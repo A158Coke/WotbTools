@@ -1,9 +1,10 @@
 <script setup>
-import { computed, inject, nextTick, onActivated, onMounted, onUnmounted, ref, useId, watch } from 'vue'
+import { computed, inject, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ChevronDown, ChevronUp, CircleHelp, Files, Play } from 'lucide-vue-next'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
+import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 import { loadOfficialDemo } from '../replay-local/demo.js'
 import { mapLabel } from '../utils/helpers.js'
 import { defineLazyModule, reloadForFreshBundle } from '../utils/lazyModule.js'
@@ -14,6 +15,9 @@ import { useConfirm } from '../composables/useConfirm.js'
 import { useReplayWorkspace } from '../composables/useReplayWorkspace.js'
 import { useNativeReplayImport } from '../composables/useNativeReplayImport.js'
 import { useMountedWhenActive } from '../composables/useMountedWhenActive.js'
+import { usePointer } from '../composables/useBreakpoint.js'
+import { usePlaybackPhoneForm } from '../composables/usePlaybackPhoneForm.js'
+import { usePlaybackPortraitViewport } from '../composables/usePlaybackPortraitViewport.js'
 import ReplayPage from './ReplayPage.vue'
 import FileDrop from './FileDrop.vue'
 import ReplayProcessingPanel from './ReplayProcessingPanel.vue'
@@ -327,10 +331,36 @@ const onboardingWorkspace = {
     sourcePicker.value?.chooseFiles()
   },
 }
+
+/**
+ * 手机横屏回放沉浸态：正方形地图只受纵向预算约束，顶栏 + Tab 栏（104px）是最大的单项消耗。
+ * 2D / 3D 回放已就绪且设备是触屏手机横屏时向外壳申请沉浸；任何条件失效、离开页面或被 KeepAlive
+ * 停用都立即释放。外壳本身（显隐与 token 归零）由 AppShell 独占。
+ */
+const shellChrome = inject(SHELL_CHROME_KEY, null)
+const shellOwner = Symbol('replay-workspace')
+const { isPhone } = usePlaybackPhoneForm()
+const { isPortrait } = usePlaybackPortraitViewport()
+const { coarse } = usePointer()
+const pageActive = ref(true)
+const workspaceContentEl = ref(null)
+const replayPaneShown = computed(() =>
+  (activeCapability.value === 'playback' && playbackMounted.value) || (activeCapability.value === '3d' && threeMounted.value))
+const wantsImmersive = computed(() =>
+  pageActive.value && isPhone.value && !isPortrait.value && coarse.value && canCollapseSource.value && replayPaneShown.value)
+watch(wantsImmersive, (on) => {
+  shellChrome?.request(shellOwner, on)
+  // 进入沉浸态时把回放区对齐到视口顶端（仅边沿触发一次，不监听滚动）
+  if (on) nextTick(() => workspaceContentEl.value?.scrollIntoView?.({ block: 'start' }))
+}, { immediate: true })
+onActivated(() => { pageActive.value = true })
+onDeactivated(() => { pageActive.value = false })
+
 function registerOnboarding() { onboarding?.registerWorkspace(onboardingWorkspace) }
 onMounted(registerOnboarding)
 onActivated(registerOnboarding)
 onUnmounted(() => {
+  shellChrome?.request(shellOwner, false)
   disposed = true
   demoController?.abort()
   onboarding?.registerWorkspace(null)
@@ -415,7 +445,7 @@ watch(() => props.initialCapability, (val) => {
       </Banner>
     </div>
 
-    <div class="workspace-content">
+    <div ref="workspaceContentEl" class="workspace-content">
       <ReplayPage
         v-show="activeCapability === 'data'"
         :active="activeCapability === 'data'"

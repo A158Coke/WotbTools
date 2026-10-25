@@ -68,6 +68,9 @@ if (players > 0) {
   dataset.events = []
   dataset.recorderAccountId = 1002
 }
+// `?shell=immersive`：与 AppShell 的沉浸态同一份契约（根元素属性 + scale.css 把外壳高度 token 归零），
+// 夹具没有真实顶栏 / Tab 栏，所以用它复现「手机横屏回放把外壳让出来」后的高度预算。
+if (params.get('shell') === 'immersive') document.documentElement.dataset.shellChrome = 'immersive'
 const recorderTeam = Number(params.get('recorder') || 1)
 dataset.friendlyTeam = recorderTeam
 if (players > 0 && recorderTeam === 2) dataset.recorderAccountId = 2002

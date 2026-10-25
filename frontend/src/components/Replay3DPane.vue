@@ -13,7 +13,7 @@ import { gunMarksByAccount } from '../utils/gunMarks.js'
  */
 import { cumulativeStatsAtV2, healthDisplayAt, lifeAt, positionAtV2, positionCoveredAtV2 } from '../utils/battlePlaybackV2.ts'
 import { detailsDamageLogAtV2 } from '../utils/playbackDetails.js'
-import { computed, inject, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
@@ -35,6 +35,7 @@ import PlaybackRoster from './PlaybackRoster.vue'
 import { rosterLanesFor } from '../scene/rosterState.js'
 import BaseStatusBar from './BaseStatusBar.vue'
 import BattlePlaybackHud from './BattlePlaybackHud.vue'
+import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 import SegmentedControl from './SegmentedControl.vue'
 import AppButton from './AppButton.vue'
 import { mapLabel } from '../utils/helpers.js'
@@ -613,6 +614,9 @@ watch(
 // 面板打开期间尺寸变化（旋转 / 全屏 / 工作台重排）重算可用高度；闭合时不测量
 // （此时 .controls 可能整块不存在），打开那一下由 watch(displayOpen) 负责。
 function onViewportResize() { measurePresentationBounds() }
+// 外壳沉浸态切换只改 --header-h / --tabbar-h，不触发 resize：显式重算预算。
+const shellChrome = inject(SHELL_CHROME_KEY, null)
+watch(() => shellChrome?.immersive.value, () => nextTick(measurePresentationBounds))
 onMounted(() => window.addEventListener('resize', onViewportResize))
 onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 </script>
