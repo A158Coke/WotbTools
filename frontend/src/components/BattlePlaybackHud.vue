@@ -17,6 +17,8 @@ const props = defineProps({
   friendlyTeam: { type: Number, default: null },
   // seek/恢复帧不补播 HP 伤害动画（与单车 hpNoTransition 同源，父组件传入）。
   hpNoTransition: { type: Boolean, default: false },
+  /** 手机横屏：地图名隐藏，时钟 / 基地并入中列，整个 HUD 只占一行（把高度让给正方形地图）。 */
+  compact: { type: Boolean, default: false },
 })
 
 function finiteNumber(value) {
@@ -95,8 +97,8 @@ const baseViews = computed(() => props.baseStates.map((state) => baseView(state,
 </script>
 
 <template>
-  <section class="pb-hud" :class="{ 'pb-hud-notransition': props.hpNoTransition }" data-test="pb-hud" :aria-label="$t('recon.map.playback.hud')">
-    <div v-if="(props.showSummary && (props.mapTitle || props.battleTime)) || props.baseStates.length || $slots.bases" class="pb-hud-meta" data-test="pb-hud-meta">
+  <section class="pb-hud" :class="{ 'pb-hud-notransition': props.hpNoTransition, 'pb-hud-compact': props.compact }" data-test="pb-hud" :aria-label="$t('recon.map.playback.hud')">
+    <div v-if="(!props.compact || !props.showSummary) && ((props.showSummary && (props.mapTitle || props.battleTime)) || props.baseStates.length || $slots.bases)" class="pb-hud-meta" data-test="pb-hud-meta">
       <span v-if="props.showSummary && props.mapTitle" class="pb-hud-map" data-test="pb-hud-map">{{ props.mapTitle }}</span>
       <div v-if="props.baseStates.length || $slots.bases" class="pb-hud-bases" data-test="pb-hud-bases">
         <slot name="bases"><BaseStatusBar :bases="baseViews" compact /></slot>
@@ -113,8 +115,12 @@ const baseViews = computed(() => props.baseStates.map((state) => baseView(state,
       </span>
     </div>
 
-    <div v-if="hasPoints()" class="pb-hud-center pb-hud-column-center" data-test="pb-hud-center">
-      <div class="pb-hud-points" data-test="pb-hud-points">
+    <div v-if="hasPoints() || props.compact" class="pb-hud-center pb-hud-column-center" data-test="pb-hud-center">
+      <div v-if="props.compact && (props.baseStates.length || $slots.bases)" class="pb-hud-bases" data-test="pb-hud-bases">
+        <slot name="bases"><BaseStatusBar :bases="baseViews" compact /></slot>
+      </div>
+      <span v-if="props.compact && props.battleTime" class="pb-hud-time" data-test="pb-hud-time">{{ props.battleTime }}</span>
+      <div v-if="hasPoints()" class="pb-hud-points" data-test="pb-hud-points">
         <strong data-test="pb-hud-score">
           <span v-if="props.friendlyPoints != null" data-test="pb-points-friendly">{{ compactNumber(props.friendlyPoints) }}</span>
           <span v-if="props.friendlyPoints != null && props.enemyPoints != null"> : </span>
@@ -179,6 +185,15 @@ const baseViews = computed(() => props.baseStates.map((state) => baseView(state,
   .pb-hud-value { white-space: normal; overflow-wrap: anywhere; }
   .pb-hud-enemy .pb-hud-track { grid-column: 1; grid-row: 2; }
 }
+/* 紧凑单行：己方 值+血条 │ 基地 / 时钟 / 比分 │ 敌方 血条+值。 */
+.pb-hud-compact { gap: 0; padding-block: var(--space-1); }
+.pb-hud-compact .pb-hud-grid { gap: var(--space-2); }
+.pb-hud-compact .pb-hud-team { grid-template-columns: auto minmax(0, 1fr); gap: var(--space-2); }
+.pb-hud-compact .pb-hud-value { grid-row: 1; grid-column: 1; justify-self: start; white-space: nowrap; overflow-wrap: normal; }
+.pb-hud-compact .pb-hud-track { grid-row: 1; grid-column: 2; }
+.pb-hud-compact .pb-hud-enemy .pb-hud-value { grid-column: 2; justify-self: end; }
+.pb-hud-compact .pb-hud-enemy .pb-hud-track { grid-column: 1; }
+.pb-hud-compact .pb-hud-center { display: flex; align-items: center; justify-content: center; gap: var(--space-2); }
 @media (prefers-reduced-motion: reduce) {
   .pb-hud-fill, .pb-hud-lag { transition: none; }
 }

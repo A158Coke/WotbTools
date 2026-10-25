@@ -139,6 +139,8 @@
        spacing value. The bounds used to be 9rem/14rem: the ceiling was wide enough that the
        roster kept absorbing new viewport width instead of handing it to the battlefield. */
     --pb-roster-min: 9rem;
+    /* 手机横屏传输条合成一行时，时间轴可被按钮挤到的最小可拖宽度 */
+    --pb-timeline-min-w: 120px;
     --pb-roster-max: 11rem;
     --pb-workspace-fallback-h: 80dvh;
 
