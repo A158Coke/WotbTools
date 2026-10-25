@@ -15,6 +15,7 @@ async function flushPromises() {
 import { useError } from '../composables/useError.js'
 import { useConnectivityNotice } from '../composables/useConnectivityNotice.js'
 import { useReplaySession } from '../composables/useReplaySession.js'
+import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
@@ -156,7 +157,7 @@ function mountWorkspace(capability = 'data', { authenticated = true, navigate = 
     props: { initialCapability: capability },
     attachTo: attached ? document.body : undefined,
     global: {
-      provide: { [NAVIGATE_VIEW_KEY]: navigate, [ONBOARDING_KEY]: onboarding, ...(shellChrome ? { [SHELL_CHROME_KEY]: shellChrome } : {}) },
+      provide: { [NAVIGATE_VIEW_KEY]: navigate, [ONBOARDING_KEY]: onboarding, [DIALOG_INLINE_KEY]: true, ...(shellChrome ? { [SHELL_CHROME_KEY]: shellChrome } : {}) },
       mocks: { $t: (k) => k },
     },
   })
@@ -1128,17 +1129,13 @@ describe('ReplayWorkspace', () => {
     await group.trigger('keydown', { key: 'End' })
     await flushPromises()
     expect(tab(wrapper, 'ai').classes()).toContain('is-active')
-    await group.trigger('keydown', { key: 'ArrowLeft' })
-    await flushPromises()
-    expect(tab(wrapper, 'shots').classes()).toContain('is-active')
     await group.trigger('keydown', { key: 'Home' })
     await flushPromises()
     expect(tab(wrapper, 'data').classes()).toContain('is-active')
-    // ARIA 单选组语义：选中项 aria-checked=true；只有选中项在 Tab 顺序里
+    // ARIA 单选组语义：选中项 aria-checked=true；其它项不在 Tab 顺序里（方向键移动见 SegmentedControl.test）
     expect(tab(wrapper, 'data').attributes('role')).toBe('radio')
     expect(tab(wrapper, 'data').attributes('aria-checked')).toBe('true')
     expect(tab(wrapper, 'ai').attributes('aria-checked')).toBe('false')
-    expect(tab(wrapper, 'data').attributes('tabindex')).toBe('0')
     expect(tab(wrapper, 'ai').attributes('tabindex')).toBe('-1')
     // 视觉 / 键盘行为归 canonical 组件：adapter 不再自带选项样式与状态机
     expect(wrapper.find('.capability-option').exists()).toBe(false)

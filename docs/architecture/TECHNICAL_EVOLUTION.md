@@ -541,6 +541,27 @@ UI 现代化与教程共用现有外壳与组件，不另造演示页面或业�
 2D 的地图是主内容，常驻控件归控制条，地图盒里不放常驻 UI。依据是实测——手机横屏 740×360 下
 2D 地图只有 96×96 px，任何满足触控下限的常驻入口都会占掉它 10% 以上并压进中心区。
 
+## 22. 2026-10-25 — 交互机制交给成熟 primitive，policy 仍归 Design Language
+
+自研的 focus trap、roving focus、outside-click、ARIA 状态机和 overlay 生命周期分散在 `AppDialog`、
+`MenuButton`、`BattlePicker`、`SegmentedControl` 与各页面手写的手机 sheet 中，每处都在重复实现同一套
+WAI-ARIA 行为，也是 #727 类遮挡问题的温床。方向是把通用交互机制交给 Reka UI（unstyled、无自带主题），
+浏览器/Vue 管线交给 VueUse，低频 UI chrome 的过渡交给 motion-v；WotbTools 组件保持原有 API，
+Design Language 与语义 token 仍是唯一的视觉与动效 policy 来源。
+
+- **第三方 primitive 不外泄**：`reka-ui`、`motion-v` 只在 WotbTools 组件边界内 import，由
+  `frontend/src/shared/ui-dependency-ownership.test.ts` 强制；页面层不理解第三方 class / theme 词汇。
+- **motion 的 policy 来源不变**：`frontend/src/shared/motion/motionPolicy.ts` 从 CSS token 读取时长与缓动，
+  `prefers-reduced-motion` 时 token 归零；Reka 管理的 overlay 进出场用 token 驱动的 CSS keyframes
+  （Reka 的 Presence 按 CSS animation 判定退场），motion-v 只用于需要 shared layout / 列表增删的位置。
+  播放帧路径（3D / 2D 场景、timeline、HP、camera）不进入 motion。
+- **VueUse 只收敛机制**：breakpoint 仍由 `useBreakpoint()` 唯一拥有，持久化仍归各自 owner，
+  `useStorage` / `useBreakpoints` 由 ownership guard 禁用；与 Reka 传递依赖对齐主版本，避免两份 VueUse。
+- **TanStack Table 试点不通过**：现有表格的自研状态只有 sort 键与方向（`AggregateTable` 约 20 行），
+  引入列定义与 row model 适配层后净代码不减少，也没有 pinning / grouping / visibility 等收益场景，
+  因此不引入依赖。
+- **Floating UI 不作为直接依赖**：定位与碰撞由 Reka 内置承担，避免出现第二个 positioning owner。
+
 ## 已退役 / 过渡架构
 
 - **Boost / Coaching** — 曾经形成完整有状态业务，后续连同 DB / frontend / roles 一并退役。

@@ -20,6 +20,8 @@ import { useIncrementalList } from '../composables/useIncrementalList.js'
 import EmptyState from './EmptyState.vue'
 import AppButton from './AppButton.vue'
 import FilterChips from './FilterChips.vue'
+import AppSheet from './AppSheet.vue'
+import { createReusableTemplate } from '@vueuse/core'
 
 const DEFAULT_FILTERS = Object.freeze({ q: '', tier: '', nation: '', type: '', sort: 'name' })
 const SEARCH_DEBOUNCE_MS = 250
@@ -115,48 +117,22 @@ function clearFilters() {
   emitFilters()
 }
 
-// 手机筛选 sheet（与坦克百科同一交互）
+// 手机筛选 sheet（与 HoF 同一交互）：容器 / 焦点陷阱 / Esc / 遮罩由 AppSheet 提供；
+// 桌面 / 平板的普通筛选行不拦截 Escape，由外层选车弹窗关闭。
 const sheetOpen = ref(false)
-const sheetRef = ref(null)
 let sheetOpener = null
+// 筛选行：桌面内联，手机放进 AppSheet；同一份模板只写一次
+const [DefineFilters, ReuseFilters] = createReusableTemplate()
 function toggleSheet() {
   if (sheetOpen.value) return closeSheet()
   sheetOpener = document.activeElement
   sheetOpen.value = true
-  // 焦点进入 sheet：Esc 才能命中 sheet 自己的 handler，Tab 也不会跑到背景控件。
-  nextTick(() => sheetRef.value?.querySelector('button, select, input')?.focus?.())
 }
 function closeSheet() {
   sheetOpen.value = false
   const opener = sheetOpener
   sheetOpener = null
   nextTick(() => opener?.focus?.())
-}
-/**
- * 筛选区键盘处理：只有 compact sheet 打开时才拦截 Escape/Tab。
- * 桌面/平板的普通筛选行必须让 Escape 继续冒泡，由外层选车弹窗关闭；
- * sheet 打开时 Escape 只关 sheet，不再连带关闭整个弹窗。
- */
-function onSheetKeydown(event) {
-  if (!isCompact.value || !sheetOpen.value) return
-  if (event.key === 'Escape') {
-    event.stopPropagation()
-    closeSheet()
-    return
-  }
-  if (event.key !== 'Tab') return
-  // sheet 是弹窗内的二级 modal：Tab 也停在本层，避免外层 picker 的 Tab trap 介入。
-  event.stopPropagation()
-  const root = sheetRef.value
-  if (!root) return
-  const focusable = [...root.querySelectorAll('button, select, input')].filter(el => !el.disabled)
-  const first = focusable[0], last = focusable[focusable.length - 1]
-  if (!first) return
-  if (event.shiftKey && (document.activeElement === first || !root.contains(document.activeElement))) {
-    event.preventDefault(); last?.focus()
-  } else if (!event.shiftKey && (document.activeElement === last || !root.contains(document.activeElement))) {
-    event.preventDefault(); first?.focus()
-  }
 }
 
 function hideBrokenImage(event) {
@@ -212,16 +188,11 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
       <span v-if="!title" id="tp-count" class="tp-count" data-testid="tank-count" aria-live="polite">{{ countText }}</span>
     </div>
 
-    <div v-if="isCompact && sheetOpen" class="tp-sheet-scrim" aria-hidden="true" @click="closeSheet"></div>
+    <DefineFilters>
     <div
-      v-if="!isCompact || sheetOpen"
-      ref="sheetRef"
       class="tp-filters"
       :class="{ 'is-sheet': isCompact }"
-      :role="isCompact ? 'dialog' : undefined"
-      :aria-label="isCompact ? t('filters.title') : undefined"
       data-testid="tank-filters" data-tour="tankopedia-filters"
-      @keydown="onSheetKeydown"
     >
       <div v-if="isCompact" class="tp-sheet-head">
         <strong>{{ t('filters.title') }}</strong>
@@ -258,6 +229,9 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
         </select>
       </label>
     </div>
+    </DefineFilters>
+    <AppSheet v-if="isCompact" :open="sheetOpen" :title="t('filters.title')" @close="closeSheet"><ReuseFilters /></AppSheet>
+    <ReuseFilters v-else />
 
     <div id="tp-grid" class="tp-results" :class="{ 'is-dialog-results': layout === 'dialog' }">
       <EmptyState
@@ -436,22 +410,11 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
 .tp-field-inline { max-inline-size: 360px; }
 .tp-field-label { color: var(--color-text-secondary); font: var(--type-caption); }
 
-.tp-sheet-scrim { position: fixed; inset: 0; z-index: var(--z-sheet); background: var(--color-scrim); }
-
+/* 手机筛选 sheet：容器 / 遮罩 / 安全区由 AppSheet 提供，这里只负责 sheet 内的两列网格 */
 .tp-filters.is-sheet {
-  position: fixed;
-  inset-inline: 0;
-  inset-block-end: 0;
-  z-index: var(--z-sheet);
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-3);
-  max-block-size: 80dvh;
-  padding: var(--space-4) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom));
-  overflow-y: auto;
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  background: var(--color-surface-3);
-  box-shadow: var(--elevation-3);
 }
 
 .tp-sheet-head {
@@ -464,6 +427,14 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
 }
 
 .is-sheet .tp-field { min-inline-size: 0; }
+
+/* 筛选内容随 AppSheet portal 到 body，脱离了上面 .is-dialog 与 AgentArmorView 的 #tank-picker 44px 保底：
+   在随内容一起传送的元素上自带保底（含 AppButton 等子组件内部按钮）。 */
+.tp-filters.is-sheet :deep(button),
+.tp-filters.is-sheet :deep(select),
+.tp-filters.is-sheet :deep(input) {
+  min-block-size: 44px;
+}
 
 /* ---------- 结果区与卡片网格 ---------- */
 .tp-results { min-block-size: 0; }

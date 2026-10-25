@@ -120,6 +120,7 @@
     --z-sheet: 400;
     --z-menu: 500;
     --z-dialog: 600;
+    --z-tooltip: 650;
     --z-toast: 700;
     /* 回放工作台内的局部叠放（§5）：工作台根（`.playback-workspace`）与场景（`.pb-map`）各自
        `isolation: isolate`，内部只用这些 1–9 的局部层，不参与全局 z-index 竞争。

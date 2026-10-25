@@ -136,6 +136,9 @@ function setPickerFilters(filters) {
 }
 function onPickerKeydown(event) {
     if (!pickerOpen.value) return
+    // 筛选 sheet 等二级模态层（portal 到 body）自己处理 Esc / Tab：按键发生在 #tank-picker 之外的 dialog 内时不介入
+    const layer = event.target instanceof Element ? event.target.closest('[role="dialog"]') : null
+    if (layer && layer.id !== 'tank-picker') return
     if (event.key === 'Escape') { event.preventDefault(); closePicker(); return }
     if (event.key !== 'Tab') return
     const picker = document.getElementById('tank-picker')

@@ -4,7 +4,8 @@
 // 点面板外或焦点移出面板时关闭；选一个链接后关闭。内容与手机"更多"页同源（useMoreMenu）。
 // Teleport 到 body：侧边栏是 fixed + z-index 的层叠上下文，面板留在里面会被页面里更高的层
 // （如装甲查看器的 3D 浮层）盖住。测试用 DIALOG_INLINE_KEY 原地渲染。
-import { inject, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { inject, nextTick, ref, watch } from 'vue'
+import { useEventListener } from '@vueuse/core'
 import { BookOpen, ExternalLink, MessageSquare } from 'lucide-vue-next'
 import { FEEDBACK_URL, LANGUAGES, useMoreMenu } from '../composables/useMoreMenu.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
@@ -49,22 +50,19 @@ function onFocusOut(event) {
 }
 
 function onPointerDown(event) {
+  if (!props.open) return
   const target = event.target
   if (panel.value?.contains(target) || props.anchor?.contains(target)) return
   close()
 }
 
-watch(() => props.open, async (open) => {
-  if (open) {
-    document.addEventListener('pointerdown', onPointerDown, true)
-    await nextTick()
-    panel.value?.querySelector('button, a, [tabindex="0"]')?.focus()
-  } else {
-    document.removeEventListener('pointerdown', onPointerDown, true)
-  }
-})
+useEventListener(() => document, 'pointerdown', onPointerDown, { capture: true })
 
-onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown, true))
+watch(() => props.open, async (open) => {
+  if (!open) return
+  await nextTick()
+  panel.value?.querySelector('button, a, [tabindex="0"]')?.focus()
+})
 </script>
 
 <template>

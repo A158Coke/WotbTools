@@ -1,10 +1,12 @@
 <script setup>
 // 对话框（design-language §7 Dialog / 审计 PG-09）：确认 / 表单共用。
-// role=dialog + aria-modal；焦点陷阱，Esc 关闭，关闭后焦点回到打开前的元素；
-// 手机上变为底部 sheet；高度按 dvh 计算并留出安全区。取代 window.confirm 与各页自写的 modal-overlay。
-import { inject, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
+// 焦点陷阱、Esc、aria-modal、body scroll lock 与嵌套层栈由 Reka Dialog 提供；这里只拥有
+// WotbTools policy：初始焦点优先级、关闭后焦点回到打开前的元素、手机底部 sheet 视觉与 inline 渲染。
+import { inject, nextTick, ref, watch } from 'vue'
+import { DialogClose, DialogContent, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
 import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 import { X } from 'lucide-vue-next'
+import AppTooltip from './AppTooltip.vue'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -25,132 +27,86 @@ const emit = defineEmits(['close'])
 defineOptions({ inheritAttrs: false })
 
 const inline = inject(DIALOG_INLINE_KEY, false)
-const panel = ref(null)
+const content = ref(null)
 
-// Multiple dialogs can overlap (for example an editor dialog opening useConfirm()).
-// Store the shared count on <body> so every AppDialog instance participates in the same lock.
-const BODY_LOCK_DATASET_KEY = 'dialogLockCount'
-function acquireBodyLock() {
-  if (typeof document === 'undefined') return
-  const body = document.body
-  const next = (Number(body.dataset[BODY_LOCK_DATASET_KEY]) || 0) + 1
-  body.dataset[BODY_LOCK_DATASET_KEY] = String(next)
-  body.classList.add('dialog-open')
-}
-function releaseBodyLock() {
-  if (typeof document === 'undefined') return
-  const body = document.body
-  const next = Math.max(0, (Number(body.dataset[BODY_LOCK_DATASET_KEY]) || 0) - 1)
-  if (next === 0) {
-    delete body.dataset[BODY_LOCK_DATASET_KEY]
-    body.classList.remove('dialog-open')
-  } else {
-    body.dataset[BODY_LOCK_DATASET_KEY] = String(next)
-  }
-}
-
-const bodyLockHeld = ref(false)
-const titleId = `dialog-title-${useId()}`
 let opener = null
-function restoreOpener() {
+function restoreOpener(panel = content.value?.$el) {
   const activeModal = document.activeElement?.closest('[role="dialog"][aria-modal="true"]')
-  if (opener?.isConnected && typeof opener.focus === 'function' && (!activeModal || activeModal === panel.value)) opener.focus()
+  if (opener?.isConnected && typeof opener.focus === 'function' && (!activeModal || activeModal === panel)) opener.focus()
   opener = null
 }
 
+/** 视觉隐藏或对辅助技术隐藏的控件无法聚焦：放进候选会让初始焦点静默落空。 */
+function visible(element) {
+  return !element.closest('[aria-hidden="true"], [hidden]') && getComputedStyle(element).display !== 'none'
+}
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-/** 视觉隐藏或对辅助技术隐藏的控件无法聚焦：放进候选会让初始焦点静默落空、Tab 陷阱失效。 */
-function focusable(element) {
-  if (element.closest('[aria-hidden="true"], [hidden]')) return false
-  const style = getComputedStyle(element)
-  return style.display !== 'none' && style.visibility !== 'hidden' && element.getClientRects().length > 0
-}
-function focusables() {
-  return [...(panel.value?.querySelectorAll(FOCUSABLE) || [])].filter(focusable)
-}
-
-function onKeydown(event) {
-  if (event.key === 'Escape') {
-    event.stopPropagation()
-    emit('close')
-    return
-  }
-  if (event.key !== 'Tab') return
-  const items = focusables()
-  if (!items.length) { event.preventDefault(); panel.value?.focus(); return }
-  const first = items[0]
-  const last = items[items.length - 1]
-  if (event.shiftKey && (document.activeElement === first || document.activeElement === panel.value)) {
-    event.preventDefault()
-    last.focus()
-  } else if (!event.shiftKey && document.activeElement === last) {
-    event.preventDefault()
-    first.focus()
-  }
+// 优先聚焦 [autofocus] / [data-autofocus]，其次第一个非关闭按钮的可聚焦元素；都没有时聚焦面板本身
+function focusInitial(event) {
+  event.preventDefault()
+  const panel = content.value?.$el
+  if (!panel) return
+  const items = [...panel.querySelectorAll(FOCUSABLE)].filter(visible)
+  const preferred = items.find(el => el.matches('[autofocus], [data-autofocus]'))
+  ;(preferred || items.find(el => !el.classList.contains('dialog-close')) || panel).focus()
 }
 
-watch(() => props.open, async (open) => {
-  if (open) {
-    opener = document.activeElement
-    await nextTick()
-    // 优先聚焦第一个输入或主按钮之外的第一个可聚焦元素；没有时聚焦面板本身
-    const items = focusables()
-    const preferred = items.find(el => el.matches('[autofocus], [data-autofocus]'))
-    ;(preferred || items.find(el => el.tagName !== 'BUTTON' || !el.classList.contains('dialog-close')) || panel.value)?.focus()
-    if (!bodyLockHeld.value) {
-      acquireBodyLock()
-      bodyLockHeld.value = true
-    }
-  } else {
-    if (bodyLockHeld.value) {
-      releaseBodyLock()
-      bodyLockHeld.value = false
-    }
-    restoreOpener()
-  }
-}, { immediate: true })
+function onUpdateOpen(value) {
+  if (!value) emit('close')
+}
+// 遮罩点击由 .dialog-scrim 自己处理（click 语义，且可由 closeOnScrim 关闭），Reka 的 outside 判定不参与。
+const keepOpen = event => event.preventDefault()
+// Reka 在内容卸载、焦点陷阱解除后才触发 close-auto-focus：在这里恢复才不会被陷阱拉回；
+// 它默认回到“挂载时的焦点”，会抢走更新的对话框的焦点，所以由 restoreOpener 按层判断。
+function onCloseAutoFocus(event) {
+  event.preventDefault()
+  restoreOpener(event.target)
+}
 
-onBeforeUnmount(() => {
-  if (bodyLockHeld.value) {
-    releaseBodyLock()
-    bodyLockHeld.value = false
-  }
-  restoreOpener()
-})
+watch(() => props.open, (open) => {
+  if (open) opener = document.activeElement
+  // keepMounted 的内容不卸载，close-auto-focus 不会触发
+  else if (props.keepMounted) nextTick(() => restoreOpener())
+}, { immediate: true, flush: 'sync' })
 </script>
 
 <template>
-  <Teleport to="body" :disabled="inline">
-    <div
-      v-if="open || keepMounted"
-      v-show="open"
-      class="dialog-scrim"
-      :class="scrimClass"
-      data-testid="dialog-scrim"
-      @click.self="closeOnScrim && emit('close')"
-    >
+  <DialogRoot :open="open" @update:open="onUpdateOpen">
+    <DialogPortal :disabled="inline" force-mount>
       <div
-        ref="panel"
-        class="dialog"
-        :class="[`is-${size}`, `is-${tone}`]"
-        role="dialog"
-        aria-modal="true"
-        :aria-labelledby="titleId"
-        tabindex="-1"
-        v-bind="$attrs"
-        @keydown="onKeydown"
+        v-if="open || keepMounted"
+        v-show="open"
+        class="dialog-scrim"
+        :class="scrimClass"
+        data-testid="dialog-scrim"
+        @click.self="closeOnScrim && emit('close')"
       >
-        <header class="dialog-head">
-          <h2 :id="titleId" class="dialog-title">{{ title }}</h2>
-          <button type="button" class="dialog-close" :aria-label="$t('app.close')" @click="emit('close')">
-            <X :size="20" aria-hidden="true" />
-          </button>
-        </header>
-        <div class="dialog-body"><slot /></div>
-        <footer v-if="$slots.actions" class="dialog-actions"><slot name="actions" /></footer>
+        <DialogContent
+          ref="content"
+          class="dialog"
+          :class="[`is-${size}`, `is-${tone}`]"
+          :force-mount="keepMounted || undefined"
+          aria-modal="true"
+          aria-describedby=""
+          v-bind="$attrs"
+          @open-auto-focus="focusInitial"
+          @close-auto-focus="onCloseAutoFocus"
+          @interact-outside="keepOpen"
+        >
+          <header class="dialog-head">
+            <DialogTitle class="dialog-title">{{ title }}</DialogTitle>
+            <AppTooltip :label="$t('app.close')">
+              <DialogClose class="dialog-close" :aria-label="$t('app.close')">
+                <X :size="20" aria-hidden="true" />
+              </DialogClose>
+            </AppTooltip>
+          </header>
+          <div class="dialog-body"><slot /></div>
+          <footer v-if="$slots.actions" class="dialog-actions"><slot name="actions" /></footer>
+        </DialogContent>
       </div>
-    </div>
-  </Teleport>
+    </DialogPortal>
+  </DialogRoot>
 </template>
 
 <style scoped>
@@ -162,6 +118,8 @@ onBeforeUnmount(() => {
   place-items: center;
   padding: var(--space-4);
   background: var(--color-scrim);
+  /* Reka 模态在打开期间把 body 设为 pointer-events: none；遮罩点击关闭需要它自己恢复命中 */
+  pointer-events: auto;
 }
 
 .dialog {
@@ -212,6 +170,12 @@ onBeforeUnmount(() => {
   border-top: 1px solid var(--color-border-subtle);
 }
 
+/* 进场：时长 / 缓动全部来自 token，reduced-motion 时 token 为 0 即无动画 */
+.dialog-scrim { animation: dialog-scrim-in var(--duration-base) var(--ease-standard); }
+.dialog { animation: dialog-in var(--duration-base) var(--ease-standard); }
+@keyframes dialog-scrim-in { from { opacity: 0; } }
+@keyframes dialog-in { from { opacity: 0; transform: translateY(var(--space-2)) scale(.985); } }
+
 @media (hover: hover) {
   .dialog-close:hover { background: var(--color-surface-2); color: var(--color-text-primary); }
 }
@@ -225,6 +189,8 @@ onBeforeUnmount(() => {
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     padding-bottom: env(safe-area-inset-bottom);
   }
+  /* 手机底部 sheet 只淡入、不位移：命中目标在进场期间不漂移（真实点击与自动化都不会落在滑动中的旧位置） */
+  .dialog { animation-name: dialog-scrim-in; }
   .dialog-actions { justify-content: stretch; }
   .dialog-actions > :deep(*) { flex: 1 1 0; }
 }

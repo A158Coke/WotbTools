@@ -9,7 +9,7 @@ import { confirm } from '../composables/useConfirm.js'
 
 const mocks = { $t: key => key }
 let wrapper
-afterEach(() => { wrapper?.unmount(); document.body.innerHTML = ''; document.body.classList.remove('dialog-open'); delete document.body.dataset.dialogLockCount })
+afterEach(() => { wrapper?.unmount(); document.body.innerHTML = ''; document.body.removeAttribute('style') })
 
 function mountDialog() {
   const Host = defineComponent({
@@ -29,6 +29,8 @@ function mountDialog() {
 }
 
 const dialog = () => document.querySelector('[role="dialog"]')
+// Reka 在焦点陷阱卸载后的下一个宏任务才触发 close-auto-focus
+const settleFocus = () => new Promise(resolve => setTimeout(resolve, 10))
 
 describe('AppDialog', () => {
   it('returns focus when a conditional editor is unmounted while open', async () => {
@@ -39,8 +41,8 @@ describe('AppDialog', () => {
     await flushPromises()
     expect(document.activeElement).not.toBe(opener)
     editor.unmount()
+    await settleFocus()
     expect(document.activeElement).toBe(opener)
-    expect(document.body.classList.contains('dialog-open')).toBe(false)
   })
   it('does not take focus from a newer active dialog when an old editor unmounts', async () => {
     const opener = document.createElement('button')
@@ -50,6 +52,7 @@ describe('AppDialog', () => {
     const current = mount(AppDialog, { props: { open: true, title: 'Current' }, attachTo: document.body, global: { mocks }, slots: { default: '<input id="current-input" autofocus>' } })
     await flushPromises()
     old.unmount()
+    await settleFocus()
     expect(document.activeElement.id).toBe('current-input')
     current.unmount()
     expect(document.getElementById('old-input')).toBeNull()
@@ -78,6 +81,7 @@ describe('AppDialog', () => {
     expect(document.activeElement.id).toBe('b')
     dialog().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await flushPromises()
+    await settleFocus()
     expect(dialog()).toBeNull()
     expect(document.activeElement).toBe(opener)
   })
@@ -106,6 +110,7 @@ describe('AppDialog', () => {
     expect(document.activeElement.id).toBe('pick')
     dialog().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await flushPromises()
+    await settleFocus()
     expect(dialog()).toBeNull()
     expect(document.activeElement).toBe(opener)
   })
@@ -119,23 +124,15 @@ describe('AppDialog', () => {
     expect(dialog()).toBeNull()
   })
 
-  it('嵌套对话框关闭一个后仍保持 body scroll lock，最后一个关闭才释放', async () => {
-    const first = mount(AppDialog, { props: { open: true, title: 'Outer' }, attachTo: document.body, global: { mocks } })
-    const second = mount(AppDialog, { props: { open: true, title: 'Inner' }, attachTo: document.body, global: { mocks } })
+  it('嵌套对话框：Esc 只关闭最上层，下层保持打开', async () => {
+    const closed = []
+    const first = mount(AppDialog, { props: { open: true, title: 'Outer', onClose: () => closed.push('outer') }, attachTo: document.body, global: { mocks } })
+    const second = mount(AppDialog, { props: { open: true, title: 'Inner', onClose: () => closed.push('inner') }, attachTo: document.body, global: { mocks } })
     await flushPromises()
 
-    expect(document.body.dataset.dialogLockCount).toBe('2')
-    expect(document.body.classList.contains('dialog-open')).toBe(true)
-
-    await second.setProps({ open: false })
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await flushPromises()
-    expect(document.body.dataset.dialogLockCount).toBe('1')
-    expect(document.body.classList.contains('dialog-open')).toBe(true)
-
-    await first.setProps({ open: false })
-    await flushPromises()
-    expect(document.body.dataset.dialogLockCount).toBeUndefined()
-    expect(document.body.classList.contains('dialog-open')).toBe(false)
+    expect(closed).toEqual(['inner'])
 
     second.unmount()
     first.unmount()
