@@ -189,8 +189,8 @@ watch(() => props.open, (open) => {
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     padding-bottom: env(safe-area-inset-bottom);
   }
-  .dialog { animation-name: dialog-sheet-in; }
-  @keyframes dialog-sheet-in { from { transform: translateY(100%); } }
+  /* 手机底部 sheet 只淡入、不位移：命中目标在进场期间不漂移（真实点击与自动化都不会落在滑动中的旧位置） */
+  .dialog { animation-name: dialog-scrim-in; }
   .dialog-actions { justify-content: stretch; }
   .dialog-actions > :deep(*) { flex: 1 1 0; }
 }
