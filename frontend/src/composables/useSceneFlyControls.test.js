@@ -14,8 +14,8 @@ function makeRig(pressedKeys, { cam = [0, 20, 30], target = [0, 0, 0] } = {}) {
   const pressed = new Set(pressedKeys)
   const camera = { position: { x: cam[0], y: cam[1], z: cam[2] } }
   const controls = { target: { x: target[0], y: target[1], z: target[2] } }
-  function tick(dt) {
-    return advanceFly(pressed, dt, camera, controls, FLY_SPEEDS[0])   // 恒档 1 = 2 m/s
+  function tick(dt, fallbackYaw = null) {
+    return advanceFly(pressed, dt, camera, controls, FLY_SPEEDS[0], fallbackYaw)   // 恒档 1 = 2 m/s
   }
   return { camera, controls, tick }
 }
@@ -67,6 +67,13 @@ describe('tickFly 位移语义', () => {
     expect(rig.camera.position.y).toBe(y0)             // 高度不变（不钻地）
     const horiz = Math.hypot(rig.camera.position.x, rig.camera.position.z - 10)
     expect(horiz).toBeCloseTo(2)                       // 水平位移 = 2 m（dt=1s）
+  })
+
+  it('正俯视没有水平投影时，Free 朝向 yaw 仍让 WASD 可用且不改变相机高度', () => {
+    const rig = makeRig(['KeyW'], { cam: [0, 300, 0], target: [0, 0, 0] })
+    expect(rig.tick(1, 0)).toBe(true)
+    expect(rig.camera.position.z).toBeCloseTo(-2)
+    expect(rig.camera.position.y).toBe(300)
   })
 
   it('A/D = 朝向的左右；朝 -z 看，A 向 -x（左）', () => {

@@ -52,7 +52,7 @@ const FLY_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE'])
  * 环绕半径恒定，旋转永远绕着自己；地形与高度边界由场景约束统一处理。
  * @returns {boolean} 是否发生位移（并入 cameraMoved 按需渲染判定）
  */
-export function advanceFly(pressed, dt, camera, controls, speed = 1) {
+export function advanceFly(pressed, dt, camera, controls, speed = 1, fallbackYaw = null) {
   if (!pressed || !pressed.size || !camera || !controls || !(dt > 0)) return false
   // 飞行视距：**移动前**取值冻结（首帧 = 进入飞行时的实际相机→target 距离；缩放
   // 改距离后下一轮飞行首帧重新冻结）。放最前，防「移动后测距」把首帧距离算错。
@@ -67,6 +67,7 @@ export function advanceFly(pressed, dt, camera, controls, speed = 1) {
   const fwdLen = Math.hypot(fwd.x, fwd.z)
   let ux = 0, uz = 0
   if (fwdLen > 1e-6) { ux = fwd.x / fwdLen; uz = fwd.z / fwdLen }
+  else if (Number.isFinite(fallbackYaw)) { ux = -Math.sin(fallbackYaw); uz = -Math.cos(fallbackYaw) }
   // 水平左向量 = forward × up（右手系）归一：朝 -z 看时左 = -x ✓，朝 +x 看时左 = +z ✓
   const lx = uz, lz = -ux
   const moveW = pressed.has('KeyW') ? 1 : 0

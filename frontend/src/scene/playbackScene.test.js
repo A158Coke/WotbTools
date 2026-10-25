@@ -1372,6 +1372,30 @@ describe('Free Camera terrain floor', () => {
     expect(controls.target.x).toBeCloseTo(0, 3)
     expect(controls.target.z).toBeCloseTo(0, 3)
     expect(controls.target.y).toBe(0)
+    const viewDirection = () => new THREE.Vector3().subVectors(controls.target, cam.position).normalize()
+    const topDirection = viewDirection()
+    document.querySelector('canvas').dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }))
+    expect(viewDirection().dot(topDirection)).toBeCloseTo(1, 8)
+    const topCanvas = document.querySelector('canvas')
+    const pointer = (type, x, y, buttons) => new MouseEvent(type, {
+      button: 0, clientX: x, clientY: y, buttons, bubbles: true, cancelable: true,
+    })
+    topCanvas.dispatchEvent(pointer('pointerdown', 100, 100, 1))
+    topCanvas.dispatchEvent(pointer('pointermove', 120, 100, 1))
+    expect(viewDirection().dot(topDirection)).toBeCloseTo(1, 8)
+    topCanvas.dispatchEvent(pointer('pointerup', 120, 100, 0))
+    const pinchTouch = (type, x, pointerId) => {
+      const event = pointer(type, x, 120, type === 'pointerup' ? 0 : 1)
+      Object.defineProperty(event, 'pointerType', { value: 'touch' })
+      Object.defineProperty(event, 'pointerId', { value: pointerId })
+      return event
+    }
+    topCanvas.dispatchEvent(pinchTouch('pointerdown', 100, 7))
+    topCanvas.dispatchEvent(pinchTouch('pointerdown', 300, 9))
+    topCanvas.dispatchEvent(pinchTouch('pointermove', 340, 9))
+    expect(viewDirection().dot(topDirection)).toBeCloseTo(1, 8)
+    topCanvas.dispatchEvent(pinchTouch('pointerup', 340, 9))
+    topCanvas.dispatchEvent(pinchTouch('pointerup', 100, 7))
     expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
     api.setCam('free')
 
@@ -1517,6 +1541,30 @@ describe('Free Camera terrain floor', () => {
     const { api } = createScene()
     await api.loadData({ kind: 'local', file: new File(['late-terrain'], 'late-terrain.wotbreplay') })
     expect(window.__camera.position.y).toBeGreaterThanOrEqual(400.5)
+  })
+
+  it('places the Free camera above the rendered triangle on a non-coplanar terrain cell', async () => {
+    stubTerrainAssets({ values: [0, 65535, 65535, 0], zmin: 0, zmax: 30 })
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const { api } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['non-coplanar'], 'terrain-triangle-floor.wotbreplay') })
+    const cam = window.__camera
+    const controls = window.__controls
+    const x = -150, z = -150
+    const terrain = []
+    window.__scene.traverse((object) => {
+      if (object.geometry?.userData?.terrainBuild) terrain.push(object)
+    })
+    expect(terrain).toHaveLength(1)
+    window.__scene.updateMatrixWorld(true)
+    const ray = new THREE.Raycaster(new THREE.Vector3(x, 100, z), new THREE.Vector3(0, -1, 0))
+    const renderedY = ray.intersectObject(terrain[0], false)[0]?.point.y
+    expect(renderedY).toBeGreaterThan(20) // 双线性高度约 15 m；此处渲染三角面约 30 m。
+
+    cam.position.set(x, -10, z)
+    controls.target.set(x, -15, z)
+    api.setCam('free')
+    expect(cam.position.y).toBeCloseTo(renderedY + 0.5, 5)
   })
 })
 
