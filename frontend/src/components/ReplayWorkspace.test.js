@@ -17,6 +17,8 @@ import { useConnectivityNotice } from '../composables/useConnectivityNotice.js'
 import { useReplaySession } from '../composables/useReplaySession.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
+import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
+import { createShellChrome } from '../app/shellChrome.js'
 import { loadOfficialDemo, OFFICIAL_DEMO } from '../replay-local/demo.js'
 import { useConfirmHost } from '../composables/useConfirm.js'
 import ReplayWorkspace from './ReplayWorkspace.vue'
@@ -26,6 +28,24 @@ import FileDrop from './FileDrop.vue'
 const hold = vi.hoisted(() => ({ state: null }))
 const authState = vi.hoisted(() => ({ authenticated: null, isAdmin: null, login: vi.fn() }))
 const nav = vi.hoisted(() => ({ navigate: null }))
+
+// 手机横屏沉浸态的三个输入（形态 / 朝向 / 触屏）：以真实 ref 驱动，不依赖 matchMedia 仿真。
+const formState = vi.hoisted(() => ({ isPhone: null, isPortrait: null, coarse: null }))
+vi.mock('../composables/usePlaybackPhoneForm.js', async () => {
+  const { ref } = await import('vue')
+  formState.isPhone = ref(false)
+  return { usePlaybackPhoneForm: () => ({ isPhone: formState.isPhone }) }
+})
+vi.mock('../composables/usePlaybackPortraitViewport.js', async () => {
+  const { ref } = await import('vue')
+  formState.isPortrait = ref(false)
+  return { usePlaybackPortraitViewport: () => ({ isPortrait: formState.isPortrait }) }
+})
+vi.mock('../composables/useBreakpoint.js', async (importOriginal) => {
+  const { ref } = await import('vue')
+  formState.coarse = ref(false)
+  return { ...(await importOriginal()), usePointer: () => ({ coarse: formState.coarse }) }
+})
 
 const connectivityState = vi.hoisted(() => ({ state: null }))
 vi.mock('../composables/useConnectivity.js', async () => {
@@ -129,14 +149,14 @@ function buildState() {
 
 let replayState = null
 
-function mountWorkspace(capability = 'data', { authenticated = true, navigate = vi.fn(), attached = false, onboarding = null } = {}) {
+function mountWorkspace(capability = 'data', { authenticated = true, navigate = vi.fn(), attached = false, onboarding = null, shellChrome = null } = {}) {
   authState.authenticated.value = authenticated
   nav.navigate = navigate
   return mount(ReplayWorkspace, {
     props: { initialCapability: capability },
     attachTo: attached ? document.body : undefined,
     global: {
-      provide: { [NAVIGATE_VIEW_KEY]: navigate, [ONBOARDING_KEY]: onboarding },
+      provide: { [NAVIGATE_VIEW_KEY]: navigate, [ONBOARDING_KEY]: onboarding, ...(shellChrome ? { [SHELL_CHROME_KEY]: shellChrome } : {}) },
       mocks: { $t: (k) => k },
     },
   })
@@ -1138,5 +1158,57 @@ describe('ReplayWorkspace', () => {
     expect(replayState.resp.value).toBeTruthy()
     expect(wrapper.find('[data-test="data-pane"]').exists()).toBe(true)
     wrapper.unmount()
+  })
+  describe('手机横屏沉浸态（外壳让出高度）', () => {
+    const landscapePhone = () => { formState.isPhone.value = true; formState.isPortrait.value = false; formState.coarse.value = true }
+    afterEach(() => { formState.isPhone.value = false; formState.isPortrait.value = false; formState.coarse.value = false })
+
+    it('触屏手机横屏 + 回放就绪才申请；离开 capability / 转竖屏 / 卸载立即释放', async () => {
+      const chrome = createShellChrome()
+      withBattles(1)
+      landscapePhone()
+      const wrapper = mountWorkspace('playback', { shellChrome: chrome })
+      await flushPromises()
+      expect(chrome.immersive.value).toBe(true)
+      await switchTo(wrapper, 'data')
+      expect(chrome.immersive.value).toBe(false)
+      await switchTo(wrapper, '3d')
+      expect(chrome.immersive.value).toBe(true)
+      formState.isPortrait.value = true
+      await flushPromises()
+      expect(chrome.immersive.value).toBe(false)
+      formState.isPortrait.value = false
+      await flushPromises()
+      expect(chrome.immersive.value).toBe(true)
+      wrapper.unmount()
+      expect(chrome.immersive.value).toBe(false)
+    })
+
+    it.each([
+      ['非手机形态（平板 / 桌面）', () => { formState.isPhone.value = false }],
+      ['精确指针（桌面窗口压矮）', () => { formState.coarse.value = false }],
+    ])('%s 不申请', async (_name, tweak) => {
+      const chrome = createShellChrome()
+      withBattles(1)
+      landscapePhone()
+      tweak()
+      const wrapper = mountWorkspace('playback', { shellChrome: chrome })
+      await flushPromises()
+      expect(chrome.immersive.value).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('还没有回放文件时不隐藏外壳；没有外壳 provider 时静默无操作', async () => {
+      const chrome = createShellChrome()
+      landscapePhone()
+      const wrapper = mountWorkspace('playback', { shellChrome: chrome })
+      await flushPromises()
+      expect(chrome.immersive.value).toBe(false)
+      wrapper.unmount()
+      withBattles(1)
+      const bare = mountWorkspace('playback')
+      await flushPromises()
+      bare.unmount()
+    })
   })
 })

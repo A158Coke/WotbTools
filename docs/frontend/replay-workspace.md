@@ -41,7 +41,7 @@
 | 档位 | 呈现 |
 |---|---|
 | 手机竖屏 | **纵向流**：HUD / 正方形 Stage / 传输控件 / Display（打开时，流内）/ 详情（inline）/ 己方 / 敌方，页面纵向滚动；没有名册浮层、没有两个各自滚动的队伍盒子 |
-| 手机横屏（740×360、844×390） | `己方 │ Stage │ 敌方`（2D 正方形，3D 横屏铺满），传输控件在 Stage 之下（中心列） |
+| 手机横屏（740×360、844×390） | `己方 │ Stage │ 敌方`（2D 正方形，3D 横屏铺满）；外壳让出（沉浸态）、2D HUD 一行；2D 的传输条是最底部**全宽一行**（时间轴 + 按钮 + 时间），车道只跨 HUD + Stage 两行 |
 | 手机全屏横屏 | **同一个**几何：`己方 │ Stage │ 敌方`（2D 正方形，3D 横屏铺满），传输控件在 Stage 之下；没有常驻侧栏，⚙ 打开的是锚定在 gear 上的 Display 浮面 |
 | 平板 / 桌面（含全屏） | `己方 │ Stage │ 敌方`（2D 正方形，3D 横屏铺满）；六个 primary 控件在中心列 Stage 之下，不存在「控件进左栏」的形态 |
 | 名册关闭（`uiPrefs.showRoster=false`） | 两侧车道**整体不存在**，2D Stage 仍为居中正方形；3D 横屏填满可用中心区域，竖屏保持正方形；数据、选中、详情、跟随、相机、播放与倍速都保留 |
@@ -50,6 +50,7 @@
 - **Recorder 视角**：己方在左、敌方在右；录像者属于 Team 2 时交换两队车道。HP 条、圆点与行边框使用己方绿／敌方红，未知视角保持中性，未识别阵营独立列在左侧。物理 `vehicle.team` 身份保持不变。
 - **桌面列宽**：左右名册各约 25%，中心约 50%；横条模式下战场血量位于 16px 血条内，装填轨道等宽、厚 2px，不重复显示血量百分比。2D 可切换车辆外围的血量环，环形模式隐藏装填条；一键防遮使用类型图标、车型名及血量环。昵称与车型共用轻薄半透明毛玻璃底。玩家名开关控制战场标签，3D 名字读取回放 `nickname`。
 - **2D 正方形是几何约束**：边长 = `min(中心列可用宽度, 纵向可用高度)`。2D 的高度那一半由 `BattlePlayback` 的 `writeSquareAvailHeight()` 实测写入 `--pb-square-avail-h`：`视口高 − 顶部偏移（全屏为 0，否则 --header-h）− --tabbar-h（全屏为 0）` 得到 `--pb-workspace-h`，再减 workspace 上缘偏移与上内边距、实测 persistent HUD 高度、实测传输控件高度、两处间距与容器下内边距；这里刻意用**视口容量**而不是根元素的内容高度（那会反过来把 Stage 撑大形成自指），滚动只改变呈现位置、不改变容量。3D 横屏画布铺满中心列可用宽高，由场景 ResizeObserver 更新相机 aspect；竖屏仍为正方形。2D 地图元素带的是地图自己的逻辑画框（`mapView` W/H，如 766×769，底图 / SVG / 标记共用），与 1:1 的差 < 1%，不强行拉伸。
+- **手机横屏沉浸态**：`ReplayWorkspace` 在「手机形态 + 横屏 + 触屏 + 当前是 2D / 3D 且已有回放」时通过 `shared/shellChrome.ts` 的 `SHELL_CHROME_KEY` 向 `AppShell` 申请沉浸；`AppShell` 是唯一 owner，沉浸时不渲染顶栏 / Tab 栏并在根元素写 `data-shell-chrome="immersive"`，`tokens/scale.css` 据此把 `--header-h` / `--tabbar-h` 归零，2D / 3D 的高度预算自动吃到这 104px（两个 pane 在沉浸态切换时显式重算预算）。转竖屏、切到非回放 capability、离开页面或 KeepAlive 停用都会释放。
 - **手机横屏名册可访问性**：触屏侧栏保留 64px 行高；高度不足时列表内部滚动，昵称 / 车型 / HP 不被压扁裁切，末行可滚动到达。
 - **名册事实与地图可见性独立**：HP 从完整 V2 车队投影，未被发现或没有当前位置的敌车仍保留已知血量；缺失血量继续显示 `—`。
 - **名册行**：共享 `PlaybackRoster`，信息为玩家 / 车型 / 当前 HP（缺精确数值时用百分比）/ 阵亡；**HP 血条内呈现当前数值或百分比**。未知血量显示 `—` 而不是 `0%`；只有相对比例证据时可显示百分比，不要求可信绝对上限。当前行模板不渲染装填轨道，装填只保留上游数据接线与战场车辆标签展示。信息不减，密度由调用方按形态给（2D 只在手机形态用 `compact`，3D 在非竖屏一律 `compact`）。
@@ -121,7 +122,7 @@ Android 与 Web 共用工作台、Router 和唯一 `useReplaySession`。外部 r
 Playback 布局有两条**真实浏览器门禁**（jsdom / happy-dom 没有布局引擎，几何断言只能在这里判定）：
 
 - `npm run test:browser-layout`（`scripts/browser-playback-layout.mjs`）：几何夹具按生产顺序加载**生产样式表**（`tokens/scale.css` → `playback-shared.css` → `playback-mobile.css` → `playback-workspace.css`，只把 `:fullscreen` 换成根类标记），并用脚本**合成**生产由 JS 写入的容量变量（`--pb-workspace-h` / `--pb-square-avail-h`，按与 `writeSquareAvailHeight()` 相同的口径算）。夹具自己的控件盒（`.pb-controls` / `.pb-btn`）是独立的小尺寸替身，因此这里锁的是宏几何，中心栈与控件尺寸由 `test:browser-interaction` 用真实组件覆盖。视口用 CDP `Emulation.setDeviceMetricsOverride` 而不是 `--window-size`（headless 窗口最小宽 500px，`390×844` 会被静默放大），并断言页面实测视口与请求一致。
-- `npm run test:browser-interaction`：真实应用。`ws2d-*` 场景挂载生产 `BattlePlayback`（`playback-controls.html?players=7&recorder=1|2`），`roster-geometry-*` 场景驱动真实 `Replay3DPane`，覆盖 375×812、390×844、740×360、844×390（含全屏与录像者在 Team 2）、1024×460、1024×768、1366×1024、1600×900、1792×922（全屏）：竖屏纵向流、横屏三段式、2D 正方形 / 3D 横屏填满与竖屏正方形、Recorder 视角左右、车道不滚动、行信息完整且 HP 文字位于血条内、主控件一行且顺序不变、HUD↔Stage↔Transport 间距紧凑、Display 从 gear 打开并夹在 workspace 内（竖屏必须是紧跟传输控件的流内面）、详情浮窗挂在 workspace 上并能拖过三栏且不压传输控件、连点 Team 2 更新同一个窗且位置不动、× 不清选中、名册关闭 / 打开保留状态、3D 全屏不重建场景。
+- `npm run test:browser-interaction`：真实应用。`ws2d-*` 场景挂载生产 `BattlePlayback`（`playback-controls.html?players=7&recorder=1|2`；手机横屏场景带 `shell=immersive` 复现外壳让出，并断言地图边长下限——740×360 ≥260、667×375 ≥270、844×390 ≥290，HUD ≤36px、传输条一行全宽；真实应用场景 `multifile-workspace-playback` 另验沉浸态隐藏 / 恢复外壳），`roster-geometry-*` 场景驱动真实 `Replay3DPane`，覆盖 375×812、390×844、740×360、844×390（含全屏与录像者在 Team 2）、1024×460、1024×768、1366×1024、1600×900、1792×922（全屏）：竖屏纵向流、横屏三段式、2D 正方形 / 3D 横屏填满与竖屏正方形、Recorder 视角左右、车道不滚动、行信息完整且 HP 文字位于血条内、主控件一行且顺序不变、HUD↔Stage↔Transport 间距紧凑、Display 从 gear 打开并夹在 workspace 内（竖屏必须是紧跟传输控件的流内面）、详情浮窗挂在 workspace 上并能拖过三栏且不压传输控件、连点 Team 2 更新同一个窗且位置不动、× 不清选中、名册关闭 / 打开保留状态、3D 全屏不重建场景。
 
 ### Playback 流体几何与控件
 

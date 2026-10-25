@@ -186,6 +186,12 @@
     :root:not([data-sidebar="collapsed"]) { --sidebar-w: var(--sidebar-full-w); }
   }
 
+  /* 沉浸态（shared/shellChrome）：AppShell 不渲染顶栏 / Tab 栏时，吸顶与高度预算同步归零 */
+  :root[data-shell-chrome="immersive"] {
+    --header-h: 0px;
+    --tabbar-h: 0px;
+  }
+
   @media (pointer: coarse) {
     :root {
       --font-size-body: 15px;
