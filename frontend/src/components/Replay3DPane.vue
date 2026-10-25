@@ -40,6 +40,7 @@ import SegmentedControl from './SegmentedControl.vue'
 import AppButton from './AppButton.vue'
 import { mapLabel } from '../utils/helpers.js'
 import { PLAYBACK_SPEEDS, PLAYBACK_STEP_SECONDS, isInteractiveTarget, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
+import { useSceneFlyControls } from '../composables/useSceneFlyControls.js'
 import { formatPlaybackClock } from '../utils/playbackClock'
 import { ChevronDown, ChevronUp, PanelLeftClose, PanelLeftOpen, ScanEye, TriangleAlert } from 'lucide-vue-next'
 
@@ -184,6 +185,14 @@ const showTopbar = computed(() => !uiHidden.value && uiPrefs.showTopbar)
 const showRoster = computed(() => !uiHidden.value && uiPrefs.showRoster)
 const showKillfeed = computed(() => !uiHidden.value && uiPrefs.showKillfeed)
 const showBaseStatus = computed(() => !uiHidden.value && uiPrefs.showBaseStatus)
+// 实时帧率角标（用户需求：拖动/飞行卡顿的量化依据）；隐藏全部 UI 时一并隐藏。
+// 只统计真正渲染的帧；`平均/峰值` 让“平均还行但有顿挫”可见。
+const showFps = computed(() => !uiHidden.value && store.hasData)
+const fpsText = computed(() => (store.fps > 0
+  ? `${store.fps.toFixed(1)} FPS · ${store.frameMs.toFixed(1)}/${store.framePeakMs.toFixed(1)} ms`
+  : '— FPS'))
+const fpsJanky = computed(() => store.fps > 0
+  && (store.fps < 45 || (store.framePeakMs > 0 && store.framePeakMs > store.frameMs * 2.5)))
 
 const store = createPlaybackStore()
 const stage = ref(null)
@@ -199,6 +208,14 @@ const transport = usePlaybackTransport({
   isReady: () => store.hasData,
   // 工作台切到别的能力时不再劫持空格 / 方向键（2D 回放面板同时激活会争抢）
   isActive: () => props.active,
+})
+// 键盘自由视角（WASD 平移 / Q 升 E 降 / 1–6 速率）：PC 键盘用户的分析飞行。
+// 键位与播放传输并行不冲突；速率写场景（store.flySpeed），位移在场景 flyTick 推进。
+const fly = useSceneFlyControls({
+  setFlySpeed: (n) => sceneApi?.setFlySpeed(n),
+  isActive: () => props.active,
+  canFly: () => !!sceneApi && store.hasData && !props.blockedReason,
+  getSceneApi: () => sceneApi,
 })
 // 审计 3D-23：渲染器创建前做 WebGL 预检；不支持时不初始化场景，整块换成说明
 const webgl = detectWebGL()
@@ -426,6 +443,7 @@ function destroyScene() {
   abortParse()   // 场景销毁 = 解析任务一并撤下（在途解析不得再占 Worker 队列）
   selectedEid.value = null
   detailsOpen.value = false
+  fly.stopLoop()   // 场景销毁：飞行循环停 + 按键清空（重建后按住键需重新按下）
   if (!sceneApi) return
   sceneApi.destroy?.()
   sceneApi = null
@@ -444,6 +462,7 @@ function ensureScene() {
   if (sceneApi || !props.active || !shouldHaveScene()) return false
   sceneApi = initPlayback(stage.value, store, labelOverlay.value, { onVehicleSelect: handleSceneSelect })
   sceneApi?.setPaused?.(!props.active)
+  sceneApi?.setFlySpeed?.(fly.flySpeedIndex())   // 新场景补推当前飞行速率档（重建不丢档）
   pushLabelPrefs();   // 新场景默认吃共享偏好（含"隐藏全部 UI"的当前状态）
   return true
 }
@@ -623,6 +642,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         <div class="stage-square">
           <div ref="stage" class="scene"></div>
           <PlaybackVehicleLabels3D :gun-marks="gunMarks" ref="labelOverlay" :label-prefs="labelPrefs" :hp-prefs="hpPrefs" :marker-prefs="markerPrefs" :selected-eid="selectedEid" :hidden="uiHidden || !store.hasData" @select="handleSceneSelect" />
+          <div v-if="showFps" class="pb-fps" :class="{ 'pb-fps-low': fpsJanky }" data-testid="replay3d-fps" aria-hidden="true">{{ fpsText }}</div>
         </div>
       </div>
 
@@ -936,6 +956,25 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 .stage-square > .scene { flex: 1; }
 .stage-square > .scene { position: absolute; inset: 0; }
 .pb-stage { container-type: size; }
+
+/* 实时帧率角标（拖拽/飞行卡顿量化）：不拦截场景指针输入，隐藏全部 UI 时一起隐藏 */
+.pb-fps {
+  position: absolute;
+  inset-block-end: var(--space-2);
+  inset-inline-end: var(--space-2);
+  z-index: var(--pb-z-hud);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-surface-1) 78%, transparent);
+  color: var(--color-text-secondary);
+  font: var(--type-caption);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+}
+/* 掉帧提示：<45 FPS 变琥珀色（颜色走 token，浅色档同样跟随） */
+.pb-fps-low { color: var(--color-warning); }
 
 /* HUD 面板外观（位置交给各自的容器规则，不再默认绝对定位） */
 .panel {
