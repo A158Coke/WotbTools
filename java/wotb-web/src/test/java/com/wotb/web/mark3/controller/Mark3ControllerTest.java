@@ -3,6 +3,7 @@ package com.wotb.web.mark3.controller;
 import com.wotb.web.mark3.dto.Mark3CreateResult;
 import com.wotb.web.mark3.dto.Mark3LeaderboardPageDto;
 import com.wotb.web.mark3.service.Mark3SubmissionService;
+import com.wotb.web.mark3.service.Mark3LeaderboardService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
@@ -38,9 +39,10 @@ class Mark3ControllerTest {
     @Test
     void leaderboardBindsSharedVehicleFilters() throws Exception {
         final Mark3SubmissionService service = mock(Mark3SubmissionService.class);
-        when(service.leaderboard(any(), any(), any(), anyInt(), anyInt()))
+        final Mark3LeaderboardService leaderboardService = mock(Mark3LeaderboardService.class);
+        when(leaderboardService.leaderboard(any(), any(), any(), anyInt(), anyInt()))
                 .thenReturn(new Mark3LeaderboardPageDto(null, null, List.of(), 1, 10, 0, 0));
-        final MockMvc mvc = MockMvcBuilders.standaloneSetup(new Mark3Controller(service)).build();
+        final MockMvc mvc = MockMvcBuilders.standaloneSetup(new Mark3Controller(service, leaderboardService)).build();
 
         mvc.perform(get("/api/hof/mark3")
                         .param("vehicleId", "385")
@@ -50,7 +52,7 @@ class Mark3ControllerTest {
                         .param("size", "20"))
                 .andExpect(status().isOk());
 
-        verify(service).leaderboard(385L, "EUROPE", "MEDIUM_TANK", 2, 20);
+        verify(leaderboardService).leaderboard(385L, "EUROPE", "MEDIUM_TANK", 2, 20);
     }
 
     @Test
@@ -62,7 +64,7 @@ class Mark3ControllerTest {
                 .thenReturn(new Mark3CreateResult(6L, "PENDING"));
         final Jwt jwt = Jwt.withTokenValue("t").header("alg", "none").subject("kc-user").build();
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(jwt, null));
-        final MockMvc mvc = MockMvcBuilders.standaloneSetup(new Mark3Controller(service)).build();
+        final MockMvc mvc = MockMvcBuilders.standaloneSetup(new Mark3Controller(service, mock(Mark3LeaderboardService.class))).build();
 
         final var request = multipart("/api/hof/mark3/submissions")
                 .file(replay("a"))
@@ -95,7 +97,7 @@ class Mark3ControllerTest {
                 .thenReturn(new Mark3CreateResult(7L, "PENDING"));
         final Jwt jwt = Jwt.withTokenValue("t").header("alg", "none").subject("kc-user").build();
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(jwt, null));
-        final MockMvc mvc = MockMvcBuilders.standaloneSetup(new Mark3Controller(service)).build();
+        final MockMvc mvc = MockMvcBuilders.standaloneSetup(new Mark3Controller(service, mock(Mark3LeaderboardService.class))).build();
 
         final var request = multipart("/api/hof/mark3/submissions")
                 .file(replay("a"))

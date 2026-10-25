@@ -1,6 +1,6 @@
 package com.wotb.ai.review;
 
-import com.wotb.web.util.apierror.ApiErrorResponse;
+import com.wotb.ai.http.ApiErrorResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

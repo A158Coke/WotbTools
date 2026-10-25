@@ -1,6 +1,6 @@
 package com.wotb.ai.review;
 
-import com.wotb.web.util.apierror.ApiErrorResponse;
+import com.wotb.ai.http.ApiErrorResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;

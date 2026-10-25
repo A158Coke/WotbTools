@@ -142,12 +142,12 @@ useEventListener(() => document, 'keydown', dismiss)
 </template>
 
 <style scoped>
-/* 瞬态交互面必须压过常驻控制条（§5 瞬态优先）：此前用 `--pb-z-modal`(9) 看似很高，
-   但手机 transport overlay 是裸 25，实测 Display surface 被它盖住、重叠区的点击落到
-   传输按钮上。层序由 token 阶梯保证，不靠加大数值。 */
+/* 工作台内最高层（§5 瞬态优先）：既要压过常驻控制条，也要压过可拖拽的车辆详情面板。
+   Display 在外点时即关闭，所以它和详情面板同时可见时一定是更晚打开的那个——被详情面板
+   盖住就是"刚打开的面看不见"（实测宽档 / 横屏下显示开关整块被遮）。层序由 token 阶梯保证，不靠加大数值。 */
 .pb-display-surface {
   position: absolute;
-  z-index: var(--pb-z-transient);
+  z-index: var(--pb-z-modal);
   display: flex;
   flex-direction: column;
   gap: var(--space-1);

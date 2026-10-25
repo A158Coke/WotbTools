@@ -5,6 +5,7 @@ import com.wotb.web.mark3.dto.Mark3CreateResult;
 import com.wotb.web.mark3.dto.Mark3LeaderboardPageDto;
 import com.wotb.web.mark3.dto.Mark3SubmissionSummaryDto;
 import com.wotb.web.mark3.service.Mark3SubmissionService;
+import com.wotb.web.mark3.service.Mark3LeaderboardService;
 import com.wotb.web.util.JwtUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -24,9 +25,11 @@ import java.util.List;
 public class Mark3Controller {
 
     private final Mark3SubmissionService service;
+    private final Mark3LeaderboardService leaderboardService;
 
-    public Mark3Controller(final Mark3SubmissionService service) {
+    public Mark3Controller(final Mark3SubmissionService service, final Mark3LeaderboardService leaderboardService) {
         this.service = service;
+        this.leaderboardService = leaderboardService;
     }
 
     @GetMapping
@@ -36,7 +39,7 @@ public class Mark3Controller {
             @RequestParam(name = "vehicleType", required = false) final String vehicleType,
             @RequestParam(name = "page", defaultValue = "1") final int page,
             @RequestParam(name = "size", defaultValue = "50") final int size) {
-        return service.leaderboard(vehicleId, nation, vehicleType, page, size);
+        return leaderboardService.leaderboard(vehicleId, nation, vehicleType, page, size);
     }
 
     /**

@@ -5,6 +5,7 @@ import com.wotb.web.hundred.dto.HundredCreateResult;
 import com.wotb.web.hundred.dto.HundredLeaderboardPageDto;
 import com.wotb.web.hundred.dto.HundredSubmissionSummaryDto;
 import com.wotb.web.hundred.service.HundredBattleSubmissionService;
+import com.wotb.web.hundred.service.HundredLeaderboardService;
 import com.wotb.web.util.JwtUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,9 +27,12 @@ import java.util.List;
 public class HundredBattleController {
 
     private final HundredBattleSubmissionService service;
+    private final HundredLeaderboardService leaderboardService;
 
-    public HundredBattleController(final HundredBattleSubmissionService service) {
+    public HundredBattleController(final HundredBattleSubmissionService service,
+                                   final HundredLeaderboardService leaderboardService) {
         this.service = service;
+        this.leaderboardService = leaderboardService;
     }
 
     /**
@@ -43,7 +47,7 @@ public class HundredBattleController {
             @RequestParam(name = "vehicleType", required = false) final String vehicleType,
             @RequestParam(name = "page", defaultValue = "1") final int page,
             @RequestParam(name = "size", defaultValue = "50") final int size) {
-        return service.leaderboard(vehicleId, nation, vehicleType, page, size);
+        return leaderboardService.leaderboard(vehicleId, nation, vehicleType, page, size);
     }
 
     /**

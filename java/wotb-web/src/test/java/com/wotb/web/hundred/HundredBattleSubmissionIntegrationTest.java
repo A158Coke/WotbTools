@@ -6,6 +6,7 @@ import com.wotb.web.hundred.entity.HundredBattleSubmission;
 import com.wotb.web.hundred.repository.HundredBattleReplayEvidenceRepository;
 import com.wotb.web.hundred.repository.HundredBattleSubmissionRepository;
 import com.wotb.web.hundred.service.HundredBattleSubmissionService;
+import com.wotb.web.hundred.service.HundredModerationService;
 import com.wotb.web.hundred.service.HundredReplayEvidenceService;
 import com.wotb.web.replayfile.ReplayDownload;
 import org.junit.jupiter.api.BeforeEach;
@@ -81,6 +82,9 @@ class HundredBattleSubmissionIntegrationTest {
     HundredBattleSubmissionService service;
 
     @Autowired
+    HundredModerationService moderationService;
+
+    @Autowired
     HundredReplayEvidenceService evidenceService;
 
     @BeforeEach
@@ -137,7 +141,7 @@ class HundredBattleSubmissionIntegrationTest {
         repository.saveAndFlush(pending);
         attachCompleteEvidence(pending.getId());
 
-        service.approve("admin-sub", pending.getId());
+        moderationService.approve("admin-sub", pending.getId());
 
         final HundredBattleSubmission oldRow = repository.findById(current.getId()).orElseThrow();
         final HundredBattleSubmission newRow = repository.findById(pending.getId()).orElseThrow();
@@ -163,7 +167,7 @@ class HundredBattleSubmissionIntegrationTest {
         repository.saveAndFlush(euPending);
         attachCompleteEvidence(euPending.getId());
 
-        service.approve("admin-sub", euPending.getId());
+        moderationService.approve("admin-sub", euPending.getId());
 
         assertEquals("CURRENT", repository.findById(cnCurrent.getId()).orElseThrow().getStatus(),
                 "(CN, 111) 的 CURRENT 不得被 (EU, 111) 的 approve 影响");
@@ -189,7 +193,7 @@ class HundredBattleSubmissionIntegrationTest {
         attachCompleteEvidence(pending.getId());
 
         assertThrows(DataIntegrityViolationException.class,
-                () -> service.approve("x".repeat(200), pending.getId()));
+                () -> moderationService.approve("x".repeat(200), pending.getId()));
 
         final HundredBattleSubmission oldRow = repository.findById(current.getId()).orElseThrow();
         final HundredBattleSubmission pendingRow = repository.findById(pending.getId()).orElseThrow();
@@ -243,7 +247,7 @@ class HundredBattleSubmissionIntegrationTest {
         final ReplayDownload download = evidenceService.downloadEvidence(s.getId(), rows.get(2).getId());
         assertArrayEquals(replays.get(2).data(), download.data(), "下载必须是用户原始字节");
 
-        service.reject("admin-sub", s.getId(), "SCREENSHOT_MISMATCH", null);
+        moderationService.reject("admin-sub", s.getId(), "SCREENSHOT_MISMATCH", null);
 
         final HundredBattleSubmission rejected = repository.findById(s.getId()).orElseThrow();
         assertEquals("REJECTED", rejected.getStatus());
@@ -287,7 +291,7 @@ class HundredBattleSubmissionIntegrationTest {
         repository.saveAndFlush(s);
 
         final IllegalStateException ex = assertThrows(IllegalStateException.class,
-                () -> service.approve("admin-sub", s.getId()));
+                () -> moderationService.approve("admin-sub", s.getId()));
         assertEquals("HUNDRED_INCOMPLETE_REVIEW_EVIDENCE", ex.getMessage());
         assertEquals("PENDING", repository.findById(s.getId()).orElseThrow().getStatus());
         assertEquals(0, currentCount(), "approve 失败不得产生 CURRENT");
@@ -315,7 +319,7 @@ class HundredBattleSubmissionIntegrationTest {
         evidenceService.attach(s.getId(), replays);
         assertEquals(5, evidenceRepository.findBySubmissionIdOrderBySlotAsc(s.getId()).size());
 
-        service.approve("admin-sub", s.getId());
+        moderationService.approve("admin-sub", s.getId());
 
         final HundredBattleSubmission approved = repository.findById(s.getId()).orElseThrow();
         assertEquals("CURRENT", approved.getStatus());
