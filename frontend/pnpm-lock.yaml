@@ -272,19 +272,6 @@ importers:
       yaml:
         specifier: ^2.8.1
         version: 2.9.0
-    optionalDependencies:
-      '@esbuild/linux-x64':
-        specifier: ^0.25.12
-        version: 0.25.12
-      '@rollup/rollup-linux-x64-gnu':
-        specifier: ^4.62.2
-        version: 4.62.2
-      '@rollup/rollup-linux-x64-musl':
-        specifier: ^4.62.2
-        version: 4.62.2
-      fsevents:
-        specifier: ^2.3.3
-        version: 2.3.3
 
 packages:
 
