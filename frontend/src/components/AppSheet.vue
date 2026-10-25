@@ -8,8 +8,10 @@ import { DIALOG_INLINE_KEY } from '../shared/dialog'
 
 defineProps<{
   open: boolean
-  /** 可访问名称（也是视觉标题，除非用 `head` 插槽自绘表头） */
+  /** 可访问名称；默认只给辅助技术，页面用自己的表头时不会出现两个标题 */
   title: string
+  /** 同时显示 AppSheet 自己的标题行 */
+  visibleTitle?: boolean
 }>()
 const emit = defineEmits<{ close: [] }>()
 defineOptions({ inheritAttrs: false })
@@ -28,7 +30,7 @@ function onUpdateOpen(value: boolean) {
       <template v-if="open">
         <DrawerOverlay class="sheet-scrim" data-testid="sheet-scrim" />
         <DrawerContent class="sheet" v-bind="$attrs">
-          <DrawerTitle class="sheet-title">{{ title }}</DrawerTitle>
+          <DrawerTitle class="sheet-title" :class="{ 'is-hidden': !visibleTitle }">{{ title }}</DrawerTitle>
           <div class="sheet-body"><slot /></div>
         </DrawerContent>
       </template>
@@ -66,6 +68,17 @@ function onUpdateOpen(value: boolean) {
 }
 
 .sheet-title { margin: 0 0 var(--space-3); font: var(--type-h3); }
+/* 仅辅助技术可见（页面自带可见表头时） */
+.sheet-title.is-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 .sheet-body { min-height: 0; overflow-y: auto; }
 
 @keyframes sheet-scrim-in { from { opacity: 0; } }
