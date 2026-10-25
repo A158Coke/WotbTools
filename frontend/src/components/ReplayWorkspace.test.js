@@ -15,6 +15,7 @@ async function flushPromises() {
 import { useError } from '../composables/useError.js'
 import { useConnectivityNotice } from '../composables/useConnectivityNotice.js'
 import { useReplaySession } from '../composables/useReplaySession.js'
+import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import { loadOfficialDemo, OFFICIAL_DEMO } from '../replay-local/demo.js'
@@ -136,7 +137,7 @@ function mountWorkspace(capability = 'data', { authenticated = true, navigate = 
     props: { initialCapability: capability },
     attachTo: attached ? document.body : undefined,
     global: {
-      provide: { [NAVIGATE_VIEW_KEY]: navigate, [ONBOARDING_KEY]: onboarding },
+      provide: { [NAVIGATE_VIEW_KEY]: navigate, [ONBOARDING_KEY]: onboarding, [DIALOG_INLINE_KEY]: true },
       mocks: { $t: (k) => k },
     },
   })

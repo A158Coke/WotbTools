@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
+import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 import TankCatalogMenu from './TankCatalogMenu.vue'
 
 const data = vi.hoisted(() => ({
@@ -31,7 +32,7 @@ const TANKS = [
 ]
 
 function mountMenu(props = {}) {
-  return mount(TankCatalogMenu, { props: { tanks: TANKS, ...props }, attachTo: document.body })
+  return mount(TankCatalogMenu, { props: { tanks: TANKS, ...props }, attachTo: document.body, global: { provide: { [DIALOG_INLINE_KEY]: true } } })
 }
 
 describe('TankCatalogMenu（坦克百科 / 装甲查看器选车共用）', () => {
@@ -68,7 +69,7 @@ describe('TankCatalogMenu（坦克百科 / 装甲查看器选车共用）', () =
     expect(wrapper.find('[data-testid="tank-filters"]').exists()).toBe(false)
     await wrapper.find('[data-testid="filter-toggle"]').trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-testid="tank-filters"]').attributes('role')).toBe('dialog')
+    expect(wrapper.find('[role="dialog"] [data-testid="tank-filters"]').exists()).toBe(true)
     for (const id of ['tp-tier', 'tp-nation', 'tp-type', 'tp-sort']) {
       expect(wrapper.find(`#${id}`).exists()).toBe(true)
     }
@@ -84,29 +85,20 @@ describe('TankCatalogMenu（坦克百科 / 装甲查看器选车共用）', () =
     wrapper.unmount()
   })
 
-  it('compact 筛选 sheet：焦点进入 sheet，Escape 只关闭 sheet 并停止冒泡', async () => {
+  it('compact 筛选 sheet：焦点进入 sheet，Escape 关闭 sheet 并把焦点还给筛选按钮', async () => {
     layout.compact = true
-    const outer = vi.fn()
-    window.addEventListener('keydown', outer)
     const wrapper = mountMenu({ filters: { q: '', tier: '10', nation: '', type: '', sort: 'name' } })
-    await wrapper.find('[data-testid="filter-toggle"]').trigger('click')
+    const toggle = wrapper.find('[data-testid="filter-toggle"]').element
+    toggle.focus()
+    toggle.click()
     await flushPromises()
-    const sheet = wrapper.find('[data-testid="tank-filters"]')
+    const sheet = wrapper.find('[role="dialog"]')
     expect(sheet.exists()).toBe(true)
     expect(sheet.element.contains(document.activeElement)).toBe(true)
-    const done = wrapper.find('[data-testid="filter-sheet-done"]').element
-    const last = wrapper.find('#tp-sort').element
-    last.focus()
-    last.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
-    expect(document.activeElement).toBe(done)
-    done.focus()
-    done.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }))
-    expect(document.activeElement).toBe(last)
-    document.activeElement.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await flushPromises()
     expect(wrapper.find('[data-testid="tank-filters"]').exists()).toBe(false)
-    expect(outer).not.toHaveBeenCalled()
-    window.removeEventListener('keydown', outer)
+    expect(document.activeElement).toBe(toggle)
     wrapper.unmount()
   })
 

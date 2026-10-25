@@ -2,6 +2,8 @@
 // 手机上的筛选入口（design-language §9 筛选：compact 下一个「筛选」按钮 → sheet，已生效条件以 chip 显示在列表上方）。
 import { useI18n } from 'vue-i18n'
 import { SlidersHorizontal, X } from 'lucide-vue-next'
+import { AnimatePresence, Motion } from 'motion-v'
+import { motionTransition } from '../shared/motion/motionPolicy'
 
 defineProps({
   /** 已生效的筛选：[{ key, label }] */
@@ -26,7 +28,17 @@ const { t } = useI18n()
       <span v-if="chips.length" class="filter-count">{{ chips.length }}</span>
     </button>
     <ul v-if="chips.length" class="chip-list">
-      <li v-for="chip in chips" :key="chip.key">
+      <AnimatePresence>
+      <Motion
+        v-for="chip in chips"
+        :key="chip.key"
+        tag="li"
+        layout
+        :initial="{ opacity: 0 }"
+        :animate="{ opacity: 1 }"
+        :exit="{ opacity: 0 }"
+        :transition="motionTransition('fast')"
+      >
         <button
           type="button"
           class="chip"
@@ -38,7 +50,8 @@ const { t } = useI18n()
           <span>{{ chip.label }}</span>
           <X :size="14" aria-hidden="true" />
         </button>
-      </li>
+      </Motion>
+      </AnimatePresence>
     </ul>
   </div>
 </template>
