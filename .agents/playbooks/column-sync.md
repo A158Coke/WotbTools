@@ -42,7 +42,7 @@
 ### 5. 测试
 - [ ] `frontend/src/replay-local/compute/compute.golden.test.ts` / `java.test.ts` — 列值/汇总断言
 - [ ] `frontend/src/replay-local/export/export.golden.test.ts` / `roundtrip.test.ts` — 表头/导出回归
-- [ ] 跑 `npx vitest run src/replay-local src/utils src/composables`（改前端）
+- [ ] 跑 `pnpm exec vitest run src/replay-local src/utils src/composables`（改前端）
 - [ ] **只有真的改了 `java/`** 才跑 `cd java && JAVA_HOME=<JDK 25> mvn -pl wotb-web -am -Dtest=WebApiTest test`
 - [ ] golden 基线更新流程：`frontend/src/replay-local/__golden__/README.md`
 

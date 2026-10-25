@@ -157,8 +157,8 @@ Details Panel 的车型图由
 
 ```bash
 node frontend/scripts/validate-vehicle-models.mjs   # 全量自检（含 source 契约，退出码门禁）
-cd frontend && npm test                             # CI 同口径（coverage + validate + extractor + bake 方向回归）
-cd frontend && npm run build && node scripts/check-bundle-separation.mjs  # bundle 分离（CI 强制）
+cd frontend && pnpm test                             # CI 同口径（coverage + validate + extractor + bake 方向回归）
+cd frontend && pnpm run build && node scripts/check-bundle-separation.mjs  # bundle 分离（CI 强制）
 cd frontend && node scripts/check-webp-orientation.mjs                     # 真实 WebP 方向校验（developer-only）
 ```
 

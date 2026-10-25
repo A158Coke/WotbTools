@@ -28,7 +28,7 @@
 ### Phase 0 — 盘点现状（只读）
 
 1. 运行 `python .agents/playbooks/keycloak-upgrade/scripts/check_versions.py` 列出所有版本引用并确认同步。
-2. 记录：镜像 tag、三个 provider pom 的 `keycloak.version`、frontend `keycloak-js`（`package.json` + `package-lock.json`）、后端 admin REST 调用点、`infra/tofu/keycloak/` 的 realm 声明。
+2. 记录：镜像 tag、三个 provider pom 的 `keycloak.version`、frontend `keycloak-js`（`package.json` + `pnpm-lock.yaml`）、后端 admin REST 调用点、`infra/tofu/keycloak/` 的 realm 声明。
 3. 确认目标版本与升级路径（patch/minor/major），必要时查官方 [endoflife / release info](https://endoflife.date/keycloak)。
 
 ### Phase 1 — 官方资料审查
@@ -50,7 +50,7 @@
 ### Phase 3 — 代码与配置同步
 
 - `docker/Dockerfile.keycloak`：FROM tag 与 pom 对齐（镜像 tag 用固定版本，不用 `latest`）。
-- frontend：`keycloak-js` 26.2+ 独立发版、向后兼容；major 升级时同步 `package.json` + `package-lock.json`（`npm install`）。
+- frontend：`keycloak-js` 26.2+ 独立发版、向后兼容；major 升级时同步 `package.json` + `pnpm-lock.yaml`（`pnpm install`）。
 - 后端：`KeycloakAdminUserService` 等调用 Admin REST API 的位置，核对目标版本响应结构与弃用端点。
 - realm：`infra/tofu/keycloak/` resource schema 兼容性；realm 通过 OpenTofu reconciliation 验证，不恢复 JSON import 路径。
 - 环境变量不丢：`WG_APPLICATION_ID`、`KC_*`、`KEYCLOAK_*`（生产走 GitHub Secrets → `.github/workflows/keycloak.yml`）。
@@ -59,7 +59,7 @@
 
 1. 运行 `deploy/test-keycloak-runtime.sh` 确认 `kc.sh build` 成功、三个 jar 进 `/opt/keycloak/providers/`；需要 realm 集成验证时运行 `deploy/test-keycloak-tofu.sh`。
 2. 冒烟：`/realms/wotbtools/.well-known/openid-configuration` 正常；登录页出现 QQ + 三个 Wargaming IdP 按钮；三区服登录闭环；JWT 含 `wotb_region` / `wotb_account_id` / `wotb_nickname` / `wotb_verified`。
-3. 回归后端：`mvn -s settings.xml test`；前端 `npm run build`（若 keycloak-js 变化）。
+3. 回归后端：`mvn -s settings.xml test`；前端 `pnpm run build`（若 keycloak-js 变化）。
 
 ### Phase 5 — 生产升级（先出计划等用户批准）
 

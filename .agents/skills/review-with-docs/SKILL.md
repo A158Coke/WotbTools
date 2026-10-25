@@ -248,7 +248,7 @@ current-state 文档发现 future-only prose：
 
 ### A4. AI dead/speculative code
 
-扫描单实现 speculative abstraction、零引用字段/参数/constructor、空壳 wrapper、future-only code。repo-wide `rg` 证明引用；前端适用时 `npx fallow check dead-code`。真死且非 contract/reflection → 删除；假死 → 保留并记录证据；待定 → 报告，不猜。
+扫描单实现 speculative abstraction、零引用字段/参数/constructor、空壳 wrapper、future-only code。repo-wide `rg` 证明引用；前端适用时 `pnpm exec fallow check dead-code`。真死且非 contract/reflection → 删除；假死 → 保留并记录证据；待定 → 报告，不猜。
 
 绝不能误删 wire DTO / Flyway / Spring-Jackson reflection / metrics / i18n / documented contract。
 

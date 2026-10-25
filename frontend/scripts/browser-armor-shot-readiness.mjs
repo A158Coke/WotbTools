@@ -1,7 +1,7 @@
 /** Single-shot lifecycle gate. Uses real viewer/GLBs/penetration math; only asset
  * responses are delayed/replaced. No screenshots or visual assertions.
  * Separate from the aiming gate: exercises async initialization and route disposal,
- * not pointer gestures. Run: npm run test:browser-armor-shot-readiness
+ * not pointer gestures. Run: pnpm run test:browser-armor-shot-readiness
  */
 import assert from 'node:assert/strict'
 import featureMessages from '../src/locales/feature-messages.json' with { type: 'json' }

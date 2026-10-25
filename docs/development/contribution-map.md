@@ -43,7 +43,7 @@
 
 | 改动类型 | 最小验证 |
 |---|---|
-| HTTP contract | `npm run api:lint`、`npm run api:generate`、`npm run api:check`、`npm run api:fixture` |
+| HTTP contract | `pnpm run api:lint`、`pnpm run api:generate`、`pnpm run api:check`、`pnpm run api:fixture` |
 | Java domain / service | 在 `java/` 下跑目标模块或目标测试；需要 Maven settings 时使用 `-s java/settings.xml` |
 | Frontend route / component / API | 跑相关前端测试、typecheck 或 build；涉及页面布局时补浏览器检查 |
 | Replay parser / playback / derived data | 跑对应 golden / fixture / pixel 或数据一致性检查，确认没有 schema drift |

@@ -15,10 +15,10 @@
 修改 OpenAPI 后，在 `frontend/` 执行：
 
 ```bash
-npm run api:lint
-npm run api:generate
-npm run api:check
-npm run api:fixture
+pnpm run api:lint
+pnpm run api:generate
+pnpm run api:check
+pnpm run api:fixture
 ```
 
 `api:generate` 生成 `src/api/generated/http-contract.ts`、Playback JSON Schema、error-code registry 与 Ajv standalone ESM validators；生成文件不得手改。`api:check` 通过重新生成并检查 git diff，作为 drift gate。`api:fixture` 使用生产形状 fixture 验证 required、nullable、enum 和 `$ref`。Ajv 只在生成时编译 schema，运行时执行 generated validator，不使用 eval/new Function，兼容 Android 严格 CSP。校验只在数据边界报告安全诊断元数据，不把响应体、token 或 schema 内部细节展示给用户。
