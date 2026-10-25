@@ -348,7 +348,7 @@ Design Grill 不是新的 Skill，不是 final implementation review，也不替
 
 一次 failure 不等于必须扩充 Harness。只有同类 reviewer finding、CI failure、incident、manual drift 或 Agent misunderstanding 重复出现，有证据证明 durable mechanism 降低长期维护成本时，才在 Ambition 中考虑 SYSTEMATIZE。
 
-不要持久化 future-refine 方向清单，也不要新增第五个 top-level Skill。
+不要持久化 future-refine 方向清单，也不要新增第五个 lifecycle Skill（`product-qa` 是不参与 lifecycle 的 operational 入口，不算在内）。
 
 ## 与其他 Skill 的边界
 
