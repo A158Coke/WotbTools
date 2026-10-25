@@ -29,14 +29,17 @@ import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.OffsetDateTime;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.util.ReflectionTestUtils;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -102,6 +105,47 @@ class ApiContractTest {
         final Path fixture = Path.of("../../contracts/http/fixtures/business-boundaries.json");
         assertThat(objectMapper.readTree(objectMapper.writeValueAsString(cases)))
                 .isEqualTo(objectMapper.readTree(Files.readString(fixture)));
+    }
+
+    @Test
+    void bulkModerationDomainDtosKeepTheSharedOpenApiWireShape() throws Exception {
+        final Path fixturePath = Path.of("../../contracts/http/fixtures/business-boundaries.json");
+        final var fixtures = objectMapper.readTree(Files.readString(fixturePath));
+        final var expectedResult = java.util.stream.StreamSupport.stream(fixtures.spliterator(), false)
+                .filter(item -> "BulkDeleteResult".equals(item.get("schema").asString()))
+                .map(item -> item.get("value")).findFirst().orElseThrow();
+        final var hundredResult = new com.wotb.web.hundred.dto.BulkDeleteResultDto(2, 1, 1, List.of(
+                new com.wotb.web.hundred.dto.BulkDeleteItemResult(11L, true, null),
+                new com.wotb.web.hundred.dto.BulkDeleteItemResult(12L, false, "HUNDRED_NOT_CURRENT")));
+        final var mark3Result = new com.wotb.web.mark3.dto.BulkDeleteResultDto(2, 1, 1, List.of(
+                new com.wotb.web.mark3.dto.BulkDeleteItemResult(11L, true, null),
+                new com.wotb.web.mark3.dto.BulkDeleteItemResult(12L, false, "MARK3_NOT_CURRENT")));
+        final JsonNode hundredResultJson = objectMapper.valueToTree(hundredResult);
+        final JsonNode mark3ResultJson = objectMapper.valueToTree(mark3Result);
+
+        assertThat(hundredResultJson.properties().stream()
+                .map(entry -> entry.getKey()).collect(Collectors.toSet()))
+                .containsExactlyInAnyOrder("requested", "deleted", "failed", "results");
+        assertThat(mark3ResultJson.properties().stream()
+                .map(entry -> entry.getKey()).collect(Collectors.toSet()))
+                .containsExactlyInAnyOrder("requested", "deleted", "failed", "results");
+        assertThat(hundredResultJson.get("requested").asInt()).isEqualTo(expectedResult.get("requested").asInt());
+        assertThat(hundredResultJson.get("deleted").asInt()).isEqualTo(expectedResult.get("deleted").asInt());
+        assertThat(hundredResultJson.get("failed").asInt()).isEqualTo(expectedResult.get("failed").asInt());
+        final JsonNode hundredRequestJson = objectMapper.valueToTree(
+                new com.wotb.web.hundred.dto.BulkDeleteModerationRequest(
+                        List.of(11L, 12L), "ADMIN_CORRECTION", "reviewed correction"));
+        final JsonNode mark3RequestJson = objectMapper.valueToTree(
+                new com.wotb.web.mark3.dto.BulkDeleteModerationRequest(
+                        List.of(11L, 12L), "ADMIN_CORRECTION", "reviewed correction"));
+        for (final JsonNode requestJson : List.of(hundredRequestJson, mark3RequestJson)) {
+            assertThat(requestJson.properties().stream().map(entry -> entry.getKey()).collect(Collectors.toSet()))
+                    .containsExactlyInAnyOrder("ids", "reason", "reasonText");
+            assertThat(requestJson.get("ids").get(0).asLong()).isEqualTo(11L);
+            assertThat(requestJson.get("ids").get(1).asLong()).isEqualTo(12L);
+            assertThat(requestJson.get("reason").asString()).isEqualTo("ADMIN_CORRECTION");
+            assertThat(requestJson.get("reasonText").asString()).isEqualTo("reviewed correction");
+        }
     }
 
     private List<WireCase> hofAndMark3Cases() {
@@ -202,6 +246,23 @@ class ApiContractTest {
         assertThat(response.getBody().id()).isNotBlank();
         assertThat(response.getBody().details()).isEmpty();
         assertThat(response.getBody().timestamp()).isNotNull();
+    }
+
+    @Test
+    void apiErrorSerializationMatchesOpenApiPropertyShape() throws Exception {
+        final ApiErrorResponse error = new ApiErrorResponse("error-1", "INVALID_ARGUMENT", null,
+                400, false, Map.of("field", "vehicleId"), Instant.parse("2026-10-25T10:15:30Z"));
+        final var json = objectMapper.readTree(objectMapper.writeValueAsString(error));
+
+        assertThat(json.properties().stream().map(Map.Entry::getKey).collect(Collectors.toSet()))
+                .containsExactlyInAnyOrder("id", "errorCode", "errorMsg", "status", "retryable", "details", "timestamp");
+        assertThat(json.get("id").asString()).isEqualTo("error-1");
+        assertThat(json.get("errorCode").asString()).isEqualTo("INVALID_ARGUMENT");
+        assertThat(json.get("errorMsg").isNull()).isTrue();
+        assertThat(json.get("status").asInt()).isEqualTo(400);
+        assertThat(json.get("retryable").asBoolean()).isFalse();
+        assertThat(json.get("details").get("field").asString()).isEqualTo("vehicleId");
+        assertThat(json.get("timestamp").asString()).isEqualTo("2026-10-25T10:15:30Z");
     }
 
     @Test

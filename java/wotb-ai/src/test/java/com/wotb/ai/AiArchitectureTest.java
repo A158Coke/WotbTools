@@ -21,6 +21,7 @@ class AiArchitectureTest {
             "com\\.wotb\\.web\\.(?:config\\.AiModelProperties|replay\\.(?:ai|dto|exception))");
     private static final Pattern PACKAGE_DECLARATION = Pattern.compile("(?m)^\\s*package\\s+([\\w.]+)\\s*;");
     private static final Pattern IMPORT_DECLARATION = Pattern.compile("(?m)^\\s*import\\s+(?:static\\s+)?([\\w.*]+)\\s*;");
+    private static final String WEB_NAMESPACE_REFERENCE = "com.wotb.web.";
 
     @Test
     void productionSourcesDoNotDeclareLegacyAiPackages() throws IOException {
@@ -30,6 +31,23 @@ class AiArchitectureTest {
                 return LEGACY_PACKAGE.matcher(content).find() || LEGACY_AI_REFERENCE.matcher(content).find();
             }), "wotb-ai production source must not reference legacy web AI packages");
         }
+    }
+
+    @Test
+    void productionSourcesDoNotReferenceWebNamespace() throws IOException {
+        try (Stream<Path> sources = javaSources()) {
+            final List<Path> violations = sources.filter(source -> read(source).contains(WEB_NAMESPACE_REFERENCE))
+                    .toList();
+            assertTrue(violations.isEmpty(), "wotb-ai production source must not reference com.wotb.web..: "
+                    + violations);
+        }
+    }
+
+    @Test
+    void webNamespaceGuardAcceptsCoreAndRejectsImportsAndQualifiedReferences() {
+        assertFalse(referencesWebNamespace("import com.wotb.core.model.Battle;"));
+        assertTrue(referencesWebNamespace("import com.wotb.web.fake.Type;"));
+        assertTrue(referencesWebNamespace("final com.wotb.web.fake.Type value = null;"));
     }
 
     @Test
@@ -111,5 +129,9 @@ class AiArchitectureTest {
         } catch (IOException exception) {
             throw new IllegalStateException("Unable to read " + source, exception);
         }
+    }
+
+    private static boolean referencesWebNamespace(final String source) {
+        return source.contains(WEB_NAMESPACE_REFERENCE);
     }
 }

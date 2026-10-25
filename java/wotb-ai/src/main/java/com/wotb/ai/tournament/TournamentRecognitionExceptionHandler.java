@@ -1,6 +1,6 @@
 package com.wotb.ai.tournament;
 
-import com.wotb.web.util.apierror.ApiErrorResponse;
+import com.wotb.ai.http.ApiErrorResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

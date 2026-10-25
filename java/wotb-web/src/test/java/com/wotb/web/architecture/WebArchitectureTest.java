@@ -91,6 +91,11 @@ class WebArchitectureTest {
             });
 
     @ArchTest
+    static final ArchRule HUNDRED_AND_MARK3_MUST_NOT_DEPEND_ON_HOF_DTOS = noClasses()
+            .that().resideInAnyPackage("com.wotb.web.hundred..", "com.wotb.web.mark3..")
+            .should().dependOnClassesThat().resideInAPackage("com.wotb.web.hof.dto..");
+
+    @ArchTest
     static final ArchRule NO_FIELD_INJECTION = NO_CLASSES_SHOULD_USE_FIELD_INJECTION;
 
     @ArchTest
