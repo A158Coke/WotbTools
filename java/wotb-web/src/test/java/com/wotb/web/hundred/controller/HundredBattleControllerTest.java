@@ -2,6 +2,7 @@ package com.wotb.web.hundred.controller;
 
 import com.wotb.web.hundred.dto.HundredLeaderboardPageDto;
 import com.wotb.web.hundred.service.HundredBattleSubmissionService;
+import com.wotb.web.hundred.service.HundredLeaderboardService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -32,8 +33,10 @@ class HundredBattleControllerTest {
     @Test
     void leaderboardBindsCategoryAndVehicleIntersectionParams() throws Exception {
         final HundredBattleSubmissionService service = mock(HundredBattleSubmissionService.class);
-        when(service.leaderboard(any(), any(), any(), anyInt(), anyInt())).thenReturn(EMPTY);
-        final MockMvc mvc = MockMvcBuilders.standaloneSetup(new HundredBattleController(service)).build();
+        final HundredLeaderboardService leaderboardService = mock(HundredLeaderboardService.class);
+        when(leaderboardService.leaderboard(any(), any(), any(), anyInt(), anyInt())).thenReturn(EMPTY);
+        final MockMvc mvc = MockMvcBuilders.standaloneSetup(
+                new HundredBattleController(service, leaderboardService)).build();
 
         mvc.perform(get("/api/hof/hundred")
                         .param("nation", "FRANCE")
@@ -43,18 +46,20 @@ class HundredBattleControllerTest {
                         .param("size", "20"))
                 .andExpect(status().isOk());
 
-        verify(service).leaderboard(3649L, "FRANCE", "LIGHT_TANK", 2, 20);
+        verify(leaderboardService).leaderboard(3649L, "FRANCE", "LIGHT_TANK", 2, 20);
     }
 
     @Test
     void leaderboardDefaultsToUnfilteredGlobalContext() throws Exception {
         final HundredBattleSubmissionService service = mock(HundredBattleSubmissionService.class);
-        when(service.leaderboard(any(), any(), any(), anyInt(), anyInt())).thenReturn(EMPTY);
-        final MockMvc mvc = MockMvcBuilders.standaloneSetup(new HundredBattleController(service)).build();
+        final HundredLeaderboardService leaderboardService = mock(HundredLeaderboardService.class);
+        when(leaderboardService.leaderboard(any(), any(), any(), anyInt(), anyInt())).thenReturn(EMPTY);
+        final MockMvc mvc = MockMvcBuilders.standaloneSetup(
+                new HundredBattleController(service, leaderboardService)).build();
 
         mvc.perform(get("/api/hof/hundred")).andExpect(status().isOk());
 
-        verify(service).leaderboard(null, null, null, 1, 50);
+        verify(leaderboardService).leaderboard(null, null, null, 1, 50);
     }
 
 }
