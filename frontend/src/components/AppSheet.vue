@@ -91,5 +91,6 @@ function onUpdateOpen(value: boolean) {
 .sheet-body { min-height: 0; overflow-y: auto; }
 
 @keyframes sheet-scrim-in { from { opacity: 0; } }
-@keyframes sheet-in { from { transform: translateY(100%); } }
+/* 只淡入、不位移：命中目标在进场期间不漂移 */
+@keyframes sheet-in { from { opacity: 0; } }
 </style>
