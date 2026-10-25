@@ -43,6 +43,12 @@
 - 后端 API 保持稳定英文 key/data 契约；用户文案、显示名和错误本地化留在 locale/display 层。
 - 路由历史、深链和 Back/Forward 由 Vue Router 所有；组件不得手写 `history.pushState`、`replaceState` 或 `popstate`。
 
+## Third-party UI primitives
+
+- `reka-ui` / `motion-v` 只能在 WotbTools 组件边界内使用（允许的文件集见 `src/shared/ui-dependency-ownership.test.ts`）；页面与 feature 使用 `AppDialog` / `AppSheet` / `AppTooltip` / `MenuButton` / `SegmentedControl`，不直接引入第三方 primitive。
+- 动效时长与缓动只经 `src/shared/motion/motionPolicy.ts` 读取 CSS token；不得进入播放帧路径（`src/scene/**`、timeline、HP、camera）。
+- `@vueuse/core` 不得接管 `useBreakpoint()` 的 breakpoint policy，也不得用 `useStorage` 系列替换带迁移 / 校验的持久化 owner。
+
 ## Design language
 
 - 改任何界面前先读 [`docs/frontend/design-language.md`](../docs/frontend/design-language.md)。组件只用语义 token（`--color-*`、`--space-*`、`--type-*` / `--font-size-*` / `--line-height-*`、`--radius-*`、`--z-*`、`--elevation-*`、`--control-h-*`）；需要新的视觉值时先加 token，不写字面量。
