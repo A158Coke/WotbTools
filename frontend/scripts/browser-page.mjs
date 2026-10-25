@@ -99,6 +99,18 @@ export class Page {
   }
 
   /**
+   * 等有限时长的 CSS / Web 动画（对话框、sheet 进场位移等）落定。
+   * 真实用户看到稳定后才点；在滑动中途量坐标再 tap 会落在旧位置。无限循环动画（spinner）不计入。
+   */
+  async animationsSettled(timeout = 3000) {
+    await this.waitForValue(
+      `document.getAnimations().every(animation => animation.playState !== 'running' || animation.effect?.getComputedTiming().iterations === Infinity)`,
+      value => value === true,
+      { timeout, label: 'animations settled' },
+    ).catch(() => {})
+  }
+
+  /**
    * 真实输入管线点击。
    *
    * 只用原始事件注入（touch 序列 / 鼠标序列），**不用 `Input.synthesizeTapGesture`**：
