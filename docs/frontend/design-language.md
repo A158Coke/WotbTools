@@ -214,9 +214,9 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 **Z-index**（**只能用 token**）：
 
-`--z-base: 0` · `--z-sticky: 100` · `--z-header: 200` · `--z-drawer: 300` · `--z-sheet: 400` · `--z-menu: 500` · `--z-dialog: 600` · `--z-toast: 700`
+`--z-base: 0` · `--z-sticky: 100` · `--z-header: 200` · `--z-drawer: 300` · `--z-sheet: 400` · `--z-menu: 500` · `--z-dialog: 600` · `--z-tooltip: 650` · `--z-toast: 700`
 
-**动效**：`--duration-fast: 120ms`（hover、按下）· `--duration-base: 200ms`（展开、切换）· `--duration-slow: 300ms`（sheet、抽屉进出）· `--ease-standard: cubic-bezier(.2, 0, 0, 1)`。`prefers-reduced-motion: reduce` 时三个时长都归零。
+**动效**：`--duration-fast: 120ms`（hover、按下）· `--duration-base: 200ms`（展开、切换）· `--duration-slow: 300ms`（sheet、抽屉进出）· `--ease-standard: cubic-bezier(.2, 0, 0, 1)`。`prefers-reduced-motion: reduce` 时三个时长都归零。JS 侧（motion-v）不另设时长：`shared/motion/motionPolicy.ts` 只读取这些 token；overlay 进出场用同一组 token 的 CSS keyframes。动效只用于低频 UI chrome（menu / popover / dialog / sheet / 选中指示器 / chip 增删 / 详情头部进入），播放帧路径（3D、2D 场景、timeline、HP、camera）不使用。
 
 场景型工作台（2D / 3D 回放、装甲查看器）内部的叠放用 `isolation: isolate` 建立局部层叠上下文，内部只用 1–9，不参与全局竞争。**隔离必须真的写出来**：`position: relative` 与 `overflow: hidden` 都不建立层叠上下文，少了 `isolation: isolate` 时局部的 1–9 会和页面里任何裸 z-index 在外壳的上下文里裸比大小，"局部刻度"只是错觉。当前隔离点：`.playback-workspace`（工作台根）与 `.pb-map`（2D 场景）。
 
@@ -321,10 +321,11 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | **Card** | 默认 / 可点击 | 可点击卡片整卡都是点击区，并且可用键盘聚焦 |
 | **DataTable** | — | 数字右对齐 + 等宽数字；表头吸顶；首列可冻结（手机上只冻结一列）；可排序列用 `<button>` 并带 `aria-sort`；容器 < 560px 时自动切换成卡片列表 |
 | **Stat** | — | 标签（caption）+ 数值（h2，等宽数字）+ 可选的变化量 |
-| **Dialog** | 确认 / 表单 | 焦点陷阱，Esc 关闭，关闭后焦点回到触发元素，`aria-modal`；手机上变为底部 sheet；**禁止 `window.confirm`** |
-| **Sheet** | 底部 / 侧边 | 手机上的筛选、详情、面板都用 sheet；有 2–3 个吸附高度 |
+| **Dialog** | 确认 / 表单 | 焦点陷阱，Esc 关闭，关闭后焦点回到触发元素，`aria-modal`；手机上变为底部 sheet；**禁止 `window.confirm`**。交互机制由 `AppDialog`（内部 Reka Dialog）提供，页面只用 `AppDialog` |
+| **Sheet** | 底部 / 侧边 | 手机上的筛选、详情、面板都用 `AppSheet`（内部 Reka Drawer，统一 `--z-sheet`、`--color-scrim`、安全区与下滑关闭）；吸附高度只在有产品场景时启用 |
 | **Drawer** | — | 桌面上是常驻侧栏，平板上是推开式侧栏（不遮盖内容），手机上变成全屏 sheet |
-| **Menu** | — | 下拉菜单，支持方向键导航和 Esc 关闭 |
+| **Menu** | — | 下拉菜单，支持方向键导航和 Esc 关闭；由 `MenuButton`（内部 Reka DropdownMenu）提供 |
+| **Tooltip** | — | icon-only 按钮必须有 `aria-label`，并用 `AppTooltip`（内部 Reka Tooltip，`--z-tooltip`）补充悬停 / 聚焦提示；触屏不依赖 tooltip 传达信息 |
 | **Toast** | 成功 / 错误 / 信息 | 用于操作结果反馈；错误 toast 不会自动消失，并提供"重试" |
 | **Banner** | 页面级 | 用于持续性状态，例如"迁移中""维护中" |
 | **Skeleton / Spinner / Progress** | — | 预计超过 1s 用 skeleton；能算出进度的一律用 Progress |
