@@ -10,6 +10,8 @@ const props = defineProps<{
   open: boolean
   /** 关闭后焦点回到的元素；缺省回到打开前的焦点元素（Drawer 没有 DrawerTrigger 时 Reka 不会自己恢复） */
   returnFocusTo?: HTMLElement | null
+  /** portal 目标（默认 body）。内容的样式依赖某个祖先作用域时，把 sheet 放回该作用域元素里 */
+  portalTo?: HTMLElement | null
   /** 可访问名称；默认只给辅助技术，页面用自己的表头时不会出现两个标题 */
   title: string
   /** 同时显示 AppSheet 自己的标题行 */
@@ -34,7 +36,7 @@ function onUpdateOpen(value: boolean) {
 
 <template>
   <DrawerRoot :open="open" @update:open="onUpdateOpen">
-    <DrawerPortal :disabled="inline" force-mount>
+    <DrawerPortal :to="portalTo ?? undefined" :disabled="inline" force-mount>
       <template v-if="open">
         <DrawerOverlay class="sheet-scrim" data-testid="sheet-scrim" />
         <DrawerContent class="sheet" :final-focus="finalFocus" v-bind="$attrs">
