@@ -6,6 +6,7 @@
   "engines": {
     "node": ">=24"
   },
+  "packageManager": "pnpm@12.15.0+sha512.b3951d6d6ff4a9f13dc7cf56cd28d2b8eb37dbcc9c68e52e1e1191873ea9f82a017287ab50baadc5ccc494f036c67c0e47eb13608c2fa36f47711b61ea128e61",
   "scripts": {
     "dev": "vite",
     "dev:production-remote": "vite --mode production-remote",
@@ -23,7 +24,7 @@
     "verify:agent-wasm": "node scripts/verify-agent-wasm-dist.mjs --dist dist",
     "preview": "vite preview",
     "api:generate": "openapi-typescript ../contracts/http/openapi.yaml -o src/api/generated/http-contract.ts && node scripts/generate-api-contract.mjs",
-    "api:check": "npm run api:generate && git diff --exit-code -- src/api/generated/http-contract.ts src/api/generated/playback-v2.schema.ts src/api/generated/api-error-codes.ts src/api/generated/contract-validators.js",
+    "api:check": "pnpm run api:generate && git diff --exit-code -- src/api/generated/http-contract.ts src/api/generated/playback-v2.schema.ts src/api/generated/api-error-codes.ts src/api/generated/contract-validators.js",
     "api:lint": "node scripts/validate-openapi.mjs",
     "api:fixture": "node scripts/validate-playback-fixture.mjs",
     "lint:css": "stylelint \"src/**/*.{css,vue}\" --allow-empty-input",
