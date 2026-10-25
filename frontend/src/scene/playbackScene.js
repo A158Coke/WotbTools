@@ -520,7 +520,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           // 双指 = 捏合缩放（沿视线推拉相机）；本次手势不再转头、也算不上单击
           const [a, b] = [...flyPointers.values()];
           const d0 = Math.hypot(a.x - b.x, a.y - b.y) || 1;
-          flyPinch = { d0, lastD: d0 };
+          flyPinch = { d0, dist0: flyLook.dist, applied: 0 };
           flyLook.active = false;
           emptyDownAt = null;
         } else {
@@ -555,13 +555,15 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (flyPointers.size >= 2 && flyPinch) {
         const [a, b] = [...flyPointers.values()];
         const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
-        // 双指捏合 = 沿视线推拉相机：dx/x 以**手势起始指距 d0** 为基准（分开 = 推近）。
-        // 用 d0 而不是上一次指距作分母，增量沿手势求和 = dist·(d−d0)/d0，严格可逆：
-        // 200→250→200 精确回位，同一手势被拆成不同数量的 pointermove 结果也一致
-        //（评审 P2：除以 lastD 是 25% 前进 / 20% 后退，往返会净漂移）。
-        const f = Math.max(-0.5, Math.min(0.5, (d - flyPinch.lastD) / flyPinch.d0));
-        flyPinch.lastD = d;
-        flyDolly(flyLook.dist * f);
+        // 双指捏合 = 沿视线推拉相机：以**手势起点**为稳定基准算**累计目标**，
+        // 再应用目标与已应用量之差。累计位移 = clamp((d−d0)/d0, ±0.5)·dist0：
+        //  · 回到 d0 ⇒ 目标 0 ⇒ 精确回位（不随事件分批漂移）；
+        //  · 单次触限只截断**累计目标**，不会丢掉后续回程位移（评审 P2：分别截断
+        //    每次增量 + 无条件推进基准，会让 200→350→275→200 净退 0.25×视距）。
+        const target = Math.max(-0.5, Math.min(0.5, (d - flyPinch.d0) / flyPinch.d0)) * flyPinch.dist0;
+        const delta = target - flyPinch.applied;
+        flyPinch.applied = target;
+        flyDolly(delta);
         e.stopPropagation();
         return;
       }
