@@ -7,7 +7,7 @@
  * 在真正需要时才 await import）——本门禁守护该分离不变。
  *
  * 用法（frontend 目录，build 之后）：
- *   npm run build && node scripts/check-bundle-separation.mjs
+ *   pnpm run build && node scripts/check-bundle-separation.mjs
  *
  * 检查（基于静态 import 依赖图，不用文件 hash / 固定 chunk 名判断）：
  * 1. 从 index.html 入口开始 BFS 递归解析所有初始静态可达的 .js chunk；
@@ -95,7 +95,7 @@ function checkMappedVehicleAssets() {
 function main() {
   const indexHtml = path.join(DIST, 'index.html')
   if (!fs.existsSync(indexHtml)) {
-    console.error('[FAIL] dist/index.html 不存在——请先 npm run build')
+    console.error('[FAIL] dist/index.html 不存在——请先 pnpm run build')
     process.exit(1)
   }
   const html = fs.readFileSync(indexHtml, 'utf8')

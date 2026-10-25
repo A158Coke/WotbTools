@@ -1,0 +1,17 @@
+# pnpm 安装安全策略。pnpm >= 11 只从本文件读取这些设置；.npmrc 只保留 registry。
+#
+# 依赖的安装脚本（preinstall / install / postinstall）默认禁止，只有下面显式为 true 的包可以执行。
+# 新增带安装脚本的依赖时，在同一 PR 里把它加到 allowBuilds 并写明理由；不得启用
+# dangerouslyAllowAllBuilds，也不得关闭 strictDepBuilds。
+allowBuilds:
+  # Vite 构建链的平台二进制：postinstall 校验并优化已安装的 @esbuild/<platform>。
+  esbuild: true
+  # 仅 macOS 的可选依赖（经 Vite / Rollup 引入）：2.x 自带预编译二进制，不需要执行安装脚本。
+  fsevents: false
+
+# 存在未审查的安装脚本时安装直接失败（ERR_PNPM_IGNORED_BUILDS），而不是只打印警告。
+strictDepBuilds: true
+
+# 不解析发布不足 24 小时（1440 分钟）的版本。显式声明即启用严格模式：没有满足条件的版本时
+# 解析失败，而不是回退到更新的版本；锁文件中的条目同样按此规则复核。
+minimumReleaseAge: 1440

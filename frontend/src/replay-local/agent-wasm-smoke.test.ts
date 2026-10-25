@@ -16,7 +16,7 @@
  *  - 契约版本门禁（playback version=2 / facets v1）真实通过。
  *
  * 本机原始问题回放（1.5MB，不入库）可加跑，额外锁该场次的具体数字：
- *   WOTB_SMOKE_REPLAY=<path/to.wotbreplay> npx vitest run src/replay-local/agent-wasm-smoke.test.ts
+ *   WOTB_SMOKE_REPLAY=<path/to.wotbreplay> pnpm exec vitest run src/replay-local/agent-wasm-smoke.test.ts
  */
 import { readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'

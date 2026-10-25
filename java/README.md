@@ -67,8 +67,8 @@ mvn -s settings.xml test
 
 ```bash
 cd frontend
-npm ci
-npm run dev
+pnpm install
+pnpm run dev
 ```
 
 Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
@@ -211,8 +211,8 @@ mvn -s settings.xml test
 
 ```bash
 cd frontend
-npm test
-npm run build
+pnpm test
+pnpm run build
 ```
 
 ## 生产备份与恢复
@@ -228,7 +228,7 @@ npm run build
 - `java/settings.xml`：仓库跟踪的可移植本地 Maven settings；在 `java/` 目录执行时使用独立仓库 `java/.m2repo`，干净 clone 无需生成。
 - `java/settings-ci.xml`：GitHub Actions 专用 Maven settings，不配置 mirror，让 CI 按 Maven 默认 repository 规则解析；本地开发仍使用 `settings.xml`。
 - `java/settings-docker.xml`：Docker 构建用 Maven settings。
-- `frontend/package-lock.json`：固定前端依赖版本。
+- `frontend/pnpm-lock.yaml`：固定前端依赖版本（pnpm，安装策略见 `frontend/pnpm-workspace.yaml`）。
 
 默认端口在 `wotb-web/src/main/resources/application.yml`：
 

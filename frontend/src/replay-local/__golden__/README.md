@@ -25,5 +25,5 @@ AI golden 同时包含 `toBattleFacts` 的 Battle，新增事实字段也必须�
 
 上游 pin 升级后（在 `frontend/` 下运行）：
 `bash ../scripts/fetch-agent-wasm.sh` 拉取 pin 版本 → `node scripts/export-wasm-results.mjs` 重新导出
-`wasm-results.json`，`WOTB_UPDATE_AI_PROJECTION_GOLDEN=1 npx vitest run src/replay-local/ai/` 重生成 AI 投影 golden，
+`wasm-results.json`，`WOTB_UPDATE_AI_PROJECTION_GOLDEN=1 pnpm exec vitest run src/replay-local/ai/` 重生成 AI 投影 golden，
 再跑全部 replay-local 测试与 `ClientAiProjectionParityTest`，确认仍与 Java 基线一致。
