@@ -2942,6 +2942,27 @@ async function runWorkspace2DScenario(env, scenario) {
     check(failures, g.hud && g.hud.h <= 36, `phone-landscape HUD must be a single row (<=36px): ${JSON.stringify(g.hud)}`)
     check(failures, g.transport && g.transport.h <= 56 && g.transport.w >= scenario.width - 4,
       `phone-landscape transport must be one full-width row (<=56px): ${JSON.stringify(g.transport)}`)
+    // 紧凑 HUD 两侧血条必须真的有宽度且对称（敌方曾因 grid 列顺序与模板不匹配被压成 0 宽）。
+    const bars = await page.evaluate(`(() => {
+      const w = (s) => document.querySelector(s)?.parentElement.getBoundingClientRect().width ?? 0
+      return { friendly: w('[data-test="pb-hp-fill-friendly"]'), enemy: w('[data-test="pb-hp-fill-enemy"]') }
+    })()`)
+    check(failures, bars.friendly >= 40 && bars.enemy >= 40 && Math.abs(bars.friendly - bars.enemy) <= 2,
+      `compact HUD HP bars must both be >=40px and symmetric: ${JSON.stringify(bars)}`)
+    // 沉浸态横屏（非全屏）也贴屏幕边缘：模拟刘海侧 safe-area，车道与传输条不得进入该区域。
+    if (!scenario.fullscreen) {
+      const inset = 44
+      await page.client.send('Emulation.setSafeAreaInsetsOverride', { insets: { left: inset, right: inset } }, page.sessionId)
+      await delay(200)
+      const edges = await page.evaluate(`(() => {
+        const r = (s) => document.querySelector(s)?.getBoundingClientRect()
+        const l = r('[data-test="pb-team-lane-left"]'), rr = r('[data-test="pb-team-lane-right"]'), t = r('.pb-transport-slot')
+        return { laneL: l?.left, laneR: rr?.right, transL: t?.left, transR: t?.right, width: innerWidth }
+      })()`)
+      await page.client.send('Emulation.setSafeAreaInsetsOverride', { insets: { left: 0, right: 0 } }, page.sessionId)
+      check(failures, edges.laneL >= inset - 1 && edges.transL >= inset - 1 && edges.laneR <= edges.width - inset + 1 && edges.transR <= edges.width - inset + 1,
+        `phone-landscape content must stay inside left/right safe-area (${inset}px): ${JSON.stringify(edges)}`)
+    }
     console.log(`[browser-interaction] ${scenario.name} map=${Math.round(g.map?.w)}x${Math.round(g.map?.h)} hud=${Math.round(g.hud?.h)} transport=${Math.round(g.transport?.h)}`)
   }
   // 主控件行：-5 ▶ +5 1× ⛶ ⚙ 同一行（触屏 44px）
