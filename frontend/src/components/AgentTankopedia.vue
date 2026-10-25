@@ -25,6 +25,8 @@ import PageHeader from './PageHeader.vue'
 import EmptyState from './EmptyState.vue'
 import AppButton from './AppButton.vue'
 import TankCatalogMenu from './TankCatalogMenu.vue'
+import { Motion } from 'motion-v'
+import { motionTransition } from '../shared/motion/motionPolicy'
 
 const VIEW = 'agent-tankopedia'
 /** 车种枚举 → i18n 键（AT-SPG 含连字符，不直接作键） */
@@ -224,7 +226,13 @@ onMounted(() => {
       </EmptyState>
 
       <template v-else-if="detail">
-        <header class="tp-detail-head">
+        <Motion
+          tag="header"
+          class="tp-detail-head"
+          :initial="{ opacity: 0, y: 4 }"
+          :animate="{ opacity: 1, y: 0 }"
+          :transition="motionTransition('fast')"
+        >
           <span class="tp-media tp-media-lg">
             <img :src="tankImageUrl(detailId)" alt="" width="320" height="200" decoding="async" :style="iconCropStyle(detailId)" @error="hideBrokenImage">
           </span>
@@ -237,7 +245,7 @@ onMounted(() => {
               <span v-if="summary?.is_premium" class="tp-pill is-premium">{{ t('agentTanks.premium') }}</span>
             </div>
           </div>
-        </header>
+        </Motion>
 
         <!-- 装甲查看器入口：装甲数值 / 热力 / 等效判定以查看器为准（唯一装甲事实源）；查看器匿名可用，入口对全员开放 -->
         <section class="tp-card-section" data-testid="tank-open3d-card" data-tour="tankopedia-detail">
