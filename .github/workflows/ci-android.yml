@@ -23,11 +23,14 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: frontend/package.json
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "9.6.1"
@@ -45,8 +48,8 @@ jobs:
         run: |
           set -euo pipefail
           bash scripts/fetch-agent-wasm.sh
-          npm --prefix frontend ci --no-audit --no-fund
-          npm --prefix frontend run build:android
+          pnpm --dir frontend install --frozen-lockfile
+          pnpm --dir frontend run build:android
       - name: Assemble debug APK and run Android JVM unit tests
         working-directory: android
         run: bash ../scripts/ci/run-with-network-retry.sh "Android Gradle dependency resolution" gradle :app:assembleDebug :app:testDebugUnitTest --no-daemon

@@ -22,7 +22,7 @@
 | 工具 | 用途 | 缺失时处理 |
 |---|---|---|
 | 可交互浏览器 MCP / computer-use，或 Playwright Library | 持续浏览器会话与真实 UI 操作 | 优先复用已配置工具；无 MCP 时使用本地 Playwright，不以 MCP 缺失直接结束 |
-| Node.js 与 npm（使用 Playwright 时） | 运行和安装浏览器驱动 | 检查 `node --version` / `npm --version`；缺少时通过官方发行渠道安装受支持的 LTS |
+| Node.js 与 pnpm（使用 Playwright 时） | 运行和安装浏览器驱动 | 检查 `node --version` / `pnpm --version`；缺少时通过官方发行渠道安装受支持的 LTS 与 pnpm |
 | `playwright` 与匹配的 Chromium | 导航、点击、输入、上传、截图、viewport | 检查包能否导入且浏览器能否启动；缺少时自动安装对应包和浏览器 |
 | 截图查看工具与可写证据目录 | 查看渲染结果、保留失败截图 | 使用当前环境的图片查看工具和仓库外可写目录 |
 
@@ -33,8 +33,8 @@ Windows PowerShell 安装示例（先检查已有安装，仅执行缺失项）�
 ```powershell
 $qaTools = Join-Path $env:LOCALAPPDATA 'WotbTools/product-qa'
 New-Item -ItemType Directory -Force -Path $qaTools | Out-Null
-npm install --prefix $qaTools playwright
-# npm 成功后再下载匹配版本浏览器；失败则先处理报错。
+pnpm add --dir $qaTools playwright
+# pnpm 成功后再下载匹配版本浏览器；失败则先处理报错。
 & (Join-Path $qaTools 'node_modules/.bin/playwright.cmd') install chromium
 ```
 

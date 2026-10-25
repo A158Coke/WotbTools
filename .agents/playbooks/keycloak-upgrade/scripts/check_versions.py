@@ -8,7 +8,7 @@ Scans (relative to the repo root, derived from this script's location):
   - docker/Dockerfile.keycloak          FROM quay.io/keycloak/keycloak:<tag>
   - keycloak-{wargaming,qq,session}-provider/pom.xml  <keycloak.version> property
   - frontend/package.json               keycloak-js dependency (informational)
-  - frontend/package-lock.json          keycloak-js resolved version (informational)
+  - frontend/pnpm-lock.yaml             keycloak-js resolved version (informational)
 
 Exit code 0 = server image tag and every provider pom agree (and, when given,
 equal the expected version). Exit code 1 = mismatch.
@@ -30,7 +30,10 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 FROM_RE = re.compile(r"FROM\s+quay\.io/keycloak/keycloak:([0-9][0-9A-Za-z.\-]*)", re.IGNORECASE)
 POM_VERSION_RE = re.compile(r"<keycloak\.version>\s*([0-9][0-9A-Za-z.\-]*)\s*</keycloak\.version>")
 PACKAGE_JSON_RE = re.compile(r'"keycloak-js"\s*:\s*"([^"]+)"')
-PACKAGE_LOCK_RE = re.compile(r'"node_modules/keycloak-js":\s*\{[^}]*?"version":\s*"([^"]+)"')
+# pnpm-lock.yaml importers entry: "keycloak-js:" / "specifier: ..." / "version: <resolved>"
+PNPM_LOCK_RE = re.compile(
+    r"^\s+keycloak-js:\s*\n\s+specifier:[^\n]*\n\s+version:\s*([0-9][0-9A-Za-z.\-]*)", re.MULTILINE
+)
 
 
 def find_version(path: Path, pattern: re.Pattern[str], label: str) -> str | None:
@@ -90,12 +93,12 @@ def main() -> int:
         REPO_ROOT / "frontend" / "package.json", PACKAGE_JSON_RE, "keycloak-js (package.json)"
     )
     js_locked = find_version(
-        REPO_ROOT / "frontend" / "package-lock.json", PACKAGE_LOCK_RE, "keycloak-js (package-lock.json)"
+        REPO_ROOT / "frontend" / "pnpm-lock.yaml", PNPM_LOCK_RE, "keycloak-js (pnpm-lock.yaml)"
     )
     js_version = js_raw[1:] if js_raw and js_raw[:1] in "^~" else js_raw
     print("\nNote: keycloak-js is informational (26.2+ releases independently, backward compatible).")
     if js_version and js_locked and js_version != js_locked:
-        print(f"MISMATCH: package.json keycloak-js {js_raw} and package-lock.json {js_locked} differ; run 'npm install'.")
+        print(f"MISMATCH: package.json keycloak-js {js_raw} and pnpm-lock.yaml {js_locked} differ; run 'pnpm install'.")
         return 1
     return 0
 

@@ -136,8 +136,8 @@ node scripts/bake-tier-x-topview.mjs --model-key maus --out-dir ../tmp/x  # 试�
 
 ```bash
 node frontend/scripts/validate-vehicle-models.mjs              # 全量自检（与 CI 同逻辑）
-cd frontend && npm test                                        # CI 同口径
-cd frontend && npm run build && node scripts/check-bundle-separation.mjs
+cd frontend && pnpm test                                        # CI 同口径
+cd frontend && pnpm run build && node scripts/check-bundle-separation.mjs
 cd frontend && node scripts/check-webp-orientation.mjs         # 真实 WebP 方向校验（developer-only）
 ```
 

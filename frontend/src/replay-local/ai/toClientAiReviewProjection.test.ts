@@ -3,7 +3,7 @@
  *
  * golden（`common/fixtures/ai-projection/<fixture>.json.gz` = `{ battle, projection }`）由锁定版本的上游 WASM
  * 在仓库 fixture 回放上现场生成；本测试断言现场结果与已提交 golden 逐字段相等——上游 pin 或投影规则
- * 变化必须显式重生成（`WOTB_UPDATE_AI_PROJECTION_GOLDEN=1 npx vitest run <本文件>`）并在评审中可见。
+ * 变化必须显式重生成（`WOTB_UPDATE_AI_PROJECTION_GOLDEN=1 pnpm exec vitest run <本文件>`）并在评审中可见。
  * Java 侧 `ClientAiProjectionParityTest` 读取同一 golden，与 Java 删除前冻结的 canonical 重建逐层比对语义。
  */
 
