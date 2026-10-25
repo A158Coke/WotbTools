@@ -1536,6 +1536,21 @@ describe('scene vehicle selection intent', () => {
     const pForward = cam.position.clone()
     gesture([350, 300])
     expect(cam.position.distanceTo(pForward)).toBeCloseTo(0, 4)
+    // 单事件触限 + 回程分批：指距 200→350（比例 0.75 → 累计目标钳 0.5）→275→200
+    // （第二指 x = 指距 + 100；d0 = 200px）
+    const pBefore = cam.position.clone()
+    gesture([450, 375, 300])
+    expect(cam.position.distanceTo(pBefore)).toBeCloseTo(0, 4)
+    // 同一端点、不同分批 ⇒ 相同位移（不能按单次增量截断）
+    const base = cam.position.clone()
+    gesture([450])                                  // 一次到指距 350（比例 0.75 → 钳 0.5）
+    const oneShot = cam.position.clone().sub(base)
+    expect(oneShot.length()).toBeGreaterThan(1)
+    gesture([200])                                  // 反向到指距 100（-0.5）⇒ 精确回位
+    expect(cam.position.distanceTo(base)).toBeCloseTo(0, 4)
+    gesture([375, 450])                             // 分两步到同一指距 350
+    const split = cam.position.clone().sub(base)
+    expect(split.distanceTo(oneShot)).toBeCloseTo(0, 4)
   })
 })
 
