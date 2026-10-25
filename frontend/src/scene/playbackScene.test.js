@@ -1397,6 +1397,9 @@ describe('Free Camera terrain floor', () => {
     topCanvas.dispatchEvent(pinchTouch('pointerup', 340, 9))
     topCanvas.dispatchEvent(pinchTouch('pointerup', 100, 7))
     expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
+    const afterForward = cam.position.y
+    expect(api.flyTick(0.1, new Set(['KeyE']))).toBe(true)
+    expect(cam.position.y).toBeLessThan(afterForward)
     api.setCam('free')
 
     cam.position.y = topHeight - 0.1
@@ -1538,9 +1541,20 @@ describe('Free Camera terrain floor', () => {
   it('applies the floor once when terrain is published after the initial Free scene', async () => {
     stubTerrainAssets({ values: [0, 0, 0, 0], zmin: 400, zmax: 400 })
     source.loadPlaybackData.mockResolvedValue(minimalData())
-    const { api } = createScene()
+    const { api, store } = createScene()
     await api.loadData({ kind: 'local', file: new File(['late-terrain'], 'late-terrain.wotbreplay') })
     expect(window.__camera.position.y).toBeGreaterThanOrEqual(400.5)
+    const cam = window.__camera
+    const controls = window.__controls
+    const tacticalHeight = 255 // minimalData 的 WORLD_CENTER.ext = 150
+    api.setCam('top')
+    expect(store.cam).toBe('free')
+    expect(cam.position.x).toBeCloseTo(0)
+    expect(cam.position.z).toBeCloseTo(0.01)
+    expect(cam.position.y).toBeGreaterThan(tacticalHeight)
+    expect(cam.position.y).toBeGreaterThanOrEqual(400.5)
+    expect(controls.target.y).toBeCloseTo(cam.position.y - tacticalHeight, 5)
+    expect(new THREE.Vector3().subVectors(controls.target, cam.position).normalize().y).toBeCloseTo(-1, 8)
   })
 
   it('places the Free camera above the rendered triangle on a non-coplanar terrain cell', async () => {
@@ -1559,7 +1573,8 @@ describe('Free Camera terrain floor', () => {
     window.__scene.updateMatrixWorld(true)
     const ray = new THREE.Raycaster(new THREE.Vector3(x, 100, z), new THREE.Vector3(0, -1, 0))
     const renderedY = ray.intersectObject(terrain[0], false)[0]?.point.y
-    expect(renderedY).toBeGreaterThan(20) // 双线性高度约 15 m；此处渲染三角面约 30 m。
+    const bilinearY = (0 + 30 + 30 + 0) / 4
+    expect(renderedY).toBeGreaterThan(bilinearY)
 
     cam.position.set(x, -10, z)
     controls.target.set(x, -15, z)
@@ -1939,7 +1954,8 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
     api.setFollow(2)
     expect(store.cam).toBe('follow')
     expect(followed).toEqual([2])
-    api.setCam('free')
+    api.setCam('top')
+    expect(store.cam).toBe('free')
     expect(followed).toEqual([])
     stop()
   })

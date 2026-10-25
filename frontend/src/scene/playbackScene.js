@@ -24,7 +24,7 @@ import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
 import {
   CLIENT_NORMAL_CAMERA_FOV_H,
-  terrainLodState, terrainLodStale,
+  terrainLodState, terrainLodStale, terrainSurfaceHeightAt,
 } from './terrainMesh.js'
 import { treeFrame } from './destructibles.js'
 import { writeHiddenInstance, fallMatrix } from './sceneryInstancing.js'
@@ -1205,19 +1205,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     return top * (1 - ty) + bot * ty;
   }
 
-  // Free Camera 的地板必须采实际 LOD 网格的三角形面；双线性高度场只在四角共面时
-  // 与渲染表面一致。竖直向下 raycast 只查当前地形 mesh，成本仅在相机约束时发生。
-  const terrainFloorRaycaster = new THREE.Raycaster();
-  const terrainFloorRayOrigin = new THREE.Vector3();
-  const terrainFloorRayDown = new THREE.Vector3(0, -1, 0);
   function sampleRenderedTerrainHeight(x, z) {
-    if (!terrainMesh || !heightMeta) return null;
-    const maxTerrainY = Number(heightMeta.zmax);
-    if (!Number.isFinite(maxTerrainY)) return null;
-    terrainFloorRayOrigin.set(x, Math.max(camera.position.y, maxTerrainY) + 1, z);
-    terrainFloorRaycaster.set(terrainFloorRayOrigin, terrainFloorRayDown);
-    const hit = terrainFloorRaycaster.intersectObject(terrainMesh, false)[0];
-    return Number.isFinite(hit?.point?.y) ? hit.point.y : Number.NaN;
+    const terrainBuild = terrainMesh?.geometry?.userData?.terrainBuild;
+    if (!terrainBuild) return null;
+    return terrainSurfaceHeightAt(terrainBuild, x, z);
   }
 
   /** Free Camera 的上限与俯视默认高度同源；地面下限只在有效高度场覆盖内生效。 */
@@ -1234,8 +1225,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         // sampleHeight 的 corner 坐标域是 [-span/2, span/2)；外侧会被采样器夹到 edge texel。
         const half = span / 2;
         if (x >= -half && x < half && z >= -half && z < half) {
-          // 地形高度异步发布早于网格装配；装配完成前沿用高度场，网格可用后必须按
-          // 实际三角面采样，避免双线性高度把非共面格子的相机留在渲染地形内部。
+          // 地形高度异步发布早于网格装配；网格可用时按其局部 LOD 三角面 O(1) 采样，
+          // 避免双线性高度低估非共面格子；装配前沿用高度场。
           const terrainY = terrainMesh
             ? sampleRenderedTerrainHeight(x, z)
             : sampleHeight(x, z);
@@ -1294,6 +1285,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const old = terrainMesh.geometry;
     terrainMesh.geometry = buildTerrainGeometry();
     old.dispose();
+    // 当前 camera pose 触发的 LOD 几何将在本帧渲染；按新网格重新约束，避免旧 LOD
+    // floor 与替换后的三角面之间留下一帧/停驻时的穿地。
+    constrainFreeCameraAltitude();
   }
 
   // 依据 mapTexture/heightField 重建地面（2D 平面或 3D 地形二选一）
@@ -1334,6 +1328,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         size, cx: meta.x || 0, cz: meta.z || 0, mapTexture,
       }));
       scene.add(terrainMesh);
+      constrainFreeCameraAltitude();
       if (DEBUG) window.__terrain = terrainMesh;   // 诊断/测试钩子：地形网格身份（免按几何猜）
     } else if (mapTexture) {
       const mat = new THREE.MeshBasicMaterial({ map: mapTexture });
@@ -3463,6 +3458,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     CAM = nextMode;
     store.cam = nextMode;
     flyLookApplyMode(topAction ? 'follow' : nextMode); // 先清理飞行手势，再接管 Free
+    if (topAction) FOLLOW_EID = 0;
     // 场景未初始化（renderer 惰性创建，首次 startPlayback 才有 controls）：只记录模式，
     // 初始化后由 animate 按 CAM/FOLLOW_EID 逐帧生效——名册点击可先于首帧发生。
     if (!controls) { invalidate(); return; }
@@ -3471,10 +3467,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     controls.enabled = !flyMode();
     invalidate();
     if (topAction) {
-      FOLLOW_EID = 0;
       const { cx, cz } = WORLD_CENTER;
       camera.position.set(cx, topCameraDefaultHeight(), cz + 0.01);
       controls.target.set(cx, 0, cz);
+      constrainFreeCameraAltitude();
       // 保留直下俯视的实际画面，同时为下一次自由飞行准备可用的水平朝向。
       flyLookSyncFromCamera('top overview', true);
       flyLook.yaw = 0;

@@ -4,7 +4,7 @@ import {
   CLIENT_NORMAL_CAMERA_FOV_H, buildRefineMask,
   decodeTerrainField, morphFunc, subdivisionMetrics, groundMapUv, subdivMorphOf, terrainLodState,
   terrainLodStale, pairedTerrainBinUrl, terrainBinMatchesMeta,
-  terrainFieldMetaValid, terrainBoundsOk,
+  terrainFieldMetaValid, terrainBoundsOk, terrainSurfaceHeightAt,
 } from './terrainMesh.js'
 import { createHash } from 'node:crypto'
 
@@ -622,6 +622,27 @@ describe('地形网格（客户端补片级自适应 LOD，引擎 LandscapeSubdi
     expect(m.overBudget).toBe(false)
     expect(m.metrics.tanFovY).toBeCloseTo(Math.tan(FOV / 2), 12)
     expect(m.patches.length).toBeGreaterThan(0)
+  })
+
+  it('局部表面查询与生成网格三角面一致，覆盖非共面顶点、morph 和当前 LOD', () => {
+    const n = 2, span = 600
+    const field = make(n, 20, (i, j) => ((i === 0 && j === 1) || (i === 1 && j === 0)) ? 21.2 : 20)
+    const mesh = build(field, n, span, { x: 0, y: 100, z: 0 })
+    const x = -150, z = -150
+    const oracle = surfaceAt(mesh, x, z)
+    expect(oracle).not.toBeNull()
+    expect(oracle[0]).toBeCloseTo(21.2, 4) // 非共面格中心落在两个高顶点构成的反对角边上。
+    expect(terrainSurfaceHeightAt({ ...mesh, n, span }, x, z)).toBeCloseTo(oracle[0], 5)
+    expect(terrainSurfaceHeightAt({ ...mesh, n, span }, span / 2, z)).toBeNull()
+
+    const lodN = 64
+    const lodField = make(lodN, 20, (i, j) => 20 + 3 * Math.sin(i / 7) * Math.cos(j / 9))
+    const lodMesh = build(lodField, lodN, span, { x: 0, y: 75, z: 0 })
+    for (const [sx, sz] of [[0, 0], [17, -43], [-122, 90], [205, 180]]) {
+      const rendered = surfaceAt(lodMesh, sx, sz)
+      expect(rendered).not.toBeNull()
+      expect(terrainSurfaceHeightAt({ ...lodMesh, n: lodN, span }, sx, sz)).toBeCloseTo(rendered[0], 5)
+    }
   })
 
   it('参考对照（引擎语义独立重写）：终止补片集逐补片一致——锁定三处转写修复不被改坏', () => {
