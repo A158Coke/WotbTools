@@ -82,7 +82,7 @@
 ## 配方 D：纯前端交互/样式
 
 只动前端组件/样式（必要时 `deploy/nginx/nginx.conf`）。不碰后端/导出。改完跑相关
-`npx vitest run <related-test-files>`（触到路由/依赖/资产管线再 `npm run build`），并在文档记一句。
+`pnpm exec vitest run <related-test-files>`（触到路由/依赖/资产管线再 `pnpm run build`），并在文档记一句。
 
 ## 配方 E：调评分（权重/系数/阈值）
 
@@ -103,7 +103,7 @@
 3. **docker 部署**：`docker/Dockerfile.business-api`、`docker/Dockerfile.ai-service`、
    `docker/Dockerfile.frontend` 已各自 `COPY common/map_names.json`（注意是 `docker/Dockerfile.*`，
    不是 `deploy/Dockerfile.*`）。若以后前端再 import 新 `common/*.json`，在对应 Dockerfile 加 `COPY`。
-4. 验证（改前端要 `npm run build`；改 docker 用 `docker compose up --build` 重建）+ 文档。
+4. 验证（改前端要 `pnpm run build`；改 docker 用 `docker compose up --build` 重建）+ 文档。
 
 > 未匹配的地图名原样显示（英文内部名），不会报错。API 始终回原始英文 `mapName`；前端按 locale 渲染，导出固定中文。
 > `java/wotb-core/pom.xml` 的 `<includes>` 仍含 `map_names.json`（服务端 `MapNames` 查表用，与客户端导出无关），不要删。
@@ -147,7 +147,7 @@
 ## 配方 L：FE ↔ BE HTTP contract
 
 1. 先编辑 `contracts/http/openapi.yaml`，明确 endpoint、status、required/nullable、enum 与 `$ref`；不要把 domain model 或 internal exception 名称直接当 wire authority。
-2. 在 `frontend/` 运行 `npm run api:lint`、`npm run api:generate`、`npm run api:check`、`npm run api:fixture`；`src/api/generated/` 产物不手改。
+2. 在 `frontend/` 运行 `pnpm run api:lint`、`pnpm run api:generate`、`pnpm run api:check`、`pnpm run api:fixture`；`src/api/generated/` 产物不手改。
 3. 后端用实际 Jackson serialization/MockMvc 测试锁定 wire shape；domain enum 到 wire enum 只通过显式 mapper。旧 persisted artifact 的兼容逻辑只能位于读取边界。
 4. 运行受影响的前端 runtime/parser/UI tests 与后端 targeted tests；确认 `204 capability unavailable` 不被当成 `200 schema violation`。
 
@@ -155,8 +155,8 @@
 
 ```bash
 # 前端（列 / 导出 / 评分 / 组件改动）
-cd frontend && npx vitest run <related-test-files>
-cd frontend && npm run build        # 仅当触及路由/依赖/Vite/动态 import/资产管线
+cd frontend && pnpm exec vitest run <related-test-files>
+cd frontend && pnpm run build        # 仅当触及路由/依赖/Vite/动态 import/资产管线
 
 # Java（只有真的改了 java/ 才需要）
 cd java && JAVA_HOME=<JDK 25> mvn -pl wotb-web -am -Dtest=WebApiTest test

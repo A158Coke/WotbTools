@@ -29,7 +29,7 @@ const LOCAL_3D_ASSET_DIR = resolve(configDirectory, '../common/assets/map-3d-loc
  * 白名单不含 localhost —— 于是本机打开 3D 回放必然被浏览器拦下（`connect-src`/CORS），
  * 与代码无关。代理让请求从同源 dev server 出去，浏览器不再做跨域判定。
  *
- * **不设该环境变量时不注册任何代理**，默认 `npm run dev` 行为与本改动前完全一致；
+ * **不设该环境变量时不注册任何代理**，默认 `pnpm run dev` 行为与本改动前完全一致；
  * 代理只存在于 dev server（`apply: 'serve'` 语义，不进 build 产物）。
  */
 function assetProxyTarget() {
@@ -244,7 +244,7 @@ export default defineConfig(({ command, mode }) => {
       // 于是 dev 下 3D 回放 / 射击复现拿不到引擎（AgentWasm 懒加载，选中回放文件时才触发）。
       //
       // 修法：在 transform 之前按静态文件伺服，与构建产物行为一致（publicDir 原样拷进 dist、
-      // 按静态文件取、query 被忽略）。`apply: 'serve'` ⇒ 只影响 dev server，`npm run build`
+      // 按静态文件取、query 被忽略）。`apply: 'serve'` ⇒ 只影响 dev server，`pnpm run build`
       // 产物与 CI 完全不受影响。
       {
         name: 'local-dev-public-wasm-as-module',

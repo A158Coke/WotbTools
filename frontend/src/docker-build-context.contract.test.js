@@ -1,6 +1,6 @@
 // Docker 构建上下文契约：前端源码里所有逃出 frontend/ 的构建期输入（common JSON、map-semantics glob、
 // ?raw Markdown）必须在 docker/Dockerfile.frontend 的 build 阶段 COPY 到同一相对位置，且未被 .dockerignore 排除。
-// 防「本地 / CI npm build 绿、生产 Docker build 红」（#447：Could not resolve common/tankopedia-tier7.json）。
+// 防「本地 / CI pnpm build 绿、生产 Docker build 红」（#447：Could not resolve common/tankopedia-tier7.json）。
 // 不复制第二份数据进 frontend——common/ 是唯一事实源，Docker 只是把它放到与仓库相同的相对路径。
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'

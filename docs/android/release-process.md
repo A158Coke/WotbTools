@@ -146,7 +146,7 @@ stage 的 APK 门禁顺序是：APK 内容/签名 → bundled frontend/WASM/Agen
 
 `frontend/vite.config.js` 的 `buildIdentity()` 把构建身份写进 bundle：`version.json` 与 `define __BUILD_TIME__`（后者内联进入口 chunk，入口内容一变会**沿 import 图级联改名**）。因此 `buildTime` **必须是确定性的**——优先级：`SOURCE_DATE_EPOCH`（unix 秒）→ 当前 checkout 的 commit 时间 → 才回落 wall-clock（此时该构建不可逐字节复现，仅作诊断）。
 
-- **Android bundle**（`npm run build:android`，有 .git）自动取 commit 时间 ⇒ 同一 commit + 同输入 ⇒ 逐字节相同的 bundle/APK（stage 重跑不会再撞 immutable conflict）。
+- **Android bundle**（`pnpm run build:android`，有 .git）自动取 commit 时间 ⇒ 同一 commit + 同输入 ⇒ 逐字节相同的 bundle/APK（stage 重跑不会再撞 immutable conflict）。
 - **任何 Docker 构建**（生产镜像由仓库外构建方按本 Dockerfile 构建）必须传 `--build-arg SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)`；`Dockerfile.frontend` 已声明该 ARG 并转 ENV，CI 侧的 `ci-frontend.yml` 已接上。未传时回落 wall-clock，该镜像不可复现。
 - 回归锁：`frontend/src/vite-proxy.test.js` 断言 `SOURCE_DATE_EPOCH` 固定 ⇒ `buildTime` 同值。
 

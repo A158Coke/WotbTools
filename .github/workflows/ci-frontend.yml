@@ -23,33 +23,36 @@ jobs:
         run: python3 deploy/test_frontend_builder.py
       - name: Frontend image identity consistency regression
         run: python3 deploy/test_frontend_image_identity.py
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: frontend/package.json
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
       - name: Install dependencies
         working-directory: frontend
-        run: npm ci --no-audit --no-fund
+        run: pnpm install --frozen-lockfile
       # 上游产物 pin（deploy/agent/source.json）的确定性验证：每个 PR 都重新下载
       # v0.1.6 附件并 sha256 校验——pin 漂移/上游重发布在这里 fail，而不是发布日。
       - name: Fetch upstream agent WASM artifact (release pin, sha256 verified)
         run: bash scripts/fetch-agent-wasm.sh
       - name: Verify generated HTTP client contract
         working-directory: frontend
-        run: npm run api:check
+        run: pnpm run api:check
       - name: Type check
         working-directory: frontend
-        run: npm run typecheck
+        run: pnpm run typecheck
       - name: Style lint (design language)
         working-directory: frontend
-        run: npm run lint:css
+        run: pnpm run lint:css
       - name: Unit tests
         working-directory: frontend
-        run: npm test
+        run: pnpm test
       - name: Build
         working-directory: frontend
-        run: npm run build
+        run: pnpm run build
       # dist 契约 smoke：Agent WASM 产物必须是 commit-addressed 的
       #（`/wasm/<deploy/agent/source.json ref>/`），fingerprint 与 pin 逐字段一致，且
       # stable `/wasm/wotb_replay_wasm.js` 不再存在。校验实现与生产 Docker build 共用
@@ -126,16 +129,19 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.head_sha }}
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: frontend/package.json
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
       - name: Install dependencies
         working-directory: frontend
-        run: npm ci --no-audit --no-fund
+        run: pnpm install --frozen-lockfile
       - name: Fetch upstream agent WASM artifact (release pin, sha256 verified)
         run: bash scripts/fetch-agent-wasm.sh
       - name: Real-browser ${{ matrix.gate.label }} regression
         working-directory: frontend
-        run: npm run ${{ matrix.gate.script }} -- ${{ matrix.gate.args }}
+        run: pnpm run ${{ matrix.gate.script }} ${{ matrix.gate.args }}

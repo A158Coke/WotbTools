@@ -418,9 +418,9 @@ evidence_i = step_index(lambda n, i: "staging evidence" in n.lower(), "staging e
 assert fetch_wasm_i < frontend_i < bundle_i < assemble_i < verify_bundle_i, stage_names
 assert verify_bundle_i < seed_apk_i < tag_i < evidence_i, stage_names
 bundle_runs = "\n".join(step.get("run") or "" for step in stage["steps"][bundle_i:assemble_i])
-assert "npm --prefix frontend run build:android" in bundle_runs, bundle_runs
-# 不重复 npm ci / 不重复取回 Agent 产物：bundle 步骤只复用前端校验的工作区。
-assert "npm ci" not in bundle_runs, bundle_runs
+assert "pnpm --dir frontend run build:android" in bundle_runs, bundle_runs
+# 不重复 pnpm install / 不重复取回 Agent 产物：bundle 步骤只复用前端校验的工作区。
+assert "pnpm install" not in bundle_runs, bundle_runs
 assert "fetch-agent-wasm" not in bundle_runs, bundle_runs
 verify_runs = stage["steps"][verify_bundle_i]["run"]
 for required in ("assets/web/index.html", "assets/web/bundle-manifest.json",

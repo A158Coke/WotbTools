@@ -97,7 +97,7 @@ Publish latest only from current main   确认 source SHA 仍是远端 main 后 
   未完成的 blob，不重建镜像、不重复构建）；超时或重试预算用尽即 fail closed。
 - **不使用 GHA 构建缓存**（`cache-from`/`cache-to` 已移除）：`mode=max` 需要把整个 build stage
   上传到 GitHub cache，是与镜像同量级、且在 step 内无法单独设超时的边界；`mode=min` 不缓存
-  build stage、省不下 `npm ci`，却被同一失败面支配。该决策**只适用于 frontend**，不外推到
+  build stage、省不下 `pnpm install`，却被同一失败面支配。该决策**只适用于 frontend**，不外推到
   business-api / keycloak / ai-service。
 
 ### 验证（不需要凭据——公开读）

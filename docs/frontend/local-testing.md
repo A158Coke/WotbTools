@@ -20,7 +20,7 @@ bash scripts/fetch-agent-wasm.sh
 # VITE_ASSET_BASE_URL=http://127.0.0.1:8123
 
 # ④ 本仓 frontend：起 dev server（/api → 本机 8087）
-npm run dev
+pnpm run dev
 ```
 
 浏览器打开 `http://localhost:5173/`（可加 `?view=agent-replay` / `agent-shots` / `agent-armor`；**本机验收免登录**按 §4.1 自备登录桩后加 `?localuser=1`）。五种回放能力始终可见；个人回放的 3D / shots 与全部 AI 用普通账号登录。已验证的官方示例可匿名使用 3D / shots，装甲查看器也匿名可用。管理页必须使用具有真实 realm role 的测试账号。
@@ -38,13 +38,13 @@ npm run dev
 
 ## 2. 一次性准备
 
-1. **Node 24 + `npm ci`**（frontend 目录，`.nvmrc` 为准）。
+1. **Node 24 + pnpm**（`.nvmrc` 为准）：先执行一次 `corepack enable`，再在 frontend 目录 `pnpm install`（pnpm 版本由 `package.json#packageManager` 钉住）。
 2. **引擎产物**：本仓根目录执行 `bash scripts/fetch-agent-wasm.sh`
    （2026-10-03 时 pin = v0.3.11 / `73ea422a…`；以 `source.json` 现值准）。
    - 脚本从上游 Release 直取 ZIP，sha256 + fingerprint 双重校验后落位 `common/assets/wasm/<ref>/`。
    - **何时重跑**：`deploy/agent/source.json` 变化（上游 pin bump）后必须重跑。不重跑的症状：
      dev 下 `/wasm/<ref>/…` 404 → 3D 回放 / 射击复现 / 装甲查看器"引擎加载失败"，其余功能正常。
-   - **重跑后必须重启 `npm run dev`**：Vite dev 在**服务启动时**把 define 表
+   - **重跑后必须重启 `pnpm run dev`**：Vite dev 在**服务启动时**把 define 表
      （`__AGENT_WASM_COMMIT__` / `__AGENT_WASM_RELEASE__` 等）序列化进
      `/node_modules/vite/dist/client/env.mjs` 并注入页面全局——**只刷新浏览器不会换 ref**，
      页面会继续加载旧 ref 的 WASM（表现为"修复明明已落位但行为还是旧的"）。
@@ -74,8 +74,8 @@ npm run dev
 
    | 命令 | `/api` 指向 | 用途 |
    |---|---|---|
-   | `npm run dev` | 本机 `http://localhost:8087` | 本地后端开发 |
-   | `npm run dev:production-remote` | 生产站点 | 生产数据/真实登录；手机标题栏与平板/桌面侧栏有非模态提示；只用获批账号与数据 |
+   | `pnpm run dev` | 本机 `http://localhost:8087` | 本地后端开发 |
+   | `pnpm run dev:production-remote` | 生产站点 | 生产数据/真实登录；手机标题栏与平板/桌面侧栏有非模态提示；只用获批账号与数据 |
 
 3. URL 参数（模块加载时读取，**每次都要带在 URL 上**；建议存书签）：
 
@@ -224,34 +224,34 @@ Keycloak 配置是硬编码的生产（`auth.wotbtools.com` / realm `wotbtools` 
 | 同上但 `.env.local` 明明是对的 | URL/localStorage 里残留非空 `?assets=` | 带一次空 `?assets=` 清除 |
 | 3D 回放/射击/装甲查看器"引擎加载失败"，`/wasm/<ref>/…` 404 | `source.json` pin 与 `common/assets/wasm/` 不一致（bump 后没重跑） | `bash scripts/fetch-agent-wasm.sh` |
 | dev 下 `/wasm/*.js?import` 500 | Vite 拦截 publicDir 里的 .js（回归） | 检查 `vite.config.js` 的 `local-dev-public-wasm-as-module` 中间件 |
-| pin 与产物都已更新，浏览器里却仍按**旧 ref** 跑（修复"不生效"） | Vite dev 的 define 表在**服务启动时**固化进 client/env.mjs 与页面全局；F5 只刷新页面不换 ref | 重启 `npm run dev`；可用 `/node_modules/vite/dist/client/env.mjs` 内的 `__AGENT_WASM_COMMIT__` 值核验当前 ref |
+| pin 与产物都已更新，浏览器里却仍按**旧 ref** 跑（修复"不生效"） | Vite dev 的 define 表在**服务启动时**固化进 client/env.mjs 与页面全局；F5 只刷新页面不换 ref | 重启 `pnpm run dev`；可用 `/node_modules/vite/dist/client/env.mjs` 内的 `__AGENT_WASM_COMMIT__` 值核验当前 ref |
 | 个人回放直连 `?view=agent-replay` / `agent-shots` 显示登录提示 | 当前未登录且所选文件不是已验证官方示例 | 普通账号登录，或选择官方示例；**本机验收免登录：按 §4.1 自备登录桩并加 `?localuser=1`（本机自备改动，不入库；仅解锁纯本机能力）**；`agent-armor` 本身匿名可用 |
 | admin 页面能打开但数据 401/403 | 当前 token 缺少后端要求的真实 realm role | §5（使用具有对应角色的测试账号） |
 
 ## 8. 自动化测试与门禁
 
-- 先跑与改动直接相关的：`npx vitest run <related-test-files>`；多文件 feature 再跑对应 suite；
-  全量 `npm test`。不因小改动重复跑全量测试或 build。
+- 先跑与改动直接相关的：`pnpm exec vitest run <related-test-files>`；多文件 feature 再跑对应 suite；
+  全量 `pnpm test`。不因小改动重复跑全量测试或 build。
 - 浏览器门禁（真实 Chrome；**完整清单以 [`../../frontend/AGENTS.md`](../../frontend/AGENTS.md)
   §Testing rules 为权威**，新增 gate 随其特性一起落地；改对应代码时保持通过）：
-  - `npm run test:browser-layout` —— Playback 布局（PC / tablet / mobile 实际 CSS geometry 与 form isolation）；
-  - `npm run test:browser-interaction` —— 交互（hit target、pointer-events、capability 切换、认证门禁、播放控件）。
-  - `npm run test:browser-armor-mobile` —— 装甲页三档布局与触控；选车弹窗与坦克百科共用 `TankCatalogMenu`，门禁通过真实名册响应覆盖共 121 张卡片（共享增量列表首屏 48，滚轮/哨兵/加载更多续页），在 Showcase / Classic 检查图片框、车型名和元数据不裁切、首末车型名实际可命中、内部滚动不带动外层页面、真实关闭按钮点击与弹窗关闭状态；手机上检查搜索框与筛选入口 44px、筛选 chips 打开 sheet 后四个筛选控件可用，并覆盖 4K、筛选和视口扩大时的名册补齐。夹具只验证图片框几何，不证明真实缩略图加载或 3D 视觉效果。
-  - `npm run test:browser-armor-aiming` —— 瞄准 / 指针交互；部位取样同时检查几何分类与
+  - `pnpm run test:browser-layout` —— Playback 布局（PC / tablet / mobile 实际 CSS geometry 与 form isolation）；
+  - `pnpm run test:browser-interaction` —— 交互（hit target、pointer-events、capability 切换、认证门禁、播放控件）。
+  - `pnpm run test:browser-armor-mobile` —— 装甲页三档布局与触控；选车弹窗与坦克百科共用 `TankCatalogMenu`，门禁通过真实名册响应覆盖共 121 张卡片（共享增量列表首屏 48，滚轮/哨兵/加载更多续页），在 Showcase / Classic 检查图片框、车型名和元数据不裁切、首末车型名实际可命中、内部滚动不带动外层页面、真实关闭按钮点击与弹窗关闭状态；手机上检查搜索框与筛选入口 44px、筛选 chips 打开 sheet 后四个筛选控件可用，并覆盖 4K、筛选和视口扩大时的名册补齐。夹具只验证图片框几何，不证明真实缩略图加载或 3D 视觉效果。
+  - `pnpm run test:browser-armor-aiming` —— 瞄准 / 指针交互；部位取样同时检查几何分类与
     `elementFromPoint` 实际命中 canvas，避免选车按钮等面板遮挡导致手势误入弹窗。
     既有像素扫描单测覆盖按钮 / 弹窗遮挡及空命中，浏览器门禁用临时覆盖控件验证重新取样。
     结果卡锚定也在这里用真实布局验证：先等相机 damping 停止，再追加页面滚动夹具，
     断言 `#traj-info` 的纵向位移跟随 canvas 的 `getBoundingClientRect()`（源码正则守卫
     不能证明定位函数真的执行）。
   - agent 运行环境起不了 Chrome 时：明确说明并交给 PR CI（本机起不来 ≠ 改动有问题）。
-- 交互夹具的 Vite 依赖缓存隔离在 `node_modules/.vite-browser-interaction`，避免带 stub 的模块图使正在运行的开发页报 `504 Outdated Optimize Dep`。额外本地 smoke 也应使用独立 `cacheDir`；遇到旧缓存失效，停掉冲突实例并用 `npm run dev -- --force` 重启开发服务。
+- 交互夹具的 Vite 依赖缓存隔离在 `node_modules/.vite-browser-interaction`，避免带 stub 的模块图使正在运行的开发页报 `504 Outdated Optimize Dep`。额外本地 smoke 也应使用独立 `cacheDir`；遇到旧缓存失效，停掉冲突实例并用 `pnpm run dev --force` 重启开发服务。
 - 无 GPU 的隔离 Chrome 夹具显式使用 SwiftShader 软件 WebGL。`browser-chrome.mjs` 的 `--enable-unsafe-swiftshader` 只用于受控本地测试页面，不改产品设置，也不能用来代替真实 3D 视觉验收。缺 WebGL 导致 fixture 无法建场时，先区分运行环境失败与布局断言失败。
-- 其余按需：`npm run typecheck`、`npm run build`、`npm run verify:agent-wasm`（build 后核对
-  `/wasm/<ref>/` 与 pin 一致）、`npm run lint:css`。
+- 其余按需：`pnpm run typecheck`、`pnpm run build`、`pnpm run verify:agent-wasm`（build 后核对
+  `/wasm/<ref>/` 与 pin 一致）、`pnpm run lint:css`。
 
 ### 单发击穿判定的加载回归
 
-`cd frontend && npm run test:browser-armor-shot-readiness`：复用浏览器门禁的应用/资产夹具，
+`cd frontend && pnpm run test:browser-armor-shot-readiness`：复用浏览器门禁的应用/资产夹具，
 验证弹药延迟时保持加载、不执行零穿深判定；弹药返回后按本发弹种自动完成首次判定；
 初始化期间选车入口禁用且显示说明，就绪后恢复；离开页面后的迟到响应不覆盖新查看器；
 弹药数据无效时显示“弹药数据”阶段错误，重试可恢复；目标加载失败的重试复用已就绪弹药，
