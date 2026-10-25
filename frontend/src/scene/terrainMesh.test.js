@@ -4,7 +4,7 @@ import {
   CLIENT_NORMAL_CAMERA_FOV_H, buildRefineMask,
   decodeTerrainField, morphFunc, subdivisionMetrics, groundMapUv, subdivMorphOf, terrainLodState,
   terrainLodStale, pairedTerrainBinUrl, terrainBinMatchesMeta,
-  terrainFieldMetaValid, terrainBoundsOk,
+  terrainFieldMetaValid, terrainBoundsOk, terrainSurfaceHeightAt,
 } from './terrainMesh.js'
 import { createHash } from 'node:crypto'
 
@@ -622,6 +622,61 @@ describe('地形网格（客户端补片级自适应 LOD，引擎 LandscapeSubdi
     expect(m.overBudget).toBe(false)
     expect(m.metrics.tanFovY).toBeCloseTo(Math.tan(FOV / 2), 12)
     expect(m.patches.length).toBeGreaterThan(0)
+  })
+
+  it('局部表面查询与生成网格三角面一致，覆盖非共面顶点、morph 和当前 LOD', () => {
+    const n = 2, span = 600
+    const field = make(n, 20, (i, j) => ((i === 0 && j === 1) || (i === 1 && j === 0)) ? 21.2 : 20)
+    const mesh = build(field, n, span, { x: 0, y: 100, z: 0 })
+    const x = -150, z = -150
+    const oracle = surfaceAt(mesh, x, z)
+    expect(oracle).not.toBeNull()
+    expect(oracle[0]).toBeCloseTo(21.2, 4) // 非共面格中心落在两个高顶点构成的反对角边上。
+    expect(terrainSurfaceHeightAt({ ...mesh, n, span }, x, z)).toBeCloseTo(oracle[0], 5)
+    expect(terrainSurfaceHeightAt({ ...mesh, n, span }, span / 2, z)).toBeNull()
+
+    const lodN = 64
+    const lodField = make(lodN, 20, (i, j) => 20 + 3 * Math.sin(i / 7) * Math.cos(j / 9))
+    const lodMesh = build(lodField, lodN, span, { x: 0, y: 75, z: 0 })
+    for (const [sx, sz] of [[0, 0], [17, -43], [-122, 90], [205, 180]]) {
+      const rendered = surfaceAt(lodMesh, sx, sz)
+      expect(rendered).not.toBeNull()
+      expect(terrainSurfaceHeightAt({ ...lodMesh, n: lodN, span }, sx, sz)).toBeCloseTo(rendered[0], 5)
+    }
+  })
+
+  it('非 8 对齐尺寸的正边与正角裁剪格使用 emitter 写入的 quad origin', () => {
+    const n = 101, span = 600
+    const field = make(n, 20, (i, j) => 20 + ((i + j) % 7) * 0.3)
+    const mesh = build(field, n, span, { x: 0, y: 10000, z: 0 })
+    const query = (i, j) => {
+      const x = ((j + 0.5) / n - 0.5) * span
+      const z = ((i + 0.5) / n - 0.5) * span
+      const oracle = surfaceAt(mesh, x, z)
+      expect(oracle).not.toBeNull()
+      const sampled = terrainSurfaceHeightAt({ ...mesh, n, span }, x, z)
+      expect(sampled).not.toBeNull()
+      expect(sampled).toBeCloseTo(oracle[0], 5)
+      return { cell: i * n + j, sampled }
+    }
+
+    // n=101 且远距离相机使正边保留 step=8；emitter 在 i=96 处将边格裁为 step=5。
+    const edge = query(98, 50)
+    expect(mesh.originIAt[edge.cell]).toBe(96)
+    expect(mesh.sizeAt[edge.cell]).toBe(5)
+
+    // 正 X + 正 Z 同时裁剪；查询仍命中实际发射的 [96,101) 角 quad。
+    const corner = query(98, 98)
+    expect(mesh.originIAt[corner.cell]).toBe(96)
+    expect(mesh.originJAt[corner.cell]).toBe(96)
+    expect(mesh.sizeAt[corner.cell]).toBe(5)
+
+    // 标准对齐尺寸和现有非共面三角面回归继续覆盖常规路径。
+    const alignedN = 64
+    const aligned = build(make(alignedN, 20), alignedN, span, { x: 0, y: 100, z: 0 })
+    const alignedX = 0, alignedZ = 0
+    const alignedOracle = surfaceAt(aligned, alignedX, alignedZ)
+    expect(terrainSurfaceHeightAt({ ...aligned, n: alignedN, span }, alignedX, alignedZ)).toBeCloseTo(alignedOracle[0], 5)
   })
 
   it('参考对照（引擎语义独立重写）：终止补片集逐补片一致——锁定三处转写修复不被改坏', () => {

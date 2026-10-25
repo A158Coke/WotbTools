@@ -457,6 +457,10 @@ export function buildAdaptiveTerrain({ field, n, span, cam, fovY, aspect = 16 / 
 
   // ---------- ① 补片级细分（客户端三条判据；终止补片内部 = 8×8 四边形）----------
   const sizeAt = new Int32Array(n * n);   // 逐 texel：所属发射四边形的顶点间距（② 的顶点高度口径要用）
+  // 裁剪后的 st 可能不再整除 ci/cj；查询必须复用 emitPatch 实际写出的格子原点。
+  const CellOriginArray = n <= 0xffff ? Uint16Array : Uint32Array;
+  const originIAt = new CellOriginArray(n * n);
+  const originJAt = new CellOriginArray(n * n);
   const morphRaw = new Float32Array(n * n);  // 逐 texel：所属补片的 subdivMorph（未过 morphFunc）
   const leaves = [];
   let overBudget = false;
@@ -471,6 +475,8 @@ export function buildAdaptiveTerrain({ field, n, span, cam, fovY, aspect = 16 / 
         for (let i = ci; i < Math.min(ci + st, n); i++) {
           for (let j = cj; j < Math.min(cj + st, n); j++) {
             sizeAt[i * n + j] = st;
+            originIAt[i * n + j] = ci;
+            originJAt[i * n + j] = cj;
             morphRaw[i * n + j] = curMorph;
           }
         }
@@ -717,8 +723,42 @@ export function buildAdaptiveTerrain({ field, n, span, cam, fovY, aspect = 16 / 
     quads: leaves.length,
     overBudget,
     sizeAt,
+    originIAt,
+    originJAt,
+    vertexIndexAt: vmap,
     morphRaw,          // 逐 texel 的 subdivMorph（诊断/测试）
     patches,
     metrics: M,
   };
+}
+
+/**
+ * 常数时间采样自适应地形网格的真实三角面高度。
+ * 使用 buildAdaptiveTerrain 生成时的 cell→step / grid-vertex→index 表和最终顶点高度，
+ * 因此涵盖当前 LOD、morph 与跨 LOD 缝合，不做 mesh traversal 或重建。
+ * 每格拓扑与发射器一致：沿反对角 (i+1,j)→(i,j+1) 分成两个三角形。
+ */
+export function terrainSurfaceHeightAt({ positions, sizeAt, originIAt, originJAt, vertexIndexAt, n, span }, x, z) {
+  if (!positions || !sizeAt || !originIAt || !originJAt || !vertexIndexAt || !Number.isInteger(n) || n < 2
+    || !Number.isFinite(span) || span <= 0 || !Number.isFinite(x) || !Number.isFinite(z)) return null;
+  const gx = (x / span + 0.5) * n, gz = (z / span + 0.5) * n;
+  if (gx < 0 || gz < 0 || gx >= n || gz >= n) return null;
+  const j = Math.floor(gx), i = Math.floor(gz);
+  const step = sizeAt[i * n + j];
+  if (!Number.isInteger(step) || step < 1) return null;
+  const cell = i * n + j;
+  const i0 = originIAt[cell], j0 = originJAt[cell];
+  const i1 = Math.min(n, i0 + step), j1 = Math.min(n, j0 + step);
+  if (i1 <= i0 || j1 <= j0) return null;
+  const width = n + 1;
+  const id00 = vertexIndexAt[i0 * width + j0], id01 = vertexIndexAt[i0 * width + j1];
+  const id10 = vertexIndexAt[i1 * width + j0], id11 = vertexIndexAt[i1 * width + j1];
+  if (id00 < 0 || id01 < 0 || id10 < 0 || id11 < 0) return null;
+  const y00 = positions[id00 * 3 + 1], y01 = positions[id01 * 3 + 1];
+  const y10 = positions[id10 * 3 + 1], y11 = positions[id11 * 3 + 1];
+  if (!Number.isFinite(y00) || !Number.isFinite(y01) || !Number.isFinite(y10) || !Number.isFinite(y11)) return null;
+  const tx = (gx - j0) / (j1 - j0), tz = (gz - i0) / (i1 - i0);
+  return tx + tz <= 1
+    ? y00 * (1 - tx - tz) + y01 * tx + y10 * tz
+    : y01 * (1 - tz) + y10 * (1 - tx) + y11 * (tx + tz - 1);
 }

@@ -988,7 +988,7 @@ describe('Replay3DPane', () => {
       layout.compact = false
     })
 
-    it('紧凑档：相机模式在控制条直接切换，走同一个 setCam（不新建移动端相机状态）', async () => {
+    it('紧凑档：俯视动作在控制条直接触发，走同一个 setCam（不新建移动端相机状态）', async () => {
       mockWebGL('webgl2')
       layout.compact = true
       const wrapper = mountPane()
@@ -997,7 +997,7 @@ describe('Replay3DPane', () => {
       store.roster = roster
       await nextTick()
       // 折叠状态也可切换（不依赖 Display 面板）
-      await wrapper.get('[data-testid="replay3d-camera"] [data-value="top"]').trigger('click')
+      await wrapper.get('[data-testid="replay3d-camera-top"]').trigger('click')
       expect(playback.api.setCam).toHaveBeenLastCalledWith('top')
       wrapper.unmount()
       layout.compact = false
@@ -1247,7 +1247,7 @@ describe('Replay3DPane', () => {
       wrapper.unmount()
     })
 
-    it('scene selection opens shared details; Free/Top preserve selection and Follow is explicit', async () => {
+    it('scene selection opens shared details; Top/Free preserve selection and Follow is explicit', async () => {
       mockWebGL('webgl2')
       const wrapper = mountPane()
       const api = playback.api
@@ -1261,13 +1261,12 @@ describe('Replay3DPane', () => {
       expect(api.setFollow).not.toHaveBeenCalled()
       // 镜头挡位直接陈列在控制条（2026-10-05：从 Display 面板移出），不经菜单
       expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(false)
-      for (const mode of ['top', 'free']) {
-        await wrapper.get(`[data-testid="replay3d-camera"] [data-value="${mode}"]`).trigger('click')
-        expect(api.setCam).toHaveBeenLastCalledWith(mode)
-        api.store.cam = mode
-        await nextTick()
-        expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Alpha')
-      }
+      await wrapper.get('[data-testid="replay3d-camera-top"]').trigger('click')
+      expect(api.setCam).toHaveBeenLastCalledWith('top')
+      api.store.cam = 'free'
+      await nextTick()
+      expect(wrapper.get('[data-testid="replay3d-camera"] [data-value="free"]').attributes('aria-checked')).toBe('true')
+      expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Alpha')
       await wrapper.get('[data-testid="replay3d-camera"] [data-value="follow"]').trigger('click')
       expect(api.setFollow).toHaveBeenCalledExactlyOnceWith(11)
       onVehicleSelect(21)
@@ -1860,8 +1859,12 @@ describe('Replay3DPane 待开播画质闸门', () => {
     playback.api.store.hasData = true
     await nextTick()
     const cams = wrapper.get('[data-testid="replay3d-camera"]')
-    expect(cams.findAll('button').map(b => b.attributes('data-value'))).toEqual(['free', 'top', 'follow'])
+    expect(cams.findAll('button').map(b => b.attributes('data-value'))).toEqual(['free', 'follow'])
     expect(cams.text()).toContain('agentReplay.cam_free')
+    const topAction = wrapper.get('[data-testid="replay3d-camera-top"]')
+    expect(topAction.text()).toContain('agentReplay.cam_top')
+    await topAction.trigger('click')
+    expect(playback.api.setCam).toHaveBeenCalledWith('top')
     wrapper.unmount()
   })
 

@@ -24,7 +24,7 @@ import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
 import {
   CLIENT_NORMAL_CAMERA_FOV_H,
-  terrainLodState, terrainLodStale,
+  terrainLodState, terrainLodStale, terrainSurfaceHeightAt,
 } from './terrainMesh.js'
 import { treeFrame } from './destructibles.js'
 import { writeHiddenInstance, fallMatrix } from './sceneryInstancing.js'
@@ -187,6 +187,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 缺失（未导出/404）时回退整图烘焙底图
   let groundLayers = null;
   let terrainMesh = null, heightField = null, heightMeta = null;  // 3D 地形
+  const CAMERA_GROUND_CLEARANCE = 0.5;  // 初值：小于地形起伏尺度，真实地图视觉校准由人工验收
   // 高度场只有一份（客户端同构：渲染/查询/放置全用真值场）。让位掩码（v0.4.2 的"渲染场"副本
   // 概念）与"贴地结构脚印"细分判据均已撤销（2026-10-11 用户裁示：只对齐客户端，不自创补偿）。
   let waterTexDispose = null;   // 水面海岸线用的高度场纹理（会话 teardown 释放）
@@ -424,7 +425,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
    *  顶视（top→free）反解出 pitch≈±π/2 会让 WASD 的水平投影 fwdLen≈0（无法移动）——
    *  |pitch| 接近天顶/天底时回落到斜俯视（保留 yaw）：从正俯视过渡到斜俯视是自然的
    *  模式切换，换来飞行立即可用。 */
-  function flyLookSyncFromCamera(tag = null) {
+  function flyLookSyncFromCamera(tag = null, preserveVertical = false) {
     const dx = controls.target.x - camera.position.x;
     const dy = controls.target.y - camera.position.y;
     const dz = controls.target.z - camera.position.z;
@@ -434,7 +435,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const rawPitch = Math.asin(Math.max(-1, Math.min(1, dy / dist)));
     // 天顶/天底附近回落到斜俯视：**保持原朝向的上下符号**（俯视=向下看，pitch 仍为负）。
     // 旧实现 `-0.6*sign(rawPitch)` 把俯视翻成仰视（target 跑到地图上空、WASD 水平分量为 0）。
-    flyLook.pitch = Math.abs(rawPitch) > Math.PI / 2 - 0.25
+    flyLook.pitch = !preserveVertical && Math.abs(rawPitch) > Math.PI / 2 - 0.25
       ? 0.6 * Math.sign(rawPitch || 1)
       : rawPitch;
     if (tag) flyDbg(`sync(${tag})`);   // 逐帧对齐（tick）不埋点，防按住键时刷屏
@@ -500,6 +501,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     controls.target.x += dx * step;
     controls.target.y += dy * step;
     controls.target.z += dz * step;
+    constrainFreeCameraAltitude();
     camera.lookAt(controls.target);
     invalidate();
   }
@@ -580,7 +582,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       flyLook.lastX = ev.clientX; flyLook.lastY = ev.clientY;
       const k = 0.0032;   // rad/px（与常见 FPS 灵敏度同量级）
       flyLook.yaw -= dx * k;
-      flyLook.pitch = Math.max(-Math.PI / 2 + 0.02, Math.min(Math.PI / 2 - 0.02, flyLook.pitch - dy * k));
+      flyLook.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, flyLook.pitch - dy * k));
     }
     flyLookApply();
     if (logThis) flyDbg('move(applied)');
@@ -1005,6 +1007,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // 必须有限；缺失曾让 fx/fy 变 NaN，坦克贴地/遮挡全部失效）。
       if (field && Number.isFinite(Number(tmeta?.size)) && tmeta.terrainLayout !== undefined) {
         heightMeta = tmeta; heightField = field;
+        // CAM 初始即 free；场景核先于异步地形初始化。发布高度场后一次性补齐初始相机约束。
+        constrainFreeCameraAltitude();
       } else if (field) {
         noteAsset('terrain', 'incomplete-meta', '忽略高度场（回退 2D）');
       } else if (metaStatus === 404 && binStatus === 404) {
@@ -1201,6 +1205,46 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     return top * (1 - ty) + bot * ty;
   }
 
+  function sampleRenderedTerrainHeight(x, z) {
+    const terrainBuild = terrainMesh?.geometry?.userData?.terrainBuild;
+    if (!terrainBuild) return null;
+    return terrainSurfaceHeightAt(terrainBuild, x, z);
+  }
+
+  /** Free Camera 的上限与俯视默认高度同源；地面下限只在有效高度场覆盖内生效。 */
+  function constrainFreeCameraAltitude() {
+    if (!flyMode() || !camera || !controls) return false;
+    const { x, y, z } = camera.position;
+    if (!Number.isFinite(y) || !Number.isFinite(controls.target.y)) return false;
+    let minY = -Infinity;
+    if (heightField && heightMeta) {
+      const n = Number(heightMeta.size), span = Number(heightMeta.span);
+      if (Number.isInteger(n) && n >= 2 && heightField.length === n * n
+        && Number.isFinite(span) && span > 0
+        && Number.isFinite(x) && Number.isFinite(z)) {
+        // sampleHeight 的 corner 坐标域是 [-span/2, span/2)；外侧会被采样器夹到 edge texel。
+        const half = span / 2;
+        if (x >= -half && x < half && z >= -half && z < half) {
+          // 地形高度异步发布早于网格装配；网格可用时按其局部 LOD 三角面 O(1) 采样，
+          // 避免双线性高度低估非共面格子；装配前沿用高度场。
+          const terrainY = terrainMesh
+            ? sampleRenderedTerrainHeight(x, z)
+            : sampleHeight(x, z);
+          if (Number.isFinite(terrainY)) minY = terrainY + CAMERA_GROUND_CLEARANCE;
+        }
+      }
+    }
+    const maxY = topCameraDefaultHeight();
+    if (!Number.isFinite(maxY)) return false;
+    const constrainedY = Math.max(minY, Math.min(maxY, y));
+    if (constrainedY === y) return false;
+    const deltaY = constrainedY - y;
+    camera.position.y += deltaY;
+    controls.target.y += deltaY;
+    camera.lookAt(controls.target);
+    return true;
+  }
+
   /** 地形世界跨度（渲染高度场的世界↔UV 换算也用同一式，杜绝与网格两处漂移）。 */
   function terrainSpanOf() {
     return mapMetaInfo?.size_m || heightMeta?.span || 600;
@@ -1241,6 +1285,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const old = terrainMesh.geometry;
     terrainMesh.geometry = buildTerrainGeometry();
     old.dispose();
+    // 当前 camera pose 触发的 LOD 几何将在本帧渲染；按新网格重新约束，避免旧 LOD
+    // floor 与替换后的三角面之间留下一帧/停驻时的穿地。
+    constrainFreeCameraAltitude();
   }
 
   // 依据 mapTexture/heightField 重建地面（2D 平面或 3D 地形二选一）
@@ -1281,6 +1328,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         size, cx: meta.x || 0, cz: meta.z || 0, mapTexture,
       }));
       scene.add(terrainMesh);
+      constrainFreeCameraAltitude();
       if (DEBUG) window.__terrain = terrainMesh;   // 诊断/测试钩子：地形网格身份（免按几何猜）
     } else if (mapTexture) {
       const mat = new THREE.MeshBasicMaterial({ map: mapTexture });
@@ -3403,9 +3451,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     invalidate();
   }
   function setCam(mode) {
-    CAM = mode;
-    store.cam = mode;
-    flyLookApplyMode(mode);   // OrbitControls 侧状态迁移（free=接管；其他=恢复原生）
+    // Top 是一次性战术总览动作，不是可持续相机模式。俯视快照完成后立刻回到
+    // Free 状态，让键盘、鼠标与触屏控制从同一帧起可用。
+    const topAction = mode === 'top';
+    const nextMode = topAction ? 'free' : mode;
+    CAM = nextMode;
+    store.cam = nextMode;
+    flyLookApplyMode(topAction ? 'follow' : nextMode); // 先清理飞行手势，再接管 Free
+    if (topAction) FOLLOW_EID = 0;
     // 场景未初始化（renderer 惰性创建，首次 startPlayback 才有 controls）：只记录模式，
     // 初始化后由 animate 按 CAM/FOLLOW_EID 逐帧生效——名册点击可先于首帧发生。
     if (!controls) { invalidate(); return; }
@@ -3413,13 +3466,18 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 无生效路径）——不得在此无条件拉回 true（top→free 复活拖曳移动的根因）
     controls.enabled = !flyMode();
     invalidate();
-    if (mode === 'top') {
-      FOLLOW_EID = 0;
-      const { cx, cz, ext } = WORLD_CENTER;
-      camera.position.set(cx, ext * 1.7, cz + 0.01);
+    if (topAction) {
+      const { cx, cz } = WORLD_CENTER;
+      camera.position.set(cx, topCameraDefaultHeight(), cz + 0.01);
       controls.target.set(cx, 0, cz);
-    } else if (mode === 'free') {
+      constrainFreeCameraAltitude();
+      // 保留直下俯视的实际画面，同时为下一次自由飞行准备可用的水平朝向。
+      flyLookSyncFromCamera('top overview', true);
+      flyLook.yaw = 0;
+      controls.enabled = false;
+    } else if (nextMode === 'free') {
       FOLLOW_EID = 0;
+      constrainFreeCameraAltitude();
     }
     // 跟随目标是名册的运行时状态（followed）。setFollow 也经由这里：暂停时没有帧在跑，
     // 换相机必须自己补写，否则跟随描边要等到下次播放 / seek 才出现。走 writeHud 而不是
@@ -3433,6 +3491,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 速率档 1–6（与播放速度档独立）：场景只存展示值并失效一帧（暂停时改档也出帧）；
   // 位移推进本体在 composables/useSceneFlyControls.tickFly（Replay3DPane 逐帧调用，
   // 相机数学不进内核——OrbitControls 的 target 随位移平移，其余控制语义不变）。
+  function topCameraDefaultHeight() { return WORLD_CENTER.ext * 1.7; }
   function setFlySpeed(n) {
     if (!isFlySpeedIndex(n)) return;
     store.flySpeed = FLY_SPEEDS[n - 1];
@@ -3444,18 +3503,17 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // pressed = 调用方（composable 实例）维护的按下键集合——按键态不进内核（pane 持有）。
   let flyWasMoving = false;
   function flyTick(dt, pressed) {
-    // top（正俯视）不飞行：WASD 在俯视下无水平分量（fwdLen≈0）、QE 被忽略，
-    // 且接管会把 pitch 反解到 ±π/2 钳死——从 top 切回 free 后"无法移动"的根因。
     if (!controls || !DATA || !flyMode() || !(dt > 0) || !pressed?.size) return false;
     // 相机可能被非飞行路径改过（初始 fit / 跟随退出）：首帧对齐朝向基准，防 target 跳变
     flyLookSyncIfStale('tick');
     // 接管（enabled/damping/朝向反解）由 flyLookApplyMode 在模式切换时完成；
     // 这里只做平移推进 + target 重钉。
     const speed = store.flySpeed || FLY_SPEEDS[DEFAULT_FLY_SPEED_INDEX];
-    const moved = tickFlyImpl(pressed, dt, camera, controls, CAM, speed);
+    const moved = tickFlyImpl(pressed, dt, camera, controls, speed, flyLook.yaw);
     if (moved) {
       flyLookApply();                                // 平移后重钉 target = cam + dir×dist
       clampCameraTarget();
+      constrainFreeCameraAltitude();
       if (!flyWasMoving) { flyDbg('fly', `keys=${[...pressed].join('+')} speed=${speed}`); flyWasMoving = true; }
     } else {
       flyWasMoving = false;
