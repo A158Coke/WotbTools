@@ -78,10 +78,14 @@ class Mark3SubmissionServiceTest {
     PlatformTransactionManager transactionManager;
 
     Mark3SubmissionService service;
+    Mark3LeaderboardService leaderboardService;
+    Mark3ModerationService moderationService;
 
     @BeforeEach
     void setUp() {
         service = newService(new ReplayCapacityLimiter(2));
+        leaderboardService = new Mark3LeaderboardService(repository, new Mark3Mapper());
+        moderationService = new Mark3ModerationService(repository, new Mark3Mapper(), evidenceService, transactionManager);
         lenient().when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         lenient().when(repository.saveAndFlush(any())).thenAnswer(invocation -> {
             final Mark3Submission submission = invocation.getArgument(0);
@@ -145,7 +149,7 @@ class Mark3SubmissionServiceTest {
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(pending));
         when(repository.findCurrentForUpdate(WOTB_SERVER, GAME_ID, TIER10_VEHICLE)).thenReturn(Optional.empty());
 
-        final var result = service.approve(ADMIN, 10L);
+        final var result = moderationService.approve(ADMIN, 10L);
 
         assertThat(result.status()).isEqualTo("CURRENT");
         assertThat(pending.getApprovedBattleCount()).isEqualTo(123);
@@ -166,7 +170,7 @@ class Mark3SubmissionServiceTest {
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(pending));
         when(repository.findCurrentForUpdate(WOTB_SERVER, GAME_ID, TIER10_VEHICLE)).thenReturn(Optional.of(current));
 
-        assertThatThrownBy(() -> service.approve(ADMIN, 10L))
+        assertThatThrownBy(() -> moderationService.approve(ADMIN, 10L))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("MARK3_CURRENT_EXISTS");
         verify(repository, never()).saveAndFlush(any());
@@ -189,7 +193,7 @@ class Mark3SubmissionServiceTest {
         when(repository.countCurrentGroupedByBattleCount(TIER10_VEHICLE)).thenReturn(List.of(
                 new Object[]{100, 1L}, new Object[]{120, 2L}, new Object[]{160, 1L}));
 
-        final Mark3LeaderboardPageDto page = service.leaderboard(TIER10_VEHICLE, null, null, 1, 50);
+        final Mark3LeaderboardPageDto page = leaderboardService.leaderboard(TIER10_VEHICLE, null, null, 1, 50);
 
         assertThat(page.items()).extracting("rank").containsExactly(1, 2, 2, 4);
         assertThat(page.items()).extracting("approvedBattleCount").containsExactly(100, 120, 120, 160);
@@ -331,7 +335,7 @@ class Mark3SubmissionServiceTest {
 
     @Test
     void rejectReasonTextCannotOverflowDatabaseColumn() {
-        assertThatThrownBy(() -> service.reject(ADMIN, 10L, "OTHER", "x".repeat(501)))
+        assertThatThrownBy(() -> moderationService.reject(ADMIN, 10L, "OTHER", "x".repeat(501)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("MARK3_REJECT_REASON_TEXT_TOO_LONG");
         verify(repository, never()).findByIdForUpdate(anyLong());

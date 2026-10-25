@@ -82,6 +82,9 @@ class HundredBattleSubmissionServiceTest {
     ReplayCapacityLimiter capacityLimiter;
 
     HundredBattleSubmissionService service;
+    HundredLeaderboardService leaderboardService;
+    HundredAdminQueryService adminQueryService;
+    HundredModerationService moderationService;
 
     @BeforeEach
     void setUp() {
@@ -90,6 +93,10 @@ class HundredBattleSubmissionServiceTest {
         service = new HundredBattleSubmissionService(
                 repository, new HundredBattleMapper(), userProfileService, evidenceService,
                 capacityLimiter, replayHashLock, transactionManager);
+        leaderboardService = new HundredLeaderboardService(repository, new HundredBattleMapper());
+        adminQueryService = new HundredAdminQueryService(repository, new HundredBattleMapper());
+        moderationService = new HundredModerationService(
+                repository, new HundredBattleMapper(), evidenceService, transactionManager);
         // 未触发终态保存的用例不报 UnnecessaryStubbing（lenient）；已触发时返回入参避免 mapper 吃 null。
         org.mockito.Mockito.lenient().when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         // saveAndFlush 返回带 id 的实体：createSubmission 需要 submission.getId() 供 evidence attach（无 DB 的真实 id）。
@@ -631,7 +638,7 @@ class HundredBattleSubmissionServiceTest {
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
 
         final HundredSubmissionSummaryDto result =
-                service.approve(ADMIN, 10L);
+                moderationService.approve(ADMIN, 10L);
 
         assertThat(result.status()).isEqualTo("CURRENT");
         assertThat(s.getApprovedAverageDamage()).isEqualTo(4200);
@@ -652,7 +659,7 @@ class HundredBattleSubmissionServiceTest {
         when(repository.findCurrentForUpdate(WOTB_SERVER, GAME_ID, TIER10_VEHICLE))
                 .thenReturn(Optional.of(current));
 
-        final HundredSubmissionSummaryDto result = service.approve(ADMIN, 10L);
+        final HundredSubmissionSummaryDto result = moderationService.approve(ADMIN, 10L);
 
         assertThat(result.status()).isEqualTo("CURRENT");
         assertThat(current.getStatus()).isEqualTo("SUPERSEDED");
@@ -671,7 +678,7 @@ class HundredBattleSubmissionServiceTest {
                 .thenReturn(Optional.of(current));
 
         // MANUAL 的创建时申报场均=4200，与 CURRENT 相同，管理员不能改分绕过严格递增。
-        assertThatThrownBy(() -> service.approve(ADMIN, 10L))
+        assertThatThrownBy(() -> moderationService.approve(ADMIN, 10L))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("HUNDRED_APPROVE_STALE");
         assertThat(current.getStatus()).isEqualTo("CURRENT");
@@ -687,7 +694,7 @@ class HundredBattleSubmissionServiceTest {
         org.mockito.Mockito.doThrow(new IllegalStateException("HUNDRED_INCOMPLETE_REVIEW_EVIDENCE"))
                 .when(evidenceService).requireCompleteEvidenceForApproval(anyLong(), any());
 
-        assertThatThrownBy(() -> service.approve(ADMIN, 10L))
+        assertThatThrownBy(() -> moderationService.approve(ADMIN, 10L))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("HUNDRED_INCOMPLETE_REVIEW_EVIDENCE");
 
@@ -704,7 +711,7 @@ class HundredBattleSubmissionServiceTest {
         when(repository.findCurrentForUpdate(WOTB_SERVER, GAME_ID, TIER10_VEHICLE))
                 .thenReturn(Optional.of(current));
 
-        assertThatThrownBy(() -> service.approve(ADMIN, 10L))
+        assertThatThrownBy(() -> moderationService.approve(ADMIN, 10L))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("HUNDRED_APPROVE_STALE");
     }
@@ -715,7 +722,7 @@ class HundredBattleSubmissionServiceTest {
         s.setClaimedAverageDamage(0);
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
 
-        assertThatThrownBy(() -> service.approve(ADMIN, 10L))
+        assertThatThrownBy(() -> moderationService.approve(ADMIN, 10L))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("HUNDRED_INVALID_APPROVED");
     }
@@ -727,7 +734,7 @@ class HundredBattleSubmissionServiceTest {
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
 
         // 百场资格：冻结 battleCount < 100 必须拒绝（backend authoritative）。
-        assertThatThrownBy(() -> service.approve(ADMIN, 10L))
+        assertThatThrownBy(() -> moderationService.approve(ADMIN, 10L))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("HUNDRED_APPROVED_BATTLE_COUNT_TOO_LOW");
         verify(repository, never()).saveAndFlush(any());
@@ -740,7 +747,7 @@ class HundredBattleSubmissionServiceTest {
         s.setClaimedBattleCount(100);
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
 
-        final HundredSubmissionSummaryDto result = service.approve(ADMIN, 10L);
+        final HundredSubmissionSummaryDto result = moderationService.approve(ADMIN, 10L);
 
         assertThat(result.status()).isEqualTo("CURRENT");
         assertThat(s.getApprovedBattleCount()).isEqualTo(100);
@@ -754,7 +761,7 @@ class HundredBattleSubmissionServiceTest {
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
 
         // 竞争：CANCEL 已成功 → APPROVE 得到明确 conflict
-        assertThatThrownBy(() -> service.approve(ADMIN, 10L))
+        assertThatThrownBy(() -> moderationService.approve(ADMIN, 10L))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("HUNDRED_SUBMISSION_NOT_PENDING");
     }
@@ -767,7 +774,7 @@ class HundredBattleSubmissionServiceTest {
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
 
         final HundredSubmissionSummaryDto result =
-                service.reject(ADMIN, 10L, "SCREENSHOT_MISMATCH", null);
+                moderationService.reject(ADMIN, 10L, "SCREENSHOT_MISMATCH", null);
 
         assertThat(result.status()).isEqualTo("REJECTED");
         assertThat(s.getRejectedBy()).isEqualTo(ADMIN);
@@ -779,17 +786,17 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void rejectRequiresReason() {
-        assertThatThrownBy(() -> service.reject(ADMIN, 10L, "  ", null))
+        assertThatThrownBy(() -> moderationService.reject(ADMIN, 10L, "  ", null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("HUNDRED_REJECT_REASON_REQUIRED");
-        assertThatThrownBy(() -> service.reject(ADMIN, 10L, "UNKNOWN_CATEGORY", null))
+        assertThatThrownBy(() -> moderationService.reject(ADMIN, 10L, "UNKNOWN_CATEGORY", null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("HUNDRED_REJECT_REASON_REQUIRED");
     }
 
     @Test
     void rejectOtherRequiresText() {
-        assertThatThrownBy(() -> service.reject(ADMIN, 10L, "OTHER", null))
+        assertThatThrownBy(() -> moderationService.reject(ADMIN, 10L, "OTHER", null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("HUNDRED_REJECT_REASON_TEXT_REQUIRED");
     }
@@ -800,7 +807,7 @@ class HundredBattleSubmissionServiceTest {
         s.setStatus("CURRENT");
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
 
-        assertThatThrownBy(() -> service.reject(ADMIN, 10L, "SCREENSHOT_MISMATCH", null))
+        assertThatThrownBy(() -> moderationService.reject(ADMIN, 10L, "SCREENSHOT_MISMATCH", null))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("HUNDRED_SUBMISSION_NOT_PENDING");
     }
@@ -907,7 +914,7 @@ class HundredBattleSubmissionServiceTest {
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
 
         final HundredSubmissionSummaryDto result =
-                service.deleteCurrent(ADMIN, 10L, "CHEATING_FORGERY", null);
+                moderationService.deleteCurrent(ADMIN, 10L, "CHEATING_FORGERY", null);
 
         assertThat(result.status()).isEqualTo("DELETED");
         assertThat(s.getDeletedBy()).isEqualTo(ADMIN);
@@ -919,10 +926,10 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void deleteRequiresReason() {
-        assertThatThrownBy(() -> service.deleteCurrent(ADMIN, 10L, null, null))
+        assertThatThrownBy(() -> moderationService.deleteCurrent(ADMIN, 10L, null, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("HUNDRED_DELETE_REASON_REQUIRED");
-        assertThatThrownBy(() -> service.deleteCurrent(ADMIN, 10L, "OTHER", null))
+        assertThatThrownBy(() -> moderationService.deleteCurrent(ADMIN, 10L, "OTHER", null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("HUNDRED_DELETE_REASON_TEXT_REQUIRED");
     }
@@ -932,7 +939,7 @@ class HundredBattleSubmissionServiceTest {
         final HundredBattleSubmission s = pendingSubmission();
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
 
-        assertThatThrownBy(() -> service.deleteCurrent(ADMIN, 10L, "CHEATING_FORGERY", null))
+        assertThatThrownBy(() -> moderationService.deleteCurrent(ADMIN, 10L, "CHEATING_FORGERY", null))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("HUNDRED_NOT_CURRENT");
     }
@@ -944,7 +951,7 @@ class HundredBattleSubmissionServiceTest {
         superseded.setStatus("SUPERSEDED");
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
 
-        service.deleteCurrent(ADMIN, 10L, "CHEATING_FORGERY", null);
+        moderationService.deleteCurrent(ADMIN, 10L, "CHEATING_FORGERY", null);
 
         // 只保存被删除的 CURRENT 行；SUPERSEDED 历史保持原状（不恢复）
         verify(repository).save(s);
@@ -1040,7 +1047,7 @@ class HundredBattleSubmissionServiceTest {
                         new Object[]{4200, 2L},
                         new Object[]{4100, 1L}));
 
-        final HundredLeaderboardPageDto dto = service.leaderboard(TIER10_VEHICLE, null, null, 1, 50);
+        final HundredLeaderboardPageDto dto = leaderboardService.leaderboard(TIER10_VEHICLE, null, null, 1, 50);
 
         assertThat(dto.items()).extracting("rank").containsExactly(1, 2, 2, 4);
         assertThat(dto.items()).extracting("approvedAverageDamage").containsExactly(4300, 4200, 4200, 4100);
@@ -1059,7 +1066,7 @@ class HundredBattleSubmissionServiceTest {
         when(repository.countCurrentGroupedByDamage(TIER10_VEHICLE))
                 .thenReturn(List.of(new Object[]{4300, 1L}, new Object[]{4200, 2L}));
 
-        final HundredLeaderboardPageDto dto = service.leaderboard(TIER10_VEHICLE, null, null, 2, 2);
+        final HundredLeaderboardPageDto dto = leaderboardService.leaderboard(TIER10_VEHICLE, null, null, 2, 2);
 
         assertThat(dto.items()).extracting("rank").containsExactly(2, 2);
     }
@@ -1079,7 +1086,7 @@ class HundredBattleSubmissionServiceTest {
         when(repository.countAllCurrentGroupedByDamage())
                 .thenReturn(List.of(new Object[]{4300, 1L}, new Object[]{4200, 1L}));
 
-        final HundredLeaderboardPageDto dto = service.leaderboard(null, null, null, 9, 100);
+        final HundredLeaderboardPageDto dto = leaderboardService.leaderboard(null, null, null, 9, 100);
 
         assertThat(dto.vehicleId()).isNull();
         assertThat(dto.vehicleName()).isNull();
@@ -1109,7 +1116,7 @@ class HundredBattleSubmissionServiceTest {
         when(repository.countCurrentGroupedByDamageForVehicles(eq(List.of(TIER10_VEHICLE_2))))
                 .thenReturn(List.of(new Object[]{4300, 1L}, new Object[]{4200, 1L}));
 
-        final HundredLeaderboardPageDto dto = service.leaderboard(
+        final HundredLeaderboardPageDto dto = leaderboardService.leaderboard(
                 null, " france ", "light_tank", 8, 99);
 
         assertThat(dto.vehicleId()).isNull();
@@ -1127,7 +1134,7 @@ class HundredBattleSubmissionServiceTest {
         when(repository.findDistinctCurrentVehicleIds())
                 .thenReturn(List.of(TIER10_VEHICLE, TIER10_VEHICLE_2));
 
-        final HundredLeaderboardPageDto dto = service.leaderboard(
+        final HundredLeaderboardPageDto dto = leaderboardService.leaderboard(
                 null, "CHINA", "HEAVY_TANK", 1, 50);
 
         assertThat(dto.items()).isEmpty();
@@ -1140,7 +1147,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void concreteVehicleReturnsEmptyWhenCategoryDoesNotMatch() {
-        final HundredLeaderboardPageDto dto = service.leaderboard(
+        final HundredLeaderboardPageDto dto = leaderboardService.leaderboard(
                 TIER10_VEHICLE, "FRANCE", "MEDIUM_TANK", 2, 20);
 
         assertThat(dto.vehicleId()).isEqualTo(TIER10_VEHICLE);
@@ -1165,7 +1172,7 @@ class HundredBattleSubmissionServiceTest {
                 eq("CURRENT"), eq(List.of(TIER10_VEHICLE)), eq(PageRequest.of(0, 50))))
                 .thenReturn(new PageImpl<>(List.of(matching), PageRequest.of(0, 50), 1));
 
-        final var dto = service.adminList(
+        final var dto = adminQueryService.adminList(
                 "CURRENT", "EUROPE", "MEDIUM_TANK", null, 1, 50);
 
         assertThat(dto.items()).hasSize(1);
@@ -1175,7 +1182,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void adminListVehicleAndCategoryAreAnIntersection() {
-        final var dto = service.adminList(
+        final var dto = adminQueryService.adminList(
                 null, "FRANCE", "LIGHT_TANK", TIER10_VEHICLE, 1, 50);
 
         assertThat(dto.items()).isEmpty();

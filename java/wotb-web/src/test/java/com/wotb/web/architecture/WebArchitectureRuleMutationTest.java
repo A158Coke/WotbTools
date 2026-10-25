@@ -2,6 +2,10 @@ package com.wotb.web.architecture;
 
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
+import com.wotb.web.hundred.archfixture.HofDtoDependencyFixture;
+import com.wotb.web.hundred.archfixture.UserProfileServiceCollaborationFixture;
+import com.wotb.web.hof.dto.BulkDeleteResultDto;
+import com.wotb.web.user.service.UserProfileService;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -37,6 +41,23 @@ class WebArchitectureRuleMutationTest {
                 "com.wotb.web.archfixture.plain", "com.wotb.web.archfixture.other");
         assertDoesNotThrow(() -> WebArchitectureTest.SERVICES_USE_ONLY_OWN_DOMAIN_REPOSITORIES.check(classes));
     }
+
+    @Test
+    void hundredOrMark3DependencyOnHofDtoIsRejected() {
+        final JavaClasses classes = new ClassFileImporter().importClasses(
+                HofDtoDependencyFixture.class, BulkDeleteResultDto.class);
+        assertThrows(AssertionError.class,
+                () -> WebArchitectureTest.HUNDRED_AND_MARK3_MUST_NOT_DEPEND_ON_HOF_DTOS.check(classes));
+    }
+
+    @Test
+    void explicitUserProfileServiceBoundaryRemainsAllowed() {
+        final JavaClasses classes = new ClassFileImporter().importClasses(
+                UserProfileServiceCollaborationFixture.class, UserProfileService.class);
+        assertDoesNotThrow(
+                () -> WebArchitectureTest.HUNDRED_AND_MARK3_MUST_NOT_DEPEND_ON_HOF_DTOS.check(classes));
+    }
+
 
     @Test
     void autowiredFieldInjectionIsRejected() {
