@@ -34,7 +34,9 @@ WotbTools 是 WoT Blitz `.wotbreplay` 回放分析工具集：Java 25 + Spring B
 ## 环境与工具链
 
 - **JDK 25** 必需。Maven 必须显式使用 settings 文件：在 `java/` 下为 `-s settings.xml`，仓库根为 `-s java/settings.xml`；容器构建使用 `java/settings-docker.xml`。
-- **Node 24**：`frontend/.nvmrc` 固定版本；安装依赖用 `npm ci`。前端使用 TypeScript 与 `vue-tsc` 做独立类型检查；源码中 JavaScript 与 TypeScript 共存，新代码跟随所在模块的现有约定。
+- **Node 24**：`frontend/.nvmrc` 固定版本。前端使用 TypeScript 与 `vue-tsc` 做独立类型检查；源码中 JavaScript 与 TypeScript 共存，新代码跟随所在模块的现有约定。
+- **pnpm**：版本由 `frontend/package.json` 的 `packageManager` 钉住；Node 24 自带 corepack，执行一次 `corepack enable` 后，`frontend/` 下的 `pnpm` 自动使用该版本。本地安装依赖用 `pnpm install`，CI 与 Docker 用 `pnpm install --frozen-lockfile`；`frontend/pnpm-lock.yaml` 是唯一 lockfile。`node_modules` 使用 pnpm 默认的隔离布局，代码只能 import `package.json` 中声明的依赖。
+- **依赖安装安全策略**（`frontend/pnpm-workspace.yaml`）：依赖的安装脚本默认禁止，只有 `allowBuilds` 中显式为 `true` 的包可以执行；存在未审查的安装脚本时安装失败（`strictDepBuilds`）；发布不足 24 小时的版本不会被解析（`minimumReleaseAge`，紧急安全补丁按包写入 `minimumReleaseAgeExclude` 并在 PR 中说明）。新增带安装脚本的依赖时，在同一 PR 里把它写进 `allowBuilds` 并说明理由；不得启用 `dangerouslyAllowAllBuilds`，也不得关闭 `strictDepBuilds`。
 - **Python 3**：`common/python/update_tankopedia.py` 使用标准库从 BlitzKit 客户端定义同步车辆数据。
 - 不要使用任何公司 token、凭据或基础设施。
 
@@ -50,14 +52,14 @@ WotbTools 是 WoT Blitz `.wotbreplay` 回放分析工具集：Java 25 + Spring B
 # 注意：wotb-ai 的真实外部 AI probe 标记为 ai-live，默认被 Surefire 排除；不要仅因环境存在 AI_API_KEY 就解除排除。
 
 # 前端分层测试
-# Targeted：cd frontend && npx vitest run <related-test-files>
-# Type check：cd frontend && npm run typecheck
-# Browser geometry gate（Playback 布局/形态）：cd frontend && npm run test:browser-layout
-# Browser interaction gate（Playback / Replay Workspace 交互）：cd frontend && npm run test:browser-interaction
-# Build（仅当改动涉及 build 范围）：cd frontend && npm run build
+# Targeted：cd frontend && pnpm exec vitest run <related-test-files>
+# Type check：cd frontend && pnpm run typecheck
+# Browser geometry gate（Playback 布局/形态）：cd frontend && pnpm run test:browser-layout
+# Browser interaction gate（Playback / Replay Workspace 交互）：cd frontend && pnpm run test:browser-interaction
+# Build（仅当改动涉及 build 范围）：cd frontend && pnpm run build
 # Local Frontend → Production Backend / Keycloak（开发代理，谨慎使用真实数据）
-# cd frontend && npm run dev:production-remote
-# 说明与验收边界见 docs/frontend/local-production-dev.md；普通 npm run dev 仍代理 localhost:8087。
+# cd frontend && pnpm run dev:production-remote
+# 说明与验收边界见 docs/frontend/local-production-dev.md；普通 pnpm run dev 仍代理 localhost:8087。
 
 # Keycloak realm 集成验证（独立 disposable PostgreSQL + Keycloak + local OpenTofu state）
 bash deploy/test-keycloak-tofu.sh
@@ -108,7 +110,7 @@ Wargaming ASIA/EU/NA 登录使用 Keycloak 的 `WG_APPLICATION_ID`；backend 不
 
 ### HTTP Contract workflow
 
-HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/serialization → runtime validation → contract tests → affected tests → PR CI`。在 `frontend/` 使用 `npm run api:lint`、`npm run api:generate`、`npm run api:check`、`npm run api:fixture`；生成文件位于 `frontend/src/api/generated/`，不可手改。Playback 数据由客户端投影并使用同一 generated schema 校验；HTTP status 依具体 endpoint 契约解释，本地 Playback unavailable 与 schema violation 必须区分。完整边界与兼容规则见 [`architecture/http-contracts.md`](architecture/http-contracts.md)。
+HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/serialization → runtime validation → contract tests → affected tests → PR CI`。在 `frontend/` 使用 `pnpm run api:lint`、`pnpm run api:generate`、`pnpm run api:check`、`pnpm run api:fixture`；生成文件位于 `frontend/src/api/generated/`，不可手改。Playback 数据由客户端投影并使用同一 generated schema 校验；HTTP status 依具体 endpoint 契约解释，本地 Playback unavailable 与 schema violation 必须区分。完整边界与兼容规则见 [`architecture/http-contracts.md`](architecture/http-contracts.md)。
 
 ### PR CI 与 owner 路由
 
@@ -267,7 +269,7 @@ League Rating 的适用范围、完整性门槛、公式、批次汇总与导出
 
 **契约覆盖范围**：`contracts/http/openapi.yaml` 包含 `GET /api/admin/users`（服务端分页）、`DELETE /api/admin/users`（body 为 Keycloak sub 数组，单条即长度 1）、`POST /api/admin/hof/records/bulk-delete`（单场，无 reason）、`POST /api/admin/hof/mark3/submissions/bulk-delete`，以及 6 个 schema（`AdminUserListItem`、`AdminUserPage`、`DeleteUserResult`、`DeleteUsersResponse`、`BulkDeleteModerationRequest`、`BulkDeleteRecordsRequest`）；百场 admin 的 `gameAccountIdSnapshot` 已改名为 `wotbAccountId` 并新增 `wotbServer`，`HundredAdminListItem` / `HundredAdminDetail` 两个 schema 覆盖该字段。
 
-**管理端 HTTP 契约**：`contracts/http/openapi.yaml` 包含 Mark3 admin 列表/详情和单场 HoF admin 列表/详情，以及用户管理和各 HoF 域的 bulk-delete 请求/响应。生成产物 `frontend/src/api/generated/*` 由 `npm run api:generate` 重建，禁止手改。
+**管理端 HTTP 契约**：`contracts/http/openapi.yaml` 包含 Mark3 admin 列表/详情和单场 HoF admin 列表/详情，以及用户管理和各 HoF 域的 bulk-delete 请求/响应。生成产物 `frontend/src/api/generated/*` 由 `pnpm run api:generate` 重建，禁止手改。
 
 **Admin HoF 治理边界**：admin 是 governance，不是数据编辑器——`/api/admin/hof/**` 只做查看 / 搜索 / 筛选 / 下载 / 删除 / 审计，禁止人工修改 replay-derived authoritative facts。
 
@@ -419,7 +421,7 @@ Admin DTO 在百场/三环的列表与详情携带 `wotbServer` + `wotbAccountId
 
 **批量删除契约（三个域共用形状，partial success）**：每个目标跑在**独立事务**中（`TransactionTemplate`，禁止 `this.method()` 自调用绕过 Spring 代理），允许 partial success；单批去重后上限 100 → 400 `BULK_LIMIT_EXCEEDED`。用户批量删除的 `confirm` 缺失/false → 整批 400 `CONFIRMATION_REQUIRED`，且逐用户复用 `deleteOneInternal` 的全部业务保护（self-delete 保护、打手依赖阻断、先删本地 profile 再删 Keycloak、审计日志）。HoF 批量删除**逐条复用权威单条删除语义**：单场仍 hard delete（audit 快照 + 真删行 + commit 后引用计数清理物理文件），百场/三环仍 soft delete（仅 CURRENT 可删，`CURRENT` → `DELETED`）；非 CURRENT 逐条失败于 `HUNDRED_NOT_CURRENT` / `MARK3_NOT_CURRENT` 而不阻塞其他记录。百场/三环的 reason 是批次级参数，先整体校验一次（参数错误整批 400，不表现为逐条失败）。
 
-当前 OpenAPI 覆盖 `GET/DELETE /api/admin/users`、单场/百场/三环的管理列表、详情、操作与 bulk-delete，以及对应 JSON schema。生成产物 `frontend/src/api/generated/*` 由 `npm run api:generate` 重建，禁止手改。
+当前 OpenAPI 覆盖 `GET/DELETE /api/admin/users`、单场/百场/三环的管理列表、详情、操作与 bulk-delete，以及对应 JSON schema。生成产物 `frontend/src/api/generated/*` 由 `pnpm run api:generate` 重建，禁止手改。
 
 **Admin HoF 治理边界**：admin 是 governance，不是数据编辑器——`/api/admin/hof/**` 只做查看/搜索/筛选/下载/删除/审计，禁止人工修改 replay-derived authoritative facts。删除语义与 IAM≠HoF 不变量见 [`features/hall-of-fame.md`](features/hall-of-fame.md)。
 
@@ -679,7 +681,7 @@ Sponsor QR 不进仓库：配置与收款码作为 **GitHub Release 资产**发�
 - **架构测试（ArchUnit）**：`wotb-core` 与 `wotb-web` 各含 `*ArchitectureTest`，随 `mvn test` 自动执行；守护模块边界（core 禁 Spring Web/Boot、HTTP transport 类型与反向依赖 web，AI transport 自有错误响应，web domain 分包与分层、禁字段注入/Lombok、顶层包无循环依赖）。规则失败即构建失败。
 - 前端：Vitest + happy-dom（按需声明）；浏览器 gate 的命令与覆盖范围见 [`frontend/AGENTS.md`](../frontend/AGENTS.md)。
 - Replay/League/UI regression 必须补针对真实 invariant 的测试，而不是只验证函数被调用。
-- **职责分层（Fast Feedback First）**：开发过程中 Agent 只跑 targeted / module / feature regression，不重复跑 repository-level full test；仓库级 full validation 由 PR CI 统一执行（authoritative gate）。仅当改动影响跨模块 / build / test infrastructure（[`.agents/AGENTS.md`](../.agents/AGENTS.md) 的 Full-test 例外清单）时，Agent 才跑 `cd java && mvn -s settings.xml test` / `cd frontend && npm test && npm run build`。
+- **职责分层（Fast Feedback First）**：开发过程中 Agent 只跑 targeted / module / feature regression，不重复跑 repository-level full test；仓库级 full validation 由 PR CI 统一执行（authoritative gate）。仅当改动影响跨模块 / build / test infrastructure（[`.agents/AGENTS.md`](../.agents/AGENTS.md) 的 Full-test 例外清单）时，Agent 才跑 `cd java && mvn -s settings.xml test` / `cd frontend && pnpm test && pnpm run build`。
 - `wotb-ai` 的真实 DeepSeek/provider probe 使用 `@Tag("ai-live")`，普通 `mvn test` 默认不执行；仅在明确选择 probe、清空 `-Dai.probe.excludedGroups=` 且通过环境变量提供 key 时手动运行。gateway mock、loopback 与 deterministic AI eval 仍属于普通测试。
 - 涉及 Docker/部署时同时跑对应 Docker build 与 deployment smoke；Deploy 不重复运行测试套件。
 

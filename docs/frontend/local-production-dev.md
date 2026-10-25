@@ -30,7 +30,7 @@
    VITE_ASSET_BASE_URL=http://127.0.0.1:8123
    ```
 
-3. `npm run dev`，打开 `http://localhost:5173/?view=agent-replay`（个人回放需普通账号登录；官方示例可匿名使用，均仍需连通性可用）。
+3. `pnpm run dev`，打开 `http://localhost:5173/?view=agent-replay`（个人回放需普通账号登录；官方示例可匿名使用，均仍需连通性可用）。
    真管理入口（`admin-users` / `hof-admin` 等）必须使用已经授予对应 realm role 的测试账号；
    dev URL 参数不会提升权限，见 [`local-testing.md`](./local-testing.md) §4。
 
@@ -48,8 +48,8 @@ server**（`import.meta.env.*` 在 transform 时内联，不是运行时读取�
 
 ```bash
 cd frontend
-npm ci
-npm run dev:production-remote
+pnpm install
+pnpm run dev:production-remote
 ```
 
 浏览器打开 `http://localhost:5173`。该模式只替换开发服务器的 `/api` 代理目标：前端代码仍使用现有的相对 API 路径，不引入业务 `VITE_API_BASE_URL`。
@@ -57,7 +57,7 @@ npm run dev:production-remote
 普通本地后端开发仍使用：
 
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 它把 `/api` 转发到 `http://localhost:8087`。未识别的 Vite mode 也会安全回退到本地后端。

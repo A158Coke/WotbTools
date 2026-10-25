@@ -226,7 +226,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 ### 遮挡与可达（occlusion / reachability）
 
-层级只决定「谁盖住谁」，不决定「盖住多少」和「还点不点得到」。下面三条和 z-index 刻度同级，是**可判定**的规则，由 `npm run test:browser-layout`（几何）与 `npm run test:browser-interaction`（真实命中）守护。
+层级只决定「谁盖住谁」，不决定「盖住多少」和「还点不点得到」。下面三条和 z-index 刻度同级，是**可判定**的规则，由 `pnpm run test:browser-layout`（几何）与 `pnpm run test:browser-interaction`（真实命中）守护。
 
 **1. 主内容遮挡。** 常驻 UI（`fixed` / `sticky` / 浮动控件 / 工具栏 / 底栏 / 侧板）不得实质遮挡该页的主任务内容——地图 / canvas / 3D 视口、表格与结果列表、图表、表单与复盘正文、搜索与百科内容。判定：
 
@@ -400,7 +400,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 ## 12. 执行与守护
 
-1. **stylelint**（`npm run lint:css`，配置见 `frontend/stylelint.config.mjs`，CI 必过）：
+1. **stylelint**（`pnpm run lint:css`，配置见 `frontend/stylelint.config.mjs`，CI 必过）：
    - `declaration-no-important`：禁止 `!important`。
    - `scale-unlimited/declaration-strict-value`：`*color`、`fill`、`stroke`、`z-index`、`font`、`font-size`、`line-height`、`border-radius`、`box-shadow` 只能用 `var(--*)` 或豁免值。豁免值（`TOKEN_EXEMPT_VALUES`）：`transparent`、`currentColor` / `currentcolor`（插件区分大小写）、`inherit`、`initial`、`unset`、`revert`、`none`、`0`、`auto`、`normal`。
    - `color-no-hex`、`color-named: never`、`function-disallowed-list: rgb/rgba/hsl/hsla`：组件里不出现色值；只有 `src/styles/tokens/**` 例外。需要半透明时用 `color-mix()`。

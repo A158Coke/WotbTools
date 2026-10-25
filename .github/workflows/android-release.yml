@@ -256,12 +256,17 @@ jobs:
               ;;
           esac
 
+      - uses: pnpm/action-setup@v6
+        if: steps.preflight.outputs.releaseAction == 'publish'
+        with:
+          package_json_file: frontend/package.json
+
       - uses: actions/setup-node@v4
         if: steps.preflight.outputs.releaseAction == 'publish'
         with:
           node-version: "24"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: Fetch pinned Agent WASM for frontend validation
         if: steps.preflight.outputs.releaseAction == 'publish'
@@ -272,9 +277,9 @@ jobs:
         if: steps.preflight.outputs.releaseAction == 'publish'
         working-directory: frontend
         run: |
-          npm ci --no-audit --no-fund
-          npm test
-          npm run build
+          pnpm install --frozen-lockfile
+          pnpm test
+          pnpm run build
 
       # PR B：signed release APK 必须和内层 debug APK 一样携带**完整的本地前端 bundle**
       # （index + JS/CSS + pinned Agent WASM + 本地 2D 资源）。否则会出现「CI 是 local-first、
@@ -332,7 +337,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npm --prefix frontend run build:android
+          pnpm --dir frontend run build:android
           # 2D 底图与 Web 同字节随包（无派生）：build 内部已逐条 fail closed（注册表每张地图
           # 都必须有随包资源），并写下 bundle manifest 的 maps 段与 map2d-embedded.json。
 

@@ -49,7 +49,7 @@
    2. **Module / Feature**：一个实现阶段完成后运行 affected module / feature 测试，捕获本次改动影响范围内的回归；
    3. **Regression**：review/fix 后运行相关 regression tests；
    4. **Repository validation 由 PR CI 统一执行**（唯一 authoritative gate）；唯一 PR workflow 对每个 PR 执行实际 validation jobs，并以稳定的 `CI / Required Gate` 作为 merge gate。
-   **Targeted / affected Module / Feature / Regression 属于实现路径的必做本地验证，不受 Full-test 例外限制。** Agent 开 PR 前不默认重新运行 java 全量 `mvn test`、frontend 全量 `npm test`、frontend `npm run build`；这些 repository-level full validation 由 PR CI 统一执行，本地 full validation 仅按下方例外控制。
+   **Targeted / affected Module / Feature / Regression 属于实现路径的必做本地验证，不受 Full-test 例外限制。** Agent 开 PR 前不默认重新运行 java 全量 `mvn test`、frontend 全量 `pnpm test`、frontend `pnpm run build`；这些 repository-level full validation 由 PR CI 统一执行，本地 full validation 仅按下方例外控制。
 
    **Full-test 例外（仅以下情形允许 Agent 主动运行 repository-level full validation）**：
    1. 用户明确要求 full test；
@@ -104,7 +104,7 @@
 **3D 回放、坦克/模型查看、场景渲染等“看起来对不对”的验收由用户执行。** Agent：
 
 - 不启动/驱动浏览器去读屏、截图或目视核对 3D 画面，也不拿截图当验收证据；3D 画面依赖真实 GPU/地形/资产面状态，分离或无头浏览器给不出可信结论。
-- 交付方式：实现 + 锁定不变量的测试（纯函数单测、场景源码级接线守卫、既有 `npm run test:browser-*` 自动化门禁），然后明确写出「需要人工看什么」交给用户确认。
+- 交付方式：实现 + 锁定不变量的测试（纯函数单测、场景源码级接线守卫、既有 `pnpm run test:browser-*` 自动化门禁），然后明确写出「需要人工看什么」交给用户确认。
 - 上游 Agent 仓（WoT-Blitz-Agent）的 `frontend/` 已冻结、不再维护：前端改动与前端测试都在本仓。
 
 ## 本机测试（全功能联调）

@@ -562,6 +562,21 @@ Design Language 与语义 token 仍是唯一的视觉与动效 policy 来源。
   因此不引入依赖。
 - **Floating UI 不作为直接依赖**：定位与碰撞由 Reka 内置承担，避免出现第二个 positioning owner。
 
+## 23. 2026-10-25 — 前端包管理从 npm 换成 pnpm：本机安装默认不执行第三方代码
+
+npm 时代任何依赖（含传递依赖）的 `preinstall` / `install` / `postinstall` 都会在贡献者本机无条件执行，
+扁平 `node_modules` 让代码可以 import 未声明的包；另有一段只为绕开 npm 可选依赖缺陷存在的
+`optionalDependencies`（手工列出 Linux 原生包）。换成 pnpm 的理由是本机环境安全与安装速度：
+
+- **安装脚本 fail-closed**：`frontend/pnpm-workspace.yaml` 的 `allowBuilds` 是唯一放行名单（`esbuild`），
+  `strictDepBuilds` 让任何未审查的安装脚本直接让安装失败，放行一个包必须经过 PR 审查。
+- **新版本隔离期**：`minimumReleaseAge` 不解析发布不足 24 小时的版本，给被投毒的新版本留出被发现、
+  撤回的时间窗口。
+- **隔离布局**：只有 `package.json` 声明的依赖可被 import；平台原生包由 pnpm 按平台解析，npm 的
+  `optionalDependencies` 绕行随之删除。
+- **单一版本来源**：pnpm 版本由 `package.json#packageManager`（带 sha512）钉住，本机与 Docker 经 corepack、
+  CI 经 `pnpm/action-setup` 读取同一字段；锁文件由 `pnpm import` 从原 `package-lock.json` 转换，解析版本不变。
+
 ## 已退役 / 过渡架构
 
 - **Boost / Coaching** — 曾经形成完整有状态业务，后续连同 DB / frontend / roles 一并退役。
