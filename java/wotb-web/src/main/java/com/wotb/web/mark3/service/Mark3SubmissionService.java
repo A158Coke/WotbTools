@@ -4,17 +4,13 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.TankInfo;
 import com.wotb.core.ref.Tankopedia;
-import com.wotb.core.ref.VehicleCodes;
-import com.wotb.web.mark3.dto.Mark3AdminDetailDto;
-import com.wotb.web.mark3.dto.Mark3AdminPageDto;
 import com.wotb.web.mark3.dto.Mark3CreateResult;
-import com.wotb.web.mark3.dto.Mark3LeaderboardPageDto;
 import com.wotb.web.mark3.dto.Mark3SubmissionSummaryDto;
 import com.wotb.web.mark3.dto.Mark3UserStatusDto;
+import com.wotb.web.mark3.dto.BulkDeleteItemResult;
+import com.wotb.web.mark3.dto.BulkDeleteResultDto;
 import com.wotb.web.mark3.entity.Mark3Submission;
 import com.wotb.web.mark3.enums.Mark3Status;
-import com.wotb.web.hof.dto.BulkDeleteItemResult;
-import com.wotb.web.hof.dto.BulkDeleteResultDto;
 import com.wotb.web.mark3.repository.Mark3SubmissionRepository;
 import com.wotb.web.replayfile.ReplayUploadValidator;
 import com.wotb.web.replayfile.ClientReplayFacts;
@@ -25,8 +21,6 @@ import com.wotb.web.user.service.UserProfileService;
 import com.wotb.web.user.service.UserProfileSnapshot;
 import com.wotb.web.user.service.WotbAccountIdentity;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -43,13 +37,10 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Set;
 
 /**
@@ -64,14 +55,11 @@ public class Mark3SubmissionService {
     private static final int MAX_IMAGE_BYTES = 4 * 1024 * 1024;
     // A FileReader data URL adds a short media-type prefix to base64's 4/3 expansion.
     private static final int MAX_IMAGE_DATA_URL_CHARS = ((MAX_IMAGE_BYTES + 2) / 3) * 4 + 64;
-    private static final int DEFAULT_PAGE_SIZE = 50;
-    private static final int MAX_PAGE_SIZE = 100;
-    private static final int TOP_LEADERBOARD_SIZE = 10;
     private static final int REPLAY_COUNT = 5;
     private static final int MAX_REASON_TEXT_CHARS = 500;
-    private static final Set<String> REJECT_CATEGORIES = Set.of(
+    static final Set<String> REJECT_CATEGORIES = Set.of(
             "SCREENSHOT_MISMATCH", "SCREENSHOT_UNREADABLE", "INSUFFICIENT_PROOF", "SUSPECTED_FRAUD", "OTHER");
-    private static final Set<String> DELETE_CATEGORIES = Set.of(
+    static final Set<String> DELETE_CATEGORIES = Set.of(
             "CHEATING_FORGERY", "WRONG_REVIEW", "PLAYER_IDENTITY_ISSUE", "DATA_ERROR", "ADMIN_CORRECTION", "OTHER");
 
     private final Mark3SubmissionRepository repository;
@@ -271,78 +259,6 @@ public class Mark3SubmissionService {
         return result;
     }
 
-    /** 公开排行榜：具体车辆分页；未指定车辆时为全站或 nation/type 交集的固定 Top 10。 */
-    @Transactional(readOnly = true)
-    public Mark3LeaderboardPageDto leaderboard(
-            final Long vehicleId,
-            final String nation,
-            final String vehicleType,
-            final int page,
-            final int size) {
-        final String nationFilter = normalizeCategoryFilter(nation);
-        final String typeFilter = normalizeCategoryFilter(vehicleType);
-        if (vehicleId == null && nationFilter == null && typeFilter == null) {
-            return defaultLeaderboard();
-        }
-        if (vehicleId == null) {
-            return categoryLeaderboard(nationFilter, typeFilter);
-        }
-        final TankInfo vehicle = tankopedia.info(vehicleId);
-        if (!isTierTen(vehicle)) {
-            throw new IllegalArgumentException("MARK3_NON_TIER_X");
-        }
-        final int effectiveSize = clamp(size);
-        if (!matchesCategory(vehicle, nationFilter, typeFilter)) {
-            final Page<Mark3Submission> empty = Page.empty(PageRequest.of(Math.max(0, page - 1), effectiveSize));
-            return mapper.toLeaderboardPage(empty, vehicleId, vehicle.name(), page, effectiveSize, Map.of());
-        }
-        final Page<Mark3Submission> rows = repository
-                .findByVehicleIdAndStatusOrderByApprovedBattleCountAscApprovedAtAscIdAsc(
-                        vehicleId, Mark3Status.CURRENT.name(),
-                        PageRequest.of(Math.max(0, page - 1), effectiveSize));
-        return mapper.toLeaderboardPage(rows, vehicleId, vehicle.name(), page, effectiveSize, rankMap(vehicleId));
-    }
-
-    private Mark3LeaderboardPageDto categoryLeaderboard(final String nation, final String vehicleType) {
-        final List<Long> vehicleIds = repository.findDistinctCurrentVehicleIds().stream()
-                .filter(id -> matchesCategory(tankopedia.info(id), nation, vehicleType))
-                .toList();
-        if (vehicleIds.isEmpty()) {
-            return mapper.toTopLeaderboardPage(List.of(), TOP_LEADERBOARD_SIZE, Map.of());
-        }
-        final List<Mark3Submission> rows = repository.findTopCurrentByVehicleIds(
-                vehicleIds, PageRequest.of(0, TOP_LEADERBOARD_SIZE));
-        return mapper.toTopLeaderboardPage(rows, TOP_LEADERBOARD_SIZE,
-                rankMap(repository.countCurrentGroupedByBattleCountForVehicles(vehicleIds)));
-    }
-
-    private Mark3LeaderboardPageDto defaultLeaderboard() {
-        final List<Mark3Submission> rows = repository
-                .findTop10ByStatusAndApprovedBattleCountIsNotNullOrderByApprovedBattleCountAscApprovedAtAscIdAsc(
-                        Mark3Status.CURRENT.name());
-        return mapper.toTopLeaderboardPage(rows, TOP_LEADERBOARD_SIZE,
-                rankMap(repository.countAllCurrentGroupedByBattleCount()));
-    }
-
-    private Map<Integer, Integer> rankMap(final long vehicleId) {
-        return rankMap(repository.countCurrentGroupedByBattleCount(vehicleId));
-    }
-
-    /** 三环场数升序的 competition rank：1, 2, 2, 4。 */
-    private static Map<Integer, Integer> rankMap(final List<Object[]> groups) {
-        final List<int[]> sorted = groups.stream()
-                .map(group -> new int[]{((Number) group[0]).intValue(), ((Number) group[1]).intValue()})
-                .sorted(Comparator.comparingInt(group -> group[0]))
-                .toList();
-        final Map<Integer, Integer> ranks = new HashMap<>();
-        int fewer = 0;
-        for (final int[] group : sorted) {
-            ranks.put(group[0], fewer + 1);
-            fewer += group[1];
-        }
-        return ranks;
-    }
-
     /**
      * 当前用户三环状态：CURRENT、PENDING 与最近十条 REJECTED。
      * 归属按当前绑定的 {@code (区服, WotB 账号)} 查询；未绑定账号时没有任何属于该身份的记录，三个列表均为空。
@@ -367,172 +283,6 @@ public class Mark3SubmissionService {
                 .stream().map(mapper::toSummary).toList();
     }
 
-    /** 管理列表：status 与 nation ∩ vehicleType ∩ vehicleId 按交集筛选。 */
-    @Transactional(readOnly = true)
-    public Mark3AdminPageDto adminList(
-            final String status,
-            final String nation,
-            final String vehicleType,
-            final Long vehicleId,
-            final int page,
-            final int size) {
-        final String normalizedStatus = StringUtils.hasText(status) ? Mark3Status.from(status.trim().toUpperCase(Locale.ROOT)).name() : null;
-        final int effectiveSize = clamp(size);
-        final PageRequest pageable = PageRequest.of(Math.max(0, page - 1), effectiveSize);
-        final String nationFilter = normalizeCategoryFilter(nation);
-        final String typeFilter = normalizeCategoryFilter(vehicleType);
-        final Page<Mark3Submission> rows;
-        if (vehicleId == null && nationFilter == null && typeFilter == null) {
-            rows = repository.searchAdmin(normalizedStatus, pageable);
-        } else {
-            final List<Long> vehicleIds = vehicleId == null
-                    ? repository.findDistinctVehicleIds().stream()
-                            .filter(id -> matchesCategory(tankopedia.info(id), nationFilter, typeFilter))
-                            .toList()
-                    : matchesCategory(tankopedia.info(vehicleId), nationFilter, typeFilter)
-                            ? List.of(vehicleId) : List.of();
-            rows = vehicleIds.isEmpty() ? Page.empty(pageable)
-                    : repository.searchAdminByVehicleIds(normalizedStatus, vehicleIds, pageable);
-        }
-        return new Mark3AdminPageDto(
-                rows.getContent().stream().map(mapper::toAdminListItem).toList(),
-                page, effectiveSize, rows.getTotalElements(), rows.getTotalPages());
-    }
-
-    @Transactional(readOnly = true)
-    public Mark3AdminDetailDto adminDetail(final long submissionId) {
-        final Mark3Submission submission = repository.findById(submissionId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "MARK3_SUBMISSION_NOT_FOUND"));
-        return mapper.toAdminDetail(submission);
-    }
-
-    /**
-     * 管理员 approve 没有 request body：只将创建时冻结的 claimed 值写入 approved。已存在 CURRENT
-     * 时拒绝，绝不 SUPERSEDE / 替换该玩家同车三环记录。
-     */
-    @Transactional
-    public Mark3SubmissionSummaryDto approve(final String adminUserId, final long submissionId) {
-        final Mark3Submission submission = repository.findByIdForUpdate(submissionId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "MARK3_SUBMISSION_NOT_FOUND"));
-        requirePending(submission);
-        evidenceService.requireCompleteEvidenceForApproval(submission.getId(), mapper.proofScreenshots(submission));
-        if (repository.findCurrentForUpdate(submission.getWotbServer(), submission.getWotbAccountId(),
-                submission.getVehicleId()).isPresent()) {
-            throw new IllegalStateException("MARK3_CURRENT_EXISTS");
-        }
-        requireApprovedValues(
-                submission.getClaimedBattleCount(), submission.getClaimedAverageDamage(), submission.getClaimedWinRate());
-        submission.setApprovedBattleCount(submission.getClaimedBattleCount());
-        submission.setApprovedAverageDamage(submission.getClaimedAverageDamage());
-        submission.setApprovedWinRate(normalizeWinRate(submission.getClaimedWinRate(), "MARK3_INVALID_APPROVED"));
-        submission.setStatus(Mark3Status.CURRENT.name());
-        submission.setApprovedAt(OffsetDateTime.now());
-        submission.setApprovedBy(adminUserId);
-        clearProofScreenshots(submission);
-        final Mark3SubmissionSummaryDto result = mapper.toSummary(repository.saveAndFlush(submission));
-        evidenceService.discardForSubmission(submission.getId());
-        return result;
-    }
-
-    /** 管理员拒绝 PENDING 申请；终态后允许该 user + vehicle 重试。 */
-    @Transactional
-    public Mark3SubmissionSummaryDto reject(
-            final String adminUserId,
-            final long submissionId,
-            final String rejectReason,
-            final String rejectReasonText) {
-        final String reason = requireCategory(rejectReason, "MARK3_REJECT_REASON_REQUIRED", REJECT_CATEGORIES);
-        if ("OTHER".equals(reason) && !StringUtils.hasText(rejectReasonText)) {
-            throw new IllegalArgumentException("MARK3_REJECT_REASON_TEXT_REQUIRED");
-        }
-        final String normalizedReasonText = normalizeReasonText(
-                rejectReasonText, "MARK3_REJECT_REASON_TEXT_TOO_LONG");
-        final Mark3Submission submission = repository.findByIdForUpdate(submissionId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "MARK3_SUBMISSION_NOT_FOUND"));
-        requirePending(submission);
-        submission.setStatus(Mark3Status.REJECTED.name());
-        submission.setRejectedAt(OffsetDateTime.now());
-        submission.setRejectedBy(adminUserId);
-        submission.setRejectReason(reason);
-        submission.setRejectReasonText(normalizedReasonText);
-        clearProofScreenshots(submission);
-        final Mark3SubmissionSummaryDto result = mapper.toSummary(repository.save(submission));
-        evidenceService.discardForSubmission(submission.getId());
-        return result;
-    }
-
-    /** 管理员删除 CURRENT；DELETED 后允许重新提交，但不恢复任何旧三环记录。 */
-    @Transactional
-    public Mark3SubmissionSummaryDto deleteCurrent(
-            final String adminUserId,
-            final long submissionId,
-            final String deleteReason,
-            final String deleteReasonText) {
-        return deleteCurrentInternal(adminUserId, submissionId,
-                requireDeleteReason(deleteReason, deleteReasonText), deleteReasonText);
-    }
-
-    /**
-     * 批量删除 CURRENT：逐条复用 {@link #deleteCurrent} 的语义（每条独立事务 + 终态证据清理），
-     * 允许 partial success。删除原因是批次级参数，先整体校验一次——参数错误不应表现为逐条失败。
-     *
-     * @param ids 已由请求 DTO 去重并校验过上限的目标 ID
-     */
-    public BulkDeleteResultDto bulkDeleteCurrent(final String adminUserId,
-                                                 final List<Long> ids,
-                                                 final String deleteReason,
-                                                 final String deleteReasonText) {
-        final String reason = requireDeleteReason(deleteReason, deleteReasonText);
-        final List<BulkDeleteItemResult> results = new ArrayList<>(ids.size());
-        int deleted = 0;
-        for (final long id : ids) {
-            try {
-                transactionTemplate.executeWithoutResult(status ->
-                        deleteCurrentInternal(adminUserId, id, reason, deleteReasonText));
-                results.add(new BulkDeleteItemResult(id, true, null));
-                deleted++;
-            } catch (final ResponseStatusException e) {
-                results.add(new BulkDeleteItemResult(id, false, e.getReason()));
-            } catch (final IllegalStateException e) {
-                results.add(new BulkDeleteItemResult(id, false, e.getMessage()));
-            }
-        }
-        return new BulkDeleteResultDto(ids.size(), deleted, ids.size() - deleted, results);
-    }
-
-    /** 强制删除原因规则：单条与批量共用一处，避免出现第二套规则。 */
-    private static String requireDeleteReason(final String deleteReason, final String deleteReasonText) {
-        final String reason = requireCategory(deleteReason, "MARK3_DELETE_REASON_REQUIRED", DELETE_CATEGORIES);
-        if ("OTHER".equals(reason) && !StringUtils.hasText(deleteReasonText)) {
-            throw new IllegalArgumentException("MARK3_DELETE_REASON_TEXT_REQUIRED");
-        }
-        return reason;
-    }
-
-    /** 单条删除的唯一实现：单条端点与批量端点共用（批量侧由 TransactionTemplate 提供独立事务）。 */
-    private Mark3SubmissionSummaryDto deleteCurrentInternal(
-            final String adminUserId,
-            final long submissionId,
-            final String reason,
-            final String deleteReasonText) {
-        final String normalizedReasonText = normalizeReasonText(
-                deleteReasonText, "MARK3_DELETE_REASON_TEXT_TOO_LONG");
-        final Mark3Submission submission = repository.findByIdForUpdate(submissionId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "MARK3_SUBMISSION_NOT_FOUND"));
-        if (!Mark3Status.CURRENT.name().equals(submission.getStatus())) {
-            throw new IllegalStateException("MARK3_NOT_CURRENT");
-        }
-        submission.setStatus(Mark3Status.DELETED.name());
-        submission.setDeletedAt(OffsetDateTime.now());
-        submission.setDeletedBy(adminUserId);
-        submission.setDeleteReason(reason);
-        submission.setDeleteReasonText(normalizedReasonText);
-        clearProofScreenshots(submission);
-        final Mark3SubmissionSummaryDto result = mapper.toSummary(repository.save(submission));
-        evidenceService.discardForSubmission(submission.getId());
-        return result;
-    }
-
     /**
      * 记录是否属于当前绑定身份。canonical owner 是 {@code (区服, WotB 账号)}，
      * 不是 Keycloak sub；只比账号 ID 会让跨服同号互相看见。
@@ -543,7 +293,7 @@ public class Mark3SubmissionService {
                 && owner.server().equals(submission.getWotbServer());
     }
 
-    private static void requirePending(final Mark3Submission submission) {
+    static void requirePending(final Mark3Submission submission) {
         if (!Mark3Status.PENDING.name().equals(submission.getStatus())) {
             throw new IllegalStateException("MARK3_SUBMISSION_NOT_PENDING");
         }
@@ -579,7 +329,7 @@ public class Mark3SubmissionService {
     }
 
     /** 审核时只接受冻结的 claimed 数据；脏历史数据不得静默变成 CURRENT。 */
-    private static void requireApprovedValues(
+    static void requireApprovedValues(
             final int battleCount,
             final int averageDamage,
             final BigDecimal winRate) {
@@ -589,7 +339,7 @@ public class Mark3SubmissionService {
         normalizeWinRate(winRate, "MARK3_INVALID_APPROVED");
     }
 
-    private static BigDecimal normalizeWinRate(final BigDecimal value, final String errorCode) {
+    static BigDecimal normalizeWinRate(final BigDecimal value, final String errorCode) {
         if (value == null || value.compareTo(BigDecimal.ZERO) < 0 || value.compareTo(BigDecimal.valueOf(100)) > 0
                 || value.stripTrailingZeros().scale() > 2) {
             throw new IllegalArgumentException(errorCode);
@@ -619,12 +369,12 @@ public class Mark3SubmissionService {
         return List.copyOf(normalized);
     }
 
-    private static void clearProofScreenshots(final Mark3Submission submission) {
+    static void clearProofScreenshots(final Mark3Submission submission) {
         submission.setProofScreenshotFirst(null);
         submission.setProofScreenshotSecond(null);
     }
 
-    private static String requireCategory(final String value, final String errorCode, final Set<String> categories) {
+    static String requireCategory(final String value, final String errorCode, final Set<String> categories) {
         if (!StringUtils.hasText(value)) {
             throw new IllegalArgumentException(errorCode);
         }
@@ -635,7 +385,7 @@ public class Mark3SubmissionService {
         return normalized;
     }
 
-    private static String normalizeReasonText(final String value, final String tooLongErrorCode) {
+    static String normalizeReasonText(final String value, final String tooLongErrorCode) {
         if (!StringUtils.hasText(value)) {
             return null;
         }
@@ -646,18 +396,8 @@ public class Mark3SubmissionService {
         return normalized;
     }
 
-    private static String normalizeCategoryFilter(final String value) {
-        return StringUtils.hasText(value) ? value.trim().toUpperCase(Locale.ROOT) : null;
-    }
-
     private static boolean isTierTen(final TankInfo vehicle) {
         return vehicle.tier() instanceof final Number tier && tier.intValue() == 10;
-    }
-
-    private static boolean matchesCategory(final TankInfo vehicle, final String nation, final String vehicleType) {
-        return isTierTen(vehicle)
-                && (nation == null || nation.equals(VehicleCodes.nationCode(vehicle.nation())))
-                && (vehicleType == null || vehicleType.equals(VehicleCodes.classCode(vehicle.type())));
     }
 
     private static byte[] readBytes(final MultipartFile file) {
@@ -686,10 +426,4 @@ public class Mark3SubmissionService {
                 .orElse(null);
     }
 
-    private static int clamp(final int size) {
-        if (size <= 0) {
-            return DEFAULT_PAGE_SIZE;
-        }
-        return Math.min(size, MAX_PAGE_SIZE);
-    }
 }

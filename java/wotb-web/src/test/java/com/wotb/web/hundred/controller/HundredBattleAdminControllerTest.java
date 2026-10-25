@@ -1,8 +1,9 @@
 package com.wotb.web.hundred.controller;
 
 import com.wotb.web.hundred.dto.HundredAdminPageDto;
-import com.wotb.web.hundred.service.HundredBattleSubmissionService;
 import com.wotb.web.hundred.service.HundredReplayEvidenceService;
+import com.wotb.web.hundred.service.HundredAdminQueryService;
+import com.wotb.web.hundred.service.HundredModerationService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -33,11 +34,12 @@ class HundredBattleAdminControllerTest {
 
     @Test
     void listBindsStatusCategoryAndVehicleIntersectionParams() throws Exception {
-        final HundredBattleSubmissionService service = mock(HundredBattleSubmissionService.class);
-        when(service.adminList(any(), any(), any(), any(), anyInt(), anyInt()))
+        final HundredModerationService moderationService = mock(HundredModerationService.class);
+        final HundredAdminQueryService queryService = mock(HundredAdminQueryService.class);
+        when(queryService.adminList(any(), any(), any(), any(), anyInt(), anyInt()))
                 .thenReturn(new HundredAdminPageDto(List.of(), 1, 50, 0, 0));
         final MockMvc mvc = MockMvcBuilders.standaloneSetup(new HundredBattleAdminController(
-                service, mock(HundredReplayEvidenceService.class))).build();
+                moderationService, queryService, mock(HundredReplayEvidenceService.class))).build();
 
         mvc.perform(get("/api/admin/hof/hundred/submissions")
                         .param("status", "CURRENT")
@@ -48,17 +50,17 @@ class HundredBattleAdminControllerTest {
                         .param("size", "20"))
                 .andExpect(status().isOk());
 
-        verify(service).adminList("CURRENT", "EUROPE", "MEDIUM_TANK", 385L, 2, 20);
+        verify(queryService).adminList("CURRENT", "EUROPE", "MEDIUM_TANK", 385L, 2, 20);
     }
 
     @Test
     void approveIgnoresClientSuppliedScores() throws Exception {
-        final HundredBattleSubmissionService service = mock(HundredBattleSubmissionService.class);
+        final HundredModerationService service = mock(HundredModerationService.class);
         final Jwt jwt = Jwt.withTokenValue("t").header("alg", "none").subject("kc-user").build();
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(jwt, null));
         final MockMvc mvc = MockMvcBuilders.standaloneSetup(new HundredBattleAdminController(
-                service, mock(HundredReplayEvidenceService.class))).build();
+                service, mock(HundredAdminQueryService.class), mock(HundredReplayEvidenceService.class))).build();
 
         mvc.perform(post("/api/admin/hof/hundred/submissions/10/approve")
                         .contentType(MediaType.APPLICATION_JSON)
