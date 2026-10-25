@@ -1,7 +1,7 @@
 
 # Product QA（真实用户黑盒探索）
 
-> **独立 operational playbook**：周期性或用户显式触发的 production product audit。它不是 PR final gate，也不由 `review-with-docs` 加载或拥有。不是顶层 Skill，不加入实现生命周期，不拥有 commit / push / PR / merge / final implementation PASS。
+> **独立 operational playbook**：周期性或用户显式触发的 production product audit。它不是 PR final gate，也不由 `review-with-docs` 加载或拥有。本目录是唯一正文；`.agents/skills/product-qa/SKILL.md` 只是让各 harness 按名字发现它的薄入口（不是 lifecycle Skill，不复制本文）。不加入实现生命周期，不拥有 commit / push / PR / merge / final implementation PASS。
 
 > 默认目标：`https://wotbtools.com`（production）。需要审查尚未发布的实现时，按该任务明确的 local / preview 目标执行；这不改变本 playbook 的周期性产品审计定位。
 

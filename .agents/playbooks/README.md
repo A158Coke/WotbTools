@@ -2,7 +2,7 @@
 
 这些是内部 playbook / checklist / tool guidance，不是顶层 Skill，不参与“现在处于生命周期哪一阶段”的选择。
 
-顶层只有四个 orchestrating Skills：
+lifecycle 只有四个 orchestrating Skills（另有一个不参与 lifecycle 的 operational 入口 `product-qa`，见下）：
 
 1. `designer` — deeply define the work；完整设计 pipeline authority 只在 `.agents/skills/designer/SKILL.md`，产出 approved `docs/current-plan.md`。
 2. `executor` — 执行已批准计划、targeted validation；review-with-docs PASS 后 commit/push/open PR；merge 后 cleanup。
@@ -11,7 +11,7 @@
 
 ## 加载规则
 
-领域实现 playbook 由四个 lifecycle Skills 按需加载。`product-qa/` 是例外：它是独立 operational product-audit playbook，由用户显式触发（Product QA / 全站 QA / 周期产品审查），不由 lifecycle Skills 加载，也不属于 PR final gate。
+领域实现 playbook 由四个 lifecycle Skills 按需加载。`product-qa/` 是例外：它是独立 operational product-audit playbook，由用户显式触发（Product QA / 全站 QA / 周期产品审查），不由 lifecycle Skills 加载，也不属于 PR final gate；它的薄入口 Skill 是 `.agents/skills/product-qa/`，只指向本目录的 README，不复制正文。
 
 | Playbook | 加载方 | 时机 |
 |---|---|---|
