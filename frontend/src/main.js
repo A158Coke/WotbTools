@@ -19,6 +19,7 @@ import './styles/playback-mobile.css'
 import './styles/playback-workspace.css'
 import './styles/classic-profile.css'
 import { messages } from './locales/messages.js'
+import { readLocale } from './i18n/locale-preference.js'
 import { sectionTitleKey, viewFromRoute } from './app/navigation.js'
 import { useAuth } from './composables/useAuth.js'
 import { hasAuthReturn } from './platform/authDiagnostics.js'
@@ -56,7 +57,7 @@ async function bootstrap() {
   const { default: router } = await import('./app/router.js')
   const { default: App } = await import('./App.vue')
   const i18n = createI18n({
-    locale: localStorage.getItem('wotb-lang') || 'zh',
+    locale: readLocale(),
     fallbackLocale: 'en',
     messages,
   })

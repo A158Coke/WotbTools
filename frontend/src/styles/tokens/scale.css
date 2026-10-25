@@ -129,8 +129,8 @@
     --pb-z-hud: 5;     /* HUD、名册车道、killfeed、滚轮提示等装饰层 */
     --pb-z-scrim: 6;   /* 待开播遮罩：盖住 HUD 面板；加载 / 错误状态仍在其上（--z-sticky） */
     --pb-z-controls: 7;   /* 常驻控制条（手机 transport overlay）：压过 HUD，但必须低于瞬态面 */
-    --pb-z-transient: 8;  /* 需要交互的瞬态面（Display surface 等）：必须压过常驻控制条 */
-    --pb-z-modal: 9;      /* 工作台内最高层：可拖拽详情面板、隐藏 UI 后的恢复按钮 */
+    --pb-z-transient: 8;  /* 浮动面板（可拖拽的车辆详情）：压过常驻控制条，但让位给刚打开的瞬态面 */
+    --pb-z-modal: 9;      /* 工作台内最高层：从控制条打开、外点即关的 Display 面；隐藏 UI 后的恢复按钮（二者不会同时可见） */
 
     /* Bounded side wings: the minimum preserves a readable 7v7 roster (name / tank / HP%), the
        maximum yields every further pixel to the center battlefield column. Measured in Chrome:

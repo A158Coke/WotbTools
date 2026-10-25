@@ -198,7 +198,7 @@ const floatingStyle = computed(() => (floating.value && pos.value
   position: absolute;
   inset-block-start: 0;
   inset-inline-start: 0;
-  z-index: var(--pb-z-modal);
+  z-index: var(--pb-z-transient);
   width: min(340px, 92%);
   max-height: min(60dvh, 520px);
   box-shadow: var(--elevation-3);

@@ -9,7 +9,7 @@ import com.wotb.web.creator.controller.CreatorController;
 import com.wotb.web.creator.service.CreatorAvatarService;
 import com.wotb.web.creator.service.CreatorService;
 import com.wotb.web.exceptionhandler.GlobalExceptionHandler;
-import com.wotb.web.replay.controller.ReplayController;
+import com.wotb.web.observability.controller.BackendHealthController;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -288,7 +288,7 @@ class CreatorHttpTest {
     @EnableWebMvc
     @Import({SecurityConfig.class, ApiErrorTestConfig.class, GlobalExceptionHandler.class})
     static class TestConfig {
-        @Bean ReplayController healthController() { return new ReplayController(); }
+        @Bean BackendHealthController healthController() { return new BackendHealthController(); }
         @Bean JwtDecoder jwtDecoder() { return mock(JwtDecoder.class); }
         @Bean CreatorService service() { return mock(CreatorService.class); }
         @Bean CreatorAvatarService avatars() { return mock(CreatorAvatarService.class); }

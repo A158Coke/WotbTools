@@ -5,6 +5,7 @@ import com.wotb.web.mark3.repository.Mark3ReplayEvidenceRepository;
 import com.wotb.web.mark3.repository.Mark3SubmissionRepository;
 import com.wotb.web.mark3.service.Mark3ReplayEvidenceService;
 import com.wotb.web.mark3.service.Mark3SubmissionService;
+import com.wotb.web.mark3.service.Mark3ModerationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -76,7 +77,7 @@ class Mark3SubmissionIntegrationTest {
     Mark3ReplayEvidenceRepository evidenceRepository;
 
     @Autowired
-    Mark3SubmissionService submissionService;
+    Mark3ModerationService moderationService;
 
     @Autowired
     Mark3ReplayEvidenceService evidenceService;
@@ -102,7 +103,7 @@ class Mark3SubmissionIntegrationTest {
 
         assertThrows(DataIntegrityViolationException.class, () -> insert("PENDING"));
 
-        submissionService.deleteCurrent("admin", current.getId(), "DATA_ERROR", null);
+        moderationService.deleteCurrent("admin", current.getId(), "DATA_ERROR", null);
         final Mark3Submission retry = insert("PENDING");
         assertEquals("PENDING", retry.getStatus());
     }
@@ -132,7 +133,7 @@ class Mark3SubmissionIntegrationTest {
         evidenceService.storeAll(replays);
         evidenceService.attach(pending.getId(), replays);
 
-        submissionService.approve("admin", pending.getId());
+        moderationService.approve("admin", pending.getId());
 
         final Mark3Submission current = submissionRepository.findById(pending.getId()).orElseThrow();
         assertEquals("CURRENT", current.getStatus());

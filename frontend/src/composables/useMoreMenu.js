@@ -7,6 +7,7 @@ import { useUiProfile } from './useUiProfile.js'
 import { isAndroidApp } from './usePlatformBridge.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import { useCreatorAvailability } from './useCreatorAvailability.js'
+import { persistLocale } from '../i18n/locale-preference.js'
 
 /**
  * "更多"的唯一内容源：手机的"更多"页（MorePage）与平板 / 桌面侧边栏底部的"更多"弹出面板（MorePanel）
@@ -30,8 +31,8 @@ export function useMoreMenu() {
   const instance = getCurrentInstance()
 
   function setLocale(value) {
-    instance.proxy.$i18n.locale = value
-    localStorage.setItem('wotb-lang', value)
+    const locale = persistLocale(value)
+    instance.proxy.$i18n.locale = locale
   }
 
   const uiProfileOptions = (t) => [
