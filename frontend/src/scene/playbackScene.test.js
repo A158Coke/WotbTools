@@ -74,6 +74,7 @@ vi.mock('./battleFx.js', async (importOriginal) => {
 })
 
 import { initPlayback, QUALITY_PRESETS } from './playbackScene.js'
+import { buildGroundGeometry } from './groundPass.js'
 import { BURST_SECS, FX_BUDGETS } from './battleFx.js'
 
 /** 最小可用 PlaybackData：空车队 + 一张地图。资产阶段与空名册都不会因此抛错。
@@ -148,6 +149,8 @@ afterEach(async () => {
 })
 
 function stubTerrainAssets({ values = [0, 65535, 0, 65535], zmin = 0, zmax = 30 } = {}) {
+  const size = Math.sqrt(values.length)
+  if (!Number.isInteger(size)) throw new Error('terrain test values must form a square heightfield')
   source.resolveMapKey.mockResolvedValue('probe_map')
   source.mapStaticUrl.mockImplementation((kind) => ['terrain', 'terrain-meta'].includes(kind) ? `/assets/${kind}` : null)
   vi.stubGlobal('fetch', vi.fn(async (url) => {
@@ -155,7 +158,7 @@ function stubTerrainAssets({ values = [0, 65535, 0, 65535], zmin = 0, zmax = 30 
       ok: true,
       status: 200,
       json: async () => ({
-        size: 2, span: 600, zmin, zmax, terrainLayout: 2,
+        size, span: 600, zmin, zmax, terrainLayout: 2,
         worldBounds: { min: [-300, -300, zmin], max: [300, 300, zmax] },
       }),
     }
@@ -1578,6 +1581,46 @@ describe('Free Camera terrain floor', () => {
 
     cam.position.set(x, -10, z)
     controls.target.set(x, -15, z)
+    api.setCam('free')
+    expect(cam.position.y).toBeCloseTo(renderedY + 0.5, 5)
+  })
+
+  it('applies the rendered-terrain floor inside a positive clipped edge quad', async () => {
+    const n = 101
+    stubTerrainAssets({ values: new Array(n * n).fill(0), zmin: 20, zmax: 20 })
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const { api } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['clipped-edge'], 'terrain-clipped-edge.wotbreplay') })
+    const cam = window.__camera
+    const terrain = []
+    window.__scene.traverse((object) => {
+      if (object.geometry?.userData?.terrainBuild) terrain.push(object)
+    })
+    expect(terrain).toHaveLength(1)
+
+    // 在场景宿主里换入同一生产 builder 的远景 LOD，以确定性地产生 step=8→5 的正边裁剪 quad。
+    const oldGeometry = terrain[0].geometry
+    terrain[0].geometry = buildGroundGeometry({
+      field: new Float32Array(n * n).fill(20), n, span: 600,
+      cam: { x: 0, y: 10000, z: 0 }, fovY: (55 * Math.PI) / 180, aspect: 16 / 9,
+    })
+    oldGeometry.dispose()
+
+    const i = 50, j = 98, span = 600
+    const x = ((j + 0.5) / n - 0.5) * span
+    const z = ((i + 0.5) / n - 0.5) * span
+    const build = terrain[0].geometry.userData.terrainBuild
+    const cell = i * n + j
+    expect(build.sizeAt[cell]).toBeGreaterThan(0)
+    expect(build.originJAt[cell]).toBe(96)
+    expect(build.sizeAt[cell]).toBe(5)
+
+    window.__scene.updateMatrixWorld(true)
+    const ray = new THREE.Raycaster(new THREE.Vector3(x, 100, z), new THREE.Vector3(0, -1, 0))
+    const renderedY = ray.intersectObject(terrain[0], false)[0]?.point.y
+    expect(renderedY).toBeCloseTo(20, 5)
+    cam.position.set(x, -10, z)
+    window.__controls.target.set(x, -15, z)
     api.setCam('free')
     expect(cam.position.y).toBeCloseTo(renderedY + 0.5, 5)
   })

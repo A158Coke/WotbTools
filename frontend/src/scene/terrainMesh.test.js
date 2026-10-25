@@ -645,6 +645,40 @@ describe('地形网格（客户端补片级自适应 LOD，引擎 LandscapeSubdi
     }
   })
 
+  it('非 8 对齐尺寸的正边与正角裁剪格使用 emitter 写入的 quad origin', () => {
+    const n = 101, span = 600
+    const field = make(n, 20, (i, j) => 20 + ((i + j) % 7) * 0.3)
+    const mesh = build(field, n, span, { x: 0, y: 10000, z: 0 })
+    const query = (i, j) => {
+      const x = ((j + 0.5) / n - 0.5) * span
+      const z = ((i + 0.5) / n - 0.5) * span
+      const oracle = surfaceAt(mesh, x, z)
+      expect(oracle).not.toBeNull()
+      const sampled = terrainSurfaceHeightAt({ ...mesh, n, span }, x, z)
+      expect(sampled).not.toBeNull()
+      expect(sampled).toBeCloseTo(oracle[0], 5)
+      return { cell: i * n + j, sampled }
+    }
+
+    // n=101 且远距离相机使正边保留 step=8；emitter 在 i=96 处将边格裁为 step=5。
+    const edge = query(98, 50)
+    expect(mesh.originIAt[edge.cell]).toBe(96)
+    expect(mesh.sizeAt[edge.cell]).toBe(5)
+
+    // 正 X + 正 Z 同时裁剪；查询仍命中实际发射的 [96,101) 角 quad。
+    const corner = query(98, 98)
+    expect(mesh.originIAt[corner.cell]).toBe(96)
+    expect(mesh.originJAt[corner.cell]).toBe(96)
+    expect(mesh.sizeAt[corner.cell]).toBe(5)
+
+    // 标准对齐尺寸和现有非共面三角面回归继续覆盖常规路径。
+    const alignedN = 64
+    const aligned = build(make(alignedN, 20), alignedN, span, { x: 0, y: 100, z: 0 })
+    const alignedX = 0, alignedZ = 0
+    const alignedOracle = surfaceAt(aligned, alignedX, alignedZ)
+    expect(terrainSurfaceHeightAt({ ...aligned, n: alignedN, span }, alignedX, alignedZ)).toBeCloseTo(alignedOracle[0], 5)
+  })
+
   it('参考对照（引擎语义独立重写）：终止补片集逐补片一致——锁定三处转写修复不被改坏', () => {
     // 2026-10-11 PR 评审遗留项：原验证（Python 参考移植逐补片比较）在仓外、无法持续复现 ⇒
     // 固化一个**缩小版**参照：同一判据按引擎语义独立重写（5 样本 / 四叉树自底向上聚合 /

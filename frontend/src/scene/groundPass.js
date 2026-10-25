@@ -99,7 +99,7 @@ export async function loadTerrain({ binUrl, metaUrl, fetchFn, stale = () => fals
 export function buildGroundGeometry({
   field, n, span, cam, fovY, aspect = 16 / 9, hFovDeg = null, refineMask = null, cx = 0, cz = 0,
 }) {
-  const { positions, indices, sizeAt, vertexIndexAt, morphRaw, quads, overBudget } = buildAdaptiveTerrain({
+  const { positions, indices, sizeAt, originIAt, originJAt, vertexIndexAt, morphRaw, quads, overBudget } = buildAdaptiveTerrain({
     field, n, span, cam, fovY, aspect, hFovDeg, refineMask,
   });
   const g = new THREE.BufferGeometry();
@@ -108,7 +108,7 @@ export function buildGroundGeometry({
   // 片元由世界坐标反推，但回退材质吃几何 `uv`，缺了整张图退化成单 texel 常量（2026-10-10 review P1）
   g.setAttribute('uv', new THREE.BufferAttribute(groundMapUv(positions, span, cx, cz), 2));
   g.setIndex(new THREE.BufferAttribute(indices, 1));
-  g.userData.terrainBuild = { positions, sizeAt, vertexIndexAt, morphRaw, quads, overBudget, n, span };
+  g.userData.terrainBuild = { positions, sizeAt, originIAt, originJAt, vertexIndexAt, morphRaw, quads, overBudget, n, span };
   g.computeVertexNormals();
   g.computeBoundingSphere();
   return g;
