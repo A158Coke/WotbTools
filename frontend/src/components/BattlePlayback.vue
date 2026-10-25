@@ -1,7 +1,7 @@
 <script setup>
 import { gunMarksByAccount } from '../utils/gunMarks.js'
 import { detailsDamageLogAtV2 } from '../utils/playbackDetails.js'
-import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
+import { computed, inject, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import { usePlaybackPhoneForm } from '../composables/usePlaybackPhoneForm.js'
 import { usePlaybackPortraitViewport } from '../composables/usePlaybackPortraitViewport.js'
 import { useI18n } from 'vue-i18n'
@@ -19,6 +19,7 @@ import BattleMap from './BattleMap.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
 import { PencilRuler, ScanEye } from 'lucide-vue-next'
 import BattlePlaybackHud from './BattlePlaybackHud.vue'
+import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 import PlaybackControls from './PlaybackControls.vue'
 import PlaybackDisplaySurface from './PlaybackDisplaySurface.vue'
 import SegmentedControl from './SegmentedControl.vue'
@@ -701,6 +702,10 @@ function writeSquareAvailHeight() {
   const budget = Math.max(1, workspaceH - above - hudH - controlsH - gap * 2 - bottom)
   root.style.setProperty('--pb-square-avail-h', `${Math.floor(budget)}px`)
 }
+
+// 外壳沉浸态切换改的是 --header-h / --tabbar-h（不触发任何元素 resize），显式重算高度预算与默认 fit。
+const shellChrome = inject(SHELL_CHROME_KEY, null)
+watch(() => shellChrome?.immersive.value, () => nextTick(() => { writeSquareAvailHeight(); fitViewIfReady(true) }))
 
 watch(() => mapStageEl.value, (el) => {
   if (stageResizeObserver) { stageResizeObserver.disconnect(); stageResizeObserver = null }
@@ -2283,6 +2288,7 @@ const mapStyle = computed(() => ({
       :base-states="uiPrefs.showBaseStatus ? hudBaseStates : []"
       :friendly-team="friendlyTeam"
       :hp-no-transition="hpNoTransition"
+      :compact="phoneLandscape"
     />
       <!-- §square-stage 三段式：己方 | 正方形 Stage | 敌方。
            两侧车道只在「名册开着 且 非手机竖屏」时存在；关掉名册两侧整体消失，

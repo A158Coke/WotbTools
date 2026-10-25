@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, provide, watch } from 'vue'
+import { computed, onMounted, onUnmounted, provide, watch, watchEffect } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth.js'
 import { shouldEnsureBusinessUser, useBusinessUserBootstrap } from '../composables/useBusinessUserBootstrap.js'
@@ -14,6 +14,8 @@ import { useUsageTelemetry } from '../composables/useUsageTelemetry.js'
 import { isAndroidApp } from '../composables/usePlatformBridge.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
+import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
+import { createShellChrome } from './shellChrome.js'
 import { Feature } from './featureCapabilities.js'
 import { defaultView, locationForView, viewFromRoute } from './navigation.js'
 import AppTopBar from './AppTopBar.vue'
@@ -119,6 +121,15 @@ function navigate(target) {
 }
 
 provide(NAVIGATE_VIEW_KEY, navigate)
+// 沉浸态：需要整屏高度的 feature（手机横屏回放）通过 typed key 申请，外壳不渲染顶栏 / Tab 栏，
+// 并把 --header-h / --tabbar-h 归零（scale.css 是这两个 token 的唯一 owner），预算公式无需改。
+const shellChrome = createShellChrome()
+provide(SHELL_CHROME_KEY, shellChrome)
+watchEffect(() => {
+  if (shellChrome.immersive.value) document.documentElement.dataset.shellChrome = 'immersive'
+  else delete document.documentElement.dataset.shellChrome
+})
+onUnmounted(() => { delete document.documentElement.dataset.shellChrome })
 const onboarding = useOnboarding({
   navigate,
   view: computed(() => viewFromRoute(route)),
@@ -128,7 +139,7 @@ provide(ONBOARDING_KEY, onboarding.context)
 </script>
 
 <template>
-  <AppTopBar v-if="isCompact" compact />
+  <AppTopBar v-if="isCompact && !shellChrome.immersive.value" compact />
   <AppSidebar v-else />
   <div v-if="failed" class="business-bootstrap-notice" role="alert" data-testid="business-bootstrap-notice">
     <span>{{ $t('bootstrap.profileFailed') }}</span>
@@ -157,7 +168,7 @@ provide(ONBOARDING_KEY, onboarding.context)
     </div>
     <p class="app-footer-disclaimer" data-testid="wargaming-disclaimer">{{ $t('home.wargamingDisclaimer') }}</p>
   </footer>
-  <AppTabBar v-if="isCompact" />
+  <AppTabBar v-if="isCompact && !shellChrome.immersive.value" />
   <GlobalErrorDialog :error="globalError" :visible="showGlobalError" @close="closeGlobalError" />
   <ConnectivityNoticeDialog
     :title-key="connectivityNotice?.titleKey"

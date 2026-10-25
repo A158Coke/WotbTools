@@ -2470,10 +2470,33 @@ async function runMultiFileWorkspaceScenario(env) {
     await page.waitForValue(roster, value => !!value && value !== firstRoster, { timeout: 60_000, label: 'second battle after mobile sheet selection' })
     check(failures, await page.evaluate(`!!document.querySelector('[data-testid="battle-picker-panel"]')`) === false,
       'mobile battle picker sheet did not close after selection')
+
+    // 手机横屏沉浸态（真实应用）：回放就绪的触屏手机横屏隐藏顶栏 / Tab 栏，地图拿走 104px；
+    // 转回竖屏 / 切到数据 capability 立即恢复，地图回到竖屏契约（= 视口宽）。
+    const shellState = `(() => ({
+      topBar: !!document.querySelector('[data-testid="app-top-bar"]'),
+      tabBar: !!document.querySelector('[data-testid="app-tab-bar"]'),
+      headerH: getComputedStyle(document.documentElement).getPropertyValue('--header-h').trim(),
+      map: document.querySelector('.pb-map')?.getBoundingClientRect().width ?? 0,
+      stage: document.querySelector('.pb-map-stage')?.getBoundingClientRect().width ?? 0,
+    }))()`
+    await page.emulate({ width: 740, height: 360, touch: true })
+    const landscape = await page.waitForValue(shellState, (state) => !state.topBar && !state.tabBar && state.map > 0, { label: 'immersive shell in phone landscape' })
+    check(failures, landscape.headerH === '0px', `immersive shell must zero --header-h: ${JSON.stringify(landscape)}`)
+    check(failures, landscape.map >= 260, `phone-landscape real-app map must be >= 260px: ${JSON.stringify(landscape)}`)
+    console.log(`[browser-interaction] multifile 740x360 real-app map=${Math.round(landscape.map)}`)
+    await page.emulate({ width: 390, height: 844, touch: true })
+    const portrait = await page.waitForValue(shellState, (state) => state.topBar && state.tabBar, { label: 'shell restored in portrait' })
+    check(failures, portrait.headerH === '48px', `portrait must restore --header-h: ${JSON.stringify(portrait)}`)
+    check(failures, portrait.map > 0 && Math.abs(portrait.map - portrait.stage) <= 2, `portrait map must fill the full column width: ${JSON.stringify(portrait)}`)
+    await page.emulate({ width: 740, height: 360, touch: true })
+    await page.waitForValue(shellState, (state) => !state.topBar, { label: 'immersive shell again' })
+    await hit('[data-testid="ws-tab"][data-cap="data"]', { touch: true })
+    await page.waitForValue(shellState, (state) => state.topBar && state.tabBar, { label: 'shell restored when leaving playback' })
   } finally {
     await env.chrome.client.send('Target.closeTarget', { targetId })
   }
-  results.push({ name: 'multifile-workspace-playback', failures, viewport: '1600x900 → 390x844' })
+  results.push({ name: 'multifile-workspace-playback', failures, viewport: '1600x900 → 390x844 → 740x360' })
 }
 
 /* ------------------------------------------------------------------ 2D 战场 workspace（正方形 Stage 契约） */
@@ -2492,10 +2515,13 @@ async function runMultiFileWorkspaceScenario(env) {
 const WORKSPACE_2D_SCENARIOS = [
   { name: 'ws2d-375x812-portrait-coarse', width: 375, height: 812, touch: true, layout: 'portrait' },
   { name: 'ws2d-390x844-portrait-coarse', width: 390, height: 844, touch: true, layout: 'portrait' },
-  { name: 'ws2d-740x360-landscape-coarse', width: 740, height: 360, touch: true, layout: 'lanes' },
-  { name: 'ws2d-844x390-landscape-coarse', width: 844, height: 390, touch: true, layout: 'lanes' },
-  { name: 'ws2d-844x390-landscape-recorder-team2', width: 844, height: 390, touch: true, layout: 'lanes', recorder: 2 },
-  { name: 'ws2d-844x390-fullscreen-coarse', width: 844, height: 390, touch: true, layout: 'lanes', fullscreen: true },
+  // 手机横屏：地图是主角。minMap = 地图边长下限（由 740×360 基线 96px + 产品目标推出：
+  // 外壳让出 104px、传输条合成一行、HUD 一行后的预算，留 ~6% 余量）。
+  { name: 'ws2d-667x375-landscape-coarse', width: 667, height: 375, touch: true, layout: 'lanes', minMap: 270 },
+  { name: 'ws2d-740x360-landscape-coarse', width: 740, height: 360, touch: true, layout: 'lanes', minMap: 260 },
+  { name: 'ws2d-844x390-landscape-coarse', width: 844, height: 390, touch: true, layout: 'lanes', minMap: 290 },
+  { name: 'ws2d-844x390-landscape-recorder-team2', width: 844, height: 390, touch: true, layout: 'lanes', recorder: 2, minMap: 290 },
+  { name: 'ws2d-844x390-fullscreen-coarse', width: 844, height: 390, touch: true, layout: 'lanes', fullscreen: true, minMap: 290 },
   { name: 'ws2d-1024x768-tablet', width: 1024, height: 768, touch: false, layout: 'lanes' },
   // 1280 宽桌面：侧边车道（≈320）比详情浮窗（340）窄——初始落位必须收窄浮窗，而不是伸进中心栏盖住 HUD
   { name: 'ws2d-1280x720-desktop', width: 1280, height: 720, touch: false, layout: 'lanes' },
@@ -2718,7 +2744,12 @@ async function checkDisplaySurface(page, failures, layout, scenario) {
     // 宽档 / 横屏的 Display 锚在 gear 上，gear 就在常驻传输条里，两者按契约必然重叠——那正是
     // 「瞬态面压过常驻控件」要判定的区域，没重叠说明这条断言在该形态上空跑了。
     // 竖屏的 Display 是紧跟传输条的流内静态面，按契约本来就不重叠。
-    if (layout !== 'portrait') {
+    // 手机横屏（minMap）传输条是底部全宽一行，Display 在其上方展开，按设计既不盖传输条也不盖详情：
+    // 此时改证「没有覆盖」（传输条整条可点），而不是要求重叠。
+    const reflowed = !!scenario.minMap
+    if (reflowed) {
+      check(failures, !paint.overlaps, `手机横屏 Display 应在全宽传输条上方展开、不得盖住传输条: ${JSON.stringify(paint)}`)
+    } else if (layout !== 'portrait') {
       check(failures, paint.overlaps,
         'wide Display 是锚在 gear 上的浮层，应与常驻传输条重叠，实际没有：瞬态优先断言在这个形态上空跑了')
     }
@@ -2746,7 +2777,7 @@ async function checkDisplaySurface(page, failures, layout, scenario) {
     // 它一定是更晚打开的那个，被详情面板盖住就是"刚打开的面看不见"。
     // 竖屏的详情是流内块、不是浮层；只有宽档 / 横屏才有两块浮动面板叠在一起的状态组合。
     // 实测全部宽档 / 横屏形态两者都重叠（夹具开场即选中车辆），所以那里必须重叠——否则这条断言空跑。
-    if (layout !== 'portrait') {
+    if (layout !== 'portrait' && !reflowed) {
       const detailsPaint = await measurePaintOrder(page, { above: '[data-testid="display-panel"]', below: '[data-test="pb-info"]' })
       check(failures, detailsPaint.overlaps === true,
         `宽档 Display 应与车辆详情面板重叠（夹具开场即选中车辆），实际没有：Display / 详情面板次序断言空跑了 ${JSON.stringify(detailsPaint)}`)
@@ -2783,7 +2814,7 @@ async function runWorkspace2DScenario(env, scenario) {
   lastPage = page
   await page.enable()
   await page.emulate(scenario)
-  await page.goto(`${env.origin}/scripts/browser-fixtures/playback-controls.html?duration=60&players=7&recorder=${scenario.recorder || 1}&marks=1`)
+  await page.goto(`${env.origin}/scripts/browser-fixtures/playback-controls.html?duration=60&players=7&recorder=${scenario.recorder || 1}&marks=1${scenario.minMap ? '&shell=immersive' : ''}`)
   await page.waitFor(() => !!document.querySelector('[data-test="pb-roster-row"]'), { label: '2D roster rows' })
   await delay(300)
 
@@ -2901,6 +2932,14 @@ async function runWorkspace2DScenario(env, scenario) {
     for (const [name, gap] of [['HUD', g.map.t - g.hud.b], ['Transport', g.transport.t - g.map.b]]) {
       check(failures, gap >= -1 && gap <= 16, `${name} gap must remain compact (0–16px): ${gap.toFixed(1)} layout=${JSON.stringify(g.layout)}`)
     }
+  }
+  if (scenario.minMap) {
+    // 手机横屏的高度账：地图 ≥ minMap；HUD 与传输条各一行（传输条横跨全宽，不再两行）。
+    check(failures, g.map && g.map.h >= scenario.minMap, `phone-landscape map must be >= ${scenario.minMap}px: ${JSON.stringify(g.map)}`)
+    check(failures, g.hud && g.hud.h <= 36, `phone-landscape HUD must be a single row (<=36px): ${JSON.stringify(g.hud)}`)
+    check(failures, g.transport && g.transport.h <= 56 && g.transport.w >= scenario.width - 4,
+      `phone-landscape transport must be one full-width row (<=56px): ${JSON.stringify(g.transport)}`)
+    console.log(`[browser-interaction] ${scenario.name} map=${Math.round(g.map?.w)}x${Math.round(g.map?.h)} hud=${Math.round(g.hud?.h)} transport=${Math.round(g.transport?.h)}`)
   }
   // 主控件行：-5 ▶ +5 1× ⛶ ⚙ 同一行（触屏 44px）
   if (scenario.touch) {

@@ -34,8 +34,8 @@
 
 **控件归属：地图盒里不放常驻 UI。** 呈现类开关（一键防遮、名册显隐、HP 档位、重置视图、事件、隐藏 UI）
 都在 gear 锚定的 Display 面里；手机横屏的「标记模式」入口由 `PlaybackTransport.vue` 的控制条承载
-（`annotationEnabled` prop），不占额外行高。依据：地图是主内容，而手机横屏下它只有不到 100px
-（实测 740×360 为 96×96），放任何常驻控件都会违反 `docs/frontend/design-language.md` §5 的遮挡契约。
+（`annotationEnabled` prop），不占额外行高。依据：地图是主内容，而手机横屏的高度本来就紧张
+（740×360 地图约 266px），放任何常驻控件都会违反 `docs/frontend/design-language.md` §5 的遮挡契约。
 
 `utils/playbackVehicleState.ts` 负责将 canonical V2 track 投影为 marker state，`utils/playbackClock.ts` 提供播放时间/倍速纯函数。拆分不新增数据源、不改变 V2 query-at-time、anti-future-leak 或既有 tank-marker 资产契约。
 
@@ -148,6 +148,7 @@ KILL / DAMAGE / DESTROYED 事件多重集（含 `observedHpLoss`）与掉血明�
 
 ### 布局与控件
 
+- **手机横屏高度账**：正方形地图只受纵向预算约束，所以横屏把非地图的行压到最小——外壳（顶栏 + Tab 栏）在 2D / 3D 回放就绪的触屏手机横屏下让出（沉浸态，转竖屏或离开回放即恢复）、HUD 压成一行（己方血条 │ 时钟 / 比分 / 基地 │ 敌方血条，不显示地图名）、传输条（时间轴 + 按钮 + 时间）合成一行横跨全宽。实测地图：740×360 约 266px、667×375 约 281px、844×390 约 298px；名册车道只跨 HUD + Stage 两行，不浮在地图上。
 - **形态判定**：`shared/breakpoints` 的 `PLAYBACK_MOBILE_QUERY`——Mobile = 宽 < 768px 或触屏且高 ≤ 500px（手机横屏）；768–1199px 一律 Tablet；≥1200px 一律 PC。布局只看可用空间，触屏只放大控件点击区域（44px），iPad / Android 平板使用 Tablet 形态。
 - **Universal Battle HUD**：Desktop / Tablet / Mobile 共用同一套 HUD——己方在左、权威比分 / 基地状态在中（无事实时不渲染占位符）、敌方在右；HP 的 FULL_RELATIVE / EXACT / PARTIAL / UNKNOWN 语义保持不变。
 - **中心栈**：2D / 3D 共用「地图/时间、HP/比分与 compact 基地 metadata 的持久 HUD → Stage → Transport」。2D 取最大正方形；3D 横屏铺满可用宽高。击杀流是独立的有界 overlay（2D 最多保留最新 2 条、3D 最多 3 条），不参与 HUD 高度预算，条目变化不牵动 Stage / Transport 重排。
