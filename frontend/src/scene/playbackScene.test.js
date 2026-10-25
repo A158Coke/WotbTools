@@ -1353,13 +1353,19 @@ describe('scene vehicle selection intent', () => {
     container.querySelector('canvas').setPointerCapture = vi.fn()
     container.querySelector('canvas').releasePointerCapture = vi.fn()
     const beforeCamera = window.__camera.position.clone()
-    container.querySelector('canvas').dispatchEvent(new MouseEvent('pointerdown', { button: 0, clientX: 10, clientY: 10 }))
+    // 自由飞行接管后（2026-10-24）：选中在 pointerup 判定（≤SLOP 才算单击——
+    // 按下即选会把"拖拽转头路过"的车辆选上）；右键不触发
+    const canvas0 = container.querySelector('canvas')
+    canvas0.dispatchEvent(new MouseEvent('pointerdown', { button: 0, clientX: 10, clientY: 10 }))
+    expect(onVehicleSelect).not.toHaveBeenCalled()      // down 不再立即选中
+    canvas0.dispatchEvent(new MouseEvent('pointerup', { button: 0, clientX: 10, clientY: 10 }))
     expect(onVehicleSelect).toHaveBeenCalledOnce()
     expect(onVehicleSelect.mock.calls[0][0]).toBe(11)
     expect(onVehicleSelect.mock.calls[0][1]?.clientX).toBe(10)
     expect(store.cam).toBe('free')
     expect(window.__camera.position.equals(beforeCamera)).toBe(true)
-    container.querySelector('canvas').dispatchEvent(new MouseEvent('pointerdown', { button: 2 }))
+    canvas0.dispatchEvent(new MouseEvent('pointerdown', { button: 2 }))
+    canvas0.dispatchEvent(new MouseEvent('pointerup', { button: 2 }))
     expect(onVehicleSelect).toHaveBeenCalledTimes(1)
   })
 
@@ -1391,6 +1397,160 @@ describe('scene vehicle selection intent', () => {
     canvas.dispatchEvent(new MouseEvent('pointerup', { button: 0, clientX: 40, clientY: 50 }))
     expect(onVehicleSelect).toHaveBeenCalledOnce()
     expect(onVehicleSelect.mock.calls[0][0]).toBe(11)
+  })
+
+  // 回归（2026-10-24 用户实测）：拖拽只改 target 不改相机朝向 ⇒ 画面不转。
+  // free 模式跳过 controls.update()（它的 lookAt 是平时更新朝向的地方），
+  // 必须由 flyLookApply / animate 显式 lookAt(target)。
+  it('鼠标拖拽转头：相机位不动、朝向与 target 对齐', async () => {
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const store = createPlaybackStore()
+    const container = mountContainer()
+    api = initPlayback(container, store, null, { onVehicleSelect: vi.fn() })
+    created.push(api)
+    await api.loadData({ kind: 'local', file: new File(['x'], 'mouse-look.wotbreplay') })
+    api.setCam('free')
+    const canvas = container.querySelector('canvas')
+    const cam = window.__camera
+    const controls = window.__controls
+    const cam0 = cam.position.clone()
+    const dir0 = cam.getWorldDirection(new THREE.Vector3())
+    const ev = (type, x, buttons) => new MouseEvent(type, { button: 0, clientX: x, clientY: 300, buttons, bubbles: true, cancelable: true })
+    canvas.dispatchEvent(ev('pointerdown', 100, 1))
+    canvas.dispatchEvent(ev('pointermove', 220, 1))
+    const dir1 = cam.getWorldDirection(new THREE.Vector3())
+    expect(cam.position.equals(cam0)).toBe(true)                 // 旋转中心 = 相机自身
+    expect(dir1.angleTo(dir0)).toBeGreaterThan(0.2)              // 朝向确实转了（≈120px×0.0032）
+    const toTgt = new THREE.Vector3().subVectors(controls.target, cam.position).normalize()
+    expect(dir1.dot(toTgt)).toBeCloseTo(1, 3)                    // 朝向 = 看向 target
+    canvas.dispatchEvent(ev('pointerup', 220, 0))
+  })
+
+  // 回归（2026-10-25 用户实测）：旧滚轮只改 flyLook.dist——target 沿视线挪、相机不动，
+  // 画面毫无变化。滚轮语义 = 沿视线推拉相机（dolly）：相机与 target 同步平移，
+  // 视角与视距不变；下滚后退、上滚前进。
+  it('滚轮缩放：沿视线推拉相机，视角与视距不变', async () => {
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const store = createPlaybackStore()
+    const container = mountContainer()
+    api = initPlayback(container, store, null, { onVehicleSelect: vi.fn() })
+    created.push(api)
+    await api.loadData({ kind: 'local', file: new File(['x'], 'wheel-zoom.wotbreplay') })
+    api.setCam('free')
+    const canvas = container.querySelector('canvas')
+    const cam = window.__camera
+    const controls = window.__controls
+    const aim0 = controls.target.clone().sub(cam.position).normalize()   // 飞行基准 = cam→target
+    const dist0 = cam.position.distanceTo(controls.target)
+    const wheel = (deltaY) => {
+      canvas.dispatchEvent(new WheelEvent('wheel', { deltaY, clientX: 100, clientY: 100, bubbles: true, cancelable: true }))
+    }
+    const p0 = cam.position.clone()
+    wheel(100)                                                   // 下滚 = 后退
+    const back = cam.position.clone().sub(p0)
+    expect(back.length()).toBeGreaterThan(1)
+    expect(back.dot(aim0)).toBeLessThan(0)                       // 位移沿视线反方向
+    expect(cam.position.distanceTo(controls.target)).toBeCloseTo(dist0, 3)  // 视距不变
+    const aim1 = controls.target.clone().sub(cam.position).normalize()
+    expect(aim1.dot(aim0)).toBeCloseTo(1, 4)                     // 视角不变
+    expect(cam.getWorldDirection(new THREE.Vector3()).dot(aim1)).toBeCloseTo(1, 4)  // 朝向仍对准 target
+    const p1 = cam.position.clone()
+    wheel(-100)                                                  // 上滚 = 前进
+    expect(cam.position.clone().sub(p1).dot(aim0)).toBeGreaterThan(0)
+  })
+
+  // 回归（2026-10-24 用户实测）：曾按 `(pointer: fine)` 决定是否接管，触屏笔记本 /
+  // 平板模式报 coarse ⇒ 自由模式整条接管链失效（WASD 全灭、拖拽退回 OrbitControls）。
+  // 语义改为「自由模式恒接管」，触屏用同一套手势。
+  it('自由模式接管与指针能力无关：touch 拖拽同样转头且相机不动', async () => {
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const store = createPlaybackStore()
+    const container = mountContainer()
+    api = initPlayback(container, store, null, { onVehicleSelect: vi.fn() })
+    created.push(api)
+    await api.loadData({ kind: 'local', file: new File(['x'], 'touch-look.wotbreplay') })
+    api.setCam('free')
+    const canvas = container.querySelector('canvas')
+    const cam = window.__camera
+    const controls = window.__controls
+    const cam0 = cam.position.clone()
+    const tgt0 = controls.target.clone()
+    const touch = (type, x, buttons, pointerId = 7) => {
+      const e = new MouseEvent(type, { button: 0, clientX: x, clientY: 300, buttons, bubbles: true, cancelable: true })
+      Object.defineProperty(e, 'pointerType', { value: 'touch' })
+      Object.defineProperty(e, 'pointerId', { value: pointerId })
+      return e
+    }
+    canvas.dispatchEvent(touch('pointerdown', 100, 1))
+    canvas.dispatchEvent(touch('pointermove', 180, 1))
+    expect(cam.position.equals(cam0)).toBe(true)          // 旋转中心 = 相机自身
+    expect(controls.target.equals(tgt0)).toBe(false)      // 朝向确实转了
+    canvas.dispatchEvent(touch('pointerup', 180, 0))
+  })
+
+  it('双指捏合：沿视线推拉相机，且手势往返精确回位（评审 P2）', async () => {
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const store = createPlaybackStore()
+    const container = mountContainer()
+    api = initPlayback(container, store, null, { onVehicleSelect: vi.fn() })
+    created.push(api)
+    await api.loadData({ kind: 'local', file: new File(['x'], 'touch-pinch.wotbreplay') })
+    api.setCam('free')
+    const canvas = container.querySelector('canvas')
+    const cam = window.__camera
+    const controls = window.__controls
+    const start = cam.position.clone()
+    const dist0 = cam.position.distanceTo(controls.target)
+    const aim0 = new THREE.Vector3().subVectors(controls.target, cam.position).normalize()
+    const touch = (type, x, buttons, pointerId) => {
+      const e = new MouseEvent(type, { button: 0, clientX: x, clientY: 300, buttons, bubbles: true, cancelable: true })
+      Object.defineProperty(e, 'pointerType', { value: 'touch' })
+      Object.defineProperty(e, 'pointerId', { value: pointerId })
+      return e
+    }
+    // 一次完整手势：两指从 200px 起，依次移动到 xs（第二指），再回到 200px 收势
+    const gesture = (xs) => {
+      canvas.dispatchEvent(touch('pointerdown', 100, 1, 7))
+      canvas.dispatchEvent(touch('pointerdown', 300, 1, 9))   // 指距 200px（= d0）
+      for (const x of xs) canvas.dispatchEvent(touch('pointermove', x, 1, 9))
+      canvas.dispatchEvent(touch('pointerup', 300, 0, 9))
+      canvas.dispatchEvent(touch('pointerup', 100, 0, 7))
+    }
+    // 分开 → 推近；回到原指距 → 精确回位（不是 25% 前进 / 20% 后退的漂移）
+    gesture([350, 300])
+    expect(cam.position.distanceTo(start)).toBeCloseTo(0, 4)
+    // 同一手势拆成更多 pointermove：结果一致
+    gesture([325, 350, 300])
+    expect(cam.position.distanceTo(start)).toBeCloseTo(0, 4)
+    // 大间距（触发 ±0.5 单事件上限）同样可逆
+    gesture([500, 300])
+    expect(cam.position.distanceTo(start)).toBeCloseTo(0, 4)
+    // 中途分开时确实沿视线前进，且视距/视角不变
+    const p0 = cam.position.clone()
+    gesture([350])
+    expect(cam.position.clone().sub(p0).dot(aim0)).toBeGreaterThan(0.5)
+    expect(cam.position.distanceTo(controls.target)).toBeCloseTo(dist0, 3)
+    const aim1 = new THREE.Vector3().subVectors(controls.target, cam.position).normalize()
+    expect(aim1.dot(aim0)).toBeCloseTo(1, 4)
+    // 补一个完整往返：从当前位置分开再收回，精确回位（相对该手势起点）
+    const pForward = cam.position.clone()
+    gesture([350, 300])
+    expect(cam.position.distanceTo(pForward)).toBeCloseTo(0, 4)
+    // 单事件触限 + 回程分批：指距 200→350（比例 0.75 → 累计目标钳 0.5）→275→200
+    // （第二指 x = 指距 + 100；d0 = 200px）
+    const pBefore = cam.position.clone()
+    gesture([450, 375, 300])
+    expect(cam.position.distanceTo(pBefore)).toBeCloseTo(0, 4)
+    // 同一端点、不同分批 ⇒ 相同位移（不能按单次增量截断）
+    const base = cam.position.clone()
+    gesture([450])                                  // 一次到指距 350（比例 0.75 → 钳 0.5）
+    const oneShot = cam.position.clone().sub(base)
+    expect(oneShot.length()).toBeGreaterThan(1)
+    gesture([200])                                  // 反向到指距 100（-0.5）⇒ 精确回位
+    expect(cam.position.distanceTo(base)).toBeCloseTo(0, 4)
+    gesture([375, 450])                             // 分两步到同一指距 350
+    const split = cam.position.clone().sub(base)
+    expect(split.distanceTo(oneShot)).toBeCloseTo(0, 4)
   })
 })
 
