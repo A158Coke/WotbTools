@@ -425,7 +425,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
    *  顶视（top→free）反解出 pitch≈±π/2 会让 WASD 的水平投影 fwdLen≈0（无法移动）——
    *  |pitch| 接近天顶/天底时回落到斜俯视（保留 yaw）：从正俯视过渡到斜俯视是自然的
    *  模式切换，换来飞行立即可用。 */
-  function flyLookSyncFromCamera(tag = null) {
+  function flyLookSyncFromCamera(tag = null, preserveVertical = false) {
     const dx = controls.target.x - camera.position.x;
     const dy = controls.target.y - camera.position.y;
     const dz = controls.target.z - camera.position.z;
@@ -435,7 +435,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const rawPitch = Math.asin(Math.max(-1, Math.min(1, dy / dist)));
     // 天顶/天底附近回落到斜俯视：**保持原朝向的上下符号**（俯视=向下看，pitch 仍为负）。
     // 旧实现 `-0.6*sign(rawPitch)` 把俯视翻成仰视（target 跑到地图上空、WASD 水平分量为 0）。
-    flyLook.pitch = Math.abs(rawPitch) > Math.PI / 2 - 0.25
+    flyLook.pitch = !preserveVertical && Math.abs(rawPitch) > Math.PI / 2 - 0.25
       ? 0.6 * Math.sign(rawPitch || 1)
       : rawPitch;
     if (tag) flyDbg(`sync(${tag})`);   // 逐帧对齐（tick）不埋点，防按住键时刷屏
@@ -582,7 +582,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       flyLook.lastX = ev.clientX; flyLook.lastY = ev.clientY;
       const k = 0.0032;   // rad/px（与常见 FPS 灵敏度同量级）
       flyLook.yaw -= dx * k;
-      flyLook.pitch = Math.max(-Math.PI / 2 + 0.02, Math.min(Math.PI / 2 - 0.02, flyLook.pitch - dy * k));
+      flyLook.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, flyLook.pitch - dy * k));
     }
     flyLookApply();
     if (logThis) flyDbg('move(applied)');
@@ -1205,6 +1205,21 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     return top * (1 - ty) + bot * ty;
   }
 
+  // Free Camera 的地板必须采实际 LOD 网格的三角形面；双线性高度场只在四角共面时
+  // 与渲染表面一致。竖直向下 raycast 只查当前地形 mesh，成本仅在相机约束时发生。
+  const terrainFloorRaycaster = new THREE.Raycaster();
+  const terrainFloorRayOrigin = new THREE.Vector3();
+  const terrainFloorRayDown = new THREE.Vector3(0, -1, 0);
+  function sampleRenderedTerrainHeight(x, z) {
+    if (!terrainMesh || !heightMeta) return null;
+    const maxTerrainY = Number(heightMeta.zmax);
+    if (!Number.isFinite(maxTerrainY)) return null;
+    terrainFloorRayOrigin.set(x, Math.max(camera.position.y, maxTerrainY) + 1, z);
+    terrainFloorRaycaster.set(terrainFloorRayOrigin, terrainFloorRayDown);
+    const hit = terrainFloorRaycaster.intersectObject(terrainMesh, false)[0];
+    return Number.isFinite(hit?.point?.y) ? hit.point.y : Number.NaN;
+  }
+
   /** Free Camera 的上限与俯视默认高度同源；地面下限只在有效高度场覆盖内生效。 */
   function constrainFreeCameraAltitude() {
     if (!flyMode() || !camera || !controls) return false;
@@ -1219,7 +1234,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         // sampleHeight 的 corner 坐标域是 [-span/2, span/2)；外侧会被采样器夹到 edge texel。
         const half = span / 2;
         if (x >= -half && x < half && z >= -half && z < half) {
-          const terrainY = sampleHeight(x, z);
+          // 地形高度异步发布早于网格装配；装配完成前沿用高度场，网格可用后必须按
+          // 实际三角面采样，避免双线性高度把非共面格子的相机留在渲染地形内部。
+          const terrainY = terrainMesh
+            ? sampleRenderedTerrainHeight(x, z)
+            : sampleHeight(x, z);
           if (Number.isFinite(terrainY)) minY = terrainY + CAMERA_GROUND_CLEARANCE;
         }
       }
@@ -3457,10 +3476,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       camera.position.set(cx, topCameraDefaultHeight(), cz + 0.01);
       controls.target.set(cx, 0, cz);
       // 保留直下俯视的实际画面，同时为下一次自由飞行准备可用的水平朝向。
-      flyLookSyncFromCamera('top overview');
+      flyLookSyncFromCamera('top overview', true);
       flyLook.yaw = 0;
-      flyLook.pitch = -0.6;
-      flyLook.dist = Math.hypot(controls.target.x - camera.position.x, controls.target.y - camera.position.y, controls.target.z - camera.position.z);
       controls.enabled = false;
     } else if (nextMode === 'free') {
       FOLLOW_EID = 0;
@@ -3496,7 +3513,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 接管（enabled/damping/朝向反解）由 flyLookApplyMode 在模式切换时完成；
     // 这里只做平移推进 + target 重钉。
     const speed = store.flySpeed || FLY_SPEEDS[DEFAULT_FLY_SPEED_INDEX];
-    const moved = tickFlyImpl(pressed, dt, camera, controls, speed);
+    const moved = tickFlyImpl(pressed, dt, camera, controls, speed, flyLook.yaw);
     if (moved) {
       flyLookApply();                                // 平移后重钉 target = cam + dir×dist
       clampCameraTarget();
