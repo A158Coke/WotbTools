@@ -7,13 +7,13 @@ import { onBeforeUnmount, onMounted } from 'vue'
  * - keydown/keyup 维护按下键集合（keydown 重复触发不重复登记；窗口失焦即清空，
  *   防"按住 W 切走再回来一直在飞"）；
  * - 1–6 直接调 adapter.setFlySpeed(n)（即时生效，不需要按住）；
- * - 暴露 tickFly(dt, camera, controls, mode)：以相机朝向为基准推进一帧位移，
+ * - 暴露 tickFly(dt, camera, controls)：以相机朝向为基准推进一帧位移，
  *   返回是否发生位移——调用方把它并入按需渲染的 cameraMoved 判定（暂停时也要出帧）。
  *
  * 键位与播放传输（空格 / ←→，usePlaybackTransport）并行不冲突；**只跳过文本输入**
  * （INPUT 文本类 / TEXTAREA / SELECT / contentEditable）——按钮不跳过：模式按钮点击后
  * 仍持有焦点，若按 BUTTON 跳过，用户「点过自由按钮再按 WASD」会全部失效（实测）。
- * 跟随（follow）模式不接管——跟随语义是车体锚定；top（正俯视）下 WASD 生效、QE 忽略。
+ * 跟随（follow）模式不接管——跟随语义是车体锚定；自由模式的高度边界由场景统一处理。
  */
 
 /** 焦点是否落在**文本输入**目标上（只有这类目标需要让出键盘）。
@@ -49,10 +49,10 @@ const FLY_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE'])
  * 防俯视时 W 钻地）；A/D 沿朝向的水平左/右；Q 升 / E 降（用户实测裁定，世界系垂直）。
  * **自由飞行的旋转中心 = 相机自身**（FPS 语义，用户裁定）：平移只推相机，位移后把
  * target 重钉到相机前方固定视距（首飞行帧冻结，缩放改距离后下轮飞行重新冻结）——
- * 环绕半径恒定，旋转永远绕着自己。mode 'top' 忽略 QE（正俯视防穿地）。
+ * 环绕半径恒定，旋转永远绕着自己；地形与高度边界由场景约束统一处理。
  * @returns {boolean} 是否发生位移（并入 cameraMoved 按需渲染判定）
  */
-export function advanceFly(pressed, dt, camera, controls, mode = 'free', speed = 1) {
+export function advanceFly(pressed, dt, camera, controls, speed = 1, fallbackYaw = null) {
   if (!pressed || !pressed.size || !camera || !controls || !(dt > 0)) return false
   // 飞行视距：**移动前**取值冻结（首帧 = 进入飞行时的实际相机→target 距离；缩放
   // 改距离后下一轮飞行首帧重新冻结）。放最前，防「移动后测距」把首帧距离算错。
@@ -67,6 +67,7 @@ export function advanceFly(pressed, dt, camera, controls, mode = 'free', speed =
   const fwdLen = Math.hypot(fwd.x, fwd.z)
   let ux = 0, uz = 0
   if (fwdLen > 1e-6) { ux = fwd.x / fwdLen; uz = fwd.z / fwdLen }
+  else if (Number.isFinite(fallbackYaw)) { ux = -Math.sin(fallbackYaw); uz = -Math.cos(fallbackYaw) }
   // 水平左向量 = forward × up（右手系）归一：朝 -z 看时左 = -x ✓，朝 +x 看时左 = +z ✓
   const lx = uz, lz = -ux
   const moveW = pressed.has('KeyW') ? 1 : 0
@@ -83,13 +84,11 @@ export function advanceFly(pressed, dt, camera, controls, mode = 'free', speed =
     camera.position.z += dz * step
     moved = true
   }
-  // Q 升 / E 降（世界系垂直，与朝向无关）；top（正俯视）忽略（防穿地，正俯视下也无意义）
-  if (mode !== 'top') {
-    const dy = (pressed.has('KeyQ') ? 1 : 0) - (pressed.has('KeyE') ? 1 : 0)
-    if (dy !== 0) {
-      camera.position.y += dy * step
-      moved = true
-    }
+  // Q 升 / E 降（世界系垂直，与朝向无关）。
+  const dy = (pressed.has('KeyQ') ? 1 : 0) - (pressed.has('KeyE') ? 1 : 0)
+  if (dy !== 0) {
+    camera.position.y += dy * step
+    moved = true
   }
   if (moved) {
     // target 重钉到相机前方固定视距（环绕半径恒定 = 绕自己旋转）
@@ -147,8 +146,8 @@ export function useSceneFlyControls(adapter) {
    * mode: 'free' | 'follow' | 'top'（follow 由调用方短路——跟随语义是车体锚定）。
    * @returns {boolean} 是否发生位移（并入 cameraMoved 按需渲染判定）
    */
-  function tickFly(dt, camera, controls, mode = 'free') {
-    return advanceFly(pressed, dt, camera, controls, mode, flySpeed())
+  function tickFly(dt, camera, controls) {
+    return advanceFly(pressed, dt, camera, controls, flySpeed())
   }
 
   // ---- 场景飞行循环（组件层自驱；场景内核的 animate 不感知键盘）----
