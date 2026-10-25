@@ -104,7 +104,7 @@ Wargaming ASIA/EU/NA 登录使用 Keycloak 的 `WG_APPLICATION_ID`；backend 不
 └── .agents/                    # Agent 规则与 skills
 ```
 
-`frontend/` 的主要目录：`src/app/`（视图注册、导航、路由）、`src/components/`、`src/composables/`、`src/api/`（transport 与 generated）、`src/replay-local/`（WASM 解析、批次计算、导出、2D/AI 投影）、`src/styles/`、`src/locales/`。Java 按 domain 分包，入口见 [`java/README.md`](../java/README.md)。
+`frontend/` 的主要目录：`src/app/`（视图注册、导航、路由）、`src/components/`、`src/composables/`、`src/api/`（transport 与 generated）、`src/replay-local/`（WASM 解析、批次计算、导出、2D/AI 投影）、`src/styles/`、`src/locales/`。Java 按 domain 分包；Hundred 与 Mark3 的 leaderboard、admin query、moderation service 各自留在所属 domain，submission service 持有创建/取消及 replay hash/storage 流程。入口见 [`java/README.md`](../java/README.md)。
 
 ### HTTP Contract workflow
 
@@ -302,7 +302,7 @@ frontend/src/locales/en.json
 frontend/src/locales/ru.json
 ```
 
-按功能追加的消息使用 `feature-messages.json`、`tournament-messages.json`、`creator-messages.json`，由 `messages.js` 非破坏性 deep merge 基础 JSON。禁止在 `main.js` 或组件初始化阶段直接修改 imported locale 对象；已有 key（例如 `replay.processing_job.mixed_league_standard`）必须保留。语言持久化只使用 `localStorage('wotb-lang')`。
+按功能追加的消息使用 `feature-messages.json`、`tournament-messages.json`、`creator-messages.json`，由 `messages.js` 非破坏性 deep merge 基础 JSON。禁止在 `main.js` 或组件初始化阶段直接修改 imported locale 对象；已有 key（例如 `replay.processing_job.mixed_league_standard`）必须保留。`src/i18n/locale-preference.js` 独占 `wotb-lang` storage key 的读取、规范化与持久化；Vue i18n 是唯一 reactive locale owner，显示 helper 通过参数接收 locale，不能隐式读取 browser storage。
 
 ### Layout primitives
 
@@ -676,7 +676,7 @@ Sponsor QR 不进仓库：配置与收款码作为 **GitHub Release 资产**发�
 
 - Java：JUnit 5 / Mockito；业务单测不要启动真实 Keycloak。
 - Keycloak Admin API 通过 `KeycloakAdminUserService` 封装后 mock。
-- **架构测试（ArchUnit）**：`wotb-core` 与 `wotb-web` 各含 `*ArchitectureTest`，随 `mvn test` 自动执行；守护模块边界（core 禁 Spring Web/Boot 与反向依赖 web、web domain 分包与分层、禁字段注入/Lombok、顶层包无循环依赖）。规则失败即构建失败。
+- **架构测试（ArchUnit）**：`wotb-core` 与 `wotb-web` 各含 `*ArchitectureTest`，随 `mvn test` 自动执行；守护模块边界（core 禁 Spring Web/Boot、HTTP transport 类型与反向依赖 web，AI transport 自有错误响应，web domain 分包与分层、禁字段注入/Lombok、顶层包无循环依赖）。规则失败即构建失败。
 - 前端：Vitest + happy-dom（按需声明）；浏览器 gate 的命令与覆盖范围见 [`frontend/AGENTS.md`](../frontend/AGENTS.md)。
 - Replay/League/UI regression 必须补针对真实 invariant 的测试，而不是只验证函数被调用。
 - **职责分层（Fast Feedback First）**：开发过程中 Agent 只跑 targeted / module / feature regression，不重复跑 repository-level full test；仓库级 full validation 由 PR CI 统一执行（authoritative gate）。仅当改动影响跨模块 / build / test infrastructure（[`.agents/AGENTS.md`](../.agents/AGENTS.md) 的 Full-test 例外清单）时，Agent 才跑 `cd java && mvn -s settings.xml test` / `cd frontend && npm test && npm run build`。

@@ -381,19 +381,46 @@ export function measureBeltUvSlope(samples, opts) {
     b.push(vv);
   }
   const keys = Array.from(buckets.keys()).sort((a, b) => a - b);
-  const med = (arr) => { const a = arr.slice().sort((x, y) => x - y); return a[a.length >> 1]; };
   const slopes = [];
   for (let i = 1; i < keys.length; i++) {
     const ds = (keys[i] - keys[i - 1]) * bucket;
     if (!(ds > minStep && ds < maxStep)) continue;
-    const dv = med(buckets.get(keys[i])) - med(buckets.get(keys[i - 1]));
-    if (Math.abs(dv) >= maxJump) continue;          // 图集换行
-    slopes.push(dv / ds);
+    // 图集式 per-link V 的两个真实形态（Grille 15 样本 19217 实测）：
+    // ① 顶点不按弧长排布——同一弧长桶内混多块板/多行图集的顶点，桶内中位会把
+    //    相邻板的 V 混在一起；② **图集两行的 V 推进方向相反**（贴图行对称铺设：
+    //    下行族 +1.24 V/m、上行族 −1.25 V/m）——两族斜率在中位数里互相抵消 = 0。
+    // 修法：逐对 (v_i, v_j) 配对（dedupeV 去掉横向重复行），剔除换行跳变后
+    // **取 |斜率| 的中位为幅值**——两族的 |slope| 相等（同一物理滚动速度），符号
+    // 歧义由调用方的 chainBottomRunDir（底段走向）定滚动方向；线性带（单一符号）
+    // 的 |中位| = |中位斜率|，与旧契约数值一致（符号交给 dir）。
+    const prev = dedupeV(buckets.get(keys[i - 1]));
+    const cur = dedupeV(buckets.get(keys[i]));
+    for (const dv0 of cur) {
+      for (const v0 of prev) {
+        const dv = dv0 - v0;
+        if (Math.abs(dv) >= maxJump) continue;        // 图集换行
+        slopes.push(Math.abs(dv) / ds);
+      }
+    }
   }
   if (slopes.length < minPairs) return { slope: 0, pairs: slopes.length, ok: false };
   slopes.sort((a, b) => a - b);
   const slope = slopes[slopes.length >> 1];
-  return { slope, pairs: slopes.length, ok: Math.abs(slope) > 0.02 };
+  return { slope, pairs: slopes.length, ok: slope > 0.02 };
+}
+
+/** 桶内 V 去重（0.01 网格）：横向重复行的同值 V 只留一个——重复行是几何事实
+ *  （履带板同弧长多行顶点），不剔除会把逐顶点对的斜率中位稀释向 0。 */
+function dedupeV(vArr) {
+  const seen = new Set();
+  const out = [];
+  for (const v of vArr) {
+    const k = Math.round(v / 0.01);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(v);
+  }
+  return out;
 }
 
 /**

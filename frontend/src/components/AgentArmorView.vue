@@ -175,10 +175,11 @@ function startViewer(preserveSelection = false) {
     const initialShooter = preserveSelection && selectedShooterId.value != null
         ? selectedShooterId.value
         : (Number(q.get('shooter')) || initialTarget)
-    window.__INITIAL_TANK__ = initialTarget
-    window.__INITIAL_SHOOTER__ = initialShooter
     // 审计 3D-16：场景脚本写入的文案与枚举值按当前语言提供
+    // 初始车/射手经显式参数注入（2026-10-24 起替代 window.__INITIAL_TANK__ / __INITIAL_SHOOTER__）
     viewer = initTankViewer({
+        initialTankId: initialTarget,
+        initialShooterId: initialShooter,
         labels: {
             loading: t('armor.loading'),
             shellUnavailable: t('armor.shell_unavailable'),

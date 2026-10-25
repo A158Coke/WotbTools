@@ -9,12 +9,13 @@ import com.wotb.web.hundred.entity.HundredBattleSubmission;
 import com.wotb.web.hundred.repository.HundredBattleSubmissionRepository;
 import com.wotb.web.hundred.service.HundredBattleMapper;
 import com.wotb.web.hundred.service.HundredBattleSubmissionService;
+import com.wotb.web.hundred.service.HundredModerationService;
 import com.wotb.web.hundred.service.HundredReplayEvidenceService;
 import com.wotb.web.mark3.entity.Mark3Submission;
 import com.wotb.web.mark3.repository.Mark3SubmissionRepository;
 import com.wotb.web.mark3.service.Mark3Mapper;
 import com.wotb.web.mark3.service.Mark3ReplayEvidenceService;
-import com.wotb.web.mark3.service.Mark3SubmissionService;
+import com.wotb.web.mark3.service.Mark3ModerationService;
 import com.wotb.web.replay.service.ReplayCapacityLimiter;
 import com.wotb.web.replayfile.HallOfFameReplayStorage;
 import com.wotb.web.replayfile.HundredReplayReferenceCounter;
@@ -93,14 +94,14 @@ class HofBulkDeleteTest {
         when(hundredRepository.save(any(HundredBattleSubmission.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        final BulkDeleteResultDto result = hundredService().bulkDeleteCurrent(
+        final com.wotb.web.hundred.dto.BulkDeleteResultDto result = hundredModerationService().bulkDeleteCurrent(
                 ADMIN_SUB, List.of(1L, 2L, 3L), "ADMIN_CORRECTION", null);
 
         assertEquals(3, result.requested());
         assertEquals(1, result.deleted());
         assertEquals(2, result.failed());
         assertEquals(List.of(true, false, false),
-                result.results().stream().map(BulkDeleteItemResult::deleted).toList());
+                result.results().stream().map(com.wotb.web.hundred.dto.BulkDeleteItemResult::deleted).toList());
 
         // 合法 CURRENT 走完整单条删除语义
         assertEquals("DELETED", current.getStatus());
@@ -119,7 +120,7 @@ class HofBulkDeleteTest {
     void hundredBulkDeleteValidatesReasonOnceForTheWholeBatch() {
         // 批次级参数错误必须整体拒绝，不能表现为「每条都失败」
         assertThrows(IllegalArgumentException.class,
-                () -> hundredService().bulkDeleteCurrent(
+                () -> hundredModerationService().bulkDeleteCurrent(
                         ADMIN_SUB, List.of(1L), "NOT_A_CATEGORY", null));
         verify(hundredRepository, never()).findByIdForUpdate(anyLong());
     }
@@ -133,7 +134,7 @@ class HofBulkDeleteTest {
         when(mark3Repository.save(any(Mark3Submission.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        final BulkDeleteResultDto result = mark3Service().bulkDeleteCurrent(
+        final com.wotb.web.mark3.dto.BulkDeleteResultDto result = mark3ModerationService().bulkDeleteCurrent(
                 ADMIN_SUB, List.of(11L, 12L), "ADMIN_CORRECTION", null);
 
         assertEquals(2, result.requested());
@@ -161,14 +162,12 @@ class HofBulkDeleteTest {
         verify(recordRepository).delete(any(HallOfFameRecord.class));
     }
 
-    private HundredBattleSubmissionService hundredService() {
-        return new HundredBattleSubmissionService(hundredRepository, hundredMapper, userProfileService,
-                hundredEvidence, replayHashLock, txManager);
+    private HundredModerationService hundredModerationService() {
+        return new HundredModerationService(hundredRepository, hundredMapper, hundredEvidence, txManager);
     }
 
-    private Mark3SubmissionService mark3Service() {
-        return new Mark3SubmissionService(mark3Repository, mark3Mapper, userProfileService,
-                replayCapacityLimiter, mark3Evidence, replayHashLock, txManager);
+    private Mark3ModerationService mark3ModerationService() {
+        return new Mark3ModerationService(mark3Repository, mark3Mapper, mark3Evidence, txManager);
     }
 
     private HallOfFameAdminService hofAdminService() {

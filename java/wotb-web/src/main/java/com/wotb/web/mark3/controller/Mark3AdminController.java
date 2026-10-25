@@ -1,8 +1,8 @@
 package com.wotb.web.mark3.controller;
 
 import com.wotb.web.config.ApiPaths;
-import com.wotb.web.hof.dto.BulkDeleteModerationRequest;
-import com.wotb.web.hof.dto.BulkDeleteResultDto;
+import com.wotb.web.mark3.dto.BulkDeleteModerationRequest;
+import com.wotb.web.mark3.dto.BulkDeleteResultDto;
 import com.wotb.web.mark3.dto.Mark3AdminDetailDto;
 import com.wotb.web.mark3.dto.Mark3AdminPageDto;
 import com.wotb.web.mark3.dto.Mark3DeleteRequest;
@@ -10,7 +10,8 @@ import com.wotb.web.mark3.dto.Mark3RejectRequest;
 import com.wotb.web.mark3.dto.Mark3ReplayEvidenceDto;
 import com.wotb.web.mark3.dto.Mark3SubmissionSummaryDto;
 import com.wotb.web.mark3.service.Mark3ReplayEvidenceService;
-import com.wotb.web.mark3.service.Mark3SubmissionService;
+import com.wotb.web.mark3.service.Mark3AdminQueryService;
+import com.wotb.web.mark3.service.Mark3ModerationService;
 import com.wotb.web.replayfile.ReplayDownload;
 import com.wotb.web.util.JwtUtil;
 import org.springframework.http.ContentDisposition;
@@ -34,13 +35,16 @@ import java.util.List;
 @RequestMapping(ApiPaths.HOF_MARK3_ADMIN)
 public class Mark3AdminController {
 
-    private final Mark3SubmissionService service;
+    private final Mark3AdminQueryService queryService;
+    private final Mark3ModerationService moderationService;
     private final Mark3ReplayEvidenceService evidenceService;
 
     public Mark3AdminController(
-            final Mark3SubmissionService service,
+            final Mark3AdminQueryService queryService,
+            final Mark3ModerationService moderationService,
             final Mark3ReplayEvidenceService evidenceService) {
-        this.service = service;
+        this.queryService = queryService;
+        this.moderationService = moderationService;
         this.evidenceService = evidenceService;
     }
 
@@ -52,12 +56,12 @@ public class Mark3AdminController {
             @RequestParam(name = "vehicleId", required = false) final Long vehicleId,
             @RequestParam(name = "page", defaultValue = "1") final int page,
             @RequestParam(name = "size", defaultValue = "50") final int size) {
-        return service.adminList(status, nation, vehicleType, vehicleId, page, size);
+        return queryService.adminList(status, nation, vehicleType, vehicleId, page, size);
     }
 
     @GetMapping("/submissions/{id}")
     public Mark3AdminDetailDto detail(@PathVariable final long id) {
-        return service.adminDetail(id);
+        return queryService.adminDetail(id);
     }
 
     @GetMapping("/submissions/{id}/replays")
@@ -82,21 +86,21 @@ public class Mark3AdminController {
     /** 通过不接收请求体，管理员不能修改 battleCount/averageDamage/winRate。 */
     @PostMapping("/submissions/{id}/approve")
     public Mark3SubmissionSummaryDto approve(@PathVariable final long id) {
-        return service.approve(JwtUtil.requireUserId(), id);
+        return moderationService.approve(JwtUtil.requireUserId(), id);
     }
 
     @PostMapping("/submissions/{id}/reject")
     public Mark3SubmissionSummaryDto reject(
             @PathVariable final long id,
             @RequestBody final Mark3RejectRequest body) {
-        return service.reject(JwtUtil.requireUserId(), id, body.rejectReason(), body.rejectReasonText());
+        return moderationService.reject(JwtUtil.requireUserId(), id, body.rejectReason(), body.rejectReasonText());
     }
 
     @PostMapping("/submissions/{id}/delete")
     public Mark3SubmissionSummaryDto delete(
             @PathVariable final long id,
             @RequestBody final Mark3DeleteRequest body) {
-        return service.deleteCurrent(JwtUtil.requireUserId(), id, body.deleteReason(), body.deleteReasonText());
+        return moderationService.deleteCurrent(JwtUtil.requireUserId(), id, body.deleteReason(), body.deleteReasonText());
     }
 
     /**
@@ -105,7 +109,7 @@ public class Mark3AdminController {
      */
     @PostMapping("/submissions/bulk-delete")
     public BulkDeleteResultDto bulkDelete(@RequestBody final BulkDeleteModerationRequest body) {
-        return service.bulkDeleteCurrent(JwtUtil.requireUserId(), body.normalizedIds(),
+        return moderationService.bulkDeleteCurrent(JwtUtil.requireUserId(), body.normalizedIds(),
                 body.reason(), body.reasonText());
     }
 }
