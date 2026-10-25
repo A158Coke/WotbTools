@@ -311,71 +311,6 @@ export const PBR_FRAG = `
     }
 `;
 
-export const resUniform = { value: new THREE.Vector2(1, 1) };   // 共享分辨率（低清/全清 pass 每帧切换）
-
-export const rcUniforms = {
-    rcThickMul: { value: 1 },
-    rcEnabled: { value: false },
-    rcMode: { value: 0 },
-    rcWorldTris: { value: null },
-    rcTriRows: { value: 1 },
-    rcGridCells: { value: null },
-    rcGridEntries: { value: null },
-    rcGridMin: { value: new THREE.Vector3(0, 0, 0) },
-    rcCell: { value: 0.45 },
-    rcGridDimsF: { value: new THREE.Vector3(1, 1, 1) },
-    rcCellRows: { value: 1 },
-    rcEntryRows: { value: 1 },
-    rcEntryTotal: { value: 0 },
-    // gun_mask 裁切面（世界系 xyz=normal, w=constant）：只过滤 gunBarrel 命中。
-    rcClipPlane: { value: new THREE.Vector4() },
-    rcClipEnabled: { value: false },
-};
-export function penetrationMaterial(thickness) {
-    return new THREE.ShaderMaterial({
-        vertexShader: PBR_VERT, fragmentShader: PBR_FRAG,
-        transparent: true, depthWrite: false,
-        uniforms: {
-            thickness: { value: thickness },
-            penetration: { value: 200 },
-            caliber: { value: 120 },
-            ricochet: { value: 70.0 * Math.PI / 180 },
-            normalization: { value: 0.0 },
-            greenPenetration: { value: false },
-            advancedHighlighting: { value: true },
-            opaque: { value: false },
-            isExplosive: { value: false },
-            canSplash: { value: false },
-            damage: { value: 0 },
-            explosionRadius: { value: 0 },
-            heActive: { value: false },
-            heCenter: { value: new THREE.Vector3(0, 0, 0) },
-            resolution: resUniform,
-            metersPerUnit: { value: 1 },
-            opacity: { value: 1 },
-            spacedArmorBuffer: { value: emptySpacedTexture() },
-            spacedArmorDepth: { value: null },
-            spacedStateBuffer: { value: emptySpacedTexture() },
-            spacedSatGuard: { value: 0 },
-            inverseProjectionMatrix: { value: null },
-            rcThickMul: rcUniforms.rcThickMul,
-            rcEnabled: rcUniforms.rcEnabled,
-            rcMode: rcUniforms.rcMode,
-            rcWorldTris: rcUniforms.rcWorldTris,
-            rcTriRows: rcUniforms.rcTriRows,
-            rcGridCells: rcUniforms.rcGridCells,
-            rcGridEntries: rcUniforms.rcGridEntries,
-            rcGridMin: rcUniforms.rcGridMin,
-            rcCell: rcUniforms.rcCell,
-            rcGridDimsF: rcUniforms.rcGridDimsF,
-            rcCellRows: rcUniforms.rcCellRows,
-            rcEntryRows: rcUniforms.rcEntryRows,
-            rcEntryTotal: rcUniforms.rcEntryTotal,
-            rcClipPlane: rcUniforms.rcClipPlane,
-            rcClipEnabled: rcUniforms.rcClipEnabled,
-        },
-    });
-}
 const EXTERNAL_VERT = `
     #include <clipping_planes_pars_vertex>
     void main() {
@@ -486,44 +421,6 @@ const SPACED_STATE_FRAG = `
       gl_FragColor = vec4(ricocheted ? 1.0 : 0.0, bCode, rcDiag / 255.0, 0.0);
     }
 `;
-/** 间隙板两通道共享 uniforms（与穿透材质同一对象引用共享续飞变量——单点更新全体生效）。 */
-function spacedCommonUniforms(thickness, penetration) {
-    return {
-        thickness: { value: thickness }, penetration: { value: penetration || 200 },
-        caliber: { value: 120 }, ricochet: { value: 70 * Math.PI / 180 }, normalization: { value: 0 },
-        rcThickMul: rcUniforms.rcThickMul,
-        rcEnabled: rcUniforms.rcEnabled,
-        rcMode: rcUniforms.rcMode,
-        rcWorldTris: rcUniforms.rcWorldTris,
-        rcTriRows: rcUniforms.rcTriRows,
-        rcGridCells: rcUniforms.rcGridCells,
-        rcGridEntries: rcUniforms.rcGridEntries,
-        rcGridMin: rcUniforms.rcGridMin,
-        rcCell: rcUniforms.rcCell,
-        rcGridDimsF: rcUniforms.rcGridDimsF,
-        rcCellRows: rcUniforms.rcCellRows,
-        rcEntryRows: rcUniforms.rcEntryRows,
-        rcEntryTotal: rcUniforms.rcEntryTotal,
-        rcClipPlane: rcUniforms.rcClipPlane,
-        rcClipEnabled: rcUniforms.rcClipEnabled,
-    };
-}
-export function spacedMaterial(thickness, penetration) {
-    return new THREE.ShaderMaterial({
-        vertexShader: SPACED_VERT, fragmentShader: SPACED_FRAG,
-        depthWrite: false, depthTest: true,
-        blending: THREE.AdditiveBlending,
-        uniforms: spacedCommonUniforms(thickness, penetration),
-    });
-}
-export function spacedStateMaterial(thickness, penetration) {
-    return new THREE.ShaderMaterial({
-        vertexShader: SPACED_VERT, fragmentShader: SPACED_STATE_FRAG,
-        // 状态不可累加：最近板写入后，其余板深度测试失败（独占写入）
-        depthWrite: true, depthTest: true, blending: THREE.NoBlending,
-        uniforms: spacedCommonUniforms(thickness, penetration),
-    });
-}
 // 外部模块状态材质（RT1）：只把 A 置 1（= 最近覆盖层是外部模块），RGB 保留——
 // 其后间隙板的跳弹/续飞状态不得被模块覆盖。RGB src=0/dst=1，A src=1/dst=0。
 // 模块不是装甲层：它在前时抑制其后间隙板的跳弹/续飞。
@@ -548,12 +445,132 @@ export function moduleStateMaterial(clip) {
     });
 }
 
-let _emptySpacedTex = null;
-export function emptySpacedTexture() {
-    if (!_emptySpacedTex) {
-        const d = new Uint8Array([0, 0, 0, 0]);
-        _emptySpacedTex = new THREE.DataTexture(d, 1, 1, THREE.RGBAFormat);
-        _emptySpacedTex.needsUpdate = true;
+/**
+ * 每个 viewer 一份的穿透材质**运行态**：穿透分辨率 uniform、跳弹续飞共享 uniforms、
+ * 空白占位纹理，以及把材质绑定到这些对象上的工厂。**不得提升为模块单例**——
+ * 两个 viewer 生命周期重叠时，A 的更新/重建/清理会直接改到 B 正在使用的 uniforms。
+ */
+export function createArmorShaderContext() {
+    const resUniform = { value: new THREE.Vector2(1, 1) };   // 共享分辨率（低清/全清 pass 每帧切换）
+
+    const rcUniforms = {
+        rcThickMul: { value: 1 },
+        rcEnabled: { value: false },
+        rcMode: { value: 0 },
+        rcWorldTris: { value: null },
+        rcTriRows: { value: 1 },
+        rcGridCells: { value: null },
+        rcGridEntries: { value: null },
+        rcGridMin: { value: new THREE.Vector3(0, 0, 0) },
+        rcCell: { value: 0.45 },
+        rcGridDimsF: { value: new THREE.Vector3(1, 1, 1) },
+        rcCellRows: { value: 1 },
+        rcEntryRows: { value: 1 },
+        rcEntryTotal: { value: 0 },
+        // gun_mask 裁切面（世界系 xyz=normal, w=constant）：只过滤 gunBarrel 命中。
+        rcClipPlane: { value: new THREE.Vector4() },
+        rcClipEnabled: { value: false },
+    };
+    function penetrationMaterial(thickness) {
+        return new THREE.ShaderMaterial({
+            vertexShader: PBR_VERT, fragmentShader: PBR_FRAG,
+            transparent: true, depthWrite: false,
+            uniforms: {
+                thickness: { value: thickness },
+                penetration: { value: 200 },
+                caliber: { value: 120 },
+                ricochet: { value: 70.0 * Math.PI / 180 },
+                normalization: { value: 0.0 },
+                greenPenetration: { value: false },
+                advancedHighlighting: { value: true },
+                opaque: { value: false },
+                isExplosive: { value: false },
+                canSplash: { value: false },
+                damage: { value: 0 },
+                explosionRadius: { value: 0 },
+                heActive: { value: false },
+                heCenter: { value: new THREE.Vector3(0, 0, 0) },
+                resolution: resUniform,
+                metersPerUnit: { value: 1 },
+                opacity: { value: 1 },
+                spacedArmorBuffer: { value: emptySpacedTexture() },
+                spacedArmorDepth: { value: null },
+                spacedStateBuffer: { value: emptySpacedTexture() },
+                spacedSatGuard: { value: 0 },
+                inverseProjectionMatrix: { value: null },
+                rcThickMul: rcUniforms.rcThickMul,
+                rcEnabled: rcUniforms.rcEnabled,
+                rcMode: rcUniforms.rcMode,
+                rcWorldTris: rcUniforms.rcWorldTris,
+                rcTriRows: rcUniforms.rcTriRows,
+                rcGridCells: rcUniforms.rcGridCells,
+                rcGridEntries: rcUniforms.rcGridEntries,
+                rcGridMin: rcUniforms.rcGridMin,
+                rcCell: rcUniforms.rcCell,
+                rcGridDimsF: rcUniforms.rcGridDimsF,
+                rcCellRows: rcUniforms.rcCellRows,
+                rcEntryRows: rcUniforms.rcEntryRows,
+                rcEntryTotal: rcUniforms.rcEntryTotal,
+                rcClipPlane: rcUniforms.rcClipPlane,
+                rcClipEnabled: rcUniforms.rcClipEnabled,
+            },
+        });
     }
-    return _emptySpacedTex;
+    /** 间隙板两通道共享 uniforms（与穿透材质同一对象引用共享续飞变量——单点更新全体生效）。 */
+    function spacedCommonUniforms(thickness, penetration) {
+        return {
+            thickness: { value: thickness }, penetration: { value: penetration || 200 },
+            caliber: { value: 120 }, ricochet: { value: 70 * Math.PI / 180 }, normalization: { value: 0 },
+            rcThickMul: rcUniforms.rcThickMul,
+            rcEnabled: rcUniforms.rcEnabled,
+            rcMode: rcUniforms.rcMode,
+            rcWorldTris: rcUniforms.rcWorldTris,
+            rcTriRows: rcUniforms.rcTriRows,
+            rcGridCells: rcUniforms.rcGridCells,
+            rcGridEntries: rcUniforms.rcGridEntries,
+            rcGridMin: rcUniforms.rcGridMin,
+            rcCell: rcUniforms.rcCell,
+            rcGridDimsF: rcUniforms.rcGridDimsF,
+            rcCellRows: rcUniforms.rcCellRows,
+            rcEntryRows: rcUniforms.rcEntryRows,
+            rcEntryTotal: rcUniforms.rcEntryTotal,
+            rcClipPlane: rcUniforms.rcClipPlane,
+            rcClipEnabled: rcUniforms.rcClipEnabled,
+        };
+    }
+    function spacedMaterial(thickness, penetration) {
+        return new THREE.ShaderMaterial({
+            vertexShader: SPACED_VERT, fragmentShader: SPACED_FRAG,
+            depthWrite: false, depthTest: true,
+            blending: THREE.AdditiveBlending,
+            uniforms: spacedCommonUniforms(thickness, penetration),
+        });
+    }
+    function spacedStateMaterial(thickness, penetration) {
+        return new THREE.ShaderMaterial({
+            vertexShader: SPACED_VERT, fragmentShader: SPACED_STATE_FRAG,
+            // 状态不可累加：最近板写入后，其余板深度测试失败（独占写入）
+            depthWrite: true, depthTest: true, blending: THREE.NoBlending,
+            uniforms: spacedCommonUniforms(thickness, penetration),
+        });
+    }
+    let _emptySpacedTex = null;
+    function emptySpacedTexture() {
+        if (!_emptySpacedTex) {
+            const d = new Uint8Array([0, 0, 0, 0]);
+            _emptySpacedTex = new THREE.DataTexture(d, 1, 1, THREE.RGBAFormat);
+            _emptySpacedTex.needsUpdate = true;
+        }
+        return _emptySpacedTex;
+    }
+
+    /** 释放本 context 的占位纹理（材质由场景 traverse 释放；这里只收 context 私有资源） */
+    function dispose() {
+        if (_emptySpacedTex) { _emptySpacedTex.dispose(); _emptySpacedTex = null }
+    }
+    return {
+        resUniform, rcUniforms, emptySpacedTexture,
+        penetrationMaterial, spacedMaterial, spacedStateMaterial,
+        externalMaterial, moduleStateMaterial, dispose,
+    }
 }
