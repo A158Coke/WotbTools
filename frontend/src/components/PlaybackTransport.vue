@@ -1,6 +1,7 @@
 <script setup>
 // Shared primary composition: −5 / Play / +5 / current speed / Fullscreen / Display.
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
+import { useEventListener } from '@vueuse/core'
 import { Maximize2, Minimize2, Pause, Play, PencilRuler, SlidersHorizontal } from 'lucide-vue-next'
 import PlaybackTimeline from './PlaybackTimeline.vue'
 import { formatPlaybackClock } from '../utils/playbackClock'
@@ -36,7 +37,6 @@ const emit = defineEmits(['toggle-play', 'step', 'set-speed', 'seek', 'scrub-sta
 const speedOpen = ref(false)
 const speedRoot = ref(null)
 const gearEl = ref(null)
-onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocPointerDown, true))
 function chooseSpeed(option) {
   speedOpen.value = false
   emit('set-speed', option)
@@ -45,11 +45,7 @@ function onDocPointerDown(event) {
   if (!speedOpen.value) return
   if (!speedRoot.value?.contains(event.target)) speedOpen.value = false
 }
-watch(speedOpen, (open) => {
-  if (typeof document === 'undefined') return
-  if (open) document.addEventListener('pointerdown', onDocPointerDown, true)
-  else document.removeEventListener('pointerdown', onDocPointerDown, true)
-})
+useEventListener(() => (typeof document === 'undefined' ? undefined : document), 'pointerdown', onDocPointerDown, { capture: true })
 
 /**
  * 时间轴不可用（duration 不大于起点）时，播放 / 跳秒 / 进度条都是 silent no-op——

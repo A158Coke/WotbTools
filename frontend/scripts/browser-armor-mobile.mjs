@@ -102,7 +102,7 @@ function armorLayoutProbe() {
     pickerSearch: box('#tp-search'),
     pickerFilters: ['#tp-tier', '#tp-nation', '#tp-type'].map((selector) => box(selector)),
     pickerFilterToggle: box('[data-testid="filter-toggle"]'),
-    pickerSheet: box('[data-testid="tank-filters"][role="dialog"]'),
+    pickerSheet: box('[role="dialog"] [data-testid="tank-filters"]'),
     targetSelect: box('#target-select'),
     configSelect: box('#config-select'),
     eqOpts: [...document.querySelectorAll('#tank-selectors .eq-opt')].map((label) => {
@@ -438,6 +438,9 @@ async function runMobileScenario(env, scenario) {
         { timeout: 5000, label: 'picker filter sheet' }).catch(() => null)
       check(failures, !!sheet && sheet.boxes.every(box => box && box.height >= 43.5) && sheet.done && sheet.done.height >= 43.5,
         `${label}: 筛选 sheet 的筛选控件/完成按钮缺失或低于 44px（boxes=${JSON.stringify(sheet?.boxes)} done=${JSON.stringify(sheet?.done)}）`)
+      // sheet 有进场位移动画：等它落定再量坐标，否则真实 tap 会落在滑动中的旧位置
+      await page.waitForValue(`document.getAnimations().every(animation => animation.playState !== 'running')`, value => value === true,
+        { timeout: 3000, label: 'sheet enter animation settled' }).catch(() => {})
       // 关闭 sheet：优先点「完成」按钮（确定性入口；scrim 点击在弹窗叠层下时序不稳定）。
       const done = await page.evaluate(`(() => {
         const el = document.querySelector('[data-testid="filter-sheet-done"]')
@@ -449,8 +452,13 @@ async function runMobileScenario(env, scenario) {
       if (done?.visible) {
         await page.tap({ x: done.x, y: done.y, touch: scenario.touch })
       }
-      await page.waitForValue(`!document.querySelector('[data-testid="tank-filters"][role="dialog"]')`, value => value === true,
+      await page.waitForValue(`!document.querySelector('[role="dialog"] [data-testid="tank-filters"]')`, value => value === true,
         { timeout: 5000, label: 'picker filter sheet closed' }).catch(() => {})
+      // 模态 sheet 关闭后 Reka 会把 body 的 pointer-events 恢复；残留 none 会让后面的真实点击全部落空
+      const released = await page.waitForValue(`getComputedStyle(document.body).pointerEvents !== 'none'`, value => value === true,
+        { timeout: 3000, label: 'body pointer-events released' }).then(() => true).catch(() => false)
+      const releaseState = released ? null : await page.evaluate(`JSON.stringify({ style: document.body.getAttribute('style'), layers: [...document.querySelectorAll('[data-dismissable-layer],[data-state]')].filter(e => /sheet|dialog|drawer/i.test(e.className + e.getAttribute('role'))).map(e => e.className + '|' + e.getAttribute('data-state')), scrims: document.querySelectorAll('[data-testid=sheet-scrim]').length, sheets: document.querySelectorAll('.sheet').length })`)
+      check(failures, released, `${label}: 筛选 sheet 关闭后 body 仍是 pointer-events: none ${releaseState || ''}`)
     }
     // 关闭弹窗：真实点击关闭键
     await page.tap({ x: picker.pickerClose.left + Math.round(picker.pickerClose.width / 2), y: picker.pickerClose.top + Math.round(picker.pickerClose.height / 2), touch: scenario.touch })
@@ -792,7 +800,7 @@ function pickerCardsProbe() {
 }
 /** 共享 TankCatalogMenu 的手机筛选 sheet 探针：四个筛选控件在 dialog 内可见。 */
 function pickerSheetProbe() {
-  const sheet = document.querySelector('[data-testid="tank-filters"][role="dialog"]')
+  const sheet = document.querySelector('[role="dialog"] [data-testid="tank-filters"]')
   const boxes = ['#tp-tier', '#tp-nation', '#tp-type', '#tp-sort'].map(selector => {
     const el = document.querySelector(selector)
     if (!el) return null

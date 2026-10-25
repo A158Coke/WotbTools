@@ -42,6 +42,7 @@ const nameFilter = process.argv[2]
 const selectedScenarios = scenarios.filter(value => !nameFilter || value.name.includes(nameFilter))
 async function tap(page, selector, touch) {
   await page.waitForValue(`!!document.querySelector(${JSON.stringify(selector)})`, Boolean)
+  await page.animationsSettled()
   const point = await page.evaluate(`(() => { const element = document.querySelector(${JSON.stringify(selector)}); element.scrollIntoView({block:'center', inline:'nearest'}); const r = element.getBoundingClientRect(); return {x:r.left+r.width/2,y:r.top+r.height/2}; })()`)
   await page.tap({ ...point, touch })
 }

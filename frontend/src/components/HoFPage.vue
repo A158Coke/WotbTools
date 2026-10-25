@@ -16,6 +16,8 @@ import { resolveVehicleName, vehicleNameIndex } from '../utils/hofVehicles.js'
 import * as api from '../api/hall-of-fame.js'
 import ImageDataUploader from './ImageDataUploader.vue'
 import FilterChips from './FilterChips.vue'
+import AppSheet from './AppSheet.vue'
+import { createReusableTemplate } from '@vueuse/core'
 import AppDialog from './AppDialog.vue'
 import AppButton from './AppButton.vue'
 import VehiclePicker from './VehiclePicker.vue'
@@ -378,6 +380,10 @@ if (route) {
 // ── 手机筛选（审计 PG-05 / design-language §9）：筛选收进底部 sheet，已生效条件显示为 chip ──
 const { isCompact } = useBreakpoint()
 const filterSheet = ref(null) // null | 'single' | 'hundred' | 'mark3'
+// 筛选工具栏：桌面内联，手机放进 AppSheet；同一份模板只写一次
+const [DefineSingleFilters, ReuseSingleFilters] = createReusableTemplate()
+const [DefineHundredFilters, ReuseHundredFilters] = createReusableTemplate()
+const [DefineMark3Filters, ReuseMark3Filters] = createReusableTemplate()
 let filterSheetOpener = null
 function toggleFilterSheet(tab) {
   if (filterSheet.value === tab) return closeFilterSheet()
@@ -1274,7 +1280,6 @@ watch(() => hofAvailability.value.available, (available, previous) => {
     <Banner v-if="!hofAvailability.pending && !hofAvailability.available" tone="info" data-testid="hof-connectivity">
       <p>{{ $t(hofAvailability.messageKey) }}</p>
     </Banner>
-    <div v-if="isCompact && filterSheet" class="lb-sheet-scrim" aria-hidden="true" @click="closeFilterSheet"></div>
     <div class="tabs" data-tour="hof-tabs">
       <button type="button" :class="{ active: activeTab === 'single' }" @click="switchTab('single')">{{ $t('hof.singleTab') }}</button>
       <button type="button" :class="{ active: activeTab === 'hundred' }" @click="switchTab('hundred')">{{ $t('hundred.tab') }}</button>
@@ -1323,7 +1328,8 @@ watch(() => hofAvailability.value.available, (available, previous) => {
       </AppDialog>
 
       <FilterChips data-tour="hof-filters" v-if="isCompact" :chips="singleChips" :open="filterSheet === 'single'" @toggle="toggleFilterSheet('single')" @remove="removeSingleFilter" />
-      <div v-if="!isCompact || filterSheet === 'single'" class="lb-toolbar-host" :data-tour="isCompact ? 'hof-filter-options' : 'hof-filters'" :class="{ 'is-sheet': isCompact }" :role="isCompact ? 'dialog' : undefined" :aria-label="isCompact ? $t('filters.title') : undefined" @keydown.esc="isCompact && closeFilterSheet()">
+      <DefineSingleFilters>
+      <div class="lb-toolbar-host" :data-tour="isCompact ? 'hof-filter-options' : 'hof-filters'" :class="{ 'is-sheet': isCompact }">
         <div v-if="isCompact" class="lb-sheet-head">
           <strong>{{ $t('filters.title') }}</strong>
           <AppButton size="sm" variant="primary" data-testid="filter-done" @click="closeFilterSheet">{{ $t('filters.done') }}</AppButton>
@@ -1381,6 +1387,9 @@ watch(() => hofAvailability.value.available, (available, previous) => {
       <p v-if="singleVehicleOptionsError" class="error">{{ singleVehicleOptionsError }}</p>
 
       </div>
+      </DefineSingleFilters>
+      <AppSheet v-if="isCompact" :portal-to="boardTop" :open="filterSheet === 'single'" :title="$t('filters.title')" @close="closeFilterSheet"><ReuseSingleFilters /></AppSheet>
+      <ReuseSingleFilters v-else />
       <p v-if="selectedTankId && !isCompact" class="lb-filter-hint">
         {{ $t('hof.filter_tank') }}: <strong>{{ selectedTankLabel }}</strong>
       </p>
@@ -1489,7 +1498,8 @@ watch(() => hofAvailability.value.available, (available, previous) => {
       </div>
 
       <FilterChips data-tour="hof-filters" v-if="isCompact" :chips="hundredChips" :open="filterSheet === 'hundred'" @toggle="toggleFilterSheet('hundred')" @remove="removeHundredFilter" />
-      <div v-if="!isCompact || filterSheet === 'hundred'" class="lb-toolbar-host" :data-tour="isCompact ? 'hof-filter-options' : 'hof-filters'" :class="{ 'is-sheet': isCompact }" :role="isCompact ? 'dialog' : undefined" :aria-label="isCompact ? $t('filters.title') : undefined" @keydown.esc="isCompact && closeFilterSheet()">
+      <DefineHundredFilters>
+      <div class="lb-toolbar-host" :data-tour="isCompact ? 'hof-filter-options' : 'hof-filters'" :class="{ 'is-sheet': isCompact }">
         <div v-if="isCompact" class="lb-sheet-head">
           <strong>{{ $t('filters.title') }}</strong>
           <AppButton size="sm" variant="primary" data-testid="filter-done" @click="closeFilterSheet">{{ $t('filters.done') }}</AppButton>
@@ -1517,6 +1527,9 @@ watch(() => hofAvailability.value.available, (available, previous) => {
         </button>
       </div>
       </div>
+      </DefineHundredFilters>
+      <AppSheet v-if="isCompact" :portal-to="boardTop" :open="filterSheet === 'hundred'" :title="$t('filters.title')" @close="closeFilterSheet"><ReuseHundredFilters /></AppSheet>
+      <ReuseHundredFilters v-else />
 
       <p v-if="h100VehicleId && !isCompact" class="lb-filter-hint">
         {{ $t('hundred.selectVehicle') }}: <strong>{{ h100VehicleLabel }}</strong>
@@ -1601,7 +1614,8 @@ watch(() => hofAvailability.value.available, (available, previous) => {
       </div>
 
       <FilterChips data-tour="hof-filters" v-if="isCompact" :chips="mark3Chips" :open="filterSheet === 'mark3'" @toggle="toggleFilterSheet('mark3')" @remove="removeMark3Filter" />
-      <div v-if="!isCompact || filterSheet === 'mark3'" class="lb-toolbar-host" :data-tour="isCompact ? 'hof-filter-options' : 'hof-filters'" :class="{ 'is-sheet': isCompact }" :role="isCompact ? 'dialog' : undefined" :aria-label="isCompact ? $t('filters.title') : undefined" @keydown.esc="isCompact && closeFilterSheet()">
+      <DefineMark3Filters>
+      <div class="lb-toolbar-host" :data-tour="isCompact ? 'hof-filter-options' : 'hof-filters'" :class="{ 'is-sheet': isCompact }">
         <div v-if="isCompact" class="lb-sheet-head">
           <strong>{{ $t('filters.title') }}</strong>
           <AppButton size="sm" variant="primary" data-testid="filter-done" @click="closeFilterSheet">{{ $t('filters.done') }}</AppButton>
@@ -1629,6 +1643,9 @@ watch(() => hofAvailability.value.available, (available, previous) => {
         </button>
       </div>
       </div>
+      </DefineMark3Filters>
+      <AppSheet v-if="isCompact" :portal-to="boardTop" :open="filterSheet === 'mark3'" :title="$t('filters.title')" @close="closeFilterSheet"><ReuseMark3Filters /></AppSheet>
+      <ReuseMark3Filters v-else />
 
       <p v-if="mark3VehicleId && !isCompact" class="lb-filter-hint">
         {{ $t('mark3.selectVehicle') }}: <strong>{{ mark3VehicleLabel }}</strong>
@@ -1886,23 +1903,8 @@ watch(() => hofAvailability.value.available, (available, previous) => {
 </template>
 
 <style scoped>
-/* 手机筛选 sheet（审计 PG-05）：工具栏本身的网格样式沿用旧样式表，这里只负责把它放进底部 sheet */
-.lb-sheet-scrim { position: fixed; inset: 0; z-index: var(--z-sheet); background: var(--color-scrim); }
-.lb-toolbar-host.is-sheet {
-  position: fixed;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  z-index: var(--z-sheet);
-  display: grid;
-  gap: var(--space-3);
-  max-height: 80dvh;
-  padding: var(--space-4) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom));
-  overflow-y: auto;
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  background: var(--color-surface-3);
-  box-shadow: var(--elevation-3);
-}
+/* 手机筛选 sheet（审计 PG-05）：容器 / 遮罩 / 焦点 / 安全区由 AppSheet 提供，这里只负责工具栏在 sheet 内的网格 */
+.lb-toolbar-host.is-sheet { display: grid; gap: var(--space-3); }
 .lb-sheet-head { display: flex; align-items: center; justify-content: space-between; color: var(--color-text-primary); font: var(--type-h3); }
 /* 手机卡片列表（审计 PG-05 / PG-19：下载按钮与车辆链接满足 44px 点击区域） */
 .lb-cards { display: grid; gap: var(--space-2); margin: var(--space-3) 0 0; padding: 0; list-style: none; }

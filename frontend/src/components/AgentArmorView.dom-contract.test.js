@@ -518,3 +518,19 @@ describe('tank-picker cover crop wiring (shared TankCatalogMenu)', () => {
     expect(menu).toMatch(/:style="iconCropStyle\(tank\.id\)"/)
   })
 })
+
+// 选车器的外层键盘 trap 与二级模态层（手机筛选 AppSheet，portal 到 body）的隔离：
+// 按键发生在 #tank-picker 之外的 dialog 内时，外层不得介入（否则 Esc 会连带关闭整个选车器、Tab 被拉回外层）。
+describe('tank picker keyboard isolation from nested modal layers', () => {
+  const template = read('./AgentArmorView.vue')
+  it('onPickerKeydown 在 #tank-picker 之外的 dialog 内直接放行', () => {
+    const start = template.indexOf('function onPickerKeydown(event)')
+    expect(start).toBeGreaterThan(-1)
+    const body = template.slice(start, template.indexOf('onMounted(', start))
+    const guard = body.indexOf("closest('[role=\"dialog\"]')")
+    const escape = body.indexOf("event.key === 'Escape'")
+    expect(guard, '二级模态放行判定').toBeGreaterThan(-1)
+    expect(guard, '必须先于 Escape / Tab 处理').toBeLessThan(escape)
+    expect(body).toContain("layer.id !== 'tank-picker'")
+  })
+})

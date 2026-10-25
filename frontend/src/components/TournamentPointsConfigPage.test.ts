@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { messages } from '../locales/messages.js'
+import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 import TournamentPointsConfigPage from './TournamentPointsConfigPage.vue'
 import TournamentEventSelect from './TournamentEventSelect.vue'
 
@@ -26,7 +27,7 @@ beforeEach(() => {
   state.source.mockResolvedValue({ eventVersion: 1, source: 'INHERIT', defaultVersion: 2, isDefaultSource: false, defaultOutdated: false })
 })
 async function page(selected = true) {
-  const wrapper = mount(TournamentPointsConfigPage, { global: { plugins: [createI18n({ legacy: false, locale: 'zh', messages: messages as Record<string, any> })], stubs: { RouterLink: true, Teleport: true } } })
+  const wrapper = mount(TournamentPointsConfigPage, { global: { plugins: [createI18n({ legacy: false, locale: 'zh', messages: messages as Record<string, any> })], stubs: { RouterLink: true }, provide: { [DIALOG_INLINE_KEY]: true } } })
   await flushPromises()
   if (selected) { wrapper.findComponent(TournamentEventSelect).vm.$emit('update:modelValue', 7); await flushPromises() }
   return wrapper

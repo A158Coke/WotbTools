@@ -31,6 +31,7 @@
     "test:shader-check": "node scripts/check-scenery-shaders.mjs"
   },
   "dependencies": {
+    "@vueuse/core": "^14.4.0",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
     "dompurify": "^3.4.12",
@@ -40,6 +41,8 @@
     "keycloak-js": "^26.2.0",
     "lucide-vue-next": "^1.0.0",
     "markdown-it": "^14.3.0",
+    "motion-v": "^2.6.0",
+    "reka-ui": "^2.11.0",
     "vue": "^3.5.13",
     "vue-i18n": "11.1.10",
     "vue-router": "4.6.4"

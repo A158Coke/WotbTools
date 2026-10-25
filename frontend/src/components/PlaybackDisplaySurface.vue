@@ -1,5 +1,6 @@
 <script setup>
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useEventListener } from '@vueuse/core'
 
 const props = defineProps({ open: Boolean, portrait: Boolean, anchor: Object, host: Object })
 const emit = defineEmits(['close'])
@@ -118,10 +119,6 @@ watch(() => [props.open, props.portrait, props.host, props.anchor], async () => 
 watch(() => props.open, (open) => syncFocus(open), { flush: 'post' })
 onMounted(() => {
   if (typeof ResizeObserver !== 'undefined') observer = new ResizeObserver(measure)
-  window.addEventListener('resize', measure)
-  window.addEventListener('scroll', measure, true)
-  document.addEventListener('pointerdown', dismiss, true)
-  document.addEventListener('keydown', dismiss)
   nextTick(() => {
     if (props.open && observer) for (const el of [props.host, props.anchor, panel.value]) if (el) observer.observe(el)
     // 挂载时就已经是打开状态（宿主 v-if 挂载即打开）不会触发上面的 watch，这里补一次落点。
@@ -131,11 +128,11 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   observer?.disconnect()
-  window.removeEventListener('resize', measure)
-  window.removeEventListener('scroll', measure, true)
-  document.removeEventListener('pointerdown', dismiss, true)
-  document.removeEventListener('keydown', dismiss)
 })
+useEventListener(() => window, 'resize', measure)
+useEventListener(() => window, 'scroll', measure, { capture: true })
+useEventListener(() => document, 'pointerdown', dismiss, { capture: true })
+useEventListener(() => document, 'keydown', dismiss)
 </script>
 
 <template>

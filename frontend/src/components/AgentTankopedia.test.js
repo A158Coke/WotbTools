@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 import AgentTankopedia from './AgentTankopedia.vue'
 
 const data = vi.hoisted(() => ({
@@ -51,7 +52,7 @@ function makeCache(count = 120) {
 async function mountAt(query = {}) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
   await router.push({ path: '/', query: { view: 'agent-tankopedia', ...query } })
-  const wrapper = mount(AgentTankopedia, { global: { plugins: [router] } })
+  const wrapper = mount(AgentTankopedia, { global: { plugins: [router], provide: { [DIALOG_INLINE_KEY]: true } } })
   await flushPromises()
   return { wrapper, router }
 }
@@ -266,7 +267,8 @@ describe('AgentTankopedia', () => {
     await flushPromises()
     expect(router.currentRoute.value.query).toEqual({ view: 'agent-tankopedia' })
     await wrapper.find('[data-testid="filter-toggle"]').trigger('click')
-    expect(wrapper.find('[data-testid="tank-filters"]').attributes('role')).toBe('dialog')
+    await flushPromises()
+    expect(wrapper.find('[role="dialog"] [data-testid="tank-filters"]').exists()).toBe(true)
   })
 
   it('俯仰角与弹种数值按紧凑小数呈现，不直出 f32 扩宽尾数', async () => {

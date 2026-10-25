@@ -44,6 +44,12 @@
 - UI reactive locale 的唯一运行时 owner 是 Vue i18n；`src/i18n/locale-preference.js` 独占 `wotb-lang` storage key 的读取、规范化与持久化。组件通过 i18n locale 更新语言，不直接访问该 key。纯显示 helper 必须接收显式 locale，缺省时只用固定 fallback，不读取 browser storage。
 - 路由历史、深链和 Back/Forward 由 Vue Router 所有；组件不得手写 `history.pushState`、`replaceState` 或 `popstate`。
 
+## Third-party UI primitives
+
+- `reka-ui` / `motion-v` 只能在 WotbTools 组件边界内使用（允许的文件集见 `src/shared/ui-dependency-ownership.test.ts`）；页面与 feature 使用 `AppDialog` / `AppSheet` / `AppTooltip` / `MenuButton` / `SegmentedControl`，不直接引入第三方 primitive。
+- 动效时长与缓动只经 `src/shared/motion/motionPolicy.ts` 读取 CSS token；不得进入播放帧路径（`src/scene/**`、timeline、HP、camera）。
+- `@vueuse/core` 不得接管 `useBreakpoint()` 的 breakpoint policy，也不得用 `useStorage` 系列替换带迁移 / 校验的持久化 owner。
+
 ## Design language
 
 - 改任何界面前先读 [`docs/frontend/design-language.md`](../docs/frontend/design-language.md)。组件只用语义 token（`--color-*`、`--space-*`、`--type-*` / `--font-size-*` / `--line-height-*`、`--radius-*`、`--z-*`、`--elevation-*`、`--control-h-*`）；需要新的视觉值时先加 token，不写字面量。
