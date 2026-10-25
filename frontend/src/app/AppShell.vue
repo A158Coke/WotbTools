@@ -140,7 +140,7 @@ provide(ONBOARDING_KEY, onboarding.context)
 
 <template>
   <AppTopBar v-if="isCompact && !shellChrome.immersive.value" compact />
-  <AppSidebar v-else />
+  <AppSidebar v-if="!isCompact" />
   <div v-if="failed" class="business-bootstrap-notice" role="alert" data-testid="business-bootstrap-notice">
     <span>{{ $t('bootstrap.profileFailed') }}</span>
     <button type="button" class="business-bootstrap-retry" @click="retryBusinessBootstrap">{{ $t('bootstrap.retry') }}</button>

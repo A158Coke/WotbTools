@@ -2476,17 +2476,20 @@ async function runMultiFileWorkspaceScenario(env) {
     const shellState = `(() => ({
       topBar: !!document.querySelector('[data-testid="app-top-bar"]'),
       tabBar: !!document.querySelector('[data-testid="app-tab-bar"]'),
+      sidebar: !!document.querySelector('[data-testid="app-sidebar"]'),
       headerH: getComputedStyle(document.documentElement).getPropertyValue('--header-h').trim(),
       map: document.querySelector('.pb-map')?.getBoundingClientRect().width ?? 0,
       stage: document.querySelector('.pb-map-stage')?.getBoundingClientRect().width ?? 0,
     }))()`
     await page.emulate({ width: 740, height: 360, touch: true })
     const landscape = await page.waitForValue(shellState, (state) => !state.topBar && !state.tabBar && state.map > 0, { label: 'immersive shell in phone landscape' })
+    check(failures, !landscape.sidebar, `immersive phone shell must not mount the sidebar either: ${JSON.stringify(landscape)}`)
     check(failures, landscape.headerH === '0px', `immersive shell must zero --header-h: ${JSON.stringify(landscape)}`)
     check(failures, landscape.map >= 260, `phone-landscape real-app map must be >= 260px: ${JSON.stringify(landscape)}`)
     console.log(`[browser-interaction] multifile 740x360 real-app map=${Math.round(landscape.map)}`)
     await page.emulate({ width: 390, height: 844, touch: true })
     const portrait = await page.waitForValue(shellState, (state) => state.topBar && state.tabBar, { label: 'shell restored in portrait' })
+    check(failures, !portrait.sidebar, `portrait phone shell must not mount the sidebar: ${JSON.stringify(portrait)}`)
     check(failures, portrait.headerH === '48px', `portrait must restore --header-h: ${JSON.stringify(portrait)}`)
     check(failures, portrait.map > 0 && Math.abs(portrait.map - portrait.stage) <= 2, `portrait map must fill the full column width: ${JSON.stringify(portrait)}`)
     await page.emulate({ width: 740, height: 360, touch: true })
