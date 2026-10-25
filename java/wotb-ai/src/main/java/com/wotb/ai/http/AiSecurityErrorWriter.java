@@ -1,6 +1,5 @@
 package com.wotb.ai.http;
 
-import com.wotb.web.util.apierror.ApiErrorResponse;
 import jakarta.servlet.http.HttpServletResponse;
 import tools.jackson.databind.json.JsonMapper;
 
