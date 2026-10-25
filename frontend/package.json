@@ -69,11 +69,5 @@
     "vitest": "^3.2.4",
     "vue-tsc": "^3.3.11",
     "yaml": "^2.8.1"
-  },
-  "optionalDependencies": {
-    "@esbuild/linux-x64": "^0.25.12",
-    "@rollup/rollup-linux-x64-gnu": "^4.62.2",
-    "@rollup/rollup-linux-x64-musl": "^4.62.2",
-    "fsevents": "^2.3.3"
   }
 }
