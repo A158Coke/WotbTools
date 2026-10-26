@@ -1,7 +1,6 @@
 package com.wotb.web.user.api;
 
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 
 import java.util.Collection;
 import java.util.List;
@@ -22,7 +21,8 @@ public interface UserProfiles {
     /** 使用既有资料行锁，供管理删除与换绑串行化。 */
     Optional<UserProfileSnapshot> findSnapshotByKeycloakUserIdForUpdate(String keycloakUserId);
 
-    Page<UserProfileSnapshot> searchForAdministration(String query, Pageable pageable);
+    /** 按用户模块拥有的默认顺序分页；调用方仅提供页码和大小。 */
+    Page<UserProfileSnapshot> searchForAdministration(String query, int page, int size);
 
     List<UserProfileSnapshot> findByKeycloakUserIdIn(Collection<String> keycloakUserIds);
 

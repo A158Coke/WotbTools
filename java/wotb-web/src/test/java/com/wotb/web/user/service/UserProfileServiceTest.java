@@ -10,11 +10,15 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -172,6 +176,39 @@ class UserProfileServiceTest {
         assertEquals(123L, snapshot.wotbAccountId());
         assertEquals("Player", snapshot.wotbNickname());
         assertEquals("CN", snapshot.wotbServer());
+    }
+
+    @Test
+    void administrationSearchOwnsSortingForAnUnfilteredPage() {
+        final PageRequest pageable = PageRequest.of(3, 10, Sort.by(Sort.Direction.DESC, "createdAt"));
+        final UserProfile profile = cnProfile(123L, "Player", null);
+        when(repository.findAll(pageable)).thenReturn(new PageImpl<>(List.of(profile), pageable, 95));
+
+        final var result = service.searchForAdministration(" \t ", 3, 10);
+
+        verify(repository).findAll(pageable);
+        assertEquals(3, result.getNumber());
+        assertEquals(10, result.getSize());
+        assertEquals(95, result.getTotalElements());
+        assertEquals(10, result.getTotalPages());
+        assertEquals(123L, result.getContent().getFirst().wotbAccountId());
+    }
+
+    @Test
+    void administrationSearchTrimsQueryAndKeepsTheSameOwnedSort() {
+        final PageRequest pageable = PageRequest.of(2, 25, Sort.by(Sort.Direction.DESC, "createdAt"));
+        final UserProfile profile = cnProfile(456L, "Player", null);
+        when(repository.searchAdminUsers("Player", pageable))
+                .thenReturn(new PageImpl<>(List.of(profile), pageable, 140));
+
+        final var result = service.searchForAdministration(" Player ", 2, 25);
+
+        verify(repository).searchAdminUsers("Player", pageable);
+        assertEquals(2, result.getNumber());
+        assertEquals(25, result.getSize());
+        assertEquals(140, result.getTotalElements());
+        assertEquals(6, result.getTotalPages());
+        assertEquals(456L, result.getContent().getFirst().wotbAccountId());
     }
 
     @Test
