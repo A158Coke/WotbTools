@@ -65,4 +65,14 @@ class MovementSegmentTest {
         assertTrue(Float.isNaN(seg.hullYawRateRadS()), "yaw 缺失 → yaw rate 必须 UNKNOWN(NaN)，不得当 0");
         assertEquals(0f, seg.verticalSpeedMps(), 1e-6f); // vertical speed 无 yaw 依赖，仍可派生
     }
+
+    @Test
+    void legacyConstructorPreservesStationaryMovementState() {
+        final MovementSegment seg = new MovementSegment(
+                10f, 12f, MovementType.STATIONARY,
+                new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, 0f),
+                0f, 0f, DecodeConfidence.EXACT);
+
+        assertEquals(MovementState.STATIONARY, seg.movementState());
+    }
 }

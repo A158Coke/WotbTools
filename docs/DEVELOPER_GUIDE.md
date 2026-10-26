@@ -33,7 +33,7 @@ WotbTools 是 WoT Blitz `.wotbreplay` 回放分析工具集：Java 25 + Spring B
 
 ## 环境与工具链
 
-- **JDK 25** 必需（parent Enforcer 限制 `[25,26)`）；Maven 3.9.0 或更新的 Maven 3 版本（Maven 4 不在支持范围内）。Maven 必须显式使用 settings 文件：在 `java/` 下为 `-s settings.xml`，仓库根为 `-s java/settings.xml`；容器构建使用 `java/settings-docker.xml`。Parent POM 会拒绝重复 dependency 声明，并在 `mvn test` 执行 advisory dependency analysis；analysis warnings 不会令构建失败，当前未启用 `dependencyConvergence`。
+- **JDK 25** 必需（parent Enforcer 限制 `[25,26)`）；Maven 3.9.0 或更新的 Maven 3 版本（Maven 4 不在支持范围内）。Maven 必须显式使用 settings 文件：在 `java/` 下为 `-s settings.xml`，仓库根为 `-s java/settings.xml`；容器构建使用 `java/settings-docker.xml`。Parent POM 会拒绝重复 dependency 声明，并在 `mvn test` 执行 advisory dependency analysis；analysis warnings 不会令构建失败，当前未启用 `dependencyConvergence`。SpotBugs Maven Plugin 4.10.5.0 在 `verify` 分析 production classes：High 阻断、Medium/Low 报告但不阻断，分析进程/执行失败会阻断；测试 class 排除。SpotBugs 对可恢复的单 class 扫描诊断会记录后继续。Targeted/module `test` 不执行 SpotBugs，Business API 与 AI Service PR owner 使用 `verify`。Suppression 仅用于经证据确认的 false positive，限定到最小 class/member 范围并记录原因和安全 invariant。
 - **Node 24**：`frontend/.nvmrc` 固定版本。前端使用 TypeScript 与 `vue-tsc` 做独立类型检查；源码中 JavaScript 与 TypeScript 共存，新代码跟随所在模块的现有约定。
 - **pnpm**：版本由 `frontend/package.json` 的 `packageManager` 钉住；Node 24 自带 corepack，执行一次 `corepack enable` 后，`frontend/` 下的 `pnpm` 自动使用该版本。本地安装依赖用 `pnpm install`，CI 与 Docker 用 `pnpm install --frozen-lockfile`；`frontend/pnpm-lock.yaml` 是唯一 lockfile。`node_modules` 使用 pnpm 默认的隔离布局，代码只能 import `package.json` 中声明的依赖。
 - **依赖安装安全策略**（`frontend/pnpm-workspace.yaml`）：依赖的安装脚本默认禁止，只有 `allowBuilds` 中显式为 `true` 的包可以执行；存在未审查的安装脚本时安装失败（`strictDepBuilds`）；发布不足 24 小时的版本不会被解析（`minimumReleaseAge`，紧急安全补丁按包写入 `minimumReleaseAgeExclude` 并在 PR 中说明）。新增带安装脚本的依赖时，在同一 PR 里把它写进 `allowBuilds` 并说明理由；不得启用 `dangerouslyAllowAllBuilds`，也不得关闭 `strictDepBuilds`。
@@ -47,7 +47,7 @@ WotbTools 是 WoT Blitz `.wotbreplay` 回放分析工具集：Java 25 + Spring B
 # 以下 Maven 命令均从 java/ 执行，并使用 -s settings.xml。
 # Targeted（改单个 class/function）：mvn -s settings.xml -pl wotb-core -Dtest=<TestClass> test
 # Module（单模块/一个 feature）：mvn -s settings.xml -pl wotb-core test 或 mvn -s settings.xml -pl wotb-web -am test
-# Full（PR CI authoritative validation，Agent 默认不跑）：cd java && JAVA_HOME=<jdk25> mvn -s settings.xml test
+# Full（PR Java owner authoritative validation，Agent 默认不跑）：cd java && JAVA_HOME=<jdk25> mvn -s settings.xml verify
 # JAVA_HOME 指向 JDK 25 安装目录（主工程 JDK 25；只有 keycloak provider 子工程用 JDK 21）。
 # 注意：wotb-ai 的真实外部 AI probe 标记为 ai-live，默认被 Surefire 排除；不要仅因环境存在 AI_API_KEY 就解除排除。
 
@@ -701,7 +701,7 @@ Sponsor QR 不进仓库：配置与收款码作为 **GitHub Release 资产**发�
   `mvn -s settings.xml -pl wotb-web -am "-Dtest=CoreArchitectureTest,WebArchitectureTest,WebArchitectureRuleMutationTest,WebModuleArchitectureTest,WebModuleArchitectureMutationTest" -Dsurefire.failIfNoSpecifiedTests=false test`。
 - 前端：Vitest + happy-dom（按需声明）；浏览器 gate 的命令与覆盖范围见 [`frontend/AGENTS.md`](../frontend/AGENTS.md)。
 - Replay/League/UI regression 必须补针对真实 invariant 的测试，而不是只验证函数被调用。
-- **职责分层（Fast Feedback First）**：开发过程中 Agent 只跑 targeted / module / feature regression，不重复跑 repository-level full test；仓库级 full validation 由 PR CI 统一执行（authoritative gate）。仅当改动影响跨模块 / build / test infrastructure（[`.agents/AGENTS.md`](../.agents/AGENTS.md) 的 Full-test 例外清单）时，Agent 才跑 `cd java && mvn -s settings.xml test` / `cd frontend && pnpm test && pnpm run build`。
+- **职责分层（Fast Feedback First）**：开发过程中 Agent 只跑 targeted / module / feature regression，不重复跑 repository-level full test；仓库级 full validation 由 PR CI 统一执行（authoritative gate）。仅当改动影响跨模块 / build / test infrastructure（[`.agents/AGENTS.md`](../.agents/AGENTS.md) 的 Full-test 例外清单）时，Agent 才跑 `cd java && mvn -s settings.xml verify` / `cd frontend && pnpm test && pnpm run build`。
 - `wotb-ai` 的真实 DeepSeek/provider probe 使用 `@Tag("ai-live")`，普通 `mvn test` 默认不执行；仅在明确选择 probe、清空 `-Dai.probe.excludedGroups=` 且通过环境变量提供 key 时手动运行。gateway mock、loopback 与 deterministic AI eval 仍属于普通测试。
 - 涉及 Docker/部署时同时跑对应 Docker build 与 deployment smoke；Deploy 不重复运行测试套件。
 

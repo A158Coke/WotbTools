@@ -30,12 +30,12 @@ jobs:
           restore-keys: ${{ runner.os }}-maven-
       # AI Review 生产链（client canonical projection → gzip HTTP → ClientAiProjectionAdapter → AI）的
       # 契约 / parity 测试只在 wotb-ai 里：wotb-web 不依赖 wotb-ai，Business API job 的 -am 拉不到它。
-      - name: Maven test for AI Service and dependencies
+      - name: Maven verify for AI Service and dependencies
         working-directory: java
         shell: bash
         run: |
           set -euo pipefail
-          mvn --batch-mode --no-transfer-progress -s settings-ci.xml -Dmaven.repo.local=.m2repo -pl wotb-ai -am test
+          mvn --batch-mode --no-transfer-progress -s settings-ci.xml -Dmaven.repo.local=.m2repo -pl wotb-ai -am verify
   image:
     name: AI Service image
     runs-on: ubuntu-latest

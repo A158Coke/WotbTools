@@ -79,12 +79,12 @@ jobs:
           path: java/.m2repo
           key: ${{ runner.os }}-maven-${{ hashFiles('java/**/pom.xml') }}
           restore-keys: ${{ runner.os }}-maven-
-      - name: Maven test for Business API and dependencies
+      - name: Maven verify for Business API and dependencies
         working-directory: java
         shell: bash
         run: |
           set -euo pipefail
-          mvn --batch-mode --no-transfer-progress -s settings-ci.xml -Dmaven.repo.local=.m2repo -pl wotb-web -am test
+          mvn --batch-mode --no-transfer-progress -s settings-ci.xml -Dmaven.repo.local=.m2repo -pl wotb-web -am verify
   http_contract:
     name: HTTP contract
     runs-on: ubuntu-latest

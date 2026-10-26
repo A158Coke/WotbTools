@@ -4,8 +4,8 @@
 
 ## 构建（全部经 owner CI / settings.xml 核对）
 
-- JDK 25（CI `java-version: "25"`，parent Enforcer 范围 `[25,26)`）；Maven 3.9.0 或更新的 Maven 3 版本（Maven 4 不在支持范围内）。Parent POM 拒绝重复 dependency 声明，并在 `mvn test` 执行不阻断构建的 advisory dependency analysis（warnings 不失败）；当前未启用 `dependencyConvergence`。本地 Maven 使用 `-s java/settings.xml`（Aliyun 镜像 + 独立 `java/.m2repo`）；GitHub Actions 使用无 mirror 的 `java/settings-ci.xml` 并继续使用独立本地仓库。容器构建用 `java/settings-docker.xml`。
-- 全量测试：`cd java && mvn -s settings.xml test`（JAVA_HOME 指向 JDK 25）——**CI authoritative validation**，
+- JDK 25（CI `java-version: "25"`，parent Enforcer 范围 `[25,26)`）；Maven 3.9.0 或更新的 Maven 3 版本（Maven 4 不在支持范围内）。Parent POM 拒绝重复 dependency 声明，并在 `mvn test` 执行不阻断构建的 advisory dependency analysis（warnings 不失败）；SpotBugs 4.10.5.0 在 `verify` 分析 production classes，只有 High finding 阻断，Medium/Low 仅报告，分析进程/执行失败会阻断。SpotBugs 对可恢复的单 class 扫描诊断会记录后继续。测试 class 不分析。Targeted/module `test` 保持快速反馈且不执行 SpotBugs；Business API 与 AI Service PR owner 执行 `verify`。Suppression 必须精确到最小可证明范围并说明原因与安全依据；不得 suppress 真实缺陷。本地 Maven 使用 `-s java/settings.xml`（Aliyun 镜像 + 独立 `java/.m2repo`）；GitHub Actions 使用无 mirror 的 `java/settings-ci.xml` 并继续使用独立本地仓库。容器构建用 `java/settings-docker.xml`。
+- 全量验证：`cd java && mvn -s settings.xml verify`（JAVA_HOME 指向 JDK 25）——**CI authoritative validation**，
   不是每次提交前必跑（见下「测试策略」）。
 
 ## 测试策略（Agent 即时验证，Fast Feedback First）
@@ -16,7 +16,7 @@
   （改单个 class/function/组件，只跑直接相关测试类）。
 - **Module**：`mvn -pl wotb-core test` 或 `mvn -pl wotb-web -am test`
   （单模块改动、或一个 feature 的多文件改动，验证该模块/feature 回归）。
-- **Full**：`cd java && mvn -s settings.xml test`
+- **Full**：`cd java && mvn -s settings.xml verify`
   （**CI authoritative validation**，由 PR CI 统一执行；Agent 仅在 Full-test 例外情形运行，例外清单见 `.agents/AGENTS.md`）。
 
 改动时须先声明：`Affected scope`（改了什么/影响哪些模块）→ `Selected validation`（选择哪档）→

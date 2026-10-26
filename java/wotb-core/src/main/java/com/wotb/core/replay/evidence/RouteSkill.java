@@ -14,6 +14,7 @@ import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -213,7 +214,7 @@ public final class RouteSkill {
                 continue;
             }
             final Integer team = teamOf(vs, teamByAccountId);
-            if (team == null || recorderTeam == null || team != recorderTeam) {
+            if (team == null || recorderTeam == null || !Objects.equals(team, recorderTeam)) {
                 continue;
             }
             sumX += vs.position().x();
