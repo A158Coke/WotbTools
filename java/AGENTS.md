@@ -4,7 +4,7 @@
 
 ## 构建（全部经 owner CI / settings.xml 核对）
 
-- JDK 25（CI `java-version: "25"`）；本地 Maven 使用 `-s java/settings.xml`（Aliyun 镜像 + 独立 `java/.m2repo`）；GitHub Actions 使用无 mirror 的 `java/settings-ci.xml` 并继续使用独立本地仓库。容器构建用 `java/settings-docker.xml`。
+- JDK 25（CI `java-version: "25"`，parent Enforcer 范围 `[25,26)`）；Maven 3.9.0 或更新版本（parent Enforcer 下限）。Parent POM 拒绝重复 dependency 声明，并在 `mvn test` 执行不阻断构建的 advisory dependency analysis（warnings 不失败）；当前未启用 `dependencyConvergence`。本地 Maven 使用 `-s java/settings.xml`（Aliyun 镜像 + 独立 `java/.m2repo`）；GitHub Actions 使用无 mirror 的 `java/settings-ci.xml` 并继续使用独立本地仓库。容器构建用 `java/settings-docker.xml`。
 - 全量测试：`cd java && mvn -s settings.xml test`（JAVA_HOME 指向 JDK 25）——**CI authoritative validation**，
   不是每次提交前必跑（见下「测试策略」）。
 
