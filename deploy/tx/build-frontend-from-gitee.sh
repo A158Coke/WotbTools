@@ -258,7 +258,10 @@ lookup_remote_digest() {
     output="$(<"$output_file")"
     rm -f "$output_file"
 
-    if grep -Eqi '(manifest unknown|name unknown|not found|404)' <<<"$output"; then
+    # `docker manifest inspect` 在 TX2 上对缺失 tag 报 "no such manifest"；
+    # buildx imagetools 报 "manifest unknown"/"not found"。两者都必须按
+    # 「tag 尚未发布」返回 10，触发构建，而不是当成致命错误。
+    if grep -Eqi '(no such manifest|manifest unknown|name unknown|not found|404)' <<<"$output"; then
       return 10
     fi
 
