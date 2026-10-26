@@ -1,17 +1,27 @@
 #!/usr/bin/env bash
-# Build and publish the Frontend on TX from an exact commit mirrored to Gitee.
-# GitHub remains the release authority; Gitee is only the domestic source transport.
-# The pinned Agent WASM release archive is staged by GitHub because it is tiny; the
-# expensive frontend image build and TCR publication stay entirely inside China.
+# Build and publish the Frontend on the TX2 build host from an exact commit mirrored
+# to Gitee. GitHub remains the release authority; Gitee is only the domestic source
+# transport. The pinned Agent WASM release archive is staged by GitHub because it is
+# tiny; the expensive frontend image build and TCR publication stay entirely in China.
+#
+# 2026-10-26 placement: the Frontend image builds on TX2, not TX1. TX1 has 1.9 GiB RAM
+# and runs the production containers; after #753 (Reka/VueUse/motion-v) the build needs
+# ~1.05 GiB of V8 old space and a 1152 MiB heap trial left TX1 at 174 MiB available /
+# 229 MiB free swap. TX2 has 3.6 GiB (2.9 GiB available) and completed the same build
+# with no swap use. TX1 still owns deployment and pulls the immutable TCR artifact.
 set -Eeuo pipefail
 
 readonly GITEE_REPO_URL="${WOTB_GITEE_REPO_URL:-https://gitee.com/A158Coke/Wotbtools.git}"
-# Share the exact-source cache and host build lock with the Business API builder.
-# TX is the constrained production builder; two application images must not compete
-# for CPU/RAM or maintain duplicate Gitee clones when the same main commit touches both.
+# Cache/lock 属于**构建宿主**：Frontend 在 TX2 构建，Business API 仍在 TX1 构建，
+# 两侧缓存与 build.lock 刻意分离（同一 commit 同时改两个应用时不再争用 TX1 的
+# CPU/RAM，也不会共享一份 Gitee clone）。
 readonly CACHE_ROOT="${WOTB_TX_BUILD_CACHE_ROOT:-$HOME/.cache/wotbtools-production-build}"
 readonly REPO_DIR="$CACHE_ROOT/repo"
 readonly BUILD_LOCK_FILE="$CACHE_ROOT/build.lock"
+# TX2 build 与同一宿主上的 Production Worker / Frontend replica 共用既有主机维护锁；
+# 空值 = 不获取（单测与 TX1 调试路径）。workflow 显式传 /opt/wotb-tx2/.deploy.lock。
+readonly HOST_LOCK_FILE="${WOTB_BUILD_HOST_LOCK:-}"
+readonly HOST_LOCK_WAIT_SECONDS="${HOST_LOCK_WAIT_SECONDS:-600}"
 readonly GITEE_WAIT_ATTEMPTS="${GITEE_WAIT_ATTEMPTS:-12}"
 readonly GITEE_WAIT_INTERVAL_SECONDS="${GITEE_WAIT_INTERVAL_SECONDS:-15}"
 readonly GIT_FETCH_TIMEOUT_SECONDS="${GIT_FETCH_TIMEOUT_SECONDS:-60}"
@@ -104,7 +114,7 @@ validate_common() {
   local setting
   for setting in GITEE_WAIT_ATTEMPTS GITEE_WAIT_INTERVAL_SECONDS GIT_FETCH_TIMEOUT_SECONDS \
     TCR_PUSH_TIMEOUT_SECONDS TCR_LOOKUP_TIMEOUT_SECONDS TCR_PULL_TIMEOUT_SECONDS KILL_AFTER_SECONDS \
-    RETRY_MAX_ATTEMPTS RETRY_BACKOFF_FIRST_SECONDS RETRY_BACKOFF_LATER_SECONDS; do
+    RETRY_MAX_ATTEMPTS RETRY_BACKOFF_FIRST_SECONDS RETRY_BACKOFF_LATER_SECONDS HOST_LOCK_WAIT_SECONDS; do
     is_positive_integer "${!setting}" || die "$setting must be a positive integer"
   done
   [ "$RETRY_MAX_ATTEMPTS" -le 3 ] || die "RETRY_MAX_ATTEMPTS cannot exceed 3"
@@ -113,7 +123,9 @@ validate_common() {
     command -v "$command_name" >/dev/null || die "$command_name is required"
   done
   docker version >/dev/null
-  docker buildx version >/dev/null
+  # buildx 不是每个构建宿主的发行版 Docker 都带（TX2 的 Ubuntu 包就没有）。构建本身
+  # 走 `docker build`；只有远端 immutable digest 查询需要 buildx，缺失时回退到
+  # `docker manifest inspect --verbose`（见 docker_image_digest）。
 }
 
 # Sponsor 运行时内容（收款码 + 配置）由 GitHub 在构建期从 CI secrets 注入并 stage 过来：
@@ -192,14 +204,50 @@ wait_for_gitee_sha() {
   die "source SHA did not reach Gitee main within the bounded wait"
 }
 
+docker_image_digest() {
+  local image="$1" raw err status
+  # TX1 有 buildx：imagetools 直接返回 index/manifest 的顶层 digest。TX2 的发行版
+  # Docker 没有 buildx 插件：`docker manifest inspect --verbose` 给出该 tag 的
+  # per-platform Descriptor；单架构镜像用它 pull 同样可验证。部署侧的 canonical
+  # digest 由 runner 重新解析，不使用这里的输出作为部署身份。
+  # timeout 必须包住具体命令而不是本函数：shell 函数不能直接作为 timeout 的 child。
+  if docker buildx version >/dev/null 2>&1; then
+    timeout --kill-after="${KILL_AFTER_SECONDS}s" "${TCR_LOOKUP_TIMEOUT_SECONDS}s" \
+      docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$image"
+    return
+  fi
+  raw="$(mktemp)"
+  err="$(mktemp)"
+  # 先单独捕获 manifest 命令的原退出码：timeout 的 124 必须原样上抛给
+  # lookup_remote_digest 的有界重试。若把命令与 Python 解析放进同一条 pipefail
+  # 管道，空输出会让 Python 以 1 退出并覆盖 124，第一次超时就永久中止发布。
+  if timeout --kill-after="${KILL_AFTER_SECONDS}s" "${TCR_LOOKUP_TIMEOUT_SECONDS}s" \
+    docker manifest inspect --verbose "$image" >"$raw" 2>"$err"; then
+    python3 - "$raw" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+entry = data[0] if isinstance(data, list) and data else data
+digest = (entry or {}).get("Descriptor", {}).get("digest", "")
+if not digest:
+    raise SystemExit("manifest has no Descriptor.digest")
+print(digest)
+PY
+    status=$?
+  else
+    status=$?
+    cat "$err" >&2
+  fi
+  rm -f "$raw" "$err"
+  return "$status"
+}
+
 lookup_remote_digest() {
   local image="$1"
   local attempt=1 output_file output status digest backoff
 
   while :; do
     output_file="$(mktemp)"
-    if digest="$(timeout --kill-after="${KILL_AFTER_SECONDS}s" "${TCR_LOOKUP_TIMEOUT_SECONDS}s" \
-      docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$image" 2>"$output_file")"; then
+    if digest="$(docker_image_digest "$image" 2>"$output_file")"; then
       rm -f "$output_file"
       [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || die "registry returned an invalid digest for $image"
       printf '%s\n' "$digest"
@@ -367,6 +415,15 @@ build_publish() {
   mkdir -p "$CACHE_ROOT"
   exec 8>"$BUILD_LOCK_FILE"
   flock -n 8 || die "another TX Frontend build is already running"
+  # 主机维护锁在 cache lock 之后获取：两个 build 先串行，再与 Production Worker /
+  # Frontend replica 的 /opt/wotb-tx2/.deploy.lock 互斥。先 host 后 cache 会让
+  # build A 持 host 等 cache、build B 持 cache 等 host 形成死锁。
+  if [ -n "$HOST_LOCK_FILE" ]; then
+    [ -e "$HOST_LOCK_FILE" ] || die "host maintenance lock is missing: $HOST_LOCK_FILE"
+    exec 7>"$HOST_LOCK_FILE"
+    flock -w "$HOST_LOCK_WAIT_SECONDS" 7 \
+      || die "timed out waiting for host maintenance lock: $HOST_LOCK_FILE"
+  fi
 
   if [ -n "$sponsor_fingerprint" ]; then
     sponsor_tmp="$(mktemp -d)"

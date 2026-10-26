@@ -584,20 +584,24 @@ Frontend 的 TX1/TX2 发布在切换线上文件或容器前，校验实际 Busi
   发布链不变，回滚可恢复旧 Dockerfile 后通过现有流程发布新 SHA。
 - `.github/workflows/business-api.yml`、`frontend.yml`、`keycloak.yml` 与 `ai-service.yml`
   分别拥有一个应用发布闭环。TX business-api/frontend 先主动 mirror exact GitHub SHA 到 Gitee，
-  再在 TX 从该 SHA 构建并发布 immutable TCR tag，生产只消费输出的 `repo@sha256:<digest>`
+  再由 TX 从该 SHA 构建并发布 immutable TCR tag（Business API 在 TX1，Frontend 在 TX2），
+  生产只消费输出的 `repo@sha256:<digest>`
   （`TX_BUSINESS_API_IMAGE_REF` / `TX_FRONTEND_IMAGE_REF`），禁止 `latest` 回退。
   Keycloak 与 Yecao ai-service 仍保留各自 SHA tag + latest/freshness 契约；Keycloak runtime 后
   继续执行自己的 OpenTofu 与最终验证。各应用的服务级 concurrency 会取消过期 main workflow。
 - `frontend.yml` 的 GitHub runner 只负责 release authority、Gitee mirror、下载校验 pinned Agent
   WASM/可选 Sponsor bundle 与 staging；不在 GitHub 构建 Frontend Docker 镜像或上传 TCR 大镜像。
-  `deploy/tx/build-frontend-from-gitee.sh` 复用 Business API 的持久 Gitee clone 与 host build lock，
-  创建 exact-SHA worktree。镜像 identity 包含 source SHA、`ASSET_BASE_URL` 与 Sponsor bundle SHA256
+  Frontend 镜像在 **TX2** 构建（TX1 的 1.9 GiB 生产宿主不足以承载当前 `vite build`；
+  测量与迁移证据见 `docs/architecture/TECHNICAL_EVOLUTION.md` §24）。
+  `deploy/tx/build-frontend-from-gitee.sh` 在 TX2 使用自己的持久 Gitee clone 与 host build lock
+  （与 TX1 的 Business API builder 分离），创建 exact-SHA worktree。镜像 identity 包含 source SHA、
+  `ASSET_BASE_URL` 与 Sponsor bundle SHA256
   （无 pin 为留空）；existing immutable tag 先 pull digest 并核验，缺失才执行本机 `docker build`。
   Web 生产 3D 资产 origin 固定为 `https://assets.wotbtools.com`，由 `frontend.yml` 与
   `frontend-replica.yml` 共同传入构建与镜像 identity；Android 仍通过 Native `AgentAssetProxy`
   使用与 Web 相同的 Alibaba origin `https://assets.wotbtools.com`。旧 APK 可继续使用编译时的 COS origin；COS 仅供 legacy/rollback。Web 的 URL/localStorage override 优先级不变。
   内容/BUILD_COMMIT/Agent/Sponsor 校验全部在 registry 写入前完成；push 使用 per-attempt timeout
-  与有界瞬态重试，发布后回读 digest、pull digest 并再次校验。构建使用 TX 本地 Docker 缓存，
+  与有界瞬态重试，发布后回读 digest、pull digest 并再次校验。构建使用 TX2 本地 Docker 缓存，
   不设置 GHA build cache；build/publish 在同一 remote builder 调用中，deploy 是单独 job。
 - `.github/workflows/caddy.yml` 独立负责 TX 网关：staged Caddy 配置与 assets 校验后只 reconcile
   Caddy，并验证 trusted TLS、redirect、前端/API、Keycloak、auth asset 与 Komodo

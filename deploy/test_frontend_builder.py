@@ -18,7 +18,13 @@ FUNCTIONS, SEPARATOR, _ = BUILDER.read_text().partition('[ "$#" -eq 8 ] || usage
 assert SEPARATOR, "frontend builder CLI entrypoint was not found"
 FIXTURE = r'''
 validate_common() { :; }
-flock() { :; }
+flock() {
+  count=$(cat "$CACHE_ROOT/flock.count" 2>/dev/null || echo 0); count=$((count + 1))
+  printf '%s
+' "$count" > "$CACHE_ROOT/flock.count"
+  if [ "${HOST_LOCK_BUSY:-0}" = 1 ] && [ "$count" -eq 2 ]; then return 1; fi
+  return 0
+}
 timeout() { while [[ "$1" = --* ]]; do shift; done; shift; "$@"; }
 sha256sum() {
   python3 -c 'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes() if len(sys.argv) > 1 else sys.stdin.buffer.read()).hexdigest())' "$@"
@@ -49,7 +55,8 @@ printf 'CALLER resumed\n'
 
 
 class FrontendBuilderCleanupTest(unittest.TestCase):
-    def run_case(self, mode="fresh", sponsor=True, fail_stage="", unsafe_bundle=False):
+    def run_case(self, mode="fresh", sponsor=True, fail_stage="", unsafe_bundle=False,
+                 host_lock=False, host_lock_busy=False):
         # Spaces and apostrophes also exercise the trap's captured path quoting.
         with tempfile.TemporaryDirectory(prefix="frontend builder's fixture-") as directory:
             cache = Path(directory) / "cache"
@@ -68,6 +75,8 @@ class FrontendBuilderCleanupTest(unittest.TestCase):
             sha = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
             archive = Path(directory) / "agent.zip"
             archive.touch()
+            if host_lock:
+                (cache / "host.lock").touch()
             bundle = Path(directory) / "sponsor.tar.gz"
             with tarfile.open(bundle, "w:gz") as tar:
                 content = b'{"enabled": false, "methods": []}'
@@ -80,14 +89,16 @@ class FrontendBuilderCleanupTest(unittest.TestCase):
                 "AGENT_ARCHIVE": str(archive), "BUILD_MODE": mode, "FAIL_STAGE": fail_stage,
                 "SPONSOR_BUNDLE": str(bundle) if sponsor else "",
                 "SPONSOR_FINGERPRINT": hashlib.sha256(bundle.read_bytes()).hexdigest() if sponsor else "",
+                "WOTB_BUILD_HOST_LOCK": str(cache / "host.lock") if host_lock else "",
+                "HOST_LOCK_BUSY": "1" if host_lock_busy else "0",
             }
-            result = subprocess.run(["bash", "-c", FUNCTIONS + FIXTURE], env=env, text=True,
+            result = subprocess.run(["bash", "-s"], input=FUNCTIONS + FIXTURE, env=env, text=True,
                                     capture_output=True, timeout=20)
             worktree_path = cache / "worktree.path"
             if worktree_path.exists():
                 self.addCleanup(shutil.rmtree, worktree_path.read_text().strip(), True)
             diagnostic = result.stdout + result.stderr
-            expected_status = 1 if unsafe_bundle else 17 if fail_stage else 0
+            expected_status = 1 if (unsafe_bundle or host_lock_busy) else 17 if fail_stage else 0
             self.assertEqual(result.returncode, expected_status, diagnostic)
             self.assertNotIn("unbound variable", diagnostic)
             self.assertEqual(list(cache.glob("sponsor.*")), [], diagnostic)
@@ -100,6 +111,8 @@ class FrontendBuilderCleanupTest(unittest.TestCase):
                 self.assertIn("RESULT wasm_verified=true", result.stdout)
                 self.assertIn("CALLER resumed", result.stdout)
                 self.assertEqual((cache / "fetched").exists(), mode == "fresh")
+                self.assertEqual(int((cache / "flock.count").read_text()), 2 if host_lock else 1,
+                                 "cache lock 与 host lock 必须按顺序各取一次")
                 if mode == "fresh":
                     # 确定性构建身份：真实生产构建方必须把**源 commit 的 epoch** 作为
                     # SOURCE_DATE_EPOCH 传给 Docker（Docker 上下文无 .git，时间只能由脚本给）。
@@ -130,6 +143,76 @@ class FrontendBuilderCleanupTest(unittest.TestCase):
 
     def test_unpack_failure_cleans_sponsor(self):
         self.run_case(unsafe_bundle=True)
+
+    def test_host_lock_is_acquired_after_cache_lock(self):
+        self.run_case(host_lock=True, sponsor=False)
+
+    def test_host_lock_busy_fails_closed(self):
+        self.run_case(host_lock=True, host_lock_busy=True, sponsor=False)
+
+
+class FrontendBuilderDigestLookupTest(unittest.TestCase):
+    """TX2 的发行版 Docker 没有 buildx：digest 查询必须回退到 docker manifest。"""
+
+    def run_lookup(self, buildx_available):
+        fixture = f'''
+timeout() {{ while [[ "$1" = --* ]]; do shift; done; shift; "$@"; }}
+docker() {{
+  if [ "$1" = buildx ]; then
+    if [ "$2" = version ]; then return {0 if buildx_available else 1}; fi
+    if [ "$2" = imagetools ]; then printf 'sha256:%064d\\n' 5; return 0; fi
+    return 1
+  fi
+  if [ "$1" = manifest ]; then
+    printf '[{{"Descriptor":{{"digest":"sha256:%064d"}}}}]\\n' 7
+    return 0
+  fi
+  return 1
+}}
+docker_image_digest repo:tag
+'''
+        result = subprocess.run(["bash", "-s"], input=FUNCTIONS + fixture, text=True,
+                                capture_output=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return result.stdout.strip()
+
+    def test_buildx_path_uses_imagetools(self):
+        self.assertEqual(self.run_lookup(buildx_available=True), "sha256:" + "0" * 63 + "5")
+
+    def test_manifest_fallback_parses_descriptor_digest(self):
+        self.assertEqual(self.run_lookup(buildx_available=False), "sha256:" + "0" * 63 + "7")
+
+    def test_manifest_timeout_keeps_timeout_status(self):
+        # 回归：fallback 不能把 timeout 的 124 变成 Python 空输入的 1，否则
+        # lookup_remote_digest 的有界重试会失效。
+        fixture = '''
+timeout() { return 124; }
+docker() { if [ "$1" = buildx ]; then return 1; fi; return 0; }
+docker_image_digest repo:tag
+'''
+        result = subprocess.run(["bash", "-s"], input=FUNCTIONS + fixture, text=True,
+                                capture_output=True, timeout=20)
+        self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.strip(), "")
+
+    def test_lookup_retries_after_timeout_then_succeeds(self):
+        with tempfile.TemporaryDirectory() as directory:
+            counter = Path(directory) / "lookup.count"
+            fixture = f'''
+docker_image_digest() {{
+  count=$(cat "{counter}" 2>/dev/null || echo 0); count=$((count + 1))
+  printf '%s\\n' "$count" > "{counter}"
+  if [ "$count" -eq 1 ]; then return 124; fi
+  printf 'sha256:%064d\\n' 9
+}}
+sleep() {{ :; }}
+lookup_remote_digest repo:tag
+'''
+            result = subprocess.run(["bash", "-s"], input=FUNCTIONS + fixture, text=True,
+                                    capture_output=True, timeout=20)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.stdout.strip(), "sha256:" + "0" * 63 + "9")
+            self.assertEqual(counter.read_text().strip(), "2")
 
 
 if __name__ == "__main__":
