@@ -1,5 +1,8 @@
 package com.wotb.web.user.service;
 
+import com.wotb.web.user.api.UserProfiles;
+import com.wotb.web.user.api.UserProfileSnapshot;
+import com.wotb.web.user.api.WotbAccountIdentity;
 import com.wotb.web.user.dto.UserProfileDto;
 import com.wotb.web.user.dto.OnboardingReceiptDto;
 import com.wotb.web.user.entity.UserProfile;
@@ -8,7 +11,8 @@ import com.wotb.web.util.ConstraintViolations;
 import com.wotb.web.util.JwtUtil;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -23,7 +27,7 @@ import java.util.Set;
 
 /** 用户资料服务。创建/查询分离，username 和 displayName 来自 Keycloak 不可修改。 */
 @Service
-public class UserProfileService {
+public class UserProfileService implements UserProfiles {
 
     /** WG Provider 支持的区服（与 Keycloak {@code WargamingRegion} 枚举一致）。 */
     private static final Set<String> WG_REGIONS = Set.of("ASIA", "EU", "NA");
@@ -78,6 +82,7 @@ public class UserProfileService {
      *
      * <p>这是 HoF 等业务域解析 ownership 的唯一入口，避免各域各写一份「解析当前绑定账号」的规则。</p>
      */
+    @Override
     @Transactional(readOnly = true)
     public Optional<WotbAccountIdentity> currentWotbIdentity(final String keycloakUserId) {
         return repository.findByKeycloakUserId(keycloakUserId)
@@ -87,17 +92,20 @@ public class UserProfileService {
     }
 
     /** 供其他业务域读取用户资料值，不暴露持久化实体。 */
+    @Override
     @Transactional(readOnly = true)
     public Optional<UserProfileSnapshot> findSnapshotByKeycloakUserId(final String keycloakUserId) {
         return repository.findByKeycloakUserId(keycloakUserId).map(mapper::toSnapshot);
     }
 
     /** 当前 JWT 是否为可用于 WG 资料同步的可信 ASIA/EU/NA 身份。 */
+    @Override
     public boolean hasTrustedWargamingIdentity() {
         return trustedWgRegionOrNull() != null;
     }
 
     /** 供跨域写操作串行化用户删除与换绑。 */
+    @Override
     @Transactional
     public Optional<UserProfileSnapshot> findSnapshotByKeycloakUserIdForUpdate(final String keycloakUserId) {
         return repository.findByKeycloakUserIdForUpdate(keycloakUserId).map(mapper::toSnapshot);
@@ -107,14 +115,17 @@ public class UserProfileService {
      * 管理端用户分页检索，Repository 保持封装在 user 域内。
      * 返回 {@link Page} 以便调用方拿到权威 totalElements/totalPages，不做内存伪造分页。
      */
+    @Override
     @Transactional(readOnly = true)
-    public Page<UserProfileSnapshot> searchForAdministration(final String query, final Pageable pageable) {
+    public Page<UserProfileSnapshot> searchForAdministration(final String query, final int page, final int size) {
+        final PageRequest pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
         return StringUtils.hasText(query)
                 ? repository.searchAdminUsers(query.trim(), pageable).map(mapper::toSnapshot)
                 : repository.findAll(pageable).map(mapper::toSnapshot);
     }
 
     /** 按 Keycloak sub 批量取本地资料；跨域编排（admin）用，禁止逐用户查询。 */
+    @Override
     @Transactional(readOnly = true)
     public List<UserProfileSnapshot> findByKeycloakUserIdIn(final Collection<String> keycloakUserIds) {
         if (keycloakUserIds == null || keycloakUserIds.isEmpty()) {
@@ -124,6 +135,7 @@ public class UserProfileService {
     }
 
     /** 管理端删除入口；flush 让约束异常在调用方补偿范围内暴露。 */
+    @Override
     @Transactional
     public void deleteForAdministration(final String keycloakUserId) {
         final UserProfile profile = repository.findByKeycloakUserId(keycloakUserId)
@@ -223,6 +235,13 @@ public class UserProfileService {
             // 3) 其余完整性冲突是服务端问题，不得伪装成 409 业务冲突。
             throw new IllegalStateException("PROFILE_BOOTSTRAP_FAILED", e);
         }
+    }
+
+    /** 跨域同步入口不返回 HTTP DTO；外层事务覆盖下方不会重新经过代理的 self-call。 */
+    @Override
+    @Transactional
+    public void synchronizeFromLogin(final String keycloakUserId) {
+        syncFromLogin(keycloakUserId);
     }
 
     /**

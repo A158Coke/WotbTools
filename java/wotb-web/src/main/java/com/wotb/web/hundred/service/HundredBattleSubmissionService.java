@@ -18,9 +18,9 @@ import com.wotb.web.replayfile.ReplayUploadValidator;
 import com.wotb.web.replayfile.ClientReplayFacts;
 import com.wotb.web.replayfile.ReplayFileNames;
 import com.wotb.web.replayfile.ReplayHashLock;
-import com.wotb.web.user.service.UserProfileService;
-import com.wotb.web.user.service.UserProfileSnapshot;
-import com.wotb.web.user.service.WotbAccountIdentity;
+import com.wotb.web.user.api.UserProfiles;
+import com.wotb.web.user.api.UserProfileSnapshot;
+import com.wotb.web.user.api.WotbAccountIdentity;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
@@ -75,7 +75,7 @@ public class HundredBattleSubmissionService {
 
     private final HundredBattleSubmissionRepository repository;
     private final HundredBattleMapper mapper;
-    private final UserProfileService userProfileService;
+    private final UserProfiles userProfileService;
     private final HundredReplayEvidenceService evidenceService;
     private final ReplayCapacityLimiter capacityLimiter;
     private final ReplayHashLock replayHashLock;
@@ -85,7 +85,7 @@ public class HundredBattleSubmissionService {
     public HundredBattleSubmissionService(
             final HundredBattleSubmissionRepository repository,
             final HundredBattleMapper mapper,
-            final UserProfileService userProfileService,
+            final UserProfiles userProfileService,
             final HundredReplayEvidenceService evidenceService,
             final ReplayCapacityLimiter capacityLimiter,
             final ReplayHashLock replayHashLock,
@@ -239,7 +239,7 @@ public class HundredBattleSubmissionService {
         if (!userProfileService.hasTrustedWargamingIdentity()) {
             throw new IllegalArgumentException("PROFILE_NOT_FOUND");
         }
-        userProfileService.syncFromLogin(userId);
+        userProfileService.synchronizeFromLogin(userId);
         return userProfileService.findSnapshotByKeycloakUserId(userId)
                 .orElseThrow(() -> new IllegalArgumentException("PROFILE_NOT_FOUND"));
     }

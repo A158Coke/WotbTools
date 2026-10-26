@@ -17,9 +17,9 @@ import com.wotb.web.replayfile.ClientReplayFacts;
 import com.wotb.web.replay.service.ReplayCapacityLimiter;
 import com.wotb.web.replayfile.ReplayFileNames;
 import com.wotb.web.replayfile.ReplayHashLock;
-import com.wotb.web.user.service.UserProfileService;
-import com.wotb.web.user.service.UserProfileSnapshot;
-import com.wotb.web.user.service.WotbAccountIdentity;
+import com.wotb.web.user.api.UserProfiles;
+import com.wotb.web.user.api.UserProfileSnapshot;
+import com.wotb.web.user.api.WotbAccountIdentity;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -64,7 +64,7 @@ public class Mark3SubmissionService {
 
     private final Mark3SubmissionRepository repository;
     private final Mark3Mapper mapper;
-    private final UserProfileService userProfileService;
+    private final UserProfiles userProfileService;
     private final ReplayCapacityLimiter capacityLimiter;
     private final Mark3ReplayEvidenceService evidenceService;
     private final ReplayHashLock replayHashLock;
@@ -74,7 +74,7 @@ public class Mark3SubmissionService {
     public Mark3SubmissionService(
             final Mark3SubmissionRepository repository,
             final Mark3Mapper mapper,
-            final UserProfileService userProfileService,
+            final UserProfiles userProfileService,
             final ReplayCapacityLimiter capacityLimiter,
             final Mark3ReplayEvidenceService evidenceService,
             final ReplayHashLock replayHashLock,
