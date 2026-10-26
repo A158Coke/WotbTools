@@ -591,8 +591,8 @@ Frontend 的 TX1/TX2 发布在切换线上文件或容器前，校验实际 Busi
   继续执行自己的 OpenTofu 与最终验证。各应用的服务级 concurrency 会取消过期 main workflow。
 - `frontend.yml` 的 GitHub runner 只负责 release authority、Gitee mirror、下载校验 pinned Agent
   WASM/可选 Sponsor bundle 与 staging；不在 GitHub 构建 Frontend Docker 镜像或上传 TCR 大镜像。
-  Frontend 镜像在 **TX2** 构建（TX1 只有 1.9 GiB 且常驻生产容器；#753 后 `vite build` 约需
-  1.05 GiB old space，1152 MiB 堆试跑会让 TX1 只剩 174 MiB available / 229 MiB free swap）。
+  Frontend 镜像在 **TX2** 构建（TX1 的 1.9 GiB 生产宿主不足以承载当前 `vite build`；
+  测量与迁移证据见 `docs/architecture/TECHNICAL_EVOLUTION.md` §24）。
   `deploy/tx/build-frontend-from-gitee.sh` 在 TX2 使用自己的持久 Gitee clone 与 host build lock
   （与 TX1 的 Business API builder 分离），创建 exact-SHA worktree。镜像 identity 包含 source SHA、
   `ASSET_BASE_URL` 与 Sponsor bundle SHA256

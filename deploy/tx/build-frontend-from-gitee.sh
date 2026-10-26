@@ -18,6 +18,10 @@ readonly GITEE_REPO_URL="${WOTB_GITEE_REPO_URL:-https://gitee.com/A158Coke/Wotbt
 readonly CACHE_ROOT="${WOTB_TX_BUILD_CACHE_ROOT:-$HOME/.cache/wotbtools-production-build}"
 readonly REPO_DIR="$CACHE_ROOT/repo"
 readonly BUILD_LOCK_FILE="$CACHE_ROOT/build.lock"
+# TX2 build 与同一宿主上的 Production Worker / Frontend replica 共用既有主机维护锁；
+# 空值 = 不获取（单测与 TX1 调试路径）。workflow 显式传 /opt/wotb-tx2/.deploy.lock。
+readonly HOST_LOCK_FILE="${WOTB_BUILD_HOST_LOCK:-}"
+readonly HOST_LOCK_WAIT_SECONDS="${HOST_LOCK_WAIT_SECONDS:-600}"
 readonly GITEE_WAIT_ATTEMPTS="${GITEE_WAIT_ATTEMPTS:-12}"
 readonly GITEE_WAIT_INTERVAL_SECONDS="${GITEE_WAIT_INTERVAL_SECONDS:-15}"
 readonly GIT_FETCH_TIMEOUT_SECONDS="${GIT_FETCH_TIMEOUT_SECONDS:-60}"
@@ -110,7 +114,7 @@ validate_common() {
   local setting
   for setting in GITEE_WAIT_ATTEMPTS GITEE_WAIT_INTERVAL_SECONDS GIT_FETCH_TIMEOUT_SECONDS \
     TCR_PUSH_TIMEOUT_SECONDS TCR_LOOKUP_TIMEOUT_SECONDS TCR_PULL_TIMEOUT_SECONDS KILL_AFTER_SECONDS \
-    RETRY_MAX_ATTEMPTS RETRY_BACKOFF_FIRST_SECONDS RETRY_BACKOFF_LATER_SECONDS; do
+    RETRY_MAX_ATTEMPTS RETRY_BACKOFF_FIRST_SECONDS RETRY_BACKOFF_LATER_SECONDS HOST_LOCK_WAIT_SECONDS; do
     is_positive_integer "${!setting}" || die "$setting must be a positive integer"
   done
   [ "$RETRY_MAX_ATTEMPTS" -le 3 ] || die "RETRY_MAX_ATTEMPTS cannot exceed 3"
@@ -201,7 +205,7 @@ wait_for_gitee_sha() {
 }
 
 docker_image_digest() {
-  local image="$1"
+  local image="$1" raw err status
   # TX1 有 buildx：imagetools 直接返回 index/manifest 的顶层 digest。TX2 的发行版
   # Docker 没有 buildx 插件：`docker manifest inspect --verbose` 给出该 tag 的
   # per-platform Descriptor；单架构镜像用它 pull 同样可验证。部署侧的 canonical
@@ -212,16 +216,29 @@ docker_image_digest() {
       docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$image"
     return
   fi
-  timeout --kill-after="${KILL_AFTER_SECONDS}s" "${TCR_LOOKUP_TIMEOUT_SECONDS}s" \
-    docker manifest inspect --verbose "$image" | python3 -c '
+  raw="$(mktemp)"
+  err="$(mktemp)"
+  # 先单独捕获 manifest 命令的原退出码：timeout 的 124 必须原样上抛给
+  # lookup_remote_digest 的有界重试。若把命令与 Python 解析放进同一条 pipefail
+  # 管道，空输出会让 Python 以 1 退出并覆盖 124，第一次超时就永久中止发布。
+  if timeout --kill-after="${KILL_AFTER_SECONDS}s" "${TCR_LOOKUP_TIMEOUT_SECONDS}s" \
+    docker manifest inspect --verbose "$image" >"$raw" 2>"$err"; then
+    python3 - "$raw" <<'PY'
 import json, sys
-data = json.load(sys.stdin)
+data = json.load(open(sys.argv[1], encoding="utf-8"))
 entry = data[0] if isinstance(data, list) and data else data
 digest = (entry or {}).get("Descriptor", {}).get("digest", "")
 if not digest:
     raise SystemExit("manifest has no Descriptor.digest")
 print(digest)
-'
+PY
+    status=$?
+  else
+    status=$?
+    cat "$err" >&2
+  fi
+  rm -f "$raw" "$err"
+  return "$status"
 }
 
 lookup_remote_digest() {
@@ -398,6 +415,15 @@ build_publish() {
   mkdir -p "$CACHE_ROOT"
   exec 8>"$BUILD_LOCK_FILE"
   flock -n 8 || die "another TX Frontend build is already running"
+  # 主机维护锁在 cache lock 之后获取：两个 build 先串行，再与 Production Worker /
+  # Frontend replica 的 /opt/wotb-tx2/.deploy.lock 互斥。先 host 后 cache 会让
+  # build A 持 host 等 cache、build B 持 cache 等 host 形成死锁。
+  if [ -n "$HOST_LOCK_FILE" ]; then
+    [ -e "$HOST_LOCK_FILE" ] || die "host maintenance lock is missing: $HOST_LOCK_FILE"
+    exec 7>"$HOST_LOCK_FILE"
+    flock -w "$HOST_LOCK_WAIT_SECONDS" 7 \
+      || die "timed out waiting for host maintenance lock: $HOST_LOCK_FILE"
+  fi
 
   if [ -n "$sponsor_fingerprint" ]; then
     sponsor_tmp="$(mktemp -d)"

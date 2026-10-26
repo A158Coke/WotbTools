@@ -41,14 +41,9 @@ TX2 上唯一由生产 workflow 部署的 workload 是 Frontend replica：`front
 | **`frontend-replica.yml`** | TX2 Frontend 双实例副本：解析并拉取与 TX1 相同的 immutable TCR artifact、部署 `/opt/wotb-tx2/frontend-replica`、验证 peer `/version.json` 与 API health | Frontend 镜像构建与 TCR 发布（Frontend owner；构建机 = TX2）、Caddy ingress、其它服务、host 前置条件 |
 | **`frontend.yml`** | Frontend immutable 镜像构建（TX2）与 TCR 发布；TX1 上的部署/健康检查仍由同一 workflow 的 deploy job 拥有 | TX2 host 前置条件、Frontend replica 落地、Caddy ingress |
 
-### Frontend 构建机 placement（2026-10-26）
+### Frontend 构建机 placement
 
-Frontend Docker 镜像在 **TX2** 构建，而不是 TX1：
-
-- TX1 为 1.9 GiB RAM（2 vCPU），常驻 Business API / Keycloak / PostgreSQL / Caddy / Frontend；#753（Reka / VueUse / motion-v）之后 `vite build` 的 V8 old-space 需求约 1.05 GiB。
-- TX1 上以 1152 MiB 堆试跑时只剩 174 MiB available / 229 MiB free swap，会威胁生产容器；默认堆则直接 OOM。
-- TX2 为 3.6 GiB RAM / 4 vCPU，同一 commit 的完整 Docker 构建（含 WASM 与资产源校验）通过，构建后仍有 2.9 GiB available，未消耗 swap。
-- 构建产物仍发布到同一 immutable TCR tag；TX1 的 deploy job 与 Caddy 入口不变。TX2 的 build cache / `build.lock` 与 TX1 的 Business API builder 分离。
+Frontend Docker 镜像在 **TX2** 构建，TX1 只负责部署与公网入口。TX2 必须为当前 `vite build` 提供足够的内存余量（TX1 的 1.9 GiB 生产宿主不足以承载）；测量与迁移证据见 `docs/architecture/TECHNICAL_EVOLUTION.md` §24。构建产物仍发布到同一 immutable TCR tag；TX2 的 build cache / `build.lock` 与 TX1 的 Business API builder 分离，并与 TX2 的 `/opt/wotb-tx2/.deploy.lock` 主机维护锁互斥。
 
 TX2 没有额外的 Komodo Stack / ResourceSync workload owner；除 Frontend replica 外，任何新 workload 都需要先经过 Designer / approved plan 与相应 owner workflow。
 
