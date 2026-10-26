@@ -33,7 +33,7 @@ WotbTools 是 WoT Blitz `.wotbreplay` 回放分析工具集：Java 25 + Spring B
 
 ## 环境与工具链
 
-- **JDK 25** 必需（parent Enforcer 限制 `[25,26)`）；Maven 3.9.0 或更新版本（parent Enforcer 下限）。Maven 必须显式使用 settings 文件：在 `java/` 下为 `-s settings.xml`，仓库根为 `-s java/settings.xml`；容器构建使用 `java/settings-docker.xml`。Parent POM 会拒绝重复 dependency 声明，并在 `mvn test` 执行 advisory dependency analysis；analysis warnings 不会令构建失败，当前未启用 `dependencyConvergence`。
+- **JDK 25** 必需（parent Enforcer 限制 `[25,26)`）；Maven 3.9.0 或更新的 Maven 3 版本（Maven 4 不在支持范围内）。Maven 必须显式使用 settings 文件：在 `java/` 下为 `-s settings.xml`，仓库根为 `-s java/settings.xml`；容器构建使用 `java/settings-docker.xml`。Parent POM 会拒绝重复 dependency 声明，并在 `mvn test` 执行 advisory dependency analysis；analysis warnings 不会令构建失败，当前未启用 `dependencyConvergence`。
 - **Node 24**：`frontend/.nvmrc` 固定版本。前端使用 TypeScript 与 `vue-tsc` 做独立类型检查；源码中 JavaScript 与 TypeScript 共存，新代码跟随所在模块的现有约定。
 - **pnpm**：版本由 `frontend/package.json` 的 `packageManager` 钉住；Node 24 自带 corepack，执行一次 `corepack enable` 后，`frontend/` 下的 `pnpm` 自动使用该版本。本地安装依赖用 `pnpm install`，CI 与 Docker 用 `pnpm install --frozen-lockfile`；`frontend/pnpm-lock.yaml` 是唯一 lockfile。`node_modules` 使用 pnpm 默认的隔离布局，代码只能 import `package.json` 中声明的依赖。
 - **依赖安装安全策略**（`frontend/pnpm-workspace.yaml`）：依赖的安装脚本默认禁止，只有 `allowBuilds` 中显式为 `true` 的包可以执行；存在未审查的安装脚本时安装失败（`strictDepBuilds`）；发布不足 24 小时的版本不会被解析（`minimumReleaseAge`，紧急安全补丁按包写入 `minimumReleaseAgeExclude` 并在 PR 中说明）。新增带安装脚本的依赖时，在同一 PR 里把它写进 `allowBuilds` 并说明理由；不得启用 `dangerouslyAllowAllBuilds`，也不得关闭 `strictDepBuilds`。
