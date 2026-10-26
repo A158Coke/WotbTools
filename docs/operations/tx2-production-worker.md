@@ -1,13 +1,15 @@
 # TX2 production worker 与 Frontend replica
 
-TX2 当前承担两类已评审的生产职责：
+TX2 当前承担三类已评审的生产职责：
 
 1. **production-worker owner** 建立 host 前置条件：Docker / Compose、registry mirror、root TCR 凭据生成、主机锁，以及 Periphery / WireGuard 回归。它不创建或迁移任何 workload。
 2. **frontend-replica owner** 把 TX2 接入生产 Frontend 双实例池：TX1 Caddy 是唯一公网入口，按权重把流量分给 TX1 Frontend（weight 2）与 TX2 Frontend（weight 8），对两个 peer 做 `/version.json` active health check。TX2 拉取与 TX1 相同的 immutable TCR artifact，不从 TX1 运行容器复制状态。
+3. **Frontend image build（Frontend owner）** 在 TX2 上执行 `frontend.yml` 的 immutable 镜像构建与 TCR 发布；TX1 仍负责部署与公网入口。TX2 只提供构建算力，不因此获得 Frontend 部署 owner。
 
 ```text
 TX2_PRODUCTION_WORKER_READY  → host capability proven
 K7C frontend replica         → active production workload
+Frontend image build         → immutable TCR artifact（TX1/TX2 共同消费）
 ```
 
 ## 目标能力与边界
@@ -36,7 +38,12 @@ TX2 上唯一由生产 workflow 部署的 workload 是 Frontend replica：`front
 |---|---|---|
 | `deploy/periphery/**` + `komodo-periphery.yml` | Periphery 二进制、配置、systemd 生命周期、身份、Core 信任、onboarding | 通用 Docker 主机 provisioning |
 | **`deploy/production-worker/**` + `production-worker.yml`** | TX2 的 host Docker 前置条件：Compose 能力、`/etc/docker/daemon.json` 的已评审 mirror、**root 执行上下文的 TCR pull 凭据** | Periphery、Komodo Core、Caddy、Frontend、Business API、Keycloak、PostgreSQL、AI、DNS、OpenTofu state、任何 workload |
-| **`frontend-replica.yml`** | TX2 Frontend 双实例副本：解析并拉取与 TX1 相同的 immutable TCR artifact、部署 `/opt/wotb-tx2/frontend-replica`、验证 peer `/version.json` 与 API health | Frontend 构建与 TCR 发布（TX1 Frontend owner）、Caddy ingress、其它服务、host 前置条件 |
+| **`frontend-replica.yml`** | TX2 Frontend 双实例副本：解析并拉取与 TX1 相同的 immutable TCR artifact、部署 `/opt/wotb-tx2/frontend-replica`、验证 peer `/version.json` 与 API health | Frontend 镜像构建与 TCR 发布（Frontend owner；构建机 = TX2）、Caddy ingress、其它服务、host 前置条件 |
+| **`frontend.yml`** | Frontend immutable 镜像构建（TX2）与 TCR 发布；TX1 上的部署/健康检查仍由同一 workflow 的 deploy job 拥有 | TX2 host 前置条件、Frontend replica 落地、Caddy ingress |
+
+### Frontend 构建机 placement
+
+Frontend Docker 镜像在 **TX2** 构建，TX1 只负责部署与公网入口。TX2 必须为当前 `vite build` 提供足够的内存余量（TX1 的 1.9 GiB 生产宿主不足以承载）；测量与迁移证据见 `docs/architecture/TECHNICAL_EVOLUTION.md` §24。构建产物仍发布到同一 immutable TCR tag；TX2 的 build cache / `build.lock` 与 TX1 的 Business API builder 分离，并与 TX2 的 `/opt/wotb-tx2/.deploy.lock` 主机维护锁互斥。
 
 TX2 没有额外的 Komodo Stack / ResourceSync workload owner；除 Frontend replica 外，任何新 workload 都需要先经过 Designer / approved plan 与相应 owner workflow。
 

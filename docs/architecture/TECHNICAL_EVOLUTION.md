@@ -577,6 +577,21 @@ npm 时代任何依赖（含传递依赖）的 `preinstall` / `install` / `posti
 - **单一版本来源**：pnpm 版本由 `package.json#packageManager`（带 sha512）钉住，本机与 Docker 经 corepack、
   CI 经 `pnpm/action-setup` 读取同一字段；锁文件由 `pnpm import` 从原 `package-lock.json` 转换，解析版本不变。
 
+## 24. 2026-10-26 — Frontend 镜像构建从 TX1 迁到 TX2：构建内存与部署宿主分离
+
+#753 引入 Reka / VueUse / motion-v 后，`vite build` 的 V8 old-space 需求升到约 1.05 GiB。TX1 是
+1.9 GiB / 2 vCPU 的生产部署宿主，常驻 Business API、Keycloak、PostgreSQL、Caddy 与 Frontend；
+默认堆直接 OOM，1152 MiB 堆试跑时只剩 174 MiB available / 229 MiB free swap，会威胁生产容器。
+把堆上限继续调大不是安全修复——TX1 没有对应内存。
+
+TX2（3.6 GiB / 4 vCPU）承担 Frontend 镜像构建：同一 commit 的完整 Docker 构建（含 WASM 与
+资产源校验）通过，构建后仍有 2.9 GiB available，未消耗 swap；TCR 凭据对
+`wotbtools/wotbtools-frontend` 有 push scope。构建仍发布同一 immutable TCR tag，TX1 的 deploy
+job、Caddy 入口与 TX2 的 frontend replica 都继续消费该 artifact。Frontend build cache 与
+`build.lock` 留在 TX2，与 TX1 的 Business API builder 分离；TX2 不因此获得 Frontend 部署 owner。
+TX2 的发行版 Docker CLI 没有 buildx 插件，构建脚本只在远端 digest 查询时回退到
+`docker manifest inspect --verbose`，构建本身仍走 `docker build`。
+
 ## 已退役 / 过渡架构
 
 - **Boost / Coaching** — 曾经形成完整有状态业务，后续连同 DB / frontend / roles 一并退役。
