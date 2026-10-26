@@ -4642,6 +4642,12 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     }
                 }
             }
+            // 上面只写局部 matrix（matrixWorldNeedsUpdate）；世界矩阵要到下一帧 render 才传播。
+            // 射击复现的首次取景（setImpactView）、弹着点标注与滑块重算都在同一任务内立即
+            // raycast——不先传播就会按旧姿态（炮塔/炮管未转）求交：弦擦过炮管落空 → 取景
+            // 回退车体原点，坦克整体出现在画面上半部；下一帧后再点「查看弹着点」才恢复。
+            // 与 doPenetrationCheck 的首帧约定一致（判定前调用同一助手）。
+            updateCollisionWorldMatrices();
         }
 
         let armorOrigMatrices = null;

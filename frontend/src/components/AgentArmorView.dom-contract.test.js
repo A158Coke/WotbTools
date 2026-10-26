@@ -504,6 +504,30 @@ describe('production gun_mask clip wiring (2026-10-21)', () => {
   })
 })
 
+// 射击复现首帧取景回归（2026-10-26）：命中弹默认进入「查看弹着点」视角时，相机瞄准点
+// 来自对目标装甲模型的 raycast。updateTurretGun 刚写入炮塔/炮管装甲板的局部矩阵，世界
+// 矩阵要到下一帧 render 才传播——同一任务内的首帧 raycast 若不做传播会按旧姿态求交：
+// 弦擦过炮管落空 → 瞄准点回退车体原点，坦克整体出现在画面上半部；下一帧后再点一次
+// 「查看弹着点」才恢复。这里锁定：姿态写入函数返回前必须传播世界矩阵（与
+// doPenetrationCheck 的首帧约定同源，勿只在单个调用点补）。
+describe('shot impact view first-frame pose propagation', () => {
+  const kernel = read('../scene/tankViewer.js')
+  it('updateTurretGun 写完炮塔/炮管装甲板矩阵后立即传播世界矩阵', () => {
+    const start = kernel.indexOf('function updateTurretGun(')
+    expect(start).toBeGreaterThan(-1)
+    const end = kernel.indexOf('let armorOrigMatrices = null;', start)
+    expect(end).toBeGreaterThan(start)
+    const body = kernel.slice(start, end)
+    const lastWrite = body.lastIndexOf('node.matrixWorldNeedsUpdate = true;')
+    expect(lastWrite).toBeGreaterThan(-1)
+    const propagate = body.lastIndexOf('updateCollisionWorldMatrices();')
+    expect(propagate, '世界矩阵未在首帧 raycast 前传播').toBeGreaterThan(lastWrite)
+  })
+  it('传播助手递归更新装甲/外观模型（含子节点的 matrixWorld）', () => {
+    expect(kernel).toMatch(/function updateCollisionWorldMatrices\(\) \{[\s\S]*?armorModel\?\.updateWorldMatrix\(true, true\);[\s\S]*?tankModel\?\.updateWorldMatrix\(true, true\);/)
+  })
+})
+
 describe('tank-picker cover crop wiring (shared TankCatalogMenu)', () => {
   const menu = read('./TankCatalogMenu.vue')
 
