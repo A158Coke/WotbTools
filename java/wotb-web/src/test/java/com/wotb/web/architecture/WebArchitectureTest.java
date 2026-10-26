@@ -22,14 +22,13 @@ import java.util.Set;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.library.GeneralCodingRules.NO_CLASSES_SHOULD_USE_FIELD_INJECTION;
-import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * wotb-web 架构契约（对应 {@code java/AGENTS.md} 与 {@code docs/DEVELOPER_GUIDE.md}）：
  * domain 分包（禁止层分包）、Controller→Service→Repository 分层、Service 不得跨域调 Repository、
- * 构造器注入（禁字段注入）、禁 Lombok、domain 层无循环依赖。
+ * 构造器注入（禁字段注入）、禁 Lombok；模块依赖与循环由 Modulith 验证。
  */
 @AnalyzeClasses(packages = "com.wotb.web", importOptions = ImportOption.DoNotIncludeTests.class)
 class WebArchitectureTest {
@@ -101,11 +100,6 @@ class WebArchitectureTest {
     @ArchTest
     static final ArchRule NO_LOMBOK = noClasses()
             .should().dependOnClassesThat().resideInAnyPackage("lombok..");
-
-    @ArchTest
-    static final ArchRule WEB_DOMAINS_ARE_FREE_OF_CYCLES = slices()
-            .matching("com.wotb.web.(*)..")
-            .should().beFreeOfCycles();
 
     /** 防"规则空转"：确保分析器真实导入了 web 主代码。 */
     @ArchTest
