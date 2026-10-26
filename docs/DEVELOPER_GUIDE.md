@@ -688,6 +688,7 @@ Sponsor QR 不进仓库：配置与收款码作为 **GitHub Release 资产**发�
   覆盖所有应用直接子包；各模块均为 CLOSED，根包和 named interfaces 是对外入口。
   user 的跨域契约仅在 `user.api`：`UserProfiles` 提供有限的资料查询、身份、可信登录同步与管理操作，
   `UserProfileSnapshot` / `WotbAccountIdentity` 提供值；四个消费者域只声明 `user :: api`。
+  管理员资料检索仅传查询词、页码和大小，排序字段与方向由 user 模块内部拥有。
   user 的 service/dto/controller/repository/entity 保持模块内部，原 `UserProfileService` Bean 实现接口，
   HTTP DTO 与绑定/徽章逻辑仍由 user 拥有。`UserProfileApiTransactionTest` 验证实际 Boot 代理接线和事务语义，
   `MyHallOfFameRecordsControllerTest` 验证 snapshot 查询后的个人记录响应。

@@ -11,7 +11,8 @@ import com.wotb.web.util.ConstraintViolations;
 import com.wotb.web.util.JwtUtil;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -116,7 +117,8 @@ public class UserProfileService implements UserProfiles {
      */
     @Override
     @Transactional(readOnly = true)
-    public Page<UserProfileSnapshot> searchForAdministration(final String query, final Pageable pageable) {
+    public Page<UserProfileSnapshot> searchForAdministration(final String query, final int page, final int size) {
+        final PageRequest pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
         return StringUtils.hasText(query)
                 ? repository.searchAdminUsers(query.trim(), pageable).map(mapper::toSnapshot)
                 : repository.findAll(pageable).map(mapper::toSnapshot);

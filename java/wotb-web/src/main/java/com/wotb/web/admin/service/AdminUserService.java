@@ -16,8 +16,6 @@ import com.wotb.web.util.ErrorCode;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -137,8 +135,7 @@ public class AdminUserService {
      * 批量查询的能力（见 docs/auth/keycloak-admin-user-search.md）。默认页大小使该代价有界。</p>
      */
     private AdminUserPageDto localSegment(final String query, final int page, final int size) {
-        final Page<UserProfileSnapshot> rows = userProfileService.searchForAdministration(
-                query, PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt")));
+        final Page<UserProfileSnapshot> rows = userProfileService.searchForAdministration(query, page, size);
         final List<AdminUserListItemDto> items = rows.getContent().stream()
                 .map(profile -> mapper.toListItem(
                         keycloakAdminUserService.getUser(profile.keycloakUserId()), profile))
