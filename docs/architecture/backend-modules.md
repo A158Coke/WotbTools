@@ -32,7 +32,7 @@ Spring Modulith `Documenter` 会从同一个已经验证过的 `ApplicationModul
 
 当前对以下高价值模块提供独立启动与边界验证：
 
-- `UserModuleIntegrationTest`：验证用户模块能在不扫描使用方模块的情况下独立完成 Spring 装配，跨域入口仍由 `UserProfiles` 提供；仓库使用 mock 替代，因为数据库行为已有独立 Testcontainers 测试。
+- `UserModuleIntegrationTest`：验证用户模块能在不扫描使用方模块的情况下独立完成 Spring 装配，跨域入口仍由 `UserProfiles` 提供；`UserProfileRepository` 使用 mock 替代，因为数据库行为已有独立 Testcontainers 测试。
 - `ReplayModuleIntegrationTest`：验证回放模块独立启动，并通过真实 `ReplayCapacityLimiter` bean 验证配置容量与许可释放语义。
 
 运行命令：

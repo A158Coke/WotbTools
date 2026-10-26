@@ -692,6 +692,9 @@ Sponsor QR 不进仓库：配置与收款码作为 **GitHub Release 资产**发�
   user 的 service/dto/controller/repository/entity 保持模块内部，原 `UserProfileService` Bean 实现接口，
   HTTP DTO 与绑定/徽章逻辑仍由 user 拥有。`UserProfileApiTransactionTest` 验证实际 Boot 代理接线和事务语义，
   `MyHallOfFameRecordsControllerTest` 验证 snapshot 查询后的个人记录响应。
+  `UserModuleIntegrationTest` 与 `ReplayModuleIntegrationTest` 分别验证 user、replay 模块的独立启动和公开边界；
+  `WebModuleDocumentationTest` 从已验证的模块模型生成架构图与文档，输出至 `wotb-web/target/spring-modulith-docs/`。
+  测试范围、生成命令与产物说明见 [`后端模块文档`](architecture/backend-modules.md)。
   模块图由源码 package-info.java 声明，Modulith core 只在测试 classpath，生产只引入 api 注解；不启用
   runtime/events/outbox。实际模块图与正反向架构夹具随 `mvn test` 执行，失败即构建失败。
   仅验证架构时，在 `java/` 运行
