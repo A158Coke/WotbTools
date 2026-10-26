@@ -53,7 +53,7 @@ state 中独立验证，不访问 production state。
 
 ## 本地开发
 
-后端需要 JDK 25（parent Enforcer 限制 `[25,26)`）和 Maven 3.9.0 或更新版本。Parent POM 会拒绝重复 dependency 声明，并在 `mvn test` 执行 advisory dependency analysis；analysis warnings 不会令构建失败，当前未启用 `dependencyConvergence`。本地完整 Docker Compose 入口已退役。需要验证 Keycloak realm 时运行
+后端需要 JDK 25（parent Enforcer 限制 `[25,26)`）和 Maven 3.9.0 或更新的 Maven 3 版本（Maven 4 不在支持范围内）。Parent POM 会拒绝重复 dependency 声明，并在 `mvn test` 执行 advisory dependency analysis；analysis warnings 不会令构建失败，当前未启用 `dependencyConvergence`。本地完整 Docker Compose 入口已退役。需要验证 Keycloak realm 时运行
 `deploy/test-keycloak-tofu.sh`，它自己启动 disposable PostgreSQL/Keycloak 并使用 local
 OpenTofu state；不需要 production secrets。
 
