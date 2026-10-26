@@ -327,7 +327,7 @@ jobs:
             -o ServerAliveInterval=10 \
             -o ServerAliveCountMax=6 \
             "$TX2_USER@$TX2_HOST" \
-            "bash '$remote_script' build-publish '$SOURCE_SHA' '$TCR_REGISTRY' '$TCR_NAMESPACE' '$ASSET_BASE_URL' '$remote_agent' '$sponsor_bundle' '$sponsor_fingerprint'" \
+            "WOTB_BUILD_HOST_LOCK=/opt/wotb-tx2/.deploy.lock bash '$remote_script' build-publish '$SOURCE_SHA' '$TCR_REGISTRY' '$TCR_NAMESPACE' '$ASSET_BASE_URL' '$remote_agent' '$sponsor_bundle' '$sponsor_fingerprint'" \
             | tee "$log"
 
           python3 - "$log" >> "$GITHUB_OUTPUT" <<'PY'
