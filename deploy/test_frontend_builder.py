@@ -214,6 +214,17 @@ lookup_remote_digest repo:tag
             self.assertEqual(result.stdout.strip(), "sha256:" + "0" * 63 + "9")
             self.assertEqual(counter.read_text().strip(), "2")
 
+    def test_lookup_treats_no_such_manifest_as_missing_tag(self):
+        # TX2 的 docker manifest inspect 对缺失 tag 报 "no such manifest"，
+        # 必须返回 10（触发构建），不能当成致命错误。
+        fixture = '''
+docker_image_digest() { printf 'no such manifest: repo:tag\\n' >&2; return 1; }
+lookup_remote_digest repo:tag
+'''
+        result = subprocess.run(["bash", "-s"], input=FUNCTIONS + fixture, text=True,
+                                capture_output=True, timeout=20)
+        self.assertEqual(result.returncode, 10, result.stdout + result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
