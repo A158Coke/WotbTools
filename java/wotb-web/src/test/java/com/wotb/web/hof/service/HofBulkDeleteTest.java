@@ -20,7 +20,7 @@ import com.wotb.web.replay.service.ReplayCapacityLimiter;
 import com.wotb.web.replayfile.HallOfFameReplayStorage;
 import com.wotb.web.replayfile.HundredReplayReferenceCounter;
 import com.wotb.web.replayfile.ReplayHashLock;
-import com.wotb.web.user.service.UserProfileService;
+import com.wotb.web.user.api.UserProfiles;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -61,7 +61,7 @@ class HofBulkDeleteTest {
             mock(HundredBattleSubmissionRepository.class);
     private final HundredBattleMapper hundredMapper = mock(HundredBattleMapper.class);
     private final HundredReplayEvidenceService hundredEvidence = mock(HundredReplayEvidenceService.class);
-    private final UserProfileService userProfileService = mock(UserProfileService.class);
+    private final UserProfiles userProfileService = mock(UserProfiles.class);
     private final ReplayHashLock replayHashLock = mock(ReplayHashLock.class);
     private final PlatformTransactionManager txManager = mock(PlatformTransactionManager.class);
 

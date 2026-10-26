@@ -10,14 +10,12 @@ import com.wotb.web.admin.exception.AdminBadRequestException;
 import com.wotb.web.admin.exception.AdminConflictException;
 import com.wotb.web.admin.exception.AdminInternalException;
 import com.wotb.web.config.KeycloakAdminUserService;
-import com.wotb.web.user.service.UserProfileService;
-import com.wotb.web.user.service.UserProfileSnapshot;
+import com.wotb.web.user.api.UserProfiles;
+import com.wotb.web.user.api.UserProfileSnapshot;
 import com.wotb.web.util.ErrorCode;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -59,13 +57,13 @@ public class AdminUserService {
     /** 单次删除请求的 id 数上限：为无界的外部（Keycloak Admin API）调用设硬边界。 */
     private static final int MAX_DELETE_BATCH = 100;
 
-    private final UserProfileService userProfileService;
+    private final UserProfiles userProfileService;
     private final AdminUserMapper mapper;
     private final AdminUserLogPersister logPersister;
     private final KeycloakAdminUserService keycloakAdminUserService;
     private final TransactionTemplate transactionTemplate;
 
-    public AdminUserService(final UserProfileService userProfileService,
+    public AdminUserService(final UserProfiles userProfileService,
                             final AdminUserMapper mapper,
                             final AdminUserLogPersister logPersister,
                             final KeycloakAdminUserService keycloakAdminUserService,
@@ -137,8 +135,7 @@ public class AdminUserService {
      * 批量查询的能力（见 docs/auth/keycloak-admin-user-search.md）。默认页大小使该代价有界。</p>
      */
     private AdminUserPageDto localSegment(final String query, final int page, final int size) {
-        final Page<UserProfileSnapshot> rows = userProfileService.searchForAdministration(
-                query, PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt")));
+        final Page<UserProfileSnapshot> rows = userProfileService.searchForAdministration(query, page, size);
         final List<AdminUserListItemDto> items = rows.getContent().stream()
                 .map(profile -> mapper.toListItem(
                         keycloakAdminUserService.getUser(profile.keycloakUserId()), profile))

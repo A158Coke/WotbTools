@@ -1,11 +1,20 @@
 package com.wotb.web.architecture;
 
 import com.wotb.web.WotbWebApplication;
-import com.wotb.web.hundred.archfixture.UserProfileServiceCollaborationFixture;
+import com.wotb.web.hundred.archfixture.UserProfilesCollaborationFixture;
+import com.wotb.web.user.api.UserProfiles;
+import com.wotb.web.user.api.UserProfileSnapshot;
+import com.wotb.web.user.api.WotbAccountIdentity;
+import com.wotb.web.user.dto.UserProfileDto;
+import com.wotb.web.user.entity.UserProfile;
+import com.wotb.web.user.repository.UserProfileRepository;
+import com.wotb.web.user.service.UserProfileMapper;
+import com.wotb.web.user.service.UserProfileService;
 import org.junit.jupiter.api.Test;
 import org.springframework.modulith.core.ApplicationModules;
 
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -40,8 +49,25 @@ class WebModuleArchitectureTest {
             assertTrue(module.contains("com.wotb.web." + type), () -> "模块缺少生产类型: " + type);
         });
         assertFalse(modules.getModuleByType(WebArchitectureTest.class).isPresent(), "不得导入架构测试");
-        assertFalse(modules.getModuleByType(UserProfileServiceCollaborationFixture.class).isPresent(),
+        assertFalse(modules.getModuleByType(UserProfilesCollaborationFixture.class).isPresent(),
                 "不得导入业务包下的测试夹具");
         modules.verify();
+    }
+
+    @Test
+    void userOnlyExposesItsApplicationApi() {
+        final var user = ApplicationModules.of(WotbWebApplication.class)
+                .getModuleByName("user").orElseThrow();
+        assertTrue(user.isExposed(UserProfiles.class));
+        assertTrue(user.isExposed(UserProfileSnapshot.class));
+        assertTrue(user.isExposed(WotbAccountIdentity.class));
+        assertFalse(user.isExposed(UserProfileService.class));
+        assertFalse(user.isExposed(UserProfileMapper.class));
+        assertFalse(user.isExposed(UserProfileDto.class));
+        assertFalse(user.isExposed(UserProfile.class));
+        assertFalse(user.isExposed(UserProfileRepository.class));
+        assertEquals(Set.of("api"), user.getNamedInterfaces().stream()
+                .filter(named -> !named.isUnnamed())
+                .map(named -> named.getName()).collect(Collectors.toSet()));
     }
 }

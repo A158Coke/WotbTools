@@ -76,7 +76,7 @@ public class AdminUserLog {
 
     public static AdminUserLog started(
             final String targetKeycloakUserId,
-            final com.wotb.web.user.service.UserProfileSnapshot profile,
+            final com.wotb.web.user.api.UserProfileSnapshot profile,
             final String adminKeycloakUserId,
             final String adminUsername) {
         final AdminUserLog log = new AdminUserLog();

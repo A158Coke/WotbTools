@@ -23,7 +23,7 @@ import com.wotb.web.mark3.service.Mark3Mapper;
 import com.wotb.web.replay.exception.ReplayBusyException;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileMapper;
-import com.wotb.web.user.service.UserProfileSnapshot;
+import com.wotb.web.user.api.UserProfileSnapshot;
 import com.wotb.web.util.apierror.ApiErrorResponse;
 import java.math.BigDecimal;
 import java.nio.file.Files;

@@ -3,9 +3,9 @@ package com.wotb.web.architecture;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.wotb.web.hundred.archfixture.HofDtoDependencyFixture;
-import com.wotb.web.hundred.archfixture.UserProfileServiceCollaborationFixture;
+import com.wotb.web.hundred.archfixture.UserProfilesCollaborationFixture;
 import com.wotb.web.hof.dto.BulkDeleteResultDto;
-import com.wotb.web.user.service.UserProfileService;
+import com.wotb.web.user.api.UserProfiles;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -51,9 +51,9 @@ class WebArchitectureRuleMutationTest {
     }
 
     @Test
-    void explicitUserProfileServiceBoundaryRemainsAllowed() {
+    void explicitUserApiBoundaryRemainsAllowed() {
         final JavaClasses classes = new ClassFileImporter().importClasses(
-                UserProfileServiceCollaborationFixture.class, UserProfileService.class);
+                UserProfilesCollaborationFixture.class, UserProfiles.class);
         assertDoesNotThrow(
                 () -> WebArchitectureTest.HUNDRED_AND_MARK3_MUST_NOT_DEPEND_ON_HOF_DTOS.check(classes));
     }

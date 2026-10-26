@@ -3,13 +3,12 @@ package com.wotb.web.admin.service;
 import com.wotb.web.admin.dto.AdminUserPageDto;
 import com.wotb.web.admin.exception.AdminBadRequestException;
 import com.wotb.web.config.KeycloakAdminUserService;
-import com.wotb.web.user.service.UserProfileService;
-import com.wotb.web.user.service.UserProfileSnapshot;
+import com.wotb.web.user.api.UserProfiles;
+import com.wotb.web.user.api.UserProfileSnapshot;
 import org.junit.jupiter.api.Test;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 import org.springframework.transaction.PlatformTransactionManager;
 
 import java.util.List;
@@ -21,7 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -36,7 +34,7 @@ import static org.mockito.Mockito.when;
  */
 class AdminUserPaginationTest {
 
-    private final UserProfileService userProfileService = mock(UserProfileService.class);
+    private final UserProfiles userProfileService = mock(UserProfiles.class);
     private final AdminUserLogPersister logPersister = mock(AdminUserLogPersister.class);
     private final KeycloakAdminUserService keycloakAdminUserService = mock(KeycloakAdminUserService.class);
     private final PlatformTransactionManager txManager = mock(PlatformTransactionManager.class);
@@ -77,7 +75,7 @@ class AdminUserPaginationTest {
 
     @Test
     void localSegmentUsesDatabasePaginationAndFlagsOrphanBindings() {
-        when(userProfileService.searchForAdministration(isNull(), any(Pageable.class)))
+        when(userProfileService.searchForAdministration(null, 0, 25))
                 .thenReturn(new PageImpl<>(
                         List.of(profile("kc-bound", 100L), profile("kc-gone", 200L)),
                         PageRequest.of(0, 25), 120));
@@ -86,6 +84,7 @@ class AdminUserPaginationTest {
 
         final AdminUserPageDto result = service().searchUsers(null, "local", null, 0, 25);
 
+        verify(userProfileService).searchForAdministration(null, 0, 25);
         assertEquals(120, result.totalItems(), "总数必须来自 DB 权威分页，而不是本地伪造");
         assertEquals(5, result.totalPages());
         assertFalse(result.items().get(0).keycloakUserMissing());
