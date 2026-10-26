@@ -3,6 +3,7 @@ package com.wotb.web.replay;
 import com.wotb.web.replay.exception.ReplayBusyException;
 import com.wotb.web.replay.service.ReplayCapacityLimiter;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.test.context.TestPropertySource;
@@ -24,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class ReplayModuleIntegrationTest {
 
     @Test
-    void bootsAndHonorsTheConfiguredCapacity(final ReplayCapacityLimiter limiter) throws Exception {
+    void bootsAndHonorsTheConfiguredCapacity(@Autowired final ReplayCapacityLimiter limiter) throws Exception {
         assertThrows(ReplayBusyException.class,
                 () -> limiter.execute(() -> limiter.execute(() -> "nested")));
         assertEquals("released", limiter.execute(() -> "released"));

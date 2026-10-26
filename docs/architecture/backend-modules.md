@@ -28,14 +28,14 @@ Spring Modulith `Documenter` 会从同一个已经验证过的 `ApplicationModul
 
 默认输出位于 `wotb-web/target/spring-modulith-docs/`。`target/` 是构建产物并已被 `.gitignore` 忽略；生成结果不提交、不手改。
 
-## Module integration tests
+## 模块集成测试
 
-Phase 3 先覆盖两个高价值边界：
+当前对以下高价值模块提供独立启动与边界验证：
 
 - `UserModuleIntegrationTest`：验证 user 模块能在不扫描 consumer modules 的情况下独立完成 Spring wiring，跨域入口仍由 `UserProfiles` 提供；repository 用 mock 替代，因为数据库行为已有独立 Testcontainers 测试。
 - `ReplayModuleIntegrationTest`：验证 replay 模块独立启动，并通过真实 `ReplayCapacityLimiter` bean 验证配置容量与 permit 释放语义。
 
-运行：
+运行命令：
 
 ```bash
 mvn -s settings.xml -pl wotb-web -am \
@@ -43,9 +43,9 @@ mvn -s settings.xml -pl wotb-web -am \
   -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
-这些 module tests 的目标是验证 Spring wiring、module slicing 和公开边界，不替代 PostgreSQL/Testcontainers、HTTP contract 或业务回归测试。
+这些模块集成测试用于验证 Spring wiring、模块隔离和公开边界，不替代 PostgreSQL/Testcontainers、HTTP contract 或业务回归测试。
 
-## Ownership
+## 职责划分
 
 Spring Modulith 负责：
 
@@ -58,4 +58,4 @@ Spring Modulith 负责：
 
 ArchUnit 继续负责 WotBTools 自己的分层和代码规则，例如 Controller/Service/Repository ownership、禁止字段注入、禁止 Lombok 等。
 
-本阶段不启用 Spring Modulith runtime、events、outbox、event publication registry 或 observability runtime。
+Spring Modulith runtime、events、outbox、event publication registry 和 observability runtime 当前未启用。
