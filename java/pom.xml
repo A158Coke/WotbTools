@@ -23,10 +23,21 @@
         <springboot.version>4.1.1</springboot.version>
         <springai.version>2.0.0</springai.version>
         <archunit.version>1.4.2</archunit.version>
+        <spring-modulith.version>2.1.2</spring-modulith.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>org.springframework.modulith</groupId>
+                <artifactId>spring-modulith-api</artifactId>
+                <version>${spring-modulith.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.modulith</groupId>
+                <artifactId>spring-modulith-core</artifactId>
+                <version>${spring-modulith.version}</version>
+            </dependency>
             <dependency>
                 <groupId>com.wotb</groupId>
                 <artifactId>wotb-core</artifactId>
