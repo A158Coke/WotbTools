@@ -678,7 +678,15 @@ Sponsor QR 不进仓库：配置与收款码作为 **GitHub Release 资产**发�
 
 - Java：JUnit 5 / Mockito；业务单测不要启动真实 Keycloak。
 - Keycloak Admin API 通过 `KeycloakAdminUserService` 封装后 mock。
-- **架构测试（ArchUnit）**：`wotb-core` 与 `wotb-web` 各含 `*ArchitectureTest`，随 `mvn test` 自动执行；守护模块边界（core 禁 Spring Web/Boot、HTTP transport 类型与反向依赖 web，AI transport 自有错误响应，web domain 分包与分层、禁字段注入/Lombok、顶层包无循环依赖）。规则失败即构建失败。
+- **架构测试**：ArchUnit 守护 core 禁 Spring Web/Boot、HTTP transport 与反向依赖 web，以及 Web
+  domain 分包、分层、ownership、禁字段注入/Lombok。Spring Modulith 的 `WebModuleArchitectureTest`
+  验证 Web 九个业务域和 `config/exceptionhandler/replayfile/util` 四个支持模块的显式依赖、公开边界及循环，
+  覆盖所有应用直接子包；各模块均为 CLOSED，根包和 named interfaces 是对外入口。
+  `user.service` / `user.dto` 当前以 `legacy-service` / `legacy-dto` 提供包级公开入口，收口工作由 #751 跟踪。
+  模块图由源码 package-info.java 声明，Modulith core 只在测试 classpath，生产只引入 api 注解；不启用
+  runtime/events/outbox。实际模块图与正反向架构夹具随 `mvn test` 执行，失败即构建失败。
+  仅验证架构时，在 `java/` 运行
+  `mvn -s settings.xml -pl wotb-web -am "-Dtest=CoreArchitectureTest,WebArchitectureTest,WebArchitectureRuleMutationTest,WebModuleArchitectureTest,WebModuleArchitectureMutationTest" -Dsurefire.failIfNoSpecifiedTests=false test`。
 - 前端：Vitest + happy-dom（按需声明）；浏览器 gate 的命令与覆盖范围见 [`frontend/AGENTS.md`](../frontend/AGENTS.md)。
 - Replay/League/UI regression 必须补针对真实 invariant 的测试，而不是只验证函数被调用。
 - **职责分层（Fast Feedback First）**：开发过程中 Agent 只跑 targeted / module / feature regression，不重复跑 repository-level full test；仓库级 full validation 由 PR CI 统一执行（authoritative gate）。仅当改动影响跨模块 / build / test infrastructure（[`.agents/AGENTS.md`](../.agents/AGENTS.md) 的 Full-test 例外清单）时，Agent 才跑 `cd java && mvn -s settings.xml test` / `cd frontend && pnpm test && pnpm run build`。
