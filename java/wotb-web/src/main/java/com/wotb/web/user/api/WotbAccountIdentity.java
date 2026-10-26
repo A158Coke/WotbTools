@@ -1,4 +1,4 @@
-package com.wotb.web.user.service;
+package com.wotb.web.user.api;
 
 /**
  * 用户当前绑定的 canonical WotB 业务身份。

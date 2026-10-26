@@ -10,9 +10,9 @@ import com.wotb.web.replayfile.HallOfFameStorageException;
 import com.wotb.web.replay.exception.ReplayBusyException;
 import com.wotb.web.replay.service.ReplayCapacityLimiter;
 import com.wotb.web.testsupport.ReplayFactsJson;
-import com.wotb.web.user.service.UserProfileService;
-import com.wotb.web.user.service.UserProfileSnapshot;
-import com.wotb.web.user.service.WotbAccountIdentity;
+import com.wotb.web.user.api.UserProfiles;
+import com.wotb.web.user.api.UserProfileSnapshot;
+import com.wotb.web.user.api.WotbAccountIdentity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -68,7 +68,7 @@ class HundredBattleSubmissionServiceTest {
     HundredBattleSubmissionRepository repository;
 
     @Mock
-    UserProfileService userProfileService;
+    UserProfiles userProfileService;
 
     @Mock
     HundredReplayEvidenceService evidenceService;
@@ -306,7 +306,7 @@ class HundredBattleSubmissionServiceTest {
 
         assertThat(result.status()).isEqualTo("PENDING");
 
-        verify(userProfileService).syncFromLogin(USER);
+        verify(userProfileService).synchronizeFromLogin(USER);
         verify(userProfileService, org.mockito.Mockito.times(2)).findSnapshotByKeycloakUserId(USER);
         verify(repository).saveAndFlush(any());
     }
@@ -321,8 +321,35 @@ class HundredBattleSubmissionServiceTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("PROFILE_NOT_FOUND");
 
-        verify(userProfileService, never()).syncFromLogin(anyString());
+        verify(userProfileService, never()).synchronizeFromLogin(anyString());
         verify(repository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void existingProfileDoesNotTriggerLoginSynchronization() throws Exception {
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+
+        final var result = service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
+                "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays()));
+
+        assertThat(result.status()).isEqualTo("PENDING");
+        verify(userProfileService, never()).hasTrustedWargamingIdentity();
+        verify(userProfileService, never()).synchronizeFromLogin(anyString());
+    }
+
+    @Test
+    void loginSynchronizationFailureKeepsItsErrorAndStopsSubmission() {
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.empty());
+        when(userProfileService.hasTrustedWargamingIdentity()).thenReturn(true);
+        doThrow(new IllegalArgumentException("WOTB_ACCOUNT_ALREADY_USED"))
+                .when(userProfileService).synchronizeFromLogin(USER);
+
+        assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
+                "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays())))
+                .isInstanceOf(IllegalArgumentException.class).hasMessage("WOTB_ACCOUNT_ALREADY_USED");
+        verify(userProfileService).findSnapshotByKeycloakUserId(USER);
+        verify(repository, never()).saveAndFlush(any());
+        verify(evidenceService, never()).storeAll(anyList());
     }
 
     @Test
@@ -877,7 +904,7 @@ class HundredBattleSubmissionServiceTest {
         final HundredBattleSubmission s = pendingSubmission();
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
         // 未绑定账号的两种形态都必须是 403：profile 不存在，或 profile 存在但 wotbAccountId 为 null
-        // （后者由 UserProfileService.currentWotbIdentity 统一归一为 empty，服务层不需要第二套规则）
+        // （后者由 UserProfiles.currentWotbIdentity 统一归一为 empty，服务层不需要第二套规则）
         when(userProfileService.currentWotbIdentity("kc-unknown")).thenReturn(Optional.empty());
         when(userProfileService.currentWotbIdentity("kc-unbound")).thenReturn(Optional.empty());
 

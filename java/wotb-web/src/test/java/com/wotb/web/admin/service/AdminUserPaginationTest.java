@@ -3,8 +3,8 @@ package com.wotb.web.admin.service;
 import com.wotb.web.admin.dto.AdminUserPageDto;
 import com.wotb.web.admin.exception.AdminBadRequestException;
 import com.wotb.web.config.KeycloakAdminUserService;
-import com.wotb.web.user.service.UserProfileService;
-import com.wotb.web.user.service.UserProfileSnapshot;
+import com.wotb.web.user.api.UserProfiles;
+import com.wotb.web.user.api.UserProfileSnapshot;
 import org.junit.jupiter.api.Test;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.data.domain.PageImpl;
@@ -36,7 +36,7 @@ import static org.mockito.Mockito.when;
  */
 class AdminUserPaginationTest {
 
-    private final UserProfileService userProfileService = mock(UserProfileService.class);
+    private final UserProfiles userProfileService = mock(UserProfiles.class);
     private final AdminUserLogPersister logPersister = mock(AdminUserLogPersister.class);
     private final KeycloakAdminUserService keycloakAdminUserService = mock(KeycloakAdminUserService.class);
     private final PlatformTransactionManager txManager = mock(PlatformTransactionManager.class);

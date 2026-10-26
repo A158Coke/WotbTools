@@ -2,7 +2,7 @@ package com.wotb.web.admin.service;
 
 import com.wotb.web.admin.dto.AdminUserDetailDto;
 import com.wotb.web.admin.dto.AdminUserListItemDto;
-import com.wotb.web.user.service.UserProfileSnapshot;
+import com.wotb.web.user.api.UserProfileSnapshot;
 import com.wotb.web.util.Mapper;
 import org.keycloak.representations.idm.FederatedIdentityRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
