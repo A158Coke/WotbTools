@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
-# Build and publish the Frontend on TX from an exact commit mirrored to Gitee.
-# GitHub remains the release authority; Gitee is only the domestic source transport.
-# The pinned Agent WASM release archive is staged by GitHub because it is tiny; the
-# expensive frontend image build and TCR publication stay entirely inside China.
+# Build and publish the Frontend on the TX2 build host from an exact commit mirrored
+# to Gitee. GitHub remains the release authority; Gitee is only the domestic source
+# transport. The pinned Agent WASM release archive is staged by GitHub because it is
+# tiny; the expensive frontend image build and TCR publication stay entirely in China.
+#
+# 2026-10-26 placement: the Frontend image builds on TX2, not TX1. TX1 has 1.9 GiB RAM
+# and runs the production containers; after #753 (Reka/VueUse/motion-v) the build needs
+# ~1.05 GiB of V8 old space and a 1152 MiB heap trial left TX1 at 174 MiB available /
+# 229 MiB free swap. TX2 has 3.6 GiB (2.9 GiB available) and completed the same build
+# with no swap use. TX1 still owns deployment and pulls the immutable TCR artifact.
 set -Eeuo pipefail
 
 readonly GITEE_REPO_URL="${WOTB_GITEE_REPO_URL:-https://gitee.com/A158Coke/Wotbtools.git}"
-# Share the exact-source cache and host build lock with the Business API builder.
-# TX is the constrained production builder; two application images must not compete
-# for CPU/RAM or maintain duplicate Gitee clones when the same main commit touches both.
+# Cache/lock 属于**构建宿主**：Frontend 在 TX2 构建，Business API 仍在 TX1 构建，
+# 两侧缓存与 build.lock 刻意分离（同一 commit 同时改两个应用时不再争用 TX1 的
+# CPU/RAM，也不会共享一份 Gitee clone）。
 readonly CACHE_ROOT="${WOTB_TX_BUILD_CACHE_ROOT:-$HOME/.cache/wotbtools-production-build}"
 readonly REPO_DIR="$CACHE_ROOT/repo"
 readonly BUILD_LOCK_FILE="$CACHE_ROOT/build.lock"
@@ -113,7 +119,9 @@ validate_common() {
     command -v "$command_name" >/dev/null || die "$command_name is required"
   done
   docker version >/dev/null
-  docker buildx version >/dev/null
+  # buildx 不是每个构建宿主的发行版 Docker 都带（TX2 的 Ubuntu 包就没有）。构建本身
+  # 走 `docker build`；只有远端 immutable digest 查询需要 buildx，缺失时回退到
+  # `docker manifest inspect --verbose`（见 docker_image_digest）。
 }
 
 # Sponsor 运行时内容（收款码 + 配置）由 GitHub 在构建期从 CI secrets 注入并 stage 过来：
@@ -192,14 +200,37 @@ wait_for_gitee_sha() {
   die "source SHA did not reach Gitee main within the bounded wait"
 }
 
+docker_image_digest() {
+  local image="$1"
+  # TX1 有 buildx：imagetools 直接返回 index/manifest 的顶层 digest。TX2 的发行版
+  # Docker 没有 buildx 插件：`docker manifest inspect --verbose` 给出该 tag 的
+  # per-platform Descriptor；单架构镜像用它 pull 同样可验证。部署侧的 canonical
+  # digest 由 runner 重新解析，不使用这里的输出作为部署身份。
+  # timeout 必须包住具体命令而不是本函数：shell 函数不能直接作为 timeout 的 child。
+  if docker buildx version >/dev/null 2>&1; then
+    timeout --kill-after="${KILL_AFTER_SECONDS}s" "${TCR_LOOKUP_TIMEOUT_SECONDS}s" \
+      docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$image"
+    return
+  fi
+  timeout --kill-after="${KILL_AFTER_SECONDS}s" "${TCR_LOOKUP_TIMEOUT_SECONDS}s" \
+    docker manifest inspect --verbose "$image" | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+entry = data[0] if isinstance(data, list) and data else data
+digest = (entry or {}).get("Descriptor", {}).get("digest", "")
+if not digest:
+    raise SystemExit("manifest has no Descriptor.digest")
+print(digest)
+'
+}
+
 lookup_remote_digest() {
   local image="$1"
   local attempt=1 output_file output status digest backoff
 
   while :; do
     output_file="$(mktemp)"
-    if digest="$(timeout --kill-after="${KILL_AFTER_SECONDS}s" "${TCR_LOOKUP_TIMEOUT_SECONDS}s" \
-      docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$image" 2>"$output_file")"; then
+    if digest="$(docker_image_digest "$image" 2>"$output_file")"; then
       rm -f "$output_file"
       [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || die "registry returned an invalid digest for $image"
       printf '%s\n' "$digest"

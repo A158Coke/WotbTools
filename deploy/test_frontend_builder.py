@@ -81,7 +81,7 @@ class FrontendBuilderCleanupTest(unittest.TestCase):
                 "SPONSOR_BUNDLE": str(bundle) if sponsor else "",
                 "SPONSOR_FINGERPRINT": hashlib.sha256(bundle.read_bytes()).hexdigest() if sponsor else "",
             }
-            result = subprocess.run(["bash", "-c", FUNCTIONS + FIXTURE], env=env, text=True,
+            result = subprocess.run(["bash", "-s"], input=FUNCTIONS + FIXTURE, env=env, text=True,
                                     capture_output=True, timeout=20)
             worktree_path = cache / "worktree.path"
             if worktree_path.exists():
@@ -130,6 +130,38 @@ class FrontendBuilderCleanupTest(unittest.TestCase):
 
     def test_unpack_failure_cleans_sponsor(self):
         self.run_case(unsafe_bundle=True)
+
+
+class FrontendBuilderDigestLookupTest(unittest.TestCase):
+    """TX2 的发行版 Docker 没有 buildx：digest 查询必须回退到 docker manifest。"""
+
+    def run_lookup(self, buildx_available):
+        fixture = f'''
+timeout() {{ while [[ "$1" = --* ]]; do shift; done; shift; "$@"; }}
+docker() {{
+  if [ "$1" = buildx ]; then
+    if [ "$2" = version ]; then return {0 if buildx_available else 1}; fi
+    if [ "$2" = imagetools ]; then printf 'sha256:%064d\\n' 5; return 0; fi
+    return 1
+  fi
+  if [ "$1" = manifest ]; then
+    printf '[{{"Descriptor":{{"digest":"sha256:%064d"}}}}]\\n' 7
+    return 0
+  fi
+  return 1
+}}
+docker_image_digest repo:tag
+'''
+        result = subprocess.run(["bash", "-s"], input=FUNCTIONS + fixture, text=True,
+                                capture_output=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return result.stdout.strip()
+
+    def test_buildx_path_uses_imagetools(self):
+        self.assertEqual(self.run_lookup(buildx_available=True), "sha256:" + "0" * 63 + "5")
+
+    def test_manifest_fallback_parses_descriptor_digest(self):
+        self.assertEqual(self.run_lookup(buildx_available=False), "sha256:" + "0" * 63 + "7")
 
 
 if __name__ == "__main__":

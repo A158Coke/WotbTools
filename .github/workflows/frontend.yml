@@ -239,29 +239,34 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "sponsor runtime content pinned: $SPONSOR_ASSET (${SPONSOR_SHA:0:12})"
 
-      - name: Configure TX SSH
+      # 构建放 TX2，部署仍回 TX1：TX1 只有 1.9 GiB 且常驻生产容器；#753（Reka /
+      # VueUse / motion-v）之后 vite build 需要约 1.05 GiB old space，1152 MiB 堆的
+      # TX1 试跑只剩 174 MiB available / 229 MiB free swap，会威胁生产。TX2 3.6 GiB
+      # 实测同一 commit 完整构建通过（无 swap 消耗）。TCR 发布后 TX1 仍按 immutable
+      # digest 拉取部署，公网入口与 Caddy 不变。
+      - name: Configure TX2 frontend build SSH
         shell: bash
         env:
-          TX_HOST: ${{ secrets.TX_VPS_HOST }}
-          TX_PORT: ${{ secrets.TX_VPS_PORT }}
-          TX_KEY: ${{ secrets.TX_VPS_SSH_KEY }}
+          TX2_HOST: ${{ secrets.TX2_VPS_HOST }}
+          TX2_PORT: ${{ secrets.TX2_VPS_PORT }}
+          TX2_KEY: ${{ secrets.TX2_VPS_SSH_KEY }}
         run: |
           set -euo pipefail
-          : "${TX_HOST:?TX_VPS_HOST is required}"
-          : "${TX_PORT:?TX_VPS_PORT is required}"
-          : "${TX_KEY:?TX_VPS_SSH_KEY is required}"
+          : "${TX2_HOST:?TX2_VPS_HOST is required}"
+          : "${TX2_PORT:?TX2_VPS_PORT is required}"
+          : "${TX2_KEY:?TX2_VPS_SSH_KEY is required}"
           install -d -m 700 ~/.ssh
-          printf '%s\n' "$TX_KEY" | tr -d '\r' > ~/.ssh/tx-frontend-build
-          chmod 600 ~/.ssh/tx-frontend-build
-          ssh-keyscan -T 15 -p "$TX_PORT" "$TX_HOST" >> ~/.ssh/known_hosts
+          printf '%s\n' "$TX2_KEY" | tr -d '\r' > ~/.ssh/tx2-frontend-build
+          chmod 600 ~/.ssh/tx2-frontend-build
+          ssh-keyscan -T 15 -p "$TX2_PORT" "$TX2_HOST" >> ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Stage TX frontend builder and pinned Agent WASM artifact
+      - name: Stage TX2 frontend builder and pinned Agent WASM artifact
         shell: bash
         env:
-          TX_HOST: ${{ secrets.TX_VPS_HOST }}
-          TX_USER: ${{ secrets.TX_VPS_USER }}
-          TX_PORT: ${{ secrets.TX_VPS_PORT }}
+          TX2_HOST: ${{ secrets.TX2_VPS_HOST }}
+          TX2_USER: ${{ secrets.TX2_VPS_USER }}
+          TX2_PORT: ${{ secrets.TX2_VPS_PORT }}
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
           AGENT_FILE: ${{ steps.agent.outputs.file }}
@@ -272,26 +277,26 @@ jobs:
           remote_script="/tmp/wotbtools-frontend-build-${RUN_ID}-${RUN_ATTEMPT}.sh"
           remote_agent="/tmp/wotbtools-agent-${RUN_ID}-${RUN_ATTEMPT}-${AGENT_ASSET}"
           remote_sponsor="/tmp/wotbtools-sponsor-${RUN_ID}-${RUN_ATTEMPT}.tar.gz"
-          scp -i ~/.ssh/tx-frontend-build -P "$TX_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
-            "$GITHUB_WORKSPACE/deploy/tx/build-frontend-from-gitee.sh" "$TX_USER@$TX_HOST:$remote_script"
-          scp -i ~/.ssh/tx-frontend-build -P "$TX_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
-            "$AGENT_FILE" "$TX_USER@$TX_HOST:$remote_agent"
+          scp -i ~/.ssh/tx2-frontend-build -P "$TX2_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
+            "$GITHUB_WORKSPACE/deploy/tx/build-frontend-from-gitee.sh" "$TX2_USER@$TX2_HOST:$remote_script"
+          scp -i ~/.ssh/tx2-frontend-build -P "$TX2_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
+            "$AGENT_FILE" "$TX2_USER@$TX2_HOST:$remote_agent"
           chmod_targets="chmod 700 '$remote_script' && chmod 600 '$remote_agent'"
           if [ -n "$SPONSOR_BUNDLE" ]; then
-            scp -i ~/.ssh/tx-frontend-build -P "$TX_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
-              "$SPONSOR_BUNDLE" "$TX_USER@$TX_HOST:$remote_sponsor"
+            scp -i ~/.ssh/tx2-frontend-build -P "$TX2_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
+              "$SPONSOR_BUNDLE" "$TX2_USER@$TX2_HOST:$remote_sponsor"
             chmod_targets="$chmod_targets && chmod 600 '$remote_sponsor'"
           fi
-          ssh -i ~/.ssh/tx-frontend-build -p "$TX_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
-            "$TX_USER@$TX_HOST" "$chmod_targets"
+          ssh -i ~/.ssh/tx2-frontend-build -p "$TX2_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
+            "$TX2_USER@$TX2_HOST" "$chmod_targets"
 
-      - name: Build and publish immutable frontend image on TX
+      - name: Build and publish immutable frontend image on TX2
         id: remote_build
         shell: bash
         env:
-          TX_HOST: ${{ secrets.TX_VPS_HOST }}
-          TX_USER: ${{ secrets.TX_VPS_USER }}
-          TX_PORT: ${{ secrets.TX_VPS_PORT }}
+          TX2_HOST: ${{ secrets.TX2_VPS_HOST }}
+          TX2_USER: ${{ secrets.TX2_VPS_USER }}
+          TX2_PORT: ${{ secrets.TX2_VPS_PORT }}
           SOURCE_SHA: ${{ github.sha }}
           TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}
           TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}
@@ -315,13 +320,13 @@ jobs:
           fi
 
           ssh \
-            -i ~/.ssh/tx-frontend-build \
-            -p "$TX_PORT" \
+            -i ~/.ssh/tx2-frontend-build \
+            -p "$TX2_PORT" \
             -o BatchMode=yes \
             -o ConnectTimeout=15 \
             -o ServerAliveInterval=10 \
             -o ServerAliveCountMax=6 \
-            "$TX_USER@$TX_HOST" \
+            "$TX2_USER@$TX2_HOST" \
             "bash '$remote_script' build-publish '$SOURCE_SHA' '$TCR_REGISTRY' '$TCR_NAMESPACE' '$ASSET_BASE_URL' '$remote_agent' '$sponsor_bundle' '$sponsor_fingerprint'" \
             | tee "$log"
 
@@ -361,13 +366,13 @@ jobs:
               print(f"{key}={value}")
           PY
 
-      - name: Cleanup staged TX frontend build inputs
+      - name: Cleanup staged TX2 frontend build inputs
         if: always()
         shell: bash
         env:
-          TX_HOST: ${{ secrets.TX_VPS_HOST }}
-          TX_USER: ${{ secrets.TX_VPS_USER }}
-          TX_PORT: ${{ secrets.TX_VPS_PORT }}
+          TX2_HOST: ${{ secrets.TX2_VPS_HOST }}
+          TX2_USER: ${{ secrets.TX2_VPS_USER }}
+          TX2_PORT: ${{ secrets.TX2_VPS_PORT }}
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
           AGENT_ASSET: ${{ steps.agent.outputs.asset }}
@@ -376,9 +381,9 @@ jobs:
           remote_script="/tmp/wotbtools-frontend-build-${RUN_ID}-${RUN_ATTEMPT}.sh"
           remote_agent="/tmp/wotbtools-agent-${RUN_ID}-${RUN_ATTEMPT}-${AGENT_ASSET}"
           remote_sponsor="/tmp/wotbtools-sponsor-${RUN_ID}-${RUN_ATTEMPT}.tar.gz"
-          ssh -i ~/.ssh/tx-frontend-build -p "$TX_PORT" -o BatchMode=yes -o ConnectTimeout=10 \
-            "$TX_USER@$TX_HOST" "rm -f -- '$remote_script' '$remote_agent' '$remote_sponsor'" || \
-            echo "WARNING: failed to clean staged TX frontend build inputs"
+          ssh -i ~/.ssh/tx2-frontend-build -p "$TX2_PORT" -o BatchMode=yes -o ConnectTimeout=10 \
+            "$TX2_USER@$TX2_HOST" "rm -f -- '$remote_script' '$remote_agent' '$remote_sponsor'" || \
+            echo "WARNING: failed to clean staged TX2 frontend build inputs"
 
   deploy:
     concurrency:
