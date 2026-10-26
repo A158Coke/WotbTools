@@ -39,10 +39,17 @@ regression tests 即可，PR CI 负责最终发现遗漏影响。同一任务内
   （+ `mapper/ enums/ exception/` 按需）；共享例外包：`config/`（含 KeycloakAdminUserService）、
   `util/`、`exceptionhandler/`（GlobalExceptionHandler）、`replayfile/`（跨域回放文件存储/锁/DTO）。
   禁止层分包。Hundred 与 Mark3 的公开 leaderboard、admin read/query、moderation transitions 由各自域内 service owner 承载；submission service 持有 create/cancel 与 replay hash/storage 生命周期，不建立跨域基类。
-- **架构测试（ArchUnit）**：`wotb-core/src/test/java/com/wotb/core/architecture/CoreArchitectureTest.java`
-  与 `wotb-web/src/test/java/com/wotb/web/architecture/WebArchitectureTest.java` 随 `mvn test` 自动执行，
-  守护上两条边界（依赖方向、domain 分包、禁字段注入/Lombok、顶层包无循环）；改动包结构/跨域依赖时
-  必须先保证架构测试全绿。`import *` 不在 ArchUnit 能力内（imports 不进 class 依赖），需另用源码扫描。
+- **架构测试**：`CoreArchitectureTest` 使用 ArchUnit 守护 core 依赖方向；Web 的
+  `WebArchitectureTest` 保留 domain 分包、Controller/service 分层、entity/DTO ownership、
+  禁字段注入/Lombok 等项目规则。`WebModuleArchitectureTest` 使用 Spring Modulith 验证九个业务域和
+  `config/exceptionhandler/replayfile/util` 四个支持模块的封装、允许依赖与循环；模块均为 CLOSED，
+  package-info.java 是模块依赖和 named interfaces 的声明入口，禁止用 OPEN 或忽略业务包绕过验证。
+  `user.service` / `user.dto` 通过 `legacy-service` / `legacy-dto` 暴露现有跨域入口；这仍是包级公开边界，
+  不表示 user service 已收口为窄 API，后续工作归 #751。Modulith core 仅为 test dependency，生产只含
+  api 注解，不启用 Modulith runtime/events。两套引擎各有真实违规夹具，随 `mvn test` 执行。
+  改动包结构/跨域依赖时，在 `java/` 执行
+  `mvn -s settings.xml -pl wotb-web -am "-Dtest=CoreArchitectureTest,WebArchitectureTest,WebArchitectureRuleMutationTest,WebModuleArchitectureTest,WebModuleArchitectureMutationTest" -Dsurefire.failIfNoSpecifiedTests=false test`。
+  `import *` 不在 ArchUnit 能力内（imports 不进 class 依赖），需另用源码扫描。
 
 ## 分层与风格（硬性）
 
