@@ -10,8 +10,8 @@ import com.wotb.web.admin.exception.AdminBadRequestException;
 import com.wotb.web.admin.exception.AdminConflictException;
 import com.wotb.web.admin.exception.AdminInternalException;
 import com.wotb.web.config.KeycloakAdminUserService;
-import com.wotb.web.user.service.UserProfileService;
-import com.wotb.web.user.service.UserProfileSnapshot;
+import com.wotb.web.user.api.UserProfiles;
+import com.wotb.web.user.api.UserProfileSnapshot;
 import com.wotb.web.util.ErrorCode;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -59,13 +59,13 @@ public class AdminUserService {
     /** 单次删除请求的 id 数上限：为无界的外部（Keycloak Admin API）调用设硬边界。 */
     private static final int MAX_DELETE_BATCH = 100;
 
-    private final UserProfileService userProfileService;
+    private final UserProfiles userProfileService;
     private final AdminUserMapper mapper;
     private final AdminUserLogPersister logPersister;
     private final KeycloakAdminUserService keycloakAdminUserService;
     private final TransactionTemplate transactionTemplate;
 
-    public AdminUserService(final UserProfileService userProfileService,
+    public AdminUserService(final UserProfiles userProfileService,
                             final AdminUserMapper mapper,
                             final AdminUserLogPersister logPersister,
                             final KeycloakAdminUserService keycloakAdminUserService,

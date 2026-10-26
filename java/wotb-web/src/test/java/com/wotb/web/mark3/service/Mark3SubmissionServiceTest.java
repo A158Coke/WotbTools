@@ -8,9 +8,9 @@ import com.wotb.web.mark3.repository.Mark3SubmissionRepository;
 import com.wotb.web.replay.exception.ReplayBusyException;
 import com.wotb.web.replay.service.ReplayCapacityLimiter;
 import com.wotb.web.testsupport.ReplayFactsJson;
-import com.wotb.web.user.service.UserProfileService;
-import com.wotb.web.user.service.UserProfileSnapshot;
-import com.wotb.web.user.service.WotbAccountIdentity;
+import com.wotb.web.user.api.UserProfiles;
+import com.wotb.web.user.api.UserProfileSnapshot;
+import com.wotb.web.user.api.WotbAccountIdentity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -66,7 +66,7 @@ class Mark3SubmissionServiceTest {
     Mark3SubmissionRepository repository;
 
     @Mock
-    UserProfileService userProfileService;
+    UserProfiles userProfileService;
 
     @Mock
     Mark3ReplayEvidenceService evidenceService;
@@ -410,7 +410,7 @@ class Mark3SubmissionServiceTest {
         final Mark3Submission pending = pendingSubmission();
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(pending));
         // 未绑定账号的两种形态都必须是 403：profile 不存在，或 profile 存在但 wotbAccountId 为 null
-        // （后者由 UserProfileService.currentWotbIdentity 统一归一为 empty，服务层不需要第二套规则）
+        // （后者由 UserProfiles.currentWotbIdentity 统一归一为 empty，服务层不需要第二套规则）
         when(userProfileService.currentWotbIdentity("kc-unknown")).thenReturn(Optional.empty());
         when(userProfileService.currentWotbIdentity("kc-unbound")).thenReturn(Optional.empty());
 

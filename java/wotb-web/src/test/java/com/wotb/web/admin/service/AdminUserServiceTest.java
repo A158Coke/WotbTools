@@ -3,8 +3,8 @@ package com.wotb.web.admin.service;
 import com.wotb.web.admin.dto.DeleteUsersResponse;
 import com.wotb.web.admin.entity.AdminUserLog;
 import com.wotb.web.config.KeycloakAdminUserService;
-import com.wotb.web.user.service.UserProfileService;
-import com.wotb.web.user.service.UserProfileSnapshot;
+import com.wotb.web.user.api.UserProfiles;
+import com.wotb.web.user.api.UserProfileSnapshot;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -26,7 +26,7 @@ class AdminUserServiceTest {
 
     @Test
     void databaseConstraintFailureDoesNotDeleteKeycloakUser() {
-        final UserProfileService userProfileService = mock(UserProfileService.class);
+        final UserProfiles userProfileService = mock(UserProfiles.class);
         final KeycloakAdminUserService keycloakService = mock(KeycloakAdminUserService.class);
         final AdminUserLogPersister logPersister = logPersister();
         final UserProfileSnapshot profile = new UserProfileSnapshot(1L, "target", null, null,
@@ -47,7 +47,7 @@ class AdminUserServiceTest {
 
     @Test
     void deletesLocalProfileBeforeKeycloakUser() {
-        final UserProfileService userProfileService = mock(UserProfileService.class);
+        final UserProfiles userProfileService = mock(UserProfiles.class);
         final KeycloakAdminUserService keycloakService = mock(KeycloakAdminUserService.class);
         final AdminUserLogPersister logPersister = logPersister();
         final UserProfileSnapshot profile = new UserProfileSnapshot(1L, "target", null, null,
@@ -64,7 +64,7 @@ class AdminUserServiceTest {
     }
 
     private static AdminUserService service(
-            final UserProfileService userProfileService,
+            final UserProfiles userProfileService,
             final AdminUserLogPersister logPersister,
             final KeycloakAdminUserService keycloakService) {
         // 第 5 参数（PlatformTransactionManager）只被 deleteUsers 使用；本用例走的删除路径不触碰它。

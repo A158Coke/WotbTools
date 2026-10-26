@@ -5,8 +5,8 @@ import com.wotb.web.admin.dto.DeleteUsersResponse;
 import com.wotb.web.admin.entity.AdminUserLog;
 import com.wotb.web.admin.exception.AdminBadRequestException;
 import com.wotb.web.config.KeycloakAdminUserService;
-import com.wotb.web.user.service.UserProfileService;
-import com.wotb.web.user.service.UserProfileSnapshot;
+import com.wotb.web.user.api.UserProfiles;
+import com.wotb.web.user.api.UserProfileSnapshot;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -50,7 +50,7 @@ class AdminUserDeleteTest {
 
     private static final int MAX_DELETE_BATCH = 100;
 
-    private final UserProfileService userProfileService = mock(UserProfileService.class);
+    private final UserProfiles userProfileService = mock(UserProfiles.class);
     private final AdminUserMapper mapper = mock(AdminUserMapper.class);
     private final AdminUserLogPersister logPersister = mock(AdminUserLogPersister.class);
     private final KeycloakAdminUserService keycloakAdminUserService = mock(KeycloakAdminUserService.class);

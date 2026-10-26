@@ -11,7 +11,7 @@ import com.wotb.web.mark3.repository.Mark3SubmissionRepository;
 import com.wotb.web.mark3.service.Mark3SubmissionService;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.repository.UserProfileRepository;
-import com.wotb.web.user.service.UserProfileService;
+import com.wotb.web.user.api.UserProfiles;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -78,7 +78,7 @@ class HofOwnershipLifecycleInvariantTest {
     UserProfileRepository userProfileRepository;
 
     @Autowired
-    UserProfileService userProfileService;
+    UserProfiles userProfileService;
 
     @Autowired
     HallOfFameRecordRepository recordRepository;

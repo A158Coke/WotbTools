@@ -1,5 +1,6 @@
 package com.wotb.web.user.service;
 
+import com.wotb.web.user.api.UserProfileSnapshot;
 import com.wotb.web.user.dto.UserProfileDto;
 import com.wotb.web.user.dto.OnboardingReceiptDto;
 import com.wotb.web.user.entity.UserProfile;

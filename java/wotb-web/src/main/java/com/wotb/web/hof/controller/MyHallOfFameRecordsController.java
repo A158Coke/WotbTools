@@ -3,7 +3,7 @@ package com.wotb.web.hof.controller;
 import com.wotb.web.config.ApiPaths;
 import com.wotb.web.hof.dto.HallOfFameRecordDto;
 import com.wotb.web.hof.service.HallOfFameService;
-import com.wotb.web.user.service.UserProfileService;
+import com.wotb.web.user.api.UserProfiles;
 import com.wotb.web.util.JwtUtil;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -20,10 +20,10 @@ import java.util.List;
 @RequestMapping(ApiPaths.USERS)
 public class MyHallOfFameRecordsController {
 
-    private final UserProfileService userProfileService;
+    private final UserProfiles userProfileService;
     private final HallOfFameService hallOfFameService;
 
-    public MyHallOfFameRecordsController(final UserProfileService userProfileService,
+    public MyHallOfFameRecordsController(final UserProfiles userProfileService,
                                          final HallOfFameService hallOfFameService) {
         this.userProfileService = userProfileService;
         this.hallOfFameService = hallOfFameService;
@@ -32,7 +32,7 @@ public class MyHallOfFameRecordsController {
     /** 当前用户的个人名人堂战绩。 */
     @GetMapping("/profile/records")
     public List<HallOfFameRecordDto> myRecords() {
-        final var profileOpt = userProfileService.findByKeycloakUserId(JwtUtil.requireUserId());
+        final var profileOpt = userProfileService.findSnapshotByKeycloakUserId(JwtUtil.requireUserId());
         if (profileOpt.isEmpty() || profileOpt.get().wotbAccountId() == null) {
             return List.of();
         }
