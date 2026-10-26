@@ -138,7 +138,7 @@ class ProductionAssetOrigin(unittest.TestCase):
         build_steps = workflow["jobs"]["build"]["steps"]
         build_names = (
             "Validate production asset origin",
-            "Build and publish immutable frontend image on TX",
+            "Build and publish immutable frontend image on TX2",
         )
         for name in build_names:
             step = next(step for step in build_steps if step.get("name") == name)
