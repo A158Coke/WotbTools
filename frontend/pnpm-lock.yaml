@@ -221,6 +221,9 @@ importers:
       '@gltf-transform/core':
         specifier: ^4.4.2
         version: 4.4.2
+      '@intlify/core-base':
+        specifier: 11.1.10
+        version: 11.1.10
       '@types/node':
         specifier: ^20.19.43
         version: 20.19.43
