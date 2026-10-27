@@ -134,6 +134,12 @@ function armorLayoutProbe() {
     scrollWidth: document.documentElement.scrollWidth,
     clientWidth: document.documentElement.clientWidth,
     statusOverlays: document.querySelectorAll('[data-testid="scene3d-error"], [data-testid="scene3d-loading"]').length,
+    /** 外壳沉浸态（shared/shellChrome）：手机横屏申请后 AppShell 卸载顶栏 / Tab 栏并归零高度 token */
+    shellChrome: document.documentElement.dataset.shellChrome || null,
+    appTopBar: box('[data-testid="app-top-bar"]'),
+    appTabBar: box('[data-testid="app-tab-bar"]'),
+    interactionHelp: box('.armor-interaction-help'),
+    shotHeader: box('[data-testid="armor-shot-header"]'),
   }
 }
 
@@ -288,6 +294,10 @@ async function runMobileScenario(env, scenario) {
   const initial = await page.probe(armorLayoutProbe)
   check(failures, initial.hasStage && !initial.unsupported, `${label}: 场景未渲染（hasStage=${initial.hasStage} unsupported=${initial.unsupported}）`)
   checkCommonGeometry(failures, initial, label)
+  // 竖屏（含窄桌面窗口）不申请沉浸：外壳顶栏 / Tab 栏必须保留（沉浸契约只属于手机横屏）
+  check(failures, initial.appTopBar?.visible === true && initial.appTabBar?.visible === true,
+    `${label}: 竖屏外壳顶栏 / Tab 栏必须保留（top=${initial.appTopBar?.visible} tab=${initial.appTabBar?.visible}）`)
+  check(failures, initial.shellChrome !== 'immersive', `${label}: 竖屏不应进入沉浸态（dataset=${initial.shellChrome}）`)
   if (scenario.assetless) {
     check(failures, initial.infoPanel?.visible === false, `${label}: 资产不可达时车名面板不应可见（场景前提失效）`)
     check(failures, initial.statusOverlays >= 1, `${label}: 资产不可达时应出现错误态遮罩（环境前提）`)
@@ -509,10 +519,11 @@ async function runMobileBackScenario(env, scenario) {
 
 /** 桌面 / 平板回归：移动端规则只作用于 <768px；桌面复用左上信息卡，参数面板默认收起。 */
 const DESKTOP_SCENARIOS = [
-  // 横屏粗指针手机必须走平板式布局（左上信息卡 + 四角浮层），而不是竖屏 mobile 的上下窄带。
-  { name: 'armor-740x360-landscape-coarse', width: 740, height: 360, touch: true },
-  // 横屏粗指针平板同一套布局（信息行压单行；不再有额外的 height 断点）。
-  { name: 'armor-1024x768-landscape-tablet-coarse', width: 1024, height: 768, touch: true },
+  // 横屏粗指针手机必须走平板式布局（左上信息卡 + 四角浮层），而不是竖屏 mobile 的上下窄带，
+  // 并通过 shared/shellChrome 申请沉浸（AppShell 卸载顶栏 / Tab 栏，armor-view 占满整屏）。
+  { name: 'armor-740x360-landscape-coarse', width: 740, height: 360, touch: true, phoneLandscape: true },
+  // 横屏粗指针平板同一套布局（信息行压单行；不再有额外的 height 断点）；不申请沉浸。
+  { name: 'armor-1024x768-landscape-tablet-coarse', width: 1024, height: 768, touch: true, tabletLandscape: true },
   // 断点边界：768px 起进入桌面档（左上信息卡 + 可收起设置面板、四角布局）
   { name: 'armor-768x1024-tablet-boundary', width: 768, height: 1024, touch: false },
   { name: 'armor-1024x768-tablet', width: 1024, height: 768, touch: false },
@@ -536,6 +547,22 @@ async function runDesktopScenario(env, scenario) {
   const layout = await page.probe(armorLayoutProbe)
   check(failures, layout.hasStage && !layout.unsupported, `${label}: 场景未渲染（hasStage=${layout.hasStage} unsupported=${layout.unsupported}）`)
   checkCommonGeometry(failures, layout, label)
+  // 沉浸态契约：手机横屏申请（外壳 bar 卸载、armor-view 占满整屏）；平板横屏不申请
+  if (scenario.phoneLandscape) {
+    check(failures, layout.shellChrome === 'immersive',
+      `${label}: 手机横屏未申请沉浸态（dataset=${layout.shellChrome}）`)
+    check(failures, layout.appTopBar === null && layout.appTabBar === null,
+      `${label}: 沉浸态下外壳顶栏 / Tab 栏仍渲染（top=${!!layout.appTopBar} tab=${!!layout.appTabBar}）`)
+    check(failures, layout.root && layout.root.top === 0 && Math.abs(layout.root.height - layout.viewport.height) <= 1,
+      `${label}: armor-view 没有占满整屏（root=${JSON.stringify(layout.root)} viewport=${JSON.stringify(layout.viewport)}）`)
+    // 深链直达（本场景 goto 即无 history.back）也必须有应用内退出：返回键恒在，
+    // 无历史时点击回坦克百科（#767 复审 P2：沉浸态不得让站内导航全部消失）
+    check(failures, layout.back?.visible === true,
+      `${label}: 沉浸态缺少返回/退出入口（返回键未显示）`)
+  }
+  if (scenario.tabletLandscape) {
+    check(failures, layout.shellChrome !== 'immersive', `${label}: 平板横屏不应申请沉浸态（dataset=${layout.shellChrome}）`)
+  }
   if (scenario.touch) checkTouchTargets(failures, layout, label)
   check(failures, layout.tools?.visible === true,
     `${label}: 桌面档参数开关必须可见（display=${layout.tools?.display}）`)
@@ -543,9 +570,24 @@ async function runDesktopScenario(env, scenario) {
     `${label}: 桌面档设置面板默认应收起（visible=${layout.selectors?.visible}）`)
   check(failures, layout.toolsOpen === false && layout.tools?.ariaExpanded === 'false',
     `${label}: 桌面档默认收起状态不正确（is-tools-open=${layout.toolsOpen} aria=${layout.tools?.ariaExpanded}）`)
-  check(failures, layout.topBar && layout.root
-    && Math.abs((layout.topBar.top - layout.root.top) - 20) <= 2 && Math.abs((layout.topBar.left - layout.root.left) - 20) <= 2,
-    `${label}: 顶栏没有回到四角布局（top=${layout.topBar?.top} left=${layout.topBar?.left} root=${layout.root?.top}/${layout.root?.left}，期望相对 20/20）`)
+  // 返回键恒在（深链直达也必须有站内退出）：has-back 共存布局下顶栏为返回键让位——
+  // 或下移 44+8（base 规则，横屏 / 桌面档），或右移 44+8（并排变体）；两种都要求返回键
+  // 自身贴 armor-view 顶边 inset 20、顶栏与它保持 space-2 间距且不重叠。不再锁死旧的
+  // 「顶栏相对 20/20」单一期望（那会让恒在返回键的正常布局必然失败）。
+  const backRel = layout.back && layout.root
+    ? { top: layout.back.top - layout.root.top, left: layout.back.left - layout.root.left } : null
+  const barRel = layout.topBar && layout.root
+    ? { top: layout.topBar.top - layout.root.top, left: layout.topBar.left - layout.root.left } : null
+  const coexistVertical = layout.back && layout.topBar
+    && Math.abs((layout.topBar.top - layout.back.bottom) - 8) <= 2
+    && Math.abs(barRel.left - 20) <= 2
+  const coexistHorizontal = layout.back && layout.topBar
+    && Math.abs((layout.topBar.left - layout.back.right) - 8) <= 2
+    && Math.abs(barRel.top - 20) <= 2
+  check(failures, !!backRel && Math.abs(backRel.top - 20) <= 2 && Math.abs(backRel.left - 20) <= 2,
+    `${label}: 返回键没有贴 armor-view 左上 inset 20（back=${JSON.stringify(backRel)}）`)
+  check(failures, coexistVertical || coexistHorizontal,
+    `${label}: 顶栏未在返回键下方或右侧留出 space-2 间距（bar=${JSON.stringify(barRel)} back=${JSON.stringify(layout.back && { bottom: layout.back.bottom, right: layout.back.right })}）`)
   check(failures, layout.bottomBar && layout.root
     && Math.abs((layout.bottomBar.top - layout.root.top) - 20) <= 2 && Math.abs((layout.root.right - layout.bottomBar.right) - 20) <= 2,
     `${label}: 底栏没有回到右上角（top=${layout.bottomBar?.top} right=${layout.bottomBar?.right} root right=${layout.root?.right}，期望相对 20/20）`)
@@ -649,6 +691,18 @@ const SHOT_SCENARIOS = [
   { name: 'armor-shot-actions-tablet', width: 1024, height: 768, touch: false },
   { name: 'armor-shot-actions-desktop', width: 1280, height: 800, touch: false },
 ]
+/** 射击复现夹具数据（sessionStorage 交接；runShotActionsScenario 与横屏场景共用同一份）。 */
+const FIXTURE_SHOT = {
+  index: 1, time_s: 12, shooter_eid: 7, target_eid: 8, is_author: true,
+  shooter_tank_id: FIXTURE_TANK_ID, target_tank_id: FIXTURE_TANK_ID,
+  shooter_name: 'Shooter', target_name: 'Target', shooter_tank_name: 'Fixture tank', target_tank_name: 'Fixture tank',
+  shell_slot: 0, damage: 100, hit_flags: 16, game_hit_result: 3,
+  shooter_pos: [0, 0, 60], target_pos: [0, 0, 0], shooter_ang: [0, 0, 0], target_ang: [0, 0, 0],
+  ball_a: [0, 1, 60], ball_b: [0, 1, 0], launch_velocity: [0, 0, -1000],
+  tick_samples: [{ dt: 0, pos: [0, 0, 0], yaw: 0, pitch: 0, roll: 0 }],
+  shooter_tick_samples: [{ dt: 0, pos: [0, 0, 60], yaw: 0, pitch: 0, roll: 0 }],
+}
+const FIXTURE_SHOTS = [FIXTURE_SHOT, { ...FIXTURE_SHOT, index: 2, time_s: 24, damage: 200 }]
 async function runShotActionsScenario(env, scenario) {
   const failures = []
   const { targetId, sessionId } = await env.chrome.openPage()
@@ -660,17 +714,7 @@ async function runShotActionsScenario(env, scenario) {
   await page.evaluate(`(async () => {
     localStorage.setItem('wotb-lang', 'zh')
     const { storeShotsForViewer } = await import('/src/scene/agentData.js')
-    const shot = {
-      index: 1, time_s: 12, shooter_eid: 7, target_eid: 8, is_author: true,
-      shooter_tank_id: ${FIXTURE_TANK_ID}, target_tank_id: ${FIXTURE_TANK_ID},
-      shooter_name: 'Shooter', target_name: 'Target', shooter_tank_name: 'Fixture tank', target_tank_name: 'Fixture tank',
-      shell_slot: 0, damage: 100, hit_flags: 16, game_hit_result: 3,
-      shooter_pos: [0, 0, 60], target_pos: [0, 0, 0], shooter_ang: [0, 0, 0], target_ang: [0, 0, 0],
-      ball_a: [0, 1, 60], ball_b: [0, 1, 0], launch_velocity: [0, 0, -1000],
-      tick_samples: [{ dt: 0, pos: [0, 0, 0], yaw: 0, pitch: 0, roll: 0 }],
-      shooter_tick_samples: [{ dt: 0, pos: [0, 0, 60], yaw: 0, pitch: 0, roll: 0 }],
-    }
-    storeShotsForViewer([shot, { ...shot, index: 2, time_s: 24, damage: 200 }])
+    storeShotsForViewer(${JSON.stringify(FIXTURE_SHOTS)})
   })()`)
   await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&shooter=${FIXTURE_TANK_ID}&shot=1&world=1&assets=${encodeURIComponent(env.assets)}`)
   await page.waitFor(() => !!document.querySelector('#world-view-toggle'), { timeout: 30000, label: 'real shot scene controls' })
@@ -751,6 +795,41 @@ async function runShotActionsScenario(env, scenario) {
   }
   await page.evaluate('delete window.__navigationPreviousApi')
   check(failures, page.consoleErrors.length === 0, `JS errors: ${page.consoleErrors.join(' | ')}`)
+  await env.chrome.client.send('Target.closeTarget', { targetId })
+  results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
+}
+
+/** 手机横屏射击复现页：沉浸态 + 流内「操作提示」节整节让位（竖屏 / 平板 / 桌面保留，由 runShotActionsScenario 锁定）。 */
+const SHOT_LANDSCAPE_SCENARIO = { name: 'armor-shot-landscape-phone', width: 740, height: 360, touch: true }
+async function runShotLandscapeScenario(env, scenario) {
+  const failures = []
+  const { targetId, sessionId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  lastPage = page
+  await page.enable()
+  await page.emulate(scenario)
+  await page.goto(`${env.origin}/?view=home&ws-auth=1`)
+  await page.evaluate(`(async () => {
+    localStorage.setItem('wotb-lang', 'zh')
+    const { storeShotsForViewer } = await import('/src/scene/agentData.js')
+    storeShotsForViewer(${JSON.stringify(FIXTURE_SHOTS)})
+  })()`)
+  await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&shooter=${FIXTURE_TANK_ID}&shot=1&assets=${encodeURIComponent(env.assets)}`)
+  await page.waitFor(() => !!document.querySelector('[data-testid="armor-stage"]'), { label: 'armor stage' })
+  await page.waitFor(() => !document.querySelector('[data-testid="scene3d-loading"]') && !document.querySelector('[data-testid="scene3d-error"]'),
+    { timeout: 30000, label: 'shot scene ready' })
+  const label = scenario.name
+  const layout = await page.probe(armorLayoutProbe)
+  check(failures, layout.shellChrome === 'immersive', `${label}: 手机横屏未申请沉浸态（dataset=${layout.shellChrome}）`)
+  check(failures, layout.appTopBar === null && layout.appTabBar === null,
+    `${label}: 沉浸态下外壳顶栏 / Tab 栏仍渲染（top=${!!layout.appTopBar} tab=${!!layout.appTabBar}）`)
+  check(failures, layout.root && layout.root.top === 0 && Math.abs(layout.root.height - layout.viewport.height) <= 1,
+    `${label}: armor-view 没有占满整屏（root=${JSON.stringify(layout.root)} viewport=${JSON.stringify(layout.viewport)}）`)
+  check(failures, layout.interactionHelp === null || layout.interactionHelp.visible === false,
+    `${label}: 操作提示节没有在手机横屏让位（${JSON.stringify(layout.interactionHelp)}）`)
+  check(failures, layout.shotHeader?.visible === true, `${label}: 射击复现顶栏丢失（${JSON.stringify(layout.shotHeader)}）`)
+  checkCommonGeometry(failures, layout, label)
+  check(failures, page.consoleErrors.length === 0, `${label}: JS errors: ${page.consoleErrors.join(' | ')}`)
   await env.chrome.client.send('Target.closeTarget', { targetId })
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
 }
@@ -1161,6 +1240,7 @@ try {
   const env = { origin, chrome: chromeCdp, assets: assets.origin, pickerAssets: pickerAssets.origin, staggeredAssets: staggeredAssets.origin, contextLossSelectionAssets: contextLossSelectionAssets.origin, contextLossRouteRebuildAssets: contextLossRouteRebuildAssets.origin }
   const runs = [
     ...SHOT_SCENARIOS.map(scenario => ({ scenario, run: () => runShotActionsScenario(env, scenario) })),
+    { scenario: SHOT_LANDSCAPE_SCENARIO, run: () => runShotLandscapeScenario(env, SHOT_LANDSCAPE_SCENARIO) },
     ...MOBILE_SCENARIOS.map((scenario) => ({ scenario, run: () => runMobileScenario(env, scenario) })),
     { scenario: BACK_SCENARIO, run: () => runMobileBackScenario(env, BACK_SCENARIO) },
     ...DESKTOP_SCENARIOS.map((scenario) => ({ scenario, run: () => runDesktopScenario(env, scenario) })),

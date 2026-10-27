@@ -21,6 +21,9 @@ import { formatPlaybackClock } from '../utils/playbackClock.js'
 import { initTankViewer } from '../scene/tankViewer.js'
 import { detectWebGL } from '../scene/webglSupport.js'
 import { usePointer } from '../composables/useBreakpoint.js'
+import { usePlaybackPhoneForm } from '../composables/usePlaybackPhoneForm.js'
+import { usePlaybackPortraitViewport } from '../composables/usePlaybackPortraitViewport.js'
+import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 import Scene3DStatus from './Scene3DStatus.vue'
 import TankCatalogMenu from './TankCatalogMenu.vue'
 
@@ -51,6 +54,13 @@ function shotTankName(role) {
 function backToShots() {
     if (canGoBack) router.back()
     else router.replace({ query: { view: 'agent-shots' } })
+}
+// 深链直达（?view=agent-armor 无 shot）没有浏览器历史可退：退出动作改走「回坦克百科」
+// replace——手机横屏沉浸态卸载外壳后，这颗按钮是页面唯一的站内出口，任何入口形态都
+// 必须在（WotbTools #767 复审 P2：直达 + 沉浸态曾让应用内导航全部消失）。
+function backOrTankopedia() {
+    if (canGoBack) router.back()
+    else router.replace({ query: { view: 'agent-tankopedia' } })
 }
 async function adjacentShot(offset) {
     const shot = shotSnapshot.value[shotPosition.value + offset]
@@ -91,6 +101,17 @@ const viewerReady = ref(false)
 const webgl = detectWebGL()
 /** 场景加载状态（tankViewer onLoadState 上报）：loading / ready / error */
 const load = ref({ state: 'loading', progress: null, message: '' })
+// 手机横屏沉浸态：compact 外壳的顶栏 + Tab 栏（104px）在 ~375px 高的横屏视口里是最大单项
+// 消耗。判据与 ReplayWorkspace 同一口径（shared/breakpoints 的手机形态查询 + 非竖屏 + 触屏）；
+// AppShell 是显隐与 token 归零的唯一 owner，这里只申请 / 释放。WebGL 不可用时整页是普通
+// 文档流（依赖 Tab 栏导航），不申请；宽 ≥768 的横屏手机 / 平板上申请是无害 no-op。
+const shellChrome = inject(SHELL_CHROME_KEY, null)
+const shellOwner = Symbol('agent-armor')
+const { isPhone } = usePlaybackPhoneForm()
+const { isPortrait } = usePlaybackPortraitViewport()
+const wantsImmersive = computed(() => coarse.value && isPhone.value && !isPortrait.value && webgl.supported)
+watch(wantsImmersive, (on) => shellChrome?.request(shellOwner, on), { immediate: true })
+onBeforeUnmount(() => shellChrome?.request(shellOwner, false))
 const onboarding = inject(ONBOARDING_KEY, null)
 onMounted(() => onboarding?.registerSurface('armor', {
     ready: () => load.value.state === 'ready',
@@ -302,8 +323,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-<div class="armor-view" data-tour="armor-workspace" :class="{ 'is-unsupported': !webgl.supported, 'has-back': canGoBack && !isShotPage, 'is-shot': isShotPage, 'is-clean': cleanQuery }">
-    <button v-if="canGoBack && !isShotPage" type="button" class="armor-back" data-testid="armor-back" :aria-label="$t('armor.back')" @click="router.back()"><ArrowLeft :size="16" aria-hidden="true" /><span class="armor-back-label">{{ $t('armor.back') }}</span></button>
+<div class="armor-view" data-tour="armor-workspace" :class="{ 'is-unsupported': !webgl.supported, 'has-back': !isShotPage, 'is-shot': isShotPage, 'is-clean': cleanQuery }">
+    <button v-if="!isShotPage" type="button" class="armor-back" data-testid="armor-back" :aria-label="$t('armor.back')" @click="backOrTankopedia"><ArrowLeft :size="16" aria-hidden="true" /><span class="armor-back-label">{{ $t('armor.back') }}</span></button>
     <header v-if="isShotPage && !cleanQuery" class="armor-shot-header" data-testid="armor-shot-header">
         <button type="button" class="armor-shot-back" :aria-label="$t('armor.back_to_shots')" @click="backToShots"><ArrowLeft :size="18" aria-hidden="true" /><span>{{ $t('armor.back_to_shots') }}</span></button>
         <div class="armor-shot-context">
@@ -575,7 +596,7 @@ onBeforeUnmount(() => {
 .armor-view #click-info .ricochet { color: var(--orange); }
 .armor-view #traj-info { position: fixed; z-index: var(--z-header); pointer-events: none; }
 .armor-view #shot-replay-error { position: fixed; z-index: var(--pb-z-modal); inset-block-start: calc(var(--space-5) + 48px); inset-inline: var(--space-4); margin-inline: auto; max-inline-size: 30rem; padding: var(--space-2) var(--space-3); background: var(--tooltip-bg); border-left: 4px solid var(--red); border-radius: var(--radius-md); color: var(--red); font: var(--type-caption); box-shadow: var(--elevation-2); pointer-events: none; }
-.armor-view .armor-back { position: absolute; z-index: calc(var(--z-sticky) + 1); inset-block-start: var(--space-5); inset-inline-start: var(--space-5); display: inline-flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--panel); color: var(--txt); }
+.armor-view .armor-back { position: absolute; z-index: calc(var(--z-sticky) + 1); inset-block-start: var(--space-5); inset-inline-start: var(--space-5); display: inline-flex; align-items: center; gap: var(--space-2); min-block-size: 44px; padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--panel); color: var(--txt); }
 .armor-view .armor-tools { display: none; }
 .armor-view .armor-bottom-controls { display: contents; }
 /* Recorded-shot actions are a persistent, high-contrast toolbar. */
@@ -609,6 +630,11 @@ onBeforeUnmount(() => {
 .armor-view .armor-interaction-help dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-6); margin: 0; min-inline-size: 0; }
 .armor-view .armor-interaction-help dt { color: var(--color-text-primary); font: var(--type-body); font-weight: 600; }
 .armor-view .armor-interaction-help dd { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); }
+/* 手机横屏（与 shared/breakpoints PLAYBACK_PHONE_QUERY 的手机横屏分支同口径）：射击复现页的
+   操作提示节是静态指引，在 ~375px 高的视口里挤占 3D 场景带，整节让位；桌面 / 平板 / 竖屏保留。 */
+@media (pointer: coarse) and (orientation: landscape) and (height <= 500px) {
+    .armor-view .armor-interaction-help { display: none; }
+}
 @media (768px <= width < 1200px), (pointer: coarse) and (orientation: landscape) {
     .armor-view #tank-selectors { max-block-size: 38dvh; }
 }
@@ -647,7 +673,7 @@ onBeforeUnmount(() => {
     .armor-view.is-shot .armor-stage.is-tools-open #corner-tr { display: flex; z-index: var(--pb-z-hud); }
     .armor-view.is-shot #debug-info { max-block-size: 20dvh; }
     .armor-view.is-clean #corner-tl { display: none; }
-    .armor-view .armor-back { inset-block-start: var(--space-2); inset-inline-start: var(--space-2); inline-size: 44px; padding: 0; justify-content: center; }
+    .armor-view .armor-back { inset-block-start: var(--space-2); inset-inline-start: var(--space-2); inline-size: 44px; block-size: 44px; padding: 0; justify-content: center; }
     .armor-view .armor-back-label { display: none; }
     .armor-view #tank-picker { inset: 0; max-inline-size: none; border-radius: 0; }
     .armor-view .armor-shot-header { flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2); }
