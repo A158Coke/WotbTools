@@ -9,9 +9,9 @@ import PROVISIONS from '../../../../common/research/provisions.json'
 import DEVICES from '../../../../common/research/devices.json'
 import CAMOUFLAGE from '../../../../common/research/camouflage.json'
 import SKILLS from '../../../../common/research/skills.json'
-import USSRS from '../../../../common/research/modules/ussr.json'
-import EUROPEANS from '../../../../common/research/modules/european.json'
-import GERMANY from '../../../../common/research/modules/germany.json'
+import USSRS from './__fixtures__/modules/ussr.json'
+import EUROPEANS from './__fixtures__/modules/european.json'
+import GERMANY from './__fixtures__/modules/germany.json'
 
 import {
   computeCharacteristics,

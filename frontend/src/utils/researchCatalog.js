@@ -13,6 +13,7 @@ import PARAMS_FORMAT_JSON from '../../../common/research/params/format.json'
 import PARAMS_STRUCTURE_JSON from '../../../common/research/params/structure.json'
 import CAMOUFLAGE_JSON from '../../../common/research/camouflage.json'
 import SKILLS_JSON from '../../../common/research/skills.json'
+import { assetProvider } from '../scene/assetProvider.js'
 
 export const RESEARCH_META = Object.freeze({
   gameVersion: DEVICES_JSON.meta.gameVersion,
@@ -100,15 +101,22 @@ export function deviceByStem(stem) {
   return DEVICES_BY_STEM.get(stem) || null
 }
 
-/** 逐车模块数据（按 nation 懒加载独立 chunk）。 */
+/**
+ * 逐车模块数据（tank-specific，随**资产包** `/research/modules/{nation}.json` 发布）。
+ *
+ * 不进入前端构建：新坦克/模块数值只更新资产包即可生效，不需要 WotbTools 发版。
+ * 缓存 Promise 让同一国别的并发请求只发一次；失败时清除，下一次可重试。
+ */
 const modulesCache = new Map()
 
-export async function loadTankModules(nation) {
+export function loadTankModules(nation) {
   if (modulesCache.has(nation)) return modulesCache.get(nation)
-  const mod = await import(`../../../common/research/modules/${nation}.json`)
-  const data = mod.default
-  modulesCache.set(nation, data)
-  return data
+  const promise = assetProvider.json(`/research/modules/${nation}.json`).catch((error) => {
+    modulesCache.delete(nation)
+    throw error
+  })
+  modulesCache.set(nation, promise)
+  return promise
 }
 
 /**

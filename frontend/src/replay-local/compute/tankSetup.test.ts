@@ -8,7 +8,7 @@ import CONSUMABLES from '../../../../common/research/consumables.json'
 import PROVISIONS from '../../../../common/research/provisions.json'
 import FORMAT from '../../../../common/research/params/format.json'
 import CAMOUFLAGE from '../../../../common/research/camouflage.json'
-import USSRS from '../../../../common/research/modules/ussr.json'
+import USSRS from './__fixtures__/modules/ussr.json'
 import {
   armorFactorFor,
   baseSelection,
