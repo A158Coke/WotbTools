@@ -37,7 +37,7 @@ AI Review 正常挂载：`?view=ai-review` deep link 与 workspace tab 都解析
 
 `ViewHost.vue` 将现有的扁平页面组件映射到由 route 派生的产品 view。扁平布局是当前实现；不要把另一种目录布局视为已经存在。不要给组件添加手动的 `history.pushState`、`replaceState` 或 `popstate` 监听器；应使用注入的导航命令，它会委托给 Vue Router。
 
-应用导航由 `frontend/src/shared/navigation.ts` 中与 feature 解耦的类型化 `NAVIGATE_VIEW_KEY` 定义。`AppShell` 提供该命令；app 与 feature 消费者注入共享契约，而不导入 router 内部实现或 `app/` 实现模块。生产代码不得引入魔法字符串形式的 `inject('navigate')` / `provide('navigate')` 调用。外壳沉浸态同理使用 `shared/shellChrome.ts` 的 `SHELL_CHROME_KEY`：`AppShell` 提供并独占显隐状态，`ReplayWorkspace` 申请 / 释放，`BattlePlayback` / `Replay3DPane` 只读。
+应用导航由 `frontend/src/shared/navigation.ts` 中与 feature 解耦的类型化 `NAVIGATE_VIEW_KEY` 定义。`AppShell` 提供该命令；app 与 feature 消费者注入共享契约，而不导入 router 内部实现或 `app/` 实现模块。生产代码不得引入魔法字符串形式的 `inject('navigate')` / `provide('navigate')` 调用。外壳沉浸态同理使用 `shared/shellChrome.ts` 的 `SHELL_CHROME_KEY`：`AppShell` 提供并独占显隐状态，`ReplayWorkspace`（手机横屏回放就绪）与 `AgentArmorView`（手机横屏且 WebGL 可用）各自以自己的 owner token 申请 / 释放，`BattlePlayback` / `Replay3DPane` 只读。
 
 积分赛管理入口由 `useAuth.isTournamentAdmin` 所有（真实 token 中的 `tournament-admin`，全站管理员通过 Keycloak 复合角色继承），不复用全站 `isAdmin` 放大专属角色权限。公开「联赛积分榜」是主导航栏目，位于坦克百科之后；主导航、页面/浏览器标题与导出标题共用 `tournament.title`，公开入口不重复放到更多面板/页面中。公开积分页持有正式 standings，`utils/tournamentPointsExport.ts` 提供屏幕/Excel/打印文档共享的列投影；`shared/tabular/xlsx/` 是唯一 ExcelJS renderer，feature 保留工作簿投影与打印文档；管理页的历史导入、预览和幂等提交状态仍归 `useTournamentPointsAdmin` 所有，JSON 文件只在文件边界转为 OpenAPI request，经 `api/tournament-points.ts` 发起请求。
 

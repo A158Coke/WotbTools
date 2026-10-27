@@ -21,6 +21,9 @@ import { formatPlaybackClock } from '../utils/playbackClock.js'
 import { initTankViewer } from '../scene/tankViewer.js'
 import { detectWebGL } from '../scene/webglSupport.js'
 import { usePointer } from '../composables/useBreakpoint.js'
+import { usePlaybackPhoneForm } from '../composables/usePlaybackPhoneForm.js'
+import { usePlaybackPortraitViewport } from '../composables/usePlaybackPortraitViewport.js'
+import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 import Scene3DStatus from './Scene3DStatus.vue'
 import TankCatalogMenu from './TankCatalogMenu.vue'
 
@@ -91,6 +94,17 @@ const viewerReady = ref(false)
 const webgl = detectWebGL()
 /** 场景加载状态（tankViewer onLoadState 上报）：loading / ready / error */
 const load = ref({ state: 'loading', progress: null, message: '' })
+// 手机横屏沉浸态：compact 外壳的顶栏 + Tab 栏（104px）在 ~375px 高的横屏视口里是最大单项
+// 消耗。判据与 ReplayWorkspace 同一口径（shared/breakpoints 的手机形态查询 + 非竖屏 + 触屏）；
+// AppShell 是显隐与 token 归零的唯一 owner，这里只申请 / 释放。WebGL 不可用时整页是普通
+// 文档流（依赖 Tab 栏导航），不申请；宽 ≥768 的横屏手机 / 平板上申请是无害 no-op。
+const shellChrome = inject(SHELL_CHROME_KEY, null)
+const shellOwner = Symbol('agent-armor')
+const { isPhone } = usePlaybackPhoneForm()
+const { isPortrait } = usePlaybackPortraitViewport()
+const wantsImmersive = computed(() => coarse.value && isPhone.value && !isPortrait.value && webgl.supported)
+watch(wantsImmersive, (on) => shellChrome?.request(shellOwner, on), { immediate: true })
+onBeforeUnmount(() => shellChrome?.request(shellOwner, false))
 const onboarding = inject(ONBOARDING_KEY, null)
 onMounted(() => onboarding?.registerSurface('armor', {
     ready: () => load.value.state === 'ready',
@@ -609,6 +623,11 @@ onBeforeUnmount(() => {
 .armor-view .armor-interaction-help dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-6); margin: 0; min-inline-size: 0; }
 .armor-view .armor-interaction-help dt { color: var(--color-text-primary); font: var(--type-body); font-weight: 600; }
 .armor-view .armor-interaction-help dd { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); }
+/* 手机横屏（与 shared/breakpoints PLAYBACK_PHONE_QUERY 的手机横屏分支同口径）：射击复现页的
+   操作提示节是静态指引，在 ~375px 高的视口里挤占 3D 场景带，整节让位；桌面 / 平板 / 竖屏保留。 */
+@media (pointer: coarse) and (orientation: landscape) and (height <= 500px) {
+    .armor-view .armor-interaction-help { display: none; }
+}
 @media (768px <= width < 1200px), (pointer: coarse) and (orientation: landscape) {
     .armor-view #tank-selectors { max-block-size: 38dvh; }
 }
