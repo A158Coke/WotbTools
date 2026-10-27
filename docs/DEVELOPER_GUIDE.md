@@ -736,3 +736,5 @@ Sponsor QR 不进仓库：配置与收款码作为 **GitHub Release 资产**发�
 Grafana 现有六个由 TF 管理的 dashboard：WotbTools Engineering Overview，以及五个产品 dashboard：Active users (home)、Feature usage、Android downloads、AI token usage 和 Backend error logs。客户端遥测使用有界的 `/api/observability/events` 契约；已认证活动需要仅在运行时提供的 `WOTB_OBSERVABILITY_HASH_KEY`。Yecao Alloy 同时采集 ai-service 日志。dashboard 删除或替换没有允许名单；datasource 删除仍受保护。可查询历史保留七天，Loki 异步删除，Docker 原始日志按大小轮转。精确计数、隐私、用量缺失与保留限制见 `docs/operations/observability.md`。
 
 工程健康：Yecao `dev-metrics-exporter` 每 15 分钟刷新 GitHub 数据，使用内存快照，Prometheus 每 15 秒独立抓取。权威语义与恢复方式见[工程指标](architecture/engineering-metrics.md)。不提供开发者排名或生产力评分。
+
+少数重要 business operation boundary 可使用 Spring Boot / Micrometer `@Observed` 显式 opt-in（当前为 `wotb.creator.avatar.upload`）。operation metric 名称、label 边界、`error_code` taxonomy 与四类 PromQL 见 [`operations/observability.md`](operations/observability.md)。不要给 Controller/Repository 重复注解，也不要对 Service 包做全局 AOP；Spring AI provider observation 保持 `ObservationRegistry.NOOP`。

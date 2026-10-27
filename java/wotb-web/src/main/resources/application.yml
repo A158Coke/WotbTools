@@ -42,6 +42,9 @@ management:
     web:
       exposure:
         include: health,info,metrics,prometheus
+  observations:
+    annotations:
+      enabled: true
   endpoint:
     health:
       show-details: never
@@ -53,6 +56,7 @@ management:
     distribution:
       percentiles-histogram:
         http.server.requests: true
+        wotb.creator.avatar.upload: true
       slo:
         http.server.requests:
           - 10ms
