@@ -55,6 +55,13 @@ function backToShots() {
     if (canGoBack) router.back()
     else router.replace({ query: { view: 'agent-shots' } })
 }
+// 深链直达（?view=agent-armor 无 shot）没有浏览器历史可退：退出动作改走「回坦克百科」
+// replace——手机横屏沉浸态卸载外壳后，这颗按钮是页面唯一的站内出口，任何入口形态都
+// 必须在（WotbTools #767 复审 P2：直达 + 沉浸态曾让应用内导航全部消失）。
+function backOrTankopedia() {
+    if (canGoBack) router.back()
+    else router.replace({ query: { view: 'agent-tankopedia' } })
+}
 async function adjacentShot(offset) {
     const shot = shotSnapshot.value[shotPosition.value + offset]
     if (!shot || navigating.value) return
@@ -316,8 +323,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-<div class="armor-view" data-tour="armor-workspace" :class="{ 'is-unsupported': !webgl.supported, 'has-back': canGoBack && !isShotPage, 'is-shot': isShotPage, 'is-clean': cleanQuery }">
-    <button v-if="canGoBack && !isShotPage" type="button" class="armor-back" data-testid="armor-back" :aria-label="$t('armor.back')" @click="router.back()"><ArrowLeft :size="16" aria-hidden="true" /><span class="armor-back-label">{{ $t('armor.back') }}</span></button>
+<div class="armor-view" data-tour="armor-workspace" :class="{ 'is-unsupported': !webgl.supported, 'has-back': !isShotPage, 'is-shot': isShotPage, 'is-clean': cleanQuery }">
+    <button v-if="!isShotPage" type="button" class="armor-back" data-testid="armor-back" :aria-label="$t('armor.back')" @click="backOrTankopedia"><ArrowLeft :size="16" aria-hidden="true" /><span class="armor-back-label">{{ $t('armor.back') }}</span></button>
     <header v-if="isShotPage && !cleanQuery" class="armor-shot-header" data-testid="armor-shot-header">
         <button type="button" class="armor-shot-back" :aria-label="$t('armor.back_to_shots')" @click="backToShots"><ArrowLeft :size="18" aria-hidden="true" /><span>{{ $t('armor.back_to_shots') }}</span></button>
         <div class="armor-shot-context">
@@ -589,7 +596,7 @@ onBeforeUnmount(() => {
 .armor-view #click-info .ricochet { color: var(--orange); }
 .armor-view #traj-info { position: fixed; z-index: var(--z-header); pointer-events: none; }
 .armor-view #shot-replay-error { position: fixed; z-index: var(--pb-z-modal); inset-block-start: calc(var(--space-5) + 48px); inset-inline: var(--space-4); margin-inline: auto; max-inline-size: 30rem; padding: var(--space-2) var(--space-3); background: var(--tooltip-bg); border-left: 4px solid var(--red); border-radius: var(--radius-md); color: var(--red); font: var(--type-caption); box-shadow: var(--elevation-2); pointer-events: none; }
-.armor-view .armor-back { position: absolute; z-index: calc(var(--z-sticky) + 1); inset-block-start: var(--space-5); inset-inline-start: var(--space-5); display: inline-flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--panel); color: var(--txt); }
+.armor-view .armor-back { position: absolute; z-index: calc(var(--z-sticky) + 1); inset-block-start: var(--space-5); inset-inline-start: var(--space-5); display: inline-flex; align-items: center; gap: var(--space-2); min-block-size: 44px; padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--panel); color: var(--txt); }
 .armor-view .armor-tools { display: none; }
 .armor-view .armor-bottom-controls { display: contents; }
 /* Recorded-shot actions are a persistent, high-contrast toolbar. */
@@ -666,7 +673,7 @@ onBeforeUnmount(() => {
     .armor-view.is-shot .armor-stage.is-tools-open #corner-tr { display: flex; z-index: var(--pb-z-hud); }
     .armor-view.is-shot #debug-info { max-block-size: 20dvh; }
     .armor-view.is-clean #corner-tl { display: none; }
-    .armor-view .armor-back { inset-block-start: var(--space-2); inset-inline-start: var(--space-2); inline-size: 44px; padding: 0; justify-content: center; }
+    .armor-view .armor-back { inset-block-start: var(--space-2); inset-inline-start: var(--space-2); inline-size: 44px; block-size: 44px; padding: 0; justify-content: center; }
     .armor-view .armor-back-label { display: none; }
     .armor-view #tank-picker { inset: 0; max-inline-size: none; border-radius: 0; }
     .armor-view .armor-shot-header { flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2); }

@@ -118,6 +118,29 @@ describe('Armor recorded-shot navigation', () => {
     await tools.trigger('click'); expect(tools.attributes('aria-expanded')).toBe('false')
   })
 })
+describe('Armor exit entry (deep link without history)', () => {
+  it('keeps an exit on phone-landscape deep link: immersive on, back goes to tankopedia', async () => {
+    window.history.replaceState(null, '') // 深链形态：无 history.state.back
+    restoredMedia.push(() => window.history.replaceState(null, ''))
+    const chrome = createShellChrome()
+    mocks.coarse.value = true
+    const { wrapper, router } = await setup({ query: { view: 'agent-armor', tank: '1' }, shellChrome: chrome, phone: true })
+    expect(chrome.immersive.value).toBe(true)
+    await wrapper.get('[data-testid="armor-back"]').trigger('click'); await flushPromises()
+    expect(router.currentRoute.value.query.view).toBe('agent-tankopedia')
+  })
+  it('still uses browser history when history.state.back exists', async () => {
+    window.history.replaceState({ back: '/?view=agent-tankopedia' }, '')
+    restoredMedia.push(() => window.history.replaceState(null, ''))
+    mocks.coarse.value = true
+    const { wrapper, router } = await setup({ query: { view: 'agent-armor', tank: '1' }, phone: true })
+    const backSpy = vi.spyOn(router, 'back')
+    await wrapper.get('[data-testid="armor-back"]').trigger('click')
+    expect(backSpy).toHaveBeenCalledOnce()
+    await flushPromises()
+    expect(router.currentRoute.value.query.view).toBe('agent-armor') // 未走 replace 兜底
+  })
+})
 describe('Armor immersive shell chrome', () => {
   it('requests immersion on touch phone landscape and releases on unmount', async () => {
     const chrome = createShellChrome()
