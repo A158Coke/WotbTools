@@ -14,7 +14,7 @@
  * 调用方保留静态百科展示，不猜默认值（fail-closed）。
  */
 import { computeCharacteristics, type ComputeInput } from './characteristics'
-import { SKILL_IDS, availableItems, resolveDeviceIds, scriptMap } from '../../utils/researchCatalog'
+import { availableItems, resolveDeviceIds, scriptMap } from '../../utils/researchCatalog'
 
 export const DEVICE_SLOT_COUNT = 9
 const EMPTY_DEVICE = '-'
@@ -46,7 +46,7 @@ export interface SetupSources {
   modules: any
   /** parseTankopediaQuery 输出的 URL 状态 */
   url: any
-  /** researchCatalog.RESEARCH_META（物品目录/预设/过滤器） */
+  /** 资产包 research 全局目录（物品目录/预设/过滤器/技能） */
   catalog?: any
 }
 
@@ -203,6 +203,7 @@ export function resolveSetup({ detail, modules, url, catalog }: SetupSources): S
 
   const engines = modules.engines || []
   const tracks = modules.chassis || []
+  const skillIds = new Set(Object.keys(catalog?.skills || {}))
   const selection: SetupResolved = {
     canConfigure: true,
     config,
@@ -215,7 +216,7 @@ export function resolveSetup({ detail, modules, url, catalog }: SetupSources): S
     // 默认空（与 BlitzInfo 的中性基线一致；客户端默认表仍导出，可按需改用/加按钮）
     consumables: url?.cons == null ? [] : url.cons,
     provisions: url?.prov == null ? [] : url.prov,
-    skills: Object.fromEntries(Object.entries(url?.skills || {}).filter(([id, level]) => SKILL_IDS.includes(id) && Number.isFinite(Number(level)) && Number(level) > 0).map(([id, level]) => [id, Math.min(7, Math.max(1, Math.round(Number(level))))])),
+    skills: Object.fromEntries(Object.entries(url?.skills || {}).filter(([id, level]) => skillIds.has(id) && Number.isFinite(Number(level)) && Number(level) > 0).map(([id, level]) => [id, Math.min(7, Math.max(1, Math.round(Number(level))))])),
     camouflage: url?.camo === true,
   }
   return { ...selection, ...normalizeSetup(selection, detail, modules, catalog) }
@@ -235,11 +236,12 @@ export function normalizeSetup(
   const availableProv = availableItems(catalog.provisions, tankRef(detail, modules))
   const consStems = new Set(availableCons.map(item => item.stem))
   const provStems = new Set(availableProv.map(item => item.stem))
+  const skillIds = new Set(Object.keys(catalog.skills || {}))
   return {
     ...selection,
     consumables: selection.consumables.filter(stem => consStems.has(stem)).slice(0, consSlots),
     provisions: selection.provisions.filter(stem => provStems.has(stem)).slice(0, slots),
-    skills: Object.fromEntries(Object.entries(selection.skills || {}).filter(([id]) => SKILL_IDS.includes(id))),
+    skills: Object.fromEntries(Object.entries(selection.skills || {}).filter(([id]) => skillIds.has(id))),
   }
 }
 
@@ -361,7 +363,7 @@ export function buildComputeInput({ detail, modules, selection, catalog }: {
   const slots = presetSlots(modules, catalog)
   const netScript = catalog?.devices?.find(device => device.stem === 'camouflageNet')?.script?.params || null
   const paint = catalog?.camouflage?.categories?.[catalog.camouflage.defaultCategory] || null
-  const deviceIds = resolveDeviceIds(slots, selection.devices)
+  const deviceIds = resolveDeviceIds(slots, selection.devices, catalog?.devices)
   return {
     modules,
     turretIdx: selection.turret,

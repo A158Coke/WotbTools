@@ -21,7 +21,7 @@ import { TYPE_CLS, normType, shellLabel, isPremiumShell, fmt, fmtNum, tankNation
 import {
   normalizeTankCache, parseTankopediaQuery, sameTankopediaQuery, withTankopediaState,
 } from '../utils/tankopediaQuery.js'
-import { RESEARCH_META, SKILL_IDS, loadTankModules, shellIconUrl } from '../utils/researchCatalog.js'
+import { loadResearchCatalog, loadTankModules, shellIconUrl } from '../utils/researchCatalog.js'
 import { computeCharacteristics, penetrationCoefficient } from '../replay-local/compute/characteristics'
 import {
   buildComputeInput, decodeDevices, encodeDevices,
@@ -146,6 +146,8 @@ const gunElevation = computed(() => {
 // ---------- 配置器状态（URL 是唯一 owner） ----------
 /** 逐车模块数据（资产包 /research/modules/{nation}.json，按 tankId 对号）。 */
 const modules = ref(null)
+/** 资产包全局目录/物品/技能/参数格式（research/*.json）。 */
+const catalog = ref(null)
 let modulesRequest = 0
 
 async function loadDetail(id) {
@@ -183,12 +185,16 @@ async function loadModules(id, nation, configs) {
   modules.value = null
   if (id == null || !nation || !Array.isArray(configs) || !configs.some(c => c?.turret_local != null)) return
   try {
-    const data = await loadTankModules(nation)
+    const [nextCatalog, data] = await Promise.all([
+      loadResearchCatalog(),
+      loadTankModules(nation),
+    ])
     if (request !== modulesRequest) return
+    catalog.value = nextCatalog
     modules.value = findTankModules(data, id)
   } catch (e) {
     if (request !== modulesRequest) return
-    console.warn('research modules unavailable:', e)
+    console.warn('research data unavailable:', e)
     modules.value = null
   }
 }
@@ -198,12 +204,12 @@ const setup = computed(() => resolveSetup({
   detail: detail.value,
   modules: modules.value,
   url: urlState.value,
-  catalog: RESEARCH_META,
+  catalog: catalog.value,
 }))
 
-const computeInput = computed(() => (setup.value.canConfigure && detail.value && modules.value
+const computeInput = computed(() => (setup.value.canConfigure && detail.value && modules.value && catalog.value
   ? buildComputeInput({
-    detail: detail.value, modules: modules.value, selection: setup.value, catalog: RESEARCH_META,
+    detail: detail.value, modules: modules.value, selection: setup.value, catalog: catalog.value,
   })
   : null))
 const characteristics = computed(() => (computeInput.value ? computeCharacteristics(computeInput.value) : null))
@@ -228,7 +234,7 @@ watch(characteristics, (value, oldValue) => {
   previousCharacteristics.value = oldValue || null
 }, { flush: 'sync' })
 const paramTable = computed(() => (characteristics.value
-  ? paramGroups(characteristics.value, previousCharacteristics.value || {}, RESEARCH_META.paramsFormat)
+  ? paramGroups(characteristics.value, previousCharacteristics.value || {}, catalog.value?.paramsFormat)
   : []))
 const deviceIds = computed(() => new Set(computeInput.value?.deviceIds || []))
 /** 弹种表：穿深/伤害/弹速随校准弹、超负荷、火药、钨芯联动（与引擎同一系数），并标记当前选中弹。 */
@@ -290,7 +296,7 @@ const pitchBonus = computed(() => {
   let up = 0
   let down = 0
   if (hasStabilizer) {
-    const item = RESEARCH_META.devices.find(device => device.id === 122)
+    const item = catalog.value?.devices?.find(device => device.id === 122)
     const params = item?.script?.params?.bonusValues
     up = Number(params?.upperPitchLimitIncrease)
     down = Number(params?.lowerPitchLimitIncrease)
@@ -342,7 +348,7 @@ function cycleSkill(id, maxLevel = false) {
 }
 
 function maxSkills() {
-  writeSetup({ skills: Object.fromEntries(SKILL_IDS.map(id => [id, 7])) })
+  writeSetup({ skills: Object.fromEntries(Object.keys(catalog.value?.skills || {}).map(id => [id, 7])) })
 }
 
 function clearSkills() {
@@ -491,11 +497,11 @@ onMounted(() => {
           </section>
 
           <TankConfigPanel
-            v-if="setup.canConfigure"
+            v-if="setup.canConfigure && catalog"
             :detail="detail"
             :modules="modules"
             :selection="setup"
-            :catalog="RESEARCH_META"
+            :catalog="catalog"
             @update="writeSetup"
             @reset="resetSetup"
             @preset="applyModulePreset"

@@ -24,7 +24,7 @@ const props = defineProps({
   modules: { type: Object, required: true },
   /** tankSetup.SetupSelection */
   selection: { type: Object, required: true },
-  /** researchCatalog.RESEARCH_META（物品目录 + 预设 + 过滤器） */
+  /** 资产包 research 全局目录（物品目录 + 预设 + 过滤器） */
   catalog: { type: Object, required: true },
 })
 const emit = defineEmits(['update', 'reset', 'preset', 'cycle-skill', 'max-skills', 'clear-skills'])
@@ -141,7 +141,7 @@ const moduleMatrix = computed(() => {
 /** 装备槽位按 (level, group) 定位：presetSlots 数组顺序是 level-major。 */
 const slots = computed(() => presetSlots(props.modules, props.catalog))
 /** 已选装备 id（101/118 等计时加成与参数区同源）。 */
-const deviceIds = computed(() => new Set(resolveDeviceIds(slots.value, props.selection.devices)))
+const deviceIds = computed(() => new Set(resolveDeviceIds(slots.value, props.selection.devices, props.catalog.devices)))
 
 function slotIndex(level, group) {
   return slots.value.findIndex(slot => Number(slot?.level) === level && slot?.group === group)
