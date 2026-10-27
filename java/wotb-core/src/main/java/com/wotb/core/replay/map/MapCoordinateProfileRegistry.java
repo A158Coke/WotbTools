@@ -7,6 +7,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -78,7 +79,7 @@ public final class MapCoordinateProfileRegistry {
                     // 单份文件损坏不影响其余地图；profileFor 回退 DEFAULT。
                 }
             }
-        } catch (final Exception ignored) {
+        } catch (final IOException ignored) {
             // classpath 不可用时保持空表。
         }
         cache = profiles;
