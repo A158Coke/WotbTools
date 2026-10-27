@@ -116,4 +116,23 @@ describe('locale message composition', () => {
       expect(titles.has(messages[locale].featureOffline.title), `${locale} titles vs offline`).toBe(false)
     }
   })
+
+  it('keeps every tank parameter label in all locales', () => {
+    // 配置器参数/俯仰表按 key 直出；缺 key 会把内部 key 显示给用户（新增键曾漏 en/ru）。
+    for (const locale of ['en', 'ru']) {
+      for (const key of Object.keys(zhBase.agentTanks.params)) {
+        expect(messages[locale].agentTanks.params[key], `${locale} agentTanks.params.${key}`).toBeTruthy()
+      }
+    }
+  })
+
+  it('describes parameter deltas against the previous rendered values', () => {
+    // BK useDelta：delta 不是相对空装备初始配置；文案必须与 AgentTankopedia 的 previous 基线一致。
+    expect(messages.zh.agentTanks.params.baseline_note).toContain('上一次')
+    expect(messages.en.agentTanks.params.baseline_note.toLowerCase()).toContain('previously')
+    expect(messages.ru.agentTanks.params.baseline_note.toLowerCase()).toContain('предыдущими')
+    for (const locale of ['zh', 'en', 'ru']) {
+      expect(messages[locale].agentTanks.params.baseline_note, `${locale} baseline_note`).not.toContain('stock configuration')
+    }
+  })
 })
