@@ -144,7 +144,7 @@ const gunElevation = computed(() => {
 })
 
 // ---------- 配置器状态（URL 是唯一 owner） ----------
-/** 逐车模块数据（common/research/modules/{nation}.json，按 tankId 对号）。 */
+/** 逐车模块数据（资产包 /research/modules/{nation}.json，按 tankId 对号）。 */
 const modules = ref(null)
 let modulesRequest = 0
 

@@ -9,7 +9,7 @@
  * - 消耗品/补给 `?cons=` / `?prov=`：**键缺省 = 客户端默认表**，键存在但为空 = 用户清空。
  * - 涂装 `?camo=1`，默认关。
  *
- * 数据面：common/research/modules/{nation}.json（客户端原值）+ tank/{id}.json（装甲/弹种）。
+ * 数据面：资产包 research/modules/{nation}.json（客户端原值）+ tank/{id}.json（装甲/弹种）。
  * 任何映射缺失（无模块、config 无 turret_local/gun_local 对号）都返回 canConfigure=false，
  * 调用方保留静态百科展示，不猜默认值（fail-closed）。
  */

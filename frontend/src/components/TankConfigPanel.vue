@@ -20,7 +20,7 @@ import { fmtNum } from '../scene/tankMeta.js'
 const props = defineProps({
   /** tank/{id}.json */
   detail: { type: Object, required: true },
-  /** common/research/modules/{nation}.json 的单车条目 */
+  /** 资产包 research/modules/{nation}.json 的单车条目 */
   modules: { type: Object, required: true },
   /** tankSetup.SetupSelection */
   selection: { type: Object, required: true },
