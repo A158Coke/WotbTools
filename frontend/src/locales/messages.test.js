@@ -1,9 +1,35 @@
 import { describe, expect, it } from 'vitest'
+import { compile } from '@intlify/core-base'
 import zhBase from './zh.json'
 import { messages, mergeLocaleMessages } from './messages.js'
 import { API_ERROR_CODES } from '../api/generated/api-error-codes.js'
 
 describe('locale message composition', () => {
+  it('compiles every message in every locale', () => {
+    // vue-i18n 在渲染时才编译消息；未转义的 `@`（linked message）/非法 `|` 会在
+    // 切语言后抛 SyntaxError，表现为整块 UI 消失（2026-10-27 英文 pen_far 事故）。
+    // 逐条过官方 compiler，别等浏览器里第一次渲染才发现。
+    const failures = []
+    for (const locale of ['zh', 'en', 'ru']) {
+      const walk = (node, prefix) => {
+        for (const [key, value] of Object.entries(node)) {
+          const path = `${prefix}.${key}`
+          if (typeof value === 'string') {
+            try {
+              compile(value, { warnHtmlMessage: false })
+            } catch (error) {
+              failures.push(`${locale}:${path}: ${error.message}`)
+            }
+          } else if (value && typeof value === 'object') {
+            walk(value, path)
+          }
+        }
+      }
+      walk(messages[locale], locale)
+    }
+    expect(failures).toEqual([])
+  })
+
   it('provides 3D toolbar disclosure labels in every locale', () => {
     for (const locale of ['zh', 'en', 'ru']) {
       expect(messages[locale].agentReplay.collapse_toolbar).toBeTruthy()

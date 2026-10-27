@@ -52,6 +52,7 @@
     "@apidevtools/swagger-parser": "^10.1.0",
     "@fallow-cli/fallow-node": "^3.16.0",
     "@gltf-transform/core": "^4.4.2",
+    "@intlify/core-base": "11.1.10",
     "@types/node": "^20.19.43",
     "@vitejs/plugin-vue": "^5.2.1",
     "@vue/test-utils": "^2.4.6",
