@@ -211,8 +211,11 @@ const characteristics = computed(() => (computeInput.value ? computeCharacterist
 const previousCharacteristics = ref(null)
 /** 重置时清掉对比值：记录重置目标，特性第一次落到该目标时把 previous 对齐（delta=0）。 */
 let resetTargetKey = null
+const effectiveShell = selection => (selection.shell == null
+  ? defaultShellIndex(cfgs.value[selection.config])
+  : selection.shell)
 const selectionKey = selection => JSON.stringify([
-  selection.config, selection.engine, selection.track,
+  selection.config, effectiveShell(selection), selection.engine, selection.track,
   selection.devices, selection.consumables, selection.provisions,
   selection.skills, selection.camouflage,
 ])
