@@ -263,6 +263,42 @@ class SpringAiChatGatewayTest {
         assertEquals("AI_UPSTREAM_UNAVAILABLE", e.code());
     }
 
+    /**
+     * 回归：Spring AI / SDK 把 UnexpectedStatusCodeException(402) 包进普通
+     * RuntimeException 时，只有 gateway 的 generic adapter 边界恢复
+     * providerStatus=402；AI_UPSTREAM_UNAVAILABLE + 402 不得被重试。
+     */
+    @Test
+    void recoversWrappedProviderStatusAndMarksNonRetryable() {
+        when(chatModel.call(any(Prompt.class))).thenThrow(
+                new IllegalStateException("spring wrapper",
+                        UnexpectedStatusCodeException.builder()
+                                .statusCode(402)
+                                .headers(Headers.builder().build())
+                                .build()));
+        final Logger gatewayLogger = (Logger) LoggerFactory.getLogger(SpringAiChatGateway.class);
+        final ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        gatewayLogger.addAppender(appender);
+        try {
+            final AiUpstreamException e = assertThrows(
+                    AiUpstreamException.class, () -> gateway.chat(request()));
+
+            assertEquals("AI_UPSTREAM_UNAVAILABLE", e.code());
+            assertEquals(402, e.providerStatus());
+            assertFalse(new AiRetryPolicy(3, 0, 0, 2.0).isRetryable(e));
+            verify(chatModel, times(1)).call(any(Prompt.class));
+            final String all = appender.list.stream()
+                    .map(ILoggingEvent::getFormattedMessage)
+                    .collect(Collectors.joining("\n"));
+            assertTrue(all.contains("event=ai_upstream_call_failed"), all);
+            assertTrue(all.contains("providerStatus=402"), all);
+            assertTrue(all.contains("retryable=false"), all);
+        } finally {
+            gatewayLogger.detachAppender(appender);
+        }
+    }
+
     @Test
     void retriesTransientFailureUpToMaxAttempts() {
         when(chatModel.call(any(Prompt.class))).thenThrow(
