@@ -4,6 +4,8 @@
  * 默认值不写进 URL，保持链接干净。
  *
  * 键：q（搜索词）· tier · nation · type · sort（name|tier|hp|pen）· tank（详情车辆 id）· config（配置下标）
+ * · engine / track（发动机/履带下标）· shell（弹种下标）· dev（装备 9 槽 0/1/-）· cons / prov（物品 stem 逗号表）
+ * · skills（已训练技能 id:等级 逗号表，兼容裸 id=7）· camo（涂装 0/1）
  */
 import { tankFuzzyScore } from '../scene/tankMeta.js'
 // 搜索别名（开发者审校维护的 WotBTools 搜索 metadata，**不是**游戏事实数据）：稀疏存储，
@@ -11,13 +13,18 @@ import { tankFuzzyScore } from '../scene/tankMeta.js'
 // 构建期相对路径 import，无后端接口、无第二资产源，Web 与 Android 内置前端同一份。
 // 契约与维护流程见 common/AGENTS.md 与 docs/architecture/tankopedia-reference-data.md。
 import TANK_ALIASES from '../../../common/tank_aliases.json'
+import { TANKOPEDIA_QUERY_KEYS } from '../shared/tankopediaQueryKeys.js'
 
+export { TANKOPEDIA_QUERY_KEYS }
 export const TANKOPEDIA_SORTS = Object.freeze(['name', 'tier', 'hp', 'pen'])
-/** 只属于坦克百科的 query 键：离开百科时由 navigation.locationForView 丢掉 */
-export const TANKOPEDIA_QUERY_KEYS = Object.freeze(['q', 'tier', 'nation', 'type', 'sort', 'tank', 'config'])
 const DEFAULT_SORT = 'name'
 /** 搜索词上限：防止超长 query 拖慢模糊匹配 */
 const MAX_QUERY_LENGTH = 64
+/** 装备槽位数（与客户端 3 组 × 3 级一致） */
+const DEVICE_SLOTS = 9
+/** 单个物品表上限（槽位数由车辆数据再夹一次） */
+const MAX_ITEM_STEMS = 8
+const STEM_RE = /^[A-Za-z0-9_]+$/
 
 function first(value) {
   return Array.isArray(value) ? value[0] : value
@@ -40,6 +47,38 @@ function nonNegativeInt(value) {
   return Number.isInteger(n) && n >= 0 ? n : null
 }
 
+/** 物品 stem 列表：键缺省 → null（用客户端默认表）；键存在但空 → []（用户清空）。 */
+function stemList(value) {
+  const raw = first(value)
+  if (raw === undefined) return null
+  if (typeof raw !== 'string' || raw.trim() === '') return []
+  const unique = [...new Set(raw.split(',').map(s => s.trim()).filter(s => STEM_RE.test(s)))]
+  return unique.slice(0, MAX_ITEM_STEMS)
+}
+
+/** 装备槽串：只取前 9 位，非 0/1 的字符按空槽处理（保持槽位对齐），去尾随空槽。 */
+function skillLevels(value) {
+  const raw = first(value)
+  if (raw === undefined) return {}
+  if (typeof raw !== 'string' || raw.trim() === '') return {}
+  const out = {}
+  for (const entry of raw.split(',').map(s => s.trim()).filter(Boolean).slice(0, 24)) {
+    const [id, levelText] = entry.split(':', 2)
+    if (!STEM_RE.test(id)) continue
+    const level = levelText == null ? 7 : Number(levelText)
+    if (!Number.isInteger(level) || level < 1 || level > 7) continue
+    out[id] = level
+  }
+  return out
+}
+
+function deviceSlots(value) {
+  const raw = first(value)
+  if (typeof raw !== 'string') return ''
+  const chars = raw.slice(0, DEVICE_SLOTS).split('').map(ch => (ch === '0' || ch === '1' ? ch : '-'))
+  return chars.join('').replace(/-+$/, '')
+}
+
 /** route.query → 已校验的状态；非法值回落到默认值。 */
 export function parseTankopediaQuery(query = {}) {
   const sort = text(query.sort)
@@ -52,8 +91,16 @@ export function parseTankopediaQuery(query = {}) {
     type: text(query.type),
     sort: TANKOPEDIA_SORTS.includes(sort) ? sort : DEFAULT_SORT,
     tank,
-    // config 只在详情态有意义
+    // 以下只在详情态有意义
     config: tank ? nonNegativeInt(query.config) : null,
+    engine: tank ? nonNegativeInt(query.engine) : null,
+    track: tank ? nonNegativeInt(query.track) : null,
+    shell: tank ? nonNegativeInt(query.shell) : null,
+    dev: tank ? deviceSlots(query.dev) : '',
+    cons: tank ? stemList(query.cons) : null,
+    prov: tank ? stemList(query.prov) : null,
+    skills: tank ? skillLevels(query.skills) : {},
+    camo: tank ? first(query.camo) === '1' : false,
   }
 }
 
@@ -69,6 +116,19 @@ export function serializeTankopediaQuery(state = {}) {
   if (state.tank) {
     query.tank = String(state.tank)
     if (Number.isInteger(state.config) && state.config >= 0) query.config = String(state.config)
+    if (Number.isInteger(state.engine) && state.engine >= 0) query.engine = String(state.engine)
+    if (Number.isInteger(state.track) && state.track >= 0) query.track = String(state.track)
+    if (Number.isInteger(state.shell) && state.shell >= 0) query.shell = String(state.shell)
+    if (typeof state.dev === 'string' && state.dev !== '') query.dev = state.dev
+    if (Array.isArray(state.cons)) query.cons = state.cons.join(',')
+    if (Array.isArray(state.prov)) query.prov = state.prov.join(',')
+    if (state.skills && typeof state.skills === 'object' && !Array.isArray(state.skills)) {
+      const pairs = Object.entries(state.skills)
+        .filter(([id, level]) => STEM_RE.test(id) && Number.isInteger(level) && level >= 1 && level <= 7)
+        .map(([id, level]) => `${id}:${level}`)
+      if (pairs.length) query.skills = pairs.join(',')
+    }
+    if (state.camo === true) query.camo = '1'
   }
   return query
 }
