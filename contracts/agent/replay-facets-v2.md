@@ -381,6 +381,24 @@ WotBTools
   独立的 main-push 工作流，若部署顺序产生短暂兼容窗口或某个 workflow 失败，用 rerun / 人工单发
   deploy 恢复——**不保留 staged writer，也不留 follow-up**。
 
+## 4m. AoI 重入血量台阶（`vehicles[].hp` 语义；上游 v0.4.12→v0.4.13）
+
+- `vehicles[].hp`（血量链显示序列）自 v0.4.12 起并入重入 Type5 物化快照血量：Type4 隐藏段
+  「零更新」（type=7/8/10 全断），丢视野期间的盲炮/视野外伤害没有 method1 事件——此前血量链
+  在二次点亮后停在丢视野前旧值、直到下一次受击才被动修正（实测 J20 CN_LEVITHAN 在场末 1192 →
+  重入快照 348，缺 844 点）。现快照血量在 `t_in`（二次点亮时刻）落台阶，与客户端 `onEnterAoI`
+  物化时 HP 条直接跳到快照值同构。
+- **血量链构建不变式（v0.4.13 修正 v0.4.12 的合并顺序缺陷）**：全部证据（`initial_hp` 种子 +
+  method1 + 重入快照）统一按时间合并（同钟快照在前 = 客户端物化先于属性更新）、**最后**做一次
+  相邻同值去重——先去重后并入会把被快照分隔的同值 method1 吞掉（隐藏段死亡无 method1 归零 +
+  复活回满血再受击、值恰同受击前；与 §4k 复活轨道同源场景）。普通回放 v0.4.13 与 v0.4.12
+  输出逐位一致，仅复活/同值边界修正。
+- **消费面（零代码适配）**：`hpAt`/`hpAtSeries`（「≤t 的最后一点」采样）与 `buildTransientSources`
+  （血量链相邻差分）按既有逻辑自动受益——隐藏段掉血在二次点亮时刻以一次聚合伤害事件出现
+  （多次受击合并为一条：协议证据只有绝对血量台阶、无 per-hit 事件；凶手归属不提供，上游
+  fail-closed）。无锚点实体以首个带血量快照为链起点；隐藏段死亡的重入快照哨兵按显示口径钳 0
+  （死亡面权威仍在 `hp_state`/prop1/§4l）。AI 投影 golden 不受影响（投影不走 `hp_series`）。
+
 ## 5. 射击复现能力（ShotReplays）
 
 - **契约 v0.1.9（breaking）**：WASM 入口输出由裸数组改为包装对象——
@@ -506,3 +524,7 @@ producer 漂移变成错误的生命态事实）。
   WotbTools 同批正式消费该字段并把它投影给服务端：canonical 分类（2D/3D 生命轨道）与
   AI 投影（`ClientAiReviewProjection.hpState` → Java `HpRawState.fromWireName`）用**同一套**
   terminal 分类；legacy 只用于明确的旧 artifact / 缺字段兼容（见 §4l）。
+- v0.4.12→v0.4.13（2026-10-27，agent commit `c32fc583…`/PR #31+#33）：**AoI 重入血量兑现**
+  （`vehicles[].hp` 台阶语义，见 §4m）——隐藏段掉血在二次点亮时刻落台阶；v0.4.13 修正
+  v0.4.12 的合并顺序（统一去重最后做）。WotbTools pin 同步到 v0.4.13，AI 投影 golden
+  仅 provenance 变化，Android `wotbVersion` 3.17.6 → 3.17.7。

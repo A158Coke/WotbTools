@@ -129,6 +129,10 @@ STRONG CANDIDATE，不提升为跨版本占领胜利枚举；SC2 `controlpoint.t
 - **坐标**：优先使用每张地图 `map-semantics/*.semantic.json` 的 `playableBoundsMeters` 推导 `centerX/centerZ/halfExtent`，再映射到 500×500 canonical；只有语义缺失或边界无效时才回退中心原点、`halfExtent=250`。三态 `VALID/CLAMPED/INVALID`；九宫格 region 只描述方位，禁止用 region 差推断距离。
 - **时间**：派生证据优先使用可靠的 battle-relative 时间（`battleClockSec`）；战斗开始无法解析时 `tryRelative()` 返回 `UNRESOLVED_RAW_ONLY`，事件以 `UNRESOLVED_RAW_ONLY_EVENTS_IGNORED` 标记并从派生计算中排除（`rawClockSec` 仍保留，但不作为可用时间）；准备阶段事件排除。
 - **权威 vs 观测**：`battle_results` 是唯一可信口径；事件流数字只是观测子集。
+- **血量时间线的证据边界（Playback）**：method1/prop3 血量证据只覆盖 AoI 在场段（Type4 隐藏段零更新）；
+  隐藏段掉血由重入 Type5 物化快照兑现为**一次聚合台阶**（上游 v0.4.12→v0.4.13，无 per-hit 事件、
+  无凶手归属，见 `contracts/agent/replay-facets-v2.md` §4m）。AI 复盘判定不受影响：canonical HP facts
+  与观测伤害抑制（`OBSERVED_DAMAGE_IS_PARTIAL`）判据不变，结算字段仍是伤害/死亡权威。
 - **录像者**：只用于确定视角（PLAYER_FOCUSED 的个人复盘 / TEAM_PERSPECTIVE 的视角队伍），不参与团队结论权重。
 
 ## 6. 模式分类的现行边界
