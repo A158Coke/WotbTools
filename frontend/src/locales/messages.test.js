@@ -116,4 +116,13 @@ describe('locale message composition', () => {
       expect(titles.has(messages[locale].featureOffline.title), `${locale} titles vs offline`).toBe(false)
     }
   })
+
+  it('keeps every tank parameter label in all locales', () => {
+    // 配置器参数/俯仰表按 key 直出；缺 key 会把内部 key 显示给用户（新增键曾漏 en/ru）。
+    for (const locale of ['en', 'ru']) {
+      for (const key of Object.keys(zhBase.agentTanks.params)) {
+        expect(messages[locale].agentTanks.params[key], `${locale} agentTanks.params.${key}`).toBeTruthy()
+      }
+    }
+  })
 })

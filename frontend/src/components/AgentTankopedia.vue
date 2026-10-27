@@ -21,17 +21,25 @@ import { TYPE_CLS, normType, shellLabel, isPremiumShell, fmt, fmtNum, tankNation
 import {
   normalizeTankCache, parseTankopediaQuery, sameTankopediaQuery, withTankopediaState,
 } from '../utils/tankopediaQuery.js'
+import { RESEARCH_META, SKILL_IDS, loadTankModules, shellIconUrl } from '../utils/researchCatalog.js'
+import { computeCharacteristics, penetrationCoefficient } from '../replay-local/compute/characteristics'
+import {
+  buildComputeInput, decodeDevices, encodeDevices,
+  defaultShellIndex, findTankModules, paramGroups, resolveSetup,
+} from '../replay-local/compute/tankSetup'
 import PageHeader from './PageHeader.vue'
 import EmptyState from './EmptyState.vue'
 import AppButton from './AppButton.vue'
 import TankCatalogMenu from './TankCatalogMenu.vue'
+import TankConfigPanel from './TankConfigPanel.vue'
+import TankParamPanel from './TankParamPanel.vue'
 import { Motion } from 'motion-v'
 import { motionTransition } from '../shared/motion/motionPolicy'
 
 const VIEW = 'agent-tankopedia'
 /** 车种枚举 → i18n 键（AT-SPG 含连字符，不直接作键） */
 
-const { t, te } = useI18n()
+const { t, te, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
 
@@ -135,6 +143,11 @@ const gunElevation = computed(() => {
   return pitchLimits.value?.min != null ? -pitchLimits.value.min : null
 })
 
+// ---------- 配置器状态（URL 是唯一 owner） ----------
+/** 逐车模块数据（common/research/modules/{nation}.json，按 tankId 对号）。 */
+const modules = ref(null)
+let modulesRequest = 0
+
 async function loadDetail(id) {
   const request = ++detailRequest
   if (id == null) {
@@ -145,11 +158,14 @@ async function loadDetail(id) {
   detailState.value = 'loading'
   detailError.value = ''
   detail.value = null
+  modules.value = null
+  modulesRequest += 1
   try {
     const data = await fetchTankData(id)
     if (request !== detailRequest) return
     detail.value = data
     detailState.value = 'ready'
+    loadModules(id, data.nation, data.configs)
   } catch (e) {
     if (request !== detailRequest) return
     detailError.value = String(e?.message || e)
@@ -157,6 +173,201 @@ async function loadDetail(id) {
   }
 }
 watch(detailId, id => loadDetail(id))
+
+/**
+ * 只在 config 带 turret_local/gun_local（客户端对号字段）时加载模块：缺失即静态回退，
+ * 不猜模块组合（fail-closed），也不为旧资产包白拉 2 MB JSON。
+ */
+async function loadModules(id, nation, configs) {
+  const request = ++modulesRequest
+  modules.value = null
+  if (id == null || !nation || !Array.isArray(configs) || !configs.some(c => c?.turret_local != null)) return
+  try {
+    const data = await loadTankModules(nation)
+    if (request !== modulesRequest) return
+    modules.value = findTankModules(data, id)
+  } catch (e) {
+    if (request !== modulesRequest) return
+    console.warn('research modules unavailable:', e)
+    modules.value = null
+  }
+}
+
+/** URL + 客户端数据 → 选择态（炮塔/炮由 ?config= 唯一决定）。 */
+const setup = computed(() => resolveSetup({
+  detail: detail.value,
+  modules: modules.value,
+  url: urlState.value,
+  catalog: RESEARCH_META,
+}))
+
+const computeInput = computed(() => (setup.value.canConfigure && detail.value && modules.value
+  ? buildComputeInput({
+    detail: detail.value, modules: modules.value, selection: setup.value, catalog: RESEARCH_META,
+  })
+  : null))
+const characteristics = computed(() => (computeInput.value ? computeCharacteristics(computeInput.value) : null))
+/** 上一次渲染的特性（BK useDelta 同逻辑）：delta = 当前值 − 上一次值；初次加载无 delta。 */
+const previousCharacteristics = ref(null)
+/** 重置时清掉对比值：记录重置目标，特性第一次落到该目标时把 previous 对齐（delta=0）。 */
+let resetTargetKey = null
+const selectionKey = selection => JSON.stringify([
+  selection.config, selection.engine, selection.track,
+  selection.devices, selection.consumables, selection.provisions,
+  selection.skills, selection.camouflage,
+])
+watch(characteristics, (value, oldValue) => {
+  if (resetTargetKey != null) {
+    previousCharacteristics.value = selectionKey(setup.value) === resetTargetKey ? value : (oldValue || null)
+    resetTargetKey = null
+    return
+  }
+  previousCharacteristics.value = oldValue || null
+}, { flush: 'sync' })
+const paramTable = computed(() => (characteristics.value
+  ? paramGroups(characteristics.value, previousCharacteristics.value || {}, RESEARCH_META.paramsFormat)
+  : []))
+const deviceIds = computed(() => new Set(computeInput.value?.deviceIds || []))
+/** 弹种表：穿深/伤害/弹速随校准弹、超负荷、火药、钨芯联动（与引擎同一系数），并标记当前选中弹。 */
+const shellRows = computed(() => shells.value.map((shell, index) => {
+  const calibrated = deviceIds.value.has(103)
+  const penetrationCoefficientValue = penetrationCoefficient(shell.type, calibrated)
+  const near = shell.penetration == null ? null : shell.penetration * penetrationCoefficientValue
+  const farRaw = shell.penetration_far == null ? null : shell.penetration_far * penetrationCoefficientValue
+  const falloff = characteristics.value?._farPenetrationFalloffFactor ?? 1
+  return {
+    ...shell,
+    index,
+    selected: index === setup.value.shell,
+    label: shellLabel(shell) || normType(shell.type),
+    premium: isPremiumShell(shell),
+    iconUrl: shellIconUrl(shell.type),
+    range: shell.range ?? null,
+    maxAmmo: modules.value?.turrets?.[setup.value.turret]?.guns?.[setup.value.gun]?.stats?.maxAmmo ?? null,
+    explosionRadius: shell.explosion_radius ?? null,
+    tunedPenetration: near,
+    // 超负荷 107：远距穿透 = 近距 − (近距 − 校准后远距) × 0.4（piercingPenaltyFactor500m = -60）
+    tunedPenetrationFar: near == null || farRaw == null ? farRaw : near - (near - farRaw) * falloff,
+    tunedDamage: (shell.damage ?? 0) * (characteristics.value?._damageCoeff ?? 1),
+    tunedVelocity: shell.velocity == null ? null : shell.velocity * (characteristics.value?._shellVelocityFactor ?? 1),
+    // 钨芯穿甲弹的伤害/模块伤害系数（引擎同一系数，弹种表与 DPM 同源）
+    tunedModuleDamage: (shell.module_damage ?? 0) * (characteristics.value?._damageCoeff ?? 1),
+  }
+}))
+
+const moduleLang = computed(() => (locale.value === 'zh' ? 'zh-Hans' : 'en'))
+function moduleName(item) {
+  if (!item) return ''
+  return item[`name_${moduleLang.value}`] || item['name_zh-Hans'] || item.name_en || item.stem || ''
+}
+const currentTurret = computed(() => modules.value?.turrets?.[setup.value.turret] || null)
+const currentGun = computed(() => currentTurret.value?.guns?.[setup.value.gun] || null)
+const currentEngine = computed(() => modules.value?.engines?.[setup.value.engine] || null)
+const currentTrack = computed(() => modules.value?.chassis?.[setup.value.track] || null)
+
+/** 参数区火炮元信息：口径 + 循环类型（config 的 is_drum/is_burst 语义）。 */
+const gunMeta = computed(() => {
+  const config = curCfg.value
+  if (!config || !characteristics.value) return null
+  const type = config.is_drum ? 'autoreloader' : config.is_burst ? 'autoloader' : 'regular'
+  return { caliber: config.caliber ?? null, type }
+})
+
+/** 交互射界图数据：沿用上面 pitchLimits（当前配置 models.pb 原值）+ yaw_limits。 */
+const yawLimits = computed(() => curCfg.value?.yaw_limits || null)
+/**
+ * 射界图的有效俯仰修正：初始炮塔 pitch（models.pb 的 initial_turret_rotation，仅 4 辆
+ * 意系 AT-SPG 非零）+ 改进型垂直稳定器 122 的 +4° 仰 / +3° 俯。
+ * 图上 up/down 是带符号的：初始 pitch 对上是 −pitch、对下是 +pitch（BI 同口径）。
+ */
+const pitchBonus = computed(() => {
+  const initialPitch = Number(modules.value?.initialTurretRotation?.pitch) || 0
+  const hasStabilizer = deviceIds.value.has(122)
+  if (!hasStabilizer && !initialPitch) return null
+  let up = 0
+  let down = 0
+  if (hasStabilizer) {
+    const item = RESEARCH_META.devices.find(device => device.id === 122)
+    const params = item?.script?.params?.bonusValues
+    up = Number(params?.upperPitchLimitIncrease)
+    down = Number(params?.lowerPitchLimitIncrease)
+    if (!Number.isFinite(up) || !Number.isFinite(down)) return null
+  }
+  return { up: up - initialPitch, down: down + initialPitch }
+})
+
+/** 初始/顶级快捷：只切换模块（config/发动机/履带），保留装备与物品选择。 */
+function applyModulePreset(kind) {
+  writeSetup({
+    config: kind === 'stock' ? 0 : Math.max(0, cfgs.value.length - 1),
+    engine: kind === 'stock' ? 0 : Math.max(0, (modules.value?.engines?.length || 1) - 1),
+    track: kind === 'stock' ? 0 : Math.max(0, (modules.value?.chassis?.length || 1) - 1),
+  })
+}
+
+/** 选择写回 URL（replace）：全部配置器字段一份 owner，分享/返回可恢复。 */
+function writeSetup(patch) {
+  const next = { ...setup.value, ...patch }
+  // 换配置/换炮后旧弹种下标不再有意义：让 resolveSetup 重新取默认弹（URL 上移除 shell）
+  const configChanged = patch.config != null && patch.config !== setup.value.config
+  writeState({
+    config: next.config,
+    engine: next.engine,
+    track: next.track,
+    shell: configChanged ? null : next.shell,
+    dev: encodeDevices(next.devices),
+    cons: next.consumables,
+    prov: next.provisions,
+    skills: next.skills,
+    camo: next.camouflage,
+  })
+}
+
+function selectShell(index) {
+  // 默认弹不写进 URL（键缺省 = 自动取 AP/首个非金币弹）
+  const config = cfgs.value[setup.value.config]
+  writeSetup({ shell: index === defaultShellIndex(config) ? null : index })
+}
+
+function cycleSkill(id, maxLevel = false) {
+  const current = Number(setup.value.skills?.[id]) || 0
+  const next = maxLevel ? 7 : current >= 7 ? 0 : current + 1
+  const skills = { ...(setup.value.skills || {}) }
+  if (next > 0) skills[id] = next
+  else delete skills[id]
+  writeSetup({ skills })
+}
+
+function maxSkills() {
+  writeSetup({ skills: Object.fromEntries(SKILL_IDS.map(id => [id, 7])) })
+}
+
+function clearSkills() {
+  writeSetup({ skills: {} })
+}
+
+function resetSetup() {
+  const target = {
+    config: Math.max(0, cfgs.value.length - 1),
+    engine: Math.max(0, (modules.value?.engines?.length || 1) - 1),
+    track: Math.max(0, (modules.value?.chassis?.length || 1) - 1),
+    devices: decodeDevices(''),
+    consumables: [],
+    provisions: [],
+    skills: {},
+    camouflage: false,
+  }
+  resetTargetKey = selectionKey({ ...setup.value, ...target })
+  if (selectionKey(setup.value) === resetTargetKey) {
+    // 已经在重置目标：不产生特性变化，直接把对比基线对齐到当前值
+    previousCharacteristics.value = characteristics.value
+    resetTargetKey = null
+  }
+  writeSetup(target)
+}
+
+/** 装甲查看器入口的配置下标：配置器可用时以选择态为准，否则回落原 select。 */
+const configForArmor = computed(() => (setup.value.canConfigure ? setup.value.config : cfgIdx.value))
 
 // 列表在详情往返期间保持挂载：TankCatalogMenu 内部保存增量条数与搜索草稿
 //（组件卸载会清掉防抖 timer，详情期间提交的 q 也会丢）。直达详情时不提前挂载列表，
@@ -173,7 +384,7 @@ function open3d() {
   const dest = locationForView('agent-armor', route)
   router.push({
     path: dest.path,
-    query: { ...dest.query, view: 'agent-armor', tank: String(detailId.value), config: String(cfgIdx.value) },
+    query: { ...dest.query, view: 'agent-armor', tank: String(detailId.value), config: String(configForArmor.value) },
   })
 }
 
@@ -247,51 +458,63 @@ onMounted(() => {
           </div>
         </Motion>
 
-        <!-- 装甲查看器入口：装甲数值 / 热力 / 等效判定以查看器为准（唯一装甲事实源）；查看器匿名可用，入口对全员开放 -->
-        <section class="tp-card-section" data-testid="tank-open3d-card" data-tour="tankopedia-detail">
-          <h2 class="tp-section-title">{{ t('agentTanks.open3d_title') }}</h2>
-          <label v-if="cfgs.length > 1" class="tp-field tp-field-inline">
-            <span class="tp-field-label">{{ t('agentTanks.select_config') }}</span>
-            <select v-model.number="cfgIdx" data-testid="tank-config">
-              <option v-for="(c, i) in cfgs" :key="i" :value="i">{{ c.label }}<template v-if="c.turret_name && c.turret_name !== c.label"> ({{ c.turret_name }})</template></option>
-            </select>
-          </label>
-          <div>
-            <AppButton variant="primary" data-testid="tank-open3d" data-tour="tankopedia-armor" @click="open3d">
-              <Box :size="16" aria-hidden="true" />
-              {{ t('agentTanks.open3d') }}
-            </AppButton>
-          </div>
-          <p class="tp-muted">{{ t('agentTanks.open3d_hint') }}</p>
-        </section>
+        <!-- 工作台：左 = 模型入口 + 配置面板，右 = 参数区（BlitzKit 式两栏）。
+             参数卡片顺序：防护 → 机动 → 火力（火力卡内弹种选择置顶）。 -->
+        <div class="tp-workbench">
+          <div class="tp-workbench-left">
+          <section class="tp-card-section tp-model-card" data-testid="tank-open3d-card" data-tour="tankopedia-detail">
+            <h2 class="tp-section-title">{{ t('agentTanks.open3d_title') }}</h2>
+            <dl v-if="setup.canConfigure" class="tp-summary">
+              <div v-if="currentTurret"><dt>{{ t('agentTanks.configurator.turret') }}</dt><dd>{{ moduleName(currentTurret) }}</dd></div>
+              <div v-if="currentGun"><dt>{{ t('agentTanks.configurator.gun') }}</dt><dd>{{ moduleName(currentGun) }}</dd></div>
+              <div v-if="currentEngine"><dt>{{ t('agentTanks.configurator.engine') }}</dt><dd>{{ moduleName(currentEngine) }}</dd></div>
+              <div v-if="currentTrack"><dt>{{ t('agentTanks.configurator.track') }}</dt><dd>{{ moduleName(currentTrack) }}</dd></div>
+            </dl>
+            <label v-if="!setup.canConfigure && cfgs.length > 1" class="tp-field tp-field-inline">
+              <span class="tp-field-label">{{ t('agentTanks.select_config') }}</span>
+              <select v-model.number="cfgIdx" data-testid="tank-config">
+                <option v-for="(c, i) in cfgs" :key="i" :value="i">{{ c.label }}<template v-if="c.turret_name && c.turret_name !== c.label"> ({{ c.turret_name }})</template></option>
+              </select>
+            </label>
+            <div>
+              <AppButton variant="primary" data-testid="tank-open3d" data-tour="tankopedia-armor" @click="open3d">
+                <Box :size="16" aria-hidden="true" />
+                {{ t('agentTanks.open3d') }}
+              </AppButton>
+            </div>
+            <p class="tp-muted">{{ t('agentTanks.open3d_hint') }}</p>
+          </section>
 
-        <section class="tp-card-section">
-          <h2 class="tp-section-title">{{ t('agentTanks.shells') }}</h2>
-          <div class="tp-table-wrap">
-            <table class="tp-table">
-              <thead>
-                <tr>
-                  <th scope="col">{{ t('agentTanks.shell') }}</th>
-                  <th scope="col" class="is-num">{{ t('agentTanks.pen') }}</th>
-                  <th scope="col" class="is-num">{{ t('agentTanks.dmg') }}</th>
-                  <th scope="col" class="is-num">{{ t('agentTanks.pen_far') }}</th>
-                  <th scope="col" class="is-num">{{ t('agentTanks.velocity') }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(s, i) in shells" :key="i">
-                  <td><span class="tp-pill is-shell" :class="{ 'is-premium': isPremiumShell(s) }">{{ shellLabel(s) || normType(s.type) }}</span></td>
-                  <td class="is-num">{{ fmtNum(s.penetration) }}</td>
-                  <td class="is-num">{{ fmtNum(s.damage) }}</td>
-                  <td class="is-num">{{ fmtNum(s.penetration_far) }}</td>
-                  <td class="is-num">{{ fmtNum(s.velocity) }}</td>
-                </tr>
-              </tbody>
-            </table>
+          <TankConfigPanel
+            v-if="setup.canConfigure"
+            :detail="detail"
+            :modules="modules"
+            :selection="setup"
+            :catalog="RESEARCH_META"
+            @update="writeSetup"
+            @reset="resetSetup"
+            @preset="applyModulePreset"
+            @cycle-skill="cycleSkill"
+            @max-skills="maxSkills"
+            @clear-skills="clearSkills"
+          />
           </div>
-        </section>
 
-        <section class="tp-card-section">
+        <TankParamPanel
+          class="tp-workbench-right"
+          v-if="characteristics"
+          :groups="paramTable"
+          :current="characteristics"
+          :base="previousCharacteristics || {}"
+          :gun-meta="gunMeta"
+          :pitch-limits="pitchLimits"
+          :yaw-limits="yawLimits"
+          :pitch-bonus="pitchBonus"
+          :shells="shellRows"
+          @select-shell="selectShell"
+        />
+
+        <section v-else class="tp-card-section tp-workbench-right">
           <h2 class="tp-section-title">{{ t('agentTanks.mobility') }}</h2>
           <dl class="tp-stats">
             <div><dt>{{ t('agentTanks.hp') }}</dt><dd>{{ fmtNum(detail.hp, 0) }}</dd></div>
@@ -305,6 +528,40 @@ onMounted(() => {
             <div v-if="curCfg?.dpm != null"><dt>{{ t('agentTanks.dpm') }}</dt><dd>{{ fmt(curCfg.dpm, 0) }}</dd></div>
             <div v-if="curCfg?.aim_time != null"><dt>{{ t('agentTanks.aim_time') }}</dt><dd>{{ fmt(curCfg.aim_time, 1) }} s</dd></div>
           </dl>
+        </section>
+        </div>
+
+        <!-- 无模块数据的静态详情：保留只读弹种表（可配置时弹种表已并入火力卡） -->
+        <section v-if="!characteristics" class="tp-card-section">
+          <h2 class="tp-section-title">{{ t('agentTanks.shells') }}</h2>
+          <div class="tp-table-wrap">
+            <table class="tp-table">
+              <thead>
+                <tr>
+                  <th scope="col">{{ t('agentTanks.shell') }}</th>
+                  <th scope="col" class="is-num">{{ t('agentTanks.pen') }}</th>
+                  <th scope="col" class="is-num">{{ t('agentTanks.dmg') }}</th>
+                  <th scope="col" class="is-num">{{ t('agentTanks.pen_far') }}</th>
+                  <th scope="col" class="is-num">{{ t('agentTanks.velocity') }}</th>
+                  <th scope="col" class="is-num">{{ t('agentTanks.module_dmg') }}</th>
+                  <th scope="col" class="is-num">{{ t('agentTanks.normalization') }}</th>
+                  <th scope="col" class="is-num">{{ t('agentTanks.ricochet') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="s in shellRows" :key="s.index">
+                  <td><span class="tp-pill is-shell" :class="{ 'is-premium': s.premium }">{{ s.label }}</span></td>
+                  <td class="is-num">{{ fmtNum(s.tunedPenetration) }}</td>
+                  <td class="is-num">{{ fmtNum(s.tunedDamage, 0) }}</td>
+                  <td class="is-num">{{ fmtNum(s.tunedPenetrationFar) }}</td>
+                  <td class="is-num">{{ fmtNum(s.tunedVelocity) }}</td>
+                  <td class="is-num">{{ fmtNum(s.tunedModuleDamage, 0) }}</td>
+                  <td class="is-num">{{ fmtNum(s.normalization, 0) }}°</td>
+                  <td class="is-num">{{ fmtNum(s.ricochet, 0) }}°</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </section>
       </template>
     </template>
@@ -435,6 +692,22 @@ onMounted(() => {
 
 .tp-section-title { margin: 0; font: var(--type-h3); }
 
+/* 工作台：桌面左右两栏（模型/装甲入口 + 配置面板），窄屏纵向堆叠 */
+.tp-workbench { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: var(--space-4); align-items: start; }
+.tp-workbench-left { display: grid; gap: var(--space-4); align-content: start; min-inline-size: 0; }
+.tp-workbench-right { min-inline-size: 0; }
+.tp-model-card { align-content: start; }
+
+.tp-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+.tp-summary > div { padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); }
+.tp-summary dt { color: var(--color-text-secondary); font: var(--type-caption); }
+.tp-summary dd { margin: 0; font: var(--type-body); font-weight: 600; overflow-wrap: anywhere; }
+
 .tp-table-wrap { overflow-x: auto; }
 .tp-table { inline-size: 100%; border-collapse: collapse; font: var(--type-body); font-variant-numeric: tabular-nums; }
 .tp-table th { padding: var(--space-1) var(--space-2); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; text-align: start; white-space: nowrap; }
@@ -452,9 +725,10 @@ onMounted(() => {
 .tp-stats dt { color: var(--color-text-secondary); font: var(--type-caption); }
 .tp-stats dd { margin: 0; font: var(--type-h3); font-variant-numeric: tabular-nums; }
 
-/* 平板：详情头部封面缩小 */
+/* 平板：详情头部封面缩小；工作台改单列（配置面板在下） */
 @media (768px <= width < 1200px) {
   .tp-media-lg { flex-basis: 200px; inline-size: 200px; }
+  .tp-workbench { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* 手机：详情头部改为上下排列 */
@@ -463,5 +737,6 @@ onMounted(() => {
   .tp-detail-head { flex-direction: column; align-items: stretch; gap: var(--space-3); }
   .tp-media-lg { flex-basis: auto; inline-size: 100%; }
   .tp-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tp-workbench { grid-template-columns: minmax(0, 1fr); }
 }
 </style>
