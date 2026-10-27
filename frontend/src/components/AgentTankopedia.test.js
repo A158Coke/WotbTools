@@ -499,6 +499,17 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
     expect(router.currentRoute.value.query).toMatchObject({ config: '2', engine: '1', track: '1' })
   })
 
+  it('重置同时清空弹种选择（当前已是顶级配置时也不能保留 HE/金币弹）', async () => {
+    const { wrapper, router } = await mountAt({ tank: '999' })
+    await wrapper.find('[data-testid="tank-shell-1"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.shell).toBe('1')
+    await wrapper.find('[data-testid="tank-config-reset"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.shell).toBeUndefined()
+    expect(wrapper.find('[data-testid="tank-shell-0"]').classes()).toContain('is-on')
+  })
+
   it('坦克模块矩阵按 4 列逐行对齐（炮塔|火炮|发动机|履带）', async () => {
     const { wrapper } = await mountAt({ tank: '999' })
     const matrix = wrapper.find('.tp-module-matrix')
@@ -522,6 +533,10 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
     const moving = () => wrapper.find('[data-testid="tank-param-dispersionMoving"] .tp-param-value').text()
     const before = moving()
     expect(wrapper.findAll('.tp-skill-btn')).toHaveLength(20)
+    // 模板带 % 的 effects 是比例：0.15 → 15%，1.0 → 100%（不是 0.15% / 1%）
+    expect(wrapper.find('[data-testid="tank-skill-desperado"]').attributes('title')).toContain('15%')
+    expect(wrapper.find('[data-testid="tank-skill-desperado"]').attributes('title')).not.toContain('0.15%')
+    expect(wrapper.find('[data-testid="tank-skill-lucky_shot"]').attributes('title')).toContain('100%')
     await wrapper.find('[data-testid="tank-skill-smooth_driving"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query.skills).toBe('smooth_driving:1')

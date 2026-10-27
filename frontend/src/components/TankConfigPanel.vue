@@ -306,8 +306,9 @@ function skillText(item, field) {
 }
 
 /**
- * 客户端 effect 模板的占位符替换：`*PerLevel` 按满级 7 乘算（小数 → 百分比），
- * 其余计数/半径等原样；未提供的参数不显示（不猜）。数值全部来自 avatar.xml。
+ * 客户端 effect 模板的占位符替换：模板在占位符后带 `%` 时，effects 值是**比例**
+ * （0.15 → 15%，1.0 → 100%）；`*PerLevel` 再乘当前等级。其余计数/半径等原样；
+ * 未提供的参数不显示（不猜）。数值全部来自 avatar.xml。
  */
 function skillEffectText(item, level) {
   const effects = item?.effects || {}
@@ -317,9 +318,13 @@ function skillEffectText(item, level) {
       if (key === 'level') return `7${percent || ''}`
       const value = Number(effects[key])
       if (!Number.isFinite(value)) return ''
-      const rendered = key.endsWith('PerLevel')
-        ? Math.round(value * level * 1000) / 10
-        : (Number.isInteger(value) ? value : Math.round(value * 1000) / 1000)
+      const isPercent = percent === '%'
+      const scaled = value *
+        (isPercent ? 100 : 1) *
+        (key.endsWith('PerLevel') ? level : 1)
+      const rendered = isPercent
+        ? Math.round(scaled * 10) / 10
+        : (Number.isInteger(scaled) ? scaled : Math.round(scaled * 1000) / 1000)
       return `${rendered}${percent || ''}`
     })
     .trim() || skillText(item, 'tip')

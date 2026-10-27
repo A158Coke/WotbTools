@@ -351,6 +351,8 @@ function resetSetup() {
     config: Math.max(0, cfgs.value.length - 1),
     engine: Math.max(0, (modules.value?.engines?.length || 1) - 1),
     track: Math.max(0, (modules.value?.chassis?.length || 1) - 1),
+    // 重置也回到默认弹：否则当前已是顶级配置时 writeSetup 会保留上一发选择的 HE/金币弹。
+    shell: null,
     devices: decodeDevices(''),
     consumables: [],
     provisions: [],
