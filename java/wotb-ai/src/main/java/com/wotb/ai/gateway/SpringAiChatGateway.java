@@ -290,9 +290,10 @@ public class SpringAiChatGateway implements AiChatGateway {
                             classify(e), providerStatus(e), correlationId, e);
                     logProviderFailure(e, failure.code(), request.analysisMode(), correlationId);
                 } catch (final RuntimeException e) {
+                    final Integer providerStatus = nestedProviderStatus(e);
                     failure = new AiUpstreamException(
-                            "AI_UPSTREAM_UNAVAILABLE", null, correlationId, e);
-                    logProviderFailure(null, failure.code(), request.analysisMode(),
+                            "AI_UPSTREAM_UNAVAILABLE", providerStatus, correlationId, e);
+                    logProviderFailure(providerStatus, failure.code(), request.analysisMode(),
                             correlationId, e.getClass().getSimpleName());
                 } finally {
                     if (!usageRecorded) {
@@ -504,7 +505,7 @@ public class SpringAiChatGateway implements AiChatGateway {
                             "AI_TIMEOUT", null, correlationId, e), retryCount, request, metrics);
                 }
                 throw finishFailure(new AiUpstreamException(
-                        "AI_UPSTREAM_UNAVAILABLE", null, correlationId, e),
+                        "AI_UPSTREAM_UNAVAILABLE", nestedProviderStatus(e), correlationId, e),
                         retryCount, request, metrics);
             } finally {
                 if (receivedUsage.get() == null) {
@@ -956,6 +957,28 @@ public class SpringAiChatGateway implements AiChatGateway {
     private static Integer providerStatus(final OpenAIException error) {
         return error instanceof OpenAIServiceException serviceError
                 ? serviceError.statusCode() : null;
+    }
+
+    /**
+     * Recovers the provider HTTP status from an {@link OpenAIServiceException}
+     * wrapped by Spring AI / the SDK in a generic runtime exception. Deliberately
+     * scoped to the generic adapter boundary: {@link AiUpstreamException} keeps
+     * explicit status semantics so terminal AI_TIMEOUT / AI_CANCELLED
+     * reclassification never inherits an earlier provider response.
+     */
+    private static Integer nestedProviderStatus(final Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof OpenAIServiceException serviceError) {
+                return serviceError.statusCode();
+            }
+            final Throwable next = current.getCause();
+            if (next == current) {
+                return null;
+            }
+            current = next;
+        }
+        return null;
     }
 
     private void logProviderFailure(
