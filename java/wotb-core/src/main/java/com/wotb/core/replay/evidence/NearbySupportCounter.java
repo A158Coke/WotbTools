@@ -14,6 +14,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 局部支援计数（LOCAL_SUPPORT 的确定性基础）。
@@ -118,7 +119,7 @@ public final class NearbySupportCounter {
             if (team == null) {
                 continue;
             }
-            if (team == recorder.team()) {
+            if (Objects.equals(team, recorder.team())) {
                 observedFriendly++;
                 if (inRadius(recorder, vs, battle.mapName)) {
                     friendly++;

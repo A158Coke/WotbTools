@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Player 复盘 prompt 编排与摘要构建器。
@@ -53,12 +54,12 @@ final class PlayerSummaryBuilder {
     public static PreparedAiPrompt prepareFallback(final Battle battle,
                                                    final ReplayReconstruction recon,
                                                    final AllowedLanguage language) {
+        Objects.requireNonNull(battle, "battle");
         final List<KeyBattleEvent> keyEvents = buildDeathTimeline(battle);
         final String enemySection = EnemyLastKnownPositionsSection.renderPlayerSection(battle, recon);
         final String phaseSection = BattlePhaseTimelineSection.renderPlayerSection(buildFallbackPhases(battle));
         // 点数局势：fallback 无覆盖口径信号，伤害数字抑制（定性）；recon 缺失时仅击杀夺分时间线
-        final Integer recorderTeam = battle == null
-                ? null : PlayerSideResolver.resolveRecorderTeam(battle);
+        final Integer recorderTeam = PlayerSideResolver.resolveRecorderTeam(battle);
         final String pointsSection = recorderTeam == null ? ""
                 : PointsSituationEvidence.renderSection(
                         battle, recon, recorderTeam, true, "你的队伍", "敌方");

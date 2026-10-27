@@ -23,6 +23,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -32,6 +33,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 无 raw team、无裸秒数、人数不可算写未知、预算超限可省略且书签段完好。</p>
  */
 class BattlePhaseTimelineEvidenceTest {
+
+    @Test
+    void fallbackRequiresSettlementBattle() {
+        assertThrows(NullPointerException.class,
+                () -> PlayerReplayPromptBuilder.prepareFallback(null, null));
+    }
 
     private static final AiTokenEstimator ESTIMATOR = new ConservativeDeepSeekTokenEstimator();
     private static final String PLAYER_SECTION_HEADER = "阶段时间线（双方存活人数）";
