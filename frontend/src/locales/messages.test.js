@@ -125,4 +125,14 @@ describe('locale message composition', () => {
       }
     }
   })
+
+  it('describes parameter deltas against the previous rendered values', () => {
+    // BK useDelta：delta 不是相对空装备初始配置；文案必须与 AgentTankopedia 的 previous 基线一致。
+    expect(messages.zh.agentTanks.params.baseline_note).toContain('上一次')
+    expect(messages.en.agentTanks.params.baseline_note.toLowerCase()).toContain('previously')
+    expect(messages.ru.agentTanks.params.baseline_note.toLowerCase()).toContain('предыдущими')
+    for (const locale of ['zh', 'en', 'ru']) {
+      expect(messages[locale].agentTanks.params.baseline_note, `${locale} baseline_note`).not.toContain('stock configuration')
+    }
+  })
 })

@@ -1630,7 +1630,7 @@
     },
     "params": {
       "title": "Characteristics",
-      "baseline_note": "Deltas are relative to the stock configuration (no equipment, provisions or paint)",
+      "baseline_note": "Deltas compare with the previously rendered values; none on first load",
       "armor": "Armor",
       "turret": "Turret",
       "hull": "Hull",
