@@ -1,5 +1,7 @@
 package com.wotb.ai.gateway;
 
+import com.openai.errors.OpenAIServiceException;
+
 /**
  * 调用上游 AI 服务（DeepSeek）失败时抛出。
  * 由 AI HTTP 边界映射为稳定错误码，
@@ -30,7 +32,7 @@ public class AiUpstreamException extends RuntimeException {
     ) {
         super(code, cause);
         this.code = code;
-        this.providerStatus = providerStatus;
+        this.providerStatus = providerStatus != null ? providerStatus : nestedProviderStatus(cause);
         this.correlationId = correlationId;
     }
 
@@ -44,5 +46,23 @@ public class AiUpstreamException extends RuntimeException {
 
     public String correlationId() {
         return correlationId;
+    }
+
+    private static Integer nestedProviderStatus(final Throwable cause) {
+        Throwable current = cause;
+        while (current != null) {
+            if (current instanceof AiUpstreamException upstream && upstream.providerStatus() != null) {
+                return upstream.providerStatus();
+            }
+            if (current instanceof OpenAIServiceException serviceError) {
+                return serviceError.statusCode();
+            }
+            final Throwable next = current.getCause();
+            if (next == current) {
+                break;
+            }
+            current = next;
+        }
+        return null;
     }
 }
