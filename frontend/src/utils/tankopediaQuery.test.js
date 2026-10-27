@@ -12,7 +12,10 @@ import TANK_ALIASES from '../../../common/tank_aliases.json'
 
 describe('parseTankopediaQuery', () => {
   it('空 query 得到默认状态', () => {
-    expect(parseTankopediaQuery({})).toEqual({ q: '', tier: '', nation: '', type: '', sort: 'name', tank: null, config: null })
+    expect(parseTankopediaQuery({})).toEqual({
+      q: '', tier: '', nation: '', type: '', sort: 'name', tank: null, config: null,
+      engine: null, track: null, shell: null, dev: '', cons: null, prov: null, skills: {}, camo: false,
+    })
   })
 
   it('校验并回落非法值', () => {
@@ -29,6 +32,27 @@ describe('parseTankopediaQuery', () => {
     expect(state).toMatchObject({ q: 'is7', nation: 'ussr', tank: 7, config: 0 })
     expect(parseTankopediaQuery({ q: 'a'.repeat(200) }).q).toHaveLength(64)
   })
+
+  it('配置器键：下标 / 装备槽 / 物品表 / 涂装', () => {
+    expect(parseTankopediaQuery({
+      tank: '5', engine: '2', track: '1', shell: '1', dev: '01-1', cons: 'afterburning,berserk', prov: 'ration', skills: 'smooth_driving:7,camouflage:3', camo: '1',
+    })).toMatchObject({
+      engine: 2, track: 1, shell: 1, dev: '01-1', cons: ['afterburning', 'berserk'], prov: ['ration'], skills: { smooth_driving: 7, camouflage: 3 }, camo: true,
+    })
+  })
+
+  it('装备槽只保留 0/1/- 且最多 9 位；物品表去重、剔非法 stem', () => {
+    expect(parseTankopediaQuery({ tank: '5', dev: '0123456789xyz-' }).dev).toBe('01')
+    expect(parseTankopediaQuery({ tank: '5', cons: 'a,a,b,c,d,!!' }).cons).toEqual(['a', 'b', 'c', 'd'])
+    expect(parseTankopediaQuery({ tank: '5', cons: '' }).cons).toEqual([])
+    expect(parseTankopediaQuery({ tank: '5', camo: '0' }).camo).toBe(false)
+  })
+
+  it('配置器键只在详情态解析（列表态不保留别车残留）', () => {
+    expect(parseTankopediaQuery({ dev: '01', cons: 'a', camo: '1' })).toMatchObject({
+      shell: null, dev: '', cons: null, prov: null, camo: false,
+    })
+  })
 })
 
 describe('serializeTankopediaQuery', () => {
@@ -37,13 +61,23 @@ describe('serializeTankopediaQuery', () => {
   })
 
   it('往返保持一致', () => {
-    const query = { q: 'e100', tier: '10', nation: 'germany', type: 'heavyTank', sort: 'hp', tank: '9', config: '2' }
+    const query = {
+      q: 'e100', tier: '10', nation: 'germany', type: 'heavyTank', sort: 'hp', tank: '9', config: '2',
+      engine: '1', track: '0', shell: '1', dev: '01-1', cons: 'afterburning,berserk', prov: 'ration', skills: 'smooth_driving:7,camouflage:3', camo: '1',
+    }
     expect(serializeTankopediaQuery(parseTankopediaQuery(query))).toEqual(query)
   })
 
   it('config 只在详情态写出', () => {
     expect(serializeTankopediaQuery({ config: 2 })).toEqual({})
     expect(serializeTankopediaQuery({ tank: 3, config: 0 })).toEqual({ tank: '3', config: '0' })
+  })
+
+  it('配置器键：缺省不写；空物品表写成空值（区分“用户清空”与“默认表”）', () => {
+    expect(serializeTankopediaQuery({ tank: 3 })).toEqual({ tank: '3' })
+    expect(serializeTankopediaQuery({ tank: 3, dev: '', cons: null, prov: null, camo: false }))
+      .toEqual({ tank: '3' })
+    expect(serializeTankopediaQuery({ tank: 3, cons: [], prov: [] })).toEqual({ tank: '3', cons: '', prov: '' })
   })
 })
 
@@ -62,7 +96,10 @@ describe('sameTankopediaQuery / withTankopediaState', () => {
   })
 
   it('导出的键清单覆盖序列化的全部键', () => {
-    const all = serializeTankopediaQuery({ q: 'x', tier: 1, nation: 'a', type: 'b', sort: 'hp', tank: 1, config: 0 })
+    const all = serializeTankopediaQuery({
+      q: 'x', tier: 1, nation: 'a', type: 'b', sort: 'hp', tank: 1, config: 0,
+      engine: 0, track: 0, shell: 0, dev: '0', cons: [], prov: [], skills: { smooth_turn: 7 }, camo: true,
+    })
     expect(Object.keys(all).sort()).toEqual([...TANKOPEDIA_QUERY_KEYS].sort())
   })
 })
