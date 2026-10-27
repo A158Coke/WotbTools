@@ -41,6 +41,60 @@ dashboard 回答维护者的问题：谁使用了产品、打开了哪些功能�
 - 发送方只持有有界的内存队列；它不持久化访客身份或离线历史，也不重试失败的批量。离线、旧客户端、被阻止的 telemetry 与页面关闭都可能造成少计。不要把这些计数用于计费、安全审计或精确总体估计。
 - 前台活动是周期性的，因此最近几分钟可能不完整。请求按 backend 接收时刻记录；客户端 `occurred_at` 是诊断内容，不是可信的 Loki 时间戳。
 
+## 业务操作指标
+
+少数重要 business operation boundary 通过 Spring Boot / Micrometer `@Observed` 显式 opt-in；不使用包级 Service AOP，也不对 Controller 或 Repository 重复注解。当前观测的 operation 是 `wotb.creator.avatar.upload`（`CreatorAvatarService.upload()`）。
+
+Prometheus 以 `job=wotb-backend` 抓取 business-api 的 `/actuator/prometheus`。该 operation 的契约指标为：
+
+| Series | 类型 | 用途 |
+|---|---|---|
+| `wotb_creator_avatar_upload_seconds_bucket` | histogram bucket | `histogram_quantile` 计算 p95 |
+| `wotb_creator_avatar_upload_seconds_count` | counter | throughput、error rate |
+| `wotb_creator_avatar_upload_seconds_sum` | counter | 平均耗时/辅助校验 |
+
+`wotb_creator_avatar_upload_seconds_max` 与 `wotb_creator_avatar_upload_active_seconds` 是 Micrometer framework 自动产生的辅助 series，不是本 operation 的契约；查询 p95 时必须使用 `_bucket`。
+
+契约标签：
+
+| Label | 含义 |
+|---|---|
+| `error` | Micrometer 技术异常 simple name；success 为 `none` |
+| `error_code` | `none`、稳定 `ApiErrorCode.name()` 或 `unclassified`；由 `error.code` 规范化 |
+| `class` / `method` | `@Observed` 自动添加的固定 class/method |
+| `application` | 现有 common tag，值 `wotb-backend` |
+
+Prometheus target labels 另有 `job`、`service`、`instance`。`error_code` 是稳定业务 taxonomy；不要从 `error` 推断业务错误码，也不要新增 `result`/`status`/`outcome` 重复表达成功或失败。
+
+四类机器查询：
+
+```promql
+# throughput（每秒调用数）
+sum(rate(wotb_creator_avatar_upload_seconds_count{job="wotb-backend"}[5m]))
+
+# error rate
+sum(rate(wotb_creator_avatar_upload_seconds_count{job="wotb-backend",error_code!="none"}[5m]))
+/
+sum(rate(wotb_creator_avatar_upload_seconds_count{job="wotb-backend"}[5m]))
+
+# p95 duration
+histogram_quantile(
+  0.95,
+  sum by (le) (
+    rate(wotb_creator_avatar_upload_seconds_bucket{job="wotb-backend"}[5m])
+  )
+)
+
+# error.code breakdown
+sum by (error_code) (
+  rate(wotb_creator_avatar_upload_seconds_count{job="wotb-backend",error_code!="none"}[5m])
+)
+```
+
+Prometheus 只承载 bounded taxonomy。`ApiException.id`、`errorMsg`、`details`、UUID、user/account/creator/avatar 标识、object key、COS path、文件名/哈希、请求 path 中的标识、异常 message、stack trace、IP、Authorization 与 token 都不得进入 label；具体诊断留在 Loki 的既有安全日志。
+
+HTTP request 继续由 Spring MVC instrumentation 拥有，Controller 不额外加 `@Observed`；Repository/JPA 继续由框架 instrumentation 拥有。Spring AI provider observation 仍显式使用 `ObservationRegistry.NOOP`，本 operation 不改变该隐私边界。Prometheus 保留仍为 168h / 2GB；本 operation 不新增 alert/recording rules 或 dashboard。
+
 ## AI token 统计语义
 
 `ai_token_usage` 在上游尝试的 received-usage 时刻发出。`inputTokens`、`outputTokens` 与 `totalTokens` 是互相独立的 provider 值；reasoning/cache 计数器是其子集，不得再加到 total 上。失败/取消的调用会贡献实际收到的任何 usage。没有 usage 的 provider 调用发出 `usageMissing=1`；缺失不是零消耗的证据。
