@@ -555,6 +555,10 @@ async function runDesktopScenario(env, scenario) {
       `${label}: 沉浸态下外壳顶栏 / Tab 栏仍渲染（top=${!!layout.appTopBar} tab=${!!layout.appTabBar}）`)
     check(failures, layout.root && layout.root.top === 0 && Math.abs(layout.root.height - layout.viewport.height) <= 1,
       `${label}: armor-view 没有占满整屏（root=${JSON.stringify(layout.root)} viewport=${JSON.stringify(layout.viewport)}）`)
+    // 深链直达（本场景 goto 即无 history.back）也必须有应用内退出：返回键恒在，
+    // 无历史时点击回坦克百科（#767 复审 P2：沉浸态不得让站内导航全部消失）
+    check(failures, layout.back?.visible === true,
+      `${label}: 沉浸态缺少返回/退出入口（返回键未显示）`)
   }
   if (scenario.tabletLandscape) {
     check(failures, layout.shellChrome !== 'immersive', `${label}: 平板横屏不应申请沉浸态（dataset=${layout.shellChrome}）`)
