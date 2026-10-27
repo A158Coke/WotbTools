@@ -1,9 +1,8 @@
 # WoT-Blitz-Agent 回放数据能力契约（replay facets）v2
 
 > Producer: [`fanypcd/WoT-Blitz-Agent`](https://github.com/fanypcd/WoT-Blitz-Agent)（MIT）
-> · 状态：生产消费契约。WotbTools 当前通过 `deploy/agent/source.json` 锁定
->   上游 Release `v0.3.11` / commit `73ea422a774fb6af83eb75ff83b146ba7f5f4c55`，
->   并校验 Release WASM asset SHA-256；升级不得浮动跟随 upstream `main`。
+> · 状态：生产消费契约。WotbTools 当前通过 `deploy/agent/source.json` 锁定上游 Release、
+>   commit 与 Release WASM asset SHA-256；升级不得浮动跟随 upstream `main`。
 >   pin 的 artifact identity SSOT 始终是 `deploy/agent/source.json`，本文档只描述其形状与语义。
 >
 > **性质声明**：本文档规定预期的公开消费 DTO 形状与能力边界，
@@ -24,13 +23,15 @@ WotBTools
 
 - **名人堂（HoF）不是 Agent 公开能力**：v1 的 `HofFacet` 已从上游删除，
   `{playback, ai, hof}` giant envelope 已拆除——Agent 不感知消费方的下游产品。
-- **四个独立 WASM 入口**（浏览器通道；v0.3.1 起为四个）：
+- **五个独立 WASM 入口**（浏览器通道；v0.4.15 起为五个）：
   `parseResult(bytes, tankNamesJson?)` / `parsePlayback(bytes, tankNamesJson?)` /
-  `parseShotReplays(bytes, limitsJson?, shellsJson?)` / `parseAiReview(bytes)`，
-  不做双 API 兼容；只要 Result 时不得被迫物化 ~MB 级 Playback。
+  `parseShotReplays(bytes, limitsJson?, shellsJson?)` / `parseAiReview(bytes)` /
+  `parseAuthorInitialPosition(bytes)`，
+  不做双 API 兼容；只要 Result 时不得被迫物化 ~MB 级 Playback，也不得隐式执行
+  初始位姿 probe。
 - **AI 事件数据自 v0.3.1 起同时提供 WASM 入口**（`parseAiReview`，DTO 冻结 v1）；
   CLI/服务端通道（`facets --parts ai`）继续保留，两者逐字段同构。
-- 消费方接口：`frontend/src/api/agent-replay-facets.ts`（三能力装载 + 形状校验
+- 消费方接口：`frontend/src/api/agent-replay-facets.ts`（五类能力装载 + 形状校验
   + `projectHoF` 投影；样例锁定测试同目录）。
 
 ### 1a. 装载边界（artifact identity；content-addressed）
@@ -81,6 +82,25 @@ WotBTools
   `survived` 语义订正：`death_reason` 缺省 = 普通击毁 → `false`，整条结算缺失才缺省。
   这组字段与已退役的服务端 Java `ReplayParser` 的 `Battle` 模型逐字段一致（迁移期对比 23 场 / 322 名战斗者；回归基线 `frontend/src/replay-local/__golden__`）。
 - 样例：`samples/result.sample.json`（与 ai-review 样例同场，真实匿名回放经 v0.1.7 重导出）。
+
+## 3a. 录像者初始世界位姿（`parseAuthorInitialPosition`；独立轻量能力，上游 v0.4.15）
+
+- WASM 入口：`parseAuthorInitialPosition(new Uint8Array(fileBuffer))` →
+  `{ author_eid, clock, position }` 或 `null`。该能力没有 `version` 字段。
+- `author_eid` = 录像者战斗车辆 entity ID（正 u32）。
+- `clock` = 第一条可信 world-space Type10 position observation 的 replay clock（秒，有限非负）。
+- `position` = Agent 原始 replay 世界坐标 `[x, y, z]`：`x` / `z` 是水平面，`y` 是 elevation。
+  **不是** WotbTools map 坐标；消费方后续可转换 `mapX = replayX` / `mapY = replayZ`，
+  但本契约不做 map 语义匹配。
+- 语义 = **replay 中最早的可信录像者车辆世界位姿观测**，不是 exact spawn point；
+  不输出 NORTH / SOUTH / WEST / EAST，不做 spawn classification。
+- 证据不足 → `null`。消费边界 fail closed：缺字段、非有限数值、`position` 长度 ≠ 3、
+  `author_eid ≤ 0` 等形状漂移一律拒绝，**不得**把未知降级为 `[0,0,0]`。
+- 独立性：不构建 ReplayModel / PlaybackData / AiReviewFacet，不修改 `parseResult`；
+  `parseResult` 仍只读 meta + battle_results，不扫描 packet stream。该 probe 只有显式调用
+  `parseAgentAuthorInitialPositionFromBytes(bytes)` 才执行。
+- 消费方 wrapper：`parseAgentAuthorInitialPositionFromBytes(bytes)` →
+  `AgentAuthorInitialPosition | null`（`frontend/src/api/agent-replay-facets.ts`）。
 
 ## 4. 时序能力（PlaybackData）
 
