@@ -7,6 +7,7 @@ import com.wotb.web.util.CosImageStorage;
 import com.wotb.web.util.ImageValidation;
 import com.wotb.web.util.apierror.ApiErrorCode;
 import com.wotb.web.util.apierror.ApiException;
+import io.micrometer.observation.annotation.Observed;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,6 +28,7 @@ import java.util.UUID;
 /** Site-owned image ledger; a reservation is internal to one multipart save, never a user asset. */
 @Service
 public class CreatorAvatarService {
+    public static final String OBSERVATION_NAME = "wotb.creator.avatar.upload";
     public static final int MAX_EDGE = 256;
     public static final int MAX_BYTES = 512 * 1024;
     private static final Logger LOG = LoggerFactory.getLogger(CreatorAvatarService.class);
@@ -54,6 +56,7 @@ public class CreatorAvatarService {
     public record AvatarImage(byte[] bytes, String contentType, String hash) { }
     public boolean configured() { return storage.configured(); }
 
+    @Observed(name = OBSERVATION_NAME, contextualName = "creator avatar upload")
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public String upload(final MultipartFile file) {
         if (!configured()) { throw unavailable(); }
