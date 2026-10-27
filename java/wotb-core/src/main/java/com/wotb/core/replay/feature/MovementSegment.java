@@ -104,7 +104,7 @@ public record MovementSegment(
         this(startTime, endTime, type, rawStartPosition, rawEndPosition,
                 distance, averageSpeed, confidence,
                 (float) Type10MovementMath.speedKmh(averageSpeed),
-                MovementState.STATIONARY.equals(type)
+                MovementType.STATIONARY.equals(type)
                         ? MovementState.STATIONARY : MovementState.MOVING,
                 Float.NaN, Float.NaN, Float.NaN);
     }

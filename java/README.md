@@ -53,7 +53,7 @@ state 中独立验证，不访问 production state。
 
 ## 本地开发
 
-后端需要 JDK 25（parent Enforcer 限制 `[25,26)`）和 Maven 3.9.0 或更新的 Maven 3 版本（Maven 4 不在支持范围内）。Parent POM 会拒绝重复 dependency 声明，并在 `mvn test` 执行 advisory dependency analysis；analysis warnings 不会令构建失败，当前未启用 `dependencyConvergence`。本地完整 Docker Compose 入口已退役。需要验证 Keycloak realm 时运行
+后端需要 JDK 25（parent Enforcer 限制 `[25,26)`）和 Maven 3.9.0 或更新的 Maven 3 版本（Maven 4 不在支持范围内）。Parent POM 会拒绝重复 dependency 声明，并在 `mvn test` 执行 advisory dependency analysis；analysis warnings 不会令构建失败，当前未启用 `dependencyConvergence`。SpotBugs 4.10.5.0 在 `mvn verify` 分析 production classes：High finding 阻断，Medium/Low 仅报告，分析进程/执行失败会阻断；测试 class 排除。SpotBugs 对可恢复的单 class 扫描诊断会记录后继续。日常 targeted/module `test` 不执行 SpotBugs，两个 Java PR owner 使用 `verify`。本地完整 Docker Compose 入口已退役。需要验证 Keycloak realm 时运行
 `deploy/test-keycloak-tofu.sh`，它自己启动 disposable PostgreSQL/Keycloak 并使用 local
 OpenTofu state；不需要 production secrets。
 
@@ -61,6 +61,7 @@ OpenTofu state；不需要 production secrets。
 cd java
 set JAVA_HOME=<JDK 25 安装目录>
 mvn -s settings.xml test
+# PR 等价的完整 Java 验证另运行：mvn -s settings.xml verify
 ```
 
 前端：
@@ -228,7 +229,7 @@ pnpm run build
 - `java/settings.xml`：仓库跟踪的可移植本地 Maven settings；在 `java/` 目录执行时使用独立仓库 `java/.m2repo`，干净 clone 无需生成。
 - `java/settings-ci.xml`：GitHub Actions 专用 Maven settings，不配置 mirror，让 CI 按 Maven 默认 repository 规则解析；本地开发仍使用 `settings.xml`。
 - `java/settings-docker.xml`：Docker 构建用 Maven settings。
-- Parent POM 的 Enforcer 在构建时检查 Java/Maven 下限与重复 dependency 声明；Dependency Plugin 在 `test` 阶段报告 advisory analysis warnings，不会阻断构建。
+- Parent POM 的 Enforcer 在构建时检查 Java/Maven 下限与重复 dependency 声明；Dependency Plugin 在 `test` 阶段报告 advisory analysis warnings，不会阻断构建。SpotBugs Maven Plugin 4.10.5.0 在 `verify` 分析 production classes，High 阻断、Medium/Low 仅报告，分析进程/执行失败会阻断；test classes 不分析。可恢复的单 class 扫描诊断会记录后继续。
 - `frontend/pnpm-lock.yaml`：固定前端依赖版本（pnpm，安装策略见 `frontend/pnpm-workspace.yaml`）。
 
 默认端口在 `wotb-web/src/main/resources/application.yml`：

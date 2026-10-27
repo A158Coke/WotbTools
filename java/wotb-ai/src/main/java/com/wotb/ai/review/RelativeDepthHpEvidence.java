@@ -20,6 +20,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 相对纵深/血量测量（RELATIVE_DEPTH_HP_MEASUREMENT）确定性证据，团队 + 个人双路径。
@@ -215,7 +216,7 @@ final class RelativeDepthHpEvidence {
             targets.add(selfAccountId);
         } else {
             for (final Map.Entry<Long, Integer> entry : teamByAccount.entrySet()) {
-                if (entry.getValue() == perspectiveTeam) {
+                if (Objects.equals(entry.getValue(), perspectiveTeam)) {
                     targets.add(entry.getKey());
                 }
             }
