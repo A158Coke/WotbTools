@@ -508,6 +508,8 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
     await flushPromises()
     expect(router.currentRoute.value.query.shell).toBeUndefined()
     expect(wrapper.find('[data-testid="tank-shell-0"]').classes()).toContain('is-on')
+    // 重置目标必须包含弹种：否则 HE→AP 的差值会残留为红字
+    expect(wrapper.find('[data-testid="tank-param-gunCommonDamagePerMin"] .tp-param-delta').exists()).toBe(false)
   })
 
   it('坦克模块矩阵按 4 列逐行对齐（炮塔|火炮|发动机|履带）', async () => {
