@@ -72,7 +72,8 @@ public class AiReviewExecutionService {
                 cancellations.cancel(request.correlationId());
             } else {
                 LOGGER.warn(AiEventLog.line("ai_review_error", request.correlationId(), "feature", "ai_review",
-                        "errorCode", errorType, "exceptionType", error.getClass().getSimpleName()));
+                        "errorCode", errorType, "providerStatus", providerStatusOf(error),
+                        "exceptionType", error.getClass().getSimpleName()));
                 try {
                     emitter.send(SseEmitter.event().name("error")
                             .data(Map.of("id", request.correlationId(), "errorCode", errorType)));
@@ -116,6 +117,13 @@ public class AiReviewExecutionService {
             return "AI_PROMPT_MANDATORY_SECTION_TOO_LARGE";
         }
         return error instanceof ClientDisconnectedException ? "AI_CANCELLED" : "AI_UPSTREAM_UNAVAILABLE";
+    }
+
+    private static String providerStatusOf(final RuntimeException error) {
+        if (error instanceof AiUpstreamException upstream && upstream.providerStatus() != null) {
+            return String.valueOf(upstream.providerStatus());
+        }
+        return "N/A";
     }
 
     private static void send(final SseEmitter emitter, final AiCancellationToken cancellation,
