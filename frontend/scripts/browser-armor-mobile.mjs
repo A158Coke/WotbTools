@@ -570,9 +570,24 @@ async function runDesktopScenario(env, scenario) {
     `${label}: 桌面档设置面板默认应收起（visible=${layout.selectors?.visible}）`)
   check(failures, layout.toolsOpen === false && layout.tools?.ariaExpanded === 'false',
     `${label}: 桌面档默认收起状态不正确（is-tools-open=${layout.toolsOpen} aria=${layout.tools?.ariaExpanded}）`)
-  check(failures, layout.topBar && layout.root
-    && Math.abs((layout.topBar.top - layout.root.top) - 20) <= 2 && Math.abs((layout.topBar.left - layout.root.left) - 20) <= 2,
-    `${label}: 顶栏没有回到四角布局（top=${layout.topBar?.top} left=${layout.topBar?.left} root=${layout.root?.top}/${layout.root?.left}，期望相对 20/20）`)
+  // 返回键恒在（深链直达也必须有站内退出）：has-back 共存布局下顶栏为返回键让位——
+  // 或下移 44+8（base 规则，横屏 / 桌面档），或右移 44+8（并排变体）；两种都要求返回键
+  // 自身贴 armor-view 顶边 inset 20、顶栏与它保持 space-2 间距且不重叠。不再锁死旧的
+  // 「顶栏相对 20/20」单一期望（那会让恒在返回键的正常布局必然失败）。
+  const backRel = layout.back && layout.root
+    ? { top: layout.back.top - layout.root.top, left: layout.back.left - layout.root.left } : null
+  const barRel = layout.topBar && layout.root
+    ? { top: layout.topBar.top - layout.root.top, left: layout.topBar.left - layout.root.left } : null
+  const coexistVertical = layout.back && layout.topBar
+    && Math.abs((layout.topBar.top - layout.back.bottom) - 8) <= 2
+    && Math.abs(barRel.left - 20) <= 2
+  const coexistHorizontal = layout.back && layout.topBar
+    && Math.abs((layout.topBar.left - layout.back.right) - 8) <= 2
+    && Math.abs(barRel.top - 20) <= 2
+  check(failures, !!backRel && Math.abs(backRel.top - 20) <= 2 && Math.abs(backRel.left - 20) <= 2,
+    `${label}: 返回键没有贴 armor-view 左上 inset 20（back=${JSON.stringify(backRel)}）`)
+  check(failures, coexistVertical || coexistHorizontal,
+    `${label}: 顶栏未在返回键下方或右侧留出 space-2 间距（bar=${JSON.stringify(barRel)} back=${JSON.stringify(layout.back && { bottom: layout.back.bottom, right: layout.back.right })}）`)
   check(failures, layout.bottomBar && layout.root
     && Math.abs((layout.bottomBar.top - layout.root.top) - 20) <= 2 && Math.abs((layout.root.right - layout.bottomBar.right) - 20) <= 2,
     `${label}: 底栏没有回到右上角（top=${layout.bottomBar?.top} right=${layout.bottomBar?.right} root right=${layout.root?.right}，期望相对 20/20）`)
