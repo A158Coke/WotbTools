@@ -28,8 +28,8 @@ COPY common/tankopedia-tier1.json common/tankopedia-tier2.json common/tankopedia
 # 与车辆库同一机制按仓库相对路径放到 /common；空对象 `{}` 也必须在上下文里，否则 Vite 解析不到该 import。
 COPY common/tank_aliases.json /common/tank_aliases.json
 COPY common/assets /common/assets
-# 坦克配置器（research/）：模块/装备/补给/涂装数据 + 图标，Vite 构建期 import；
-# common/ 是唯一事实源，整目录按仓库相对路径放到 /common（契约测试逐项断言）。
+# 坦克配置器（research/）：仅全局图标集；所有数据（目录/物品/技能/参数/逐车模块）由
+# 资产包 research/** 提供。common/ 是图标唯一事实源，整目录按仓库相对路径放到 /common。
 COPY common/research /common/research
 # Agent WASM identity SSOT：Vite 构建期从这里取 ref/release 并注入 __AGENT_WASM_COMMIT__ /
 # __AGENT_WASM_RELEASE__（`frontend/src/docker-build-context.contract.test.js` 断言这条 COPY）。

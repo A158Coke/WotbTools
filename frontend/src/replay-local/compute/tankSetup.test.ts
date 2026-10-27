@@ -3,11 +3,12 @@
  * 锁定 (turret_local, gun_local) ↔ config 对号、装备槽编解码、默认消耗品与 delta 行契约。
  */
 import { describe, expect, it } from 'vitest'
-import DEVICES from '../../../../common/research/devices.json'
-import CONSUMABLES from '../../../../common/research/consumables.json'
-import PROVISIONS from '../../../../common/research/provisions.json'
-import FORMAT from '../../../../common/research/params/format.json'
-import CAMOUFLAGE from '../../../../common/research/camouflage.json'
+import DEVICES from './__fixtures__/research/devices.json'
+import CONSUMABLES from './__fixtures__/research/consumables.json'
+import PROVISIONS from './__fixtures__/research/provisions.json'
+import FORMAT from './__fixtures__/research/params/format.json'
+import CAMOUFLAGE from './__fixtures__/research/camouflage.json'
+import SKILLS from './__fixtures__/research/skills.json'
 import USSRS from './__fixtures__/modules/ussr.json'
 import {
   armorFactorFor,
@@ -38,6 +39,8 @@ const catalog = {
   consumables: CONSUMABLES.items,
   provisions: PROVISIONS.items,
   camouflage: { defaultCategory: CAMOUFLAGE.defaultCategory, categories: CAMOUFLAGE.categories },
+  skills: SKILLS.items,
+  crewSkillClasses: SKILLS.classes,
 }
 
 const MODULES = findTankModules(USSRS, 1)!

@@ -4,11 +4,11 @@
  * 上游 docs/wotbtools-research-loadout-plan.md §5）。改公式必须同时改两处并重生成。
  */
 import { describe, expect, it } from 'vitest'
-import CONSUMABLES from '../../../../common/research/consumables.json'
-import PROVISIONS from '../../../../common/research/provisions.json'
-import DEVICES from '../../../../common/research/devices.json'
-import CAMOUFLAGE from '../../../../common/research/camouflage.json'
-import SKILLS from '../../../../common/research/skills.json'
+import CONSUMABLES from './__fixtures__/research/consumables.json'
+import PROVISIONS from './__fixtures__/research/provisions.json'
+import DEVICES from './__fixtures__/research/devices.json'
+import CAMOUFLAGE from './__fixtures__/research/camouflage.json'
+import SKILLS from './__fixtures__/research/skills.json'
 import USSRS from './__fixtures__/modules/ussr.json'
 import EUROPEANS from './__fixtures__/modules/european.json'
 import GERMANY from './__fixtures__/modules/germany.json'

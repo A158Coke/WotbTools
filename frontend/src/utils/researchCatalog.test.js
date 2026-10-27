@@ -4,8 +4,13 @@
  */
 import { describe, expect, it } from 'vitest'
 import ICON_MANIFEST from '../../../common/research/icons/manifest.json'
+import DEVICES from '../replay-local/compute/__fixtures__/research/devices.json'
+import CONSUMABLES from '../replay-local/compute/__fixtures__/research/consumables.json'
+import PROVISIONS from '../replay-local/compute/__fixtures__/research/provisions.json'
+import SKILLS from '../replay-local/compute/__fixtures__/research/skills.json'
+import CAMOUFLAGE from '../replay-local/compute/__fixtures__/research/camouflage.json'
+import FORMAT from '../replay-local/compute/__fixtures__/research/params/format.json'
 import {
-  RESEARCH_META,
   availableItems,
   itemAvailableForTank,
   itemIconUrl,
@@ -14,6 +19,17 @@ import {
   shellIconUrl,
   skillIconUrl,
 } from './researchCatalog.js'
+
+const RESEARCH_META = {
+  devices: DEVICES.devices,
+  devicePresets: DEVICES.presets,
+  consumables: CONSUMABLES.items,
+  provisions: PROVISIONS.items,
+  paramsFormat: FORMAT.params,
+  camouflage: { defaultCategory: CAMOUFLAGE.defaultCategory, categories: CAMOUFLAGE.categories },
+  skills: SKILLS.items,
+  crewSkillClasses: SKILLS.classes,
+}
 
 describe('research icons', () => {
   it('装备/消耗品/补给图标全部解析到构建期 URL', () => {
@@ -70,9 +86,9 @@ describe('resolveDeviceIds', () => {
       { level: 0, group: 'attack', left: 'rammer', right: 'calibratedShells' },
       { level: 0, group: 'defence', left: 'protectedModules', right: null },
     ]
-    expect(resolveDeviceIds(slots, [0, 1])).toEqual([100])
-    expect(resolveDeviceIds(slots, [1, null])).toEqual([103])
-    expect(resolveDeviceIds(slots, [null, 1])).toEqual([])
+    expect(resolveDeviceIds(slots, [0, 1], DEVICES.devices)).toEqual([100])
+    expect(resolveDeviceIds(slots, [1, null], DEVICES.devices)).toEqual([103])
+    expect(resolveDeviceIds(slots, [null, 1], DEVICES.devices)).toEqual([])
   })
 })
 

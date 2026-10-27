@@ -5,6 +5,12 @@ import { ref } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 import AgentTankopedia from './AgentTankopedia.vue'
+import DEVICES from '../replay-local/compute/__fixtures__/research/devices.json'
+import CONSUMABLES from '../replay-local/compute/__fixtures__/research/consumables.json'
+import PROVISIONS from '../replay-local/compute/__fixtures__/research/provisions.json'
+import SKILLS from '../replay-local/compute/__fixtures__/research/skills.json'
+import CAMOUFLAGE from '../replay-local/compute/__fixtures__/research/camouflage.json'
+import FORMAT from '../replay-local/compute/__fixtures__/research/params/format.json'
 
 const data = vi.hoisted(() => ({
   fetchTankEncyclopedia: vi.fn(),
@@ -15,11 +21,23 @@ const data = vi.hoisted(() => ({
 vi.mock('../scene/agentData.js', () => data)
 
 /** 集成态模块夹具：只替换懒加载 chunk（目录/预设/过滤器仍用仓库真实数据）。 */
-const research = vi.hoisted(() => ({ loadTankModules: vi.fn() }))
+const research = vi.hoisted(() => ({ loadTankModules: vi.fn(), loadResearchCatalog: vi.fn() }))
 vi.mock('../utils/researchCatalog.js', async (importOriginal) => ({
   ...(await importOriginal()),
   loadTankModules: research.loadTankModules,
+  loadResearchCatalog: research.loadResearchCatalog,
 }))
+
+const CATALOG = {
+  devices: DEVICES.devices,
+  devicePresets: DEVICES.presets,
+  consumables: CONSUMABLES.items,
+  provisions: PROVISIONS.items,
+  paramsFormat: FORMAT.params,
+  camouflage: { defaultCategory: CAMOUFLAGE.defaultCategory, categories: CAMOUFLAGE.categories },
+  skills: SKILLS.items,
+  crewSkillClasses: SKILLS.classes,
+}
 
 function moduleFixture() {
   const gunStats = reload => ({
@@ -384,6 +402,7 @@ describe('AgentTankopedia', () => {
 describe('AgentTankopedia — 整合配置器（客户端模块数据）', () => {
   beforeEach(() => {
     research.loadTankModules.mockReset().mockResolvedValue({ tanks: { 'IS-7': moduleFixture() } })
+    research.loadResearchCatalog.mockReset().mockResolvedValue(CATALOG)
     data.fetchTankData.mockResolvedValue({
       tank_id: 999, name: 'IS-7', tier: 10, nation: 'ussr', type: 'heavyTank', hp: 2400,
       armor: { hull: { front: 150, sides: 100, rear: 60 }, turret: { front: 250, sides: 150, rear: 80 } },

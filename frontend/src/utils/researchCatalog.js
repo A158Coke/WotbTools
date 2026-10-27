@@ -1,36 +1,47 @@
 /**
- * 研发/配置数据面加载器（数据源 = 仓库 common/research/，由上游 WoT-Blitz-Agent 仓
- * tools/export_research_loadout.py 从本机客户端解包导出，meta.json.gameVersion 锚定）。
+ * 研发/配置数据面加载器（数据源 = 资产包 `research/`，由上游 WoT-Blitz-Agent 仓
+ * `tools/export_research_loadout.py` 从本机客户端解包导出，`meta.json.gameVersion` 锚定）。
  *
- * 职责：加载装备/物品目录与逐车模块数据、vehicleFilter 求值（include 各规则 AND、
+ * 所有配置器数据（装备/物品/技能/参数/涂装/逐车模块）都由资产包提供，`common/research/`
+ * 只保留全局共享的图标集。职责：加载目录、vehicleFilter 求值（include 各规则 AND、
  * 规则间 OR，exclude 命中即排除；extendedTags 全语义）、装备槽位 → 设备 id 解析。
  * 纯数据 + 纯函数；组件只消费，不做第二次解析。
  */
-import DEVICES_JSON from '../../../common/research/devices.json'
-import CONSUMABLES_JSON from '../../../common/research/consumables.json'
-import PROVISIONS_JSON from '../../../common/research/provisions.json'
-import PARAMS_FORMAT_JSON from '../../../common/research/params/format.json'
-import PARAMS_STRUCTURE_JSON from '../../../common/research/params/structure.json'
-import CAMOUFLAGE_JSON from '../../../common/research/camouflage.json'
-import SKILLS_JSON from '../../../common/research/skills.json'
 import { assetProvider } from '../scene/assetProvider.js'
 
-export const RESEARCH_META = Object.freeze({
-  gameVersion: DEVICES_JSON.meta.gameVersion,
-  devices: DEVICES_JSON.devices,
-  devicePresets: DEVICES_JSON.presets,
-  consumables: CONSUMABLES_JSON.items,
-  provisions: PROVISIONS_JSON.items,
-  paramsFormat: PARAMS_FORMAT_JSON.params,
-  paramsStructure: PARAMS_STRUCTURE_JSON,
-  camouflage: { defaultCategory: CAMOUFLAGE_JSON.defaultCategory, categories: CAMOUFLAGE_JSON.categories },
-  skills: SKILLS_JSON.items,
-  crewSkillClasses: SKILLS_JSON.classes,
-})
+/**
+ * 全局配置器目录（资产包 `/research/*.json`；不含逐车模块）。
+ * 缓存 Promise，同一页面生命周期只拉一次；失败清除后可重试。
+ */
+let catalogPromise = null
 
-/** 乘员技能 id（skills.json 的 20 项；训练资格按车型，效果全局生效）。 */
-export const SKILL_IDS = Object.freeze(Object.keys(SKILLS_JSON.items))
-
+export function loadResearchCatalog() {
+  if (catalogPromise) return catalogPromise
+  catalogPromise = Promise.all([
+    assetProvider.json('/research/devices.json'),
+    assetProvider.json('/research/consumables.json'),
+    assetProvider.json('/research/provisions.json'),
+    assetProvider.json('/research/params/format.json'),
+    assetProvider.json('/research/params/structure.json'),
+    assetProvider.json('/research/camouflage.json'),
+    assetProvider.json('/research/skills.json'),
+  ]).then(([devices, consumables, provisions, format, structure, camouflage, skills]) => Object.freeze({
+    gameVersion: devices.meta?.gameVersion || null,
+    devices: devices.devices,
+    devicePresets: devices.presets,
+    consumables: consumables.items,
+    provisions: provisions.items,
+    paramsFormat: format.params,
+    paramsStructure: structure,
+    camouflage: { defaultCategory: camouflage.defaultCategory, categories: camouflage.categories },
+    skills: skills.items,
+    crewSkillClasses: skills.classes,
+  })).catch((error) => {
+    catalogPromise = null
+    throw error
+  })
+  return catalogPromise
+}
 
 /**
  * 客户端图标（构建期打成一个 URL 表）：物品来自客户端 UI 样式表 bg-sprite 映射并裁成
@@ -90,17 +101,6 @@ export function shellIconUrl(type) {
   return type ? ICON_URLS.shells[`${type}.webp`] || null : null
 }
 
-const DEVICES_BY_STEM = new Map(DEVICES_JSON.devices.map(d => [d.stem, d]))
-const DEVICES_BY_ID = new Map(DEVICES_JSON.devices.map(d => [d.id, d]))
-
-export function deviceById(id) {
-  return DEVICES_BY_ID.get(id) || null
-}
-
-export function deviceByStem(stem) {
-  return DEVICES_BY_STEM.get(stem) || null
-}
-
 /**
  * 逐车模块数据（tank-specific，随**资产包** `/research/modules/{nation}.json` 发布）。
  *
@@ -133,14 +133,15 @@ export function scriptMap(items, stems) {
 }
 
 /** 装备槽位选择（0=左候选 / 1=右候选 / null=空）→ 已选设备 id 列表（空槽跳过）。 */
-export function resolveDeviceIds(presetSlots, choices) {
+export function resolveDeviceIds(presetSlots, choices, devices) {
   if (!Array.isArray(presetSlots)) return []
+  const byStem = new Map((devices || []).map(device => [device.stem, device]))
   const ids = []
   for (let i = 0; i < presetSlots.length; i += 1) {
     const choice = choices?.[i]
     if (choice !== 0 && choice !== 1) continue
     const stem = choice === 0 ? presetSlots[i].left : presetSlots[i].right
-    const device = stem ? DEVICES_BY_STEM.get(stem) : null
+    const device = stem ? byStem.get(stem) : null
     if (device) ids.push(device.id)
   }
   return ids
@@ -186,11 +187,4 @@ export function itemAvailableForTank(item, tankRef) {
  */
 export function availableItems(items, tankRef, { mode = 'common' } = {}) {
   return items.filter(item => !item.isAbility && (mode ? item.mode === mode : true) && itemAvailableForTank(item, tankRef))
-}
-
-/** 参数名/单位的本地化条目（strings/{lang}/research.json 由调用方按需动态 import）。 */
-export async function loadResearchStrings(locale) {
-  const lang = locale === 'ru' ? 'en' : locale === 'en' ? 'en' : 'zh-Hans'
-  const mod = await import(`../../../common/research/strings/${lang}/research.json`)
-  return mod.default.entries
 }
