@@ -308,6 +308,11 @@ describe('引擎输入与 delta 行', () => {
     // 单位/小数位来自客户端 format
     expect(rows.maxFrontSpeed.unit).toBe('KILOMETER_PER_HOUR')
     expect(rows.weight.digits).toBe(2)
+    // 客户端 format 缺 units 的时间/距离键由 UI 语义补充
+    expect(rows.gunAimingTime.unit).toBe('SECOND')
+    expect(rows.gunShellReloadTime.unit).toBe('SECOND')
+    expect(rows.circularVisionRadius.unit).toBe('METER')
+    expect(rows.gunShotDispersionRadius.unit).toBe('METER')
     // 没有值的参数不出现
     expect(rows.gunClipReloadTime).toBeUndefined()
     expect(rows.dispersionMoving.unit).toBeNull()

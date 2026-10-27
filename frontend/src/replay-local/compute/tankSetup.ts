@@ -482,6 +482,23 @@ const PARAM_FORMAT_OVERRIDES: Record<string, any> = {
   tankLength: { digits: 2, units: 'METER', biggerIsBetter: false },
   tankHeight: { digits: 2, units: 'METER', biggerIsBetter: false },
   tankVolume: { digits: 2, units: 'CUBIC_METER', biggerIsBetter: false },
+  // 客户端 hangarParams format 对这些键只给 digits/biggerIsBetter，单位由 UI 层
+  // 按参数语义补；否则参数区会显示“2.5”而没有秒/米。
+  gunAimingTime: { units: 'SECOND' },
+  gunShellReloadTime: { units: 'SECOND' },
+  gunClipReloadTime: { units: 'SECOND' },
+  gunClipShellReloadTime: { units: 'SECOND' },
+  gunClipBurstReloadTime: { units: 'SECOND' },
+  gunCommonReloadTime: { units: 'SECOND' },
+  timeBetweenPumpShots: { units: 'SECOND' },
+  reloadingShellTime0: { units: 'SECOND' },
+  reloadingShellTime1: { units: 'SECOND' },
+  reloadingShellTime2: { units: 'SECOND' },
+  reloadingShellTime3: { units: 'SECOND' },
+  reloadingShellTime4: { units: 'SECOND' },
+  reloadingShellTime5: { units: 'SECOND' },
+  circularVisionRadius: { units: 'METER' },
+  gunShotDispersionRadius: { units: 'METER' },
 }
 
 const PARAM_GROUP_ORDER = ['protectability', 'mobility', 'gun']
@@ -562,7 +579,8 @@ export function paramGroups(current: Record<string, any>, base: Record<string, a
     if (spec.key === 'gunTraverseSpeed' && !swapTraverse) continue
     const value = current?.[spec.key]
     if (value == null || typeof value !== 'number') continue
-    const fmt = format?.[spec.key] || PARAM_FORMAT_OVERRIDES[spec.key] || {}
+    const override = PARAM_FORMAT_OVERRIDES[spec.key] || {}
+    const fmt = format?.[spec.key] ? { ...override, ...format[spec.key] } : override
     // 客户端 format 对百分数不给 digits：统一按 1 位（隐蔽/起火几率的真实差值在 0.1 级）
     const digits = Number.isInteger(fmt.digits) ? fmt.digits : (fmt.units === 'PERCENT' ? 1 : 0)
     const baseValue = base?.[spec.key]
