@@ -126,6 +126,12 @@ payload 截断、或尾部剩余不足一个完整包时直接失败（fail clos
 关闭 AoI 观测段（`ReplayAoiLifecycle`），段间为 `UNKNOWN_AOI`。不得把 EntityLeave 当作死亡、也不得据此
 推断死亡时刻。
 
+**隐藏段零更新与重入快照（2026-10-26 逆向）**：Type4 关段后该实体的 type=7/8/10 流全部断流
+（实测 485/485 隐藏段零更新）——隐藏期间的掉血（盲炮等）没有 method1/prop3 事件；实体重入 AoI
+的 Type5 物化包 offset51 携带<b>物化时刻当前血量</b>（重广播语义，非开局值），是隐藏段掉血的唯一下游
+证据。上游 v0.4.12 起把它并入回放血量链 `vehicles[].hp`（v0.4.13 定稿合并顺序不变式：
+全部证据统一按时间合并、最后相邻同值去重），见 `contracts/agent/replay-facets-v2.md` §4m。
+
 ### Type 7：EntityProperty（generic envelope + verified property semantics）
 
 单个属性更新，负载为定长三段头 + 变长值：
