@@ -13,13 +13,10 @@ import { tankFuzzyScore } from '../scene/tankMeta.js'
 // 构建期相对路径 import，无后端接口、无第二资产源，Web 与 Android 内置前端同一份。
 // 契约与维护流程见 common/AGENTS.md 与 docs/architecture/tankopedia-reference-data.md。
 import TANK_ALIASES from '../../../common/tank_aliases.json'
+import { TANKOPEDIA_QUERY_KEYS } from '../shared/tankopediaQueryKeys.js'
 
+export { TANKOPEDIA_QUERY_KEYS }
 export const TANKOPEDIA_SORTS = Object.freeze(['name', 'tier', 'hp', 'pen'])
-/** 只属于坦克百科的 query 键：离开百科时由 navigation.locationForView 丢掉 */
-export const TANKOPEDIA_QUERY_KEYS = Object.freeze([
-  'q', 'tier', 'nation', 'type', 'sort', 'tank', 'config',
-  'engine', 'track', 'shell', 'dev', 'cons', 'prov', 'skills', 'camo',
-])
 const DEFAULT_SORT = 'name'
 /** 搜索词上限：防止超长 query 拖慢模糊匹配 */
 const MAX_QUERY_LENGTH = 64
