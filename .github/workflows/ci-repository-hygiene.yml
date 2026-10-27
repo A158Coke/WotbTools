@@ -1,0 +1,21 @@
+name: Repository hygiene
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  tracked-file-policy:
+    name: Tracked file policy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check tracked files
+        run: bash scripts/ci/check-repository-hygiene.sh
