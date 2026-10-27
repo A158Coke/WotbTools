@@ -260,6 +260,7 @@ Native Bearer runtime 请求头集合为 Authorization、Content-Type、Content-
 
 客户端语义（`MainActivity.onVersionReady`，读 `version.json`）：`installedVersionCode < minSupportedVersionCode` ⇒ **强制更新**屏（阻塞入口）；`installedVersionCode < latestVersionCode` ⇒ 仅可选更新提示；其余不动。
 
+- **3017007（3.17.7；2026-10-27 用户要求，随本候选 publish 生效）** —— 用户指令的 patch 强制更新例外延续：所有低于 3.17.7 的客户端必须升级，以取得隐藏段（盲炮）掉血在二次点亮兑现的血量链修复。目标为 `latestVersionCode = minSupportedVersionCode = 3017007`；设置仓库变量或完成 stage 均不代表该门槛已经对线上客户端生效。
 - **3015003（3.15.3；2026-10-20 用户要求，随本候选 publish 生效）** —— 本次是用户指令的 patch 强制更新例外：所有低于 3.15.3 的客户端必须升级，以取得共面续飞判定修复。目标为 `latestVersionCode = minSupportedVersionCode = 3015003`；设置仓库变量或完成 stage 均不代表该门槛已经对线上客户端生效。
 
 ## Rollout 与验证
