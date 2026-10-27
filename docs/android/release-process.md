@@ -260,6 +260,7 @@ Native Bearer runtime 请求头集合为 Authorization、Content-Type、Content-
 
 客户端语义（`MainActivity.onVersionReady`，读 `version.json`）：`installedVersionCode < minSupportedVersionCode` ⇒ **强制更新**屏（阻塞入口）；`installedVersionCode < latestVersionCode` ⇒ 仅可选更新提示；其余不动。
 
+- **3015003（3.17.8；2026-10-27 恢复）** —— 3.17.7 曾以 3017007 发布（非用户要求，用户仅要求 publish 最新版本）；同版本门槛不可就地改写（`prod_equal_conflict` fail-closed），故由 3.17.8 的清单撤回为 3015003：低于 3.15.3 的客户端仍强制更新，3.15.3 及以上恢复可选更新行为。
 - **3015003（3.15.3；2026-10-20 用户要求，随本候选 publish 生效）** —— 本次是用户指令的 patch 强制更新例外：所有低于 3.15.3 的客户端必须升级，以取得共面续飞判定修复。目标为 `latestVersionCode = minSupportedVersionCode = 3015003`；设置仓库变量或完成 stage 均不代表该门槛已经对线上客户端生效。
 
 ## Rollout 与验证
