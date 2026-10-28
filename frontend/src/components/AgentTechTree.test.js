@@ -251,20 +251,25 @@ describe('研发态（?tank=）', () => {
     expect(wrapper.find('[data-testid="research-node-engine-eng0"]').exists()).toBe(true)
   })
 
-  it('点击模块节点即安装：炮节点写对应 config；履带节点写 track 下标', async () => {
+  it('点击模块节点即安装（默认顶配时点初始炮/初始履带）；点已安装节点是 no-op', async () => {
     data.fetchTankData.mockResolvedValue(DETAIL)
     research.loadTankModules.mockResolvedValue({ tanks: { 'T-26': MODULES } })
     const { wrapper, router } = await mountView()
     await wrapper.find('[data-testid="techtree-cell-T-26"]').trigger('click')
     await flushPromises()
-    // 装 g1（炮塔 t0 的第二门炮）→ config 1
+    // 默认 = 末位配置/顶级履带：g1、track1 已安装
+    expect(wrapper.find('[data-testid="research-node-gun-g1"]').classes()).toContain('is-installed')
     await wrapper.find('[data-testid="research-node-gun-g1"]').trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.query.config).toBe('1')
-    // 装 track1 → track 1，config 保持
-    await wrapper.find('[data-testid="research-node-chassis-track1"]').trigger('click')
+    expect(router.currentRoute.value.query.config).toBeUndefined() // 已安装 → no-op
+    // 装初始炮 g0 → config 0
+    await wrapper.find('[data-testid="research-node-gun-g0"]').trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.query.track).toBe('1')
-    expect(router.currentRoute.value.query.config).toBe('1')
+    expect(router.currentRoute.value.query.config).toBe('0')
+    // 装初始履带 track0 → track 0，config 保持 0
+    await wrapper.find('[data-testid="research-node-chassis-track0"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.track).toBe('0')
+    expect(router.currentRoute.value.query.config).toBe('0')
   })
 })

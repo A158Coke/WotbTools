@@ -2,19 +2,19 @@
 /**
  * 单车研发界面（客户端 ModulesTree 的数据面复刻）。
  *
- * 布局（客户端 ModulesTree.yaml）：左侧 PreviousTanks（前驱车纵向列表）→ 当前车面板
- * （TankPanel：图标/名称/等级/兵种/当前搭载）→ 右侧模块网格。网格 = 客户端常量
- * 64×64 节点 + 104/97 pitch；**节点坐标由客户端模型计算，数据没有**，这里用
- * 「列 = 最长入边深度、行 = 模块族」的确定性推导，UI 明示「布局为复刻推导」。
+ * 结构（客户端 ModulesTree.yaml）：左列 PreviousTanks（前驱车）→ 当前车面板 →
+ * 右侧模块研发图。网格 = 客户端常量 64×64 节点 + 104/97 pitch；**节点坐标由客户端
+ * 模型计算、数据没有**，这里用 utils/techTreeLayout 的分层 DAG（列=最长入边路径、
+ * 行就着父节点放），UI 明示「布局为复刻推导」。下一级坦克是图里的节点，由解锁它的
+ * 模块连出去（与客户端同构）。
  *
- * 交互 = 客户端「点击节点 → 安装」（不提供配置下拉）：点炮塔/炮/发动机/履带节点即把
- * 该模块装到当前配置上（炮塔/炮经 `?config=` 对号，发动机/履带写引擎/履带下标）。
- * 不做研发/购买/解锁流程（2026-10-27 裁定：无账号状态），未装模块只显示解锁 XP。
+ * 交互 = 客户端「点击节点 → 安装」：炮塔/炮经 `?config=` 对号，发动机/履带写各自
+ * 下标；下一级坦克节点点击切车。不做研发/购买/解锁流程（无账号状态）。
  */
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeft, Check } from 'lucide-vue-next'
-import { tankImageUrl, loadTankIconCrops } from '../scene/agentData.js'
+import { loadTankIconCrops, tankImageUrl } from '../scene/agentData.js'
 import { tankIconCropTransform } from '../utils/tankIconCrop.js'
 import { moduleIconUrl } from '../utils/researchCatalog.js'
 import { moduleTreeLayout } from '../utils/techTreeLayout.js'
@@ -28,7 +28,7 @@ const props = defineProps({
   selection: { type: Object, default: null },
   /** 前驱车：[{ node, cost, name }]（科技树边 to=当前车；可能多父） */
   prevVehicles: { type: Array, default: () => [] },
-  /** 后继车：[{ stem, cost, name, tankId }]（模块 `<unlocks><vehicle>` 目标；网格右端节点） */
+  /** 后继车：[{ stem, cost, name, tankId, sourceModule, sourceKind }]（模块 `<unlocks><vehicle>` 目标） */
   nextVehicles: { type: Array, default: () => [] },
 })
 
@@ -44,7 +44,7 @@ function moduleName(item) {
 
 const layout = computed(() => {
   try {
-    return moduleTreeLayout(props.modules, props.selection)
+    return moduleTreeLayout(props.modules, props.selection, { nextVehicles: props.nextVehicles })
   } catch (error) {
     // 拓扑环等数据异常：整块降级为不可用（fail-closed），不渲染半残图。
     console.error('module tree layout failed:', error)
@@ -57,38 +57,23 @@ const PITCH_X = 104
 const PITCH_Y = 97
 
 const gridStyle = computed(() => ({
-  width: `${(layout.value.columns + (props.nextVehicles.length ? 1 : 0)) * PITCH_X}px`,
-  height: `${Math.max(layout.value.rows, props.nextVehicles.length) * PITCH_Y}px`,
+  width: `${layout.value.columns * PITCH_X}px`,
+  height: `${layout.value.rows * PITCH_Y}px`,
 }))
 
 function cellPos(node) {
   return { left: `${node.col * PITCH_X}px`, top: `${node.row * PITCH_Y}px` }
 }
 
-/** 解锁箭头：父子节点中心的连线（SVG，拓扑等价）。 */
+/** 连线（含「模块 → 下一级坦克」）：两端都取节点中心，SVG 拓扑等价。 */
 const edges = computed(() => {
   const l = layout.value
   if (!l) return []
   const byKey = new Map(l.nodes.map(n => [n.key, n]))
-  const out = []
-  for (const node of l.nodes) {
-    for (const u of Array.isArray(node.module?.unlocks) ? node.module.unlocks : []) {
-      if (!u?.stem || u.kind === 'vehicle') continue
-      const target = byKey.get(`${u.kind}:${u.stem}`)
-      if (!target) continue
-      out.push({
-        key: `${node.key}->${target.key}`,
-        from: node,
-        to: target,
-        cost: u.cost || null,
-      })
-    }
-  }
-  return out
+  return l.edges
+    .map(edge => ({ ...edge, from: byKey.get(edge.from), to: byKey.get(edge.to) }))
+    .filter(edge => edge.from && edge.to)
 })
-
-/** 后继车节点占网格最右一列（不参与模块深度计算）。 */
-const nextVehicleNodes = computed(() => props.nextVehicles.map((v, i) => ({ ...v, row: i })))
 
 const KIND_I18N = { chassis: 'track', turret: 'turret', gun: 'gun', engine: 'engine' }
 /** 模块类型图标（客户端 ModulesTechTree 图集）。 */
@@ -98,7 +83,15 @@ function nodeIcon(kind) {
   return moduleIconUrl(KIND_ICON[kind] || '')
 }
 
+function nodeLabelText(node) {
+  return node.kind === 'vehicle' ? (node.name || node.stem) : moduleName(node.module)
+}
+
 function nodeTitle(node) {
+  if (node.kind === 'vehicle') {
+    const cost = node.cost != null ? t('research.xp_cost', { xp: node.cost.toLocaleString() }) : ''
+    return [node.name || node.stem, t('research.next_tanks'), cost].filter(Boolean).join(' · ')
+  }
   const name = moduleName(node.module)
   const kindLabel = t(`research.module_${KIND_I18N[node.kind] || node.kind}`)
   const cost = node.cost != null ? t('research.xp_cost', { xp: node.cost.toLocaleString() }) : ''
@@ -132,6 +125,14 @@ const iconStyle = computed(() => {
   const transform = tankIconCropTransform(iconCrops.value?.[String(tankId.value)], ICON_ASPECT)
   return transform ? { transform } : null
 })
+
+function activate(node) {
+  if (node.kind === 'vehicle') {
+    if (node.tankId) emit('open-vehicle', node.tankId)
+    return
+  }
+  if (!node.installed) emit('install', node)
+}
 </script>
 
 <template>
@@ -173,7 +174,7 @@ const iconStyle = computed(() => {
       </div>
     </aside>
 
-    <!-- ============ 右：模块网格（点击即安装） ============ -->
+    <!-- ============ 右：研发图（模块 + 下一级坦克，点击安装/切车） ============ -->
     <div class="tr-main">
       <header class="tr-head">
         <h3 class="tr-title">{{ t('research.modules_title') }}</h3>
@@ -195,7 +196,7 @@ const iconStyle = computed(() => {
               </defs>
               <line
                 v-for="edge in edges"
-                :key="edge.key"
+                :key="`${edge.from.key}->${edge.to.key}`"
                 class="tr-edge"
                 :class="{ 'is-installed': edge.from.installed && edge.to.installed }"
                 :x1="edge.from.col * PITCH_X + CELL / 2"
@@ -204,47 +205,35 @@ const iconStyle = computed(() => {
                 :y2="edge.to.row * PITCH_Y + CELL / 2"
                 marker-end="url(#tr-arrow)"
               >
-                <title>{{ `${moduleName(edge.from.module)} → ${moduleName(edge.to.module)}` }}{{ edge.cost?.xp != null ? ` · ${t('research.xp_cost', { xp: edge.cost.xp.toLocaleString() })}` : '' }}</title>
+                <title>{{ `${nodeLabelText(edge.from)} → ${nodeLabelText(edge.to)}` }}{{ edge.cost?.xp != null ? ` · ${t('research.xp_cost', { xp: edge.cost.xp.toLocaleString() })}` : '' }}</title>
               </line>
             </svg>
-            <button
-              v-for="next in nextVehicleNodes"
-              :key="`next-${next.stem}`"
-              type="button"
-              class="tr-node is-next-tank"
-              :style="{ left: `${layout.columns * PITCH_X}px`, top: `${next.row * PITCH_Y}px` }"
-              :title="`${next.name || next.stem}${next.cost != null ? ` · ${t('research.xp_cost', { xp: next.cost.toLocaleString() })}` : ''}`"
-              :data-testid="`research-next-vehicle-${next.stem}`"
-              @click="next.tankId ? emit('open-vehicle', next.tankId) : null"
-            >
-              <span class="tr-node-pic">
-                <img v-if="next.tankId" :src="tankImageUrl(next.tankId)" alt="" loading="lazy">
-                <span v-else class="tr-node-fallback">{{ (next.name || next.stem).slice(0, 1) }}</span>
-              </span>
-              <span v-if="next.cost != null" class="tr-node-cost">{{ t('research.xp_short', { xp: next.cost.toLocaleString() }) }}</span>
-              <span class="tr-node-name">{{ next.name || next.stem }}</span>
-            </button>
             <button
               v-for="node in layout.nodes"
               :key="node.key"
               type="button"
               class="tr-node"
-              :class="{ 'is-installed': node.installed }"
+              :class="{
+                'is-installed': node.installed,
+                'is-next-tank': node.kind === 'vehicle',
+              }"
               :style="cellPos(node)"
               :title="nodeTitle(node)"
               :aria-label="nodeTitle(node)"
-              :aria-pressed="node.installed ? 'true' : 'false'"
+              :aria-pressed="node.kind === 'vehicle' ? undefined : (node.installed ? 'true' : 'false')"
+              :disabled="node.kind === 'vehicle' && !node.tankId"
               :data-testid="`research-node-${node.kind}-${node.stem}`"
-              @click="emit('install', node)"
+              @click="activate(node)"
             >
               <span class="tr-node-pic">
-                <img v-if="nodeIcon(node.kind)" :src="nodeIcon(node.kind)" alt="" width="40" height="40" loading="lazy">
-                <span v-else class="tr-node-fallback">{{ moduleName(node.module).slice(0, 1) }}</span>
+                <img v-if="node.kind === 'vehicle' && node.tankId" :src="tankImageUrl(node.tankId)" alt="" loading="lazy">
+                <img v-else-if="nodeIcon(node.kind)" :src="nodeIcon(node.kind)" alt="" width="40" height="40" loading="lazy">
+                <span v-else class="tr-node-fallback">{{ nodeLabelText(node).slice(0, 1) }}</span>
               </span>
-              <span v-if="node.level != null && node.kind !== 'gun'" class="tr-node-level">{{ node.level }}</span>
+              <span v-if="node.kind !== 'vehicle' && node.level != null && node.kind !== 'gun'" class="tr-node-level">{{ node.level }}</span>
               <span v-if="node.cost != null && !node.installed" class="tr-node-cost">{{ t('research.xp_short', { xp: node.cost.toLocaleString() }) }}</span>
               <span v-if="node.installed" class="tr-node-check" aria-hidden="true"><Check :size="12" /></span>
-              <span class="tr-node-name">{{ moduleName(node.module) }}</span>
+              <span class="tr-node-name">{{ nodeLabelText(node) }}</span>
             </button>
           </div>
         </div>
@@ -254,10 +243,11 @@ const iconStyle = computed(() => {
 </template>
 
 <style scoped>
-/* 客户端 ModulesTree 的横向结构：前驱车列表 → 当前车面板 → 模块网格 */
+/* 客户端 ModulesTree 的横向结构：前驱车 → 当前车面板 → 研发图。
+   左两栏固定窄宽，研发图吃掉全部剩余空间（不再被挤成需要左右拖的小窗）。 */
 .tr-panel {
   display: grid;
-  grid-template-columns: minmax(150px, 0.8fr) minmax(200px, 1fr) minmax(0, 2.6fr);
+  grid-template-columns: 190px 230px minmax(0, 1fr);
   gap: var(--space-4);
   padding: var(--space-4);
   border: 1px solid var(--color-border-subtle);
@@ -265,10 +255,11 @@ const iconStyle = computed(() => {
   background: var(--color-surface-1);
   box-shadow: var(--elevation-1);
   min-inline-size: 0;
-  align-items: start;
+  min-block-size: calc(100dvh - var(--header-h) - var(--tabbar-h) - 190px);
+  align-items: stretch;
 }
 
-.tr-side { display: grid; gap: var(--space-3); min-inline-size: 0; }
+.tr-side { display: grid; gap: var(--space-3); align-content: start; min-inline-size: 0; }
 .tr-side-title { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; }
 .tr-prev { display: grid; gap: var(--space-1); }
 .tr-prev-node {
@@ -328,21 +319,27 @@ const iconStyle = computed(() => {
 .tr-mounted dd { margin: 0; font: var(--type-caption); font-weight: 600; text-align: end; overflow-wrap: anywhere; }
 .tr-hint { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); text-align: center; }
 
-.tr-main { display: grid; gap: var(--space-2); min-inline-size: 0; }
+.tr-main { display: grid; grid-template-rows: auto auto 1fr; gap: var(--space-2); min-inline-size: 0; min-block-size: 0; }
 .tr-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; }
 .tr-title { margin: 0; font: var(--type-h3); }
 .tr-note { color: var(--color-text-secondary); font: var(--type-caption); }
 .tr-empty { margin: 0; color: var(--color-text-secondary); font: var(--type-body); }
 
-/* 网格：客户端 pitch 语义（列 104 / 行 97），小屏横向滚动 */
-.tr-scroll { overflow-x: auto; }
+/* 研发图区：占满剩余宽高，内容居中（图比容器小时不贴左上角留死白） */
+.tr-scroll {
+  display: grid;
+  place-content: safe center;
+  overflow: auto;
+  min-block-size: 0;
+  padding: var(--space-2);
+}
 .tr-grid { position: relative; }
 .tr-edges { position: absolute; inset: 0; pointer-events: none; }
 .tr-edge { stroke: var(--color-border-strong); stroke-width: 1.5; }
 .tr-edge.is-installed { stroke: var(--color-accent-text); }
 .tr-arrow-head { fill: var(--color-border-strong); }
 
-/* 节点 64×64（客户端 ModuleNode）；已安装 = 高亮 + 勾，可点击安装 */
+/* 节点 64×64（客户端 ModuleNode）；已安装 = 高亮 + 勾，点击安装 */
 .tr-node {
   position: absolute;
   display: grid;
@@ -363,8 +360,15 @@ const iconStyle = computed(() => {
   border-color: var(--color-accent);
   background: color-mix(in oklab, var(--color-accent) 16%, var(--color-surface-1));
 }
+/* 下一级坦克节点：客户端 ModulesTree 的 VEHICLE 节点（在网格里、由模块连出去） */
+.tr-node.is-next-tank {
+  border-color: var(--color-info);
+  background: color-mix(in oklab, var(--color-info) 12%, var(--color-surface-1));
+  color: var(--color-text-primary);
+}
+.tr-node.is-next-tank:disabled { cursor: default; opacity: 0.6; }
 
-.tr-node-pic { display: grid; place-items: center; inline-size: 32px; block-size: 32px; }
+.tr-node-pic { display: grid; place-items: center; inline-size: 32px; block-size: 32px; overflow: hidden; }
 .tr-node-pic img { inline-size: 100%; block-size: 100%; object-fit: contain; }
 .tr-node-fallback { font: var(--type-h3); }
 .tr-node-level {
@@ -401,8 +405,6 @@ const iconStyle = computed(() => {
   background: var(--color-accent);
   color: var(--color-canvas);
 }
-.tr-node.is-next-tank { border-color: var(--color-info); background: color-mix(in oklab, var(--color-info) 12%, var(--color-surface-1)); }
-.tr-node.is-next-tank .tr-node-pic img { object-fit: contain; }
 .tr-node-name {
   inline-size: 100%;
   overflow: hidden;
@@ -413,10 +415,11 @@ const iconStyle = computed(() => {
   align-self: end;
 }
 
-/* 平板/手机：客户端横向三段改为纵向堆叠（前驱车 → 当前车 → 网格） */
+/* 平板/手机：横向三段改为纵向堆叠（前驱车 → 当前车 → 研发图） */
 @media (width < 1200px) {
-  .tr-panel { grid-template-columns: minmax(0, 1fr); }
+  .tr-panel { grid-template-columns: minmax(0, 1fr); min-block-size: 0; }
   .tr-side { grid-template-columns: minmax(150px, 0.9fr) minmax(0, 1.1fr); align-items: start; }
+  .tr-scroll { place-content: start; }
 }
 @media (width < 768px) {
   .tr-side { grid-template-columns: minmax(0, 1fr); }

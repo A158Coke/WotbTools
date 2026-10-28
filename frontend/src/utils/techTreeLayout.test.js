@@ -110,29 +110,54 @@ describe('moduleTreeLayout（单车模块研发图，列=深度、行=模块族�
     const depth = Object.fromEntries(layout.nodes.map(n => [n.stem, n.col]))
     expect(depth.track0).toBe(0)
     expect(depth.track1).toBe(1)
-    expect(depth.L11).toBe(0)
-    expect(depth.F34).toBe(1)
-    expect(depth.ZiS4).toBe(2)
+    // 炮挂在所属炮塔下：L11 = 炮塔深度 + 1（不再是第 0 列的孤立根）
+    expect(depth.t0).toBe(0)
+    expect(depth.L11).toBe(1)
+    expect(depth.F34).toBe(2)
+    expect(depth.ZiS4).toBe(3)
     // gun 出现在两个炮塔但网格里只有一份
     expect(layout.nodes.filter(n => n.stem === 'L11')).toHaveLength(1)
     expect(layout.hasChain).toBe(true)
-    // vehicle 目标单列：两炮塔的 F34 各带一条 → 汇总为 MT25（成本取最小 31000）
+    // vehicle 目标单列：汇总为 MT25（含解锁来源，供页面把边接到图上）
     expect(layout.nextVehicles).toEqual([
       { stem: 'MT25', cost: { xp: 31000 }, sourceModule: 'F34', sourceKind: 'gun' },
     ])
+    expect(layout.nodes.some(n => n.kind === 'vehicle')).toBe(false) // 未传 nextVehicles 时不造节点
   })
 
-  it('行 = 模块族（chassis/turret/gun/engine 顺序固定），入边成本取最小', () => {
+  it('分层 DAG：炮就着自己的炮塔放（不按模块族强行分行），入边成本取最小', () => {
     const layout = moduleTreeLayout(modules)
-    const rowOf = Object.fromEntries(layout.nodes.map(n => [n.stem, n.row]))
-    expect(rowOf.track0).toBe(rowOf.track1) // chassis 同行
-    expect(rowOf.t0).toBe(rowOf.t1)
-    expect(rowOf.L11).toBe(rowOf.F34)
-    expect(rowOf.track0).toBeLessThan(rowOf.t0)
-    expect(rowOf.t0).toBeLessThan(rowOf.L11)
-    expect(rowOf.L11).toBeLessThan(rowOf.eng0)
+    const at = key => layout.nodes.find(n => n.key === key)
+    // 底盘链同一行（无分支的长链不跳行）
+    expect(at('chassis:track0').row).toBe(at('chassis:track1').row)
+    // 炮与它的炮塔相邻列、行不强制同族（这正是客户端拓扑排布）
+    expect(at('gun:L11').col).toBe(at('turret:t0').col + 1)
+    // 引擎是另一条根分支，行与底盘/炮塔不同
+    expect(at('engine:eng0').col).toBe(0)
     // F34 的入边：L11 → F34 有 2000/2200 两条（数值独立），显示最小
-    expect(layout.nodes.find(n => n.stem === 'F34').cost).toBe(2000)
+    expect(at('gun:F34').cost).toBe(2000)
+    // 每列不重叠
+    const used = new Set()
+    for (const n of layout.nodes) {
+      const slot = `${n.col},${n.row}`
+      expect(used.has(slot)).toBe(false)
+      used.add(slot)
+    }
+  })
+
+  it('下一级坦克是图里的节点，由解锁它的模块连出去（客户端同构）', () => {
+    const layout = moduleTreeLayout(modules, null, {
+      nextVehicles: [{ stem: 'MT25', name: 'MT-25', tankId: 2 }],
+    })
+    const vehicle = layout.nodes.find(n => n.key === 'vehicle:MT25')
+    expect(vehicle).toBeTruthy()
+    expect(vehicle.kind).toBe('vehicle')
+    expect(vehicle.tankId).toBe(2)
+    // 边来自解锁它的炮（F34 的 vehicle 边），且位于炮的右侧一列
+    const edge = layout.edges.find(e => e.to === 'vehicle:MT25')
+    expect(edge.from).toBe('gun:F34')
+    const source = layout.nodes.find(n => n.key === edge.from)
+    expect(vehicle.col).toBe(source.col + 1)
   })
 
   it('installed 按 stem 对号（不按下标）：当前搭载的炮塔/炮/发动机/履带', () => {

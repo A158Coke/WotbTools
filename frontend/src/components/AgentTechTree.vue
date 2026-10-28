@@ -307,6 +307,8 @@ const nextVehicles = computed(() => {
       cost: Number(v.cost?.xp) || null,
       tankId: node?.tankId ?? null,
       name: node ? nameOf(node) : null,
+      sourceModule: v.sourceModule,
+      sourceKind: v.sourceKind,
       node: node || null,
     }
   })
@@ -352,6 +354,7 @@ function installModule(node) {
 <template>
   <section class="techtree" data-testid="techtree">
     <PageHeader
+      v-if="researchId == null"
       :title="t('research.title')"
       :description="t('research.hint')"
     >
@@ -366,13 +369,6 @@ function installModule(node) {
 
     <!-- ================= 研发态（?tank=） ================= -->
     <template v-if="researchId != null">
-      <div class="tt-nav">
-        <AppButton variant="ghost" size="sm" data-testid="techtree-back" @click="backToTree">
-          <ArrowLeft :size="16" aria-hidden="true" />
-          {{ t('research.back_tree') }}
-        </AppButton>
-      </div>
-
       <p v-if="detailState === 'loading'" class="tt-status" role="status">{{ t('agentTanks.loading') }}</p>
       <EmptyState
         v-else-if="detailState === 'error'"
@@ -389,12 +385,15 @@ function installModule(node) {
       </EmptyState>
 
       <template v-else-if="detail">
-        <header class="tt-research-bar">
-          <button type="button" class="tt-link-chip" data-testid="techtree-open-detail" @click="openDetail">
+        <div class="tt-nav">
+          <AppButton variant="ghost" size="sm" data-testid="techtree-back" @click="backToTree">
+            <ArrowLeft :size="16" aria-hidden="true" />
+            {{ t('research.back_tree') }}
+          </AppButton>
+          <AppButton variant="ghost" size="sm" data-testid="techtree-open-detail" @click="openDetail">
             {{ t('research.open_detail') }}
-          </button>
-          <span class="tt-research-name">{{ detail.name }}</span>
-        </header>
+          </AppButton>
+        </div>
 
         <TankResearchPanel
           v-if="modules"
@@ -700,14 +699,6 @@ function installModule(node) {
 
 /* ---------- 研发态 ---------- */
 .tt-nav { display: flex; }
-.tt-research-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-}
-.tt-research-name { font: var(--type-h3); }
-
 /* 手机：头部纵向排列，网格横向滚动不变 */
 @media (width < 768px) {
   .techtree { gap: var(--space-3); padding-block-start: var(--space-4); }
