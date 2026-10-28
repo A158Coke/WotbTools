@@ -138,30 +138,6 @@ const rulerStyle = computed(() => ({
 }))
 
 /**
- * 金币车带（客户端 PremiumSection / `premiumRows`）：数据事实 = premium/collector 车放在
- * **最小 y 行**（ussr y=2、germany y=1-2、usa y=1、uk y=2），即树的最上方；客户端把带子
- * 画在树的顶部、标签是其下缘的分隔（TANK_TREE_PREMIUM_VEHICLES_LABEL + 96px 渐变底）。
- * 这里按「从最小 y 起连续含金币车的行数」取高度——不按 `premiumRows` 硬套，
- * 避免把紧邻的常规线（如 ussr y=3 的 SU-152 线）涂进带里。
- */
-const premiumBand = computed(() => {
-  const g = grid.value
-  if (!g || !g.rows.length) return null
-  let rows = 0
-  for (const y of g.rows) {
-    const hasPremium = [...g.cells.values()].some(node => {
-      if (node.y !== y) return false
-      const info = summaryOf(node)
-      return !!(info?.is_premium || info?.is_collector)
-    })
-    if (!hasPremium) break
-    rows += 1
-  }
-  if (!rows) return null
-  return { rows, height: rows * CELL_H, width: g.columns.length * CELL_W }
-})
-
-/**
  * 客户端连线几何（TankCell/Lines{mask} 提取）：出线 = 源格右侧 20px（RightHLine
  * 19.5px + 0.5 边距）；跨行干线骑在列边界（VL/VR 在 ±0.5px）；入线到目标格内 13px
  * （LeftHLine 13.5px），箭头即 LeftCenterArrow @13px。同行相邻 = 直线。
@@ -470,7 +446,11 @@ function installModule(node) {
               :key="key"
               type="button"
               class="tt-cell"
-              :class="{ 'is-preview': node.preview }"
+              :class="{
+                'is-preview': node.preview,
+                'is-premium': summaryOf(node)?.is_premium,
+                'is-collector': !summaryOf(node)?.is_premium && summaryOf(node)?.is_collector,
+              }"
               :style="{ gridColumn: String(grid.colIndex.get(node.x) + 1), gridRow: String(grid.rowIndex.get(node.y) + 1) }"
               :data-testid="`techtree-cell-${node.stem}`"
               :aria-label="`${nameOf(node) || node.stem} · ${t('agentTanks.tier_n', { tier: node.tier })}`"
@@ -484,22 +464,11 @@ function installModule(node) {
                 <span class="tt-card-name">{{ nameOf(node) || node.stem }}</span>
                 <span class="tt-card-meta">
                   <span class="tt-pill">{{ romanLevel(node.tier) }}</span>
-                  <span v-if="summaryOf(node)?.is_premium" class="tt-pill is-premium">{{ t('agentTanks.premium') }}</span>
                   <span v-if="node.preview" class="tt-pill is-preview">{{ t('research.preview') }}</span>
                 </span>
                 <span v-if="costByStem.get(node.stem) != null" class="tt-card-cost">{{ t('research.xp_short', { xp: formatXpCompact(costByStem.get(node.stem)) }) }}</span>
               </span>
             </button>
-            <!-- 金币车带（顶部覆盖，客户端 PremiumSection 同构；premium 车本身就在这几行里） -->
-            <div
-              v-if="premiumBand"
-              class="tt-premium"
-              :style="{ height: `${premiumBand.height}px`, inlineSize: `${premiumBand.width}px` }"
-              data-testid="techtree-premium-band"
-              aria-hidden="true"
-            >
-              <span class="tt-premium-label">{{ t('research.premium_band') }}</span>
-            </div>
             <span
               v-for="node in grid.pending"
               :key="`pending-${node.stem}`"
@@ -562,30 +531,6 @@ function installModule(node) {
 .tt-edge { fill: none; stroke: var(--color-border-strong); stroke-width: 1.5; }
 .tt-arrow-head { fill: var(--color-border-strong); }
 
-/* PREMIUM 带（客户端 PremiumSection 在树**顶部**）：从网格顶边覆盖前 N 行，
-   下缘一条 96px 渐变分隔 + 左下角标签，与下方研发线分开。pointer-events:none
-   保证金币车卡片本身仍可点击。 */
-.tt-premium {
-  position: absolute;
-  inset-block-start: 0;
-  inset-inline-start: 0;
-  display: flex;
-  align-items: flex-end;
-  padding: var(--space-1) var(--space-2);
-  background:
-    linear-gradient(to top, color-mix(in oklab, var(--color-warning) 10%, transparent), transparent) bottom / 100% 96px no-repeat,
-    color-mix(in oklab, var(--color-warning) 4%, transparent);
-  border-block-end: 1px solid color-mix(in oklab, var(--color-warning) 22%, transparent);
-  pointer-events: none;
-}
-.tt-premium-label {
-  color: var(--color-warning);
-  font: var(--type-caption);
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
 /* 等级条（客户端 LevelCell 216×24，罗马数字，吸底随内容横向滚动） */
 .tt-ruler {
   position: sticky;
@@ -628,6 +573,10 @@ function installModule(node) {
   background: var(--color-surface-1);
 }
 .tt-cell:hover .tt-card { border-color: var(--color-border-strong); }
+/* 坦克类别只由卡片边框表达（用户 2026-10-27）：金币 = 金、收藏 = 蓝，不另出带子/徽标。
+   与选择器卡片同口径（TankCatalogMenu 的 .tp-card.is-premium/.is-collector）。 */
+.tt-cell.is-premium .tt-card { border-color: color-mix(in oklab, var(--color-warning) 45%, var(--color-border-subtle)); }
+.tt-cell.is-collector .tt-card { border-color: color-mix(in oklab, var(--color-info) 55%, var(--color-border-subtle)); }
 .tt-cell.is-preview .tt-card { border-style: dashed; border-color: color-mix(in oklab, var(--color-warning) 55%, var(--color-border-subtle)); }
 .tt-cell.is-pending { cursor: default; }
 .tt-card.is-placeholder {
@@ -694,7 +643,6 @@ function installModule(node) {
   font-weight: 600;
   white-space: nowrap;
 }
-.tt-pill.is-premium { background: color-mix(in oklab, var(--color-warning) 16%, var(--color-surface-1)); color: var(--color-warning); }
 .tt-pill.is-preview { background: color-mix(in oklab, var(--color-info) 14%, var(--color-surface-1)); color: var(--color-info); }
 .tt-pill.is-tier { background: color-mix(in oklab, var(--color-accent) 14%, var(--color-surface-1)); color: var(--color-accent-text); }
 

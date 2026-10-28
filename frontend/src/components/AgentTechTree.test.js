@@ -148,27 +148,29 @@ describe('树态', () => {
     expect(ruler[10].text()).toBe('XI')
   })
 
-  it('金币车带在树**顶部**：覆盖最小 y 起连续含金币车的行，标签在带内', async () => {
-    // 数据事实：premium 车放最小 y 行（ussr y=2）。缓存里把 tank 1 标成金币车。
-    data.fetchTankEncyclopedia.mockResolvedValueOnce({
-      1: { name: 'T-26', tier: 1, is_premium: true },
-      2: { name: 'MT-25', tier: 6 },
-    })
+  it('金币车只由卡片边框标记（金）：不渲染金币车带、「高级」徽标', async () => {
     const { wrapper } = await mountView()
-    const band = wrapper.find('[data-testid="techtree-premium-band"]')
-    expect(band.exists()).toBe(true)
-    // 高度 = 1 行 × 96（只有 y=5 这一行含金币车，y=9 不含 → 不扩到两行）
-    expect(band.attributes('style')).toContain('height: 96px')
-    expect(band.text()).toContain('research.premium_band')
+    const premium = wrapper.find('[data-testid="techtree-cell-R230_Object_432U"]')
+    expect(premium.classes()).toContain('is-premium')
+    expect(premium.classes()).not.toContain('is-collector')
+    // 普通车不吃类别色
+    expect(wrapper.find('[data-testid="techtree-cell-T-26"]').classes()).not.toContain('is-premium')
+    // 不再有顶部带子与逐车「高级」徽标
+    expect(wrapper.find('[data-testid="techtree-premium-band"]').exists()).toBe(false)
+    expect(wrapper.find('.tt-pill.is-premium').exists()).toBe(false)
   })
 
-  it('树里没有金币车时不出带子（不渲染空占位）', async () => {
+  it('收藏车用蓝色边框类；同时是金币车时金色优先', async () => {
     data.fetchTankEncyclopedia.mockResolvedValueOnce({
-      1: { name: 'T-26', tier: 1 },
+      1: { name: 'T-26', tier: 1, is_collector: true },
       2: { name: 'MT-25', tier: 6 },
+      27905: { name: 'Object 432U', tier: 11, is_premium: true, is_collector: true },
     })
     const { wrapper } = await mountView()
-    expect(wrapper.find('[data-testid="techtree-premium-band"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="techtree-cell-T-26"]').classes()).toContain('is-collector')
+    const both = wrapper.find('[data-testid="techtree-cell-R230_Object_432U"]')
+    expect(both.classes()).toContain('is-premium')
+    expect(both.classes()).not.toContain('is-collector')
   })
 })
 
