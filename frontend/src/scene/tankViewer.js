@@ -4067,12 +4067,21 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             return null;
         };
 
+        /** 宿主（装甲页）有了图形化装配编辑器时隐藏原生配置下拉；仍是场景的配置状态源。 */
+        let configUiHidden = false;
+        function setConfigUiVisible(visible) {
+            configUiHidden = !visible;
+            const row = document.getElementById('config-row');
+            if (row) row.style.display = configUiHidden ? 'none' : '';
+        }
+
         function setupConfigSelect() {
             const sel = document.getElementById('config-select');
             const row = document.getElementById('config-row');
             const cfgs = tankData && tankData.configs ? tankData.configs : [];
+            if (!sel || !row) return;
             if (cfgs.length <= 1) { row.style.display = 'none'; return; }
-            row.style.display = 'flex';
+            row.style.display = configUiHidden ? 'none' : 'flex';
             sel.innerHTML = '';
             cfgs.forEach((c, i) => {
                 const o = document.createElement('option');
@@ -5983,5 +5992,5 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             console.error('tank viewer init failed:', e);
             reportLoad({ state: 'error', message: loadFailed(initPhase, errorMessage(e)) });
         });
-        return { destroy, retry, selectTank, canPick, isContextLost };
+        return { destroy, retry, selectTank, canPick, isContextLost, setConfig: applyConfig, setConfigUiVisible };
     }

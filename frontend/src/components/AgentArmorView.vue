@@ -93,14 +93,51 @@ const shotGestures = computed(() => ['rotate', 'zoom', 'pan'].map(action => ({
 // 「参数」面板（装备 / 射击方 / 目标 / 配置）：桌面与手机都默认收起，不再常驻占掉 3D 视口；
 // 桌面端复用手机竖屏的顶栏结构，信息卡与设置面板合并为左上角同一张卡。
 const toolsOpen = ref(false)
+/** 装配编辑器的数据就绪后才隐藏场景自带的原生配置下拉（资产缺失时它仍是可用回退） */
+const loadoutReady = ref(false)
+
+/** 重建场景的 query 键：装配键（config/engine/track/dev/cons/prov/shell）不在其中——
+ *  改装配只就地更新（viewer.setConfig）与写 URL，不销毁 3D 场景。 */
+const SCENE_QUERY_KEYS = [
+  'tank', 'shooter', 'shot', 'scfg', 'world', 'heatmap', 'az', 'h', 'd', 'quality', 'move', 'rel', 'clean', 'debug',
+]
+const sceneSignature = () => SCENE_QUERY_KEYS.map(key => `${key}=${route.query[key] ?? ''}`).join('&')
+let lastSceneSignature = null
 // 「实际搭载」面板懒激活：首次展开「参数」才拉 research 数据（catalog/modules 是 MB 级
 // JSON，不该在 3D 场景加载路径上抢带宽）；一旦激活保持（收起再展开不重复拉）。
 const loadoutActive = ref(false)
 watch(toolsOpen, (open) => { if (open) loadoutActive.value = true }, { immediate: true })
+// 图形化装配编辑器就绪 → 隐藏场景自带的原生配置下拉（资产缺失时编辑器不就绪，下拉保留为回退）
+watch(loadoutReady, ready => viewer?.setConfigUiVisible?.(!ready))
 /** 搭载面板的车：场景选择器换车后以 viewer 上报为准（选车不写 URL），深链回落 URL。 */
 const loadoutTankId = computed(() => selectedTargetId.value ?? (Number(route.query.tank) || null))
 // ?clean=1 时场景脚本会隐藏全部常驻面板（截图 / 嵌入用）；顶栏卡片与参数开关一并让位
 const cleanQuery = computed(() => route.query.clean === '1')
+
+/**
+ * 装配改动（模块/装备/消耗品/补给，来自详情页同款 TankConfigPanel）：
+ * 写同一组 URL 键（config/engine/track/dev/cons/prov），并让场景立即切到新配置
+ * （炮塔/炮装甲板、炮管模块缓存一起换）。换 config 时删掉旧弹种下标（弹表已变）。
+ */
+function applyLoadout(patch) {
+  if (!patch) return
+  const query = { ...route.query }
+  const put = (key, value) => {
+    const text = Array.isArray(value) ? value.join(',') : value
+    if (text == null || text === '') delete query[key]
+    else query[key] = String(text)
+  }
+  const configChanged = patch.config != null && String(patch.config) !== String(route.query.config ?? '')
+  put('config', patch.config)
+  put('engine', patch.engine)
+  put('track', patch.track)
+  put('dev', patch.dev)
+  put('cons', patch.cons)
+  put('prov', patch.prov)
+  if (configChanged) delete query.shell
+  router.replace({ query })
+  if (configChanged) viewer?.setConfig?.(Number(patch.config))
+}
 
 let viewer = null
 /** tankViewer 已创建并挂上静态控件事件（碰撞/热力图按钮在此之前置灰，避免点击丢失） */
@@ -272,6 +309,9 @@ function startViewer(preserveSelection = false) {
         },
     })
     viewerReady.value = true
+    lastSceneSignature = sceneSignature()
+    // 编辑器可能先于场景就绪（模块 JSON 比模型快）：创建后补一次显隐
+    viewer.setConfigUiVisible?.(!loadoutReady.value)
 }
 
 async function retry() {
@@ -301,6 +341,8 @@ onMounted(async () => {
 // Same-view query navigation does not remount ViewHost. Dispose the old scene before rebuilding its ID contract.
 watch(() => route.fullPath, async () => {
     if (route.query.view !== 'agent-armor') return
+    // 只改了装配键：场景已由 applyLoadout 就地更新，不重建（否则每次点模块都会闪一下）
+    if (viewer && sceneSignature() === lastSceneSignature) return
     requestSeq++
     viewerReady.value = false
     viewer?.destroy?.()
@@ -396,9 +438,13 @@ onBeforeUnmount(() => {
                         v-else
                         :tank-id="loadoutTankId"
                         :config="route.query.config"
+                        :engine="route.query.engine"
+                        :track="route.query.track"
                         :dev="route.query.dev"
                         :cons="route.query.cons"
                         :prov="route.query.prov"
+                        @apply="applyLoadout"
+                        @ready="loadoutReady = true"
                     />
                 </div>
                 <div class="sel-row"><label id="shooter-label">{{ $t('armor.shooter') }}</label><button class="tank-btn" id="shooter-select" disabled @click="openPicker('shooter')">—</button></div>

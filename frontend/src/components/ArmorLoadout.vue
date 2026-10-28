@@ -7,15 +7,22 @@
  * URL 参数求值（单一实现，无第二套对号）；数据缺失（旧包 / 资产源未配）整块降级为
  * 提示文案，不渲染半残装配（fail-closed）。
  *
- * 本组件只读：改选择回坦克百科（客户端同语义——机库里改配置）。
+ * 交互与坦克百科详情页一致：模块矩阵 / 装备格 / 消耗品 / 补给都用同一个
+ * `TankConfigPanel` 组件（乘员/涂装块在装甲页隐藏），点图标即改、写回同一组 URL 键；
+ * 改动经 `apply` 交给宿主：装甲查看器立即把 config 应用到场景（炮塔/炮装甲板），
+ * 并把 dev/cons/prov 写进 URL（刷新/分享保持）。数据不可用时退回原生配置下拉（场景自带）。
  */
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { SlidersHorizontal } from 'lucide-vue-next'
 import { fetchTankData } from '../scene/agentData.js'
 import {
-  findTankModules, presetSlots, resolveSetup,
+  encodeDevices, findTankModules, presetSlots, resolveSetup,
 } from '../replay-local/compute/tankSetup'
 import { itemIconUrl, loadResearchCatalog, loadTankModules } from '../utils/researchCatalog.js'
+import AppButton from './AppButton.vue'
+import AppDialog from './AppDialog.vue'
+import TankConfigPanel from './TankConfigPanel.vue'
 
 const props = defineProps({
   tankId: { type: Number, default: null },
@@ -24,11 +31,15 @@ const props = defineProps({
   dev: { type: String, default: null },
   cons: { type: String, default: null },
   prov: { type: String, default: null },
+  engine: { type: [Number, String], default: null },
+  track: { type: [Number, String], default: null },
 })
+const emit = defineEmits(['apply', 'ready'])
 
 const { t, locale } = useI18n()
 
 const state = ref('loading') // loading | ready | unavailable
+const editorOpen = ref(false)
 const detail = ref(null)
 const modules = ref(null)
 const catalog = ref(null)
@@ -62,23 +73,80 @@ async function load(tankId) {
       if (seq !== request) modules.value = null
     }
     state.value = modules.value ? 'ready' : 'unavailable'
+    if (modules.value) emit('ready')
   } catch {
     if (seq !== request) return
     state.value = 'unavailable'
   }
 }
 
-watch(() => props.tankId, id => load(id), { immediate: true })
+watch(() => props.tankId, (id) => { editorOpen.value = false; load(id) }, { immediate: true })
+
+/** URL 值是字符串；resolveSetup 的 engine/track 只认 number（字符串会被夹成默认顶级）。 */
+const urlIndex = value => {
+  const n = Number(value)
+  return Number.isInteger(n) && n >= 0 ? n : null
+}
 
 const selection = computed(() => {
   if (!detail.value || !modules.value || !catalog.value) return null
   return resolveSetup({
     detail: detail.value,
     modules: modules.value,
-    url: { config: props.config, dev: props.dev, cons: stemList(props.cons), prov: stemList(props.prov) },
+    url: {
+      config: props.config,
+      engine: urlIndex(props.engine),
+      track: urlIndex(props.track),
+      dev: props.dev,
+      cons: stemList(props.cons),
+      prov: stemList(props.prov),
+    },
     catalog: catalog.value,
   })
 })
+
+/**
+ * 提交一次改动：`patch` 可以是模块矩阵的完整选择，也可以是单项（发动机/履带只发下标）。
+ * 统一并回当前 `selection` 后按 URL 契约输出（config/engine/track + dev/cons/prov）。
+ */
+function apply(patch) {
+  const sel = selection.value
+  if (!sel?.canConfigure || !patch) return
+  const next = { ...sel, ...patch }
+  emit('apply', {
+    config: next.config,
+    engine: next.engine,
+    track: next.track,
+    dev: encodeDevices(next.devices || []),
+    cons: [...(next.consumables || [])],
+    prov: [...(next.provisions || [])],
+  })
+}
+
+/** 初始/顶级快捷（与详情页同语义：顶级 = 末位配置/末位发动机/末位履带）。 */
+function applyPreset(kind) {
+  const sel = selection.value
+  if (!sel?.canConfigure) return
+  const last = list => Math.max(0, (list || []).length - 1)
+  apply({
+    config: kind === 'stock' ? 0 : last(detail.value?.configs),
+    engine: kind === 'stock' ? 0 : last(modules.value?.engines),
+    track: kind === 'stock' ? 0 : last(modules.value?.chassis),
+  })
+}
+
+/** 重置：顶级配置 + 清空装备/补给/消耗品（详情页重置的同语义子集）。 */
+function resetAll() {
+  const sel = selection.value
+  if (!sel?.canConfigure) return
+  const last = list => Math.max(0, (list || []).length - 1)
+  apply({
+    config: last(detail.value?.configs),
+    engine: last(modules.value?.engines),
+    track: last(modules.value?.chassis),
+    devices: [], consumables: [], provisions: [],
+  })
+}
 
 const lang = computed(() => (locale.value === 'zh' ? 'zh-Hans' : 'en'))
 function moduleName(item) {
@@ -171,6 +239,35 @@ const itemGroups = computed(() => {
           <span v-else class="loadout-item-fallback">{{ moduleName(item).slice(0, 2) }}</span>
         </span>
       </div>
+      <AppButton
+        v-if="selection?.canConfigure"
+        variant="secondary"
+        size="sm"
+        data-testid="armor-loadout-edit"
+        @click="editorOpen = true"
+      >
+        <SlidersHorizontal :size="16" aria-hidden="true" />
+        {{ t('armor.loadout_edit') }}
+      </AppButton>
+      <AppDialog
+        :open="editorOpen"
+        :title="t('agentTanks.configurator.title')"
+        size="xl"
+        data-testid="armor-loadout-dialog"
+        @close="editorOpen = false"
+      >
+        <TankConfigPanel
+          v-if="selection?.canConfigure"
+          :detail="detail"
+          :modules="modules"
+          :selection="selection"
+          :catalog="catalog"
+          :show-crew="false"
+          @update="apply"
+          @preset="applyPreset"
+          @reset="resetAll"
+        />
+      </AppDialog>
     </template>
   </div>
 </template>
