@@ -11,7 +11,7 @@
  * 交互 = 客户端「点击节点 → 安装」：炮塔/炮经 `?config=` 对号，发动机/履带写各自
  * 下标；下一级坦克节点点击切车。不做研发/购买/解锁流程（无账号状态）。
  */
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeft, Check } from 'lucide-vue-next'
 import { loadTankIconCrops, tankImageUrl } from '../scene/agentData.js'
@@ -71,43 +71,15 @@ const gridStyle = computed(() => ({
   height: `${layout.value.rows * PITCH_Y}px`,
 }))
 
-/** 研发图等比缩放到可用区域（客户端整屏缩放 UI 的同构做法）：图比容器大时缩小，
- * 而不是让用户拖动；容器变大时恢复到 1:1（不放大）。下限 0.72——更小的缩放文字读不清，
- * 极宽的树改为横向平移（与客户端滚动容器同语义）。 */
-const scrollEl = ref(null)
-const fitScale = ref(1)
+/** 研发图按自然尺寸渲染（96×64 节点 / 136×97 pitch）：容器 .tr-scroll 负责滚动。
+ * 不做整图 `transform: scale()`——缩放会把节点文字和 44px 触控目标一起缩小，窄屏上
+ * 无法阅读/点击（frontend/AGENTS.md 明确禁止整图 scale 作为布局手段）。 */
 const gridW = computed(() => (layout.value?.columns || 0) * PITCH_X)
 const canvasW = computed(() => NODE_W + TRUNK_W + gridW.value)
 const gridH = computed(() => (layout.value?.rows || 0) * PITCH_Y)
-let observer = null
-function recalcFit() {
-  const el = scrollEl.value
-  if (!el || !gridW.value || !gridH.value) { fitScale.value = 1; return }
-  const availW = el.clientWidth - 20
-  if (availW <= 0) return
-  // 只按宽度缩放：面板高度随内容（对话框 body 自己滚动），若也按 clientHeight 适配，
-  // 缩放会改变容器高度而反复收缩；同时不设下限——研发图不得出现横向拖动。
-  const scale = Math.min(1, availW / canvasW.value)
-  fitScale.value = Math.round(scale * 1000) / 1000
-}
-watch([canvasW, gridH], recalcFit)
-onMounted(() => {
-  recalcFit()
-  if (typeof ResizeObserver !== 'undefined' && scrollEl.value) {
-    observer = new ResizeObserver(recalcFit)
-    observer.observe(scrollEl.value)
-  }
-})
-onBeforeUnmount(() => { observer?.disconnect(); observer = null })
-const fitStyle = computed(() => ({
-  width: `${canvasW.value * fitScale.value}px`,
-  height: `${gridH.value * fitScale.value}px`,
-}))
-const canvasScaledStyle = computed(() => ({
+const canvasStyle = computed(() => ({
   width: `${canvasW.value}px`,
   height: `${gridH.value}px`,
-  transform: `scale(${fitScale.value})`,
-  transformOrigin: 'top left',
 }))
 const gridInCanvasStyle = computed(() => ({ ...gridStyle.value, left: `${NODE_W + TRUNK_W}px` }))
 /** 当前坦克节点：纵向对齐各链行的中点（不超出画布）。 */
@@ -265,9 +237,8 @@ function activate(node) {
         <p v-if="!layout.hasChain" class="tr-empty" data-testid="research-no-chain">
           {{ t('research.no_chain_note') }}
         </p>
-        <div ref="scrollEl" class="tr-scroll">
-          <div class="tr-fit" :style="fitStyle">
-          <div class="tr-canvas" :style="canvasScaledStyle">
+        <div class="tr-scroll">
+          <div class="tr-canvas" :style="canvasStyle">
           <!-- 本级坦克：与下一级坦克同一呈现（节点 + 下方名字），竖干从它右缘接出 -->
           <div
             class="tr-node is-current-tank"
@@ -355,7 +326,6 @@ function activate(node) {
             </button>
           </div>
           </div>
-          </div>
         </div>
       </template>
     </div>
@@ -421,8 +391,7 @@ function activate(node) {
   min-block-size: 0;
   padding: var(--space-2);
 }
-.tr-fit { position: relative; }
-.tr-canvas { position: relative; transform-origin: top left; }
+.tr-canvas { position: relative; }
 .tr-trunk { position: absolute; inset-block-start: 0; inset-inline-start: 0; pointer-events: none; }
 .tr-trunk-line { stroke: var(--color-border-strong); stroke-width: 1.5; }
 .tr-grid { position: absolute; inset-block-start: 0; }

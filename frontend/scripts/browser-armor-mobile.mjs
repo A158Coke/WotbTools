@@ -1209,10 +1209,22 @@ async function runStaggeredLoadScenario(env, scenario) {
         if (/_armor_/.test(node.name || '')) armorSample = node
       })
     }
+    let visibleBodyMeshes = 0
+    let visibleModuleMeshes = 0
+    if (debug && debug.tankModel) {
+      debug.tankModel.traverse(node => {
+        if (!node.isMesh || !node.visible) return
+        const section = node.userData.armorSection
+        if (section === 'chassis' || section === 'gunBarrel') visibleModuleMeshes++
+        else visibleBodyMeshes++
+      })
+    }
     return {
       load: window.__LOAD__,
       collision: document.getElementById('collision-btn').getAttribute('aria-pressed'),
       tankVisible: debug && debug.tankModel ? debug.tankModel.visible : null,
+      visibleBodyMeshes,
+      visibleModuleMeshes,
       armorOpacity: armorSample && armorSample.material ? armorSample.material.opacity : null,
     }
   })()`)
@@ -1220,8 +1232,10 @@ async function runStaggeredLoadScenario(env, scenario) {
     `${scenario.name}: visual 先完成时加载未收敛（__LOAD__=${state.load}）`)
   check(failures, state.collision === 'true',
     `${scenario.name}: armor 就绪后碰撞模式丢失（aria-pressed=${state.collision}）`)
-  check(failures, state.tankVisible === false,
-    `${scenario.name}: armor 就绪后视觉车体仍可见（tankVisible=${state.tankVisible}）`)
+  check(failures, state.tankVisible === true && state.visibleBodyMeshes === 0,
+    `${scenario.name}: armor 就绪后视觉车体仍可见（tankVisible=${state.tankVisible}, body=${state.visibleBodyMeshes}）`)
+  check(failures, state.visibleModuleMeshes > 0,
+    `${scenario.name}: 厚度视图未保留炮管/履带碰撞体（modules=${state.visibleModuleMeshes}）`)
   check(failures, state.armorOpacity != null && state.armorOpacity >= 0.9,
     `${scenario.name}: armor 材质未切到碰撞态（opacity=${state.armorOpacity}）`)
   check(failures, page.consoleErrors.length === 0, `${scenario.name}: JS errors: ${page.consoleErrors.join(' | ')}`)

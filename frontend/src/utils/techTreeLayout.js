@@ -26,8 +26,12 @@ export function techTreeGrid(tree) {
   const nodes = Array.isArray(tree?.nodes) ? tree.nodes : []
   const edges = Array.isArray(tree?.edges) ? tree.edges : []
   const defined = nodes.filter(n => n && n.stem && Number.isFinite(n.x) && Number.isFinite(n.y))
-  const columns = [...new Set(defined.map(n => n.x))].sort((a, b) => a - b)
-  const rows = [...new Set(defined.map(n => n.y))].sort((a, b) => a - b)
+  // pending（已登记未实装的 XI 展示位）不是车辆事实，但它的网格坐标必须进入列/行轴：
+  // 否则 pending 所在列缺失时 colIndex.get(x) 为 undefined，UI 会得到 NaN gridColumn。
+  const pending = Array.isArray(tree?.pending) ? tree.pending : []
+  const pendingCoords = pending.filter(p => p && Number.isFinite(p.x) && Number.isFinite(p.y))
+  const columns = [...new Set([...defined.map(n => n.x), ...pendingCoords.map(p => p.x)])].sort((a, b) => a - b)
+  const rows = [...new Set([...defined.map(n => n.y), ...pendingCoords.map(p => p.y)])].sort((a, b) => a - b)
   const colIndex = new Map(columns.map((x, i) => [x, i]))
   const rowIndex = new Map(rows.map((y, i) => [y, i]))
 
@@ -81,7 +85,7 @@ export function techTreeGrid(tree) {
     drawnEdges,
     minTier,
     maxTier,
-    pending: Array.isArray(tree?.pending) ? tree.pending : [],
+    pending,
     premiumRows: Number(tree?.meta?.premiumRows) || 0,
   }
 }

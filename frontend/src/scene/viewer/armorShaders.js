@@ -547,13 +547,14 @@ export function createArmorShaderContext() {
             rcClipEnabled: rcUniforms.rcClipEnabled,
         };
     }
-    function spacedMaterial(thickness, penetration) {
+    function spacedMaterial(thickness, penetration, side) {
         return new THREE.ShaderMaterial({
             vertexShader: SPACED_VERT, fragmentShader: SPACED_FRAG,
             depthWrite: false, depthTest: true,
             blending: THREE.AdditiveBlending,
-            // 间隙甲双面：从背面命中的间隙屏同样上色/累计（与点击判定双面口径一致）
-            side: THREE.DoubleSide,
+            // 开放面片双面（背面命中可见），闭合网格单面（正/背两表面只累计一次）；
+            // 面由几何拓扑决定，调用方传入（armorMeshTopology.isClosedSurfaceGeometry）。
+            side,
             uniforms: spacedCommonUniforms(thickness, penetration),
         });
     }

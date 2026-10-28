@@ -699,15 +699,17 @@ describe('spaced armor double-sided judgment', () => {
   })
 })
 
-// 间隙甲双面（2026-10-28 用户裁定）：点击判定之外，热力图（additive/状态通道）与厚度
-// 视图的材质也必须双面渲染，否则从背面命中的间隙屏看不见；背面片元把法线翻向相机
-// （与 classifyHit 同口径），避免角度/续飞用错朝向。
-describe('spaced armor double-sided rendering', () => {
+// 间隙甲渲染：additive 层按网格拓扑选面——闭合网格单面累计（正/背两表面只算一次），
+// 开放面片双面（背面命中仍可见）；背面片元把法线翻向相机（与 classifyHit 同口径）。
+describe('spaced armor surface selection', () => {
   const shaders = read('../scene/viewer/armorShaders.js')
   const kernel = read('../scene/tankViewer.js')
-  it('热力图间隙甲材质与深度占位都是 DoubleSide', () => {
-    expect(shaders).toMatch(/blending: THREE\.AdditiveBlending,\s*\n\s*\/\/[^\n]*\n\s*side: THREE\.DoubleSide,/)
+  it('闭合网格单面、开放面片双面；深度占位保持双面且在着色之后', () => {
+    expect(shaders).toMatch(/function spacedMaterial\(thickness, penetration, side\)/)
+    expect(shaders).toMatch(/side,\s*\n\s*uniforms:/)
     expect(shaders).toMatch(/depthWrite: true, depthTest: true, blending: THREE\.NoBlending,\s*\n\s*side: THREE\.DoubleSide,/)
+    expect(kernel).toMatch(/isClosedSurfaceGeometry\(node\.geometry\) \? THREE\.FrontSide : THREE\.DoubleSide/)
+    expect(kernel).toMatch(/spacedMaterial\(t, pen, side\)/)
     expect(kernel).toMatch(/colorWrite: false, depthTest: true, depthWrite: true, side: THREE\.DoubleSide,/)
     expect(kernel).toMatch(/addClone\(spacedArmorScene, node, spacedOmitMaterial, 5\)/)
   })

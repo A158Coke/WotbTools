@@ -26,12 +26,14 @@ describe('techTreeGrid（车辆科技树网格）', () => {
     pending: [{ stem: 'R228_KR_1', x: 11, y: 5 }],
   }
 
-  it('列/行取坐标并集并压缩空洞；tier 按列判定（mixed → null）', () => {
+  it('列/行取已定义节点与有效 pending 坐标的并集；pending 不进 cells/tier', () => {
     const grid = techTreeGrid(tree)
-    expect(grid.columns).toEqual([1, 6, 7])
+    expect(grid.columns).toEqual([1, 6, 7, 11])
     expect(grid.rows).toEqual([4, 5, 9])
+    expect(grid.colIndex.get(11)).toBe(3)
     expect(grid.tierByColumn.get(1)).toBe(1)
     expect(grid.tierByColumn.get(7)).toBeNull() // 4/5 混列 → 不猜
+    expect(grid.tierByColumn.get(11)).toBeNull() // pending 列不是车辆事实
     expect(grid.premiumRows).toBe(2)
   })
 

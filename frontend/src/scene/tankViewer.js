@@ -39,6 +39,8 @@ import {
 import {
     PBR_VERT, PBR_FRAG, createArmorShaderContext,
 } from './viewer/armorShaders.js'
+// 间隙甲拓扑：闭合网格用单面累计，开放面片用双面渲染（同一块板不重复计厚）
+import { isClosedSurfaceGeometry } from './armorMeshTopology.js'
 // 点击判定的触发面分类（Primary = 主装甲板）；与判定本体同源，勿在此复制一份板面清单
 import { isPrimary, hasPrimaryLayer, matchHitsByOccurrence } from './penetration.js'
 // Armor Inspector 概率模型：±range = ±3σ 的正态 CDF + 逐层 1× 等效厚度传播
@@ -791,9 +793,14 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             });
             spacedMeshes.forEach(function(node){
                 const t = node.userData.armorThickness || 0;
-                const cm = addClone(spacedArmorScene, node, spacedMaterial(t, pen), 2);
+                // 闭合网格只着色最近正面（每像素一块板一次）；开放面片双面着色，背面可见。
+                // additive 层之间不写深度，多块间隙板仍按层累加，不会被前板遮挡。
+                const side = isClosedSurfaceGeometry(node.geometry) ? THREE.FrontSide : THREE.DoubleSide;
+                const cm = addClone(spacedArmorScene, node, spacedMaterial(t, pen, side), 2);
                 cm.userData._baseThickness = t;
                 tagStateClone(cm, node);
+                // 间隙甲深度占位（renderOrder 5，着色之后）：供 HEAT gap 衰减读取最近
+                // 间隙板深度；状态通道另有自己的最近层深度测试。
                 const od = addClone(spacedArmorScene, node, spacedOmitMaterial, 5);
                 tagStateClone(od, node);
             });
@@ -1850,6 +1857,14 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     }
                     // 双面模块（履带）保留客户端的双面口径：厚度视图里上表面仍可见
                     mat.side = side;
+                    // 复用缓存材质时恢复高亮可能改过的透明/深度状态：离开厚度视图会先
+                    // 清 collisionMode，resetArmorHighlight 提前返回；不恢复的话再次进入
+                    // 时外部模块仍是半透明且不写深度。
+                    mat.transparent = false;
+                    mat.opacity = 1;
+                    mat.depthWrite = true;
+                    mat.depthTest = true;
+                    mat.needsUpdate = true;
                     node.material = mat;
                 } else if (moduleOriginalMaterials.has(node)) {
                     node.material = moduleOriginalMaterials.get(node);
@@ -4318,10 +4333,12 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             collectArmorNodes();
             updateTurretGun(currentTurretDeg, currentGunDeg);
 
-            // 射手弹表随目标配置切换仅限普通装甲检视；射击复现会话中弹表已按
-            // 射手实际搭载配置（&scfg=）选定，同坦克不同玩家配置不同，此处覆盖会
-            // 把 scfg 域的弹表错换成目标当前配置的弹表
-            if (shooterData && tankData && shooterData.tank_id === tankData.tank_id && !QP.get('shot')) {
+            // 射手弹表随目标配置切换仅限普通装甲检视且未独立选射击方配置；射击复现
+            // 会话或显式 &scfg= 已按射手实际搭载配置选定弹表，此处覆盖会把 scfg 域
+            // 的弹表错换成目标当前配置的弹表。
+            const hasExplicitShooterConfig = QP.get('scfg') != null && QP.get('scfg') !== '';
+            if (shooterData && tankData && shooterData.tank_id === tankData.tank_id
+                && !QP.get('shot') && !hasExplicitShooterConfig) {
                 shooterShells = cfg.shells || [];
                 shooterCaliber = (Number.isFinite(cfg.caliber) && cfg.caliber > 0) ? cfg.caliber : null;
                 populateShellSelector(shooterShells);
@@ -4985,6 +5002,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const rayDir = raycaster.ray.direction.clone().normalize();
             let info = null;
             for (const hit of raycaster.intersectObjects(objects, true)) {
+                // 材质裁切不会删除几何命中：炮根在 gunClipPlane 负侧被裁掉后，点击
+                // 其后可见的装甲板仍可能先命中不可见炮根。与 collectJudgmentHits 同口径
+                // 复用 isClippedModuleHit，厚度点选也不会选中被裁掉的炮管段。
+                if (isClippedModuleHit(hit.object.userData.armorSection, hit.point, gunClipPlane)) continue;
                 info = classifyHit(hit, rayDir);
                 if (info) break;
             }

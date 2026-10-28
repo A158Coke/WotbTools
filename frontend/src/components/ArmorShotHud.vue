@@ -54,7 +54,10 @@ watch(() => props.shooterId, id => load(id), { immediate: true })
 const configs = computed(() => details.value?.configs || [])
 const cfgIndex = computed(() => {
   if (!configs.value.length) return null
-  const wanted = Number(props.scfg ?? props.config)
+  const raw = props.scfg ?? props.config
+  // 与 tankViewer 的缺省完全一致：没有显式 scfg/config 时用最后一档（顶级炮），
+  // 不能 Number(null) → 0 选成 stock 炮——否则 HUD 的弹种索引对应错弹表。
+  const wanted = raw == null || raw === '' ? NaN : Number(raw)
   return Number.isInteger(wanted) && wanted >= 0 && wanted < configs.value.length
     ? wanted
     : configs.value.length - 1
