@@ -57,7 +57,7 @@ jobs:
 
       - name: Run targeted prompt contract tests
         working-directory: java
-        run: ./mvnw -pl wotb-ai -am -Dtest=TeamReviewNaturalCoachContractTest,PromptRuleContractTest,TeamReviewQualityGateContractTest,TeamReplayOfflineEvalHarnessTest -Dsurefire.failIfNoSpecifiedTests=false test
+        run: mvn -s settings.xml -pl wotb-ai -am -Dtest=TeamReviewNaturalCoachContractTest,PromptRuleContractTest,TeamReviewQualityGateContractTest,TeamReplayOfflineEvalHarnessTest -Dsurefire.failIfNoSpecifiedTests=false test
 
       - name: Commit repair
         run: |
