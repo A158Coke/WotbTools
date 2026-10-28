@@ -1,0 +1,20 @@
+name: Repository hygiene / main
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  tracked-file-policy:
+    name: Main history hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Check tracked files and pushed history
+        shell: bash
+        run: bash scripts/ci/check-repository-hygiene.sh

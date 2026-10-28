@@ -1,0 +1,6 @@
+# Exact tracked paths that are intentionally allowed to exceed the repository
+# hygiene size limit. Keep this list small; each addition should explain in the
+# PR why the file is source-of-truth and why normal Git remains appropriate.
+#
+# Example:
+# common/fixtures/example-large-fixture.bin
