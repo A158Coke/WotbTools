@@ -45,7 +45,8 @@ async function load(tankId) {
       if (seq !== request) return
       modules.value = findTankModules(nationData, tankId)
     } catch {
-      if (seq !== request) modules.value = null
+      if (seq !== request) return
+      modules.value = null
     }
     state.value = modules.value ? 'ready' : 'unavailable'
     if (modules.value) emit('ready')

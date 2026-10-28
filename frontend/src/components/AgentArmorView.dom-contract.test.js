@@ -739,6 +739,8 @@ describe('armor shell and readiness ownership', () => {
     expect(view).toMatch(/\.armor-view #tank-selectors\.has-shot-hud \.eq-opt:not\(#armor-state-opt\)/)
     expect(view).toMatch(/const configChanged = patch\.configChanged === true/)
     expect(read('./ArmorSideConfig.vue')).toMatch(/configChanged: next\.config !== sel\.config/)
+    // 旧车的模块请求失败/迟到不得改写新车的 modules 与 ready 状态
+    expect(read('./ArmorSideConfig.vue')).toMatch(/\} catch \{\s*if \(seq !== request\) return\s*modules\.value = null\s*\}/)
   })
 })
 
