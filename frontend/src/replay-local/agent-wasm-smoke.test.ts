@@ -1,18 +1,20 @@
 /**
- * Agent WASM 四入口 smoke（真实锁定产物，不 mock）——stale WASM 的症状回归。
+ * Agent WASM 五入口 smoke（真实锁定产物，不 mock）——stale WASM 的症状回归。
  *
  * 两个真实故障的症状都在这里锁住：
  *  1. AI Review 报 `ai_review.poses 缺失`（旧产物没有 v0.3.7 的原始位姿）；
  *  2. 装填条**永远不动**——错版 WASM 给出 `reloads = 0`，UI 再把"无遥测"兜底成满条。
  *
  * 本测试用 `deploy/agent/source.json` pin 的产物在仓库 fixture 上真实跑
- * `parseResult` / `parsePlayback` / `parseAiReview` / `parseShotReplays` 四入口，
- * 锁 canonical 投影与装填渲染**必需**的证据形状：
+ * `parseResult` / `parsePlayback` / `parseAiReview` / `parseShotReplays` /
+ * `parseAuthorInitialPosition` 五入口，锁 canonical 投影与装填渲染**必需**的证据形状：
  *
  *  - `ai_review.poses` / `ai_review.turrets` **存在且是数组**（只锁存在性——具体条数
  *    是单场属性，不是通用契约）；
  *  - `playback.reloads` 存在且**作者车拥有真实的装填相位**（不是"锁死具体条数"：
  *    `reloads === N` 不是 wire contract，只有"有遥测 + 作者有 timeline"是）；
+ *  - `parseAuthorInitialPosition` 入口存在，且录像者初始位姿是有限三轴坐标；
+ *    该 smoke 只锁 pinned 产物确实暴露并能消费该能力，不锁具体坐标值。
  *  - 契约版本门禁（playback version=2 / facets v1）真实通过。
  *
  * 本机原始问题回放（1.5MB，不入库）可加跑，额外锁该场次的具体数字：
@@ -25,6 +27,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   FIXTURE_REPLAYS,
+  authorInitialPositionViaPinnedWasm,
   fixtureFacets,
   reloadTelemetryFor,
   replayFacets,
@@ -38,7 +41,7 @@ const FIXTURES = Object.keys(FIXTURE_REPLAYS)
 /** 参考 fixture（仓库已提交，CI 可跑） */
 const REFERENCE = 'random-battle-example.wotbreplay'
 
-describe('Agent WASM 四入口 smoke（pin 产物真实解析）', () => {
+describe('Agent WASM 五入口 smoke（pin 产物真实解析）', () => {
   it('fixture 名单非空（scanner self-check）', () => {
     expect(FIXTURES.length).toBeGreaterThan(0)
   })
@@ -73,6 +76,17 @@ describe('Agent WASM 四入口 smoke（pin 产物真实解析）', () => {
     expect(Array.isArray(outcome.shots)).toBe(true)
     expect(['ok', 'error']).toContain(outcome.author_path)
     if (outcome.author_path === 'error') expect(typeof outcome.author_error).toBe('string')
+  })
+
+  it('parseAuthorInitialPosition 入口可用（录像者初始世界位姿 / null）', async () => {
+    const bytes = new Uint8Array(readFileSync(join(REPO, FIXTURE_REPLAYS[REFERENCE])))
+    const position = await authorInitialPositionViaPinnedWasm(bytes)
+    expect(position).not.toBeNull()
+    expect(position!.author_eid).toBeGreaterThan(0)
+    expect(Number.isFinite(position!.clock)).toBe(true)
+    expect(position!.clock).toBeGreaterThanOrEqual(0)
+    expect(position!.position).toHaveLength(3)
+    for (const value of position!.position) expect(Number.isFinite(value)).toBe(true)
   })
 
   it('装填遥测形状：reloads 是数组，条目带 clock/eid/phase（无遥测则整场为空数组）', async () => {
