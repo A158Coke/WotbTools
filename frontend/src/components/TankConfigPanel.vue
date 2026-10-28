@@ -402,6 +402,8 @@ const camoBonusParts = computed(() => {
       </div>
       <template v-for="(cells, index) in moduleMatrix" :key="index">
         <div v-for="cell in cells" :key="`${cell.row.key}-${index}`" class="tp-module-cell">
+          <!-- 手机 2 列时每个控件自带类型标题；桌面隐藏，使用顶部统一标题行 -->
+          <span class="tp-module-cell-head">{{ t(`agentTanks.configurator.${cell.row.key}`) }}</span>
           <button
             v-if="cell.option"
             type="button"
@@ -601,6 +603,7 @@ const camoBonusParts = computed(() => {
 }
 .tp-module-head { display: grid; justify-items: center; align-content: end; gap: 2px; min-inline-size: 0; padding-block-end: var(--space-1); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; text-align: center; overflow-wrap: anywhere; }
 .tp-module-cell { min-inline-size: 0; }
+.tp-module-cell-head { display: none; }
 
 .tp-module-tile {
   position: relative;
@@ -763,7 +766,9 @@ const camoBonusParts = computed(() => {
   /* 手机：4 列矩阵折 2 列（炮塔|火炮 // 发动机|履带）——每个逻辑行恰好 4 格，
      折行后列语义仍逐行对齐；类型标签行与数据行同步折，不会错位。 */
   .tp-module-matrix { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2) var(--space-1); }
-  .tp-module-head { align-content: start; }
+  /* 2 列折行后顶部 4 个标题行会落到错误列上方：隐藏它，改用每个控件自己的标题。 */
+  .tp-module-head { display: none; }
+  .tp-module-cell-head { display: block; margin-block-end: 2px; color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; text-align: center; }
   .tp-module-tile { padding: var(--space-1); min-block-size: 64px; }
   /* 装备矩阵在窄屏吃掉等级标签列：标签收窄为图标宽度，槽位保持两候选并排 */
   .tp-dev-matrix { gap: var(--space-1); }

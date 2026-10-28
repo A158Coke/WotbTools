@@ -54,6 +54,7 @@ describe('ArmorSideConfig（一侧的模块 + 配件完整选择）', () => {
     const payload = wrapper.emitted('apply').at(-1)[0]
     expect(payload.track).toBe(0)
     expect(payload.config).toBe(0)
+    expect(payload.configChanged).toBe(false)
     expect(typeof payload.dev).toBe('string')
   })
 })

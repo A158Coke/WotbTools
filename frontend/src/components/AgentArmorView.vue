@@ -171,7 +171,6 @@ function applySide(side, patch) {
     else query[key] = String(text)
   }
   const shooter = side === 'shooter'
-  const before = shooter ? route.query.scfg : route.query.config
   if (shooter) {
     put('scfg', patch.config)
     put('sengine', patch.engine)
@@ -183,7 +182,7 @@ function applySide(side, patch) {
     put('track', patch.track)
     put('dev', patch.dev)
   }
-  const configChanged = patch.config != null && String(patch.config) !== String(before ?? '')
+  const configChanged = patch.configChanged === true
   const explicitShooterConfig = query.scfg != null && query.scfg !== ''
   if (shouldResetShellOnConfigChange({
     side,
@@ -485,7 +484,7 @@ onBeforeUnmount(() => {
                 :title="$t('armor.tools')"
                 @click="toolsOpen = !toolsOpen"
             ><SlidersHorizontal :size="18" aria-hidden="true" /><span class="armor-tools-label">{{ $t('armor.tools') }}</span></button>
-            <div id="tank-selectors" :class="{ 'has-shot-setup': editorsReady && hudReady }"><h2 class="armor-panel-title">{{ $t('armor.setup') }}</h2><p v-if="isShotPage" class="armor-setup-note">{{ $t('armor.recording_vs_preview') }}</p>
+            <div id="tank-selectors" :class="{ 'has-shot-hud': hudReady }"><h2 class="armor-panel-title">{{ $t('armor.setup') }}</h2><p v-if="isShotPage" class="armor-setup-note">{{ $t('armor.recording_vs_preview') }}</p>
                 <div class="sel-row" id="config-row" style="display:none;"><label id="config-label" for="config-select">{{ $t('armor.config') }}</label><select id="config-select"></select></div>
                 <div class="sel-row">
                     <label>{{ $t('armor.equip') }}</label>
@@ -681,7 +680,7 @@ onBeforeUnmount(() => {
 .armor-view .armor-side-toggle svg.is-open { transform: rotate(180deg); }
 .armor-view .armor-side-body { padding-block-start: var(--space-1); }
 /* 射击复现的图形面板就绪后，场景自带的校准弹/强化装甲勾选只作为资产缺失时的回退 */
-.armor-view #tank-selectors.has-shot-setup .eq-opt:not(#armor-state-opt) { display: none; }
+.armor-view #tank-selectors.has-shot-hud .eq-opt:not(#armor-state-opt) { display: none; }
 .armor-view #tank-selectors { padding: var(--space-3); inline-size: 23rem; max-block-size: 54dvh; overflow-y: auto; z-index: var(--pb-z-hud); }
 .armor-view #tank-selectors .sel-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-1) 0; }
 .armor-view #tank-selectors label { color: var(--muted); font: var(--type-caption); }

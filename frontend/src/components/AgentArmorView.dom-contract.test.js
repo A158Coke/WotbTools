@@ -271,7 +271,7 @@ describe('dolly-zoom world-overview scope guard', () => {
     expect(kernel).toMatch(/const hiddenCategories = \{ primary: false, spaced: false, external: false \}/)
     expect(kernel).toMatch(/function applyCategoryFilters\(/)
     // 击穿视图默认开启，?heatmap=0 显式关闭（2026-10-28 用户要求）
-    expect(kernel).toMatch(/if \(QP\.get\('heatmap'\) !== '0' && !penetrationMode\)/)
+    expect(kernel).toMatch(/if \(QP\.get\('heatmap'\) !== '0' && !penetrationMode && !collisionMode\)/)
     // 普通检视换弹：只清掉上一次判定，不按旧点击位置重跑（2026-10-28 用户裁定）
     expect(kernel).toMatch(/else if \(penetrationMode && lastClickNdc\) \{[\s\S]*?tidyTrajectory\(\);/)
     expect(kernel).not.toMatch(/doPenetrationCheck\(lastClickNdc\.x, lastClickNdc\.y\)/)
@@ -718,6 +718,12 @@ describe('armor shell and readiness ownership', () => {
     expect(view).toMatch(/watch\(targetSetupId, \(\) => \{ targetReady\.value = false \}\)/)
     const hud = view.match(/<ArmorShotHud[\s\S]*?\/>/)[0]
     expect(hud).not.toContain(':config=')
+  })
+  it('HUD 就绪即独占被替换的装备控件；配置变更按解析后的选择判断', () => {
+    expect(view).toMatch(/'has-shot-hud': hudReady/)
+    expect(view).toMatch(/\.armor-view #tank-selectors\.has-shot-hud \.eq-opt:not\(#armor-state-opt\)/)
+    expect(view).toMatch(/const configChanged = patch\.configChanged === true/)
+    expect(read('./ArmorSideConfig.vue')).toMatch(/configChanged: next\.config !== sel\.config/)
   })
 })
 

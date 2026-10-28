@@ -86,6 +86,9 @@ function apply(patch) {
   const next = { ...sel, ...patch }
   emit('apply', {
     config: next.config,
+    // 与解析后的当前配置比较：url.config 缺省时 resolveSetup 会给出有效默认值，
+    // 直接用原始 URL 键比较会把“只换发动机/履带”误判成换炮。
+    configChanged: next.config !== sel.config,
     engine: next.engine,
     track: next.track,
     dev: encodeDevices(next.devices || []),

@@ -2731,8 +2731,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 }
             }
             controls.update();
-            // 击穿视图默认开启（2026-10-28 用户要求）；?heatmap=0 显式关闭。
-            if (QP.get('heatmap') !== '0' && !penetrationMode) {
+            // 击穿视图默认开启；?heatmap=0 显式关闭。换目标重载时若用户已选厚度视图，
+            // 不能把击穿视图再打开成“双模式”（厚度点选与热力图会同时生效）。
+            if (QP.get('heatmap') !== '0' && !penetrationMode && !collisionMode) {
                 penetrationMode = true;
                 const btn = document.getElementById('penetration-btn');
                 btn.classList.add('active'); btn.setAttribute('aria-pressed', 'true');
