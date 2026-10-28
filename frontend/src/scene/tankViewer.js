@@ -843,10 +843,19 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 // 0 mm 是合法的 fail-closed 厚度，只有缺失/undefined 才使用外部模块兜底值
                 const t = node.userData.armorThickness ?? 20;
                 const clipped = node.userData.armorSection === 'gunBarrel' && gunClipPlane;
-                const dmat = clipped
-                    ? (() => { const m = externalDepthMaterial.clone(); m.clippingPlanes = [gunClipPlane]; return m; })()
+                const side = node.userData.moduleDoubleSided ? THREE.DoubleSide : THREE.FrontSide;
+                // 深度/着色 clone 沿用源材质 side（履带双面；轮子单面）：FrontSide 会把
+                // 履带上表面（绕序朝内）剔除，热力图在履带顶部变成空洞/露出后方装甲色。
+                const dmat = (clipped || side === THREE.DoubleSide)
+                    ? (() => {
+                        const m = externalDepthMaterial.clone();
+                        m.side = side;
+                        m.clippingPlanes = clipped ? [gunClipPlane] : null;
+                        return m;
+                    })()
                     : externalDepthMaterial;
                 const cmat = externalMaterial(t, pen, clipped ? gunClipPlane : null);
+                cmat.side = side;
                 const od = addClone(spacedArmorScene, node, omitMaterial, 3);
                 od.material = dmat;
                 const cm2 = addClone(spacedArmorScene, node, cmat, 4);
@@ -875,7 +884,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             externalMeshes.forEach(function(node){
                 const clipped = node.userData.armorSection === 'gunBarrel' && gunClipPlane;
                 // 模块在最近间隙板之前时写 A=1（更远则深度测试失败）；RGB 保留间隙板状态。
-                addClone(spacedStateScene, node, moduleStateMaterial(clipped ? gunClipPlane : null), 3);
+                const sm = moduleStateMaterial(clipped ? gunClipPlane : null);
+                sm.side = node.userData.moduleDoubleSided ? THREE.DoubleSide : THREE.FrontSide;
+                addClone(spacedStateScene, node, sm, 3);
             });
         }
         function buildPrimaryArmorScene() {
@@ -1871,6 +1882,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     if (!moduleOriginalMaterials.has(node)) moduleOriginalMaterials.set(node, node.material);
                     const t = Number(node.userData.armorThickness);
                     const color = thicknessToColor(Number.isFinite(t) ? t : 0);
+                    const side = node.userData.moduleDoubleSided ? THREE.DoubleSide : THREE.FrontSide;
                     let mat = node.userData.collisionSolidMaterial;
                     if (!mat) {
                         mat = new THREE.MeshStandardMaterial({ color, metalness: 0.4, roughness: 0.6 });
@@ -1878,6 +1890,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     } else {
                         mat.color.set(color);
                     }
+                    // 双面模块（履带）保留客户端的双面口径：厚度视图里上表面仍可见
+                    mat.side = side;
                     node.material = mat;
                 } else if (moduleOriginalMaterials.has(node)) {
                     node.material = moduleOriginalMaterials.get(node);
@@ -2347,6 +2361,14 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             box.checked = armorStateCurrent === nonDefaultStateId(armorStateDecl);
         }
 
+        /** 源材质是否双面（GLB 的 doubleSided = 客户端 customCullMode NONE）。
+         *  模块替换材质与热力图 clone 必须沿用：履带是双面网格，且上表面条带的绕序朝内
+         *  （法线向下），FrontSide 下从上方看会被剔除成空洞，看起来像上表面位置不对。 */
+        function moduleDoubleSided(node) {
+            const mat = Array.isArray(node.material) ? node.material[0] : node.material;
+            return !!mat && mat.side === THREE.DoubleSide;
+        }
+
         function tagModuleMeshes(model) {
             moduleMeshes = [];
             model.traverse(function(node) {
@@ -2363,12 +2385,14 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     node.userData.armorSection = 'chassis';
                     node.userData.armorPlateId = isRight ? 'rightTrack' : 'leftTrack';
                     node.userData.armorThickness = getPlateThickness('chassis', node.userData.armorPlateId);
+                    node.userData.moduleDoubleSided = moduleDoubleSided(node);
                     moduleMeshes.push(node);
                 } else if (/^gun_\d+$/.test(parentName)) {
                     node.userData.armorSection = 'gunBarrel';
                     node.userData.armorPlateId = 'gun';
                     node.userData.armorThickness = getPlateThickness('gunBarrel', 'gun');
                     node.userData.gunMaskPart = false;
+                    node.userData.moduleDoubleSided = moduleDoubleSided(node);
                     const gm = parentName.match(/^gun_(\d+)/);
                     node.userData.gunConfig = gm ? parseInt(gm[1], 10) : null;
                     moduleMeshes.push(node);
@@ -2377,6 +2401,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     node.userData.armorPlateId = 'gun';
                     node.userData.armorThickness = getPlateThickness('gunBarrel', 'gun');
                     node.userData.gunMaskPart = true;
+                    node.userData.moduleDoubleSided = moduleDoubleSided(node);
                     const gm = parentName.match(/^gun_(\d+)/);
                     node.userData.gunConfig = gm ? parseInt(gm[1], 10) : null;
                     moduleMeshes.push(node);

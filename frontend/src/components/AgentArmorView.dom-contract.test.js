@@ -58,6 +58,19 @@ describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
     expect(template).toMatch(/\.armor-view \.armor-filters \{[^}]*flex: 1 1 100%;/)
     expect(template).not.toMatch(/\.armor-view \.armor-filters \{[^}]*position: absolute;/)
   })
+
+  // 2026-10-29 用户报障（114 SP2 / 11057）：履带上表面位置不对。源 GLB 履带材质是
+  // doubleSided，上表面条带绕序朝内——替换材质固定 FrontSide 会在厚度视图/热力图里把
+  // 上表面剔除成空洞。模块替换材质/clone 必须沿用源材质的 side。
+  it('模块替换材质沿用客户端材质的双面口径', () => {
+    expect(kernel).toMatch(/function moduleDoubleSided\(node\) \{/)
+    expect(kernel).toMatch(/node\.userData\.moduleDoubleSided = moduleDoubleSided\(node\);/)
+    expect(kernel).toMatch(/const side = node\.userData\.moduleDoubleSided \? THREE\.DoubleSide : THREE\.FrontSide;/)
+    expect(kernel).toMatch(/mat\.side = side;/)
+    expect(kernel).toMatch(/cmat\.side = side;/)
+    expect(kernel).toMatch(/m\.side = side;/)
+    expect(kernel).toMatch(/sm\.side = node\.userData\.moduleDoubleSided \? THREE\.DoubleSide : THREE\.FrontSide;/)
+  })
 })
 
 
@@ -381,7 +394,10 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(kernel).toMatch(/blendSrcAlpha: THREE\.OneFactor, blendDstAlpha: THREE\.ZeroFactor/)
     const stateScene = kernel.slice(kernel.indexOf('function buildSpacedStateScene'), kernel.indexOf('function buildPrimaryArmorScene'))
     expect(stateScene).toMatch(/primaryMeshes\.forEach/)
-    expect(stateScene).toMatch(/addClone\(spacedStateScene, node, moduleStateMaterial\(/)
+    // 状态 clone 先用 moduleStateMaterial 建材质（再按源材质 side 设双面），再 addClone
+    expect(stateScene).toMatch(/const sm = moduleStateMaterial\(/)
+    expect(stateScene).toMatch(/sm\.side = node\.userData\.moduleDoubleSided \? THREE\.DoubleSide : THREE\.FrontSide;/)
+    expect(stateScene).toMatch(/addClone\(spacedStateScene, node, sm, 3\)/)
     // PBR：RT0.R 已是逐层 normalized effective；直接累加，不再用 RT1.B 做最近层差额。
     expect(kernel).toMatch(/highp float totalConsume = spacedSatBlocked \? 1\.0 : max\(0\.0, rawTotal\);/)
     // B 的唯一消费者是上方锁定的诊断解码，不参与厚度或穿深计算。
