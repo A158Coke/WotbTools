@@ -340,7 +340,18 @@ const selectionKey = selection => JSON.stringify([
 /** 上一次计入对比基线的选择键：URL 提交（pending → route.query）会让特性重算一次，
  *  内容相同但对象是新引用；若照单收下，previous 就被抹成新值，delta 立刻消失。 */
 let lastSelectionKey = null
+let lastTankId = null
 watch(characteristics, (value, oldValue) => {
+  const tankId = detail.value?.tank_id ?? null
+  // 加载/换车过渡期间不能沿用上一辆车（或上一配置）的基线，否则新车首次参数表
+  // 会显示相对上一辆车的 delta；等有效特性再次出现时从空基线重新开始。
+  if (!value || tankId !== lastTankId) {
+    previousCharacteristics.value = null
+    lastSelectionKey = null
+    lastTankId = tankId
+    resetTargetKey = null
+    return
+  }
   const key = selectionKey(setup.value)
   if (key === lastSelectionKey) return
   lastSelectionKey = key

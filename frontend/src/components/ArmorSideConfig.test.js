@@ -38,12 +38,19 @@ describe('ArmorSideConfig（一侧的模块 + 配件完整选择）', () => {
   it('渲染详情页同款模块矩阵（装备/消耗品/补给/乘员/涂装都不在装甲页）', async () => {
     const wrapper = mount(ArmorSideConfig, { props: { tankId: 999 }, global: { mocks: { $t: key => key } } })
     await flushPromises()
-    expect(wrapper.emitted('ready')).toHaveLength(1)
+    expect(wrapper.emitted('ready').at(-1)).toEqual([true])
     expect(wrapper.find('[data-testid="tank-configurator"]').exists()).toBe(true)
     expect(wrapper.findAll('.tp-module-tile')).toHaveLength(6) // 炮塔1+火炮1+发动机2+履带2
     expect(wrapper.findAll('.tp-dev-btn')).toHaveLength(0)
     expect(wrapper.find('.tp-skills-block').exists()).toBe(false)
     expect(wrapper.find('.tp-camo-block').exists()).toBe(false)
+  })
+
+  it('配置与模块无法对号时不报告 ready（保留原生配置回退）', async () => {
+    data.fetchTankData.mockResolvedValueOnce({ ...DETAIL, configs: [{ label: 'Stock' }] })
+    const wrapper = mount(ArmorSideConfig, { props: { tankId: 999 }, global: { mocks: { $t: key => key } } })
+    await flushPromises()
+    expect(wrapper.emitted('ready').at(-1)).toEqual([false])
   })
 
   it('点模块即 emit apply（config/engine/track/dev 四项 URL 载荷）', async () => {

@@ -5194,7 +5194,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (isClippedModuleHit(hit.object.userData.armorSection, hit.point, gunClipPlane)) continue;
                 const entry = classifyHit(hit, rayDir);
                 if (!entry) continue;
-                const key = entry.plateId == null ? '' : String(entry.plateId);
+                // plateId 只在所属装甲表内唯一：hull/turret/gun 可以出现相同数字。
+                // 正/背面去重必须带上原始 section，否则跨板的合法层会被误删。
+                const origSection = entry.object?.userData?.armorSectionOrig || entry.section || '';
+                const key = `${origSection}:${entry.plateId == null ? '' : entry.plateId}`;
                 if (entry.backface) {
                     if (entry.section !== 'spaced' || spacedSeen.has(key)) continue;
                     spacedSeen.add(key);

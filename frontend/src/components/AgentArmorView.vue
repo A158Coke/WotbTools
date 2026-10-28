@@ -567,7 +567,7 @@ onBeforeUnmount(() => {
                                 :track="route.query.strack"
                                 :dev="route.query.sdev"
                                 @apply="patch => applySide('shooter', patch)"
-                                @ready="shooterReady = true"
+                                @ready="value => shooterReady = value"
                             />
                         </div>
                     </section>
@@ -595,7 +595,7 @@ onBeforeUnmount(() => {
                                 :track="route.query.track"
                                 :dev="route.query.dev"
                                 @apply="patch => applySide('target', patch)"
-                                @ready="targetReady = true"
+                                @ready="value => targetReady = value"
                             />
                         </div>
                     </section>

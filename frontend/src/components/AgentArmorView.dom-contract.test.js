@@ -693,6 +693,8 @@ describe('spaced armor double-sided judgment', () => {
   })
   it('命中收集只放行未计过的间隙甲背面，主装甲/模块仍剔除背面', () => {
     expect(kernel).toMatch(/function collectJudgmentHits\(intersects, rayDir\)/)
+    expect(kernel).toMatch(/const origSection = entry\.object\?\.userData\?\.armorSectionOrig \|\| entry\.section \|\| '';/)
+    expect(kernel).toMatch(/const key = `\$\{origSection\}:\$\{entry\.plateId == null \? '' : entry\.plateId\}`;/)
     expect(kernel).toMatch(/if \(entry\.section !== 'spaced' \|\| spacedSeen\.has\(key\)\) continue;/)
     expect(kernel).toMatch(/if \(entry\.section === 'spaced'\) spacedSeen\.add\(key\);/)
     expect(kernel).not.toMatch(/entry && !entry\.backface/)
@@ -718,6 +720,10 @@ describe('armor shell and readiness ownership', () => {
   it('选车器换车时重置编辑器/HUD 就绪标志，HUD 不再套用受击方 config', () => {
     expect(view).toMatch(/watch\(shooterSetupId, \(\) => \{ shooterReady\.value = false; hudReady\.value = false \}\)/)
     expect(view).toMatch(/watch\(targetSetupId, \(\) => \{ targetReady\.value = false \}\)/)
+    expect(view).toMatch(/@ready="value => shooterReady = value"/)
+    expect(view).toMatch(/@ready="value => targetReady = value"/)
+    expect(read('./ArmorSideConfig.vue')).toMatch(/const canConfigure = computed\(\(\) => selection\.value\?\.canConfigure === true\)/)
+    expect(read('./ArmorSideConfig.vue')).toMatch(/watch\(canConfigure, value => \{ emit\('ready', value\) \}, \{ immediate: true \}\)/)
     const hud = view.match(/<ArmorShotHud[\s\S]*?\/>/)[0]
     expect(hud).not.toContain(':config=')
   })

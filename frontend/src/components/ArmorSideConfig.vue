@@ -49,7 +49,6 @@ async function load(tankId) {
       modules.value = null
     }
     state.value = modules.value ? 'ready' : 'unavailable'
-    if (modules.value) emit('ready')
   } catch {
     if (seq !== request) return
     state.value = 'unavailable'
@@ -82,6 +81,9 @@ const selection = computed(() => {
     catalog: catalog.value,
   })
 })
+/** 只有替换编辑器实际可配置（炮塔/炮对号成立）时才允许宿主隐藏原生配置回退。 */
+const canConfigure = computed(() => selection.value?.canConfigure === true)
+watch(canConfigure, value => { emit('ready', value) }, { immediate: true })
 
 /** 输出这一侧的 URL 载荷（模块/装备四项；设备串按 tankSetup 的编码）。 */
 function apply(patch) {
