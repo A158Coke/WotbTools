@@ -23,16 +23,19 @@ import {
   normalizeTankCache, parseTankopediaQuery, sameTankopediaQuery, withTankopediaState,
 } from '../utils/tankopediaQuery.js'
 import { loadResearchCatalog, loadTankModules, shellIconUrl } from '../utils/researchCatalog.js'
+import { loadTechTree } from '../utils/researchCatalog.js'
+import { moduleTreeLayout } from '../utils/techTreeLayout.js'
 import { computeCharacteristics, penetrationCoefficient } from '../replay-local/compute/characteristics'
 import {
   buildComputeInput, decodeDevices, devicesFromEquipmentIds, encodeDevices,
-  defaultShellIndex, findTankModules, paramGroups, resolveSetup,
+  defaultShellIndex, findTankModules, paramGroups, pickGun, pickTurret, resolveSetup,
 } from '../replay-local/compute/tankSetup'
 import PageHeader from './PageHeader.vue'
 import EmptyState from './EmptyState.vue'
 import AppButton from './AppButton.vue'
 import TankCatalogMenu from './TankCatalogMenu.vue'
 import TankConfigPanel from './TankConfigPanel.vue'
+import TankResearchPanel from './TankResearchPanel.vue'
 import TankParamPanel from './TankParamPanel.vue'
 import { Motion } from 'motion-v'
 import { motionTransition } from '../shared/motion/motionPolicy'
@@ -45,13 +48,22 @@ const route = useRoute()
 const router = useRouter()
 
 // ---------- URL 状态（唯一 owner） ----------
-const urlState = computed(() => parseTankopediaQuery(route.query))
+/** 已提交但可能尚未落到 route.query 的最近一次写入。同一 tick 内连点两个节点
+ *  （先履带后发动机）时，第二次写入若仍以 route.query 为底，就会把第一击的
+ *  track 覆盖回旧值——URL 是异步提交的，选择态必须立刻以它为准。 */
+const pendingQuery = ref(null)
+const effectiveQuery = computed(() => pendingQuery.value || route.query)
+const urlState = computed(() => parseTankopediaQuery(effectiveQuery.value))
 const onView = () => route.query?.view === VIEW
+// 导航落地后 URL 重新成为唯一事实来源；同步清空避免旧 pending 压过一次真实跳转
+watch(() => route.query, () => { pendingQuery.value = null }, { flush: 'sync' })
 
 function writeState(patch, { push = false } = {}) {
   if (!onView()) return
-  const query = withTankopediaState(route.query, { ...urlState.value, ...patch })
-  if (sameTankopediaQuery(route.query, query)) return
+  const base = effectiveQuery.value
+  const query = withTankopediaState(base, { ...urlState.value, ...patch })
+  if (sameTankopediaQuery(base, query)) return
+  pendingQuery.value = query
   router[push ? 'push' : 'replace']({ query })
 }
 
@@ -149,6 +161,8 @@ const gunElevation = computed(() => {
 const modules = ref(null)
 /** 资产包全局目录/物品/技能/参数格式（research/*.json）。 */
 const catalog = ref(null)
+/** 该车所属科技树（取后继车的 tankId/tier；缺失时后继车节点不显示，fail-closed）。 */
+const techTree = ref(null)
 let modulesRequest = 0
 
 async function loadDetail(id) {
@@ -193,6 +207,16 @@ async function loadModules(id, nation, configs) {
     if (request !== modulesRequest) return
     catalog.value = nextCatalog
     modules.value = findTankModules(data, id)
+    // 科技树只为研发图的「下一级坦克」补名称/tier：不阻塞配置器数据，
+    // 也不让它失败拖垮整个详情（assetProvider 未配置时会同步抛出）。
+    techTree.value = null
+    try {
+      loadTechTree(nation).then((tree) => {
+        if (request === modulesRequest) techTree.value = tree
+      }).catch(() => {})
+    } catch {
+      techTree.value = null
+    }
     reconcileEquipmentHandoff()
   } catch (e) {
     if (request !== modulesRequest) return
@@ -238,9 +262,15 @@ const selectionKey = selection => JSON.stringify([
   selection.devices, selection.consumables, selection.provisions,
   selection.skills, selection.camouflage,
 ])
+/** 上一次计入对比基线的选择键：URL 提交（pending → route.query）会让特性重算一次，
+ *  内容相同但对象是新引用；若照单收下，previous 就被抹成新值，delta 立刻消失。 */
+let lastSelectionKey = null
 watch(characteristics, (value, oldValue) => {
+  const key = selectionKey(setup.value)
+  if (key === lastSelectionKey) return
+  lastSelectionKey = key
   if (resetTargetKey != null) {
-    previousCharacteristics.value = selectionKey(setup.value) === resetTargetKey ? value : (oldValue || null)
+    previousCharacteristics.value = key === resetTargetKey ? value : (oldValue || null)
     resetTargetKey = null
     return
   }
@@ -318,15 +348,6 @@ const pitchBonus = computed(() => {
   return { up: up - initialPitch, down: down + initialPitch }
 })
 
-/** 初始/顶级快捷：只切换模块（config/发动机/履带），保留装备与物品选择。 */
-function applyModulePreset(kind) {
-  writeSetup({
-    config: kind === 'stock' ? 0 : Math.max(0, cfgs.value.length - 1),
-    engine: kind === 'stock' ? 0 : Math.max(0, (modules.value?.engines?.length || 1) - 1),
-    track: kind === 'stock' ? 0 : Math.max(0, (modules.value?.chassis?.length || 1) - 1),
-  })
-}
-
 /** 选择写回 URL（replace）：全部配置器字段一份 owner，分享/返回可恢复。 */
 function writeSetup(patch) {
   const next = { ...setup.value, ...patch }
@@ -388,6 +409,55 @@ function resetSetup() {
     resetTargetKey = null
   }
   writeSetup(target)
+}
+
+/** 研发图里的后继车：节点来自布局，展示事实来自科技树 + tank_cache。 */
+const researchNextVehicles = computed(() => {
+  if (!modules.value || !catalog.value) return []
+  let layout = null
+  try {
+    layout = moduleTreeLayout(modules.value, setup.value, {})
+  } catch {
+    return []
+  }
+  if (!layout) return []
+  const byStem = new Map((techTree.value?.nodes || []).map(n => [n.stem, n]))
+  return layout.nextVehicles.map((v) => {
+    const node = byStem.get(v.stem)
+    const summary = node ? cache.value?.[String(node.tankId)] : null
+    return {
+      stem: v.stem,
+      cost: v.cost || null,
+      tankId: node?.tankId ?? null,
+      name: summary?.name || node?.stem || v.stem,
+      tier: Number(summary?.tier ?? node?.tier) || null,
+      sourceModule: v.sourceModule,
+      sourceKind: v.sourceKind,
+    }
+  })
+})
+
+/** 研发图点节点 = 安装（与研发页同一套对号规则）。 */
+function installFromGraph(node) {
+  const m = modules.value
+  const d = detail.value
+  const sel = setup.value
+  if (!m || !d || !sel?.canConfigure || !node?.install) return
+  const ins = node.install
+  if (ins.kind === 'engine') return writeSetup({ engine: ins.index })
+  if (ins.kind === 'chassis') return writeSetup({ track: ins.index })
+  if (ins.kind === 'turret') return writeSetup(pickTurret(sel, m, d, ins.index))
+  if (ins.kind === 'gun') {
+    const occ = ins.occurrences.find(o => o.turret === sel.turret) || ins.occurrences[0]
+    const base = occ.turret === sel.turret ? sel : pickTurret(sel, m, d, occ.turret)
+    return writeSetup(pickGun(base, m, d, occ.gun))
+  }
+}
+
+/** 研发图点「下一级坦克」= 切到那辆车。 */
+function openVehicleFromGraph(tankId) {
+  if (!tankId) return
+  writeState({ tank: Number(tankId), config: null, engine: null, track: null })
 }
 
 /** 装甲查看器入口的配置下标：配置器可用时以选择态为准，否则回落原 select。 */
@@ -502,8 +572,8 @@ onMounted(() => {
           </div>
         </Motion>
 
-        <!-- 工作台：左 = 模型入口 + 配置面板，右 = 参数区（BlitzKit 式两栏）。
-             参数卡片顺序：防护 → 机动 → 火力（火力卡内弹种选择置顶）。 -->
+        <!-- 工作台：左 = 模型入口 + 配置面板，右 = **模块研发图**（模块选择在这里）。
+             参数区在下方整宽展示（防护 → 机动 → 火力；火力卡内弹种选择置顶）。 -->
         <div class="tp-workbench">
           <div class="tp-workbench-left">
           <section class="tp-card-section tp-model-card" data-testid="tank-open3d-card" data-tour="tankopedia-detail">
@@ -537,15 +607,27 @@ onMounted(() => {
             :catalog="catalog"
             @update="writeSetup"
             @reset="resetSetup"
-            @preset="applyModulePreset"
             @cycle-skill="cycleSkill"
             @max-skills="maxSkills"
             @clear-skills="clearSkills"
           />
           </div>
 
+          <div v-if="modules && setup.canConfigure" class="tp-workbench-graph" data-testid="tank-module-graph">
+            <TankResearchPanel
+              embedded
+              :detail="detail"
+              :modules="modules"
+              :selection="setup"
+              :next-vehicles="researchNextVehicles"
+              @install="installFromGraph"
+              @open-vehicle="openVehicleFromGraph"
+            />
+          </div>
+        </div>
+
         <TankParamPanel
-          class="tp-workbench-right"
+          class="tp-params-full"
           v-if="characteristics"
           :groups="paramTable"
           :current="characteristics"
@@ -558,7 +640,7 @@ onMounted(() => {
           @select-shell="selectShell"
         />
 
-        <section v-else class="tp-card-section tp-workbench-right">
+        <section v-else class="tp-card-section tp-params-full">
           <h2 class="tp-section-title">{{ t('agentTanks.mobility') }}</h2>
           <dl class="tp-stats">
             <div><dt>{{ t('agentTanks.hp') }}</dt><dd>{{ fmtNum(detail.hp, 0) }}</dd></div>
@@ -573,7 +655,6 @@ onMounted(() => {
             <div v-if="curCfg?.aim_time != null"><dt>{{ t('agentTanks.aim_time') }}</dt><dd>{{ fmt(curCfg.aim_time, 1) }} s</dd></div>
           </dl>
         </section>
-        </div>
 
         <!-- 无模块数据的静态详情：保留只读弹种表（可配置时弹种表已并入火力卡） -->
         <section v-if="!characteristics" class="tp-card-section">
@@ -725,6 +806,8 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: var(--space-6);
+  align-items: flex-start;
+  flex-wrap: wrap;
   padding: var(--space-4);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-lg);
@@ -749,9 +832,11 @@ onMounted(() => {
 .tp-section-title { margin: 0; font: var(--type-h3); }
 
 /* 工作台：桌面左右两栏（模型/装甲入口 + 配置面板），窄屏纵向堆叠 */
-.tp-workbench { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: var(--space-4); align-items: start; }
+.tp-workbench { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: var(--space-4); align-items: start; }
 .tp-workbench-left { display: grid; gap: var(--space-4); align-content: start; min-inline-size: 0; }
-.tp-workbench-right { min-inline-size: 0; }
+/* 模块研发图：右侧独立一栏（模块选择），宽度不足时等比缩放而不是横向拖动 */
+.tp-workbench-graph { min-inline-size: 0; padding: var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-surface-1); box-shadow: var(--elevation-1); }
+.tp-params-full { margin-block-start: var(--space-4); }
 .tp-model-card { align-content: start; }
 
 .tp-summary {
