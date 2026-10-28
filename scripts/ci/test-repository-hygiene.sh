@@ -45,7 +45,7 @@ printf 'generated\n' > frontend/dist/assets/app.js
 git add -f frontend/dist/assets/app.js
 git commit -q -m 'add generated dist output'
 head=$(git rev-parse HEAD)
-expect_fail generated-dist env BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail generated-dist env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
 # A large blob added in one commit and deleted in the next must still fail: it
 # remains reachable from the PR commit history even though the final tree is clean.
@@ -59,7 +59,7 @@ git commit -q -m 'add temporary large blob'
 git rm -q large.bin
 git commit -q -m 'remove temporary large blob'
 head=$(git rev-parse HEAD)
-expect_fail add-delete env BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail add-delete env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
 # Normal small source changes remain allowed.
 git switch -q -C clean-change "$base"
@@ -68,6 +68,6 @@ printf 'ok\n' > src/example.txt
 git add src/example.txt
 git commit -q -m 'add small source file'
 head=$(git rev-parse HEAD)
-expect_pass clean-change env BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_pass clean-change env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
 echo "repository hygiene regression tests: PASS"
