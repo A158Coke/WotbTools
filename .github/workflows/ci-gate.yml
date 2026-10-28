@@ -48,6 +48,9 @@ jobs:
             echo "::error::docs/current-plan.md must remain ignored." >&2
             exit 1
           }
+      - name: Enforce repository hygiene
+        shell: bash
+        run: bash scripts/ci/check-repository-hygiene.sh
       - name: Resolve and verify pull request range
         id: revisions
         env:
