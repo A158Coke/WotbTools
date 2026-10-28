@@ -28,7 +28,7 @@ import {
 import { normalizeTankCache } from '../utils/tankopediaQuery.js'
 import { createLoadProgress } from './loadProgress.js'
 import { shotResultClass } from '../utils/shotResultClass.js'
-import { isCompactShotResultCard, shotResultCardMetrics } from '../utils/shotResultCardMetrics.js'
+import { isCompactShotResultCard, shotResultCardMaxWidth as resultCardMaxWidth, shotResultCardMetrics } from '../utils/shotResultCardMetrics.js'
 import {
     RC,
     buildPack, snapshotPackPose, packPoseChanged, buildRicochetGrid, createGridTextures, simulateContinuation, raycastPackAll,
@@ -5646,9 +5646,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const cardHostRect = cardHost ? cardHost.getBoundingClientRect() : null;
             const compactCard = isCompactShotResultCard(window.innerWidth, window.innerHeight);
             const cardMetrics = shotResultCardMetrics(compactCard);
-            const cardMaxWidth = cardHostRect && cardHostRect.width > 0
-                ? Math.max(compactCard ? 180 : 220, Math.floor(cardHostRect.width - (compactCard ? 16 : 32)))
-                : null;
+            const cardMaxWidth = resultCardMaxWidth(cardHostRect ? cardHostRect.width : 0, window.innerWidth, window.innerHeight);
             let html = `<div style="background:var(--tooltip-bg);border-radius:${cardMetrics.radius}px;border-left:${cardMetrics.borderWidth}px solid ${cardBorder};padding:${cardMetrics.padding};font-family:'Segoe UI',sans-serif;white-space:normal;box-sizing:border-box;${cardMaxWidth ? `max-width:${cardMaxWidth}px;` : ''}box-shadow:0 4px 20px rgba(0,0,0,0.5);">`;
             // 顶行：交战距离 · 有效穿深（距离衰减后） · 溅射半径（仅 HE）。
             // 有效穿深取判定链的 probability_penetration（d>100 时已按 far 衰减；
@@ -5868,8 +5866,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const host = document.getElementById('canvas-container');
             const rect = host ? host.getBoundingClientRect() : null;
             if (!rect || !(rect.width > 0) || !(rect.height > 0)) { div.style.display = 'none'; return; }
-            // 卡片宽度跟画布容器走（侧栏/窄画布不能按视口算），窗口缩放后同步刷新。
-            div.style.maxWidth = `${Math.max(220, Math.floor(rect.width - 32))}px`;
+            // 卡片宽度跟画布容器走（侧栏/窄画布不能按视口算），窗口缩放后同步刷新；
+            // 紧凑档（竖屏手机 / 横屏矮视口）再封顶 420px，避免横屏里铺满整屏。
+            const maxWidth = resultCardMaxWidth(rect.width, window.innerWidth, window.innerHeight);
+            if (maxWidth) div.style.maxWidth = `${maxWidth}px`;
             div.style.whiteSpace = 'normal';
             div.style.boxSizing = 'border-box';
             const v = trajInfoPos.clone().project(camera);
