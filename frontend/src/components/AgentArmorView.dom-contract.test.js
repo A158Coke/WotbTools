@@ -629,6 +629,32 @@ describe('spaced armor double-sided judgment', () => {
   })
 })
 
+// 炮管裁切面按客户端原值（2026-10-28）：客户端逐车 yaml maskSlice 的 planePosition/
+// planeNormal/planeSliceMode 经资产面 sidecar 透传；平面在 gun_NN 节点局部系，按节点
+// world 矩阵变换。旧标量（gun_mask + 轴对齐重建）只作为旧资产包的回退。
+describe('client maskSlice plane wiring', () => {
+  const kernel = read('../scene/tankViewer.js')
+  const helper = read('../scene/gunMask.js')
+  it('viewer 拉取 sidecar 并在到达后重算裁切面/同步厚度视图材质', () => {
+    expect(kernel).toContain('fetchGunMaskSlices()')
+    expect(kernel).toMatch(/fetchGunMaskSlices\(\)\.then\(\(records\) => \{[\s\S]*?computeGunClipPlane\(\);\s*\n\s*syncModuleClipPlanes\(\);/)
+  })
+  it('平面优先取客户端记录：position/normal 经 gun_NN 节点 world 矩阵', () => {
+    expect(kernel).toMatch(/const record = gunMaskRecord\(cfg\);/)
+    expect(kernel).toMatch(/gunMaskPlaneWorld\(record, node\.matrixWorld, _gunMaskNormal, _gunMaskPoint\)/)
+    expect(kernel).toMatch(/gunMaskNodeName\(record\)/)
+    // 记录存在但 planeSliceMode !== 1 → 不裁（不回落到标量近似）
+    expect(helper).toMatch(/if \(Number\(record\.plane_slice_mode\) !== 1\) return false/)
+    // 记录路径先 return，标量重建只在无记录（旧包）时执行
+    expect(kernel).toMatch(/if \(record\) \{[\s\S]*?\n\s*return;\s*\n\s*\}\s*\n\s*\/\/ 旧资产包（无 sidecar 记录）/)
+  })
+  it('外部模块 mask 子树的可见性统一走客户端记录优先的判定', () => {
+    const calls = [...kernel.matchAll(/const hasMask = gunHasMaskPart\(gunMaskRecord\(cfg\), cfg\);/g)]
+    expect(calls.length).toBeGreaterThanOrEqual(5)
+    expect(kernel).toMatch(/const gunHasMask = gunHasMaskPart\(gunMaskRecord\(cfgForGun\), cfgForGun\);/)
+  })
+})
+
 // 选车器的外层键盘 trap 与二级模态层（手机筛选 AppSheet，portal 到 body）的隔离：
 // 按键发生在 #tank-picker 之外的 dialog 内时，外层不得介入（否则 Esc 会连带关闭整个选车器、Tab 被拉回外层）。
 describe('tank picker keyboard isolation from nested modal layers', () => {

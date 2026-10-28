@@ -21,10 +21,12 @@ import {
     fetchTankEncyclopedia,
     fetchShells,
     fetchReplayShots,
+    fetchGunMaskSlices,
     judgePenetration,
     assetProvider,
     shotBallisticLength,
 } from './agentData.js'
+import { gunHasMaskPart, gunMaskNodeName, gunMaskPlaneWorld, gunMaskSliceKey } from './gunMask.js'
 import { normalizeTankCache } from '../utils/tankopediaQuery.js'
 import { createLoadProgress } from './loadProgress.js'
 import { shotResultClass } from '../utils/shotResultClass.js'
@@ -469,6 +471,16 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         let gunClipPlane = null;
         const _gunClipPlaneObj = new THREE.Plane();
         let gunMuzzleWorld = null;
+        // 客户端 maskSlice 完整记录（资产包 /data/gunMaskSlices.json，逐车逐炮位）。
+        // 到达后裁切面按客户端原值重建；旧包无该文件 → null，回退旧标量重建。
+        let gunMaskSlices = null;
+        const _gunMaskNormal = new THREE.Vector3();
+        const _gunMaskPoint = new THREE.Vector3();
+        function gunMaskRecord(cfg) {
+            if (!gunMaskSlices || !tankData) return null;
+            const key = gunMaskSliceKey(tankData.tank_id, cfg || currentConfig());
+            return key ? (gunMaskSlices[key] || null) : null;
+        }
         // 装甲旋转枢轴（alignArmorModules 按 models.pb 原点写入：track+turret / track+turret+gun）。
         // updateTurretGun 以此为炮塔/炮管的旋转中心（对齐 BlitzKit 旋转语义）。
         let armorPivotTurret = null, armorPivotGun = null;
@@ -478,8 +490,6 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const act = activeGunNumber();
             const cfg = currentConfig();
             if (act == null || !tankModel) return;
-            // BlitzKit 真值语义：mask=0 视同无 mask（gunModelDefinition.mask ? ...）
-            const hasMask = cfg && typeof cfg.gun_mask === 'number' && cfg.gun_mask !== 0;
             tankModel.updateMatrixWorld(true);
             const gunPrefix = 'gun_' + String(act).padStart(2, '0');
             let barrel = null, barrelLen = 0;
@@ -528,6 +538,20 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 const halfAlongDir = (Math.abs(dir.x)*sz.x + Math.abs(dir.y)*sz.y + Math.abs(dir.z)*sz.z) / 2;
                 gunMuzzleWorld = center.add(dir.clone().multiplyScalar(halfAlongDir));
             }
+            // 客户端 maskSlice 原值优先（逐车逐炮位 sidecar）：position/normal 定义在
+            // gun_NN 节点局部系，经该节点 world 矩阵变换；`planeSliceMode !== 1` 表示
+            // 客户端不做平面切割——不建平面，也不回退到“有 mask 就裁”的旧近似。
+            const record = gunMaskRecord(cfg);
+            if (record) {
+                const nodeName = gunMaskNodeName(record);
+                const node = nodeName ? tankModel.getObjectByName(nodeName) : null;
+                if (node && gunMaskPlaneWorld(record, node.matrixWorld, _gunMaskNormal, _gunMaskPoint)) {
+                    gunClipPlane = _gunClipPlaneObj.setFromNormalAndCoplanarPoint(_gunMaskNormal, _gunMaskPoint);
+                }
+                return;
+            }
+            // 旧资产包（无 sidecar 记录）：沿用标量重建（模型原点 + 掩体偏移沿炮口方向）。
+            const hasMask = gunHasMaskPart(gunMaskRecord(cfg), cfg);
             if (!hasMask) return;
             const mo = tankData && tankData.model_origins;
             if (!(mo && mo.track && mo.turret && cfg.gun_origin && barrel)) return;
@@ -561,7 +585,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const act = activeGunNumber();
             const cfg = currentConfig();
             // BlitzKit 真值语义：mask=0 视同无 mask（SpacedArmorScene `gunModelDefinition.mask ?`）
-            const hasMask = cfg && typeof cfg.gun_mask === 'number' && cfg.gun_mask !== 0;
+            const hasMask = gunHasMaskPart(gunMaskRecord(cfg), cfg);
             computeGunClipPlane();
             moduleMeshes.forEach(function(node) {
                 if (!node.isMesh) return;
@@ -1013,7 +1037,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             });
             const act = activeGunNumber();
             const cfg = currentConfig();
-            const hasMask = cfg && typeof cfg.gun_mask === 'number' && cfg.gun_mask !== 0;
+            const hasMask = gunHasMaskPart(gunMaskRecord(cfg), cfg);
             moduleMeshes.forEach(function(node) {
                 if (!node.isMesh) return;
                 if (node.userData.gunConfig != null && act != null && node.userData.gunConfig !== act) return;
@@ -1666,7 +1690,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 const ndcY = -((py - rect.top) / rect.height) * 2 + 1;
                 const act = activeGunNumber();
                 const cfg = currentConfig();
-                const hasMask = cfg && typeof cfg.gun_mask === 'number' && cfg.gun_mask !== 0;
+                const hasMask = gunHasMaskPart(gunMaskRecord(cfg), cfg);
                 const activeModules = act == null ? moduleMeshes : moduleMeshes.filter(m => {
                     if (m.userData.gunConfig != null) return m.userData.gunConfig === act;
                     return true;
@@ -1778,7 +1802,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // 值的车上不属于外部模块，需随外部模块口径隐藏；普通/击穿视图的视觉模型仍渲染
             // 全部部件（2026-10-28 用户报障：视觉模型缺件；厚度模式要求裁剪隐藏）。
             const cfg = currentConfig();
-            const hasMask = cfg && typeof cfg.gun_mask === 'number' && cfg.gun_mask !== 0;
+            const hasMask = gunHasMaskPart(gunMaskRecord(cfg), cfg);
             const hideMaskPart = collisionMode && !hasMask;
             for (const node of moduleMeshes) {
                 node.visible = baseNodeVisible(node)
@@ -4712,6 +4736,14 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             reportLoad({ state: 'loading', progress: null });
             initScene();
             setupEventHandlers();
+            // 客户端 maskSlice sidecar（逐车逐炮位）：与模型加载并行拉取，到达后按客户端
+            // 原值重算裁切面并同步厚度视图实心炮管材质（旧包缺文件 → null，保持标量路径）。
+            fetchGunMaskSlices().then((records) => {
+                gunMaskSlices = records;
+                if (destroyed || contextLost) return;
+                computeGunClipPlane();
+                syncModuleClipPlanes();
+            });
             const initTargetId = initialTankId ?? 28689;
             const initShooterId = initialShooterId ?? initTargetId;
             await populateTankLists(initTargetId, initShooterId);
@@ -5181,7 +5213,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const activeGun = activeGunNumber();
             const cfgForGun = currentConfig();
             // BlitzKit 真值语义：mask=0 视同无 mask
-            const gunHasMask = cfgForGun && typeof cfgForGun.gun_mask === 'number' && cfgForGun.gun_mask !== 0;
+            const gunHasMask = gunHasMaskPart(gunMaskRecord(cfgForGun), cfgForGun);
             computeGunClipPlane();
             const activeModules = activeGun == null
                 ? moduleMeshes   // 无法确定激活炮(如 configGunGroups 未填充)时退化为全部保留

@@ -17,6 +17,20 @@ export async function fetchTankData(id) {
   return assetProvider.json(`/tank/${id}.json`)
 }
 
+/** 客户端 maskSlice 完整记录（装甲查看器炮管裁切面按客户端原值重建）。
+ *  资产包 `/data/gunMaskSlices.json`（上游 emit_vehicle_pb 从客户端逐车 yaml 原样导出）；
+ *  旧包缺该文件 → null，viewer 回退到旧标量 `gun_mask` 重建（兼容，不静默丢裁剪）。 */
+let gunMaskSlicesPromise = null
+export function fetchGunMaskSlices() {
+  if (!gunMaskSlicesPromise) {
+    gunMaskSlicesPromise = assetProvider.json('/data/gunMaskSlices.json')
+      .then((doc) => (doc && typeof doc === 'object' ? doc.records || null : null))
+      .catch(() => null)
+    gunMaskSlicesPromise.then((records) => { if (records == null) gunMaskSlicesPromise = null })
+  }
+  return gunMaskSlicesPromise
+}
+
 /** 射击检视的紧凑搭载输入（config 原始顺序 / pitch_limits / shell_global_ids）：
  *  与装甲查看器同源取资产包 tank/{id}.json，按射击链所需字段投影——内嵌快照已退役
  *  （2026-10-15，随上游 shellKinds 一并改为 COS 获取，数据随包更新不再依赖前端发版）。
