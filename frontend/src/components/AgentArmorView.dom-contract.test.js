@@ -230,21 +230,20 @@ describe('dolly-zoom world-overview scope guard', () => {
     expect(kernel).toMatch(/if \(!collisionMode\) \{ resetArmorHighlight\(\); document\.getElementById\('click-info'\)\.style\.display = 'none'; \}/)
     expect(kernel).toMatch(/highlightedArmorNode && !isEffectivelyVisible\(highlightedArmorNode\)[\s\S]*?resetArmorHighlight\(\);/)
     // 视觉模型必须渲染全部部件：`gun_XX_mask` 是炮盾/炮根视觉（Super Conqueror 19281 等
-    // 无 mask 值的车，炮塔与炮管之间只由这个网格连接），不能写进基线的视觉可见性
+    // 无 mask 值的车，炮塔与炮管之间只由这个网格连接），不能写进可见性
     // （2026-10-28 用户报障：视觉模型缺件）。
     const baseVisible = kernel.slice(kernel.indexOf('function baseNodeVisible('), kernel.indexOf('function setArmorFilterRowVisible('))
     expect(baseVisible).not.toContain('gunMaskPart')
-    // 装甲厚度视图才按 BlitzKit 外部模块口径裁剪/隐藏炮管组件：
-    //  - 无 mask 值的车隐藏炮盾网格（mask 无值 → 外部模块只取精确 gun_0X）
-    //  - 有 mask 值的车把实心炮管体按 gun_mask 平面裁剪（掩体之后的炮尾段不显示）
-    expect(kernel).toMatch(/const hideMaskPart = collisionMode && !hasMask;/)
-    expect(kernel).toMatch(/!hiddenCategories\.external\s*&&\s*!\(hideMaskPart && node\.userData\.gunMaskPart\)/)
+    // 外部模块 = 整根炮管（gun_0X + gun_XX_mask）：客户端没有“无 mask 就隐藏炮盾”的规则，
+    // 炮盾在厚度视图/热力图外部模块里都保留；裁切只由 maskSlice 平面决定。
+    expect(kernel).not.toMatch(/gunMaskPart && !/)
+    expect(kernel).not.toContain('hideMaskPart')
     expect(kernel).toMatch(/node\.userData\.armorSection === 'gunBarrel' && gunClipPlane[\s\S]*?mat\.clippingPlanes = clipPlanes;[\s\S]*?mat\.needsUpdate = true;/)
     // 平面随姿态更新：进厚度视图前重算；炮塔/炮管转动后也重算（材质持有同一 Plane 对象）
     expect(kernel).toMatch(/if \(collision\) computeGunClipPlane\(\);\s*\n\s*applyModuleCollisionMaterial\(collision\);/)
     expect(kernel).toMatch(/updateCollisionWorldMatrices\(\);\s*\n\s*\/\/ 姿态变化后重算 gun_mask 裁切面[\s\S]*?if \(collisionMode\) \{ computeGunClipPlane\(\); syncModuleClipPlanes\(\); \}/)
-    // 外部模块口径不变：热力图外层网格仍按 mask 规则选取
-    expect(kernel).toMatch(/if \(node\.userData\.gunMaskPart && !hasMask\) return;\s*\n\s*externalMeshes\.push\(node\);/)
+    // 热力图外部模块保留整根炮管（不再按 mask 规则过滤 gunMaskPart）
+    expect(kernel).toMatch(/moduleMeshes\.forEach\(function\(node\) \{[\s\S]*?externalMeshes\.push\(node\);\s*\n\s*\}\);/)
     expect(kernel).toMatch(/return \{[\s\S]*?destroy, retry, selectTank, canPick, isContextLost,/)
     for (const api of ['setConfig: applyConfig', 'setConfigUiVisible', 'setShellUiVisible', 'setShell', 'setShooterConfig', 'setEquipmentOverride']) {
       expect(kernel).toContain(api)
@@ -648,10 +647,33 @@ describe('client maskSlice plane wiring', () => {
     // 记录路径先 return，标量重建只在无记录（旧包）时执行
     expect(kernel).toMatch(/if \(record\) \{[\s\S]*?\n\s*return;\s*\n\s*\}\s*\n\s*\/\/ 旧资产包（无 sidecar 记录）/)
   })
-  it('外部模块 mask 子树的可见性统一走客户端记录优先的判定', () => {
-    const calls = [...kernel.matchAll(/const hasMask = gunHasMaskPart\(gunMaskRecord\(cfg\), cfg\);/g)]
-    expect(calls.length).toBeGreaterThanOrEqual(5)
-    expect(kernel).toMatch(/const gunHasMask = gunHasMaskPart\(gunMaskRecord\(cfgForGun\), cfgForGun\);/)
+  it('外部模块保留整根炮管：可见性不再按“有无 mask”隐藏炮盾网格', () => {
+    // 客户端没有“无 mask → 只取精确 gun_0X”规则；炮盾（gun_XX_mask）与炮管同属外部
+    // 模块，裁切只由 maskSlice 平面决定。
+    expect(kernel).not.toMatch(/gunMaskPart && !/)
+    expect(kernel).not.toContain('hideMaskPart')
+    expect(kernel).toMatch(/for \(const node of moduleMeshes\) \{\s*\n\s*node\.visible = baseNodeVisible\(node\) && !hiddenCategories\.external;/)
+  })
+})
+
+// 间隙甲双面（2026-10-28 用户裁定）：点击判定之外，热力图（additive/状态通道）与厚度
+// 视图的材质也必须双面渲染，否则从背面命中的间隙屏看不见；背面片元把法线翻向相机
+// （与 classifyHit 同口径），避免角度/续飞用错朝向。
+describe('spaced armor double-sided rendering', () => {
+  const shaders = read('../scene/viewer/armorShaders.js')
+  const kernel = read('../scene/tankViewer.js')
+  it('热力图间隙甲材质与深度占位都是 DoubleSide', () => {
+    expect(shaders).toMatch(/blending: THREE\.AdditiveBlending,\s*\n\s*\/\/[^\n]*\n\s*side: THREE\.DoubleSide,/)
+    expect(shaders).toMatch(/depthWrite: true, depthTest: true, blending: THREE\.NoBlending,\s*\n\s*side: THREE\.DoubleSide,/)
+    expect(kernel).toMatch(/colorWrite: false, depthTest: true, depthWrite: true, side: THREE\.DoubleSide,/)
+    expect(kernel).toMatch(/addClone\(spacedArmorScene, node, spacedOmitMaterial, 5\)/)
+  })
+  it('间隙甲片元着色器按 gl_FrontFacing 翻转法线（PBR/间隙/状态三处）', () => {
+    const flips = [...shaders.matchAll(/if \(!gl_FrontFacing\) nFace = -nFace;/g)]
+    expect(flips).toHaveLength(3)
+  })
+  it('厚度视图间隙甲材质 DoubleSide，主装甲保持 FrontSide', () => {
+    expect(kernel).toMatch(/side: node\.userData\.armorSection === 'spaced' \? THREE\.DoubleSide : THREE\.FrontSide,/)
   })
 })
 

@@ -26,7 +26,7 @@ import {
     assetProvider,
     shotBallisticLength,
 } from './agentData.js'
-import { gunHasMaskPart, gunMaskNodeName, gunMaskPlaneWorld, gunMaskSliceKey } from './gunMask.js'
+import { gunMaskNodeName, gunMaskPlaneWorld, gunMaskSliceKey } from './gunMask.js'
 import { normalizeTankCache } from '../utils/tankopediaQuery.js'
 import { createLoadProgress } from './loadProgress.js'
 import { shotResultClass } from '../utils/shotResultClass.js'
@@ -551,7 +551,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 return;
             }
             // 旧资产包（无 sidecar 记录）：沿用标量重建（模型原点 + 掩体偏移沿炮口方向）。
-            const hasMask = gunHasMaskPart(gunMaskRecord(cfg), cfg);
+            const hasMask = cfg && typeof cfg.gun_mask === 'number' && cfg.gun_mask !== 0;
             if (!hasMask) return;
             const mo = tankData && tankData.model_origins;
             if (!(mo && mo.track && mo.turret && cfg.gun_origin && barrel)) return;
@@ -583,22 +583,23 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             });
             externalMeshes = [];
             const act = activeGunNumber();
-            const cfg = currentConfig();
-            // BlitzKit 真值语义：mask=0 视同无 mask（SpacedArmorScene `gunModelDefinition.mask ?`）
-            const hasMask = gunHasMaskPart(gunMaskRecord(cfg), cfg);
             computeGunClipPlane();
             moduleMeshes.forEach(function(node) {
                 if (!node.isMesh) return;
                 if (node.visible === false) return;
                 if (node.userData.gunConfig != null && act != null && node.userData.gunConfig !== act) return;
-                // BlitzKit 选择规则：mask 有值 → gun_01 + gun_01_mask 子树都渲染；
-                // mask 无值 → 只渲染 gun_01（炮管本体），mask 网格不参与
-                if (node.userData.gunMaskPart && !hasMask) return;
+                // 外部模块 = 整根炮管（gun_0X + gun_XX_mask 炮盾）：客户端只在给了
+                // maskSlice 平面时裁切，没有平面就不裁；不再按“有无 mask”隐藏炮盾网格
+                // （客户端没有该规则；游戏内露出的炮管整段参与判定）。
                 externalMeshes.push(node);
             });
         }
 
         const omitMaterial = new THREE.MeshBasicMaterial({ colorWrite: false, depthTest: true, depthWrite: true });
+        // 间隙甲深度占位也必须双面：背面命中的间隙屏要参与遮挡/深度（与着色双面一致）。
+        const spacedOmitMaterial = new THREE.MeshBasicMaterial({
+            colorWrite: false, depthTest: true, depthWrite: true, side: THREE.DoubleSide,
+        });
         const excludeMaterial = new THREE.MeshBasicMaterial({ colorWrite: false, depthTest: true, depthWrite: true });
         // 跳弹续飞共享 uniform（同一对象引用注入每个 penetrationMaterial——单点更新全体生效）。
         // 数据面 = 世界系均匀网格（buildRicochetGrid，炮塔/配置变化时重建；相机移动不重建）；
@@ -856,7 +857,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 const cm = addClone(spacedArmorScene, node, spacedMaterial(t, pen), 2);
                 cm.userData._baseThickness = t;
                 tagStateClone(cm, node);
-                const od = addClone(spacedArmorScene, node, omitMaterial, 5);
+                const od = addClone(spacedArmorScene, node, spacedOmitMaterial, 5);
                 tagStateClone(od, node);
             });
             externalMeshes.forEach(function(node){
@@ -1036,12 +1037,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 list.push({ mesh: node, section: sec, thickness: t, variant: null });
             });
             const act = activeGunNumber();
-            const cfg = currentConfig();
-            const hasMask = gunHasMaskPart(gunMaskRecord(cfg), cfg);
             moduleMeshes.forEach(function(node) {
                 if (!node.isMesh) return;
                 if (node.userData.gunConfig != null && act != null && node.userData.gunConfig !== act) return;
-                if (node.userData.gunMaskPart && !hasMask) return;
                 if (node.parent && node.parent.visible === false) return;
                 const t = node.userData.armorThickness;
                 if (typeof t !== 'number') return;
@@ -1689,12 +1687,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 const ndcX = ((px - rect.left) / rect.width) * 2 - 1;
                 const ndcY = -((py - rect.top) / rect.height) * 2 + 1;
                 const act = activeGunNumber();
-                const cfg = currentConfig();
-                const hasMask = gunHasMaskPart(gunMaskRecord(cfg), cfg);
                 const activeModules = act == null ? moduleMeshes : moduleMeshes.filter(m => {
                     if (m.userData.gunConfig != null) return m.userData.gunConfig === act;
                     return true;
-                }).filter(m => !(m.userData.gunMaskPart && !hasMask));
+                });
                 const rc = new THREE.Raycaster();
                 rc.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
                 const objects = [armorModel, ...activeModules];
@@ -1797,17 +1793,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     node.visible = baseNodeVisible(node) && !(category && hiddenCategories[category]);
                 });
             }
-            // BlitzKit 的“mask 无值 → 外部模块只取精确 gun_0X”规则只属于**装甲厚度视图**
-            // 的外部模块：厚度视图把炮管/履带画成实心碰撞体，炮盾（gun_XX_mask）在无 mask
-            // 值的车上不属于外部模块，需随外部模块口径隐藏；普通/击穿视图的视觉模型仍渲染
-            // 全部部件（2026-10-28 用户报障：视觉模型缺件；厚度模式要求裁剪隐藏）。
-            const cfg = currentConfig();
-            const hasMask = gunHasMaskPart(gunMaskRecord(cfg), cfg);
-            const hideMaskPart = collisionMode && !hasMask;
+            // 外部模块（炮管/履带）的可见性只受分类过滤控制：炮管整根（含 gun_XX_mask
+            // 炮盾）都算外部模块——客户端没有“无 mask 就隐藏炮盾”的规则，裁切只由
+            // maskSlice 平面决定（见 computeGunClipPlane）。
             for (const node of moduleMeshes) {
-                node.visible = baseNodeVisible(node)
-                    && !hiddenCategories.external
-                    && !(hideMaskPart && node.userData.gunMaskPart);
+                node.visible = baseNodeVisible(node) && !hiddenCategories.external;
             }
             if (collisionMode && highlightedArmorNode && !isEffectivelyVisible(highlightedArmorNode)) {
                 resetArmorHighlight();
@@ -1948,6 +1938,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     ? new THREE.MeshStandardMaterial({
                         color: thicknessToColor(node.userData.armorThickness), metalness: 0.4, roughness: 0.6,
                         transparent: true, opacity: 0.95, depthWrite: true,
+                        // 间隙甲双面：厚度视图下从背面看/点也可见（与判定/高亮口径一致）
+                        side: node.userData.armorSection === 'spaced' ? THREE.DoubleSide : THREE.FrontSide,
                     })
                     : new THREE.MeshStandardMaterial({
                         color: 0x444444, metalness: 0.3, roughness: 0.8,
@@ -5211,16 +5203,13 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (node.visible === false) node.visible = true;
             });
             const activeGun = activeGunNumber();
-            const cfgForGun = currentConfig();
-            // BlitzKit 真值语义：mask=0 视同无 mask
-            const gunHasMask = gunHasMaskPart(gunMaskRecord(cfgForGun), cfgForGun);
             computeGunClipPlane();
             const activeModules = activeGun == null
                 ? moduleMeshes   // 无法确定激活炮(如 configGunGroups 未填充)时退化为全部保留
                 : moduleMeshes.filter(m => {
                     if (m.userData.gunConfig != null) return m.userData.gunConfig === activeGun;
                     return true;
-                }).filter(m => !(m.userData.gunMaskPart && !gunHasMask));
+                });
             for (const mesh of activeModules) {
                 if (mesh.visible === false) mesh.visible = true;
             }

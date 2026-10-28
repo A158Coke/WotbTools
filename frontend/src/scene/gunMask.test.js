@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Matrix4, Vector3 } from 'three'
 import {
-  gunHasMaskPart,
   gunMaskNodeName,
   gunMaskPlaneWorld,
   gunMaskSliceKey,
@@ -27,18 +26,6 @@ describe('gunMaskSliceKey', () => {
     expect(gunMaskSliceKey(null, { turret_local: 0, gun_local: 0 })).toBeNull()
     expect(gunMaskSliceKey(1, null)).toBeNull()
     expect(gunMaskSliceKey(1, { turret_local: 0 })).toBeNull()
-  })
-})
-
-describe('gunHasMaskPart', () => {
-  it('客户端 enabled 记录优先（表里只存 enabled 记录）', () => {
-    expect(gunHasMaskPart(record, { gun_mask: null })).toBe(true)
-  })
-  it('无记录（旧包/预览车）退回标量 gun_mask；0 视同无 mask', () => {
-    expect(gunHasMaskPart(null, { gun_mask: 0.84 })).toBe(true)
-    expect(gunHasMaskPart(null, { gun_mask: 0 })).toBe(false)
-    expect(gunHasMaskPart(null, { gun_mask: null })).toBe(false)
-    expect(gunHasMaskPart(null, null)).toBe(false)
   })
 })
 

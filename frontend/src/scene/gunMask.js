@@ -24,13 +24,6 @@ export function gunMaskSliceKey(tankId, cfg) {
   return `${tankId}:${tl}:${gl}`
 }
 
-/** 外部模块是否包含 gun_XX_mask 子树：客户端 enabled 记录优先；无记录（旧包/预览车）
- *  退回旧标量 `gun_mask`（该标量本身也只由 enabled 记录生成）。 */
-export function gunHasMaskPart(record, cfg) {
-  if (record) return true
-  return !!(cfg && typeof cfg.gun_mask === 'number' && cfg.gun_mask !== 0)
-}
-
 /** 记录对应的可视节点名（maskSlice 键 gun_NN 的 NN）。 */
 export function gunMaskNodeName(record) {
   const n = Number(record?.node)

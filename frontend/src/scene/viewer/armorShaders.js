@@ -92,6 +92,9 @@ export const PBR_FRAG = `
       // 几何输入与运算全程 highp，避免法线/穿深先量化再提升精度；仍使用碰撞逐面
       // 法线，不改为屏幕导数。500 m 视空间 length() 在 mediump 下会溢出。
       highp vec3 nFace = normalize(vNormal);
+      // 双面材质（间隙甲）：背面命中把法线翻向相机来向，与点击链 classifyHit 同口径；
+      // 正面命中不受影响。
+      if (!gl_FrontFacing) nFace = -nFace;
       highp float angle = acos(clamp(dot(nFace, -viewDir), -1.0, 1.0));
 
       highp mat3 vRotT = transpose(mat3(viewMatrix));
@@ -358,6 +361,9 @@ const SPACED_FRAG = `
       // 同一 flat vNormal 面法线；不要用 dFdx/dFdy(vViewPos)（移动端 mediump 导数会错乱）。
       // 视线方向用 highp：500 m 处 mediump length() 会在平方时溢出。
       highp vec3 nFace = normalize(vNormal);
+      // 双面材质（间隙甲）：背面命中把法线翻向相机来向，与点击链 classifyHit 同口径；
+      // 正面命中不受影响。
+      if (!gl_FrontFacing) nFace = -nFace;
       highp float angle = acos(clamp(dot(nFace, -viewDir), -1.0, 1.0));
       // RT1 只对最近的间隙板做跳弹判定；本 additive 通道只累计各层
       // normalized effective，后续高倾角间隙板不能被写成 R=1（CPU layerIndex>0 已抑制跳弹）。
@@ -390,6 +396,9 @@ const SPACED_STATE_FRAG = `
       // 同一 flat vNormal 面法线；不要用 dFdx/dFdy(vViewPos)（移动端 mediump 导数会错乱）。
       // 视线方向用 highp：500 m 处 mediump length() 会在平方时溢出。
       highp vec3 nFace = normalize(vNormal);
+      // 双面材质（间隙甲）：背面命中把法线翻向相机来向，与点击链 classifyHit 同口径；
+      // 正面命中不受影响。
+      if (!gl_FrontFacing) nFace = -nFace;
       highp float angle = acos(clamp(dot(nFace, -viewDir), -1.0, 1.0));
       bool threeCal = caliber > thickness * 3.0;
       bool ricocheted = !threeCal && angle >= ricochet;
@@ -543,6 +552,8 @@ export function createArmorShaderContext() {
             vertexShader: SPACED_VERT, fragmentShader: SPACED_FRAG,
             depthWrite: false, depthTest: true,
             blending: THREE.AdditiveBlending,
+            // 间隙甲双面：从背面命中的间隙屏同样上色/累计（与点击判定双面口径一致）
+            side: THREE.DoubleSide,
             uniforms: spacedCommonUniforms(thickness, penetration),
         });
     }
@@ -551,6 +562,7 @@ export function createArmorShaderContext() {
             vertexShader: SPACED_VERT, fragmentShader: SPACED_STATE_FRAG,
             // 状态不可累加：最近板写入后，其余板深度测试失败（独占写入）
             depthWrite: true, depthTest: true, blending: THREE.NoBlending,
+            side: THREE.DoubleSide,
             uniforms: spacedCommonUniforms(thickness, penetration),
         });
     }
