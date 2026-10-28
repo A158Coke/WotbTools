@@ -1790,7 +1790,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (!m) continue;
                 m.transparent = true;
                 m.opacity = modules.has(node) ? 1 : 0.95;
-                m.depthWrite = true;
+                // 外部模块是深度测试的叠加层（renderOrder 4），不写深度；装甲板写深度
+                m.depthWrite = !modules.has(node);
                 if (m.emissive) { m.emissive.setHex(0x000000); m.emissiveIntensity = 0; }
                 m.needsUpdate = true;
             }
@@ -1809,8 +1810,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     if (m.emissive) { m.emissive.setHex(0x000000); m.emissiveIntensity = 0; }
                 } else {
                     m.transparent = true;
-                    m.opacity = modules.has(node) ? 0.15 : 0.18;
-                    m.depthWrite = false;
+                    m.opacity = modules.has(node) ? 0.15 : 0.25;
+                    // 与 BlitzKit 一致：非选中的装甲板仍写深度（继续遮挡其后的炮根/
+                    // 模块），外部模块不写深度（半透明叠加层）。
+                    m.depthWrite = !modules.has(node);
                     if (m.emissive) { m.emissive.setHex(0x000000); m.emissiveIntensity = 0; }
                 }
                 m.needsUpdate = true;
@@ -1850,9 +1853,18 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     }
                     // 双面模块（履带）保留客户端的双面口径：厚度视图里上表面仍可见
                     mat.side = side;
+                    // BlitzKit 的外部模块层次：装甲板先写深度，外部模块（炮管/履带）
+                    // 在其后做深度测试的透明层。炮管后段被炮塔装甲遮住——否则点击高亮
+                    // 压暗装甲板后，整根炮管会从炮塔里露出来，看起来比 BlitzKit 长。
+                    mat.transparent = true;
+                    mat.opacity = 1;
+                    mat.depthWrite = false;
+                    mat.depthTest = true;
+                    node.renderOrder = 4;
                     node.material = mat;
                 } else if (moduleOriginalMaterials.has(node)) {
                     node.material = moduleOriginalMaterials.get(node);
+                    node.renderOrder = 0;
                     moduleOriginalMaterials.delete(node);
                 }
             }

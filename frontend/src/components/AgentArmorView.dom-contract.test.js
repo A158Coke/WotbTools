@@ -277,7 +277,12 @@ describe('dolly-zoom world-overview scope guard', () => {
     expect(kernel).toMatch(/function applyArmorHighlight\(selected\)/)
     expect(kernel).not.toContain('0xffc247')
     expect(kernel).toMatch(/if \(node === selected\) \{[\s\S]*?m\.opacity = 1;[\s\S]*?m\.emissive\.setHex\(0x000000\)/)
-    expect(kernel).toMatch(/m\.opacity = modules\.has\(node\) \? 0\.15 : 0\.18/)
+    expect(kernel).toMatch(/m\.opacity = modules\.has\(node\) \? 0\.15 : 0\.25/)
+    // BlitzKit 外部模块层次：装甲板先写深度，模块在其后做深度测试的透明层；
+    // 非选中装甲板仍写深度，炮根不会从炮塔里露出来（点击高亮后也不变长）。
+    expect(kernel).toMatch(/mat\.transparent = true;\s*\n\s*mat\.opacity = 1;\s*\n\s*mat\.depthWrite = false;\s*\n\s*mat\.depthTest = true;\s*\n\s*node\.renderOrder = 4;/)
+    expect(kernel).toMatch(/m\.depthWrite = !modules\.has\(node\);/)
+    expect(kernel).toMatch(/node\.renderOrder = 0;/)
     expect(kernel).toMatch(/function resetArmorHighlight\(\)[\s\S]*?if \(!collisionMode \|\| !armorModel\) return;/)
     expect(kernel).toMatch(/if \(node === selected\) \{[\s\S]*?m\.opacity = 1;/)
     // 命中换板、落空清空；离开碰撞视图 / 换配置 / 过滤隐藏当前板都要清掉高亮
