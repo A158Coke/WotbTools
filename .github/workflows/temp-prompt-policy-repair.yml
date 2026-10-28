@@ -39,6 +39,23 @@ jobs:
                   'Output still uses the v0.5 structured result;': 'Output still uses the structured result;',
                   'Вывод по-прежнему в структуре v0.5;': 'Вывод по-прежнему использует structured result;',
               },
+              'java/wotb-ai/src/test/java/com/wotb/ai/review/TeamReviewNaturalCoachContractTest.java': {
+                  'Focus Window 是内部 attention 提示而非用户模板；v0.5 结构化输出契约；': 'Focus Window 是内部 attention 提示而非用户模板；结构化输出契约；',
+                  '=== Team AI Review v0.5 结构化结果（最终输出契约） ===': '=== Team AI Review 结构化结果（最终输出契约） ===',
+                  '必须有 v0.5 输出契约段': '必须有结构化输出契约段',
+                  'v0.5 必须使用 summary 结构': 'structured result 必须使用 summary 结构',
+                  'v0.5 必须有 episodes': 'structured result 必须有 episodes',
+                  'v0.5 必须有 trainingSuggestions': 'structured result 必须有 trainingSuggestions',
+                  'v0.5 必须有 reviewFocus': 'structured result 必须有 reviewFocus',
+                  'v0.5 必须有 highContributors': 'structured result 必须有 highContributors',
+                  '=== 团队复盘 v0.6 推理顺序与因果质量约束（强制） ===': '=== 团队复盘推理顺序与因果质量约束（强制） ===',
+                  '残留中文 v0.6 reasoning contract': '残留中文 reasoning contract',
+                  'primaryDiagnosis 只是整场摘要，不得压缩 v0.5 structured result 中的 episodes 或训练建议': 'primaryDiagnosis 只是整场摘要，不得压缩 structured result 中的 episodes 或训练建议',
+                  'Team AI Review v0.5 structured result': 'Team AI Review structured result',
+                  'EN 必须有 v0.5 structured result 契约': 'EN 必须有 structured result 契约',
+                  'Team AI Review v0.5': 'Team AI Review',
+                  'RU 必须有 v0.5 structured result 契约': 'RU 必须有 structured result 契约',
+              },
           }
           for path, pairs in replacements.items():
               p = Path(path)
