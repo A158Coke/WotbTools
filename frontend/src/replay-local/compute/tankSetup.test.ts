@@ -18,6 +18,7 @@ import {
   computeSetupPair,
   consumableTiming,
   decodeDevices,
+  devicesFromEquipmentIds,
   encodeDevices,
   findTankModules,
   gunCycleOf,
@@ -399,5 +400,30 @@ describe('consumableTiming（装备 101/118 与客户端 script 计时）', () =
     expect(consumableTiming(extinguisher!.script, [118], catalog).cooldown).toBeCloseTo(70 / 1.17, 6)
     expect(consumableTiming({ params: { crewLevelIncrease: 10 } }, [101, 118], catalog))
       .toEqual({ cooldown: null, duration: null })
+  })
+})
+
+describe('devicesFromEquipmentIds（回放装配 → 槽位反解）', () => {
+  const modules = findTankModules(USSRS as any, 5137) ?? USSRS.tanks[Object.keys(USSRS.tanks)[0]]
+
+  it('id 命中预设一侧 → 该侧；两侧都命中/都未命中 → null', () => {
+    // level0 attack：左 rammer(100) / 右 calibratedShells(103)
+    expect(devicesFromEquipmentIds([100], modules, catalog)[0]).toBe(0)
+    expect(devicesFromEquipmentIds([103], modules, catalog)[0]).toBe(1)
+    // 未命中：槽位空（fail-closed），不猜
+    expect(devicesFromEquipmentIds([], modules, catalog)[0]).toBeNull()
+    expect(devicesFromEquipmentIds([101], modules, catalog)[0]).toBeNull() // 101 不在该槽两侧
+  })
+
+  it('0 = 空槽垫底：过滤掉；左右候选 id 同时在场 = 歧义 → null', () => {
+    const slots = devicesFromEquipmentIds([0, 100, 101], modules, catalog)
+    expect(slots[0]).toBe(0) // 100 → rammer（左）
+    expect(devicesFromEquipmentIds([100, 103], modules, catalog)[0]).toBeNull()
+  })
+
+  it('未知 id（预设外）→ 对应槽位 null；空入参 → 全 null 表', () => {
+    expect(devicesFromEquipmentIds([999], modules, catalog)).not.toContain(1)
+    expect(devicesFromEquipmentIds(null, modules, catalog).every(s => s === null)).toBe(true)
+    expect(devicesFromEquipmentIds([], modules, catalog).length).toBe(9)
   })
 })

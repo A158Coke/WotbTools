@@ -754,7 +754,13 @@ const camoBonusParts = computed(() => {
 .tp-camo input { inline-size: var(--control-check); block-size: var(--control-check); margin: 0; accent-color: var(--color-accent); }
 
 @media (width < 768px) {
-  .tp-module-matrix { gap: var(--space-1); }
-  .tp-module-tile { padding: 2px; }
+  /* 手机：4 列矩阵折 2 列（炮塔|火炮 // 发动机|履带）——每个逻辑行恰好 4 格，
+     折行后列语义仍逐行对齐；类型标签行与数据行同步折，不会错位。 */
+  .tp-module-matrix { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2) var(--space-1); }
+  .tp-module-head { align-content: start; }
+  .tp-module-tile { padding: var(--space-1); min-block-size: 64px; }
+  /* 装备矩阵在窄屏吃掉等级标签列：标签收窄为图标宽度，槽位保持两候选并排 */
+  .tp-dev-matrix { gap: var(--space-1); }
+  .tp-dev-btn { min-block-size: 48px; }
 }
 </style>

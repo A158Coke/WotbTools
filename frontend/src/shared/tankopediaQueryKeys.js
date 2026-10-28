@@ -6,5 +6,5 @@
  */
 export const TANKOPEDIA_QUERY_KEYS = Object.freeze([
   'q', 'tier', 'nation', 'type', 'sort', 'tank', 'config',
-  'engine', 'track', 'shell', 'dev', 'cons', 'prov', 'skills', 'camo',
+  'engine', 'track', 'shell', 'dev', 'cons', 'prov', 'skills', 'camo', 'eq',
 ])

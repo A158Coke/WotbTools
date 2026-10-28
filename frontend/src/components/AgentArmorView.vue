@@ -26,6 +26,8 @@ import { usePlaybackPortraitViewport } from '../composables/usePlaybackPortraitV
 import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 import Scene3DStatus from './Scene3DStatus.vue'
 import TankCatalogMenu from './TankCatalogMenu.vue'
+import ArmorLoadout from './ArmorLoadout.vue'
+import EquipmentBadges from './EquipmentBadges.vue'
 
 const { t, te } = useI18n()
 const router = useRouter()
@@ -91,6 +93,12 @@ const shotGestures = computed(() => ['rotate', 'zoom', 'pan'].map(action => ({
 // 「参数」面板（装备 / 射击方 / 目标 / 配置）：桌面与手机都默认收起，不再常驻占掉 3D 视口；
 // 桌面端复用手机竖屏的顶栏结构，信息卡与设置面板合并为左上角同一张卡。
 const toolsOpen = ref(false)
+// 「实际搭载」面板懒激活：首次展开「参数」才拉 research 数据（catalog/modules 是 MB 级
+// JSON，不该在 3D 场景加载路径上抢带宽）；一旦激活保持（收起再展开不重复拉）。
+const loadoutActive = ref(false)
+watch(toolsOpen, (open) => { if (open) loadoutActive.value = true }, { immediate: true })
+/** 搭载面板的车：场景选择器换车后以 viewer 上报为准（选车不写 URL），深链回落 URL。 */
+const loadoutTankId = computed(() => selectedTargetId.value ?? (Number(route.query.tank) || null))
 // ?clean=1 时场景脚本会隐藏全部常驻面板（截图 / 嵌入用）；顶栏卡片与参数开关一并让位
 const cleanQuery = computed(() => route.query.clean === '1')
 
@@ -374,6 +382,24 @@ onBeforeUnmount(() => {
                     <label class="eq-opt"><input type="checkbox" id="eq-calibrated"> <span class="eq-opt-label">{{ $t('armor.calibrated') }}</span></label>
                     <label class="eq-opt"><input type="checkbox" id="eq-enhanced"> <span class="eq-opt-label">{{ $t('armor.enhanced') }}</span></label>
                     <label class="eq-opt" id="armor-state-opt" style="display:none;"><input type="checkbox" id="armor-state-toggle"> <span class="eq-opt-label">{{ $t('armor.dynamic_armor') }}</span></label>
+                </div>
+                <!-- 实际搭载（2026-10-27 接入）：百科交接 = 模块四件 + 装备/物品图标；
+                     射击复现 = 该弹射手/目标的 Type5 配件串徽标（回放真值，只读）。 -->
+                <div v-if="loadoutActive" class="sel-row sel-loadout" data-testid="armor-loadout-section">
+                    <template v-if="isShotPage">
+                        <label>{{ $t('armor.loadout_shooter') }}</label>
+                        <EquipmentBadges :ids="activeShot?.shooter_equipment?.raw ?? null" />
+                        <label>{{ $t('armor.loadout_target') }}</label>
+                        <EquipmentBadges :ids="activeShot?.target_equipment?.raw ?? null" />
+                    </template>
+                    <ArmorLoadout
+                        v-else
+                        :tank-id="loadoutTankId"
+                        :config="route.query.config"
+                        :dev="route.query.dev"
+                        :cons="route.query.cons"
+                        :prov="route.query.prov"
+                    />
                 </div>
                 <div class="sel-row"><label id="shooter-label">{{ $t('armor.shooter') }}</label><button class="tank-btn" id="shooter-select" disabled @click="openPicker('shooter')">—</button></div>
                 <div class="sel-row"><label id="target-label">{{ $t('armor.target') }}</label><button class="tank-btn" id="target-select" disabled @click="openPicker('target')">—</button></div>

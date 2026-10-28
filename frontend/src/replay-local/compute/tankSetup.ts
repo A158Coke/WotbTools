@@ -167,6 +167,32 @@ export function presetSlots(modules: any, catalog: any) {
   return presets[modules?.optDevicePreset] || presets.defaultPreset || []
 }
 
+/**
+ * 回放装配 id 集合（`shooter_equipment.raw`，Type5 九字节、0=空槽）→ 装备槽位选择
+ * （0=左候选 / 1=右候选 / null=空）。线上串**变长且空槽省略**，槽位信息不存在——
+ * 反解只能按 id 对号预设两侧候选：id 命中一侧 → 该侧；两侧同 id 或都未命中 → null。
+ * 回放真值超出该车预设（活动装备等）时对应槽位保持空，不伪造可选性（fail-closed）。
+ */
+export function devicesFromEquipmentIds(ids: number[] | null | undefined, modules: any, catalog: any): Array<0 | 1 | null> {
+  const slots = presetSlots(modules, catalog)
+  if (!Array.isArray(ids) || !Array.isArray(slots)) return slots.map(() => null)
+  const present = new Set(ids.filter(id => Number.isInteger(id) && id > 0))
+  const byStem = new Map<string, number>(
+    (catalog?.devices || []).map((device: any): [string, number] => [device.stem, Number(device.id)]),
+  )
+  const idOf = (stem: any) => (stem ? byStem.get(stem) ?? null : null)
+  return slots.map((slot: any) => {
+    const leftId = idOf(slot?.left)
+    const rightId = idOf(slot?.right)
+    const leftHit = leftId != null && present.has(leftId)
+    const rightHit = rightId != null && present.has(rightId)
+    if (leftHit && rightHit) return null
+    if (leftHit) return 0
+    if (rightHit) return 1
+    return null
+  })
+}
+
 function clampIndex(value: number | null | undefined, length: number, fallback: number): number {
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value >= length) return fallback
   return value

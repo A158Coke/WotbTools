@@ -13,7 +13,7 @@ export const LEGACY_VIEW_ALIASES = Object.freeze({
 export const ALLOWED_VIEWS = Object.freeze([
   'home', 'replay', 'hof', 'more', 'hof-admin',
   'profile', 'admin-users', 'history', 'technical-evolution', 'contact',
-  'ai-review', 'battle-playback', 'agent-replay', 'agent-tankopedia', 'agent-armor', 'agent-shots',
+  'ai-review', 'battle-playback', 'agent-replay', 'agent-tankopedia', 'agent-armor', 'agent-shots', 'agent-techtree',
   'rating-docs', 'tournament-points', 'tournament-points-config', 'tournament-points-admin',
   'android', 'sponsor', 'league-broadcasts', 'recommendations', 'recommended-videos', 'creators', 'creators-config',
 ])
@@ -62,6 +62,7 @@ const PRIMARY_SECTION_OF_VIEW = Object.freeze({
   hof: 'hof',
   'agent-tankopedia': 'tankopedia',
   'agent-armor': 'tankopedia',
+  'agent-techtree': 'tankopedia',
   'tournament-points': 'tournament-points',
   'league-broadcasts': 'league-broadcasts',
   creators: 'creators',

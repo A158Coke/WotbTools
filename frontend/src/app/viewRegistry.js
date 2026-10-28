@@ -17,6 +17,7 @@ const SponsorPage = defineAsyncComponent(() => import('../components/SponsorPage
 const MorePage = defineAsyncComponent(() => import('../components/MorePage.vue'))
 const AgentTankopediaPage = defineAsyncComponent(() => import('../components/AgentTankopedia.vue'))
 const AgentArmorViewPage = defineAsyncComponent(() => import('../components/AgentArmorView.vue'))
+const AgentTechTreePage = defineAsyncComponent(() => import('../components/AgentTechTree.vue'))
 const RatingDocsPage = defineAsyncComponent(() => import('../components/RatingDocsPage.vue'))
 const TournamentPointsPage = defineAsyncComponent(() => import('../components/TournamentPointsPage.vue'))
 const TournamentPointsConfigPage = defineAsyncComponent(() => import('../components/TournamentPointsConfigPage.vue'))
@@ -45,6 +46,7 @@ export const VIEW_COMPONENTS = Object.freeze({
   'agent-shots': ReplayWorkspace,
   'agent-tankopedia': AgentTankopediaPage,
   'agent-armor': AgentArmorViewPage,
+  'agent-techtree': AgentTechTreePage,
   hof: HoFPage,
   more: MorePage,
   'hof-admin': HoFAdminPage,

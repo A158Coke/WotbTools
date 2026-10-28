@@ -24,7 +24,7 @@ import {
 import { loadResearchCatalog, loadTankModules, shellIconUrl } from '../utils/researchCatalog.js'
 import { computeCharacteristics, penetrationCoefficient } from '../replay-local/compute/characteristics'
 import {
-  buildComputeInput, decodeDevices, encodeDevices,
+  buildComputeInput, decodeDevices, devicesFromEquipmentIds, encodeDevices,
   defaultShellIndex, findTankModules, paramGroups, resolveSetup,
 } from '../replay-local/compute/tankSetup'
 import PageHeader from './PageHeader.vue'
@@ -192,11 +192,23 @@ async function loadModules(id, nation, configs) {
     if (request !== modulesRequest) return
     catalog.value = nextCatalog
     modules.value = findTankModules(data, id)
+    reconcileEquipmentHandoff()
   } catch (e) {
     if (request !== modulesRequest) return
     console.warn('research data unavailable:', e)
     modules.value = null
   }
+}
+
+/**
+ * 回放「在配置器中打开」交接（?eq= 装备 id 原值，Type5 配件串）：模块/目录就绪后
+ * 反解成 dev 槽位选择写回 URL 并移除 eq（歧义 fail-closed = 对应槽位留空）。
+ */
+function reconcileEquipmentHandoff() {
+  const ids = urlState.value.eq
+  if (!ids?.length || !modules.value || !catalog.value) return
+  const devices = devicesFromEquipmentIds(ids, modules.value, catalog.value)
+  writeState({ dev: encodeDevices(devices), eq: null })
 }
 
 /** URL + 客户端数据 → 选择态（炮塔/炮由 ?config= 唯一决定）。 */
@@ -386,16 +398,36 @@ const configForArmor = computed(() => (setup.value.canConfigure ? setup.value.co
 const listMounted = ref(detailId.value == null)
 watch(detailId, id => { if (id == null) listMounted.value = true })
 
-function open3d() {
-  // 审计 3D-09：在当前标签页打开装甲查看器（携带实际搭载配置下标），返回走浏览器历史
+function openTechTree() {
+  // 科技树入口：locationForView 保留 assets/lang 等与视图无关的键。
+  const dest = locationForView('agent-techtree', route)
+  router.push({ path: dest.path, query: { ...dest.query, view: 'agent-techtree' } })
+}
+
+function open3d() {  // 审计 3D-09：在当前标签页打开装甲查看器（携带实际搭载配置下标），返回走浏览器历史
   // 走 locationForView：它按"离开坦克百科"删掉列表筛选（nation/q/…），同时保留
   // 与视图无关的键（`assets` 资产源 override、`lang`、`admin` 等）——此前手写的
   // `query: { view, tank, config }` 会把 `assets` 一并丢掉，导致进入装甲查看器后
   // 资产源回落（模型/贴图加载不到）。
+  // 配置器可用时把装备/物品选择一并带上（dev/cons/prov/camo）：装甲查看器的
+  // 「实际搭载」面板读同一组参数，与百科参数区同源（2026-10-27 接入）。
   const dest = locationForView('agent-armor', route)
+  const handoff = setup.value.canConfigure
+    ? {
+        dev: encodeDevices(setup.value.devices),
+        cons: setup.value.consumables.join(','),
+        prov: setup.value.provisions.join(','),
+      }
+    : {}
   router.push({
     path: dest.path,
-    query: { ...dest.query, view: 'agent-armor', tank: String(detailId.value), config: String(configForArmor.value) },
+    query: {
+      ...dest.query,
+      view: 'agent-armor',
+      tank: String(detailId.value),
+      config: String(configForArmor.value),
+      ...handoff,
+    },
   })
 }
 
@@ -579,7 +611,19 @@ onMounted(() => {
 
     <!-- ================= 列表态 ================= -->
     <!-- v-if：直达详情不提前挂载；v-show：列表→详情→返回保留增量条数与搜索草稿 -->
-    <PageHeader v-if="listMounted" v-show="detailId == null" :title="t('agentTanks.title')" :description="t('agentTanks.hint')" />
+    <PageHeader v-if="listMounted" v-show="detailId == null" :title="t('agentTanks.title')" :description="t('agentTanks.hint')">
+      <template #actions>
+        <AppButton
+          v-if="detailId == null"
+          variant="ghost"
+          size="sm"
+          data-testid="tankopedia-techtree"
+          @click="openTechTree"
+        >
+          {{ t('research.open_techtree') }}
+        </AppButton>
+      </template>
+    </PageHeader>
     <TankCatalogMenu
       v-if="listMounted"
       v-show="detailId == null"
