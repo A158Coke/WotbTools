@@ -1752,6 +1752,18 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             }
             return true;
         }
+        /** 装甲组成显隐只在装甲厚度视图可用：进入时显示这一行，退出时复位并隐藏。 */
+        function setArmorFilterRowVisible(visible) {
+            const row = document.getElementById('armor-filters');
+            if (row) row.hidden = !visible;
+        }
+        function resetArmorFilters() {
+            for (const name of ['primary', 'spaced', 'external']) {
+                hiddenCategories[name] = false;
+                const btn = document.getElementById('filter-' + name);
+                if (btn) { btn.classList.add('active'); btn.setAttribute('aria-pressed', 'true'); }
+            }
+        }
         /** 把三个分类开关应用到装甲板与外部模块（炮管/履带）的可见性。 */
         function applyCategoryFilters() {
             if (armorModel) {
@@ -2025,6 +2037,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 cb.classList.remove('active');
                 cb.textContent = L.showCollision;
                 cb.setAttribute('aria-pressed', 'false');
+                resetArmorFilters();
+                setArmorFilterRowVisible(false);
                 applyArmorViewStyle(false);
             }
             this.classList.toggle('active', penetrationMode);
@@ -4565,6 +4579,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 this.classList.toggle('active', collisionMode);
                 this.textContent = collisionMode ? L.hideCollision : L.showCollision;
                 this.setAttribute('aria-pressed', String(collisionMode));
+                // 组成显隐只在厚度视图可用；退出时复位为全显示
+                if (!collisionMode) resetArmorFilters();
+                setArmorFilterRowVisible(collisionMode);
                 if (!collisionMode) document.getElementById('click-info').style.display = 'none';
                 if (!armorModel) return;
                 applyArmorViewStyle(collisionMode);

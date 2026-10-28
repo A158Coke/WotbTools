@@ -589,9 +589,12 @@ onBeforeUnmount(() => {
             <div id="view-toggle">
                 <button id="collision-btn" type="button" aria-pressed="false" :disabled="!viewerReady">{{ $t('armor.show_collision') }}</button>
                 <button id="penetration-btn" type="button" aria-pressed="false" :disabled="!viewerReady">{{ $t('armor.heatmap') }}</button>
-                <button id="filter-primary" type="button" class="active" aria-pressed="true">{{ $t('armor.filter_primary') }}</button>
-                <button id="filter-spaced" type="button" class="active" aria-pressed="true">{{ $t('armor.filter_spaced') }}</button>
-                <button id="filter-external" type="button" class="active" aria-pressed="true">{{ $t('armor.filter_external') }}</button>
+                <!-- 装甲组成显隐只在装甲厚度视图可用（场景按 collisionMode 显示这一行） -->
+                <div id="armor-filters" class="armor-filters" hidden>
+                    <button id="filter-primary" type="button" class="active" aria-pressed="true">{{ $t('armor.filter_primary') }}</button>
+                    <button id="filter-spaced" type="button" class="active" aria-pressed="true">{{ $t('armor.filter_spaced') }}</button>
+                    <button id="filter-external" type="button" class="active" aria-pressed="true">{{ $t('armor.filter_external') }}</button>
+                </div>
             </div>
         </div>
         <div id="corner-br">
@@ -686,6 +689,8 @@ onBeforeUnmount(() => {
 .armor-view #shell-selector label { color: var(--muted); font: var(--type-caption); }
 .armor-view #shell-selector select { max-inline-size: 100%; min-inline-size: 0; padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--input-bg); color: var(--txt); }
 .armor-view #view-toggle { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2); }
+.armor-view .armor-filters { display: flex; flex: 1 0 100%; flex-wrap: wrap; gap: var(--space-2); }
+.armor-view .armor-filters[hidden] { display: none; }
 .armor-view :is(#view-toggle button, .armor-scene-button) { padding: var(--space-2) var(--space-3); background: var(--input-bg); color: var(--txt); border: 1px solid var(--border); border-radius: var(--radius-md); font: var(--type-caption); }
 .armor-view #view-toggle button:hover { border-color: var(--accent); }
 .armor-view :is(#view-toggle button.active, .armor-scene-button[aria-pressed="true"]) { background: var(--color-accent); color: var(--color-on-accent); border-color: transparent; }

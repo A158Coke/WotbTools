@@ -201,6 +201,9 @@ describe('dolly-zoom world-overview scope guard', () => {
     expect(kernel).toMatch(/moduleOriginalMaterials\.set\(node, node\.material\)/)
     expect(kernel).toMatch(/const keep = new Set\(moduleMeshes\)/)
     // 分类过滤（主装甲/间隙/外部模块）
+    expect(kernel).toMatch(/setArmorFilterRowVisible\(collisionMode\)/)
+    expect(kernel).toMatch(/if \(!collisionMode\) resetArmorFilters\(\);/)
+    expect(read('./AgentArmorView.vue')).toMatch(/id="armor-filters"/)
     expect(kernel).toMatch(/const hiddenCategories = \{ primary: false, spaced: false, external: false \}/)
     expect(kernel).toMatch(/function applyCategoryFilters\(/)
     // 击穿视图默认开启，?heatmap=0 显式关闭（2026-10-28 用户要求）
