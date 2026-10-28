@@ -191,8 +191,9 @@ function cropStyle(id, boxAspect) {
 }
 const iconStyle = computed(() => cropStyle(tankId.value, ICON_ASPECT))
 /** 下一级坦克节点的小图同样要套内容框裁剪（原始画布坦克锚左上，不然看着偏）。 */
+/** 车辆节点图铺满格子（96×64 → aspect 1.5），与模块图同一裁剪口径。 */
 function vehicleIconStyle(id) {
-  return cropStyle(id, 1)
+  return cropStyle(id, NODE_W / NODE_H)
 }
 
 function activate(node) {
@@ -445,8 +446,20 @@ function activate(node) {
 }
 .tr-node.is-next-tank:disabled { cursor: default; opacity: 0.6; }
 
-.tr-node-pic { display: grid; place-items: center; inline-size: 30px; block-size: 30px; overflow: hidden; }
-.tr-node-pic img { inline-size: 100%; block-size: 100%; object-fit: contain; }
+/* 客户端 ModuleNode 的模块图是 97×60 居中（几乎铺满 64×72 节点），不是小角标 */
+.tr-node-pic {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: inherit;
+}
+.tr-node-pic img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: contain;
+}
 .tr-node-fallback { font: var(--type-h3); }
 .tr-node-level {
   position: absolute;
@@ -480,8 +493,8 @@ function activate(node) {
 .tr-node-cost.is-token { color: var(--color-info); }
 .tr-node-check {
   position: absolute;
-  inset-block-end: -6px;
-  inset-inline-end: -6px;
+  inset-block-end: 2px;
+  inset-inline-end: 2px;
   display: grid;
   place-items: center;
   inline-size: 14px;
@@ -490,12 +503,12 @@ function activate(node) {
   background: var(--color-accent);
   color: var(--color-canvas);
 }
-/* 客户端 ModuleNode：图标双轴居中、名字在底部叠放（这里配一层底色保证可读）。
-   最多两行；完整名称在 tooltip/aria 里。 */
+/* 客户端 ModulesTree 的节点里**只有图标**（名字在 tooltip/详情）；这里把名字放到
+   节点下方的行间距里，图标因此能完整铺满格子不被文字盖住。 */
 .tr-node-name {
   position: absolute;
-  inset-inline: 2px;
-  inset-block-end: 1px;
+  inset-block-start: calc(100% + 1px);
+  inset-inline: -8px;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -505,8 +518,8 @@ function activate(node) {
   font-family: var(--font-family-sans);
   font-size: var(--font-size-caption-xs);
   line-height: var(--line-height-caption-xs);
-  background: color-mix(in oklab, var(--color-surface-2) 88%, transparent);
-  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  pointer-events: none;
 }
 
 /* 平板/手机：横向三段改为纵向堆叠（前驱车 → 当前车 → 研发图） */
