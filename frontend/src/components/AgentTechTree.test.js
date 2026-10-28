@@ -174,147 +174,18 @@ describe('树态', () => {
   })
 })
 
-describe('研发态（?tank=）', () => {
-  const MODULES = {
-    tankId: 1, tier: 1, optDevicePreset: 'defaultPreset', consumableSlots: 1, provisionSlots: 1,
-    chassis: [
-      { stem: 'track0', localId: 0, level: 1, unlocks: [{ kind: 'chassis', stem: 'track1', cost: { xp: 500 } }], stats: {} },
-      { stem: 'track1', localId: 1, level: 2, unlocks: [], stats: {} },
-    ],
-    engines: [
-      { stem: 'eng0', localId: 0, level: 1, unlocks: [], stats: {} },
-      { stem: 'eng1', localId: 1, level: 2, unlocks: [], stats: {} },
-    ],
-    // 电台/油箱：参数计算需要，但**不是**研发模块（客户端 ModulesTree 只有四类）
-    radios: [{ stem: 'radio0', localId: 0, level: 1, unlocks: [], stats: {} }],
-    fuelTanks: [{ stem: 'fuel0', localId: 0, level: 1, unlocks: [], stats: {} }],
-    turrets: [
-      { stem: 't0', localId: 0, level: 1, unlocks: [], guns: [
-        { stem: 'g0', localId: 0, level: 1, unlocks: [{ kind: 'gun', stem: 'g1', cost: { xp: 200 } }], stats: {} },
-        { stem: 'g1', localId: 1, level: 2, unlocks: [], stats: {} },
-      ] },
-    ],
-  }
-  const DETAIL = {
-    tank_id: 1, name: 'T-26', tier: 1, nation: 'ussr',
-    configs: [
-      { label: 'T-26', turret_local: 0, gun_local: 0 },
-      { label: 'T-26', turret_local: 0, gun_local: 1 },
-    ],
-  }
-
-  it('节点点击写 ?tank=；模块数据缺失时面板降级为提示', async () => {
-    data.fetchTankData.mockResolvedValue(DETAIL)
-    research.loadTankModules.mockRejectedValue(new Error('404'))
-    const { wrapper, router } = await mountView()
+describe('坦克入口', () => {
+  it('点击坦克 → 坦克百科详情；科技树页签参数不带过去', async () => {
+    const { wrapper, router } = await mountView({ nation: 'ussr' })
     await wrapper.find('[data-testid="techtree-cell-T-26"]').trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.query.tank).toBe('1')
-    // 模块缺失：研发面板不出，但有降级提示
-    expect(wrapper.find('[data-testid="research-panel"]').exists()).toBe(false)
+    expect(router.currentRoute.value.query).toMatchObject({ view: 'agent-tankopedia', tank: '1' })
+    expect(router.currentRoute.value.query.nation).toBeUndefined()
   })
 
-  it('客户端布局：左前驱车列 + 当前车面板 + 右模块网格；无配置下拉', async () => {
-    data.fetchTankData.mockResolvedValue(DETAIL)
-    research.loadTankModules.mockResolvedValue({ tanks: { 'T-26': MODULES } })
-    const { wrapper, router } = await mountView()
-    await wrapper.find('[data-testid="techtree-cell-T-26"]').trigger('click')
+  it('旧深链 ?tank=：自动转到坦克百科详情（研发弹窗在详情页里）', async () => {
+    const { router } = await mountView({ tank: '1' })
     await flushPromises()
-    expect(wrapper.find('[data-testid="research-panel"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="research-current-tank"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="research-grid"]').exists()).toBe(true)
-    // 不再用下拉选配置（用户 2026-10-27 要求点击安装）
-    expect(wrapper.find('[data-testid="research-config"]').exists()).toBe(false)
-    expect(router.currentRoute.value.query.tank).toBe('1')
-  })
-
-
-  it('URL 下标按数字生效：?track=0 选中初始履带（不再被字符串夹回末位）', async () => {
-    data.fetchTankData.mockResolvedValue(DETAIL)
-    research.loadTankModules.mockResolvedValue({ tanks: { 'T-26': MODULES } })
-    const { wrapper } = await mountView({ tank: '1', config: '0', engine: '1', track: '0' })
-    const installed = wrapper.findAll('.tr-node.is-installed')
-    // 同时只有一套履带/一台发动机被标为已安装（回归：曾出现两款履带同时“选中”）
-    const installedTracks = installed.filter(node => node.attributes('data-testid')?.startsWith('research-node-chassis-'))
-    expect(installedTracks).toHaveLength(1)
-    expect(installedTracks[0].attributes('data-testid')).toBe('research-node-chassis-track0')
-    const installedEngines = installed.filter(node => node.attributes('data-testid')?.startsWith('research-node-engine-'))
-    expect(installedEngines).toHaveLength(1)
-    expect(installedEngines[0].attributes('data-testid')).toBe('research-node-engine-eng1')
-  })
-
-  it('成本角标：XP 用 k 缩写、活动代币单独配色（都不是截断的长数字）', async () => {
-    const modules = {
-      ...MODULES,
-      chassis: [
-        { stem: 'track0', localId: 0, level: 1, unlocks: [
-          { kind: 'chassis', stem: 'track1', cost: { xp: 31000 } },
-        ], stats: {} },
-        { stem: 'track1', localId: 1, level: 2, unlocks: [], stats: {} },
-      ],
-      turrets: [{
-        stem: 't0', localId: 0, level: 1, unlocks: [], guns: [
-          { stem: 'g0', localId: 0, level: 1, unlocks: [
-            { kind: 'gun', stem: 'g1', cost: { tokens: { currency: 'prx_season_6', amount: 1000 } } },
-          ], stats: {} },
-          { stem: 'g1', localId: 1, level: 2, unlocks: [], stats: {} },
-        ],
-      }],
-    }
-    data.fetchTankData.mockResolvedValue(DETAIL)
-    research.loadTankModules.mockResolvedValue({ tanks: { 'T-26': modules } })
-    // 选初始配置/初始履带 → track1、g1 未安装，才有成本角标
-    const { wrapper } = await mountView({ tank: '1', config: '0', track: '0' })
-    const trackBadge = wrapper.find('[data-testid="research-node-chassis-track1"] .tr-node-cost')
-    expect(trackBadge.text()).toBe('31k')
-    const tokenBadge = wrapper.find('[data-testid="research-node-gun-g1"] .tr-node-cost')
-    expect(tokenBadge.text()).toBe('1k')
-    expect(tokenBadge.classes()).toContain('is-token')
-  })
-
-  it('等级角标：每个节点（含炮/坦克）都有罗马数字标', async () => {
-    data.fetchTankData.mockResolvedValue(DETAIL)
-    research.loadTankModules.mockResolvedValue({ tanks: { 'T-26': MODULES } })
-    const { wrapper } = await mountView({ tank: '1' })
-    const nodes = wrapper.findAll('.tr-node')
-    expect(nodes.length).toBeGreaterThan(0)
-    const badges = wrapper.findAll('.tr-node-level')
-    expect(badges).toHaveLength(nodes.length)
-    // 夹具里炮塔/履带 level 1-2，炮链没有 level → 只校验罗马数字形态
-    for (const badge of badges) expect(badge.text()).toMatch(/^(I|II|III|IV|V|VI|VII|VIII|IX|X|XI)$/)
-    // 当前坦克节点也带标（tier 1 → I）
-    expect(wrapper.find('[data-testid="research-current-tank"] .tr-node-level').text()).toBe('I')
-  })
-
-  it('研发网格不渲染电台/油箱（客户端 ModulesTree 只有底盘/炮塔/炮/发动机）', async () => {
-    data.fetchTankData.mockResolvedValue(DETAIL)
-    research.loadTankModules.mockResolvedValue({ tanks: { 'T-26': MODULES } })
-    const { wrapper } = await mountView({ tank: '1' })
-    expect(wrapper.find('[data-testid="research-node-radio-radio0"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="research-node-fuelTank-fuel0"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="research-node-chassis-track0"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="research-node-engine-eng0"]').exists()).toBe(true)
-  })
-
-  it('点击模块节点即安装（默认顶配时点初始炮/初始履带）；点已安装节点是 no-op', async () => {
-    data.fetchTankData.mockResolvedValue(DETAIL)
-    research.loadTankModules.mockResolvedValue({ tanks: { 'T-26': MODULES } })
-    const { wrapper, router } = await mountView()
-    await wrapper.find('[data-testid="techtree-cell-T-26"]').trigger('click')
-    await flushPromises()
-    // 默认 = 末位配置/顶级履带：g1、track1 已安装
-    expect(wrapper.find('[data-testid="research-node-gun-g1"]').classes()).toContain('is-installed')
-    await wrapper.find('[data-testid="research-node-gun-g1"]').trigger('click')
-    await flushPromises()
-    expect(router.currentRoute.value.query.config).toBeUndefined() // 已安装 → no-op
-    // 装初始炮 g0 → config 0
-    await wrapper.find('[data-testid="research-node-gun-g0"]').trigger('click')
-    await flushPromises()
-    expect(router.currentRoute.value.query.config).toBe('0')
-    // 装初始履带 track0 → track 0，config 保持 0
-    await wrapper.find('[data-testid="research-node-chassis-track0"]').trigger('click')
-    await flushPromises()
-    expect(router.currentRoute.value.query.track).toBe('0')
-    expect(router.currentRoute.value.query.config).toBe('0')
+    expect(router.currentRoute.value.query).toMatchObject({ view: 'agent-tankopedia', tank: '1' })
   })
 })

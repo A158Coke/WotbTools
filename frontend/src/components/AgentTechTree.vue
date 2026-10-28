@@ -8,26 +8,24 @@
  * 研发连线 = 整车 `<unlocks><vehicle>` 边的 SVG 拓扑等价（from 车不在树上不画线）。
  * `pending`（已登记未实装的 XI 展示位）渲染为无名称占位——不造数据。
  *
- * 点击节点进入单车研发界面（?tank=，复刻 ModulesTree：上一辆车/当前车 + 模块研发图，
- * 见 TankResearchPanel）；不做研发/购买/解锁流程（2026-10-27 裁定维持）。
+ * 点击节点进入**坦克百科详情**（?view=agent-tankopedia&tank=）；单车研发界面在详情页的
+ * 「研发」弹窗里（见 TankResearchPanel），不做研发/购买/解锁流程（2026-10-27 裁定维持）。
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { ArrowLeft, RotateCcw, TriangleAlert } from 'lucide-vue-next'
-import { fetchTankData, fetchTankEncyclopedia, loadTankIconCrops, tankImageUrl } from '../scene/agentData.js'
+import { RotateCcw, TriangleAlert } from 'lucide-vue-next'
+import { fetchTankEncyclopedia, loadTankIconCrops, tankImageUrl } from '../scene/agentData.js'
 import { tankIconCropTransform } from '../utils/tankIconCrop.js'
 import { tankNationLabel } from '../scene/tankMeta.js'
-import { findTankModules, pickGun, pickTurret, resolveSetup } from '../replay-local/compute/tankSetup'
-import { loadTechTree, loadTankModules } from '../utils/researchCatalog.js'
-import { moduleTreeLayout, techTreeGrid, techTreeNations } from '../utils/techTreeLayout.js'
+import { loadTechTree } from '../utils/researchCatalog.js'
+import { techTreeGrid, techTreeNations } from '../utils/techTreeLayout.js'
 import { formatXpCompact } from '../utils/xpFormat.js'
 import { romanLevel } from '../utils/tierFormat.js'
 import { locationForView } from '../app/navigation'
 import PageHeader from './PageHeader.vue'
 import EmptyState from './EmptyState.vue'
 import AppButton from './AppButton.vue'
-import TankResearchPanel from './TankResearchPanel.vue'
 
 const VIEW = 'agent-techtree'
 const NATIONS = techTreeNations()
@@ -38,11 +36,6 @@ const router = useRouter()
 
 // ---------- URL 状态 ----------
 const urlNation = computed(() => (NATIONS.includes(String(route.query.nation)) ? String(route.query.nation) : NATIONS[0]))
-const researchId = computed(() => {
-  const id = Number(route.query.tank)
-  return Number.isInteger(id) && id > 0 ? id : null
-})
-
 function writeState(patch) {
   const next = { ...route.query, view: VIEW, ...patch }
   if (patch.nation != null && !NATIONS.includes(String(patch.nation))) next.nation = NATIONS[0]
@@ -154,184 +147,35 @@ function edgePath(edge) {
 
 /** 客户端等级条用罗马数字（LevelCell 绑定 roman(level)；1..11 覆盖 XI）。 */
 
-
+/** 节点点击 = 进坦克百科详情（研发弹窗在详情页里；这里不再有中间研发页）。 */
 function openResearch(node) {
-  writeState({ tank: String(node.tankId) })
-}
-function backToTree() {
-  writeState({ tank: null })
-}
-function openDetail() {
+  if (!node?.tankId) return
   // 走 locationForView：保留 assets/lang 等与视图无关的键（审计 3D-09 同口径）。
   const dest = locationForView('agent-tankopedia', route)
-  router.push({ path: dest.path, query: { ...dest.query, view: 'agent-tankopedia', tank: String(researchId.value) } })
+  const query = { ...dest.query, view: 'agent-tankopedia', tank: String(node.tankId) }
+  // 科技树的国别页签与详情无关；上一辆车的配置下标更不能带过去
+  for (const key of ['nation', 'config', 'engine', 'track', 'shell']) delete query[key]
+  router.push({ path: dest.path, query })
 }
 function openTankopedia() {
   const dest = locationForView('agent-tankopedia', route)
   router.push({ path: dest.path, query: { ...dest.query, view: 'agent-tankopedia' } })
 }
 
-// ---------- 研发态数据（?tank=） ----------
-const detail = ref(null)
-const detailState = ref('idle')
-const detailError = ref('')
-const modules = ref(null)
-let detailRequest = 0
-
-async function loadResearch(id) {
-  const request = ++detailRequest
-  detail.value = null
-  modules.value = null
-  if (id == null) { detailState.value = 'idle'; return }
-  detailState.value = 'loading'
-  detailError.value = ''
-  try {
-    const data = await fetchTankData(id)
-    if (request !== detailRequest) return
-    detail.value = data
-    detailState.value = 'ready'
-    try {
-      const nationData = await loadTankModules(data.nation)
-      if (request !== detailRequest) return
-      modules.value = findTankModules(nationData, id)
-    } catch (e) {
-      if (request !== detailRequest) return
-      console.warn('research modules unavailable:', e)
-      modules.value = null
-    }
-  } catch (e) {
-    if (request !== detailRequest) return
-    detailError.value = String(e?.message || e)
-    detailState.value = 'error'
-  }
-}
-watch(researchId, id => loadResearch(id), { immediate: true })
-
-/** URL 值 → 非负整数下标（tankSetup.clampIndex 只接受 number；字符串会被静默夹到默认值）。 */
-function queryIndex(value) {
-  const raw = Array.isArray(value) ? value[0] : value
-  if (raw == null || raw === '') return null
-  const n = Number(raw)
-  return Number.isInteger(n) && n >= 0 ? n : null
-}
-
-const selection = computed(() => {
-  if (!detail.value || !modules.value) return null
-  return resolveSetup({
-    detail: detail.value,
-    modules: modules.value,
-    url: {
-      config: queryIndex(route.query.config),
-      engine: queryIndex(route.query.engine),
-      track: queryIndex(route.query.track),
-      shell: queryIndex(route.query.shell),
-    },
-    catalog: null,
-  })
+// 旧深链 ?view=agent-techtree&tank=<id>：研发界面已并入坦克百科详情页，直接转过去。
+onMounted(() => {
+  const id = Number(route.query.tank)
+  if (!Number.isInteger(id) || id <= 0) return
+  const dest = locationForView('agent-tankopedia', route)
+  const query = { ...dest.query, view: 'agent-tankopedia', tank: String(id) }
+  delete query.nation
+  router.replace({ path: dest.path, query })
 })
-
-/** 研发态的科技树数据（上一辆车/下一辆车反解）：?tank= 的国别可能与页签不同。 */
-const researchTreeData = ref(null)
-watch(() => detail.value?.nation, async (nation) => {
-  researchTreeData.value = null
-  if (!nation) return
-  try {
-    researchTreeData.value = await loadTechTree(nation)
-  } catch {
-    researchTreeData.value = null
-  }
-}, { immediate: true })
-const researchGrid = computed(() => (researchTreeData.value ? techTreeGrid(researchTreeData.value) : null))
-
-/** 上一辆车：科技树边 to=当前车（多父全列）。 */
-const prevVehicles = computed(() => {
-  const stem = detail.value?.stem
-  const g = researchGrid.value
-  if (!stem || !g) return []
-  const byStem = new Map()
-  for (const node of g.cells.values()) byStem.set(node.stem, node)
-  const out = new Map()
-  for (const edge of researchTreeData.value.edges || []) {
-    if (edge.to !== stem) continue
-    const node = byStem.get(edge.from)
-    if (node && !out.has(node.stem)) {
-      out.set(node.stem, { node, cost: Number(edge.cost?.xp) || null, name: nameOf(node) })
-    }
-  }
-  return [...out.values()]
-})
-
-const moduleLayout = computed(() => {
-  if (!modules.value) return null
-  try {
-    return moduleTreeLayout(modules.value, selection.value)
-  } catch {
-    return null
-  }
-})
-const nextVehicles = computed(() => {
-  const g = researchGrid.value
-  const layout = moduleLayout.value
-  if (!g || !layout) return []
-  const byStem = new Map()
-  for (const node of g.cells.values()) byStem.set(node.stem, node)
-  return layout.nextVehicles.map(v => {
-    const node = byStem.get(v.stem)
-    return {
-      stem: v.stem,
-      cost: Number(v.cost?.xp) || null,
-      tankId: node?.tankId ?? null,
-      name: node ? nameOf(node) : null,
-      // 下一级坦克的等级角标（tank_cache 概要，缺省回落到科技树节点 tier）
-      tier: Number(summaryOf(node)?.tier ?? node?.tier) || null,
-      sourceModule: v.sourceModule,
-      sourceKind: v.sourceKind,
-      node: node || null,
-    }
-  })
-})
-
-function jumpTo(tankId) {
-  // 换车时清掉上辆车留下的配置选择（下标不再有意义）
-  writeState({ tank: String(tankId), config: null, engine: null, track: null })
-}
-
-/** 安装写回 URL（与坦克百科配置器同一组键；炮塔/炮经 pickTurret/pickGun 折算 config）。 */
-function writeSetup(next) {
-  if (!next) return
-  writeState({
-    config: String(next.config ?? 0),
-    engine: next.engine != null ? String(next.engine) : null,
-    track: next.track != null ? String(next.track) : null,
-  })
-}
-
-/**
- * 点击模块节点 = 安装（客户端 ModulesTree 同语义）：
- * 炮塔/炮 → pickTurret/pickGun 折算 config；发动机/履带 → 直写下标。
- * 炮优先装在当前炮塔上的同门炮副本，否则切到第一个持有该炮的炮塔再装。
- */
-function installModule(node) {
-  const m = modules.value
-  const d = detail.value
-  const sel = selection.value
-  if (!m || !d || !sel?.canConfigure || !node?.install) return
-  const ins = node.install
-  if (ins.kind === 'engine') return writeSetup({ ...sel, engine: ins.index })
-  if (ins.kind === 'chassis') return writeSetup({ ...sel, track: ins.index })
-  if (ins.kind === 'turret') return writeSetup(pickTurret(sel, m, d, ins.index))
-  if (ins.kind === 'gun') {
-    const occ = ins.occurrences.find(o => o.turret === sel.turret) || ins.occurrences[0]
-    const base = occ.turret === sel.turret ? sel : pickTurret(sel, m, d, occ.turret)
-    return writeSetup(pickGun(base, m, d, occ.gun))
-  }
-}
 </script>
 
 <template>
   <section class="techtree" data-testid="techtree">
     <PageHeader
-      v-if="researchId == null"
       :title="t('research.title')"
       :description="t('research.hint')"
     >
@@ -344,51 +188,8 @@ function installModule(node) {
 
     <p v-if="cacheState === 'error'" class="tt-status" role="status">{{ t('research.cache_unavailable') }}</p>
 
-    <!-- ================= 研发态（?tank=） ================= -->
-    <template v-if="researchId != null">
-      <p v-if="detailState === 'loading'" class="tt-status" role="status">{{ t('agentTanks.loading') }}</p>
-      <EmptyState
-        v-else-if="detailState === 'error'"
-        role="alert"
-        data-testid="techtree-detail-error"
-        :icon="TriangleAlert"
-        :title="t('agentTanks.detail_error_title')"
-        :description="detailError || t('agentTanks.error_desc')"
-      >
-        <AppButton variant="primary" @click="loadResearch(researchId)">
-          <RotateCcw :size="16" aria-hidden="true" />
-          {{ t('agentTanks.retry') }}
-        </AppButton>
-      </EmptyState>
-
-      <template v-else-if="detail">
-        <div class="tt-nav">
-          <AppButton variant="ghost" size="sm" data-testid="techtree-back" @click="backToTree">
-            <ArrowLeft :size="16" aria-hidden="true" />
-            {{ t('research.back_tree') }}
-          </AppButton>
-          <AppButton variant="ghost" size="sm" data-testid="techtree-open-detail" @click="openDetail">
-            {{ t('research.open_detail') }}
-          </AppButton>
-        </div>
-
-        <TankResearchPanel
-          v-if="modules"
-          :detail="detail"
-          :modules="modules"
-          :selection="selection"
-          :prev-vehicles="prevVehicles"
-          :next-vehicles="nextVehicles"
-          @install="installModule"
-          @open-vehicle="jumpTo"
-        />
-        <p v-else class="tt-status">{{ t('research.modules_unavailable') }}</p>
-      </template>
-    </template>
-
     <!-- ================= 树态 ================= -->
-    <template v-else>
-      <div class="tt-tabs" role="tablist" :aria-label="t('research.nation_tabs')">
+    <div class="tt-tabs" role="tablist" :aria-label="t('research.nation_tabs')">
         <button
           v-for="nation in NATIONS"
           :key="nation"
@@ -492,7 +293,6 @@ function installModule(node) {
           </div>
         </div>
       </div>
-    </template>
   </section>
 </template>
 
@@ -647,7 +447,6 @@ function installModule(node) {
 .tt-pill.is-tier { background: color-mix(in oklab, var(--color-accent) 14%, var(--color-surface-1)); color: var(--color-accent-text); }
 
 /* ---------- 研发态 ---------- */
-.tt-nav { display: flex; }
 /* 手机：头部纵向排列，网格横向滚动不变 */
 @media (width < 768px) {
   .techtree { gap: var(--space-3); padding-block-start: var(--space-4); }

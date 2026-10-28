@@ -84,12 +84,11 @@ function recalcFit() {
   const el = scrollEl.value
   if (!el || !gridW.value || !gridH.value) { fitScale.value = 1; return }
   const availW = el.clientWidth - 20
-  const availH = el.clientHeight - 20
-  if (availW <= 0 || availH <= 0) return
-  const scale = Math.min(1, availW / canvasW.value, availH / gridH.value)
-  // 下限 0.72：再小文字就读不清了。极宽的树（如 14 列的活动车）宁可横向平移
-  // ——客户端本身也是滚动容器，不做无限缩小。
-  fitScale.value = Math.max(0.72, Math.round(scale * 1000) / 1000)
+  if (availW <= 0) return
+  // 只按宽度缩放：面板高度随内容（对话框 body 自己滚动），若也按 clientHeight 适配，
+  // 缩放会改变容器高度而反复收缩；同时不设下限——研发图不得出现横向拖动。
+  const scale = Math.min(1, availW / canvasW.value)
+  fitScale.value = Math.round(scale * 1000) / 1000
 }
 watch([canvasW, gridH], recalcFit)
 onMounted(() => {
@@ -233,10 +232,10 @@ function activate(node) {
 </script>
 
 <template>
-  <section class="tr-panel" data-testid="research-panel">
+  <section class="tr-panel" :class="{ 'has-side': prevVehicles.length }" data-testid="research-panel">
     <!-- ============ 左：前驱车 → 当前车面板 ============ -->
-    <aside class="tr-side">
-      <div v-if="prevVehicles.length" class="tr-prev" data-testid="research-prev-tanks">
+    <aside v-if="prevVehicles.length" class="tr-side">
+      <div class="tr-prev" data-testid="research-prev-tanks">
         <h3 class="tr-side-title">{{ t('research.prev_tanks') }}</h3>
         <button
           v-for="prev in prevVehicles"
@@ -368,7 +367,8 @@ function activate(node) {
    左两栏固定窄宽，研发图吃掉全部剩余空间（不再被挤成需要左右拖的小窗）。 */
 .tr-panel {
   display: grid;
-  grid-template-columns: 190px minmax(0, 1fr);
+  /* 没有前驱车（金币车等）时不保留空侧栏：单列铺满，否则图被挤进 190px 首列 */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
   padding: var(--space-4);
   border: 1px solid var(--color-border-subtle);
@@ -376,10 +376,11 @@ function activate(node) {
   background: var(--color-surface-1);
   box-shadow: var(--elevation-1);
   min-inline-size: 0;
-  min-block-size: calc(100dvh - var(--header-h) - var(--tabbar-h) - 190px);
+  min-block-size: 0;
   align-items: stretch;
 }
 
+.tr-panel.has-side { grid-template-columns: 190px minmax(0, 1fr); }
 .tr-side { display: grid; gap: var(--space-3); align-content: start; min-inline-size: 0; }
 .tr-side-title { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; }
 .tr-prev { display: grid; gap: var(--space-1); }
