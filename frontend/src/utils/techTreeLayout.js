@@ -278,6 +278,7 @@ export function moduleTreeLayout(modules, selection = null, options = {}) {
       installed: false,
       cost: costXpOf.get(key) ?? null,
       costTokens: costTokensOf.get(key) ?? null,
+      level: Number(info.tier) || null,
       tankId: info.tankId ?? null,
       name: info.name ?? null,
       install: null,

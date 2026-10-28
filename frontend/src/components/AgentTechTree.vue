@@ -308,6 +308,8 @@ const nextVehicles = computed(() => {
       cost: Number(v.cost?.xp) || null,
       tankId: node?.tankId ?? null,
       name: node ? nameOf(node) : null,
+      // 下一级坦克的等级角标（tank_cache 概要，缺省回落到科技树节点 tier）
+      tier: Number(summaryOf(node)?.tier ?? node?.tier) || null,
       sourceModule: v.sourceModule,
       sourceKind: v.sourceKind,
       node: node || null,
