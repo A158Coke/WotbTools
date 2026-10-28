@@ -12,6 +12,7 @@ import {
 } from '../utils/battlePlaybackV2.ts'
 import { loadoutItemLabel } from '../data/loadoutItems.js'
 import { deviceById, itemIconUrl, loadDevices } from '../utils/researchCatalog.js'
+import { romanLevel } from '../utils/tierFormat.js'
 
 /**
  * V2 车辆检查器：选中任意 materialized vehicle 后，展示「在 t 时刻我们到底知道什么」。
@@ -203,7 +204,7 @@ function moduleStateLabel(state) {
 
     <div class="v2-inspector-row" data-test="v2-inspector-tier">
       <span class="v2-inspector-key">{{ $t('recon.map.playback.tank_tier') }}</span>
-      <span class="v2-inspector-val">{{ track.tankTier ?? '—' }}</span>
+      <span class="v2-inspector-val">{{ romanLevel(track.tankTier) || '—' }}</span>
     </div>
 
     <template v-if="loadout">

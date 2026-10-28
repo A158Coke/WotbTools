@@ -270,6 +270,20 @@ describe('研发态（?tank=）', () => {
     expect(tokenBadge.classes()).toContain('is-token')
   })
 
+  it('等级角标：每个节点（含炮/坦克）都有罗马数字标', async () => {
+    data.fetchTankData.mockResolvedValue(DETAIL)
+    research.loadTankModules.mockResolvedValue({ tanks: { 'T-26': MODULES } })
+    const { wrapper } = await mountView({ tank: '1' })
+    const nodes = wrapper.findAll('.tr-node')
+    expect(nodes.length).toBeGreaterThan(0)
+    const badges = wrapper.findAll('.tr-node-level')
+    expect(badges).toHaveLength(nodes.length)
+    // 夹具里炮塔/履带 level 1-2，炮链没有 level → 只校验罗马数字形态
+    for (const badge of badges) expect(badge.text()).toMatch(/^(I|II|III|IV|V|VI|VII|VIII|IX|X|XI)$/)
+    // 当前坦克节点也带标（tier 1 → I）
+    expect(wrapper.find('[data-testid="research-current-tank"] .tr-node-level').text()).toBe('I')
+  })
+
   it('研发网格不渲染电台/油箱（客户端 ModulesTree 只有底盘/炮塔/炮/发动机）', async () => {
     data.fetchTankData.mockResolvedValue(DETAIL)
     research.loadTankModules.mockResolvedValue({ tanks: { 'T-26': MODULES } })

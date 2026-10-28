@@ -17,6 +17,7 @@ import { useI18n } from 'vue-i18n'
 import { ArrowLeft, Box, RotateCcw, TriangleAlert } from 'lucide-vue-next'
 import { fetchTankEncyclopedia, fetchTankData, tankImageUrl, loadTankIconCrops } from '../scene/agentData.js'
 import { tankIconCropTransform } from '../utils/tankIconCrop.js'
+import { romanLevel } from '../utils/tierFormat.js'
 import { TYPE_CLS, normType, shellLabel, isPremiumShell, fmt, fmtNum, tankNationLabel, tankTypeLabel } from '../scene/tankMeta.js'
 import {
   normalizeTankCache, parseTankopediaQuery, sameTankopediaQuery, withTankopediaState,
@@ -76,7 +77,7 @@ function writeFilters(filters) {
 // ---------- 显示名（审计 3D-16：不直接显示 china / heavyTank 等原始值） ----------
 const nationLabel = nation => tankNationLabel(t, te, nation)
 const typeLabel = type => tankTypeLabel(t, te, type)
-const tierLabel = tier => t('agentTanks.tier_n', { tier })
+const tierLabel = tier => romanLevel(tier)
 
 // ---------- 列表态 ----------
 const cache = ref({})

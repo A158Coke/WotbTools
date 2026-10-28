@@ -15,6 +15,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { poseFromYPR, neutralizeDefaultMetalness, dropDuplicateGunMasks } from './glbRig.js'
+import { romanLevel } from '../utils/tierFormat.js'
 import {
     fetchTankData,
     fetchTankEncyclopedia,
@@ -4018,7 +4019,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         function updateInfoPanel() {
             document.getElementById('tank-name').textContent = tankData.name || '?';
             // 卡片该行已有「等级」行标题：值只写数字
-            document.getElementById('tank-tier').textContent = String(tankData.tier || '?');
+            document.getElementById('tank-tier').textContent = romanLevel(tankData.tier) || '?';
             document.getElementById('tank-type').textContent = tankData.type ? L.type(tankData.type) : '?';
             document.getElementById('tank-nation').textContent = tankData.nation ? L.nation(tankData.nation) : '?';
             document.getElementById('info-panel').style.display = 'block';

@@ -19,6 +19,7 @@ import { tankIconCropTransform } from '../utils/tankIconCrop.js'
 import { moduleIconUrl } from '../utils/researchCatalog.js'
 import { moduleTreeLayout } from '../utils/techTreeLayout.js'
 import { formatXpCompact } from '../utils/xpFormat.js'
+import { romanLevel } from '../utils/tierFormat.js'
 
 const props = defineProps({
   /** tank/{id}.json */
@@ -222,11 +223,6 @@ function vehicleIconStyle(id) {
   return cropStyle(id, NODE_W / NODE_H)
 }
 
-const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI']
-function romanTier(level) {
-  return ROMAN[Number(level) - 1] || String(level ?? '')
-}
-
 function activate(node) {
   if (node.kind === 'vehicle') {
     if (node.tankId) emit('open-vehicle', node.tankId)
@@ -284,7 +280,7 @@ function activate(node) {
             <span class="tr-node-pic">
               <img v-if="tankId" :src="tankImageUrl(tankId)" alt="" :style="iconStyle" @error="$event.target.hidden = true">
             </span>
-            <span class="tr-node-level">{{ romanTier(detail.tier) }}</span>
+            <span class="tr-node-level">{{ romanLevel(detail.tier) }}</span>
             <span class="tr-node-name">{{ detail.name }}</span>
           </div>
           <svg
@@ -348,10 +344,7 @@ function activate(node) {
                 <img v-else-if="nodeIcon(node.kind)" :src="nodeIcon(node.kind)" alt="" width="40" height="40" loading="lazy">
                 <span v-else class="tr-node-fallback">{{ nodeLabelText(node).slice(0, 1) }}</span>
               </span>
-              <span
-                v-if="node.level != null && node.kind !== 'gun'"
-                class="tr-node-level"
-              >{{ node.kind === 'vehicle' ? romanTier(node.level) : node.level }}</span>
+              <span v-if="node.level != null" class="tr-node-level">{{ romanLevel(node.level) }}</span>
               <span
                 v-if="nodeCostText(node) && !node.installed"
                 class="tr-node-cost"

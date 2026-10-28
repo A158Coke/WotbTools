@@ -22,6 +22,7 @@ import { findTankModules, pickGun, pickTurret, resolveSetup } from '../replay-lo
 import { loadTechTree, loadTankModules } from '../utils/researchCatalog.js'
 import { moduleTreeLayout, techTreeGrid, techTreeNations } from '../utils/techTreeLayout.js'
 import { formatXpCompact } from '../utils/xpFormat.js'
+import { romanLevel } from '../utils/tierFormat.js'
 import { locationForView } from '../app/navigation'
 import PageHeader from './PageHeader.vue'
 import EmptyState from './EmptyState.vue'
@@ -176,10 +177,7 @@ function edgePath(edge) {
 }
 
 /** 客户端等级条用罗马数字（LevelCell 绑定 roman(level)；1..11 覆盖 XI）。 */
-const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI']
-function romanLevel(level) {
-  return ROMAN[level - 1] || String(level)
-}
+
 
 function openResearch(node) {
   writeState({ tank: String(node.tankId) })
