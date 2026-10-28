@@ -16,6 +16,7 @@ import AppButton from './AppButton.vue'
 import { availableItems, itemIconUrl, moduleIconUrl, resolveDeviceIds, skillIconUrl } from '../utils/researchCatalog.js'
 import { configIndexFor, consumableTiming, pickGun, pickTurret, presetSlots, tankRef } from '../replay-local/compute/tankSetup'
 import { fmtNum } from '../scene/tankMeta.js'
+import { romanLevel } from '../utils/tierFormat.js'
 
 const props = defineProps({
   /** tank/{id}.json */
@@ -413,7 +414,7 @@ const camoBonusParts = computed(() => {
               <img v-if="cell.row.icon" :src="cell.row.icon" alt="" width="32" height="32" loading="lazy">
               <span v-else class="tp-module-pic-fallback">{{ cell.option.name.slice(0, 1) }}</span>
             </span>
-            <span v-if="cell.option.level != null" class="tp-module-level">{{ cell.option.level }}</span>
+            <span v-if="cell.option.level != null" class="tp-module-level">{{ romanLevel(cell.option.level) }}</span>
             <span class="tp-module-name">{{ cell.option.name }}</span>
           </button>
         </div>
