@@ -455,7 +455,11 @@ function activate(node) {
   overflow: hidden;
   border-radius: inherit;
 }
+/* 必须**绝对定位**铺满：grid 容器里 `block-size:100%` 解不出确定高度，
+   img 会退回固有尺寸（96×96），被 62 高的容器从下方裁掉 32px——实测如此。 */
 .tr-node-pic img {
+  position: absolute;
+  inset: 0;
   inline-size: 100%;
   block-size: 100%;
   object-fit: contain;
