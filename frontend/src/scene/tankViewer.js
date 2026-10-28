@@ -1735,13 +1735,70 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             node.material = material;
             node.userData.armorMaterialOwned = true;
         }
+        // —— 装甲分类过滤（主装甲 / 间隙 / 外部模块，2026-10-28 用户要求）——
+        const hiddenCategories = { primary: false, spaced: false, external: false };
+        /** 节点在“未被分类过滤”时应有的可见性（配置/动态装甲/炮塔变体等其它规则）。 */
+        function baseNodeVisible(node) {
+            if (!node.isMesh) return false;
+            if (node.userData.armorSection === 'deco') return false;
+            if (node.userData.configHidden) return false;
+            if (node.userData.armorStateHidden) return false;
+            if (node.userData.armorSection === 'gunBarrel' && node.userData.gunConfig != null) {
+                const act = activeGunNumber();
+                if (act != null && node.userData.gunConfig !== act) return false;
+                const cfg = currentConfig();
+                const hasMask = cfg && typeof cfg.gun_mask === 'number' && cfg.gun_mask !== 0;
+                if (node.userData.gunMaskPart && !hasMask) return false;
+            }
+            return true;
+        }
+        /** 把三个分类开关应用到装甲板与外部模块（炮管/履带）的可见性。 */
+        function applyCategoryFilters() {
+            if (armorModel) {
+                armorModel.traverse(function(node) {
+                    if (!node.isMesh) return;
+                    const sec = node.userData.armorSection;
+                    let category = null;
+                    if (sec === 'spaced') category = 'spaced';
+                    else if (sec === 'hull' || sec === 'turret' || sec === 'gun') category = 'primary';
+                    node.visible = baseNodeVisible(node) && !(category && hiddenCategories[category]);
+                });
+            }
+            for (const node of moduleMeshes) {
+                node.visible = baseNodeVisible(node) && !hiddenCategories.external;
+            }
+        }
+
         // 装甲模型视图样式（collision 按钮与热力图退出共用一份写入，避免各自硬编码漂移）：
         // 碰撞视图=按厚度上色并隐藏视觉车体；普通视图=透明覆盖层并显示视觉车体
+        const collisionHiddenVisuals = [];
         function applyArmorViewStyle(collision) {
             // visual 与 armor 两个 GLB 独立完成；collisionMode 可能在 armor 就绪前已开启。
             // armor 未就绪时直接返回，等 armor 完成回调里的 applyConfig 再刷新材质。
             if (!armorModel) return;
-            if (tankModel) tankModel.visible = !collision;
+            if (collision) {
+                // 碰撞视图保留外部模块（炮管/履带）的碰撞体，隐藏其余视觉网格
+                if (tankModel) {
+                    tankModel.visible = true;
+                    const keep = new Set(moduleMeshes);
+                    collisionHiddenVisuals.length = 0;
+                    tankModel.traverse(function(node) {
+                        if (!node.isMesh || keep.has(node)) return;
+                        if (!node.visible) return;
+                        node.visible = false;
+                        collisionHiddenVisuals.push(node);
+                    });
+                }
+            } else {
+                for (const node of collisionHiddenVisuals) node.visible = true;
+                collisionHiddenVisuals.length = 0;
+                if (tankModel) {
+                    tankModel.visible = true;
+                    // 碰撞视图期间可能换过炮塔/炮：按当前配置重置视觉部件可见性
+                    const cfg = currentConfig();
+                    applyConfigVisible(tankModel, cfg ? cfg.gun_index : 0, cfg ? cfg.turret_index : 0);
+                }
+            }
             armorModel.traverse(function(node) {
                 if (!node.isMesh) return;
                 if (node.userData.armorSection === 'deco') { node.visible = false; return; }
@@ -1755,6 +1812,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         transparent: true, opacity: 0, depthWrite: false,
                     }));
             });
+            applyCategoryFilters();
         }
         function applyPenetrationMode(on) {
             if (!armorModel) return;
@@ -1776,6 +1834,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             rebuildHeatmapScenes();
             armorModel.visible = true;
             externalMeshes.forEach(function(node){ node.visible = true; });
+            applyCategoryFilters();
             if (heSplashGroup) heSplashGroup.visible = true;
         }
 
@@ -1936,9 +1995,19 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
 
         document.getElementById('penetration-btn').addEventListener('click', function() {
             penetrationMode = !penetrationMode;
+            // 与装甲厚度（碰撞）视图互斥：开一个必须关另一个（2026-10-28 用户要求）
+            if (penetrationMode && collisionMode) {
+                collisionMode = false;
+                const cb = document.getElementById('collision-btn');
+                cb.classList.remove('active');
+                cb.textContent = L.showCollision;
+                cb.setAttribute('aria-pressed', 'false');
+                applyArmorViewStyle(false);
+            }
             this.classList.toggle('active', penetrationMode);
             this.textContent = penetrationMode ? L.hideHeatmap : L.heatmap;
             this.setAttribute('aria-pressed', String(penetrationMode));
+            document.getElementById('click-info').style.display = 'none';
             applyPenetrationMode(penetrationMode);
             refreshPenetrationResolution();
         });
@@ -2128,6 +2197,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             if (!armorStateDecl.states.some(function(s) { return s.id === stateId; })) return;
             armorStateCurrent = stateId;
             applyArmorStateToModel();
+            applyCategoryFilters();
             // 板集变了 → 翻可控板 clone 可见性（零重建：无材质/着色器编译 → 无闪烁）+
             // 重建跳弹几何（纯几何：源网格 deco 口径已随态更新，无编译开销）
             if (penetrationMode && armorModel) {
@@ -4144,6 +4214,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // applyArmorConfigVisible 会把可控板还原/重显（覆盖 deco）——visual 回调与
             // 配置切换都经此汇入，漏挂或次序颠倒则初态/切态被覆盖或板集陈旧（review P1-1/P2）
             applyArmorStateToModel();
+            applyCategoryFilters();
+            // 切配置后旧的命中部件信息不再属于当前视图
+            const cfgCard = document.getElementById('click-info');
+            if (cfgCard) cfgCard.style.display = 'none';
             // 碰撞视图的颜色是厚度快照（applyArmorViewStyle 只在按钮切换时写）；切配置后
             // 必须重刷，否则新炮塔/主炮仍显示上一配置的厚度色。热力图模式由下方重建接管。
             if (collisionMode && !penetrationMode && armorModel) applyArmorViewStyle(true);
@@ -4455,11 +4529,34 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
 
             document.getElementById('collision-btn').addEventListener('click', function() {
                 collisionMode = !collisionMode;
+                // 与击穿视图互斥：切到装甲厚度先关掉热力图
+                if (collisionMode && penetrationMode) {
+                    penetrationMode = false;
+                    const pb = document.getElementById('penetration-btn');
+                    pb.classList.remove('active');
+                    pb.textContent = L.heatmap;
+                    pb.setAttribute('aria-pressed', 'false');
+                    applyPenetrationMode(false);
+                    refreshPenetrationResolution();
+                }
                 this.classList.toggle('active', collisionMode);
                 this.textContent = collisionMode ? L.hideCollision : L.showCollision;
                 this.setAttribute('aria-pressed', String(collisionMode));
+                if (!collisionMode) document.getElementById('click-info').style.display = 'none';
                 if (!armorModel) return;
                 applyArmorViewStyle(collisionMode);
+            });
+
+            // 分类过滤（主装甲 / 间隙 / 外部模块）：active = 显示
+            ['primary', 'spaced', 'external'].forEach(function(name) {
+                const btn = document.getElementById('filter-' + name);
+                if (!btn) return;
+                btn.addEventListener('click', function() {
+                    hiddenCategories[name] = !hiddenCategories[name];
+                    this.classList.toggle('active', !hiddenCategories[name]);
+                    this.setAttribute('aria-pressed', String(!hiddenCategories[name]));
+                    applyCategoryFilters();
+                });
             });
 
             // —— 指针交互注册（单一 Pointer Events，桌面+触屏统一；评审 PR BLOCKER 1/2）——
@@ -4748,8 +4845,46 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const rect = renderer.domElement.getBoundingClientRect();
             const ndcX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
             const ndcY = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+            // 装甲厚度（碰撞）模式（2026-10-28 用户裁定）：不做击穿判定，只显示点击位置
+            // 命中的装甲/模块信息（BlitzKit armor inspector 同语义）。
+            if (collisionMode) { showArmorPartInfo(event, ndcX, ndcY); return; }
             lastClickNdc = { x: ndcX, y: ndcY };
             doPenetrationCheck(ndcX, ndcY);
+        }
+
+        /** 装甲厚度模式：射线命中部件 → 名称/基础厚度/入射角/等效厚度的小卡（无击穿判定）。 */
+        function showArmorPartInfo(event, ndcX, ndcY) {
+            tidyTrajectory();
+            raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
+            const objects = armorModel ? [armorModel, ...moduleMeshes] : [];
+            const rayDir = raycaster.ray.direction.clone().normalize();
+            let info = null;
+            for (const hit of raycaster.intersectObjects(objects, true)) {
+                info = classifyHit(hit, rayDir);
+                if (info) break;
+            }
+            const card = document.getElementById('click-info');
+            if (!info) { card.style.display = 'none'; return; }
+            const thickness = Number(info.thickness);
+            const angle = Math.acos(Math.min(1, Math.abs(info.normal.dot(rayDir)))) * 180 / Math.PI;
+            const effective = Number.isFinite(thickness) ? thickness / Math.max(0.05, Math.cos(angle * Math.PI / 180)) : null;
+            document.getElementById('click-part').textContent = L.partName ? L.partName(info.partName) : info.partName;
+            document.getElementById('click-armor').textContent = Number.isFinite(thickness) ? `${Math.round(thickness * 100) / 100} mm` : '—';
+            document.getElementById('click-angle').textContent = `${Math.round(angle)}°`;
+            document.getElementById('click-effective').textContent = effective != null ? `${Math.round(effective * 10) / 10} mm` : '—';
+            // 装甲厚度模式不产生击穿判定：穿深/结果两行隐藏
+            const penRow = document.getElementById('click-pen')?.parentElement;
+            const resultRow = document.getElementById('click-result')?.parentElement;
+            if (penRow) penRow.style.display = 'none';
+            if (resultRow) resultRow.style.display = 'none';
+            const stage = document.querySelector('.armor-stage');
+            const stageRect = stage ? stage.getBoundingClientRect() : { left: 0, top: 0 };
+            card.style.display = 'block';
+            const w = card.offsetWidth || 220, h = card.offsetHeight || 110;
+            const left = Math.max(8, Math.min(window.innerWidth - w - 8, event.clientX - stageRect.left - w / 2));
+            const top = Math.max(8, Math.min(window.innerHeight - h - 8, event.clientY - stageRect.top + 16));
+            card.style.left = `${left}px`;
+            card.style.top = `${top}px`;
         }
 
         let __shotRayOrigin = null;   // 射击复现：射线起点（射手方向，固定距离）

@@ -427,7 +427,11 @@
       },
       "loadout_shooter": "射击方",
       "loadout_target": "受击方",
-      "loadout_unavailable": "搭载数据不可用"
+            "loadout_unavailable": "搭载数据不可用",
+      "filter_primary": "主装甲",
+      "filter_spaced": "间隙装甲",
+      "filter_external": "外部模块",
+      "part_info": "命中部件"
     },
     "hofAdmin": {
       "tabsLabel": "管理分区",
@@ -1290,7 +1294,11 @@
       },
       "loadout_shooter": "Shooter",
       "loadout_target": "Target",
-      "loadout_unavailable": "Loadout unavailable"
+            "loadout_unavailable": "Loadout unavailable",
+      "filter_primary": "Primary",
+      "filter_spaced": "Spaced",
+      "filter_external": "External",
+      "part_info": "Hit part"
     },
     "hofAdmin": {
       "tabsLabel": "Admin sections",
@@ -2153,7 +2161,11 @@
       },
       "loadout_shooter": "Стрелок",
       "loadout_target": "Цель",
-      "loadout_unavailable": "Снаряжение недоступно"
+            "loadout_unavailable": "Снаряжение недоступно",
+      "filter_primary": "Основная",
+      "filter_spaced": "Экраны",
+      "filter_external": "Внешние",
+      "part_info": "Попадание"
     },
     "hofAdmin": {
       "tabsLabel": "Разделы администрирования",

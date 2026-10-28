@@ -589,6 +589,9 @@ onBeforeUnmount(() => {
             <div id="view-toggle">
                 <button id="collision-btn" type="button" aria-pressed="false" :disabled="!viewerReady">{{ $t('armor.show_collision') }}</button>
                 <button id="penetration-btn" type="button" aria-pressed="false" :disabled="!viewerReady">{{ $t('armor.heatmap') }}</button>
+                <button id="filter-primary" type="button" class="active" aria-pressed="true">{{ $t('armor.filter_primary') }}</button>
+                <button id="filter-spaced" type="button" class="active" aria-pressed="true">{{ $t('armor.filter_spaced') }}</button>
+                <button id="filter-external" type="button" class="active" aria-pressed="true">{{ $t('armor.filter_external') }}</button>
             </div>
         </div>
         <div id="corner-br">

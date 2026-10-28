@@ -191,6 +191,16 @@ describe('dolly-zoom world-overview scope guard', () => {
     expect(kernel).toMatch(/function animate\(\) \{\s*if \(destroyed \|\| contextLost\) return;/)
     expect(kernel).toMatch(/reportLoad\(\{ state: 'error', message: contextLostMessage\(\), contextLost: true \}\)/)
     expect(kernel).toMatch(/function isContextLost\(\) \{ return contextLost; \}/)
+    // 装甲厚度与击穿视图互斥；厚度模式点击只出部件信息，不做击穿判定
+    expect(kernel).toMatch(/collisionMode && penetrationMode/)
+    expect(kernel).toMatch(/penetrationMode && collisionMode/)
+    expect(kernel).toMatch(/if \(collisionMode\) \{ showArmorPartInfo\(event, ndcX, ndcY\); return; \}/)
+    expect(kernel).toMatch(/function showArmorPartInfo\(/)
+    // 碰撞视图保留炮管/履带碰撞体
+    expect(kernel).toMatch(/const keep = new Set\(moduleMeshes\)/)
+    // 分类过滤（主装甲/间隙/外部模块）
+    expect(kernel).toMatch(/const hiddenCategories = \{ primary: false, spaced: false, external: false \}/)
+    expect(kernel).toMatch(/function applyCategoryFilters\(/)
     // 击穿视图默认开启，?heatmap=0 显式关闭（2026-10-28 用户要求）
     expect(kernel).toMatch(/if \(QP\.get\('heatmap'\) !== '0' && !penetrationMode\)/)
     // 普通检视换弹：只清掉上一次判定，不按旧点击位置重跑（2026-10-28 用户裁定）
