@@ -15,7 +15,8 @@
 ```
 Agent Rust Core
 ├── Result interpretation   -> BattleResult（结果能力）
-└── Temporal interpretation -> PlaybackData / AI 事件数据（时序能力）
+├── Temporal interpretation -> PlaybackData / AI 事件数据（时序能力）
+└── Author initial position -> parseAuthorInitialPosition（独立轻量 probe）
 
 WotBTools
 └── BattleResult -> HoFSubmission -> Business API / HoF domain（消费方投影）

@@ -8,8 +8,7 @@
  *  - `position` 保持 Agent 原始 replay 世界坐标 `[x,y,z]` 顺序，不做 map/spawn 转换。
  *
  * wrapper 的合法对象/null 用例通过注桩 WASM 模块驱动；真实 pinned 产物的 export /
- * replay fixture smoke 在 `agent-wasm-smoke.test.ts`：当前 v0.4.14 pin 下预期失败，
- * 正式 v0.4.15 Release 后切 pin 即通过。
+ * replay fixture smoke 在 `agent-wasm-smoke.test.ts`（v0.4.15 pin 下通过）。
  */
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
