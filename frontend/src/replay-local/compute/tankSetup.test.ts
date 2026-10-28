@@ -339,6 +339,20 @@ describe('引擎输入与 delta 行', () => {
     expect(groups.map(group => group.group)).toEqual(['protectability', 'mobility', 'gun'])
   })
 
+  it('paramGroups：连发组炮显示组数/每组发数/组内连发间隔（客户端 format 口径）', () => {
+    const rows = Object.fromEntries(
+      paramGroups({
+        gunClipShellCount: 6, gunClipBurstCount: 2, gunBurstShellCount: 3,
+        gunClipBurstReloadTime: 0.25, gunClipShellReloadTime: 3,
+      }, {}, FORMAT.params).flatMap(group => group.rows.map(row => [row.key, row])),
+    )
+    expect(rows.gunClipBurstCount.value).toBe(2)
+    expect(rows.gunBurstShellCount.value).toBe(3)
+    expect(rows.gunClipBurstReloadTime.value).toBe(0.25)
+    expect(rows.gunClipBurstReloadTime.unit).toBe('SECOND')
+    expect(rows.gunClipBurstReloadTime.digits).toBe(2)
+  })
+
   it('paramGroups：无炮塔车用火炮转向速度替换炮塔转速（有炮塔车相反）', () => {
     const rowsOf = (current: Record<string, any>) => Object.fromEntries(
       paramGroups(current, {}, FORMAT.params).flatMap(group => group.rows.map(row => [row.key, row])),
