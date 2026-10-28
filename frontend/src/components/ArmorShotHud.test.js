@@ -30,7 +30,7 @@ describe('ArmorShotHud（右上角弹种 + 校准弹/强化装甲图标）', () 
   it('按射击方配置渲染弹种图标与两枚装备图标', async () => {
     const wrapper = mount(ArmorShotHud, { props: { shooterId: 1, scfg: 1 } })
     await flushPromises()
-    expect(wrapper.emitted('ready')).toHaveLength(1)
+    expect(wrapper.emitted('ready').at(-1)).toEqual([true])
     expect(wrapper.findAll('[data-testid^="hud-shell-"]')).toHaveLength(3)
     expect(wrapper.find('[data-testid="hud-calibrated"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="hud-enhanced"]').exists()).toBe(true)
@@ -52,14 +52,31 @@ describe('ArmorShotHud（右上角弹种 + 校准弹/强化装甲图标）', () 
     })
     const fallback = mount(ArmorShotHud, { props: { shooterId: 1 } })
     await flushPromises()
-    expect(fallback.emitted('ready')).toHaveLength(1)
+    expect(fallback.emitted('ready').at(-1)).toEqual([true])
     expect(fallback.findAll('[data-testid^="hud-shell-"]')).toHaveLength(1)
 
     data.fetchTankData.mockResolvedValueOnce({ tank_id: 1, configs: [] })
     const none = mount(ArmorShotHud, { props: { shooterId: 1 } })
     await flushPromises()
-    expect(none.emitted('ready')).toBeUndefined()
+    expect(none.emitted('ready').at(-1)).toEqual([false])
     expect(none.findAll('[data-testid^="hud-shell-"]')).toHaveLength(0)
+  })
+
+  it('切换到无弹表配置时 ready 变 false，交还原生控件', async () => {
+    data.fetchTankData.mockResolvedValueOnce({
+      tank_id: 1,
+      configs: [
+        { label: 'Gun A', shells: [{ type: 'ap', damage: 300, penetration: 220 }] },
+        { label: 'Empty', shells: [] },
+      ],
+    })
+    const wrapper = mount(ArmorShotHud, { props: { shooterId: 1, scfg: 0 } })
+    await flushPromises()
+    expect(wrapper.emitted('ready').at(-1)).toEqual([true])
+    await wrapper.setProps({ scfg: 1 })
+    await flushPromises()
+    expect(wrapper.emitted('ready').at(-1)).toEqual([false])
+    expect(wrapper.findAll('[data-testid^="hud-shell-"]')).toHaveLength(0)
   })
 
   it('点击弹种与装备图标发出事件；URL 覆盖优先于回放真值', async () => {

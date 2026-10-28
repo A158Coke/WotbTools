@@ -750,6 +750,11 @@ describe('armor shell and readiness ownership', () => {
     expect(view).toMatch(/const queryShooter = Number\(route\.query\.shooter\)/)
     expect(view).toMatch(/Number\.isFinite\(queryShooter\) && queryShooter > 0 \? queryShooter : loadoutTankId\.value/)
   })
+  it('HUD readiness 双向跟随弹表，切到无弹表配置交还原生控件', () => {
+    expect(read('./ArmorShotHud.vue')).toMatch(/const hasShells = computed\(\(\) => shells\.value\.length > 0\)/)
+    expect(read('./ArmorShotHud.vue')).toMatch(/watch\(hasShells, value => \{ emit\('ready', value\) \}/)
+    expect(read('./AgentArmorView.vue')).toMatch(/@ready="value => hudReady = value"/)
+  })
   it('HUD 只加载 devices 轻目录，不拉整份配置器目录', () => {
     const hud = read('./ArmorShotHud.vue')
     expect(hud).toMatch(/loadDevices\(\)/)

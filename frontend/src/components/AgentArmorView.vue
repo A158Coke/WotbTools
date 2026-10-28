@@ -639,7 +639,7 @@ onBeforeUnmount(() => {
                 @shell="index => applyShotSetup({ shell: index })"
                 @calibrated="value => applyShotSetup({ eqcal: value })"
                 @enhanced="value => applyShotSetup({ eqenh: value })"
-                @ready="hudReady = true"
+                @ready="value => hudReady = value"
             />
             <div id="shell-selector" style="display:none;">
                 <label for="shell-select">{{ $t('armor.shell') }} </label>
