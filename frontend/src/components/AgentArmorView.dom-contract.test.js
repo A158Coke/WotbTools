@@ -604,6 +604,31 @@ describe('tank-picker cover crop wiring (shared TankCatalogMenu)', () => {
   })
 })
 
+// 间隙甲双面判定（2026-10-28 用户裁定）：间隙屏从背面命中同样参与判定；闭合间隙甲
+// 正/背面是同一块板，只计一层（否则重复消耗厚度）。显示/采样材质是 FrontSide，求交
+// 时临时切 DoubleSide，同步求交后立即恢复。
+describe('spaced armor double-sided judgment', () => {
+  const kernel = read('../scene/tankViewer.js')
+  it('求交前把间隙甲材质临时切成 DoubleSide，并在 finally 恢复', () => {
+    expect(kernel).toMatch(/function intersectArmorDoubleSidedSpaced\(objects, caster\)/)
+    expect(kernel).toMatch(/node\.userData\.armorSection !== 'spaced'/)
+    expect(kernel).toMatch(/m\.side = THREE\.DoubleSide/)
+    expect(kernel).toMatch(/finally \{\s*\n\s*for \(const \[m, side\] of saved\) m\.side = side;/)
+  })
+  it('命中收集只放行未计过的间隙甲背面，主装甲/模块仍剔除背面', () => {
+    expect(kernel).toMatch(/function collectJudgmentHits\(intersects, rayDir\)/)
+    expect(kernel).toMatch(/if \(entry\.section !== 'spaced' \|\| spacedSeen\.has\(key\)\) continue;/)
+    expect(kernel).toMatch(/if \(entry\.section === 'spaced'\) spacedSeen\.add\(key\);/)
+    expect(kernel).not.toMatch(/entry && !entry\.backface/)
+  })
+  it('点击主链与跳弹续飞共用同一双面求交/收集', () => {
+    expect(kernel).toMatch(/const intersects = intersectArmorDoubleSidedSpaced\(objects, raycaster\);/)
+    expect(kernel).toMatch(/const armorHits = collectJudgmentHits\(intersects, raycaster\.ray\.direction\);/)
+    expect(kernel).toMatch(/const ricIntersects = intersectArmorDoubleSidedSpaced\(objects, rc\);/)
+    expect(kernel).toMatch(/const ricHits = collectJudgmentHits\(ricIntersects, rc\.ray\.direction\)/)
+  })
+})
+
 // 选车器的外层键盘 trap 与二级模态层（手机筛选 AppSheet，portal 到 body）的隔离：
 // 按键发生在 #tank-picker 之外的 dialog 内时，外层不得介入（否则 Esc 会连带关闭整个选车器、Tab 被拉回外层）。
 describe('tank picker keyboard isolation from nested modal layers', () => {

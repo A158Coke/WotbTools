@@ -5061,8 +5061,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const normal = hit.face ? hit.face.normal.clone() : new THREE.Vector3(0, 1, 0);
             const nm = new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);
             normal.applyNormalMatrix(nm).normalize();
-            // 材质可以是 DoubleSide（间隙甲显示），但判定只接受迎面命中：绕序法线
-            // 朝向来向 = 背面。BlitzKit 的装甲材质与采样网格都是 FrontSide 口径。
+            // 绕序法线朝来向 = 背面命中。间隙甲求交时临时 DoubleSide（见
+            // intersectArmorDoubleSidedSpaced），背面法线先翻回来向再算角度；该层是否
+            // 保留由 collectJudgmentHits 决定（只有间隙甲接受背面命中）。
             const backface = !!rayDir && isBackfaceNormal(normal, rayDir);
             if (backface) normal.negate();
             let partName;
@@ -5075,6 +5076,53 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 partName = `${disp.charAt(0).toUpperCase() + disp.slice(1)} Plate ${plateId}`;
             }
             return { section, plateId, thickness, point: hit.point, normal, partName, distance: hit.distance, object: hit.object, backface };
+        }
+
+        /**
+         * 间隙甲（spaced）双面求交：显示/采样材质与 BlitzKit 同为 FrontSide，从背面命中的
+         * 间隙屏（单面屏幕或闭合板的背面）不会进入 THREE.Raycaster。求交前把间隙甲材质的
+         * side 临时切成 DoubleSide，求交是同步的，完成后立即恢复（不经过渲染，画面不变）。
+         */
+        function intersectArmorDoubleSidedSpaced(objects, caster) {
+            const mats = new Set();
+            if (armorModel) {
+                armorModel.traverse(function(node) {
+                    if (!node.isMesh || node.userData.armorSection !== 'spaced') return;
+                    if (node.material) mats.add(node.material);
+                });
+            }
+            const saved = [];
+            for (const m of mats) { saved.push([m, m.side]); m.side = THREE.DoubleSide; }
+            try {
+                return caster.intersectObjects(objects, true);
+            } finally {
+                for (const [m, side] of saved) m.side = side;
+            }
+        }
+        /**
+         * 判定命中收集（点击主链 / 跳弹续飞共用）：
+         *  - 间隙甲双面：背面命中的间隙屏参与判定（法线已由 classifyHit 翻向来向）；
+         *    主装甲/外部模块仍只认迎面命中（闭合壳体正/背面各算一层会重复消耗厚度）。
+         *  - 闭合间隙甲的正/背面是同一块板：该板前面已计过时不再重复计背面。
+         */
+        function collectJudgmentHits(intersects, rayDir) {
+            const hits = [];
+            const spacedSeen = new Set();
+            for (const hit of intersects) {
+                if (isClippedModuleHit(hit.object.userData.armorSection, hit.point, gunClipPlane)) continue;
+                const entry = classifyHit(hit, rayDir);
+                if (!entry) continue;
+                const key = entry.plateId == null ? '' : String(entry.plateId);
+                if (entry.backface) {
+                    if (entry.section !== 'spaced' || spacedSeen.has(key)) continue;
+                    spacedSeen.add(key);
+                    hits.push(entry);
+                    continue;
+                }
+                if (entry.section === 'spaced') spacedSeen.add(key);
+                hits.push(entry);
+            }
+            return hits;
         }
 
         /**
@@ -5157,14 +5205,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 raycaster.setFromCamera(mouse, camera);
             }
             const objects = [armorModel, ...activeModules];
-            const intersects = raycaster.intersectObjects(objects, true);
-            // blitzkit：非外部模块不做去重（外部模块的 variant 去重在判定侧进行）
-            const armorHits = [];
-            for (const hit of intersects) {
-                if (isClippedModuleHit(hit.object.userData.armorSection, hit.point, gunClipPlane)) continue;
-                const entry = classifyHit(hit, raycaster.ray.direction);
-                if (entry && !entry.backface) armorHits.push(entry);
-            }
+            // 间隙甲按双面参与判定：临时 DoubleSide 求交，背面命中在 collectJudgmentHits
+            // 里按“同一块板只计一层”过滤（主装甲/外部模块仍只认迎面命中）。
+            const intersects = intersectArmorDoubleSidedSpaced(objects, raycaster);
+            const armorHits = collectJudgmentHits(intersects, raycaster.ray.direction);
 
             // BlitzKit 语义（SpacedArmorScene 的触发面）：判定只由【触达主装甲板】的射线发起——
             // shoot() 只挂在 Primary 网格的 onClick 上，spaced / 外部模块网格挂的是空 handler
@@ -5583,14 +5627,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                 .sub(currentNormal.clone().multiplyScalar(2 * currentDir.dot(currentNormal)))
                                 .normalize();
                             const rc = new THREE.Raycaster(currentPoint, reflect);
-                            const ricIntersects = rc.intersectObjects(objects, true);
-                            const ricHits = [];
-                            for (const hit of ricIntersects) {
-                                if (hit.distance <= RC.MIN_CONTINUATION_T) continue;
-                                if (isClippedModuleHit(hit.object.userData.armorSection, hit.point, gunClipPlane)) continue;
-                                const entry = classifyHit(hit, rc.ray.direction);
-                                if (entry && !entry.backface) ricHits.push(entry);
-                            }
+                            // 与点击主链同一收集口径：间隙甲双面 + 同一块板只计一层
+                            const ricIntersects = intersectArmorDoubleSidedSpaced(objects, rc);
+                            const ricHits = collectJudgmentHits(ricIntersects, rc.ray.direction)
+                                .filter(h => h.distance > RC.MIN_CONTINUATION_T);
                             ricHits.sort((a, b) => a.distance - b.distance);
                             if (!ricHits.length || !ricHits.some(h => isPrimary(h.section))) break;
 
