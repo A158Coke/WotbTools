@@ -714,10 +714,22 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const ctx = window.__shotCtx || {};
             return { shooter: ctx.eqShooter || null, target: ctx.eqTarget || null };
         }
-        function shellPenMul(s) {
-            const eq = (s && s.shooter_equipment) || shotEquipmentCtx().shooter;
-            const calOn = eq ? eq.calibrated_shells
+        /** 手动覆盖（装甲页图形开关）：null = 跟随回放真值/旧勾选框。 */
+        const equipmentOverride = { calibrated: null, enhanced: null };
+        function effectiveCalibrated(eq) {
+            if (equipmentOverride.calibrated != null) return equipmentOverride.calibrated;
+            const data = eq || shotEquipmentCtx().shooter;
+            return data ? !!data.calibrated_shells
                 : !!(document.getElementById('eq-calibrated') && document.getElementById('eq-calibrated').checked);
+        }
+        function effectiveEnhanced(eq) {
+            if (equipmentOverride.enhanced != null) return equipmentOverride.enhanced;
+            const data = eq || shotEquipmentCtx().target;
+            return data ? !!data.enhanced_armor
+                : !!(document.getElementById('eq-enhanced') && document.getElementById('eq-enhanced').checked);
+        }
+        function shellPenMul(s) {
+            const calOn = effectiveCalibrated((s && s.shooter_equipment) || null);
             if (!calOn) return 1.0;
             const t = shellTypeOf(s);
             // 未知弹种没有可用的装备口径系数；判定入口会 fail-closed，这里不猜 1.07。
@@ -730,9 +742,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
         function equipmentCoeffs() {
             const penMul = shellPenMul(selectedShell);
-            const eqT = shotEquipmentCtx().target;
-            const enhOn = eqT ? eqT.enhanced_armor
-                : !!(document.getElementById('eq-enhanced') && document.getElementById('eq-enhanced').checked);
+            const enhOn = effectiveEnhanced(null);
             const thickMul = enhOn ? 1.04 : 1.0;
             return { penMul, thickMul };
         }
@@ -2416,6 +2426,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
 
         const QP = new URLSearchParams(location.search);
+        // 装甲页图形开关的手动覆盖（&eqcal=0/1、&eqenh=0/1）：场景初始化即生效
+        if (QP.has('eqcal')) equipmentOverride.calibrated = QP.get('eqcal') === '1';
+        if (QP.has('eqenh')) equipmentOverride.enhanced = QP.get('eqenh') === '1';
         // 本机复现开关：?armordebug=1（仅 dev）。点击后复制/查看本次判定的完整输入与层链。
         const ARMOR_DEBUG = import.meta.env.DEV && QP.get('armordebug') === '1';
         let urlApplied = false;
@@ -4069,6 +4082,13 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
 
         /** 宿主（装甲页）有了图形化装配编辑器时隐藏原生配置下拉；仍是场景的配置状态源。 */
         let configUiHidden = false;
+        /** 射击复现的图形面板就绪后隐藏原生弹种下拉（仍是场景的弹种状态源）。 */
+        let shellUiHidden = false;
+        function setShellUiVisible(visible) {
+            shellUiHidden = !visible;
+            const el = document.getElementById('shell-selector');
+            if (el) el.style.display = (!shellUiHidden && shooterShells && shooterShells.length) ? 'block' : 'none';
+        }
         function setConfigUiVisible(visible) {
             configUiHidden = !visible;
             const row = document.getElementById('config-row');
@@ -4167,7 +4187,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 ? requestedIndex : 0;
             sel.value = String(index);
             selectedShell = shells[index] || null;
-            document.getElementById('shell-selector').style.display = shells.length > 0 ? 'block' : 'none';
+            document.getElementById('shell-selector').style.display = (!shellUiHidden && shells.length > 0) ? 'block' : 'none';
         }
 
         async function loadShooter(tid) {
@@ -4400,18 +4420,23 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 }
             });
 
-            const onEquipmentChange = function() {
+            function refreshEquipmentEffects() {
                 const sel = document.getElementById('shell-select');
-                for (let i = 0; i < sel.options.length; i++) {
-                    if (shooterShells && i < shooterShells.length) {
-                        sel.options[i].textContent = shellOptionText(shooterShells[i]);
+                if (sel) {
+                    for (let i = 0; i < sel.options.length; i++) {
+                        if (shooterShells && i < shooterShells.length) {
+                            sel.options[i].textContent = shellOptionText(shooterShells[i]);
+                        }
                     }
                 }
                 if (!penetrationMode) return;
                 const sh = selectedShell || (shooterShells[0]) || null;
                 if (sh) { updatePenetrationUniforms(sh); updateSpacedUniforms(sh); }
                 updateHeatmapThickness();
-            };
+                if (QP.get('shot')) doPenetrationCheck(0, 0);
+            }
+
+            const onEquipmentChange = function() { refreshEquipmentEffects(); };
             document.getElementById('eq-calibrated').addEventListener('change', onEquipmentChange);
             document.getElementById('eq-enhanced').addEventListener('change', onEquipmentChange);
             document.getElementById('armor-state-toggle').addEventListener('change', function() {
@@ -5001,8 +5026,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // doPenetrationCheck 的入口 guard 已保证 > 0；这里不再有 120mm 静默默认。
             const caliber = resolveShotCaliber();
             const isHE = shellType === 'he';
-            const eqCal = !!(document.getElementById('eq-calibrated') && document.getElementById('eq-calibrated').checked);
-            const eqEnh = !!(document.getElementById('eq-enhanced') && document.getElementById('eq-enhanced').checked);
+            const eqCal = effectiveCalibrated(null);
+            const eqEnh = effectiveEnhanced(null);
             // 距离衰减（对齐客户端指示器 0x719740）：交战距离 = 射线起点（射击复现 =
             // 真实炮口；静态检视 = 炮管几何/相机）到命中点，全模式自动检测。
             // d≤100m 或 HE 恒 near；d>100m 非 HE 线性衰减至 far。
@@ -5992,5 +6017,41 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             console.error('tank viewer init failed:', e);
             reportLoad({ state: 'error', message: loadFailed(initPhase, errorMessage(e)) });
         });
-        return { destroy, retry, selectTank, canPick, isContextLost, setConfig: applyConfig, setConfigUiVisible };
+        /** 弹种选择（与原生下拉的 change 同一路径）：index 越界即忽略。 */
+        function setShell(index) {
+            const sel = document.getElementById('shell-select');
+            const i = Number(index);
+            if (!sel || !shooterShells || !Number.isInteger(i) || i < 0 || i >= shooterShells.length) return false;
+            sel.value = String(i);
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+            return true;
+        }
+
+        /** 校准弹/强化装甲手动覆盖（null = 跟随回放真值/旧勾选框）。 */
+        function setEquipmentOverride(kind, value) {
+            if (kind !== 'calibrated' && kind !== 'enhanced') return;
+            equipmentOverride[kind] = value == null ? null : !!value;
+            refreshEquipmentEffects();
+        }
+
+        /**
+         * 射击方主炮（配置下标）：换 &scfg= 后重载射手弹表（弹种/口径随炮塔×炮），
+         * 再按新表重跑判定。回放记录的炮塔/炮管姿态保持原样（那是历史真值）。
+         */
+        async function setShooterConfig(index) {
+            if (!shooterData) return false;
+            const idx = Number(index);
+            const configs = shooterData.configs || [];
+            if (!Number.isInteger(idx) || idx < 0 || idx >= configs.length) return false;
+            QP.set('scfg', String(idx));
+            QP.delete('shell');   // 旧弹种下标对新炮表无意义
+            await loadShooter(shooterData.tank_id);
+            return true;
+        }
+
+        return {
+            destroy, retry, selectTank, canPick, isContextLost,
+            setConfig: applyConfig, setConfigUiVisible, setShellUiVisible,
+            setShell, setShooterConfig, setEquipmentOverride,
+        };
     }

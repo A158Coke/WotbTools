@@ -27,7 +27,7 @@ import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 import Scene3DStatus from './Scene3DStatus.vue'
 import TankCatalogMenu from './TankCatalogMenu.vue'
 import ArmorLoadout from './ArmorLoadout.vue'
-import EquipmentBadges from './EquipmentBadges.vue'
+import ArmorShotSetup from './ArmorShotSetup.vue'
 
 const { t, te } = useI18n()
 const router = useRouter()
@@ -95,11 +95,13 @@ const shotGestures = computed(() => ['rotate', 'zoom', 'pan'].map(action => ({
 const toolsOpen = ref(false)
 /** 装配编辑器的数据就绪后才隐藏场景自带的原生配置下拉（资产缺失时它仍是可用回退） */
 const loadoutReady = ref(false)
+/** 射击复现的图形面板就绪后才隐藏原生的配置/弹种下拉与装备勾选（资产缺失时仍可回退） */
+const shotSetupReady = ref(false)
 
 /** 重建场景的 query 键：装配键（config/engine/track/dev/cons/prov/shell）不在其中——
  *  改装配只就地更新（viewer.setConfig）与写 URL，不销毁 3D 场景。 */
 const SCENE_QUERY_KEYS = [
-  'tank', 'shooter', 'shot', 'scfg', 'world', 'heatmap', 'az', 'h', 'd', 'quality', 'move', 'rel', 'clean', 'debug',
+  'tank', 'shooter', 'shot', 'world', 'heatmap', 'az', 'h', 'd', 'quality', 'move', 'rel', 'clean', 'debug',
 ]
 const sceneSignature = () => SCENE_QUERY_KEYS.map(key => `${key}=${route.query[key] ?? ''}`).join('&')
 let lastSceneSignature = null
@@ -107,8 +109,11 @@ let lastSceneSignature = null
 // JSON，不该在 3D 场景加载路径上抢带宽）；一旦激活保持（收起再展开不重复拉）。
 const loadoutActive = ref(false)
 watch(toolsOpen, (open) => { if (open) loadoutActive.value = true }, { immediate: true })
-// 图形化装配编辑器就绪 → 隐藏场景自带的原生配置下拉（资产缺失时编辑器不就绪，下拉保留为回退）
-watch(loadoutReady, ready => viewer?.setConfigUiVisible?.(!ready))
+// 图形化装配编辑器/射击面板就绪 → 隐藏场景自带的原生下拉（资产缺失时保留为回退）
+watch([loadoutReady, shotSetupReady], ([loadout, shot]) => {
+  viewer?.setConfigUiVisible?.(!(loadout || shot))
+  viewer?.setShellUiVisible?.(!shot)
+}, { flush: 'sync' })
 /** 搭载面板的车：场景选择器换车后以 viewer 上报为准（选车不写 URL），深链回落 URL。 */
 const loadoutTankId = computed(() => selectedTargetId.value ?? (Number(route.query.tank) || null))
 // ?clean=1 时场景脚本会隐藏全部常驻面板（截图 / 嵌入用）；顶栏卡片与参数开关一并让位
@@ -119,6 +124,31 @@ const cleanQuery = computed(() => route.query.clean === '1')
  * 写同一组 URL 键（config/engine/track/dev/cons/prov），并让场景立即切到新配置
  * （炮塔/炮装甲板、炮管模块缓存一起换）。换 config 时删掉旧弹种下标（弹表已变）。
  */
+/**
+ * 射击复现的相关项（用户裁定：射击方主炮/校准弹/弹种、受击方炮塔×炮/强化装甲）：
+ * 写 URL（scfg / config / shell / eqcal / eqenh）并调用场景 API 就地生效。
+ * 换射击方主炮会清掉旧弹种下标（新炮表从 0 开始）。
+ */
+function applyShotSetup(patch) {
+  if (!patch) return
+  const query = { ...route.query }
+  const put = (key, value) => {
+    if (value == null || value === '') delete query[key]
+    else query[key] = String(value)
+  }
+  if ('scfg' in patch) { put('scfg', patch.scfg); delete query.shell }
+  if ('config' in patch) put('config', patch.config)
+  if ('shell' in patch) put('shell', patch.shell)
+  if ('eqcal' in patch) put('eqcal', patch.eqcal ? '1' : '0')
+  if ('eqenh' in patch) put('eqenh', patch.eqenh ? '1' : '0')
+  router.replace({ query })
+  if (patch.scfg != null) viewer?.setShooterConfig?.(Number(patch.scfg))
+  if (patch.config != null) viewer?.setConfig?.(Number(patch.config))
+  if (patch.shell != null) viewer?.setShell?.(Number(patch.shell))
+  if ('eqcal' in patch) viewer?.setEquipmentOverride?.('calibrated', patch.eqcal)
+  if ('eqenh' in patch) viewer?.setEquipmentOverride?.('enhanced', patch.eqenh)
+}
+
 function applyLoadout(patch) {
   if (!patch) return
   const query = { ...route.query }
@@ -311,7 +341,8 @@ function startViewer(preserveSelection = false) {
     viewerReady.value = true
     lastSceneSignature = sceneSignature()
     // 编辑器可能先于场景就绪（模块 JSON 比模型快）：创建后补一次显隐
-    viewer.setConfigUiVisible?.(!loadoutReady.value)
+    viewer.setConfigUiVisible?.(!(loadoutReady.value || shotSetupReady.value))
+    viewer.setShellUiVisible?.(!shotSetupReady.value)
 }
 
 async function retry() {
@@ -344,6 +375,7 @@ watch(() => route.fullPath, async () => {
     // 只改了装配键：场景已由 applyLoadout 就地更新，不重建（否则每次点模块都会闪一下）
     if (viewer && sceneSignature() === lastSceneSignature) return
     requestSeq++
+    shotSetupReady.value = false
     viewerReady.value = false
     viewer?.destroy?.()
     viewer = null
@@ -417,7 +449,7 @@ onBeforeUnmount(() => {
                 :title="$t('armor.tools')"
                 @click="toolsOpen = !toolsOpen"
             ><SlidersHorizontal :size="18" aria-hidden="true" /><span class="armor-tools-label">{{ $t('armor.tools') }}</span></button>
-            <div id="tank-selectors"><h2 class="armor-panel-title">{{ $t('armor.setup') }}</h2><p v-if="isShotPage" class="armor-setup-note">{{ $t('armor.recording_vs_preview') }}</p>
+            <div id="tank-selectors" :class="{ 'has-shot-setup': shotSetupReady }"><h2 class="armor-panel-title">{{ $t('armor.setup') }}</h2><p v-if="isShotPage" class="armor-setup-note">{{ $t('armor.recording_vs_preview') }}</p>
                 <div class="sel-row" id="config-row" style="display:none;"><label id="config-label" for="config-select">{{ $t('armor.config') }}</label><select id="config-select"></select></div>
                 <div class="sel-row">
                     <label>{{ $t('armor.equip') }}</label>
@@ -425,15 +457,28 @@ onBeforeUnmount(() => {
                     <label class="eq-opt"><input type="checkbox" id="eq-enhanced"> <span class="eq-opt-label">{{ $t('armor.enhanced') }}</span></label>
                     <label class="eq-opt" id="armor-state-opt" style="display:none;"><input type="checkbox" id="armor-state-toggle"> <span class="eq-opt-label">{{ $t('armor.dynamic_armor') }}</span></label>
                 </div>
-                <!-- 实际搭载（2026-10-27 接入）：百科交接 = 模块四件 + 装备/物品图标；
-                     射击复现 = 该弹射手/目标的 Type5 配件串徽标（回放真值，只读）。 -->
+                <!-- 实际搭载（2026-10-27 接入）：普通检视 = 与详情页同款配置面板；
+                     射击复现 = 只保留与射击相关的 5 项图形化选择（2026-10-28 用户裁定）。 -->
                 <div v-if="loadoutActive" class="sel-row sel-loadout" data-testid="armor-loadout-section">
-                    <template v-if="isShotPage">
-                        <label>{{ $t('armor.loadout_shooter') }}</label>
-                        <EquipmentBadges :ids="activeShot?.shooter_equipment?.raw ?? null" />
-                        <label>{{ $t('armor.loadout_target') }}</label>
-                        <EquipmentBadges :ids="activeShot?.target_equipment?.raw ?? null" />
-                    </template>
+                    <ArmorShotSetup
+                        v-if="isShotPage"
+                        :key="`shot-setup-${route.query.shot ?? 'none'}`"
+                        :shooter-id="(selectedShooterId ?? Number(route.query.shooter)) || null"
+                        :target-id="selectedTargetId ?? loadoutTankId"
+                        :scfg="route.query.scfg"
+                        :config="route.query.config"
+                        :shell="route.query.shell"
+                        :calibrated-default="!!activeShot?.shooter_equipment?.calibrated_shells"
+                        :enhanced-default="!!activeShot?.target_equipment?.enhanced_armor"
+                        :eqcal="route.query.eqcal"
+                        :eqenh="route.query.eqenh"
+                        @shooter-config="index => applyShotSetup({ scfg: index })"
+                        @shell="index => applyShotSetup({ shell: index })"
+                        @calibrated="value => applyShotSetup({ eqcal: value })"
+                        @target-config="index => applyShotSetup({ config: index })"
+                        @enhanced="value => applyShotSetup({ eqenh: value })"
+                        @ready="shotSetupReady = true"
+                    />
                     <ArmorLoadout
                         v-else
                         :tank-id="loadoutTankId"
@@ -549,6 +594,8 @@ onBeforeUnmount(() => {
 .armor-view #info-panel .value { font-weight: 600; }
 .armor-view .armor-setup-note { margin: 0 0 var(--space-3); color: var(--muted); font: var(--type-caption); }
 .armor-view .armor-panel-title { margin: 0 0 var(--space-2); color: var(--muted); font: var(--type-caption); }
+/* 射击复现的图形面板就绪后，场景自带的校准弹/强化装甲勾选只作为资产缺失时的回退 */
+.armor-view #tank-selectors.has-shot-setup .eq-opt { display: none; }
 .armor-view #tank-selectors { padding: var(--space-3); inline-size: 17rem; max-block-size: 54dvh; overflow-y: auto; z-index: var(--pb-z-hud); }
 .armor-view #tank-selectors .sel-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-1) 0; }
 .armor-view #tank-selectors label { color: var(--muted); font: var(--type-caption); }
