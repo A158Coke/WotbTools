@@ -4,6 +4,7 @@ common/data/
 !common/fixtures/replays/*.wotbreplay
 !common/fixtures/leaderboard/*.wotbreplay
 !common/assets/onboarding/*.wotbreplay
+!common/fixtures/hall-of-fame/training-room-example.wotbreplay
 
 # 构建产物
 dist/
@@ -33,6 +34,7 @@ frontend/scripts/.vehicle-model-refs/
 node_modules/
 .env
 .env.*
+!.env.example
 .idea/
 .vscode/
 # AI 工具运行时数据 (保留 .agents/)

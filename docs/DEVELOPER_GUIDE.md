@@ -116,6 +116,8 @@ HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/s
 
 `.github/workflows/ci-gate.yml` 是唯一 PR 入口：校验 PR/base/head SHA 身份，用 `dorny/paths-filter` 将变更映射到 owner，调用相应 reusable CI workflow，最后由稳定的 `CI / Required Gate` 汇总。未受影响的 owner 跳过；五个 OpenTofu root 只在各自 owner 受影响时验证。PR trigger 不设置 paths，确保 required check 始终产生。PR CI 不接触 production credentials、host、state 或 authenticated plan。
 
+仓库 hygiene 是同一 PR gate 的无条件前置检查：`scripts/ci/check-repository-hygiene.sh` 默认拒绝超过 5 MiB 的 tracked file，并拒绝 `Python/`、`.deepseek/`、`common/assets/wasm/`、`frontend/dist/`、`frontend/dist-android/`、`dist/`、`dist-desktop/`、`target/`、`node_modules/` 等生成/运行时路径；确属 source-of-truth 且应继续使用普通 Git 的超限文件，只能把 exact path 加到 `scripts/ci/large-file-allowlist.txt` 并在 PR 解释理由。检查同时覆盖最终 tree 和 PR `base..head` 中每个 commit tree，防止“先提交大 blob 再删除”把对象带入历史；路径遍历使用 NUL-safe Git 输出以支持合法特殊文件名。开发者可在仓库根运行 `bash scripts/ci/check-repository-hygiene.sh`，回归 fixture 为 `bash scripts/ci/test-repository-hygiene.sh`。main 上另有 push-only `repository-hygiene-main.yml` 对 bypass/direct push 做事后审计。
+
 三个数据更新 workflow 在创建/更新 PR 时分别执行来源数据的真实同步与验证，再 dispatch CI 验证精确 open PR head。生产发布继续由 service owner workflow 的原生路径规则独立触发。
 
 [`ci-owner-paths.yml`](../.github/ci-owner-paths.yml) 是 PR 路由表；生产 owner workflow 的 `on.push.paths` 与 `PRODUCTION_INPUT_PATHS` 必须逐项相同。共享输入按真实依赖 fan-out，未列出的普通文档变更只执行 PR gate。下表是维护边界索引，具体路径以 workflow 为准；完整 owner 清单与运行时不变量见 [`.github/AGENTS.md`](../.github/AGENTS.md)。
