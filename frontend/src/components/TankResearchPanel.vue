@@ -402,7 +402,7 @@ function activate(node) {
 .tr-prev-cost { color: var(--color-warning); font-variant-numeric: tabular-nums; }
 
 /* 当前车面板（客户端 TankPanel 的紧凑形态） */
-.tr-node.is-current-tank { border-color: var(--color-accent); }
+.tr-node.is-current-tank { border-color: var(--color-border-strong); }
 .tr-node.is-current-tank .tr-node-name { color: var(--color-text-primary); font-weight: 600; }
 
 .tr-main { display: flex; flex-direction: column; gap: var(--space-2); min-inline-size: 0; min-block-size: 0; }
@@ -427,7 +427,8 @@ function activate(node) {
 .tr-grid { position: absolute; inset-block-start: 0; }
 .tr-edges { position: absolute; inset: 0; pointer-events: none; }
 .tr-edge { stroke: var(--color-border-strong); stroke-width: 1.5; }
-.tr-edge.is-installed { stroke: var(--color-accent-text); }
+/* 已研发链路的线也只提亮成中性白，不用金色（金色 = 高级车） */
+.tr-edge.is-installed { stroke: var(--color-text-primary); }
 .tr-arrow-head { fill: var(--color-border-strong); }
 
 /* 节点 64×64（客户端 ModuleNode）；已安装 = 高亮 + 勾，点击安装 */
@@ -446,14 +447,14 @@ function activate(node) {
 }
 .tr-node:hover { border-color: var(--color-border-strong); color: var(--color-text-primary); }
 .tr-node:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+/* 已安装 = 中性高亮 + 右下勾，不用强调色：蓝/金在客户端是收藏车/高级车的等级编码，
+   研发图里借来标“已安装/可切换”会被读成坦克类别（用户 2026-10-27）。 */
 .tr-node.is-installed {
-  border-color: var(--color-accent);
-  background: color-mix(in oklab, var(--color-accent) 16%, var(--color-surface-1));
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-3);
 }
-/* 下一级坦克节点：客户端 ModulesTree 的 VEHICLE 节点（在网格里、由模块连出去） */
+/* 下一级坦克节点：类型由坦克图 + 等级角标表达，边框保持普通样式 */
 .tr-node.is-next-tank {
-  border-color: var(--color-info);
-  background: color-mix(in oklab, var(--color-info) 12%, var(--color-surface-1));
   color: var(--color-text-primary);
 }
 .tr-node.is-next-tank:disabled { cursor: default; opacity: 0.6; }
