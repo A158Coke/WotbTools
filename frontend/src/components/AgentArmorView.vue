@@ -123,9 +123,14 @@ const sameTankInspection = computed(() => {
   return shooter != null && target != null && shooter === target
 })
 
+/** 同一 tick 连点两下（弹种 + 开关）时，第二次写入必须基于上一次尚未落地的 query，
+ *  否则会把第一击的结果覆盖回旧值（与坦克百科 pendingQuery 同因同解）。 */
+let pendingShotQuery = null
+watch(() => route.query, () => { pendingShotQuery = null }, { flush: 'sync' })
+
 function applyShotSetup(patch) {
   if (!patch) return
-  const query = { ...route.query }
+  const query = { ...(pendingShotQuery || route.query) }
   const put = (key, value) => {
     if (value == null || value === '') delete query[key]
     else query[key] = String(value)
@@ -147,6 +152,7 @@ function applyShotSetup(patch) {
   if ('shell' in patch) put('shell', patch.shell)
   if ('eqcal' in patch) put('eqcal', patch.eqcal ? '1' : '0')
   if ('eqenh' in patch) put('eqenh', patch.eqenh ? '1' : '0')
+  pendingShotQuery = query
   router.replace({ query })
   if (patch.scfg != null) {
     if (sameTankInspection.value) viewer?.setConfig?.(Number(patch.scfg))
