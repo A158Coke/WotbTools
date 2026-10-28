@@ -27,6 +27,11 @@ const props = defineProps({
   selection: { type: Object, required: true },
   /** 资产包 research 全局目录（物品目录 + 预设 + 过滤器） */
   catalog: { type: Object, required: true },
+  /** 乘员技能 / 涂装块 */
+  showCrew: { type: Boolean, default: true },
+  showEquipment: { type: Boolean, default: true },
+  showConsumables: { type: Boolean, default: true },
+  showProvisions: { type: Boolean, default: true },
 })
 const emit = defineEmits(['update', 'reset', 'preset', 'cycle-skill', 'max-skills', 'clear-skills'])
 
@@ -422,7 +427,7 @@ const camoBonusParts = computed(() => {
     </div>
 
     <!-- 装备：3×3，每格左右两件图标 -->
-    <section class="tp-config-block">
+    <section v-if="showEquipment" class="tp-config-block">
       <div class="tp-block-head">
         <h3>{{ t('agentTanks.configurator.equipment') }}</h3>
         <span class="tp-muted">{{ t('agentTanks.configurator.equipment_hint') }}</span>
@@ -464,7 +469,7 @@ const camoBonusParts = computed(() => {
     </section>
 
     <!-- 补给 / 消耗品：图标格（名称走 aria-label / tooltip） -->
-    <section class="tp-config-block">
+    <section v-if="showProvisions" class="tp-config-block">
       <div class="tp-block-head">
         <h3>{{ t('agentTanks.configurator.provisions') }}</h3>
         <span class="tp-muted">{{ selection.provisions.length }}/{{ provisionSlots }}</span>
@@ -488,7 +493,7 @@ const camoBonusParts = computed(() => {
       </div>
     </section>
 
-    <section class="tp-config-block">
+    <section v-if="showConsumables" class="tp-config-block">
       <div class="tp-block-head">
         <h3>{{ t('agentTanks.configurator.consumables') }}</h3>
         <span class="tp-muted">{{ selection.consumables.length }}/{{ consumableSlots }}</span>
@@ -518,7 +523,7 @@ const camoBonusParts = computed(() => {
       </div>
     </section>
 
-    <section class="tp-config-block tp-skills-block">
+    <section v-if="showCrew" class="tp-config-block tp-skills-block">
       <div class="tp-block-head">
         <h3>{{ t('agentTanks.configurator.crew_skills') }}</h3>
         <span class="tp-muted">{{ t('agentTanks.configurator.crew_count') }} {{ modules.crewRoles.length }} · {{ Object.values(selection.skills).filter(level => level > 0).length }}/20</span>
@@ -558,7 +563,7 @@ const camoBonusParts = computed(() => {
       <p class="tp-muted">{{ t('agentTanks.configurator.skill_note') }}</p>
     </section>
 
-    <div class="tp-camo-block">
+    <div v-if="showCrew" class="tp-camo-block">
       <label class="tp-camo">
         <input type="checkbox" data-testid="tank-camo" :checked="selection.camouflage" @change="setCamo">
         <span>{{ t('agentTanks.configurator.camouflage') }}</span>

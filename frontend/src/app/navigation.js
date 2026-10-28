@@ -133,7 +133,7 @@ const HOF_QUERY_KEYS = ['tab', 'page', 'tank', 'nation', 'type', 'tier', 'bt', '
  * （`AgentTankopedia` 的 router.push）都不经本函数；但任何以 URL 表达的交接都不该在入场时被吞掉。
  */
 const ARMOR_SCENE_QUERY_KEYS = [
-  'tank', 'shooter', 'config', 'scfg', 'shell', 'shot', 'world', 'heatmap',
+  'tank', 'shooter', 'config', 'scfg', 'sengine', 'strack', 'sdev', 'shell', 'shot', 'world', 'heatmap',
   'az', 'h', 'd', 'eqcal', 'eqenh', 'quality', 'move', 'rel', 'clean', 'debug',
 ]
 const BROADCAST_QUERY_KEYS = ['lbServer', 'lbSeason', 'lbCategory']
