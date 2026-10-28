@@ -68,6 +68,11 @@ describe('primary navigation', () => {
       expect(primarySection(view)).toBe('more')
     }
     for (const view of ['agent-tankopedia', 'agent-armor']) expect(primarySection(view)).toBe('tankopedia')
+    // 科技树是坦克百科的**平级**栏目（不是坦克百科的子页）
+    expect(primarySection('agent-techtree')).toBe('techtree')
+    expect(sectionTitleKey('agent-techtree')).toBe('research.title')
+    expect(PRIMARY_NAV.findIndex(item => item.id === 'techtree'))
+      .toBe(PRIMARY_NAV.findIndex(item => item.id === 'tankopedia') + 1)
     for (const item of ADMIN_NAV) expect(primarySection(item.view)).toBe(item.id)
     expect(primarySection('profile')).toBe('account')
     expect(primarySection('hof')).toBe('hof')
@@ -75,14 +80,14 @@ describe('primary navigation', () => {
   })
 
   it('only offers Home on the production home host', () => {
-    expect(primaryNavItems('wotbtools.com').map(item => item.id)).toEqual(['home', 'replay', 'hof', 'tankopedia', 'tournament-points', 'league-broadcasts', 'creators', 'more'])
-    expect(primaryNavItems('localhost').map(item => item.id)).toEqual(['replay', 'hof', 'tankopedia', 'tournament-points', 'league-broadcasts', 'creators', 'more'])
+    expect(primaryNavItems('wotbtools.com').map(item => item.id)).toEqual(['home', 'replay', 'hof', 'tankopedia', 'techtree', 'tournament-points', 'league-broadcasts', 'creators', 'more'])
+    expect(primaryNavItems('localhost').map(item => item.id)).toEqual(['replay', 'hof', 'tankopedia', 'techtree', 'tournament-points', 'league-broadcasts', 'creators', 'more'])
   })
 
   it('omits Home in the APK and resolves startup or stale Home links to Replay', () => {
     vi.stubEnv('MODE', 'android')
     try {
-      const expected = ['replay', 'hof', 'tankopedia', 'tournament-points', 'league-broadcasts', 'creators', 'more']
+      const expected = ['replay', 'hof', 'tankopedia', 'techtree', 'tournament-points', 'league-broadcasts', 'creators', 'more']
       expect(primaryNavItems('127.0.0.1').map(item => item.id)).toEqual(expected)
       expect(primaryNavItems('wotbtools.com').map(item => item.id)).toEqual(expected)
       expect(defaultView('127.0.0.1')).toBe('replay')

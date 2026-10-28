@@ -8,6 +8,7 @@
  * layout="page"：随页面文档滚动（坦克百科）；layout="dialog"：结果区在弹窗内滚动
  * （装甲查看器），标题/关闭按钮由 title 属性开启。
  */
+import { romanLevel } from '../utils/tierFormat.js'
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RotateCcw, Search, SearchX, TriangleAlert, X } from 'lucide-vue-next'
@@ -96,7 +97,7 @@ const { visible, hasMore, loadMore, sentinel } = useIncrementalList(filtered, {
 })
 const remaining = computed(() => filtered.value.length - visible.value.length)
 
-const tierLabel = tier => t('agentTanks.tier_n', { tier })
+const tierLabel = tier => romanLevel(tier)
 const nationLabel = nation => tankNationLabel(t, te, nation)
 const typeLabel = type => tankTypeLabel(t, te, type)
 const countText = computed(() => t('agentTanks.count', { shown: filtered.value.length, total: props.tanks.length }))

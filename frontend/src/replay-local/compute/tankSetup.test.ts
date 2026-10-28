@@ -18,6 +18,7 @@ import {
   computeSetupPair,
   consumableTiming,
   decodeDevices,
+  devicesFromEquipmentIds,
   encodeDevices,
   findTankModules,
   gunCycleOf,
@@ -171,6 +172,23 @@ describe('gunCycleOf（config 的 is_drum/is_burst 语义）', () => {
     expect(gunCycleOf({ reload_time: 14, burst_size: 3, burst_interval: 2.727, burst_reloads: [14, 12, 10], is_burst: true, is_drum: true }))
       .toMatchObject({ type: 'autoreloader', shellCount: 3, shellReloads: [14, 12, 10] })
   })
+
+  it('连发组（PomPom）：burst_group_* 进循环；缺字段/不超过 1 发视为无组', () => {
+    const atlas = gunCycleOf({
+      reload_time: 13, burst_size: 6, burst_interval: 3, is_burst: true, is_drum: false,
+      burst_group_count: 3, burst_group_interval: 0.25,
+    })
+    expect(atlas).toMatchObject({
+      type: 'autoloader', shellCount: 6, intraClip: 3,
+      burstGroupCount: 3, burstGroupInterval: 0.25,
+    })
+    // 普通弹夹（旧包没有 burst_group_*）：0 → 计算仍走整匣公式
+    expect(gunCycleOf({ reload_time: 20, burst_size: 3, burst_interval: 3, is_burst: true }))
+      .toMatchObject({ burstGroupCount: 0, burstGroupInterval: 0 })
+    // count=1 是“单发连发组”（客户端常规炮也带 burst count 1）：不算组
+    expect(gunCycleOf({ reload_time: 20, burst_size: 3, burst_interval: 3, is_burst: true, burst_group_count: 1, burst_group_interval: 0.2 }))
+      .toMatchObject({ burstGroupCount: 0, burstGroupInterval: 0 })
+  })
 })
 
 describe('装备槽编解码', () => {
@@ -321,6 +339,20 @@ describe('引擎输入与 delta 行', () => {
     expect(groups.map(group => group.group)).toEqual(['protectability', 'mobility', 'gun'])
   })
 
+  it('paramGroups：连发组炮显示组数/每组发数/组内连发间隔（客户端 format 口径）', () => {
+    const rows = Object.fromEntries(
+      paramGroups({
+        gunClipShellCount: 6, gunClipBurstCount: 2, gunBurstShellCount: 3,
+        gunClipBurstReloadTime: 0.25, gunClipShellReloadTime: 3,
+      }, {}, FORMAT.params).flatMap(group => group.rows.map(row => [row.key, row])),
+    )
+    expect(rows.gunClipBurstCount.value).toBe(2)
+    expect(rows.gunBurstShellCount.value).toBe(3)
+    expect(rows.gunClipBurstReloadTime.value).toBe(0.25)
+    expect(rows.gunClipBurstReloadTime.unit).toBe('SECOND')
+    expect(rows.gunClipBurstReloadTime.digits).toBe(2)
+  })
+
   it('paramGroups：无炮塔车用火炮转向速度替换炮塔转速（有炮塔车相反）', () => {
     const rowsOf = (current: Record<string, any>) => Object.fromEntries(
       paramGroups(current, {}, FORMAT.params).flatMap(group => group.rows.map(row => [row.key, row])),
@@ -399,5 +431,30 @@ describe('consumableTiming（装备 101/118 与客户端 script 计时）', () =
     expect(consumableTiming(extinguisher!.script, [118], catalog).cooldown).toBeCloseTo(70 / 1.17, 6)
     expect(consumableTiming({ params: { crewLevelIncrease: 10 } }, [101, 118], catalog))
       .toEqual({ cooldown: null, duration: null })
+  })
+})
+
+describe('devicesFromEquipmentIds（回放装配 → 槽位反解）', () => {
+  const modules = findTankModules(USSRS as any, 5137) ?? USSRS.tanks[Object.keys(USSRS.tanks)[0]]
+
+  it('id 命中预设一侧 → 该侧；两侧都命中/都未命中 → null', () => {
+    // level0 attack：左 rammer(100) / 右 calibratedShells(103)
+    expect(devicesFromEquipmentIds([100], modules, catalog)[0]).toBe(0)
+    expect(devicesFromEquipmentIds([103], modules, catalog)[0]).toBe(1)
+    // 未命中：槽位空（fail-closed），不猜
+    expect(devicesFromEquipmentIds([], modules, catalog)[0]).toBeNull()
+    expect(devicesFromEquipmentIds([101], modules, catalog)[0]).toBeNull() // 101 不在该槽两侧
+  })
+
+  it('0 = 空槽垫底：过滤掉；左右候选 id 同时在场 = 歧义 → null', () => {
+    const slots = devicesFromEquipmentIds([0, 100, 101], modules, catalog)
+    expect(slots[0]).toBe(0) // 100 → rammer（左）
+    expect(devicesFromEquipmentIds([100, 103], modules, catalog)[0]).toBeNull()
+  })
+
+  it('未知 id（预设外）→ 对应槽位 null；空入参 → 全 null 表', () => {
+    expect(devicesFromEquipmentIds([999], modules, catalog)).not.toContain(1)
+    expect(devicesFromEquipmentIds(null, modules, catalog).every(s => s === null)).toBe(true)
+    expect(devicesFromEquipmentIds([], modules, catalog).length).toBe(9)
   })
 })

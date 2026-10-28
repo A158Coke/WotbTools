@@ -713,7 +713,7 @@ describe('续飞初始接受阈三路一致（评审 P1）', () => {
         expect(src).not.toContain('RC.MIN_CONTINUATION_T + RC.ADVANCE_EPSILON');
         // click 路径（tankViewer.js）严格同一口径：t <= MIN 滤（此前是 t < MIN，且 GLSL/JS 侧 +eps）
         const viewer = require('fs').readFileSync(new URL('./tankViewer.js', import.meta.url), 'utf8');
-        expect(viewer).toContain('if (hit.distance <= RC.MIN_CONTINUATION_T) continue;');
+        expect(viewer).toMatch(/\.filter\(h => h\.distance > RC\.MIN_CONTINUATION_T\)/);
         expect(viewer).not.toContain('hit.distance < RC.MIN_CONTINUATION_T');
     });
     it('行为锁定：0.15mm 处的板被命中（旧 +eps 口径 0.2mm 会滤掉它）；0.05mm 处被滤', () => {

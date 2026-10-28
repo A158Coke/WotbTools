@@ -17,7 +17,14 @@ vi.mock('../scene/tankViewer.js', () => ({
   }),
 }))
 
-vi.mock('../scene/assetProvider.js', () => ({ assetProvider: { configured: () => true } }))
+// 装甲 HUD 会为当前射击方拉取坦克配置与配置器目录；这里只验证视图壳，
+// 给资产源一个空的成功响应即可（缺 json 会留下未处理的 rejected promise）。
+vi.mock('../scene/assetProvider.js', () => ({
+  assetProvider: {
+    configured: () => true,
+    json: async () => ({ configs: [] }),
+  },
+}))
 
 vi.mock('../composables/useBreakpoint.js', async () => {
   const { computed } = await import('vue')

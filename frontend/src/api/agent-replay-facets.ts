@@ -269,6 +269,16 @@ export interface AgentModuleCrewState {
   related_eid: number
 }
 
+/** Type5 配件串物化（上游 replay-core VehicleEquipment；additive，缺省 = 该场无 0B framing 证据）。 */
+export interface AgentVehicleEquipment {
+  /** 携带校准弹（id 103） */
+  calibrated_shells?: boolean
+  /** 携带强化装甲（id 110） */
+  enhanced_armor?: boolean
+  /** 九槽配件 id 原值（0=空槽垫底、空槽省略；**位置不承载槽位语义**，反解只能按 id 对号预设） */
+  raw?: number[]
+}
+
 export interface AgentPlaybackShot {
   t_fire: number
   shooter_eid: number
@@ -647,8 +657,9 @@ export interface AgentShotReplay {
   shooter_tank_id?: number
   target_config_idx?: number
   shooter_config_idx?: number
-  shooter_equipment?: number
-  target_equipment?: number
+  /** Type5 配件串物化（上游 VehicleEquipment：calibrated_shells/enhanced_armor/raw；raw 变长、0=空槽垫底、空槽位置信息线上不存在） */
+  shooter_equipment?: AgentVehicleEquipment
+  target_equipment?: AgentVehicleEquipment
   /** 逐发质量标注（降级/陈旧/兜底路径，UI ⚠ 悬停依据） */
   quality?: Record<string, unknown>
   [key: string]: unknown

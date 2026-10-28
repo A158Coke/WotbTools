@@ -8,8 +8,7 @@ publish 阶段的候选版本改由操作者显式指定（见下节）。
 当前源码版本：**3.17.12 / 3017012**（`android/gradle.properties`）。
 `android-v3.17.9` / `android-v3.17.10` 已有 immutable release identity，
 **不得 publish / 不得复用**；版本化记录见 [3.17.9](releases/3.17.9.md)、
-[3.17.10](releases/3.17.10.md)、[3.17.11](releases/3.17.11.md) 与
-[3.17.12](releases/3.17.12.md)。
+[3.17.10](releases/3.17.10.md)、[3.17.11](releases/3.17.11.md) 与 [3.17.12](releases/3.17.12.md)。
 3.16.0 已按联赛回放同页展开/整类删除与视觉优化发布（tag `android-v3.16.0`，对应 `6f5ca3ca`），其 APK 早于 #703 的装甲合并，不能复用该版本承载 armor 修复。
 3.17.0 承载 bundled armor viewer 的 HE/HESH 800 射线溅射、结果卡/热力图重做与装甲判定修复（双面间隙甲、二次跳弹、gun_mask 裁切、无效 HE fail-closed），按 **minor** 选位，详见 [3.17.0](releases/3.17.0.md)。
 3.17.1 修复 HE 溅射三态语义（零有效样本=0、采样器不可用显式报错、客户端不再单射线兜底），按 **patch** 递增，说明见 [3.17.1](releases/3.17.1.md)。影响限于 HE 命中履带/炮管/间隙甲等主装全在爆炸半径外的边缘场景，不强制旧客户端更新，门槛保持 `3015003`。
