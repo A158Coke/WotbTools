@@ -129,10 +129,12 @@ export function moduleTreeLayout(modules, selection = null) {
     })
   })
   push('engine', modules.engines, 'engine')
-  push('radio', modules.radios, 'radio')
-  push('fuelTank', modules.fuelTanks, 'fuelTank')
+  // 电台 / 油箱不是客户端 ModulesTree 的研发模块（它们在 modules/*.json 里只为整车重量
+  // 等参数计算保留），研发网格不渲染——UI 与客户端一致只出现底盘/炮塔/炮/发动机。
 
-  const byStem = new Map(entries.map(e => [e.module.stem, e]))
+  // 注意：**不同模块族可能同名**（实测 A-20 的底盘 A-20_mod_1938 与炮塔同名），
+  // 所有内部索引都必须按 `kind:stem` 限定，否则安装标记/研发深度会跨族串味。
+  const byKey = new Map(entries.map(e => [`${e.kind}:${e.module.stem}`, e]))
   /** 本车内部的模块解锁边（目标必须能对号本车模块；vehicle 目标单列）。 */
   const intra = new Map()
   const nextVehicles = []
@@ -143,9 +145,11 @@ export function moduleTreeLayout(modules, selection = null) {
         nextVehicles.push({ stem: u.stem, cost: u.cost || null, sourceModule: module.stem, sourceKind: kind })
         continue
       }
-      if (!byStem.has(u.stem)) continue
-      if (!intra.has(module.stem)) intra.set(module.stem, [])
-      intra.get(module.stem).push({ to: u.stem, cost: u.cost || null, costRaw: u.costRaw ?? null, kind: u.kind })
+      const targetKey = `${u.kind}:${u.stem}`
+      if (!byKey.has(targetKey)) continue
+      const nodeKey = `${kind}:${module.stem}`
+      if (!intra.has(nodeKey)) intra.set(nodeKey, [])
+      intra.get(nodeKey).push({ to: targetKey, cost: u.cost || null, costRaw: u.costRaw ?? null, kind: u.kind })
     }
   }
 
@@ -170,7 +174,7 @@ export function moduleTreeLayout(modules, selection = null) {
     depth.set(stem, value)
     return value
   }
-  for (const { module } of entries) depthOf(module.stem)
+  for (const { kind, module } of entries) depthOf(`${kind}:${module.stem}`)
 
   /** 入边成本：指向本模块的解锁边里取最小 XP（多父时客户端同样有多条线）。 */
   const costOf = new Map()
@@ -184,7 +188,7 @@ export function moduleTreeLayout(modules, selection = null) {
     }
   }
 
-  const FAMILY_ORDER = { chassis: 0, turret: 1, gun: 2, engine: 3, radio: 4, fuelTank: 5 }
+  const FAMILY_ORDER = { chassis: 0, turret: 1, gun: 2, engine: 3 }
   const families = new Map()
   for (const entry of entries) {
     if (!families.has(entry.family)) families.set(entry.family, [])
@@ -200,7 +204,7 @@ export function moduleTreeLayout(modules, selection = null) {
       .map(e => ({ ...e, level: Number(e.module.level) || 0 }))
       .sort((a, b) => (a.level - b.level) || a.module.stem.localeCompare(b.module.stem))
     for (const { module, kind, index, occurrences } of members) {
-      const col = depthOf(module.stem)
+      const col = depthOf(`${kind}:${module.stem}`)
       maxDepth = Math.max(maxDepth, col)
       /** 点击安装的描述（下标对号；炮带全部 (turret,gun) 出现位置）。 */
       const install = kind === 'gun'
@@ -214,8 +218,8 @@ export function moduleTreeLayout(modules, selection = null) {
         row: rowIndex,
         level: Number(module.level) || null,
         price: module.price ?? null,
-        installed: installed.has(module.stem),
-        cost: costOf.get(module.stem) ?? null,
+        installed: installed.has(`${kind}:${module.stem}`),
+        cost: costOf.get(`${kind}:${module.stem}`) ?? null,
         install,
         module,
       })
@@ -238,12 +242,12 @@ function installedStems(modules, selection) {
   const set = new Set()
   if (!selection?.canConfigure) return set
   const turret = (Array.isArray(modules?.turrets) ? modules.turrets : [])[selection.turret]
-  if (turret?.stem) set.add(turret.stem)
+  if (turret?.stem) set.add(`turret:${turret.stem}`)
   const gun = (Array.isArray(turret?.guns) ? turret.guns : [])[selection.gun]
-  if (gun?.stem) set.add(gun.stem)
+  if (gun?.stem) set.add(`gun:${gun.stem}`)
   const engine = (Array.isArray(modules?.engines) ? modules.engines : [])[selection.engine]
-  if (engine?.stem) set.add(engine.stem)
+  if (engine?.stem) set.add(`engine:${engine.stem}`)
   const track = (Array.isArray(modules?.chassis) ? modules.chassis : [])[selection.track]
-  if (track?.stem) set.add(track.stem)
+  if (track?.stem) set.add(`chassis:${track.stem}`)
   return set
 }

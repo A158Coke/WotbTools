@@ -179,7 +179,13 @@ describe('研发态（?tank=）', () => {
       { stem: 'track0', localId: 0, level: 1, unlocks: [{ kind: 'chassis', stem: 'track1', cost: { xp: 500 } }], stats: {} },
       { stem: 'track1', localId: 1, level: 2, unlocks: [], stats: {} },
     ],
-    engines: [{ stem: 'eng0', localId: 0, level: 1, unlocks: [], stats: {} }],
+    engines: [
+      { stem: 'eng0', localId: 0, level: 1, unlocks: [], stats: {} },
+      { stem: 'eng1', localId: 1, level: 2, unlocks: [], stats: {} },
+    ],
+    // 电台/油箱：参数计算需要，但**不是**研发模块（客户端 ModulesTree 只有四类）
+    radios: [{ stem: 'radio0', localId: 0, level: 1, unlocks: [], stats: {} }],
+    fuelTanks: [{ stem: 'fuel0', localId: 0, level: 1, unlocks: [], stats: {} }],
     turrets: [
       { stem: 't0', localId: 0, level: 1, unlocks: [], guns: [
         { stem: 'g0', localId: 0, level: 1, unlocks: [{ kind: 'gun', stem: 'g1', cost: { xp: 200 } }], stats: {} },
@@ -218,6 +224,31 @@ describe('研发态（?tank=）', () => {
     // 不再用下拉选配置（用户 2026-10-27 要求点击安装）
     expect(wrapper.find('[data-testid="research-config"]').exists()).toBe(false)
     expect(router.currentRoute.value.query.tank).toBe('1')
+  })
+
+
+  it('URL 下标按数字生效：?track=0 选中初始履带（不再被字符串夹回末位）', async () => {
+    data.fetchTankData.mockResolvedValue(DETAIL)
+    research.loadTankModules.mockResolvedValue({ tanks: { 'T-26': MODULES } })
+    const { wrapper } = await mountView({ tank: '1', config: '0', engine: '1', track: '0' })
+    const installed = wrapper.findAll('.tr-node.is-installed')
+    // 同时只有一套履带/一台发动机被标为已安装（回归：曾出现两款履带同时“选中”）
+    const installedTracks = installed.filter(node => node.attributes('data-testid')?.startsWith('research-node-chassis-'))
+    expect(installedTracks).toHaveLength(1)
+    expect(installedTracks[0].attributes('data-testid')).toBe('research-node-chassis-track0')
+    const installedEngines = installed.filter(node => node.attributes('data-testid')?.startsWith('research-node-engine-'))
+    expect(installedEngines).toHaveLength(1)
+    expect(installedEngines[0].attributes('data-testid')).toBe('research-node-engine-eng1')
+  })
+
+  it('研发网格不渲染电台/油箱（客户端 ModulesTree 只有底盘/炮塔/炮/发动机）', async () => {
+    data.fetchTankData.mockResolvedValue(DETAIL)
+    research.loadTankModules.mockResolvedValue({ tanks: { 'T-26': MODULES } })
+    const { wrapper } = await mountView({ tank: '1' })
+    expect(wrapper.find('[data-testid="research-node-radio-radio0"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="research-node-fuelTank-fuel0"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="research-node-chassis-track0"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="research-node-engine-eng0"]').exists()).toBe(true)
   })
 
   it('点击模块节点即安装：炮节点写对应 config；履带节点写 track 下标', async () => {

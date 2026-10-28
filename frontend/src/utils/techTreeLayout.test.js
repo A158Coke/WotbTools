@@ -150,6 +150,32 @@ describe('moduleTreeLayout（单车模块研发图，列=深度、行=模块族�
     expect(none.nodes.every(n => !n.installed)).toBe(true)
   })
 
+  it('不同族同名模块不串味（实测 A-20：底盘与炮塔都叫 A-20_mod_1938）', () => {
+    const same = {
+      chassis: [
+        { stem: 'A-20_mod_1938', localId: 16, level: 3, unlocks: [{ kind: 'chassis', stem: 'A-20_mod_1941' }] },
+        { stem: 'A-20_mod_1941', localId: 17, level: 4, unlocks: [] },
+      ],
+      engines: [{ stem: 'V-2', level: 5, unlocks: [] }],
+      turrets: [
+        { stem: 'A-20_mod_1938', localId: 14, level: 3, unlocks: [], guns: [{ stem: 'g0', level: 3, unlocks: [] }] },
+      ],
+    }
+    // 只装初始履带：同名炮塔的 tick 不该把升级履带也点亮
+    const first = moduleTreeLayout(same, { canConfigure: true, turret: 0, gun: 0, engine: 0, track: 0 })
+    const chassisInstalled = first.nodes.filter(n => n.kind === 'chassis' && n.installed).map(n => n.stem)
+    expect(chassisInstalled).toEqual(['A-20_mod_1938'])
+    // 只装升级履带：同名炮塔的 tick 不该把初始履带也点亮
+    const second = moduleTreeLayout(same, { canConfigure: true, turret: 0, gun: 0, engine: 0, track: 1 })
+    const chassisInstalled2 = second.nodes.filter(n => n.kind === 'chassis' && n.installed).map(n => n.stem)
+    expect(chassisInstalled2).toEqual(['A-20_mod_1941'])
+    // 研发深度按 kind:stem 计算：底盘链 0→1 不与同名炮塔合并
+    const depth = Object.fromEntries(second.nodes.map(n => [`${n.kind}:${n.stem}`, n.col]))
+    expect(depth['chassis:A-20_mod_1938']).toBe(0)
+    expect(depth['chassis:A-20_mod_1941']).toBe(1)
+    expect(depth['turret:A-20_mod_1938']).toBe(0)
+  })
+
   it('解锁环 = 数据异常显式抛出（不猜深度）', () => {
     const cyclic = {
       chassis: [

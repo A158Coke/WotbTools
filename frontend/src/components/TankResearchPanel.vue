@@ -90,8 +90,8 @@ const edges = computed(() => {
 /** 后继车节点占网格最右一列（不参与模块深度计算）。 */
 const nextVehicleNodes = computed(() => props.nextVehicles.map((v, i) => ({ ...v, row: i })))
 
-const KIND_I18N = { chassis: 'track', turret: 'turret', gun: 'gun', engine: 'engine', radio: 'radio', fuelTank: 'fuel' }
-/** 模块类型图标只有 5 张（ModulesTechTree）；radio/fuelTank 无图 → 文字回退。 */
+const KIND_I18N = { chassis: 'track', turret: 'turret', gun: 'gun', engine: 'engine' }
+/** 模块类型图标（客户端 ModulesTechTree 图集）。 */
 const KIND_ICON = { chassis: 'chassis', turret: 'turret', gun: 'gun', engine: 'engine' }
 
 function nodeIcon(kind) {

@@ -232,12 +232,25 @@ async function loadResearch(id) {
 }
 watch(researchId, id => loadResearch(id), { immediate: true })
 
+/** URL 值 → 非负整数下标（tankSetup.clampIndex 只接受 number；字符串会被静默夹到默认值）。 */
+function queryIndex(value) {
+  const raw = Array.isArray(value) ? value[0] : value
+  if (raw == null || raw === '') return null
+  const n = Number(raw)
+  return Number.isInteger(n) && n >= 0 ? n : null
+}
+
 const selection = computed(() => {
   if (!detail.value || !modules.value) return null
   return resolveSetup({
     detail: detail.value,
     modules: modules.value,
-    url: { config: route.query.config, engine: route.query.engine, track: route.query.track },
+    url: {
+      config: queryIndex(route.query.config),
+      engine: queryIndex(route.query.engine),
+      track: queryIndex(route.query.track),
+      shell: queryIndex(route.query.shell),
+    },
     catalog: null,
   })
 })
