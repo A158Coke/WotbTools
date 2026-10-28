@@ -33,7 +33,8 @@ cd "$repo"
 git config user.name "repository-hygiene-test"
 git config user.email "repository-hygiene-test@example.invalid"
 printf 'baseline\n' > README.md
-git add README.md
+cp "$ROOT/.gitignore" .gitignore
+git add README.md .gitignore
 git commit -q -m baseline
 base=$(git rev-parse HEAD)
 
@@ -46,6 +47,31 @@ git add -f frontend/dist/assets/app.js
 git commit -q -m 'add generated dist output'
 head=$(git rev-parse HEAD)
 expect_fail generated-dist env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+
+# Generated/local-only paths declared by .gitignore are policy too. Many small
+# files must not bypass the generic per-file size limit when force-added.
+git switch -q -C ignored-many-small "$base"
+mkdir -p common/assets/map-3d-local
+python3 - <<'PY'
+from pathlib import Path
+root = Path("common/assets/map-3d-local")
+for index in range(8):
+    (root / f"tile-{index}.bin").write_bytes(b"x" * (1024 * 1024))
+PY
+git add -f common/assets/map-3d-local
+git commit -q -m 'force add ignored generated map assets'
+head=$(git rev-parse HEAD)
+expect_fail ignored-many-small env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+
+# Explicit .gitignore negations remain valid source-of-truth exceptions. Replay
+# fixtures intentionally tracked by the repository must still pass.
+git switch -q -C ignored-exception "$base"
+mkdir -p common/fixtures/replays
+printf 'fixture\n' > common/fixtures/replays/allowed.wotbreplay
+git add common/fixtures/replays/allowed.wotbreplay
+git commit -q -m 'add allowed replay fixture'
+head=$(git rev-parse HEAD)
+expect_pass ignored-exception env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
 # A large blob added in one commit and deleted in the next must still fail: it
 # remains reachable from the PR commit history even though the final tree is clean.
