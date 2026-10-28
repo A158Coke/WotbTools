@@ -25,6 +25,9 @@ is_allowlisted() {
   return 1
 }
 
+# Defense-in-depth for paths that must never become source even if a future
+# change accidentally weakens .gitignore. The repository .gitignore remains the
+# broad source of truth for generated/local-only paths.
 is_forbidden_path() {
   local path="$1"
   case "$path" in
@@ -39,6 +42,13 @@ is_forbidden_path() {
 
 printable_path() {
   printf '%q' "$1"
+}
+
+report_ignored_path() {
+  local scope="$1"
+  local path="$2"
+  echo "ERROR: path ignored by repository policy $scope: $(printable_path "$path")" >&2
+  echo "       Do not force-add generated/local-only files; change .gitignore only when repository ownership intentionally changes." >&2
 }
 
 report_forbidden_path() {
@@ -106,12 +116,53 @@ fi
 
 violations=0
 checked=0
+ignore_work=$(mktemp -d)
+trap 'rm -rf "$ignore_work"' EXIT
+
+# Ask Git itself which paths the repository ignore policy rejects. --no-index is
+# required because the whole point is to catch files that were force-added even
+# though .gitignore says they are local/generated. NUL input/output keeps valid
+# Git pathnames with whitespace/newlines safe.
+load_ignored_paths() {
+  local source_kind="$1"
+  local source_ref="$2"
+  local destination_name="$3"
+  local -n destination="$destination_name"
+  local status=0
+
+  destination=()
+  if [[ "$source_kind" == "index" ]]; then
+    git ls-files -z > "$ignore_work/input"
+  else
+    git ls-tree -r -z --name-only "$source_ref" > "$ignore_work/input"
+  fi
+
+  : > "$ignore_work/output"
+  git check-ignore --no-index -z --stdin < "$ignore_work/input" > "$ignore_work/output" || status=$?
+  if (( status > 1 )); then
+    echo "Unable to evaluate repository .gitignore policy (git check-ignore exit $status)." >&2
+    exit 2
+  fi
+
+  while IFS= read -r -d '' ignored_path; do
+    destination["$ignored_path"]=1
+  done < "$ignore_work/output"
+}
 
 # Guard the final tracked tree. This catches generated paths even when every
 # individual file is small enough to stay below the size threshold.
+declare -A tracked_ignored=()
+load_ignored_paths index "" tracked_ignored
+
 while IFS= read -r -d '' path; do
   [[ -f "$path" ]] || continue
   checked=$((checked + 1))
+
+  if [[ -n "${tracked_ignored[$path]+x}" ]]; then
+    report_ignored_path "is tracked" "$path"
+    violations=$((violations + 1))
+    continue
+  fi
 
   if is_forbidden_path "$path"; then
     report_forbidden_path "is tracked" "$path"
@@ -128,7 +179,7 @@ done < <(git ls-files -z)
 
 # Inspect every tree state introduced by commits in the event range. `git ls-tree
 # -z` is NUL-delimited, so valid Git paths containing newlines, tabs, quotes, or
-# other unusual bytes cannot escape either the size or forbidden-path policy.
+# other unusual bytes cannot escape either the size or generated-path policy.
 # This also catches a large/generated file that is committed and then deleted in
 # a later commit: the violating path/blob is still present in the intermediate
 # commit tree and would otherwise remain reachable from main history.
@@ -150,6 +201,9 @@ if [[ -n "$BASE_SHA" ]]; then
     [[ -n "$commit" ]] || continue
     history_commits=$((history_commits + 1))
 
+    declare -A commit_ignored=()
+    load_ignored_paths tree "$commit" commit_ignored
+
     while IFS= read -r -d '' record; do
       [[ "$record" == *$'\t'* ]] || {
         echo "Unexpected git ls-tree record while checking $commit" >&2
@@ -169,6 +223,12 @@ if [[ -n "$BASE_SHA" ]]; then
       [[ -n "${history_seen[$key]+x}" ]] && continue
       history_seen["$key"]=1
       history_checked=$((history_checked + 1))
+
+      if [[ -n "${commit_ignored[$path]+x}" ]]; then
+        report_ignored_path "entered Git history" "$path"
+        violations=$((violations + 1))
+        continue
+      fi
 
       if is_forbidden_path "$path"; then
         report_forbidden_path "entered Git history" "$path"
