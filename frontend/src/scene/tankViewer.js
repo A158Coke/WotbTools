@@ -728,12 +728,16 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const cal = document.getElementById('eq-calibrated');
             const enh = document.getElementById('eq-enhanced');
             if (cal) {
-                if (s.shooter_equipment) { cal.checked = !!s.shooter_equipment.calibrated_shells; cal.disabled = true; cal.title = '回放自动判定（Type5 配件串）'; }
-                else { cal.disabled = false; cal.title = ''; }
+                if (s.shooter_equipment) {
+                    cal.checked = equipmentOverride.calibrated ?? !!s.shooter_equipment.calibrated_shells;
+                    cal.disabled = true; cal.title = '回放自动判定（Type5 配件串）';
+                } else { cal.disabled = false; cal.title = ''; }
             }
             if (enh) {
-                if (s.target_equipment) { enh.checked = !!s.target_equipment.enhanced_armor; enh.disabled = true; enh.title = '回放自动判定（Type5 配件串）'; }
-                else { enh.disabled = false; enh.title = ''; }
+                if (s.target_equipment) {
+                    enh.checked = equipmentOverride.enhanced ?? !!s.target_equipment.enhanced_armor;
+                    enh.disabled = true; enh.title = '回放自动判定（Type5 配件串）';
+                } else { enh.disabled = false; enh.title = ''; }
             }
             updateHeatmapThickness();
             refreshShellOptionText();
@@ -4659,6 +4663,12 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
 
         function setupEventHandlers() {
+            // 回退 checkbox 初始勾选必须反映 URL/场景的有效装备状态，否则 HUD 资产加载
+            // 失败时会出现“界面关闭、判定仍开启”的误导。
+            const initialCal = document.getElementById('eq-calibrated');
+            if (initialCal && equipmentOverride.calibrated != null) initialCal.checked = equipmentOverride.calibrated;
+            const initialEnh = document.getElementById('eq-enhanced');
+            if (initialEnh && equipmentOverride.enhanced != null) initialEnh.checked = equipmentOverride.enhanced;
             document.getElementById('shell-select').addEventListener('change', function() {
                 if (destroyed || shooterLoading) return;
                 const idx = parseInt(this.value);
