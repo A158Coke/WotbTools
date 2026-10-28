@@ -750,8 +750,20 @@ describe('armor shell and readiness ownership', () => {
     expect(view).toMatch(/const queryShooter = Number\(route\.query\.shooter\)/)
     expect(view).toMatch(/Number\.isFinite\(queryShooter\) && queryShooter > 0 \? queryShooter : loadoutTankId\.value/)
   })
+  it('HUD 只加载 devices 轻目录，不拉整份配置器目录', () => {
+    const hud = read('./ArmorShotHud.vue')
+    expect(hud).toMatch(/loadDevices\(\)/)
+    expect(hud).not.toMatch(/loadResearchCatalog/)
+  })
   it('普通检视换射手/换炮清掉上一发结果与 HE 可视化', () => {
     expect(kernel).toMatch(/if \(!QP\.get\('shot'\)\) \{\s*tidyTrajectory\(\);[\s\S]*?lastClickNdc = null;/)
+  })
+  it('射击复现换装备/换配置沿权威 launch/lvDir 重跑', () => {
+    expect(kernel).toMatch(/function rerunAuthoritativeShotCheck\(\)/)
+    expect(kernel).toMatch(/if \(QP\.get\('shot'\) && !rerunAuthoritativeShotCheck\(\)\) doPenetrationCheck\(0, 0\);/)
+  })
+  it('目标配置切换清空旧结果并使在途判定失效', () => {
+    expect(kernel).toMatch(/if \(!QP\.get\('shot'\)\) \{\s*__penCheckSeq\+\+;\s*tidyTrajectory\(\);[\s\S]*?lastClickNdc = null;\s*\} else \{\s*rerunAuthoritativeShotCheck\(\);/)
   })
   it('只换射手发动机/履带不凭空建立 scfg', () => {
     expect(view).toMatch(/const hadExplicitShooterConfig = query\.scfg != null && query\.scfg !== ''/)

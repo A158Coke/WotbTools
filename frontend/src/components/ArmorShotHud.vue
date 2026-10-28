@@ -9,7 +9,7 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Crosshair, Shield } from 'lucide-vue-next'
 import { fetchTankData } from '../scene/agentData.js'
-import { loadResearchCatalog, shellIconUrl, itemIconUrl } from '../utils/researchCatalog.js'
+import { loadDevices, shellIconUrl, itemIconUrl } from '../utils/researchCatalog.js'
 import { shellLabel } from '../scene/tankMeta.js'
 
 const props = defineProps({
@@ -36,7 +36,8 @@ async function load(shooterId) {
   devices.value = { calibrated: null, enhanced: null }
   if (!(shooterId > 0)) return
   try {
-    const [detail, catalog] = await Promise.all([fetchTankData(shooterId), loadResearchCatalog()])
+    // HUD 常驻且只读 devices：不要为两枚装备图标拉整份配置器目录（skills/camo/params…）。
+    const [detail, catalog] = await Promise.all([fetchTankData(shooterId), loadDevices()])
     if (seq !== request) return
     details.value = detail
     const list = catalog?.devices || []

@@ -4392,6 +4392,16 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const cfgCard = document.getElementById('click-info');
             if (cfgCard) cfgCard.style.display = 'none';
             highlightedArmorNode = null;
+            // 目标配置变化后旧的穿透结果/轨迹/HE 爆点都对不上新装甲；普通检视清空并
+            // 使在途判定失效，射击复现则沿权威 launch/lvDir 重跑。
+            if (!QP.get('shot')) {
+                __penCheckSeq++;
+                tidyTrajectory();
+                if (window.__hitMarker) { scene.remove(window.__hitMarker); window.__hitMarker = null; }
+                lastClickNdc = null;
+            } else {
+                rerunAuthoritativeShotCheck();
+            }
             // 碰撞视图的颜色是厚度快照（applyArmorViewStyle 只在按钮切换时写）；切配置后
             // 必须重刷，否则新炮塔/主炮仍显示上一配置的厚度色。热力图模式由下方重建接管。
             if (collisionMode && !penetrationMode && armorModel) applyArmorViewStyle(true);
@@ -4651,6 +4661,17 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             mouse = new THREE.Vector2();
         }
 
+        /** 射击复现重判必须沿录像的 launch/lvDir，不能用相机中心射线替代权威方向。 */
+        function rerunAuthoritativeShotCheck() {
+            const wc = window.__worldTickCtx;
+            if (!(window.__worldPenMode && wc?.launch && wc.lvDir)) return false;
+            __shotRayOrigin = wc.launch.clone();
+            __shotRayTarget = wc.launch.clone().addScaledVector(wc.lvDir, wc.rayFar);
+            doPenetrationCheck(0, 0);
+            __shotRayOrigin = null; __shotRayTarget = null;
+            return true;
+        }
+
         /** 校准弹/强化装甲变化后的统一刷新（勾选框与宿主 HUD 的 setEquipmentOverride 共用）。
          *  厚度系数与判定模式无关：装甲检视下点板/热力图读同一份 uniform。 */
         function refreshEquipmentEffects() {
@@ -4666,7 +4687,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             if (!penetrationMode) return;
             const sh = selectedShell || (shooterShells[0]) || null;
             if (sh) { updatePenetrationUniforms(sh); updateSpacedUniforms(sh); }
-            if (QP.get('shot')) doPenetrationCheck(0, 0);
+            if (QP.get('shot') && !rerunAuthoritativeShotCheck()) doPenetrationCheck(0, 0);
         }
 
         function setupEventHandlers() {
@@ -4683,16 +4704,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     QP.set('shell', String(idx));
                     selectedShell = shooterShells[idx];
                     if (penetrationMode) { updatePenetrationUniforms(selectedShell); updateSpacedUniforms(selectedShell); }
-                    if (window.__worldPenMode && window.__worldTickCtx && window.__worldTickCtx.lvDir) {
-                        // 世界模式：换弹按权威弦射线重跑判定——直接 doPenetrationCheck
-                        // 会用相机射线覆盖锁定的复现结果
-                        const wc3 = window.__worldTickCtx;
-                        __shotRayOrigin = wc3.launch.clone();
-                        __shotRayTarget = wc3.launch.clone().addScaledVector(wc3.lvDir, wc3.rayFar);
-                        doPenetrationCheck(0, 0);
-                        __shotRayOrigin = null; __shotRayTarget = null;
-                    } else if (QP.get('shot')) {
-                        doPenetrationCheck(0, 0);
+                    if (QP.get('shot')) {
+                        // 世界模式：换弹按权威弦射线重跑判定。
+                        if (!rerunAuthoritativeShotCheck()) doPenetrationCheck(0, 0);
                     } else if (penetrationMode && lastClickNdc) {
                         // 普通检视换弹（2026-10-28 用户裁定）：只清掉上一次判定结果，
                         // 不按旧点击位置重跑——新弹种要用户重新点击才产生结果。

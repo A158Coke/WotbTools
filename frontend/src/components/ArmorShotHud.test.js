@@ -5,10 +5,10 @@ import ArmorShotHud from './ArmorShotHud.vue'
 
 const data = vi.hoisted(() => ({ fetchTankData: vi.fn() }))
 vi.mock('../scene/agentData.js', () => data)
-const research = vi.hoisted(() => ({ loadResearchCatalog: vi.fn() }))
+const research = vi.hoisted(() => ({ loadDevices: vi.fn() }))
 vi.mock('../utils/researchCatalog.js', async (importOriginal) => ({
   ...(await importOriginal()),
-  loadResearchCatalog: research.loadResearchCatalog,
+  loadDevices: research.loadDevices,
 }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: key => key }) }))
 
@@ -23,7 +23,7 @@ const CATALOG = { devices: [{ id: 103, icon: 'calibrated' }, { id: 110, icon: 'e
 
 beforeEach(() => {
   data.fetchTankData.mockReset().mockResolvedValue(TANK)
-  research.loadResearchCatalog.mockReset().mockResolvedValue(CATALOG)
+  research.loadDevices.mockReset().mockResolvedValue(CATALOG)
 })
 
 describe('ArmorShotHud（右上角弹种 + 校准弹/强化装甲图标）', () => {
