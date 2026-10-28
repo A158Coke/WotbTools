@@ -7,8 +7,7 @@
  *   由数据证实（premium 车放最小 y 行 = 树顶部）。
  * - 整车研发边：`edges[]`（from/to 为车辆 stem）。from 车可能不在树里（如 ussr:MS-1
  *   解锁 T-26 但自身不是树节点）——只有两端都能解析才画线。
- * - 单车模块研发图：见 moduleTreeLayout（分层 DAG，客户端网格坐标由模型计算、数据没有，
- *   UI 标注「布局为复刻推导」）。
+ * - 单车模块研发图：见 moduleTreeLayout。
  */
 
 const NATION_ORDER = ['ussr', 'germany', 'usa', 'china', 'france', 'uk', 'japan', 'other', 'european']
@@ -88,98 +87,86 @@ export function techTreeGrid(tree) {
 }
 
 /**
- * 单车模块研发图布局（客户端 ModulesTree 的推导布局）。
+ * 单车模块研发图布局 —— 按客户端 Modules 界面截图对齐（2026-10-27，KV-1 与 SU-100M1
+ * 实机截图）：
  *
- * 客户端网格坐标由模型计算（数据没有），但拓扑是权威的。这里：
- * - **列 = 最长入边路径**（研发流向从左到右，初始模块在第 0 列）；
- * - **行 = 树的叶序**（tidy-tree）：叶子按 DFS 顺序各占一行，内部节点取子节点行的
- *   均值——每个研发分支因此成块紧凑排列，而不是按模块族强行分行；
- * - **每条边只画一个上级**（客户端 ModuleNode 的 6 向箭头标志 = 树，不是全 DAG）：
- *   每个节点在候选父里选一条——研发边优先（成本小者优先），没有研发父才用挂载边
- *   （`turret.guns` 结构关系）。全画所有父会让连线数比客户端密一倍；
- * - **下一级坦克也是图里的节点**：模块 `<unlocks><vehicle>` 边直连到它（客户端同构）。
+ * - **每条「无研发父」的初始模块起一条横向链**，链自上而下按 火炮 → 炮塔 → 发动机 →
+ *   履带 排列（KV-1：ZiS-5 线 / Turret_1 线 / M-17T 线 / Chassis_KV1 线）。
+ * - 列 = 链上的研发步进；同链下一步右移一列。
+ * - **一个节点有多个子分支时，主链留在本行、其余分支向下另起一行**
+ *   （SU-100M1：炮2 → {炮 IX 向右继续 / SU-101 坦克落到下一行}）。父节点与第一个子
+ *   节点同行，不出现向上斜的箭头。
+ * - **下一级坦克也是树里的子节点**（模块 `<unlocks><vehicle>`），排在模块子节点之后。
+ * - 模块名与等级都在节点上显示（用户 2026-10-27：名字保留，只优化排布）。
  *
- * 不同模块族可以同名（实测 740 辆中 19 辆，如 A-20 的底盘与炮塔都叫 A-20_mod_1938），
- * 所有索引按 `kind:stem` 限定。环 = 数据异常，显式抛出（不猜深度）。
- *
- * selection（可选）：tankSetup.resolveSetup 的结果；当前搭载的模块标 installed。
- * options.nextVehicles（可选）：[{ stem, name, tankId, cost, sourceModule, sourceKind }]
- * 作为 kind='vehicle' 节点入图。
+ * 客户端精确网格坐标由 `TankModulesTreeModel` 运行时计算（census §4.4），数据里没有；
+ * 这里按上述确定性规则推导。环 = 数据异常，显式抛出。
  */
 export function moduleTreeLayout(modules, selection = null, options = {}) {
   if (!modules || typeof modules !== 'object') return null
   const turrets = Array.isArray(modules.turrets) ? modules.turrets : []
   const entries = []
-  const push = (kind, list, family) => {
+  const push = (kind, list) => {
     (Array.isArray(list) ? list : []).forEach((m, index) => {
-      if (m?.stem) entries.push({ key: `${kind}:${m.stem}`, module: m, kind, family, index })
+      if (m?.stem) entries.push({ key: `${kind}:${m.stem}`, module: m, kind, index })
     })
   }
-  push('chassis', modules.chassis, 'chassis')
-  /** 炮按 stem 去重为一个节点（同一 localId = 同一模块），保留全部安装位置。 */
+  push('chassis', modules.chassis)
   const gunOccurrences = new Map()
+  /**
+   * 无炮塔车（客户端 `<hull><fakeTurrets>` ⇒ `hasTurret=false`，固定战斗室）：
+   * 客户端研发界面**不显示炮塔行**（SU-100M1 实机截图只有 火炮/发动机/履带 三行），
+   * 但炮塔条目仍要留在数据里给 `pickGun` 对号——所以只跳过节点登记。
+   */
+  const showTurrets = modules.hasTurret !== false
   turrets.forEach((turret, turretIndex) => {
-    if (turret?.stem) {
-      entries.push({ key: `turret:${turret.stem}`, module: turret, kind: 'turret', family: 'turret', index: turretIndex })
-    }
+    if (turret?.stem && showTurrets) entries.push({ key: `turret:${turret.stem}`, module: turret, kind: 'turret', index: turretIndex })
     ;(Array.isArray(turret?.guns) ? turret.guns : []).forEach((gun, gunIndex) => {
       if (!gun?.stem) return
       if (!gunOccurrences.has(gun.stem)) {
         gunOccurrences.set(gun.stem, [])
-        entries.push({ key: `gun:${gun.stem}`, module: gun, kind: 'gun', family: 'gun', index: gunIndex, occurrences: [] })
+        entries.push({ key: `gun:${gun.stem}`, module: gun, kind: 'gun', index: gunIndex, occurrences: [] })
       }
       gunOccurrences.get(gun.stem).push({ turret: turretIndex, gun: gunIndex })
     })
   })
-  push('engine', modules.engines, 'engine')
-  // 电台 / 油箱不是客户端 ModulesTree 的研发模块（它们在 modules/*.json 里只为整车重量
-  // 等参数计算保留），研发网格不渲染——UI 与客户端一致只出现底盘/炮塔/炮/发动机。
-
-  const byKey = new Map(entries.map(e => [e.key, e]))
+  push('engine', modules.engines)
   for (const entry of entries) {
     if (entry.kind === 'gun') entry.occurrences = gunOccurrences.get(entry.module.stem) || []
   }
+  // 电台 / 油箱不是客户端 ModulesTree 的研发模块（只为整车重量等参数保留）。
 
-  /**
-   * 每条边先作为**候选父关系**收集，最后每个节点只保留一条上级连线。
-   * 客户端 ModuleNode 的箭头是 6 向标志（`hasArrowLeft/Right/...`），即每个节点在树里
-   * 只挂一个上级——数据虽然是 DAG（炮可被多个炮塔挂载、部分模块多父），但全画出来
-   * 会比客户端密一倍。选取顺序：研发边优先（成本小的优先），否则挂载边。
-   */
-  const candidates = new Map() // toKey → [{ from, cost, mount }]
-  const addCandidate = (fromKey, toKey, cost, mount = false) => {
-    if (!byKey.has(toKey)) return
-    if (!candidates.has(toKey)) candidates.set(toKey, [])
-    const list = candidates.get(toKey)
-    if (list.some(c => c.from === fromKey)) {
-      // 同一对节点既有挂载又有研发边：升级为研发边并带上成本
-      const existing = list.find(c => c.from === fromKey)
-      if (!mount) {
-        existing.mount = false
-        if (cost?.xp != null && existing.cost?.xp == null) existing.cost = cost
-      }
-      return
+  const byKey = new Map(entries.map(e => [e.key, e]))
+  const vehicleByStem = new Map((Array.isArray(options.nextVehicles) ? options.nextVehicles : [])
+    .map(v => [v.stem, v]))
+
+  const edges = []
+  const childrenOf = new Map()
+  const parentsOf = new Map()
+  const costXpOf = new Map()
+  const costTokensOf = new Map()
+  const vehicleTargets = []
+  const addChild = (fromKey, toKey, cost) => {
+    if (!childrenOf.has(fromKey)) childrenOf.set(fromKey, [])
+    if (!childrenOf.get(fromKey).includes(toKey)) childrenOf.get(fromKey).push(toKey)
+    if (!parentsOf.has(toKey)) parentsOf.set(toKey, [])
+    if (!parentsOf.get(toKey).includes(fromKey)) parentsOf.get(toKey).push(fromKey)
+    edges.push({ from: fromKey, to: toKey, cost: cost || null })
+    const xp = Number(cost?.xp)
+    if (Number.isFinite(xp)) {
+      const prev = costXpOf.get(toKey)
+      if (prev == null || xp < prev) costXpOf.set(toKey, xp)
     }
-    list.push({ from: fromKey, to: toKey, cost: cost || null, mount })
-  }
-  const vehicleCandidates = new Map() // vehicle stem → [{ sourceKey, cost }]
-  const addVehicleCandidate = (stem, cost, sourceKey) => {
-    if (!vehicleCandidates.has(stem)) vehicleCandidates.set(stem, [])
-    const list = vehicleCandidates.get(stem)
-    if (list.some(c => c.sourceKey === sourceKey)) return
-    list.push({ sourceKey, cost: cost || null })
+    const amount = Number(cost?.tokens?.amount)
+    if (Number.isFinite(amount)) {
+      const prev = costTokensOf.get(toKey)
+      if (prev == null || amount < prev.amount) {
+        costTokensOf.set(toKey, { currency: cost.tokens.currency || null, amount })
+      }
+    }
   }
 
-  // 挂载候选：每个炮塔 → 它挂的每一门炮
-  turrets.forEach((turret) => {
-    if (!turret?.stem) return
-    ;(Array.isArray(turret?.guns) ? turret.guns : []).forEach((gun) => {
-      if (gun?.stem) addCandidate(`turret:${turret.stem}`, `gun:${gun.stem}`, null, true)
-    })
-  })
-
-  // 研发候选：逐条目扫 `<unlocks>`；炮的边逐炮塔副本收集（副本上的边可能不同，
-  // 实测 3 辆：japan NC27、european P88/CC55mod54 的第二份炮副本带 vehicle 边）。
+  /** 研发边：炮逐炮塔副本收集（副本上的 `<unlocks>` 可能不同，实测 3 辆）。 */
   for (const entry of entries) {
     const scans = entry.kind === 'gun' && entry.occurrences.length
       ? entry.occurrences.map(o => turrets[o.turret]?.guns?.[o.gun] || entry.module)
@@ -188,40 +175,16 @@ export function moduleTreeLayout(modules, selection = null, options = {}) {
       for (const u of Array.isArray(mod?.unlocks) ? mod.unlocks : []) {
         if (!u?.stem) continue
         if (u.kind === 'vehicle') {
-          addVehicleCandidate(u.stem, u.cost, entry.key)
+          addChild(entry.key, `vehicle:${u.stem}`, u.cost)
+          vehicleTargets.push({ stem: u.stem, cost: u.cost || null, sourceKey: entry.key })
           continue
         }
-        addCandidate(entry.key, `${u.kind}:${u.stem}`, u.cost || null)
+        addChild(entry.key, `${u.kind}:${u.stem}`, u.cost)
       }
     }
   }
 
-  /** 每个节点选一条上级：研发优先（成本升序），否则挂载。 */
-  const pickParent = (list) => [...list].sort((a, b) => {
-    if (a.mount !== b.mount) return a.mount ? 1 : -1
-    const ax = a.cost?.xp == null ? Number.POSITIVE_INFINITY : Number(a.cost.xp)
-    const bx = b.cost?.xp == null ? Number.POSITIVE_INFINITY : Number(b.cost.xp)
-    return (ax - bx) || a.from.localeCompare(b.from)
-  })[0]
-
-  const edges = []
-  const parentsOf = new Map()
-  for (const [toKey, list] of candidates) {
-    const parent = pickParent(list)
-    edges.push({ from: parent.from, to: toKey, cost: parent.cost, mount: parent.mount })
-    parentsOf.set(toKey, [parent.from])
-  }
-  const vehicleTargets = []
-  for (const [stem, list] of vehicleCandidates) {
-    const best = [...list].sort((a, b) => {
-      const ax = a.cost?.xp == null ? Number.POSITIVE_INFINITY : Number(a.cost.xp)
-      const bx = b.cost?.xp == null ? Number.POSITIVE_INFINITY : Number(b.cost.xp)
-      return (ax - bx) || a.sourceKey.localeCompare(b.sourceKey)
-    })[0]
-    vehicleTargets.push({ stem, cost: best.cost, sourceKey: best.sourceKey })
-  }
-
-  // 列 = 最长入边路径（记忆化）；环显式失败。
+  // 列 = 研发深度（最长父链）；环显式失败。
   const depth = new Map()
   const visiting = new Set()
   const depthOf = (key) => {
@@ -236,77 +199,58 @@ export function moduleTreeLayout(modules, selection = null, options = {}) {
   }
   for (const entry of entries) depthOf(entry.key)
 
-  /** 入边成本：指向本节点的**研发**边；XP 与活动代币（`prx_*`）分开取（挂载边无成本）。 */
-  const costXpOf = new Map()
-  const costTokensOf = new Map()
-  for (const edge of edges) {
-    const xp = Number(edge.cost?.xp)
-    if (Number.isFinite(xp)) {
-      const prev = costXpOf.get(edge.to)
-      if (prev == null || xp < prev) costXpOf.set(edge.to, xp)
-    }
-    const amount = Number(edge.cost?.tokens?.amount)
-    if (Number.isFinite(amount)) {
-      const prev = costTokensOf.get(edge.to)
-      if (prev == null || amount < prev.amount) {
-        costTokensOf.set(edge.to, { currency: edge.cost.tokens.currency || null, amount })
-      }
-    }
-  }
-
   const installed = installedKeys(modules, selection)
-  const FAMILY_ORDER = { chassis: 0, turret: 1, gun: 2, engine: 3 }
-  const meta = new Map(entries.map(e => [e.key, e]))
-  const vehicleByStem = new Map((Array.isArray(options.nextVehicles) ? options.nextVehicles : [])
-    .map(v => [v.stem, v]))
 
-  const childrenOf = new Map()
-  for (const edge of edges) {
-    if (!childrenOf.has(edge.from)) childrenOf.set(edge.from, [])
-    childrenOf.get(edge.from).push(edge.to)
-  }
-  const childOrder = (a, b) => {
-    const ea = meta.get(a); const eb = meta.get(b)
-    if (!ea || !eb) return a.localeCompare(b)
-    return (FAMILY_ORDER[ea.kind] - FAMILY_ORDER[eb.kind])
-      || ((Number(ea.module.level) || 0) - (Number(eb.module.level) || 0))
+  /**
+   * 行 = 每条初始模块一条链；根按 火炮 → 炮塔 → 发动机 → 履带 排序。
+   * 子节点排序：模块优先（主链留本行），车辆最后（自然落到下一行）。
+   */
+  const KIND_ORDER = { gun: 0, turret: 1, engine: 2, chassis: 3, vehicle: 9 }
+  const keyKind = key => key.split(':')[0]
+  const sortKeys = (a, b) => {
+    const ka = keyKind(a); const kb = keyKind(b)
+    const ma = byKey.get(a)?.module; const mb = byKey.get(b)?.module
+    return (KIND_ORDER[ka] - KIND_ORDER[kb])
+      || ((Number(ma?.level) || 0) - (Number(mb?.level) || 0))
       || a.localeCompare(b)
-  }
-
-  // ---- 行：tidy-tree 叶序（叶子各占一行，内部节点取子节点行均值） ----
-  const row = new Map()
-  let nextLeafRow = 0
-  const placed = new Set()
-  const placeRow = (key) => {
-    if (row.has(key)) return row.get(key)
-    if (placed.has(key)) return row.get(key) ?? 0
-    placed.add(key)
-    const children = (childrenOf.get(key) || []).filter(k => byKey.has(k) || k.startsWith('vehicle:'))
-    if (!children.length) {
-      const value = nextLeafRow
-      nextLeafRow += 1
-      row.set(key, value)
-      return value
-    }
-    const rows = children.sort(childOrder).map(placeRow)
-    const value = Math.round(rows.reduce((a, b) => a + b, 0) / rows.length)
-    row.set(key, value)
-    return value
   }
   const roots = entries
     .filter(e => !(parentsOf.get(e.key) || []).length)
     .map(e => e.key)
-    .sort(childOrder)
-  for (const key of roots) placeRow(key)
-  // 未被任何根覆盖的节点（异常数据兜底）：各自按叶序补一行，不丢节点
-  for (const entry of entries) if (!row.has(entry.key)) placeRow(entry.key)
+    .sort(sortKeys)
+
+  const row = new Map()
+  /** 子树根放在 top 行；返回占用行数（行不重叠 ⇒ 连线不相交）。 */
+  const placeSubtree = (key, top) => {
+    const kids = (childrenOf.get(key) || [])
+      .filter(k => byKey.has(k) || (k.startsWith('vehicle:') && vehicleByStem.has(k.slice('vehicle:'.length))))
+      .sort(sortKeys)
+    if (!kids.length) {
+      row.set(key, top)
+      return 1
+    }
+    // 第一个子节点（模块优先）与本节点同行；其余子分支依次向下铺
+    row.set(key, top)
+    let cursor = placeSubtree(kids[0], top)
+    for (const kid of kids.slice(1)) cursor += placeSubtree(kid, top + cursor)
+    return cursor
+  }
+  let cursorRow = 0
+  const branchRows = []
+  for (const rootKey of roots) {
+    const height = placeSubtree(rootKey, cursorRow)
+    if (row.has(rootKey)) branchRows.push({ rootKey, row: row.get(rootKey), height })
+    cursorRow += height
+  }
+  // 未被任何根覆盖的节点（异常数据兜底）：各自补一行，不丢节点
+  for (const entry of entries) if (!row.has(entry.key)) row.set(entry.key, cursorRow++)
 
   const nodes = entries.map((entry) => ({
     key: entry.key,
     kind: entry.kind,
     stem: entry.module.stem,
     col: depthOf(entry.key),
-    row: row.get(entry.key),
+    row: row.get(entry.key) ?? 0,
     level: Number(entry.module.level) || null,
     price: entry.module.price ?? null,
     installed: installed.has(entry.key),
@@ -318,52 +262,29 @@ export function moduleTreeLayout(modules, selection = null, options = {}) {
     module: entry.module,
   }))
 
-  /** 同格让位：tidy-tree 行是"理想行"，同一 (列,行) 上的第二个节点依次下移，
-   *  保证网格一格一节点（顺序确定：族 → 等级 → key）。 */
-  const occupied = new Set()
-  const cellKey = (col, row) => `${col}:${row}`
-  const freeRow = (col, preferred) => {
-    let r = Math.max(0, preferred)
-    while (occupied.has(cellKey(col, r))) r += 1
-    occupied.add(cellKey(col, r))
-    return r
-  }
-  nodes.sort((a, b) => (a.col - b.col) || (a.row - b.row)
-    || (FAMILY_ORDER[a.kind] - FAMILY_ORDER[b.kind]) || a.key.localeCompare(b.key))
-  for (const node of nodes) node.row = freeRow(node.col, node.row)
-
-  // ---- 下一级坦克节点：接在解锁它的模块右侧，并保留那条边 ----
-  for (const target of vehicleTargets) {
-    const source = nodes.find(n => n.key === target.sourceKey)
-    if (!source) continue
-    // 只有调用方声明了该目标车（有名称/tankId 等展示事实）才入图——否则先由
-    // nextVehicles 列表交给页面补事实，下一次渲染再成为网格节点（不造无信息的孤儿节点）。
-    const info = vehicleByStem.get(target.stem)
+  // 车辆节点：已作为子节点参与排布，这里补展示事实（未声明的目标不造孤儿节点）。
+  const vehicleKeys = [...new Set(edges.filter(e => e.to.startsWith('vehicle:')).map(e => e.to))]
+  for (const key of vehicleKeys) {
+    if (nodes.some(n => n.key === key)) continue
+    const stem = key.slice('vehicle:'.length)
+    const info = vehicleByStem.get(stem)
     if (!info) continue
-    const key = `vehicle:${target.stem}`
-    let vehicle = nodes.find(n => n.key === key)
-    if (!vehicle) {
-      // 行：贴着解锁它的模块（同格已被占则依次下移）
-      vehicle = {
-        key,
-        kind: 'vehicle',
-        stem: target.stem,
-        col: source.col + 1,
-        row: freeRow(source.col + 1, source.row),
-        installed: false,
-        cost: Number(target.cost?.xp) || null,
-        costTokens: Number(target.cost?.tokens?.amount) > 0
-          ? { currency: target.cost.tokens.currency || null, amount: Number(target.cost.tokens.amount) }
-          : null,
-        tankId: info.tankId ?? null,
-        name: info.name ?? null,
-        install: null,
-        sourceKey: source.key,
-      }
-      nodes.push(vehicle)
-    }
-    edges.push({ from: target.sourceKey, to: key, cost: target.cost, mount: false })
+    nodes.push({
+      key,
+      kind: 'vehicle',
+      stem,
+      col: depthOf(key),
+      row: row.get(key) ?? 0,
+      installed: false,
+      cost: costXpOf.get(key) ?? null,
+      costTokens: costTokensOf.get(key) ?? null,
+      tankId: info.tankId ?? null,
+      name: info.name ?? null,
+      install: null,
+    })
   }
+  const known = new Set(nodes.map(n => n.key))
+  const finalEdges = edges.filter(e => known.has(e.from) && known.has(e.to))
 
   const columns = nodes.reduce((max, n) => Math.max(max, n.col + 1), 0)
   const rows = nodes.reduce((max, n) => Math.max(max, n.row + 1), 0)
@@ -372,13 +293,15 @@ export function moduleTreeLayout(modules, selection = null, options = {}) {
     columns,
     rows,
     nodes,
-    edges,
+    edges: finalEdges,
+    /** 每条链（根行）：面板据此画左侧竖干 + 一行一个分叉箭头（客户端同构）。 */
+    branches: branchRows,
     nextVehicles: [...new Map(vehicleTargets.map(t => {
       const [sourceKind, sourceModule] = t.sourceKey.split(':')
       return [t.stem, { stem: t.stem, cost: t.cost, sourceModule, sourceKind }]
     })).values()],
-    /** 研发边（非挂载）> 0 ⇔ 有研发链；XI 超测车每族单模块、零成本，只有挂载边。 */
-    hasChain: edges.some(edge => !edge.mount),
+    /** 研发边 > 0 ⇔ 有研发链；XI 超测车每族单模块、零成本，只有初始模块。 */
+    hasChain: finalEdges.length > 0,
     derived: true, // 布局为复刻推导（数据文件没有客户端网格坐标）
   }
 }

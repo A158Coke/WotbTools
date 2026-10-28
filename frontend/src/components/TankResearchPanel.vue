@@ -60,6 +60,8 @@ const NODE_W = 96
 const NODE_H = 64
 const PITCH_X = 136
 const PITCH_Y = 97
+/** 左侧竖干（客户端：当前坦克 → 各行分叉）的宽度 */
+const TRUNK_W = 32
 
 const gridStyle = computed(() => ({
   width: `${layout.value.columns * PITCH_X}px`,
@@ -72,6 +74,7 @@ const gridStyle = computed(() => ({
 const scrollEl = ref(null)
 const fitScale = ref(1)
 const gridW = computed(() => (layout.value?.columns || 0) * PITCH_X)
+const canvasW = computed(() => TRUNK_W + gridW.value)
 const gridH = computed(() => (layout.value?.rows || 0) * PITCH_Y)
 let observer = null
 function recalcFit() {
@@ -80,12 +83,12 @@ function recalcFit() {
   const availW = el.clientWidth - 20
   const availH = el.clientHeight - 20
   if (availW <= 0 || availH <= 0) return
-  const scale = Math.min(1, availW / gridW.value, availH / gridH.value)
+  const scale = Math.min(1, availW / canvasW.value, availH / gridH.value)
   // 下限 0.72：再小文字就读不清了。极宽的树（如 14 列的活动车）宁可横向平移
   // ——客户端本身也是滚动容器，不做无限缩小。
   fitScale.value = Math.max(0.72, Math.round(scale * 1000) / 1000)
 }
-watch([gridW, gridH], recalcFit)
+watch([canvasW, gridH], recalcFit)
 onMounted(() => {
   recalcFit()
   if (typeof ResizeObserver !== 'undefined' && scrollEl.value) {
@@ -95,14 +98,27 @@ onMounted(() => {
 })
 onBeforeUnmount(() => { observer?.disconnect(); observer = null })
 const fitStyle = computed(() => ({
-  width: `${gridW.value * fitScale.value}px`,
+  width: `${canvasW.value * fitScale.value}px`,
   height: `${gridH.value * fitScale.value}px`,
 }))
-const gridScaledStyle = computed(() => ({
-  ...gridStyle.value,
+const canvasScaledStyle = computed(() => ({
+  width: `${canvasW.value}px`,
+  height: `${gridH.value}px`,
   transform: `scale(${fitScale.value})`,
   transformOrigin: 'top left',
 }))
+const gridInCanvasStyle = computed(() => ({ ...gridStyle.value, left: `${TRUNK_W}px` }))
+/** 竖干：连接各链行（客户端：当前坦克右侧一根竖线，逐行分叉带箭头）。 */
+const trunk = computed(() => {
+  const l = layout.value
+  if (!l?.branches?.length) return { lines: [], height: gridH.value }
+  const ys = l.branches.map(b => b.row * PITCH_Y + NODE_H / 2).sort((a, b) => a - b)
+  const top = ys[0]
+  const bottom = ys[ys.length - 1]
+  const lines = [{ x1: 12, y1: top, x2: 12, y2: bottom }]
+  for (const y of ys) lines.push({ x1: 12, y1: y, x2: TRUNK_W, y2: y })
+  return { lines, height: gridH.value }
+})
 
 function cellPos(node) {
   return { left: `${node.col * PITCH_X}px`, top: `${node.row * PITCH_Y}px` }
@@ -258,7 +274,22 @@ function activate(node) {
         </p>
         <div ref="scrollEl" class="tr-scroll">
           <div class="tr-fit" :style="fitStyle">
-          <div class="tr-grid" :style="gridScaledStyle" data-testid="research-grid">
+          <div class="tr-canvas" :style="canvasScaledStyle">
+          <svg class="tr-trunk" :width="TRUNK_W" :height="gridH" aria-hidden="true">
+            <defs>
+              <marker id="tr-trunk-arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                <path d="M0,0 L6,3 L0,6 z" class="tr-arrow-head" />
+              </marker>
+            </defs>
+            <line
+              v-for="(line, i) in trunk.lines"
+              :key="i"
+              class="tr-trunk-line"
+              :x1="line.x1" :y1="line.y1" :x2="line.x2" :y2="line.y2"
+              :marker-end="line.x2 > line.x1 ? 'url(#tr-trunk-arrow)' : null"
+            />
+          </svg>
+          <div class="tr-grid" :style="gridInCanvasStyle" data-testid="research-grid">
             <svg class="tr-edges" :width="layout.columns * PITCH_X" :height="layout.rows * PITCH_Y" aria-hidden="true">
               <defs>
                 <marker id="tr-arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
@@ -311,6 +342,7 @@ function activate(node) {
               <span v-if="node.installed" class="tr-node-check" aria-hidden="true"><Check :size="12" /></span>
               <span class="tr-node-name">{{ nodeLabelText(node) }}</span>
             </button>
+          </div>
           </div>
           </div>
         </div>
@@ -412,7 +444,10 @@ function activate(node) {
   padding: var(--space-2);
 }
 .tr-fit { position: relative; }
-.tr-grid { position: absolute; inset-block-start: 0; inset-inline-start: 0; }
+.tr-canvas { position: relative; transform-origin: top left; }
+.tr-trunk { position: absolute; inset-block-start: 0; inset-inline-start: 0; pointer-events: none; }
+.tr-trunk-line { stroke: var(--color-border-strong); stroke-width: 1.5; }
+.tr-grid { position: absolute; inset-block-start: 0; }
 .tr-edges { position: absolute; inset: 0; pointer-events: none; }
 .tr-edge { stroke: var(--color-border-strong); stroke-width: 1.5; }
 .tr-edge.is-installed { stroke: var(--color-accent-text); }

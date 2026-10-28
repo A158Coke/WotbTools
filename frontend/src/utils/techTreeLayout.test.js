@@ -21,7 +21,6 @@ describe('techTreeGrid（车辆科技树网格）', () => {
       { from: 'T-26', to: 'MT25', cost: { xp: 31000 }, sourceModule: 'gun' },
       // from 车不在树上（如 ussr:MS-1）→ 保留数据但不画线
       { from: 'MS-1', to: 'T-26', cost: { xp: 0 }, sourceModule: 'gun' },
-      // 环 / 自环不成线
       { from: 'MT25', to: 'MT25', cost: { xp: 1 }, sourceModule: 'gun' },
     ],
     pending: [{ stem: 'R228_KR_1', x: 11, y: 5 }],
@@ -55,7 +54,7 @@ describe('techTreeGrid（车辆科技树网格）', () => {
   it('等级条窗口 = minLevel..maxLevel（客户端 LevelCell 可见区间）', () => {
     const grid = techTreeGrid(tree)
     expect(grid.minTier).toBe(1)
-    expect(grid.maxTier).toBe(6) // 夹具最高 tier 6（MT25）
+    expect(grid.maxTier).toBe(6)
     expect(techTreeGrid(null).minTier).toBeNull()
   })
 
@@ -72,7 +71,7 @@ describe('techTreeGrid（车辆科技树网格）', () => {
     expect(grid.cells.get('1,1')?.stem).toBe('A')
   })
 
-  it('缺 nodes/edges（旧包 404 之外的数据缺失）fail-closed 为空网格', () => {
+  it('缺 nodes/edges 时 fail-closed 为空网格', () => {
     const grid = techTreeGrid(null)
     expect(grid.columns).toEqual([])
     expect(grid.drawnEdges).toEqual([])
@@ -80,140 +79,61 @@ describe('techTreeGrid（车辆科技树网格）', () => {
   })
 })
 
-describe('moduleTreeLayout（单车模块研发图，列=深度、行=模块族）', () => {
-  const gun = (stem, level, unlocks) => ({ stem, level, unlocks, stats: {} })
-  const modules = {
-    tankId: 999,
-    optDevicePreset: 'defaultPreset',
-    consumableSlots: 1, provisionSlots: 1,
-    chassis: [
-      { stem: 'track0', level: 4, unlocks: [{ kind: 'chassis', stem: 'track1', cost: { xp: 7000 } }] },
-      { stem: 'track1', level: 5, unlocks: [] },
-    ],
-    engines: [{ stem: 'eng0', level: 4, unlocks: [] }],
-    turrets: [
-      { stem: 't0', level: 4, unlocks: [{ kind: 'turret', stem: 't1', cost: { xp: 3000 } }], guns: [
-        gun('L11', 4, [{ kind: 'gun', stem: 'F34', cost: { xp: 2000 } }]),
-        gun('F34', 5, [{ kind: 'vehicle', stem: 'MT25', cost: { xp: 31000 } }, { kind: 'gun', stem: 'ZiS4', cost: { xp: 31000 } }]),
-      ] },
-      { stem: 't1', level: 5, unlocks: [], guns: [
-        // 同一门炮挂多炮塔：去重（一份拓扑）
-        gun('L11', 4, [{ kind: 'gun', stem: 'F34', cost: { xp: 2200 } }]),
-        gun('ZiS4', 6, []),
-      ] },
-    ],
-  }
+/**
+ * 模块研发图夹具（客户端截图口径）：
+ * - 炮链 L11 → F34 → ZiS4（F34 解锁车辆 MT25）
+ * - 炮塔 t0（挂 L11/F34）；t1 挂 L11/ZiS4
+ * - 发动机 eng0；履带 track0 → track1
+ * 期望行：火炮行0 / 炮塔行1 / 发动机行2 / 履带行3（与 KV-1 实机截图一致）
+ */
+const gun = (stem, level, unlocks) => ({ stem, localId: null, level, unlocks, stats: {} })
+const modules = {
+  hasTurret: true,
+  tankId: 999,
+  optDevicePreset: 'defaultPreset',
+  consumableSlots: 1, provisionSlots: 1,
+  chassis: [
+    { stem: 'track0', level: 4, unlocks: [{ kind: 'chassis', stem: 'track1', cost: { xp: 7000 } }] },
+    { stem: 'track1', level: 5, unlocks: [] },
+  ],
+  engines: [{ stem: 'eng0', level: 4, unlocks: [] }],
+  turrets: [
+    { stem: 't0', level: 4, unlocks: [{ kind: 'turret', stem: 't1', cost: { xp: 3000 } }], guns: [
+      gun('L11', 4, [{ kind: 'gun', stem: 'F34', cost: { xp: 2000 } }]),
+      gun('F34', 5, [{ kind: 'vehicle', stem: 'MT25', cost: { xp: 31000 } }, { kind: 'gun', stem: 'ZiS4', cost: { xp: 31000 } }]),
+    ] },
+    { stem: 't1', level: 5, unlocks: [], guns: [
+      gun('L11', 4, []),
+      gun('ZiS4', 6, []),
+    ] },
+  ],
+}
 
-  it('深度 = 本车内部解锁链最长链；vehicle 目标进 nextVehicles 不进网格', () => {
+describe('moduleTreeLayout（客户端分行规则）', () => {
+  it('列 = 链上研发步进；vehicle 目标进 nextVehicles', () => {
     const layout = moduleTreeLayout(modules)
-    expect(layout.derived).toBe(true)
-    const depth = Object.fromEntries(layout.nodes.map(n => [n.stem, n.col]))
-    expect(depth.track0).toBe(0)
-    expect(depth.track1).toBe(1)
-    // 炮挂在所属炮塔下：L11 = 炮塔深度 + 1（不再是第 0 列的孤立根）
-    expect(depth.t0).toBe(0)
-    expect(depth.L11).toBe(1)
-    expect(depth.F34).toBe(2)
-    expect(depth.ZiS4).toBe(3)
-    // gun 出现在两个炮塔但网格里只有一份
-    expect(layout.nodes.filter(n => n.stem === 'L11')).toHaveLength(1)
-    expect(layout.hasChain).toBe(true)
-    // vehicle 目标单列：汇总为 MT25（含解锁来源，供页面把边接到图上）
+    const col = key => layout.nodes.find(n => n.key === key).col
+    expect(col('gun:L11')).toBe(0)
+    expect(col('gun:F34')).toBe(1)
+    expect(col('gun:ZiS4')).toBe(2)
+    expect(col('chassis:track0')).toBe(0)
+    expect(col('chassis:track1')).toBe(1)
     expect(layout.nextVehicles).toEqual([
       { stem: 'MT25', cost: { xp: 31000 }, sourceModule: 'F34', sourceKind: 'gun' },
     ])
-    expect(layout.nodes.some(n => n.kind === 'vehicle')).toBe(false) // 未传 nextVehicles 时不造节点
   })
 
-  it('分层 DAG：炮就着自己的炮塔放（不按模块族强行分行），入边成本取最小', () => {
+  it('分行：火炮 → 炮塔 → 发动机 → 履带 各一行；同链同一行', () => {
     const layout = moduleTreeLayout(modules)
     const at = key => layout.nodes.find(n => n.key === key)
-    // 底盘链同一行（无分支的长链不跳行）
-    expect(at('chassis:track0').row).toBe(at('chassis:track1').row)
-    // 炮与它的炮塔相邻列、行不强制同族（这正是客户端拓扑排布）
-    expect(at('gun:L11').col).toBe(at('turret:t0').col + 1)
-    // 引擎是另一条根分支，行与底盘/炮塔不同
-    expect(at('engine:eng0').col).toBe(0)
-    // F34 的入边：L11 → F34 有 2000/2200 两条（数值独立），显示最小
-    expect(at('gun:F34').cost).toBe(2000)
-    // 每列不重叠
-    const used = new Set()
-    for (const n of layout.nodes) {
-      const slot = `${n.col},${n.row}`
-      expect(used.has(slot)).toBe(false)
-      used.add(slot)
-    }
-  })
-
-  it('下一级坦克是图里的节点，由解锁它的模块连出去（客户端同构）', () => {
-    const layout = moduleTreeLayout(modules, null, {
-      nextVehicles: [{ stem: 'MT25', name: 'MT-25', tankId: 2 }],
-    })
-    const vehicle = layout.nodes.find(n => n.key === 'vehicle:MT25')
-    expect(vehicle).toBeTruthy()
-    expect(vehicle.kind).toBe('vehicle')
-    expect(vehicle.tankId).toBe(2)
-    // 边来自解锁它的炮（F34 的 vehicle 边），且位于炮的右侧一列
-    const edge = layout.edges.find(e => e.to === 'vehicle:MT25')
-    expect(edge.from).toBe('gun:F34')
-    const source = layout.nodes.find(n => n.key === edge.from)
-    expect(vehicle.col).toBe(source.col + 1)
-  })
-
-  it('installed 按 stem 对号（不按下标）：当前搭载的炮塔/炮/发动机/履带', () => {
-    const selection = { canConfigure: true, turret: 1, gun: 1, engine: 0, track: 1 }
-    const layout = moduleTreeLayout(modules, selection)
-    const flagOf = stem => layout.nodes.find(n => n.stem === stem)?.installed
-    expect(flagOf('t1')).toBe(true)
-    expect(flagOf('ZiS4')).toBe(true) // t1 的 guns[1]
-    expect(flagOf('t0')).toBe(false)
-    expect(flagOf('L11')).toBe(false)
-    expect(flagOf('eng0')).toBe(true)
-    expect(flagOf('track1')).toBe(true)
-    // canConfigure=false（模块缺失等）→ 全部未安装
-    const none = moduleTreeLayout(modules, { canConfigure: false, turret: 0, gun: 0, engine: 0, track: 0 })
-    expect(none.nodes.every(n => !n.installed)).toBe(true)
-  })
-
-  it('不同族同名模块不串味（实测 A-20：底盘与炮塔都叫 A-20_mod_1938）', () => {
-    const same = {
-      chassis: [
-        { stem: 'A-20_mod_1938', localId: 16, level: 3, unlocks: [{ kind: 'chassis', stem: 'A-20_mod_1941' }] },
-        { stem: 'A-20_mod_1941', localId: 17, level: 4, unlocks: [] },
-      ],
-      engines: [{ stem: 'V-2', level: 5, unlocks: [] }],
-      turrets: [
-        { stem: 'A-20_mod_1938', localId: 14, level: 3, unlocks: [], guns: [{ stem: 'g0', level: 3, unlocks: [] }] },
-      ],
-    }
-    // 只装初始履带：同名炮塔的 tick 不该把升级履带也点亮
-    const first = moduleTreeLayout(same, { canConfigure: true, turret: 0, gun: 0, engine: 0, track: 0 })
-    const chassisInstalled = first.nodes.filter(n => n.kind === 'chassis' && n.installed).map(n => n.stem)
-    expect(chassisInstalled).toEqual(['A-20_mod_1938'])
-    // 只装升级履带：同名炮塔的 tick 不该把初始履带也点亮
-    const second = moduleTreeLayout(same, { canConfigure: true, turret: 0, gun: 0, engine: 0, track: 1 })
-    const chassisInstalled2 = second.nodes.filter(n => n.kind === 'chassis' && n.installed).map(n => n.stem)
-    expect(chassisInstalled2).toEqual(['A-20_mod_1941'])
-    // 研发深度按 kind:stem 计算：底盘链 0→1 不与同名炮塔合并
-    const depth = Object.fromEntries(second.nodes.map(n => [`${n.kind}:${n.stem}`, n.col]))
-    expect(depth['chassis:A-20_mod_1938']).toBe(0)
-    expect(depth['chassis:A-20_mod_1941']).toBe(1)
-    expect(depth['turret:A-20_mod_1938']).toBe(0)
-  })
-
-  it('每个节点只有一条上级连线（客户端树同构）：研发优先，无研发父才用挂载', () => {
-    const layout = moduleTreeLayout(modules)
-    const incoming = new Map()
-    for (const edge of layout.edges) incoming.set(edge.to, (incoming.get(edge.to) || 0) + 1)
-    expect([...incoming.values()].every(count => count === 1)).toBe(true)
-    // 边数 = 节点数 - 根数（根 = 无上级的初始模块）
-    const roots = layout.nodes.filter(n => !incoming.has(n.key))
-    expect(layout.edges.length).toBe(layout.nodes.length - roots.length)
-    // 夹具里只有 L11 没有研发父（F34 由 L11 解锁、ZiS4 由 F34 解锁）→ 唯一的挂载边
-    expect(layout.edges.filter(e => e.mount).map(e => `${e.from}->${e.to}`)).toEqual([
-      'turret:t0->gun:L11',
-    ])
-    // 一格一节点
+    expect([at('gun:L11').row, at('gun:F34').row, at('gun:ZiS4').row]).toEqual([0, 0, 0])
+    expect(at('turret:t0').row).toBe(1)
+    expect(at('turret:t1').row).toBe(1)
+    expect(at('engine:eng0').row).toBe(2)
+    expect([at('chassis:track0').row, at('chassis:track1').row]).toEqual([3, 3])
+    expect(layout.branches.map(b => b.rootKey).sort()).toEqual(
+      ['chassis:track0', 'engine:eng0', 'gun:L11', 'turret:t0'],
+    )
     const cells = new Set()
     for (const n of layout.nodes) {
       const cell = `${n.col},${n.row}`
@@ -222,17 +142,77 @@ describe('moduleTreeLayout（单车模块研发图，列=深度、行=模块族�
     }
   })
 
+  it('多个子分支：主链留本行，坦克分支落到下一行（SU-100M1 截图形态）', () => {
+    const su = {
+      hasTurret: false,
+      chassis: [{ stem: 'c0', level: 7, unlocks: [] }],
+      engines: [{ stem: 'e0', level: 6, unlocks: [] }],
+      turrets: [{ stem: 'fake', level: 7, unlocks: [], guns: [
+        gun('g0', 7, [
+          { kind: 'gun', stem: 'g1', cost: { xp: 100 } },
+          { kind: 'vehicle', stem: 'SU-101', cost: { xp: 200 } },
+        ]),
+        gun('g1', 7, [{ kind: 'gun', stem: 'g2', cost: { xp: 300 } }]),
+        gun('g2', 9, []),
+      ] }],
+    }
+    const layout = moduleTreeLayout(su, null, { nextVehicles: [{ stem: 'SU-101', name: 'SU-101', tankId: 12850 }] })
+    const at = key => layout.nodes.find(n => n.key === key)
+    // 无炮塔车：客户端不显示炮塔行（SU-100M1 截图只有 炮/发动机/履带）
+    expect(at('turret:fake')).toBeUndefined()
+    expect([at('gun:g0').row, at('gun:g1').row, at('gun:g2').row]).toEqual([0, 0, 0])
+    const vehicle = at('vehicle:SU-101')
+    expect(vehicle.row).toBe(1)
+    expect(vehicle.col).toBe(at('gun:g0').col + 1)
+    expect(at('engine:e0').row).toBeGreaterThan(1)
+    expect(at('chassis:c0').row).toBeGreaterThan(at('engine:e0').row)
+  })
+
+  it('每个非根节点只有一条上级连线（6 向箭头 = 树；挂载不画线）', () => {
+    const layout = moduleTreeLayout(modules)
+    const incoming = new Map()
+    for (const edge of layout.edges) incoming.set(edge.to, (incoming.get(edge.to) || 0) + 1)
+    expect([...incoming.values()].every(count => count === 1)).toBe(true)
+    const roots = layout.nodes.filter(n => !incoming.has(n.key))
+    expect(layout.edges.length).toBe(layout.nodes.length - roots.length)
+    expect(layout.edges.some(e => e.mount)).toBe(false)
+  })
+
+  it('下一级坦克是树里的节点，接在解锁它的模块右侧（同链优先本行）', () => {
+    const layout = moduleTreeLayout(modules, null, {
+      nextVehicles: [{ stem: 'MT25', name: 'MT-25', tankId: 2 }],
+    })
+    const vehicle = layout.nodes.find(n => n.key === 'vehicle:MT25')
+    expect(vehicle).toBeTruthy()
+    expect(vehicle.tankId).toBe(2)
+    const edge = layout.edges.find(e => e.to === 'vehicle:MT25')
+    expect(edge.from).toBe('gun:F34')
+    const source = layout.nodes.find(n => n.key === edge.from)
+    expect(vehicle.col).toBe(source.col + 1)
+    // 主链（F34 的 gun 子节点）优先占本行 → 车辆落在下一行
+    expect(vehicle.row).toBe(source.row + 1)
+  })
+
+  it('installed 按当前搭载对号（炮/发动机/履带/炮塔各一）', () => {
+    const selection = { canConfigure: true, turret: 1, gun: 1, engine: 0, track: 1 }
+    const layout = moduleTreeLayout(modules, selection)
+    const installed = layout.nodes.filter(n => n.installed).map(n => n.key).sort()
+    expect(installed).toEqual(['chassis:track1', 'engine:eng0', 'gun:ZiS4', 'turret:t1'])
+    const none = moduleTreeLayout(modules, { canConfigure: false })
+    expect(none.nodes.every(n => !n.installed)).toBe(true)
+  })
+
   it('非首个炮副本上的 vehicle 边也要收进图（实测 japan NC27 形态）', () => {
     const nc = {
+      hasTurret: true,
       chassis: [{ stem: 'c0', level: 1, unlocks: [] }],
       engines: [{ stem: 'e0', level: 1, unlocks: [] }],
       turrets: [
         { stem: 't0', level: 1, unlocks: [{ kind: 'turret', stem: 't1', cost: { xp: 100 } }], guns: [
-          { stem: 'g0', level: 1, unlocks: [] },
+          gun('g0', 1, []),
         ] },
         { stem: 't1', level: 2, unlocks: [], guns: [
-          // 同一门炮的第二份副本才带 vehicle 边
-          { stem: 'g0', level: 1, unlocks: [{ kind: 'vehicle', stem: 'Chi_Ni', cost: { xp: 9000 } }] },
+          gun('g0', 1, [{ kind: 'vehicle', stem: 'Chi_Ni', cost: { xp: 9000 } }]),
         ] },
       ],
     }
@@ -244,6 +224,7 @@ describe('moduleTreeLayout（单车模块研发图，列=深度、行=模块族�
 
   it('解锁环 = 数据异常显式抛出（不猜深度）', () => {
     const cyclic = {
+      hasTurret: true,
       chassis: [
         { stem: 'a', unlocks: [{ kind: 'chassis', stem: 'b' }] },
         { stem: 'b', unlocks: [{ kind: 'chassis', stem: 'a' }] },
@@ -255,12 +236,14 @@ describe('moduleTreeLayout（单车模块研发图，列=深度、行=模块族�
 
   it('XI 型无链车：零解锁边 → hasChain=false（数据可证的注记依据）', () => {
     const xi = {
+      hasTurret: true,
       chassis: [{ stem: 'track0', level: 11, unlocks: [] }],
       engines: [{ stem: 'eng0', level: 11, unlocks: [] }],
-      turrets: [{ stem: 't0', level: 11, unlocks: [], guns: [{ stem: 'g0', level: 11, unlocks: [] }] }],
+      turrets: [{ stem: 't0', level: 11, unlocks: [], guns: [gun('g0', 11, [])] }],
     }
     const layout = moduleTreeLayout(xi)
     expect(layout.hasChain).toBe(false)
+    expect(layout.edges).toEqual([])
     expect(layout.nodes.every(n => n.cost == null)).toBe(true)
   })
 
