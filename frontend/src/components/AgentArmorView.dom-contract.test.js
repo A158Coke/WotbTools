@@ -30,6 +30,34 @@ describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
       '内核按 ID 查找的节点在模板里不存在——该路径会静默失效（控件点了没反应）',
     ).toEqual([])
   })
+
+  // 2026-10-29 用户要求：厚度模式点选结果只留基础装甲值，并收进右上角面板（不再浮在点击处遮挡车体）；
+  // 射击 HUD、模式切换、装甲组成、点选结果合并为同一张卡片。
+  it('点选结果只显示基础装甲值且不遮挡，右上角合并为一块整体面板', () => {
+    expect(template).toContain('id="click-armor"')
+    expect(template).not.toMatch(/id="click-(?:part|angle|effective|pen|result)"/)
+    expect(kernel).not.toContain("document.getElementById('click-angle')")
+    expect(kernel).not.toContain("document.getElementById('click-effective')")
+    expect(kernel).not.toContain("document.getElementById('click-part')")
+    expect(kernel).not.toMatch(/card\.style\.(?:left|top)/)
+    expect(kernel).toMatch(/card\.style\.display = 'flex'/)
+    expect(template.indexOf('id="click-info"')).toBeGreaterThan(template.indexOf('id="corner-tr"'))
+    const clickInfoCss = template.slice(template.indexOf('.armor-view #click-info {'))
+    expect(clickInfoCss.slice(0, clickInfoCss.indexOf('}'))).not.toContain('position: absolute')
+    // 卡片外观由 #corner-tr 提供；射击 HUD 与模式切换只排布内容，过滤行是面板内静态第二行
+    const cornerTrCss = template.slice(template.indexOf('.armor-view #corner-tr {'))
+    const cornerTrRule = cornerTrCss.slice(0, cornerTrCss.indexOf('}'))
+    expect(cornerTrRule).toContain('background: var(--panel)')
+    expect(cornerTrRule).toContain('border: 1px solid var(--border)')
+    // 面板固定宽度：进入厚度视图出现过滤行/点选结果时不撑宽（手机竖屏整条底栏不固定）
+    expect(cornerTrRule).toContain('inline-size: 17rem')
+    expect(template).toMatch(/\.armor-view #corner-tr \{[^}]*inline-size: auto;/)
+    const shotHud = read('./ArmorShotHud.vue')
+    const shotHudRule = shotHud.slice(shotHud.indexOf('.shot-hud {'), shotHud.indexOf('.hud-row'))
+    expect(shotHudRule).not.toContain('background: var(--panel)')
+    expect(template).toMatch(/\.armor-view \.armor-filters \{[^}]*flex: 1 1 100%;/)
+    expect(template).not.toMatch(/\.armor-view \.armor-filters \{[^}]*position: absolute;/)
+  })
 })
 
 
@@ -194,8 +222,8 @@ describe('dolly-zoom world-overview scope guard', () => {
     // 装甲厚度与击穿视图互斥；厚度模式点击只出部件信息，不做击穿判定
     expect(kernel).toMatch(/collisionMode && penetrationMode/)
     expect(kernel).toMatch(/penetrationMode && collisionMode/)
-    expect(kernel).toMatch(/if \(collisionMode\) \{ showArmorPartInfo\(event, ndcX, ndcY\); return; \}/)
-    expect(kernel).toMatch(/function showArmorPartInfo\(/)
+    expect(kernel).toMatch(/if \(collisionMode\) \{ showArmorPartInfo\(ndcX, ndcY\); return; \}/)
+    expect(kernel).toMatch(/function showArmorPartInfo\(ndcX, ndcY\)/)
     // 碰撞视图保留炮管/履带碰撞体
     expect(kernel).toMatch(/function applyModuleCollisionMaterial\(on\)/)
     expect(kernel).toMatch(/moduleOriginalMaterials\.set\(node, node\.material\)/)

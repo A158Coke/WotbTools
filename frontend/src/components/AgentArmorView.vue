@@ -558,14 +558,6 @@ onBeforeUnmount(() => {
                 @close="closePicker"
             />
         </div>
-            <div id="click-info">
-                <h3 id="click-part">—</h3>
-                <div class="row"><span>{{ $t('armor.base_armor') }}</span><span id="click-armor">—</span></div>
-                <div class="row"><span>{{ $t('armor.angle') }}</span><span id="click-angle">—</span></div>
-                <div class="row"><span>{{ $t('armor.effective') }}</span><span id="click-effective">—</span></div>
-                <div class="row"><span>{{ $t('armor.penetration') }}</span><span id="click-pen">—</span></div>
-                <div class="row"><span>{{ $t('armor.result') }}</span><span id="click-result">—</span></div>
-            </div>
         <div class="armor-bottom-controls">
         <div id="corner-tr">
             <ArmorShotHud
@@ -595,6 +587,11 @@ onBeforeUnmount(() => {
                     <button id="filter-spaced" type="button" class="active" aria-pressed="true">{{ $t('armor.filter_spaced') }}</button>
                     <button id="filter-external" type="button" class="active" aria-pressed="true">{{ $t('armor.filter_external') }}</button>
                 </div>
+            </div>
+            <!-- 装甲厚度模式点选结果：只显示基础装甲值；作为面板的一行，不再浮在车体上 -->
+            <div id="click-info">
+                <span class="click-label">{{ $t('armor.base_armor') }}</span>
+                <span id="click-armor">—</span>
             </div>
         </div>
         <div id="corner-br">
@@ -650,7 +647,7 @@ onBeforeUnmount(() => {
 .armor-view :is(#corner-tl, #corner-tr, #corner-br) { position: absolute; display: flex; gap: var(--space-3); }
 .armor-view #corner-tl { inset-block-start: var(--space-5); inset-inline-start: var(--space-5); align-items: flex-start; }
 .armor-view.has-back #corner-tl { inset-block-start: calc(var(--space-5) + 44px + var(--space-2)); }
-.armor-view :is(#info-panel, #tank-selectors, #shell-selector, #view-toggle, #turret-controls, #debug-info, #click-info) {
+.armor-view :is(#info-panel, #tank-selectors, #turret-controls, #debug-info) {
     background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--elevation-2);
 }
 .armor-view #info-panel { padding: var(--space-4); max-inline-size: 20rem; max-block-size: 46dvh; overflow: auto; overflow-wrap: anywhere; }
@@ -684,27 +681,36 @@ onBeforeUnmount(() => {
 .armor-view #tank-selection-status { margin: var(--space-2) 0 0; color: var(--color-text-secondary); font: var(--type-caption); }
 .armor-view #shooter-label { color: var(--color-accent-text); }
 .armor-view #target-label { color: var(--color-info); }
-.armor-view #corner-tr { inset-block-start: var(--space-5); inset-inline-end: var(--space-5); flex-direction: column; align-items: flex-end; max-inline-size: 42%; }
-.armor-view #shell-selector { padding: var(--space-2) var(--space-3); max-inline-size: 100%; }
-.armor-view #shell-selector label { color: var(--muted); font: var(--type-caption); }
-.armor-view #shell-selector select { max-inline-size: 100%; min-inline-size: 0; padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--input-bg); color: var(--txt); }
-.armor-view #view-toggle { position: relative; display: flex; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2); }
-/* 模式按钮文案固定（状态用 active/aria-pressed 表示）：避免开关时标签变长变短把面板宽度挤动 */
-.armor-view #view-toggle > button { white-space: nowrap; }
-/* 第二行浮在面板下方（绝对定位）：出现/隐藏都不改变面板尺寸与位置 */
-.armor-view .armor-filters {
-    position: absolute;
-    inset-block-start: calc(100% + var(--space-2));
-    inset-inline-end: 0;
-    display: flex;
-    flex-wrap: wrap;
+/* 右上角是一块整体面板：射击 HUD、模式切换、装甲组成、点选结果共用同一张卡片。
+   固定宽度：进入厚度视图（过滤行/点选结果出现）时面板不会突然变宽。 */
+.armor-view #corner-tr {
+    inset-block-start: var(--space-5);
+    inset-inline-end: var(--space-5);
+    flex-direction: column;
+    align-items: stretch;
     gap: var(--space-2);
+    inline-size: 17rem;
+    max-inline-size: 42%;
     padding: var(--space-2);
     background: var(--panel);
     border: 1px solid var(--border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-lg);
     box-shadow: var(--elevation-2);
-    z-index: var(--pb-z-hud);
+}
+.armor-view #shell-selector { padding: var(--space-2) var(--space-3); max-inline-size: 100%; }
+.armor-view #shell-selector label { color: var(--muted); font: var(--type-caption); }
+.armor-view #shell-selector select { max-inline-size: 100%; min-inline-size: 0; padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--input-bg); color: var(--txt); }
+.armor-view #view-toggle { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+/* 模式按钮文案固定（状态用 active/aria-pressed 表示）：避免开关时标签变长变短把面板宽度挤动 */
+.armor-view #view-toggle > button { white-space: nowrap; }
+/* 装甲组成显隐是同一面板内的第二行（只在厚度视图出现），不再是浮在产品外的独立卡片 */
+.armor-view .armor-filters {
+    flex: 1 1 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    padding-block-start: var(--space-2);
+    border-block-start: 1px solid var(--color-border-subtle);
 }
 .armor-view .armor-filters[hidden] { display: none; }
 .armor-view :is(#view-toggle button, .armor-scene-button) { padding: var(--space-2) var(--space-3); background: var(--input-bg); color: var(--txt); border: 1px solid var(--border); border-radius: var(--radius-md); font: var(--type-caption); }
@@ -800,12 +806,18 @@ onBeforeUnmount(() => {
 .armor-view .dbg-dot { flex: none; inline-size: var(--space-2); block-size: var(--space-2); border-radius: var(--radius-full); margin-block-start: var(--space-1); }
 .armor-view .dbg-name { flex: none; color: var(--muted); }
 .armor-view .dbg-val { min-inline-size: 0; }
-.armor-view #click-info { position: absolute; display: none; padding: var(--space-3) var(--space-4); min-inline-size: 13rem; pointer-events: none; z-index: var(--pb-z-modal); }
-.armor-view #click-info h3 { margin: 0 0 var(--space-2); font: var(--type-h3); }
-.armor-view #click-info .row { display: flex; justify-content: space-between; gap: var(--space-3); font: var(--type-caption); }
-.armor-view #click-info .pen { color: var(--green); }
-.armor-view #click-info .bounce { color: var(--red); }
-.armor-view #click-info .ricochet { color: var(--orange); }
+/* 装甲厚度模式点选结果：面板内的一行，只显示基础装甲值（不再浮在车体上方遮挡） */
+.armor-view #click-info {
+    display: none;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding-block-start: var(--space-2);
+    border-block-start: 1px solid var(--color-border-subtle);
+    color: var(--muted);
+    font: var(--type-caption);
+}
+.armor-view #click-info #click-armor { color: var(--txt); font-weight: 600; font-variant-numeric: tabular-nums; }
 .armor-view #traj-info { position: fixed; z-index: var(--z-header); pointer-events: none; }
 .armor-view #shot-replay-error { position: fixed; z-index: var(--pb-z-modal); inset-block-start: calc(var(--space-5) + 48px); inset-inline: var(--space-4); margin-inline: auto; max-inline-size: 30rem; padding: var(--space-2) var(--space-3); background: var(--tooltip-bg); border-left: 4px solid var(--red); border-radius: var(--radius-md); color: var(--red); font: var(--type-caption); box-shadow: var(--elevation-2); pointer-events: none; }
 .armor-view .armor-back { position: absolute; z-index: calc(var(--z-sticky) + 1); inset-block-start: var(--space-5); inset-inline-start: var(--space-5); display: inline-flex; align-items: center; gap: var(--space-2); min-block-size: 44px; padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--panel); color: var(--txt); }
@@ -871,10 +883,12 @@ onBeforeUnmount(() => {
     .armor-view .armor-tools { grid-column: 2; grid-row: 1; display: inline-flex; align-items: center; justify-content: center; inline-size: 44px; block-size: 44px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--input-bg); color: var(--txt); }
     .armor-view .armor-tools-label { display: none; }
     .armor-view .armor-tools[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
-    .armor-view #corner-tr { inset-block-start: auto; inset-block-end: var(--space-2); inset-inline: var(--space-2); max-inline-size: none; flex-direction: row; flex-wrap: wrap; align-items: stretch; gap: var(--space-2); }
+    .armor-view #corner-tr { inset-block-start: auto; inset-block-end: var(--space-2); inset-inline: var(--space-2); inline-size: auto; max-inline-size: none; flex-direction: row; flex-wrap: wrap; align-items: stretch; gap: var(--space-2); }
     .armor-view #shell-selector { flex: none; padding: var(--space-1) var(--space-2); }
-    .armor-view #view-toggle { flex: 1 1 11rem; min-inline-size: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1); padding: var(--space-1) var(--space-2); }
+    .armor-view #view-toggle { flex: 1 1 11rem; min-inline-size: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1); padding: 0; }
     .armor-view #view-toggle button { padding: var(--space-1); white-space: normal; }
+    .armor-view #armor-filters { grid-column: 1 / -1; padding-block-start: var(--space-1); gap: var(--space-1); }
+    .armor-view #click-info { flex: 1 1 100%; padding-block-start: var(--space-1); }
     .armor-view #turret-controls { inset-block-start: calc(var(--space-2) * 2 + 48px); inset-block-end: auto; inset-inline-start: var(--space-2); min-inline-size: 0; max-inline-size: calc(100% - var(--space-4)); padding: var(--space-1) var(--space-3); max-block-size: 28dvh; }
     .armor-view #turret-controls .ctrl-row { display: inline-flex; margin: 0 var(--space-3) 0 0; }
     .armor-view #corner-br { display: none; }

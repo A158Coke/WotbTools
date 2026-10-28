@@ -78,7 +78,13 @@ function armorLayoutProbe() {
     })(),
     viewToggleButtons: [...document.querySelectorAll('#view-toggle button')].map((button) => {
       const rect = button.getBoundingClientRect()
-      return { text: button.textContent.trim(), width: Math.round(rect.width), height: Math.round(rect.height) }
+      return {
+        text: button.textContent.trim(),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+        // 装甲组成过滤行只在厚度视图出现；隐藏时不是触控目标（0x0 不参与 44px 判定）
+        visible: button.getClientRects().length > 0,
+      }
     }),
     turretControls: box('#turret-controls'),
     turretRowsInline: turretRows.length === 2 ? Math.abs(Math.round(turretRows[0].top) - Math.round(turretRows[1].top)) <= 2 : null,
@@ -227,6 +233,7 @@ function checkSceneBand(failures, layout, label) {
 
 function checkTouchTargets(failures, layout, label) {
   for (const button of layout.viewToggleButtons) {
+    if (!button.visible) continue
     check(failures, Math.min(button.width, button.height) >= 43.5,
       `${label}: 视图开关「${button.text}」触控目标 ${button.width}x${button.height}，低于 44px`)
   }
@@ -593,6 +600,16 @@ async function runDesktopScenario(env, scenario) {
     `${label}: 底栏没有回到右上角（top=${layout.bottomBar?.top} right=${layout.bottomBar?.right} root right=${layout.root?.right}，期望相对 20/20）`)
   check(failures, layout.viewToggleDisplay === 'flex',
     `${label}: 视图开关不是桌面 flex 布局（display=${layout.viewToggleDisplay}）`)
+  // 右上角是一块固定宽度面板：进入厚度视图（装甲组成过滤行出现）不得把面板撑宽
+  // （2026-10-29 用户报障：点厚度模式后这一栏突然变宽）。
+  const panelWidth = layout.bottomBar?.width
+  await page.evaluate(`document.getElementById('collision-btn').click()`)
+  await delay(200)
+  const thicknessLayout = await page.probe(armorLayoutProbe)
+  check(failures, thicknessLayout.bottomBar?.width === panelWidth,
+    `${label}: 进入装甲厚度模式后右上角面板宽度变化（${panelWidth} → ${thicknessLayout.bottomBar?.width}px）`)
+  await page.evaluate(`document.getElementById('collision-btn').click()`)
+  await delay(200)
 
   // Desktop mirrors mobile portrait: the toggle expands the setup fields inside the top-left info card.
   await page.installInputTrace()

@@ -118,15 +118,12 @@ const enhanced = computed(() => (props.eqenh == null ? props.enhancedDefault : S
 </template>
 
 <style scoped>
+/* 卡片外观由宿主（#corner-tr 整体面板）提供；这里只排布弹种/装备图标。 */
 .shot-hud {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--space-2);
-  padding: var(--space-2);
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--elevation-2);
 }
 .hud-row { display: flex; align-items: center; gap: var(--space-1); }
 .hud-shell,

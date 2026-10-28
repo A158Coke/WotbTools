@@ -4979,13 +4979,13 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const ndcY = -((event.clientY - rect.top) / rect.height) * 2 + 1;
             // 装甲厚度（碰撞）模式（2026-10-28 用户裁定）：不做击穿判定，只显示点击位置
             // 命中的装甲/模块信息（BlitzKit armor inspector 同语义）。
-            if (collisionMode) { showArmorPartInfo(event, ndcX, ndcY); return; }
+            if (collisionMode) { showArmorPartInfo(ndcX, ndcY); return; }
             lastClickNdc = { x: ndcX, y: ndcY };
             doPenetrationCheck(ndcX, ndcY);
         }
 
-        /** 装甲厚度模式：射线命中部件 → 名称/基础厚度/入射角/等效厚度的小卡（无击穿判定）。 */
-        function showArmorPartInfo(event, ndcX, ndcY) {
+        /** 装甲厚度模式：命中装甲板 → 高亮该板，并在右上角面板内只显示基础装甲值（无击穿判定）。 */
+        function showArmorPartInfo(ndcX, ndcY) {
             tidyTrajectory();
             raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
             const objects = armorModel ? [armorModel, ...moduleMeshes] : [];
@@ -4999,25 +4999,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             if (!info) { resetArmorHighlight(); card.style.display = 'none'; return; }
             applyArmorHighlight(info.object);
             const thickness = Number(info.thickness);
-            const angle = Math.acos(Math.min(1, Math.abs(info.normal.dot(rayDir)))) * 180 / Math.PI;
-            const effective = Number.isFinite(thickness) ? thickness / Math.max(0.05, Math.cos(angle * Math.PI / 180)) : null;
-            document.getElementById('click-part').textContent = L.partName ? L.partName(info.partName) : info.partName;
             document.getElementById('click-armor').textContent = Number.isFinite(thickness) ? `${Math.round(thickness * 100) / 100} mm` : '—';
-            document.getElementById('click-angle').textContent = `${Math.round(angle)}°`;
-            document.getElementById('click-effective').textContent = effective != null ? `${Math.round(effective * 10) / 10} mm` : '—';
-            // 装甲厚度模式不产生击穿判定：穿深/结果两行隐藏
-            const penRow = document.getElementById('click-pen')?.parentElement;
-            const resultRow = document.getElementById('click-result')?.parentElement;
-            if (penRow) penRow.style.display = 'none';
-            if (resultRow) resultRow.style.display = 'none';
-            const stage = document.querySelector('.armor-stage');
-            const stageRect = stage ? stage.getBoundingClientRect() : { left: 0, top: 0 };
-            card.style.display = 'block';
-            const w = card.offsetWidth || 220, h = card.offsetHeight || 110;
-            const left = Math.max(8, Math.min(window.innerWidth - w - 8, event.clientX - stageRect.left - w / 2));
-            const top = Math.max(8, Math.min(window.innerHeight - h - 8, event.clientY - stageRect.top + 16));
-            card.style.left = `${left}px`;
-            card.style.top = `${top}px`;
+            card.style.display = 'flex';
         }
 
         let __shotRayOrigin = null;   // 射击复现：射线起点（射手方向，固定距离）
