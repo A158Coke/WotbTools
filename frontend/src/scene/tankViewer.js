@@ -4687,7 +4687,14 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             if (!penetrationMode) return;
             const sh = selectedShell || (shooterShells[0]) || null;
             if (sh) { updatePenetrationUniforms(sh); updateSpacedUniforms(sh); }
-            if (QP.get('shot') && !rerunAuthoritativeShotCheck()) doPenetrationCheck(0, 0);
+            if (QP.get('shot')) {
+                if (!rerunAuthoritativeShotCheck()) doPenetrationCheck(0, 0);
+            } else if (penetrationMode && lastClickNdc) {
+                // 校准弹/强化装甲改变的是判定输入，旧的命中结果不再成立。
+                tidyTrajectory();
+                if (window.__hitMarker) { scene.remove(window.__hitMarker); window.__hitMarker = null; }
+                lastClickNdc = null;
+            }
         }
 
         function setupEventHandlers() {

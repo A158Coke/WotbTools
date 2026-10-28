@@ -760,7 +760,9 @@ describe('armor shell and readiness ownership', () => {
   })
   it('射击复现换装备/换配置沿权威 launch/lvDir 重跑', () => {
     expect(kernel).toMatch(/function rerunAuthoritativeShotCheck\(\)/)
-    expect(kernel).toMatch(/if \(QP\.get\('shot'\) && !rerunAuthoritativeShotCheck\(\)\) doPenetrationCheck\(0, 0\);/)
+    expect(kernel).toMatch(/if \(!rerunAuthoritativeShotCheck\(\)\) doPenetrationCheck\(0, 0\);/)
+    // 普通检视换装备同样清掉旧结果
+    expect(kernel).toMatch(/else if \(penetrationMode && lastClickNdc\) \{\s*\/\/[^\n]*\n\s*tidyTrajectory\(\);/)
   })
   it('目标配置切换清空旧结果并使在途判定失效', () => {
     expect(kernel).toMatch(/if \(!QP\.get\('shot'\)\) \{\s*__penCheckSeq\+\+;\s*tidyTrajectory\(\);[\s\S]*?lastClickNdc = null;\s*\} else \{\s*rerunAuthoritativeShotCheck\(\);/)
