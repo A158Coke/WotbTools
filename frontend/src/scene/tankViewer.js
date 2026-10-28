@@ -4688,10 +4688,14 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             });
 
             document.getElementById('eq-calibrated').addEventListener('change', function() {
+                // 原生勾选是回退控件：用户手动改动后必须接管 URL 初始化留下的 override，
+                // 否则复选框可见但计算仍走旧覆盖值。
+                equipmentOverride.calibrated = null;
                 refreshEquipmentEffects();
                 onEquipmentSelection?.('calibrated', this.checked);
             });
             document.getElementById('eq-enhanced').addEventListener('change', function() {
+                equipmentOverride.enhanced = null;
                 refreshEquipmentEffects();
                 onEquipmentSelection?.('enhanced', this.checked);
             });

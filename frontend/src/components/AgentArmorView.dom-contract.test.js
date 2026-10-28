@@ -725,6 +725,8 @@ describe('armor shell and readiness ownership', () => {
     expect(kernel).toMatch(/onConfigSelection\?\.\(idx\)/)
     expect(kernel).toMatch(/onShellSelection\?\.\(idx\)/)
     expect(kernel).toMatch(/onEquipmentSelection\?\.\('calibrated', this\.checked\)/)
+    expect(kernel).toMatch(/equipmentOverride\.calibrated = null;\s*\n\s*refreshEquipmentEffects\(\);/)
+    expect(kernel).toMatch(/equipmentOverride\.enhanced = null;\s*\n\s*refreshEquipmentEffects\(\);/)
     expect(view).toMatch(/function syncNativeTargetConfig\(index\)/)
     expect(view).toMatch(/function syncNativeShell\(index\)/)
     expect(view).toMatch(/function syncNativeEquipment\(kind, value\)/)
