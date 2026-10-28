@@ -515,14 +515,16 @@ function open3d() {  // 审计 3D-09：在当前标签页打开装甲查看器�
   // 与视图无关的键（`assets` 资产源 override、`lang`、`admin` 等）——此前手写的
   // `query: { view, tank, config }` 会把 `assets` 一并丢掉，导致进入装甲查看器后
   // 资产源回落（模型/贴图加载不到）。
-  // 配置器可用时把装备/物品选择一并带上（dev/cons/prov/camo）：装甲查看器的
-  // 「实际搭载」面板读同一组参数，与百科参数区同源（2026-10-27 接入）。
+  // 配置器可用时把装备/物品选择一并带上（dev/cons/prov），并把装甲查看器只认的两个
+  // 射击相关装备折成 eqcal/eqenh（103 校准弹 / 110 强化装甲）——装甲页不再展示完整装备。
   const dest = locationForView('agent-armor', route)
   const handoff = setup.value.canConfigure
     ? {
         dev: encodeDevices(setup.value.devices),
         cons: setup.value.consumables.join(','),
         prov: setup.value.provisions.join(','),
+        ...(deviceIds.value.has(103) ? { eqcal: '1' } : {}),
+        ...(deviceIds.value.has(110) ? { eqenh: '1' } : {}),
       }
     : {}
   router.push({

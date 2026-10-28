@@ -424,10 +424,7 @@
         "spaced": "间隙甲",
         "chassis": "履带",
         "gun_barrel": "炮管"
-      },
-      "loadout_shooter": "射手装备",
-      "loadout_target": "目标装备",
-      "loadout_unavailable": "搭载数据不可用"
+      }
     },
     "hofAdmin": {
       "tabsLabel": "管理分区",
@@ -1287,10 +1284,7 @@
         "spaced": "Spaced armor",
         "chassis": "Track",
         "gun_barrel": "Gun barrel"
-      },
-      "loadout_shooter": "Shooter equipment",
-      "loadout_target": "Target equipment",
-      "loadout_unavailable": "Loadout unavailable"
+      }
     },
     "hofAdmin": {
       "tabsLabel": "Admin sections",
@@ -2150,10 +2144,7 @@
         "spaced": "Экран",
         "chassis": "Гусеница",
         "gun_barrel": "Ствол орудия"
-      },
-      "loadout_shooter": "Оборудование стрелка",
-      "loadout_target": "Оборудование цели",
-      "loadout_unavailable": "Снаряжение недоступно"
+      }
     },
     "hofAdmin": {
       "tabsLabel": "Разделы администрирования",

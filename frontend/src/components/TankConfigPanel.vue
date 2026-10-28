@@ -27,10 +27,6 @@ const props = defineProps({
   selection: { type: Object, required: true },
   /** 资产包 research 全局目录（物品目录 + 预设 + 过滤器） */
   catalog: { type: Object, required: true },
-  /** 乘员技能 / 涂装块：装甲查看器只要装备与模块，不显示与装甲无关的部分 */
-  showCrew: { type: Boolean, default: true },
-  /** 紧凑形态（装甲查看器侧栏）：图标格缩一号、模块只留图标+等级（名称走 tooltip） */
-  compact: { type: Boolean, default: false },
 })
 const emit = defineEmits(['update', 'reset', 'preset', 'cycle-skill', 'max-skills', 'clear-skills'])
 
@@ -377,7 +373,7 @@ const camoBonusParts = computed(() => {
 </script>
 
 <template>
-  <section class="tp-config" :class="{ 'is-compact': compact }" data-testid="tank-configurator">
+  <section class="tp-config" data-testid="tank-configurator">
     <header class="tp-config-head">
       <h2 class="tp-section-title">{{ t('agentTanks.configurator.title') }}</h2>
       <div class="tp-config-actions">
@@ -522,7 +518,7 @@ const camoBonusParts = computed(() => {
       </div>
     </section>
 
-    <section v-if="showCrew" class="tp-config-block tp-skills-block">
+    <section class="tp-config-block tp-skills-block">
       <div class="tp-block-head">
         <h3>{{ t('agentTanks.configurator.crew_skills') }}</h3>
         <span class="tp-muted">{{ t('agentTanks.configurator.crew_count') }} {{ modules.crewRoles.length }} · {{ Object.values(selection.skills).filter(level => level > 0).length }}/20</span>
@@ -562,7 +558,7 @@ const camoBonusParts = computed(() => {
       <p class="tp-muted">{{ t('agentTanks.configurator.skill_note') }}</p>
     </section>
 
-    <div v-if="showCrew" class="tp-camo-block">
+    <div class="tp-camo-block">
       <label class="tp-camo">
         <input type="checkbox" data-testid="tank-camo" :checked="selection.camouflage" @change="setCamo">
         <span>{{ t('agentTanks.configurator.camouflage') }}</span>
@@ -769,28 +765,4 @@ const camoBonusParts = computed(() => {
   .tp-dev-btn { min-block-size: 48px; }
 }
 
-/* ---------- 紧凑形态（装甲查看器侧栏 19rem） ---------- */
-.tp-config.is-compact {
-  gap: var(--space-2);
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-.tp-config.is-compact .tp-section-title { font: var(--type-body); font-weight: 600; }
-.tp-config.is-compact .tp-module-matrix { gap: var(--space-1); }
-.tp-config.is-compact .tp-module-name { display: none; }
-.tp-config.is-compact .tp-module-tile {
-  grid-template-rows: 1fr;
-  min-block-size: 44px;
-  padding: 2px;
-}
-.tp-config.is-compact .tp-module-pic { inline-size: 28px; block-size: 28px; }
-.tp-config.is-compact .tp-module-level { font-size: var(--font-size-caption-xs); }
-.tp-config.is-compact .tp-block-head .tp-muted { display: none; }
-.tp-config.is-compact .tp-dev-matrix { gap: var(--space-1); }
-.tp-config.is-compact .tp-dev-btn { min-block-size: 36px; padding: 2px; border-radius: var(--radius-sm); }
-.tp-config.is-compact .tp-dev-btn img { inline-size: 28px; block-size: 28px; }
-.tp-config.is-compact .tp-icon-tile { inline-size: 40px; block-size: 40px; }
 </style>

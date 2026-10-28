@@ -26,7 +26,6 @@ import { usePlaybackPortraitViewport } from '../composables/usePlaybackPortraitV
 import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 import Scene3DStatus from './Scene3DStatus.vue'
 import TankCatalogMenu from './TankCatalogMenu.vue'
-import ArmorLoadout from './ArmorLoadout.vue'
 import ArmorShotSetup from './ArmorShotSetup.vue'
 
 const { t, te } = useI18n()
@@ -93,9 +92,7 @@ const shotGestures = computed(() => ['rotate', 'zoom', 'pan'].map(action => ({
 // 「参数」面板（装备 / 射击方 / 目标 / 配置）：桌面与手机都默认收起，不再常驻占掉 3D 视口；
 // 桌面端复用手机竖屏的顶栏结构，信息卡与设置面板合并为左上角同一张卡。
 const toolsOpen = ref(false)
-/** 装配编辑器的数据就绪后才隐藏场景自带的原生配置下拉（资产缺失时它仍是可用回退） */
-const loadoutReady = ref(false)
-/** 射击复现的图形面板就绪后才隐藏原生的配置/弹种下拉与装备勾选（资产缺失时仍可回退） */
+/** 五项图形面板就绪后才隐藏原生的配置/弹种下拉与装备勾选（资产缺失时仍可回退） */
 const shotSetupReady = ref(false)
 
 /** 重建场景的 query 键：装配键（config/engine/track/dev/cons/prov/shell）不在其中——
@@ -109,26 +106,23 @@ let lastSceneSignature = null
 // JSON，不该在 3D 场景加载路径上抢带宽）；一旦激活保持（收起再展开不重复拉）。
 const loadoutActive = ref(false)
 watch(toolsOpen, (open) => { if (open) loadoutActive.value = true }, { immediate: true })
-// 图形化装配编辑器/射击面板就绪 → 隐藏场景自带的原生下拉（资产缺失时保留为回退）
-watch([loadoutReady, shotSetupReady], ([loadout, shot]) => {
-  viewer?.setConfigUiVisible?.(!(loadout || shot))
-  viewer?.setShellUiVisible?.(!shot)
+// 五项图形面板就绪 → 隐藏场景自带的原生下拉与装备勾选（资产缺失时保留为回退）
+watch(shotSetupReady, ready => {
+  viewer?.setConfigUiVisible?.(!ready)
+  viewer?.setShellUiVisible?.(!ready)
 }, { flush: 'sync' })
 /** 搭载面板的车：场景选择器换车后以 viewer 上报为准（选车不写 URL），深链回落 URL。 */
 const loadoutTankId = computed(() => selectedTargetId.value ?? (Number(route.query.tank) || null))
 // ?clean=1 时场景脚本会隐藏全部常驻面板（截图 / 嵌入用）；顶栏卡片与参数开关一并让位
 const cleanQuery = computed(() => route.query.clean === '1')
+/** 普通装甲页：射击方与受击方默认同一辆（回放页由 shot 的 shooter/target 决定）。 */
+const sameTankInspection = computed(() => {
+  if (isShotPage.value) return false
+  const shooter = selectedShooterId.value ?? Number(route.query.shooter) ?? loadoutTankId.value
+  const target = selectedTargetId.value ?? loadoutTankId.value
+  return shooter != null && target != null && shooter === target
+})
 
-/**
- * 装配改动（模块/装备/消耗品/补给，来自详情页同款 TankConfigPanel）：
- * 写同一组 URL 键（config/engine/track/dev/cons/prov），并让场景立即切到新配置
- * （炮塔/炮装甲板、炮管模块缓存一起换）。换 config 时删掉旧弹种下标（弹表已变）。
- */
-/**
- * 射击复现的相关项（用户裁定：射击方主炮/校准弹/弹种、受击方炮塔×炮/强化装甲）：
- * 写 URL（scfg / config / shell / eqcal / eqenh）并调用场景 API 就地生效。
- * 换射击方主炮会清掉旧弹种下标（新炮表从 0 开始）。
- */
 function applyShotSetup(patch) {
   if (!patch) return
   const query = { ...route.query }
@@ -136,13 +130,28 @@ function applyShotSetup(patch) {
     if (value == null || value === '') delete query[key]
     else query[key] = String(value)
   }
-  if ('scfg' in patch) { put('scfg', patch.scfg); delete query.shell }
-  if ('config' in patch) put('config', patch.config)
+  if ('scfg' in patch && sameTankInspection.value) {
+    // 同车装甲检视只有一个配置状态：选射击方主炮就是切这辆车的配置
+    put('config', patch.scfg)
+    delete query.scfg
+    delete query.shell
+  } else if ('scfg' in patch) {
+    put('scfg', patch.scfg)
+    delete query.shell
+  }
+  if ('config' in patch && !('scfg' in patch && sameTankInspection.value)) {
+    put('config', patch.config)
+    // 同车检视：射击方弹表跟随受击方配置（场景 applyConfig 同语义），清掉单独的 scfg
+    if (sameTankInspection.value) delete query.scfg
+  }
   if ('shell' in patch) put('shell', patch.shell)
   if ('eqcal' in patch) put('eqcal', patch.eqcal ? '1' : '0')
   if ('eqenh' in patch) put('eqenh', patch.eqenh ? '1' : '0')
   router.replace({ query })
-  if (patch.scfg != null) viewer?.setShooterConfig?.(Number(patch.scfg))
+  if (patch.scfg != null) {
+    if (sameTankInspection.value) viewer?.setConfig?.(Number(patch.scfg))
+    else viewer?.setShooterConfig?.(Number(patch.scfg))
+  }
   if (patch.config != null) viewer?.setConfig?.(Number(patch.config))
   if (patch.shell != null) viewer?.setShell?.(Number(patch.shell))
   if ('eqcal' in patch) viewer?.setEquipmentOverride?.('calibrated', patch.eqcal)
@@ -341,7 +350,7 @@ function startViewer(preserveSelection = false) {
     viewerReady.value = true
     lastSceneSignature = sceneSignature()
     // 编辑器可能先于场景就绪（模块 JSON 比模型快）：创建后补一次显隐
-    viewer.setConfigUiVisible?.(!(loadoutReady.value || shotSetupReady.value))
+    viewer.setConfigUiVisible?.(!shotSetupReady.value)
     viewer.setShellUiVisible?.(!shotSetupReady.value)
 }
 
@@ -372,7 +381,7 @@ onMounted(async () => {
 // Same-view query navigation does not remount ViewHost. Dispose the old scene before rebuilding its ID contract.
 watch(() => route.fullPath, async () => {
     if (route.query.view !== 'agent-armor') return
-    // 只改了装配键：场景已由 applyLoadout 就地更新，不重建（否则每次点模块都会闪一下）
+    // 只改了装配键：场景已由 applyShotSetup 就地更新，不重建（否则每次点模块都会闪一下）
     if (viewer && sceneSignature() === lastSceneSignature) return
     requestSeq++
     shotSetupReady.value = false
@@ -457,13 +466,12 @@ onBeforeUnmount(() => {
                     <label class="eq-opt"><input type="checkbox" id="eq-enhanced"> <span class="eq-opt-label">{{ $t('armor.enhanced') }}</span></label>
                     <label class="eq-opt" id="armor-state-opt" style="display:none;"><input type="checkbox" id="armor-state-toggle"> <span class="eq-opt-label">{{ $t('armor.dynamic_armor') }}</span></label>
                 </div>
-                <!-- 实际搭载（2026-10-27 接入）：普通检视 = 与详情页同款配置面板；
-                     射击复现 = 只保留与射击相关的 5 项图形化选择（2026-10-28 用户裁定）。 -->
-                <div v-if="loadoutActive" class="sel-row sel-loadout" data-testid="armor-loadout-section">
+                <!-- 与射击相关的 5 项图形化选择（2026-10-28 用户裁定）：普通检视与射击复现
+                     都在这里改；模块/装备/消耗品只保留真正影响这一发的部分。 -->
+                <div v-if="loadoutActive" class="sel-row sel-loadout" data-testid="armor-shot-setup-section">
                     <ArmorShotSetup
-                        v-if="isShotPage"
-                        :key="`shot-setup-${route.query.shot ?? 'none'}`"
-                        :shooter-id="(selectedShooterId ?? Number(route.query.shooter)) || null"
+                        :key="`setup-${route.query.shot ?? 'live'}-${route.query.tank ?? ''}`"
+                        :shooter-id="(selectedShooterId ?? Number(route.query.shooter)) || loadoutTankId"
                         :target-id="selectedTargetId ?? loadoutTankId"
                         :scfg="route.query.scfg"
                         :config="route.query.config"
@@ -478,18 +486,6 @@ onBeforeUnmount(() => {
                         @target-config="index => applyShotSetup({ config: index })"
                         @enhanced="value => applyShotSetup({ eqenh: value })"
                         @ready="shotSetupReady = true"
-                    />
-                    <ArmorLoadout
-                        v-else
-                        :tank-id="loadoutTankId"
-                        :config="route.query.config"
-                        :engine="route.query.engine"
-                        :track="route.query.track"
-                        :dev="route.query.dev"
-                        :cons="route.query.cons"
-                        :prov="route.query.prov"
-                        @apply="applyLoadout"
-                        @ready="loadoutReady = true"
                     />
                 </div>
                 <div class="sel-row"><label id="shooter-label">{{ $t('armor.shooter') }}</label><button class="tank-btn" id="shooter-select" disabled @click="openPicker('shooter')">—</button></div>

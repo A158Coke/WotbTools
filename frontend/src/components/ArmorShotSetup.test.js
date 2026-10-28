@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { ref } from 'vue'
 import ArmorShotSetup from './ArmorShotSetup.vue'
 
 const data = vi.hoisted(() => ({ fetchTankData: vi.fn() }))
@@ -12,7 +13,7 @@ vi.mock('../utils/researchCatalog.js', async (importOriginal) => ({
   loadTankModules: research.loadTankModules,
 }))
 
-vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: key => key }) }))
+vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: key => key, locale: ref('zh') }) }))
 
 const MODULES = {
   tankId: 1, turrets: [

@@ -35,7 +35,7 @@ const props = defineProps({
 })
 const emit = defineEmits(['shooter-config', 'shell', 'calibrated', 'target-config', 'enhanced', 'ready'])
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const shooter = ref(null)
 const target = ref(null)
 const shooterModules = ref(null)
@@ -80,9 +80,36 @@ const clamp = (value, length) => {
 }
 const shooterConfigs = computed(() => shooter.value?.configs || [])
 const targetConfigs = computed(() => target.value?.configs || [])
-const shooterCfg = computed(() => (shooterConfigs.value.length ? clamp(props.scfg, shooterConfigs.value.length) : null))
+// 同车检视（普通装甲页）：射击方与受击方是同一辆，未单独给 scfg 时跟随受击方 config，
+// 否则弹表会和场景 applyConfig 之后的弹表脱节。
+const shooterCfg = computed(() => {
+  if (!shooterConfigs.value.length) return null
+  const fallback = props.scfg != null
+    ? props.scfg
+    : (props.shooterId === props.targetId ? props.config : null)
+  return clamp(fallback, shooterConfigs.value.length)
+})
 const targetCfg = computed(() => (targetConfigs.value.length ? clamp(props.config, targetConfigs.value.length) : null))
 const shells = computed(() => (shooterCfg.value == null ? [] : (shooterConfigs.value[shooterCfg.value]?.shells || [])))
+/** 「主炮」按炮去重：同一门炮挂在两座炮塔上只出现一次（取首个配置；炮塔名进 title）。 */
+const shooterOptions = computed(() => {
+  const byKey = new Map()
+  shooterConfigs.value.forEach((cfg, index) => {
+    const gun = gunOf(shooterModules.value, cfg)
+    const key = gun?.stem || `${cfg.turret_local}:${cfg.gun_local}`
+    const hit = byKey.get(key)
+    if (hit) hit.indices.push(index)
+    else byKey.set(key, { index, indices: [index], key, label: cfg.label })
+  })
+  return [...byKey.values()]
+})
+const currentShooter = computed(() => (shooterCfg.value == null ? null : shooterConfigs.value[shooterCfg.value]))
+const currentShooterGunKey = computed(() => {
+  const cfg = currentShooter.value
+  if (!cfg) return null
+  const gun = gunOf(shooterModules.value, cfg)
+  return gun?.stem || `${cfg.turret_local}:${cfg.gun_local}`
+})
 const shellCfg = computed(() => (shells.value.length ? clamp(props.shell, shells.value.length) : null))
 const calibrated = computed(() => (props.eqcal == null ? props.calibratedDefault : String(props.eqcal) === '1'))
 const enhanced = computed(() => (props.eqenh == null ? props.enhancedDefault : String(props.eqenh) === '1'))
@@ -93,8 +120,32 @@ function gunOf(modules, cfg) {
   const turret = (modules.turrets || []).find(item => item.localId === cfg.turret_local)
   return (turret?.guns || []).find(item => item.localId === cfg.gun_local) || null
 }
-function configLabel(list, index) {
-  return index == null ? '' : (list[index]?.label || '')
+const lang = computed(() => (locale.value === 'zh' ? 'zh-Hans' : 'en'))
+function itemName(item) {
+  if (!item) return ''
+  return item[`name_${lang.value}`] || item['name_zh-Hans'] || item.name_en || item.stem || ''
+}
+function turretName(modules, cfg) {
+  if (!modules || !cfg) return ''
+  return itemName((modules.turrets || []).find(turret => turret.localId === cfg.turret_local)) || cfg.turret_name || ''
+}
+/** 同炮不同炮塔的配置用「炮塔名 · 炮名」区分（客户端配置名只有炮名）。 */
+function configTitle(list, modules, index) {
+  const cfg = index == null ? null : list[index]
+  if (!cfg) return ''
+  const turret = turretName(modules, cfg)
+  return turret ? `${turret} · ${cfg.label}` : cfg.label
+}
+/** 同车检视：选一门炮时优先留在当前炮塔的同炮配置。 */
+function selectShooterGun(option) {
+  if (option.key === currentShooterGunKey.value) return
+  const currentTurret = props.shooterId === props.targetId
+    ? targetConfigs.value[targetCfg.value]?.turret_local
+    : null
+  const sameTurret = currentTurret == null
+    ? null
+    : option.indices.find(index => shooterConfigs.value[index]?.turret_local === currentTurret)
+  emit('shooter-config', sameTurret ?? option.index)
 }
 function shellTitle(shell) {
   if (!shell) return ''
@@ -110,22 +161,22 @@ function shellTitle(shell) {
       <h3 class="ss-title">{{ t('armor.shooter') }}</h3>
       <div class="ss-row" role="group" :aria-label="t('armor.shooter')">
         <button
-          v-for="(cfg, index) in shooterConfigs"
-          :key="`sg-${index}`"
+          v-for="option in shooterOptions"
+          :key="`sg-${option.index}`"
           type="button"
           class="ss-tile"
-          :class="{ 'is-on': index === shooterCfg }"
-          :aria-pressed="index === shooterCfg"
-          :aria-label="cfg.label"
-          :title="cfg.label"
-          :data-testid="`shot-shooter-gun-${index}`"
-          @click="index === shooterCfg ? null : emit('shooter-config', index)"
+          :class="{ 'is-on': option.key === currentShooterGunKey }"
+          :aria-pressed="option.key === currentShooterGunKey"
+          :aria-label="configTitle(shooterConfigs, shooterModules, option.index)"
+          :title="configTitle(shooterConfigs, shooterModules, option.index)"
+          :data-testid="`shot-shooter-gun-${option.index}`"
+          @click="selectShooterGun(option)"
         >
           <img :src="moduleIconUrl('gun')" alt="" width="32" height="32" loading="lazy">
-          <span v-if="gunOf(shooterModules, cfg)?.level != null" class="ss-level">{{ romanLevel(gunOf(shooterModules, cfg).level) }}</span>
+          <span v-if="gunOf(shooterModules, shooterConfigs[option.index])?.level != null" class="ss-level">{{ romanLevel(gunOf(shooterModules, shooterConfigs[option.index]).level) }}</span>
         </button>
       </div>
-      <p class="ss-value" data-testid="shot-shooter-label">{{ configLabel(shooterConfigs, shooterCfg) }}</p>
+      <p class="ss-value" data-testid="shot-shooter-label">{{ configTitle(shooterConfigs, shooterModules, shooterCfg) }}</p>
       <div v-if="shells.length" class="ss-row" role="group" :aria-label="t('armor.shell')">
         <button
           v-for="(shell, index) in shells"
@@ -165,8 +216,8 @@ function shellTitle(shell) {
           class="ss-tile"
           :class="{ 'is-on': index === targetCfg }"
           :aria-pressed="index === targetCfg"
-          :aria-label="cfg.label"
-          :title="cfg.label"
+          :aria-label="configTitle(targetConfigs, targetModules, index)"
+          :title="configTitle(targetConfigs, targetModules, index)"
           :data-testid="`shot-target-config-${index}`"
           @click="index === targetCfg ? null : emit('target-config', index)"
         >
@@ -174,7 +225,7 @@ function shellTitle(shell) {
           <span v-if="gunOf(targetModules, cfg)?.level != null" class="ss-level">{{ romanLevel(gunOf(targetModules, cfg).level) }}</span>
         </button>
       </div>
-      <p class="ss-value" data-testid="shot-target-label">{{ configLabel(targetConfigs, targetCfg) }}</p>
+      <p class="ss-value" data-testid="shot-target-label">{{ configTitle(targetConfigs, targetModules, targetCfg) }}</p>
       <button
         type="button"
         class="ss-switch"
