@@ -1835,7 +1835,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     m.transparent = true;
                     m.opacity = 1;
                     m.depthWrite = true;
-                    if (m.emissive) { m.emissive.setHex(0xffc247); m.emissiveIntensity = 0.45; }
+                    // 高亮只靠"选中板保持不透明、其余压暗"：不改厚度色相（用户 2026-10-28
+                    // 报障：金色自发光让被点板颜色与点击前不一致）。
+                    if (m.emissive) { m.emissive.setHex(0x000000); m.emissiveIntensity = 0; }
                 } else {
                     m.transparent = true;
                     m.opacity = modules.has(node) ? 0.15 : 0.18;

@@ -217,11 +217,12 @@ describe('dolly-zoom world-overview scope guard', () => {
     // 普通检视换弹：只清掉上一次判定，不按旧点击位置重跑（2026-10-28 用户裁定）
     expect(kernel).toMatch(/else if \(penetrationMode && lastClickNdc\) \{[\s\S]*?tidyTrajectory\(\);/)
     expect(kernel).not.toMatch(/doPenetrationCheck\(lastClickNdc\.x, lastClickNdc\.y\)/)
-    // 厚度视图点击高亮（2026-10-28 用户要求，对齐 BlitzKit）：被点装甲板保持不透明
-    // 并轻微自发光，其余装甲板/模块降透明度；复位只作用于碰撞视图，不能把普通视图的
-    // 透明覆盖层改成不透明。
+    // 厚度视图点击高亮（2026-10-28 用户要求，对齐 BlitzKit）：被点装甲板保持不透明、
+    // 其余装甲板/模块降透明度；**不改厚度色相**（不加金色自发光，2026-10-29 用户报障：
+    // 点击后颜色与点击前不一致）；复位只作用于碰撞视图，不能把普通视图的透明覆盖层改成不透明。
     expect(kernel).toMatch(/function applyArmorHighlight\(selected\)/)
-    expect(kernel).toMatch(/m\.emissive\.setHex\(0xffc247\)/)
+    expect(kernel).not.toContain('0xffc247')
+    expect(kernel).toMatch(/if \(node === selected\) \{[\s\S]*?m\.opacity = 1;[\s\S]*?m\.emissive\.setHex\(0x000000\)/)
     expect(kernel).toMatch(/m\.opacity = modules\.has\(node\) \? 0\.15 : 0\.18/)
     expect(kernel).toMatch(/function resetArmorHighlight\(\)[\s\S]*?if \(!collisionMode \|\| !armorModel\) return;/)
     expect(kernel).toMatch(/if \(node === selected\) \{[\s\S]*?m\.opacity = 1;/)
