@@ -596,7 +596,7 @@ onBeforeUnmount(() => {
 .armor-view .armor-panel-title { margin: 0 0 var(--space-2); color: var(--muted); font: var(--type-caption); }
 /* 射击复现的图形面板就绪后，场景自带的校准弹/强化装甲勾选只作为资产缺失时的回退 */
 .armor-view #tank-selectors.has-shot-setup .eq-opt { display: none; }
-.armor-view #tank-selectors { padding: var(--space-3); inline-size: 17rem; max-block-size: 54dvh; overflow-y: auto; z-index: var(--pb-z-hud); }
+.armor-view #tank-selectors { padding: var(--space-3); inline-size: 19rem; max-block-size: 54dvh; overflow-y: auto; z-index: var(--pb-z-hud); }
 .armor-view #tank-selectors .sel-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-1) 0; }
 .armor-view #tank-selectors label { color: var(--muted); font: var(--type-caption); }
 .armor-view #tank-selectors .sel-row > label:first-child { flex: 0 0 100%; }

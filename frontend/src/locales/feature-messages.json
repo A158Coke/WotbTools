@@ -427,8 +427,7 @@
       },
       "loadout_shooter": "射手装备",
       "loadout_target": "目标装备",
-      "loadout_unavailable": "搭载数据不可用",
-      "loadout_edit": "更改配置"
+      "loadout_unavailable": "搭载数据不可用"
     },
     "hofAdmin": {
       "tabsLabel": "管理分区",
@@ -1291,8 +1290,7 @@
       },
       "loadout_shooter": "Shooter equipment",
       "loadout_target": "Target equipment",
-      "loadout_unavailable": "Loadout unavailable",
-      "loadout_edit": "Change loadout"
+      "loadout_unavailable": "Loadout unavailable"
     },
     "hofAdmin": {
       "tabsLabel": "Admin sections",
@@ -2155,8 +2153,7 @@
       },
       "loadout_shooter": "Оборудование стрелка",
       "loadout_target": "Оборудование цели",
-      "loadout_unavailable": "Снаряжение недоступно",
-      "loadout_edit": "Изменить комплектацию"
+      "loadout_unavailable": "Снаряжение недоступно"
     },
     "hofAdmin": {
       "tabsLabel": "Разделы администрирования",

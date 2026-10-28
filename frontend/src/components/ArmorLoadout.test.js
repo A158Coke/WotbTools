@@ -2,7 +2,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
-import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 import ArmorLoadout from './ArmorLoadout.vue'
 import DEVICES from '../replay-local/compute/__fixtures__/research/devices.json'
 import CONSUMABLES from '../replay-local/compute/__fixtures__/research/consumables.json'
@@ -60,7 +59,7 @@ const DETAIL = {
 async function setup(props = {}) {
   const wrapper = mount(ArmorLoadout, {
     props: { tankId: 999, ...props },
-    global: { provide: { [DIALOG_INLINE_KEY]: true }, mocks: { $t: key => key } },
+    global: { mocks: { $t: key => key } },
   })
   await flushPromises()
   return wrapper
@@ -73,18 +72,15 @@ beforeEach(() => {
 })
 
 describe('ArmorLoadout（装甲查看器的装配面板）', () => {
-  it('数据就绪后发出 ready，并显示与详情页同款配置入口', async () => {
+  it('数据就绪后发出 ready，并在面板内直接渲染详情页同款 TankConfigPanel', async () => {
     const wrapper = await setup()
     expect(wrapper.emitted('ready')).toHaveLength(1)
-    expect(wrapper.get('[data-testid="armor-loadout-edit"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="tank-configurator"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="tank-configurator"]').classes()).toContain('is-compact')
   })
 
-  it('「更改配置」打开共享的 TankConfigPanel（模块矩阵 + 装备），点击模块即 emit apply', async () => {
+  it('点模块/装备图标即 emit apply（不再经过弹窗/按钮）', async () => {
     const wrapper = await setup()
-    await wrapper.get('[data-testid="armor-loadout-edit"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[data-testid="armor-loadout-dialog"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="tank-configurator"]').exists()).toBe(true)
     // 默认顶级（config 1 → 顶炮塔 t1 + g1）：换成初始履带
     await wrapper.get('[data-testid="tank-track-0"]').trigger('click')
     await flushPromises()
@@ -100,8 +96,6 @@ describe('ArmorLoadout（装甲查看器的装配面板）', () => {
 
   it('URL 里的 config/engine/track 决定面板初始选择', async () => {
     const wrapper = await setup({ config: '0', engine: '0', track: '1' })
-    await wrapper.get('[data-testid="armor-loadout-edit"]').trigger('click')
-    await flushPromises()
     expect(wrapper.get('[data-testid="tank-turret-0"]').attributes('aria-pressed')).toBe('true')
     expect(wrapper.get('[data-testid="tank-engine-0"]').attributes('aria-pressed')).toBe('true')
     expect(wrapper.get('[data-testid="tank-track-1"]').attributes('aria-pressed')).toBe('true')
