@@ -31,6 +31,22 @@ export function gunMaskNodeName(record) {
   return `gun_${String(n).padStart(2, '0')}`
 }
 
+/**
+ * 外部模块/判定是否包含炮盾网格（`gun_NN_mask` 子树）。
+ *
+ * 客户端判定只用**炮管部分**：`gun_NN` 是炮管本体节点，`gun_NN_mask` 是炮盾/炮根
+ * （模型节点命名即客户端语义）。只有当客户端给出可用的平面切割（maskSlice 记录且
+ * `planeSliceMode === 1`）时，炮盾网格才参与外部模块——由平面裁掉炮根、保留平面前方
+ * 的炮管段；没有平面时只判定精确 `gun_NN`（炮盾不做外部模块）。
+ *
+ * 旧资产包没有 sidecar 记录时退回旧标量 `gun_mask`（客户端 enabled 记录才产生该标量），
+ * 与旧行为兼容。
+ */
+export function gunMaskPartsActive(record, cfg) {
+  if (record) return Number(record.plane_slice_mode) === 1
+  return !!(cfg && typeof cfg.gun_mask === 'number' && cfg.gun_mask !== 0)
+}
+
 const _nm = new Matrix3()
 
 /**

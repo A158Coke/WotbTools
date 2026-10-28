@@ -26,7 +26,7 @@ import {
     assetProvider,
     shotBallisticLength,
 } from './agentData.js'
-import { gunMaskNodeName, gunMaskPlaneWorld, gunMaskSliceKey } from './gunMask.js'
+import { gunMaskNodeName, gunMaskPartsActive, gunMaskPlaneWorld, gunMaskSliceKey } from './gunMask.js'
 import { normalizeTankCache } from '../utils/tankopediaQuery.js'
 import { createLoadProgress } from './loadProgress.js'
 import { shotResultClass } from '../utils/shotResultClass.js'
@@ -481,6 +481,12 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const key = gunMaskSliceKey(tankData.tank_id, cfg || currentConfig());
             return key ? (gunMaskSlices[key] || null) : null;
         }
+        /** 外部模块/判定是否包含炮盾网格：客户端只在有平面切割时把炮盾并入炮管，
+         *  由平面裁掉炮根；无平面时只判 `gun_NN` 炮管本体（见 gunMask.js）。 */
+        function gunMaskPartsFor(cfg) {
+            const c = cfg || currentConfig();
+            return gunMaskPartsActive(gunMaskRecord(c), c);
+        }
         // 装甲旋转枢轴（alignArmorModules 按 models.pb 原点写入：track+turret / track+turret+gun）。
         // updateTurretGun 以此为炮塔/炮管的旋转中心（对齐 BlitzKit 旋转语义）。
         let armorPivotTurret = null, armorPivotGun = null;
@@ -583,14 +589,15 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             });
             externalMeshes = [];
             const act = activeGunNumber();
+            const maskParts = gunMaskPartsFor();
             computeGunClipPlane();
             moduleMeshes.forEach(function(node) {
                 if (!node.isMesh) return;
                 if (node.visible === false) return;
                 if (node.userData.gunConfig != null && act != null && node.userData.gunConfig !== act) return;
-                // 外部模块 = 整根炮管（gun_0X + gun_XX_mask 炮盾）：客户端只在给了
-                // maskSlice 平面时裁切，没有平面就不裁；不再按“有无 mask”隐藏炮盾网格
-                // （客户端没有该规则；游戏内露出的炮管整段参与判定）。
+                // 判定只用炮管部分：gun_NN 为炮管本体；炮盾网格（gun_NN_mask）仅在客户端
+                // 给出平面切割时并入（由平面裁掉炮根）。视觉模型不在此列（始终完整）。
+                if (node.userData.gunMaskPart && !maskParts) return;
                 externalMeshes.push(node);
             });
         }
@@ -1037,9 +1044,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 list.push({ mesh: node, section: sec, thickness: t, variant: null });
             });
             const act = activeGunNumber();
+            const maskParts = gunMaskPartsFor();
             moduleMeshes.forEach(function(node) {
                 if (!node.isMesh) return;
                 if (node.userData.gunConfig != null && act != null && node.userData.gunConfig !== act) return;
+                if (node.userData.gunMaskPart && !maskParts) return;
                 if (node.parent && node.parent.visible === false) return;
                 const t = node.userData.armorThickness;
                 if (typeof t !== 'number') return;
@@ -1687,10 +1696,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 const ndcX = ((px - rect.left) / rect.width) * 2 - 1;
                 const ndcY = -((py - rect.top) / rect.height) * 2 + 1;
                 const act = activeGunNumber();
+                const maskParts = gunMaskPartsFor();
                 const activeModules = act == null ? moduleMeshes : moduleMeshes.filter(m => {
                     if (m.userData.gunConfig != null) return m.userData.gunConfig === act;
                     return true;
-                });
+                }).filter(m => !(m.userData.gunMaskPart && !maskParts));
                 const rc = new THREE.Raycaster();
                 rc.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
                 const objects = [armorModel, ...activeModules];
@@ -1793,11 +1803,14 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     node.visible = baseNodeVisible(node) && !(category && hiddenCategories[category]);
                 });
             }
-            // 外部模块（炮管/履带）的可见性只受分类过滤控制：炮管整根（含 gun_XX_mask
-            // 炮盾）都算外部模块——客户端没有“无 mask 就隐藏炮盾”的规则，裁切只由
-            // maskSlice 平面决定（见 computeGunClipPlane）。
+            // 判定只用炮管部分：炮盾网格（gun_XX_mask）仅在客户端给出平面切割时并入
+            // 外部模块（由平面裁掉炮根）。这条只作用于**厚度视图的实心碰撞体**；普通/
+            // 击穿视图的带贴图视觉模型始终渲染完整炮管（2026-10-28 视觉缺件回归）。
+            const maskParts = gunMaskPartsFor();
             for (const node of moduleMeshes) {
-                node.visible = baseNodeVisible(node) && !hiddenCategories.external;
+                node.visible = baseNodeVisible(node)
+                    && !hiddenCategories.external
+                    && !(collisionMode && node.userData.gunMaskPart && !maskParts);
             }
             if (collisionMode && highlightedArmorNode && !isEffectivelyVisible(highlightedArmorNode)) {
                 resetArmorHighlight();
@@ -4730,11 +4743,15 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             setupEventHandlers();
             // 客户端 maskSlice sidecar（逐车逐炮位）：与模型加载并行拉取，到达后按客户端
             // 原值重算裁切面并同步厚度视图实心炮管材质（旧包缺文件 → null，保持标量路径）。
+            // 炮盾是否并入外部模块取决于记录的 planeSliceMode，表到达后需重建一次外部模块集。
             fetchGunMaskSlices().then((records) => {
                 gunMaskSlices = records;
-                if (destroyed || contextLost) return;
+                if (destroyed || contextLost || !armorModel) return;
+                if (penetrationMode) rebuildHeatmapScenes();
+                applyCategoryFilters();
                 computeGunClipPlane();
                 syncModuleClipPlanes();
+                if (collisionMode) applyArmorViewStyle(true);
             });
             const initTargetId = initialTankId ?? 28689;
             const initShooterId = initialShooterId ?? initTargetId;
@@ -5203,13 +5220,14 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (node.visible === false) node.visible = true;
             });
             const activeGun = activeGunNumber();
+            const maskParts = gunMaskPartsFor();
             computeGunClipPlane();
             const activeModules = activeGun == null
                 ? moduleMeshes   // 无法确定激活炮(如 configGunGroups 未填充)时退化为全部保留
                 : moduleMeshes.filter(m => {
                     if (m.userData.gunConfig != null) return m.userData.gunConfig === activeGun;
                     return true;
-                });
+                }).filter(m => !(m.userData.gunMaskPart && !maskParts));
             for (const mesh of activeModules) {
                 if (mesh.visible === false) mesh.visible = true;
             }

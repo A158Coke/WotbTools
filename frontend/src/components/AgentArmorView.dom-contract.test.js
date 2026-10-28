@@ -234,10 +234,12 @@ describe('dolly-zoom world-overview scope guard', () => {
     // （2026-10-28 用户报障：视觉模型缺件）。
     const baseVisible = kernel.slice(kernel.indexOf('function baseNodeVisible('), kernel.indexOf('function setArmorFilterRowVisible('))
     expect(baseVisible).not.toContain('gunMaskPart')
-    // 外部模块 = 整根炮管（gun_0X + gun_XX_mask）：客户端没有“无 mask 就隐藏炮盾”的规则，
-    // 炮盾在厚度视图/热力图外部模块里都保留；裁切只由 maskSlice 平面决定。
-    expect(kernel).not.toMatch(/gunMaskPart && !/)
-    expect(kernel).not.toContain('hideMaskPart')
+    // 判定只用炮管部分：`gun_NN` = 炮管本体；炮盾（`gun_NN_mask`）仅在客户端给出
+    // 可用平面切割（记录 planeSliceMode=1；旧包用标量）时并入外部模块，由平面裁掉炮根。
+    // 视觉模型始终渲染全部部件（baseNodeVisible 不含 gunMaskPart）。
+    expect(kernel).toMatch(/const maskParts = gunMaskPartsFor\(\);/)
+    expect(kernel).toMatch(/if \(node\.userData\.gunMaskPart && !maskParts\) return;\s*\n\s*externalMeshes\.push\(node\);/)
+    expect(read('../scene/gunMask.js')).toMatch(/if \(record\) return Number\(record\.plane_slice_mode\) === 1/)
     expect(kernel).toMatch(/node\.userData\.armorSection === 'gunBarrel' && gunClipPlane[\s\S]*?mat\.clippingPlanes = clipPlanes;[\s\S]*?mat\.needsUpdate = true;/)
     // 平面随姿态更新：进厚度视图前重算；炮塔/炮管转动后也重算（材质持有同一 Plane 对象）
     expect(kernel).toMatch(/if \(collision\) computeGunClipPlane\(\);\s*\n\s*applyModuleCollisionMaterial\(collision\);/)
@@ -647,12 +649,15 @@ describe('client maskSlice plane wiring', () => {
     // 记录路径先 return，标量重建只在无记录（旧包）时执行
     expect(kernel).toMatch(/if \(record\) \{[\s\S]*?\n\s*return;\s*\n\s*\}\s*\n\s*\/\/ 旧资产包（无 sidecar 记录）/)
   })
-  it('外部模块保留整根炮管：可见性不再按“有无 mask”隐藏炮盾网格', () => {
-    // 客户端没有“无 mask → 只取精确 gun_0X”规则；炮盾（gun_XX_mask）与炮管同属外部
-    // 模块，裁切只由 maskSlice 平面决定。
-    expect(kernel).not.toMatch(/gunMaskPart && !/)
-    expect(kernel).not.toContain('hideMaskPart')
-    expect(kernel).toMatch(/for \(const node of moduleMeshes\) \{\s*\n\s*node\.visible = baseNodeVisible\(node\) && !hiddenCategories\.external;/)
+  it('判定/厚度视图只在有平面切割时并入炮盾网格', () => {
+    // 客户端判定只用炮管部分：没有平面（无记录/planeSliceMode=0）时不把 gun_XX_mask
+    // 当作外部模块；有平面时并入并由裁切面去掉炮根。
+    expect(kernel).toMatch(/const maskParts = gunMaskPartsFor\(\);/)
+    expect(kernel).toMatch(/node\.visible = baseNodeVisible\(node\)\s*\n\s*&& !hiddenCategories\.external\s*\n\s*&& !\(collisionMode && node\.userData\.gunMaskPart && !maskParts\);/)
+    const helper = read('../scene/gunMask.js')
+    expect(helper).toMatch(/export function gunMaskPartsActive\(record, cfg\)/)
+    expect(helper).toMatch(/if \(record\) return Number\(record\.plane_slice_mode\) === 1/)
+    expect(helper).toMatch(/typeof cfg\.gun_mask === 'number' && cfg\.gun_mask !== 0/)
   })
 })
 

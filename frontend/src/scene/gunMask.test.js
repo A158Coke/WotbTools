@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Matrix4, Vector3 } from 'three'
 import {
   gunMaskNodeName,
+  gunMaskPartsActive,
   gunMaskPlaneWorld,
   gunMaskSliceKey,
 } from './gunMask.js'
@@ -26,6 +27,19 @@ describe('gunMaskSliceKey', () => {
     expect(gunMaskSliceKey(null, { turret_local: 0, gun_local: 0 })).toBeNull()
     expect(gunMaskSliceKey(1, null)).toBeNull()
     expect(gunMaskSliceKey(1, { turret_local: 0 })).toBeNull()
+  })
+})
+
+describe('gunMaskPartsActive（炮盾是否并入外部模块）', () => {
+  it('客户端记录：只有 planeSliceMode=1 时并入（平面负责裁掉炮根）', () => {
+    expect(gunMaskPartsActive(record, { gun_mask: 0.84 })).toBe(true)
+    expect(gunMaskPartsActive({ ...record, plane_slice_mode: 0 }, { gun_mask: 0.26 })).toBe(false)
+  })
+  it('无记录（旧包）退回标量：gun_mask 非 0 才并入', () => {
+    expect(gunMaskPartsActive(null, { gun_mask: 0.84 })).toBe(true)
+    expect(gunMaskPartsActive(null, { gun_mask: 0 })).toBe(false)
+    expect(gunMaskPartsActive(null, { gun_mask: null })).toBe(false)
+    expect(gunMaskPartsActive(null, null)).toBe(false)
   })
 })
 
