@@ -123,6 +123,7 @@ describe('Agent WASM 版本门禁（fingerprint 先于模块解析）', () => {
       api.parseAgentResultFromBytes,
       api.parseAgentPlaybackFromBytes,
       api.parseAgentAiReviewFromBytes,
+      api.parseAgentAuthorInitialPositionFromBytes,
       api.parseAgentShotsFromBytes,
     ]) {
       await expect(parse(new Uint8Array([1, 2, 3]))).rejects.toBeInstanceOf(api.AgentWasmVersionMismatchError)
