@@ -32,8 +32,6 @@ const props = defineProps({
   prevVehicles: { type: Array, default: () => [] },
   /** 后继车：[{ stem, cost, name, tankId, sourceModule, sourceKind }]（模块 `<unlocks><vehicle>` 目标） */
   nextVehicles: { type: Array, default: () => [] },
-  /** 嵌入模式（坦克百科详情头部）：不要左栏/标题/竖干/本级节点，只出研发图 */
-  embedded: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['install', 'open-vehicle'])
@@ -79,26 +77,17 @@ const gridStyle = computed(() => ({
 const scrollEl = ref(null)
 const fitScale = ref(1)
 const gridW = computed(() => (layout.value?.columns || 0) * PITCH_X)
-const canvasW = computed(() => (props.embedded ? gridW.value : NODE_W + TRUNK_W + gridW.value))
+const canvasW = computed(() => NODE_W + TRUNK_W + gridW.value)
 const gridH = computed(() => (layout.value?.rows || 0) * PITCH_Y)
 let observer = null
 function recalcFit() {
   const el = scrollEl.value
   if (!el || !gridW.value || !gridH.value) { fitScale.value = 1; return }
   const availW = el.clientWidth - 20
-  if (availW <= 0) return
-  const widthScale = availW / canvasW.value
-  // 嵌入详情页右栏时高度由内容决定（整页纵向滚动），只按宽度适配；若也按
-  // clientHeight 适配，自身的缩放会改变容器高度，反复收缩成“越算越小”的反馈。
-  // 同时不设缩放下限：用户要求右侧这一栏不出现横向拖动，宁可等比缩小。
-  if (props.embedded) {
-    fitScale.value = Math.min(1, Math.round(widthScale * 1000) / 1000)
-    return
-  }
   const availH = el.clientHeight - 20
-  if (availH <= 0) return
-  const scale = Math.min(1, widthScale, availH / gridH.value)
-  // 独立研发页下限 0.72：再小文字就读不清了。极宽的树（如 14 列的活动车）宁可横向平移
+  if (availW <= 0 || availH <= 0) return
+  const scale = Math.min(1, availW / canvasW.value, availH / gridH.value)
+  // 下限 0.72：再小文字就读不清了。极宽的树（如 14 列的活动车）宁可横向平移
   // ——客户端本身也是滚动容器，不做无限缩小。
   fitScale.value = Math.max(0.72, Math.round(scale * 1000) / 1000)
 }
@@ -121,7 +110,7 @@ const canvasScaledStyle = computed(() => ({
   transform: `scale(${fitScale.value})`,
   transformOrigin: 'top left',
 }))
-const gridInCanvasStyle = computed(() => ({ ...gridStyle.value, left: `${props.embedded ? 0 : NODE_W + TRUNK_W}px` }))
+const gridInCanvasStyle = computed(() => ({ ...gridStyle.value, left: `${NODE_W + TRUNK_W}px` }))
 /** 当前坦克节点：纵向对齐各链行的中点（不超出画布）。 */
 const currentTop = computed(() => {
   const l = layout.value
@@ -244,9 +233,9 @@ function activate(node) {
 </script>
 
 <template>
-  <section class="tr-panel" :class="{ 'is-embedded': embedded }" data-testid="research-panel">
+  <section class="tr-panel" data-testid="research-panel">
     <!-- ============ 左：前驱车 → 当前车面板 ============ -->
-    <aside v-if="!embedded" class="tr-side">
+    <aside class="tr-side">
       <div v-if="prevVehicles.length" class="tr-prev" data-testid="research-prev-tanks">
         <h3 class="tr-side-title">{{ t('research.prev_tanks') }}</h3>
         <button
@@ -267,14 +256,14 @@ function activate(node) {
 
     <!-- ============ 右：研发图（模块 + 下一级坦克，点击安装/切车） ============ -->
     <div class="tr-main">
-      <header v-if="!embedded" class="tr-head">
+      <header class="tr-head">
         <h3 class="tr-title">{{ t('research.modules_title') }}</h3>
         <span class="tr-note">{{ t('research.layout_derived_note') }}</span>
       </header>
 
       <p v-if="!layout" class="tr-empty" role="alert">{{ t('research.layout_unavailable') }}</p>
       <template v-else>
-        <p v-if="!embedded && !layout.hasChain" class="tr-empty" data-testid="research-no-chain">
+        <p v-if="!layout.hasChain" class="tr-empty" data-testid="research-no-chain">
           {{ t('research.no_chain_note') }}
         </p>
         <div ref="scrollEl" class="tr-scroll">
@@ -282,7 +271,6 @@ function activate(node) {
           <div class="tr-canvas" :style="canvasScaledStyle">
           <!-- 本级坦克：与下一级坦克同一呈现（节点 + 下方名字），竖干从它右缘接出 -->
           <div
-            v-if="!embedded"
             class="tr-node is-current-tank"
             :style="{ left: `${CURRENT_X}px`, top: `${currentTop}px` }"
             data-testid="research-current-tank"
@@ -296,7 +284,6 @@ function activate(node) {
             <span class="tr-node-name">{{ detail.name }}</span>
           </div>
           <svg
-            v-if="!embedded"
             class="tr-trunk"
             :width="TRUNK_W"
             :height="gridH"
@@ -379,17 +366,6 @@ function activate(node) {
 <style scoped>
 /* 客户端 ModulesTree 的横向结构：前驱车 → 当前车面板 → 研发图。
    左两栏固定窄宽，研发图吃掉全部剩余空间（不再被挤成需要左右拖的小窗）。 */
-.tr-panel.is-embedded {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-  min-block-size: 0;
-  gap: 0;
-  /* 嵌入时没有前驱车/当前车侧栏：必须收成单列，否则唯一子元素被塞进
-     190px 的首列，研发图只能横向滚动（用户 2026-10-27 报的“被截断、需要拖动”）。 */
-  grid-template-columns: minmax(0, 1fr);
-}
 .tr-panel {
   display: grid;
   grid-template-columns: 190px minmax(0, 1fr);
@@ -564,18 +540,7 @@ function activate(node) {
 
 /* 平板/手机：横向三段改为纵向堆叠（前驱车 → 当前车 → 研发图） */
 @media (width < 1200px) {
-  .tr-panel.is-embedded {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-  min-block-size: 0;
-  gap: 0;
-  /* 嵌入时没有前驱车/当前车侧栏：必须收成单列，否则唯一子元素被塞进
-     190px 的首列，研发图只能横向滚动（用户 2026-10-27 报的“被截断、需要拖动”）。 */
-  grid-template-columns: minmax(0, 1fr);
-}
-.tr-panel { grid-template-columns: minmax(0, 1fr); min-block-size: 0; }
+  .tr-panel { grid-template-columns: minmax(0, 1fr); min-block-size: 0; }
   .tr-side { grid-template-columns: minmax(150px, 0.9fr) minmax(0, 1.1fr); align-items: start; }
   .tr-scroll { place-content: start; }
 }

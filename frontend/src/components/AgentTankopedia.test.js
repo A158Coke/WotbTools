@@ -413,13 +413,12 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
   it('模块对号成立时渲染配置面板；默认顶级配置，参数区用引擎值 + 上次值 delta（BK useDelta）', async () => {
     const { wrapper } = await mountAt({ tank: '999' })
     expect(wrapper.find('[data-testid="tank-configurator"]').exists()).toBe(true)
-    // 模块选择在详情头部的研发图里（配置面板只保留装备/补给/消耗品/技能/涂装）
-    expect(wrapper.find('.tp-module-matrix').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="research-node-turret-t1"]').classes()).toContain('is-installed')
-    expect(wrapper.find('[data-testid="research-node-gun-g1"]').classes()).toContain('is-installed')
-    expect(wrapper.find('[data-testid="research-node-engine-eng1"]').classes()).toContain('is-installed')
-    expect(wrapper.find('[data-testid="research-node-chassis-track1"]').classes()).toContain('is-installed')
-    expect(wrapper.find('[data-testid="research-node-turret-t0"] img').attributes('src')).toBeTruthy()
+    // 模块选择是图标格（客户端 ModulesTechTree 类型图），选中态用 aria-pressed 表达
+    expect(wrapper.find('[data-testid="tank-turret-1"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('[data-testid="tank-gun-1"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('[data-testid="tank-engine-1"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('[data-testid="tank-track-1"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('[data-testid="tank-turret-0"] img').attributes('src')).toBeTruthy()
     // 装备/补给/消耗品格显示客户端图标（不是文字）
     expect(wrapper.find('[data-testid="tank-device-0-attack-0"] img').attributes('src')).toContain('items/devices/rammer')
     const provisionTile = wrapper.findAll('[data-testid^="tank-provision-"] img')
@@ -508,14 +507,15 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
     expect(wrapper.find('[data-testid="tank-summary-damage"]').text()).toContain('600')
     expect(wrapper.find('[data-testid="tank-summary-pen"]').text()).toContain('90')
     expect(wrapper.find('[data-testid="tank-shell-1"]').classes()).toContain('is-on')
-    // 研发图点初始履带/初始发动机 → URL 写 track/engine 下标
-    await wrapper.find('[data-testid="research-node-chassis-track0"]').trigger('click')
-    await wrapper.find('[data-testid="research-node-engine-eng0"]').trigger('click')
+    await wrapper.find('[data-testid="tank-preset-stock"]').trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.query).toMatchObject({ engine: '0', track: '0' })
-    await wrapper.find('[data-testid="research-node-engine-eng1"]').trigger('click')
+    expect(router.currentRoute.value.query).toMatchObject({ config: '0', engine: '0', track: '0' })
+    expect(router.currentRoute.value.query.shell).toBeUndefined()
+    expect(wrapper.find('[data-testid="tank-summary-damage"]').text()).toContain('490')
+    expect(wrapper.find('[data-testid="tank-summary-hp"]').text()).toContain('2400')
+    await wrapper.find('[data-testid="tank-preset-top"]').trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.query).toMatchObject({ engine: '1' })
+    expect(router.currentRoute.value.query).toMatchObject({ config: '2', engine: '1', track: '1' })
   })
 
   it('重置同时清空弹种选择（当前已是顶级配置时也不能保留 HE/金币弹）', async () => {
@@ -529,6 +529,16 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
     expect(wrapper.find('[data-testid="tank-shell-0"]').classes()).toContain('is-on')
     // 重置目标必须包含弹种：否则 HE→AP 的差值会残留为红字
     expect(wrapper.find('[data-testid="tank-param-gunCommonDamagePerMin"] .tp-param-delta').exists()).toBe(false)
+  })
+
+  it('坦克模块矩阵按 4 列逐行对齐（炮塔|火炮|发动机|履带）', async () => {
+    const { wrapper } = await mountAt({ tank: '999' })
+    const matrix = wrapper.find('.tp-module-matrix')
+    expect(matrix.exists()).toBe(true)
+    expect(matrix.findAll('.tp-module-head')).toHaveLength(4)
+    const cells = matrix.findAll('.tp-module-cell')
+    expect(cells.slice(0, 4).map(cell => cell.find('button').exists() ? cell.find('button').attributes('data-testid') : null))
+      .toEqual(['tank-turret-0', 'tank-gun-0', 'tank-engine-0', 'tank-track-0'])
   })
 
   it('高端消耗品 / 配送系统联动消耗品计时徽标', async () => {
@@ -628,7 +638,9 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
     expect(title('tank-device-1-attack-1')).toContain('+35%')
     expect(title('tank-device-1-attack-1')).toContain('−60%')
     expect(title('tank-device-0-attack-1')).toContain('+6%')
-    // 模块瓦片已移除（模块选择改到研发图），载重 tooltip 不再出现在详情页
+    // 履带载重：客户端 maxLoad 是 kg（55000），tooltip 显示 55 吨
+    expect(title('tank-track-0')).toContain('"load":"55"')
+    expect(title('tank-track-0')).not.toContain('55000')
     // 全部装备槽位：不应残留占位符/对象字符串/双百分号
     const titles = wrapper.findAll('[data-testid^="tank-device-"]').map(button => button.attributes('title') || '')
     expect(titles.some(text => text.includes('%('))).toBe(false)
@@ -684,26 +696,26 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
 
   it('切炮塔 → 写 ?config=，炮候选保留全车集、当前塔不可装配置灰', async () => {
     const { wrapper, router } = await mountAt({ tank: '999' })
-    await wrapper.find('[data-testid="research-node-turret-t0"]').trigger('click')
+    await wrapper.find('[data-testid="tank-turret-0"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query.config).toBe('0')
-    expect(wrapper.find('[data-testid="research-node-gun-g0"]').classes()).toContain('is-installed')
-    // g1 属于另一炮塔：点它 = 切到该炮塔再装（客户端同语义），config 变 2
-    await wrapper.find('[data-testid="research-node-gun-g1"]').trigger('click')
+    expect(wrapper.find('[data-testid="tank-gun-0"]').attributes('aria-pressed')).toBe('true')
+    // 当前炮塔只有 g0；g1 来自另一炮塔，保留为灰色不可选
+    const unavailable = wrapper.find('[data-testid="tank-gun-unavailable-g1"]')
+    expect(unavailable.exists()).toBe(true)
+    expect(unavailable.attributes('disabled')).toBeDefined()
+    expect(unavailable.classes()).toContain('is-disabled')
+    await unavailable.trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.query.config).toBe('2')
-    expect(wrapper.find('[data-testid="research-node-turret-t1"]').classes()).toContain('is-installed')
-    expect(wrapper.find('[data-testid="tank-param-maxHealth"]').text()).toContain('2500')
-    // g0 在两座炮塔上都有：保留当前炮塔（不把顶级塔降回初级塔，HP 不掉），config 仍是 1
-    await wrapper.find('[data-testid="research-node-gun-g0"]').trigger('click')
+    expect(router.currentRoute.value.query.config).toBe('0')
+    expect(wrapper.find('[data-testid="tank-param-maxHealth"]').text()).toContain('2400')
+    await wrapper.find('[data-testid="tank-gun-0"]').trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.query.config).toBe('1')
-    expect(wrapper.find('[data-testid="research-node-turret-t1"]').classes()).toContain('is-installed')
     const push = vi.spyOn(router, 'push')
     await wrapper.find('[data-testid="tank-open3d"]').trigger('click')
     await flushPromises()
     expect(push).toHaveBeenCalled()
-    expect(router.currentRoute.value.query.config).toBe('1')
+    expect(router.currentRoute.value.query.config).toBe('0')
   })
 
   it('消耗品默认空；点选写入 URL，满槽不再追加，取消后写回', async () => {

@@ -13,9 +13,10 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppButton from './AppButton.vue'
-import { availableItems, itemIconUrl, resolveDeviceIds, skillIconUrl } from '../utils/researchCatalog.js'
-import { consumableTiming, presetSlots, tankRef } from '../replay-local/compute/tankSetup'
+import { availableItems, itemIconUrl, moduleIconUrl, resolveDeviceIds, skillIconUrl } from '../utils/researchCatalog.js'
+import { configIndexFor, consumableTiming, pickGun, pickTurret, presetSlots, tankRef } from '../replay-local/compute/tankSetup'
 import { fmtNum } from '../scene/tankMeta.js'
+import { romanLevel } from '../utils/tierFormat.js'
 
 const props = defineProps({
   /** tank/{id}.json */
@@ -27,7 +28,7 @@ const props = defineProps({
   /** 资产包 research 全局目录（物品目录 + 预设 + 过滤器） */
   catalog: { type: Object, required: true },
 })
-const emit = defineEmits(['update', 'reset', 'cycle-skill', 'max-skills', 'clear-skills'])
+const emit = defineEmits(['update', 'reset', 'preset', 'cycle-skill', 'max-skills', 'clear-skills'])
 
 const { t, locale } = useI18n()
 
@@ -40,6 +41,103 @@ function itemName(item) {
   if (!item) return ''
   return item[`name_${lang.value}`] || item['name_zh-Hans'] || item.name_en || item.stem || ''
 }
+
+const currentTurret = computed(() => props.modules?.turrets?.[props.selection.turret] || null)
+
+/** 四个模块槽的候选（图标 = 客户端 ModulesTechTree 类型图；名称/等级来自数据）。 */
+const moduleRows = computed(() => {
+  const turrets = props.modules?.turrets || []
+  const guns = currentTurret.value?.guns || []
+  return [
+    {
+      key: 'turret',
+      icon: moduleIconUrl('turret'),
+      selected: props.selection.turret,
+      options: turrets.map((turret, index) => ({ value: index, level: turret.level, name: itemName(turret) })),
+      select: value => emit('update', pickTurret(props.selection, props.modules, props.detail, value)),
+    },
+    {
+      key: 'gun',
+      icon: moduleIconUrl('gun'),
+      selected: props.selection.gun,
+      // 炮候选 = 全车炮的全集（跨炮塔去重）：当前炮塔不能直接装配的置灰禁用，
+      // 不隐藏（用户 2026-10-27 要求）。value 只对当前炮塔内的炮有效（pickGun 下标）。
+      options: (() => {
+        const seen = new Set()
+        const all = []
+        for (const turret of props.modules?.turrets || []) {
+          for (const gun of turret.guns || []) {
+            const id = gun.stem || gun.localId
+            if (seen.has(id)) continue
+            seen.add(id)
+            all.push(gun)
+          }
+        }
+        const currentTurretId = currentTurret.value?.localId
+        return all.map(gun => {
+          const index = guns.findIndex(item => item.stem === gun.stem)
+          const currentGun = index >= 0 ? guns[index] : null
+          const hasConfig = currentGun != null && currentTurretId != null
+            && configIndexFor(props.detail?.configs || [], currentTurretId, currentGun.localId) >= 0
+          const disabled = !hasConfig
+          const reason = t('agentTanks.configurator.gun_unavailable')
+          return {
+            key: gun.stem || gun.localId,
+            value: index >= 0 ? index : null,
+            level: gun.level,
+            name: itemName(gun),
+            disabled,
+            testId: index >= 0 ? undefined : `tank-gun-unavailable-${gun.stem || gun.localId}`,
+            title: disabled
+              ? `${itemName(gun)} — ${reason}`
+              : t('agentTanks.configurator.gun_option', { name: itemName(gun), reload: fmtNum(gun?.stats?.reloadTime, 1) }),
+            ariaLabel: disabled ? `${itemName(gun)} — ${reason}` : itemName(gun),
+          }
+        })
+      })(),
+      select: value => {
+        if (value != null) emit('update', pickGun(props.selection, props.modules, props.detail, value))
+      },
+    },
+    {
+      key: 'engine',
+      icon: moduleIconUrl('engine'),
+      selected: props.selection.engine,
+      options: (props.modules?.engines || []).map((engine, index) => ({
+        value: index,
+        level: engine.level,
+        name: itemName(engine),
+        title: t('agentTanks.configurator.engine_option', { name: itemName(engine), power: fmtNum(engine?.stats?.power, 0) }),
+      })),
+      select: value => emit('update', { engine: value }),
+    },
+    {
+      key: 'track',
+      icon: moduleIconUrl('chassis'),
+      selected: props.selection.track,
+      options: (props.modules?.chassis || []).map((track, index) => ({
+        value: index,
+        level: track.level,
+        name: itemName(track),
+        title: t('agentTanks.configurator.track_option', {
+          name: itemName(track),
+          rotation: fmtNum(track?.stats?.rotationSpeed, 1),
+          // 客户端 chassis maxLoad 单位是 kg（T-34 31300），tooltip 显示吨
+          load: Number(track?.stats?.maxLoad) > 0 ? fmtNum(Number(track.stats.maxLoad) / 1000, 1) : '—',
+        }),
+      })),
+      select: value => emit('update', { track: value }),
+    },
+  ]
+})
+
+/** 模块矩阵的选项行：按选项序号逐行展开，4 列一起对齐（炮塔1|火炮1|发动机1|履带1…）。 */
+const moduleMatrix = computed(() => {
+  const rows = moduleRows.value
+  const depth = Math.max(0, ...rows.map(row => row.options.length))
+  return Array.from({ length: depth }, (_, index) =>
+    rows.map(row => ({ row, option: row.options[index] || null })))
+})
 
 /** 装备槽位按 (level, group) 定位：presetSlots 数组顺序是 level-major。 */
 const slots = computed(() => presetSlots(props.modules, props.catalog))
@@ -279,11 +377,49 @@ const camoBonusParts = computed(() => {
     <header class="tp-config-head">
       <h2 class="tp-section-title">{{ t('agentTanks.configurator.title') }}</h2>
       <div class="tp-config-actions">
+        <AppButton variant="ghost" size="sm" data-testid="tank-preset-stock" @click="emit('preset', 'stock')">
+          {{ t('agentTanks.configurator.stock') }}
+        </AppButton>
+        <AppButton variant="ghost" size="sm" data-testid="tank-preset-top" @click="emit('preset', 'top')">
+          {{ t('agentTanks.configurator.top') }}
+        </AppButton>
         <AppButton variant="ghost" size="sm" data-testid="tank-config-reset" @click="emit('reset')">
           {{ t('agentTanks.configurator.reset') }}
         </AppButton>
       </div>
     </header>
+
+    <!-- 模块矩阵：首行 = 4 个类型标签，之后按选项序号逐行展开（炮塔1|火炮1|发动机1|履带1，
+         下一行炮塔2|火炮2…），4 列严格对齐，避免右侧空白。 -->
+    <div class="tp-module-matrix">
+      <div v-for="row in moduleRows" :key="row.key" class="tp-module-head" :data-testid="`tank-module-${row.key}`">
+        <span>{{ t(`agentTanks.configurator.${row.key}`) }}</span>
+      </div>
+      <template v-for="(cells, index) in moduleMatrix" :key="index">
+        <div v-for="cell in cells" :key="`${cell.row.key}-${index}`" class="tp-module-cell">
+          <button
+            v-if="cell.option"
+            type="button"
+            class="tp-module-tile"
+            :class="{ 'is-on': cell.row.selected === cell.option.value, 'is-disabled': cell.option.disabled }"
+            :disabled="cell.option.disabled"
+            :aria-disabled="cell.option.disabled ? 'true' : undefined"
+            :aria-pressed="!cell.option.disabled && cell.row.selected === cell.option.value"
+            :aria-label="cell.option.ariaLabel || cell.option.name"
+            :title="cell.option.title || cell.option.name"
+            :data-testid="cell.option.testId || `tank-${cell.row.key}-${cell.option.value}`"
+            @click="cell.option.disabled ? null : cell.row.select(cell.option.value)"
+          >
+            <span class="tp-module-pic">
+              <img v-if="cell.row.icon" :src="cell.row.icon" alt="" width="32" height="32" loading="lazy">
+              <span v-else class="tp-module-pic-fallback">{{ cell.option.name.slice(0, 1) }}</span>
+            </span>
+            <span v-if="cell.option.level != null" class="tp-module-level">{{ romanLevel(cell.option.level) }}</span>
+            <span class="tp-module-name">{{ cell.option.name }}</span>
+          </button>
+        </div>
+      </template>
+    </div>
 
     <!-- 装备：3×3，每格左右两件图标 -->
     <section class="tp-config-block">
