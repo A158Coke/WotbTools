@@ -21,6 +21,7 @@ import { tankNationLabel } from '../scene/tankMeta.js'
 import { findTankModules, pickGun, pickTurret, resolveSetup } from '../replay-local/compute/tankSetup'
 import { loadTechTree, loadTankModules } from '../utils/researchCatalog.js'
 import { moduleTreeLayout, techTreeGrid, techTreeNations } from '../utils/techTreeLayout.js'
+import { formatXpCompact } from '../utils/xpFormat.js'
 import { locationForView } from '../app/navigation'
 import PageHeader from './PageHeader.vue'
 import EmptyState from './EmptyState.vue'
@@ -486,7 +487,7 @@ function installModule(node) {
                   <span v-if="summaryOf(node)?.is_premium" class="tt-pill is-premium">{{ t('agentTanks.premium') }}</span>
                   <span v-if="node.preview" class="tt-pill is-preview">{{ t('research.preview') }}</span>
                 </span>
-                <span v-if="costByStem.get(node.stem) != null" class="tt-card-cost">{{ t('research.xp_short', { xp: costByStem.get(node.stem).toLocaleString() }) }}</span>
+                <span v-if="costByStem.get(node.stem) != null" class="tt-card-cost">{{ t('research.xp_short', { xp: formatXpCompact(costByStem.get(node.stem)) }) }}</span>
               </span>
             </button>
             <!-- 金币车带（顶部覆盖，客户端 PremiumSection 同构；premium 车本身就在这几行里） -->

@@ -860,7 +860,8 @@
       "module_radio": "电台",
       "module_fuel": "油箱",
       "premium_band": "金币车辆",
-      "no_chain_note": "该车没有研发链（XI 超测车：每族模块唯一、无解锁成本，客户端数据零解锁边）。"
+      "no_chain_note": "该车没有研发链（XI 超测车：每族模块唯一、无解锁成本，客户端数据零解锁边）。",
+      "token_cost": "{amount} 活动代币（{currency}）"
     }
   },
   "en": {
@@ -1724,7 +1725,8 @@
       "module_radio": "Radio",
       "module_fuel": "Fuel tank",
       "premium_band": "Premium vehicles",
-      "no_chain_note": "This vehicle has no research chain (XI supertest: one module per family, no unlock costs — zero unlock edges in the client data)."
+      "no_chain_note": "This vehicle has no research chain (XI supertest: one module per family, no unlock costs — zero unlock edges in the client data).",
+      "token_cost": "{amount} event tokens ({currency})"
     }
   },
   "ru": {
@@ -2588,7 +2590,8 @@
       "module_radio": "Радио",
       "module_fuel": "Топливный бак",
       "premium_band": "Премиум техника",
-      "no_chain_note": "У этого танка нет цепочки исследования (супертест XI: один модуль на семейство, без стоимости — в данных клиента нет рёбер исследования)."
+      "no_chain_note": "У этого танка нет цепочки исследования (супертест XI: один модуль на семейство, без стоимости — в данных клиента нет рёбер исследования).",
+      "token_cost": "{amount} событийных жетонов ({currency})"
     }
   }
 }

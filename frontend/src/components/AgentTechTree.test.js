@@ -85,8 +85,8 @@ describe('树态', () => {
     const cells = wrapper.findAll('[data-testid^="techtree-cell-"]')
     expect(cells).toHaveLength(3)
     expect(wrapper.find('[data-testid="techtree-cell-T-26"]').text()).toContain('T-26')
-    // MT-25 的最低研发成本 = 入边 31000
-    expect(wrapper.find('[data-testid="techtree-cell-MT25"]').text()).toContain('31,000')
+    // MT-25 的最低研发成本 = 入边 31000 → 卡片上按 k 缩写（不截断成省略号）
+    expect(wrapper.find('[data-testid="techtree-cell-MT25"]').text()).toContain('31k')
     // preview XI 节点：预览徽标 + 金币标记（tank_cache is_premium）
     const previewCell = wrapper.find('[data-testid="techtree-cell-R230_Object_432U"]')
     expect(previewCell.classes()).toContain('is-preview')
@@ -239,6 +239,35 @@ describe('研发态（?tank=）', () => {
     const installedEngines = installed.filter(node => node.attributes('data-testid')?.startsWith('research-node-engine-'))
     expect(installedEngines).toHaveLength(1)
     expect(installedEngines[0].attributes('data-testid')).toBe('research-node-engine-eng1')
+  })
+
+  it('成本角标：XP 用 k 缩写、活动代币单独配色（都不是截断的长数字）', async () => {
+    const modules = {
+      ...MODULES,
+      chassis: [
+        { stem: 'track0', localId: 0, level: 1, unlocks: [
+          { kind: 'chassis', stem: 'track1', cost: { xp: 31000 } },
+        ], stats: {} },
+        { stem: 'track1', localId: 1, level: 2, unlocks: [], stats: {} },
+      ],
+      turrets: [{
+        stem: 't0', localId: 0, level: 1, unlocks: [], guns: [
+          { stem: 'g0', localId: 0, level: 1, unlocks: [
+            { kind: 'gun', stem: 'g1', cost: { tokens: { currency: 'prx_season_6', amount: 1000 } } },
+          ], stats: {} },
+          { stem: 'g1', localId: 1, level: 2, unlocks: [], stats: {} },
+        ],
+      }],
+    }
+    data.fetchTankData.mockResolvedValue(DETAIL)
+    research.loadTankModules.mockResolvedValue({ tanks: { 'T-26': modules } })
+    // 选初始配置/初始履带 → track1、g1 未安装，才有成本角标
+    const { wrapper } = await mountView({ tank: '1', config: '0', track: '0' })
+    const trackBadge = wrapper.find('[data-testid="research-node-chassis-track1"] .tr-node-cost')
+    expect(trackBadge.text()).toBe('31k')
+    const tokenBadge = wrapper.find('[data-testid="research-node-gun-g1"] .tr-node-cost')
+    expect(tokenBadge.text()).toBe('1k')
+    expect(tokenBadge.classes()).toContain('is-token')
   })
 
   it('研发网格不渲染电台/油箱（客户端 ModulesTree 只有底盘/炮塔/炮/发动机）', async () => {

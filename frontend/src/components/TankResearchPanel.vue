@@ -18,6 +18,7 @@ import { loadTankIconCrops, tankImageUrl } from '../scene/agentData.js'
 import { tankIconCropTransform } from '../utils/tankIconCrop.js'
 import { moduleIconUrl } from '../utils/researchCatalog.js'
 import { moduleTreeLayout } from '../utils/techTreeLayout.js'
+import { formatXpCompact } from '../utils/xpFormat.js'
 
 const props = defineProps({
   /** tank/{id}.json */
@@ -52,8 +53,12 @@ const layout = computed(() => {
   }
 })
 
-const CELL = 64
-const PITCH_X = 104
+/* 客户端节点 64×64 / pitch 104×97；这里把**宽度**放宽到 96（pitch 136）——
+   小字号下 64 宽只能放约 10 字符/行，两行放不下 "110 mm Destiny Gun V1"
+   （实测 4/16 截断）；96 宽两行可容纳 ~28 字符。高度保持客户端 64。 */
+const NODE_W = 96
+const NODE_H = 64
+const PITCH_X = 136
 const PITCH_Y = 97
 
 const gridStyle = computed(() => ({
@@ -62,7 +67,8 @@ const gridStyle = computed(() => ({
 }))
 
 /** 研发图等比缩放到可用区域（客户端整屏缩放 UI 的同构做法）：图比容器大时缩小，
- * 而不是让用户拖动；容器变大时恢复到 1:1（不放大，保持客户端 104/97 pitch 比例）。 */
+ * 而不是让用户拖动；容器变大时恢复到 1:1（不放大）。下限 0.72——更小的缩放文字读不清，
+ * 极宽的树改为横向平移（与客户端滚动容器同语义）。 */
 const scrollEl = ref(null)
 const fitScale = ref(1)
 const gridW = computed(() => (layout.value?.columns || 0) * PITCH_X)
@@ -75,7 +81,9 @@ function recalcFit() {
   const availH = el.clientHeight - 20
   if (availW <= 0 || availH <= 0) return
   const scale = Math.min(1, availW / gridW.value, availH / gridH.value)
-  fitScale.value = Math.max(0.35, Math.round(scale * 1000) / 1000)
+  // 下限 0.72：再小文字就读不清了。极宽的树（如 14 列的活动车）宁可横向平移
+  // ——客户端本身也是滚动容器，不做无限缩小。
+  fitScale.value = Math.max(0.72, Math.round(scale * 1000) / 1000)
 }
 watch([gridW, gridH], recalcFit)
 onMounted(() => {
@@ -100,6 +108,10 @@ function cellPos(node) {
   return { left: `${node.col * PITCH_X}px`, top: `${node.row * PITCH_Y}px` }
 }
 
+/** 连线端点 = 节点中心（宽高各自按节点尺寸取半）。 */
+const centerX = col => col * PITCH_X + NODE_W / 2
+const centerY = row => row * PITCH_Y + NODE_H / 2
+
 /** 连线（含「模块 → 下一级坦克」）：两端都取节点中心，SVG 拓扑等价。 */
 const edges = computed(() => {
   const l = layout.value
@@ -122,6 +134,23 @@ function nodeLabelText(node) {
   return node.kind === 'vehicle' ? (node.name || node.stem) : moduleName(node.module)
 }
 
+/** 节点成本：XP 与活动代币（`prx_*`）分开显示，都按 k 缩写（tooltip 给全值）。 */
+function nodeCostText(node) {
+  if (node.cost != null) return formatXpCompact(node.cost)
+  if (node.costTokens?.amount != null) return formatXpCompact(node.costTokens.amount)
+  return ''
+}
+function nodeCostTitle(node) {
+  if (node.cost != null) return t('research.xp_cost', { xp: node.cost.toLocaleString() })
+  if (node.costTokens?.amount != null) {
+    return t('research.token_cost', {
+      amount: node.costTokens.amount.toLocaleString(),
+      currency: node.costTokens.currency || '—',
+    })
+  }
+  return ''
+}
+
 function nodeTitle(node) {
   if (node.kind === 'vehicle') {
     const cost = node.cost != null ? t('research.xp_cost', { xp: node.cost.toLocaleString() }) : ''
@@ -129,7 +158,7 @@ function nodeTitle(node) {
   }
   const name = moduleName(node.module)
   const kindLabel = t(`research.module_${KIND_I18N[node.kind] || node.kind}`)
-  const cost = node.cost != null ? t('research.xp_cost', { xp: node.cost.toLocaleString() }) : ''
+  const cost = nodeCostTitle(node)
   const level = node.level != null ? t('agentTanks.tier_n', { tier: node.level }) : ''
   const action = node.installed ? t('research.installed') : t('research.click_to_install')
   return [name, kindLabel, level, cost, action].filter(Boolean).join(' · ')
@@ -187,7 +216,7 @@ function activate(node) {
         >
           <ArrowLeft :size="14" aria-hidden="true" />
           <span class="tr-prev-name">{{ prev.name || prev.node.stem }}</span>
-          <span v-if="prev.cost != null" class="tr-prev-cost">{{ t('research.xp_short', { xp: prev.cost.toLocaleString() }) }}</span>
+          <span v-if="prev.cost != null" class="tr-prev-cost">{{ t('research.xp_short', { xp: formatXpCompact(prev.cost) }) }}</span>
         </button>
       </div>
 
@@ -235,10 +264,10 @@ function activate(node) {
                 :key="`${edge.from.key}->${edge.to.key}`"
                 class="tr-edge"
                 :class="{ 'is-installed': edge.from.installed && edge.to.installed }"
-                :x1="edge.from.col * PITCH_X + CELL / 2"
-                :y1="edge.from.row * PITCH_Y + CELL / 2"
-                :x2="edge.to.col * PITCH_X + CELL / 2"
-                :y2="edge.to.row * PITCH_Y + CELL / 2"
+                :x1="centerX(edge.from.col)"
+                :y1="centerY(edge.from.row)"
+                :x2="centerX(edge.to.col)"
+                :y2="centerY(edge.to.row)"
                 marker-end="url(#tr-arrow)"
               >
                 <title>{{ `${nodeLabelText(edge.from)} → ${nodeLabelText(edge.to)}` }}{{ edge.cost?.xp != null ? ` · ${t('research.xp_cost', { xp: edge.cost.xp.toLocaleString() })}` : '' }}</title>
@@ -267,7 +296,12 @@ function activate(node) {
                 <span v-else class="tr-node-fallback">{{ nodeLabelText(node).slice(0, 1) }}</span>
               </span>
               <span v-if="node.kind !== 'vehicle' && node.level != null && node.kind !== 'gun'" class="tr-node-level">{{ node.level }}</span>
-              <span v-if="node.cost != null && !node.installed" class="tr-node-cost">{{ t('research.xp_short', { xp: node.cost.toLocaleString() }) }}</span>
+              <span
+                v-if="nodeCostText(node) && !node.installed"
+                class="tr-node-cost"
+                :class="{ 'is-token': node.cost == null }"
+                :title="nodeCostTitle(node)"
+              >{{ nodeCostText(node) }}</span>
               <span v-if="node.installed" class="tr-node-check" aria-hidden="true"><Check :size="12" /></span>
               <span class="tr-node-name">{{ nodeLabelText(node) }}</span>
             </button>
@@ -382,11 +416,13 @@ function activate(node) {
 .tr-node {
   position: absolute;
   display: grid;
+  grid-template-rows: 24px minmax(0, 1fr);
   justify-items: center;
+  align-items: start;
   gap: 2px;
-  inline-size: 64px;
+  inline-size: 96px;
   block-size: 64px;
-  padding: 2px;
+  padding: 3px var(--space-1) 2px;
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-md);
   background: var(--color-surface-2);
@@ -407,7 +443,7 @@ function activate(node) {
 }
 .tr-node.is-next-tank:disabled { cursor: default; opacity: 0.6; }
 
-.tr-node-pic { display: grid; place-items: center; inline-size: 32px; block-size: 32px; overflow: hidden; }
+.tr-node-pic { display: grid; place-items: center; inline-size: 24px; block-size: 24px; overflow: hidden; }
 .tr-node-pic img { inline-size: 100%; block-size: 100%; object-fit: contain; }
 .tr-node-fallback { font: var(--type-h3); }
 .tr-node-level {
@@ -427,7 +463,7 @@ function activate(node) {
   position: absolute;
   inset-block-start: 0;
   inset-inline-start: 0;
-  max-inline-size: calc(100% - 20px);
+  max-inline-size: calc(100% - 18px);
   padding: 0 3px;
   border-radius: var(--radius-sm);
   background: var(--color-surface-1);
@@ -439,6 +475,7 @@ function activate(node) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.tr-node-cost.is-token { color: var(--color-info); }
 .tr-node-check {
   position: absolute;
   inset-block-end: 0;
@@ -451,14 +488,19 @@ function activate(node) {
   background: var(--color-accent);
   color: var(--color-canvas);
 }
+/* 模块名最多两行（客户端也是压缩显示；单行必然全是省略号）：
+   24px 图标 + 2×16px 文本 = 62px，正好落在 64px 节点内。完整名称在 tooltip/aria 里。 */
 .tr-node-name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   inline-size: 100%;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   text-align: center;
-  font: var(--type-caption);
-  align-self: end;
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-caption-xs);
+  line-height: var(--line-height-caption-xs);
 }
 
 /* 平板/手机：横向三段改为纵向堆叠（前驱车 → 当前车 → 研发图） */

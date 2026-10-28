@@ -236,13 +236,22 @@ export function moduleTreeLayout(modules, selection = null, options = {}) {
   }
   for (const entry of entries) depthOf(entry.key)
 
-  /** 入边成本：指向本节点的**研发**边里取最小 XP（挂载边无成本）。 */
-  const costOf = new Map()
+  /** 入边成本：指向本节点的**研发**边；XP 与活动代币（`prx_*`）分开取（挂载边无成本）。 */
+  const costXpOf = new Map()
+  const costTokensOf = new Map()
   for (const edge of edges) {
     const xp = Number(edge.cost?.xp)
-    if (!Number.isFinite(xp)) continue
-    const prev = costOf.get(edge.to)
-    if (prev == null || xp < prev) costOf.set(edge.to, xp)
+    if (Number.isFinite(xp)) {
+      const prev = costXpOf.get(edge.to)
+      if (prev == null || xp < prev) costXpOf.set(edge.to, xp)
+    }
+    const amount = Number(edge.cost?.tokens?.amount)
+    if (Number.isFinite(amount)) {
+      const prev = costTokensOf.get(edge.to)
+      if (prev == null || amount < prev.amount) {
+        costTokensOf.set(edge.to, { currency: edge.cost.tokens.currency || null, amount })
+      }
+    }
   }
 
   const installed = installedKeys(modules, selection)
@@ -301,7 +310,8 @@ export function moduleTreeLayout(modules, selection = null, options = {}) {
     level: Number(entry.module.level) || null,
     price: entry.module.price ?? null,
     installed: installed.has(entry.key),
-    cost: costOf.get(entry.key) ?? null,
+    cost: costXpOf.get(entry.key) ?? null,
+    costTokens: costTokensOf.get(entry.key) ?? null,
     install: entry.kind === 'gun'
       ? { kind: 'gun', occurrences: entry.occurrences }
       : { kind: entry.kind, index: entry.index },
@@ -342,6 +352,9 @@ export function moduleTreeLayout(modules, selection = null, options = {}) {
         row: freeRow(source.col + 1, source.row),
         installed: false,
         cost: Number(target.cost?.xp) || null,
+        costTokens: Number(target.cost?.tokens?.amount) > 0
+          ? { currency: target.cost.tokens.currency || null, amount: Number(target.cost.tokens.amount) }
+          : null,
         tankId: info.tankId ?? null,
         name: info.name ?? null,
         install: null,
