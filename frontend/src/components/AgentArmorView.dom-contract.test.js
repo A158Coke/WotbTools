@@ -229,6 +229,16 @@ describe('dolly-zoom world-overview scope guard', () => {
     expect(kernel).toMatch(/if \(!info\) \{ resetArmorHighlight\(\); card\.style\.display = 'none'; return; \}[\s\S]*?applyArmorHighlight\(info\.object\);/)
     expect(kernel).toMatch(/if \(!collisionMode\) \{ resetArmorHighlight\(\); document\.getElementById\('click-info'\)\.style\.display = 'none'; \}/)
     expect(kernel).toMatch(/highlightedArmorNode && !isEffectivelyVisible\(highlightedArmorNode\)[\s\S]*?resetArmorHighlight\(\);/)
+    // 视觉模型必须渲染全部部件：`gun_XX_mask` 是炮盾/炮根视觉（Super Conqueror 19281 等
+    // 无 mask 值的车，炮塔与炮管之间只由这个网格连接）。BlitzKit 的 “mask 无值 → 外部模块
+    // 只取精确 gun_0X” 规则只属于装甲视图的外部模块选取（热力图 clone / 求交），不能写进
+    // 视觉可见性（2026-10-28 用户报障：炮塔与炮管之间缺一段）。
+    expect(kernel).toMatch(/for \(const node of moduleMeshes\) \{\s*\n\s*node\.visible = baseNodeVisible\(node\) && !hiddenCategories\.external;/)
+    expect(kernel).not.toMatch(/hideMaskPart/)
+    const baseVisible = kernel.slice(kernel.indexOf('function baseNodeVisible('), kernel.indexOf('function setArmorFilterRowVisible('))
+    expect(baseVisible).not.toContain('gunMaskPart')
+    // 外部模块口径不变：热力图外层网格仍按 mask 规则选取
+    expect(kernel).toMatch(/if \(node\.userData\.gunMaskPart && !hasMask\) return;\s*\n\s*externalMeshes\.push\(node\);/)
     expect(kernel).toMatch(/return \{[\s\S]*?destroy, retry, selectTank, canPick, isContextLost,/)
     for (const api of ['setConfig: applyConfig', 'setConfigUiVisible', 'setShellUiVisible', 'setShell', 'setShooterConfig', 'setEquipmentOverride']) {
       expect(kernel).toContain(api)

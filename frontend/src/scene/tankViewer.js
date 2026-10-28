@@ -1746,9 +1746,6 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             if (node.userData.armorSection === 'gunBarrel' && node.userData.gunConfig != null) {
                 const act = activeGunNumber();
                 if (act != null && node.userData.gunConfig !== act) return false;
-                const cfg = currentConfig();
-                const hasMask = cfg && typeof cfg.gun_mask === 'number' && cfg.gun_mask !== 0;
-                if (node.userData.gunMaskPart && !hasMask) return false;
             }
             return true;
         }
@@ -1776,6 +1773,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     node.visible = baseNodeVisible(node) && !(category && hiddenCategories[category]);
                 });
             }
+            // BlitzKit 的“mask 无值 → 外部模块只取精确 gun_0X”规则只属于**装甲视图的
+            // 外部模块选取**（热力图 clone / 点击与续飞求交）。`moduleMeshes` 是视觉模型的
+            // 炮管/履带网格，可见性必须渲染 glb 的全部部件：`gun_XX_mask` 是炮盾/炮根视觉
+            // （Super Conqueror 19281 等无 mask 值的车，炮塔与炮管之间只由这个网格连接），
+            // 按外部模块口径隐藏会让炮管断开（2026-10-28 用户报障）。
             for (const node of moduleMeshes) {
                 node.visible = baseNodeVisible(node) && !hiddenCategories.external;
             }
