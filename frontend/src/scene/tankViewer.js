@@ -1805,30 +1805,33 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 }
             }
         }
-        const collisionHiddenVisuals = [];
         function applyArmorViewStyle(collision) {
             // visual 与 armor 两个 GLB 独立完成；collisionMode 可能在 armor 就绪前已开启。
             // armor 未就绪时直接返回，等 armor 完成回调里的 applyConfig 再刷新材质。
             if (!armorModel) return;
             applyModuleCollisionMaterial(collision);
             if (collision) {
-                // 碰撞视图保留外部模块（炮管/履带）的碰撞体，隐藏其余视觉网格
+                // 碰撞视图保留外部模块（炮管/履带）的碰撞体，隐藏其余视觉网格。
+                // 用逐节点标记而不是一次性数组：切配置会重复调用本函数，数组清空后会丢掉
+                // 已经隐藏的节点，退出碰撞视图时坦克就再也显示不回来（用户 2026-10-28 报障）。
                 if (tankModel) {
                     tankModel.visible = true;
                     const keep = new Set(moduleMeshes);
-                    collisionHiddenVisuals.length = 0;
                     tankModel.traverse(function(node) {
                         if (!node.isMesh || keep.has(node)) return;
                         if (!node.visible) return;
+                        node.userData.collisionHidden = true;
                         node.visible = false;
-                        collisionHiddenVisuals.push(node);
                     });
                 }
             } else {
-                for (const node of collisionHiddenVisuals) node.visible = true;
-                collisionHiddenVisuals.length = 0;
                 if (tankModel) {
                     tankModel.visible = true;
+                    tankModel.traverse(function(node) {
+                        if (!node.isMesh || node.userData.collisionHidden !== true) return;
+                        node.userData.collisionHidden = false;
+                        node.visible = true;
+                    });
                     // 碰撞视图期间可能换过炮塔/炮：按当前配置重置视觉部件可见性
                     const cfg = currentConfig();
                     applyConfigVisible(tankModel, cfg ? cfg.gun_index : 0, cfg ? cfg.turret_index : 0);
@@ -2035,14 +2038,12 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 collisionMode = false;
                 const cb = document.getElementById('collision-btn');
                 cb.classList.remove('active');
-                cb.textContent = L.showCollision;
                 cb.setAttribute('aria-pressed', 'false');
                 resetArmorFilters();
                 setArmorFilterRowVisible(false);
                 applyArmorViewStyle(false);
             }
             this.classList.toggle('active', penetrationMode);
-            this.textContent = penetrationMode ? L.hideHeatmap : L.heatmap;
             this.setAttribute('aria-pressed', String(penetrationMode));
             document.getElementById('click-info').style.display = 'none';
             applyPenetrationMode(penetrationMode);
@@ -2613,7 +2614,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             if (QP.get('heatmap') !== '0' && !penetrationMode) {
                 penetrationMode = true;
                 const btn = document.getElementById('penetration-btn');
-                btn.classList.add('active'); btn.textContent = L.hideHeatmap; btn.setAttribute('aria-pressed', 'true');
+                btn.classList.add('active'); btn.setAttribute('aria-pressed', 'true');
                 applyPenetrationMode(true);
                 refreshPenetrationResolution();
             }
@@ -4571,13 +4572,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     penetrationMode = false;
                     const pb = document.getElementById('penetration-btn');
                     pb.classList.remove('active');
-                    pb.textContent = L.heatmap;
                     pb.setAttribute('aria-pressed', 'false');
                     applyPenetrationMode(false);
                     refreshPenetrationResolution();
                 }
                 this.classList.toggle('active', collisionMode);
-                this.textContent = collisionMode ? L.hideCollision : L.showCollision;
                 this.setAttribute('aria-pressed', String(collisionMode));
                 // 组成显隐只在厚度视图可用；退出时复位为全显示
                 if (!collisionMode) resetArmorFilters();

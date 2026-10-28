@@ -688,8 +688,24 @@ onBeforeUnmount(() => {
 .armor-view #shell-selector { padding: var(--space-2) var(--space-3); max-inline-size: 100%; }
 .armor-view #shell-selector label { color: var(--muted); font: var(--type-caption); }
 .armor-view #shell-selector select { max-inline-size: 100%; min-inline-size: 0; padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--input-bg); color: var(--txt); }
-.armor-view #view-toggle { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2); }
-.armor-view .armor-filters { display: flex; flex: 1 0 100%; flex-wrap: wrap; gap: var(--space-2); }
+.armor-view #view-toggle { position: relative; display: flex; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2); }
+/* 模式按钮文案固定（状态用 active/aria-pressed 表示）：避免开关时标签变长变短把面板宽度挤动 */
+.armor-view #view-toggle > button { white-space: nowrap; }
+/* 第二行浮在面板下方（绝对定位）：出现/隐藏都不改变面板尺寸与位置 */
+.armor-view .armor-filters {
+    position: absolute;
+    inset-block-start: calc(100% + var(--space-2));
+    inset-inline-end: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    padding: var(--space-2);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--elevation-2);
+    z-index: var(--pb-z-hud);
+}
 .armor-view .armor-filters[hidden] { display: none; }
 .armor-view :is(#view-toggle button, .armor-scene-button) { padding: var(--space-2) var(--space-3); background: var(--input-bg); color: var(--txt); border: 1px solid var(--border); border-radius: var(--radius-md); font: var(--type-caption); }
 .armor-view #view-toggle button:hover { border-color: var(--accent); }

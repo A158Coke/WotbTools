@@ -201,6 +201,12 @@ describe('dolly-zoom world-overview scope guard', () => {
     expect(kernel).toMatch(/moduleOriginalMaterials\.set\(node, node\.material\)/)
     expect(kernel).toMatch(/const keep = new Set\(moduleMeshes\)/)
     // 分类过滤（主装甲/间隙/外部模块）
+    // 碰撞视图隐藏用逐节点标记（重复调用不丢状态），退出后外观恢复
+    expect(kernel).toMatch(/node\.userData\.collisionHidden = true/)
+    expect(kernel).not.toMatch(/collisionHiddenVisuals/)
+    // 模式按钮文案固定：不按开关改 textContent（否则面板宽度跳动）
+    expect(kernel).not.toMatch(/this\.textContent = penetrationMode/)
+    expect(kernel).not.toMatch(/this\.textContent = collisionMode/)
     expect(kernel).toMatch(/setArmorFilterRowVisible\(collisionMode\)/)
     expect(kernel).toMatch(/if \(!collisionMode\) resetArmorFilters\(\);/)
     expect(read('./AgentArmorView.vue')).toMatch(/id="armor-filters"/)
