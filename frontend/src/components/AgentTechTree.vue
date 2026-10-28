@@ -14,7 +14,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { RotateCcw, TriangleAlert } from 'lucide-vue-next'
+import { BookOpen, RotateCcw, TriangleAlert } from 'lucide-vue-next'
 import { fetchTankEncyclopedia, loadTankIconCrops, tankImageUrl } from '../scene/agentData.js'
 import { tankIconCropTransform } from '../utils/tankIconCrop.js'
 import { tankNationLabel } from '../scene/tankMeta.js'
@@ -180,7 +180,8 @@ onMounted(() => {
       :description="t('research.hint')"
     >
       <template #actions>
-        <AppButton variant="ghost" size="sm" data-testid="techtree-tankopedia" @click="openTankopedia">
+        <AppButton variant="secondary" data-testid="techtree-tankopedia" @click="openTankopedia">
+          <BookOpen :size="18" aria-hidden="true" />
           {{ t('nav.tankopedia') }}
         </AppButton>
       </template>
