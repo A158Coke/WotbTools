@@ -734,6 +734,13 @@ describe('armor shell and readiness ownership', () => {
     expect(view).toMatch(/onShellSelection: index => syncNativeShell\(index\)/)
     expect(view).toMatch(/onEquipmentSelection: \(kind, value\) => syncNativeEquipment\(kind, value\)/)
   })
+  it('空 scfg 视同缺省，同车检视仍回落到受击方配置', () => {
+    expect(view).toMatch(/const scfg = route\.query\.scfg\s*\n\s*return scfg != null && scfg !== ''/)
+  })
+  it('缺省 shooter 时同车检视按 target 判定，不把 NaN 当作独立射手', () => {
+    expect(view).toMatch(/const queryShooter = Number\(route\.query\.shooter\)/)
+    expect(view).toMatch(/Number\.isFinite\(queryShooter\) && queryShooter > 0 \? queryShooter : loadoutTankId\.value/)
+  })
   it('HUD 就绪即独占被替换的装备控件；配置变更按解析后的选择判断', () => {
     expect(view).toMatch(/'has-shot-hud': hudReady/)
     expect(view).toMatch(/\.armor-view #tank-selectors\.has-shot-hud \.eq-opt:not\(#armor-state-opt\)/)

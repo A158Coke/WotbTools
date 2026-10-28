@@ -126,14 +126,19 @@ const cleanQuery = computed(() => route.query.clean === '1')
 /** 普通装甲页：射击方与受击方默认同一辆（回放页由 shot 的 shooter/target 决定）。 */
 const sameTankInspection = computed(() => {
   if (isShotPage.value) return false
-  const shooter = selectedShooterId.value ?? Number(route.query.shooter) ?? loadoutTankId.value
+  const queryShooter = Number(route.query.shooter)
+  const shooter = selectedShooterId.value
+    ?? (Number.isFinite(queryShooter) && queryShooter > 0 ? queryShooter : loadoutTankId.value)
   const target = selectedTargetId.value ?? loadoutTankId.value
   return shooter != null && target != null && shooter === target
 })
 const shooterSetupId = computed(() => (selectedShooterId.value ?? Number(route.query.shooter)) || loadoutTankId.value)
 const targetSetupId = computed(() => selectedTargetId.value ?? loadoutTankId.value)
-/** 射击方配置：&scfg= 优先；普通同车检视未单独选炮时跟随受击方配置。 */
-const shooterConfigValue = computed(() => route.query.scfg ?? (sameTankInspection.value ? route.query.config : null))
+/** 射击方配置：&scfg= 优先；普通同车检视未单独选炮时跟随受击方配置。空 scfg 视同缺省。 */
+const shooterConfigValue = computed(() => {
+  const scfg = route.query.scfg
+  return scfg != null && scfg !== '' ? scfg : (sameTankInspection.value ? route.query.config : null)
+})
 
 /** 同一 tick 连点两下（弹种 + 开关）时，第二次写入必须基于上一次尚未落地的 query，
  *  否则会把第一击的结果覆盖回旧值（与坦克百科 pendingQuery 同因同解）。 */
