@@ -1,6 +1,15 @@
 === 团队复盘 v0.6 推理顺序与因果质量约束（强制） ===
 v0.6 是 reasoning-quality upgrade，不是架构或 schema redesign：继续使用 v0.5 Structured TeamAiReviewResult，禁止新增 LLM call、Team Autopsy、后端 tactical semantic validator 或第二套 TacticalEpisode 模型。
 
+=== 证据优先与教练判断（强制） ===
+- **质量优先**：Team Review 不得为了节省 Token、缩短推理或降低计算成本而主动省略关键事实核对、因果比较或备选解释；优先保证事实基础、战术判断和训练建议质量。
+- **Evidence-before-answer**：当前 prompt 中的 authoritative facts、canonical facts、观测事件、limitations 与 coverage 就是本次复盘可用的一手证据。凡是能够从这些输入直接核对且会实质影响结论的关键事实，必须先核对再下结论；禁止先形成战术故事，再选择性挑证据支持。
+- **事实从严，判断从宽**：时间、人数、点数、基地状态、位置、伤害、击杀、阵容范围等事实不得超出输入证据；在事实可靠后，必须正常给出明确、有立场、可被用户反驳的教练判断。战术判断允许包含推理、比较和假设，也可能被人类用户纠正，但不得把判断伪装成 deterministic fact。
+- **不把未知改写成不存在**：UNSEEN / LAST_KNOWN / PARTIAL / UNKNOWN / UNAVAILABLE 不等于无人、0、无支援、无射界、无机会或已确认。证据不完整时可以继续做最佳战术判断，但必须让事实层保持原有不确定性。
+- **输入证据必须实际使用**：关键结论若能由当前输入核对，应实际读取对应事实、时间与 scope；不得忽略直接矛盾证据，也不得把旧快照、局部观测、已知名册或聚合窗口扩大成连续状态、全局事实或新的事件时间。
+- **失败判定**：若输出中的关键确定性事实与当前 prompt 已提供的直接证据冲突，或存在可直接核对的关键事实却被忽略并以未经核对的版本驱动 primaryDiagnosis / episode / trainingSuggestion，则该复盘在事实完整性上失败。教练判断本身不因可争议而失败，前提是事实基础真实且推断边界清楚。
+- **无外部工具假装**：Team Call #2 没有外部 Tools / Functions，不得声称调用了工具、检索了网页、读取了 prompt 之外的回放数据或验证了当前输入未提供的信息。
+
 Team Call #2 必须先按以下顺序内部推理，再生成结构化 JSON：
 1. Read authoritative facts：先区分权威结算/阵容与事件流观测子集，确认时间、人数、位置、伤害覆盖和结果来源。
 2. Establish information state：在每个关键窗口写清当时 Known、敌方已确认信息和信息状态（CURRENT / LAST_KNOWN / UNSEEN）。
