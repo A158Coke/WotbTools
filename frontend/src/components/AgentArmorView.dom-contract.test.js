@@ -197,6 +197,8 @@ describe('dolly-zoom world-overview scope guard', () => {
     expect(kernel).toMatch(/if \(collisionMode\) \{ showArmorPartInfo\(event, ndcX, ndcY\); return; \}/)
     expect(kernel).toMatch(/function showArmorPartInfo\(/)
     // 碰撞视图保留炮管/履带碰撞体
+    expect(kernel).toMatch(/function applyModuleCollisionMaterial\(on\)/)
+    expect(kernel).toMatch(/moduleOriginalMaterials\.set\(node, node\.material\)/)
     expect(kernel).toMatch(/const keep = new Set\(moduleMeshes\)/)
     // 分类过滤（主装甲/间隙/外部模块）
     expect(kernel).toMatch(/const hiddenCategories = \{ primary: false, spaced: false, external: false \}/)

@@ -1771,11 +1771,34 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
 
         // 装甲模型视图样式（collision 按钮与热力图退出共用一份写入，避免各自硬编码漂移）：
         // 碰撞视图=按厚度上色并隐藏视觉车体；普通视图=透明覆盖层并显示视觉车体
+        // 碰撞（装甲厚度）视图：炮管/履带等外部模块用纯色材质（无贴图），与装甲板同厚度色阶
+        const moduleOriginalMaterials = new Map();
+        function applyModuleCollisionMaterial(on) {
+            for (const node of moduleMeshes) {
+                if (on) {
+                    if (!moduleOriginalMaterials.has(node)) moduleOriginalMaterials.set(node, node.material);
+                    const t = Number(node.userData.armorThickness);
+                    const color = thicknessToColor(Number.isFinite(t) ? t : 0);
+                    let mat = node.userData.collisionSolidMaterial;
+                    if (!mat) {
+                        mat = new THREE.MeshStandardMaterial({ color, metalness: 0.4, roughness: 0.6 });
+                        node.userData.collisionSolidMaterial = mat;
+                    } else {
+                        mat.color.set(color);
+                    }
+                    node.material = mat;
+                } else if (moduleOriginalMaterials.has(node)) {
+                    node.material = moduleOriginalMaterials.get(node);
+                    moduleOriginalMaterials.delete(node);
+                }
+            }
+        }
         const collisionHiddenVisuals = [];
         function applyArmorViewStyle(collision) {
             // visual 与 armor 两个 GLB 独立完成；collisionMode 可能在 armor 就绪前已开启。
             // armor 未就绪时直接返回，等 armor 完成回调里的 applyConfig 再刷新材质。
             if (!armorModel) return;
+            applyModuleCollisionMaterial(collision);
             if (collision) {
                 // 碰撞视图保留外部模块（炮管/履带）的碰撞体，隐藏其余视觉网格
                 if (tankModel) {
