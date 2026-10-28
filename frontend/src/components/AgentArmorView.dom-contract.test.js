@@ -234,17 +234,20 @@ describe('dolly-zoom world-overview scope guard', () => {
     // （2026-10-28 用户报障：视觉模型缺件）。
     const baseVisible = kernel.slice(kernel.indexOf('function baseNodeVisible('), kernel.indexOf('function setArmorFilterRowVisible('))
     expect(baseVisible).not.toContain('gunMaskPart')
-    // 判定只用炮管部分：`gun_NN` = 炮管本体，炮盾（`gun_NN_mask`）不进外部模块；
-    // 客户端 maskSlice 是炮管视觉/特效切片参数，不是装甲边界（2026-10-28 实测：
-    // planePosition 在多数车上落在炮管根部之外或中段，按它裁会切掉大半根炮管）。
-    // 视觉模型始终渲染全部部件；厚度视图隐藏炮盾实心体。
-    expect(kernel).toMatch(/if \(node\.userData\.gunMaskPart\) return;\s*\n\s*externalMeshes\.push\(node\);/)
-    expect(kernel).toMatch(/for \(const node of moduleMeshes\) \{\s*\n\s*node\.visible = baseNodeVisible\(node\)\s*\n\s*&& !hiddenCategories\.external\s*\n\s*&& !\(collisionMode && node\.userData\.gunMaskPart\);/)
-    // 装甲判定不使用 maskSlice 裁切面：平面恒 null、无裁切面同步/重算代码
-    expect(kernel).toMatch(/const gunClipPlane = null;/)
-    expect(kernel).not.toContain('computeGunClipPlane')
-    expect(kernel).not.toContain('syncModuleClipPlanes')
-    expect(kernel).not.toContain('gunMaskPartsFor')
+    // BlitzKit 口径（2026-10-28 用户裁定回退）：外部模块按 mask 标量选取——有 mask 值
+    // → gun_0X + gun_0X_mask 全部网格（由平面裁掉炮根）；无 mask 值 → 只取精确 gun_0X。
+    // 视觉模型始终渲染全部部件；厚度视图按外部模块口径隐藏炮盾实心体。
+    expect(kernel).toMatch(/if \(node\.userData\.gunMaskPart && !hasMask\) return;\s*\n\s*externalMeshes\.push\(node\);/)
+    expect(kernel).toMatch(/const hideMaskPart = collisionMode && !hasMask;/)
+    expect(kernel).toMatch(/&& !\(hideMaskPart && node\.userData\.gunMaskPart\)/)
+    // 平面 = BlitzKit 标量重建（gun_mask + 原点链沿炮口方向），随姿态重算；厚度视图
+    // 实心炮管体与续飞着色器同步同一平面。
+    expect(kernel).toMatch(/const maskOriginModel = cfg\.gun_mask \+ mo\.track\[1\] \+ mo\.turret\[1\] \+ cfg\.gun_origin\[1\];/)
+    expect(kernel).toMatch(/gunClipPlane = _gunClipPlaneObj\.setFromNormalAndCoplanarPoint\(dir, point\);/)
+    expect(kernel).toMatch(/function syncModuleClipPlanes\(\)/)
+    expect(kernel).toMatch(/if \(collision\) computeGunClipPlane\(\);/)
+    expect(kernel).toMatch(/if \(collisionMode\) \{ computeGunClipPlane\(\); syncModuleClipPlanes\(\); \}/)
+    expect(kernel).toMatch(/rcUniforms\.rcClipEnabled\.value = true;/)
     expect(kernel).toMatch(/return \{[\s\S]*?destroy, retry, selectTank, canPick, isContextLost,/)
     for (const api of ['setConfig: applyConfig', 'setConfigUiVisible', 'setShellUiVisible', 'setShell', 'setShooterConfig', 'setEquipmentOverride']) {
       expect(kernel).toContain(api)
@@ -539,16 +542,14 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
 // 宽度漂移、内容框换算失准）。
 describe('production gun_mask clip wiring (2026-10-21)', () => {
   // 穿透材质族 2026-10-24 出仓 viewer/armorShaders.js（Step B2）：uniform 注入断言拼接读取两份源。
-  // 2026-10-28：装甲判定不再使用 maskSlice 裁切面，gunClipPlane 恒 null、rcClipEnabled 恒 false
-  //（uniform 注入保留，供未来真正的裁切源复用）。
+  // 2026-10-28：保持 BlitzKit 口径——gun_mask 标量重建的裁切面每帧同步到续飞着色器。
   const kernel = read('../scene/tankViewer.js') + '\n' + read('../scene/viewer/armorShaders.js')
-  it('PBR 与间隙甲状态材质都注入同一 rcClipPlane/rcClipEnabled，且不启用裁切', () => {
+  it('PBR 与间隙甲状态材质都注入同一 rcClipPlane/rcClipEnabled，且每帧同步 gunClipPlane', () => {
     const occurrences = [...kernel.matchAll(/rcClipPlane:\s*rcUniforms\.rcClipPlane/g)]
     expect(occurrences).toHaveLength(2)
     expect(kernel).toContain('rcClipEnabled: rcUniforms.rcClipEnabled')
-    expect(kernel).toContain('rcUniforms.rcClipEnabled.value = false;')
-    expect(kernel).not.toContain('rcUniforms.rcClipEnabled.value = true;')
-    expect(kernel).not.toContain('rcUniforms.rcClipPlane.value.set(')
+    expect(kernel).toContain('rcUniforms.rcClipPlane.value.set(')
+    expect(kernel).toContain('rcUniforms.rcClipEnabled.value = true;')
     expect(kernel).toContain('clipPlane: gunClipPlane')
   })
   it('无效 HE 概率行走 resolveCardChance fail-closed', () => {
