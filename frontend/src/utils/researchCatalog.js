@@ -120,6 +120,51 @@ export function loadTankModules(nation) {
 }
 
 /**
+ * 科技树布局数据（随资产包 `/research/tech_tree/{nation}.json` 发布；上游
+ * `export_research_loadout.py --with-research-graph` 导出）。nodes 带 x/y 网格坐标
+ * （x=列 y=行，列≠tier）、tankId/tier/price/tags；pending = 科技树已登记但未实装的
+ * XI 展示位（只有坐标，无名称/价格——不造数据）；edges = 整车研发边
+ * （`<unlocks><vehicle>`，from/to 为车辆 stem）。
+ */
+const techTreeCache = new Map()
+
+export function loadTechTree(nation) {
+  if (techTreeCache.has(nation)) return techTreeCache.get(nation)
+  const promise = assetProvider.json(`/research/tech_tree/${nation}.json`).catch((error) => {
+    techTreeCache.delete(nation)
+    throw error
+  })
+  techTreeCache.set(nation, promise)
+  return promise
+}
+
+/** 装备 id → 目录条目（回放 `shooter_equipment.raw` 徽标的唯一反查源；未知 id 返回 null）。 */
+export function deviceById(devices, id) {
+  if (!Array.isArray(devices)) return null
+  return devices.find(device => Number(device?.id) === Number(id)) || null
+}
+
+/**
+ * 只装装备目录（devices.json）的轻加载器：装甲查看器/回放徽标只需要 id→图标/名称，
+ * 不为徽标拉整份配置器目录（params/技能/涂装）。缓存 Promise，与 loadResearchCatalog
+ * 各自独立；失败清除后可重试。
+ */
+let devicesPromise = null
+
+export function loadDevices() {
+  if (devicesPromise) return devicesPromise
+  devicesPromise = assetProvider.json('/research/devices.json').then(data => Object.freeze({
+    gameVersion: data.meta?.gameVersion || null,
+    devices: data.devices,
+    devicePresets: data.presets,
+  })).catch((error) => {
+    devicesPromise = null
+    throw error
+  })
+  return devicesPromise
+}
+
+/**
  * 已选物品 stem → 客户端 `<script>` 摘要（计算引擎 provisionScripts/consumableScripts
  * 入参；食物类乘员加成等唯一权威在 script，UI 必须经此构造，勿手写数值）。
  */

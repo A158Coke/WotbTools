@@ -401,7 +401,7 @@ try {
       if (scenario.compactNavigation) {
         await page.waitForValue('!!document.querySelector("[data-testid=more-page]")', Boolean)
         await page.waitForValue('!!document.querySelector("[data-testid=tab-creators]")', Boolean)
-        await tabGeometry(page, scenario.productionHome ? 8 : 7)
+        await tabGeometry(page, scenario.productionHome ? 9 : 8)
         if (scenario.productionHome && scenario.width === 320) {
           const y = await page.evaluate('document.querySelector("[data-testid=app-tab-bar]").getBoundingClientRect().top + 24')
           await chrome.client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 140, y, id: 1 }] }, sessionId)
@@ -427,7 +427,7 @@ try {
       await tap(page, '[data-testid=recommendation-card-UP]', scenario.touch)
       await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 2)
       assert.equal(await page.evaluate(`document.querySelector(${JSON.stringify(primary)}).getAttribute('aria-current')`), 'page')
-      if (scenario.compactNavigation) await tabGeometry(page, scenario.productionHome ? 8 : 7)
+      if (scenario.compactNavigation) await tabGeometry(page, scenario.productionHome ? 9 : 8)
       assert.equal(await page.evaluate('document.querySelectorAll(".creator-card button").length'), 0, 'anonymous cards have no management or user-action buttons')
       assert.equal(await page.evaluate('window.__wsAuth.loginCalls.length'), 0); assert.equal(db.writes, 0)
       assert.equal(await page.evaluate('document.querySelector(".creator-card a").rel'), 'noopener noreferrer')

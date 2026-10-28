@@ -16,6 +16,7 @@ import AppButton from './AppButton.vue'
 import { availableItems, itemIconUrl, moduleIconUrl, resolveDeviceIds, skillIconUrl } from '../utils/researchCatalog.js'
 import { configIndexFor, consumableTiming, pickGun, pickTurret, presetSlots, tankRef } from '../replay-local/compute/tankSetup'
 import { fmtNum } from '../scene/tankMeta.js'
+import { romanLevel } from '../utils/tierFormat.js'
 
 const props = defineProps({
   /** tank/{id}.json */
@@ -26,6 +27,11 @@ const props = defineProps({
   selection: { type: Object, required: true },
   /** 资产包 research 全局目录（物品目录 + 预设 + 过滤器） */
   catalog: { type: Object, required: true },
+  /** 乘员技能 / 涂装块 */
+  showCrew: { type: Boolean, default: true },
+  showEquipment: { type: Boolean, default: true },
+  showConsumables: { type: Boolean, default: true },
+  showProvisions: { type: Boolean, default: true },
 })
 const emit = defineEmits(['update', 'reset', 'preset', 'cycle-skill', 'max-skills', 'clear-skills'])
 
@@ -396,6 +402,8 @@ const camoBonusParts = computed(() => {
       </div>
       <template v-for="(cells, index) in moduleMatrix" :key="index">
         <div v-for="cell in cells" :key="`${cell.row.key}-${index}`" class="tp-module-cell">
+          <!-- 手机 2 列时每个控件自带类型标题；桌面隐藏，使用顶部统一标题行 -->
+          <span class="tp-module-cell-head">{{ t(`agentTanks.configurator.${cell.row.key}`) }}</span>
           <button
             v-if="cell.option"
             type="button"
@@ -413,7 +421,7 @@ const camoBonusParts = computed(() => {
               <img v-if="cell.row.icon" :src="cell.row.icon" alt="" width="32" height="32" loading="lazy">
               <span v-else class="tp-module-pic-fallback">{{ cell.option.name.slice(0, 1) }}</span>
             </span>
-            <span v-if="cell.option.level != null" class="tp-module-level">{{ cell.option.level }}</span>
+            <span v-if="cell.option.level != null" class="tp-module-level">{{ romanLevel(cell.option.level) }}</span>
             <span class="tp-module-name">{{ cell.option.name }}</span>
           </button>
         </div>
@@ -421,7 +429,7 @@ const camoBonusParts = computed(() => {
     </div>
 
     <!-- 装备：3×3，每格左右两件图标 -->
-    <section class="tp-config-block">
+    <section v-if="showEquipment" class="tp-config-block">
       <div class="tp-block-head">
         <h3>{{ t('agentTanks.configurator.equipment') }}</h3>
         <span class="tp-muted">{{ t('agentTanks.configurator.equipment_hint') }}</span>
@@ -463,7 +471,7 @@ const camoBonusParts = computed(() => {
     </section>
 
     <!-- 补给 / 消耗品：图标格（名称走 aria-label / tooltip） -->
-    <section class="tp-config-block">
+    <section v-if="showProvisions" class="tp-config-block">
       <div class="tp-block-head">
         <h3>{{ t('agentTanks.configurator.provisions') }}</h3>
         <span class="tp-muted">{{ selection.provisions.length }}/{{ provisionSlots }}</span>
@@ -487,7 +495,7 @@ const camoBonusParts = computed(() => {
       </div>
     </section>
 
-    <section class="tp-config-block">
+    <section v-if="showConsumables" class="tp-config-block">
       <div class="tp-block-head">
         <h3>{{ t('agentTanks.configurator.consumables') }}</h3>
         <span class="tp-muted">{{ selection.consumables.length }}/{{ consumableSlots }}</span>
@@ -517,7 +525,7 @@ const camoBonusParts = computed(() => {
       </div>
     </section>
 
-    <section class="tp-config-block tp-skills-block">
+    <section v-if="showCrew" class="tp-config-block tp-skills-block">
       <div class="tp-block-head">
         <h3>{{ t('agentTanks.configurator.crew_skills') }}</h3>
         <span class="tp-muted">{{ t('agentTanks.configurator.crew_count') }} {{ modules.crewRoles.length }} · {{ Object.values(selection.skills).filter(level => level > 0).length }}/20</span>
@@ -557,7 +565,7 @@ const camoBonusParts = computed(() => {
       <p class="tp-muted">{{ t('agentTanks.configurator.skill_note') }}</p>
     </section>
 
-    <div class="tp-camo-block">
+    <div v-if="showCrew" class="tp-camo-block">
       <label class="tp-camo">
         <input type="checkbox" data-testid="tank-camo" :checked="selection.camouflage" @change="setCamo">
         <span>{{ t('agentTanks.configurator.camouflage') }}</span>
@@ -595,6 +603,7 @@ const camoBonusParts = computed(() => {
 }
 .tp-module-head { display: grid; justify-items: center; align-content: end; gap: 2px; min-inline-size: 0; padding-block-end: var(--space-1); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; text-align: center; overflow-wrap: anywhere; }
 .tp-module-cell { min-inline-size: 0; }
+.tp-module-cell-head { display: none; }
 
 .tp-module-tile {
   position: relative;
@@ -754,7 +763,16 @@ const camoBonusParts = computed(() => {
 .tp-camo input { inline-size: var(--control-check); block-size: var(--control-check); margin: 0; accent-color: var(--color-accent); }
 
 @media (width < 768px) {
-  .tp-module-matrix { gap: var(--space-1); }
-  .tp-module-tile { padding: 2px; }
+  /* 手机：4 列矩阵折 2 列（炮塔|火炮 // 发动机|履带）——每个逻辑行恰好 4 格，
+     折行后列语义仍逐行对齐；类型标签行与数据行同步折，不会错位。 */
+  .tp-module-matrix { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2) var(--space-1); }
+  /* 2 列折行后顶部 4 个标题行会落到错误列上方：隐藏它，改用每个控件自己的标题。 */
+  .tp-module-head { display: none; }
+  .tp-module-cell-head { display: block; margin-block-end: 2px; color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; text-align: center; }
+  .tp-module-tile { padding: var(--space-1); min-block-size: 64px; }
+  /* 装备矩阵在窄屏吃掉等级标签列：标签收窄为图标宽度，槽位保持两候选并排 */
+  .tp-dev-matrix { gap: var(--space-1); }
+  .tp-dev-btn { min-block-size: 48px; }
 }
+
 </style>

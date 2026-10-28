@@ -77,6 +77,10 @@ export interface ComputeInput {
     shellCount: number
     /** 自动装填逐发时间（autoreloader）；其余为空 */
     shellReloads: number[]
+    /** 连发组每组发数（PomPom 类；0/1 = 无连发组）；组间仍按 intraClip */
+    burstGroupCount?: number
+    /** 连发组内弹间秒（BK `GunDefinition.burst.interval`） */
+    burstGroupInterval?: number
   } | null
   /** tank/{id}.json 当前配置的标准弹（AP/首个非金币）；burst 炮可空 */
   standardShell: { damage: number; penetration: number; type: string; velocity?: number | null } | null
@@ -275,7 +279,10 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
 
   // ---- 装填（BK：rammer × 乘员 ÷ 肾上腺素；条件技能按触发效果计入）----
   const reloadBase = gun.stats?.reloadTime ?? 0
-  const cycle = input.gunCycle || { type: 'regular', reload: reloadBase, intraClip: 0, shellCount: 0, shellReloads: [] }
+  const cycle = input.gunCycle || {
+    type: 'regular', reload: reloadBase, intraClip: 0, shellCount: 0, shellReloads: [],
+    burstGroupCount: 0, burstGroupInterval: 0,
+  }
   const isMagazine = cycle.type !== 'regular'
   // 肾上腺素：客户端 consumable filter 的 exclude extendedTags:["clip"]（弹夹/自动装填车不可用），
   // 等价于 BK 的 gun_type === regular；burst 已由 tankSetup 的同一过滤排除，这里不另设守卫。
@@ -300,7 +307,23 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
   const intraClip = cycle.intraClip * intraClipFactor
   const clipShellCount = isMagazine && cycle.shellCount > 0 ? cycle.shellCount : null
   // 弹夹炮用 gunClipShellReloadTime；自动装填炮用 timeBetweenPumpShots（同一数值只出现一次）
-  const clipShellReload = cycle.type === 'autoloader' && intraClip > 0 ? intraClip : null
+  // 连发组（PomPom）：组内弹间 / 每组发数 / 每夹组数（客户端 hangarParams 同名参数）。
+  // 非连发组 → null（参数行隐藏）；整夹不能被每组整除时组数留空（fail-closed）。
+  const burstGroupSize = cycle.type === 'autoloader' && (cycle.burstGroupCount || 0) > 1
+    ? (cycle.burstGroupCount as number)
+    : 0
+  const burstGroupsPerClip = burstGroupSize > 0 && cycle.shellCount % burstGroupSize === 0
+    ? cycle.shellCount / burstGroupSize
+    : null
+  const burstGroupInterval = burstGroupSize > 0 && (cycle.burstGroupInterval || 0) > 0
+    ? (cycle.burstGroupInterval as number)
+    : null
+  // 弹间装填 = 组与组之间的扳机间隔。整夹只有一组连发时（Annihilator/Cerberus：3 发一组、
+  // 一夹一组）不存在“组间”，该行隐藏——此时唯一的射击间隔是组内的 gunClipBurstReloadTime。
+  const clipShotsSpan = burstGroupSize > 0
+    ? burstGroupsPerClip != null && burstGroupsPerClip > 1
+    : true
+  const clipShellReload = cycle.type === 'autoloader' && intraClip > 0 && clipShotsSpan ? intraClip : null
   const clipReload = cycle.type === 'autoloader'
     ? (cycle.reload > 0 ? cycle.reload * reloadCoeff : null)
     : cycle.type === 'autoreloader' && cycle.shellReloads.length > 0
@@ -459,7 +482,19 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
     if (cycle.type === 'regular') {
       dpm = reload ? Math.round(damage * 60 / reload) : null
     } else if (cycle.type === 'autoloader' && cycle.shellCount > 0) {
-      const cycleTime = cycle.reload * reloadCoeff + Math.max(0, cycle.shellCount - 1) * intraClip
+      // 整匣循环（BK resolveDpm）：无连发组 = reload + (n-1)×弹间；
+      // PomPom = reload + (组数-1)×弹间 + 组数×(每组发数-1)×组内弹间
+      //（组内连发比扳机间隔快，按普通弹夹算会把组内时间重复计一遍，DPM 显著偏低）。
+      const groupCount = (cycle.burstGroupCount || 0) > 1
+        ? cycle.shellCount / (cycle.burstGroupCount as number)
+        : 0
+      let cycleTime = cycle.reload * reloadCoeff
+      if (groupCount > 0) {
+        cycleTime += (groupCount - 1) * intraClip +
+          groupCount * ((cycle.burstGroupCount as number) - 1) * (cycle.burstGroupInterval || 0)
+      } else {
+        cycleTime += Math.max(0, cycle.shellCount - 1) * intraClip
+      }
       dpm = cycleTime > 0 ? Math.round((damage * cycle.shellCount * 60) / cycleTime) : null
       shotsPerMinute = cycleTime > 0 ? Math.round((cycle.shellCount * 60 / cycleTime) * 100) / 100 : null
     } else if (cycle.type === 'autoreloader' && cycle.shellReloads.length > 0) {
@@ -547,6 +582,9 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
     gunClipDamage: clipDamage,
     gunShotsPerMinute: shotsPerMinute,
     gunClipShellCount: clipShellCount,
+    gunClipBurstCount: burstGroupsPerClip,
+    gunBurstShellCount: burstGroupSize > 0 ? burstGroupSize : null,
+    gunClipBurstReloadTime: burstGroupInterval,
     gunClipShellReloadTime: clipShellReload,
     gunClipReloadTime: clipReload,
     timeBetweenPumpShots: cycle.type === 'autoreloader' && intraClip > 0 ? intraClip : null,

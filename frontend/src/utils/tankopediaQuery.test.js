@@ -14,7 +14,7 @@ describe('parseTankopediaQuery', () => {
   it('空 query 得到默认状态', () => {
     expect(parseTankopediaQuery({})).toEqual({
       q: '', tier: '', nation: '', type: '', sort: 'name', tank: null, config: null,
-      engine: null, track: null, shell: null, dev: '', cons: null, prov: null, skills: {}, camo: false,
+      engine: null, track: null, shell: null, dev: '', eq: null, cons: null, prov: null, skills: {}, camo: false,
     })
   })
 
@@ -99,8 +99,19 @@ describe('sameTankopediaQuery / withTankopediaState', () => {
     const all = serializeTankopediaQuery({
       q: 'x', tier: 1, nation: 'a', type: 'b', sort: 'hp', tank: 1, config: 0,
       engine: 0, track: 0, shell: 0, dev: '0', cons: [], prov: [], skills: { smooth_turn: 7 }, camo: true,
+      eq: [103],
     })
     expect(Object.keys(all).sort()).toEqual([...TANKOPEDIA_QUERY_KEYS].sort())
+  })
+
+  it('eq（回放装配 id 透传）：正整数集合序列化；非法/空不写', () => {
+    expect(serializeTankopediaQuery({ tank: 3, eq: [103, 110] })).toEqual({ tank: '3', eq: '103,110' })
+    expect(serializeTankopediaQuery({ tank: 3, eq: [] })).toEqual({ tank: '3' })
+    // 解析：0=空槽垫底过滤、越界剔除、去重、上限 9
+    const parsed = parseTankopediaQuery({ tank: '3', eq: '103,0,110,103,999,abc' })
+    expect(parsed.eq).toEqual([103, 110])
+    expect(parseTankopediaQuery({ tank: '3' }).eq).toBeNull()
+    expect(parseTankopediaQuery({ eq: '103' }).eq).toBeNull() // 仅详情态有效
   })
 })
 

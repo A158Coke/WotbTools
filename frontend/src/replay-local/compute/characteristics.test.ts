@@ -240,8 +240,57 @@ describe('弹夹 / 自动装填（客户端 config 字段 → BK resolveDpm）',
     expect(out.gunClipShellCount).toBe(3)
     expect(out.gunClipShellReloadTime).toBe(3)
     expect(out.gunClipReloadTime).toBeCloseTo(19.18, 1)
+    // 普通弹夹没有连发组：三行留空（参数行隐藏）
+    expect(out.gunClipBurstReloadTime).toBeNull()
+    expect(out.gunBurstShellCount).toBeNull()
+    expect(out.gunClipBurstCount).toBeNull()
     expect(out.gunClipDamage).toBe(480) // 160 × 3
     expect(out.gunEffectiveDamagePerMin).toBeNull() // 有效 DPM 只给 autoreloader
+  })
+
+  it('连发组（PomPom，AC Atlas）：组内连发与组间弹间分开计，DPM 不再把组内时间重复计入', () => {
+    // 客户端 AC Atlas V2：整夹 6 发、组间 3s、每组 3 发、组内 0.25s、整夹装填 13s、单发 120。
+    // BK resolveDpm：13×装填系数 + (6/3−1)×3 + (6/3)×(3−1)×0.25 = 12.466 + 3 + 1 = 16.466s
+    // → 120×6×60/16.466 ≈ 2623（若按普通弹夹算组内也乘 3s 会得到 ~1573，明显偏低）。
+    const out = computeCharacteristics(setup({
+      standardShell: { damage: 120, penetration: 255, type: 'ap' },
+      gunCycle: {
+        type: 'autoloader', reload: 13, intraClip: 3, shellCount: 6, shellReloads: [],
+        burstGroupCount: 3, burstGroupInterval: 0.25,
+      },
+    }))
+    expect(out.gunCommonDamagePerMin).toBeGreaterThan(2618)
+    expect(out.gunCommonDamagePerMin).toBeLessThan(2628)
+    expect(out.gunShotsPerMinute).toBeGreaterThan(21.8)
+    expect(out.gunShotsPerMinute).toBeLessThan(21.9)
+    expect(out.gunClipShellCount).toBe(6)
+    expect(out.gunClipShellReloadTime).toBe(3) // 组间扳机间隔（组内 0.25s 走下面的连发行）
+    expect(out.gunClipReloadTime).toBeCloseTo(12.466, 2)
+    // 连发行（客户端 hangarParams 同名参数）：组内弹间 / 每组发数 / 每夹组数
+    expect(out.gunClipBurstReloadTime).toBe(0.25)
+    expect(out.gunBurstShellCount).toBe(3)
+    expect(out.gunClipBurstCount).toBe(2)
+  })
+
+  it('单组连发（Annihilator/Cerberus）：整夹即一组，弹间装填行隐藏、只显示组内间隔', () => {
+    // 客户端 Cerberus：整夹 3 发全部在同一个连发组里（一组 3 发、组内 0.333s），
+    // 一夹一组 ⇒ 不存在“组间扳机间隔”，gunClipShellReloadTime 应为空；
+    // 唯一的射击间隔是 gunClipBurstReloadTime，DPM 循环只加组内 (n−1) 个间隔。
+    const out = computeCharacteristics(setup({
+      standardShell: { damage: 160, penetration: 200, type: 'ap' },
+      gunCycle: {
+        type: 'autoloader', reload: 10, intraClip: 0.3333333, shellCount: 3, shellReloads: [],
+        burstGroupCount: 3, burstGroupInterval: 0.3333333,
+      },
+    }))
+    expect(out.gunClipBurstCount).toBe(1)
+    expect(out.gunBurstShellCount).toBe(3)
+    expect(out.gunClipBurstReloadTime).toBeCloseTo(0.3333333, 6)
+    expect(out.gunClipShellReloadTime).toBeNull()
+    expect(out.gunClipReloadTime).toBeCloseTo(10 * 0.958904, 4)
+    // 3 发 / (10×0.958904 + 2×0.3333)s ≈ 2808/min
+    expect(out.gunCommonDamagePerMin).toBeGreaterThan(2800)
+    expect(out.gunCommonDamagePerMin).toBeLessThan(2820)
   })
 
   it('自动装填炮：逐发时间、整匣 = 逐发之和、最短单发循环决定 DPM', () => {

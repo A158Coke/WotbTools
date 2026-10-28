@@ -30,6 +30,60 @@ describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
       '内核按 ID 查找的节点在模板里不存在——该路径会静默失效（控件点了没反应）',
     ).toEqual([])
   })
+
+  // 2026-10-29 用户要求：厚度模式点选结果只留装甲名称 + 基础装甲值，做成命中点旁侧的浮层
+  // （相对点击坐标偏移 + 视口钳制，不盖住命中点）；右上角 HUD/模式/装甲组成合并为一块整卡片。
+  it('点选结果只显示装甲名称与基础装甲值，浮层避开命中点；右上角合并为一块整体面板', () => {
+    expect(template).toContain('id="click-part"')
+    expect(template).toContain('id="click-armor"')
+    expect(template).not.toMatch(/id="click-(?:angle|effective|pen|result)"/)
+    expect(kernel).not.toContain("document.getElementById('click-angle')")
+    expect(kernel).not.toContain("document.getElementById('click-effective')")
+    expect(kernel).toMatch(/document\.getElementById\('click-part'\)\.textContent = L\.partName/)
+    expect(kernel).toMatch(/if \(collisionMode\) \{ showArmorPartInfo\(event, ndcX, ndcY\); return; \}/)
+    expect(kernel).toMatch(/function showArmorPartInfo\(event, ndcX, ndcY\)/)
+    // 浮层先放在命中点右下、越界翻到左上，再钳制；两条左/上赋值都在，且偏移量 >= 视觉间距
+    expect(kernel).toMatch(/let left = event\.clientX \+ gap;/)
+    expect(kernel).toMatch(/let top = event\.clientY \+ gap;/)
+    expect(kernel).toMatch(/if \(left \+ w > window\.innerWidth - edge\) left = event\.clientX - w - gap;/)
+    expect(kernel).toMatch(/if \(top \+ h > window\.innerHeight - edge\) top = event\.clientY - h - gap;/)
+    expect(kernel).toMatch(/card\.style\.left = /)
+    expect(kernel).toMatch(/card\.style\.top = /)
+    expect(kernel).toMatch(/card\.style\.display = 'block'/)
+    // 浮层不是右上角面板的子节点：DOM 顺序在 #corner-tr 之前，外观由共享面板规则提供
+    expect(template.indexOf('id="click-info"')).toBeLessThan(template.indexOf('id="corner-tr"'))
+    const clickInfoCss = template.slice(template.indexOf('.armor-view #click-info {'))
+    const clickInfoRule = clickInfoCss.slice(0, clickInfoCss.indexOf('}'))
+    expect(clickInfoRule).toContain('position: fixed')
+    expect(clickInfoRule).toContain('pointer-events: none')
+    expect(template).toMatch(/:is\(#info-panel, #tank-selectors, #turret-controls, #debug-info, #click-info\)/)
+    // 右上角卡片外观由 #corner-tr 提供；射击 HUD 与模式切换只排布内容，过滤行是面板内静态第二行
+    const cornerTrCss = template.slice(template.indexOf('.armor-view #corner-tr {'))
+    const cornerTrRule = cornerTrCss.slice(0, cornerTrCss.indexOf('}'))
+    expect(cornerTrRule).toContain('background: var(--panel)')
+    expect(cornerTrRule).toContain('border: 1px solid var(--border)')
+    // 面板固定宽度：进入厚度视图出现过滤行时不撑宽（手机竖屏整条底栏不固定）
+    expect(cornerTrRule).toContain('inline-size: 17rem')
+    expect(template).toMatch(/\.armor-view #corner-tr \{[^}]*inline-size: auto;/)
+    const shotHud = read('./ArmorShotHud.vue')
+    const shotHudRule = shotHud.slice(shotHud.indexOf('.shot-hud {'), shotHud.indexOf('.hud-row'))
+    expect(shotHudRule).not.toContain('background: var(--panel)')
+    expect(template).toMatch(/\.armor-view \.armor-filters \{[^}]*flex: 1 1 100%;/)
+    expect(template).not.toMatch(/\.armor-view \.armor-filters \{[^}]*position: absolute;/)
+  })
+
+  // 2026-10-29 用户报障（114 SP2 / 11057）：履带上表面位置不对。源 GLB 履带材质是
+  // doubleSided，上表面条带绕序朝内——替换材质固定 FrontSide 会在厚度视图/热力图里把
+  // 上表面剔除成空洞。模块替换材质/clone 必须沿用源材质的 side。
+  it('模块替换材质沿用客户端材质的双面口径', () => {
+    expect(kernel).toMatch(/function moduleDoubleSided\(node\) \{/)
+    expect(kernel).toMatch(/node\.userData\.moduleDoubleSided = moduleDoubleSided\(node\);/)
+    expect(kernel).toMatch(/const side = node\.userData\.moduleDoubleSided \? THREE\.DoubleSide : THREE\.FrontSide;/)
+    expect(kernel).toMatch(/mat\.side = side;/)
+    expect(kernel).toMatch(/cmat\.side = side;/)
+    expect(kernel).toMatch(/m\.side = side;/)
+    expect(kernel).toMatch(/sm\.side = node\.userData\.moduleDoubleSided \? THREE\.DoubleSide : THREE\.FrontSide;/)
+  })
 })
 
 
@@ -191,7 +245,86 @@ describe('dolly-zoom world-overview scope guard', () => {
     expect(kernel).toMatch(/function animate\(\) \{\s*if \(destroyed \|\| contextLost\) return;/)
     expect(kernel).toMatch(/reportLoad\(\{ state: 'error', message: contextLostMessage\(\), contextLost: true \}\)/)
     expect(kernel).toMatch(/function isContextLost\(\) \{ return contextLost; \}/)
-    expect(kernel).toMatch(/return \{ destroy, retry, selectTank, canPick, isContextLost \};/)
+    // 装甲厚度与击穿视图互斥；厚度模式点击只出部件信息，不做击穿判定
+    expect(kernel).toMatch(/collisionMode && penetrationMode/)
+    expect(kernel).toMatch(/penetrationMode && collisionMode/)
+    expect(kernel).toMatch(/if \(collisionMode\) \{ showArmorPartInfo\(event, ndcX, ndcY\); return; \}/)
+    expect(kernel).toMatch(/function showArmorPartInfo\(event, ndcX, ndcY\)/)
+    // 碰撞视图保留炮管/履带碰撞体
+    expect(kernel).toMatch(/function applyModuleCollisionMaterial\(on\)/)
+    expect(kernel).toMatch(/moduleOriginalMaterials\.set\(node, node\.material\)/)
+    // 卸载目标时释放厚度视图缓存的原材质/实心材质及贴图，避免换车累积模型内存
+    expect(kernel).toMatch(/function releaseModuleMaterialCaches\(\)/)
+    expect(kernel).toMatch(/moduleOriginalMaterials\.clear\(\)/)
+    expect(kernel).toMatch(/releaseModuleMaterialCaches\(\);\s*\n\s*\/\/[^\n]*\n\s*highlightedArmorNode = null;/)
+    expect(kernel).toMatch(/const staleClickInfo = document\.getElementById\('click-info'\);/)
+    expect(kernel).toMatch(/moduleMeshes = \[\];/)
+    expect(kernel).toMatch(/const keep = new Set\(moduleMeshes\)/)
+    // 分类过滤（主装甲/间隙/外部模块）
+    // 碰撞视图隐藏用逐节点标记（重复调用不丢状态），退出后外观恢复
+    expect(kernel).toMatch(/node\.userData\.collisionHidden = true/)
+    expect(kernel).not.toMatch(/collisionHiddenVisuals/)
+    // 模式按钮文案固定：不按开关改 textContent（否则面板宽度跳动）
+    expect(kernel).not.toMatch(/this\.textContent = penetrationMode/)
+    expect(kernel).not.toMatch(/this\.textContent = collisionMode/)
+    expect(kernel).toMatch(/setArmorFilterRowVisible\(collisionMode\)/)
+    expect(kernel).toMatch(/if \(!collisionMode\) resetArmorFilters\(\);/)
+    expect(read('./AgentArmorView.vue')).toMatch(/id="armor-filters"/)
+    expect(kernel).toMatch(/const hiddenCategories = \{ primary: false, spaced: false, external: false \}/)
+    expect(kernel).toMatch(/function applyCategoryFilters\(/)
+    // 击穿视图默认开启，?heatmap=0 显式关闭（2026-10-28 用户要求）
+    expect(kernel).toMatch(/if \(QP\.get\('heatmap'\) !== '0' && !penetrationMode && !collisionMode\)/)
+    // 普通检视换弹：只清掉上一次判定，不按旧点击位置重跑（2026-10-28 用户裁定）
+    expect(kernel).toMatch(/else if \(penetrationMode && lastClickNdc\) \{[\s\S]*?tidyTrajectory\(\);/)
+    expect(kernel).not.toMatch(/doPenetrationCheck\(lastClickNdc\.x, lastClickNdc\.y\)/)
+    // 厚度视图点击高亮（2026-10-28 用户要求，对齐 BlitzKit）：被点装甲板保持不透明、
+    // 其余装甲板/模块降透明度；**不改厚度色相**（不加金色自发光，2026-10-29 用户报障：
+    // 点击后颜色与点击前不一致）；复位只作用于碰撞视图，不能把普通视图的透明覆盖层改成不透明。
+    expect(kernel).toMatch(/function applyArmorHighlight\(selected\)/)
+    expect(kernel).not.toContain('0xffc247')
+    expect(kernel).toMatch(/if \(node === selected\) \{[\s\S]*?m\.opacity = 1;[\s\S]*?m\.emissive\.setHex\(0x000000\)/)
+    expect(kernel).toMatch(/m\.opacity = modules\.has\(node\) \? 0\.15 : 0\.18/)
+    expect(kernel).toMatch(/function resetArmorHighlight\(\)[\s\S]*?if \(!collisionMode \|\| !armorModel\) return;/)
+    expect(kernel).toMatch(/if \(node === selected\) \{[\s\S]*?m\.opacity = 1;/)
+    // 命中换板、落空清空；离开碰撞视图 / 换配置 / 过滤隐藏当前板都要清掉高亮
+    expect(kernel).toMatch(/if \(!info\) \{ resetArmorHighlight\(\); card\.style\.display = 'none'; return; \}[\s\S]*?applyArmorHighlight\(info\.object\);/)
+    expect(kernel).toMatch(/if \(!collisionMode\) \{ resetArmorHighlight\(\); document\.getElementById\('click-info'\)\.style\.display = 'none'; \}/)
+    expect(kernel).toMatch(/highlightedArmorNode && !isEffectivelyVisible\(highlightedArmorNode\)[\s\S]*?resetArmorHighlight\(\);/)
+    // 视觉模型必须渲染全部部件：`gun_XX_mask` 是炮盾/炮根视觉（Super Conqueror 19281 等
+    // 无 mask 值的车，炮塔与炮管之间只由这个网格连接），不能写进可见性
+    // （2026-10-28 用户报障：视觉模型缺件）。
+    const baseVisible = kernel.slice(kernel.indexOf('function baseNodeVisible('), kernel.indexOf('function setArmorFilterRowVisible('))
+    expect(baseVisible).not.toContain('gunMaskPart')
+    // BlitzKit 口径（2026-10-28 用户裁定回退）：外部模块按 mask 标量选取——有 mask 值
+    // → gun_0X* 全部网格（含 _mask/辅助件，由同一平面裁掉炮根）；无 mask 值 → 只取精确
+    // gun_0X。辅助件必须并入模块（BlitzKit startsWith），不能按纯视觉 deco 隐藏。
+    expect(kernel).toMatch(/if \(node\.userData\.gunMaskPart && !hasMask\) return;\s*\n\s*externalMeshes\.push\(node\);/)
+    expect(kernel).toMatch(/const hideMaskPart = collisionMode && !hasMask;/)
+    expect(kernel).toMatch(/&& !\(hideMaskPart && node\.userData\.gunMaskPart\)/)
+    const tagFn = kernel.slice(kernel.indexOf('function tagModuleMeshes('), kernel.indexOf('let worldMetersPerUnit'))
+    expect(tagFn).not.toContain("armorSection = 'deco'")
+    expect((tagFn.match(/gunMaskPart = true;/g) || [])).toHaveLength(2)
+    // 平面 = BlitzKit 同式：枪管局部系（法线=模型前向）过模型原点前方 gun_mask+原点链处，
+    // 随炮塔/炮管姿态矩阵（gunPoseMatrix）与模型根变换进世界系；厚度视图实心炮管体与
+    // 续飞着色器同步同一平面。不能再用「模型原点 + 炮口方向 × 距离」的近似。
+    expect(kernel).toMatch(/const maskOriginModel = cfg\.gun_mask \+ mo\.track\[1\] \+ mo\.turret\[1\] \+ cfg\.gun_origin\[1\];/)
+    expect(kernel).toMatch(/gunPoseMatrix\.copy\(mGun\);/)
+    expect(kernel).toMatch(/_gunClipMatrix\.copy\(tankModel\.matrixWorld\)\.multiply\(gunPoseMatrix\);/)
+    expect(kernel).toMatch(/plane\.applyMatrix4\(_gunClipMatrix\);/)
+    expect(kernel).toMatch(/new THREE\.Vector3\(0, 1, 0\),/)
+    expect(kernel).not.toContain('gunMuzzleWorld')
+    expect(kernel).toMatch(/function syncModuleClipPlanes\(\)/)
+    expect(kernel).toMatch(/if \(collision\) computeGunClipPlane\(\);/)
+    expect(kernel).toMatch(/if \(collisionMode\) \{ computeGunClipPlane\(\); syncModuleClipPlanes\(\); \}/)
+    expect(kernel).toMatch(/rcUniforms\.rcClipEnabled\.value = true;/)
+    expect(kernel).toMatch(/return \{[\s\S]*?destroy, retry, selectTank, canPick, isContextLost,/)
+    for (const api of ['setConfig: applyConfig', 'setConfigUiVisible', 'setShellUiVisible', 'setShell', 'setShooterConfig', 'setEquipmentOverride']) {
+      expect(kernel).toContain(api)
+    }
+    // 强化装甲的厚度系数与判定模式无关：setEquipmentOverride → 统一刷新，且刷新在
+    // “penetrationMode” 早退之前就写入 uniform（否则装甲检视模式里开关不生效）。
+    expect(kernel).toMatch(/function setEquipmentOverride\(kind, value\)[\s\S]*?refreshEquipmentEffects\(\);/)
+    expect(kernel).toMatch(/function refreshEquipmentEffects\(\)[\s\S]*?updateHeatmapThickness\(\);\s*if \(!penetrationMode\) return;/)
     const view = read('./AgentArmorView.vue')
     expect(view).toMatch(/function startViewer\(preserveSelection = false\)/)
     expect(view).toMatch(/if \(!preserveSelection\) \{/)
@@ -288,7 +421,10 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(kernel).toMatch(/blendSrcAlpha: THREE\.OneFactor, blendDstAlpha: THREE\.ZeroFactor/)
     const stateScene = kernel.slice(kernel.indexOf('function buildSpacedStateScene'), kernel.indexOf('function buildPrimaryArmorScene'))
     expect(stateScene).toMatch(/primaryMeshes\.forEach/)
-    expect(stateScene).toMatch(/addClone\(spacedStateScene, node, moduleStateMaterial\(/)
+    // 状态 clone 先用 moduleStateMaterial 建材质（再按源材质 side 设双面），再 addClone
+    expect(stateScene).toMatch(/const sm = moduleStateMaterial\(/)
+    expect(stateScene).toMatch(/sm\.side = node\.userData\.moduleDoubleSided \? THREE\.DoubleSide : THREE\.FrontSide;/)
+    expect(stateScene).toMatch(/addClone\(spacedStateScene, node, sm, 3\)/)
     // PBR：RT0.R 已是逐层 normalized effective；直接累加，不再用 RT1.B 做最近层差额。
     expect(kernel).toMatch(/highp float totalConsume = spacedSatBlocked \? 1\.0 : max\(0\.0, rawTotal\);/)
     // B 的唯一消费者是上方锁定的诊断解码，不参与厚度或穿深计算。
@@ -477,7 +613,8 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
 // 与 .tp-media 的 aspect-ratio 必须一致，且盒子不再用固定高度（固定高会让比例随卡片
 // 宽度漂移、内容框换算失准）。
 describe('production gun_mask clip wiring (2026-10-21)', () => {
-  // 穿透材质族 2026-10-24 出仓 viewer/armorShaders.js（Step B2）：uniform 注入断言拼接读取两份源
+  // 穿透材质族 2026-10-24 出仓 viewer/armorShaders.js（Step B2）：uniform 注入断言拼接读取两份源。
+  // 2026-10-28：保持 BlitzKit 口径——gun_mask 标量重建的裁切面每帧同步到续飞着色器。
   const kernel = read('../scene/tankViewer.js') + '\n' + read('../scene/viewer/armorShaders.js')
   it('PBR 与间隙甲状态材质都注入同一 rcClipPlane/rcClipEnabled，且每帧同步 gunClipPlane', () => {
     const occurrences = [...kernel.matchAll(/rcClipPlane:\s*rcUniforms\.rcClipPlane/g)]
@@ -540,6 +677,104 @@ describe('tank-picker cover crop wiring (shared TankCatalogMenu)', () => {
     expect(menu).toMatch(/tankIconCropTransform\(iconCrops\.value\?\.\[String\(id\)\], ICON_BOX_ASPECT\)/)
     expect(menu).toMatch(/loadTankIconCrops\(\)\.then/)
     expect(menu).toMatch(/:style="iconCropStyle\(tank\.id\)"/)
+  })
+})
+
+// 间隙甲双面判定（2026-10-28 用户裁定）：间隙屏从背面命中同样参与判定；闭合间隙甲
+// 正/背面是同一块板，只计一层（否则重复消耗厚度）。显示/采样材质是 FrontSide，求交
+// 时临时切 DoubleSide，同步求交后立即恢复。
+describe('spaced armor double-sided judgment', () => {
+  const kernel = read('../scene/tankViewer.js')
+  it('求交前把间隙甲材质临时切成 DoubleSide，并在 finally 恢复', () => {
+    expect(kernel).toMatch(/function intersectArmorDoubleSidedSpaced\(objects, caster\)/)
+    expect(kernel).toMatch(/node\.userData\.armorSection !== 'spaced'/)
+    expect(kernel).toMatch(/m\.side = THREE\.DoubleSide/)
+    expect(kernel).toMatch(/finally \{\s*\n\s*for \(const \[m, side\] of saved\) m\.side = side;/)
+  })
+  it('命中收集只放行未计过的间隙甲背面，主装甲/模块仍剔除背面', () => {
+    expect(kernel).toMatch(/function collectJudgmentHits\(intersects, rayDir\)/)
+    expect(kernel).toMatch(/if \(entry\.section !== 'spaced' \|\| spacedSeen\.has\(key\)\) continue;/)
+    expect(kernel).toMatch(/if \(entry\.section === 'spaced'\) spacedSeen\.add\(key\);/)
+    expect(kernel).not.toMatch(/entry && !entry\.backface/)
+  })
+  it('点击主链与跳弹续飞共用同一双面求交/收集', () => {
+    expect(kernel).toMatch(/const intersects = intersectArmorDoubleSidedSpaced\(objects, raycaster\);/)
+    expect(kernel).toMatch(/const armorHits = collectJudgmentHits\(intersects, raycaster\.ray\.direction\);/)
+    expect(kernel).toMatch(/const ricIntersects = intersectArmorDoubleSidedSpaced\(objects, rc\);/)
+    expect(kernel).toMatch(/const ricHits = collectJudgmentHits\(ricIntersects, rc\.ray\.direction\)/)
+  })
+})
+
+// 换车/换弹的状态归属：URL 是 owner，viewer 的恢复输入不能停留在初始化快照；
+// 选车器换车不写 route，编辑器/HUD 就绪标志必须按当前车重置。
+describe('armor shell and readiness ownership', () => {
+  const kernel = read('../scene/tankViewer.js')
+  const view = read('./AgentArmorView.vue')
+  it('换目标后从当前 URL 恢复 shell，setShell 不再保留旧 QP 快照', () => {
+    expect(kernel).toMatch(/function requestedShellIndex\(\)/)
+    expect(kernel).toMatch(/populateShellSelector\(shooterShells, requestedShellIndex\(\)\)/)
+    expect(kernel).toMatch(/QP\.set\('shell', String\(i\)\);/)
+  })
+  it('选车器换车时重置编辑器/HUD 就绪标志，HUD 不再套用受击方 config', () => {
+    expect(view).toMatch(/watch\(shooterSetupId, \(\) => \{ shooterReady\.value = false; hudReady\.value = false \}\)/)
+    expect(view).toMatch(/watch\(targetSetupId, \(\) => \{ targetReady\.value = false \}\)/)
+    const hud = view.match(/<ArmorShotHud[\s\S]*?\/>/)[0]
+    expect(hud).not.toContain(':config=')
+  })
+  it('原生回退控件把选择写回 URL，避免 HUD 与场景各用一套状态', () => {
+    expect(kernel).toMatch(/onConfigSelection\?\.\(idx\)/)
+    expect(kernel).toMatch(/onShellSelection\?\.\(idx\)/)
+    expect(kernel).toMatch(/onEquipmentSelection\?\.\('calibrated', this\.checked\)/)
+    expect(kernel).toMatch(/equipmentOverride\.calibrated = null;\s*\n\s*refreshEquipmentEffects\(\);/)
+    expect(kernel).toMatch(/equipmentOverride\.enhanced = null;\s*\n\s*refreshEquipmentEffects\(\);/)
+    expect(view).toMatch(/function syncNativeTargetConfig\(index\)/)
+    expect(view).toMatch(/function syncNativeShell\(index\)/)
+    expect(view).toMatch(/function syncNativeEquipment\(kind, value\)/)
+    expect(view).toMatch(/onConfigSelection: index => syncNativeTargetConfig\(index\)/)
+    expect(view).toMatch(/onShellSelection: index => syncNativeShell\(index\)/)
+    expect(view).toMatch(/onEquipmentSelection: \(kind, value\) => syncNativeEquipment\(kind, value\)/)
+  })
+  it('空 scfg 视同缺省，同车检视仍回落到受击方配置', () => {
+    expect(view).toMatch(/const scfg = route\.query\.scfg\s*\n\s*return scfg != null && scfg !== ''/)
+  })
+  it('缺省 shooter 时同车检视按 target 判定，不把 NaN 当作独立射手', () => {
+    expect(view).toMatch(/const queryShooter = Number\(route\.query\.shooter\)/)
+    expect(view).toMatch(/Number\.isFinite\(queryShooter\) && queryShooter > 0 \? queryShooter : loadoutTankId\.value/)
+  })
+  it('只换射手发动机/履带不凭空建立 scfg', () => {
+    expect(view).toMatch(/const hadExplicitShooterConfig = query\.scfg != null && query\.scfg !== ''/)
+    expect(view).toMatch(/if \(configChanged \|\| hadExplicitShooterConfig\) put\('scfg', patch\.config\)/)
+  })
+  it('HUD 就绪即独占被替换的装备控件；配置变更按解析后的选择判断', () => {
+    expect(view).toMatch(/'has-shot-hud': hudReady/)
+    expect(view).toMatch(/\.armor-view #tank-selectors\.has-shot-hud \.eq-opt:not\(#armor-state-opt\)/)
+    expect(view).toMatch(/const configChanged = patch\.configChanged === true/)
+    expect(read('./ArmorSideConfig.vue')).toMatch(/configChanged: next\.config !== sel\.config/)
+    // 旧车的模块请求失败/迟到不得改写新车的 modules 与 ready 状态
+    expect(read('./ArmorSideConfig.vue')).toMatch(/\} catch \{\s*if \(seq !== request\) return\s*modules\.value = null\s*\}/)
+  })
+})
+
+// 间隙甲渲染：additive 层按网格拓扑选面——闭合网格单面累计（正/背两表面只算一次），
+// 开放面片双面（背面命中仍可见）；背面片元把法线翻向相机（与 classifyHit 同口径）。
+describe('spaced armor surface selection', () => {
+  const shaders = read('../scene/viewer/armorShaders.js')
+  const kernel = read('../scene/tankViewer.js')
+  it('闭合网格单面、开放面片双面；深度占位保持双面且在着色之后', () => {
+    expect(shaders).toMatch(/function spacedMaterial\(thickness, penetration, side\)/)
+    expect(shaders).toMatch(/side,\s*\n\s*uniforms:/)
+    expect(shaders).toMatch(/depthWrite: true, depthTest: true, blending: THREE\.NoBlending,\s*\n\s*side: THREE\.DoubleSide,/)
+    expect(kernel).toMatch(/isClosedSurfaceGeometry\(node\.geometry\) \? THREE\.FrontSide : THREE\.DoubleSide/)
+    expect(kernel).toMatch(/spacedMaterial\(t, pen, side\)/)
+    expect(kernel).toMatch(/colorWrite: false, depthTest: true, depthWrite: true, side: THREE\.DoubleSide,/)
+    expect(kernel).toMatch(/addClone\(spacedArmorScene, node, spacedOmitMaterial, 5\)/)
+  })
+  it('间隙甲片元着色器按 gl_FrontFacing 翻转法线（PBR/间隙/状态三处）', () => {
+    const flips = [...shaders.matchAll(/if \(!gl_FrontFacing\) nFace = -nFace;/g)]
+    expect(flips).toHaveLength(3)
+  })
+  it('厚度视图间隙甲材质 DoubleSide，主装甲保持 FrontSide', () => {
+    expect(kernel).toMatch(/side: node\.userData\.armorSection === 'spaced' \? THREE\.DoubleSide : THREE\.FrontSide,/)
   })
 })
 

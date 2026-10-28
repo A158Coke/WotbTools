@@ -820,8 +820,9 @@ export function isClippedModuleHit(section, point, clipPlane) {
 
 /**
  * FrontSide 背面判据（与 `raycastPackAll`/GLSL 的绕序背面剔除同义）：世界法线
- * 朝来向时该交点是实体背面。点击链的 raycaster 读取显示材质（间隙甲 DoubleSide），
- * 判定收集必须再剔除背面，否则闭合间隙甲正/背面各计一层（重复消耗厚度）。
+ * 朝来向时该交点是实体背面。点击主链对间隙甲做双面求交（临时 DoubleSide），收集时
+ * 只放行「该板前面未计过」的间隙甲背面——闭合间隙甲正/背面各计一层会重复消耗厚度；
+ * 主装甲/外部模块仍只认迎面命中。判定包与 GLSL 路径默认仍按 FrontSide 剔除。
  * @param {THREE.Vector3} normal 世界系绕序法线（翻面之前）
  * @param {THREE.Vector3} rayDir 世界系射线方向（单位向量）
  */

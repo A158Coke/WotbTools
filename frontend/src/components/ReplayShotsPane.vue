@@ -34,6 +34,7 @@ import StatStrip from './StatStrip.vue'
 import TankClassIcon from './TankClassIcon.vue'
 import AppButton from './AppButton.vue'
 import Banner from './Banner.vue'
+import EquipmentBadges from './EquipmentBadges.vue'
 
 defineOptions({ name: 'ReplayShotsPane' })
 
@@ -492,6 +493,11 @@ function rowHas3d(s) {
   return s.target_eid != null
 }
 
+/** 该弹的射手配件串有可显示内容（Type5 物化在案且含非空槽 id；未知 id 由徽标 fail-closed）。 */
+function hasEquipment(s) {
+  return Array.isArray(s?.shooter_equipment?.raw) && s.shooter_equipment.raw.some(id => Number.isInteger(id) && id > 0)
+}
+
 /**
  * 列表 / 详情分档由**容器宽度**决定（design-language §9：expanded 常驻、medium 推开式、
  * compact 全屏），不看视口——工作台可能被侧栏或抽屉挤窄。
@@ -792,6 +798,12 @@ onBeforeUnmount(() => {
             <div v-if="trajectoryLength(selectedShot) != null" class="shot-detail-row">
               <dt>{{ $t('agentShots.detail_trajectory') }}</dt>
               <dd>{{ trajectoryLength(selectedShot).toFixed(1) }} m</dd>
+            </div>
+            <div v-if="hasEquipment(selectedShot)" class="shot-detail-row">
+              <dt>{{ $t('agentShots.col_equipment') }}</dt>
+              <dd>
+                <EquipmentBadges :ids="selectedShot.shooter_equipment?.raw ?? null" />
+              </dd>
             </div>
           </dl>
 

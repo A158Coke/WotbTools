@@ -1,5 +1,6 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import GunMarksBadge from './GunMarksBadge.vue'
 import { useI18n } from 'vue-i18n'
 import {
@@ -10,6 +11,8 @@ import {
   moduleCrewStatesAt,
 } from '../utils/battlePlaybackV2.ts'
 import { loadoutItemLabel } from '../data/loadoutItems.js'
+import { deviceById, itemIconUrl, loadDevices } from '../utils/researchCatalog.js'
+import { romanLevel } from '../utils/tierFormat.js'
 
 /**
  * V2 车辆检查器：选中任意 materialized vehicle 后，展示「在 t 时刻我们到底知道什么」。
@@ -22,6 +25,36 @@ const props = defineProps({
 })
 
 const { t, te, locale } = useI18n()
+const router = useRouter()
+
+// 装备图标反查（资产包 devices.json，loadDevices 轻加载）：**名称权威仍是
+// loadoutItemLabel**（未知 id 走通用未知文案、raw id 不进 UI，既有门禁）；图标只是
+// 美术层增强——目录不可达或 id 无法对号时不渲染图标，文本不变（fail-soft）。
+const devices = ref(null)
+onMounted(async () => {
+  try {
+    devices.value = (await loadDevices()).devices
+  } catch {
+    devices.value = null
+  }
+})
+function equipmentIcon(id) {
+  const device = deviceById(devices.value, id)
+  return device ? itemIconUrl('devices', device.icon) : null
+}
+
+/** 「在配置器中打开」：装备 id 原值经 ?eq= 透传，由配置器反解槽位（歧义 fail-closed）。 */
+const equipmentIdList = computed(() => (props.track.loadout?.equipmentIds || []).filter(id => Number.isInteger(id) && id > 0))
+function openInConfigurator() {
+  if (!(props.track.tankId > 0)) return
+  router.push({
+    query: {
+      view: 'agent-tankopedia',
+      tank: String(props.track.tankId),
+      ...(equipmentIdList.value.length ? { eq: equipmentIdList.value.join(',') } : {}),
+    },
+  })
+}
 
 const life = computed(() => lifeAt(props.track, props.timeSec))
 const health = computed(() => healthDisplayAt(props.track, props.timeSec))
@@ -85,6 +118,7 @@ const equipmentLabels = computed(() => {
   return Array.from({ length: 9 }, (_, i) => ({
     slot: i,
     semanticKey: slotKeys[i],
+    id: loadout.value.equipmentIds?.[i] ?? null,
     label: itemLabel('equipment', loadout.value.equipmentIds?.[i] ?? null),
   }))
 })
@@ -170,7 +204,7 @@ function moduleStateLabel(state) {
 
     <div class="v2-inspector-row" data-test="v2-inspector-tier">
       <span class="v2-inspector-key">{{ $t('recon.map.playback.tank_tier') }}</span>
-      <span class="v2-inspector-val">{{ track.tankTier ?? '—' }}</span>
+      <span class="v2-inspector-val">{{ romanLevel(track.tankTier) || '—' }}</span>
     </div>
 
     <template v-if="loadout">
@@ -208,10 +242,20 @@ function moduleStateLabel(state) {
           :data-equipment-slot="e.slot"
         >
           <span class="v2-chip-type">{{ $t(`recon.map.playback.equipment_slot_${e.semanticKey}`) }}</span>
-          <span>{{ e.label }}</span>
+          <span class="v2-chip-item">
+            <img v-if="equipmentIcon(e.id)" :src="equipmentIcon(e.id)" alt="" width="24" height="24" loading="lazy">
+            <span>{{ e.label }}</span>
+          </span>
         </div>
             </div>
           </div>
+          <button
+            v-if="track.tankId > 0"
+            type="button"
+            class="v2-configurator-link"
+            data-test="v2-inspector-open-configurator"
+            @click="openInConfigurator"
+          >{{ $t('research.open_in_configurator') }}</button>
         </div>
       </div>
     </template>
@@ -270,4 +314,20 @@ function moduleStateLabel(state) {
   .v2-equipment-row { display: block; }
 }
 .v2-chip-type { color: var(--pb-dim, #9aa); font-size: 9px; text-transform: uppercase; }
+.v2-chip-item { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+.v2-chip-item img { flex: none; inline-size: 24px; block-size: 24px; object-fit: contain; }
+.v2-configurator-link {
+  margin-top: 2px;
+  align-self: flex-start;
+  padding: 2px 8px;
+  min-height: 24px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 4px;
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font-size: 10px;
+  cursor: pointer;
+}
+.v2-configurator-link:hover { border-color: var(--color-border-strong); }
+.v2-configurator-link:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 </style>

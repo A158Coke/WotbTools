@@ -76,7 +76,7 @@ function linkAttrs(id) {
             :aria-label="rail && item.shortLabelKey ? `${$t(item.shortLabelKey)}: ${$t(item.labelKey)}` : $t(item.labelKey)"
             :data-testid="`nav-${item.id}`"
           >
-            <component :is="PRIMARY_NAV_ICONS[item.id]" :size="20" aria-hidden="true" />
+            <component :is="PRIMARY_NAV_ICONS[item.id]" :size="24" aria-hidden="true" />
             <span class="sidebar-label">{{ $t(rail ? (item.shortLabelKey || item.labelKey) : item.labelKey) }}</span>
           </RouterLink>
         </li>
@@ -95,7 +95,7 @@ function linkAttrs(id) {
               :title="rail ? $t(item.labelKey) : undefined"
               :data-testid="`nav-${item.id}`"
             >
-              <component :is="ADMIN_NAV_ICONS[item.id]" :size="20" aria-hidden="true" />
+              <component :is="ADMIN_NAV_ICONS[item.id]" :size="24" aria-hidden="true" />
               <span class="sidebar-label">{{ $t(item.labelKey) }}</span>
             </RouterLink>
           </li>
@@ -116,7 +116,7 @@ function linkAttrs(id) {
         data-testid="nav-more"
         @click="moreOpen = !moreOpen"
       >
-        <component :is="PRIMARY_NAV_ICONS.more" :size="20" aria-hidden="true" />
+        <component :is="PRIMARY_NAV_ICONS.more" :size="24" aria-hidden="true" />
         <span class="sidebar-label">{{ $t(moreItem.labelKey) }}</span>
       </button>
 
@@ -127,7 +127,7 @@ function linkAttrs(id) {
         :title="rail ? (accountLabel ?? $t('app.login')) : undefined"
         data-testid="nav-account"
       >
-        <component :is="ACCOUNT_ICON" :size="20" aria-hidden="true" />
+        <component :is="ACCOUNT_ICON" :size="24" aria-hidden="true" />
         <span class="sidebar-label sidebar-account-label">{{ accountLabel ?? $t('app.login') }}</span>
       </RouterLink>
 
