@@ -240,6 +240,10 @@ describe('弹夹 / 自动装填（客户端 config 字段 → BK resolveDpm）',
     expect(out.gunClipShellCount).toBe(3)
     expect(out.gunClipShellReloadTime).toBe(3)
     expect(out.gunClipReloadTime).toBeCloseTo(19.18, 1)
+    // 普通弹夹没有连发组：三行留空（参数行隐藏）
+    expect(out.gunClipBurstReloadTime).toBeNull()
+    expect(out.gunBurstShellCount).toBeNull()
+    expect(out.gunClipBurstCount).toBeNull()
     expect(out.gunClipDamage).toBe(480) // 160 × 3
     expect(out.gunEffectiveDamagePerMin).toBeNull() // 有效 DPM 只给 autoreloader
   })
@@ -260,8 +264,12 @@ describe('弹夹 / 自动装填（客户端 config 字段 → BK resolveDpm）',
     expect(out.gunShotsPerMinute).toBeGreaterThan(21.8)
     expect(out.gunShotsPerMinute).toBeLessThan(21.9)
     expect(out.gunClipShellCount).toBe(6)
-    expect(out.gunClipShellReloadTime).toBe(3) // 组间扳机间隔（组内 0.25s 不写进该行）
+    expect(out.gunClipShellReloadTime).toBe(3) // 组间扳机间隔（组内 0.25s 走下面的连发行）
     expect(out.gunClipReloadTime).toBeCloseTo(12.466, 2)
+    // 连发行（客户端 hangarParams 同名参数）：组内弹间 / 每组发数 / 每夹组数
+    expect(out.gunClipBurstReloadTime).toBe(0.25)
+    expect(out.gunBurstShellCount).toBe(3)
+    expect(out.gunClipBurstCount).toBe(2)
   })
 
   it('自动装填炮：逐发时间、整匣 = 逐发之和、最短单发循环决定 DPM', () => {
