@@ -13,9 +13,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
   normalizeAgentShotsOutcome,
   validateAgentAiReview,
+  validateAgentAuthorInitialPosition,
   validateAgentBattleResult,
   validateAgentPlayback,
   type AgentAiReviewFacet,
+  type AgentAuthorInitialPosition,
   type AgentBattleResult,
   type AgentPlaybackFacet,
   type AgentShotsOutcome,
@@ -39,6 +41,8 @@ interface WasmModule {
   parsePlayback: (bytes: Uint8Array) => string
   parseAiReview: (bytes: Uint8Array) => string
   parseShotReplays: (bytes: Uint8Array, limits?: string, shells?: string) => string
+  /** 第五入口（上游 v0.4.15）；旧产物缺省 */
+  parseAuthorInitialPosition?: (bytes: Uint8Array) => string
 }
 
 let mod: WasmModule | null = null
@@ -146,6 +150,21 @@ export async function replayFacets(path: string): Promise<FixtureFacets> {
 export async function shotsViaPinnedWasm(bytes: Uint8Array): Promise<AgentShotsOutcome> {
   const m = await wasm()
   return normalizeAgentShotsOutcome(JSON.parse(m.parseShotReplays(bytes)) as unknown)
+}
+
+/**
+ * 第五入口（`parseAuthorInitialPosition`，上游 v0.4.15）：录像者初始世界位姿。
+ * 旧产物缺该 export 时显式失败——不能把「pinned 产物没有该能力」伪装成 null。
+ */
+export async function authorInitialPositionViaPinnedWasm(
+  bytes: Uint8Array,
+): Promise<AgentAuthorInitialPosition | null> {
+  const m = await wasm()
+  const parse = m.parseAuthorInitialPosition
+  if (typeof parse !== 'function') {
+    throw new Error('pinned agent WASM 缺 parseAuthorInitialPosition（需要 v0.4.15+）')
+  }
+  return validateAgentAuthorInitialPosition(JSON.parse(parse(bytes)) as unknown)
 }
 
 /** 作者车的装填遥测（生产装配的同款形状 + 逐发状态采样） */
