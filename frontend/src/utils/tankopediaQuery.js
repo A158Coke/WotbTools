@@ -72,6 +72,18 @@ function skillLevels(value) {
   return out
 }
 
+/**
+ * 回放装配 id 透传（`shooter_equipment.raw`，Type5 九字节、0=空槽垫底）：只做一次性
+ * 「在配置器中打开」的中转参数——AgentTankopedia 加载模块/目录后反解成 `dev` 槽位选择
+ * 并从 URL 移除（歧义 fail-closed 丢弃，见 tankSetup.devicesFromEquipmentIds）。
+ */
+function equipmentIds(value) {
+  const raw = first(value)
+  if (raw == null || raw === '') return null
+  const out = String(raw).split(',').map(s => Number(s.trim())).filter(n => Number.isInteger(n) && n > 0 && n <= 255)
+  return out.length ? [...new Set(out)].slice(0, DEVICE_SLOTS) : null
+}
+
 function deviceSlots(value) {
   const raw = first(value)
   if (typeof raw !== 'string') return ''
@@ -97,6 +109,7 @@ export function parseTankopediaQuery(query = {}) {
     track: tank ? nonNegativeInt(query.track) : null,
     shell: tank ? nonNegativeInt(query.shell) : null,
     dev: tank ? deviceSlots(query.dev) : '',
+    eq: tank ? equipmentIds(query.eq) : null,
     cons: tank ? stemList(query.cons) : null,
     prov: tank ? stemList(query.prov) : null,
     skills: tank ? skillLevels(query.skills) : {},
@@ -120,6 +133,7 @@ export function serializeTankopediaQuery(state = {}) {
     if (Number.isInteger(state.track) && state.track >= 0) query.track = String(state.track)
     if (Number.isInteger(state.shell) && state.shell >= 0) query.shell = String(state.shell)
     if (typeof state.dev === 'string' && state.dev !== '') query.dev = state.dev
+    if (Array.isArray(state.eq) && state.eq.length) query.eq = state.eq.join(',')
     if (Array.isArray(state.cons)) query.cons = state.cons.join(',')
     if (Array.isArray(state.prov)) query.prov = state.prov.join(',')
     if (state.skills && typeof state.skills === 'object' && !Array.isArray(state.skills)) {

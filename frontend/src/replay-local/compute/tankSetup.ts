@@ -108,13 +108,32 @@ export function gunCycleOf(config: any) {
   const shellReloads = Array.isArray(config.burst_reloads)
     ? config.burst_reloads.map(Number).filter(value => Number.isFinite(value) && value > 0)
     : []
+  // 连发组（PomPom 类）：tank/{id}.json 的 burst_group_*（上游 pb 的 GunDefinition.burst）。
+  // 一次扳机连发 N 发、组内间隔秒；**不是** is_burst 判定依据（那只看车辆内联 clip/pump）。
+  const burstGroupRaw = Number(config.burst_group_count) || 0
+  const burstGroupCount = burstGroupRaw > 1 ? Math.round(burstGroupRaw) : 0
+  const burstGroupInterval = burstGroupCount
+    ? Math.max(0, Number(config.burst_group_interval) || 0)
+    : 0
   if (config.is_drum && shellReloads.length > 0) {
-    return { type: 'autoreloader' as const, reload, intraClip, shellCount: shellCount || shellReloads.length, shellReloads }
+    return {
+      type: 'autoreloader' as const,
+      reload, intraClip, shellCount: shellCount || shellReloads.length, shellReloads,
+      burstGroupCount, burstGroupInterval,
+    }
   }
   if (config.is_burst && shellCount > 0) {
-    return { type: 'autoloader' as const, reload, intraClip, shellCount, shellReloads: [] }
+    return {
+      type: 'autoloader' as const,
+      reload, intraClip, shellCount, shellReloads: [],
+      burstGroupCount, burstGroupInterval,
+    }
   }
-  return { type: 'regular' as const, reload, intraClip: 0, shellCount: 0, shellReloads: [] }
+  return {
+    type: 'regular' as const,
+    reload, intraClip: 0, shellCount: 0, shellReloads: [],
+    burstGroupCount: 0, burstGroupInterval: 0,
+  }
 }
 
 /** 默认弹种下标：优先非金币 AP/APCR，其次任意 AP 族，最后首项。 */
@@ -165,6 +184,32 @@ export function tankRef(detail: any, modules?: any) {
 export function presetSlots(modules: any, catalog: any) {
   const presets = catalog?.devicePresets || {}
   return presets[modules?.optDevicePreset] || presets.defaultPreset || []
+}
+
+/**
+ * 回放装配 id 集合（`shooter_equipment.raw`，Type5 九字节、0=空槽）→ 装备槽位选择
+ * （0=左候选 / 1=右候选 / null=空）。线上串**变长且空槽省略**，槽位信息不存在——
+ * 反解只能按 id 对号预设两侧候选：id 命中一侧 → 该侧；两侧同 id 或都未命中 → null。
+ * 回放真值超出该车预设（活动装备等）时对应槽位保持空，不伪造可选性（fail-closed）。
+ */
+export function devicesFromEquipmentIds(ids: number[] | null | undefined, modules: any, catalog: any): Array<0 | 1 | null> {
+  const slots = presetSlots(modules, catalog)
+  if (!Array.isArray(ids) || !Array.isArray(slots)) return slots.map(() => null)
+  const present = new Set(ids.filter(id => Number.isInteger(id) && id > 0))
+  const byStem = new Map<string, number>(
+    (catalog?.devices || []).map((device: any): [string, number] => [device.stem, Number(device.id)]),
+  )
+  const idOf = (stem: any) => (stem ? byStem.get(stem) ?? null : null)
+  return slots.map((slot: any) => {
+    const leftId = idOf(slot?.left)
+    const rightId = idOf(slot?.right)
+    const leftHit = leftId != null && present.has(leftId)
+    const rightHit = rightId != null && present.has(rightId)
+    if (leftHit && rightHit) return null
+    if (leftHit) return 0
+    if (rightHit) return 1
+    return null
+  })
 }
 
 function clampIndex(value: number | null | undefined, length: number, fallback: number): number {
@@ -522,8 +567,11 @@ const PARAM_ROWS: Array<{ group: string; key: string }> = [
   { group: 'gun', key: 'gunShellReloadTime' },
   { group: 'gun', key: 'gunClipReloadTime' },
   { group: 'gun', key: 'gunClipShellCount' },
+  { group: 'gun', key: 'gunClipBurstCount' },
+  { group: 'gun', key: 'gunBurstShellCount' },
   { group: 'gun', key: 'gunClipShellReloadTime' },
   { group: 'gun', key: 'timeBetweenPumpShots' },
+  { group: 'gun', key: 'gunClipBurstReloadTime' },
   { group: 'gun', key: 'reloadingShellTime0' },
   { group: 'gun', key: 'reloadingShellTime1' },
   { group: 'gun', key: 'reloadingShellTime2' },

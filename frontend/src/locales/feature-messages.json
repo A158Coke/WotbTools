@@ -297,7 +297,8 @@
     },
     "agentShots": {
       "title": "射击分析",
-      "hint": "在上方选择 .wotbreplay——在浏览器内本地解析全员射击（文件不会上传），点击一行即可在装甲查看器里复现这一发的弹道与命中判定。"
+      "hint": "在上方选择 .wotbreplay——在浏览器内本地解析全员射击（文件不会上传），点击一行即可在装甲查看器里复现这一发的弹道与命中判定。",
+      "col_equipment": "装备"
     },
     "armor": {
       "back": "返回",
@@ -423,7 +424,14 @@
         "spaced": "间隙甲",
         "chassis": "履带",
         "gun_barrel": "炮管"
-      }
+      },
+      "loadout_shooter": "射击方",
+      "loadout_target": "受击方",
+            "loadout_unavailable": "搭载数据不可用",
+      "filter_primary": "主装甲",
+      "filter_spaced": "间隙装甲",
+      "filter_external": "外部模块",
+      "part_info": "命中部件"
     },
     "hofAdmin": {
       "tabsLabel": "管理分区",
@@ -831,6 +839,31 @@
       "BROADCAST_COVER_INVALID": "封面须为一张有效 PNG / JPEG，最多 10 MiB、边长 16–8192 像素且最多 2000 万像素。",
       "BROADCAST_STORAGE_UNAVAILABLE": "封面上传尚未配置或暂不可用；可先保存不带新封面的回放。",
       "BROADCAST_STORAGE_ERROR": "封面存储暂时失败，原回放及封面保持不变，请重试。"
+    },
+    "research": {
+      "title": "科技树",
+      "hint": "客户端式科技树：国家页签、等级列与研发连线，数据来自客户端解包（含 XI 超测预览）。",
+      "open_techtree": "科技树",
+      "open_in_configurator": "在配置器中打开",
+      "prev_tanks": "上一辆车",
+      "next_tanks": "解锁车辆",
+      "modules_title": "研发",
+      "open_research": "模块研发",
+      "layout_derived_note": "模块布局为数据推导，与客户端不完全逐像素一致。",
+      "layout_unavailable": "模块研发图不可用（数据缺失）。",
+      "xp_cost": "{xp} XP",
+      "xp_short": "{xp} XP",
+      "preview": "超测预览",
+      "pending": "未实装",
+      "pending_title": "科技树已登记但未实装（{stem}）",
+      "load_error_title": "科技树加载失败",
+      "cache_unavailable": "车辆名称不可用（车辆列表加载失败）。",
+      "modules_unavailable": "逐车模块数据不可用。",
+      "nation_tabs": "国别",
+      "module_radio": "电台",
+      "module_fuel": "油箱",
+      "no_chain_note": "该车没有研发链（XI 超测车：每族模块唯一、无解锁成本，客户端数据零解锁边）。",
+      "token_cost": "{amount} 活动代币（{currency}）"
     }
   },
   "en": {
@@ -1131,7 +1164,8 @@
     },
     "agentShots": {
       "title": "Shot analysis",
-      "hint": "Pick a local .wotbreplay above — every shot is parsed in your browser (never uploaded). Click a row to replay that shot’s trajectory and hit check in the armor viewer."
+      "hint": "Pick a local .wotbreplay above — every shot is parsed in your browser (never uploaded). Click a row to replay that shot’s trajectory and hit check in the armor viewer.",
+      "col_equipment": "Equipment"
     },
     "armor": {
       "back": "Back",
@@ -1257,7 +1291,14 @@
         "spaced": "Spaced armor",
         "chassis": "Track",
         "gun_barrel": "Gun barrel"
-      }
+      },
+      "loadout_shooter": "Shooter",
+      "loadout_target": "Target",
+            "loadout_unavailable": "Loadout unavailable",
+      "filter_primary": "Primary",
+      "filter_spaced": "Spaced",
+      "filter_external": "External",
+      "part_info": "Hit part"
     },
     "hofAdmin": {
       "tabsLabel": "Admin sections",
@@ -1665,6 +1706,31 @@
       "BROADCAST_COVER_INVALID": "Choose one valid PNG / JPEG cover, up to 10 MiB, 16–8192 px per side and 20 megapixels.",
       "BROADCAST_STORAGE_UNAVAILABLE": "Cover uploads are not configured or temporarily unavailable. You can save without a new cover.",
       "BROADCAST_STORAGE_ERROR": "Cover storage failed. The previous replay and cover were preserved. Please retry."
+    },
+    "research": {
+      "title": "Tech tree",
+      "hint": "Client-style tech tree: nation tabs, tier columns and research lines from unpacked client data (XI supertest preview included).",
+      "open_techtree": "Tech tree",
+      "open_in_configurator": "Open in configurator",
+      "prev_tanks": "Previous vehicle",
+      "next_tanks": "Unlocks",
+      "modules_title": "Research",
+      "open_research": "Module research",
+      "layout_derived_note": "Module layout derived from data; not pixel-identical to the client.",
+      "layout_unavailable": "Module research tree unavailable (data missing).",
+      "xp_cost": "{xp} XP",
+      "xp_short": "{xp} XP",
+      "preview": "Supertest",
+      "pending": "Not implemented",
+      "pending_title": "Registered in the tech tree but not implemented ({stem})",
+      "load_error_title": "Tech tree failed to load",
+      "cache_unavailable": "Vehicle names unavailable (tank list failed to load).",
+      "modules_unavailable": "Per-vehicle module data unavailable.",
+      "nation_tabs": "Nations",
+      "module_radio": "Radio",
+      "module_fuel": "Fuel tank",
+      "no_chain_note": "This vehicle has no research chain (XI supertest: one module per family, no unlock costs — zero unlock edges in the client data).",
+      "token_cost": "{amount} event tokens ({currency})"
     }
   },
   "ru": {
@@ -1965,7 +2031,8 @@
     },
     "agentShots": {
       "title": "Анализ выстрелов",
-      "hint": "Выберите .wotbreplay выше — все выстрелы разбираются в браузере (файл не загружается). Клик по строке воспроизводит траекторию и попадание в просмотрщике брони."
+      "hint": "Выберите .wotbreplay выше — все выстрелы разбираются в браузере (файл не загружается). Клик по строке воспроизводит траекторию и попадание в просмотрщике брони.",
+      "col_equipment": "Оборудование"
     },
     "armor": {
       "back": "Назад",
@@ -2091,7 +2158,14 @@
         "spaced": "Экран",
         "chassis": "Гусеница",
         "gun_barrel": "Ствол орудия"
-      }
+      },
+      "loadout_shooter": "Стрелок",
+      "loadout_target": "Цель",
+            "loadout_unavailable": "Снаряжение недоступно",
+      "filter_primary": "Основная",
+      "filter_spaced": "Экраны",
+      "filter_external": "Внешние",
+      "part_info": "Попадание"
     },
     "hofAdmin": {
       "tabsLabel": "Разделы администрирования",
@@ -2499,6 +2573,31 @@
       "BROADCAST_COVER_INVALID": "Выберите один корректный PNG / JPEG до 10 MiB, 16–8192 пикселя по стороне и до 20 Мп.",
       "BROADCAST_STORAGE_UNAVAILABLE": "Загрузка обложек не настроена или временно недоступна. Можно сохранить запись без новой обложки.",
       "BROADCAST_STORAGE_ERROR": "Ошибка хранилища обложек. Предыдущая запись и обложка сохранены. Повторите попытку."
+    },
+    "research": {
+      "title": "Дерево исследований",
+      "hint": "Дерево исследований в стиле клиента: вкладки наций, уровни и линии исследований по данным клиента (включая предпросмотр супертеста XI).",
+      "open_techtree": "Дерево исследований",
+      "open_in_configurator": "Открыть в конфигураторе",
+      "prev_tanks": "Предыдущий танк",
+      "next_tanks": "Открывает",
+      "modules_title": "Исследование",
+      "open_research": "Исследование модулей",
+      "layout_derived_note": "Расположение модулей восстановлено по данным; не пиксель-в-пиксель с клиентом.",
+      "layout_unavailable": "Дерево исследования модулей недоступно (нет данных).",
+      "xp_cost": "{xp} XP",
+      "xp_short": "{xp} XP",
+      "preview": "Супертест",
+      "pending": "Не реализовано",
+      "pending_title": "Заявлен в дереве, но не реализован ({stem})",
+      "load_error_title": "Не удалось загрузить дерево исследований",
+      "cache_unavailable": "Названия танков недоступны (список не загружен).",
+      "modules_unavailable": "Данные модулей танка недоступны.",
+      "nation_tabs": "Нации",
+      "module_radio": "Радио",
+      "module_fuel": "Топливный бак",
+      "no_chain_note": "У этого танка нет цепочки исследования (супертест XI: один модуль на семейство, без стоимости — в данных клиента нет рёбер исследования).",
+      "token_cost": "{amount} событийных жетонов ({currency})"
     }
   }
 }

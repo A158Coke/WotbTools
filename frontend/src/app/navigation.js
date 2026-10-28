@@ -13,7 +13,7 @@ export const LEGACY_VIEW_ALIASES = Object.freeze({
 export const ALLOWED_VIEWS = Object.freeze([
   'home', 'replay', 'hof', 'more', 'hof-admin',
   'profile', 'admin-users', 'history', 'technical-evolution', 'contact',
-  'ai-review', 'battle-playback', 'agent-replay', 'agent-tankopedia', 'agent-armor', 'agent-shots',
+  'ai-review', 'battle-playback', 'agent-replay', 'agent-tankopedia', 'agent-armor', 'agent-shots', 'agent-techtree',
   'rating-docs', 'tournament-points', 'tournament-points-config', 'tournament-points-admin',
   'android', 'sponsor', 'league-broadcasts', 'recommendations', 'recommended-videos', 'creators', 'creators-config',
 ])
@@ -31,6 +31,7 @@ export const PRIMARY_NAV = Object.freeze([
   Object.freeze({ id: 'replay', view: 'replay', labelKey: 'nav.replay' }),
   Object.freeze({ id: 'hof', view: 'hof', labelKey: 'nav.hof' }),
   Object.freeze({ id: 'tankopedia', view: 'agent-tankopedia', labelKey: 'nav.tankopedia' }),
+  Object.freeze({ id: 'techtree', view: 'agent-techtree', labelKey: 'research.title' }),
   Object.freeze({ id: 'tournament-points', view: 'tournament-points', labelKey: 'tournament.title' }),
   Object.freeze({ id: 'league-broadcasts', view: 'league-broadcasts', labelKey: 'leagueBroadcasts.title', shortLabelKey: 'leagueBroadcasts.navTitle' }),
   Object.freeze({ id: 'creators', view: 'recommendations', labelKey: 'creators.nav' }),
@@ -62,6 +63,7 @@ const PRIMARY_SECTION_OF_VIEW = Object.freeze({
   hof: 'hof',
   'agent-tankopedia': 'tankopedia',
   'agent-armor': 'tankopedia',
+  'agent-techtree': 'techtree',
   'tournament-points': 'tournament-points',
   'league-broadcasts': 'league-broadcasts',
   creators: 'creators',
@@ -131,7 +133,7 @@ const HOF_QUERY_KEYS = ['tab', 'page', 'tank', 'nation', 'type', 'tier', 'bt', '
  * （`AgentTankopedia` 的 router.push）都不经本函数；但任何以 URL 表达的交接都不该在入场时被吞掉。
  */
 const ARMOR_SCENE_QUERY_KEYS = [
-  'tank', 'shooter', 'config', 'scfg', 'shell', 'shot', 'world', 'heatmap',
+  'tank', 'shooter', 'config', 'scfg', 'sengine', 'strack', 'sdev', 'shell', 'shot', 'world', 'heatmap',
   'az', 'h', 'd', 'eqcal', 'eqenh', 'quality', 'move', 'rel', 'clean', 'debug',
 ]
 const BROADCAST_QUERY_KEYS = ['lbServer', 'lbSeason', 'lbCategory']

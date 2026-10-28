@@ -141,7 +141,10 @@ function makeCache(count = 120) {
 async function mountAt(query = {}) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
   await router.push({ path: '/', query: { view: 'agent-tankopedia', ...query } })
-  const wrapper = mount(AgentTankopedia, { global: { plugins: [router], provide: { [DIALOG_INLINE_KEY]: true } } })
+  // AppDialog 模板用全局 $t（真实应用由 i18n 插件提供）；本文件整体 mock 了 vue-i18n
+  const wrapper = mount(AgentTankopedia, {
+    global: { plugins: [router], provide: { [DIALOG_INLINE_KEY]: true }, mocks: { $t: key => key } },
+  })
   await flushPromises()
   return { wrapper, router }
 }
@@ -739,5 +742,31 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
     await flushPromises()
     expect(active()).toHaveLength(1)
     expect(router.currentRoute.value.query.cons).toBe(second)
+  })
+  it('研发弹窗：头部按钮打开；图里装模块与配置栏矩阵双向同步', async () => {
+    const { wrapper, router } = await mountAt({ tank: '999' })
+    expect(wrapper.find('[data-testid="tank-open-research"]').exists()).toBe(true)
+    await wrapper.find('[data-testid="tank-open-research"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="tank-research-dialog"]').exists()).toBe(true)
+    // 默认顶级配置：研发图里 track1 已安装
+    expect(wrapper.find('[data-testid="research-node-chassis-track1"]').classes()).toContain('is-installed')
+    // 图里点初始履带 → URL + 背后的配置栏矩阵同步
+    await wrapper.find('[data-testid="research-node-chassis-track0"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.track).toBe('0')
+    expect(wrapper.find('[data-testid="tank-track-0"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('[data-testid="research-node-chassis-track0"]').classes()).toContain('is-installed')
+    // 关窗 → 配置栏换回顶级履带 → 再开窗，安装标记跟着走
+    await wrapper.find('[data-testid="tank-research-dialog"] .dialog-close').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="tank-research-dialog"]').exists()).toBe(false)
+    await wrapper.find('[data-testid="tank-track-1"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.track).toBe('1')
+    await wrapper.find('[data-testid="tank-open-research"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="research-node-chassis-track1"]').classes()).toContain('is-installed')
+    expect(wrapper.find('[data-testid="research-node-chassis-track0"]').classes()).not.toContain('is-installed')
   })
 })
