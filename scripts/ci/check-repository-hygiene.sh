@@ -139,3 +139,9 @@ if (( violations > 0 )); then
 fi
 
 echo "Repository hygiene check passed: $checked tracked files checked; limit=$MAX_TRACKED_FILE_BYTES bytes."
+
+# Keep the bypass scenarios executable in the same required CI path without
+# recursing when the regression fixture invokes this checker in disposable repos.
+if [[ "${CI:-}" == "true" && "${REPOSITORY_HYGIENE_TEST_CHILD:-0}" != "1" ]]; then
+  bash scripts/ci/test-repository-hygiene.sh
+fi
