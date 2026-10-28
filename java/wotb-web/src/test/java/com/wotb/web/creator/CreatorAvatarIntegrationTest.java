@@ -15,7 +15,12 @@ import com.wotb.web.util.CosImageStorage;
 import com.wotb.web.util.ImageValidation;
 import com.wotb.web.util.apierror.ApiErrorCode;
 import com.wotb.web.util.apierror.ApiException;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.observation.aop.ObservedAspect;
+import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
 import org.apache.http.client.methods.HttpRequestBase;
+import org.springframework.aop.support.AopUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -56,6 +61,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -103,6 +109,9 @@ class CreatorAvatarIntegrationTest {
     @Autowired PlatformTransactionManager transactions;
     @Autowired JdbcTemplate jdbc;
     @Autowired COSClient client;
+    @Autowired MeterRegistry meters;
+    @Autowired PrometheusMeterRegistry prometheus;
+    @Autowired(required = false) ObservedAspect observedAspect;
     private final ConcurrentHashMap<String, byte[]> objects = new ConcurrentHashMap<>();
     private final AtomicLong nextUid = new AtomicLong(1000);
 
@@ -401,6 +410,57 @@ class CreatorAvatarIntegrationTest {
         directory.deleteRecommendation("VIDEO", video.id(), video.version());
         age(cover); avatars.cleanup();
         assertFalse(reservations.existsById(cover)); assertFalse(objects.containsKey(PREFIX + cover));
+    }
+
+    @Test void observationInterceptsRealUploadExactlyOnceAndExposesHistogram() throws Exception {
+        assertTrue(AopUtils.isAopProxy(avatars));
+        assertNotNull(observedAspect);
+        final double before = operationCount();
+        final String id = avatars.upload(png(32, 32));
+        assertNotNull(id);
+        assertEquals(before + 1, operationCount(), 0.0);
+        final Timer timer = operationTimer("none", "none");
+        assertNotNull(timer);
+        assertTrue(timer.count() >= 1);
+        assertTrue(timer.totalTime(TimeUnit.NANOSECONDS) > 0);
+        final String scrape = prometheus.scrape();
+        assertTrue(scrape.contains("# TYPE wotb_creator_avatar_upload_seconds histogram"));
+        assertTrue(scrape.contains("wotb_creator_avatar_upload_seconds_bucket{"));
+        assertTrue(scrape.contains("le=\"+Inf\""));
+        assertTrue(scrape.contains("wotb_creator_avatar_upload_seconds_count"));
+        assertTrue(scrape.contains("wotb_creator_avatar_upload_seconds_sum"));
+        assertTrue(scrape.contains("error_code=\"none\""));
+    }
+
+    @Test void observationKeepsBusinessAndUnexpectedErrorTaxonomy() throws Exception {
+        final double beforeApi = operationCount();
+        final ApiException api = assertThrows(ApiException.class,
+                () -> avatars.upload(new MockMultipartFile("image", new byte[] {1, 2, 3})));
+        assertEquals(ApiErrorCode.CREATOR_INVALID_REQUEST, api.errorCode());
+        assertEquals(beforeApi + 1, operationCount(), 0.0);
+        assertNotNull(operationTimer("ApiException", "CREATOR_INVALID_REQUEST"));
+
+        final IllegalStateException failure = new IllegalStateException("unexpected");
+        doThrow(failure).when(client).putObject(anyString(), anyString(), any(InputStream.class), any());
+        final double beforeUnexpected = operationCount();
+        final IllegalStateException thrown = assertThrows(IllegalStateException.class,
+                () -> avatars.upload(png(32, 32)));
+        assertSame(failure, thrown);
+        assertEquals(beforeUnexpected + 1, operationCount(), 0.0);
+        assertNotNull(operationTimer("IllegalStateException", "unclassified"));
+    }
+
+    private double operationCount() {
+        return meters.find(CreatorAvatarService.OBSERVATION_NAME).timers().stream()
+                .mapToDouble(Timer::count).sum();
+    }
+
+    private Timer operationTimer(final String error, final String code) {
+        return meters.find(CreatorAvatarService.OBSERVATION_NAME).timers().stream()
+                .filter(timer -> error.equals(timer.getId().getTag("error")))
+                .filter(timer -> code.equals(timer.getId().getTag("error.code"))
+                        || code.equals(timer.getId().getTag("error_code")))
+                .findFirst().orElse(null);
     }
 
     private long creator() {

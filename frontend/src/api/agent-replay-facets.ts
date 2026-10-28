@@ -6,11 +6,12 @@
  *   WotBTools = 消费/编排；名人堂（HoF）是 WotBTools 产品域——从 Result 投影，
  *   Agent 公开面不感知（v1 的 HofFacet / `{playback,ai,hof}` 信封已拆除，breaking）。
  *
- * 四条消费路径（全部本地 WASM，文件不出本机；WotBTools Playback 拓扑 client-only）：
+ * 五条消费路径（全部本地 WASM，文件不出本机；WotBTools Playback 拓扑 client-only）：
  *  1. `parseAgentResultFromBytes`   → BattleResult（毫秒级，不物化 Playback）
  *  2. `parseAgentPlaybackFromBytes` → PlaybackData（时序）
  *  3. `parseAgentShotsFromBytes`    → 全员射击链（射击复现）
- *  4. `projectHoF(result)`          → HoF 提交行（Result 的消费方投影，纯函数）
+ *  4. `parseAgentAuthorInitialPositionFromBytes` → 录像者初始世界位姿（独立轻量 probe）
+ *  5. `projectHoF(result)`          → HoF 提交行（Result 的消费方投影，纯函数）
  * 预解析 JSON 通道（`*FromJson`）用于部署面静态托管的同形状文件。
  *
  * AI 事件数据（AiReviewFacet v1，`parseAiReview`）：本模块只建模与做形状校验；
@@ -108,6 +109,18 @@ export interface AgentBattleResult {
   author: Record<string, unknown>
   players: AgentResultPlayer[]
   [key: string]: unknown
+}
+
+/**
+ * 录像者初始世界位姿（`parseAuthorInitialPosition`，上游 v0.4.15 独立轻量能力）。
+ *
+ * `null` = 证据不足；未知绝不降级成 `[0,0,0]`。`position` 是 Agent 原始 replay 世界坐标
+ * `[x, y, z]`（x/z 水平面、y elevation），不是 WotbTools map 坐标。
+ */
+export interface AgentAuthorInitialPosition {
+  author_eid: number
+  clock: number
+  position: [number, number, number]
 }
 
 // ---------- 时序能力：PlaybackData（contract v2：+Supremacy/点数/瞄准帧；版本显式门禁） ----------
@@ -748,6 +761,27 @@ export function validateAgentBattleResult(value: unknown): AgentBattleResult {
 }
 
 /**
+ * 录像者初始世界位姿 trust boundary：合法返回只有 `null`（证据不足）或严格三字段对象。
+ *
+ * `author_eid` 必须是正 u32、`clock` 有限非负、`position` 恰好 3 个有限数值。缺字段、
+ * NaN/Infinity、长度漂移一律 throw——不把未知伪装成 `[0,0,0]`，也不做 map/spawn 语义转换。
+ */
+export function validateAgentAuthorInitialPosition(value: unknown): AgentAuthorInitialPosition | null {
+  if (value === null) return null
+  const obj = assertObject(value, 'author_initial_position')
+  const authorEid = assertNonNegativeInteger(obj.author_eid, 'author_initial_position.author_eid', 0xffffffff)
+  if (authorEid === 0) throw new Error('agent facets: author_initial_position.author_eid 必须是正 u32')
+  const clock = assertFiniteNumber(obj.clock, 'author_initial_position.clock')
+  if (clock < 0) throw new Error('agent facets: author_initial_position.clock 必须非负')
+  const rawPosition = assertArray(obj.position, 'author_initial_position.position')
+  if (rawPosition.length !== 3) {
+    throw new Error('agent facets: author_initial_position.position 长度必须为 3')
+  }
+  const [x, y, z] = rawPosition.map((v, i) => assertFiniteNumber(v, `author_initial_position.position[${i}]`))
+  return { author_eid: authorEid, clock, position: [x, y, z] }
+}
+
+/**
  * PlaybackData 形状校验：version === PLAYBACK_CONTRACT_VERSION(2)、meta、必备数组 + v2 新键。
  * 未知键忽略 = 契约的同版本加字段策略；字段级取值语义由类型承载。
  */
@@ -1003,6 +1037,8 @@ interface AgentWasmModule {
   parseShotReplays?: (bytes: Uint8Array, limits?: string, shells?: string) => string
   /** 第 4 入口（上游 v0.3.1）：AiReviewFacet JSON（花名册 + 事件流 + 结算锚点） */
   parseAiReview?: (bytes: Uint8Array) => string
+  /** 第 5 入口（上游 v0.4.15）：录像者初始世界位姿 JSON，或字符串 "null" */
+  parseAuthorInitialPosition?: (bytes: Uint8Array) => string
   default?: () => Promise<void>
   initSync?: () => void
 }
@@ -1340,6 +1376,18 @@ export async function parseAgentPlaybackFromBytes(
 export async function parseAgentAiReviewFromBytes(bytes: Uint8Array): Promise<AgentAiReviewFacet> {
   const parse = await wasmFn('parseAiReview')
   return validateAgentAiReview(JSON.parse(parse(bytes)) as unknown, 'current-producer')
+}
+
+/**
+ * 录像者初始世界位姿（独立轻量 probe，上游 v0.4.15）：.wotbreplay 字节 →
+ * `{ author_eid, clock, position }` 或 `null`。不构建 ReplayModel / PlaybackData /
+ * AiReviewFacet，也不修改 `parseResult`；只有显式调用本函数才执行该 probe。
+ */
+export async function parseAgentAuthorInitialPositionFromBytes(
+  bytes: Uint8Array,
+): Promise<AgentAuthorInitialPosition | null> {
+  const parse = await wasmFn('parseAuthorInitialPosition')
+  return validateAgentAuthorInitialPosition(JSON.parse(parse(bytes)) as unknown)
 }
 
 function assertShotArray(v: unknown): AgentShotReplay[] {
