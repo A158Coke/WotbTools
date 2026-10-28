@@ -468,75 +468,33 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         let primaryMeshes = [], spacedMeshes = [], externalMeshes = [];
         let gunClipPlane = null;
         const _gunClipPlaneObj = new THREE.Plane();
-        let gunMuzzleWorld = null;
+        const _gunClipMatrix = new THREE.Matrix4();
+        // 炮塔/炮管姿态矩阵（模型系，绕 models.pb 枢轴；与 gun 节点 matrix 同源）。
+        // BlitzKit 把 gun_mask 裁切面定义在 gun 局部系、随姿态重算；这里复用同一姿态矩阵。
+        const gunPoseMatrix = new THREE.Matrix4();
         // 装甲旋转枢轴（alignArmorModules 按 models.pb 原点写入：track+turret / track+turret+gun）。
         // updateTurretGun 以此为炮塔/炮管的旋转中心（对齐 BlitzKit 旋转语义）。
         let armorPivotTurret = null, armorPivotGun = null;
         function computeGunClipPlane() {
             gunClipPlane = null;
-            gunMuzzleWorld = null;
-            const act = activeGunNumber();
             const cfg = currentConfig();
-            if (act == null || !tankModel) return;
-            // BlitzKit 真值语义：mask=0 视同无 mask（gunModelDefinition.mask ? ...）
-            const hasMask = cfg && typeof cfg.gun_mask === 'number' && cfg.gun_mask !== 0;
-            tankModel.updateMatrixWorld(true);
-            const gunPrefix = 'gun_' + String(act).padStart(2, '0');
-            let barrel = null, barrelLen = 0;
-            tankModel.traverse(function(n){
-                if (!n.isMesh) return;
-                const pn = n.parent && n.parent.name || '';
-                if (pn !== gunPrefix) return;
-                if (!n.geometry.boundingBox) n.geometry.computeBoundingBox();
-                const b = n.geometry.boundingBox;
-                const len = Math.max(b.max.x-b.min.x, b.max.y-b.min.y, b.max.z-b.min.z);
-                if (len > barrelLen) { barrelLen = len; barrel = n; }
-            });
-            let dir = new THREE.Vector3(0, 1, 0);
-            if (barrel) {
-                const wb = new THREE.Box3().setFromObject(barrel);
-                const sz = new THREE.Vector3(); wb.getSize(sz);
-                let axis = 'x';
-                if (sz.y >= sz.x && sz.y >= sz.z) axis = 'y';
-                else if (sz.z >= sz.x && sz.z >= sz.y) axis = 'z';
-                const a = wb.min.clone(), b2 = wb.max.clone();
-                if (axis === 'x') { a.y = b2.y = (wb.min.y+wb.max.y)/2; a.z = b2.z = (wb.min.z+wb.max.z)/2; }
-                if (axis === 'y') { a.x = b2.x = (wb.min.x+wb.max.x)/2; a.z = b2.z = (wb.min.z+wb.max.z)/2; }
-                if (axis === 'z') { a.x = b2.x = (wb.min.x+wb.max.x)/2; a.y = b2.y = (wb.min.y+wb.max.y)/2; }
-                const origin = new THREE.Vector3(0, 0, 0);
-                // 炮口方向判定：以 models.pb 火炮原点（炮耳轴）为基准——炮管两端中距耳轴
-                // 更远的一端为炮口（按"远离世界原点"判向会因包围盒中心居中于原点而随机反转）。
-                // cfg 与上文为同一次 currentConfig()（纯数组查找，原重复调用已合并）
-                const mo0 = tankData && tankData.model_origins;
-                let gunOriginWorld = null;
-                if (mo0 && mo0.track && mo0.turret && cfg && cfg.gun_origin) {
-                    const g = new THREE.Vector3(
-                        mo0.track[0] + mo0.turret[0] + cfg.gun_origin[0],
-                        mo0.track[1] + mo0.turret[1] + cfg.gun_origin[1],
-                        mo0.track[2] + mo0.turret[2] + cfg.gun_origin[2]);
-                    gunOriginWorld = tankModel.localToWorld(g);
-                }
-                if (gunOriginWorld) {
-                    const dA = a.distanceToSquared(gunOriginWorld);
-                    const dB = b2.distanceToSquared(gunOriginWorld);
-                    dir = (dA > dB) ? a.sub(b2) : b2.sub(a);
-                } else {
-                    dir = (a.distanceToSquared(origin) > b2.distanceToSquared(origin)) ? a.sub(b2) : b2.sub(a);
-                }
-                dir.normalize();
-                const center = wb.getCenter(new THREE.Vector3());
-                const halfAlongDir = (Math.abs(dir.x)*sz.x + Math.abs(dir.y)*sz.y + Math.abs(dir.z)*sz.z) / 2;
-                gunMuzzleWorld = center.add(dir.clone().multiplyScalar(halfAlongDir));
-            }
-            if (!hasMask) return;
             const mo = tankData && tankData.model_origins;
-            if (!(mo && mo.track && mo.turret && cfg.gun_origin && barrel)) return;
+            if (!tankModel || !cfg || !mo || !mo.track || !mo.turret || !cfg.gun_origin) return;
+            // BlitzKit 真值语义：mask=0 视同无 mask（SpacedArmorScene `gunModelDefinition.mask ?`）
+            const hasMask = typeof cfg.gun_mask === 'number' && cfg.gun_mask !== 0;
+            if (!hasMask) return;
             const maskOriginModel = cfg.gun_mask + mo.track[1] + mo.turret[1] + cfg.gun_origin[1];
-            // 模型原点的世界坐标 + 炮轴方向 × (模型本地距离 / worldMetersPerUnit → 世界距离)
-            const originWorld = new THREE.Vector3(); tankModel.localToWorld(originWorld.set(0, 0, 0));
-            const mpu = worldMetersPerUnit || 1;
-            const point = originWorld.add(dir.clone().multiplyScalar(maskOriginModel / mpu));
-            gunClipPlane = _gunClipPlaneObj.setFromNormalAndCoplanarPoint(dir, point);
+            // BlitzKit 同式：裁切面定义在枪管局部系（模型系）——法线 = 模型前向 +Y，过模型
+            // 原点前方 maskOriginModel 处；再乘炮塔/炮管姿态矩阵（绕各自枢轴）与模型根变换
+            // 进世界系。不能只取「模型原点 + 当前炮口方向 × 距离」：转炮塔/俯仰后平面应绕
+            // 枢轴旋转，否则裁切位置会随姿态漂移（与 BlitzKit 不一致）。
+            tankModel.updateMatrixWorld(true);
+            const plane = _gunClipPlaneObj.setFromNormalAndCoplanarPoint(
+                new THREE.Vector3(0, 1, 0),
+                new THREE.Vector3(0, maskOriginModel / (worldMetersPerUnit || 1), 0));
+            _gunClipMatrix.copy(tankModel.matrixWorld).multiply(gunPoseMatrix);
+            plane.applyMatrix4(_gunClipMatrix);
+            gunClipPlane = plane;
         }
         function collectPenetrationMeshes() {
             primaryMeshes = []; spacedMeshes = [];
@@ -4881,6 +4839,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             mGun.multiply(new THREE.Matrix4().makeTranslation(gPivot.x, gPivot.y, gPivot.z));
             mGun.multiply(new THREE.Matrix4().makeRotationX(gr));
             mGun.multiply(new THREE.Matrix4().makeTranslation(-gPivot.x, -gPivot.y, -gPivot.z));
+            // gun_mask 裁切面与 gun 节点共用同一姿态矩阵（BlitzKit 的 gun 局部系平面）
+            gunPoseMatrix.copy(mGun);
 
             if (turretNode) {
                 const orig = origMatrices.get(turretNode);

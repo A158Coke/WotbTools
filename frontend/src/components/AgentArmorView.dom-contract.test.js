@@ -295,10 +295,15 @@ describe('dolly-zoom world-overview scope guard', () => {
     expect(kernel).toMatch(/if \(node\.userData\.gunMaskPart && !hasMask\) return;\s*\n\s*externalMeshes\.push\(node\);/)
     expect(kernel).toMatch(/const hideMaskPart = collisionMode && !hasMask;/)
     expect(kernel).toMatch(/&& !\(hideMaskPart && node\.userData\.gunMaskPart\)/)
-    // 平面 = BlitzKit 标量重建（gun_mask + 原点链沿炮口方向），随姿态重算；厚度视图
-    // 实心炮管体与续飞着色器同步同一平面。
+    // 平面 = BlitzKit 同式：枪管局部系（法线=模型前向）过模型原点前方 gun_mask+原点链处，
+    // 随炮塔/炮管姿态矩阵（gunPoseMatrix）与模型根变换进世界系；厚度视图实心炮管体与
+    // 续飞着色器同步同一平面。不能再用「模型原点 + 炮口方向 × 距离」的近似。
     expect(kernel).toMatch(/const maskOriginModel = cfg\.gun_mask \+ mo\.track\[1\] \+ mo\.turret\[1\] \+ cfg\.gun_origin\[1\];/)
-    expect(kernel).toMatch(/gunClipPlane = _gunClipPlaneObj\.setFromNormalAndCoplanarPoint\(dir, point\);/)
+    expect(kernel).toMatch(/gunPoseMatrix\.copy\(mGun\);/)
+    expect(kernel).toMatch(/_gunClipMatrix\.copy\(tankModel\.matrixWorld\)\.multiply\(gunPoseMatrix\);/)
+    expect(kernel).toMatch(/plane\.applyMatrix4\(_gunClipMatrix\);/)
+    expect(kernel).toMatch(/new THREE\.Vector3\(0, 1, 0\),/)
+    expect(kernel).not.toContain('gunMuzzleWorld')
     expect(kernel).toMatch(/function syncModuleClipPlanes\(\)/)
     expect(kernel).toMatch(/if \(collision\) computeGunClipPlane\(\);/)
     expect(kernel).toMatch(/if \(collisionMode\) \{ computeGunClipPlane\(\); syncModuleClipPlanes\(\); \}/)
