@@ -52,6 +52,13 @@ describe('techTreeGrid（车辆科技树网格）', () => {
     expect(grid.pending).toEqual([{ stem: 'R228_KR_1', x: 11, y: 5 }])
   })
 
+  it('等级条窗口 = minLevel..maxLevel（客户端 LevelCell 可见区间）', () => {
+    const grid = techTreeGrid(tree)
+    expect(grid.minTier).toBe(1)
+    expect(grid.maxTier).toBe(6) // 夹具最高 tier 6（MT25）
+    expect(techTreeGrid(null).minTier).toBeNull()
+  })
+
   it('同格冲突显式上报（不静默覆盖）', () => {
     const grid = techTreeGrid({
       meta: {},
@@ -108,6 +115,7 @@ describe('moduleTreeLayout（单车模块研发图，列=深度、行=模块族�
     expect(depth.ZiS4).toBe(2)
     // gun 出现在两个炮塔但网格里只有一份
     expect(layout.nodes.filter(n => n.stem === 'L11')).toHaveLength(1)
+    expect(layout.hasChain).toBe(true)
     // vehicle 目标单列：两炮塔的 F34 各带一条 → 汇总为 MT25（成本取最小 31000）
     expect(layout.nextVehicles).toEqual([
       { stem: 'MT25', cost: { xp: 31000 }, sourceModule: 'F34', sourceKind: 'gun' },
@@ -151,6 +159,17 @@ describe('moduleTreeLayout（单车模块研发图，列=深度、行=模块族�
       turrets: [], engines: [],
     }
     expect(() => moduleTreeLayout(cyclic)).toThrow(/cycle/)
+  })
+
+  it('XI 型无链车：零解锁边 → hasChain=false（数据可证的注记依据）', () => {
+    const xi = {
+      chassis: [{ stem: 'track0', level: 11, unlocks: [] }],
+      engines: [{ stem: 'eng0', level: 11, unlocks: [] }],
+      turrets: [{ stem: 't0', level: 11, unlocks: [], guns: [{ stem: 'g0', level: 11, unlocks: [] }] }],
+    }
+    const layout = moduleTreeLayout(xi)
+    expect(layout.hasChain).toBe(false)
+    expect(layout.nodes.every(n => n.cost == null)).toBe(true)
   })
 
   it('空模块 → null（不渲染半残图）', () => {

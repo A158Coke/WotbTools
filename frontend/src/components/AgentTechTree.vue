@@ -114,7 +114,30 @@ const svgSize = computed(() => ({
   width: (grid.value?.columns.length || 0) * CELL_W,
   height: (grid.value?.rows.length || 0) * CELL_H,
 }))
-const center = (col, row) => ({ x: col * CELL_W + CELL_W / 2, y: row * CELL_H + CELL_H / 2 })
+const rulerStyle = computed(() => ({
+  gridTemplateColumns: `repeat(${grid.value.columns.length}, ${CELL_W}px)`,
+}))
+
+/**
+ * 客户端连线几何（TankCell/Lines{mask} 提取）：出线 = 源格右侧 20px（RightHLine
+ * 19.5px + 0.5 边距）；跨行干线骑在列边界（VL/VR 在 ±0.5px）；入线到目标格内 13px
+ * （LeftHLine 13.5px），箭头即 LeftCenterArrow @13px。同行相邻 = 直线。
+ */
+function edgePath(edge) {
+  const xOut = (edge.x1 + 1) * CELL_W - 20
+  const yFrom = edge.y1 * CELL_H + CELL_H / 2
+  const xBoundary = edge.x2 * CELL_W
+  const yTo = edge.y2 * CELL_H + CELL_H / 2
+  const xIn = edge.x2 * CELL_W + 13
+  if (edge.y1 === edge.y2) return `M ${xOut} ${yFrom} L ${xIn} ${yTo}`
+  return `M ${xOut} ${yFrom} L ${xBoundary} ${yFrom} L ${xBoundary} ${yTo} L ${xIn} ${yTo}`
+}
+
+/** 客户端等级条用罗马数字（LevelCell 绑定 roman(level)；1..11 覆盖 XI）。 */
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI']
+function romanLevel(level) {
+  return ROMAN[level - 1] || String(level)
+}
 
 function openResearch(node) {
   writeState({ tank: String(node.tankId) })
@@ -372,12 +395,6 @@ function selectConfig(value) {
 
       <div v-else-if="grid" class="tt-scroll" data-testid="techtree-grid">
         <div class="tt-canvas" :style="{ minWidth: `${grid.columns.length * CELL_W}px` }">
-          <!-- 等级锚点：按列判定（列内 tier 一致才标注；other 树列≠tier 时留空） -->
-          <div class="tt-ruler" :style="gridStyle" aria-hidden="true">
-            <span v-for="x in grid.columns" :key="`ruler-${x}`" class="tt-ruler-cell">
-              {{ grid.tierByColumn.get(x) != null ? t('agentTanks.tier_n', { tier: grid.tierByColumn.get(x) }) : '' }}
-            </span>
-          </div>
           <div class="tt-body" :style="gridStyle">
             <svg class="tt-edges" :width="svgSize.width" :height="svgSize.height" aria-hidden="true">
               <defs>
@@ -385,18 +402,18 @@ function selectConfig(value) {
                   <path d="M0,0 L7,3.5 L0,7 z" class="tt-arrow-head" />
                 </marker>
               </defs>
-              <line
+              <!-- 客户端连线几何（TankCell/Lines{mask} 提取）：出线从源格右侧 20px 处出发，
+                   跨行干线骑在列边界上（客户端 VL/VR 在 ±0.5px），入线 13px 后是箭头
+                   （LeftCenterArrow @13px）。 -->
+              <path
                 v-for="edge in grid.drawnEdges"
                 :key="`${edge.from}-${edge.to}-${edge.sourceModule}`"
                 class="tt-edge"
-                :x1="center(edge.x1, edge.y1).x"
-                :y1="center(edge.x1, edge.y1).y"
-                :x2="center(edge.x2, edge.y2).x"
-                :y2="center(edge.x2, edge.y2).y"
+                :d="edgePath(edge)"
                 marker-end="url(#tt-arrow)"
               >
                 <title>{{ `${nameOf(edge.fromNode) || edge.from} → ${nameOf(edge.toNode) || edge.to}` }}{{ edge.cost?.xp != null ? ` · ${t('research.xp_cost', { xp: edge.cost.xp.toLocaleString() })}` : '' }}</title>
-              </line>
+              </path>
             </svg>
             <button
               v-for="[key, node] in grid.cells"
@@ -429,6 +446,24 @@ function selectConfig(value) {
               :data-testid="`techtree-pending-${node.stem}`"
             >
               <span class="tt-pending-label">{{ t('research.pending') }}</span>
+            </span>
+          </div>
+          <!-- PREMIUM 带（客户端 PremiumSection：premiumRows×96，底部 96px 渐变底 + 标签）；
+               单元归属由客户端模型重排、数据不可证——这里只渲染带本身，不重排任何格子。 -->
+          <div
+            v-if="grid.premiumRows > 0"
+            class="tt-premium"
+            :style="{ height: `${grid.premiumRows * CELL_H}px` }"
+            data-testid="techtree-premium-band"
+          >
+            <span class="tt-premium-label">{{ t('research.premium_band') }}</span>
+          </div>
+          <!-- 等级条（客户端 LevelCell：216×24，roman(level)，可见窗口 = minLevel..maxLevel；
+               吸底、随内容横向滚动）。列 i 的标注 = minTier + i（other 树列 1..7 = tier
+               4..10 时与客户端一致）。 -->
+          <div class="tt-ruler" :style="rulerStyle" data-testid="techtree-levels">
+            <span v-for="(x, i) in grid.columns" :key="`ruler-${x}`" class="tt-ruler-cell">
+              {{ grid.minTier != null && grid.minTier + i <= grid.maxTier ? romanLevel(grid.minTier + i) : '' }}
             </span>
           </div>
         </div>
@@ -465,20 +500,45 @@ function selectConfig(value) {
 .tt-tab:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 
 /* ---------- 树网格：客户端 216×96 单元格语义，横向滚动 ---------- */
-.tt-scroll { overflow: auto; }
-.tt-canvas { display: grid; gap: var(--space-2); min-inline-size: 0; }
+.tt-scroll { overflow: auto; max-block-size: calc(100dvh - 220px); }
+.tt-canvas { display: grid; gap: 0; min-inline-size: 0; align-content: start; }
+.tt-body { position: relative; display: grid; }
+.tt-edges { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+.tt-edge { fill: none; stroke: var(--color-border-strong); stroke-width: 1.5; }
+.tt-arrow-head { fill: var(--color-border-strong); }
+
+/* PREMIUM 带（客户端 PremiumSection：底部 96px 渐变底 + 标签；这里是布局近似，
+   客户端的单元格归属由模型重排、数据不可证，我们不重排）。 */
+.tt-premium {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  padding: var(--space-2);
+  background: linear-gradient(to top, color-mix(in oklab, var(--color-warning) 7%, transparent), transparent) var(--color-surface-1) bottom / 100% 96px no-repeat;
+}
+.tt-premium-label {
+  color: var(--color-text-secondary);
+  font: var(--type-caption);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* 等级条（客户端 LevelCell 216×24，罗马数字，吸底随内容横向滚动） */
 .tt-ruler {
   position: sticky;
-  inset-block-start: 0;
-  z-index: var(--z-sticky);
+  inset-block-end: 0;
   display: grid;
-  background: var(--color-canvas);
+  background: var(--color-surface-2);
 }
-.tt-ruler-cell { display: grid; place-items: center; color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; }
-.tt-body { position: relative; display: grid; }
-.tt-edges { position: absolute; inset: 0; pointer-events: none; }
-.tt-edge { stroke: var(--color-border-strong); stroke-width: 1.5; }
-.tt-arrow-head { fill: var(--color-border-strong); }
+.tt-ruler-cell {
+  display: grid;
+  place-items: center;
+  block-size: 24px;
+  color: var(--color-text-secondary);
+  font: var(--type-caption);
+  font-weight: 700;
+}
 
 .tt-cell {
   position: relative;

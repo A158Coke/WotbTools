@@ -50,6 +50,12 @@ export function techTreeGrid(tree) {
   }
 
   const byStem = new Map(defined.map(n => [n.stem, n]))
+
+  /** 等级锚点窗口（客户端 LevelCell 的可见区间：cells.minLevel..maxLevel；XI 预览=11）。 */
+  const tiers = defined.map(n => n.tier).filter(t => Number.isFinite(t) && t > 0)
+  const minTier = tiers.length ? Math.min(...tiers) : null
+  const maxTier = tiers.length ? Math.max(...tiers) : null
+
   /** 只保留两端都可解析的边（from 车不在树上时无法画线，但数据保留给消费方）。 */
   const drawnEdges = []
   for (const edge of edges) {
@@ -76,6 +82,8 @@ export function techTreeGrid(tree) {
     cells,
     conflicts,
     drawnEdges,
+    minTier,
+    maxTier,
     pending: Array.isArray(tree?.pending) ? tree.pending : [],
     premiumRows: Number(tree?.meta?.premiumRows) || 0,
   }
@@ -206,6 +214,8 @@ export function moduleTreeLayout(modules, selection = null) {
     rows: familyNames.length,
     nodes,
     nextVehicles,
+    /** 本车内部解锁边数 = 0 ⇔ 无研发链（XI 超测车：每族单模块、零成本——数据可证）。 */
+    hasChain: intra.size > 0,
     derived: true, // 布局为复刻推导（数据文件没有客户端网格坐标）
   }
 }

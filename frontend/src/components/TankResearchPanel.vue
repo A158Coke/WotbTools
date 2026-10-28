@@ -117,8 +117,12 @@ const configs = computed(() => (Array.isArray(props.detail?.configs) ? props.det
     </header>
 
     <p v-if="!layout" class="tr-empty" role="alert">{{ t('research.layout_unavailable') }}</p>
-    <div v-else class="tr-scroll">
-      <div class="tr-grid" :style="gridStyle" data-testid="research-grid">
+    <template v-else>
+      <p v-if="!layout.hasChain" class="tr-empty" data-testid="research-no-chain">
+        {{ t('research.no_chain_note') }}
+      </p>
+      <div class="tr-scroll">
+        <div class="tr-grid" :style="gridStyle" data-testid="research-grid">
         <svg class="tr-edges" :width="layout.columns * PITCH_X" :height="layout.rows * PITCH_Y" aria-hidden="true">
           <defs>
             <marker id="tr-arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
@@ -157,8 +161,9 @@ const configs = computed(() => (Array.isArray(props.detail?.configs) ? props.det
           <span v-if="node.cost != null && !node.installed" class="tr-node-cost">{{ t('research.xp_short', { xp: node.cost.toLocaleString() }) }}</span>
           <span class="tr-node-name">{{ moduleName(node.module) }}</span>
         </button>
+        </div>
       </div>
-    </div>
+    </template>
   </section>
 </template>
 

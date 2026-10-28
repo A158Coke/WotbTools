@@ -88,7 +88,7 @@ describe('树态', () => {
     expect(previewCell.text()).toContain('BZ-79'.replace('BZ-79', '')) // 名称来自 tank_cache
     expect(previewCell.text()).toContain('11')
     // 连线：两端都在树上的一条
-    expect(wrapper.findAll('line.tt-edge')).toHaveLength(1)
+    expect(wrapper.findAll('path.tt-edge')).toHaveLength(1)
   })
 
   it('pending（已登记未实装）渲染为占位，不造名称', async () => {
@@ -105,7 +105,7 @@ describe('树态', () => {
     expect(wrapper.find('[data-testid="techtree-grid"]').exists()).toBe(false)
   })
 
-  it('等级锚点按列数据判定：单 tier 列标注，mixed 列留空（other 树特例不猜）', async () => {
+  it('等级条（客户端 LevelCell 语义）：minLevel..maxLevel 逐列罗马数字（other 树列 1..7 = IV..X）', async () => {
     research.loadTechTree.mockResolvedValue({
       meta: { nation: 'other', premiumRows: 1 },
       nodes: [
@@ -118,8 +118,31 @@ describe('树态', () => {
     const { wrapper } = await mountView({ nation: 'other' })
     const ruler = wrapper.findAll('.tt-ruler-cell')
     expect(ruler).toHaveLength(2)
-    expect(ruler[0].text()).toContain('4')
-    expect(ruler[1].text()).toContain('5')
+    expect(ruler[0].text()).toBe('IV')
+    expect(ruler[1].text()).toBe('V')
+  })
+
+  it('XI 预览列：等级条窗口含 11（真实数据列连续 1..11 → I..XI）；premium 带渲染', async () => {
+    // 真实 ussr 数据列 1..11 连续（每列 ≥1 节点）：XI 列末格 = 罗马 XI。
+    research.loadTechTree.mockImplementation(async nation => ({
+      meta: { nation, premiumRows: 2 },
+      nodes: [
+        ...Array.from({ length: 10 }, (_, i) => ({
+          stem: `V${i + 1}`, tankId: i + 1, tier: i + 1, x: i + 1, y: 5,
+        })),
+        { stem: 'R230_Object_432U', tankId: 27905, tier: 11, x: 11, y: 8, preview: true },
+      ],
+      pending: [],
+      edges: [],
+    }))
+    const { wrapper } = await mountView()
+    const ruler = wrapper.findAll('.tt-ruler-cell')
+    expect(ruler).toHaveLength(11)
+    expect(ruler[0].text()).toBe('I')
+    expect(ruler[9].text()).toBe('X')
+    expect(ruler[10].text()).toBe('XI')
+    const band = wrapper.find('[data-testid="techtree-premium-band"]')
+    expect(band.exists()).toBe(true)
   })
 })
 
