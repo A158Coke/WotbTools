@@ -27,6 +27,28 @@ jobs:
           cache: maven
           cache-dependency-path: java/pom.xml
 
+      - name: Pre-clean remaining stale Team Review labels
+        shell: python
+        run: |
+          from pathlib import Path
+          replacements = {
+              'java/wotb-ai/src/main/resources/prompts/team/reasoning-contract.zh.md': {
+                  'v0.5 输出 schema': 'structured result 输出 schema',
+              },
+              'java/wotb-ai/src/main/java/com/wotb/ai/review/TeamPromptLocalizer.java': {
+                  'Output still uses the v0.5 structured result;': 'Output still uses the structured result;',
+                  'Вывод по-прежнему в структуре v0.5;': 'Вывод по-прежнему использует structured result;',
+              },
+          }
+          for path, pairs in replacements.items():
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              for old, new in pairs.items():
+                  if old not in text:
+                      raise SystemExit(f'missing expected stale label in {path}: {old}')
+                  text = text.replace(old, new)
+              p.write_text(text, encoding='utf-8', newline='\n')
+
       - name: Apply prompt-policy repair and stale-label cleanup
         run: python .github/scripts/temp_prompt_policy_repair.py
 
