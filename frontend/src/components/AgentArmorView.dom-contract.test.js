@@ -230,13 +230,19 @@ describe('dolly-zoom world-overview scope guard', () => {
     expect(kernel).toMatch(/if \(!collisionMode\) \{ resetArmorHighlight\(\); document\.getElementById\('click-info'\)\.style\.display = 'none'; \}/)
     expect(kernel).toMatch(/highlightedArmorNode && !isEffectivelyVisible\(highlightedArmorNode\)[\s\S]*?resetArmorHighlight\(\);/)
     // 视觉模型必须渲染全部部件：`gun_XX_mask` 是炮盾/炮根视觉（Super Conqueror 19281 等
-    // 无 mask 值的车，炮塔与炮管之间只由这个网格连接）。BlitzKit 的 “mask 无值 → 外部模块
-    // 只取精确 gun_0X” 规则只属于装甲视图的外部模块选取（热力图 clone / 求交），不能写进
-    // 视觉可见性（2026-10-28 用户报障：炮塔与炮管之间缺一段）。
-    expect(kernel).toMatch(/for \(const node of moduleMeshes\) \{\s*\n\s*node\.visible = baseNodeVisible\(node\) && !hiddenCategories\.external;/)
-    expect(kernel).not.toMatch(/hideMaskPart/)
+    // 无 mask 值的车，炮塔与炮管之间只由这个网格连接），不能写进基线的视觉可见性
+    // （2026-10-28 用户报障：视觉模型缺件）。
     const baseVisible = kernel.slice(kernel.indexOf('function baseNodeVisible('), kernel.indexOf('function setArmorFilterRowVisible('))
     expect(baseVisible).not.toContain('gunMaskPart')
+    // 装甲厚度视图才按 BlitzKit 外部模块口径裁剪/隐藏炮管组件：
+    //  - 无 mask 值的车隐藏炮盾网格（mask 无值 → 外部模块只取精确 gun_0X）
+    //  - 有 mask 值的车把实心炮管体按 gun_mask 平面裁剪（掩体之后的炮尾段不显示）
+    expect(kernel).toMatch(/const hideMaskPart = collisionMode && !hasMask;/)
+    expect(kernel).toMatch(/!hiddenCategories\.external\s*&&\s*!\(hideMaskPart && node\.userData\.gunMaskPart\)/)
+    expect(kernel).toMatch(/node\.userData\.armorSection === 'gunBarrel' && gunClipPlane[\s\S]*?mat\.clippingPlanes = clipPlanes;[\s\S]*?mat\.needsUpdate = true;/)
+    // 平面随姿态更新：进厚度视图前重算；炮塔/炮管转动后也重算（材质持有同一 Plane 对象）
+    expect(kernel).toMatch(/if \(collision\) computeGunClipPlane\(\);\s*\n\s*applyModuleCollisionMaterial\(collision\);/)
+    expect(kernel).toMatch(/updateCollisionWorldMatrices\(\);\s*\n\s*\/\/ 姿态变化后重算 gun_mask 裁切面[\s\S]*?if \(collisionMode\) \{ computeGunClipPlane\(\); syncModuleClipPlanes\(\); \}/)
     // 外部模块口径不变：热力图外层网格仍按 mask 规则选取
     expect(kernel).toMatch(/if \(node\.userData\.gunMaskPart && !hasMask\) return;\s*\n\s*externalMeshes\.push\(node\);/)
     expect(kernel).toMatch(/return \{[\s\S]*?destroy, retry, selectTank, canPick, isContextLost,/)

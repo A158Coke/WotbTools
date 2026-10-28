@@ -1773,13 +1773,17 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     node.visible = baseNodeVisible(node) && !(category && hiddenCategories[category]);
                 });
             }
-            // BlitzKit 的“mask 无值 → 外部模块只取精确 gun_0X”规则只属于**装甲视图的
-            // 外部模块选取**（热力图 clone / 点击与续飞求交）。`moduleMeshes` 是视觉模型的
-            // 炮管/履带网格，可见性必须渲染 glb 的全部部件：`gun_XX_mask` 是炮盾/炮根视觉
-            // （Super Conqueror 19281 等无 mask 值的车，炮塔与炮管之间只由这个网格连接），
-            // 按外部模块口径隐藏会让炮管断开（2026-10-28 用户报障）。
+            // BlitzKit 的“mask 无值 → 外部模块只取精确 gun_0X”规则只属于**装甲厚度视图**
+            // 的外部模块：厚度视图把炮管/履带画成实心碰撞体，炮盾（gun_XX_mask）在无 mask
+            // 值的车上不属于外部模块，需随外部模块口径隐藏；普通/击穿视图的视觉模型仍渲染
+            // 全部部件（2026-10-28 用户报障：视觉模型缺件；厚度模式要求裁剪隐藏）。
+            const cfg = currentConfig();
+            const hasMask = cfg && typeof cfg.gun_mask === 'number' && cfg.gun_mask !== 0;
+            const hideMaskPart = collisionMode && !hasMask;
             for (const node of moduleMeshes) {
-                node.visible = baseNodeVisible(node) && !hiddenCategories.external;
+                node.visible = baseNodeVisible(node)
+                    && !hiddenCategories.external
+                    && !(hideMaskPart && node.userData.gunMaskPart);
             }
             if (collisionMode && highlightedArmorNode && !isEffectivelyVisible(highlightedArmorNode)) {
                 resetArmorHighlight();
@@ -1841,6 +1845,20 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
 
         // 碰撞（装甲厚度）视图：炮管/履带等外部模块用纯色材质（无贴图），与装甲板同厚度色阶
         const moduleOriginalMaterials = new Map();
+        /** 厚度视图实心炮管体的 gun_mask 裁剪面同步（材质持有同一 Plane 对象，原地更新）。 */
+        function syncModuleClipPlanes() {
+            for (const node of moduleMeshes) {
+                const mat = node.userData.collisionSolidMaterial;
+                if (!mat || node.material !== mat) continue;
+                const clipPlanes = node.userData.armorSection === 'gunBarrel' && gunClipPlane
+                    ? [gunClipPlane] : null;
+                const hadClip = !!(mat.clippingPlanes && mat.clippingPlanes.length);
+                if (hadClip !== !!clipPlanes) {
+                    mat.clippingPlanes = clipPlanes;
+                    mat.needsUpdate = true;   // 裁剪面有无切换会换 shader 变体
+                }
+            }
+        }
         function applyModuleCollisionMaterial(on) {
             for (const node of moduleMeshes) {
                 if (on) {
@@ -1860,11 +1878,17 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     moduleOriginalMaterials.delete(node);
                 }
             }
+            // 厚度视图的炮管外部模块按 gun_mask 平面裁剪（与热力图外部模块 clone 同一
+            // 口径）：掩体平面之后的炮尾/炮根段不显示，避免整根炮管插进炮塔。
+            if (on) syncModuleClipPlanes();
         }
         function applyArmorViewStyle(collision) {
             // visual 与 armor 两个 GLB 独立完成；collisionMode 可能在 armor 就绪前已开启。
             // armor 未就绪时直接返回，等 armor 完成回调里的 applyConfig 再刷新材质。
             if (!armorModel) return;
+            // 厚度视图的炮管实心体按当前配置的 gun_mask 平面裁剪：与热力图外部模块 clone
+            // 同一实现，进视图/换配置时先重算平面
+            if (collision) computeGunClipPlane();
             applyModuleCollisionMaterial(collision);
             if (collision) {
                 // 碰撞视图保留外部模块（炮管/履带）的碰撞体，隐藏其余视觉网格。
@@ -4882,6 +4906,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // 回退车体原点，坦克整体出现在画面上半部；下一帧后再点「查看弹着点」才恢复。
             // 与 doPenetrationCheck 的首帧约定一致（判定前调用同一助手）。
             updateCollisionWorldMatrices();
+            // 姿态变化后重算 gun_mask 裁切面（材质持有同一个 Plane 对象，原地更新即可；
+            // 热力图路径每帧自算，这里补齐厚度视图的姿态驱动路径）。
+            if (collisionMode) { computeGunClipPlane(); syncModuleClipPlanes(); }
         }
 
         let armorOrigMatrices = null;
