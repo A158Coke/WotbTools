@@ -772,6 +772,15 @@ describe('armor shell and readiness ownership', () => {
   it('目标配置切换清空旧结果并使在途判定失效', () => {
     expect(kernel).toMatch(/if \(!QP\.get\('shot'\)\) \{\s*__penCheckSeq\+\+;\s*tidyTrajectory\(\);[\s\S]*?lastClickNdc = null;\s*\} else \{\s*rerunAuthoritativeShotCheck\(\);/)
   })
+  it('射手数据未就绪时排队换炮，不拿上一辆车的 shooterData 重载', () => {
+    expect(kernel).toMatch(/let pendingShooterConfig = null;/)
+    expect(kernel).toMatch(/pendingShooterConfig = \{ tankId: currentShooterId, index: idx \};/)
+    expect(kernel).toMatch(/pendingShooterConfig\.tankId === tid && pendingShooterConfig\.tankId === currentShooterId/)
+  })
+  it('只重建场景时保留已挂载子组件的 readiness', () => {
+    expect(view).not.toMatch(/requestSeq\+\+;\s*\n\s*shooterReady\.value = false;/)
+    expect(view).not.toMatch(/requestSeq\+\+;\s*\n\s*hudReady\.value = false;/)
+  })
   it('只换射手发动机/履带不凭空建立 scfg', () => {
     expect(view).toMatch(/const hadExplicitShooterConfig = query\.scfg != null && query\.scfg !== ''/)
     expect(view).toMatch(/if \(configChanged \|\| hadExplicitShooterConfig\) put\('scfg', patch\.config\)/)

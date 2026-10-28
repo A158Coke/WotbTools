@@ -278,6 +278,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         let tankModel = null, armorModel = null, tankData;   // tankData = target tank (model/armor/info)
         let armorStateDecl = null, armorStateCurrent = null; // 动态装甲声明与当前态（非动态车均 null）
         let shooterData = null;                              // shooter tank (caliber/shells)
+        let pendingShooterConfig = null;                     // { tankId, index }：编辑器先于场景射手数据就绪
         // 口径不再预置默认值：判定必须用实际数据（配置/弹体/坦克），缺失即报错。
         let shooterShells = [], shooterCaliber = null;
         let selectedShell = null;
@@ -4467,6 +4468,17 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (destroyed) return;
                 if (gen !== shooterLoadGen) return;
                 shooterData = data;
+                // 编辑器可能先于场景拿到射手数据：排队中的换炮在数据就绪时生效；
+                // tankId 不匹配说明选择已切走，丢弃旧队列。
+                if (pendingShooterConfig) {
+                    if (pendingShooterConfig.tankId === tid && pendingShooterConfig.tankId === currentShooterId) {
+                        QP.set('scfg', String(pendingShooterConfig.index));
+                        QP.delete('shell');
+                        pendingShooterConfig = null;
+                    } else if (pendingShooterConfig.tankId !== currentShooterId) {
+                        pendingShooterConfig = null;
+                    }
+                }
                 // 射手实际搭载配置弹表（&scfg= = shooter_config_idx，射击复现表注入）：
                 // 多炮坦克 stock 弹表与发射炮的穿深/弹种清单不同（KV-1 发射 85mm F-30 AP
                 // 120mm，stock ZiS-5 表只有 86/102/20），选择器必须用发射炮的表；
@@ -6451,13 +6463,20 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
          * 再按新表重跑判定。回放记录的炮塔/炮管姿态保持原样（那是历史真值）。
          */
         async function setShooterConfig(index) {
-            if (!shooterData) return false;
+            if (currentShooterId == null) return false;
             const idx = Number(index);
-            const configs = shooterData.configs || [];
-            if (!Number.isInteger(idx) || idx < 0 || idx >= configs.length) return false;
+            if (!Number.isInteger(idx) || idx < 0) return false;
+            const hasCurrent = !!(shooterData && shooterData.tank_id === currentShooterId);
+            if (hasCurrent && idx >= (shooterData.configs || []).length) return false;
             QP.set('scfg', String(idx));
             QP.delete('shell');   // 旧弹种下标对新炮表无意义
-            await loadShooter(shooterData.tank_id);
+            if (!hasCurrent) {
+                // 当前选中的射手数据仍在路上：不要用上一辆车的 shooterData 重载，
+                // 否则会递增 shooterLoadGen 把正确的在途响应丢掉。
+                pendingShooterConfig = { tankId: currentShooterId, index: idx };
+                return true;
+            }
+            await loadShooter(currentShooterId);
             return true;
         }
 

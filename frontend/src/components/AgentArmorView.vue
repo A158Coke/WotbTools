@@ -457,9 +457,8 @@ watch(() => route.fullPath, async () => {
     // 只改了装配键：场景已由 applyShotSetup 就地更新，不重建（否则每次点模块都会闪一下）
     if (viewer && sceneSignature() === lastSceneSignature) return
     requestSeq++
-    shooterReady.value = false
-    targetReady.value = false
-    hudReady.value = false
+    // 仅重建场景时子编辑器/HUD 仍挂载；它们的 boolean 监听不会重新发 ready，
+    // 不能在这里清空 readiness，否则会同时显示原生回退控件。
     viewerReady.value = false
     viewer?.destroy?.()
     viewer = null
