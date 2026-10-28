@@ -140,6 +140,43 @@ const shooterConfigValue = computed(() => route.query.scfg ?? (sameTankInspectio
 let pendingShotQuery = null
 watch(() => route.query, () => { pendingShotQuery = null }, { flush: 'sync' })
 
+/** 原生回退控件变更后写回 URL；场景已经自行应用，不能再回调 viewer 造成循环。 */
+function replaceArmorSetupQuery(mutate) {
+  const query = { ...(pendingShotQuery || route.query) }
+  mutate(query)
+  pendingShotQuery = query
+  router.replace({ query })
+}
+
+function syncNativeTargetConfig(index) {
+  const n = Number(index)
+  if (!Number.isInteger(n) || n < 0) return
+  replaceArmorSetupQuery((query) => {
+    query.config = String(n)
+    const explicitShooterConfig = query.scfg != null && query.scfg !== ''
+    if (shouldResetShellOnConfigChange({
+      side: 'target',
+      configChanged: true,
+      sameTank: sameTankInspection.value,
+      explicitShooterConfig,
+    })) delete query.shell
+  })
+}
+
+function syncNativeShell(index) {
+  const n = Number(index)
+  if (!Number.isInteger(n) || n < 0) return
+  replaceArmorSetupQuery((query) => { query.shell = String(n) })
+}
+
+function syncNativeEquipment(kind, value) {
+  if (kind !== 'calibrated' && kind !== 'enhanced') return
+  replaceArmorSetupQuery((query) => {
+    if (kind === 'calibrated') query.eqcal = value ? '1' : '0'
+    else query.eqenh = value ? '1' : '0'
+  })
+}
+
 function applyShotSetup(patch) {
   if (!patch) return
   const query = { ...(pendingShotQuery || route.query) }
@@ -370,6 +407,9 @@ function startViewer(preserveSelection = false) {
             selectedShooterId.value = selection.shooter
             selectedTargetId.value = selection.target
         },
+        onConfigSelection: index => syncNativeTargetConfig(index),
+        onShellSelection: index => syncNativeShell(index),
+        onEquipmentSelection: (kind, value) => syncNativeEquipment(kind, value),
     })
     viewerReady.value = true
     lastSceneSignature = sceneSignature()

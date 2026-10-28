@@ -511,7 +511,10 @@ function activate(node) {
 
 /* 平板/手机：横向三段改为纵向堆叠（前驱车 → 当前车 → 研发图） */
 @media (width < 1200px) {
-  .tr-panel { grid-template-columns: minmax(0, 1fr); min-block-size: 0; }
+  /* has-side 的桌面规则是 .tr-panel.has-side（0,2,0），这里必须同特异性覆盖，否则
+     平板/手机会继续保留 190px 前驱车列，把研发图挤成一条无法阅读的滚动缝。 */
+  .tr-panel,
+  .tr-panel.has-side { grid-template-columns: minmax(0, 1fr); min-block-size: 0; }
   .tr-side { grid-template-columns: minmax(150px, 0.9fr) minmax(0, 1.1fr); align-items: start; }
   .tr-scroll { place-content: start; }
 }

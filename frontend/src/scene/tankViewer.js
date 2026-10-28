@@ -56,6 +56,9 @@ import { activePlateSet, controllablePlateSet, defaultStateId, dynamicDeclaratio
  * @param {(state: { state: string, progress?: number | null, message?: string }) => void} [options.onLoadState]
  * @param {(list: Array) => void} [options.onTankList] 名册视图模型（normalizeTankCache）就绪
  * @param {(selection: { shooter: number|null, target: number|null }) => void} [options.onTankSelection] 当前射手/目标变化
+ * @param {(index: number) => void} [options.onConfigSelection] 原生配置下拉切换目标配置（宿主写回 URL）
+ * @param {(index: number) => void} [options.onShellSelection] 原生弹种下拉切换（宿主写回 URL）
+ * @param {(kind: 'calibrated'|'enhanced', value: boolean) => void} [options.onEquipmentSelection] 原生装备勾选切换（宿主写回 URL）
  */
 /**
  * 场景脚本把射击复现 / 调试状态挂在 window 上（__worldPan、__shotCtx…）。以前每次都在新窗口里打开，
@@ -133,7 +136,7 @@ export function mirrorShotData(s) {
     
 }
 
-export function initTankViewer({ labels = {}, onLoadState = null, onTankList = null, onTankSelection = null, initialTankId = null, initialShooterId = null } = {}) {
+export function initTankViewer({ labels = {}, onLoadState = null, onTankList = null, onTankSelection = null, onConfigSelection = null, onShellSelection = null, onEquipmentSelection = null, initialTankId = null, initialShooterId = null } = {}) {
         // 穿透材质族的**每实例**运行态（分辨率/跳弹 uniforms/占位纹理 + 绑定它们的材质工厂）。
         // 不能是模块单例：两个 viewer 生命周期重叠时，A 的更新/重建/清理会直接改到 B 的 uniforms
         //（评审 P1）。解构命名与拆分前一致，消费点零改动。
@@ -2512,6 +2515,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             if (window.__endMarker) { scene.remove(window.__endMarker); window.__endMarker = null; }
             if (window.__dbgGroup) { scene.remove(window.__dbgGroup); window.__dbgGroup = null; }
             releaseModuleMaterialCaches();
+            // 旧模型卸载后高亮节点/点选浮层不再有效：清掉引用，加载失败也不会残留旧板信息。
+            highlightedArmorNode = null;
+            const staleClickInfo = document.getElementById('click-info');
+            if (staleClickInfo) staleClickInfo.style.display = 'none';
             moduleMeshes = [];
             turretNode = null; gunNodesList = [];
             gunBarrelNodes = [];
@@ -4676,19 +4683,27 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         if (window.__hitMarker) { scene.remove(window.__hitMarker); window.__hitMarker = null; }
                         lastClickNdc = null;
                     }
+                    onShellSelection?.(idx);
                 }
             });
 
-            const onEquipmentChange = function() { refreshEquipmentEffects(); };
-            document.getElementById('eq-calibrated').addEventListener('change', onEquipmentChange);
-            document.getElementById('eq-enhanced').addEventListener('change', onEquipmentChange);
+            document.getElementById('eq-calibrated').addEventListener('change', function() {
+                refreshEquipmentEffects();
+                onEquipmentSelection?.('calibrated', this.checked);
+            });
+            document.getElementById('eq-enhanced').addEventListener('change', function() {
+                refreshEquipmentEffects();
+                onEquipmentSelection?.('enhanced', this.checked);
+            });
             document.getElementById('armor-state-toggle').addEventListener('change', function() {
                 if (!armorStateDecl) return;   // 静态车无声明：不得读 states（review P2 崩溃点）
                 setArmorState(this.checked ? nonDefaultStateId(armorStateDecl) : defaultStateId(armorStateDecl));
             });
 
             document.getElementById('config-select').addEventListener('change', function() {
-                applyConfig(parseInt(this.value));
+                const idx = parseInt(this.value);
+                applyConfig(idx);
+                onConfigSelection?.(idx);
             });
 
             document.getElementById('collision-btn').addEventListener('click', function() {

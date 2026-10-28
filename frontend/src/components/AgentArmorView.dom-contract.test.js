@@ -256,7 +256,9 @@ describe('dolly-zoom world-overview scope guard', () => {
     // 卸载目标时释放厚度视图缓存的原材质/实心材质及贴图，避免换车累积模型内存
     expect(kernel).toMatch(/function releaseModuleMaterialCaches\(\)/)
     expect(kernel).toMatch(/moduleOriginalMaterials\.clear\(\)/)
-    expect(kernel).toMatch(/releaseModuleMaterialCaches\(\);\s*\n\s*moduleMeshes = \[\];/)
+    expect(kernel).toMatch(/releaseModuleMaterialCaches\(\);\s*\n\s*\/\/[^\n]*\n\s*highlightedArmorNode = null;/)
+    expect(kernel).toMatch(/const staleClickInfo = document\.getElementById\('click-info'\);/)
+    expect(kernel).toMatch(/moduleMeshes = \[\];/)
     expect(kernel).toMatch(/const keep = new Set\(moduleMeshes\)/)
     // 分类过滤（主装甲/间隙/外部模块）
     // 碰撞视图隐藏用逐节点标记（重复调用不丢状态），退出后外观恢复
@@ -718,6 +720,17 @@ describe('armor shell and readiness ownership', () => {
     expect(view).toMatch(/watch\(targetSetupId, \(\) => \{ targetReady\.value = false \}\)/)
     const hud = view.match(/<ArmorShotHud[\s\S]*?\/>/)[0]
     expect(hud).not.toContain(':config=')
+  })
+  it('原生回退控件把选择写回 URL，避免 HUD 与场景各用一套状态', () => {
+    expect(kernel).toMatch(/onConfigSelection\?\.\(idx\)/)
+    expect(kernel).toMatch(/onShellSelection\?\.\(idx\)/)
+    expect(kernel).toMatch(/onEquipmentSelection\?\.\('calibrated', this\.checked\)/)
+    expect(view).toMatch(/function syncNativeTargetConfig\(index\)/)
+    expect(view).toMatch(/function syncNativeShell\(index\)/)
+    expect(view).toMatch(/function syncNativeEquipment\(kind, value\)/)
+    expect(view).toMatch(/onConfigSelection: index => syncNativeTargetConfig\(index\)/)
+    expect(view).toMatch(/onShellSelection: index => syncNativeShell\(index\)/)
+    expect(view).toMatch(/onEquipmentSelection: \(kind, value\) => syncNativeEquipment\(kind, value\)/)
   })
   it('HUD 就绪即独占被替换的装备控件；配置变更按解析后的选择判断', () => {
     expect(view).toMatch(/'has-shot-hud': hudReady/)

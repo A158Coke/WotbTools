@@ -12,4 +12,8 @@ describe('TankResearchPanel layout', () => {
     expect(source).toMatch(/<div class="tr-scroll">/)
     expect(source).toMatch(/\.tr-scroll \{[^}]*overflow: auto;/s)
   })
+
+  it('窄屏覆盖 has-side，前驱车与研发图纵向堆叠', () => {
+    expect(source).toMatch(/@media \(width < 1200px\)[\s\S]*?\.tr-panel\.has-side \{ grid-template-columns: minmax\(0, 1fr\);/)
+  })
 })
