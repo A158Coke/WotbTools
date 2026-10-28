@@ -185,10 +185,15 @@ onMounted(() => {
   loadTankIconCrops().then((crops) => { iconCrops.value = crops })
 })
 const tankId = computed(() => props.detail?.tank_id ?? props.detail?.tankId ?? null)
-const iconStyle = computed(() => {
-  const transform = tankIconCropTransform(iconCrops.value?.[String(tankId.value)], ICON_ASPECT)
+function cropStyle(id, boxAspect) {
+  const transform = tankIconCropTransform(iconCrops.value?.[String(id)], boxAspect)
   return transform ? { transform } : null
-})
+}
+const iconStyle = computed(() => cropStyle(tankId.value, ICON_ASPECT))
+/** 下一级坦克节点的小图同样要套内容框裁剪（原始画布坦克锚左上，不然看着偏）。 */
+function vehicleIconStyle(id) {
+  return cropStyle(id, 1)
+}
 
 function activate(node) {
   if (node.kind === 'vehicle') {
@@ -291,7 +296,7 @@ function activate(node) {
               @click="activate(node)"
             >
               <span class="tr-node-pic">
-                <img v-if="node.kind === 'vehicle' && node.tankId" :src="tankImageUrl(node.tankId)" alt="" loading="lazy">
+                <img v-if="node.kind === 'vehicle' && node.tankId" :src="tankImageUrl(node.tankId)" alt="" loading="lazy" :style="vehicleIconStyle(node.tankId)">
                 <img v-else-if="nodeIcon(node.kind)" :src="nodeIcon(node.kind)" alt="" width="40" height="40" loading="lazy">
                 <span v-else class="tr-node-fallback">{{ nodeLabelText(node).slice(0, 1) }}</span>
               </span>
@@ -416,13 +421,10 @@ function activate(node) {
 .tr-node {
   position: absolute;
   display: grid;
-  grid-template-rows: 24px minmax(0, 1fr);
-  justify-items: center;
-  align-items: start;
-  gap: 2px;
+  place-items: center;
   inline-size: 96px;
   block-size: 64px;
-  padding: 3px var(--space-1) 2px;
+  padding: 0;
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-md);
   background: var(--color-surface-2);
@@ -443,7 +445,7 @@ function activate(node) {
 }
 .tr-node.is-next-tank:disabled { cursor: default; opacity: 0.6; }
 
-.tr-node-pic { display: grid; place-items: center; inline-size: 24px; block-size: 24px; overflow: hidden; }
+.tr-node-pic { display: grid; place-items: center; inline-size: 30px; block-size: 30px; overflow: hidden; }
 .tr-node-pic img { inline-size: 100%; block-size: 100%; object-fit: contain; }
 .tr-node-fallback { font: var(--type-h3); }
 .tr-node-level {
@@ -478,8 +480,8 @@ function activate(node) {
 .tr-node-cost.is-token { color: var(--color-info); }
 .tr-node-check {
   position: absolute;
-  inset-block-end: 0;
-  inset-inline-end: 0;
+  inset-block-end: -6px;
+  inset-inline-end: -6px;
   display: grid;
   place-items: center;
   inline-size: 14px;
@@ -488,19 +490,23 @@ function activate(node) {
   background: var(--color-accent);
   color: var(--color-canvas);
 }
-/* 模块名最多两行（客户端也是压缩显示；单行必然全是省略号）：
-   24px 图标 + 2×16px 文本 = 62px，正好落在 64px 节点内。完整名称在 tooltip/aria 里。 */
+/* 客户端 ModuleNode：图标双轴居中、名字在底部叠放（这里配一层底色保证可读）。
+   最多两行；完整名称在 tooltip/aria 里。 */
 .tr-node-name {
+  position: absolute;
+  inset-inline: 2px;
+  inset-block-end: 1px;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
-  inline-size: 100%;
   overflow: hidden;
   overflow-wrap: anywhere;
   text-align: center;
   font-family: var(--font-family-sans);
   font-size: var(--font-size-caption-xs);
   line-height: var(--line-height-caption-xs);
+  background: color-mix(in oklab, var(--color-surface-2) 88%, transparent);
+  border-radius: var(--radius-sm);
 }
 
 /* 平板/手机：横向三段改为纵向堆叠（前驱车 → 当前车 → 研发图） */
