@@ -44,7 +44,9 @@ async function load(shooterId) {
       calibrated: list.find(item => item.id === 103) || null,
       enhanced: list.find(item => item.id === 110) || null,
     }
-    emit('ready')
+    // 只有真正渲染出弹种/装备控件时才让宿主隐藏原生回退控件；无 config shells
+    // 的坦克仍可用顶层 shells 回退，二者都没有则保持 native shell/equipment 可用。
+    if (shells.value.length) emit('ready')
   } catch {
     if (seq === request) details.value = null
   }
@@ -62,7 +64,12 @@ const cfgIndex = computed(() => {
     ? wanted
     : configs.value.length - 1
 })
-const shells = computed(() => configs.value[cfgIndex.value]?.shells || [])
+const shells = computed(() => {
+  const configured = configs.value[cfgIndex.value]?.shells
+  if (Array.isArray(configured) && configured.length) return configured
+  // 与 tankViewer.loadShooter 的回退一致：config shells 为空时用坦克顶层弹表。
+  return details.value?.shells || []
+})
 const shellIndex = computed(() => {
   const n = Number(props.shell)
   return Number.isInteger(n) && n >= 0 && n < shells.value.length ? n : 0

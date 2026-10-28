@@ -59,6 +59,9 @@ async function load(tankId) {
 watch(() => props.tankId, id => load(id), { immediate: true })
 
 const urlIndex = value => {
+  // 缺省（null/空串）必须保持“未选择”，交给 resolveSetup 回落到最后一档；
+  // Number(null) === 0 会把默认选型错误地钉在 stock 发动机/履带。
+  if (value == null || value === '') return null
   const n = Number(value)
   return Number.isInteger(n) && n >= 0 ? n : null
 }

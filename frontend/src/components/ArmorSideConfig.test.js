@@ -54,6 +54,8 @@ describe('ArmorSideConfig（一侧的模块 + 配件完整选择）', () => {
     const payload = wrapper.emitted('apply').at(-1)[0]
     expect(payload.track).toBe(0)
     expect(payload.config).toBe(0)
+    // engine 未显式传入：保持 resolveSetup 的最后一档，而不是 Number(null) -> 0
+    expect(payload.engine).toBe(1)
     expect(payload.configChanged).toBe(false)
     expect(typeof payload.dev).toBe('string')
   })

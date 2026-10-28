@@ -744,6 +744,9 @@ describe('armor shell and readiness ownership', () => {
     expect(view).toMatch(/const queryShooter = Number\(route\.query\.shooter\)/)
     expect(view).toMatch(/Number\.isFinite\(queryShooter\) && queryShooter > 0 \? queryShooter : loadoutTankId\.value/)
   })
+  it('普通检视换射手/换炮清掉上一发结果与 HE 可视化', () => {
+    expect(kernel).toMatch(/if \(!QP\.get\('shot'\)\) \{\s*tidyTrajectory\(\);[\s\S]*?lastClickNdc = null;/)
+  })
   it('只换射手发动机/履带不凭空建立 scfg', () => {
     expect(view).toMatch(/const hadExplicitShooterConfig = query\.scfg != null && query\.scfg !== ''/)
     expect(view).toMatch(/if \(configChanged \|\| hadExplicitShooterConfig\) put\('scfg', patch\.config\)/)

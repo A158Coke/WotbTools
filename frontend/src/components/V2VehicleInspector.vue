@@ -317,15 +317,15 @@ function moduleStateLabel(state) {
 .v2-chip-item { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
 .v2-chip-item img { flex: none; inline-size: 24px; block-size: 24px; object-fit: contain; }
 .v2-configurator-link {
-  margin-top: 2px;
+  margin-block-start: var(--space-1);
   align-self: flex-start;
-  padding: 2px 8px;
-  min-height: 24px;
+  padding: var(--space-1) var(--space-2);
+  min-block-size: var(--control-h-sm);
   border: 1px solid var(--color-border-subtle);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--color-surface-2);
   color: var(--color-text-primary);
-  font-size: 10px;
+  font: var(--type-caption);
   cursor: pointer;
 }
 .v2-configurator-link:hover { border-color: var(--color-border-strong); }

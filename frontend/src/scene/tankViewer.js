@@ -4445,6 +4445,13 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             shooterLoading = true;
             selectedShell = null;
             __penCheckSeq++;
+            // 普通检视换射手/换炮后旧命中、轨迹与 HE 爆点属于上一门炮，必须立即失效；
+            // 射击复现仍按权威弹道重跑，不在此清空。
+            if (!QP.get('shot')) {
+                tidyTrajectory();
+                if (window.__hitMarker) { scene.remove(window.__hitMarker); window.__hitMarker = null; }
+                lastClickNdc = null;
+            }
             try {
                 const data = await fetchTankData(tid);
                 if (destroyed) return;
