@@ -234,18 +234,17 @@ describe('dolly-zoom world-overview scope guard', () => {
     // （2026-10-28 用户报障：视觉模型缺件）。
     const baseVisible = kernel.slice(kernel.indexOf('function baseNodeVisible('), kernel.indexOf('function setArmorFilterRowVisible('))
     expect(baseVisible).not.toContain('gunMaskPart')
-    // 判定只用炮管部分：`gun_NN` = 炮管本体；炮盾（`gun_NN_mask`）仅在客户端给出
-    // 可用平面切割（记录 planeSliceMode=1；旧包用标量）时并入外部模块，由平面裁掉炮根。
-    // 视觉模型始终渲染全部部件（baseNodeVisible 不含 gunMaskPart）。
-    expect(kernel).toMatch(/const maskParts = gunMaskPartsFor\(\);/)
-    expect(kernel).toMatch(/if \(node\.userData\.gunMaskPart && !maskParts\) return;\s*\n\s*externalMeshes\.push\(node\);/)
-    expect(read('../scene/gunMask.js')).toMatch(/if \(record\) return Number\(record\.plane_slice_mode\) === 1/)
-    expect(kernel).toMatch(/node\.userData\.armorSection === 'gunBarrel' && gunClipPlane[\s\S]*?mat\.clippingPlanes = clipPlanes;[\s\S]*?mat\.needsUpdate = true;/)
-    // 平面随姿态更新：进厚度视图前重算；炮塔/炮管转动后也重算（材质持有同一 Plane 对象）
-    expect(kernel).toMatch(/if \(collision\) computeGunClipPlane\(\);\s*\n\s*applyModuleCollisionMaterial\(collision\);/)
-    expect(kernel).toMatch(/updateCollisionWorldMatrices\(\);\s*\n\s*\/\/ 姿态变化后重算 gun_mask 裁切面[\s\S]*?if \(collisionMode\) \{ computeGunClipPlane\(\); syncModuleClipPlanes\(\); \}/)
-    // 热力图外部模块保留整根炮管（不再按 mask 规则过滤 gunMaskPart）
-    expect(kernel).toMatch(/moduleMeshes\.forEach\(function\(node\) \{[\s\S]*?externalMeshes\.push\(node\);\s*\n\s*\}\);/)
+    // 判定只用炮管部分：`gun_NN` = 炮管本体，炮盾（`gun_NN_mask`）不进外部模块；
+    // 客户端 maskSlice 是炮管视觉/特效切片参数，不是装甲边界（2026-10-28 实测：
+    // planePosition 在多数车上落在炮管根部之外或中段，按它裁会切掉大半根炮管）。
+    // 视觉模型始终渲染全部部件；厚度视图隐藏炮盾实心体。
+    expect(kernel).toMatch(/if \(node\.userData\.gunMaskPart\) return;\s*\n\s*externalMeshes\.push\(node\);/)
+    expect(kernel).toMatch(/for \(const node of moduleMeshes\) \{\s*\n\s*node\.visible = baseNodeVisible\(node\)\s*\n\s*&& !hiddenCategories\.external\s*\n\s*&& !\(collisionMode && node\.userData\.gunMaskPart\);/)
+    // 装甲判定不使用 maskSlice 裁切面：平面恒 null、无裁切面同步/重算代码
+    expect(kernel).toMatch(/const gunClipPlane = null;/)
+    expect(kernel).not.toContain('computeGunClipPlane')
+    expect(kernel).not.toContain('syncModuleClipPlanes')
+    expect(kernel).not.toContain('gunMaskPartsFor')
     expect(kernel).toMatch(/return \{[\s\S]*?destroy, retry, selectTank, canPick, isContextLost,/)
     for (const api of ['setConfig: applyConfig', 'setConfigUiVisible', 'setShellUiVisible', 'setShell', 'setShooterConfig', 'setEquipmentOverride']) {
       expect(kernel).toContain(api)
@@ -539,14 +538,17 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
 // 与 .tp-media 的 aspect-ratio 必须一致，且盒子不再用固定高度（固定高会让比例随卡片
 // 宽度漂移、内容框换算失准）。
 describe('production gun_mask clip wiring (2026-10-21)', () => {
-  // 穿透材质族 2026-10-24 出仓 viewer/armorShaders.js（Step B2）：uniform 注入断言拼接读取两份源
+  // 穿透材质族 2026-10-24 出仓 viewer/armorShaders.js（Step B2）：uniform 注入断言拼接读取两份源。
+  // 2026-10-28：装甲判定不再使用 maskSlice 裁切面，gunClipPlane 恒 null、rcClipEnabled 恒 false
+  //（uniform 注入保留，供未来真正的裁切源复用）。
   const kernel = read('../scene/tankViewer.js') + '\n' + read('../scene/viewer/armorShaders.js')
-  it('PBR 与间隙甲状态材质都注入同一 rcClipPlane/rcClipEnabled，且每帧同步 gunClipPlane', () => {
+  it('PBR 与间隙甲状态材质都注入同一 rcClipPlane/rcClipEnabled，且不启用裁切', () => {
     const occurrences = [...kernel.matchAll(/rcClipPlane:\s*rcUniforms\.rcClipPlane/g)]
     expect(occurrences).toHaveLength(2)
     expect(kernel).toContain('rcClipEnabled: rcUniforms.rcClipEnabled')
-    expect(kernel).toContain('rcUniforms.rcClipPlane.value.set(')
-    expect(kernel).toContain('rcUniforms.rcClipEnabled.value = true;')
+    expect(kernel).toContain('rcUniforms.rcClipEnabled.value = false;')
+    expect(kernel).not.toContain('rcUniforms.rcClipEnabled.value = true;')
+    expect(kernel).not.toContain('rcUniforms.rcClipPlane.value.set(')
     expect(kernel).toContain('clipPlane: gunClipPlane')
   })
   it('无效 HE 概率行走 resolveCardChance fail-closed', () => {
@@ -627,37 +629,6 @@ describe('spaced armor double-sided judgment', () => {
     expect(kernel).toMatch(/const armorHits = collectJudgmentHits\(intersects, raycaster\.ray\.direction\);/)
     expect(kernel).toMatch(/const ricIntersects = intersectArmorDoubleSidedSpaced\(objects, rc\);/)
     expect(kernel).toMatch(/const ricHits = collectJudgmentHits\(ricIntersects, rc\.ray\.direction\)/)
-  })
-})
-
-// 炮管裁切面按客户端原值（2026-10-28）：客户端逐车 yaml maskSlice 的 planePosition/
-// planeNormal/planeSliceMode 经资产面 sidecar 透传；平面在 gun_NN 节点局部系，按节点
-// world 矩阵变换。旧标量（gun_mask + 轴对齐重建）只作为旧资产包的回退。
-describe('client maskSlice plane wiring', () => {
-  const kernel = read('../scene/tankViewer.js')
-  const helper = read('../scene/gunMask.js')
-  it('viewer 拉取 sidecar 并在到达后重算裁切面/同步厚度视图材质', () => {
-    expect(kernel).toContain('fetchGunMaskSlices()')
-    expect(kernel).toMatch(/fetchGunMaskSlices\(\)\.then\(\(records\) => \{[\s\S]*?computeGunClipPlane\(\);\s*\n\s*syncModuleClipPlanes\(\);/)
-  })
-  it('平面优先取客户端记录：position/normal 经 gun_NN 节点 world 矩阵', () => {
-    expect(kernel).toMatch(/const record = gunMaskRecord\(cfg\);/)
-    expect(kernel).toMatch(/gunMaskPlaneWorld\(record, node\.matrixWorld, _gunMaskNormal, _gunMaskPoint\)/)
-    expect(kernel).toMatch(/gunMaskNodeName\(record\)/)
-    // 记录存在但 planeSliceMode !== 1 → 不裁（不回落到标量近似）
-    expect(helper).toMatch(/if \(Number\(record\.plane_slice_mode\) !== 1\) return false/)
-    // 记录路径先 return，标量重建只在无记录（旧包）时执行
-    expect(kernel).toMatch(/if \(record\) \{[\s\S]*?\n\s*return;\s*\n\s*\}\s*\n\s*\/\/ 旧资产包（无 sidecar 记录）/)
-  })
-  it('判定/厚度视图只在有平面切割时并入炮盾网格', () => {
-    // 客户端判定只用炮管部分：没有平面（无记录/planeSliceMode=0）时不把 gun_XX_mask
-    // 当作外部模块；有平面时并入并由裁切面去掉炮根。
-    expect(kernel).toMatch(/const maskParts = gunMaskPartsFor\(\);/)
-    expect(kernel).toMatch(/node\.visible = baseNodeVisible\(node\)\s*\n\s*&& !hiddenCategories\.external\s*\n\s*&& !\(collisionMode && node\.userData\.gunMaskPart && !maskParts\);/)
-    const helper = read('../scene/gunMask.js')
-    expect(helper).toMatch(/export function gunMaskPartsActive\(record, cfg\)/)
-    expect(helper).toMatch(/if \(record\) return Number\(record\.plane_slice_mode\) === 1/)
-    expect(helper).toMatch(/typeof cfg\.gun_mask === 'number' && cfg\.gun_mask !== 0/)
   })
 })
 

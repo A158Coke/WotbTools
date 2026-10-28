@@ -21,12 +21,10 @@ import {
     fetchTankEncyclopedia,
     fetchShells,
     fetchReplayShots,
-    fetchGunMaskSlices,
     judgePenetration,
     assetProvider,
     shotBallisticLength,
 } from './agentData.js'
-import { gunMaskNodeName, gunMaskPartsActive, gunMaskPlaneWorld, gunMaskSliceKey } from './gunMask.js'
 import { normalizeTankCache } from '../utils/tankopediaQuery.js'
 import { createLoadProgress } from './loadProgress.js'
 import { shotResultClass } from '../utils/shotResultClass.js'
@@ -468,106 +466,16 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
 
         let primaryMeshes = [], spacedMeshes = [], externalMeshes = [];
-        let gunClipPlane = null;
-        const _gunClipPlaneObj = new THREE.Plane();
-        let gunMuzzleWorld = null;
-        // 客户端 maskSlice 完整记录（资产包 /data/gunMaskSlices.json，逐车逐炮位）。
-        // 到达后裁切面按客户端原值重建；旧包无该文件 → null，回退旧标量重建。
-        let gunMaskSlices = null;
-        const _gunMaskNormal = new THREE.Vector3();
-        const _gunMaskPoint = new THREE.Vector3();
-        function gunMaskRecord(cfg) {
-            if (!gunMaskSlices || !tankData) return null;
-            const key = gunMaskSliceKey(tankData.tank_id, cfg || currentConfig());
-            return key ? (gunMaskSlices[key] || null) : null;
-        }
-        /** 外部模块/判定是否包含炮盾网格：客户端只在有平面切割时把炮盾并入炮管，
-         *  由平面裁掉炮根；无平面时只判 `gun_NN` 炮管本体（见 gunMask.js）。 */
-        function gunMaskPartsFor(cfg) {
-            const c = cfg || currentConfig();
-            return gunMaskPartsActive(gunMaskRecord(c), c);
-        }
+        // 客户端 `maskSlice` 是炮管**视觉/特效切片**参数（与 gunRecoil / gunMarks /
+        // markerPosition 同组），不是装甲外部模块的边界：planePosition 在多数车上落在
+        // 炮管根部之外或中段（Pz.Sfl. IVc gun_03 平面 y=4.29、炮管 -2.06..5.38，按平面裁
+        // 会切掉大半根炮管；T-34 恰好贴在炮管根部）——按它裁切会得到不一致的“怪”结果，
+        // 也与游戏内“露出的炮管整段参与判定”不符。故裁切面恒为 null：判定只用 `gun_NN`
+        // 炮管本体（炮盾网格不进外部模块），视觉模型始终渲染完整炮管。
+        const gunClipPlane = null;
         // 装甲旋转枢轴（alignArmorModules 按 models.pb 原点写入：track+turret / track+turret+gun）。
         // updateTurretGun 以此为炮塔/炮管的旋转中心（对齐 BlitzKit 旋转语义）。
         let armorPivotTurret = null, armorPivotGun = null;
-        function computeGunClipPlane() {
-            gunClipPlane = null;
-            gunMuzzleWorld = null;
-            const act = activeGunNumber();
-            const cfg = currentConfig();
-            if (act == null || !tankModel) return;
-            tankModel.updateMatrixWorld(true);
-            const gunPrefix = 'gun_' + String(act).padStart(2, '0');
-            let barrel = null, barrelLen = 0;
-            tankModel.traverse(function(n){
-                if (!n.isMesh) return;
-                const pn = n.parent && n.parent.name || '';
-                if (pn !== gunPrefix) return;
-                if (!n.geometry.boundingBox) n.geometry.computeBoundingBox();
-                const b = n.geometry.boundingBox;
-                const len = Math.max(b.max.x-b.min.x, b.max.y-b.min.y, b.max.z-b.min.z);
-                if (len > barrelLen) { barrelLen = len; barrel = n; }
-            });
-            let dir = new THREE.Vector3(0, 1, 0);
-            if (barrel) {
-                const wb = new THREE.Box3().setFromObject(barrel);
-                const sz = new THREE.Vector3(); wb.getSize(sz);
-                let axis = 'x';
-                if (sz.y >= sz.x && sz.y >= sz.z) axis = 'y';
-                else if (sz.z >= sz.x && sz.z >= sz.y) axis = 'z';
-                const a = wb.min.clone(), b2 = wb.max.clone();
-                if (axis === 'x') { a.y = b2.y = (wb.min.y+wb.max.y)/2; a.z = b2.z = (wb.min.z+wb.max.z)/2; }
-                if (axis === 'y') { a.x = b2.x = (wb.min.x+wb.max.x)/2; a.z = b2.z = (wb.min.z+wb.max.z)/2; }
-                if (axis === 'z') { a.x = b2.x = (wb.min.x+wb.max.x)/2; a.y = b2.y = (wb.min.y+wb.max.y)/2; }
-                const origin = new THREE.Vector3(0, 0, 0);
-                // 炮口方向判定：以 models.pb 火炮原点（炮耳轴）为基准——炮管两端中距耳轴
-                // 更远的一端为炮口（按"远离世界原点"判向会因包围盒中心居中于原点而随机反转）。
-                // cfg 与上文为同一次 currentConfig()（纯数组查找，原重复调用已合并）
-                const mo0 = tankData && tankData.model_origins;
-                let gunOriginWorld = null;
-                if (mo0 && mo0.track && mo0.turret && cfg && cfg.gun_origin) {
-                    const g = new THREE.Vector3(
-                        mo0.track[0] + mo0.turret[0] + cfg.gun_origin[0],
-                        mo0.track[1] + mo0.turret[1] + cfg.gun_origin[1],
-                        mo0.track[2] + mo0.turret[2] + cfg.gun_origin[2]);
-                    gunOriginWorld = tankModel.localToWorld(g);
-                }
-                if (gunOriginWorld) {
-                    const dA = a.distanceToSquared(gunOriginWorld);
-                    const dB = b2.distanceToSquared(gunOriginWorld);
-                    dir = (dA > dB) ? a.sub(b2) : b2.sub(a);
-                } else {
-                    dir = (a.distanceToSquared(origin) > b2.distanceToSquared(origin)) ? a.sub(b2) : b2.sub(a);
-                }
-                dir.normalize();
-                const center = wb.getCenter(new THREE.Vector3());
-                const halfAlongDir = (Math.abs(dir.x)*sz.x + Math.abs(dir.y)*sz.y + Math.abs(dir.z)*sz.z) / 2;
-                gunMuzzleWorld = center.add(dir.clone().multiplyScalar(halfAlongDir));
-            }
-            // 客户端 maskSlice 原值优先（逐车逐炮位 sidecar）：position/normal 定义在
-            // gun_NN 节点局部系，经该节点 world 矩阵变换；`planeSliceMode !== 1` 表示
-            // 客户端不做平面切割——不建平面，也不回退到“有 mask 就裁”的旧近似。
-            const record = gunMaskRecord(cfg);
-            if (record) {
-                const nodeName = gunMaskNodeName(record);
-                const node = nodeName ? tankModel.getObjectByName(nodeName) : null;
-                if (node && gunMaskPlaneWorld(record, node.matrixWorld, _gunMaskNormal, _gunMaskPoint)) {
-                    gunClipPlane = _gunClipPlaneObj.setFromNormalAndCoplanarPoint(_gunMaskNormal, _gunMaskPoint);
-                }
-                return;
-            }
-            // 旧资产包（无 sidecar 记录）：沿用标量重建（模型原点 + 掩体偏移沿炮口方向）。
-            const hasMask = cfg && typeof cfg.gun_mask === 'number' && cfg.gun_mask !== 0;
-            if (!hasMask) return;
-            const mo = tankData && tankData.model_origins;
-            if (!(mo && mo.track && mo.turret && cfg.gun_origin && barrel)) return;
-            const maskOriginModel = cfg.gun_mask + mo.track[1] + mo.turret[1] + cfg.gun_origin[1];
-            // 模型原点的世界坐标 + 炮轴方向 × (模型本地距离 / worldMetersPerUnit → 世界距离)
-            const originWorld = new THREE.Vector3(); tankModel.localToWorld(originWorld.set(0, 0, 0));
-            const mpu = worldMetersPerUnit || 1;
-            const point = originWorld.add(dir.clone().multiplyScalar(maskOriginModel / mpu));
-            gunClipPlane = _gunClipPlaneObj.setFromNormalAndCoplanarPoint(dir, point);
-        }
         function collectPenetrationMeshes() {
             primaryMeshes = []; spacedMeshes = [];
             armorModel.traverse(function(node) {
@@ -589,15 +497,13 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             });
             externalMeshes = [];
             const act = activeGunNumber();
-            const maskParts = gunMaskPartsFor();
-            computeGunClipPlane();
             moduleMeshes.forEach(function(node) {
                 if (!node.isMesh) return;
                 if (node.visible === false) return;
                 if (node.userData.gunConfig != null && act != null && node.userData.gunConfig !== act) return;
-                // 判定只用炮管部分：gun_NN 为炮管本体；炮盾网格（gun_NN_mask）仅在客户端
-                // 给出平面切割时并入（由平面裁掉炮根）。视觉模型不在此列（始终完整）。
-                if (node.userData.gunMaskPart && !maskParts) return;
+                // 判定只用炮管部分：gun_NN 为炮管本体；炮盾网格（gun_NN_mask）不进外部
+                // 模块（客户端 maskSlice 不是装甲边界，见上方说明）。视觉模型不在此列。
+                if (node.userData.gunMaskPart) return;
                 externalMeshes.push(node);
             });
         }
@@ -1044,11 +950,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 list.push({ mesh: node, section: sec, thickness: t, variant: null });
             });
             const act = activeGunNumber();
-            const maskParts = gunMaskPartsFor();
             moduleMeshes.forEach(function(node) {
                 if (!node.isMesh) return;
                 if (node.userData.gunConfig != null && act != null && node.userData.gunConfig !== act) return;
-                if (node.userData.gunMaskPart && !maskParts) return;
+                if (node.userData.gunMaskPart) return;
                 if (node.parent && node.parent.visible === false) return;
                 const t = node.userData.armorThickness;
                 if (typeof t !== 'number') return;
@@ -1696,11 +1601,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 const ndcX = ((px - rect.left) / rect.width) * 2 - 1;
                 const ndcY = -((py - rect.top) / rect.height) * 2 + 1;
                 const act = activeGunNumber();
-                const maskParts = gunMaskPartsFor();
                 const activeModules = act == null ? moduleMeshes : moduleMeshes.filter(m => {
                     if (m.userData.gunConfig != null) return m.userData.gunConfig === act;
                     return true;
-                }).filter(m => !(m.userData.gunMaskPart && !maskParts));
+                }).filter(m => !m.userData.gunMaskPart);
                 const rc = new THREE.Raycaster();
                 rc.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
                 const objects = [armorModel, ...activeModules];
@@ -1803,14 +1707,12 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     node.visible = baseNodeVisible(node) && !(category && hiddenCategories[category]);
                 });
             }
-            // 判定只用炮管部分：炮盾网格（gun_XX_mask）仅在客户端给出平面切割时并入
-            // 外部模块（由平面裁掉炮根）。这条只作用于**厚度视图的实心碰撞体**；普通/
-            // 击穿视图的带贴图视觉模型始终渲染完整炮管（2026-10-28 视觉缺件回归）。
-            const maskParts = gunMaskPartsFor();
+            // 判定只用炮管部分：炮盾网格（gun_XX_mask）不进外部模块。这条只作用于
+            // **厚度视图的实心碰撞体**；普通/击穿视图的带贴图视觉模型始终渲染完整炮管。
             for (const node of moduleMeshes) {
                 node.visible = baseNodeVisible(node)
                     && !hiddenCategories.external
-                    && !(collisionMode && node.userData.gunMaskPart && !maskParts);
+                    && !(collisionMode && node.userData.gunMaskPart);
             }
             if (collisionMode && highlightedArmorNode && !isEffectivelyVisible(highlightedArmorNode)) {
                 resetArmorHighlight();
@@ -1872,20 +1774,6 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
 
         // 碰撞（装甲厚度）视图：炮管/履带等外部模块用纯色材质（无贴图），与装甲板同厚度色阶
         const moduleOriginalMaterials = new Map();
-        /** 厚度视图实心炮管体的 gun_mask 裁剪面同步（材质持有同一 Plane 对象，原地更新）。 */
-        function syncModuleClipPlanes() {
-            for (const node of moduleMeshes) {
-                const mat = node.userData.collisionSolidMaterial;
-                if (!mat || node.material !== mat) continue;
-                const clipPlanes = node.userData.armorSection === 'gunBarrel' && gunClipPlane
-                    ? [gunClipPlane] : null;
-                const hadClip = !!(mat.clippingPlanes && mat.clippingPlanes.length);
-                if (hadClip !== !!clipPlanes) {
-                    mat.clippingPlanes = clipPlanes;
-                    mat.needsUpdate = true;   // 裁剪面有无切换会换 shader 变体
-                }
-            }
-        }
         function applyModuleCollisionMaterial(on) {
             for (const node of moduleMeshes) {
                 if (on) {
@@ -1905,17 +1793,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     moduleOriginalMaterials.delete(node);
                 }
             }
-            // 厚度视图的炮管外部模块按 gun_mask 平面裁剪（与热力图外部模块 clone 同一
-            // 口径）：掩体平面之后的炮尾/炮根段不显示，避免整根炮管插进炮塔。
-            if (on) syncModuleClipPlanes();
         }
         function applyArmorViewStyle(collision) {
             // visual 与 armor 两个 GLB 独立完成；collisionMode 可能在 armor 就绪前已开启。
             // armor 未就绪时直接返回，等 armor 完成回调里的 applyConfig 再刷新材质。
             if (!armorModel) return;
-            // 厚度视图的炮管实心体按当前配置的 gun_mask 平面裁剪：与热力图外部模块 clone
-            // 同一实现，进视图/换配置时先重算平面
-            if (collision) computeGunClipPlane();
             applyModuleCollisionMaterial(collision);
             if (collision) {
                 // 碰撞视图保留外部模块（炮管/履带）的碰撞体，隐藏其余视觉网格。
@@ -2100,15 +1982,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const srt = ensureSpacedStateRT();
             syncCloneMatrices(spacedArmorScene);
             syncCloneMatrices(spacedStateScene);
-            computeGunClipPlane();
-            // gun_mask 裁切面同步到续飞着色器：与点击/JS 参考同一判据，只滤 gunBarrel。
-            if (gunClipPlane) {
-                rcUniforms.rcClipPlane.value.set(
-                    gunClipPlane.normal.x, gunClipPlane.normal.y, gunClipPlane.normal.z, gunClipPlane.constant);
-                rcUniforms.rcClipEnabled.value = true;
-            } else {
-                rcUniforms.rcClipEnabled.value = false;
-            }
+            // 装甲判定不使用客户端 maskSlice 裁切面（见 gunClipPlane 声明）；续飞着色器
+            // 的裁切通道保持关闭。
+            rcUniforms.rcClipEnabled.value = false;
             // ① 状态通道：主装甲深度 → 最近间隙板独占写 R/G（A=0）→ 更近的外部模块写
             //    A=1（RGB 保留：模块后间隙板的跳弹/续飞状态不被覆盖）
             if (spacedStateScene) {
@@ -4741,18 +4617,6 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             reportLoad({ state: 'loading', progress: null });
             initScene();
             setupEventHandlers();
-            // 客户端 maskSlice sidecar（逐车逐炮位）：与模型加载并行拉取，到达后按客户端
-            // 原值重算裁切面并同步厚度视图实心炮管材质（旧包缺文件 → null，保持标量路径）。
-            // 炮盾是否并入外部模块取决于记录的 planeSliceMode，表到达后需重建一次外部模块集。
-            fetchGunMaskSlices().then((records) => {
-                gunMaskSlices = records;
-                if (destroyed || contextLost || !armorModel) return;
-                if (penetrationMode) rebuildHeatmapScenes();
-                applyCategoryFilters();
-                computeGunClipPlane();
-                syncModuleClipPlanes();
-                if (collisionMode) applyArmorViewStyle(true);
-            });
             const initTargetId = initialTankId ?? 28689;
             const initShooterId = initialShooterId ?? initTargetId;
             await populateTankLists(initTargetId, initShooterId);
@@ -4947,9 +4811,6 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // 回退车体原点，坦克整体出现在画面上半部；下一帧后再点「查看弹着点」才恢复。
             // 与 doPenetrationCheck 的首帧约定一致（判定前调用同一助手）。
             updateCollisionWorldMatrices();
-            // 姿态变化后重算 gun_mask 裁切面（材质持有同一个 Plane 对象，原地更新即可；
-            // 热力图路径每帧自算，这里补齐厚度视图的姿态驱动路径）。
-            if (collisionMode) { computeGunClipPlane(); syncModuleClipPlanes(); }
         }
 
         let armorOrigMatrices = null;
@@ -5220,14 +5081,12 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (node.visible === false) node.visible = true;
             });
             const activeGun = activeGunNumber();
-            const maskParts = gunMaskPartsFor();
-            computeGunClipPlane();
             const activeModules = activeGun == null
                 ? moduleMeshes   // 无法确定激活炮(如 configGunGroups 未填充)时退化为全部保留
                 : moduleMeshes.filter(m => {
                     if (m.userData.gunConfig != null) return m.userData.gunConfig === activeGun;
                     return true;
-                }).filter(m => !(m.userData.gunMaskPart && !maskParts));
+                }).filter(m => !m.userData.gunMaskPart);
             for (const mesh of activeModules) {
                 if (mesh.visible === false) mesh.visible = true;
             }
