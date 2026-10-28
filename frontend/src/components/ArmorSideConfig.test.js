@@ -35,13 +35,13 @@ beforeEach(() => {
 })
 
 describe('ArmorSideConfig（一侧的模块 + 配件完整选择）', () => {
-  it('渲染详情页同款模块矩阵与装备格（不含消耗品/补给/乘员/涂装）', async () => {
+  it('渲染详情页同款模块矩阵（装备/消耗品/补给/乘员/涂装都不在装甲页）', async () => {
     const wrapper = mount(ArmorSideConfig, { props: { tankId: 999 }, global: { mocks: { $t: key => key } } })
     await flushPromises()
     expect(wrapper.emitted('ready')).toHaveLength(1)
     expect(wrapper.find('[data-testid="tank-configurator"]').exists()).toBe(true)
     expect(wrapper.findAll('.tp-module-tile')).toHaveLength(6) // 炮塔1+火炮1+发动机2+履带2
-    expect(wrapper.findAll('.tp-dev-btn').length).toBeGreaterThan(0)
+    expect(wrapper.findAll('.tp-dev-btn')).toHaveLength(0)
     expect(wrapper.find('.tp-skills-block').exists()).toBe(false)
     expect(wrapper.find('.tp-camo-block').exists()).toBe(false)
   })

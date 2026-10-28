@@ -13,7 +13,7 @@ import { computed, inject, nextTick, onMounted, onBeforeUnmount, ref, watch } fr
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, SlidersHorizontal, MousePointer2 } from 'lucide-vue-next'
+import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, SlidersHorizontal, MousePointer2, ChevronDown } from 'lucide-vue-next'
 import { fetchReplayShots, shotViewerQuery } from '../scene/agentData.js'
 import { shotResultBadge } from '../utils/shotPresentation.js'
 import { shellLabel, armorPartLabel, armorResultLabel, tankNationLabel, tankTypeLabel } from '../scene/tankMeta.js'
@@ -97,6 +97,9 @@ const toolsOpen = ref(false)
 const shooterReady = ref(false)
 const targetReady = ref(false)
 const hudReady = ref(false)
+/** 两侧模块选择默认收起（2026-10-28 用户要求）；坦克切换按钮在卡片头部，与模块同一块。 */
+const shooterOpen = ref(false)
+const targetOpen = ref(false)
 const editorsReady = computed(() => shooterReady.value && targetReady.value)
 
 /** 重建场景的 query 键：装配键（config/engine/track/dev/cons/prov/shell）不在其中——
@@ -478,35 +481,66 @@ onBeforeUnmount(() => {
                     <label class="eq-opt"><input type="checkbox" id="eq-enhanced"> <span class="eq-opt-label">{{ $t('armor.enhanced') }}</span></label>
                     <label class="eq-opt" id="armor-state-opt" style="display:none;"><input type="checkbox" id="armor-state-toggle"> <span class="eq-opt-label">{{ $t('armor.dynamic_armor') }}</span></label>
                 </div>
-                <!-- 射击方 / 受击方：各自完整的详情页「模块 + 配件」选择（弹种与校准弹/
-                     强化装甲在右上角 HUD，见 #corner-tr）。 -->
-                <div v-if="loadoutActive" class="sel-row sel-loadout" data-testid="armor-side-configs">
-                    <h3 class="armor-side-title">{{ $t('armor.loadout_shooter') }}</h3>
-                    <ArmorSideConfig
-                        :key="`shooter-${shooterSetupId ?? 'none'}`"
-                        :tank-id="shooterSetupId"
-                        :config="shooterConfigValue"
-                        :engine="route.query.sengine"
-                        :track="route.query.strack"
-                        :dev="route.query.sdev"
-                        @apply="patch => applySide('shooter', patch)"
-                        @ready="shooterReady = true"
-                    />
-                    <h3 class="armor-side-title">{{ $t('armor.loadout_target') }}</h3>
-                    <ArmorSideConfig
-                        :key="`target-${targetSetupId ?? 'none'}`"
-                        :tank-id="targetSetupId"
-                        :config="route.query.config"
-                        :engine="route.query.engine"
-                        :track="route.query.track"
-                        :dev="route.query.dev"
-                        @apply="patch => applySide('target', patch)"
-                        @ready="targetReady = true"
-                    />
+                <!-- 射击方 / 受击方：坦克切换 + 模块选择同一张卡，模块默认收起。 -->
+                <div class="armor-side-cards" data-testid="armor-side-configs">
+                    <section class="armor-side-card">
+                        <header class="armor-side-head">
+                            <span class="armor-side-role">{{ $t('armor.loadout_shooter') }}</span>
+                            <button type="button" class="tank-btn armor-side-tank" id="shooter-select" disabled @click="openPicker('shooter')">—</button>
+                            <button
+                                type="button"
+                                class="armor-side-toggle"
+                                :aria-expanded="shooterOpen ? 'true' : 'false'"
+                                aria-controls="shooter-modules"
+                                :aria-label="$t('armor.loadout_shooter')"
+                                data-testid="armor-side-toggle-shooter"
+                                @click="shooterOpen = !shooterOpen"
+                            ><ChevronDown :size="18" aria-hidden="true" :class="{ 'is-open': shooterOpen }" /></button>
+                        </header>
+                        <div v-show="shooterOpen" id="shooter-modules" class="armor-side-body">
+                            <ArmorSideConfig
+                                v-if="loadoutActive"
+                                :key="`shooter-${shooterSetupId ?? 'none'}`"
+                                :tank-id="shooterSetupId"
+                                :config="shooterConfigValue"
+                                :engine="route.query.sengine"
+                                :track="route.query.strack"
+                                :dev="route.query.sdev"
+                                @apply="patch => applySide('shooter', patch)"
+                                @ready="shooterReady = true"
+                            />
+                        </div>
+                    </section>
+                    <section class="armor-side-card">
+                        <header class="armor-side-head">
+                            <span class="armor-side-role">{{ $t('armor.loadout_target') }}</span>
+                            <button type="button" class="tank-btn armor-side-tank" id="target-select" disabled @click="openPicker('target')">—</button>
+                            <button
+                                type="button"
+                                class="armor-side-toggle"
+                                :aria-expanded="targetOpen ? 'true' : 'false'"
+                                aria-controls="target-modules"
+                                :aria-label="$t('armor.loadout_target')"
+                                data-testid="armor-side-toggle-target"
+                                @click="targetOpen = !targetOpen"
+                            ><ChevronDown :size="18" aria-hidden="true" :class="{ 'is-open': targetOpen }" /></button>
+                        </header>
+                        <div v-show="targetOpen" id="target-modules" class="armor-side-body">
+                            <ArmorSideConfig
+                                v-if="loadoutActive"
+                                :key="`target-${targetSetupId ?? 'none'}`"
+                                :tank-id="targetSetupId"
+                                :config="route.query.config"
+                                :engine="route.query.engine"
+                                :track="route.query.track"
+                                :dev="route.query.dev"
+                                @apply="patch => applySide('target', patch)"
+                                @ready="targetReady = true"
+                            />
+                        </div>
+                    </section>
+                    <p id="tank-selection-status" role="status">{{ $t('armor.picker_loading') }}</p>
                 </div>
-                <div class="sel-row"><label id="shooter-label">{{ $t('armor.shooter') }}</label><button class="tank-btn" id="shooter-select" disabled @click="openPicker('shooter')">—</button></div>
-                <div class="sel-row"><label id="target-label">{{ $t('armor.target') }}</label><button class="tank-btn" id="target-select" disabled @click="openPicker('target')">—</button></div>
-                <p id="tank-selection-status" role="status">{{ $t('armor.picker_loading') }}</p>
             </div>
         </div>
         <div id="tank-picker" role="dialog" aria-modal="true" aria-labelledby="tp-title" :class="{ open: pickerOpen }" @click.self="closePicker">
@@ -620,8 +654,15 @@ onBeforeUnmount(() => {
 .armor-view #info-panel .value { font-weight: 600; }
 .armor-view .armor-setup-note { margin: 0 0 var(--space-3); color: var(--muted); font: var(--type-caption); }
 .armor-view .armor-panel-title { margin: 0 0 var(--space-2); color: var(--muted); font: var(--type-caption); }
-.armor-view .armor-side-title { margin: var(--space-2) 0 var(--space-1); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; }
-.armor-view .armor-side-title:first-child { margin-block-start: 0; }
+.armor-view .armor-side-cards { display: grid; gap: var(--space-2); min-inline-size: 0; }
+.armor-view .armor-side-card { display: grid; gap: var(--space-1); padding: var(--space-1) var(--space-2) var(--space-2); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); background: var(--color-surface-1); }
+.armor-view .armor-side-head { display: flex; align-items: center; gap: var(--space-1); min-inline-size: 0; }
+.armor-view .armor-side-role { color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; white-space: nowrap; }
+.armor-view .armor-side-tank { flex: 1 1 auto; inline-size: auto; min-inline-size: 0; }
+.armor-view .armor-side-toggle { display: grid; place-items: center; flex: none; inline-size: var(--hit-min); block-size: var(--hit-min); padding: 0; border: 0; background: transparent; color: var(--color-text-secondary); cursor: pointer; }
+.armor-view .armor-side-toggle svg { transition: transform var(--duration-fast) var(--ease-standard); }
+.armor-view .armor-side-toggle svg.is-open { transform: rotate(180deg); }
+.armor-view .armor-side-body { padding-block-start: var(--space-1); }
 /* 射击复现的图形面板就绪后，场景自带的校准弹/强化装甲勾选只作为资产缺失时的回退 */
 .armor-view #tank-selectors.has-shot-setup .eq-opt { display: none; }
 .armor-view #tank-selectors { padding: var(--space-3); inline-size: 23rem; max-block-size: 54dvh; overflow-y: auto; z-index: var(--pb-z-hud); }
