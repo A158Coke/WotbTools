@@ -1779,10 +1779,64 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             for (const node of moduleMeshes) {
                 node.visible = baseNodeVisible(node) && !hiddenCategories.external;
             }
+            if (collisionMode && highlightedArmorNode && !isEffectivelyVisible(highlightedArmorNode)) {
+                resetArmorHighlight();
+                const card = document.getElementById('click-info');
+                if (card) card.style.display = 'none';
+            }
         }
 
         // 装甲模型视图样式（collision 按钮与热力图退出共用一份写入，避免各自硬编码漂移）：
         // 碰撞视图=按厚度上色并隐藏视觉车体；普通视图=透明覆盖层并显示视觉车体
+        // 装甲厚度视图的点击高亮：选中的装甲板保持不透明 + 轻微自发光，其余部件降透明度
+        let highlightedArmorNode = null;
+        function collectHighlightMeshes() {
+            const list = [];
+            if (armorModel) {
+                armorModel.traverse(function(node) {
+                    if (!node.isMesh || node.userData.armorSection === 'deco') return;
+                    list.push(node);
+                });
+            }
+            for (const node of moduleMeshes) list.push(node);
+            return list;
+        }
+        function resetArmorHighlight() {
+            highlightedArmorNode = null;
+            // 普通/击穿视图的装甲材质是“透明覆盖层”，不能套用碰撞视图的透明度复位
+            if (!collisionMode || !armorModel) return;
+            const modules = new Set(moduleMeshes);
+            for (const node of collectHighlightMeshes()) {
+                const m = node.material;
+                if (!m) continue;
+                m.transparent = true;
+                m.opacity = modules.has(node) ? 1 : 0.95;
+                m.depthWrite = true;
+                if (m.emissive) { m.emissive.setHex(0x000000); m.emissiveIntensity = 0; }
+                m.needsUpdate = true;
+            }
+        }
+        function applyArmorHighlight(selected) {
+            const modules = new Set(moduleMeshes);
+            for (const node of collectHighlightMeshes()) {
+                const m = node.material;
+                if (!m) continue;
+                if (node === selected) {
+                    m.transparent = true;
+                    m.opacity = 1;
+                    m.depthWrite = true;
+                    if (m.emissive) { m.emissive.setHex(0xffc247); m.emissiveIntensity = 0.45; }
+                } else {
+                    m.transparent = true;
+                    m.opacity = modules.has(node) ? 0.15 : 0.18;
+                    m.depthWrite = false;
+                    if (m.emissive) { m.emissive.setHex(0x000000); m.emissiveIntensity = 0; }
+                }
+                m.needsUpdate = true;
+            }
+            highlightedArmorNode = selected;
+        }
+
         // 碰撞（装甲厚度）视图：炮管/履带等外部模块用纯色材质（无贴图），与装甲板同厚度色阶
         const moduleOriginalMaterials = new Map();
         function applyModuleCollisionMaterial(on) {
@@ -2041,6 +2095,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 cb.setAttribute('aria-pressed', 'false');
                 resetArmorFilters();
                 setArmorFilterRowVisible(false);
+                highlightedArmorNode = null;
                 applyArmorViewStyle(false);
             }
             this.classList.toggle('active', penetrationMode);
@@ -4256,6 +4311,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // 切配置后旧的命中部件信息不再属于当前视图
             const cfgCard = document.getElementById('click-info');
             if (cfgCard) cfgCard.style.display = 'none';
+            highlightedArmorNode = null;
             // 碰撞视图的颜色是厚度快照（applyArmorViewStyle 只在按钮切换时写）；切配置后
             // 必须重刷，否则新炮塔/主炮仍显示上一配置的厚度色。热力图模式由下方重建接管。
             if (collisionMode && !penetrationMode && armorModel) applyArmorViewStyle(true);
@@ -4581,7 +4637,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 // 组成显隐只在厚度视图可用；退出时复位为全显示
                 if (!collisionMode) resetArmorFilters();
                 setArmorFilterRowVisible(collisionMode);
-                if (!collisionMode) document.getElementById('click-info').style.display = 'none';
+                if (!collisionMode) { resetArmorHighlight(); document.getElementById('click-info').style.display = 'none'; }
                 if (!armorModel) return;
                 applyArmorViewStyle(collisionMode);
             });
@@ -4903,7 +4959,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (info) break;
             }
             const card = document.getElementById('click-info');
-            if (!info) { card.style.display = 'none'; return; }
+            if (!info) { resetArmorHighlight(); card.style.display = 'none'; return; }
+            applyArmorHighlight(info.object);
             const thickness = Number(info.thickness);
             const angle = Math.acos(Math.min(1, Math.abs(info.normal.dot(rayDir)))) * 180 / Math.PI;
             const effective = Number.isFinite(thickness) ? thickness / Math.max(0.05, Math.cos(angle * Math.PI / 180)) : null;
