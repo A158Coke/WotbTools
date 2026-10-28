@@ -48,6 +48,32 @@ report_large_file() {
   echo "       If this is a deliberate source-of-truth asset, add the exact path to $ALLOWLIST_FILE with PR justification." >&2
 }
 
+# PR CI initially checks out GitHub's synthetic merge ref. Resolve the actual
+# base/head pair from the event payload so history checks cover the PR commits
+# themselves, including blobs added and deleted before the final tree.
+if [[ -z "$BASE_SHA" && "${GITHUB_EVENT_NAME:-}" == "pull_request" && -f "${GITHUB_EVENT_PATH:-}" ]]; then
+  mapfile -t pr_range < <(
+    python3 - "$GITHUB_EVENT_PATH" <<'PY'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as handle:
+    event = json.load(handle)
+print(event["pull_request"]["base"]["sha"])
+print(event["pull_request"]["head"]["sha"])
+PY
+  )
+  BASE_SHA="${pr_range[0]:-}"
+  HEAD_SHA="${pr_range[1]:-HEAD}"
+fi
+
+# workflow_dispatch and local full-history runs do not have a PR payload. When
+# origin/main is available, use the merge-base as the comparison boundary.
+if [[ -z "$BASE_SHA" ]] && git show-ref --verify --quiet refs/remotes/origin/main; then
+  resolved_head=$(git rev-parse "$HEAD_SHA")
+  BASE_SHA=$(git merge-base "$resolved_head" refs/remotes/origin/main)
+  HEAD_SHA="$resolved_head"
+fi
+
 violations=0
 checked=0
 
@@ -70,10 +96,9 @@ while IFS= read -r -d '' path; do
   fi
 done < <(git ls-files -z)
 
-# When CI provides the PR range, also inspect every blob newly reachable from
-# the head. This closes the add-then-delete loophole: a large blob committed in
-# an intermediate PR commit remains part of Git history even if absent from the
-# final tree.
+# Inspect every blob newly reachable from the PR head. A large blob committed in
+# an intermediate commit remains in Git history even if a later commit deletes
+# it, so final-tree-only checks are insufficient.
 if [[ -n "$BASE_SHA" ]]; then
   git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null || {
     echo "BASE_SHA is not an available commit: $BASE_SHA" >&2
