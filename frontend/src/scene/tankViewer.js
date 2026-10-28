@@ -4395,6 +4395,24 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             mouse = new THREE.Vector2();
         }
 
+        /** 校准弹/强化装甲变化后的统一刷新（勾选框与宿主 HUD 的 setEquipmentOverride 共用）。
+         *  厚度系数与判定模式无关：装甲检视下点板/热力图读同一份 uniform。 */
+        function refreshEquipmentEffects() {
+            const sel = document.getElementById('shell-select');
+            if (sel) {
+                for (let i = 0; i < sel.options.length; i++) {
+                    if (shooterShells && i < shooterShells.length) {
+                        sel.options[i].textContent = shellOptionText(shooterShells[i]);
+                    }
+                }
+            }
+            updateHeatmapThickness();
+            if (!penetrationMode) return;
+            const sh = selectedShell || (shooterShells[0]) || null;
+            if (sh) { updatePenetrationUniforms(sh); updateSpacedUniforms(sh); }
+            if (QP.get('shot')) doPenetrationCheck(0, 0);
+        }
+
         function setupEventHandlers() {
             document.getElementById('shell-select').addEventListener('change', function() {
                 if (destroyed || shooterLoading) return;
@@ -4419,22 +4437,6 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     }
                 }
             });
-
-            function refreshEquipmentEffects() {
-                const sel = document.getElementById('shell-select');
-                if (sel) {
-                    for (let i = 0; i < sel.options.length; i++) {
-                        if (shooterShells && i < shooterShells.length) {
-                            sel.options[i].textContent = shellOptionText(shooterShells[i]);
-                        }
-                    }
-                }
-                if (!penetrationMode) return;
-                const sh = selectedShell || (shooterShells[0]) || null;
-                if (sh) { updatePenetrationUniforms(sh); updateSpacedUniforms(sh); }
-                updateHeatmapThickness();
-                if (QP.get('shot')) doPenetrationCheck(0, 0);
-            }
 
             const onEquipmentChange = function() { refreshEquipmentEffects(); };
             document.getElementById('eq-calibrated').addEventListener('change', onEquipmentChange);

@@ -195,6 +195,10 @@ describe('dolly-zoom world-overview scope guard', () => {
     for (const api of ['setConfig: applyConfig', 'setConfigUiVisible', 'setShellUiVisible', 'setShell', 'setShooterConfig', 'setEquipmentOverride']) {
       expect(kernel).toContain(api)
     }
+    // 强化装甲的厚度系数与判定模式无关：setEquipmentOverride → 统一刷新，且刷新在
+    // “penetrationMode” 早退之前就写入 uniform（否则装甲检视模式里开关不生效）。
+    expect(kernel).toMatch(/function setEquipmentOverride\(kind, value\)[\s\S]*?refreshEquipmentEffects\(\);/)
+    expect(kernel).toMatch(/function refreshEquipmentEffects\(\)[\s\S]*?updateHeatmapThickness\(\);\s*if \(!penetrationMode\) return;/)
     const view = read('./AgentArmorView.vue')
     expect(view).toMatch(/function startViewer\(preserveSelection = false\)/)
     expect(view).toMatch(/if \(!preserveSelection\) \{/)
