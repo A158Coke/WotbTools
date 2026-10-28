@@ -588,10 +588,13 @@ onBeforeUnmount(() => {
                     <button id="filter-external" type="button" class="active" aria-pressed="true">{{ $t('armor.filter_external') }}</button>
                 </div>
             </div>
-            <!-- 装甲厚度模式点选结果：只显示基础装甲值；作为面板的一行，不再浮在车体上 -->
+            <!-- 装甲厚度模式点选结果：部件名 + 基础装甲值；作为面板的一段，不再浮在车体上 -->
             <div id="click-info">
-                <span class="click-label">{{ $t('armor.base_armor') }}</span>
-                <span id="click-armor">—</span>
+                <h3 id="click-part">—</h3>
+                <div class="row">
+                    <span>{{ $t('armor.base_armor') }}</span>
+                    <span id="click-armor">—</span>
+                </div>
             </div>
         </div>
         <div id="corner-br">
@@ -806,18 +809,19 @@ onBeforeUnmount(() => {
 .armor-view .dbg-dot { flex: none; inline-size: var(--space-2); block-size: var(--space-2); border-radius: var(--radius-full); margin-block-start: var(--space-1); }
 .armor-view .dbg-name { flex: none; color: var(--muted); }
 .armor-view .dbg-val { min-inline-size: 0; }
-/* 装甲厚度模式点选结果：面板内的一行，只显示基础装甲值（不再浮在车体上方遮挡） */
+/* 装甲厚度模式点选结果：面板内的部件名 + 基础装甲值（不再浮在车体上方遮挡） */
 .armor-view #click-info {
     display: none;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: var(--space-3);
+    flex-direction: column;
+    gap: var(--space-1);
     padding-block-start: var(--space-2);
     border-block-start: 1px solid var(--color-border-subtle);
     color: var(--muted);
     font: var(--type-caption);
 }
-.armor-view #click-info #click-armor { color: var(--txt); font-weight: 600; font-variant-numeric: tabular-nums; }
+.armor-view #click-info h3 { margin: 0; color: var(--txt); font: var(--type-caption); font-weight: 600; }
+.armor-view #click-info .row { display: flex; justify-content: space-between; gap: var(--space-3); }
+.armor-view #click-info #click-armor { color: var(--txt); font-variant-numeric: tabular-nums; }
 .armor-view #traj-info { position: fixed; z-index: var(--z-header); pointer-events: none; }
 .armor-view #shot-replay-error { position: fixed; z-index: var(--pb-z-modal); inset-block-start: calc(var(--space-5) + 48px); inset-inline: var(--space-4); margin-inline: auto; max-inline-size: 30rem; padding: var(--space-2) var(--space-3); background: var(--tooltip-bg); border-left: 4px solid var(--red); border-radius: var(--radius-md); color: var(--red); font: var(--type-caption); box-shadow: var(--elevation-2); pointer-events: none; }
 .armor-view .armor-back { position: absolute; z-index: calc(var(--z-sticky) + 1); inset-block-start: var(--space-5); inset-inline-start: var(--space-5); display: inline-flex; align-items: center; gap: var(--space-2); min-block-size: 44px; padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--panel); color: var(--txt); }

@@ -31,14 +31,15 @@ describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
     ).toEqual([])
   })
 
-  // 2026-10-29 用户要求：厚度模式点选结果只留基础装甲值，并收进右上角面板（不再浮在点击处遮挡车体）；
-  // 射击 HUD、模式切换、装甲组成、点选结果合并为同一张卡片。
-  it('点选结果只显示基础装甲值且不遮挡，右上角合并为一块整体面板', () => {
+  // 2026-10-29 用户要求：厚度模式点选结果只留装甲名称 + 基础装甲值，并收进右上角面板
+  // （不再浮在点击处遮挡车体）；射击 HUD、模式切换、装甲组成、点选结果合并为同一张卡片。
+  it('点选结果只显示装甲名称与基础装甲值且不遮挡，右上角合并为一块整体面板', () => {
+    expect(template).toContain('id="click-part"')
     expect(template).toContain('id="click-armor"')
-    expect(template).not.toMatch(/id="click-(?:part|angle|effective|pen|result)"/)
+    expect(template).not.toMatch(/id="click-(?:angle|effective|pen|result)"/)
     expect(kernel).not.toContain("document.getElementById('click-angle')")
     expect(kernel).not.toContain("document.getElementById('click-effective')")
-    expect(kernel).not.toContain("document.getElementById('click-part')")
+    expect(kernel).toMatch(/document\.getElementById\('click-part'\)\.textContent = L\.partName/)
     expect(kernel).not.toMatch(/card\.style\.(?:left|top)/)
     expect(kernel).toMatch(/card\.style\.display = 'flex'/)
     expect(template.indexOf('id="click-info"')).toBeGreaterThan(template.indexOf('id="corner-tr"'))

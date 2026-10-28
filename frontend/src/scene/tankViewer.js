@@ -5009,7 +5009,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             doPenetrationCheck(ndcX, ndcY);
         }
 
-        /** 装甲厚度模式：命中装甲板 → 高亮该板，并在右上角面板内只显示基础装甲值（无击穿判定）。 */
+        /** 装甲厚度模式：命中装甲板 → 高亮该板，并在右上角面板内显示部件名与基础装甲值（无击穿判定）。 */
         function showArmorPartInfo(ndcX, ndcY) {
             tidyTrajectory();
             raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
@@ -5024,6 +5024,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             if (!info) { resetArmorHighlight(); card.style.display = 'none'; return; }
             applyArmorHighlight(info.object);
             const thickness = Number(info.thickness);
+            document.getElementById('click-part').textContent = L.partName ? L.partName(info.partName) : info.partName;
             document.getElementById('click-armor').textContent = Number.isFinite(thickness) ? `${Math.round(thickness * 100) / 100} mm` : '—';
             card.style.display = 'flex';
         }
