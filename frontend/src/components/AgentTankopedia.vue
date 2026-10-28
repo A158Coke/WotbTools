@@ -14,7 +14,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { locationForView } from '../app/navigation'
 import { useI18n } from 'vue-i18n'
-import { ArrowLeft, Box, GitBranch, RotateCcw, TriangleAlert } from 'lucide-vue-next'
+import { ArrowLeft, Box, GitBranch, Network, RotateCcw, TriangleAlert } from 'lucide-vue-next'
 import { fetchTankEncyclopedia, fetchTankData, tankImageUrl, loadTankIconCrops } from '../scene/agentData.js'
 import { tankIconCropTransform } from '../utils/tankIconCrop.js'
 import { romanLevel } from '../utils/tierFormat.js'
@@ -607,13 +607,13 @@ onMounted(() => {
           </div>
           <div v-if="modules && setup.canConfigure" class="tp-detail-actions">
             <AppButton
-              variant="primary"
-              size="sm"
+              variant="secondary"
+              size="md"
               data-testid="tank-open-research"
               @click="researchOpen = true"
             >
-              <GitBranch :size="16" aria-hidden="true" />
-              {{ t('research.modules_title') }}
+              <GitBranch :size="18" aria-hidden="true" />
+              {{ t('research.open_research') }}
             </AppButton>
           </div>
         </Motion>
@@ -753,11 +753,11 @@ onMounted(() => {
       <template #actions>
         <AppButton
           v-if="detailId == null"
-          variant="ghost"
-          size="sm"
+          variant="primary"
           data-testid="tankopedia-techtree"
           @click="openTechTree"
         >
+          <Network :size="18" aria-hidden="true" />
           {{ t('research.open_techtree') }}
         </AppButton>
       </template>
