@@ -4431,9 +4431,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     } else if (QP.get('shot')) {
                         doPenetrationCheck(0, 0);
                     } else if (penetrationMode && lastClickNdc) {
-                        // 普通检视：换弹（含 HE→HE/HESH）后按最后点击位置重跑判定，
-                        // 球/热力图与结果卡必须是同一发弹的参数（评审 P2）。
-                        doPenetrationCheck(lastClickNdc.x, lastClickNdc.y);
+                        // 普通检视换弹（2026-10-28 用户裁定）：只清掉上一次判定结果，
+                        // 不按旧点击位置重跑——新弹种要用户重新点击才产生结果。
+                        tidyTrajectory();
+                        if (window.__hitMarker) { scene.remove(window.__hitMarker); window.__hitMarker = null; }
+                        lastClickNdc = null;
                     }
                 }
             });
