@@ -15,9 +15,10 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeft, RotateCcw, TriangleAlert } from 'lucide-vue-next'
-import { fetchTankData, fetchTankEncyclopedia, tankImageUrl } from '../scene/agentData.js'
+import { fetchTankData, fetchTankEncyclopedia, loadTankIconCrops, tankImageUrl } from '../scene/agentData.js'
+import { tankIconCropTransform } from '../utils/tankIconCrop.js'
 import { tankNationLabel } from '../scene/tankMeta.js'
-import { findTankModules, resolveSetup } from '../replay-local/compute/tankSetup'
+import { findTankModules, pickGun, pickTurret, resolveSetup } from '../replay-local/compute/tankSetup'
 import { loadTechTree, loadTankModules } from '../utils/researchCatalog.js'
 import { moduleTreeLayout, techTreeGrid, techTreeNations } from '../utils/techTreeLayout.js'
 import { locationForView } from '../app/navigation'
@@ -90,6 +91,22 @@ onMounted(loadCache)
 
 const summaryOf = node => cache.value?.[String(node.tankId)] || null
 const nameOf = node => summaryOf(node)?.name || null
+
+/**
+ * 封面图标裁剪：客户端 TankNode 的图标盒是 **97×60**（`TankIcon` size，@40,8 in a
+ * 176×64 card），贴图是原始画布（坦克锚左上、右/下留白近半）。用数据面逐车内容框
+ * （tank_images/crops.json）换算出容器内 transform（utils/tankIconCrop.js，与坦克百科
+ * 同一实现）；缺 crop（旧包）时回退原始 contain。
+ */
+const ICON_ASPECT = 97 / 60
+const iconCrops = ref(null)
+onMounted(() => {
+  loadTankIconCrops().then((crops) => { iconCrops.value = crops })
+})
+function iconCropStyle(tankId) {
+  const transform = tankIconCropTransform(iconCrops.value?.[String(tankId)], ICON_ASPECT)
+  return transform ? { transform } : null
+}
 
 /** 每辆树节点的最低研发成本（指向它的全部整车边取最小 XP；数据缺省不显示）。 */
 const costByStem = computed(() => {
@@ -193,7 +210,12 @@ watch(researchId, id => loadResearch(id), { immediate: true })
 
 const selection = computed(() => {
   if (!detail.value || !modules.value) return null
-  return resolveSetup({ detail: detail.value, modules: modules.value, url: { config: route.query.config }, catalog: null })
+  return resolveSetup({
+    detail: detail.value,
+    modules: modules.value,
+    url: { config: route.query.config, engine: route.query.engine, track: route.query.track },
+    catalog: null,
+  })
 })
 
 /** 研发态的科技树数据（上一辆车/下一辆车反解）：?tank= 的国别可能与页签不同。 */
@@ -220,7 +242,9 @@ const prevVehicles = computed(() => {
   for (const edge of researchTreeData.value.edges || []) {
     if (edge.to !== stem) continue
     const node = byStem.get(edge.from)
-    if (node && !out.has(node.stem)) out.set(node.stem, { node, cost: Number(edge.cost?.xp) || null })
+    if (node && !out.has(node.stem)) {
+      out.set(node.stem, { node, cost: Number(edge.cost?.xp) || null, name: nameOf(node) })
+    }
   }
   return [...out.values()]
 })
@@ -239,18 +263,52 @@ const nextVehicles = computed(() => {
   if (!g || !layout) return []
   const byStem = new Map()
   for (const node of g.cells.values()) byStem.set(node.stem, node)
-  return layout.nextVehicles
-    .map(v => {
-      const node = byStem.get(v.stem)
-      return node ? { stem: v.stem, cost: Number(v.cost?.xp) || null, node } : { stem: v.stem, cost: Number(v.cost?.xp) || null, node: null }
-    })
+  return layout.nextVehicles.map(v => {
+    const node = byStem.get(v.stem)
+    return {
+      stem: v.stem,
+      cost: Number(v.cost?.xp) || null,
+      tankId: node?.tankId ?? null,
+      name: node ? nameOf(node) : null,
+      node: node || null,
+    }
+  })
 })
 
-function jumpTo(node) {
-  writeState({ tank: String(node.tankId) })
+function jumpTo(tankId) {
+  // 换车时清掉上辆车留下的配置选择（下标不再有意义）
+  writeState({ tank: String(tankId), config: null, engine: null, track: null })
 }
-function selectConfig(value) {
-  writeState({ config: String(value) })
+
+/** 安装写回 URL（与坦克百科配置器同一组键；炮塔/炮经 pickTurret/pickGun 折算 config）。 */
+function writeSetup(next) {
+  if (!next) return
+  writeState({
+    config: String(next.config ?? 0),
+    engine: next.engine != null ? String(next.engine) : null,
+    track: next.track != null ? String(next.track) : null,
+  })
+}
+
+/**
+ * 点击模块节点 = 安装（客户端 ModulesTree 同语义）：
+ * 炮塔/炮 → pickTurret/pickGun 折算 config；发动机/履带 → 直写下标。
+ * 炮优先装在当前炮塔上的同门炮副本，否则切到第一个持有该炮的炮塔再装。
+ */
+function installModule(node) {
+  const m = modules.value
+  const d = detail.value
+  const sel = selection.value
+  if (!m || !d || !sel?.canConfigure || !node?.install) return
+  const ins = node.install
+  if (ins.kind === 'engine') return writeSetup({ ...sel, engine: ins.index })
+  if (ins.kind === 'chassis') return writeSetup({ ...sel, track: ins.index })
+  if (ins.kind === 'turret') return writeSetup(pickTurret(sel, m, d, ins.index))
+  if (ins.kind === 'gun') {
+    const occ = ins.occurrences.find(o => o.turret === sel.turret) || ins.occurrences[0]
+    const base = occ.turret === sel.turret ? sel : pickTurret(sel, m, d, occ.turret)
+    return writeSetup(pickGun(base, m, d, occ.gun))
+  }
 }
 </script>
 
@@ -294,59 +352,11 @@ function selectConfig(value) {
       </EmptyState>
 
       <template v-else-if="detail">
-        <header class="tt-research-head">
-          <span class="tt-media">
-            <img :src="tankImageUrl(detail.tank_id ?? detail.tankId)" alt="" width="240" height="150" decoding="async" @error="$event.target.hidden = true">
-          </span>
-          <div class="tt-research-title">
-            <h2>{{ detail.name }}</h2>
-            <div class="tt-badges">
-              <span class="tt-pill is-tier">{{ t('agentTanks.tier_n', { tier: detail.tier }) }}</span>
-              <span class="tt-pill">{{ nationLabel(detail.nation) }}</span>
-              <span v-if="summaryOf({ tankId: detail.tank_id ?? detail.tankId })?.is_premium" class="tt-pill is-premium">{{ t('agentTanks.premium') }}</span>
-            </div>
-            <div class="tt-research-actions">
-              <AppButton variant="ghost" size="sm" data-testid="techtree-open-detail" @click="openDetail">
-                {{ t('research.open_detail') }}
-              </AppButton>
-            </div>
-          </div>
-          <dl v-if="prevVehicles.length || nextVehicles.length" class="tt-links">
-            <div v-if="prevVehicles.length">
-              <dt>{{ t('research.prev_tanks') }}</dt>
-              <dd>
-                <button
-                  v-for="prev in prevVehicles"
-                  :key="prev.node.stem"
-                  type="button"
-                  class="tt-link-chip"
-                  data-testid="techtree-prev-vehicle"
-                  @click="jumpTo(prev.node)"
-                >
-                  {{ nameOf(prev.node) || prev.node.stem }}
-                  <span v-if="prev.cost != null" class="tt-link-cost">{{ t('research.xp_short', { xp: prev.cost.toLocaleString() }) }}</span>
-                </button>
-              </dd>
-            </div>
-            <div v-if="nextVehicles.length">
-              <dt>{{ t('research.next_tanks') }}</dt>
-              <dd>
-                <template v-for="next in nextVehicles" :key="next.stem">
-                  <button
-                    v-if="next.node"
-                    type="button"
-                    class="tt-link-chip"
-                    data-testid="techtree-next-vehicle"
-                    @click="jumpTo(next.node)"
-                  >
-                    {{ nameOf(next.node) || next.node.stem }}
-                    <span v-if="next.cost != null" class="tt-link-cost">{{ t('research.xp_short', { xp: next.cost.toLocaleString() }) }}</span>
-                  </button>
-                  <span v-else class="tt-link-chip is-unresolved" data-testid="techtree-next-vehicle-unresolved">{{ next.stem }}</span>
-                </template>
-              </dd>
-            </div>
-          </dl>
+        <header class="tt-research-bar">
+          <button type="button" class="tt-link-chip" data-testid="techtree-open-detail" @click="openDetail">
+            {{ t('research.open_detail') }}
+          </button>
+          <span class="tt-research-name">{{ detail.name }}</span>
         </header>
 
         <TankResearchPanel
@@ -354,9 +364,12 @@ function selectConfig(value) {
           :detail="detail"
           :modules="modules"
           :selection="selection"
-          @select-config="selectConfig"
+          :prev-vehicles="prevVehicles"
+          :next-vehicles="nextVehicles"
+          @install="installModule"
+          @open-vehicle="jumpTo"
         />
-        <p v-else-if="detailState === 'ready'" class="tt-status">{{ t('research.modules_unavailable') }}</p>
+        <p v-else class="tt-status">{{ t('research.modules_unavailable') }}</p>
       </template>
     </template>
 
@@ -426,15 +439,18 @@ function selectConfig(value) {
               :aria-label="`${nameOf(node) || node.stem} · ${t('agentTanks.tier_n', { tier: node.tier })}`"
               @click="openResearch(node)"
             >
-              <img class="tt-cell-icon" :src="tankImageUrl(node.tankId)" alt="" loading="lazy" decoding="async" @error="$event.target.hidden = true">
-              <span class="tt-cell-info">
-                <span class="tt-cell-name">{{ nameOf(node) || node.stem }}</span>
-                <span class="tt-cell-meta">
-                  <span class="tt-pill">T{{ node.tier }}</span>
+              <!-- 卡片 = 客户端 TankNode 的 176×64（格子 216×96，四周留出 20/16px 连线跑道） -->
+              <span class="tt-card">
+                <span class="tt-card-icon">
+                  <img :src="tankImageUrl(node.tankId)" alt="" loading="lazy" decoding="async" :style="iconCropStyle(node.tankId)" @error="$event.target.hidden = true">
+                </span>
+                <span class="tt-card-name">{{ nameOf(node) || node.stem }}</span>
+                <span class="tt-card-meta">
+                  <span class="tt-pill">{{ romanLevel(node.tier) }}</span>
                   <span v-if="summaryOf(node)?.is_premium" class="tt-pill is-premium">{{ t('agentTanks.premium') }}</span>
                   <span v-if="node.preview" class="tt-pill is-preview">{{ t('research.preview') }}</span>
                 </span>
-                <span v-if="costByStem.get(node.stem) != null" class="tt-cell-cost">{{ t('research.xp_short', { xp: costByStem.get(node.stem).toLocaleString() }) }}</span>
+                <span v-if="costByStem.get(node.stem) != null" class="tt-card-cost">{{ t('research.xp_short', { xp: costByStem.get(node.stem).toLocaleString() }) }}</span>
               </span>
             </button>
             <span
@@ -445,7 +461,9 @@ function selectConfig(value) {
               :title="t('research.pending_title', { stem: node.stem })"
               :data-testid="`techtree-pending-${node.stem}`"
             >
-              <span class="tt-pending-label">{{ t('research.pending') }}</span>
+              <span class="tt-card is-placeholder">
+                <span class="tt-pending-label">{{ t('research.pending') }}</span>
+              </span>
             </span>
           </div>
           <!-- PREMIUM 带（客户端 PremiumSection：premiumRows×96，底部 96px 渐变底 + 标签）；
@@ -540,42 +558,88 @@ function selectConfig(value) {
   font-weight: 700;
 }
 
+/* 格子 = 客户端 TankCell 216×96，但视觉卡片是内嵌的 176×64（TankNode 的
+   NationFlag/TankBackground 尺寸）——四周 20/16px 就是连线跑道，卡片之间因此有
+   明显间隔，连线在缝隙里可见。 */
 .tt-cell {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  min-inline-size: 0;
+  cursor: pointer;
+}
+.tt-cell:focus-visible { outline: none; }
+.tt-cell:focus-visible .tt-card { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+
+.tt-card {
   position: relative;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-1);
+  display: block;
+  inline-size: 176px;
+  block-size: 64px;
+  overflow: hidden;
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-md);
   background: var(--color-surface-1);
-  cursor: pointer;
-  text-align: start;
-  min-inline-size: 0;
 }
-.tt-cell:hover { border-color: var(--color-border-strong); }
-.tt-cell:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-.tt-cell.is-preview { border-style: dashed; border-color: color-mix(in oklab, var(--color-warning) 55%, var(--color-border-subtle)); }
-.tt-cell.is-pending {
+.tt-cell:hover .tt-card { border-color: var(--color-border-strong); }
+.tt-cell.is-preview .tt-card { border-style: dashed; border-color: color-mix(in oklab, var(--color-warning) 55%, var(--color-border-subtle)); }
+.tt-cell.is-pending { cursor: default; }
+.tt-card.is-placeholder {
   display: grid;
   place-items: center;
   border-style: dashed;
   background: var(--color-surface-2);
   opacity: 0.72;
-  cursor: default;
 }
 .tt-pending-label { color: var(--color-text-secondary); font: var(--type-caption); }
 
-.tt-cell-icon {
-  flex: none;
-  inline-size: 45%;
-  max-inline-size: 120px;
+/* 图标盒 = 客户端 TankIcon 97×60（@40,8）；crop transform 由 tankIconCrop 给出 */
+.tt-card-icon {
+  position: absolute;
+  inset-block-start: 4px;
+  inset-inline-start: 40px;
+  inline-size: 97px;
+  block-size: 60px;
+  overflow: hidden;
+}
+.tt-card-icon img {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
   object-fit: contain;
 }
-.tt-cell-info { display: grid; gap: 2px; min-inline-size: 0; }
-.tt-cell-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--type-caption); font-weight: 600; }
-.tt-cell-meta { display: flex; flex-wrap: wrap; gap: var(--space-1); }
-.tt-cell-cost { color: var(--color-warning); font: var(--type-caption); font-variant-numeric: tabular-nums; }
+
+.tt-card-name {
+  position: absolute;
+  inset-block-end: 2px;
+  inset-inline: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+  color: var(--color-text-primary);
+  font: var(--type-caption);
+  font-weight: 600;
+}
+.tt-card-meta {
+  position: absolute;
+  inset-block-start: 2px;
+  inset-inline-start: 4px;
+  display: flex;
+  gap: 2px;
+}
+.tt-card-cost {
+  position: absolute;
+  inset-block-start: 2px;
+  inset-inline-end: 4px;
+  color: var(--color-warning);
+  font: var(--type-caption);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
 
 .tt-pill {
   padding: 0 var(--space-1);
@@ -592,57 +656,16 @@ function selectConfig(value) {
 
 /* ---------- 研发态 ---------- */
 .tt-nav { display: flex; }
-.tt-research-head {
+.tt-research-bar {
   display: flex;
-  align-items: flex-start;
-  gap: var(--space-4);
-  padding: var(--space-4);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface-1);
-  box-shadow: var(--elevation-1);
+  align-items: center;
+  gap: var(--space-3);
   flex-wrap: wrap;
 }
-.tt-media {
-  flex: none;
-  display: grid;
-  place-items: center;
-  inline-size: 240px;
-  aspect-ratio: 8 / 5;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-2);
-  overflow: hidden;
-}
-.tt-media img { inline-size: 100%; block-size: 100%; object-fit: contain; }
-.tt-research-title { display: grid; gap: var(--space-2); min-inline-size: 0; }
-.tt-research-title h2 { margin: 0; font: var(--type-h2); overflow-wrap: anywhere; }
-.tt-badges { display: flex; flex-wrap: wrap; gap: var(--space-1); }
-.tt-research-actions { display: flex; gap: var(--space-1); }
-.tt-links { display: grid; gap: var(--space-2); margin: 0; min-inline-size: 0; }
-.tt-links dt { color: var(--color-text-secondary); font: var(--type-caption); }
-.tt-links dd { margin: 0; display: flex; flex-wrap: wrap; gap: var(--space-1); }
-.tt-link-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: 0 var(--space-2);
-  min-block-size: var(--control-h-sm, 32px);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-full);
-  background: var(--color-surface-2);
-  color: var(--color-text-primary);
-  font: var(--type-caption);
-  cursor: pointer;
-}
-.tt-link-chip:hover { border-color: var(--color-border-strong); }
-.tt-link-chip:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-.tt-link-chip.is-unresolved { color: var(--color-text-secondary); cursor: default; }
-.tt-link-cost { color: var(--color-warning); font-variant-numeric: tabular-nums; }
+.tt-research-name { font: var(--type-h3); }
 
 /* 手机：头部纵向排列，网格横向滚动不变 */
 @media (width < 768px) {
   .techtree { gap: var(--space-3); padding-block-start: var(--space-4); }
-  .tt-research-head { flex-direction: column; }
-  .tt-media { inline-size: 100%; }
 }
 </style>

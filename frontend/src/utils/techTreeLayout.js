@@ -106,20 +106,28 @@ export function moduleTreeLayout(modules, selection = null) {
   if (!modules || typeof modules !== 'object') return null
   const entries = []
   const push = (kind, list, family) => {
-    for (const m of Array.isArray(list) ? list : []) {
-      if (m?.stem) entries.push({ module: m, kind, family })
-    }
+    (Array.isArray(list) ? list : []).forEach((m, index) => {
+      if (m?.stem) entries.push({ module: m, kind, family, index })
+    })
   }
   push('chassis', modules.chassis, 'chassis')
-  const gunSeen = new Set()
-  for (const turret of Array.isArray(modules.turrets) ? modules.turrets : []) {
-    if (turret?.stem) entries.push({ module: turret, kind: 'turret', family: 'turret' })
-    for (const gun of Array.isArray(turret?.guns) ? turret.guns : []) {
-      if (!gun?.stem || gunSeen.has(gun.stem)) continue
-      gunSeen.add(gun.stem)
-      entries.push({ module: gun, kind: 'gun', family: 'gun' })
-    }
-  }
+  /** 炮：同一门炮可挂多个炮塔（数值独立）；网格按 stem 去重为一份拓扑，
+   * 但保留全部 (turret 下标, gun 下标) 出现位置——点安装时按当前炮塔优先对号。 */
+  const gunSeen = new Map()
+  ;(Array.isArray(modules.turrets) ? modules.turrets : []).forEach((turret, turretIndex) => {
+    if (turret?.stem) entries.push({ module: turret, kind: 'turret', family: 'turret', index: turretIndex })
+    ;(Array.isArray(turret?.guns) ? turret.guns : []).forEach((gun, gunIndex) => {
+      if (!gun?.stem) return
+      const occurrence = { turret: turretIndex, gun: gunIndex }
+      if (gunSeen.has(gun.stem)) {
+        gunSeen.get(gun.stem).occurrences.push(occurrence)
+        return
+      }
+      const entry = { module: gun, kind: 'gun', family: 'gun', index: gunIndex, occurrences: [occurrence] }
+      gunSeen.set(gun.stem, entry)
+      entries.push(entry)
+    })
+  })
   push('engine', modules.engines, 'engine')
   push('radio', modules.radios, 'radio')
   push('fuelTank', modules.fuelTanks, 'fuelTank')
@@ -191,9 +199,13 @@ export function moduleTreeLayout(modules, selection = null) {
     const members = families.get(family)
       .map(e => ({ ...e, level: Number(e.module.level) || 0 }))
       .sort((a, b) => (a.level - b.level) || a.module.stem.localeCompare(b.module.stem))
-    for (const { module, kind } of members) {
+    for (const { module, kind, index, occurrences } of members) {
       const col = depthOf(module.stem)
       maxDepth = Math.max(maxDepth, col)
+      /** 点击安装的描述（下标对号；炮带全部 (turret,gun) 出现位置）。 */
+      const install = kind === 'gun'
+        ? { kind, occurrences }
+        : { kind, index }
       nodes.push({
         key: `${kind}:${module.stem}`,
         kind,
@@ -204,6 +216,7 @@ export function moduleTreeLayout(modules, selection = null) {
         price: module.price ?? null,
         installed: installed.has(module.stem),
         cost: costOf.get(module.stem) ?? null,
+        install,
         module,
       })
     }

@@ -24,9 +24,14 @@ const data = vi.hoisted(() => ({
     1: { name: 'T-26', tier: 1, is_premium: false },
     2: { name: 'MT-25', tier: 6, is_premium: false },
     15153: { name: 'BZ-79', tier: 11, is_premium: true },
+    27905: { name: 'Object 432U', tier: 11, is_premium: true },
   })),
   fetchTankData: vi.fn(),
   tankImageUrl: vi.fn(id => `https://assets.test/tank_images/${id}.webp`),
+  // 逐车内容框（科技树/坦克百科同一裁剪实现）；夹具给一个合法框验证 transform 生效
+  loadTankIconCrops: vi.fn(async () => ({
+    1: { canvas_w: 256, canvas_h: 128, x: 0, y: 0, w: 128, h: 100 },
+  })),
 }))
 vi.mock('../scene/agentData.js', () => data)
 
@@ -85,8 +90,8 @@ describe('树态', () => {
     // preview XI 节点：预览徽标 + 金币标记（tank_cache is_premium）
     const previewCell = wrapper.find('[data-testid="techtree-cell-R230_Object_432U"]')
     expect(previewCell.classes()).toContain('is-preview')
-    expect(previewCell.text()).toContain('BZ-79'.replace('BZ-79', '')) // 名称来自 tank_cache
-    expect(previewCell.text()).toContain('11')
+    expect(previewCell.text()).toContain('Object 432U') // 名称来自 tank_cache
+    expect(previewCell.text()).toContain('XI')
     // 连线：两端都在树上的一条
     expect(wrapper.findAll('path.tt-edge')).toHaveLength(1)
   })
@@ -147,8 +152,30 @@ describe('树态', () => {
 })
 
 describe('研发态（?tank=）', () => {
+  const MODULES = {
+    tankId: 1, tier: 1, optDevicePreset: 'defaultPreset', consumableSlots: 1, provisionSlots: 1,
+    chassis: [
+      { stem: 'track0', localId: 0, level: 1, unlocks: [{ kind: 'chassis', stem: 'track1', cost: { xp: 500 } }], stats: {} },
+      { stem: 'track1', localId: 1, level: 2, unlocks: [], stats: {} },
+    ],
+    engines: [{ stem: 'eng0', localId: 0, level: 1, unlocks: [], stats: {} }],
+    turrets: [
+      { stem: 't0', localId: 0, level: 1, unlocks: [], guns: [
+        { stem: 'g0', localId: 0, level: 1, unlocks: [{ kind: 'gun', stem: 'g1', cost: { xp: 200 } }], stats: {} },
+        { stem: 'g1', localId: 1, level: 2, unlocks: [], stats: {} },
+      ] },
+    ],
+  }
+  const DETAIL = {
+    tank_id: 1, name: 'T-26', tier: 1, nation: 'ussr',
+    configs: [
+      { label: 'T-26', turret_local: 0, gun_local: 0 },
+      { label: 'T-26', turret_local: 0, gun_local: 1 },
+    ],
+  }
+
   it('节点点击写 ?tank=；模块数据缺失时面板降级为提示', async () => {
-    data.fetchTankData.mockResolvedValue({ tank_id: 1, name: 'T-26', tier: 1, nation: 'ussr', configs: [{ label: 'stock', turret_local: 0, gun_local: 0 }] })
+    data.fetchTankData.mockResolvedValue(DETAIL)
     research.loadTankModules.mockRejectedValue(new Error('404'))
     const { wrapper, router } = await mountView()
     await wrapper.find('[data-testid="techtree-cell-T-26"]').trigger('click')
@@ -156,5 +183,36 @@ describe('研发态（?tank=）', () => {
     expect(router.currentRoute.value.query.tank).toBe('1')
     // 模块缺失：研发面板不出，但有降级提示
     expect(wrapper.find('[data-testid="research-panel"]').exists()).toBe(false)
+  })
+
+  it('客户端布局：左前驱车列 + 当前车面板 + 右模块网格；无配置下拉', async () => {
+    data.fetchTankData.mockResolvedValue(DETAIL)
+    research.loadTankModules.mockResolvedValue({ tanks: { 'T-26': MODULES } })
+    const { wrapper, router } = await mountView()
+    await wrapper.find('[data-testid="techtree-cell-T-26"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="research-panel"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="research-current-tank"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="research-grid"]').exists()).toBe(true)
+    // 不再用下拉选配置（用户 2026-10-27 要求点击安装）
+    expect(wrapper.find('[data-testid="research-config"]').exists()).toBe(false)
+    expect(router.currentRoute.value.query.tank).toBe('1')
+  })
+
+  it('点击模块节点即安装：炮节点写对应 config；履带节点写 track 下标', async () => {
+    data.fetchTankData.mockResolvedValue(DETAIL)
+    research.loadTankModules.mockResolvedValue({ tanks: { 'T-26': MODULES } })
+    const { wrapper, router } = await mountView()
+    await wrapper.find('[data-testid="techtree-cell-T-26"]').trigger('click')
+    await flushPromises()
+    // 装 g1（炮塔 t0 的第二门炮）→ config 1
+    await wrapper.find('[data-testid="research-node-gun-g1"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.config).toBe('1')
+    // 装 track1 → track 1，config 保持
+    await wrapper.find('[data-testid="research-node-chassis-track1"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.track).toBe('1')
+    expect(router.currentRoute.value.query.config).toBe('1')
   })
 })
