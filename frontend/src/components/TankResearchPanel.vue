@@ -62,9 +62,8 @@ const PITCH_X = 136
 const PITCH_Y = 97
 /** 左侧竖干（客户端：当前坦克 → 各行分叉）的宽度 */
 const TRUNK_W = 32
-/** 当前坦克大卡片（客户端 TankPanel：在研发图左侧，竖干从它的右边缘接出） */
-const CARD_W = 210
-const CARD_H = 236
+/** 本级坦克节点与下一级坦克同尺寸、同呈现（用户 2026-10-27），占最左一个节点位 */
+const CURRENT_X = 0
 
 const gridStyle = computed(() => ({
   width: `${layout.value.columns * PITCH_X}px`,
@@ -77,7 +76,7 @@ const gridStyle = computed(() => ({
 const scrollEl = ref(null)
 const fitScale = ref(1)
 const gridW = computed(() => (layout.value?.columns || 0) * PITCH_X)
-const canvasW = computed(() => CARD_W + TRUNK_W + gridW.value)
+const canvasW = computed(() => NODE_W + TRUNK_W + gridW.value)
 const gridH = computed(() => (layout.value?.rows || 0) * PITCH_Y)
 let observer = null
 function recalcFit() {
@@ -110,23 +109,32 @@ const canvasScaledStyle = computed(() => ({
   transform: `scale(${fitScale.value})`,
   transformOrigin: 'top left',
 }))
-const gridInCanvasStyle = computed(() => ({ ...gridStyle.value, left: `${CARD_W + TRUNK_W}px` }))
-/** 竖干：从当前坦克卡片右缘中点横出 → 竖线贯穿各链行 → 逐行横出箭头（直角折线）。 */
+const gridInCanvasStyle = computed(() => ({ ...gridStyle.value, left: `${NODE_W + TRUNK_W}px` }))
+/** 当前坦克节点：纵向对齐各链行的中点（不超出画布）。 */
+const currentTop = computed(() => {
+  const l = layout.value
+  if (!l?.branches?.length) return 0
+  const ys = l.branches.map(b => b.row * PITCH_Y + NODE_H / 2)
+  const mid = (Math.min(...ys) + Math.max(...ys)) / 2
+  return Math.max(0, Math.min(gridH.value - NODE_H, mid - NODE_H / 2))
+})
+
+/** 竖干：从当前坦克节点右缘中点横出 → 竖线贯穿各链行 → 逐行横出箭头（直角折线）。 */
 const trunk = computed(() => {
   const l = layout.value
   if (!l?.branches?.length) return { lines: [], height: gridH.value }
   const ys = l.branches.map(b => b.row * PITCH_Y + NODE_H / 2).sort((a, b) => a - b)
   const top = ys[0]
   const bottom = ys[ys.length - 1]
-  const cardCenter = CARD_H / 2
-  const trunkX = CARD_W + 12
+  const currentY = currentTop.value + NODE_H / 2
+  const trunkX = NODE_W + 12
   const lines = [
-    // 卡片右缘 → 竖干
-    { x1: CARD_W, y1: cardCenter, x2: trunkX, y2: cardCenter, arrow: false },
-    // 竖干本体（同时覆盖卡片中心与全部分行）
-    { x1: trunkX, y1: Math.min(top, cardCenter), x2: trunkX, y2: Math.max(bottom, cardCenter), arrow: false },
+    // 当前坦克右缘 → 竖干
+    { x1: NODE_W, y1: currentY, x2: trunkX, y2: currentY, arrow: false },
+    // 竖干本体（覆盖当前节点中心与全部分行）
+    { x1: trunkX, y1: Math.min(top, currentY), x2: trunkX, y2: Math.max(bottom, currentY), arrow: false },
   ]
-  for (const y of ys) lines.push({ x1: trunkX, y1: y, x2: CARD_W + TRUNK_W, y2: y, arrow: true })
+  for (const y of ys) lines.push({ x1: trunkX, y1: y, x2: NODE_W + TRUNK_W, y2: y, arrow: true })
   return { lines, height: gridH.value }
 })
 
@@ -197,22 +205,7 @@ function nodeTitle(node) {
   return [name, kindLabel, level, cost, action].filter(Boolean).join(' · ')
 }
 
-/** 当前搭载的四件（与网格 installed 标记同源：resolveSetup 的下标对号）。 */
-const mountedModules = computed(() => {
-  const s = props.selection
-  const m = props.modules
-  if (!s?.canConfigure) return []
-  const turret = m?.turrets?.[s.turret]
-  return [
-    { key: 'turret', item: turret },
-    { key: 'gun', item: turret?.guns?.[s.gun] },
-    { key: 'engine', item: m?.engines?.[s.engine] },
-    { key: 'track', item: m?.chassis?.[s.track] },
-  ].filter(row => row.item?.stem)
-})
-
-// 当前车面板图标：与科技树同一 crop 口径（卡片 176×64 内的 97×60 图标盒）
-const ICON_ASPECT = 97 / 60
+/** 本级坦克节点图：与下一级坦克节点同一裁剪口径（96×64）。 */
 const iconCrops = ref(null)
 onMounted(() => {
   loadTankIconCrops().then((crops) => { iconCrops.value = crops })
@@ -222,11 +215,16 @@ function cropStyle(id, boxAspect) {
   const transform = tankIconCropTransform(iconCrops.value?.[String(id)], boxAspect)
   return transform ? { transform } : null
 }
-const iconStyle = computed(() => cropStyle(tankId.value, ICON_ASPECT))
+const iconStyle = computed(() => cropStyle(tankId.value, NODE_W / NODE_H))
 /** 下一级坦克节点的小图同样要套内容框裁剪（原始画布坦克锚左上，不然看着偏）。 */
 /** 车辆节点图铺满格子（96×64 → aspect 1.5），与模块图同一裁剪口径。 */
 function vehicleIconStyle(id) {
   return cropStyle(id, NODE_W / NODE_H)
+}
+
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI']
+function romanTier(level) {
+  return ROMAN[Number(level) - 1] || String(level ?? '')
 }
 
 function activate(node) {
@@ -275,32 +273,25 @@ function activate(node) {
         <div ref="scrollEl" class="tr-scroll">
           <div class="tr-fit" :style="fitStyle">
           <div class="tr-canvas" :style="canvasScaledStyle">
-          <!-- 本级坦克大卡片（客户端 TankPanel）：竖干从它右缘接出 -->
+          <!-- 本级坦克：与下一级坦克同一呈现（节点 + 下方名字），竖干从它右缘接出 -->
           <div
-            class="tr-tank tr-tank-canvas"
-            :style="{ width: `${CARD_W}px`, height: `${CARD_H}px` }"
+            class="tr-node is-current-tank"
+            :style="{ left: `${CURRENT_X}px`, top: `${currentTop}px` }"
             data-testid="research-current-tank"
+            :aria-label="detail.name"
+            :title="detail.name"
           >
-            <span class="tr-tank-icon">
+            <span class="tr-node-pic">
               <img v-if="tankId" :src="tankImageUrl(tankId)" alt="" :style="iconStyle" @error="$event.target.hidden = true">
             </span>
-            <h3 class="tr-tank-name">{{ detail.name }}</h3>
-            <div class="tr-tank-meta">
-              <span class="tr-pill">{{ t('agentTanks.tier_n', { tier: detail.tier }) }}</span>
-            </div>
-            <dl class="tr-mounted">
-              <div v-for="row in mountedModules" :key="row.key">
-                <dt>{{ t(`agentTanks.configurator.${row.key}`) }}</dt>
-                <dd>{{ moduleName(row.item) }}</dd>
-              </div>
-            </dl>
-            <p class="tr-hint">{{ t('research.click_to_install_hint') }}</p>
+            <span class="tr-node-level">{{ romanTier(detail.tier) }}</span>
+            <span class="tr-node-name">{{ detail.name }}</span>
           </div>
           <svg
             class="tr-trunk"
             :width="TRUNK_W"
             :height="gridH"
-            :style="{ insetInlineStart: `${CARD_W}px` }"
+            :style="{ insetInlineStart: `${NODE_W}px` }"
             aria-hidden="true"
           >
             <defs>
@@ -312,8 +303,8 @@ function activate(node) {
               v-for="(line, i) in trunk.lines"
               :key="i"
               class="tr-trunk-line"
-              :x1="line.x1 - CARD_W" :y1="line.y1"
-              :x2="line.x2 - CARD_W" :y2="line.y2"
+              :x1="line.x1 - NODE_W" :y1="line.y1"
+              :x2="line.x2 - NODE_W" :y2="line.y2"
               :marker-end="line.arrow ? 'url(#tr-trunk-arrow)' : null"
             />
           </svg>
@@ -415,43 +406,8 @@ function activate(node) {
 .tr-prev-cost { color: var(--color-warning); font-variant-numeric: tabular-nums; }
 
 /* 当前车面板（客户端 TankPanel 的紧凑形态） */
-.tr-tank {
-  display: grid;
-  gap: var(--space-2);
-  justify-items: center;
-  padding: var(--space-3);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-2);
-}
-.tr-tank-icon {
-  position: relative;
-  inline-size: 97px;
-  block-size: 60px;
-  overflow: hidden;
-}
-.tr-tank-icon img {
-  position: absolute;
-  inset: 0;
-  inline-size: 100%;
-  block-size: 100%;
-  object-fit: contain;
-}
-.tr-tank-name { margin: 0; font: var(--type-h3); text-align: center; overflow-wrap: anywhere; }
-.tr-tank-meta { display: flex; flex-wrap: wrap; gap: var(--space-1); justify-content: center; }
-.tr-pill {
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-full);
-  background: var(--color-surface-3);
-  color: var(--color-text-secondary);
-  font: var(--type-caption);
-  font-weight: 600;
-}
-.tr-mounted { display: grid; gap: 2px; margin: 0; inline-size: 100%; }
-.tr-mounted > div { display: flex; justify-content: space-between; gap: var(--space-2); }
-.tr-mounted dt { color: var(--color-text-secondary); font: var(--type-caption); }
-.tr-mounted dd { margin: 0; font: var(--type-caption); font-weight: 600; text-align: end; overflow-wrap: anywhere; }
-.tr-hint { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); text-align: center; }
+.tr-node.is-current-tank { border-color: var(--color-accent); }
+.tr-node.is-current-tank .tr-node-name { color: var(--color-text-primary); font-weight: 600; }
 
 .tr-main { display: flex; flex-direction: column; gap: var(--space-2); min-inline-size: 0; min-block-size: 0; }
 .tr-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; }
