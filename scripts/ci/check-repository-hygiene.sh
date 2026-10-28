@@ -48,12 +48,14 @@ report_large_file() {
   echo "       If this is a deliberate source-of-truth asset, add the exact path to $ALLOWLIST_FILE with PR justification." >&2
 }
 
-# PR CI initially checks out GitHub's synthetic merge ref. Resolve the actual
-# base/head pair from the event payload so history checks cover the PR commits
-# themselves, including blobs added and deleted before the final tree.
-if [[ -z "$BASE_SHA" && "${GITHUB_EVENT_NAME:-}" == "pull_request" && -f "${GITHUB_EVENT_PATH:-}" ]]; then
-  mapfile -t pr_range < <(
-    python3 - "$GITHUB_EVENT_PATH" <<'PY'
+# Resolve the exact event range when CI did not pass one explicitly. PR runs
+# use the real base/head rather than GitHub's synthetic merge ref; push runs use
+# before/after so bypass pushes to main are still audited after the fact.
+if [[ -z "$BASE_SHA" && -f "${GITHUB_EVENT_PATH:-}" ]]; then
+  case "${GITHUB_EVENT_NAME:-}" in
+    pull_request)
+      mapfile -t event_range < <(
+        python3 - "$GITHUB_EVENT_PATH" <<'PY'
 import json
 import sys
 with open(sys.argv[1], encoding="utf-8") as handle:
@@ -61,13 +63,31 @@ with open(sys.argv[1], encoding="utf-8") as handle:
 print(event["pull_request"]["base"]["sha"])
 print(event["pull_request"]["head"]["sha"])
 PY
-  )
-  BASE_SHA="${pr_range[0]:-}"
-  HEAD_SHA="${pr_range[1]:-HEAD}"
+      )
+      BASE_SHA="${event_range[0]:-}"
+      HEAD_SHA="${event_range[1]:-HEAD}"
+      ;;
+    push)
+      mapfile -t event_range < <(
+        python3 - "$GITHUB_EVENT_PATH" <<'PY'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as handle:
+    event = json.load(handle)
+print(event.get("before", ""))
+print(event.get("after", ""))
+PY
+      )
+      if [[ "${event_range[0]:-}" != "0000000000000000000000000000000000000000" ]]; then
+        BASE_SHA="${event_range[0]:-}"
+        HEAD_SHA="${event_range[1]:-HEAD}"
+      fi
+      ;;
+  esac
 fi
 
-# workflow_dispatch and local full-history runs do not have a PR payload. When
-# origin/main is available, use the merge-base as the comparison boundary.
+# workflow_dispatch and local full-history runs do not necessarily have a PR
+# payload. When origin/main is available, use the merge-base as the boundary.
 if [[ -z "$BASE_SHA" ]] && git show-ref --verify --quiet refs/remotes/origin/main; then
   resolved_head=$(git rev-parse "$HEAD_SHA")
   BASE_SHA=$(git merge-base "$resolved_head" refs/remotes/origin/main)
@@ -96,9 +116,9 @@ while IFS= read -r -d '' path; do
   fi
 done < <(git ls-files -z)
 
-# Inspect every blob newly reachable from the PR head. A large blob committed in
-# an intermediate commit remains in Git history even if a later commit deletes
-# it, so final-tree-only checks are insufficient.
+# Inspect every blob newly reachable from the event head. A large blob committed
+# in an intermediate commit remains in Git history even if a later commit
+# deletes it, so final-tree-only checks are insufficient.
 if [[ -n "$BASE_SHA" ]]; then
   git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null || {
     echo "BASE_SHA is not an available commit: $BASE_SHA" >&2
@@ -116,13 +136,13 @@ if [[ -n "$BASE_SHA" ]]; then
     history_checked=$((history_checked + 1))
 
     if is_forbidden_path "$path"; then
-      echo "ERROR: forbidden generated/runtime path entered PR history: $path" >&2
+      echo "ERROR: forbidden generated/runtime path entered Git history: $path" >&2
       violations=$((violations + 1))
       continue
     fi
 
     if (( size > MAX_TRACKED_FILE_BYTES )) && ! is_allowlisted "$path"; then
-      report_large_file "new PR-history blob" "$path" "$size"
+      report_large_file "new history blob" "$path" "$size"
       violations=$((violations + 1))
     fi
   done < <(
