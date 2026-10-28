@@ -272,6 +272,27 @@ describe('弹夹 / 自动装填（客户端 config 字段 → BK resolveDpm）',
     expect(out.gunClipBurstCount).toBe(2)
   })
 
+  it('单组连发（Annihilator/Cerberus）：整夹即一组，弹间装填行隐藏、只显示组内间隔', () => {
+    // 客户端 Cerberus：整夹 3 发全部在同一个连发组里（一组 3 发、组内 0.333s），
+    // 一夹一组 ⇒ 不存在“组间扳机间隔”，gunClipShellReloadTime 应为空；
+    // 唯一的射击间隔是 gunClipBurstReloadTime，DPM 循环只加组内 (n−1) 个间隔。
+    const out = computeCharacteristics(setup({
+      standardShell: { damage: 160, penetration: 200, type: 'ap' },
+      gunCycle: {
+        type: 'autoloader', reload: 10, intraClip: 0.3333333, shellCount: 3, shellReloads: [],
+        burstGroupCount: 3, burstGroupInterval: 0.3333333,
+      },
+    }))
+    expect(out.gunClipBurstCount).toBe(1)
+    expect(out.gunBurstShellCount).toBe(3)
+    expect(out.gunClipBurstReloadTime).toBeCloseTo(0.3333333, 6)
+    expect(out.gunClipShellReloadTime).toBeNull()
+    expect(out.gunClipReloadTime).toBeCloseTo(10 * 0.958904, 4)
+    // 3 发 / (10×0.958904 + 2×0.3333)s ≈ 2808/min
+    expect(out.gunCommonDamagePerMin).toBeGreaterThan(2800)
+    expect(out.gunCommonDamagePerMin).toBeLessThan(2820)
+  })
+
   it('自动装填炮：逐发时间、整匣 = 逐发之和、最短单发循环决定 DPM', () => {
     const out = computeCharacteristics(setup({
       gunCycle: { type: 'autoreloader', reload: 14, intraClip: 2.727, shellCount: 3, shellReloads: [14, 12, 10] },

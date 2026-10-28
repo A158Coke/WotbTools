@@ -307,7 +307,6 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
   const intraClip = cycle.intraClip * intraClipFactor
   const clipShellCount = isMagazine && cycle.shellCount > 0 ? cycle.shellCount : null
   // 弹夹炮用 gunClipShellReloadTime；自动装填炮用 timeBetweenPumpShots（同一数值只出现一次）
-  const clipShellReload = cycle.type === 'autoloader' && intraClip > 0 ? intraClip : null
   // 连发组（PomPom）：组内弹间 / 每组发数 / 每夹组数（客户端 hangarParams 同名参数）。
   // 非连发组 → null（参数行隐藏）；整夹不能被每组整除时组数留空（fail-closed）。
   const burstGroupSize = cycle.type === 'autoloader' && (cycle.burstGroupCount || 0) > 1
@@ -319,6 +318,12 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
   const burstGroupInterval = burstGroupSize > 0 && (cycle.burstGroupInterval || 0) > 0
     ? (cycle.burstGroupInterval as number)
     : null
+  // 弹间装填 = 组与组之间的扳机间隔。整夹只有一组连发时（Annihilator/Cerberus：3 发一组、
+  // 一夹一组）不存在“组间”，该行隐藏——此时唯一的射击间隔是组内的 gunClipBurstReloadTime。
+  const clipShotsSpan = burstGroupSize > 0
+    ? burstGroupsPerClip != null && burstGroupsPerClip > 1
+    : true
+  const clipShellReload = cycle.type === 'autoloader' && intraClip > 0 && clipShotsSpan ? intraClip : null
   const clipReload = cycle.type === 'autoloader'
     ? (cycle.reload > 0 ? cycle.reload * reloadCoeff : null)
     : cycle.type === 'autoreloader' && cycle.shellReloads.length > 0
