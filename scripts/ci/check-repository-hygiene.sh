@@ -37,6 +37,16 @@ is_forbidden_path() {
   esac
 }
 
+printable_path() {
+  printf '%q' "$1"
+}
+
+report_forbidden_path() {
+  local scope="$1"
+  local path="$2"
+  echo "ERROR: forbidden generated/runtime path $scope: $(printable_path "$path")" >&2
+}
+
 report_large_file() {
   local scope="$1"
   local path="$2"
@@ -44,7 +54,7 @@ report_large_file() {
   local mib limit_mib
   mib=$(awk -v bytes="$size" 'BEGIN { printf "%.2f", bytes / 1048576 }')
   limit_mib=$(awk -v bytes="$MAX_TRACKED_FILE_BYTES" 'BEGIN { printf "%.2f", bytes / 1048576 }')
-  echo "ERROR: $scope exceeds ${limit_mib} MiB limit: $path (${mib} MiB)" >&2
+  echo "ERROR: $scope exceeds ${limit_mib} MiB limit: $(printable_path "$path") (${mib} MiB)" >&2
   echo "       If this is a deliberate source-of-truth asset, add the exact path to $ALLOWLIST_FILE with PR justification." >&2
 }
 
@@ -104,7 +114,7 @@ while IFS= read -r -d '' path; do
   checked=$((checked + 1))
 
   if is_forbidden_path "$path"; then
-    echo "ERROR: forbidden generated/runtime path is tracked: $path" >&2
+    report_forbidden_path "is tracked" "$path"
     violations=$((violations + 1))
     continue
   fi
@@ -116,9 +126,12 @@ while IFS= read -r -d '' path; do
   fi
 done < <(git ls-files -z)
 
-# Inspect every blob newly reachable from the event head. A large blob committed
-# in an intermediate commit remains in Git history even if a later commit
-# deletes it, so final-tree-only checks are insufficient.
+# Inspect every tree state introduced by commits in the event range. `git ls-tree
+# -z` is NUL-delimited, so valid Git paths containing newlines, tabs, quotes, or
+# other unusual bytes cannot escape either the size or forbidden-path policy.
+# This also catches a large/generated file that is committed and then deleted in
+# a later commit: the violating path/blob is still present in the intermediate
+# commit tree and would otherwise remain reachable from main history.
 if [[ -n "$BASE_SHA" ]]; then
   git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null || {
     echo "BASE_SHA is not an available commit: $BASE_SHA" >&2
@@ -130,27 +143,47 @@ if [[ -n "$BASE_SHA" ]]; then
   }
 
   history_checked=0
-  while IFS=' ' read -r oid type size path; do
-    [[ "$type" == "blob" ]] || continue
-    [[ -n "${path:-}" ]] || continue
-    history_checked=$((history_checked + 1))
+  history_commits=0
+  declare -A history_seen=()
 
-    if is_forbidden_path "$path"; then
-      echo "ERROR: forbidden generated/runtime path entered Git history: $path" >&2
-      violations=$((violations + 1))
-      continue
-    fi
+  while IFS= read -r commit; do
+    [[ -n "$commit" ]] || continue
+    history_commits=$((history_commits + 1))
 
-    if (( size > MAX_TRACKED_FILE_BYTES )) && ! is_allowlisted "$path"; then
-      report_large_file "new history blob" "$path" "$size"
-      violations=$((violations + 1))
-    fi
-  done < <(
-    git rev-list --objects "${BASE_SHA}..${HEAD_SHA}" |
-      git cat-file --batch-check='%(objectname) %(objecttype) %(objectsize) %(rest)'
-  )
+    while IFS= read -r -d '' record; do
+      [[ "$record" == *$'\t'* ]] || {
+        echo "Unexpected git ls-tree record while checking $commit" >&2
+        exit 2
+      }
 
-  echo "Repository history hygiene checked $history_checked newly reachable blob(s) in ${BASE_SHA}..${HEAD_SHA}."
+      meta="${record%%$'\t'*}"
+      path="${record#*$'\t'}"
+      read -r mode type oid size <<< "$meta"
+      [[ "$type" == "blob" ]] || continue
+      [[ "$size" =~ ^[0-9]+$ ]] || {
+        echo "Unexpected blob size from git ls-tree for $oid" >&2
+        exit 2
+      }
+
+      key="${oid}"$'\x1f'"${path}"
+      [[ -n "${history_seen[$key]+x}" ]] && continue
+      history_seen["$key"]=1
+      history_checked=$((history_checked + 1))
+
+      if is_forbidden_path "$path"; then
+        report_forbidden_path "entered Git history" "$path"
+        violations=$((violations + 1))
+        continue
+      fi
+
+      if (( size > MAX_TRACKED_FILE_BYTES )) && ! is_allowlisted "$path"; then
+        report_large_file "history blob" "$path" "$size"
+        violations=$((violations + 1))
+      fi
+    done < <(git ls-tree -r -z -l "$commit")
+  done < <(git rev-list --reverse "${BASE_SHA}..${HEAD_SHA}")
+
+  echo "Repository history hygiene checked $history_checked unique blob/path pair(s) across $history_commits commit tree(s) in ${BASE_SHA}..${HEAD_SHA}."
 fi
 
 if (( violations > 0 )); then
