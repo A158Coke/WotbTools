@@ -2502,7 +2502,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 }
             }
             controls.update();
-            if (QP.get('heatmap') === '1' && !penetrationMode) {
+            // 击穿视图默认开启（2026-10-28 用户要求）；?heatmap=0 显式关闭。
+            if (QP.get('heatmap') !== '0' && !penetrationMode) {
                 penetrationMode = true;
                 const btn = document.getElementById('penetration-btn');
                 btn.classList.add('active'); btn.textContent = L.hideHeatmap; btn.setAttribute('aria-pressed', 'true');

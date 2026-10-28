@@ -191,6 +191,8 @@ describe('dolly-zoom world-overview scope guard', () => {
     expect(kernel).toMatch(/function animate\(\) \{\s*if \(destroyed \|\| contextLost\) return;/)
     expect(kernel).toMatch(/reportLoad\(\{ state: 'error', message: contextLostMessage\(\), contextLost: true \}\)/)
     expect(kernel).toMatch(/function isContextLost\(\) \{ return contextLost; \}/)
+    // 击穿视图默认开启，?heatmap=0 显式关闭（2026-10-28 用户要求）
+    expect(kernel).toMatch(/if \(QP\.get\('heatmap'\) !== '0' && !penetrationMode\)/)
     // 普通检视换弹：只清掉上一次判定，不按旧点击位置重跑（2026-10-28 用户裁定）
     expect(kernel).toMatch(/else if \(penetrationMode && lastClickNdc\) \{[\s\S]*?tidyTrajectory\(\);/)
     expect(kernel).not.toMatch(/doPenetrationCheck\(lastClickNdc\.x, lastClickNdc\.y\)/)
