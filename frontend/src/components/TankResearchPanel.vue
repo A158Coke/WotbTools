@@ -422,15 +422,22 @@ function activate(node) {
   font: var(--type-caption);
   font-weight: 700;
 }
+/* 研发成本：左上角小标（等级标在右上、勾在右下，互不遮挡） */
 .tr-node-cost {
   position: absolute;
-  inset-block-end: 12px;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  max-inline-size: calc(100% - 20px);
   padding: 0 3px;
   border-radius: var(--radius-sm);
   background: var(--color-surface-1);
   color: var(--color-warning);
   font: var(--type-caption);
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .tr-node-check {
   position: absolute;
