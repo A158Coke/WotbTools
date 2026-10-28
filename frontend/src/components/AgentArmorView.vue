@@ -558,6 +558,14 @@ onBeforeUnmount(() => {
                 @close="closePicker"
             />
         </div>
+        <!-- 装甲厚度模式点选结果：命中点旁侧的浮层（偏移 + 视口钳制），只显示部件名 + 基础装甲值 -->
+        <div id="click-info">
+            <h3 id="click-part">—</h3>
+            <div class="row">
+                <span>{{ $t('armor.base_armor') }}</span>
+                <span id="click-armor">—</span>
+            </div>
+        </div>
         <div class="armor-bottom-controls">
         <div id="corner-tr">
             <ArmorShotHud
@@ -586,14 +594,6 @@ onBeforeUnmount(() => {
                     <button id="filter-primary" type="button" class="active" aria-pressed="true">{{ $t('armor.filter_primary') }}</button>
                     <button id="filter-spaced" type="button" class="active" aria-pressed="true">{{ $t('armor.filter_spaced') }}</button>
                     <button id="filter-external" type="button" class="active" aria-pressed="true">{{ $t('armor.filter_external') }}</button>
-                </div>
-            </div>
-            <!-- 装甲厚度模式点选结果：部件名 + 基础装甲值；作为面板的一段，不再浮在车体上 -->
-            <div id="click-info">
-                <h3 id="click-part">—</h3>
-                <div class="row">
-                    <span>{{ $t('armor.base_armor') }}</span>
-                    <span id="click-armor">—</span>
                 </div>
             </div>
         </div>
@@ -650,7 +650,7 @@ onBeforeUnmount(() => {
 .armor-view :is(#corner-tl, #corner-tr, #corner-br) { position: absolute; display: flex; gap: var(--space-3); }
 .armor-view #corner-tl { inset-block-start: var(--space-5); inset-inline-start: var(--space-5); align-items: flex-start; }
 .armor-view.has-back #corner-tl { inset-block-start: calc(var(--space-5) + 44px + var(--space-2)); }
-.armor-view :is(#info-panel, #tank-selectors, #turret-controls, #debug-info) {
+.armor-view :is(#info-panel, #tank-selectors, #turret-controls, #debug-info, #click-info) {
     background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--elevation-2);
 }
 .armor-view #info-panel { padding: var(--space-4); max-inline-size: 20rem; max-block-size: 46dvh; overflow: auto; overflow-wrap: anywhere; }
@@ -809,17 +809,19 @@ onBeforeUnmount(() => {
 .armor-view .dbg-dot { flex: none; inline-size: var(--space-2); block-size: var(--space-2); border-radius: var(--radius-full); margin-block-start: var(--space-1); }
 .armor-view .dbg-name { flex: none; color: var(--muted); }
 .armor-view .dbg-val { min-inline-size: 0; }
-/* 装甲厚度模式点选结果：面板内的部件名 + 基础装甲值（不再浮在车体上方遮挡） */
+/* 装甲厚度模式点选结果：命中点旁侧的浮层（内核按点击坐标偏移 24px 并在视口内钳制，
+   不盖住命中点），只显示部件名 + 基础装甲值 */
 .armor-view #click-info {
+    position: fixed;
     display: none;
-    flex-direction: column;
-    gap: var(--space-1);
-    padding-block-start: var(--space-2);
-    border-block-start: 1px solid var(--color-border-subtle);
+    padding: var(--space-2) var(--space-3);
+    min-inline-size: 11rem;
     color: var(--muted);
     font: var(--type-caption);
+    pointer-events: none;
+    z-index: var(--pb-z-modal);
 }
-.armor-view #click-info h3 { margin: 0; color: var(--txt); font: var(--type-caption); font-weight: 600; }
+.armor-view #click-info h3 { margin: 0 0 var(--space-1); color: var(--txt); font: var(--type-caption); font-weight: 600; }
 .armor-view #click-info .row { display: flex; justify-content: space-between; gap: var(--space-3); }
 .armor-view #click-info #click-armor { color: var(--txt); font-variant-numeric: tabular-nums; }
 .armor-view #traj-info { position: fixed; z-index: var(--z-header); pointer-events: none; }
@@ -892,7 +894,6 @@ onBeforeUnmount(() => {
     .armor-view #view-toggle { flex: 1 1 11rem; min-inline-size: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1); padding: 0; }
     .armor-view #view-toggle button { padding: var(--space-1); white-space: normal; }
     .armor-view #armor-filters { grid-column: 1 / -1; padding-block-start: var(--space-1); gap: var(--space-1); }
-    .armor-view #click-info { flex: 1 1 100%; padding-block-start: var(--space-1); }
     .armor-view #turret-controls { inset-block-start: calc(var(--space-2) * 2 + 48px); inset-block-end: auto; inset-inline-start: var(--space-2); min-inline-size: 0; max-inline-size: calc(100% - var(--space-4)); padding: var(--space-1) var(--space-3); max-block-size: 28dvh; }
     .armor-view #turret-controls .ctrl-row { display: inline-flex; margin: 0 var(--space-3) 0 0; }
     .armor-view #corner-br { display: none; }

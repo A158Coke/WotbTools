@@ -5004,13 +5004,14 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const ndcY = -((event.clientY - rect.top) / rect.height) * 2 + 1;
             // 装甲厚度（碰撞）模式（2026-10-28 用户裁定）：不做击穿判定，只显示点击位置
             // 命中的装甲/模块信息（BlitzKit armor inspector 同语义）。
-            if (collisionMode) { showArmorPartInfo(ndcX, ndcY); return; }
+            if (collisionMode) { showArmorPartInfo(event, ndcX, ndcY); return; }
             lastClickNdc = { x: ndcX, y: ndcY };
             doPenetrationCheck(ndcX, ndcY);
         }
 
-        /** 装甲厚度模式：命中装甲板 → 高亮该板，并在右上角面板内显示部件名与基础装甲值（无击穿判定）。 */
-        function showArmorPartInfo(ndcX, ndcY) {
+        /** 装甲厚度模式：命中装甲板 → 高亮该板，并在命中点旁侧的浮层显示部件名与基础装甲值
+         *  （浮层相对点击坐标偏移 24px 并在视口内钳制，避免盖住命中点；无击穿判定）。 */
+        function showArmorPartInfo(event, ndcX, ndcY) {
             tidyTrajectory();
             raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
             const objects = armorModel ? [armorModel, ...moduleMeshes] : [];
@@ -5026,7 +5027,18 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const thickness = Number(info.thickness);
             document.getElementById('click-part').textContent = L.partName ? L.partName(info.partName) : info.partName;
             document.getElementById('click-armor').textContent = Number.isFinite(thickness) ? `${Math.round(thickness * 100) / 100} mm` : '—';
-            card.style.display = 'flex';
+            card.style.display = 'block';
+            // 命中点旁侧：先试右下，越界翻到左上；再整体钳制在视口内。任何情况下都不压住点击落点。
+            const gap = 24, edge = 8;
+            const w = card.offsetWidth || 200, h = card.offsetHeight || 72;
+            let left = event.clientX + gap;
+            let top = event.clientY + gap;
+            if (left + w > window.innerWidth - edge) left = event.clientX - w - gap;
+            if (top + h > window.innerHeight - edge) top = event.clientY - h - gap;
+            left = Math.max(edge, Math.min(window.innerWidth - w - edge, left));
+            top = Math.max(edge, Math.min(window.innerHeight - h - edge, top));
+            card.style.left = `${left}px`;
+            card.style.top = `${top}px`;
         }
 
         let __shotRayOrigin = null;   // 射击复现：射线起点（射手方向，固定距离）

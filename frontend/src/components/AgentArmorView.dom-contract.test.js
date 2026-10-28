@@ -31,26 +31,38 @@ describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
     ).toEqual([])
   })
 
-  // 2026-10-29 用户要求：厚度模式点选结果只留装甲名称 + 基础装甲值，并收进右上角面板
-  // （不再浮在点击处遮挡车体）；射击 HUD、模式切换、装甲组成、点选结果合并为同一张卡片。
-  it('点选结果只显示装甲名称与基础装甲值且不遮挡，右上角合并为一块整体面板', () => {
+  // 2026-10-29 用户要求：厚度模式点选结果只留装甲名称 + 基础装甲值，做成命中点旁侧的浮层
+  // （相对点击坐标偏移 + 视口钳制，不盖住命中点）；右上角 HUD/模式/装甲组成合并为一块整卡片。
+  it('点选结果只显示装甲名称与基础装甲值，浮层避开命中点；右上角合并为一块整体面板', () => {
     expect(template).toContain('id="click-part"')
     expect(template).toContain('id="click-armor"')
     expect(template).not.toMatch(/id="click-(?:angle|effective|pen|result)"/)
     expect(kernel).not.toContain("document.getElementById('click-angle')")
     expect(kernel).not.toContain("document.getElementById('click-effective')")
     expect(kernel).toMatch(/document\.getElementById\('click-part'\)\.textContent = L\.partName/)
-    expect(kernel).not.toMatch(/card\.style\.(?:left|top)/)
-    expect(kernel).toMatch(/card\.style\.display = 'flex'/)
-    expect(template.indexOf('id="click-info"')).toBeGreaterThan(template.indexOf('id="corner-tr"'))
+    expect(kernel).toMatch(/if \(collisionMode\) \{ showArmorPartInfo\(event, ndcX, ndcY\); return; \}/)
+    expect(kernel).toMatch(/function showArmorPartInfo\(event, ndcX, ndcY\)/)
+    // 浮层先放在命中点右下、越界翻到左上，再钳制；两条左/上赋值都在，且偏移量 >= 视觉间距
+    expect(kernel).toMatch(/let left = event\.clientX \+ gap;/)
+    expect(kernel).toMatch(/let top = event\.clientY \+ gap;/)
+    expect(kernel).toMatch(/if \(left \+ w > window\.innerWidth - edge\) left = event\.clientX - w - gap;/)
+    expect(kernel).toMatch(/if \(top \+ h > window\.innerHeight - edge\) top = event\.clientY - h - gap;/)
+    expect(kernel).toMatch(/card\.style\.left = /)
+    expect(kernel).toMatch(/card\.style\.top = /)
+    expect(kernel).toMatch(/card\.style\.display = 'block'/)
+    // 浮层不是右上角面板的子节点：DOM 顺序在 #corner-tr 之前，外观由共享面板规则提供
+    expect(template.indexOf('id="click-info"')).toBeLessThan(template.indexOf('id="corner-tr"'))
     const clickInfoCss = template.slice(template.indexOf('.armor-view #click-info {'))
-    expect(clickInfoCss.slice(0, clickInfoCss.indexOf('}'))).not.toContain('position: absolute')
-    // 卡片外观由 #corner-tr 提供；射击 HUD 与模式切换只排布内容，过滤行是面板内静态第二行
+    const clickInfoRule = clickInfoCss.slice(0, clickInfoCss.indexOf('}'))
+    expect(clickInfoRule).toContain('position: fixed')
+    expect(clickInfoRule).toContain('pointer-events: none')
+    expect(template).toMatch(/:is\(#info-panel, #tank-selectors, #turret-controls, #debug-info, #click-info\)/)
+    // 右上角卡片外观由 #corner-tr 提供；射击 HUD 与模式切换只排布内容，过滤行是面板内静态第二行
     const cornerTrCss = template.slice(template.indexOf('.armor-view #corner-tr {'))
     const cornerTrRule = cornerTrCss.slice(0, cornerTrCss.indexOf('}'))
     expect(cornerTrRule).toContain('background: var(--panel)')
     expect(cornerTrRule).toContain('border: 1px solid var(--border)')
-    // 面板固定宽度：进入厚度视图出现过滤行/点选结果时不撑宽（手机竖屏整条底栏不固定）
+    // 面板固定宽度：进入厚度视图出现过滤行时不撑宽（手机竖屏整条底栏不固定）
     expect(cornerTrRule).toContain('inline-size: 17rem')
     expect(template).toMatch(/\.armor-view #corner-tr \{[^}]*inline-size: auto;/)
     const shotHud = read('./ArmorShotHud.vue')
@@ -236,8 +248,8 @@ describe('dolly-zoom world-overview scope guard', () => {
     // 装甲厚度与击穿视图互斥；厚度模式点击只出部件信息，不做击穿判定
     expect(kernel).toMatch(/collisionMode && penetrationMode/)
     expect(kernel).toMatch(/penetrationMode && collisionMode/)
-    expect(kernel).toMatch(/if \(collisionMode\) \{ showArmorPartInfo\(ndcX, ndcY\); return; \}/)
-    expect(kernel).toMatch(/function showArmorPartInfo\(ndcX, ndcY\)/)
+    expect(kernel).toMatch(/if \(collisionMode\) \{ showArmorPartInfo\(event, ndcX, ndcY\); return; \}/)
+    expect(kernel).toMatch(/function showArmorPartInfo\(event, ndcX, ndcY\)/)
     // 碰撞视图保留炮管/履带碰撞体
     expect(kernel).toMatch(/function applyModuleCollisionMaterial\(on\)/)
     expect(kernel).toMatch(/moduleOriginalMaterials\.set\(node, node\.material\)/)
