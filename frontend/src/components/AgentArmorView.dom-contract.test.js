@@ -290,11 +290,14 @@ describe('dolly-zoom world-overview scope guard', () => {
     const baseVisible = kernel.slice(kernel.indexOf('function baseNodeVisible('), kernel.indexOf('function setArmorFilterRowVisible('))
     expect(baseVisible).not.toContain('gunMaskPart')
     // BlitzKit 口径（2026-10-28 用户裁定回退）：外部模块按 mask 标量选取——有 mask 值
-    // → gun_0X + gun_0X_mask 全部网格（由平面裁掉炮根）；无 mask 值 → 只取精确 gun_0X。
-    // 视觉模型始终渲染全部部件；厚度视图按外部模块口径隐藏炮盾实心体。
+    // → gun_0X* 全部网格（含 _mask/辅助件，由同一平面裁掉炮根）；无 mask 值 → 只取精确
+    // gun_0X。辅助件必须并入模块（BlitzKit startsWith），不能按纯视觉 deco 隐藏。
     expect(kernel).toMatch(/if \(node\.userData\.gunMaskPart && !hasMask\) return;\s*\n\s*externalMeshes\.push\(node\);/)
     expect(kernel).toMatch(/const hideMaskPart = collisionMode && !hasMask;/)
     expect(kernel).toMatch(/&& !\(hideMaskPart && node\.userData\.gunMaskPart\)/)
+    const tagFn = kernel.slice(kernel.indexOf('function tagModuleMeshes('), kernel.indexOf('let worldMetersPerUnit'))
+    expect(tagFn).not.toContain("armorSection = 'deco'")
+    expect((tagFn.match(/gunMaskPart = true;/g) || [])).toHaveLength(2)
     // 平面 = BlitzKit 同式：枪管局部系（法线=模型前向）过模型原点前方 gun_mask+原点链处，
     // 随炮塔/炮管姿态矩阵（gunPoseMatrix）与模型根变换进世界系；厚度视图实心炮管体与
     // 续飞着色器同步同一平面。不能再用「模型原点 + 炮口方向 × 距离」的近似。

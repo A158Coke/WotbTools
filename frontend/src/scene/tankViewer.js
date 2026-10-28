@@ -525,8 +525,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (!node.isMesh) return;
                 if (node.visible === false) return;
                 if (node.userData.gunConfig != null && act != null && node.userData.gunConfig !== act) return;
-                // BlitzKit 选择规则：mask 有值 → gun_01 + gun_01_mask 子树都渲染；
-                // mask 无值 → 只渲染 gun_01（炮管本体），mask 网格不参与
+                // BlitzKit 选择规则（models.pb mask 注释同义）：mask 有值 → gun_0X* 全部
+                // 网格都渲染并一起裁切；mask 无值 → 只渲染精确 gun_0X（辅助件不参与）。
                 if (node.userData.gunMaskPart && !hasMask) return;
                 externalMeshes.push(node);
             });
@@ -2364,11 +2364,18 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     node.userData.gunConfig = gm ? parseInt(gm[1], 10) : null;
                     moduleMeshes.push(node);
                 } else if (/^gun_\d+_/.test(parentName)) {
-                    // hide_elements / state_XX 等拆件只是视觉模型，不是 50mm 炮管外部模块；
-                    // 保留渲染，但不参与点击判定/续飞/热力图。
-                    node.userData.armorSection = 'deco';
-                    node.userData.armorPlateId = '';
-                    node.userData.armorThickness = 0;
+                    // BlitzKit 口径：有 mask 的炮把 gun_0X* 全部网格并入外部模块（含
+                    // gun_XX_mask_nc 等辅助件），由裁切面统一裁掉炮根；active 配置无
+                    // mask 时这些辅助件在 collectPenetrationMeshes/applyCategoryFilters
+                    // 被过滤，只保留精确 gun_0X（与 `mask ? startsWith : ===` 一致）。
+                    node.userData.armorSection = 'gunBarrel';
+                    node.userData.armorPlateId = 'gun';
+                    node.userData.armorThickness = getPlateThickness('gunBarrel', 'gun');
+                    node.userData.gunMaskPart = true;
+                    node.userData.moduleDoubleSided = moduleDoubleSided(node);
+                    const gm = parentName.match(/^gun_(\d+)/);
+                    node.userData.gunConfig = gm ? parseInt(gm[1], 10) : null;
+                    moduleMeshes.push(node);
                 }
             });
         }
