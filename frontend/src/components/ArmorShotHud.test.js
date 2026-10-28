@@ -37,6 +37,13 @@ describe('ArmorShotHud（右上角弹种 + 校准弹/强化装甲图标）', () 
     expect(wrapper.find('[data-testid="hud-shell-0"]').attributes('aria-pressed')).toBe('true')
   })
 
+  it('缺省 scfg/config 时使用最后一档（与 viewer 的缺省一致）', async () => {
+    const wrapper = mount(ArmorShotHud, { props: { shooterId: 1 } })
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid^="hud-shell-"]')).toHaveLength(3)
+    expect(wrapper.find('[data-testid="hud-shell-0"]').attributes('aria-pressed')).toBe('true')
+  })
+
   it('点击弹种与装备图标发出事件；URL 覆盖优先于回放真值', async () => {
     const wrapper = mount(ArmorShotHud, {
       props: { shooterId: 1, scfg: 1, calibratedDefault: true, enhancedDefault: true, eqcal: '0' },

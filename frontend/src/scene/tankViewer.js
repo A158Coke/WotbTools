@@ -2472,6 +2472,28 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             });
         }
 
+        /** 厚度视图缓存的原材质与实心材质：目标卸载后不会再恢复，必须连同贴图释放。 */
+        function releaseModuleMaterialCaches() {
+            const released = new Set();
+            const release = (value) => {
+                const materials = Array.isArray(value) ? value : [value];
+                for (const material of materials) {
+                    if (!material || released.has(material)) continue;
+                    released.add(material);
+                    for (const child of Object.values(material)) {
+                        if (child && child.isTexture && typeof child.dispose === 'function') child.dispose();
+                    }
+                    if (typeof material.dispose === 'function') material.dispose();
+                }
+            };
+            for (const material of moduleOriginalMaterials.values()) release(material);
+            moduleOriginalMaterials.clear();
+            for (const node of moduleMeshes) {
+                release(node.userData.collisionSolidMaterial);
+                node.userData.collisionSolidMaterial = null;
+            }
+        }
+
         function clearModels() {
             // 释放 GPU 资源：此前只 scene.remove + 置 null，几何/材质/贴图全留在显存里——
             // 反复切换坦克或复现射击时显存单调增长。disposeDetachedModel 是同文件既有助手
@@ -2489,6 +2511,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             if (window.__hitMarker) { scene.remove(window.__hitMarker); window.__hitMarker = null; }
             if (window.__endMarker) { scene.remove(window.__endMarker); window.__endMarker = null; }
             if (window.__dbgGroup) { scene.remove(window.__dbgGroup); window.__dbgGroup = null; }
+            releaseModuleMaterialCaches();
             moduleMeshes = [];
             turretNode = null; gunNodesList = [];
             gunBarrelNodes = [];
@@ -2634,6 +2657,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         // 本机复现开关：?armordebug=1（仅 dev）。点击后复制/查看本次判定的完整输入与层链。
         const ARMOR_DEBUG = import.meta.env.DEV && QP.get('armordebug') === '1';
         let urlApplied = false;
+        /** shell 的权威 owner 是 URL：换目标/重载后按当前 location 恢复，不能用初始化时的 QP 快照。 */
+        function requestedShellIndex() {
+            return parseInt(new URLSearchParams(location.search).get('shell'), 10);
+        }
         function applyUrlOptionsOnce() {
             if (urlApplied || !tankModel || !armorModel) return;
             urlApplied = true;
@@ -2641,7 +2668,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // 再恢复 URL 下标，避免任一模型回调重建下拉框把选弹重置；手动切配置不重套 URL。
             // 射击复现的弹表/选弹由射手 scfg 与回放 shell_id 所有，不在此覆盖。
             if (!QP.get('shot')) {
-                populateShellSelector(shooterShells, parseInt(QP.get('shell'), 10));
+                populateShellSelector(shooterShells, requestedShellIndex());
                 if (penetrationMode && selectedShell) {
                     updatePenetrationUniforms(selectedShell);
                     updateSpacedUniforms(selectedShell);
@@ -4442,7 +4469,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     ? Object.assign({}, s, { caliber: caliber }) : s);
                 shooterCaliber = caliber;
                 // 射击复现的 &shell= 属于射手配置；普通检视在配置完成后重新恢复该下标。
-                populateShellSelector(shooterShells, parseInt(QP.get('shell'), 10));
+                populateShellSelector(shooterShells, requestedShellIndex());
                 // 这里只校验“能不能构成一次判定”：弹种/穿深/伤害/口径。转正角属于判定输入，
                 // 由 doPenetrationCheck 在点击时校验——普通同车型检视会先用顶层展示弹表
                 // （可能不含 normalization），随后 applyConfig 换成当前配置的权威弹表。
@@ -4628,6 +4655,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (destroyed || shooterLoading) return;
                 const idx = parseInt(this.value);
                 if (shooterShells && idx < shooterShells.length) {
+                    QP.set('shell', String(idx));
                     selectedShell = shooterShells[idx];
                     if (penetrationMode) { updatePenetrationUniforms(selectedShell); updateSpacedUniforms(selectedShell); }
                     if (window.__worldPenMode && window.__worldTickCtx && window.__worldTickCtx.lvDir) {
@@ -6344,6 +6372,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const sel = document.getElementById('shell-select');
             const i = Number(index);
             if (!sel || !shooterShells || !Number.isInteger(i) || i < 0 || i >= shooterShells.length) return false;
+            QP.set('shell', String(i));
             sel.value = String(i);
             sel.dispatchEvent(new Event('change', { bubbles: true }));
             return true;

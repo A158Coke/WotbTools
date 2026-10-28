@@ -253,6 +253,10 @@ describe('dolly-zoom world-overview scope guard', () => {
     // 碰撞视图保留炮管/履带碰撞体
     expect(kernel).toMatch(/function applyModuleCollisionMaterial\(on\)/)
     expect(kernel).toMatch(/moduleOriginalMaterials\.set\(node, node\.material\)/)
+    // 卸载目标时释放厚度视图缓存的原材质/实心材质及贴图，避免换车累积模型内存
+    expect(kernel).toMatch(/function releaseModuleMaterialCaches\(\)/)
+    expect(kernel).toMatch(/moduleOriginalMaterials\.clear\(\)/)
+    expect(kernel).toMatch(/releaseModuleMaterialCaches\(\);\s*\n\s*moduleMeshes = \[\];/)
     expect(kernel).toMatch(/const keep = new Set\(moduleMeshes\)/)
     // 分类过滤（主装甲/间隙/外部模块）
     // 碰撞视图隐藏用逐节点标记（重复调用不丢状态），退出后外观恢复
@@ -696,6 +700,24 @@ describe('spaced armor double-sided judgment', () => {
     expect(kernel).toMatch(/const armorHits = collectJudgmentHits\(intersects, raycaster\.ray\.direction\);/)
     expect(kernel).toMatch(/const ricIntersects = intersectArmorDoubleSidedSpaced\(objects, rc\);/)
     expect(kernel).toMatch(/const ricHits = collectJudgmentHits\(ricIntersects, rc\.ray\.direction\)/)
+  })
+})
+
+// 换车/换弹的状态归属：URL 是 owner，viewer 的恢复输入不能停留在初始化快照；
+// 选车器换车不写 route，编辑器/HUD 就绪标志必须按当前车重置。
+describe('armor shell and readiness ownership', () => {
+  const kernel = read('../scene/tankViewer.js')
+  const view = read('./AgentArmorView.vue')
+  it('换目标后从当前 URL 恢复 shell，setShell 不再保留旧 QP 快照', () => {
+    expect(kernel).toMatch(/function requestedShellIndex\(\)/)
+    expect(kernel).toMatch(/populateShellSelector\(shooterShells, requestedShellIndex\(\)\)/)
+    expect(kernel).toMatch(/QP\.set\('shell', String\(i\)\);/)
+  })
+  it('选车器换车时重置编辑器/HUD 就绪标志，HUD 不再套用受击方 config', () => {
+    expect(view).toMatch(/watch\(shooterSetupId, \(\) => \{ shooterReady\.value = false; hudReady\.value = false \}\)/)
+    expect(view).toMatch(/watch\(targetSetupId, \(\) => \{ targetReady\.value = false \}\)/)
+    const hud = view.match(/<ArmorShotHud[\s\S]*?\/>/)[0]
+    expect(hud).not.toContain(':config=')
   })
 })
 

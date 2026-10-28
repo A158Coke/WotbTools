@@ -134,6 +134,10 @@ const shooterSetupId = computed(() => (selectedShooterId.value ?? Number(route.q
 const targetSetupId = computed(() => selectedTargetId.value ?? loadoutTankId.value)
 /** 射击方配置：&scfg= 优先；普通同车检视未单独选炮时跟随受击方配置。 */
 const shooterConfigValue = computed(() => route.query.scfg ?? (sameTankInspection.value ? route.query.config : null))
+// 选车器换车不写 route；子编辑器按 tank-id 重建，就绪标志必须随车重置，
+// 否则新车的编辑器不可用/加载失败时原生配置下拉仍被旧标志隐藏。
+watch(shooterSetupId, () => { shooterReady.value = false; hudReady.value = false })
+watch(targetSetupId, () => { targetReady.value = false })
 
 /** 同一 tick 连点两下（弹种 + 开关）时，第二次写入必须基于上一次尚未落地的 query，
  *  否则会把第一击的结果覆盖回旧值（与坦克百科 pendingQuery 同因同解）。 */
@@ -578,7 +582,6 @@ onBeforeUnmount(() => {
             <ArmorShotHud
                 :shooter-id="shooterSetupId"
                 :scfg="shooterConfigValue"
-                :config="route.query.config"
                 :shell="route.query.shell"
                 :eqcal="route.query.eqcal"
                 :eqenh="route.query.eqenh"
