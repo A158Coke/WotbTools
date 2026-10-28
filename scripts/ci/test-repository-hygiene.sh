@@ -61,6 +61,22 @@ git commit -q -m 'remove temporary large blob'
 head=$(git rev-parse HEAD)
 expect_fail add-delete env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
+# Git permits pathnames containing newlines. History inspection must remain
+# NUL-safe so an oversized add-then-delete blob cannot hide behind line parsing.
+git switch -q -C add-delete-special-path "$base"
+special_path=$'\nlarge.bin'
+python3 - "$special_path" <<'PY'
+from pathlib import Path
+import sys
+Path(sys.argv[1]).write_bytes(b"x" * (6 * 1024 * 1024))
+PY
+git add -- "$special_path"
+git commit -q -m 'add temporary large blob with special path'
+git rm -q -- "$special_path"
+git commit -q -m 'remove temporary large blob with special path'
+head=$(git rev-parse HEAD)
+expect_fail add-delete-special-path env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+
 # Normal small source changes remain allowed.
 git switch -q -C clean-change "$base"
 mkdir -p src
