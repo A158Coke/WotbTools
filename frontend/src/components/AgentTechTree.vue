@@ -136,6 +136,30 @@ const rulerStyle = computed(() => ({
 }))
 
 /**
+ * 金币车带（客户端 PremiumSection / `premiumRows`）：数据事实 = premium/collector 车放在
+ * **最小 y 行**（ussr y=2、germany y=1-2、usa y=1、uk y=2），即树的最上方；客户端把带子
+ * 画在树的顶部、标签是其下缘的分隔（TANK_TREE_PREMIUM_VEHICLES_LABEL + 96px 渐变底）。
+ * 这里按「从最小 y 起连续含金币车的行数」取高度——不按 `premiumRows` 硬套，
+ * 避免把紧邻的常规线（如 ussr y=3 的 SU-152 线）涂进带里。
+ */
+const premiumBand = computed(() => {
+  const g = grid.value
+  if (!g || !g.rows.length) return null
+  let rows = 0
+  for (const y of g.rows) {
+    const hasPremium = [...g.cells.values()].some(node => {
+      if (node.y !== y) return false
+      const info = summaryOf(node)
+      return !!(info?.is_premium || info?.is_collector)
+    })
+    if (!hasPremium) break
+    rows += 1
+  }
+  if (!rows) return null
+  return { rows, height: rows * CELL_H, width: g.columns.length * CELL_W }
+})
+
+/**
  * 客户端连线几何（TankCell/Lines{mask} 提取）：出线 = 源格右侧 20px（RightHLine
  * 19.5px + 0.5 边距）；跨行干线骑在列边界（VL/VR 在 ±0.5px）；入线到目标格内 13px
  * （LeftHLine 13.5px），箭头即 LeftCenterArrow @13px。同行相邻 = 直线。
@@ -453,6 +477,16 @@ function installModule(node) {
                 <span v-if="costByStem.get(node.stem) != null" class="tt-card-cost">{{ t('research.xp_short', { xp: costByStem.get(node.stem).toLocaleString() }) }}</span>
               </span>
             </button>
+            <!-- 金币车带（顶部覆盖，客户端 PremiumSection 同构；premium 车本身就在这几行里） -->
+            <div
+              v-if="premiumBand"
+              class="tt-premium"
+              :style="{ height: `${premiumBand.height}px`, inlineSize: `${premiumBand.width}px` }"
+              data-testid="techtree-premium-band"
+              aria-hidden="true"
+            >
+              <span class="tt-premium-label">{{ t('research.premium_band') }}</span>
+            </div>
             <span
               v-for="node in grid.pending"
               :key="`pending-${node.stem}`"
@@ -465,16 +499,6 @@ function installModule(node) {
                 <span class="tt-pending-label">{{ t('research.pending') }}</span>
               </span>
             </span>
-          </div>
-          <!-- PREMIUM 带（客户端 PremiumSection：premiumRows×96，底部 96px 渐变底 + 标签）；
-               单元归属由客户端模型重排、数据不可证——这里只渲染带本身，不重排任何格子。 -->
-          <div
-            v-if="grid.premiumRows > 0"
-            class="tt-premium"
-            :style="{ height: `${grid.premiumRows * CELL_H}px` }"
-            data-testid="techtree-premium-band"
-          >
-            <span class="tt-premium-label">{{ t('research.premium_band') }}</span>
           </div>
           <!-- 等级条（客户端 LevelCell：216×24，roman(level)，可见窗口 = minLevel..maxLevel；
                吸底、随内容横向滚动）。列 i 的标注 = minTier + i（other 树列 1..7 = tier
@@ -525,17 +549,24 @@ function installModule(node) {
 .tt-edge { fill: none; stroke: var(--color-border-strong); stroke-width: 1.5; }
 .tt-arrow-head { fill: var(--color-border-strong); }
 
-/* PREMIUM 带（客户端 PremiumSection：底部 96px 渐变底 + 标签；这里是布局近似，
-   客户端的单元格归属由模型重排、数据不可证，我们不重排）。 */
+/* PREMIUM 带（客户端 PremiumSection 在树**顶部**）：从网格顶边覆盖前 N 行，
+   下缘一条 96px 渐变分隔 + 左下角标签，与下方研发线分开。pointer-events:none
+   保证金币车卡片本身仍可点击。 */
 .tt-premium {
-  position: relative;
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
   display: flex;
   align-items: flex-end;
-  padding: var(--space-2);
-  background: linear-gradient(to top, color-mix(in oklab, var(--color-warning) 7%, transparent), transparent) var(--color-surface-1) bottom / 100% 96px no-repeat;
+  padding: var(--space-1) var(--space-2);
+  background:
+    linear-gradient(to top, color-mix(in oklab, var(--color-warning) 10%, transparent), transparent) bottom / 100% 96px no-repeat,
+    color-mix(in oklab, var(--color-warning) 4%, transparent);
+  border-block-end: 1px solid color-mix(in oklab, var(--color-warning) 22%, transparent);
+  pointer-events: none;
 }
 .tt-premium-label {
-  color: var(--color-text-secondary);
+  color: var(--color-warning);
   font: var(--type-caption);
   font-weight: 700;
   letter-spacing: 0.08em;

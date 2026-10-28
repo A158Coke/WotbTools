@@ -127,7 +127,7 @@ describe('树态', () => {
     expect(ruler[1].text()).toBe('V')
   })
 
-  it('XI 预览列：等级条窗口含 11（真实数据列连续 1..11 → I..XI）；premium 带渲染', async () => {
+  it('XI 预览列：等级条窗口含 11（真实数据列连续 1..11 → I..XI）', async () => {
     // 真实 ussr 数据列 1..11 连续（每列 ≥1 节点）：XI 列末格 = 罗马 XI。
     research.loadTechTree.mockImplementation(async nation => ({
       meta: { nation, premiumRows: 2 },
@@ -146,8 +146,29 @@ describe('树态', () => {
     expect(ruler[0].text()).toBe('I')
     expect(ruler[9].text()).toBe('X')
     expect(ruler[10].text()).toBe('XI')
+  })
+
+  it('金币车带在树**顶部**：覆盖最小 y 起连续含金币车的行，标签在带内', async () => {
+    // 数据事实：premium 车放最小 y 行（ussr y=2）。缓存里把 tank 1 标成金币车。
+    data.fetchTankEncyclopedia.mockResolvedValueOnce({
+      1: { name: 'T-26', tier: 1, is_premium: true },
+      2: { name: 'MT-25', tier: 6 },
+    })
+    const { wrapper } = await mountView()
     const band = wrapper.find('[data-testid="techtree-premium-band"]')
     expect(band.exists()).toBe(true)
+    // 高度 = 1 行 × 96（只有 y=5 这一行含金币车，y=9 不含 → 不扩到两行）
+    expect(band.attributes('style')).toContain('height: 96px')
+    expect(band.text()).toContain('research.premium_band')
+  })
+
+  it('树里没有金币车时不出带子（不渲染空占位）', async () => {
+    data.fetchTankEncyclopedia.mockResolvedValueOnce({
+      1: { name: 'T-26', tier: 1 },
+      2: { name: 'MT-25', tier: 6 },
+    })
+    const { wrapper } = await mountView()
+    expect(wrapper.find('[data-testid="techtree-premium-band"]').exists()).toBe(false)
   })
 })
 
