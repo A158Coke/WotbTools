@@ -172,6 +172,23 @@ describe('gunCycleOf（config 的 is_drum/is_burst 语义）', () => {
     expect(gunCycleOf({ reload_time: 14, burst_size: 3, burst_interval: 2.727, burst_reloads: [14, 12, 10], is_burst: true, is_drum: true }))
       .toMatchObject({ type: 'autoreloader', shellCount: 3, shellReloads: [14, 12, 10] })
   })
+
+  it('连发组（PomPom）：burst_group_* 进循环；缺字段/不超过 1 发视为无组', () => {
+    const atlas = gunCycleOf({
+      reload_time: 13, burst_size: 6, burst_interval: 3, is_burst: true, is_drum: false,
+      burst_group_count: 3, burst_group_interval: 0.25,
+    })
+    expect(atlas).toMatchObject({
+      type: 'autoloader', shellCount: 6, intraClip: 3,
+      burstGroupCount: 3, burstGroupInterval: 0.25,
+    })
+    // 普通弹夹（旧包没有 burst_group_*）：0 → 计算仍走整匣公式
+    expect(gunCycleOf({ reload_time: 20, burst_size: 3, burst_interval: 3, is_burst: true }))
+      .toMatchObject({ burstGroupCount: 0, burstGroupInterval: 0 })
+    // count=1 是“单发连发组”（客户端常规炮也带 burst count 1）：不算组
+    expect(gunCycleOf({ reload_time: 20, burst_size: 3, burst_interval: 3, is_burst: true, burst_group_count: 1, burst_group_interval: 0.2 }))
+      .toMatchObject({ burstGroupCount: 0, burstGroupInterval: 0 })
+  })
 })
 
 describe('装备槽编解码', () => {

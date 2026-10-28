@@ -77,6 +77,10 @@ export interface ComputeInput {
     shellCount: number
     /** 自动装填逐发时间（autoreloader）；其余为空 */
     shellReloads: number[]
+    /** 连发组每组发数（PomPom 类；0/1 = 无连发组）；组间仍按 intraClip */
+    burstGroupCount?: number
+    /** 连发组内弹间秒（BK `GunDefinition.burst.interval`） */
+    burstGroupInterval?: number
   } | null
   /** tank/{id}.json 当前配置的标准弹（AP/首个非金币）；burst 炮可空 */
   standardShell: { damage: number; penetration: number; type: string; velocity?: number | null } | null
@@ -459,7 +463,19 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
     if (cycle.type === 'regular') {
       dpm = reload ? Math.round(damage * 60 / reload) : null
     } else if (cycle.type === 'autoloader' && cycle.shellCount > 0) {
-      const cycleTime = cycle.reload * reloadCoeff + Math.max(0, cycle.shellCount - 1) * intraClip
+      // 整匣循环（BK resolveDpm）：无连发组 = reload + (n-1)×弹间；
+      // PomPom = reload + (组数-1)×弹间 + 组数×(每组发数-1)×组内弹间
+      //（组内连发比扳机间隔快，按普通弹夹算会把组内时间重复计一遍，DPM 显著偏低）。
+      const groupCount = (cycle.burstGroupCount || 0) > 1
+        ? cycle.shellCount / (cycle.burstGroupCount as number)
+        : 0
+      let cycleTime = cycle.reload * reloadCoeff
+      if (groupCount > 0) {
+        cycleTime += (groupCount - 1) * intraClip +
+          groupCount * ((cycle.burstGroupCount as number) - 1) * (cycle.burstGroupInterval || 0)
+      } else {
+        cycleTime += Math.max(0, cycle.shellCount - 1) * intraClip
+      }
       dpm = cycleTime > 0 ? Math.round((damage * cycle.shellCount * 60) / cycleTime) : null
       shotsPerMinute = cycleTime > 0 ? Math.round((cycle.shellCount * 60 / cycleTime) * 100) / 100 : null
     } else if (cycle.type === 'autoreloader' && cycle.shellReloads.length > 0) {

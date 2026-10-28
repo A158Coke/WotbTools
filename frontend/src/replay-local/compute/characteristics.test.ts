@@ -244,6 +244,26 @@ describe('弹夹 / 自动装填（客户端 config 字段 → BK resolveDpm）',
     expect(out.gunEffectiveDamagePerMin).toBeNull() // 有效 DPM 只给 autoreloader
   })
 
+  it('连发组（PomPom，AC Atlas）：组内连发与组间弹间分开计，DPM 不再把组内时间重复计入', () => {
+    // 客户端 AC Atlas V2：整夹 6 发、组间 3s、每组 3 发、组内 0.25s、整夹装填 13s、单发 120。
+    // BK resolveDpm：13×装填系数 + (6/3−1)×3 + (6/3)×(3−1)×0.25 = 12.466 + 3 + 1 = 16.466s
+    // → 120×6×60/16.466 ≈ 2623（若按普通弹夹算组内也乘 3s 会得到 ~1573，明显偏低）。
+    const out = computeCharacteristics(setup({
+      standardShell: { damage: 120, penetration: 255, type: 'ap' },
+      gunCycle: {
+        type: 'autoloader', reload: 13, intraClip: 3, shellCount: 6, shellReloads: [],
+        burstGroupCount: 3, burstGroupInterval: 0.25,
+      },
+    }))
+    expect(out.gunCommonDamagePerMin).toBeGreaterThan(2618)
+    expect(out.gunCommonDamagePerMin).toBeLessThan(2628)
+    expect(out.gunShotsPerMinute).toBeGreaterThan(21.8)
+    expect(out.gunShotsPerMinute).toBeLessThan(21.9)
+    expect(out.gunClipShellCount).toBe(6)
+    expect(out.gunClipShellReloadTime).toBe(3) // 组间扳机间隔（组内 0.25s 不写进该行）
+    expect(out.gunClipReloadTime).toBeCloseTo(12.466, 2)
+  })
+
   it('自动装填炮：逐发时间、整匣 = 逐发之和、最短单发循环决定 DPM', () => {
     const out = computeCharacteristics(setup({
       gunCycle: { type: 'autoreloader', reload: 14, intraClip: 2.727, shellCount: 3, shellReloads: [14, 12, 10] },

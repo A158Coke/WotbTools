@@ -108,13 +108,32 @@ export function gunCycleOf(config: any) {
   const shellReloads = Array.isArray(config.burst_reloads)
     ? config.burst_reloads.map(Number).filter(value => Number.isFinite(value) && value > 0)
     : []
+  // 连发组（PomPom 类）：tank/{id}.json 的 burst_group_*（上游 pb 的 GunDefinition.burst）。
+  // 一次扳机连发 N 发、组内间隔秒；**不是** is_burst 判定依据（那只看车辆内联 clip/pump）。
+  const burstGroupRaw = Number(config.burst_group_count) || 0
+  const burstGroupCount = burstGroupRaw > 1 ? Math.round(burstGroupRaw) : 0
+  const burstGroupInterval = burstGroupCount
+    ? Math.max(0, Number(config.burst_group_interval) || 0)
+    : 0
   if (config.is_drum && shellReloads.length > 0) {
-    return { type: 'autoreloader' as const, reload, intraClip, shellCount: shellCount || shellReloads.length, shellReloads }
+    return {
+      type: 'autoreloader' as const,
+      reload, intraClip, shellCount: shellCount || shellReloads.length, shellReloads,
+      burstGroupCount, burstGroupInterval,
+    }
   }
   if (config.is_burst && shellCount > 0) {
-    return { type: 'autoloader' as const, reload, intraClip, shellCount, shellReloads: [] }
+    return {
+      type: 'autoloader' as const,
+      reload, intraClip, shellCount, shellReloads: [],
+      burstGroupCount, burstGroupInterval,
+    }
   }
-  return { type: 'regular' as const, reload, intraClip: 0, shellCount: 0, shellReloads: [] }
+  return {
+    type: 'regular' as const,
+    reload, intraClip: 0, shellCount: 0, shellReloads: [],
+    burstGroupCount: 0, burstGroupInterval: 0,
+  }
 }
 
 /** 默认弹种下标：优先非金币 AP/APCR，其次任意 AP 族，最后首项。 */
