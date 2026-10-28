@@ -18,6 +18,7 @@ import { fetchReplayShots, shotViewerQuery } from '../scene/agentData.js'
 import { shotResultBadge } from '../utils/shotPresentation.js'
 import { shellLabel, armorPartLabel, armorResultLabel, tankNationLabel, tankTypeLabel } from '../scene/tankMeta.js'
 import { formatPlaybackClock } from '../utils/playbackClock.js'
+import { shouldResetShellOnConfigChange } from '../utils/armorShellSelection.js'
 import { initTankViewer } from '../scene/tankViewer.js'
 import { detectWebGL } from '../scene/webglSupport.js'
 import { usePointer } from '../composables/useBreakpoint.js'
@@ -183,7 +184,13 @@ function applySide(side, patch) {
     put('dev', patch.dev)
   }
   const configChanged = patch.config != null && String(patch.config) !== String(before ?? '')
-  if (configChanged) delete query.shell
+  const explicitShooterConfig = query.scfg != null && query.scfg !== ''
+  if (shouldResetShellOnConfigChange({
+    side,
+    configChanged,
+    sameTank: sameTankInspection.value,
+    explicitShooterConfig,
+  })) delete query.shell
   pendingShotQuery = query
   router.replace({ query })
   if (!configChanged) return
