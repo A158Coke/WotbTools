@@ -201,15 +201,17 @@ describe('moduleTreeLayout（单车模块研发图，列=深度、行=模块族�
     expect(depth['turret:A-20_mod_1938']).toBe(0)
   })
 
-  it('炮塔→炮的挂载线：每个炮塔连到它挂的每一门炮；节点不重叠', () => {
+  it('每个节点只有一条上级连线（客户端树同构）：研发优先，无研发父才用挂载', () => {
     const layout = moduleTreeLayout(modules)
-    const mounts = layout.edges.filter(e => e.mount)
-    // t0 挂 L11/F34，t1 挂 L11/ZiS4（夹具）→ 4 条挂载线；共享的 L11 只出一个节点、两个炮塔各连一条
-    expect(mounts.map(e => `${e.from}->${e.to}`).sort()).toEqual([
-      'turret:t0->gun:F34',
+    const incoming = new Map()
+    for (const edge of layout.edges) incoming.set(edge.to, (incoming.get(edge.to) || 0) + 1)
+    expect([...incoming.values()].every(count => count === 1)).toBe(true)
+    // 边数 = 节点数 - 根数（根 = 无上级的初始模块）
+    const roots = layout.nodes.filter(n => !incoming.has(n.key))
+    expect(layout.edges.length).toBe(layout.nodes.length - roots.length)
+    // 夹具里只有 L11 没有研发父（F34 由 L11 解锁、ZiS4 由 F34 解锁）→ 唯一的挂载边
+    expect(layout.edges.filter(e => e.mount).map(e => `${e.from}->${e.to}`)).toEqual([
       'turret:t0->gun:L11',
-      'turret:t1->gun:L11',
-      'turret:t1->gun:ZiS4',
     ])
     // 一格一节点
     const cells = new Set()

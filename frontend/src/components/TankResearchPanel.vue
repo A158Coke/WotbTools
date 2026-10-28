@@ -71,8 +71,8 @@ let observer = null
 function recalcFit() {
   const el = scrollEl.value
   if (!el || !gridW.value || !gridH.value) { fitScale.value = 1; return }
-  const availW = el.clientWidth - 16
-  const availH = el.clientHeight - 16
+  const availW = el.clientWidth - 20
+  const availH = el.clientHeight - 20
   if (availW <= 0 || availH <= 0) return
   const scale = Math.min(1, availW / gridW.value, availH / gridH.value)
   fitScale.value = Math.max(0.35, Math.round(scale * 1000) / 1000)
