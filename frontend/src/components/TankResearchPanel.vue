@@ -11,7 +11,7 @@
  * 交互 = 客户端「点击节点 → 安装」：炮塔/炮经 `?config=` 对号，发动机/履带写各自
  * 下标；下一级坦克节点点击切车。不做研发/购买/解锁流程（无账号状态）。
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeft, Check } from 'lucide-vue-next'
 import { loadTankIconCrops, tankImageUrl } from '../scene/agentData.js'
@@ -59,6 +59,41 @@ const PITCH_Y = 97
 const gridStyle = computed(() => ({
   width: `${layout.value.columns * PITCH_X}px`,
   height: `${layout.value.rows * PITCH_Y}px`,
+}))
+
+/** 研发图等比缩放到可用区域（客户端整屏缩放 UI 的同构做法）：图比容器大时缩小，
+ * 而不是让用户拖动；容器变大时恢复到 1:1（不放大，保持客户端 104/97 pitch 比例）。 */
+const scrollEl = ref(null)
+const fitScale = ref(1)
+const gridW = computed(() => (layout.value?.columns || 0) * PITCH_X)
+const gridH = computed(() => (layout.value?.rows || 0) * PITCH_Y)
+let observer = null
+function recalcFit() {
+  const el = scrollEl.value
+  if (!el || !gridW.value || !gridH.value) { fitScale.value = 1; return }
+  const availW = el.clientWidth - 16
+  const availH = el.clientHeight - 16
+  if (availW <= 0 || availH <= 0) return
+  const scale = Math.min(1, availW / gridW.value, availH / gridH.value)
+  fitScale.value = Math.max(0.35, Math.round(scale * 1000) / 1000)
+}
+watch([gridW, gridH], recalcFit)
+onMounted(() => {
+  recalcFit()
+  if (typeof ResizeObserver !== 'undefined' && scrollEl.value) {
+    observer = new ResizeObserver(recalcFit)
+    observer.observe(scrollEl.value)
+  }
+})
+onBeforeUnmount(() => { observer?.disconnect(); observer = null })
+const fitStyle = computed(() => ({
+  width: `${gridW.value * fitScale.value}px`,
+  height: `${gridH.value * fitScale.value}px`,
+}))
+const gridScaledStyle = computed(() => ({
+  ...gridStyle.value,
+  transform: `scale(${fitScale.value})`,
+  transformOrigin: 'top left',
 }))
 
 function cellPos(node) {
@@ -186,8 +221,9 @@ function activate(node) {
         <p v-if="!layout.hasChain" class="tr-empty" data-testid="research-no-chain">
           {{ t('research.no_chain_note') }}
         </p>
-        <div class="tr-scroll">
-          <div class="tr-grid" :style="gridStyle" data-testid="research-grid">
+        <div ref="scrollEl" class="tr-scroll">
+          <div class="tr-fit" :style="fitStyle">
+          <div class="tr-grid" :style="gridScaledStyle" data-testid="research-grid">
             <svg class="tr-edges" :width="layout.columns * PITCH_X" :height="layout.rows * PITCH_Y" aria-hidden="true">
               <defs>
                 <marker id="tr-arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
@@ -236,6 +272,7 @@ function activate(node) {
               <span class="tr-node-name">{{ nodeLabelText(node) }}</span>
             </button>
           </div>
+          </div>
         </div>
       </template>
     </div>
@@ -247,7 +284,7 @@ function activate(node) {
    左两栏固定窄宽，研发图吃掉全部剩余空间（不再被挤成需要左右拖的小窗）。 */
 .tr-panel {
   display: grid;
-  grid-template-columns: 190px 230px minmax(0, 1fr);
+  grid-template-columns: 190px minmax(0, 1fr);
   gap: var(--space-4);
   padding: var(--space-4);
   border: 1px solid var(--color-border-subtle);
@@ -319,7 +356,7 @@ function activate(node) {
 .tr-mounted dd { margin: 0; font: var(--type-caption); font-weight: 600; text-align: end; overflow-wrap: anywhere; }
 .tr-hint { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); text-align: center; }
 
-.tr-main { display: grid; grid-template-rows: auto auto 1fr; gap: var(--space-2); min-inline-size: 0; min-block-size: 0; }
+.tr-main { display: flex; flex-direction: column; gap: var(--space-2); min-inline-size: 0; min-block-size: 0; }
 .tr-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; }
 .tr-title { margin: 0; font: var(--type-h3); }
 .tr-note { color: var(--color-text-secondary); font: var(--type-caption); }
@@ -329,11 +366,13 @@ function activate(node) {
 .tr-scroll {
   display: grid;
   place-content: safe center;
+  flex: 1 1 auto;
   overflow: auto;
   min-block-size: 0;
   padding: var(--space-2);
 }
-.tr-grid { position: relative; }
+.tr-fit { position: relative; }
+.tr-grid { position: absolute; inset-block-start: 0; inset-inline-start: 0; }
 .tr-edges { position: absolute; inset: 0; pointer-events: none; }
 .tr-edge { stroke: var(--color-border-strong); stroke-width: 1.5; }
 .tr-edge.is-installed { stroke: var(--color-accent-text); }

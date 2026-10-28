@@ -201,6 +201,45 @@ describe('moduleTreeLayout（单车模块研发图，列=深度、行=模块族�
     expect(depth['turret:A-20_mod_1938']).toBe(0)
   })
 
+  it('炮塔→炮的挂载线：每个炮塔连到它挂的每一门炮；节点不重叠', () => {
+    const layout = moduleTreeLayout(modules)
+    const mounts = layout.edges.filter(e => e.mount)
+    // t0 挂 L11/F34，t1 挂 L11/ZiS4（夹具）→ 4 条挂载线；共享的 L11 只出一个节点、两个炮塔各连一条
+    expect(mounts.map(e => `${e.from}->${e.to}`).sort()).toEqual([
+      'turret:t0->gun:F34',
+      'turret:t0->gun:L11',
+      'turret:t1->gun:L11',
+      'turret:t1->gun:ZiS4',
+    ])
+    // 一格一节点
+    const cells = new Set()
+    for (const n of layout.nodes) {
+      const cell = `${n.col},${n.row}`
+      expect(cells.has(cell)).toBe(false)
+      cells.add(cell)
+    }
+  })
+
+  it('非首个炮副本上的 vehicle 边也要收进图（实测 japan NC27 形态）', () => {
+    const nc = {
+      chassis: [{ stem: 'c0', level: 1, unlocks: [] }],
+      engines: [{ stem: 'e0', level: 1, unlocks: [] }],
+      turrets: [
+        { stem: 't0', level: 1, unlocks: [{ kind: 'turret', stem: 't1', cost: { xp: 100 } }], guns: [
+          { stem: 'g0', level: 1, unlocks: [] },
+        ] },
+        { stem: 't1', level: 2, unlocks: [], guns: [
+          // 同一门炮的第二份副本才带 vehicle 边
+          { stem: 'g0', level: 1, unlocks: [{ kind: 'vehicle', stem: 'Chi_Ni', cost: { xp: 9000 } }] },
+        ] },
+      ],
+    }
+    const layout = moduleTreeLayout(nc, null, { nextVehicles: [{ stem: 'Chi_Ni', name: 'Chi-Ni', tankId: 7 }] })
+    expect(layout.nextVehicles).toEqual([{ stem: 'Chi_Ni', cost: { xp: 9000 }, sourceModule: 'g0', sourceKind: 'gun' }])
+    expect(layout.edges.some(e => e.from === 'gun:g0' && e.to === 'vehicle:Chi_Ni')).toBe(true)
+    expect(layout.nodes.find(n => n.key === 'vehicle:Chi_Ni')?.tankId).toBe(7)
+  })
+
   it('解锁环 = 数据异常显式抛出（不猜深度）', () => {
     const cyclic = {
       chassis: [
