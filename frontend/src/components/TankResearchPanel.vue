@@ -62,6 +62,9 @@ const PITCH_X = 136
 const PITCH_Y = 97
 /** 左侧竖干（客户端：当前坦克 → 各行分叉）的宽度 */
 const TRUNK_W = 32
+/** 当前坦克大卡片（客户端 TankPanel：在研发图左侧，竖干从它的右边缘接出） */
+const CARD_W = 210
+const CARD_H = 236
 
 const gridStyle = computed(() => ({
   width: `${layout.value.columns * PITCH_X}px`,
@@ -74,7 +77,7 @@ const gridStyle = computed(() => ({
 const scrollEl = ref(null)
 const fitScale = ref(1)
 const gridW = computed(() => (layout.value?.columns || 0) * PITCH_X)
-const canvasW = computed(() => TRUNK_W + gridW.value)
+const canvasW = computed(() => CARD_W + TRUNK_W + gridW.value)
 const gridH = computed(() => (layout.value?.rows || 0) * PITCH_Y)
 let observer = null
 function recalcFit() {
@@ -107,28 +110,27 @@ const canvasScaledStyle = computed(() => ({
   transform: `scale(${fitScale.value})`,
   transformOrigin: 'top left',
 }))
-const gridInCanvasStyle = computed(() => ({ ...gridStyle.value, left: `${TRUNK_W}px` }))
-/** 竖干：连接各链行（客户端：当前坦克右侧一根竖线，逐行分叉带箭头）。 */
+const gridInCanvasStyle = computed(() => ({ ...gridStyle.value, left: `${CARD_W + TRUNK_W}px` }))
+/** 竖干：从当前坦克卡片右缘中点横出 → 竖线贯穿各链行 → 逐行横出箭头（直角折线）。 */
 const trunk = computed(() => {
   const l = layout.value
   if (!l?.branches?.length) return { lines: [], height: gridH.value }
   const ys = l.branches.map(b => b.row * PITCH_Y + NODE_H / 2).sort((a, b) => a - b)
   const top = ys[0]
   const bottom = ys[ys.length - 1]
-  const lines = [{ x1: 12, y1: top, x2: 12, y2: bottom }]
-  for (const y of ys) lines.push({ x1: 12, y1: y, x2: TRUNK_W, y2: y })
+  const cardCenter = CARD_H / 2
+  const trunkX = CARD_W + 12
+  const lines = [
+    // 卡片右缘 → 竖干
+    { x1: CARD_W, y1: cardCenter, x2: trunkX, y2: cardCenter, arrow: false },
+    // 竖干本体（同时覆盖卡片中心与全部分行）
+    { x1: trunkX, y1: Math.min(top, cardCenter), x2: trunkX, y2: Math.max(bottom, cardCenter), arrow: false },
+  ]
+  for (const y of ys) lines.push({ x1: trunkX, y1: y, x2: CARD_W + TRUNK_W, y2: y, arrow: true })
   return { lines, height: gridH.value }
 })
 
-function cellPos(node) {
-  return { left: `${node.col * PITCH_X}px`, top: `${node.row * PITCH_Y}px` }
-}
-
-/** 连线端点 = 节点中心（宽高各自按节点尺寸取半）。 */
-const centerX = col => col * PITCH_X + NODE_W / 2
-const centerY = row => row * PITCH_Y + NODE_H / 2
-
-/** 连线（含「模块 → 下一级坦克」）：两端都取节点中心，SVG 拓扑等价。 */
+/** 连线：直角折线（客户端同样不画斜线）：源右缘 → 列间中线 → 竖直 → 目标左缘箭头。 */
 const edges = computed(() => {
   const l = layout.value
   if (!l) return []
@@ -136,8 +138,23 @@ const edges = computed(() => {
   return l.edges
     .map(edge => ({ ...edge, from: byKey.get(edge.from), to: byKey.get(edge.to) }))
     .filter(edge => edge.from && edge.to)
+    .map((edge) => {
+      const x1 = edge.from.col * PITCH_X + NODE_W
+      const y1 = edge.from.row * PITCH_Y + NODE_H / 2
+      const x2 = edge.to.col * PITCH_X
+      const y2 = edge.to.row * PITCH_Y + NODE_H / 2
+      const d = y1 === y2
+        ? `M ${x1} ${y1} H ${x2}`
+        : `M ${x1} ${y1} H ${(x1 + x2) / 2} V ${y2} H ${x2}`
+      return { ...edge, d }
+    })
 })
 
+function cellPos(node) {
+  return { left: `${node.col * PITCH_X}px`, top: `${node.row * PITCH_Y}px` }
+}
+
+/** 连线端点 = 节点中心（宽高各自按节点尺寸取半）。 */
 const KIND_I18N = { chassis: 'track', turret: 'turret', gun: 'gun', engine: 'engine' }
 /** 模块类型图标（客户端 ModulesTechTree 图集）。 */
 const KIND_ICON = { chassis: 'chassis', turret: 'turret', gun: 'gun', engine: 'engine' }
@@ -241,23 +258,6 @@ function activate(node) {
           <span v-if="prev.cost != null" class="tr-prev-cost">{{ t('research.xp_short', { xp: formatXpCompact(prev.cost) }) }}</span>
         </button>
       </div>
-
-      <div class="tr-tank" data-testid="research-current-tank">
-        <span class="tr-tank-icon">
-          <img v-if="tankId" :src="tankImageUrl(tankId)" alt="" :style="iconStyle" @error="$event.target.hidden = true">
-        </span>
-        <h3 class="tr-tank-name">{{ detail.name }}</h3>
-        <div class="tr-tank-meta">
-          <span class="tr-pill">{{ t('agentTanks.tier_n', { tier: detail.tier }) }}</span>
-        </div>
-        <dl class="tr-mounted">
-          <div v-for="row in mountedModules" :key="row.key">
-            <dt>{{ t(`agentTanks.configurator.${row.key}`) }}</dt>
-            <dd>{{ moduleName(row.item) }}</dd>
-          </div>
-        </dl>
-        <p class="tr-hint">{{ t('research.click_to_install_hint') }}</p>
-      </div>
     </aside>
 
     <!-- ============ 右：研发图（模块 + 下一级坦克，点击安装/切车） ============ -->
@@ -275,7 +275,34 @@ function activate(node) {
         <div ref="scrollEl" class="tr-scroll">
           <div class="tr-fit" :style="fitStyle">
           <div class="tr-canvas" :style="canvasScaledStyle">
-          <svg class="tr-trunk" :width="TRUNK_W" :height="gridH" aria-hidden="true">
+          <!-- 本级坦克大卡片（客户端 TankPanel）：竖干从它右缘接出 -->
+          <div
+            class="tr-tank tr-tank-canvas"
+            :style="{ width: `${CARD_W}px`, height: `${CARD_H}px` }"
+            data-testid="research-current-tank"
+          >
+            <span class="tr-tank-icon">
+              <img v-if="tankId" :src="tankImageUrl(tankId)" alt="" :style="iconStyle" @error="$event.target.hidden = true">
+            </span>
+            <h3 class="tr-tank-name">{{ detail.name }}</h3>
+            <div class="tr-tank-meta">
+              <span class="tr-pill">{{ t('agentTanks.tier_n', { tier: detail.tier }) }}</span>
+            </div>
+            <dl class="tr-mounted">
+              <div v-for="row in mountedModules" :key="row.key">
+                <dt>{{ t(`agentTanks.configurator.${row.key}`) }}</dt>
+                <dd>{{ moduleName(row.item) }}</dd>
+              </div>
+            </dl>
+            <p class="tr-hint">{{ t('research.click_to_install_hint') }}</p>
+          </div>
+          <svg
+            class="tr-trunk"
+            :width="TRUNK_W"
+            :height="gridH"
+            :style="{ insetInlineStart: `${CARD_W}px` }"
+            aria-hidden="true"
+          >
             <defs>
               <marker id="tr-trunk-arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
                 <path d="M0,0 L6,3 L0,6 z" class="tr-arrow-head" />
@@ -285,8 +312,9 @@ function activate(node) {
               v-for="(line, i) in trunk.lines"
               :key="i"
               class="tr-trunk-line"
-              :x1="line.x1" :y1="line.y1" :x2="line.x2" :y2="line.y2"
-              :marker-end="line.x2 > line.x1 ? 'url(#tr-trunk-arrow)' : null"
+              :x1="line.x1 - CARD_W" :y1="line.y1"
+              :x2="line.x2 - CARD_W" :y2="line.y2"
+              :marker-end="line.arrow ? 'url(#tr-trunk-arrow)' : null"
             />
           </svg>
           <div class="tr-grid" :style="gridInCanvasStyle" data-testid="research-grid">
@@ -296,19 +324,16 @@ function activate(node) {
                   <path d="M0,0 L6,3 L0,6 z" class="tr-arrow-head" />
                 </marker>
               </defs>
-              <line
+              <path
                 v-for="edge in edges"
                 :key="`${edge.from.key}->${edge.to.key}`"
                 class="tr-edge"
                 :class="{ 'is-installed': edge.from.installed && edge.to.installed }"
-                :x1="centerX(edge.from.col)"
-                :y1="centerY(edge.from.row)"
-                :x2="centerX(edge.to.col)"
-                :y2="centerY(edge.to.row)"
+                :d="edge.d"
                 marker-end="url(#tr-arrow)"
               >
                 <title>{{ `${nodeLabelText(edge.from)} → ${nodeLabelText(edge.to)}` }}{{ edge.cost?.xp != null ? ` · ${t('research.xp_cost', { xp: edge.cost.xp.toLocaleString() })}` : '' }}</title>
-              </line>
+              </path>
             </svg>
             <button
               v-for="node in layout.nodes"
