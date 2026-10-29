@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html data-theme="dark" data-ui-profile="showcase">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>MenuButton viewport fixture</title>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module">
+    import { createApp, h, ref } from 'vue'
+    // 与生产入口保持样式顺序；夹具仅固定触发器位置，不替换菜单定位或尺寸。
+    import '../../src/styles/tokens/scale.css'
+    import '../../src/styles/tokens/color.css'
+    import '../../src/styles/tokens.css'
+    import '../../src/styles/showcase.css'
+    import '../../src/styles/showcase-workspaces.css'
+    import '../../src/styles/showcase-pages.css'
+    import '../../src/styles/showcase-rankings.css'
+    import '../../src/styles/showcase-cohesion.css'
+    import '../../src/styles/showcase-regressions.css'
+    import '../../src/styles/app-shell.css'
+    import '../../src/styles/playback-overlap-ux.css'
+    import '../../src/styles/playback-shared.css'
+    import '../../src/styles/playback-mobile.css'
+    import '../../src/styles/playback-workspace.css'
+    import '../../src/styles/classic-profile.css'
+    import MenuButton from '../../src/components/MenuButton.vue'
+    import { messages } from '../../src/locales/messages.js'
+
+    const params = new URLSearchParams(location.search)
+    const profile = params.get('profile') === 'classic' ? 'classic' : 'showcase'
+    document.documentElement.dataset.uiProfile = profile
+    document.documentElement.dataset.theme = profile === 'classic' ? 'light' : 'dark'
+    const text = messages.ru.workspace
+    const items = [
+      { key: 'aggregate', label: text.export_excel_summary, testid: 'menu-aggregate' },
+      { key: 'each', label: text.export_excel_each, testid: 'menu-each' },
+      { key: 'png', label: text.export_png, testid: 'menu-png' },
+    ]
+    createApp({
+      setup() {
+        const selected = ref('')
+        return () => [
+          // 两边都不足时才暴露“只翻转、不限高”的缺陷；祖先的隔离与裁切不能影响 portal。
+          h('div', { style: { position: 'fixed', top: '45%', right: '16px', isolation: 'isolate', overflow: 'hidden' } },
+            h(MenuButton, { label: text.export, items, 'data-testid': 'menu-trigger', onSelect: key => { selected.value = key } })),
+          h('output', { 'data-testid': 'menu-selected' }, selected.value),
+        ]
+      },
+    }).mount('#app')
+  </script>
+</body>
+</html>

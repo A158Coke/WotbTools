@@ -3473,6 +3473,100 @@ async function runOnboardingScenario(env, scenario) {
   results.push({ name: scenario.name, failures: [...failures, ...page.consoleErrors], viewport: `${scenario.width}x${scenario.height}` })
 }
 
+// #727：真实 MenuButton + 当前三项导出文案；短视口在上下两侧都放不下整个菜单。
+const MENU_VIEWPORT_SCENARIOS = ['showcase', 'classic'].flatMap(profile => [
+  { width: 360, height: 640, touch: true },
+  { width: 740, height: 360, touch: true },
+  { width: 740, height: 240, touch: true },
+  { width: 1024, height: 768, touch: true },
+  { width: 1440, height: 900, touch: false },
+].map(size => ({ ...size, profile, name: `menu-viewport-${profile}-${size.width}x${size.height}` })))
+
+async function runMenuViewportScenario(env, scenario) {
+  const { sessionId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  lastPage = page
+  const failures = []
+  await page.enable()
+  await page.emulate(scenario)
+  await page.goto(`${env.origin}/scripts/browser-fixtures/menu-button.html?profile=${scenario.profile}`)
+  await page.waitForValue('!!document.querySelector("[data-testid=menu-trigger]")', Boolean)
+
+  async function tap(selector) {
+    const point = await page.evaluate(`(() => {
+      const el = document.querySelector(${JSON.stringify(selector)})
+      el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+      const r = el.getBoundingClientRect()
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+    })()`)
+    await page.tap({ ...point, touch: scenario.touch })
+  }
+  async function open() {
+    await tap('[data-testid=menu-trigger]')
+    await page.waitForValue('!!document.querySelector("[role=menu]")', Boolean)
+    await page.waitForValue('document.getAnimations().every(a => a.playState !== "running")', Boolean,
+      { timeout: 3000, label: 'menu entry animation settled' })
+  }
+  async function checkBounds() {
+    const box = await page.evaluate(`(() => {
+      const el = document.querySelector('[role=menu]'), r = el.getBoundingClientRect()
+      return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, height: r.height,
+        viewportWidth: innerWidth, viewportHeight: innerHeight, client: el.clientHeight, scroll: el.scrollHeight }
+    })()`)
+    check(failures, box.top >= -1 && box.bottom <= box.viewportHeight + 1,
+      `menu leaves vertical viewport: ${JSON.stringify(box)}`)
+    check(failures, box.left >= -1 && box.right <= box.viewportWidth + 1,
+      `menu leaves horizontal viewport: ${JSON.stringify(box)}`)
+    if (box.viewportHeight === 240) check(failures, box.scroll > box.client, 'short viewport must scroll inside the menu')
+  }
+  async function key(name, code) {
+    await env.chrome.client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: name, code: name, windowsVirtualKeyCode: code }, sessionId)
+    await env.chrome.client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: name, code: name, windowsVirtualKeyCode: code }, sessionId)
+  }
+
+  await open()
+  await checkBounds()
+  if (failures.length) throw new Error(failures.join('\n'))
+  // 键盘导航本身必须把末项/首项滚入可用区；不能靠测试先 scrollIntoView 掩盖它。
+  for (const [name, code, item] of [['End', 35, 'png'], ['Home', 36, 'aggregate']]) {
+    await key(name, code)
+    await page.waitForValue(`document.activeElement?.dataset.testid`, value => value === `menu-${item}`)
+    const reach = await measureReachability(page, { options: [`[data-testid=menu-${item}]`] })
+    check(failures, reach.sampled > 0, `${name}: reachability probe must sample an item`)
+    failures.push(...reach.failures)
+  }
+  await key('Escape', 27)
+  await page.waitForValue('!document.querySelector("[role=menu]")', Boolean)
+  await page.waitForValue('document.activeElement?.dataset.testid', value => value === 'menu-trigger')
+
+  // 每一项都用原始触摸/鼠标选择；回调结果和菜单关闭共同证明事件真正到达。
+  for (const item of ['aggregate', 'each', 'png']) {
+    await open()
+    await page.evaluate(`document.querySelector('[data-testid=menu-${item}]').scrollIntoView({block:'nearest'})`)
+    const reach = await measureReachability(page, { options: [`[data-testid=menu-${item}]`] })
+    check(failures, reach.sampled > 0, `${item}: reachability probe must sample an item`)
+    failures.push(...reach.failures)
+    await tap(`[data-testid=menu-${item}]`)
+    await page.waitForValue('document.querySelector("[data-testid=menu-selected]")?.textContent', value => value === item)
+    await page.waitForValue('!document.querySelector("[role=menu]")', Boolean)
+  }
+  // 菜单打开时缩短并恢复视口，覆盖浏览器可用空间动态变化；不声称模拟真实软键盘。
+  if (scenario.height > 240) {
+    await open()
+    for (const height of [240, scenario.height]) {
+      await page.emulate({ ...scenario, height })
+      await page.waitForValue(`(() => {
+        const r = document.querySelector('[role=menu]').getBoundingClientRect()
+        return innerHeight === ${height} && r.top >= -1 && r.bottom <= innerHeight + 1
+      })()`, Boolean, { timeout: 3000, label: `menu within resized ${height}px viewport` })
+      await checkBounds()
+    }
+    await key('Escape', 27)
+    await page.waitForValue('!document.querySelector("[role=menu]")', Boolean)
+  }
+  results.push({ name: scenario.name, failures: [...failures, ...page.consoleErrors], viewport: `${scenario.width}x${scenario.height}` })
+}
+
 const chrome = findChrome()
 const { server, origin } = await startFixtureServer()
 let chromeCdp = null
@@ -3487,6 +3581,7 @@ try {
   })
   const env = { origin, chrome: chromeCdp }
   const runs = [
+    ...MENU_VIEWPORT_SCENARIOS.map(scenario => ({ scenario, run: () => runMenuViewportScenario(env, scenario) })),
     { scenario: { name: 'multifile-workspace-playback', width: 1600, height: 900 }, run: () => runMultiFileWorkspaceScenario(env) },
     { scenario: { name: 'offline-local-workspace-matrix', width: 1600, height: 900 }, run: () => runOfflineWorkspaceScenario(env) },
     ...APP_SCENARIOS.map((scenario) => ({ scenario, run: () => runAppScenario(env, scenario) })),
