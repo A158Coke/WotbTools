@@ -587,30 +587,26 @@ Frontend 的 TX1/TX2 发布在切换线上文件或容器前，校验实际 Busi
   和 `BUILD_COMMIT`。第二次普通业务代码发布时应确认依赖层复用；生产 exact-SHA / digest
   发布链不变，回滚可恢复旧 Dockerfile 后通过现有流程发布新 SHA。
 - `.github/workflows/business-api.yml`、`frontend.yml`、`keycloak.yml` 与 `ai-service.yml`
-  分别拥有一个应用发布闭环。TX business-api/frontend 先用 exact GitHub SHA 物化源（Gitee 国内
-  镜像优先，镜像落后时按 exact SHA 浅取 GitHub），再由 TX 从该 SHA 构建并发布 immutable TCR tag
+  分别拥有一个应用发布闭环。TX business-api/frontend 按 GitHub reviewed exact SHA 物化源
+  （Gitee 是唯一生产 Git 来源，等待耗尽即失败），再由 TX 从该 SHA 构建并发布 immutable TCR tag
   （Business API 在 TX1，Frontend 在 TX2），生产只消费输出的 `repo@sha256:<digest>`
   （`TX_BUSINESS_API_IMAGE_REF` / `TX_FRONTEND_IMAGE_REF`），禁止 `latest` 回退。
   Keycloak 与 Yecao ai-service 仍保留各自 SHA tag + latest/freshness 契约；Keycloak runtime 后
   继续执行自己的 OpenTofu 与最终验证。各应用的服务级 concurrency 会取消过期 main workflow。
-- `frontend.yml` 的 GitHub runner 只负责 release authority、Gitee mirror、下载校验 pinned Agent
-  WASM/可选 Sponsor bundle 与 staging；不在 GitHub 构建 Frontend Docker 镜像或上传 TCR 大镜像。
-  **Gitee mirror 是国内镜像，不是发布前置，且不属于任何发布 workflow**：它由独立 workflow
-  `gitee-mirror.yml` 拥有（`push: main` + `workflow_dispatch`）。`build` 不在同一个 run 里等镜像
-  完成——`Frontend Replica` 只在 `Frontend` run completed + success 后更新 TX2，镜像若留在发布 run
-  里，一个最长 180 分钟的任务就会让 TX1 已上线的新版本与 TX2 旧版本在 Caddy 2:8 双端混服，被新
-  push 取消的 run 更不会触发 replica。mirror job 上限 180 分钟，hub-mirror-action 的 `timeout: 100m`
-  是**单次 Git 命令**的预算（且无法中断已启动的 git 子进程）：历史重写后的首次全量推送要上传整张
-  新 commit 图（约 300MB），预算不足时每次重试都从零开始、永远推不完。
-  源物化由 `deploy/tx/build-*-from-gitee.sh` 的 `materialize_source` 负责，按固定顺序取源：
-  ① 在 `GITEE_WAIT_ATTEMPTS` 内等国内镜像给出该 SHA（稳定态只取增量）；② 用 runner 随既有
-  staging 链路送到的 **depth-1 源包**（`Package exact-commit source bundle`，保留原 SHA、
-  不含历史，约 53MB，sha256 由 runner 声明、TX 校验）；③ 才尝试按 exact SHA 从 GitHub 浅取。
-  TX 直连 GitHub 不可靠（实测 `curl 56 Recv failure: Connection timed out`），所以 runner 推送
-  的源包是镜像落后时的确定性来源，抢不到才落到 GitHub。三者都拿不到即 fail closed；实际使用的
-  传输写入日志（`source_transport=gitee-mirror|staged-bundle|github-exact-sha`）。镜像长期落后时
-  由运维在国内网络执行一次性 `git push --mirror` 补齐（原因与测量见
-  `docs/architecture/TECHNICAL_EVOLUTION.md` §25）。
+- `frontend.yml` 的 GitHub runner 只负责 release authority、下载校验 pinned Agent
+  WASM/可选 Sponsor bundle 与 staging；不构建 Frontend Docker 镜像或上传 TCR 大镜像。
+  GitHub 是唯一 SSOT / review / release authority；Gitee main 是国内生产源码 transport，
+  TCR 是生产 image transport。独立 `gitee-mirror.yml` 在 main push/manual 时 checkout event SHA，
+  只通过显式 lease 更新 Gitee `refs/heads/main`，并复验远端等于该 SHA；不推 tags/其他分支，
+  不 prune，不触碰 asset-origin。旧事件和 observation→push 期间的竞争 writer 均 fail closed。
+  两应用 run 不依赖 mirror job graph；`materialize_source` 只等待 Gitee main 历史包含 requested SHA，
+  保留 `GITEE_WAIT_ATTEMPTS=12` / `GITEE_WAIT_INTERVAL_SECONDS=15`，随后创建 exact-SHA worktree。
+  等待耗尽即失败，不使用 runner 源码包或 TX→GitHub fallback；日志记录
+  `gitee_sync result=PASS` / `source_transport=gitee-mirror`。Git fetch 本身另有 timeout，
+  因此 12次/15秒配置不是严格的180秒 wall-clock 总上限。
+  正常同步只传 main 增量；历史重写属于异常恢复：正常同步可能失败时，人工一次性修复 Gitee
+  main（只更新该 ref，使用明确 lease），验证 GitHub main SHA == Gitee main SHA 后重跑生产 workflow。
+  恢复不使用 broad mirror，也不纳入正常 CI。Frontend Replica 仍只在 Frontend run 成功后更新。
   Frontend 镜像在 **TX2** 构建（TX1 的 1.9 GiB 生产宿主不足以承载当前 `vite build`；
   测量与迁移证据见 `docs/architecture/TECHNICAL_EVOLUTION.md` §24）。
   `deploy/tx/build-frontend-from-gitee.sh` 在 TX2 使用自己的持久 Gitee clone 与 host build lock

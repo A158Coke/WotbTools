@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import textwrap
 import unittest
 
 
@@ -154,94 +155,9 @@ class FrontendBuilderCleanupTest(unittest.TestCase):
     def test_host_lock_busy_fails_closed(self):
         self.run_case(host_lock=True, host_lock_busy=True, sponsor=False)
 
-    def run_with_source_bundle(self, directory, declared_sha=None):
-        """用 runner 打出的 depth-1 源包作为唯一可用来源跑一次 build_publish。"""
-        cache = Path(directory) / "cache"
-        origin = Path(directory) / "origin"
-        mirror = Path(directory) / "mirror"
-        origin.mkdir()
-        subprocess.run(["git", "init", "-q", "-b", "main", str(origin)], check=True)
-        fetch = origin / "scripts/fetch-agent-wasm.sh"
-        fetch.parent.mkdir()
-        fetch.write_text(': > "$WOTB_TX_BUILD_CACHE_ROOT/fetched"\n')
-        subprocess.run(["git", "-C", str(origin), "add", "."], check=True)
-        subprocess.run([
-            "git", "-C", str(origin), "-c", "user.name=Fixture",
-            "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false",
-            "commit", "-qm", "fixture",
-        ], check=True)
-        sha = subprocess.check_output(["git", "-C", str(origin), "rev-parse", "HEAD"], text=True).strip()
-        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(mirror)], check=True)
-
-        tip = Path(directory) / "tip"
-        bundle = Path(directory) / "source.bundle"
-        subprocess.run(["git", "clone", "-q", "--depth", "1", "--no-local",
-                        origin.resolve().as_uri(), str(tip)], check=True)
-        subprocess.run(["git", "-C", str(tip), "bundle", "create", str(bundle), "HEAD"],
-                       check=True, capture_output=True)
-        bundle_sha = hashlib.sha256(bundle.read_bytes()).hexdigest()
-        archive = Path(directory) / "agent.zip"
-        archive.touch()
-
-        fixture = r'''
-validate_common() { :; }
-flock() { :; }
-sha256sum() {
-  python3 -c 'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes() if len(sys.argv) > 1 else sys.stdin.buffer.read()).hexdigest())' "$@"
-}
-timeout() { while [[ "$1" = --* ]]; do shift; done; shift; "$@"; }
-lookup_remote_digest() { if [ -f "$CACHE_ROOT/pushed" ]; then printf 'sha256:%064d\n' 0; else return 10; fi; }
-verify_agent_archive() { :; }
-verify_frontend_image() { :; }
-docker() { printf '%s\n' "$*" >> "$CACHE_ROOT/docker.log"; if [ "$1" = push ]; then : > "$CACHE_ROOT/pushed"; fi; }
-build_publish "$SOURCE_SHA" ccr.ccs.tencentyun.com fixture https://assets.example.invalid "$AGENT_ARCHIVE" "" ""
-printf 'CALLER resumed\n'
-'''
-        env = {
-            **os.environ,
-            "WOTB_TX_BUILD_CACHE_ROOT": str(cache),
-            "WOTB_GITEE_REPO_URL": mirror.resolve().as_uri(),
-            "WOTB_SOURCE_BUNDLE": str(bundle),
-            "WOTB_SOURCE_BUNDLE_SHA256": declared_sha or bundle_sha,
-            "SOURCE_SHA": sha, "AGENT_ARCHIVE": str(archive),
-            "GITEE_WAIT_ATTEMPTS": "1", "GITEE_WAIT_INTERVAL_SECONDS": "1",
-            "KILL_AFTER_SECONDS": "10", "RETRY_BACKOFF_LATER_SECONDS": "1",
-        }
-        result = subprocess.run(["bash", "-s"], input=FUNCTIONS + fixture, env=env,
-                                text=True, capture_output=True, timeout=180)
-        return origin, cache, sha, result
-
-    def test_staged_source_bundle_builds_and_cleans_up(self):
-        """runner staged 的 depth-1 源包：TX 不需要访问 GitHub 也能拿到 exact commit。"""
-        with tempfile.TemporaryDirectory(prefix="frontend staged bundle-") as directory:
-            origin, cache, sha, result = self.run_with_source_bundle(directory)
-            diagnostic = result.stdout + result.stderr
-            self.assertEqual(result.returncode, 0, diagnostic)
-            self.assertIn("source_transport=gitee-lagging; trying the staged source bundle",
-                          result.stdout, diagnostic)
-            self.assertIn(f"staged_bundle result=PASS source_sha={sha}", result.stdout, diagnostic)
-            self.assertIn("source_transport=staged-bundle", result.stdout, diagnostic)
-            self.assertNotIn("github_exact_fetch", result.stdout, diagnostic)
-            epoch = subprocess.check_output(
-                ["git", "-C", str(origin), "show", "-s", "--format=%ct", sha], text=True).strip()
-            docker_log = (cache / "docker.log").read_text()
-            self.assertIn(f"--build-arg SOURCE_DATE_EPOCH={epoch}", docker_log, docker_log)
-            self.assertTrue((cache / "fetched").exists(), diagnostic)
-            self.assertFalse((cache / "source-staged").exists(), diagnostic)
-
-    def test_staged_source_bundle_sha_mismatch_fails_closed(self):
-        with tempfile.TemporaryDirectory(prefix="frontend staged bundle bad-") as directory:
-            origin, cache, sha, result = self.run_with_source_bundle(directory, declared_sha="0" * 64)
-            diagnostic = result.stdout + result.stderr
-            self.assertEqual(result.returncode, 1, diagnostic)
-            self.assertIn("staged source bundle sha256 does not match", diagnostic)
-            self.assertNotIn("CALLER resumed", result.stdout, diagnostic)
-            self.assertFalse((cache / "pushed").exists())
-            self.assertFalse((cache / "source-staged").exists(), diagnostic)
-
-    def test_shallow_source_builds_and_cleans_up(self):
-        """真实的 exact-SHA 兜底路径：浅取仓库能开 worktree、供 epoch，并被清理干净。"""
-        with tempfile.TemporaryDirectory(prefix="frontend shallow fallback-") as directory:
+    def test_gitee_source_builds_and_cleans_up(self):
+        """真实 Gitee exact-SHA 源能开 worktree、供 epoch，并被清理干净。"""
+        with tempfile.TemporaryDirectory(prefix="frontend gitee source-") as directory:
             cache = Path(directory) / "cache"
             origin = Path(directory) / "origin"
             mirror = Path(directory) / "mirror"
@@ -257,9 +173,7 @@ printf 'CALLER resumed\n'
                 "commit", "-qm", "fixture",
             ], check=True)
             sha = subprocess.check_output(["git", "-C", str(origin), "rev-parse", "HEAD"], text=True).strip()
-            subprocess.run(["git", "-C", str(origin), "config", "uploadpack.allowAnySHA1InWant", "true"],
-                           check=True)
-            subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(mirror)], check=True)
+            subprocess.run(["git", "clone", "-q", "--bare", str(origin), str(mirror)], check=True)
             archive = Path(directory) / "agent.zip"
             archive.touch()
 
@@ -278,26 +192,23 @@ printf 'CALLER resumed\n'
                 **os.environ,
                 "WOTB_TX_BUILD_CACHE_ROOT": str(cache),
                 "WOTB_GITEE_REPO_URL": mirror.resolve().as_uri(),
-                "WOTB_GITHUB_REPO_URL": origin.resolve().as_uri(),
                 "SOURCE_SHA": sha, "AGENT_ARCHIVE": str(archive),
                 "GITEE_WAIT_ATTEMPTS": "1", "GITEE_WAIT_INTERVAL_SECONDS": "1",
-                "GITHUB_FETCH_ATTEMPTS": "1", "GITHUB_FETCH_TIMEOUT_SECONDS": "60",
                 "KILL_AFTER_SECONDS": "10", "RETRY_BACKOFF_LATER_SECONDS": "1",
             }
             result = subprocess.run(["bash", "-s"], input=FUNCTIONS + fixture, env=env,
                                     text=True, capture_output=True, timeout=180)
             diagnostic = result.stdout + result.stderr
             self.assertEqual(result.returncode, 0, diagnostic)
-            self.assertIn("source_transport=github-exact-sha", result.stdout, diagnostic)
+            self.assertIn("source_transport=gitee-mirror", result.stdout, diagnostic)
             self.assertIn("CALLER resumed", result.stdout, diagnostic)
-            # 浅取源同样供出确定性 epoch 与 WASM 注入。
+            # Gitee 源供出确定性 epoch 与 WASM 注入。
             epoch = subprocess.check_output(
                 ["git", "-C", str(origin), "show", "-s", "--format=%ct", sha], text=True).strip()
             docker_log = (cache / "docker.log").read_text()
             self.assertIn(f"--build-arg SOURCE_DATE_EPOCH={epoch}", docker_log, docker_log)
             self.assertTrue((cache / "fetched").exists(), diagnostic)
-            # build 结束后不留浅取目录、不留注册的 worktree。
-            self.assertFalse((cache / "source-shallow").exists(), diagnostic)
+            # build 结束后不留注册的 worktree。
             worktrees = subprocess.check_output(
                 ["git", "-C", str(origin), "worktree", "list", "--porcelain"], text=True)
             self.assertEqual(worktrees.count("worktree "), 1, worktrees)
@@ -378,105 +289,175 @@ lookup_remote_digest repo:tag
         self.assertEqual(result.returncode, 10, result.stdout + result.stderr)
 
 
-class FrontendBuilderSourceTransportTest(unittest.TestCase):
-    """源物化：国内镜像优先，镜像落后时按 exact SHA 直取 GitHub。
+class BuilderSourceTransportTest(unittest.TestCase):
+    """两服务仅接受 Gitee main 历史中的 exact SHA，拒绝其他缓存对象。"""
 
-    两条路径产出的源仓库必须同构（同一个 commit、可读同一棵树），并且都不拿到该
-    commit 时必须 fail closed 而不是继续构建。
-    """
-
-    DRIVER = '''
-materialize_source "$SOURCE_SHA"
-printf 'SOURCE_DIR=%s\\n' "$SOURCE_DIR"
-git -C "$SOURCE_DIR" cat-file -e "$SOURCE_SHA^{commit}"
-git -C "$SOURCE_DIR" show "$SOURCE_SHA:marker.txt"
-'''
-
-    @staticmethod
-    def display(value):
-        # Git Bash 打印 POSIX 路径，Windows 上 Path 用反斜杠：两侧统一后再比较。
-        return str(value).replace("\\", "/")
-
-    def build_fixture(self, directory, mirror_has_sha):
-        """真实 git 仓库：origin 是 GitHub 源，mirror 是"落后"的 Gitee 镜像。"""
-        cache = Path(directory) / "cache"
-        origin = Path(directory) / "origin"
-        mirror = Path(directory) / "mirror"
-        origin.mkdir()
-        subprocess.run(["git", "init", "-q", "-b", "main", str(origin)], check=True)
-        (origin / "marker.txt").write_text("fixture\n")
-        subprocess.run(["git", "-C", str(origin), "add", "."], check=True)
-        subprocess.run([
-            "git", "-C", str(origin), "-c", "user.name=Fixture",
-            "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false",
-            "commit", "-qm", "fixture",
-        ], check=True)
-        sha = subprocess.check_output(["git", "-C", str(origin), "rev-parse", "HEAD"], text=True).strip()
-        # 按 SHA 浅取要求服务端显式放行未在 ref 中通告的 commit。
-        subprocess.run(["git", "-C", str(origin), "config", "uploadpack.allowAnySHA1InWant", "true"],
-                       check=True)
-        if mirror_has_sha:
+    def run_source(self, owner, state):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            origin, mirror, cache = (base / name for name in ("origin", "mirror", "cache"))
+            subprocess.run(["git", "init", "-q", "-b", "main", str(origin)], check=True)
+            (origin / "marker.txt").write_text("fixture\n")
+            def commit():
+                subprocess.run(["git", "-C", str(origin), "add", "."], check=True)
+                subprocess.run(["git", "-C", str(origin), "-c", "user.name=Fixture",
+                                "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false",
+                                "commit", "-qm", "fixture"], check=True)
+                return subprocess.check_output(["git", "-C", str(origin), "rev-parse", "HEAD"], text=True).strip()
+            first = commit()
+            (origin / "marker.txt").write_text("second\n")
+            second = commit()
             subprocess.run(["git", "clone", "-q", "--bare", str(origin), str(mirror)], check=True)
-        else:
-            subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(mirror)], check=True)
-        env = {
-            **os.environ,
-            "WOTB_TX_BUILD_CACHE_ROOT": str(cache),
-            "WOTB_GITEE_REPO_URL": mirror.resolve().as_uri(),
-            "WOTB_GITHUB_REPO_URL": origin.resolve().as_uri(),
-            "SOURCE_SHA": sha,
-            "GITEE_WAIT_ATTEMPTS": "1", "GITEE_WAIT_INTERVAL_SECONDS": "1",
-            "GITHUB_FETCH_ATTEMPTS": "1", "GITHUB_FETCH_TIMEOUT_SECONDS": "60",
-            "KILL_AFTER_SECONDS": "10", "RETRY_BACKOFF_LATER_SECONDS": "1",
-        }
-        result = subprocess.run(["bash", "-s"], input=FUNCTIONS + self.DRIVER, env=env,
-                                text=True, capture_output=True, timeout=120)
-        return cache, sha, result
-
-    def test_mirror_hit_uses_the_domestic_clone(self):
-        with tempfile.TemporaryDirectory() as directory:
-            cache, sha, result = self.build_fixture(directory, mirror_has_sha=True)
+            sha = first if state == "ancestor" else second
+            if state in ("lag", "off-main"):
+                subprocess.run(["git", "-C", str(mirror), "update-ref", "refs/heads/main", first], check=True)
+            if state == "off-main":
+                # 对象已在缓存，但不在刚 fetch 的 main 历史里。
+                repo = cache / "repo"
+                repo.parent.mkdir()
+                subprocess.run(["git", "clone", "-q", str(mirror), str(repo)], check=True)
+                subprocess.run(["git", "-C", str(repo), "fetch", str(origin), second], check=True)
+                subprocess.run(["git", "-C", str(repo), "remote", "set-url", "origin", mirror.resolve().as_uri()], check=True)
+            if state == "unavailable":
+                mirror = base / "missing"
+            builder = ROOT / f"deploy/tx/build-{owner}-from-gitee.sh"
+            delimiter = '[ "$#" -eq 8 ] || usage' if owner == "frontend" else '[ "$#" -eq 4 ] || usage'
+            functions, separator, _ = builder.read_text().partition(delimiter)
+            self.assertTrue(separator)
+            env = {**os.environ, "WOTB_TX_BUILD_CACHE_ROOT": str(cache),
+                   "WOTB_GITEE_REPO_URL": mirror.resolve().as_uri(), "SOURCE_SHA": sha,
+                   "GITEE_WAIT_ATTEMPTS": "2", "GITEE_WAIT_INTERVAL_SECONDS": "1"}
+            driver = r'''
+sleep() { :; }
+materialize_source "$SOURCE_SHA"
+git -C "$SOURCE_DIR" show "$SOURCE_SHA:marker.txt"
+printf 'SOURCE_READY\n'
+'''
+            if state not in ("hit", "ancestor"):
+                # 运行真实 build_publish，证明取源失败在 registry lookup/build/push 之前中止。
+                driver = r'''
+validate_common() { :; }
+flock() { :; }
+lookup_remote_digest() { echo REGISTRY_REACHED; return 10; }
+docker() { echo DOCKER_REACHED; }
+''' + ('build_publish "$SOURCE_SHA" ccr.ccs.tencentyun.com fixture https://assets.example.invalid unused "" ""\n'
+       if owner == "frontend" else 'build_publish "$SOURCE_SHA" ccr.ccs.tencentyun.com fixture\n')
+            result = subprocess.run(["bash", "-s"], input=functions + driver, env=env,
+                                    text=True, capture_output=True, timeout=30)
             diagnostic = result.stdout + result.stderr
-            self.assertEqual(result.returncode, 0, diagnostic)
-            self.assertIn("source_transport=gitee-mirror", result.stdout, diagnostic)
-            self.assertIn(self.display(cache / "repo"), self.display(result.stdout), diagnostic)
-            self.assertNotIn("github_exact_fetch", result.stdout, diagnostic)
-            self.assertIn("fixture", result.stdout, diagnostic)
+            if state in ("hit", "ancestor"):
+                self.assertEqual(result.returncode, 0, diagnostic)
+                self.assertIn("source_transport=gitee-mirror", result.stdout)
+                self.assertIn("fixture" if state == "ancestor" else "second", result.stdout)
+                self.assertIn("SOURCE_READY", result.stdout)
+            else:
+                self.assertNotEqual(result.returncode, 0, diagnostic)
+                self.assertIn("gitee_sync attempt=2/2", result.stdout)
+                self.assertIn("source SHA did not reach Gitee main within the bounded wait", diagnostic)
+                self.assertNotIn("SOURCE_READY", result.stdout)
+                self.assertNotIn("source_transport=", result.stdout)
+                self.assertNotIn("REGISTRY_REACHED", result.stdout)
+                self.assertNotIn("DOCKER_REACHED", result.stdout)
 
-    def test_lagging_mirror_falls_back_to_the_exact_sha(self):
-        with tempfile.TemporaryDirectory() as directory:
-            cache, sha, result = self.build_fixture(directory, mirror_has_sha=False)
-            diagnostic = result.stdout + result.stderr
-            self.assertEqual(result.returncode, 0, diagnostic)
-            self.assertIn("gitee_sync result=LAG", result.stdout, diagnostic)
-            self.assertIn("source_transport=github-exact-sha", result.stdout, diagnostic)
-            self.assertIn(self.display(cache / "source-shallow"), self.display(result.stdout), diagnostic)
-            self.assertIn(f"github_exact_fetch result=PASS source_sha={sha}", result.stdout, diagnostic)
-            # 兜底仓与镜像仓同构：同一个 commit、同一棵树。
-            self.assertIn("fixture", result.stdout, diagnostic)
+    def test_both_builders_exact_sha_and_failure_contract(self):
+        for owner in ("frontend", "business-api"):
+            for state in ("hit", "ancestor", "lag", "off-main", "unavailable"):
+                with self.subTest(owner=owner, state=state):
+                    self.run_source(owner, state)
 
-    def test_missing_sha_everywhere_fails_closed(self):
+
+class GiteeMainSyncTest(unittest.TestCase):
+    """执行 workflow 的原始 bash，以真实 Git refs 证明单 ref 与 lease 语义。"""
+
+    def run_sync(self, case):
+        workflow = (ROOT / ".github/workflows/gitee-mirror.yml").read_text(encoding="utf-8")
+        script = textwrap.dedent(workflow.split("      - name: Sync and verify only Gitee main", 1)[1].split("        run: |\n", 1)[1])
         with tempfile.TemporaryDirectory() as directory:
-            cache = Path(directory) / "cache"
-            empty = Path(directory) / "empty"
-            empty.mkdir()
-            subprocess.run(["git", "init", "-q", str(empty)], check=True)
-            env = {
-                **os.environ,
-                "WOTB_TX_BUILD_CACHE_ROOT": str(cache),
-                "WOTB_GITEE_REPO_URL": empty.resolve().as_uri(),
-                "WOTB_GITHUB_REPO_URL": empty.resolve().as_uri(),
-                "SOURCE_SHA": "0" * 40,
-                "GITEE_WAIT_ATTEMPTS": "1", "GITEE_WAIT_INTERVAL_SECONDS": "1",
-                "GITHUB_FETCH_ATTEMPTS": "1", "GITHUB_FETCH_TIMEOUT_SECONDS": "60",
-                "KILL_AFTER_SECONDS": "10", "RETRY_BACKOFF_LATER_SECONDS": "1",
-            }
-            result = subprocess.run(["bash", "-s"], input=FUNCTIONS + self.DRIVER, env=env,
-                                    text=True, capture_output=True, timeout=120)
+            base = Path(directory)
+            source, target, upstream = (base / n for n in ("source", "gitee", "github"))
+            def git(*args, cwd=None):
+                return subprocess.check_output(["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+                                                "-c", "commit.gpgsign=false", *args], cwd=cwd, text=True, stderr=subprocess.PIPE).strip()
+            git("init", "-q", "-b", "main", str(source))
+            (source / "marker").write_text("first")
+            git("add", ".", cwd=source)
+            git("commit", "-qm", "first", cwd=source)
+            first = git("rev-parse", "HEAD", cwd=source)
+            (source / "marker").write_text("second")
+            git("commit", "-qam", "second", cwd=source)
+            sha = git("rev-parse", "HEAD", cwd=source)
+            race = git("commit-tree", "HEAD^{tree}", "-p", first, "-m", "racing writer", cwd=source)
+            git("tag", "-a", "source-only", "-m", "must not be pushed", cwd=source)
+            git("config", "push.followTags", "true", cwd=source)
+            git("clone", "-q", "--bare", str(source), str(upstream))
+            git("remote", "add", "origin", upstream.resolve().as_uri(), cwd=source)
+            git("clone", "-q", "--bare", str(source), str(target))
+            git("--git-dir", str(target), "update-ref", "-d", "refs/tags/source-only")
+            git("--git-dir", str(target), "update-ref", "refs/heads/main", first)
+            git("--git-dir", str(target), "update-ref", "refs/heads/asset-origin", first)
+            git("--git-dir", str(target), "update-ref", "refs/heads/other", first)
+            git("--git-dir", str(target), "update-ref", "refs/tags/preserved", first)
+            if case == "empty":
+                git("--git-dir", str(target), "update-ref", "-d", "refs/heads/main")
+            if case == "stale":
+                git("--git-dir", str(upstream), "update-ref", "refs/heads/main", first)
+            before = git("--git-dir", str(target), "show-ref")
+            env = {**os.environ, "SOURCE_SHA": sha, "GITEE_TOKEN": "fixture-token",
+                   "GITEE_USERNAME": "fixture", "GITEE_REPO_URL": target.resolve().as_uri(),
+                   "RUNNER_TEMP": str(base), "CASE": case, "RACE_SHA": race,
+                   "TARGET_DIR": str(target), "FIXTURE_ROOT": str(base)}
+            shim = r'''
+timeout() { while [[ "$1" = --* ]]; do shift; done; shift; "$@"; }
+git() {
+  if [[ "$*" == *"ls-remote --refs $GITEE_REPO_URL refs/heads/main"* ]]; then
+    count=$(cat "$FIXTURE_ROOT/reads" 2>/dev/null || echo 0)
+    count=$((count + 1)); echo "$count" > "$FIXTURE_ROOT/reads"
+    if [ "$CASE" = observation-error ]; then return 9; fi
+    if [ "$CASE" = malformed ]; then printf 'not-a-sha\trefs/heads/main\n'; return; fi
+    if [ "$CASE" = verify-mismatch ] && [ "$count" -eq 2 ]; then
+      printf '%s\trefs/heads/main\n' "$RACE_SHA"; return
+    fi
+  fi
+  if [[ " $* " == *" push "* ]] && [ "$CASE" = race ]; then
+    command git --git-dir="$TARGET_DIR" update-ref refs/heads/main "$RACE_SHA"
+  fi
+  command git "$@"
+}
+'''
+            result = subprocess.run(["bash", "-s"], input=shim + script, cwd=source, env=env,
+                                    text=True, capture_output=True, timeout=30)
             diagnostic = result.stdout + result.stderr
-            self.assertEqual(result.returncode, 1, diagnostic)
-            self.assertIn("not on Gitee main, not in a staged bundle, and not fetchable from GitHub", diagnostic)
-            self.assertNotIn("SOURCE_DIR=", result.stdout, diagnostic)
+            actual = git("--git-dir", str(target), "rev-parse", "refs/heads/main") if case != "empty" or result.returncode == 0 else ""
+            if case in ("success", "empty"):
+                self.assertEqual(result.returncode, 0, diagnostic)
+                self.assertEqual(actual, sha)
+                self.assertIn("gitee_main_sync result=PASS", result.stdout)
+            else:
+                self.assertNotEqual(result.returncode, 0, diagnostic)
+                self.assertNotIn("gitee_main_sync result=PASS", result.stdout)
+                self.assertEqual(actual, race if case == "race" else sha if case == "verify-mismatch" else first)
+            after = git("--git-dir", str(target), "show-ref")
+            without_main = lambda refs: [l for l in refs.splitlines() if not l.endswith(" refs/heads/main")]
+            self.assertEqual(without_main(before), without_main(after))
+            self.assertFalse((base / "gitee-main-askpass.sh").exists(), diagnostic)
+
+    def test_main_invocation_guard(self):
+        workflow = (ROOT / ".github/workflows/gitee-mirror.yml").read_text(encoding="utf-8")
+        guard = textwrap.dedent(workflow.split("        run: |\n", 1)[1].split("      - uses:", 1)[0])
+        for event, ref, accepted in (("push", "refs/heads/main", True),
+                                     ("workflow_dispatch", "refs/heads/main", True),
+                                     ("push", "refs/heads/other", False),
+                                     ("pull_request", "refs/heads/main", False)):
+            with self.subTest(event=event, ref=ref):
+                result = subprocess.run(["bash", "-s"], input=guard,
+                                        env={**os.environ, "EVENT_NAME": event, "EVENT_REF": ref},
+                                        text=True, capture_output=True, timeout=10)
+                self.assertEqual(result.returncode == 0, accepted, result.stdout + result.stderr)
+
+    def test_sync_and_failure_contract(self):
+        for case in ("success", "empty", "race", "stale", "verify-mismatch", "observation-error", "malformed"):
+            with self.subTest(case=case):
+                self.run_sync(case)
 
 
 if __name__ == "__main__":

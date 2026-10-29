@@ -10,22 +10,16 @@ It does **not** cut production traffic over by itself.
 - Public name: `assets.wotbtools.com`
 - Compose source: GitHub is review authority; Gitee is transport for the mainland worker.
 - Stack source ref: `branch = "asset-origin"`. This asset-owned Gitee branch is moved
-  **only** by `.github/workflows/asset-origin.yml`; the Frontend/Business API mirrors
-  can never change what this Stack deploys.
+  **only** by `.github/workflows/asset-origin.yml`; main-only 同步不会改变此 Stack 的来源。
 - Source mirror gate: `.github/workflows/asset-origin.yml` checks out the triggering
   GitHub `main` event SHA, publishes that frozen commit to the derived GitHub
   `asset-origin` pointer branch and then to the matching Gitee `asset-origin`
   transport branch, and requires `refs/heads/asset-origin` on Gitee to equal the same
   SHA. It never writes shared Gitee `main`, and it fails closed without pushing when
   the frozen SHA is no longer the exact current GitHub `main`.
-- Why the GitHub pointer branch exists: the Frontend/Business API production mirrors
-  run a pinned `Yikun/hub-mirror-action` that force-pushes **every** GitHub branch to
-  Gitee as `refs/remotes/origin/*:refs/heads/*` with `--tags --prune`. A Gitee-only
-  `asset-origin` branch would be deleted by the next application mirror. Publishing
-  the same frozen SHA to the GitHub `asset-origin` branch makes it part of the mirrored
-  source set, so those mirrors carry the verified SHA instead of pruning it. The
-  shared `production-gitee-mirror` concurrency group serializes this job with both
-  mirror jobs, so the pair is never updated concurrently.
+- GitHub pointer branch 与 Gitee transport branch 继续由 asset-origin owner 共同维护。
+  `gitee-mirror.yml` 只同步 main，不写或 prune asset ref；共享
+  `production-gitee-mirror` 队列保留，asset-origin workflow 的运行逻辑不变。
 - Periphery: the Alibaba agent is **manually** bootstrapped and manually
   lifecycle-managed today (see below); it is not part of `komodo-periphery.yml`.
 - Payload: host state under `/srv/wotb-assets`, mounted read-only into Caddy.

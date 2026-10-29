@@ -20,6 +20,8 @@ jobs:
         with:
           ref: ${{ inputs.head_sha }}
           fetch-depth: 0
+      - name: Gitee source and main sync behavior regression
+        run: python3 deploy/test_frontend_builder.py GiteeMainSyncTest BuilderSourceTransportTest
       - name: Flyway migration immutability guard
         env:
           FLYWAY_BASE_REF: ${{ inputs.base_sha }}

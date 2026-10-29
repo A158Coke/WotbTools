@@ -349,14 +349,19 @@ mirror_job = mirror_workflow["jobs"]["mirror_gitee"]
 assert mirror_job["concurrency"] == {
     "group": "production-gitee-mirror", "cancel-in-progress": "false", "queue": "max",
 }, "mirror must stay serialized with the asset-origin transport push"
-mirror_step = next(
-    step for step in mirror_job["steps"]
-    if step.get("name") == "Mirror WotbTools to Gitee"
-)
-assert mirror_step["with"]["force_update"] == "true"
-# 历史重写后的首次全量推送约 300MB，单次 Git 命令预算不足会让每次重试都从零开始。
-assert mirror_step["with"]["timeout"] == "100m", mirror_step["with"]["timeout"]
-assert mirror_job["timeout-minutes"] == "180", mirror_job["timeout-minutes"]
+mirror_steps = mirror_job["steps"]
+assert mirror_job["timeout-minutes"] == "10"
+assert mirror_workflow["on"]["push"]["branches"] == ["main"]
+checkout = next(step for step in mirror_steps if step.get("uses", "").startswith("actions/checkout@"))
+assert checkout["with"] == {"ref": "${{ github.sha }}", "fetch-depth": "0"}
+sync = next(step for step in mirror_steps if step.get("name") == "Sync and verify only Gitee main")
+assert sync["env"]["SOURCE_SHA"] == "${{ github.sha }}"
+sync_script = sync["run"]
+assert '--force-with-lease="refs/heads/main:$observed"' in sync_script
+assert '"$SOURCE_SHA:refs/heads/main"' in sync_script
+assert '[ "$actual" = "$SOURCE_SHA"' in sync_script
+for forbidden in ("hub-mirror-action", "force_update", "--mirror", "--all", "--tags", "--prune", "refs/tags/", "refs/heads/asset-origin"):
+    assert forbidden not in json.dumps(mirror_workflow), forbidden
 
 # Release identity must not cross the GitHub job-output boundary. GitHub may
 # redact arbitrary SHA/digest values when they happen to match a configured secret,
@@ -367,15 +372,19 @@ for owner in ("business-api", "frontend"):
     assert "outputs" not in workflow["jobs"]["build"], owner
     assert "needs.build.outputs" not in json.dumps(workflow, ensure_ascii=False), owner
 
-# 源包是昂贵工作（clone + bundle 整份源码），必须排在新鲜度闸门之后：stale push 或
-# 无效 manual dispatch 应在打包前就被拒绝，而不是先付一次全量打包再失败。
+# TX 生产 Git 来源只有 Gitee；必要的小型 staged inputs 不受影响。
 for owner in ("business-api", "frontend"):
-    step_names = [
-        step.get("name", "") for step in load(workflow_dir / f"{owner}.yml")["jobs"]["build"]["steps"]
-    ]
-    freeze = next(i for i, name in enumerate(step_names) if name.startswith("Freeze current main"))
-    package = step_names.index("Package exact-commit source bundle")
-    assert freeze < package, f"{owner}: freshness gate must precede source bundle packaging"
+    workflow_text = (workflow_dir / f"{owner}.yml").read_text(encoding="utf-8")
+    builder_text = (root / f"deploy/tx/build-{owner}-from-gitee.sh").read_text(encoding="utf-8")
+    for forbidden in ("SOURCE_BUNDLE", "staged_bundle", "source_transport=staged-bundle",
+                      "source_transport=github-exact-sha", "fetch_exact_sha_shallow",
+                      "GITHUB_REPO_URL", "GITHUB_FETCH_", "SHALLOW_SOURCE_DIR", "STAGED_SOURCE_DIR",
+                      "Package exact-commit source bundle", "steps.source.outputs"):
+        assert forbidden not in workflow_text + builder_text, (owner, forbidden)
+    assert 'source_transport=gitee-mirror' in builder_text
+    assert 'merge-base --is-ancestor "$source_sha" refs/remotes/origin/main' in builder_text
+    assert 'GITEE_WAIT_ATTEMPTS:-12' in builder_text
+    assert 'GITEE_WAIT_INTERVAL_SECONDS:-15' in builder_text
 
 frontend_workflow = load(workflow_dir / "frontend.yml")
 assert frontend_workflow["env"]["ASSET_BASE_URL"] == "https://assets.wotbtools.com"
@@ -1343,41 +1352,10 @@ shared="$(gitee_main)"
 }
 echo 'asset-origin pins the reviewed SHA on its own ref and never touches shared main: PASS'
 
-# The push step also published the derived GitHub pointer branch. The pinned
-# Yikun/hub-mirror-action@ec47170 force-pushes
-# `refs/remotes/origin/*:refs/heads/* --tags --prune`, so that pointer branch is
-# what keeps the Gitee transport ref alive. Exercise the real mirror refspec.
+# asset-owned transport pair 保留；main-only sync 的 ref isolation 由真实 Git fixture 验证。
 hub_transport="$(git -C "$asset_work/hub-bare" rev-parse --verify 'refs/heads/asset-origin^{commit}')"
 [ "$hub_transport" = "$sha_asset" ] || {
   echo "the asset workflow did not publish the GitHub pointer branch: $hub_transport" >&2
   exit 1
 }
-mirror_push() {
-  rm -rf "$asset_work/mirror"
-  git clone -q "$asset_work/hub-bare" "$asset_work/mirror"
-  git -C "$asset_work/mirror" push -q --force "$asset_work/gitee.git" \
-    'refs/remotes/origin/*:refs/heads/*' --tags --prune
-}
-mirror_push
-current="$(gitee_transport)"
-[ "$current" = "$sha_asset" ] || {
-  echo "an application mirror pruned or changed the asset transport ref: $current" >&2
-  exit 1
-}
-# Negative control: WITHOUT the GitHub pointer branch the very same mirror push
-# deletes the Gitee-only ref. This is the failure mode the pointer branch prevents.
-git -C "$asset_work/hub-bare" update-ref -d refs/heads/asset-origin
-mirror_push
-if gitee_transport >/dev/null 2>&1; then
-  echo 'the application mirror did not prune the Gitee-only asset ref' >&2
-  exit 1
-fi
-# Restoring the pointer branch lets the next mirror carry the verified SHA again.
-git -C "$asset_work/seed" push -q "$asset_work/hub-bare" "+$sha_asset:refs/heads/asset-origin"
-mirror_push
-current="$(gitee_transport)"
-[ "$current" = "$sha_asset" ] || {
-  echo "the application mirror did not restore the verified asset ref: $current" >&2
-  exit 1
-}
-echo 'asset-origin transport pair survives the application mirrors'"'"' prune: PASS'
+echo 'asset-origin transport pair remains asset-owned: PASS'
