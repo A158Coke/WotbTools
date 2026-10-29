@@ -1,15 +1,23 @@
 #!/usr/bin/env bash
-# Build and publish the Business API on TX from an exact commit mirrored to Gitee.
-# GitHub remains the release authority; Gitee is only the domestic source transport.
+# Build and publish the Business API on TX from an exact commit. GitHub remains the
+# release authority; Gitee is the domestic source transport and is tried first. When the
+# mirror cannot serve the commit yet, the exact SHA is fetched shallow from GitHub
+# instead, so a lagging mirror never blocks a release.
 set -Eeuo pipefail
 
 readonly GITEE_REPO_URL="${WOTB_GITEE_REPO_URL:-https://gitee.com/A158Coke/Wotbtools.git}"
+readonly GITHUB_REPO_URL="${WOTB_GITHUB_REPO_URL:-https://github.com/A158Coke/WotbTools.git}"
 readonly CACHE_ROOT="${WOTB_TX_BUILD_CACHE_ROOT:-$HOME/.cache/wotbtools-production-build}"
 readonly REPO_DIR="$CACHE_ROOT/repo"
+readonly SHALLOW_SOURCE_DIR="$CACHE_ROOT/source-shallow"
+# 当前构建的源仓库：镜像命中时为持久 Gitee clone，兜底时为按 exact SHA 的浅取仓库。
+SOURCE_DIR="$REPO_DIR"
 readonly BUILD_LOCK_FILE="$CACHE_ROOT/build.lock"
 readonly GITEE_WAIT_ATTEMPTS="${GITEE_WAIT_ATTEMPTS:-12}"
 readonly GITEE_WAIT_INTERVAL_SECONDS="${GITEE_WAIT_INTERVAL_SECONDS:-15}"
 readonly GIT_FETCH_TIMEOUT_SECONDS="${GIT_FETCH_TIMEOUT_SECONDS:-60}"
+readonly GITHUB_FETCH_TIMEOUT_SECONDS="${GITHUB_FETCH_TIMEOUT_SECONDS:-900}"
+readonly GITHUB_FETCH_ATTEMPTS="${GITHUB_FETCH_ATTEMPTS:-3}"
 readonly TCR_PUSH_TIMEOUT_SECONDS="${TCR_PUSH_TIMEOUT_SECONDS:-600}"
 readonly TCR_LOOKUP_TIMEOUT_SECONDS="${TCR_LOOKUP_TIMEOUT_SECONDS:-60}"
 readonly TCR_PULL_TIMEOUT_SECONDS="${TCR_PULL_TIMEOUT_SECONDS:-300}"
@@ -79,6 +87,7 @@ validate_common() {
 
   local setting
   for setting in GITEE_WAIT_ATTEMPTS GITEE_WAIT_INTERVAL_SECONDS GIT_FETCH_TIMEOUT_SECONDS \
+    GITHUB_FETCH_TIMEOUT_SECONDS GITHUB_FETCH_ATTEMPTS \
     TCR_PUSH_TIMEOUT_SECONDS TCR_LOOKUP_TIMEOUT_SECONDS TCR_PULL_TIMEOUT_SECONDS KILL_AFTER_SECONDS \
     RETRY_MAX_ATTEMPTS RETRY_BACKOFF_FIRST_SECONDS RETRY_BACKOFF_LATER_SECONDS; do
     is_positive_integer "${!setting}" || die "$setting must be a positive integer"
@@ -126,7 +135,53 @@ wait_for_gitee_sha() {
     fi
   done
 
-  die "source SHA did not reach Gitee main within the bounded wait"
+  echo "gitee_sync result=LAG source_sha=$source_sha attempts=$GITEE_WAIT_ATTEMPTS"
+  return 1
+}
+
+# 按 exact SHA 从 GitHub 浅取（只含该 commit 的树），见 frontend builder 的同名函数。
+fetch_exact_sha_shallow() {
+  local source_sha="$1"
+  local attempt
+
+  mkdir -p "$CACHE_ROOT"
+  for attempt in $(seq 1 "$GITHUB_FETCH_ATTEMPTS"); do
+    rm -rf -- "$SHALLOW_SOURCE_DIR"
+    mkdir -p "$SHALLOW_SOURCE_DIR"
+    git -C "$SHALLOW_SOURCE_DIR" init -q
+    echo "github_exact_fetch attempt=$attempt/$GITHUB_FETCH_ATTEMPTS source_sha=$source_sha"
+    if timeout --kill-after="${KILL_AFTER_SECONDS}s" "$GITHUB_FETCH_TIMEOUT_SECONDS" \
+      env GIT_TERMINAL_PROMPT=0 \
+      git -C "$SHALLOW_SOURCE_DIR" fetch --depth 1 --no-tags "$GITHUB_REPO_URL" "$source_sha"; then
+      if [ "$(git -C "$SHALLOW_SOURCE_DIR" rev-parse FETCH_HEAD 2>/dev/null)" = "$source_sha" ] \
+        && git -C "$SHALLOW_SOURCE_DIR" cat-file -e "$source_sha^{commit}" 2>/dev/null; then
+        echo "github_exact_fetch result=PASS source_sha=$source_sha"
+        return 0
+      fi
+      echo "github_exact_fetch result=SHA_MISMATCH source_sha=$source_sha" >&2
+    fi
+    if [ "$attempt" -lt "$GITHUB_FETCH_ATTEMPTS" ]; then
+      sleep "$RETRY_BACKOFF_LATER_SECONDS"
+    fi
+  done
+  rm -rf -- "$SHALLOW_SOURCE_DIR"
+  return 1
+}
+
+materialize_source() {
+  local source_sha="$1"
+
+  if wait_for_gitee_sha "$source_sha"; then
+    SOURCE_DIR="$REPO_DIR"
+    echo "source_transport=gitee-mirror"
+    return 0
+  fi
+
+  echo "source_transport=gitee-lagging; exact-SHA fallback engaged"
+  fetch_exact_sha_shallow "$source_sha" \
+    || die "source SHA is neither on Gitee main nor fetchable from GitHub as an exact SHA"
+  SOURCE_DIR="$SHALLOW_SOURCE_DIR"
+  echo "source_transport=github-exact-sha"
 }
 
 lookup_remote_digest() {
@@ -187,7 +242,7 @@ build_publish() {
   exec 8>"$BUILD_LOCK_FILE"
   flock -n 8 || die "another TX Business API build is already running"
 
-  wait_for_gitee_sha "$source_sha"
+  materialize_source "$source_sha"
 
   lookup_status=0
   digest="$(lookup_remote_digest "$remote_image")" || lookup_status=$?
@@ -203,8 +258,8 @@ build_publish() {
     10)
       reused=false
       rm -rf -- "$worktree"
-      git -C "$REPO_DIR" worktree add --force --detach "$worktree" "$source_sha" >/dev/null
-      trap "git -C '$REPO_DIR' worktree remove --force '$worktree' >/dev/null 2>&1 || true; rm -rf -- '$worktree'" EXIT
+      git -C "$SOURCE_DIR" worktree add --force --detach "$worktree" "$source_sha" >/dev/null
+      trap "git -C '$SOURCE_DIR' worktree remove --force '$worktree' >/dev/null 2>&1 || true; rm -rf -- '$worktree' '$SHALLOW_SOURCE_DIR'" EXIT
 
       [ "$(git -C "$worktree" rev-parse HEAD)" = "$source_sha" ] || die "detached worktree SHA mismatch"
 
