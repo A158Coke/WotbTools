@@ -3,6 +3,7 @@ import { onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import MarkdownContent from './MarkdownContent.vue'
 import { copyText } from '../utils/clipboard.js'
+import { buildAiReviewReplyText, teamIdentityLabel as identityLabel } from '../utils/aiReviewReplyText.js'
 
 // 普通用户页面只展示 AI 复盘正文/Team 结构化结果 + 可折叠的「赛前预测」区块。
 // 后端 SSE `done` 载荷返回个人 { analysis, preBattleSection? } 或团队 { teamReview, preBattleSection? }；
@@ -35,29 +36,13 @@ function toggleAnalysis() {
 /** 一键复制最终复盘正文（团队结果使用 authoritative display identity；不含独立的赛前预测与地图鸟瞰）。
  * 末尾附带一行网站宣传（recon.copy_footer，三语随界面语言）。 */
 function teamIdentityLabel(playerKey) {
-  const identity = Array.isArray(props.result.teamPlayers)
-    ? props.result.teamPlayers.find(item => item?.playerKey === playerKey)
-    : undefined
-  const displayName = identity?.displayName?.trim() || t('recon.team.unknownPlayer')
-  const tankName = identity?.tankName?.trim() || t('recon.team.unknownTank')
-  return `${displayName} / ${tankName}`
+  return identityLabel(props.result, playerKey, t)
 }
 
 async function copyAnalysis() {
-  const team = props.result.teamReview
-  const text = team
-    ? [
-        team.summary.verdict,
-        team.summary.primaryDiagnosis,
-        ...team.episodes.map((episode) => `${episode.title}\n${episode.analysis}`),
-        ...team.trainingSuggestions.map((suggestion) => `${suggestion.title}\n${suggestion.content}`),
-        ...team.reviewFocus.map((item) => `${teamIdentityLabel(item.playerKey)}: ${item.reason}`),
-        ...team.highContributors.map((item) => `${teamIdentityLabel(item.playerKey)}: ${item.reason}`)
-      ].filter(Boolean).join('\n\n')
-    : props.result.analysis
+  const text = buildAiReviewReplyText(props.result, t)
   if (!text) return
-  const withFooter = text + '\n' + t('recon.copy_footer')
-  if (!(await copyText(withFooter))) return
+  if (!(await copyText(text))) return
   copied.value = true
   clearTimeout(copyTimer)
   copyTimer = setTimeout(() => {
