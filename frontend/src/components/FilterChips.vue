@@ -64,7 +64,7 @@ const { t } = useI18n()
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  min-height: var(--control-h-sm);
+  min-height: max(var(--control-h-sm), var(--hit-min));
   border-radius: var(--radius-full);
   font: var(--type-body);
   cursor: pointer;

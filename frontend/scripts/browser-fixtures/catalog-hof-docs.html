@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark" data-ui-profile="showcase">
+<head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" /><title>筛选与文档可达性夹具</title></head>
+<body>
+<div id="app"></div>
+<script type="module">
+  import { createApp, h, ref } from 'vue'
+  import { createI18n } from 'vue-i18n'
+  import { createMemoryHistory, createRouter } from 'vue-router'
+  import '../../src/styles/tokens/scale.css'
+  import '../../src/styles/tokens/color.css'
+  import '../../src/styles/tokens.css'
+  import '../../src/styles/showcase.css'
+  import '../../src/styles/showcase-workspaces.css'
+  import '../../src/styles/showcase-pages.css'
+  import '../../src/styles/showcase-rankings.css'
+  import '../../src/styles/showcase-cohesion.css'
+  import '../../src/styles/showcase-regressions.css'
+  import '../../src/styles/app-shell.css'
+  import '../../src/styles/playback-overlap-ux.css'
+  import '../../src/styles/playback-shared.css'
+  import '../../src/styles/playback-mobile.css'
+  import '../../src/styles/playback-workspace.css'
+  import '../../src/styles/classic-profile.css'
+  import { messages } from '../../src/locales/messages.js'
+  import { useConnectivity } from '../../src/composables/useConnectivity.js'
+  import TankCatalogMenu from '../../src/components/TankCatalogMenu.vue'
+  import HoFPage from '../../src/components/HoFPage.vue'
+  import MarkdownDocPage from '../../src/components/MarkdownDocPage.vue'
+
+  const query = new URLSearchParams(location.search)
+  const profile = query.get('profile') === 'classic' ? 'classic' : 'showcase'
+  document.documentElement.dataset.uiProfile = profile
+  document.documentElement.dataset.theme = profile === 'classic' ? 'light' : 'dark'
+  const mode = query.get('mode') || 'catalog'
+  const tanks = [
+    { id: 9001, name: '测试重坦', tier: 10, nation: 'germany', type: 'heavyTank', aliases: [], hp: 2000, pen_max: 250 },
+    { id: 9002, name: '测试中坦', tier: 9, nation: 'usa', type: 'mediumTank', aliases: [], hp: 1500, pen_max: 220 },
+  ]
+  const source = '# 文档测试\n\n' + Array.from({ length: 18 }, (_, index) => `## 章节 ${index + 1}\n\n${'用于验证长文档滚动、目录及固定返回按钮。'.repeat(12)}\n\n`).join('')
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: HoFPage }] })
+  await router.push('/?view=hof')
+  await router.isReady()
+  await useConnectivity().start()
+  const app = createApp({ setup() {
+    const filters = ref({})
+    const selected = ref('')
+    return () => h('main', { style: { padding: '16px' }, 'data-testid': 'catalog-hof-docs-fixture' }, [
+      mode === 'hof' ? h(HoFPage) : mode === 'docs' ? h(MarkdownDocPage, { source })
+        : h(TankCatalogMenu, { tanks, filters: filters.value, 'onUpdate:filters': value => { filters.value = value }, onSelect: value => { selected.value = String(value.id) } }),
+      h('output', { 'data-testid': 'catalog-selected' }, selected.value),
+    ])
+  } })
+  app.use(createI18n({ legacy: false, locale: 'zh', fallbackLocale: 'en', messages })).use(router).mount('#app')
+</script>
+</body>
+</html>

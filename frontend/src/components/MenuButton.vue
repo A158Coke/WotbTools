@@ -78,6 +78,9 @@ const inline = inject(DIALOG_INLINE_KEY, false)
   z-index: var(--z-menu);
   display: grid;
   min-width: 200px;
+  max-height: var(--reka-dropdown-menu-content-available-height);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: var(--space-1);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-md);
