@@ -32,7 +32,7 @@ description: >
    的 `merged=true` 或等价 merge commit 事实；确认后直接加载 `.agents/playbooks/post-merge-cleanup.md`
    执行其 cleanup contract。若无法确认已合并，停止并汇报，不把未合并任务当 cleanup。此路径不进入
    下方 implementation phases，也不要求重新创建/读取 approved plan。
-1. **读取并校验计划**：实现路径按用户明确选择的来源读取完整计划：文件来源读取 `docs/current-plan.md`；手贴来源使用用户提供的完整文本。用户当前明确提供的输入是本次任务的最高优先来源，优先于仓库或 worktree 中已有的计划内容；此优先级不绕过批准和 schema 校验。两种来源都必须符合 `.agents/skills/designer/SKILL.md` 的 canonical schema，检查全部必需 section、`# Execution Steps` 每步的 `Status` / Goal / Scope / Files / Change / Validation / Commit boundary，以及步骤状态值；缺失或结构不符时停止并返回 Designer 修正，不自行补写计划。不得假设另有“分步计划状态表”“影响面清单”“验收标准”“待确认项”等第二套字段。
+1. **读取并校验计划**：实现路径按用户明确选择的来源读取完整计划：文件来源读取 `docs/current-plan.md`；手贴来源使用用户提供的完整文本。用户当前明确提供的输入是本次任务的最高优先来源，优先于仓库或 worktree 中已有的计划内容；此优先级不绕过批准和 schema 校验。两种来源都必须符合 `.agents/skills/designer/SKILL.md` 的 canonical schema，检查全部必需 section、`# Execution Steps` 每步的 `Status` / Goal / Scope / Files / Change / Validation，以及步骤状态值；必需内容缺失或结构不符时停止并返回 Designer 修正，不自行补写计划。`Commit boundary` 是可选字段：存在时遵守，缺失不阻塞。不得假设另有“分步计划状态表”“影响面清单”“验收标准”“待确认项”等第二套字段。
 2. **授权校验**：无论来源，plan 都必须已获用户批准；手贴文本只有在当前对话或随附上下文中能确认其已获批准时才可继续。`# Unverified Assumptions` / `# Evidence Gaps` 中存在未确认且会阻塞执行的项 → 停下汇报，不执行；用户明确说"执行/批准"即视为已授权。
 3. **从已验证的最新 main remote 创建任务 worktree 与分支（分支名符合任务主题）**：
    - 从计划内容提取主题：优先 `# Goal` / `# Actual Outcome`；无明确标题时用 `# Impact Surface` 中最核心的动词短语。
