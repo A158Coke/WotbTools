@@ -1,0 +1,90 @@
+name: Android Auto Publish
+
+# Normal release path:
+#   main version bump -> Release / Android stage -> stage success -> this workflow
+#   -> dispatch Release / Android(mode=publish, version=X).
+#
+# The existing publish job remains the only writer of production version.json and
+# keeps all staged-identity / runtime / CORS / minSupported guards. Manual publish
+# remains available as the recovery path for interrupted or failed automatic runs.
+on:
+  workflow_run:
+    workflows:
+      - "Release / Android"
+    types:
+      - completed
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: android-auto-publish-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # Only continue the normal main-push stage path. The publish run itself is
+    # workflow_dispatch, so its completion cannot recurse into another publish.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify triggering stage job succeeded
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          STAGE_CONCLUSION="$(gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --json jobs --jq '.jobs[] | select(.name == "stage") | .conclusion' | head -n1)"
+          if [ "$STAGE_CONCLUSION" != "success" ]; then
+            echo "::error::Release / Android run $RUN_ID completed successfully overall, but stage conclusion is '${STAGE_CONCLUSION:-missing}'. Refusing auto-publish." >&2
+            exit 1
+          fi
+          echo "Verified stage success for Release / Android run $RUN_ID."
+
+      - name: Checkout the staged source commit
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 1
+
+      - name: Resolve immutable staged version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(sed -n 's/^wotbVersion=//p' android/gradle.properties | head -n1)"
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Invalid or missing wotbVersion at staged source ${{ github.event.workflow_run.head_sha }}: '$VERSION'" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Auto-publish candidate: $VERSION"
+
+      - name: Dispatch existing guarded publish phase
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          STAGE_RUN_ID: ${{ github.event.workflow_run.id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run android-release.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f mode=publish \
+            -f version="$VERSION"
+          {
+            echo "# Android auto publish"
+            echo ""
+            echo "Stage run: $STAGE_RUN_ID"
+            echo "Staged source: ${{ github.event.workflow_run.head_sha }}"
+            echo "Version: $VERSION"
+            echo "Action: dispatched Release / Android mode=publish"
+            echo ""
+            echo "Manual workflow_dispatch(mode=publish, version=X) remains the recovery path."
+          } >> "$GITHUB_STEP_SUMMARY"
