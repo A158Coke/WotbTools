@@ -157,3 +157,22 @@ Engineering Overview 显示：距上次成功不足 30 分钟为 Healthy，30–
 月度表展示历史 event-date 标签。每日 Created/Merged 折线图通过原生 Grafana transformation 把 day 标签转换为 UTC 零点；其 x 轴跟随选择器。它们不虚构 Prometheus 之前的样本历史。月份从 2026 年 6 月开始；天数覆盖最近 90 天。instant bucket 查询要求选择器末端存在快照；选择超出观测到的 Prometheus 保留范围的末端可能返回 No data。workflow snapshot/生产趋势跟随选择器与既有七天保留。永远不要在重建的 GitHub 总量上使用 `increase()`/`rate()`。Area 会重叠，draft 会与 open 重叠，cancelled run 不是失败，Actions 保留期限可能限制 CI 完整性。PR 创建到合并不是 DORA lead time。Release/workflow 完成不证明已改动：deployment/publish 面板明确显示 Not available。
 
 活动量不等于生产力，生产相关性也不证明因果关系。五个产品 dashboard 在彼此之间互相导航；Engineering Overview 是独立的第六个当前 dashboard，并可单向链接到五个产品 dashboard。生产验收必须比对实时 GitHub 总量/月份、证明 30 分钟内成功刷新、检查诊断信息无泄漏，并对完整 Grafana OpenTofu root 执行 plan、apply exact saved plan、clean second plan，验证全部 6 个当前 dashboard UID（5 个产品 dashboard + Engineering Overview），确认 6 个 retired UID 不存在/404，确认 7 个 Prometheus UP job（含 dev-metrics），同时保留 datasource/state 安全规则。
+## Battle Data Collector 指标
+
+Business API 通过既有 MeterRegistry 暴露以下低基数 counters：
+
+| Micrometer 名称 | Prometheus counter | 语义 |
+|---|---|---|
+| `battle_data.created` | `battle_data_created_total` | 首次观察的整个数据库事务已提交 |
+| `battle_data.duplicate` | `battle_data_duplicate_total` | arenaId 已存在，原数据不变 |
+| `battle_data.rejected` | `battle_data_rejected_total` | 400/413 拒绝，固定 `reason=schema/size` |
+| `battle_data.rate_limited` | `battle_data_rate_limited_total` | 429，每源、单进程配额或来源状态容量不足 |
+
+415 在 MVC 进入业务 Service 前拒绝，只进入既有 HTTP 指标。关闭入口返回 503、数据库异常返回 500，
+均不计 created。created 只在独立事务提交后增加，提交阶段失败也不计成功。
+指标不使用 arenaId、mapKey、clientVersion、vehicleId、IP 或任意输入作为标签；日志不记录 body/roster。
+来源解析仅信任既有私有代理覆盖的单值 X-Real-IP，来源 hash 只在限流器内存中按分钟轮换，不进入 dataset。
+
+这些数字只代表实际接收请求，不代表全部战斗或用户覆盖；离线、未核验地图、队列丢弃和网络失败都会少计。
+采集边界见 [Replay Pipeline](../architecture/replay-pipeline.md#匿名-battle-data-collector)，
+关闭与数据维护见 [运维手册](observability-runbook.md#battle-data-collector)。

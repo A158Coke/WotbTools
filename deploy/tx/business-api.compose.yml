@@ -16,6 +16,11 @@ services:
       # nginx overwrites X-Real-IP; public peers must never be added here.
       WOTB_OBSERVABILITY_TRUSTED_PROXIES: "172.29.0.0/16,10.20.0.3/32"
       WOTB_OBSERVABILITY_HASH_KEY: ${WOTB_OBSERVABILITY_HASH_KEY:-}
+      # 独立于主回放处理；修改后重新创建 business-api 容器生效。
+      BATTLE_DATA_ENABLED: ${BATTLE_DATA_ENABLED:-true}
+      BATTLE_DATA_PER_SOURCE_PER_MINUTE: ${BATTLE_DATA_PER_SOURCE_PER_MINUTE:-60}
+      BATTLE_DATA_PER_INSTANCE_PER_MINUTE: ${BATTLE_DATA_PER_INSTANCE_PER_MINUTE:-3000}
+      BATTLE_DATA_MAX_SOURCE_KEYS: ${BATTLE_DATA_MAX_SOURCE_KEYS:-4096}
       # Flyway owns every application table in the OpenTofu-provisioned business
       # database; the application role is separate from the PostgreSQL bootstrap
       # administrator.

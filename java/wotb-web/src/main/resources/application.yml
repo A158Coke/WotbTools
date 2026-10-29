@@ -1,6 +1,13 @@
 server:
   port: 8087
 
+battle-data:
+  enabled: ${BATTLE_DATA_ENABLED:true}
+  per-source-per-minute: ${BATTLE_DATA_PER_SOURCE_PER_MINUTE:60}
+  per-instance-per-minute: ${BATTLE_DATA_PER_INSTANCE_PER_MINUTE:3000}
+  max-source-keys: ${BATTLE_DATA_MAX_SOURCE_KEYS:4096}
+  trusted-proxies: ${BATTLE_DATA_TRUSTED_PROXIES:${WOTB_OBSERVABILITY_TRUSTED_PROXIES:}}
+
 spring:
   main:
     keep-alive: true

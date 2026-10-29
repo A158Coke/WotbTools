@@ -284,6 +284,13 @@ class SecurityConfigTest {
                 .andExpect(status().isOk());
     }
 
+    @Test
+    void battleDataOnlyAllowsExactAnonymousPost() throws Exception {
+        mvc.perform(post(ApiPaths.BATTLE_DATA)).andExpect(status().isOk());
+        mvc.perform(get(ApiPaths.BATTLE_DATA).with(jwt())).andExpect(status().isForbidden());
+        mvc.perform(post(ApiPaths.BATTLE_DATA + "/extra").with(jwt())).andExpect(status().isForbidden());
+    }
+
     /**
      * 服务器没有 parser：preview / export / columns、Processing Job、Export Job、playback-v2 /
      * map-overview、reconstruct-batch / process 端点全部删除，不再有专属安全规则，落回
@@ -353,6 +360,9 @@ class SecurityConfigTest {
 
         @PostMapping(ApiPaths.OBSERVABILITY_EVENTS)
         String telemetry() { return "ok"; }
+
+        @PostMapping(ApiPaths.BATTLE_DATA)
+        String battleData() { return "ok"; }
 
         @PostMapping("/api/admin/tournaments")
         String tournamentCreate() { return "ok"; }

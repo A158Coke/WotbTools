@@ -72,6 +72,8 @@ Spring Security 不经过 MVC advice，因此 401/403 分别由 canonical `Authe
 | `AI_REVIEW_BUSY` | 503 | true | capacity | AI Review worker 暂时繁忙 |
 | `AI_REVIEW_SCHEMA_FAILED` | 502 | true | ai-schema | Team Call #2 的 primary 与唯一一次 fresh JSON recovery 均未满足 `TeamAiReviewResult` contract 后的最终错误 |
 | `INTERNAL_ERROR` | 500 | true | internal | 未分类服务端异常 |
+| `RATE_LIMITED` | 429 | false | capacity | 匿名 Battle Data Collector 请求超过每源或进程限额；Collector 静默丢弃，不执行重试 |
+| `SERVICE_UNAVAILABLE` | 503 | true | availability | 服务入口关闭或不可用；Battle Data Collector 关闭接收时使用，客户端静默丢弃 |
 | `DATASET_REFERENCE_REQUIRED` | 400 | false | validation | **已退役（无生产者）**：Playback/AI Dataset reference 缺失；enum 值保留以避免动 wire |
 
 > 服务器没有回放解析器（`/api/replay/processing-jobs`、`/api/replay/export-jobs`、`/api/preview`、

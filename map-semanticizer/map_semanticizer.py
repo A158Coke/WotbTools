@@ -1190,6 +1190,27 @@ def build_spawn_semantics(
     return result
 
 
+def preserve_reviewed_spawn_sides(
+    spawns: dict[str, Any], reviewed: dict[str, Any], map_id: str,
+) -> None:
+    """只接收同地图已审校的互补方向，不从坐标/scene team 编号推断。"""
+    groups = reviewed.get("spawnSemantics", {})
+    sides = {key: value["physicalSide"] for key, value in groups.items()
+             if "physicalSide" in value}
+    if not sides:
+        return
+    opposite = {"NORTH": "SOUTH", "SOUTH": "NORTH", "WEST": "EAST", "EAST": "WEST"}
+    if (reviewed.get("mapId") != map_id
+            or set(sides) != {"TEAM_1", "TEAM_2"}
+            or sides["TEAM_1"] not in opposite
+            or opposite[sides["TEAM_1"]] != sides["TEAM_2"]
+            or any(key not in spawns or spawns[key].get("status") != "EXACT_SCENE_DATA"
+                   for key in sides)):
+        raise ValueError("已审校出生方向必须来自同地图且为完整互补侧")
+    for key, side in sides.items():
+        spawns[key]["physicalSide"] = side
+
+
 def coordinate_validation_passed(terrain: dict[str, Any]) -> bool:
     """Robust Z-axis validation rule for generated documents.
 
@@ -1373,6 +1394,7 @@ def semanticize(
     map_codes: Sequence[str] | None = None,
     known_map_codes: Sequence[str] | None = None,
     known_map_names: dict[str, dict[str, str]] | None = None,
+    reviewed_semantics: dict[str, Any] | None = None,
 ) -> tuple[pathlib.Path, pathlib.Path]:
     scene_path, heightmap_path = discover_map_resources(input_root)
     scene = read_sc2(read_resource(scene_path))
@@ -1509,6 +1531,11 @@ def semanticize(
     output_dir.mkdir(parents=True, exist_ok=True)
     json_path = output_dir / f"{map_id}.semantic.json"
     text_path = output_dir / f"{map_id}.semantic.txt"
+    # 目标文件可提供已审校方向；其它人工修正仍不合并，禁止重跑已核验地图。
+    if reviewed_semantics is None and json_path.exists():
+        reviewed_semantics = json.loads(json_path.read_text(encoding="utf-8"))
+    if reviewed_semantics is not None:
+        preserve_reviewed_spawn_sides(spawns, reviewed_semantics, map_id)
     json_path.write_text(json.dumps(document, ensure_ascii=False, indent=2), encoding="utf-8")
     text_path.write_text(render_llm_text(document), encoding="utf-8")
     return json_path, text_path

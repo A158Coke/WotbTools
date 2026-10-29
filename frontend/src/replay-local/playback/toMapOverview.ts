@@ -11,6 +11,7 @@
 import MAP_NAMES from '../../../../common/map_names.json'
 import type { BattlePlaybackDataset, VehiclePlaybackTrack } from '../../types/playback-v2.js'
 import type { AgentBattleResult } from '../../api/agent-replay-facets.js'
+import type { components } from '../../api/generated/http-contract.js'
 
 export interface MapBounds { xMin: number; xMax: number; yMin: number; yMax: number }
 export interface MapGridCell { id: string; nineGridRegion: number; bounds: MapBounds }
@@ -52,6 +53,8 @@ export interface MapGridProfile {
   playableBounds: MapBounds
   gridCells: MapGridCell[]
   spawnPoints: MapSpawnPoint[]
+  /** 只消费已核验的 canonical 方向；不进入地图 overview wire。 */
+  physicalSpawns?: { side: components['schemas']['BattleDataSpawn']; points: { x: number; y: number }[] }[]
 }
 
 type Json = Record<string, unknown>
@@ -87,11 +90,29 @@ export function parseMapGridProfile(semantic: unknown): MapGridProfile | null {
       y: num(p.position[1]),
     })
   }
+  const physicalSpawns: NonNullable<MapGridProfile['physicalSpawns']> = []
+  const groups = isObj(semantic.spawnSemantics) ? semantic.spawnSemantics : {}
+  if (semantic.verified === true) {
+    for (const team of [1, 2]) {
+      const group = groups[`TEAM_${team}`]
+      if (!isObj(group) || group.status !== 'EXACT_SCENE_DATA') continue
+      const side = group.physicalSide
+      if (side !== 'NORTH' && side !== 'SOUTH' && side !== 'WEST' && side !== 'EAST') continue
+      const exactPoints = (Array.isArray(points) ? points : []).flatMap((p) =>
+        isObj(p) && p.type === 'spawnpoint' && p.team === team && p.confidence === 'EXACT_SCENE_DATA'
+          && Array.isArray(p.position) && p.position.length >= 2
+          && typeof p.position[0] === 'number' && Number.isFinite(p.position[0])
+          && typeof p.position[1] === 'number' && Number.isFinite(p.position[1])
+          ? [{ x: p.position[0], y: p.position[1] }] : [])
+      if (exactPoints.length > 0) physicalSpawns.push({ side, points: exactPoints })
+    }
+  }
   return {
     displayName: typeof semantic.displayName === 'string' ? semantic.displayName : semantic.mapId,
     playableBounds: playable,
     gridCells: cells,
     spawnPoints: spawns,
+    ...(physicalSpawns.length === 2 ? { physicalSpawns } : {}),
   }
 }
 

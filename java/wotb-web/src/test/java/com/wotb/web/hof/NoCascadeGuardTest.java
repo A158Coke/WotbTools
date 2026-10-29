@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <ol>
  *   <li>没有任何外键指向 {@code user_profile}（删资料不会牵连任何业务表）；</li>
  *   <li>{@code ON DELETE CASCADE} 只允许出现在**域内组合关系**上，且必须逐个显式评审：
- *       creator 的类别关联随所属 UP 删除；该路径只指向 creator，
+ *       creator 的类别关联随所属 UP 删除，battledata 的车辆槽位随所属战斗删除；
  *       不得出现在 HoF 或 IAM 路径上；</li>
  *   <li>百场/三环的 replay evidence 外键不是 CASCADE（业务行永不被级联删除）。</li>
  * </ol>
@@ -77,8 +77,9 @@ class NoCascadeGuardTest {
                             + "  on ccu.constraint_name = tc.constraint_name and ccu.constraint_schema = tc.constraint_schema "
                             + "where rc.delete_rule = 'CASCADE' "
                             + "order by tc.constraint_name");
-            // Only creator-owned composition may cascade; verify the exact source and target columns too.
+            // 仅允许已核验的域内组合关系，来源和目标列也必须精确匹配。
             assertEquals(List.of(
+                            "battle_data_vehicle_battle_id_fkey:battle_data_vehicle.battle_id->battle_data_battle.id",
                             "creator_category_link_creator_id_fkey:creator_category_link.creator_id->creator.id"),
                     cascades,
                     "出现新的级联删除关系时必须显式评审：IAM / HoF 路径禁止级联删除");

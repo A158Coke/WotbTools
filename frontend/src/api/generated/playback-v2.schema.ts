@@ -3,6 +3,211 @@ export default {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$ref": "#/$defs/BattlePlaybackDataset",
   "$defs": {
+    "BattleDataSpawn": {
+      "type": "string",
+      "enum": [
+        "NORTH",
+        "SOUTH",
+        "WEST",
+        "EAST"
+      ]
+    },
+    "BattleDataTeam": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "team",
+        "spawn",
+        "vehicles"
+      ],
+      "properties": {
+        "team": {
+          "type": "integer",
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "spawn": {
+          "$ref": "#/$defs/BattleDataSpawn"
+        },
+        "vehicles": {
+          "type": "array",
+          "minItems": 7,
+          "maxItems": 7,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          }
+        }
+      }
+    },
+    "BattleDataRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "arenaId",
+        "arenaBonusType",
+        "mapId",
+        "mapKey",
+        "clientVersion",
+        "winnerTeam",
+        "teams"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "arenaId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20,
+          "pattern": "^([1-9][0-9]{0,18}|1[0-7][0-9]{18}|18[0-3][0-9]{17}|184[0-3][0-9]{16}|1844[0-5][0-9]{15}|18446[0-6][0-9]{14}|184467[0-3][0-9]{13}|1844674[0-3][0-9]{12}|184467440[0-6][0-9]{10}|1844674407[0-2][0-9]{9}|18446744073[0-6][0-9]{8}|1844674407370[0-8][0-9]{6}|18446744073709[0-4][0-9]{5}|184467440737095[0-4][0-9]{4}|18446744073709550[0-9]{3}|18446744073709551[0-5][0-9]{2}|1844674407370955160[0-9]{1}|1844674407370955161[0-4]|18446744073709551615)(?![\\s\\S])",
+          "description": "uint64十进制字符串，不得超过18446744073709551615"
+        },
+        "arenaBonusType": {
+          "type": "integer",
+          "enum": [
+            1,
+            7
+          ]
+        },
+        "mapId": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "mapKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z0-9_]+(?![\\s\\S])"
+        },
+        "clientVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9._-]+(?![\\s\\S])"
+        },
+        "winnerTeam": {
+          "type": "integer",
+          "enum": [
+            0,
+            1,
+            2
+          ]
+        },
+        "teams": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/BattleDataTeam"
+          },
+          "allOf": [
+            {
+              "contains": {
+                "properties": {
+                  "team": {
+                    "const": 1
+                  }
+                }
+              },
+              "minContains": 1,
+              "maxContains": 1
+            },
+            {
+              "contains": {
+                "properties": {
+                  "team": {
+                    "const": 2
+                  }
+                }
+              },
+              "minContains": 1,
+              "maxContains": 1
+            }
+          ],
+          "oneOf": [
+            {
+              "prefixItems": [
+                {
+                  "properties": {
+                    "spawn": {
+                      "const": "NORTH"
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "spawn": {
+                      "const": "SOUTH"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "prefixItems": [
+                {
+                  "properties": {
+                    "spawn": {
+                      "const": "SOUTH"
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "spawn": {
+                      "const": "NORTH"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "prefixItems": [
+                {
+                  "properties": {
+                    "spawn": {
+                      "const": "WEST"
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "spawn": {
+                      "const": "EAST"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "prefixItems": [
+                {
+                  "properties": {
+                    "spawn": {
+                      "const": "EAST"
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "spawn": {
+                      "const": "WEST"
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
     "RecommendationType": {
       "type": "string",
       "enum": [

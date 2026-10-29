@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/battle-data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 匿名提交最小化战斗观察 */
+        post: operations["collectBattleData"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/users/profile/records": {
         parameters: {
             query?: never;
@@ -1679,6 +1696,28 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /** @enum {string} */
+        BattleDataSpawn: "NORTH" | "SOUTH" | "WEST" | "EAST";
+        BattleDataTeam: {
+            /** @enum {integer} */
+            team: 1 | 2;
+            spawn: components["schemas"]["BattleDataSpawn"];
+            vehicles: number[];
+        };
+        BattleDataRequest: {
+            /** @constant */
+            schemaVersion: 1;
+            /** @description uint64十进制字符串，不得超过18446744073709551615 */
+            arenaId: string;
+            /** @enum {integer} */
+            arenaBonusType: 1 | 7;
+            mapId: number;
+            mapKey: string;
+            clientVersion: string;
+            /** @enum {integer} */
+            winnerTeam: 0 | 1 | 2;
+            teams: (components["schemas"]["BattleDataTeam"][] & (unknown & unknown)) & (unknown | unknown | unknown | unknown);
+        };
+        /** @enum {string} */
         RecommendationType: "UP" | "VIDEO";
         RecommendationCategory: {
             type: components["schemas"]["RecommendationType"];
@@ -3321,6 +3360,89 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    collectBattleData: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BattleDataRequest"];
+            };
+        };
+        responses: {
+            /** @description 首个合法提交已存储，无响应体 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description arenaId已存在，无响应体 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description INVALID_REQUEST */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description FILE_TOO_LARGE */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description UNSUPPORTED_MEDIA_TYPE */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description RATE_LIMITED */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description INTERNAL_ERROR */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description SERVICE_UNAVAILABLE */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     getUserHofRecords: {
         parameters: {
             query?: never;

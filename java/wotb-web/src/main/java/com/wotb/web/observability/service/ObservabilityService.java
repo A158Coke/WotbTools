@@ -1,5 +1,7 @@
 package com.wotb.web.observability.service;
 
+import com.wotb.web.util.admission.AnonymousAdmission;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,8 +18,6 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.HashMap;
@@ -46,12 +46,10 @@ public class ObservabilityService {
     private static final int MAX_ANONYMOUS_KEYS = 4_096;
     // Ephemeral fixed-minute counters, never logged or persisted.
     private final Map<String, Integer> authenticatedSubjects = new HashMap<>();
-    private final Map<String, Integer> anonymousSources = new HashMap<>();
+    private final AnonymousAdmission anonymous;
     private final Clock clock;
     private long minute = Long.MIN_VALUE;
-    private String sourceSalt;
     private int authenticatedTotal;
-    private int anonymousTotal;
 
     @Autowired
     public ObservabilityService(final ObjectMapper mapper,
@@ -63,6 +61,7 @@ public class ObservabilityService {
         this.mapper = mapper;
         this.hashKey = hashKey;
         this.clock = clock;
+        anonymous = new AnonymousAdmission(clock, ANONYMOUS_EVENTS_PER_SOURCE, ANONYMOUS_EVENTS_PER_MINUTE, MAX_ANONYMOUS_KEYS);
     }
 
     public void accept(final byte[] body, final Jwt jwt, final String clientSource) {
@@ -149,45 +148,23 @@ public class ObservabilityService {
     }
 
     private synchronized void limit(final String subject, final String clientSource, final int cost) {
+        if (subject == null || subject.isBlank()) {
+            if (!anonymous.tryAcquire(clientSource, cost)) { throw rejected(HttpStatus.TOO_MANY_REQUESTS); }
+            return;
+        }
         final long current = clock.millis() / 60_000;
         if (current != minute) {
             authenticatedSubjects.clear();
-            anonymousSources.clear();
             authenticatedTotal = 0;
-            anonymousTotal = 0;
-            sourceSalt = UUID.randomUUID().toString();
             minute = current;
         }
-        final boolean authenticated = subject != null && !subject.isBlank();
-        final Map<String, Integer> counters = authenticated ? authenticatedSubjects : anonymousSources;
-        final String key = authenticated ? subject : anonymousSourceKey(clientSource);
-        final int count = counters.getOrDefault(key, 0);
-        final int total = authenticated ? authenticatedTotal : anonymousTotal;
-        final int sourceLimit = authenticated ? AUTHENTICATED_EVENTS_PER_SUBJECT : ANONYMOUS_EVENTS_PER_SOURCE;
-        final int globalLimit = authenticated ? AUTHENTICATED_EVENTS_PER_MINUTE : ANONYMOUS_EVENTS_PER_MINUTE;
-        final int maxKeys = authenticated ? MAX_AUTHENTICATED_KEYS : MAX_ANONYMOUS_KEYS;
-        // Check every bound before mutation: rejected requests consume no capacity.
-        if (count + cost > sourceLimit || total + cost > globalLimit
-                || (!counters.containsKey(key) && counters.size() >= maxKeys)) {
+        final int count = authenticatedSubjects.getOrDefault(subject, 0);
+        if (count + cost > AUTHENTICATED_EVENTS_PER_SUBJECT || authenticatedTotal + cost > AUTHENTICATED_EVENTS_PER_MINUTE
+                || (!authenticatedSubjects.containsKey(subject) && authenticatedSubjects.size() >= MAX_AUTHENTICATED_KEYS)) {
             throw rejected(HttpStatus.TOO_MANY_REQUESTS);
         }
-        counters.put(key, count + cost);
-        if (authenticated) {
-            authenticatedTotal += cost;
-        } else {
-            anonymousTotal += cost;
-        }
-    }
-
-    private String anonymousSourceKey(final String clientSource) {
-        try {
-            // Minute-specific hash: this is a rate-limit source, never an analytics identity.
-            final MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest((sourceSalt + ":" + clientSource)
-                    .getBytes(StandardCharsets.UTF_8)));
-        } catch (final NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("Telemetry source hashing unavailable", exception);
-        }
+        authenticatedSubjects.put(subject, count + cost);
+        authenticatedTotal += cost;
     }
 
     private String hash(final String subject) {

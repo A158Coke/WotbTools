@@ -18,6 +18,20 @@ class MapTacticalSemanticsRegistryTest {
     private final MapTacticalSemanticsRegistry registry = MapTacticalSemanticsRegistry.load();
 
     @Test
+    void riftPhysicalSidesAreReviewedCanonicalMetadata() throws Exception {
+        final Resource[] resources = new PathMatchingResourcePatternResolver()
+                .getResources("classpath:/map-semantics/35_rift_rt.semantic.json");
+        assertEquals(1, resources.length);
+        try (InputStream in = resources[0].getInputStream()) {
+            final JsonNode root = JsonMapper.builder().build().readTree(in);
+            assertEquals("A is north/top; 1 is west/left", root.path("analysisGrid").path("orientation").asString());
+            assertEquals("SOUTH", root.path("spawnSemantics").path("TEAM_1").path("physicalSide").asString());
+            assertEquals("NORTH", root.path("spawnSemantics").path("TEAM_2").path("physicalSide").asString());
+            assertTrue(registry.semanticsFor("rift").hasSemantics(), "新增可选字段不破坏既有读取者");
+        }
+    }
+
+    @Test
     void desertTrainResolvesFromSemanticizerData() {
         // map-semanticizer 生成的 Desert Sands 语义（common/map-semantics/02_desert_train_dt.semantic.json）
         final MapTacticalSemantics semantics = registry.semanticsFor("desert_train");

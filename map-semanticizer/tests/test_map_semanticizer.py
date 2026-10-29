@@ -52,6 +52,60 @@ def semantic_documents():
         yield path, json.loads(path.read_text(encoding="utf-8"))
 
 
+class ReviewedSpawnSideTest(unittest.TestCase):
+    def test_preserves_reviewed_complementary_sides_only(self):
+        for first, second in [("NORTH", "SOUTH"), ("SOUTH", "NORTH"),
+                              ("WEST", "EAST"), ("EAST", "WEST")]:
+            spawns = {key: {"status": "EXACT_SCENE_DATA"} for key in ["TEAM_1", "TEAM_2"]}
+            ms.preserve_reviewed_spawn_sides(spawns, {
+                "mapId": "example", "spawnSemantics": {
+                    "TEAM_1": {"physicalSide": first}, "TEAM_2": {"physicalSide": second}}}, "example")
+            self.assertEqual(spawns["TEAM_1"]["physicalSide"], first)
+            self.assertEqual(spawns["TEAM_2"]["physicalSide"], second)
+
+    def test_refuses_invalid_or_foreign_reviewed_metadata(self):
+        for map_id, sides in [("other", ("NORTH", "SOUTH")), ("example", ("NORTH", "EAST")),
+                              ("example", ("UNKNOWN", "SOUTH"))]:
+            with self.assertRaises(ValueError):
+                ms.preserve_reviewed_spawn_sides(
+                    {key: {"status": "EXACT_SCENE_DATA"} for key in ["TEAM_1", "TEAM_2"]},
+                    {"mapId": map_id, "spawnSemantics": {
+                        "TEAM_1": {"physicalSide": sides[0]}, "TEAM_2": {"physicalSide": sides[1]}}}, "example")
+
+    def test_rejects_incomplete_and_non_exact_reviewed_groups(self):
+        reviewed = {"mapId": "example", "spawnSemantics": {
+            "TEAM_1": {"physicalSide": "NORTH"}, "TEAM_2": {"physicalSide": "SOUTH"}}}
+        with self.assertRaises(ValueError):
+            ms.preserve_reviewed_spawn_sides({"TEAM_1": {"status": "EXACT_SCENE_DATA"}}, reviewed, "example")
+        with self.assertRaises(ValueError):
+            ms.preserve_reviewed_spawn_sides({"TEAM_1": {"status": "EXACT_SCENE_DATA"},
+                "TEAM_2": {"status": "UNKNOWN"}}, reviewed, "example")
+        del reviewed["spawnSemantics"]["TEAM_2"]["physicalSide"]
+        with self.assertRaises(ValueError):
+            ms.preserve_reviewed_spawn_sides({"TEAM_1": {"status": "EXACT_SCENE_DATA"},
+                "TEAM_2": {"status": "EXACT_SCENE_DATA"}}, reviewed, "example")
+
+    def test_missing_metadata_stays_unknown(self):
+        spawns = {"TEAM_1": {"status": "EXACT_SCENE_DATA"}}
+        ms.preserve_reviewed_spawn_sides(spawns, {"mapId": "example"}, "example")
+        self.assertNotIn("physicalSide", spawns["TEAM_1"])
+
+    def test_repository_annotations_are_complementary_and_rift_is_independent_expected(self):
+        annotated = []
+        for path, doc in semantic_documents():
+            if any("physicalSide" in group for group in doc["spawnSemantics"].values()):
+                annotated.append(path.name)
+                ms.preserve_reviewed_spawn_sides(doc["spawnSemantics"], doc, doc["mapId"])
+        self.assertIn("35_rift_rt.semantic.json", annotated)
+        self.assertGreaterEqual(len(annotated), 10)
+        unresolved = sorted(p.name for p, doc in semantic_documents() if not all("physicalSide" in doc["spawnSemantics"].get(team, {}) for team in ("TEAM_1", "TEAM_2")))
+        print(f"physicalSide reviewed={len(annotated)} unresolved={len(unresolved)}: {unresolved}")
+        self.assertEqual(len(annotated) + len(unresolved), 33, "新增地图必须审计 physicalSide 覆盖并更新基线")
+        rift = json.loads((SEMANTIC_DIR / "35_rift_rt.semantic.json").read_text(encoding="utf-8"))
+        self.assertEqual(rift["spawnSemantics"]["TEAM_1"]["physicalSide"], "SOUTH")
+        self.assertEqual(rift["spawnSemantics"]["TEAM_2"]["physicalSide"], "NORTH")
+
+
 class HeightmapTest(unittest.TestCase):
     def test_16x16_block_untiling(self):
         size = 16

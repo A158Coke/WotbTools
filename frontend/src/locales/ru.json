@@ -800,6 +800,8 @@
     "BOOST_ASSIGNMENT_CANCELLED": "Назначение отменено."
   },
   "api_errors": {
+    "RATE_LIMITED": "Слишком много запросов. Повторите позже.",
+    "SERVICE_UNAVAILABLE": "Сервис временно недоступен.",
     "UNKNOWN_ERROR": "Неизвестная ошибка",
     "NETWORK_ERROR": "Ошибка сетевого подключения",
     "INVALID_ARGUMENT": "Некорректный запрос",

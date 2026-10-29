@@ -353,7 +353,7 @@ class BroadcastSeedMigrationTest {
         final var facts = jdbc.queryForList("select to_jsonb(replay)-'title' as facts from tournament_broadcast_replay replay order by id");
         final var seasonFacts = jdbc.queryForList("select to_jsonb(season)-ARRAY['name_zh','name_en','name_ru','version'] as facts from tournament_broadcast_season season order by id");
         final Flyway current = Flyway.configure().dataSource(POSTGRES.getJdbcUrl(),POSTGRES.getUsername(),POSTGRES.getPassword()).load();
-        current.migrate(); current.validate(); assertEquals("44",current.info().current().getVersion().toString());
+        current.migrate(); current.validate(); assertEquals("45",current.info().current().getVersion().toString());
         assertCounts(20,29,33,74); assertLocalizedDefaults();
         assertEquals(facts,jdbc.queryForList("select to_jsonb(replay)-'title' as facts from tournament_broadcast_replay replay order by id"));
         assertEquals(seasonFacts,jdbc.queryForList("select to_jsonb(season)-ARRAY['name_zh','name_en','name_ru','version'] as facts from tournament_broadcast_season season order by id"));
