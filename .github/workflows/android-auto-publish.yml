@@ -4,6 +4,10 @@ name: Android Auto Publish
 #   main version bump -> Release / Android stage -> stage success -> this workflow
 #   -> dispatch Release / Android(mode=publish, version=X).
 #
+# Automatic publication is latest-main-wins. If main advances after a candidate
+# stages, the older candidate remains immutable and manually recoverable, but its
+# auto-publish is skipped so it cannot displace a newer pending stage.
+#
 # The existing publish job remains the only writer of production version.json and
 # keeps all staged-identity / runtime / CORS / minSupported guards. Manual publish
 # remains available as the recovery path for interrupted or failed automatic runs.
@@ -18,8 +22,12 @@ permissions:
   contents: read
   actions: write
 
+# Serialize freshness decisions. Unlike the release workflow's production lock,
+# this queue never mutates release state itself; it only decides whether the
+# completed stage is still the latest main candidate before dispatching publish.
 concurrency:
-  group: android-auto-publish-${{ github.event.workflow_run.head_sha }}
+  group: android-auto-publish
+  queue: max
   cancel-in-progress: false
 
 jobs:
@@ -65,14 +73,38 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Auto-publish candidate: $VERSION"
 
-      - name: Dispatch existing guarded publish phase
+      - name: Dispatch existing guarded publish phase if candidate is still latest main
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
           STAGE_RUN_ID: ${{ github.event.workflow_run.id }}
+          STAGED_SHA: ${{ github.event.workflow_run.head_sha }}
         shell: bash
         run: |
           set -euo pipefail
+
+          # Check freshness immediately before dispatch. This closes the race where
+          # an older stage A could inject publish(A) into the shared android-release
+          # concurrency group after newer B/C stages have already arrived. Normal
+          # CD only auto-publishes the candidate that is still current main.
+          MAIN_SHA="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          DECISION="$(bash scripts/android-release/auto-publish-decision.sh "$STAGED_SHA" "$MAIN_SHA")"
+          if [ "$DECISION" = "skip" ]; then
+            echo "::notice::Skipping stale Android auto-publish: staged=$STAGED_SHA current-main=$MAIN_SHA version=$VERSION. A newer main candidate owns the automatic release path."
+            {
+              echo "# Android auto publish"
+              echo ""
+              echo "Stage run: $STAGE_RUN_ID"
+              echo "Staged source: $STAGED_SHA"
+              echo "Current main: $MAIN_SHA"
+              echo "Version: $VERSION"
+              echo "Action: skipped (main advanced; latest-main-wins)"
+              echo ""
+              echo "The immutable staged version remains available through manual workflow_dispatch(mode=publish, version=X) recovery."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
           gh workflow run android-release.yml \
             --repo "$GITHUB_REPOSITORY" \
             --ref main \
@@ -82,7 +114,8 @@ jobs:
             echo "# Android auto publish"
             echo ""
             echo "Stage run: $STAGE_RUN_ID"
-            echo "Staged source: ${{ github.event.workflow_run.head_sha }}"
+            echo "Staged source: $STAGED_SHA"
+            echo "Current main: $MAIN_SHA"
             echo "Version: $VERSION"
             echo "Action: dispatched Release / Android mode=publish"
             echo ""
