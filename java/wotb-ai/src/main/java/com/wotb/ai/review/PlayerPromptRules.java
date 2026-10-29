@@ -484,6 +484,26 @@ final class PlayerPromptRules {
             8. Гибель в конце боя, не повлиявшая на результат, не оценивается.
             """;
 
+    static final String EVIDENCE_FIRST_RULE = AiPromptLibrary.zh("player/evidence-first");
+
+    static final String EVIDENCE_FIRST_RULE_EN = """
+            === EVIDENCE FIRST AND COACHING JUDGMENT (mandatory) ===
+            Prioritize quality: do not omit key factual checks, causal comparisons or alternatives to save tokens, reasoning or compute.
+            Check authoritative facts, observed events, limitations and coverage before drawing conclusions; do not build a tactical story first and cherry-pick evidence. Do not ignore directly contradictory evidence.
+            Be strict with facts but give clear, contestable coaching judgments and training advice grounded in reliable evidence. Distinguish factual observation from tactical inference.
+            UNSEEN / LAST_KNOWN / PARTIAL / UNKNOWN / UNAVAILABLE do not mean absent or zero. Distinguish current from last-known, observed from unknown, and complete from partial; do not turn partial or discrete observations into continuous or global facts, or temporal proximity into causation.
+            A key definite fact that contradicts direct input evidence, or an unchecked key fact driving a conclusion or recommendation, fails factual integrity. A coaching judgment can be disputed when its factual basis is sound and inference boundaries are clear. Do not claim external tool use or access to data outside the input.
+            """;
+
+    static final String EVIDENCE_FIRST_RULE_RU = """
+            === ПРИОРИТЕТ ДОКАЗАТЕЛЬСТВ И ТРЕНЕРСКАЯ ОЦЕНКА (обязательно) ===
+            Качество прежде всего: не пропускайте проверку ключевых фактов, причинные сравнения или альтернативы ради экономии токенов, рассуждений или вычислений.
+            Проверяйте authoritative facts, наблюдаемые события, ограничения и покрытие до выводов; не создавайте сначала тактическую историю с выборочным подбором доказательств. Не игнорируйте прямые противоречия в данных.
+            Строго соблюдайте границы фактов, но давайте ясные, оспоримые тренерские оценки и рекомендации на основе надёжных доказательств. Отличайте наблюдение от тактического вывода.
+            UNSEEN / LAST_KNOWN / PARTIAL / UNKNOWN / UNAVAILABLE не означают отсутствие или ноль. Различайте текущую и последнюю известную информацию, наблюдаемое и неизвестное, полное и частичное; не превращайте частичные или отдельные наблюдения в непрерывные или общие факты, а близость по времени — в причинность.
+            Ключевой определённый факт, противоречащий прямым входным данным, или непроверенный ключевой факт, на котором основан вывод или рекомендация, означает фактическую ошибку. Тренерская оценка может быть спорной при верной фактической основе и ясных границах вывода. Не заявляйте об использовании внешних инструментов или доступе к данным вне входа.
+            """;
+
     static String localizePlayerSystemPrompt(final String zhPrompt, final AllowedLanguage language) {
         if (language == null || language == AllowedLanguage.ZH) {
             return zhPrompt;
@@ -494,6 +514,7 @@ final class PlayerPromptRules {
                 .replace("请用简体中文输出一份简洁、专业、可执行的战术复盘：",
                         en ? EN_FALLBACK_OUTPUT_INTRO : RU_FALLBACK_OUTPUT_INTRO)
                 .replace("请用简体中文输出：", en ? EN_OUTPUT_INTRO : RU_OUTPUT_INTRO)
+                .replace(EVIDENCE_FIRST_RULE, en ? EVIDENCE_FIRST_RULE_EN : EVIDENCE_FIRST_RULE_RU)
                 .replace(ZH_TIME_RULE, timeRule)
                 .replace(ZH_UNKNOWN_FIELD_RULE,
                         en ? EN_UNKNOWN_FIELD_RULE : RU_UNKNOWN_FIELD_RULE)

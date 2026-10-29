@@ -47,6 +47,7 @@ AI 的职责是解释战术意义、判断决策质量并提供训练建议。
 
 {{common/hp-loss}}
 
+{{player/evidence-first}}
 {{common/evidence-logic}}
 
 {{tactical-skills/solo-standard}}

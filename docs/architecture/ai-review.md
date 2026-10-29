@@ -190,6 +190,7 @@ AI 提示词正文维护在 `java/wotb-ai/src/main/resources/prompts/` 下的 `.
 
 | key | 文件 | 对应常量 |
 |---|---|---|
+| player/evidence-first | `prompts/player/evidence-first.zh.md` | `PlayerPromptRules.EVIDENCE_FIRST_RULE`（三语证据优先与教练判断，由三个 Player prompt include） |
 | player/fallback | `prompts/player/fallback.zh.md` | `PlayerPromptRules.SYSTEM_PROMPT`（单 Call 兜底） |
 | player/single | `prompts/player/single.zh.md` | `PlayerPromptRules.SINGLE_PLAYER_PROMPT` |
 | player/tactical | `prompts/player/tactical.zh.md` | `TacticalReviewPromptBuilder.TACTICAL_SYSTEM_PROMPT`（fallback + Harness 规则） |
@@ -217,7 +218,7 @@ AI 提示词正文维护在 `java/wotb-ai/src/main/resources/prompts/` 下的 `.
 
 Team Call #2 在 `Canonical BattleTimeline → deterministic evidence → grounded JSON` 链路中，通过 `AiPromptLibrary` include 按 INFORMATION/VISION → OBJECTIVES → LOCAL ENGAGEMENTS → POSITION/TEMPO → TEAM EXECUTION → HP/TRADES 注入六个紧凑模块。模块只提供经验性决策考虑，不产生 `BAD_PUSH`、`HALF_COMMIT_ERROR`、`GOOD_TRADE` 等后端结论；`EpisodeDetector`、Focus Window 和现有 Team evidence 继续是唯一事实输入。
 
-Team Review 三语 system prompt 均要求先核对权威事实、观测、覆盖和局限；未知、局部或最后已知信息不得升级为确定事实。战术推断须标明边界，并基于证据给出明确的教练判断和训练建议。
+Player 与 Team Review 三语 system prompt 均要求先核对权威事实、观测、覆盖和局限；未知、局部或最后已知信息不得升级为确定事实。战术推断须标明边界，并基于证据给出明确的教练判断和训练建议。
 
 Team Review 不接受战术地图计划，也没有语音/通信证据。模型先重建当时的信息状态（CURRENT/LAST_KNOWN/UNSEEN）、基地与点数义务、空间结构和局部有效兵力，再分析局部之间的信息/火力/空间传播、推进/等待/脱离/角色转换和交换结果；无法由证据支持的推断直接跳过。`summary.primaryDiagnosis` 表示本场最重要的结论，允许“没有明显确认错误”“关键成功因素”或“对手处理更好”。Strategic Prior 明确只是阵容与可能性的基线，不能作为实际队伍计划或单独的判错依据。
 
