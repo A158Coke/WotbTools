@@ -145,7 +145,7 @@ public class TeamReplayQualityBenchmarkRunner {
         final TeamAiReviewResult structured = parsed.result();
         final boolean contractPass = parsed.usable();
         final Map<String, Object> scores = new LinkedHashMap<>();
-        // v0.5 contract：parser 可产出 minimum contract（summary + episodes）即为通过；
+        // contract：parser 可产出 minimum contract（summary + episodes）即为通过；
         // normalized 表示发生了确定性 salvage。legacy envelope 的 grounding validator /
         // structural shortcut validator 已随 legacy 契约层删除，不再参与评分（见 ai-evaluation 文档）。
         scores.put("contract", parsed.normalized() ? 1 : 2);
@@ -168,7 +168,7 @@ public class TeamReplayQualityBenchmarkRunner {
     }
 
     /**
-     * v0.5 structured result → 参与 gold / lexical 评分的正文文本：
+     * structured result → 参与 gold / lexical 评分的正文文本：
      * summary 摘要 + episode 标题与分析 + 训练建议（legacy {@code reviewMarkdown} 的等价载体）。
      */
     private static String reviewText(final TeamAiReviewResult result) {

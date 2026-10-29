@@ -71,7 +71,7 @@ class TeamReviewOutputCapTest {
     @Test
     void teamCapBelowGlobalStillProducesStructuredReview() {
         // 预算守卫与 request 使用同一 effective 值：team cap < global 时仍然完整走完
-        // Call #2（JSON_OBJECT）并产出 v0.5 structured result。
+        // Call #2（JSON_OBJECT）并产出 structured result。
         final CapGateway gateway = new CapGateway();
         final TeamReplayAnalysisService service = service(gateway, 32_768, 4_096);
         final AiReviewDonePayload result = service.analyzeTeam(

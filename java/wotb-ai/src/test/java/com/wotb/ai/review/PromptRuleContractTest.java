@@ -129,9 +129,9 @@ class PromptRuleContractTest {
                     lang + " 残留中文 reasoning contract");
         }
         assertTrue(TeamPromptLocalizer.localizeTeamSystemPrompt(team, AllowedLanguage.EN)
-                        .contains("TEAM REVIEW V0.6 REASONING ORDER AND CAUSAL QUALITY CONTRACT"));
+                        .contains("TEAM REVIEW REASONING ORDER AND CAUSAL QUALITY CONTRACT"));
         assertTrue(TeamPromptLocalizer.localizeTeamSystemPrompt(team, AllowedLanguage.RU)
-                        .contains("ПОРЯДОК РАССУЖДЕНИЯ КОМАНДНОГО РАЗБОРА V0.6 И КОНТРАКТ ПРИЧИННОСТИ"));
+                        .contains("ПОРЯДОК РАССУЖДЕНИЯ КОМАНДНОГО РАЗБОРА И КОНТРАКТ ПРИЧИННОСТИ"));
     }
 
     @Test

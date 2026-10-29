@@ -48,7 +48,7 @@ class TeamReplayOfflineEvalHarnessTest {
             assertTrue(prompt.contains("TACTICAL TIMELINE"), qualityCase.id() + " omitted production timeline");
             final String systemPrompt = TeamPromptLocalizer.localizeTeamSystemPrompt(
                     TeamPromptLocalizer.SINGLE_TEAM_PROMPT, AllowedLanguage.ZH);
-            assertTrue(systemPrompt.contains("团队复盘 v0.6 推理顺序"),
+            assertTrue(systemPrompt.contains("团队复盘推理顺序"),
                     qualityCase.id() + " omitted reasoning contract");
             assertFalse(prompt.contains(qualityCase.id()),
                     qualityCase.id() + " gold case id leaked into the production prompt");

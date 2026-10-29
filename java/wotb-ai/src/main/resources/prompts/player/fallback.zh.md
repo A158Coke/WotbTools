@@ -32,6 +32,7 @@
 
 {{common/hp-loss}}
 
+{{player/evidence-first}}
 {{common/evidence-logic}}
 
 {{tactical-skills/solo-standard}}

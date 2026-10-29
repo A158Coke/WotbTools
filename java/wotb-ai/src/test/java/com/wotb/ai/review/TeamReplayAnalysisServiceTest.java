@@ -52,7 +52,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * {@link TeamReplayAnalysisService#analyzeTeam}（Team AI 唯一 production 编排入口）契约：
- * Call #1 prior 注入 / 团队 Prompt 契约 / v0.5 structured result 解析与 salvage /
+ * Call #1 prior 注入 / 团队 Prompt 契约 / structured result 解析与 salvage /
  * 唯一一次 recovery / token 与 contract 事件日志。
  */
 class TeamReplayAnalysisServiceTest {
@@ -349,7 +349,7 @@ class TeamReplayAnalysisServiceTest {
                 "team Call #2 must forward reasoningEffort when thinking enabled");
     }
 
-    // ========== v0.5 structured result：salvage / recovery ==========
+    // ========== structured result：salvage / recovery ==========
 
     @Test
     void invalidOptionalSchemaReferencesAreSalvagedWithoutRecovery() {

@@ -38,7 +38,7 @@ class TeamReviewQualityGateContractTest {
         assertTrue(ZH.contains("关键 tactical episode，必须展开到足以说明"), "关键 episode 必须完整解释");
         assertTrue(ZH.contains("不得为了“简洁”省略会改变战术判断的信息"), "不得因简洁省略关键战术信息");
         assertTrue(ZH.contains("多个 local 必须检查是否有传播"), "多个 local 必须检查传播");
-        assertTrue(ZH.contains("primaryDiagnosis 只是整场摘要，不得压缩 v0.5 structured result 中的 episodes 或训练建议"), "primaryDiagnosis 只是摘要");
+        assertTrue(ZH.contains("primaryDiagnosis 只是整场摘要，不得压缩 structured result 中的 episodes 或训练建议"), "primaryDiagnosis 只是摘要");
         assertTrue(ZH.contains("“重点复查”和“高贡献者”是可选 section"), "个人 section 可选");
         assertTrue(ZH.contains("主因可以只有一个，不要为了凑结构制造不存在的问题"), "主因可以只有一个且不得凑结构造问题");
         assertTrue(ZH.contains("但一个主因不等于正文只能讲一件事"), "主因不能压缩正文范围");
@@ -143,7 +143,7 @@ class TeamReviewQualityGateContractTest {
     }
 
     @Test
-    void v06InformationSupportabilityAndIndividualBindingContract() {
+    void informationSupportabilityAndIndividualBindingContract() {
         assertTrue(ZH.contains("Known → Remaining uncertainty → New observation → 哪种 uncertainty 被移除/缩小 → Decision impact"),
                 "Information 必须形成 Known -> uncertainty -> observation -> decision impact 链");
         assertTrue(ZH.contains("distance 只是 evidence，不是 supportability verdict"),
@@ -171,7 +171,7 @@ class TeamReviewQualityGateContractTest {
     }
 
     @Test
-    void v06ReasoningOrderIsExplicitAndOrdered() {
+    void reasoningOrderIsExplicitAndOrdered() {
         final String[] anchors = {
                 "Read authoritative facts",
                 "Establish information state",
@@ -189,22 +189,22 @@ class TeamReviewQualityGateContractTest {
         int previous = -1;
         for (final String anchor : anchors) {
             final int current = ZH.indexOf(anchor);
-            assertTrue(current > previous, "v0.6 推理顺序缺少或顺序错误: " + anchor);
+            assertTrue(current > previous, "推理顺序缺少或顺序错误: " + anchor);
             previous = current;
         }
     }
 
     @Test
-    void v06LocalizedReasoningContractIsAvailableInThreeLanguages() {
+    void localizedReasoningContractIsAvailableInThreeLanguages() {
         final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.EN);
-        assertTrue(en.contains("TEAM REVIEW V0.6 REASONING ORDER AND CAUSAL QUALITY CONTRACT"));
+        assertTrue(en.contains("TEAM REVIEW REASONING ORDER AND CAUSAL QUALITY CONTRACT"));
         assertTrue(en.contains("Distance is evidence, not a supportability verdict"));
         assertTrue(en.contains("State before -> Change -> Immediate local consequence -> Propagation"));
         assertTrue(en.contains("downstream validation"));
         assertFalse(en.contains("=== v0.4 信息链、支援能力与个人复查约束（强制） ==="));
 
         final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.RU);
-        assertTrue(ru.contains("ПОРЯДОК РАССУЖДЕНИЯ КОМАНДНОГО РАЗБОРА V0.6"));
+        assertTrue(ru.contains("ПОРЯДОК РАССУЖДЕНИЯ КОМАНДНОГО РАЗБОРА"));
         assertTrue(ru.contains("Расстояние — evidence, а не verdict о возможности поддержки"));
         assertTrue(ru.contains("downstream validation"));
         assertFalse(ru.contains("=== v0.4 信息链、支援能力与个人复查约束（强制） ==="));

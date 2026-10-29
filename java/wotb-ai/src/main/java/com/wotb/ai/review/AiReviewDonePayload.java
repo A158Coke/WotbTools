@@ -11,7 +11,7 @@ import java.util.List;
  *
  * <p>两个复盘分支共用本类型：PLAYER_FOCUSED 的 {@code analysis} 为随机战复盘正文、
  * {@code teamReview} 为 {@code null}、{@code teamPlayers} 为空数组；TEAM_PERSPECTIVE 的
- * {@code analysis} 为 v0.5 structured result 的 {@code summary.verdict} 兼容文本，
+ * {@code analysis} 为 structured result 的 {@code summary.verdict} 兼容文本，
  * {@code teamReview}/{@code teamPlayers} 来自 {@code TeamReplayAnalysisService}。
  * 任何分支都必须发出全部 5 个 key（null 值按 wire contract 保留）。</p>
  *
@@ -20,7 +20,7 @@ import java.util.List;
  * @param capability       AVAILABLE / AVAILABLE_WITH_LIMITED_TIMELINE / UNAVAILABLE
  *                         （派生：recon.battleStartRawClockSec 非 finite 或投影声明 limitations → LIMITED；
  *                         见 {@link Capability}）
- * @param teamReview       Team AI Review v0.5 structured result；个人复盘时为 null
+ * @param teamReview       Team AI Review structured result；个人复盘时为 null
  * @param teamPlayers      authoritative playerKey → display identity mapping；个人复盘时为空
  */
 public record AiReviewDonePayload(

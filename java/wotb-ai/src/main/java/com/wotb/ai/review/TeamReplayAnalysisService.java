@@ -89,7 +89,7 @@ public class TeamReplayAnalysisService {
     }
 
     /**
-     * 单团队 Call #2（Team production v0.5 唯一入口）：请求 JSON_OBJECT，解析并
+     * 单团队 Call #2（Team production 唯一入口）：请求 JSON_OBJECT，解析并
      * 校验 {@link TeamAiReviewResult}，然后把结构化结果交给 SSE done 事件。
      */
     private TeamCallResult callSingleTeamContext(
@@ -338,15 +338,15 @@ public class TeamReplayAnalysisService {
         return TeamPromptLocalizer.localizeTeamSystemPrompt(
                         TeamPromptLocalizer.SINGLE_TEAM_PROMPT, language)
                 + switch (language) {
-                    case EN -> "\n\nRECOVERY STRICTNESS: output only the canonical v0.5 TeamAiReviewResult object "
+                    case EN -> "\n\nRECOVERY STRICTNESS: output only the canonical TeamAiReviewResult object "
                             + "described above. Root and nested objects reject extra fields; never emit unknown_field, "
                             + "repair instructions, schema metadata, or explanatory prose. Use only authoritative roster "
                             + "playerKey values supplied in the user context; omit uncertain optional references.";
                     case RU -> "\n\nСТРОГИЙ RECOVERY-КОНТРАКТ: выводите только описанный выше канонический "
-                            + "объект TeamAiReviewResult v0.5. Дополнительные поля в root и вложенных объектах запрещены; "
+                            + "объект TeamAiReviewResult. Дополнительные поля в root и вложенных объектах запрещены; "
                             + "не выводите unknown_field, инструкции repair, метаданные schema или поясняющий текст. "
                             + "Используйте только authoritative roster playerKey из контекста; сомнительные optional references опускайте.";
-                    case ZH -> "\n\nRECOVERY 严格约束：只输出上方 canonical v0.5 TeamAiReviewResult object。"
+                    case ZH -> "\n\nRECOVERY 严格约束：只输出上方 canonical TeamAiReviewResult object。"
                             + "root 与所有 nested object 都拒绝额外字段；禁止输出 unknown_field、repair instructions、schema metadata 或解释性文本。"
                             + "playerKey 只能使用 user context 提供的 authoritative roster key；无法确认的 optional reference 直接省略。";
                 };
@@ -358,7 +358,7 @@ public class TeamReplayAnalysisService {
         return switch (language) {
             case EN -> "=== RECOVERY REQUEST ===\n"
                     + "This is the only recovery attempt. Regenerate the complete team review from the same battle context. "
-                    + "Reuse the TeamAiReviewResult v0.5 contract from the system message strictly: root and nested objects "
+                    + "Reuse the TeamAiReviewResult contract from the system message strictly: root and nested objects "
                     + "must not contain extra fields; never emit unknown_field, repair instructions, or schema/error metadata. "
                     + "Output only the final JSON object, with no Markdown fence, explanation, or commentary outside JSON. "
                     + "playerKey values must be copied verbatim from the authoritative roster key set; omit uncertain optional "
@@ -366,7 +366,7 @@ public class TeamReplayAnalysisService {
                     + "Keep the same tactical task and authoritative battle context; do not invent new facts.";
             case RU -> "=== RECOVERY REQUEST ===\n"
                     + "Это единственная попытка recovery. Повторно сформируйте полный командный разбор на основе того же контекста боя. "
-                    + "Строго используйте контракт TeamAiReviewResult v0.5 из системного сообщения: в root и вложенных объектах "
+                    + "Строго используйте контракт TeamAiReviewResult из системного сообщения: в root и вложенных объектах "
                     + "запрещены дополнительные поля; не выводите unknown_field, инструкции repair или schema/error metadata. "
                     + "Выводите только итоговый JSON object без Markdown fence, объяснений и комментариев вне JSON. "
                     + "Значения playerKey должны дословно соответствовать authoritative roster key set; сомнительные optional "
@@ -374,7 +374,7 @@ public class TeamReplayAnalysisService {
                     + "Сохраните ту же тактическую задачу и authoritative battle context; не добавляйте новые факты.";
             case ZH -> "=== RECOVERY REQUEST ===\n"
                     + "这是唯一一次 recovery。请基于同一战局上下文重新生成完整团队复盘。"
-                    + "严格复用系统消息中的 TeamAiReviewResult v0.5 contract：root 和 nested object 都禁止 extra field，"
+                    + "严格复用系统消息中的 TeamAiReviewResult contract：root 和 nested object 都禁止 extra field，"
                     + "禁止 unknown_field、repair instructions、schema/error metadata；只输出最终 JSON object，"
                     + "不要输出 Markdown fence、解释或 JSON 外 commentary。"
                     + "playerKey 只能逐字取自 authoritative roster key set；无法确认的 optional reference 直接省略，"
