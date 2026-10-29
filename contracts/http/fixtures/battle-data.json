@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "arenaId": "1168689173149065733",
+  "arenaBonusType": 1,
+  "mapId": 43,
+  "mapKey": "rift",
+  "clientVersion": "11.18.0_china_apple",
+  "winnerTeam": 0,
+  "teams": [
+    {
+      "team": 1,
+      "spawn": "SOUTH",
+      "vehicles": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "team": 2,
+      "spawn": "NORTH",
+      "vehicles": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ]
+    }
+  ]
+}

@@ -166,6 +166,7 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 - `creator`：bilibili UP/优秀作品共用五表目录，按类型隔离分类和 UID/BV 标识；统一 recommendations API、服务和事务锁；管理使用 `content-admin`。契约见 [`features/bilibili-creators.md`](features/bilibili-creators.md)。
 - `tournament`：按年份/区服/季赛配置积分规则、截图排名的共享草稿、CSV 整表替换、正式榜单、修正与审计；同域 `Broadcast*` 管理五服联赛直播目录。契约见 [`features/tournament-points.md`](features/tournament-points.md) 与 [`features/league-broadcasts.md`](features/league-broadcasts.md)。
 - `replay`：只剩 `/api/health` 与名人堂共用的 `ReplayCapacityLimiter`。
+- `battledata`：匿名接收最小化 Random/Rating 战斗观察；验证后按 arenaId 首次有效写入，不解析回放、不关联用户。客户端隔离、隐私与数据归属见 [Replay Pipeline](architecture/replay-pipeline.md#匿名-battle-data-collector)，配额与开关见 [运维手册](operations/observability-runbook.md#battle-data-collector)。
 
 ### 客户端 Replay Engine
 

@@ -110,3 +110,27 @@ for (const invalid of [
   if (validateTimedSave(invalid)) throw new Error('Invalid timed save accepted')
 }
 console.log('Broadcast contract envelope, nested business boundaries, optional groups and explicit time precision: OK')
+
+// Collector结构与跨字段约束由OpenAPI独立验证。
+const battle = JSON.parse(await readFile(new URL('../../contracts/http/fixtures/battle-data.json', import.meta.url), 'utf8'))
+const checkBattle = ajv.compile(document.components.schemas.BattleDataRequest)
+if (!checkBattle(battle)) throw new Error(JSON.stringify(checkBattle.errors))
+for (const mutate of [
+  value => { value.arenaBonusType = 2 },
+  value => { value.schemaVersion = 2 },
+  value => { value.arenaId = '18446744073709551616' },
+  value => { value.arenaId = '123\n' },
+  value => { value.mapKey = 'rift\n' },
+  value => { value.clientVersion = '11.18.0\n' },
+  value => { value.winnerTeam = null },
+  value => { value.accountId = 123 },
+  value => { value.teams[0].vehicles.pop() },
+  value => { value.teams[1].team = 1 },
+  value => { value.teams[1].spawn = 'SOUTH' },
+  value => { value.teams[1].spawn = 'WEST' },
+]) {
+  const invalid = structuredClone(battle)
+  mutate(invalid)
+  if (checkBattle(invalid)) throw new Error('Invalid Collector contract fixture accepted')
+}
+console.log('Battle data request contract fixtures: OK')

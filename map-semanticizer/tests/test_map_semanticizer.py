@@ -52,6 +52,43 @@ def semantic_documents():
         yield path, json.loads(path.read_text(encoding="utf-8"))
 
 
+class ReviewedSpawnSideTest(unittest.TestCase):
+    def test_preserves_reviewed_complementary_sides_only(self):
+        for first, second in [("NORTH", "SOUTH"), ("SOUTH", "NORTH"),
+                              ("WEST", "EAST"), ("EAST", "WEST")]:
+            spawns = {key: {"status": "EXACT_SCENE_DATA"} for key in ["TEAM_1", "TEAM_2"]}
+            ms.preserve_reviewed_spawn_sides(spawns, {
+                "mapId": "example", "spawnSemantics": {
+                    "TEAM_1": {"physicalSide": first}, "TEAM_2": {"physicalSide": second}}}, "example")
+            self.assertEqual(spawns["TEAM_1"]["physicalSide"], first)
+            self.assertEqual(spawns["TEAM_2"]["physicalSide"], second)
+
+    def test_refuses_invalid_or_foreign_reviewed_metadata(self):
+        for map_id, sides in [("other", ("NORTH", "SOUTH")), ("example", ("NORTH", "EAST")),
+                              ("example", ("UNKNOWN", "SOUTH"))]:
+            with self.assertRaises(ValueError):
+                ms.preserve_reviewed_spawn_sides(
+                    {key: {"status": "EXACT_SCENE_DATA"} for key in ["TEAM_1", "TEAM_2"]},
+                    {"mapId": map_id, "spawnSemantics": {
+                        "TEAM_1": {"physicalSide": sides[0]}, "TEAM_2": {"physicalSide": sides[1]}}}, "example")
+
+    def test_missing_metadata_stays_unknown(self):
+        spawns = {"TEAM_1": {"status": "EXACT_SCENE_DATA"}}
+        ms.preserve_reviewed_spawn_sides(spawns, {"mapId": "example"}, "example")
+        self.assertNotIn("physicalSide", spawns["TEAM_1"])
+
+    def test_repository_annotations_are_complementary_and_rift_is_independent_expected(self):
+        annotated = []
+        for path, doc in semantic_documents():
+            if any("physicalSide" in group for group in doc["spawnSemantics"].values()):
+                annotated.append(path.name)
+                ms.preserve_reviewed_spawn_sides(doc["spawnSemantics"], doc, doc["mapId"])
+        self.assertEqual(annotated, ["35_rift_rt.semantic.json"])
+        rift = json.loads((SEMANTIC_DIR / annotated[0]).read_text(encoding="utf-8"))
+        self.assertEqual(rift["spawnSemantics"]["TEAM_1"]["physicalSide"], "SOUTH")
+        self.assertEqual(rift["spawnSemantics"]["TEAM_2"]["physicalSide"], "NORTH")
+
+
 class HeightmapTest(unittest.TestCase):
     def test_16x16_block_untiling(self):
         size = 16

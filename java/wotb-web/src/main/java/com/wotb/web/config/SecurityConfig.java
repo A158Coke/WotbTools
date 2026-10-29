@@ -73,6 +73,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HEALTH).permitAll()
                 .requestMatchers(HttpMethod.POST, ApiPaths.OBSERVABILITY_EVENTS).permitAll()
+                .requestMatchers(HttpMethod.POST, ApiPaths.BATTLE_DATA).permitAll()
                 .requestMatchers(HttpMethod.GET, ApiPaths.TOURNAMENTS, ApiPaths.TOURNAMENT_STANDINGS, ApiPaths.TOURNAMENT_DATA_SOURCE).permitAll()
                 .requestMatchers(HttpMethod.GET, ApiPaths.BROADCASTS, ApiPaths.BROADCAST_SEASON,
                         ApiPaths.BROADCAST_SEASON_CONTENTS, ApiPaths.BROADCAST_CATEGORY, ApiPaths.BROADCAST_COVER).permitAll()

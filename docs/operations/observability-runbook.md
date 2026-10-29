@@ -59,3 +59,47 @@ Prometheus 必须有七个 UP job：wotb-backend（WireGuard `10.20.0.1:8088`）
 dashboard 变更通过 `infra/tofu/grafana` 与 observability owner workflow 应用。任何 dashboard 都可以无 allowlist 地删除/替换；datasource 删除仍然禁止。从 Git 恢复内容的方式是恢复声明并 apply 经评审的 plan，而不是覆写线上 state。部分 apply 需要先检查当前 state 并重新 plan；不要自动恢复旧 state。
 
 生产验收：验证真实用户活动、一批十个回放文件的成功/失败/取消路径、页面重新进入、一次最终 APK 下载按钮点击及对应 telemetry event，以及 AI 已知/缺失用量。仅靠 deployment canary 不能证明这些用户流程。
+## Battle Data Collector
+
+Collector 是在线、匿名、尽力而为的旁路，不影响回放解析、Workspace 或 HoF。先部署带新增 Flyway 表的
+Business API，再部署前端；旧前端没有请求，新前端遇旧后端 404 或关闭入口 503 也静默丢弃，无重试。
+隐私与可信度边界由 [Replay Pipeline](../architecture/replay-pipeline.md#匿名-battle-data-collector) 拥有。
+
+TX `business-api.compose.yml` 转发以下运行配置：
+
+| 变量 | 默认值 | 生效范围 |
+|---|---|---|
+| `BATTLE_DATA_ENABLED` | `true` | false 时 503、零写入 |
+| `BATTLE_DATA_PER_SOURCE_PER_MINUTE` | `60` | 每来源固定分钟请求额度 |
+| `BATTLE_DATA_PER_INSTANCE_PER_MINUTE` | `3000` | 单进程分钟额度；不是部署级全局限额 |
+| `BATTLE_DATA_MAX_SOURCE_KEYS` | `4096` | 来源 hash 内存状态上限 |
+
+紧急停止写入时，在既有 Business API 重建环境设置 `BATTLE_DATA_ENABLED=false`，使用原有精确镜像 digest
+和其余部署环境，通过 `bash /opt/wotb-tx/deploy/with-deploy-lock.sh <既有 business-api 重建命令>`
+重新创建应用容器；确认实际容器 environment 为 false，匿名 POST 返回 503，DB 行数停止增长。
+单纯 `docker compose restart` 不更新容器环境；配置不热刷新。后续正常发布若未继续传 false，会按默认重新启用。
+该开关不停止旧浏览器中的 CPU 工作；旧请求可能已经提交，不能通过关闭入口撤回已提交数据。
+
+停止前端计算需重新构建并发布：本地 Vite 设置 `VITE_BATTLE_DATA_COLLECTOR_ENABLED=false`；
+Docker 构建使用 `--build-arg BATTLE_DATA_COLLECTOR_ENABLED=false`。默认构建启用；
+现有发布流程未传该可选参数时仍采用默认值。新 bundle 在刷新后生效，不新增热配置 API。
+
+先查看 `battle_data_created_total`、`battle_data_duplicate_total`、`battle_data_rejected_total`、
+`battle_data_rate_limited_total` 与数据库增长。rejected/rate-limited 增加时先核对版本、来源代理和配额，
+不要以丢弃数据为由添加重试或放宽出生方向证据。未知地图跳过是预期行为。
+
+匿名 dataset 默认长期保留，没有自动清理任务。确需按时间删除时先关闭接收、备份 Business PostgreSQL，
+由操作者选择并核对 UTC cutoff，然后在数据库执行显式事务；不涉及 HoF 或回放文件。
+以下仅展示 SQL 形状，执行前替换 cutoff 并确认 count：
+
+```sql
+BEGIN;
+SELECT count(*) FROM battle_data_battle WHERE received_at < TIMESTAMPTZ '2026-01-01 00:00:00+00';
+SELECT count(*) FROM battle_data_vehicle v JOIN battle_data_battle b ON b.id = v.battle_id
+  WHERE b.received_at < TIMESTAMPTZ '2026-01-01 00:00:00+00';
+DELETE FROM battle_data_battle WHERE received_at < TIMESTAMPTZ '2026-01-01 00:00:00+00';
+-- 核对删除数量后 COMMIT；不符合预期则 ROLLBACK。
+COMMIT;
+```
+
+子表由 FK ON DELETE CASCADE 同事务删除；应用回滚只关闭/revert Collector，不降级 Flyway、不删除表或 dataset。

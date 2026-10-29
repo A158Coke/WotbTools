@@ -54,6 +54,12 @@ python .\map_semanticizer.py `
 
 后端 `MapTacticalSemanticsRegistry` 会加载 `classpath:/map-semantics/*.semantic.json`，按 `mapCodes` / `mapId` 查询，并对 `NN_<code>_<variant>` 形式的 mapId 做 token 边界别名匹配；没有语义数据的地图保持 UNKNOWN，禁止 LLM 编造。
 
+## 已审校的物理出生方向
+
+`spawnSemantics.TEAM_1/TEAM_2` 可带互补的 `physicalSide`（`NORTH/SOUTH` 或 `WEST/EAST`）。这些值由独立场景核验提供，生成器不按坐标或 team 编号推断；缺失时保持未知。场景 TEAM 分组不等于回放队伍编号，消费规则与已标注地图见 [`docs/reference/maps.md`](../docs/reference/maps.md#collector-物理出生侧)。
+
+Python `semanticize(..., reviewed_semantics=<同地图语义对象>)` 可接收已审校方向；未显式提供时，已有目标 JSON 提供该 metadata 输入。只保留完整、互补、同地图且在生成结果中存在的 exact spawn 分组；非法方向在写出前失败。此保留仅限 `physicalSide`，**其它人工修正仍会被覆盖，因此禁止重跑已人工核验的地图**。
+
 ## 九宫格 GRID_REGION_1~9 对齐
 
 每个语义网格 cell 输出 `nineGridRegion`（1–9），每个 area 汇总 `gridRegions`，与后端 `MapRegionResolver` 使用同一约定：

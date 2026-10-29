@@ -49,6 +49,14 @@
   分析网格仍用 `playableBounds`——两者分离，逐图可独立校准。
 - **语义数据手工调整**：`common/map-semantics/*.semantic.json` 的区域 label/特征/风险等人类可读字段为中文，可直接手工修改；**改后不要重跑 map-semanticizer**（重新生成会整份覆盖），直到语义化器引入人工覆写合并。
 
+## Collector 物理出生侧
+
+`common/map-semantics/*.semantic.json` 的 `spawnSemantics.TEAM_1/TEAM_2.physicalSide` 是可选的已审校方向，值为 `NORTH/SOUTH/WEST/EAST`，两组必须互补。这里的 TEAM 是客户端场景出生点分组，**不是回放队伍编号**。方向缺失的地图不参与 Collector；不得按编号、坐标符号或最长轴自动猜方向。
+
+已标注范围为 `35_rift_rt`（`mapCodes: [rift]`）：场景组1为 `SOUTH`，组2为 `NORTH`。依据是语义网格 `A is north/top; 1 is west/left` 与 exact scene 出生点所属网格；仓库 Random 夹具的录像者早期位置距北侧 `Spawn2-8` 约 0.937m。其它地图保持未标注，横向真实回放覆盖不作保证。
+
+Collector 按 Agent `map_key` 匹配现有 `mapCodes`，不以数字 `map_id` 匹配文件名前缀。回放 `[x,y,z]` 的 `[x,z]` 对应语义平面 `[x,y]`；只接收 `0≤clock≤1s` 且距某个 `EXACT_SCENE_DATA` 出生点不超过 2m、仅命中一个物理侧的位置，再用 `author_team` 映射两支回放队伍。晚观测、超界、歧义、未知或缺元数据均整场跳过。1s/2m 是刻意保守的接收策略，不是全地图误差保证。
+
 ## 新增地图 / 素材流程
 
 1. 素材图片按英文展示名小写中划线放入 `frontend/src/assets/maps/`（如 `wasteland.webp`）。
