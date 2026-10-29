@@ -126,6 +126,12 @@ class TacticalReviewPromptBuilderTest {
     }
 
     @Test
+    void tacticalSystemPromptPreservesEvidenceFirst() {
+        final var prepared = prepare(131_072, 8192, 1000);
+        PlayerGatewayPromptContractTest.assertEvidenceFirst(prepared.systemPrompt(), AllowedLanguage.ZH);
+    }
+
+    @Test
     void containsAllBookendSections() {
         final var prepared = prepare(131_072, 8192, 1000);
         assertTrue(prepared.userContent().contains("BATTLE SNAPSHOT"));

@@ -34,7 +34,7 @@ flowchart LR
 
 ## AI 证据链
 
-回放 → **权威结算**（`battle_results.dat`：伤害 / 承伤 / 死亡时刻）与**事件流**（`data.wotreplay`：走位 / 交火 / 伤害事件 / 九宫格）→ 确定性特征（阶段边界「至阶段末」存活人数、双方逐车死亡时间线、交火与集火证据）→ 客户端提交 canonical AI projection → 服务端校验并装配确定性证据 → Prompt 注入该证据 → AI 对照赛前基线复盘（时间统一 X分XX秒、九宫格区域、我方/对方视角）→ 结果页流式展示个人复盘；团队复盘使用 `TeamAiReviewResult` v0.5（`summary` / `episodes` / `trainingSuggestions` / `reviewFocus` / `highContributors`）与 `teamPlayers` 身份映射，不含第三次模型调用或 Team Autopsy。
+回放 → **权威结算**（`battle_results.dat`：伤害 / 承伤 / 死亡时刻）与**事件流**（`data.wotreplay`：走位 / 交火 / 伤害事件 / 九宫格）→ 确定性特征（阶段边界「至阶段末」存活人数、双方逐车死亡时间线、交火与集火证据）→ 客户端提交 canonical AI projection → 服务端校验并装配确定性证据 → Prompt 注入该证据 → AI 对照赛前基线复盘（时间统一 X分XX秒、九宫格区域、我方/对方视角）→ 结果页流式展示个人复盘；团队复盘使用 `TeamAiReviewResult`（`summary` / `episodes` / `trainingSuggestions` / `reviewFocus` / `highContributors`）与 `teamPlayers` 身份映射，不含第三次模型调用或 Team Autopsy。
 
 ## 核心工程取舍
 

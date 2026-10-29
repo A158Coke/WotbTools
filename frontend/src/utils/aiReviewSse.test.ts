@@ -66,7 +66,7 @@ describe('aiReviewSse runtime guards', () => {
     expect(parseAiReviewEvent('done', { analysis: 123 })).toBeNull()
   })
 
-  it('accepts the structured Team Review v0.5 result and omits empty sections in the renderer contract', () => {
+  it('accepts the structured Team Review result and omits empty sections in the renderer contract', () => {
     const event = parseAiReviewEvent('done', {
       analysis: null,
       teamPlayers: [{ playerKey: 'P1', displayName: 'Alice', tankName: 'Kranvagn' }],

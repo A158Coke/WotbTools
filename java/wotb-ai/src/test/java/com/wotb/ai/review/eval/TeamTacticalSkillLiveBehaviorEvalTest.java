@@ -39,12 +39,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>This is deliberately a live-provider test, not a default CI test or merge
  * gate. It sends
  * the existing Team Call #2 JSON request through {@link SpringAiChatGateway},
- * parses the final v0.5 structured result, and checks the final model text against explicit
+ * parses the final structured result, and checks the final model text against explicit
  * behavior contracts. The A-H prompt golden cases remain a separate static
  * contract suite and are not treated as behavior evidence.</p>
  *
  * <p>Historical grounding validator check（legacy Team Review envelope + 事实一致性 validator）
- * 已随 legacy 契约层删除：v0.5 production 只做技术
+ * 已随 legacy 契约层删除：Team production 只做技术
  * JSON/schema/引用解析，不提供后端 tactical grounding verdict，因此本 probe 不再重复它。</p>
  *
  * <p>Run from {@code java} after supplying the key out of band:
@@ -143,7 +143,7 @@ class TeamTacticalSkillLiveBehaviorEvalTest {
                 + "\n\n=== LIVE BEHAVIOR EVALUATION SCENARIO ===\n"
                 + spec.scenario() + "\n"
                 + "这是评估用的额外、明确标注的场景事实；只据此和上面的后端证据作答。"
-                + "请仍然输出唯一 JSON object（v0.5 structured result），不要输出 JSON 之外的解释。";
+                + "请仍然输出唯一 JSON object（structured result），不要输出 JSON 之外的解释。";
         final AiChatRequest request = new AiChatRequest(
                 systemPrompt, userPrompt, model, null, TEAM_REVIEW_MAX_OUTPUT_TOKENS, false, null, null,
                 "SINGLE_TEAM_BATTLE", REQUEST_COMPLETION_TOKENS, AiResponseFormat.JSON_OBJECT);
@@ -155,7 +155,7 @@ class TeamTacticalSkillLiveBehaviorEvalTest {
             return LiveResult.failed(caseId, reason, "", "", List.of());
         }
         final String raw = response.completionText() == null ? "" : response.completionText();
-        // v0.5 structured result：本 probe 只读正文语义，因此不做 roster playerKey 校验
+        // structured result：本 probe 只读正文语义，因此不做 roster playerKey 校验
         // （normative roster 校验由 TeamAiReviewResultParserTest / TeamReplayAnalysisServiceTest 覆盖）。
         final TeamAiReviewResultParser.ParseResult parsed =
                 TeamAiReviewResultParser.parse(raw, Set.of());
@@ -193,7 +193,7 @@ class TeamTacticalSkillLiveBehaviorEvalTest {
         return checks;
     }
 
-    /** v0.5 structured result 的自然语言正文（legacy reviewMarkdown 的等价载体）。 */
+    /** structured result 的自然语言正文（legacy reviewMarkdown 的等价载体）。 */
     private static String finalText(final TeamAiReviewResult structured) {
         final StringBuilder text = new StringBuilder();
         if (structured.summary() != null) {

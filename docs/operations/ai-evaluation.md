@@ -32,7 +32,7 @@ mvn -pl wotb-ai -am test `
 
 ## 2026-10 legacy 契约收敛后的能力变化（已迁移）
 
-两个 `@Tag("ai-live")` 工具已从 legacy envelope / claims validator 迁移到 v0.5
+两个 `@Tag("ai-live")` 工具已从 legacy envelope / claims validator 迁移到
 `TeamAiReviewResult` + `TeamAiReviewResultParser`（`TeamQualityShortcutValidator` 与 legacy envelope 均已删除）。
 
 ### `TeamReplayQualityBenchmarkRunner`（`TeamReplayQualityBenchmarkRunnerTest`）
@@ -52,7 +52,7 @@ mvn -pl wotb-ai -am test `
   恒为 `null` 的 `semantic` 占位维度（从不计算、只写进 JSON 报告，造成「存在语义裁判维度」的误导）已一并删除——
   JSON 报告的 `dimensionScores` 现在只含 `contract` 与上述 9 个 lexical 维度。
 - **语义变化**：`contract` 不再等价于「事实无冲突」。旧的 `grounding` / `structural` 通过意味着
-  「模型没有改写 backend 事实」；`contract` 通过只意味着「能解析出满足最低 contract 的 v0.5 结构」。
+  「模型没有改写 backend 事实」；`contract` 通过只意味着「能解析出满足最低 contract 的结构」。
   不要再用迁移后的分数宣称事实一致性。
 
 ### `TeamTacticalSkillLiveBehaviorEvalTest`

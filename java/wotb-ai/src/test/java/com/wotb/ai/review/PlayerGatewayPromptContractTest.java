@@ -118,6 +118,31 @@ class PlayerGatewayPromptContractTest {
                 null, battle, features, mapping, coverage, List.of("TEST_LIMITATION"));
     }
 
+    static void assertEvidenceFirst(final String prompt, final AllowedLanguage language) {
+        final List<String> anchors = switch (language) {
+            case ZH -> List.of("不得为节省 token、推理或计算成本", "禁止先形成战术故事，再选择性挑证据支持", "事实从严，判断从宽", "在事实可靠时仍须给出明确", "复盘在事实完整性上失败", "LAST_KNOWN / PARTIAL / UNKNOWN");
+            case EN -> List.of("do not omit key factual checks", "do not build a tactical story first and cherry-pick evidence", "Be strict with facts but give clear", "fails factual integrity", "LAST_KNOWN / PARTIAL / UNKNOWN");
+            case RU -> List.of("не пропускайте проверку ключевых фактов", "не создавайте сначала тактическую историю с выборочным подбором доказательств", "Строго соблюдайте границы фактов, но давайте ясные", "означает фактическую ошибку", "LAST_KNOWN / PARTIAL / UNKNOWN");
+        };
+        for (final String anchor : anchors) {
+            assertTrue(prompt.contains(anchor), language + ": " + anchor);
+        }
+        if (language != AllowedLanguage.ZH) {
+            assertFalse(prompt.contains("事实从严，判断从宽"));
+        }
+    }
+
+    @Test
+    void playerGatewayPromptsPreserveEvidenceFirstInThreeLanguages() {
+        final Battle battle = makeBattle(1, 1);
+        for (final AllowedLanguage language : AllowedLanguage.values()) {
+            service().analyze(battle, null, language);
+            assertEvidenceFirst(last().systemPrompt(), language);
+            service().analyzePlayerContext(ctxFor(battle), language);
+            assertEvidenceFirst(last().systemPrompt(), language);
+        }
+    }
+
     // ===== fallback =====
 
     @Test

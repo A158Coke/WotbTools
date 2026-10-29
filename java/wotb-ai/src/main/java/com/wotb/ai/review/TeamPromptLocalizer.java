@@ -127,8 +127,13 @@ final class TeamPromptLocalizer {
 
     static final String TEAM_REASONING_CONTRACT_RULE_EN = """
 
-                        === TEAM REVIEW V0.6 REASONING ORDER AND CAUSAL QUALITY CONTRACT (mandatory) ===
-                        This is a reasoning-quality upgrade, not an architecture or schema redesign. Keep the v0.5 Structured TeamAiReviewResult; do not add an LLM call, Team Autopsy, backend tactical semantic validator, or second TacticalEpisode model.
+                        === TEAM REVIEW REASONING ORDER AND CAUSAL QUALITY CONTRACT (mandatory) ===
+                        Use the Structured TeamAiReviewResult and follow the reasoning and causal-quality contract below. Do not add an LLM call, Team Autopsy, backend tactical semantic validator, or second TacticalEpisode model.
+                        === EVIDENCE FIRST AND COACHING JUDGMENT (mandatory) ===
+                        Prioritize quality: do not omit key factual checks, causal comparisons or alternatives to save tokens, reasoning or compute.
+                        Check consequential facts against authoritative and canonical facts, observed events, limitations and coverage before drawing conclusions; do not build a story first and cherry-pick evidence. Be strict with facts, but make clear, contestable coaching judgments grounded in evidence; distinguish observation from tactical inference and hypotheses.
+                        UNSEEN, LAST_KNOWN, PARTIAL, UNKNOWN and UNAVAILABLE do not mean absent, zero, no support, no firing line or no opportunity. Observed damage of zero does not prove no participation; unseen enemies do not prove no targets; grid occupancy is not actual participation. Never turn last-known position into current position, discrete objective observations into continuous control, temporal proximity into causation, or a limited roster into the whole team. Preserve observed versus unknown and complete versus partial scope.
+                        Use the actual input and do not ignore contradictory evidence or expand snapshots, partial observations or aggregate windows into global facts or new event times. An unchecked or contradicted key fact driving a diagnosis, episode or recommendation fails factual integrity. Judgments may be disputed when their factual basis and inference boundaries are clear. Do not claim external tool use or access to information outside the prompt.
                         Reason internally in this order before producing JSON: 1) read authoritative facts; 2) establish the information state; 3) identify remaining uncertainty; 4) evaluate objective obligation; 5) identify pivotal local engagements; 6) determine effective local participation; 7) trace the tactical transition; 8) trace propagation; 9) use HP/damage/deaths as downstream validation; 10) select training targets; 11) select individual candidates only if episode-grounded; 12) produce the structured JSON.
                         For each key window, distinguish Known, Remaining uncertainty, and CURRENT / LAST_KNOWN / UNSEEN. New observation must state which uncertainty was removed or reduced and its Decision impact. UNSEEN means absence of evidence, not an empty lane or no enemy.
                         Evaluate objective obligation with base ownership, current points, point growth, remaining time, alive vehicles, map position, and usable firepower: say who must act, who can wait, and who bears base or time pressure. A points lead is not an automatic push order and a points deficit is not an automatic charge.
@@ -142,8 +147,13 @@ final class TeamPromptLocalizer {
 
     static final String TEAM_REASONING_CONTRACT_RULE_RU = """
 
-                        === ПОРЯДОК РАССУЖДЕНИЯ КОМАНДНОГО РАЗБОРА V0.6 И КОНТРАКТ ПРИЧИННОСТИ (обязательно) ===
-                        Это обновление качества рассуждений, а не redesign архитектуры или schema. Сохраняйте v0.5 Structured TeamAiReviewResult; не добавляйте новый LLM call, Team Autopsy, семантический тактический валидатор бэкенда или вторую модель TacticalEpisode.
+                        === ПОРЯДОК РАССУЖДЕНИЯ КОМАНДНОГО РАЗБОРА И КОНТРАКТ ПРИЧИННОСТИ (обязательно) ===
+                        Используйте Structured TeamAiReviewResult и следуйте приведённому ниже контракту рассуждений и причинности. Не добавляйте новый LLM call, Team Autopsy, семантический тактический валидатор бэкенда или вторую модель TacticalEpisode.
+                        === ПРИОРИТЕТ ДОКАЗАТЕЛЬСТВ И ТРЕНЕРСКАЯ ОЦЕНКА (обязательно) ===
+                        Качество прежде всего: не пропускайте проверку ключевых фактов, причинные сравнения или альтернативы ради экономии токенов, рассуждений или вычислений.
+                        Перед выводом проверяйте важные факты по authoritative и canonical facts, наблюдаемым событиям, ограничениям и покрытию; не создавайте сначала историю с выборочным подбором доказательств. Строго соблюдайте границы фактов, но давайте ясные, оспоримые тренерские оценки на основе доказательств; отличайте наблюдение от тактического вывода и гипотезы.
+                        UNSEEN, LAST_KNOWN, PARTIAL, UNKNOWN и UNAVAILABLE не означают отсутствие, ноль, отсутствие поддержки, линии огня или возможности. Наблюдаемый нулевой урон не доказывает отсутствие участия; невидимые противники не доказывают отсутствие целей; заполненность сетки не равна фактическому участию. Не превращайте последнюю известную позицию в текущую, отдельные наблюдения цели в непрерывный контроль, близость по времени в причинность, а неполный список в всю команду. Различайте наблюдаемое и неизвестное, полное и частичное.
+                        Используйте входные данные и не игнорируйте противоречащие доказательства; не расширяйте снимки, частичные наблюдения или агрегированные окна до общих фактов или новых времён событий. Непроверенный или противоречащий данным ключевой факт в диагнозе, эпизоде или рекомендации означает фактическую ошибку. Суждение может быть спорным при верной фактической основе и ясных границах вывода. Не заявляйте об использовании внешних инструментов или доступе к данным вне prompt.
                         Сначала рассуждайте в таком порядке: 1) authoritative facts; 2) состояние информации; 3) remaining uncertainty; 4) objective obligation; 5) ключевые локальные столкновения; 6) effective local participation; 7) тактический переход; 8) propagation; 9) HP/урон/гибели как downstream validation; 10) цели обучения; 11) кандидаты на личные разделы только из episode; 12) structured JSON.
                         В каждом важном окне различайте Known, Remaining uncertainty и CURRENT / LAST_KNOWN / UNSEEN. Новое наблюдение должно указывать, какая неопределённость снята или уменьшена и каков Decision impact. UNSEEN означает отсутствие доказательства, а не пустой фланг или отсутствие противника.
                         Оценивайте objective obligation по принадлежности баз, текущим очкам, росту очков, оставшемуся времени, живым машинам, позиции и доступному огню: кто обязан действовать, кто может ждать и кто несёт давление базы или времени. Преимущество по очкам не означает автоматическую атаку, а отставание не означает автоматический штурм.
@@ -798,7 +808,7 @@ final class TeamPromptLocalizer {
     static final String COACH_STANDARD_RULE_EN = """
 
             === SUPREMACY REVIEW STANDARD v1.1 (Coach Lab) ===
-            Source: a game-by-game human review of all 34 games of the 2026 China-server summer top-four playoffs (client 11.19); every item was scored or corrected by a human coach, and the sample is only these 34 games. How to apply it: the verdict format in section I replaces wording in other modules that prefers fewer conclusions; sections II and III are conditional rules that apply only when every listed precondition is supported by evidence from that moment (CURRENT / LAST_KNOWN, hits, positions, points). When a precondition lacks evidence or an exception applies, do not apply the rule and fall back to the reasoning contract's firing lines, cover, time to influence, objectives and safe routes; when it conflicts with the evidence-boundary rules, the evidence boundary wins. Output still uses the v0.5 structured result; put verdicts in summary and in each episode's analysis.
+            Source: a game-by-game human review of all 34 games of the 2026 China-server summer top-four playoffs (client 11.19); every item was scored or corrected by a human coach, and the sample is only these 34 games. How to apply it: the verdict format in section I replaces wording in other modules that prefers fewer conclusions; sections II and III are conditional rules that apply only when every listed precondition is supported by evidence from that moment (CURRENT / LAST_KNOWN, hits, positions, points). When a precondition lacks evidence or an exception applies, do not apply the rule and fall back to the reasoning contract's firing lines, cover, time to influence, objectives and safe routes; when it conflicts with the evidence-boundary rules, the evidence boundary wins. Output still uses the structured result; put verdicts in summary and in each episode's analysis.
 
             I. Verdicts (mandatory)
             1. Every decision that changed the battle gets exactly one of three verdicts: mistake / correct / cannot determine. Do not use in-between words such as "questionable", "debatable" or "to be observed". "Cannot determine" must name the missing data (for example enemy positions UNSEEN in a window, or no LOS).
@@ -844,7 +854,7 @@ final class TeamPromptLocalizer {
     static final String COACH_STANDARD_RULE_RU = """
 
             === СТАНДАРТ РАЗБОРА SUPREMACY v1.1 (Coach Lab) ===
-            Источник: покадровый ручной разбор всех 34 боёв плей-офф топ-4 летнего турнира китайского сервера 2026 года (клиент 11.19); каждый пункт оценён или исправлен тренером-человеком, а выборка — только эти 34 боя. Как применять: формат вердиктов раздела I заменяет формулировки других модулей, предпочитающие меньше выводов; разделы II и III — условные правила, которые применяются, только когда каждая перечисленная предпосылка подтверждена данными того момента (CURRENT / LAST_KNOWN, попадания, позиции, очки). Если предпосылке не хватает данных или действует исключение, правило не применяйте и вернитесь к рассуждению reasoning contract о линиях огня, укрытиях, времени влияния, целях и безопасных маршрутах; при противоречии с правилами границ доказательств приоритет у границ доказательств. Вывод по-прежнему в структуре v0.5; вердикты пишите в summary и в analysis каждого episode.
+            Источник: покадровый ручной разбор всех 34 боёв плей-офф топ-4 летнего турнира китайского сервера 2026 года (клиент 11.19); каждый пункт оценён или исправлен тренером-человеком, а выборка — только эти 34 боя. Как применять: формат вердиктов раздела I заменяет формулировки других модулей, предпочитающие меньше выводов; разделы II и III — условные правила, которые применяются, только когда каждая перечисленная предпосылка подтверждена данными того момента (CURRENT / LAST_KNOWN, попадания, позиции, очки). Если предпосылке не хватает данных или действует исключение, правило не применяйте и вернитесь к рассуждению reasoning contract о линиях огня, укрытиях, времени влияния, целях и безопасных маршрутах; при противоречии с правилами границ доказательств приоритет у границ доказательств. Вывод по-прежнему в структурированном формате; вердикты пишите в summary и в analysis каждого episode.
 
             I. Вердикты (обязательно)
             1. Каждое решение, изменившее бой, получает ровно один из трёх вердиктов: ошибка / верно / невозможно определить. Не используйте промежуточные слова вроде «сомнительно», «спорно», «нужно понаблюдать». «Невозможно определить» обязано назвать недостающие данные (например, позиции противника UNSEEN в окне или нет LOS).
@@ -1110,7 +1120,7 @@ final class TeamPromptLocalizer {
 
     private static final String TEAM_STRUCTURED_RESULT_RULE_ZH = """
 
-            === Team AI Review v0.5 结构化结果（最终输出契约） ===
+            === Team AI Review 结构化结果（最终输出契约） ===
             只输出一个 JSON object，不输出 Markdown heading，不输出旧的 reviewMarkdown/claims envelope：
             {
               "summary": {"verdict": "...", "primaryDiagnosis": "..."},
@@ -1122,29 +1132,29 @@ final class TeamPromptLocalizer {
             episodes 最多 6 条，reviewFocus 与 highContributors 各最多 2 条；所有数组必须存在，可为空。
             episodeId 必须引用已有 episode，playerKey 必须来自当前队伍名册；trainingSuggestions 的 episodeId 可为 null。
             startSec/endSec 无法确定时使用 null。Markdown 只能出现在字段值内部；页面标题和层级由前端控制。
-            以上 v0.5 契约覆盖本提示中较早的旧 envelope 输出说明；不要调用或模拟 Team Autopsy。
+            以上契约覆盖本提示中较早的旧 envelope 输出说明；不要调用或模拟 Team Autopsy。
             """;
 
     private static final String TEAM_STRUCTURED_RESULT_RULE_EN = """
 
-            === Team AI Review v0.5 structured result (final output contract) ===
+            === Team AI Review structured result (final output contract) ===
             Output exactly one JSON object. Do not output Markdown headings or the old reviewMarkdown/claims envelope:
             {"summary":{"verdict":"...","primaryDiagnosis":"..."},"episodes":[{"id":"E1","startSec":0,"endSec":30,"title":"...","analysis":"...","playerKeys":["P1"]}],"trainingSuggestions":[{"title":"...","content":"...","episodeId":"E1"}],"reviewFocus":[{"playerKey":"P1","episodeId":"E1","reason":"..."}],"highContributors":[{"playerKey":"P2","episodeId":"E1","reason":"..."}]}
             episodes: at most 6; reviewFocus and highContributors: at most 2 each; every array is required and may be empty.
             episodeId must reference an existing episode and playerKey must be from the current roster; trainingSuggestions episodeId may be null.
             Use null for unknown startSec/endSec. Markdown is allowed only inside field values; the frontend owns page headings and hierarchy.
-            This v0.5 contract overrides earlier envelope instructions; do not call or simulate Team Autopsy.
+            This contract overrides earlier envelope instructions; do not call or simulate Team Autopsy.
             """;
 
     private static final String TEAM_STRUCTURED_RESULT_RULE_RU = """
 
-            === Team AI Review v0.5 структурированный результат (итоговый контракт) ===
+            === Team AI Review структурированный результат (итоговый контракт) ===
             Выводите ровно один JSON object. Не выводите Markdown-заголовки и старый envelope reviewMarkdown/claims:
             {"summary":{"verdict":"...","primaryDiagnosis":"..."},"episodes":[{"id":"E1","startSec":0,"endSec":30,"title":"...","analysis":"...","playerKeys":["P1"]}],"trainingSuggestions":[{"title":"...","content":"...","episodeId":"E1"}],"reviewFocus":[{"playerKey":"P1","episodeId":"E1","reason":"..."}],"highContributors":[{"playerKey":"P2","episodeId":"E1","reason":"..."}]}
             episodes: не более 6; reviewFocus и highContributors: не более 2 каждого; каждый массив обязателен и может быть пустым.
             episodeId должен ссылаться на существующий episode, playerKey — на текущий roster; episodeId в trainingSuggestions может быть null.
             Если startSec/endSec неизвестны, используйте null. Markdown разрешён только внутри значений полей; заголовки и иерархию задаёт frontend.
-            Этот контракт v0.5 заменяет более ранние инструкции envelope; не вызывайте и не имитируйте Team Autopsy.
+            Этот контракт заменяет более ранние инструкции envelope; не вызывайте и не имитируйте Team Autopsy.
             """;
 
     static final String SINGLE_TEAM_PROMPT = AiPromptLibrary.zh("team/single");

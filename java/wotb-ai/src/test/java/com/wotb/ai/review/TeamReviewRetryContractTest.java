@@ -35,7 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Team Call #2（v0.5 structured result）的 transport 契约：
+ * Team Call #2（structured result）的 transport 契约：
  * <ul>
  *   <li>合法 structured JSON → 恰好 1 次 {@code SINGLE_TEAM_BATTLE} 请求；</li>
  *   <li>contract 失败 → 恰好 1 次 {@code SINGLE_TEAM_BATTLE_RECOVERY}（全新 stream() 调用，不串 buffer）；</li>
@@ -48,7 +48,7 @@ class TeamReviewRetryContractTest {
 
     private static final float START_RAW = 1000f;
 
-    /** 合法 v0.5 structured result。 */
+    /** 合法 structured result。 */
     private static final String STRUCTURED_RESULT = "{"
             + "\"summary\":{\"verdict\":\"结论\",\"primaryDiagnosis\":\"诊断\"},"
             + "\"episodes\":[],\"trainingSuggestions\":[],\"reviewFocus\":[],\"highContributors\":[]}";
@@ -60,7 +60,7 @@ class TeamReviewRetryContractTest {
 
         final AiReviewDonePayload result = analyze(service);
 
-        assertNotNull(result.teamReview(), "v0.5 structured result must reach the done payload");
+        assertNotNull(result.teamReview(), "structured result must reach the done payload");
         assertEquals("结论", result.analysis(), "文本摘要取 structured result 的 verdict");
         assertEquals(1, gateway.teamCall2Requests(), "合法 structured JSON 只允许 1 次 Call #2 请求");
     }
