@@ -67,55 +67,11 @@ concurrency:
   group: deploy-frontend
   cancel-in-progress: true
 
+# 发布 run 只含 build/deploy：Gitee 镜像是国内镜像，不是发布前置，由独立 workflow
+# `gitee-mirror.yml` 拥有。Frontend Replica 只在 `Frontend` run completed+success 后
+# 更新 TX2，镜像若留在这个 run 里，TX1 已上线的新版本会与 TX2 旧版本在 Caddy 2:8
+# 双端混服，而且被新 push 取消的 run 不会触发 replica。
 jobs:
-  mirror_gitee:
-    name: Mirror exact GitHub source to Gitee
-    concurrency:
-      group: production-gitee-mirror
-      cancel-in-progress: false
-      queue: max
-    runs-on: ubuntu-latest
-    # 国内镜像，**不再是发布前置**：历史重写后首次全量推送需要约 300MB（Gitee 对新
-    # commit 图的对象持有量为零），且 hub-mirror 每次重试都从零开始，所以单次 Git 命令
-    # 必须给足预算（100m），否则永远推不完。镜像追不上时 TX2 builder 按 exact SHA
-    # 直取 GitHub（见 deploy/tx/build-frontend-from-gitee.sh materialize_source），
-    # 发布因此不被镜像的跨境带宽卡住。若镜像长期落后，运维侧的补救是在国内网络执行
-    # `git push --mirror`（一次性 bootstrap，见 docs/architecture/TECHNICAL_EVOLUTION.md §25）。
-    timeout-minutes: 180
-    # 镜像失败可观察（job 红、日志在），但不让 run 结论变成 failure：Frontend Replica 的
-    # workflow_run 只接受 conclusion == success，镜像落后不该拦住生产复制与部署。
-    continue-on-error: true
-    permissions:
-      contents: read
-    steps:
-      - name: Reject non-main invocation
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          EVENT_REF: ${{ github.ref }}
-        run: |
-          set -euo pipefail
-          case "$EVENT_NAME" in
-            push|workflow_dispatch) ;;
-            *) echo "Unsupported mirror event: $EVENT_NAME" >&2; exit 1 ;;
-          esac
-          [ "$EVENT_REF" = refs/heads/main ] || {
-            echo "Gitee production mirror must run from main." >&2
-            exit 1
-          }
-
-      - name: Mirror WotbTools to Gitee
-        uses: Yikun/hub-mirror-action@ec47170fa9d126a4bee5a1ab9359845bb1395248
-        with:
-          src: github/A158Coke
-          dst: gitee/A158Coke
-          dst_key: ${{ secrets.GITEE_PRIVATE_KEY }}
-          dst_token: ${{ secrets.GITEE_TOKEN }}
-          static_list: WotbTools
-          account_type: user
-          force_update: true
-          timeout: 100m
-
   build:
     concurrency:
       group: tx-production-build

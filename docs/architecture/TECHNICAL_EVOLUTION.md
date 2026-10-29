@@ -608,12 +608,14 @@ TX2 的发行版 Docker CLI 没有 buildx 插件，构建脚本只在远端 dige
 
 结论：把 300MB 跨境全量推送放在发布门禁里，调多大的 job 预算都不是可靠链路。于是改结构：
 
-- **镜像降级为国内镜像，不再是发布前置**。`frontend.yml` / `business-api.yml` 的 `build` 不再
-  `needs: [mirror_gitee]`；镜像 job 与构建并行且带 `continue-on-error`——失败只标红该 job，
-  run 结论仍是 success（否则 `Frontend Replica` 的 `workflow_run` 会因镜像落后而跳过生产复制）。
-  它的单次 Git 命令预算提到 `100m`（job `180m`），使这一次全量推送有机会在单个 attempt 内完成。
-  若仍推不完，运维补救是在国内网络执行一次 `git push --mirror`（一次性 bootstrap），之后 CI 回到
-  增量推送。
+- **镜像独立成 one-owner workflow，不参与任何发布 run**。`gitee-mirror.yml`（`push: main` +
+  `workflow_dispatch`，concurrency `production-gitee-mirror`）拥有镜像；`frontend.yml` /
+  `business-api.yml` 只剩 build/deploy，`build` 也不再 `needs` 镜像。这一点不是洁癖：
+  `frontend-replica.yml` 只在 `Frontend` run **completed + success** 后更新 TX2，镜像若留在发布
+  run 里，一个最长 180 分钟的任务就会让 TX1 已上线的新版本与 TX2 旧版本在 Caddy 2:8 双端混服
+  数小时（hashed asset 还会在另一端 404），而被新 push 取消的 run 根本不会触发 replica。
+  单次 Git 命令预算 `100m`（job `180m`）使这一次全量推送有机会在单个 attempt 内完成。若仍推不完，
+  运维补救是在国内网络执行一次 `git push --mirror`（一次性 bootstrap），之后 CI 回到增量推送。
 - **源物化按 exact SHA 兜底**。`deploy/tx/build-*-from-gitee.sh` 的 `materialize_source` 先等镜像
   （`GITEE_WAIT_ATTEMPTS` × 间隔，稳定态只取增量），追不上就
   `git fetch --depth 1 <github-url> <sha>` 只取该 commit 的树：GitHub 允许按未通告的 SHA 浅取，实测
