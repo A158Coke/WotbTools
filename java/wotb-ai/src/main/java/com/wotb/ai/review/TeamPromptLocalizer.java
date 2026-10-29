@@ -128,7 +128,7 @@ final class TeamPromptLocalizer {
     static final String TEAM_REASONING_CONTRACT_RULE_EN = """
 
                         === TEAM REVIEW REASONING ORDER AND CAUSAL QUALITY CONTRACT (mandatory) ===
-                        This is a reasoning-quality upgrade, not an architecture or schema redesign. Keep the Structured TeamAiReviewResult; do not add an LLM call, Team Autopsy, backend tactical semantic validator, or second TacticalEpisode model.
+                        Use the Structured TeamAiReviewResult and follow the reasoning and causal-quality contract below. Do not add an LLM call, Team Autopsy, backend tactical semantic validator, or second TacticalEpisode model.
                         === EVIDENCE FIRST AND COACHING JUDGMENT (mandatory) ===
                         Prioritize quality: do not omit key factual checks, causal comparisons or alternatives to save tokens, reasoning or compute.
                         Check consequential facts against authoritative and canonical facts, observed events, limitations and coverage before drawing conclusions; do not build a story first and cherry-pick evidence. Be strict with facts, but make clear, contestable coaching judgments grounded in evidence; distinguish observation from tactical inference and hypotheses.
@@ -148,7 +148,7 @@ final class TeamPromptLocalizer {
     static final String TEAM_REASONING_CONTRACT_RULE_RU = """
 
                         === ПОРЯДОК РАССУЖДЕНИЯ КОМАНДНОГО РАЗБОРА И КОНТРАКТ ПРИЧИННОСТИ (обязательно) ===
-                        Это обновление качества рассуждений, а не redesign архитектуры или schema. Сохраняйте Structured TeamAiReviewResult; не добавляйте новый LLM call, Team Autopsy, семантический тактический валидатор бэкенда или вторую модель TacticalEpisode.
+                        Используйте Structured TeamAiReviewResult и следуйте приведённому ниже контракту рассуждений и причинности. Не добавляйте новый LLM call, Team Autopsy, семантический тактический валидатор бэкенда или вторую модель TacticalEpisode.
                         === ПРИОРИТЕТ ДОКАЗАТЕЛЬСТВ И ТРЕНЕРСКАЯ ОЦЕНКА (обязательно) ===
                         Качество прежде всего: не пропускайте проверку ключевых фактов, причинные сравнения или альтернативы ради экономии токенов, рассуждений или вычислений.
                         Перед выводом проверяйте важные факты по authoritative и canonical facts, наблюдаемым событиям, ограничениям и покрытию; не создавайте сначала историю с выборочным подбором доказательств. Строго соблюдайте границы фактов, но давайте ясные, оспоримые тренерские оценки на основе доказательств; отличайте наблюдение от тактического вывода и гипотезы.

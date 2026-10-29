@@ -22,13 +22,13 @@ class TeamReviewNaturalCoachContractTest {
         final String zh = TeamPromptLocalizer.localizeTeamSystemPrompt(TeamPromptLocalizer.SINGLE_TEAM_PROMPT, AllowedLanguage.ZH);
         final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(TeamPromptLocalizer.SINGLE_TEAM_PROMPT, AllowedLanguage.EN);
         final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(TeamPromptLocalizer.SINGLE_TEAM_PROMPT, AllowedLanguage.RU);
-        for (String anchor : new String[]{"事实从严，判断从宽", "不把未知改写成不存在", "旧快照、局部观测", "observed damage = 0", "grid occupancy 不等于实际参战人数", "离散 objective observation", "有限 roster 写成全队", "时间接近的死亡事件"}) {
+        for (String anchor : new String[]{"禁止先形成战术故事，再选择性挑证据支持", "则该复盘在事实完整性上失败", "事实从严，判断从宽", "不把未知改写成不存在", "旧快照、局部观测", "observed damage = 0", "grid occupancy 不等于实际参战人数", "离散 objective observation", "有限 roster 写成全队", "时间接近的死亡事件"}) {
             assertTrue(zh.contains(anchor), anchor);
         }
-        for (String anchor : new String[]{"Be strict with facts", "coaching judgments grounded in evidence", "Observed damage of zero", "grid occupancy is not actual participation", "last-known position into current position", "discrete objective observations", "temporal proximity into causation", "limited roster into the whole team"}) {
+        for (String anchor : new String[]{"do not build a story first and cherry-pick evidence", "fails factual integrity", "Be strict with facts", "coaching judgments grounded in evidence", "Observed damage of zero", "grid occupancy is not actual participation", "last-known position into current position", "discrete objective observations", "temporal proximity into causation", "limited roster into the whole team"}) {
             assertTrue(en.contains(anchor), anchor);
         }
-        for (String anchor : new String[]{"Строго соблюдайте границы фактов", "тренерские оценки на основе доказательств", "Наблюдаемый нулевой урон", "заполненность сетки не равна фактическому участию", "последнюю известную позицию в текущую", "отдельные наблюдения цели", "близость по времени в причинность", "неполный список в всю команду"}) {
+        for (String anchor : new String[]{"не создавайте сначала историю с выборочным подбором доказательств", "означает фактическую ошибку", "Строго соблюдайте границы фактов", "тренерские оценки на основе доказательств", "Наблюдаемый нулевой урон", "заполненность сетки не равна фактическому участию", "последнюю известную позицию в текущую", "отдельные наблюдения цели", "близость по времени в причинность", "неполный список в всю команду"}) {
             assertTrue(ru.contains(anchor), anchor);
         }
         assertFalse(en.contains("事实从严，判断从宽"));
