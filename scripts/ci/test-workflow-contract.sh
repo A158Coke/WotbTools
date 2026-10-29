@@ -367,6 +367,16 @@ for owner in ("business-api", "frontend"):
     assert "outputs" not in workflow["jobs"]["build"], owner
     assert "needs.build.outputs" not in json.dumps(workflow, ensure_ascii=False), owner
 
+# 源包是昂贵工作（clone + bundle 整份源码），必须排在新鲜度闸门之后：stale push 或
+# 无效 manual dispatch 应在打包前就被拒绝，而不是先付一次全量打包再失败。
+for owner in ("business-api", "frontend"):
+    step_names = [
+        step.get("name", "") for step in load(workflow_dir / f"{owner}.yml")["jobs"]["build"]["steps"]
+    ]
+    freeze = next(i for i, name in enumerate(step_names) if name.startswith("Freeze current main"))
+    package = step_names.index("Package exact-commit source bundle")
+    assert freeze < package, f"{owner}: freshness gate must precede source bundle packaging"
+
 frontend_workflow = load(workflow_dir / "frontend.yml")
 assert frontend_workflow["env"]["ASSET_BASE_URL"] == "https://assets.wotbtools.com"
 frontend_deploy = next(
