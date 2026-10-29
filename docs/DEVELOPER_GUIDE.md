@@ -600,11 +600,15 @@ Frontend 的 TX1/TX2 发布在切换线上文件或容器前，校验实际 Busi
   push 取消的 run 更不会触发 replica。mirror job 上限 180 分钟，hub-mirror-action 的 `timeout: 100m`
   是**单次 Git 命令**的预算（且无法中断已启动的 git 子进程）：历史重写后的首次全量推送要上传整张
   新 commit 图（约 300MB），预算不足时每次重试都从零开始、永远推不完。
-  源物化由 `deploy/tx/build-*-from-gitee.sh` 的 `materialize_source` 负责：先在
-  `GITEE_WAIT_ATTEMPTS` 内等镜像给出该 SHA（稳定态只取增量），追不上就按 exact SHA 从 GitHub
-  浅取（`--depth 1`，约 53MB，不含历史），两条路径都拿不到才 fail closed；实际使用的传输写入
-  日志（`source_transport=gitee-mirror|github-exact-sha`）。镜像长期落后时由运维在国内网络执行
-  一次性 `git push --mirror` 补齐（原因与测量见 `docs/architecture/TECHNICAL_EVOLUTION.md` §25）。
+  源物化由 `deploy/tx/build-*-from-gitee.sh` 的 `materialize_source` 负责，按固定顺序取源：
+  ① 在 `GITEE_WAIT_ATTEMPTS` 内等国内镜像给出该 SHA（稳定态只取增量）；② 用 runner 随既有
+  staging 链路送到的 **depth-1 源包**（`Package exact-commit source bundle`，保留原 SHA、
+  不含历史，约 53MB，sha256 由 runner 声明、TX 校验）；③ 才尝试按 exact SHA 从 GitHub 浅取。
+  TX 直连 GitHub 不可靠（实测 `curl 56 Recv failure: Connection timed out`），所以 runner 推送
+  的源包是镜像落后时的确定性来源，抢不到才落到 GitHub。三者都拿不到即 fail closed；实际使用的
+  传输写入日志（`source_transport=gitee-mirror|staged-bundle|github-exact-sha`）。镜像长期落后时
+  由运维在国内网络执行一次性 `git push --mirror` 补齐（原因与测量见
+  `docs/architecture/TECHNICAL_EVOLUTION.md` §25）。
   Frontend 镜像在 **TX2** 构建（TX1 的 1.9 GiB 生产宿主不足以承载当前 `vite build`；
   测量与迁移证据见 `docs/architecture/TECHNICAL_EVOLUTION.md` §24）。
   `deploy/tx/build-frontend-from-gitee.sh` 在 TX2 使用自己的持久 Gitee clone 与 host build lock
