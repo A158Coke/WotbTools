@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark" data-ui-profile="showcase">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"><title>Drawer and table interaction fixture</title></head>
+<body><div id="app"></div>
+<script type="module">
+import { createApp, h, ref } from 'vue'
+import { createI18n } from 'vue-i18n'
+import '../../src/styles/tokens/scale.css'
+import '../../src/styles/tokens/color.css'
+import '../../src/styles/tokens.css'
+import '../../src/styles/showcase.css'
+import '../../src/styles/showcase-workspaces.css'
+import '../../src/styles/showcase-pages.css'
+import '../../src/styles/showcase-rankings.css'
+import '../../src/styles/showcase-cohesion.css'
+import '../../src/styles/showcase-regressions.css'
+import '../../src/styles/app-shell.css'
+import '../../src/styles/playback-overlap-ux.css'
+import '../../src/styles/playback-shared.css'
+import '../../src/styles/playback-mobile.css'
+import '../../src/styles/playback-workspace.css'
+import '../../src/styles/classic-profile.css'
+import { messages } from '../../src/locales/messages.js'
+import PlayerDetailDrawer from '../../src/components/PlayerDetailDrawer.vue'
+import CwPlayerSummaryTable from '../../src/components/CwPlayerSummaryTable.vue'
+import BattleTable from '../../src/components/BattleTable.vue'
+import AggregateTable from '../../src/components/AggregateTable.vue'
+import AnalysisResultPanel from '../../src/components/AnalysisResultPanel.vue'
+const profile = new URLSearchParams(location.search).get('profile') === 'classic' ? 'classic' : 'showcase'
+document.documentElement.dataset.uiProfile = profile
+document.documentElement.dataset.theme = profile === 'classic' ? 'light' : 'dark'
+// 每个独立场景从相同的用户偏好开始，避免前一场景的拖宽或指标选择污染后续场景。
+localStorage.removeItem('radarSidePanelWidth')
+localStorage.removeItem('wotb-radar-metric-order')
+const player = { accountId: 1001, nickname: 'Alpha', clan: 'AAA', rating: 850.4, observedMean: 850.4,
+  dimensionMeans: [250,40,30,75,10,50,65], mvpCount: 2, battles: 3, wins: 2,
+  cells: { nickname: 'Alpha', league_rating: 850, battles: 12, rated_battles: 8, wins: 2, win_rate: 66.7, damage_avg: 500, assisted_avg: 120, kills_avg: 3.2, earned_avg: 80 } }
+const leagueColumns = ['league_rating','league_damage_score','league_assist_score','league_kill_score','league_exchange_score','league_blocked_score','league_survival_score','league_shooting_score'].map((key,i)=>({ key, max: [1000,365,110,110,180,50,75,110][i] }))
+const columns = ['nickname','league_rating','battles','damage_avg','assisted_avg','kills_avg','earned_avg','win_rate'].map(key=>({key,num:key!=='nickname'}))
+const rows = [{ accountId: 1001, team: 1, cells: player.cells }, { accountId: 1002, team: 2, cells: {...player.cells,nickname:'Beta',league_rating:700} }]
+createApp({ setup() {
+  const context = ref(null)
+  return () => h('main',{ class:'layout-data-workspace', style:{paddingTop:'var(--space-4)'} },[
+    h('section',{'data-testid':'cw-fixture'},h(CwPlayerSummaryTable,{ title:'League',rows,columns,leagueColumns,leagueMode:true,onSelectPlayer:()=>{context.value={scope:'summary',accountId:1001}} })),
+    h('section',{'data-testid':'battle-fixture'},h(BattleTable,{battle:{arenaId:1,mapName:'Lagoon',durationS:300,winnerTeam:1,players:rows},shownCols:columns,leagueColumns,leagueMode:true,onSelectPlayer:()=>{context.value={scope:'summary',accountId:1001}}})),
+    h('section',{'data-testid':'aggregate-fixture'},h(AggregateTable,{aggregate:rows,shownCols:columns,aggStats:null})),
+    h(AnalysisResultPanel,{result:{analysis:'## Обзор\n\n' + 'Подробный разбор боя.\n\n'.repeat(30),preBattleSection:'## Прогноз\n\nИсходные данные.'}}),
+    h(PlayerDetailDrawer,{context:context.value,player,leagueColumns,scopePlayers:[{...rows[0],league:{dimensionMeans:player.dimensionMeans}}],onClose:()=>{context.value=null}}),
+  ])
+}}).use(createI18n({legacy:false,locale:'ru',fallbackLocale:'en',messages})).mount('#app')
+</script></body></html>

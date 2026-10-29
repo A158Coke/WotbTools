@@ -59,7 +59,6 @@ const isSummary = computed(() => props.context?.scope === 'summary')
 const isMobile = ref(typeof window !== 'undefined' ? window.innerWidth < 768 : false)
 // 仅 Desktop (>=1200px) 提供自由 resize；Tablet/Mobile 保持原有行为。
 const isDesktop = ref(typeof window !== 'undefined' ? window.innerWidth >= 1200 : true)
-const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1440)
 
 // ---- Side Panel 自由 Resize（仅桌面）----
 const DRAWER_MIN = 320
@@ -103,8 +102,6 @@ function setDrawerWidth(w) {
   applyDrawerWidth(w)
   saveDrawerWidth(drawerWidth.value)
 }
-const resizerLeftPx = computed(() =>
-  isDesktop.value ? Math.max(0, viewportWidth.value - drawerWidth.value - 8) : 0)
 
 function onResizeStart(e) {
   if (!isDesktop.value || !open.value) return
@@ -157,7 +154,6 @@ function updateViewport() {
   const w = window.innerWidth
   isMobile.value = w < 768
   isDesktop.value = w >= 1200
-  viewportWidth.value = w
   // 屏幕尺寸变化时自动 clamp 当前宽度，不强制写回 localStorage。
   drawerWidth.value = clampDrawerWidth(drawerWidth.value)
 }
@@ -640,7 +636,7 @@ function ensureImageLoaded(url) {
            :aria-label="t('league.drawer.resize_panel')"
            :aria-valuenow="Math.round(drawerWidth)" :aria-valuemin="DRAWER_MIN"
            :aria-valuemax="Math.round(drawerMaxWidth())"
-           :style="{ left: resizerLeftPx + 'px' }"
+           :style="{ right: 'calc(' + drawerWidth + 'px + var(--space-2))' }"
            ref="resizeHandle"
            @pointerdown="onResizeStart" @pointermove="onResizeMove" @pointerup="onResizeEnd"
            @pointercancel="onResizeEnd"
@@ -781,7 +777,8 @@ function ensureImageLoaded(url) {
   align-items: center;
   justify-content: center;
   width: var(--space-3);
-  margin-left: -5px;
+  /* 与 fixed drawer 共用 CSS 布局视口，避免页面滚动条使 JS innerWidth 定位偏入内容。 */
+  transform: translateX(50%);
   cursor: col-resize;
   opacity: 0;
   touch-action: none;
@@ -897,6 +894,13 @@ body.pd-resizing .pd-resizer-line,
   font: var(--type-caption);
   font-weight: 600;
   cursor: pointer;
+}
+
+@media (pointer: coarse) {
+  .pd-nav-btn, .pd-linkbtn {
+    min-width: var(--hit-min);
+    min-height: var(--hit-min);
+  }
 }
 
 .radar-picker {

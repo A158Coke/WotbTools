@@ -985,5 +985,6 @@ onBeforeUnmount(() => {
   .shots-select { min-height: var(--control-h-md); }
   .shot-detail-quality summary { min-height: var(--hit-min); display: flex; align-items: center; }
   .shot-nav-btn { min-width: var(--hit-min); min-height: var(--hit-min); }
+  .shot-detail-nav :deep(.app-button) { min-height: var(--hit-min); }
 }
 </style>
