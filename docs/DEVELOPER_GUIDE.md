@@ -670,9 +670,9 @@ runner → 上海 COS → TX1 → 清华网盘 这条候选链路，现状与判
 Deploy job、固定基础设施的 Tofu/runtime workflows 与 database backup 共用
 `production-maintenance` concurrency（`cancel-in-progress: false`、`queue: max`）。应用 workflow
 自身仍使用 `deploy-<service>` + `cancel-in-progress: true`，因此新 main 可以取消旧应用 workflow；
-不能把 job 队列设置描述为绝不取消应用部署的保证。Gitee mirror（`gitee-mirror.yml`）与
-asset-origin 的镜像 job 共用 `production-gitee-mirror`，TX build jobs 共用 `tx-production-build`，
-两者均不取消运行项并最大排队。
+不能把 job 队列设置描述为绝不取消应用部署的保证。Gitee main sync（`gitee-mirror.yml`）
+独占 `production-gitee-main-sync`；asset-origin 保留独立的 `production-gitee-mirror`，不得阻塞 main
+同步。TX build jobs 共用 `tx-production-build`；这些 job 队列均不取消运行项并最大排队。
 TX builders 还共用 host build lock；production mutation 另由各宿主 deploy `flock` 串行化。
 应用 lane 在 mutation 前执行 current-main/freshness 校验，固定基础设施仍使用各自 maintenance 契约。
 TX 人工 mutation 必须通过 `bash /opt/wotb-tx/deploy/with-deploy-lock.sh <command...>`

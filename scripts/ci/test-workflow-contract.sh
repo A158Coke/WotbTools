@@ -347,8 +347,8 @@ for owner in ("business-api", "frontend"):
 mirror_workflow = load(workflow_dir / "gitee-mirror.yml")
 mirror_job = mirror_workflow["jobs"]["mirror_gitee"]
 assert mirror_job["concurrency"] == {
-    "group": "production-gitee-mirror", "cancel-in-progress": "false", "queue": "max",
-}, "mirror must stay serialized with the asset-origin transport push"
+    "group": "production-gitee-main-sync", "cancel-in-progress": "false", "queue": "max",
+}, "main sync must serialize only main writers, independently of asset-origin"
 mirror_steps = mirror_job["steps"]
 assert mirror_job["timeout-minutes"] == "10"
 assert mirror_workflow["on"]["push"]["branches"] == ["main"]
@@ -1050,6 +1050,12 @@ for forbidden in ("docker compose up", "docker run", "komodo-controller", "tofu 
                   "resource_sync", "infra/komodo/resources/**"):
     assert forbidden not in asset_text, f"the asset source transport must not own {forbidden}"
 assert set(re.findall(r"secrets\.([A-Za-z0-9_]+)", asset_text)) == {"GITEE_TOKEN"}
+asset_concurrency = asset_workflow["jobs"]["mirror_gitee"]["concurrency"]
+assert asset_concurrency == {
+    "group": "production-gitee-mirror", "cancel-in-progress": "false", "queue": "max",
+}, "asset-origin keeps its existing owner queue"
+assert mirror_job["concurrency"]["group"] != asset_concurrency["group"], \
+    "asset-origin must not delay the release-critical Gitee main sync"
 asset_steps = asset_workflow["jobs"]["mirror_gitee"]["steps"]
 asset_step_names = [step.get("name") for step in asset_steps]
 freeze_index = asset_step_names.index("Freeze reviewed main source")

@@ -13,7 +13,7 @@ jobs:
   mirror_gitee:
     name: Sync exact GitHub main to Gitee
     concurrency:
-      group: production-gitee-mirror
+      group: production-gitee-main-sync
       cancel-in-progress: false
       queue: max
     runs-on: ubuntu-latest
