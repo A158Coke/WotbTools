@@ -71,17 +71,15 @@ jobs:
           observed="$(timeout --kill-after=10s 120s git -c credential.helper= \
             ls-remote --refs "$GITEE_REPO_URL" refs/heads/main)"
           if [ -n "$observed" ]; then
-            [[ "$observed" =~ ^([0-9a-f]{40})$'\t'refs/heads/main$ ]]
-            observed="${BASH_REMATCH[1]}"
+            [[ "$observed" =~ ^[0-9a-f]{40}$'\t'refs/heads/main$ ]]
           fi
-          # 排队旧事件不能倒退 main；lease 另行防止 observation→push 期间的竞争 writer。
+          # 排队旧事件不能倒退 main；普通 push 只允许创建或 fast-forward，分叉需人工恢复。
           current="$(timeout --kill-after=10s 120s git ls-remote --refs origin refs/heads/main)"
           [ "$current" = "$SOURCE_SHA"$'\t'refs/heads/main ] || {
             echo "Source event is no longer current GitHub main; refusing sync." >&2
             exit 1
           }
           timeout --kill-after=10s 120s git -c credential.helper= -c push.followTags=false push \
-            --force-with-lease="refs/heads/main:$observed" \
             "$GITEE_REPO_URL" "$SOURCE_SHA:refs/heads/main"
           actual="$(timeout --kill-after=10s 120s git -c credential.helper= \
             ls-remote --refs "$GITEE_REPO_URL" refs/heads/main)"

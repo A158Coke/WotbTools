@@ -597,8 +597,8 @@ Frontend 的 TX1/TX2 发布在切换线上文件或容器前，校验实际 Busi
   WASM/可选 Sponsor bundle 与 staging；不构建 Frontend Docker 镜像或上传 TCR 大镜像。
   GitHub 是唯一 SSOT / review / release authority；Gitee main 是国内生产源码 transport，
   TCR 是生产 image transport。独立 `gitee-mirror.yml` 在 main push/manual 时 checkout event SHA，
-  只通过显式 lease 更新 Gitee `refs/heads/main`，并复验远端等于该 SHA；不推 tags/其他分支，
-  不 prune，不触碰 asset-origin。旧事件和 observation→push 期间的竞争 writer 均 fail closed。
+  只通过普通 push 创建或 fast-forward 更新 Gitee `refs/heads/main`，并复验远端等于该 SHA；不推 tags/其他分支，
+  不 prune，不触碰 asset-origin。旧事件被拒绝；既有分叉或竞争导致的非 fast-forward 更新均 fail closed，不自动改写历史。
   两应用 run 不依赖 mirror job graph；`materialize_source` 只等待 Gitee main 历史包含 requested SHA，
   保留 `GITEE_WAIT_ATTEMPTS=12` / `GITEE_WAIT_INTERVAL_SECONDS=15`，随后创建 exact-SHA worktree。
   等待耗尽即失败，不使用 runner 源码包或 TX→GitHub fallback；日志记录

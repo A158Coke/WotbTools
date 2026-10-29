@@ -357,7 +357,9 @@ assert checkout["with"] == {"ref": "${{ github.sha }}", "fetch-depth": "0"}
 sync = next(step for step in mirror_steps if step.get("name") == "Sync and verify only Gitee main")
 assert sync["env"]["SOURCE_SHA"] == "${{ github.sha }}"
 sync_script = sync["run"]
-assert '--force-with-lease="refs/heads/main:$observed"' in sync_script
+# 常规 CI 只允许普通 fast-forward push；历史分叉必须交给人工恢复。
+assert "--force" not in sync_script
+assert '"+$SOURCE_SHA:refs/heads/main"' not in sync_script
 assert '"$SOURCE_SHA:refs/heads/main"' in sync_script
 assert '[ "$actual" = "$SOURCE_SHA"' in sync_script
 for forbidden in ("hub-mirror-action", "force_update", "--mirror", "--all", "--tags", "--prune", "refs/tags/", "refs/heads/asset-origin"):

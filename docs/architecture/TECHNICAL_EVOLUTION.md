@@ -602,7 +602,7 @@ TX→GitHub exact-SHA 浅取作为后备。TX 直取 GitHub 曾出现 curl 56/ea
 
 2026-10-29 的职责收敛刻意移除两条后备路径：GitHub 唯一拥有 SSOT/review/release authority，
 Gitee main 只承担国内生产源码 transport，TCR 只承担生产 image transport。
-`gitee-mirror.yml` 只通过显式 lease 更新 main 并校验 exact event SHA，不推其他 branches/tags，
+`gitee-mirror.yml` 只通过普通 push 创建或 fast-forward 更新 main 并校验 exact event SHA，分叉即失败；不推其他 branches/tags，
 不 prune；asset-origin 独立 owner 与 transport pair 保留。TX1 Business API 与 TX2 Frontend
 只等待 Gitee main 历史包含 requested SHA，随后 exact-SHA worktree 构建，等待耗尽即 fail closed。
 Agent WASM、Sponsor 内容与脚本 staging 保留，image identity/digest/freshness/deploy 语义不变。

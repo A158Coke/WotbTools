@@ -397,6 +397,8 @@ class GiteeMainSyncTest(unittest.TestCase):
             git("--git-dir", str(target), "update-ref", "refs/heads/asset-origin", first)
             git("--git-dir", str(target), "update-ref", "refs/heads/other", first)
             git("--git-dir", str(target), "update-ref", "refs/tags/preserved", first)
+            if case == "divergent":
+                git("--git-dir", str(target), "update-ref", "refs/heads/main", race)
             if case == "empty":
                 git("--git-dir", str(target), "update-ref", "-d", "refs/heads/main")
             if case == "stale":
@@ -435,11 +437,14 @@ git() {
             else:
                 self.assertNotEqual(result.returncode, 0, diagnostic)
                 self.assertNotIn("gitee_main_sync result=PASS", result.stdout)
-                self.assertEqual(actual, race if case == "race" else sha if case == "verify-mismatch" else first)
+                self.assertEqual(actual, race if case in ("race", "divergent") else sha if case == "verify-mismatch" else first)
             after = git("--git-dir", str(target), "show-ref")
             without_main = lambda refs: [l for l in refs.splitlines() if not l.endswith(" refs/heads/main")]
             self.assertEqual(without_main(before), without_main(after))
             self.assertFalse((base / "gitee-main-askpass.sh").exists(), diagnostic)
+
+    def test_preexisting_divergence_fails_closed(self):
+        self.run_sync("divergent")
 
     def test_main_invocation_guard(self):
         workflow = (ROOT / ".github/workflows/gitee-mirror.yml").read_text(encoding="utf-8")
