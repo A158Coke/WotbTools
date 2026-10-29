@@ -4,6 +4,10 @@ import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { OCCLUSION_LIMITS, measureOcclusion, measurePaintOrder, measureReachability } from './browser-occlusion.mjs'
+import { SHELL_OVERLAY_SCENARIOS, runShellOverlayScenario } from './browser-shell-overlays.mjs'
+import { DIALOG_SHEET_SCENARIOS, runDialogSheetScenario } from './browser-dialog-sheet.mjs'
+import { DRAWER_TABLE_SCENARIOS, runDrawerTableScenario } from './browser-drawer-tables.mjs'
+import { CATALOG_HOF_DOC_SCENARIOS, runCatalogHofDocScenario } from './browser-catalog-hof-docs.mjs'
 
 /**
  * Browser-level interaction regression for the Replay Workspace capability tabs and the
@@ -549,6 +553,7 @@ const AUTH_CAPABILITY_SCENARIOS = [
   { name: 'capability-normal-shots-armor-handoff', cap: 'shots', view: 'agent-shots', authenticated: true, width: 1600, height: 900, touch: false, reconstruct: true },
   { name: 'capability-normal-shots-armor-handoff-mobile', cap: 'shots', view: 'agent-shots', authenticated: true, width: 390, height: 844, touch: true, reconstruct: true },
   { name: 'capability-normal-shots-armor-handoff-tablet', cap: 'shots', view: 'agent-shots', authenticated: true, width: 1024, height: 768, touch: false, reconstruct: true },
+  ...['showcase', 'classic'].map(profile => ({ name: `capability-normal-shots-armor-handoff-landscape-${profile}`, profile, cap: 'shots', view: 'agent-shots', authenticated: true, width: 740, height: 360, touch: true, reconstruct: true })),
 ]
 
 async function runAuthCapabilityScenario(env, scenario) {
@@ -556,7 +561,7 @@ async function runAuthCapabilityScenario(env, scenario) {
   const { targetId, sessionId } = await env.chrome.openPage()
   const page = new Page(env.chrome.client, sessionId)
   lastPage = page
-  await page.enable()
+  await page.enable({ profile: scenario.profile ?? 'showcase' })
   await page.emulate(scenario)
   await page.goto(`${env.origin}/?view=replay&ws-auth=${scenario.authenticated ? 1 : 0}&ws-shot-fixture=1&assets=${encodeURIComponent(`${env.origin}/fixture-assets`)}`)
   await page.waitFor(() => !!document.querySelector('[data-testid="ws-data"]'), { label: 'data pane' })
@@ -625,6 +630,24 @@ async function runAuthCapabilityScenario(env, scenario) {
       await page.tap({ ...row, touch: scenario.touch })
       check(failures, await page.evaluate('window.__wsInput.click?.testId') === 'shot-row-1',
         'real selection click must land on the selected shot row')
+      for (const selector of ['[data-testid=shot-next]', '[data-testid=shot-prev]', '[data-testid=shot-detail-close]']) {
+        await page.evaluate(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'center'})`)
+        const reach = await measureReachability(page, { options: [selector], touch: scenario.touch })
+        check(failures, reach.sampled > 0, `${selector}: no hit-test samples`)
+        failures.push(...reach.failures)
+        const point = await page.evaluate(clickCenterExpression(selector))
+        if (!point) throw new Error(`${selector} must be hit-testable`)
+        await page.tap({ ...point, touch: scenario.touch })
+      }
+      await page.waitForValue('!document.querySelector("[data-testid=shot-inspector]")', Boolean)
+      await page.evaluate('document.querySelector("[data-testid=shot-row-1]").scrollIntoView({block:"center"})')
+      const reopened = await page.evaluate(clickCenterExpression('[data-testid=shot-row-1]'))
+      if (!reopened) throw new Error('shot row cannot be reopened')
+      await page.tap({ ...reopened, touch: scenario.touch })
+      await page.evaluate('document.querySelector("[data-testid=shot-open-viewer]").scrollIntoView({block:"center"})')
+      const viewerReach = await measureReachability(page, { options: ['[data-testid=shot-open-viewer]'], touch: scenario.touch })
+      check(failures, viewerReach.sampled > 0, 'armor handoff reachability is empty')
+      failures.push(...viewerReach.failures)
       const open = await page.evaluate(clickCenterExpression('[data-testid="shot-open-viewer"]'))
       if (!open) throw new Error('armor handoff button must be hit-testable')
       await page.tap({ ...open, touch: scenario.touch })
@@ -3531,7 +3554,7 @@ async function runMenuViewportScenario(env, scenario) {
   for (const [name, code, item] of [['End', 35, 'png'], ['Home', 36, 'aggregate']]) {
     await key(name, code)
     await page.waitForValue(`document.activeElement?.dataset.testid`, value => value === `menu-${item}`)
-    const reach = await measureReachability(page, { options: [`[data-testid=menu-${item}]`] })
+    const reach = await measureReachability(page, { options: [`[data-testid=menu-${item}]`], touch: scenario.touch })
     check(failures, reach.sampled > 0, `${name}: reachability probe must sample an item`)
     failures.push(...reach.failures)
   }
@@ -3543,7 +3566,7 @@ async function runMenuViewportScenario(env, scenario) {
   for (const item of ['aggregate', 'each', 'png']) {
     await open()
     await page.evaluate(`document.querySelector('[data-testid=menu-${item}]').scrollIntoView({block:'nearest'})`)
-    const reach = await measureReachability(page, { options: [`[data-testid=menu-${item}]`] })
+    const reach = await measureReachability(page, { options: [`[data-testid=menu-${item}]`], touch: scenario.touch })
     check(failures, reach.sampled > 0, `${item}: reachability probe must sample an item`)
     failures.push(...reach.failures)
     await tap(`[data-testid=menu-${item}]`)
@@ -3581,6 +3604,10 @@ try {
   })
   const env = { origin, chrome: chromeCdp }
   const runs = [
+    ...SHELL_OVERLAY_SCENARIOS.map(scenario => ({ scenario, run: async () => results.push(await runShellOverlayScenario(env, scenario)) })),
+    ...DIALOG_SHEET_SCENARIOS.map(scenario => ({ scenario, run: async () => results.push(await runDialogSheetScenario(env, scenario)) })),
+    ...DRAWER_TABLE_SCENARIOS.map(scenario => ({ scenario, run: async () => results.push(await runDrawerTableScenario(env, scenario)) })),
+    ...CATALOG_HOF_DOC_SCENARIOS.map(scenario => ({ scenario, run: async () => results.push(await runCatalogHofDocScenario(env, scenario)) })),
     ...MENU_VIEWPORT_SCENARIOS.map(scenario => ({ scenario, run: () => runMenuViewportScenario(env, scenario) })),
     { scenario: { name: 'multifile-workspace-playback', width: 1600, height: 900 }, run: () => runMultiFileWorkspaceScenario(env) },
     { scenario: { name: 'offline-local-workspace-matrix', width: 1600, height: 900 }, run: () => runOfflineWorkspaceScenario(env) },
@@ -3607,7 +3634,9 @@ try {
   const shardTotal = shard ? Number(shard[2]) : 1
   // 名过滤器忽略 --shard 的**值**（`1/2` 不以 - 开头，否则会被误当场景名）
   const nameFilter = argv.find((arg, i) => !arg.startsWith('-') && (shardFlagAt < 0 || i !== shardFlagAt + 1))
-  const base = process.argv.includes('--mobile-visual')
+  const base = process.argv.includes('--occlusion')
+    ? runs.filter(({ scenario }) => /^(shell-overlay-|dialog-sheet-|drawer-tables-|overlay-|menu-viewport-|ws2d-|capability-normal-shots-armor-handoff)/.test(scenario.name))
+    : process.argv.includes('--mobile-visual')
     ? runs.filter(({ scenario }) => scenario.width < 900 && /^(roster-geometry|ws2d)-/.test(scenario.name))
     : nameFilter ? runs.filter(({ scenario }) => scenario.name.includes(nameFilter)) : runs
   const selected = shardTotal > 1 ? base.filter((_, idx) => idx % shardTotal === shardIndex) : base

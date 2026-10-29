@@ -12,6 +12,26 @@
 
 共享 `MenuButton` 使用 Reka 碰撞定位给出的可用高度限制菜单面板，空间不足时在菜单内部纵向滚动，滚动不传递到背景页面。选项保留原有触控尺寸；键盘 Home / End 导航及指针选择均可触达全部选项。`test:browser-interaction menu-viewport` 以当前回放导出三项文案验证 Showcase / Classic、手机短视口、平板、桌面及打开期间的视口高度变化。
 
+## 浮层与可达性验证
+
+`pnpm run test:browser-interaction --occlusion` 运行代表界面的遮挡与交互矩阵，复用 `browser-occlusion.mjs` 和设计语言 §5 的阈值。检查包含展开状态、滚动后首末项、真实触摸/鼠标输入和负向遮挡对照；触控场景显式要求 44×44 的命中区域。
+
+| 界面 | 验证内容 | 场景前缀 |
+|---|---|---|
+| 应用外壳、更多页/面板 | 固定导航与标题、滚动后选项可达、语言切换、Esc 还焦点、真实路由跳转 | `shell-overlay-` |
+| 通用 AppDialog / AppSheet | 长内容内部滚动、常驻底栏层级、嵌套 dialog、关闭与焦点恢复、滚动条侧按钮边缘命中 | `dialog-sheet-` |
+| 玩家详情与三种数据表格 | sticky 昵称列打开详情、末列滚动可达、桌面拖宽、抽屉让位/覆盖、雷达设置与选项 | `drawer-tables-` |
+| AI 结果面板 | 折叠/预测真实点击、复制按钮几何可达 | `drawer-tables-` |
+| 坦克百科筛选 | 筛选 sheet、车型筛选、已选条件移除、卡片选择 | `overlay-catalog-` |
+| 名人堂三类榜单 | 筛选控件、嵌套车辆选择、完成与已选条件移除 | `overlay-hof-` |
+| 文档页面 | 手机折叠目录、桌面 sticky 目录、末项锚点与返回顶部 | `overlay-docs-` |
+| 射击分析详情 | 上一发/下一发/关闭与重开、装甲复现交接、手机横屏可达 | `capability-normal-shots-armor-handoff` |
+| 导出菜单、2D 工作台 | 菜单短视口滚动、显示面层级、主地图遮挡及已有负向对照 | `menu-viewport-` / `ws2d-` |
+
+`FilterChips`、名人堂 sheet 控件、玩家抽屉、AI 报告与射击详情的操作在触控档保持最小命中区。`AppSheet` 的内部滚动区在末端保留空隙，避免覆盖式滚动条吞掉右对齐按钮边缘的触摸；滚动条保持可见。桌面玩家抽屉的拖拽柄使用与面板一致的 CSS 布局视口定位，不用包含页面滚动条宽度的 `innerWidth` 推算横坐标。
+
+矩阵覆盖 Showcase / Classic、窄屏竖屏/横屏，并为通用弹层、抽屉与文档目录补充平板/桌面。外壳与射击交接使用真实应用，其他域使用生产组件、生产样式和确定性外部数据夹具；空榜单夹具只证明筛选交互。复制/导出按钮的可达检查不等于真实剪贴板或下载验收。Chromium 设备仿真不替代真实 Android GeckoView、iPhone Safari、软键盘或 3D 画面验收。
+
 ## 界面档位（UI Profile）
 
 - `frontend/src/composables/useUiProfile.js` 是 profile 的唯一 reactive owner，持久化 key 为 `wotb-ui-profile`。

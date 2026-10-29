@@ -250,6 +250,12 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
 .prebattle-title { font-weight: 700; color: var(--text-heading); }
 .prebattle-state { font-size: .78rem; color: var(--text-muted); }
 .prebattle-content { margin: 8px 0 0; padding: 0; }
+@media (pointer: coarse) {
+  .toggle-btn, .copy-btn, .prebattle-toggle {
+    min-width: var(--hit-min);
+    min-height: var(--hit-min);
+  }
+}
 .team-review-content { padding: 0 14px 14px; }
 .team-summary, .team-section { border-bottom: 1px solid var(--border); padding: 12px 0; }
 .team-section:last-child { border-bottom: 0; }
