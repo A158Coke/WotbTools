@@ -75,9 +75,16 @@ jobs:
       cancel-in-progress: false
       queue: max
     runs-on: ubuntu-latest
-    # 历史重写后首次镜像要把全新 commit 图整体推给 Gitee（跨境全量），20m 不够；
-    # Gitee 收齐后恢复增量，无需回调。
-    timeout-minutes: 60
+    # 国内镜像，**不再是发布前置**：历史重写后首次全量推送需要约 300MB（Gitee 对新
+    # commit 图的对象持有量为零），且 hub-mirror 每次重试都从零开始，所以单次 Git 命令
+    # 必须给足预算（100m），否则永远推不完。镜像追不上时 TX2 builder 按 exact SHA
+    # 直取 GitHub（见 deploy/tx/build-frontend-from-gitee.sh materialize_source），
+    # 发布因此不被镜像的跨境带宽卡住。若镜像长期落后，运维侧的补救是在国内网络执行
+    # `git push --mirror`（一次性 bootstrap，见 docs/architecture/TECHNICAL_EVOLUTION.md §25）。
+    timeout-minutes: 180
+    # 镜像失败可观察（job 红、日志在），但不让 run 结论变成 failure：Frontend Replica 的
+    # workflow_run 只接受 conclusion == success，镜像落后不该拦住生产复制与部署。
+    continue-on-error: true
     permissions:
       contents: read
     steps:
@@ -107,14 +114,13 @@ jobs:
           static_list: WotbTools
           account_type: user
           force_update: true
-          timeout: 45m
+          timeout: 100m
 
   build:
     concurrency:
       group: tx-production-build
       cancel-in-progress: false
       queue: max
-    needs: [mirror_gitee]
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:

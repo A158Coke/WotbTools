@@ -585,17 +585,25 @@ Frontend 的 TX1/TX2 发布在切换线上文件或容器前，校验实际 Busi
   和 `BUILD_COMMIT`。第二次普通业务代码发布时应确认依赖层复用；生产 exact-SHA / digest
   发布链不变，回滚可恢复旧 Dockerfile 后通过现有流程发布新 SHA。
 - `.github/workflows/business-api.yml`、`frontend.yml`、`keycloak.yml` 与 `ai-service.yml`
-  分别拥有一个应用发布闭环。TX business-api/frontend 先主动 mirror exact GitHub SHA 到 Gitee，
-  再由 TX 从该 SHA 构建并发布 immutable TCR tag（Business API 在 TX1，Frontend 在 TX2），
-  生产只消费输出的 `repo@sha256:<digest>`
+  分别拥有一个应用发布闭环。TX business-api/frontend 先用 exact GitHub SHA 物化源（Gitee 国内
+  镜像优先，镜像落后时按 exact SHA 浅取 GitHub），再由 TX 从该 SHA 构建并发布 immutable TCR tag
+  （Business API 在 TX1，Frontend 在 TX2），生产只消费输出的 `repo@sha256:<digest>`
   （`TX_BUSINESS_API_IMAGE_REF` / `TX_FRONTEND_IMAGE_REF`），禁止 `latest` 回退。
   Keycloak 与 Yecao ai-service 仍保留各自 SHA tag + latest/freshness 契约；Keycloak runtime 后
   继续执行自己的 OpenTofu 与最终验证。各应用的服务级 concurrency 会取消过期 main workflow。
 - `frontend.yml` 的 GitHub runner 只负责 release authority、Gitee mirror、下载校验 pinned Agent
   WASM/可选 Sponsor bundle 与 staging；不在 GitHub 构建 Frontend Docker 镜像或上传 TCR 大镜像。
-  Gitee mirror job 的总上限是 60 分钟；hub-mirror-action 的 `timeout: 45m` 只是**单次 Git 命令**
-  的预算（且无法中断已启动的 git 子进程），不是整个 action 的总耗时保证——重试 × 45m 仍受 job
-  60 分钟上限约束。
+  **Gitee mirror 是国内镜像，不是发布前置**：`mirror_gitee` 与 `build` 并行且 `continue-on-error`，
+  失败只标红该 job，不改变 run 结论、不阻塞发布（`business-api.yml` 同一约定；Frontend Replica 的
+  `workflow_run` 只接受 `conclusion == success`，镜像落后不该拦住生产复制）。mirror job 上限
+  180 分钟，hub-mirror-action 的 `timeout: 100m` 是**单次 Git 命令**的预算（且无法中断已启动的
+  git 子进程）：历史重写后的首次全量推送要上传整张新 commit 图（约 300MB），预算不足时每次重试
+  都从零开始、永远推不完。
+  源物化由 `deploy/tx/build-*-from-gitee.sh` 的 `materialize_source` 负责：先在
+  `GITEE_WAIT_ATTEMPTS` 内等镜像给出该 SHA（稳定态只取增量），追不上就按 exact SHA 从 GitHub
+  浅取（`--depth 1`，约 53MB，不含历史），两条路径都拿不到才 fail closed；实际使用的传输写入
+  日志（`source_transport=gitee-mirror|github-exact-sha`）。镜像长期落后时由运维在国内网络执行
+  一次性 `git push --mirror` 补齐（原因与测量见 `docs/architecture/TECHNICAL_EVOLUTION.md` §25）。
   Frontend 镜像在 **TX2** 构建（TX1 的 1.9 GiB 生产宿主不足以承载当前 `vite build`；
   测量与迁移证据见 `docs/architecture/TECHNICAL_EVOLUTION.md` §24）。
   `deploy/tx/build-frontend-from-gitee.sh` 在 TX2 使用自己的持久 Gitee clone 与 host build lock

@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# Build and publish the Frontend on the TX2 build host from an exact commit mirrored
-# to Gitee. GitHub remains the release authority; Gitee is only the domestic source
-# transport. The pinned Agent WASM release archive is staged by GitHub because it is
-# tiny; the expensive frontend image build and TCR publication stay entirely in China.
+# Build and publish the Frontend on the TX2 build host from an exact commit. GitHub
+# remains the release authority; Gitee is the domestic source transport and is tried
+# first. When the mirror cannot serve the commit yet, the exact SHA is fetched shallow
+# from GitHub instead (about 53MB vs the ~300MB full history a post-rewrite mirror push needs),
+# so a lagging mirror never blocks a release. The pinned Agent WASM release archive is
+# staged by GitHub because it is tiny; the expensive frontend image build and TCR
+# publication stay entirely in China.
 #
 # 2026-10-26 placement: the Frontend image builds on TX2, not TX1. TX1 has 1.9 GiB RAM
 # and runs the production containers; after #753 (Reka/VueUse/motion-v) the build needs
@@ -12,11 +15,20 @@
 set -Eeuo pipefail
 
 readonly GITEE_REPO_URL="${WOTB_GITEE_REPO_URL:-https://gitee.com/A158Coke/Wotbtools.git}"
+# 镜像落后时的兜底：GitHub 允许按 exact SHA 浅取（53MB，实测 18s），只取该 commit 的树，
+# 不需要任何历史。它比"把重写后的全新 commit 图整推 Gitee"（约 300MB）小一个数量级，
+# 所以镜像 budget 再大也不该成为发布的前置条件。
+readonly GITHUB_REPO_URL="${WOTB_GITHUB_REPO_URL:-https://github.com/A158Coke/WotbTools.git}"
 # Cache/lock 属于**构建宿主**：Frontend 在 TX2 构建，Business API 仍在 TX1 构建，
 # 两侧缓存与 build.lock 刻意分离（同一 commit 同时改两个应用时不再争用 TX1 的
 # CPU/RAM，也不会共享一份 Gitee clone）。
 readonly CACHE_ROOT="${WOTB_TX_BUILD_CACHE_ROOT:-$HOME/.cache/wotbtools-production-build}"
 readonly REPO_DIR="$CACHE_ROOT/repo"
+# 浅取仓库是每次构建的临时源（不复用：浅边界不适合长期 cache）。
+readonly SHALLOW_SOURCE_DIR="$CACHE_ROOT/source-shallow"
+# 当前构建的源仓库：镜像命中时为持久的 Gitee clone，兜底时为浅取仓库。所有
+# `git show <sha>:<path>` / commit epoch 读取都从它出发，两条路径语义一致。
+SOURCE_DIR="$REPO_DIR"
 readonly BUILD_LOCK_FILE="$CACHE_ROOT/build.lock"
 # TX2 build 与同一宿主上的 Production Worker / Frontend replica 共用既有主机维护锁；
 # 空值 = 不获取（单测与 TX1 调试路径）。workflow 显式传 /opt/wotb-tx2/.deploy.lock。
@@ -25,6 +37,9 @@ readonly HOST_LOCK_WAIT_SECONDS="${HOST_LOCK_WAIT_SECONDS:-600}"
 readonly GITEE_WAIT_ATTEMPTS="${GITEE_WAIT_ATTEMPTS:-12}"
 readonly GITEE_WAIT_INTERVAL_SECONDS="${GITEE_WAIT_INTERVAL_SECONDS:-15}"
 readonly GIT_FETCH_TIMEOUT_SECONDS="${GIT_FETCH_TIMEOUT_SECONDS:-60}"
+# 53MB 跨境浅取的预算：够慢链路走完，又不至于让一次失败拖满 90 分钟的 build job。
+readonly GITHUB_FETCH_TIMEOUT_SECONDS="${GITHUB_FETCH_TIMEOUT_SECONDS:-900}"
+readonly GITHUB_FETCH_ATTEMPTS="${GITHUB_FETCH_ATTEMPTS:-3}"
 readonly TCR_PUSH_TIMEOUT_SECONDS="${TCR_PUSH_TIMEOUT_SECONDS:-600}"
 readonly TCR_LOOKUP_TIMEOUT_SECONDS="${TCR_LOOKUP_TIMEOUT_SECONDS:-60}"
 readonly TCR_PULL_TIMEOUT_SECONDS="${TCR_PULL_TIMEOUT_SECONDS:-300}"
@@ -113,6 +128,7 @@ validate_common() {
 
   local setting
   for setting in GITEE_WAIT_ATTEMPTS GITEE_WAIT_INTERVAL_SECONDS GIT_FETCH_TIMEOUT_SECONDS \
+    GITHUB_FETCH_TIMEOUT_SECONDS GITHUB_FETCH_ATTEMPTS \
     TCR_PUSH_TIMEOUT_SECONDS TCR_LOOKUP_TIMEOUT_SECONDS TCR_PULL_TIMEOUT_SECONDS KILL_AFTER_SECONDS \
     RETRY_MAX_ATTEMPTS RETRY_BACKOFF_FIRST_SECONDS RETRY_BACKOFF_LATER_SECONDS HOST_LOCK_WAIT_SECONDS; do
     is_positive_integer "${!setting}" || die "$setting must be a positive integer"
@@ -201,7 +217,58 @@ wait_for_gitee_sha() {
     fi
   done
 
-  die "source SHA did not reach Gitee main within the bounded wait"
+  echo "gitee_sync result=LAG source_sha=$source_sha attempts=$GITEE_WAIT_ATTEMPTS"
+  return 1
+}
+
+# 按 exact SHA 从 GitHub 浅取（只含该 commit 的树）。GitHub 允许 fetch 未在 ref 里
+# 通告的 SHA；取到的对象与镜像路径完全同构，因此 epoch/source.json/worktree 读取
+# 不需要任何特判。每次重建目录：浅边界不该被复用。
+fetch_exact_sha_shallow() {
+  local source_sha="$1"
+  local attempt
+
+  mkdir -p "$CACHE_ROOT"
+  for attempt in $(seq 1 "$GITHUB_FETCH_ATTEMPTS"); do
+    rm -rf -- "$SHALLOW_SOURCE_DIR"
+    mkdir -p "$SHALLOW_SOURCE_DIR"
+    git -C "$SHALLOW_SOURCE_DIR" init -q
+    echo "github_exact_fetch attempt=$attempt/$GITHUB_FETCH_ATTEMPTS source_sha=$source_sha"
+    if timeout --kill-after="${KILL_AFTER_SECONDS}s" "$GITHUB_FETCH_TIMEOUT_SECONDS" \
+      env GIT_TERMINAL_PROMPT=0 \
+      git -C "$SHALLOW_SOURCE_DIR" fetch --depth 1 --no-tags "$GITHUB_REPO_URL" "$source_sha"; then
+      if [ "$(git -C "$SHALLOW_SOURCE_DIR" rev-parse FETCH_HEAD 2>/dev/null)" = "$source_sha" ] \
+        && git -C "$SHALLOW_SOURCE_DIR" cat-file -e "$source_sha^{commit}" 2>/dev/null; then
+        echo "github_exact_fetch result=PASS source_sha=$source_sha"
+        return 0
+      fi
+      echo "github_exact_fetch result=SHA_MISMATCH source_sha=$source_sha" >&2
+    fi
+    if [ "$attempt" -lt "$GITHUB_FETCH_ATTEMPTS" ]; then
+      sleep "$RETRY_BACKOFF_LATER_SECONDS"
+    fi
+  done
+  rm -rf -- "$SHALLOW_SOURCE_DIR"
+  return 1
+}
+
+# 源物化：国内镜像优先（稳定态只取增量），镜像追不上时按 exact SHA 直取 GitHub，
+# 两者都失败才 fail closed。每条路径都把 SOURCE_DIR 指向"含该 commit 的仓库"，
+# 并把实际使用的传输写进日志（发布证据里能区分 mirror 命中与兜底）。
+materialize_source() {
+  local source_sha="$1"
+
+  if wait_for_gitee_sha "$source_sha"; then
+    SOURCE_DIR="$REPO_DIR"
+    echo "source_transport=gitee-mirror"
+    return 0
+  fi
+
+  echo "source_transport=gitee-lagging; exact-SHA fallback engaged"
+  fetch_exact_sha_shallow "$source_sha" \
+    || die "source SHA is neither on Gitee main nor fetchable from GitHub as an exact SHA"
+  SOURCE_DIR="$SHALLOW_SOURCE_DIR"
+  echo "source_transport=github-exact-sha"
 }
 
 docker_image_digest() {
@@ -301,7 +368,7 @@ verify_frontend_image() {
   # 链 = source.json ref/release → ZIP fingerprint → common/assets/wasm/<ref>/ →
   # dist/wasm/<ref>/ → 镜像。镜像里必须正好是这个 commit 的产物。
   local agent_ref agent_release
-  read -r agent_ref agent_release < <(git -C "$REPO_DIR" show "$source_sha:deploy/agent/source.json" \
+  read -r agent_ref agent_release < <(git -C "$SOURCE_DIR" show "$source_sha:deploy/agent/source.json" \
     | python3 -c '
 import json, sys
 data = json.load(sys.stdin)
@@ -314,7 +381,7 @@ print(data.get("ref", ""), (data.get("artifact") or {}).get("release", ""))
   # 这条把"确定性构建身份"从脚本传参升级为**产物级断言**：wall-clock 回落、参数丢失、或有人
   # 改回 new Date() 都会在这里被拦住（Docker 上下文无 .git，时间只能由本脚本给）。
   local source_epoch expected_build_time
-  source_epoch="$(source_commit_epoch "$REPO_DIR" "$source_sha")"
+  source_epoch="$(source_commit_epoch "$SOURCE_DIR" "$source_sha")"
   expected_build_time="$(SOURCE_EPOCH="$source_epoch" python3 -c '
 import datetime, os
 epoch = int(os.environ["SOURCE_EPOCH"])
@@ -433,9 +500,10 @@ build_publish() {
   fi
   cleanup_build_leftovers() {
     local worktree="$1" sponsor_tmp="$2"
-    git -C "$REPO_DIR" worktree remove --force "$worktree" >/dev/null 2>&1 || true
+    git -C "$SOURCE_DIR" worktree remove --force "$worktree" >/dev/null 2>&1 || true
     rm -rf -- "$worktree"
     [ -z "$sponsor_tmp" ] || rm -rf -- "$sponsor_tmp"
+    rm -rf -- "$SHALLOW_SOURCE_DIR"
   }
   # Capture quoted paths now: EXIT runs after build_publish's locals leave scope.
   trap "$(printf 'cleanup_build_leftovers %q %q' "$worktree" "$sponsor_tmp")" EXIT
@@ -444,7 +512,7 @@ build_publish() {
     unpack_sponsor_bundle "$sponsor_bundle" "$sponsor_tmp"
   fi
 
-  wait_for_gitee_sha "$source_sha"
+  materialize_source "$source_sha"
 
   lookup_status=0
   digest="$(lookup_remote_digest "$remote_image")" || lookup_status=$?
@@ -459,7 +527,7 @@ build_publish() {
     10)
       reused=false
       rm -rf -- "$worktree"
-      git -C "$REPO_DIR" worktree add --force --detach "$worktree" "$source_sha" >/dev/null
+      git -C "$SOURCE_DIR" worktree add --force --detach "$worktree" "$source_sha" >/dev/null
 
       [ "$(git -C "$worktree" rev-parse HEAD)" = "$source_sha" ] || die "detached worktree SHA mismatch"
       verify_agent_archive "$worktree" "$agent_archive"
@@ -470,7 +538,7 @@ build_publish() {
         cp -R "$sponsor_tmp/." "$worktree/common/assets/"
       fi
 
-      source_epoch="$(source_commit_epoch "$REPO_DIR" "$source_sha")"
+      source_epoch="$(source_commit_epoch "$SOURCE_DIR" "$source_sha")"
       timeout 1800 docker build \
         --file "$worktree/docker/Dockerfile.frontend" \
         --build-arg "BUILD_COMMIT=$source_sha" \

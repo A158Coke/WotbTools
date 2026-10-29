@@ -592,14 +592,40 @@ job、Caddy 入口与 TX2 的 frontend replica 都继续消费该 artifact。Fro
 TX2 的发行版 Docker CLI 没有 buildx 插件，构建脚本只在远端 digest 查询时回退到
 `docker manifest inspect --verbose`，构建本身仍走 `docker build`。
 
-## 25. 2026-10-28 — 仓库历史重写后的 Gitee 镜像预算：单次命令超时 ≠ 总预算
+## 25. 2026-10-28 — 仓库历史重写后的 Gitee 镜像：首推是全量，镜像不该是发布前置
 
-仓库 hygiene 重写把 main force-push 成全新 commit 图（约 293MB），此后**首次** Gitee mirror
-必须全量上传：Gitee 对重写图的对象持有量为零，且每次重试都从零开始。旧的 20 分钟 job 上限
-连续三次在 `Git LFS initialized.` 后挂死——重写前每次镜像都是增量（几 MB），20 分钟绰绰有余。
-hub-mirror-action 的 `timeout: 10m` 只约束单次 Git 命令，且无法中断已启动的 git 子进程，因此
-不会快速失败、只会拖到 job 上限。现行为：job 总上限 60 分钟、action 单命令预算 45m
-（`frontend.yml` 的 `mirror_gitee`），Gitee 收齐全量后恢复增量。
+仓库 hygiene 重写把 main force-push 成全新 commit 图。旧 Gitee tip（`4c3dbcba`，重写前最后一次
+成功镜像）与新 main **没有共同祖先**，历次 commit 的树也都是新对象——实测把新 main 推给旧远端需要
+约 **300MB**（`git bundle create main --not 4c3dbcba` = 306MB）：只有 tip 的树内容落在共同 blob 上，
+历史本身是整张新的。所以重写后的**首次**镜像不是增量而是全量上传，Gitee 侧对新图的对象持有量为零。
+
+失败过程与预算：20 分钟 job 连续三次失败，把 job 提到 60 分钟仍然失败。三次日志都停在
+`Git LFS initialized.` 之后整整 59 分钟没有任何输出——hub-mirror-action 的 Python 输出是块缓冲，只在
+进程退出时 flush（重写前成功那次同样把 `(1/3) Downloading…`…`Total: 1` 全部挤在结束时间戳上）。
+所以"没有进度日志"不等于"没有传输"，我们看不到它卡在 clone、Gitee API 还是 push 哪一段。另一个
+致命点：action 的 `timeout: 45m` 只给单次 git 命令设上限，超时被 kill 后**重试从头再来**（不续传），
+任何小于完整传输时间的 kill 都兑现不了 300MB；job 上限再大也只是循环烧预算。
+
+结论：把 300MB 跨境全量推送放在发布门禁里，调多大的 job 预算都不是可靠链路。于是改结构：
+
+- **镜像降级为国内镜像，不再是发布前置**。`frontend.yml` / `business-api.yml` 的 `build` 不再
+  `needs: [mirror_gitee]`；镜像 job 与构建并行且带 `continue-on-error`——失败只标红该 job，
+  run 结论仍是 success（否则 `Frontend Replica` 的 `workflow_run` 会因镜像落后而跳过生产复制）。
+  它的单次 Git 命令预算提到 `100m`（job `180m`），使这一次全量推送有机会在单个 attempt 内完成。
+  若仍推不完，运维补救是在国内网络执行一次 `git push --mirror`（一次性 bootstrap），之后 CI 回到
+  增量推送。
+- **源物化按 exact SHA 兜底**。`deploy/tx/build-*-from-gitee.sh` 的 `materialize_source` 先等镜像
+  （`GITEE_WAIT_ATTEMPTS` × 间隔，稳定态只取增量），追不上就
+  `git fetch --depth 1 <github-url> <sha>` 只取该 commit 的树：GitHub 允许按未通告的 SHA 浅取，实测
+  **53MB / 18s**，是 300MB 全量的 1/5.6 且不含历史。取到的对象与镜像路径同构（`rev-parse`、
+  `show <sha>:path`、`show -s --format=%ct`、`worktree add` 全部可用），所以 epoch /
+  `deploy/agent/source.json` / worktree 的既有校验不需要任何特判；两条路径都拿不到该 SHA 才
+  fail closed。
+- 发布证据记录实际传输（`source_transport=gitee-mirror|github-exact-sha`、
+  `github_exact_fetch result=PASS`），使"这次靠兜底发出去"可复查，不会被静默当成镜像正常。
+
+对镜像的长期要求不变：它仍是国内用户的首选克隆源，重写后必须补齐那一次全量推送；补齐之后每次
+推送回到几 MB 增量，180 分钟与 `100m` 都不会被用到。
 
 ## 已退役 / 过渡架构
 

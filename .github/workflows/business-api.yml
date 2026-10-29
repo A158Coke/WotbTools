@@ -66,7 +66,12 @@ jobs:
       cancel-in-progress: false
       queue: max
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 国内镜像，**不再是发布前置**（与 frontend.yml 同一份仓库、同一次历史重写）：
+    # 首次全量推送约 300MB，单次 Git 命令预算不足就永远推不完；镜像落后时 TX builder
+    # 按 exact SHA 直取 GitHub，发布不被跨境带宽卡住。
+    timeout-minutes: 180
+    # 镜像失败可观察但不改变 run 结论：镜像落后不是发布阻塞（见 frontend.yml 同一约定）。
+    continue-on-error: true
     permissions:
       contents: read
     steps:
@@ -96,14 +101,13 @@ jobs:
           static_list: WotbTools
           account_type: user
           force_update: true
-          timeout: 10m
+          timeout: 100m
 
   build:
     concurrency:
       group: tx-production-build
       cancel-in-progress: false
       queue: max
-    needs: [mirror_gitee]
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
