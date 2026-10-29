@@ -629,6 +629,12 @@ TX2 的发行版 Docker CLI 没有 buildx 插件，构建脚本只在远端 dige
 对镜像的长期要求不变：它仍是国内用户的首选克隆源，重写后必须补齐那一次全量推送；补齐之后每次
 推送回到几 MB 增量，180 分钟与 `100m` 都不会被用到。
 
+重写的另一处 blast radius（同一提交修复）：`deploy/test-flyway-immutability.sh` 的"已批准 V18
+历史恢复"用例硬编码 base commit `8d94a24c`，该 commit 现在只经由旧 android 发布标签可达；
+`ci-deployment.yml` 的 checkout 默认不取 tags，于是这个用例在重写后首次运行时解析不到 base
+commit（`Flyway immutability guard cannot resolve base commit`）。checkout 因此显式
+`fetch-tags: true`——用例校验的是真实的生产恢复记录，不该改成任意当前 commit。
+
 ## 已退役 / 过渡架构
 
 - **Boost / Coaching** — 曾经形成完整有状态业务，后续连同 DB / frontend / roles 一并退役。

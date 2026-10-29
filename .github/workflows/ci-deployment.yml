@@ -20,6 +20,10 @@ jobs:
         with:
           ref: ${{ inputs.head_sha }}
           fetch-depth: 0
+          # 历史重写后 main 与旧 commit 图无关：`deploy/test-flyway-immutability.sh` 里
+          # "已批准的 V18 历史恢复"用例所依赖的 base commit 只经由旧 android 发布标签可达，
+          # 而 checkout 默认不取 tags —— 不显式打开，该用例解析不到 base commit。
+          fetch-tags: true
       - name: Flyway migration immutability guard
         env:
           FLYWAY_BASE_REF: ${{ inputs.base_sha }}
