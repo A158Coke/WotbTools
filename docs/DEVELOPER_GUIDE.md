@@ -595,8 +595,7 @@ Frontend 的 TX1/TX2 发布在切换线上文件或容器前，校验实际 Busi
   WASM/可选 Sponsor bundle 与 staging；不在 GitHub 构建 Frontend Docker 镜像或上传 TCR 大镜像。
   Gitee mirror job 的总上限是 60 分钟；hub-mirror-action 的 `timeout: 45m` 只是**单次 Git 命令**
   的预算（且无法中断已启动的 git 子进程），不是整个 action 的总耗时保证——重试 × 45m 仍受 job
-  60 分钟上限约束。仓库历史重写（2026-10-28）后首次镜像必须全量上传约 293MB 重写图，旧的
-  20 分钟上限连续三次在 `Git LFS initialized.` 后挂死，故提到 60m/45m；Gitee 收齐后恢复增量。
+  60 分钟上限约束。
   Frontend 镜像在 **TX2** 构建（TX1 的 1.9 GiB 生产宿主不足以承载当前 `vite build`；
   测量与迁移证据见 `docs/architecture/TECHNICAL_EVOLUTION.md` §24）。
   `deploy/tx/build-frontend-from-gitee.sh` 在 TX2 使用自己的持久 Gitee clone 与 host build lock
