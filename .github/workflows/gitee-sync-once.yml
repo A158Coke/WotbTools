@@ -1,0 +1,51 @@
+name: Gitee Sync Once
+
+# 一次性运维工具：把指定 GitHub commit force-push 到 Gitee 镜像仓库的 main。
+# 临时文件：只用于手工同步，用完即从 main 删除（见 handover）。
+# 目的：绕过 hub-mirror-action，直接观察 US runner -> Gitee 的真实吞吐。
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: 要推送到 Gitee 的 GitHub commit SHA（40 位）
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Push exact SHA to Gitee over SSH
+        shell: bash
+        env:
+          GITEE_PRIVATE_KEY: ${{ secrets.GITEE_PRIVATE_KEY }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git cat-file -e "$SOURCE_SHA^{commit}"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$GITEE_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/gitee_sync
+          chmod 600 ~/.ssh/gitee_sync
+          ssh-keyscan -T 15 gitee.com >> ~/.ssh/known_hosts 2>/dev/null
+          export GIT_SSH_COMMAND='ssh -i ~/.ssh/gitee_sync -o IdentitiesOnly=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o ConnectTimeout=20'
+          echo "== preflight =="
+          timeout 60 git ls-remote git@gitee.com:A158Coke/Wotbtools.git refs/heads/main || true
+          echo "== push $SOURCE_SHA -> gitee main =="
+          start=$(date +%s)
+          git push --force --progress git@gitee.com:A158Coke/Wotbtools.git "$SOURCE_SHA:refs/heads/main"
+          echo "== push elapsed: $(( $(date +%s) - start ))s =="
+
+      - name: Verify Gitee tip
+        if: always()
+        shell: bash
+        run: |
+          timeout 60 git ls-remote https://gitee.com/A158Coke/Wotbtools.git refs/heads/main
