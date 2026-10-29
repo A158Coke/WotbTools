@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Technical parser for Team AI Review v0.5.
+ * Technical parser for Team AI Review.
  *
  * <p>The parser never changes tactical text. It only validates the wire shape and
  * deterministically removes or clears unsupported optional references.</p>

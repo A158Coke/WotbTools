@@ -10,12 +10,30 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Natural Coach Mode 提示词契约。
  * <p>验证：主正文为自由组织的自然复盘（无固定章节模板）；必须有唯一「最重要结论」；
- * Focus Window 是内部 attention 提示而非用户模板；v0.5 结构化输出契约；
+ * Focus Window 是内部 attention 提示而非用户模板；结构化输出契约；
  * 教练不是司法鉴定员；ZH/EN/RU 三语一致。</p>
  */
 class TeamReviewNaturalCoachContractTest {
 
     private static final String ZH = AiPromptLibrary.zh("team/single");
+
+    @Test
+    void finalSystemPromptsPreserveEvidenceAndCoachingPolicy() {
+        final String zh = TeamPromptLocalizer.localizeTeamSystemPrompt(TeamPromptLocalizer.SINGLE_TEAM_PROMPT, AllowedLanguage.ZH);
+        final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(TeamPromptLocalizer.SINGLE_TEAM_PROMPT, AllowedLanguage.EN);
+        final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(TeamPromptLocalizer.SINGLE_TEAM_PROMPT, AllowedLanguage.RU);
+        for (String anchor : new String[]{"事实从严，判断从宽", "不把未知改写成不存在", "旧快照、局部观测", "observed damage = 0", "grid occupancy 不等于实际参战人数", "离散 objective observation", "有限 roster 写成全队", "时间接近的死亡事件"}) {
+            assertTrue(zh.contains(anchor), anchor);
+        }
+        for (String anchor : new String[]{"Be strict with facts", "coaching judgments grounded in evidence", "Observed damage of zero", "grid occupancy is not actual participation", "last-known position into current position", "discrete objective observations", "temporal proximity into causation", "limited roster into the whole team"}) {
+            assertTrue(en.contains(anchor), anchor);
+        }
+        for (String anchor : new String[]{"Строго соблюдайте границы фактов", "тренерские оценки на основе доказательств", "Наблюдаемый нулевой урон", "заполненность сетки не равна фактическому участию", "последнюю известную позицию в текущую", "отдельные наблюдения цели", "близость по времени в причинность", "неполный список в всю команду"}) {
+            assertTrue(ru.contains(anchor), anchor);
+        }
+        assertFalse(en.contains("事实从严，判断从宽"));
+        assertFalse(ru.contains("事实从严，判断从宽"));
+    }
 
     @Test
     void noFixedSectionTemplate() {
@@ -62,20 +80,20 @@ class TeamReviewNaturalCoachContractTest {
     }
 
     @Test
-    void v05StructuredOutputContract() {
-        assertTrue(ZH.contains("=== Team AI Review v0.5 结构化结果（最终输出契约） ==="), "必须有 v0.5 输出契约段");
+    void structuredOutputContract() {
+        assertTrue(ZH.contains("=== Team AI Review 结构化结果（最终输出契约） ==="), "必须有输出契约段");
         assertTrue(ZH.contains("\"summary\": {\"verdict\": \"...\", \"primaryDiagnosis\": \"...\"}"),
-                "v0.5 必须使用 summary 结构");
-        assertTrue(ZH.contains("episodes"), "v0.5 必须有 episodes");
-        assertTrue(ZH.contains("trainingSuggestions"), "v0.5 必须有 trainingSuggestions");
-        assertTrue(ZH.contains("reviewFocus"), "v0.5 必须有 reviewFocus");
-        assertTrue(ZH.contains("highContributors"), "v0.5 必须有 highContributors");
+                "必须使用 summary 结构");
+        assertTrue(ZH.contains("episodes"), "必须有 episodes");
+        assertTrue(ZH.contains("trainingSuggestions"), "必须有 trainingSuggestions");
+        assertTrue(ZH.contains("reviewFocus"), "必须有 reviewFocus");
+        assertTrue(ZH.contains("highContributors"), "必须有 highContributors");
         assertFalse(ZH.contains("\"primaryDiagnosis\": {"), "不得恢复旧 envelope 的嵌套 primaryDiagnosis");
         assertFalse(ZH.contains("=== GROUNDING FACTS 与结构化输出（强制） ==="), "不得保留旧 GROUNDING envelope");
     }
 
     @Test
-    void v06CausalReasoningContractIsTrilingual() {
+    void causalReasoningContractIsTrilingual() {
         assertTrue(ZH.contains("Known"), "必须区分 Known");
         assertTrue(ZH.contains("Remaining uncertainty"), "必须区分 Remaining uncertainty");
         assertTrue(ZH.contains("Decision impact"), "必须要求 Decision impact");
@@ -87,8 +105,8 @@ class TeamReviewNaturalCoachContractTest {
         assertTrue(ZH.contains("Trigger → Decision target → Training goal"), "建议必须绑定状态触发器");
         for (final AllowedLanguage lang : java.util.List.of(AllowedLanguage.EN, AllowedLanguage.RU)) {
             final String localized = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, lang);
-            assertFalse(localized.contains("=== 团队复盘 v0.6 推理顺序与因果质量约束（强制） ==="),
-                    lang + " 残留中文 v0.6 reasoning contract");
+            assertFalse(localized.contains("=== 团队复盘推理顺序与因果质量约束（强制） ==="),
+                    lang + " 残留中文 reasoning contract");
             assertTrue(localized.contains("Remaining uncertainty"), lang + " 必须携带 uncertainty contract");
             assertTrue(localized.contains("Effective local participation")
                             || localized.contains("effective local participation"),
@@ -122,7 +140,7 @@ class TeamReviewNaturalCoachContractTest {
         assertTrue(ZH.contains("如果基地/点数状态改变了行动义务，Objectives 必须说明谁需要主动、谁可以等待"),
                 "目标状态改变义务时必须解释行动影响");
         assertTrue(ZH.contains("多个 local 必须检查是否有传播"), "多个 local 必须检查传播");
-        assertTrue(ZH.contains("primaryDiagnosis 只是整场摘要，不得压缩 v0.5 structured result 中的 episodes 或训练建议"),
+        assertTrue(ZH.contains("primaryDiagnosis 只是整场摘要，不得压缩 structured result 中的 episodes 或训练建议"),
                 "primaryDiagnosis 只是摘要");
         assertTrue(ZH.contains("“重点复查”和“高贡献者”是可选 section"), "个人 section 可选");
         assertTrue(ZH.contains("没有明确 structural evidence"), "个人判断需要 structural evidence");
@@ -153,9 +171,9 @@ class TeamReviewNaturalCoachContractTest {
         assertTrue(en.contains("FREE-FORM natural review"), "EN 必须声明 free-form natural review");
         assertTrue(en.contains("not a fixed-section template"), "EN 必须声明非固定章节模板");
         assertTrue(en.contains("PRIMARY DIAGNOSIS (mandatory)"), "EN 必须有主判断契约");
-        assertTrue(en.contains("Team AI Review v0.5 structured result"), "EN 必须有 v0.5 structured result 契约");
+        assertTrue(en.contains("Team AI Review structured result"), "EN 必须有 structured result 契约");
         final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.RU);
         assertTrue(ru.contains("ОСНОВНОЙ ДИАГНОЗ (PRIMARY DIAGNOSIS, обязательно)"), "RU 必须有主判断契约");
-        assertTrue(ru.contains("Team AI Review v0.5"), "RU 必须有 v0.5 structured result 契约");
+        assertTrue(ru.contains("Team AI Review структурированный результат"), "RU 必须有 structured result 契约");
     }
 }

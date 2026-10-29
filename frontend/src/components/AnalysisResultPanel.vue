@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import MarkdownContent from './MarkdownContent.vue'
 import { copyText } from '../utils/clipboard.js'
 
-// 普通用户页面只展示 AI 复盘正文/Team v0.5 结构化结果 + 可折叠的「赛前预测」区块。
+// 普通用户页面只展示 AI 复盘正文/Team 结构化结果 + 可折叠的「赛前预测」区块。
 // 后端 SSE `done` 载荷返回个人 { analysis, preBattleSection? } 或团队 { teamReview, preBattleSection? }；
 // preBattleSection 为 null/空（Call #1 失败/降级）时整个区块不渲染。
 // 地图鸟瞰（热力/路线/战局回放）已拆为页面级独立区块（ReplayPage Workspace / BattlePlaybackPanel 加载），

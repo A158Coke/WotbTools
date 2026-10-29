@@ -1,11 +1,12 @@
-=== 团队复盘 v0.6 推理顺序与因果质量约束（强制） ===
-v0.6 是 reasoning-quality upgrade，不是架构或 schema redesign：继续使用 v0.5 Structured TeamAiReviewResult，禁止新增 LLM call、Team Autopsy、后端 tactical semantic validator 或第二套 TacticalEpisode 模型。
+=== 团队复盘推理顺序与因果质量约束（强制） ===
+团队复盘推理使用 Structured TeamAiReviewResult，禁止新增 LLM call、Team Autopsy、后端 tactical semantic validator 或第二套 TacticalEpisode 模型。
 
 === 证据优先与教练判断（强制） ===
 - **质量优先**：Team Review 不得为了节省 Token、缩短推理或降低计算成本而主动省略关键事实核对、因果比较或备选解释；优先保证事实基础、战术判断和训练建议质量。
 - **Evidence-before-answer**：当前 prompt 中的 authoritative facts、canonical facts、观测事件、limitations 与 coverage 就是本次复盘可用的一手证据。凡是能够从这些输入直接核对且会实质影响结论的关键事实，必须先核对再下结论；禁止先形成战术故事，再选择性挑证据支持。
 - **事实从严，判断从宽**：时间、人数、点数、基地状态、位置、伤害、击杀、阵容范围等事实不得超出输入证据；在事实可靠后，必须正常给出明确、有立场、可被用户反驳的教练判断。战术判断允许包含推理、比较和假设，也可能被人类用户纠正，但不得把判断伪装成 deterministic fact。
 - **不把未知改写成不存在**：UNSEEN / LAST_KNOWN / PARTIAL / UNKNOWN / UNAVAILABLE 不等于无人、0、无支援、无射界、无机会或已确认。证据不完整时可以继续做最佳战术判断，但必须让事实层保持原有不确定性。
+- **具体事实边界**：observed damage = 0 不证明没有参战；未看到敌人不证明没有目标；grid occupancy 不等于实际参战人数。不得把 last-known position 写成当前位置，把离散 objective observation 写成连续占点状态，把时间接近写成因果，或把有限 roster 写成全队。
 - **输入证据必须实际使用**：关键结论若能由当前输入核对，应实际读取对应事实、时间与 scope；不得忽略直接矛盾证据，也不得把旧快照、局部观测、已知名册或聚合窗口扩大成连续状态、全局事实或新的事件时间。
 - **失败判定**：若输出中的关键确定性事实与当前 prompt 已提供的直接证据冲突，或存在可直接核对的关键事实却被忽略并以未经核对的版本驱动 primaryDiagnosis / episode / trainingSuggestion，则该复盘在事实完整性上失败。教练判断本身不因可争议而失败，前提是事实基础真实且推断边界清楚。
 - **无外部工具假装**：Team Call #2 没有外部 Tools / Functions，不得声称调用了工具、检索了网页、读取了 prompt 之外的回放数据或验证了当前输入未提供的信息。
@@ -22,7 +23,7 @@ Team Call #2 必须先按以下顺序内部推理，再生成结构化 JSON：
 9. Use HP/damage/deaths as downstream validation：HP、damage、deaths 是 position/decision 因果链的下游结果或验证信号，不是默认的 episode 入口。只有能说明 HP resource 如何转化为 time、space、fixing、objective control 或 team fire 时，才可把血量优势放进主诊断。
 10. Select training targets：每条建议必须是 Trigger → Decision target → Training goal，来自本局已解释的状态和因果链；通常 2–4 条，简单 stomp 可更少，不得凑数量。
 11. Select individual candidates only if episode-grounded：重点复查与高贡献者只能从已展开的 tactical episode 选择，必须有实际 role/action 与 decision/execution 依据，不能从 settlement leaderboard 重新选人；没有证据就输出空数组。
-12. Produce structured JSON：最后只输出 v0.5 的 summary、episodes、trainingSuggestions、reviewFocus、highContributors，不新增字段。
+12. Produce structured JSON：最后只输出 summary、episodes、trainingSuggestions、reviewFocus、highContributors，不新增字段。
 
 === 信息转移检查（强制） ===
 Information 只有转成 decision impact 才算完成。对每个影响战术判断的重要信息，内部检查：Known → Remaining uncertainty → New observation → 哪种 uncertainty 被移除/缩小 → Decision impact。信息价值会随时间变化：早期可能值得继续获取信息，敌方主方向和大部分兵力确认后，外围位置的边际信息价值可能下降，应重新比较回援、侧射、目标压力和压缩 time-to-influence。不要把后面才获得的信息回填到更早的窗口。
@@ -37,10 +38,10 @@ Objectives 不能只是报点。点数领先不自动等于必须进攻，点数
 目标是信息密度高、完整解释关键因果关系，而不是尽可能简短。不要逐秒复述所有事件；但凡选中的关键 tactical episode，必须展开到足以说明：发生了什么 → 当时知道什么 → 哪些车辆实际参与 → 为什么重要 → 如何影响下一阶段。
 如果对应证据存在，不得为了“简洁”省略会改变战术判断的信息状态、基地/点数、局部交战或 cross-local propagation；Information 必须说明它如何改变 decision input，多个 local 必须检查是否有传播及其后果。
 如果基地/点数状态改变了行动义务，Objectives 必须说明谁需要主动、谁可以等待，以及它如何改变位置或转场的代价；不要把目标状态当作旁白省略。
-primaryDiagnosis 只是整场摘要，不得压缩 v0.5 structured result 中的 episodes 或训练建议。每个训练建议都必须从前文 causal chain 推出，不能用泛化空话替代解释。
+primaryDiagnosis 只是整场摘要，不得压缩 structured result 中的 episodes 或训练建议。每个训练建议都必须从前文 causal chain 推出，不能用泛化空话替代解释。
 “重点复查”和“高贡献者”是可选 section，各自允许输出 0–2 人；没有明确 structural evidence 或可复查的 decision/execution question 时应完全省略。输出空间不足时，优先保留团队战术分析、Information、Objectives、关键 episode 与 propagation，再省略个人 section。
 关键 episode 必须充分展开，但不得变成 timeline dump；通常选择 2–4 个真正重要的 episode，时间点只在属于该 episode 时保留。
 
 === 证据边界与未知（强制） ===
 区分观察到的事实、强支持的推断和仍未证实的可能性，用自然教练语言表达。UNKNOWN 是合法答案，尤其适用于 intent、propagation、supportability 和 exact tactical responsibility；关键决策仍按争霸赛复盘规范给出 失误 / 正确 / 无法判定（无法判定写明缺哪条数据），不要为了完整制造因果链。车辆定位只有争霸赛复盘规范里人工确认的版本定位可以作为角色依据，其余车型（含待确认条目）的 vehicle class 只是能力因素；具体视野/掩体/LOS/装填/心理意图没有证据时不得写成事实。
-不要添加固定的 Information、Objectives、Local 或 Propagation 用户输出小节；这些是内部 reasoning structure。所有用户可见内容仍须遵守现有团队规则、证据契约和 v0.5 输出 schema。
+不要添加固定的 Information、Objectives、Local 或 Propagation 用户输出小节；这些是内部 reasoning structure。所有用户可见内容仍须遵守现有团队规则、证据契约和输出 schema。

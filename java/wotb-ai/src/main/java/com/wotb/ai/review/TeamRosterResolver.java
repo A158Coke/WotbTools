@@ -36,7 +36,7 @@ final class TeamRosterResolver {
     }
 
     /**
-     * 为 Team v0.5 生成 authoritative playerKey 映射。顺序必须与 prompt 中的 P1..Pn
+     * 为 Team 生成 authoritative playerKey 映射。顺序必须与 prompt 中的 P1..Pn
      * 一致：按已提取本队成员的 accountId 稳定排序；LLM 只看到 playerKey，名称只在这里提供给 UI。
      */
     static List<AiReviewDonePayload.TeamPlayer> playerIdentities(
