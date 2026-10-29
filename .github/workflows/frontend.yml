@@ -87,27 +87,6 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.sha }}
 
-      # TX 直连 GitHub 不稳定（实测 curl 56 超时），而 Gitee 镜像可能还在补推全量；
-      # runner 打一个 depth-1 源包随既有 staging 链路送过去，TX 侧就能确定性拿到
-      # 该 commit（保留原 SHA，不含历史）。
-      - name: Package exact-commit source bundle
-        id: source
-        shell: bash
-        env:
-          SOURCE_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          [ "$(git rev-parse HEAD)" = "$SOURCE_SHA" ]
-          tip="$RUNNER_TEMP/source-tip"
-          bundle="$RUNNER_TEMP/source-$SOURCE_SHA.bundle"
-          rm -rf "$tip" "$bundle"
-          git clone --quiet --depth 1 --no-local "file://$GITHUB_WORKSPACE" "$tip"
-          [ "$(git -C "$tip" rev-parse HEAD)" = "$SOURCE_SHA" ]
-          git -C "$tip" bundle create "$bundle" HEAD >/dev/null
-          sha="$(sha256sum "$bundle" | cut -d' ' -f1)"
-          echo "source bundle: $sha ($(stat -c %s "$bundle") bytes)"
-          { echo "bundle=$bundle"; echo "sha256=$sha"; } >> "$GITHUB_OUTPUT"
-
       - name: Validate production asset origin
         shell: bash
         run: |
@@ -138,6 +117,29 @@ jobs:
             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
           case "$TCR_REGISTRY" in *.tencentyun.com) ;; *) echo 'TCR_REGISTRY must be a Tencent TCR host.' >&2; exit 1 ;; esac
           [[ "$TCR_NAMESPACE" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || { echo 'TCR_NAMESPACE is invalid.' >&2; exit 1; }
+
+      # 源包打包排在新鲜度闸门之后：stale push / 无效 manual dispatch 在这里已被拒绝，
+      # 不再为一个注定失败的 run 先花几十秒克隆并打包整份源快照（与 business-api.yml 同序）。
+      # TX 直连 GitHub 不稳定（实测 curl 56 超时），而 Gitee 镜像可能还在补推全量；
+      # runner 打一个 depth-1 源包随既有 staging 链路送过去，TX 侧就能确定性拿到
+      # 该 commit（保留原 SHA，不含历史）。
+      - name: Package exact-commit source bundle
+        id: source
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$SOURCE_SHA" ]
+          tip="$RUNNER_TEMP/source-tip"
+          bundle="$RUNNER_TEMP/source-$SOURCE_SHA.bundle"
+          rm -rf "$tip" "$bundle"
+          git clone --quiet --depth 1 --no-local "file://$GITHUB_WORKSPACE" "$tip"
+          [ "$(git -C "$tip" rev-parse HEAD)" = "$SOURCE_SHA" ]
+          git -C "$tip" bundle create "$bundle" HEAD >/dev/null
+          sha="$(sha256sum "$bundle" | cut -d' ' -f1)"
+          echo "source bundle: $sha ($(stat -c %s "$bundle") bytes)"
+          { echo "bundle=$bundle"; echo "sha256=$sha"; } >> "$GITHUB_OUTPUT"
 
       - name: Download pinned Agent WASM release asset
         id: agent
