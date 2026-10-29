@@ -592,6 +592,15 @@ job、Caddy 入口与 TX2 的 frontend replica 都继续消费该 artifact。Fro
 TX2 的发行版 Docker CLI 没有 buildx 插件，构建脚本只在远端 digest 查询时回退到
 `docker manifest inspect --verbose`，构建本身仍走 `docker build`。
 
+## 25. 2026-10-28 — 仓库历史重写后的 Gitee 镜像预算：单次命令超时 ≠ 总预算
+
+仓库 hygiene 重写把 main force-push 成全新 commit 图（约 293MB），此后**首次** Gitee mirror
+必须全量上传：Gitee 对重写图的对象持有量为零，且每次重试都从零开始。旧的 20 分钟 job 上限
+连续三次在 `Git LFS initialized.` 后挂死——重写前每次镜像都是增量（几 MB），20 分钟绰绰有余。
+hub-mirror-action 的 `timeout: 10m` 只约束单次 Git 命令，且无法中断已启动的 git 子进程，因此
+不会快速失败、只会拖到 job 上限。现行为：job 总上限 60 分钟、action 单命令预算 45m
+（`frontend.yml` 的 `mirror_gitee`），Gitee 收齐全量后恢复增量。
+
 ## 已退役 / 过渡架构
 
 - **Boost / Coaching** — 曾经形成完整有状态业务，后续连同 DB / frontend / roles 一并退役。

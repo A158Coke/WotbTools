@@ -75,7 +75,9 @@ jobs:
       cancel-in-progress: false
       queue: max
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 历史重写后首次镜像要把全新 commit 图整体推给 Gitee（跨境全量），20m 不够；
+    # Gitee 收齐后恢复增量，无需回调。
+    timeout-minutes: 60
     permissions:
       contents: read
     steps:
@@ -105,7 +107,7 @@ jobs:
           static_list: WotbTools
           account_type: user
           force_update: true
-          timeout: 10m
+          timeout: 45m
 
   build:
     concurrency:
