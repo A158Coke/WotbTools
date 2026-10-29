@@ -71,6 +71,37 @@ describe('physical spawn: reviewed canonical data and bounded evidence', () => {
       expect(resolvePhysicalSpawns('alias', 1, probe(), indexMapGridProfiles([s]))).toBeNull()
     }
   })
+  it.each(['desert_train', 'erlenberg', 'medvedkovo', 'amigosville', 'pliego', 'himmelsdorf', 'milbase', 'neptune'])(
+    'uses reviewed north/south scene metadata for %s', (mapKey) => {
+      const documents = Object.values(import.meta.glob('../../../../common/map-semantics/*.semantic.json', { eager: true, import: 'default' }))
+      const profiles = indexMapGridProfiles(documents)
+      const groups = profiles.get(mapKey)?.physicalSpawns
+      expect(groups).toHaveLength(2)
+      const north = groups!.find(group => group.side === 'NORTH')!
+      const point = north.points[0]
+      expect(resolvePhysicalSpawns(mapKey, 1, probe(point.x, point.y), profiles)).toEqual({ team1: 'NORTH', team2: 'SOUTH' })
+    },
+  )
+  it('resolves a real Malinovka fixture from independent scene coordinates', async () => {
+    const bytes = readFileSync(fileURLToPath(new URL('../../../../common/fixtures/replays/cw-training-15-14-example.wotbreplay', import.meta.url)))
+    const agent = await wasm()
+    const result = JSON.parse(agent.parseResult(bytes))
+    const position = JSON.parse(agent.parseAuthorInitialPosition!(bytes)) as AgentAuthorInitialPosition
+    expect(result.map_key).toBe('malinovka')
+    expect(result.arena_bonus_type).toBe(2) // 非采集模式，仅验证位置及方向。
+    expect(result.author_team).toBe(2)
+    expect(Math.hypot(position.position[0] - 229.885, position.position[2] + 143.6585)).toBeLessThan(0.001)
+    expect(resolvePhysicalSpawns(result.map_key, result.author_team, position)).toEqual({ team1: 'NORTH', team2: 'SOUTH' })
+  })
+  it('drops the real Normandy fixture because the first observation is later than one second', async () => {
+    const bytes = readFileSync(fileURLToPath(new URL('../../../../common/fixtures/replays/tournament-14-14-example.wotbreplay', import.meta.url)))
+    const agent = await wasm()
+    const result = JSON.parse(agent.parseResult(bytes))
+    const position = JSON.parse(agent.parseAuthorInitialPosition!(bytes)) as AgentAuthorInitialPosition
+    expect(result.map_key).toBe('neptune')
+    expect(position.clock).toBeGreaterThan(1)
+    expect(resolvePhysicalSpawns(result.map_key, result.author_team, position)).toBeNull()
+  })
   it('resolves real pinned Random fixture against independent scene/cardinal expected', async () => {
     const bytes = readFileSync(fileURLToPath(new URL('../../../../common/fixtures/replays/random-battle-example.wotbreplay', import.meta.url)))
     const agent = await wasm()

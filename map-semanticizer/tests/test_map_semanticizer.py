@@ -72,6 +72,19 @@ class ReviewedSpawnSideTest(unittest.TestCase):
                     {"mapId": map_id, "spawnSemantics": {
                         "TEAM_1": {"physicalSide": sides[0]}, "TEAM_2": {"physicalSide": sides[1]}}}, "example")
 
+    def test_rejects_incomplete_and_non_exact_reviewed_groups(self):
+        reviewed = {"mapId": "example", "spawnSemantics": {
+            "TEAM_1": {"physicalSide": "NORTH"}, "TEAM_2": {"physicalSide": "SOUTH"}}}
+        with self.assertRaises(ValueError):
+            ms.preserve_reviewed_spawn_sides({"TEAM_1": {"status": "EXACT_SCENE_DATA"}}, reviewed, "example")
+        with self.assertRaises(ValueError):
+            ms.preserve_reviewed_spawn_sides({"TEAM_1": {"status": "EXACT_SCENE_DATA"},
+                "TEAM_2": {"status": "UNKNOWN"}}, reviewed, "example")
+        del reviewed["spawnSemantics"]["TEAM_2"]["physicalSide"]
+        with self.assertRaises(ValueError):
+            ms.preserve_reviewed_spawn_sides({"TEAM_1": {"status": "EXACT_SCENE_DATA"},
+                "TEAM_2": {"status": "EXACT_SCENE_DATA"}}, reviewed, "example")
+
     def test_missing_metadata_stays_unknown(self):
         spawns = {"TEAM_1": {"status": "EXACT_SCENE_DATA"}}
         ms.preserve_reviewed_spawn_sides(spawns, {"mapId": "example"}, "example")
@@ -83,8 +96,12 @@ class ReviewedSpawnSideTest(unittest.TestCase):
             if any("physicalSide" in group for group in doc["spawnSemantics"].values()):
                 annotated.append(path.name)
                 ms.preserve_reviewed_spawn_sides(doc["spawnSemantics"], doc, doc["mapId"])
-        self.assertEqual(annotated, ["35_rift_rt.semantic.json"])
-        rift = json.loads((SEMANTIC_DIR / annotated[0]).read_text(encoding="utf-8"))
+        self.assertIn("35_rift_rt.semantic.json", annotated)
+        self.assertGreaterEqual(len(annotated), 10)
+        unresolved = sorted(p.name for p, doc in semantic_documents() if not all("physicalSide" in doc["spawnSemantics"].get(team, {}) for team in ("TEAM_1", "TEAM_2")))
+        print(f"physicalSide reviewed={len(annotated)} unresolved={len(unresolved)}: {unresolved}")
+        self.assertEqual(len(annotated) + len(unresolved), 33, "新增地图必须审计 physicalSide 覆盖并更新基线")
+        rift = json.loads((SEMANTIC_DIR / "35_rift_rt.semantic.json").read_text(encoding="utf-8"))
         self.assertEqual(rift["spawnSemantics"]["TEAM_1"]["physicalSide"], "SOUTH")
         self.assertEqual(rift["spawnSemantics"]["TEAM_2"]["physicalSide"], "NORTH")
 

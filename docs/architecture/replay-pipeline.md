@@ -131,7 +131,7 @@ Collector 的异常、超时、重复提交和断网均不改变主解析结果�
 不能使用 numeric mapId 对照语义文件名前缀，也不能把 replay Team 编号等同场景出生组。
 只接受 clock 在 0–1 秒、距 exact scene 出生点不超过 2 米且唯一命中某物理侧的观测，
 按 authorTeam 赋给对应 replay team，对侧取互补方向。该门限是保守接收策略，非全地图误差保证。
-Rift 有真实回放正例；其它地图缺 reviewed physicalSide 时跳过。合成横向测试不代表真实横向地图已验证。
+Rift 有真实 Random 回放正例，马利诺夫卡有非采集模式真实回放位置正例；已审校方向的其它地图可按同一规则采集，缺 reviewed physicalSide 的地图跳过。合成横向测试不代表真实横向地图已验证。
 
 Worker 使用 `api/battle-data.ts` 发送 `POST /api/battle-data`，wire SSOT 为 OpenAPI 的
 `BattleDataRequest`，发送前执行生成的 runtime validator。请求不带 Authorization/Cookie，
