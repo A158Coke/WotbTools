@@ -154,6 +154,91 @@ class FrontendBuilderCleanupTest(unittest.TestCase):
     def test_host_lock_busy_fails_closed(self):
         self.run_case(host_lock=True, host_lock_busy=True, sponsor=False)
 
+    def run_with_source_bundle(self, directory, declared_sha=None):
+        """用 runner 打出的 depth-1 源包作为唯一可用来源跑一次 build_publish。"""
+        cache = Path(directory) / "cache"
+        origin = Path(directory) / "origin"
+        mirror = Path(directory) / "mirror"
+        origin.mkdir()
+        subprocess.run(["git", "init", "-q", "-b", "main", str(origin)], check=True)
+        fetch = origin / "scripts/fetch-agent-wasm.sh"
+        fetch.parent.mkdir()
+        fetch.write_text(': > "$WOTB_TX_BUILD_CACHE_ROOT/fetched"\n')
+        subprocess.run(["git", "-C", str(origin), "add", "."], check=True)
+        subprocess.run([
+            "git", "-C", str(origin), "-c", "user.name=Fixture",
+            "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false",
+            "commit", "-qm", "fixture",
+        ], check=True)
+        sha = subprocess.check_output(["git", "-C", str(origin), "rev-parse", "HEAD"], text=True).strip()
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(mirror)], check=True)
+
+        tip = Path(directory) / "tip"
+        bundle = Path(directory) / "source.bundle"
+        subprocess.run(["git", "clone", "-q", "--depth", "1", "--no-local",
+                        origin.resolve().as_uri(), str(tip)], check=True)
+        subprocess.run(["git", "-C", str(tip), "bundle", "create", str(bundle), "HEAD"],
+                       check=True, capture_output=True)
+        bundle_sha = hashlib.sha256(bundle.read_bytes()).hexdigest()
+        archive = Path(directory) / "agent.zip"
+        archive.touch()
+
+        fixture = r'''
+validate_common() { :; }
+flock() { :; }
+sha256sum() {
+  python3 -c 'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes() if len(sys.argv) > 1 else sys.stdin.buffer.read()).hexdigest())' "$@"
+}
+timeout() { while [[ "$1" = --* ]]; do shift; done; shift; "$@"; }
+lookup_remote_digest() { if [ -f "$CACHE_ROOT/pushed" ]; then printf 'sha256:%064d\n' 0; else return 10; fi; }
+verify_agent_archive() { :; }
+verify_frontend_image() { :; }
+docker() { printf '%s\n' "$*" >> "$CACHE_ROOT/docker.log"; if [ "$1" = push ]; then : > "$CACHE_ROOT/pushed"; fi; }
+build_publish "$SOURCE_SHA" ccr.ccs.tencentyun.com fixture https://assets.example.invalid "$AGENT_ARCHIVE" "" ""
+printf 'CALLER resumed\n'
+'''
+        env = {
+            **os.environ,
+            "WOTB_TX_BUILD_CACHE_ROOT": str(cache),
+            "WOTB_GITEE_REPO_URL": mirror.resolve().as_uri(),
+            "WOTB_SOURCE_BUNDLE": str(bundle),
+            "WOTB_SOURCE_BUNDLE_SHA256": declared_sha or bundle_sha,
+            "SOURCE_SHA": sha, "AGENT_ARCHIVE": str(archive),
+            "GITEE_WAIT_ATTEMPTS": "1", "GITEE_WAIT_INTERVAL_SECONDS": "1",
+            "KILL_AFTER_SECONDS": "10", "RETRY_BACKOFF_LATER_SECONDS": "1",
+        }
+        result = subprocess.run(["bash", "-s"], input=FUNCTIONS + fixture, env=env,
+                                text=True, capture_output=True, timeout=180)
+        return origin, cache, sha, result
+
+    def test_staged_source_bundle_builds_and_cleans_up(self):
+        """runner staged 的 depth-1 源包：TX 不需要访问 GitHub 也能拿到 exact commit。"""
+        with tempfile.TemporaryDirectory(prefix="frontend staged bundle-") as directory:
+            origin, cache, sha, result = self.run_with_source_bundle(directory)
+            diagnostic = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 0, diagnostic)
+            self.assertIn("source_transport=gitee-lagging; trying the staged source bundle",
+                          result.stdout, diagnostic)
+            self.assertIn(f"staged_bundle result=PASS source_sha={sha}", result.stdout, diagnostic)
+            self.assertIn("source_transport=staged-bundle", result.stdout, diagnostic)
+            self.assertNotIn("github_exact_fetch", result.stdout, diagnostic)
+            epoch = subprocess.check_output(
+                ["git", "-C", str(origin), "show", "-s", "--format=%ct", sha], text=True).strip()
+            docker_log = (cache / "docker.log").read_text()
+            self.assertIn(f"--build-arg SOURCE_DATE_EPOCH={epoch}", docker_log, docker_log)
+            self.assertTrue((cache / "fetched").exists(), diagnostic)
+            self.assertFalse((cache / "source-staged").exists(), diagnostic)
+
+    def test_staged_source_bundle_sha_mismatch_fails_closed(self):
+        with tempfile.TemporaryDirectory(prefix="frontend staged bundle bad-") as directory:
+            origin, cache, sha, result = self.run_with_source_bundle(directory, declared_sha="0" * 64)
+            diagnostic = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 1, diagnostic)
+            self.assertIn("staged source bundle sha256 does not match", diagnostic)
+            self.assertNotIn("CALLER resumed", result.stdout, diagnostic)
+            self.assertFalse((cache / "pushed").exists())
+            self.assertFalse((cache / "source-staged").exists(), diagnostic)
+
     def test_shallow_source_builds_and_cleans_up(self):
         """真实的 exact-SHA 兜底路径：浅取仓库能开 worktree、供 epoch，并被清理干净。"""
         with tempfile.TemporaryDirectory(prefix="frontend shallow fallback-") as directory:
@@ -390,7 +475,7 @@ git -C "$SOURCE_DIR" show "$SOURCE_SHA:marker.txt"
                                     text=True, capture_output=True, timeout=120)
             diagnostic = result.stdout + result.stderr
             self.assertEqual(result.returncode, 1, diagnostic)
-            self.assertIn("neither on Gitee main nor fetchable from GitHub", diagnostic)
+            self.assertIn("not on Gitee main, not in a staged bundle, and not fetchable from GitHub", diagnostic)
             self.assertNotIn("SOURCE_DIR=", result.stdout, diagnostic)
 
 

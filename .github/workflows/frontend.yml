@@ -118,6 +118,29 @@ jobs:
           case "$TCR_REGISTRY" in *.tencentyun.com) ;; *) echo 'TCR_REGISTRY must be a Tencent TCR host.' >&2; exit 1 ;; esac
           [[ "$TCR_NAMESPACE" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || { echo 'TCR_NAMESPACE is invalid.' >&2; exit 1; }
 
+      # 源包打包排在新鲜度闸门之后：stale push / 无效 manual dispatch 在这里已被拒绝，
+      # 不再为一个注定失败的 run 先花几十秒克隆并打包整份源快照（与 business-api.yml 同序）。
+      # TX 直连 GitHub 不稳定（实测 curl 56 超时），而 Gitee 镜像可能还在补推全量；
+      # runner 打一个 depth-1 源包随既有 staging 链路送过去，TX 侧就能确定性拿到
+      # 该 commit（保留原 SHA，不含历史）。
+      - name: Package exact-commit source bundle
+        id: source
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$SOURCE_SHA" ]
+          tip="$RUNNER_TEMP/source-tip"
+          bundle="$RUNNER_TEMP/source-$SOURCE_SHA.bundle"
+          rm -rf "$tip" "$bundle"
+          git clone --quiet --depth 1 --no-local "file://$GITHUB_WORKSPACE" "$tip"
+          [ "$(git -C "$tip" rev-parse HEAD)" = "$SOURCE_SHA" ]
+          git -C "$tip" bundle create "$bundle" HEAD >/dev/null
+          sha="$(sha256sum "$bundle" | cut -d' ' -f1)"
+          echo "source bundle: $sha ($(stat -c %s "$bundle") bytes)"
+          { echo "bundle=$bundle"; echo "sha256=$sha"; } >> "$GITHUB_OUTPUT"
+
       - name: Download pinned Agent WASM release asset
         id: agent
         timeout-minutes: 5
@@ -236,16 +259,20 @@ jobs:
           AGENT_FILE: ${{ steps.agent.outputs.file }}
           AGENT_ASSET: ${{ steps.agent.outputs.asset }}
           SPONSOR_BUNDLE: ${{ steps.sponsor.outputs.bundle }}
+          SOURCE_BUNDLE: ${{ steps.source.outputs.bundle }}
         run: |
           set -euo pipefail
           remote_script="/tmp/wotbtools-frontend-build-${RUN_ID}-${RUN_ATTEMPT}.sh"
           remote_agent="/tmp/wotbtools-agent-${RUN_ID}-${RUN_ATTEMPT}-${AGENT_ASSET}"
           remote_sponsor="/tmp/wotbtools-sponsor-${RUN_ID}-${RUN_ATTEMPT}.tar.gz"
+          remote_source="/tmp/wotbtools-source-${RUN_ID}-${RUN_ATTEMPT}.bundle"
           scp -i ~/.ssh/tx2-frontend-build -P "$TX2_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
             "$GITHUB_WORKSPACE/deploy/tx/build-frontend-from-gitee.sh" "$TX2_USER@$TX2_HOST:$remote_script"
           scp -i ~/.ssh/tx2-frontend-build -P "$TX2_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
             "$AGENT_FILE" "$TX2_USER@$TX2_HOST:$remote_agent"
-          chmod_targets="chmod 700 '$remote_script' && chmod 600 '$remote_agent'"
+          scp -i ~/.ssh/tx2-frontend-build -P "$TX2_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
+            "$SOURCE_BUNDLE" "$TX2_USER@$TX2_HOST:$remote_source"
+          chmod_targets="chmod 700 '$remote_script' && chmod 600 '$remote_agent' && chmod 600 '$remote_source'"
           if [ -n "$SPONSOR_BUNDLE" ]; then
             scp -i ~/.ssh/tx2-frontend-build -P "$TX2_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
               "$SPONSOR_BUNDLE" "$TX2_USER@$TX2_HOST:$remote_sponsor"
@@ -269,11 +296,13 @@ jobs:
           AGENT_ASSET: ${{ steps.agent.outputs.asset }}
           SPONSOR_STATE: ${{ steps.sponsor.outputs.state }}
           SPONSOR_FINGERPRINT: ${{ steps.sponsor.outputs.fingerprint }}
+          SOURCE_BUNDLE_SHA256: ${{ steps.source.outputs.sha256 }}
         run: |
           set -euo pipefail
           remote_script="/tmp/wotbtools-frontend-build-${RUN_ID}-${RUN_ATTEMPT}.sh"
           remote_agent="/tmp/wotbtools-agent-${RUN_ID}-${RUN_ATTEMPT}-${AGENT_ASSET}"
           remote_sponsor="/tmp/wotbtools-sponsor-${RUN_ID}-${RUN_ATTEMPT}.tar.gz"
+          remote_source="/tmp/wotbtools-source-${RUN_ID}-${RUN_ATTEMPT}.bundle"
           log="$RUNNER_TEMP/tx-frontend-build.log"
 
           sponsor_bundle="-"
@@ -291,7 +320,7 @@ jobs:
             -o ServerAliveInterval=10 \
             -o ServerAliveCountMax=6 \
             "$TX2_USER@$TX2_HOST" \
-            "WOTB_BUILD_HOST_LOCK=/opt/wotb-tx2/.deploy.lock bash '$remote_script' build-publish '$SOURCE_SHA' '$TCR_REGISTRY' '$TCR_NAMESPACE' '$ASSET_BASE_URL' '$remote_agent' '$sponsor_bundle' '$sponsor_fingerprint'" \
+            "WOTB_BUILD_HOST_LOCK=/opt/wotb-tx2/.deploy.lock WOTB_SOURCE_BUNDLE='$remote_source' WOTB_SOURCE_BUNDLE_SHA256='$SOURCE_BUNDLE_SHA256' bash '$remote_script' build-publish '$SOURCE_SHA' '$TCR_REGISTRY' '$TCR_NAMESPACE' '$ASSET_BASE_URL' '$remote_agent' '$sponsor_bundle' '$sponsor_fingerprint'" \
             | tee "$log"
 
           python3 - "$log" >> "$GITHUB_OUTPUT" <<'PY'
@@ -345,8 +374,9 @@ jobs:
           remote_script="/tmp/wotbtools-frontend-build-${RUN_ID}-${RUN_ATTEMPT}.sh"
           remote_agent="/tmp/wotbtools-agent-${RUN_ID}-${RUN_ATTEMPT}-${AGENT_ASSET}"
           remote_sponsor="/tmp/wotbtools-sponsor-${RUN_ID}-${RUN_ATTEMPT}.tar.gz"
+          remote_source="/tmp/wotbtools-source-${RUN_ID}-${RUN_ATTEMPT}.bundle"
           ssh -i ~/.ssh/tx2-frontend-build -p "$TX2_PORT" -o BatchMode=yes -o ConnectTimeout=10 \
-            "$TX2_USER@$TX2_HOST" "rm -f -- '$remote_script' '$remote_agent' '$remote_sponsor'" || \
+            "$TX2_USER@$TX2_HOST" "rm -f -- '$remote_script' '$remote_agent' '$remote_sponsor' '$remote_source'" || \
             echo "WARNING: failed to clean staged TX2 frontend build inputs"
 
   deploy:

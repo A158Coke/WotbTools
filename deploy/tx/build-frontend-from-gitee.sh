@@ -15,9 +15,12 @@
 set -Eeuo pipefail
 
 readonly GITEE_REPO_URL="${WOTB_GITEE_REPO_URL:-https://gitee.com/A158Coke/Wotbtools.git}"
-# 镜像落后时的兜底：GitHub 允许按 exact SHA 浅取（53MB，实测 18s），只取该 commit 的树，
-# 不需要任何历史。它比"把重写后的全新 commit 图整推 Gitee"（约 300MB）小一个数量级，
-# 所以镜像 budget 再大也不该成为发布的前置条件。
+# 镜像落后时的第二来源：runner 预先 stage 过来的 depth-1 源包。TX 直连 GitHub 不稳定
+# （实测 `curl 56 Recv failure: Connection timed out`），而 Gitee 镜像又在补推全量，
+# 所以 runner 打好的这个包是两者都不可用时的确定性来源；它保留原 commit SHA。
+readonly SOURCE_BUNDLE="${WOTB_SOURCE_BUNDLE:-}"
+readonly SOURCE_BUNDLE_SHA256="${WOTB_SOURCE_BUNDLE_SHA256:-}"
+# 第三来源（尽力而为）：GitHub 允许按 exact SHA 浅取，只取该 commit 的树，不需要历史。
 readonly GITHUB_REPO_URL="${WOTB_GITHUB_REPO_URL:-https://github.com/A158Coke/WotbTools.git}"
 # Cache/lock 属于**构建宿主**：Frontend 在 TX2 构建，Business API 仍在 TX1 构建，
 # 两侧缓存与 build.lock 刻意分离（同一 commit 同时改两个应用时不再争用 TX1 的
@@ -26,8 +29,10 @@ readonly CACHE_ROOT="${WOTB_TX_BUILD_CACHE_ROOT:-$HOME/.cache/wotbtools-producti
 readonly REPO_DIR="$CACHE_ROOT/repo"
 # 浅取仓库是每次构建的临时源（不复用：浅边界不适合长期 cache）。
 readonly SHALLOW_SOURCE_DIR="$CACHE_ROOT/source-shallow"
-# 当前构建的源仓库：镜像命中时为持久的 Gitee clone，兜底时为浅取仓库。所有
-# `git show <sha>:<path>` / commit epoch 读取都从它出发，两条路径语义一致。
+# runner staged 的 depth-1 源包解出来的仓库，同样是每次构建的临时源。
+readonly STAGED_SOURCE_DIR="$CACHE_ROOT/source-staged"
+# 当前构建的源仓库：镜像命中时为持久的 Gitee clone，其余来源为临时 clone。所有
+# `git show <sha>:<path>` / commit epoch 读取都从它出发，各条路径语义一致。
 SOURCE_DIR="$REPO_DIR"
 readonly BUILD_LOCK_FILE="$CACHE_ROOT/build.lock"
 # TX2 build 与同一宿主上的 Production Worker / Frontend replica 共用既有主机维护锁；
@@ -252,9 +257,34 @@ fetch_exact_sha_shallow() {
   return 1
 }
 
-# 源物化：国内镜像优先（稳定态只取增量），镜像追不上时按 exact SHA 直取 GitHub，
-# 两者都失败才 fail closed。每条路径都把 SOURCE_DIR 指向"含该 commit 的仓库"，
-# 并把实际使用的传输写进日志（发布证据里能区分 mirror 命中与兜底）。
+# runner stage 过来的 depth-1 源包：保留原 commit SHA，只含该 commit 的树。
+# 未 stage 时返回 1（继续尝试下一来源）；已 stage 但校验不过则 fail closed——
+# 包损坏是发布输入的问题，不能悄悄降级成"换个地方再抓一次"。
+stage_source_bundle() {
+  local source_sha="$1"
+
+  [ -n "$SOURCE_BUNDLE" ] || return 1
+  [ -f "$SOURCE_BUNDLE" ] || die "staged source bundle is missing: $SOURCE_BUNDLE"
+  [ "$(sha256sum "$SOURCE_BUNDLE" | cut -d' ' -f1)" = "$SOURCE_BUNDLE_SHA256" ] \
+    || die "staged source bundle sha256 does not match the runner's declaration"
+
+  echo "staged_bundle source_sha=$source_sha"
+  rm -rf -- "$STAGED_SOURCE_DIR"
+  git clone --quiet "$SOURCE_BUNDLE" "$STAGED_SOURCE_DIR" \
+    || die "cannot clone the staged source bundle"
+  [ "$(git -C "$STAGED_SOURCE_DIR" rev-parse HEAD)" = "$source_sha" ] \
+    || die "staged source bundle does not carry the exact source SHA"
+  # depth-1 包没有父提交：标成 shallow 边界，epoch/路径读取才不会去追不存在的 parent。
+  printf '%s\n' "$source_sha" > "$STAGED_SOURCE_DIR/.git/shallow"
+  git -C "$STAGED_SOURCE_DIR" show -s --format=%ct "$source_sha" >/dev/null \
+    || die "staged source bundle cannot resolve the commit epoch"
+  echo "staged_bundle result=PASS source_sha=$source_sha"
+  return 0
+}
+
+# 源物化：国内镜像优先（稳定态只取增量），其次是 runner staged 的 depth-1 源包，
+# 最后才尝试直连 GitHub 按 exact SHA 浅取；三者都拿不到才 fail closed。每条路径都把
+# SOURCE_DIR 指向"含该 commit 的仓库"，并把实际使用的传输写进日志（发布证据里能区分）。
 materialize_source() {
   local source_sha="$1"
 
@@ -264,9 +294,16 @@ materialize_source() {
     return 0
   fi
 
-  echo "source_transport=gitee-lagging; exact-SHA fallback engaged"
+  echo "source_transport=gitee-lagging; trying the staged source bundle"
+  if stage_source_bundle "$source_sha"; then
+    SOURCE_DIR="$STAGED_SOURCE_DIR"
+    echo "source_transport=staged-bundle"
+    return 0
+  fi
+
+  echo "source_transport=staged-bundle-absent; exact-SHA fetch fallback engaged"
   fetch_exact_sha_shallow "$source_sha" \
-    || die "source SHA is neither on Gitee main nor fetchable from GitHub as an exact SHA"
+    || die "source SHA is not on Gitee main, not in a staged bundle, and not fetchable from GitHub"
   SOURCE_DIR="$SHALLOW_SOURCE_DIR"
   echo "source_transport=github-exact-sha"
 }
@@ -503,7 +540,7 @@ build_publish() {
     git -C "$SOURCE_DIR" worktree remove --force "$worktree" >/dev/null 2>&1 || true
     rm -rf -- "$worktree"
     [ -z "$sponsor_tmp" ] || rm -rf -- "$sponsor_tmp"
-    rm -rf -- "$SHALLOW_SOURCE_DIR"
+    rm -rf -- "$SHALLOW_SOURCE_DIR" "$STAGED_SOURCE_DIR"
   }
   # Capture quoted paths now: EXIT runs after build_publish's locals leave scope.
   trap "$(printf 'cleanup_build_leftovers %q %q' "$worktree" "$sponsor_tmp")" EXIT

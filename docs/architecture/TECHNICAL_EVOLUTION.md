@@ -616,15 +616,19 @@ TX2 的发行版 Docker CLI 没有 buildx 插件，构建脚本只在远端 dige
   数小时（hashed asset 还会在另一端 404），而被新 push 取消的 run 根本不会触发 replica。
   单次 Git 命令预算 `100m`（job `180m`）使这一次全量推送有机会在单个 attempt 内完成。若仍推不完，
   运维补救是在国内网络执行一次 `git push --mirror`（一次性 bootstrap），之后 CI 回到增量推送。
-- **源物化按 exact SHA 兜底**。`deploy/tx/build-*-from-gitee.sh` 的 `materialize_source` 先等镜像
-  （`GITEE_WAIT_ATTEMPTS` × 间隔，稳定态只取增量），追不上就
-  `git fetch --depth 1 <github-url> <sha>` 只取该 commit 的树：GitHub 允许按未通告的 SHA 浅取，实测
-  **53MB / 18s**，是 300MB 全量的 1/5.6 且不含历史。取到的对象与镜像路径同构（`rev-parse`、
-  `show <sha>:path`、`show -s --format=%ct`、`worktree add` 全部可用），所以 epoch /
-  `deploy/agent/source.json` / worktree 的既有校验不需要任何特判；两条路径都拿不到该 SHA 才
+- **源物化按固定顺序取源**。`deploy/tx/build-*-from-gitee.sh` 的 `materialize_source`：
+  ① 等镜像（`GITEE_WAIT_ATTEMPTS` × 间隔，稳定态只取增量）；② 用 runner 随既有 staging 链路
+  送到的 **depth-1 源包**；③ 才尝试 `git fetch --depth 1 <github-url> <sha>`。
+  第 ③ 步是"尽力而为"而非可靠通道：2026-10-29 合并后首次真实运行里，TX 侧拉 GitHub 直接
+  `curl 56 Recv failure: Connection timed out` + `early EOF`（同一份 53MB 数据从开发机 18s 就取完，
+  TX 出口不行），所以 runner 打好的源包（保留原 commit SHA、不含历史，sha256 由 runner 声明、
+  TX 校验后才用）才是镜像落后时的确定性来源。depth-1 包没有父提交，clone 后写入 `.git/shallow`
+  边界，`show -s --format=%ct` / `show <sha>:path` / `worktree add` 与镜像路径完全同构，
+  epoch / `deploy/agent/source.json` / worktree 的既有校验不需要特判；三条路径都拿不到该 SHA 才
   fail closed。
-- 发布证据记录实际传输（`source_transport=gitee-mirror|github-exact-sha`、
-  `github_exact_fetch result=PASS`），使"这次靠兜底发出去"可复查，不会被静默当成镜像正常。
+- 发布证据记录实际传输（`source_transport=gitee-mirror|staged-bundle|github-exact-sha`、
+  `staged_bundle result=PASS` / `github_exact_fetch result=PASS`），使"这次靠哪个来源发出去"可复查，
+  不会被静默当成镜像正常。
 
 对镜像的长期要求不变：它仍是国内用户的首选克隆源，重写后必须补齐那一次全量推送；补齐之后每次
 推送回到几 MB 增量，180 分钟与 `100m` 都不会被用到。

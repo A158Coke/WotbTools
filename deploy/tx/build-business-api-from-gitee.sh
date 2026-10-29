@@ -6,11 +6,16 @@
 set -Eeuo pipefail
 
 readonly GITEE_REPO_URL="${WOTB_GITEE_REPO_URL:-https://gitee.com/A158Coke/Wotbtools.git}"
+# 镜像落后时的第二来源：runner stage 过来的 depth-1 源包（TX 直连 GitHub 不稳定）。
+readonly SOURCE_BUNDLE="${WOTB_SOURCE_BUNDLE:-}"
+readonly SOURCE_BUNDLE_SHA256="${WOTB_SOURCE_BUNDLE_SHA256:-}"
+# 第三来源（尽力而为）：按 exact SHA 从 GitHub 浅取。
 readonly GITHUB_REPO_URL="${WOTB_GITHUB_REPO_URL:-https://github.com/A158Coke/WotbTools.git}"
 readonly CACHE_ROOT="${WOTB_TX_BUILD_CACHE_ROOT:-$HOME/.cache/wotbtools-production-build}"
 readonly REPO_DIR="$CACHE_ROOT/repo"
 readonly SHALLOW_SOURCE_DIR="$CACHE_ROOT/source-shallow"
-# 当前构建的源仓库：镜像命中时为持久 Gitee clone，兜底时为按 exact SHA 的浅取仓库。
+readonly STAGED_SOURCE_DIR="$CACHE_ROOT/source-staged"
+# 当前构建的源仓库：镜像命中时为持久 Gitee clone，其余来源为临时 clone。
 SOURCE_DIR="$REPO_DIR"
 readonly BUILD_LOCK_FILE="$CACHE_ROOT/build.lock"
 readonly GITEE_WAIT_ATTEMPTS="${GITEE_WAIT_ATTEMPTS:-12}"
@@ -168,6 +173,26 @@ fetch_exact_sha_shallow() {
   return 1
 }
 
+# runner stage 过来的 depth-1 源包，见 frontend builder 的同名函数。
+stage_source_bundle() {
+  local source_sha="$1"
+
+  [ -n "$SOURCE_BUNDLE" ] || return 1
+  [ -f "$SOURCE_BUNDLE" ] || die "staged source bundle is missing: $SOURCE_BUNDLE"
+  [ "$(sha256sum "$SOURCE_BUNDLE" | cut -d' ' -f1)" = "$SOURCE_BUNDLE_SHA256" ] \
+    || die "staged source bundle sha256 does not match the runner's declaration"
+
+  echo "staged_bundle source_sha=$source_sha"
+  rm -rf -- "$STAGED_SOURCE_DIR"
+  git clone --quiet "$SOURCE_BUNDLE" "$STAGED_SOURCE_DIR" \
+    || die "cannot clone the staged source bundle"
+  [ "$(git -C "$STAGED_SOURCE_DIR" rev-parse HEAD)" = "$source_sha" ] \
+    || die "staged source bundle does not carry the exact source SHA"
+  printf '%s\n' "$source_sha" > "$STAGED_SOURCE_DIR/.git/shallow"
+  echo "staged_bundle result=PASS source_sha=$source_sha"
+  return 0
+}
+
 materialize_source() {
   local source_sha="$1"
 
@@ -177,9 +202,16 @@ materialize_source() {
     return 0
   fi
 
-  echo "source_transport=gitee-lagging; exact-SHA fallback engaged"
+  echo "source_transport=gitee-lagging; trying the staged source bundle"
+  if stage_source_bundle "$source_sha"; then
+    SOURCE_DIR="$STAGED_SOURCE_DIR"
+    echo "source_transport=staged-bundle"
+    return 0
+  fi
+
+  echo "source_transport=staged-bundle-absent; exact-SHA fetch fallback engaged"
   fetch_exact_sha_shallow "$source_sha" \
-    || die "source SHA is neither on Gitee main nor fetchable from GitHub as an exact SHA"
+    || die "source SHA is not on Gitee main, not in a staged bundle, and not fetchable from GitHub"
   SOURCE_DIR="$SHALLOW_SOURCE_DIR"
   echo "source_transport=github-exact-sha"
 }
@@ -259,7 +291,7 @@ build_publish() {
       reused=false
       rm -rf -- "$worktree"
       git -C "$SOURCE_DIR" worktree add --force --detach "$worktree" "$source_sha" >/dev/null
-      trap "git -C '$SOURCE_DIR' worktree remove --force '$worktree' >/dev/null 2>&1 || true; rm -rf -- '$worktree' '$SHALLOW_SOURCE_DIR'" EXIT
+      trap "git -C '$SOURCE_DIR' worktree remove --force '$worktree' >/dev/null 2>&1 || true; rm -rf -- '$worktree' '$SHALLOW_SOURCE_DIR' '$STAGED_SOURCE_DIR'" EXIT
 
       [ "$(git -C "$worktree" rev-parse HEAD)" = "$source_sha" ] || die "detached worktree SHA mismatch"
 
