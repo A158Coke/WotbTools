@@ -4,6 +4,7 @@
  * 服务器没有 parser：解析失败只会是「该文件解析失败」或「WASM 不可用」，不存在回退到服务端。
  */
 import type { ParseMessage, ParsedReplayFile } from './parseWorkerProtocol.js'
+import { tryCollect } from './battle-data/collector.js'
 
 export type { ParsedReplayFile }
 
@@ -55,6 +56,7 @@ export async function parseReplayFiles(files: File[], options: ParseReplaysOptio
           onFile?.(message.index, message.file)
           done++
           onProgress?.(done, files.length)
+          if (message.file.result && !message.file.error) tryCollect(files[message.index], message.file.result)
         } else if (message.type === 'fatal') {
           reject(new ReplayEngineUnavailableError(message.error))
         } else {

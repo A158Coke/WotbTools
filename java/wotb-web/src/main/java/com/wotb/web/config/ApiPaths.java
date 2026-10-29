@@ -47,6 +47,7 @@ public final class ApiPaths {
     // ---- 精确端点（SecurityConfig 与 Controller 共用） ----
     public static final String HOF_UPLOAD = "/api/hof/upload";
     public static final String OBSERVABILITY_EVENTS = "/api/observability/events";
+    public static final String BATTLE_DATA = "/api/battle-data";
     public static final String HEALTH = "/api/health";
 
     // ---- 安全匹配模式（/** 通配，仅 SecurityConfig 使用） ----

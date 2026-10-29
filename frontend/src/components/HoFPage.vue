@@ -1332,7 +1332,7 @@ watch(() => hofAvailability.value.available, (available, previous) => {
       <div class="lb-toolbar-host" :data-tour="isCompact ? 'hof-filter-options' : 'hof-filters'" :class="{ 'is-sheet': isCompact }">
         <div v-if="isCompact" class="lb-sheet-head">
           <strong>{{ $t('filters.title') }}</strong>
-          <AppButton size="sm" variant="primary" data-testid="filter-done" @click="closeFilterSheet">{{ $t('filters.done') }}</AppButton>
+          <AppButton variant="primary" data-testid="filter-done" @click="closeFilterSheet">{{ $t('filters.done') }}</AppButton>
         </div>
         <div class="lb-toolbar">
         <label class="lb-limit"><span class="lb-label">{{ $t('hof.nation') }}</span>
@@ -1502,7 +1502,7 @@ watch(() => hofAvailability.value.available, (available, previous) => {
       <div class="lb-toolbar-host" :data-tour="isCompact ? 'hof-filter-options' : 'hof-filters'" :class="{ 'is-sheet': isCompact }">
         <div v-if="isCompact" class="lb-sheet-head">
           <strong>{{ $t('filters.title') }}</strong>
-          <AppButton size="sm" variant="primary" data-testid="filter-done" @click="closeFilterSheet">{{ $t('filters.done') }}</AppButton>
+          <AppButton variant="primary" data-testid="filter-done" @click="closeFilterSheet">{{ $t('filters.done') }}</AppButton>
         </div>
         <div class="lb-toolbar h100-toolbar">
         <label class="lb-limit h100-filter"><span class="lb-label">{{ $t('hundred.nation') }}</span>
@@ -1618,7 +1618,7 @@ watch(() => hofAvailability.value.available, (available, previous) => {
       <div class="lb-toolbar-host" :data-tour="isCompact ? 'hof-filter-options' : 'hof-filters'" :class="{ 'is-sheet': isCompact }">
         <div v-if="isCompact" class="lb-sheet-head">
           <strong>{{ $t('filters.title') }}</strong>
-          <AppButton size="sm" variant="primary" data-testid="filter-done" @click="closeFilterSheet">{{ $t('filters.done') }}</AppButton>
+          <AppButton variant="primary" data-testid="filter-done" @click="closeFilterSheet">{{ $t('filters.done') }}</AppButton>
         </div>
         <div class="lb-toolbar h100-toolbar">
         <label class="lb-limit mark3-filter"><span class="lb-label">{{ $t('mark3.nation') }}</span>
@@ -1905,6 +1905,7 @@ watch(() => hofAvailability.value.available, (available, previous) => {
 <style scoped>
 /* 手机筛选 sheet（审计 PG-05）：容器 / 遮罩 / 焦点 / 安全区由 AppSheet 提供，这里只负责工具栏在 sheet 内的网格 */
 .lb-toolbar-host.is-sheet { display: grid; gap: var(--space-3); }
+.lb-toolbar-host.is-sheet :deep(.lb-toolbar :is(select, input, button)) { min-height: var(--hit-min); }
 .lb-sheet-head { display: flex; align-items: center; justify-content: space-between; color: var(--color-text-primary); font: var(--type-h3); }
 /* 手机卡片列表（审计 PG-05 / PG-19：下载按钮与车辆链接满足 44px 点击区域） */
 .lb-cards { display: grid; gap: var(--space-2); margin: var(--space-3) 0 0; padding: 0; list-style: none; }

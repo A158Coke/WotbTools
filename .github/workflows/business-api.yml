@@ -58,52 +58,14 @@ concurrency:
   group: deploy-business-api
   cancel-in-progress: true
 
+# 发布 run 只含 build/deploy：Gitee 镜像是国内镜像，不是发布前置，由独立 workflow
+# `gitee-mirror.yml` 拥有（镜像落后时 TX builder 按 exact SHA 直取 GitHub）。
 jobs:
-  mirror_gitee:
-    name: Mirror exact GitHub source to Gitee
-    concurrency:
-      group: production-gitee-mirror
-      cancel-in-progress: false
-      queue: max
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    steps:
-      - name: Reject non-main invocation
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          EVENT_REF: ${{ github.ref }}
-        run: |
-          set -euo pipefail
-          case "$EVENT_NAME" in
-            push|workflow_dispatch) ;;
-            *) echo "Unsupported mirror event: $EVENT_NAME" >&2; exit 1 ;;
-          esac
-          [ "$EVENT_REF" = refs/heads/main ] || {
-            echo "Gitee production mirror must run from main." >&2
-            exit 1
-          }
-
-      - name: Mirror WotbTools to Gitee
-        uses: Yikun/hub-mirror-action@ec47170fa9d126a4bee5a1ab9359845bb1395248
-        with:
-          src: github/A158Coke
-          dst: gitee/A158Coke
-          dst_key: ${{ secrets.GITEE_PRIVATE_KEY }}
-          dst_token: ${{ secrets.GITEE_TOKEN }}
-          static_list: WotbTools
-          account_type: user
-          force_update: true
-          timeout: 10m
-
   build:
     concurrency:
       group: tx-production-build
       cancel-in-progress: false
       queue: max
-    needs: [mirror_gitee]
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -136,6 +98,26 @@ jobs:
           case "$TCR_REGISTRY" in *.tencentyun.com) ;; *) echo 'TCR_REGISTRY must be a Tencent TCR host.' >&2; exit 1 ;; esac
           [[ "$TCR_NAMESPACE" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || { echo 'TCR_NAMESPACE is invalid.' >&2; exit 1; }
 
+      # TX 直连 GitHub 不稳定（实测 curl 56 超时），Gitee 镜像可能还在补推全量；
+      # runner 打一个 depth-1 源包随既有 staging 链路送过去，TX 侧确定性拿到该 commit。
+      - name: Package exact-commit source bundle
+        id: source
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$SOURCE_SHA" ]
+          tip="$RUNNER_TEMP/source-tip"
+          bundle="$RUNNER_TEMP/source-$SOURCE_SHA.bundle"
+          rm -rf "$tip" "$bundle"
+          git clone --quiet --depth 1 --no-local "file://$GITHUB_WORKSPACE" "$tip"
+          [ "$(git -C "$tip" rev-parse HEAD)" = "$SOURCE_SHA" ]
+          git -C "$tip" bundle create "$bundle" HEAD >/dev/null
+          sha="$(sha256sum "$bundle" | cut -d' ' -f1)"
+          echo "source bundle: $sha ($(stat -c %s "$bundle") bytes)"
+          { echo "bundle=$bundle"; echo "sha256=$sha"; } >> "$GITHUB_OUTPUT"
+
       - name: Configure TX SSH
         shell: bash
         env:
@@ -161,6 +143,7 @@ jobs:
           TX_PORT: ${{ secrets.TX_VPS_PORT }}
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
+          SOURCE_BUNDLE: ${{ steps.source.outputs.bundle }}
         run: |
           set -euo pipefail
           remote="/tmp/wotbtools-business-api-build-${RUN_ID}-${RUN_ATTEMPT}.sh"
@@ -171,13 +154,21 @@ jobs:
             -o ConnectTimeout=15 \
             "$GITHUB_WORKSPACE/deploy/tx/build-business-api-from-gitee.sh" \
             "$TX_USER@$TX_HOST:$remote"
+          remote_source="/tmp/wotbtools-source-${RUN_ID}-${RUN_ATTEMPT}.bundle"
+          scp \
+            -i ~/.ssh/tx-business-build \
+            -P "$TX_PORT" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=15 \
+            "$SOURCE_BUNDLE" \
+            "$TX_USER@$TX_HOST:$remote_source"
           ssh \
             -i ~/.ssh/tx-business-build \
             -p "$TX_PORT" \
             -o BatchMode=yes \
             -o ConnectTimeout=15 \
             "$TX_USER@$TX_HOST" \
-            "chmod 700 '$remote'"
+            "chmod 700 '$remote' && chmod 600 '$remote_source'"
 
       - name: Build and publish immutable image on TX
         id: remote_build
@@ -191,9 +182,11 @@ jobs:
           TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
+          SOURCE_BUNDLE_SHA256: ${{ steps.source.outputs.sha256 }}
         run: |
           set -euo pipefail
           remote="/tmp/wotbtools-business-api-build-${RUN_ID}-${RUN_ATTEMPT}.sh"
+          remote_source="/tmp/wotbtools-source-${RUN_ID}-${RUN_ATTEMPT}.bundle"
           log="$RUNNER_TEMP/tx-business-build.log"
 
           ssh \
@@ -204,7 +197,7 @@ jobs:
             -o ServerAliveInterval=10 \
             -o ServerAliveCountMax=6 \
             "$TX_USER@$TX_HOST" \
-            "bash '$remote' build-publish '$SOURCE_SHA' '$TCR_REGISTRY' '$TCR_NAMESPACE'" \
+            "WOTB_SOURCE_BUNDLE='$remote_source' WOTB_SOURCE_BUNDLE_SHA256='$SOURCE_BUNDLE_SHA256' bash '$remote' build-publish '$SOURCE_SHA' '$TCR_REGISTRY' '$TCR_NAMESPACE'" \
             | tee "$log"
 
           python3 - "$log" >> "$GITHUB_OUTPUT" <<'PY'
@@ -241,13 +234,14 @@ jobs:
         run: |
           set -u
           remote="/tmp/wotbtools-business-api-build-${RUN_ID}-${RUN_ATTEMPT}.sh"
+          remote_source="/tmp/wotbtools-source-${RUN_ID}-${RUN_ATTEMPT}.bundle"
           if ! ssh \
             -i ~/.ssh/tx-business-build \
             -p "$TX_PORT" \
             -o BatchMode=yes \
             -o ConnectTimeout=10 \
             "$TX_USER@$TX_HOST" \
-            "rm -f -- '$remote'"; then
+            "rm -f -- '$remote' '$remote_source'"; then
             echo "WARNING: failed to remove staged TX build publisher: $remote"
           fi
 

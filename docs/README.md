@@ -37,7 +37,7 @@
 | `architecture/backend-modules.md` | 查 `wotb-web` 的 Spring Modulith 模块边界、模块集成测试与架构文档生成方式时 |
 | `architecture/ai-review.md` | 改 AI 复盘 / 证据链 / prompt / 双 Call / 结构化团队结果（`TeamAiReviewResult`）时 |
 | `ai-coach/README.md` | 改团队 AI 复盘或随机战个人复盘的战术判定规则（Coach Lab 争霸赛复盘规范、随机战个人复盘规范、RULE-001–020、案例索引、版本车辆定位）时 |
-| `architecture/replay-pipeline.md` | 改客户端回放管线（上游 Rust Core WASM → 批次计算 / 导出 / 2D）或名人堂客户端事实时 |
+| `architecture/replay-pipeline.md` | 改客户端回放管线（上游 Rust Core WASM → 批次计算 / 导出 / 2D）、名人堂客户端事实或匿名 Battle Data Collector 时 |
 | `architecture/battle-timeline.md` | 改 battle timeline 事件模型 / 时间轴聚合时 |
 | `architecture/http-contracts.md` | 改 HTTP OpenAPI 契约、生成 transport 或 runtime schema 时 |
 | `architecture/engineering-metrics.md` | GitHub engineering exporter、classification、freshness 与 Engineering Overview |

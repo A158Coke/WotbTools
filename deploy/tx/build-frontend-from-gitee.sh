@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# Build and publish the Frontend on the TX2 build host from an exact commit mirrored
-# to Gitee. GitHub remains the release authority; Gitee is only the domestic source
-# transport. The pinned Agent WASM release archive is staged by GitHub because it is
-# tiny; the expensive frontend image build and TCR publication stay entirely in China.
+# Build and publish the Frontend on the TX2 build host from an exact commit. GitHub
+# remains the release authority; Gitee is the domestic source transport and is tried
+# first. When the mirror cannot serve the commit yet, the exact SHA is fetched shallow
+# from GitHub instead (about 53MB vs the ~300MB full history a post-rewrite mirror push needs),
+# so a lagging mirror never blocks a release. The pinned Agent WASM release archive is
+# staged by GitHub because it is tiny; the expensive frontend image build and TCR
+# publication stay entirely in China.
 #
 # 2026-10-26 placement: the Frontend image builds on TX2, not TX1. TX1 has 1.9 GiB RAM
 # and runs the production containers; after #753 (Reka/VueUse/motion-v) the build needs
@@ -12,11 +15,25 @@
 set -Eeuo pipefail
 
 readonly GITEE_REPO_URL="${WOTB_GITEE_REPO_URL:-https://gitee.com/A158Coke/Wotbtools.git}"
+# 镜像落后时的第二来源：runner 预先 stage 过来的 depth-1 源包。TX 直连 GitHub 不稳定
+# （实测 `curl 56 Recv failure: Connection timed out`），而 Gitee 镜像又在补推全量，
+# 所以 runner 打好的这个包是两者都不可用时的确定性来源；它保留原 commit SHA。
+readonly SOURCE_BUNDLE="${WOTB_SOURCE_BUNDLE:-}"
+readonly SOURCE_BUNDLE_SHA256="${WOTB_SOURCE_BUNDLE_SHA256:-}"
+# 第三来源（尽力而为）：GitHub 允许按 exact SHA 浅取，只取该 commit 的树，不需要历史。
+readonly GITHUB_REPO_URL="${WOTB_GITHUB_REPO_URL:-https://github.com/A158Coke/WotbTools.git}"
 # Cache/lock 属于**构建宿主**：Frontend 在 TX2 构建，Business API 仍在 TX1 构建，
 # 两侧缓存与 build.lock 刻意分离（同一 commit 同时改两个应用时不再争用 TX1 的
 # CPU/RAM，也不会共享一份 Gitee clone）。
 readonly CACHE_ROOT="${WOTB_TX_BUILD_CACHE_ROOT:-$HOME/.cache/wotbtools-production-build}"
 readonly REPO_DIR="$CACHE_ROOT/repo"
+# 浅取仓库是每次构建的临时源（不复用：浅边界不适合长期 cache）。
+readonly SHALLOW_SOURCE_DIR="$CACHE_ROOT/source-shallow"
+# runner staged 的 depth-1 源包解出来的仓库，同样是每次构建的临时源。
+readonly STAGED_SOURCE_DIR="$CACHE_ROOT/source-staged"
+# 当前构建的源仓库：镜像命中时为持久的 Gitee clone，其余来源为临时 clone。所有
+# `git show <sha>:<path>` / commit epoch 读取都从它出发，各条路径语义一致。
+SOURCE_DIR="$REPO_DIR"
 readonly BUILD_LOCK_FILE="$CACHE_ROOT/build.lock"
 # TX2 build 与同一宿主上的 Production Worker / Frontend replica 共用既有主机维护锁；
 # 空值 = 不获取（单测与 TX1 调试路径）。workflow 显式传 /opt/wotb-tx2/.deploy.lock。
@@ -25,6 +42,9 @@ readonly HOST_LOCK_WAIT_SECONDS="${HOST_LOCK_WAIT_SECONDS:-600}"
 readonly GITEE_WAIT_ATTEMPTS="${GITEE_WAIT_ATTEMPTS:-12}"
 readonly GITEE_WAIT_INTERVAL_SECONDS="${GITEE_WAIT_INTERVAL_SECONDS:-15}"
 readonly GIT_FETCH_TIMEOUT_SECONDS="${GIT_FETCH_TIMEOUT_SECONDS:-60}"
+# 53MB 跨境浅取的预算：够慢链路走完，又不至于让一次失败拖满 90 分钟的 build job。
+readonly GITHUB_FETCH_TIMEOUT_SECONDS="${GITHUB_FETCH_TIMEOUT_SECONDS:-900}"
+readonly GITHUB_FETCH_ATTEMPTS="${GITHUB_FETCH_ATTEMPTS:-3}"
 readonly TCR_PUSH_TIMEOUT_SECONDS="${TCR_PUSH_TIMEOUT_SECONDS:-600}"
 readonly TCR_LOOKUP_TIMEOUT_SECONDS="${TCR_LOOKUP_TIMEOUT_SECONDS:-60}"
 readonly TCR_PULL_TIMEOUT_SECONDS="${TCR_PULL_TIMEOUT_SECONDS:-300}"
@@ -113,6 +133,7 @@ validate_common() {
 
   local setting
   for setting in GITEE_WAIT_ATTEMPTS GITEE_WAIT_INTERVAL_SECONDS GIT_FETCH_TIMEOUT_SECONDS \
+    GITHUB_FETCH_TIMEOUT_SECONDS GITHUB_FETCH_ATTEMPTS \
     TCR_PUSH_TIMEOUT_SECONDS TCR_LOOKUP_TIMEOUT_SECONDS TCR_PULL_TIMEOUT_SECONDS KILL_AFTER_SECONDS \
     RETRY_MAX_ATTEMPTS RETRY_BACKOFF_FIRST_SECONDS RETRY_BACKOFF_LATER_SECONDS HOST_LOCK_WAIT_SECONDS; do
     is_positive_integer "${!setting}" || die "$setting must be a positive integer"
@@ -201,7 +222,90 @@ wait_for_gitee_sha() {
     fi
   done
 
-  die "source SHA did not reach Gitee main within the bounded wait"
+  echo "gitee_sync result=LAG source_sha=$source_sha attempts=$GITEE_WAIT_ATTEMPTS"
+  return 1
+}
+
+# 按 exact SHA 从 GitHub 浅取（只含该 commit 的树）。GitHub 允许 fetch 未在 ref 里
+# 通告的 SHA；取到的对象与镜像路径完全同构，因此 epoch/source.json/worktree 读取
+# 不需要任何特判。每次重建目录：浅边界不该被复用。
+fetch_exact_sha_shallow() {
+  local source_sha="$1"
+  local attempt
+
+  mkdir -p "$CACHE_ROOT"
+  for attempt in $(seq 1 "$GITHUB_FETCH_ATTEMPTS"); do
+    rm -rf -- "$SHALLOW_SOURCE_DIR"
+    mkdir -p "$SHALLOW_SOURCE_DIR"
+    git -C "$SHALLOW_SOURCE_DIR" init -q
+    echo "github_exact_fetch attempt=$attempt/$GITHUB_FETCH_ATTEMPTS source_sha=$source_sha"
+    if timeout --kill-after="${KILL_AFTER_SECONDS}s" "$GITHUB_FETCH_TIMEOUT_SECONDS" \
+      env GIT_TERMINAL_PROMPT=0 \
+      git -C "$SHALLOW_SOURCE_DIR" fetch --depth 1 --no-tags "$GITHUB_REPO_URL" "$source_sha"; then
+      if [ "$(git -C "$SHALLOW_SOURCE_DIR" rev-parse FETCH_HEAD 2>/dev/null)" = "$source_sha" ] \
+        && git -C "$SHALLOW_SOURCE_DIR" cat-file -e "$source_sha^{commit}" 2>/dev/null; then
+        echo "github_exact_fetch result=PASS source_sha=$source_sha"
+        return 0
+      fi
+      echo "github_exact_fetch result=SHA_MISMATCH source_sha=$source_sha" >&2
+    fi
+    if [ "$attempt" -lt "$GITHUB_FETCH_ATTEMPTS" ]; then
+      sleep "$RETRY_BACKOFF_LATER_SECONDS"
+    fi
+  done
+  rm -rf -- "$SHALLOW_SOURCE_DIR"
+  return 1
+}
+
+# runner stage 过来的 depth-1 源包：保留原 commit SHA，只含该 commit 的树。
+# 未 stage 时返回 1（继续尝试下一来源）；已 stage 但校验不过则 fail closed——
+# 包损坏是发布输入的问题，不能悄悄降级成"换个地方再抓一次"。
+stage_source_bundle() {
+  local source_sha="$1"
+
+  [ -n "$SOURCE_BUNDLE" ] || return 1
+  [ -f "$SOURCE_BUNDLE" ] || die "staged source bundle is missing: $SOURCE_BUNDLE"
+  [ "$(sha256sum "$SOURCE_BUNDLE" | cut -d' ' -f1)" = "$SOURCE_BUNDLE_SHA256" ] \
+    || die "staged source bundle sha256 does not match the runner's declaration"
+
+  echo "staged_bundle source_sha=$source_sha"
+  rm -rf -- "$STAGED_SOURCE_DIR"
+  git clone --quiet "$SOURCE_BUNDLE" "$STAGED_SOURCE_DIR" \
+    || die "cannot clone the staged source bundle"
+  [ "$(git -C "$STAGED_SOURCE_DIR" rev-parse HEAD)" = "$source_sha" ] \
+    || die "staged source bundle does not carry the exact source SHA"
+  # depth-1 包没有父提交：标成 shallow 边界，epoch/路径读取才不会去追不存在的 parent。
+  printf '%s\n' "$source_sha" > "$STAGED_SOURCE_DIR/.git/shallow"
+  git -C "$STAGED_SOURCE_DIR" show -s --format=%ct "$source_sha" >/dev/null \
+    || die "staged source bundle cannot resolve the commit epoch"
+  echo "staged_bundle result=PASS source_sha=$source_sha"
+  return 0
+}
+
+# 源物化：国内镜像优先（稳定态只取增量），其次是 runner staged 的 depth-1 源包，
+# 最后才尝试直连 GitHub 按 exact SHA 浅取；三者都拿不到才 fail closed。每条路径都把
+# SOURCE_DIR 指向"含该 commit 的仓库"，并把实际使用的传输写进日志（发布证据里能区分）。
+materialize_source() {
+  local source_sha="$1"
+
+  if wait_for_gitee_sha "$source_sha"; then
+    SOURCE_DIR="$REPO_DIR"
+    echo "source_transport=gitee-mirror"
+    return 0
+  fi
+
+  echo "source_transport=gitee-lagging; trying the staged source bundle"
+  if stage_source_bundle "$source_sha"; then
+    SOURCE_DIR="$STAGED_SOURCE_DIR"
+    echo "source_transport=staged-bundle"
+    return 0
+  fi
+
+  echo "source_transport=staged-bundle-absent; exact-SHA fetch fallback engaged"
+  fetch_exact_sha_shallow "$source_sha" \
+    || die "source SHA is not on Gitee main, not in a staged bundle, and not fetchable from GitHub"
+  SOURCE_DIR="$SHALLOW_SOURCE_DIR"
+  echo "source_transport=github-exact-sha"
 }
 
 docker_image_digest() {
@@ -301,7 +405,7 @@ verify_frontend_image() {
   # 链 = source.json ref/release → ZIP fingerprint → common/assets/wasm/<ref>/ →
   # dist/wasm/<ref>/ → 镜像。镜像里必须正好是这个 commit 的产物。
   local agent_ref agent_release
-  read -r agent_ref agent_release < <(git -C "$REPO_DIR" show "$source_sha:deploy/agent/source.json" \
+  read -r agent_ref agent_release < <(git -C "$SOURCE_DIR" show "$source_sha:deploy/agent/source.json" \
     | python3 -c '
 import json, sys
 data = json.load(sys.stdin)
@@ -314,7 +418,7 @@ print(data.get("ref", ""), (data.get("artifact") or {}).get("release", ""))
   # 这条把"确定性构建身份"从脚本传参升级为**产物级断言**：wall-clock 回落、参数丢失、或有人
   # 改回 new Date() 都会在这里被拦住（Docker 上下文无 .git，时间只能由本脚本给）。
   local source_epoch expected_build_time
-  source_epoch="$(source_commit_epoch "$REPO_DIR" "$source_sha")"
+  source_epoch="$(source_commit_epoch "$SOURCE_DIR" "$source_sha")"
   expected_build_time="$(SOURCE_EPOCH="$source_epoch" python3 -c '
 import datetime, os
 epoch = int(os.environ["SOURCE_EPOCH"])
@@ -433,9 +537,10 @@ build_publish() {
   fi
   cleanup_build_leftovers() {
     local worktree="$1" sponsor_tmp="$2"
-    git -C "$REPO_DIR" worktree remove --force "$worktree" >/dev/null 2>&1 || true
+    git -C "$SOURCE_DIR" worktree remove --force "$worktree" >/dev/null 2>&1 || true
     rm -rf -- "$worktree"
     [ -z "$sponsor_tmp" ] || rm -rf -- "$sponsor_tmp"
+    rm -rf -- "$SHALLOW_SOURCE_DIR" "$STAGED_SOURCE_DIR"
   }
   # Capture quoted paths now: EXIT runs after build_publish's locals leave scope.
   trap "$(printf 'cleanup_build_leftovers %q %q' "$worktree" "$sponsor_tmp")" EXIT
@@ -444,7 +549,7 @@ build_publish() {
     unpack_sponsor_bundle "$sponsor_bundle" "$sponsor_tmp"
   fi
 
-  wait_for_gitee_sha "$source_sha"
+  materialize_source "$source_sha"
 
   lookup_status=0
   digest="$(lookup_remote_digest "$remote_image")" || lookup_status=$?
@@ -459,7 +564,7 @@ build_publish() {
     10)
       reused=false
       rm -rf -- "$worktree"
-      git -C "$REPO_DIR" worktree add --force --detach "$worktree" "$source_sha" >/dev/null
+      git -C "$SOURCE_DIR" worktree add --force --detach "$worktree" "$source_sha" >/dev/null
 
       [ "$(git -C "$worktree" rev-parse HEAD)" = "$source_sha" ] || die "detached worktree SHA mismatch"
       verify_agent_archive "$worktree" "$agent_archive"
@@ -470,7 +575,7 @@ build_publish() {
         cp -R "$sponsor_tmp/." "$worktree/common/assets/"
       fi
 
-      source_epoch="$(source_commit_epoch "$REPO_DIR" "$source_sha")"
+      source_epoch="$(source_commit_epoch "$SOURCE_DIR" "$source_sha")"
       timeout 1800 docker build \
         --file "$worktree/docker/Dockerfile.frontend" \
         --build-arg "BUILD_COMMIT=$source_sha" \

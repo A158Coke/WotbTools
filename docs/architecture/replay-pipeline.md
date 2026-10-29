@@ -112,6 +112,42 @@ WotbTools 不把 interaction / segment 展开成额外“射击”，也不在�
 （如 Kranvagn）整场 `reload_effective` 为空。这属 **producer 语义**，消费方不得按车型/burst size
 推断或用 shots 反推——需要时在上游修并发新 Release。
 
+## 匿名 Battle Data Collector
+
+数据批次 `parseReplays.ts` 与名人堂 `submissionFacts.ts:replayFactsJson` 在主事实构造成功后，
+同步触发 `replay-local/battle-data/collector.ts` 的 best-effort 旁路。主流程不等待采集，
+Collector 的异常、超时、重复提交和断网均不改变主解析结果或用户错误状态。
+账号验证、AI 与其它底层 parser 调用不隐式触发采集。
+
+只采集 `arenaBonusType=1/7` 的 Random/Rating，且必须恰好两队各七辆。seed 只保留 arenaId、
+模式、地图、版本、胜方、队伍车型及 authorTeam；不传整个解析对象。独立 Dedicated Worker
+接收原始 `Blob`（`File` 是其子类），自行读字节并调用 pinned Agent 的
+`parseAuthorInitialPosition`，主 parser Worker 与 ArrayBuffer ownership 不变。
+主机只保留一项执行中、两项等待中；单文件最多 32 MiB、等待文件总和最多 64 MiB，超限直接丢弃。
+任务最多 15 秒、空闲 15 秒后释放 Worker。crash、messageerror、离线和 pagehide 丢弃活动及排队任务；
+新文件可重新创建 Worker，旧任务不重试、不恢复。
+
+物理出生方向只读 [canonical 地图语义](../reference/maps.md)，通过 `map_key`/`mapCodes` 查找，
+不能使用 numeric mapId 对照语义文件名前缀，也不能把 replay Team 编号等同场景出生组。
+只接受 clock 在 0–1 秒、距 exact scene 出生点不超过 2 米且唯一命中某物理侧的观测，
+按 authorTeam 赋给对应 replay team，对侧取互补方向。该门限是保守接收策略，非全地图误差保证。
+Rift 有真实 Random 回放正例，马利诺夫卡有非采集模式真实回放位置正例；已审校方向的其它地图可按同一规则采集，缺 reviewed physicalSide 的地图跳过。合成横向测试不代表真实横向地图已验证。
+
+Worker 使用 `api/battle-data.ts` 发送 `POST /api/battle-data`，wire SSOT 为 OpenAPI 的
+`BattleDataRequest`，发送前执行生成的 runtime validator。请求不带 Authorization/Cookie，
+`credentials=omit`、禁止重定向、5 秒超时。201/204 都是正常终态；其它结果也静默丢弃。
+dispatch 和发送前检查在线状态；无 IndexedDB/localStorage/Cache API 队列、联网补发或 retry。
+
+后端 CLOSED `battledata` 模块不解析 replay、不读取身份。先严格验证字段与队伍/出生侧不变量，
+再以 `UNIQUE(arena_id)` 和 PostgreSQL `ON CONFLICT DO NOTHING RETURNING id` 仲裁。
+首个有效事务写入一条 `battle_data_battle` 与十四条 `battle_data_vehicle`，后续同 arena 返回 204，
+不合并、覆盖或升级；非法提交不占 arenaId，子表或提交失败全部回滚。同车型可重复，winnerTeam=0 保留为平局。
+匿名输入只经过结构和领域校验，不能证明战斗真实性，也不能防止伪造客户端抢先占用 arenaId。
+
+只持久化 relational representation；不收集玩家账号、昵称、clan、录像者身份、文件名、原始回放或个人战绩，
+不保存原始 JSON。dataset 默认长期保留；开关、配额与显式删除路径见
+[运维手册](../operations/observability-runbook.md#battle-data-collector)。
+
 ## 缺字段怎么办
 
 后端或前端需要的回放字段，一律向上游 Rust Core 要（直接改上游、发版、升级 `deploy/agent/source.json`），

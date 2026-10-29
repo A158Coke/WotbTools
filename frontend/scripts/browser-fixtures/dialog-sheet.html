@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark" data-ui-profile="showcase">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"><title>Dialog and sheet reachability</title></head>
+<body>
+<div id="app"></div>
+<script type="module">
+import { createApp, h, ref } from 'vue'
+import { createI18n } from 'vue-i18n'
+import '../../src/styles/tokens/scale.css'
+import '../../src/styles/tokens/color.css'
+import '../../src/styles/tokens.css'
+import '../../src/styles/showcase.css'
+import '../../src/styles/showcase-workspaces.css'
+import '../../src/styles/showcase-pages.css'
+import '../../src/styles/showcase-rankings.css'
+import '../../src/styles/showcase-cohesion.css'
+import '../../src/styles/showcase-regressions.css'
+import '../../src/styles/app-shell.css'
+import '../../src/styles/playback-overlap-ux.css'
+import '../../src/styles/playback-shared.css'
+import '../../src/styles/playback-mobile.css'
+import '../../src/styles/playback-workspace.css'
+import '../../src/styles/classic-profile.css'
+import { messages } from '../../src/locales/messages.js'
+import AppDialog from '../../src/components/AppDialog.vue'
+import AppSheet from '../../src/components/AppSheet.vue'
+import AppButton from '../../src/components/AppButton.vue'
+
+const profile = new URLSearchParams(location.search).get('profile') === 'classic' ? 'classic' : 'showcase'
+document.documentElement.dataset.uiProfile = profile
+document.documentElement.dataset.theme = profile === 'classic' ? 'light' : 'dark'
+createApp({ setup() {
+  const dialog = ref(false), nested = ref(false), sheet = ref(false), visibleTitle = ref(false), selected = ref('')
+  const button = (id, label, onClick) => h(AppButton, { 'data-testid': id, onClick }, () => label)
+  const rows = prefix => Array.from({ length: 20 }, (_, i) => h('p', { key: i },
+    button(`${prefix}-${i}`, `选项 ${i + 1}`, () => { selected.value = `${prefix}-${i}` })))
+  return () => [
+    h('header', { style: { position: 'fixed', top: '0', left: '0', right: '0', padding: 'env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left)', zIndex: 'var(--z-header)', background: 'var(--color-surface-2)' } }, [
+      button('open-dialog', '打开对话框', () => { dialog.value = true }),
+      button('open-sheet-hidden', '打开内置标题面板', () => { visibleTitle.value = false; sheet.value = true }),
+      button('open-sheet-visible', '打开标题面板', () => { visibleTitle.value = true; sheet.value = true }),
+    ]),
+    h('footer', { 'data-testid': 'persistent-footer', style: { position: 'fixed', bottom: '0', left: '0', right: '0', height: '44px', zIndex: 'var(--z-header)', background: 'var(--color-surface-2)' } }, '底部导航'),
+    h('output', { 'data-testid': 'overlay-selected' }, selected.value),
+    h(AppDialog, { open: dialog.value, title: '测试对话框', 'data-testid': 'outer-dialog', onClose: () => { dialog.value = false } }, {
+      default: () => [button('open-nested-dialog', '打开嵌套对话框', () => { nested.value = true }), ...rows('dialog-row'),
+        h(AppDialog, { open: nested.value, title: '嵌套对话框', 'data-testid': 'nested-dialog', onClose: () => { nested.value = false } }, {
+          default: () => button('nested-select', '选择嵌套内容', () => { selected.value = 'nested'; nested.value = false }),
+        })],
+      actions: () => button('dialog-done', '完成', () => { dialog.value = false }),
+    }),
+    h(AppSheet, { open: sheet.value, title: '筛选面板', visibleTitle: visibleTitle.value, 'data-testid': 'test-sheet', onClose: () => { sheet.value = false } }, {
+      default: () => [h('div', { style: { display: 'flex', justifyContent: 'flex-end' } },
+        button('sheet-done', '完成', () => { sheet.value = false })), ...rows('sheet-row')],
+    }),
+  ]
+}}).use(createI18n({ legacy: false, locale: 'zh', messages })).mount('#app')
+</script>
+</body>
+</html>

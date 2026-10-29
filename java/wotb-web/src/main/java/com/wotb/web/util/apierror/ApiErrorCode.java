@@ -9,6 +9,8 @@ public enum ApiErrorCode {
     INVALID_ARGUMENT(HttpStatus.BAD_REQUEST, false),
     MISSING_PARAM(HttpStatus.BAD_REQUEST, false),
     INVALID_REQUEST(HttpStatus.BAD_REQUEST, false),
+    RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, false),
+    SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, true),
     FILE_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, false),
     UNSUPPORTED_MEDIA_TYPE(HttpStatus.UNSUPPORTED_MEDIA_TYPE, false),
     METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, false),

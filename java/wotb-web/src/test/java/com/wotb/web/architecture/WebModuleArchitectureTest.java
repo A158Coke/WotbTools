@@ -28,6 +28,7 @@ class WebModuleArchitectureTest {
         final ApplicationModules modules = ApplicationModules.of(WotbWebApplication.class);
         final Map<String, String> representativeTypes = Map.ofEntries(
                 Map.entry("admin", "admin.controller.AdminUserController"),
+                Map.entry("battledata", "battledata.service.BattleDataService"),
                 Map.entry("creator", "creator.controller.RecommendationController"),
                 Map.entry("hof", "hof.controller.HallOfFameController"),
                 Map.entry("hundred", "hundred.controller.HundredBattleController"),

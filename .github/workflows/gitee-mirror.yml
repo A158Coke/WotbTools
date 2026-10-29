@@ -1,0 +1,62 @@
+name: Gitee Mirror
+
+# 国内镜像，**不属于任何发布 workflow**。Frontend Replica 只在 `Frontend` run
+# completed + success 后更新 TX2；镜像若留在发布 workflow 里，这一个长任务（最长
+# 180 分钟）就会让 TX1 已上线的新版本与 TX2 的旧版本在 Caddy 2:8 双端长时间混服，
+# 被新 push 取消的 run 更不会触发 replica。因此镜像独立成 one-owner workflow：
+# 它怎么慢都不影响 build/deploy/replica 的完成时序。
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mirror_gitee:
+    name: Mirror exact GitHub source to Gitee
+    concurrency:
+      # 与 asset-origin.yml 的镜像 job 共用同一组：同一次 source transport 不能并发写
+      # Gitee（all-branch --prune 与 asset-origin 指针分支的先后顺序需要串行）。
+      group: production-gitee-mirror
+      cancel-in-progress: false
+      queue: max
+    runs-on: ubuntu-latest
+    # 历史重写后首次全量推送要上传整张新 commit 图（约 300MB），且 hub-mirror 的
+    # 每条 Git 命令 kill 后重试都从零开始，所以单次命令预算必须够（100m）、job 也要
+    # 留出这次尝试的余量。镜像追不上时 TX builder 按 exact SHA 直取 GitHub，
+    # 发布不依赖它（见 deploy/tx/build-*-from-gitee.sh materialize_source）。
+    # 若长期推不完，运维补救是在国内网络执行一次 `git push --mirror`
+    # （原因与测量见 docs/architecture/TECHNICAL_EVOLUTION.md §25）。
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    steps:
+      - name: Reject non-main invocation
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            push|workflow_dispatch) ;;
+            *) echo "Unsupported mirror event: $EVENT_NAME" >&2; exit 1 ;;
+          esac
+          [ "$EVENT_REF" = refs/heads/main ] || {
+            echo "Gitee production mirror must run from main." >&2
+            exit 1
+          }
+
+      - name: Mirror WotbTools to Gitee
+        uses: Yikun/hub-mirror-action@ec47170fa9d126a4bee5a1ab9359845bb1395248
+        with:
+          src: github/A158Coke
+          dst: gitee/A158Coke
+          dst_key: ${{ secrets.GITEE_PRIVATE_KEY }}
+          dst_token: ${{ secrets.GITEE_TOKEN }}
+          static_list: WotbTools
+          account_type: user
+          force_update: true
+          timeout: 100m

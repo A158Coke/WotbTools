@@ -6,12 +6,15 @@
 import { parseAgentResultFromBytes } from '../api/agent-replay-facets.js'
 import { ApiError } from '../utils/http.js'
 import { toBattleFacts } from './battleFacts.js'
+import { tryCollect } from './battle-data/collector.js'
 
 /** 解析失败一律映射为稳定的 INVALID_REPLAY_FILE（沿用服务端旧错误码与文案） */
 export async function replayFactsJson(file: Blob): Promise<string> {
   try {
     const result = await parseAgentResultFromBytes(new Uint8Array(await file.arrayBuffer()))
-    return JSON.stringify(toBattleFacts(result))
+    const json = JSON.stringify(toBattleFacts(result))
+    tryCollect(file, result)
+    return json
   } catch (error) {
     console.warn('[hof] local replay parse failed', error)
     throw new ApiError({ code: 'INVALID_REPLAY_FILE', status: 400, retryable: false })

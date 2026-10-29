@@ -56,6 +56,7 @@ WotbTools 是 WoT Blitz `.wotbreplay` 回放分析工具集：Java 25 + Spring B
 # Type check：cd frontend && pnpm run typecheck
 # Browser geometry gate（Playback 布局/形态）：cd frontend && pnpm run test:browser-layout
 # Browser interaction gate（Playback / Replay Workspace 交互）：cd frontend && pnpm run test:browser-interaction
+# 代表页面浮层/遮挡/触控可达矩阵：cd frontend && pnpm run test:browser-interaction --occlusion
 # Build（仅当改动涉及 build 范围）：cd frontend && pnpm run build
 # Local Frontend → Production Backend / Keycloak（开发代理，谨慎使用真实数据）
 # cd frontend && pnpm run dev:production-remote
@@ -166,6 +167,7 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 - `creator`：bilibili UP/优秀作品共用五表目录，按类型隔离分类和 UID/BV 标识；统一 recommendations API、服务和事务锁；管理使用 `content-admin`。契约见 [`features/bilibili-creators.md`](features/bilibili-creators.md)。
 - `tournament`：按年份/区服/季赛配置积分规则、截图排名的共享草稿、CSV 整表替换、正式榜单、修正与审计；同域 `Broadcast*` 管理五服联赛直播目录。契约见 [`features/tournament-points.md`](features/tournament-points.md) 与 [`features/league-broadcasts.md`](features/league-broadcasts.md)。
 - `replay`：只剩 `/api/health` 与名人堂共用的 `ReplayCapacityLimiter`。
+- `battledata`：匿名接收最小化 Random/Rating 战斗观察；验证后按 arenaId 首次有效写入，不解析回放、不关联用户。客户端隔离、隐私与数据归属见 [Replay Pipeline](architecture/replay-pipeline.md#匿名-battle-data-collector)，配额与开关见 [运维手册](operations/observability-runbook.md#battle-data-collector)。
 
 ### 客户端 Replay Engine
 
@@ -585,14 +587,30 @@ Frontend 的 TX1/TX2 发布在切换线上文件或容器前，校验实际 Busi
   和 `BUILD_COMMIT`。第二次普通业务代码发布时应确认依赖层复用；生产 exact-SHA / digest
   发布链不变，回滚可恢复旧 Dockerfile 后通过现有流程发布新 SHA。
 - `.github/workflows/business-api.yml`、`frontend.yml`、`keycloak.yml` 与 `ai-service.yml`
-  分别拥有一个应用发布闭环。TX business-api/frontend 先主动 mirror exact GitHub SHA 到 Gitee，
-  再由 TX 从该 SHA 构建并发布 immutable TCR tag（Business API 在 TX1，Frontend 在 TX2），
-  生产只消费输出的 `repo@sha256:<digest>`
+  分别拥有一个应用发布闭环。TX business-api/frontend 先用 exact GitHub SHA 物化源（Gitee 国内
+  镜像优先，镜像落后时按 exact SHA 浅取 GitHub），再由 TX 从该 SHA 构建并发布 immutable TCR tag
+  （Business API 在 TX1，Frontend 在 TX2），生产只消费输出的 `repo@sha256:<digest>`
   （`TX_BUSINESS_API_IMAGE_REF` / `TX_FRONTEND_IMAGE_REF`），禁止 `latest` 回退。
   Keycloak 与 Yecao ai-service 仍保留各自 SHA tag + latest/freshness 契约；Keycloak runtime 后
   继续执行自己的 OpenTofu 与最终验证。各应用的服务级 concurrency 会取消过期 main workflow。
 - `frontend.yml` 的 GitHub runner 只负责 release authority、Gitee mirror、下载校验 pinned Agent
   WASM/可选 Sponsor bundle 与 staging；不在 GitHub 构建 Frontend Docker 镜像或上传 TCR 大镜像。
+  **Gitee mirror 是国内镜像，不是发布前置，且不属于任何发布 workflow**：它由独立 workflow
+  `gitee-mirror.yml` 拥有（`push: main` + `workflow_dispatch`）。`build` 不在同一个 run 里等镜像
+  完成——`Frontend Replica` 只在 `Frontend` run completed + success 后更新 TX2，镜像若留在发布 run
+  里，一个最长 180 分钟的任务就会让 TX1 已上线的新版本与 TX2 旧版本在 Caddy 2:8 双端混服，被新
+  push 取消的 run 更不会触发 replica。mirror job 上限 180 分钟，hub-mirror-action 的 `timeout: 100m`
+  是**单次 Git 命令**的预算（且无法中断已启动的 git 子进程）：历史重写后的首次全量推送要上传整张
+  新 commit 图（约 300MB），预算不足时每次重试都从零开始、永远推不完。
+  源物化由 `deploy/tx/build-*-from-gitee.sh` 的 `materialize_source` 负责，按固定顺序取源：
+  ① 在 `GITEE_WAIT_ATTEMPTS` 内等国内镜像给出该 SHA（稳定态只取增量）；② 用 runner 随既有
+  staging 链路送到的 **depth-1 源包**（`Package exact-commit source bundle`，保留原 SHA、
+  不含历史，约 53MB，sha256 由 runner 声明、TX 校验）；③ 才尝试按 exact SHA 从 GitHub 浅取。
+  TX 直连 GitHub 不可靠（实测 `curl 56 Recv failure: Connection timed out`），所以 runner 推送
+  的源包是镜像落后时的确定性来源，抢不到才落到 GitHub。三者都拿不到即 fail closed；实际使用的
+  传输写入日志（`source_transport=gitee-mirror|staged-bundle|github-exact-sha`）。镜像长期落后时
+  由运维在国内网络执行一次性 `git push --mirror` 补齐（原因与测量见
+  `docs/architecture/TECHNICAL_EVOLUTION.md` §25）。
   Frontend 镜像在 **TX2** 构建（TX1 的 1.9 GiB 生产宿主不足以承载当前 `vite build`；
   测量与迁移证据见 `docs/architecture/TECHNICAL_EVOLUTION.md` §24）。
   `deploy/tx/build-frontend-from-gitee.sh` 在 TX2 使用自己的持久 Gitee clone 与 host build lock
@@ -656,8 +674,9 @@ runner → 上海 COS → TX1 → 清华网盘 这条候选链路，现状与判
 Deploy job、固定基础设施的 Tofu/runtime workflows 与 database backup 共用
 `production-maintenance` concurrency（`cancel-in-progress: false`、`queue: max`）。应用 workflow
 自身仍使用 `deploy-<service>` + `cancel-in-progress: true`，因此新 main 可以取消旧应用 workflow；
-不能把 job 队列设置描述为绝不取消应用部署的保证。Business API/Frontend 的 mirror jobs 另共用
-`production-gitee-mirror`，TX build jobs 共用 `tx-production-build`，两者均不取消运行项并最大排队。
+不能把 job 队列设置描述为绝不取消应用部署的保证。Gitee mirror（`gitee-mirror.yml`）与
+asset-origin 的镜像 job 共用 `production-gitee-mirror`，TX build jobs 共用 `tx-production-build`，
+两者均不取消运行项并最大排队。
 TX builders 还共用 host build lock；production mutation 另由各宿主 deploy `flock` 串行化。
 应用 lane 在 mutation 前执行 current-main/freshness 校验，固定基础设施仍使用各自 maintenance 契约。
 TX 人工 mutation 必须通过 `bash /opt/wotb-tx/deploy/with-deploy-lock.sh <command...>`

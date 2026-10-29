@@ -88,7 +88,8 @@ function onUpdateOpen(value: boolean) {
   clip-path: inset(50%);
   white-space: nowrap;
 }
-.sheet-body { min-height: 0; overflow-y: auto; }
+/* overlay scrollbar 不占布局宽度；为右对齐控件留出命中空间，不能只依赖 scrollbar-gutter。 */
+.sheet-body { min-height: 0; overflow-y: auto; padding-inline-end: var(--space-3); }
 
 @keyframes sheet-scrim-in { from { opacity: 0; } }
 /* 只淡入、不位移：命中目标在进场期间不漂移 */

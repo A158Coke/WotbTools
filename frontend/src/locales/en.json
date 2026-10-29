@@ -800,6 +800,8 @@
     "BOOST_ASSIGNMENT_CANCELLED": "Assignment cancelled."
   },
   "api_errors": {
+    "RATE_LIMITED": "Too many requests. Please try again later.",
+    "SERVICE_UNAVAILABLE": "The service is temporarily unavailable.",
     "UNKNOWN_ERROR": "Unknown error",
     "NETWORK_ERROR": "Network connection failed",
     "INVALID_ARGUMENT": "Invalid request",

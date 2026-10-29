@@ -330,22 +330,33 @@ assert set(pr_owner_for_production) == set(owners)
 image_owners = {"business-api", "frontend", "keycloak"}
 queue = {"group": "production-maintenance", "cancel-in-progress": "false", "queue": "max"}
 
-# Business API and Frontend both mirror the same GitHub repository to Gitee and
-# build on the same constrained TX host. Those shared mutation points must stay
-# serialized across the two otherwise-independent owner workflows.
+# Business API and Frontend build on the same constrained TX host, so those shared
+# mutation points stay serialized across the two otherwise-independent owner workflows.
+# The Gitee mirror is NOT one of them: it is owned by `gitee-mirror.yml`, because a
+# release run that also carries a mirror job (up to 180 minutes) finishes late — and
+# `frontend-replica.yml` only rolls TX2 after the `Frontend` run completes successfully,
+# so TX1 would serve the new bundle against a stale TX2 for hours (Caddy splits 2:8),
+# and a run cancelled by the next push would never trigger the replica at all.
 for owner in ("business-api", "frontend"):
     workflow = load(workflow_dir / f"{owner}.yml")
-    assert workflow["jobs"]["mirror_gitee"]["concurrency"] == {
-        "group": "production-gitee-mirror", "cancel-in-progress": "false", "queue": "max",
-    }, owner
-    mirror_step = next(
-        step for step in workflow["jobs"]["mirror_gitee"]["steps"]
-        if step.get("name") == "Mirror WotbTools to Gitee"
-    )
-    assert mirror_step["with"]["force_update"] == "true", owner
+    assert "mirror_gitee" not in workflow["jobs"], owner
     assert workflow["jobs"]["build"]["concurrency"] == {
         "group": "tx-production-build", "cancel-in-progress": "false", "queue": "max",
     }, owner
+
+mirror_workflow = load(workflow_dir / "gitee-mirror.yml")
+mirror_job = mirror_workflow["jobs"]["mirror_gitee"]
+assert mirror_job["concurrency"] == {
+    "group": "production-gitee-mirror", "cancel-in-progress": "false", "queue": "max",
+}, "mirror must stay serialized with the asset-origin transport push"
+mirror_step = next(
+    step for step in mirror_job["steps"]
+    if step.get("name") == "Mirror WotbTools to Gitee"
+)
+assert mirror_step["with"]["force_update"] == "true"
+# 历史重写后的首次全量推送约 300MB，单次 Git 命令预算不足会让每次重试都从零开始。
+assert mirror_step["with"]["timeout"] == "100m", mirror_step["with"]["timeout"]
+assert mirror_job["timeout-minutes"] == "180", mirror_job["timeout-minutes"]
 
 # Release identity must not cross the GitHub job-output boundary. GitHub may
 # redact arbitrary SHA/digest values when they happen to match a configured secret,
@@ -355,6 +366,16 @@ for owner in ("business-api", "frontend"):
     workflow = load(workflow_dir / f"{owner}.yml")
     assert "outputs" not in workflow["jobs"]["build"], owner
     assert "needs.build.outputs" not in json.dumps(workflow, ensure_ascii=False), owner
+
+# 源包是昂贵工作（clone + bundle 整份源码），必须排在新鲜度闸门之后：stale push 或
+# 无效 manual dispatch 应在打包前就被拒绝，而不是先付一次全量打包再失败。
+for owner in ("business-api", "frontend"):
+    step_names = [
+        step.get("name", "") for step in load(workflow_dir / f"{owner}.yml")["jobs"]["build"]["steps"]
+    ]
+    freeze = next(i for i, name in enumerate(step_names) if name.startswith("Freeze current main"))
+    package = step_names.index("Package exact-commit source bundle")
+    assert freeze < package, f"{owner}: freshness gate must precede source bundle packaging"
 
 frontend_workflow = load(workflow_dir / "frontend.yml")
 assert frontend_workflow["env"]["ASSET_BASE_URL"] == "https://assets.wotbtools.com"
