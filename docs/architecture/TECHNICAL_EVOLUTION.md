@@ -630,10 +630,14 @@ TX2 的发行版 Docker CLI 没有 buildx 插件，构建脚本只在远端 dige
 推送回到几 MB 增量，180 分钟与 `100m` 都不会被用到。
 
 重写的另一处 blast radius（同一提交修复）：`deploy/test-flyway-immutability.sh` 的"已批准 V18
-历史恢复"用例硬编码 base commit `8d94a24c`，该 commit 现在只经由旧 android 发布标签可达；
-`ci-deployment.yml` 的 checkout 默认不取 tags，于是这个用例在重写后首次运行时解析不到 base
-commit（`Flyway immutability guard cannot resolve base commit`）。checkout 因此显式
-`fetch-tags: true`——用例校验的是真实的生产恢复记录，不该改成任意当前 commit。
+历史恢复"用例原本以真实仓库的 `8d94a24c` 为 base，而重写时发布标签被重新指向新 commit 图，这个
+commit 在远端**已不可达**（远端 `android-v1.0.0` 的目标不包含它；只有旧的本地克隆还留着老标签
+对象），因此任何 checkout——即使把 tags 全取回来——都解析不到它，
+`Flyway immutability guard cannot resolve base commit` 必然失败。修法不是恢复历史，而是让用例
+自持：pre-restore 字节放进 hash-pinned fixture
+（`deploy/fixtures/flyway/V18__create_hundred_battle_submission.pre_restore.sql`，hash 必须等于
+guard 允许名单里的 drifted blob），在临时仓库里造出 base=drifted / HEAD=historical 的一对；
+同时仍然断言真实仓库的 V18 就是权威历史 blob——生产记录没有被改写，只是不再依赖已消失的 commit。
 
 ## 已退役 / 过渡架构
 

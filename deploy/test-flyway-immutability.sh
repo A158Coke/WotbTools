@@ -41,9 +41,40 @@ expect_fail() {
   grep -q "$expected" <<<"$output" || fail "$label missing '$expected': $output"
 }
 
-# The production hotfix uses the one explicitly approved historical restore pair.
-(cd "$ROOT" && bash "$GUARD" 8d94a24c >/dev/null) \
-  || fail "approved V18 historical restore did not pass"
+# The production hotfix uses the one explicitly approved historical restore pair. It is
+# reproduced hermetically: the pre-restore bytes are a hash-pinned fixture, because the
+# commit they came from (`8d94a24c`) is no longer reachable on the remote after the history
+# rewrite (release tags were re-pointed at the new commit graph), so no checkout — not even
+# a full tag fetch — can resolve it. The real record is still asserted: the shipped V18 must
+# be the authoritative historical blob, and the fixture must still be the drifted blob.
+readonly V18_REL_PATH="$MIGRATION_DIR/V18__create_hundred_battle_submission.sql"
+readonly V18_PRE_RESTORE_REL="deploy/fixtures/flyway/V18__create_hundred_battle_submission.pre_restore.sql"
+readonly V18_DRIFTED_BLOB="212635ebf5c04198476af52f4913dbfd2a9f0e4e"
+readonly V18_HISTORICAL_BLOB="a7941f0d2e4c545043e7b38f40c8e0cd0837ba6b"
+
+[ "$(git -C "$ROOT" rev-parse "HEAD:$V18_REL_PATH")" = "$V18_HISTORICAL_BLOB" ] \
+  || fail "shipped V18 is not the authoritative historical blob ($V18_HISTORICAL_BLOB)"
+[ "$(git -C "$ROOT" rev-parse "HEAD:$V18_PRE_RESTORE_REL")" = "$V18_DRIFTED_BLOB" ] \
+  || fail "pre-restore fixture is not the drifted blob ($V18_DRIFTED_BLOB)"
+
+rm -rf "$REPO"
+mkdir -p "$REPO/$MIGRATION_DIR"
+git -C "$REPO" init -q
+git -C "$REPO" config user.email ci@example.invalid
+git -C "$REPO" config user.name ci
+cp "$ROOT/$V18_PRE_RESTORE_REL" "$REPO/$V18_REL_PATH"
+git -C "$REPO" add .
+git -C "$REPO" commit -qm drifted
+BASE="$(git -C "$REPO" rev-parse HEAD)"
+[ "$(git -C "$REPO" rev-parse "HEAD:$V18_REL_PATH")" = "$V18_DRIFTED_BLOB" ] \
+  || fail "restore fixture base is not the drifted blob"
+cp "$ROOT/$V18_REL_PATH" "$REPO/$V18_REL_PATH"
+git -C "$REPO" add .
+git -C "$REPO" commit -qm restored
+restore_output="$(cd "$REPO" && bash "$GUARD" "$BASE" 2>&1)" \
+  || fail "approved V18 historical restore did not pass: $restore_output"
+grep -q "one-time exception" <<<"$restore_output" \
+  || fail "approved V18 historical restore missing allowlist token: $restore_output"
 
 init_fixture
 printf 'create table v18_fixture (id bigint primary key, changed boolean);\n' \
