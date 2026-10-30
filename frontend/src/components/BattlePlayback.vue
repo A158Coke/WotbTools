@@ -1697,22 +1697,21 @@ const markerPrefsForMap = computed(() => ({
   showStatus: !uiHidden.value && markerPrefs.showStatus,
 }))
 
-// 车辆在队伍内的着色序号缓存：花名册与队伍构成整场不变（vehicleStates 每帧重建但
-// st.vehicle 引用同一批稳定对象），序号只算一次；颜色列表仍逐调用读取（调色板可变）。
-// 逐调用 map+filter+indexOf 在炮线着色路径是 O(车数×炮线数)/帧 的纯浪费。
+// 车辆在队伍内的着色序号缓存：从**完整花名册**（hpVehicles，时间无关且对象稳定）派生
+// 队伍内序号——vehicleStates 是时间相关的渲染子集（车辆首观测前缺席），从中缓存会把
+// 部分序号永久固化（Codex review 2026-10-31：seek 历史不同 → 颜色不同，且多车共享
+// 同色）。颜色列表仍逐调用读取（调色板可变）。
 const vehicleColorIndexCache = new WeakMap()
 
 function vehicleColor(vehicle) {
   let index = vehicleColorIndexCache.get(vehicle)
   if (index === undefined) {
-    const teamVehicles = vehicleStates.value
-      .map(st => st.vehicle)
-      .filter(v => v.team === vehicle.team)
+    const teamVehicles = hpVehicles.value.filter(v => v.team === vehicle.team)
     if (teamVehicles.length > 0) {
       index = Math.max(0, teamVehicles.indexOf(vehicle))
       vehicleColorIndexCache.set(vehicle, index)
     } else {
-      index = 0 // 状态尚未构建（空 roster）：退回首色且不缓存，避免毒化序号
+      index = 0 // 花名册尚未构建：退回首色且不缓存，避免毒化序号
     }
   }
   const list = vehicle.friendly === true ? friendlyColors.value : enemyColors.value
