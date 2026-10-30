@@ -10,7 +10,8 @@ name: Release / Android
 #              ⇒ major / bridge cutover 的 ANDROID_MIN_SUPPORTED_VERSION_CODE 必须在**合并之前**设好：
 #              floor 未到位时这个 preflight 会 fail-closed（修好变量后幂等重跑是恢复路径，不是正常流程）。
 #              major cutover：设 floor → 合并 → 本 stage 与随 PR 带来的基础设施 workflow（如 caddy.yml）各自从 main
-#              运行 → 两者都成功 → 自动 guarded publish。
+#              运行；stage 成功即自动请求 guarded publish，**不等待**基础设施 workflow —— infra 未就绪时
+#              publish 的 runtime readiness fail-closed（不写 version.json），之后对同一候选做 recovery publish。
 #   publish —— stage 成功后由 Android Auto Publish 自动续跑（mode=publish, version=X, auto_publish=true）：
 #              候选身份由**显式版本 X**决定（X 的 immutable tag target = staged 源码），
 #              不重建 APK（复用 staged 的 immutable APK），校验 staged 身份（版本/SHA/tag/URL/

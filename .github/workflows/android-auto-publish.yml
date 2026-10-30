@@ -13,6 +13,9 @@ name: Android Auto Publish
 #     不会让唯一已 staged 的候选失去自动发布权。
 #   - 被更新的 Android candidate 取代时，publish_gate 安全 skip（不写 version.json），
 #     更新候选自己的 stage 成功后拥有自动发布权。
+#   - 它只观察 Release / Android 的 stage 结论，**不等待**、也不查询 caddy.yml 等其他基础设施 workflow：
+#     基础设施就绪由 publish 的 runtime readiness guards 兜底（fail-closed），之后对同一 immutable
+#     candidate 做 recovery publish。
 #
 # 现有 publish job 仍然是 production version.json 的唯一写入者，并保留全部 staged-identity /
 # runtime / CORS / minSupported 守卫。手动 workflow_dispatch(mode=publish, version=X) 仍是

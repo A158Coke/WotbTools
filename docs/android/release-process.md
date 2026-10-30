@@ -94,7 +94,7 @@ PR B 的初始候选版本是 **2.0.1 / 2000001**。2026-10-03 的只读审计�
   **注意：不是只有 publish 之后才锁版本**——stage 阶段的 tag / 任一台 origin 上的 APK / staging evidence 同样是 immutable identity。只有这些条件**全部尚未成立**时，同一 release PR 的 pre-release fix 才保留原版本——PR 合并前（还没有 stage）通常不存在任何 immutable identity，review 修复因此不需要 bump。
   清华云盘副本（distribution replica）**不是** identity authority：它是可 `replace=1` 覆盖的分发副本 + origin 冷启动源，上传并核验副本本身不消耗版本（判定源划分见下文「Origin 与分发副本是两个身份」）。但只要**任意一台** origin 已从该副本 seed 并 no-clobber 落位成功，版本即锁定（上列 ②）。
 - **锁定后哪些修改必须换版本**：会改变已锁定 Android candidate identity 的修改——Android Native 代码与 `android/app/**`、Android 构建输入（Gradle 配置 / 依赖版本 / 工具链）、进入 APK 的 bundled frontend / WASM / 资产与 Android 专用生成 bundle、Native Bridge contract 与 `bridgeVersion`、以及 tag target 中任何会改变 staged APK 字节或身份的 release input。与已 staged Android artifact 无关的修改——docs-only、Caddy-only、observability-only、无关后端 / 基础设施修复、不改变 staged 字节与身份的 workflow / policy 修复——可以让 main 前进，**本身不消耗新的 Android 版本**（与 Android 无关的 main 前进本身不消耗新的 Android 版本）。已完整 stage 的候选照常按自己的 tag target 发布，并且仍要通过 publish 的 ancestry / 当前 policy / bridge compatibility / minSupported / CORS 等就绪探测 / staged identity 守卫，没有跳过守卫的例外。
-  - 允许：候选 X stage 成功 → 仅修改不进入 APK 的部署配置（例如 `deploy/tx/Caddyfile`）→ main 前进 → 部署成功 → publish 已 staged 的 X。
+  - 允许：候选 X stage 成功 → 仅修改不进入 APK 的部署配置（例如 `deploy/tx/Caddyfile`）→ main 前进 → 部署成功 → publish 已 staged 的 X。自动续跑不等待这次部署：若它在部署完成前运行并因 readiness fail-closed，部署成功后用 `workflow_dispatch(mode=publish, version=X)` 对同一候选做 recovery。
   - 不允许：候选 X stage 成功 → 修改 `GeckoWebRuntime` / bundled frontend / Bridge contract → 仍复用 X。这种情况必须使用更高版本。
 - **「版本已锁定」不等于「stage 已完成」**：
   - *version identity consumed*：上列四项**任一**出现即成立；
@@ -127,7 +127,7 @@ PR B 的初始候选版本是 **2.0.1 / 2000001**。2026-10-03 的只读审计�
   - 候选与线上**同 major** ⇒ 默认不得改动门槛（minor/patch 不强制）；用户明确指令的例外见上（3.14.1 / 3014001；3.14.2 / 3014002；3.15.3 / 3015003）。
   - 包含 Native Bridge wire breaking 时，门槛还须满足 publish 现有的 bridge / cutover 守卫（以守卫为准）。
   - 现有 publish 守卫在 bridge 不变时**不会**从历史推导未发布 major 的门槛要求（只校验门槛 ≤ 候选 versionCode），这一步由操作者按本条执行。也可以选择先 publish 每个 major 再发布后续 minor/patch；在没有更严格的 bridge / cutover 要求时两种做法的门槛结果相同。
-- **major 的发布动作（顺序固定）**：① **先把仓库变量 `ANDROID_MIN_SUPPORTED_VERSION_CODE` 设为 `X×1_000_000`** → ② 合并候选 PR → ③ 合并到 main 后由正式 workflow 自动执行：Android 自动 stage，以及该 PR 一并带来的基础设施改动（如 Caddy）→ ④ 等两者**都**成功 → ⑤ `Android Auto Publish` 自动续跑 guarded publish（显式 `version=<候选>`、`auto_publish=true`）→ ⑥ production `version.json` 回读。真机测试不是这一步的审批门：stage 的技术门与 publish 现有守卫才是发布条件，真机冒烟 / 回归按「Rollout 与验证」在 rollout 之后执行。变量必须在合并/stage **之前**设置——stage preflight 本身就跑 `guard_min_supported` / `guard_local_first_cutover` / `guard_bridge_covered`，floor 没到位会 fail-closed，所以它不只是 publish 的前提。随候选 PR 一起改的基础设施**只能**在合并后由 main-only 的正式 workflow 部署（`caddy.yml` 的手动 dispatch 也只接受 `refs/heads/main` 且做 freshness 校验），不要求、也不允许在合并前部署——不要手工 SSH 改生产、不要从 PR 分支复制文件、不要放宽 workflow 门禁。
+- **major 的发布动作（顺序固定）**：① **先把仓库变量 `ANDROID_MIN_SUPPORTED_VERSION_CODE` 设为 `X×1_000_000`** → ② 合并候选 PR → ③ 合并到 main 后由正式 workflow 自动执行：Android 自动 stage，以及该 PR 一并带来的基础设施改动（如 Caddy）→ ④ stage 成功即由 `Android Auto Publish` 自动请求 guarded publish（显式 `version=<候选>`、`auto_publish=true`）；它**不等待**基础设施 workflow → ⑤ publish 的 runtime readiness 是真正的 gate：基础设施未就绪时 fail-closed、不写 `version.json` → ⑥ 基础设施成功后对同一 immutable candidate 做 recovery publish，并回读 production `version.json`。真机测试不是这一步的审批门：stage 的技术门与 publish 现有守卫才是发布条件，真机冒烟 / 回归按「Rollout 与验证」在 rollout 之后执行。变量必须在合并/stage **之前**设置——stage preflight 本身就跑 `guard_min_supported` / `guard_local_first_cutover` / `guard_bridge_covered`，floor 没到位会 fail-closed，所以它不只是 publish 的前提。随候选 PR 一起改的基础设施**只能**在合并后由 main-only 的正式 workflow 部署（`caddy.yml` 的手动 dispatch 也只接受 `refs/heads/main` 且做 freshness 校验），不要求、也不允许在合并前部署——不要手工 SSH 改生产、不要从 PR 分支复制文件、不要放宽 workflow 门禁。
 - **发布说明**：继承门槛的 minor/patch 候选，`Minimum supported version` 行写 `raised to X000000 (X.0.0 floor, inherited from unpublished X.0.0)`。
 
 ## 两阶段发布（stage → publish）
@@ -162,6 +162,7 @@ merge Android version bump
 - **候选新鲜度只看 Version-as-Code**：判定依据是 `android/gradle.properties:wotbVersion`，不是「repo main SHA 是否等于 staged SHA」。只改 docs / 后端 / 基础设施的 main 提交不改变版本号，不产生新的 Android candidate，因此不会让唯一已 staged 的候选失去自动发布权；只有 main 上出现**更高版本**时，旧候选的自动发布才让位给更新候选。自动续跑在 publish 开始执行时重新判定，所以排队期间 main 的变化也会被看到。
 - **调度不变量由 `android-release.yml` 自己保证**：stage 与 publish 共用 `android-release` concurrency group，并设置 `queue: max`。生产 mutation 仍然严格串行（`cancel-in-progress: false`），但 GitHub 默认的单 pending 槽不会再把请求互相挤掉——任一 stage / publish 请求都不会被后到的自动 publish 取消或替换。`android-auto-publish.yml` 只是薄入口，不承担这个不变量。
 - **排队 ≠ 逐个上线**：排队只保证请求不丢失；自动 publish 真正拿到 runner 后才判定一次候选新鲜度，被更新候选取代的旧候选安全 no-op。因此不会把多个历史 Android 版本自动逐个 publish。
+- **与基础设施 workflow 没有顺序协调**：`Android Auto Publish` 只观察 `Release / Android` 的 `stage` 结论，**不等待**、也不查询 `caddy.yml` 等其他 workflow。基础设施未就绪时自动 publish 会因 publish 的 runtime readiness fail-closed（不写 `version.json`），待基础设施 owner workflow 成功后再对同一 immutable candidate 做 recovery publish。readiness probe 未覆盖的基础设施改动同样没有调度层保证：必须以 owner workflow 的成功与验证为准，发布后按真机 / production smoke 兜底。
 - **手动 recovery**：`workflow_dispatch(mode=publish, version=X)` 保持可用，且不受自动发布的最新候选策略限制——它用于自动 dispatch 失败、publish 因瞬时故障失败后对同一 X 幂等续跑，或操作者明确要发布一个已被更新 main 取代的历史 staged candidate。手动入口仍要通过全部 publish 安全守卫，不能绕过或重建 immutable 身份。
 
 ### 构建身份的确定性（stage 重跑 ⇒ 同一 APK）
@@ -260,7 +261,7 @@ publish 的第一步就是按公开 URL 取证据（`https://wotbtools.com/downl
 所有探测只读且有超时，任何失败都阻止写 production version.json：
 
 1. Keycloak `wotbtools-android` public client 与 private-scheme redirect 可用，认证走 PKCE。
-2. `/api/users/profile` 真实 OPTIONS：Origin 为 staging evidence 的 `runtimeOrigin`（3.0 起 `http://127.0.0.1:21653`，2.x 为 appassets），Authorization 等请求头允许，GET/POST/PUT/PATCH/DELETE/OPTIONS 允许；ACAO 必须精确等于该 origin，不能是 wildcard，不启用 credentialed CORS。无 Bearer 的同一路由 GET 必须返回 401 且携带正确 CORS，证明 backend 可达。`deploy/tx/Caddyfile` 同时放行两个 exact origin（`@android` 与 `@androidLoopback`，字段逐一相同，`validate-caddy-config.sh` 对两者做同样校验）；新 origin 的 Caddy 改动必须在 publish 前已部署。
+2. `/api/users/profile` 真实 OPTIONS：Origin 为 staging evidence 的 `runtimeOrigin`（3.0 起 `http://127.0.0.1:21653`，2.x 为 appassets），Authorization 等请求头允许，GET/POST/PUT/PATCH/DELETE/OPTIONS 允许；ACAO 必须精确等于该 origin，不能是 wildcard，不启用 credentialed CORS。无 Bearer 的同一路由 GET 必须返回 401 且携带正确 CORS，证明 backend 可达。`deploy/tx/Caddyfile` 同时放行两个 exact origin（`@android` 与 `@androidLoopback`，字段逐一相同，`validate-caddy-config.sh` 对两者做同样校验）；新 origin 的 Caddy 改动必须在 publish 前已部署（自动续跑不等待该部署；未完成时 CORS readiness 会 fail-closed，之后对同一 immutable candidate 做 recovery publish）。
 3. APK 资产源是**本机路径** `/agent-assets`（bundle identity 钉死，见 `android_contract.py`），由 Native `AgentAssetProxy` 直连对象存储。publish 从已验证的 immutable release tag 中读取候选 APK 对应的 `AgentAssetProxy.kt`，只接受 Alibaba origin `https://assets.wotbtools.com`（新版本）或 legacy COS origin `https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com`（旧 staged APK），再对相应 origin 的 `index.json` 执行 GET 并要求返回 JSON object。这样 main 前进不会让旧 staged APK 错探新 origin。Native 资产请求不受 CORS 约束；gateway `/agent-assets` 只服务仍使用 legacy gateway identity 的旧 APK。详见 [资产源运维说明](../operations/agent-asset-origin.md)。
 4. `ANDROID_MIN_SUPPORTED_VERSION_CODE >= 3015003` 且不超过 `latestVersionCode`；实际生效值由 repository variable 决定。Native Bridge 保持 v3。
 
@@ -276,7 +277,7 @@ Native Bearer runtime 请求头集合为 Authorization、Content-Type、Content-
 
 1. 按变更等级递增 `android/gradle.properties:wotbVersion`（major，或同一未发布 major 之后的 minor/patch 候选；Version-as-Code，普通 PR），先不合并；
 2. **先把变量设为目标门槛值**（`guard_min_supported` 校验 ≤ 新版本 code）——对 bridge / major cutover 这是 **stage prerequisite**：变量仍是旧 major 门槛时，合并触发的自动 stage 会在 `guard_bridge_covered` 上 fail-closed；
-3. 合并 main → 自动 stage（构建/签名/上传/seed/tag/evidence，不写 `version.json`）；若该 PR 同时带有基础设施改动（例如 Caddy），由对应的 main-only workflow 在合并后自动部署，两者都成功后才进入下一步；
+3. 合并 main → 自动 stage（构建/签名/上传/seed/tag/evidence，不写 `version.json`）；若该 PR 同时带有基础设施改动（例如 Caddy），由对应的 main-only workflow 在合并后自动部署。自动续跑**不等待**它：两者并行，publish 的 readiness 会在基础设施未就绪时 fail-closed；
 4. 该 PR 合并触发的自动 stage 成功后，`Android Auto Publish` 自动续跑 `mode=publish, version=<新版本>` 写新 manifest（publish 身份核验不变）；自动 dispatch 失败或需要幂等重跑时，仍用 `workflow_dispatch(mode=publish, version=<新版本>)` 做 recovery。真机测试不再阻塞这一步。
 
 设置变量本身**不动** production `version.json`，因此**不会立刻**强制线上旧客户端更新——真正影响客户端的 commit point 仍是 publish 最后写入 `version.json`。但变量设为 `X×1_000_000` 之后，**不要再 stage / publish 任何低于该门槛的旧 major 候选**；这是有意的 cutover。若顺序搞错导致 stage fail-closed，修好变量后对同一版本幂等重跑即可（恢复路径，不是正常流程）——floor 守卫在 stage preflight 就失败，发生在任何 immutable artifact 之前，版本未被消耗。

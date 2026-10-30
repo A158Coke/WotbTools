@@ -952,6 +952,17 @@ for doc_path in ("docs/android/release-process.md", "docs/DEVELOPER_GUIDE.md",
         assert stale not in doc_text, f"{doc_path} still describes the manual publish gate: {stale}"
 assert "auto_publish=true" in release_doc and "queue: max" in release_doc, \
     "the canonical runbook must document the automatic continuation and the scheduling contract"
+# major / bridge cutover：自动续跑只观察 stage 结论，不得再声称等待基础设施 workflow。
+for infra_path in ("docs/android/release-process.md", "docs/DEVELOPER_GUIDE.md",
+                   ".github/workflows/android-release.yml", ".github/workflows/android-auto-publish.yml"):
+    infra_text = (root / infra_path).read_text(encoding="utf-8")
+    assert "两者都成功" not in infra_text, \
+        f"{infra_path} still claims automatic publish waits for infra workflows"
+assert "不等待" in release_doc and "fail-closed" in release_doc, \
+    "the runbook must state the infra-not-ready fail-closed ordering contract"
+guide_doc = (root / "docs/DEVELOPER_GUIDE.md").read_text(encoding="utf-8")
+assert "android-auto-publish.yml" in guide_doc and "auto_publish=true" in guide_doc, \
+    "the developer guide summary must describe the automatic continuation"
 
 # 薄续跑入口只负责请求 publish；是否发布由目标 workflow 在执行时判定。
 auto_jobs = auto["jobs"]
