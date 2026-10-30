@@ -28,7 +28,7 @@
 
 ## 更新教学
 
-教学定义与 `ONBOARDING_RELEASE` 位于 `frontend/src/composables/useOnboarding.ts`（当前 `enabled=true`、`coreEpoch=1`、`contentRevision=4`），所有文案在三语 feature messages 中。组件的稳定 `data-tour` 锚点与 typed public surface 连接真实功能。
+教学定义与 `ONBOARDING_RELEASE` 位于 `frontend/src/composables/useOnboarding.ts`（当前 `enabled=true`、`coreEpoch=1`、`contentRevision=5`），所有文案在三语 feature messages 中。组件的稳定 `data-tour` 锚点与 typed public surface 连接真实功能。
 
 1. 页面移动或换行：保持锚点 id，聚焦位置由真实 DOM 重测。
 2. 更新文案或加入普通功能：同步三语与专项步骤，增加 `contentRevision`，保持 `coreEpoch`。
