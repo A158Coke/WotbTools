@@ -84,6 +84,10 @@ TX `business-api.compose.yml` 转发以下运行配置：
 Docker 构建使用 `--build-arg BATTLE_DATA_COLLECTOR_ENABLED=false`。默认构建启用；
 现有发布流程未传该可选参数时仍采用默认值。新 bundle 在刷新后生效，不新增热配置 API。
 
+站点管理员可以从 Battle Data 页面只读审查当前持久化数据及单场车辆；该页面的数量不含重复、拒绝、
+限流或失败尝试，也不等价于 JVM counters。地图分布受审校与采集条件选择偏差影响，不应用作公开全地图统计。
+无新记录只表示未观察到新的持久化行，不单独证明 Collector 故障；结合下列 metrics 与运行配置排查。
+
 先查看 `battle_data_created_total`、`battle_data_duplicate_total`、`battle_data_rejected_total`、
 `battle_data_rate_limited_total` 与数据库增长。rejected/rate-limited 增加时先核对版本、来源代理和配额，
 不要以丢弃数据为由添加重试或放宽出生方向证据。未知地图跳过是预期行为。

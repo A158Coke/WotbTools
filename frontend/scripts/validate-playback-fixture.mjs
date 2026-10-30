@@ -134,3 +134,16 @@ for (const mutate of [
   if (checkBattle(invalid)) throw new Error('Invalid Collector contract fixture accepted')
 }
 console.log('Battle data request contract fixtures: OK')
+// Admin read shapes: empty database, uint64 arena and bigint id remain lossless strings.
+const adminBattle = { id: '9223372036854775807', arenaId: '18446744073709551615', schemaVersion: 1, arenaBonusType: 1, mapId: 42, mapKey: 'rift', clientVersion: '11.18', winnerTeam: 0, team1Spawn: 'NORTH', team2Spawn: 'SOUTH', receivedAt: '2026-10-29T00:00:00Z' }
+const adminEmpty = { asOf: '2026-10-29T00:00:00Z', totalBattles: 0, last24Hours: 0, last7Days: 0, last30Days: 0, windowBattles: 0, latestReceivedAt: null, distinctMaps: 0, distinctClientVersions: 0, modes: [], winnerTeams: [], schemaVersions: [], daily: [], maps: [], clientVersions: [] }
+for (const [schema, valid, invalid] of [
+  ['BattleDataAdminSummary', adminEmpty, { ...adminEmpty, windowBattles: -1 }],
+  ['BattleDataAdminPage', { items: [adminBattle], nextCursor: null }, { items: [{ ...adminBattle, id: 9223372036854775807 }], nextCursor: null }],
+  ['BattleDataAdminDetail', { battle: adminBattle, vehicles: [{ team: 1, slot: 0, vehicleId: 42 }] }, { battle: adminBattle, vehicles: [{ team: 1, slot: 7, vehicleId: 42 }] }],
+]) {
+  const check = ajv.compile(document.components.schemas[schema])
+  if (!check(valid)) throw new Error(`${schema} valid fixture rejected: ${JSON.stringify(check.errors)}`)
+  if (check(invalid)) throw new Error(`${schema} invalid fixture accepted`)
+}
+console.log('Battle data admin read contract fixtures: OK')

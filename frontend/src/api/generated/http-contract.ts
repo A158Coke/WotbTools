@@ -21,6 +21,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/battle-data/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read persisted battle observation summary (wotbtools-admin only)
+         * @description UTC interval [from,to); unbounded endpoints allowed. Global metrics use the snapshot asOf; distributions use the selected interval capped at asOf.
+         */
+        get: operations["getBattleDataAdminSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/battle-data/battles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read persisted battle observations (wotbtools-admin only)
+         * @description Descending keyset pagination by receivedAt and id; cursor is bound to the filters. Time interval is [from,to).
+         */
+        get: operations["getBattleDataAdminBattles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/battle-data/battles/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read one persisted observation and its vehicle rows (wotbtools-admin only) */
+        get: operations["getBattleDataAdminDetail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/users/profile/records": {
         parameters: {
             query?: never;
@@ -1750,6 +1807,75 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        BattleDataAdminBattle: {
+            id: string;
+            arenaId: string;
+            schemaVersion: number;
+            /** @enum {integer} */
+            arenaBonusType: 1 | 7;
+            mapId: number;
+            mapKey: string;
+            clientVersion: string;
+            /** @enum {integer} */
+            winnerTeam: 0 | 1 | 2;
+            team1Spawn: components["schemas"]["BattleDataSpawn"];
+            team2Spawn: components["schemas"]["BattleDataSpawn"];
+            /** Format: date-time */
+            receivedAt: string;
+        };
+        BattleDataAdminVehicle: {
+            /** @enum {integer} */
+            team: 1 | 2;
+            /** @description Stable child-row identity; not spawn position or player rank. */
+            slot: number;
+            vehicleId: number;
+        };
+        BattleDataAdminDetail: {
+            battle: components["schemas"]["BattleDataAdminBattle"];
+            /** @description Actual stored rows ordered by team and slot. */
+            vehicles: components["schemas"]["BattleDataAdminVehicle"][];
+        };
+        BattleDataAdminPage: {
+            items: components["schemas"]["BattleDataAdminBattle"][];
+            nextCursor: string | null;
+        };
+        BattleDataAdminNumericCount: {
+            key: number;
+            count: number;
+        };
+        BattleDataAdminDailyCount: {
+            /**
+             * Format: date
+             * @description UTC calendar day
+             */
+            key: string;
+            count: number;
+        };
+        BattleDataAdminNamedCount: {
+            key: string;
+            count: number;
+            /** Format: date-time */
+            latestReceivedAt: string;
+        };
+        BattleDataAdminSummary: {
+            /** Format: date-time */
+            asOf: string;
+            totalBattles: number;
+            last24Hours: number;
+            last7Days: number;
+            last30Days: number;
+            windowBattles: number;
+            /** Format: date-time */
+            latestReceivedAt: string | null;
+            distinctMaps: number;
+            distinctClientVersions: number;
+            modes: components["schemas"]["BattleDataAdminNumericCount"][];
+            winnerTeams: components["schemas"]["BattleDataAdminNumericCount"][];
+            schemaVersions: components["schemas"]["BattleDataAdminNumericCount"][];
+            daily: components["schemas"]["BattleDataAdminDailyCount"][];
+            maps: components["schemas"]["BattleDataAdminNamedCount"][];
+            clientVersions: components["schemas"]["BattleDataAdminNamedCount"][];
+        };
         /** @enum {string} */
         BattleDataSpawn: "NORTH" | "SOUTH" | "WEST" | "EAST";
         BattleDataTeam: {
@@ -3530,6 +3656,198 @@ export interface operations {
             };
             /** @description SERVICE_UNAVAILABLE */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getBattleDataAdminSummary: {
+        parameters: {
+            query?: {
+                from?: string;
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Summary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BattleDataAdminSummary"];
+                };
+            };
+            /** @description Invalid interval */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Admin role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getBattleDataAdminBattles: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                size?: number;
+                from?: string;
+                to?: string;
+                arenaId?: string;
+                mapKey?: string;
+                arenaBonusType?: 1 | 7;
+                clientVersion?: string;
+                winnerTeam?: 0 | 1 | 2;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BattleDataAdminPage"];
+                };
+            };
+            /** @description Invalid parameter or cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Admin role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getBattleDataAdminDetail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BattleDataAdminDetail"];
+                };
+            };
+            /** @description Invalid id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Admin role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Battle not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Internal error */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

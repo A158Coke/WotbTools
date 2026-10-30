@@ -144,6 +144,12 @@ dispatch 和发送前检查在线状态；无 IndexedDB/localStorage/Cache API �
 不合并、覆盖或升级；非法提交不占 arenaId，子表或提交失败全部回滚。同车型可重复，winnerTeam=0 保留为平局。
 匿名输入只经过结构和领域校验，不能证明战斗真实性，也不能防止伪造客户端抢先占用 arenaId。
 
+管理员只读审计位于 `?view=admin-battle-data` 与 `/api/admin/battle-data/**`，后端只允许 `wotbtools-admin`。
+三个 GET 从同一 battle / vehicle 表读取 summary、keyset recent list 和实际子行；没有管理写入 API。
+时间窗口采用 UTC `[from,to)`，summary 使用只读一致快照，`received_at` 是服务端接收事务时间而非战斗时间。
+页面同时列出当前 map-semantics 中已审校但无观察的地图和未匹配观察；当前已审校集合会随语义更新，不能反推历史采样覆盖。
+数量是已持久化的 accepted observations，不是请求总数或无偏总体统计；匿名提交仍不能证明真实性。
+
 只持久化 relational representation；不收集玩家账号、昵称、clan、录像者身份、文件名、原始回放或个人战绩，
 不保存原始 JSON。dataset 默认长期保留；开关、配额与显式删除路径见
 [运维手册](../operations/observability-runbook.md#battle-data-collector)。

@@ -22,6 +22,8 @@
     --gutter: 16px;
     /* Minimum readable form field before wrapping a fluid toolbar. */
     --form-field-min: 160px;
+    /* Admin dataset summary: minimum readable metric card width. */
+    --metric-card-min: 180px;
     --border-width: 1px;
     --broadcast-cover-max-h: 320px;
     --broadcast-cover-thumbnail-w: 160px;

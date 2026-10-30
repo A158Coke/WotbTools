@@ -11,7 +11,7 @@ vi.mock('../composables/useAuth.js', async importOriginal => ({
   ...await importOriginal<typeof import('../composables/useAuth.js')>(), useAuth: () => state.auth,
 }))
 vi.mock('./viewRegistry.js', () => ({
-  VIEW_COMPONENTS: { 'tournament-points': { template: '<div data-testid="public-board" />' },
+  VIEW_COMPONENTS: { 'admin-battle-data': { template: '<div data-testid="battle-admin" />' }, 'tournament-points': { template: '<div data-testid="public-board" />' },
     'tournament-points-admin': { template: '<div data-testid="admin-editor" />' },
     'tournament-points-config': { template: '<div data-testid="admin-config" />' },
     'creators-config': { template: '<div data-testid="creator-config" />' },
@@ -26,6 +26,21 @@ beforeEach(() => {
   state.auth.isContentAdmin = computed(() => contentAdminAllowed(state.auth))
 })
 function host() { return mount(ViewHost, { global: { mocks: { $t: (key: string) => key }, stubs: { ReplayCapabilityAuthGate: { template: '<div data-testid="login-gate" />' } } } }) }
+describe('battle data deep-link gate', () => {
+  it('mounts only for an authenticated site admin', async () => {
+    state.route.query.view = 'admin-battle-data'
+    state.auth.isAdmin.value = false
+    const wrapper = host()
+    expect(wrapper.find('[data-testid="login-gate"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="battle-admin"]').exists()).toBe(false)
+    state.auth.authenticated.value = true; await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="admin-required"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="battle-admin"]').exists()).toBe(false)
+    state.auth.isAdmin.value = true; await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="battle-admin"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+})
 describe('tournament deep-link page gates', () => {
   it('distinguishes confirmed unpublished content from an unknown failed probe and preserves retry', async () => {
     state.route.query.view = 'creators'
