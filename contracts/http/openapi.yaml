@@ -3018,6 +3018,52 @@ paths:
       responses:
         '200': { description: Per-id bulk delete result, content: { application/json: { schema: { $ref: '#/components/schemas/BulkDeleteResult' } } } }
         '400': { description: Invalid reason or too many ids, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+  /api/ai-review-feedback:
+    post:
+      operationId: createAiReviewFeedback
+      summary: Submit feedback on a final AI review
+      description: JSON request bodies are limited to 3 MiB; larger or malformed requests return 400.
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateAiReviewFeedbackRequest' } } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/CreateAiReviewFeedbackResponse' } } } }
+        '400': { description: Invalid request, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '401': { description: Authentication required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+  /api/admin/ai-review-feedback:
+    get:
+      operationId: listAdminAiReviewFeedback
+      summary: List AI review feedback for site administrators
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+        - { name: reason, in: query, schema: { $ref: '#/components/schemas/AiReviewFeedbackReason' } }
+      responses:
+        '200': { description: Feedback page, content: { application/json: { schema: { $ref: '#/components/schemas/AdminAiReviewFeedbackPage' } } } }
+        '400': { description: Invalid filter or page, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '401': { description: Authentication required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '403': { description: Administrator required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+  /api/admin/ai-review-feedback/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
+    get:
+      operationId: getAdminAiReviewFeedback
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Feedback detail, content: { application/json: { schema: { $ref: '#/components/schemas/AdminAiReviewFeedbackDetail' } } } }
+        '400': { description: Invalid id, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '401': { description: Authentication required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '403': { description: Administrator required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '404': { description: Feedback not found, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    delete:
+      operationId: deleteAdminAiReviewFeedback
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Deleted }
+        '400': { description: Invalid id, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '401': { description: Authentication required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '403': { description: Administrator required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '404': { description: Feedback not found, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
   /api/admin/users:
     get:
       operationId: searchAdminUsers
@@ -6851,6 +6897,57 @@ components:
         profileCreatedAt: { type: [string, 'null'], format: date-time }
         hasLocalProfile: { type: boolean }
         keycloakUserMissing: { type: boolean }
+    AiReviewFeedbackReason:
+      type: string
+      enum: [FACT_ERROR, BAD_JUDGMENT, MISSED_KEY_POINT, TOO_AI_LIKE, TOO_VAGUE, TOO_VERBOSE, UNHELPFUL_ADVICE, OTHER]
+    CreateAiReviewFeedbackRequest:
+      type: object
+      additionalProperties: false
+      required: [reasonCodes, aiResponseText]
+      properties:
+        reasonCodes: { type: array, maxItems: 8, uniqueItems: true, items: { $ref: '#/components/schemas/AiReviewFeedbackReason' } }
+        feedbackText: { type: [string, 'null'], maxLength: 4000 }
+        aiResponseText: { type: string, minLength: 1, maxLength: 200000 }
+        model: { type: [string, 'null'], maxLength: 128 }
+      description: At least one reason or non-blank feedback text is required; AI response must be non-blank. Text is stored without modification. NUL and unpaired surrogates are invalid because they cannot round-trip through PostgreSQL UTF-8 text.
+    CreateAiReviewFeedbackResponse:
+      type: object
+      additionalProperties: false
+      required: [id, createdAt]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        createdAt: { type: string, format: date-time }
+    AdminAiReviewFeedbackListItem:
+      type: object
+      additionalProperties: false
+      required: [id, reasonCodes, feedbackText, model, createdAt]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        reasonCodes: { type: array, maxItems: 8, uniqueItems: true, items: { $ref: '#/components/schemas/AiReviewFeedbackReason' } }
+        feedbackText: { type: [string, 'null'] }
+        model: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+    AdminAiReviewFeedbackDetail:
+      type: object
+      additionalProperties: false
+      required: [id, reasonCodes, feedbackText, aiResponseText, model, createdAt]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        reasonCodes: { type: array, maxItems: 8, uniqueItems: true, items: { $ref: '#/components/schemas/AiReviewFeedbackReason' } }
+        feedbackText: { type: [string, 'null'] }
+        aiResponseText: { type: string }
+        model: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+    AdminAiReviewFeedbackPage:
+      type: object
+      additionalProperties: false
+      required: [items, page, size, totalItems, totalPages]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AdminAiReviewFeedbackListItem' } }
+        page: { type: integer, minimum: 0 }
+        size: { type: integer, minimum: 1, maximum: 100 }
+        totalItems: { type: integer, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
     AdminUserPage:
       type: object
       additionalProperties: false

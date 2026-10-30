@@ -1344,6 +1344,61 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ai-review-feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit feedback on a final AI review
+         * @description JSON request bodies are limited to 3 MiB; larger or malformed requests return 400.
+         */
+        post: operations["createAiReviewFeedback"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/ai-review-feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List AI review feedback for site administrators */
+        get: operations["listAdminAiReviewFeedback"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/ai-review-feedback/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get: operations["getAdminAiReviewFeedback"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteAdminAiReviewFeedback"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/users": {
         parameters: {
             query?: never;
@@ -3025,6 +3080,44 @@ export interface components {
             profileCreatedAt?: string | null;
             hasLocalProfile: boolean;
             keycloakUserMissing: boolean;
+        };
+        /** @enum {string} */
+        AiReviewFeedbackReason: "FACT_ERROR" | "BAD_JUDGMENT" | "MISSED_KEY_POINT" | "TOO_AI_LIKE" | "TOO_VAGUE" | "TOO_VERBOSE" | "UNHELPFUL_ADVICE" | "OTHER";
+        /** @description At least one reason or non-blank feedback text is required; AI response must be non-blank. Text is stored without modification. NUL and unpaired surrogates are invalid because they cannot round-trip through PostgreSQL UTF-8 text. */
+        CreateAiReviewFeedbackRequest: {
+            reasonCodes: components["schemas"]["AiReviewFeedbackReason"][];
+            feedbackText?: string | null;
+            aiResponseText: string;
+            model?: string | null;
+        };
+        CreateAiReviewFeedbackResponse: {
+            id: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        AdminAiReviewFeedbackListItem: {
+            id: string;
+            reasonCodes: components["schemas"]["AiReviewFeedbackReason"][];
+            feedbackText: string | null;
+            model: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        AdminAiReviewFeedbackDetail: {
+            id: string;
+            reasonCodes: components["schemas"]["AiReviewFeedbackReason"][];
+            feedbackText: string | null;
+            aiResponseText: string;
+            model: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        AdminAiReviewFeedbackPage: {
+            items: components["schemas"]["AdminAiReviewFeedbackListItem"][];
+            page: number;
+            size: number;
+            totalItems: number;
+            totalPages: number;
         };
         AdminUserPage: {
             items: components["schemas"]["AdminUserListItem"][];
@@ -7904,6 +7997,213 @@ export interface operations {
             };
             /** @description Invalid reason or too many ids */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    createAiReviewFeedback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAiReviewFeedbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateAiReviewFeedbackResponse"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    listAdminAiReviewFeedback: {
+        parameters: {
+            query?: {
+                page?: number;
+                size?: number;
+                reason?: components["schemas"]["AiReviewFeedbackReason"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Feedback page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminAiReviewFeedbackPage"];
+                };
+            };
+            /** @description Invalid filter or page */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Administrator required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getAdminAiReviewFeedback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Feedback detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminAiReviewFeedbackDetail"];
+                };
+            };
+            /** @description Invalid id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Administrator required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Feedback not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    deleteAdminAiReviewFeedback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Administrator required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Feedback not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

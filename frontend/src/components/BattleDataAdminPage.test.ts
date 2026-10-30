@@ -48,6 +48,37 @@ describe('BattleDataAdminPage', () => {
     expect(wrapper.text()).not.toContain('18446744073709551615')
     wrapper.unmount()
   })
+  it('cannot load an old cursor while a replacement range refresh is pending', async () => {
+    state.battles.mockResolvedValueOnce({ items: [battle], nextCursor: 'old-cursor' })
+    const wrapper = page(); await flushPromises()
+    let finishSummary!: (value: typeof summary) => void
+    let finishList!: (value: { items: (typeof battle)[]; nextCursor: string | null }) => void
+    const delayedSummary = new Promise<typeof summary>(resolve => { finishSummary = resolve })
+    const delayedList = new Promise<{ items: (typeof battle)[]; nextCursor: string | null }>(resolve => { finishList = resolve })
+    state.summary.mockReturnValueOnce(delayedSummary)
+    state.battles.mockReturnValueOnce(delayedList)
+    await wrapper.find('select').setValue('30d')
+    await wrapper.vm.$nextTick()
+    const loadMore = wrapper.findAll('button').find(button => button.text() === 'battleDataAdmin.loadMore')
+    expect(loadMore).toBeDefined()
+    expect(loadMore!.attributes('disabled')).toBeDefined()
+    await loadMore!.trigger('click'); await flushPromises()
+    expect(state.battles).toHaveBeenCalledTimes(2)
+    expect(state.battles).not.toHaveBeenCalledWith(expect.objectContaining({ cursor: 'old-cursor' }))
+    finishSummary({ ...summary, totalBattles: 4242, windowBattles: 4242, maps: [{ key: 'malinovka', count: 4242, latestReceivedAt: summary.latestReceivedAt }] })
+    finishList({ items: [{ ...battle, id: '2', arenaId: 'new-range', mapKey: 'malinovka', clientVersion: '11.19' }], nextCursor: null })
+    await flushPromises()
+    expect(wrapper.text()).toContain('new-range')
+    expect(wrapper.text()).toContain('4242')
+    expect(wrapper.text()).not.toContain('18446744073709551615')
+    expect(state.battles).toHaveBeenCalledTimes(2)
+    const summaryQuery = state.summary.mock.calls.at(-1)![0] as { from: string; to: string }
+    const listQuery = state.battles.mock.calls.at(-1)![0] as { from: string; to: string }
+    expect(listQuery.from).toBe(summaryQuery.from)
+    expect(listQuery.to).toBe(summaryQuery.to)
+    expect(wrapper.findAll('button').find(button => button.text() === 'battleDataAdmin.loadMore')).toBeUndefined()
+    wrapper.unmount()
+  })
   it('shows zero-count UTC days inside the selected window', async () => {
     const now = vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-29T00:00:00Z'))
     state.summary.mockResolvedValueOnce({ ...summary, daily: [{ key: '2026-10-27', count: 1 }] })

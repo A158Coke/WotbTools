@@ -56,6 +56,7 @@ WotbTools 是 WoT Blitz `.wotbreplay` 回放分析工具集：Java 25 + Spring B
 # Type check：cd frontend && pnpm run typecheck
 # Browser geometry gate（Playback 布局/形态）：cd frontend && pnpm run test:browser-layout
 # Browser interaction gate（Playback / Replay Workspace 交互）：cd frontend && pnpm run test:browser-interaction
+# AI 复盘反馈浏览器门禁：cd frontend && pnpm run test:browser-ai-feedback
 # 代表页面浮层/遮挡/触控可达矩阵：cd frontend && pnpm run test:browser-interaction --occlusion
 # Build（仅当改动涉及 build 范围）：cd frontend && pnpm run build
 # Local Frontend → Production Backend / Keycloak（开发代理，谨慎使用真实数据）
@@ -168,6 +169,7 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 - `tournament`：按年份/区服/季赛配置积分规则、截图排名的共享草稿、CSV 整表替换、正式榜单、修正与审计；同域 `Broadcast*` 管理五服联赛直播目录。契约见 [`features/tournament-points.md`](features/tournament-points.md) 与 [`features/league-broadcasts.md`](features/league-broadcasts.md)。
 - `replay`：只剩 `/api/health` 与名人堂共用的 `ReplayCapacityLimiter`。
 - `battledata`：匿名接收最小化 Random/Rating 战斗观察，站点管理员可只读审计持久化数据；验证后按 arenaId 首次有效写入，不解析回放、不关联用户。客户端隔离、隐私与数据归属见 [Replay Pipeline](architecture/replay-pipeline.md#匿名-battle-data-collector)，配额与开关见 [运维手册](operations/observability-runbook.md#battle-data-collector)。
+- `aireviewfeedback`：认证用户提交 AI 复盘反馈及复制回复快照，站点管理员可查询和硬删除；不保存用户 ID 或回放。详情见 [AI Review](architecture/ai-review.md#用户反馈)。
 
 ### 客户端 Replay Engine
 
@@ -709,7 +711,7 @@ Sponsor QR 不进仓库：配置与收款码作为 **GitHub Release 资产**发�
 - Keycloak Admin API 通过 `KeycloakAdminUserService` 封装后 mock。
 - **架构测试**：ArchUnit 守护 core 禁 Spring Web/Boot、HTTP transport 与反向依赖 web，以及 Web
   domain 分包、分层、ownership、禁字段注入/Lombok。Spring Modulith 的 `WebModuleArchitectureTest`
-  验证 Web 九个业务域和 `config/exceptionhandler/replayfile/util` 四个支持模块的显式依赖、公开边界及循环，
+  验证 Web 十一个业务域和 `config/exceptionhandler/replayfile/util` 四个支持模块的显式依赖、公开边界及循环，
   覆盖所有应用直接子包；各模块均为 CLOSED，根包和 named interfaces 是对外入口。
   user 的跨域契约仅在 `user.api`：`UserProfiles` 提供有限的资料查询、身份、可信登录同步与管理操作，
   `UserProfileSnapshot` / `WotbAccountIdentity` 提供值；四个消费者域只声明 `user :: api`。

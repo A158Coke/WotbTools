@@ -21,10 +21,13 @@ const creatorUnavailable = computed(() => recommendationList.value ? !typeVisibl
 const creatorsNotPublished = computed(() => contentKnown.value && (recommendationList.value
   ? typeAvailable(recommendationType.value) && !typeVisible(recommendationType.value) : creatorsAvailable.value && !directoryVisible.value))
 // 装甲查看器匿名可用，ViewHost 只保留管理页的登录/角色门：内容配置归 content-admin，积分赛归 tournament-admin。
-const adminView = computed(() => ['tournament-points-config', 'tournament-points-admin', 'creators-config', 'admin-battle-data'].includes(activeView.value))
+const adminView = computed(() => ['tournament-points-config', 'tournament-points-admin', 'creators-config', 'admin-battle-data', 'admin-ai-review-feedback'].includes(activeView.value))
 const adminCopy = computed(() => {
   if (activeView.value === 'admin-battle-data') {
     return { allowed: isAdmin.value, title: 'battleDataAdmin.title', login: 'battleDataAdmin.loginRequired', denied: 'battleDataAdmin.adminRequired' }
+  }
+  if (activeView.value === 'admin-ai-review-feedback') {
+    return { allowed: isAdmin.value, title: 'aiFeedback.adminTitle', login: 'aiFeedback.loginRequired', denied: 'aiFeedback.adminRequired' }
   }
   if (activeView.value === 'creators-config') {
     return { allowed: isContentAdmin.value, title: 'creators.configTitle', login: 'creators.loginRequired', denied: 'creators.adminRequired' }

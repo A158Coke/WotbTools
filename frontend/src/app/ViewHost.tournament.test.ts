@@ -15,6 +15,7 @@ vi.mock('./viewRegistry.js', () => ({
     'tournament-points-admin': { template: '<div data-testid="admin-editor" />' },
     'tournament-points-config': { template: '<div data-testid="admin-config" />' },
     'creators-config': { template: '<div data-testid="creator-config" />' },
+    'admin-ai-review-feedback': { template: '<div data-testid="feedback-admin" />' },
     creators: { template: '<div data-testid="creator-directory" />' } },
   replayInitialCapability: () => 'data',
 }))
@@ -72,6 +73,20 @@ describe('tournament deep-link page gates', () => {
     wrapper.unmount()
   })
   it('keeps the public page accessible anonymously', () => { expect(host().find('[data-testid="public-board"]').exists()).toBe(true) })
+  it('requires authentication and the site administrator role for feedback deep links', async () => {
+    state.route.query.view = 'admin-ai-review-feedback'
+    state.auth.isAdmin.value = false
+    const wrapper = host()
+    expect(wrapper.find('[data-testid="login-gate"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="feedback-admin"]').exists()).toBe(false)
+    state.auth.authenticated.value = true; await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('aiFeedback.adminRequired')
+    expect(wrapper.find('[data-testid="feedback-admin"]').exists()).toBe(false)
+    state.auth.isAdmin.value = true; await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="feedback-admin"]').exists()).toBe(true)
+    state.auth.isAdmin.value = false; await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="feedback-admin"]').exists()).toBe(false)
+  })
   it.each(['tournament-points-admin', 'tournament-points-config', 'creators-config'])('does not mount %s anonymously despite admin=1', view => {
     state.route.query.view = view
     const wrapper = host()

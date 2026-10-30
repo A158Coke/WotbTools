@@ -25,6 +25,9 @@ App.vue
 
 主导航的唯一数据源是 `app/navigation.js`：`PRIMARY_NAV` 定义首页 · 回放 · 名人堂 · 坦克百科 · 科技树 · 联赛积分榜 · 联赛直播回放 · UP 推荐 · 更多（**科技树与坦克百科平级**，各自是独立栏目：`agent-techtree` → section `techtree`，顶栏/标题显示「科技树」，侧栏与底部栏各有一项；不挂在坦克百科之下），`primaryNavItems()` 再按 runtime/host 投影实际可见项——public Web home host 保留首页，Android APK 与本地 Web 不显示首页并以回放作为默认落地页；`ADMIN_NAV`（按角色显示的管理入口）与 `primarySection(view)`（视图归属哪个栏目）共享同一导航模型。外壳按 `useBreakpoint()`（`composables/useBreakpoint.js`，断点常量在 `shared/breakpoints.ts`）在两种形态间切换：平板 / 桌面渲染 `AppSidebar`（桌面可折叠，偏好由 `composables/useSidebar.js` 写到 `<html data-sidebar>`，`tokens/scale.css` 据此派生 `--sidebar-w`）；手机（compact）渲染 `AppTopBar` 标题栏 + `AppTabBar`；**触屏横屏矮视口（pointer: coarse + landscape + 高度 ≤520）改为左侧图标栏（compact 专用 56px，保住回放传输控件单行）**，顶栏与底部 Tab 栏都不渲染、`--sidebar-w` 取图标栏宽度，把垂直空间让给内容；回放工作区的沉浸态仍隐藏全部导航（侧栏也不挂载，`--sidebar-w` 归零）。两者都用 `RouterLink` 渲染，并以 `aria-current` 标记当前栏目。直播入口的 `shortLabelKey` 仅用于底部栏和侧栏收起形态，完整名称仍为辅助技术提供；桌面展开形态与页面标题使用完整名称。账户（登录、个人中心、登出）进入 `?view=profile`（`ProfilePage.vue`，未登录时显示说明卡而不是自动跳转）：平板 / 桌面在侧边栏底部，手机在标题栏右侧。"更多"的内容只有一个来源 `composables/useMoreMenu.js`：平板 / 桌面是侧边栏底部的弹出面板（`app/MorePanel.vue`：显示设置 + 关于与支持；管理入口在侧边栏管理组），手机是 `?view=more` 整页（`components/MorePage.vue`，另含按角色显示的管理入口）。
 
+AI 复盘结果的反馈弹窗与复制按钮使用同一回复文本 formatter；提交会包含该完整文本。反馈管理视图由站点管理员导航和深链角色门保护，列表筛选、分页、详情和删除走 Business Backend；功能联网状态由 `AI_FEEDBACK` / `ADMIN_AI_FEEDBACK` capability 判定。
+首次加载因连通性未就绪而被阻止时，恢复可用后自动加载一次；筛选或翻页切换时清除旧查询的结果，失败后可重试，不把旧行展示为新查询结果。
+
 `router.js` 拥有浏览器 history、deep-link 处理、重定向和 Back/Forward。产品 URL 有意保留兼容的 query 契约：`?view=replay`、`?view=ai-review`、`?view=battle-playback`、`?view=agent-replay` 和 `?view=agent-shots` 都解析为同一个 keep-alive 的 Replay Workspace，只是初始能力不同（data / ai / playback / 3d / shots，见 `viewRegistry.js` 的 `replayInitialCapability`）。legacy aliases（`leaderboard`、`extended`、`reconstruction`）各自一次性重定向到其规范的 query 值。Android 还会把过时的落地 `?view=home` URL 规范化为 Replay-root URL，同时保留无关的 query/hash 值；公开 Web 的 Home deep link 仍然有效。`/download/android` 和 `/download/android/` 解析到 Android 页面；`/sponsor` 是 AppShell 的一等路由，经 `ViewHost` 解析到 `SponsorPage`。
 
 **视图私有 query 键**（`navigation.js: locationForView`）：名人堂筛选（tab/page/nation/type/tier/bt/nick/limit）、坦克百科筛选与详情（q/tier/nation/type/sort/tank/config/engine/track/shell/dev/cons/prov/skills/camo/eq）、以及装甲查看器 / 射击复现场景参数（tank/shooter/config/scfg/sengine/strack/sdev/engine/track/dev/shell/shot/world/heatmap + 相机与显示档 az/h/d/eqcal/eqenh/quality/move/rel/clean/debug）只属于各自的视图：导航到别的视图时整组丢掉（`locationForView` 三条清理规则），否则从场景切走会在 URL 里留下上一发的 `tank/shot/shooter/…`。留在同一视图内的导航保留全部参数。
@@ -145,6 +148,7 @@ UI profile 仍然只涉及呈现：`wotb-ui-profile` 是唯一的持久化 key�
 - Battle Playback 的高价值持久化归属不在 orchestration root；
 - 架构守卫覆盖已移除的 service-locator keys 与 replay capability 的 transport 归属；
 - frontend CI 包含真实浏览器 Playback geometry / form-isolation 检查；
+- AI 复盘反馈的真实浏览器门禁覆盖三档视口、深浅主题、提交快照及管理交互；
 - 陈旧的 navigation/auth/replay injection bridges 与重复的 Playback 持久化归属均已不存在。
 
 当前架构不要求纯目录重写，不引入没有明确归属需求的 Pinia，也不把广泛视觉改版或无关产品改动视为架构边界变更的一部分。现有 `?view=` 兼容契约继续保留：删除该兼容层属于产品 URL 迁移，而不是解决上述归属问题的前置条件。

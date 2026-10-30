@@ -69,6 +69,10 @@ async function refresh() {
   const generation = ++summaryGeneration
   const currentListGeneration = ++listGeneration
   loading.value = true; moreLoading.value = false; summaryError.value = ''; listError.value = ''
+  // Invalidate the previous page before the replacement request settles: the old cursor/filter must not
+  // be able to append a stale page while summary/list are switching ranges.
+  nextCursor.value = null
+  applied.value = {}
   const interval = rangeQuery()
   currentInterval.value = interval
   let query: api.Query
@@ -94,7 +98,7 @@ async function applyFilters() {
   finally { if (generation === listGeneration) moreLoading.value = false }
 }
 async function loadMore() {
-  if (!nextCursor.value || !gate.requireFeature(Feature.ADMIN_BATTLE_DATA)) return
+  if (!nextCursor.value || loading.value || moreLoading.value || !gate.requireFeature(Feature.ADMIN_BATTLE_DATA)) return
   const generation = ++listGeneration
   moreLoading.value = true; listError.value = ''
   try {
@@ -156,7 +160,7 @@ onBeforeUnmount(() => { ++summaryGeneration; ++listGeneration; ++detailGeneratio
         <div><span>{{ t('battleDataAdmin.latest') }}</span><strong>{{ time(summary.latestReceivedAt) }}</strong></div>
       </div>
       <p v-if="summary.totalBattles === 0">{{ t('battleDataAdmin.empty') }}</p>
-      <h2>{{ t('battleDataAdmin.trend') }}</h2><ul><li v-for="row in trendRows" :key="row.key"><span>{{ row.key }}</span> <span class="bar" :style="{ width: `${Math.max(1, 150 * row.count / Math.max(1, ...trendRows.map(x => x.count)))}px` }" /> {{ row.count }}</li></ul>
+      <h2>{{ t('battleDataAdmin.trend') }}</h2><ul class="trend"><li v-for="row in trendRows" :key="row.key" class="trend-row"><span>{{ row.key }}</span><span class="trend-track"><span class="bar" :style="{ '--bar-share': `${Math.max(0, 100 * row.count / Math.max(1, ...trendRows.map(x => x.count)))}%` }" /></span><span>{{ row.count }}</span></li></ul>
       <div class="distributions"><section><h2>{{ t('battleDataAdmin.modes') }}</h2><p v-for="row in modeRows" :key="row.key">{{ mode(row.key) }}: {{ row.count }} ({{ share(row.count) }})</p></section>
         <section><h2>{{ t('battleDataAdmin.winners') }}</h2><p v-for="row in winnerRows" :key="row.key">{{ winner(row.key) }}: {{ row.count }} ({{ share(row.count) }})</p></section>
         <section><h2>{{ t('battleDataAdmin.schema') }}</h2><p v-for="row in summary.schemaVersions" :key="row.key">v{{ row.key }}: {{ row.count }}</p></section>
@@ -175,7 +179,7 @@ onBeforeUnmount(() => { ++summaryGeneration; ++listGeneration; ++detailGeneratio
     <p v-if="listError" role="alert">{{ t('battleDataAdmin.error') }} {{ listError }}</p><p v-if="!loading && !battles.length && summary?.totalBattles">{{ t('battleDataAdmin.emptyFilter') }}</p>
     <div class="table-wrap"><table data-testid="recent-battles"><thead><tr><th>{{ t('battleDataAdmin.received') }}</th><th>{{ t('battleDataAdmin.arenaId') }}</th><th>{{ t('battleDataAdmin.mode') }}</th><th>{{ t('battleDataAdmin.map') }}</th><th>{{ t('battleDataAdmin.version') }}</th><th>{{ t('battleDataAdmin.winner') }}</th><th>{{ t('battleDataAdmin.spawn') }}</th><th /></tr></thead><tbody>
       <tr v-for="battle in battles" :key="battle.id"><td>{{ time(battle.receivedAt) }}</td><td>{{ battle.arenaId }}</td><td>{{ mode(battle.arenaBonusType) }}</td><td>{{ battle.mapKey }}</td><td>{{ battle.clientVersion }}</td><td>{{ winner(battle.winnerTeam) }}</td><td>{{ battle.team1Spawn }} / {{ battle.team2Spawn }}</td><td><button :disabled="!availability.available" @click="openDetail(battle.id)">{{ t('battleDataAdmin.view') }}</button></td></tr></tbody></table></div>
-    <button v-if="nextCursor" :disabled="!availability.available || moreLoading" @click="loadMore">{{ t('battleDataAdmin.loadMore') }}</button>
+    <button v-if="nextCursor || (loading && battles.length)" :disabled="!availability.available || loading || moreLoading || !nextCursor" @click="loadMore">{{ t('battleDataAdmin.loadMore') }}</button>
     <AppDialog :open="dialogOpen" :title="t('battleDataAdmin.detail')" size="lg" @close="closeDetail">
       <p v-if="detailLoading">{{ t('battleDataAdmin.loading') }}</p><p v-if="detailError" role="alert">{{ t('battleDataAdmin.detailError') }} {{ detailError }}</p>
       <template v-if="detail"><dl><template v-for="[key,value] in [[t('battleDataAdmin.arenaId'),detail.battle.arenaId],[t('battleDataAdmin.received'),time(detail.battle.receivedAt)],[t('battleDataAdmin.schemaVersion'),detail.battle.schemaVersion],[t('battleDataAdmin.mode'),mode(detail.battle.arenaBonusType)],[t('battleDataAdmin.mapId'),detail.battle.mapId],[t('battleDataAdmin.map'),detail.battle.mapKey],[t('battleDataAdmin.version'),detail.battle.clientVersion],[t('battleDataAdmin.winner'),winner(detail.battle.winnerTeam)],[t('battleDataAdmin.team1'),detail.battle.team1Spawn],[t('battleDataAdmin.team2'),detail.battle.team2Spawn]]" :key="String(key)"><dt>{{ key }}</dt><dd>{{ value }}</dd></template></dl>
@@ -185,17 +189,20 @@ onBeforeUnmount(() => { ++summaryGeneration; ++listGeneration; ++detailGeneratio
   </section>
 </template>
 <style scoped>
-.battle-admin { max-inline-size: 1200px; margin-inline: auto; padding: var(--space-6); }
+.battle-admin { max-inline-size: var(--content-max); margin-inline: auto; padding: var(--space-6); }
 .page-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--space-4); }
 .notice { padding: var(--space-3); border-inline-start: var(--space-1) solid var(--color-accent); background: var(--color-surface-1); }
 .bias { border-color: var(--color-warning); }
-.kpis, .distributions, .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--space-3); }
-.kpis > div { display: grid; gap: var(--space-1); padding: var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); }
+.kpis, .distributions, .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(var(--metric-card-min), 1fr)); gap: var(--space-3); }
+.kpis > div { display: grid; gap: var(--space-1); padding: var(--space-3); border: var(--border-width) solid var(--color-border-subtle); border-radius: var(--radius-md); }
 .filters label { display: grid; gap: var(--space-1); }
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
-th, td { padding: var(--space-2); border-bottom: 1px solid var(--color-border-subtle); text-align: start; }
-.bar { display: inline-block; block-size: var(--space-1); background: var(--color-accent); }
+th, td { padding: var(--space-2); border-bottom: var(--border-width) solid var(--color-border-subtle); text-align: start; }
+.trend { display: grid; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
+.trend-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); }
+.trend-track { display: block; block-size: var(--space-1); background: var(--color-surface-2); }
+.bar { display: block; block-size: 100%; inline-size: var(--bar-share, 0%); background: var(--color-accent); }
 dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-1) var(--space-4); }
 dd { margin: 0; overflow-wrap: anywhere; }
 </style>

@@ -1,8 +1,10 @@
 <script setup>
-import { onBeforeUnmount, ref } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import MarkdownContent from './MarkdownContent.vue'
+import AiReviewFeedbackDialog from './AiReviewFeedbackDialog.vue'
 import { copyText } from '../utils/clipboard.js'
+import { buildAiReviewReplyText, teamIdentityLabel as identityLabel } from '../utils/aiReviewReplyText.js'
 
 // 普通用户页面只展示 AI 复盘正文/Team 结构化结果 + 可折叠的「赛前预测」区块。
 // 后端 SSE `done` 载荷返回个人 { analysis, preBattleSection? } 或团队 { teamReview, preBattleSection? }；
@@ -21,8 +23,16 @@ const preBattleOpen = ref(true)
 // 复盘正文（call2）折叠状态，默认展开
 const analysisOpen = ref(true)
 const copied = ref(false)
+const feedbackOpen = ref(false)
+const feedbackSnapshot = ref('')
+const feedbackSent = ref(false)
 let copyTimer
-const { t } = useI18n()
+const { t, locale } = useI18n()
+
+watch([() => props.result, () => locale?.value], () => {
+  feedbackOpen.value = false
+  feedbackSent.value = false
+})
 
 function togglePreBattle() {
   preBattleOpen.value = !preBattleOpen.value
@@ -32,32 +42,28 @@ function toggleAnalysis() {
   analysisOpen.value = !analysisOpen.value
 }
 
+function openFeedback() {
+  feedbackSnapshot.value = buildAiReviewReplyText(props.result, t)
+  if (!feedbackSnapshot.value) return
+  feedbackSent.value = false
+  feedbackOpen.value = true
+}
+
+function feedbackSuccess() {
+  feedbackOpen.value = false
+  feedbackSent.value = true
+}
+
 /** 一键复制最终复盘正文（团队结果使用 authoritative display identity；不含独立的赛前预测与地图鸟瞰）。
  * 末尾附带一行网站宣传（recon.copy_footer，三语随界面语言）。 */
 function teamIdentityLabel(playerKey) {
-  const identity = Array.isArray(props.result.teamPlayers)
-    ? props.result.teamPlayers.find(item => item?.playerKey === playerKey)
-    : undefined
-  const displayName = identity?.displayName?.trim() || t('recon.team.unknownPlayer')
-  const tankName = identity?.tankName?.trim() || t('recon.team.unknownTank')
-  return `${displayName} / ${tankName}`
+  return identityLabel(props.result, playerKey, t)
 }
 
 async function copyAnalysis() {
-  const team = props.result.teamReview
-  const text = team
-    ? [
-        team.summary.verdict,
-        team.summary.primaryDiagnosis,
-        ...team.episodes.map((episode) => `${episode.title}\n${episode.analysis}`),
-        ...team.trainingSuggestions.map((suggestion) => `${suggestion.title}\n${suggestion.content}`),
-        ...team.reviewFocus.map((item) => `${teamIdentityLabel(item.playerKey)}: ${item.reason}`),
-        ...team.highContributors.map((item) => `${teamIdentityLabel(item.playerKey)}: ${item.reason}`)
-      ].filter(Boolean).join('\n\n')
-    : props.result.analysis
+  const text = buildAiReviewReplyText(props.result, t)
   if (!text) return
-  const withFooter = text + '\n' + t('recon.copy_footer')
-  if (!(await copyText(withFooter))) return
+  if (!(await copyText(text))) return
   copied.value = true
   clearTimeout(copyTimer)
   copyTimer = setTimeout(() => {
@@ -92,8 +98,11 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
         >
           {{ $t(copied ? 'recon.copied' : 'recon.copy') }}
         </button>
+        <button v-if="buildAiReviewReplyText(result, t)" type="button" class="copy-btn" data-test="feedback-btn" @click="openFeedback">{{ $t('aiFeedback.button') }}</button>
       </div>
     </div>
+    <p v-if="feedbackSent" role="status">{{ $t('aiFeedback.success') }}</p>
+    <AiReviewFeedbackDialog :open="feedbackOpen" :snapshot="feedbackSnapshot" @close="feedbackOpen = false" @success="feedbackSuccess" />
     <div v-if="result.preBattleSection" class="prebattle-block">
       <button
         type="button"
@@ -203,7 +212,7 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
   }
 }
 .panel-head h2 { margin: 0; }
-.panel-head-actions { display: flex; align-items: center; gap: 8px; margin: 0; }
+.panel-head-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; margin: 0; }
 .toggle-btn, .copy-btn {
   padding: 4px 12px;
   border: 1px solid var(--border);
