@@ -29,6 +29,7 @@ import { normalizeTankCache } from '../utils/tankopediaQuery.js'
 import { createLoadProgress } from './loadProgress.js'
 import { shotResultClass } from '../utils/shotResultClass.js'
 import { isCompactShotResultCard, shotResultCardMaxWidth as resultCardMaxWidth, shotResultCardMetrics } from '../utils/shotResultCardMetrics.js'
+import { placeShotResultCard } from '../utils/shotResultCardPlacement.js'
 import {
     RC,
     buildPack, snapshotPackPose, packPoseChanged, buildRicochetGrid, createGridTextures, simulateContinuation, raycastPackAll,
@@ -6366,7 +6367,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const rect = host ? host.getBoundingClientRect() : null;
             if (!rect || !(rect.width > 0) || !(rect.height > 0)) { div.style.display = 'none'; return; }
             // 卡片宽度跟画布容器走（侧栏/窄画布不能按视口算），窗口缩放后同步刷新；
-            // 紧凑档（竖屏手机 / 横屏矮视口）再封顶 420px，避免横屏里铺满整屏。
+            // 紧凑档（竖屏手机 / 横屏矮视口）再封顶 360px，避免横屏里铺满整屏。
             const maxWidth = resultCardMaxWidth(rect.width, window.innerWidth, window.innerHeight);
             if (maxWidth) div.style.maxWidth = `${maxWidth}px`;
             div.style.whiteSpace = 'normal';
@@ -6378,18 +6379,12 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const x = rect.left + (v.x * 0.5 + 0.5) * rect.width;
             const y = rect.top + (-v.y * 0.5 + 0.5) * rect.height;
             const offX = 0, offY = 160;
-            let px = x + offX, py = y + offY;
             div.style.display = 'block';   // 先显示才能量取实际尺寸
             const w = div.offsetWidth || 300, h = div.offsetHeight || 90;
             // 可见画布内钳制（translateX(-50%)：left 是面板中心 x）
             const clipL = Math.max(rect.left, 0), clipT = Math.max(rect.top, 0);
             const clipR = Math.min(rect.right, window.innerWidth), clipB = Math.min(rect.bottom, window.innerHeight);
             if (clipR <= clipL || clipB <= clipT) { div.style.display = 'none'; return; }
-            const minX = clipL + w / 2 + 10, maxX = clipR - w / 2 - 10;
-            const minY = clipT + 10, maxY = clipB - h - 10;
-            const clampX = (v2) => maxX >= minX ? Math.max(minX, Math.min(maxX, v2)) : (clipL + clipR) / 2;
-            const clampY = (v2) => maxY >= minY ? Math.max(minY, Math.min(maxY, v2)) : clipT + 10;
-            px = clampX(px); py = clampY(py);
             // 固定 UI 避让：不压四角与顶部信息面板（左下信息/右下按钮提示/右上栈/左上排）
             const blockers = [];
             const tc = document.getElementById('turret-controls');
@@ -6399,14 +6394,15 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (el) { const r = el.getBoundingClientRect(); if (r.width > 0 && r.height > 0) blockers.push(r); }
             };
             addRect('corner-br'); addRect('corner-tr'); addRect('info-panel'); addRect('tank-selectors');
-            for (const r of blockers) {
-                if (r.width === 0 || r.height === 0) continue;
-                const l = px - w / 2, t = py, rr = l + w, b = t + h;
-                if (l >= r.right || rr <= r.left || t >= r.bottom || b <= r.top) continue;
-                // 首选：整体上移到面板上方；顶部放不下再水平平移到面板侧边
-                if (r.top - h - 12 >= clipT + 10) { py = clampY(r.top - h - 12); continue; }
-                px = clampX(px < (r.left + r.right) / 2 ? r.left - w / 2 - 12 : r.right + w / 2 + 12);
-            }
+            const { x: px, y: py } = placeShotResultCard({
+                anchorX: x + offX,
+                anchorY: y,
+                offsetY: offY,
+                cardWidth: w,
+                cardHeight: h,
+                clip: { left: clipL, top: clipT, right: clipR, bottom: clipB },
+                blockers,
+            });
             div.style.transform = 'translateX(-50%)';
             div.style.left = px + 'px';
             div.style.top = py + 'px';

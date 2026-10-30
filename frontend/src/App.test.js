@@ -86,14 +86,16 @@ vi.mock('./composables/useAuth.js', () => ({
 }))
 
 // 外壳档位：默认桌面 / 平板（单行顶栏）；手机用例切到 compact（标题栏 + 底部 Tab 栏）
-const layoutState = vi.hoisted(() => ({ isCompact: null }))
+const layoutState = vi.hoisted(() => ({ isCompact: null, isCompactLandscape: null }))
 vi.mock('./composables/useBreakpoint.js', async () => {
   const { ref: vueRef, computed: vueComputed } = await import('vue')
   layoutState.isCompact = vueRef(false)
+  layoutState.isCompactLandscape = vueRef(false)
   return {
     useBreakpoint: () => ({
       tier: vueComputed(() => (layoutState.isCompact.value ? 'compact' : 'expanded')),
       isCompact: layoutState.isCompact,
+      isCompactLandscape: layoutState.isCompactLandscape,
       isExpanded: vueComputed(() => !layoutState.isCompact.value),
     }),
     usePointer: () => ({ coarse: vueRef(false) }),
@@ -517,6 +519,7 @@ describe('App shell navigation, 更多 and account', () => {
     authState.login.mockClear()
     authState.logout.mockClear()
     layoutState.isCompact.value = false
+    layoutState.isCompactLandscape.value = false
   })
 
   it('marks the active primary section with aria-current, including Replay capabilities', async () => {
@@ -571,6 +574,16 @@ describe('App shell navigation, 更多 and account', () => {
     expect(wrapper.get('[data-testid="tab-hof"]').attributes('aria-current')).toBe('page')
     expect(wrapper.find('[data-testid="tab-more"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="nav-account"]').attributes('aria-label')).toBe('nav.account')
+  })
+
+  it('compact 横屏：导航切到左侧图标栏，顶栏与底部 Tab 栏都不渲染', async () => {
+    layoutState.isCompact.value = true
+    layoutState.isCompactLandscape.value = true
+    const { wrapper } = await mountApp('/?view=hof')
+    expect(wrapper.find('[data-testid="app-sidebar"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="app-tab-bar"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="app-top-bar"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="nav-hof"]').attributes('aria-current')).toBe('page')
   })
 
   it('does not render the tab bar or top bar on wider layouts; the sidebar carries navigation', async () => {

@@ -2506,6 +2506,7 @@ async function runMultiFileWorkspaceScenario(env) {
     }))()`
     await page.emulate({ width: 740, height: 360, touch: true })
     const landscape = await page.waitForValue(shellState, (state) => !state.topBar && !state.tabBar && state.map > 0, { label: 'immersive shell in phone landscape' })
+    console.log(`[browser-interaction] shell landscape state=${JSON.stringify(landscape)}`)
     check(failures, !landscape.sidebar, `immersive phone shell must not mount the sidebar either: ${JSON.stringify(landscape)}`)
     check(failures, landscape.headerH === '0px', `immersive shell must zero --header-h: ${JSON.stringify(landscape)}`)
     check(failures, landscape.map >= 260, `phone-landscape real-app map must be >= 260px: ${JSON.stringify(landscape)}`)
@@ -2518,7 +2519,10 @@ async function runMultiFileWorkspaceScenario(env) {
     await page.emulate({ width: 740, height: 360, touch: true })
     await page.waitForValue(shellState, (state) => !state.topBar, { label: 'immersive shell again' })
     await hit('[data-testid="ws-tab"][data-cap="data"]', { touch: true })
-    await page.waitForValue(shellState, (state) => state.topBar && state.tabBar, { label: 'shell restored when leaving playback' })
+    // 离开回放后仍处于 compact 横屏：导航是左侧图标栏（不是顶栏 + Tab 栏）
+    await page.waitForValue(shellState,
+      (state) => state.sidebar && !state.topBar && !state.tabBar && state.headerH === '0px',
+      { label: 'rail restored when leaving playback' })
   } finally {
     await env.chrome.client.send('Target.closeTarget', { targetId })
   }
