@@ -20,7 +20,8 @@ Playback HTTP 端点已删除，OpenAPI schema component 继续作为本地 `Bat
 
 - `VehicleLoadoutFacts`：materialized combat vehicle 的 battle loadout 是**持久配置**——
   一旦观察到本场装备了什么，即使离开 AoI（Type4）仍 KNOWN，不随 AoI 消失变 UNKNOWN。
-- `ConsumableLifecycle`：consumable **runtime** 观测（wireCode/state/eventClock/param）。
+- `ConsumableLifecycle`：consumable **runtime** 观测（wireCode/state/eventClock/param，
+  以及上游派生的 duration/endsAt/everActivated/slot）。
   与 loadout 不同，runtime 在 hidden interval（UNKNOWN_AOI）内 = UNKNOWN——不能因为
   「没看到 activation」就显示 READY。
 - `VehicleModuleCrewLifecycle`：method16 为 **recorder-visible telemetry**，每条带

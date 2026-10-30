@@ -244,6 +244,31 @@ export interface AgentVehicleTrack {
   loadout_items?: number[][]
   /** Type5 装备 9 字节（equipment id 原值，位置序）；与 loadout_items 同缺省 */
   equipment?: number[]
+  /**
+   * Type5 装载解码视图（上游 v0.4.17 additive）：3 消耗品 + 0..3 给养 + 模式额外能力 +
+   * equipment/equipment_ids。缺省 = 旧产物（消费端回退 loadout_items）。
+   */
+  loadout?: AgentVehicleLoadout | null
+}
+
+/** Type5 单条 14B 描述符解码视图（raw 恒保留）。 */
+export interface AgentLoadoutItem {
+  index: number
+  kind: 'consumable' | 'provision' | 'ability'
+  wire_code: number
+  state: number
+  payload_raw: number[]
+  logical_id?: string | null
+}
+
+export interface AgentVehicleLoadout {
+  equipment: number[]
+  equipment_count: number
+  equipment_ids: number[]
+  items: number[][]
+  consumables: AgentLoadoutItem[]
+  abilities: AgentLoadoutItem[]
+  provisions: AgentLoadoutItem[]
 }
 
 /** Type32 消耗品生命周期（state：1=INITIALIZED 2=ACTIVATED 3=ACTIVE_ENDED_OR_COOLDOWN 255=TEARDOWN） */
@@ -251,7 +276,19 @@ export interface AgentConsumableEvent {
   clock: number
   eid: number
   wire_code: number
+  /** 已证逻辑标识（v0.4.17 additive；旧产物缺省 → 回退前端 wire 表） */
+  logical_item_id?: string | null
   state: number
+  /** 语义状态名（v0.4.17 additive；与 canonical 名称一致） */
+  state_name?: string
+  /** state2=激活持续秒 / state3=冷却秒（v0.4.17 additive） */
+  duration_s?: number | null
+  /** clock + duration_s（回放时钟，v0.4.17 additive） */
+  ends_at?: number | null
+  /** 该 (eid, wire) 此前是否激活过（v0.4.17 additive） */
+  ever_activated?: boolean
+  /** loadout 消耗品槽位 0..2（v0.4.17 additive；模式能力/未知为 null/缺省） */
+  slot?: number | null
   body_clock: number
   param: number
 }

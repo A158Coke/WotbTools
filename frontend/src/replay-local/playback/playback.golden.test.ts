@@ -77,6 +77,18 @@ const PINNED_LOADOUT_UPGRADES: Record<string, number> = {
 }
 
 /**
+ * 放行的 `loadout` 语义纠正（上游 **v0.4.18**）：Agent 按 `provisions.pb` 的 id 103..110
+ * 与回放线码 0x46..0x4D 的逐项对应（每国 HQ(大)→regular(小)）重新闭合欧系食物块。
+ * Java golden 由旧 WotbTools 映射生成，把 Swedish `0x49` 标成 LARGE；正确为
+ * `0x49` = Crispbread/SMALL（id 106）。这里按 account 冻结纠正值，其余字段仍逐字段相等。
+ */
+const PINNED_LOADOUT_CORRECTIONS: Record<string, Record<number, { provisions: string[] }>> = {
+  'tournament-14-14-example.wotbreplay': {
+    3109171124: { provisions: ['SMALL_FOOD', 'ENHANCED_SANDBAG_ARMOR', 'IMPROVED_FUEL'] },
+  },
+}
+
+/**
  * fixture 三切面 → canonical dataset。经 [`requireFixtures`] 严格读取：被 trust boundary 拒绝的
  * producer 输出在此抛出**原始 validation error**，而不是降级成 `null.meta` 的二次症状。
  */
@@ -185,6 +197,12 @@ describe('2D 战局回放 canonical 语义 ↔ Java golden', () => {
           if (a.loadout === null && b.loadout !== null) {
             upgrades.push(a.accountId)
             expect({ ...b, loadout: null }).toEqual(a) // loadout 之外不允许任何差异
+            continue
+          }
+          // 已冻结的 loadout 语义纠正（见 PINNED_LOADOUT_CORRECTIONS）：只允许列出的字段值。
+          const correction = PINNED_LOADOUT_CORRECTIONS[file]?.[a.accountId]
+          if (correction && a.loadout) {
+            expect(b).toEqual({ ...a, loadout: { ...a.loadout, ...correction } })
             continue
           }
           expect(b).toEqual(a)
