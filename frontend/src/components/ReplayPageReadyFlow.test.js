@@ -159,7 +159,8 @@ describe('ReplayPage READY 第一帧渲染（同一提交周期内结果立即�
     // league summaries 全空 → 区块显示 neutral 空态，不渲染 LeagueSummaryTable
     expect(wrapper.find('[data-testid="league-summary-empty"]').exists()).toBe(true)
     expect(wrapper.find('.league-summary-stub').exists()).toBe(false)
-    expect(wrapper.find('.battle-table-stub').element.parentElement.style.display).toBe('none')
+    // v-if 挂载口径（2026-10-31 批量优化）：汇总视图下战斗表不进 DOM（此前 v-show 挂载后 display:none）
+    expect(wrapper.find('.battle-table-stub').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -169,7 +170,8 @@ describe('ReplayPage READY 第一帧渲染（同一提交周期内结果立即�
       aggregate: [{ cells: { nickname: 'P1', damage_dealt: 5000 } }],
     }))
     expect(wrapper.find('.agg-table-stub').element.parentElement.style.display).not.toBe('none')
-    expect(wrapper.find('.battle-table-stub').element.parentElement.style.display).toBe('none')
+    // v-if 挂载口径：汇总视图下战斗表不进 DOM
+    expect(wrapper.find('.battle-table-stub').exists()).toBe(false)
     expect(wrapper.find('.league-summary-stub').exists()).toBe(false)
     wrapper.unmount()
   })

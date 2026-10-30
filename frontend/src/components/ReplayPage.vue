@@ -368,7 +368,9 @@ const aggregateRef = ref(null)
 const battleRefs = ref([])
 
 function setBattleRef(el, index) {
-  if (el) battleRefs.value[index] = el
+  // v-if 挂载/卸载都会以 el=null 回调：无条件写入让数组始终只反映当前在 DOM 里的表，
+  // 防止换批/切换后残留对已卸载元素的引用（导出恒取 currentSingleIndex，见 getExportTarget）
+  battleRefs.value[index] = el
 }
 
 function readTheme() {
@@ -655,17 +657,24 @@ function openRatingDocs() {
           </template>
         </div>
 
-        <div v-for="(b, i) in resp.battles" :key="i" v-show="!isSummaryView && currentSingleIndex === i"
-             :ref="(el) => setBattleRef(el, i)">
-          <BattleTable :battle="b" :shown-cols="shownCols"
-            :active="!isSummaryView && currentSingleIndex === i"
-            :league-mode="leagueMode" :league="b.league" :league-columns="leagueData?.columns || []"
-            :team-names="battleTeamNames" @update-team-name="updateBattleTeamName"
-            :selected-account-id="selectedPlayer?.accountId ?? null"
-            :selected-arena-id="selectedPlayer?.arenaId ?? null"
-            :layout="dataLayout"
-            @select-player="selectPlayer" />
-        </div>
+        <!-- 仅挂载当前批次表（此前 v-show 全量挂载：100 文件批次 = 100 张全表 DOM +
+             打开玩家抽屉时逐表 VDOM 重渲染）。PNG 导出恒取 currentSingleIndex 的表
+             （getExportTarget 只消费 battleRefs[current]，见 exportBattleIdx），隐藏表
+             从不需要 DOM 存在。Vue 3 中 v-if 与 v-for 同元素时 v-if 先求值（拿不到 i），
+             故用 template 包裹。 -->
+        <template v-for="(b, i) in resp.battles" :key="i">
+          <div v-if="!isSummaryView && currentSingleIndex === i"
+               :ref="(el) => setBattleRef(el, i)">
+            <BattleTable :battle="b" :shown-cols="shownCols"
+              :active="!isSummaryView && currentSingleIndex === i"
+              :league-mode="leagueMode" :league="b.league" :league-columns="leagueData?.columns || []"
+              :team-names="battleTeamNames" @update-team-name="updateBattleTeamName"
+              :selected-account-id="selectedPlayer?.accountId ?? null"
+              :selected-arena-id="selectedPlayer?.arenaId ?? null"
+              :layout="dataLayout"
+              @select-player="selectPlayer" />
+          </div>
+        </template>
         </template>
       </div>
 

@@ -281,12 +281,15 @@ describe('dolly-zoom world-overview scope guard', () => {
     // 厚度视图点击高亮（2026-10-28 用户要求，对齐 BlitzKit）：被点装甲板保持不透明、
     // 其余装甲板/模块降透明度；**不改厚度色相**（不加金色自发光，2026-10-29 用户报障：
     // 点击后颜色与点击前不一致）；复位只作用于碰撞视图，不能把普通视图的透明覆盖层改成不透明。
+    // 状态写入经 applyArmorMaterialState（needsUpdate 只在 transparent/depthWrite 真变时置位，
+    // 透明度数值本身不需要重评估）。
     expect(kernel).toMatch(/function applyArmorHighlight\(selected\)/)
     expect(kernel).not.toContain('0xffc247')
-    expect(kernel).toMatch(/if \(node === selected\) \{[\s\S]*?m\.opacity = 1;[\s\S]*?m\.emissive\.setHex\(0x000000\)/)
-    expect(kernel).toMatch(/m\.opacity = modules\.has\(node\) \? 0\.15 : 0\.18/)
+    expect(kernel).toMatch(/if \(node === selected\) \{[\s\S]*?applyArmorMaterialState\(m, true, 1, true\);[\s\S]*?m\.emissive\.setHex\(0x000000\)/)
+    expect(kernel).toMatch(/applyArmorMaterialState\(m, true, modules\.has\(node\) \? 0\.15 : 0\.18, false\)/)
+    expect(kernel).toMatch(/function applyArmorMaterialState\(m, transparent, opacity, depthWrite\) \{[\s\S]*?if \(m\.transparent !== transparent \|\| m\.depthWrite !== depthWrite\) m\.needsUpdate = true;/)
     expect(kernel).toMatch(/function resetArmorHighlight\(\)[\s\S]*?if \(!collisionMode \|\| !armorModel\) return;/)
-    expect(kernel).toMatch(/if \(node === selected\) \{[\s\S]*?m\.opacity = 1;/)
+    expect(kernel).toMatch(/applyArmorMaterialState\(m, true, modules\.has\(node\) \? 1 : 0\.95, true\)/)
     // 命中换板、落空清空；离开碰撞视图 / 换配置 / 过滤隐藏当前板都要清掉高亮
     expect(kernel).toMatch(/if \(!info\) \{ resetArmorHighlight\(\); card\.style\.display = 'none'; return; \}[\s\S]*?applyArmorHighlight\(info\.object\);/)
     expect(kernel).toMatch(/if \(!collisionMode\) \{ resetArmorHighlight\(\); document\.getElementById\('click-info'\)\.style\.display = 'none'; \}/)

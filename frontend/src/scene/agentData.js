@@ -13,8 +13,23 @@ export { assetProvider }
 
 // ---------- per-tank 数据（dump-tank-data 物化 → /api/tank/{id} 同形状） ----------
 
-export async function fetchTankData(id) {
-  return assetProvider.json(`/tank/${id}.json`)
+// 同坦克 JSON 的 in-flight/结果 promise 缓存（key = tankId）：同车检视一次会触发
+// loadTarget / loadShooter / fetchShells / fetchShotTankData / 侧配置卡 多路并发
+// 请求同一份 MB 级 JSON（同车对比时 ≈5 次）；缓存 promise 与 fetchTankCacheStatic
+// 同模式——失败即清槽（下次调用重试），不缓存失败结果。
+const tankDataPromises = new Map()
+
+export function fetchTankData(id) {
+  const key = String(id)
+  let p = tankDataPromises.get(key)
+  if (!p) {
+    p = assetProvider.json(`/tank/${key}.json`).catch((e) => {
+      tankDataPromises.delete(key)
+      throw e
+    })
+    tankDataPromises.set(key, p)
+  }
+  return p
 }
 
 /** 射击检视的紧凑搭载输入（config 原始顺序 / pitch_limits / shell_global_ids）：

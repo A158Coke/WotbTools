@@ -294,9 +294,23 @@ const baseStatesAt = computed(() => {
 })
 
 // ---- 播放状态 ----
+// 播放钟双轨：playbackClock = rAF 内部非响应式时钟（逐帧精确推进，事件消费 exactly-once
+// 的事实源）；currentTime = 响应式发布值，按 CLOCK_PUBLISH_SEC 节流写入——60fps 直写
+// ref 会让整条 computed 链（轨迹/炮线/标记/HP/布局）以 60fps 全量重算 + 整页 VDOM patch
+// （与 3D 面板 store.time 的 HUD_INTERVAL_MS 节流同一模式）。两者由全部写入口保持同步
+// （frame/play/seek/step/回绕），对外语义不变，仅派生视觉状态以 30Hz 刷新。
+const CLOCK_PUBLISH_SEC = 1 / 30
+let playbackClock = 0
 const currentTime = ref(0)
 const playing = ref(false)
 const speed = ref(1)
+
+/** 统一写入口：内部钟与响应式发布值同步置位（seek/step/回绕/到末尾）。
+ * frame() 的逐帧推进不走这里（内部钟先行、发布值节流），见 frame()。 */
+function publishClock(t) {
+  playbackClock = t
+  currentTime.value = t
+}
 // transient/animation 时间基准 = UI wall clock（performance.now）。
 // 播放时由 frame() 每帧刷新；暂停时由 ensurePauseClock 的轻量 RAF 继续推进
 //（仅当存在未决 transient），不依赖 replay 播放状态。
@@ -374,17 +388,17 @@ function consumeEvents(fromSec, toSec) {
   // remain responsible for lifecycle feedback only.
   for (const track of hpVehicles.value) {
     for (const loss of track.damageLosses || []) {
-      if (!loss || loss.toSec <= Math.max(fromSec, eventCursor.value) + 1e-6 || loss.toSec > toSec + 1e-6) continue
+      if (!loss || loss.toSec <= damageLeft + 1e-6 || loss.toSec > toSec + 1e-6) continue
       const victim = vehiclesByAccount.value.get(track.accountId)
       if (!victim || loss.transientAllowed !== true) continue
       if (!stateByAccount.has(track.accountId)) continue
-      floatItems.value = [...floatItems.value, {
+      floatItems.value.push({
         id: ++transientSeq,
         victimAccountId: track.accountId,
         hpLoss: loss.hpLoss,
         bornRealMs: now,
         durationMs: FLOAT_DMG_MS,
-      }]
+      })
       const g = ghostAroundV2(loss)
       if (g) ghostByAccount.set(track.accountId, { prevPct: g.prevPct, nextPct: g.nextPct, untilRealMs: now + GHOST_MS })
       flashByAccount.set(track.accountId, now + FLASH_MS)
@@ -398,12 +412,12 @@ function consumeEvents(fromSec, toSec) {
       const victim = vehiclesByAccount.value.get(ev.accountId)
       if (!victim || !victimFeedbackAllowedV2(victim, ev.timeSec)) continue
       if (!stateByAccount.has(ev.accountId)) continue
-      burstItems.value = [...burstItems.value, {
+      burstItems.value.push({
         id: ++transientSeq,
         victimAccountId: ev.accountId,
         bornRealMs: now,
         durationMs: BURST_MS,
-      }]
+      })
     } else if (ev.type === 'KILL') {
       // §16 kill feed：只显示受害者被击毁（§15.2——回放只能证明后端事后解析
       // attackerAccountId，无法证明客户端当时可见击杀者身份，禁止伪造 "未知 ☠ IS-7"）。
@@ -1401,16 +1415,16 @@ function frame(ts) {
   }
   const delta = lastFrameTs == null ? 0 : (ts - lastFrameTs)
   lastFrameTs = ts
-  const prev = currentTime.value
+  const prev = playbackClock
   const next = advancePlaybackTime(prev, duration.value, delta, speed.value)
-  currentTime.value = next
+  playbackClock = next
   nowMs.value = realNowMs()
   // §1.3/§20.3/Blocker 2：先消费 (prev, next]（next 可 == duration——到达末尾前最后一段事件
   // 必须在停止/回绕前消费，exactly-once，不因到达 duration 丢失）；cursor 严格左开不重复。
   consumeEvents(prev, next)
-  if (currentTime.value >= duration.value) {
+  if (next >= duration.value) {
     if (props.loop) {
-      currentTime.value = 0
+      publishClock(0)
       // 循环回绕：只重置播放时间与严格左开 cursor。上一轮末尾刚消费的 transient 继续按
       // wall-clock 自然完成（「末尾消费一次」可见且不重复）；不重置 eventCursor 会把下一轮
       // (0, t] 的事件误判为已消费而静默跳过。
@@ -1418,11 +1432,17 @@ function frame(ts) {
       rafId = requestAnimationFrame(frame)
       return
     }
+    publishClock(next)
     playing.value = false
     rafId = null
     // 播放到末尾自然停止 → 若有未决 transient，轻量 clock 接管
     ensurePauseClock(realNowMs())
     return
+  }
+  // 响应式发布节流：距上次发布 ≥ 1/30s 才写 currentTime；currentTime 意外落后内部钟
+  // （外部写入口未同步的兜底）时立即追平。
+  if (next - currentTime.value >= CLOCK_PUBLISH_SEC || next < currentTime.value) {
+    currentTime.value = next
   }
   rafId = requestAnimationFrame(frame)
 }
@@ -1433,6 +1453,7 @@ function play() {
   if (annotationOpen.value) closeAnnotation()
   playing.value = true
   lastFrameTs = null
+  playbackClock = currentTime.value
   // 播放开始：transient 时钟由 playback frame() 驱动——作废可能残留的轻量 pause RAF
   //（stub 环境只保留最近回调，若不清理，pause() 的 ensurePauseClock 会误判"已有 RAF"
   //  而无法注册接管时钟；真实浏览器中残留回调至多无害地刷新一次 nowMs）
@@ -1447,6 +1468,8 @@ function pause() {
     cancelAnimationFrame(rafId)
     rafId = null
   }
+  // 发布值补齐到内部钟：节流发布下 currentTime 可能落后最后帧 ≤1/30s，暂停必须停在精确时刻
+  if (currentTime.value !== playbackClock) currentTime.value = playbackClock
   // 播放中可能有未决 transient——暂停后立即让轻量 pause clock（UI wall clock）接管；
   // 无 pending 时不启动 RAF（不永久轮询）。
   ensurePauseClock(typeof performance !== 'undefined' ? performance.now() : Date.now())
@@ -1455,14 +1478,14 @@ function pause() {
 watch(() => props.seekTo, (sec) => {
   if (Number.isFinite(sec)) {
     pause() // 点击 AI 时间 → seek + 自动暂停（含取消 RAF）
-    currentTime.value = clampPlaybackTime(sec, duration.value)
+    publishClock(clampPlaybackTime(sec, duration.value))
     resetTransients(currentTime.value)
     suppressHpTransition()
   }
 }, { immediate: true })
 
 function seek(sec) {
-  currentTime.value = clampPlaybackTime(sec, duration.value)
+  publishClock(clampPlaybackTime(sec, duration.value))
   nowMs.value = realNowMs()
   resetTransients(currentTime.value)
   suppressHpTransition()
@@ -1496,7 +1519,7 @@ function seekToEvent(sec) {
 }
 
 function step(delta) {
-  currentTime.value = clampPlaybackTime(currentTime.value + delta, duration.value)
+  publishClock(clampPlaybackTime(currentTime.value + delta, duration.value))
   resetTransients(currentTime.value)
   suppressHpTransition()
 }
@@ -1660,13 +1683,34 @@ function poseAtTime(track, t) {
 const friendlyColors = computed(() => palette.value.friendlyColors)
 const enemyColors = computed(() => palette.value.enemyColors)
 
+// BattleMap 的偏好 props 提升为 computed：内联对象字面量在父组件每次重渲染时都生成
+// 新身份，会击穿 Vue 的 props 等值短路，迫使整个地图子树跟着重渲染。
+const hpPrefsForMap = computed(() => ({ ...hpPrefs, showHp: !uiHidden.value && hpPrefs.showHp }))
+const markerPrefsForMap = computed(() => ({
+  classIcons: !uiHidden.value && markerPrefs.classIcons,
+  showStatus: !uiHidden.value && markerPrefs.showStatus,
+}))
+
+// 车辆在队伍内的着色序号缓存：花名册与队伍构成整场不变（vehicleStates 每帧重建但
+// st.vehicle 引用同一批稳定对象），序号只算一次；颜色列表仍逐调用读取（调色板可变）。
+// 逐调用 map+filter+indexOf 在炮线着色路径是 O(车数×炮线数)/帧 的纯浪费。
+const vehicleColorIndexCache = new WeakMap()
+
 function vehicleColor(vehicle) {
-  const teamVehicles = vehicleStates.value
-    .map(st => st.vehicle)
-    .filter(v => v.team === vehicle.team)
-  const index = teamVehicles.indexOf(vehicle)
+  let index = vehicleColorIndexCache.get(vehicle)
+  if (index === undefined) {
+    const teamVehicles = vehicleStates.value
+      .map(st => st.vehicle)
+      .filter(v => v.team === vehicle.team)
+    if (teamVehicles.length > 0) {
+      index = Math.max(0, teamVehicles.indexOf(vehicle))
+      vehicleColorIndexCache.set(vehicle, index)
+    } else {
+      index = 0 // 状态尚未构建（空 roster）：退回首色且不缓存，避免毒化序号
+    }
+  }
   const list = vehicle.friendly === true ? friendlyColors.value : enemyColors.value
-  return list[Math.max(0, index) % list.length]
+  return list[index % list.length]
 }
 
 /**
@@ -2325,8 +2369,8 @@ const mapStyle = computed(() => ({
           :selected-account-id="selectedAccountId"
           :marker-label="markerLabel"
           :hp-for="hpFor"
-          :hp-prefs="{ ...hpPrefs, showHp: !uiHidden && hpPrefs.showHp }"
-          :marker-prefs="{ classIcons: !uiHidden && markerPrefs.classIcons, showStatus: !uiHidden && markerPrefs.showStatus }"
+          :hp-prefs="hpPrefsForMap"
+          :marker-prefs="markerPrefsForMap"
           :translate="t"
           :ghost-for="ghostFor"
           :flash-for="flashFor"

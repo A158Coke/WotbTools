@@ -266,12 +266,18 @@ const QUALITY_ORDER = Object.keys(QUALITY_PRESETS)
 
 // 顶栏双方总血量：数值用**完整整数**（§11 HUD 禁止 1k / 22.3k 缩写，与 2D HUD 同口径）；
 // 色条宽度用原始百分比（不取整，血量缓慢下降时条仍平滑），title 上给取整百分比。
-const hudHealth = (current, maximum) => ({
-  state: 'EXACT',
-  knownRemaining: Number.isFinite(Number(current)) ? Math.max(0, Number(current)) : 0,
-  totalMax: Number.isFinite(Number(maximum)) ? Math.max(0, Number(maximum)) : 0,
-  unknownMax: 0,
-})
+// computed 提升对象构造：模板内联函数调用在每次父渲染（~10Hz HUD 节流）都生成新 prop
+// 身份，击穿子组件的 props 等值短路。
+const hudFriendlyHp = computed(() => hudHealth(store.hpFriend, store.hpFriendMax))
+const hudEnemyHp = computed(() => hudHealth(store.hpEnemy, store.hpEnemyMax))
+function hudHealth(current, maximum) {
+  return {
+    state: 'EXACT',
+    knownRemaining: Number.isFinite(Number(current)) ? Math.max(0, Number(current)) : 0,
+    totalMax: Number.isFinite(Number(maximum)) ? Math.max(0, Number(maximum)) : 0,
+    unknownMax: 0,
+  }
+}
 
 /** Banner colors follow the current profile and Recorder perspective. */
 const teamColors = computed(() => {
@@ -655,8 +661,8 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
           score-label-key="recon.map.playback.kills"
           :map-title="mapTitle"
           :battle-time="battleTimeLabel"
-          :friendly-hp="hudHealth(store.hpFriend, store.hpFriendMax)"
-          :enemy-hp="hudHealth(store.hpEnemy, store.hpEnemyMax)"
+          :friendly-hp="hudFriendlyHp"
+          :enemy-hp="hudEnemyHp"
           :friendly-points="store.scoreFriend"
           :enemy-points="store.scoreEnemy"
           :hp-no-transition="!store.playing"

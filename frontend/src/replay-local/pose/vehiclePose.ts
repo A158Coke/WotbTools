@@ -24,7 +24,7 @@
  *
  * 纯函数、无 THREE/DOM 依赖（单测锁不变量）。
  */
-import { GRID_DT, coverageSpanAt, keyframeAt, sampleChannel, sampleChannelWithin, sampleKeyframes, segmentAt, visibilitySpanForSampling } from '../../scene/trackInterp.js'
+import { GRID_DT, coverageSpanAt, keyframeAt, sampleChannel, sampleChannelWithin, sampleKeyframes, segmentAt, visibilitySpanForSampling, visibilitySpanForSamplingInto } from '../../scene/trackInterp.js'
 import { activeEntityAt } from '../canonical/facts.js'
 import type { AgentAoiPresence, AgentPoseKeyframes, AgentPlaybackFacet, AgentVehicleTrack } from '../../api/agent-replay-facets.js'
 
@@ -219,6 +219,9 @@ function gridChannel(
   return sampleChannel((i) => arr[i], arr.length, t, grid.tStart, GRID_DT)
 }
 
+/** 可见段定位草稿（采样热路径零分配）：单次采样内持有、不复用跨调用，段定位无重入。 */
+const _spanScratch: [number, number] = [0, 0]
+
 /**
  * 求一辆车在回放时刻 `t`（**回放时钟域**，与 facet 网格同域）的 game 系位姿。
  * `out` 可复用以免每帧分配；返回值即 `out`。
@@ -231,7 +234,9 @@ export function sampleVehiclePoseGame(
   visibleSpans?: readonly number[] | null,
 ): VehiclePoseGame {
   // 段内采样：t 落在短隐藏段时夹到前一段（最后已知），不得退回无约束插值。
-  const span = visibleSpans ? (visibilitySpanForSampling(visibleSpans, t) as readonly [number, number] | null) : null
+  const span = visibleSpans
+    ? (visibilitySpanForSamplingInto(visibleSpans, t, _spanScratch) as readonly [number, number] | null)
+    : null
   const kf = poseKeyframesOf(def)
   if (kf) {
     const col = (c: number) => (i: number) => kf.pos[i * 3 + c]

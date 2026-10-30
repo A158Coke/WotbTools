@@ -1974,7 +1974,14 @@ describe('ReplayPage League failure UX separation', () => {
     })
     const wrapper = mountPage()
     await flushPromises()
-    expect(wrapper.findAll('.battle-table-stub').length).toBe(30)
+    // v-if 挂载口径（2026-10-31 批量优化，此前 v-show 全量挂载隐藏表）：
+    // 单场视图仅当前场表进 DOM；「逐场可看」= 切场次后对应表挂载
+    state.setActiveTab('b0')
+    await flushPromises()
+    expect(wrapper.findAll('.battle-table-stub').length).toBe(1)
+    state.setActiveTab('b29')
+    await flushPromises()
+    expect(wrapper.findAll('.battle-table-stub').length).toBe(1)
     wrapper.unmount()
   })
 
@@ -2019,7 +2026,13 @@ describe('ReplayPage League failure UX separation', () => {
     expect(notice.exists()).toBe(true)
     expect(notice.classes()).toContain('is-warning')
     expect(wrapper.text()).toContain('league.unavailable_mixed')
-    expect(wrapper.findAll('.battle-table-stub').length).toBe(2)
+    // v-if 挂载口径：逐场切换各挂载一张表（此前 v-show 两张全挂）
+    state.setActiveTab('b0')
+    await flushPromises()
+    expect(wrapper.findAll('.battle-table-stub').length).toBe(1)
+    state.setActiveTab('b1')
+    await flushPromises()
+    expect(wrapper.findAll('.battle-table-stub').length).toBe(1)
     expect(wrapper.find('[data-testid="result-failures"]').exists()).toBe(false)
     wrapper.unmount()
   })
