@@ -3,14 +3,14 @@ name: designer
 description: >
   开发生命周期的设计阶段：从用户请求中提取真实 outcome 与约束，基于仓库事实完成 ambition、
   evidence depth、cross-domain range、方案设计、独立验证与 adversarial design grill，最终产出
-  Executor-ready 的 docs/current-plan.md 并等待用户批准。
+  Executor-ready 的 docs/current-plan.md；按授权边界自动交接或等待用户决定。
   Trigger: 用户提出模糊需求、明确需求但尚无已批准方案、要求“grill / 先设计 / 出 plan”，
   或计划文件需要创建/更新时。它不实现 production 代码，不 commit/push/open PR，不判定 final pass。
 ---
 
 # Designer（deeply define the work）
 
-> 生命周期位置：User Request → **Designer** → approved `docs/current-plan.md` → Executor。
+> 生命周期位置：User Request → **Designer** → 已批准或符合本节执行授权条件的 `docs/current-plan.md` → Executor。
 > Designer 是 workflow 的 thinking / design brain；唯一下一阶段是 Executor。
 > 本 Skill 不做 production implementation、不 commit、不 push、不开 PR、不判定 final implementation PASS。
 
@@ -19,6 +19,37 @@ description: >
 - 用户请求（可以模糊，也可以已经非常明确）。
 - 现有 `docs/current-plan.md`（存在且与当前任务相关时先完整读取）。
 - 当前 repository reality：代码、canonical docs、配置、测试、运行时/CI/日志/指标等原始证据。
+
+## 授权、计划输入与偏差边界
+
+本节是授权、计划规范化和停止条件的唯一语义来源；其他 Skill 引用本节，不另定义批准规则。
+
+### 授权与阶段转换
+
+- **Plan-only**：用户要求 grill / 先设计 / 出 plan / 研究怎么做 / 暂不编码时，完成设计后等待执行授权。请求中的否定、限制与上下文优先于“修复”等单个词。
+- **Execute-authorized**：用户明确要求修复、实现、执行所附计划或开 PR，且没有 plan-only 限制时，记录其授权原文与范围。执行授权不等于用户批准 Agent 尚未展示的具体方案。
+- 未提供可执行计划的新 development task 仍先完成本 Skill 的完整 pipeline，并在编码前写入唯一计划。`Ambition = KEEP`、无未决产品决定、无新增破坏性动作或 security / data ownership / migration / runtime topology 边界变化，且用户已授权执行时，自动交给 Executor，不重复请求批准。否则提交具体方案供用户决定；已明确批准的高风险方案在其边界内连续执行，不逐步重新批准。
+- 授权来源、允许范围和限制记录在现有 `# Constraints`，不新增平行状态文件。授权不自动包含 merge、生产 apply、付费 probe 或破坏性数据操作；这些动作仍需其适用的具体授权。EXPAND / SYSTEMATIZE 不从一般执行请求推定批准。
+- 恢复上下文时核对计划、授权来源与当前 scope；无法确认授权时只暂停依赖该授权的动作。
+
+### 用户提供的计划
+
+- Executor 接受文件计划和用户直接提供的 plan；`docs/current-plan.md` 是唯一执行载体，不是唯一输入入口。用户明确要求执行所附计划即提供该计划范围的执行授权，不再询问同一批准。
+- 用户提供的可执行方案无需仅为格式重新走完整设计 pipeline。Executor 可将标题、字段别名和排列无损映射到下方 canonical schema，保留用户的目标、约束、非目标、步骤及验收；有事实支持的不适用项可写 N/A + 理由，尚未执行的步骤可标 PENDING，不能把未知写成无风险或已验证。
+- 缺少路径、直接相关测试或文档可从仓库定位；实质缺失可由已授权目标和事实确定时先补证据。不得猜测业务选择、代定安全/迁移策略、弱化验收或伪造设计证据。只有缺失信息需要用户决策，或方案实质失效时才返回 Designer / 用户。
+- 规范化摘要与授权来源保留在同一计划的 Evidence / Constraints；执行前物化到任务 worktree 的唯一 `docs/current-plan.md`。现有相关但不同的计划按用户当前明确选择处理，保护其他任务的载体。
+
+### 停止条件
+
+| 类别 | 判定 | 动作 |
+|---|---|---|
+| HARD STOP | 需要新的产品/业务/权限决定，或偏差改变 Goal、Actual Outcome、user-visible contract、security、data ownership / migration、runtime topology、不可逆动作或实质 scope / ambition；必要外部输入缺失且无安全恢复路径 | 停止依赖该决定的步骤，记录证据及所需决定；需要设计变化时返回 Designer；其他独立安全工作继续 |
+| RECOVERABLE DEVIATION | 同一 Target State 内的路径纠正、必要直接依赖、相关测试、canonical docs、generated artifact、测试失败迭代、可安全恢复的工具故障 | 自行修正、更新同一计划的实际 impact / validation evidence，验证后继续；不更改 Non-Goals 或静默扩大目标 |
+| REPORT-ONLY | 无关既存债务、非阻断 warning、review MINOR、未触及且不影响验收的文档漂移 | 保留并最终报告，不扩大当前任务 |
+
+实现预测变化不等于设计失效。Evidence gap / unverified assumption 本身不要求用户答复；先获取可得证据，按其对上述边界的实际影响分类。
+
+Review BLOCKER/MAJOR 阻止交付，但可修复时继续修复与重审；不因首次失败、单轮未闭环或新增必要文件结束本轮。反复失败且无新证据或安全恢复路径时准确报告外部依赖，不盲目重试、不虚报完成。
 
 ## Canonical pipeline
 
@@ -41,7 +72,7 @@ PHASE 7 — EXECUTION PLAN
   ↓
 INTERNAL DESIGN GRILL
   ↓
-approved docs/current-plan.md
+approved / execute-authorized docs/current-plan.md
   ↓
 Executor
 ```
@@ -291,16 +322,16 @@ DONE
 BLOCKED
 ```
 
-- 用户批准计划后：plan 整体 = approved；每个 execution step 初始 `PENDING`。
+- 用户批准具体计划，或符合本节自动交接条件后：每个 execution step 初始 `PENDING`；授权来源写在 `# Constraints`，不伪称用户批准未展示方案。
 - Executor 执行时：`PENDING → IN_PROGRESS → DONE`。
-- 遇到真实 blocker（缺少外部输入、依赖不可用、计划外冲突）→ `BLOCKED`，停止该步并汇报。
-- 若 repository reality 证明 plan assumption 失效 → 停止执行并返回 Designer / 用户，不在 Executor 内改写 schema。
+- 本节 HARD STOP → 该步 `BLOCKED` 并说明必要外部输入；可恢复偏差继续执行，不以 BLOCKED 代替自主修复。
+- assumption 失效按本节影响边界分类；只有设计实质失效才返回 Designer / 用户，普通实现事实更新留在同一 schema。
 
 禁止维护第二套平行状态词汇（如待批准 / 待执行 / 进行中 / 完成）。
 
 ### KEEP 任务的轻量 plan
 
-所有 development task 都进入本 Skill，包括明确 bug、单点 CSS、i18n 缺漏等小修。规模由 `Ambition = KEEP` 控制：KEEP 任务仍输出同一 canonical schema，但每节可以一行，Execution Steps 通常只有 1 步。
+未提供可执行计划的新 development task 都进入本 Skill，包括明确 bug、单点 CSS、i18n 缺漏等小修；用户提供的计划按本节输入规则消费。规模由 `Ambition = KEEP` 控制：KEEP 任务仍输出同一 canonical schema，但每节可以一行，Execution Steps 通常只有 1 步。
 
 例如修复一个明确 CSS overflow：
 
@@ -312,7 +343,7 @@ Validation / Outside Judge: specified viewport regression
 Execution Steps: 1 step
 ```
 
-不要把 KEEP 任务扩大成系统重构，也不要因为没有明显设计空间而跳过 plan approval。
+不要把 KEEP 任务扩大成系统重构；按本节授权条件决定自动交接或请求具体方案批准。
 
 不要机械要求“一步一 commit”；只有自然边界才写 Commit boundary。
 
@@ -320,7 +351,7 @@ Execution Steps: 1 step
 
 ## INTERNAL DESIGN GRILL
 
-在 `docs/current-plan.md` 获得最终用户 approval 前，Designer 必须 adversarially attack 自己的 plan：
+在 `docs/current-plan.md` 交给 Executor 或提交用户批准前，Designer 必须 adversarially attack 自己的 plan：
 
 - 是否只解决 literal request，没解决 actual outcome？
 - 是否无证据扩大 scope？
@@ -334,7 +365,7 @@ Execution Steps: 1 step
 - 是否违反 compatibility / security / data boundary？
 - Executor 是否可以不重新设计就直接执行？
 
-发现问题时 Designer 自己迭代 plan，再提交用户批准。
+发现问题时 Designer 自己迭代 plan，再按本节授权边界交接；不能用自动交接跳过 Grill。
 
 Design Grill 不是新的 Skill，不是 final implementation review，也不替代 `review-with-docs`。
 
@@ -342,25 +373,25 @@ Design Grill 不是新的 Skill，不是 final implementation review，也不替
 
 不要创建 `idea-refine` / `grill` 等独立顶层 Skill。像“增强 AI Review”“让 IaC 更完整”“做个联赛系统”这类 idea 在 Phase 1 加载 `requirement-clarification.md`，澄清后仍继续完整 pipeline。
 
-明确 bug / performance / alias / role / login / CSS / i18n 小修等任务都直接进入 Designer；所有会改变 repository 行为的 development task 都走本 Skill。明确需求只减少 clarification，不缩短后续设计 pipeline；简单任务由 `Ambition = KEEP` 与轻量 plan 控制复杂度。
+明确 bug / performance / alias / role / login / CSS / i18n 小修等任务都直接进入 Designer；未提供可执行计划的 development task 都走本 Skill；已有用户计划先按本节规范化入口校验，不为格式重做设计。明确需求只减少 clarification，不缩短后续设计 pipeline；简单任务由 `Ambition = KEEP` 与轻量 plan 控制复杂度。
 
 ## Continual refinement principle
 
 一次 failure 不等于必须扩充 Harness。只有同类 reviewer finding、CI failure、incident、manual drift 或 Agent misunderstanding 重复出现，有证据证明 durable mechanism 降低长期维护成本时，才在 Ambition 中考虑 SYSTEMATIZE。
 
-不要持久化 future-refine 方向清单，也不要新增第五个 lifecycle Skill（`product-qa` 是不参与 lifecycle 的 operational 入口，不算在内）。
+不要持久化 future-refine 方向清单，也不要新增第五个 lifecycle Skill（`product-qa` 是独立 operational 入口，`finish-task` 只委托 Executor 收尾，均不新增 lifecycle 阶段）。
 
 ## 与其他 Skill 的边界
 
 - **Designer = deeply define the work**：负责 intent、actual outcome、constraints、ambition、evidence、depth、range、design、outside judge、executable plan、internal design grill。
-- **Executor = execute approved plan**：若现实证明 approved plan 的关键 assumption 错误，停止并返回 Designer / 用户，不得静默 redesign。
-- **Prompt Repair = minimum delta repair**：默认只修 reviewer finding；只有 finding 证明 approved plan 本身失效才返回 Designer。
+- **Executor = execute approved/authorized plan**：按本节分类现实偏差，必要实现纠正自行吸收，设计实质失效才返回；不得静默 redesign。
+- **Prompt Repair = minimum delta repair**：默认只修 reviewer finding；只有 finding 按本节边界证明设计实质失效才返回 Designer。
 - **Review With Docs = verify implementation against plan + reality + canonical docs + runtime evidence**：不是第二个 Designer。
 
 ## 规则
 
 - 只用证据说话；无法从事实源确认的写「待确认」，不猜。
 - 不写 production 实现代码，不 commit/push/open PR。
-- 方案未获用户批准不得交给 Executor。
+- 只按本节授权条件交给 Executor；plan-only、未决产品决定或未批准风险边界不得自动执行。
 - 需求/方案变化只更新 `docs/current-plan.md`，不另建第二份计划。
 - 新增 production abstraction 前先做 Reuse Audit：优先 reuse / extend 现有结构。

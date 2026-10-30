@@ -1,6 +1,6 @@
 # Developer Guide
 
-> 动手前先读这一份。维护者与 AI 都适用。
+> 开发索引。普通任务定位相关章节；全仓接手 / onboarding / architecture-wide 任务全文阅读。维护者与 AI 都适用。
 
 联赛回放统一使用无版本路径；Bilibili UP/视频推荐统一使用 recommendations 接口。旧 APK 内容接口适配及前端回退已移除，现代数据结构以 OpenAPI 为准；历史迁移、归档及图片 URL 保留。旧接口仅供内部测试使用；当前发布版本与最低支持门槛见 [联赛回放](features/league-broadcasts.md#停止旧-apk-支持与部署切换) 与 [推荐目录](features/bilibili-creators.md)。Android 版本与兼容性由 [Android release process](android/release-process.md) 声明。
 
@@ -10,7 +10,7 @@
 
 WotbTools 是 WoT Blitz `.wotbreplay` 回放分析工具集：Java 25 + Spring Boot 4 业务与 AI 服务、Vue 3 Web/Android 客户端、上游 Rust/WASM 回放引擎、Keycloak + PostgreSQL。
 
-动手前读 `.agents/AGENTS.md`、当前目录的 `AGENTS.md` 和本文件；跨层改动按 `.agents/playbooks/wotb-sync.md`。真实代码始终是 source of truth，发现文档漂移时必须在同一次改动里修正文档。
+动手前读根 `AGENTS.md`、`.agents/AGENTS.md`、当前 lifecycle Skill 与涉及目录的 `AGENTS.md`；本文件和专题文档按任务主题定位，跨层改动按 `.agents/playbooks/wotb-sync.md`。真实代码始终是 source of truth；与当前改动有关的文档漂移同步修正，未触及且不影响验收的无关漂移只报告。
 
 固定接手方法（入口阅读 → 现实审计 → 任务分类 → 计划契约 → Reuse / SSOT 执行 → 分层验证 → 收尾交接）以 [`.agents/AGENTS.md`](../.agents/AGENTS.md) 的「接手与调整方法」为准。
 
@@ -20,7 +20,7 @@ WotbTools 是 WoT Blitz `.wotbreplay` 回放分析工具集：Java 25 + Spring B
 
 | 文档 | 作用 | 何时读 |
 |---|---|---|
-| `docs/DEVELOPER_GUIDE.md` | 开发入口、环境、结构、架构约束 | 最先 |
+| `docs/DEVELOPER_GUIDE.md` | 开发入口、环境、结构、架构约束 | 按任务读取相关章节；全仓接手时全文 |
 | `.agents/AGENTS.md` | 仓库级硬约定、接手与调整固定流程 | 动手前必读 |
 | `frontend/AGENTS.md` / `java/AGENTS.md` 等 | 目录级约束 | 进入对应目录时 |
 | `.agents/playbooks/wotb-sync.md` | 跨层改动检查单 | 增删列、改解析、导出、前端时 |

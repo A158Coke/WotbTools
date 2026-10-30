@@ -1,0 +1,4 @@
+interface:
+  display_name: "Finish Task"
+  short_description: "PR 合并后收尾入口，委托 Executor 清理当前任务工作区与分支"
+  default_prompt: "使用 $finish-task 为当前已合并的 PR 收尾，进入 Executor cleanup fast path。"

@@ -1,4 +1,4 @@
 interface:
   display_name: "Executor"
-  short_description: "执行已批准计划并在 review-with-docs PASS 后提交/开 PR；merge 后清理"
-  default_prompt: "Use $executor to execute docs/current-plan.md."
+  short_description: "执行已授权文件/手贴计划；review-with-docs PASS 后提交/开 PR"
+  default_prompt: "使用 $executor 执行用户提供的文件或手贴计划，按 Designer 授权边界规范化并写入唯一 docs/current-plan.md。"
