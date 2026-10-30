@@ -6,7 +6,6 @@ import PlaybackConsumableBadge from './PlaybackConsumableBadge.vue'
 const mountBadge = (props = {}) => mount(PlaybackConsumableBadge, {
   props: {
     logicalItemId: 'ADRENALINE',
-    state: 'ACTIVE',
     remainingSec: 15,
     durationSec: 20,
     ...props,
@@ -14,21 +13,15 @@ const mountBadge = (props = {}) => mount(PlaybackConsumableBadge, {
 })
 
 describe('PlaybackConsumableBadge', () => {
-  it('定时消耗品：图标 + 剩余比例环（dashoffset 随剩余时间变化）', () => {
+  it('正在生效：图标 + 剩余比例环（dashoffset 随剩余时间变化）', () => {
     const wrapper = mountBadge()
-    expect(wrapper.get('[data-test="pb-consumable-badge"]').attributes('data-state')).toBe('ACTIVE')
+    expect(wrapper.find('[data-test="pb-consumable-badge"]').exists()).toBe(true)
     expect(wrapper.find('.pb-consumable-icon').exists()).toBe(true)
     const ring = wrapper.get('.pb-consumable-ring-fill')
     const dasharray = Number(ring.attributes('stroke-dasharray'))
     const dashoffset = Number(ring.attributes('stroke-dashoffset'))
     expect(dasharray).toBeGreaterThan(0)
     expect(dashoffset).toBeCloseTo(dasharray * 0.25, 5)
-  })
-
-  it('冷却态带 is-cooldown 类，图标仍保留', () => {
-    const wrapper = mountBadge({ state: 'COOLDOWN', remainingSec: 40, durationSec: 60 })
-    expect(wrapper.classes()).toContain('is-cooldown')
-    expect(wrapper.find('.pb-consumable-icon').exists()).toBe(true)
   })
 
   it('无图 logicalItemId 回退几何点，不裸显 ID', () => {

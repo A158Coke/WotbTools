@@ -1,11 +1,11 @@
 /**
- * 回放消耗品运行时：把 canonical `consumableTransitions` 折叠成「当前可展示的定时消耗品」。
+ * 回放消耗品运行时：把消耗品 lifecycle 折叠成「此刻正在生效的主动消耗品」。
  *
- * 只输出**持续一段时间的主动消耗品**在 ACTIVE / COOLDOWN 中的状态：
- * - `durationSec > 0` 才算定时；瞬发消耗品（修理箱/急救包等）不进入 HUD。
- * - `remainingSec` 由 `endsAt`（Agent 新字段）计算；旧产物缺 `endsAt` 时回退
- *   `timeSec + durationSec`。
- * - `state === 'INITIALIZED'`（未使用/已就绪）不展示；`TEARDOWN`/`UNKNOWN` 隐藏。
+ * 只输出**定时主动消耗品在激活窗口内**的状态（`ACTIVATED` 且 `durationSec > 0`）：
+ * - 瞬发消耗品（修理箱/急救包等，激活 duration=0）不进入 HUD。
+ * - 冷却（`ACTIVE_ENDED_OR_COOLDOWN`）、未使用/已就绪（`INITIALIZED`）、
+ *   `TEARDOWN`/`UNKNOWN` 一律不展示——HUD 只表达「现在正在生效」。
+ * - `remainingSec` 由 `endsAt` 计算；旧产物缺 `endsAt` 时回退 `timeSec + durationSec`。
  * - `invalidation === true`（AoI 关闭/未知段）清空该车全部槽位，绝不把旧状态留在屏幕上。
  *
  * 纯函数，无 Vue/场景依赖；2D 与 3D 共用同一份状态语义。
@@ -24,12 +24,11 @@ function firstFinite(...values) {
   return null
 }
 
-/** 单个槽位在 t 时刻是否应展示，以及剩余秒数。 */
+/** 单个槽位在 t 时刻是否处于激活窗口，以及剩余秒数。 */
 function slotBadge(slot, t) {
   if (!slot || !Number.isFinite(t)) return null
-  if (!(slot.timed === true)) return null
+  if (slot.state !== 'ACTIVATED') return null
   if (!(Number.isFinite(slot.durationSec) && slot.durationSec > 0)) return null
-  if (slot.state !== 'ACTIVATED' && slot.state !== 'ACTIVE_ENDED_OR_COOLDOWN') return null
   const end = Number.isFinite(slot.endsAt)
     ? slot.endsAt
     : (Number.isFinite(slot.timeSec) ? slot.timeSec + slot.durationSec : null)
@@ -40,14 +39,13 @@ function slotBadge(slot, t) {
     slot: slot.consumableSlot,
     logicalItemId: slot.logicalItemId ?? null,
     wireCode: slot.wireCode ?? null,
-    state: slot.state === 'ACTIVATED' ? 'ACTIVE' : 'COOLDOWN',
     remainingSec,
     durationSec: slot.durationSec,
   }
 }
 
 /**
- * 折叠 transition，返回 t 时刻应展示的定时消耗品（按槽位升序）。
+ * 折叠 transition，返回 t 时刻正在生效的定时消耗品（按槽位升序）。
  *
  * 两种输入形状共用同一语义：canonical `ConsumableTransition`（2D：`timeSec` /
  * `state` / `durationSec` / `endsAt` / `consumableSlot` / `logicalItemId`）与
@@ -57,7 +55,7 @@ function slotBadge(slot, t) {
  *
  * @param {readonly object[]|null|undefined} transitions
  * @param {number} t 回放时刻（与该输入的时钟同 base）
- * @returns {{slot:number,logicalItemId:string|null,wireCode:number|null,state:'ACTIVE'|'COOLDOWN',remainingSec:number,durationSec:number}[]}
+ * @returns {{slot:number,logicalItemId:string|null,wireCode:number|null,remainingSec:number,durationSec:number}[]}
  */
 export function consumableRuntimeAt(transitions, t) {
   if (!Array.isArray(transitions) || !Number.isFinite(t)) return []
@@ -76,12 +74,6 @@ export function consumableRuntimeAt(transitions, t) {
       ?? (typeof tr.state_name === 'string' ? tr.state_name : 'UNKNOWN')
     const durationSec = firstFinite(tr.durationSec, tr.duration_s)
     const endsAt = firstFinite(tr.endsAt, tr.ends_at)
-    const prev = bySlot.get(slotIndex)
-    // 「是否是定时消耗品」只在 ACTIVATED 时由 duration 定：state3 的 duration 是冷却，
-    // 不能反过来把瞬发消耗品升级成定时；INITIALIZED/TEARDOWN/UNKNOWN 结束该生命周期。
-    let timed = prev?.timed === true
-    if (state === 'ACTIVATED') timed = durationSec !== null && durationSec > 0
-    if (state === 'INITIALIZED' || state === 'TEARDOWN' || state === 'UNKNOWN') timed = false
     bySlot.set(slotIndex, {
       consumableSlot: slotIndex,
       logicalItemId: tr.logicalItemId ?? tr.logical_item_id ?? null,
@@ -90,7 +82,6 @@ export function consumableRuntimeAt(transitions, t) {
       durationSec: durationSec === null ? null : Math.max(0, durationSec),
       endsAt,
       timeSec,
-      timed,
     })
   }
   const out = []

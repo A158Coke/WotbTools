@@ -346,7 +346,7 @@ describe('playbackScene 会话代数契约', () => {
     api.setPlaying(false)
     api.seekTime(55)
     expect(overlay.setLabels.mock.calls.at(-1)[0][0].consumables).toEqual([{
-      slot: 0, logicalItemId: 'ADRENALINE', wireCode: 9, state: 'ACTIVE', remainingSec: 15, durationSec: 20,
+      slot: 0, logicalItemId: 'ADRENALINE', wireCode: 9, remainingSec: 15, durationSec: 20,
     }])
     api.seekTime(45)
     expect(overlay.setLabels.mock.calls.at(-1)[0][0].consumables).toEqual([])

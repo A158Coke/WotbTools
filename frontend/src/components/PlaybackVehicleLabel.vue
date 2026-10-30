@@ -46,7 +46,7 @@ const ghostWidth = computed(() => {
   return g && Number.isFinite(g.prevPct) && Number.isFinite(g.nextPct)
     && g.prevPct - g.nextPct > 0.5 ? g.prevPct - g.nextPct : null
 })
-/** 只展示定时消耗品（duration>0）且仍有剩余时间的 ACTIVE/COOLDOWN。 */
+/** 只展示正在生效的定时消耗品（runtime 已保证 ACTIVE；这里再挡一次零时长/已结束）。 */
 const activeConsumables = computed(() => (Array.isArray(props.consumables) ? props.consumables : [])
   .filter((c) => c && Number.isFinite(c.remainingSec) && c.remainingSec > 0
     && Number.isFinite(c.durationSec) && c.durationSec > 0))
@@ -75,7 +75,7 @@ const classes = computed(() => ({
           <!-- 定时消耗品徽标：绝对定位在血条左侧，不改变血条中心/伤害数字右缘几何。 -->
           <span v-if="activeConsumables.length" class="pb-consumables" data-test="pb-consumables">
             <PlaybackConsumableBadge v-for="c in activeConsumables" :key="c.slot"
-              :logical-item-id="c.logicalItemId" :state="c.state"
+              :logical-item-id="c.logicalItemId"
               :remaining-sec="c.remainingSec" :duration-sec="c.durationSec" />
           </span>
           <span class="pb-hp-bar" :class="{ 'pb-hp-unknown-track': hpFillUnknown }">

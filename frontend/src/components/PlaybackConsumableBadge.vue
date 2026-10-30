@@ -3,16 +3,15 @@ import { computed } from 'vue'
 import { consumableIconUrl } from '../utils/consumableIcons.js'
 
 /**
- * 血量条旁的一个定时消耗品状态徽标：图标 + 剩余时间环。
+ * 血量条旁的一个**正在生效**的定时消耗品徽标：图标 + 剩余时间环。
  *
- * - 环 = 剩余时间 / 当前状态总时长（ACTIVE 是持续时间，COOLDOWN 是冷却时长）。
- * - 只由 `consumableRuntimeAt` 的 ACTIVE/COOLDOWN 且 durationSec>0 条目驱动；
- *   瞬发消耗品不会进来。
+ * - 只在 `consumableRuntimeAt` 给出激活窗口（ACTIVATED 且 duration>0）时渲染；
+ *   冷却/未使用/瞬发都不会进来。
+ * - 环 = 剩余时间 / 本次激活总时长。
  * - 不显示 raw wire/logical ID；无图时用同色几何点回退。
  */
 const props = defineProps({
   logicalItemId: { type: String, default: null },
-  state: { type: String, default: 'ACTIVE' },
   remainingSec: { type: Number, required: true },
   durationSec: { type: Number, required: true },
 })
@@ -25,18 +24,16 @@ const fraction = computed(() => {
 })
 const dashOffset = computed(() => RING_LEN * (1 - fraction.value))
 const iconUrl = computed(() => consumableIconUrl(props.logicalItemId))
-const badgeClass = computed(() => (props.state === 'COOLDOWN' ? 'is-cooldown' : 'is-active'))
 </script>
 
 <template>
-  <span class="pb-consumable-badge" :class="badgeClass" data-test="pb-consumable-badge"
-    :data-state="state" aria-hidden="true">
+  <span class="pb-consumable-badge" data-test="pb-consumable-badge" aria-hidden="true">
     <svg class="pb-consumable-ring" viewBox="0 0 20 20">
       <circle class="pb-consumable-ring-track" cx="10" cy="10" r="8" />
       <circle class="pb-consumable-ring-fill" cx="10" cy="10" r="8"
         :stroke-dasharray="RING_LEN" :stroke-dashoffset="dashOffset" />
     </svg>
-    <img v-if="iconUrl" class="pb-consumable-icon" :src="iconUrl" alt="" width="12" height="12" />
+    <img v-if="iconUrl" class="pb-consumable-icon" :src="iconUrl" alt="" width="20" height="20" />
     <span v-else class="pb-consumable-fallback"></span>
   </span>
 </template>
@@ -46,8 +43,8 @@ const badgeClass = computed(() => (props.state === 'COOLDOWN' ? 'is-cooldown' : 
   position: relative;
   display: inline-grid;
   place-items: center;
-  width: var(--space-4);
-  height: var(--space-4);
+  width: var(--space-6);
+  height: var(--space-6);
   color: inherit;
   pointer-events: none;
 }
@@ -63,35 +60,29 @@ const badgeClass = computed(() => (props.state === 'COOLDOWN' ? 'is-cooldown' : 
 .pb-consumable-ring-track {
   fill: none;
   stroke: var(--color-playback-label-track);
-  stroke-width: calc(var(--space-1) / 2);
+  stroke-width: 2;
 }
 .pb-consumable-ring-fill {
   fill: none;
   stroke: currentColor;
-  stroke-width: calc(var(--space-1) / 2);
+  stroke-width: 2;
   stroke-linecap: round;
   transition: stroke-dashoffset var(--duration-fast) linear;
 }
 .pb-consumable-icon {
   position: relative;
-  width: var(--space-3);
-  height: var(--space-3);
+  width: var(--space-5);
+  height: var(--space-5);
   object-fit: contain;
   border-radius: var(--radius-full);
 }
 .pb-consumable-fallback {
   position: relative;
-  width: var(--space-1);
-  height: var(--space-1);
+  width: calc(var(--space-1) * 1.5);
+  height: calc(var(--space-1) * 1.5);
   border-radius: var(--radius-full);
   background: currentColor;
   opacity: .6;
-}
-/* 冷却期保留图标与环（用户能看出"刚用过/还要等"）：环改中性白 + 降一档强度，
-   与激活期的队伍色环区分。 */
-.pb-consumable-badge.is-cooldown {
-  color: var(--color-playback-label-text);
-  opacity: .55;
 }
 @media (prefers-reduced-motion: reduce) {
   .pb-consumable-ring-fill { transition: none; }

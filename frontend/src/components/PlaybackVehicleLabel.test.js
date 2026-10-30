@@ -198,16 +198,15 @@ describe('PlaybackVehicleLabel magazine segmentation', () => {
 })
 
 describe('PlaybackVehicleLabel consumable badges', () => {
-  it('定时消耗品 ACTIVE/COOLDOWN 渲染在血条左侧，一个槽位一个徽标', () => {
+  it('正在生效的定时消耗品渲染在血条左侧，一个槽位一个徽标', () => {
     const wrapper = mountLabel({
       consumables: [
-        { slot: 0, logicalItemId: 'ADRENALINE', state: 'ACTIVE', remainingSec: 15, durationSec: 20 },
-        { slot: 2, logicalItemId: 'RETICLE_CALIBRATION', state: 'COOLDOWN', remainingSec: 30, durationSec: 55 },
+        { slot: 0, logicalItemId: 'ADRENALINE', remainingSec: 15, durationSec: 20 },
+        { slot: 2, logicalItemId: 'RETICLE_CALIBRATION', remainingSec: 30, durationSec: 55 },
       ],
     })
     const badges = wrapper.findAll('[data-test="pb-consumable-badge"]')
     expect(badges).toHaveLength(2)
-    expect(badges.map(b => b.attributes('data-state'))).toEqual(['ACTIVE', 'COOLDOWN'])
     expect(wrapper.get('[data-test="pb-consumables"]').element.parentElement)
       .toBe(wrapper.get('.pb-hp-row').element)
   })
