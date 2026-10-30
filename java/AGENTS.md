@@ -41,7 +41,7 @@ regression tests 即可，PR CI 负责最终发现遗漏影响。同一任务内
   禁止层分包。Hundred 与 Mark3 的公开 leaderboard、admin read/query、moderation transitions 由各自域内 service owner 承载；submission service 持有 create/cancel 与 replay hash/storage 生命周期，不建立跨域基类。
 - **架构测试**：`CoreArchitectureTest` 使用 ArchUnit 守护 core 依赖方向；Web 的
   `WebArchitectureTest` 保留 domain 分包、Controller/service 分层、entity/DTO ownership、
-  禁字段注入/Lombok 等项目规则。`WebModuleArchitectureTest` 使用 Spring Modulith 验证九个业务域和
+  禁字段注入/Lombok 等项目规则。`WebModuleArchitectureTest` 使用 Spring Modulith 验证十一个业务域和
   `config/exceptionhandler/replayfile/util` 四个支持模块的封装、允许依赖与循环；模块均为 CLOSED，
   package-info.java 是模块依赖和 named interfaces 的声明入口，禁止用 OPEN 或忽略业务包绕过验证。
   user 模块仅通过 `user.api` 的 `UserProfiles`、`UserProfileSnapshot` 和 `WotbAccountIdentity` 提供跨域契约；

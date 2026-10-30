@@ -9,6 +9,7 @@ const HoFPage = defineAsyncComponent(() => import('../components/HoFPage.vue'))
 const HoFAdminPage = defineAsyncComponent(() => import('../components/HoFAdminPage.vue'))
 const ProfilePage = defineAsyncComponent(() => import('../components/ProfilePage.vue'))
 const AdminUsersPage = defineAsyncComponent(() => import('../components/AdminUsersPage.vue'))
+const AdminAiReviewFeedbackPage = defineAsyncComponent(() => import('../components/AdminAiReviewFeedbackPage.vue'))
 const HistoryPage = defineAsyncComponent(() => import('../components/HistoryPage.vue'))
 const TechnicalEvolutionPage = defineAsyncComponent(() => import('../components/TechnicalEvolutionPage.vue'))
 const ContactPage = defineAsyncComponent(() => import('../components/ContactPage.vue'))
@@ -52,6 +53,7 @@ export const VIEW_COMPONENTS = Object.freeze({
   'hof-admin': HoFAdminPage,
   profile: ProfilePage,
   'admin-users': AdminUsersPage,
+  'admin-ai-review-feedback': AdminAiReviewFeedbackPage,
   history: HistoryPage,
   'technical-evolution': TechnicalEvolutionPage,
   contact: ContactPage,

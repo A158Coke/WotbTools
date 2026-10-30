@@ -224,6 +224,8 @@ export async function requireOk(response: Response): Promise<Response> {
  * 不该被这里伪造成「功能不可用」。
  */
 const API_PATH_FEATURES: readonly (readonly [string, string])[] = Object.freeze([
+  ['/api/admin/ai-review-feedback', Feature.ADMIN_AI_FEEDBACK],
+  ['/api/ai-review-feedback', Feature.AI_FEEDBACK],
   ['/api/admin/users', Feature.ADMIN_USERS],
   ['/api/admin/hof', Feature.HALL_OF_FAME],
   ['/api/users', Feature.ACCOUNT_PROFILE],

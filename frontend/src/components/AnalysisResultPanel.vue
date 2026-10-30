@@ -1,7 +1,8 @@
 <script setup>
-import { onBeforeUnmount, ref } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import MarkdownContent from './MarkdownContent.vue'
+import AiReviewFeedbackDialog from './AiReviewFeedbackDialog.vue'
 import { copyText } from '../utils/clipboard.js'
 import { buildAiReviewReplyText, teamIdentityLabel as identityLabel } from '../utils/aiReviewReplyText.js'
 
@@ -22,8 +23,16 @@ const preBattleOpen = ref(true)
 // 复盘正文（call2）折叠状态，默认展开
 const analysisOpen = ref(true)
 const copied = ref(false)
+const feedbackOpen = ref(false)
+const feedbackSnapshot = ref('')
+const feedbackSent = ref(false)
 let copyTimer
-const { t } = useI18n()
+const { t, locale } = useI18n()
+
+watch([() => props.result, () => locale?.value], () => {
+  feedbackOpen.value = false
+  feedbackSent.value = false
+})
 
 function togglePreBattle() {
   preBattleOpen.value = !preBattleOpen.value
@@ -31,6 +40,18 @@ function togglePreBattle() {
 
 function toggleAnalysis() {
   analysisOpen.value = !analysisOpen.value
+}
+
+function openFeedback() {
+  feedbackSnapshot.value = buildAiReviewReplyText(props.result, t)
+  if (!feedbackSnapshot.value) return
+  feedbackSent.value = false
+  feedbackOpen.value = true
+}
+
+function feedbackSuccess() {
+  feedbackOpen.value = false
+  feedbackSent.value = true
 }
 
 /** 一键复制最终复盘正文（团队结果使用 authoritative display identity；不含独立的赛前预测与地图鸟瞰）。
@@ -77,8 +98,11 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
         >
           {{ $t(copied ? 'recon.copied' : 'recon.copy') }}
         </button>
+        <button v-if="buildAiReviewReplyText(result, t)" type="button" class="copy-btn" data-test="feedback-btn" @click="openFeedback">{{ $t('aiFeedback.button') }}</button>
       </div>
     </div>
+    <p v-if="feedbackSent" role="status">{{ $t('aiFeedback.success') }}</p>
+    <AiReviewFeedbackDialog :open="feedbackOpen" :snapshot="feedbackSnapshot" @close="feedbackOpen = false" @success="feedbackSuccess" />
     <div v-if="result.preBattleSection" class="prebattle-block">
       <button
         type="button"
@@ -188,7 +212,7 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
   }
 }
 .panel-head h2 { margin: 0; }
-.panel-head-actions { display: flex; align-items: center; gap: 8px; margin: 0; }
+.panel-head-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; margin: 0; }
 .toggle-btn, .copy-btn {
   padding: 4px 12px;
   border: 1px solid var(--border);

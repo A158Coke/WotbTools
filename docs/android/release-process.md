@@ -5,7 +5,7 @@
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本改由操作者显式指定（见下节）。
-当前源码版本：**3.17.12 / 3017012**（`android/gradle.properties`）。
+当前源码版本：**3.20.0 / 3020000**（`android/gradle.properties`），AI 复盘反馈随 APK 打包，说明见 [3.20.0](releases/3.20.0.md)。
 `android-v3.17.9` / `android-v3.17.10` 已有 immutable release identity，
 **不得 publish / 不得复用**；版本化记录见 [3.17.9](releases/3.17.9.md)、
 [3.17.10](releases/3.17.10.md)、[3.17.11](releases/3.17.11.md) 与 [3.17.12](releases/3.17.12.md)。
