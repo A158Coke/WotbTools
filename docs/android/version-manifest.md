@@ -28,18 +28,21 @@
    （逐跳 SHA-256 校验，见 [release-process.md](release-process.md)）→ 建 tag，并写一份 staging evidence
    `/download/android/wotbtools-android-v<版本>.staging.json`（记录 versionCode/versionName/
    sourceSha/tag/apkUrl/sha256/stagedAt）；**此时 production `version.json` 不变**。
-2. **publish**（真机 B13/B14 验证后手工 `mode=publish, version=<已 staged 版本>`）：以 **staged release
-   身份**为发布权威 —— 显式版本决定 immutable tag 与 APK/evidence 名，tag target 的源码给出
+2. **publish**（stage 成功后 `Android Auto Publish` 自动续跑 `mode=publish, version=<已 staged 版本>,
+   auto_publish=true`；手动 dispatch 仅作 recovery）：以 **staged release 身份**为发布权威 ——
+   显式版本决定 immutable tag 与 APK/evidence 名，tag target 的源码给出
    versionCode/bridge/Agent pin，再与 staging evidence、线上 APK 字节逐一比对（绝不重建、
    绝不 repoint tag、绝不改 evidence），并校验 Keycloak 的 `wotbtools-android` 可用、staged APK 中的本地 bundle 与
    Native runtime/bridge/Agent 身份一致、生产 API exact-origin CORS 和对象存储可读、
    `minSupportedVersionCode` 覆盖 breaking bridge cutover，
    全部成立后才写 `version.json`（`sourceSha` 记录 **APK 的 staged source**，不是发布当刻的 main
-   HEAD）并回读核验。真机验证期间 main 前进不会作废已 staged 的版本：当前 main 只提供策略与
-   历史，发布候选来自操作者给出的版本。
+   HEAD）并回读核验。stage 完成后 main 前进不会作废已 staged 的版本：当前 main 只提供策略与
+   历史，发布候选来自显式版本；自动续跑只有在 main 已提交**更高 Version-as-Code**
+   （`android/gradle.properties:wotbVersion`）时才让位给更新候选，docs/backend/infra-only 提交不改变版本。
 
-因此 `version.json` 是**唯一**的强制更新 commit point：真机验证未做或失败时，旧客户端读到的仍是
-上一份 manifest。协议细节见 [`release-process.md`](release-process.md)。
+因此 `version.json` 是**唯一**的强制更新 commit point：stage 技术门未过、自动续跑被更新候选取代、
+或任一 publish 安全守卫失败时，旧客户端读到的仍是上一份 manifest。真机冒烟 / 回归矩阵在 rollout
+之后执行，不再是发布前的人工审批门。协议细节见 [`release-process.md`](release-process.md)。
 
 > 上面的 `minSupportedVersionCode=2000000` 是 Android 2.0 的 cutover 取值：manifest 一旦指向
 > bridge v2 的客户端，前端就不再服务 bridge v1，因此旧版必须是强制更新。该值来自 GitHub Actions

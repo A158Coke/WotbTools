@@ -645,16 +645,24 @@ bridge version、Native 实现和前端兼容门禁。CI 会比较 PR base/head 
 生产发布前还会校验 APK、manifest 和 `version.json` 的 SHA/版本一致性。
 
 发布分两阶段（`android-release.yml`）：main 合并后自动 **stage**（构建/签名/上传 immutable APK、
-建 tag、写 staging evidence，**不碰** production `version.json`）；真机 B13/B14 验证通过后手工
-`workflow_dispatch(mode=publish, version=<已 staged 版本>)` **publish**（显式版本决定 tag/APK/evidence
-名，tag target 源码给出 versionCode/bridge/Agent pin，再校验 staged 身份 + Keycloak client +
-APK bundled frontend 身份/Bridge/native-auth + API exact-origin CORS/对象存储匿名可读就绪 + minSupported
-至少 2000001 的 local-first cutover，最后才写 `version.json`）。**stage preflight 同样执行 cutover 守卫**
+建 tag、写 staging evidence，**不碰** production `version.json`）；stage 技术门全部成功后
+`android-auto-publish.yml` 自动续跑 `mode=publish, version=<已 staged 版本>, auto_publish=true`
+**publish**（显式版本决定 tag/APK/evidence 名，tag target 源码给出 versionCode/bridge/Agent pin，
+再校验 staged 身份 + Keycloak client + APK bundled frontend 身份/Bridge/native-auth + API exact-origin
+CORS/对象存储匿名可读就绪 + minSupported 至少 2000001 的 local-first cutover，最后才写 `version.json`）。
+stage/publish 共用 `android-release` concurrency group 且 `queue: max`：生产 mutation 串行，但 stage /
+publish 请求互不取消；publish 开始执行时 `publish_gate` 只对自动续跑按 Version-as-Code 判定是否已被更新的
+Android candidate 取代，被取代则安全 skip（不写 `version.json`）。手动
+`workflow_dispatch(mode=publish, version=X)` 是 recovery/rerun 入口，不受该策略限制。
+**stage preflight 同样执行 cutover 守卫**
 （`guard_min_supported` / `guard_local_first_cutover` / `guard_bridge_covered`），所以 major / bridge
 cutover 的 `ANDROID_MIN_SUPPORTED_VERSION_CODE` 必须在**合并之前**设好，而不是等到 publish。
-major cutover 顺序固定为：设 floor → 合并 → main 上自动运行 stage 与随 PR 带来的基础设施 workflow（如 3.0 的
-`caddy.yml` / `@androidLoopback`，只能从 fresh main 部署，不在合并前手工部署）→ 两者都成功 → 真机验收 →
-publish（Android 客户端 rollout / `version.json` 强制更新状态的唯一 commit point）。版本号在**任一** immutable artifact 出现时即被消耗（tag、任意一台
+major cutover 顺序：设 floor → 合并 → main 上自动运行 stage 与随 PR 带来的基础设施 workflow（如 3.0 的
+`caddy.yml` / `@androidLoopback`，只能从 fresh main 部署，不在合并前手工部署）→ stage 成功即自动请求
+guarded publish（**不等待**基础设施 workflow；基础设施未就绪时 publish 的 runtime readiness fail-closed、
+不写 `version.json`）→ 基础设施成功后对同一 immutable candidate 做 recovery publish → production
+`version.json` readback（Android 客户端 rollout / `version.json` 强制更新状态的唯一 commit point）。物理真机 B13/B14 矩阵仍有价值，但不再是 `version.json` 之前的人工审批门：
+它在 rollout 之后做 smoke / regression，发现问题按版本规则发布更高版本。版本号在**任一** immutable artifact 出现时即被消耗（tag、任意一台
 origin 上 no-clobber 落位并核验的 APK、staging evidence、production `version.json`）；stage 失败不代表版本可复用，
 判定方法见 `docs/android/release-process.md`「版本号递增规则」。
 候选身份与当前 main 分离：main 前进

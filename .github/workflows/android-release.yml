@@ -10,18 +10,34 @@ name: Release / Android
 #              ⇒ major / bridge cutover 的 ANDROID_MIN_SUPPORTED_VERSION_CODE 必须在**合并之前**设好：
 #              floor 未到位时这个 preflight 会 fail-closed（修好变量后幂等重跑是恢复路径，不是正常流程）。
 #              major cutover：设 floor → 合并 → 本 stage 与随 PR 带来的基础设施 workflow（如 caddy.yml）各自从 main
-#              运行 → 两者都成功 → 真机验收 → publish。
-#   publish —— 真机 A14 验证通过后由 workflow_dispatch(mode=publish, version=X) 手工续跑：
+#              运行；stage 成功即自动请求 guarded publish，**不等待**基础设施 workflow —— infra 未就绪时
+#              publish 的 runtime readiness fail-closed（不写 version.json），之后对同一候选做 recovery publish。
+#   publish —— stage 成功后由 Android Auto Publish 自动续跑（mode=publish, version=X, auto_publish=true）：
 #              候选身份由**显式版本 X**决定（X 的 immutable tag target = staged 源码），
 #              不重建 APK（复用 staged 的 immutable APK），校验 staged 身份（版本/SHA/tag/URL/
 #              source SHA）→ minSupported 覆盖 breaking bridge cutover → Keycloak runtime client
 #              与 bundled frontend 与 API/CORS/asset 运行面就绪 → 才写 version.json（Android 客户端 rollout 的唯一 commit point）。
+#              真机测试仍有价值，但不再是 version.json 之前的人工审批门：它在 rollout 之后做 production
+#              smoke / regression，发现问题按正常版本规则发布更高版本。
+#
+# 调度不变量：stage 与 publish 共用 android-release concurrency group，并设置 queue: max。生产 mutation
+# 仍然严格串行（cancel-in-progress: false），但 GitHub 默认的单 pending 槽不会再把 stage / publish 请求
+# 互相取消：后到的自动 publish 不会替换一个更新的 pending stage。
+#
+# 自动续跑在**开始执行时**重新判定候选新鲜度（publish_gate job）：只有 main 上出现更高的
+# Version-as-Code（android/gradle.properties:wotbVersion）时，旧 staged candidate 才跳过自动发布；
+# docs/backend/infra-only 的 main 前进不改变版本，不会误杀唯一候选。被跳过的自动发布是安全 no-op：
+# 不写 version.json，候选保持 immutable，且仍可用显式 workflow_dispatch 做 recovery。
+# 排队 ≠ 逐个上线：queue: max 只保证请求不丢失，是否需要发布由 publish_gate 在执行时决定。
 #
 # 当前 main 在 publish 里的角色只有「策略与历史」：ancestry、minSupported、runtime compatibility
 # 以及 workflow 代码本身。它**不**决定发布哪个候选 —— main 前进到 2.0.2 不能作废已 staged 的 2.0.1。
 #
-# `version.json` 是强制更新的开关：只有 publish 阶段会动它，因此真机验证失败 / 未做时线上
-# manifest 保持不变，旧客户端不会被推向一个尚未验证的客户端。
+# `version.json` 是强制更新的开关：只有 publish 阶段会动它，因此 publish 守卫失败 / 自动发布被更新候选
+# 取代时线上 manifest 保持不变，旧客户端不会被推向一个未经守卫验证的客户端。
+#
+# 手动 `workflow_dispatch(mode=publish, version=X)` 是 recovery / rerun 入口：它不受自动发布
+# 最新候选策略限制，但仍要经过全部 publish 安全守卫。
 #
 # 全程 fail-closed + 幂等：APK/tag/staging evidence/version.json 任一步失败后对**同一源码**重跑同一版本都安全，
 # 不会双写、不会覆盖 immutable APK、不会 repoint tag。stage 失败不代表版本可复用：只要已有任一 immutable
@@ -38,7 +54,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "stage = 构建/签名/staging（默认）；publish = 真机验证通过后发布 version.json"
+        description: "stage = 构建/签名/staging（默认）；publish = 发布已 staged 的 immutable 候选并写 version.json"
         type: choice
         options:
           - stage
@@ -49,20 +65,35 @@ on:
         # 「条件必填」，因此 publish job 的第一件事就是 fail-closed 校验它非空（见
         # "Guard: publish requires an explicit staged version"）。
         #
-        # 为什么必须显式：真机验证期间 main 可能已经从 2.0.1 走到 2.0.2，从此不能再拿
+        # 为什么必须显式：stage 完成后 main 可能已经从 2.0.1 走到 2.0.2，从此不能再拿
         # 「当前 main 的 android/gradle.properties」当作发布候选 —— 那份文件的 owner 是
         # **当前策略**（ancestry / minSupported / compatibility），候选身份来自操作者给出的
-        # 这个版本 + 它对应的 immutable tag target。
+        # 这个版本 + 它对应的 immutable tag target。自动续跑传入 stage 解析出的同一个版本。
         description: "Immutable staged Android version to publish, e.g. 2.0.1 (required for mode=publish; unused for mode=stage)"
         required: false
         type: string
+      auto_publish:
+        # 只有 Android Auto Publish 的自动续跑传 true。手动 recovery 保持默认 false：
+        # 历史 staged candidate 是否放行只由既有 publish 安全守卫决定，不能被
+        # 「main 上已有更新候选」的自动发布策略拦住。
+        description: "true = automatic continuation from Android Auto Publish (adds the latest-Android-candidate skip)"
+        type: choice
+        options:
+          - "false"
+          - "true"
+        default: "false"
 
 permissions:
   contents: read
 
 concurrency:
+  # 生产 mutation 串行 + 请求不丢失：GitHub 默认只有 1 个 pending 槽，后到的 run 会替换（取消）
+  # 正在等待的那个。自动续跑的 publish dispatch 因此可能把更新的 pending stage 挤掉。queue: max
+  # 最多保留 100 个 pending 请求，stage / publish 请求互不取消；是否需要真正发布由 publish_gate
+  # 在实际执行时判定，排队本身不等于逐个上线。
   group: android-release
   cancel-in-progress: false
+  queue: max
 
 env:
   ANDROID_MIN_SUPPORTED_VERSION_CODE: ${{ vars.ANDROID_MIN_SUPPORTED_VERSION_CODE || '1000000' }}
@@ -970,17 +1001,22 @@ jobs:
           }
           echo "Staging evidence verified: the publish phase can prove this exact APK identity."
 
-      - name: Remind the operator about the manual publish phase
+      - name: Hand off to the guarded publish phase
         if: steps.preflight.outputs.releaseAction == 'publish'
         shell: bash
         run: |
           {
             echo "### stage complete — production version.json untouched"
             echo ""
-            echo "Next: run the real-device A14 matrix (QQ / WG ASIA / WG EU / WG NA + cancel / error /"
-            echo "logout / refresh / process death / both redirect transports). Only after that, dispatch"
-            echo "this workflow with \`mode=publish\` **and** \`version=${{ steps.version.outputs.versionName }}\`"
-            echo "(the explicit staged version) to write version.json (the mandatory-update commit point)."
+            echo "Android Auto Publish continues this candidate automatically: after this run succeeds it"
+            echo "dispatches \`mode=publish\`, \`version=${{ steps.version.outputs.versionName }}\` and"
+            echo "\`auto_publish=true\`. The publish phase re-checks the staged identity, runtime readiness and"
+            echo "minSupported/bridge guards before writing version.json as its last step."
+            echo ""
+            echo "Physical-device testing is still valuable, but it is no longer an approval gate before"
+            echo "version.json: run the production smoke / regression matrix after the rollout and fix any"
+            echo "finding with a higher version. Manual workflow_dispatch(mode=publish, version=X) remains the"
+            echo "recovery/rerun path."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Write release summary
@@ -1011,16 +1047,99 @@ jobs:
             echo "production version.json is NOT modified by this job."
           } >> "$GITHUB_STEP_SUMMARY"
 
+  publish_gate:
+    name: Publish gate
+    # 自动续跑的候选新鲜度 gate：在 publish **开始执行时**（而不是 dispatch 时）判定 main 上
+    # 是否已经存在更新的 Android release candidate。
+    #
+    # 取代关系只看 Version-as-Code（android/gradle.properties:wotbVersion），不看
+    # 「repo main SHA 是否等于 staged SHA」：docs/backend/infra-only 的 main 前进不改版本号，
+    # 不会产生新的 Android candidate，因此不得让唯一已 staged 的候选失去自动发布权；
+    # 只有 main committed 版本更高时，旧候选的自动发布才安全 skip。
+    #
+    # 手动 recovery（auto_publish != true）不经过这个判断：历史 staged candidate 的发布权
+    # 只由既有 publish 安全守卫决定。本 job 只读，不写 tag / APK / evidence / version.json。
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'publish'
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      superseded: ${{ steps.freshness.outputs.superseded }}
+    steps:
+      - name: Checkout current main (candidate baseline)
+        uses: actions/checkout@v5
+        with:
+          # 只需要 main 当前 committed 的 Version-as-Code，不需要历史或 tag。
+          ref: main
+          fetch-depth: 1
+
+      - name: "Guard: automatic publish yields to a newer Android candidate"
+        id: freshness
+        shell: bash
+        env:
+          AUTO_PUBLISH: ${{ inputs.auto_publish }}
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          SUPERSEDED=false
+          STATE=manual
+          MAIN_VERSION=""
+          if [ "$AUTO_PUBLISH" = "true" ]; then
+            . scripts/android-release/check-release-guards.sh
+            git show HEAD:android/gradle.properties > "$RUNNER_TEMP/main-gradle.properties"
+            classify_candidate_freshness "$REQUESTED_VERSION" "$RUNNER_TEMP/main-gradle.properties"
+            STATE="$CANDIDATE_STATE"
+            MAIN_VERSION="$MAIN_CANDIDATE_VERSION"
+            case "$CANDIDATE_STATE" in
+              candidate_latest)
+                echo "Automatic publish $REQUESTED_VERSION is still the latest Android candidate (main committed version: $MAIN_CANDIDATE_VERSION)."
+                ;;
+              candidate_superseded)
+                SUPERSEDED=true
+                echo "::notice::Skipping automatic publish $REQUESTED_VERSION: main already commits the newer Android candidate $MAIN_CANDIDATE_VERSION. The staged candidate stays immutable and manually recoverable."
+                ;;
+              *)
+                echo "::error::Unclassified candidate freshness state: '$CANDIDATE_STATE'" >&2
+                exit 1
+                ;;
+            esac
+          else
+            echo "Manual publish: the automatic latest-candidate policy does not apply; the existing publish guards decide."
+          fi
+          echo "superseded=$SUPERSEDED" >> "$GITHUB_OUTPUT"
+          {
+            echo "# Android publish gate"
+            echo ""
+            echo "Requested version: $REQUESTED_VERSION"
+            echo "Entry: $([ "$AUTO_PUBLISH" = "true" ] && echo automatic || echo manual)"
+            echo "Main committed version: ${MAIN_VERSION:-n/a}"
+            echo "Candidate state: $STATE"
+            echo "Automatic publish superseded: $SUPERSEDED"
+            if [ "$SUPERSEDED" = "true" ]; then
+              echo ""
+              echo "No publish step ran: the newer Android candidate owns the automatic release path."
+              echo "The immutable staged version (tag / APK / staging evidence) is untouched and can still be"
+              echo "published through workflow_dispatch(mode=publish, version=X) as a recovery action."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
   publish:
-    # 第二阶段：真机 A14 验证通过后手工续跑（mode=publish）。复用已经 staged 的 immutable APK，
-    # **绝不重建**、绝不改 tag；只有本 job 会写 production version.json（强制更新的 commit point）。
+    # 第二阶段：stage 成功后由 Android Auto Publish 自动续跑（mode=publish, auto_publish=true），
+    # 手动 recovery 也走同一入口。复用已经 staged 的 immutable APK，**绝不重建**、绝不改 tag；
+    # 只有本 job 会写 production version.json（强制更新的 commit point）。
     #
     # 最终发布不变量（全部成立才写 manifest）：
-    #   staged APK 身份正确（版本 / source SHA / tag / URL / APK SHA-256）
+    #   ∧ 自动续跑没有被更新的 Android candidate 取代（publish_gate，仅 auto_publish=true）
+    #   ∧ staged APK 身份正确（版本 / source SHA / tag / URL / APK SHA-256）
     #   ∧ production Keycloak 有可用的 wotbtools-android
     #   ∧ APK bundled frontend 支持 staged Native Bridge contract + native-auth，API/asset CORS 就绪
     #   ∧ minSupportedVersionCode 覆盖这次 breaking bridge cutover
-    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'publish'
+    needs: publish_gate
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.mode == 'publish' &&
+      needs.publish_gate.outputs.superseded != 'true'
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -1164,8 +1283,9 @@ jobs:
           . scripts/android-release/check-release-guards.sh
 
           # 发布权威 = 已 staged 的 release 身份（显式版本 → tag target → staging evidence → APK 字节）。
-          # 真机验证期间 main 可能已经前进（A → B）：那**不能**作废一个已经 staged + 验证过的
+          # stage 完成后 main 可能已经前进（A → B）：那**不能**作废一个已经 staged 的
           # Android 版本（Android 版本/tag/APK 身份都是 immutable，无法从 B 重新 staged 同一版本）。
+          # 自动续跑只在 main 已有更高 Version-as-Code 时让位，见 publish_gate。
           APK_NAME="${{ steps.stagedref.outputs.apkName }}"
           STAGING_NAME="${{ steps.stagedref.outputs.stagingName }}"
           TAG="${{ steps.stagedref.outputs.tagName }}"
@@ -1243,7 +1363,7 @@ jobs:
           APK_NAME="${{ steps.stagedref.outputs.apkName }}"
           BRIDGE_VERSION="${{ steps.staged.outputs.nativeBridgeVersion }}"
           # version.json 的 sourceSha 记录的是 **APK 的 source**（= staged release source），
-          # 不是当前 main HEAD：两者在真机验证期间完全可能不同，而 immutable 的只有前者。
+          # 不是当前 main HEAD：stage 完成后两者完全可能不同，而 immutable 的只有前者。
           SOURCE_SHA="${{ steps.staged.outputs.stagedSource }}"
           PROD_JSON="$RUNNER_TEMP/prod-version.json"
           URL="https://wotbtools.com/download/android/version.json"
