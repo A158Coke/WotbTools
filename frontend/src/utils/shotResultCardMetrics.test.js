@@ -24,8 +24,8 @@ describe('shot result card metrics', () => {
 })
 
 describe('shotResultCardMaxWidth', () => {
-  it('caps compact cards at 420px and follows the canvas width', () => {
-    expect(shotResultCardMaxWidth(757, 844, 390)).toBe(420)   // 横屏手机：封顶
+  it('caps compact cards at 360px and follows the canvas width', () => {
+    expect(shotResultCardMaxWidth(757, 844, 390)).toBe(360)   // 横屏手机：封顶
     expect(shotResultCardMaxWidth(357, 390, 844)).toBe(341)   // 竖屏窄画布：画布-16
     expect(shotResultCardMaxWidth(900, 1280, 720)).toBe(868)  // 桌面：画布-32
     expect(shotResultCardMaxWidth(0, 1280, 720)).toBeNull()

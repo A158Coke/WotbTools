@@ -357,6 +357,15 @@ describe('traj-info canvas anchoring', () => {
     expect(fn).not.toMatch(/\(v\.x \* 0\.5 \+ 0\.5\) \* window\.innerWidth/)
     expect(fn).not.toMatch(/\(-v\.y \* 0\.5 \+ 0\.5\) \* window\.innerHeight/)
   })
+
+  it('贴边避让按可用空间选边，不用卡片中心（防相机阻尼下左右翻转抖动）', () => {
+    const start = kernel.indexOf('function updateTrajInfoPos()')
+    const end = kernel.indexOf('div.style.transform', start)
+    const fn = kernel.slice(start, end)
+    expect(fn).toMatch(/const spaceLeft = r\.left - clipL;/)
+    expect(fn).toMatch(/const spaceRight = clipR - r\.right;/)
+    expect(fn).not.toMatch(/px < \(r\.left \+ r\.right\) \/ 2/)
+  })
 })
 
 // 交战距离结果行本地化（review P3）：标签/单位走 labels（三语），不用硬编码中文。

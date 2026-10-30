@@ -6403,9 +6403,18 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (r.width === 0 || r.height === 0) continue;
                 const l = px - w / 2, t = py, rr = l + w, b = t + h;
                 if (l >= r.right || rr <= r.left || t >= r.bottom || b <= r.top) continue;
-                // 首选：整体上移到面板上方；顶部放不下再水平平移到面板侧边
+                // 首选：整体上移到面板上方；顶部放不下再水平平移到面板侧边。
+                // 侧向选择只看**可用空间**（与卡片当前中心无关）：相机阻尼下 px 连续
+                // 变化时不会在面板中线两侧来回翻转，消除贴边抖动。
                 if (r.top - h - 12 >= clipT + 10) { py = clampY(r.top - h - 12); continue; }
-                px = clampX(px < (r.left + r.right) / 2 ? r.left - w / 2 - 12 : r.right + w / 2 + 12);
+                const need = w + 12;
+                const spaceLeft = r.left - clipL;
+                const spaceRight = clipR - r.right;
+                let sideRight;
+                if (spaceRight >= need && spaceRight >= spaceLeft) sideRight = true;
+                else if (spaceLeft >= need) sideRight = false;
+                else sideRight = spaceRight >= spaceLeft;
+                px = clampX(sideRight ? r.right + w / 2 + 12 : r.left - w / 2 - 12);
             }
             div.style.transform = 'translateX(-50%)';
             div.style.left = px + 'px';
