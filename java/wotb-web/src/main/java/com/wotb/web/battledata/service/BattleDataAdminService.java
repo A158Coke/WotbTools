@@ -48,16 +48,8 @@ public class BattleDataAdminService {
                 repository.windowCount(from, to), totals.latest(), totals.maps(), totals.versions(),
                 repository.numeric("arena_bonus_type", from, to), repository.numeric("winner_team", from, to),
                 repository.numeric("schema_version", from, to), repository.daily(from, to),
-                repository.namedCounts("map_key", from, to), repository.namedCounts("client_version", from, to));
-    }
-    @Transactional(readOnly = true)
-    public BattleDataAdminDtos.SpawnStats spawnStats(final String fromInput, final String toInput) {
-        final var from = parseTime(fromInput);
-        final var requestedTo = parseTime(toInput);
-        interval(from, requestedTo);
-        final var asOf = clock.instant();
-        final var to = requestedTo == null || requestedTo.isAfter(asOf) ? asOf : requestedTo;
-        return new BattleDataAdminDtos.SpawnStats(repository.spawnStats(from, to));
+                repository.namedCounts("map_key", from, to), repository.namedCounts("client_version", from, to),
+                repository.spawnStats(from, to));
     }
     private static void validate(final BattleDataAdminDtos.Filter filter, final int size) {
         interval(filter.from(), filter.to());
