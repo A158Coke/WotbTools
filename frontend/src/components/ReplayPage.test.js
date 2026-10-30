@@ -275,8 +275,9 @@ function mountPage(overrides = {}) {
             '<p class="scroll-hint">Scroll</p></div>'
         },
         BattleTable: {
-          props: ['battle'],
-          template: '<div class="battle-table-stub" :data-export-role="\'battle-\' + battle.mapName">' +
+          props: ['battle', 'sortKey', 'sortReverse'],
+          template: '<div class="battle-table-stub" :data-export-role="\'battle-\' + battle.mapName" ' +
+            ':data-sort-key="sortKey || \'\'" :data-sort-reverse="String(!!sortReverse)">' +
             '<div class="mcards"><div class="mc"><div class="k">Map</div><div class="v">{{ battle.mapName }}</div></div></div>' +
             '<div class="tablewrap"><table style="width:2000px"><tbody>' +
             '<tr class="t1"><td><span class="rbadge">1500</span></td></tr>' +
@@ -2066,5 +2067,41 @@ describe('ReplayPage League 算法说明入口', () => {
     expect(btn.exists()).toBe(true)
     await btn.trigger('click')
     expect(navigate).toHaveBeenCalledWith('rating-docs')
+  })
+})
+
+// ---- battleSorts 批次边界（Codex round-2 复审回归）----
+// ReplayPage.test 的 BattleTable 是 stub（无真实行序），回归锁**接线与状态机**：
+// 父组件持有逐场排序 → 子表 prop 同步；同批次切场保留；selectionRevision++ 清空。
+// 「sortKey='' → 默认行序」由 BattleTable 自身 sorted 语义保证（其单测覆盖）。
+
+describe('ReplayPage battleSorts 批次边界', () => {
+  const sortAttr = (wrapper) => wrapper.get('.battle-table-stub').attributes('data-sort-key')
+
+  it('同批次切场保留排序；换文件批次（selectionRevision++）后新表回默认（空排序）', async () => {
+    state.init.resp = makeResp()
+    const wrapper = mountPage()
+    await flushPromises()
+    state.setActiveTab('b0')
+    await flushPromises()
+    expect(sortAttr(wrapper)).toBe('')
+    // 排序写入父组件状态 → 子表 prop 同步
+    wrapper.vm.battleSorts[0] = { key: 'damage_dealt', reverse: false }
+    await flushPromises()
+    expect(sortAttr(wrapper)).toBe('damage_dealt')
+    // 同批次切场再回来：排序保留（v-if 卸载不丢状态——状态在父组件）
+    state.setActiveTab('b1')
+    await flushPromises()
+    state.setActiveTab('b0')
+    await flushPromises()
+    expect(sortAttr(wrapper)).toBe('damage_dealt')
+    // 换文件批次（updateFiles → selectionRevision++）：排序清空，新表回默认
+    state.setResp(makeResp())
+    state.replay.updateFiles(['next.wotbreplay'])
+    await flushPromises()
+    state.setActiveTab('b0')
+    await flushPromises()
+    expect(sortAttr(wrapper)).toBe('')
+    wrapper.unmount()
   })
 })

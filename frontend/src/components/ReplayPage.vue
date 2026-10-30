@@ -362,6 +362,10 @@ function teamNamesPayload() {
 watch(selectionRevision, () => {
   battleTeamNames.value = {}
   summaryTeamNames.value = {}
+  // 逐场排序状态随批次清空（Codex review round-2 复审）：replaceSelection 后新批次
+  // 不得继承旧批次同索引的排序（否则行序与 PNG 导出继承旧表的排序）。同批次内
+  // 切场/汇总往返不受影响（selectionRevision 不变）。
+  battleSorts.value = []
 })
 const exportingPng = ref(false)
 const aggregateRef = ref(null)
