@@ -109,13 +109,17 @@ try {
       await page.goto(`${scenarioOrigin}/?view=more&ws-auth=0`)
       await page.waitForValue('!!document.querySelector("[data-testid=more-page]")', Boolean)
       assert.equal(await page.evaluate('!!document.querySelector("[data-testid=more-link-league-broadcasts]")'), false)
-      const navigation = scenario.width < 768 ? 'tab' : 'nav'
+      // 触屏横屏矮视口（≤520 高）由外壳改左侧图标栏：与 AppShell 的
+      // SHELL_RAIL_QUERY 同口径，不再有底部 Tab 栏。
+      const rail = scenario.touch && scenario.width < 768 && scenario.height <= 520
+        && scenario.width > scenario.height
+      const navigation = rail || scenario.width >= 768 ? 'nav' : 'tab'
       await tap(page, `[data-testid=${navigation}-league-broadcasts]`, scenario.touch)
       await page.waitForValue('document.querySelectorAll("[data-testid^=broadcast-server-]").length', value => value === 5)
       assert.equal(await page.evaluate(`document.querySelector('[data-testid="${navigation}-league-broadcasts"]').getAttribute('aria-current')`), 'page')
       const navLabel = await page.evaluate(`(() => { const link = document.querySelector('[data-testid="${navigation}-league-broadcasts"]'); return { visible: link.textContent.trim(), accessible: link.getAttribute('aria-label') }; })()`)
       assert.ok(navLabel.accessible.includes(navLabel.visible), 'accessible name includes the visible navigation label')
-      if (scenario.width < 768) {
+      if (navigation === 'tab') {
         await page.waitForValue('!!document.querySelector("[data-testid=tab-creators]")', Boolean)
         assert.equal(await page.evaluate('document.querySelectorAll("[data-testid=app-tab-bar] .tab").length'), primaryNavItems(new URL(scenarioOrigin).hostname).length)
       }
