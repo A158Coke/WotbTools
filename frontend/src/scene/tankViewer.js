@@ -4752,8 +4752,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             if (sh) { updatePenetrationUniforms(sh); updateSpacedUniforms(sh); }
             if (QP.get('shot')) {
                 if (!rerunAuthoritativeShotCheck()) doPenetrationCheck(0, 0);
-            } else if ((penetrationMode || primaryArmorScene) && lastClickNdc) {
-                // 校准弹/强化装甲改变的是判定输入，旧的命中结果不再成立（两个视图同口径）。
+            } else if (lastClickNdc || heHeatmapCenter) {
+                // 校准弹/强化装甲改变的是判定输入，旧的命中结果不再成立。清理**不得**绑定
+                // 「叠加层资源是否存在」：厚度视图里叠加层已释放（两个门控都为假），
+                // 但上一发的爆点/轨迹仍在，换了弹种再回默认视图会让渐变按新弹参数在旧
+                // 爆点复活，且没有新的点击（Codex 复核 P2，2026-10-30）。
                 tidyTrajectory();
                 if (window.__hitMarker) { fxScene.remove(window.__hitMarker); window.__hitMarker = null; }
                 lastClickNdc = null;
@@ -4780,11 +4783,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     if (QP.get('shot')) {
                         // 世界模式：换弹按权威弦射线重跑判定。
                         if (!rerunAuthoritativeShotCheck()) doPenetrationCheck(0, 0);
-                    } else if ((penetrationMode || primaryArmorScene) && lastClickNdc) {
+                    } else if (lastClickNdc || heHeatmapCenter) {
                         // 普通检视换弹（2026-10-28 用户裁定）：只清掉上一次判定结果，
                         // 不按旧点击位置重跑——新弹种要用户重新点击才产生结果。
-                        // 默认视图的 HE 渐变也建立过爆点/结果卡：清理覆盖两个视图，否则
-                        // 旧卡片/轨迹留着、渐变却按新弹参数重算（评审 P2）。
+                        // 清理与「叠加层资源是否存在」解耦：厚度视图里叠加层已释放，
+                        // 上一发的爆点/轨迹仍必须清（Codex 复核 P2，2026-10-30）。
                         tidyTrajectory();
                         if (window.__hitMarker) { fxScene.remove(window.__hitMarker); window.__hitMarker = null; }
                         lastClickNdc = null;

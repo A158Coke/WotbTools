@@ -71,10 +71,12 @@ describe('HE 热力图投影到可见主装甲（源码级锁）', () => {
         // 逐帧管线同样只在机械真的建好时才走热力图分支。
         expect(viewer).toContain('if ((penetrationMode || (!!primaryArmorScene && heGradientWanted())) && armorModel) {');
     });
-    it('普通检视的换弹/换装备清理覆盖两个视图（评审 P2）', () => {
-        // 默认视图也能建 HE 爆点/渐变：清理若仍限定 penetrationMode，旧结果卡/轨迹/
-        // 命中标记会留下，而渐变已按新弹参数重算。
-        expect(viewer.match(/\} else if \(\(penetrationMode \|\| primaryArmorScene\) && lastClickNdc\) \{/g)).toHaveLength(2);
+    it('普通检视的换弹/换装备清理与叠加层资源解耦（评审 + Codex 复核 P2）', () => {
+        // 清理条件不得绑定 penetrationMode / primaryArmorScene：厚度视图里叠加层已释放
+        // （两者都为假），上一发的爆点/命中结果仍必须清，否则换弹后回到默认视图会在
+        // 旧爆点按新弹参数复活渐变，且没有新的点击。
+        expect(viewer.match(/\} else if \(lastClickNdc \|\| heHeatmapCenter\) \{/g)).toHaveLength(2);
+        expect(viewer).not.toContain('(penetrationMode || primaryArmorScene) && lastClickNdc');
         // 清理之后再统一裁决叠加层（换到非 HE 释放、HE+爆点保留/重建）。
         expect(viewer).toMatch(/lastClickNdc = null;\s*\n\s*\}\s*\n\s*\/\/ 清理之后再统一裁决叠加层[\s\S]*?syncHeatOverlay\(\);/);
     });
