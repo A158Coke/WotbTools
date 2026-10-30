@@ -8,6 +8,7 @@ import {
   buildEraserRing,
   buildPenRibbon,
   sanitizePoints,
+  smoothPolyline,
   subdividePolyline,
 } from './annotation3d.js'
 
@@ -112,6 +113,33 @@ describe('subdividePolyline', () => {
     expect(pts).toEqual([{ x: 0, y: 0 }, { x: 100, y: 0 }])
   })
 
+  it('preserves first/last and full span when projected budget is smaller than a long polyline', () => {
+    const source = Array.from({ length: 50 }, (_, i) => ({ x: i * 2, y: 0 }))
+    const out = subdividePolyline(source, () => 0, { maxSegment: 0.1, maxPoints: 5 })
+    expect(out.length).toBe(5)
+    expect(out[0]).toEqual(source[0])
+    expect(out[out.length - 1]).toEqual(source[source.length - 1])
+    expect(out.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))).toBe(true)
+  })
+
+  it('allocates projected budget without dropping the tail of a sparse long segment', () => {
+    const source = [{ x: 0, y: 0 }, { x: 100, y: 0 }]
+    const out = subdividePolyline(source, () => 0, { maxSegment: 1, maxPoints: 5 })
+    expect(out.length).toBe(5)
+    expect(out[0]).toEqual(source[0])
+    expect(out[out.length - 1]).toEqual(source[1])
+  })
+
+  it('smooths semantic XZ lightly while preserving endpoints and staying in the segment hull', () => {
+    const source = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }]
+    const out = smoothPolyline(source)
+    expect(out[0]).toEqual(source[0])
+    expect(out[out.length - 1]).toEqual(source[2])
+    expect(out.length).toBe(6)
+    expect(out.every((p) => p.x >= 0 && p.x <= 10 && p.y >= 0 && p.y <= 10)).toBe(true)
+    expect(out.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))).toBe(true)
+  })
+
   it('caps output at maxPoints and keeps the result finite', () => {
     const pts = subdividePolyline([{ x: 0, y: 0 }, { x: 100, y: 0 }], () => 20, {
       maxSegment: 1, maxPoints: 5,
@@ -160,7 +188,7 @@ describe('buildPenRibbon', () => {
       sampleHeight: () => 20, maxSegment: 100,
     })
     expect(ribbon).not.toBeNull()
-    expect(ribbon.pointCount).toBe(3)
+    expect(ribbon.pointCount).toBeGreaterThanOrEqual(3)
     expectDraped(ribbon, () => 20)
   })
 

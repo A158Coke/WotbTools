@@ -25,6 +25,7 @@ import { buildCanonicalReplayFacts, entityFirstSeenByAccount } from '../replay-l
 import { toBattlePlaybackDataset } from '../replay-local/playback/toBattlePlaybackDataset.js'
 import { validateAgentAiReview, validateAgentBattleResult, validateAgentPlayback } from '../api/agent-replay-facets.js'
 import { FLOAT_DMG_MS } from '../utils/battlePlayback.js'
+import { mapImages } from '../data/mapImages.js'
 
 const source = vi.hoisted(() => ({ loadPlaybackData: vi.fn(), resolveMapKey: vi.fn(), mapStaticUrl: vi.fn() }))
 vi.mock('./replaySource.js', () => ({
@@ -3114,8 +3115,9 @@ describe('3D annotation pointer ownership', () => {
     return event
   }
 
-  async function setup({ tool = 'pen' } = {}) {
+  async function setup({ tool = 'pen', mapKey = 'probe_map' } = {}) {
     stubTerrainAssets({ values: [0, 0, 0, 0], zmin: 10, zmax: 10 })
+    source.resolveMapKey.mockResolvedValue(mapKey)
     source.loadPlaybackData.mockResolvedValue(minimalData())
     const onAnnotationCommit = vi.fn()
     const onAnnotationErase = vi.fn()
@@ -3156,8 +3158,8 @@ describe('3D annotation pointer ownership', () => {
       expect(Number.isFinite(point.x) && Number.isFinite(point.y)).toBe(true)
     }
     const layer = window.__annotationLayer
-    const startPick = layer.pick(380, 300)
-    expect(annotation.width).toBeCloseTo(startPick.unitsPerCssPx * 3, 6)
+    expect(layer.pick(380, 300).semantic).toEqual(expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) }))
+    expect(annotation.width).toBeCloseTo(3, 6)   // unknown map key -> stable 1:1 map units
     // 独立 oracle：semantic point 反投影必须回到按下时的 client px（锁 x 取负与 z 映射）。
     const first = annotation.points[0]
     camera.updateMatrixWorld()
@@ -3197,6 +3199,57 @@ describe('3D annotation pointer ownership', () => {
     expect(onVehicleSelect).not.toHaveBeenCalled()
   })
 
+  it('touch: fast continuous valid hits farther than maxReconnect never freeze', async () => {
+    const { canvas, onAnnotationCommit } = await setup()
+    canvas.dispatchEvent(touch('pointerdown', 380, 300, 21))
+    canvas.dispatchEvent(touch('pointermove', 600, 300, 21))
+    canvas.dispatchEvent(touch('pointerup', 600, 300, 21))
+    expect(onAnnotationCommit).toHaveBeenCalledTimes(1)
+    const points = onAnnotationCommit.mock.calls[0][0].points
+    expect(points.length).toBeGreaterThanOrEqual(2)
+    expect(Math.hypot(points[points.length - 1].x - points[0].x, points[points.length - 1].y - points[0].y)).toBeGreaterThan(25)
+  })
+
+  it('touch: a terrain miss followed by a far valid hit still applies reconnect protection', async () => {
+    const { canvas, onAnnotationCommit } = await setup()
+    canvas.dispatchEvent(touch('pointerdown', 380, 300, 22))
+    canvas.dispatchEvent(touch('pointermove', 5000, 300, 22))   // 地形外：miss
+    canvas.dispatchEvent(touch('pointermove', 600, 300, 22))    // 回到地形但 XZ 跳 > 25m
+    canvas.dispatchEvent(touch('pointerup', 600, 300, 22))
+    expect(onAnnotationCommit).not.toHaveBeenCalled()
+  })
+
+  it('pen width and eraser radius keep identical map-space semantics across camera distances', async () => {
+    const { api, canvas } = await setup({ mapKey: 'amigosville' })
+    const layer = window.__annotationLayer
+    const image = mapImages.amigosville
+    const expectedWidth = 3 * ((image.coordinateBounds.xMax - image.coordinateBounds.xMin) / image.width)
+    const expectedRadius = 16 * ((image.coordinateBounds.xMax - image.coordinateBounds.xMin) / image.width)
+
+    canvas.dispatchEvent(mouse('pointerdown', 380, 300))
+    const nearWidth = layer.gesture().width
+    canvas.dispatchEvent(mouse('pointercancel', 380, 300))
+    window.__camera.position.set(0, 500, 0.01)
+    window.__camera.updateMatrixWorld()
+    canvas.dispatchEvent(mouse('pointerdown', 380, 300))
+    const farWidth = layer.gesture().width
+    canvas.dispatchEvent(mouse('pointercancel', 380, 300))
+    expect(nearWidth).toBeCloseTo(expectedWidth, 6)
+    expect(farWidth).toBeCloseTo(expectedWidth, 6)
+
+    api.setAnnotationInteraction({ enabled: true, tool: 'eraser', color: '#ff4d4f', width: 3, eraserWidth: 16 })
+    canvas.dispatchEvent(mouse('pointerdown', 380, 300))
+    const nearRadius = layer.gesture().radius
+    canvas.dispatchEvent(mouse('pointercancel', 380, 300))
+    window.__camera.position.set(0, 255, 0.01)
+    window.__camera.updateMatrixWorld()
+    canvas.dispatchEvent(mouse('pointerdown', 380, 300))
+    const farRadius = layer.gesture().radius
+    canvas.dispatchEvent(mouse('pointercancel', 380, 300))
+    expect(nearRadius).toBeCloseTo(expectedRadius, 6)
+    expect(farRadius).toBeCloseTo(expectedRadius, 6)
+  })
+
   it('eraser: single mouse pointer emits one semantic erase path with radius', async () => {
     const { canvas, onAnnotationCommit, onAnnotationErase } = await setup({ tool: 'eraser' })
     const camera = window.__camera
@@ -3210,7 +3263,7 @@ describe('3D annotation pointer ownership', () => {
     const path = onAnnotationErase.mock.calls[0][0]
     expect(path.points.length).toBeGreaterThanOrEqual(2)
     expect(path.radius).toBeGreaterThan(0)
-    expect(path.radius).toBeCloseTo(window.__annotationLayer.pick(380, 300).unitsPerCssPx * 16, 6)
+    expect(path.radius).toBeCloseTo(16, 6)
     for (const point of path.points) {
       expect(Number.isFinite(point.x) && Number.isFinite(point.y)).toBe(true)
     }
@@ -3339,7 +3392,7 @@ describe('3D annotation pointer ownership', () => {
     expect(onAnnotationCommit).toHaveBeenCalledTimes(1)
     const annotation = onAnnotationCommit.mock.calls[0][0]
     expect(annotation.color).toBe('#ff4d4f')
-    expect(annotation.width).toBeCloseTo(window.__annotationLayer.pick(380, 300).unitsPerCssPx * 3, 6)
+    expect(annotation.width).toBeCloseTo(3, 6)
   })
 
   it('lostpointercapture cancels the draft without committing', async () => {
@@ -3364,6 +3417,19 @@ describe('3D annotation pointer ownership', () => {
     api.setAnnotations([{ type: 'pen', width: 1, points: [{ x: -10, y: -10 }, { x: 10, y: 10 }] }])
     expect(layer.committedMesh.visible).toBe(true)
     expect(layer.committedMesh.geometry.getAttribute('color').getX(0)).toBeGreaterThan(0)
+  })
+
+  it('bounds the groundMesh fallback to the finite placeholder plane', async () => {
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const store = createPlaybackStore()
+    const container = mountContainer()
+    const api = initPlayback(container, store, null, {})
+    created.push(api)
+    await api.loadData({ kind: 'local', file: new File(['x'], 'annotation-ground-bounds.wotbreplay') })
+    const layer = window.__annotationLayer
+    expect(layer.sampler(0, 0)).toBe(0)
+    expect(layer.sampler(10000, 0)).toBeNull()
+    expect(layer.sampler(0, 10000)).toBeNull()
   })
 
   it('destroy removes annotation pointer listeners and state', async () => {

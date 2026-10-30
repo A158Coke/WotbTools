@@ -33,6 +33,21 @@ export const ANNOT_ERASER_RADIUS_MIN = 6
 export const ANNOT_ERASER_RADIUS_MAX = 40
 export const ANNOT_ERASER_RADIUS_DEFAULT = 16
 
+/**
+ * Toolbar logical width → canonical map-space semantic width.
+ * 2D 调用：semanticSpan = renderBounds.xMax−xMin，logicalSpan = mapView.W；
+ * 3D 调用：semanticSpan = map coordinateBounds span，logicalSpan = mapImages[key].width。
+ * 不读取 camera / viewport scale；span 不可用时 1:1 回退，保持有限且稳定。
+ */
+export function semanticWidthFromSlider(sliderValue, { semanticSpan, logicalSpan } = {}) {
+  const value = Number(sliderValue)
+  if (!Number.isFinite(value) || value <= 0) return 0
+  const semantic = Number(semanticSpan)
+  const logical = Number(logicalSpan)
+  if (!Number.isFinite(semantic) || semantic <= 0 || !Number.isFinite(logical) || logical <= 0) return value
+  return value * (semantic / logical)
+}
+
 /** 文字标注字号（SVG 单位，随地图缩放）。 */
 export const ANNOT_FONT_SIZE = 20
 

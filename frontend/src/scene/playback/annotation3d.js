@@ -10,13 +10,15 @@
 /** 笔迹离地 lift（米）。低于地形 LOD 插值误差会让 ribbon 扎进 terrain。 */
 export const ANNOTATION_LIFT = 0.08
 /** adaptive subdivision 的硬最大段长（米）。 */
-export const ANNOTATION_MAX_SEGMENT = 2
+const ANNOTATION_MAX_SEGMENT = 2
 /** centerline 中点相对两端线性插值的最大允许误差（米）。 */
-export const ANNOTATION_MIDPOINT_ERROR = 0.08
+const ANNOTATION_MIDPOINT_ERROR = 0.08
 /** 递归细分最大深度（2^6 = worst case）。 */
-export const ANNOTATION_MAX_DEPTH = 6
-/** 单条笔迹 semantic 点上限；scene 达到上限时冻结 stroke。 */
-export const ANNOTATION_MAX_POINTS = 4096
+const ANNOTATION_MAX_DEPTH = 6
+/** 单条笔迹 semantic 输入点上限；scene 达到上限时冻结 stroke。 */
+export const ANNOTATION_MAX_INPUT_POINTS = 4096
+/** 单条笔迹 subdivision 输出点预算；预算不足时降密度，不丢尾部。 */
+const ANNOTATION_MAX_PROJECTED_POINTS = 4096
 /** miter join 相对 halfWidth 的上限，避免锐角处无限拉长。 */
 export const ANNOTATION_MITER_LIMIT = 2.5
 /** eraser preview ring 的线段数。 */
@@ -42,9 +44,10 @@ function sampleOrNull(sampleHeight, x, z) {
  * 过滤非有限点、连续重复点，并把单点/空输入归一成 []。
  * 不重新排序、不插值；保序是 semantic eraser 断段语义的前提。
  */
-export function sanitizePoints(points, { maxPoints = ANNOTATION_MAX_POINTS } = {}) {
+export function sanitizePoints(points, { maxPoints = ANNOTATION_MAX_INPUT_POINTS } = {}) {
   if (!Array.isArray(points)) return []
-  const limit = Number.isFinite(maxPoints) && maxPoints >= 2 ? Math.floor(maxPoints) : ANNOTATION_MAX_POINTS
+  const finiteLimit = Number.isFinite(maxPoints) && maxPoints >= 2
+  const limit = finiteLimit ? Math.floor(maxPoints) : (maxPoints == null || maxPoints === Infinity ? Infinity : ANNOTATION_MAX_INPUT_POINTS)
   const out = []
   for (const p of points) {
     const x = Number(p && p.x)
@@ -53,9 +56,22 @@ export function sanitizePoints(points, { maxPoints = ANNOTATION_MAX_POINTS } = {
     const prev = out[out.length - 1]
     if (prev && Math.hypot(x - prev.x, y - prev.y) <= DUP_EPS) continue
     out.push({ x, y })
-    if (out.length >= limit) break
+    if (Number.isFinite(limit) && out.length >= limit) break
   }
   return out.length >= 2 ? out : []
+}
+
+/** 等距重采样（保留首尾）；只用于预算不足时的降密度，不丢整段尾部。 */
+function resampleByIndex(points, limit) {
+  if (limit >= points.length) return points.map((p) => ({ ...p }))
+  const out = []
+  for (let i = 0; i < limit; i++) {
+    const idx = Math.round((i * (points.length - 1)) / (limit - 1))
+    out.push({ ...points[idx] })
+  }
+  out[0] = { ...points[0] }
+  out[out.length - 1] = { ...points[points.length - 1] }
+  return out
 }
 
 /**
@@ -63,51 +79,101 @@ export function sanitizePoints(points, { maxPoints = ANNOTATION_MAX_POINTS } = {
  * - world XZ 距离超过 maxSegment；
  * - 或 centerline 中点地形高度与两端线性插值差超过 midpointError。
  * sampleHeight 返回 null 时不做误差细分（空洞交给 ribbon strip break），但仍可因距离细分。
- * 返回包含首尾端点的点列；上限 maxPoints（达到上限后提前结束，保证有界）。
+ *
+ * 输入上限与输出预算分离：maxInputPoints 是 semantic 输入 cap；maxPoints 是 projected 输出
+ * budget。输出预算不足时按 segment 长度分配额外细分点，并始终保留每个输入 segment 的终点，
+ * 因此首点、尾点和完整 span 都不会被 prefix truncation 丢掉；最多在密度上降级。
  */
 export function subdividePolyline(points, sampleHeight, {
   maxSegment = ANNOTATION_MAX_SEGMENT,
   midpointError = ANNOTATION_MIDPOINT_ERROR,
   maxDepth = ANNOTATION_MAX_DEPTH,
-  maxPoints = ANNOTATION_MAX_POINTS,
+  maxPoints = ANNOTATION_MAX_PROJECTED_POINTS,
+  maxInputPoints = ANNOTATION_MAX_INPUT_POINTS,
 } = {}) {
-  const clean = sanitizePoints(points, { maxPoints })
+  const clean = sanitizePoints(points, { maxPoints: maxInputPoints })
   if (clean.length < 2) return []
-  const limit = Number.isFinite(maxPoints) && maxPoints >= 2 ? Math.floor(maxPoints) : ANNOTATION_MAX_POINTS
+  const limit = Number.isFinite(maxPoints) && maxPoints >= 2 ? Math.floor(maxPoints) : ANNOTATION_MAX_PROJECTED_POINTS
   // 只允许两个点时无法再细分；保留首尾端点，不能返回空导致整条笔迹消失。
   if (limit <= 2) return [{ ...clean[0] }, { ...clean[clean.length - 1] }]
+  if (clean.length >= limit) return resampleByIndex(clean, limit)
+
   const seg = numberOr(maxSegment, ANNOTATION_MAX_SEGMENT)
   const tol = numberOr(midpointError, ANNOTATION_MIDPOINT_ERROR)
   const depthLimit = Math.max(0, Math.floor(numberOr(maxDepth, ANNOTATION_MAX_DEPTH)))
+  const lengths = []
+  let totalLength = 0
+  for (let i = 1; i < clean.length; i++) {
+    const len = Math.hypot(clean[i].x - clean[i - 1].x, clean[i].y - clean[i - 1].y)
+    lengths.push(len)
+    totalLength += len
+  }
+  const totalExtra = Math.max(0, limit - clean.length)
   const out = [{ ...clean[0] }]
 
-  const recurse = (a, b, depth) => {
-    if (out.length >= limit) return
-    const dx = b.x - a.x
-    const dz = b.y - a.y
-    const dist = Math.hypot(dx, dz)
-    let split = dist > seg && depth < depthLimit
-    if (!split) {
-      const sa = sampleOrNull(sampleHeight, a.x, a.y)
-      const sb = sampleOrNull(sampleHeight, b.x, b.y)
-      if (sa !== null && sb !== null) {
-        const mx = (a.x + b.x) / 2
-        const mz = (a.y + b.y) / 2
-        const sm = sampleOrNull(sampleHeight, mx, mz)
-        if (sm !== null && Math.abs(sm - (sa + sb) / 2) > tol && depth < depthLimit) split = true
+  const subdivideSegment = (a, b, depth, budget) => {
+    let used = 0
+    const recurse = (x, y, d) => {
+      const dx = y.x - x.x
+      const dz = y.y - x.y
+      const dist = Math.hypot(dx, dz)
+      let split = dist > seg && d < depthLimit
+      if (!split) {
+        const sa = sampleOrNull(sampleHeight, x.x, x.y)
+        const sb = sampleOrNull(sampleHeight, y.x, y.y)
+        if (sa !== null && sb !== null) {
+          const mx = (x.x + y.x) / 2
+          const mz = (x.y + y.y) / 2
+          const sm = sampleOrNull(sampleHeight, mx, mz)
+          if (sm !== null && Math.abs(sm - (sa + sb) / 2) > tol && d < depthLimit) split = true
+        }
       }
+      if (split && used < budget) {
+        used++
+        const mid = { x: (x.x + y.x) / 2, y: (x.y + y.y) / 2 }
+        recurse(x, mid, d + 1)
+        recurse(mid, y, d + 1)
+        return
+      }
+      // 预算耗尽也一定 append segment 终点：完整跨度优先于密度。
+      out.push({ x: y.x, y: y.y })
     }
-    if (split) {
-      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
-      recurse(a, mid, depth + 1)
-      recurse(mid, b, depth + 1)
-      return
-    }
-    if (out.length < limit) out.push({ x: b.x, y: b.y })
+    recurse(a, b, depth)
   }
 
-  for (let i = 1; i < clean.length && out.length < limit; i++) recurse(clean[i - 1], clean[i], 0)
-  return out.length >= 2 ? out.slice(0, limit) : []
+  for (let i = 1; i < clean.length; i++) {
+    const isLast = i === clean.length - 1
+    const remainingSlots = limit - out.length
+    const proportional = totalLength > 0
+      ? Math.floor((totalExtra * lengths[i - 1]) / totalLength)
+      : 0
+    const budget = Math.max(0, Math.min(remainingSlots - 1, isLast ? remainingSlots - 1 : proportional))
+    subdivideSegment(clean[i - 1], clean[i], 0, budget)
+  }
+  return out.length >= 2 ? out : []
+}
+
+/**
+ * 轻量 semantic XZ 平滑：一次 Chaikin corner cutting（默认 strength=0.2），只处理 x/y，
+ * 不接触 world Y。首尾点保留，输出始终落在相邻输入 segment 的包围盒内（不会越出战场）。
+ */
+export function smoothPolyline(points, { iterations = 1, strength = 0.2 } = {}) {
+  let current = sanitizePoints(points, { maxPoints: null })
+  if (current.length < 3) return current
+  const rounds = Math.max(0, Math.floor(numberOr(iterations, 1)))
+  const s = Math.max(0, Math.min(0.49, numberOr(strength, 0.2)))
+  for (let round = 0; round < rounds; round++) {
+    const next = [{ ...current[0] }]
+    for (let i = 1; i < current.length; i++) {
+      const a = current[i - 1]
+      const b = current[i]
+      next.push({ x: a.x + (b.x - a.x) * s, y: a.y + (b.y - a.y) * s })
+      next.push({ x: a.x + (b.x - a.x) * (1 - s), y: a.y + (b.y - a.y) * (1 - s) })
+    }
+    next.push({ ...current[current.length - 1] })
+    current = next
+  }
+  return current
 }
 
 function unitDirection(a, b) {
@@ -131,13 +197,21 @@ export function buildPenRibbon(annotation, {
   maxSegment = ANNOTATION_MAX_SEGMENT,
   midpointError = ANNOTATION_MIDPOINT_ERROR,
   maxDepth = ANNOTATION_MAX_DEPTH,
-  maxPoints = ANNOTATION_MAX_POINTS,
+  maxPoints = ANNOTATION_MAX_PROJECTED_POINTS,
 } = {}) {
   if (!annotation || annotation.type !== 'pen') return null
   if (typeof sampleHeight !== 'function') return null
   const width = Number(annotation.width)
   if (!Number.isFinite(width) || width <= 0) return null
-  const points = subdividePolyline(annotation.points, sampleHeight, { maxSegment, midpointError, maxDepth, maxPoints })
+  // Renderer 不截断 semantic 输入；live scene 已在 append 阶段按 input cap 冻结。
+  // 这样即使历史 annotation 超过 cap，投影预算也只降密度，不丢尾。
+  const raw = sanitizePoints(annotation.points, { maxPoints: null })
+  if (raw.length < 2) return null
+  // 先做语义 XZ 平滑，再做地形细分；Y 始终由 ribbon 边缘采样派生，不进入平滑。
+  const smoothed = smoothPolyline(raw)
+  const points = subdividePolyline(smoothed, sampleHeight, {
+    maxSegment, midpointError, maxDepth, maxPoints, maxInputPoints: null,
+  })
   if (points.length < 2) return null
   const half = width / 2
   const liftValue = numberOr(lift, ANNOTATION_LIFT)

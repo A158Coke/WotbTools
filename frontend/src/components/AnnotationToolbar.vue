@@ -47,6 +47,8 @@ const allowedToolButtons = computed(() => {
   const allowed = new Set(props.allowedTools)
   return tools.filter((tool) => allowed.has(tool.key))
 })
+// 3D 通过 allowedTools 复用同一个 toolbar；每次只展示当前 tool 相关 slider。
+const is3D = computed(() => Array.isArray(props.allowedTools))
 </script>
 
 <template>
@@ -90,15 +92,15 @@ const allowedToolButtons = computed(() => {
       <button type="button" class="pb-annot-btn" data-test="pb-annot-delete" @click="emit('delete-selected')"><Trash2 :size="18" aria-hidden="true" />{{ $t('recon.map.playback.annot.delete') }}</button>
     </div>
     <div class="pb-annot-options">
-      <div class="pb-annot-colors" role="group" :aria-label="$t('recon.map.playback.annot.color')">
+      <div v-if="!is3D || props.activeTool !== 'eraser'" class="pb-annot-colors" data-test="pb-annot-colors" role="group" :aria-label="$t('recon.map.playback.annot.color')">
         <button v-for="(color, index) in props.annotColors" :key="color" type="button" class="pb-annot-color" :class="{ active: (props.selectedAnnotation?.color || props.annotColor) === color }" :aria-pressed="(props.selectedAnnotation?.color || props.annotColor) === color" :style="{ '--annot-color': color }" :aria-label="$t('recon.map.playback.annot.color_index', { index: index + 1 })" @click="emit('set-annot-color', color)"><span></span></button>
       </div>
-      <label class="pb-annot-width">
+      <label v-if="!is3D || props.activeTool !== 'eraser'" class="pb-annot-width" data-test="pb-annot-width">
         {{ $t('recon.map.playback.annot.width') }}
         <input type="range" :min="props.annotWidthMin" :max="props.annotWidthMax" step="1" :value="props.annotWidthSlider" @input="emit('update:annot-width', Number($event.target.value))" />
         <span>{{ props.annotWidthSlider }}</span>
       </label>
-      <label v-if="props.eraserRadiusSlider != null" class="pb-annot-width">
+      <label v-if="props.eraserRadiusSlider != null && (!is3D || props.activeTool === 'eraser')" class="pb-annot-width">
         {{ $t('recon.map.playback.annot.eraser_radius') }}
         <input type="range" data-test="pb-annot-eraser-radius" :min="props.eraserRadiusMin" :max="props.eraserRadiusMax" step="1" :value="props.eraserRadiusSlider" @input="emit('update:eraser-radius', Number($event.target.value))" />
         <span>{{ props.eraserRadiusSlider }}</span>

@@ -19,6 +19,7 @@ import {
   rectFromCorners,
   redo,
   screenToSemantic,
+  semanticWidthFromSlider,
   screenToSvg,
   svgToScreen,
   undo
@@ -140,6 +141,20 @@ describe('geometry normalization', () => {
     // toY(-100) = (200-(-100))/400*500 = 375
     expect(polylinePoints([{ x: 0, y: 0 }, { x: 100, y: -100 }], mapView.toX, mapView.toY))
       .toBe('500.00,250.00 666.67,375.00')
+  })
+})
+
+describe('semanticWidthFromSlider', () => {
+  it('uses map coordinate span / logical frame, not camera projection', () => {
+    expect(semanticWidthFromSlider(3, { semanticSpan: 600, logicalSpan: 768 })).toBeCloseTo(2.34375, 9)
+    expect(semanticWidthFromSlider(3, { semanticSpan: 600, logicalSpan: 600 })).toBe(3)
+  })
+
+  it('fails closed for invalid slider/span without NaN', () => {
+    expect(semanticWidthFromSlider(0, { semanticSpan: 600, logicalSpan: 768 })).toBe(0)
+    expect(semanticWidthFromSlider(NaN, { semanticSpan: 600, logicalSpan: 768 })).toBe(0)
+    expect(semanticWidthFromSlider(3, { semanticSpan: 0, logicalSpan: 768 })).toBe(3)
+    expect(semanticWidthFromSlider(3, { semanticSpan: 600, logicalSpan: NaN })).toBe(3)
   })
 })
 

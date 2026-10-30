@@ -1931,10 +1931,12 @@ describe('Replay3DPane 顶栏双方血量', () => {
 })
 
 describe('Replay3DPane 3D annotation wiring', () => {
-  async function openDrawing() {
+  async function openDrawing({ playing = false } = {}) {
     mockWebGL('webgl2')
     const wrapper = mountPane()
     await start(wrapper)
+    playback.api.store.playing = playing
+    await nextTick()
     await wrapper.get('[data-test="pb-annotation-entry"]').trigger('click')
     await flush()
     return wrapper
@@ -1944,10 +1946,11 @@ describe('Replay3DPane 3D annotation wiring', () => {
     return playback.init.mock.calls.at(-1)[3]
   }
 
-  it('opens with pen, pauses, and exposes only pen/eraser plus shared actions', async () => {
-    const wrapper = await openDrawing()
+  it('opens with pen without touching transport and exposes only pen/eraser plus shared actions', async () => {
+    const wrapper = await openDrawing({ playing: true })
     const api = playback.api
-    expect(api.setPlaying).toHaveBeenCalledWith(false)
+    expect(api.store.playing).toBe(true)
+    expect(api.setPlaying).not.toHaveBeenCalledWith(false)
     expect(api.setAnnotations).toHaveBeenLastCalledWith([])
     expect(api.setAnnotationInteraction).toHaveBeenLastCalledWith(expect.objectContaining({
       enabled: true, tool: 'pen', width: 3, eraserWidth: 16,
@@ -1960,7 +1963,10 @@ describe('Replay3DPane 3D annotation wiring', () => {
     expect(panel.find('[data-test="pb-annot-clear"]').exists()).toBe(true)
     expect(panel.find('[data-test="pb-annot-toggle"]').exists()).toBe(true)
     expect(panel.find('[data-test="pb-annot-close"]').exists()).toBe(true)
-    expect(panel.find('[data-test="pb-annot-eraser-radius"]').exists()).toBe(true)
+    expect(panel.find('[data-test="pb-annot-toolbar"]').classes()).toContain('pb-annot-compact')
+    expect(panel.find('[data-test="pb-annot-width"]').exists()).toBe(true)
+    expect(panel.find('[data-test="pb-annot-eraser-radius"]').exists()).toBe(false)
+    expect(panel.find('[data-test="pb-annot-colors"]').exists()).toBe(true)
     expect(panel.find('[data-test="pb-annot-select"]').exists()).toBe(false)
     expect(panel.find('[data-test="pb-annot-route"]').exists()).toBe(false)
     expect(panel.find('[data-test="pb-annot-arrow"]').exists()).toBe(false)
@@ -1969,6 +1975,50 @@ describe('Replay3DPane 3D annotation wiring', () => {
     expect(panel.find('[data-test="pb-annot-HT"]').exists()).toBe(false)
     expect(panel.find('[data-test="pb-annot-TD"]').exists()).toBe(false)
     wrapper.unmount()
+  })
+
+  it('shows only the current tool slider in the compact 3D toolbar', async () => {
+    const wrapper = await openDrawing()
+    const panel = wrapper.get('[data-test="replay3d-annotations"]')
+    expect(panel.find('[data-test="pb-annot-width"]').exists()).toBe(true)
+    expect(panel.find('[data-test="pb-annot-eraser-radius"]').exists()).toBe(false)
+
+    await panel.find('[data-test="pb-annot-eraser"]').trigger('click')
+    await flush()
+    expect(panel.find('[data-test="pb-annot-width"]').exists()).toBe(false)
+    expect(panel.find('[data-test="pb-annot-colors"]').exists()).toBe(false)
+    expect(panel.find('[data-test="pb-annot-eraser-radius"]').exists()).toBe(true)
+
+    await panel.find('[data-test="pb-annot-pen"]').trigger('click')
+    await flush()
+    expect(panel.find('[data-test="pb-annot-width"]').exists()).toBe(true)
+    expect(panel.find('[data-test="pb-annot-colors"]').exists()).toBe(true)
+    expect(panel.find('[data-test="pb-annot-eraser-radius"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('pen/eraser activation and exit never change playback state', async () => {
+    const playingWrapper = await openDrawing({ playing: true })
+    const playingApi = playback.api
+    await playingWrapper.get('[data-test="pb-annot-eraser"]').trigger('click')
+    await flush()
+    expect(playingApi.store.playing).toBe(true)
+    await playingWrapper.get('[data-test="pb-annot-close"]').trigger('click')
+    await flush()
+    expect(playingApi.store.playing).toBe(true)
+    expect(playingApi.setPlaying).not.toHaveBeenCalledWith(false)
+    playingWrapper.unmount()
+
+    const pausedWrapper = await openDrawing({ playing: false })
+    const pausedApi = playback.api
+    await pausedWrapper.get('[data-test="pb-annot-eraser"]').trigger('click')
+    await flush()
+    expect(pausedApi.store.playing).toBe(false)
+    await pausedWrapper.get('[data-test="pb-annot-close"]').trigger('click')
+    await flush()
+    expect(pausedApi.store.playing).toBe(false)
+    expect(pausedApi.setPlaying).not.toHaveBeenCalledWith(true)
+    pausedWrapper.unmount()
   })
 
   it('commits one annotation through the scene callback and supports undo/redo/clear', async () => {

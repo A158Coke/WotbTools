@@ -90,6 +90,7 @@ import {
   rectFromCorners,
   redo,
   screenToSemantic,
+  semanticWidthFromSlider,
   svgToScreen,
   undo
 } from '../utils/annotation'
@@ -1013,7 +1014,10 @@ const semPerSvgY = computed(() => {
   const b = mapView.value.renderBounds
   return b && mapView.value.H > 0 ? (b.yMax - b.yMin) / mapView.value.H : 1
 })
-const annotWidth = computed(() => annotWidthSlider.value * semPerSvgX.value)
+const annotWidth = computed(() => semanticWidthFromSlider(annotWidthSlider.value, {
+  semanticSpan: mapView.value.renderBounds ? mapView.value.renderBounds.xMax - mapView.value.renderBounds.xMin : 0,
+  logicalSpan: mapView.value.W
+}))
 const history = ref([[]]) // 快照栈（不可变数组），history[0] = 初始空
 const historyIndex = ref(0)
 const annotations = computed(() => history.value[historyIndex.value] || [])

@@ -22,6 +22,7 @@ import { orientDiscUv } from './baseDecal.js'
 import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, foldSupremacyTransitions } from '../utils/baseStatus.js'
 import { createConsumableStateResolver } from '../utils/consumableRuntime.js'
 import { mapBases } from '../data/mapBases.js'
+import { mapImages } from '../data/mapImages.js'
 import { firstIndexAfter } from './seekPointer.js'
 import {
   CLIENT_NORMAL_CAMERA_FOV_H,
@@ -62,6 +63,7 @@ import { teamHpTotals } from './teamHpTotals.js'   //（perspectiveScore 随计�
 // 战斗反馈时长：与 2D 共用同一组 canonical 常量（SSOT，避免两处各自漂移）
 import { FLASH_MS, FLOAT_DMG_MS, GHOST_MS } from '../utils/battlePlayback.js'
 import { playableBounds } from '../data/playableBounds.js'
+import { semanticWidthFromSlider } from '../utils/annotation.js'
 import { createLoadProgress } from './loadProgress.js'
 import { createFrameMeter } from './frameMeter.js'
 import { advancePlaybackTime } from '../utils/playbackClock'
@@ -96,7 +98,7 @@ import { createBoundaryBand, BOUNDARY_THICK } from './playback/boundary.js'
 import { createBaseMarkers } from './playback/bases.js'
 import { createHudFeed } from './playback/hudFeed.js'
 import {
-  ANNOTATION_LIFT, ANNOTATION_MAX_ERASER_POINTS, ANNOTATION_MAX_POINTS,
+  ANNOTATION_LIFT, ANNOTATION_MAX_ERASER_POINTS, ANNOTATION_MAX_INPUT_POINTS,
   buildEraserRing, buildPenRibbon,
 } from './playback/annotation3d.js'
 
@@ -1403,7 +1405,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (x < cx - half || x >= cx + half || z < cz - half || z >= cz + half) return null
       return mapPlane.position.y
     }
-    if (groundMesh) return groundMesh.position.y
+    if (groundMesh) {
+      // placeholder ground 也是有限平面（buildWorld: ext*2+100）；不能当无限地面。
+      const { cx, cz, ext } = WORLD_CENTER
+      const half = ext + 50
+      if (x < cx - half || x >= cx + half || z < cz - half || z >= cz + half) return null
+      return groundMesh.position.y
+    }
     return null
   }
 
@@ -1501,7 +1509,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         ringOutline: annotationRingOutline,
         stats: annotationStats,
         sampler: annotationSurfaceHeightAt,
-        pick: (x, y) => pickAnnotationGround(x, y, { withScale: true }),
+        pick: (x, y) => pickAnnotationGround(x, y),
         gesture: () => annotationGesture,
         rebuild: () => { rebuildAnnotationProjection(); return annotationStats.terrainRebuilds },
       }
@@ -1616,7 +1624,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 消费事件（未命中保留 OrbitControls/fly 的既有导航）；touch 不 stopPropagation，
   // 让 OrbitControls 保留 pointer 跟踪，第二指才能自然进入 TOUCH_DOLLY_PAN。
   const ANNOTATION_THIN_PX = 2          // 屏幕像素抽稀；与 2D 的 ANNOT_THIN_PX 同量级
-  const ANNOTATION_MAX_RECONNECT = 25   // initial hypothesis：断开超过此 XZ 距离就冻结 stroke
+  const ANNOTATION_MAX_RECONNECT = 25   // hit→miss→hit 后 XZ 跳超过此距离才冻结 stroke
   const ANNOTATION_RING_OUTLINE_SCALE = 1.06  // 半透明黑外圈相对白 ring 的半径倍数
 
   function annotationToolActive() {
@@ -1681,35 +1689,32 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
 
   /**
-   * client px -> semantic ground point + worldPerCssPx（仅 gesture 起点需要 scale）。
-   * 不触碰车辆/建筑/树/水：只查 terrain build / heightfield / flat ground。
+   * client px -> semantic ground point. 不触碰车辆/建筑/树/水：只查
+   * terrain build / heightfield / flat ground。Width/radius 不使用 camera scale。
    */
-  function pickAnnotationGround(clientX, clientY, { withScale = false } = {}) {
+  function pickAnnotationGround(clientX, clientY) {
     if (!annotationToolActive() || !annotationsVisible) return null
     const startedAt = PERF ? performance.now() : 0
     const rect = container.getBoundingClientRect()
     const hit = raycastAnnotationGround(clientX, clientY, rect)
     if (!hit) return null
-    let unitsPerCssPx = null
-    if (withScale) {
-      const stepPx = 2
-      const probeX = raycastAnnotationGround(clientX + stepPx, clientY, rect)
-      const probeY = raycastAnnotationGround(clientX, clientY + stepPx, rect)
-      const dx = probeX
-        ? Math.hypot(probeX.point.x - hit.point.x, probeX.point.z - hit.point.z) / stepPx : null
-      const dy = probeY
-        ? Math.hypot(probeY.point.x - hit.point.x, probeY.point.z - hit.point.z) / stepPx : null
-      if (dx !== null && dy !== null) unitsPerCssPx = (dx + dy) / 2
-      else if (dx !== null) unitsPerCssPx = dx
-      else if (dy !== null) unitsPerCssPx = dy
-      if (!(unitsPerCssPx > 0)) {
-        const fovY = ((Number(camera.fov) || 55) * Math.PI) / 180
-        unitsPerCssPx = (2 * Math.max(0.01, hit.distance) * Math.tan(fovY / 2)) / Math.max(1, rect.height)
-      }
-      unitsPerCssPx = Math.max(0.001, Math.min(2, unitsPerCssPx))
-    }
     if (PERF) annotationStats.lastPickMs = performance.now() - startedAt
-    return { semantic: semanticFromScene(hit.point.x, hit.point.z), unitsPerCssPx, distance: hit.distance }
+    return { semantic: semanticFromScene(hit.point.x, hit.point.z) }
+  }
+
+  /**
+   * Toolbar logical width -> canonical map-space width. Reuse mapImages (2D canonical
+   * registry) and terrain/map span; never current camera projection. Unknown map key
+   * falls back to 1:1 map units so the slider stays stable without a second registry.
+   */
+  function annotationSemanticWidth(sliderValue) {
+    const image = currentMapKey ? mapImages[currentMapKey] : null
+    const bounds = image?.coordinateBounds
+    const semanticSpan = bounds
+      ? bounds.xMax - bounds.xMin
+      : (Number(mapMetaInfo?.size_m) || Number(heightMeta?.span) || terrainSpanOf())
+    const logicalSpan = Number(image?.width) || semanticSpan
+    return semanticWidthFromSlider(sliderValue, { semanticSpan, logicalSpan })
   }
 
   function applyAnnotationTouchMode() {
@@ -1739,18 +1744,18 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
 
   function beginAnnotationGesture(e, pick) {
     const tool = annotationInteraction.tool
-    const units = pick.unitsPerCssPx || 0.05
     const semantic = { x: pick.semantic.x, y: pick.semantic.y }
     annotationGesture = {
       pointerId: e.pointerId,
       pointerType: e.pointerType || 'mouse',
       tool,
       color: annotationInteraction.color,
-      width: tool === 'pen' ? Math.max(0.01, annotationInteraction.width * units) : 0,
-      radius: tool === 'eraser' ? Math.max(0.01, annotationInteraction.eraserWidth * units) : 0,
+      width: tool === 'pen' ? Math.max(0.01, annotationSemanticWidth(annotationInteraction.width)) : 0,
+      radius: tool === 'eraser' ? Math.max(0.01, annotationSemanticWidth(annotationInteraction.eraserWidth)) : 0,
       points: [semantic],
       lastScreen: { x: e.clientX, y: e.clientY },
       frozen: false,
+      hadGroundMiss: false,
       capture: false,
     }
     if (tool === 'pen') {
@@ -1775,19 +1780,24 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (!gesture || gesture.frozen) return
     const pick = pickAnnotationGround(e.clientX, e.clientY)
     if (!pick) {
+      // 连续有效 hit 之间的大跳只是 fast swipe / 低帧率 / 合并事件，不是 reconnect；
+      // 只有真的经过 terrain miss 后才允许用 maxReconnect 保护。
+      gesture.hadGroundMiss = true
       if (gesture.tool === 'eraser') setAnnotationRingPositions(null)
       return
     }
     const previous = gesture.points[gesture.points.length - 1]
     const jump = Math.hypot(pick.semantic.x - previous.x, pick.semantic.y - previous.y)
-    if (!(jump <= ANNOTATION_MAX_RECONNECT)) {
+    const reconnected = gesture.hadGroundMiss && jump > ANNOTATION_MAX_RECONNECT
+    gesture.hadGroundMiss = false
+    if (reconnected) {
       // 不让一次 gesture 跨地图拉巨线；也不拆成第二条 annotation（one gesture = one undo）。
       gesture.frozen = true
       if (gesture.tool === 'eraser') setAnnotationRingPositions(null)
       return
     }
     if (jump < 1e-6) return
-    if (gesture.tool === 'pen' && gesture.points.length >= ANNOTATION_MAX_POINTS) {
+    if (gesture.tool === 'pen' && gesture.points.length >= ANNOTATION_MAX_INPUT_POINTS) {
       gesture.frozen = true
       return
     }
@@ -1873,13 +1883,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         return
       }
       if (annotationSuppressUntilAllUp || annotationGesture || !annotationsVisible) return
-      const pick = pickAnnotationGround(e.clientX, e.clientY, { withScale: true })
+      const pick = pickAnnotationGround(e.clientX, e.clientY)
       if (!pick) return
       beginAnnotationGesture(e, pick)
       return
     }
     if (annotationSuppressUntilAllUp || annotationGesture || !annotationsVisible) return
-    const pick = pickAnnotationGround(e.clientX, e.clientY, { withScale: true })
+    const pick = pickAnnotationGround(e.clientX, e.clientY)
     if (!pick) return
     beginAnnotationGesture(e, pick)
     let captured = false

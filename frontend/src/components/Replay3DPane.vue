@@ -197,7 +197,7 @@ function setAnnotationTool(tool) {
 }
 function openAnnotation() {
   if (annotationOpen.value) return
-  sceneApi?.setPlaying(false)      // 与 2D 一致：进入 drawing 先暂停
+  // Drawing owns pointer interaction only; playback transport keeps its own state.
   displayOpen.value = false
   annotationOpen.value = true
   annotationTool.value = 'pen'
@@ -860,7 +860,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
           <div v-if="annotationOpen" class="replay3d-annotations" data-test="replay3d-annotations">
             <AnnotationToolbar
               :open="annotationOpen"
-              :compact="isPhone && !portraitFlow"
+              compact
               :active-tool="annotationTool"
               :annot-colors="ANNOT_COLORS"
               :annot-color="annotationColor"
