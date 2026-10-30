@@ -74,7 +74,7 @@ function expectTrianglesClear(ribbon, surface, { allowEmpty = false } = {}) {
   else expect(checked).toBeGreaterThan(0)
 }
 
-function expectTrianglesDenseClear(ribbon, surface, { steps = 16, epsilon = 0.05 } = {}) {
+function expectTrianglesDenseClear(ribbon, surface, { steps = 16, epsilon = 0.05, allowEmpty = false } = {}) {
   let checked = 0
   for (const strip of ribbon.strips) {
     for (let i = 0; i < strip.indices.length; i += 3) {
@@ -98,7 +98,8 @@ function expectTrianglesDenseClear(ribbon, surface, { steps = 16, epsilon = 0.05
       }
     }
   }
-  expect(checked).toBeGreaterThan(0)
+  if (allowEmpty) expect(checked).toBeGreaterThanOrEqual(0)
+  else expect(checked).toBeGreaterThan(0)
 }
 
 describe('sanitizePoints', () => {
@@ -319,6 +320,16 @@ describe('buildPenRibbon', () => {
     expect(ribbon.validation.unsafeCells).toBe(0)
     expect(ribbon.validation.iterations).toBeGreaterThan(0)
     expectTrianglesClear(ribbon, sampler)
+  })
+
+  it('treats max-depth exhaustion as unresolved, never fail-open', () => {
+    const surface = (x, z) => 20 + 0.04 * Math.sin(z * 80)
+    const ribbon = buildPenRibbon(pen([{ x: -2, y: 0 }, { x: 2, y: 0 }], 2), { sampleHeight: surface, lift: 0 })
+    expect(ribbon).not.toBeNull()
+    expect(ribbon.validation.unsafeCells).toBeGreaterThan(0)
+    const emittedTriangles = ribbon.strips.reduce((sum, strip) => sum + strip.indices.length / 3, 0)
+    expect(emittedTriangles).toBeLessThan(ribbon.validation.cellsChecked * 2)
+    expectTrianglesDenseClear(ribbon, surface, { steps: 8, epsilon: 0.05, allowEmpty: true })
   })
 
   it('fails closed by skipping unsafe cells when refinement budget is exhausted', () => {

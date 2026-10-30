@@ -295,13 +295,16 @@ function triangleClear(a, b, c, sampleHeight, clearance, depth = 0) {
     if (terrain === null || y < terrain - clearance) return false
     maxDeviation = Math.max(maxDeviation, Math.abs(terrain - (wa * ta + wb * tb + wc * tc)))
   }
-  if (depth >= ANNOTATION_VALIDATION_MAX_DEPTH) return true
   const maxEdge = Math.max(
     Math.hypot(a.x - b.x, a.z - b.z),
     Math.hypot(b.x - c.x, b.z - c.z),
     Math.hypot(c.x - a.x, c.z - a.z),
   )
-  if (maxDeviation <= ANNOTATION_VALIDATION_DEVIATION_TRIGGER && maxEdge <= ANNOTATION_VALIDATION_EDGE_LIMIT) return true
+  const converged = maxDeviation <= ANNOTATION_VALIDATION_DEVIATION_TRIGGER
+    && maxEdge <= ANNOTATION_VALIDATION_EDGE_LIMIT
+  if (converged) return true
+  // Depth exhaustion is NOT a proof of safety: not converged + cannot recurse = unresolved/fail closed.
+  if (depth >= ANNOTATION_VALIDATION_MAX_DEPTH) return false
   // Recursive sub-triangle validation: hidden terrain between the 7 fixed samples
   // must be probed at smaller scales; spatial/error bounds terminate deterministically.
   const ab = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: (a.z + b.z) / 2 }
