@@ -182,7 +182,7 @@ describe('2D 战局回放 canonical 语义 ↔ Java golden', () => {
         // 静默失去全部徽标，而其余 golden 字段仍然全绿——在这里显式钉住上游派生链。
         const observed = l.vehicles.flatMap((v) => v.consumableTransitions)
           .filter((t) => !t.invalidation && t.state === 'ACTIVATED'
-            && t.durationSec !== null && t.durationSec > 0)
+            && typeof t.durationSec === 'number' && t.durationSec > 0)
         expect(observed.length, 'ACTIVATED 且 duration>0 的定时消耗品条数').toBeGreaterThan(0)
         for (const t of observed) {
           expect(t.endsAt, JSON.stringify(t)).not.toBeNull()
