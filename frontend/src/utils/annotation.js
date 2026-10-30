@@ -28,6 +28,11 @@ export const ANNOT_WIDTH_MIN = 1
 export const ANNOT_WIDTH_MAX = 12
 export const ANNOT_WIDTH_DEFAULT = 3
 
+/** 3D 橡皮擦 visual radius（CSS/logical px；pen width 与 eraser radius 分离）。 */
+export const ANNOT_ERASER_RADIUS_MIN = 6
+export const ANNOT_ERASER_RADIUS_MAX = 40
+export const ANNOT_ERASER_RADIUS_DEFAULT = 16
+
 /** 文字标注字号（SVG 单位，随地图缩放）。 */
 export const ANNOT_FONT_SIZE = 20
 
@@ -187,30 +192,202 @@ export function translateAnnotation(annotation, dx, dy) {
 }
 
 /**
- * 按保留点集合把原始点列拆成连续段：被删除的点制造中断，中断处不重新连线。
- * kept 必须是 original 中元素的引用子集（保持原顺序）。
+ * 橡皮擦 capsule 与一条直线段的参数区间：返回 t∈[0,1] 上被擦除的区间。
+ * capsule = 到 eraser 线段的距离 ≤ radius，等价于「两端 disc ∪ 两条平行边之间的矩形」。
  */
-function splitByRemoved(original, kept) {
-  const keptSet = new Set(kept)
-  const segments = []
-  let current = []
-  for (const p of original) {
-    if (keptSet.has(p)) {
-      current.push(p)
-    } else if (current.length) {
-      segments.push(current)
-      current = []
+function capsuleIntervals(a, b, c, d, radius) {
+  const vx = b.x - a.x
+  const vy = b.y - a.y
+  const ex = d.x - c.x
+  const ey = d.y - c.y
+  const length2 = ex * ex + ey * ey
+  const intervals = []
+  const segLength2 = vx * vx + vy * vy
+  if (segLength2 <= 1e-12) return intervals
+
+  const addDisc = (p) => {
+    const px = a.x - p.x
+    const py = a.y - p.y
+    const bq = 2 * (px * vx + py * vy)
+    const cq = px * px + py * py - radius * radius
+    const disc = bq * bq - 4 * segLength2 * cq
+    if (disc < 0) return
+    const root = Math.sqrt(disc)
+    intervals.push([(-bq - root) / (2 * segLength2), (-bq + root) / (2 * segLength2)])
+  }
+
+  if (length2 <= 1e-12) {
+    addDisc(c)
+    return intervals
+  }
+
+  const length = Math.sqrt(length2)
+  const ux = ex / length
+  const uy = ey / length
+  const nx = -uy
+  const ny = ux
+  const w0 = (a.x - c.x) * nx + (a.y - c.y) * ny
+  const wd = vx * nx + vy * ny
+  let lineLo = -Infinity
+  let lineHi = Infinity
+  if (Math.abs(wd) <= 1e-12) {
+    if (Math.abs(w0) > radius) return []
+  } else {
+    lineLo = (-radius - w0) / wd
+    lineHi = (radius - w0) / wd
+    if (lineLo > lineHi) {
+      const tmp = lineLo
+      lineLo = lineHi
+      lineHi = tmp
     }
   }
-  if (current.length) segments.push(current)
-  return segments
+
+  const q0 = (a.x - c.x) * ux + (a.y - c.y) * uy
+  const qd = vx * ux + vy * uy
+  let projLo = -Infinity
+  let projHi = Infinity
+  if (Math.abs(qd) <= 1e-12) {
+    if (q0 < -1e-9 || q0 > length + 1e-9) return []
+  } else {
+    projLo = -q0 / qd
+    projHi = (length - q0) / qd
+    if (projLo > projHi) {
+      const tmp = projLo
+      projLo = projHi
+      projHi = tmp
+    }
+  }
+
+  const lo = Math.max(lineLo, projLo)
+  const hi = Math.min(lineHi, projHi)
+  if (hi > lo) intervals.push([lo, hi])
+  addDisc(c)
+  addDisc(d)
+  return intervals
+}
+
+function mergeCoveredIntervals(intervals) {
+  const clamped = intervals
+    .map(([a, b]) => [Math.max(0, a), Math.min(1, b)])
+    .filter(([a, b]) => b > a + 1e-9)
+    .sort((p, q) => p[0] - q[0])
+  if (!clamped.length) return []
+  const out = [clamped[0]]
+  for (let i = 1; i < clamped.length; i++) {
+    const last = out[out.length - 1]
+    const next = clamped[i]
+    if (next[0] <= last[1] + 1e-9) last[1] = Math.max(last[1], next[1])
+    else out.push(next)
+  }
+  return out
+}
+
+function boxesOverlap(a, b) {
+  return a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1]
+}
+
+function pathLength(points) {
+  let total = 0
+  for (let i = 1; i < points.length; i++) {
+    total += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y)
+  }
+  return total
+}
+
+/**
+ * 语义 capsule eraser：对每条 stroke segment 求被擦除的 t 区间，取补集生成新 polyline。
+ * 返回 null = 未命中（调用方保留原 annotation 引用）；[] = 整笔被擦净；否则为 ≥2 点的新段。
+ * 子段精度是 3D 稀疏笔迹（远距离画、快速划）不漏擦的前提。
+ */
+function clipPenByEraser(points, eraserPoints, radius) {
+  if (!Array.isArray(points) || points.length < 2) return null
+  const cleanPoints = []
+  for (const point of points) {
+    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) continue
+    const previous = cleanPoints[cleanPoints.length - 1]
+    if (previous && Math.hypot(point.x - previous.x, point.y - previous.y) <= 1e-9) continue
+    cleanPoints.push(point)
+  }
+  if (cleanPoints.length < 2) return null
+  const cleanEraser = []
+  for (const point of eraserPoints) {
+    if (point && Number.isFinite(point.x) && Number.isFinite(point.y)) cleanEraser.push(point)
+  }
+  if (!cleanEraser.length) return null
+  const segments = []
+  if (cleanEraser.length === 1) {
+    segments.push({ a: cleanEraser[0], b: cleanEraser[0] })
+  } else {
+    for (let i = 1; i < cleanEraser.length; i++) {
+      segments.push({ a: cleanEraser[i - 1], b: cleanEraser[i] })
+    }
+  }
+  const boxes = segments.map((segment) => [
+    Math.min(segment.a.x, segment.b.x) - radius,
+    Math.min(segment.a.y, segment.b.y) - radius,
+    Math.max(segment.a.x, segment.b.x) + radius,
+    Math.max(segment.a.y, segment.b.y) + radius,
+  ])
+
+  const pieces = []
+  let current = []
+  let changed = false
+  const flush = () => {
+    if (current.length >= 2 && pathLength(current) > 1e-9) pieces.push(current)
+    current = []
+  }
+  const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t })
+
+  for (let i = 1; i < cleanPoints.length; i++) {
+    const a = cleanPoints[i - 1]
+    const b = cleanPoints[i]
+    const strokeBox = [
+      Math.min(a.x, b.x) - radius, Math.min(a.y, b.y) - radius,
+      Math.max(a.x, b.x) + radius, Math.max(a.y, b.y) + radius,
+    ]
+    let covered = []
+    for (let k = 0; k < segments.length; k++) {
+      if (!boxesOverlap(strokeBox, boxes[k])) continue
+      covered.push(...capsuleIntervals(a, b, segments[k].a, segments[k].b, radius))
+    }
+    covered = mergeCoveredIntervals(covered)
+    if (!covered.length) {
+      if (!current.length) current.push({ x: a.x, y: a.y })
+      current.push({ x: b.x, y: b.y })
+      continue
+    }
+    changed = true
+    let cursor = 0
+    for (const [lo, hi] of covered) {
+      if (lo > cursor + 1e-9) {
+        const start = cursor <= 1e-9 ? { x: a.x, y: a.y } : lerp(a, b, cursor)
+        if (!current.length) current.push(start)
+        current.push(lerp(a, b, lo))
+        flush()
+      } else {
+        flush()
+      }
+      cursor = Math.max(cursor, hi)
+    }
+    if (cursor < 1 - 1e-9) {
+      const start = cursor <= 1e-9 ? { x: a.x, y: a.y } : lerp(a, b, cursor)
+      if (!current.length) current.push(start)
+      current.push({ x: b.x, y: b.y })
+    } else {
+      flush()
+    }
+  }
+  flush()
+  if (!changed) return null
+  return pieces
 }
 
 /**
  * 橡皮擦应用（不可变，返回新数组）：
- * - pen 笔迹：删去距任一橡皮点 ≤ radius 的点，「点擦局部」；剩余点按中断拆段，
+ * - pen 笔迹：eraser 路径作为 capsule 扫过 semantic 平面，按子段裁剪并断段；
  *   不足 2 点的段丢弃（整笔被擦净则整笔消失）；
  * - 形状/文字：橡皮路径任一点距其几何 ≤ radius + 线宽（文字为字号）时整件删除。
+ * 未命中任何内容时返回原数组引用，调用方不产生无效 undo 快照。
  */
 export function applyEraser(annotations, eraserPoints, radius) {
   if (!Array.isArray(annotations) || !Array.isArray(eraserPoints) || eraserPoints.length === 0) {
@@ -222,18 +399,19 @@ export function applyEraser(annotations, eraserPoints, radius) {
   for (const ann of annotations) {
     if (!ann) continue
     if (ann.type === 'pen') {
-      const kept = ann.points.filter(
-        p => !eraserPoints.some(ep => Math.hypot(p.x - ep.x, p.y - ep.y) <= r)
-      )
-      if (kept.length < ann.points.length) changed = true
-      if (kept.length < 2) continue
-      const segments = splitByRemoved(ann.points, kept)
-      for (const seg of segments) {
-        if (seg.length >= 2) result.push({ ...ann, points: seg })
+      const pieces = clipPenByEraser(ann.points, eraserPoints, r)
+      if (pieces === null) {
+        result.push(ann)
+        continue
+      }
+      changed = true
+      for (const piece of pieces) {
+        if (piece.length >= 2) result.push({ ...ann, points: piece })
       }
     } else {
       const width = Number.isFinite(ann.width) && ann.width > 0 ? ann.width : ANNOT_WIDTH_DEFAULT
-      const hit = eraserPoints.some(ep => distanceToShape(ann, ep.x, ep.y) <= r + width)
+      const hit = eraserPoints.some((ep) => ep && Number.isFinite(ep.x) && Number.isFinite(ep.y)
+        && distanceToShape(ann, ep.x, ep.y) <= r + width)
       if (hit) {
         changed = true
         continue
@@ -241,9 +419,9 @@ export function applyEraser(annotations, eraserPoints, radius) {
       result.push(ann)
     }
   }
-  // 未命中任何内容：返回原数组引用，调用方不产生无效的 undo 快照
   return changed ? result : annotations
 }
+
 
 /**
  * 快照式提交：next 成为新历史项；若当前不在栈尾（已撤回过），丢弃 redo 侧。

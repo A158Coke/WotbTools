@@ -143,21 +143,22 @@ describe('geometry normalization', () => {
   })
 })
 
-describe('applyEraser (point-erase)', () => {
+describe('applyEraser (semantic capsule)', () => {
   const pen = (points) => ({ type: 'pen', color: '#fff', width: 3, points })
 
-  it('removes pen points within radius and splits into segments', () => {
+  it('clips a stroke at capsule boundaries and splits into sub-segments', () => {
     const points = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0 }, { x: 30, y: 0 }, { x: 40, y: 0 }]
-    const result = applyEraser([pen(points)], [{ x: 15, y: 0 }], 6) // 半径 6 覆盖 (10,0)/(20,0)
-    expect(result).toHaveLength(1) // 只剩 (30,0)-(40,0) 段；(0,0) 单点段被丢弃
-    expect(result[0].points).toEqual([{ x: 30, y: 0 }, { x: 40, y: 0 }])
+    const result = applyEraser([pen(points)], [{ x: 15, y: 0 }], 6) // 覆盖 [9,21]
+    expect(result).toHaveLength(2)
+    expect(result[0].points).toEqual([{ x: 0, y: 0 }, { x: 9, y: 0 }])
+    expect(result[1].points).toEqual([{ x: 21, y: 0 }, { x: 30, y: 0 }, { x: 40, y: 0 }])
   })
 
-  it('removes an endpoint locally', () => {
+  it('clips an endpoint at the capsule boundary, preserving the rest', () => {
     const points = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0 }]
     const result = applyEraser([pen(points)], [{ x: 2, y: 0 }], 4)
     expect(result).toHaveLength(1)
-    expect(result[0].points).toEqual([{ x: 10, y: 0 }, { x: 20, y: 0 }])
+    expect(result[0].points).toEqual([{ x: 6, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0 }])
   })
 
   it('erases whole pen when nothing remains with 2+ points', () => {
@@ -194,6 +195,41 @@ describe('applyEraser (point-erase)', () => {
   it('returns the same array when the eraser misses everything (no-op)', () => {
     const anns = [pen([{ x: 0, y: 0 }, { x: 10, y: 0 }]), { type: 'circle', color: '#fff', width: 2, cx: 0, cy: 0, r: 10 }]
     expect(applyEraser(anns, [{ x: 500, y: 500 }], 4)).toBe(anns)
+  })
+
+  it('erases the middle of a sparse 10m segment that point-distance would miss', () => {
+    const sparse = pen([{ x: 0, y: 0 }, { x: 10, y: 0 }])
+    const result = applyEraser([sparse], [{ x: 5, y: 0 }], 1)
+    expect(result).toHaveLength(2)
+    expect(result[0].points).toEqual([{ x: 0, y: 0 }, { x: 4, y: 0 }])
+    expect(result[1].points).toEqual([{ x: 6, y: 0 }, { x: 10, y: 0 }])
+  })
+
+  it('treats a long eraser segment as a capsule, not as sparse points', () => {
+    const result = applyEraser([pen([{ x: 0, y: 0 }, { x: 10, y: 0 }])], [{ x: 5, y: -50 }, { x: 5, y: 50 }], 1)
+    expect(result).toHaveLength(2)
+    expect(result[0].points).toEqual([{ x: 0, y: 0 }, { x: 4, y: 0 }])
+    expect(result[1].points).toEqual([{ x: 6, y: 0 }, { x: 10, y: 0 }])
+  })
+
+  it('accepts a single-point eraser path', () => {
+    const result = applyEraser([pen([{ x: 0, y: 0 }, { x: 10, y: 0 }])], [{ x: 5, y: 0 }], 2)
+    expect(result).toHaveLength(2)
+    expect(result[0].points[1].x).toBeCloseTo(3, 9)
+    expect(result[1].points[0].x).toBeCloseTo(7, 9)
+  })
+
+  it('undo restores the erased geometry and redo erases it again', () => {
+    const original = pen([{ x: 0, y: 0 }, { x: 10, y: 0 }])
+    let state = commit([[]], 0, [original])
+    const erased = applyEraser(state.history[state.index], [{ x: 5, y: 0 }], 1)
+    state = commit(state.history, state.index, erased)
+    expect(state.history[state.index]).toHaveLength(2)
+    state = undo(state.history, state.index)
+    expect(state.history[state.index]).toHaveLength(1)
+    expect(state.history[state.index][0]).toBe(original)
+    state = redo(state.history, state.index)
+    expect(state.history[state.index]).toHaveLength(2)
   })
 })
 
