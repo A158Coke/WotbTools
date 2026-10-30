@@ -733,6 +733,9 @@ const ROSTER_GEOMETRY_SCENARIOS = [
   { name: 'roster-geometry-portrait-to844x390-coarse', width: 390, height: 844, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', rotateTo: { width: 844, height: 390 } },
   { name: 'roster-geometry-667x375-landscape-coarse', width: 667, height: 375, touch: true, players: 7, unknown: 0, killfeed: 0 },
   { name: 'roster-geometry-1280x720-desktop', width: 1280, height: 720, touch: false, players: 7, unknown: 2, killfeed: 0 },
+  { name: 'roster-geometry-1280x800-desktop', width: 1280, height: 800, touch: false, players: 7, unknown: 2, killfeed: 0, killfeedRows: 2 },
+  { name: 'roster-geometry-1280x704-desktop', width: 1280, height: 704, touch: false, players: 7, unknown: 2, killfeed: 0, killfeedRows: 2 },
+  { name: 'roster-geometry-1280x660-desktop', width: 1280, height: 660, touch: false, players: 7, unknown: 2, killfeed: 0 },
   { name: 'roster-geometry-1024x460-short', width: 1024, height: 460, touch: false, players: 7, unknown: 0, killfeed: 1, layout: 'side' },
 ]
 
@@ -1524,6 +1527,36 @@ async function runRosterGeometryScenario(env, scenario) {
     check(failures, sceneOcclusion.items?.length > 0, '3D 遮挡判定空跑：网格没有发现任何 HUD 面')
     check(failures, sceneOcclusion.items?.some((item) => item.label === '[replay3d-killfeed]'), '3D 遮挡判定空跑：没有量到击杀流')
   }
+  // 行数预算：放不下 3 条时只渲染最新的，每一行都完整，不是把 3 条一起压扁
+  const killfeedRows = await page.evaluate(`(() => {
+    const box = document.querySelector('.pb-root .killfeed').getBoundingClientRect()
+    const rows = [...document.querySelectorAll('.pb-root .killfeed .kf')]
+    return {
+      texts: rows.map((row) => row.textContent),
+      complete: rows.every((row) => {
+        const r = row.getBoundingClientRect()
+        return row.scrollHeight <= row.clientHeight + 1 && r.top >= box.top - 1 && r.bottom <= box.bottom + 1
+      }),
+    }
+  })()`)
+  console.log(`[browser-interaction] ${scenario.name} killfeed rows=${killfeedRows.texts.length}`)
+  check(failures, killfeedRows.complete, `击杀流每一行都必须完整: ${JSON.stringify(killfeedRows)}`)
+  check(failures, killfeedRows.texts.at(-1)?.includes('Victim_3'), `击杀流必须保留最新一条: ${JSON.stringify(killfeedRows)}`)
+  if (scenario.killfeedRows) {
+    check(failures, killfeedRows.texts.length === scenario.killfeedRows, `击杀流行数预算应为 ${scenario.killfeedRows}: ${JSON.stringify(killfeedRows)}`)
+    // HUD 变高（如基地状态条出现）时预算降到 1 行：只留最新一条，不是把 3 条压进一行高度
+    await page.evaluate(`(() => {
+      const style = document.createElement('style')
+      style.id = 'killfeed-budget-control'
+      style.textContent = '.pb-root.playback-workspace > .hud::after { content: ""; display: block; block-size: 44px }'
+      document.head.append(style)
+    })()`)
+    await page.waitForValue(`document.querySelectorAll('.pb-root .killfeed .kf').length`, (rows) => rows === 1, { label: 'kill feed budget drops to one row' })
+    const single = await page.evaluate(`document.querySelector('.pb-root .killfeed .kf').textContent`)
+    check(failures, single.includes('Victim_3'), `1 行预算必须保留最新一条: ${single}`)
+    await page.evaluate(`document.getElementById('killfeed-budget-control')?.remove()`)
+    await page.waitForValue(`document.querySelectorAll('.pb-root .killfeed .kf').length`, (rows) => rows === scenario.killfeedRows, { label: 'kill feed budget restored' })
+  }
   // 负向对照：44px 的合规控件（类名不在任何清单里，位置避开任何整数倍采样点的巧合），探针只能靠命中发现它
   await page.evaluate(`(() => {
     const mutant = document.createElement('button')
@@ -1578,7 +1611,7 @@ async function runRosterGeometryScenario(env, scenario) {
   } else if (scenario.layout !== 'portrait') {
     // 宽形态：车道轻微压入中心。这个量在紧凑例外的 15% 以内，严格判定必须红、放宽判定必须绿，
     // 两边都成立才证明例外确实没有漏到宽形态。
-    const LANE_MUTANT = '.pb-root.playback-workspace .team-lane.side-left { inset-inline-start: 22% !important; inset-block-start: 8% !important }'
+    const LANE_MUTANT = '.pb-root.playback-workspace .team-lane.side-left { inset-inline-start: 22% !important; inset-block-start: 7% !important }'
     const strict = await occlusionWithCss(LANE_MUTANT)
     const lenient = await occlusionWithCss(LANE_MUTANT, { ...SCENE_OCCLUSION, edgeDocked: EDGE_DOCKED })
     const intrusion = strict.items?.find((item) => item.label === '[replay3d-lane-left]')?.centralPct

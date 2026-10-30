@@ -663,9 +663,11 @@ const rootEl = ref(null)
 const hudEl = ref(null)
 const controlsEl = ref(null)
 let laneBoundsObserver = null
-/** 工作台高度低于它时，两行控制条放不进场景底部 20% 边带（design-language §5）。 */
-const SHORT_WORKSPACE_MAX_H = 500
+/** 工作台高度低于它时，两行控制条（实测约 137px）放不进场景底部 20% 边带（design-language §5）。 */
+const SHORT_WORKSPACE_MAX_H = 700
 const KILLFEED_MAX_LINES = 3
+const KILLFEED_ROW_BORDER_PX = 2
+const killfeedLines = ref(KILLFEED_MAX_LINES)
 const shortWorkspace = ref(false)
 function measurePresentationBounds() {
   const root = rootEl.value
@@ -686,12 +688,12 @@ function measurePresentationBounds() {
   const controlsH = controlsEl.value?.getBoundingClientRect().height || 0
   const budget = Math.max(1, workspaceH - padding - border - hudH - controlsH - gap * 2)
   root.style.setProperty('--pb-square-avail-h', `${Math.floor(budget)}px`)
-  // 宽形态的击杀流不得压入场景中心 60% 盒（design-language §5）：按 HUD 下方剩余边带限行，
-  // 放不下时保留最新几条。紧凑形态走贴边例外，竖屏的 HUD 不在场景上。
+  // 宽形态的击杀流不得压入场景中心 60% 盒（design-language §5）：按 HUD 下方剩余边带决定
+  // 渲染几条，放不下时只留最新的。紧凑形态走贴边例外，竖屏的 HUD 不在场景上。
   const hudBottom = (hudEl.value?.getBoundingClientRect().bottom ?? 0) - root.getBoundingClientRect().top
-  const killfeedLineH = (parseFloat(style.getPropertyValue('--line-height-caption')) || 16) + gap
-  const killfeedLines = Math.floor((root.clientHeight * 0.2 - hudBottom - gap) / killfeedLineH)
-  root.style.setProperty('--pb-killfeed-lines', String(compactBar.value || portraitFlow.value ? KILLFEED_MAX_LINES : Math.min(KILLFEED_MAX_LINES, Math.max(1, killfeedLines))))
+  const killfeedLineH = (parseFloat(style.getPropertyValue('--line-height-caption')) || 16) + KILLFEED_ROW_BORDER_PX + gap
+  const lineBudget = Math.floor((root.clientHeight * 0.2 - hudBottom - gap) / killfeedLineH)
+  killfeedLines.value = compactBar.value || portraitFlow.value ? KILLFEED_MAX_LINES : Math.min(KILLFEED_MAX_LINES, Math.max(1, lineBudget))
   root.style.setProperty('--pb-stage-h', `${Math.floor(budget) + gap * 2}px`)
 }
 function observeLaneBounds() {
@@ -824,7 +826,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
           </template>
         </BattlePlaybackHud>
         <div v-if="showKillfeed && store.killfeed.length" class="killfeed" data-test="replay3d-killfeed" aria-hidden="true">
-          <div v-for="kf in store.killfeed.slice(-3)" :key="kf.id" class="kf">{{ killfeedText(kf) }}</div>
+          <div v-for="kf in store.killfeed.slice(-killfeedLines)" :key="kf.id" class="kf">{{ killfeedText(kf) }}</div>
         </div>
       </div>
 
@@ -1106,7 +1108,6 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 }
 
 .pb-root {
-  --pb-killfeed-lines: 3; /* 宽形态由 measurePresentationBounds 按剩余边带改写 */
   position: relative;
   scroll-margin-block-start: calc(var(--header-h) + var(--space-3));
   isolation: isolate;               /* 局部层叠上下文：HUD 只用 --pb-z-* 的 1–9 层 */
@@ -1226,11 +1227,11 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 
 .killfeed {
   position: absolute; inset-block-start: calc(100% + var(--space-1)); inset-inline: 0;
-  max-block-size: calc(var(--pb-killfeed-lines) * (var(--line-height-caption) + var(--space-1))); overflow: hidden;
-  display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: var(--space-1);
+  display: flex; flex-direction: column; align-items: center; gap: var(--space-1);
   max-width: 100%;
 }
 .kf {
+  flex: none;
   padding: 0 var(--space-3);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-sm);
