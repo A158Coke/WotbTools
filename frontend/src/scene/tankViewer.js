@@ -4747,19 +4747,22 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 }
             }
             updateHeatmapThickness();
-            if (!penetrationMode && !primaryArmorScene) return;
-            const sh = selectedShell || (shooterShells[0]) || null;
-            if (sh) { updatePenetrationUniforms(sh); updateSpacedUniforms(sh); }
-            if (QP.get('shot')) {
-                if (!rerunAuthoritativeShotCheck()) doPenetrationCheck(0, 0);
-            } else if (lastClickNdc || heHeatmapCenter) {
-                // 校准弹/强化装甲改变的是判定输入，旧的命中结果不再成立。清理**不得**绑定
-                // 「叠加层资源是否存在」：厚度视图里叠加层已释放（两个门控都为假），
-                // 但上一发的爆点/轨迹仍在，换了弹种再回默认视图会让渐变按新弹参数在旧
-                // 爆点复活，且没有新的点击（Codex 复核 P2，2026-10-30）。
+            // 旧判定失效必须排在「渲染资源是否存在」的守卫之前：厚度视图里叠加层已释放
+            // （penetrationMode / primaryArmorScene 都为假），但上一发的爆点、结果卡、轨迹
+            // 仍是上一发的——换了装备再回默认视图，syncHeatOverlay 会在旧爆点上按新参数
+            // 重建渐变且没有新的点击（Codex 复核 P2，2026-10-30）。只有 uniform 刷新
+            // 依资源存在与否，replay 的权威重判分支保持原样。
+            if (!QP.get('shot') && (lastClickNdc || heHeatmapCenter)) {
                 tidyTrajectory();
                 if (window.__hitMarker) { fxScene.remove(window.__hitMarker); window.__hitMarker = null; }
                 lastClickNdc = null;
+            }
+            if (penetrationMode || primaryArmorScene) {
+                const sh = selectedShell || (shooterShells[0]) || null;
+                if (sh) { updatePenetrationUniforms(sh); updateSpacedUniforms(sh); }
+            }
+            if (QP.get('shot')) {
+                if (!rerunAuthoritativeShotCheck()) doPenetrationCheck(0, 0);
             }
             syncHeatOverlay();
         }
@@ -4838,11 +4841,15 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (!collisionMode) resetArmorFilters();
                 setArmorFilterRowVisible(collisionMode);
                 if (!collisionMode) { resetArmorHighlight(); document.getElementById('click-info').style.display = 'none'; }
-                // 进厚度视图释放 HE 渐变叠加层；退出后 HE+爆点仍在则重建（机械/语义由
-                // syncHeatOverlay 统一裁决——含上方互斥分支已走 applyPenetrationMode 的情形）。
-                syncHeatOverlay();
-                if (!armorModel) return;
+                if (!armorModel) { syncHeatOverlay(); return; }
                 applyArmorViewStyle(collisionMode);
+                // 叠加层裁决必须排在网格可见性恢复**之后**：退出厚度视图时
+                // resetArmorFilters() 只复位开关，真正恢复可见性的是
+                // applyArmorViewStyle → applyCategoryFilters；而 rebuildHeatmapScenes →
+                // collectPenetrationMeshes 会跳过 visible=false 的板，先重建会漏掉被分类
+                // 过滤隐藏的主装/间隙甲/模块，之后的点击也复用这份残缺场景
+                // （Codex 复核 P2，2026-10-30）。进入厚度视图时这里只做释放，顺序无影响。
+                syncHeatOverlay();
             });
 
             // 分类过滤（主装甲 / 间隙 / 外部模块）：active = 显示

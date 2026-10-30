@@ -326,7 +326,10 @@ describe('dolly-zoom world-overview scope guard', () => {
     // “penetrationMode/叠加层机械” 早退之前就写入 uniform（否则装甲检视模式里开关不生效；
     // 默认视图 HE 渐变机械存在时同样要刷新，2026-10-30）。
     expect(kernel).toMatch(/function setEquipmentOverride\(kind, value\)[\s\S]*?refreshEquipmentEffects\(\);/)
-    expect(kernel).toMatch(/function refreshEquipmentEffects\(\)[\s\S]*?updateHeatmapThickness\(\);\s*if \(!penetrationMode && !primaryArmorScene\) return;/)
+    // 旧结果失效必须排在资源守卫之前：厚度视图里叠加层已释放，若守卫先行则清理执行不到
+    // （Codex 复核 P2），上一发的爆点/结果卡会在回到默认视图时被复活。
+    expect(kernel).toMatch(/function refreshEquipmentEffects\(\)[\s\S]*?updateHeatmapThickness\(\);[\s\S]*?if \(!QP\.get\('shot'\) && \(lastClickNdc \|\| heHeatmapCenter\)\) \{/)
+    expect(kernel).not.toMatch(/if \(!penetrationMode && !primaryArmorScene\) return;/)
     const view = read('./AgentArmorView.vue')
     expect(view).toMatch(/function startViewer\(preserveSelection = false\)/)
     expect(view).toMatch(/if \(!preserveSelection\) \{/)

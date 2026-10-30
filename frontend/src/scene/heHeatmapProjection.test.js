@@ -75,10 +75,22 @@ describe('HE 热力图投影到可见主装甲（源码级锁）', () => {
         // 清理条件不得绑定 penetrationMode / primaryArmorScene：厚度视图里叠加层已释放
         // （两者都为假），上一发的爆点/命中结果仍必须清，否则换弹后回到默认视图会在
         // 旧爆点按新弹参数复活渐变，且没有新的点击。
-        expect(viewer.match(/\} else if \(lastClickNdc \|\| heHeatmapCenter\) \{/g)).toHaveLength(2);
+        expect(viewer).toContain("if (!QP.get('shot') && (lastClickNdc || heHeatmapCenter)) {");
+        expect(viewer).toMatch(/\} else if \(lastClickNdc \|\| heHeatmapCenter\) \{/);
         expect(viewer).not.toContain('(penetrationMode || primaryArmorScene) && lastClickNdc');
+        // 装备路径的清理必须在资源守卫之前（否则厚度视图早退，清理永远执行不到）。
+        expect(viewer).not.toContain('if (!penetrationMode && !primaryArmorScene) return;');
+        expect(viewer).toMatch(/refreshEquipmentEffects\(\) \{[\s\S]*?if \(!QP\.get\('shot'\) && \(lastClickNdc \|\| heHeatmapCenter\)\) \{[\s\S]*?if \(penetrationMode \|\| primaryArmorScene\) \{/);
         // 清理之后再统一裁决叠加层（换到非 HE 释放、HE+爆点保留/重建）。
         expect(viewer).toMatch(/lastClickNdc = null;\s*\n\s*\}\s*\n\s*\/\/ 清理之后再统一裁决叠加层[\s\S]*?syncHeatOverlay\(\);/);
+    });
+    it('退出厚度视图时先恢复网格可见性再重建叠加层（Codex 复核 P2）', () => {
+        // collectPenetrationMeshes 跳过 visible=false 的板；resetArmorFilters 只复位开关，
+        // 可见性由 applyArmorViewStyle → applyCategoryFilters 恢复。
+        expect(viewer).toMatch(/applyArmorViewStyle\(collisionMode\);\s*\n\s*\/\/ 叠加层裁决必须排在网格可见性恢复\*\*之后\*\*/);
+        expect(viewer).toMatch(/applyArmorViewStyle\(collisionMode\);[\s\S]{0,400}?syncHeatOverlay\(\);/);
+        // 旧顺序（先 syncHeatOverlay 再 applyArmorViewStyle）必须消失。
+        expect(viewer).not.toMatch(/syncHeatOverlay\(\);\s*\n\s*if \(!armorModel\) return;\s*\n\s*applyArmorViewStyle\(collisionMode\);/);
     });
     it('点击判定特效走独立 fxScene，击穿概率模式下画在热力图之上', () => {
         expect(viewer).toContain('fxScene = new THREE.Scene();');
