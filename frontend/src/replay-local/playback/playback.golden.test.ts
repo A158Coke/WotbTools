@@ -82,9 +82,18 @@ const PINNED_LOADOUT_UPGRADES: Record<string, number> = {
  * Java golden 由旧 WotbTools 映射生成，把 Swedish `0x49` 标成 LARGE；正确为
  * `0x49` = Crispbread/SMALL（id 106）。这里按 account 冻结纠正值，其余字段仍逐字段相等。
  */
-const PINNED_LOADOUT_CORRECTIONS: Record<string, Record<number, { provisions: string[] }>> = {
+const PINNED_LOADOUT_CORRECTIONS: Record<string, Record<number, { provisions?: string[]; confidence?: string }>> = {
   'tournament-14-14-example.wotbreplay': {
     3109171124: { provisions: ['SMALL_FOOD', 'ENHANCED_SANDBAG_ARMOR', 'IMPROVED_FUEL'] },
+    // 波兰补给 0x6D 由 WotbTools 线码回退表闭合（Zurek/LARGE_FOOD）；Java 旧映射为 null/LOW
+    3105519605: {
+      provisions: ['LARGE_FOOD', 'IMPROVED_FUEL', 'IMPROVED_GEAR_OIL'],
+      confidence: 'HIGH',
+    },
+    3116319903: {
+      provisions: ['LARGE_FOOD', 'IMPROVED_GEAR_OIL', 'IMPROVED_FUEL'],
+      confidence: 'HIGH',
+    },
   },
 }
 

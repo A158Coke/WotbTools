@@ -1292,6 +1292,7 @@
         "loadout_unknown_consumable": "Неизвестный расходник",
         "loadout_unknown_provision": "Неизвестная провизия",
         "loadout_unknown_equipment": "Неизвестное оборудование",
+        "equipment_empty": "Не установлено",
         "equipment_slot_f1": "F1",
         "equipment_slot_v1": "V1",
         "equipment_slot_s1": "S1",

@@ -414,7 +414,8 @@ GeckoView 库的 manifest 会合并进 `WAKE_LOCK` 与 `MODIFY_AUDIO_SETTINGS` �
 CI 覆盖 Native JVM 单测、前端单测、bridge contract 三方一致、release helpers 与 APK bundle 身份。
 2.x 的 WebView instrumentation smoke（基于 `WebView.evaluateJavascript`）随引擎迁移删除；
 引擎层的真实行为（冷启动 / 离线、replay 导入、3D、fullscreen、认证回跳、自更新、后台回收恢复）由
-发布前的真机验收负责（至少一台 Android 9 设备 + 一台 Android 13+ 设备），见 `release-process.md`。
+rollout 后的真机冒烟 / 回归矩阵负责（至少一台 Android 9 设备 + 一台 Android 13+ 设备），它不再是
+`version.json` 发布前的人工审批门，见 `release-process.md`「物理 Android 冒烟 / 回归矩阵」。
 
 执行真机矩阵时记录 model / Android / GeckoView 版本、最终 APK SHA256、bundle buildCommit 和每项 PASS/FAIL。
 
