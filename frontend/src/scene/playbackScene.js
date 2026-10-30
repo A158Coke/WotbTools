@@ -20,6 +20,7 @@ import { loadPlaybackData, mapStaticUrl, resolveMapKey } from './replaySource.js
 import { battleEndTime } from './battleEnd.js'
 import { orientDiscUv } from './baseDecal.js'
 import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, foldSupremacyTransitions } from '../utils/baseStatus.js'
+import { createConsumableStateResolver } from '../utils/consumableRuntime.js'
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
 import {
@@ -47,7 +48,7 @@ import { collectMaterialTextures } from './materialDispose.js'
 import { applyTankDestroyedVisual, destroyedVisualAmount, disposeTankDestroyedVisual, prepareTankDestroyedVisual } from './tankDestroyedVisual.js'
 import { lifeAt, defLifeAt } from '../utils/battlePlaybackV2.ts'
 //（pruneForeignVariantsDetailed 随场景装配块移入 playback/mapAssets.js）
-import { sampleDetachedPose, spansContainAt } from './trackInterp.js'
+import { sampleDetachedPose, spanStartAt, spansContainAt } from './trackInterp.js'
 import { sampleVehiclePoseGame, visibilitySpansByEid } from '../replay-local/pose/vehiclePose.js'
 import { pathPointsOf, legSecsOf, legEndTimes, pointAtInto, legArcEnds, arcAtTime, pointAtArcInto } from './shotPath.js'
 import { impactKind } from './impactKind.js'
@@ -1462,6 +1463,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // HTML label contents are isolated in the child overlay, capped at 10 Hz.
   // Anchors use camera projection at render FPS without mutating Vue state.
   let reloadStateAt = () => null;
+  // 定时消耗品状态 resolver（ACTIVE/COOLDOWN + 剩余秒）；startPlayback 重建，teardown 清空
+  let consumableStateAt = () => [];
   // 会话级 mounted-configs（tank_id → tank/{id}.json）：弹容 N 的实际搭载配置联表源
   //（reloadBar.resolveMountedConfig 消费；startPlayback 重建，teardown 清空）
   let tankDataByTankId = new Map();
@@ -1502,6 +1505,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         friendly, destroyed, lastKnown: false,
         hp: { current, pct, state: destroyed ? 'DESTROYED' : 'CURRENT' },
         reload: destroyed ? null : reloadStateAt(v.def.eid, T),
+        consumables: destroyed || !visibleAt(v, T) ? []
+          : consumableStateAt(v.def.eid, T, spanStartAt(VIS_BY_EID.get(v.def.eid) ?? v.def.coverage, T)),
         hpGhost: ghost ? { prevPct: (ghost.fromFrac + ghost.lossFrac) * 100, nextPct: ghost.fromFrac * 100 } : null,
         hpFlash: flashByEid.has(v.def.eid),
       };
@@ -3632,6 +3637,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     labelOverlay?.clear();
     labelsTime = null; labelsWrittenMs = -Infinity;
     reloadStateAt = () => null;
+    consumableStateAt = () => [];
     tankDataByTankId = new Map();
     for (const o of [mapPlane, terrainMesh, mapScenery, groundMesh, gridHelper]) {
       if (o) { scene.remove(o); disposeObject3D(o); }
@@ -3839,6 +3845,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // resolver 闭包持有同一引用，异步填充后自动生效
     tankDataByTankId = new Map();
     reloadStateAt = createReloadStateResolver({ ...DATA, friendlyTeam: DATA.meta.friendly_team, mountedConfigs: tankDataByTankId });
+    consumableStateAt = createConsumableStateResolver(DATA);
     // 弹容 N：resolver 按「实际搭载配置」取默认（comp locals → 发射弹种 → 初始血量 三级
     // 证据链联表资产面 tank/{id}.json；见 reloadBar.resolveMountedConfig）。多炮坦克各炮
     // 弹容不同，禁止跨配置取最大 / 剩余弹数+1 推断（上游 §六 裁决）。configs 就绪后写入

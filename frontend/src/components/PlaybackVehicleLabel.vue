@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
 import GunMarksBadge from './GunMarksBadge.vue'
+import PlaybackConsumableBadge from './PlaybackConsumableBadge.vue'
 
 // One presentation for map-positioned and camera-projected vehicles. Facts and
 // reload interpretation belong to the callers; this component only presents them.
@@ -17,6 +18,8 @@ const props = defineProps({
   showReload: { type: Boolean, default: true },
   hp: { type: Object, default: null },
   reload: { type: Array, default: null },
+  /** 定时消耗品状态（consumableRuntimeAt 输出；ACTIVE/COOLDOWN + remainingSec/durationSec） */
+  consumables: { type: Array, default: () => [] },
   hpGhost: { type: Object, default: null },
   hpFlash: Boolean,
   hpNoTransition: Boolean,
@@ -43,6 +46,11 @@ const ghostWidth = computed(() => {
   return g && Number.isFinite(g.prevPct) && Number.isFinite(g.nextPct)
     && g.prevPct - g.nextPct > 0.5 ? g.prevPct - g.nextPct : null
 })
+/** 只展示正在生效且身份已闭合的定时消耗品（未知线码不占位，fail-closed）。 */
+const activeConsumables = computed(() => (Array.isArray(props.consumables) ? props.consumables : [])
+  .filter((c) => c && typeof c.logicalItemId === 'string' && c.logicalItemId.length > 0
+    && Number.isFinite(c.remainingSec) && c.remainingSec > 0
+    && Number.isFinite(c.durationSec) && c.durationSec > 0))
 const classes = computed(() => ({
   'label-friendly': props.friendly === true,
   'label-enemy': props.friendly === false,
@@ -64,10 +72,18 @@ const classes = computed(() => ({
       <div v-if="showHp && hp && !destroyed" class="pb-hp-hud" data-test="pb-hp-hud"
         :class="{ 'pb-hp-lastknown': hp.state === 'LAST_KNOWN', 'pb-hp-flash': hpFlash, 'pb-hp-no-transition': hpNoTransition, 'pb-hp-full-spawn': hp.state === 'RELATIVE_FULL' }"
         :title="hpTitle">
-        <span class="pb-hp-bar" :class="{ 'pb-hp-unknown-track': hpFillUnknown }">
-          <span class="pb-hp-fill" :class="{ 'pb-hp-fill-unknown': hpFillUnknown }" :style="{ width: hpFillWidth }"></span>
-          <span v-if="ghostWidth != null" class="pb-hp-ghost" :style="{ left: hpGhost.nextPct + '%', width: ghostWidth + '%' }"></span>
-          <span class="pb-hp-num" data-test="pb-hp-num">{{ hp.current ?? '—' }}</span>
+        <span class="pb-hp-row">
+          <!-- 定时消耗品徽标：绝对定位在血条左侧，不改变血条中心/伤害数字右缘几何。 -->
+          <span v-if="activeConsumables.length" class="pb-consumables" data-test="pb-consumables">
+            <PlaybackConsumableBadge v-for="c in activeConsumables" :key="c.slot"
+              :logical-item-id="c.logicalItemId"
+              :remaining-sec="c.remainingSec" :duration-sec="c.durationSec" />
+          </span>
+          <span class="pb-hp-bar" :class="{ 'pb-hp-unknown-track': hpFillUnknown }">
+            <span class="pb-hp-fill" :class="{ 'pb-hp-fill-unknown': hpFillUnknown }" :style="{ width: hpFillWidth }"></span>
+            <span v-if="ghostWidth != null" class="pb-hp-ghost" :style="{ left: hpGhost.nextPct + '%', width: ghostWidth + '%' }"></span>
+            <span class="pb-hp-num" data-test="pb-hp-num">{{ hp.current ?? '—' }}</span>
+          </span>
         </span>
       </div>
       <span v-if="showReload && !destroyed && friendly === true && reload?.length" class="reload-bar" data-test="pb-reload">
@@ -109,6 +125,19 @@ const classes = computed(() => ({
 .label-last-known .pb-label-player { opacity: .65; }
 .label-last-known .pb-hp-hud { opacity: .55; }
 .pb-hp-hud { display: flex; flex-direction: column; align-items: center; gap: var(--space-0); }
+/* 血条中心保持与身份两行同轴；消耗品徽标绝对定位到左侧，不参与居中布局，
+   也不改变 `.pb-hp-bar` 右缘（伤害数字落点仍按血条几何计算）。 */
+.pb-hp-row { position: relative; display: flex; justify-content: center; align-items: center; }
+.pb-consumables {
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-right: var(--space-1);
+}
 .pb-hp-num { position: absolute; inset: 0; display: grid; place-items: center; color: var(--color-playback-label-text); font-variant-numeric: tabular-nums; }
 /* 等宽轨道：HP 容纳数值，reload 保持较细的分段状态。 */
 .pb-hp-bar, .reload-bar { border-radius: var(--radius-full); background: var(--color-playback-label-track); overflow: hidden; }

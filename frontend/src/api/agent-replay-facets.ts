@@ -244,6 +244,31 @@ export interface AgentVehicleTrack {
   loadout_items?: number[][]
   /** Type5 装备 9 字节（equipment id 原值，位置序）；与 loadout_items 同缺省 */
   equipment?: number[]
+  /**
+   * Type5 装载解码视图（上游 v0.4.17 additive）：3 消耗品 + 0..3 给养 + 模式额外能力 +
+   * equipment/equipment_ids。缺省 = 旧产物（消费端回退 loadout_items）。
+   */
+  loadout?: AgentVehicleLoadout | null
+}
+
+/** Type5 单条 14B 描述符解码视图（raw 恒保留）。 */
+export interface AgentLoadoutItem {
+  index: number
+  kind: 'consumable' | 'provision' | 'ability'
+  wire_code: number
+  state: number
+  payload_raw: number[]
+  logical_id?: string | null
+}
+
+export interface AgentVehicleLoadout {
+  equipment: number[]
+  equipment_count: number
+  equipment_ids: number[]
+  items: number[][]
+  consumables: AgentLoadoutItem[]
+  abilities: AgentLoadoutItem[]
+  provisions: AgentLoadoutItem[]
 }
 
 /** Type32 消耗品生命周期（state：1=INITIALIZED 2=ACTIVATED 3=ACTIVE_ENDED_OR_COOLDOWN 255=TEARDOWN） */
@@ -251,7 +276,19 @@ export interface AgentConsumableEvent {
   clock: number
   eid: number
   wire_code: number
+  /** 已证逻辑标识（v0.4.17 additive；旧产物缺省 → 回退前端 wire 表） */
+  logical_item_id?: string | null
   state: number
+  /** 语义状态名（v0.4.17 additive；与 canonical 名称一致） */
+  state_name?: string
+  /** state2=激活持续秒 / state3=冷却秒（v0.4.17 additive） */
+  duration_s?: number | null
+  /** clock + duration_s（回放时钟，v0.4.17 additive） */
+  ends_at?: number | null
+  /** 该 (eid, wire) 此前是否激活过（v0.4.17 additive） */
+  ever_activated?: boolean
+  /** loadout 消耗品槽位 0..2（v0.4.17 additive；模式能力/未知为 null/缺省） */
+  slot?: number | null
   body_clock: number
   param: number
 }
@@ -739,6 +776,32 @@ function validateReloadEffectiveEvent(value: unknown, path: string): void {
   if (d <= 0) throw new Error(`agent facets: ${path}.duration_s 必须为正数`)
 }
 
+/**
+ * Type32 消耗品 lifecycle（v0.4.18 additive）：3D 名牌直接消费 facet 原始事件，
+ * 时钟/实体/线码/状态必须在 trust boundary 锁定；派生字段（state_name/duration_s/
+ * ends_at/ever_activated/slot/logical_item_id）缺省即旧产物，出现时校验形状。
+ */
+function validateConsumableEvent(value: unknown, path: string): void {
+  const e = assertObject(value, path)
+  assertFiniteNumber(e.clock, `${path}.clock`)
+  assertNonNegativeInteger(e.eid, `${path}.eid`, 0xffffffff)
+  assertNonNegativeInteger(e.wire_code, `${path}.wire_code`, 0xff)
+  assertNonNegativeInteger(e.state, `${path}.state`, 0xff)
+  if (e.state_name !== undefined && typeof e.state_name !== 'string') {
+    throw new Error(`agent facets: ${path}.state_name 必须是字符串`)
+  }
+  if (e.duration_s !== undefined) assertNullableFiniteNumber(e.duration_s, `${path}.duration_s`)
+  if (e.ends_at !== undefined) assertNullableFiniteNumber(e.ends_at, `${path}.ends_at`)
+  if (e.ever_activated !== undefined && typeof e.ever_activated !== 'boolean') {
+    throw new Error(`agent facets: ${path}.ever_activated 必须是布尔值`)
+  }
+  if (e.slot !== undefined && e.slot !== null) assertNonNegativeInteger(e.slot, `${path}.slot`, 2)
+  if (e.logical_item_id !== undefined && e.logical_item_id !== null
+    && typeof e.logical_item_id !== 'string') {
+    throw new Error(`agent facets: ${path}.logical_item_id 必须是字符串或 null`)
+  }
+}
+
 /** 切面契约版本锁定（v1 切面字段口径沿用；能力拆分见契约 v2 文档） */
 function assertFacetVersion(v: unknown, path: string, expected: number = CONTRACT_VERSION): void {
   if (v !== expected) {
@@ -803,6 +866,10 @@ export function validateAgentPlayback(value: unknown): AgentPlaybackFacet {
   if (pb.reload_effective !== undefined) {
     const events = assertArray(pb.reload_effective, 'playback.reload_effective')
     events.forEach((event, i) => validateReloadEffectiveEvent(event, `playback.reload_effective[${i}]`))
+  }
+  if (pb.consumables !== undefined) {
+    const events = assertArray(pb.consumables, 'playback.consumables')
+    events.forEach((event, i) => validateConsumableEvent(event, `playback.consumables[${i}]`))
   }
   if (pb.armor_states !== undefined) {
     const tracks = assertArray(pb.armor_states, 'playback.armor_states') as AgentArmorStateTrack[]

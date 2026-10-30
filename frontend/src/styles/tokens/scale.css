@@ -71,6 +71,8 @@
     --tabbar-h: 56px;
     /* 侧边栏（平板 / 桌面）：图标栏宽 / 展开宽；--sidebar-w 是布局唯一读取的当前宽度（手机为 0） */
     --sidebar-rail-w: 72px;
+    /* compact 横屏（矮视口）的图标栏：更窄，保住回放传输控件单行 */
+    --sidebar-rail-w-compact-landscape: 56px;
     --sidebar-full-w: 240px;
     --sidebar-w: 0px;
 
@@ -188,6 +190,19 @@
   @media (width >= 1200px) {
     :root { --gutter: 32px; }
     :root:not([data-sidebar="collapsed"]) { --sidebar-w: var(--sidebar-full-w); }
+  }
+
+  /* 手机横屏 / 矮视口：导航收进左侧图标栏，顶栏与底部 Tab 栏让出垂直空间 */
+  @media (pointer: coarse) and (orientation: landscape) and (height <= 520px) and (width < 768px) {
+    :root {
+      --header-h: 0px;
+      --tabbar-h: 0px;
+    }
+    /* 沉浸态（回放工作区）导航全部收起：不占内容宽度。侧栏宽度包含左侧安全区，
+       否则刘海屏横屏时 72px 边框盒被 env(safe-area-inset-left) 吃掉内宽。 */
+    :root:not([data-shell-chrome="immersive"]) {
+      --sidebar-w: calc(var(--sidebar-rail-w-compact-landscape) + env(safe-area-inset-left));
+    }
   }
 
   /* 沉浸态（shared/shellChrome）：AppShell 不渲染顶栏 / Tab 栏时，吸顶与高度预算同步归零 */

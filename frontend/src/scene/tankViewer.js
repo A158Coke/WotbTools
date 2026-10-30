@@ -29,6 +29,7 @@ import { normalizeTankCache } from '../utils/tankopediaQuery.js'
 import { createLoadProgress } from './loadProgress.js'
 import { shotResultClass } from '../utils/shotResultClass.js'
 import { isCompactShotResultCard, shotResultCardMaxWidth as resultCardMaxWidth, shotResultCardMetrics } from '../utils/shotResultCardMetrics.js'
+import { placeShotResultCard } from '../utils/shotResultCardPlacement.js'
 import {
     RC,
     buildPack, snapshotPackPose, packPoseChanged, buildRicochetGrid, createGridTextures, simulateContinuation, raycastPackAll,
@@ -274,6 +275,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         let heatFrames = 0, heatReadySent = false;
 
         let scene, camera, renderer, controls;
+        // 点击判定特效（轨迹/命中标记/溅射半径球）独立场景：见 renderFxPass()。
+        let fxScene = null;
         let raycaster, mouse;
         let tankModel = null, armorModel = null, tankData;   // tankData = target tank (model/armor/info)
         let armorStateDecl = null, armorStateCurrent = null; // 动态装甲声明与当前态（非动态车均 null）
@@ -293,7 +296,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         let heSplashGroup = null;      // 溅射半径球面（无 800 方向线）
 
         function tidyTrajectory() {
-            if (trajGroup) { scene.remove(trajGroup); trajGroup = null; }
+            if (trajGroup) { fxScene.remove(trajGroup); trajGroup = null; }
             trajInfoPos = null;
             document.getElementById('traj-info').style.display = 'none';
             document.getElementById('click-info').style.display = 'none';
@@ -321,7 +324,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         // 800 方向采样不再画线；方向化信息交给热力图染色（best 方向白色高亮）。
         function disposeHeSplashVisual() {
             if (!heSplashGroup) return;
-            scene.remove(heSplashGroup);
+            fxScene.remove(heSplashGroup);
             heSplashGroup.traverse((o) => {
                 if (o.geometry) o.geometry.dispose();
                 if (o.material) o.material.dispose();
@@ -342,10 +345,12 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 }),
             );
             sphere.raycast = () => {};
+            // renderOrder 不随父级继承，必须写在 mesh 上：球壳先画（996），轨迹线/命中
+            // 标记后画，否则按距离排序可能让球壳的橙色薄涂在轨迹线上。
+            sphere.renderOrder = 996;
             group.add(sphere);
-            group.renderOrder = 998;
             group.visible = penetrationMode;
-            scene.add(group);
+            fxScene.add(group);
             heSplashGroup = group;
         }
 
@@ -362,6 +367,16 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 applyHeUniforms(node.material.uniforms);
             });
             apply(primaryArmorScene);
+        }
+        /** 击穿视图/默认视图二分（2026-10-30 用户裁定）：true = 把 HE 的可直穿像素盖白
+         *  （渐变照画）；false = 默认视图，只有渐变。随模式切换/机械重建统一刷新。 */
+        function updateHeatMaskUniforms(on) {
+            if (!primaryArmorScene) return;
+            primaryArmorScene.traverse(function(node) {
+                if (node.isMesh && node.material && node.material.uniforms && node.material.uniforms.heatmapMask) {
+                    node.material.uniforms.heatmapMask.value = on;
+                }
+            });
         }
 
         function getPlateThickness(section, plateId) {
@@ -959,6 +974,12 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             disposeSceneMaterials(primaryArmorScene);
             disposeSceneMaterials(spacedArmorScene);
             disposeSceneMaterials(spacedStateScene);
+            // 三个 Scene 清空后必须一并置 null：调用方（syncHeatOverlay / animate /
+            // 模式往返重建）都以引用是否为 null 判断「叠加层是否可用」。留着空 Scene，
+            // 释放后再需要渐变时只会去更新一个空场景的 uniform，重建永不发生（评审 P2）。
+            primaryArmorScene = null;
+            spacedArmorScene = null;
+            spacedStateScene = null;
             if (spacedStateRT) {
                 if (spacedStateRT.depthTexture) spacedStateRT.depthTexture.dispose();
                 spacedStateRT.dispose();
@@ -1714,6 +1735,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             updateHeatmapThickness();
             refreshPenetrationResolution();
             updateHeHeatmapUniforms();
+            updateHeatMaskUniforms(penetrationMode);
         }
         // 本查看器替换过的装甲材质才可 dispose；GLTF 原始材质可能跨网格共享，不能动。
         function replaceArmorMaterial(node, material) {
@@ -1935,10 +1957,28 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             });
             applyCategoryFilters();
         }
+        // ===== HE 渐变叠加层（默认视图随点击判定显示，2026-10-30 用户裁定）=====
+        // 击穿视图的机械（RT0/RT1/叠加 clone）由 penetrationMode 管理；默认视图下选中
+        // HE 且爆点已由点击判定给出时复用同一套机械渲染渐变（材质 heatmapMask=false），
+        // 条件消失（换非 HE 弹/进厚度视图/换车）即释放。白色可直穿遮罩只在击穿视图。
+        function heGradientWanted() {
+            return !penetrationMode && !collisionMode && !!armorModel
+                && !!selectedShell && shellTypeOf(selectedShell) === 'he' && !!heHeatmapCenter;
+        }
+        function syncHeatOverlay() {
+            if (penetrationMode) return;
+            if (heGradientWanted()) {
+                if (primaryArmorScene) updateHeatMaskUniforms(false);
+                else rebuildHeatmapScenes();
+            } else if (primaryArmorScene) {
+                disposePenetrationResources();
+                renderer.autoClear = true;
+                renderer.setRenderTarget(null);
+            }
+        }
         function applyPenetrationMode(on) {
             if (!armorModel) return;
             if (!on) {
-                disposePenetrationResources();
                 if (heSplashGroup) heSplashGroup.visible = false;
                 armorModel.visible = true;
                 // 回到进入热力图前的视图样式（collisionMode 仍开启则恢复碰撞视图）。
@@ -1949,6 +1989,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 applyArmorViewStyle(collisionMode);
                 renderer.autoClear = true;
                 renderer.setRenderTarget(null);
+                // HE 渐变仍需叠加层（默认视图 + HE + 爆点）→ 保留机械并切渐变语义；
+                // 否则照旧释放。保留/释放统一由 syncHeatOverlay 裁决。
+                syncHeatOverlay();
                 return;
             }
             if (tankModel) tankModel.visible = true;
@@ -2321,8 +2364,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             applyArmorStateToModel();
             applyCategoryFilters();
             // 板集变了 → 翻可控板 clone 可见性（零重建：无材质/着色器编译 → 无闪烁）+
-            // 重建跳弹几何（纯几何：源网格 deco 口径已随态更新，无编译开销）
-            if (penetrationMode && armorModel) {
+            // 重建跳弹几何（纯几何：源网格 deco 口径已随态更新，无编译开销）。
+            // 机械存在（击穿视图或默认视图 HE 渐变）时都要跟进，否则渐变停在旧板集。
+            if ((penetrationMode || primaryArmorScene) && armorModel) {
                 applyArmorStateToHeatmapClones(activePlateSet(armorStateDecl, stateId));
                 rebuildRicochetPack();
             }
@@ -2513,10 +2557,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 window.__shooterModel = null;
             }
             _armorPrefixCache = null;   // 装甲模型重建后前缀缓存失效
-            if (trajGroup) { scene.remove(trajGroup); trajGroup = null; }
+            if (trajGroup) { fxScene.remove(trajGroup); trajGroup = null; }
             disposeHeSplashVisual();
             heHeatmapCenter = null;
-            if (window.__hitMarker) { scene.remove(window.__hitMarker); window.__hitMarker = null; }
+            disposePenetrationResources();   // 叠加 clone 引用旧模型几何，卸载即整体释放；新模型装载路径按模式重建
+            if (window.__hitMarker) { fxScene.remove(window.__hitMarker); window.__hitMarker = null; }
             if (window.__endMarker) { scene.remove(window.__endMarker); window.__endMarker = null; }
             if (window.__dbgGroup) { scene.remove(window.__dbgGroup); window.__dbgGroup = null; }
             releaseModuleMaterialCaches();
@@ -3883,10 +3928,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                 if (want != null && want >= 0 && want < sel.options.length) {
                                     sel.value = String(want);
                                     selectedShell = shooterShells[want];
-                                    if (penetrationMode) {
+                                    if (penetrationMode || primaryArmorScene) {
                                         updatePenetrationUniforms(selectedShell);
                                         updateSpacedUniforms(selectedShell);
                                     }
+                                    syncHeatOverlay();
                                 }
                             }
                         }
@@ -4398,7 +4444,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             if (!QP.get('shot')) {
                 __penCheckSeq++;
                 tidyTrajectory();
-                if (window.__hitMarker) { scene.remove(window.__hitMarker); window.__hitMarker = null; }
+                if (window.__hitMarker) { fxScene.remove(window.__hitMarker); window.__hitMarker = null; }
                 lastClickNdc = null;
             } else {
                 rerunAuthoritativeShotCheck();
@@ -4407,6 +4453,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // 必须重刷，否则新炮塔/主炮仍显示上一配置的厚度色。热力图模式由下方重建接管。
             if (collisionMode && !penetrationMode && armorModel) applyArmorViewStyle(true);
             if (penetrationMode && armorModel) rebuildHeatmapScenes();
+            else if (primaryArmorScene) { disposePenetrationResources(); syncHeatOverlay(); }
         }
 
         function applyArmorConfigVisible(cfg) {
@@ -4460,7 +4507,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // 射击复现仍按权威弹道重跑，不在此清空。
             if (!QP.get('shot')) {
                 tidyTrajectory();
-                if (window.__hitMarker) { scene.remove(window.__hitMarker); window.__hitMarker = null; }
+                if (window.__hitMarker) { fxScene.remove(window.__hitMarker); window.__hitMarker = null; }
                 lastClickNdc = null;
             }
             try {
@@ -4522,10 +4569,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     throw new Error(L.shellUnavailable);
                 }
                 // 切换射击坦克后同步热力图 uniforms（口径/穿深/跳弹角/转正角），否则判定沿用旧数据
-                if (penetrationMode) {
+                if (penetrationMode || primaryArmorScene) {
                     const sh = selectedShell || null;
                     if (sh) { updatePenetrationUniforms(sh); updateSpacedUniforms(sh); }
                 }
+                syncHeatOverlay();
                 shooterLoading = false;
                 const wc = window.__worldTickCtx;
                 if (urlApplied && wc?.launch && wc.lvDir && window.__worldPenMode) {
@@ -4602,6 +4650,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // 3D 场景不再自带棕色调背景/雾与地面网格：画布透明，直接继承网页 UI 的
             // --color-canvas；场景只保留车体与光照，风格与页面外壳一致。
             scene.background = null;
+            // 点击判定特效（轨迹/命中标记/溅射半径球）单独一个场景：热力图 pass 后渲染，
+            // 留在主场景会被半透明着色（HE 白色遮罩 alpha≈0.95）整片盖掉。特效材质全是
+            // MeshBasicMaterial（不吃光照），空场景即可正确显色。
+            fxScene = new THREE.Scene();
 
             // SPA 壳内渲染：视口尺寸取 canvas 容器（main 区域），而非整窗（顶部导航占 67px）
             const view = document.getElementById('canvas-container');
@@ -4696,17 +4748,24 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 }
             }
             updateHeatmapThickness();
-            if (!penetrationMode) return;
-            const sh = selectedShell || (shooterShells[0]) || null;
-            if (sh) { updatePenetrationUniforms(sh); updateSpacedUniforms(sh); }
-            if (QP.get('shot')) {
-                if (!rerunAuthoritativeShotCheck()) doPenetrationCheck(0, 0);
-            } else if (penetrationMode && lastClickNdc) {
-                // 校准弹/强化装甲改变的是判定输入，旧的命中结果不再成立。
+            // 旧判定失效必须排在「渲染资源是否存在」的守卫之前：厚度视图里叠加层已释放
+            // （penetrationMode / primaryArmorScene 都为假），但上一发的爆点、结果卡、轨迹
+            // 仍是上一发的——换了装备再回默认视图，syncHeatOverlay 会在旧爆点上按新参数
+            // 重建渐变且没有新的点击（Codex 复核 P2，2026-10-30）。只有 uniform 刷新
+            // 依资源存在与否，replay 的权威重判分支保持原样。
+            if (!QP.get('shot') && (lastClickNdc || heHeatmapCenter)) {
                 tidyTrajectory();
-                if (window.__hitMarker) { scene.remove(window.__hitMarker); window.__hitMarker = null; }
+                if (window.__hitMarker) { fxScene.remove(window.__hitMarker); window.__hitMarker = null; }
                 lastClickNdc = null;
             }
+            if (penetrationMode || primaryArmorScene) {
+                const sh = selectedShell || (shooterShells[0]) || null;
+                if (sh) { updatePenetrationUniforms(sh); updateSpacedUniforms(sh); }
+            }
+            if (QP.get('shot')) {
+                if (!rerunAuthoritativeShotCheck()) doPenetrationCheck(0, 0);
+            }
+            syncHeatOverlay();
         }
 
         function setupEventHandlers() {
@@ -4722,17 +4781,23 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (shooterShells && idx < shooterShells.length) {
                     QP.set('shell', String(idx));
                     selectedShell = shooterShells[idx];
-                    if (penetrationMode) { updatePenetrationUniforms(selectedShell); updateSpacedUniforms(selectedShell); }
+                    // 机械存在（击穿视图或默认视图 HE 渐变）时都要刷新弹种 uniforms，
+                    // 否则默认视图换弹后渐变仍用上一发的穿深/伤害/爆炸半径。
+                    if (penetrationMode || primaryArmorScene) { updatePenetrationUniforms(selectedShell); updateSpacedUniforms(selectedShell); }
                     if (QP.get('shot')) {
                         // 世界模式：换弹按权威弦射线重跑判定。
                         if (!rerunAuthoritativeShotCheck()) doPenetrationCheck(0, 0);
-                    } else if (penetrationMode && lastClickNdc) {
+                    } else if (lastClickNdc || heHeatmapCenter) {
                         // 普通检视换弹（2026-10-28 用户裁定）：只清掉上一次判定结果，
                         // 不按旧点击位置重跑——新弹种要用户重新点击才产生结果。
+                        // 清理与「叠加层资源是否存在」解耦：厚度视图里叠加层已释放，
+                        // 上一发的爆点/轨迹仍必须清（Codex 复核 P2，2026-10-30）。
                         tidyTrajectory();
-                        if (window.__hitMarker) { scene.remove(window.__hitMarker); window.__hitMarker = null; }
+                        if (window.__hitMarker) { fxScene.remove(window.__hitMarker); window.__hitMarker = null; }
                         lastClickNdc = null;
                     }
+                    // 清理之后再统一裁决叠加层（HE→非 HE 释放、HE+爆点保留/重建）。
+                    syncHeatOverlay();
                     onShellSelection?.(idx);
                 }
             });
@@ -4777,8 +4842,15 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (!collisionMode) resetArmorFilters();
                 setArmorFilterRowVisible(collisionMode);
                 if (!collisionMode) { resetArmorHighlight(); document.getElementById('click-info').style.display = 'none'; }
-                if (!armorModel) return;
+                if (!armorModel) { syncHeatOverlay(); return; }
                 applyArmorViewStyle(collisionMode);
+                // 叠加层裁决必须排在网格可见性恢复**之后**：退出厚度视图时
+                // resetArmorFilters() 只复位开关，真正恢复可见性的是
+                // applyArmorViewStyle → applyCategoryFilters；而 rebuildHeatmapScenes →
+                // collectPenetrationMeshes 会跳过 visible=false 的板，先重建会漏掉被分类
+                // 过滤隐藏的主装/间隙甲/模块，之后的点击也复用这份残缺场景
+                // （Codex 复核 P2，2026-10-30）。进入厚度视图时这里只做释放，顺序无影响。
+                syncHeatOverlay();
             });
 
             // 分类过滤（主装甲 / 间隙 / 外部模块）：active = 显示
@@ -5341,13 +5413,13 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const isCameraClick = !window.__segRay && !(__shotRayOrigin && __shotRayTarget);
             if (isCameraClick && shellTypeNow !== 'he' && armorHits.length > 0
                 && !armorHits.some(h => isPrimary(h.section))) {
-                if (window.__hitMarker) { scene.remove(window.__hitMarker); window.__hitMarker = null; }
+                if (window.__hitMarker) { fxScene.remove(window.__hitMarker); window.__hitMarker = null; }
                 // 不构成判定 = 无结果态（与「点击未命中装甲」同款清理）：清掉上一次的判定
                 // 面板/轨迹，避免旧结论被误读成本次点击的结论
                 document.getElementById('click-info').style.display = 'none';
                 document.getElementById('traj-info').style.display = 'none';
                 trajInfoPos = null;
-                if (trajGroup) { scene.remove(trajGroup); trajGroup = null; }
+                if (trajGroup) { fxScene.remove(trajGroup); trajGroup = null; }
                 return;
             }
 
@@ -5357,7 +5429,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 tidyTrajectory();
                 // 弦不再与装甲相交（滑块拖到命中前位姿等）：同步清掉上次判定的命中
                 // 标记，避免旧位置的绿/红点残留与"不相交"提示并存
-                if (window.__hitMarker) { scene.remove(window.__hitMarker); window.__hitMarker = null; }
+                if (window.__hitMarker) { fxScene.remove(window.__hitMarker); window.__hitMarker = null; }
                 if (window.__shotIsHit) {
                     if (window.__worldPenMode) {
                         // 世界模式：默认 tick 在命中前 ≈0.2s，弦不相交是正常数据态而非几何错误。
@@ -5395,18 +5467,20 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 const pid = parseInt(first.plateId, 10);
                 fragOk = (!isNaN(pid)) && pid === segCtx.segArmorGroup;
             }
-            if (window.__hitMarker) { scene.remove(window.__hitMarker); window.__hitMarker = null; }
+            if (window.__hitMarker) { fxScene.remove(window.__hitMarker); window.__hitMarker = null; }
             const markerColor = fragOk === true ? 0x22cc44 : (fragOk === false ? 0xff2222 : 0xffcc00);
             const markerGeo = new THREE.SphereGeometry(0.08, 16, 12);
             const markerMat = new THREE.MeshBasicMaterial({ color: markerColor, transparent: true, opacity: 0.9, depthTest: false });
             const marker = new THREE.Mesh(markerGeo, markerMat);
             marker.position.copy(point);
             marker.renderOrder = 999;
-            scene.add(marker);
+            fxScene.add(marker);
             window.__hitMarker = marker;
             const ringGeo = new THREE.RingGeometry(0.12, 0.18, 24);
             const ringMat = new THREE.MeshBasicMaterial({ color: markerColor, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthTest: false });
             const ring = new THREE.Mesh(ringGeo, ringMat);
+            // 靶环永远在最上层（球壳 996 / 轨迹 997 / 命中点 999）：renderOrder 不继承父级。
+            ring.renderOrder = 1000;
             // 圆环面垂直入射弹向（命中点的"靶环"语义）；无弹向时回退朝向相机
             const ringDir = (window.__segRay && window.__segRay.dir)
                 ? point.clone().add(window.__segRay.dir.clone()) : camera.position;
@@ -5541,6 +5615,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 updateHeHeatmapUniforms();
                 disposeHeSplashVisual();
             }
+            // 默认视图：HE 渐变叠加层随点击判定建/放（击穿视图下本调用是空操作）。
+            syncHeatOverlay();
 
             // blitzkit shoot() 只用 near 穿深（无距离衰减）；dist 仅用于显示
             // 射击复现：射线只命中外部模块/间隙甲时按 BLOCKED/0 伤处理（服务器 result=1/2/4）；
@@ -5946,7 +6022,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 heInfo, heChance, probabilityMode, overallChance, rawChance, allowChance,
             });
 
-            if (trajGroup) scene.remove(trajGroup);
+            if (trajGroup) fxScene.remove(trajGroup);
             trajGroup = new THREE.Group();
 
             // 概率色按精确累计概率分档：0 红、0–1 黄、1 绿；显示用四舍五入百分比，
@@ -6278,7 +6354,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             }
             // 轨迹线与轨迹面板无条件展示(用户要求:与正常点击判定一致的轨迹展示)
             updateTrajInfoPos();
-            scene.add(trajGroup);
+            // 轨迹画在溅射球壳之上（996）、命中标记之下（999）：三者的深度测试都关闭，
+            // 玻璃球壳不能把轨迹线/层点糊掉。
+            trajGroup.traverse((o) => { if (o.isMesh) o.renderOrder = 997; });
+            fxScene.add(trajGroup);
         }
 
         function updateTrajInfoPos() {
@@ -6288,7 +6367,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const rect = host ? host.getBoundingClientRect() : null;
             if (!rect || !(rect.width > 0) || !(rect.height > 0)) { div.style.display = 'none'; return; }
             // 卡片宽度跟画布容器走（侧栏/窄画布不能按视口算），窗口缩放后同步刷新；
-            // 紧凑档（竖屏手机 / 横屏矮视口）再封顶 420px，避免横屏里铺满整屏。
+            // 紧凑档（竖屏手机 / 横屏矮视口）再封顶 360px，避免横屏里铺满整屏。
             const maxWidth = resultCardMaxWidth(rect.width, window.innerWidth, window.innerHeight);
             if (maxWidth) div.style.maxWidth = `${maxWidth}px`;
             div.style.whiteSpace = 'normal';
@@ -6300,18 +6379,12 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const x = rect.left + (v.x * 0.5 + 0.5) * rect.width;
             const y = rect.top + (-v.y * 0.5 + 0.5) * rect.height;
             const offX = 0, offY = 160;
-            let px = x + offX, py = y + offY;
             div.style.display = 'block';   // 先显示才能量取实际尺寸
             const w = div.offsetWidth || 300, h = div.offsetHeight || 90;
             // 可见画布内钳制（translateX(-50%)：left 是面板中心 x）
             const clipL = Math.max(rect.left, 0), clipT = Math.max(rect.top, 0);
             const clipR = Math.min(rect.right, window.innerWidth), clipB = Math.min(rect.bottom, window.innerHeight);
             if (clipR <= clipL || clipB <= clipT) { div.style.display = 'none'; return; }
-            const minX = clipL + w / 2 + 10, maxX = clipR - w / 2 - 10;
-            const minY = clipT + 10, maxY = clipB - h - 10;
-            const clampX = (v2) => maxX >= minX ? Math.max(minX, Math.min(maxX, v2)) : (clipL + clipR) / 2;
-            const clampY = (v2) => maxY >= minY ? Math.max(minY, Math.min(maxY, v2)) : clipT + 10;
-            px = clampX(px); py = clampY(py);
             // 固定 UI 避让：不压四角与顶部信息面板（左下信息/右下按钮提示/右上栈/左上排）
             const blockers = [];
             const tc = document.getElementById('turret-controls');
@@ -6321,14 +6394,15 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (el) { const r = el.getBoundingClientRect(); if (r.width > 0 && r.height > 0) blockers.push(r); }
             };
             addRect('corner-br'); addRect('corner-tr'); addRect('info-panel'); addRect('tank-selectors');
-            for (const r of blockers) {
-                if (r.width === 0 || r.height === 0) continue;
-                const l = px - w / 2, t = py, rr = l + w, b = t + h;
-                if (l >= r.right || rr <= r.left || t >= r.bottom || b <= r.top) continue;
-                // 首选：整体上移到面板上方；顶部放不下再水平平移到面板侧边
-                if (r.top - h - 12 >= clipT + 10) { py = clampY(r.top - h - 12); continue; }
-                px = clampX(px < (r.left + r.right) / 2 ? r.left - w / 2 - 12 : r.right + w / 2 + 12);
-            }
+            const { x: px, y: py } = placeShotResultCard({
+                anchorX: x + offX,
+                anchorY: y,
+                offsetY: offY,
+                cardWidth: w,
+                cardHeight: h,
+                clip: { left: clipL, top: clipT, right: clipR, bottom: clipB },
+                blockers,
+            });
             div.style.transform = 'translateX(-50%)';
             div.style.left = px + 'px';
             div.style.top = py + 'px';
@@ -6387,6 +6461,18 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             if (dirty) camera.updateProjectionMatrix();
         }
 
+        /** 点击判定特效 pass：独立 fxScene，永远画在车体/热力图之上。击穿概率模式在
+         *  primaryArmorScene 之后、clearDepth 之上叠加，HE 白色遮罩下命中点/轨迹仍清晰；
+         *  默认视图画在场景之后。autoClear 必须临时关闭——fxScene 没有背景，
+         *  否则会把整帧清掉。 */
+        function renderFxPass() {
+            if (!fxScene || fxScene.children.length === 0) return;
+            const prevAutoClear = renderer.autoClear;
+            renderer.autoClear = false;
+            renderer.render(fxScene, camera);
+            renderer.autoClear = prevAutoClear;
+        }
+
         function animate() {
             if (destroyed || contextLost) return;
             hookRcClickRecorder();   // 探针监听惰性挂载（首帧 renderer 就绪）
@@ -6396,7 +6482,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // shot replay：旧 30m/50° dolly-zoom；world 总览传 false → 原生 50°。
             applyLongRangeCompensation(!worldOverviewMode);
             trackCameraMotion();
-            if (penetrationMode && armorModel) {
+            // 击穿视图全管线；默认视图下 HE 渐变叠加层（机械已建且爆点在）复用同一管线。
+            if ((penetrationMode || (!!primaryArmorScene && heGradientWanted())) && armorModel) {
                 if (SESS && heatFrames < 5) {
                     heatFrames++;   // 就绪门控计数保留（上游语义）；上报端点已随 client-only 移除
                 }
@@ -6406,8 +6493,15 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 renderer.render(scene, camera);                       // 背景/网格（autoClear 已置 false）
                 renderer.clearDepth();                                 // 清除深度，让 exclude 深度遮罩生效
                 if (primaryArmorScene) { syncCloneMatrices(primaryArmorScene); renderer.render(primaryArmorScene, camera); }
+                renderFxPass();   // 点击判定特效画在热力图之上（否则被 0.5/0.95 alpha 覆盖）
             } else {
+                // 普通分支必须自清屏：热力图/叠加层的最后一帧会把 autoClear 留成 false，
+                // 若条件在两次 syncHeatOverlay 之间失效（如 selectedShell 被换掉但尚未
+                // 同步），没有显式 clear 的帧会复用上一帧缓冲（评审 2026-10-30 提出的
+                // 清理状态风险）。这里不依赖「谁最后动过 autoClear」。
+                renderer.autoClear = true;
                 renderer.render(scene, camera);
+                renderFxPass();
             }
             if (trajInfoPos) updateTrajInfoPos();
         }

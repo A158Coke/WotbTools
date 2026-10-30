@@ -275,7 +275,8 @@ describe('dolly-zoom world-overview scope guard', () => {
     // 击穿视图默认开启，?heatmap=0 显式关闭（2026-10-28 用户要求）
     expect(kernel).toMatch(/if \(QP\.get\('heatmap'\) !== '0' && !penetrationMode && !collisionMode\)/)
     // 普通检视换弹：只清掉上一次判定，不按旧点击位置重跑（2026-10-28 用户裁定）
-    expect(kernel).toMatch(/else if \(penetrationMode && lastClickNdc\) \{[\s\S]*?tidyTrajectory\(\);/)
+    // 输入变化后只清旧结果、不按旧点击位置重跑；条件覆盖两个视图（默认视图也能建 HE 渐变）。
+    expect(kernel).toMatch(/else if \(lastClickNdc \|\| heHeatmapCenter\) \{[\s\S]*?tidyTrajectory\(\);/)
     expect(kernel).not.toMatch(/doPenetrationCheck\(lastClickNdc\.x, lastClickNdc\.y\)/)
     // 厚度视图点击高亮（2026-10-28 用户要求，对齐 BlitzKit）：被点装甲板保持不透明、
     // 其余装甲板/模块降透明度；**不改厚度色相**（不加金色自发光，2026-10-29 用户报障：
@@ -322,9 +323,13 @@ describe('dolly-zoom world-overview scope guard', () => {
       expect(kernel).toContain(api)
     }
     // 强化装甲的厚度系数与判定模式无关：setEquipmentOverride → 统一刷新，且刷新在
-    // “penetrationMode” 早退之前就写入 uniform（否则装甲检视模式里开关不生效）。
+    // “penetrationMode/叠加层机械” 早退之前就写入 uniform（否则装甲检视模式里开关不生效；
+    // 默认视图 HE 渐变机械存在时同样要刷新，2026-10-30）。
     expect(kernel).toMatch(/function setEquipmentOverride\(kind, value\)[\s\S]*?refreshEquipmentEffects\(\);/)
-    expect(kernel).toMatch(/function refreshEquipmentEffects\(\)[\s\S]*?updateHeatmapThickness\(\);\s*if \(!penetrationMode\) return;/)
+    // 旧结果失效必须排在资源守卫之前：厚度视图里叠加层已释放，若守卫先行则清理执行不到
+    // （Codex 复核 P2），上一发的爆点/结果卡会在回到默认视图时被复活。
+    expect(kernel).toMatch(/function refreshEquipmentEffects\(\)[\s\S]*?updateHeatmapThickness\(\);[\s\S]*?if \(!QP\.get\('shot'\) && \(lastClickNdc \|\| heHeatmapCenter\)\) \{/)
+    expect(kernel).not.toMatch(/if \(!penetrationMode && !primaryArmorScene\) return;/)
     const view = read('./AgentArmorView.vue')
     expect(view).toMatch(/function startViewer\(preserveSelection = false\)/)
     expect(view).toMatch(/if \(!preserveSelection\) \{/)
@@ -767,7 +772,7 @@ describe('armor shell and readiness ownership', () => {
     expect(kernel).toMatch(/function rerunAuthoritativeShotCheck\(\)/)
     expect(kernel).toMatch(/if \(!rerunAuthoritativeShotCheck\(\)\) doPenetrationCheck\(0, 0\);/)
     // 普通检视换装备同样清掉旧结果
-    expect(kernel).toMatch(/else if \(penetrationMode && lastClickNdc\) \{\s*\/\/[^\n]*\n\s*tidyTrajectory\(\);/)
+    expect(kernel).toMatch(/else if \(lastClickNdc \|\| heHeatmapCenter\) \{[\s\S]*?tidyTrajectory\(\);/)
   })
   it('目标配置切换清空旧结果并使在途判定失效', () => {
     expect(kernel).toMatch(/if \(!QP\.get\('shot'\)\) \{\s*__penCheckSeq\+\+;\s*tidyTrajectory\(\);[\s\S]*?lastClickNdc = null;\s*\} else \{\s*rerunAuthoritativeShotCheck\(\);/)

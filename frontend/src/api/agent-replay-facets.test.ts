@@ -157,6 +157,25 @@ describe('时序能力（PlaybackData 校验）', () => {
     expect(() => validateAgentPlayback(bad)).toThrow(/playback\.supremacy_bases 必须是数组/)
   })
 
+  it('消耗品 lifecycle（v0.4.18 additive）：缺省合法、形状错误 fail closed', () => {
+    const ok = minimalPlayback()
+    ;(ok as Record<string, unknown>).consumables = [{
+      clock: 10, eid: 7, wire_code: 9, state: 2, state_name: 'ACTIVATED',
+      duration_s: 20, ends_at: 30, ever_activated: true, slot: 1, logical_item_id: 'ADRENALINE',
+    }]
+    expect(validateAgentPlayback(ok).consumables).toHaveLength(1)
+    expect(() => validateAgentPlayback({ ...minimalPlayback(), consumables: {} }))
+      .toThrow(/playback\.consumables 必须是数组/)
+    expect(() => validateAgentPlayback({
+      ...minimalPlayback(),
+      consumables: [{ clock: 10, eid: 7, wire_code: 9, state: '2' }],
+    })).toThrow(/consumables\[0\]\.state/)
+    expect(() => validateAgentPlayback({
+      ...minimalPlayback(),
+      consumables: [{ clock: 10, eid: 7, wire_code: 9, state: 2, slot: 3 }],
+    })).toThrow(/consumables\[0\]\.slot/)
+  })
+
   it('装填遥测（v0.3.9）：缺省合法、合法 shape 通过、数组/元素 primitive 漂移 fail closed', () => {
     const ok = minimalPlayback()
     ;(ok as Record<string, unknown>).reloads = [
