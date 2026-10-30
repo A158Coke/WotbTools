@@ -18,4 +18,13 @@ class BattleDataAdminContractTest {
         assertThat(json.get("items").get(0).get("arenaId").asString()).isEqualTo("18446744073709551615");
         assertThat(json.get("nextCursor").isNull()).isTrue();
     }
+
+    @Test
+    void serializedSpawnStatKeepsNullCombinedModeAndCarriesCountsOnly() {
+        final var mapper = JsonMapper.builder().findAndAddModules().build();
+        final var json = mapper.readTree(mapper.writeValueAsString(new BattleDataAdminDtos.SpawnStat("rift", null, "NORTH", 4, 1, 1, 2)));
+        assertThat(json.has("arenaBonusType")).isTrue();
+        assertThat(json.get("arenaBonusType").isNull()).isTrue();
+        assertThat(json.propertyNames()).containsExactlyInAnyOrder("mapKey", "arenaBonusType", "side", "battles", "wins", "draws", "losses");
+    }
 }

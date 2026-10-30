@@ -131,7 +131,8 @@ Collector 的异常、超时、重复提交和断网均不改变主解析结果�
 不能使用 numeric mapId 对照语义文件名前缀，也不能把 replay Team 编号等同场景出生组。
 只接受 clock 在 0–1 秒、距 exact scene 出生点不超过 2 米且唯一命中某物理侧的观测，
 按 authorTeam 赋给对应 replay team，对侧取互补方向。该门限是保守接收策略，非全地图误差保证。
-Rift 有真实 Random 回放正例，马利诺夫卡有非采集模式真实回放位置正例；已审校方向的其它地图可按同一规则采集，缺 reviewed physicalSide 的地图跳过。合成横向测试不代表真实横向地图已验证。
+回放 team 与场景出生组没有固定对应：匹配战里 team 2 可以出生在场景第 1 组，所以方向只由位置命中的场景组决定。
+Rift 有真实 Random 回放正例，马利诺夫卡有非采集模式真实回放位置正例；语义缺 mapCodes 或缺 reviewed physicalSide 的地图跳过。铜矿采集场是唯一的 WEST/EAST 地图，其 Collector 位置映射只有场景坐标与合成测试覆盖。
 
 Worker 使用 `api/battle-data.ts` 发送 `POST /api/battle-data`，wire SSOT 为 OpenAPI 的
 `BattleDataRequest`，发送前执行生成的 runtime validator。请求不带 Authorization/Cookie，
@@ -147,7 +148,8 @@ dispatch 和发送前检查在线状态；无 IndexedDB/localStorage/Cache API �
 管理员只读审计位于 `?view=admin-battle-data` 与 `/api/admin/battle-data/**`，后端只允许 `wotbtools-admin`。
 三个 GET 从同一 battle / vehicle 表读取 summary、keyset recent list 和实际子行；没有管理写入 API。
 时间窗口采用 UTC `[from,to)`，summary 使用只读一致快照，`received_at` 是服务端接收事务时间而非战斗时间。
-页面同时列出当前 map-semantics 中已审校但无观察的地图和未匹配观察；当前已审校集合会随语义更新，不能反推历史采样覆盖。
+Summary 的 `spawnStats` 只返回 map / side / mode 维度的胜、平、负计数，`arenaBonusType=null` 是 Random + Rating 合计，胜率 `wins / battles` 由前端派生，平局计入分母。
+页面同时列出当前 map-semantics 中可寻址、已审校但无观察的地图和未匹配观察；当前已审校集合会随语义更新，不能反推历史采样覆盖。
 数量是已持久化的 accepted observations，不是请求总数或无偏总体统计；匿名提交仍不能证明真实性。
 
 只持久化 relational representation；不收集玩家账号、昵称、clan、录像者身份、文件名、原始回放或个人战绩，

@@ -86,6 +86,7 @@ Docker 构建使用 `--build-arg BATTLE_DATA_COLLECTOR_ENABLED=false`。默认�
 
 站点管理员可以从 Battle Data 页面只读审查当前持久化数据及单场车辆；该页面的数量不含重复、拒绝、
 限流或失败尝试，也不等价于 JVM counters。地图分布受审校与采集条件选择偏差影响，不应用作公开全地图统计。
+`neptune` 的语义曾把方向绑到相反的出生组，修复前的 bundle 与仍在使用的旧 APK 写入的 `neptune` 行上下相反；first-write-wins 不会覆盖这些行，解读该图出生侧胜率时要按客户端版本区分。
 无新记录只表示未观察到新的持久化行，不单独证明 Collector 故障；结合下列 metrics 与运行配置排查。
 
 先查看 `battle_data_created_total`、`battle_data_duplicate_total`、`battle_data_rejected_total`、

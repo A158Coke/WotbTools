@@ -197,6 +197,55 @@ export default {
         }
       }
     },
+    "BattleDataAdminSpawnStat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mapKey",
+        "arenaBonusType",
+        "side",
+        "battles",
+        "wins",
+        "draws",
+        "losses"
+      ],
+      "properties": {
+        "mapKey": {
+          "type": "string"
+        },
+        "arenaBonusType": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "enum": [
+            1,
+            7,
+            null
+          ],
+          "description": "null is the Random + Rating combined row."
+        },
+        "side": {
+          "$ref": "#/$defs/BattleDataSpawn"
+        },
+        "battles": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "wins": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "draws": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "losses": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
     "BattleDataAdminSummary": {
       "type": "object",
       "additionalProperties": false,
@@ -215,7 +264,8 @@ export default {
         "schemaVersions",
         "daily",
         "maps",
-        "clientVersions"
+        "clientVersions",
+        "spawnStats"
       ],
       "properties": {
         "asOf": {
@@ -292,6 +342,13 @@ export default {
           "items": {
             "$ref": "#/$defs/BattleDataAdminNamedCount"
           }
+        },
+        "spawnStats": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BattleDataAdminSpawnStat"
+          },
+          "description": "Per map/side outcome counts for the selected interval; rates are a client display derivation."
         }
       }
     },

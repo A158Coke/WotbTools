@@ -1857,6 +1857,19 @@ export interface components {
             /** Format: date-time */
             latestReceivedAt: string;
         };
+        BattleDataAdminSpawnStat: {
+            mapKey: string;
+            /**
+             * @description null is the Random + Rating combined row.
+             * @enum {integer|null}
+             */
+            arenaBonusType: 1 | 7 | null;
+            side: components["schemas"]["BattleDataSpawn"];
+            battles: number;
+            wins: number;
+            draws: number;
+            losses: number;
+        };
         BattleDataAdminSummary: {
             /** Format: date-time */
             asOf: string;
@@ -1875,6 +1888,8 @@ export interface components {
             daily: components["schemas"]["BattleDataAdminDailyCount"][];
             maps: components["schemas"]["BattleDataAdminNamedCount"][];
             clientVersions: components["schemas"]["BattleDataAdminNamedCount"][];
+            /** @description Per map/side outcome counts for the selected interval; rates are a client display derivation. */
+            spawnStats: components["schemas"]["BattleDataAdminSpawnStat"][];
         };
         /** @enum {string} */
         BattleDataSpawn: "NORTH" | "SOUTH" | "WEST" | "EAST";

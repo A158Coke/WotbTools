@@ -4270,10 +4270,22 @@ components:
         key: { type: string }
         count: { type: integer, minimum: 0 }
         latestReceivedAt: { type: string, format: date-time }
+    BattleDataAdminSpawnStat:
+      type: object
+      additionalProperties: false
+      required: [mapKey, arenaBonusType, side, battles, wins, draws, losses]
+      properties:
+        mapKey: { type: string }
+        arenaBonusType: { type: [integer, 'null'], enum: [1, 7, null], description: null is the Random + Rating combined row. }
+        side: { $ref: '#/components/schemas/BattleDataSpawn' }
+        battles: { type: integer, minimum: 0 }
+        wins: { type: integer, minimum: 0 }
+        draws: { type: integer, minimum: 0 }
+        losses: { type: integer, minimum: 0 }
     BattleDataAdminSummary:
       type: object
       additionalProperties: false
-      required: [asOf, totalBattles, last24Hours, last7Days, last30Days, windowBattles, latestReceivedAt, distinctMaps, distinctClientVersions, modes, winnerTeams, schemaVersions, daily, maps, clientVersions]
+      required: [asOf, totalBattles, last24Hours, last7Days, last30Days, windowBattles, latestReceivedAt, distinctMaps, distinctClientVersions, modes, winnerTeams, schemaVersions, daily, maps, clientVersions, spawnStats]
       properties:
         asOf: { type: string, format: date-time }
         totalBattles: { type: integer, minimum: 0 }
@@ -4290,6 +4302,7 @@ components:
         daily: { type: array, items: { $ref: '#/components/schemas/BattleDataAdminDailyCount' } }
         maps: { type: array, items: { $ref: '#/components/schemas/BattleDataAdminNamedCount' } }
         clientVersions: { type: array, items: { $ref: '#/components/schemas/BattleDataAdminNamedCount' } }
+        spawnStats: { type: array, items: { $ref: '#/components/schemas/BattleDataAdminSpawnStat' }, description: Per map/side outcome counts for the selected interval; rates are a client display derivation. }
     BattleDataSpawn:
       type: string
       enum: [NORTH, SOUTH, WEST, EAST]
