@@ -1279,6 +1279,8 @@ async function check3DDrawingSurface(page, failures, scenario, viewport) {
     return {
       entry: entryInfo,
       inTransport: !!controls && !!controls.querySelector('[data-test="pb-annotation-entry"]'),
+      entryInTransport: !!entry && !!controls && controls.contains(entry),
+      entryInDisplay: !!entry?.closest('[data-testid="display-panel"]'),
       toolRow: !!document.querySelector('[data-testid="replay3d-toolrow"]'),
       toolbar: !!document.querySelector('[data-test="pb-annot-toolbar"]'),
       transport: {
@@ -1290,13 +1292,7 @@ async function check3DDrawingSurface(page, failures, scenario, viewport) {
       },
     }
   }
-  // 紧凑控制条的工具行在 Display 面里（design-language §5），入口要先打开面才存在
   const compactBar = await page.evaluate(`document.querySelector('.pb-root').classList.contains('compact-bar')`)
-  if (compactBar) {
-    await page.evaluate(`document.querySelector('[data-testid="display-toggle"]').click()`)
-    await page.waitFor(() => !!document.querySelector('[data-testid="display-panel"] [data-testid="replay3d-drawing-entry"]'),
-      { label: 'compact Drawing entry inside Display' })
-  }
   const before = await page.probe(probe)
   const label = viewport.width + 'x' + viewport.height
   check(failures, !!before.entry && before.entry.reachable, label + ': Drawing entry must be hit-testable in the 3D tool-row')
@@ -1304,7 +1300,10 @@ async function check3DDrawingSurface(page, failures, scenario, viewport) {
     check(failures, !scenario.touch || (before.entry.width >= 43.5 && before.entry.height >= 43.5),
       label + ': Drawing entry must keep a 44px touch target')
   }
-  check(failures, before.toolRow && !before.inTransport, label + ': Drawing entry must live outside the shared transport')
+  // 紧凑形态的镜头 / GLB 在 Display 面里，Drawing 入口留在控制条
+  check(failures, compactBar ? !before.toolRow : before.toolRow, label + ': tool-row belongs to the controls only in wide forms')
+  check(failures, !before.inTransport && !before.entryInTransport, label + ': Drawing entry must live outside the shared transport')
+  check(failures, !before.entryInDisplay, label + ': Drawing is a creation tool, not a Display preference')
   check(failures, before.transport.order.length === 6 && before.transport.oneRow,
     label + ': six shared primary controls must stay in x-order on one row before Drawing')
   if (!before.entry) return
@@ -1315,6 +1314,31 @@ async function check3DDrawingSurface(page, failures, scenario, viewport) {
   const opened = await page.probe(probe)
   check(failures, opened.toolbar && !opened.toolRow, label + ': Drawing must replace the tool-row with AnnotationToolbar')
   check(failures, await page.evaluate(`!document.querySelector('[data-testid="display-panel"]')`), label + ': Drawing and Display are mutually exclusive')
+  check(failures, await page.evaluate('window.__sceneMarker === window.__pbPane.sceneApi'), label + ': opening Drawing must not rebuild the scene')
+  // 工具条横向滚动：逐项滚进来再测，切在滚动口边上的半个按钮是可滚动触达，不是遮挡
+  const toolCount = await page.evaluate(`document.querySelectorAll('[data-test="pb-annot-toolbar"] button').length`)
+  check(failures, toolCount > 0, label + ': AnnotationToolbar has no controls')
+  for (let i = 0; i < toolCount; i += 1) {
+    await page.evaluate(`(() => {
+      document.querySelector('[data-occlusion-control]')?.removeAttribute('data-occlusion-control')
+      const tool = document.querySelectorAll('[data-test="pb-annot-toolbar"] button')[${i}]
+      tool.dataset.occlusionControl = 'current'
+      const bar = document.querySelector('[data-test="pb-annot-toolbar"]')
+      bar.scrollLeft += tool.getBoundingClientRect().left - bar.getBoundingClientRect().left - (bar.clientWidth - tool.offsetWidth) / 2
+    })()`)
+    const reach = await measureReachability(page, { options: ['[data-occlusion-control=current]'], touch: scenario.touch })
+    for (const failure of reach.failures) check(failures, false, `${label}: AnnotationToolbar 可达: ${failure}`)
+  }
+  await page.evaluate(`(() => {
+    document.querySelector('[data-occlusion-control]')?.removeAttribute('data-occlusion-control')
+    document.querySelector('[data-test="pb-annot-toolbar"]').scrollLeft = 0
+  })()`)
+  if (scenario.layout !== 'portrait') {
+    await page.evaluate(`document.querySelector('.pb-root .scene').scrollIntoView({ block: 'center' })`)
+    await waitForStableLayout(page)
+    const drawingOcclusion = await measureOcclusion(page, { primary: '.pb-root .scene', overlayHud: true, edgeDocked: compactBar ? ['.team-lane', '.killfeed'] : [] })
+    for (const failure of drawingOcclusion.failures) check(failures, false, `${label}: Drawing 打开时遮挡: ${failure}`)
+  }
   check(failures, opened.transport.order.length === 6 && opened.transport.oneRow
     && Math.abs(opened.transport.height - before.transport.height) <= 2,
   label + ': transport geometry must stay unchanged while Drawing is open')
@@ -1323,7 +1347,14 @@ async function check3DDrawingSurface(page, failures, scenario, viewport) {
   if (!closedByClick) return
   await page.waitFor(() => !document.querySelector('[data-test="pb-annot-toolbar"]'), { label: '3D drawing toolbar closed' })
   const restored = await page.probe(probe)
-  check(failures, (compactBar || restored.toolRow) && !restored.toolbar, label + ': original tool-row must return after Drawing closes')
+  check(failures, (compactBar ? !!restored.entry : restored.toolRow) && !restored.toolbar, label + ': original tool-row must return after Drawing closes')
+  if (compactBar) {
+    await page.evaluate(`document.querySelector('[data-testid="display-toggle"]').click()`)
+    await page.waitFor(() => !!document.querySelector('[data-testid="display-panel"] [data-testid="replay3d-camera"]'), { label: 'compact Camera stays in Display' })
+    check(failures, await page.evaluate(`!!document.querySelector('[data-testid="display-panel"] [data-testid="disp-glb"]')`), label + ': compact GLB stays in Display')
+    await page.evaluate(`document.querySelector('[data-testid="display-toggle"]').click()`)
+    await page.waitFor(() => !document.querySelector('[data-testid="display-panel"]'), { label: 'compact Display closes' })
+  }
   check(failures, restored.transport.order.length === 6 && restored.transport.oneRow
     && Math.abs(restored.transport.height - before.transport.height) <= 2,
   label + ': transport geometry must stay unchanged after Drawing closes')

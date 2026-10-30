@@ -887,6 +887,28 @@ describe('Replay3DPane', () => {
     wrapper.unmount()
   })
 
+  it.each([
+    [70, ['K2']],
+    [50, ['K1', 'K2']],
+  ])('击杀流行数预算决定实际渲染：HUD 底边 %ipx 时只渲染最新的 %j', async (hudBottom, expected) => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    const { store } = playback.api
+    store.hasData = true
+    store.killfeed = [0, 1, 2].map((id) => ({ id, kill: true, killer: `K${id}`, victim: `V${id}` }))
+    await nextTick()
+    const root = wrapper.get('[data-testid="replay3d-root"]').element
+    Object.defineProperty(root, 'clientHeight', { configurable: true, value: 500 })
+    vi.spyOn(wrapper.get('.hud').element, 'getBoundingClientRect').mockReturnValue({ bottom: hudBottom })
+    window.dispatchEvent(new Event('resize'))
+    await nextTick()
+    const rows = wrapper.get('[data-test="replay3d-killfeed"]').findAll('.kf').map((row) => row.text())
+    // 断言 DOM 里的条数：旧消息要真的没渲染，不是被 overflow 裁掉
+    expect(rows).toHaveLength(expected.length)
+    expected.forEach((killer, index) => expect(rows[index]).toContain(killer))
+    wrapper.unmount()
+  })
+
   it('显示面板可分别开关战场 UI 分块（顶栏 / 阵容 / 击杀流 / 基地条）', async () => {
     mockWebGL('webgl2')
     const wrapper = mountPane()
@@ -1024,6 +1046,8 @@ describe('Replay3DPane', () => {
       expect(wrapper.find('[data-testid="replay3d-camera"]').exists()).toBe(false)
       await wrapper.get('[data-testid="display-toggle"]').trigger('click')
       expect(wrapper.find('[data-testid="display-panel"] [data-testid="replay3d-camera"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="display-panel"] [data-testid="replay3d-drawing-entry"]').exists()).toBe(false)
+      expect(wrapper.get('[data-testid="replay3d-drawing-entry"]').element.parentElement.classList.contains('controls')).toBe(true)
       expect(wrapper.get('[data-testid="replay3d-toolrow"] label').text()).toContain('agentReplay.glb')
       store.cam = 'free'
       await nextTick()

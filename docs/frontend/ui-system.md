@@ -29,7 +29,7 @@
 | 文档页面 | 手机折叠目录、桌面 sticky 目录、末项锚点与返回顶部 | `overlay-docs-` |
 | 射击分析详情 | 上一发/下一发/关闭与重开、装甲复现交接、手机横屏可达 | `capability-normal-shots-armor-handoff` |
 | 导出菜单、2D 工作台 | 菜单短视口滚动、显示面层级、主地图遮挡及已有负向对照 | `menu-viewport-` / `ws2d-` |
-| 3D 工作台 | 控制条不压入场景中心；车道与击杀流的 15% 上限只在 `compact-bar` 形态生效，其余形态严格判定；Display 逐项可达与压过控制条、倍速菜单可达 | `roster-geometry-` |
+| 3D 工作台 | 控制条不压入场景中心（含绘制打开时）；车道与击杀流的 15% 上限只在 `compact-bar` 形态生效，其余形态严格判定；击杀流按行数预算只渲染最新 N 条；Display 逐项可达与压过控制条、倍速菜单与绘制工具条可达 | `roster-geometry-` |
 | 列选择器、dialog 内选车 | 列选择器首末项、移动按钮、Esc 还焦点；选车列表在 dialog 内不被裁切 | `drawer-tables-` / `overlay-dialog-` |
 
 `FilterChips`、名人堂 sheet 控件、玩家抽屉、AI 报告与射击详情的操作在触控档保持最小命中区。`AppSheet` 的内部滚动区在末端保留空隙，避免覆盖式滚动条吞掉右对齐按钮边缘的触摸；滚动条保持可见。桌面玩家抽屉的拖拽柄使用与面板一致的 CSS 布局视口定位，不用包含页面滚动条宽度的 `innerWidth` 推算横坐标。

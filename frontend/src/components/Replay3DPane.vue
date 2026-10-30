@@ -667,7 +667,8 @@ let laneBoundsObserver = null
 const SHORT_WORKSPACE_MAX_H = 700
 const KILLFEED_MAX_LINES = 3
 const KILLFEED_ROW_BORDER_PX = 2
-const killfeedLines = ref(KILLFEED_MAX_LINES)
+const killfeedMaxLines = ref(KILLFEED_MAX_LINES)
+const visibleKillfeed = computed(() => store.killfeed.slice(-killfeedMaxLines.value))
 const shortWorkspace = ref(false)
 function measurePresentationBounds() {
   const root = rootEl.value
@@ -693,7 +694,7 @@ function measurePresentationBounds() {
   const hudBottom = (hudEl.value?.getBoundingClientRect().bottom ?? 0) - root.getBoundingClientRect().top
   const killfeedLineH = (parseFloat(style.getPropertyValue('--line-height-caption')) || 16) + KILLFEED_ROW_BORDER_PX + gap
   const lineBudget = Math.floor((root.clientHeight * 0.2 - hudBottom - gap) / killfeedLineH)
-  killfeedLines.value = compactBar.value || portraitFlow.value || !root.clientHeight ? KILLFEED_MAX_LINES : Math.min(KILLFEED_MAX_LINES, Math.max(1, lineBudget))
+  killfeedMaxLines.value = compactBar.value || portraitFlow.value || !root.clientHeight ? KILLFEED_MAX_LINES : Math.min(KILLFEED_MAX_LINES, Math.max(1, lineBudget))
   root.style.setProperty('--pb-stage-h', `${Math.floor(budget) + gap * 2}px`)
 }
 function observeLaneBounds() {
@@ -826,7 +827,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
           </template>
         </BattlePlaybackHud>
         <div v-if="showKillfeed && store.killfeed.length" class="killfeed" data-test="replay3d-killfeed" aria-hidden="true">
-          <div v-for="kf in store.killfeed.slice(-killfeedLines)" :key="kf.id" class="kf">{{ killfeedText(kf) }}</div>
+          <div v-for="kf in visibleKillfeed" :key="kf.id" class="kf">{{ killfeedText(kf) }}</div>
         </div>
       </div>
 
@@ -931,7 +932,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
           >
           </PlaybackTransport>
           <!-- 高频查看动作直接陈列（2026-10-05 需求：从 Display 菜单移出）：镜头挡位 + GLB 车模。
-               紧凑控制条放不下第二行，§5 也不允许它压进场景中心，此时进 Display 面。
+               紧凑控制条放不下第二行，§5 也不允许它压进场景中心，此时镜头 / GLB 进 Display 面。
                drawing 打开时让位给 AnnotationToolbar（同一行高度预算），关闭后恢复。
                Drawing 是 3D 自己的工具，不是 shared transport 的第 7 个 primary action。 -->
           <ReplayCameraTools v-if="!compactBar && !annotationOpen" v-bind="cameraTools" @update:cam="chooseCamera($event)" @update:glb="sceneApi.setGlb($event)">
@@ -947,24 +948,25 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
             </button>
           </ReplayCameraTools>
         </div>
+        <!-- Drawing 是创作工具，不是 Display 里的偏好：紧凑控制条也常驻入口，但仍不进 shared transport。 -->
+        <button
+          v-if="compactBar && !annotationOpen && !controlsCollapsed"
+          type="button" class="pb-quick-action drawing-entry"
+          data-testid="replay3d-drawing-entry"
+          data-tour="playback-annotation-entry"
+          :aria-label="t('recon.map.playback.annot.mode')"
+          :title="t('recon.map.playback.annot.mode')"
+          @click="openAnnotation()"
+        >
+          <PencilRuler :size="16" aria-hidden="true" />
+        </button>
       </div>
 
       <PlaybackDisplaySurface :open="displayOpen && !uiHidden" :portrait="portraitFlow" :anchor="displayAnchor" :host="rootEl" @close="displayOpen = false">
         <!-- 查看 / 显示开关都在这里（同一份 store.cam / uiPrefs / labelPrefs / hpPrefs / store.glbOn，
              没有第二套状态）：高频动作之外的设置不该永久占着战场高度。
              场景上不放常驻开关（design-language §5），名册与防遮都只在这里。 -->
-          <ReplayCameraTools v-if="compactBar" v-bind="cameraTools" @update:cam="chooseCamera($event)" @update:glb="sceneApi.setGlb($event)">
-            <button
-              type="button" class="tool-btn drawing-entry"
-              data-testid="replay3d-drawing-entry"
-              data-tour="playback-annotation-entry"
-              :aria-label="t('recon.map.playback.annot.mode')"
-              :title="t('recon.map.playback.annot.mode')"
-              @click="openAnnotation()"
-            >
-              <PencilRuler :size="16" aria-hidden="true" /> {{ t('recon.map.playback.annot.mode') }}
-            </button>
-          </ReplayCameraTools>
+          <ReplayCameraTools v-if="compactBar" v-bind="cameraTools" @update:cam="chooseCamera($event)" @update:glb="sceneApi.setGlb($event)" />
           <p class="dp-title">{{ t('agentReplay.display_battlefield') }}</p>
         <label class="toggle" :title="store.treadAllowed ? '' : t('agentReplay.tread_gate_hint')">
           <input type="checkbox" data-testid="disp-tread" :checked="store.treadOn" :disabled="!store.treadAllowed" @change="sceneApi.setTreadMarks($event.target.checked)"> {{ t('agentReplay.tread_marks') }}

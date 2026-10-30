@@ -205,9 +205,12 @@
 }
 .pb-root.playback-workspace:not(.portrait-flow) > .controls > .controls-content { flex: 1 1 auto; min-inline-size: 0; }
 .pb-root.playback-workspace:not(.portrait-flow) > .controls > .controls-toggle { order: 1; flex: none; }
-/* 绘制工具条独占一行：它是用户打开的模式，不和时间轴抢同一行。 */
-.pb-root.playback-workspace.compact-bar .controls-content:has(> .replay3d-annotations) { flex-wrap: wrap; }
-.pb-root.playback-workspace.compact-bar .controls-content > .replay3d-annotations { flex: 0 0 100%; min-inline-size: 0; }
+/* 绘制工具条在控制条里按按钮高度排：内边距、边框与横向滚动条都会把控制条顶进场景中心。 */
+.pb-root.playback-workspace:not(.portrait-flow) .replay3d-annotations > .pb-annotation-toolbar { padding-block: 0; border-block-width: 0; scrollbar-width: none; }
+/* 紧凑控制条放不下第二行：绘制期间工具条占时间轴的位置，播放键仍在，关闭后恢复。 */
+.pb-root.playback-workspace.compact-bar .controls-content > .replay3d-annotations { flex: 1 1 0; min-inline-size: 0; }
+.pb-root.playback-workspace.compact-bar .controls-content:has(> .replay3d-annotations) > .pb-progress,
+.pb-root.playback-workspace.compact-bar .controls-content:has(> .replay3d-annotations) .pb-time { display: none; }
 /* 手机横屏与矮工作台：全宽单行，高度落在名册车道让出的底部（车道上限 100% - 4rem）。 */
 .pb-root.playback-workspace.compact-bar:not(.portrait-flow) > .controls {
   align-items: center;
