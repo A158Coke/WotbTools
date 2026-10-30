@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { mapCoverage, spawnSideKey, spawnTables } from './battleDataCoverage.js'
 
 const latest = '2026-10-29T00:00:00Z'
-const response = (items: ReturnType<typeof stat>[], excludedMaps: string[] = []) => ({ items, excludedMaps })
+const response = (items: ReturnType<typeof stat>[]) => ({ items })
 const stat = (mapKey: string, arenaBonusType: 1 | 7 | null, side: 'NORTH' | 'SOUTH' | 'WEST' | 'EAST', wins: number, draws: number, losses: number) =>
   ({ mapKey, arenaBonusType, side, battles: wins + draws + losses, wins, draws, losses })
 
@@ -46,11 +46,6 @@ describe('spawn side tables', () => {
     const tables = spawnTables(value, response([stat('unmapped', null, 'WEST', 1, 0, 0), stat('unmapped', null, 'EAST', 0, 0, 1)]), 'RANDOM')
     expect(tables[0].rows.find(row => row.key === 'erlenberg')).toMatchObject({ battles: 0, draws: 0 })
     expect(tables[1].rows.find(row => row.key === 'unmapped')).toMatchObject({ observedOnly: true, battles: 0 })
-  })
-  it('marks a map the server excluded instead of showing it as zero observations', () => {
-    const rows = spawnTables(coverage, response(stats, ['neptune']), 'ALL')[0].rows
-    expect(rows.find(row => row.key === 'neptune')).toMatchObject({ excluded: true, battles: 0 })
-    expect(rows.find(row => row.key === 'rift')?.excluded).toBe(false)
   })
   it('maps sides to presentation keys only', () => {
     expect((['NORTH', 'SOUTH', 'WEST', 'EAST'] as const).map(spawnSideKey)).toEqual(['top', 'bottom', 'west', 'east'])

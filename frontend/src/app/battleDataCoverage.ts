@@ -51,7 +51,7 @@ export function mapCoverage(maps: Summary['maps']) {
 }
 
 /** One table per spawn axis for the selected mode. Counts stay facts; rates are derived at display time. */
-export function spawnTables(coverage: ReturnType<typeof mapCoverage>, { items: stats, excludedMaps }: SpawnStats, mode: SpawnMode) {
+export function spawnTables(coverage: ReturnType<typeof mapCoverage>, { items: stats }: SpawnStats, mode: SpawnMode) {
   const maps = [
     ...coverage.reviewed.map(row => ({ key: row.key, keys: row.keys, sides: row.sides, latest: row.latest, observedOnly: false })),
     ...coverage.other.map(row => ({ key: row.key, keys: [row.key], sides: [] as Side[], latest: row.latestReceivedAt as string | null, observedOnly: true })),
@@ -67,7 +67,7 @@ export function spawnTables(coverage: ReturnType<typeof mapCoverage>, { items: s
         const sum = (field: 'battles' | 'wins' | 'draws' | 'losses') => rows.reduce((total, row) => total + row[field], 0)
         return { side, battles: sum('battles'), wins: sum('wins'), draws: sum('draws'), losses: sum('losses') }
       })
-      return [{ key: map.key, latest: map.latest, observedOnly: map.observedOnly, excluded: map.keys.some(key => excludedMaps.includes(key)), battles: Math.max(...sides.map(side => side.battles)), draws: sides[0].draws, sides }]
+      return [{ key: map.key, latest: map.latest, observedOnly: map.observedOnly, battles: Math.max(...sides.map(side => side.battles)), draws: sides[0].draws, sides }]
     }),
   })).filter(table => table.rows.length > 0)
 }

@@ -10,7 +10,6 @@ const spawnSummary = {
   maps: [{ key: 'erlenberg', count: 128, latestReceivedAt: '2026-10-29T00:00:00Z' }, { key: 'karieri', count: 83, latestReceivedAt: '2026-10-29T00:00:00Z' }],
 }
 const spawnResponse = {
-  excludedMaps: [] as string[],
   items: [
     stat('erlenberg', null, 'NORTH', 70, 5, 53), stat('erlenberg', null, 'SOUTH', 53, 5, 70),
     stat('erlenberg', 1, 'NORTH', 60, 4, 36), stat('erlenberg', 1, 'SOUTH', 36, 4, 60),
@@ -26,7 +25,7 @@ vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (s: string, p?: { side?: strin
 const summary = { asOf: '2026-10-29T00:00:00Z', totalBattles: 1, last24Hours: 1, last7Days: 1, last30Days: 1, windowBattles: 1, latestReceivedAt: '2026-10-29T00:00:00Z', distinctMaps: 1, distinctClientVersions: 1, modes: [{ key: 1, count: 1 }], winnerTeams: [{ key: 0, count: 1 }], schemaVersions: [{ key: 1, count: 1 }], daily: [], maps: [{ key: 'rift', count: 1, latestReceivedAt: '2026-10-29T00:00:00Z' }], clientVersions: [] }
 const battle = { id: '1', arenaId: '18446744073709551615', schemaVersion: 1, arenaBonusType: 1, mapId: 1, mapKey: 'rift', clientVersion: '11.18', winnerTeam: 0, team1Spawn: 'NORTH', team2Spawn: 'SOUTH', receivedAt: '2026-10-29T00:00:00Z' }
 const vehicles = Array.from({ length: 14 }, (_, i) => ({ team: i < 7 ? 1 : 2, slot: i % 7, vehicleId: 10 + i }))
-beforeEach(() => { vi.clearAllMocks(); online.value = true; locale.value = 'en'; state.summary.mockResolvedValue(summary); state.spawnStats.mockResolvedValue({ items: [], excludedMaps: [] }); state.battles.mockResolvedValue({ items: [battle], nextCursor: null }); state.detail.mockResolvedValue({ battle, vehicles }) })
+beforeEach(() => { vi.clearAllMocks(); online.value = true; locale.value = 'en'; state.summary.mockResolvedValue(summary); state.spawnStats.mockResolvedValue({ items: [] }); state.battles.mockResolvedValue({ items: [battle], nextCursor: null }); state.detail.mockResolvedValue({ battle, vehicles }) })
 function page() { return mount(BattleDataAdminPage, { global: { stubs: { AppDialog: { props: ['open'], template: '<div v-if="open"><slot /></div>' } } } }) }
 describe('BattleDataAdminPage', () => {
   it('shows bias, reviewed zero coverage and detail', async () => {
@@ -102,14 +101,6 @@ describe('BattleDataAdminPage', () => {
     expect(wrapper.text()).not.toContain('battleDataAdmin.unknown')
     const empty = wrapper.findAll('[data-testid=spawn-stats] tbody tr').find(item => item.text().includes('Middleburg'))!
     expect(empty.findAll('td').map(cell => cell.text()).slice(1, 5)).toEqual(['0', '—', '—', '—'])
-    wrapper.unmount()
-  })
-  it('shows a map excluded by the server as unavailable, not as zero battles', async () => {
-    state.spawnStats.mockResolvedValueOnce({ items: [], excludedMaps: ['neptune'] })
-    const wrapper = page(); await flushPromises()
-    const row = wrapper.findAll('[data-testid=spawn-stats] tbody tr').find(item => item.text().includes('Normandy'))!
-    expect(row.find('[data-testid=spawn-excluded]').text()).toBe('battleDataAdmin.spawnExcluded')
-    expect(row.findAll('td').map(cell => cell.text()).slice(1, 5)).toEqual(['—', '—', '—', '—'])
     wrapper.unmount()
   })
   it('keeps the page usable when the backend has no spawn statistics yet', async () => {

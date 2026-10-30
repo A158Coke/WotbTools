@@ -106,19 +106,7 @@ class BattleDataAdminPersistenceTest {
         }
     }
 
-    @Test void neptuneRowsWithoutCollectorProvenanceNeverReachSpawnStats() {
-        final String t = "2026-10-02T12:00:00Z";
-        // The same physical outcome stored by the inverted and the corrected Collector: nothing distinguishes them.
-        insertSpawn(1, 1, 1, "neptune", "SOUTH", "NORTH", t);
-        insertSpawn(2, 1, 1, "neptune", "NORTH", "SOUTH", t);
-        insertSpawn(3, 7, 2, "neptune", "NORTH", "SOUTH", t);
-        insertSpawn(4, 1, 1, "rift", "NORTH", "SOUTH", t);
-        final var result = service.spawnStats(null, null);
-        assertEquals(List.of("neptune"), result.excludedMaps());
-        assertTrue(result.items().stream().noneMatch(row -> row.mapKey().equals("neptune")));
-        assertEquals(List.of("rift"), result.items().stream().map(BattleDataAdminDtos.SpawnStat::mapKey).distinct().toList());
-        // Rows stay stored and visible to the audit surfaces.
-        assertEquals(4, service.summary(null, null).totalBattles());
+    @Test void spawnStatsRejectInvalidIntervals() {
         assertThrows(ApiException.class, () -> service.spawnStats("bad", null));
         assertThrows(ApiException.class, () -> service.spawnStats("2026-10-03T00:00:00Z", "2026-10-02T00:00:00Z"));
     }

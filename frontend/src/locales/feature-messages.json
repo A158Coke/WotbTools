@@ -498,7 +498,6 @@
       "latestData": "最近数据",
       "outcomes": "胜 {wins} · 平 {draws} · 负 {losses}",
       "advanced": "高级条件",
-      "spawnExcluded": "方向数据因历史 Collector 语义不一致，暂不计入胜率统计。",
       "side": {
         "top": "上方",
         "bottom": "下方",
@@ -1450,7 +1449,6 @@
       "latestData": "Latest data",
       "outcomes": "W {wins} · D {draws} · L {losses}",
       "advanced": "Advanced filters",
-      "spawnExcluded": "Spawn data is excluded from win rates: past Collector versions recorded inconsistent sides.",
       "side": {
         "top": "North side",
         "bottom": "South side",
@@ -2402,7 +2400,6 @@
       "latestData": "Последние данные",
       "outcomes": "П {wins} · Н {draws} · Пр {losses}",
       "advanced": "Дополнительные фильтры",
-      "spawnExcluded": "Данные о сторонах не входят в статистику: прежние версии сборщика записывали их несогласованно.",
       "side": {
         "top": "Северная сторона",
         "bottom": "Южная сторона",

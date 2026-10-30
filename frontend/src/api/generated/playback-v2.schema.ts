@@ -250,8 +250,7 @@ export default {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "items",
-        "excludedMaps"
+        "items"
       ],
       "properties": {
         "items": {
@@ -260,13 +259,6 @@ export default {
             "$ref": "#/$defs/BattleDataAdminSpawnStat"
           },
           "description": "Per map/side outcome counts for the selected interval; rates are a client display derivation."
-        },
-        "excludedMaps": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "Map keys whose stored spawn sides have no trustworthy Collector provenance and are left out of items."
         }
       }
     },

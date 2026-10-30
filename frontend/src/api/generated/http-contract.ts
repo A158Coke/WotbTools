@@ -1893,8 +1893,6 @@ export interface components {
         BattleDataAdminSpawnStats: {
             /** @description Per map/side outcome counts for the selected interval; rates are a client display derivation. */
             items: components["schemas"]["BattleDataAdminSpawnStat"][];
-            /** @description Map keys whose stored spawn sides have no trustworthy Collector provenance and are left out of items. */
-            excludedMaps: string[];
         };
         BattleDataAdminSummary: {
             /** Format: date-time */

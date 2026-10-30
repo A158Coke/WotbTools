@@ -88,17 +88,16 @@ public class BattleDataAdminRepository {
                 (r, n) -> new BattleDataAdminDtos.DailyCount(r.getObject(1, LocalDate.class), r.getLong(2)));
     }
     /** One scan: each battle yields one observation per side; the map+side grouping set is the combined row. */
-    public List<BattleDataAdminDtos.SpawnStat> spawnStats(final Instant from, final Instant to, final List<String> excludedMaps) {
+    public List<BattleDataAdminDtos.SpawnStat> spawnStats(final Instant from, final Instant to) {
         return named.query("SELECT map_key, arena_bonus_type, observed.side, count(*) AS battles,"
                 + " count(*) FILTER (WHERE winner_team = observed.team) AS wins,"
                 + " count(*) FILTER (WHERE winner_team = 0) AS draws,"
                 + " count(*) FILTER (WHERE winner_team = 3 - observed.team) AS losses"
                 + " FROM battle_data_battle"
                 + " CROSS JOIN LATERAL (VALUES (1, team1_spawn), (2, team2_spawn)) AS observed(team, side)"
-                + intervalSql(from, to) + " AND map_key NOT IN (:excluded)"
+                + intervalSql(from, to)
                 + " GROUP BY GROUPING SETS ((map_key, observed.side), (map_key, observed.side, arena_bonus_type))"
-                + " ORDER BY map_key, observed.side, arena_bonus_type NULLS FIRST",
-                interval(from, to).addValue("excluded", excludedMaps),
+                + " ORDER BY map_key, observed.side, arena_bonus_type NULLS FIRST", interval(from, to),
                 (r, n) -> new BattleDataAdminDtos.SpawnStat(r.getString(1), r.getObject(2, Integer.class), r.getString(3),
                         r.getLong(4), r.getLong(5), r.getLong(6), r.getLong(7)));
     }
