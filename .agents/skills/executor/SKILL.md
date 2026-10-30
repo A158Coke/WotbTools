@@ -1,20 +1,20 @@
 ---
 name: executor
 description: >
-  开发生命周期的实现与收尾阶段：执行 docs/current-plan.md 中已批准的计划，做 targeted validation，
+  开发生命周期的实现与收尾阶段：执行已批准/授权的文件计划或用户直接提供的 plan，做 targeted validation，
   在 review-with-docs PASS 后 commit/push/open PR，并在 merge 后清理 worktree、分支与计划文件。
-  Trigger: 用户说"执行 current-plan / 按计划执行 / 继续执行计划"、计划已由 designer 批准，
+  Trigger: 用户说"执行 current-plan / 执行下面的计划 / 按计划执行 / 继续执行计划"、Designer 按授权条件交接，
   或用户针对已合并 PR 明确要求 post-merge cleanup / 清理 worktree / 清理已合并分支 / 收尾。
   它不设计需求、不自行判定 review pass；final quality gate 只属于 review-with-docs。
 ---
 
 # Executor（计划执行 + PR 收尾）
 
-> 生命周期位置：approved current-plan → **Executor** → targeted validation → Review With Docs。
+> 生命周期位置：approved/authorized plan（文件或手贴）→ **Executor** → targeted validation → Review With Docs。
 > 只有 review-with-docs PASS 后，Executor 才 commit/push/open PR；merge 后加载
 > `.agents/playbooks/post-merge-cleanup.md` 做 post-merge cleanup。
 
-定位：把已批准的《开发方案单》（`docs/current-plan.md`）落地为代码；或在 PR 已确认 merge 后执行
+定位：把已批准/授权的文件或手贴计划物化到唯一 `docs/current-plan.md` 并落地为代码；或在 PR 已确认 merge 后执行
 生命周期收尾。实现阶段不重新讨论方案、不扩大范围、每步可独立验证。
 
 ## 输入
@@ -28,12 +28,12 @@ description: >
 
 ## 流程
 
-0. **Post-merge cleanup fast path**：若用户请求仅为已合并 PR 的 cleanup / 收尾，先验证目标 PR
+0. **Post-merge cleanup fast path**：用户直接请求或经 `finish-task` 薄入口请求已合并 PR 的 cleanup / 收尾时，先验证目标 PR
    的 `merged=true` 或等价 merge commit 事实；确认后直接加载 `.agents/playbooks/post-merge-cleanup.md`
    执行其 cleanup contract。若无法确认已合并，停止并汇报，不把未合并任务当 cleanup。此路径不进入
    下方 implementation phases，也不要求重新创建/读取 approved plan。
-1. **读取并校验计划**：实现路径按用户明确选择的来源读取完整计划：文件来源读取 `docs/current-plan.md`；手贴来源使用用户提供的完整文本。用户当前明确提供的输入是本次任务的最高优先来源，优先于仓库或 worktree 中已有的计划内容；此优先级不绕过批准和 schema 校验。两种来源都必须符合 `.agents/skills/designer/SKILL.md` 的 canonical schema，检查全部必需 section、`# Execution Steps` 每步的 `Status`、`Goal`、`Scope / Files`、`Change`、`Validation`，以及步骤状态值；必需内容缺失或结构不符时停止并返回 Designer 修正，不自行补写计划。`Commit boundary` 是可选字段：存在时遵守，缺失不阻塞。不得假设另有“分步计划状态表”“影响面清单”“验收标准”“待确认项”等第二套字段。
-2. **授权校验**：无论来源，plan 都必须已获用户批准；手贴文本只有在当前对话或随附上下文中能确认其已获批准时才可继续。`# Unverified Assumptions` / `# Evidence Gaps` 中存在未确认且会阻塞执行的项 → 停下汇报，不执行；用户明确说"执行/批准"即视为已授权。
+1. **读取并规范化计划**：按用户当前明确选择读取文件计划或直接提供的完整 plan；当前选择优先于旧文件。按 `.agents/skills/designer/SKILL.md`「授权、计划输入与偏差边界」校验，允许有证据的无损规范化，不因标题/字段格式返回 Designer。规范化后必须符合其 canonical schema：全部必需 section，以及每步 `Status`、`Goal`、`Scope / Files`、`Change`、`Validation` 与合法状态；`Commit boundary` 可选。不得编造实质决定、验收或批准事实，也不得维护第二套 schema。
+2. **授权与阻塞校验**：复用 Designer 同一节的授权规则；用户明确要求执行所附计划即授权该计划范围，不重复确认。核对 `# Constraints` 中的授权来源、范围与限制；Evidence Gaps / Unverified Assumptions 先按可得事实验证，只有真正需要用户决定或无安全恢复路径时才阻塞。高风险具体方案的批准和适用动作授权仍不可省略。
 3. **从已验证的最新 main remote 创建任务 worktree 与分支（分支名符合任务主题）**：
    - 从计划内容提取主题：优先 `# Goal` / `# Actual Outcome`；无明确标题时用 `# Impact Surface` 中最核心的动词短语。
    - 分支名 grammar：`<branch> = feat/<kebab-case-suffix> | fix/<kebab-case-suffix> | refactor/<kebab-case-suffix> | chore/<kebab-case-suffix>`。
@@ -48,14 +48,14 @@ description: >
    - 新任务优先使用 Codex 的 `create_worktree`；工具不可用时用
      `git worktree add -b <branch> <task-worktree-path> <main-ref>`。
      worktree 路径应独立且能识别任务。若同名分支或 worktree 已存在，确认其属于当前计划后
-     复用并说明；无法确认时停下询问，不重置或覆盖。
+     复用并说明；无法确认时保留原对象，另选不冲突的主题名称，不重置或覆盖；确需操作归属不明对象才询问。
    - 在任务 worktree 中确认分支与起点；后续读取、编辑、验证、提交、推送和开 PR
-     均以该 worktree 为工作目录。若批准的计划仅存在于原检出，先将该计划文件带入任务
+     均以该 worktree 为工作目录。若选定的已批准/授权计划仅存在于原检出，先将该计划文件带入任务
      worktree 并核对内容，保留原检出及其其他改动。
-   - 选定的获批计划必须在执行任何计划步骤前物化为任务 worktree 中唯一的 `docs/current-plan.md`：
-     目标文件不存在时写入选定来源的完整内容；目标文件内容完全一致时复用；内容不同时，先向用户
-     明确报告冲突，再以用户当前选定的来源替换任务 worktree 中的文件，不合并、不改动原检出，
-     也不因旧文件内容阻塞执行。替换后复核文件与已校验、已批准的来源一致；只有确认后才可进入步骤 4。
+   - 选定且已校验/规范化、已批准或授权的计划，必须在执行任何计划步骤前物化为任务 worktree 中唯一的 `docs/current-plan.md`。
+     文件不存在时写入规范化后的完整计划；内容一致时复用。已确认属于当前任务的旧内容不同，先在 commentary 报告差异，
+     再按用户当前选定来源替换，不合并、不改原检出，不因旧内容重复请求批准；其他任务的计划保留。
+     核对物化内容与规范化结果一致，并用 Evidence 中的映射确认用户原计划的实质内容及授权未改变后进入步骤 4。
 4. **确定执行顺序**：按 `# Execution Steps` 顺序执行 `Status: PENDING` 的步骤；
    只执行当前计划内步骤。
 5. **逐项执行（每步）**：
@@ -63,11 +63,9 @@ description: >
    - **Reuse Audit（新增 production type/file 前）**：先 `rg` / repo-wide 搜索候选现有实现，优先 reuse / extend；如仍需新增，在实现 reasoning 中明确为什么现有 abstraction 无法合理承载（按 `.agents/AGENTS.md` 的 Reuse / Extend First contract，只引用不复制、无需长 ADR）；
    - 开始该步前把 `Status` 置为 `IN_PROGRESS`；
    - 实现，遵循项目约定（`.agents/AGENTS.md`、`.agents/playbooks/wotb-sync.md` 跨层检查单）；
-   - 运行该步 `Validation`；失败先修复再前进；
-   - 该步 `Status` 置为 `DONE`，并在 commentary 简短汇报。
-6. **阻塞处理**：遇到依赖用户决策、外部数据或超出计划范围的改动时，把该步 `Status` 置为 `BLOCKED`，
-   停下汇报并给出选项；不静默扩大范围、不自行改方案。若 repository reality 证明 approved plan 的关键 assumption 错误
-   （`# Unverified Assumptions` 失效），停止执行并返回 Designer / 用户，不得在 Executor 内悄悄 redesign。
+   - 运行该步 `Validation`；失败先修复再前进；已通过且依赖未变的验证复用，不重复运行；
+   - 该步 `Status` 置为 `DONE`，在 commentary 简短汇报后自动继续下一步；阶段汇报不代表任务完成。
+6. **偏差处理**：按 Designer「授权、计划输入与偏差边界」分类。路径、必要直接依赖、测试/文档/生成产物等可恢复纠正自行完成，更新同一计划的实际 impact 与证据后继续。HARD STOP 只暂停依赖该决定的步骤并置 `BLOCKED`，给出证据与所需输入；设计实质失效才返回 Designer / 用户，不静默改变目标。
 7. **全部完成后**：
    - 按 `# Validation / Outside Judge` 与 `# Final Verification` 逐条验证（映射到具体测试/检查，禁止口头宣称通过）；
    - 运行本任务 affected regression tests（targeted / module / feature）；
@@ -81,13 +79,12 @@ description: >
      （代码质量审查 + 文档同步 + AI 死代码清理）。审查范围必须是完整 candidate tree：
      committed range（以 `<main-ref>` 为 base）+ staged + unstaged tracked + untracked implementation files；
      不得先 commit 以制造干净 diff，也不得只看 `<main-ref>..HEAD`。审查发现的问题先修复，
-     再复查直到零问题；单轮无法闭环的阻塞项停下汇报。
-   - **review-with-docs 零 blocker 即验收通过，PASS 后才提交并开 PR**：提交（git add/commit，
+     继续修复与重审直到无未解决 BLOCKER/MAJOR；MINOR 可按 Review 规则报告。只有 Designer 定义的 HARD STOP 才中断依赖步骤，不因单轮未闭环停止。
+   - **review-with-docs 明确 PASS（无未解决 BLOCKER/MAJOR）即验收通过，PASS 后才提交并开 PR**：提交（git add/commit，
      中文信息 + Co-Authored-By，按 `.agents/AGENTS.md` 约定）→ 推送 → `gh pr create`，
      无需再等用户指示；存在 blocker/未闭环问题时禁止开 PR。
 8. **计划文件收尾**：无论计划最初来自文件还是手贴文本，状态更新与收尾都只操作任务 worktree
-   中唯一的 `docs/current-plan.md`。所有 execution step 的 `Status` 置为 `DONE`；按该文件头部约定
-   决定清理回初始状态（默认保留完成记录，询问用户是否清理）。
+   中唯一的 `docs/current-plan.md`。只把实际完成的 step 置为 `DONE`；默认保留完成记录，不为可选清理额外请求确认。
    任务分支与提交保留；review-with-docs 零 blocker 时按步骤 7 在 PASS 后开 PR。
    PR 合并后加载 `.agents/playbooks/post-merge-cleanup.md` 清理分支、worktree 与计划文件。
 
@@ -101,9 +98,9 @@ description: >
 - 已验证 `<main-ref>` 是 Executor → Review With Docs 的 lifecycle handoff 信息；final gate 必须复用它，不得重新硬编码或猜测 remote。
 - 只执行计划内任务：`# Non-Goals` 内的改动一律不做。
 - 每步必须有验证，禁止"改完就继续"；每步 `Status` 按 `PENDING → IN_PROGRESS → DONE`，真实阻塞置 `BLOCKED`。
-- `# Unverified Assumptions` / `# Evidence Gaps` 中未确认且阻塞的项，未获用户答复前不得执行。
-- 发现方案与代码事实冲突时停下汇报（引用 `文件:行`），不擅自推翻已批准方案。
-- 执行完成后必须调用 review-with-docs 审查并闭环（修复 → 复查 → 零问题），
+- Evidence Gaps / Unverified Assumptions 按 Designer 定义先补证据并分类，不把未知直接等同于需用户答复。
+- 事实冲突引用 `文件:行` 并按 Designer 偏差边界处理；不能因实现预测不准擅自推翻目标或停下。
+- 执行完成后必须调用 review-with-docs 审查并闭环（修复 → 复查 → 无未解决 BLOCKER/MAJOR），
   审查结果写入最终汇报；本技能不替代审查。review-with-docs 零 blocker 后允许
   PASS 后提交并开 PR（无需再等用户指示）；存在 blocker/未闭环时不得开 PR。
 
