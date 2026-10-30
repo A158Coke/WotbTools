@@ -1252,7 +1252,7 @@ describe('Replay3DPane', () => {
       wrapper.unmount()
     })
 
-    it('scene selection opens shared details; Top/Free preserve selection and Follow is explicit', async () => {
+    it('scene selection opens shared details and follows; Top/Free preserve selection', async () => {
       mockWebGL('webgl2')
       const wrapper = mountPane()
       const api = playback.api
@@ -1263,7 +1263,7 @@ describe('Replay3DPane', () => {
       onVehicleSelect(11)
       await nextTick()
       expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Alpha')
-      expect(api.setFollow).not.toHaveBeenCalled()
+      expect(api.setFollow).toHaveBeenCalledExactlyOnceWith(11)
       // 镜头挡位直接陈列在控制条（2026-10-05：从 Display 面板移出），不经菜单
       expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(false)
       api.store.cam = 'free'
@@ -1274,16 +1274,20 @@ describe('Replay3DPane', () => {
       await nextTick()
       expect(wrapper.get('[data-testid="replay3d-camera"] [data-value="free"]').attributes('aria-checked')).toBe('true')
       expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Alpha')
-      await wrapper.get('[data-testid="replay3d-camera"] [data-value="follow"]').trigger('click')
-      expect(api.setFollow).toHaveBeenCalledExactlyOnceWith(11)
+      // 跟随没有档位：只由点车或点名单触发，跟随时三档都不高亮
+      expect(wrapper.find('[data-testid="replay3d-camera"] [data-value="follow"]').exists()).toBe(false)
       onVehicleSelect(21)
       await nextTick()
-      expect(api.setFollow).toHaveBeenCalledTimes(1)
+      expect(api.setFollow).toHaveBeenLastCalledWith(21)
       expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Enemy')
-      // 点场景空处（eid=null）→ 详情窗隐藏（2026-10-05 需求）
+      api.store.cam = 'follow'
+      await nextTick()
+      expect(wrapper.findAll('[data-testid="replay3d-camera"] [aria-checked="true"]')).toHaveLength(0)
+      // 点场景空处（eid=null）→ 详情窗隐藏，跟随不变
       onVehicleSelect(null)
       await nextTick()
       expect(wrapper.find('[data-testid="replay3d-details"]').exists()).toBe(false)
+      expect(api.setFollow).toHaveBeenCalledTimes(2)
       wrapper.unmount()
     })
 
@@ -1387,7 +1391,7 @@ describe('Replay3DPane', () => {
       expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Alpha')
       expect(api.store.roster).toEqual(roster)
       expect(api.store.time).toBe(45)
-      expect(api.setFollow).not.toHaveBeenCalled()
+      expect(api.setFollow).toHaveBeenCalledExactlyOnceWith(11)
       await wrapper.get('[data-testid="disp-roster"]').setValue(true)
       expect(wrapper.get('[data-testid="replay3d-lane-left"] .pl').classes()).toContain('selected')
       expect(api.loadData).toHaveBeenCalledTimes(1)
@@ -1409,7 +1413,7 @@ describe('Replay3DPane', () => {
       expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Alpha')
       await wrapper.get('[data-test="pb-sb-close"]').trigger('click')
       expect(wrapper.find('[data-testid="replay3d-details"]').exists()).toBe(false)
-      expect(api.setFollow).not.toHaveBeenCalled()
+      expect(api.setFollow).toHaveBeenCalledExactlyOnceWith(11)   // 只来自点车，关详情不再调用
       expect(api.setCam).not.toHaveBeenCalled()
       expect(api.store.time).toBe(30)
       // 名册与详情互不影响：两条车道一直都在
@@ -1866,9 +1870,12 @@ describe('Replay3DPane 待开播画质闸门', () => {
     playback.api.store.hasData = true
     await nextTick()
     const cams = wrapper.get('[data-testid="replay3d-camera"]')
-    expect(cams.findAll('button').map(b => b.attributes('data-value'))).toEqual(['free', 'follow', 'top'])
+    expect(cams.findAll('button').map(b => b.attributes('data-value'))).toEqual(['free', 'top', 'recorder'])
     expect(cams.text()).toContain('agentReplay.cam_free')
     expect(cams.text()).toContain('agentReplay.cam_top')
+    const recorder = cams.get('[data-value="recorder"]')
+    expect(recorder.attributes('disabled')).toBeDefined()
+    expect(recorder.attributes('title')).toBe('agentReplay.cam_recorder_unsupported')
     playback.api.store.cam = 'free'
     await nextTick()
     await cams.get('[data-value="top"]').trigger('click')

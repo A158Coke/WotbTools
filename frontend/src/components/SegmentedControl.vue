@@ -11,7 +11,7 @@ import { motionTransition } from '../shared/motion/motionPolicy'
 
 const props = defineProps({
   modelValue: { type: String, required: true },
-  /** [{ value, label, testid?, data? }]；data 是附加到按钮上的 data-* 键值（如 data-cap） */
+  /** [{ value, label, testid?, data?, disabled?, title? }]；data 是附加到按钮上的 data-* 键值（如 data-cap） */
   options: { type: Array, required: true },
   ariaLabel: { type: String, required: true },
   /** 撑满可用宽度并按需横向滚动，保持单行。 */
@@ -40,7 +40,8 @@ function selectOnNavigationFocus(value) {
 }
 
 function onKeydown(event) {
-  const target = { Home: props.options[0], End: props.options[props.options.length - 1] }[event.key]
+  const enabled = props.options.filter((option) => !option.disabled)
+  const target = { Home: enabled[0], End: enabled[enabled.length - 1] }[event.key]
   if (!target) return
   event.preventDefault()
   select(target.value)
@@ -68,6 +69,8 @@ function onKeydown(event) {
       :class="{ 'is-active': option.value === modelValue }"
       :data-value="option.value"
       :data-testid="option.testid"
+      :disabled="option.disabled"
+      :title="option.title"
       v-bind="option.data"
       @focus="selectOnNavigationFocus(option.value)"
     >
@@ -141,6 +144,7 @@ function onKeydown(event) {
 
 .segmented-label { position: relative; }
 
+.segmented-option:disabled { opacity: .5; cursor: not-allowed; }
 .segmented-option:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 
 .segmented.is-wrapping .segmented-option {

@@ -169,7 +169,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let sceneClock = null, canonicalClock = null;
   // Derived identity index only; ReplaySession still owns every canonical life fact.
   let lifeTracks = null, lifeTracksByAccount = new Map();
-  let CAM = 'top', FOLLOW_EID = 0;
+  let CAM = 'free', FOLLOW_EID = 0;
+  // 新会话默认以俯视机位开局；用户选过自由/跟随后，同一实例内不再覆盖其视角。
+  let topViewOnLoad = true;
   let shotPtr = 0;   //（killPtr 随击杀 feed 出仓 playback/hudFeed.js）
   const tracers = [];
   const pendingMuzzles = [];   // 本 tick 开火、待炮管姿态摆完再定位的炮口特效（见 flushMuzzles）
@@ -4197,36 +4199,27 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
   function setCam(mode) {
     if (annotationGesture) cancelAnnotationGesture()   // 相机模式跳变不得继续旧 draft
-    // 俯视是持续的战术总览视角：OrbitControls 以**地图中心**为 target，拖拽/滚轮
-    // 围绕地图中心旋转与缩放；跟随以选中坦克为 target；自由视角仍是 FPS 飞行。
-    const nextMode = mode === 'top' ? 'top' : mode;
+    // 俯视不是模式，只是快速回到俯视机位的动作（reset view）：完成后就是自由视角，
+    // 键盘、鼠标与触屏从同一帧起可用。跟随以选中坦克为 target；自由视角是 FPS 飞行。
+    const topAction = mode === 'top';
+    const nextMode = topAction ? 'free' : mode;
+    if (!topAction) topViewOnLoad = false;
     CAM = nextMode;
     store.cam = nextMode;
     flyLookApplyMode(nextMode === 'free' ? 'free' : 'follow');
     if (nextMode !== 'follow') FOLLOW_EID = 0;
     if (!controls) { invalidate(); return; }
     controls.enabled = !flyMode();
-    // 旋转/缩放中心语义要求 target 不被平移带走：Follow 锁坦克、Top 锁地图中心；
-    // Free 由 flyLook 接管，OrbitControls 的 pan 不参与（恢复默认值供下次非 Free 入口设置）。
+    // 跟随锁坦克：target 不被平移带走。Free 由 flyLook 接管，OrbitControls 的 pan 不参与
+    //（恢复默认值供下次非 Free 入口设置）。
     controls.enablePan = nextMode === 'free';
     invalidate();
-    if (nextMode === 'top') {
-      const { cx, cz } = WORLD_CENTER;
-      camera.position.set(cx, topCameraDefaultHeight(), cz + 0.01);
-      controls.target.set(cx, 0, cz);
-      controls.minDistance = baseMinDistance;
-      controls.maxDistance = Math.max(controls.maxDistance, topCameraDefaultHeight());
-      controls.minPolarAngle = 0;
-      // 不贴地平线以下：俯视拖拽保持在地图上方
-      controls.maxPolarAngle = Math.PI * 0.49;
-      clampOrbitCameraToTerrain();
-      camera.lookAt(controls.target);
-      controls.enabled = true;
-    } else if (nextMode === 'free') {
-      FOLLOW_EID = 0;
+    if (nextMode === 'free') {
       controls.minPolarAngle = 0;
       controls.maxPolarAngle = Math.PI;
+      if (topAction) applyTopView();
       constrainFreeCameraAltitude();
+      if (topAction) camera.lookAt(controls.target);
     } else {
       // 跟随绕转不得沉到 target 水平线以下：OrbitControls 的极角上限直接挡住
       // 「向下绕到地下」的输入；相机点仍由 clampOrbitCameraToTerrain 按地形净空校验。
@@ -4238,6 +4231,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 换相机必须自己补写，否则跟随描边要等到下次播放 / seek 才出现。走 writeHud 而不是
     // 直接投影名册：播放中名册也不得跑到顶栏前面（两者始终同一个 T）。
     writeHud(true);
+  }
+  function applyTopView() {
+    const { cx, cz } = WORLD_CENTER;
+    camera.position.set(cx, topCameraDefaultHeight(), cz + 0.01);
+    controls.target.set(cx, 0, cz);
+    // 保留直下朝向：默认的天顶回落会让第一次拖拽突然跳到斜俯视。
+    flyLookSyncFromCamera('top view', true);
   }
   // 只接受档位表内的值：面板按钮与 URL 参数都不该把场景带进"1.37×"这种未定义速度
   function setSpeed(s) { if (!isPlaybackSpeed(s)) return; SPEED = s; store.speed = s; }
@@ -4566,9 +4566,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       currentMapKey = resolvedKey;
     }
     buildWorld();
-    // 默认视角：俯视（OrbitControls 以地图中心为 target）；用户切到 Follow/Free 后
-    // 同一会话内保持其选择，新会话沿用当前 CAM。
-    if (CAM === 'top') setCam('top');
+    // 默认机位：俯视（仍是自由视角）；用户切到跟随/自由后保持其选择。
+    if (topViewOnLoad) setCam('top');
     // 进入场景前等待运行所需全部资产（评审要求：地图/地形/分层地表/场景 GLB 按
     // 画质档全部就绪后才进场，不再先进场后异步补图）。各段内部已 try/catch——
     // 资产缺失按档位语义降级（回退网格/2D/烘焙底图），等待不因单项缺失而悬挂。
