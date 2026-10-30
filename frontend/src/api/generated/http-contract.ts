@@ -41,6 +41,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/battle-data/spawn-stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read persisted outcome counts per map and physical spawn side (wotbtools-admin only)
+         * @description UTC interval [from,to) capped at the server clock; unbounded endpoints allowed. Separate from the summary so its shape stays readable by released clients.
+         */
+        get: operations["getBattleDataAdminSpawnStats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/battle-data/battles": {
         parameters: {
             query?: never;
@@ -1870,6 +1890,12 @@ export interface components {
             draws: number;
             losses: number;
         };
+        BattleDataAdminSpawnStats: {
+            /** @description Per map/side outcome counts for the selected interval; rates are a client display derivation. */
+            items: components["schemas"]["BattleDataAdminSpawnStat"][];
+            /** @description Map keys whose stored spawn sides have no trustworthy Collector provenance and are left out of items. */
+            excludedMaps: string[];
+        };
         BattleDataAdminSummary: {
             /** Format: date-time */
             asOf: string;
@@ -1888,8 +1914,6 @@ export interface components {
             daily: components["schemas"]["BattleDataAdminDailyCount"][];
             maps: components["schemas"]["BattleDataAdminNamedCount"][];
             clientVersions: components["schemas"]["BattleDataAdminNamedCount"][];
-            /** @description Per map/side outcome counts for the selected interval; rates are a client display derivation. */
-            spawnStats: components["schemas"]["BattleDataAdminSpawnStat"][];
         };
         /** @enum {string} */
         BattleDataSpawn: "NORTH" | "SOUTH" | "WEST" | "EAST";
@@ -3699,6 +3723,65 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BattleDataAdminSummary"];
+                };
+            };
+            /** @description Invalid interval */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Admin role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getBattleDataAdminSpawnStats: {
+        parameters: {
+            query?: {
+                from?: string;
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Spawn statistics */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BattleDataAdminSpawnStats"];
                 };
             };
             /** @description Invalid interval */

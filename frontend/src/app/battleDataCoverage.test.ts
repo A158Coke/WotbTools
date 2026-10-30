@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { mapCoverage, spawnSideKey, spawnTables } from './battleDataCoverage.js'
 
 const latest = '2026-10-29T00:00:00Z'
+const response = (items: ReturnType<typeof stat>[], excludedMaps: string[] = []) => ({ items, excludedMaps })
 const stat = (mapKey: string, arenaBonusType: 1 | 7 | null, side: 'NORTH' | 'SOUTH' | 'WEST' | 'EAST', wins: number, draws: number, losses: number) =>
   ({ mapKey, arenaBonusType, side, battles: wins + draws + losses, wins, draws, losses })
 
@@ -29,22 +30,27 @@ describe('spawn side tables', () => {
   const coverage = mapCoverage([{ key: 'rift', count: 4, latestReceivedAt: latest }, { key: 'karieri', count: 1, latestReceivedAt: latest }])
 
   it('keeps Copperfield on its own west/east axis', () => {
-    const tables = spawnTables(coverage, stats, 'ALL')
+    const tables = spawnTables(coverage, response(stats), 'ALL')
     expect(tables.map(table => table.axis)).toEqual([['NORTH', 'SOUTH'], ['WEST', 'EAST']])
     expect(tables[1].rows.map(row => row.key)).toEqual(['karieri'])
     expect(tables[0].rows.map(row => row.key)).not.toContain('karieri')
   })
   it('switches rows by mode without changing the fact counts', () => {
-    const rift = (mode: 'ALL' | 'RANDOM' | 'RATING') => spawnTables(coverage, stats, mode)[0].rows.find(row => row.key === 'rift')!
+    const rift = (mode: 'ALL' | 'RANDOM' | 'RATING') => spawnTables(coverage, response(stats), mode)[0].rows.find(row => row.key === 'rift')!
     expect(rift('ALL')).toMatchObject({ battles: 4, draws: 1, sides: [{ side: 'NORTH', wins: 2, losses: 1 }, { side: 'SOUTH', wins: 1, losses: 2 }] })
     expect(rift('RANDOM')).toMatchObject({ battles: 3, draws: 1, sides: [{ wins: 2 }, { wins: 0 }] })
     expect(rift('RATING')).toMatchObject({ battles: 1, draws: 0, sides: [{ wins: 0 }, { wins: 1 }] })
   })
   it('lists a reviewed map with zero observations and never loses unmapped stored rows', () => {
     const value = mapCoverage([{ key: 'unmapped', count: 1, latestReceivedAt: latest }])
-    const tables = spawnTables(value, [stat('unmapped', null, 'WEST', 1, 0, 0), stat('unmapped', null, 'EAST', 0, 0, 1)], 'RANDOM')
+    const tables = spawnTables(value, response([stat('unmapped', null, 'WEST', 1, 0, 0), stat('unmapped', null, 'EAST', 0, 0, 1)]), 'RANDOM')
     expect(tables[0].rows.find(row => row.key === 'erlenberg')).toMatchObject({ battles: 0, draws: 0 })
     expect(tables[1].rows.find(row => row.key === 'unmapped')).toMatchObject({ observedOnly: true, battles: 0 })
+  })
+  it('marks a map the server excluded instead of showing it as zero observations', () => {
+    const rows = spawnTables(coverage, response(stats, ['neptune']), 'ALL')[0].rows
+    expect(rows.find(row => row.key === 'neptune')).toMatchObject({ excluded: true, battles: 0 })
+    expect(rows.find(row => row.key === 'rift')?.excluded).toBe(false)
   })
   it('maps sides to presentation keys only', () => {
     expect((['NORTH', 'SOUTH', 'WEST', 'EAST'] as const).map(spawnSideKey)).toEqual(['top', 'bottom', 'west', 'east'])

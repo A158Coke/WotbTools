@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.List;
 import java.util.Objects;
 import java.util.regex.Pattern;
 
@@ -24,6 +25,9 @@ public class BattleDataAdminService {
     private static final Pattern ARENA = Pattern.compile("[1-9][0-9]{0,19}");
     private static final Pattern MAP = Pattern.compile("[a-z0-9_]{1,128}");
     private static final Pattern VERSION = Pattern.compile("[A-Za-z0-9._-]{1,64}");
+    // Pre-3.22.0 clients stored neptune sides inverted. Rows carry no Collector version (client_version is the
+    // game version) and arena_id is first-write-wins, so old and corrected rows cannot be told apart.
+    private static final List<String> UNTRUSTED_SPAWN_MAPS = List.of("neptune");
     private final BattleDataAdminRepository repository;
     private final Clock clock = Clock.systemUTC();
     public BattleDataAdminService(final BattleDataAdminRepository repository) { this.repository = repository; }
@@ -48,8 +52,16 @@ public class BattleDataAdminService {
                 repository.windowCount(from, to), totals.latest(), totals.maps(), totals.versions(),
                 repository.numeric("arena_bonus_type", from, to), repository.numeric("winner_team", from, to),
                 repository.numeric("schema_version", from, to), repository.daily(from, to),
-                repository.namedCounts("map_key", from, to), repository.namedCounts("client_version", from, to),
-                repository.spawnStats(from, to));
+                repository.namedCounts("map_key", from, to), repository.namedCounts("client_version", from, to));
+    }
+    @Transactional(readOnly = true)
+    public BattleDataAdminDtos.SpawnStats spawnStats(final String fromInput, final String toInput) {
+        final var from = parseTime(fromInput);
+        final var requestedTo = parseTime(toInput);
+        interval(from, requestedTo);
+        final var asOf = clock.instant();
+        final var to = requestedTo == null || requestedTo.isAfter(asOf) ? asOf : requestedTo;
+        return new BattleDataAdminDtos.SpawnStats(repository.spawnStats(from, to, UNTRUSTED_SPAWN_MAPS), UNTRUSTED_SPAWN_MAPS);
     }
     private static void validate(final BattleDataAdminDtos.Filter filter, final int size) {
         interval(filter.from(), filter.to());
