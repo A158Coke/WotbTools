@@ -290,10 +290,10 @@ describe('Replay3DPane', () => {
     expect(details.props('selCurStats')).toEqual({ dealt: 900, received: 100, kills: 1 })
     expect(details.props('selDamageLog')).toHaveLength(2)
     for (const group of ['equipment', 'provisions', 'consumables']) expect(details.find(`[data-test="v2-inspector-${group}"]`).exists()).toBe(true)
-    expect(details.find('.v2-chip-state').exists()).toBe(true)
+    expect(details.find('[data-state="COOLDOWN"]').exists()).toBe(true)
     store.time = 47
     await nextTick()
-    expect(details.find('.v2-chip-state').exists()).toBe(false)
+    expect(details.find('[data-state="COOLDOWN"]').exists()).toBe(false)
     store.time = 51
     await nextTick()
     expect(details.props('selCurStats')).toEqual({ dealt: 0, received: 0, kills: 0 })
