@@ -969,8 +969,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 尚未加载，命中 mapCode 表则先画，否则不画；rebuildGround 再按 terrain meta 重建
     buildBoundary(playableBoundsFor(), BOUNDARY_THICK);
     WORLD_CENTER = { cx, cz, ext };
-    camera.position.set(cx, ext * 1.1, cz + ext * 1.2);
-    controls.target.set(cx, 0, cz);
+    // 用户操作过的自由视角跨回放保留；跟随目标不跨回放，仍回到默认机位。
+    if (topViewOnLoad || CAM !== 'free') {
+      camera.position.set(cx, ext * 1.1, cz + ext * 1.2);
+      controls.target.set(cx, 0, cz);
+    }
     applyCameraClamp();   // 世界范围决定 min/max 距离（初值，实测再调）
   }
   let WORLD_CENTER = { cx: 0, cz: 0, ext: 300 };
@@ -4569,8 +4572,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       currentMapKey = resolvedKey;
     }
     buildWorld();
-    // 默认机位：俯视（仍是自由视角）；用户切到跟随/自由后保持其选择。
+    // 默认机位：俯视（仍是自由视角）；保留的自由视角要按新地图重新约束。
     if (topViewOnLoad) setCam('top');
+    else if (flyMode()) { clampCameraTarget(); constrainFreeCameraAltitude(); }
     // 进入场景前等待运行所需全部资产（评审要求：地图/地形/分层地表/场景 GLB 按
     // 画质档全部就绪后才进场，不再先进场后异步补图）。各段内部已 try/catch——
     // 资产缺失按档位语义降级（回退网格/2D/烘焙底图），等待不因单项缺失而悬挂。

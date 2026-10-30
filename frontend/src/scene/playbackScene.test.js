@@ -1596,28 +1596,51 @@ describe('Free Camera terrain floor', () => {
       expect(window.__camera.position.y).toBeCloseTo(TOP_HEIGHT, 3)
     })
 
-    it('keyboard flight counts as using the Free camera', async () => {
+    const expectPoseKept = async (api) => {
+      const position = window.__camera.position.clone()
+      const target = window.__controls.target.clone()
+      await loadNext(api)
+      expect(window.__camera.position.distanceTo(position)).toBeLessThan(1e-6)
+      expect(window.__controls.target.distanceTo(target)).toBeLessThan(1e-6)
+    }
+
+    it('keyboard flight keeps the full camera pose on the next replay', async () => {
       const { api } = await loadScene()
       expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
-      await loadNext(api)
-      expect(window.__camera.position.y).toBeLessThan(TOP_HEIGHT)
+      await expectPoseKept(api)
     })
 
-    it('wheel dolly counts as using the Free camera', async () => {
+    it('wheel dolly keeps the full camera pose on the next replay', async () => {
       const { api } = await loadScene()
       document.querySelector('canvas').dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }))
-      await loadNext(api)
-      expect(window.__camera.position.y).toBeLessThan(TOP_HEIGHT)
+      await expectPoseKept(api)
     })
 
-    it('drag look counts as using the Free camera', async () => {
+    it('drag look keeps the full camera pose on the next replay', async () => {
       const { api } = await loadScene()
       const canvas = document.querySelector('canvas')
       canvas.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0, buttons: 1, clientX: 100, clientY: 100 }))
       canvas.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, button: 0, buttons: 1, clientX: 160, clientY: 120 }))
       canvas.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, button: 0, clientX: 160, clientY: 120 }))
+      await expectPoseKept(api)
+    })
+
+    it('a kept pose still obeys the next map terrain floor', async () => {
+      const { api } = await loadScene()
+      expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
+      window.__camera.position.y = 100
+      window.__controls.target.y = 90
+      stubTerrainAssets({ values: [0, 0, 0, 0], zmin: 150, zmax: 150 })
       await loadNext(api)
-      expect(window.__camera.position.y).toBeLessThan(TOP_HEIGHT)
+      expect(window.__camera.position.y).toBeGreaterThanOrEqual(150.5)
+    })
+
+    it('Follow does not carry a pose into the next replay', async () => {
+      const { api } = await loadScene()
+      api.setCam('follow')
+      window.__camera.position.set(40, 60, 40)
+      await loadNext(api)
+      expect(window.__camera.position.distanceTo(new THREE.Vector3(40, 60, 40))).toBeGreaterThan(1)
     })
   })
 
