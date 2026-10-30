@@ -138,6 +138,18 @@ export function spansContainAt(coverage, t) {
   return false
 }
 
+/** 段集合中**包含 t** 的那一段的起点（闭区间 + 1e-6；无包含段 → null）。 */
+export function spanStartAt(coverage, t) {
+  if (!Array.isArray(coverage) || !Number.isFinite(t)) return null
+  for (let i = 0; i + 1 < coverage.length; i += 2) {
+    const start = coverage[i]
+    const end = coverage[i + 1]
+    if (!Number.isFinite(start) || (!Number.isFinite(end) && end !== Number.POSITIVE_INFINITY)) continue
+    if (t >= start - 1e-6 && t <= end + 1e-6) return start
+  }
+  return null
+}
+
 /**
  * 覆盖段内的均匀网格采样（炮塔/炮管/侧倾等仅网格列）。
  *

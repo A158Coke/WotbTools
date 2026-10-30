@@ -338,13 +338,26 @@ describe('playbackScene 会话代数契约', () => {
     data.vehicles = [{ eid: 1, account_id: 77, team: 1, is_author: true, nickname: 'Recorder', tank_name: 'Maus', max_hp: 3074,
       pos: [0, 0, 0], hull_yaw: [0], hull_pitch: [0], turret_yaw: [0], gun_pitch: [0],
       hp: [[42, 2048]], coverage: [42, 100], death_t: null }]
+    // AoI 两段：离开期间状态未知；重入不得复活离开前的激活
+    data.visibility = [{ eid: 1, t_in: 42, t_out: 60 }, { eid: 1, t_in: 65, t_out: 100 }]
     // Playback facet 原始形状：snake_case + 数字 state；3D 的 T 与 clock 同 base。
-    data.consumables = [{ clock: 50, eid: 1, wire_code: 9, state: 2, state_name: 'ACTIVATED',
-      duration_s: 20, ends_at: 70, ever_activated: true, slot: 0, logical_item_id: 'ADRENALINE' }]
+    data.consumables = [
+      { clock: 50, eid: 1, wire_code: 9, state: 2, state_name: 'ACTIVATED',
+        duration_s: 20, ends_at: 70, ever_activated: true, slot: 0, logical_item_id: 'ADRENALINE' },
+      { clock: 70, eid: 1, wire_code: 9, state: 2, state_name: 'ACTIVATED',
+        duration_s: 20, ends_at: 90, ever_activated: true, slot: 0, logical_item_id: 'ADRENALINE' },
+    ]
     const session = { loadScene: vi.fn().mockResolvedValue(data), getState: () => ({ canonical: null }) }
     await api.loadData({ kind: 'local', file: new File(['replay'], 'consumable.wotbreplay'), session })
     api.setPlaying(false)
     api.seekTime(55)
+    expect(overlay.setLabels.mock.calls.at(-1)[0][0].consumables).toEqual([{
+      slot: 0, logicalItemId: 'ADRENALINE', wireCode: 9, remainingSec: 15, durationSec: 20,
+    }])
+    api.seekTime(66)
+    // 重入（65）后：离开前的激活（50–70）不得复活；新的激活（70）尚未发生
+    expect(overlay.setLabels.mock.calls.at(-1)[0][0].consumables).toEqual([])
+    api.seekTime(75)
     expect(overlay.setLabels.mock.calls.at(-1)[0][0].consumables).toEqual([{
       slot: 0, logicalItemId: 'ADRENALINE', wireCode: 9, remainingSec: 15, durationSec: 20,
     }])

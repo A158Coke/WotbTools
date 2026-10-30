@@ -55,14 +55,18 @@ function slotBadge(slot, t) {
  *
  * @param {readonly object[]|null|undefined} transitions
  * @param {number} t 回放时刻（与该输入的时钟同 base）
+ * @param {number|null} [since] 观测窗口起点：早于它的历史事件一律忽略（AoI 重入后
+ *   不得复用离开前的状态；由调用方传当前可见段起点，canonical 2D 用 invalidation 行）
  * @returns {{slot:number,logicalItemId:string|null,wireCode:number|null,remainingSec:number,durationSec:number}[]}
  */
-export function consumableRuntimeAt(transitions, t) {
+export function consumableRuntimeAt(transitions, t, since = null) {
   if (!Array.isArray(transitions) || !Number.isFinite(t)) return []
+  const floor = Number.isFinite(since) ? since : null
   const bySlot = new Map()
   for (const tr of transitions) {
     const timeSec = eventTime(tr)
     if (timeSec === null || timeSec > t + EPS) continue
+    if (floor !== null && timeSec < floor - EPS) continue
     if (tr.invalidation === true) {
       bySlot.clear()
       continue
@@ -92,7 +96,7 @@ export function consumableRuntimeAt(transitions, t) {
   return out.sort((a, b) => a.slot - b.slot)
 }
 
-/** 按 eid 建一次索引，返回 `(eid, t) => badge[]`（3D 10Hz 名牌快照用）。 */
+/** 按 eid 建一次索引，返回 `(eid, t, since?) => badge[]`（3D 10Hz 名牌快照用）。 */
 export function createConsumableStateResolver(telemetry) {
   const byEid = new Map()
   for (const tr of telemetry?.consumables ?? []) {
@@ -102,5 +106,5 @@ export function createConsumableStateResolver(telemetry) {
   }
   const at = (tr) => eventTime(tr) ?? 0
   for (const list of byEid.values()) list.sort((a, b) => at(a) - at(b))
-  return (eid, t) => consumableRuntimeAt(byEid.get(eid), t)
+  return (eid, t, since = null) => consumableRuntimeAt(byEid.get(eid), t, since)
 }

@@ -65,6 +65,18 @@ describe('consumableRuntimeAt', () => {
       .toMatchObject({ remainingSec: 10, durationSec: 20 })
   })
 
+  it('since 起点忽略窗口前历史：AoI 重入不复用离开前的状态', () => {
+    const active = activeAt10()
+    expect(consumableRuntimeAt([active], 20, 5)).toHaveLength(1)
+    expect(consumableRuntimeAt([active], 20, 15)).toEqual([])
+    // 重入后新事件仍可用
+    const fresh = tr({
+      timeSec: 22, state: 'ACTIVATED', durationSec: 20, endsAt: 42,
+      wireCode: 0x09, logicalItemId: 'ADRENALINE', everActivated: true,
+    })
+    expect(consumableRuntimeAt([active, fresh], 25, 21)[0]).toMatchObject({ remainingSec: 17 })
+  })
+
   it('按槽位升序输出，最多三个槽位', () => {
     const transitions = [
       activeAt10({ consumableSlot: 2, logicalItemId: 'ADRENALINE' }),

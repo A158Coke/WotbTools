@@ -48,7 +48,7 @@ import { collectMaterialTextures } from './materialDispose.js'
 import { applyTankDestroyedVisual, destroyedVisualAmount, disposeTankDestroyedVisual, prepareTankDestroyedVisual } from './tankDestroyedVisual.js'
 import { lifeAt, defLifeAt } from '../utils/battlePlaybackV2.ts'
 //（pruneForeignVariantsDetailed 随场景装配块移入 playback/mapAssets.js）
-import { sampleDetachedPose, spansContainAt } from './trackInterp.js'
+import { sampleDetachedPose, spanStartAt, spansContainAt } from './trackInterp.js'
 import { sampleVehiclePoseGame, visibilitySpansByEid } from '../replay-local/pose/vehiclePose.js'
 import { pathPointsOf, legSecsOf, legEndTimes, pointAtInto, legArcEnds, arcAtTime, pointAtArcInto } from './shotPath.js'
 import { impactKind } from './impactKind.js'
@@ -1505,7 +1505,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         friendly, destroyed, lastKnown: false,
         hp: { current, pct, state: destroyed ? 'DESTROYED' : 'CURRENT' },
         reload: destroyed ? null : reloadStateAt(v.def.eid, T),
-        consumables: destroyed || !visibleAt(v, T) ? [] : consumableStateAt(v.def.eid, T),
+        consumables: destroyed || !visibleAt(v, T) ? []
+          : consumableStateAt(v.def.eid, T, spanStartAt(VIS_BY_EID.get(v.def.eid) ?? v.def.coverage, T)),
         hpGhost: ghost ? { prevPct: (ghost.fromFrac + ghost.lossFrac) * 100, nextPct: ghost.fromFrac * 100 } : null,
         hpFlash: flashByEid.has(v.def.eid),
       };
