@@ -1587,6 +1587,47 @@ describe('Free Camera terrain floor', () => {
     expect(controls.minDistance).toBeCloseTo(cam.position.distanceTo(controls.target), 5)
   })
 
+  it('Follow 不允许相机绕到 target 下方；已在地下的点被抬到地形净空', async () => {
+    stubTerrainAssets({ values: [0, 0, 0, 0], zmin: 0, zmax: 0 })
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const { api } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['terrain'], 'follow-down.wotbreplay') })
+    const cam = window.__camera
+    const controls = window.__controls
+    controls.target.set(0, 2, 0)
+    cam.position.set(8, -28, 0)   // 绕到 target 水平线以下（review 复现）
+    api.setCam('follow')
+    expect(controls.maxPolarAngle).toBeLessThanOrEqual(Math.PI / 2)
+    expect(cam.position.y).toBeGreaterThanOrEqual(0.5)
+    // 真实 OrbitControls update 也不得把相机带回地下
+    controls.update()
+    expect(cam.position.y).toBeGreaterThanOrEqual(0.5)
+  })
+
+  it('坡面外推按新 x/z 重采样，最终相机点高于实际地形', async () => {
+    const n = 64, span = 600, zmin = -50, zmax = 400
+    const values = []
+    for (let r = 0; r < n; r++) {
+      for (let c = 0; c < n; c++) {
+        const x = (c / n - 0.5) * span
+        const h = 100 + 0.5 * x
+        values.push(Math.round((h - zmin) / (zmax - zmin) * 65535))
+      }
+    }
+    stubTerrainAssets({ values, zmin, zmax })
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const { api } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['terrain'], 'follow-slope.wotbreplay') })
+    const cam = window.__camera
+    const controls = window.__controls
+    controls.target.set(0, 0, 0)
+    cam.position.set(50, 50, 0)
+    api.setCam('follow')
+    // 旧实现只按 x=50 的地形一次外推到 x≈125.5，那里地面已 162.75：仍穿地。
+    expect(cam.position.x).toBeGreaterThan(150)
+    expect(cam.position.y).toBeGreaterThanOrEqual(100 + 0.5 * cam.position.x + 0.49)
+  })
+
   it('places the Free camera above the rendered triangle on a non-coplanar terrain cell', async () => {
     stubTerrainAssets({ values: [0, 65535, 65535, 0], zmin: 0, zmax: 30 })
     source.loadPlaybackData.mockResolvedValue(minimalData())

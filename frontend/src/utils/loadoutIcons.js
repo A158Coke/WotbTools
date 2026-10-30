@@ -11,6 +11,7 @@ const PROVISION_ICON = {
   STANDARD_FUEL: 'regular_fuel',
   IMPROVED_FUEL: 'improved_fuel',
   PROTECTIVE_KIT: 'safety_set',
+  SPALL_LINER: 'anti-high-explosive',
   SANDBAG_ARMOR: 'small-hp-stock',
   ENHANCED_SANDBAG_ARMOR: 'large-hp-stock',
   GEAR_OIL: 'provision_gear-oil',

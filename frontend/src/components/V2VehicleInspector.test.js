@@ -177,4 +177,30 @@ describe('V2VehicleInspector', () => {
     expect(w.findAll('[data-test="v2-inspector-provisions"] .v2-chip-icon').length).toBeGreaterThan(0)
     expect(w.findAll('[data-test="v2-inspector-consumables"] .v2-chip-icon').length).toBeGreaterThan(0)
   })
+
+  it('已装备防破片内衬使用 anti-high-explosive 图标，不降级为空占位', () => {
+    const t = track()
+    t.loadout.provisions = ['SPALL_LINER', null, null]
+    t.loadout.provisionWireCodes = [0x32, null, null]
+    const w = mountInspector(120, 'zh', t)
+    const chip = w.get('[data-provision-slot="0"]')
+    expect(chip.classes()).not.toContain('is-empty')
+    expect(chip.classes()).not.toContain('is-unknown')
+    const icon = chip.get('.v2-chip-icon')
+    expect(icon.attributes('src')).toContain('anti-high-explosive')
+    w.unmount()
+  })
+
+  it('已装备但缺图与空槽回退可区分（未知实线警示 vs 空槽虚线）', () => {
+    const t = track()
+    t.loadout.provisions = ['SOME_INTERNAL_ENUM', null, null]
+    t.loadout.provisionWireCodes = [0x77, null, null]
+    const w = mountInspector(120, 'zh', t)
+    const chips = w.findAll('[data-test="v2-inspector-provisions"] .v2-inspector-chip')
+    expect(chips[0].classes()).toContain('is-unknown')
+    expect(chips[0].classes()).not.toContain('is-empty')
+    expect(chips[1].classes()).toContain('is-empty')
+    expect(chips[1].classes()).not.toContain('is-unknown')
+    w.unmount()
+  })
 })

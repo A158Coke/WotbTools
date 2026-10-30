@@ -232,7 +232,7 @@ function moduleStateLabel(state) {
           v-for="c in consumables"
           :key="'c' + c.slot"
           class="v2-inspector-chip"
-          :class="{ 'is-empty': c.empty }"
+          :class="{ 'is-empty': c.empty, 'is-unknown': !c.empty && !c.icon }"
           role="img"
           :title="c.ariaLabel"
           :aria-label="c.ariaLabel"
@@ -251,7 +251,7 @@ function moduleStateLabel(state) {
           v-for="p in provisionLabels"
           :key="'p' + p.slot"
           class="v2-inspector-chip"
-          :class="{ 'is-empty': p.empty }"
+          :class="{ 'is-empty': p.empty, 'is-unknown': !p.empty && !p.icon }"
           role="img"
           :title="p.label"
           :aria-label="p.label"
@@ -269,6 +269,7 @@ function moduleStateLabel(state) {
               v-for="e in equipmentLabels"
               :key="'e' + e.slot"
               class="v2-inspector-chip"
+              :class="{ 'is-unknown': devices && !e.icon }"
               :data-equipment-id="e.id"
               role="img"
               :title="e.label"
@@ -369,6 +370,16 @@ function moduleStateLabel(state) {
 .v2-inspector-chip .v2-chip-placeholder {
   width: 32px; height: 32px; border-radius: var(--radius-sm);
   border: 1px dashed var(--color-border-subtle); opacity: .5;
+}
+/* 未知/缺图不是「未装备」：实线警示框 + 斜杠，避免空槽虚线掩盖已装备事实 */
+.v2-inspector-chip.is-unknown .v2-chip-placeholder {
+  position: relative; opacity: 1; border-style: solid;
+  border-color: var(--color-warning);
+}
+.v2-inspector-chip.is-unknown .v2-chip-placeholder::after {
+  content: ''; position: absolute; inset: 7px;
+  border-top: 1.5px solid var(--color-warning);
+  transform: rotate(-45deg); transform-origin: center;
 }
 .v2-inspector-chip[role="img"] { cursor: help; }
 </style>
