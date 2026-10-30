@@ -427,6 +427,45 @@ export function lifeTransitions(
 // ---------- 装载 / 消耗品 / 模块 ----------
 
 function toLoadout(vehicles: AgentVehicleTrack[], replayVersion: string | null): VehicleBattleLoadout | null {
+  // v0.4.17：优先消费 Agent 解码后的 loadout（3 消耗品 + 0..3 给养 + 模式能力），
+  // 7 条 Type5 布局（GravityMode 额外能力）不再被旧 loadout_items.length===6 门禁丢弃。
+  const decoded = vehicles.find((x) => x.loadout
+    && Array.isArray(x.loadout.consumables) && Array.isArray(x.loadout.provisions))
+    ?.loadout
+  if (decoded) {
+    let unknown = false
+    const consumables: Array<string | null> = []
+    const consumableWireCodes: Array<number | null> = []
+    const provisions: Array<string | null> = []
+    const provisionWireCodes: Array<number | null> = []
+    for (let i = 0; i < 3; i++) {
+      const item = decoded.consumables[i]
+      const wire = item?.wire_code ?? null
+      const id = item?.logical_id ?? (wire !== null ? consumableItemId(wire) : null)
+      if (id === null && wire !== null && wire !== 0) unknown = true
+      consumables.push(id)
+      consumableWireCodes.push(wire)
+      const p = decoded.provisions[i]
+      const pw = p?.wire_code ?? null
+      const pid = p?.logical_id ?? (pw !== null ? provisionItemId(pw) : null)
+      if (pid === null && pw !== null && pw !== 0) unknown = true
+      provisions.push(pid)
+      provisionWireCodes.push(pw)
+    }
+    const equipmentIds = Array.isArray(decoded.equipment) && decoded.equipment.length === 9
+      ? decoded.equipment
+      : [...(decoded.equipment_ids ?? []), ...Array(9).fill(0)].slice(0, 9)
+    return {
+      replayVersion,
+      consumables,
+      consumableWireCodes,
+      provisions,
+      provisionWireCodes,
+      equipmentIds,
+      confidence: unknown ? 'LOW' : 'HIGH',
+    }
+  }
+  // 旧产物回退：只有完整 6 条 Type5 描述符时才能可靠切分 3+3。
   const v = vehicles.find((x) => Array.isArray(x.loadout_items) && x.loadout_items.length === 6
     && Array.isArray(x.equipment) && x.equipment.length === 9)
   if (!v) return null
@@ -474,10 +513,24 @@ function consumableTransitions(
   const obs = (pb.consumables ?? [])
     .filter((c) => eids.has(c.eid))
     .map((c) => {
-      const logicalItemId = consumableItemId(c.wire_code)
-      const state = consumableStateName(c.state)
+      const logicalItemId = c.logical_item_id ?? consumableItemId(c.wire_code)
+      const state = c.state_name ?? consumableStateName(c.state)
+      const durationSec = Number.isFinite(c.duration_s) ? Math.max(0, Number(c.duration_s)) : null
+      const endsAt = Number.isFinite(c.ends_at) ? Number(c.ends_at) - clock.startRaw : null
+      const everActivated = c.ever_activated === true
       const proven = logicalItemId !== null && state !== 'UNKNOWN'
-      return { t: c.clock - clock.startRaw, eid: c.eid, wire: c.wire_code, logicalItemId, state, confidence: (proven ? 'HIGH' : 'LOW') as PlaybackConfidence }
+      return {
+        t: c.clock - clock.startRaw,
+        eid: c.eid,
+        wire: c.wire_code,
+        slot: Number.isInteger(c.slot) ? Number(c.slot) : null,
+        logicalItemId,
+        state,
+        durationSec,
+        endsAt,
+        everActivated,
+        confidence: (proven ? 'HIGH' : 'LOW') as PlaybackConfidence,
+      }
     })
     .sort((a, b) => a.t - b.t || a.eid - b.eid)
   const out: ConsumableTransition[] = []
@@ -493,18 +546,29 @@ function consumableTransitions(
     const invalidation = o.state === 'UNKNOWN'
     out.push({
       timeSec: o.t,
-      consumableSlot: invalidation ? null : consumableSlot(loadout, o.wire),
+      consumableSlot: invalidation ? null : (o.slot ?? consumableSlot(loadout, o.wire)),
       logicalItemId: invalidation ? null : o.logicalItemId,
       wireCode: invalidation ? null : o.wire,
       state: o.state,
+      durationSec: invalidation ? null : o.durationSec,
+      endsAt: invalidation ? null : o.endsAt,
+      everActivated: invalidation ? false : o.everActivated,
       invalidation,
       confidence: o.confidence,
     })
   }
   for (const o of seeds.values()) {
     out.push({
-      timeSec: 0, consumableSlot: consumableSlot(loadout, o.wire), logicalItemId: o.logicalItemId,
-      wireCode: o.wire, state: 'INITIALIZED', invalidation: false, confidence: o.confidence,
+      timeSec: 0,
+      consumableSlot: o.slot ?? consumableSlot(loadout, o.wire),
+      logicalItemId: o.logicalItemId,
+      wireCode: o.wire,
+      state: 'INITIALIZED',
+      durationSec: null,
+      endsAt: null,
+      everActivated: false,
+      invalidation: false,
+      confidence: o.confidence,
     })
   }
   for (const id of entityIds) {
@@ -513,7 +577,18 @@ function consumableTransitions(
       if (absent === null || !Number.isFinite(absent) || absent < 0) continue
       const hadKnownBefore = obs.some((o) => o.t < absent - EPS && (o.logicalItemId !== null || o.state !== 'UNKNOWN'))
       if (hadKnownBefore) {
-        out.push({ timeSec: absent, consumableSlot: null, logicalItemId: null, wireCode: null, state: 'UNKNOWN', invalidation: true, confidence: 'UNKNOWN' })
+        out.push({
+          timeSec: absent,
+          consumableSlot: null,
+          logicalItemId: null,
+          wireCode: null,
+          state: 'UNKNOWN',
+          durationSec: null,
+          endsAt: null,
+          everActivated: false,
+          invalidation: true,
+          confidence: 'UNKNOWN',
+        })
       }
     }
   }

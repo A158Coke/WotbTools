@@ -13,8 +13,11 @@ const CONSUMABLES: Record<number, string> = {
   0x0d: 'REPAIR_KIT',
   0x3d: 'IMPROVED_ENGINE_POWER_BOOST',
   0x3e: 'RETICLE_CALIBRATION',
+  // 上游 v0.4.19（Agent 侧权威表）：装填加速；旧产物无 logical_item_id 时按线码回退。
+  0x3f: 'SHELL_RELOAD_BOOST',
   0x42: 'REACTIVE_ARMOR',
   0x69: 'TUNGSTEN_SHELLS',
+  0xa9: 'DYNAMIC_ARMOUR_SYSTEM',
   0xbd: 'REDUCED_ENGINE_POWER_BOOST',
 }
 
