@@ -1,6 +1,7 @@
 <script setup>
 // 镜头挡位 + GLB 车模：宽形态直接陈列在 3D 控制条，紧凑控制条放不下时进 Display 面。
 // 两处渲染同一份组件，状态仍归 Replay3DPane 的 store，这里只转发。
+// 默认插槽放同一行的 3D 工具入口：它们用父组件的样式。
 import { useI18n } from 'vue-i18n'
 import SegmentedControl from './SegmentedControl.vue'
 
@@ -31,6 +32,7 @@ const { t } = useI18n()
     <label class="toggle" :title="glbAllowed ? '' : t(glbOn ? 'agentReplay.glb_forced_hint' : 'agentReplay.glb_gate_hint')">
       <input type="checkbox" data-testid="disp-glb" :checked="glbOn" :disabled="!glbAllowed" @change="emit('update:glb', $event.target.checked)"> {{ t('agentReplay.glb') }}
     </label>
+    <slot />
   </div>
 </template>
 

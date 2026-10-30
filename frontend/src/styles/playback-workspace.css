@@ -205,6 +205,9 @@
 }
 .pb-root.playback-workspace:not(.portrait-flow) > .controls > .controls-content { flex: 1 1 auto; min-inline-size: 0; }
 .pb-root.playback-workspace:not(.portrait-flow) > .controls > .controls-toggle { order: 1; flex: none; }
+/* 绘制工具条独占一行：它是用户打开的模式，不和时间轴抢同一行。 */
+.pb-root.playback-workspace.compact-bar .controls-content:has(> .replay3d-annotations) { flex-wrap: wrap; }
+.pb-root.playback-workspace.compact-bar .controls-content > .replay3d-annotations { flex: 0 0 100%; min-inline-size: 0; }
 /* 手机横屏与矮工作台：全宽单行，高度落在名册车道让出的底部（车道上限 100% - 4rem）。 */
 .pb-root.playback-workspace.compact-bar:not(.portrait-flow) > .controls {
   align-items: center;

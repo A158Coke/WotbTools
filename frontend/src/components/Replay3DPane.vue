@@ -39,11 +39,17 @@ import BattlePlaybackHud from './BattlePlaybackHud.vue'
 import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 import SegmentedControl from './SegmentedControl.vue'
 import AppButton from './AppButton.vue'
+import AnnotationToolbar from './AnnotationToolbar.vue'
+import {
+  ANNOT_COLORS, ANNOT_ERASER_RADIUS_DEFAULT, ANNOT_ERASER_RADIUS_MAX, ANNOT_ERASER_RADIUS_MIN,
+  ANNOT_WIDTH_DEFAULT, ANNOT_WIDTH_MAX, ANNOT_WIDTH_MIN,
+  applyEraser, canRedo, canUndo, commit, redo, undo,
+} from '../utils/annotation.js'
 import { mapLabel } from '../utils/helpers.js'
 import { PLAYBACK_SPEEDS, PLAYBACK_STEP_SECONDS, isInteractiveTarget, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
 import { useSceneFlyControls } from '../composables/useSceneFlyControls.js'
 import { formatPlaybackClock } from '../utils/playbackClock'
-import { ChevronDown, ChevronUp, ScanEye, TriangleAlert } from 'lucide-vue-next'
+import { ChevronDown, ChevronUp, PencilRuler, ScanEye, TriangleAlert } from 'lucide-vue-next'
 
 defineOptions({ name: 'Replay3DPane' })
 
@@ -103,15 +109,25 @@ const uiHidden = ref(false)
  */
 const displayOpen = ref(false)
 const displayAnchor = ref(null)
-function toggleDisplay(anchor) { displayAnchor.value = anchor; displayOpen.value = !displayOpen.value }
+function toggleDisplay(anchor) {
+  if (!displayOpen.value) closeAnnotation()   // Display 与 drawing 互斥（同一行高度预算）
+  displayAnchor.value = anchor
+  displayOpen.value = !displayOpen.value
+}
 
 const controlsCollapsed = ref(false)
 const controlsContentId = useId()
 function toggleControls() {
   controlsCollapsed.value = !controlsCollapsed.value
-  if (controlsCollapsed.value) displayOpen.value = false
+  if (controlsCollapsed.value) {
+    displayOpen.value = false
+    closeAnnotation()
+  }
 }
-watch(() => props.file, () => { controlsCollapsed.value = false })
+watch(() => props.file, () => {
+  controlsCollapsed.value = false
+  resetAnnotationState()   // 换场次 = 换地图语义；旧标注不得跨图残留
+})
 /** 紧凑档：手机形态（见 usePlaybackPhoneForm —— 宽度 <768 **或** 触屏且视口高 ≤500，
  *  后者命中手机全屏横屏）。**不能用纯宽度断点**：手机竖屏 412×915 全屏后是 915×412，
  *  按宽度会突然判成平板、把收起来的 controls 又展开。与 2D 共用同一份 form-factor 契约。 */
@@ -134,6 +150,98 @@ const selectedEid = ref(null)
 const detailsOpen = ref(false)
 /** 浮窗落位偏好：点左车道 → 落右侧，点右车道 → 落左侧，点场景里的车 → 与它相对的一侧。 */
 const detailsSide = ref('right')
+
+// ---------- 3D annotation（terrain-anchored drawing）----------
+// history/tool/color/width/visibility 的唯一 owner 是本面板；scene 只消费 projection 与
+// interaction 配置。V1 不持久化，换文件 / 场景销毁即清空（与 2D 的临时标注语义一致）。
+const annotationOpen = ref(false)
+const annotationTool = ref(null)
+const annotationColor = ref(ANNOT_COLORS[0])
+const annotationWidthSlider = ref(ANNOT_WIDTH_DEFAULT)
+const annotationEraserRadius = ref(ANNOT_ERASER_RADIUS_DEFAULT)
+const annotationsVisible = ref(true)
+const annotationHistory = ref([[]])
+const annotationIndex = ref(0)
+const annotations = computed(() => annotationHistory.value[annotationIndex.value] || [])
+
+function pushAnnotationProjection() {
+  sceneApi?.setAnnotations?.(annotations.value)
+}
+function pushAnnotationInteraction() {
+  sceneApi?.setAnnotationInteraction?.({
+    enabled: annotationOpen.value && !!annotationTool.value && store.hasData,
+    tool: annotationTool.value,
+    color: annotationColor.value,
+    width: annotationWidthSlider.value,
+    eraserWidth: annotationEraserRadius.value,
+  })
+}
+function pushAnnotationVisibility() {
+  sceneApi?.setAnnotationsVisible?.(annotationsVisible.value)
+}
+function replaceAnnotations(next) {
+  const state = commit(annotationHistory.value, annotationIndex.value, next)
+  annotationHistory.value = state.history
+  annotationIndex.value = state.index
+}
+function commitAnnotationFromScene(annotation) {
+  replaceAnnotations([...annotations.value, annotation])
+}
+function eraseFromScene(path) {
+  const next = applyEraser(annotations.value, path.points, path.radius)
+  if (next !== annotations.value) replaceAnnotations(next)
+}
+function undoAnnotation() {
+  const state = undo(annotationHistory.value, annotationIndex.value)
+  annotationHistory.value = state.history
+  annotationIndex.value = state.index
+}
+function redoAnnotation() {
+  const state = redo(annotationHistory.value, annotationIndex.value)
+  annotationHistory.value = state.history
+  annotationIndex.value = state.index
+}
+function clearAnnotations() {
+  if (annotations.value.length) replaceAnnotations([])
+}
+function toggleAnnotationsVisible() {
+  annotationsVisible.value = !annotationsVisible.value
+}
+function setAnnotationTool(tool) {
+  annotationTool.value = tool
+  if (!annotationsVisible.value) annotationsVisible.value = true
+}
+function openAnnotation() {
+  if (annotationOpen.value) return
+  // Drawing owns pointer interaction only; playback transport keeps its own state.
+  displayOpen.value = false
+  annotationOpen.value = true
+  annotationTool.value = 'pen'
+  annotationsVisible.value = true
+  pushAnnotationProjection()
+  pushAnnotationInteraction()
+  pushAnnotationVisibility()
+}
+function closeAnnotation() {
+  annotationOpen.value = false
+  annotationTool.value = null
+  pushAnnotationInteraction()
+}
+function toggleAnnotation() {
+  if (annotationOpen.value) closeAnnotation()
+  else openAnnotation()
+}
+function resetAnnotationState() {
+  annotationHistory.value = [[]]
+  annotationIndex.value = 0
+  annotationOpen.value = false
+  annotationTool.value = null
+  annotationsVisible.value = true
+  sceneApi?.setAnnotations?.([])
+  sceneApi?.setAnnotationInteraction?.({ enabled: false, tool: null })
+  sceneApi?.setAnnotationsVisible?.(true)
+}
+
 /**
  * 名册行点击 = **跟随该玩家坦克**（2026-10-05 需求）：不再打开详情窗。
  * 选中高亮照旧（selectedEid），相机跟随由场景内核 setFollow 独占（它同时切 follow 档）。
@@ -176,7 +284,10 @@ function chooseCamera(mode) {
 }
 function setUiHidden(hidden) {
   uiHidden.value = hidden
-  if (hidden) displayOpen.value = false
+  if (hidden) {
+    displayOpen.value = false
+    closeAnnotation()
+  }
 }
 function toggleUiHidden() { setUiHidden(!uiHidden.value) }
 /**
@@ -253,6 +364,14 @@ function pushLabelPrefs() {
   })
 }
 watch([labelPrefs, hpPrefs, markerPrefs, uiHidden], pushLabelPrefs, { deep: true })
+// annotation 投影 / 交互 / 可见性的唯一推送方向（pane → scene）。
+watch(annotations, pushAnnotationProjection)
+watch(
+  [annotationOpen, annotationTool, annotationColor, annotationWidthSlider, annotationEraserRadius, () => store.hasData],
+  pushAnnotationInteraction,
+)
+watch(annotationsVisible, pushAnnotationVisibility)
+watch(() => store.hasData, (has) => { if (!has && annotationOpen.value) closeAnnotation() })
 
 /** 最近一次加载的文件：失败后"重试"直接重新解析，不必再选一次 */
 let lastFile = null
@@ -458,6 +577,7 @@ function killfeedText(kf) {
  */
 function destroyScene() {
   abortParse()   // 场景销毁 = 解析任务一并撤下（在途解析不得再占 Worker 队列）
+  resetAnnotationState()   // 场景消失 = annotation 派生层与 history 一并清空（V1 不持久化）
   selectedEid.value = null
   detailsOpen.value = false
   fly.stopLoop()   // 场景销毁：飞行循环停 + 按键清空（重建后按住键需重新按下）
@@ -477,10 +597,17 @@ function ensureScene() {
   //   · `!props.active` —— 未激活的能力不得建场景（不需要激活就初始化会在切走时白跑渲染）；
   //   · `labelOverlay.value` —— 3D 名牌改屏幕空间 DOM 锚点后，场景需要覆盖层句柄。
   if (sceneApi || !props.active || !shouldHaveScene()) return false
-  sceneApi = initPlayback(stage.value, store, labelOverlay.value, { onVehicleSelect: handleSceneSelect })
+  sceneApi = initPlayback(stage.value, store, labelOverlay.value, {
+    onVehicleSelect: handleSceneSelect,
+    onAnnotationCommit: commitAnnotationFromScene,
+    onAnnotationErase: eraseFromScene,
+  })
   sceneApi?.setPaused?.(!props.active)
   sceneApi?.setFlySpeed?.(fly.flySpeedIndex())   // 新场景补推当前飞行速率档（重建不丢档）
   pushLabelPrefs();   // 新场景默认吃共享偏好（含"隐藏全部 UI"的当前状态）
+  pushAnnotationProjection()
+  pushAnnotationInteraction()
+  pushAnnotationVisibility()
   return true
 }
 
@@ -633,7 +760,10 @@ watch(
     const activeChanged = previous.length >= 3 && previous[2] !== active
     if (activeChanged) {
       sceneApi?.setPaused?.(!active)
-      if (!active) unlockOrientation()
+      if (!active) {
+        closeAnnotation()
+        unlockOrientation()
+      }
     }
   },
   { flush: 'post' },
@@ -669,7 +799,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
       <div class="pb-stage" data-testid="replay3d-stage">
         <div class="stage-square">
           <div ref="stage" class="scene"></div>
-          <PlaybackVehicleLabels3D :gun-marks="gunMarks" ref="labelOverlay" :label-prefs="labelPrefs" :hp-prefs="hpPrefs" :marker-prefs="markerPrefs" :selected-eid="selectedEid" :hidden="uiHidden || !store.hasData" @select="handleSceneSelect" />
+          <PlaybackVehicleLabels3D :gun-marks="gunMarks" ref="labelOverlay" :label-prefs="labelPrefs" :hp-prefs="hpPrefs" :marker-prefs="markerPrefs" :selected-eid="selectedEid" :hidden="uiHidden || !store.hasData" :interactive="!annotationTool" @select="handleSceneSelect" />
           <div v-if="showFps" class="pb-fps" :class="{ 'pb-fps-low': fpsJanky }" data-testid="replay3d-fps" aria-hidden="true">{{ fpsText }}</div>
         </div>
       </div>
@@ -743,6 +873,37 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
           <component :is="controlsCollapsed ? ChevronUp : ChevronDown" :size="18" aria-hidden="true" />
         </button>
         <div v-show="!controlsCollapsed" :id="controlsContentId" class="controls-content">
+          <!-- Drawing 面板在传输控件之上，占用 camera/GLB 行的同一份高度预算；不遮 play/timeline。 -->
+          <div v-if="annotationOpen" class="replay3d-annotations" data-test="replay3d-annotations">
+            <AnnotationToolbar
+              :open="annotationOpen"
+              compact
+              :active-tool="annotationTool"
+              :annot-colors="ANNOT_COLORS"
+              :annot-color="annotationColor"
+              :annot-visible="annotationsVisible"
+              :annot-width-slider="annotationWidthSlider"
+              :annot-width-min="ANNOT_WIDTH_MIN"
+              :annot-width-max="ANNOT_WIDTH_MAX"
+              :allowed-tools="['pen', 'eraser']"
+              :eraser-radius-slider="annotationEraserRadius"
+              :eraser-radius-min="ANNOT_ERASER_RADIUS_MIN"
+              :eraser-radius-max="ANNOT_ERASER_RADIUS_MAX"
+              :history-index="annotationIndex"
+              :history="annotationHistory"
+              :can-undo="canUndo"
+              :can-redo="canRedo"
+              @toggle-tool="setAnnotationTool"
+              @set-annot-color="annotationColor = $event"
+              @update:annot-width="annotationWidthSlider = $event"
+              @update:eraser-radius="annotationEraserRadius = $event"
+              @undo="undoAnnotation"
+              @redo="redoAnnotation"
+              @clear-annotations="clearAnnotations"
+              @toggle-annotations="toggleAnnotationsVisible"
+              @close="closeAnnotation"
+            />
+          </div>
           <!-- 与 2D 回放同一套传输控件（时间轴 / 倍速 / mm:ss 一致） -->
           <PlaybackTransport
             :fullscreen-supported="fullscreenSupported"
@@ -768,8 +929,21 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
           >
           </PlaybackTransport>
           <!-- 高频查看动作直接陈列（2026-10-05 需求：从 Display 菜单移出）：镜头挡位 + GLB 车模。
-               紧凑控制条放不下第二行，§5 也不允许它压进场景中心，此时进 Display 面。 -->
-          <ReplayCameraTools v-if="!compactBar" v-bind="cameraTools" @update:cam="chooseCamera($event)" @update:glb="sceneApi.setGlb($event)" />
+               紧凑控制条放不下第二行，§5 也不允许它压进场景中心，此时进 Display 面。
+               drawing 打开时让位给 AnnotationToolbar（同一行高度预算），关闭后恢复。
+               Drawing 是 3D 自己的工具，不是 shared transport 的第 7 个 primary action。 -->
+          <ReplayCameraTools v-if="!compactBar && !annotationOpen" v-bind="cameraTools" @update:cam="chooseCamera($event)" @update:glb="sceneApi.setGlb($event)">
+            <button
+              type="button" class="tool-btn drawing-entry"
+              data-testid="replay3d-drawing-entry"
+              data-tour="playback-annotation-entry"
+              :aria-label="t('recon.map.playback.annot.mode')"
+              :title="t('recon.map.playback.annot.mode')"
+              @click="openAnnotation()"
+            >
+              <PencilRuler :size="16" aria-hidden="true" /> {{ t('recon.map.playback.annot.mode') }}
+            </button>
+          </ReplayCameraTools>
         </div>
       </div>
 
@@ -777,7 +951,18 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         <!-- 查看 / 显示开关都在这里（同一份 store.cam / uiPrefs / labelPrefs / hpPrefs / store.glbOn，
              没有第二套状态）：高频动作之外的设置不该永久占着战场高度。
              场景上不放常驻开关（design-language §5），名册与防遮都只在这里。 -->
-          <ReplayCameraTools v-if="compactBar" v-bind="cameraTools" @update:cam="chooseCamera($event)" @update:glb="sceneApi.setGlb($event)" />
+          <ReplayCameraTools v-if="compactBar" v-bind="cameraTools" @update:cam="chooseCamera($event)" @update:glb="sceneApi.setGlb($event)">
+            <button
+              type="button" class="tool-btn drawing-entry"
+              data-testid="replay3d-drawing-entry"
+              data-tour="playback-annotation-entry"
+              :aria-label="t('recon.map.playback.annot.mode')"
+              :title="t('recon.map.playback.annot.mode')"
+              @click="openAnnotation()"
+            >
+              <PencilRuler :size="16" aria-hidden="true" /> {{ t('recon.map.playback.annot.mode') }}
+            </button>
+          </ReplayCameraTools>
           <p class="dp-title">{{ t('agentReplay.display_battlefield') }}</p>
         <label class="toggle" :title="store.treadAllowed ? '' : t('agentReplay.tread_gate_hint')">
           <input type="checkbox" data-testid="disp-tread" :checked="store.treadOn" :disabled="!store.treadAllowed" @change="sceneApi.setTreadMarks($event.target.checked)"> {{ t('agentReplay.tread_marks') }}
@@ -1067,6 +1252,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
   display: flex; flex-direction: column; gap: var(--space-2);
 }
 .controls-content { display: flex; flex-direction: column; gap: var(--space-1); }
+.replay3d-annotations { min-inline-size: 0; }
 .controls-toggle { margin-inline-start: auto; min-inline-size: var(--hit-min-comfortable); min-block-size: var(--hit-min-comfortable); }
 .pb-root.playback-workspace > .controls.controls-collapsed {
   inline-size: fit-content;

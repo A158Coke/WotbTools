@@ -19,6 +19,7 @@ import {
   rectFromCorners,
   redo,
   screenToSemantic,
+  semanticWidthFromSlider,
   screenToSvg,
   svgToScreen,
   undo
@@ -143,21 +144,36 @@ describe('geometry normalization', () => {
   })
 })
 
-describe('applyEraser (point-erase)', () => {
-  const pen = (points) => ({ type: 'pen', color: '#fff', width: 3, points })
-
-  it('removes pen points within radius and splits into segments', () => {
-    const points = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0 }, { x: 30, y: 0 }, { x: 40, y: 0 }]
-    const result = applyEraser([pen(points)], [{ x: 15, y: 0 }], 6) // 半径 6 覆盖 (10,0)/(20,0)
-    expect(result).toHaveLength(1) // 只剩 (30,0)-(40,0) 段；(0,0) 单点段被丢弃
-    expect(result[0].points).toEqual([{ x: 30, y: 0 }, { x: 40, y: 0 }])
+describe('semanticWidthFromSlider', () => {
+  it('uses map coordinate span / logical frame, not camera projection', () => {
+    expect(semanticWidthFromSlider(3, { semanticSpan: 600, logicalSpan: 768 })).toBeCloseTo(2.34375, 9)
+    expect(semanticWidthFromSlider(3, { semanticSpan: 600, logicalSpan: 600 })).toBe(3)
   })
 
-  it('removes an endpoint locally', () => {
+  it('fails closed for invalid slider/span without NaN', () => {
+    expect(semanticWidthFromSlider(0, { semanticSpan: 600, logicalSpan: 768 })).toBe(0)
+    expect(semanticWidthFromSlider(NaN, { semanticSpan: 600, logicalSpan: 768 })).toBe(0)
+    expect(semanticWidthFromSlider(3, { semanticSpan: 0, logicalSpan: 768 })).toBe(3)
+    expect(semanticWidthFromSlider(3, { semanticSpan: 600, logicalSpan: NaN })).toBe(3)
+  })
+})
+
+describe('applyEraser (semantic capsule)', () => {
+  const pen = (points) => ({ type: 'pen', color: '#fff', width: 3, points })
+
+  it('clips a stroke at capsule boundaries and splits into sub-segments', () => {
+    const points = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0 }, { x: 30, y: 0 }, { x: 40, y: 0 }]
+    const result = applyEraser([pen(points)], [{ x: 15, y: 0 }], 6) // 覆盖 [9,21]
+    expect(result).toHaveLength(2)
+    expect(result[0].points).toEqual([{ x: 0, y: 0 }, { x: 9, y: 0 }])
+    expect(result[1].points).toEqual([{ x: 21, y: 0 }, { x: 30, y: 0 }, { x: 40, y: 0 }])
+  })
+
+  it('clips an endpoint at the capsule boundary, preserving the rest', () => {
     const points = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0 }]
     const result = applyEraser([pen(points)], [{ x: 2, y: 0 }], 4)
     expect(result).toHaveLength(1)
-    expect(result[0].points).toEqual([{ x: 10, y: 0 }, { x: 20, y: 0 }])
+    expect(result[0].points).toEqual([{ x: 6, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0 }])
   })
 
   it('erases whole pen when nothing remains with 2+ points', () => {
@@ -194,6 +210,69 @@ describe('applyEraser (point-erase)', () => {
   it('returns the same array when the eraser misses everything (no-op)', () => {
     const anns = [pen([{ x: 0, y: 0 }, { x: 10, y: 0 }]), { type: 'circle', color: '#fff', width: 2, cx: 0, cy: 0, r: 10 }]
     expect(applyEraser(anns, [{ x: 500, y: 500 }], 4)).toBe(anns)
+  })
+
+  it('erases the middle of a sparse 10m segment that point-distance would miss', () => {
+    const sparse = pen([{ x: 0, y: 0 }, { x: 10, y: 0 }])
+    const result = applyEraser([sparse], [{ x: 5, y: 0 }], 1)
+    expect(result).toHaveLength(2)
+    expect(result[0].points).toEqual([{ x: 0, y: 0 }, { x: 4, y: 0 }])
+    expect(result[1].points).toEqual([{ x: 6, y: 0 }, { x: 10, y: 0 }])
+  })
+
+  it('treats a long eraser segment as a capsule, not as sparse points', () => {
+    const result = applyEraser([pen([{ x: 0, y: 0 }, { x: 10, y: 0 }])], [{ x: 5, y: -50 }, { x: 5, y: 50 }], 1)
+    expect(result).toHaveLength(2)
+    expect(result[0].points).toEqual([{ x: 0, y: 0 }, { x: 4, y: 0 }])
+    expect(result[1].points).toEqual([{ x: 6, y: 0 }, { x: 10, y: 0 }])
+  })
+
+  it('accepts a single-point eraser path', () => {
+    const result = applyEraser([pen([{ x: 0, y: 0 }, { x: 10, y: 0 }])], [{ x: 5, y: 0 }], 2)
+    expect(result).toHaveLength(2)
+    expect(result[0].points[1].x).toBeCloseTo(3, 9)
+    expect(result[1].points[0].x).toBeCloseTo(7, 9)
+  })
+
+  it('erases inside the start cap even when the rectangle body projection misses', () => {
+    const stroke = pen([{ x: -1, y: -1 }, { x: -1, y: 1 }])
+    expect(applyEraser([stroke], [{ x: 0, y: 0 }, { x: 10, y: 0 }], 2)).toEqual([])
+  })
+
+  it('erases inside the end cap even when the rectangle body projection misses', () => {
+    const stroke = pen([{ x: 11, y: -1 }, { x: 11, y: 1 }])
+    expect(applyEraser([stroke], [{ x: 0, y: 0 }, { x: 10, y: 0 }], 2)).toEqual([])
+  })
+
+  it('capsule endpoint caps are direction-symmetric', () => {
+    const stroke = pen([{ x: -1, y: -1 }, { x: -1, y: 1 }])
+    expect(applyEraser([stroke], [{ x: 10, y: 0 }, { x: 0, y: 0 }], 2)).toEqual([])
+  })
+
+  it('leaves the stroke untouched outside caps and body', () => {
+    const stroke = pen([{ x: 5, y: 10 }, { x: 6, y: 10 }])
+    const anns = [stroke]
+    expect(applyEraser(anns, [{ x: 0, y: 0 }, { x: 10, y: 0 }], 2)).toBe(anns)
+  })
+
+  it('clips only the cap-covered prefix of a stroke', () => {
+    const stroke = pen([{ x: -3, y: 0 }, { x: 0, y: 0 }])
+    const result = applyEraser([stroke], [{ x: 0, y: 0 }, { x: 10, y: 0 }], 2)
+    expect(result).toHaveLength(1)
+    expect(result[0].points).toEqual([{ x: -3, y: 0 }, { x: -2, y: 0 }])
+  })
+
+  it('undo restores the erased geometry and redo erases it again', () => {
+    const original = pen([{ x: 0, y: 0 }, { x: 10, y: 0 }])
+    let state = commit([[]], 0, [original])
+    const erased = applyEraser(state.history[state.index], [{ x: 5, y: 0 }], 1)
+    state = commit(state.history, state.index, erased)
+    expect(state.history[state.index]).toHaveLength(2)
+    state = undo(state.history, state.index)
+    expect(state.history[state.index]).toHaveLength(1)
+    expect(state.history[state.index][0]).toBe(original)
+    state = redo(state.history, state.index)
+    expect(state.history[state.index]).toHaveLength(2)
   })
 })
 
