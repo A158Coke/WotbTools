@@ -177,6 +177,20 @@ describe('2D 战局回放 canonical 语义 ↔ Java golden', () => {
         expect(validateBattlePlaybackDataset(JSON.parse(JSON.stringify(l))).diagnostics).toEqual([])
       })
 
+      it('定时消耗品 lifecycle 携带上游派生的 duration/endsAt（v0.4.18 pin）', () => {
+        // HUD 徽标只消费 ACTIVATED 且 duration>0 的条目：pin 断链或字段改名会让 2D/3D
+        // 静默失去全部徽标，而其余 golden 字段仍然全绿——在这里显式钉住上游派生链。
+        const observed = l.vehicles.flatMap((v) => v.consumableTransitions)
+          .filter((t) => !t.invalidation && t.state === 'ACTIVATED'
+            && t.durationSec !== null && t.durationSec > 0)
+        expect(observed.length, 'ACTIVATED 且 duration>0 的定时消耗品条数').toBeGreaterThan(0)
+        for (const t of observed) {
+          expect(t.endsAt, JSON.stringify(t)).not.toBeNull()
+          expect(t.endsAt!).toBeGreaterThanOrEqual(t.timeSec)
+          expect(t.everActivated, JSON.stringify(t)).toBe(true)
+        }
+      })
+
       it('身份 / 元数据 / 名册 / capability / limitations 逐字段一致', () => {
         for (const k of ['durationSec', 'mapCode', 'friendlyTeam', 'recorderAccountId', 'arenaBonusType',
           'assaultObjectivePresent', 'capability', 'limitations'] as const) {
