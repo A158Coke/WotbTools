@@ -1568,7 +1568,7 @@ describe('Free Camera terrain floor', () => {
     source.loadPlaybackData.mockResolvedValue(minimalData())
     const { api, store } = createScene()
     await api.loadData({ kind: 'local', file: new File(['late-terrain'], 'late-terrain.wotbreplay') })
-    expect(window.__camera.position.y).toBeGreaterThanOrEqual(400.5)
+    expect(store.cam).toBe('top')   // 默认俯视（地形发布后由 setCam('top') 再做净空）
     const cam = window.__camera
     const controls = window.__controls
     const tacticalHeight = 255 // minimalData 的 WORLD_CENTER.ext = 150
@@ -1675,7 +1675,7 @@ describe('scene vehicle selection intent', () => {
     expect(onVehicleSelect).toHaveBeenCalledOnce()
     expect(onVehicleSelect.mock.calls[0][0]).toBe(11)
     expect(onVehicleSelect.mock.calls[0][1]?.clientX).toBe(10)
-    expect(store.cam).toBe('free')
+    expect(store.cam).toBe('top')
     expect(window.__camera.position.equals(beforeCamera)).toBe(true)
     canvas0.dispatchEvent(new MouseEvent('pointerdown', { button: 2 }))
     canvas0.dispatchEvent(new MouseEvent('pointerup', { button: 2 }))

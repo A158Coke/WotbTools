@@ -163,7 +163,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let sceneClock = null, canonicalClock = null;
   // Derived identity index only; ReplaySession still owns every canonical life fact.
   let lifeTracks = null, lifeTracksByAccount = new Map();
-  let CAM = 'free', FOLLOW_EID = 0;
+  let CAM = 'top', FOLLOW_EID = 0;
   let shotPtr = 0;   //（killPtr 随击杀 feed 出仓 playback/hudFeed.js）
   const tracers = [];
   const pendingMuzzles = [];   // 本 tick 开火、待炮管姿态摆完再定位的炮口特效（见 flushMuzzles）
@@ -3848,6 +3848,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       currentMapKey = resolvedKey;
     }
     buildWorld();
+    // 默认视角：俯视（OrbitControls 以地图中心为 target）；用户切到 Follow/Free 后
+    // 同一会话内保持其选择，新会话沿用当前 CAM。
+    if (CAM === 'top') setCam('top');
     // 进入场景前等待运行所需全部资产（评审要求：地图/地形/分层地表/场景 GLB 按
     // 画质档全部就绪后才进场，不再先进场后异步补图）。各段内部已 try/catch——
     // 资产缺失按档位语义降级（回退网格/2D/烘焙底图），等待不因单项缺失而悬挂。

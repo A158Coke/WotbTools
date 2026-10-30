@@ -42,7 +42,7 @@ export function createPlaybackStore() {
     duration: 0,
     seekFrac: 0,
     seeking: false, // 用户拖动进度条期间场景不回写
-    cam: 'free',
+    cam: 'top',
     // 实时帧率（scene/frameMeter.js 每 500ms 写一次，只统计真正渲染的帧；3D 角标只读）
     fps: 0,
     frameMs: 0,
