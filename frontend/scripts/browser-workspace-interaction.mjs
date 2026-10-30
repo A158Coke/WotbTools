@@ -1428,7 +1428,10 @@ async function runRosterGeometryScenario(env, scenario) {
   await waitForStableLayout(page)
   // HUD 与击杀流都是 pointer-events: none，网格看不见，必须显式列出；击杀流超出 HUD 盒，单列。
   // 按满 3 条击杀流量：这是 HUD 最高的状态，空击杀流量不出它压没压进中心。
-  const SCENE_OCCLUSION = { primary: '.pb-root .scene', persistent: ['.pb-root .hud', '.pb-root .killfeed'], overlayHud: true, edgeDocked: ['.team-lane', '.killfeed'] }
+  // 贴边例外的适用范围以组件自己派生的 compact-bar 为准，不在门禁里再写一套断点。
+  const compactBar = await page.evaluate(`document.querySelector('.pb-root').classList.contains('compact-bar')`)
+  const EDGE_DOCKED = ['.team-lane', '.killfeed']
+  const SCENE_OCCLUSION = { primary: '.pb-root .scene', persistent: ['.pb-root .hud', '.pb-root .killfeed'], overlayHud: true, edgeDocked: compactBar ? EDGE_DOCKED : [] }
   await page.evaluate(`(() => {
     window.__sceneKillfeed = window.__pbPane.store.killfeed
     window.__pbPane.store.killfeed = [1, 2, 3].map((id) => ({ id, killer: 'Killer_' + id, victim: 'Victim_' + id, kill: true }))
@@ -1476,6 +1479,44 @@ async function runRosterGeometryScenario(env, scenario) {
   if (scenario.layout !== 'portrait') {
     check(failures, hudMutant.failures.some((failure) => failure.includes('.hud') || failure.includes('hud')),
       `负向对照必须失败：pointer-events: none 的 HUD 压进中心却没被发现 ${JSON.stringify(hudMutant.failures)}`)
+  }
+  // 负向对照：贴边例外的作用域。真实改几何后过探针，而不是断言配置值。
+  const occlusionWithCss = async (css, options = SCENE_OCCLUSION) => {
+    await page.evaluate(`(() => {
+      const style = document.createElement('style')
+      style.id = 'occlusion-negative-control'
+      style.textContent = ${JSON.stringify(css)}
+      document.head.append(style)
+    })()`)
+    await waitForStableLayout(page)
+    const measured = await measureOcclusion(page, options)
+    await page.evaluate(`document.getElementById('occlusion-negative-control')?.remove()`)
+    return measured
+  }
+  if (compactBar) {
+    const legal = sceneOcclusion.items.filter((item) => item.edgeDocked && item.centralPct > 0)
+    console.log(`[browser-interaction] ${scenario.name} compact edge-docked ${JSON.stringify(legal.map((i) => [i.label, i.centralPct]))}`)
+    const barMutant = await occlusionWithCss('.pb-root.playback-workspace > .controls { inset-block-end: 22% !important }')
+    check(failures, barMutant.failures.some((failure) => failure.includes('div.controls')),
+      `负向对照必须失败：控制条不享受贴边例外，上移压入中心却没被判 ${JSON.stringify(barMutant.failures)}`)
+    const laneMutant = await occlusionWithCss('.pb-root.playback-workspace .team-lane.side-left { inline-size: 45% !important }')
+    check(failures, laneMutant.failures.some((failure) => failure.includes('replay3d-lane-left')),
+      `负向对照必须失败：车道超过贴边上限却没被判 ${JSON.stringify(laneMutant.failures)}`)
+    const killfeedMutant = await occlusionWithCss('.pb-root .killfeed { inset-inline: -100% auto !important; inline-size: 60vw !important; max-width: none !important; block-size: 40vh !important; max-block-size: none !important }')
+    check(failures, killfeedMutant.failures.some((failure) => failure.includes('replay3d-killfeed')),
+      `负向对照必须失败：击杀流超过贴边上限却没被判 ${JSON.stringify(killfeedMutant.items)}`)
+  } else if (scenario.layout !== 'portrait') {
+    // 宽形态：车道轻微压入中心。这个量在紧凑例外的 15% 以内，严格判定必须红、放宽判定必须绿，
+    // 两边都成立才证明例外确实没有漏到宽形态。
+    const LANE_MUTANT = '.pb-root.playback-workspace .team-lane.side-left { inset-inline-start: 22% !important; inset-block-start: 8% !important }'
+    const strict = await occlusionWithCss(LANE_MUTANT)
+    const lenient = await occlusionWithCss(LANE_MUTANT, { ...SCENE_OCCLUSION, edgeDocked: EDGE_DOCKED })
+    const intrusion = strict.items?.find((item) => item.label === '[replay3d-lane-left]')?.centralPct
+    console.log(`[browser-interaction] ${scenario.name} wide lane mutant central=${intrusion}%`)
+    check(failures, strict.failures.some((failure) => failure.includes('replay3d-lane-left')),
+      `负向对照必须失败：宽形态车道压入中心却没被判 ${JSON.stringify(strict.failures)}`)
+    check(failures, !lenient.failures.some((failure) => failure.includes('replay3d-lane-left')),
+      `对照失效：这个侵入量应落在 15% 以内，否则证明不了例外的作用域 ${JSON.stringify(lenient.failures)}`)
   }
   await page.evaluate('window.__pbPane.store.killfeed = window.__sceneKillfeed')
   await page.evaluate('window.scrollTo(0, 0)')
@@ -3557,6 +3598,19 @@ async function runOnboardingScenario(env, scenario) {
             guideWidth:document.querySelector('[data-testid="onboarding-card"]')?.getBoundingClientRect().width};
         })()`)
         if (!handoff.startInsideOwner || !handoff.startWidth || !handoff.guideWidth) throw new Error(`fullscreen capability handoff trapped the guide ${JSON.stringify(handoff)}`)
+        // 紧凑形态的镜头在 Display 面里：真实点「开始」后教程自动推进，必须自己把面打开，目标才存在
+        // 原地点：先滚到屏幕正中会把按钮送到教程卡片下面，真实用户不会这样滚
+        const startPoint = await page.evaluate(`(() => {
+          const button = document.querySelector('[data-test="replay3d-start"]')
+          const r = button.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2
+          return { x, y, onButton: button.contains(document.elementFromPoint(x, y)) }
+        })()`)
+        check(failures, startPoint.onButton, `3D start must be reachable beside the guide card: ${JSON.stringify(startPoint)}`)
+        await page.tap({ ...startPoint, touch: scenario.touch })
+        await page.waitForValue('document.querySelector("[data-testid=onboarding-card]")?.dataset.anchor', value => value === 'replay3d-camera',
+          { timeout: 60_000, label: 'guide auto-advances to the camera stage' })
+        await page.waitFor(() => !!document.querySelector('.pb-root.compact-bar [data-testid="display-panel"] [data-tour="replay3d-camera"]'),
+          { label: 'compact guide opens Display and the camera anchor exists' })
       }
       await hit('[data-testid="onboarding-next"]')
       await page.waitForValue('new URLSearchParams(location.search).get("view")', value => value === 'agent-shots', { label: 'shots guide destination' })

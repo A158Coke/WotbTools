@@ -25,7 +25,7 @@ export const OCCLUSION_LIMITS = {
   minTouchTargetPx: 44,
   /** 部分裁剪 / 部分覆盖的容差：只放过边框、阴影级别的亚像素误差，超过即不可达。 */
   clipTolerancePx: 2,
-  /** 3D overlay HUD：贴边的名册车道与击杀流占中心保护区的上限（百分比）；其它常驻面不得压入。 */
+  /** 3D 紧凑形态（手机横屏与矮工作台）：贴边的名册车道与击杀流占中心保护区的上限（百分比）。其它形态与其它常驻面不得压入。 */
   maxEdgeDockedCentralPct: 15,
   /** 网格命中的采样间距：小于最小触控目标，任何合规控件都至少落进一个采样点。 */
   gridSpacingPx: 20,
@@ -347,7 +347,7 @@ const reachabilityProbe = () => {
  * @param persistent 只放 `pointer-events: none` 的装饰层：它们不参与命中，网格发现不了
  * @param ignore 属于主内容的元素（如地图上的车辆命中区），网格命中时跳过
  * @param overlayHud game-style overlay HUD（§5 例外）：不适用面积上限，仍判中心保护区
- * @param edgeDocked overlayHud 下的贴边车道：中心侵入按 maxEdgeDockedCentralPct 判
+ * @param edgeDocked overlayHud 下享受中心侵入上限的贴边面。只有紧凑形态才该传，其余形态留空即严格判定
  */
 export async function measureOcclusion(page, { primary, persistent = [], ignore = [], overlayHud = false, edgeDocked = [] }) {
   const input = { primary, persistent, ignore, overlayHud, edgeDocked, interactive: INTERACTIVE_SELECTOR, limits: OCCLUSION_LIMITS }

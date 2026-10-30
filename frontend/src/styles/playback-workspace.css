@@ -225,7 +225,10 @@
    手机横屏（.phone-form）适度缩小浮层：lane 10rem 起 / HUD 收口相应收窄——740×360 上
    顶中 HUD（含时间与比分）此前盖住名册下排行的点击区（740 tap diagnostic 实测
    hitAtRow=SPAN.pb-time），缩组件后两者互不侵入。 */
-.pb-root.playback-workspace.roster-side:not(.portrait-flow) { --pb-overlay-lane-w: clamp(11rem, 16vw, 15rem); }
+.pb-root.playback-workspace.roster-side:not(.portrait-flow) {
+  /* 上限按工作台算（侧栏占掉的宽度 vw 看不见）：宽形态车道不得压入场景中心 60% 盒。 */
+  --pb-overlay-lane-w: min(clamp(11rem, 16vw, 15rem), calc(20% - var(--space-2)));
+}
 .pb-root.playback-workspace.roster-side:not(.portrait-flow) .team-lane.side-left,
 .pb-root.playback-workspace.roster-side:not(.portrait-flow) .team-lane.side-right {
   position: absolute;
