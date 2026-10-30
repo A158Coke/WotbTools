@@ -107,6 +107,66 @@ guard_bridge_covered() {
   return 1
 }
 
+# classify_candidate_freshness <staged_version> <main_gradle_properties_path>
+#
+# 自动发布只回答一个问题：main 上是否已经存在一个**更新的 Android release candidate**？
+#
+# Android release candidate 由 Version-as-Code 定义（android/gradle.properties:wotbVersion），
+# 不是「仓库 main SHA 是否等于 staged SHA」。只改 docs / 后端 / 基础设施的 main 提交不改版本号，
+# 因此不产生新的 Android candidate，也不能让唯一已 staged 的候选失去自动发布权；反过来，一旦
+# main 的 committed 版本是更高的 X.Y.Z，更新的候选就存在，旧候选的自动发布必须让位。
+#
+# Sets CANDIDATE_STATE:
+#   candidate_latest      没有更新的 Android candidate -> 自动发布继续走既有 publish 守卫
+#   candidate_superseded  main committed version 更高    -> 自动发布安全 skip
+# Also sets MAIN_CANDIDATE_VERSION (main 的 committed wotbVersion)。
+# 输入不可读 / 不是 X.Y.Z 时返回非零（fail closed，绝不猜）。
+classify_candidate_freshness() {
+  local staged_version="$1" main_properties="$2"
+  CANDIDATE_STATE=""
+  MAIN_CANDIDATE_VERSION=""
+
+  if [ ! -f "$main_properties" ]; then
+    guard_error "candidate freshness needs main android/gradle.properties (missing: $main_properties)"
+    return 1
+  fi
+
+  local helper_dir output
+  helper_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  # 版本号公式与 X.Y.Z 校验只有 android_contract.py 一份实现，判定逻辑不重复它。
+  if ! output="$(python3 - "$staged_version" "$main_properties" "$helper_dir" <<'PY'
+import sys
+from pathlib import Path
+
+sys.path.insert(0, sys.argv[3])
+from android_contract import parse_version, properties, version_code
+
+staged_version = sys.argv[1]
+main_properties = properties(Path(sys.argv[2]).read_text(encoding="utf-8"))
+main_version = main_properties.get("wotbVersion", "")
+if not main_version:
+    raise SystemExit("main android/gradle.properties has no wotbVersion")
+staged_code = version_code(parse_version(staged_version))
+main_code = version_code(parse_version(main_version))
+print(f"mainVersion={main_version}")
+print(f"stagedVersionCode={staged_code}")
+print(f"mainVersionCode={main_code}")
+print("state=" + ("candidate_superseded" if main_code > staged_code else "candidate_latest"))
+PY
+  )"; then
+    guard_error "candidate freshness could not be resolved (staged='$staged_version', main properties='$main_properties')"
+    return 1
+  fi
+
+  MAIN_CANDIDATE_VERSION="$(printf '%s\n' "$output" | sed -n 's/^mainVersion=//p' | head -n1)"
+  CANDIDATE_STATE="$(printf '%s\n' "$output" | sed -n 's/^state=//p' | head -n1)"
+  case "$CANDIDATE_STATE" in
+    candidate_latest|candidate_superseded) return 0 ;;
+  esac
+  guard_error "candidate freshness returned no usable state"
+  return 1
+}
+
 # classify_prod <path_to_prod_version.json> <version_code> <version_name> <apk_name> <min_supported> [bridge_version] [source_sha]
 # Sets PROD_STATE:
 #   prod_older            prod latestVersionCode < new    -> proceed to publish

@@ -1,16 +1,22 @@
 name: Android Auto Publish
 
-# Normal release path:
-#   main version bump -> Release / Android stage -> stage success -> this workflow
-#   -> dispatch Release / Android(mode=publish, version=X).
+# 正常发布路径的薄续跑入口：
+#   main version bump -> Release / Android stage -> stage 成功 -> 本 workflow
+#   -> dispatch Release / Android(mode=publish, version=X, auto_publish=true)。
 #
-# Automatic publication is latest-main-wins. If main advances after a candidate
-# stages, the older candidate remains immutable and manually recoverable, but its
-# auto-publish is skipped so it cannot displace a newer pending stage.
+# 本 workflow **不**决定候选是否可以发布。调度与安全不变量由 android-release.yml 自己保证：
+#   - 它使用 android-release concurrency group + queue: max，因此自动 publish 请求不会取消、
+#     替换或挤掉任何更新的 pending stage；
+#   - publish 开始执行时由 publish_gate 重新判定「main 上是否已有更新的 Android candidate」，
+#     判定以 Version-as-Code（android/gradle.properties:wotbVersion）为准，而不是
+#     「repo main SHA 是否等于 staged SHA」。docs/backend/infra-only 的 main 前进不改版本号，
+#     不会让唯一已 staged 的候选失去自动发布权。
+#   - 被更新的 Android candidate 取代时，publish_gate 安全 skip（不写 version.json），
+#     更新候选自己的 stage 成功后拥有自动发布权。
 #
-# The existing publish job remains the only writer of production version.json and
-# keeps all staged-identity / runtime / CORS / minSupported guards. Manual publish
-# remains available as the recovery path for interrupted or failed automatic runs.
+# 现有 publish job 仍然是 production version.json 的唯一写入者，并保留全部 staged-identity /
+# runtime / CORS / minSupported 守卫。手动 workflow_dispatch(mode=publish, version=X) 仍是
+# 自动 dispatch 失败或需要幂等重跑时的 recovery 入口。
 on:
   workflow_run:
     workflows:
@@ -22,9 +28,8 @@ permissions:
   contents: read
   actions: write
 
-# Serialize freshness decisions. Unlike the release workflow's production lock,
-# this queue never mutates release state itself; it only decides whether the
-# completed stage is still the latest main candidate before dispatching publish.
+# 串行化这个薄入口本身：每个完成的 stage run 对应一次 publish 请求；dispatch 很轻，
+# 真正的候选新鲜度判定在 android-release 的 publish_gate 里。
 concurrency:
   group: android-auto-publish
   queue: max
@@ -32,8 +37,8 @@ concurrency:
 
 jobs:
   publish:
-    # Only continue the normal main-push stage path. The publish run itself is
-    # workflow_dispatch, so its completion cannot recurse into another publish.
+    # 只续跑正常 main-push stage。publish run 本身是 workflow_dispatch，因此它的完成
+    # 不会递归触发这里（event != push）。
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
@@ -73,7 +78,7 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Auto-publish candidate: $VERSION"
 
-      - name: Dispatch existing guarded publish phase if candidate is still latest main
+      - name: Request the guarded publish phase
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
@@ -83,41 +88,25 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Check freshness immediately before dispatch. This closes the race where
-          # an older stage A could inject publish(A) into the shared android-release
-          # concurrency group after newer B/C stages have already arrived. Normal
-          # CD only auto-publishes the candidate that is still current main.
-          MAIN_SHA="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
-          DECISION="$(bash scripts/android-release/auto-publish-decision.sh "$STAGED_SHA" "$MAIN_SHA")"
-          if [ "$DECISION" = "skip" ]; then
-            echo "::notice::Skipping stale Android auto-publish: staged=$STAGED_SHA current-main=$MAIN_SHA version=$VERSION. A newer main candidate owns the automatic release path."
-            {
-              echo "# Android auto publish"
-              echo ""
-              echo "Stage run: $STAGE_RUN_ID"
-              echo "Staged source: $STAGED_SHA"
-              echo "Current main: $MAIN_SHA"
-              echo "Version: $VERSION"
-              echo "Action: skipped (main advanced; latest-main-wins)"
-              echo ""
-              echo "The immutable staged version remains available through manual workflow_dispatch(mode=publish, version=X) recovery."
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-
+          # 这里不做 publish / skip 决策：dispatch 不是原子的（读取候选与入队之间 main 可能前进），
+          # 真正的安全不变量必须由目标 release 调度层保证。android-release 的 queue: max 保证这次
+          # dispatch 不会替换更新的 pending stage；publish_gate 在 publish 开始执行时再按
+          # Version-as-Code 判定该候选是否已被更新候选取代，被取代则安全 skip。
           gh workflow run android-release.yml \
             --repo "$GITHUB_REPOSITORY" \
             --ref main \
             -f mode=publish \
-            -f version="$VERSION"
+            -f version="$VERSION" \
+            -f auto_publish=true
           {
             echo "# Android auto publish"
             echo ""
             echo "Stage run: $STAGE_RUN_ID"
             echo "Staged source: $STAGED_SHA"
-            echo "Current main: $MAIN_SHA"
             echo "Version: $VERSION"
-            echo "Action: dispatched Release / Android mode=publish"
+            echo "Action: requested Release / Android mode=publish (auto_publish=true)"
             echo ""
-            echo "Manual workflow_dispatch(mode=publish, version=X) remains the recovery path."
+            echo "publish_gate decides at execution time whether this candidate is still the latest"
+            echo "Android candidate; the existing publish guards are unchanged. Manual"
+            echo "workflow_dispatch(mode=publish, version=X) remains the recovery path."
           } >> "$GITHUB_STEP_SUMMARY"

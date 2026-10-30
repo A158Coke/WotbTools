@@ -4,7 +4,7 @@
 
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
-publish 阶段的候选版本改由操作者显式指定（见下节）。
+publish 阶段的候选版本由显式 `version` 输入决定：自动续跑传入 stage 解析出的同一版本，手动 recovery 由操作者显式给出（见下节）。
 当前源码版本：**3.17.12 / 3017012**（`android/gradle.properties`）。
 `android-v3.17.9` / `android-v3.17.10` 已有 immutable release identity，
 **不得 publish / 不得复用**；版本化记录见 [3.17.9](releases/3.17.9.md)、
@@ -15,7 +15,7 @@ publish 阶段的候选版本改由操作者显式指定（见下节）。
 3.17.2 将新 APK 的 Native 3D 资产 upstream 与 Web 统一到 Alibaba origin；本机 `/agent-assets` 路由、Native Bridge v3、ETag 磁盘缓存与 stale-cache fallback 不变。旧 APK 仍按已编译 origin 访问 COS，COS 暂留作旧客户端与回滚，详见 [3.17.2](releases/3.17.2.md)。
 3.17.3 修复固定战斗室（GLB 无 `turret_NN` 的 44 台 AT-SPG）装甲查看器拖曳炮管失效；scene-runtime 改动按 **patch** 递增，说明见 [3.17.3](releases/3.17.3.md)。不改变 Native Bridge 与最低支持门槛。
 Native Bridge 保持 v3；最低支持门槛保持 **3015003**，不回退也不额外抬高。后端新增接口必须先就绪，再切换网页或发布 APK。
-版本声明不代表已 stage、Android 真机验收或 publish。
+版本声明不代表已 stage 或已 publish。真机测试不再位于 publish 之前，详见「Rollout 与验证」。
 保留 main 已合并的 3.12.0 联赛回放开赛时刻/显示与录入时区/小组号选填/三语术语修正与 71 条已核实回放、
 3.11.2 推荐内容管理权限 cutover、3.11.1 3D 回放可见性/地图资产加载修复、3.10.1 全等级坦克百科资料修复
 （基础资料覆盖 tiers 1–10，装备/补给建模仍限 7–10），以及 3.10.0 共享选车菜单、搜索别名、动能弹外部模块
@@ -37,11 +37,11 @@ Native Bridge 仍为 v3，最低支持版本门槛保持 `3000000`，不为这�
 `android-v3.13.1` tag 已指向 `1f00bc66e75890cbe8bc116307cebffcb5ee403f`（3.13.1 已取得 immutable release identity），不能复用来承载新的 bundled frontend：
 PR #688 修复教程导出/焦点与 Escape、名人堂上传弹层键盘、AI 复盘原始 Markdown 残留与战队汇总三语表头，随 APK 打包后按 **patch** 递增为 **3.13.2 / 3013002**，说明见 [3.13.2](releases/3.13.2.md)。
 本次不改 Native Bridge（保持 v3）、不改 `contracts/android-native-bridge.json`、不抬 `ANDROID_MIN_SUPPORTED_VERSION_CODE`，只声明新的候选版本。
-3.13.2 不涉及后端切换，仍按 stage、真机验收、publish 发布，本次不修改生产变量。
+3.13.2 不涉及后端切换，本次不修改生产变量。
 `android-v3.13.2` tag 已指向 `7749b77ada9770785f45fcbe206a30816e7af20a`（3.13.2 已取得 immutable release identity），不能复用来承载新的 bundled frontend：
 PR #670 修复教程内登录 OIDC 回跳后丢失教程位置，随 APK 打包后按 **patch** 递增为 **3.13.3 / 3013003**，说明见 [3.13.3](releases/3.13.3.md)。
 本次不改 Native Bridge（保持 v3）、不改 `contracts/android-native-bridge.json`、不抬 `ANDROID_MIN_SUPPORTED_VERSION_CODE`，只声明新的候选版本。
-3.13.3 不涉及后端切换，仍按 stage、真机验收、publish 发布，本次不修改生产变量。
+3.13.3 不涉及后端切换，本次不修改生产变量。
 `android-v3.13.3` tag 已指向 `b333c8c8b21a7a500ae33db99fa80fefd6fff1fa`（3.13.3 已取得 immutable release identity），不能复用来承载新的 bundled frontend：
 PR #685 重做首页 IA（纯展示页、Android 条件渲染、reduced-motion、Intl 数字与 `/api/hof` 合同消费），随 APK 打包后按 **minor** 递增为 **3.14.0 / 3014000**，说明见 [3.14.0](releases/3.14.0.md)。
 3.14.0 已取得 immutable release identity 且已被 3.14.1 取代；不再 stage / publish 3.14.0（3014000 < 当前门槛 3014002）。
@@ -56,7 +56,7 @@ PR #701 把装甲查看器结果卡改为概率链驱动（AP/APCR/HEAT 与命�
 本次不改 Native Bridge（保持 v3）、不改 `contracts/android-native-bridge.json`；不抬 `ANDROID_MIN_SUPPORTED_VERSION_CODE`（3.14.2 的门槛继续生效），只声明新的候选版本。
 3.15.0 成为当前候选；3.14.2 若尚未 publish，由 3.15.0 取代，不再 stage/publish 旧候选。
 这不是线上已发布版本的证明。线上版本以 production `version.json` 回读为准，
-实际发布仍须按下面的 stage、真机验证与 publish 流程完成。
+实际发布仍须按下面的自动 stage → 自动 guarded publish 流程完成。
 `contracts/android-native-bridge.json` 是协议 SSOT；Gradle、Native 与前端声明必须一致。
 
 Native Bridge 为 **v3**（3.0.0 起）：可信本地 origin 是 LocalRuntimeServer 的固定 loopback
@@ -88,7 +88,7 @@ PR B 的初始候选版本是 **2.0.1 / 2000001**。2026-10-03 的只读审计�
 
 - **归零**：minor 递增时 patch 归 0；major 递增时 minor、patch 都归 0。
 - **取最高**：一个 PR 同时含多个等级的改动，按最高等级递增。两次 publish 之间合并的多个 PR 各自在当时的 committed 版本上按自己的等级递增，最终发布版本自然体现其中最高的等级。
-- **版本号在候选取得 immutable release identity 时才被消耗，不是每个 review commit 都消耗**：`wotbVersion` 固定的是**发布身份**，不是提交序号。同一个尚未形成 immutable identity 的 PR / release candidate，在 code review、测试或真机验收过程中发生的修复**不因此自动递增 patch**，保持在**原计划版本**。
+- **版本号在候选取得 immutable release identity 时才被消耗，不是每个 review commit 都消耗**：`wotbVersion` 固定的是**发布身份**，不是提交序号。同一个尚未形成 immutable identity 的 PR / release candidate，在 code review、CI 或 pre-merge 测试过程中发生的修复**不因此自动递增 patch**，保持在**原计划版本**。
   一旦下列**任一**条件成立，候选版本即被锁定（version identity consumed），此后任何会改变该 staged Android candidate / APK identity 的源码或 release input 修改，都必须使用**更高的** `wotbVersion`：
   ① 已创建 immutable release tag（`android-vX.Y.Z`）；② staged APK 已在**任意一台** immutable origin（TX1 **或** TX2 的 no-clobber origin 路径）成功落位并通过 SHA-256 核验——**不需要等两台都完成**；③ 已写出 staging evidence；④ production `version.json` 已 publish。
   **注意：不是只有 publish 之后才锁版本**——stage 阶段的 tag / 任一台 origin 上的 APK / staging evidence 同样是 immutable identity。只有这些条件**全部尚未成立**时，同一 release PR 的 pre-release fix 才保留原版本——PR 合并前（还没有 stage）通常不存在任何 immutable identity，review 修复因此不需要 bump。
@@ -127,23 +127,42 @@ PR B 的初始候选版本是 **2.0.1 / 2000001**。2026-10-03 的只读审计�
   - 候选与线上**同 major** ⇒ 默认不得改动门槛（minor/patch 不强制）；用户明确指令的例外见上（3.14.1 / 3014001；3.14.2 / 3014002；3.15.3 / 3015003）。
   - 包含 Native Bridge wire breaking 时，门槛还须满足 publish 现有的 bridge / cutover 守卫（以守卫为准）。
   - 现有 publish 守卫在 bridge 不变时**不会**从历史推导未发布 major 的门槛要求（只校验门槛 ≤ 候选 versionCode），这一步由操作者按本条执行。也可以选择先 publish 每个 major 再发布后续 minor/patch；在没有更严格的 bridge / cutover 要求时两种做法的门槛结果相同。
-- **major 的发布动作（顺序固定）**：① **先把仓库变量 `ANDROID_MIN_SUPPORTED_VERSION_CODE` 设为 `X×1_000_000`** → ② 合并候选 PR → ③ 合并到 main 后由正式 workflow 自动执行：Android 自动 stage，以及该 PR 一并带来的基础设施改动（如 Caddy）→ ④ 等两者**都**成功 → ⑤ 真机验收 → ⑥ `publish(version=<候选>)`。变量必须在合并/stage **之前**设置——stage preflight 本身就跑 `guard_min_supported` / `guard_local_first_cutover` / `guard_bridge_covered`，floor 没到位会 fail-closed，所以它不只是 publish 的前提。随候选 PR 一起改的基础设施**只能**在合并后由 main-only 的正式 workflow 部署（`caddy.yml` 的手动 dispatch 也只接受 `refs/heads/main` 且做 freshness 校验），不要求、也不允许在合并前部署——不要手工 SSH 改生产、不要从 PR 分支复制文件、不要放宽 workflow 门禁。
+- **major 的发布动作（顺序固定）**：① **先把仓库变量 `ANDROID_MIN_SUPPORTED_VERSION_CODE` 设为 `X×1_000_000`** → ② 合并候选 PR → ③ 合并到 main 后由正式 workflow 自动执行：Android 自动 stage，以及该 PR 一并带来的基础设施改动（如 Caddy）→ ④ 等两者**都**成功 → ⑤ `Android Auto Publish` 自动续跑 guarded publish（显式 `version=<候选>`、`auto_publish=true`）→ ⑥ production `version.json` 回读。真机测试不是这一步的审批门：stage 的技术门与 publish 现有守卫才是发布条件，真机冒烟 / 回归按「Rollout 与验证」在 rollout 之后执行。变量必须在合并/stage **之前**设置——stage preflight 本身就跑 `guard_min_supported` / `guard_local_first_cutover` / `guard_bridge_covered`，floor 没到位会 fail-closed，所以它不只是 publish 的前提。随候选 PR 一起改的基础设施**只能**在合并后由 main-only 的正式 workflow 部署（`caddy.yml` 的手动 dispatch 也只接受 `refs/heads/main` 且做 freshness 校验），不要求、也不允许在合并前部署——不要手工 SSH 改生产、不要从 PR 分支复制文件、不要放宽 workflow 门禁。
 - **发布说明**：继承门槛的 minor/patch 候选，`Minimum supported version` 行写 `raised to X000000 (X.0.0 floor, inherited from unpublished X.0.0)`。
 
 ## 两阶段发布（stage → publish）
 
-`.github/workflows/android-release.yml` 的默认 mode 是 `stage`；`publish` 只能手工续跑。`stage` 的版本权威是当前 checkout 的 `android/gradle.properties`；主路径是 main 合并后自动 stage，手动 dispatch 要求 dispatched SHA == 当前 `origin/main`。`android/gradle.properties` 变更或 `android-v*` tag 也可触发，tag 入口要求 tag 名与 committed `wotbVersion` 一致。
+`.github/workflows/android-release.yml` 的默认 mode 是 `stage`。正常路径是 main 合并后自动 stage，stage 成功后 `android-auto-publish.yml` 自动派发 `mode=publish`（显式 `version` = staged 版本，`auto_publish=true`）；手动 `workflow_dispatch(mode=publish, version=X)` 是 recovery / rerun 入口。`stage` 的版本权威是当前 checkout 的 `android/gradle.properties`；手动 stage dispatch 要求 dispatched SHA == 当前 `origin/main`。`android/gradle.properties` 变更或 `android-v*` tag 也可触发，tag 入口要求 tag 名与 committed `wotbVersion` 一致。
 
 | 阶段 | 行为 |
 |---|---|
 | stage | 校验 source/version/contract 与 **cutover 守卫**（`guard_min_supported` + `guard_local_first_cutover` + `guard_bridge_covered`，因此 major/bridge cutover 的 floor 必须在合并/stage 之前设好）→ 构建完整 Android bundle → 签名 APK → 核验 APK 内容、签名和 SHA → 上传清华副本（distribution replica，可覆盖，不锁定版本）→ **TX1、TX2 依次从副本拉取 seed（逐跳 SHA-256，no-clobber 落位；任意一台落位即消耗版本号）** → 公网回读核验 → immutable APK/tag/evidence；不写 production version.json |
-| publish | `workflow_dispatch(mode=publish, version=X)`：X 的 immutable tag 决定候选 → 核验 tag target 源码、evidence、APK 字节与内嵌 bundle → Keycloak/API/资产就绪探测 → 最后上传 version.json；不重建、不重新签名 APK |
+| publish | 自动续跑（`auto_publish=true`）或手动 recovery（`workflow_dispatch(mode=publish, version=X)`）：X 的 immutable tag 决定候选 → 核验 tag target 源码、evidence、APK 字节与内嵌 bundle → Keycloak/API/资产就绪探测 → 最后上传 version.json；不重建、不重新签名 APK。自动续跑在开始执行时先判定是否已被更新的 Android candidate 取代 |
 
-stage 的 APK 门禁顺序是：APK 内容/签名 → bundled frontend/WASM/Agent pin → SHA-256 → 公网回读。publish 的顺序是：`version` 非空且合法 → tag target 源码 → staging evidence → APK badging/SHA/bundle manifest → 当前 main ancestry/policy → Keycloak/API/资产就绪 → `version.json` 最后写入；任一步失败都不写 `version.json`。
+stage 的 APK 门禁顺序是：APK 内容/签名 → bundled frontend/WASM/Agent pin → SHA-256 → 公网回读。publish 的顺序是：`version` 非空且合法 → （自动续跑先判最新 Android candidate）→ tag target 源码 → staging evidence → APK badging/SHA/bundle manifest → 当前 main ancestry/policy → Keycloak/API/资产就绪 → `version.json` 最后写入；任一步失败都不写 `version.json`。
 
 生产版本较旧时继续，相同版本验证元数据和 SHA 后 no-op，较新则拒绝回滚。Tag 不得 repoint；已有 APK SHA 不同则拒绝覆盖。已有 staging evidence 必须与该次实际 APK 身份逐字段匹配，重跑保留其原始 `stagedAt`，不能用新身份覆盖旧证据。
 
 失败语义：stage 失败不写 production `version.json`；部分成功可能已锁版本（见上文）；publish 在写 `version.json` 前失败时生产版本保持不变，对同一 X 幂等重跑安全；tag/APK/evidence/版本 mismatch 一律 fail closed；production 已是更高版本时拒绝回滚；证据 404 先确认两台 origin 文件，不能用绕过身份校验的方式手写 `version.json`。
+
+### 自动续跑、调度不变量与手动 recovery
+
+正常路径不需要人工 dispatch：
+
+```text
+merge Android version bump
+-> 自动 stage（构建/签名/tag/evidence/分发）
+-> stage 技术门全部成功
+-> Android Auto Publish 自动 dispatch Release / Android(mode=publish, version=X, auto_publish=true)
+-> publish 开始执行时判定：main 上是否已有更新的 Android candidate？
+     no  -> 既有 publish 安全守卫 -> production version.json（最后写入）-> readback
+     yes -> safe skip（不写 version.json，候选保持 immutable）
+```
+
+- **候选新鲜度只看 Version-as-Code**：判定依据是 `android/gradle.properties:wotbVersion`，不是「repo main SHA 是否等于 staged SHA」。只改 docs / 后端 / 基础设施的 main 提交不改变版本号，不产生新的 Android candidate，因此不会让唯一已 staged 的候选失去自动发布权；只有 main 上出现**更高版本**时，旧候选的自动发布才让位给更新候选。自动续跑在 publish 开始执行时重新判定，所以排队期间 main 的变化也会被看到。
+- **调度不变量由 `android-release.yml` 自己保证**：stage 与 publish 共用 `android-release` concurrency group，并设置 `queue: max`。生产 mutation 仍然严格串行（`cancel-in-progress: false`），但 GitHub 默认的单 pending 槽不会再把请求互相挤掉——任一 stage / publish 请求都不会被后到的自动 publish 取消或替换。`android-auto-publish.yml` 只是薄入口，不承担这个不变量。
+- **排队 ≠ 逐个上线**：排队只保证请求不丢失；自动 publish 真正拿到 runner 后才判定一次候选新鲜度，被更新候选取代的旧候选安全 no-op。因此不会把多个历史 Android 版本自动逐个 publish。
+- **手动 recovery**：`workflow_dispatch(mode=publish, version=X)` 保持可用，且不受自动发布的最新候选策略限制——它用于自动 dispatch 失败、publish 因瞬时故障失败后对同一 X 幂等续跑，或操作者明确要发布一个已被更新 main 取代的历史 staged candidate。手动入口仍要通过全部 publish 安全守卫，不能绕过或重建 immutable 身份。
 
 ### 构建身份的确定性（stage 重跑 ⇒ 同一 APK）
 
@@ -189,10 +208,11 @@ stage        → 产生不可变候选 X（tag android-vX + staging evidence X +
 publish(X)   → 以 X 为候选发布；当前 main 可能已经走到 Y（Y > X）
 ```
 
-`workflow_dispatch` 的 `version` 输入是 publish 的**唯一**候选入口：
+publish 的 `version` 输入是候选的**唯一**入口（自动续跑与手动 recovery 传的是同一个 staged 版本）：
 
 - `mode=stage`：`version` 必须留空 / 被显式忽略，版本权威仍是当前 main 的 `android/gradle.properties`；
 - `mode=publish`：`version` **必填**。GitHub 的 input schema 无法表达条件必填，因此 publish job 的第一步就 fail closed（空值或非 `X.Y.Z` 直接失败），绝不从当前 main 推导候选。
+- `auto_publish`：choice 输入，默认 `false`。只有 `Android Auto Publish` 的自动续跑传 `true`；此时 publish 开始前先判定是否已被更新候选取代。手动 recovery 保持默认 `false`，历史 staged candidate 能否发布只由既有安全守卫决定。
 
 由 `version=X` 直接推导 `TAG=android-vX`、`APK=wotbtools-android-vX.apk`、`STAGING=wotbtools-android-vX.staging.json`，再取 tag target 源码（`git archive`）读取 `android/gradle.properties`、`contracts/android-native-bridge.json`、`deploy/agent/source.json`，得到真实的 versionName/versionCode/bridge/Agent pin。工作区的 `android/gradle.properties` **不参与**候选身份。
 
@@ -222,7 +242,7 @@ publish(X)   → 以 X 为候选发布；当前 main 可能已经走到 Y（Y > 
 
 Bundle schema 2 的 `files` 清单列出每个内容文件的路径、大小、SHA-256。校验器对 APK 内完整文件集合逐项核验，同时检查 entry/WASM hash、总大小和数量；工作区里的清单不能代替 APK 内容。stage/publish/debug CI 都复用 `scripts/android-release/android_contract.py bundle`。
 
-发布权威是已 staged APK，不是当前 main HEAD：tag target 必须包含在当前 main 历史里，但 main 可以在真机验证期间继续前进（`stage X` 之后 main 升到 `Y` 仍然允许 `publish(version=X)`）。Android Vue 已在 APK 内，发布不依赖生产 Web `/version.json` 或 Web build commit；Web 与 Android 是独立发布产物。
+发布权威是已 staged APK，不是当前 main HEAD：tag target 必须包含在当前 main 历史里，但 main 可以在 stage 完成后继续前进（`stage X` 之后 main 升到 `Y` 仍然允许 `publish(version=X)`；自动续跑只在 main 已存在更高 Version-as-Code 时让位）。Android Vue 已在 APK 内，发布不依赖生产 Web `/version.json` 或 Web build commit；Web 与 Android 是独立发布产物。
 
 ### 证据的存续
 
@@ -257,7 +277,7 @@ Native Bearer runtime 请求头集合为 Authorization、Content-Type、Content-
 1. 按变更等级递增 `android/gradle.properties:wotbVersion`（major，或同一未发布 major 之后的 minor/patch 候选；Version-as-Code，普通 PR），先不合并；
 2. **先把变量设为目标门槛值**（`guard_min_supported` 校验 ≤ 新版本 code）——对 bridge / major cutover 这是 **stage prerequisite**：变量仍是旧 major 门槛时，合并触发的自动 stage 会在 `guard_bridge_covered` 上 fail-closed；
 3. 合并 main → 自动 stage（构建/签名/上传/seed/tag/evidence，不写 `version.json`）；若该 PR 同时带有基础设施改动（例如 Caddy），由对应的 main-only workflow 在合并后自动部署，两者都成功后才进入下一步；
-4. 真机验收通过后 `workflow_dispatch(mode=publish, version=<新版本>)` 写新 manifest（publish 身份核验不变）。
+4. 该 PR 合并触发的自动 stage 成功后，`Android Auto Publish` 自动续跑 `mode=publish, version=<新版本>` 写新 manifest（publish 身份核验不变）；自动 dispatch 失败或需要幂等重跑时，仍用 `workflow_dispatch(mode=publish, version=<新版本>)` 做 recovery。真机测试不再阻塞这一步。
 
 设置变量本身**不动** production `version.json`，因此**不会立刻**强制线上旧客户端更新——真正影响客户端的 commit point 仍是 publish 最后写入 `version.json`。但变量设为 `X×1_000_000` 之后，**不要再 stage / publish 任何低于该门槛的旧 major 候选**；这是有意的 cutover。若顺序搞错导致 stage fail-closed，修好变量后对同一版本幂等重跑即可（恢复路径，不是正常流程）——floor 守卫在 stage preflight 就失败，发生在任何 immutable artifact 之前，版本未被消耗。
 
@@ -268,9 +288,9 @@ Native Bearer runtime 请求头集合为 Authorization、Content-Type、Content-
 
 ## Rollout 与验证
 
-### 物理 Android 发布验收矩阵（每个 production release 必跑）
+### 物理 Android 冒烟 / 回归矩阵（rollout 后执行，不是发布前审批门）
 
-publish 之前必须在至少一台 Android 9 问题机 + 一台 Android 13+ 真机上完成，记录型号 / Android / ABI / GeckoView 版本 / APK SHA。CI 只构建 debug APK 与 JVM 单测，不覆盖以下真机项：
+物理 Android 测试仍然有价值：它是唯一覆盖真实 GeckoView 渲染、OEM Intent、native auth 生命周期、飞行模式冷启动与本地回放全链路的证据。它不再位于 production `version.json` 写入之前——自动 publish 只取决于 stage 的技术门与现有 publish 守卫，真机矩阵在 rollout 之后对 staged / 已发布版本执行，记录型号 / Android / ABI / GeckoView 版本 / APK SHA / bundle buildCommit / 每项 PASS/FAIL。CI 只构建 debug APK 与 JVM 单测，不覆盖以下真机项：
 
 - **启动与基础运行**：冷启动、飞行模式启动、重启后偏好保留。
 - **认证**：QQ 登录 → 回跳 → 登出；登录态刷新；授权中 process death/resume；expired token offline。
@@ -278,14 +298,14 @@ publish 之前必须在至少一台 Android 9 问题机 + 一台 Android 13+ 真
 - **导出 / 下载（GeckoView blob 链）**：网页 PNG blob 导出、HoF replay 下载、tournament XLSX 导出 → 保存成功；核对文件内容 / 文件名 / MIME；取消与失败后重试。
 - **文件选择 / 导航**：select 打开时页面导航、选项更新后导航、file picker 打开时导航及迟到结果（新页面不可收到旧文件）。
 - **更新**：检查更新 → 下载 → 安装（含旧版本覆盖安装当前版本）；外链交系统浏览器；软键盘不遮挡输入。
-- **出站网络**：用 PCAPdroid 等免 root 工具观察一次「冷启动 → 闲置 → replay → 3D → 登录」；只应出现 wotbtools.com / 对象存储 / auth / 下载源；出现 Mozilla / Google 服务流量时先用 GeckoView 公开设置关闭，关不掉即阻塞发布。
+- **出站网络**：用 PCAPdroid 等免 root 工具观察一次「冷启动 → 闲置 → replay → 3D → 登录」；只应出现 wotbtools.com / 对象存储 / auth / 下载源；出现 Mozilla / Google 服务流量时先用 GeckoView 公开设置关闭，关不掉即按回归处理：修复后用更高版本发布。
 - **界面**：fullscreen 进出与 Back、横竖屏、软键盘。
 
-没有物理设备时不能把真机项目标为 PASS，production `version.json` 保持不变。
+没有物理设备时不能把真机项目标为 PASS；它不影响 automatic publish 是否发生，但矩阵未执行的版本不得声称通过真机验收。矩阵发现回归时按「版本号递增规则」修复并发布**更高版本**，不要改动已 immutable 的 tag / APK / staging evidence。
 
-stage 不探测 API CORS、asset gateway 或 Keycloak client；它们是 **publish** 的就绪前提（publish 的 readiness 步骤会 fail-closed）。随候选 PR 一起修改的网关配置由合并后的 main-only workflow 部署，必须在 publish 之前成功。完成物理 Android 矩阵后才手工 `workflow_dispatch(mode=publish, version=<已 staged 版本>)`。没有物理设备时不能把真机项目标为 PASS，production version.json 保持不变。
+stage 不探测 API CORS、asset gateway 或 Keycloak client；它们是 **publish** 的就绪前提（publish 的 readiness 步骤会 fail-closed）。随候选 PR 一起修改的网关配置由合并后的 main-only workflow 部署，必须在自动 publish 之前成功。需要重跑或恢复历史候选时，仍使用 `workflow_dispatch(mode=publish, version=<已 staged 版本>)`；该手动入口不受自动发布最新候选策略限制。
 
-`scripts/android-release/test-release.sh` 覆盖版本/幂等分类、cutover floor、schema2 stage/publish roundtrip、每个证据字段被破坏时 fail-closed、APK 文件损坏、真实版本不符、CORS wildcard/credentials/headers/methods/HTTP 错误；同时锁定 publish 不重建与 version.json 最后写入，并覆盖 publish 候选解析（显式 staged 版本优先于已前进的 main、缺版本、未 staged 版本、tag target 版本不符、staged 源码不自洽）。`scripts/ci/test-workflow-contract.sh` 校验 owner 与实际 workflow 接线（含显式 `version` 输入、publish 不读当前 main 版本、version.json 由 staged 身份写出）。
+`scripts/android-release/test-release.sh` 覆盖版本/幂等分类、cutover floor、schema2 stage/publish roundtrip、每个证据字段被破坏时 fail-closed、APK 文件损坏、真实版本不符、CORS wildcard/credentials/headers/methods/HTTP 错误；同时锁定 publish 不重建与 version.json 最后写入，并覆盖 publish 候选解析（显式 staged 版本优先于已前进的 main、缺版本、未 staged 版本、tag target 版本不符、staged 源码不自洽）。它还覆盖自动发布的候选新鲜度（Version-as-Code 取代判定、docs/backend-only main 前进不误杀、更高版本让位、不可读版本 fail closed）与调度策略（`queue: max`、publish gate 只在 `auto_publish=true` 且执行时生效、手动 recovery 不受最新候选策略限制、单 pending 槽替换模型）。`scripts/ci/test-workflow-contract.sh` 校验 owner 与实际 workflow 接线（含显式 `version` 输入、publish 不读当前 main 版本、version.json 由 staged 身份写出）。
 
 CI 还构建 debug APK，验证本地启动/Bridge/replay 合约及离线 bundle；真机仍负责实际 GeckoView 渲染、OEM Intent、native auth/refresh/process-death、飞行模式冷启动与本地回放全链路。
 

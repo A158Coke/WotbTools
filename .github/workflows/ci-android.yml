@@ -110,44 +110,8 @@ jobs:
           bash -n scripts/android-release/resolve-version.sh
           bash -n scripts/android-release/check-release-guards.sh
           bash -n scripts/android-release/test-release.sh
-          bash -n scripts/android-release/auto-publish-decision.sh
       - name: Release helper unit tests
         run: bash scripts/android-release/test-release.sh
-      - name: Auto-publish scheduling policy tests
-        run: |
-          set -euo pipefail
-          A="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-          B="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-          test "$(bash scripts/android-release/auto-publish-decision.sh "$A" "$A")" = "publish"
-          test "$(bash scripts/android-release/auto-publish-decision.sh "$A" "$B")" = "skip"
-          if bash scripts/android-release/auto-publish-decision.sh invalid "$B" >/dev/null 2>&1; then
-            echo "::error::Malformed staged SHA must fail closed"
-            exit 1
-          fi
-          if bash scripts/android-release/auto-publish-decision.sh "$A" invalid >/dev/null 2>&1; then
-            echo "::error::Malformed main SHA must fail closed"
-            exit 1
-          fi
-          python3 - <<'PY'
-          from pathlib import Path
-          import yaml
-
-          workflow = yaml.safe_load(Path('.github/workflows/android-auto-publish.yml').read_text(encoding='utf-8'))
-          concurrency = workflow['concurrency']
-          assert concurrency['group'] == 'android-auto-publish'
-          assert concurrency['queue'] == 'max'
-          assert concurrency['cancel-in-progress'] is False
-          dispatch = next(
-              step for step in workflow['jobs']['publish']['steps']
-              if step.get('name', '').startswith('Dispatch existing guarded publish phase')
-          )['run']
-          freshness = dispatch.find('git ls-remote origin refs/heads/main')
-          decision = dispatch.find('auto-publish-decision.sh')
-          publish = dispatch.find('gh workflow run android-release.yml')
-          assert -1 not in (freshness, decision, publish)
-          assert freshness < decision < publish, 'freshness decision must happen immediately before publish dispatch'
-          assert 'exit 0' in dispatch[decision:publish], 'stale candidate must skip dispatch'
-          PY
   android_contract:
     name: Android contract
     runs-on: ubuntu-latest
