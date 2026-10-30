@@ -25,35 +25,10 @@
   }
 }
 
-/* Replay task card stays inside the viewport and below modal overlays.
- * Stacking order: topbar (100) < task notification (180) < modal (200). */
-.layout-data-workspace:has(> .replay-task-card) {
-  padding-bottom: 230px !important;
-}
-.replay-task-card {
-  z-index: 180 !important;
-  width: min(300px, calc(100vw - 32px)) !important;
-  max-height: calc(100vh - 32px);
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-
 @media (width < 768px) {
   .hof-admin {
     width: 100% !important;
     padding-inline: 12px !important;
   }
 
-  .layout-data-workspace:has(> .replay-task-card) {
-    padding-bottom: 260px !important;
-  }
-  .replay-task-card {
-    left: 8px !important;
-    right: 8px !important;
-    bottom: 8px !important;
-    width: auto !important;
-    max-height: min(46vh, 300px);
-    /* Android edge-to-edge 预备：14px 对齐组件基础 padding，env() 今日解析为 0 */
-    padding-bottom: calc(14px + env(safe-area-inset-bottom)) !important;
-  }
 }

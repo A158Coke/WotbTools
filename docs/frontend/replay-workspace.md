@@ -127,7 +127,7 @@ Playback 布局有两条**真实浏览器门禁**（jsdom / happy-dom 没有布�
 
 ### Playback 流体几何与控件
 
-3D 回放下方工具栏右上角支持收起／展开，默认展开。收起后仅保留恢复按钮，播放继续，进度、倍速、选车和相机保持；切换文件恢复展开，全屏和视口变化保留状态。此开关独立于“隐藏全部 UI”。Drawing 打开时收起 controls 会同时关闭 drawing 并取消未提交草稿；打开 Display / 隐藏全部 UI / 切换能力同样关闭 drawing。
+3D 回放控制条在手机横屏与高度 ≤ 700px 的工作台收成一行：镜头与 GLB 进「显示」面板，Drawing 入口留在控制条且不进共用传输控件，绘制期间工具条占时间轴的位置。工具栏右侧支持收起／展开，默认展开。收起后仅保留恢复按钮，播放继续，进度、倍速、选车和相机保持；切换文件恢复展开，全屏和视口变化保留状态。此开关独立于“隐藏全部 UI”。Drawing 打开时收起 controls 会同时关闭 drawing 并取消未提交草稿；打开 Display / 隐藏全部 UI / 切换能力同样关闭 drawing。
 
 2D/3D 共用 primary composition `-5 / Play-Pause / +5 / current speed / Fullscreen / Display`。速度选项按需展开；六个控件都保留自身触控目标。HUD、Stage 与 Transport 形成一个紧凑的中央栈。2D Stage 保持正方形；3D canvas 横屏填满可用中央宽高、竖屏保持正方形。录像者友军保持左侧、敌军右侧；竖屏保留自然文档流。名册宽度在工作台相对范围内有界增长。视口容量与实测 persistent HUD/Transport 高度决定 Stage 容量；滚动、选择和展示切换不重建 renderer、不重新解析回放、不重新加载资产。
 

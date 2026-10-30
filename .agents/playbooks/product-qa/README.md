@@ -82,16 +82,21 @@ Product QA finding 需要开发时，路由固定为：Product QA → confirmed 
 `docs/frontend/design-language.md` §5「遮挡与可达」，本文件不复制数值）：
 
 ```js
-// 1) 常驻控件遮挡主内容多少：primary 换成该页主内容选择器，persistent 换成常驻面
+// 1) 主内容上方压着什么：不用知道控件类名，20px 网格命中自己发现（比 44px 控件密）。primary 换成该页主内容选择器。
+//    pointer-events: none 的层不参与命中，看见半透明 HUD / 浮字时把选择器填进 decor。
+//    pct = 占主内容面积，centralPct = 占中心 60% 盒。
 ;(() => {
-  const area = r => Math.max(0, r.right - r.left) * Math.max(0, r.bottom - r.top)
-  const inter = (a, b) => area({ left: Math.max(a.left, b.left), right: Math.min(a.right, b.right),
-    top: Math.max(a.top, b.top), bottom: Math.min(a.bottom, b.bottom) })
-  const primary = document.querySelector('<主内容选择器>').getBoundingClientRect()
-  return [...document.querySelectorAll('<常驻面选择器>')].map(el => {
-    const r = el.getBoundingClientRect()
-    return { el: el.className, pct: +(inter(primary, r) / area(primary) * 100).toFixed(2) }
-  })
+  const el = document.querySelector('<主内容选择器>'), p = el.getBoundingClientRect()
+  const owner = hit => { let o = hit; for (let a = hit; a && !a.contains(el); a = a.parentElement) if (getComputedStyle(a).position !== 'static') o = a; return o }
+  const found = new Set(document.querySelectorAll('<装饰层选择器，没有就删掉这个参数>'))
+  for (let x = p.left + 10; x < p.right; x += 20) for (let y = p.top + 10; y < p.bottom; y += 20) {
+    const hit = document.elementFromPoint(x, y)
+    if (hit && hit !== el && !hit.contains(el) && (!el.contains(hit) || hit.closest('button,a[href],input,select'))) found.add(owner(hit))
+  }
+  const inter = (a, b) => Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top))
+  const c = { left: p.left + p.width * .2, right: p.right - p.width * .2, top: p.top + p.height * .2, bottom: p.bottom - p.height * .2 }
+  return [...found].map(n => { const r = n.getBoundingClientRect(); return { el: n.className,
+    pct: +(inter(p, r) / (p.width * p.height) * 100).toFixed(2), centralPct: +(inter(c, r) / (p.width * p.height * .36) * 100).toFixed(2) } })
 })()
 
 // 2) 可见选项到底点不点得到：在选项盒内多点采样，返回「点不到自身的采样点命中了谁」。
@@ -287,17 +292,17 @@ Product QA finding 需要开发时，路由固定为：Product QA → confirmed 
 「选项落在可用视口外且无法滚动触达」「触控命中区小于 44×44」都属于 Visual/layout problem，
 按正常门槛复现两次并记录数值即可，不因为「看着还能用」降级或丢弃。
 
-### Named regression case：#727（2D 手机端遮挡）
+### Named regression case：#727（2D / 3D 手机端遮挡）
 
 这一条必须在每轮涉及回放的 QA 里实际跑到，因为它是本 playbook 两次漏测的那一类：
 
-1. 导入 fixture → 打开 2D；
+1. 导入 fixture → 分别打开 2D 与 3D（3D 的 primary 用画布）；
 2. viewport 切到手机横屏（如 740×360）与竖屏（390×844）；
-3. 对地图跑 §1 例外的探针 1（primary = 地图容器，persistent = 页面上所有 `fixed`/`sticky`/浮动控件）；
+3. 对地图 / 画布跑 §1 例外的探针 1；
 4. 打开 gear 的显示面板，跑探针 2（选项 = 面板内所有按钮/复选框），并跑探针 1 看面板与控制条的关系；
 5. 进全屏横屏再跑一遍第 4 步。
 
-判定：常驻控件不得实质遮挡地图（阈值见 design-language §5），显示面板必须压过底部控制条，
+判定：常驻控件不得实质遮挡地图，3D 控制条不得压入中心盒（阈值见 design-language §5），显示面板必须压过底部控制条，
 面板里每个可见选项都必须命中自身、不被裁掉、落在可用视口内或可滚动触达。
 **任何一项不满足就是 confirmed Visual/layout bug**，不是「移动端就这样」。
 

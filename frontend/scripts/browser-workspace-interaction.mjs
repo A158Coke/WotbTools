@@ -731,6 +731,11 @@ const ROSTER_GEOMETRY_SCENARIOS = [
   { name: 'roster-geometry-844x390-landscape-coarse', width: 844, height: 390, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side' },
   { name: 'roster-geometry-844x390-fullscreen-coarse', width: 844, height: 390, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', fullscreen: true },
   { name: 'roster-geometry-portrait-to844x390-coarse', width: 390, height: 844, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', rotateTo: { width: 844, height: 390 } },
+  { name: 'roster-geometry-667x375-landscape-coarse', width: 667, height: 375, touch: true, players: 7, unknown: 0, killfeed: 0 },
+  { name: 'roster-geometry-1280x720-desktop', width: 1280, height: 720, touch: false, players: 7, unknown: 2, killfeed: 0 },
+  { name: 'roster-geometry-1280x800-desktop', width: 1280, height: 800, touch: false, players: 7, unknown: 2, killfeed: 0, killfeedRows: 2 },
+  { name: 'roster-geometry-1280x704-desktop', width: 1280, height: 704, touch: false, players: 7, unknown: 2, killfeed: 0, killfeedRows: 2 },
+  { name: 'roster-geometry-1280x660-desktop', width: 1280, height: 660, touch: false, players: 7, unknown: 2, killfeed: 0 },
   { name: 'roster-geometry-1024x460-short', width: 1024, height: 460, touch: false, players: 7, unknown: 0, killfeed: 1, layout: 'side' },
 ]
 
@@ -1274,6 +1279,8 @@ async function check3DDrawingSurface(page, failures, scenario, viewport) {
     return {
       entry: entryInfo,
       inTransport: !!controls && !!controls.querySelector('[data-test="pb-annotation-entry"]'),
+      entryInTransport: !!entry && !!controls && controls.contains(entry),
+      entryInDisplay: !!entry?.closest('[data-testid="display-panel"]'),
       toolRow: !!document.querySelector('[data-testid="replay3d-toolrow"]'),
       toolbar: !!document.querySelector('[data-test="pb-annot-toolbar"]'),
       transport: {
@@ -1285,6 +1292,7 @@ async function check3DDrawingSurface(page, failures, scenario, viewport) {
       },
     }
   }
+  const compactBar = await page.evaluate(`document.querySelector('.pb-root').classList.contains('compact-bar')`)
   const before = await page.probe(probe)
   const label = viewport.width + 'x' + viewport.height
   check(failures, !!before.entry && before.entry.reachable, label + ': Drawing entry must be hit-testable in the 3D tool-row')
@@ -1292,7 +1300,10 @@ async function check3DDrawingSurface(page, failures, scenario, viewport) {
     check(failures, !scenario.touch || (before.entry.width >= 43.5 && before.entry.height >= 43.5),
       label + ': Drawing entry must keep a 44px touch target')
   }
-  check(failures, before.toolRow && !before.inTransport, label + ': Drawing entry must live outside the shared transport')
+  // 紧凑形态的镜头 / GLB 在 Display 面里，Drawing 入口留在控制条
+  check(failures, compactBar ? !before.toolRow : before.toolRow, label + ': tool-row belongs to the controls only in wide forms')
+  check(failures, !before.inTransport && !before.entryInTransport, label + ': Drawing entry must live outside the shared transport')
+  check(failures, !before.entryInDisplay, label + ': Drawing is a creation tool, not a Display preference')
   check(failures, before.transport.order.length === 6 && before.transport.oneRow,
     label + ': six shared primary controls must stay in x-order on one row before Drawing')
   if (!before.entry) return
@@ -1302,6 +1313,32 @@ async function check3DDrawingSurface(page, failures, scenario, viewport) {
   await page.waitFor(() => !!document.querySelector('[data-test="pb-annot-toolbar"]'), { label: '3D drawing toolbar' })
   const opened = await page.probe(probe)
   check(failures, opened.toolbar && !opened.toolRow, label + ': Drawing must replace the tool-row with AnnotationToolbar')
+  check(failures, await page.evaluate(`!document.querySelector('[data-testid="display-panel"]')`), label + ': Drawing and Display are mutually exclusive')
+  check(failures, await page.evaluate('window.__sceneMarker === window.__pbPane.sceneApi'), label + ': opening Drawing must not rebuild the scene')
+  // 工具条横向滚动：逐项滚进来再测，切在滚动口边上的半个按钮是可滚动触达，不是遮挡
+  const toolCount = await page.evaluate(`document.querySelectorAll('[data-test="pb-annot-toolbar"] button').length`)
+  check(failures, toolCount > 0, label + ': AnnotationToolbar has no controls')
+  for (let i = 0; i < toolCount; i += 1) {
+    await page.evaluate(`(() => {
+      document.querySelector('[data-occlusion-control]')?.removeAttribute('data-occlusion-control')
+      const tool = document.querySelectorAll('[data-test="pb-annot-toolbar"] button')[${i}]
+      tool.dataset.occlusionControl = 'current'
+      const bar = document.querySelector('[data-test="pb-annot-toolbar"]')
+      bar.scrollLeft += tool.getBoundingClientRect().left - bar.getBoundingClientRect().left - (bar.clientWidth - tool.offsetWidth) / 2
+    })()`)
+    const reach = await measureReachability(page, { options: ['[data-occlusion-control=current]'], touch: scenario.touch })
+    for (const failure of reach.failures) check(failures, false, `${label}: AnnotationToolbar 可达: ${failure}`)
+  }
+  await page.evaluate(`(() => {
+    document.querySelector('[data-occlusion-control]')?.removeAttribute('data-occlusion-control')
+    document.querySelector('[data-test="pb-annot-toolbar"]').scrollLeft = 0
+  })()`)
+  if (scenario.layout !== 'portrait') {
+    await page.evaluate(`document.querySelector('.pb-root .scene').scrollIntoView({ block: 'center' })`)
+    await waitForStableLayout(page)
+    const drawingOcclusion = await measureOcclusion(page, { primary: '.pb-root .scene', overlayHud: true, edgeDocked: compactBar ? ['.team-lane', '.killfeed'] : [] })
+    for (const failure of drawingOcclusion.failures) check(failures, false, `${label}: Drawing 打开时遮挡: ${failure}`)
+  }
   check(failures, opened.transport.order.length === 6 && opened.transport.oneRow
     && Math.abs(opened.transport.height - before.transport.height) <= 2,
   label + ': transport geometry must stay unchanged while Drawing is open')
@@ -1310,7 +1347,14 @@ async function check3DDrawingSurface(page, failures, scenario, viewport) {
   if (!closedByClick) return
   await page.waitFor(() => !document.querySelector('[data-test="pb-annot-toolbar"]'), { label: '3D drawing toolbar closed' })
   const restored = await page.probe(probe)
-  check(failures, restored.toolRow && !restored.toolbar, label + ': original tool-row must return after Drawing closes')
+  check(failures, (compactBar ? !!restored.entry : restored.toolRow) && !restored.toolbar, label + ': original tool-row must return after Drawing closes')
+  if (compactBar) {
+    await page.evaluate(`document.querySelector('[data-testid="display-toggle"]').click()`)
+    await page.waitFor(() => !!document.querySelector('[data-testid="display-panel"] [data-testid="replay3d-camera"]'), { label: 'compact Camera stays in Display' })
+    check(failures, await page.evaluate(`!!document.querySelector('[data-testid="display-panel"] [data-testid="disp-glb"]')`), label + ': compact GLB stays in Display')
+    await page.evaluate(`document.querySelector('[data-testid="display-toggle"]').click()`)
+    await page.waitFor(() => !document.querySelector('[data-testid="display-panel"]'), { label: 'compact Display closes' })
+  }
   check(failures, restored.transport.order.length === 6 && restored.transport.oneRow
     && Math.abs(restored.transport.height - before.transport.height) <= 2,
   label + ': transport geometry must stay unchanged after Drawing closes')
@@ -1449,7 +1493,8 @@ async function runRosterGeometryScenario(env, scenario) {
 
   // Real input regression: disclosure must release toolbar space and remain reachable.
   const toolbarSelector = '[data-testid="replay3d-controls-toggle"]'
-  const expandedHeight = await page.evaluate("document.querySelector('.controls').getBoundingClientRect().height")
+  const controlsFootprint = "(() => { const r = document.querySelector('.controls').getBoundingClientRect(); return r.width * r.height })()"
+  const expandedFootprint = await page.evaluate(controlsFootprint)
   const sessionBeforeCollapse = await page.evaluate('JSON.stringify({ time: window.__pbPane.store.time, speed: window.__pbPane.store.speed, cam: window.__pbPane.store.cam, playing: window.__pbPane.store.playing })')
   for (const collapsed of [true, false]) {
     await page.evaluate(`document.querySelector(${JSON.stringify(toolbarSelector)}).scrollIntoView({ block: 'center' })`)
@@ -1465,9 +1510,9 @@ async function runRosterGeometryScenario(env, scenario) {
     await page.waitForValue(`document.querySelector(${JSON.stringify(toolbarSelector)})?.getAttribute('aria-expanded')`,
       value => value === String(!collapsed), { label: 'toolbar disclosure changes after raw input' })
     await waitForStableLayout(page)
-    const height = await page.evaluate("document.querySelector('.controls').getBoundingClientRect().height")
-    check(failures, collapsed ? height < expandedHeight - 20 : Math.abs(height - expandedHeight) < 2,
-      `toolbar must shrink and restore its height: expanded=${expandedHeight}, actual=${height}`)
+    const footprint = await page.evaluate(controlsFootprint)
+    check(failures, collapsed ? footprint < expandedFootprint / 2 : Math.abs(footprint - expandedFootprint) < expandedFootprint * 0.02,
+      `toolbar must shrink and restore its footprint: expanded=${expandedFootprint}, actual=${footprint}`)
     check(failures, await page.evaluate("getComputedStyle(document.querySelector('.controls-content')).display === 'none'") === collapsed,
       'collapsed content must leave layout and keyboard navigation')
     check(failures, await page.evaluate('window.__sceneMarker === window.__pbPane.sceneApi'), 'toolbar disclosure rebuilt the scene')
@@ -1481,6 +1526,135 @@ async function runRosterGeometryScenario(env, scenario) {
   await page.evaluate('window.scrollTo(0, 0)')
   await waitForStableLayout(page)
   const geometry = await page.probe(rosterGeometryProbe)
+
+  // —— #727 3D 主内容遮挡（design-language §5 例外段）：HUD 可以浮在场景上，但控制条不得压入中心 ——
+  await page.evaluate(`document.querySelector('.pb-root .scene').scrollIntoView({ block: 'center' })`)
+  await waitForStableLayout(page)
+  // HUD 与击杀流都是 pointer-events: none，网格看不见，必须显式列出；击杀流超出 HUD 盒，单列。
+  // 按满 3 条击杀流量：这是 HUD 最高的状态，空击杀流量不出它压没压进中心。
+  // 贴边例外的适用范围以组件自己派生的 compact-bar 为准，不在门禁里再写一套断点。
+  const compactBar = await page.evaluate(`document.querySelector('.pb-root').classList.contains('compact-bar')`)
+  const EDGE_DOCKED = ['.team-lane', '.killfeed']
+  const SCENE_OCCLUSION = { primary: '.pb-root .scene', persistent: ['.pb-root .hud', '.pb-root .killfeed'], overlayHud: true, edgeDocked: compactBar ? EDGE_DOCKED : [] }
+  await page.evaluate(`(() => {
+    window.__sceneKillfeed = window.__pbPane.store.killfeed
+    window.__pbPane.store.killfeed = [1, 2, 3].map((id) => ({ id, killer: 'Killer_' + id, victim: 'Victim_' + id, kill: true }))
+    document.querySelector('[data-testid="display-toggle"]').click()
+  })()`)
+  // 击杀流开关是持久化偏好，前一个场景可能关掉了它：先打开，否则这里量不到击杀流
+  await page.waitFor(() => !!document.querySelector('[data-testid="disp-killfeed"]'), { label: 'display panel for kill feed' })
+  await page.evaluate(`(() => {
+    const toggle = document.querySelector('[data-testid="disp-killfeed"]')
+    if (!toggle.checked) toggle.click()
+    document.querySelector('[data-testid="display-close"]').click()
+  })()`)
+  await page.waitFor(() => !!document.querySelector('.killfeed .kf') && !document.querySelector('[data-testid="display-panel"]'), { label: 'kill feed visible, display closed' })
+  await waitForStableLayout(page)
+  const sceneOcclusion = await measureOcclusion(page, SCENE_OCCLUSION)
+  console.log(`[browser-interaction] ${scenario.name} scene ${JSON.stringify(sceneOcclusion.items?.map((i) => [i.label, i.pct, i.centralPct]))}`)
+  for (const failure of sceneOcclusion.failures) check(failures, false, `3D 场景遮挡: ${failure}`)
+  // 竖屏的 HUD / 控制条都在流内，场景上本来就没有常驻面；横屏必须真的发现它们，否则就是空跑
+  if (scenario.layout !== 'portrait') {
+    check(failures, sceneOcclusion.items?.length > 0, '3D 遮挡判定空跑：网格没有发现任何 HUD 面')
+    check(failures, sceneOcclusion.items?.some((item) => item.label === '[replay3d-killfeed]'), '3D 遮挡判定空跑：没有量到击杀流')
+  }
+  // 行数预算：放不下 3 条时只渲染最新的，每一行都完整，不是把 3 条一起压扁
+  const killfeedRows = await page.evaluate(`(() => {
+    const box = document.querySelector('.pb-root .killfeed').getBoundingClientRect()
+    const rows = [...document.querySelectorAll('.pb-root .killfeed .kf')]
+    return {
+      texts: rows.map((row) => row.textContent),
+      complete: rows.every((row) => {
+        const r = row.getBoundingClientRect()
+        return row.scrollHeight <= row.clientHeight + 1 && r.top >= box.top - 1 && r.bottom <= box.bottom + 1
+      }),
+    }
+  })()`)
+  console.log(`[browser-interaction] ${scenario.name} killfeed rows=${killfeedRows.texts.length}`)
+  check(failures, killfeedRows.complete, `击杀流每一行都必须完整: ${JSON.stringify(killfeedRows)}`)
+  check(failures, killfeedRows.texts.at(-1)?.includes('Victim_3'), `击杀流必须保留最新一条: ${JSON.stringify(killfeedRows)}`)
+  if (scenario.killfeedRows) {
+    check(failures, killfeedRows.texts.length === scenario.killfeedRows, `击杀流行数预算应为 ${scenario.killfeedRows}: ${JSON.stringify(killfeedRows)}`)
+    // HUD 变高（如基地状态条出现）时预算降到 1 行：只留最新一条，不是把 3 条压进一行高度
+    await page.evaluate(`(() => {
+      const style = document.createElement('style')
+      style.id = 'killfeed-budget-control'
+      style.textContent = '.pb-root.playback-workspace > .hud::after { content: ""; display: block; block-size: 44px }'
+      document.head.append(style)
+    })()`)
+    await page.waitForValue(`document.querySelectorAll('.pb-root .killfeed .kf').length`, (rows) => rows === 1, { label: 'kill feed budget drops to one row' })
+    const single = await page.evaluate(`document.querySelector('.pb-root .killfeed .kf').textContent`)
+    check(failures, single.includes('Victim_3'), `1 行预算必须保留最新一条: ${single}`)
+    await page.evaluate(`document.getElementById('killfeed-budget-control')?.remove()`)
+    await page.waitForValue(`document.querySelectorAll('.pb-root .killfeed .kf').length`, (rows) => rows === scenario.killfeedRows, { label: 'kill feed budget restored' })
+  }
+  // 负向对照：44px 的合规控件（类名不在任何清单里，位置避开任何整数倍采样点的巧合），探针只能靠命中发现它
+  await page.evaluate(`(() => {
+    const mutant = document.createElement('button')
+    mutant.className = 'mutant-toolbar'
+    const r = document.querySelector('.pb-root .scene').getBoundingClientRect()
+    mutant.style.cssText = 'position:fixed;z-index:9;width:44px;height:44px;left:' + (r.left + r.width / 2 + 3) + 'px;top:' + (r.top + r.height / 2 + 3) + 'px'
+    document.querySelector('.pb-root').append(mutant)
+  })()`)
+  const mutantOcclusion = await measureOcclusion(page, SCENE_OCCLUSION)
+  await page.evaluate(`document.querySelector('.mutant-toolbar')?.remove()`)
+  check(failures, mutantOcclusion.failures.some((failure) => failure.includes('mutant-toolbar')),
+    `负向对照必须失败：清单外的 44px 控件压进中心却没被发现 ${JSON.stringify(mutantOcclusion.failures)}`)
+  // 负向对照：不参与命中的装饰层进中心，只有显式清单能发现
+  await page.evaluate(`(() => {
+    const style = document.createElement('style')
+    style.id = 'occlusion-negative-control'
+    style.textContent = '.pb-root.playback-workspace > .hud { top: 40% !important; inset-block-start: 40% !important }'
+    document.head.append(style)
+  })()`)
+  await waitForStableLayout(page)
+  const hudMutant = await measureOcclusion(page, SCENE_OCCLUSION)
+  await page.evaluate(`document.getElementById('occlusion-negative-control')?.remove()`)
+  if (scenario.layout !== 'portrait') {
+    check(failures, hudMutant.failures.some((failure) => failure.includes('.hud') || failure.includes('hud')),
+      `负向对照必须失败：pointer-events: none 的 HUD 压进中心却没被发现 ${JSON.stringify(hudMutant.failures)}`)
+  }
+  // 负向对照：贴边例外的作用域。真实改几何后过探针，而不是断言配置值。
+  const occlusionWithCss = async (css, options = SCENE_OCCLUSION) => {
+    await page.evaluate(`(() => {
+      const style = document.createElement('style')
+      style.id = 'occlusion-negative-control'
+      style.textContent = ${JSON.stringify(css)}
+      document.head.append(style)
+    })()`)
+    await waitForStableLayout(page)
+    const measured = await measureOcclusion(page, options)
+    await page.evaluate(`document.getElementById('occlusion-negative-control')?.remove()`)
+    return measured
+  }
+  if (compactBar) {
+    const legal = sceneOcclusion.items.filter((item) => item.edgeDocked && item.centralPct > 0)
+    console.log(`[browser-interaction] ${scenario.name} compact edge-docked ${JSON.stringify(legal.map((i) => [i.label, i.centralPct]))}`)
+    const barMutant = await occlusionWithCss('.pb-root.playback-workspace > .controls { inset-block-end: 22% !important }')
+    check(failures, barMutant.failures.some((failure) => failure.includes('div.controls')),
+      `负向对照必须失败：控制条不享受贴边例外，上移压入中心却没被判 ${JSON.stringify(barMutant.failures)}`)
+    const laneMutant = await occlusionWithCss('.pb-root.playback-workspace .team-lane.side-left { inline-size: 45% !important }')
+    check(failures, laneMutant.failures.some((failure) => failure.includes('replay3d-lane-left')),
+      `负向对照必须失败：车道超过贴边上限却没被判 ${JSON.stringify(laneMutant.failures)}`)
+    const killfeedMutant = await occlusionWithCss('.pb-root .killfeed { inset-inline: -100% auto !important; inline-size: 60vw !important; max-width: none !important; block-size: 40vh !important; max-block-size: none !important }')
+    check(failures, killfeedMutant.failures.some((failure) => failure.includes('replay3d-killfeed')),
+      `负向对照必须失败：击杀流超过贴边上限却没被判 ${JSON.stringify(killfeedMutant.items)}`)
+  } else if (scenario.layout !== 'portrait') {
+    // 宽形态：车道轻微压入中心。这个量在紧凑例外的 15% 以内，严格判定必须红、放宽判定必须绿，
+    // 两边都成立才证明例外确实没有漏到宽形态。
+    const LANE_MUTANT = '.pb-root.playback-workspace .team-lane.side-left { inset-inline-start: 22% !important; inset-block-start: 7% !important }'
+    const strict = await occlusionWithCss(LANE_MUTANT)
+    const lenient = await occlusionWithCss(LANE_MUTANT, { ...SCENE_OCCLUSION, edgeDocked: EDGE_DOCKED })
+    const intrusion = strict.items?.find((item) => item.label === '[replay3d-lane-left]')?.centralPct
+    console.log(`[browser-interaction] ${scenario.name} wide lane mutant central=${intrusion}%`)
+    check(failures, strict.failures.some((failure) => failure.includes('replay3d-lane-left')),
+      `负向对照必须失败：宽形态车道压入中心却没被判 ${JSON.stringify(strict.failures)}`)
+    check(failures, !lenient.failures.some((failure) => failure.includes('replay3d-lane-left')),
+      `对照失效：这个侵入量应落在 15% 以内，否则证明不了例外的作用域 ${JSON.stringify(lenient.failures)}`)
+  }
+  await page.evaluate('window.__pbPane.store.killfeed = window.__sceneKillfeed')
+  await page.evaluate('window.scrollTo(0, 0)')
+  await waitForStableLayout(page)
   check(failures, geometry.root, 'pb-root missing')
   check(failures, geometry.viewport.width === viewport.width && geometry.viewport.height === viewport.height,
     `viewport collapsed: requested ${viewport.width}x${viewport.height}, measured ${JSON.stringify(geometry.viewport)}`)
@@ -1637,6 +1811,17 @@ async function runRosterGeometryScenario(env, scenario) {
   // 滚动祖先，把底部控制条滚出视口 → 中心点命中失败，实测 1600x900 的隐藏按钮就是这样"不可点"），
   // 再做 elementFromPoint 命中验证。
 
+  // —— #727 控制条的子菜单：一行控制条上方展开，每个档位都要完整可点 ——
+  const speedToggle = await clickElement(page, '[data-test="pb-speed-current"]')
+  check(failures, clicked(speedToggle), `speed picker not clickable: ${speedToggle}`)
+  if (clicked(speedToggle)) {
+    await page.waitFor(() => !!document.querySelector('[data-test="pb-speed-menu"]'), { label: 'speed menu opens' })
+    const speedReach = await measureReachability(page, { options: ['[data-test="pb-speed-menu"] button'], touch: scenario.touch })
+    for (const failure of speedReach.failures) check(failures, false, `3D 倍速菜单可达: ${failure}`)
+    await page.evaluate(`document.querySelector('[data-test="pb-speed-current"]').click()`)
+    await page.waitFor(() => !document.querySelector('[data-test="pb-speed-menu"]'), { label: 'speed menu closes' })
+  }
+
   // —— 「显示」面板：真实点击展开，几何在视口内，不盖场景中心 ——
   // 这段探针 2D / 3D 共用，且断言「点一下 = 打开」。3D 的名册场景会开关同一面板，
   // 所以先**幂等地归位到关闭**（关着就不动），再点开——否则点击会变成关闭、后续等待超时。
@@ -1655,6 +1840,50 @@ async function runRosterGeometryScenario(env, scenario) {
     await captureMobileReview(page, scenario, 'display')
     const panel = await page.probe(displayPanelProbe)
     check(failures, panel.errors.length === 0, `display panel violations: ${panel.errors.join('; ')}`)
+
+    // —— #727 瞬态优先 + 可见即可达（design-language §5）：3D 的 Display 与控制条 ——
+    // 逐项滚进视口再测：竖屏的面在页面流里，矮横屏的面自己滚动，都不是"一屏全看得见"。
+    const pageScroll = await page.evaluate('window.scrollY')
+    const displayOptions = await page.evaluate(`document.querySelectorAll('[data-testid="display-panel"] button, [data-testid="display-panel"] label').length`)
+    check(failures, displayOptions > 0, '3D Display 可达性判定空跑：面板里没有选项')
+    for (let i = 0; i < displayOptions; i += 1) {
+      await page.evaluate(`(() => {
+        document.querySelector('[data-occlusion-control]')?.removeAttribute('data-occlusion-control')
+        const option = document.querySelectorAll('[data-testid="display-panel"] button, [data-testid="display-panel"] label')[${i}]
+        option.dataset.occlusionControl = 'current'
+        // 浮层形态只滚面板自身：连带滚页面会让 Display 重新定位，量到的就不是这次滚动的结果
+        const panel = option.closest('[data-testid="display-panel"]')
+        if (getComputedStyle(panel).position === 'absolute') {
+          panel.scrollTop += option.getBoundingClientRect().top - panel.getBoundingClientRect().top - (panel.clientHeight - option.offsetHeight) / 2
+        } else {
+          option.scrollIntoView({ block: 'center', inline: 'nearest' })
+        }
+      })()`)
+      const reach = await measureReachability(page, { options: ['[data-occlusion-control=current]'], touch: scenario.touch })
+      for (const failure of reach.failures) check(failures, false, `3D Display 可达: ${failure}`)
+      check(failures, reach.sampled > 0, `3D Display 第 ${i} 项没有做到命中采样: ${JSON.stringify(reach.results)}`)
+    }
+    await page.evaluate(`(() => {
+      document.querySelector('[data-occlusion-control]')?.removeAttribute('data-occlusion-control')
+      document.querySelector('[data-testid="display-panel"]').scrollTop = 0
+      window.scrollTo(0, ${pageScroll})
+    })()`)
+    const DISPLAY_PAINT = { above: '[data-testid="display-panel"]', below: '.controls' }
+    const displayPaint = await measurePaintOrder(page, DISPLAY_PAINT)
+    for (const failure of displayPaint.failures) check(failures, false, `3D Display 必须压过控制条: ${failure}`)
+    if (displayPaint.overlaps) {
+      // 负向对照：把控制条提到瞬态面之上，次序探针必须报错
+      await page.evaluate(`(() => {
+        const style = document.createElement('style')
+        style.id = 'occlusion-negative-control'
+        style.textContent = '.pb-root .controls { z-index: 25 !important }'
+        document.head.append(style)
+      })()`)
+      const inverted = await measurePaintOrder(page, DISPLAY_PAINT)
+      await page.evaluate(`document.getElementById('occlusion-negative-control')?.remove()`)
+      check(failures, inverted.failures.length > 0,
+        `负向对照必须失败：控制条盖住 Display 后次序探针仍然通过 ${JSON.stringify(inverted)}`)
+    }
 
     // 单个分块开关真实生效：把击杀流**显式关掉**（先读当前值，避免依赖上一条浏览器配置里的
     // 持久化偏好），它必须从 DOM 里消失。失败时把复选框状态与面板几何一起带出来。
@@ -2916,9 +3145,10 @@ async function runWorkspace2DScenario(env, scenario) {
   // 这里量的是真实应用（不是夹具）：真实 locale 文字宽度 + 真实布局决定占比。
   const mapOcclusion = await measureOcclusion(page, {
     primary: '.pb-map',
-    // 2D 的主内容是地图：HUD / 常驻传输条 / 任何浮动控件都不得实质压住它。
-    // 选择器覆盖"所有常驻面"，这样以后谁再往地图上加常驻控件都会被这条断言挡住。
-    persistent: ['.pb-map-quick-actions', '.pb-quick-action', '.pb-mobile-overlay-content', '.pb-hud', '.pb-kill-feed'],
+    // 2D 的主内容是地图：HUD / 常驻传输条 / 任何浮动控件都不得实质压住它，由网格命中发现；
+    // 清单只留不参与命中的装饰层。
+    persistent: ['.pb-mobile-overlay-content', '.pb-hud', '.pb-kill-feed'],
+    ignore: ['.pb-vehicle'],
   })
   console.log(`[browser-interaction] ${scenario.name} occlusion map=${mapOcclusion.primary ? `${mapOcclusion.primary.w}x${mapOcclusion.primary.h}` : '?'} total=${mapOcclusion.totalPct}%`)
   for (const failure of mapOcclusion.failures) {
@@ -3504,6 +3734,19 @@ async function runOnboardingScenario(env, scenario) {
             guideWidth:document.querySelector('[data-testid="onboarding-card"]')?.getBoundingClientRect().width};
         })()`)
         if (!handoff.startInsideOwner || !handoff.startWidth || !handoff.guideWidth) throw new Error(`fullscreen capability handoff trapped the guide ${JSON.stringify(handoff)}`)
+        // 紧凑形态的镜头在 Display 面里：真实点「开始」后教程自动推进，必须自己把面打开，目标才存在
+        // 原地点：先滚到屏幕正中会把按钮送到教程卡片下面，真实用户不会这样滚
+        const startPoint = await page.evaluate(`(() => {
+          const button = document.querySelector('[data-test="replay3d-start"]')
+          const r = button.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2
+          return { x, y, onButton: button.contains(document.elementFromPoint(x, y)) }
+        })()`)
+        check(failures, startPoint.onButton, `3D start must be reachable beside the guide card: ${JSON.stringify(startPoint)}`)
+        await page.tap({ ...startPoint, touch: scenario.touch })
+        await page.waitForValue('document.querySelector("[data-testid=onboarding-card]")?.dataset.anchor', value => value === 'replay3d-camera',
+          { timeout: 60_000, label: 'guide auto-advances to the camera stage' })
+        await page.waitFor(() => !!document.querySelector('.pb-root.compact-bar [data-testid="display-panel"] [data-tour="replay3d-camera"]'),
+          { label: 'compact guide opens Display and the camera anchor exists' })
       }
       await hit('[data-testid="onboarding-next"]')
       await page.waitForValue('new URLSearchParams(location.search).get("view")', value => value === 'agent-shots', { label: 'shots guide destination' })
@@ -3703,7 +3946,7 @@ try {
   // 名过滤器忽略 --shard 的**值**（`1/2` 不以 - 开头，否则会被误当场景名）
   const nameFilter = argv.find((arg, i) => !arg.startsWith('-') && (shardFlagAt < 0 || i !== shardFlagAt + 1))
   const base = process.argv.includes('--occlusion')
-    ? runs.filter(({ scenario }) => /^(shell-overlay-|dialog-sheet-|drawer-tables-|overlay-|menu-viewport-|ws2d-|capability-normal-shots-armor-handoff)/.test(scenario.name))
+    ? runs.filter(({ scenario }) => /^(shell-overlay-|dialog-sheet-|drawer-tables-|overlay-|menu-viewport-|ws2d-|roster-geometry-|capability-normal-shots-armor-handoff)/.test(scenario.name))
     : process.argv.includes('--mobile-visual')
     ? runs.filter(({ scenario }) => scenario.width < 900 && /^(roster-geometry|ws2d)-/.test(scenario.name))
     : nameFilter ? runs.filter(({ scenario }) => scenario.name.includes(nameFilter)) : runs

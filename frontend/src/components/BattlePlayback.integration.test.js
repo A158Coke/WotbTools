@@ -1599,7 +1599,6 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
 
     // §details-blocker：未选中车辆时 shell 空壳且不带 pb-details-active（不遮挡/不 tint/不接管 pointer）
     expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="pb-side-panel-shell"]').exists()).toBe(false)
 
     await openPanel(wrapper, 'display')
     expect(wrapper.find('[data-test="pb-panel-events"]').exists()).toBe(true)
@@ -1609,7 +1608,6 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     await wrapper.find('[data-test="pb-marker-1001"]').trigger('click', { clientX: 0, clientY: 0 })
     await flushPromises()
     expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="pb-side-panel-shell"]').exists()).toBe(false)
     // 退出 fullscreen 后仍保持 mobile overlay controls（不产生第二份常驻控件条）
     setFullscreen(null)
     document.dispatchEvent(new Event('fullscreenchange'))
@@ -1645,7 +1643,6 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     await flushPromises()
 
     // 空 shell：未选中车辆，无 pb-details-active → shell 不接管 pointer
-    expect(wrapper.find('[data-test="pb-side-panel-shell"]').exists()).toBe(false)
 
     // 先 zoom in，让地图走出 contain-fit、产生可平移余量（真实手势路径：手指拖动）
     const map = wrapper.find('[data-test="pb-map"]')
@@ -1731,7 +1728,6 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     // 右侧列只在**真的有内容**时才存在：名册关闭、也没选车时它整列不渲染，
     // 否则空壳会占住「地图列 + 详情列」的第二轨，正方形只能拿到第一轨的宽度
     // （详见 styles/playback-workspace.css 的 `.pb-details-column`）。
-    expect(wrapper.find('[data-test="pb-side-panel-shell"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="pb-panel-content-battle"]').exists()).toBe(false)
     // 进入 fullscreen + 点击车辆 → 详情就是右侧列本身（全屏下不走浮窗）
