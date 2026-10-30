@@ -46,7 +46,7 @@ function expectDraped(ribbon, surface, lift = ANNOTATION_LIFT) {
   }
 }
 
-function expectTrianglesClear(ribbon, surface) {
+function expectTrianglesClear(ribbon, surface, { allowEmpty = false } = {}) {
   let checked = 0
   for (const strip of ribbon.strips) {
     for (let i = 0; i < strip.indices.length; i += 3) {
@@ -56,7 +56,10 @@ function expectTrianglesClear(ribbon, surface) {
       const ax = strip.positions[ia]; const ay = strip.positions[ia + 1]; const az = strip.positions[ia + 2]
       const bx = strip.positions[ib]; const by = strip.positions[ib + 1]; const bz = strip.positions[ib + 2]
       const cx = strip.positions[ic]; const cy = strip.positions[ic + 1]; const cz = strip.positions[ic + 2]
-      for (const [wa, wb, wc] of [[1 / 3, 1 / 3, 1 / 3], [0.5, 0.25, 0.25], [0.25, 0.5, 0.25], [0.25, 0.25, 0.5]]) {
+      for (const [wa, wb, wc] of [
+        [1 / 3, 1 / 3, 1 / 3], [0.5, 0.25, 0.25], [0.25, 0.5, 0.25], [0.25, 0.25, 0.5],
+        [0.5, 0.5, 0], [0, 0.5, 0.5], [0.5, 0, 0.5],
+      ]) {
         const x = wa * ax + wb * bx + wc * cx
         const y = wa * ay + wb * by + wc * cy
         const z = wa * az + wb * bz + wc * cz
@@ -67,7 +70,8 @@ function expectTrianglesClear(ribbon, surface) {
       }
     }
   }
-  expect(checked).toBeGreaterThan(0)
+  if (allowEmpty) expect(checked).toBeGreaterThanOrEqual(0)
+  else expect(checked).toBeGreaterThan(0)
 }
 
 describe('sanitizePoints', () => {
@@ -225,6 +229,7 @@ describe('buildPenRibbon', () => {
     for (const [name, surface, points, width] of cases) {
       const ribbon = buildPenRibbon(pen(points, width), { sampleHeight: surface, lift: 0 })
       expect(ribbon, name).not.toBeNull()
+      expect(ribbon.validation.unsafeCells, name).toBe(0)
       let triangles = 0
       for (const strip of ribbon.strips) {
         const n = strip.crossCount
@@ -236,7 +241,10 @@ describe('buildPenRibbon', () => {
           const bx = strip.positions[ib]; const by = strip.positions[ib + 1]; const bz = strip.positions[ib + 2]
           const cx = strip.positions[ic]; const cy = strip.positions[ic + 1]; const cz = strip.positions[ic + 2]
           // 重心 + 三个偏向顶点的重心采样；只查 mesh 线性插值是否低于 terrain。
-          for (const [wa, wb, wc] of [[1 / 3, 1 / 3, 1 / 3], [0.6, 0.2, 0.2], [0.2, 0.6, 0.2], [0.2, 0.2, 0.6]]) {
+          for (const [wa, wb, wc] of [
+            [1 / 3, 1 / 3, 1 / 3], [0.6, 0.2, 0.2], [0.2, 0.6, 0.2], [0.2, 0.2, 0.6],
+            [0.5, 0.5, 0], [0, 0.5, 0.5], [0.5, 0, 0.5],
+          ]) {
             const x = wa * ax + wb * bx + wc * cx
             const y = wa * ay + wb * by + wc * cy
             const z = wa * az + wb * bz + wc * cz
@@ -257,6 +265,43 @@ describe('buildPenRibbon', () => {
     expect(ribbon.vertexCount).toBeLessThanOrEqual(ribbon.vertexBudget)
     expect(ribbon.vertexCount).toBeLessThanOrEqual(65536)
     expect(ribbon.strips.every((strip) => Number.isFinite(strip.positions[strip.positions.length - 1]))).toBe(true)
+  })
+
+  it('refines cells until the exact diagonal ridge reproduction clears terrain', () => {
+    const n = 128
+    const span = 128
+    const field = new Float32Array(n * n)
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) field[i * n + j] = 20 - Math.abs(i - 64)
+    }
+    const build = buildAdaptiveTerrain({
+      field,
+      n,
+      span,
+      cam: { x: 0, y: 40, z: 20 },
+      fovY: 0.96,
+      aspect: 1.7,
+      hFovDeg: 70,
+    })
+    const sampler = terrainSurfaceHeightAt.bind(null, { ...build, n, span })
+    const ribbon = buildPenRibbon(pen([{ x: -10, y: -10 }, { x: 10, y: 10 }], 2), {
+      sampleHeight: sampler,
+      lift: ANNOTATION_LIFT,
+    })
+    expect(ribbon).not.toBeNull()
+    expect(ribbon.validation.unsafeCells).toBe(0)
+    expect(ribbon.validation.iterations).toBeGreaterThan(0)
+    expectTrianglesClear(ribbon, sampler)
+  })
+
+  it('fails closed by skipping unsafe cells when refinement budget is exhausted', () => {
+    const points = Array.from({ length: 4096 }, (_, i) => ({ x: (i / 4095) * 200 - 100, y: 0 }))
+    const surface = (x, z) => 20 - Math.abs(((z + 100) % 1) - 0.5)
+    const ribbon = buildPenRibbon(pen(points, 40), { sampleHeight: surface, lift: 0, maxSegment: 1e9 })
+    expect(ribbon).not.toBeNull()
+    expect(ribbon.validation.unsafeCells).toBeGreaterThan(0)
+    // unsafe cells are omitted; if any safe triangle is emitted it must still be clear.
+    expectTrianglesClear(ribbon, surface, { allowEmpty: true })
   })
 
   it('normalizes at commit and uses the same centerline for rendering and erasing', () => {
@@ -304,6 +349,7 @@ describe('buildPenRibbon', () => {
     const ribbon = buildPenRibbon(pen([{ x: -10, y: 0 }, { x: 10, y: 0 }], 2), { sampleHeight: surface, lift: 0 })
     expect(ribbon).not.toBeNull()
     expect(ribbon.crossCount).toBeGreaterThanOrEqual(5)
+    expect(ribbon.validation.unsafeCells).toBe(0)
     expectTrianglesClear(ribbon, surface)
   })
 
@@ -312,6 +358,7 @@ describe('buildPenRibbon', () => {
     const ribbon = buildPenRibbon(pen([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }], 8), { sampleHeight: surface, lift: 0 })
     expect(ribbon).not.toBeNull()
     expect(ribbon.crossCount).toBeGreaterThanOrEqual(5)
+    expect(ribbon.validation.unsafeCells).toBe(0)
     expectTrianglesClear(ribbon, surface)
   })
 

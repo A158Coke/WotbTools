@@ -28,9 +28,16 @@ export const ANNOTATION_RING_SEGMENTS = 48
 /** 横向 adaptive subdivision：midpoint terrain error / 实际 transverse span 触发。 */
 const ANNOTATION_CROSS_MIDPOINT_ERROR = 0.08
 const ANNOTATION_CROSS_MAX_SEGMENT = 0.5
+/** 横向最多 33 个 sample（32 个 cross interval）；更长的笔迹由 vertex budget 再降。 */
 const ANNOTATION_MAX_CROSS_SAMPLES = 33
 /** 单条 annotation 的 projected vertex 预算；预算不足时降横向密度，不截断 stroke。 */
 const ANNOTATION_MAX_RIBBON_VERTICES = 65536
+/** 最终 triangle interior 允许的 maximum penetration（米）；超过就继续 cell refinement。 */
+const ANNOTATION_CLEARANCE_EPS = 0.05
+/** Cell refinement 的硬上限；预算耗尽后 unsafe cell 局部断 strip，不输出已知穿地三角形。 */
+const ANNOTATION_MAX_REFINEMENT_ITERATIONS = 6
+/** 2D cell refinement 可增加的 longitudinal row 上限（与 projected centerline 预算一致）。 */
+const ANNOTATION_MAX_PROJECTED_CENTERLINE_POINTS = 4096
 /** 单次 eraser gesture 的 semantic path 点上限；scene 超过后抽稀。 */
 export const ANNOTATION_MAX_ERASER_POINTS = 1024
 
@@ -198,6 +205,110 @@ export function normalizePenPoints(points) {
     : smoothed
 }
 
+const TRIANGLE_CLEARANCE_SAMPLES = [
+  [1 / 3, 1 / 3, 1 / 3],
+  [0.5, 0.25, 0.25],
+  [0.25, 0.5, 0.25],
+  [0.25, 0.25, 0.5],
+  [0.5, 0.5, 0],
+  [0, 0.5, 0.5],
+  [0.5, 0, 0.5],
+]
+
+function ribbonFrames(points, half) {
+  const frames = []
+  for (let i = 0; i < points.length; i++) {
+    const prev = points[i - 1]
+    const cur = points[i]
+    const next = points[i + 1]
+    const dirIn = prev ? unitDirection(prev, cur) : null
+    const dirOut = next ? unitDirection(cur, next) : null
+    let dx = 0
+    let dz = 0
+    let miter = 1
+    if (dirIn && dirOut) {
+      dx = dirIn.x + dirOut.x
+      dz = dirIn.z + dirOut.z
+      const len = Math.hypot(dx, dz)
+      if (len <= 1e-6) {
+        dx = dirOut.x
+        dz = dirOut.z
+      } else {
+        dx /= len
+        dz /= len
+      }
+      const cosT = Math.max(-1, Math.min(1, dirIn.x * dirOut.x + dirIn.z * dirOut.z))
+      const cosHalf = Math.sqrt(Math.max(1e-6, (1 + cosT) / 2))
+      miter = Math.min(ANNOTATION_MITER_LIMIT, 1 / Math.max(0.4, cosHalf))
+    } else if (dirIn) {
+      dx = dirIn.x
+      dz = dirIn.z
+    } else if (dirOut) {
+      dx = dirOut.x
+      dz = dirOut.z
+    } else {
+      return null
+    }
+    frames.push({ x: cur.x, z: cur.y, nx: -dz, nz: dx, half: half * miter })
+  }
+  return frames
+}
+
+function ribbonRows(frames, fractions, sampleHeight, liftValue) {
+  const rows = []
+  const valid = []
+  for (const frame of frames) {
+    const row = []
+    let rowValid = true
+    for (const fraction of fractions) {
+      const p = crossPoint(frame, fraction)
+      const y = sampleOrNull(sampleHeight, p.x, p.z)
+      if (y === null) {
+        row.push(null)
+        rowValid = false
+      } else {
+        row.push({ x: p.x, y: y + liftValue, z: p.z })
+      }
+    }
+    rows.push(row)
+    valid.push(rowValid)
+  }
+  return { rows, valid }
+}
+
+function triangleClear(a, b, c, sampleHeight, clearance) {
+  for (const [wa, wb, wc] of TRIANGLE_CLEARANCE_SAMPLES) {
+    const x = wa * a.x + wb * b.x + wc * c.x
+    const y = wa * a.y + wb * b.y + wc * c.y
+    const z = wa * a.z + wb * b.z + wc * c.z
+    const terrain = sampleOrNull(sampleHeight, x, z)
+    // clearance = allowed penetration epsilon，不是“必须高于 terrain 的正 clearance”。
+    if (terrain === null || y < terrain - clearance) return false
+  }
+  return true
+}
+
+/** 对最终 triangulation 的两个 triangle 做 interior clearance 检查；失败 cell 会触发 2D refinement。 */
+function ribbonCellFailures(rows, valid, crossCount, sampleHeight, clearance) {
+  const failing = []
+  let checked = 0
+  for (let i = 0; i < rows.length - 1; i++) {
+    if (!valid[i] || !valid[i + 1]) continue
+    for (let j = 0; j < crossCount - 1; j++) {
+      const a = rows[i][j]
+      const b = rows[i][j + 1]
+      const c = rows[i + 1][j + 1]
+      const d = rows[i + 1][j]
+      checked++
+      if (!triangleClear(a, b, d, sampleHeight, clearance)
+        || !triangleClear(b, c, d, sampleHeight, clearance)) {
+        failing.push({ i, j })
+      }
+    }
+  }
+  return { failing, checked }
+}
+
 function unitDirection(a, b) {
   const dx = b.x - a.x
   const dz = b.y - a.y
@@ -206,7 +317,7 @@ function unitDirection(a, b) {
   return { x: dx / len, z: dz / len }
 }
 
-/** Cross sample 上限由单笔 vertex budget 约束；至少 2，最多 17（含 center）。 */
+/** Cross sample 上限由单笔 vertex budget 约束；至少 2，最多 33（含 center）。 */
 function annotationCrossBudget(pointCount) {
   return Math.max(2, Math.min(ANNOTATION_MAX_CROSS_SAMPLES, Math.floor(ANNOTATION_MAX_RIBBON_VERTICES / Math.max(1, pointCount))))
 }
@@ -253,11 +364,11 @@ function adaptiveCrossFractions(frames, sampleHeight, pointCount) {
 }
 
 /**
- * committed pen -> 贴地 ribbon。每个语义点生成左右两个边缘点：
- *   left  = p + normal * halfWidth * miterScale
- *   right = p - normal * halfWidth * miterScale
- * 两个边缘点分别采样 terrain，绝不只采 centerline。任一边缘采样为 null 时该点断开 strip。
- * 返回 { strips:[{positions,indices}], pointCount } 或 null。
+ * committed pen -> 贴地 ribbon。每个语义点生成 cross-width grid（center + adaptive fractions），
+ * 每行顶点都采样 terrain；任一 cross sample 为 null 时该 row 断开 strip。
+ * 最终对每个 cell 的两个 triangle interior 做 clearance validation；失败时同时细分
+ * longitudinal row 与 cross fraction，预算耗尽则跳过 unsafe cell（不输出已知穿地 triangle）。
+ * 返回 { strips, pointCount, crossCount, vertexCount, vertexBudget, validation } 或 null。
  */
 export function buildPenRibbon(annotation, {
   sampleHeight,
@@ -279,73 +390,71 @@ export function buildPenRibbon(annotation, {
   if (points.length < 2) return null
   const half = width / 2
   const liftValue = numberOr(lift, ANNOTATION_LIFT)
-  const frames = []
+  let rowPoints = points
+  let frames = ribbonFrames(rowPoints, half)
+  if (!frames) return null
+  let fractions = adaptiveCrossFractions(frames, sampleHeight, rowPoints.length)
+  let crossCount = fractions.length
+  let rows = []
+  let valid = []
+  let failures = { failing: [], checked: 0 }
+  let iterations = 0
 
-  for (let i = 0; i < points.length; i++) {
-    const prev = points[i - 1]
-    const cur = points[i]
-    const next = points[i + 1]
-    const dirIn = prev ? unitDirection(prev, cur) : null
-    const dirOut = next ? unitDirection(cur, next) : null
-    let dx = 0
-    let dz = 0
-    let miter = 1
-    if (dirIn && dirOut) {
-      dx = dirIn.x + dirOut.x
-      dz = dirIn.z + dirOut.z
-      const len = Math.hypot(dx, dz)
-      if (len <= 1e-6) {
-        // 180° 折返/几乎相反：用 outgoing 方向兜底，保持有限而不是除以 0。
-        dx = dirOut.x
-        dz = dirOut.z
-      } else {
-        dx /= len
-        dz /= len
+  for (; iterations <= ANNOTATION_MAX_REFINEMENT_ITERATIONS; iterations++) {
+    const built = ribbonRows(frames, fractions, sampleHeight, liftValue)
+    rows = built.rows
+    valid = built.valid
+    failures = ribbonCellFailures(rows, valid, crossCount, sampleHeight, ANNOTATION_CLEARANCE_EPS)
+    if (!failures.failing.length || iterations === ANNOTATION_MAX_REFINEMENT_ITERATIONS) break
+
+    const rowSplits = new Set(failures.failing.map((cell) => cell.i))
+    const crossSplits = new Set(failures.failing.map((cell) => cell.j))
+    const nextRowCount = rowPoints.length + rowSplits.size
+    const nextCrossCount = fractions.length + crossSplits.size
+    const canRows = rowSplits.size > 0
+      && nextRowCount <= ANNOTATION_MAX_PROJECTED_CENTERLINE_POINTS
+      && nextRowCount * fractions.length <= ANNOTATION_MAX_RIBBON_VERTICES
+    const canCross = crossSplits.size > 0
+      && nextCrossCount <= ANNOTATION_MAX_CROSS_SAMPLES
+      && (canRows ? nextRowCount : rowPoints.length) * nextCrossCount <= ANNOTATION_MAX_RIBBON_VERTICES
+    if (!canRows && !canCross) break
+
+    let changed = false
+    if (canRows) {
+      const nextRows = []
+      for (let i = 0; i < rowPoints.length; i++) {
+        nextRows.push(rowPoints[i])
+        if (rowSplits.has(i)) {
+          const a = rowPoints[i]
+          const b = rowPoints[i + 1]
+          nextRows.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 })
+        }
       }
-      const cosT = Math.max(-1, Math.min(1, dirIn.x * dirOut.x + dirIn.z * dirOut.z))
-      const cosHalf = Math.sqrt(Math.max(1e-6, (1 + cosT) / 2))
-      miter = Math.min(ANNOTATION_MITER_LIMIT, 1 / Math.max(0.4, cosHalf))
-    } else if (dirIn) {
-      dx = dirIn.x
-      dz = dirIn.z
-    } else if (dirOut) {
-      dx = dirOut.x
-      dz = dirOut.z
-    } else {
-      return null
+      rowPoints = nextRows
+      changed = true
     }
-    // 实际 transverse span 使用本 row 的 miterScale；adaptive 采样必须按它，
-    // 而不是按未膨胀的 annotation width。
-    frames.push({ x: cur.x, z: cur.y, nx: -dz, nz: dx, half: half * miter })
+    if (canCross) {
+      const nextFractions = new Set(fractions)
+      for (const j of crossSplits) nextFractions.add((fractions[j] + fractions[j + 1]) / 2)
+      fractions = [...nextFractions].sort((a, b) => a - b)
+      crossCount = fractions.length
+      changed = true
+    }
+    if (!changed) break
+    if (canRows) {
+      frames = ribbonFrames(rowPoints, half)
+      if (!frames) return null
+    }
   }
 
-  const fractions = adaptiveCrossFractions(frames, sampleHeight, points.length)
-  const crossCount = fractions.length
-  const rows = []
-  const valid = []
-  for (const frame of frames) {
-    const row = []
-    let rowValid = true
-    for (const fraction of fractions) {
-      const p = crossPoint(frame, fraction)
-      const y = sampleOrNull(sampleHeight, p.x, p.z)
-      if (y === null) {
-        row.push(null)
-        rowValid = false
-      } else {
-        row.push({ x: p.x, y: y + liftValue, z: p.z })
-      }
-    }
-    rows.push(row)
-    valid.push(rowValid)
-  }
+  const unsafe = new Set(failures.failing.map((cell) => cell.i * (crossCount - 1) + cell.j))
 
   const strips = []
   let i = 0
-  while (i < points.length) {
+  while (i < rowPoints.length) {
     if (!valid[i]) { i++; continue }
     let j = i
-    while (j + 1 < points.length && valid[j + 1]) j++
+    while (j + 1 < rowPoints.length && valid[j + 1]) j++
     if (j > i) {
       const rowCount = j - i + 1
       const positions = new Float32Array(rowCount * crossCount * 3)
@@ -361,6 +470,8 @@ export function buildPenRibbon(annotation, {
       }
       for (let k = 0; k < rowCount - 1; k++) {
         for (let c = 0; c < crossCount - 1; c++) {
+          const cellKey = (i + k) * (crossCount - 1) + c
+          if (unsafe.has(cellKey)) continue
           const a = k * crossCount + c
           const b = a + 1
           const d = a + crossCount
@@ -376,10 +487,17 @@ export function buildPenRibbon(annotation, {
   const vertexCount = strips.reduce((sum, strip) => sum + strip.positions.length / 3, 0)
   return {
     strips,
-    pointCount: points.length,
+    pointCount: rowPoints.length,
     crossCount,
     vertexCount,
     vertexBudget: ANNOTATION_MAX_RIBBON_VERTICES,
+    validation: {
+      iterations,
+      cellsChecked: failures.checked,
+      unsafeCells: unsafe.size,
+      rowCount: rowPoints.length,
+      crossCount,
+    },
   }
 }
 
