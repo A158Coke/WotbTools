@@ -2,7 +2,7 @@
 // 上游 Rust 判定语义变更时，本文件与 penetration.js 同版本跟随——两仓不变量保持同源。
 import { describe, it, expect } from 'vitest'
 import { calculate, isPrimary, ArmorSection, hasPrimaryLayer, matchHitsByOccurrence } from './penetration.js'
-import { penetrationChance, resolveCardChance } from './armorInspectorChance.js'
+import { penetrationChance, resolveCardChance, evaluateProbabilityChain } from './armorInspectorChance.js'
 
 function hit(section, thickness, point, extra = {}) {
   return {
@@ -849,5 +849,41 @@ describe('require_primary（射击复现无主装甲链门禁）', () => {
     }))
     expect(r.result).toBe('PENETRATION')
     expect(r.blocked_no_primary).toBe(false)
+  })
+})
+
+// HE 白色遮罩（击穿视图）的权威侧：判定链对「击穿」的定义必须可复现——
+// 首层非主装（履带/炮管/间隙甲）时 HE 一律 penetrated=false（卡片走 SPLASH/BLOCKED），
+// 首层主装时卡片只在概率链 CDF 夹到 100%（厚度 <= 0.95×穿深）才写 PENETRATION。
+describe('HE「击穿」权威口径（白色遮罩与点击卡片同源）', () => {
+  it('HE 首层外部模块/间隙甲：必定 blocked（被前置层提前挡下，不计击穿）', () => {
+    for (const section of [ArmorSection.CHASSIS, ArmorSection.GUN_BARREL, ArmorSection.SPACED]) {
+      const r = calculate(req('he', 300.0, 150.0, [
+        hit(section, 20.0, [0, 0, 0]),
+        hit(ArmorSection.HULL, 10.0, [0, 0, 1.0]),
+      ], { explosion_radius: 5.0, he_splash: { min: 0, max: 0, avg: 0, samples: 0 } }))
+      expect(r.layers[0].penetrated).toBe(false)
+      expect(r.result).not.toBe('PENETRATION')
+    }
+  })
+
+  it('HE 首层主装：penetrated 取决于剩余穿深 vs 等效厚度', () => {
+    const thin = calculate(req('he', 300.0, 150.0, [hit(ArmorSection.HULL, 10.0, [0, 0, 0])],
+      { explosion_radius: 5.0, he_splash: { min: 0, max: 0, avg: 0, samples: 0 } }))
+    const thick = calculate(req('he', 300.0, 150.0, [hit(ArmorSection.HULL, 400.0, [0, 0, 0])],
+      { explosion_radius: 5.0, he_splash: { min: 0, max: 0, avg: 0, samples: 0 } }))
+    expect(thin.layers[0].penetrated).toBe(true)
+    expect(thick.layers[0].penetrated).toBe(false)
+  })
+
+  it('卡片「击穿」= 概率链 CDF 100%：厚度 <= 0.95×穿深 才夹到 1', () => {
+    // 层必须带 section（否则 isExternalLayer 按“无角度模块”扁平消耗，不参与 CDF）。
+    const chance = (pen, effective) => evaluateProbabilityChain(pen, [{
+      section: ArmorSection.HULL, thickness: effective, effective, angle_deg: 0,
+    }]).chance
+    expect(chance(100, 95)).toBe(1)
+    expect(chance(100, 96)).toBeLessThan(1)
+    expect(chance(100, 104)).toBeGreaterThan(0)
+    expect(chance(100, 105)).toBe(0)
   })
 })
