@@ -11,7 +11,10 @@ import { RC_GLSL_CONST, RC_GLSL_FUNCS } from '../armorCollisionPack.js'
 
 // ===== 实时穿透热力图（逐行对齐 BlitzKit PrimaryArmorSceneComponent fragment.glsl）=====
 // fragment shader 逐像素计算击穿概率着色：绿=稳定击穿 红=稳定挡住 渐变=概率过渡；
-// 跳弹(角度≥ricochet 且不满足三倍口径规则)→蓝紫高亮
+// 跳弹(角度≥ricochet 且不满足三倍口径规则)→蓝紫高亮。
+// HE（canSplash）始终画随点击判定的溅射伤害渐变（Armor Inspector 口径，爆点由
+// heActive/heCenter 给出）；heatmapMask（击穿视图）时再把它判定为「可直穿」的像素
+// 盖成白色——白色与结果卡 PENETRATION 同源，优先级高于该点的渐变读数。
 export const PBR_VERT = `
     varying highp vec3 vNormal;
     varying highp vec3 vViewPos;
@@ -40,6 +43,8 @@ export const PBR_FRAG = `
     // 颜色 = 该像素自己的 thickness+spacedThick 与到爆点距离算出的伤害。
     uniform bool heActive;
     uniform highp vec3 heCenter;
+    // true = 击穿视图（热力图模式）：把 HE 的可直穿像素盖白（渐变照画）；false = 默认视图。
+    uniform bool heatmapMask;
     uniform bool greenPenetration;
     uniform bool advancedHighlighting;
     uniform bool opaque;
@@ -111,6 +116,8 @@ export const PBR_FRAG = `
       float penChance = -1.0;
       float splashChance = 0.0;
       float heDamageNorm = 0.0;
+      // HE 白色遮罩（击穿视图）判定结果；渐变的 heArmor 在各自分支内自算。
+      float hePenMask = 0.0;
       bool ricocheted = false;
       bool contPen = false;
       int contCls = 0;
@@ -244,6 +251,18 @@ export const PBR_FRAG = `
             }
           }
         }
+        // HE 白色遮罩 = 点击卡片的「击穿」（PENETRATION）判定，逐条与判定链同源：
+        //   ① 该像素射线上主装必须是**第一层**：履带/炮管/间隙甲在前时，判定链对 HE
+        //      首面非主装一律 penetrated=false（卡片走 SPLASH/BLOCKED），不算击穿——
+        //      即被前置层提前挡下。RT0 有任何覆盖（underSpaced）正对该情形。
+        //   ② 等效厚度必须落在穿深浮动区间下端以内：卡片的概率链 CDF 只在
+        //      thickness <= 0.95×穿深 时夹到 100%（标题 PENETRATION）；区间内的
+        //      「可能击穿」（1–99%）不着白，区间外（BLOCKED）也不着白。
+        //   ③ 穿深为 0（数据缺失）：判定链给 0%，同样不亮（cdfForInterval 的
+        //      min===max 分支返回 0，不能靠 thickness<=pMin 的等号蒙混）。
+        if (canSplash && !underSpaced && penetration > 0.0 && finalThick <= pMin) {
+          hePenMask = 1.0;
+        }
         if (penChance < 0.0) {
           // 均值与宽度同时传播：σ = (max-min)/6，不得按扣减后的 rem 重算。
           if (spacedSatBlocked) {
@@ -282,11 +301,20 @@ export const PBR_FRAG = `
       vec3 base = vec3(1.0, splashChance * 0.392, 0.0);
       if (advancedHighlighting && ricocheted) base = vec3(1.0, base.g, 1.0);
       if (canSplash) {
+        // 溅射伤害渐变（点击判定口径）在**两个视图都保留**：默认视图就是它本身；
+        // 击穿视图在渐变之上把「可直穿」像素盖成白色。注意白色优先级高于渐变：
+        // 白 = 该处 HE 打得穿（与结果卡 PENETRATION 同源），比该点的伤害读数更关键；
+        // 其余像素仍按 heDamageNorm 走暗红→绿与 0.18–0.95 alpha 渐变。
         // 每块板自身的局部伤害：thickness+spacedThick 与到爆点距离。
         vec3 heColor = heDamageRamp(heDamageNorm);
         // 零伤害仍是热力图的 0 端（暗红），不能整块透明——只有未激活/无爆点
         // 才透明；否则无法区分“零伤害的装甲”和“没开热力图”（评审 P2）。
         float heAlpha = heActive ? mix(0.18, 0.95, heDamageNorm) : 0.0;
+        if (heatmapMask && hePenMask > 0.5) {
+          // 白色提示不依赖点击（选弹种即显示）；点击后只是把该像素的渐变盖住。
+          heColor = vec3(1.0);
+          heAlpha = 0.95;
+        }
         gl_FragColor = vec4(heColor, heAlpha);
       } else if (greenPenetration || advancedHighlighting) {
         // 概率色带：红 → 橙 → 黄 → 绿；高概率端保留 overmatch 青蓝/续飞纯绿。
@@ -499,6 +527,7 @@ export function createArmorShaderContext() {
                 explosionRadius: { value: 0 },
                 heActive: { value: false },
                 heCenter: { value: new THREE.Vector3(0, 0, 0) },
+                heatmapMask: { value: false },
                 resolution: resUniform,
                 metersPerUnit: { value: 1 },
                 opacity: { value: 1 },
