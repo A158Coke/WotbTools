@@ -5,7 +5,7 @@
       "cancel": "取消", "submit": "提交反馈", "success": "感谢你的反馈。", "tooLong": "文本超过长度限制。", "snapshotNotice": "反馈会包含本次复制回复的完整原文，供站点管理员查看。",
       "adminTitle": "AI 复盘反馈", "loginRequired": "请登录以查看反馈。", "adminRequired": "需要站点管理员权限。",
       "filter": "原因", "all": "全部", "refresh": "刷新", "loading": "加载中…", "empty": "没有反馈记录。",
-      "created": "时间", "actions": "操作", "view": "查看", "delete": "删除", "deleteConfirm": "确定永久删除这条反馈？",
+      "created": "时间", "model": "模型", "actions": "操作", "view": "查看", "delete": "删除", "deleteConfirm": "确定永久删除这条反馈？",
       "previous": "上一页", "next": "下一页", "detail": "反馈详情", "snapshot": "AI 回复原文",
       "reasons": { "FACT_ERROR": "事实错误", "BAD_JUDGMENT": "判断不好", "MISSED_KEY_POINT": "漏掉关键点", "TOO_AI_LIKE": "太像 AI", "TOO_VAGUE": "过于模糊", "TOO_VERBOSE": "太啰嗦", "UNHELPFUL_ADVICE": "建议没帮助", "OTHER": "其他" }
     },
@@ -883,7 +883,7 @@
       "cancel": "Cancel", "submit": "Submit feedback", "success": "Thank you for your feedback.", "tooLong": "The text exceeds the length limit.", "snapshotNotice": "Your feedback includes the complete copyable reply for site administrators to review.",
       "adminTitle": "AI review feedback", "loginRequired": "Sign in to view feedback.", "adminRequired": "Site administrator access is required.",
       "filter": "Reason", "all": "All", "refresh": "Refresh", "loading": "Loading…", "empty": "No feedback found.",
-      "created": "Date", "actions": "Actions", "view": "View", "delete": "Delete", "deleteConfirm": "Permanently delete this feedback?",
+      "created": "Date", "model": "Model", "actions": "Actions", "view": "View", "delete": "Delete", "deleteConfirm": "Permanently delete this feedback?",
       "previous": "Previous", "next": "Next", "detail": "Feedback details", "snapshot": "Original AI reply",
       "reasons": { "FACT_ERROR": "Factual error", "BAD_JUDGMENT": "Poor judgment", "MISSED_KEY_POINT": "Missed key point", "TOO_AI_LIKE": "Too AI-like", "TOO_VAGUE": "Too vague", "TOO_VERBOSE": "Too verbose", "UNHELPFUL_ADVICE": "Unhelpful advice", "OTHER": "Other" }
     },
@@ -1761,7 +1761,7 @@
       "cancel": "Отмена", "submit": "Отправить отзыв", "success": "Спасибо за отзыв.", "tooLong": "Текст превышает ограничение длины.", "snapshotNotice": "Отзыв включает полный копируемый ответ для просмотра администраторами сайта.",
       "adminTitle": "Отзывы о разборах ИИ", "loginRequired": "Войдите, чтобы просматривать отзывы.", "adminRequired": "Требуются права администратора сайта.",
       "filter": "Причина", "all": "Все", "refresh": "Обновить", "loading": "Загрузка…", "empty": "Отзывы не найдены.",
-      "created": "Дата", "actions": "Действия", "view": "Просмотр", "delete": "Удалить", "deleteConfirm": "Удалить отзыв без возможности восстановления?",
+      "created": "Дата", "model": "Модель", "actions": "Действия", "view": "Просмотр", "delete": "Удалить", "deleteConfirm": "Удалить отзыв без возможности восстановления?",
       "previous": "Назад", "next": "Далее", "detail": "Подробности отзыва", "snapshot": "Исходный ответ ИИ",
       "reasons": { "FACT_ERROR": "Фактическая ошибка", "BAD_JUDGMENT": "Неверная оценка", "MISSED_KEY_POINT": "Упущен важный момент", "TOO_AI_LIKE": "Слишком похоже на ИИ", "TOO_VAGUE": "Слишком расплывчато", "TOO_VERBOSE": "Слишком многословно", "UNHELPFUL_ADVICE": "Бесполезный совет", "OTHER": "Другое" }
     },

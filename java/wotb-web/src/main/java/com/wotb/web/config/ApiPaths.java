@@ -62,5 +62,6 @@ public final class ApiPaths {
     public static final String ADMIN_USERS_PATTERN = "/api/admin/users/**";
     public static final String TOURNAMENTS_ADMIN_PATTERN = "/api/admin/tournaments/**";
     public static final String AI_REVIEW_FEEDBACK = "/api/ai-review-feedback";
+    public static final String ADMIN_AI_REVIEW_FEEDBACK = "/api/admin/ai-review-feedback";
     public static final String ADMIN_PATTERN = "/api/admin/**";
 }

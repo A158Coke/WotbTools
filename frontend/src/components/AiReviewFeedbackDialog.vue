@@ -63,8 +63,8 @@ async function submit() {
 </template>
 
 <style scoped>
-.reasons { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
-.reasons button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent-dark); }
-textarea { display:block; width:100%; box-sizing:border-box; margin-top:8px; }
-.actions { display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
+.reasons { display:flex; flex-wrap:wrap; gap:var(--space-2); margin:var(--space-3) 0; }
+.reasons button[aria-pressed="true"] { border-color:var(--color-accent); color:var(--color-accent-text); }
+textarea { display:block; width:100%; box-sizing:border-box; margin-top:var(--space-2); }
+.actions { display:flex; justify-content:flex-end; gap:var(--space-2); margin-top:var(--space-3); }
 </style>

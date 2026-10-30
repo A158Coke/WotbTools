@@ -26,17 +26,17 @@ public class AiReviewFeedbackController {
         return ResponseEntity.status(HttpStatus.CREATED).body(service.createFromStream(request.getInputStream()));
     }
 
-    @GetMapping("/api/admin/ai-review-feedback")
+    @GetMapping(ApiPaths.ADMIN_AI_REVIEW_FEEDBACK)
     public FeedbackPage list(@RequestParam(name = "page", defaultValue = "0") final int page,
             @RequestParam(name = "size", defaultValue = "25") final int size,
             @RequestParam(name = "reason", required = false) final String reason) {
         return service.list(page, size, reason);
     }
 
-    @GetMapping("/api/admin/ai-review-feedback/{id}")
+    @GetMapping(ApiPaths.ADMIN_AI_REVIEW_FEEDBACK + "/{id}")
     public FeedbackRecord detail(@PathVariable(name = "id") final String id) { return service.get(id); }
 
-    @DeleteMapping("/api/admin/ai-review-feedback/{id}")
+    @DeleteMapping(ApiPaths.ADMIN_AI_REVIEW_FEEDBACK + "/{id}")
     public ResponseEntity<Void> delete(@PathVariable(name = "id") final String id) {
         service.delete(id);
         return ResponseEntity.noContent().build();

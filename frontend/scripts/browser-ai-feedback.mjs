@@ -19,7 +19,7 @@ const plugin = {
   },
   load(id) {
     if (id === '\0feedback-auth') return 'export const useAuth = () => ({ token: () => "test", ensureToken: async () => true })'
-    if (id === '\0feedback-gate') return 'export const useFeatureGate = () => ({ requireFeature: () => window.testOnline !== false })'
+    if (id === '\0feedback-gate') return 'export const useFeatureGate = () => ({ requireFeature: () => window.testOnline !== false, availability: () => ({ available: window.testOnline !== false }) })'
   },
 }
 let server, chrome
@@ -28,9 +28,14 @@ try {
   await writeFile(entry, `
     import { createApp, h } from 'vue'
     import { createI18n } from 'vue-i18n'
+    import '/src/styles/tokens/scale.css'
+    import '/src/styles/tokens/color.css'
+    import '/src/styles/tokens.css'
+    import '/src/styles/app-shell.css'
     import AnalysisResultPanel from '/src/components/AnalysisResultPanel.vue'
     import AdminAiReviewFeedbackPage from '/src/components/AdminAiReviewFeedbackPage.vue'
     import messages from '/src/locales/feature-messages.json'
+    document.documentElement.dataset.theme = new URLSearchParams(location.search).get('theme') || 'dark'
     window.requests = []
     Object.defineProperty(navigator, 'clipboard', { value: { writeText: async value => { window.copied = value } } })
     window.fetch = async (url, options = {}) => {
@@ -52,11 +57,11 @@ try {
   const { client } = chrome
   client.on('Runtime.exceptionThrown', event => console.error('Browser exception:', event.exceptionDetails?.exception?.description || event.exceptionDetails?.text))
   client.on('Runtime.consoleAPICalled', event => { if (event.type === 'error') console.error('Browser console:', event.args.map(arg => arg.value || arg.description).join(' ')) })
-  for (const width of [390, 1280]) {
+  for (const [width, theme] of [[390, 'dark'], [390, 'light'], [900, 'dark'], [900, 'light'], [1280, 'dark'], [1280, 'light']]) {
     const { sessionId, targetId } = await chrome.openPage()
     await client.send('Runtime.enable', {}, sessionId)
     await client.send('Emulation.setDeviceMetricsOverride', { width, height: 850, deviceScaleFactor: 1, mobile: width < 600 }, sessionId)
-    await client.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/${name}.html` }, sessionId)
+    await client.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/${name}.html?theme=${theme}` }, sessionId)
     let ready = false
     for (let attempt = 0; attempt < 100 && !ready; attempt++) {
       await delay(100)
@@ -71,7 +76,9 @@ try {
       const click = selector => { const node = document.querySelector(selector); if (!node) throw Error('missing ' + selector); node.click() }
       click('[data-test=copy-analysis-btn]'); await new Promise(r => setTimeout(r, 30)); click('[data-test=feedback-btn]'); await new Promise(r => setTimeout(r, 100))
       const dialog = document.querySelector('[role=dialog]'); if (!dialog) throw Error('dialog missing')
-      const rect = dialog.getBoundingClientRect(); if (rect.left < -1 || rect.right > innerWidth + 1) throw Error('dialog overflows viewport')
+      const rect = dialog.getBoundingClientRect(); if (rect.left < -1 || rect.right > innerWidth + 1) throw Error('dialog overflows viewport ' + JSON.stringify({left:rect.left,right:rect.right,width:innerWidth}))
+      if (document.documentElement.scrollWidth > innerWidth) throw Error('page overflows viewport')
+      if (!getComputedStyle(document.documentElement).getPropertyValue('--space-2').trim()) throw Error('spacing tokens not loaded')
       const choice = dialog.querySelector('[aria-pressed]'); choice.click(); await new Promise(r => setTimeout(r, 30))
       const submit = [...dialog.querySelectorAll('button')].find(x => x.textContent.trim() === 'Submit feedback'); if (!submit || submit.disabled) throw Error('submit unavailable'); submit.click()
       await new Promise(r => setTimeout(r, 150)); const sent = window.requests.find(x => x.options.method === 'POST')
@@ -97,7 +104,7 @@ try {
     })()`
     const outcome = await client.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, sessionId)
     if (outcome.exceptionDetails || outcome.result.value !== true) throw new Error(JSON.stringify(outcome.exceptionDetails || outcome.result))
-    console.log(`AI feedback browser flow OK (${width}px)`)
+    console.log(`AI feedback browser flow OK (${width}px, ${theme})`)
     await client.send('Target.closeTarget', { targetId })
   }
 } finally {
