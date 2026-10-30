@@ -55,6 +55,7 @@ import {
   friendlyHealthAt,
   ghostAroundV2,
   healthDisplayAt,
+  positionAtV2,
   positionCoveredAtV2,
   victimFeedbackAllowedV2,
 } from '../utils/battlePlaybackV2'
@@ -382,8 +383,13 @@ function consumeEvents(fromSec, toSec) {
     return
   }
   const now = realNowMs()
-  const states = vehicleStates.value
-  const stateByAccount = new Map(states.map(s => [s.vehicle.accountId, s]))
+  // 消费时刻资格判定（Codex review 2026-10-31）：以**帧末 toSec** 的 canonical 位置为准，
+  // 与 projectVehicleState 的排除谓词同源（positionAtV2 为空 = 该车尚未入场）。
+  // 此前的守卫读 vehicleStates（派生自节流发布的 currentTime，落后内部钟至多 1/30s）——
+  // 车辆首次 canonical 位置与首个合格事件落在同一消费帧时会被旧快照误删浮动伤害/击毁
+  // burst，且 cursor 随后永久跳过该事件。事件稀疏：逐 track 的 segment 位置检查远轻于
+  // 整表状态快照。
+  const hasPositionAtConsumption = (track) => positionAtV2(track.positionSegments, toSec) != null
   // DamageLoss is the sole numeric damage authority. Notification events below
   // remain responsible for lifecycle feedback only.
   for (const track of hpVehicles.value) {
@@ -391,7 +397,7 @@ function consumeEvents(fromSec, toSec) {
       if (!loss || loss.toSec <= damageLeft + 1e-6 || loss.toSec > toSec + 1e-6) continue
       const victim = vehiclesByAccount.value.get(track.accountId)
       if (!victim || loss.transientAllowed !== true) continue
-      if (!stateByAccount.has(track.accountId)) continue
+      if (!hasPositionAtConsumption(track)) continue
       floatItems.value.push({
         id: ++transientSeq,
         victimAccountId: track.accountId,
@@ -411,7 +417,7 @@ function consumeEvents(fromSec, toSec) {
       // §12：击毁 burst（轻量 2D，克制；仅受击方位置流覆盖时锚定）
       const victim = vehiclesByAccount.value.get(ev.accountId)
       if (!victim || !victimFeedbackAllowedV2(victim, ev.timeSec)) continue
-      if (!stateByAccount.has(ev.accountId)) continue
+      if (!hasPositionAtConsumption(victim)) continue
       burstItems.value.push({
         id: ++transientSeq,
         victimAccountId: ev.accountId,

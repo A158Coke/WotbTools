@@ -167,6 +167,30 @@ describe('ReplayShotsPane author_path fail-visible（评审 blocker 回归）', 
     wrapper.unmount()
   })
 
+  it('上游 v0.4.20：others 缺失而 others_error 在场 → 独立警示可见（不静默当全 0）', async () => {
+    parseAgentShotsFromBytes.mockResolvedValue({
+      shots: [],
+      author_path: 'ok',
+      author_eid: 7,
+      others_error: '他人路径: shotId=9 非续段发射缺少命中通知窗口（build_notice_windows 不变量破坏）',
+    })
+    const wrapper = await mountPane()
+    const warn = wrapper.get('[data-testid="shots-others-error"]')
+    expect(warn.text()).toContain('agentShots.others_error')
+    expect(warn.text()).toContain('build_notice_windows')
+    wrapper.unmount()
+  })
+
+  it('上游 v0.4.20：others 在场 → 无他人警示', async () => {
+    parseAgentShotsFromBytes.mockResolvedValue({
+      shots: [], author_path: 'ok', author_eid: 7,
+      others: { ...baseOthers, total_launches: 12 },
+    })
+    const wrapper = await mountPane()
+    expect(wrapper.find('[data-testid="shots-others-error"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('author_path=ok → 无警示', async () => {
     parseAgentShotsFromBytes.mockResolvedValue({
       shots: [], author_path: 'ok', author_eid: 7,

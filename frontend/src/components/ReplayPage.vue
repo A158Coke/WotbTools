@@ -373,6 +373,16 @@ function setBattleRef(el, index) {
   battleRefs.value[index] = el
 }
 
+// 逐场排序状态（Codex review 2026-10-31）：v-if 挂载口径下 BattleTable 隐藏即卸载，
+// 其本地排序 ref 会随之丢失——「排序 → 切场次 → 回来」重置行序并改变后续 PNG 导出。
+// 轻量 { key, reverse } 留在父组件，随表下传回写。
+const battleSorts = ref([])
+
+function setBattleSort(index, patch) {
+  const current = battleSorts.value[index] || { key: '', reverse: false }
+  battleSorts.value[index] = { ...current, ...patch }
+}
+
 function readTheme() {
   return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'
 }
@@ -667,6 +677,10 @@ function openRatingDocs() {
                :ref="(el) => setBattleRef(el, i)">
             <BattleTable :battle="b" :shown-cols="shownCols"
               :active="!isSummaryView && currentSingleIndex === i"
+              :sort-key="battleSorts[i]?.key || ''"
+              :sort-reverse="battleSorts[i]?.reverse || false"
+              @update:sort-key="k => setBattleSort(i, { key: k })"
+              @update:sort-reverse="r => setBattleSort(i, { reverse: r })"
               :league-mode="leagueMode" :league="b.league" :league-columns="leagueData?.columns || []"
               :team-names="battleTeamNames" @update-team-name="updateBattleTeamName"
               :selected-account-id="selectedPlayer?.accountId ?? null"
