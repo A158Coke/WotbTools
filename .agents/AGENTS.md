@@ -11,18 +11,18 @@
 
 每次新任务先按这条路径接手；除非用户明确要求只做单个命令或只回答问题，否则默认执行到可交接状态。
 
-1. **入口阅读** — 先读根 `AGENTS.md`、本文件、`docs/DEVELOPER_GUIDE.md`；进入具体目录再读该目录 `AGENTS.md`；改专项能力时读 `docs/README.md` 指向的对应专题文档。
+1. **入口阅读** — 始终读根 `AGENTS.md`、本文件、当前 lifecycle Skill 与实际涉及目录的 `AGENTS.md`。`docs/DEVELOPER_GUIDE.md`、`docs/README.md` 作为索引，按任务定位相关章节、canonical owner 与领域 playbook；接手全仓维护 / onboarding 或 architecture-wide 任务才全文读 Guide。所有适用硬规则仍须加载，不递归预读所有链接；同一 revision 已读内容跨阶段复用，压缩上下文后按需恢复。
 2. **现实审计** — 先确认 `git status --short --branch`、`git remote -v`、当前分支/HEAD 与已有未提交改动；再用 `rg` 追真实调用链、配置、测试与文档。真实代码是 source of truth，文档只作为待校验线索。
-3. **任务分类** — 判定是问答/排障、文档、小修、feature、大范围重构、跨层改动、数据/导出/API/部署/Android runtime。问答/排障可直接回答；任何会改变 repository 行为的 development task（含小修、bug fix、CSS、i18n、hotfix）统一进入 Designer → approved current-plan → Executor → Review With Docs。跨层改动加载 `.agents/playbooks/wotb-sync.md`；增删列加载 `.agents/playbooks/column-sync.md`。
-4. **计划契约** — 计划必须写清范围、非目标、影响面、SSOT、风险、验证档位、回滚/失败处理，写入 `docs/current-plan.md` 并等待用户批准。Plan schema 唯一来源是 `.agents/skills/designer/SKILL.md`；Executor 只消费该 schema，不定义第二套 current-plan format。
+3. **任务分类** — 判定是问答/排障、文档、小修、feature、大范围重构、跨层改动、数据/导出/API/部署/Android runtime。问答/排障可直接回答；未提供可执行计划的 development task（含小修、bug fix、CSS、i18n、hotfix）进入 Designer → approved/authorized current-plan → Executor → Review With Docs；用户已提供计划时按 Designer 的规范化入口交给 Executor。跨层改动加载 `.agents/playbooks/wotb-sync.md`；增删列加载 `.agents/playbooks/column-sync.md`。
+4. **计划契约** — 计划必须写清范围、非目标、影响面、SSOT、风险、验证档位、回滚/失败处理，编码前写入唯一 `docs/current-plan.md`；授权来源、手贴输入规范化与自动交接 / 必须批准边界只按 Designer「授权、计划输入与偏差边界」。Plan schema 唯一来源是 `.agents/skills/designer/SKILL.md`；Executor 只消费该 schema，不定义第二套 current-plan format。
 5. **Reuse / SSOT 执行** — 新增 production abstraction 前先做 Reuse Audit；优先复用/扩展现有结构，避免第二份事实源。改动影响界面、导出、数据、构建、用法或运维时，同步更新文档。
 6. **分层验证** — 先 targeted，再 module/feature，只有触发 Full-test 例外才跑 repository-level full validation；每次说明 Affected scope / Selected validation / Why，避免重复跑已失效范围外的测试。
 7. **收尾交接** — Review With Docs 是唯一 final quality gate；通过后 Executor 再 commit/push/open PR；最终说明改了什么、验证了什么、未验证什么、剩余风险和下一步。
 
 ## 规则
 
-1. **Plan-First** — 所有 development task 先进入 `designer` 产出 approved plan，再交给 `executor`；不存在跳过 Designer 的小修 / CSS / i18n / hotfix / direct implementation 路径。简单任务的复杂度由 Designer 用 `Ambition = KEEP` 与轻量化 plan 控制，不扩大设计。Plan schema 与 lifecycle authority 以 `.agents/skills/designer/SKILL.md` 为准。
-2. **生命周期** — 模糊需求 / 明确需求 → `designer`（deeply define the work）→ approved `docs/current-plan.md` → `executor`（实现 + targeted validation）→ `review-with-docs`（唯一 final gate）→ PASS 后 executor commit/push/open PR → merge 后 executor 加载 `.agents/playbooks/post-merge-cleanup.md`。PR reviewer findings → `prompt-repair` → `review-with-docs`。未批准不得编码；review-with-docs 未 PASS 不得开 PR。Designer 的 Understand / Ambition / Depth / Range / Design / Outside Judge / Execution Plan / internal Design Grill 完整定义只维护在其 Skill，不在本文件复制。
+1. **Plan-First** — 未提供可执行计划的新 development task 先进入 `designer` 完成设计，再按其授权边界交给 `executor`；用户提供可执行计划时按同一 Skill 的规范化入口消费，不因格式重新设计。小修 / CSS / i18n / hotfix 不能作为无计划直接编码的理由。简单任务的复杂度由 Designer 用 `Ambition = KEEP` 与轻量化 plan 控制，不扩大设计。Plan schema 与 lifecycle authority 以 `.agents/skills/designer/SKILL.md` 为准。
+2. **生命周期** — 模糊需求 / 明确需求 → `designer`（deeply define the work）→ approved/authorized `docs/current-plan.md` → `executor`（实现 + targeted validation）→ `review-with-docs`（唯一 final gate）→ PASS 后 executor commit/push/open PR → merge 后 executor 加载 `.agents/playbooks/post-merge-cleanup.md`。PR reviewer findings → `prompt-repair` → `review-with-docs`。缺少适用执行授权不得编码；review-with-docs 未 PASS 不得开 PR。Designer 的 Understand / Ambition / Depth / Range / Design / Outside Judge / Execution Plan / internal Design Grill 完整定义只维护在其 Skill，不在本文件复制。
 3. **文档生命周期与权威归属** — 持久文档按用途分层，任何改动都不得把「改动故事」写进 canonical 文档：
    - `HISTORY.md`：**仅产品/业务演进**——用户可见或商业能力为何引入、变化、退役，以及产品方向决策。不是技术架构史。
    - `docs/architecture/TECHNICAL_EVOLUTION.md`：**仅技术演进**——架构迁移、数据流/权威归属变化、基础设施与拓扑、身份模型、被引入又退役的技术方案。不是产品 changelog。
@@ -82,7 +82,7 @@
 
    **测试层级去重** — 优先使用原生校验器与真实集成测试，而不是源码文本断言；只有项目特有的架构或生产安全不变量才新增自定义 contract/policy test。
    **测试入口最小化** — 默认禁止新增 standalone `test-*.sh` / `*-contract.sh`。必须先按 `reuse > extend > merge > create` 复用现有 native validation、policy test 或 integration smoke；只有存在无法合理并入现有入口的独立职责时才允许新增，并说明原因。
-7. **Review With Docs 闭环** — 任何实现完成后都进入 `review-with-docs`；代码质量、code-smell、fallow、文档、架构与领域 playbook 检查均作为其内部阶段。先构造 task-related candidate files，显式记录 exclusions；只有 task-related candidate files 非空且 calculated review scope = 0 才 BLOCKER。只有 `review-with-docs` 可以输出 final PASS / zero blocker；通过后 Executor 才 commit/push/open PR。
+7. **Review With Docs 闭环** — 任何实现完成后都进入 `review-with-docs`；代码质量、code-smell、fallow、文档、架构与领域 playbook 检查均作为其内部阶段。先构造 task-related candidate files，显式记录 exclusions；task-related candidate files 非空且 calculated review scope = 0 时必须 BLOCKER；非零 scope 仍须证明每个 task-related file 已审查或有适用的覆盖证据，不能以聚合计数掩盖漏审。只有 `review-with-docs` 可以输出 final PASS / zero blocker；通过后 Executor 才 commit/push/open PR。
 8. **Git** — 推送前先 `git remote -v` 确认实际 remote（本机 remote 名/SSH 别名以本机配置为准，不写死）；仓库账号 A158Coke。中文提交、尾带 `Co-Authored-By`；禁止 force push、禁止改写已公开历史、禁止动与当前任务无关的分支/PR。
 9. **子代理** — spawn 子代理后必须显式验证其完成状态与产物（不可假设自动完成），完成后以醒目格式通知用户。
 10. **大需求拆分** — 一次性大需求拆为多个小任务，每个小任务一个子代理，主代理最后执行 review-with-docs final gate。
@@ -122,9 +122,9 @@
 
 ## Skills（.agents/skills/，四个 lifecycle Skills + 一个 operational 入口）
 
-1. **designer** — deeply define the work；完整 pipeline authority 在 `.agents/skills/designer/SKILL.md`，产出 approved `docs/current-plan.md`。
-2. **executor** — execute approved plan、targeted validation、review-with-docs PASS 后 commit/push/open PR、merge 后 cleanup。
-3. **prompt-repair** — reviewer findings 的 minimum-delta 增量修复；只有 finding 证明 approved plan 失效才返回 Designer。
+1. **designer** — deeply define the work；完整 pipeline authority 在 `.agents/skills/designer/SKILL.md`，产出已批准/授权的 `docs/current-plan.md`，授权与停止条件只在该 Skill 定义。
+2. **executor** — execute approved/authorized 文件或手贴 plan、targeted validation、review-with-docs PASS 后 commit/push/open PR、merge 后 cleanup。
+3. **prompt-repair** — reviewer findings 的 minimum-delta 增量修复；只有 finding 按 Designer 偏差边界证明设计实质失效才返回 Designer。
 4. **review-with-docs** — 验证 implementation against plan + repository reality + canonical docs + runtime evidence；唯一 final quality gate。
 
 Domain implementation playbooks、检查单与工具指南在 `.agents/playbooks/`，由四个 lifecycle Skills 按需加载；它们不是顶层 Skill，不参与生命周期选择。

@@ -18,7 +18,7 @@ WoT Blitz（坦克世界闪击战）回放工具集：Java 25 + Spring Boot 后�
 ## 必读
 
 1. **`.agents/AGENTS.md`** — 仓库级硬约定（Plan-First / 提交约定 / 跨层一致 / 禁止清单），任何改动前先读。
-2. **`docs/DEVELOPER_GUIDE.md`** — 架构、目录结构、环境、测试与部署约定（接手维护必读）。
+2. **`docs/DEVELOPER_GUIDE.md`** — 架构、目录结构、环境、测试与部署索引；普通任务按主题读取相关章节，全仓接手 / onboarding / architecture-wide 任务全文读取。
 3. 进入具体目录工作时，同时读取该目录的 `AGENTS.md`（存在时）：
 
 | 目录 | AGENTS.md 覆盖 |
@@ -39,7 +39,7 @@ WoT Blitz（坦克世界闪击战）回放工具集：Java 25 + Spring Boot 后�
 operational 入口 **product-qa**（只指向 Product QA playbook，见下）。该目录是跨 harness 的 canonical 位置：
 Codex 等直接读取 `.agents/skills/`，Claude Code 通过本机 `.claude/skills` → `.agents/skills` 的符号链接（不入库）发现同一批 Skill。
 
-Designer 的完整 pipeline authority 只在 `.agents/skills/designer/SKILL.md`；本文件不复制其阶段定义。
+Designer 的完整 pipeline、执行授权、手贴计划规范化与停止条件 authority 只在 `.agents/skills/designer/SKILL.md`；本文件不复制其定义。Executor 接受文件或用户直接提供的计划；唯一执行载体仍为 `docs/current-plan.md`。
 Domain implementation playbook / checklist / tool guidance 在 `.agents/playbooks/`（wotb-sync、column-sync、
 frontend-architecture、keycloak-upgrade、komodo-server-lifecycle、code-quality、code-smell、fallow、
 requirement-clarification、post-merge-cleanup），由四个 lifecycle Skills 按需加载，不是顶层 Skill。

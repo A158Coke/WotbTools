@@ -4,9 +4,9 @@
 
 lifecycle 只有四个 orchestrating Skills（另有一个不参与 lifecycle 的 operational 入口 `product-qa`，见下）：
 
-1. `designer` — deeply define the work；完整设计 pipeline authority 只在 `.agents/skills/designer/SKILL.md`，产出 approved `docs/current-plan.md`。
-2. `executor` — 执行已批准计划、targeted validation；review-with-docs PASS 后 commit/push/open PR；merge 后 cleanup。
-3. `prompt-repair` — 基于现成 repair prompt / PR findings 做 minimum-delta 增量修复；只有 finding 证明 approved plan 失效才返回 Designer。
+1. `designer` — deeply define the work；完整设计 pipeline authority 只在 `.agents/skills/designer/SKILL.md`，产出已批准/授权的 `docs/current-plan.md`；授权、手贴计划规范化与偏差边界只由该 Skill 定义。
+2. `executor` — 执行已批准/授权的文件或手贴计划、targeted validation；review-with-docs PASS 后 commit/push/open PR；merge 后 cleanup。
+3. `prompt-repair` — 基于现成 repair prompt / PR findings 做 minimum-delta 增量修复；只有 finding 按 Designer 偏差边界证明设计实质失效才返回 Designer。
 4. `review-with-docs` — 验证 implementation against plan + repository reality + canonical docs + acceptance criteria 要求的 runtime evidence；唯一 final quality gate。
 
 ## 加载规则

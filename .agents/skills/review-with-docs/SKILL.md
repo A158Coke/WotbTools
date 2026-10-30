@@ -1,7 +1,7 @@
 ---
 name: review-with-docs
 description: >
-  唯一 final quality gate：验证 implementation 是否符合 approved plan、repository reality、canonical docs
+  唯一 final quality gate：验证 implementation 是否符合 approved/authorized plan、repository reality、canonical docs
   与 acceptance criteria 要求的 runtime evidence；覆盖代码质量、文档同步、AI 死代码、架构/领域 playbook。
   Trigger: Executor 实现完成后、Prompt Repair 修复 reviewer finding 后、merge 前需要 final gate 时。
   只有本 Skill 可以判定 final PASS。周期性 Product QA 是独立 playbook，不是本 Skill 的 gate 或 trigger。
@@ -11,7 +11,7 @@ description: >
 # Review With Docs（唯一 final quality gate）
 
 > 生命周期：Executor implementation + targeted validation → **Review With Docs** → PASS 后 Executor 才 commit/push/open PR。
-> Review 不是第二个 Designer：它验证 approved plan + repository reality + canonical docs + runtime evidence，不重新选择 ambition 或擅自 redesign。
+> Review 不是第二个 Designer：它验证 approved/authorized plan + repository reality + canonical docs + runtime evidence，不重新选择 ambition 或擅自 redesign。
 
 ## 输入与 main baseline
 
@@ -47,10 +47,10 @@ committed range: merge-base(<main-ref>, HEAD)..HEAD
 
 ```text
 Candidate changes = task-related candidate files 非空
-Calculated review scope = OCR reviewable task-related files ∪ A3 manually-reviewed task-related docs
+Calculated review scope = OCR reviewable task-related files ∪ A3 manually-reviewed task-related docs ∪ equivalent manually-reviewed fallback files
 ```
 
-只有：
+最低覆盖检查：
 
 ```text
 task-related candidate files 非空
@@ -58,7 +58,7 @@ AND
 calculated review scope == 0
 ```
 
-才 fail-closed：
+成立时必须 fail-closed：
 
 ```text
 Task-related candidate tree contains changes but review scope is empty.
@@ -73,9 +73,9 @@ Task-related candidate tree contains changes but review scope is empty.
 - staged / unstaged tracked / task-related untracked → 全覆盖；
 - committed + fresh repair → range + workspace deterministic union / dedupe；
 - docs-only candidate → OCR unsupported 时 A3 人工审查全部 task-related docs 并计入 scope；
-- OCR unsupported non-doc committed file → task-related candidate 非空但 scope=0 时 BLOCKER。
+- OCR unsupported non-doc file → 需要有证据的等价人工覆盖；无法覆盖时 BLOCKER，不能因其他文件可审就忽略该文件。
 
-不得用 `reviewable_count == 0` 单独判 PASS。
+不得用 `reviewable_count == 0` 单独判 PASS，也不得用 scope 非零掩盖部分漏审。每个 task-related file 都要有审查结论或等价覆盖证据；skipped 必须说明理由及替代证据，mandatory coverage gap 始终 BLOCKER。
 
 ## 三层审查
 
@@ -100,7 +100,7 @@ Task-related candidate tree contains changes but review scope is empty.
 5. **Supplemental gates**：DI + docs + dead code + reuse/SSOT。
 6. **Internal checklists**：code-quality；代码变更加 code-smell；前端适用时加 fallow。
 7. **Layer C**：reconcile findings，计算 blocker。
-8. **Fix → re-review**：BLOCKER/MAJOR 修复后只重跑受影响 scope；无法闭环则停止汇报。
+8. **Fix → re-review**：可修 BLOCKER/MAJOR 持续修复后只重跑受影响 scope；按 Designer「授权、计划输入与偏差边界」遇到 HARD STOP 才暂停依赖步骤。
 9. **Report**：Plan compliance + Findings + Validation + Final。
 
 ## HTTP Contract Gate
@@ -149,7 +149,7 @@ ocr delegate rule --format json <task-related-paths...>
 
 只有版本 gate 通过后才运行上述 delegate 命令。mixed candidate 两个 preview 都运行并按 path union/dedupe。OCR 返回 scope 后再次应用 task-related classification；exclusion 仍显式记录。
 
-每个 task-related reviewable file 必须 `reviewed` 或有具体原因的 `skipped`。range 读 `merge-base(<main-ref>, HEAD)..HEAD` diff，tracked workspace 读 `git diff HEAD -- <path>`，task-related untracked 读全文。
+每个 task-related file 必须 `reviewed` 或有具体原因及等价覆盖证据的 `skipped`。range 读 `merge-base(<main-ref>, HEAD)..HEAD` diff，tracked workspace 读 `git diff HEAD -- <path>`，task-related untracked 读全文。
 
 ## Layer A — Plan Auditor
 
@@ -178,7 +178,7 @@ ocr delegate rule --format json <task-related-paths...>
 
 ### A2. Java DI gate
 
-Constructor injection preferred；禁止无理由 field injection。
+存在 Java production 变更或直接受影响 Java DI 接线时执行本节；纯非 Java 任务记录 N/A + 原因。Constructor injection preferred；禁止无理由 field injection。
 
 先确认真实 roots：
 
@@ -198,7 +198,7 @@ rg -n -U '@Autowired\s*\n\s*(?:private|protected|public)\s+' java/*/src/main/jav
 rg -n '@Autowired\s+(?:private|protected|public)\s+' java/*/src/main/java
 ```
 
-必须证明普通两行与同行 field injection 都能命中，且命令本身不报 multiline error。发现后优先 constructor injection / `@RequiredArgsConstructor` + `final`；唯一可行时才保留并写具体原因。不引入 AST tooling。
+必须证明普通两行与同行 field injection 都能命中，且命令本身不报 multiline error。发现后优先显式 constructor injection + `final` 字段（不引入 Lombok）；唯一可行时才保留并写具体原因。不引入 AST tooling。
 
 ### A3. Documentation Gate
 
@@ -264,23 +264,25 @@ current-state 文档发现 future-only prose：
 
 规则：去重；OCR finding 必须用 repository evidence 验证；不盲从 OCR severity；不因 reviewer suggestion over-engineer；requirement missing 高于 OCR no findings。
 
-Source-of-truth 顺序：用户当前显式 requirement → approved plan → acceptance criteria → repository current architecture/contract → tests/runtime evidence → OCR → reviewer inference。
+Source-of-truth 顺序：用户当前显式 requirement → approved/authorized plan → acceptance criteria → repository current architecture/contract → tests/runtime evidence → OCR → reviewer inference。
 
 ```text
 Blocker count: N
 ```
 
-只有 N=0 才能 final PASS。
+只有 N=0 且无未解决 MAJOR、无 mandatory coverage gap 才能 final PASS；MINOR 可报告，不要求“零所有问题”。
 
 ## Repair boundary
 
 - BLOCKER → MAJOR → MINOR；MINOR 可记录 known issue，不扩大 scope；
 - 修复后重跑受影响 validation/review；repository-level authoritative validation 交给 PR CI，除 Full-test 例外不重复全量；
-- finding 若证明 approved plan 本身失效，返回 Designer，不在 Review 内 redesign。
+- finding 按 Designer「授权、计划输入与偏差边界」证明设计实质失效才返回 Designer；实现细节纠正继续修复，不在 Review 内 redesign。
 
 ## OCR failure
 
-executable missing / timeout / parser/provider error 都是 tool failure：明确报告；Layer A 继续；人工 fallback 或 `review incomplete` + blocker；禁止假装 no findings。
+executable missing / timeout / parser/provider error 都是 tool failure：明确报告并尝试安全恢复；Layer A 继续。人工 fallback 仅在能独立列全 candidate paths、取得完整 diff/文件和适用规则、完成逐文件审查及必需验证时等价；报告工具失败、覆盖方法和证据，禁止假装 OCR 成功或 no findings。不能维持同等覆盖则 `review incomplete` + blocker，不得 PASS。
+
+版本安全门禁始终先于 candidate OCR rules 解析；低于安全下限时先修复到安全版本，不以 fallback 为由运行不安全 OCR 或解析未获安全保障的 candidate rules。缺少必要 runtime evidence 不能用静态 fallback 或“未验证”替代验收。
 
 ## Report
 
@@ -313,7 +315,7 @@ Blocker count: N
 ## 边界
 
 - Designer = deeply define the work。
-- Executor = execute approved plan，并把已验证 `<main-ref>` 交给 final gate。
+- Executor = execute approved/authorized plan，并把已验证 `<main-ref>` 交给 final gate。
 - Prompt Repair = minimum-delta reviewer finding repair。
 - Review With Docs = verify implementation against plan + reality + docs + acceptance criteria 明确要求的 runtime evidence，并拥有唯一 final PASS authority；复用已验证 baseline，不自行硬编码 remote。
 - Product QA = 独立、周期性或用户显式触发的 production product audit；不拥有 final implementation PASS，也不属于本 Skill 的 gate。
