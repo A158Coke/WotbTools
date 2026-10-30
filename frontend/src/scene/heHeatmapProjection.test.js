@@ -62,6 +62,22 @@ describe('HE 热力图投影到可见主装甲（源码级锁）', () => {
         expect(viewer).toMatch(/heHeatmapCenter = null;\s*\n\s*disposePenetrationResources\(\);/);
         expect(viewer).toContain('else if (primaryArmorScene) { disposePenetrationResources(); syncHeatOverlay(); }');
     });
+    it('叠加层释放后清空 Scene 引用，模式往返能重建（评审 P2）', () => {
+        // 只 clear() 不置 null：释放后 primaryArmorScene 仍是 truthy 空场景，
+        // heGradientWanted() 恢复时只会更新空场景 uniform，重建永不发生。
+        expect(viewer).toMatch(/function disposePenetrationResources\(\) \{[\s\S]*?primaryArmorScene = null;\s*\n\s*spacedArmorScene = null;\s*\n\s*spacedStateScene = null;/);
+        // 「已构建」判断依赖同一引用：null 时走 rebuildHeatmapScenes。
+        expect(viewer).toMatch(/if \(heGradientWanted\(\)\) \{\s*\n\s*if \(primaryArmorScene\) updateHeatMaskUniforms\(false\);\s*\n\s*else rebuildHeatmapScenes\(\);/);
+        // 逐帧管线同样只在机械真的建好时才走热力图分支。
+        expect(viewer).toContain('if ((penetrationMode || (!!primaryArmorScene && heGradientWanted())) && armorModel) {');
+    });
+    it('普通检视的换弹/换装备清理覆盖两个视图（评审 P2）', () => {
+        // 默认视图也能建 HE 爆点/渐变：清理若仍限定 penetrationMode，旧结果卡/轨迹/
+        // 命中标记会留下，而渐变已按新弹参数重算。
+        expect(viewer.match(/\} else if \(\(penetrationMode \|\| primaryArmorScene\) && lastClickNdc\) \{/g)).toHaveLength(2);
+        // 清理之后再统一裁决叠加层（换到非 HE 释放、HE+爆点保留/重建）。
+        expect(viewer).toMatch(/lastClickNdc = null;\s*\n\s*\}\s*\n\s*\/\/ 清理之后再统一裁决叠加层[\s\S]*?syncHeatOverlay\(\);/);
+    });
     it('点击判定特效走独立 fxScene，击穿概率模式下画在热力图之上', () => {
         expect(viewer).toContain('fxScene = new THREE.Scene();');
         // 轨迹/命中标记/溅射半径球全部挂在 fxScene，不再留在主场景。

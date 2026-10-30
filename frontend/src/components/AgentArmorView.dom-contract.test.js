@@ -275,7 +275,8 @@ describe('dolly-zoom world-overview scope guard', () => {
     // 击穿视图默认开启，?heatmap=0 显式关闭（2026-10-28 用户要求）
     expect(kernel).toMatch(/if \(QP\.get\('heatmap'\) !== '0' && !penetrationMode && !collisionMode\)/)
     // 普通检视换弹：只清掉上一次判定，不按旧点击位置重跑（2026-10-28 用户裁定）
-    expect(kernel).toMatch(/else if \(penetrationMode && lastClickNdc\) \{[\s\S]*?tidyTrajectory\(\);/)
+    // 输入变化后只清旧结果、不按旧点击位置重跑；条件覆盖两个视图（默认视图也能建 HE 渐变）。
+    expect(kernel).toMatch(/else if \(\(penetrationMode \|\| primaryArmorScene\) && lastClickNdc\) \{[\s\S]*?tidyTrajectory\(\);/)
     expect(kernel).not.toMatch(/doPenetrationCheck\(lastClickNdc\.x, lastClickNdc\.y\)/)
     // 厚度视图点击高亮（2026-10-28 用户要求，对齐 BlitzKit）：被点装甲板保持不透明、
     // 其余装甲板/模块降透明度；**不改厚度色相**（不加金色自发光，2026-10-29 用户报障：
@@ -768,7 +769,7 @@ describe('armor shell and readiness ownership', () => {
     expect(kernel).toMatch(/function rerunAuthoritativeShotCheck\(\)/)
     expect(kernel).toMatch(/if \(!rerunAuthoritativeShotCheck\(\)\) doPenetrationCheck\(0, 0\);/)
     // 普通检视换装备同样清掉旧结果
-    expect(kernel).toMatch(/else if \(penetrationMode && lastClickNdc\) \{\s*\/\/[^\n]*\n\s*tidyTrajectory\(\);/)
+    expect(kernel).toMatch(/else if \(\(penetrationMode \|\| primaryArmorScene\) && lastClickNdc\) \{\s*\/\/[^\n]*\n\s*tidyTrajectory\(\);/)
   })
   it('目标配置切换清空旧结果并使在途判定失效', () => {
     expect(kernel).toMatch(/if \(!QP\.get\('shot'\)\) \{\s*__penCheckSeq\+\+;\s*tidyTrajectory\(\);[\s\S]*?lastClickNdc = null;\s*\} else \{\s*rerunAuthoritativeShotCheck\(\);/)

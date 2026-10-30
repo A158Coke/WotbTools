@@ -973,6 +973,12 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             disposeSceneMaterials(primaryArmorScene);
             disposeSceneMaterials(spacedArmorScene);
             disposeSceneMaterials(spacedStateScene);
+            // 三个 Scene 清空后必须一并置 null：调用方（syncHeatOverlay / animate /
+            // 模式往返重建）都以引用是否为 null 判断「叠加层是否可用」。留着空 Scene，
+            // 释放后再需要渐变时只会去更新一个空场景的 uniform，重建永不发生（评审 P2）。
+            primaryArmorScene = null;
+            spacedArmorScene = null;
+            spacedStateScene = null;
             if (spacedStateRT) {
                 if (spacedStateRT.depthTexture) spacedStateRT.depthTexture.dispose();
                 spacedStateRT.dispose();
@@ -4746,12 +4752,13 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             if (sh) { updatePenetrationUniforms(sh); updateSpacedUniforms(sh); }
             if (QP.get('shot')) {
                 if (!rerunAuthoritativeShotCheck()) doPenetrationCheck(0, 0);
-            } else if (penetrationMode && lastClickNdc) {
-                // 校准弹/强化装甲改变的是判定输入，旧的命中结果不再成立。
+            } else if ((penetrationMode || primaryArmorScene) && lastClickNdc) {
+                // 校准弹/强化装甲改变的是判定输入，旧的命中结果不再成立（两个视图同口径）。
                 tidyTrajectory();
                 if (window.__hitMarker) { fxScene.remove(window.__hitMarker); window.__hitMarker = null; }
                 lastClickNdc = null;
             }
+            syncHeatOverlay();
         }
 
         function setupEventHandlers() {
@@ -4770,17 +4777,20 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     // 机械存在（击穿视图或默认视图 HE 渐变）时都要刷新弹种 uniforms，
                     // 否则默认视图换弹后渐变仍用上一发的穿深/伤害/爆炸半径。
                     if (penetrationMode || primaryArmorScene) { updatePenetrationUniforms(selectedShell); updateSpacedUniforms(selectedShell); }
-                    syncHeatOverlay();
                     if (QP.get('shot')) {
                         // 世界模式：换弹按权威弦射线重跑判定。
                         if (!rerunAuthoritativeShotCheck()) doPenetrationCheck(0, 0);
-                    } else if (penetrationMode && lastClickNdc) {
+                    } else if ((penetrationMode || primaryArmorScene) && lastClickNdc) {
                         // 普通检视换弹（2026-10-28 用户裁定）：只清掉上一次判定结果，
                         // 不按旧点击位置重跑——新弹种要用户重新点击才产生结果。
+                        // 默认视图的 HE 渐变也建立过爆点/结果卡：清理覆盖两个视图，否则
+                        // 旧卡片/轨迹留着、渐变却按新弹参数重算（评审 P2）。
                         tidyTrajectory();
                         if (window.__hitMarker) { fxScene.remove(window.__hitMarker); window.__hitMarker = null; }
                         lastClickNdc = null;
                     }
+                    // 清理之后再统一裁决叠加层（HE→非 HE 释放、HE+爆点保留/重建）。
+                    syncHeatOverlay();
                     onShellSelection?.(idx);
                 }
             });
@@ -6479,6 +6489,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (primaryArmorScene) { syncCloneMatrices(primaryArmorScene); renderer.render(primaryArmorScene, camera); }
                 renderFxPass();   // 点击判定特效画在热力图之上（否则被 0.5/0.95 alpha 覆盖）
             } else {
+                // 普通分支必须自清屏：热力图/叠加层的最后一帧会把 autoClear 留成 false，
+                // 若条件在两次 syncHeatOverlay 之间失效（如 selectedShell 被换掉但尚未
+                // 同步），没有显式 clear 的帧会复用上一帧缓冲（评审 2026-10-30 提出的
+                // 清理状态风险）。这里不依赖「谁最后动过 autoClear」。
+                renderer.autoClear = true;
                 renderer.render(scene, camera);
                 renderFxPass();
             }
