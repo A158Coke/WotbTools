@@ -3,14 +3,17 @@ import * as THREE from 'three'
 import { buildAdaptiveTerrain, terrainSurfaceHeightAt } from '../terrainMesh.js'
 import {
   ANNOTATION_LIFT,
+  ANNOTATION_MAX_COMMITTED_POINTS,
   ANNOTATION_MITER_LIMIT,
   ANNOTATION_RING_SEGMENTS,
   buildEraserRing,
   buildPenRibbon,
+  normalizePenPoints,
   sanitizePoints,
   smoothPolyline,
   subdividePolyline,
 } from './annotation3d.js'
+import { applyEraser, commit, redo, undo } from '../../utils/annotation.js'
 
 function pen(points, width = 1.4, color = '#ff4d4f') {
   return { type: 'pen', color, width, points }
@@ -157,11 +160,15 @@ describe('buildPenRibbon', () => {
       sampleHeight: surface, lift: 0, maxSegment: 100,
     })
     expect(ribbon).not.toBeNull()
-    const verts = ribbonVertices(ribbon)
-    expect(verts).toHaveLength(4)
-    for (let i = 0; i < verts.length; i += 2) {
-      const left = verts[i]
-      const right = verts[i + 1]
+    expect(ribbon.vertexCount).toBeLessThanOrEqual(ribbon.vertexBudget)
+    expect(ribbon.strips[0].rowCount).toBe(2)
+    const strip = ribbon.strips[0]
+    const n = strip.crossCount
+    for (let k = 0; k < strip.rowCount; k++) {
+      const li = (k * n) * 3
+      const ri = (k * n + n - 1) * 3
+      const left = { z: strip.positions[li + 2], y: strip.positions[li + 1] }
+      const right = { z: strip.positions[ri + 2], y: strip.positions[ri + 1] }
       expect(Math.abs(left.z - right.z)).toBeCloseTo(2, 6)
       expect((left.z + right.z) / 2).toBeCloseTo(0, 6)
       expect(left.y).toBeCloseTo(20 + 0.3 * left.z, 5)
@@ -181,6 +188,91 @@ describe('buildPenRibbon', () => {
       expect(ribbon, name).not.toBeNull()
       expectDraped(ribbon, surface)
     }
+  })
+
+  it('keeps triangle interiors above convex ridge, valley and cross-slope terrain', () => {
+    const cases = [
+      ['flat', () => 20, [{ x: -10, y: 0 }, { x: 10, y: 0 }], 2],
+      ['slope', (x) => 20 + 0.2 * x, [{ x: -10, y: 0 }, { x: 10, y: 0 }], 2],
+      ['ridge', (x, z) => 20 - 0.5 * Math.abs(z), [{ x: -10, y: 0 }, { x: 10, y: 0 }], 8],
+      ['valley', (x, z) => 20 + 0.5 * Math.abs(z), [{ x: -10, y: 0 }, { x: 10, y: 0 }], 8],
+      ['cross-slope', (x, z) => 20 + 0.3 * z, [{ x: -10, y: 0 }, { x: 10, y: 0 }], 2],
+    ]
+    for (const [name, surface, points, width] of cases) {
+      const ribbon = buildPenRibbon(pen(points, width), { sampleHeight: surface, lift: 0 })
+      expect(ribbon, name).not.toBeNull()
+      let triangles = 0
+      for (const strip of ribbon.strips) {
+        const n = strip.crossCount
+        for (let i = 0; i < strip.indices.length; i += 3) {
+          const ia = strip.indices[i] * 3
+          const ib = strip.indices[i + 1] * 3
+          const ic = strip.indices[i + 2] * 3
+          const ax = strip.positions[ia]; const ay = strip.positions[ia + 1]; const az = strip.positions[ia + 2]
+          const bx = strip.positions[ib]; const by = strip.positions[ib + 1]; const bz = strip.positions[ib + 2]
+          const cx = strip.positions[ic]; const cy = strip.positions[ic + 1]; const cz = strip.positions[ic + 2]
+          // 重心 + 三个偏向顶点的重心采样；只查 mesh 线性插值是否低于 terrain。
+          for (const [wa, wb, wc] of [[1 / 3, 1 / 3, 1 / 3], [0.6, 0.2, 0.2], [0.2, 0.6, 0.2], [0.2, 0.2, 0.6]]) {
+            const x = wa * ax + wb * bx + wc * cx
+            const y = wa * ay + wb * by + wc * cy
+            const z = wa * az + wb * bz + wc * cz
+            expect(y, name).toBeGreaterThanOrEqual(surface(x, z) - 1e-6)
+          }
+          triangles++
+        }
+        expect(n).toBeGreaterThanOrEqual(2)
+      }
+      expect(triangles, name).toBeGreaterThan(0)
+    }
+  })
+
+  it('bounds cross-width tessellation for a long wide stroke without dropping the tail', () => {
+    const points = Array.from({ length: 4096 }, (_, i) => ({ x: (i / 4095) * 200 - 100, y: 0 }))
+    const ribbon = buildPenRibbon(pen(points, 40), { sampleHeight: () => 20, lift: 0, maxSegment: 1e9 })
+    expect(ribbon).not.toBeNull()
+    expect(ribbon.vertexCount).toBeLessThanOrEqual(ribbon.vertexBudget)
+    expect(ribbon.vertexCount).toBeLessThanOrEqual(65536)
+    expect(ribbon.strips.every((strip) => Number.isFinite(strip.positions[strip.positions.length - 1]))).toBe(true)
+  })
+
+  it('normalizes at commit and uses the same centerline for rendering and erasing', () => {
+    const raw = [{ x: 0, y: 0 }, { x: 10, y: 10 }, { x: 20, y: 0 }]
+    const normalized = normalizePenPoints(raw)
+    expect(normalized[0]).toEqual(raw[0])
+    expect(normalized[normalized.length - 1]).toEqual(raw[2])
+    expect(normalized).not.toEqual(raw)
+
+    const committed = pen(normalized, 1)
+    const ribbon = buildPenRibbon(committed, { sampleHeight: () => 20, lift: 0, maxSegment: 1e9 })
+    expect(ribbon).not.toBeNull()
+    // Renderer consumes normalized points; raw peak (10,10) must not appear as a centerline row.
+    const verts = ribbonVertices(ribbon)
+    expect(verts.some((v) => Math.abs(v.x - 10) < 1e-6 && Math.abs(v.z - 10) < 1e-6)).toBe(false)
+
+    const eraser = [{ x: 10, y: 8 }]
+    const rawAnn = pen(raw, 1)
+    expect(applyEraser([rawAnn], eraser, 0.5)).toEqual([rawAnn])
+    const erased = applyEraser([committed], eraser, 0.5)
+    expect(erased).not.toBe(committed)
+    expect(erased.length).toBe(2)
+
+    let state = commit([[]], 0, [committed])
+    const original = state.history[state.index][0]
+    state = commit(state.history, state.index, applyEraser(state.history[state.index], eraser, 0.5))
+    const erasedSnapshot = state.history[state.index]
+    state = undo(state.history, state.index)
+    expect(state.history[state.index][0]).toBe(original)
+    state = redo(state.history, state.index)
+    expect(state.history[state.index]).toBe(erasedSnapshot)
+  })
+
+  it('bounds the committed centerline while preserving endpoints and full span', () => {
+    const raw = Array.from({ length: 4096 }, (_, i) => ({ x: i, y: i % 2 }))
+    const normalized = normalizePenPoints(raw)
+    expect(normalized.length).toBeLessThanOrEqual(ANNOTATION_MAX_COMMITTED_POINTS)
+    expect(normalized[0]).toEqual(raw[0])
+    expect(normalized[normalized.length - 1]).toEqual(raw[raw.length - 1])
+    expect(normalized.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))).toBe(true)
   })
 
   it('handles duplicate semantic points without NaN', () => {

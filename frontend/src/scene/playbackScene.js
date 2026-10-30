@@ -99,7 +99,7 @@ import { createBaseMarkers } from './playback/bases.js'
 import { createHudFeed } from './playback/hudFeed.js'
 import {
   ANNOTATION_LIFT, ANNOTATION_MAX_ERASER_POINTS, ANNOTATION_MAX_INPUT_POINTS,
-  buildEraserRing, buildPenRibbon,
+  buildEraserRing, buildPenRibbon, normalizePenPoints,
 } from './playback/annotation3d.js'
 
 export { QUALITY_PRESETS, tracerSpanSecs, occlusionCells, occlusionFootprintCells }
@@ -1462,7 +1462,16 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
 
   function ensureAnnotationLayer() {
     if (!scene) return false
-    if (annotationGroup) return true
+    if (annotationGroup) {
+      // rebuildRenderer() replaces THREE.Scene without disposing the annotation layer
+      // (materials/geometries are reusable). Reattach before returning; otherwise the
+      // layer keeps rebuilding into a scene that is no longer rendered.
+      if (annotationGroup.parent !== scene) {
+        annotationGroup.parent?.remove(annotationGroup)
+        scene.add(annotationGroup)
+      }
+      return true
+    }
     annotationGroup = new THREE.Group()
     annotationGroup.name = 'playback-annotations'
     annotationGroup.visible = annotationsVisible
@@ -1804,7 +1813,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const next = { x: pick.semantic.x, y: pick.semantic.y }
     gesture.points.push(next)
     if (gesture.tool === 'pen') {
-      annotationDraft.points = gesture.points
+      // Draft 与 commit 用同一个 deterministic normalizer，避免 pointerup 时视觉 snap。
+      annotationDraft.points = normalizePenPoints(gesture.points)
       rebuildDraftAnnotation()
     } else {
       if (gesture.points.length > ANNOTATION_MAX_ERASER_POINTS) {
@@ -1839,7 +1849,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           type: 'pen',
           color: gesture.color,
           width: gesture.width,
-          points: gesture.points.map((point) => ({ x: point.x, y: point.y })),
+          points: normalizePenPoints(gesture.points),
         })
       }
     } else if (gesture.points.length > 0) {

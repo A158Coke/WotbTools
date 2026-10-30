@@ -17,12 +17,19 @@ const ANNOTATION_MIDPOINT_ERROR = 0.08
 const ANNOTATION_MAX_DEPTH = 6
 /** 单条笔迹 semantic 输入点上限；scene 达到上限时冻结 stroke。 */
 export const ANNOTATION_MAX_INPUT_POINTS = 4096
+/** commit 后的 normalized semantic centerline 上限；超出时重采样，不截断尾。 */
+export const ANNOTATION_MAX_COMMITTED_POINTS = 4096
 /** 单条笔迹 subdivision 输出点预算；预算不足时降密度，不丢尾部。 */
 const ANNOTATION_MAX_PROJECTED_POINTS = 4096
 /** miter join 相对 halfWidth 的上限，避免锐角处无限拉长。 */
 export const ANNOTATION_MITER_LIMIT = 2.5
 /** eraser preview ring 的线段数。 */
 export const ANNOTATION_RING_SEGMENTS = 48
+/** ribbon 横向采样间距（米）与硬上限；保证 ridge 内部也有 terrain sample。 */
+const ANNOTATION_CROSS_STEP = 0.5
+const ANNOTATION_MAX_CROSS_SEGMENTS = 16
+/** 单条 annotation 的 projected vertex 预算；预算不足时降横向密度，不截断 stroke。 */
+const ANNOTATION_MAX_RIBBON_VERTICES = 65536
 /** 单次 eraser gesture 的 semantic path 点上限；scene 超过后抽稀。 */
 export const ANNOTATION_MAX_ERASER_POINTS = 1024
 
@@ -176,12 +183,38 @@ export function smoothPolyline(points, { iterations = 1, strength = 0.2 } = {}) 
   return current
 }
 
+/**
+ * Commit boundary 的唯一 semantic normalizer：sanitize → light Chaikin smoothing →
+ * committed budget resample。首尾/完整 span 保留；返回的 points 就是 renderer 与
+ * eraser 共同消费的 durable centerline，renderer 不再二次平滑。
+ */
+export function normalizePenPoints(points) {
+  const clean = sanitizePoints(points, { maxPoints: null })
+  if (clean.length < 3) return clean.map((p) => ({ ...p }))
+  const smoothed = smoothPolyline(clean)
+  return smoothed.length > ANNOTATION_MAX_COMMITTED_POINTS
+    ? resampleByIndex(smoothed, ANNOTATION_MAX_COMMITTED_POINTS)
+    : smoothed
+}
+
 function unitDirection(a, b) {
   const dx = b.x - a.x
   const dz = b.y - a.y
   const len = Math.hypot(dx, dz)
   if (!(len > EPS)) return null
   return { x: dx / len, z: dz / len }
+}
+
+/** 横向采样数：以 0.5m 间距覆盖 width，强制含 center sample，受 vertices 预算约束。 */
+function annotationCrossCount(width, pointCount) {
+  let segments = Math.max(2, Math.ceil(width / ANNOTATION_CROSS_STEP))
+  if (segments % 2) segments += 1
+  segments = Math.min(segments, ANNOTATION_MAX_CROSS_SEGMENTS)
+  if (segments % 2) segments -= 1
+  const maxSamples = Math.max(2, Math.floor(ANNOTATION_MAX_RIBBON_VERTICES / Math.max(1, pointCount)))
+  let samples = Math.min(segments + 1, maxSamples)
+  if (samples >= 3 && samples % 2 === 0) samples -= 1
+  return Math.max(2, samples)
 }
 
 /**
@@ -203,20 +236,17 @@ export function buildPenRibbon(annotation, {
   if (typeof sampleHeight !== 'function') return null
   const width = Number(annotation.width)
   if (!Number.isFinite(width) || width <= 0) return null
-  // Renderer 不截断 semantic 输入；live scene 已在 append 阶段按 input cap 冻结。
-  // 这样即使历史 annotation 超过 cap，投影预算也只降密度，不丢尾。
-  const raw = sanitizePoints(annotation.points, { maxPoints: null })
-  if (raw.length < 2) return null
-  // 先做语义 XZ 平滑，再做地形细分；Y 始终由 ribbon 边缘采样派生，不进入平滑。
-  const smoothed = smoothPolyline(raw)
-  const points = subdividePolyline(smoothed, sampleHeight, {
+  // annotation.points 已是 commit-normalized durable centerline；renderer 只做
+  // terrain subdivision + cross-width tessellation，不再修改 semantic centerline。
+  const points = subdividePolyline(annotation.points, sampleHeight, {
     maxSegment, midpointError, maxDepth, maxPoints, maxInputPoints: null,
   })
   if (points.length < 2) return null
   const half = width / 2
   const liftValue = numberOr(lift, ANNOTATION_LIFT)
-  const left = []
-  const right = []
+  const crossCount = annotationCrossCount(width, points.length)
+  const fractions = Array.from({ length: crossCount }, (_, i) => (crossCount === 2 ? i : i / (crossCount - 1)))
+  const rows = []
   const valid = []
 
   for (let i = 0; i < points.length; i++) {
@@ -254,15 +284,22 @@ export function buildPenRibbon(annotation, {
     }
     const nx = -dz
     const nz = dx
-    const lx = cur.x + nx * half * miter
-    const lz = cur.y + nz * half * miter
-    const rx = cur.x - nx * half * miter
-    const rz = cur.y - nz * half * miter
-    const ly = sampleOrNull(sampleHeight, lx, lz)
-    const ry = sampleOrNull(sampleHeight, rx, rz)
-    left.push(ly === null ? null : { x: lx, y: ly + liftValue, z: lz })
-    right.push(ry === null ? null : { x: rx, y: ry + liftValue, z: rz })
-    valid.push(ly !== null && ry !== null)
+    const row = []
+    let rowValid = true
+    for (const fraction of fractions) {
+      const offset = (0.5 - fraction) * width * miter
+      const x = cur.x + nx * offset
+      const z = cur.y + nz * offset
+      const y = sampleOrNull(sampleHeight, x, z)
+      if (y === null) {
+        row.push(null)
+        rowValid = false
+      } else {
+        row.push({ x, y: y + liftValue, z })
+      }
+    }
+    rows.push(row)
+    valid.push(rowValid)
   }
 
   const strips = []
@@ -272,33 +309,40 @@ export function buildPenRibbon(annotation, {
     let j = i
     while (j + 1 < points.length && valid[j + 1]) j++
     if (j > i) {
-      const count = j - i + 1
-      const positions = new Float32Array(count * 2 * 3)
+      const rowCount = j - i + 1
+      const positions = new Float32Array(rowCount * crossCount * 3)
       const indices = []
-      for (let k = 0; k < count; k++) {
-        const L = left[i + k]
-        const R = right[i + k]
-        const o = k * 6
-        positions[o] = L.x
-        positions[o + 1] = L.y
-        positions[o + 2] = L.z
-        positions[o + 3] = R.x
-        positions[o + 4] = R.y
-        positions[o + 5] = R.z
-        if (k > 0) {
-          const lp = (k - 1) * 2
-          const rp = lp + 1
-          const lc = k * 2
-          const rc = lc + 1
-          indices.push(lp, rp, lc, rp, rc, lc)
+      for (let k = 0; k < rowCount; k++) {
+        for (let c = 0; c < crossCount; c++) {
+          const cell = rows[i + k][c]
+          const o = (k * crossCount + c) * 3
+          positions[o] = cell.x
+          positions[o + 1] = cell.y
+          positions[o + 2] = cell.z
         }
       }
-      strips.push({ positions, indices: new Uint32Array(indices) })
+      for (let k = 0; k < rowCount - 1; k++) {
+        for (let c = 0; c < crossCount - 1; c++) {
+          const a = k * crossCount + c
+          const b = a + 1
+          const d = a + crossCount
+          const e = d + 1
+          indices.push(a, b, d, b, e, d)
+        }
+      }
+      strips.push({ positions, indices: new Uint32Array(indices), rowCount, crossCount })
     }
     i = j + 1
   }
   if (!strips.length) return null
-  return { strips, pointCount: points.length }
+  const vertexCount = strips.reduce((sum, strip) => sum + strip.positions.length / 3, 0)
+  return {
+    strips,
+    pointCount: points.length,
+    crossCount,
+    vertexCount,
+    vertexBudget: ANNOTATION_MAX_RIBBON_VERTICES,
+  }
 }
 
 /**

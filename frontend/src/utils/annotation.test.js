@@ -234,6 +234,34 @@ describe('applyEraser (semantic capsule)', () => {
     expect(result[1].points[0].x).toBeCloseTo(7, 9)
   })
 
+  it('erases inside the start cap even when the rectangle body projection misses', () => {
+    const stroke = pen([{ x: -1, y: -1 }, { x: -1, y: 1 }])
+    expect(applyEraser([stroke], [{ x: 0, y: 0 }, { x: 10, y: 0 }], 2)).toEqual([])
+  })
+
+  it('erases inside the end cap even when the rectangle body projection misses', () => {
+    const stroke = pen([{ x: 11, y: -1 }, { x: 11, y: 1 }])
+    expect(applyEraser([stroke], [{ x: 0, y: 0 }, { x: 10, y: 0 }], 2)).toEqual([])
+  })
+
+  it('capsule endpoint caps are direction-symmetric', () => {
+    const stroke = pen([{ x: -1, y: -1 }, { x: -1, y: 1 }])
+    expect(applyEraser([stroke], [{ x: 10, y: 0 }, { x: 0, y: 0 }], 2)).toEqual([])
+  })
+
+  it('leaves the stroke untouched outside caps and body', () => {
+    const stroke = pen([{ x: 5, y: 10 }, { x: 6, y: 10 }])
+    const anns = [stroke]
+    expect(applyEraser(anns, [{ x: 0, y: 0 }, { x: 10, y: 0 }], 2)).toBe(anns)
+  })
+
+  it('clips only the cap-covered prefix of a stroke', () => {
+    const stroke = pen([{ x: -3, y: 0 }, { x: 0, y: 0 }])
+    const result = applyEraser([stroke], [{ x: 0, y: 0 }, { x: 10, y: 0 }], 2)
+    expect(result).toHaveLength(1)
+    expect(result[0].points).toEqual([{ x: -3, y: 0 }, { x: -2, y: 0 }])
+  })
+
   it('undo restores the erased geometry and redo erases it again', () => {
     const original = pen([{ x: 0, y: 0 }, { x: 10, y: 0 }])
     let state = commit([[]], 0, [original])

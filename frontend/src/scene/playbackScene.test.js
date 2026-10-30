@@ -26,6 +26,7 @@ import { toBattlePlaybackDataset } from '../replay-local/playback/toBattlePlayba
 import { validateAgentAiReview, validateAgentBattleResult, validateAgentPlayback } from '../api/agent-replay-facets.js'
 import { FLOAT_DMG_MS } from '../utils/battlePlayback.js'
 import { mapImages } from '../data/mapImages.js'
+import { normalizePenPoints } from './playback/annotation3d.js'
 
 const source = vi.hoisted(() => ({ loadPlaybackData: vi.fn(), resolveMapKey: vi.fn(), mapStaticUrl: vi.fn() }))
 vi.mock('./replaySource.js', () => ({
@@ -3250,6 +3251,17 @@ describe('3D annotation pointer ownership', () => {
     expect(farRadius).toBeCloseTo(expectedRadius, 6)
   })
 
+  it('commits the normalized centerline at the pointerup boundary', async () => {
+    const { canvas, onAnnotationCommit } = await setup()
+    canvas.dispatchEvent(mouse('pointerdown', 380, 300))
+    canvas.dispatchEvent(mouse('pointermove', 460, 340))
+    canvas.dispatchEvent(mouse('pointermove', 540, 300))
+    const raw = window.__annotationLayer.gesture().points.map((p) => ({ ...p }))
+    canvas.dispatchEvent(mouse('pointerup', 540, 300))
+    expect(onAnnotationCommit).toHaveBeenCalledTimes(1)
+    expect(onAnnotationCommit.mock.calls[0][0].points).toEqual(normalizePenPoints(raw))
+  })
+
   it('eraser: single mouse pointer emits one semantic erase path with radius', async () => {
     const { canvas, onAnnotationCommit, onAnnotationErase } = await setup({ tool: 'eraser' })
     const camera = window.__camera
@@ -3417,6 +3429,31 @@ describe('3D annotation pointer ownership', () => {
     api.setAnnotations([{ type: 'pen', width: 1, points: [{ x: -10, y: -10 }, { x: 10, y: 10 }] }])
     expect(layer.committedMesh.visible).toBe(true)
     expect(layer.committedMesh.geometry.getAttribute('color').getX(0)).toBeGreaterThan(0)
+  })
+
+  it('reattaches the annotation layer to the new Scene after renderer rebuild and disposes on destroy', async () => {
+    const { api } = await setup()
+    const layer = window.__annotationLayer
+    const oldScene = window.__scene
+    api.setAnnotations([{ type: 'pen', color: '#ff4d4f', width: 3, points: [{ x: -5, y: 0 }, { x: 5, y: 0 }] }])
+    expect(layer.group.parent).toBe(oldScene)
+    expect(oldScene.children).toContain(layer.group)
+
+    api.setLogdepth(true)
+    await api.loadData({ kind: 'local', file: new File(['y'], 'annotation-rebuild.wotbreplay') })
+    const newScene = window.__scene
+    expect(newScene).not.toBe(oldScene)
+    expect(layer.group.parent).toBe(newScene)
+    expect(newScene.children).toContain(layer.group)
+    expect(oldScene.children).not.toContain(layer.group)
+
+    api.setAnnotations([{ type: 'pen', color: '#40c4ff', width: 3, points: [{ x: -5, y: 0 }, { x: 5, y: 0 }] }])
+    expect(layer.committedMesh.visible).toBe(true)
+    expect(layer.committedMesh.geometry.getAttribute('position').count).toBeGreaterThan(0)
+
+    api.destroy()
+    expect(window.__annotationLayer).toBeUndefined()
+    expect(layer.group.parent).toBeNull()
   })
 
   it('bounds the groundMesh fallback to the finite placeholder plane', async () => {

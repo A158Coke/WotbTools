@@ -245,8 +245,9 @@ function capsuleIntervals(a, b, c, d, radius) {
   const wd = vx * nx + vy * ny
   let lineLo = -Infinity
   let lineHi = Infinity
+  let bodyPossible = true
   if (Math.abs(wd) <= 1e-12) {
-    if (Math.abs(w0) > radius) return []
+    if (Math.abs(w0) > radius) bodyPossible = false
   } else {
     lineLo = (-radius - w0) / wd
     lineHi = (radius - w0) / wd
@@ -262,7 +263,7 @@ function capsuleIntervals(a, b, c, d, radius) {
   let projLo = -Infinity
   let projHi = Infinity
   if (Math.abs(qd) <= 1e-12) {
-    if (q0 < -1e-9 || q0 > length + 1e-9) return []
+    if (q0 < -1e-9 || q0 > length + 1e-9) bodyPossible = false
   } else {
     projLo = -q0 / qd
     projHi = (length - q0) / qd
@@ -273,9 +274,12 @@ function capsuleIntervals(a, b, c, d, radius) {
     }
   }
 
-  const lo = Math.max(lineLo, projLo)
-  const hi = Math.min(lineHi, projHi)
-  if (hi > lo) intervals.push([lo, hi])
+  if (bodyPossible) {
+    const lo = Math.max(lineLo, projLo)
+    const hi = Math.min(lineHi, projHi)
+    if (hi > lo) intervals.push([lo, hi])
+  }
+  // Body miss must not bypass caps: start/end discs are part of the capsule.
   addDisc(c)
   addDisc(d)
   return intervals
