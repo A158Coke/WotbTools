@@ -117,6 +117,8 @@ jobs:
             script: test:browser-broadcasts
           - label: Creator recommendations
             script: test:browser-creators
+          - label: AI review feedback
+            script: test:browser-ai-feedback
           # 首页 reduced-motion：真实浏览器媒体查询 + computed style + hover，而不是源码正则。
           - label: Home reduced motion
             script: test:browser-home

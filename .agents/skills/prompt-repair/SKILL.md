@@ -5,7 +5,7 @@ description: >
   解析 blockers → Delta Discovery（diff / symbol / direct dependency）→ 立即修改 → changed-file tests。
   Trigger: 用户提供已有 repair artifact / review 修复意见 / PR blockers / follow-up findings，或当前 PR 的
   cleanup finding。新报告的 bug / hotfix 若没有既有 reviewer finding 或 repair artifact，不进入本 Skill，
-  按 Designer → approved plan → Executor 生命周期处理。它不重新设计需求、不自行判定 final pass；修完交给 review-with-docs。
+  按 Designer → approved/authorized plan → Executor 生命周期处理。它不重新设计需求、不自行判定 final pass；修完交给 review-with-docs。
 ---
 
 # Prompt Repair（增量修复）
@@ -41,7 +41,7 @@ REPAIR PROMPT 不是要求重新发现整个项目。
 - 用户提供的已有修复提示词（一整份即可，无需拆参数）：repair prompt / review 修复意见 /
   PR review blockers / follow-up findings / 当前 PR cleanup findings。
 - 新报告的独立 bug / hotfix（没有既有 review finding / repair artifact）不是 Prompt Repair 输入；
-  交由 Designer 定义工作并产出 approved plan，再由 Executor 实现。
+  交由 Designer 定义工作并按其授权边界产出计划，再由 Executor 实现。
 - Repair Prompt = 本次修复的 **primary task contract**（决定"要修成什么"）；
   真实代码 = **implementation reality**（决定"现在实际上是什么"）。
   不能因为代码当前实现不同，就擅自改变用户明确要求。
@@ -272,7 +272,7 @@ Blocker: leagueMode contract
 → rg leagueMode
 → 读取 frontend/src/replay-local/compute/league-rating.ts / frontend/src/api/ai-review.ts /
   frontend/src/replay-local/analyzeReplays.ts / ReplayPage.vue / useColumns.js / 直接相关 tests
-→ 停止
+→ 停止 discovery，立即修复 → targeted test → final review
 ```
 
 禁止默认执行：`读取整个 repository` / 读所有 README / 从头读 current-plan.md /

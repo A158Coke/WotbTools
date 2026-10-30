@@ -12,7 +12,7 @@ export const LEGACY_VIEW_ALIASES = Object.freeze({
 
 export const ALLOWED_VIEWS = Object.freeze([
   'home', 'replay', 'hof', 'more', 'hof-admin',
-  'profile', 'admin-users', 'history', 'technical-evolution', 'contact',
+  'profile', 'admin-users', 'admin-ai-review-feedback', 'history', 'technical-evolution', 'contact',
   'ai-review', 'battle-playback', 'agent-replay', 'agent-tankopedia', 'agent-armor', 'agent-shots', 'agent-techtree',
   'rating-docs', 'tournament-points', 'tournament-points-config', 'tournament-points-admin',
   'android', 'sponsor', 'league-broadcasts', 'recommendations', 'recommended-videos', 'creators', 'creators-config',
@@ -45,6 +45,7 @@ export const PRIMARY_NAV = Object.freeze([
  */
 export const ADMIN_NAV = Object.freeze([
   Object.freeze({ id: 'admin-users', view: 'admin-users', labelKey: 'admin.title', role: 'admin' }),
+  Object.freeze({ id: 'admin-ai-review-feedback', view: 'admin-ai-review-feedback', labelKey: 'aiFeedback.adminTitle', role: 'admin' }),
   Object.freeze({ id: 'hof-admin', view: 'hof-admin', labelKey: 'hofAdmin.cardTitle', role: 'hofAdmin' }),
   Object.freeze({ id: 'tournament-points-config', view: 'tournament-points-config', labelKey: 'tournament.configTitle', role: 'tournamentAdmin' }),
   Object.freeze({ id: 'tournament-points-admin', view: 'tournament-points-admin', labelKey: 'tournament.adminTitle', role: 'tournamentAdmin' }),
@@ -70,6 +71,7 @@ const PRIMARY_SECTION_OF_VIEW = Object.freeze({
   recommendations: 'creators',
   'recommended-videos': 'creators',
   'admin-users': 'admin-users',
+  'admin-ai-review-feedback': 'admin-ai-review-feedback',
   'hof-admin': 'hof-admin',
   'tournament-points-config': 'tournament-points-config',
   'tournament-points-admin': 'tournament-points-admin',

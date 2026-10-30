@@ -5,6 +5,11 @@ import { messages, mergeLocaleMessages } from './messages.js'
 import { API_ERROR_CODES } from '../api/generated/api-error-codes.js'
 
 describe('locale message composition', () => {
+  it('provides the feedback model label in each supported language', () => {
+    expect(messages.zh.aiFeedback.model).toBe('模型')
+    expect(messages.en.aiFeedback.model).toBe('Model')
+    expect(messages.ru.aiFeedback.model).toBe('Модель')
+  })
   it('compiles every message in every locale', () => {
     // vue-i18n 在渲染时才编译消息；未转义的 `@`（linked message）/非法 `|` 会在
     // 切语言后抛 SyntaxError，表现为整块 UI 消失（2026-10-27 英文 pen_far 事故）。

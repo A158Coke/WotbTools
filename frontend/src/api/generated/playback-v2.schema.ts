@@ -5445,6 +5445,197 @@ export default {
         }
       }
     },
+    "AiReviewFeedbackReason": {
+      "type": "string",
+      "enum": [
+        "FACT_ERROR",
+        "BAD_JUDGMENT",
+        "MISSED_KEY_POINT",
+        "TOO_AI_LIKE",
+        "TOO_VAGUE",
+        "TOO_VERBOSE",
+        "UNHELPFUL_ADVICE",
+        "OTHER"
+      ]
+    },
+    "CreateAiReviewFeedbackRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reasonCodes",
+        "aiResponseText"
+      ],
+      "properties": {
+        "reasonCodes": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/AiReviewFeedbackReason"
+          }
+        },
+        "feedbackText": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 4000
+        },
+        "aiResponseText": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200000
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 128
+        }
+      },
+      "description": "At least one reason or non-blank feedback text is required; AI response must be non-blank. Text is stored without modification. NUL and unpaired surrogates are invalid because they cannot round-trip through PostgreSQL UTF-8 text."
+    },
+    "CreateAiReviewFeedbackResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "createdAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "AdminAiReviewFeedbackListItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "reasonCodes",
+        "feedbackText",
+        "model",
+        "createdAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "reasonCodes": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/AiReviewFeedbackReason"
+          }
+        },
+        "feedbackText": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "AdminAiReviewFeedbackDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "reasonCodes",
+        "feedbackText",
+        "aiResponseText",
+        "model",
+        "createdAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "reasonCodes": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/AiReviewFeedbackReason"
+          }
+        },
+        "feedbackText": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "aiResponseText": {
+          "type": "string"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "AdminAiReviewFeedbackPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items",
+        "page",
+        "size",
+        "totalItems",
+        "totalPages"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AdminAiReviewFeedbackListItem"
+          }
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "totalItems": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalPages": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
     "AdminUserPage": {
       "type": "object",
       "additionalProperties": false,

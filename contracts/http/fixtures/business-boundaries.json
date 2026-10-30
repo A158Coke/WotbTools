@@ -526,5 +526,17 @@
       "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "createdAt": "2026-10-01T12:00:00Z"
     }
+  },
+  {
+    "schema": "CreateAiReviewFeedbackResponse",
+    "value": { "id": "123", "createdAt": "2026-10-01T12:00:00Z" }
+  },
+  {
+    "schema": "AdminAiReviewFeedbackDetail",
+    "value": { "id": "123", "reasonCodes": ["FACT_ERROR"], "feedbackText": "note", "aiResponseText": "reply\nfooter", "model": null, "createdAt": "2026-10-01T12:00:00Z" }
+  },
+  {
+    "schema": "AdminAiReviewFeedbackPage",
+    "value": { "items": [{ "id": "123", "reasonCodes": ["FACT_ERROR"], "feedbackText": "note", "model": null, "createdAt": "2026-10-01T12:00:00Z" }], "page": 0, "size": 25, "totalItems": 1, "totalPages": 1 }
   }
 ]

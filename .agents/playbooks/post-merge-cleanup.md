@@ -18,6 +18,8 @@
 - 若更新 main 需要使用主 worktree，先检查该主 worktree 的 `git status --short`；存在未提交改动时停止并汇报，不得覆盖。其他 worktree 的状态不属于本次 cleanup 判定范围。
 - 执行 `git worktree list --porcelain` 仅用于定位当前任务 worktree 与主 worktree；不得把“非主 worktree”自动解释为本次待删除对象。
 
+停止条件只暂停依赖相应授权、归属或 merge 证据的动作；可独立完成的只读核验继续，最终分别报告完成与保留项。不得为了“收尾完成”绕过下列删除保护，也不因未完成 cleanup 否定已交付的开发结果。
+
 ## 流程
 
 1. **清理当前任务 worktree（如本任务使用了独立 worktree）**
@@ -33,13 +35,13 @@
 
 3. **清理 `docs/current-plan.md`，就绪下一个任务**
    - 读取该文件（gitignore，本地不入库）。
-   - 若含当前已合并任务：按实际结果标记 `COMPLETED` / `BLOCKED`，然后清回初始状态（仅保留头注释）。
+   - 若含当前已合并任务：按实际结果核对 execution step 的 `DONE` / `BLOCKED` 状态，然后清回初始状态（仅保留头注释）。
    - 不清理属于其他仍在进行任务的计划内容；无法确认归属时停止并汇报。
    - 初始状态模板：
      ```markdown
      # Current Development Plan
 
-     > 本地开发计划载体（gitignore，不入库）。由 `designer` 创建 approved plan，`executor` 更新执行状态，`review-with-docs` 做 final audit；任务完成后清理回初始状态。
+     > 本地开发计划载体（gitignore，不入库）。由 `designer` 定义计划/授权契约，`executor` 更新执行状态，`review-with-docs` 做 final audit；任务完成后清理回初始状态。
      ```
    - 无当前任务条目时保持现状即可。
 

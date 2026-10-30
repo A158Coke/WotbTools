@@ -10,7 +10,7 @@
 
 | 文档 | 何时读 |
 |---|---|
-| `DEVELOPER_GUIDE.md` | 接手维护 / 找环境、构建、仓库结构、架构速览时（最先） |
+| `DEVELOPER_GUIDE.md` | 找环境、构建、结构或架构时读取相关章节；全仓接手 / onboarding / architecture-wide 任务全文 |
 | `frontend/local-testing.md` | **本机全功能测试 runbook**：起环境（Agent 引擎 / 资产面 / 认证门禁）、自检探针、故障对照、自动化门禁时（本机测试最先读） |
 | `frontend/local-production-dev.md` | 本地前端连接生产后端 / Keycloak 链路与安全边界时 |
 | `../README.md` | 了解当前产品是什么、功能与工程取舍 |
@@ -32,7 +32,7 @@
 | `frontend/architecture.md` | 改 Vue 应用壳、路由、依赖方向或状态 ownership 时 |
 | `frontend/replay-workspace.md` | 改 Replay Workspace capability、selection 或 dataset 边界时 |
 | `frontend/ui-system.md` | 改 UI Profile、token、layout primitive 或响应式规则时 |
-| `frontend/design-language.md` | 改任何界面前：颜色 / 字号 / 间距 / 组件 / 文案的设计规则与 stylelint 守护 |
+| `frontend/design-language.md` | 改界面前定位相关章节：颜色 / 字号 / 间距 / 组件 / 文案的设计规则与 stylelint 守护 |
 | `architecture/TECHNICAL_EVOLUTION.md` | 查技术架构决策、authority / boundary、分布式 Replay 与双云拓扑的 canonical 技术演进时（历史，不是当前契约） |
 | `architecture/backend-modules.md` | 查 `wotb-web` 的 Spring Modulith 模块边界、模块集成测试与架构文档生成方式时 |
 | `architecture/ai-review.md` | 改 AI 复盘 / 证据链 / prompt / 双 Call / 结构化团队结果（`TeamAiReviewResult`）时 |

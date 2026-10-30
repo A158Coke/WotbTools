@@ -17,6 +17,7 @@ export const PRIMARY_NAV_ICONS = Object.freeze({
 
 export const ADMIN_NAV_ICONS = Object.freeze({
   'admin-users': Users,
+  'admin-ai-review-feedback': Users,
   'hof-admin': ShieldCheck,
   'tournament-points-config': Settings,
   'tournament-points-admin': ListOrdered,
