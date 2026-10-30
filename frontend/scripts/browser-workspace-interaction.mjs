@@ -1451,7 +1451,7 @@ async function runRosterGeometryScenario(env, scenario) {
     s.duration = 300
     s.time = 42
     s.startTime = 0
-    s.cam = 'top'
+    s.cam = 'free'
     s.roster = {
       team1: mk('Ally', ${scenario.players}, 1),
       team2: mk('Enemy', ${scenario.players}, 2),

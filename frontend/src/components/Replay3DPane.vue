@@ -145,7 +145,7 @@ const portraitFlow = computed(() => isPortrait.value)
 const compactBar = computed(() => !portraitFlow.value && (isPhone.value || shortWorkspace.value))
 
 // Selection belongs to the pane. Camera mode and follow target belong to the scene.
-// 选中与详情可见性是**两个状态**：关详情不清选中，选中也从不自动跟随（跟随只由相机动作改变）。
+// 选中与详情可见性是**两个状态**：关详情不清选中。点车或点名单都会选中并跟随；相机档位负责离开跟随。
 const selectedEid = ref(null)
 const detailsOpen = ref(false)
 /** 浮窗落位偏好：点左车道 → 落右侧，点右车道 → 落左侧，点场景里的车 → 与它相对的一侧。 */
@@ -251,10 +251,11 @@ function followFromRoster(eid) {
   displayOpen.value = false
   sceneApi?.setFollow(eid)
 }
-/** 场景里点中坦克 = 打开共享详情窗（保留原逻辑）；点空处（eid=null）= 隐藏详情窗。 */
+/** 场景里点中坦克 = 打开共享详情窗并跟随；点空处（eid=null）= 隐藏详情窗，跟随不变。 */
 function handleSceneSelect(eid, event = null) {
   if (eid == null) { closeDetails(); return }
   selectVehicle(eid, event)
+  sceneApi?.setFollow(eid)
 }
 function selectVehicle(eid, event = null) {
   selectedEid.value = eid
@@ -279,8 +280,7 @@ function closeDetails() {
 }
 const cameraTools = computed(() => ({ cam: store.cam, cameras: CAMERAS.value, glbOn: store.glbOn, glbAllowed: store.glbAllowed }))
 function chooseCamera(mode) {
-  if (mode === 'follow' && selectedEid.value != null) sceneApi?.setFollow(selectedEid.value)
-  else sceneApi?.setCam(mode)
+  sceneApi?.setCam(mode)
 }
 function setUiHidden(hidden) {
   uiHidden.value = hidden
@@ -395,8 +395,12 @@ const mapTitle = computed(() => {
 // 所以走 computed 每次重算——不得在 setup 里定死一次，也不用内核预设里的固定中文 label。
 const CAMERAS = computed(() => [
   { value: 'free', label: t('agentReplay.cam_free') },
-  { value: 'follow', label: t('agentReplay.cam_follow') },
-  { value: 'top', label: t('agentReplay.cam_top') },
+  {
+    value: 'recorder',
+    label: t('agentReplay.cam_recorder'),
+    disabled: true,
+    title: t('agentReplay.cam_recorder_unsupported'),
+  },
 ])
 const QUALITY_ORDER = Object.keys(QUALITY_PRESETS)
 
