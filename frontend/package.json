@@ -14,6 +14,7 @@
     "test:browser-layout": "node scripts/browser-playback-layout.mjs",
     "test:browser-broadcasts": "node scripts/browser-league-broadcasts.mjs",
     "test:browser-creators": "node scripts/browser-creators.mjs",
+    "test:browser-ai-feedback": "node scripts/browser-ai-feedback.mjs",
     "test:browser-home": "node scripts/browser-home-reduced-motion.mjs",
     "test:browser-interaction": "node scripts/browser-workspace-interaction.mjs",
     "test:browser-armor-mobile": "node scripts/browser-armor-mobile.mjs",

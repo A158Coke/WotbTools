@@ -146,6 +146,7 @@ UI profile 仍然只涉及呈现：`wotb-ui-profile` 是唯一的持久化 key�
 - Battle Playback 的高价值持久化归属不在 orchestration root；
 - 架构守卫覆盖已移除的 service-locator keys 与 replay capability 的 transport 归属；
 - frontend CI 包含真实浏览器 Playback geometry / form-isolation 检查；
+- AI 复盘反馈的真实浏览器门禁覆盖三档视口、深浅主题、提交快照及管理交互；
 - 陈旧的 navigation/auth/replay injection bridges 与重复的 Playback 持久化归属均已不存在。
 
 当前架构不要求纯目录重写，不引入没有明确归属需求的 Pinia，也不把广泛视觉改版或无关产品改动视为架构边界变更的一部分。现有 `?view=` 兼容契约继续保留：删除该兼容层属于产品 URL 迁移，而不是解决上述归属问题的前置条件。
