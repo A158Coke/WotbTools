@@ -25,10 +25,10 @@ export const OCCLUSION_LIMITS = {
   minTouchTargetPx: 44,
   /** 部分裁剪 / 部分覆盖的容差：只放过边框、阴影级别的亚像素误差，超过即不可达。 */
   clipTolerancePx: 2,
-  /** 3D overlay HUD：贴边名册车道占中心保护区的上限（百分比）；其它常驻面不得压入。 */
+  /** 3D overlay HUD：贴边的名册车道与击杀流占中心保护区的上限（百分比）；其它常驻面不得压入。 */
   maxEdgeDockedCentralPct: 15,
-  /** 网格命中发现的每边采样数：发现常驻面不依赖任何选择器清单。 */
-  gridSteps: 16,
+  /** 网格命中的采样间距：小于最小触控目标，任何合规控件都至少落进一个采样点。 */
+  gridSpacingPx: 20,
 }
 
 /** 常驻面发现与触控目标扫描共用的"可交互"定义。 */
@@ -127,11 +127,11 @@ const occlusionProbe = () => {
     for (const el of document.querySelectorAll(selector)) if (visible(el)) surfaces.add(el)
   }
   let gridSampled = 0
-  const steps = limits.gridSteps
-  for (let i = 0; i < steps; i += 1) {
-    for (let j = 0; j < steps; j += 1) {
-      const x = primary.left + ((primary.right - primary.left) * (i + 0.5)) / steps
-      const y = primary.top + ((primary.bottom - primary.top) * (j + 0.5)) / steps
+  let gridTotal = 0
+  const spacing = limits.gridSpacingPx
+  for (let x = primary.left + spacing / 2; x < primary.right; x += spacing) {
+    for (let y = primary.top + spacing / 2; y < primary.bottom; y += spacing) {
+      gridTotal += 1
       if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) continue
       gridSampled += 1
       const hit = document.elementFromPoint(x, y)
@@ -145,8 +145,8 @@ const occlusionProbe = () => {
   const items = []
   const clipped = []
   // 主内容大半在视口外时网格没有样本，"没发现遮挡"不是结论，必须显式失败
-  if (gridSampled < (steps * steps) / 2) {
-    failures.push(`主内容 ${input.primary} 只有 ${gridSampled}/${steps * steps} 个网格点在视口内：先把它滚进视口再测`)
+  if (gridSampled < gridTotal / 2) {
+    failures.push(`主内容 ${input.primary} 只有 ${gridSampled}/${gridTotal} 个网格点在视口内：先把它滚进视口再测`)
   }
   const centralArea = area(central)
   for (const el of surfaces) {

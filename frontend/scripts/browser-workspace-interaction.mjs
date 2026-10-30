@@ -1426,24 +1426,58 @@ async function runRosterGeometryScenario(env, scenario) {
   // —— #727 3D 主内容遮挡（design-language §5 例外段）：HUD 可以浮在场景上，但控制条不得压入中心 ——
   await page.evaluate(`document.querySelector('.pb-root .scene').scrollIntoView({ block: 'center' })`)
   await waitForStableLayout(page)
-  const SCENE_OCCLUSION = { primary: '.pb-root .scene', overlayHud: true, edgeDocked: ['.team-lane'] }
+  // HUD 与击杀流都是 pointer-events: none，网格看不见，必须显式列出；击杀流超出 HUD 盒，单列。
+  // 按满 3 条击杀流量：这是 HUD 最高的状态，空击杀流量不出它压没压进中心。
+  const SCENE_OCCLUSION = { primary: '.pb-root .scene', persistent: ['.pb-root .hud', '.pb-root .killfeed'], overlayHud: true, edgeDocked: ['.team-lane', '.killfeed'] }
+  await page.evaluate(`(() => {
+    window.__sceneKillfeed = window.__pbPane.store.killfeed
+    window.__pbPane.store.killfeed = [1, 2, 3].map((id) => ({ id, killer: 'Killer_' + id, victim: 'Victim_' + id, kill: true }))
+    document.querySelector('[data-testid="display-toggle"]').click()
+  })()`)
+  // 击杀流开关是持久化偏好，前一个场景可能关掉了它：先打开，否则这里量不到击杀流
+  await page.waitFor(() => !!document.querySelector('[data-testid="disp-killfeed"]'), { label: 'display panel for kill feed' })
+  await page.evaluate(`(() => {
+    const toggle = document.querySelector('[data-testid="disp-killfeed"]')
+    if (!toggle.checked) toggle.click()
+    document.querySelector('[data-testid="display-close"]').click()
+  })()`)
+  await page.waitFor(() => !!document.querySelector('.killfeed .kf') && !document.querySelector('[data-testid="display-panel"]'), { label: 'kill feed visible, display closed' })
+  await waitForStableLayout(page)
   const sceneOcclusion = await measureOcclusion(page, SCENE_OCCLUSION)
   console.log(`[browser-interaction] ${scenario.name} scene ${JSON.stringify(sceneOcclusion.items?.map((i) => [i.label, i.pct, i.centralPct]))}`)
   for (const failure of sceneOcclusion.failures) check(failures, false, `3D 场景遮挡: ${failure}`)
   // 竖屏的 HUD / 控制条都在流内，场景上本来就没有常驻面；横屏必须真的发现它们，否则就是空跑
-  if (scenario.layout !== 'portrait') check(failures, sceneOcclusion.items?.length > 0, '3D 遮挡判定空跑：网格没有发现任何 HUD 面')
-  // 负向对照：类名不在任何清单里，探针只能靠命中发现它
+  if (scenario.layout !== 'portrait') {
+    check(failures, sceneOcclusion.items?.length > 0, '3D 遮挡判定空跑：网格没有发现任何 HUD 面')
+    check(failures, sceneOcclusion.items?.some((item) => item.label === '[replay3d-killfeed]'), '3D 遮挡判定空跑：没有量到击杀流')
+  }
+  // 负向对照：44px 的合规控件（类名不在任何清单里，位置避开任何整数倍采样点的巧合），探针只能靠命中发现它
   await page.evaluate(`(() => {
-    const mutant = document.createElement('div')
+    const mutant = document.createElement('button')
     mutant.className = 'mutant-toolbar'
     const r = document.querySelector('.pb-root .scene').getBoundingClientRect()
-    mutant.style.cssText = 'position:fixed;z-index:9;background:#000;left:' + (r.left + r.width * 0.4) + 'px;top:' + (r.top + r.height * 0.4) + 'px;width:' + r.width * 0.2 + 'px;height:' + r.height * 0.2 + 'px'
+    mutant.style.cssText = 'position:fixed;z-index:9;width:44px;height:44px;left:' + (r.left + r.width / 2 + 3) + 'px;top:' + (r.top + r.height / 2 + 3) + 'px'
     document.querySelector('.pb-root').append(mutant)
   })()`)
   const mutantOcclusion = await measureOcclusion(page, SCENE_OCCLUSION)
   await page.evaluate(`document.querySelector('.mutant-toolbar')?.remove()`)
   check(failures, mutantOcclusion.failures.some((failure) => failure.includes('mutant-toolbar')),
-    `负向对照必须失败：清单外的控件压进中心却没被发现 ${JSON.stringify(mutantOcclusion.failures)}`)
+    `负向对照必须失败：清单外的 44px 控件压进中心却没被发现 ${JSON.stringify(mutantOcclusion.failures)}`)
+  // 负向对照：不参与命中的装饰层进中心，只有显式清单能发现
+  await page.evaluate(`(() => {
+    const style = document.createElement('style')
+    style.id = 'occlusion-negative-control'
+    style.textContent = '.pb-root.playback-workspace > .hud { top: 40% !important; inset-block-start: 40% !important }'
+    document.head.append(style)
+  })()`)
+  await waitForStableLayout(page)
+  const hudMutant = await measureOcclusion(page, SCENE_OCCLUSION)
+  await page.evaluate(`document.getElementById('occlusion-negative-control')?.remove()`)
+  if (scenario.layout !== 'portrait') {
+    check(failures, hudMutant.failures.some((failure) => failure.includes('.hud') || failure.includes('hud')),
+      `负向对照必须失败：pointer-events: none 的 HUD 压进中心却没被发现 ${JSON.stringify(hudMutant.failures)}`)
+  }
+  await page.evaluate('window.__pbPane.store.killfeed = window.__sceneKillfeed')
   await page.evaluate('window.scrollTo(0, 0)')
   await waitForStableLayout(page)
   check(failures, geometry.root, 'pb-root missing')

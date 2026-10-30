@@ -448,6 +448,11 @@ export function useOnboarding(options: {
       if (stageIndex.value < currentStep.value.stages.length - 1) {
         stageIndex.value++
         issue.value = ''
+        // 这条路径不经过 prepareStep：下一阶段的目标可能在 prepare 才打开的面里
+        const nextStage = currentStage.value
+        if (nextStage?.prepare && nextStage.surface) {
+          Promise.resolve(surfaces.value[nextStage.surface]?.prepare?.()).catch(() => { issue.value = 'unavailable' })
+        }
       } else if (index.value < steps.value.length - 1) next()
     }
   })

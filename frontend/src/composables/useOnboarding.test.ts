@@ -697,6 +697,8 @@ describe('real lesson lifecycle', () => {
     ready.value = true
     await nextTick()
     expect(h.controller.currentStage.value.anchor).toBe('replay3d-camera')
+    // 自动推进也要跑 prepare：紧凑控制条下镜头在 Display 面里，不打开就没有目标
+    expect(startScene).toHaveBeenCalledTimes(1)
     failed.value = true
     await nextTick()
     expect(h.controller.issue.value).toBe('unavailable')

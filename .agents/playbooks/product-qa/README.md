@@ -82,14 +82,15 @@ Product QA finding 需要开发时，路由固定为：Product QA → confirmed 
 `docs/frontend/design-language.md` §5「遮挡与可达」，本文件不复制数值）：
 
 ```js
-// 1) 主内容上方压着什么：不用知道控件类名，网格命中自己发现。primary 换成该页主内容选择器。
+// 1) 主内容上方压着什么：不用知道控件类名，20px 网格命中自己发现（比 44px 控件密）。primary 换成该页主内容选择器。
+//    pointer-events: none 的层不参与命中，看见半透明 HUD / 浮字时把选择器填进 decor。
 //    pct = 占主内容面积，centralPct = 占中心 60% 盒。
 ;(() => {
   const el = document.querySelector('<主内容选择器>'), p = el.getBoundingClientRect()
   const owner = hit => { let o = hit; for (let a = hit; a && !a.contains(el); a = a.parentElement) if (getComputedStyle(a).position !== 'static') o = a; return o }
-  const found = new Set()
-  for (let i = 0.5; i < 16; i += 1) for (let j = 0.5; j < 16; j += 1) {
-    const hit = document.elementFromPoint(p.left + p.width * i / 16, p.top + p.height * j / 16)
+  const found = new Set(document.querySelectorAll('<装饰层选择器，没有就删掉这个参数>'))
+  for (let x = p.left + 10; x < p.right; x += 20) for (let y = p.top + 10; y < p.bottom; y += 20) {
+    const hit = document.elementFromPoint(x, y)
     if (hit && hit !== el && !hit.contains(el) && (!el.contains(hit) || hit.closest('button,a[href],input,select'))) found.add(owner(hit))
   }
   const inter = (a, b) => Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top))
