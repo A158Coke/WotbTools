@@ -74,6 +74,33 @@ function expectTrianglesClear(ribbon, surface, { allowEmpty = false } = {}) {
   else expect(checked).toBeGreaterThan(0)
 }
 
+function expectTrianglesDenseClear(ribbon, surface, { steps = 16, epsilon = 0.05 } = {}) {
+  let checked = 0
+  for (const strip of ribbon.strips) {
+    for (let i = 0; i < strip.indices.length; i += 3) {
+      const ia = strip.indices[i] * 3
+      const ib = strip.indices[i + 1] * 3
+      const ic = strip.indices[i + 2] * 3
+      const ax = strip.positions[ia]; const ay = strip.positions[ia + 1]; const az = strip.positions[ia + 2]
+      const bx = strip.positions[ib]; const by = strip.positions[ib + 1]; const bz = strip.positions[ib + 2]
+      const cx = strip.positions[ic]; const cy = strip.positions[ic + 1]; const cz = strip.positions[ic + 2]
+      for (let u = 0; u <= steps; u++) {
+        for (let v = 0; v <= steps - u; v++) {
+          const wa = u / steps
+          const wb = v / steps
+          const wc = 1 - wa - wb
+          const x = wa * ax + wb * bx + wc * cx
+          const y = wa * ay + wb * by + wc * cy
+          const z = wa * az + wb * bz + wc * cz
+          expect(y).toBeGreaterThanOrEqual(surface(x, z) - epsilon)
+          checked++
+        }
+      }
+    }
+  }
+  expect(checked).toBeGreaterThan(0)
+}
+
 describe('sanitizePoints', () => {
   it('drops non-finite points and consecutive duplicates, keeps a later repeat', () => {
     const out = sanitizePoints([
@@ -304,6 +331,34 @@ describe('buildPenRibbon', () => {
     expectTrianglesClear(ribbon, surface, { allowEmpty: true })
   })
 
+  it('catches the width-1 offset diagonal ridge with an independent dense barycentric oracle', () => {
+    const n = 128
+    const span = 128
+    const field = new Float32Array(n * n)
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) field[i * n + j] = 20 - Math.abs(i - 64)
+    }
+    const build = buildAdaptiveTerrain({
+      field,
+      n,
+      span,
+      cam: { x: 0, y: 40, z: 20 },
+      fovY: 0.96,
+      aspect: 1.7,
+      hFovDeg: 70,
+    })
+    const sampler = terrainSurfaceHeightAt.bind(null, { ...build, n, span })
+    const ribbon = buildPenRibbon(pen([{ x: -10, y: -9.75 }, { x: 10, y: 10.25 }], 1), {
+      sampleHeight: sampler,
+      lift: ANNOTATION_LIFT,
+    })
+    expect(ribbon).not.toBeNull()
+    expect(ribbon.validation.unsafeCells).toBe(0)
+    // Runtime uses recursive validation; this independent 17x17 barycentric grid is not
+    // the runtime's 7-point oracle. In particular it includes (1/16, 14/16, 1/16).
+    expectTrianglesDenseClear(ribbon, sampler, { steps: 16, epsilon: 0.05 })
+  })
+
   it('normalizes at commit and uses the same centerline for rendering and erasing', () => {
     const raw = [{ x: 0, y: 0 }, { x: 10, y: 10 }, { x: 20, y: 0 }]
     const normalized = normalizePenPoints(raw)
@@ -358,8 +413,10 @@ describe('buildPenRibbon', () => {
     const ribbon = buildPenRibbon(pen([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }], 8), { sampleHeight: surface, lift: 0 })
     expect(ribbon).not.toBeNull()
     expect(ribbon.crossCount).toBeGreaterThanOrEqual(5)
-    expect(ribbon.validation.unsafeCells).toBe(0)
+    // Sharp miter may exhaust the bounded geometry budget; unsafe cells are skipped, so
+    // only emitted triangles are asserted against an independent dense oracle.
     expectTrianglesClear(ribbon, surface)
+    expectTrianglesDenseClear(ribbon, surface, { steps: 12, epsilon: 0.05 })
   })
 
   it('handles duplicate semantic points without NaN', () => {

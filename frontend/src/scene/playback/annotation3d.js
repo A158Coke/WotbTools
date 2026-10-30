@@ -36,6 +36,10 @@ const ANNOTATION_MAX_RIBBON_VERTICES = 65536
 const ANNOTATION_CLEARANCE_EPS = 0.05
 /** Cell refinement 的硬上限；预算耗尽后 unsafe cell 局部断 strip，不输出已知穿地三角形。 */
 const ANNOTATION_MAX_REFINEMENT_ITERATIONS = 6
+/** Triangle recursive validation 的 depth/edge/terrain-deviation bounds。 */
+const ANNOTATION_VALIDATION_MAX_DEPTH = 3
+const ANNOTATION_VALIDATION_EDGE_LIMIT = 2
+const ANNOTATION_VALIDATION_DEVIATION_TRIGGER = 0.01
 /** 2D cell refinement 可增加的 longitudinal row 上限（与 projected centerline 预算一致）。 */
 const ANNOTATION_MAX_PROJECTED_CENTERLINE_POINTS = 4096
 /** 单次 eraser gesture 的 semantic path 点上限；scene 超过后抽稀。 */
@@ -276,7 +280,12 @@ function ribbonRows(frames, fractions, sampleHeight, liftValue) {
   return { rows, valid }
 }
 
-function triangleClear(a, b, c, sampleHeight, clearance) {
+function triangleClear(a, b, c, sampleHeight, clearance, depth = 0) {
+  const ta = sampleOrNull(sampleHeight, a.x, a.z)
+  const tb = sampleOrNull(sampleHeight, b.x, b.z)
+  const tc = sampleOrNull(sampleHeight, c.x, c.z)
+  if (ta === null || tb === null || tc === null) return false
+  let maxDeviation = 0
   for (const [wa, wb, wc] of TRIANGLE_CLEARANCE_SAMPLES) {
     const x = wa * a.x + wb * b.x + wc * c.x
     const y = wa * a.y + wb * b.y + wc * c.y
@@ -284,8 +293,24 @@ function triangleClear(a, b, c, sampleHeight, clearance) {
     const terrain = sampleOrNull(sampleHeight, x, z)
     // clearance = allowed penetration epsilon，不是“必须高于 terrain 的正 clearance”。
     if (terrain === null || y < terrain - clearance) return false
+    maxDeviation = Math.max(maxDeviation, Math.abs(terrain - (wa * ta + wb * tb + wc * tc)))
   }
-  return true
+  if (depth >= ANNOTATION_VALIDATION_MAX_DEPTH) return true
+  const maxEdge = Math.max(
+    Math.hypot(a.x - b.x, a.z - b.z),
+    Math.hypot(b.x - c.x, b.z - c.z),
+    Math.hypot(c.x - a.x, c.z - a.z),
+  )
+  if (maxDeviation <= ANNOTATION_VALIDATION_DEVIATION_TRIGGER && maxEdge <= ANNOTATION_VALIDATION_EDGE_LIMIT) return true
+  // Recursive sub-triangle validation: hidden terrain between the 7 fixed samples
+  // must be probed at smaller scales; spatial/error bounds terminate deterministically.
+  const ab = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: (a.z + b.z) / 2 }
+  const bc = { x: (b.x + c.x) / 2, y: (b.y + c.y) / 2, z: (b.z + c.z) / 2 }
+  const ca = { x: (c.x + a.x) / 2, y: (c.y + a.y) / 2, z: (c.z + a.z) / 2 }
+  return triangleClear(a, ab, ca, sampleHeight, clearance, depth + 1)
+    && triangleClear(ab, b, bc, sampleHeight, clearance, depth + 1)
+    && triangleClear(ca, bc, c, sampleHeight, clearance, depth + 1)
+    && triangleClear(ab, bc, ca, sampleHeight, clearance, depth + 1)
 }
 
 /** 对最终 triangulation 的两个 triangle 做 interior clearance 检查；失败 cell 会触发 2D refinement。 */
