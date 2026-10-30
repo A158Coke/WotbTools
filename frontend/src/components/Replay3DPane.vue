@@ -693,7 +693,7 @@ function measurePresentationBounds() {
   const hudBottom = (hudEl.value?.getBoundingClientRect().bottom ?? 0) - root.getBoundingClientRect().top
   const killfeedLineH = (parseFloat(style.getPropertyValue('--line-height-caption')) || 16) + KILLFEED_ROW_BORDER_PX + gap
   const lineBudget = Math.floor((root.clientHeight * 0.2 - hudBottom - gap) / killfeedLineH)
-  killfeedLines.value = compactBar.value || portraitFlow.value ? KILLFEED_MAX_LINES : Math.min(KILLFEED_MAX_LINES, Math.max(1, lineBudget))
+  killfeedLines.value = compactBar.value || portraitFlow.value || !root.clientHeight ? KILLFEED_MAX_LINES : Math.min(KILLFEED_MAX_LINES, Math.max(1, lineBudget))
   root.style.setProperty('--pb-stage-h', `${Math.floor(budget) + gap * 2}px`)
 }
 function observeLaneBounds() {
