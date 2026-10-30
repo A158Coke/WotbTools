@@ -82,6 +82,9 @@ vi.mock('../scene/playbackScene.js', () => {
       setLabelPrefs: vi.fn(),
       setQuality: vi.fn(),
       setPaused: vi.fn(),
+      setAnnotations: vi.fn(),
+      setAnnotationInteraction: vi.fn(),
+      setAnnotationsVisible: vi.fn(),
     }
     playback.api = api
     playback.apis.push(api)
@@ -1923,6 +1926,158 @@ describe('Replay3DPane 顶栏双方血量', () => {
     await nextTick()
     expect(wrapper.get('[data-test="pb-hp-bars"]').text()).toContain('0 / 0')
     expect(wrapper.get('[data-test="pb-hp-bars"]').text()).not.toContain('NaN')
+    wrapper.unmount()
+  })
+})
+
+describe('Replay3DPane 3D annotation wiring', () => {
+  async function openDrawing() {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await start(wrapper)
+    await wrapper.get('[data-test="pb-annotation-entry"]').trigger('click')
+    await flush()
+    return wrapper
+  }
+
+  function sceneOptions() {
+    return playback.init.mock.calls.at(-1)[3]
+  }
+
+  it('opens with pen, pauses, and exposes only pen/eraser plus shared actions', async () => {
+    const wrapper = await openDrawing()
+    const api = playback.api
+    expect(api.setPlaying).toHaveBeenCalledWith(false)
+    expect(api.setAnnotations).toHaveBeenLastCalledWith([])
+    expect(api.setAnnotationInteraction).toHaveBeenLastCalledWith(expect.objectContaining({
+      enabled: true, tool: 'pen', width: 3, eraserWidth: 16,
+    }))
+    const panel = wrapper.get('[data-test="replay3d-annotations"]')
+    expect(panel.find('[data-test="pb-annot-pen"]').exists()).toBe(true)
+    expect(panel.find('[data-test="pb-annot-eraser"]').exists()).toBe(true)
+    expect(panel.find('[data-test="pb-annot-undo"]').exists()).toBe(true)
+    expect(panel.find('[data-test="pb-annot-redo"]').exists()).toBe(true)
+    expect(panel.find('[data-test="pb-annot-clear"]').exists()).toBe(true)
+    expect(panel.find('[data-test="pb-annot-toggle"]').exists()).toBe(true)
+    expect(panel.find('[data-test="pb-annot-close"]').exists()).toBe(true)
+    expect(panel.find('[data-test="pb-annot-eraser-radius"]').exists()).toBe(true)
+    expect(panel.find('[data-test="pb-annot-select"]').exists()).toBe(false)
+    expect(panel.find('[data-test="pb-annot-route"]').exists()).toBe(false)
+    expect(panel.find('[data-test="pb-annot-arrow"]').exists()).toBe(false)
+    expect(panel.find('[data-test="pb-annot-LT"]').exists()).toBe(false)
+    expect(panel.find('[data-test="pb-annot-MT"]').exists()).toBe(false)
+    expect(panel.find('[data-test="pb-annot-HT"]').exists()).toBe(false)
+    expect(panel.find('[data-test="pb-annot-TD"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('commits one annotation through the scene callback and supports undo/redo/clear', async () => {
+    const wrapper = await openDrawing()
+    const api = playback.api
+    const annotation = { type: 'pen', color: '#ff4d4f', width: 1.2, points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] }
+    sceneOptions().onAnnotationCommit(annotation)
+    await flush()
+    expect(api.setAnnotations).toHaveBeenLastCalledWith([annotation])
+    expect(wrapper.find('[data-test="pb-annot-clear"]').attributes('disabled')).toBeUndefined()
+
+    await wrapper.get('[data-test="pb-annot-undo"]').trigger('click')
+    await flush()
+    expect(api.setAnnotations).toHaveBeenLastCalledWith([])
+    await wrapper.get('[data-test="pb-annot-redo"]').trigger('click')
+    await flush()
+    expect(api.setAnnotations).toHaveBeenLastCalledWith([annotation])
+
+    await wrapper.get('[data-test="pb-annot-clear"]').trigger('click')
+    await flush()
+    expect(api.setAnnotations).toHaveBeenLastCalledWith([])
+    await wrapper.get('[data-test="pb-annot-undo"]').trigger('click')
+    await flush()
+    expect(api.setAnnotations).toHaveBeenLastCalledWith([annotation])
+    wrapper.unmount()
+  })
+
+  it('eraser callback applies semantically and adds one history entry', async () => {
+    const wrapper = await openDrawing()
+    const api = playback.api
+    const annotation = { type: 'pen', color: '#ff4d4f', width: 1.2, points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] }
+    sceneOptions().onAnnotationCommit(annotation)
+    await flush()
+    await wrapper.get('[data-test="pb-annot-eraser"]').trigger('click')
+    await flush()
+    expect(api.setAnnotationInteraction).toHaveBeenLastCalledWith(expect.objectContaining({ tool: 'eraser' }))
+    const before = api.setAnnotations.mock.calls.length
+    sceneOptions().onAnnotationErase({ points: [{ x: 0.5, y: 0.5 }], radius: 10 })
+    await flush()
+    expect(api.setAnnotations.mock.calls.length).toBe(before + 1)
+    expect(api.setAnnotations).toHaveBeenLastCalledWith([])
+    await wrapper.get('[data-test="pb-annot-undo"]').trigger('click')
+    await flush()
+    expect(api.setAnnotations).toHaveBeenLastCalledWith([annotation])
+    wrapper.unmount()
+  })
+
+  it('visibility toggle never changes history and does not reproject', async () => {
+    const wrapper = await openDrawing()
+    const api = playback.api
+    const annotation = { type: 'pen', color: '#ff4d4f', width: 1.2, points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] }
+    sceneOptions().onAnnotationCommit(annotation)
+    await flush()
+    const projections = api.setAnnotations.mock.calls.length
+    await wrapper.get('[data-test="pb-annot-toggle"]').trigger('click')
+    await flush()
+    expect(api.setAnnotationsVisible).toHaveBeenLastCalledWith(false)
+    expect(api.setAnnotations.mock.calls.length).toBe(projections)
+    await wrapper.get('[data-test="pb-annot-toggle"]').trigger('click')
+    await flush()
+    expect(api.setAnnotationsVisible).toHaveBeenLastCalledWith(true)
+    expect(api.setAnnotations.mock.calls.length).toBe(projections)
+    wrapper.unmount()
+  })
+
+  it('close keeps committed annotations and disables interaction; reopen restores them', async () => {
+    const wrapper = await openDrawing()
+    const api = playback.api
+    const annotation = { type: 'pen', color: '#ff4d4f', width: 1.2, points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] }
+    sceneOptions().onAnnotationCommit(annotation)
+    await flush()
+    const projections = api.setAnnotations.mock.calls.length
+    await wrapper.get('[data-test="pb-annot-close"]').trigger('click')
+    await flush()
+    expect(wrapper.find('[data-test="replay3d-annotations"]').exists()).toBe(false)
+    expect(api.setAnnotationInteraction).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: false, tool: null }))
+    expect(api.setAnnotations.mock.calls.length).toBe(projections)
+    await wrapper.get('[data-test="pb-annotation-entry"]').trigger('click')
+    await flush()
+    expect(wrapper.find('[data-test="replay3d-annotations"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-annot-undo"]').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('opening Display or collapsing controls closes drawing mode', async () => {
+    const wrapper = await openDrawing()
+    await wrapper.get('[data-testid="display-toggle"]').trigger('click')
+    await flush()
+    expect(wrapper.find('[data-test="replay3d-annotations"]').exists()).toBe(false)
+
+    await wrapper.get('[data-test="pb-annotation-entry"]').trigger('click')
+    await flush()
+    expect(wrapper.find('[data-test="replay3d-annotations"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="replay3d-controls-toggle"]').trigger('click')
+    await flush()
+    expect(wrapper.find('[data-test="replay3d-annotations"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('changing the replay file clears history and closes drawing mode', async () => {
+    const wrapper = await openDrawing()
+    const api = playback.api
+    const annotation = { type: 'pen', color: '#ff4d4f', width: 1.2, points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] }
+    sceneOptions().onAnnotationCommit(annotation)
+    await flush()
+    await wrapper.setProps({ file: mkFile('next.wotbreplay') })
+    await flush()
+    expect(wrapper.find('[data-test="replay3d-annotations"]').exists()).toBe(false)
+    expect(api.setAnnotations).toHaveBeenLastCalledWith([])
     wrapper.unmount()
   })
 })
