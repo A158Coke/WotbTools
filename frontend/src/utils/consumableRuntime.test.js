@@ -65,6 +65,22 @@ describe('consumableRuntimeAt', () => {
       .toMatchObject({ remainingSec: 10, durationSec: 20 })
   })
 
+  it('since 与事件时钟按 producer 的 0.01s 网格对齐：同 tick 新激活不被丢弃', () => {
+    // visibility.t_in 保留原始 f32（120.0039978…）；consumable.clock 经 r2 为 120.00。
+    const activation = tr({
+      timeSec: 120, state: 'ACTIVATED', durationSec: 20, endsAt: 140,
+      wireCode: 0x09, logicalItemId: 'ADRENALINE', everActivated: true,
+    })
+    expect(consumableRuntimeAt([activation], 121, 120.00399780273438)[0])
+      .toMatchObject({ remainingSec: 19 })
+    // 真正早于重入点的旧事件（上一 tick）仍被排除
+    const stale = tr({
+      timeSec: 119.99, state: 'ACTIVATED', durationSec: 20, endsAt: 139.99,
+      wireCode: 0x09, logicalItemId: 'ADRENALINE', everActivated: true,
+    })
+    expect(consumableRuntimeAt([stale], 121, 120.00399780273438)).toEqual([])
+  })
+
   it('since 起点忽略窗口前历史：AoI 重入不复用离开前的状态', () => {
     const active = activeAt10()
     expect(consumableRuntimeAt([active], 20, 5)).toHaveLength(1)

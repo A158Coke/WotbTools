@@ -11,6 +11,12 @@
  * 纯函数，无 Vue/场景依赖；2D 与 3D 共用同一份状态语义。
  */
 const EPS = 1e-6
+// Agent 把 consumable.clock 序列化为 2 位小数（playback.rs `r2`），而 visibility.t_in
+// 保留原始 f32（如 120.0039978）。观测窗口下界必须归一到与事件相同的 0.01s 网格，
+// 否则「同一 tick 内、紧贴重入点」的新激活（120.00）会被误判为窗口前旧事件而整条丢失。
+// 这是与 producer 序列化精度一致的规范化，不是放宽容差。
+const CLOCK_QUANTUM = 0.01
+const quantizeClock = (v) => Math.round(v / CLOCK_QUANTUM) * CLOCK_QUANTUM
 
 /** 事件时刻：canonical `timeSec` 或 facet 原始 `clock`（同 base，不做 origin 变换）。 */
 function eventTime(tr) {
@@ -61,7 +67,7 @@ function slotBadge(slot, t) {
  */
 export function consumableRuntimeAt(transitions, t, since = null) {
   if (!Array.isArray(transitions) || !Number.isFinite(t)) return []
-  const floor = Number.isFinite(since) ? since : null
+  const floor = Number.isFinite(since) ? quantizeClock(since) : null
   const bySlot = new Map()
   for (const tr of transitions) {
     const timeSec = eventTime(tr)
