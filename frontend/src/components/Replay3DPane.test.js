@@ -1002,7 +1002,7 @@ describe('Replay3DPane', () => {
       // 折叠状态也可切换（不依赖 Display 面板）；默认已是 top，先切到 free 再点 top
       store.cam = 'free'
       await nextTick()
-      await wrapper.get('[data-testid="replay3d-camera"] [data-value="top"]').trigger('click')
+      await wrapper.get('[data-testid="replay3d-top-view"]').trigger('click')
       expect(playback.api.setCam).toHaveBeenLastCalledWith('top')
       wrapper.unmount()
       layout.compact = false
@@ -1268,7 +1268,7 @@ describe('Replay3DPane', () => {
       expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(false)
       api.store.cam = 'free'
       await nextTick()
-      await wrapper.get('[data-testid="replay3d-camera"] [data-value="top"]').trigger('click')
+      await wrapper.get('[data-testid="replay3d-top-view"]').trigger('click')
       expect(api.setCam).toHaveBeenLastCalledWith('top')
       api.store.cam = 'free'
       await nextTick()
@@ -1870,15 +1870,15 @@ describe('Replay3DPane 待开播画质闸门', () => {
     playback.api.store.hasData = true
     await nextTick()
     const cams = wrapper.get('[data-testid="replay3d-camera"]')
-    expect(cams.findAll('button').map(b => b.attributes('data-value'))).toEqual(['free', 'top', 'recorder'])
+    expect(cams.findAll('button').map(b => b.attributes('data-value'))).toEqual(['free', 'recorder'])
     expect(cams.text()).toContain('agentReplay.cam_free')
-    expect(cams.text()).toContain('agentReplay.cam_top')
+    expect(wrapper.get('[data-testid="replay3d-top-view"]').text()).toBe('agentReplay.cam_top')
     const recorder = cams.get('[data-value="recorder"]')
     expect(recorder.attributes('disabled')).toBeDefined()
     expect(recorder.attributes('title')).toBe('agentReplay.cam_recorder_unsupported')
     playback.api.store.cam = 'free'
     await nextTick()
-    await cams.get('[data-value="top"]').trigger('click')
+    await wrapper.get('[data-testid="replay3d-top-view"]').trigger('click')
     expect(playback.api.setCam).toHaveBeenCalledWith('top')
     wrapper.unmount()
   })

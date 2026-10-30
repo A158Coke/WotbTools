@@ -378,7 +378,6 @@ const mapTitle = computed(() => {
 // 所以走 computed 每次重算——不得在 setup 里定死一次，也不用内核预设里的固定中文 label。
 const CAMERAS = computed(() => [
   { value: 'free', label: t('agentReplay.cam_free') },
-  { value: 'top', label: t('agentReplay.cam_top') },
   {
     value: 'recorder',
     label: t('agentReplay.cam_recorder'),
@@ -928,6 +927,10 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
               :aria-label="t('agentReplay.camera')"
               @update:model-value="chooseCamera($event)"
             />
+            <!-- 俯视是一次性动作，不是相机模式，所以不进 radio 组。 -->
+            <button type="button" class="tool-btn" data-testid="replay3d-top-view" @click="chooseCamera('top')">
+              {{ t('agentReplay.cam_top') }}
+            </button>
             <label class="toggle" :title="store.glbAllowed ? '' : t(store.glbOn ? 'agentReplay.glb_forced_hint' : 'agentReplay.glb_gate_hint')">
               <input type="checkbox" data-testid="disp-glb" :checked="store.glbOn" :disabled="!store.glbAllowed" @change="sceneApi.setGlb($event.target.checked)"> {{ t('agentReplay.glb') }}
             </label>

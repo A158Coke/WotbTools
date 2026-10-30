@@ -170,7 +170,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // Derived identity index only; ReplaySession still owns every canonical life fact.
   let lifeTracks = null, lifeTracksByAccount = new Map();
   let CAM = 'free', FOLLOW_EID = 0;
-  // 新会话默认以俯视机位开局；用户选过自由/跟随后，同一实例内不再覆盖其视角。
+  // 新会话默认以俯视机位开局；用户一旦操作过相机，同一实例内不再覆盖其视角。
   let topViewOnLoad = true;
   let shotPtr = 0;   //（killPtr 随击杀 feed 出仓 playback/hudFeed.js）
   const tracers = [];
@@ -523,6 +523,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
    *  只改 flyLook.dist 而相机不动是没有画面变化的（用户实测「滚轮没有缩放」）。 */
   function flyDolly(step) {
     if (!step) return;
+    topViewOnLoad = false;
     const cp = Math.cos(flyLook.pitch);
     const dx = -Math.sin(flyLook.yaw) * cp;
     const dy = Math.sin(flyLook.pitch);
@@ -620,6 +621,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       flyLook.yaw -= dx * k;
       flyLook.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, flyLook.pitch - dy * k));
     }
+    topViewOnLoad = false;
     flyLookApply();
     if (logThis) flyDbg('move(applied)');
     invalidate();
@@ -4266,6 +4268,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const speed = store.flySpeed || FLY_SPEEDS[DEFAULT_FLY_SPEED_INDEX];
     const moved = tickFlyImpl(pressed, dt, camera, controls, speed, flyLook.yaw);
     if (moved) {
+      topViewOnLoad = false;
       flyLookApply();                                // 平移后重钉 target = cam + dir×dist
       clampCameraTarget();
       constrainFreeCameraAltitude();

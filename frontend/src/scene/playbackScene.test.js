@@ -1576,23 +1576,49 @@ describe('Free Camera terrain floor', () => {
     expect(new THREE.Vector3().subVectors(controls.target, cam.position).normalize().y).toBeLessThan(-0.99)
   })
 
-  it('opens at the top view in Free, and later sessions keep a camera the user chose', async () => {
-    stubTerrainAssets({ values: [0, 0, 0, 0], zmin: 0, zmax: 0 })
-    source.loadPlaybackData.mockResolvedValue(minimalData())
-    const { api, store } = createScene()
-    await api.loadData({ kind: 'local', file: new File(['a'], 'first.wotbreplay') })
-    const cam = window.__camera
-    const controls = window.__controls
-    expect(store.cam).toBe('free')
-    expect(controls.enabled).toBe(false)
-    expect(cam.position.y).toBeCloseTo(255, 3)   // minimalData 的 ext = 150 × 1.7
-    expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
+  describe('default top view across sessions', () => {
+    const TOP_HEIGHT = 255   // minimalData 的 ext = 150 × 1.7
+    const loadScene = async () => {
+      stubTerrainAssets({ values: [0, 0, 0, 0], zmin: 0, zmax: 0 })
+      source.loadPlaybackData.mockResolvedValue(minimalData())
+      const scene = createScene()
+      await scene.api.loadData({ kind: 'local', file: new File(['a'], 'first.wotbreplay') })
+      return scene
+    }
+    const loadNext = (api) => api.loadData({ kind: 'local', file: new File(['b'], 'second.wotbreplay') })
 
-    cam.position.set(10, 40, 10)
-    controls.target.set(0, 30, 0)
-    api.setCam('free')
-    await api.loadData({ kind: 'local', file: new File(['b'], 'second.wotbreplay') })
-    expect(cam.position.y).toBeLessThan(255)
+    it('opens at the top view in Free, and repeats it while the camera is untouched', async () => {
+      const { api, store } = await loadScene()
+      expect(store.cam).toBe('free')
+      expect(window.__controls.enabled).toBe(false)
+      expect(window.__camera.position.y).toBeCloseTo(TOP_HEIGHT, 3)
+      await loadNext(api)
+      expect(window.__camera.position.y).toBeCloseTo(TOP_HEIGHT, 3)
+    })
+
+    it('keyboard flight counts as using the Free camera', async () => {
+      const { api } = await loadScene()
+      expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
+      await loadNext(api)
+      expect(window.__camera.position.y).toBeLessThan(TOP_HEIGHT)
+    })
+
+    it('wheel dolly counts as using the Free camera', async () => {
+      const { api } = await loadScene()
+      document.querySelector('canvas').dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }))
+      await loadNext(api)
+      expect(window.__camera.position.y).toBeLessThan(TOP_HEIGHT)
+    })
+
+    it('drag look counts as using the Free camera', async () => {
+      const { api } = await loadScene()
+      const canvas = document.querySelector('canvas')
+      canvas.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0, buttons: 1, clientX: 100, clientY: 100 }))
+      canvas.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, button: 0, buttons: 1, clientX: 160, clientY: 120 }))
+      canvas.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, button: 0, clientX: 160, clientY: 120 }))
+      await loadNext(api)
+      expect(window.__camera.position.y).toBeLessThan(TOP_HEIGHT)
+    })
   })
 
   it('Follow 不允许相机绕到 target 下方；已在地下的点被抬到地形净空', async () => {
