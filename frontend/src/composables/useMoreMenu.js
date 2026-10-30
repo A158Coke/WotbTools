@@ -1,6 +1,6 @@
 import { computed, getCurrentInstance, inject } from 'vue'
 import {
-  Cpu, Download, FileText, Heart, History, Mail, ShieldCheck, Users, ListOrdered, Settings,
+  Cpu, Database, Download, FileText, Heart, History, Mail, ShieldCheck, Users, ListOrdered, Settings,
 } from 'lucide-vue-next'
 import { useAuth } from './useAuth.js'
 import { useUiProfile } from './useUiProfile.js'
@@ -44,6 +44,7 @@ export function useMoreMenu() {
   /** 管理入口：平板 / 桌面在侧边栏管理组，手机在"更多"页。 */
   const adminLinks = computed(() => [
     isAdmin.value && { view: 'admin-users', labelKey: 'admin.title', icon: Users },
+    isAdmin.value && { view: 'admin-battle-data', labelKey: 'battleDataAdmin.title', icon: Database },
     isAdmin.value && { view: 'admin-ai-review-feedback', labelKey: 'aiFeedback.adminTitle', icon: Users },
     isHofAdmin.value && { view: 'hof-admin', labelKey: 'hofAdmin.cardTitle', icon: ShieldCheck },
     isTournamentAdmin.value && { view: 'tournament-points-config', labelKey: 'tournament.configTitle', icon: Settings },

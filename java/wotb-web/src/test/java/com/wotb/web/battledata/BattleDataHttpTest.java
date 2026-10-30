@@ -89,6 +89,7 @@ class BattleDataHttpTest {
     private final HttpClient client = HttpClient.newHttpClient();
 
     @BeforeEach void setup() {
+        org.mockito.Mockito.reset(decoder);
         jdbc.execute("TRUNCATE battle_data_battle RESTART IDENTITY CASCADE");
     }
 
@@ -241,6 +242,41 @@ class BattleDataHttpTest {
             jdbc.execute("DROP TRIGGER battle_data_test_commit_failure ON battle_data_vehicle");
             jdbc.execute("DROP FUNCTION battle_data_test_commit_failure()");
         }
+    }
+
+    @Test void adminReadRequiresSiteAdminAndCannotMutate() throws Exception {
+        final var admin = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("admin-token").header("alg", "none")
+                .subject("admin").claim("realm_access", java.util.Map.of("roles", List.of("wotbtools-admin"))).build();
+        final var user = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("user-token").header("alg", "none")
+                .subject("user").claim("realm_access", java.util.Map.of("roles", List.of("wotbtools-user"))).build();
+        org.mockito.Mockito.when(decoder.decode("admin-token")).thenReturn(admin);
+        org.mockito.Mockito.when(decoder.decode("user-token")).thenReturn(user);
+        for (final String role : List.of("HoF-admin", "tournament-admin", "content-admin")) {
+            final var other = org.springframework.security.oauth2.jwt.Jwt.withTokenValue(role).header("alg", "none")
+                    .subject("other").claim("realm_access", java.util.Map.of("roles", List.of(role))).build();
+            org.mockito.Mockito.when(decoder.decode(role)).thenReturn(other);
+        }
+        for (final String path : List.of("summary", "battles", "battles/1")) {
+            final var uri = URI.create("http://127.0.0.1:" + port + "/api/admin/battle-data/" + path);
+            assertEquals(401, client.send(HttpRequest.newBuilder(uri).GET().build(), HttpResponse.BodyHandlers.ofString()).statusCode());
+            assertEquals(403, client.send(HttpRequest.newBuilder(uri).header("Authorization", "Bearer user-token").GET().build(), HttpResponse.BodyHandlers.ofString()).statusCode());
+            for (final String role : List.of("HoF-admin", "tournament-admin", "content-admin")) {
+                assertEquals(403, client.send(HttpRequest.newBuilder(uri).header("Authorization", "Bearer " + role).GET().build(), HttpResponse.BodyHandlers.ofString()).statusCode());
+            }
+            assertEquals(path.equals("battles/1") ? 404 : 200,
+                    client.send(HttpRequest.newBuilder(uri).header("Authorization", "Bearer admin-token").GET().build(), HttpResponse.BodyHandlers.ofString()).statusCode());
+            assertEquals(405, client.send(HttpRequest.newBuilder(uri).header("Authorization", "Bearer admin-token").DELETE().build(), HttpResponse.BodyHandlers.ofString()).statusCode());
+        }
+        assertEquals(201, post(BattleDataPersistenceTest.payload("989", 1, 0, 123)).statusCode());
+        final var listUrl = URI.create("http://127.0.0.1:" + port + "/api/admin/battle-data/battles");
+        final var listResponse = client.send(HttpRequest.newBuilder(listUrl).header("Authorization", "Bearer admin-token").GET().build(), HttpResponse.BodyHandlers.ofString());
+        final var json = JsonMapper.builder().build().readTree(listResponse.body());
+        assertEquals("989", json.get("items").get(0).get("arenaId").asString());
+        assertTrue(json.get("items").get(0).get("receivedAt").isString());
+        assertTrue(json.get("nextCursor").isNull());
+        final var detailUrl = URI.create(listUrl + "/" + json.get("items").get(0).get("id").asString());
+        final var detail = client.send(HttpRequest.newBuilder(detailUrl).header("Authorization", "Bearer admin-token").GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(14, JsonMapper.builder().build().readTree(detail.body()).get("vehicles").size());
     }
 
     private HttpResponse<String> post(final String body) throws Exception {

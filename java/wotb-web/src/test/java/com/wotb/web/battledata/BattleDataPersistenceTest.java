@@ -48,7 +48,7 @@ class BattleDataPersistenceTest {
                 .connectRetries(5).load();
         flyway.migrate();
         flyway.validate();
-        assertEquals("46", flyway.info().current().getVersion().toString());
+        assertEquals("47", flyway.info().current().getVersion().toString());
     }
 
     @BeforeEach void setup() {
