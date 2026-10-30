@@ -11,7 +11,7 @@ import { locationForView, viewFromRoute } from './navigation.js'
 import { replayInitialCapability, VIEW_COMPONENTS } from './viewRegistry.js'
 
 const route = useRoute(), router = useRouter()
-const { authenticated, isTournamentAdmin, isContentAdmin } = useAuth()
+const { authenticated, isAdmin, isTournamentAdmin, isContentAdmin } = useAuth()
 const activeView = computed(() => viewFromRoute(route))
 const { typeAvailable, typeVisible, available: creatorsAvailable, directoryVisible, contentKnown, error: creatorsError, loading: creatorsChecking, refresh: retryCreators } = useCreatorAvailability()
 const recommendationType = computed(() => activeView.value === 'recommended-videos' ? 'VIDEO' : 'UP')
@@ -21,14 +21,14 @@ const creatorUnavailable = computed(() => recommendationList.value ? !typeVisibl
 const creatorsNotPublished = computed(() => contentKnown.value && (recommendationList.value
   ? typeAvailable(recommendationType.value) && !typeVisible(recommendationType.value) : creatorsAvailable.value && !directoryVisible.value))
 // 装甲查看器匿名可用，ViewHost 只保留管理页的登录/角色门：内容配置归 content-admin，积分赛归 tournament-admin。
-const adminView = computed(() => ['tournament-points-config', 'tournament-points-admin', 'creators-config'].includes(activeView.value))
-const adminAllowed = computed(() => activeView.value === 'creators-config' ? isContentAdmin.value : isTournamentAdmin.value)
+const adminView = computed(() => ['tournament-points-config', 'tournament-points-admin', 'creators-config', 'admin-ai-review-feedback'].includes(activeView.value))
+const adminAllowed = computed(() => activeView.value === 'admin-ai-review-feedback' ? isAdmin.value : activeView.value === 'creators-config' ? isContentAdmin.value : isTournamentAdmin.value)
 const adminNeedsLogin = computed(() => adminView.value && !authenticated.value)
 const adminDenied = computed(() => adminView.value && authenticated.value && !adminAllowed.value)
-const adminTitleKey = computed(() => activeView.value === 'creators-config' ? 'creators.configTitle' : 'tournament.adminTitle')
+const adminTitleKey = computed(() => activeView.value === 'admin-ai-review-feedback' ? 'aiFeedback.adminTitle' : activeView.value === 'creators-config' ? 'creators.configTitle' : 'tournament.adminTitle')
 // 内容管理页的登录/权限提示必须说「内容管理员」，不能复用联赛文案（否则会告诉已具备联赛权限的人缺联赛权限）。
-const adminLoginKey = computed(() => activeView.value === 'creators-config' ? 'creators.loginRequired' : 'tournament.loginRequired')
-const adminDeniedKey = computed(() => activeView.value === 'creators-config' ? 'creators.adminRequired' : 'tournament.adminRequired')
+const adminLoginKey = computed(() => activeView.value === 'admin-ai-review-feedback' ? 'aiFeedback.loginRequired' : activeView.value === 'creators-config' ? 'creators.loginRequired' : 'tournament.loginRequired')
+const adminDeniedKey = computed(() => activeView.value === 'admin-ai-review-feedback' ? 'aiFeedback.adminRequired' : activeView.value === 'creators-config' ? 'creators.adminRequired' : 'tournament.adminRequired')
 const loginDestination = computed(() => ({ path: route.path, query: { ...route.query }, hash: route.hash }))
 const currentView = computed(() => VIEW_COMPONENTS[activeView.value] || VIEW_COMPONENTS.replay)
 const initialCapability = computed(() => replayInitialCapability(activeView.value))
