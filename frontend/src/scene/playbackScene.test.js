@@ -1629,10 +1629,14 @@ describe('Free Camera terrain floor', () => {
       const { api } = await loadScene()
       expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
       api.setLogdepth(true)
-      await expectPoseKept(api)
-      const before = window.__camera.position.clone()
-      expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
-      expect(window.__camera.position.distanceTo(before)).toBeGreaterThan(0.01)
+      try {
+        await expectPoseKept(api)
+        const before = window.__camera.position.clone()
+        expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
+        expect(window.__camera.position.distanceTo(before)).toBeGreaterThan(0.01)
+      } finally {
+        api.setLogdepth(false)   // 偏好会持久化，不得泄漏给后续用例
+      }
     })
 
     it('a kept pose still obeys the next map terrain floor', async () => {
