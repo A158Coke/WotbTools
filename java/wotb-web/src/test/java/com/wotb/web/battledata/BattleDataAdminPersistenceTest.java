@@ -54,6 +54,63 @@ class BattleDataAdminPersistenceTest {
                 """, Integer.toString(id), mode, map, version, winner, received);
     }
 
+    private void insertSpawn(final int id, final int mode, final int winner, final String map, final String team1,
+            final String team2, final String received) {
+        jdbc.update("""
+                INSERT INTO battle_data_battle (arena_id,schema_version,arena_bonus_type,map_id,map_key,client_version,
+                    winner_team,team1_spawn,team2_spawn,received_at)
+                VALUES (?,1,?,1,?,'11.18',?,?,?,?::timestamptz)
+                """, Integer.toString(id), mode, map, winner, team1, team2, received);
+    }
+
+    private static BattleDataAdminDtos.SpawnStat stat(final String map, final Integer mode, final String side,
+            final long battles, final long wins, final long draws, final long losses) {
+        return new BattleDataAdminDtos.SpawnStat(map, mode, side, battles, wins, draws, losses);
+    }
+
+    @Test void spawnStatsCountEverySideByModeAndCombinedInsideTheInterval() {
+        final String t = "2026-10-02T12:00:00Z";
+        insertSpawn(1, 1, 1, "rift", "NORTH", "SOUTH", t);                      // Random: NORTH win / SOUTH loss
+        insertSpawn(2, 7, 2, "rift", "NORTH", "SOUTH", t);                      // Rating: SOUTH win / NORTH loss
+        insertSpawn(3, 7, 1, "rift", "SOUTH", "NORTH", t);                      // team number is not the side
+        insertSpawn(4, 1, 0, "rift", "SOUTH", "NORTH", t);                      // draw on both sides
+        insertSpawn(5, 1, 1, "karieri", "WEST", "EAST", t);
+        insertSpawn(6, 1, 1, "rift", "NORTH", "SOUTH", "2026-10-01T23:59:59Z"); // before from
+        insertSpawn(7, 7, 2, "rift", "NORTH", "SOUTH", "2026-10-03T00:00:00Z"); // exactly to: excluded
+        final var stats = service.spawnStats("2026-10-02T00:00:00Z", "2026-10-03T00:00:00Z").items();
+        assertEquals(List.of(
+                stat("karieri", null, "EAST", 1, 0, 0, 1), stat("karieri", 1, "EAST", 1, 0, 0, 1),
+                stat("karieri", null, "WEST", 1, 1, 0, 0), stat("karieri", 1, "WEST", 1, 1, 0, 0),
+                stat("rift", null, "NORTH", 4, 1, 1, 2), stat("rift", 1, "NORTH", 2, 1, 1, 0), stat("rift", 7, "NORTH", 2, 0, 0, 2),
+                stat("rift", null, "SOUTH", 4, 2, 1, 1), stat("rift", 1, "SOUTH", 2, 0, 1, 1), stat("rift", 7, "SOUTH", 2, 2, 0, 0)), stats);
+        stats.forEach(row -> assertEquals(row.battles(), row.wins() + row.draws() + row.losses()));
+        for (final String map : List.of("rift", "karieri")) {
+            final var rows = stats.stream().filter(row -> row.mapKey().equals(map)).toList();
+            for (final Integer mode : java.util.Arrays.asList(null, 1, 7)) {
+                final var sides = rows.stream().filter(row -> java.util.Objects.equals(row.arenaBonusType(), mode)).toList();
+                if (sides.isEmpty()) continue;
+                assertEquals(2, sides.size());
+                assertEquals(sides.get(0).battles(), sides.get(1).battles());
+                assertEquals(sides.get(0).draws(), sides.get(1).draws());
+                assertEquals(sides.get(0).wins(), sides.get(1).losses());
+            }
+            for (final String side : rows.stream().map(BattleDataAdminDtos.SpawnStat::side).distinct().toList()) {
+                final var bySide = rows.stream().filter(row -> row.side().equals(side)).toList();
+                final var combined = bySide.stream().filter(row -> row.arenaBonusType() == null).findFirst().orElseThrow();
+                final var modes = bySide.stream().filter(row -> row.arenaBonusType() != null).toList();
+                assertEquals(combined.battles(), modes.stream().mapToLong(BattleDataAdminDtos.SpawnStat::battles).sum());
+                assertEquals(combined.wins(), modes.stream().mapToLong(BattleDataAdminDtos.SpawnStat::wins).sum());
+                assertEquals(combined.draws(), modes.stream().mapToLong(BattleDataAdminDtos.SpawnStat::draws).sum());
+                assertEquals(combined.losses(), modes.stream().mapToLong(BattleDataAdminDtos.SpawnStat::losses).sum());
+            }
+        }
+    }
+
+    @Test void spawnStatsRejectInvalidIntervals() {
+        assertThrows(ApiException.class, () -> service.spawnStats("bad", null));
+        assertThrows(ApiException.class, () -> service.spawnStats("2026-10-03T00:00:00Z", "2026-10-02T00:00:00Z"));
+    }
+
     @Test void summaryAndUtcBoundariesMatchIndependentFixture() {
         // Exactly from is inclusive; exactly to is exclusive; the rows immediately outside stay outside.
         insert(1, 1, 1, "rift", "11.18", "2026-10-01T23:59:59.999999Z");
@@ -90,6 +147,7 @@ class BattleDataAdminPersistenceTest {
         assertTrue(summary.daily().isEmpty());
         assertTrue(summary.maps().isEmpty());
         assertTrue(summary.clientVersions().isEmpty());
+        assertTrue(service.spawnStats(null, null).items().isEmpty());
         assertTrue(service.list(new BattleDataAdminDtos.Filter(null, null, null, null, null, null, null), null, 25).items().isEmpty());
     }
 

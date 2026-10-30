@@ -58,7 +58,7 @@ app → features → shared
 
 核心 Replay/API/AI/Playback 契约位于 `frontend/src/types/`，并在外部 JSON/SSE 边界处校验。迁移期间 JavaScript 与 TypeScript 可以共存；`.js` import specifier 可能经 Vite/TypeScript resolver 解析到其 `.ts` 实现，但只能有一个实现。
 
-Battle Data 管理视图由 `BattleDataAdminPage` lazy-load；`api/admin-battle-data.ts` 持有认证读取与 wire 校验，`ADMIN_BATTLE_DATA` 是 ONLINE_REQUIRED。深链由 ViewHost 要求站点管理员；离线保留已加载结果并阻止新请求。地图覆盖复用 Collector 的 map-semantics profile，不建立另一份审校清单。
+Battle Data 管理视图由 `BattleDataAdminPage` lazy-load；`api/admin-battle-data.ts` 持有认证读取与 wire 校验，`ADMIN_BATTLE_DATA` 是 ONLINE_REQUIRED。深链由 ViewHost 要求站点管理员；离线保留已加载结果并阻止新请求。地图覆盖复用 Collector 的 map-semantics profile，不建立另一份审校清单；地图显示名只经 `mapLabel()` 读取 `common/map_names.json`，出生侧上方 / 下方 / 西侧 / 东侧是 `battleDataCoverage.ts` 的展示映射；出生侧统计是独立读取，失败时页面其余部分保持可用；地图筛选项覆盖全部可寻址地图，不随 summary 时间窗变化。
 
 业务 HTTP endpoint 的唯一 owner 是 `frontend/src/api/**`。`user-profile.ts` 持有用户资料、账号绑定与验证；`admin-users.ts` 持有管理用户搜索、详情与删除；`hall-of-fame.ts` 持有单场、百场、三环的公开/登录/管理请求、个人状态与证据上传下载；个人单场成绩 `getUserHofRecords` 也由该 owner 提供，`user-profile.ts` 不持有 HoF 请求。组件/composable 消费领域 API，资料 provisioning/retry 状态机仍归 `useBusinessUserBootstrap`。wire 类型以 generated OpenAPI transport 为准。
 

@@ -19,6 +19,9 @@ public final class BattleDataAdminDtos {
     public record NumericCount(int key, long count) { }
     public record DailyCount(LocalDate key, long count) { }
     public record NamedCount(String key, long count, Instant latestReceivedAt) { }
+    public record SpawnStat(String mapKey, Integer arenaBonusType, String side, long battles, long wins,
+            long draws, long losses) { }
+    public record SpawnStats(List<SpawnStat> items) { }
     public record Summary(Instant asOf, long totalBattles, long last24Hours, long last7Days, long last30Days,
             long windowBattles, Instant latestReceivedAt, long distinctMaps, long distinctClientVersions,
             List<NumericCount> modes, List<NumericCount> winnerTeams, List<NumericCount> schemaVersions,
