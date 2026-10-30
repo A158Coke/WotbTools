@@ -1628,6 +1628,29 @@ describe('Free Camera terrain floor', () => {
     expect(cam.position.y).toBeGreaterThanOrEqual(100 + 0.5 * cam.position.x + 0.49)
   })
 
+  it('坡面比射线更陡、射线无安全交点时，在相机当前 x/z 垂直抬升', async () => {
+    const n = 64, span = 600, zmin = -100, zmax = 750
+    const values = []
+    for (let r = 0; r < n; r++) {
+      for (let c = 0; c < n; c++) {
+        const x = (c / n - 0.5) * span
+        const h = 100 + 2 * x
+        values.push(Math.round((h - zmin) / (zmax - zmin) * 65535))
+      }
+    }
+    stubTerrainAssets({ values, zmin, zmax })
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const { api } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['terrain'], 'follow-steep.wotbreplay') })
+    const cam = window.__camera
+    const controls = window.__controls
+    controls.target.set(0, 0, 0)
+    cam.position.set(50, 50, 0)
+    api.setCam('follow')
+    expect(cam.position.x).toBeCloseTo(50, 3)   // 不沿射线外推到无地形区
+    expect(cam.position.y).toBeGreaterThanOrEqual(200.49)
+  })
+
   it('places the Free camera above the rendered triangle on a non-coplanar terrain cell', async () => {
     stubTerrainAssets({ values: [0, 65535, 65535, 0], zmin: 0, zmax: 30 })
     source.loadPlaybackData.mockResolvedValue(minimalData())
