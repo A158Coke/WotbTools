@@ -1408,8 +1408,9 @@ describe('Free Camera terrain floor', () => {
     const controls = window.__controls
     api.setCam('top')
     const topHeight = cam.position.y
-    expect(store.cam).toBe('free')
-    expect(controls.enabled).toBe(false)
+    expect(store.cam).toBe('top')
+    expect(controls.enabled).toBe(true)
+    expect(controls.enablePan).toBe(false)   // Top 不允许 pan 把中心带离地图中心
     expect(controls.target.x).toBeCloseTo(0, 3)
     expect(controls.target.z).toBeCloseTo(0, 3)
     expect(controls.target.y).toBe(0)
@@ -1417,26 +1418,11 @@ describe('Free Camera terrain floor', () => {
     const topDirection = viewDirection()
     document.querySelector('canvas').dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }))
     expect(viewDirection().dot(topDirection)).toBeCloseTo(1, 8)
-    const topCanvas = document.querySelector('canvas')
-    const pointer = (type, x, y, buttons) => new MouseEvent(type, {
-      button: 0, clientX: x, clientY: y, buttons, bubbles: true, cancelable: true,
-    })
-    topCanvas.dispatchEvent(pointer('pointerdown', 100, 100, 1))
-    topCanvas.dispatchEvent(pointer('pointermove', 120, 100, 1))
-    expect(viewDirection().dot(topDirection)).toBeCloseTo(1, 8)
-    topCanvas.dispatchEvent(pointer('pointerup', 120, 100, 0))
-    const pinchTouch = (type, x, pointerId) => {
-      const event = pointer(type, x, 120, type === 'pointerup' ? 0 : 1)
-      Object.defineProperty(event, 'pointerType', { value: 'touch' })
-      Object.defineProperty(event, 'pointerId', { value: pointerId })
-      return event
-    }
-    topCanvas.dispatchEvent(pinchTouch('pointerdown', 100, 7))
-    topCanvas.dispatchEvent(pinchTouch('pointerdown', 300, 9))
-    topCanvas.dispatchEvent(pinchTouch('pointermove', 340, 9))
-    expect(viewDirection().dot(topDirection)).toBeCloseTo(1, 8)
-    topCanvas.dispatchEvent(pinchTouch('pointerup', 340, 9))
-    topCanvas.dispatchEvent(pinchTouch('pointerup', 100, 7))
+    const topTarget = controls.target.clone()
+    document.querySelector('canvas').dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }))
+    expect(controls.target.equals(topTarget)).toBe(true)   // 俯视缩放中心 = 地图中心
+    api.setCam('free')
+    expect(controls.enablePan).toBe(true)
     expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
     const afterForward = cam.position.y
     expect(api.flyTick(0.1, new Set(['KeyE']))).toBe(true)
@@ -1584,18 +1570,85 @@ describe('Free Camera terrain floor', () => {
     source.loadPlaybackData.mockResolvedValue(minimalData())
     const { api, store } = createScene()
     await api.loadData({ kind: 'local', file: new File(['late-terrain'], 'late-terrain.wotbreplay') })
-    expect(window.__camera.position.y).toBeGreaterThanOrEqual(400.5)
+    expect(store.cam).toBe('top')   // 默认俯视（地形发布后由 setCam('top') 再做净空）
     const cam = window.__camera
     const controls = window.__controls
     const tacticalHeight = 255 // minimalData 的 WORLD_CENTER.ext = 150
     api.setCam('top')
-    expect(store.cam).toBe('free')
+    expect(store.cam).toBe('top')
     expect(cam.position.x).toBeCloseTo(0)
-    expect(cam.position.z).toBeCloseTo(0.01)
-    expect(cam.position.y).toBeGreaterThan(tacticalHeight)
+    expect(Math.abs(cam.position.z)).toBeLessThan(0.1)   // 沿射线外推后轻微偏移
     expect(cam.position.y).toBeGreaterThanOrEqual(400.5)
-    expect(controls.target.y).toBeCloseTo(cam.position.y - tacticalHeight, 5)
-    expect(new THREE.Vector3().subVectors(controls.target, cam.position).normalize().y).toBeCloseTo(-1, 8)
+    expect(controls.target.x).toBeCloseTo(0, 3)
+    expect(controls.target.z).toBeCloseTo(0, 3)
+    expect(controls.target.y).toBe(0)
+    expect(new THREE.Vector3().subVectors(controls.target, cam.position).normalize().y).toBeLessThan(-0.99)
+    // 地形阻挡：相机被抬到地形净空，minDistance 锁在该距离（再放大不会钻进地形）
+    expect(controls.minDistance).toBeCloseTo(cam.position.distanceTo(controls.target), 5)
+  })
+
+  it('Follow 不允许相机绕到 target 下方；已在地下的点被抬到地形净空', async () => {
+    stubTerrainAssets({ values: [0, 0, 0, 0], zmin: 0, zmax: 0 })
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const { api } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['terrain'], 'follow-down.wotbreplay') })
+    const cam = window.__camera
+    const controls = window.__controls
+    controls.target.set(0, 2, 0)
+    cam.position.set(8, -28, 0)   // 绕到 target 水平线以下（review 复现）
+    api.setCam('follow')
+    expect(controls.maxPolarAngle).toBeLessThanOrEqual(Math.PI / 2)
+    expect(cam.position.y).toBeGreaterThanOrEqual(0.5)
+    // 真实 OrbitControls update 也不得把相机带回地下
+    controls.update()
+    expect(cam.position.y).toBeGreaterThanOrEqual(0.5)
+  })
+
+  it('坡面外推按新 x/z 重采样，最终相机点高于实际地形', async () => {
+    const n = 64, span = 600, zmin = -50, zmax = 400
+    const values = []
+    for (let r = 0; r < n; r++) {
+      for (let c = 0; c < n; c++) {
+        const x = (c / n - 0.5) * span
+        const h = 100 + 0.5 * x
+        values.push(Math.round((h - zmin) / (zmax - zmin) * 65535))
+      }
+    }
+    stubTerrainAssets({ values, zmin, zmax })
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const { api } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['terrain'], 'follow-slope.wotbreplay') })
+    const cam = window.__camera
+    const controls = window.__controls
+    controls.target.set(0, 0, 0)
+    cam.position.set(50, 50, 0)
+    api.setCam('follow')
+    // 旧实现只按 x=50 的地形一次外推到 x≈125.5，那里地面已 162.75：仍穿地。
+    expect(cam.position.x).toBeGreaterThan(150)
+    expect(cam.position.y).toBeGreaterThanOrEqual(100 + 0.5 * cam.position.x + 0.49)
+  })
+
+  it('坡面比射线更陡、射线无安全交点时，在相机当前 x/z 垂直抬升', async () => {
+    const n = 64, span = 600, zmin = -100, zmax = 750
+    const values = []
+    for (let r = 0; r < n; r++) {
+      for (let c = 0; c < n; c++) {
+        const x = (c / n - 0.5) * span
+        const h = 100 + 2 * x
+        values.push(Math.round((h - zmin) / (zmax - zmin) * 65535))
+      }
+    }
+    stubTerrainAssets({ values, zmin, zmax })
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const { api } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['terrain'], 'follow-steep.wotbreplay') })
+    const cam = window.__camera
+    const controls = window.__controls
+    controls.target.set(0, 0, 0)
+    cam.position.set(50, 50, 0)
+    api.setCam('follow')
+    expect(cam.position.x).toBeCloseTo(50, 3)   // 不沿射线外推到无地形区
+    expect(cam.position.y).toBeGreaterThanOrEqual(200.49)
   })
 
   it('places the Free camera above the rendered triangle on a non-coplanar terrain cell', async () => {
@@ -1688,7 +1741,7 @@ describe('scene vehicle selection intent', () => {
     expect(onVehicleSelect).toHaveBeenCalledOnce()
     expect(onVehicleSelect.mock.calls[0][0]).toBe(11)
     expect(onVehicleSelect.mock.calls[0][1]?.clientX).toBe(10)
-    expect(store.cam).toBe('free')
+    expect(store.cam).toBe('top')
     expect(window.__camera.position.equals(beforeCamera)).toBe(true)
     canvas0.dispatchEvent(new MouseEvent('pointerdown', { button: 2 }))
     canvas0.dispatchEvent(new MouseEvent('pointerup', { button: 2 }))
@@ -2036,7 +2089,7 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
     expect(store.cam).toBe('follow')
     expect(followed).toEqual([2])
     api.setCam('top')
-    expect(store.cam).toBe('free')
+    expect(store.cam).toBe('top')
     expect(followed).toEqual([])
     stop()
   })

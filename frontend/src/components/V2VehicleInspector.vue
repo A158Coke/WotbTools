@@ -12,6 +12,7 @@ import {
 } from '../utils/battlePlaybackV2.ts'
 import { loadoutItemLabel } from '../data/loadoutItems.js'
 import { deviceById, itemIconUrl, loadDevices } from '../utils/researchCatalog.js'
+import { consumableIconUrl, provisionIconUrl } from '../utils/loadoutIcons.js'
 import { romanLevel } from '../utils/tierFormat.js'
 
 /**
@@ -31,11 +32,15 @@ const router = useRouter()
 // loadoutItemLabel**（未知 id 走通用未知文案、raw id 不进 UI，既有门禁）；图标只是
 // 美术层增强——目录不可达或 id 无法对号时不渲染图标，文本不变（fail-soft）。
 const devices = ref(null)
+// 目录加载状态与图标未知分开：目录 404 时装备仍实际存在，不能退回空槽虚线。
+const devicesState = ref('loading')
 onMounted(async () => {
   try {
     devices.value = (await loadDevices()).devices
+    devicesState.value = 'ready'
   } catch {
     devices.value = null
+    devicesState.value = 'error'
   }
 })
 function equipmentIcon(id) {
@@ -94,40 +99,54 @@ const consumables = computed(() => {
     const id = ids[i] ?? null
     const slotWire = wireCodes[i]
     const rt = runtimes.get(i)
+    const logicalItemId = rt?.logicalItemId || id
+    const empty = id == null && !(Number.isInteger(slotWire) && slotWire > 0)
     return {
       slot: i,
-      logicalItemId: rt?.logicalItemId || id,
+      logicalItemId,
       wireCode: slotWire,
       runtimeState: rt?.state || 'UNKNOWN',
-      label: itemLabel('consumable', rt?.logicalItemId || id),
+      empty,
+      icon: empty ? null : consumableIconUrl(logicalItemId),
+      label: empty ? t('recon.map.playback.equipment_empty') : itemLabel('consumable', logicalItemId),
+      ariaLabel: (() => {
+        const base = empty ? t('recon.map.playback.equipment_empty') : itemLabel('consumable', logicalItemId)
+        const state = rt?.state && rt.state !== 'UNKNOWN' ? consumableStateLabel(rt.state) : ''
+        return state ? `${base} · ${state}` : base
+      })(),
     }
   })
 })
 
 const provisionLabels = computed(() => {
   if (!loadout.value) return []
-  return Array.from({ length: 3 }, (_, i) => ({
-    slot: i,
-    label: itemLabel('provision', loadout.value.provisions?.[i] ?? null),
-  }))
+  return Array.from({ length: 3 }, (_, i) => {
+    const id = loadout.value.provisions?.[i] ?? null
+    const wire = loadout.value.provisionWireCodes?.[i] ?? null
+    const empty = id == null && !(Number.isInteger(wire) && wire > 0)
+    return {
+      slot: i,
+      empty,
+      icon: empty ? null : provisionIconUrl(id),
+      label: empty ? t('recon.map.playback.equipment_empty') : itemLabel('provision', id),
+    }
+  })
 })
 
 const equipmentLabels = computed(() => {
   if (!loadout.value) return []
-  const slotKeys = ['f1', 'v1', 's1', 'f2', 'v2', 's2', 'f3', 'v3', 's3']
-  return Array.from({ length: 9 }, (_, i) => ({
-    slot: i,
-    semanticKey: slotKeys[i],
-    id: loadout.value.equipmentIds?.[i] ?? null,
-    label: itemLabel('equipment', loadout.value.equipmentIds?.[i] ?? null),
-  }))
+  // 装备串是**紧凑线序**（空槽省略、尾部补 0），数组位置不是语义槽位：
+  // 不能把第 N 个 id 当成第 N 格，也不能把尾部 0 说成某个具体槽「未装备」。
+  // inspector 只展示实际装上的装备（图标 + 无障碍名称），不伪造槽位/空槽。
+  return (loadout.value.equipmentIds || [])
+    .filter(id => Number.isInteger(id) && id > 0)
+    .map((id, index) => ({
+      slot: index,
+      id,
+      icon: equipmentIcon(id),
+      label: itemLabel('equipment', id),
+    }))
 })
-
-const equipmentRows = computed(() => [
-  { key: 'row1', slots: equipmentLabels.value.slice(0, 3) },
-  { key: 'row2', slots: equipmentLabels.value.slice(3, 6) },
-  { key: 'row3', slots: equipmentLabels.value.slice(6, 9) },
-])
 
 const modules = computed(() => moduleCrewStatesAt(props.track.moduleCrewTransitions, props.timeSec))
 
@@ -213,9 +232,19 @@ function moduleStateLabel(state) {
         <div class="v2-loadout-group" data-test="v2-inspector-consumables">
           <div class="v2-loadout-group-title">{{ $t('recon.map.playback.consumable') }}</div>
           <div class="v2-loadout-grid">
-        <div v-for="c in consumables" :key="'c' + c.slot" class="v2-inspector-chip">
-          <span>{{ c.label }}</span>
-          <span v-if="c.runtimeState !== 'UNKNOWN'" class="v2-chip-state">{{ consumableStateLabel(c.runtimeState) }}</span>
+        <div
+          v-for="c in consumables"
+          :key="'c' + c.slot"
+          class="v2-inspector-chip"
+          :class="{ 'is-empty': c.empty, 'is-unknown': !c.empty && !c.icon }"
+          role="img"
+          :title="c.ariaLabel"
+          :aria-label="c.ariaLabel"
+          :data-consumable-slot="c.slot"
+          :data-state="c.runtimeState"
+        >
+          <img v-if="c.icon" class="v2-chip-icon" :src="c.icon" alt="" width="32" height="32" loading="lazy">
+          <span v-else class="v2-chip-placeholder"></span>
         </div>
           </div>
         </div>
@@ -226,27 +255,32 @@ function moduleStateLabel(state) {
           v-for="p in provisionLabels"
           :key="'p' + p.slot"
           class="v2-inspector-chip"
+          :class="{ 'is-empty': p.empty, 'is-unknown': !p.empty && !p.icon }"
+          role="img"
+          :title="p.label"
+          :aria-label="p.label"
+          :data-provision-slot="p.slot"
         >
-          <span>{{ p.label }}</span>
+          <img v-if="p.icon" class="v2-chip-icon" :src="p.icon" alt="" width="32" height="32" loading="lazy">
+          <span v-else class="v2-chip-placeholder"></span>
         </div>
           </div>
         </div>
         <div class="v2-loadout-group" data-test="v2-inspector-equipment">
           <div class="v2-loadout-group-title">{{ $t('recon.map.playback.equipment') }}</div>
-          <div v-for="row in equipmentRows" :key="row.key" class="v2-equipment-row" :data-equipment-group="row.key">
-            <div class="v2-loadout-grid">
-        <div
-          v-for="e in row.slots"
-          :key="'e' + e.slot"
-          class="v2-inspector-chip"
-          :data-equipment-slot="e.slot"
-        >
-          <span class="v2-chip-type">{{ $t(`recon.map.playback.equipment_slot_${e.semanticKey}`) }}</span>
-          <span class="v2-chip-item">
-            <img v-if="equipmentIcon(e.id)" :src="equipmentIcon(e.id)" alt="" width="24" height="24" loading="lazy">
-            <span>{{ e.label }}</span>
-          </span>
-        </div>
+          <div class="v2-loadout-grid" data-test="v2-inspector-equipment-grid">
+            <div
+              v-for="e in equipmentLabels"
+              :key="'e' + e.slot"
+              class="v2-inspector-chip"
+              :class="{ 'is-unknown': !e.icon && devicesState !== 'loading', 'is-loading': !e.icon && devicesState === 'loading' }"
+              :data-equipment-id="e.id"
+              role="img"
+              :title="e.label"
+              :aria-label="e.label"
+            >
+              <img v-if="e.icon" class="v2-chip-icon" :src="e.icon" alt="" width="32" height="32" loading="lazy">
+              <span v-else class="v2-chip-placeholder"></span>
             </div>
           </div>
           <button
@@ -330,4 +364,31 @@ function moduleStateLabel(state) {
 }
 .v2-configurator-link:hover { border-color: var(--color-border-strong); }
 .v2-configurator-link:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+
+/* 未装备槽：与「未知装备」区分——空槽是已知事实，不是解析失败 */
+.v2-inspector-chip.is-empty .v2-chip-item { color: var(--color-text-tertiary); font-style: italic; }
+.v2-inspector-chip.is-empty .v2-chip-type { opacity: .7; }
+
+/* 装载区图形化：只显示图标，名称进 title / aria-label；空槽为虚线占位 */
+.v2-inspector-chip .v2-chip-icon { width: 32px; height: 32px; object-fit: contain; }
+.v2-inspector-chip .v2-chip-placeholder {
+  width: 32px; height: 32px; border-radius: var(--radius-sm);
+  border: 1px dashed var(--color-border-subtle); opacity: .5;
+}
+/* 未知/缺图不是「未装备」：实线警示框 + 斜杠，避免空槽虚线掩盖已装备事实 */
+.v2-inspector-chip.is-unknown .v2-chip-placeholder {
+  position: relative; opacity: 1; border-style: solid;
+  border-color: var(--color-warning);
+}
+/* 目录加载中：实线中性框，既不等同空槽虚线，也不提前报未知 */
+.v2-inspector-chip.is-loading .v2-chip-placeholder {
+  opacity: .75; border-style: solid;
+  border-color: var(--color-border-strong);
+}
+.v2-inspector-chip.is-unknown .v2-chip-placeholder::after {
+  content: ''; position: absolute; inset: 7px;
+  border-top: 1.5px solid var(--color-warning);
+  transform: rotate(-45deg); transform-origin: center;
+}
+.v2-inspector-chip[role="img"] { cursor: help; }
 </style>

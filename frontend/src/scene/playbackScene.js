@@ -163,7 +163,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let sceneClock = null, canonicalClock = null;
   // Derived identity index only; ReplaySession still owns every canonical life fact.
   let lifeTracks = null, lifeTracksByAccount = new Map();
-  let CAM = 'free', FOLLOW_EID = 0;
+  let CAM = 'top', FOLLOW_EID = 0;
   let shotPtr = 0;   //（killPtr 随击杀 feed 出仓 playback/hudFeed.js）
   const tracers = [];
   const pendingMuzzles = [];   // 本 tick 开火、待炮管姿态摆完再定位的炮口特效（见 flushMuzzles）
@@ -754,10 +754,108 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function buildBoundary(bounds, thick) { boundaryBand.build(bounds, thick); }
 
   // 相机距离钳制（禁止无限 zoom-out）：min/max 基于 world extent，初值实测后再调
+  let baseMinDistance = 20;
   function applyCameraClamp() {
     const { ext } = WORLD_CENTER;
-    controls.minDistance = Math.max(20, ext * 0.08);
+    baseMinDistance = Math.max(20, ext * 0.08);
+    controls.minDistance = baseMinDistance;
     controls.maxDistance = ext * 2.2;
+  }
+
+  /**
+   * 非自由视角可采样的地形高度：优先渲染网格的真实三角面（含 LOD/morph/缝合），
+   * 网格未建或该点无三角面时回退高度场。超出高度场范围的 x/z 返回 null——
+   * 没有地形数据时不得拿 0 当代替，否则会在边界外制造假的净空。
+   */
+  function terrainHeightForCameraClamp(x, z) {
+    if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
+    const rendered = terrainMesh ? sampleRenderedTerrainHeight(x, z) : null;
+    if (Number.isFinite(rendered)) return rendered;
+    if (!heightField || !heightMeta) return null;
+    const n = Number(heightMeta.size), span = Number(heightMeta.span);
+    if (!Number.isInteger(n) || n < 2 || !Number.isFinite(span) || span <= 0) return null;
+    const half = span / 2;
+    if (x < -half || x >= half || z < -half || z >= half) return null;
+    const h = sampleHeight(x, z);
+    return Number.isFinite(h) ? h : null;
+  }
+
+  /**
+   * 非自由视角的地形放大阻挡：沿 target→camera 射线从当前距离向外找相机点，
+   * 直到该点的**新 x/z** 采样高度低于相机净空。只按旧 x/z 高度一次外推在坡面上
+   * 仍会穿地（外推会改变 x/z，坡面越高外推点越深）；这里每轮都用新坐标重采样，
+   * 最多 24 轮（0.5 斜率收敛比 0.5，12 轮仍差最后几厘米）。若射线没有安全交点
+   * （坡面比射线更陡、方向水平/向下、或出高度场），
+   * 在相机当前 x/z 垂直抬到净空之上——绝不把相机留在地下。
+   * 相机贴住限制时把 minDistance 锁在当前安全距离，滚轮继续放大不会钻地；
+   * 缩小后相机升高，minDistance 复位，**target 全程不动**（旋转/缩放中心不变）。
+   */
+  const _orbitTerrainDir = new THREE.Vector3();
+  function clampOrbitCameraToTerrain() {
+    if (flyMode() || !camera || !controls || !heightField || !heightMeta) return false;
+    const t = controls.target;
+    if (!Number.isFinite(t.y) || !Number.isFinite(camera.position.y)) return false;
+    const dir = _orbitTerrainDir.subVectors(camera.position, t);
+    const dist = dir.length();
+    if (!(dist > 1e-6)) { controls.minDistance = baseMinDistance; return false; }
+    dir.divideScalar(dist);
+    const clearance = CAMERA_GROUND_CLEARANCE;
+
+    let safeDist = dist;
+    let safeTerrain = null;
+    let found = false;
+    for (let i = 0; i < 24; i++) {
+      const px = t.x + dir.x * safeDist;
+      const pz = t.z + dir.z * safeDist;
+      const py = t.y + dir.y * safeDist;
+      const terrainY = terrainHeightForCameraClamp(px, pz);
+      if (!Number.isFinite(terrainY)) break;
+      safeTerrain = terrainY;
+      // 1 mm 容差：不动点迭代尾部只差浮点级距离，不应因此判成「无交点」。
+      if (py + 1e-3 >= terrainY + clearance) { found = true; break; }
+      // 水平/向下射线外推不会升高：不再找，交给下面的垂直回退。
+      if (!(dir.y > 1e-4)) break;
+      const next = (terrainY + clearance - t.y) / dir.y;
+      if (!Number.isFinite(next) || next <= safeDist + 1e-6) break;
+      safeDist = next;
+    }
+    // 安全点超出 OrbitControls 的最大缩放距离：下一帧 update 会把相机拉回来，
+    // 那个距离仍在地形里。改为在相机当前 x/z 垂直抬升，避免来回振荡。
+    if (found && safeDist > controls.maxDistance) found = false;
+
+    if (!found) {
+      const camTerrain = terrainHeightForCameraClamp(camera.position.x, camera.position.z);
+      if (!Number.isFinite(camTerrain)) { controls.minDistance = baseMinDistance; return false; }
+      const lift = camTerrain + clearance;
+      if (camera.position.y < lift) {
+        camera.position.y = lift;
+        camera.lookAt(t);
+        const locked = Math.max(baseMinDistance, camera.position.distanceTo(t));
+        controls.minDistance = locked;
+        controls.maxDistance = Math.max(controls.maxDistance, locked);
+        return true;
+      }
+      // 相机点本身安全、只是射线前方无交点：无需限制。
+      controls.minDistance = baseMinDistance;
+      return false;
+    }
+
+    const camDist = camera.position.distanceTo(t);
+    const limit = safeTerrain + clearance;
+    // 相机低于净空、或还没退到安全距离：沿原方向退到 safeDist（target 不动）。
+    if (camDist < safeDist - 1e-6 || camera.position.y < limit - 0.02) {
+      camera.position.copy(t).addScaledVector(dir, safeDist);
+      camera.lookAt(t);
+      controls.minDistance = Math.max(baseMinDistance, safeDist);
+      return true;
+    }
+    // 已贴净空：保持 minDistance 锁定，滚轮继续放大不会钻地；缩小后自然释放。
+    if (camera.position.y <= limit + 0.02) {
+      controls.minDistance = Math.max(baseMinDistance, safeDist);
+      return false;
+    }
+    controls.minDistance = baseMinDistance;
+    return false;
   }
 
   // 相机目标钳制在战场范围内（拖到天边会让地形/边界消失、只剩背景色）
@@ -3143,6 +3241,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 拖拽只改 target 不改朝向，画面不转（用户实测）。
     if (flyMode()) camera.lookAt(controls.target);
     const cameraMoved = flyMode() ? false : controls.update();   // three 的 update() 返回相机是否变化（阻尼/交互）
+    if (!flyMode()) clampOrbitCameraToTerrain();
     // ---------- 按需渲染（脏帧）----------
     // 暂停且没有在飞特效、相机也静止时，跳过整帧工作（标签/基地/transient 重算 + 全屏
     // render）。此前空闲也满速重绘，是移动端发热与笔记本耗电的第一来源。
@@ -3456,33 +3555,42 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     invalidate();
   }
   function setCam(mode) {
-    // Top 是一次性战术总览动作，不是可持续相机模式。俯视快照完成后立刻回到
-    // Free 状态，让键盘、鼠标与触屏控制从同一帧起可用。
-    const topAction = mode === 'top';
-    const nextMode = topAction ? 'free' : mode;
+    // 俯视是持续的战术总览视角：OrbitControls 以**地图中心**为 target，拖拽/滚轮
+    // 围绕地图中心旋转与缩放；跟随以选中坦克为 target；自由视角仍是 FPS 飞行。
+    const nextMode = mode === 'top' ? 'top' : mode;
     CAM = nextMode;
     store.cam = nextMode;
-    flyLookApplyMode(topAction ? 'follow' : nextMode); // 先清理飞行手势，再接管 Free
-    if (topAction) FOLLOW_EID = 0;
-    // 场景未初始化（renderer 惰性创建，首次 startPlayback 才有 controls）：只记录模式，
-    // 初始化后由 animate 按 CAM/FOLLOW_EID 逐帧生效——名册点击可先于首帧发生。
+    flyLookApplyMode(nextMode === 'free' ? 'free' : 'follow');
+    if (nextMode !== 'follow') FOLLOW_EID = 0;
     if (!controls) { invalidate(); return; }
-    // free 接管期间 controls.enabled 必须保持 false（OrbitControls 的 pan/rotate
-    // 无生效路径）——不得在此无条件拉回 true（top→free 复活拖曳移动的根因）
     controls.enabled = !flyMode();
+    // 旋转/缩放中心语义要求 target 不被平移带走：Follow 锁坦克、Top 锁地图中心；
+    // Free 由 flyLook 接管，OrbitControls 的 pan 不参与（恢复默认值供下次非 Free 入口设置）。
+    controls.enablePan = nextMode === 'free';
     invalidate();
-    if (topAction) {
+    if (nextMode === 'top') {
       const { cx, cz } = WORLD_CENTER;
       camera.position.set(cx, topCameraDefaultHeight(), cz + 0.01);
       controls.target.set(cx, 0, cz);
-      constrainFreeCameraAltitude();
-      // 保留直下俯视的实际画面，同时为下一次自由飞行准备可用的水平朝向。
-      flyLookSyncFromCamera('top overview', true);
-      flyLook.yaw = 0;
-      controls.enabled = false;
+      controls.minDistance = baseMinDistance;
+      controls.maxDistance = Math.max(controls.maxDistance, topCameraDefaultHeight());
+      controls.minPolarAngle = 0;
+      // 不贴地平线以下：俯视拖拽保持在地图上方
+      controls.maxPolarAngle = Math.PI * 0.49;
+      clampOrbitCameraToTerrain();
+      camera.lookAt(controls.target);
+      controls.enabled = true;
     } else if (nextMode === 'free') {
       FOLLOW_EID = 0;
+      controls.minPolarAngle = 0;
+      controls.maxPolarAngle = Math.PI;
       constrainFreeCameraAltitude();
+    } else {
+      // 跟随绕转不得沉到 target 水平线以下：OrbitControls 的极角上限直接挡住
+      // 「向下绕到地下」的输入；相机点仍由 clampOrbitCameraToTerrain 按地形净空校验。
+      controls.minPolarAngle = 0;
+      controls.maxPolarAngle = Math.PI * 0.49;
+      clampOrbitCameraToTerrain();
     }
     // 跟随目标是名册的运行时状态（followed）。setFollow 也经由这里：暂停时没有帧在跑，
     // 换相机必须自己补写，否则跟随描边要等到下次播放 / seek 才出现。走 writeHud 而不是
@@ -3815,6 +3923,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       currentMapKey = resolvedKey;
     }
     buildWorld();
+    // 默认视角：俯视（OrbitControls 以地图中心为 target）；用户切到 Follow/Free 后
+    // 同一会话内保持其选择，新会话沿用当前 CAM。
+    if (CAM === 'top') setCam('top');
     // 进入场景前等待运行所需全部资产（评审要求：地图/地形/分层地表/场景 GLB 按
     // 画质档全部就绪后才进场，不再先进场后异步补图）。各段内部已 try/catch——
     // 资产缺失按档位语义降级（回退网格/2D/烘焙底图），等待不因单项缺失而悬挂。

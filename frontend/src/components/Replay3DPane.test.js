@@ -290,10 +290,10 @@ describe('Replay3DPane', () => {
     expect(details.props('selCurStats')).toEqual({ dealt: 900, received: 100, kills: 1 })
     expect(details.props('selDamageLog')).toHaveLength(2)
     for (const group of ['equipment', 'provisions', 'consumables']) expect(details.find(`[data-test="v2-inspector-${group}"]`).exists()).toBe(true)
-    expect(details.find('.v2-chip-state').exists()).toBe(true)
+    expect(details.find('[data-state="COOLDOWN"]').exists()).toBe(true)
     store.time = 47
     await nextTick()
-    expect(details.find('.v2-chip-state').exists()).toBe(false)
+    expect(details.find('[data-state="COOLDOWN"]').exists()).toBe(false)
     store.time = 51
     await nextTick()
     expect(details.props('selCurStats')).toEqual({ dealt: 0, received: 0, kills: 0 })
@@ -996,8 +996,10 @@ describe('Replay3DPane', () => {
       store.hasData = true
       store.roster = roster
       await nextTick()
-      // 折叠状态也可切换（不依赖 Display 面板）
-      await wrapper.get('[data-testid="replay3d-camera-top"]').trigger('click')
+      // 折叠状态也可切换（不依赖 Display 面板）；默认已是 top，先切到 free 再点 top
+      store.cam = 'free'
+      await nextTick()
+      await wrapper.get('[data-testid="replay3d-camera"] [data-value="top"]').trigger('click')
       expect(playback.api.setCam).toHaveBeenLastCalledWith('top')
       wrapper.unmount()
       layout.compact = false
@@ -1261,7 +1263,9 @@ describe('Replay3DPane', () => {
       expect(api.setFollow).not.toHaveBeenCalled()
       // 镜头挡位直接陈列在控制条（2026-10-05：从 Display 面板移出），不经菜单
       expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(false)
-      await wrapper.get('[data-testid="replay3d-camera-top"]').trigger('click')
+      api.store.cam = 'free'
+      await nextTick()
+      await wrapper.get('[data-testid="replay3d-camera"] [data-value="top"]').trigger('click')
       expect(api.setCam).toHaveBeenLastCalledWith('top')
       api.store.cam = 'free'
       await nextTick()
@@ -1859,11 +1863,12 @@ describe('Replay3DPane 待开播画质闸门', () => {
     playback.api.store.hasData = true
     await nextTick()
     const cams = wrapper.get('[data-testid="replay3d-camera"]')
-    expect(cams.findAll('button').map(b => b.attributes('data-value'))).toEqual(['free', 'follow'])
+    expect(cams.findAll('button').map(b => b.attributes('data-value'))).toEqual(['free', 'follow', 'top'])
     expect(cams.text()).toContain('agentReplay.cam_free')
-    const topAction = wrapper.get('[data-testid="replay3d-camera-top"]')
-    expect(topAction.text()).toContain('agentReplay.cam_top')
-    await topAction.trigger('click')
+    expect(cams.text()).toContain('agentReplay.cam_top')
+    playback.api.store.cam = 'free'
+    await nextTick()
+    await cams.get('[data-value="top"]').trigger('click')
     expect(playback.api.setCam).toHaveBeenCalledWith('top')
     wrapper.unmount()
   })
