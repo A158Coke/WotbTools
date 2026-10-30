@@ -194,6 +194,7 @@ beforeEach(async () => {
   canonical.load.mockReset().mockResolvedValue({ dataset: null, reloadTelemetry: null })
   canonical.portrait.mockReset().mockResolvedValue(null)
   layout.compact = false
+  layout.portrait = false
   playback.api = null
   playback.apis.length = 0
   playback.init?.mockClear()
@@ -818,16 +819,16 @@ describe('Replay3DPane', () => {
     const store = playback.api.store
     store.time = 52
     const parseCount = playback.api.loadData.mock.calls.length
+    await wrapper.get('[data-testid="display-toggle"]').trigger('click')
     await wrapper.get('[data-test="pb-declutter"]').trigger('click')
     expect(wrapper.get('[data-test="pb-declutter"]').attributes('aria-pressed')).toBe('true')
     expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith({
       enabled: true, showPlayerName: false, showTankName: true, showHp: false, showReload: false,
       classIcons: true, showStatus: false,
     })
-    await wrapper.get('[data-test="pb-toggle-roster"]').trigger('click')
+    await wrapper.get('[data-testid="disp-roster"]').setValue(false)
     expect(wrapper.find('[data-testid="roster-surface"]').exists()).toBe(false)
-    expect(wrapper.get('[data-test="pb-toggle-roster"]').attributes('aria-expanded')).toBe('false')
-    await wrapper.get('[data-test="pb-toggle-roster"]').trigger('click')
+    await wrapper.get('[data-testid="disp-roster"]').setValue(true)
     expect(wrapper.find('[data-testid="roster-surface"]').exists()).toBe(true)
     await wrapper.get('[data-test="pb-declutter"]').trigger('click')
     expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith(expect.objectContaining({ classIcons: false, showHp: true, showReload: true, showStatus: true }))
@@ -886,6 +887,28 @@ describe('Replay3DPane', () => {
     wrapper.unmount()
   })
 
+  it.each([
+    [70, ['K2']],
+    [50, ['K1', 'K2']],
+  ])('击杀流行数预算决定实际渲染：HUD 底边 %ipx 时只渲染最新的 %j', async (hudBottom, expected) => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    const { store } = playback.api
+    store.hasData = true
+    store.killfeed = [0, 1, 2].map((id) => ({ id, kill: true, killer: `K${id}`, victim: `V${id}` }))
+    await nextTick()
+    const root = wrapper.get('[data-testid="replay3d-root"]').element
+    Object.defineProperty(root, 'clientHeight', { configurable: true, value: 500 })
+    vi.spyOn(wrapper.get('.hud').element, 'getBoundingClientRect').mockReturnValue({ bottom: hudBottom })
+    window.dispatchEvent(new Event('resize'))
+    await nextTick()
+    const rows = wrapper.get('[data-test="replay3d-killfeed"]').findAll('.kf').map((row) => row.text())
+    // 断言 DOM 里的条数：旧消息要真的没渲染，不是被 overflow 裁掉
+    expect(rows).toHaveLength(expected.length)
+    expected.forEach((killer, index) => expect(rows[index]).toContain(killer))
+    wrapper.unmount()
+  })
+
   it('显示面板可分别开关战场 UI 分块（顶栏 / 阵容 / 击杀流 / 基地条）', async () => {
     mockWebGL('webgl2')
     const wrapper = mountPane()
@@ -937,6 +960,7 @@ describe('Replay3DPane', () => {
     it('紧凑档与宽档共享 Display 相机设置；两档都没有「打开名册」按钮', async () => {
       mockWebGL('webgl2')
       layout.compact = true
+      layout.portrait = true
       const compactPane = mountPane()
       const compactStore = playback.api.store
       compactStore.hasData = true
@@ -951,6 +975,7 @@ describe('Replay3DPane', () => {
       compactPane.unmount()
 
       layout.compact = false
+      layout.portrait = false
       const widePane = mountPane()
       const wideStore = playback.api.store
       wideStore.hasData = true
@@ -994,12 +1019,36 @@ describe('Replay3DPane', () => {
     it('紧凑档：俯视动作在控制条直接触发，走同一个 setCam（不新建移动端相机状态）', async () => {
       mockWebGL('webgl2')
       layout.compact = true
+      layout.portrait = true
       const wrapper = mountPane()
       const store = playback.api.store
       store.hasData = true
       store.roster = roster
       await nextTick()
       // 折叠状态也可切换（不依赖 Display 面板）；默认已是 top，先切到 free 再点 top
+      store.cam = 'free'
+      await nextTick()
+      await wrapper.get('[data-testid="replay3d-top-view"]').trigger('click')
+      expect(playback.api.setCam).toHaveBeenLastCalledWith('top')
+      wrapper.unmount()
+      layout.portrait = false
+    })
+
+    it('手机横屏：控制条只留传输，镜头进 Display，且不新建第二份相机状态', async () => {
+      mockWebGL('webgl2')
+      layout.compact = true
+      const wrapper = mountPane()
+      const store = playback.api.store
+      store.hasData = true
+      store.roster = roster
+      await nextTick()
+      expect(wrapper.get('[data-testid="replay3d-root"]').classes()).toContain('compact-bar')
+      expect(wrapper.find('[data-testid="replay3d-camera"]').exists()).toBe(false)
+      await wrapper.get('[data-testid="display-toggle"]').trigger('click')
+      expect(wrapper.find('[data-testid="display-panel"] [data-testid="replay3d-camera"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="display-panel"] [data-testid="replay3d-drawing-entry"]').exists()).toBe(false)
+      expect(wrapper.get('[data-testid="replay3d-drawing-entry"]').element.parentElement.classList.contains('controls')).toBe(true)
+      expect(wrapper.get('[data-testid="replay3d-toolrow"] label').text()).toContain('agentReplay.glb')
       store.cam = 'free'
       await nextTick()
       await wrapper.get('[data-testid="replay3d-top-view"]').trigger('click')
@@ -1274,7 +1323,7 @@ describe('Replay3DPane', () => {
       await nextTick()
       expect(wrapper.get('[data-testid="replay3d-camera"] [data-value="free"]').attributes('aria-checked')).toBe('true')
       expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Alpha')
-      // 跟随没有档位：只由点车或点名单触发，跟随时三档都不高亮
+      // 跟随没有档位：只由点车或点名单触发，radio 仍选中自由，再点一次退出
       expect(wrapper.find('[data-testid="replay3d-camera"] [data-value="follow"]').exists()).toBe(false)
       onVehicleSelect(21)
       await nextTick()
@@ -1282,7 +1331,10 @@ describe('Replay3DPane', () => {
       expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Enemy')
       api.store.cam = 'follow'
       await nextTick()
-      expect(wrapper.findAll('[data-testid="replay3d-camera"] [aria-checked="true"]')).toHaveLength(0)
+      const free = wrapper.get('[data-testid="replay3d-camera"] [data-value="free"]')
+      expect(free.attributes('aria-checked')).toBe('true')
+      await free.trigger('click')
+      expect(api.setCam).toHaveBeenLastCalledWith('free')
       // 点场景空处（eid=null）→ 详情窗隐藏，跟随不变
       onVehicleSelect(null)
       await nextTick()

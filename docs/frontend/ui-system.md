@@ -16,6 +16,8 @@
 
 `pnpm run test:browser-interaction --occlusion` 运行代表界面的遮挡与交互矩阵，复用 `browser-occlusion.mjs` 和设计语言 §5 的阈值。检查包含展开状态、滚动后首末项、真实触摸/鼠标输入和负向遮挡对照；触控场景显式要求 44×44 的命中区域。
 
+探针不依赖控件清单：`measureOcclusion` 在主内容上做 20px 间距的网格命中（小于最小触控目标，合规控件必被采到），凡不属于主内容的可命中元素都计为常驻面，显式 `persistent` 只用于 `pointer-events: none` 的装饰层（3D 的 HUD 与击杀流），并按满 3 条击杀流测量；`measureTouchTargets` 扫描范围内全部可见交互元素，页脚备案链接等法定文字由调用方显式放行。负向对照使用不出现在任何清单里的类名，证明换名字重新加回来的控件也会被发现。
+
 | 界面 | 验证内容 | 场景前缀 |
 |---|---|---|
 | 应用外壳、更多页/面板 | 固定导航与标题、滚动后选项可达、语言切换、Esc 还焦点、真实路由跳转 | `shell-overlay-` |
@@ -27,6 +29,8 @@
 | 文档页面 | 手机折叠目录、桌面 sticky 目录、末项锚点与返回顶部 | `overlay-docs-` |
 | 射击分析详情 | 上一发/下一发/关闭与重开、装甲复现交接、手机横屏可达 | `capability-normal-shots-armor-handoff` |
 | 导出菜单、2D 工作台 | 菜单短视口滚动、显示面层级、主地图遮挡及已有负向对照 | `menu-viewport-` / `ws2d-` |
+| 3D 工作台 | 控制条不压入场景中心（含绘制打开时）；车道与击杀流的 15% 上限只在 `compact-bar` 形态生效，其余形态严格判定；击杀流按行数预算只渲染最新 N 条；Display 逐项可达与压过控制条、倍速菜单与绘制工具条可达 | `roster-geometry-` |
+| 列选择器、dialog 内选车 | 列选择器首末项、移动按钮、Esc 还焦点；选车列表在 dialog 内不被裁切 | `drawer-tables-` / `overlay-dialog-` |
 
 `FilterChips`、名人堂 sheet 控件、玩家抽屉、AI 报告与射击详情的操作在触控档保持最小命中区。`AppSheet` 的内部滚动区在末端保留空隙，避免覆盖式滚动条吞掉右对齐按钮边缘的触摸；滚动条保持可见。桌面玩家抽屉的拖拽柄使用与面板一致的 CSS 布局视口定位，不用包含页面滚动条宽度的 `innerWidth` 推算横坐标。
 
@@ -52,7 +56,7 @@
   - ③ 的四张与 ④ 的 Android 手机图都是真实产品截图，来源与隐私边界见 [`frontend/src/assets/showcase/README.md`](../../frontend/src/assets/showcase/README.md)；只有第一张 `eager`，其余 `lazy` 且都带固有尺寸防抖版。动效默认关闭，只在 `prefers-reduced-motion: no-preference` 下启用；hover 位移 / 缩放同样如此。
   - 项目历史 / 技术演进 / 联系我只在 `useMoreMenu.js` 的「更多」组；Web 首页有自己的 Android 下载转化卡，Android App 内隐藏。`PageHeader.vue` 不提供 hero 变体。
 - `PlaybackRoster.vue` 的三层 grid 显式使用 `minmax(0, 1fr)` 横向轨道，连续长昵称 / 车型可以在行内收缩，不撑宽车道、不裁掉血条。既有 2D 浏览器夹具包含长中文 / 英文压力名称，并断言车道无横滚、整行与血条矩形完整落在车道内。
-- 层级与遮挡（`design-language.md` §5）的实现位置：局部层叠上下文在 `playback-workspace.css` 的 `.playback-workspace` 与 `BattleMap.vue` 的 `.pb-map`（两处 `isolation: isolate`），局部刻度 token 在 `tokens/scale.css`（`--pb-z-canvas/hud/scrim/controls/transient/modal`）。遮挡与可达由浏览器门禁强制：共享探针在 `frontend/scripts/browser-occlusion.mjs`，几何档接在 `pnpm run test:browser-layout`（含故意盖住主内容的负向场景，以及可达性探针自测：部分裁剪、部分覆盖、`pointer-events` 穿透必须判失败，可滚动触达与逃出 overflow 的 fixed 元素必须判通过），真实命中与状态组合接在 `pnpm run test:browser-interaction`（含把常驻控制条提到瞬态面之上的负向对照；空跑守卫按形态逐场景判定：宽档 / 横屏的 Display 锚在 gear 上，必须与常驻传输条重叠，竖屏的 Display 是流内静态面、不要求重叠，因此按名字单跑或分片都不会误报；宽档 / 横屏还断言 Display 压过同时打开的车辆详情面板；可达性检查覆盖面板内的按钮与复选框行，并要求至少有一个选项真的做了命中采样）。探针的判定常量与 `design-language.md` §5 双向校验（`assertDocumentedLimits()`），任一侧漂移即失败。
+- 层级与遮挡（`design-language.md` §5）的实现位置：局部层叠上下文在 `playback-workspace.css` 的 `.playback-workspace` 与 `BattleMap.vue` 的 `.pb-map`（两处 `isolation: isolate`），局部刻度 token 在 `tokens/scale.css`（`--pb-z-canvas/hud/scrim/controls/transient/modal`）。遮挡与可达由浏览器门禁强制：共享探针在 `frontend/scripts/browser-occlusion.mjs`，几何档接在 `pnpm run test:browser-layout`（含故意盖住主内容的负向场景，以及可达性探针自测：部分裁剪、部分覆盖、`pointer-events` 穿透必须判失败，可滚动触达与逃出 overflow 的 fixed 元素必须判通过），真实命中与状态组合接在 `pnpm run test:browser-interaction`（含把常驻控制条提到瞬态面之上的负向对照；空跑守卫按形态逐场景判定：宽档 / 横屏的 Display 锚在 gear 上，必须与常驻传输条重叠，竖屏的 Display 是流内静态面、不要求重叠，因此按名字单跑或分片都不会误报；宽档 / 横屏还断言 Display 压过同时打开的车辆详情面板；可达性检查覆盖面板内的按钮与复选框行，并要求至少有一个选项真的做了命中采样）。3D 的控制条与名册由 `roster-geometry-` 场景按 §5 例外段判定，实现位置是 `Replay3DPane.vue` 的 `compact-bar` 与 `playback-workspace.css`。探针的判定常量与 `design-language.md` §5 双向校验（`assertDocumentedLimits()`），任一侧漂移即失败。
 - 回放结果表格的滚动 / sticky 接线由 `showcase-workspaces.css` 提供，容器建立局部隔离层叠；表头、首列及交叉角使用 `--table-z-*`，背景保持不透明，阵营底色与非 sticky 单元格使用同一表达式。
 - 复用 `layout-content`、`layout-wide`、`layout-data-workspace`、`layout-full-workspace` 等已有 primitive；宽表优先保持信息密度，横向滚动只能是字段过多时的明确 fallback。
 - 当前支持 Desktop `>=1200px`、Tablet `768–1199px`、Mobile `<768px` 三档。窄屏保留任务语义，不能整体缩放页面来规避 overflow。

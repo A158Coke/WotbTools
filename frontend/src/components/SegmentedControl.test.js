@@ -50,6 +50,13 @@ describe('SegmentedControl', () => {
     expect(wrapper.emitted('update:modelValue')).toHaveLength(1)
   })
 
+  it('点已选中项只发 reselect，不改值', async () => {
+    const wrapper = mountControl()
+    await option(wrapper, 'data').trigger('click')
+    expect(wrapper.emitted('reselect')).toEqual([['data']])
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+  })
+
   it('禁用项不可点击，title 说明原因', async () => {
     const options = [
       { value: 'data', label: '数据' },

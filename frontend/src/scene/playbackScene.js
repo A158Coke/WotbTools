@@ -4571,6 +4571,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (!current()) return false;   // 资产解析期间被取代：不得继续动场景
       currentMapKey = resolvedKey;
     }
+    // 跟随目标不跨回放：新回放回到俯视机位的自由视角，不留下无目标的 follow。
+    if (CAM !== 'free') topViewOnLoad = true;
     buildWorld();
     // 默认机位：俯视（仍是自由视角）；保留的自由视角要按新地图重新约束。
     if (topViewOnLoad) setCam('top');

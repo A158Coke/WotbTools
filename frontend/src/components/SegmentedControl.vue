@@ -19,12 +19,16 @@ const props = defineProps({
   /** 按可用宽度换行，窄屏各行填满宽度，长标签仍完整可见。 */
   wrap: { type: Boolean, default: false },
 })
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue', 'reselect'])
 
 const indicatorId = `segmented-indicator-${useId()}`
 
 function select(value) {
   if (value !== props.modelValue) emit('update:modelValue', value)
+}
+/** 点已选中项不改值；需要「再点一次」语义的调用方监听 reselect。 */
+function onOptionClick(value) {
+  if (value === props.modelValue) emit('reselect', value)
 }
 
 const NAVIGATION_KEYS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']
@@ -73,6 +77,7 @@ function onKeydown(event) {
       :title="option.title"
       v-bind="option.data"
       @focus="selectOnNavigationFocus(option.value)"
+      @click="onOptionClick(option.value)"
     >
       <Motion
         v-if="option.value === modelValue"

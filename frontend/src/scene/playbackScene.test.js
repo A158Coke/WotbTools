@@ -1635,12 +1635,16 @@ describe('Free Camera terrain floor', () => {
       expect(window.__camera.position.y).toBeGreaterThanOrEqual(150.5)
     })
 
-    it('Follow does not carry a pose into the next replay', async () => {
-      const { api } = await loadScene()
-      api.setCam('follow')
+    it('Follow on one replay opens the next at the top view in working Free', async () => {
+      const { api, store } = await loadScene()
+      api.setFollow(1)
+      expect(store.cam).toBe('follow')
       window.__camera.position.set(40, 60, 40)
       await loadNext(api)
-      expect(window.__camera.position.distanceTo(new THREE.Vector3(40, 60, 40))).toBeGreaterThan(1)
+      expect(store.cam).toBe('free')
+      expect(window.__controls.enabled).toBe(false)
+      expect(window.__camera.position.y).toBeCloseTo(TOP_HEIGHT, 3)
+      expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
     })
   })
 
