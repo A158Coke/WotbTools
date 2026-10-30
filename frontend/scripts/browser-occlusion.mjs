@@ -25,7 +25,14 @@ export const OCCLUSION_LIMITS = {
   minTouchTargetPx: 44,
   /** 部分裁剪 / 部分覆盖的容差：只放过边框、阴影级别的亚像素误差，超过即不可达。 */
   clipTolerancePx: 2,
+  /** 3D overlay HUD：贴边名册车道占中心保护区的上限（百分比）；其它常驻面不得压入。 */
+  maxEdgeDockedCentralPct: 15,
+  /** 网格命中发现的每边采样数：发现常驻面不依赖任何选择器清单。 */
+  gridSteps: 16,
 }
+
+/** 常驻面发现与触控目标扫描共用的"可交互"定义。 */
+const INTERACTIVE_SELECTOR = 'a[href],button,input:not([type=hidden]):not([type=file]),select,textarea,summary,[role=button],[role=tab],[role=menuitem]'
 
 /**
  * 文档与门禁的反向一致性检查：design-language §5 必须写着同样的数值。
@@ -51,6 +58,9 @@ export function assertDocumentedLimits() {
   }
   if (!section.includes(`容差 ${OCCLUSION_LIMITS.clipTolerancePx}px`)) {
     failures.push(`design-language §5 必须写明部分裁剪 / 覆盖的容差为 ${OCCLUSION_LIMITS.clipTolerancePx}px`)
+  }
+  if (!section.includes(`≤ 中心盒的 ${OCCLUSION_LIMITS.maxEdgeDockedCentralPct}%`)) {
+    failures.push(`design-language §5 必须写明贴边名册车道占中心盒上限为 ${OCCLUSION_LIMITS.maxEdgeDockedCentralPct}%`)
   }
   if (failures.length) {
     throw new Error(`occlusion 规则与文档不一致（文档是规则 owner）:\n- ${failures.join('\n- ')}`)
@@ -99,22 +109,60 @@ const occlusionProbe = () => {
   const halfH = ((primary.bottom - primary.top) * limits.centralBoxFraction) / 2
   const central = { left: cx - halfW, right: cx + halfW, top: cy - halfH, bottom: cy + halfH }
 
+  // 主内容上方的面**不靠清单发现**：网格逐点命中，凡不是主内容自身（或其内部的非交互元素）
+  // 的都算常驻面。清单只兜 `pointer-events: none` 的装饰层——它们不参与命中，网格看不见。
+  // 否则换个类名重新加回来的控件就是盲区（#727 的负向对照曾因此只能证明"清单内能抓"）。
+  const ignored = (el) => input.ignore.some((selector) => el.closest(selector))
+  const ownerOf = (hit) => {
+    let owner = hit
+    for (let a = hit; a && !a.contains(primaryEl); a = a.parentElement) {
+      const s = getComputedStyle(a)
+      if (s.pointerEvents === 'none') break
+      if (s.position !== 'static' && s.display !== 'contents') owner = a
+    }
+    return owner
+  }
+  const surfaces = new Set()
+  for (const selector of input.persistent) {
+    for (const el of document.querySelectorAll(selector)) if (visible(el)) surfaces.add(el)
+  }
+  let gridSampled = 0
+  const steps = limits.gridSteps
+  for (let i = 0; i < steps; i += 1) {
+    for (let j = 0; j < steps; j += 1) {
+      const x = primary.left + ((primary.right - primary.left) * (i + 0.5)) / steps
+      const y = primary.top + ((primary.bottom - primary.top) * (j + 0.5)) / steps
+      if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) continue
+      gridSampled += 1
+      const hit = document.elementFromPoint(x, y)
+      if (!hit || hit === primaryEl || hit.contains(primaryEl) || ignored(hit)) continue
+      if (primaryEl.contains(hit) && !hit.closest(input.interactive)) continue
+      surfaces.add(ownerOf(hit))
+    }
+  }
+
   const failures = []
   const items = []
   const clipped = []
-  for (const selector of input.persistent) {
-    for (const el of document.querySelectorAll(selector)) {
-      if (!visible(el)) continue
-      const b = box(el)
-      const over = area(intersect(primary, b))
-      if (over <= 0) continue
-      const centralOver = area(intersect(central, b))
-      clipped.push(intersect(primary, b))
-      const pct = +((over / primaryArea) * 100).toFixed(2)
-      items.push({ selector, label: label(el), rect: b, overPx: +over.toFixed(1), pct, central: centralOver > 0 })
-      if (centralOver > 0) {
-        failures.push(`常驻控件 ${label(el)} 压入主内容中心 ${Math.round(limits.centralBoxFraction * 100)}% 保护区（交集 ${Math.round(centralOver)} px²）`)
-      }
+  // 主内容大半在视口外时网格没有样本，"没发现遮挡"不是结论，必须显式失败
+  if (gridSampled < (steps * steps) / 2) {
+    failures.push(`主内容 ${input.primary} 只有 ${gridSampled}/${steps * steps} 个网格点在视口内：先把它滚进视口再测`)
+  }
+  const centralArea = area(central)
+  for (const el of surfaces) {
+    const b = box(el)
+    const over = area(intersect(primary, b))
+    if (over <= 0) continue
+    const centralOver = area(intersect(central, b))
+    const edgeDocked = input.edgeDocked.some((selector) => el.closest(selector))
+    clipped.push(intersect(primary, b))
+    const pct = +((over / primaryArea) * 100).toFixed(2)
+    const centralPct = +((centralOver / centralArea) * 100).toFixed(2)
+    items.push({ label: label(el), rect: b, overPx: +over.toFixed(1), pct, centralPct, edgeDocked })
+    if (edgeDocked) {
+      if (centralPct > limits.maxEdgeDockedCentralPct) failures.push(`贴边车道 ${label(el)} 占中心保护区 ${centralPct}%（上限 ${limits.maxEdgeDockedCentralPct}%）`)
+    } else if (centralOver > 0) {
+      failures.push(`常驻控件 ${label(el)} 压入主内容中心 ${Math.round(limits.centralBoxFraction * 100)}% 保护区 ${centralPct}%（交集 ${Math.round(centralOver)} px²）`)
     }
   }
   // 面积取**并集**，不是逐个相加：容器与它的按钮、互相重叠的控件都只能算一次，
@@ -141,10 +189,10 @@ const occlusionProbe = () => {
     coveredArea += covered * (x1 - x0)
   }
   const totalPct = +((coveredArea / primaryArea) * 100).toFixed(2)
-  if (totalPct > limits.maxPrimaryCoveragePct) {
+  if (!input.overlayHud && totalPct > limits.maxPrimaryCoveragePct) {
     failures.push(`常驻控件共遮挡主内容 ${totalPct}%（上限 ${limits.maxPrimaryCoveragePct}%）：${items.map((i) => `${i.label} ${i.pct}%`).join(' + ')}`)
   }
-  return { primary, primaryArea: +primaryArea.toFixed(1), totalPct, items, failures }
+  return { primary, primaryArea: +primaryArea.toFixed(1), totalPct, items, gridSampled, failures }
 }
 
 /**
@@ -293,13 +341,17 @@ const reachabilityProbe = () => {
 }
 
 /**
- * 测量常驻控件对主内容的遮挡。
+ * 测量常驻控件对主内容的遮挡。常驻面由网格命中自动发现，调用方不必（也不该）枚举控件。
  * @param page browser-page.mjs 的 Page
  * @param primary 主内容选择器（地图 / 表格 / 图表 / 正文容器）
- * @param persistent 常驻控件选择器列表（fixed / sticky / 浮动工具栏 / 底栏 / 侧板）
+ * @param persistent 只放 `pointer-events: none` 的装饰层：它们不参与命中，网格发现不了
+ * @param ignore 属于主内容的元素（如地图上的车辆命中区），网格命中时跳过
+ * @param overlayHud game-style overlay HUD（§5 例外）：不适用面积上限，仍判中心保护区
+ * @param edgeDocked overlayHud 下的贴边车道：中心侵入按 maxEdgeDockedCentralPct 判
  */
-export async function measureOcclusion(page, { primary, persistent }) {
-  await page.evaluate(`window.__occlusionInput = ${JSON.stringify({ primary, persistent, limits: OCCLUSION_LIMITS })}`)
+export async function measureOcclusion(page, { primary, persistent = [], ignore = [], overlayHud = false, edgeDocked = [] }) {
+  const input = { primary, persistent, ignore, overlayHud, edgeDocked, interactive: INTERACTIVE_SELECTOR, limits: OCCLUSION_LIMITS }
+  await page.evaluate(`window.__occlusionInput = ${JSON.stringify(input)}`)
   return page.probe(occlusionProbe)
 }
 
@@ -312,6 +364,41 @@ export async function measureOcclusion(page, { primary, persistent }) {
 export async function measureReachability(page, { options, touch = false, requirePresent = true }) {
   await page.evaluate(`window.__reachInput = ${JSON.stringify({ options, touch, requirePresent, limits: OCCLUSION_LIMITS })}`)
   return page.probe(reachabilityProbe)
+}
+
+/**
+ * 触控目标扫描：范围内所有可见交互元素都必须 ≥ 触控档最小命中区。
+ * 不枚举控件，新控件自动入网。复选框 / 单选框的命中区是包着它的 label；
+ * 正文里的行内链接按 WCAG 2.5.8 的 inline 例外放行。
+ * @param root 扫描根选择器
+ * @param exclude 明确放行的选择器（须在调用处说明理由）
+ */
+export async function measureTouchTargets(page, { root = 'body', exclude = [] } = {}) {
+  await page.evaluate(`window.__touchInput = ${JSON.stringify({ root, exclude, interactive: INTERACTIVE_SELECTOR, limits: OCCLUSION_LIMITS })}`)
+  return page.probe(() => {
+    const input = window.__touchInput
+    const min = input.limits.minTouchTargetPx - 0.5
+    const failures = []
+    let scanned = 0
+    for (const scope of document.querySelectorAll(input.root)) {
+      for (const node of scope.querySelectorAll(input.interactive)) {
+        const el = node.matches('input[type=checkbox],input[type=radio]') ? node.closest('label') || node : node
+        if (input.exclude.some((selector) => el.closest(selector))) continue
+        const s = getComputedStyle(el)
+        if (s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity) === 0) continue
+        if (s.display === 'inline' && el.tagName === 'A') continue
+        const r = el.getBoundingClientRect()
+        if (r.width <= 0 || r.height <= 0) continue
+        scanned += 1
+        if (r.width < min || r.height < min) {
+          const name = el.getAttribute('data-test') || el.getAttribute('data-testid')
+            || `${el.tagName.toLowerCase()}.${(el.className || '').toString().trim().split(/\s+/)[0] || '?'}`
+          failures.push(`交互控件 ${name}「${el.textContent.trim().slice(0, 16)}」命中区 ${Math.round(r.width)}×${Math.round(r.height)} 小于 ${input.limits.minTouchTargetPx}×${input.limits.minTouchTargetPx}`)
+        }
+      }
+    }
+    return { scanned, failures: [...new Set(failures)] }
+  })
 }
 
 /**

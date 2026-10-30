@@ -191,6 +191,7 @@ beforeEach(async () => {
   canonical.load.mockReset().mockResolvedValue({ dataset: null, reloadTelemetry: null })
   canonical.portrait.mockReset().mockResolvedValue(null)
   layout.compact = false
+  layout.portrait = false
   playback.api = null
   playback.apis.length = 0
   playback.init?.mockClear()
@@ -815,16 +816,16 @@ describe('Replay3DPane', () => {
     const store = playback.api.store
     store.time = 52
     const parseCount = playback.api.loadData.mock.calls.length
+    await wrapper.get('[data-testid="display-toggle"]').trigger('click')
     await wrapper.get('[data-test="pb-declutter"]').trigger('click')
     expect(wrapper.get('[data-test="pb-declutter"]').attributes('aria-pressed')).toBe('true')
     expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith({
       enabled: true, showPlayerName: false, showTankName: true, showHp: false, showReload: false,
       classIcons: true, showStatus: false,
     })
-    await wrapper.get('[data-test="pb-toggle-roster"]').trigger('click')
+    await wrapper.get('[data-testid="disp-roster"]').setValue(false)
     expect(wrapper.find('[data-testid="roster-surface"]').exists()).toBe(false)
-    expect(wrapper.get('[data-test="pb-toggle-roster"]').attributes('aria-expanded')).toBe('false')
-    await wrapper.get('[data-test="pb-toggle-roster"]').trigger('click')
+    await wrapper.get('[data-testid="disp-roster"]').setValue(true)
     expect(wrapper.find('[data-testid="roster-surface"]').exists()).toBe(true)
     await wrapper.get('[data-test="pb-declutter"]').trigger('click')
     expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith(expect.objectContaining({ classIcons: false, showHp: true, showReload: true, showStatus: true }))
@@ -934,6 +935,7 @@ describe('Replay3DPane', () => {
     it('紧凑档与宽档共享 Display 相机设置；两档都没有「打开名册」按钮', async () => {
       mockWebGL('webgl2')
       layout.compact = true
+      layout.portrait = true
       const compactPane = mountPane()
       const compactStore = playback.api.store
       compactStore.hasData = true
@@ -948,6 +950,7 @@ describe('Replay3DPane', () => {
       compactPane.unmount()
 
       layout.compact = false
+      layout.portrait = false
       const widePane = mountPane()
       const wideStore = playback.api.store
       wideStore.hasData = true
@@ -991,12 +994,34 @@ describe('Replay3DPane', () => {
     it('紧凑档：俯视动作在控制条直接触发，走同一个 setCam（不新建移动端相机状态）', async () => {
       mockWebGL('webgl2')
       layout.compact = true
+      layout.portrait = true
       const wrapper = mountPane()
       const store = playback.api.store
       store.hasData = true
       store.roster = roster
       await nextTick()
       // 折叠状态也可切换（不依赖 Display 面板）；默认已是 top，先切到 free 再点 top
+      store.cam = 'free'
+      await nextTick()
+      await wrapper.get('[data-testid="replay3d-camera"] [data-value="top"]').trigger('click')
+      expect(playback.api.setCam).toHaveBeenLastCalledWith('top')
+      wrapper.unmount()
+      layout.portrait = false
+    })
+
+    it('手机横屏：控制条只留传输，镜头进 Display，且不新建第二份相机状态', async () => {
+      mockWebGL('webgl2')
+      layout.compact = true
+      const wrapper = mountPane()
+      const store = playback.api.store
+      store.hasData = true
+      store.roster = roster
+      await nextTick()
+      expect(wrapper.get('[data-testid="replay3d-root"]').classes()).toContain('compact-bar')
+      expect(wrapper.find('[data-testid="replay3d-camera"]').exists()).toBe(false)
+      await wrapper.get('[data-testid="display-toggle"]').trigger('click')
+      expect(wrapper.find('[data-testid="display-panel"] [data-testid="replay3d-camera"]').exists()).toBe(true)
+      expect(wrapper.get('[data-testid="replay3d-toolrow"] label').text()).toContain('agentReplay.glb')
       store.cam = 'free'
       await nextTick()
       await wrapper.get('[data-testid="replay3d-camera"] [data-value="top"]').trigger('click')

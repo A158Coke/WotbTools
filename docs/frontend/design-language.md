@@ -195,7 +195,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 | token | 紧凑（鼠标） | 触控（`pointer: coarse`） | 依据 |
 |---|---|---|---|
-| `--control-h-sm` | 28 | 36 | 仅用于次要的行内操作 |
+| `--control-h-sm` | 28 | 44 | 仅用于次要的行内操作；触控档同样要满足最小点击区域 |
 | `--control-h-md` | 32 | 44 | 按钮、输入框、下拉框 |
 | `--control-h-lg` | 40 | 48 | 主操作 |
 | `--row-h` | 36 | 48 | 表格行、列表行 |
@@ -226,7 +226,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 ### 遮挡与可达（occlusion / reachability）
 
-层级只决定「谁盖住谁」，不决定「盖住多少」和「还点不点得到」。下面三条和 z-index 刻度同级，是**可判定**的规则，由 `pnpm run test:browser-layout`（几何）与 `pnpm run test:browser-interaction`（真实命中）守护。
+层级只决定「谁盖住谁」，不决定「盖住多少」和「还点不点得到」。下面三条和 z-index 刻度同级，是**可判定**的规则，由 `pnpm run test:browser-layout`（几何）与 `pnpm run test:browser-interaction`（真实命中）守护。判定靠网格命中发现常驻面，不靠控件清单。
 
 **1. 主内容遮挡。** 常驻 UI（`fixed` / `sticky` / 浮动控件 / 工具栏 / 底栏 / 侧板）不得实质遮挡该页的主任务内容——地图 / canvas / 3D 视口、表格与结果列表、图表、表单与复盘正文、搜索与百科内容。判定：
 
@@ -236,9 +236,12 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 交互本身要求的覆盖（打开的 sheet / dialog / 菜单）不受此限——它们是瞬态面，由规则 2 管。
 
 **例外：game-style overlay HUD。** 3D 回放的 HUD、名册车道与控制条按产品设计就浮在场景上
-（游戏同款布局，`.pb-root` 的常驻层都是 `position: absolute`），不适用上面的 5% 面积上限；
-它们仍须满足"不得压入主内容中心区"与规则 3 的可达性。2D 的地图不是这种形态：它的常驻控件
-归控制条，地图盒里不放常驻 UI。
+（游戏同款布局，`.pb-root` 的常驻层都是 `position: absolute`），不适用上面的 5% 面积上限，但：
+
+- 控制条与 HUD 仍不得压入中心 60% 盒，并须满足规则 3 的可达性；
+- 名册车道贴边、可由 Display 一键隐藏，手机横屏下放不进 20% 边带，允许占 **≤ 中心盒的 15%**。
+
+2D 的地图不是这种形态：它的常驻控件归控制条，地图盒里不放常驻 UI。
 
 > 5% 的来历：2D 手机横屏实测基线，三个文字 quick action 在 740×360 下占地图 9.52%、844×390 下 6.94%（绝对像素恒定 ≈5.2–5.7k px²，视口越小占比越高）；收成单个图标入口后在 244px 地图上约 3.25%、竖屏约 1.27%。阈值取在两者之间，双向都有余量。
 
@@ -250,6 +253,8 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 4. 菜单 / 下拉 / popover / 选择器 / tooltip
 5. drawer / modal / sheet
 6. 关键通知层（如有）
+
+概念序是「谁压谁」的默认关系；`--z-menu` 数值高于 `--z-sheet` 是因为 sheet 里打开的菜单必须在它之上，dialog 内的选择器则留在 dialog 的上下文里。
 
 **不得用「给一个很大的 z-index」收尾**。先核实层叠上下文、containing block、transform / filter / opacity、`overflow` 裁剪与组件归属：跨上下文时提高数值无效，正确做法是 Teleport；同上下文时按上面的 token 阶梯取值。
 

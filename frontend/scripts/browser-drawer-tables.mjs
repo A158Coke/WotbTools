@@ -1,5 +1,5 @@
 import { Page } from './browser-page.mjs'
-import { measureReachability } from './browser-occlusion.mjs'
+import { measureReachability, measureTouchTargets } from './browser-occlusion.mjs'
 
 export const DRAWER_TABLE_SCENARIOS = ['showcase', 'classic'].flatMap(profile => [
   { width: 390, height: 844, touch: true },
@@ -97,10 +97,32 @@ export async function runDrawerTableScenario(env, scenario) {
     await page.waitForValue('document.querySelector("[data-test=toggle-analysis]").getAttribute("aria-expanded")', value => value === 'false')
     await tap('[data-test=toggle-analysis]')
     await page.waitForValue('document.querySelector("[data-test=toggle-analysis]").getAttribute("aria-expanded")', value => value === 'true')
+    // 列选择器：常驻表格之上的非模态面，首末项、移动按钮都要真实可点，Esc 把焦点还给触发按钮。
+    await tap('[data-testid=column-picker-open]')
+    await page.waitForValue('!!document.querySelector(".colpanel")', Boolean)
+    await reach('.colpanel .linkbtn:last-of-type')
+    await reach('.collist li:first-child .colitem')
+    await page.evaluate(`document.querySelector('.collist').scrollTop = 1e6`)
+    await reach('.collist li:last-child .colitem')
+    await reach('.collist li:last-child .colmove-btn:first-child')
+    if (scenario.touch) {
+      const touch = await measureTouchTargets(page, { root: '.colpanel' })
+      check(touch.scanned > 0, 'column picker touch sweep must not be empty')
+      failures.push(...touch.failures)
+    }
+    await page.evaluate(`document.querySelector('.colpanel').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
+    await page.waitForValue('!document.querySelector(".colpanel")', Boolean)
+    check(await page.evaluate('document.activeElement?.dataset.testid === "column-picker-open"'), 'closing the column picker must restore focus to its opener')
+
     await reach('.prebattle-toggle')
     await tap('.prebattle-toggle')
     await page.waitForValue('document.querySelector(".prebattle-toggle").getAttribute("aria-expanded")', value => value === 'false')
     check(await page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'expanded report must not overflow the document horizontally')
+    if (scenario.touch) {
+      const touch = await measureTouchTargets(page, { root: 'main' })
+      check(touch.scanned > 0, 'page touch sweep must not be empty')
+      failures.push(...touch.failures)
+    }
   } catch (error) {
     failures.push(error.message, ...await page.diagnose())
   } finally {

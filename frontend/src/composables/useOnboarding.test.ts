@@ -584,6 +584,7 @@ describe('real lesson lifecycle', () => {
     expect(h.controller.topic.value).toBe('3d')
     expect(h.controller.index.value).toBe(1)
 
+    h.controller.registerSurface('3d', { ready: () => true })
     h.loadDemo.mockImplementation(async () => { h.selected.value = true; h.revision.value++ })
     h.controller.retry()
     await flushPromises()

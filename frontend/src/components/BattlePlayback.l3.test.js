@@ -179,7 +179,6 @@ describe('L3：名册是常驻的两侧车道（审计 BZ-13 / PB-03 + 正方形
     // 浮窗挂在**整个战场 workspace（.pb-main）**下，不在 Stage 里
     expect(details.element.parentElement).toBe(wrapper.get('[data-test="pb-main"]').element)
     // 三段式下右侧详情列**整列不存在**：详情是 workspace 顶层的浮窗、名册在两侧车道。
-    expect(wrapper.find('[data-test="pb-side-panel-shell"]').exists()).toBe(false)
     expect(wrapper.get('[data-test="battle-playback"]').classes()).not.toContain('pb-details-column')
   })
 

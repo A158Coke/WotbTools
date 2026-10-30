@@ -27,6 +27,8 @@
   import TankCatalogMenu from '../../src/components/TankCatalogMenu.vue'
   import HoFPage from '../../src/components/HoFPage.vue'
   import MarkdownDocPage from '../../src/components/MarkdownDocPage.vue'
+  import AppDialog from '../../src/components/AppDialog.vue'
+  import VehiclePicker from '../../src/components/VehiclePicker.vue'
 
   const query = new URLSearchParams(location.search)
   const profile = query.get('profile') === 'classic' ? 'classic' : 'showcase'
@@ -46,7 +48,8 @@
     const filters = ref({})
     const selected = ref('')
     return () => h('main', { style: { padding: '16px' }, 'data-testid': 'catalog-hof-docs-fixture' }, [
-      mode === 'hof' ? h(HoFPage) : mode === 'docs' ? h(MarkdownDocPage, { source })
+      mode === 'hof' ? h(HoFPage) : mode === 'dialog' ? h(AppDialog, { open: true, title: 'Fixture' }, () => h(VehiclePicker, { modelValue: null, inputId: 'dialog-vehicle', options: tanks.map(tank => ({ id: tank.id, label: tank.name })) }))
+        : mode === 'docs' ? h(MarkdownDocPage, { source })
         : h(TankCatalogMenu, { tanks, filters: filters.value, 'onUpdate:filters': value => { filters.value = value }, onSelect: value => { selected.value = String(value.id) } }),
       h('output', { 'data-testid': 'catalog-selected' }, selected.value),
     ])

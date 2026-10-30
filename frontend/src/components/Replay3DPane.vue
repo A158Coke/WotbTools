@@ -29,6 +29,7 @@ import { usePlaybackPreferences } from '../composables/usePlaybackPreferences.js
 import Scene3DStatus from './Scene3DStatus.vue'
 import PlaybackTransport from './PlaybackTransport.vue'
 import PlaybackDisplaySurface from './PlaybackDisplaySurface.vue'
+import ReplayCameraTools from './ReplayCameraTools.vue'
 import PlaybackVehicleLabels3D from './PlaybackVehicleLabels3D.vue'
 import VehicleDetailsPanel from './VehicleDetailsPanel.vue'
 import PlaybackRoster from './PlaybackRoster.vue'
@@ -42,7 +43,7 @@ import { mapLabel } from '../utils/helpers.js'
 import { PLAYBACK_SPEEDS, PLAYBACK_STEP_SECONDS, isInteractiveTarget, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
 import { useSceneFlyControls } from '../composables/useSceneFlyControls.js'
 import { formatPlaybackClock } from '../utils/playbackClock'
-import { ChevronDown, ChevronUp, PanelLeftClose, PanelLeftOpen, ScanEye, TriangleAlert } from 'lucide-vue-next'
+import { ChevronDown, ChevronUp, ScanEye, TriangleAlert } from 'lucide-vue-next'
 
 defineOptions({ name: 'Replay3DPane' })
 
@@ -58,8 +59,21 @@ const props = defineProps({
 
 const { t, locale } = useI18n()
 const onboarding = inject(ONBOARDING_KEY, null)
+// 紧凑控制条把镜头收进了 Display 面：教程指向镜头前先打开它，cleanup 只收回自己打开的那一次。
+let guideOpenedDisplay = false
 onMounted(() => onboarding?.registerSurface('3d', {
   ready: () => props.active && store.hasData,
+  prepare: async () => {
+    if (!compactBar.value || displayOpen.value) return
+    displayAnchor.value = rootEl.value?.querySelector('[data-testid="display-toggle"]') || null
+    displayOpen.value = true
+    guideOpenedDisplay = true
+    await nextTick()
+  },
+  cleanup: () => {
+    if (guideOpenedDisplay) displayOpen.value = false
+    guideOpenedDisplay = false
+  },
   failed: () => !webgl.supported || !!store.err || (!online.value.pending && !online.value.available),
 }))
 onBeforeUnmount(() => onboarding?.registerSurface('3d', null))
@@ -111,6 +125,8 @@ const { isPhone } = usePlaybackPhoneForm()
  */
 const { isPortrait } = usePlaybackPortraitViewport()
 const portraitFlow = computed(() => isPortrait.value)
+/** 控制条收成一行：手机横屏与矮工作台。竖屏的控制条在流内，不压场景，不需要收。 */
+const compactBar = computed(() => !portraitFlow.value && (isPhone.value || shortWorkspace.value))
 
 // Selection belongs to the pane. Camera mode and follow target belong to the scene.
 // 选中与详情可见性是**两个状态**：关详情不清选中，选中也从不自动跟随（跟随只由相机动作改变）。
@@ -153,6 +169,7 @@ function detailsSideFor(event) {
 function closeDetails() {
   detailsOpen.value = false
 }
+const cameraTools = computed(() => ({ cam: store.cam, cameras: CAMERAS.value, glbOn: store.glbOn, glbAllowed: store.glbAllowed }))
 function chooseCamera(mode) {
   if (mode === 'follow' && selectedEid.value != null) sceneApi?.setFollow(selectedEid.value)
   else sceneApi?.setCam(mode)
@@ -519,6 +536,9 @@ const rootEl = ref(null)
 const hudEl = ref(null)
 const controlsEl = ref(null)
 let laneBoundsObserver = null
+/** 工作台高度低于它时，两行控制条放不进场景底部 20% 边带（design-language §5）。 */
+const SHORT_WORKSPACE_MAX_H = 500
+const shortWorkspace = ref(false)
 function measurePresentationBounds() {
   const root = rootEl.value
   if (!root) return
@@ -529,6 +549,7 @@ function measurePresentationBounds() {
   const top = document.fullscreenElement === root ? 0 : header
   const workspaceH = Math.max(1, viewportH - top - tabs)
   root.style.setProperty('--pb-workspace-h', `${workspaceH}px`)
+  shortWorkspace.value = workspaceH <= SHORT_WORKSPACE_MAX_H
   const style = getComputedStyle(root)
   const gap = parseFloat(style.getPropertyValue('--space-1')) || 0
   const padding = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0)
@@ -635,7 +656,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
                             宽档、平板、手机横屏、手机全屏横屏都是这一条；
            `portrait-flow` = 手机竖屏纵向流：HUD / Stage / 传输控件 / 详情 / Team 1 / Team 2。
          名册关闭时两者都没有车道，横屏场景铺满整个根，竖屏仍为正方形。 -->
-    <div v-else class="pb-root playback-workspace" ref="rootEl" :class="{ 'phone-form': isPhone, 'portrait-flow': portraitFlow, 'roster-side': showRoster && !portraitFlow }" data-testid="replay3d-root" data-tour="replay3d-workspace">
+    <div v-else class="pb-root playback-workspace" ref="rootEl" :class="{ 'phone-form': isPhone, 'portrait-flow': portraitFlow, 'roster-side': showRoster && !portraitFlow, 'compact-bar': compactBar }" data-testid="replay3d-root" data-tour="replay3d-workspace">
       <!-- 名牌覆盖层与 canvas 共用**同一个画布盒子**：场景内核按 canvas（.scene）尺寸算锚点，
            覆盖层必须与它同原点，否则三段式下名牌会整体偏一条车道宽。 -->
       <div class="pb-stage" data-testid="replay3d-stage">
@@ -707,24 +728,13 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
       <!-- 隐藏全部 UI：连底部播放控件一起让位（这是「只看战场」的语义）；
            `H` 键或右上角常驻按钮随时恢复。resize 观测对 null 元素是安全的（watch(controlsEl)）。 -->
       <div v-if="store.hasData && !uiHidden" ref="controlsEl" class="controls panel" :class="{ 'controls-collapsed': controlsCollapsed }">
-        <div class="pb-quick-actions">
-          <template v-if="!controlsCollapsed">
-            <button type="button" class="pb-quick-action" data-test="pb-toggle-roster" :aria-expanded="uiPrefs.showRoster" @click="uiPrefs.showRoster = !uiPrefs.showRoster">
-              <component :is="uiPrefs.showRoster ? PanelLeftClose : PanelLeftOpen" :size="18" aria-hidden="true" />
-              {{ t(uiPrefs.showRoster ? 'recon.map.playback.hide_rosters' : 'recon.map.playback.show_rosters') }}
-            </button>
-            <button type="button" class="pb-quick-action" data-test="pb-declutter" :aria-pressed="declutterActive" :title="t('recon.map.playback.declutter_hint_3d')" @click="toggleDeclutter('hidden')">
-              <ScanEye :size="18" aria-hidden="true" /> {{ t('recon.map.playback.declutter') }}
-            </button>
-          </template>
-          <button type="button" class="controls-toggle pb-quick-action" data-testid="replay3d-controls-toggle"
-            :aria-expanded="!controlsCollapsed" :aria-controls="controlsContentId"
-            :aria-label="t(controlsCollapsed ? 'agentReplay.expand_toolbar' : 'agentReplay.collapse_toolbar')"
-            :title="t(controlsCollapsed ? 'agentReplay.expand_toolbar' : 'agentReplay.collapse_toolbar')"
-            @click="toggleControls">
-            <component :is="controlsCollapsed ? ChevronUp : ChevronDown" :size="18" aria-hidden="true" />
-          </button>
-        </div>
+        <button type="button" class="controls-toggle pb-quick-action" data-testid="replay3d-controls-toggle"
+          :aria-expanded="!controlsCollapsed" :aria-controls="controlsContentId"
+          :aria-label="t(controlsCollapsed ? 'agentReplay.expand_toolbar' : 'agentReplay.collapse_toolbar')"
+          :title="t(controlsCollapsed ? 'agentReplay.expand_toolbar' : 'agentReplay.collapse_toolbar')"
+          @click="toggleControls">
+          <component :is="controlsCollapsed ? ChevronUp : ChevronDown" :size="18" aria-hidden="true" />
+        </button>
         <div v-show="!controlsCollapsed" :id="controlsContentId" class="controls-content">
           <!-- 与 2D 回放同一套传输控件（时间轴 / 倍速 / mm:ss 一致） -->
           <PlaybackTransport
@@ -750,28 +760,17 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
             @scrub-end="store.seeking = false; transport.scrubEnd()"
           >
           </PlaybackTransport>
-          <!-- 高频查看动作直接陈列（2026-10-05 需求：从 Display 菜单移出）：镜头挡位 + GLB 车模 -->
-          <div class="tool-row" data-testid="replay3d-toolrow" data-tour="replay3d-camera">
-            <span class="dim">{{ t('agentReplay.camera') }}</span>
-            <SegmentedControl
-              class="camera-control"
-              data-testid="replay3d-camera"
-              :model-value="store.cam"
-              :options="CAMERAS"
-              :aria-label="t('agentReplay.camera')"
-              @update:model-value="chooseCamera($event)"
-            />
-            <label class="toggle" :title="store.glbAllowed ? '' : t(store.glbOn ? 'agentReplay.glb_forced_hint' : 'agentReplay.glb_gate_hint')">
-              <input type="checkbox" data-testid="disp-glb" :checked="store.glbOn" :disabled="!store.glbAllowed" @change="sceneApi.setGlb($event.target.checked)"> {{ t('agentReplay.glb') }}
-            </label>
-          </div>
+          <!-- 高频查看动作直接陈列（2026-10-05 需求：从 Display 菜单移出）：镜头挡位 + GLB 车模。
+               紧凑控制条放不下第二行，§5 也不允许它压进场景中心，此时进 Display 面。 -->
+          <ReplayCameraTools v-if="!compactBar" v-bind="cameraTools" @update:cam="chooseCamera($event)" @update:glb="sceneApi.setGlb($event)" />
         </div>
       </div>
 
       <PlaybackDisplaySurface :open="displayOpen && !uiHidden" :portrait="portraitFlow" :anchor="displayAnchor" :host="rootEl" @close="displayOpen = false">
         <!-- 查看 / 显示开关都在这里（同一份 store.cam / uiPrefs / labelPrefs / hpPrefs / store.glbOn，
              没有第二套状态）：高频动作之外的设置不该永久占着战场高度。
-             常驻快捷按钮与这里的名册开关共用 uiPrefs.showRoster。 -->
+             场景上不放常驻开关（design-language §5），名册与防遮都只在这里。 -->
+          <ReplayCameraTools v-if="compactBar" v-bind="cameraTools" @update:cam="chooseCamera($event)" @update:glb="sceneApi.setGlb($event)" />
           <p class="dp-title">{{ t('agentReplay.display_battlefield') }}</p>
         <label class="toggle" :title="store.treadAllowed ? '' : t('agentReplay.tread_gate_hint')">
           <input type="checkbox" data-testid="disp-tread" :checked="store.treadOn" :disabled="!store.treadAllowed" @change="sceneApi.setTreadMarks($event.target.checked)"> {{ t('agentReplay.tread_marks') }}
@@ -779,6 +778,9 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         <label class="toggle"><input type="checkbox" data-testid="disp-topbar" :checked="uiPrefs.showTopbar" @change="uiPrefs.showTopbar = $event.target.checked"> {{ t('agentReplay.display_topbar') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-roster" :checked="uiPrefs.showRoster" @change="uiPrefs.showRoster = $event.target.checked"> {{ t('agentReplay.display_roster') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-killfeed" :checked="uiPrefs.showKillfeed" @change="uiPrefs.showKillfeed = $event.target.checked"> {{ t('agentReplay.display_killfeed') }}</label>
+        <button type="button" class="tool-btn dp-declutter" data-test="pb-declutter" :aria-pressed="declutterActive" :title="t('recon.map.playback.declutter_hint_3d')" @click="toggleDeclutter('hidden')">
+          <ScanEye :size="18" aria-hidden="true" /> {{ t('recon.map.playback.declutter') }}
+        </button>
         <label class="toggle"><input type="checkbox" data-testid="disp-base" :checked="uiPrefs.showBaseStatus" @change="uiPrefs.showBaseStatus = $event.target.checked"> {{ t('agentReplay.display_base') }}</label>
         <p class="dp-title">{{ t('agentReplay.display_labels') }}</p>
         <label class="toggle"><input type="checkbox" data-testid="disp-class-icons" :checked="markerPrefs.classIcons" @change="markerPrefs.classIcons = $event.target.checked"> {{ t('recon.map.playback.class_icons') }}</label>
@@ -1083,6 +1085,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 
 /* Display content appearance; placement belongs to PlaybackDisplaySurface. */
 .dp-title { margin: var(--space-1) 0 0; color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; }
+.dp-declutter { inline-size: 100%; }
 .dp-hide { margin-block-start: var(--space-2); inline-size: 100%; }
 
 /* 隐藏全部 UI 后的唯一恢复入口：右下角常驻，不遮场景中心也不拦场景操作 */
@@ -1111,7 +1114,6 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 .phone-form .dp-close { inline-size: 100%; }
 /* 直接陈列的查看动作行（镜头挡位 + GLB）：窄屏整行换行 */
 .tool-row { display: flex; align-items: center; justify-content: center; gap: var(--space-2); flex-wrap: wrap; padding-block-start: var(--space-2); border-block-start: 1px solid var(--color-border-subtle); }
-.tool-row .dim { font: var(--type-caption); color: var(--color-text-secondary); }
 .phone-form .tool-row { gap: var(--space-1); }
 
 /**

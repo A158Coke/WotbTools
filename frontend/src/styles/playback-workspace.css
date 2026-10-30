@@ -13,8 +13,6 @@
   --pb-lane-w: var(--pb-roster-min);
 }
 
-/* Direct, always-reachable presentation actions share the existing preference owner. */
-.pb-quick-actions { display: flex; align-items: center; gap: var(--space-1); flex-wrap: wrap; }
 .pb-quick-action {
   display: inline-flex;
   align-items: center;
@@ -37,7 +35,7 @@
 .pb-quick-action:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: var(--space-1); }
 /* Phone landscape uses the available width instead of spending a second row on
    the same clock already shown in the HUD. Buttons retain their touch targets. */
-.battle-playback.pb-phone-landscape .pb-controls .pb-time { flex-basis: auto; margin-inline: auto; order: 0; }
+:is(.battle-playback.pb-phone-landscape, .pb-root.compact-bar) .pb-controls .pb-time { flex-basis: auto; margin-inline: auto; order: 0; }
 
 .battle-playback.playback-workspace:not(:fullscreen),
 .battle-playback.playback-workspace:fullscreen {
@@ -136,17 +134,18 @@
   padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
 }
 .battle-playback.playback-workspace.pb-phone-landscape.pb-roster-lanes .pb-main > .pb-mobile-overlay { grid-column: 1 / -1; }
-.battle-playback.playback-workspace.pb-phone-landscape [data-test="pb-transport-controls"] {
+:is(.battle-playback.playback-workspace.pb-phone-landscape [data-test="pb-transport-controls"], .pb-root.playback-workspace.compact-bar .controls-content) {
   display: flex;
+  flex-direction: row;
   align-items: center;
   gap: var(--space-1);
 }
-.battle-playback.playback-workspace.pb-phone-landscape [data-test="pb-transport-controls"] > .pb-progress {
+:is(.battle-playback.playback-workspace.pb-phone-landscape [data-test="pb-transport-controls"], .pb-root.playback-workspace.compact-bar .controls-content) > .pb-progress {
   flex: 1 1 auto;
   inline-size: auto;
   min-inline-size: var(--pb-timeline-min-w);
 }
-.battle-playback.playback-workspace.pb-phone-landscape [data-test="pb-transport-controls"] > .pb-controls {
+:is(.battle-playback.playback-workspace.pb-phone-landscape [data-test="pb-transport-controls"], .pb-root.playback-workspace.compact-bar .controls-content) > .pb-controls {
   flex: none;
   flex-wrap: nowrap;
 }
@@ -188,25 +187,30 @@
 }
 .pb-root.playback-workspace > .hud > .pb-hud { inline-size: auto; }
 
-/* 传输控件 = 底部居中悬浮（两行：传输 + 直接陈列的镜头/GLB 行）。 */
+/* 传输控件 = 底部居中悬浮（传输 + 直接陈列的镜头/GLB 行；收起按钮在最右）。
+   整体高度必须留在场景底部 20% 边带内（design-language §5：不得压入中心 60% 盒）。 */
 .pb-root.playback-workspace:not(.portrait-flow) > .controls {
   position: absolute;
   inset-block-end: var(--space-2);
   inset-inline: 0;
   z-index: var(--pb-z-hud);
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: flex-start;
   gap: var(--space-1);
   inline-size: auto;
   max-inline-size: min(100% - var(--space-4), 720px);
   margin-inline: auto;
   padding: var(--space-1) var(--space-2);
 }
-/* 手机横屏（.phone-form）适度缩小浮层组件：传输条收窄到 min(100% - 2×lane - 16px,
-   560px)——740×360 上全宽时间轴会横向贯穿屏幕、盖住左右名册下排行的点击区（实测
-   elementFromPoint 命中 INPUT.pb-range），给两侧车道让出底角。 */
-.pb-root.playback-workspace.roster-side:not(.portrait-flow).phone-form > .controls {
-  max-inline-size: min(100% - 2 * var(--pb-overlay-lane-w) - var(--space-4), 560px);
+.pb-root.playback-workspace:not(.portrait-flow) > .controls > .controls-content { flex: 1 1 auto; min-inline-size: 0; }
+.pb-root.playback-workspace:not(.portrait-flow) > .controls > .controls-toggle { order: 1; flex: none; }
+/* 手机横屏与矮工作台：全宽单行，高度落在名册车道让出的底部（车道上限 100% - 4rem）。 */
+.pb-root.playback-workspace.compact-bar:not(.portrait-flow) > .controls {
+  align-items: center;
+  max-inline-size: calc(100% - var(--space-4));
+  margin-inline: var(--space-2);
+  padding-block: var(--space-1);
 }
 .pb-root.playback-workspace.roster-side:not(.portrait-flow).phone-form { --pb-overlay-lane-w: clamp(10rem, 15vw, 13rem); }
 .pb-root.playback-workspace.roster-side:not(.portrait-flow).phone-form > .hud {

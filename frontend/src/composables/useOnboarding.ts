@@ -62,7 +62,7 @@ export interface GuideStep {
 }
 // prepare 之前必须先等 ready 的 surface：它们的 ready() 表示"回放视图已挂上、可以被准备"。
 // 'annotations' 不在此列——它的 ready() 表示目标状态已达成（工具条已打开），只能在 prepare 之后成立。
-const SURFACES_READY_BEFORE_PREPARE = new Set<OnboardingSurfaceId>(['playback', 'display'])
+const SURFACES_READY_BEFORE_PREPARE = new Set<OnboardingSurfaceId>(['playback', 'display', '3d'])
 
 const stage = (anchor: string, copy: string, extra: Partial<GuideStage> = {}): GuideStage => ({ anchor, copy, ...extra })
 const step = (id: string, capability: ReplayCapability, stages: GuideStage[]): GuideStep => ({ id, capability, stages })
@@ -78,7 +78,7 @@ const annotations = step('annotations', 'playback', [
 const declutter = step('declutter', 'playback', [stage('playback-declutter', 'declutter', { surface: 'display', prepare: true, interactionAnchor: 'playback-display-options' })])
 const replay3d = step('3d', '3d', [
   stage('replay3d-start', 'replay3dStart', { surface: '3d', advanceOnReady: true }),
-  stage('replay3d-camera', 'replay3dCamera', { surface: '3d', interactionAnchor: 'replay3d-workspace' }),
+  stage('replay3d-camera', 'replay3dCamera', { surface: '3d', prepare: true, interactionAnchor: 'replay3d-workspace' }),
 ])
 const shots = step('shots', 'shots', [
   stage('shots-first-shot', 'shots', { surface: 'shots', prepare: true, advanceOnReady: true }),
@@ -92,7 +92,7 @@ export const ONBOARDING_GUIDES: Record<OnboardingTopic, GuideStep[]> = {
   data: [demo, data, step('columns', 'data', [stage('data-columns', 'columns', { interactionAnchor: 'data-column-options' })]), step('export', 'data', [stage('data-export', 'export')])],
   playback: [playback, step('timeline', 'playback', [stage('playback-timeline', 'timeline')]), step('display', 'playback', [stage('playback-display', 'display', { interactionAnchor: 'playback-display-options' })])],
   annotations: [annotations, step('drawing', 'playback', [stage('playback-annotation-tools', 'drawing', { surface: 'annotations', prepare: true, interactionAnchor: 'playback-map' })]), declutter],
-  '3d': [replay3d, step('camera', '3d', [stage('replay3d-camera', 'camera', { surface: '3d', interactionAnchor: 'replay3d-workspace' })]), step('3dDisplay', '3d', [stage('playback-display', 'display', { interactionAnchor: 'playback-display-options' })])],
+  '3d': [replay3d, step('camera', '3d', [stage('replay3d-camera', 'camera', { surface: '3d', prepare: true, interactionAnchor: 'replay3d-workspace' })]), step('3dDisplay', '3d', [stage('playback-display', 'display', { interactionAnchor: 'playback-display-options' })])],
   shots: [step('shotList', 'shots', [stage('shots-first-shot', 'shots', { surface: 'shots', prepare: true, advanceOnReady: true })]),
     step('shotOpen', 'shots', [stage('shot-open-viewer', 'shotViewer', { surface: 'armor', advanceOnReady: true, interactionAnchor: 'shots-inspector' })]),
     { id: 'armor', stages: [stage('armor-workspace', 'armor', { surface: 'armor' })] }],

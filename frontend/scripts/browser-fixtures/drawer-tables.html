@@ -26,6 +26,7 @@ import CwPlayerSummaryTable from '../../src/components/CwPlayerSummaryTable.vue'
 import BattleTable from '../../src/components/BattleTable.vue'
 import AggregateTable from '../../src/components/AggregateTable.vue'
 import AnalysisResultPanel from '../../src/components/AnalysisResultPanel.vue'
+import ColumnPicker from '../../src/components/ColumnPicker.vue'
 const profile = new URLSearchParams(location.search).get('profile') === 'classic' ? 'classic' : 'showcase'
 document.documentElement.dataset.uiProfile = profile
 document.documentElement.dataset.theme = profile === 'classic' ? 'light' : 'dark'
@@ -40,11 +41,14 @@ const columns = ['nickname','league_rating','battles','damage_avg','assisted_avg
 const rows = [{ accountId: 1001, team: 1, cells: player.cells }, { accountId: 1002, team: 2, cells: {...player.cells,nickname:'Beta',league_rating:700} }]
 createApp({ setup() {
   const context = ref(null)
+  const pickerOpen = ref(false)
   return () => h('main',{ class:'layout-data-workspace', style:{paddingTop:'var(--space-4)'} },[
     h('section',{'data-testid':'cw-fixture'},h(CwPlayerSummaryTable,{ title:'League',rows,columns,leagueColumns,leagueMode:true,onSelectPlayer:()=>{context.value={scope:'summary',accountId:1001}} })),
     h('section',{'data-testid':'battle-fixture'},h(BattleTable,{battle:{arenaId:1,mapName:'Lagoon',durationS:300,winnerTeam:1,players:rows},shownCols:columns,leagueColumns,leagueMode:true,onSelectPlayer:()=>{context.value={scope:'summary',accountId:1001}}})),
     h('section',{'data-testid':'aggregate-fixture'},h(AggregateTable,{aggregate:rows,shownCols:columns,aggStats:null})),
     h(AnalysisResultPanel,{result:{analysis:'## Обзор\n\n' + 'Подробный разбор боя.\n\n'.repeat(30),preBattleSection:'## Прогноз\n\nИсходные данные.'}}),
+    h('button',{type:'button',class:'ghost','data-testid':'column-picker-open',onClick:()=>{pickerOpen.value=true}},'Columns'),
+    pickerOpen.value ? h(ColumnPicker,{scope:'player',order:columns.map(c=>c.key).concat(leagueColumns),visible:['nickname'],onClose:()=>{pickerOpen.value=false}}) : null,
     h(PlayerDetailDrawer,{context:context.value,player,leagueColumns,scopePlayers:[{...rows[0],league:{dimensionMeans:player.dimensionMeans}}],onClose:()=>{context.value=null}}),
   ])
 }}).use(createI18n({legacy:false,locale:'ru',fallbackLocale:'en',messages})).mount('#app')

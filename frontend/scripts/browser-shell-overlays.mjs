@@ -1,5 +1,5 @@
 import { Page } from './browser-page.mjs'
-import { measureOcclusion, measureReachability } from './browser-occlusion.mjs'
+import { measureOcclusion, measureReachability, measureTouchTargets } from './browser-occlusion.mjs'
 
 export const SHELL_OVERLAY_SCENARIOS = ['showcase', 'classic'].flatMap(profile => [
   { width: 390, height: 844, touch: true },
@@ -46,6 +46,12 @@ export async function runShellOverlayScenario(env, scenario) {
     await page.emulate(scenario)
     await page.goto(`${env.origin}/?view=more&ws-auth=0`)
     await page.waitForValue('!!document.querySelector("[data-testid=more-page]")', Boolean)
+    if (scenario.touch) {
+      // 页脚备案号是法定文字链接（WCAG 2.5.8 inline 例外），不是任务控件
+      const touch = await measureTouchTargets(page, { exclude: ['footer'] })
+      check(touch.scanned > 0, 'shell touch sweep must not be empty')
+      failures.push(...touch.failures)
+    }
     const mobile = scenario.width < 768
     if (mobile) {
       const occlusion = await measureOcclusion(page, {

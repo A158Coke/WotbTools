@@ -1313,9 +1313,7 @@
         "declutter_hint": "Show tank names, class symbols and HP rings; hide player names, reload bars and other details. Click again to restore your settings; editing an option exits the preset.",
         "declutter_hint_3d": "Show tank names and class symbols only. Click again to restore your display settings; editing an option exits this preset.",
         "class_icons": "Replace vehicle models with class icons",
-        "show_status": "Vehicle badges and damage numbers",
-        "hide_rosters": "Hide teams",
-        "show_rosters": "Show teams"
+        "show_status": "Vehicle badges and damage numbers"
       }
     },
     "stages": {

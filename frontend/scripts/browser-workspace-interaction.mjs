@@ -731,6 +731,8 @@ const ROSTER_GEOMETRY_SCENARIOS = [
   { name: 'roster-geometry-844x390-landscape-coarse', width: 844, height: 390, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side' },
   { name: 'roster-geometry-844x390-fullscreen-coarse', width: 844, height: 390, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', fullscreen: true },
   { name: 'roster-geometry-portrait-to844x390-coarse', width: 390, height: 844, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', rotateTo: { width: 844, height: 390 } },
+  { name: 'roster-geometry-667x375-landscape-coarse', width: 667, height: 375, touch: true, players: 7, unknown: 0, killfeed: 0 },
+  { name: 'roster-geometry-1280x720-desktop', width: 1280, height: 720, touch: false, players: 7, unknown: 2, killfeed: 0 },
   { name: 'roster-geometry-1024x460-short', width: 1024, height: 460, touch: false, players: 7, unknown: 0, killfeed: 1, layout: 'side' },
 ]
 
@@ -1387,7 +1389,8 @@ async function runRosterGeometryScenario(env, scenario) {
 
   // Real input regression: disclosure must release toolbar space and remain reachable.
   const toolbarSelector = '[data-testid="replay3d-controls-toggle"]'
-  const expandedHeight = await page.evaluate("document.querySelector('.controls').getBoundingClientRect().height")
+  const controlsFootprint = "(() => { const r = document.querySelector('.controls').getBoundingClientRect(); return r.width * r.height })()"
+  const expandedFootprint = await page.evaluate(controlsFootprint)
   const sessionBeforeCollapse = await page.evaluate('JSON.stringify({ time: window.__pbPane.store.time, speed: window.__pbPane.store.speed, cam: window.__pbPane.store.cam, playing: window.__pbPane.store.playing })')
   for (const collapsed of [true, false]) {
     await page.evaluate(`document.querySelector(${JSON.stringify(toolbarSelector)}).scrollIntoView({ block: 'center' })`)
@@ -1403,9 +1406,9 @@ async function runRosterGeometryScenario(env, scenario) {
     await page.waitForValue(`document.querySelector(${JSON.stringify(toolbarSelector)})?.getAttribute('aria-expanded')`,
       value => value === String(!collapsed), { label: 'toolbar disclosure changes after raw input' })
     await waitForStableLayout(page)
-    const height = await page.evaluate("document.querySelector('.controls').getBoundingClientRect().height")
-    check(failures, collapsed ? height < expandedHeight - 20 : Math.abs(height - expandedHeight) < 2,
-      `toolbar must shrink and restore its height: expanded=${expandedHeight}, actual=${height}`)
+    const footprint = await page.evaluate(controlsFootprint)
+    check(failures, collapsed ? footprint < expandedFootprint / 2 : Math.abs(footprint - expandedFootprint) < expandedFootprint * 0.02,
+      `toolbar must shrink and restore its footprint: expanded=${expandedFootprint}, actual=${footprint}`)
     check(failures, await page.evaluate("getComputedStyle(document.querySelector('.controls-content')).display === 'none'") === collapsed,
       'collapsed content must leave layout and keyboard navigation')
     check(failures, await page.evaluate('window.__sceneMarker === window.__pbPane.sceneApi'), 'toolbar disclosure rebuilt the scene')
@@ -1419,6 +1422,30 @@ async function runRosterGeometryScenario(env, scenario) {
   await page.evaluate('window.scrollTo(0, 0)')
   await waitForStableLayout(page)
   const geometry = await page.probe(rosterGeometryProbe)
+
+  // —— #727 3D 主内容遮挡（design-language §5 例外段）：HUD 可以浮在场景上，但控制条不得压入中心 ——
+  await page.evaluate(`document.querySelector('.pb-root .scene').scrollIntoView({ block: 'center' })`)
+  await waitForStableLayout(page)
+  const SCENE_OCCLUSION = { primary: '.pb-root .scene', overlayHud: true, edgeDocked: ['.team-lane'] }
+  const sceneOcclusion = await measureOcclusion(page, SCENE_OCCLUSION)
+  console.log(`[browser-interaction] ${scenario.name} scene ${JSON.stringify(sceneOcclusion.items?.map((i) => [i.label, i.pct, i.centralPct]))}`)
+  for (const failure of sceneOcclusion.failures) check(failures, false, `3D 场景遮挡: ${failure}`)
+  // 竖屏的 HUD / 控制条都在流内，场景上本来就没有常驻面；横屏必须真的发现它们，否则就是空跑
+  if (scenario.layout !== 'portrait') check(failures, sceneOcclusion.items?.length > 0, '3D 遮挡判定空跑：网格没有发现任何 HUD 面')
+  // 负向对照：类名不在任何清单里，探针只能靠命中发现它
+  await page.evaluate(`(() => {
+    const mutant = document.createElement('div')
+    mutant.className = 'mutant-toolbar'
+    const r = document.querySelector('.pb-root .scene').getBoundingClientRect()
+    mutant.style.cssText = 'position:fixed;z-index:9;background:#000;left:' + (r.left + r.width * 0.4) + 'px;top:' + (r.top + r.height * 0.4) + 'px;width:' + r.width * 0.2 + 'px;height:' + r.height * 0.2 + 'px'
+    document.querySelector('.pb-root').append(mutant)
+  })()`)
+  const mutantOcclusion = await measureOcclusion(page, SCENE_OCCLUSION)
+  await page.evaluate(`document.querySelector('.mutant-toolbar')?.remove()`)
+  check(failures, mutantOcclusion.failures.some((failure) => failure.includes('mutant-toolbar')),
+    `负向对照必须失败：清单外的控件压进中心却没被发现 ${JSON.stringify(mutantOcclusion.failures)}`)
+  await page.evaluate('window.scrollTo(0, 0)')
+  await waitForStableLayout(page)
   check(failures, geometry.root, 'pb-root missing')
   check(failures, geometry.viewport.width === viewport.width && geometry.viewport.height === viewport.height,
     `viewport collapsed: requested ${viewport.width}x${viewport.height}, measured ${JSON.stringify(geometry.viewport)}`)
@@ -1573,6 +1600,17 @@ async function runRosterGeometryScenario(env, scenario) {
   // 滚动祖先，把底部控制条滚出视口 → 中心点命中失败，实测 1600x900 的隐藏按钮就是这样"不可点"），
   // 再做 elementFromPoint 命中验证。
 
+  // —— #727 控制条的子菜单：一行控制条上方展开，每个档位都要完整可点 ——
+  const speedToggle = await clickElement(page, '[data-test="pb-speed-current"]')
+  check(failures, clicked(speedToggle), `speed picker not clickable: ${speedToggle}`)
+  if (clicked(speedToggle)) {
+    await page.waitFor(() => !!document.querySelector('[data-test="pb-speed-menu"]'), { label: 'speed menu opens' })
+    const speedReach = await measureReachability(page, { options: ['[data-test="pb-speed-menu"] button'], touch: scenario.touch })
+    for (const failure of speedReach.failures) check(failures, false, `3D 倍速菜单可达: ${failure}`)
+    await page.evaluate(`document.querySelector('[data-test="pb-speed-current"]').click()`)
+    await page.waitFor(() => !document.querySelector('[data-test="pb-speed-menu"]'), { label: 'speed menu closes' })
+  }
+
   // —— 「显示」面板：真实点击展开，几何在视口内，不盖场景中心 ——
   // 这段探针 2D / 3D 共用，且断言「点一下 = 打开」。3D 的名册场景会开关同一面板，
   // 所以先**幂等地归位到关闭**（关着就不动），再点开——否则点击会变成关闭、后续等待超时。
@@ -1591,6 +1629,50 @@ async function runRosterGeometryScenario(env, scenario) {
     await captureMobileReview(page, scenario, 'display')
     const panel = await page.probe(displayPanelProbe)
     check(failures, panel.errors.length === 0, `display panel violations: ${panel.errors.join('; ')}`)
+
+    // —— #727 瞬态优先 + 可见即可达（design-language §5）：3D 的 Display 与控制条 ——
+    // 逐项滚进视口再测：竖屏的面在页面流里，矮横屏的面自己滚动，都不是"一屏全看得见"。
+    const pageScroll = await page.evaluate('window.scrollY')
+    const displayOptions = await page.evaluate(`document.querySelectorAll('[data-testid="display-panel"] button, [data-testid="display-panel"] label').length`)
+    check(failures, displayOptions > 0, '3D Display 可达性判定空跑：面板里没有选项')
+    for (let i = 0; i < displayOptions; i += 1) {
+      await page.evaluate(`(() => {
+        document.querySelector('[data-occlusion-control]')?.removeAttribute('data-occlusion-control')
+        const option = document.querySelectorAll('[data-testid="display-panel"] button, [data-testid="display-panel"] label')[${i}]
+        option.dataset.occlusionControl = 'current'
+        // 浮层形态只滚面板自身：连带滚页面会让 Display 重新定位，量到的就不是这次滚动的结果
+        const panel = option.closest('[data-testid="display-panel"]')
+        if (getComputedStyle(panel).position === 'absolute') {
+          panel.scrollTop += option.getBoundingClientRect().top - panel.getBoundingClientRect().top - (panel.clientHeight - option.offsetHeight) / 2
+        } else {
+          option.scrollIntoView({ block: 'center', inline: 'nearest' })
+        }
+      })()`)
+      const reach = await measureReachability(page, { options: ['[data-occlusion-control=current]'], touch: scenario.touch })
+      for (const failure of reach.failures) check(failures, false, `3D Display 可达: ${failure}`)
+      check(failures, reach.sampled > 0, `3D Display 第 ${i} 项没有做到命中采样: ${JSON.stringify(reach.results)}`)
+    }
+    await page.evaluate(`(() => {
+      document.querySelector('[data-occlusion-control]')?.removeAttribute('data-occlusion-control')
+      document.querySelector('[data-testid="display-panel"]').scrollTop = 0
+      window.scrollTo(0, ${pageScroll})
+    })()`)
+    const DISPLAY_PAINT = { above: '[data-testid="display-panel"]', below: '.controls' }
+    const displayPaint = await measurePaintOrder(page, DISPLAY_PAINT)
+    for (const failure of displayPaint.failures) check(failures, false, `3D Display 必须压过控制条: ${failure}`)
+    if (displayPaint.overlaps) {
+      // 负向对照：把控制条提到瞬态面之上，次序探针必须报错
+      await page.evaluate(`(() => {
+        const style = document.createElement('style')
+        style.id = 'occlusion-negative-control'
+        style.textContent = '.pb-root .controls { z-index: 25 !important }'
+        document.head.append(style)
+      })()`)
+      const inverted = await measurePaintOrder(page, DISPLAY_PAINT)
+      await page.evaluate(`document.getElementById('occlusion-negative-control')?.remove()`)
+      check(failures, inverted.failures.length > 0,
+        `负向对照必须失败：控制条盖住 Display 后次序探针仍然通过 ${JSON.stringify(inverted)}`)
+    }
 
     // 单个分块开关真实生效：把击杀流**显式关掉**（先读当前值，避免依赖上一条浏览器配置里的
     // 持久化偏好），它必须从 DOM 里消失。失败时把复选框状态与面板几何一起带出来。
@@ -2852,9 +2934,10 @@ async function runWorkspace2DScenario(env, scenario) {
   // 这里量的是真实应用（不是夹具）：真实 locale 文字宽度 + 真实布局决定占比。
   const mapOcclusion = await measureOcclusion(page, {
     primary: '.pb-map',
-    // 2D 的主内容是地图：HUD / 常驻传输条 / 任何浮动控件都不得实质压住它。
-    // 选择器覆盖"所有常驻面"，这样以后谁再往地图上加常驻控件都会被这条断言挡住。
-    persistent: ['.pb-map-quick-actions', '.pb-quick-action', '.pb-mobile-overlay-content', '.pb-hud', '.pb-kill-feed'],
+    // 2D 的主内容是地图：HUD / 常驻传输条 / 任何浮动控件都不得实质压住它，由网格命中发现；
+    // 清单只留不参与命中的装饰层。
+    persistent: ['.pb-mobile-overlay-content', '.pb-hud', '.pb-kill-feed'],
+    ignore: ['.pb-vehicle'],
   })
   console.log(`[browser-interaction] ${scenario.name} occlusion map=${mapOcclusion.primary ? `${mapOcclusion.primary.w}x${mapOcclusion.primary.h}` : '?'} total=${mapOcclusion.totalPct}%`)
   for (const failure of mapOcclusion.failures) {
@@ -3639,7 +3722,7 @@ try {
   // 名过滤器忽略 --shard 的**值**（`1/2` 不以 - 开头，否则会被误当场景名）
   const nameFilter = argv.find((arg, i) => !arg.startsWith('-') && (shardFlagAt < 0 || i !== shardFlagAt + 1))
   const base = process.argv.includes('--occlusion')
-    ? runs.filter(({ scenario }) => /^(shell-overlay-|dialog-sheet-|drawer-tables-|overlay-|menu-viewport-|ws2d-|capability-normal-shots-armor-handoff)/.test(scenario.name))
+    ? runs.filter(({ scenario }) => /^(shell-overlay-|dialog-sheet-|drawer-tables-|overlay-|menu-viewport-|ws2d-|roster-geometry-|capability-normal-shots-armor-handoff)/.test(scenario.name))
     : process.argv.includes('--mobile-visual')
     ? runs.filter(({ scenario }) => scenario.width < 900 && /^(roster-geometry|ws2d)-/.test(scenario.name))
     : nameFilter ? runs.filter(({ scenario }) => scenario.name.includes(nameFilter)) : runs
