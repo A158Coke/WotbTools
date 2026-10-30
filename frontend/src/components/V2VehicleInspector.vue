@@ -12,6 +12,7 @@ import {
 } from '../utils/battlePlaybackV2.ts'
 import { loadoutItemLabel } from '../data/loadoutItems.js'
 import { deviceById, itemIconUrl, loadDevices } from '../utils/researchCatalog.js'
+import { consumableIconUrl, provisionIconUrl } from '../utils/loadoutIcons.js'
 import { romanLevel } from '../utils/tierFormat.js'
 
 /**
@@ -94,22 +95,38 @@ const consumables = computed(() => {
     const id = ids[i] ?? null
     const slotWire = wireCodes[i]
     const rt = runtimes.get(i)
+    const logicalItemId = rt?.logicalItemId || id
+    const empty = id == null && !(Number.isInteger(slotWire) && slotWire > 0)
     return {
       slot: i,
-      logicalItemId: rt?.logicalItemId || id,
+      logicalItemId,
       wireCode: slotWire,
       runtimeState: rt?.state || 'UNKNOWN',
-      label: itemLabel('consumable', rt?.logicalItemId || id),
+      empty,
+      icon: empty ? null : consumableIconUrl(logicalItemId),
+      label: empty ? t('recon.map.playback.equipment_empty') : itemLabel('consumable', logicalItemId),
+      ariaLabel: (() => {
+        const base = empty ? t('recon.map.playback.equipment_empty') : itemLabel('consumable', logicalItemId)
+        const state = rt?.state && rt.state !== 'UNKNOWN' ? consumableStateLabel(rt.state) : ''
+        return state ? `${base} · ${state}` : base
+      })(),
     }
   })
 })
 
 const provisionLabels = computed(() => {
   if (!loadout.value) return []
-  return Array.from({ length: 3 }, (_, i) => ({
-    slot: i,
-    label: itemLabel('provision', loadout.value.provisions?.[i] ?? null),
-  }))
+  return Array.from({ length: 3 }, (_, i) => {
+    const id = loadout.value.provisions?.[i] ?? null
+    const wire = loadout.value.provisionWireCodes?.[i] ?? null
+    const empty = id == null && !(Number.isInteger(wire) && wire > 0)
+    return {
+      slot: i,
+      empty,
+      icon: empty ? null : provisionIconUrl(id),
+      label: empty ? t('recon.map.playback.equipment_empty') : itemLabel('provision', id),
+    }
+  })
 })
 
 const equipmentLabels = computed(() => {
@@ -125,6 +142,7 @@ const equipmentLabels = computed(() => {
       semanticKey: slotKeys[i],
       id,
       empty,
+      icon: empty ? null : equipmentIcon(id),
       label: empty ? t('recon.map.playback.equipment_empty') : itemLabel('equipment', id),
     }
   })
@@ -220,9 +238,19 @@ function moduleStateLabel(state) {
         <div class="v2-loadout-group" data-test="v2-inspector-consumables">
           <div class="v2-loadout-group-title">{{ $t('recon.map.playback.consumable') }}</div>
           <div class="v2-loadout-grid">
-        <div v-for="c in consumables" :key="'c' + c.slot" class="v2-inspector-chip">
-          <span>{{ c.label }}</span>
-          <span v-if="c.runtimeState !== 'UNKNOWN'" class="v2-chip-state">{{ consumableStateLabel(c.runtimeState) }}</span>
+        <div
+          v-for="c in consumables"
+          :key="'c' + c.slot"
+          class="v2-inspector-chip"
+          :class="{ 'is-empty': c.empty }"
+          role="img"
+          :title="c.ariaLabel"
+          :aria-label="c.ariaLabel"
+          :data-consumable-slot="c.slot"
+          :data-state="c.runtimeState"
+        >
+          <img v-if="c.icon" class="v2-chip-icon" :src="c.icon" alt="" width="32" height="32" loading="lazy">
+          <span v-else class="v2-chip-placeholder"></span>
         </div>
           </div>
         </div>
@@ -233,8 +261,14 @@ function moduleStateLabel(state) {
           v-for="p in provisionLabels"
           :key="'p' + p.slot"
           class="v2-inspector-chip"
+          :class="{ 'is-empty': p.empty }"
+          role="img"
+          :title="p.label"
+          :aria-label="p.label"
+          :data-provision-slot="p.slot"
         >
-          <span>{{ p.label }}</span>
+          <img v-if="p.icon" class="v2-chip-icon" :src="p.icon" alt="" width="32" height="32" loading="lazy">
+          <span v-else class="v2-chip-placeholder"></span>
         </div>
           </div>
         </div>
@@ -249,12 +283,12 @@ function moduleStateLabel(state) {
           :class="{ 'is-empty': e.empty }"
           :data-equipment-slot="e.slot"
           :data-equipment-empty="e.empty ? 'true' : undefined"
+          role="img"
+          :title="e.label"
+          :aria-label="`${$t(`recon.map.playback.equipment_slot_${e.semanticKey}`)}: ${e.label}`"
         >
-          <span class="v2-chip-type">{{ $t(`recon.map.playback.equipment_slot_${e.semanticKey}`) }}</span>
-          <span class="v2-chip-item">
-            <img v-if="equipmentIcon(e.id)" :src="equipmentIcon(e.id)" alt="" width="24" height="24" loading="lazy">
-            <span>{{ e.label }}</span>
-          </span>
+          <img v-if="e.icon" class="v2-chip-icon" :src="e.icon" alt="" width="32" height="32" loading="lazy">
+          <span v-else class="v2-chip-placeholder"></span>
         </div>
             </div>
           </div>
@@ -343,4 +377,12 @@ function moduleStateLabel(state) {
 /* 未装备槽：与「未知装备」区分——空槽是已知事实，不是解析失败 */
 .v2-inspector-chip.is-empty .v2-chip-item { color: var(--color-text-tertiary); font-style: italic; }
 .v2-inspector-chip.is-empty .v2-chip-type { opacity: .7; }
+
+/* 装载区图形化：只显示图标，名称进 title / aria-label；空槽为虚线占位 */
+.v2-inspector-chip .v2-chip-icon { width: 32px; height: 32px; object-fit: contain; }
+.v2-inspector-chip .v2-chip-placeholder {
+  width: 32px; height: 32px; border-radius: var(--radius-sm);
+  border: 1px dashed var(--color-border-subtle); opacity: .5;
+}
+.v2-inspector-chip[role="img"] { cursor: help; }
 </style>

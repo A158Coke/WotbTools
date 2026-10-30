@@ -33,6 +33,9 @@ const PROVISIONS: Record<number, string> = {
   0x6a: 'GEAR_OIL',
   0x6b: 'IMPROVED_GEAR_OIL',
   0x6c: 'IMPROVED_GUNPOWDER',
+  // 波兰补给（provisions.pb id 109 Zurek / 110 Faworki；0x6D/0x6E = id 原值）
+  0x6d: 'LARGE_FOOD',
+  0x6e: 'SMALL_FOOD',
 }
 
 /** Type32 / Type5 consumable 槽共用映射。 */
