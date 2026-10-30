@@ -12,6 +12,18 @@
  */
 const EPS = 1e-6
 
+/** 事件时刻：canonical `timeSec` 或 facet 原始 `clock`（同 base，不做 origin 变换）。 */
+function eventTime(tr) {
+  if (!tr) return null
+  if (Number.isFinite(tr.timeSec)) return tr.timeSec
+  return Number.isFinite(tr.clock) ? tr.clock : null
+}
+
+function firstFinite(...values) {
+  for (const v of values) if (Number.isFinite(v)) return v
+  return null
+}
+
 /** 单个槽位在 t 时刻是否应展示，以及剩余秒数。 */
 function slotBadge(slot, t) {
   if (!slot || !Number.isFinite(t)) return null
@@ -35,25 +47,35 @@ function slotBadge(slot, t) {
 }
 
 /**
- * 折叠 canonical transitions，返回 t 时刻应展示的定时消耗品（按槽位升序）。
+ * 折叠 transition，返回 t 时刻应展示的定时消耗品（按槽位升序）。
+ *
+ * 两种输入形状共用同一语义：canonical `ConsumableTransition`（2D：`timeSec` /
+ * `state` / `durationSec` / `endsAt` / `consumableSlot` / `logicalItemId`）与
+ * Playback facet 原始事件（3D：`clock` / `state_name` / `duration_s` / `ends_at` /
+ * `slot` / `logical_item_id`）。3D 的 `T` 与 facet `clock` 同为 raw stream 时钟，
+ * 不需要再减 battle origin。
+ *
  * @param {readonly object[]|null|undefined} transitions
- * @param {number} t 回放相对秒
+ * @param {number} t 回放时刻（与该输入的时钟同 base）
  * @returns {{slot:number,logicalItemId:string|null,wireCode:number|null,state:'ACTIVE'|'COOLDOWN',remainingSec:number,durationSec:number}[]}
  */
 export function consumableRuntimeAt(transitions, t) {
   if (!Array.isArray(transitions) || !Number.isFinite(t)) return []
   const bySlot = new Map()
   for (const tr of transitions) {
-    if (!tr || !Number.isFinite(tr.timeSec) || tr.timeSec > t + EPS) continue
+    const timeSec = eventTime(tr)
+    if (timeSec === null || timeSec > t + EPS) continue
     if (tr.invalidation === true) {
       bySlot.clear()
       continue
     }
-    const slotIndex = Number.isInteger(tr.consumableSlot) ? tr.consumableSlot : null
+    const slotIndex = Number.isInteger(tr.consumableSlot) ? tr.consumableSlot
+      : (Number.isInteger(tr.slot) ? tr.slot : null)
     if (slotIndex === null || slotIndex < 0 || slotIndex > 2) continue
-    const state = typeof tr.state === 'string' ? tr.state : 'UNKNOWN'
-    const durationSec = Number.isFinite(tr.durationSec) ? Math.max(0, tr.durationSec) : null
-    const endsAt = Number.isFinite(tr.endsAt) ? tr.endsAt : null
+    const state = (typeof tr.state === 'string' ? tr.state : null)
+      ?? (typeof tr.state_name === 'string' ? tr.state_name : 'UNKNOWN')
+    const durationSec = firstFinite(tr.durationSec, tr.duration_s)
+    const endsAt = firstFinite(tr.endsAt, tr.ends_at)
     const prev = bySlot.get(slotIndex)
     // 「是否是定时消耗品」只在 ACTIVATED 时由 duration 定：state3 的 duration 是冷却，
     // 不能反过来把瞬发消耗品升级成定时；INITIALIZED/TEARDOWN/UNKNOWN 结束该生命周期。
@@ -62,12 +84,12 @@ export function consumableRuntimeAt(transitions, t) {
     if (state === 'INITIALIZED' || state === 'TEARDOWN' || state === 'UNKNOWN') timed = false
     bySlot.set(slotIndex, {
       consumableSlot: slotIndex,
-      logicalItemId: tr.logicalItemId ?? null,
-      wireCode: tr.wireCode ?? null,
+      logicalItemId: tr.logicalItemId ?? tr.logical_item_id ?? null,
+      wireCode: tr.wireCode ?? tr.wire_code ?? null,
       state,
-      durationSec,
+      durationSec: durationSec === null ? null : Math.max(0, durationSec),
       endsAt,
-      timeSec: tr.timeSec,
+      timeSec,
       timed,
     })
   }
@@ -87,6 +109,7 @@ export function createConsumableStateResolver(telemetry) {
     if (!byEid.has(tr.eid)) byEid.set(tr.eid, [])
     byEid.get(tr.eid).push(tr)
   }
-  for (const list of byEid.values()) list.sort((a, b) => a.timeSec - b.timeSec)
+  const at = (tr) => eventTime(tr) ?? 0
+  for (const list of byEid.values()) list.sort((a, b) => at(a) - at(b))
   return (eid, t) => consumableRuntimeAt(byEid.get(eid), t)
 }

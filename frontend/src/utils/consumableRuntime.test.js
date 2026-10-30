@@ -90,4 +90,39 @@ describe('consumableRuntimeAt', () => {
     expect(resolve(2, 20)).toEqual([])
     expect(resolve(3, 20)).toEqual([])
   })
+
+  it('接受 3D facet 原始事件形状（clock/state_name/duration_s/ends_at/slot/logical_item_id）', () => {
+    // 3D 场景直接消费 Playback facet（snake_case、state 为数字），3D 的 T 与 clock 同 base；
+    // 字段名不匹配曾导致 3D 徽标静默全空。
+    const raw = (over = {}) => ({
+      clock: 0, eid: 1, wire_code: 9, state: 1, state_name: 'INITIALIZED',
+      duration_s: null, ends_at: null, ever_activated: false, slot: 0, logical_item_id: null,
+      ...over,
+    })
+    const events = [
+      raw({ state: 2, state_name: 'ACTIVATED', clock: 10, duration_s: 20, ends_at: 30, ever_activated: true, logical_item_id: 'ADRENALINE' }),
+      raw({ state: 3, state_name: 'ACTIVE_ENDED_OR_COOLDOWN', clock: 30, duration_s: 60, ends_at: 90, ever_activated: true, logical_item_id: 'ADRENALINE' }),
+    ]
+    expect(consumableRuntimeAt(events, 40)).toEqual([{
+      slot: 0, logicalItemId: 'ADRENALINE', wireCode: 9, state: 'COOLDOWN',
+      remainingSec: 50, durationSec: 60,
+    }])
+    expect(consumableRuntimeAt(events, 9)).toEqual([])
+  })
+
+  it('createConsumableStateResolver 直接消费 facet telemetry（3D 路径）', () => {
+    const resolve = createConsumableStateResolver({
+      consumables: [
+        {
+          clock: 10, eid: 7, wire_code: 9, state: 2, state_name: 'ACTIVATED',
+          duration_s: 20, ends_at: 30, ever_activated: true, slot: 1, logical_item_id: 'ADRENALINE',
+        },
+      ],
+    })
+    expect(resolve(7, 20)).toEqual([{
+      slot: 1, logicalItemId: 'ADRENALINE', wireCode: 9, state: 'ACTIVE',
+      remainingSec: 10, durationSec: 20,
+    }])
+    expect(resolve(8, 20)).toEqual([])
+  })
 })

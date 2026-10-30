@@ -1505,7 +1505,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         friendly, destroyed, lastKnown: false,
         hp: { current, pct, state: destroyed ? 'DESTROYED' : 'CURRENT' },
         reload: destroyed ? null : reloadStateAt(v.def.eid, T),
-        consumables: destroyed ? [] : consumableStateAt(v.def.eid, T),
+        consumables: destroyed || !visibleAt(v, T) ? [] : consumableStateAt(v.def.eid, T),
         hpGhost: ghost ? { prevPct: (ghost.fromFrac + ghost.lossFrac) * 100, nextPct: ghost.fromFrac * 100 } : null,
         hpFlash: flashByEid.has(v.def.eid),
       };

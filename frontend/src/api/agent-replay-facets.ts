@@ -776,6 +776,32 @@ function validateReloadEffectiveEvent(value: unknown, path: string): void {
   if (d <= 0) throw new Error(`agent facets: ${path}.duration_s 必须为正数`)
 }
 
+/**
+ * Type32 消耗品 lifecycle（v0.4.18 additive）：3D 名牌直接消费 facet 原始事件，
+ * 时钟/实体/线码/状态必须在 trust boundary 锁定；派生字段（state_name/duration_s/
+ * ends_at/ever_activated/slot/logical_item_id）缺省即旧产物，出现时校验形状。
+ */
+function validateConsumableEvent(value: unknown, path: string): void {
+  const e = assertObject(value, path)
+  assertFiniteNumber(e.clock, `${path}.clock`)
+  assertNonNegativeInteger(e.eid, `${path}.eid`, 0xffffffff)
+  assertNonNegativeInteger(e.wire_code, `${path}.wire_code`, 0xff)
+  assertNonNegativeInteger(e.state, `${path}.state`, 0xff)
+  if (e.state_name !== undefined && typeof e.state_name !== 'string') {
+    throw new Error(`agent facets: ${path}.state_name 必须是字符串`)
+  }
+  if (e.duration_s !== undefined) assertNullableFiniteNumber(e.duration_s, `${path}.duration_s`)
+  if (e.ends_at !== undefined) assertNullableFiniteNumber(e.ends_at, `${path}.ends_at`)
+  if (e.ever_activated !== undefined && typeof e.ever_activated !== 'boolean') {
+    throw new Error(`agent facets: ${path}.ever_activated 必须是布尔值`)
+  }
+  if (e.slot !== undefined && e.slot !== null) assertNonNegativeInteger(e.slot, `${path}.slot`, 2)
+  if (e.logical_item_id !== undefined && e.logical_item_id !== null
+    && typeof e.logical_item_id !== 'string') {
+    throw new Error(`agent facets: ${path}.logical_item_id 必须是字符串或 null`)
+  }
+}
+
 /** 切面契约版本锁定（v1 切面字段口径沿用；能力拆分见契约 v2 文档） */
 function assertFacetVersion(v: unknown, path: string, expected: number = CONTRACT_VERSION): void {
   if (v !== expected) {
@@ -840,6 +866,10 @@ export function validateAgentPlayback(value: unknown): AgentPlaybackFacet {
   if (pb.reload_effective !== undefined) {
     const events = assertArray(pb.reload_effective, 'playback.reload_effective')
     events.forEach((event, i) => validateReloadEffectiveEvent(event, `playback.reload_effective[${i}]`))
+  }
+  if (pb.consumables !== undefined) {
+    const events = assertArray(pb.consumables, 'playback.consumables')
+    events.forEach((event, i) => validateConsumableEvent(event, `playback.consumables[${i}]`))
   }
   if (pb.armor_states !== undefined) {
     const tracks = assertArray(pb.armor_states, 'playback.armor_states') as AgentArmorStateTrack[]

@@ -327,6 +327,31 @@ describe('playbackScene 会话代数契约', () => {
     expect(store.hasData).toBe(true)
   })
 
+  it('3D 名牌的定时消耗品徽标直接消费 facet 事件（active 剩余秒 / 未激活为空）', async () => {
+    const store = createPlaybackStore()
+    const overlay = { setLabels: vi.fn(), setAnchor: vi.fn(), clear: vi.fn() }
+    api = initPlayback(mountContainer(), store, overlay)
+    created.push(api)
+    const data = minimalData()
+    data.meta.samples = 1
+    data.meta.duration = 100
+    data.vehicles = [{ eid: 1, account_id: 77, team: 1, is_author: true, nickname: 'Recorder', tank_name: 'Maus', max_hp: 3074,
+      pos: [0, 0, 0], hull_yaw: [0], hull_pitch: [0], turret_yaw: [0], gun_pitch: [0],
+      hp: [[42, 2048]], coverage: [42, 100], death_t: null }]
+    // Playback facet 原始形状：snake_case + 数字 state；3D 的 T 与 clock 同 base。
+    data.consumables = [{ clock: 50, eid: 1, wire_code: 9, state: 2, state_name: 'ACTIVATED',
+      duration_s: 20, ends_at: 70, ever_activated: true, slot: 0, logical_item_id: 'ADRENALINE' }]
+    const session = { loadScene: vi.fn().mockResolvedValue(data), getState: () => ({ canonical: null }) }
+    await api.loadData({ kind: 'local', file: new File(['replay'], 'consumable.wotbreplay'), session })
+    api.setPlaying(false)
+    api.seekTime(55)
+    expect(overlay.setLabels.mock.calls.at(-1)[0][0].consumables).toEqual([{
+      slot: 0, logicalItemId: 'ADRENALINE', wireCode: 9, state: 'ACTIVE', remainingSec: 15, durationSec: 20,
+    }])
+    api.seekTime(45)
+    expect(overlay.setLabels.mock.calls.at(-1)[0][0].consumables).toEqual([])
+  })
+
   it('a late GLB obeys class-icon mode during attach, seek and restoration', async () => {
     window.history.replaceState(null, '', '/?debug&q=mid')
     const parked = track(deferred())
