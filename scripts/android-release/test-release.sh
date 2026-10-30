@@ -944,6 +944,12 @@ assert not (root / "docs/android/auto-publish.md").exists(), \
     "docs/android/release-process.md is the only canonical Android release runbook"
 release_doc = (root / "docs/android/release-process.md").read_text(encoding="utf-8")
 assert "只能手工续跑" not in release_doc, "the canonical runbook must describe the automatic path"
+# canonical runbook 与当前状态摘要入口都不得再描述「真机验收通过后手工 publish」的旧流程。
+for doc_path in ("docs/android/release-process.md", "docs/DEVELOPER_GUIDE.md",
+                 "docs/android/version-manifest.md", "docs/android/architecture.md"):
+    doc_text = (root / doc_path).read_text(encoding="utf-8")
+    for stale in ("验证通过后手工", "真机 B13/B14 验证通过后", "发布前的真机验收负责", "只能手工续跑"):
+        assert stale not in doc_text, f"{doc_path} still describes the manual publish gate: {stale}"
 assert "auto_publish=true" in release_doc and "queue: max" in release_doc, \
     "the canonical runbook must document the automatic continuation and the scheduling contract"
 
