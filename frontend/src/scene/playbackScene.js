@@ -85,7 +85,7 @@ import {
 import { assetProvider } from './assetProvider.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { createSceneCore } from './playback/renderer.js'
-// 内核拆分（2026-10-24，docs/current-plan.md Step A1 + 模式验证）：常量/纯函数/画质表
+// 内核拆分（2026-10-24）：常量/纯函数/画质表
 // 出仓到 ./playback/，点击拾取调试与边界带出仓为工厂；公开 API 经本文件 re-export，
 // 导入方（Replay3DPane / 测试）零改动。
 import { GRID_DT, ASSET_CONCURRENCY, mapLimit } from './playback/util.js'
@@ -95,6 +95,10 @@ import { createPickReporter } from './playback/pickReport.js'
 import { createBoundaryBand, BOUNDARY_THICK } from './playback/boundary.js'
 import { createBaseMarkers } from './playback/bases.js'
 import { createHudFeed } from './playback/hudFeed.js'
+import {
+  ANNOTATION_LIFT, ANNOTATION_MAX_ERASER_POINTS, ANNOTATION_MAX_POINTS,
+  buildEraserRing, buildPenRibbon,
+} from './playback/annotation3d.js'
 
 export { QUALITY_PRESETS, tracerSpanSecs, occlusionCells, occlusionFootprintCells }
 
@@ -124,7 +128,7 @@ export { QUALITY_PRESETS, tracerSpanSecs, occlusionCells, occlusionFootprintCell
 // 纯函数 tracerSpanSecs / occlusionCells / occlusionFootprintCells 在 ./playback/pure.js
 //（本文件 re-export，导入方零改动）。
 
-export function initPlayback(container, store, labelOverlay = null, { onVehicleSelect } = {}) {
+export function initPlayback(container, store, labelOverlay = null, { onVehicleSelect, onAnnotationCommit, onAnnotationErase } = {}) {
   // ---------- 全局状态 ----------
   let DATA = null;                 // PlaybackData（当前会话）
   /** eid → 协议精确 AoI 段 flat [t0,t1,...]（来自 DATA.visibility；3D 炮塔/侧倾采样用） */
@@ -208,6 +212,29 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let destructPickList = null;   // 拾取用全量实例清单（destructibles.json instances，与事件无关）
   let meshOwner = null;          // mesh → 实例 精确归属（buildMeshOwnerMap，拾取主路径）
   let groundMesh = null, gridHelper = null;           // buildWorld 的占位地面/网格（会话拥有）
+  // ---------- 3D annotation（terrain-anchored drawing）----------
+  // committed annotation 的权威 owner 是 Replay3DPane；本闭包只保存最后一次 projection
+  // 引用作为 terrain rebuild 的派生缓存。draft/GPU 资源归本闭包，绝不回写 history。
+  let projectedAnnotations = []
+  let annotationsVisible = true
+  let annotationGroup = null
+  let annotationCommittedMesh = null
+  let annotationDraftMesh = null
+  let annotationRing = null
+  let annotationRingOutline = null
+  let annotationDraft = null
+  let annotationMaterial = null
+  let annotationRingMaterial = null
+  let annotationRingOutlineMaterial = null
+  const annotationStats = {
+    committedBuilds: 0, draftBuilds: 0, eraseCallbacks: 0, terrainRebuilds: 0,
+    lastBuildMs: 0, lastPickMs: 0, committedVertices: 0, draftVertices: 0,
+  }
+  let annotationInteraction = { enabled: false, tool: null, color: '#ff4d4f', width: 3, eraserWidth: 16 }
+  const annotationPointers = new Map()
+  let annotationGesture = null
+  let annotationSuppressUntilAllUp = false
+  let annotationOriginalTouchesOne = null
   let destroyed = false;
   // 会话代数：loadData/teardown 各自递增，全部异步续体持旧代数即失效
   let sessionGen = 0;
@@ -526,6 +553,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           flyPinch = { d0, dist0: flyLook.dist, applied: 0 };
           flyLook.active = false;
           emptyDownAt = null;
+        } else if (annotationToolActive()) {
+          // drawing mode：单指 owner 是 annotation；free camera 也不得转视角。
+          flyLook.active = false;
+          emptyDownAt = null;
         } else {
           flyLook.active = true;
           flyLook.lastX = e.clientX; flyLook.lastY = e.clientY;
@@ -623,7 +654,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         if (o) eid = o.userData.eid;
       }
       flyDbg('click', `eid=${eid}`);
-      onVehicleSelect?.(eid, e);
+      if (!annotationToolActive()) onVehicleSelect?.(eid, e);
     }
     e.stopPropagation();
   }
@@ -662,6 +693,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     controls = core.controls; clock = core.clock; raycaster = core.raycaster;
     hemiLight = core.hemiLight; sunLight = core.sunLight;
     dynResCtl = core.dynResCtl; sizeObserver = core.sizeObserver; rendererCaps = core.rendererCaps;
+    // annotation 先于 fly capture 注册：mouse/pen 命中地形时消费事件；touch 不消费，
+    // 让 OrbitControls / fly 继续跟踪第二指。
+    container.addEventListener('pointerdown', onAnnotationPointerDown, true);
+    container.addEventListener('pointermove', onAnnotationPointerMove, true);
+    container.addEventListener('pointerup', onAnnotationPointerUp, true);
+    container.addEventListener('pointercancel', onAnnotationPointerUp, true);
+    container.addEventListener('lostpointercapture', onAnnotationCaptureLost, true);
     // FPS 飞行接管（capture 阶段挂 container——先于 canvas 的 target 阶段，
     // OrbitControls 物理收不到 flyMode 下的事件；down/up 的 renderer 接线仍服务
     // 非 free 模式的选中语义）
@@ -670,6 +708,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     container.addEventListener('pointerup', onFlyCaptureUp, true);
     container.addEventListener('pointercancel', onFlyCaptureCancel, true);
     container.addEventListener('wheel', onFlyCaptureWheel, { capture: true, passive: false });
+    ensureAnnotationLayer();   // annotation layer 跟随 renderer 生命周期（lazy，材质/geometry 可复用）
+    applyAnnotationTouchMode();   // pane 可能在 initScene 之前就推送了 interaction
     if (CAM === 'free') flyLookApplyMode('free');   // 初始 CAM 可能已是 'free'（默认值）
   }
   function onResize() {
@@ -689,6 +729,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function onScenePointerDown(e) {
     // （free 模式的事件在 container capture 已拦截——此处只服务 OrbitControls 路径）
     if (e.button !== 0) return;
+    if (annotationToolActive()) { emptyDownAt = null; return; }
     if (PICK_DEBUG) pickDownAt = { x: e.clientX, y: e.clientY };   // 调试拾取独立记录（车辆命中路径也出报告）
     const r = container.getBoundingClientRect();
     const nd = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
@@ -707,6 +748,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
   function onScenePointerUp(e) {
     if (e.button !== 0) return;
+    if (annotationToolActive()) { emptyDownAt = null; return; }
     // 调试拾取：按下/抬起与拖拽判定独立于选中语义——车辆命中路径（emptyDownAt=null）
     // 同样出报告，且不会被前方车辆挡掉场景物体的调试报告
     if (pickDownAt) {
@@ -1310,6 +1352,581 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     return terrainSurfaceHeightAt(terrainBuild, x, z);
   }
 
+  // ---------- 3D annotation layer（scene-owned derived geometry）----------
+  // 纯几何在 playback/annotation3d.js；这里只做 sampler 适配、GPU 资源与 rebuild 编排。
+  // annotation 的 x 是 replay X，进入 scene 时取负；回调时再转回 semantic。
+  function emptyAnnotationGeometry() {
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3))
+    geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(0), 3))
+    geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(0), 1))
+    return geometry
+  }
+
+  function replaceAnnotationGeometry(mesh, geometry) {
+    if (!mesh) return
+    const old = mesh.geometry
+    mesh.geometry = geometry
+    const position = geometry.getAttribute('position')
+    mesh.visible = !!position && position.count > 0
+    if (old && old !== geometry) old.dispose()
+  }
+
+  /**
+   * 当前可见地表的 O(1) 采样（scene XZ）。优先级与渲染一致：
+   * 当前 LOD terrain build → 高度场（带 span 边界）→ 平地面（mapPlane / groundMesh）。
+   * 无地表时返回 null；ribbon 会断 strip，不拿 0 冒充地形。
+   */
+  function annotationSurfaceHeightAt(x, z) {
+    if (!Number.isFinite(x) || !Number.isFinite(z)) return null
+    const terrainBuild = terrainMesh && terrainMesh.geometry && terrainMesh.geometry.userData
+      ? terrainMesh.geometry.userData.terrainBuild : null
+    if (terrainBuild) {
+      const y = terrainSurfaceHeightAt(terrainBuild, x, z)
+      return Number.isFinite(y) ? y : null
+    }
+    if (heightField && heightMeta) {
+      const n = Number(heightMeta.size)
+      const span = Number(heightMeta.span)
+      if (!Number.isInteger(n) || n < 2 || !Number.isFinite(span) || span <= 0) return null
+      const half = span / 2
+      if (x < -half || x >= half || z < -half || z >= half) return null
+      const y = sampleHeight(x, z)
+      return Number.isFinite(y) ? y : null
+    }
+    if (mapPlane) {
+      // 2D 回退地面是有限 plan；不能把平面高度当成无限地图，否则能画到图外。
+      const size = Number(mapMetaInfo?.size_m) || Number(heightMeta?.span) || 600
+      const cx = Number(mapMetaInfo?.x) || 0
+      const cz = Number(mapMetaInfo?.z) || 0
+      const half = size / 2
+      if (x < cx - half || x >= cx + half || z < cz - half || z >= cz + half) return null
+      return mapPlane.position.y
+    }
+    if (groundMesh) return groundMesh.position.y
+    return null
+  }
+
+  /**
+   * 把 pane 的 semantic annotations 投影成当前 terrain 上的 merged geometry。
+   * 颜色写进 per-vertex color：一个 material / 一个 draw call，不需要 per-stroke material。
+   */
+  function buildMergedAnnotationGeometry(annotations) {
+    const positions = []
+    const colors = []
+    const indices = []
+    const color = new THREE.Color()
+    let vertexOffset = 0
+    const list = Array.isArray(annotations) ? annotations : []
+    for (const ann of list) {
+      if (!ann || ann.type !== 'pen') continue
+      // pane 的 SSOT 是 semantic (x=replay X, y=replay Z)；scene 系 x 取负后交给纯几何。
+      // 防御异常/旧 state：缺 points 的 pen 不能让整个 annotation layer 抛错。
+      const points = Array.isArray(ann.points)
+        ? ann.points.filter((point) => point && Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.y)))
+        : []
+      const sceneAnn = { ...ann, points: points.map((point) => ({ x: -point.x, y: point.y })) }
+      const ribbon = buildPenRibbon(sceneAnn, {
+        sampleHeight: annotationSurfaceHeightAt,
+        lift: ANNOTATION_LIFT,
+      })
+      if (!ribbon) continue
+      const hex = typeof ann.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(ann.color) ? ann.color : '#ffffff'
+      color.set(hex)
+      for (const strip of ribbon.strips) {
+        const count = strip.positions.length / 3
+        for (let i = 0; i < count; i++) {
+          positions.push(strip.positions[i * 3], strip.positions[i * 3 + 1], strip.positions[i * 3 + 2])
+          colors.push(color.r, color.g, color.b)
+        }
+        for (let i = 0; i < strip.indices.length; i++) indices.push(strip.indices[i] + vertexOffset)
+        vertexOffset += count
+      }
+    }
+    if (!positions.length) return { geometry: emptyAnnotationGeometry(), vertices: 0 }
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3))
+    geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3))
+    geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1))
+    geometry.computeBoundingSphere()
+    return { geometry, vertices: positions.length / 3 }
+  }
+
+  function ensureAnnotationLayer() {
+    if (!scene) return false
+    if (annotationGroup) return true
+    annotationGroup = new THREE.Group()
+    annotationGroup.name = 'playback-annotations'
+    annotationGroup.visible = annotationsVisible
+    annotationMaterial = new THREE.MeshBasicMaterial({
+      vertexColors: true,
+      side: THREE.DoubleSide,
+      toneMapped: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    })
+    annotationCommittedMesh = new THREE.Mesh(emptyAnnotationGeometry(), annotationMaterial)
+    annotationCommittedMesh.name = 'annotation-committed'
+    annotationCommittedMesh.renderOrder = 2
+    annotationCommittedMesh.frustumCulled = false
+    annotationDraftMesh = new THREE.Mesh(emptyAnnotationGeometry(), annotationMaterial)
+    annotationDraftMesh.name = 'annotation-draft'
+    annotationDraftMesh.renderOrder = 2
+    annotationDraftMesh.frustumCulled = false
+    annotationRingMaterial = new THREE.LineBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 0.95, depthTest: false, toneMapped: false,
+    })
+    annotationRing = new THREE.LineLoop(emptyAnnotationGeometry(), annotationRingMaterial)
+    annotationRing.name = 'annotation-eraser-ring'
+    annotationRing.renderOrder = 12
+    annotationRing.frustumCulled = false
+    annotationRing.visible = false
+    annotationRingOutlineMaterial = new THREE.LineBasicMaterial({
+      color: 0x000000, transparent: true, opacity: 0.35, depthTest: false, toneMapped: false,
+    })
+    annotationRingOutline = new THREE.LineLoop(emptyAnnotationGeometry(), annotationRingOutlineMaterial)
+    annotationRingOutline.name = 'annotation-eraser-ring-outline'
+    annotationRingOutline.renderOrder = 11
+    annotationRingOutline.frustumCulled = false
+    annotationRingOutline.visible = false
+    annotationGroup.add(annotationCommittedMesh, annotationDraftMesh, annotationRing, annotationRingOutline)
+    scene.add(annotationGroup)
+    if (DEBUG) {
+      window.__annotationLayer = {
+        group: annotationGroup,
+        committedMesh: annotationCommittedMesh,
+        draftMesh: annotationDraftMesh,
+        ring: annotationRing,
+        ringOutline: annotationRingOutline,
+        stats: annotationStats,
+        sampler: annotationSurfaceHeightAt,
+        pick: (x, y) => pickAnnotationGround(x, y, { withScale: true }),
+        gesture: () => annotationGesture,
+        rebuild: () => { rebuildAnnotationProjection(); return annotationStats.terrainRebuilds },
+      }
+    }
+    rebuildCommittedAnnotations()
+    rebuildDraftAnnotation()
+    return true
+  }
+
+  function rebuildCommittedAnnotations() {
+    if (!annotationCommittedMesh) return
+    const t0 = PERF ? performance.now() : 0
+    const result = buildMergedAnnotationGeometry(projectedAnnotations)
+    replaceAnnotationGeometry(annotationCommittedMesh, result.geometry)
+    annotationStats.committedBuilds++
+    annotationStats.committedVertices = result.vertices
+    if (PERF) annotationStats.lastBuildMs = performance.now() - t0
+    if (annotationGroup) annotationGroup.visible = annotationsVisible
+    invalidate()
+  }
+
+  function rebuildDraftAnnotation() {
+    if (!annotationDraftMesh) return
+    if (!annotationDraft || !Array.isArray(annotationDraft.points) || annotationDraft.points.length < 2) {
+      replaceAnnotationGeometry(annotationDraftMesh, emptyAnnotationGeometry())
+      annotationStats.draftVertices = 0
+      return
+    }
+    const result = buildMergedAnnotationGeometry([annotationDraft])
+    replaceAnnotationGeometry(annotationDraftMesh, result.geometry)
+    annotationStats.draftBuilds++
+    annotationStats.draftVertices = result.vertices
+    if (annotationGroup) annotationGroup.visible = annotationsVisible
+    invalidate()
+  }
+
+  function applyRingGeometry(mesh, positions) {
+    if (!mesh) return
+    const old = mesh.geometry
+    if (!positions || positions.length < 9) {
+      mesh.visible = false
+      mesh.geometry = new THREE.BufferGeometry()
+      if (old) old.dispose()
+      return
+    }
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    mesh.geometry = geometry
+    mesh.visible = annotationsVisible
+    if (old) old.dispose()
+  }
+
+  /** 白 ring + 半透明黑外圈：任意地表（尤其雪地/亮石面）都保留可见的半径 affordance。 */
+  function setAnnotationRingPositions(positions, outlinePositions = null) {
+    if (!annotationRing) return
+    applyRingGeometry(annotationRing, positions)
+    applyRingGeometry(annotationRingOutline, outlinePositions)
+    invalidate()
+  }
+
+  /** terrain 重建后只重投影 Y（XZ 来自 semantic points），committed + draft 都重采样。 */
+  function rebuildAnnotationProjection() {
+    if (!annotationGroup) return
+    annotationStats.terrainRebuilds++
+    rebuildCommittedAnnotations()
+    rebuildDraftAnnotation()
+  }
+
+  function clearAnnotationProjection() {
+    cancelAnnotationGesture()
+    annotationPointers.clear()
+    annotationSuppressUntilAllUp = false
+    projectedAnnotations = []
+    annotationDraft = null
+    if (annotationCommittedMesh) replaceAnnotationGeometry(annotationCommittedMesh, emptyAnnotationGeometry())
+    if (annotationDraftMesh) replaceAnnotationGeometry(annotationDraftMesh, emptyAnnotationGeometry())
+    setAnnotationRingPositions(null)
+    annotationStats.committedVertices = 0
+    annotationStats.draftVertices = 0
+    annotationStats.committedBuilds = 0
+    annotationStats.draftBuilds = 0
+    annotationStats.terrainRebuilds = 0
+    annotationStats.eraseCallbacks = 0
+    annotationStats.lastBuildMs = 0
+    annotationStats.lastPickMs = 0
+  }
+
+  function disposeAnnotationLayer() {
+    if (!annotationGroup) return
+    annotationGroup.traverse((object) => {
+      if (object.geometry) object.geometry.dispose()
+    })
+    annotationGroup.parent?.remove(annotationGroup)
+    annotationMaterial?.dispose()
+    annotationRingMaterial?.dispose()
+    annotationRingOutlineMaterial?.dispose()
+    annotationGroup = null
+    annotationCommittedMesh = null
+    annotationDraftMesh = null
+    annotationRing = null
+    annotationRingOutline = null
+    annotationDraft = null
+    annotationMaterial = null
+    annotationRingMaterial = null
+    annotationRingOutlineMaterial = null
+    projectedAnnotations = []
+    if (DEBUG) delete window.__annotationLayer
+  }
+
+  // ---------- annotation pointer ownership（desktop + touch）----------
+  // 单指/单指针 drawing 的 owner 是本闭包；pane 不镜像指针状态。mouse/pen 命中地形才
+  // 消费事件（未命中保留 OrbitControls/fly 的既有导航）；touch 不 stopPropagation，
+  // 让 OrbitControls 保留 pointer 跟踪，第二指才能自然进入 TOUCH_DOLLY_PAN。
+  const ANNOTATION_THIN_PX = 2          // 屏幕像素抽稀；与 2D 的 ANNOT_THIN_PX 同量级
+  const ANNOTATION_MAX_RECONNECT = 25   // initial hypothesis：断开超过此 XZ 距离就冻结 stroke
+  const ANNOTATION_RING_OUTLINE_SCALE = 1.06  // 半透明黑外圈相对白 ring 的半径倍数
+
+  function annotationToolActive() {
+    return annotationInteraction.enabled && !!annotationInteraction.tool
+  }
+
+  function semanticFromScene(x, z) {
+    return { x: -x, y: z }
+  }
+
+  function sceneFromSemantic(point) {
+    return { x: -point.x, y: point.y }
+  }
+
+  function raycastAnnotationGround(clientX, clientY, rect) {
+    if (!camera || !raycaster || !controls || !rect || !(rect.width > 0) || !(rect.height > 0)) return null
+    const nd = new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1,
+    )
+    // renderer.render 才更新 matrixWorld；暂停/无首帧时也必须得到当前相机射线。
+    // 无布局测试/首帧前 aspect 可能仍是 NaN（renderer 创建时 clientWidth/clientHeight=0），
+    // 用容器实测比例修复投影；真实浏览器不会走到这里。
+    if (!Number.isFinite(camera.aspect) || camera.aspect <= 0) {
+      camera.aspect = rect.width / rect.height
+      camera.updateProjectionMatrix()
+    }
+    camera.updateMatrixWorld()
+    raycaster.setFromCamera(nd, camera)
+    const origin = raycaster.ray.origin
+    const direction = raycaster.ray.direction
+    const maxT = Math.min(4000, Number.isFinite(camera.far) ? camera.far : 4000)
+    const distance = camera.position.distanceTo(controls.target)
+    const step = Math.max(1.5, Math.min(8, (Number.isFinite(distance) ? distance : 200) / 160))
+    // ceiling 只用于向上射线提前退出；+100 m 是地形 zmax 之上的安全余量。
+    const ceiling = (Number.isFinite(Number(heightMeta && heightMeta.zmax)) ? Number(heightMeta.zmax) : 50) + 100
+    let prevT = 0
+    for (let t = step; t <= maxT; t += step) {
+      const x = origin.x + direction.x * t
+      const y = origin.y + direction.y * t
+      const z = origin.z + direction.z * t
+      const surface = annotationSurfaceHeightAt(x, z)
+      if (surface !== null && y <= surface) {
+        let lo = prevT
+        let hi = t
+        for (let i = 0; i < 14; i++) {
+          const mid = (lo + hi) / 2
+          const mx = origin.x + direction.x * mid
+          const my = origin.y + direction.y * mid
+          const mz = origin.z + direction.z * mid
+          const ms = annotationSurfaceHeightAt(mx, mz)
+          if (ms !== null && my <= ms) hi = mid
+          else lo = mid
+        }
+        const hitT = (lo + hi) / 2
+        return { point: origin.clone().addScaledVector(direction, hitT), distance: hitT }
+      }
+      if (direction.y >= 0 && y > ceiling) break
+      prevT = t
+    }
+    return null
+  }
+
+  /**
+   * client px -> semantic ground point + worldPerCssPx（仅 gesture 起点需要 scale）。
+   * 不触碰车辆/建筑/树/水：只查 terrain build / heightfield / flat ground。
+   */
+  function pickAnnotationGround(clientX, clientY, { withScale = false } = {}) {
+    if (!annotationToolActive() || !annotationsVisible) return null
+    const startedAt = PERF ? performance.now() : 0
+    const rect = container.getBoundingClientRect()
+    const hit = raycastAnnotationGround(clientX, clientY, rect)
+    if (!hit) return null
+    let unitsPerCssPx = null
+    if (withScale) {
+      const stepPx = 2
+      const probeX = raycastAnnotationGround(clientX + stepPx, clientY, rect)
+      const probeY = raycastAnnotationGround(clientX, clientY + stepPx, rect)
+      const dx = probeX
+        ? Math.hypot(probeX.point.x - hit.point.x, probeX.point.z - hit.point.z) / stepPx : null
+      const dy = probeY
+        ? Math.hypot(probeY.point.x - hit.point.x, probeY.point.z - hit.point.z) / stepPx : null
+      if (dx !== null && dy !== null) unitsPerCssPx = (dx + dy) / 2
+      else if (dx !== null) unitsPerCssPx = dx
+      else if (dy !== null) unitsPerCssPx = dy
+      if (!(unitsPerCssPx > 0)) {
+        const fovY = ((Number(camera.fov) || 55) * Math.PI) / 180
+        unitsPerCssPx = (2 * Math.max(0.01, hit.distance) * Math.tan(fovY / 2)) / Math.max(1, rect.height)
+      }
+      unitsPerCssPx = Math.max(0.001, Math.min(2, unitsPerCssPx))
+    }
+    if (PERF) annotationStats.lastPickMs = performance.now() - startedAt
+    return { semantic: semanticFromScene(hit.point.x, hit.point.z), unitsPerCssPx, distance: hit.distance }
+  }
+
+  function applyAnnotationTouchMode() {
+    if (!controls || !controls.touches) return
+    if (annotationToolActive()) {
+      if (annotationOriginalTouchesOne === null) annotationOriginalTouchesOne = controls.touches.ONE
+      controls.touches.ONE = null
+    } else if (annotationOriginalTouchesOne !== null) {
+      controls.touches.ONE = annotationOriginalTouchesOne
+      annotationOriginalTouchesOne = null
+    }
+  }
+
+  function updateAnnotationRing(semantic, radius) {
+    if (!annotationRing) return
+    if (!semantic || !(radius > 0)) {
+      setAnnotationRingPositions(null)
+      return
+    }
+    const center = sceneFromSemantic(semantic)
+    const ring = buildEraserRing(center, radius, annotationSurfaceHeightAt, { lift: ANNOTATION_LIFT / 2 })
+    const outline = buildEraserRing(center, radius * ANNOTATION_RING_OUTLINE_SCALE, annotationSurfaceHeightAt, {
+      lift: ANNOTATION_LIFT / 2,
+    })
+    setAnnotationRingPositions(ring ? ring.positions : null, outline ? outline.positions : null)
+  }
+
+  function beginAnnotationGesture(e, pick) {
+    const tool = annotationInteraction.tool
+    const units = pick.unitsPerCssPx || 0.05
+    const semantic = { x: pick.semantic.x, y: pick.semantic.y }
+    annotationGesture = {
+      pointerId: e.pointerId,
+      pointerType: e.pointerType || 'mouse',
+      tool,
+      color: annotationInteraction.color,
+      width: tool === 'pen' ? Math.max(0.01, annotationInteraction.width * units) : 0,
+      radius: tool === 'eraser' ? Math.max(0.01, annotationInteraction.eraserWidth * units) : 0,
+      points: [semantic],
+      lastScreen: { x: e.clientX, y: e.clientY },
+      frozen: false,
+      capture: false,
+    }
+    if (tool === 'pen') {
+      setAnnotationRingPositions(null)
+      annotationDraft = {
+        type: 'pen',
+        color: annotationGesture.color,
+        width: annotationGesture.width,
+        points: [{ x: semantic.x, y: semantic.y }],
+      }
+      rebuildDraftAnnotation()
+    } else {
+      annotationDraft = null
+      rebuildDraftAnnotation()
+      updateAnnotationRing(semantic, annotationGesture.radius)
+    }
+    invalidate()
+  }
+
+  function appendAnnotationPoint(e) {
+    const gesture = annotationGesture
+    if (!gesture || gesture.frozen) return
+    const pick = pickAnnotationGround(e.clientX, e.clientY)
+    if (!pick) {
+      if (gesture.tool === 'eraser') setAnnotationRingPositions(null)
+      return
+    }
+    const previous = gesture.points[gesture.points.length - 1]
+    const jump = Math.hypot(pick.semantic.x - previous.x, pick.semantic.y - previous.y)
+    if (!(jump <= ANNOTATION_MAX_RECONNECT)) {
+      // 不让一次 gesture 跨地图拉巨线；也不拆成第二条 annotation（one gesture = one undo）。
+      gesture.frozen = true
+      if (gesture.tool === 'eraser') setAnnotationRingPositions(null)
+      return
+    }
+    if (jump < 1e-6) return
+    if (gesture.tool === 'pen' && gesture.points.length >= ANNOTATION_MAX_POINTS) {
+      gesture.frozen = true
+      return
+    }
+    const next = { x: pick.semantic.x, y: pick.semantic.y }
+    gesture.points.push(next)
+    if (gesture.tool === 'pen') {
+      annotationDraft.points = gesture.points
+      rebuildDraftAnnotation()
+    } else {
+      if (gesture.points.length > ANNOTATION_MAX_ERASER_POINTS) {
+        // 保留首尾做隔点抽稀；capsule 对稀疏 eraser path 仍然正确。
+        const thinned = []
+        for (let i = 0; i < gesture.points.length; i += 2) thinned.push(gesture.points[i])
+        const last = gesture.points[gesture.points.length - 1]
+        if (thinned[thinned.length - 1] !== last) thinned.push(last)
+        gesture.points = thinned
+      }
+      updateAnnotationRing(next, gesture.radius)
+    }
+    invalidate()
+  }
+
+  function finishAnnotationGesture(cancelled) {
+    const gesture = annotationGesture
+    annotationGesture = null
+    annotationDraft = null
+    rebuildDraftAnnotation()
+    setAnnotationRingPositions(null)
+    if (gesture && gesture.capture) {
+      try { container.releasePointerCapture(gesture.pointerId) } catch (_) {}
+    }
+    if (!gesture || cancelled) {
+      invalidate()
+      return
+    }
+    if (gesture.tool === 'pen') {
+      if (gesture.points.length >= 2) {
+        onAnnotationCommit?.({
+          type: 'pen',
+          color: gesture.color,
+          width: gesture.width,
+          points: gesture.points.map((point) => ({ x: point.x, y: point.y })),
+        })
+      }
+    } else if (gesture.points.length > 0) {
+      annotationStats.eraseCallbacks++
+      onAnnotationErase?.({
+        points: gesture.points.map((point) => ({ x: point.x, y: point.y })),
+        radius: gesture.radius,
+      })
+    }
+    invalidate()
+  }
+
+  function cancelAnnotationGesture() {
+    const gesture = annotationGesture
+    annotationGesture = null
+    annotationDraft = null
+    rebuildDraftAnnotation()
+    setAnnotationRingPositions(null)
+    if (gesture && gesture.capture) {
+      try { container.releasePointerCapture(gesture.pointerId) } catch (_) {}
+    }
+    if (annotationPointers.size > 0) annotationSuppressUntilAllUp = true
+    invalidate()
+  }
+
+  function onAnnotationPointerDown(e) {
+    if (!annotationToolActive()) return
+    if (e.pointerType !== 'touch' && e.button !== 0) return
+    if (!annotationPointers.has(e.pointerId)) {
+      annotationPointers.set(e.pointerId, e.pointerType || 'mouse')
+    }
+    if (annotationGesture && annotationGesture.pointerId !== e.pointerId) {
+      cancelAnnotationGesture()
+      annotationSuppressUntilAllUp = true
+      return
+    }
+    if (e.pointerType === 'touch') {
+      if (annotationPointers.size >= 2) {
+        cancelAnnotationGesture()
+        annotationSuppressUntilAllUp = true
+        return
+      }
+      if (annotationSuppressUntilAllUp || annotationGesture || !annotationsVisible) return
+      const pick = pickAnnotationGround(e.clientX, e.clientY, { withScale: true })
+      if (!pick) return
+      beginAnnotationGesture(e, pick)
+      return
+    }
+    if (annotationSuppressUntilAllUp || annotationGesture || !annotationsVisible) return
+    const pick = pickAnnotationGround(e.clientX, e.clientY, { withScale: true })
+    if (!pick) return
+    beginAnnotationGesture(e, pick)
+    let captured = false
+    try { container.setPointerCapture(e.pointerId); captured = true } catch (_) {}
+    annotationGesture.capture = captured
+    e.preventDefault()
+    // 同节点还有 fly capture 监听：stopPropagation 不会拦住同一元素的其他 listener；
+    // 必须 stopImmediatePropagation，否则 free camera 下 mouse 画线会同时转头。
+    e.stopImmediatePropagation()
+  }
+
+  function onAnnotationPointerMove(e) {
+    const gesture = annotationGesture
+    if (!gesture || gesture.pointerId !== e.pointerId) return
+    if (e.pointerType === 'touch' && annotationPointers.size >= 2) return
+    const dx = e.clientX - gesture.lastScreen.x
+    const dy = e.clientY - gesture.lastScreen.y
+    if (Math.hypot(dx, dy) < ANNOTATION_THIN_PX) return
+    gesture.lastScreen = { x: e.clientX, y: e.clientY }
+    if (gesture.pointerType !== 'touch') {
+      e.preventDefault()
+      e.stopImmediatePropagation()
+    }
+    if (gesture.frozen) return
+    appendAnnotationPoint(e)
+  }
+
+  function onAnnotationPointerUp(e) {
+    const gesture = annotationGesture
+    if (gesture && gesture.pointerId === e.pointerId) {
+      if (gesture.pointerType !== 'touch') {
+        e.preventDefault()
+        e.stopImmediatePropagation()
+      }
+      finishAnnotationGesture(e.type === 'pointercancel')
+    }
+    annotationPointers.delete(e.pointerId)
+    if (annotationPointers.size === 0) annotationSuppressUntilAllUp = false
+  }
+
+  function onAnnotationCaptureLost(e) {
+    if (!annotationGesture || annotationGesture.pointerId !== e.pointerId) return
+    finishAnnotationGesture(true)
+    annotationPointers.delete(e.pointerId)
+    if (annotationPointers.size === 0) annotationSuppressUntilAllUp = false
+  }
+
   /** Free Camera 的上限与俯视默认高度同源；地面下限只在有效高度场覆盖内生效。 */
   function constrainFreeCameraAltitude() {
     if (!flyMode() || !camera || !controls) return false;
@@ -1387,6 +2004,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 当前 camera pose 触发的 LOD 几何将在本帧渲染；按新网格重新约束，避免旧 LOD
     // floor 与替换后的三角面之间留下一帧/停驻时的穿地。
     constrainFreeCameraAltitude();
+    rebuildAnnotationProjection();   // annotation 只重投影 Y，semantic XZ 不缓存旧值
   }
 
   // 依据 mapTexture/heightField 重建地面（2D 平面或 3D 地形二选一）
@@ -1442,6 +2060,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     buildBoundary(playableBoundsFor(), BOUNDARY_THICK);
     // 地形异步就绪后把基地环带/HUD 重新贴回地表
     regroundBases();
+    // terrain 首次就绪 / 2D 回退切换：annotation 必须重投影到当前地表
+    rebuildAnnotationProjection();
   }
 
   function teamColor(v) {
@@ -3348,6 +3968,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       `draw calls med=${f(q('calls', 0.5))} p90=${f(q('calls', 0.9))} max=${f(q('calls', 0.99))}`,
       `pixel ratio med=${f(q('dpr', 0.5))} min=${f(q('dpr', 0.05))}`,
       `now: T=${last.t.toFixed(1)} veh=${last.veh} tracers=${last.tracers} trajBoxes=${last.traj} impacts=${last.impacts} burst=${last.burst}`,
+      `annotation committedBuilds=${annotationStats.committedBuilds} draftBuilds=${annotationStats.draftBuilds} terrainRebuilds=${annotationStats.terrainRebuilds} eraseCallbacks=${annotationStats.eraseCallbacks} lastBuildMs=${annotationStats.lastBuildMs.toFixed(2)} pickMs=${annotationStats.lastPickMs.toFixed(2)} verts=${annotationStats.committedVertices}/${annotationStats.draftVertices}`,
       'slowest frames (dt ms / update / render / T):',
       ...perfSlow.map((r) => `  ${f(r.dt)} / ${f(r.updateMs)} / ${f(r.renderMs)} @T=${r.t.toFixed(1)}`),
       `main-thread stalls >${PERF_HEARTBEAT_MS * 2}ms: ${perfStalls.length}`,
@@ -3555,6 +4176,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     invalidate();
   }
   function setCam(mode) {
+    if (annotationGesture) cancelAnnotationGesture()   // 相机模式跳变不得继续旧 draft
     // 俯视是持续的战术总览视角：OrbitControls 以**地图中心**为 target，拖拽/滚轮
     // 围绕地图中心旋转与缩放；跟随以选中坦克为 target；自由视角仍是 FPS 飞行。
     const nextMode = mode === 'top' ? 'top' : mode;
@@ -3709,6 +4331,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     pickReporter.dispose({ scene, disposeObject3D });
     boundaryBand.clear();
     currentMapKey = null;
+    clearAnnotationProjection();   // 旧会话的 annotation 派生几何不得跨图残留（权威在 pane）
     clearBases();   // 基地贴地标记（圆环 + 圆盘贴图）随会话释放
     currentMapBases = null;
     for (const v of V) {
@@ -4039,6 +4662,42 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     },
     togglePlay: () => setPlaying(!PLAYING),
     setPlaying,
+    /**
+     * committed annotations 的 projection input（权威 owner = Replay3DPane）。
+     * 同引用重复调用跳过；scene 不修改数组，也不把它当可回写状态。
+     */
+    setAnnotations: (annotations) => {
+      const next = Array.isArray(annotations) ? annotations : []
+      if (next === projectedAnnotations) return
+      projectedAnnotations = next
+      if (ensureAnnotationLayer()) rebuildCommittedAnnotations()
+      invalidate()
+    },
+    /**
+     * drawing tool 配置（pane 是唯一 owner）。width/eraserWidth 是 CSS px 视觉值；
+     * scene 在 gesture 起点换算 semantic 尺寸。只在 enabled/tool 变化时取消 draft。
+     */
+    setAnnotationInteraction: (config = {}) => {
+      const next = {
+        enabled: config.enabled === true,
+        tool: config.enabled === true && (config.tool === 'pen' || config.tool === 'eraser') ? config.tool : null,
+        color: typeof config.color === 'string' ? config.color : annotationInteraction.color,
+        width: Number.isFinite(config.width) ? config.width : annotationInteraction.width,
+        eraserWidth: Number.isFinite(config.eraserWidth) ? config.eraserWidth : annotationInteraction.eraserWidth,
+      }
+      const changed = next.enabled !== annotationInteraction.enabled || next.tool !== annotationInteraction.tool
+      annotationInteraction = next
+      if (changed) cancelAnnotationGesture()
+      applyAnnotationTouchMode()
+      invalidate()
+    },
+    /** 只切 renderer 可见性；不删 state、不写 history、不重建 geometry。 */
+    setAnnotationsVisible: (visible) => {
+      annotationsVisible = visible !== false
+      if (!annotationsVisible) cancelAnnotationGesture()
+      if (annotationGroup) annotationGroup.visible = annotationsVisible
+      invalidate()
+    },
     setSpeed,
     setFlySpeed,
     flyTick,
@@ -4115,9 +4774,15 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // （ownsLoading 同时看 destroyed 与 loadGeneration），不依赖单一标志。
       cancelAnimationFrame(rafId);   // 显式取消：不等下一帧的 destroyed 自然退出
       teardownSession();             // 会话资源（车辆/地图/特效/GLB 模板）全量 dispose
+      disposeAnnotationLayer();      // annotation 材质/geometry/group 随实例释放
       removeEventListener('resize', onResize);
       // container 由宿主复用（场景销毁 ≠ 舞台销毁）：capture 拦截必须摘除，
       // 否则重建场景后同一事件被多份闭包重复消费（拖拽增量翻倍）。
+      try { container.removeEventListener('pointerdown', onAnnotationPointerDown, true); } catch (_) {}
+      try { container.removeEventListener('pointermove', onAnnotationPointerMove, true); } catch (_) {}
+      try { container.removeEventListener('pointerup', onAnnotationPointerUp, true); } catch (_) {}
+      try { container.removeEventListener('pointercancel', onAnnotationPointerUp, true); } catch (_) {}
+      try { container.removeEventListener('lostpointercapture', onAnnotationCaptureLost, true); } catch (_) {}
       try { container.removeEventListener('pointerdown', onFlyCaptureDown, true); } catch (_) {}
       try { container.removeEventListener('pointermove', onFlyCaptureMove, true); } catch (_) {}
       try { container.removeEventListener('pointerup', onFlyCaptureUp, true); } catch (_) {}
@@ -4141,7 +4806,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         try { renderer.domElement.removeEventListener('pointerdown', onScenePointerDown); } catch (_) {}
         try { renderer.domElement.removeEventListener('pointerup', onScenePointerUp); } catch (_) {}
       }
-      if (controls) { try { controls.dispose(); } catch (_) {} }
+      if (controls) {
+        if (annotationOriginalTouchesOne !== null) {
+          try { controls.touches.ONE = annotationOriginalTouchesOne; } catch (_) {}
+        }
+        annotationOriginalTouchesOne = null
+        try { controls.dispose(); } catch (_) {}
+      }
       if (renderer) {
         renderer.dispose();
         try { renderer.forceContextLoss(); } catch (_) {}
