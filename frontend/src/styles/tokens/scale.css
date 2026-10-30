@@ -191,13 +191,16 @@
   }
 
   /* 手机横屏 / 矮视口：导航收进左侧图标栏，顶栏与底部 Tab 栏让出垂直空间 */
-  @media (pointer: coarse) and (orientation: landscape) and (height <= 520px) {
+  @media (pointer: coarse) and (orientation: landscape) and (height <= 520px) and (width < 768px) {
     :root {
       --header-h: 0px;
       --tabbar-h: 0px;
     }
-    /* 沉浸态（回放工作区）导航全部收起：不占内容宽度 */
-    :root:not([data-shell-chrome="immersive"]) { --sidebar-w: var(--sidebar-rail-w); }
+    /* 沉浸态（回放工作区）导航全部收起：不占内容宽度。侧栏宽度包含左侧安全区，
+       否则刘海屏横屏时 72px 边框盒被 env(safe-area-inset-left) 吃掉内宽。 */
+    :root:not([data-shell-chrome="immersive"]) {
+      --sidebar-w: calc(var(--sidebar-rail-w) + env(safe-area-inset-left));
+    }
   }
 
   /* 沉浸态（shared/shellChrome）：AppShell 不渲染顶栏 / Tab 栏时，吸顶与高度预算同步归零 */
