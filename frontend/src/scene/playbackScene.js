@@ -754,10 +754,39 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function buildBoundary(bounds, thick) { boundaryBand.build(bounds, thick); }
 
   // 相机距离钳制（禁止无限 zoom-out）：min/max 基于 world extent，初值实测后再调
+  let baseMinDistance = 20;
   function applyCameraClamp() {
     const { ext } = WORLD_CENTER;
-    controls.minDistance = Math.max(20, ext * 0.08);
+    baseMinDistance = Math.max(20, ext * 0.08);
+    controls.minDistance = baseMinDistance;
     controls.maxDistance = ext * 2.2;
+  }
+
+  /**
+   * 非自由视角的地形放大阻挡：相机沿 target→camera 方向下探到地形以下时，把相机
+   * 拉回到「地形高度 + 净空」对应的距离，并把 minDistance 抬到该距离——再滚轮放大
+   * 会被 OrbitControls 挡住，不会继续钻进地形；缩小后相机升高，minDistance 复位，
+   * **target 全程不动**（旋转/缩放中心保持不变）。
+   */
+  function clampOrbitCameraToTerrain() {
+    if (flyMode() || !camera || !controls || !heightField || !heightMeta) return false;
+    const t = controls.target;
+    if (!Number.isFinite(t.y) || !Number.isFinite(camera.position.y)) return false;
+    const terrainY = terrainMesh ? sampleRenderedTerrainHeight(camera.position.x, camera.position.z) : sampleHeight(camera.position.x, camera.position.z);
+    if (!Number.isFinite(terrainY)) { controls.minDistance = baseMinDistance; return false; }
+    const limit = terrainY + CAMERA_GROUND_CLEARANCE;
+    if (camera.position.y >= limit) { controls.minDistance = baseMinDistance; return false; }
+    const dy = camera.position.y - t.y;
+    let factor = null;
+    if (dy > 1e-6) factor = (limit - t.y) / dy;
+    if (factor !== null && factor > 0 && factor < 1) {
+      camera.position.lerpVectors(t, camera.position, factor);
+    } else {
+      camera.position.y = limit;   // target 在净空以下（俯视贴地）：只抬相机，不动中心
+    }
+    camera.lookAt(t);
+    controls.minDistance = Math.max(baseMinDistance, camera.position.distanceTo(t));
+    return true;
   }
 
   // 相机目标钳制在战场范围内（拖到天边会让地形/边界消失、只剩背景色）
@@ -3143,6 +3172,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 拖拽只改 target 不改朝向，画面不转（用户实测）。
     if (flyMode()) camera.lookAt(controls.target);
     const cameraMoved = flyMode() ? false : controls.update();   // three 的 update() 返回相机是否变化（阻尼/交互）
+    if (!flyMode()) clampOrbitCameraToTerrain();
     // ---------- 按需渲染（脏帧）----------
     // 暂停且没有在飞特效、相机也静止时，跳过整帧工作（标签/基地/transient 重算 + 全屏
     // render）。此前空闲也满速重绘，是移动端发热与笔记本耗电的第一来源。
@@ -3456,33 +3486,36 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     invalidate();
   }
   function setCam(mode) {
-    // Top 是一次性战术总览动作，不是可持续相机模式。俯视快照完成后立刻回到
-    // Free 状态，让键盘、鼠标与触屏控制从同一帧起可用。
-    const topAction = mode === 'top';
-    const nextMode = topAction ? 'free' : mode;
+    // 俯视是持续的战术总览视角：OrbitControls 以**地图中心**为 target，拖拽/滚轮
+    // 围绕地图中心旋转与缩放；跟随以选中坦克为 target；自由视角仍是 FPS 飞行。
+    const nextMode = mode === 'top' ? 'top' : mode;
     CAM = nextMode;
     store.cam = nextMode;
-    flyLookApplyMode(topAction ? 'follow' : nextMode); // 先清理飞行手势，再接管 Free
-    if (topAction) FOLLOW_EID = 0;
-    // 场景未初始化（renderer 惰性创建，首次 startPlayback 才有 controls）：只记录模式，
-    // 初始化后由 animate 按 CAM/FOLLOW_EID 逐帧生效——名册点击可先于首帧发生。
+    flyLookApplyMode(nextMode === 'free' ? 'free' : 'follow');
+    if (nextMode !== 'follow') FOLLOW_EID = 0;
     if (!controls) { invalidate(); return; }
-    // free 接管期间 controls.enabled 必须保持 false（OrbitControls 的 pan/rotate
-    // 无生效路径）——不得在此无条件拉回 true（top→free 复活拖曳移动的根因）
     controls.enabled = !flyMode();
     invalidate();
-    if (topAction) {
+    if (nextMode === 'top') {
       const { cx, cz } = WORLD_CENTER;
       camera.position.set(cx, topCameraDefaultHeight(), cz + 0.01);
       controls.target.set(cx, 0, cz);
-      constrainFreeCameraAltitude();
-      // 保留直下俯视的实际画面，同时为下一次自由飞行准备可用的水平朝向。
-      flyLookSyncFromCamera('top overview', true);
-      flyLook.yaw = 0;
-      controls.enabled = false;
+      controls.minDistance = baseMinDistance;
+      controls.maxDistance = Math.max(controls.maxDistance, topCameraDefaultHeight());
+      controls.minPolarAngle = 0;
+      // 不贴地平线以下：俯视拖拽保持在地图上方
+      controls.maxPolarAngle = Math.PI * 0.49;
+      clampOrbitCameraToTerrain();
+      camera.lookAt(controls.target);
+      controls.enabled = true;
     } else if (nextMode === 'free') {
       FOLLOW_EID = 0;
+      controls.minPolarAngle = 0;
+      controls.maxPolarAngle = Math.PI;
       constrainFreeCameraAltitude();
+    } else {
+      controls.minPolarAngle = 0;
+      controls.maxPolarAngle = Math.PI;
     }
     // 跟随目标是名册的运行时状态（followed）。setFollow 也经由这里：暂停时没有帧在跑，
     // 换相机必须自己补写，否则跟随描边要等到下次播放 / seek 才出现。走 writeHud 而不是

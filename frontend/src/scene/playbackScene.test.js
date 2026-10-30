@@ -1408,8 +1408,8 @@ describe('Free Camera terrain floor', () => {
     const controls = window.__controls
     api.setCam('top')
     const topHeight = cam.position.y
-    expect(store.cam).toBe('free')
-    expect(controls.enabled).toBe(false)
+    expect(store.cam).toBe('top')
+    expect(controls.enabled).toBe(true)
     expect(controls.target.x).toBeCloseTo(0, 3)
     expect(controls.target.z).toBeCloseTo(0, 3)
     expect(controls.target.y).toBe(0)
@@ -1417,26 +1417,10 @@ describe('Free Camera terrain floor', () => {
     const topDirection = viewDirection()
     document.querySelector('canvas').dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }))
     expect(viewDirection().dot(topDirection)).toBeCloseTo(1, 8)
-    const topCanvas = document.querySelector('canvas')
-    const pointer = (type, x, y, buttons) => new MouseEvent(type, {
-      button: 0, clientX: x, clientY: y, buttons, bubbles: true, cancelable: true,
-    })
-    topCanvas.dispatchEvent(pointer('pointerdown', 100, 100, 1))
-    topCanvas.dispatchEvent(pointer('pointermove', 120, 100, 1))
-    expect(viewDirection().dot(topDirection)).toBeCloseTo(1, 8)
-    topCanvas.dispatchEvent(pointer('pointerup', 120, 100, 0))
-    const pinchTouch = (type, x, pointerId) => {
-      const event = pointer(type, x, 120, type === 'pointerup' ? 0 : 1)
-      Object.defineProperty(event, 'pointerType', { value: 'touch' })
-      Object.defineProperty(event, 'pointerId', { value: pointerId })
-      return event
-    }
-    topCanvas.dispatchEvent(pinchTouch('pointerdown', 100, 7))
-    topCanvas.dispatchEvent(pinchTouch('pointerdown', 300, 9))
-    topCanvas.dispatchEvent(pinchTouch('pointermove', 340, 9))
-    expect(viewDirection().dot(topDirection)).toBeCloseTo(1, 8)
-    topCanvas.dispatchEvent(pinchTouch('pointerup', 340, 9))
-    topCanvas.dispatchEvent(pinchTouch('pointerup', 100, 7))
+    const topTarget = controls.target.clone()
+    document.querySelector('canvas').dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }))
+    expect(controls.target.equals(topTarget)).toBe(true)   // 俯视缩放中心 = 地图中心
+    api.setCam('free')
     expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
     const afterForward = cam.position.y
     expect(api.flyTick(0.1, new Set(['KeyE']))).toBe(true)
@@ -1589,13 +1573,16 @@ describe('Free Camera terrain floor', () => {
     const controls = window.__controls
     const tacticalHeight = 255 // minimalData 的 WORLD_CENTER.ext = 150
     api.setCam('top')
-    expect(store.cam).toBe('free')
+    expect(store.cam).toBe('top')
     expect(cam.position.x).toBeCloseTo(0)
     expect(cam.position.z).toBeCloseTo(0.01)
-    expect(cam.position.y).toBeGreaterThan(tacticalHeight)
     expect(cam.position.y).toBeGreaterThanOrEqual(400.5)
-    expect(controls.target.y).toBeCloseTo(cam.position.y - tacticalHeight, 5)
-    expect(new THREE.Vector3().subVectors(controls.target, cam.position).normalize().y).toBeCloseTo(-1, 8)
+    expect(controls.target.x).toBeCloseTo(0, 3)
+    expect(controls.target.z).toBeCloseTo(0, 3)
+    expect(controls.target.y).toBe(0)
+    expect(new THREE.Vector3().subVectors(controls.target, cam.position).normalize().y).toBeLessThan(-0.99)
+    // 地形阻挡：相机被抬到地形净空，minDistance 锁在该距离（再放大不会钻进地形）
+    expect(controls.minDistance).toBeCloseTo(cam.position.distanceTo(controls.target), 5)
   })
 
   it('places the Free camera above the rendered triangle on a non-coplanar terrain cell', async () => {
@@ -2036,7 +2023,7 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
     expect(store.cam).toBe('follow')
     expect(followed).toEqual([2])
     api.setCam('top')
-    expect(store.cam).toBe('free')
+    expect(store.cam).toBe('top')
     expect(followed).toEqual([])
     stop()
   })
