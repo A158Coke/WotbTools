@@ -13,23 +13,22 @@ export { assetProvider }
 
 // ---------- per-tank 数据（dump-tank-data 物化 → /api/tank/{id} 同形状） ----------
 
-// 同坦克 JSON 的 in-flight/结果 promise 缓存（key = tankId）：同车检视一次会触发
-// loadTarget / loadShooter / fetchShells / fetchShotTankData / 侧配置卡 多路并发
-// 请求同一份 MB 级 JSON（同车对比时 ≈5 次）；缓存 promise 与 fetchTankCacheStatic
-// 同模式——失败即清槽（下次调用重试），不缓存失败结果。
-const tankDataPromises = new Map()
+// 同坦克 JSON 的 in-flight 合并（key = tankId，**settle 即清槽**）：同车检视一次会
+// 并发触发 loadTarget / loadShooter / fetchShells / fetchShotTankData / 侧配置卡
+// ≈5 路同一份 MB 级 JSON 请求，合并为 1。只在飞行中去重——settle 后删除，顺序重选
+// 按契约重发请求（browser gate browser-armor-shot-readiness 锁定逐选择请求语义，
+// 含失败/重试路径），失败也不缓存（重试必发新请求）。
+const tankDataInflight = new Map()
 
 export function fetchTankData(id) {
   const key = String(id)
-  let p = tankDataPromises.get(key)
-  if (!p) {
-    p = assetProvider.json(`/tank/${key}.json`).catch((e) => {
-      tankDataPromises.delete(key)
-      throw e
-    })
-    tankDataPromises.set(key, p)
-  }
-  return p
+  const pending = tankDataInflight.get(key)
+  if (pending) return pending
+  const req = assetProvider.json(`/tank/${key}.json`).finally(() => {
+    tankDataInflight.delete(key)
+  })
+  tankDataInflight.set(key, req)
+  return req
 }
 
 /** 射击检视的紧凑搭载输入（config 原始顺序 / pitch_limits / shell_global_ids）：
