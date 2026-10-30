@@ -131,28 +131,18 @@ const provisionLabels = computed(() => {
 
 const equipmentLabels = computed(() => {
   if (!loadout.value) return []
-  const slotKeys = ['f1', 'v1', 's1', 'f2', 'v2', 's2', 'f3', 'v3', 's3']
-  return Array.from({ length: 9 }, (_, i) => {
-    const id = loadout.value.equipmentIds?.[i] ?? null
-    // 0 / 缺省 = 该槽**未装备**（replay 的 equipment 串按实装件数解析，其余位补 0）；
-    // 只有非空且映射不到的 id 才是「未知装备」。两者不能混为一谈。
-    const empty = !Number.isInteger(id) || id <= 0
-    return {
-      slot: i,
-      semanticKey: slotKeys[i],
+  // 装备串是**紧凑线序**（空槽省略、尾部补 0），数组位置不是语义槽位：
+  // 不能把第 N 个 id 当成第 N 格，也不能把尾部 0 说成某个具体槽「未装备」。
+  // inspector 只展示实际装上的装备（图标 + 无障碍名称），不伪造槽位/空槽。
+  return (loadout.value.equipmentIds || [])
+    .filter(id => Number.isInteger(id) && id > 0)
+    .map((id, index) => ({
+      slot: index,
       id,
-      empty,
-      icon: empty ? null : equipmentIcon(id),
-      label: empty ? t('recon.map.playback.equipment_empty') : itemLabel('equipment', id),
-    }
-  })
+      icon: equipmentIcon(id),
+      label: itemLabel('equipment', id),
+    }))
 })
-
-const equipmentRows = computed(() => [
-  { key: 'row1', slots: equipmentLabels.value.slice(0, 3) },
-  { key: 'row2', slots: equipmentLabels.value.slice(3, 6) },
-  { key: 'row3', slots: equipmentLabels.value.slice(6, 9) },
-])
 
 const modules = computed(() => moduleCrewStatesAt(props.track.moduleCrewTransitions, props.timeSec))
 
@@ -274,22 +264,18 @@ function moduleStateLabel(state) {
         </div>
         <div class="v2-loadout-group" data-test="v2-inspector-equipment">
           <div class="v2-loadout-group-title">{{ $t('recon.map.playback.equipment') }}</div>
-          <div v-for="row in equipmentRows" :key="row.key" class="v2-equipment-row" :data-equipment-group="row.key">
-            <div class="v2-loadout-grid">
-        <div
-          v-for="e in row.slots"
-          :key="'e' + e.slot"
-          class="v2-inspector-chip"
-          :class="{ 'is-empty': e.empty }"
-          :data-equipment-slot="e.slot"
-          :data-equipment-empty="e.empty ? 'true' : undefined"
-          role="img"
-          :title="e.label"
-          :aria-label="`${$t(`recon.map.playback.equipment_slot_${e.semanticKey}`)}: ${e.label}`"
-        >
-          <img v-if="e.icon" class="v2-chip-icon" :src="e.icon" alt="" width="32" height="32" loading="lazy">
-          <span v-else class="v2-chip-placeholder"></span>
-        </div>
+          <div class="v2-loadout-grid" data-test="v2-inspector-equipment-grid">
+            <div
+              v-for="e in equipmentLabels"
+              :key="'e' + e.slot"
+              class="v2-inspector-chip"
+              :data-equipment-id="e.id"
+              role="img"
+              :title="e.label"
+              :aria-label="e.label"
+            >
+              <img v-if="e.icon" class="v2-chip-icon" :src="e.icon" alt="" width="32" height="32" loading="lazy">
+              <span v-else class="v2-chip-placeholder"></span>
             </div>
           </div>
           <button

@@ -49,17 +49,14 @@ function mountInspector(timeSec, locale = 'zh', trackObj = track()) {
 }
 
 describe('V2VehicleInspector', () => {
-  it('未装备的空槽显示「未装备」，不与未知装备混淆', () => {
+  it('紧凑装备串只展示实际装备，不按数组位置宣称具体槽位', () => {
     const t = track()
     t.loadout.equipmentIds = [103, 114, 0, 0, 0, 0, 0, 0, 0]
     const w = mountInspector(120, 'zh', t)
-    const chips = w.findAll('[data-test="v2-inspector-equipment"] [data-equipment-slot]')
-    expect(chips).toHaveLength(9)
-    const empty = w.findAll('[data-equipment-empty="true"]')
-    expect(empty).toHaveLength(7)
-    expect(empty.every(chip => String(chip.attributes('aria-label')).includes('未装备'))).toBe(true)
-    expect(w.get('[data-test="v2-inspector-equipment"]').html()).not.toContain('未知装备')
-    expect(w.get('[data-equipment-slot="0"]').attributes('aria-label')).toContain('校准炮弹')
+    const chips = w.findAll('[data-test="v2-inspector-equipment"] .v2-inspector-chip')
+    expect(chips).toHaveLength(2)   // 只画实际装上的 2 件，不画 7 个伪空槽
+    expect(chips.map(chip => chip.attributes('aria-label'))).toEqual(['校准炮弹', '改进型光学系统'])
+    expect(w.get('[data-test="v2-inspector-equipment"]').text()).not.toContain('未装备')
     w.unmount()
   })
 
@@ -163,20 +160,17 @@ describe('V2VehicleInspector', () => {
     expect(labels.join(' ')).not.toContain('SOME_INTERNAL_ENUM')
   })
 
-  it('loadout is rendered as fixed 3 + 3 + 3x3 semantic cells', () => {
+  it('loadout 图形化：固定 3 消耗品 + 3 补给 + 已装装备图标', () => {
     const w = mountInspector(120)
     expect(w.findAll('[data-test="v2-inspector-consumables"] .v2-inspector-chip')).toHaveLength(3)
     expect(w.findAll('[data-test="v2-inspector-provisions"] .v2-inspector-chip')).toHaveLength(3)
     expect(w.findAll('[data-test="v2-inspector-equipment"] .v2-inspector-chip')).toHaveLength(9)
-    expect(w.findAll('[data-test="v2-inspector-equipment"] [data-equipment-group="row1"] .v2-inspector-chip')).toHaveLength(3)
-    expect(w.findAll('[data-test="v2-inspector-equipment"] [data-equipment-group="row2"] .v2-inspector-chip')).toHaveLength(3)
-    expect(w.findAll('[data-test="v2-inspector-equipment"] [data-equipment-group="row3"] .v2-inspector-chip')).toHaveLength(3)
+
     const equipment = w.findAll('[data-test="v2-inspector-equipment"] .v2-inspector-chip')
-    const labels = equipment.map(cell => String(cell.attributes('aria-label')))
-    expect(labels).toEqual([
-      'F1: 火炮输弹机', 'V1: 改进型模块+', 'S1: 改进型光学系统',
-      'F2: 改进型炮控系统', 'V2: 改进型组装', 'S2: 发动机加速器',
-      'F3: 精密火炮', 'V3: 工具箱', 'S3: 高级消耗品',
+    expect(equipment.map(cell => String(cell.attributes('aria-label')))).toEqual([
+      '火炮输弹机', '改进型模块+', '改进型光学系统',
+      '改进型炮控系统', '改进型组装', '发动机加速器',
+      '精密火炮', '工具箱', '高级消耗品',
     ])
     // 图形化：chip 内不再渲染可见文字，只保留图标/占位
     expect(equipment.map(cell => cell.text().trim())).toEqual(Array(9).fill(''))
