@@ -234,6 +234,7 @@ defineExpose({ setLabels, setAnchor, clear, spawnDamage, removeDamage, clearDama
       <PlaybackVehicleLabel
         :player-name="row.playerName" :tank-name="row.tankName" :gun-marks="gunMarks.get(row.accountId)" :friendly="row.friendly"
         :destroyed="row.destroyed" :last-known="row.lastKnown" :hp="row.hp" :reload="row.reload"
+        :consumables="row.consumables"
         :hp-ghost="row.hpGhost" :hp-flash="row.hpFlash" :hp-no-transition="true"
         :show-player-name="labelPrefs.showPlayerName" :show-tank-name="labelPrefs.showTankName"
         :show-hp="hpPrefs.showHp" :show-reload="labelPrefs.showReload"

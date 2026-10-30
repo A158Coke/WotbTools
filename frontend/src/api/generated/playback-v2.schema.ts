@@ -7265,6 +7265,23 @@ export default {
         "state": {
           "type": "string"
         },
+        "durationSec": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "endsAt": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "everActivated": {
+          "type": "boolean"
+        },
         "invalidation": {
           "type": "boolean"
         },

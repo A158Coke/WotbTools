@@ -3278,6 +3278,9 @@ export interface components {
             logicalItemId: string | null;
             wireCode: number | null;
             state: string;
+            durationSec?: number | null;
+            endsAt?: number | null;
+            everActivated?: boolean;
             invalidation: boolean;
             confidence: components["schemas"]["PlaybackConfidence"];
         };

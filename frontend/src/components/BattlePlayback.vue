@@ -66,6 +66,7 @@ import { assetProvider } from '../scene/assetProvider.js'
 import { computeVehicleMarkerSize, healthRingDiameter } from '../utils/vehicleMarkerSizing'
 import { advancePlaybackTime, clampPlaybackTime } from '../utils/playbackClock'
 import { baseView } from '../utils/baseStatus.js'
+import { consumableRuntimeAt } from '../utils/consumableRuntime.js'
 import {
   MARKER_CORE_PX,
   computeLabelLayout,
@@ -217,6 +218,11 @@ function vehicleReloadAt(accountId, time) {
   // configs 未就绪时回退 facet burst_size → 单发，就绪后本组件响应式重算。
   const size = magazineSizeForVehicle(vehicle, tankConfigs.value.get(vehicle.tank_id))
   return reloadStateAt.value(vehicle.eid, time + telemetry.timeOrigin, size)
+}
+
+/** 2D 名牌：当前定时消耗品（canonical transitions 的 timeSec 已是回放相对秒）。 */
+function vehicleConsumablesAt(track, time) {
+  return consumableRuntimeAt(track?.consumableTransitions, time)
 }
 const duration = computed(() => (playback.value ? Math.max(0, playback.value.durationSec) : 0))
 const friendlyTeam = computed(() => pbOverview.value.friendlyTeam)
@@ -1750,7 +1756,7 @@ const baseVehicleStates = computed(() => {
       if (!state) return null
       // 2D 是严格俯视投影（2026-10-16）：不再呈现"多出的维度"（俯仰/侧倾），
       // 故不产出 terrainAttitude（原地形高度场合成倾斜已删）。
-      return { ...state, gunMarks: gunMarks.value.get(track.accountId) ?? null, reloadShells: vehicleReloadAt(track.accountId, currentTime.value) }
+      return { ...state, gunMarks: gunMarks.value.get(track.accountId) ?? null, reloadShells: vehicleReloadAt(track.accountId, currentTime.value), consumables: vehicleConsumablesAt(track, currentTime.value) }
     })
     .filter(Boolean)
 })

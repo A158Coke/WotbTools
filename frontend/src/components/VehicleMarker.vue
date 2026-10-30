@@ -336,7 +336,8 @@ const stateClasses = computed(() => ({
         :show-player-name="label.showPlayer && !label.blockHidden"
         :show-tank-name="label.showTank && !label.blockHidden"
         :show-hp="!ringMode && hpVisible && !label.hpHidden" :show-reload="!ringMode && label.showReload !== false"
-        :hp="hp" :reload="st.reloadShells" :hp-ghost="hpGhost" :hp-flash="hpFlash" :hp-no-transition="hpNoTransition"
+        :hp="hp" :reload="st.reloadShells" :consumables="st.consumables"
+        :hp-ghost="hpGhost" :hp-flash="hpFlash" :hp-no-transition="hpNoTransition"
         :hp-title="hp?.state === 'RELATIVE_FULL' && t ? t('recon.map.playback.hp_full_spawn') : ''"
         name-tooltips
       />

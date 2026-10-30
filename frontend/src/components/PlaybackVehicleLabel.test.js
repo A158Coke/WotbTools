@@ -196,3 +196,43 @@ describe('PlaybackVehicleLabel magazine segmentation', () => {
     expect(labelSource).toMatch(/\.reload-shell\[data-state="locked"\]/)
   })
 })
+
+describe('PlaybackVehicleLabel consumable badges', () => {
+  it('正在生效的定时消耗品渲染在血条左侧，一个槽位一个徽标', () => {
+    const wrapper = mountLabel({
+      consumables: [
+        { slot: 0, logicalItemId: 'ADRENALINE', remainingSec: 15, durationSec: 20 },
+        { slot: 2, logicalItemId: 'RETICLE_CALIBRATION', remainingSec: 30, durationSec: 55 },
+      ],
+    })
+    const badges = wrapper.findAll('[data-test="pb-consumable-badge"]')
+    expect(badges).toHaveLength(2)
+    expect(wrapper.get('[data-test="pb-consumables"]').element.parentElement)
+      .toBe(wrapper.get('.pb-hp-row').element)
+  })
+
+  it('未闭合身份（logicalItemId 为空）不占位，fail-closed', () => {
+    const wrapper = mountLabel({
+      consumables: [{ slot: 0, logicalItemId: null, wireCode: 0x3F, remainingSec: 15, durationSec: 20 }],
+    })
+    expect(wrapper.find('[data-test="pb-consumables"]').exists()).toBe(false)
+  })
+
+  it('只展示 duration>0 且 remaining>0 的条目；空/瞬发不渲染', () => {
+    const empty = mountLabel({ consumables: [] })
+    expect(empty.find('[data-test="pb-consumables"]').exists()).toBe(false)
+    const instant = mountLabel({
+      consumables: [{ slot: 0, logicalItemId: 'REPAIR_KIT', state: 'ACTIVE', remainingSec: 0, durationSec: 0 }],
+    })
+    expect(instant.find('[data-test="pb-consumables"]').exists()).toBe(false)
+  })
+
+  it('徽标绝对定位在血条左侧，不改变血条居中与伤害数字右缘', () => {
+    const row = ruleBody('.pb-hp-row')
+    const badges = ruleBody('.pb-consumables')
+    expect(row).toMatch(/position:\s*relative/)
+    expect(badges).toMatch(/position:\s*absolute/)
+    expect(badges).toMatch(/right:\s*100%/)
+    expect(badges).toMatch(/translateY\(-50%\)/)
+  })
+})
