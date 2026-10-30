@@ -4516,6 +4516,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   /** 重建渲染器上下文（偏好失配时）：卸旧 renderer/controls/画布与事件，
    *  initScene 重建——会话数据（DATA/资产/相机状态）不动，仅重挂画布。 */
   function rebuildRenderer() {
+    // initScene 换新相机：机位不随之丢失，是否保留由 buildWorld 按会话决定。
+    const position = camera.position.clone();
+    const target = controls.target.clone();
     // 旧尺寸监听器必须先断（评审 P2）：initScene 每次新建 ResizeObserver 覆盖
     // sizeObserver——不断开旧实例会在同容器上累积回调（每次重建一个），
     // destroy 也只回收最后一个；旧回调还会对已 dispose 的 renderer 调 setSize。
@@ -4532,6 +4535,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
     dynResCtl = null;
     initScene();
+    camera.position.copy(position);
+    controls.target.copy(target);
+    if (flyMode()) flyLookSyncFromCamera('renderer rebuild', true);
+    camera.lookAt(controls.target);
   }
 
   async function startPlayback(epoch) {

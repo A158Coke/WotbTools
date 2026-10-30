@@ -1625,6 +1625,16 @@ describe('Free Camera terrain floor', () => {
       await expectPoseKept(api)
     })
 
+    it('a renderer rebuild keeps the pose and the flight heading', async () => {
+      const { api } = await loadScene()
+      expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
+      api.setLogdepth(true)
+      await expectPoseKept(api)
+      const before = window.__camera.position.clone()
+      expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
+      expect(window.__camera.position.distanceTo(before)).toBeGreaterThan(0.01)
+    })
+
     it('a kept pose still obeys the next map terrain floor', async () => {
       const { api } = await loadScene()
       expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
