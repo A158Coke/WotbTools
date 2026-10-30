@@ -2,12 +2,14 @@
 
 这些是内部 playbook / checklist / tool guidance，不是顶层 Skill，不参与“现在处于生命周期哪一阶段”的选择。
 
-lifecycle 只有四个 orchestrating Skills（另有一个不参与 lifecycle 的 operational 入口 `product-qa`，见下）：
+lifecycle 只有四个 orchestrating Skills（另有 operational 入口 `product-qa` 和委托 Executor 的收尾薄入口 `finish-task`，均不新增 lifecycle 阶段）：
 
 1. `designer` — deeply define the work；完整设计 pipeline authority 只在 `.agents/skills/designer/SKILL.md`，产出已批准/授权的 `docs/current-plan.md`；授权、手贴计划规范化与偏差边界只由该 Skill 定义。
 2. `executor` — 执行已批准/授权的文件或手贴计划、targeted validation；review-with-docs PASS 后 commit/push/open PR；merge 后 cleanup。
 3. `prompt-repair` — 基于现成 repair prompt / PR findings 做 minimum-delta 增量修复；只有 finding 按 Designer 偏差边界证明设计实质失效才返回 Designer。
 4. `review-with-docs` — 验证 implementation against plan + repository reality + canonical docs + acceptance criteria 要求的 runtime evidence；唯一 final quality gate。
+
+`finish-task` 仅是 Executor post-merge cleanup fast path 的可发现入口；收尾流程与权限不在薄入口重复定义。
 
 ## 加载规则
 

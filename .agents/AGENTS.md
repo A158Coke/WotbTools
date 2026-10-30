@@ -120,7 +120,7 @@
 - 在付款/赞助页面或代码中硬编码个人收款信息
 - 用推测值冒充权威方向/可见性（回放数据只信已证明的解码，见 `docs/research/replay/protocol.md`）
 
-## Skills（.agents/skills/，四个 lifecycle Skills + 一个 operational 入口）
+## Skills（.agents/skills/，四个 lifecycle Skills + operational / 收尾薄入口）
 
 1. **designer** — deeply define the work；完整 pipeline authority 在 `.agents/skills/designer/SKILL.md`，产出已批准/授权的 `docs/current-plan.md`，授权与停止条件只在该 Skill 定义。
 2. **executor** — execute approved/authorized 文件或手贴 plan、targeted validation、review-with-docs PASS 后 commit/push/open PR、merge 后 cleanup。
@@ -128,6 +128,8 @@
 4. **review-with-docs** — 验证 implementation against plan + repository reality + canonical docs + runtime evidence；唯一 final quality gate。
 
 Domain implementation playbooks、检查单与工具指南在 `.agents/playbooks/`，由四个 lifecycle Skills 按需加载；它们不是顶层 Skill，不参与生命周期选择。
+
+**finish-task**（收尾薄入口）— `.agents/skills/finish-task/SKILL.md` 委托 Executor 的 post-merge cleanup fast path，不是第五个 lifecycle 阶段；cleanup authority 仍属于 Executor 与其 playbook。
 
 5. **product-qa**（operational 入口，不属于 lifecycle）— `.agents/skills/product-qa/SKILL.md` 只指向 Product QA playbook，让 Claude Code、Codex 等 harness 能按名字调用；流程与规则的唯一正文仍是 `.agents/playbooks/product-qa/README.md`。
 

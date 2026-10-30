@@ -28,7 +28,7 @@ description: >
 
 ## 流程
 
-0. **Post-merge cleanup fast path**：若用户请求仅为已合并 PR 的 cleanup / 收尾，先验证目标 PR
+0. **Post-merge cleanup fast path**：用户直接请求或经 `finish-task` 薄入口请求已合并 PR 的 cleanup / 收尾时，先验证目标 PR
    的 `merged=true` 或等价 merge commit 事实；确认后直接加载 `.agents/playbooks/post-merge-cleanup.md`
    执行其 cleanup contract。若无法确认已合并，停止并汇报，不把未合并任务当 cleanup。此路径不进入
    下方 implementation phases，也不要求重新创建/读取 approved plan。
