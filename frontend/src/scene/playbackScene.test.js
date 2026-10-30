@@ -28,9 +28,10 @@ import { FLOAT_DMG_MS } from '../utils/battlePlayback.js'
 import { mapImages } from '../data/mapImages.js'
 import { normalizePenPoints } from './playback/annotation3d.js'
 
-const source = vi.hoisted(() => ({ loadPlaybackData: vi.fn(), resolveMapKey: vi.fn(), mapStaticUrl: vi.fn() }))
+const source = vi.hoisted(() => ({ loadPlaybackData: vi.fn(), loadRecorderCameraFromFile: vi.fn(), resolveMapKey: vi.fn(), mapStaticUrl: vi.fn() }))
 vi.mock('./replaySource.js', () => ({
   loadPlaybackData: source.loadPlaybackData,
+  loadRecorderCameraFromFile: source.loadRecorderCameraFromFile,
   resolveMapKey: source.resolveMapKey,
   mapStaticUrl: source.mapStaticUrl,
 }))
@@ -126,6 +127,8 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('unit tests run without network'))))
   vi.spyOn(assetProvider, 'fetch').mockImplementation((...args) => fetch(...args))
   source.loadPlaybackData.mockReset()
+  source.loadRecorderCameraFromFile.mockReset()
+  source.loadRecorderCameraFromFile.mockResolvedValue(null)
   source.resolveMapKey.mockReset()
   source.mapStaticUrl.mockReset()
   source.mapStaticUrl.mockReturnValue(null)
@@ -2058,6 +2061,144 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
     vi.stubGlobal('cancelAnimationFrame', vi.fn())
     return frames
   }
+
+  describe('recorder view', () => {
+    const facet = (overrides = {}) => ({
+      version: 1,
+      author_eid: 1,
+      aim: { t: [42, 200], yaw: [0, 0], pitch: [0, 0], ray_x: [0, 0], ray_y: [2, 2], ray_z: [100, 100] },
+      mode: { t: [42, 60, 70], raw: [1, 0, 1] },
+      zoom: { t: [60.1], raw: [27] },
+      bloom: { t: [], raw: [] },
+      client_options: { backward_zoom: null },
+      ...overrides,
+    })
+    const load = async ({ camera = facet(), vehicleOverrides = {} } = {}) => {
+      const frames = manualFrames()
+      vi.spyOn(THREE.Clock.prototype, 'getDelta').mockReturnValue(0.1)
+      source.loadRecorderCameraFromFile.mockResolvedValue(camera)
+      const data = rosterData([vehicle({ eid: 1, team: 1, nickname: 'A', tank_name: 'T', max_hp: 100, hp: [[42, 100]], ...vehicleOverrides })])
+      data.meta = { ...data.meta, author_eid: 1 }
+      source.loadPlaybackData.mockResolvedValue(data)
+      const reticle = { update: vi.fn(), hide: vi.fn() }
+      const store = createPlaybackStore()
+      api = initPlayback(mountContainer(), store, null, { recorderReticle: reticle })
+      created.push(api)
+      await api.loadData({ kind: 'local', file: new File(['r'], 'recorder.wotbreplay') })
+      api.setPlaying(false)
+      await Promise.resolve()
+      const run = (count = 1) => { for (let i = 0; i < count; i++) frames.shift()?.() }
+      return { api, store, frames, run, reticle, vehicle: window.__pbV[0] }
+    }
+
+    it('becomes available once the facet is ready, then drives an arcade camera along the aim', async () => {
+      const { api, store, run, reticle } = await load()
+      expect(store.recorderCameraStatus).toBe('ready')
+      api.seekTime(50)
+      expect(store.recorderViewAvailable).toBe(true)
+      api.setCam('recorder')
+      expect(store.cam).toBe('recorder')
+      expect(window.__controls.enabled).toBe(false)
+      run(5)
+      const camera = window.__camera
+      const direction = new THREE.Vector3()
+      camera.getWorldDirection(direction)
+      expect(direction.z).toBeCloseTo(1, 5)
+      expect(camera.position.z).toBeLessThan(window.__pbV[0].group.position.z)
+      expect(camera.fov).toBe(55)
+      expect(reticle.update).toHaveBeenCalled()
+    })
+
+    it('accepts no camera input while active', async () => {
+      const { api, run } = await load()
+      api.seekTime(50)
+      api.setCam('recorder')
+      run(5)
+      const before = window.__camera.position.clone()
+      document.querySelector('canvas').dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }))
+      expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(false)
+      run(1)
+      expect(window.__camera.position.distanceTo(before)).toBeLessThan(1e-6)
+    })
+
+    it('enters the real sniper view: gun position, replay FOV and hidden own tank', async () => {
+      const { api, run, vehicle } = await load()
+      api.seekTime(50)
+      api.setCam('recorder')
+      run(5)
+      api.seekTime(65)
+      run(1)
+      const camera = window.__camera
+      expect(camera.fov).toBe(27)
+      expect(vehicle.group.visible).toBe(false)
+      const gun = vehicle.gunPivot.getWorldPosition(new THREE.Vector3())
+      expect(camera.position.distanceTo(gun)).toBeLessThan(1e-6)
+
+      api.seekTime(75)
+      run(1)
+      expect(camera.fov).toBe(55)   // Arcade/Sniper 由回放驱动，硬切
+      expect(vehicle.group.visible).toBe(true)
+    })
+
+    it('falls back to Free near the old pose when the recorder dies, and only re-enables on seek back', async () => {
+      const { api, store, run, reticle } = await load({ vehicleOverrides: { death_t: 80 } })
+      api.seekTime(65)
+      api.setCam('recorder')
+      run(5)
+      const before = window.__camera.position.clone()
+      api.seekTime(90)
+      run(1)
+      expect(store.cam).toBe('free')
+      expect(store.recorderViewAvailable).toBe(false)
+      expect(window.__camera.position.distanceTo(before)).toBeLessThan(50)
+      expect(reticle.hide).toHaveBeenCalled()
+      run(5)
+      expect(window.__camera.fov).toBeCloseTo(55)
+      api.setCam('recorder')
+      expect(store.cam).toBe('free')
+      api.seekTime(50)
+      expect(store.recorderViewAvailable).toBe(true)
+      run(1)
+      expect(store.cam).toBe('free')
+    })
+
+    it('stays disabled when the replay has no usable camera data', async () => {
+      const { api, store } = await load({ camera: null })
+      expect(store.recorderCameraStatus).toBe('unavailable')
+      api.setCam('recorder')
+      expect(store.cam).toBe('free')
+    })
+
+    it('rejects a facet for a different recorder', async () => {
+      const { store } = await load({ camera: facet({ author_eid: 2 }) })
+      expect(store.recorderCameraStatus).toBe('unavailable')
+    })
+
+    it('a parse failure leaves playback usable', async () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const frames = manualFrames()
+      source.loadRecorderCameraFromFile.mockRejectedValue(new Error('boom'))
+      source.loadPlaybackData.mockResolvedValue(rosterData([vehicle({ eid: 1, team: 1, nickname: 'A', tank_name: 'T', max_hp: 1, hp: [] })]))
+      const { api: scene, store } = createScene()
+      await scene.loadData({ kind: 'local', file: new File(['r'], 'recorder.wotbreplay') })
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(frames).toBeDefined()
+      expect(store.hasData).toBe(true)
+      expect(store.recorderCameraStatus).toBe('unavailable')
+    })
+
+    it('recorder mode on one replay opens the next at the top view in Free', async () => {
+      const { api, store, run } = await load()
+      api.seekTime(65)
+      api.setCam('recorder')
+      run(5)
+      await api.loadData({ kind: 'local', file: new File(['n'], 'next.wotbreplay') })
+      expect(store.cam).toBe('free')
+      run(5)
+      expect(window.__camera.fov).toBeCloseTo(55)
+    })
+  })
 
   it('seek 到更晚时刻：effect 观察到名册行的 hp / dead，而不是停在满血', async () => {
     manualFrames()

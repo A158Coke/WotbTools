@@ -1928,6 +1928,27 @@ describe('Replay3DPane 待开播画质闸门', () => {
     const recorder = cams.get('[data-value="recorder"]')
     expect(recorder.attributes('disabled')).toBeDefined()
     expect(recorder.attributes('title')).toBe('agentReplay.cam_recorder_unsupported')
+    playback.api.store.recorderCameraStatus = 'loading'
+    await nextTick()
+    expect(recorder.attributes('title')).toBe('agentReplay.cam_recorder_loading')
+    playback.api.store.recorderCameraStatus = 'ready'
+    await nextTick()
+    expect(recorder.attributes('title')).toBe('agentReplay.cam_recorder_dead')
+    playback.api.store.recorderViewAvailable = true
+    await nextTick()
+    expect(recorder.attributes('disabled')).toBeUndefined()
+    await recorder.trigger('click')
+    expect(playback.api.setCam).toHaveBeenLastCalledWith('recorder')
+    playback.api.store.cam = 'recorder'
+    await nextTick()
+    expect(wrapper.get('[data-testid="replay3d-drawing-entry"]').attributes('disabled')).toBeDefined()
+    playback.api.setFollow.mockClear()
+    playback.init.mock.calls.at(-1)[3].onVehicleSelect(11)
+    expect(playback.api.setFollow).not.toHaveBeenCalled()
+    playback.api.store.cam = 'free'
+    playback.api.store.recorderViewAvailable = false
+    playback.api.store.recorderCameraStatus = 'idle'
+    await nextTick()
     playback.api.store.cam = 'free'
     await nextTick()
     await wrapper.get('[data-testid="replay3d-top-view"]').trigger('click')

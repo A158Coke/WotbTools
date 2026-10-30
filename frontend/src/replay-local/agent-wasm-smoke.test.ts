@@ -20,6 +20,7 @@
  * 本机原始问题回放（1.5MB，不入库）可加跑，额外锁该场次的具体数字：
  *   WOTB_SMOKE_REPLAY=<path/to.wotbreplay> pnpm exec vitest run src/replay-local/agent-wasm-smoke.test.ts
  */
+import { sampleRecorderCamera } from '../scene/playback/cameraRig.js'
 import { readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -28,6 +29,7 @@ import { describe, expect, it } from 'vitest'
 import {
   FIXTURE_REPLAYS,
   authorInitialPositionViaPinnedWasm,
+  recorderCameraViaPinnedWasm,
   fixtureFacets,
   reloadTelemetryFor,
   replayFacets,
@@ -40,6 +42,16 @@ const SMOKE_REPLAY = process.env.WOTB_SMOKE_REPLAY
 const FIXTURES = Object.keys(FIXTURE_REPLAYS)
 /** 参考 fixture（仓库已提交，CI 可跑） */
 const REFERENCE = 'random-battle-example.wotbreplay'
+/** 独立于 Agent 的原始包分帧脚本结果：[开镜 session, Type31 样本]。 */
+const RECORDER_CAMERA_ORACLE: Record<string, [number, number]> = {
+  'random-battle-example.wotbreplay': [39, 7926],
+  'cw-training-15-14-example.wotbreplay': [14, 2026],
+  'tournament-14-14-example.wotbreplay': [11, 1847],
+}
+/** 发射事件的时钟比当时的瞄准晚约 0.2s（fixture 实测，量级与网络往返一致）。 */
+const LAUNCH_LAG_SEC = 0.2
+const median = (values: number[]) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]
+const wrapDeg = (deg: number) => Math.abs(((deg + 180) % 360 + 360) % 360 - 180)
 
 describe('Agent WASM 五入口 smoke（pin 产物真实解析）', () => {
   it('fixture 名单非空（scanner self-check）', () => {
@@ -87,6 +99,43 @@ describe('Agent WASM 五入口 smoke（pin 产物真实解析）', () => {
     expect(position!.clock).toBeGreaterThanOrEqual(0)
     expect(position!.position).toHaveLength(3)
     for (const value of position!.position) expect(Number.isFinite(value)).toBe(true)
+  })
+
+  it.each(Object.entries(RECORDER_CAMERA_ORACLE))(
+    'parseRecorderCamera 与独立分帧计数一致：%s',
+    async (name, [sessions, zoomSamples]) => {
+      const bytes = new Uint8Array(readFileSync(join(REPO, FIXTURE_REPLAYS[name])))
+      const camera = await recorderCameraViaPinnedWasm(bytes)
+      expect(camera).not.toBeNull()
+      expect(camera!.mode.raw.filter((raw) => raw !== 1)).toHaveLength(sessions)
+      expect(camera!.zoom.t).toHaveLength(zoomSamples)
+    },
+  )
+
+  it('瞄准方向与 method29 发射向量一致（独立物理 oracle，同时验证时钟对齐）', async () => {
+    const yawErrors: number[] = []
+    const pitchErrors: number[] = []
+    const zeroLagPitchErrors: number[] = []
+    for (const name of Object.keys(RECORDER_CAMERA_ORACLE)) {
+      const bytes = new Uint8Array(readFileSync(join(REPO, FIXTURE_REPLAYS[name])))
+      const camera = await recorderCameraViaPinnedWasm(bytes)
+      const { shots } = await shotsViaPinnedWasm(bytes)
+      for (const shot of shots) {
+        if (!shot.is_author || shot.launch_velocity?.length !== 3) continue
+        const [vx, vy, vz] = shot.launch_velocity
+        const launchPitch = Math.atan2(vy, Math.hypot(vx, vz))
+        const aim = sampleRecorderCamera(camera, shot.time_s - LAUNCH_LAG_SEC)
+        yawErrors.push(wrapDeg(((aim.yaw - Math.atan2(vx, vz)) * 180) / Math.PI))
+        pitchErrors.push(Math.abs((aim.pitch - launchPitch) * 180 / Math.PI))
+        const zeroLag = sampleRecorderCamera(camera, shot.time_s)
+        zeroLagPitchErrors.push(Math.abs((zeroLag.pitch - launchPitch) * 180 / Math.PI))
+      }
+    }
+    expect(yawErrors.length).toBeGreaterThan(20)
+    expect(median(yawErrors)).toBeLessThan(0.5)
+    expect(median(pitchErrors)).toBeLessThan(1)
+    // 反向对照：不带延迟时误差明显更大，说明这里验证的是时序，不是巧合
+    expect(median(zeroLagPitchErrors)).toBeGreaterThan(median(pitchErrors))
   })
 
   it('装填遥测形状：reloads 是数组，条目带 clock/eid/phase（无遥测则整场为空数组）', async () => {

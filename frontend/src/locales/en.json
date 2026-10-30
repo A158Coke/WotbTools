@@ -1498,6 +1498,8 @@
     "cam_top": "Top",
     "cam_recorder": "Recorder",
     "cam_recorder_unsupported": "This replay does not support the Recorder view",
+    "cam_recorder_loading": "Recorder camera data is loading",
+    "cam_recorder_dead": "The recorder is destroyed",
     "camera": "Camera",
     "glb": "Real models (GLB)",
     "tread_marks": "Track marks (treads)",

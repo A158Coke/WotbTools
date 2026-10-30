@@ -29,6 +29,7 @@ import { usePlaybackPreferences } from '../composables/usePlaybackPreferences.js
 import Scene3DStatus from './Scene3DStatus.vue'
 import PlaybackTransport from './PlaybackTransport.vue'
 import PlaybackDisplaySurface from './PlaybackDisplaySurface.vue'
+import RecorderReticle from './RecorderReticle.vue'
 import ReplayCameraTools from './ReplayCameraTools.vue'
 import PlaybackVehicleLabels3D from './PlaybackVehicleLabels3D.vue'
 import VehicleDetailsPanel from './VehicleDetailsPanel.vue'
@@ -212,7 +213,7 @@ function setAnnotationTool(tool) {
   if (!annotationsVisible.value) annotationsVisible.value = true
 }
 function openAnnotation() {
-  if (annotationOpen.value) return
+  if (annotationOpen.value || store.cam === 'recorder') return
   // Drawing owns pointer interaction only; playback transport keeps its own state.
   displayOpen.value = false
   annotationOpen.value = true
@@ -249,13 +250,17 @@ function resetAnnotationState() {
 function followFromRoster(eid) {
   selectedEid.value = eid
   displayOpen.value = false
-  sceneApi?.setFollow(eid)
+  followUnlessRecorder(eid)
+}
+/** 录像者视角由回放驱动：点车只选中，不改变相机。 */
+function followUnlessRecorder(eid) {
+  if (store.cam !== 'recorder') sceneApi?.setFollow(eid)
 }
 /** 场景里点中坦克 = 打开共享详情窗并跟随；点空处（eid=null）= 隐藏详情窗，跟随不变。 */
 function handleSceneSelect(eid, event = null) {
   if (eid == null) { closeDetails(); return }
   selectVehicle(eid, event)
-  sceneApi?.setFollow(eid)
+  followUnlessRecorder(eid)
 }
 function selectVehicle(eid, event = null) {
   selectedEid.value = eid
@@ -325,6 +330,7 @@ const fpsJanky = computed(() => store.fps > 0
 const store = createPlaybackStore()
 const stage = ref(null)
 const labelOverlay = ref(null)
+const recorderReticle = ref(null)
 let sceneApi = null
 const transport = usePlaybackTransport({
   isPlaying: () => store.playing,
@@ -393,13 +399,19 @@ const mapTitle = computed(() => {
 
 // 相机 / 画质档位文案都是用户可见文本，且本应用支持运行中切语言（MorePanel 的 setLocale 不刷新页面），
 // 所以走 computed 每次重算——不得在 setup 里定死一次，也不用内核预设里的固定中文 label。
+const recorderUnavailableReason = computed(() => {
+  if (store.recorderViewAvailable) return ''
+  if (store.recorderCameraStatus === 'loading') return t('agentReplay.cam_recorder_loading')
+  if (store.recorderCameraStatus === 'ready') return t('agentReplay.cam_recorder_dead')
+  return t('agentReplay.cam_recorder_unsupported')
+})
 const CAMERAS = computed(() => [
   { value: 'free', label: t('agentReplay.cam_free') },
   {
     value: 'recorder',
     label: t('agentReplay.cam_recorder'),
-    disabled: true,
-    title: t('agentReplay.cam_recorder_unsupported'),
+    disabled: !store.recorderViewAvailable,
+    title: recorderUnavailableReason.value,
   },
 ])
 const QUALITY_ORDER = Object.keys(QUALITY_PRESETS)
@@ -605,6 +617,7 @@ function ensureScene() {
     onVehicleSelect: handleSceneSelect,
     onAnnotationCommit: commitAnnotationFromScene,
     onAnnotationErase: eraseFromScene,
+    recorderReticle: recorderReticle.value,
   })
   sceneApi?.setPaused?.(!props.active)
   sceneApi?.setFlySpeed?.(fly.flySpeedIndex())   // 新场景补推当前飞行速率档（重建不丢档）
@@ -807,6 +820,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         <div class="stage-square">
           <div ref="stage" class="scene"></div>
           <PlaybackVehicleLabels3D :gun-marks="gunMarks" ref="labelOverlay" :label-prefs="labelPrefs" :hp-prefs="hpPrefs" :marker-prefs="markerPrefs" :selected-eid="selectedEid" :hidden="uiHidden || !store.hasData" :interactive="!annotationTool" @select="handleSceneSelect" />
+          <RecorderReticle ref="recorderReticle" />
           <div v-if="showFps" class="pb-fps" :class="{ 'pb-fps-low': fpsJanky }" data-testid="replay3d-fps" aria-hidden="true">{{ fpsText }}</div>
         </div>
       </div>
@@ -943,6 +957,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
             <button
               type="button" class="tool-btn drawing-entry"
               data-testid="replay3d-drawing-entry"
+              :disabled="store.cam === 'recorder'"
               data-tour="playback-annotation-entry"
               :aria-label="t('recon.map.playback.annot.mode')"
               :title="t('recon.map.playback.annot.mode')"
@@ -957,6 +972,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
           v-if="compactBar && !annotationOpen && !controlsCollapsed"
           type="button" class="pb-quick-action drawing-entry"
           data-testid="replay3d-drawing-entry"
+          :disabled="store.cam === 'recorder'"
           data-tour="playback-annotation-entry"
           :aria-label="t('recon.map.playback.annot.mode')"
           :title="t('recon.map.playback.annot.mode')"
@@ -970,7 +986,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         <!-- 查看 / 显示开关都在这里（同一份 store.cam / uiPrefs / labelPrefs / hpPrefs / store.glbOn，
              没有第二套状态）：高频动作之外的设置不该永久占着战场高度。
              场景上不放常驻开关（design-language §5），名册与防遮都只在这里。 -->
-          <ReplayCameraTools v-if="compactBar" v-bind="cameraTools" @update:cam="chooseCamera($event)" @update:glb="sceneApi.setGlb($event)" />
+          <ReplayCameraTools v-if="compactBar" v-bind="cameraTools" :hint="recorderUnavailableReason" @update:cam="chooseCamera($event)" @update:glb="sceneApi.setGlb($event)" />
           <p class="dp-title">{{ t('agentReplay.display_battlefield') }}</p>
         <label class="toggle" :title="store.treadAllowed ? '' : t('agentReplay.tread_gate_hint')">
           <input type="checkbox" data-testid="disp-tread" :checked="store.treadOn" :disabled="!store.treadAllowed" @change="sceneApi.setTreadMarks($event.target.checked)"> {{ t('agentReplay.tread_marks') }}

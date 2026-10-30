@@ -16,7 +16,22 @@
 import { confirm as appConfirm } from '../composables/useConfirm.js'
 import * as THREE from 'three'
 
-import { loadPlaybackData, mapStaticUrl, resolveMapKey } from './replaySource.js'
+import { loadPlaybackData, loadRecorderCameraFromFile, mapStaticUrl, resolveMapKey } from './replaySource.js'
+import {
+  ANCHOR_HEIGHT_M,
+  ARCADE_BOOM_M,
+  BASE_FOV_DEG,
+  CAMERA_MODE,
+  REVERSE_SAMPLE_OFFSET_SEC,
+  aimDirectionScene,
+  arcadeCameraPosition,
+  backwardZoomScale,
+  blendProgress,
+  fovFromZoomRaw,
+  isReversing,
+  reticleRadiusPx,
+  sampleRecorderCamera,
+} from './playback/cameraRig.js'
 import { battleEndTime } from './battleEnd.js'
 import { orientDiscUv } from './baseDecal.js'
 import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, foldSupremacyTransitions } from '../utils/baseStatus.js'
@@ -130,7 +145,7 @@ export { QUALITY_PRESETS, tracerSpanSecs, occlusionCells, occlusionFootprintCell
 // 纯函数 tracerSpanSecs / occlusionCells / occlusionFootprintCells 在 ./playback/pure.js
 //（本文件 re-export，导入方零改动）。
 
-export function initPlayback(container, store, labelOverlay = null, { onVehicleSelect, onAnnotationCommit, onAnnotationErase } = {}) {
+export function initPlayback(container, store, labelOverlay = null, { onVehicleSelect, onAnnotationCommit, onAnnotationErase, recorderReticle = null } = {}) {
   // ---------- 全局状态 ----------
   let DATA = null;                 // PlaybackData（当前会话）
   /** eid → 协议精确 AoI 段 flat [t0,t1,...]（来自 DATA.visibility；3D 炮塔/侧倾采样用） */
@@ -172,6 +187,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let CAM = 'free', FOLLOW_EID = 0;
   // 新会话默认以俯视机位开局；用户一旦操作过相机，同一实例内不再覆盖其视角。
   let topViewOnLoad = true;
+  // 录像者视角：facet 随会话，相机由 driveRecorderCamera 逐帧写入。
+  let recorderCamera = null;
+  const recorderSample = {};
+  let recorderBoomScale = 1;
+  let scopedHiddenEid = 0;             // 开镜时相机在炮位，本车隐藏
+  let cameraBlend = null;              // 进入录像者视角的呈现过渡
+  let fovRestore = null;               // 离开录像者视角时 FOV 的呈现过渡
   let shotPtr = 0;   //（killPtr 随击杀 feed 出仓 playback/hudFeed.js）
   const tracers = [];
   const pendingMuzzles = [];   // 本 tick 开火、待炮管姿态摆完再定位的炮口特效（见 flushMuzzles）
@@ -665,6 +687,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     e.stopPropagation();
   }
   function onFlyCaptureWheel(e) {
+    if (CAM === 'recorder') { e.preventDefault(); e.stopPropagation(); return; }
     if (!flyMode()) return;
     // 滚轮 = 沿视线推拉相机（OrbitControls 的 dolly 语义）：相机与 target 一起前进/后退，
     // 视角与视距保持不变。旧实现只改 flyLook.dist 而相机不动——target 只沿视线挪，
@@ -840,7 +863,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
    */
   const _orbitTerrainDir = new THREE.Vector3();
   function clampOrbitCameraToTerrain() {
-    if (flyMode() || !camera || !controls || !heightField || !heightMeta) return false;
+    if (cameraDriven() || !camera || !controls || !heightField || !heightMeta) return false;
     const t = controls.target;
     if (!Number.isFinite(t.y) || !Number.isFinite(camera.position.y)) return false;
     const dir = _orbitTerrainDir.subVectors(camera.position, t);
@@ -3811,6 +3834,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const rel = wrapPi(turretAbsAt(v, T) - yawAt(v, T));
     v.turretG.rotation.y = -rel;
     v.gunPivot.rotation.x = -gunPitchAt(v, T);
+    if (v.def.eid === scopedHiddenEid) {
+      v.group.visible = false;
+      if (v.glb) v.glb.visible = false;
+    }
   }
 
   // 按需渲染的脏标记：状态跳变（seek/换相机/开关节/尺寸变化/特效到期）必须显式置脏，
@@ -3875,7 +3902,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         followAnchor = (followAnchor || new THREE.Vector3()).copy(tmpV);
       } else followAnchor = null;
     } else followAnchor = null;
-    clampCameraTarget();
+    if (CAM === 'recorder') driveRecorderCamera(dt);
+    else clampCameraTarget();
+    if (fovRestore) stepFovRestore(dt);
     // flyMode 接管期间 OrbitControls.update() 必须完全停跑：enabled=false 只挡输入
     // 事件、update 照常执行——其内部球面状态会按 target/相机重算，与 flyLook 的
     // target 重钉互相污染（表现 = 拖拽行为在 FPS 转头与 OrbitControls 环绕之间漂移、
@@ -3887,14 +3916,15 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 维持（target 是权威：拖拽 / 平移 / 缩放都会先重钉 target）。不补这一步，
     // 拖拽只改 target 不改朝向，画面不转（用户实测）。
     if (flyMode()) camera.lookAt(controls.target);
-    const cameraMoved = flyMode() ? false : controls.update();   // three 的 update() 返回相机是否变化（阻尼/交互）
-    if (!flyMode()) clampOrbitCameraToTerrain();
+    const cameraMoved = cameraDriven() ? false : controls.update();   // three 的 update() 返回相机是否变化（阻尼/交互）
+    clampOrbitCameraToTerrain();
     // ---------- 按需渲染（脏帧）----------
     // 暂停且没有在飞特效、相机也静止时，跳过整帧工作（标签/基地/transient 重算 + 全屏
     // render）。此前空闲也满速重绘，是移动端发热与笔记本耗电的第一来源。
     // 伤害数字不参与这个判定：它是覆盖层 DOM + CSS 动画，暂停时自己走完，不需要出帧。
     const busy = PLAYING
       || cameraMoved
+      || cameraBlend || fovRestore
       || frameDirty
       || (destruct && destruct.animating)
       || tracers.length > 0 || (battleFx && battleFx.active())
@@ -4113,6 +4143,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 名册与上面的总血量同帧写入：两侧名册与顶栏永远是同一个 T 的投影
     updateRoster();
     store.time = T;
+    store.recorderViewAvailable = recorderViewAvailable();
     const f = (T - START) / Math.max(0.001, END - START);
     if (!store.seeking) store.seekFrac = Math.round(f * 1000);
   }
@@ -4208,13 +4239,16 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 键盘、鼠标与触屏从同一帧起可用。跟随以选中坦克为 target；自由视角是 FPS 飞行。
     const topAction = mode === 'top';
     const nextMode = topAction ? 'free' : mode;
+    if (nextMode === 'recorder' && !recorderViewAvailable()) return;
     if (!topAction) topViewOnLoad = false;
+    if (CAM === 'recorder' && nextMode !== 'recorder') leaveRecorderView();
+    if (nextMode === 'recorder' && CAM !== 'recorder') enterRecorderView();
     CAM = nextMode;
     store.cam = nextMode;
     flyLookApplyMode(nextMode === 'free' ? 'free' : 'follow');
     if (nextMode !== 'follow') FOLLOW_EID = 0;
     if (!controls) { invalidate(); return; }
-    controls.enabled = !flyMode();
+    controls.enabled = nextMode === 'follow';
     // 跟随锁坦克：target 不被平移带走。Free 由 flyLook 接管，OrbitControls 的 pan 不参与
     //（恢复默认值供下次非 Free 入口设置）。
     controls.enablePan = nextMode === 'free';
@@ -4225,7 +4259,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (topAction) applyTopView();
       constrainFreeCameraAltitude();
       if (topAction) camera.lookAt(controls.target);
-    } else {
+    } else if (nextMode === 'follow') {
       // 跟随绕转不得沉到 target 水平线以下：OrbitControls 的极角上限直接挡住
       // 「向下绕到地下」的输入；相机点仍由 clampOrbitCameraToTerrain 按地形净空校验。
       controls.minPolarAngle = 0;
@@ -4236,6 +4270,135 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 换相机必须自己补写，否则跟随描边要等到下次播放 / seek 才出现。走 writeHud 而不是
     // 直接投影名册：播放中名册也不得跑到顶栏前面（两者始终同一个 T）。
     writeHud(true);
+  }
+  // ---------- 录像者视角 ----------
+  const cameraDriven = () => flyMode() || CAM === 'recorder';
+  const recorderVehicle = () => vehicleByEid(DATA?.meta?.author_eid);
+  function recorderViewAvailable() {
+    const v = recorderVehicle();
+    return !!recorderCamera && !!v && !deathAt(v, T);
+  }
+  function loadRecorderCamera(source, epoch) {
+    recorderCamera = null;
+    store.recorderCameraStatus = source?.file ? 'loading' : 'unavailable';
+    if (!source?.file) return;
+    const settle = (facet) => {
+      if (destroyed || epoch !== sessionEpoch) return;
+      const usable = !!facet && facet.author_eid === DATA?.meta?.author_eid;
+      recorderCamera = usable ? facet : null;
+      store.recorderCameraStatus = usable ? 'ready' : 'unavailable';
+      writeHud(true);
+    };
+    loadRecorderCameraFromFile(source.file, source.signal).then(settle).catch((err) => {
+      if (err?.name !== 'AbortError') console.warn('[playback] 录像者相机解析失败:', err);
+      settle(null);
+    });
+  }
+  function enterRecorderView() {
+    cameraBlend = {
+      position: camera.position.clone(),
+      quaternion: camera.quaternion.clone(),
+      fov: camera.fov,
+      elapsed: 0,
+    };
+    fovRestore = null;
+    recorderBoomScale = 1;
+  }
+  function leaveRecorderView() {
+    cameraBlend = null;
+    fovRestore = camera.fov === BASE_FOV_DEG ? null : { fov: camera.fov, elapsed: 0 };
+    const hidden = scopedHiddenEid ? vehicleByEid(scopedHiddenEid) : null;
+    scopedHiddenEid = 0;
+    if (hidden) applyPose(hidden);
+    recorderReticle?.hide();
+  }
+  function applyCameraFov(fov) {
+    if (Math.abs(camera.fov - fov) < 1e-3) return;
+    camera.fov = fov;
+    camera.updateProjectionMatrix();
+  }
+  function stepFovRestore(dt) {
+    fovRestore.elapsed += dt;
+    const progress = blendProgress(fovRestore.elapsed);
+    applyCameraFov(fovRestore.fov + (BASE_FOV_DEG - fovRestore.fov) * progress);
+    if (progress >= 1) fovRestore = null;
+  }
+  const _recorderDir = {};
+  const _recorderPos = new THREE.Vector3();
+  const _recorderAnchor = new THREE.Vector3();
+  const _recorderPrev = new THREE.Vector3();
+  const _recorderLook = new THREE.Vector3();
+  const _recorderRay = new THREE.Vector3();
+  const _recorderQuat = new THREE.Quaternion();
+  const _recorderLastPos = new THREE.Vector3();
+  const _recorderLastQuat = new THREE.Quaternion();
+  /** 回放数据驱动相机：开镜相机在炮位、朝向与 FOV 全部来自回放，不做平滑。 */
+  function driveRecorderCamera(dt) {
+    const v = recorderVehicle();
+    if (!DATA || !recorderCamera || !v || deathAt(v, T)) { setCam('free'); return; }
+    const sample = sampleRecorderCamera(recorderCamera, T, recorderSample);
+    aimDirectionScene(sample.yaw, sample.pitch, _recorderDir);
+    const scoped = sample.mode === CAMERA_MODE.SNIPER;
+    const hiddenEid = scoped ? v.def.eid : 0;
+    if (hiddenEid !== scopedHiddenEid) {
+      scopedHiddenEid = hiddenEid;
+      applyPose(v);
+    }
+    let fov = BASE_FOV_DEG;
+    if (scoped) {
+      v.gunPivot.updateWorldMatrix(true, false);
+      v.gunPivot.getWorldPosition(_recorderPos);
+      fov = fovFromZoomRaw(sample.zoomRaw);
+      recorderBoomScale = 1;
+    } else {
+      posAt(v, T, _recorderAnchor);
+      _recorderAnchor.y += ANCHOR_HEIGHT_M;
+      if (recorderCamera.client_options.backward_zoom === true) {
+        posAt(v, T - REVERSE_SAMPLE_OFFSET_SEC, _recorderPrev);
+        const reversing = isReversing(
+          { x: -_recorderPrev.x, z: _recorderPrev.z },
+          { x: -_recorderAnchor.x, z: _recorderAnchor.z },
+          yawAt(v, T),
+        );
+        recorderBoomScale = backwardZoomScale(recorderBoomScale, reversing, dt);
+      }
+      arcadeCameraPosition(_recorderAnchor, _recorderDir, ARCADE_BOOM_M * recorderBoomScale, _recorderPos);
+      const terrainY = terrainHeightForCameraClamp(_recorderPos.x, _recorderPos.z);
+      if (Number.isFinite(terrainY)) _recorderPos.y = Math.max(_recorderPos.y, terrainY + CAMERA_GROUND_CLEARANCE);
+    }
+    _recorderLastPos.copy(camera.position);
+    _recorderLastQuat.copy(camera.quaternion);
+    const lastFov = camera.fov;
+    camera.position.copy(_recorderPos);
+    _recorderLook.set(_recorderDir.x, _recorderDir.y, _recorderDir.z);
+    camera.lookAt(_recorderPos.x + _recorderLook.x, _recorderPos.y + _recorderLook.y, _recorderPos.z + _recorderLook.z);
+    if (cameraBlend) {
+      cameraBlend.elapsed += dt;
+      const progress = blendProgress(cameraBlend.elapsed);
+      _recorderQuat.copy(camera.quaternion);
+      camera.position.lerpVectors(cameraBlend.position, _recorderPos, progress);
+      camera.quaternion.slerpQuaternions(cameraBlend.quaternion, _recorderQuat, progress);
+      fov = cameraBlend.fov + (fov - cameraBlend.fov) * progress;
+      if (progress >= 1) cameraBlend = null;
+    }
+    applyCameraFov(fov);
+    controls.target.copy(camera.position).addScaledVector(_recorderLook, 30);
+    if (!camera.position.equals(_recorderLastPos) || !camera.quaternion.equals(_recorderLastQuat) || camera.fov !== lastFov) {
+      invalidate();
+    }
+    updateRecorderReticle(sample);
+  }
+  function updateRecorderReticle(sample) {
+    if (!recorderReticle) return;
+    const width = container.clientWidth, height = container.clientHeight;
+    camera.updateMatrixWorld();
+    _recorderRay.set(-sample.rayX, sample.rayY, sample.rayZ).project(camera);
+    const visible = _recorderRay.z < 1 && Math.abs(_recorderRay.x) <= 1 && Math.abs(_recorderRay.y) <= 1;
+    recorderReticle.update(
+      visible ? (_recorderRay.x + 1) * width / 2 : width / 2,
+      visible ? (1 - _recorderRay.y) * height / 2 : height / 2,
+      reticleRadiusPx({ bloomRaw: sample.bloomRaw, fovDeg: camera.fov, viewportH: height }),
+    );
   }
   function applyTopView() {
     const { cx, cz } = WORLD_CENTER;
@@ -4342,6 +4505,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
   function teardownSession() {
     sessionGen++;
+    recorderCamera = null;
+    store.recorderCameraStatus = 'idle';
+    store.recorderViewAvailable = false;
     resetMapLighting();   // 逐图光照随会话复位（否则换图时上一张的太阳会残留）
     animLayerMats = [];   // 动画混合层材质随会话失效（材质已随 mapScenery dispose）
     clearEffects();
@@ -4489,6 +4655,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       POSE_GRID.tStart = data.meta.t_start;
       POSE_GRID.samples = data.meta.samples;
       store.playbackSession = playbackSession;
+      loadRecorderCamera(source, epoch);
       // 资产阶段（地图/地形/地表/场景）内部有多个 await：被取代后必须立刻放弃，
       // 否则旧会话会走完 buildVehicles / buildRoster / setPlaying / tick / writeHud 复活自己。
       const ready = await startPlayback(epoch);

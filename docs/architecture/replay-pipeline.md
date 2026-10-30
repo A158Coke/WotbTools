@@ -127,6 +127,9 @@ Collector 的异常、超时、重复提交和断网均不改变主解析结果�
 任务最多 15 秒、空闲 15 秒后释放 Worker。crash、messageerror、离线和 pagehide 丢弃活动及排队任务；
 新文件可重新创建 Worker，旧任务不重试、不恢复。
 
+3D 打开回放后，`scene/replaySource.js` 的 `loadRecorderCameraFromFile` 用同一 parse Worker 与 session
+取消语义后台调用 `parseRecorderCamera`，不阻塞进场；返回 `null` 或解析失败时录像者视角禁用，回放不受影响。
+
 物理出生方向只读 [canonical 地图语义](../reference/maps.md)，通过 `map_key`/`mapCodes` 查找，
 不能使用 numeric mapId 对照语义文件名前缀，也不能把 replay Team 编号等同场景出生组。
 只接受 clock 在 0–1 秒、距 exact scene 出生点不超过 2 米且唯一命中某物理侧的观测，
