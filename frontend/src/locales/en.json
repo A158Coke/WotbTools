@@ -1223,6 +1223,7 @@
           "text": "Text",
           "color": "Color",
           "width": "Width",
+          "eraser_radius": "Eraser radius",
           "undo": "Undo",
           "redo": "Redo",
           "clear": "Clear all",

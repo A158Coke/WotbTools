@@ -25,6 +25,8 @@ import { buildCanonicalReplayFacts, entityFirstSeenByAccount } from '../replay-l
 import { toBattlePlaybackDataset } from '../replay-local/playback/toBattlePlaybackDataset.js'
 import { validateAgentAiReview, validateAgentBattleResult, validateAgentPlayback } from '../api/agent-replay-facets.js'
 import { FLOAT_DMG_MS } from '../utils/battlePlayback.js'
+import { mapImages } from '../data/mapImages.js'
+import { normalizePenPoints } from './playback/annotation3d.js'
 
 const source = vi.hoisted(() => ({ loadPlaybackData: vi.fn(), resolveMapKey: vi.fn(), mapStaticUrl: vi.fn() }))
 vi.mock('./replaySource.js', () => ({
@@ -75,6 +77,7 @@ vi.mock('./battleFx.js', async (importOriginal) => {
 
 import { initPlayback, QUALITY_PRESETS } from './playbackScene.js'
 import { buildGroundGeometry } from './groundPass.js'
+import { ANNOTATION_LIFT } from './playback/annotation3d.js'
 import { BURST_SECS, FX_BUDGETS } from './battleFx.js'
 
 /** 最小可用 PlaybackData：空车队 + 一张地图。资产阶段与空名册都不会因此抛错。
@@ -2978,5 +2981,502 @@ describe('turretless GLB（固定战斗室歼击车）挂载与摆姿', () => {
     api.seekTime(45)                                 // 倒带到分离前：恢复
     expect(head.root.visible).toBe(false)
     expect(v.glbParts.gunNodes.every(gn => gn.visible === true)).toBe(true)
+  })
+})
+
+describe('3D annotation renderer (scene projection)', () => {
+  function stroke(points = [{ x: -50, y: -50 }, { x: 50, y: 50 }]) {
+    return { type: 'pen', color: '#ff4d4f', width: 2, points }
+  }
+
+  function annotationVertices(layer) {
+    const position = layer.committedMesh.geometry.getAttribute('position')
+    const out = []
+    for (let i = 0; i < position.count; i++) {
+      out.push({ x: position.getX(i), y: position.getY(i), z: position.getZ(i) })
+    }
+    return out
+  }
+
+  it('projects committed annotations after terrain arrives and drapes every vertex', async () => {
+    stubTerrainAssets({ values: [0, 0, 0, 0], zmin: 10, zmax: 10 })
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const { api } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['a'], 'annotation-terrain.wotbreplay') })
+    api.setAnnotations([stroke()])
+    const layer = window.__annotationLayer
+    expect(layer).toBeTruthy()
+    const vertices = annotationVertices(layer)
+    expect(vertices.length).toBeGreaterThan(10)
+    for (const vertex of vertices) {
+      expect(vertex.y).toBeCloseTo(10 + ANNOTATION_LIFT, 4)
+    }
+    expect(layer.stats.terrainRebuilds).toBeGreaterThanOrEqual(1)
+  })
+
+  it('skips same-reference projection and rebuilds on a new snapshot', async () => {
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const { api } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['b'], 'annotation-idle.wotbreplay') })
+    const layer = window.__annotationLayer
+    const annotations = [stroke()]
+    api.setAnnotations(annotations)
+    const first = layer.committedMesh.geometry
+    const builds = layer.stats.committedBuilds
+    api.setAnnotations(annotations)
+    expect(layer.committedMesh.geometry).toBe(first)
+    expect(layer.stats.committedBuilds).toBe(builds)
+    api.setAnnotations([...annotations])
+    expect(layer.committedMesh.geometry).not.toBe(first)
+    expect(layer.stats.committedBuilds).toBe(builds + 1)
+  })
+
+  it('visibility only toggles renderer visibility, not geometry or state', async () => {
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const { api } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['c'], 'annotation-visible.wotbreplay') })
+    const layer = window.__annotationLayer
+    api.setAnnotations([stroke()])
+    const geometry = layer.committedMesh.geometry
+    api.setAnnotationsVisible(false)
+    expect(layer.group.visible).toBe(false)
+    api.setAnnotationsVisible(true)
+    expect(layer.group.visible).toBe(true)
+    expect(layer.committedMesh.geometry).toBe(geometry)
+  })
+
+  it('ignores non-pen/null annotations and clears derived geometry on teardown', async () => {
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const { api } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['d'], 'annotation-clear.wotbreplay') })
+    const layer = window.__annotationLayer
+    api.setAnnotations([{ type: 'line', color: '#fff', width: 2, x1: 0, y1: 0, x2: 10, y2: 0 }, null])
+    expect(layer.committedMesh.visible).toBe(false)
+    expect(layer.committedMesh.geometry.getAttribute('position').count).toBe(0)
+    api.setAnnotations([stroke()])
+    expect(layer.committedMesh.visible).toBe(true)
+    api.reset()
+    expect(layer.committedMesh.visible).toBe(false)
+    expect(layer.committedMesh.geometry.getAttribute('position').count).toBe(0)
+  })
+
+  it('reprojects committed geometry through the terrain rebuild hook', async () => {
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const { api } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['e'], 'annotation-rebuild.wotbreplay') })
+    const layer = window.__annotationLayer
+    api.setAnnotations([stroke()])
+    const before = layer.committedMesh.geometry
+    const revisions = layer.stats.terrainRebuilds
+    expect(layer.rebuild()).toBe(revisions + 1)
+    expect(layer.stats.terrainRebuilds).toBe(revisions + 1)
+    expect(layer.committedMesh.geometry).not.toBe(before)
+  })
+
+  it('disposes the annotation layer on destroy', async () => {
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const { api } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['f'], 'annotation-destroy.wotbreplay') })
+    api.setAnnotations([stroke()])
+    expect(window.__annotationLayer).toBeTruthy()
+    api.destroy()
+    expect(window.__annotationLayer).toBeUndefined()
+    created = []
+  })
+})
+
+describe('3D annotation pointer ownership', () => {
+  function mouse(type, x, y, pointerId = 1) {
+    const event = new MouseEvent(type, {
+      button: 0,
+      buttons: type === 'pointerup' || type === 'pointercancel' ? 0 : 1,
+      clientX: x,
+      clientY: y,
+      bubbles: true,
+      cancelable: true,
+    })
+    Object.defineProperty(event, 'pointerId', { value: pointerId })
+    Object.defineProperty(event, 'pointerType', { value: 'mouse' })
+    return event
+  }
+
+  function touch(type, x, y, pointerId) {
+    const event = new MouseEvent(type, {
+      button: 0,
+      buttons: type === 'pointerup' || type === 'pointercancel' ? 0 : 1,
+      clientX: x,
+      clientY: y,
+      bubbles: true,
+      cancelable: true,
+    })
+    Object.defineProperty(event, 'pointerId', { value: pointerId })
+    Object.defineProperty(event, 'pointerType', { value: 'touch' })
+    Object.defineProperty(event, 'pageX', { value: x })
+    Object.defineProperty(event, 'pageY', { value: y })
+    return event
+  }
+
+  async function setup({ tool = 'pen', mapKey = 'probe_map' } = {}) {
+    stubTerrainAssets({ values: [0, 0, 0, 0], zmin: 10, zmax: 10 })
+    source.resolveMapKey.mockResolvedValue(mapKey)
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const onAnnotationCommit = vi.fn()
+    const onAnnotationErase = vi.fn()
+    const onVehicleSelect = vi.fn()
+    const store = createPlaybackStore()
+    const container = mountContainer()
+    const api = initPlayback(container, store, null, { onVehicleSelect, onAnnotationCommit, onAnnotationErase })
+    created.push(api)
+    await api.loadData({ kind: 'local', file: new File(['x'], 'annotation-pointer.wotbreplay') })
+    api.setPlaying(false)
+    const canvas = container.querySelector('canvas')
+    Object.defineProperty(canvas, 'clientWidth', { value: 800, configurable: true })
+    Object.defineProperty(canvas, 'clientHeight', { value: 600, configurable: true })
+    canvas.setPointerCapture = vi.fn()
+    canvas.releasePointerCapture = vi.fn()
+    container.getBoundingClientRect = () => ({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600 })
+    container.setPointerCapture = vi.fn()
+    container.releasePointerCapture = vi.fn()
+    api.setAnnotationInteraction({ enabled: true, tool, color: '#ff4d4f', width: 3, eraserWidth: 16 })
+    return { api, store, container, canvas, onAnnotationCommit, onAnnotationErase, onVehicleSelect }
+  }
+
+  it('pen: single mouse pointer draws once, suppresses orbit, keeps semantic points', async () => {
+    const { canvas, onAnnotationCommit } = await setup()
+    const camera = window.__camera
+    const before = camera.position.clone()
+    canvas.dispatchEvent(mouse('pointerdown', 380, 300))
+    canvas.dispatchEvent(mouse('pointermove', 400, 300))
+    canvas.dispatchEvent(mouse('pointermove', 420, 310))
+    canvas.dispatchEvent(mouse('pointerup', 420, 310))
+    expect(onAnnotationCommit).toHaveBeenCalledTimes(1)
+    const annotation = onAnnotationCommit.mock.calls[0][0]
+    expect(annotation.type).toBe('pen')
+    expect(annotation.color).toBe('#ff4d4f')
+    expect(annotation.points.length).toBeGreaterThanOrEqual(2)
+    expect(annotation.width).toBeGreaterThan(0)
+    for (const point of annotation.points) {
+      expect(Number.isFinite(point.x) && Number.isFinite(point.y)).toBe(true)
+    }
+    const layer = window.__annotationLayer
+    expect(layer.pick(380, 300).semantic).toEqual(expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) }))
+    expect(annotation.width).toBeCloseTo(3, 6)   // unknown map key -> stable 1:1 map units
+    // 独立 oracle：semantic point 反投影必须回到按下时的 client px（锁 x 取负与 z 映射）。
+    const first = annotation.points[0]
+    camera.updateMatrixWorld()
+    camera.matrixWorldInverse.copy(camera.matrixWorld).invert()
+    const projected = new THREE.Vector3(-first.x, layer.sampler(-first.x, first.y), first.y).project(camera)
+    expect((projected.x + 1) / 2 * 800).toBeCloseTo(380, 0)
+    expect((1 - projected.y) / 2 * 600).toBeCloseTo(300, 0)
+    expect(camera.position.distanceTo(before)).toBeLessThan(1e-9)
+  })
+
+  it('tool off: orbit still rotates and vehicle selection still works', async () => {
+    const { api, canvas, onVehicleSelect } = await setup()
+    api.setAnnotationInteraction({ enabled: false, tool: null })
+    expect(window.__controls.touches.ONE).toBe(0)
+    const camera = window.__camera
+    const before = camera.position.clone()
+    canvas.dispatchEvent(mouse('pointerdown', 400, 300, 2))
+    canvas.dispatchEvent(mouse('pointermove', 500, 340, 2))
+    canvas.dispatchEvent(mouse('pointerup', 500, 340, 2))
+    expect(camera.position.distanceTo(before)).toBeGreaterThan(1e-4)
+
+    const object = new THREE.Object3D()
+    object.userData.eid = 11
+    vi.spyOn(THREE.Raycaster.prototype, 'intersectObjects').mockReturnValue([{ object }])
+    canvas.dispatchEvent(mouse('pointerdown', 400, 300, 3))
+    canvas.dispatchEvent(mouse('pointerup', 400, 300, 3))
+    expect(onVehicleSelect).toHaveBeenCalledWith(11, expect.anything())
+  })
+
+  it('pen on: vehicle selection is suppressed', async () => {
+    const { canvas, onVehicleSelect } = await setup()
+    const object = new THREE.Object3D()
+    object.userData.eid = 11
+    vi.spyOn(THREE.Raycaster.prototype, 'intersectObjects').mockReturnValue([{ object }])
+    canvas.dispatchEvent(mouse('pointerdown', 400, 300, 4))
+    canvas.dispatchEvent(mouse('pointerup', 400, 300, 4))
+    expect(onVehicleSelect).not.toHaveBeenCalled()
+  })
+
+  it('touch: fast continuous valid hits farther than maxReconnect never freeze', async () => {
+    const { canvas, onAnnotationCommit } = await setup()
+    canvas.dispatchEvent(touch('pointerdown', 380, 300, 21))
+    canvas.dispatchEvent(touch('pointermove', 600, 300, 21))
+    canvas.dispatchEvent(touch('pointerup', 600, 300, 21))
+    expect(onAnnotationCommit).toHaveBeenCalledTimes(1)
+    const points = onAnnotationCommit.mock.calls[0][0].points
+    expect(points.length).toBeGreaterThanOrEqual(2)
+    expect(Math.hypot(points[points.length - 1].x - points[0].x, points[points.length - 1].y - points[0].y)).toBeGreaterThan(25)
+  })
+
+  it('touch: a terrain miss followed by a far valid hit still applies reconnect protection', async () => {
+    const { canvas, onAnnotationCommit } = await setup()
+    canvas.dispatchEvent(touch('pointerdown', 380, 300, 22))
+    canvas.dispatchEvent(touch('pointermove', 5000, 300, 22))   // 地形外：miss
+    canvas.dispatchEvent(touch('pointermove', 600, 300, 22))    // 回到地形但 XZ 跳 > 25m
+    canvas.dispatchEvent(touch('pointerup', 600, 300, 22))
+    expect(onAnnotationCommit).not.toHaveBeenCalled()
+  })
+
+  it('pen width and eraser radius keep identical map-space semantics across camera distances', async () => {
+    const { api, canvas } = await setup({ mapKey: 'amigosville' })
+    const layer = window.__annotationLayer
+    const image = mapImages.amigosville
+    const expectedWidth = 3 * ((image.coordinateBounds.xMax - image.coordinateBounds.xMin) / image.width)
+    const expectedRadius = 16 * ((image.coordinateBounds.xMax - image.coordinateBounds.xMin) / image.width)
+
+    canvas.dispatchEvent(mouse('pointerdown', 380, 300))
+    const nearWidth = layer.gesture().width
+    canvas.dispatchEvent(mouse('pointercancel', 380, 300))
+    window.__camera.position.set(0, 500, 0.01)
+    window.__camera.updateMatrixWorld()
+    canvas.dispatchEvent(mouse('pointerdown', 380, 300))
+    const farWidth = layer.gesture().width
+    canvas.dispatchEvent(mouse('pointercancel', 380, 300))
+    expect(nearWidth).toBeCloseTo(expectedWidth, 6)
+    expect(farWidth).toBeCloseTo(expectedWidth, 6)
+
+    api.setAnnotationInteraction({ enabled: true, tool: 'eraser', color: '#ff4d4f', width: 3, eraserWidth: 16 })
+    canvas.dispatchEvent(mouse('pointerdown', 380, 300))
+    const nearRadius = layer.gesture().radius
+    canvas.dispatchEvent(mouse('pointercancel', 380, 300))
+    window.__camera.position.set(0, 255, 0.01)
+    window.__camera.updateMatrixWorld()
+    canvas.dispatchEvent(mouse('pointerdown', 380, 300))
+    const farRadius = layer.gesture().radius
+    canvas.dispatchEvent(mouse('pointercancel', 380, 300))
+    expect(nearRadius).toBeCloseTo(expectedRadius, 6)
+    expect(farRadius).toBeCloseTo(expectedRadius, 6)
+  })
+
+  it('commits the normalized centerline at the pointerup boundary', async () => {
+    const { canvas, onAnnotationCommit } = await setup()
+    canvas.dispatchEvent(mouse('pointerdown', 380, 300))
+    canvas.dispatchEvent(mouse('pointermove', 460, 340))
+    canvas.dispatchEvent(mouse('pointermove', 540, 300))
+    const raw = window.__annotationLayer.gesture().points.map((p) => ({ ...p }))
+    canvas.dispatchEvent(mouse('pointerup', 540, 300))
+    expect(onAnnotationCommit).toHaveBeenCalledTimes(1)
+    expect(onAnnotationCommit.mock.calls[0][0].points).toEqual(normalizePenPoints(raw))
+  })
+
+  it('eraser: single mouse pointer emits one semantic erase path with radius', async () => {
+    const { canvas, onAnnotationCommit, onAnnotationErase } = await setup({ tool: 'eraser' })
+    const camera = window.__camera
+    const before = camera.position.clone()
+    canvas.dispatchEvent(mouse('pointerdown', 380, 300))
+    canvas.dispatchEvent(mouse('pointermove', 400, 300))
+    canvas.dispatchEvent(mouse('pointermove', 420, 310))
+    canvas.dispatchEvent(mouse('pointerup', 420, 310))
+    expect(onAnnotationCommit).not.toHaveBeenCalled()
+    expect(onAnnotationErase).toHaveBeenCalledTimes(1)
+    const path = onAnnotationErase.mock.calls[0][0]
+    expect(path.points.length).toBeGreaterThanOrEqual(2)
+    expect(path.radius).toBeGreaterThan(0)
+    expect(path.radius).toBeCloseTo(16, 6)
+    for (const point of path.points) {
+      expect(Number.isFinite(point.x) && Number.isFinite(point.y)).toBe(true)
+    }
+    expect(camera.position.distanceTo(before)).toBeLessThan(1e-9)
+  })
+
+  it('second touch cancels the draft, hands off to pinch, and the next fresh touch draws', async () => {
+    const { canvas, onAnnotationCommit } = await setup()
+    const controls = window.__controls
+    const camera = window.__camera
+    const dist0 = camera.position.distanceTo(controls.target)
+    canvas.dispatchEvent(touch('pointerdown', 400, 300, 7))
+    expect(controls.touches.ONE).toBeNull()
+    canvas.dispatchEvent(touch('pointerdown', 600, 300, 9))
+    expect(controls.state).toBe(5)
+    canvas.dispatchEvent(touch('pointermove', 700, 320, 9))
+    expect(Math.abs(camera.position.distanceTo(controls.target) - dist0)).toBeGreaterThan(0.1)
+    canvas.dispatchEvent(touch('pointerup', 700, 320, 9))
+    canvas.dispatchEvent(touch('pointerup', 400, 300, 7))
+    expect(onAnnotationCommit).not.toHaveBeenCalled()
+
+    canvas.dispatchEvent(touch('pointerdown', 400, 300, 11))
+    canvas.dispatchEvent(touch('pointermove', 430, 300, 11))
+    canvas.dispatchEvent(touch('pointerup', 430, 300, 11))
+    expect(onAnnotationCommit).toHaveBeenCalledTimes(1)
+  })
+
+  it('pointercancel discards the draft and restores OrbitControls ownership', async () => {
+    const { api, canvas, onAnnotationCommit } = await setup()
+    const controls = window.__controls
+    canvas.dispatchEvent(touch('pointerdown', 400, 300, 7))
+    canvas.dispatchEvent(touch('pointercancel', 400, 300, 7))
+    expect(onAnnotationCommit).not.toHaveBeenCalled()
+    api.setAnnotationInteraction({ enabled: false, tool: null })
+    expect(controls.touches.ONE).toBe(0)
+    const camera = window.__camera
+    const before = camera.position.clone()
+    canvas.dispatchEvent(touch('pointerdown', 400, 300, 9))
+    canvas.dispatchEvent(touch('pointermove', 520, 300, 9))
+    canvas.dispatchEvent(touch('pointerup', 520, 300, 9))
+    expect(camera.position.distanceTo(before)).toBeGreaterThan(1e-4)
+  })
+
+  it('tool switch mid-gesture cancels without committing half a stroke', async () => {
+    const { api, canvas, onAnnotationCommit } = await setup()
+    canvas.dispatchEvent(mouse('pointerdown', 380, 300))
+    canvas.dispatchEvent(mouse('pointermove', 400, 300))
+    api.setAnnotationInteraction({ enabled: true, tool: 'eraser', color: '#ff4d4f', width: 3, eraserWidth: 16 })
+    canvas.dispatchEvent(mouse('pointermove', 420, 310))
+    canvas.dispatchEvent(mouse('pointerup', 420, 310))
+    expect(onAnnotationCommit).not.toHaveBeenCalled()
+    expect(window.__annotationLayer.draftMesh.visible).toBe(false)
+  })
+
+  it('free camera: drawing does not move the camera and one-finger look is suppressed', async () => {
+    const { api, canvas, onAnnotationCommit } = await setup()
+    api.setCam('free')
+    const camera = window.__camera
+    const before = camera.position.clone()
+    canvas.dispatchEvent(mouse('pointerdown', 400, 300))
+    canvas.dispatchEvent(mouse('pointermove', 420, 310))
+    canvas.dispatchEvent(mouse('pointerup', 420, 310))
+    expect(onAnnotationCommit).toHaveBeenCalledTimes(1)
+    expect(camera.position.distanceTo(before)).toBeLessThan(1e-9)
+
+    onAnnotationCommit.mockClear()
+    const afterMouse = camera.position.clone()
+    canvas.dispatchEvent(touch('pointerdown', 400, 300, 13))
+    canvas.dispatchEvent(touch('pointermove', 520, 380, 13))
+    canvas.dispatchEvent(touch('pointerup', 520, 380, 13))
+    expect(camera.position.distanceTo(afterMouse)).toBeLessThan(1e-9)
+  })
+
+  it('free camera: second touch cancels draft and hands off to fly pinch', async () => {
+    const { api, canvas, onAnnotationCommit } = await setup()
+    api.setCam('free')
+    const camera = window.__camera
+    const beforePinch = camera.position.clone()
+    canvas.dispatchEvent(touch('pointerdown', 400, 300, 7))
+    canvas.dispatchEvent(touch('pointerdown', 600, 300, 9))
+    expect(window.__annotationLayer.draftMesh.visible).toBe(false)
+    canvas.dispatchEvent(touch('pointermove', 700, 320, 9))
+    expect(camera.position.distanceTo(beforePinch)).toBeGreaterThan(0.2)
+    canvas.dispatchEvent(touch('pointerup', 700, 320, 9))
+    canvas.dispatchEvent(touch('pointerup', 400, 300, 7))
+    expect(onAnnotationCommit).not.toHaveBeenCalled()
+    canvas.dispatchEvent(touch('pointerdown', 400, 300, 13))
+    canvas.dispatchEvent(touch('pointermove', 430, 300, 13))
+    canvas.dispatchEvent(touch('pointerup', 430, 300, 13))
+    expect(onAnnotationCommit).toHaveBeenCalledTimes(1)
+  })
+
+  it('eraser move never rebuilds committed geometry and commits one callback', async () => {
+    const { api, canvas, onAnnotationErase } = await setup({ tool: 'eraser' })
+    api.setAnnotations([{ type: 'pen', color: '#ff4d4f', width: 1.5, points: [{ x: -20, y: -20 }, { x: 20, y: 20 }] }])
+    const layer = window.__annotationLayer
+    const geometry = layer.committedMesh.geometry
+    const builds = layer.stats.committedBuilds
+    canvas.dispatchEvent(mouse('pointerdown', 400, 300))
+    expect(layer.ring.visible).toBe(true)
+    expect(layer.ring.geometry.getAttribute('position').count).toBeGreaterThan(8)
+    expect(layer.ringOutline.visible).toBe(true)
+    expect(layer.ringOutline.geometry.getAttribute('position').count).toBeGreaterThan(8)
+    canvas.dispatchEvent(mouse('pointermove', 410, 300))
+    expect(layer.committedMesh.geometry).toBe(geometry)
+    expect(layer.stats.committedBuilds).toBe(builds)
+    canvas.dispatchEvent(mouse('pointermove', 420, 310))
+    expect(layer.committedMesh.geometry).toBe(geometry)
+    expect(layer.stats.committedBuilds).toBe(builds)
+    canvas.dispatchEvent(mouse('pointerup', 420, 310))
+    expect(layer.committedMesh.geometry).toBe(geometry)
+    expect(layer.stats.committedBuilds).toBe(builds)
+    expect(layer.ring.visible).toBe(false)
+    expect(layer.ringOutline.visible).toBe(false)
+    expect(onAnnotationErase).toHaveBeenCalledTimes(1)
+    expect(layer.stats.eraseCallbacks).toBe(1)
+  })
+
+  it('color/width changes do not cancel an active stroke; gesture keeps its start values', async () => {
+    const { api, canvas, onAnnotationCommit } = await setup()
+    canvas.dispatchEvent(mouse('pointerdown', 380, 300))
+    canvas.dispatchEvent(mouse('pointermove', 400, 300))
+    api.setAnnotationInteraction({ enabled: true, tool: 'pen', color: '#40c4ff', width: 8, eraserWidth: 24 })
+    canvas.dispatchEvent(mouse('pointermove', 420, 310))
+    canvas.dispatchEvent(mouse('pointerup', 420, 310))
+    expect(onAnnotationCommit).toHaveBeenCalledTimes(1)
+    const annotation = onAnnotationCommit.mock.calls[0][0]
+    expect(annotation.color).toBe('#ff4d4f')
+    expect(annotation.width).toBeCloseTo(3, 6)
+  })
+
+  it('lostpointercapture cancels the draft without committing', async () => {
+    const { canvas, onAnnotationCommit } = await setup()
+    canvas.dispatchEvent(mouse('pointerdown', 380, 300))
+    canvas.dispatchEvent(mouse('pointermove', 400, 300))
+    const lost = new Event('lostpointercapture', { bubbles: true })
+    Object.defineProperty(lost, 'pointerId', { value: 1 })
+    canvas.dispatchEvent(lost)
+    canvas.dispatchEvent(mouse('pointerup', 400, 300))
+    expect(onAnnotationCommit).not.toHaveBeenCalled()
+    expect(window.__annotationLayer.draftMesh.visible).toBe(false)
+  })
+
+  it('ignores malformed pen annotations instead of throwing or crashing the layer', async () => {
+    const { api } = await setup()
+    const layer = window.__annotationLayer
+    expect(() => api.setAnnotations([{ type: 'pen', color: '#ffffff', width: 1 }])).not.toThrow()
+    expect(() => api.setAnnotations([{ type: 'pen', color: '#ffffff', width: 1, points: [null, { x: 1, y: 2 }] }])).not.toThrow()
+    expect(layer.committedMesh.visible).toBe(false)
+    expect(layer.committedMesh.geometry.getAttribute('position').count).toBe(0)
+    api.setAnnotations([{ type: 'pen', width: 1, points: [{ x: -10, y: -10 }, { x: 10, y: 10 }] }])
+    expect(layer.committedMesh.visible).toBe(true)
+    expect(layer.committedMesh.geometry.getAttribute('color').getX(0)).toBeGreaterThan(0)
+  })
+
+  it('reattaches the annotation layer to the new Scene after renderer rebuild and disposes on destroy', async () => {
+    const { api } = await setup()
+    const layer = window.__annotationLayer
+    const oldScene = window.__scene
+    api.setAnnotations([{ type: 'pen', color: '#ff4d4f', width: 3, points: [{ x: -5, y: 0 }, { x: 5, y: 0 }] }])
+    expect(layer.group.parent).toBe(oldScene)
+    expect(oldScene.children).toContain(layer.group)
+
+    api.setLogdepth(true)
+    await api.loadData({ kind: 'local', file: new File(['y'], 'annotation-rebuild.wotbreplay') })
+    const newScene = window.__scene
+    expect(newScene).not.toBe(oldScene)
+    expect(layer.group.parent).toBe(newScene)
+    expect(newScene.children).toContain(layer.group)
+    expect(oldScene.children).not.toContain(layer.group)
+
+    api.setAnnotations([{ type: 'pen', color: '#40c4ff', width: 3, points: [{ x: -5, y: 0 }, { x: 5, y: 0 }] }])
+    expect(layer.committedMesh.visible).toBe(true)
+    expect(layer.committedMesh.geometry.getAttribute('position').count).toBeGreaterThan(0)
+
+    api.destroy()
+    expect(window.__annotationLayer).toBeUndefined()
+    expect(layer.group.parent).toBeNull()
+  })
+
+  it('bounds the groundMesh fallback to the finite placeholder plane', async () => {
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const store = createPlaybackStore()
+    const container = mountContainer()
+    const api = initPlayback(container, store, null, {})
+    created.push(api)
+    await api.loadData({ kind: 'local', file: new File(['x'], 'annotation-ground-bounds.wotbreplay') })
+    const layer = window.__annotationLayer
+    expect(layer.sampler(0, 0)).toBe(0)
+    expect(layer.sampler(10000, 0)).toBeNull()
+    expect(layer.sampler(0, 10000)).toBeNull()
+  })
+
+  it('destroy removes annotation pointer listeners and state', async () => {
+    const { api, canvas, onAnnotationCommit } = await setup()
+    api.destroy()
+    canvas.dispatchEvent(mouse('pointerdown', 400, 300))
+    canvas.dispatchEvent(mouse('pointermove', 420, 310))
+    canvas.dispatchEvent(mouse('pointerup', 420, 310))
+    expect(onAnnotationCommit).not.toHaveBeenCalled()
+    expect(window.__annotationLayer).toBeUndefined()
+    created = []
   })
 })

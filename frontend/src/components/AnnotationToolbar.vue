@@ -1,6 +1,6 @@
 <script setup>
 import { ArrowUpRight, Circle, Eraser, Eye, EyeOff, MousePointer2, Pencil, Redo2, Route, Slash, Square, Trash2, Type, Undo2, X } from 'lucide-vue-next'
-import { nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { ANNOT_TANK_CLASSES } from '../utils/annotation.js'
 import TankClassIcon from './TankClassIcon.vue'
 
@@ -8,6 +8,12 @@ defineOptions({ name: 'AnnotationToolbar' })
 const props = defineProps({
   open: Boolean,
   compact: Boolean,
+  /** 能力过滤：null = 既有 2D 全量工具；数组 = 只渲染这些 tool key。 */
+  allowedTools: { type: Array, default: null },
+  /** 3D 的 eraser visual radius（CSS px）；null = 不渲染第二个滑块。 */
+  eraserRadiusSlider: { type: Number, default: null },
+  eraserRadiusMin: { type: Number, default: 6 },
+  eraserRadiusMax: { type: Number, default: 40 },
   activeTool: { type: String, default: null },
   selectedAnnotation: { type: Object, default: null },
   routePointCount: { type: Number, default: 0 },
@@ -22,7 +28,7 @@ const props = defineProps({
   canUndo: { type: Function, required: true },
   canRedo: { type: Function, required: true },
 })
-const emit = defineEmits(['toggle-tool', 'set-annot-color', 'update:annot-width', 'undo', 'redo', 'clear-annotations', 'toggle-annotations', 'close', 'rename-selected', 'delete-selected', 'finish-route', 'cancel-route'])
+const emit = defineEmits(['toggle-tool', 'set-annot-color', 'update:annot-width', 'update:eraser-radius', 'undo', 'redo', 'clear-annotations', 'toggle-annotations', 'close', 'rename-selected', 'delete-selected', 'finish-route', 'cancel-route'])
 const toolbarEl = ref(null)
 // A newly opened context must be reachable even if the user scrolled to a distant tool.
 watch([() => props.compact, () => props.activeTool === 'route', () => !!props.selectedAnnotation], async ([compact, route, selected]) => {
@@ -36,25 +42,42 @@ const tools = [
   { key: 'arrow', icon: ArrowUpRight }, { key: 'line', icon: Slash },
   { key: 'rect', icon: Square }, { key: 'circle', icon: Circle }, { key: 'text', icon: Type },
 ]
+const allowedToolButtons = computed(() => {
+  if (!Array.isArray(props.allowedTools)) return []
+  const allowed = new Set(props.allowedTools)
+  return tools.filter((tool) => allowed.has(tool.key))
+})
+// 3D 通过 allowedTools 复用同一个 toolbar；每次只展示当前 tool 相关 slider。
+const is3D = computed(() => Array.isArray(props.allowedTools))
 </script>
 
 <template>
   <div v-if="props.open" ref="toolbarEl" class="pb-annotation-toolbar" :class="{ 'pb-annot-compact': props.compact }" data-test="pb-annot-toolbar" data-tour="playback-annotation-tools" @pointerdown.stop @click.stop>
-    <div class="pb-annot-tools" role="group" :aria-label="$t('recon.map.playback.annot.tools')">
-      <button v-for="tool in tools.slice(0, 2)" :key="tool.key" type="button" class="pb-annot-btn" :class="{ active: props.activeTool === tool.key }" :aria-pressed="props.activeTool === tool.key" :data-test="'pb-annot-' + tool.key" @click="emit('toggle-tool', tool.key)">
-        <component :is="tool.icon" :size="18" aria-hidden="true" />{{ $t('recon.map.playback.annot.' + tool.key) }}
-      </button>
-      <button v-for="tank in ANNOT_TANK_CLASSES" :key="tank.key" type="button" class="pb-annot-btn pb-annot-unit-btn" :class="{ active: props.activeTool === tank.key }" :aria-pressed="props.activeTool === tank.key" :data-test="'pb-annot-' + tank.key" @click="emit('toggle-tool', tank.key)">
-        <TankClassIcon :tank-class="tank.key" />
-        <span>{{ $t('recon.map.playback.annot.' + tank.key) }}<small>{{ tank.key }}</small></span>
-      </button>
-      <button type="button" class="pb-annot-btn pb-annot-close" data-test="pb-annot-close" :aria-label="$t('recon.map.playback.annot.exit')" @click="emit('close')"><X :size="18" aria-hidden="true" /><span class="pb-annot-close-label">{{ $t('recon.map.playback.annot.exit') }}</span></button>
-    </div>
-    <div class="pb-annot-tools pb-annot-secondary" role="group" :aria-label="$t('recon.map.playback.annot.drawing')">
-      <button v-for="tool in tools.slice(2)" :key="tool.key" type="button" class="pb-annot-btn" :class="{ active: props.activeTool === tool.key }" :aria-pressed="props.activeTool === tool.key" :data-test="'pb-annot-' + tool.key" @click="emit('toggle-tool', tool.key)">
-        <component :is="tool.icon" :size="18" aria-hidden="true" />{{ $t('recon.map.playback.annot.' + tool.key) }}
-      </button>
-    </div>
+    <template v-if="props.allowedTools">
+      <div class="pb-annot-tools" role="group" :aria-label="$t('recon.map.playback.annot.drawing')">
+        <button v-for="tool in allowedToolButtons" :key="tool.key" type="button" class="pb-annot-btn" :class="{ active: props.activeTool === tool.key }" :aria-pressed="props.activeTool === tool.key" :data-test="'pb-annot-' + tool.key" @click="emit('toggle-tool', tool.key)">
+          <component :is="tool.icon" :size="18" aria-hidden="true" />{{ $t('recon.map.playback.annot.' + tool.key) }}
+        </button>
+        <button type="button" class="pb-annot-btn pb-annot-close" data-test="pb-annot-close" :aria-label="$t('recon.map.playback.annot.exit')" @click="emit('close')"><X :size="18" aria-hidden="true" /><span class="pb-annot-close-label">{{ $t('recon.map.playback.annot.exit') }}</span></button>
+      </div>
+    </template>
+    <template v-else>
+      <div class="pb-annot-tools" role="group" :aria-label="$t('recon.map.playback.annot.tools')">
+        <button v-for="tool in tools.slice(0, 2)" :key="tool.key" type="button" class="pb-annot-btn" :class="{ active: props.activeTool === tool.key }" :aria-pressed="props.activeTool === tool.key" :data-test="'pb-annot-' + tool.key" @click="emit('toggle-tool', tool.key)">
+          <component :is="tool.icon" :size="18" aria-hidden="true" />{{ $t('recon.map.playback.annot.' + tool.key) }}
+        </button>
+        <button v-for="tank in ANNOT_TANK_CLASSES" :key="tank.key" type="button" class="pb-annot-btn pb-annot-unit-btn" :class="{ active: props.activeTool === tank.key }" :aria-pressed="props.activeTool === tank.key" :data-test="'pb-annot-' + tank.key" @click="emit('toggle-tool', tank.key)">
+          <TankClassIcon :tank-class="tank.key" />
+          <span>{{ $t('recon.map.playback.annot.' + tank.key) }}<small>{{ tank.key }}</small></span>
+        </button>
+        <button type="button" class="pb-annot-btn pb-annot-close" data-test="pb-annot-close" :aria-label="$t('recon.map.playback.annot.exit')" @click="emit('close')"><X :size="18" aria-hidden="true" /><span class="pb-annot-close-label">{{ $t('recon.map.playback.annot.exit') }}</span></button>
+      </div>
+      <div class="pb-annot-tools pb-annot-secondary" role="group" :aria-label="$t('recon.map.playback.annot.drawing')">
+        <button v-for="tool in tools.slice(2)" :key="tool.key" type="button" class="pb-annot-btn" :class="{ active: props.activeTool === tool.key }" :aria-pressed="props.activeTool === tool.key" :data-test="'pb-annot-' + tool.key" @click="emit('toggle-tool', tool.key)">
+          <component :is="tool.icon" :size="18" aria-hidden="true" />{{ $t('recon.map.playback.annot.' + tool.key) }}
+        </button>
+      </div>
+    </template>
     <div v-if="props.activeTool === 'route'" class="pb-annot-context" data-test="pb-annot-route-context">
       <span role="status">{{ $t('recon.map.playback.annot.route_hint', { count: props.routePointCount }) }}</span>
       <button type="button" class="pb-annot-btn" :disabled="props.routePointCount < 2" data-test="pb-annot-route-finish" @click="emit('finish-route')">{{ $t('recon.map.playback.annot.finish_route') }}</button>
@@ -69,13 +92,18 @@ const tools = [
       <button type="button" class="pb-annot-btn" data-test="pb-annot-delete" @click="emit('delete-selected')"><Trash2 :size="18" aria-hidden="true" />{{ $t('recon.map.playback.annot.delete') }}</button>
     </div>
     <div class="pb-annot-options">
-      <div class="pb-annot-colors" role="group" :aria-label="$t('recon.map.playback.annot.color')">
+      <div v-if="!is3D || props.activeTool !== 'eraser'" class="pb-annot-colors" data-test="pb-annot-colors" role="group" :aria-label="$t('recon.map.playback.annot.color')">
         <button v-for="(color, index) in props.annotColors" :key="color" type="button" class="pb-annot-color" :class="{ active: (props.selectedAnnotation?.color || props.annotColor) === color }" :aria-pressed="(props.selectedAnnotation?.color || props.annotColor) === color" :style="{ '--annot-color': color }" :aria-label="$t('recon.map.playback.annot.color_index', { index: index + 1 })" @click="emit('set-annot-color', color)"><span></span></button>
       </div>
-      <label class="pb-annot-width">
+      <label v-if="!is3D || props.activeTool !== 'eraser'" class="pb-annot-width" data-test="pb-annot-width">
         {{ $t('recon.map.playback.annot.width') }}
         <input type="range" :min="props.annotWidthMin" :max="props.annotWidthMax" step="1" :value="props.annotWidthSlider" @input="emit('update:annot-width', Number($event.target.value))" />
         <span>{{ props.annotWidthSlider }}</span>
+      </label>
+      <label v-if="props.eraserRadiusSlider != null && (!is3D || props.activeTool === 'eraser')" class="pb-annot-width">
+        {{ $t('recon.map.playback.annot.eraser_radius') }}
+        <input type="range" data-test="pb-annot-eraser-radius" :min="props.eraserRadiusMin" :max="props.eraserRadiusMax" step="1" :value="props.eraserRadiusSlider" @input="emit('update:eraser-radius', Number($event.target.value))" />
+        <span>{{ props.eraserRadiusSlider }}</span>
       </label>
       <div class="pb-annot-tools">
         <button type="button" class="pb-annot-btn" :disabled="!props.canUndo(props.historyIndex)" data-test="pb-annot-undo" @click="emit('undo')"><Undo2 :size="18" aria-hidden="true" />{{ $t('recon.map.playback.annot.undo') }}</button>

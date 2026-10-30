@@ -1223,6 +1223,7 @@
           "text": "文字",
           "color": "颜色",
           "width": "粗细",
+          "eraser_radius": "橡皮半径",
           "undo": "撤回",
           "redo": "重做",
           "clear": "清空",

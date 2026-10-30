@@ -8,8 +8,8 @@
 
 - 回放优先的页面组织：能力切换放在页头操作区；单场能力共用紧凑选局行。数据 / 2D / 3D 支持一次选择多个文件，先分析再选局。完成分析后，2D / 3D / 射击 / AI 可收起文件区，文件选择器仍挂载并保持会话；解析中或出错时自动显示，数据页始终保留文件区。
 - 能力栏随可用宽度自然换行，手机上每行按钮填满宽度，五个入口及中英俄标签完整可见，无需横向滑动。桌面空间足够时保留单行排列；选中态、键盘切换和至少 44px 的触屏目标继续由共享 `SegmentedControl` 提供。
-- 2D 默认无标注且关闭编辑，播放区提供直接的“标记模式”入口。进入时暂停，退出不自动继续；已完成标注常驻，可手动隐藏，切局或刷新清空。LT / MT / HT / TD、多点路线及编辑沿用现有 annotation owner，不与 3D 同步。具体行为见 [battle-playback.md](../features/battle-playback.md)。
-- 2D / 3D 共用时间轴在上、主要播放按钮在下的传输控件。3D 开始前直接选择画质，额外性能选项默认收在原生折叠区；相机与模型查看在单独的工具行。
+- 2D 默认无标注且关闭编辑，播放区提供直接的“标记模式”入口。进入时暂停，退出不自动继续；已完成标注常驻，可手动隐藏，切局或刷新清空。LT / MT / HT / TD、多点路线及编辑沿用现有 annotation owner，不与 3D 同步。3D 有独立的 session-only drawing（入口位于 3D tool-row，不进入 shared PlaybackTransport），语义 pen schema 与 2D 相同但不共享 state；具体行为见 [battle-playback.md](../features/battle-playback.md)。
+- 2D / 3D 共用时间轴在上、主要播放按钮在下的传输控件。3D 开始前直接选择画质，额外性能选项默认收在原生折叠区；相机与模型查看在单独的工具行。3D Drawing 入口在 3D 自己的 tool-row（Camera / GLB / Drawing）；shared PlaybackTransport 始终是六个 primary actions。打开 Drawing 时 tool-row 让位给 AnnotationToolbar，关闭后恢复；不新增 permanent row、不遮 play/timeline。
 
 - `frontend/src/components/ReplayWorkspace.vue` 是 `data`、`playback`、`3d`、`shots`、`ai` **五种能力**的统一工作台：选择一次文件，能力之间切换不重新选文件、不重建 session。
 - Workspace 页面本身是 orchestration layer：`PageHeader` 负责页面标题，`ReplayCapabilityTabs.vue` 负责能力切换（数据 · 2D 回放 · 3D 回放 · 射击分析 · AI 复盘，五种能力对所有用户可见，`wotbtools-admin` 不改变能力集合；五个能力都在本工作台内，没有"导航去另一个页面"的能力），`FileDrop.vue` 是全站唯一的上传面（空 / 已选择 / 解析完成三种状态，解析完成后折叠为一行，清空需确认，是唯一的清空入口），`BattlePicker.vue`（可搜索的场次选择器）在四个单场能力上方选择当前场次。它们只接收 Workspace 派生状态并发出显式命令，不复制 session owner。
@@ -63,7 +63,7 @@
 
 - Playback 2D/3D 共用 `usePlaybackPhoneForm()` / `PLAYBACK_MOBILE_QUERY`：844×390 coarse 手机横屏仍用 compact transport 与二级面板；3D CSS 由根 `.phone-form` 驱动，不单凭宽度切回 tablet。真正平板保留 tablet。共享 `usePlaybackFullscreen` 只在当前 target 拥有 `document.fullscreenElement` 时报告全屏；另一个 keep-alive 面板不冒认或退出别人的全屏。landscape orientation 尝试只属于 phone 的自身全屏。
 - 3D 名册没有「临时名册面」：竖屏走纵向流，其余一律两侧常驻车道（见上表）。`uiPrefs.showRoster` 是唯一的呈现偏好，隐藏不能清空名册、selection、follow 或播放时刻。
-- `Replay3DPane` 独占 selected vehicle；场景 raycast 执行选择并打开共享 `VehicleDetailsPanel.vue`；3D roster 行执行明确的跟随命令。相机持久模式只有 Free / Follow，follow target 与相机模式独立且 Follow 必须显式请求；Top 是一次性战术总览动作：清除 Follow，立即移到地图中心俯视，并回到 Free，selection 保持不变。2D / 3D 共用 canonical evidence；3D 在 canonical 就绪前保留场景身份 / 权威 HP / 阵亡基础子集，就绪后按账号增强统计、日志与装备状态（见文末 canonical parity），不伪造缺失伤害统计；详情开关不重建场景或重新解析。（`selected` 与 `followed` 是独立状态；3D 行点击选择并跟随，场景点击打开详情。）
+- `Replay3DPane` 独占 selected vehicle；`Replay3DPane` 同时独占 3D drawing 的 history/tool/color/width/visibility，`playbackScene` 只拥有 pointer/touch ownership、ground picking、draft 与 GPU geometry；annotation 只存 semantic XZ，scene 在边界做 x 取负。`onAnnotationCommit` / `onAnnotationErase` 每次 gesture 最多各一次；工具关闭 / 换场 / 组件销毁都会取消未提交 draft 并恢复 OrbitControls。场景 raycast 执行选择并打开共享 `VehicleDetailsPanel.vue`；3D roster 行执行明确的跟随命令。相机模式为 Free / Follow / Top；follow target 与相机模式独立且 Follow 必须显式请求；Top 是持续的地图中心俯视模式（OrbitControls 围绕地图中心旋转 / 缩放，`enablePan` 关闭），selection 保持不变。2D / 3D 共用 canonical evidence；3D 在 canonical 就绪前保留场景身份 / 权威 HP / 阵亡基础子集，就绪后按账号增强统计、日志与装备状态（见文末 canonical parity），不伪造缺失伤害统计；详情开关不重建场景或重新解析。（`selected` 与 `followed` 是独立状态；3D 行点击选择并跟随，场景点击打开详情。）
 
 - Free 相机低于当前渲染地形三角面时会被地形约束托起；其绝对 Y 硬上限与 Top 总览的默认高度相同。缺少有效高度场或位于覆盖范围外时不施加地面约束。
 - 多文件选择、当前 battle 选择和 capability 切换都由 Workspace facade 协调；session 以 `selectionRevision` 与 `sourceId`（`r{文件序号}`）作为唯一 identity。
@@ -127,7 +127,7 @@ Playback 布局有两条**真实浏览器门禁**（jsdom / happy-dom 没有布�
 
 ### Playback 流体几何与控件
 
-3D 回放下方工具栏右上角支持收起／展开，默认展开。收起后仅保留恢复按钮，播放继续，进度、倍速、选车和相机保持；切换文件恢复展开，全屏和视口变化保留状态。此开关独立于“隐藏全部 UI”。
+3D 回放下方工具栏右上角支持收起／展开，默认展开。收起后仅保留恢复按钮，播放继续，进度、倍速、选车和相机保持；切换文件恢复展开，全屏和视口变化保留状态。此开关独立于“隐藏全部 UI”。Drawing 打开时收起 controls 会同时关闭 drawing 并取消未提交草稿；打开 Display / 隐藏全部 UI / 切换能力同样关闭 drawing。
 
 2D/3D 共用 primary composition `-5 / Play-Pause / +5 / current speed / Fullscreen / Display`。速度选项按需展开；六个控件都保留自身触控目标。HUD、Stage 与 Transport 形成一个紧凑的中央栈。2D Stage 保持正方形；3D canvas 横屏填满可用中央宽高、竖屏保持正方形。录像者友军保持左侧、敌军右侧；竖屏保留自然文档流。名册宽度在工作台相对范围内有界增长。视口容量与实测 persistent HUD/Transport 高度决定 Stage 容量；滚动、选择和展示切换不重建 renderer、不重新解析回放、不重新加载资产。
 
