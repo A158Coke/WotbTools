@@ -1254,6 +1254,68 @@ async function waitForStableLayout(page, { timeout = 10_000 } = {}) {
   return previous
 }
 
+async function check3DDrawingSurface(page, failures, scenario, viewport) {
+  const probe = () => {
+    const ids = ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']
+    const controls = document.querySelector('.pb-controls')
+    const els = ids.map((id) => controls && controls.querySelector('[data-test="' + id + '"]'))
+    const boxes = els.map((el) => el && el.getBoundingClientRect()).filter(Boolean)
+    const order = controls
+      ? [...controls.querySelectorAll('button[data-test]')].map((el) => el.dataset.test).filter((id) => ids.includes(id))
+      : []
+    const entry = document.querySelector('[data-testid="replay3d-drawing-entry"]')
+    let entryInfo = null
+    if (entry) {
+      entry.scrollIntoView({ block: 'center', inline: 'nearest' })
+      const r = entry.getBoundingClientRect()
+      const hit = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2))
+      entryInfo = { reachable: entry.contains(hit), width: r.width, height: r.height }
+    }
+    return {
+      entry: entryInfo,
+      inTransport: !!controls && !!controls.querySelector('[data-test="pb-annotation-entry"]'),
+      toolRow: !!document.querySelector('[data-testid="replay3d-toolrow"]'),
+      toolbar: !!document.querySelector('[data-test="pb-annot-toolbar"]'),
+      transport: {
+        order,
+        oneRow: boxes.length === ids.length
+          && boxes.every((b, i) => i === 0 || Math.abs(b.top - boxes[0].top) <= 1)
+          && boxes.every((b, i) => i === 0 || b.left >= boxes[i - 1].right - 1),
+        height: controls ? controls.getBoundingClientRect().height : null,
+      },
+    }
+  }
+  const before = await page.probe(probe)
+  const label = viewport.width + 'x' + viewport.height
+  check(failures, !!before.entry && before.entry.reachable, label + ': Drawing entry must be hit-testable in the 3D tool-row')
+  if (before.entry) {
+    check(failures, !scenario.touch || (before.entry.width >= 43.5 && before.entry.height >= 43.5),
+      label + ': Drawing entry must keep a 44px touch target')
+  }
+  check(failures, before.toolRow && !before.inTransport, label + ': Drawing entry must live outside the shared transport')
+  check(failures, before.transport.order.length === 6 && before.transport.oneRow,
+    label + ': six shared primary controls must stay in x-order on one row before Drawing')
+  if (!before.entry) return
+  const openedByClick = clicked(await clickElement(page, '[data-testid="replay3d-drawing-entry"]'))
+  check(failures, openedByClick, label + ': Drawing entry click failed')
+  if (!openedByClick) return
+  await page.waitFor(() => !!document.querySelector('[data-test="pb-annot-toolbar"]'), { label: '3D drawing toolbar' })
+  const opened = await page.probe(probe)
+  check(failures, opened.toolbar && !opened.toolRow, label + ': Drawing must replace the tool-row with AnnotationToolbar')
+  check(failures, opened.transport.order.length === 6 && opened.transport.oneRow
+    && Math.abs(opened.transport.height - before.transport.height) <= 2,
+  label + ': transport geometry must stay unchanged while Drawing is open')
+  const closedByClick = clicked(await clickElement(page, '[data-test="pb-annot-close"]'))
+  check(failures, closedByClick, label + ': Drawing close failed')
+  if (!closedByClick) return
+  await page.waitFor(() => !document.querySelector('[data-test="pb-annot-toolbar"]'), { label: '3D drawing toolbar closed' })
+  const restored = await page.probe(probe)
+  check(failures, restored.toolRow && !restored.toolbar, label + ': original tool-row must return after Drawing closes')
+  check(failures, restored.transport.order.length === 6 && restored.transport.oneRow
+    && Math.abs(restored.transport.height - before.transport.height) <= 2,
+  label + ': transport geometry must stay unchanged after Drawing closes')
+}
+
 async function runRosterGeometryScenario(env, scenario) {
   const failures = []
   const { targetId, sessionId } = await env.chrome.openPage()
@@ -1443,6 +1505,8 @@ async function runRosterGeometryScenario(env, scenario) {
   } else {
     check(failures, geometry.side && !geometry.portrait, `expected Team 1 | Stage | Team 2 (class roster-side): portrait=${geometry.portrait} side=${geometry.side}`)
   }
+
+  await check3DDrawingSurface(page, failures, scenario, viewport)
 
   // Desktop uses approximately 25 / 50 / 25 columns.
   // 2026-10-05 布局恢复为「场景铺满 + 浮层」：2/6/2 列几何断言编码的是被替换的旧契约，

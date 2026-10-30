@@ -25,9 +25,10 @@ const ANNOTATION_MAX_PROJECTED_POINTS = 4096
 export const ANNOTATION_MITER_LIMIT = 2.5
 /** eraser preview ring 的线段数。 */
 export const ANNOTATION_RING_SEGMENTS = 48
-/** ribbon 横向采样间距（米）与硬上限；保证 ridge 内部也有 terrain sample。 */
-const ANNOTATION_CROSS_STEP = 0.5
-const ANNOTATION_MAX_CROSS_SEGMENTS = 16
+/** 横向 adaptive subdivision：midpoint terrain error / 实际 transverse span 触发。 */
+const ANNOTATION_CROSS_MIDPOINT_ERROR = 0.08
+const ANNOTATION_CROSS_MAX_SEGMENT = 0.5
+const ANNOTATION_MAX_CROSS_SAMPLES = 33
 /** 单条 annotation 的 projected vertex 预算；预算不足时降横向密度，不截断 stroke。 */
 const ANNOTATION_MAX_RIBBON_VERTICES = 65536
 /** 单次 eraser gesture 的 semantic path 点上限；scene 超过后抽稀。 */
@@ -205,16 +206,50 @@ function unitDirection(a, b) {
   return { x: dx / len, z: dz / len }
 }
 
-/** 横向采样数：以 0.5m 间距覆盖 width，强制含 center sample，受 vertices 预算约束。 */
-function annotationCrossCount(width, pointCount) {
-  let segments = Math.max(2, Math.ceil(width / ANNOTATION_CROSS_STEP))
-  if (segments % 2) segments += 1
-  segments = Math.min(segments, ANNOTATION_MAX_CROSS_SEGMENTS)
-  if (segments % 2) segments -= 1
-  const maxSamples = Math.max(2, Math.floor(ANNOTATION_MAX_RIBBON_VERTICES / Math.max(1, pointCount)))
-  let samples = Math.min(segments + 1, maxSamples)
-  if (samples >= 3 && samples % 2 === 0) samples -= 1
-  return Math.max(2, samples)
+/** Cross sample 上限由单笔 vertex budget 约束；至少 2，最多 17（含 center）。 */
+function annotationCrossBudget(pointCount) {
+  return Math.max(2, Math.min(ANNOTATION_MAX_CROSS_SAMPLES, Math.floor(ANNOTATION_MAX_RIBBON_VERTICES / Math.max(1, pointCount))))
+}
+
+function crossPoint(frame, fraction) {
+  const offset = frame.half * (1 - 2 * fraction)
+  return { x: frame.x + frame.nx * offset, z: frame.z + frame.nz * offset }
+}
+
+/** 在 A/B 中点检测 terrain error 或实际 transverse span（含 miter）。 */
+function crossIntervalNeedsSplit(frames, sampleHeight, fa, fb) {
+  const fm = (fa + fb) / 2
+  for (const frame of frames) {
+    const pa = crossPoint(frame, fa)
+    const pb = crossPoint(frame, fb)
+    const pm = crossPoint(frame, fm)
+    const ha = sampleOrNull(sampleHeight, pa.x, pa.z)
+    const hb = sampleOrNull(sampleHeight, pb.x, pb.z)
+    const hm = sampleOrNull(sampleHeight, pm.x, pm.z)
+    if (ha === null || hb === null || hm === null) continue
+    if (Math.hypot(pb.x - pa.x, pb.z - pa.z) > ANNOTATION_CROSS_MAX_SEGMENT) return true
+    if (Math.abs(hm - (ha + hb) / 2) > ANNOTATION_CROSS_MIDPOINT_ERROR) return true
+  }
+  return false
+}
+
+/** 从 center sample 开始，自适应细分 cross fractions，直到误差合格或 vertex budget 用尽。 */
+function adaptiveCrossFractions(frames, sampleHeight, pointCount) {
+  const maxSamples = annotationCrossBudget(pointCount)
+  if (maxSamples < 3) return [0, 1]
+  let fractions = [0, 0.5, 1]
+  while (fractions.length < maxSamples) {
+    const additions = []
+    for (let i = 0; i < fractions.length - 1; i++) {
+      if (fractions.length + additions.length >= maxSamples) break
+      const a = fractions[i]
+      const b = fractions[i + 1]
+      if (crossIntervalNeedsSplit(frames, sampleHeight, a, b)) additions.push((a + b) / 2)
+    }
+    if (!additions.length) break
+    fractions = [...fractions, ...additions].sort((a, b) => a - b)
+  }
+  return fractions
 }
 
 /**
@@ -244,10 +279,7 @@ export function buildPenRibbon(annotation, {
   if (points.length < 2) return null
   const half = width / 2
   const liftValue = numberOr(lift, ANNOTATION_LIFT)
-  const crossCount = annotationCrossCount(width, points.length)
-  const fractions = Array.from({ length: crossCount }, (_, i) => (crossCount === 2 ? i : i / (crossCount - 1)))
-  const rows = []
-  const valid = []
+  const frames = []
 
   for (let i = 0; i < points.length; i++) {
     const prev = points[i - 1]
@@ -282,20 +314,26 @@ export function buildPenRibbon(annotation, {
     } else {
       return null
     }
-    const nx = -dz
-    const nz = dx
+    // 实际 transverse span 使用本 row 的 miterScale；adaptive 采样必须按它，
+    // 而不是按未膨胀的 annotation width。
+    frames.push({ x: cur.x, z: cur.y, nx: -dz, nz: dx, half: half * miter })
+  }
+
+  const fractions = adaptiveCrossFractions(frames, sampleHeight, points.length)
+  const crossCount = fractions.length
+  const rows = []
+  const valid = []
+  for (const frame of frames) {
     const row = []
     let rowValid = true
     for (const fraction of fractions) {
-      const offset = (0.5 - fraction) * width * miter
-      const x = cur.x + nx * offset
-      const z = cur.y + nz * offset
-      const y = sampleOrNull(sampleHeight, x, z)
+      const p = crossPoint(frame, fraction)
+      const y = sampleOrNull(sampleHeight, p.x, p.z)
       if (y === null) {
         row.push(null)
         rowValid = false
       } else {
-        row.push({ x, y: y + liftValue, z })
+        row.push({ x: p.x, y: y + liftValue, z: p.z })
       }
     }
     rows.push(row)

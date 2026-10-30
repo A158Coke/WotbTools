@@ -1937,7 +1937,7 @@ describe('Replay3DPane 3D annotation wiring', () => {
     await start(wrapper)
     playback.api.store.playing = playing
     await nextTick()
-    await wrapper.get('[data-test="pb-annotation-entry"]').trigger('click')
+    await wrapper.get('[data-testid="replay3d-drawing-entry"]').trigger('click')
     await flush()
     return wrapper
   }
@@ -2021,6 +2021,27 @@ describe('Replay3DPane 3D annotation wiring', () => {
     pausedWrapper.unmount()
   })
 
+  it('keeps Drawing out of the shared transport and opens it from the 3D tool-row', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await start(wrapper)
+    const toolrow = wrapper.get('[data-testid="replay3d-toolrow"]')
+    expect(toolrow.find('[data-testid="replay3d-drawing-entry"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="pb-controls"]').find('[data-testid="replay3d-drawing-entry"]').exists()).toBe(false)
+
+    await toolrow.find('[data-testid="replay3d-drawing-entry"]').trigger('click')
+    await flush()
+    expect(wrapper.find('[data-testid="replay3d-toolrow"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-annot-toolbar"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="pb-controls"]').find('[data-testid="replay3d-drawing-entry"]').exists()).toBe(false)
+
+    await wrapper.get('[data-test="pb-annot-close"]').trigger('click')
+    await flush()
+    expect(wrapper.find('[data-testid="replay3d-toolrow"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-annot-toolbar"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('commits one annotation through the scene callback and supports undo/redo/clear', async () => {
     const wrapper = await openDrawing()
     const api = playback.api
@@ -2096,7 +2117,7 @@ describe('Replay3DPane 3D annotation wiring', () => {
     expect(wrapper.find('[data-test="replay3d-annotations"]').exists()).toBe(false)
     expect(api.setAnnotationInteraction).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: false, tool: null }))
     expect(api.setAnnotations.mock.calls.length).toBe(projections)
-    await wrapper.get('[data-test="pb-annotation-entry"]').trigger('click')
+    await wrapper.get('[data-testid="replay3d-drawing-entry"]').trigger('click')
     await flush()
     expect(wrapper.find('[data-test="replay3d-annotations"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-annot-undo"]').attributes('disabled')).toBeUndefined()
@@ -2109,7 +2130,7 @@ describe('Replay3DPane 3D annotation wiring', () => {
     await flush()
     expect(wrapper.find('[data-test="replay3d-annotations"]').exists()).toBe(false)
 
-    await wrapper.get('[data-test="pb-annotation-entry"]').trigger('click')
+    await wrapper.get('[data-testid="replay3d-drawing-entry"]').trigger('click')
     await flush()
     expect(wrapper.find('[data-test="replay3d-annotations"]').exists()).toBe(true)
     await wrapper.get('[data-testid="replay3d-controls-toggle"]').trigger('click')

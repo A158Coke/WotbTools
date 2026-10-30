@@ -9,7 +9,7 @@
 - 回放优先的页面组织：能力切换放在页头操作区；单场能力共用紧凑选局行。数据 / 2D / 3D 支持一次选择多个文件，先分析再选局。完成分析后，2D / 3D / 射击 / AI 可收起文件区，文件选择器仍挂载并保持会话；解析中或出错时自动显示，数据页始终保留文件区。
 - 能力栏随可用宽度自然换行，手机上每行按钮填满宽度，五个入口及中英俄标签完整可见，无需横向滑动。桌面空间足够时保留单行排列；选中态、键盘切换和至少 44px 的触屏目标继续由共享 `SegmentedControl` 提供。
 - 2D 默认无标注且关闭编辑，播放区提供直接的“标记模式”入口。进入时暂停，退出不自动继续；已完成标注常驻，可手动隐藏，切局或刷新清空。LT / MT / HT / TD、多点路线及编辑沿用现有 annotation owner，不与 3D 同步。3D 有独立的 session-only drawing（入口在同一传输条），语义 pen schema 与 2D 相同但不共享 state；具体行为见 [battle-playback.md](../features/battle-playback.md)。
-- 2D / 3D 共用时间轴在上、主要播放按钮在下的传输控件。3D 开始前直接选择画质，额外性能选项默认收在原生折叠区；相机与模型查看在单独的工具行。3D drawing 打开时在传输条上方显示工具面，并临时让出 camera/GLB 行预算；关闭后恢复，不遮 play/timeline。
+- 2D / 3D 共用时间轴在上、主要播放按钮在下的传输控件。3D 开始前直接选择画质，额外性能选项默认收在原生折叠区；相机与模型查看在单独的工具行。3D Drawing 入口在 3D 自己的 tool-row（Camera / GLB / Drawing）；shared PlaybackTransport 始终是六个 primary actions。打开 Drawing 时 tool-row 让位给 AnnotationToolbar，关闭后恢复；不新增 permanent row、不遮 play/timeline。
 
 - `frontend/src/components/ReplayWorkspace.vue` 是 `data`、`playback`、`3d`、`shots`、`ai` **五种能力**的统一工作台：选择一次文件，能力之间切换不重新选文件、不重建 session。
 - Workspace 页面本身是 orchestration layer：`PageHeader` 负责页面标题，`ReplayCapabilityTabs.vue` 负责能力切换（数据 · 2D 回放 · 3D 回放 · 射击分析 · AI 复盘，五种能力对所有用户可见，`wotbtools-admin` 不改变能力集合；五个能力都在本工作台内，没有"导航去另一个页面"的能力），`FileDrop.vue` 是全站唯一的上传面（空 / 已选择 / 解析完成三种状态，解析完成后折叠为一行，清空需确认，是唯一的清空入口），`BattlePicker.vue`（可搜索的场次选择器）在四个单场能力上方选择当前场次。它们只接收 Workspace 派生状态并发出显式命令，不复制 session owner。

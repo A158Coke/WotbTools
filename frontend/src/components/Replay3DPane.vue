@@ -48,7 +48,7 @@ import { mapLabel } from '../utils/helpers.js'
 import { PLAYBACK_SPEEDS, PLAYBACK_STEP_SECONDS, isInteractiveTarget, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
 import { useSceneFlyControls } from '../composables/useSceneFlyControls.js'
 import { formatPlaybackClock } from '../utils/playbackClock'
-import { ChevronDown, ChevronUp, PanelLeftClose, PanelLeftOpen, ScanEye, TriangleAlert } from 'lucide-vue-next'
+import { ChevronDown, ChevronUp, PanelLeftClose, PanelLeftOpen, PencilRuler, ScanEye, TriangleAlert } from 'lucide-vue-next'
 
 defineOptions({ name: 'Replay3DPane' })
 
@@ -893,10 +893,8 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
             :is-fullscreen="isFullscreen"
             :display-open="displayOpen"
             display-enabled
-            annotation-enabled
             @toggle-fullscreen="toggleFullscreen()"
             @toggle-display="toggleDisplay"
-            @toggle-annotation="toggleAnnotation"
             :playing="store.playing"
             :speed="store.speed"
             :speeds="PLAYBACK_SPEEDS"
@@ -928,6 +926,18 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
             <label class="toggle" :title="store.glbAllowed ? '' : t(store.glbOn ? 'agentReplay.glb_forced_hint' : 'agentReplay.glb_gate_hint')">
               <input type="checkbox" data-testid="disp-glb" :checked="store.glbOn" :disabled="!store.glbAllowed" @change="sceneApi.setGlb($event.target.checked)"> {{ t('agentReplay.glb') }}
             </label>
+            <!-- Drawing 是 3D 自己的工具，不是 shared transport 的第 7 个 primary action。
+                 打开后整个 tool-row 让位给 AnnotationToolbar；关闭恢复。 -->
+            <button
+              type="button" class="tool-btn drawing-entry"
+              data-testid="replay3d-drawing-entry"
+              data-tour="playback-annotation-entry"
+              :aria-label="t('recon.map.playback.annot.mode')"
+              :title="t('recon.map.playback.annot.mode')"
+              @click="openAnnotation()"
+            >
+              <PencilRuler :size="16" aria-hidden="true" /> {{ t('recon.map.playback.annot.mode') }}
+            </button>
           </div>
         </div>
       </div>

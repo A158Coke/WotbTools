@@ -46,6 +46,30 @@ function expectDraped(ribbon, surface, lift = ANNOTATION_LIFT) {
   }
 }
 
+function expectTrianglesClear(ribbon, surface) {
+  let checked = 0
+  for (const strip of ribbon.strips) {
+    for (let i = 0; i < strip.indices.length; i += 3) {
+      const ia = strip.indices[i] * 3
+      const ib = strip.indices[i + 1] * 3
+      const ic = strip.indices[i + 2] * 3
+      const ax = strip.positions[ia]; const ay = strip.positions[ia + 1]; const az = strip.positions[ia + 2]
+      const bx = strip.positions[ib]; const by = strip.positions[ib + 1]; const bz = strip.positions[ib + 2]
+      const cx = strip.positions[ic]; const cy = strip.positions[ic + 1]; const cz = strip.positions[ic + 2]
+      for (const [wa, wb, wc] of [[1 / 3, 1 / 3, 1 / 3], [0.5, 0.25, 0.25], [0.25, 0.5, 0.25], [0.25, 0.25, 0.5]]) {
+        const x = wa * ax + wb * bx + wc * cx
+        const y = wa * ay + wb * by + wc * cy
+        const z = wa * az + wb * bz + wc * cz
+        // 5cm 允许误差；production lift=8cm 覆盖。固定 0.5m cross samples 的 off-grid
+        // ridge 实测 ~8.7cm，超过该阈值，因此这个回归仍能锁住 adaptive refinement。
+        expect(y).toBeGreaterThanOrEqual(surface(x, z) - 0.05)
+        checked++
+      }
+    }
+  }
+  expect(checked).toBeGreaterThan(0)
+}
+
 describe('sanitizePoints', () => {
   it('drops non-finite points and consecutive duplicates, keeps a later repeat', () => {
     const out = sanitizePoints([
@@ -273,6 +297,22 @@ describe('buildPenRibbon', () => {
     expect(normalized[0]).toEqual(raw[0])
     expect(normalized[normalized.length - 1]).toEqual(raw[raw.length - 1])
     expect(normalized.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))).toBe(true)
+  })
+
+  it('refines cross samples for an off-grid convex ridge instead of trusting fixed spacing', () => {
+    const surface = (x, z) => 20 - Math.abs(z - 0.25)
+    const ribbon = buildPenRibbon(pen([{ x: -10, y: 0 }, { x: 10, y: 0 }], 2), { sampleHeight: surface, lift: 0 })
+    expect(ribbon).not.toBeNull()
+    expect(ribbon.crossCount).toBeGreaterThanOrEqual(5)
+    expectTrianglesClear(ribbon, surface)
+  })
+
+  it('refines sharp miter rows using their actual transverse span', () => {
+    const surface = (x, z) => 20 - 0.5 * Math.abs(z - 0.25)
+    const ribbon = buildPenRibbon(pen([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }], 8), { sampleHeight: surface, lift: 0 })
+    expect(ribbon).not.toBeNull()
+    expect(ribbon.crossCount).toBeGreaterThanOrEqual(5)
+    expectTrianglesClear(ribbon, surface)
   })
 
   it('handles duplicate semantic points without NaN', () => {
