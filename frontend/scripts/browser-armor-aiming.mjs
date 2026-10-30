@@ -945,6 +945,27 @@ try {
     console.log('[armor-aiming] 跳过（模式条件）：真实资产覆盖不做固定战斗室夹具回归')
   }
 
+  // 结果卡贴边/避让：在真实浏览器里直接执行生产定位函数（vite 提供源模块），
+  // 用确定性几何覆盖「锚点越过 blocker 中线仍选同一边」与四边钳制。
+  const placement = await page.evaluate(`(async () => {
+    const { placeShotResultCard } = await import('/src/utils/shotResultCardPlacement.js')
+    const clip = { left: 0, top: 0, right: 1200, bottom: 700 }
+    const blocker = { left: 500, top: 20, right: 700, bottom: 200, width: 200, height: 180 }
+    const base = { offsetY: 0, cardWidth: 240, cardHeight: 120, clip, blockers: [blocker] }
+    return {
+      leftAnchor: placeShotResultCard({ ...base, anchorX: 420, anchorY: 100 }),
+      rightAnchor: placeShotResultCard({ ...base, anchorX: 780, anchorY: 100 }),
+      clippedLeft: placeShotResultCard({ ...base, anchorX: -500, anchorY: 300, blockers: [] }),
+      clippedRight: placeShotResultCard({ ...base, anchorX: 5000, anchorY: 300, blockers: [] }),
+    }
+  })()`)
+  check(placement.leftAnchor.x === placement.rightAnchor.x,
+    `结果卡避让跨 blocker 中线应选同一边（${placement.leftAnchor.x} vs ${placement.rightAnchor.x}）`)
+  const cardLeft = placement.leftAnchor.x - 120
+  check(cardLeft >= 700 + 12, `避让后卡片应落在 blocker 右侧（left=${cardLeft}）`)
+  check(placement.clippedLeft.x === 130, `左边界应钳制到 130（实际 ${placement.clippedLeft.x}）`)
+  check(placement.clippedRight.x === 1070, `右边界应钳制到 1070（实际 ${placement.clippedRight.x}）`)
+
   await chromeCdp.client.send('Target.closeTarget', { targetId })
 } catch (error) {
   failures.push(`脚本异常：${error.message}`)

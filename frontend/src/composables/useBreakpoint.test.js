@@ -2,11 +2,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 // 每个用例重新加载模块：useBreakpoint 在模块级共享一组 matchMedia 监听
-function stubMatchMedia(width, coarse = false) {
+function stubMatchMedia(width, coarse = false, { landscape = false, height = 800 } = {}) {
   const listeners = []
   const evaluate = (query) => {
     const min = /min-width:\s*(\d+)px/.exec(query)
     if (min) return width >= Number(min[1])
+    if (query.includes('(pointer: coarse) and (orientation: landscape)')) {
+      return coarse && landscape && height <= 520 && width <= 1199.98
+    }
     if (query.includes('pointer: coarse')) return coarse
     return false
   }
@@ -46,5 +49,23 @@ describe('useBreakpoint', () => {
     const { useBreakpoint, usePointer } = await import('./useBreakpoint.js')
     expect(useBreakpoint().tier.value).toBe('expanded')
     expect(usePointer().coarse.value).toBe(true)
+  })
+
+  it('compact + 触屏横屏矮视口 → 左侧图标栏形态', async () => {
+    stubMatchMedia(740, true, { landscape: true, height: 390 })
+    const { useBreakpoint } = await import('./useBreakpoint.js')
+    const bp = useBreakpoint()
+    expect(bp.isCompact.value).toBe(true)
+    expect(bp.isCompactLandscape.value).toBe(true)
+  })
+
+  it('横屏但不是触屏 / 高度足够 → 保持底部 Tab 形态', async () => {
+    stubMatchMedia(740, false, { landscape: true, height: 390 })
+    let bp = (await import('./useBreakpoint.js')).useBreakpoint()
+    expect(bp.isCompactLandscape.value).toBe(false)
+    vi.resetModules()
+    stubMatchMedia(740, true, { landscape: true, height: 900 })
+    bp = (await import('./useBreakpoint.js')).useBreakpoint()
+    expect(bp.isCompactLandscape.value).toBe(false)
   })
 })
