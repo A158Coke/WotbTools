@@ -32,6 +32,26 @@ class MapTacticalSemanticsRegistryTest {
     }
 
     @Test
+    void everySemanticDeclaresComplementaryPhysicalSides() throws Exception {
+        final Resource[] resources = new PathMatchingResourcePatternResolver()
+                .getResources("classpath:/map-semantics/*.semantic.json");
+        assertEquals(33, resources.length);
+        for (final Resource resource : resources) {
+            try (InputStream in = resource.getInputStream()) {
+                final JsonNode root = JsonMapper.builder().build().readTree(in);
+                final String team1 = root.path("spawnSemantics").path("TEAM_1").path("physicalSide").asString();
+                final String team2 = root.path("spawnSemantics").path("TEAM_2").path("physicalSide").asString();
+                final String pair = team1 + "/" + team2;
+                if ("23_karieri_kr".equals(root.path("mapId").asString())) {
+                    assertEquals("WEST/EAST", pair);
+                } else {
+                    assertTrue("NORTH/SOUTH".equals(pair) || "SOUTH/NORTH".equals(pair), resource.getFilename() + " " + pair);
+                }
+            }
+        }
+    }
+
+    @Test
     void desertTrainResolvesFromSemanticizerData() {
         // map-semanticizer 生成的 Desert Sands 语义（common/map-semantics/02_desert_train_dt.semantic.json）
         final MapTacticalSemantics semantics = registry.semanticsFor("desert_train");

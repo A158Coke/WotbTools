@@ -2320,6 +2320,7 @@
   "spawnSemantics": {
     "TEAM_1": {
       "status": "EXACT_SCENE_DATA",
+      "physicalSide": "WEST",
       "spawnCount": 14,
       "centroidMeters": {
         "x": -173.444,
@@ -2340,6 +2341,7 @@
     },
     "TEAM_2": {
       "status": "EXACT_SCENE_DATA",
+      "physicalSide": "EAST",
       "spawnCount": 14,
       "centroidMeters": {
         "x": 213.509,

@@ -71,17 +71,57 @@ describe('physical spawn: reviewed canonical data and bounded evidence', () => {
       expect(resolvePhysicalSpawns('alias', 1, probe(), indexMapGridProfiles([s]))).toBeNull()
     }
   })
-  it.each(['desert_train', 'erlenberg', 'medvedkovo', 'amigosville', 'pliego', 'himmelsdorf', 'milbase', 'neptune'])(
-    'uses reviewed north/south scene metadata for %s', (mapKey) => {
-      const documents = Object.values(import.meta.glob('../../../../common/map-semantics/*.semantic.json', { eager: true, import: 'default' }))
-      const profiles = indexMapGridProfiles(documents)
-      const groups = profiles.get(mapKey)?.physicalSpawns
+  describe('canonical semantic files', () => {
+    type Document = { mapId: string; mapCodes?: string[]; spawnSemantics: Record<string, { physicalSide: Side; centroidMeters: { x: number; y: number } }> }
+    const documents = Object.values(import.meta.glob('../../../../common/map-semantics/*.semantic.json', { eager: true, import: 'default' })) as Document[]
+    const profiles = indexMapGridProfiles(documents)
+    const centroid = (points: { x: number; y: number }[]) => ({
+      x: points.reduce((total, p) => total + p.x, 0) / points.length,
+      y: points.reduce((total, p) => total + p.y, 0) / points.length,
+    })
+
+    it('covers every semantic file', () => expect(documents).toHaveLength(33))
+    it.each(documents.map(document => [document.mapId, document] as const))('%s binds each side to its own exact spawn group', (mapId, document) => {
+      const groups = profiles.get(mapId)?.physicalSpawns
       expect(groups).toHaveLength(2)
-      const north = groups!.find(group => group.side === 'NORTH')!
-      const point = north.points[0]
-      expect(resolvePhysicalSpawns(mapKey, 1, probe(point.x, point.y), profiles)).toEqual({ team1: 'NORTH', team2: 'SOUTH' })
-    },
-  )
+      // The side declared on a semantic group must land on that group's scene points.
+      for (const [index, team] of ['TEAM_1', 'TEAM_2'].entries()) {
+        const declared = document.spawnSemantics[team]
+        expect(groups![index].side).toBe(declared.physicalSide)
+        expect(centroid(groups![index].points).x).toBeCloseTo(declared.centroidMeters.x, 2)
+        expect(centroid(groups![index].points).y).toBeCloseTo(declared.centroidMeters.y, 2)
+      }
+      const [a, b] = groups!.map(group => ({ side: group.side, ...centroid(group.points) }))
+      if (a.side === 'NORTH') expect(a.y).toBeGreaterThan(b.y)
+      if (a.side === 'SOUTH') expect(a.y).toBeLessThan(b.y)
+      if (a.side === 'WEST') expect(a.x).toBeLessThan(b.x)
+      if (a.side === 'EAST') expect(a.x).toBeGreaterThan(b.x)
+      // Every exact point resolves to its own side; replay team only chooses which team receives it.
+      for (const group of groups!) {
+        const other = groups!.find(item => item !== group)!.side
+        for (const p of group.points) {
+          expect(resolvePhysicalSpawns(mapId, 1, probe(p.x, p.y), profiles)).toEqual({ team1: group.side, team2: other })
+          expect(resolvePhysicalSpawns(mapId, 2, probe(p.x, p.y), profiles)).toEqual({ team1: other, team2: group.side })
+        }
+      }
+    })
+    it('keeps Copperfield west/east and every other map north/south', () => {
+      for (const document of documents) {
+        const sides = profiles.get(document.mapId)!.physicalSpawns!.map(group => group.side)
+        expect(sides).toEqual(document.mapId === '23_karieri_kr' ? ['WEST', 'EAST'] : expect.arrayContaining(['NORTH', 'SOUTH']))
+      }
+    })
+    it('resolves Neptune by position: the north scene group is NORTH', () => {
+      const north = profiles.get('neptune')!.physicalSpawns!.find(group => group.side === 'NORTH')!
+      expect(centroid(north.points).y).toBeGreaterThan(200)
+      expect(resolvePhysicalSpawns('neptune', 2, probe(108.1868, 222.9614), profiles)).toEqual({ team1: 'SOUTH', team2: 'NORTH' })
+    })
+    it('still drops a real map probe past two meters or one second', () => {
+      const point = profiles.get('karieri')!.physicalSpawns![0].points[0]
+      expect(resolvePhysicalSpawns('karieri', 1, probe(point.x + 2.001, point.y), profiles)).toBeNull()
+      expect(resolvePhysicalSpawns('karieri', 1, probe(point.x, point.y, 1.001), profiles)).toBeNull()
+    })
+  })
   it('resolves a real Malinovka fixture from independent scene coordinates', async () => {
     const bytes = readFileSync(fileURLToPath(new URL('../../../../common/fixtures/replays/cw-training-15-14-example.wotbreplay', import.meta.url)))
     const agent = await wasm()

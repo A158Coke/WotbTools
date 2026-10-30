@@ -51,11 +51,15 @@
 
 ## Collector 物理出生侧
 
-`common/map-semantics/*.semantic.json` 的 `spawnSemantics.TEAM_1/TEAM_2.physicalSide` 是可选的已审校方向，值为 `NORTH/SOUTH/WEST/EAST`，两组必须互补。这里的 TEAM 是客户端场景出生点分组，**不是回放队伍编号**。方向缺失的地图不参与 Collector；不得按编号、坐标符号或最长轴自动猜方向。
+`common/map-semantics/*.semantic.json` 的 `spawnSemantics.TEAM_1/TEAM_2.physicalSide` 是显式的已审校方向，值为 `NORTH/SOUTH/WEST/EAST`，两组必须互补。方向缺失的地图不参与 Collector；不得按编号、坐标符号或最长轴自动猜方向。
 
-已标注的十张地图包括黄沙荒漠、米德尔堡、废弃轨道、乡间溪流、卡斯提拉、锡默尔斯多夫、落日军港、滩涂阵地、马利诺夫卡和海拉斯；其中 `35_rift_rt`（`mapCodes: [rift]`）：场景组1为 `SOUTH`，组2为 `NORTH`。依据是语义网格 `A is north/top; 1 is west/left` 与 exact scene 出生点所属网格；仓库 Random 夹具的录像者早期位置距北侧 `Spawn2-8` 约 0.937m。其余地图保持未标注并跳过，横向真实回放覆盖不作保证。马利诺夫卡的非采集模式回放初始位置距场景 `SpawnTeam2_01` 不到 0.001 米，独立验证南侧映射。
+**TEAM 是客户端场景出生点分组，不是回放队伍编号。** 本机回放样本里，训练房类 mode 2 / 24 的回放 team n 都出生在场景第 n 组；mode 1 随机战中海防前沿、马利诺夫卡，mode 4 滩涂阵地、mode 8 废弃之地都出现 team 2 出生在场景第 1 组。两者没有固定对应，所以 `battlePoints[].team` 保持场景分组标签，不按单场回放翻转；物理出生侧只能由实际位置命中的场景组决定。
 
-33 份语义中已审校 10 份，23 份未审校：`06_rudniki_rd`、`07_fort_ft`、`08_idle_id`、`09_savanna_sv`、`11_plant_pn`、`14_port_pt`、`15_lagoon_ln`、`16_holland_hl`、`17_karelia_ka`、`18_canal_cn`、`21_mountain_mnt`、`22_italy_it`、`23_karieri_kr`、`25_canyon_ca`、`26_holmeisk_hk`、`28_rock_rc`、`29_skit_sk`、`30_grossberg_sh`、`31_lumber_lm`、`32_faust_fa_night`、`34_forgecity_fc`、`40_moon_mn`、`41_iceworld_ic`。这些地图的斜对角或横向出生组仍缺独立方向核验；其中 4 份还缺 `mapCodes`。有 mapCodes 的 29 份中已审校 10 份。新增语义地图时，覆盖测试要求重新审计并更新数量基线。
+方向分类：北 / 东北 / 西北归 `NORTH`，南 / 东南 / 西南归 `SOUTH`；铜矿采集场（`23_karieri_kr`）为 `WEST/EAST`。管理端把 `NORTH/SOUTH` 显示为上方 / 下方，这只是展示语义，DB、API 与 Collector 始终保持原值。
+
+33 份语义全部标注方向。方向依据是语义网格 `A is north/top; 1 is west/left` 与 exact scene 出生点的位置，2D 底图同样以 +y 为上、+x 为右。`35_rift_rt` 的场景组 1 为 `SOUTH`、组 2 为 `NORTH`，仓库 Random 夹具的录像者早期位置距北侧 `Spawn2-8` 约 0.937m；马利诺夫卡的非采集模式回放初始位置距场景 `SpawnTeam2_01` 不到 0.001 米，独立验证南侧映射。
+
+`06_rudniki_rd`、`30_grossberg_sh`、`40_moon_mn`、`41_iceworld_ic` 没有 `mapCodes`，回放无法寻址，不计入 Collector 覆盖；有 mapCodes 的 29 份都可采集。覆盖测试逐图断言方向落在对应 exact 出生组上，新增语义地图时要重新审计并更新数量基线。
 
 Collector 按 Agent `map_key` 匹配现有 `mapCodes`，不以数字 `map_id` 匹配文件名前缀。回放 `[x,y,z]` 的 `[x,z]` 对应语义平面 `[x,y]`；只接收 `0≤clock≤1s` 且距某个 `EXACT_SCENE_DATA` 出生点不超过 2m、仅命中一个物理侧的位置，再用 `author_team` 映射两支回放队伍。晚观测、超界、歧义、未知或缺元数据均整场跳过。1s/2m 是刻意保守的接收策略，不是全地图误差保证。
 

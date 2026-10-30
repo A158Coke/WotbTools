@@ -256,7 +256,7 @@ class BattleDataHttpTest {
                     .subject("other").claim("realm_access", java.util.Map.of("roles", List.of(role))).build();
             org.mockito.Mockito.when(decoder.decode(role)).thenReturn(other);
         }
-        for (final String path : List.of("summary", "battles", "battles/1")) {
+        for (final String path : List.of("summary", "spawn-stats", "battles", "battles/1")) {
             final var uri = URI.create("http://127.0.0.1:" + port + "/api/admin/battle-data/" + path);
             assertEquals(401, client.send(HttpRequest.newBuilder(uri).GET().build(), HttpResponse.BodyHandlers.ofString()).statusCode());
             assertEquals(403, client.send(HttpRequest.newBuilder(uri).header("Authorization", "Bearer user-token").GET().build(), HttpResponse.BodyHandlers.ofString()).statusCode());

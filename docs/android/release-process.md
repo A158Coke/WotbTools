@@ -5,8 +5,8 @@
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本由显式 `version` 输入决定：自动续跑传入 stage 解析出的同一版本，手动 recovery 由操作者显式给出（见下节）。
-当前源码版本：**3.21.2 / 3021002**（`android/gradle.properties`），3D 回放相机档位调整随 APK 打包，说明见 [3.21.2](releases/3.21.2.md)。
-3.21.1 在 3.21.0 之后按 **patch** 递增；Native Bridge 仍为 v3，最低支持版本保持现有发布配置，详见 [3.21.1](releases/3.21.1.md)。
+当前源码版本：**3.22.0 / 3022000**（`android/gradle.properties`），Battle Data 出生侧胜率页面与完整地图出生方向随 APK 打包，说明见 [3.22.0](releases/3.22.0.md)。
+3.22.0 在 3.21.2 之后按 **minor** 递增；Native Bridge 仍为 v3，最低支持版本保持现有发布配置，详见 [3.22.0](releases/3.22.0.md)。
 3.21.0 在 3.20.0 之后按 **minor** 递增，承载管理员 Battle Data 只读审计页；Native Bridge 仍为 v3，最低支持版本保持现有发布配置，详见 [3.21.0](releases/3.21.0.md)。
 3.21.2 在 3.21.1 之后按 **patch** 递增，承载 3D 回放相机档位调整；Native Bridge 仍为 v3，最低支持版本保持现有发布配置，详见 [3.21.2](releases/3.21.2.md)。
 `android-v3.17.9` / `android-v3.17.10` 已有 immutable release identity，
