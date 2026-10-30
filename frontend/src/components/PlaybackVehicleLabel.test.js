@@ -211,6 +211,13 @@ describe('PlaybackVehicleLabel consumable badges', () => {
       .toBe(wrapper.get('.pb-hp-row').element)
   })
 
+  it('未闭合身份（logicalItemId 为空）不占位，fail-closed', () => {
+    const wrapper = mountLabel({
+      consumables: [{ slot: 0, logicalItemId: null, wireCode: 0x3F, remainingSec: 15, durationSec: 20 }],
+    })
+    expect(wrapper.find('[data-test="pb-consumables"]').exists()).toBe(false)
+  })
+
   it('只展示 duration>0 且 remaining>0 的条目；空/瞬发不渲染', () => {
     const empty = mountLabel({ consumables: [] })
     expect(empty.find('[data-test="pb-consumables"]').exists()).toBe(false)

@@ -21,6 +21,7 @@ const ICON_BY_LOGICAL_ID = {
   REPAIR_KIT: 'largeRepairkit',
   IMPROVED_ENGINE_POWER_BOOST: 'superburner',
   RETICLE_CALIBRATION: 'aim',
+  SHELL_RELOAD_BOOST: 'reload',
   REACTIVE_ARMOR: 'shield-kit',
   TUNGSTEN_SHELLS: 'tungstentip',
   DYNAMIC_ARMOUR_SYSTEM: 'armorMover',

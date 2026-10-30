@@ -24,6 +24,12 @@ describe('PlaybackConsumableBadge', () => {
     expect(dashoffset).toBeCloseTo(dasharray * 0.25, 5)
   })
 
+  it('Shell Reload Boost 使用客户端 reload 图标', () => {
+    const wrapper = mountBadge({ logicalItemId: 'SHELL_RELOAD_BOOST' })
+    const img = wrapper.get('.pb-consumable-icon')
+    expect(img.attributes('src')).toContain('reload')
+  })
+
   it('无图 logicalItemId 回退几何点，不裸显 ID', () => {
     const wrapper = mountBadge({ logicalItemId: 'GRAVITY_JUMP' })
     expect(wrapper.find('.pb-consumable-icon').exists()).toBe(false)

@@ -43,8 +43,8 @@ const iconUrl = computed(() => consumableIconUrl(props.logicalItemId))
   position: relative;
   display: inline-grid;
   place-items: center;
-  width: var(--space-6);
-  height: var(--space-6);
+  width: var(--space-8);
+  height: var(--space-8);
   color: inherit;
   pointer-events: none;
 }
@@ -78,8 +78,8 @@ const iconUrl = computed(() => consumableIconUrl(props.logicalItemId))
 }
 .pb-consumable-fallback {
   position: relative;
-  width: calc(var(--space-1) * 1.5);
-  height: calc(var(--space-1) * 1.5);
+  width: var(--space-2);
+  height: var(--space-2);
   border-radius: var(--radius-full);
   background: currentColor;
   opacity: .6;

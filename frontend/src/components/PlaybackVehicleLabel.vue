@@ -46,9 +46,10 @@ const ghostWidth = computed(() => {
   return g && Number.isFinite(g.prevPct) && Number.isFinite(g.nextPct)
     && g.prevPct - g.nextPct > 0.5 ? g.prevPct - g.nextPct : null
 })
-/** 只展示正在生效的定时消耗品（runtime 已保证 ACTIVE；这里再挡一次零时长/已结束）。 */
+/** 只展示正在生效且身份已闭合的定时消耗品（未知线码不占位，fail-closed）。 */
 const activeConsumables = computed(() => (Array.isArray(props.consumables) ? props.consumables : [])
-  .filter((c) => c && Number.isFinite(c.remainingSec) && c.remainingSec > 0
+  .filter((c) => c && typeof c.logicalItemId === 'string' && c.logicalItemId.length > 0
+    && Number.isFinite(c.remainingSec) && c.remainingSec > 0
     && Number.isFinite(c.durationSec) && c.durationSec > 0))
 const classes = computed(() => ({
   'label-friendly': props.friendly === true,
