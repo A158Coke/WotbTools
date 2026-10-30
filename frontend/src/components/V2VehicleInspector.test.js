@@ -49,6 +49,20 @@ function mountInspector(timeSec, locale = 'zh', trackObj = track()) {
 }
 
 describe('V2VehicleInspector', () => {
+  it('未装备的空槽显示「未装备」，不与未知装备混淆', () => {
+    const t = track()
+    t.loadout.equipmentIds = [103, 114, 0, 0, 0, 0, 0, 0, 0]
+    const w = mountInspector(120, 'zh', t)
+    const chips = w.findAll('[data-test="v2-inspector-equipment"] [data-equipment-slot]')
+    expect(chips).toHaveLength(9)
+    const empty = w.findAll('[data-equipment-empty="true"]')
+    expect(empty).toHaveLength(7)
+    expect(empty.every(chip => chip.text().includes('未装备'))).toBe(true)
+    expect(w.get('[data-test="v2-inspector-equipment"]').text()).not.toContain('未知装备')
+    expect(w.get('[data-equipment-slot="0"]').text()).toContain('校准炮弹')
+    w.unmount()
+  })
+
   it('renders earned marks independently of replay time, and clears the badge on vehicle changes', async () => {
     const w = mountInspector(120)
     await w.setProps({ gunMarks: 2 })

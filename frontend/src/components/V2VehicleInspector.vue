@@ -115,12 +115,19 @@ const provisionLabels = computed(() => {
 const equipmentLabels = computed(() => {
   if (!loadout.value) return []
   const slotKeys = ['f1', 'v1', 's1', 'f2', 'v2', 's2', 'f3', 'v3', 's3']
-  return Array.from({ length: 9 }, (_, i) => ({
-    slot: i,
-    semanticKey: slotKeys[i],
-    id: loadout.value.equipmentIds?.[i] ?? null,
-    label: itemLabel('equipment', loadout.value.equipmentIds?.[i] ?? null),
-  }))
+  return Array.from({ length: 9 }, (_, i) => {
+    const id = loadout.value.equipmentIds?.[i] ?? null
+    // 0 / 缺省 = 该槽**未装备**（replay 的 equipment 串按实装件数解析，其余位补 0）；
+    // 只有非空且映射不到的 id 才是「未知装备」。两者不能混为一谈。
+    const empty = !Number.isInteger(id) || id <= 0
+    return {
+      slot: i,
+      semanticKey: slotKeys[i],
+      id,
+      empty,
+      label: empty ? t('recon.map.playback.equipment_empty') : itemLabel('equipment', id),
+    }
+  })
 })
 
 const equipmentRows = computed(() => [
@@ -239,7 +246,9 @@ function moduleStateLabel(state) {
           v-for="e in row.slots"
           :key="'e' + e.slot"
           class="v2-inspector-chip"
+          :class="{ 'is-empty': e.empty }"
           :data-equipment-slot="e.slot"
+          :data-equipment-empty="e.empty ? 'true' : undefined"
         >
           <span class="v2-chip-type">{{ $t(`recon.map.playback.equipment_slot_${e.semanticKey}`) }}</span>
           <span class="v2-chip-item">
@@ -330,4 +339,8 @@ function moduleStateLabel(state) {
 }
 .v2-configurator-link:hover { border-color: var(--color-border-strong); }
 .v2-configurator-link:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+
+/* 未装备槽：与「未知装备」区分——空槽是已知事实，不是解析失败 */
+.v2-inspector-chip.is-empty .v2-chip-item { color: var(--color-text-tertiary); font-style: italic; }
+.v2-inspector-chip.is-empty .v2-chip-type { opacity: .7; }
 </style>
