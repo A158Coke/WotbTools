@@ -85,7 +85,8 @@ describe('相机距离钳制（PR #411 P1-3）', () => {
   const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
 
   it('设置 controls.minDistance / maxDistance 且基于 ext', () => {
-    expect(src).toMatch(/controls\.minDistance = Math\.max\(20, ext \* 0\.08\)/)
+    expect(src).toMatch(/baseMinDistance = Math\.max\(20, ext \* 0\.08\)/)
+    expect(src).toMatch(/controls\.minDistance = baseMinDistance/)
     expect(src).toMatch(/controls\.maxDistance = ext \* 2\.2/)
     expect(src).toMatch(/applyCameraClamp\(\);/)
   })
