@@ -50,6 +50,28 @@ describe('SegmentedControl', () => {
     expect(wrapper.emitted('update:modelValue')).toHaveLength(1)
   })
 
+  it('点已选中项只发 reselect，不改值', async () => {
+    const wrapper = mountControl()
+    await option(wrapper, 'data').trigger('click')
+    expect(wrapper.emitted('reselect')).toEqual([['data']])
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+  })
+
+  it('禁用项不可点击，title 说明原因', async () => {
+    const options = [
+      { value: 'data', label: '数据' },
+      { value: 'locked', label: '锁定', disabled: true, title: '不可用' },
+    ]
+    const wrapper = mountControl({ options })
+    const locked = option(wrapper, 'locked')
+    expect(locked.attributes('disabled')).toBeDefined()
+    expect(locked.attributes('title')).toBe('不可用')
+    await locked.trigger('click')
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    await option(wrapper, 'data').trigger('keydown', { key: 'End' })
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+  })
+
   it('方向键循环移动并选中', async () => {
     const wrapper = mountControl({ modelValue: 'ai' })
     await flushPromises()

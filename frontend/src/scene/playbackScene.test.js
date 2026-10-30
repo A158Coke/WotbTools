@@ -1411,20 +1411,11 @@ describe('Free Camera terrain floor', () => {
     const controls = window.__controls
     api.setCam('top')
     const topHeight = cam.position.y
-    expect(store.cam).toBe('top')
-    expect(controls.enabled).toBe(true)
-    expect(controls.enablePan).toBe(false)   // Top 不允许 pan 把中心带离地图中心
-    expect(controls.target.x).toBeCloseTo(0, 3)
-    expect(controls.target.z).toBeCloseTo(0, 3)
-    expect(controls.target.y).toBe(0)
+    // 俯视是 reset view：完成后就是自由视角，飞行接管立即生效。
+    expect(store.cam).toBe('free')
+    expect(controls.enabled).toBe(false)
     const viewDirection = () => new THREE.Vector3().subVectors(controls.target, cam.position).normalize()
-    const topDirection = viewDirection()
-    document.querySelector('canvas').dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }))
-    expect(viewDirection().dot(topDirection)).toBeCloseTo(1, 8)
-    const topTarget = controls.target.clone()
-    document.querySelector('canvas').dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }))
-    expect(controls.target.equals(topTarget)).toBe(true)   // 俯视缩放中心 = 地图中心
-    api.setCam('free')
+    expect(viewDirection().y).toBeLessThan(-0.99)   // 保持直下朝向，不回落到斜俯视
     expect(controls.enablePan).toBe(true)
     expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
     const afterForward = cam.position.y
@@ -1573,21 +1564,102 @@ describe('Free Camera terrain floor', () => {
     source.loadPlaybackData.mockResolvedValue(minimalData())
     const { api, store } = createScene()
     await api.loadData({ kind: 'local', file: new File(['late-terrain'], 'late-terrain.wotbreplay') })
-    expect(store.cam).toBe('top')   // 默认俯视（地形发布后由 setCam('top') 再做净空）
+    expect(store.cam).toBe('free')   // 默认以俯视机位进入自由视角
     const cam = window.__camera
     const controls = window.__controls
     const tacticalHeight = 255 // minimalData 的 WORLD_CENTER.ext = 150
     api.setCam('top')
-    expect(store.cam).toBe('top')
+    expect(store.cam).toBe('free')
     expect(cam.position.x).toBeCloseTo(0)
-    expect(Math.abs(cam.position.z)).toBeLessThan(0.1)   // 沿射线外推后轻微偏移
-    expect(cam.position.y).toBeGreaterThanOrEqual(400.5)
-    expect(controls.target.x).toBeCloseTo(0, 3)
-    expect(controls.target.z).toBeCloseTo(0, 3)
-    expect(controls.target.y).toBe(0)
+    expect(Math.abs(cam.position.z)).toBeLessThan(0.1)
+    expect(cam.position.y).toBeGreaterThanOrEqual(400.5)   // 地形净空优先于默认高度
     expect(new THREE.Vector3().subVectors(controls.target, cam.position).normalize().y).toBeLessThan(-0.99)
-    // 地形阻挡：相机被抬到地形净空，minDistance 锁在该距离（再放大不会钻进地形）
-    expect(controls.minDistance).toBeCloseTo(cam.position.distanceTo(controls.target), 5)
+  })
+
+  describe('default top view across sessions', () => {
+    const TOP_HEIGHT = 255   // minimalData 的 ext = 150 × 1.7
+    const loadScene = async () => {
+      stubTerrainAssets({ values: [0, 0, 0, 0], zmin: 0, zmax: 0 })
+      source.loadPlaybackData.mockResolvedValue(minimalData())
+      const scene = createScene()
+      await scene.api.loadData({ kind: 'local', file: new File(['a'], 'first.wotbreplay') })
+      return scene
+    }
+    const loadNext = (api) => api.loadData({ kind: 'local', file: new File(['b'], 'second.wotbreplay') })
+
+    it('opens at the top view in Free, and repeats it while the camera is untouched', async () => {
+      const { api, store } = await loadScene()
+      expect(store.cam).toBe('free')
+      expect(window.__controls.enabled).toBe(false)
+      expect(window.__camera.position.y).toBeCloseTo(TOP_HEIGHT, 3)
+      await loadNext(api)
+      expect(window.__camera.position.y).toBeCloseTo(TOP_HEIGHT, 3)
+    })
+
+    const expectPoseKept = async (api) => {
+      const position = window.__camera.position.clone()
+      const target = window.__controls.target.clone()
+      await loadNext(api)
+      expect(window.__camera.position.distanceTo(position)).toBeLessThan(1e-6)
+      expect(window.__controls.target.distanceTo(target)).toBeLessThan(1e-6)
+    }
+
+    it('keyboard flight keeps the full camera pose on the next replay', async () => {
+      const { api } = await loadScene()
+      expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
+      await expectPoseKept(api)
+    })
+
+    it('wheel dolly keeps the full camera pose on the next replay', async () => {
+      const { api } = await loadScene()
+      document.querySelector('canvas').dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }))
+      await expectPoseKept(api)
+    })
+
+    it('drag look keeps the full camera pose on the next replay', async () => {
+      const { api } = await loadScene()
+      const canvas = document.querySelector('canvas')
+      canvas.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0, buttons: 1, clientX: 100, clientY: 100 }))
+      canvas.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, button: 0, buttons: 1, clientX: 160, clientY: 120 }))
+      canvas.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, button: 0, clientX: 160, clientY: 120 }))
+      await expectPoseKept(api)
+    })
+
+    it('a renderer rebuild keeps the pose and the flight heading', async () => {
+      const { api } = await loadScene()
+      expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
+      api.setLogdepth(true)
+      try {
+        await expectPoseKept(api)
+        const before = window.__camera.position.clone()
+        expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
+        expect(window.__camera.position.distanceTo(before)).toBeGreaterThan(0.01)
+      } finally {
+        api.setLogdepth(false)   // 偏好会持久化，不得泄漏给后续用例
+      }
+    })
+
+    it('a kept pose still obeys the next map terrain floor', async () => {
+      const { api } = await loadScene()
+      expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
+      window.__camera.position.y = 100
+      window.__controls.target.y = 90
+      stubTerrainAssets({ values: [0, 0, 0, 0], zmin: 150, zmax: 150 })
+      await loadNext(api)
+      expect(window.__camera.position.y).toBeGreaterThanOrEqual(150.5)
+    })
+
+    it('Follow on one replay opens the next at the top view in working Free', async () => {
+      const { api, store } = await loadScene()
+      api.setFollow(1)
+      expect(store.cam).toBe('follow')
+      window.__camera.position.set(40, 60, 40)
+      await loadNext(api)
+      expect(store.cam).toBe('free')
+      expect(window.__controls.enabled).toBe(false)
+      expect(window.__camera.position.y).toBeCloseTo(TOP_HEIGHT, 3)
+      expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
+    })
   })
 
   it('Follow 不允许相机绕到 target 下方；已在地下的点被抬到地形净空', async () => {
@@ -1744,7 +1816,7 @@ describe('scene vehicle selection intent', () => {
     expect(onVehicleSelect).toHaveBeenCalledOnce()
     expect(onVehicleSelect.mock.calls[0][0]).toBe(11)
     expect(onVehicleSelect.mock.calls[0][1]?.clientX).toBe(10)
-    expect(store.cam).toBe('top')
+    expect(store.cam).toBe('free')   // 跟随由 Pane 收到 selection 后发起，场景本身不切相机
     expect(window.__camera.position.equals(beforeCamera)).toBe(true)
     canvas0.dispatchEvent(new MouseEvent('pointerdown', { button: 2 }))
     canvas0.dispatchEvent(new MouseEvent('pointerup', { button: 2 }))
@@ -2092,7 +2164,7 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
     expect(store.cam).toBe('follow')
     expect(followed).toEqual([2])
     api.setCam('top')
-    expect(store.cam).toBe('top')
+    expect(store.cam).toBe('free')
     expect(followed).toEqual([])
     stop()
   })
@@ -3173,6 +3245,7 @@ describe('3D annotation pointer ownership', () => {
 
   it('tool off: orbit still rotates and vehicle selection still works', async () => {
     const { api, canvas, onVehicleSelect } = await setup()
+    api.setCam('follow')
     api.setAnnotationInteraction({ enabled: false, tool: null })
     expect(window.__controls.touches.ONE).toBe(0)
     const camera = window.__camera
@@ -3283,7 +3356,8 @@ describe('3D annotation pointer ownership', () => {
   })
 
   it('second touch cancels the draft, hands off to pinch, and the next fresh touch draws', async () => {
-    const { canvas, onAnnotationCommit } = await setup()
+    const { api, canvas, onAnnotationCommit } = await setup()
+    api.setCam('follow')
     const controls = window.__controls
     const camera = window.__camera
     const dist0 = camera.position.distanceTo(controls.target)
@@ -3305,6 +3379,7 @@ describe('3D annotation pointer ownership', () => {
 
   it('pointercancel discards the draft and restores OrbitControls ownership', async () => {
     const { api, canvas, onAnnotationCommit } = await setup()
+    api.setCam('follow')
     const controls = window.__controls
     canvas.dispatchEvent(touch('pointerdown', 400, 300, 7))
     canvas.dispatchEvent(touch('pointercancel', 400, 300, 7))

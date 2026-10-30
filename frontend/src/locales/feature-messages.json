@@ -604,7 +604,7 @@
         },
         "3d": {
           "title": "3D 回放",
-          "description": "选画质，进入场景，切换自由、跟随与俯视相机。"
+          "description": "选画质，进入场景，用自由视角、俯视复位和点车跟随观察战局。"
         },
         "shots": {
           "title": "射击分析与装甲",
@@ -662,7 +662,7 @@
         },
         "replay3dCamera": {
           "title": "换个视角看这场战斗",
-          "description": "在相机选项中切换自由、跟随和俯视。拖动场景调整视角，再用播放控件回到同一个关键时刻。"
+          "description": "拖动场景调整自由视角，点「俯视」可一键回到俯视机位。点击车辆或名单会跟随该车，点「自由」退出。再用播放控件回到同一个关键时刻。"
         },
         "shots": {
           "title": "从真实的一发开始",
@@ -697,8 +697,8 @@
           "description": "选中已有标记可修改它；用撤销、重做或清空整理画面。切局或刷新会清空这些临时标记。"
         },
         "camera": {
-          "title": "跟随与自由视角各有所长",
-          "description": "跟随适合观察一辆车，自由视角适合看交火关系，俯视适合看整体位置。按当前关注点切换。"
+          "title": "自由视角与跟随各有所长",
+          "description": "自由视角适合看交火关系；点「俯视」一键回到俯视机位看整体位置；点击车辆或名单跟随一辆车，点「自由」或「俯视」退出。"
         },
         "aiFiles": {
           "title": "先选择要复盘的回放",
@@ -1555,7 +1555,7 @@
         },
         "3d": {
           "title": "3D playback",
-          "description": "Choose quality, enter the scene and switch between free, follow and top cameras."
+          "description": "Choose quality, enter the scene and use the free camera, top view reset and click-to-follow."
         },
         "shots": {
           "title": "Shots and armor",
@@ -1613,7 +1613,7 @@
         },
         "replay3dCamera": {
           "title": "See the battle from another angle",
-          "description": "Switch between free, follow and top cameras. Drag the scene to adjust the view, then use playback controls to revisit a moment."
+          "description": "Drag the scene to adjust the free camera, or press Top to jump back to the overhead view. Click a tank or roster row to follow it, and press Free to stop. Then use playback controls to revisit a moment."
         },
         "shots": {
           "title": "Start with a recorded shot",
@@ -1649,7 +1649,7 @@
         },
         "camera": {
           "title": "Choose the camera for your question",
-          "description": "Follow focuses on one tank, Free reveals firing relationships, and Top shows overall positions. Switch as needed."
+          "description": "Free reveals firing relationships, and Top jumps to the overhead view for overall positions. Click a tank or roster row to follow it; press Free or Top to stop."
         },
         "aiFiles": {
           "title": "Choose a replay for review",
@@ -2506,7 +2506,7 @@
         },
         "3d": {
           "title": "3D-реплей",
-          "description": "Выберите качество, запустите сцену и переключайте свободную камеру, слежение и вид сверху."
+          "description": "Выберите качество, запустите сцену и используйте свободную камеру, быстрый вид сверху и слежение по клику."
         },
         "shots": {
           "title": "Выстрелы и броня",
@@ -2564,7 +2564,7 @@
         },
         "replay3dCamera": {
           "title": "Посмотрите с другого ракурса",
-          "description": "Переключайте свободную камеру, слежение и вид сверху. Перетаскивайте сцену и возвращайтесь к нужному моменту кнопками воспроизведения."
+          "description": "Перетаскивайте сцену, чтобы настроить свободную камеру, а кнопка «Сверху» сразу вернёт вид сверху. Нажмите на танк или строку списка, чтобы следить за ним, а «Свободная» отключит слежение. Кнопками воспроизведения возвращайтесь к нужному моменту."
         },
         "shots": {
           "title": "Начните с записанного выстрела",
@@ -2600,7 +2600,7 @@
         },
         "camera": {
           "title": "Выберите камеру под задачу",
-          "description": "Слежение показывает один танк, свободная камера — взаимодействие, вид сверху — общую расстановку. Переключайтесь по необходимости."
+          "description": "Свободная камера показывает взаимодействие, кнопка «Сверху» сразу открывает общую расстановку. Нажмите на танк или строку списка, чтобы следить за ним; «Свободная» или «Сверху» отключат слежение."
         },
         "aiFiles": {
           "title": "Выберите реплей для разбора",
