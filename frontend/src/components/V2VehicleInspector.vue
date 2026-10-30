@@ -32,11 +32,15 @@ const router = useRouter()
 // loadoutItemLabel**（未知 id 走通用未知文案、raw id 不进 UI，既有门禁）；图标只是
 // 美术层增强——目录不可达或 id 无法对号时不渲染图标，文本不变（fail-soft）。
 const devices = ref(null)
+// 目录加载状态与图标未知分开：目录 404 时装备仍实际存在，不能退回空槽虚线。
+const devicesState = ref('loading')
 onMounted(async () => {
   try {
     devices.value = (await loadDevices()).devices
+    devicesState.value = 'ready'
   } catch {
     devices.value = null
+    devicesState.value = 'error'
   }
 })
 function equipmentIcon(id) {
@@ -269,7 +273,7 @@ function moduleStateLabel(state) {
               v-for="e in equipmentLabels"
               :key="'e' + e.slot"
               class="v2-inspector-chip"
-              :class="{ 'is-unknown': devices && !e.icon }"
+              :class="{ 'is-unknown': !e.icon && devicesState !== 'loading', 'is-loading': !e.icon && devicesState === 'loading' }"
               :data-equipment-id="e.id"
               role="img"
               :title="e.label"
@@ -375,6 +379,11 @@ function moduleStateLabel(state) {
 .v2-inspector-chip.is-unknown .v2-chip-placeholder {
   position: relative; opacity: 1; border-style: solid;
   border-color: var(--color-warning);
+}
+/* 目录加载中：实线中性框，既不等同空槽虚线，也不提前报未知 */
+.v2-inspector-chip.is-loading .v2-chip-placeholder {
+  opacity: .75; border-style: solid;
+  border-color: var(--color-border-strong);
 }
 .v2-inspector-chip.is-unknown .v2-chip-placeholder::after {
   content: ''; position: absolute; inset: 7px;
