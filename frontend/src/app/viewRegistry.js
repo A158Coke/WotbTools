@@ -8,6 +8,7 @@ import { toReplayCapability } from '../types/workspace.js'
 const HoFPage = defineAsyncComponent(() => import('../components/HoFPage.vue'))
 const HoFAdminPage = defineAsyncComponent(() => import('../components/HoFAdminPage.vue'))
 const ProfilePage = defineAsyncComponent(() => import('../components/ProfilePage.vue'))
+const BattleDataAdminPage = defineAsyncComponent(() => import('../components/BattleDataAdminPage.vue'))
 const AdminUsersPage = defineAsyncComponent(() => import('../components/AdminUsersPage.vue'))
 const HistoryPage = defineAsyncComponent(() => import('../components/HistoryPage.vue'))
 const TechnicalEvolutionPage = defineAsyncComponent(() => import('../components/TechnicalEvolutionPage.vue'))
@@ -52,6 +53,7 @@ export const VIEW_COMPONENTS = Object.freeze({
   'hof-admin': HoFAdminPage,
   profile: ProfilePage,
   'admin-users': AdminUsersPage,
+  'admin-battle-data': BattleDataAdminPage,
   history: HistoryPage,
   'technical-evolution': TechnicalEvolutionPage,
   contact: ContactPage,

@@ -3,6 +3,298 @@ export default {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$ref": "#/$defs/BattlePlaybackDataset",
   "$defs": {
+    "BattleDataAdminBattle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "arenaId",
+        "schemaVersion",
+        "arenaBonusType",
+        "mapId",
+        "mapKey",
+        "clientVersion",
+        "winnerTeam",
+        "team1Spawn",
+        "team2Spawn",
+        "receivedAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,18}(?![\\s\\S])"
+        },
+        "arenaId": {
+          "type": "string",
+          "pattern": "^([1-9][0-9]{0,18}|1[0-7][0-9]{18}|18[0-3][0-9]{17}|184[0-3][0-9]{16}|1844[0-5][0-9]{15}|18446[0-6][0-9]{14}|184467[0-3][0-9]{13}|1844674[0-3][0-9]{12}|184467440[0-6][0-9]{10}|1844674407[0-2][0-9]{9}|18446744073[0-6][0-9]{8}|1844674407370[0-8][0-9]{6}|18446744073709[0-4][0-9]{5}|184467440737095[0-4][0-9]{4}|18446744073709550[0-9]{3}|18446744073709551[0-5][0-9]{2}|1844674407370955160[0-9]{1}|1844674407370955161[0-4]|18446744073709551615)(?![\\s\\S])"
+        },
+        "schemaVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "arenaBonusType": {
+          "type": "integer",
+          "enum": [
+            1,
+            7
+          ]
+        },
+        "mapId": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "mapKey": {
+          "type": "string"
+        },
+        "clientVersion": {
+          "type": "string"
+        },
+        "winnerTeam": {
+          "type": "integer",
+          "enum": [
+            0,
+            1,
+            2
+          ]
+        },
+        "team1Spawn": {
+          "$ref": "#/$defs/BattleDataSpawn"
+        },
+        "team2Spawn": {
+          "$ref": "#/$defs/BattleDataSpawn"
+        },
+        "receivedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "BattleDataAdminVehicle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "team",
+        "slot",
+        "vehicleId"
+      ],
+      "properties": {
+        "team": {
+          "type": "integer",
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "slot": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 6,
+          "description": "Stable child-row identity; not spawn position or player rank."
+        },
+        "vehicleId": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "BattleDataAdminDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "battle",
+        "vehicles"
+      ],
+      "properties": {
+        "battle": {
+          "$ref": "#/$defs/BattleDataAdminBattle"
+        },
+        "vehicles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BattleDataAdminVehicle"
+          },
+          "description": "Actual stored rows ordered by team and slot."
+        }
+      }
+    },
+    "BattleDataAdminPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items",
+        "nextCursor"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BattleDataAdminBattle"
+          }
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "BattleDataAdminNumericCount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "count"
+      ],
+      "properties": {
+        "key": {
+          "type": "integer"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "BattleDataAdminDailyCount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "count"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "format": "date",
+          "description": "UTC calendar day"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "BattleDataAdminNamedCount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "count",
+        "latestReceivedAt"
+      ],
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "latestReceivedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "BattleDataAdminSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "asOf",
+        "totalBattles",
+        "last24Hours",
+        "last7Days",
+        "last30Days",
+        "windowBattles",
+        "latestReceivedAt",
+        "distinctMaps",
+        "distinctClientVersions",
+        "modes",
+        "winnerTeams",
+        "schemaVersions",
+        "daily",
+        "maps",
+        "clientVersions"
+      ],
+      "properties": {
+        "asOf": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "totalBattles": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "last24Hours": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "last7Days": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "last30Days": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "windowBattles": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "latestReceivedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "distinctMaps": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "distinctClientVersions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "modes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BattleDataAdminNumericCount"
+          }
+        },
+        "winnerTeams": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BattleDataAdminNumericCount"
+          }
+        },
+        "schemaVersions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BattleDataAdminNumericCount"
+          }
+        },
+        "daily": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BattleDataAdminDailyCount"
+          }
+        },
+        "maps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BattleDataAdminNamedCount"
+          }
+        },
+        "clientVersions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BattleDataAdminNamedCount"
+          }
+        }
+      }
+    },
     "BattleDataSpawn": {
       "type": "string",
       "enum": [

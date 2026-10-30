@@ -6,6 +6,12 @@ type Side = components['schemas']['BattleDataSpawn']
 const opposite: Record<Side, Side> = { NORTH: 'SOUTH', SOUTH: 'NORTH', WEST: 'EAST', EAST: 'WEST' }
 let profiles: Map<string, MapGridProfile> | undefined
 
+/** Canonical reviewed-spawn criterion shared by collection and admin coverage. */
+export function reviewedPhysicalSpawns(profile: MapGridProfile | null | undefined) {
+  const groups = profile?.physicalSpawns
+  return groups && groups.length === 2 && opposite[groups[0].side] === groups[1].side ? groups : null
+}
+
 /** 保守接收策略：早期观测且仅命中一个 exact scene 出生侧；未知整场丢弃。 */
 export function resolvePhysicalSpawns(
   mapKey: string, authorTeam: number, probe: AgentAuthorInitialPosition | null,
@@ -20,8 +26,8 @@ export function resolvePhysicalSpawns(
     })))
     mapProfiles = profiles
   }
-  const groups = mapProfiles.get(mapKey)?.physicalSpawns
-  if (!groups || groups.length !== 2 || opposite[groups[0].side] !== groups[1].side) return null
+  const groups = reviewedPhysicalSpawns(mapProfiles.get(mapKey))
+  if (!groups) return null
   // 与既有 playback 投影一致：replay x/z 对应 semantic x/y。
   const [x, , y] = probe.position
   const hits = groups.filter((g) => g.points.some((p) => Math.hypot(p.x - x, p.y - y) <= 2))

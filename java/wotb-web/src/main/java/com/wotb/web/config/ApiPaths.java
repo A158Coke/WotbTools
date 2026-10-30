@@ -19,6 +19,7 @@ public final class ApiPaths {
     public static final String USERS = "/api/users";
     public static final String ADMIN = "/api/admin";
     public static final String ADMIN_USERS = "/api/admin/users";
+    public static final String ADMIN_BATTLE_DATA = ADMIN + "/battle-data";
     public static final String HOF_ADMIN = "/api/admin/hof";
     public static final String HOF_HUNDRED = "/api/hof/hundred";
     public static final String HOF_HUNDRED_SUBMISSIONS = "/api/hof/hundred/submissions";

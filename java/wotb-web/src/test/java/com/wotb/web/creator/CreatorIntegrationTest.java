@@ -570,7 +570,7 @@ class CreatorIntegrationTest {
             assertEquals(0, upgrade.queryForObject("select count(*) from creator_category where type='VIDEO'", Integer.class));
             assertEquals(4, upgrade.queryForObject("select count(*) from creator_level", Integer.class));
             assertNull(upgrade.queryForObject("select to_regclass('creator_catalog_lock')::text", String.class));
-            assertEquals("45", flyway.info().current().getVersion().toString());
+            assertEquals("46", flyway.info().current().getVersion().toString());
         } finally { jdbc.execute("drop database recommendation_upgrade with (force)"); }
     }
 
