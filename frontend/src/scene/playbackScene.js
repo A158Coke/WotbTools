@@ -768,6 +768,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
    * 会被 OrbitControls 挡住，不会继续钻进地形；缩小后相机升高，minDistance 复位，
    * **target 全程不动**（旋转/缩放中心保持不变）。
    */
+  const _orbitTerrainDir = new THREE.Vector3();
   function clampOrbitCameraToTerrain() {
     if (flyMode() || !camera || !controls || !heightField || !heightMeta) return false;
     const t = controls.target;
@@ -775,18 +776,25 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const terrainY = terrainMesh ? sampleRenderedTerrainHeight(camera.position.x, camera.position.z) : sampleHeight(camera.position.x, camera.position.z);
     if (!Number.isFinite(terrainY)) { controls.minDistance = baseMinDistance; return false; }
     const limit = terrainY + CAMERA_GROUND_CLEARANCE;
-    if (camera.position.y >= limit) { controls.minDistance = baseMinDistance; return false; }
-    const dy = camera.position.y - t.y;
-    let factor = null;
-    if (dy > 1e-6) factor = (limit - t.y) / dy;
-    if (factor !== null && factor > 0 && factor < 1) {
-      camera.position.lerpVectors(t, camera.position, factor);
-    } else {
-      camera.position.y = limit;   // target 在净空以下（俯视贴地）：只抬相机，不动中心
+    const dir = _orbitTerrainDir.subVectors(camera.position, t);
+    const dist = dir.length();
+    if (!(dist > 1e-6)) { controls.minDistance = baseMinDistance; return false; }
+    dir.divideScalar(dist);
+    // 沿 target→camera 射线保持相机在地形净空以上：射线向上的分量决定允许距离。
+    if (!(dir.y > 1e-4)) { controls.minDistance = baseMinDistance; return false; }
+    const allowed = (limit - t.y) / dir.y;
+    if (!Number.isFinite(allowed) || allowed <= 0) { controls.minDistance = baseMinDistance; return false; }
+    // 相机已到/低于净空：沿同一射线退到 allowed（可向外，不改变方向与 target），
+    // 并把 minDistance 锁在 allowed。只要相机仍贴着限制就保持锁定，避免下一空闲帧
+    // 复位后继续放大又滑进地形；真正缩小（相机高于限制且距离 > allowed）才释放。
+    if (camera.position.y <= limit + 0.02 || dist < allowed) {
+      camera.position.copy(t).addScaledVector(dir, Math.max(dist, allowed));
+      camera.lookAt(t);
+      controls.minDistance = Math.max(baseMinDistance, allowed);
+      return true;
     }
-    camera.lookAt(t);
-    controls.minDistance = Math.max(baseMinDistance, camera.position.distanceTo(t));
-    return true;
+    controls.minDistance = baseMinDistance;
+    return false;
   }
 
   // 相机目标钳制在战场范围内（拖到天边会让地形/边界消失、只剩背景色）
@@ -3495,6 +3503,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (nextMode !== 'follow') FOLLOW_EID = 0;
     if (!controls) { invalidate(); return; }
     controls.enabled = !flyMode();
+    // 旋转/缩放中心语义要求 target 不被平移带走：Follow 锁坦克、Top 锁地图中心；
+    // Free 由 flyLook 接管，OrbitControls 的 pan 不参与（恢复默认值供下次非 Free 入口设置）。
+    controls.enablePan = nextMode === 'free';
     invalidate();
     if (nextMode === 'top') {
       const { cx, cz } = WORLD_CENTER;

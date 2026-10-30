@@ -1410,6 +1410,7 @@ describe('Free Camera terrain floor', () => {
     const topHeight = cam.position.y
     expect(store.cam).toBe('top')
     expect(controls.enabled).toBe(true)
+    expect(controls.enablePan).toBe(false)   // Top 不允许 pan 把中心带离地图中心
     expect(controls.target.x).toBeCloseTo(0, 3)
     expect(controls.target.z).toBeCloseTo(0, 3)
     expect(controls.target.y).toBe(0)
@@ -1421,6 +1422,7 @@ describe('Free Camera terrain floor', () => {
     document.querySelector('canvas').dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }))
     expect(controls.target.equals(topTarget)).toBe(true)   // 俯视缩放中心 = 地图中心
     api.setCam('free')
+    expect(controls.enablePan).toBe(true)
     expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
     const afterForward = cam.position.y
     expect(api.flyTick(0.1, new Set(['KeyE']))).toBe(true)
@@ -1575,7 +1577,7 @@ describe('Free Camera terrain floor', () => {
     api.setCam('top')
     expect(store.cam).toBe('top')
     expect(cam.position.x).toBeCloseTo(0)
-    expect(cam.position.z).toBeCloseTo(0.01)
+    expect(Math.abs(cam.position.z)).toBeLessThan(0.1)   // 沿射线外推后轻微偏移
     expect(cam.position.y).toBeGreaterThanOrEqual(400.5)
     expect(controls.target.x).toBeCloseTo(0, 3)
     expect(controls.target.z).toBeCloseTo(0, 3)
