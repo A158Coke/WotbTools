@@ -1209,3 +1209,56 @@ describe('ReplayWorkspace', () => {
     })
   })
 })
+
+// ---- 打开 2D/3D 等回放视图时自动把视窗垂直居中（用户 2026-10-31 要求）----
+describe('ReplayWorkspace 回放视窗自动居中', () => {
+  let originalScrollIntoView
+  let originalInnerHeight
+  let scrollCalls
+
+  beforeEach(() => {
+    scrollCalls = []
+    originalScrollIntoView = HTMLElement.prototype.scrollIntoView
+    originalInnerHeight = window.innerHeight
+    HTMLElement.prototype.scrollIntoView = function (opts) {
+      scrollCalls.push({ el: this, opts })
+    }
+    withBattles(1)
+  })
+  afterEach(() => {
+    HTMLElement.prototype.scrollIntoView = originalScrollIntoView
+    Object.defineProperty(window, 'innerHeight', { value: originalInnerHeight, configurable: true })
+  })
+
+  const lastBlock = () => scrollCalls.at(-1)?.opts?.block
+
+  it('切到 2D/3D：内容矮于视口 → 垂直居中；高于视口 → 对齐顶部', async () => {
+    const wrapper = mountWorkspace('data')
+    await flushPromises()
+    const content = wrapper.get('.workspace-content').element
+    Object.defineProperty(window, 'innerHeight', { value: 900, configurable: true })
+
+    // 内容比视口矮（默认 jsdom 布局 0 高度也走居中分支）
+    content.getBoundingClientRect = () => ({ height: 400, top: 100, bottom: 500, left: 0, right: 0, width: 800, x: 0, y: 100 })
+    await switchTo(wrapper, 'playback')
+    expect(lastBlock()).toBe('center')
+
+    await switchTo(wrapper, '3d')
+    expect(lastBlock()).toBe('center')
+
+    // 内容高于视口：居中的话会裁掉顶部，改为对齐顶端
+    content.getBoundingClientRect = () => ({ height: 1600, top: 0, bottom: 1600, left: 0, right: 0, width: 800, x: 0, y: 0 })
+    await switchTo(wrapper, 'playback')
+    expect(lastBlock()).toBe('start')
+    wrapper.unmount()
+  })
+
+  it('切到数据视图不触发居中（不动用户的数据页滚动位置）', async () => {
+    const wrapper = mountWorkspace('playback')
+    await flushPromises()
+    const before = scrollCalls.length
+    await switchTo(wrapper, 'data')
+    expect(scrollCalls.length).toBe(before)
+    wrapper.unmount()
+  })
+})

@@ -296,6 +296,35 @@ watch(activeCapability, (cap) => {
   if (cap !== 'data') void ensureTargetBattle()
 }, { immediate: true })
 
+/** 回放类视图（2D/3D/射击/AI）：打开时把视窗放到屏幕中间。 */
+const REPLAY_CAPABILITIES = new Set(['playback', '3d', 'shots', 'ai'])
+// 回放内容容器（视图切换居中与手机横屏沉浸态共用；声明须早于下方 immediate watcher）
+const workspaceContentEl = ref(null)
+
+/**
+ * 打开 2D/3D 等回放视窗时**自动垂直居中**（用户 2026-10-31 要求：此前视窗偏上，
+ * 每次都要手动往下滚一段）。规则：
+ * - 内容比视口矮 → `block: 'center'`（这正是"偏上、要往下滚"的场景）；
+ * - 内容比视口高 → `block: 'start'`（居中的话会裁掉顶部，继续往下滚才是浏览剩余内容的自然动作）。
+ * 只在切换视图/首次进入时触发一次（边沿），不监听滚动、不覆盖用户后续滚动位置。
+ * 手机横屏沉浸态另有 `scrollIntoView({block:'start'})`（见 wantsImmersive），两者目的不同。
+ */
+function centerReplayPane() {
+  const el = workspaceContentEl.value
+  if (!el || typeof el.scrollIntoView !== 'function') return
+  const rect = el.getBoundingClientRect()
+  const viewportH = typeof window !== 'undefined' && Number.isFinite(window.innerHeight) ? window.innerHeight : 0
+  // 高度不可测量（隐藏 / jsdom 无布局）时按居中处理：scrollIntoView 自身会安全退化为最近可滚位置
+  const tallerThanViewport = viewportH > 0 && rect.height > viewportH
+  el.scrollIntoView({ block: tallerThanViewport ? 'start' : 'center' })
+}
+
+// 视图切换（含首次进入非 data 视图）后自动居中；等两帧让懒挂载的回放视窗先完成布局。
+watch(activeCapability, (cap) => {
+  if (!REPLAY_CAPABILITIES.has(cap)) return
+  nextTick(() => { nextTick(centerReplayPane) })
+}, { immediate: true })
+
 function onFileRemoveRequest(f) {
   workspace.replay.askRemoveFile(f)
 }
@@ -343,7 +372,6 @@ const { isPhone } = usePlaybackPhoneForm()
 const { isPortrait } = usePlaybackPortraitViewport()
 const { coarse } = usePointer()
 const pageActive = ref(true)
-const workspaceContentEl = ref(null)
 const replayPaneShown = computed(() =>
   (activeCapability.value === 'playback' && playbackMounted.value) || (activeCapability.value === '3d' && threeMounted.value))
 const wantsImmersive = computed(() =>
