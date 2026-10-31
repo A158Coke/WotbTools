@@ -19,6 +19,7 @@ import { createHash } from 'node:crypto'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { assetProvider } from './assetProvider.js'
+import { foliageClip } from './sceneryMaterials.js'
 import { createPlaybackStore } from './playbackStore.js'
 import { fixtureFacets, requireFixtures } from '../replay-local/__golden__/agentWasmNode.js'
 import { buildCanonicalReplayFacts, entityFirstSeenByAccount } from '../replay-local/canonical/facts.js'
@@ -2208,6 +2209,21 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
       run(1)
       expect(camera.fov).toBe(55)   // Arcade/Sniper 由回放驱动，硬切
       expect(vehicle.meshHull.layers.test(camera.layers)).toBe(true)
+    })
+
+    it('clears nearby foliage only while the recorder view is active', async () => {
+      const { api, run } = await load()
+      api.seekTime(50)
+      expect(foliageClip.value).toBe(0)
+      api.setCam('recorder')
+      run(1)
+      const arcade = foliageClip.value
+      expect(arcade).toBeGreaterThan(0)
+      api.seekTime(65)
+      run(1)
+      expect(foliageClip.value).toBeGreaterThan(arcade)
+      api.setCam('free')
+      expect(foliageClip.value).toBe(0)
     })
 
     const pointer = (type, x, y, id, pointerType) => Object.assign(

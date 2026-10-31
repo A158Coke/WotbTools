@@ -22,6 +22,8 @@ import {
   ARCADE_BOOM_M,
   BASE_FOV_DEG,
   CAMERA_MODE,
+  FOLIAGE_CLIP_ARCADE_M,
+  FOLIAGE_CLIP_SCOPED_M,
   REVERSE_SAMPLE_OFFSET_SEC,
   aimDirectionScene,
   arcadeCameraPosition,
@@ -46,7 +48,7 @@ import {
 import { treeFrame } from './destructibles.js'
 import { writeHiddenInstance, fallMatrix } from './sceneryInstancing.js'
 import { createDynRes } from './dynRes.js'
-import { clearSceneryMatCache } from './sceneryMaterials.js'
+import { clearSceneryMatCache, foliageClip } from './sceneryMaterials.js'
 // 地面 pass SSOT（2026-10-14 抽层，用户裁示"直接完全照搬 3D 回放的代码"）：地形数据/几何、
 // 分层地表材质与俯视烘焙共用同一份——此前烘焙不渲染地面，底图用客户端自带
 // 地图图，与 3D 档实时分层渲染在夜图/带 lm 图上差异显著（见该模块头部）
@@ -4382,6 +4384,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const hidden = scopedHiddenEid ? vehicleByEid(scopedHiddenEid) : null;
     scopedHiddenEid = 0;
     if (hidden) setScopedLayer(hidden, false);
+    foliageClip.value = 0;
     recorderReticle?.hide();
   }
   function setScopedLayer(v, hidden) {
@@ -4428,6 +4431,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     } else if (scoped && v.glb && !v.glb.layers.isEnabled(SCOPED_HIDDEN_LAYER)) {
       setScopedLayer(v, true);   // 开镜期间 GLB 才装配完成
     }
+    foliageClip.value = scoped ? FOLIAGE_CLIP_SCOPED_M : FOLIAGE_CLIP_ARCADE_M;
     let fov = BASE_FOV_DEG;
     if (scoped) {
       if (!glbGunPivotWorld(v, _recorderPos)) {
@@ -4609,6 +4613,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function teardownSession() {
     sessionGen++;
     recorderCamera = null;
+    foliageClip.value = 0;
     store.recorderCameraStatus = 'idle';
     store.recorderViewAvailable = false;
     resetMapLighting();   // 逐图光照随会话复位（否则换图时上一张的太阳会残留）
@@ -5067,6 +5072,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     qualityPresets: QUALITY_PRESETS,
     destroy() {
       destroyed = true;
+      foliageClip.value = 0;
       flyLookApplyMode('follow');   // 恢复 controls 原生状态（实例随即销毁，防残 handedness）
       loadGeneration++;
       sessionEpoch++;

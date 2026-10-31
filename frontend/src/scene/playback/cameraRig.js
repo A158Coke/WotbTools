@@ -10,6 +10,9 @@ export const ARCADE_BOOM_M = 14
 const ARCADE_HEIGHT_M = 4
 export const ANCHOR_HEIGHT_M = 2.2
 export const BACKWARD_ZOOM_SCALE = 1.35
+/** 视野穿透半径（米）：Arcade 要盖住相机到本车这一段，两者都是校准值。 */
+export const FOLIAGE_CLIP_SCOPED_M = 25
+export const FOLIAGE_CLIP_ARCADE_M = ARCADE_BOOM_M + 6
 const BACKWARD_ZOOM_TAU_SEC = 0.25
 const REVERSE_WINDOW_SEC = 0.2
 const REVERSE_MIN_SPEED_MPS = 0.5
