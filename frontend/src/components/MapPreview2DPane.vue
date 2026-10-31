@@ -53,7 +53,15 @@ async function resolveBasemap(bm) {
     basemapImage.value = bm.image
     return
   }
-  const url = mapStaticUrl('map', null, bm.mapKey || props.mapKey)
+  const url = (() => {
+    // mapStaticUrl 内部 assetProvider.url 在 Android 离线门控下可抛（NETWORK_ERROR）：
+    // 与下方 fetch 同一 try 语义，抛错归一为 basemapError（fail-visible）。
+    try {
+      return mapStaticUrl('map', null, bm.mapKey || props.mapKey)
+    } catch {
+      return null
+    }
+  })()
   if (!url) {
     basemapError.value = true
     return
@@ -175,9 +183,24 @@ watch(stageHeight, measureSquare, { flush: 'post' })
 onMounted(() => {
   measureSquare()
   if (typeof ResizeObserver === 'function') {
+    let lastValidSide = 0
     mapSizeObserver = new ResizeObserver(() => {
+      const prevValid = lastValidSide
       measureSquare()
-      fitView()
+      // 零尺寸（v-show 隐藏 / 卸载中）：不动 view——否则 2D⇄3D 切换回来会
+      // 把用户的缩放/平移重置回 contain fit。
+      if (!squareSide.value) return
+      lastValidSide = squareSide.value
+      if (prevValid === 0 || !fitObserved) {
+        // 首次有效尺寸：contain fit（与 image watch 的 fitObserved 协同只做一次）
+        if (!fitObserved) fitObserved = true
+        fitView()
+        return
+      }
+      if (squareSide.value !== prevValid) {
+        // 已有用户视图：保留 scale/tx/ty，仅按新边界重新 clamp（窗口 resize 语义）
+        applyView(view)
+      }
     })
     if (mapEl.value) mapSizeObserver.observe(mapEl.value)
     if (stageEl.value) mapSizeObserver.observe(stageEl.value)

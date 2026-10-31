@@ -70,11 +70,20 @@ async function loadMaps() {
       basemap: bundled
         ? { kind: 'bundled', image: bundled }
         : { kind: 'ground', mapKey: key },
-      thumb: bundled ? bundled.src : mapStaticUrl('map', null, key),
+      thumb: bundled ? bundled.src : safeGroundUrl(key),
     })
   }
   rawMaps.value = [...byKey.values()]
   indexLoaded.value = true
+}
+/** ground.webp 回退 URL；assetProvider 在 Android 离线门控下可抛（NETWORK_ERROR）
+ *  ——picker 构建阶段吞为 null（封面回退占位图标），不让整份清单失败。 */
+function safeGroundUrl(key) {
+  try {
+    return mapStaticUrl('map', null, key)
+  } catch {
+    return null
+  }
 }
 watch(authenticated, (ok) => { if (ok && !indexLoaded.value) loadMaps() }, { immediate: true })
 
