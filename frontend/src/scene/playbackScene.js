@@ -492,7 +492,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   const flyMode = () => CAM === 'free';
   // 触屏多点手势状态：pointerId → 最新坐标
   const flyPointers = new Map();
-  // 单指：armed 前是单击候选，armed 后是贴地平移（y0 高度 / height 平移平面 / offset0 抓取偏移）
+  // 单指：armed 前是单击候选，armed 后是贴地平移（x0/y0/z0 手势起点相机 / height 平移平面 / offset0 抓取偏移）
   let flyPan = null;
   // 双指：mode = pending（判定中）| pinch（d0 指距 / dist0 视距）| look（cx/cy 两指中点）
   let flyTwoFinger = null;
@@ -538,6 +538,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
   /** free↔其他模式切换的 OrbitControls 侧状态迁移（enabled/damping/惯性清理）。 */
   function flyLookApplyMode(mode) {
+    flyPan = null;   // 平移从手势起点重算：相机被模式切换挪动后，旧起点不能再用
     if (mode === 'free') {
       if (controls) {
         controls.enabled = false;
@@ -547,7 +548,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     } else {
       // 离开自由：手势状态一并清空（触屏指针表 / 平移 / 双指 / 转头态）
       flyPointers.clear();
-      flyPan = null;
       flyTwoFinger = null;
       flyLook.active = false;
       emptyDownAt = null;
@@ -601,25 +601,21 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   /** 单指越过单击阈值：抓住手指下的地面点。高度只决定平移比例，不用作净空。 */
   function flyPanArm(clientX, clientY) {
     if (!flyPanRay(clientX, clientY)) return;
-    const y0 = camera.position.y;
+    const { x: x0, y: y0, z: z0 } = camera.position;
     const refY = raycastAnnotationGround(clientX, clientY, container.getBoundingClientRect())?.point.y
       ?? terrainHeightForCameraClamp(camera.position.x, camera.position.z)
       ?? 0;
     const height = Math.max(y0 - refY, TOUCH_PAN_MIN_HEIGHT);
     const offset0 = groundPanOffset(flyPanRay(clientX, clientY), height);
-    Object.assign(flyPan, { armed: true, y0, height, offset0, appliedX: 0, appliedZ: 0 });
+    Object.assign(flyPan, { armed: true, x0, y0, z0, height, offset0 });
     emptyDownAt = null;
   }
-  /** 单指平移一步：累计目标减已应用量，高度回到 y0，朝向全程不变。 */
+  /** 单指平移一步：每次从手势起点重算，撞边修正不累积，手指回到起点相机就回到起点。 */
   function flyPanStep(clientX, clientY) {
     const dir = flyPanRay(clientX, clientY);
     if (!dir) return;
     const o = groundPanOffset(dir, flyPan.height);
-    const tx = flyPan.offset0.x - o.x, tz = flyPan.offset0.z - o.z;
-    camera.position.x += tx - flyPan.appliedX;
-    camera.position.z += tz - flyPan.appliedZ;
-    flyPan.appliedX = tx; flyPan.appliedZ = tz;
-    camera.position.y = flyPan.y0;       // 翻过高坡后回到原高度
+    camera.position.set(flyPan.x0 + flyPan.offset0.x - o.x, flyPan.y0, flyPan.z0 + flyPan.offset0.z - o.z);
     topViewOnLoad = false;
     flyLookApply();
     // target 被钳制时相机同步修正：到地图边缘停下，而不是转头
@@ -655,11 +651,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const pa = flyPointers.get(g.a), pb = flyPointers.get(g.b);
     if (!pa || !pb) return;
     if (g.mode === 'pending') {
-      const mode = classifyTwoFinger(g.startA, g.startB, pa, pb);
-      // pointermove 逐指派发：另一指这一帧的事件可能还没到，看起来像一指不动。
-      // 'pinch' 要等下一个事件确认，否则快速两指拖动的第一帧会被判成缩放。
-      if (mode === 'look' || (mode === 'pinch' && g.pinchSeen)) flyTwoFingerEnter(mode, pa, pb);
-      else if (mode === 'pinch') g.pinchSeen = true;
+      // pointermove 逐指派发，单个事件时另一指可能还是旧位置：一帧判定一次，
+      // 这一帧里两指的最新位置都到齐后再分类，结果不依赖派发顺序。
+      if (!g.sampling) {
+        g.sampling = true;
+        requestAnimationFrame(() => flyTwoFingerSample(g));
+      }
       return;
     }
     if (g.mode === 'pinch') {
@@ -681,6 +678,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     topViewOnLoad = false;
     flyLookApply();
     invalidate();
+  }
+  function flyTwoFingerSample(g) {
+    g.sampling = false;
+    if (flyTwoFinger !== g || g.mode !== 'pending') return;   // 这一帧里手势已结束或换了手指
+    const pa = flyPointers.get(g.a), pb = flyPointers.get(g.b);
+    if (!pa || !pb) return;
+    const mode = classifyTwoFinger(g.startA, g.startB, pa, pb);
+    if (mode) flyTwoFingerEnter(mode, pa, pb);
   }
   function flyLookBy(dx, dy) {
     flyLook.yaw -= dx * FLY_LOOK_RAD_PER_PX;
