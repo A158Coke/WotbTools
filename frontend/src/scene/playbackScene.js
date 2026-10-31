@@ -24,6 +24,7 @@ import {
   CAMERA_MODE,
   FOLIAGE_CLIP_ARCADE_M,
   FOLIAGE_CLIP_SCOPED_M,
+  recorderModeAt,
   REVERSE_SAMPLE_OFFSET_SEC,
   aimDirectionScene,
   arcadeCameraPosition,
@@ -3638,36 +3639,39 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     dmgPtr = 0; burstPtr = 0;
   }
 
-  function buildBurstSources() {
+  /** 车辆每次死亡的场景时刻（issue #622 复活模式：同一 eid 可多次死亡），未排序。 */
+  function deathTimesOf(v) {
     const canonical = store.playbackSession?.canonical;
-    const hasCanonicalLife = canonical?.dataset?.vehicles && Number.isFinite(canonical.clock?.startRaw);
-    burstEvents = [];
-    for (const v of V) {
-      // 每次死亡各一次爆焰（issue #622 复活模式：同一 eid 可多次死亡）。
-      // 普通战斗每车至多一次死亡——单条行为与既往逐位一致。
-      const times = [];
-      if (hasCanonicalLife) {
-        const seenDeaths = new Set();
-        for (const life of canonicalLifeTrack(v, canonical)?.lifeTransitions ?? []) {
-          if (life.lifeState !== 'DESTROYED' || !Number.isFinite(life.timeSec)) continue;
-          const identityTime = (life.destroyedKnownAtSec ?? life.timeSec) + canonical.clock.startRaw;
-          if (!canonicalDeathAppliesTo(v, identityTime, canonical)) continue;
-          // 同一次死亡的重复迁移只爆一次（既有不变式）；真复活模式的多死 killedAtSec 互异
-          const key = Number.isFinite(life.destroyedKnownAtSec) ? life.destroyedKnownAtSec : life.timeSec;
-          if (seenDeaths.has(key)) continue;
-          seenDeaths.add(key);
-          times.push(life.timeSec + canonical.clock.startRaw);
-        }
-      } else {
-        const death = v.def.death_t;
-        if (Number.isFinite(death)) {
-          times.push(death);
-          for (const d of v.def.death_times ?? []) {
-            if (Number.isFinite(d) && d !== death) times.push(d);
-          }
+    const times = [];
+    if (canonical?.dataset?.vehicles && Number.isFinite(canonical.clock?.startRaw)) {
+      const seenDeaths = new Set();
+      for (const life of canonicalLifeTrack(v, canonical)?.lifeTransitions ?? []) {
+        if (life.lifeState !== 'DESTROYED' || !Number.isFinite(life.timeSec)) continue;
+        const identityTime = (life.destroyedKnownAtSec ?? life.timeSec) + canonical.clock.startRaw;
+        if (!canonicalDeathAppliesTo(v, identityTime, canonical)) continue;
+        // 同一次死亡的重复迁移只算一次（既有不变式）；真复活模式的多死 killedAtSec 互异
+        const key = Number.isFinite(life.destroyedKnownAtSec) ? life.destroyedKnownAtSec : life.timeSec;
+        if (seenDeaths.has(key)) continue;
+        seenDeaths.add(key);
+        times.push(life.timeSec + canonical.clock.startRaw);
+      }
+    } else {
+      const death = v.def.death_t;
+      if (Number.isFinite(death)) {
+        times.push(death);
+        for (const d of v.def.death_times ?? []) {
+          if (Number.isFinite(d) && d !== death) times.push(d);
         }
       }
-      for (const t of times) burstEvents.push({ t, eid: v.def.eid });
+    }
+    return times;
+  }
+
+  function buildBurstSources() {
+    burstEvents = [];
+    for (const v of V) {
+      // 每次死亡各一次爆焰；普通战斗每车至多一次死亡——单条行为与既往逐位一致。
+      for (const t of deathTimesOf(v)) burstEvents.push({ t, eid: v.def.eid });
     }
     burstEvents.sort((a, b) => a.t - b.t);
   }
@@ -4205,6 +4209,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 名册与上面的总血量同帧写入：两侧名册与顶栏永远是同一个 T 的投影
     updateRoster();
     store.time = T;
+    store.recorderModeUnknown = !!recorderCamera && recorderModeAt(recorderCamera, T) === CAMERA_MODE.UNKNOWN;
     store.recorderViewAvailable = recorderViewAvailable();
     const f = (T - START) / Math.max(0.001, END - START);
     if (!store.seeking) store.seekFrac = Math.round(f * 1000);
@@ -4348,9 +4353,15 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // ---------- 录像者视角 ----------
   const cameraDriven = () => flyMode() || CAM === 'recorder';
   const recorderVehicle = () => vehicleByEid(DATA?.meta?.author_eid);
+  /** Type39/23/31 的归属止于第一次死亡：之后可能属于观战视点，复活不能证明相机回到录像者。 */
+  function recorderOwnsCamera(v) {
+    return !deathAt(v, T) && deathTimesOf(v).every((death) => T < death);
+  }
+  /** Type23 未知时不伪装成 Arcade：保留 raw，消费层退出。 */
   function recorderViewAvailable() {
     const v = recorderVehicle();
-    return !!recorderCamera && !!v && !deathAt(v, T);
+    return !!recorderCamera && !!v && recorderOwnsCamera(v)
+      && recorderModeAt(recorderCamera, T) !== CAMERA_MODE.UNKNOWN;
   }
   function loadRecorderCamera(source, epoch) {
     recorderCamera = null;
@@ -4420,8 +4431,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   /** 回放数据驱动相机：开镜相机在炮位、朝向与 FOV 全部来自回放，不做平滑。 */
   function driveRecorderCamera(dt) {
     const v = recorderVehicle();
-    if (!DATA || !recorderCamera || !v || deathAt(v, T)) { setCam('free'); return; }
+    if (!DATA || !recorderCamera || !v || !recorderOwnsCamera(v)) { setCam('free'); return; }
     const sample = sampleRecorderCamera(recorderCamera, T, recorderSample);
+    if (sample.mode === CAMERA_MODE.UNKNOWN) { setCam('free'); return; }
     aimDirectionScene(sample.yaw, sample.pitch, _recorderDir);
     const scoped = sample.mode === CAMERA_MODE.SNIPER;
     const hiddenEid = scoped ? v.def.eid : 0;
@@ -4621,6 +4633,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     foliageClip.value = 0;
     store.recorderCameraStatus = 'idle';
     store.recorderViewAvailable = false;
+    store.recorderModeUnknown = false;
     resetMapLighting();   // 逐图光照随会话复位（否则换图时上一张的太阳会残留）
     animLayerMats = [];   // 动画混合层材质随会话失效（材质已随 mapScenery dispose）
     clearEffects();

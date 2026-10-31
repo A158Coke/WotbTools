@@ -47,6 +47,12 @@ function modeOf(raw) {
   return CAMERA_MODE.UNKNOWN
 }
 
+/** 回放时刻 t 的 Type23 模式，供可用性门控逐帧读取。 */
+export function recorderModeAt(facet, t) {
+  const index = lastIndexAtOrBefore(facet.mode.t, t)
+  return modeOf(index >= 0 ? facet.mode.raw[index] : MODE_DEFAULT_RAW)
+}
+
 /**
  * Type31 只在当前开镜 session 内取最近样本：连续流的保持误差约 8ms，而稀疏流线性插值
  * 会凭空造出数秒的缓变。session 刚开始还没有样本时取本 session 的第一个样本。

@@ -12,6 +12,7 @@ import {
   fovFromZoomRaw,
   isReversing,
   reticleRadiusPx,
+  recorderModeAt,
   sampleRecorderCamera,
 } from './cameraRig.js'
 
@@ -23,6 +24,20 @@ const facet = (zoom) => ({
 })
 const CONTINUOUS = { t: [2.008, 2.5, 3], raw: [54, 40, 27] }
 const SPARSE = { t: [2, 2.6, 5.5], raw: [27, 16.88, 6.75] }
+
+describe('recorderModeAt', () => {
+  const modes = (raw) => ({ mode: { t: [10, 20], raw } })
+
+  it('holds the last mode and reads only the low 31 bits', () => {
+    expect(recorderModeAt(modes([0, 1]), 15)).toBe(CAMERA_MODE.SNIPER)
+    expect(recorderModeAt(modes([0x80000000, 0x80000001]), 25)).toBe(CAMERA_MODE.ARCADE)
+    expect(recorderModeAt(modes([0, 1]), 5)).toBe(CAMERA_MODE.ARCADE)
+  })
+
+  it('keeps an unrecognized code unknown', () => {
+    expect(recorderModeAt(modes([1, 2]), 25)).toBe(CAMERA_MODE.UNKNOWN)
+  })
+})
 
 describe('sampleRecorderCamera', () => {
   it('interpolates aim between keyframes and clamps outside them', () => {

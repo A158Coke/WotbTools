@@ -1941,6 +1941,10 @@ describe('Replay3DPane 待开播画质闸门', () => {
     playback.api.store.recorderCameraStatus = 'ready'
     await nextTick()
     expect(recorder.attributes('title')).toBe('agentReplay.cam_recorder_dead')
+    playback.api.store.recorderModeUnknown = true
+    await nextTick()
+    expect(recorder.attributes('title')).toBe('agentReplay.cam_recorder_unsupported')
+    playback.api.store.recorderModeUnknown = false
     playback.api.store.recorderViewAvailable = true
     await nextTick()
     expect(recorder.attributes('disabled')).toBeUndefined()

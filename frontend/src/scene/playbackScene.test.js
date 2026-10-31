@@ -2358,6 +2358,43 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
       expect(window.__camera.fov).toBeCloseTo(55)
     })
 
+    it('does not re-enable after a respawn, because a later life cannot prove camera ownership came back', async () => {
+      const { api, store, run } = await load({ vehicleOverrides: { death_t: 80, resurrection_times: [90] } })
+      api.seekTime(95)
+      expect(window.__pbV[0].group.visible).toBe(true)
+      expect(store.recorderViewAvailable).toBe(false)
+      api.setCam('recorder')
+      expect(store.cam).not.toBe('recorder')
+      api.seekTime(65)
+      expect(store.recorderViewAvailable).toBe(true)
+      api.setCam('recorder')
+      run(1)
+      expect(store.cam).toBe('recorder')
+      api.seekTime(95)
+      run(1)
+      expect(store.cam).toBe('free')
+    })
+
+    it('fails closed on an unknown Type23 mode instead of drawing an Arcade camera', async () => {
+      const mode = { t: [42, 60, 70], raw: [1, 2, 1] }
+      const { api, store, run, reticle } = await load({ camera: facet({ mode }) })
+      api.seekTime(50)
+      api.setCam('recorder')
+      run(1)
+      expect(store.cam).toBe('recorder')
+      api.seekTime(65)
+      run(1)
+      expect(store.cam).toBe('free')
+      expect(store.recorderViewAvailable).toBe(false)
+      expect(store.recorderModeUnknown).toBe(true)
+      expect(reticle.hide).toHaveBeenCalled()
+      api.setCam('recorder')
+      expect(store.cam).toBe('free')
+      api.seekTime(75)
+      expect(store.recorderViewAvailable).toBe(true)
+      expect(store.recorderModeUnknown).toBe(false)
+    })
+
     it('reset then Start, as the file picker does, still opens the next replay at the default overview', async () => {
       const { api, store, run } = await load()
       const overviewHeight = window.__camera.position.y

@@ -435,7 +435,7 @@ const mapTitle = computed(() => {
 const recorderUnavailableReason = computed(() => {
   if (store.recorderViewAvailable) return ''
   if (store.recorderCameraStatus === 'loading') return t('agentReplay.cam_recorder_loading')
-  if (store.recorderCameraStatus === 'ready') return t('agentReplay.cam_recorder_dead')
+  if (store.recorderCameraStatus === 'ready' && !store.recorderModeUnknown) return t('agentReplay.cam_recorder_dead')
   return t('agentReplay.cam_recorder_unsupported')
 })
 const CAMERAS = computed(() => [
