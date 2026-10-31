@@ -236,7 +236,7 @@ function onBattleSelect(sourceId) {
 const targetFile = computed(() => workspace.currentTargetFile.value)
 /**
  * 工作台四态由 session 派生，不另存状态：
- * Empty（没有文件）/ Loading（首批加载中）/ Ready（有结果）/ Failure（全部打不开）。
+ * Empty（没有文件）/ Loading（首批加载中）/ Ready（有结果）/ Failure（没有可提交的批次结果）。
  * Loading 与 Failure 时隐藏内容区但不卸载面板；批次里部分失败仍是 Ready。
  */
 const initialLoading = computed(() => analysis.value.phase === 'parsing' && !resp.value)

@@ -6,7 +6,7 @@
 
 - 工作台的官方示例与帮助复用同一 Replay session。示例经固定 manifest 与 SHA-256 验证后，匿名可用 3D/射击；普通文件选择立即撤销示例资格，AI 与服务端写操作仍使用真实登录。真实页面教学与维护规则见 [onboarding.md](../features/onboarding.md)。
 
-- 回放优先的页面组织：能力切换放在页头操作区；单场能力共用紧凑选局行。工作台分四态：Empty 显示示例入口与拖放区；Loading 只显示「正在加载回放…」、进度与取消；Ready 直接显示功能内容，页头只多一个「管理回放 · N」；Failure 在全部回放都打不开时显示恢复面板（重试 / 打开其他回放 / 从列表移除或清空列表）。Loading 与 Failure 用 `v-show` 隐藏内容区，面板不卸载。批次里部分回放打不开仍是 Ready：五个能力上方都显示可确认的警示条，其余回放照常使用，确认只对当前这份结果有效，失败数继续留在「管理回放」按钮上。
+- 回放优先的页面组织：能力切换放在页头操作区；单场能力共用紧凑选局行。工作台分四态：Empty 显示示例入口与拖放区；Loading 只显示「正在加载回放…」、进度与取消；Ready 直接显示功能内容，页头只多一个「管理回放 · N」；Failure 表示当前选择没有可提交的批次结果（无有效场次、解析引擎不可用或批次分析失败），显示恢复面板（重试 / 打开其他回放 / 从列表移除或清空列表）。Loading 与 Failure 用 `v-show` 隐藏内容区，面板不卸载。只要有可提交的结果，即使批次里部分回放打不开也是 Ready：五个能力上方都显示可确认的警示条，其余回放照常使用，确认只对当前这份结果有效，失败数继续留在「管理回放」按钮上。
 - 能力栏随可用宽度自然换行，手机上每行按钮填满宽度，五个入口及中英俄标签完整可见，无需横向滑动。桌面空间足够时保留单行排列；选中态、键盘切换和至少 44px 的触屏目标继续由共享 `SegmentedControl` 提供。
 - 2D 默认无标注且关闭编辑，播放区提供直接的“标记模式”入口。进入时暂停，退出不自动继续；已完成标注常驻，可手动隐藏，切局或刷新清空。LT / MT / HT / TD、多点路线及编辑沿用现有 annotation owner，不与 3D 同步。3D 有独立的 session-only drawing（入口位于 3D tool-row，不进入 shared PlaybackTransport），语义 pen schema 与 2D 相同但不共享 state；具体行为见 [battle-playback.md](../features/battle-playback.md)。
 - 2D / 3D 共用时间轴在上、主要播放按钮在下的传输控件。3D 开始前直接选择画质，额外性能选项默认收在原生折叠区；相机与模型查看在单独的工具行。3D Drawing 入口在 3D 自己的 tool-row（Camera / GLB / Drawing）；shared PlaybackTransport 始终是六个 primary actions。打开 Drawing 时 tool-row 让位给 AnnotationToolbar，关闭后恢复；不新增 permanent row、不遮 play/timeline。
