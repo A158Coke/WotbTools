@@ -48,6 +48,18 @@ describe('PlaybackRoster', () => {
     wrapper.unmount()
   })
 
+  it('血条内写可证明的数值：阵亡不占位，未知不伪造', () => {
+    const wrapper = mountRoster({
+      health: { 1001: { currentHp: 0, maxHp: 2600 }, 1002: { currentHp: 1234.4, maxHp: 1950 } },
+      destroyed: new Set([1001]),
+    })
+    const [dead, alive] = wrapper.findAll('[data-test="pb-roster-row"]')
+    expect(dead.find('[data-test="roster-hp-value"]').exists()).toBe(false)
+    expect(alive.get('[data-test="roster-hp"] [data-test="roster-hp-value"]').text()).toBe('1234')
+    const unknown = mountRoster({ health: { 1001: {}, 1002: {} } })
+    expect(new Set(unknown.findAll('[data-test="roster-hp-value"]').map(node => node.text()))).toEqual(new Set(['—']))
+  })
+
   it('HP 呈现：exact 数值走 aria-label（行样式回归原始单行版，视觉只有细血条）', () => {
     const wrapper = mountRoster({
       health: { 1001: { currentHp: 0, maxHp: 2600 }, 1002: { currentHp: 1950, maxHp: 1950 } },
@@ -61,7 +73,7 @@ describe('PlaybackRoster', () => {
     const bar = alive.get('[data-test="roster-hp"]')
     expect(bar.attributes('aria-label')).toBe('1950 / 1950')
     expect(bar.attributes('aria-label')).not.toContain('%')
-    // 视觉只有条形（无文字节点）；血量条宽度按比例
+    // 血量条宽度按比例
     expect(bar.classes()).toContain('hp-mode-exact')
     expect(bar.element.querySelector('.pb-roster-hpfill').style.width).toBe('100%')
     expect(alive.get('[data-test="pb-roster-player"]').text()).toBe('Wingman')
@@ -127,7 +139,7 @@ describe('PlaybackRoster', () => {
     wrapper.unmount()
   })
 
-  it('HP 条源码回归：行尾细条 52×5（原始样式），无条内文字/弹夹分段节点', () => {
+  it('HP 条源码回归：行尾 52 宽，数值写在条内，无弹夹分段节点', () => {
     // happy-dom 没有布局引擎（computed style 量不到真实尺寸），所以这里锁的是**声明本身**；
     // 真实渲染后的比值由 browser gate 断言。
     const source = readFileSync('src/components/PlaybackRoster.vue', 'utf8')
@@ -138,7 +150,7 @@ describe('PlaybackRoster', () => {
     }
     const hpBar = block('.pb-roster-hpbar')
     expect(hpBar).toContain('inline-size: 52px')
-    expect(hpBar).toContain('block-size: 5px')
+    expect(hpBar).toContain('block-size: var(--space-4)')
     // 单行 flex 行；条内文字 / 弹夹分段的节点与样式均已移除
     expect(block('.pb-roster-row')).toContain('flex-direction: row')
     expect(source).not.toContain('pb-roster-hptext')

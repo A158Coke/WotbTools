@@ -118,6 +118,32 @@ function toggleDisplay(anchor) {
 
 const controlsCollapsed = ref(false)
 const controlsContentId = useId()
+/**
+ * 收起动画：内容高度收到 0，控制条底部固定，所以整条向下滑出、按钮竖直落下。
+ * 动画结束才收窄容器（docked）：滑动期间按钮的横向位置不能变，收起后又不能继续占场景。
+ */
+const controlsDocked = ref(false)
+function slideContentFrom(el) {
+  controlsDocked.value = false
+  el.style.height = '0px'
+}
+function slideContentOpen(el) {
+  el.style.height = `${el.scrollHeight}px`
+}
+function slideContentClose(el) {
+  el.style.height = `${el.offsetHeight}px`
+}
+function slideContentShut(el) {
+  void el.offsetHeight
+  el.style.height = '0px'
+}
+function clearSlideHeight(el) {
+  el.style.height = ''
+}
+function dockControls(el) {
+  clearSlideHeight(el)
+  controlsDocked.value = true
+}
 function toggleControls() {
   controlsCollapsed.value = !controlsCollapsed.value
   if (controlsCollapsed.value) {
@@ -127,6 +153,7 @@ function toggleControls() {
 }
 watch(() => props.file, () => {
   controlsCollapsed.value = false
+  controlsDocked.value = false
   resetAnnotationState()   // 换场次 = 换地图语义；旧标注不得跨图残留
 })
 /** 紧凑档：手机形态（见 usePlaybackPhoneForm —— 宽度 <768 **或** 触屏且视口高 ≤500，
@@ -570,11 +597,9 @@ function bannerText() {
   if (!banner) return ''
   return banner.outcome ? t('agentReplay.banner_' + banner.outcome) : banner.text
 }
-function killfeedText(kf) {
+function killfeedVerb(kf) {
   // 结构化渲染（三语）：击杀 = killer × victim；环境/非击杀只标阵亡（cause 细节上游为中文后缀）
-  return kf.kill
-    ? `${kf.killer} ${t('agentReplay.destroyed')} ${kf.victim}`
-    : `${kf.victim} ${t('agentReplay.destroyed_by_environment')}`
+  return t(kf.kill ? 'agentReplay.destroyed' : 'agentReplay.destroyed_by_environment')
 }
 
 /**
@@ -845,7 +870,16 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
           </template>
         </BattlePlaybackHud>
         <div v-if="showKillfeed && store.killfeed.length" class="killfeed" data-test="replay3d-killfeed" aria-hidden="true">
-          <div v-for="kf in visibleKillfeed" :key="kf.id" class="kf">{{ killfeedText(kf) }}</div>
+          <div v-for="kf in visibleKillfeed" :key="kf.id" class="kf">
+            <template v-if="kf.kill">
+              <span class="kf-name" :class="kf.killerSide && 'kf-' + kf.killerSide">{{ kf.killer }}</span>
+              <span v-if="kf.killerTank" class="kf-tank">{{ kf.killerTank }}</span>
+              <span class="kf-verb">{{ killfeedVerb(kf) }}</span>
+            </template>
+            <span class="kf-name" :class="kf.victimSide && 'kf-' + kf.victimSide">{{ kf.victim }}</span>
+            <span v-if="kf.victimTank" class="kf-tank">{{ kf.victimTank }}</span>
+            <span v-if="!kf.kill" class="kf-verb">{{ killfeedVerb(kf) }}</span>
+          </div>
         </div>
       </div>
 
@@ -885,7 +919,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 
       <!-- 隐藏全部 UI：连底部播放控件一起让位（这是「只看战场」的语义）；
            `H` 键或右上角常驻按钮随时恢复。resize 观测对 null 元素是安全的（watch(controlsEl)）。 -->
-      <div v-if="store.hasData && !uiHidden" ref="controlsEl" class="controls panel" :class="{ 'controls-collapsed': controlsCollapsed }">
+      <div v-if="store.hasData && !uiHidden" ref="controlsEl" class="controls panel" :class="{ 'controls-collapsed': controlsCollapsed, 'controls-docked': controlsDocked }">
         <button type="button" class="controls-toggle pb-quick-action" data-testid="replay3d-controls-toggle"
           :aria-expanded="!controlsCollapsed" :aria-controls="controlsContentId"
           :aria-label="t(controlsCollapsed ? 'agentReplay.expand_toolbar' : 'agentReplay.collapse_toolbar')"
@@ -893,6 +927,17 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
           @click="toggleControls">
           <component :is="controlsCollapsed ? ChevronUp : ChevronDown" :size="18" aria-hidden="true" />
         </button>
+        <Transition
+          name="controls-slide"
+          @before-enter="slideContentFrom"
+          @enter="slideContentOpen"
+          @after-enter="clearSlideHeight"
+          @enter-cancelled="clearSlideHeight"
+          @before-leave="slideContentClose"
+          @leave="slideContentShut"
+          @after-leave="dockControls"
+          @leave-cancelled="clearSlideHeight"
+        >
         <div v-show="!controlsCollapsed" :id="controlsContentId" class="controls-content">
           <!-- Drawing 面板在传输控件之上，占用 camera/GLB 行的同一份高度预算；不遮 play/timeline。 -->
           <div v-if="annotationOpen" class="replay3d-annotations" data-test="replay3d-annotations">
@@ -967,6 +1012,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
             </button>
           </ReplayCameraTools>
         </div>
+        </Transition>
         <!-- Drawing 是创作工具，不是 Display 里的偏好：紧凑控制条也常驻入口，但仍不进 shared transport。 -->
         <button
           v-if="compactBar && !annotationOpen && !controlsCollapsed"
@@ -1253,7 +1299,10 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
   max-width: 100%;
 }
 .kf {
+  display: flex;
   flex: none;
+  gap: var(--space-1);
+  align-items: baseline;
   padding: 0 var(--space-3);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-sm);
@@ -1264,6 +1313,16 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
   white-space: nowrap;
   animation: kfin var(--duration-base) var(--ease-standard);
 }
+.kf-name {
+  overflow: hidden;
+  min-inline-size: 0;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+.kf-ally { color: var(--color-team-ally); }
+.kf-enemy { color: var(--color-team-enemy); }
+.kf-tank { flex: none; color: var(--color-text-secondary); }
+.kf-verb { flex: none; color: var(--color-text-tertiary); }
 @keyframes kfin { from { opacity: 0; transform: translateY(-6px); } }
 
 /* 基地状态条：顶栏下方居中，不拦截场景操作（徽章本身可悬停看说明） */
@@ -1277,12 +1336,25 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 .controls-content { display: flex; flex-direction: column; gap: var(--space-1); }
 .replay3d-annotations { min-inline-size: 0; }
 .controls-toggle { margin-inline-start: auto; min-inline-size: var(--hit-min-comfortable); min-block-size: var(--hit-min-comfortable); }
-.pb-root.playback-workspace > .controls.controls-collapsed {
-  inline-size: fit-content;
-  margin-inline-start: auto;
-  margin-inline-end: var(--space-2);
-  padding: 0;
+.controls {
+  --controls-slide-duration: calc(var(--duration-slow) * 2);
+  transition:
+    background-color var(--controls-slide-duration) var(--ease-standard),
+    border-color var(--controls-slide-duration) var(--ease-standard),
+    box-shadow var(--controls-slide-duration) var(--ease-standard);
 }
+.controls-slide-enter-active,
+.controls-slide-leave-active {
+  overflow: hidden;
+  transition: height var(--controls-slide-duration) var(--ease-standard);
+}
+.pb-root.playback-workspace > .controls.controls-collapsed {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  pointer-events: none;
+}
+.pb-root.playback-workspace > .controls.controls-collapsed > .controls-toggle { pointer-events: auto; }
 .toggle { display: flex; gap: var(--space-1); align-items: center; min-height: var(--hit-min); color: var(--color-text-secondary); cursor: pointer; }
 .tool-btn {
   min-height: var(--control-h-sm);

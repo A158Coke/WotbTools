@@ -21,9 +21,9 @@ const MODE_CODE_MASK = 0x7fffffff
 /** Type31 相对 session 边界的时钟容差，与上游结构校验同值。 */
 const ZOOM_SESSION_SLACK_SEC = 0.02
 
-const RETICLE_BASE_RAD = (1.5 * Math.PI) / 180
-const RETICLE_MIN_PX = 12
-const RETICLE_MAX_VIEWPORT = 0.45
+const RETICLE_BASE_RAD = 0.01
+const RETICLE_MIN_PX = 10
+const RETICLE_MAX_VIEWPORT = 0.2
 
 /** `values` 中最后一个 ≤ t 的下标；全部大于 t 时返回 -1。 */
 function lastIndexAtOrBefore(values, t) {

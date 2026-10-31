@@ -2082,14 +2082,14 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
       source.loadPlaybackData.mockResolvedValue(data)
       const reticle = { update: vi.fn(), hide: vi.fn() }
       const store = createPlaybackStore()
-      api = initPlayback(mountContainer(), store, null, { recorderReticle: reticle })
+      const stage = mountContainer()
+      Object.defineProperty(stage, 'clientWidth', { value: 900, configurable: true })
+      Object.defineProperty(stage, 'clientHeight', { value: 600, configurable: true })
+      api = initPlayback(stage, store, null, { recorderReticle: reticle })
       created.push(api)
       await api.loadData({ kind: 'local', file: new File(['r'], 'recorder.wotbreplay') })
       api.setPlaying(false)
       await Promise.resolve()
-      // 测试容器没有尺寸：给相机真实比例，否则准星投影恒为无效
-      window.__camera.aspect = 1.5
-      window.__camera.updateProjectionMatrix()
       const run = (count = 1) => { for (let i = 0; i < count; i++) frames.shift()?.() }
       return { api, store, frames, run, reticle, vehicle: window.__pbV[0] }
     }
@@ -2171,15 +2171,26 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
       expect(window.__camera.position.distanceTo(before)).toBeLessThan(1e-6)
     })
 
-    it('hides the reticle instead of faking the center when the aim point cannot be projected', async () => {
+    it('keeps the aim dot centered while the gun circle follows the real gun when the turret lags', async () => {
+      const aim = { t: [42, 200], yaw: [0.3, 0.3], pitch: [0, 0], ray_x: [30, 30], ray_y: [2, 2], ray_z: [100, 100] }
+      const { api, run, reticle } = await load({ camera: facet({ aim }) })
+      api.seekTime(50)
+      api.setCam('recorder')
+      run(5)
+      const [dot, circle] = reticle.update.mock.lastCall
+      expect(Math.abs(dot.x - 450)).toBeLessThan(40)
+      // 炮塔朝 +z、相机朝右偏 0.3 rad：圆必须落在中心一侧，不能跟着相机锁在中间
+      expect(Math.abs(circle.x - dot.x)).toBeGreaterThan(100)
+    })
+
+    it('does not fake the center when the aim point cannot be projected', async () => {
       const { api, run, reticle } = await load({
         camera: facet({ aim: { t: [42, 200], yaw: [0, 0], pitch: [0, 0], ray_x: [0, 0], ray_y: [2, 2], ray_z: [-500, -500] } }),
       })
       api.seekTime(50)
       api.setCam('recorder')
       run(5)
-      expect(reticle.update).not.toHaveBeenCalled()
-      expect(reticle.hide).toHaveBeenCalled()
+      expect(reticle.update.mock.lastCall[0]).toBeNull()
     })
 
     it('still bursts the recorder when it dies while scoped', async () => {
@@ -2264,6 +2275,21 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
       expect(store.cam).toBe('free')
       run(5)
       expect(window.__camera.fov).toBeCloseTo(55)
+    })
+  })
+
+  it('击杀公告带车型与敌我阵营', async () => {
+    manualFrames()
+    const { store, api } = createScene()
+    source.loadPlaybackData.mockResolvedValue(rosterData([
+      vehicle({ eid: 1, team: 1, nickname: 'Ally', tank_name: 'Maus', max_hp: 100 }),
+      vehicle({ eid: 2, team: 2, nickname: 'Enemy', tank_name: 'E 100', max_hp: 100, death_t: 60 }),
+    ], { kills: [{ t: 60, killer_eid: 1, victim_eid: 2, cause: 0 }] }))
+    await api.loadData({ kind: 'local', file: new File(['k'], 'kills.wotbreplay') })
+    api.seekTime(61)
+    expect(store.killfeed.at(-1)).toMatchObject({
+      kill: true, killer: 'Ally', killerTank: 'Maus', killerSide: 'ally',
+      victim: 'Enemy', victimTank: 'E 100', victimSide: 'enemy',
     })
   })
 

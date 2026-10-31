@@ -114,7 +114,7 @@ import { createBaseMarkers } from './playback/bases.js'
 import { createHudFeed } from './playback/hudFeed.js'
 import {
   ANNOTATION_LIFT, ANNOTATION_MAX_ERASER_POINTS, ANNOTATION_MAX_INPUT_POINTS,
-  buildEraserRing, buildPenRibbon, normalizePenPoints,
+  buildEraserRing, buildPenRibbon, normalizePenPoints, reprojectRibbonPositions,
 } from './playback/annotation3d.js'
 
 export { QUALITY_PRESETS, tracerSpanSecs, occlusionCells, occlusionFootprintCells }
@@ -220,6 +220,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 缺失（未导出/404）时回退整图烘焙底图
   let groundLayers = null;
   let terrainMesh = null, heightField = null, heightMeta = null;  // 3D 地形
+  const RETICLE_MIN_GUN_DISTANCE_M = 30;  // 瞄准点贴脸时扩散圆的最小投影距离
   const SCOPED_HIDDEN_LAYER = 1;       // 相机不启用的 layer：开镜时本车留在场景里但不绘制
   const CAMERA_GROUND_CLEARANCE = 0.5;  // 初值：小于地形起伏尺度，真实地图视觉校准由人工验收
   // 高度场只有一份（客户端同构：渲染/查询/放置全用真值场）。让位掩码（v0.4.2 的"渲染场"副本
@@ -245,6 +246,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // committed annotation 的权威 owner 是 Replay3DPane；本闭包只保存最后一次 projection
   // 引用作为 terrain rebuild 的派生缓存。draft/GPU 资源归本闭包，绝不回写 history。
   let projectedAnnotations = []
+  // 提交时算一次的 ribbon 拓扑：细分校验很贵，LOD 变化只刷新高度，不重算。
+  let annotationRibbons = new WeakMap()
   let annotationsVisible = true
   let annotationGroup = null
   let annotationCommittedMesh = null
@@ -1454,7 +1457,18 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
    * 把 pane 的 semantic annotations 投影成当前 terrain 上的 merged geometry。
    * 颜色写进 per-vertex color：一个 material / 一个 draw call，不需要 per-stroke material。
    */
-  function buildMergedAnnotationGeometry(annotations) {
+  function ribbonFor(ann, sceneAnn, refine) {
+    if (refine && annotationRibbons.has(ann)) return annotationRibbons.get(ann)
+    const ribbon = buildPenRibbon(sceneAnn, {
+      sampleHeight: annotationSurfaceHeightAt,
+      lift: ANNOTATION_LIFT,
+      refine,
+    })
+    if (refine) annotationRibbons.set(ann, ribbon)
+    return ribbon
+  }
+
+  function buildMergedAnnotationGeometry(annotations, { refine = true } = {}) {
     const positions = []
     const colors = []
     const indices = []
@@ -1469,10 +1483,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         ? ann.points.filter((point) => point && Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.y)))
         : []
       const sceneAnn = { ...ann, points: points.map((point) => ({ x: -point.x, y: point.y })) }
-      const ribbon = buildPenRibbon(sceneAnn, {
-        sampleHeight: annotationSurfaceHeightAt,
-        lift: ANNOTATION_LIFT,
-      })
+      const ribbon = ribbonFor(ann, sceneAnn, refine)
       if (!ribbon) continue
       const hex = typeof ann.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(ann.color) ? ann.color : '#ffffff'
       color.set(hex)
@@ -1488,7 +1499,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
     if (!positions.length) return { geometry: emptyAnnotationGeometry(), vertices: 0 }
     const geometry = new THREE.BufferGeometry()
-    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3))
+    const merged = reprojectRibbonPositions(new Float32Array(positions), annotationSurfaceHeightAt)
+    geometry.setAttribute('position', new THREE.BufferAttribute(merged, 3))
     geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3))
     geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1))
     geometry.computeBoundingSphere()
@@ -1556,6 +1568,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         pick: (x, y) => pickAnnotationGround(x, y),
         gesture: () => annotationGesture,
         rebuild: () => { rebuildAnnotationProjection(); return annotationStats.terrainRebuilds },
+        reproject: () => { reprojectAnnotationHeights(); return annotationStats.terrainRebuilds },
       }
     }
     rebuildCommittedAnnotations()
@@ -1582,7 +1595,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       annotationStats.draftVertices = 0
       return
     }
-    const result = buildMergedAnnotationGeometry([annotationDraft])
+    const result = buildMergedAnnotationGeometry([annotationDraft], { refine: false })
     replaceAnnotationGeometry(annotationDraftMesh, result.geometry)
     annotationStats.draftBuilds++
     annotationStats.draftVertices = result.vertices
@@ -1614,12 +1627,26 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     invalidate()
   }
 
-  /** terrain 重建后只重投影 Y（XZ 来自 semantic points），committed + draft 都重采样。 */
+  /** 地表整体更换（首次就绪 / 2D 回退）：拓扑失效，全部重建。 */
   function rebuildAnnotationProjection() {
     if (!annotationGroup) return
     annotationStats.terrainRebuilds++
+    annotationRibbons = new WeakMap()
     rebuildCommittedAnnotations()
     rebuildDraftAnnotation()
+  }
+
+  /** 地形 LOD 变化：XZ 来自 semantic points，只在原 geometry 上刷新 Y。 */
+  function reprojectAnnotationHeights() {
+    if (!annotationGroup) return
+    annotationStats.terrainRebuilds++
+    for (const mesh of [annotationCommittedMesh, annotationDraftMesh]) {
+      const position = mesh?.geometry.getAttribute('position')
+      if (!position?.count) continue
+      reprojectRibbonPositions(position.array, annotationSurfaceHeightAt)
+      position.needsUpdate = true
+    }
+    invalidate()
   }
 
   function clearAnnotationProjection() {
@@ -2059,7 +2086,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 当前 camera pose 触发的 LOD 几何将在本帧渲染；按新网格重新约束，避免旧 LOD
     // floor 与替换后的三角面之间留下一帧/停驻时的穿地。
     constrainFreeCameraAltitude();
-    rebuildAnnotationProjection();   // annotation 只重投影 Y，semantic XZ 不缓存旧值
+    reprojectAnnotationHeights();
   }
 
   // 依据 mapTexture/heightField 重建地面（2D 平面或 3D 地形二选一）
@@ -4348,6 +4375,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   const _recorderPrev = new THREE.Vector3();
   const _recorderLook = new THREE.Vector3();
   const _recorderRay = new THREE.Vector3();
+  const _recorderGun = new THREE.Vector3();
+  const _recorderGunDir = new THREE.Vector3();
+  const _reticleAim = { x: 0, y: 0 };
+  const _reticleGun = { x: 0, y: 0 };
   const _recorderQuat = new THREE.Quaternion();
   const _recorderLastPos = new THREE.Vector3();
   const _recorderLastQuat = new THREE.Quaternion();
@@ -4409,23 +4440,35 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (!camera.position.equals(_recorderLastPos) || !camera.quaternion.equals(_recorderLastQuat) || camera.fov !== lastFov) {
       invalidate();
     }
-    updateRecorderReticle(sample);
+    updateRecorderReticle(sample, v);
   }
-  function updateRecorderReticle(sample) {
+  /** 世界点 → 舞台像素；投影不到返回 null，不伪造屏幕位置。 */
+  function projectToStage(point, out) {
+    point.project(camera);
+    if (![point.x, point.y, point.z].every((n) => Number.isFinite(n) && Math.abs(n) <= 1)) return null;
+    out.x = (point.x + 1) * container.clientWidth / 2;
+    out.y = (1 - point.y) * container.clientHeight / 2;
+    return out;
+  }
+  /**
+   * Arcade 相机沿 Type39 看，所以中心点按定义在屏幕中间；扩散圆画在炮管实际指向上，
+   * 炮塔转动滞后时才会偏离中心再追上来，开镜时两者接近重合。
+   */
+  function updateRecorderReticle(sample, v) {
     if (!recorderReticle) return;
-    const width = container.clientWidth, height = container.clientHeight;
     camera.updateMatrixWorld();
-    _recorderRay.set(-sample.rayX, sample.rayY, sample.rayZ).project(camera);
-    // 中心标记只表示瞄准点的真实投影：投影不到就隐藏，不伪造屏幕中心。
-    if (![_recorderRay.x, _recorderRay.y, _recorderRay.z].every((n) => Number.isFinite(n) && Math.abs(n) <= 1)) {
-      recorderReticle.hide();
-      return;
-    }
-    recorderReticle.update(
-      (_recorderRay.x + 1) * width / 2,
-      (1 - _recorderRay.y) * height / 2,
-      reticleRadiusPx({ bloomRaw: sample.bloomRaw, fovDeg: camera.fov, viewportH: height }),
-    );
+    v.gunPivot.updateWorldMatrix(true, false);
+    if (!glbGunPivotWorld(v, _recorderGun)) v.gunPivot.getWorldPosition(_recorderGun);
+    _recorderRay.set(-sample.rayX, sample.rayY, sample.rayZ);
+    const distance = Math.max(RETICLE_MIN_GUN_DISTANCE_M, _recorderGun.distanceTo(_recorderRay));
+    _recorderGunDir.set(0, 0, 1).transformDirection(v.gunPivot.matrixWorld);
+    _recorderGun.addScaledVector(_recorderGunDir, distance);
+    const aim = projectToStage(_recorderRay, _reticleAim);
+    const gun = projectToStage(_recorderGun, _reticleGun);
+    if (!aim && !gun) { recorderReticle.hide(); return; }
+    recorderReticle.update(aim, gun, reticleRadiusPx({
+      bloomRaw: sample.bloomRaw, fovDeg: camera.fov, viewportH: container.clientHeight,
+    }));
   }
   function applyTopView() {
     const { cx, cz } = WORLD_CENTER;

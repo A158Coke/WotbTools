@@ -124,8 +124,13 @@ describe('reticleRadiusPx', () => {
     expect(radius(0.8, 13)).toBeGreaterThan(radius(0.8, 55))
   })
 
+  it('stays small enough for a deep sniper zoom', () => {
+    expect(radius(0.9, 6.75)).toBeLessThan(90)
+    expect(radius(0.9, 27)).toBeLessThan(25)
+  })
+
   it('stays inside the viewport budget and treats missing bloom as 1', () => {
-    expect(radius(50, 6.75)).toBe(405)
+    expect(radius(50, 6.75)).toBe(180)
     expect(radius(null, 55)).toBe(radius(1, 55))
   })
 })

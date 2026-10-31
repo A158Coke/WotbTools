@@ -20,6 +20,8 @@
     --text-shadow-playback-damage: 0 0 2px rgb(0 0 0), 0 0 4px rgb(0 0 0 / .95), 0 1px 0 rgb(0 0 0 / .95), 0 -1px 0 rgb(0 0 0 / .95), 1px 0 0 rgb(0 0 0 / .95), -1px 0 0 rgb(0 0 0 / .95);
     /* 装填条外描边：半透明黑——白色状态条/亮空槽在雪地等亮背景上会糊进背景 */
     --pb-label-reload-outline: 0 0 0 1.5px rgb(0 0 0 / .7);
+    --pb-reticle-ink: #33ff33;
+    --pb-reticle-outline: rgb(0 0 0 / .7);
     --green-400: #5cc280;
     --green-700: #16703c;
     --red-400: #f2786d;
