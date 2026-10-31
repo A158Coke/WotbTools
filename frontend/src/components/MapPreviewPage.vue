@@ -31,7 +31,16 @@ const router = useRouter()
 const { authenticated } = useAuth()
 
 // ---- 地图清单（资产包 index.json → 按 key 去重的 picker 模型）----
-const maps = ref([])
+/** 目录数据保持 locale 中性（rawMaps 只存 key/id/display）；显示名与排序是
+ *  当前 locale 的**派生投影**（computed）——运行中切语言即时生效，不残留旧语言。 */
+const rawMaps = ref([])
+const nameOf = (m) => {
+  const localized = mapLabel(m.key, locale.value)
+  return localized !== m.key ? localized : (m.packDisplay || m.key)
+}
+const maps = computed(() => rawMaps.value
+  .map((m) => ({ ...m, name: nameOf(m) }))
+  .sort((a, b) => collator.compare(a.name, b.name)))
 const indexFailed = ref(false)
 const indexLoaded = ref(false)
 const collator = new Intl.Collator()
@@ -43,7 +52,7 @@ async function loadMaps() {
   if (!entries) {
     // 资产源未配置 / 索引拉取失败（loadMapIndex 已告警）：预览没有 3D 数据面，明确失败
     indexFailed.value = true
-    maps.value = []
+    rawMaps.value = []
     indexLoaded.value = true
     return
   }
@@ -52,12 +61,10 @@ async function loadMaps() {
     const key = String(m.key || '')
     if (!key || byKey.has(key)) continue   // 变体空间归并基础图（首个出现的 id = 基础 id）
     const bundled = mapImages[key] || null
-    const localized = mapLabel(key, locale.value)
     byKey.set(key, {
       key,
       mapId: Number(id),
       packDisplay: m.display || '',
-      name: localized !== key ? localized : (m.display || key),
       // 底图双源：打包注册表优先（离线 + 逐图校准）；未收录的 14 张图回退资产包
       // ground.webp（每张图都有，±300 契约框——3D 内核 meta 恒等回退与之一致）。
       basemap: bundled
@@ -66,7 +73,7 @@ async function loadMaps() {
       thumb: bundled ? bundled.src : mapStaticUrl('map', null, key),
     })
   }
-  maps.value = [...byKey.values()].sort((a, b) => collator.compare(a.name, b.name))
+  rawMaps.value = [...byKey.values()]
   indexLoaded.value = true
 }
 watch(authenticated, (ok) => { if (ok && !indexLoaded.value) loadMaps() }, { immediate: true })

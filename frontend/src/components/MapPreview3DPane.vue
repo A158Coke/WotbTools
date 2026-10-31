@@ -11,7 +11,7 @@
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Download, Maximize, Minimize, PencilRuler, Upload } from 'lucide-vue-next'
+import { Download, Maximize, Minimize, PencilRuler, TriangleAlert, Upload } from 'lucide-vue-next'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { createPlaybackStore } from '../scene/playbackStore.js'
@@ -384,8 +384,8 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
       mode="unsupported"
       :webgl-status="webgl.status"
     />
-    <div v-else class="map3d-root">
-      <div class="map3d-stage" :style="{ height: stageH }" data-testid="map-3d-stage">
+    <div v-else class="map3d-root" :style="{ height: stageH }" data-testid="map-3d-root">
+      <div class="map3d-stage" data-testid="map-3d-stage">
         <div ref="stage" class="scene"></div>
         <Scene3DStatus
           v-if="statusMode"
@@ -395,6 +395,17 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
           :message="statusMessage"
           @retry="reloadMap"
         />
+        <!-- 资产降级是非阻塞状态（与回放 3D 同一口径）：场景可交互，但缺失必须可见 -->
+        <div
+          v-if="!uiHidden && store.mapReady && store.assetDegraded"
+          class="map3d-degraded"
+          data-testid="map-3d-asset-degraded"
+          role="status"
+          aria-live="polite"
+        >
+          <TriangleAlert :size="16" aria-hidden="true" />
+          <span>{{ t('agentReplay.asset_degraded') }}</span>
+        </div>
         <div
           v-if="!uiHidden && store.mapReady"
           class="map3d-fps"
@@ -541,8 +552,11 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
   background: var(--color-canvas);
 }
 
+/* root 高度 = 视口剩余高度（usePaneFillHeight）：stage 吃剩余、controls 固有高
+   ——场景与下方绘制菜单同屏，不把菜单挤出视口。 */
 .map3d-stage {
   position: relative;
+  flex: 1 1 0;
   min-height: 0;
 }
 
@@ -583,8 +597,25 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
 .map3d-controls {
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
+}
+
+.map3d-degraded {
+  position: absolute;
+  inset-block-start: var(--space-2);
+  inset-inline-end: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: calc(100% - var(--space-4));
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-warning);
+  font: var(--type-caption);
+  pointer-events: none;
 }
 
 .map3d-toolrow {

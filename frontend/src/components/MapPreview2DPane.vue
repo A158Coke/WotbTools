@@ -94,6 +94,7 @@ const annotWidth = computed(() => semanticWidthFromSlider(annotWidthSlider.value
 // ---------- 视图（contain fit / pan / pinch / wheel zoom）----------
 const rootEl = ref(null)
 const stageEl = ref(null)
+const squareEl = ref(null)
 const mapComponent = ref(null)
 /** BattleMap expose 的**真实地图 DOM**（组件实例没有 getBoundingClientRect）；
  *  桌面/平板下 .pb-map 根宽为 66.7%，所有 screen-space 几何必须以它为原点/尺寸。 */
@@ -105,6 +106,14 @@ const ZOOM_STEP = 1.2
 const PAN_THRESHOLD_PX = 5
 const PINCH_THRESHOLD_PX = 5
 const FIT_MARGIN = 0.98
+/** 居中方形舞台边长（min(舞台宽, 舞台高)，JS 实测——纯 CSS aspect-ratio 与
+ *  max-width 冲突时会被拉成矩形，实测写入内联尺寸才稳定）。 */
+const squareSide = ref(0)
+function measureSquare() {
+  const w = stageEl.value?.clientWidth || 0
+  const h = stageEl.value?.clientHeight || 0
+  squareSide.value = w > 0 && h > 0 ? Math.floor(Math.min(w, h)) : 0
+}
 
 function mapWidth() {
   return mapEl.value ? mapEl.value.clientWidth : 0
@@ -112,11 +121,13 @@ function mapWidth() {
 function mapHeight() {
   return mapEl.value ? mapEl.value.clientHeight : 0
 }
+/** 可视视口 = 居中方形舞台（squareEl）：pan 夹与 contain fit 以它为界，
+ *  与回放的正方形 stage 同构——地图不会溢出舞台、也不会留不可用的 letterbox。 */
 function stageWidth() {
-  return stageEl.value ? stageEl.value.clientWidth : (rootEl.value?.clientWidth || 0)
+  return squareEl.value ? squareEl.value.clientWidth : (stageEl.value ? stageEl.value.clientWidth : 0)
 }
 function stageHeightPx() {
-  return stageEl.value ? stageEl.value.clientHeight : (rootEl.value?.clientHeight || 0)
+  return squareEl.value ? squareEl.value.clientHeight : (stageEl.value ? stageEl.value.clientHeight : 0)
 }
 /** 当前渲染矩形（相对地图容器原点；与回放的 MapRenderRect SSoT 同构）。 */
 function renderRect() {
@@ -153,17 +164,23 @@ function fitView() {
   applyView({ scale: 1, tx: 0, ty: 0 })
 }
 let fitObserved = false
-/** 地图 DOM 尺寸观察（挂载/底图切换/窗口缩放 → fit 重算；无 RO 环境回退 clientWidth）。 */
+/** 舞台/地图 DOM 尺寸观察（挂载/底图切换/窗口缩放 → 方形实测 + fit 重算）。 */
 let mapSizeObserver = null
 watch(mapEl, (el, prev) => {
   if (prev && mapSizeObserver) mapSizeObserver.unobserve(prev)
   if (el && mapSizeObserver) mapSizeObserver.observe(el)
   fitObserved = false   // 新 DOM = 新几何，重新 fit 一次
 }, { flush: 'post' })
+watch(stageHeight, measureSquare, { flush: 'post' })
 onMounted(() => {
+  measureSquare()
   if (typeof ResizeObserver === 'function') {
-    mapSizeObserver = new ResizeObserver(() => fitView())
+    mapSizeObserver = new ResizeObserver(() => {
+      measureSquare()
+      fitView()
+    })
     if (mapEl.value) mapSizeObserver.observe(mapEl.value)
+    if (stageEl.value) mapSizeObserver.observe(stageEl.value)
   }
 })
 onBeforeUnmount(() => {
@@ -483,42 +500,54 @@ const stubFloatClass = () => ''
 </script>
 
 <template>
+  <!-- 观察层（rootEl）与固定高度层（.map2d-body）分离：usePaneFillHeight 的 RO 观察
+       外层——高度写在外层自身会让 RO 失活（固定盒不再 resize，陈旧测量死锁）。 -->
   <div ref="rootEl" class="map2d" data-testid="map-2d-pane">
-    <div
-      ref="stageEl"
-      class="map2d-stage"
-      :style="{ height: stageHeight }"
-      data-testid="map-2d-stage"
-      tabindex="0"
-      @wheel="onWheel"
-      @pointerdown="onPointerDown"
-      @pointermove="onPointerMove"
-      @pointerup="onPointerUp"
-      @pointercancel="onPointerUp"
-    >
-      <p v-if="basemapError" class="map2d-error" data-testid="map-2d-basemap-error">{{ $t('mapPreview.basemapFailed') }}</p>
-      <BattleMap
-        v-if="image"
-        ref="mapComponent"
-        class="map2d-battlemap"
-        :image="image"
-        :map-view="mapView"
-        :pb-overview="overview"
-        :view-scale="view.scale"
-        :viewport-style="viewportStyle"
-        :touch-pan="mapTouchPan"
-        :annot-visible="annotationsVisible"
-        :rendered-annotations="renderedAnnotations"
-        :annot-font-size="ANNOT_FONT_SIZE"
-        :active-tool="annotationTool"
-        :marker-label="stubText"
-        :hp-for="stubNull"
-        :hp-prefs="{}"
-        :translate="t"
-        :ghost-for="stubNull"
-        :flash-for="stubNull"
-        :float-team-class="stubFloatClass"
-      />
+    <div class="map2d-body" :style="{ height: stageHeight }">
+      <div
+        ref="stageEl"
+        class="map2d-stage"
+        data-testid="map-2d-stage"
+        tabindex="0"
+        @wheel="onWheel"
+        @pointerdown="onPointerDown"
+        @pointermove="onPointerMove"
+        @pointerup="onPointerUp"
+        @pointercancel="onPointerUp"
+      >
+      <!-- 居中方形舞台（边长 JS 实测 = min(舞台宽, 舞台高)）：底图 1:1 契约框是
+           正方形，contain fit 以舞台为界（与回放正方形 stage 同构）——宽屏不留
+           裁切、窄屏不留横滚，标注语义坐标不变。 -->
+      <div
+        ref="squareEl"
+        class="map2d-square"
+        :style="squareSide ? { width: squareSide + 'px', height: squareSide + 'px' } : null"
+      >
+        <p v-if="basemapError" class="map2d-error" data-testid="map-2d-basemap-error">{{ $t('mapPreview.basemapFailed') }}</p>
+        <BattleMap
+          v-if="image"
+          ref="mapComponent"
+          class="map2d-battlemap"
+          :image="image"
+          :map-view="mapView"
+          :pb-overview="overview"
+          :view-scale="view.scale"
+          :viewport-style="viewportStyle"
+          :touch-pan="mapTouchPan"
+          :terrain-relief="false"
+          :annot-visible="annotationsVisible"
+          :rendered-annotations="renderedAnnotations"
+          :annot-font-size="ANNOT_FONT_SIZE"
+          :active-tool="annotationTool"
+          :marker-label="stubText"
+          :hp-for="stubNull"
+          :hp-prefs="{}"
+          :translate="t"
+          :ghost-for="stubNull"
+          :flash-for="stubNull"
+          :float-team-class="stubFloatClass"
+        />
+      </div>
     </div>
     <div class="map2d-controls">
       <div v-if="annotationOpen" class="map2d-annotations" data-testid="map-2d-annotations">
@@ -587,21 +616,44 @@ const stubFloatClass = () => ''
       </div>
       <p v-if="importMessage" class="map2d-import-note" role="status" data-testid="map-2d-import-note">{{ importMessage }}</p>
     </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .map2d {
+  position: relative;
+  min-height: 0;
+}
+
+/* 固定高度层（usePaneFillHeight 写入）：舞台吃剩余、controls 固有高——
+   地图与下方绘制菜单同屏。 */
+.map2d-body {
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
 
+/* root 高度 = 视口剩余高度（usePaneFillHeight）：舞台吃剩余、controls 固有高
+   ——地图与下方绘制菜单同屏。 */
 .map2d-stage {
   position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex: 1 1 0;
+  min-height: 0;
   overflow: hidden;
   background: var(--color-canvas);
   touch-action: none;
+}
+
+/* 舞台内居中方形（边长 = min(舞台宽, 舞台高)，JS 实测写入内联尺寸）：底图契约框
+   是正方形，contain fit 与 pan 夹都以这个舞台为界（与回放正方形 stage 同构）——
+   宽屏不留裁切、窄屏不留横滚，标注语义坐标不变。 */
+.map2d-square {
+  position: relative;
+  overflow: hidden;
 }
 
 .map2d-stage:focus-visible {
