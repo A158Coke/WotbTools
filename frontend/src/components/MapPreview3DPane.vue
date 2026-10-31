@@ -274,6 +274,24 @@ watch(() => props.active, (active) => {
   sceneApi?.setPaused?.(!active)
   if (!active && annotationOpen.value) closeAnnotation()
 })
+// annotation 投影 / 交互 / 可见性的唯一推送方向（pane → scene）——与 Replay3DPane
+// 同一接线。没有这组 watch，画笔提交/导入/撤销/擦除/工具与可见性变化只改 refs，
+// 内核侧画面永远不更新。
+watch(annotations, pushAnnotationProjection)
+watch(
+  [annotationOpen, annotationTool, annotationColor, annotationWidthSlider, annotationEraserRadius, () => store.mapReady],
+  pushAnnotationInteraction,
+)
+watch(annotationsVisible, pushAnnotationVisibility)
+watch(() => store.mapReady, (ready) => {
+  if (!ready && annotationOpen.value) closeAnnotation()
+  // loadMapOnly 的 teardown 清空内核侧标注数组（会话纪律与回放一致）；pane 的
+  // 撤销栈是权威——就绪后把当前标注整体补推回内核（换图/画质重建同样经过这里）。
+  if (ready) {
+    pushAnnotationProjection()
+    pushAnnotationVisibility()
+  }
+})
 /**
  * 连通性翻转兜底（矿井阵地空白页根因）：组件可能在连通性检测仍 pending 时挂载
  * （`online.available=false` → `shouldHaveScene()` false），而 onMounted 只拍一次、

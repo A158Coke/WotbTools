@@ -29,6 +29,7 @@ vi.mock('../scene/replaySource.js', async (importOriginal) => ({
 
 import MapPreviewPage from './MapPreviewPage.vue'
 import { PRIMARY_NAV } from '../app/navigation.js'
+import { assetProvider } from '../scene/assetProvider.js'
 
 /**
  * 地图预览页 contract：
@@ -73,6 +74,10 @@ beforeEach(() => {
   auth.authenticated.value = false
   source.loadMapIndex.mockReset()
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 404 })))
+  // ground.webp 回退封面依赖资产源已配置（CI 无 .env.local）：与 replaySource.test.js
+  // 同款 spy，URL 断言不随运行环境漂移
+  vi.spyOn(assetProvider, 'configured').mockReturnValue(true)
+  vi.spyOn(assetProvider, 'url').mockImplementation((p) => 'https://assets.test' + p)
 })
 
 describe('MapPreviewPage', () => {

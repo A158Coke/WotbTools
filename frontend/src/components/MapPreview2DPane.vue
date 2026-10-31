@@ -8,7 +8,7 @@
  * utils/annotation 全套）；渲染复用 BattleMap.vue（纯展示，车辆/浮层以空数组 +
  * 桩函数传入）。标注只取 pen/eraser（与 3D 预览同一工具集），会话内保存 + 文件导入导出。
  */
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Download, PencilRuler, Upload } from 'lucide-vue-next'
 import BattleMap from './BattleMap.vue'
@@ -18,7 +18,7 @@ import { mapStaticUrl } from '../scene/replaySource.js'
 import { createMapView } from '../utils/mapView.js'
 import {
   ANNOT_COLORS, ANNOT_FONT_SIZE, ANNOT_WIDTH_DEFAULT, ANNOT_WIDTH_MAX, ANNOT_WIDTH_MIN,
-  applyEraser, canRedo, canUndo, commit, polylinePoints, screenToSemantic, semanticWidthFromSlider,
+  applyEraser, canRedo, canUndo, commit, polylinePoints, redo, screenToSemantic, semanticWidthFromSlider, undo,
 } from '../utils/annotation.js'
 import { clampViewPan, zoomViewAt } from '../utils/battlePlayback.js'
 import { usePaneFillHeight } from '../composables/usePaneFillHeight.js'
@@ -94,7 +94,10 @@ const annotWidth = computed(() => semanticWidthFromSlider(annotWidthSlider.value
 // ---------- 视图（contain fit / pan / pinch / wheel zoom）----------
 const rootEl = ref(null)
 const stageEl = ref(null)
-const mapEl = ref(null)
+const mapComponent = ref(null)
+/** BattleMap expose 的**真实地图 DOM**（组件实例没有 getBoundingClientRect）；
+ *  桌面/平板下 .pb-map 根宽为 66.7%，所有 screen-space 几何必须以它为原点/尺寸。 */
+const mapEl = computed(() => mapComponent.value?.mapEl || null)
 const importFile = ref(null)
 const { height: stageHeight } = usePaneFillHeight(rootEl)
 const view = reactive({ scale: 1, tx: 0, ty: 0 })
@@ -103,15 +106,21 @@ const PAN_THRESHOLD_PX = 5
 const PINCH_THRESHOLD_PX = 5
 const FIT_MARGIN = 0.98
 
+function mapWidth() {
+  return mapEl.value ? mapEl.value.clientWidth : 0
+}
+function mapHeight() {
+  return mapEl.value ? mapEl.value.clientHeight : 0
+}
 function stageWidth() {
   return stageEl.value ? stageEl.value.clientWidth : (rootEl.value?.clientWidth || 0)
 }
 function stageHeightPx() {
   return stageEl.value ? stageEl.value.clientHeight : (rootEl.value?.clientHeight || 0)
 }
-/** 当前渲染矩形（相对地图容器原点；宽 = stage 宽，高按图片比例）。 */
+/** 当前渲染矩形（相对地图容器原点；与回放的 MapRenderRect SSoT 同构）。 */
 function renderRect() {
-  const width = stageWidth()
+  const width = mapWidth()
   const ratio = mapView.value.H / mapView.value.W
   return { width, height: width * ratio }
 }
@@ -125,6 +134,7 @@ function fitScale() {
   return 1
 }
 function applyView(next) {
+  // pan 夹以 stage 为界、rect 用真实地图 DOM 尺寸（66.7% 根宽时两者不同）
   const clamped = clampViewPan(next, stageWidth(), stageHeightPx(), renderRect().width, renderRect().height)
   view.scale = clamped.scale
   view.tx = clamped.tx
@@ -143,6 +153,23 @@ function fitView() {
   applyView({ scale: 1, tx: 0, ty: 0 })
 }
 let fitObserved = false
+/** 地图 DOM 尺寸观察（挂载/底图切换/窗口缩放 → fit 重算；无 RO 环境回退 clientWidth）。 */
+let mapSizeObserver = null
+watch(mapEl, (el, prev) => {
+  if (prev && mapSizeObserver) mapSizeObserver.unobserve(prev)
+  if (el && mapSizeObserver) mapSizeObserver.observe(el)
+  fitObserved = false   // 新 DOM = 新几何，重新 fit 一次
+}, { flush: 'post' })
+onMounted(() => {
+  if (typeof ResizeObserver === 'function') {
+    mapSizeObserver = new ResizeObserver(() => fitView())
+    if (mapEl.value) mapSizeObserver.observe(mapEl.value)
+  }
+})
+onBeforeUnmount(() => {
+  mapSizeObserver?.disconnect()
+  mapSizeObserver = null
+})
 /** 笔迹抽稀阈值（屏幕 CSS px，与坐标体系无关；与回放 2D 同值，源内常量不外导）。 */
 const ANNOT_THIN_PX = 2
 watch([image, stageHeight], () => {
@@ -384,6 +411,14 @@ const mapTouchPan = computed(() => !annotationOpen.value && view.scale <= fitSca
 
 // ---------- 标注导入 / 导出（会话内文件落盘；fail-closed 校验）----------
 const IMPORT_KIND = 'map-preview-annotations-2d'
+/** 本面板的标注几何只有 pen：点列 ≥2、坐标有限、宽度为正。 */
+function isImportableAnnotation(a) {
+  return !!a && a.type === 'pen'
+    && typeof a.color === 'string'
+    && Number.isFinite(a.width) && a.width > 0
+    && Array.isArray(a.points) && a.points.length >= 2
+    && a.points.every((p) => !!p && Number.isFinite(p.x) && Number.isFinite(p.y))
+}
 const importMessage = ref('')
 let importMessageTimer = 0
 function flashImportMessage(key, values) {
@@ -430,7 +465,13 @@ async function importAnnotations(event) {
     flashImportMessage('mapPreview.annotations.importFailed', { reason: t('mapPreview.annotations.importReasonMap') })
     return
   }
-  const items = payload.annotations.filter((a) => a && typeof a === 'object')
+  // 几何逐条校验（fail-closed，整份拒绝）：渲染层 polylinePoints 直接读 points[].x/y，
+  // 半校验的条目会让「导入成功」提示之后紧跟渲染 TypeError。
+  if (!payload.annotations.every(isImportableAnnotation)) {
+    flashImportMessage('mapPreview.annotations.importFailed', { reason: t('mapPreview.annotations.importReasonFormat') })
+    return
+  }
+  const items = payload.annotations
   replaceAnnotations(items)
   flashImportMessage('mapPreview.annotations.importedCount', { count: items.length })
 }
@@ -458,7 +499,7 @@ const stubFloatClass = () => ''
       <p v-if="basemapError" class="map2d-error" data-testid="map-2d-basemap-error">{{ $t('mapPreview.basemapFailed') }}</p>
       <BattleMap
         v-if="image"
-        ref="mapEl"
+        ref="mapComponent"
         class="map2d-battlemap"
         :image="image"
         :map-view="mapView"
@@ -582,6 +623,12 @@ const stubFloatClass = () => ''
 
 .map2d-battlemap {
   height: 100%;
+}
+
+/* 地图预览是整页查看器：BattleMap 根的回放内嵌宽度（66.7%）在本布局不适用，
+   全幅铺满 stage——screen-space 几何全部取真实 mapEl 尺寸，宽度改动不影响坐标换算。 */
+.map2d-stage :deep(.pb-map) {
+  width: 100%;
 }
 
 .map2d-controls {

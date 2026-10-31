@@ -73,13 +73,25 @@ describe('MapPreview2DPane 标注导入导出', () => {
     expect(wrapper.find('[data-testid="map-2d-import-note"]').text()).toContain('"count":1')
   })
 
+  it('几何非法（单点 pen）整份拒绝，不进历史', async () => {
+    const wrapper = mountPane()
+    await importJson(wrapper, {
+      version: 1,
+      kind: 'map-preview-annotations-2d',
+      mapKey: 'erlenberg',
+      annotations: [{ type: 'pen', color: '#fff', width: 3, points: [{ x: 0, y: 0 }] }],
+    })
+    expect(wrapper.find('.bm-stub').attributes('data-count')).toBe('0')
+    expect(wrapper.find('[data-testid="map-2d-import-note"]').text()).toContain('importReasonFormat')
+  })
+
   it('kind / mapKey 不符拒绝导入（fail-closed），当前标注不变', async () => {
     const wrapper = mountPane()
     await importJson(wrapper, {
       version: 1,
       kind: 'map-preview-annotations-3d',
       mapKey: 'erlenberg',
-      annotations: [{ type: 'pen', color: '#fff', width: 3, points: [{ x: 0, y: 0 }] }],
+      annotations: [{ type: 'pen', color: '#fff', width: 3, points: [{ x: 0, y: 0 }, { x: 5, y: 5 }] }],
     })
     expect(wrapper.find('.bm-stub').attributes('data-count')).toBe('0')
     expect(wrapper.find('[data-testid="map-2d-import-note"]').text()).toContain('importReasonFormat')
@@ -88,7 +100,7 @@ describe('MapPreview2DPane 标注导入导出', () => {
       version: 1,
       kind: 'map-preview-annotations-2d',
       mapKey: 'moon',
-      annotations: [{ type: 'pen', color: '#fff', width: 3, points: [{ x: 0, y: 0 }] }],
+      annotations: [{ type: 'pen', color: '#fff', width: 3, points: [{ x: 0, y: 0 }, { x: 5, y: 5 }] }],
     })
     expect(wrapper.find('.bm-stub').attributes('data-count')).toBe('0')
     expect(wrapper.find('[data-testid="map-2d-import-note"]').text()).toContain('importReasonMap')
@@ -100,7 +112,7 @@ describe('MapPreview2DPane 标注导入导出', () => {
       version: 1,
       kind: 'map-preview-annotations-2d',
       mapKey: 'erlenberg',
-      annotations: [{ type: 'pen', color: '#fff', width: 3, points: [{ x: 0, y: 0 }] }],
+      annotations: [{ type: 'pen', color: '#fff', width: 3, points: [{ x: 0, y: 0 }, { x: 5, y: 5 }] }],
     })
     expect(wrapper.find('.bm-stub').attributes('data-count')).toBe('1')
     await wrapper.setProps({ mapKey: 'moon', basemap: { kind: 'ground', mapKey: 'moon' } })
