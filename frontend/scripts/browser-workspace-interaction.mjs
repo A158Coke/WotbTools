@@ -2736,6 +2736,15 @@ async function runReplayCollectionScenario(env) {
     const point = await page.waitForValue(clickCenterExpression(selector), Boolean, { label: selector })
     await page.tap({ ...point, touch: false })
   }
+  // 切能力后的自动居中是异步滚动：量到的坐标可能在点击前失效，所以以弹层真的出现为准。
+  const openList = async () => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await hit('[data-testid="collection-trigger"]')
+      const opened = await page.waitForValue(`!!document.querySelector('[data-testid="replay-collection"]')`, Boolean, { timeout: 3000, label: 'collection list' }).catch(() => false)
+      if (opened) return
+    }
+    throw new Error('collection list did not open')
+  }
   const roster = `Array.from(document.querySelectorAll('[data-test="pb-roster-row"]')).map(row => row.dataset.accountId).join(',')`
   const contentTop = `(() => { window.scrollTo(0, 0); return Math.round(document.querySelector('.workspace-content').getBoundingClientRect().top) })()`
   const trigger = `document.querySelector('[data-testid="collection-trigger"]')?.textContent ?? ''`
@@ -2784,7 +2793,7 @@ async function runReplayCollectionScenario(env) {
     await page.waitForValue(`document.activeElement?.dataset?.testid`, value => value === 'collection-trigger', { label: 'focus returns to the trigger' })
 
     // 移除失败文件：先关列表再确认，确认后当前场次不变，焦点回到触发按钮。
-    await hit('[data-testid="collection-trigger"]')
+    await openList()
     await page.waitFor(() => document.querySelectorAll('[data-testid="collection-remove"]').length === 4, { label: 'remove buttons' })
     await page.evaluate(`document.querySelector('[data-testid="collection-row"][data-status="failed"] [data-testid="collection-remove"]').click()`)
     await hit('[data-testid="remove-confirm-ok"]')
@@ -2821,15 +2830,16 @@ async function runReplayCollectionScenario(env) {
     }
 
     await page.emulate({ width: 1440, height: 900, touch: false })
-    await hit('[data-testid="collection-trigger"]')
+    await page.evaluate(`document.querySelector('[data-testid="ws-tab"][data-cap="data"]').click()`)
+    await openList()
     await hit('[data-testid="collection-clear"]')
     await hit('[data-testid="collection-clear-confirm"]')
     await page.waitFor(() => !!document.querySelector('[data-testid="file-uploader-empty"]'), { label: 'clear returns to Empty' })
     check(failures, !await page.evaluate(`!!document.querySelector('[data-testid="playback-battle-picker"]')`), 'clear must remove the battle context')
 
     await setFiles([fixture('random-battle-example')])
-    await hit('[data-testid="collection-trigger"]')
-    await page.waitFor(() => !!document.querySelector('[data-testid="replay-collection"]'), { label: 'list open before back' })
+    await page.waitFor(() => !!document.querySelector('[data-testid="collection-trigger"]:not([disabled])'), { timeout: 60_000, label: 'replay ready before back' })
+    await openList()
     await page.evaluate(`history.go(-(history.length - ${entryLength} + 1))`)
     await page.waitForValue('new URLSearchParams(location.search).get("view")', view => view !== 'replay' && view !== 'battle-playback', { label: 'browser back left the workspace' })
     await page.waitFor(() => !document.querySelector('[data-testid="replay-collection"]'), { label: 'list closed after back' })
