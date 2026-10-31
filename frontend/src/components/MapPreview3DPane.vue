@@ -278,10 +278,9 @@ function reloadMap() {
 // 但图没换，标注与撤销栈不得清空（名称更新由页面 header 的 computed 承担）。
 watch(() => props.mapId, () => {
   resetAnnotationState()   // 换图 = 换标注语义；旧标注不跨图残留
-  if (shouldHaveScene()) {
-    ensureScene()
-    reloadMap()
-  }
+  // 场景已存在（曾激活）：暂停态下重载，用户回到 3D 看到新图；
+  // 从未激活（无场景）：不抢建——首次激活的 reconcile watcher 会装载当前图。
+  if (sceneApi && shouldHaveScene()) reloadMap()
 })
 watch(() => props.active, (active) => {
   sceneApi?.setPaused?.(!active)
@@ -319,11 +318,15 @@ watch(
       destroyScene()
       return
     }
+    // 未激活（直达 ?mode=2d，3D pane 仍 v-show 挂载）：不建 WebGL 上下文、不装
+    // 资产——移动端上隐藏 pane 的整套 map-only 资产链是纯浪费。首次激活才创建
+    // + 装载；之后切走只暂停保留场景/标注（Replay3DPane 生命周期同一不变量）。
+    if (!active) return
     nextTick(() => {
       const created = ensureScene()
       if (!sceneApi) return
-      sceneApi.setPaused?.(!active)
-      // 首次可建（含 pending→available 翻转）才装载；active 翻转不重复装图
+      sceneApi.setPaused?.(false)
+      // 首次创建（含激活翻转、pending→available 翻转）才装载；active 翻转不重复装图
       if (created || (available === true && prevAvailable === false)) reloadMap()
     })
   },
