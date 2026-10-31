@@ -11,6 +11,7 @@
  *  2. `parseAgentPlaybackFromBytes` → PlaybackData（时序）
  *  3. `parseAgentShotsFromBytes`    → 全员射击链（射击复现）
  *  4. `parseAgentAuthorInitialPositionFromBytes` → 录像者初始世界位姿（独立轻量 probe）
+ *  5. `validateAgentRecorderCamera` → 录像者相机状态（独立入口，3D 录像者视角消费）
  *  5. `projectHoF(result)`          → HoF 提交行（Result 的消费方投影，纯函数）
  * 预解析 JSON 通道（`*FromJson`）用于部署面静态托管的同形状文件。
  *
@@ -121,6 +122,21 @@ export interface AgentAuthorInitialPosition {
   author_eid: number
   clock: number
   position: [number, number, number]
+}
+
+/**
+ * 录像者相机状态（`parseRecorderCamera`，上游 v0.4.21 独立能力）。各列同组等长、按 clock 升序。
+ * `aim.yaw` / `aim.pitch` 为弧度，`mode.raw` 是 Type23 无损 u32，`zoom.raw` 是 Type31 raw 值（单位未闭合，
+ * 不得当作 FOV 度数或倍率展示）。`null` = 结构校验未通过，消费方禁用录像者视角。
+ */
+export interface AgentRecorderCamera {
+  version: 1
+  author_eid: number
+  aim: { t: number[]; yaw: number[]; pitch: number[]; ray_x: number[]; ray_y: number[]; ray_z: number[] }
+  mode: { t: number[]; raw: number[] }
+  zoom: { t: number[]; raw: number[] }
+  bloom: { t: number[]; raw: number[] }
+  client_options: { backward_zoom: boolean | null }
 }
 
 // ---------- 时序能力：PlaybackData（contract v2：+Supremacy/点数/瞄准帧；版本显式门禁） ----------
@@ -844,6 +860,69 @@ export function validateAgentAuthorInitialPosition(value: unknown): AgentAuthorI
   return { author_eid: authorEid, clock, position: [x, y, z] }
 }
 
+function assertAscendingClock(v: unknown, path: string): number[] {
+  const values = assertArray(v, path).map((item, i) => assertFiniteNumber(item, `${path}[${i}]`))
+  for (let i = 1; i < values.length; i++) {
+    if (values[i] < values[i - 1]) throw new Error(`agent facets: ${path} 必须按时钟升序`)
+  }
+  return values
+}
+
+function assertColumn(v: unknown, path: string, length: number): number[] {
+  const values = assertArray(v, path).map((item, i) => assertFiniteNumber(item, `${path}[${i}]`))
+  if (values.length !== length) throw new Error(`agent facets: ${path} 长度必须等于时钟列`)
+  return values
+}
+
+function assertU32Column(v: unknown, path: string, length: number): number[] {
+  const values = assertArray(v, path).map((item, i) => assertNonNegativeInteger(item, `${path}[${i}]`, 0xffffffff))
+  if (values.length !== length) throw new Error(`agent facets: ${path} 长度必须等于时钟列`)
+  return values
+}
+
+/**
+ * 录像者相机形状校验（`parseRecorderCamera`）：`null` 是上游结构校验未通过的合法结果；
+ * 形状漂移一律 throw，由调用方按「不支持」处理，不做降级补值。
+ */
+export function validateAgentRecorderCamera(value: unknown): AgentRecorderCamera | null {
+  if (value === null) return null
+  const obj = assertObject(value, 'recorder_camera')
+  if (obj.version !== 1) throw new Error('agent facets: recorder_camera.version 必须为 1')
+  const authorEid = assertNonNegativeInteger(obj.author_eid, 'recorder_camera.author_eid', 0xffffffff)
+  if (authorEid === 0) throw new Error('agent facets: recorder_camera.author_eid 必须是正 u32')
+  const aim = assertObject(obj.aim, 'recorder_camera.aim')
+  const aimT = assertAscendingClock(aim.t, 'recorder_camera.aim.t')
+  if (aimT.length === 0) throw new Error('agent facets: recorder_camera.aim.t 不能为空')
+  const mode = assertObject(obj.mode, 'recorder_camera.mode')
+  const modeT = assertAscendingClock(mode.t, 'recorder_camera.mode.t')
+  if (modeT.length === 0) throw new Error('agent facets: recorder_camera.mode.t 不能为空')
+  const zoom = assertObject(obj.zoom, 'recorder_camera.zoom')
+  const zoomT = assertAscendingClock(zoom.t, 'recorder_camera.zoom.t')
+  const bloom = assertObject(obj.bloom, 'recorder_camera.bloom')
+  const bloomT = assertAscendingClock(bloom.t, 'recorder_camera.bloom.t')
+  const options = assertObject(obj.client_options, 'recorder_camera.client_options')
+  const backwardZoom = options.backward_zoom
+  if (backwardZoom !== null && typeof backwardZoom !== 'boolean') {
+    throw new Error('agent facets: recorder_camera.client_options.backward_zoom 必须是 boolean 或 null')
+  }
+  return {
+    version: 1,
+    author_eid: authorEid,
+    aim: {
+      t: aimT,
+      yaw: assertColumn(aim.yaw, 'recorder_camera.aim.yaw', aimT.length),
+      pitch: assertColumn(aim.pitch, 'recorder_camera.aim.pitch', aimT.length),
+      ray_x: assertColumn(aim.ray_x, 'recorder_camera.aim.ray_x', aimT.length),
+      ray_y: assertColumn(aim.ray_y, 'recorder_camera.aim.ray_y', aimT.length),
+      ray_z: assertColumn(aim.ray_z, 'recorder_camera.aim.ray_z', aimT.length),
+    },
+    mode: { t: modeT, raw: assertU32Column(mode.raw, 'recorder_camera.mode.raw', modeT.length) },
+    zoom: { t: zoomT, raw: assertColumn(zoom.raw, 'recorder_camera.zoom.raw', zoomT.length) },
+    bloom: { t: bloomT, raw: assertColumn(bloom.raw, 'recorder_camera.bloom.raw', bloomT.length) },
+    client_options: { backward_zoom: backwardZoom },
+  }
+}
+
 /**
  * PlaybackData 形状校验：version === PLAYBACK_CONTRACT_VERSION(2)、meta、必备数组 + v2 新键。
  * 未知键忽略 = 契约的同版本加字段策略；字段级取值语义由类型承载。
@@ -1106,6 +1185,8 @@ interface AgentWasmModule {
   parseAiReview?: (bytes: Uint8Array) => string
   /** 第 5 入口（上游 v0.4.15）：录像者初始世界位姿 JSON，或字符串 "null" */
   parseAuthorInitialPosition?: (bytes: Uint8Array) => string
+  /** 第 6 入口（上游 v0.4.21）：录像者相机状态 JSON，或字符串 "null" */
+  parseRecorderCamera?: (bytes: Uint8Array) => string
   default?: () => Promise<void>
   initSync?: () => void
 }

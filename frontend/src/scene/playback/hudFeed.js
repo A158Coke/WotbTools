@@ -18,7 +18,18 @@ function feedEntry(k) {
   const text = k.killer_eid !== 0
     ? `${name(k.killer_eid)} 击毁 ${name(k.victim_eid)}`
     : `${name(k.victim_eid)}${causeMap[k.cause] || '阵亡'}`;
-  const entry = { id: ++kfId, kill: k.killer_eid !== 0, killer: name(k.killer_eid), victim: name(k.victim_eid), text };
+  const vehicleOf = (eid) => getV().find((x) => x.def.eid === eid)?.def;
+  const sideOf = (def) => {
+    const friendlyTeam = getData().meta.friendly_team;
+    if (!def || ![1, 2].includes(friendlyTeam) || ![1, 2].includes(def.team)) return '';
+    return def.team === friendlyTeam ? 'ally' : 'enemy';
+  };
+  const killerDef = vehicleOf(k.killer_eid), victimDef = vehicleOf(k.victim_eid);
+  const entry = {
+    id: ++kfId, kill: k.killer_eid !== 0, killer: name(k.killer_eid), victim: name(k.victim_eid), text,
+    killerTank: killerDef?.tank_name || '', victimTank: victimDef?.tank_name || '',
+    killerSide: sideOf(killerDef), victimSide: sideOf(victimDef),
+  };
   store.killfeed.push(entry);
   setTimeout(() => {
     if (gen !== getSessionGen()) return;   // 会话已切换：条目已随 teardown 清空，不动新会话

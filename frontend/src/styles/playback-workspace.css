@@ -198,8 +198,9 @@
   flex-direction: row;
   align-items: flex-start;
   gap: var(--space-1);
+  --pb-controls-max: min(100% - var(--space-4), 720px);
   inline-size: auto;
-  max-inline-size: min(100% - var(--space-4), 720px);
+  max-inline-size: var(--pb-controls-max);
   margin-inline: auto;
   padding: var(--space-1) var(--space-2);
 }
@@ -213,10 +214,21 @@
 .pb-root.playback-workspace.compact-bar .controls-content:has(> .replay3d-annotations) .pb-time { display: none; }
 /* 手机横屏与矮工作台：全宽单行，高度落在名册车道让出的底部（车道上限 100% - 4rem）。 */
 .pb-root.playback-workspace.compact-bar:not(.portrait-flow) > .controls {
+  --pb-controls-max: calc(100% - var(--space-4));
   align-items: center;
-  max-inline-size: calc(100% - var(--space-4));
   margin-inline: var(--space-2);
   padding-block: var(--space-1);
+}
+/* 收起后容器只包住按钮：右缘留在展开时的位置，按钮不横向跳动。 */
+.pb-root.playback-workspace:not(.portrait-flow) > .controls.controls-docked {
+  inset-inline-start: auto;
+  inset-inline-end: calc((100% - var(--pb-controls-max)) / 2);
+  inline-size: fit-content;
+  margin-inline: 0;
+}
+.pb-root.playback-workspace.portrait-flow > .controls.controls-docked {
+  inline-size: fit-content;
+  margin-inline-start: auto;
 }
 .pb-root.playback-workspace.roster-side:not(.portrait-flow).phone-form { --pb-overlay-lane-w: clamp(10rem, 15vw, 13rem); }
 .pb-root.playback-workspace.roster-side:not(.portrait-flow).phone-form > .hud {
@@ -246,6 +258,8 @@
   overflow-x: hidden;
   min-block-size: 0;
 }
+/* 宽形态车道不进中心盒，行高可以放宽；紧凑形态贴边，高度预算已用满。 */
+.pb-root.playback-workspace.roster-side:not(.portrait-flow):not(.compact-bar) .team-lane { --roster-row-min: 40px; }
 .pb-root.playback-workspace.roster-side:not(.portrait-flow) .side-left {
   inset-inline-start: var(--space-1);
 }

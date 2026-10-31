@@ -1,6 +1,6 @@
 # Recorder camera state — Type23 / Type31 / Type39 closure
 
-> Scope: Blitz `11.19.0_china` / `11.19.0_china_apple`.
+> Scope: Blitz `11.19.0_china` / `11.19.0_china_apple`；§补充验证 覆盖 11.18 与 11.20。
 >
 > Base corpus: 34 strict-framing unique arenas.
 >
@@ -300,6 +300,18 @@ Renderer rules:
 ## Architecture cross-check only
 
 Historical Wargaming/Blitz replay architecture exposes separate control-mode, camera/zoom and turret/aim families. This is useful corroboration only; historical numeric IDs are not imported into current Blitz 11.19.
+
+## 补充验证（11.18 / 11.20）
+
+46 份本地回放（`11.18.0_china_apple`、`11.19.0_china`、`11.19.0_china_apple`、`11.20.0`、`11.20.0_china`）全部通过 Agent 结构校验：Type23 取值与迁移图不变，Type39 仍是 28 字节，Type31 样本都落在开镜 session 内。
+
+**Type31 形态不唯一，修正上文「约 120Hz」的普遍性。** `11.20.0_china` 与 11.19 一致；`11.20.0` 非 `_china` 样本每个 session 只有 2–8 个样本，取值集中在 `27 / 16.88 / 6.75`，样本之间可隔数秒。有 method49 的稀疏样本，其 `SmartZoom` 都含 `false` 分段，所有连续样本 `SmartZoom` 全为 `true`，指向手动分档与自动缩放的差异，因果未闭合。消费方只能在同一 session 内保持最近样本，不能插值。
+
+**method49 按设备形态分段。** `Desktop` / `Tablet` / `Phone` / `MiniTablet` 各有独立设置，回放里没有本场生效分段的标记，所以按回放给出单一 `BackwardZoom` 取值不成立；只有各分段一致时才能确定。
+
+**method36 bloom 稀疏。** 每场 29–48 条，中位间隔 1.3–3.2 s，集中在开火前后，不能当作连续缩圈曲线。
+
+**瞄准与发射的时序。** 3 份 11.18 fixture 共 36 发：`time_s` 时刻的 Type39 与 method29 发射向量 yaw 中位误差 0.56–1.83°，pitch 1.39–2.62°；同一组取 `time_s - 0.2 s` 后 yaw 降到 0.29–0.88°，pitch 降到 0.08–0.61°。发射事件比当时的瞄准晚约 0.2 s，量级与网络往返一致，成因未单独验证。
 
 ## Remaining bounded work
 

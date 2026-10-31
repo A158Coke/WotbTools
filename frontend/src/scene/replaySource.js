@@ -16,7 +16,7 @@
 // 契约校验复用 api/agent-replay-facets 的 validateAgentPlayback（trust-boundary
 // 单一实现）：3D 路径此前只做 JSON.parse，错版 WASM 可静默载入 v1 数据（缺
 // supremacy_bases/points），版本门禁形同虚设。
-import { loadAgentWasmModule, validateAgentPlayback } from '../api/agent-replay-facets.js'
+import { loadAgentWasmModule, validateAgentPlayback, validateAgentRecorderCamera } from '../api/agent-replay-facets.js'
 import { buildPitchLimits } from './pitchLimits.js'
 
 /**
@@ -229,7 +229,7 @@ export async function loadFromLocalFile(fileObject, signal) {
   // 在此抛出，而不是把缺字段的 v1 数据交给渲染层）
   return enrichPlayback(validateAgentPlayback(JSON.parse(json)))
 }
-async function parsePlaybackJsonOffThread(bytes, signal, limitsJson) {
+async function parsePlaybackJsonOffThread(bytes, signal, limitsJson, kind = 'playback') {
   if (signal?.aborted) throw playbackParseAbortError()
   const worker = parseWorkerInstance();
   if (worker) {
@@ -253,7 +253,7 @@ async function parsePlaybackJsonOffThread(bytes, signal, limitsJson) {
         };
         signal?.addEventListener('abort', pending.onAbort, { once: true });
         // 不转移所有权：失败回退时主线程仍需这份字节（结构化克隆 1–2MB 成本可忽略）
-        worker.postMessage({ id, bytes: playbackParsePayload(bytes), limitsJson });
+        worker.postMessage({ id, kind, bytes: playbackParsePayload(bytes), limitsJson });
       });
     } catch (err) {
       if (!parseWorker) {
@@ -267,10 +267,27 @@ async function parsePlaybackJsonOffThread(bytes, signal, limitsJson) {
   }
   const mod = await loadAgentWasmModule();
   if (signal?.aborted) throw playbackParseAbortError()
+  if (kind === 'recorder-camera') {
+    if (typeof mod.parseRecorderCamera !== 'function') {
+      throw new Error('agent wasm: parseRecorderCamera 缺失（产物版本早于 v0.4.21）')
+    }
+    return mod.parseRecorderCamera(bytes);
+  }
   if (typeof mod.parsePlayback !== 'function') {
     throw new Error('agent wasm: parsePlayback 缺失（产物版本早于契约 v2）')
   }
   return mod.parsePlayback(bytes, undefined, limitsJson || undefined);
+}
+
+/**
+ * 录像者相机状态：与 Playback 分开解析，只有 3D 需要它。走同一 Worker 与 session
+ * 取消语义；返回 `null` 表示上游结构校验未通过。
+ */
+export async function loadRecorderCameraFromFile(fileObject, signal) {
+  if (signal?.aborted) throw playbackParseAbortError()
+  const bytes = new Uint8Array(await fileObject.arrayBuffer())
+  const json = await parsePlaybackJsonOffThread(bytes, signal, undefined, 'recorder-camera')
+  return validateAgentRecorderCamera(JSON.parse(json))
 }
 
 /** 展示名富化（本地通道与缓存命中路径共用） */

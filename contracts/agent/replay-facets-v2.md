@@ -16,7 +16,8 @@
 Agent Rust Core
 ├── Result interpretation   -> BattleResult（结果能力）
 ├── Temporal interpretation -> PlaybackData / AI 事件数据（时序能力）
-└── Author initial position -> parseAuthorInitialPosition（独立轻量 probe）
+├── Author initial position -> parseAuthorInitialPosition（独立轻量 probe）
+└── Recorder camera         -> parseRecorderCamera（独立能力，3D 录像者视角）
 
 WotBTools
 └── BattleResult -> HoFSubmission -> Business API / HoF domain（消费方投影）
@@ -24,15 +25,15 @@ WotBTools
 
 - **名人堂（HoF）不是 Agent 公开能力**：v1 的 `HofFacet` 已从上游删除，
   `{playback, ai, hof}` giant envelope 已拆除——Agent 不感知消费方的下游产品。
-- **五个独立 WASM 入口**（浏览器通道；v0.4.15 起为五个）：
+- **六个独立 WASM 入口**（浏览器通道；v0.4.21 起为六个）：
   `parseResult(bytes, tankNamesJson?)` / `parsePlayback(bytes, tankNamesJson?)` /
   `parseShotReplays(bytes, limitsJson?, shellsJson?)` / `parseAiReview(bytes)` /
-  `parseAuthorInitialPosition(bytes)`，
+  `parseAuthorInitialPosition(bytes)` / `parseRecorderCamera(bytes)`，
   不做双 API 兼容；只要 Result 时不得被迫物化 ~MB 级 Playback，也不得隐式执行
   初始位姿 probe。
 - **AI 事件数据自 v0.3.1 起同时提供 WASM 入口**（`parseAiReview`，DTO 冻结 v1）；
   CLI/服务端通道（`facets --parts ai`）继续保留，两者逐字段同构。
-- 消费方接口：`frontend/src/api/agent-replay-facets.ts`（五类能力装载 + 形状校验
+- 消费方接口：`frontend/src/api/agent-replay-facets.ts`（六类能力装载 + 形状校验
   + `projectHoF` 投影；样例锁定测试同目录）。
 
 ### 1a. 装载边界（artifact identity；content-addressed）
@@ -102,6 +103,24 @@ WotBTools
   `parseAgentAuthorInitialPositionFromBytes(bytes)` 才执行。
 - 消费方 wrapper：`parseAgentAuthorInitialPositionFromBytes(bytes)` →
   `AgentAuthorInitialPosition | null`（`frontend/src/api/agent-replay-facets.ts`）。
+
+## 3b. 录像者相机状态（`parseRecorderCamera`；独立能力，上游 v0.4.21）
+
+- WASM 入口：`parseRecorderCamera(new Uint8Array(fileBuffer))` →
+  `{ version: 1, author_eid, aim, mode, zoom, bloom, client_options }` 或 `null`。
+- 所有 `t` 都是原始 replay clock（秒），与 `pose_kf` 同一时钟；同组各列等长、按时钟升序。
+- `aim`（Type39 抽稀关键帧）：`yaw` 弧度且已解卷绕，`yaw = atan2(dx, dz)`（游戏系）；`pitch` 弧度，正为仰角；
+  `ray_x/ray_y/ray_z` 是瞄准射线上一点的原始 replay 世界坐标，不是弹着点或目标位置。
+- `mode.raw`（Type23）：u32 无损。`raw & 0x7fffffff`：1 = ARCADE，0 = SNIPER，高位语义未闭合。
+- `zoom.raw`（Type31）：开镜缩放 raw 值，越小越深，单位未闭合，不得展示为 FOV 度数或倍率。
+  形态不唯一：可能约 120Hz 连续，也可能每 session 只有几个离散样本。消费规则：只在同一开镜 session 内取最近样本，
+  禁止线性插值，禁止跨 session。
+- `bloom.raw`（method36 field6.field1）：稀疏样本，不是连续缩圈曲线。
+- `client_options.backward_zoom`：method49 各设备分段取值一致时为 bool，否则 `null`。
+- `null` = 协议形状不符合已验证结构（包长度、Type23 迁移、session 外 Type31 等），消费方禁用录像者视角。
+  Type39 在录像者死亡或观战后不再代表原车视角，消费方必须按生命史门控。
+- 消费方 wrapper：`validateAgentRecorderCamera(value)`；解析走 `scene/replaySource.js` 的
+  `loadRecorderCameraFromFile(file, signal)`（同一 Worker 与 session 取消语义）。
 
 ## 4. 时序能力（PlaybackData）
 

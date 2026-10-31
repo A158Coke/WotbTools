@@ -19,6 +19,7 @@ import { createHash } from 'node:crypto'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { assetProvider } from './assetProvider.js'
+import { foliageClip } from './sceneryMaterials.js'
 import { createPlaybackStore } from './playbackStore.js'
 import { fixtureFacets, requireFixtures } from '../replay-local/__golden__/agentWasmNode.js'
 import { buildCanonicalReplayFacts, entityFirstSeenByAccount } from '../replay-local/canonical/facts.js'
@@ -28,9 +29,10 @@ import { FLOAT_DMG_MS } from '../utils/battlePlayback.js'
 import { mapImages } from '../data/mapImages.js'
 import { normalizePenPoints } from './playback/annotation3d.js'
 
-const source = vi.hoisted(() => ({ loadPlaybackData: vi.fn(), resolveMapKey: vi.fn(), mapStaticUrl: vi.fn() }))
+const source = vi.hoisted(() => ({ loadPlaybackData: vi.fn(), loadRecorderCameraFromFile: vi.fn(), resolveMapKey: vi.fn(), mapStaticUrl: vi.fn() }))
 vi.mock('./replaySource.js', () => ({
   loadPlaybackData: source.loadPlaybackData,
+  loadRecorderCameraFromFile: source.loadRecorderCameraFromFile,
   resolveMapKey: source.resolveMapKey,
   mapStaticUrl: source.mapStaticUrl,
 }))
@@ -126,6 +128,8 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('unit tests run without network'))))
   vi.spyOn(assetProvider, 'fetch').mockImplementation((...args) => fetch(...args))
   source.loadPlaybackData.mockReset()
+  source.loadRecorderCameraFromFile.mockReset()
+  source.loadRecorderCameraFromFile.mockResolvedValue(null)
   source.resolveMapKey.mockReset()
   source.mapStaticUrl.mockReset()
   source.mapStaticUrl.mockReturnValue(null)
@@ -170,6 +174,14 @@ function stubTerrainAssets({ values = [0, 65535, 0, 65535], zmin = 0, zmax = 30 
     }
     return { ok: false, status: 404 }
   }))
+}
+
+/** 手动驱动 rAF：双指判定一帧一次，测试用 frame() 表示这一帧结束。 */
+function stubFrames() {
+  const frames = []
+  vi.stubGlobal('requestAnimationFrame', (cb) => frames.push(cb))
+  vi.stubGlobal('cancelAnimationFrame', vi.fn())
+  return () => { for (const cb of frames.splice(0)) cb() }
 }
 
 function createScene(existingStore = null) {
@@ -1498,8 +1510,11 @@ describe('Free Camera terrain floor', () => {
       Object.defineProperty(event, 'pointerId', { value: pointerId })
       return event
     }
+    const frame = stubFrames()
     canvas.dispatchEvent(touch('pointerdown', 100, 7))
-    canvas.dispatchEvent(touch('pointerdown', 300, 9))
+    canvas.dispatchEvent(touch('pointerdown', 340, 9))
+    canvas.dispatchEvent(touch('pointermove', 300, 9))
+    frame()                                              // 判定为捏合，基准指距 200px
     canvas.dispatchEvent(touch('pointermove', 260, 9))
     expect(cam.position.y).toBeCloseTo(topHeight, 5)
     canvas.dispatchEvent(touch('pointerup', 260, 9))
@@ -1567,8 +1582,11 @@ describe('Free Camera terrain floor', () => {
       Object.defineProperty(event, 'pointerId', { value: pointerId })
       return event
     }
+    const frame = stubFrames()
     canvas.dispatchEvent(touch('pointerdown', 100, 7))
-    canvas.dispatchEvent(touch('pointerdown', 300, 9))
+    canvas.dispatchEvent(touch('pointerdown', 260, 9))
+    canvas.dispatchEvent(touch('pointermove', 300, 9))
+    frame()                                              // 判定为捏合，基准指距 200px
     canvas.dispatchEvent(touch('pointermove', 340, 9))
     expect(cam.position.y).toBeGreaterThanOrEqual(27.5)
     canvas.dispatchEvent(touch('pointerup', 340, 9))
@@ -1689,6 +1707,25 @@ describe('Free Camera terrain floor', () => {
       expect(window.__camera.position.distanceTo(position)).toBeLessThan(1e-6)
       expect(window.__controls.target.distanceTo(target)).toBeLessThan(1e-6)
     }
+
+    it('top-view jumps to the overhead pose and stays in working Free, unlike the persistent overview', async () => {
+      const { api, store } = await loadScene()
+      expect(store.cam).toBe('top')
+      expect(window.__controls.enabled).toBe(true)
+      api.setCam('free')
+      window.__camera.position.set(10, 40, 10)
+      api.setCam('top-view')
+      expect(store.cam).toBe('free')
+      expect(window.__controls.enabled).toBe(false)
+      expect(window.__camera.position.y).toBeCloseTo(TOP_HEIGHT, 3)
+      const direction = new THREE.Vector3().subVectors(window.__controls.target, window.__camera.position).normalize()
+      expect(direction.y).toBeLessThan(-0.99)
+      expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
+      api.setCam('top')
+      expect(store.cam).toBe('top')
+      expect(window.__controls.enabled).toBe(true)
+      expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(false)
+    })
 
     it('keyboard flight keeps the full camera pose on the next replay', async () => {
       const { api } = await loadScene()
@@ -2010,8 +2047,8 @@ describe('scene vehicle selection intent', () => {
 
   // 回归（2026-10-24 用户实测）：曾按 `(pointer: fine)` 决定是否接管，触屏笔记本 /
   // 平板模式报 coarse ⇒ 自由模式整条接管链失效（WASD 全灭、拖拽退回 OrbitControls）。
-  // 语义改为「自由模式恒接管」，触屏用同一套手势。
-  it('自由模式接管与指针能力无关：touch 拖拽同样转头且相机不动', async () => {
+  // 语义改为「自由模式恒接管」，触屏手势见下方「自由视角触屏手势」。
+  it('自由模式接管与指针能力无关：touch 拖拽由 fly 接管且 OrbitControls 保持关闭', async () => {
     source.loadPlaybackData.mockResolvedValue(minimalData())
     const store = createPlaybackStore()
     const container = mountContainer()
@@ -2019,6 +2056,7 @@ describe('scene vehicle selection intent', () => {
     created.push(api)
     await api.loadData({ kind: 'local', file: new File(['x'], 'touch-look.wotbreplay') })
     api.setCam('free')
+    container.getBoundingClientRect = () => ({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600 })
     const canvas = container.querySelector('canvas')
     const cam = window.__camera
     const controls = window.__controls
@@ -2032,9 +2070,11 @@ describe('scene vehicle selection intent', () => {
     }
     canvas.dispatchEvent(touch('pointerdown', 100, 1))
     canvas.dispatchEvent(touch('pointermove', 180, 1))
-    expect(cam.position.equals(cam0)).toBe(true)          // 旋转中心 = 相机自身
-    expect(controls.target.equals(tgt0)).toBe(false)      // 朝向确实转了
-    canvas.dispatchEvent(touch('pointerup', 180, 0))
+    canvas.dispatchEvent(touch('pointermove', 240, 1))
+    expect(cam.position.equals(cam0)).toBe(false)
+    expect(controls.target.equals(tgt0)).toBe(false)
+    expect(controls.enabled).toBe(false)
+    canvas.dispatchEvent(touch('pointerup', 240, 0))
   })
 
   it('双指捏合：沿视线推拉相机，且手势往返精确回位（评审 P2）', async () => {
@@ -2057,10 +2097,13 @@ describe('scene vehicle selection intent', () => {
       Object.defineProperty(e, 'pointerId', { value: pointerId })
       return e
     }
-    // 一次完整手势：两指从 200px 起，依次移动到 xs（第二指），再回到 200px 收势
+    const frame = stubFrames()
+    // 一次完整手势：两指走够判定距离后基准指距 200px，依次移动到 xs（第二指），再回到 200px 收势
     const gesture = (xs) => {
       canvas.dispatchEvent(touch('pointerdown', 100, 1, 7))
-      canvas.dispatchEvent(touch('pointerdown', 300, 1, 9))   // 指距 200px（= d0）
+      canvas.dispatchEvent(touch('pointerdown', 280, 1, 9))
+      canvas.dispatchEvent(touch('pointermove', 300, 1, 9))
+      frame()                                                 // 判定为捏合：指距 200px（= d0）
       for (const x of xs) canvas.dispatchEvent(touch('pointermove', x, 1, 9))
       canvas.dispatchEvent(touch('pointerup', 300, 0, 9))
       canvas.dispatchEvent(touch('pointerup', 100, 0, 7))
@@ -2100,6 +2143,404 @@ describe('scene vehicle selection intent', () => {
     gesture([375, 450])                             // 分两步到同一指距 350
     const split = cam.position.clone().sub(base)
     expect(split.distanceTo(oneShot)).toBeCloseTo(0, 4)
+  })
+})
+
+describe('自由视角触屏手势', () => {
+  const touch = (type, x, y, pointerId) => Object.assign(
+    new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: type === 'pointerup' ? 0 : 1, clientX: x, clientY: y }),
+    { pointerId, pointerType: 'touch' },
+  )
+
+  async function setup({ pos = [0, 100, 100], target = [0, 0, 0] } = {}) {
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const frame = stubFrames()
+    const onVehicleSelect = vi.fn()
+    const container = mountContainer()
+    container.getBoundingClientRect = () => ({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600 })
+    container.setPointerCapture = vi.fn()
+    container.releasePointerCapture = vi.fn()
+    const api = initPlayback(container, createPlaybackStore(), null, { onVehicleSelect })
+    created.push(api)
+    await api.loadData({ kind: 'local', file: new File(['x'], 'touch-gestures.wotbreplay') })
+    api.setPlaying(false)
+    api.setCam('free')
+    const cam = window.__camera
+    const controls = window.__controls
+    cam.position.set(...pos)
+    controls.target.set(...target)
+    cam.lookAt(controls.target)
+    const canvas = container.querySelector('canvas')
+    canvas.setPointerCapture = vi.fn()
+    canvas.releasePointerCapture = vi.fn()
+    const send = (...args) => canvas.dispatchEvent(touch(...args))
+    const dir = () => new THREE.Vector3().subVectors(controls.target, cam.position).normalize()
+    return { api, cam, controls, canvas, send, dir, frame, onVehicleSelect }
+  }
+
+  // 手指当前射线与 y=0 平面的交点：不经过实现的平移计算，独立验证「地面跟手」
+  function groundUnder(cam, x, y) {
+    cam.updateMatrixWorld()
+    const raycaster = new THREE.Raycaster()
+    raycaster.setFromCamera(new THREE.Vector2(x / 800 * 2 - 1, -(y / 600 * 2 - 1)), cam)
+    return raycaster.ray.at(-cam.position.y / raycaster.ray.direction.y, new THREE.Vector3())
+  }
+
+  describe('单指平移', () => {
+    it('抓住的地面点留在手指下，朝向和高度不变，松手即停', async () => {
+      const { cam, controls, send, dir } = await setup()
+      const dir0 = dir()
+      send('pointerdown', 400, 300, 1)
+      send('pointermove', 410, 300, 1)                        // 越过单击阈值，抓住地面点
+      const grabbed = groundUnder(cam, 410, 300)
+      send('pointermove', 520, 380, 1)
+      expect(cam.position.y).toBe(100)
+      expect(dir().dot(dir0)).toBeCloseTo(1, 8)
+      expect(controls.enabled).toBe(false)
+      const under = groundUnder(cam, 520, 380)
+      expect(under.distanceTo(grabbed)).toBeLessThan(1e-3)
+      expect(cam.position.x).not.toBeCloseTo(0, 1)
+      send('pointerup', 520, 380, 1)
+      const stopped = cam.position.clone()
+      send('pointermove', 600, 300, 1)
+      expect(cam.position.equals(stopped)).toBe(true)
+    })
+
+    it('手指回到起点时相机精确回位', async () => {
+      const { cam, send } = await setup()
+      send('pointerdown', 400, 300, 1)
+      send('pointermove', 410, 300, 1)
+      const start = cam.position.clone()
+      send('pointermove', 600, 450, 1)
+      send('pointermove', 300, 200, 1)
+      send('pointermove', 410, 300, 1)
+      send('pointerup', 410, 300, 1)
+      expect(cam.position.distanceTo(start)).toBeLessThan(1e-6)
+    })
+
+    it('手指按在地平线以上也不会把相机甩飞', async () => {
+      const { cam, send } = await setup({ pos: [0, 100, 0], target: [0, 100, -100] })
+      send('pointerdown', 400, 100, 1)
+      send('pointermove', 410, 100, 1)
+      send('pointermove', 500, 100, 1)
+      send('pointerup', 500, 100, 1)
+      expect(Number.isFinite(cam.position.x)).toBe(true)
+      expect(Math.abs(cam.position.x)).toBeLessThan(800)
+      expect(cam.position.y).toBe(100)
+    })
+
+    it('平移到地图边缘时相机停下而不是转头', async () => {
+      const { cam, send, dir } = await setup()
+      const dir0 = dir()
+      let last = null
+      for (let i = 0; i < 40; i++) {
+        send('pointerdown', 400, 100, 1)
+        send('pointermove', 400, 110, 1)
+        send('pointermove', 400, 500, 1)
+        send('pointerup', 400, 500, 1)
+        expect(dir().dot(dir0)).toBeCloseTo(1, 6)
+        if (i === 39) expect(cam.position.distanceTo(last)).toBeLessThan(1e-6)
+        last = cam.position.clone()
+      }
+    })
+
+    it('撞到地图边缘再反向，手指回到起点时相机回到手势起点', async () => {
+      const { cam, controls, send } = await setup()
+      for (let i = 0; i < 40; i++) {
+        send('pointerdown', 400, 100, 1)
+        send('pointermove', 400, 110, 1)
+        send('pointermove', 400, 500, 1)
+        send('pointerup', 400, 500, 1)
+      }
+      send('pointerdown', 400, 300, 2)
+      send('pointermove', 400, 310, 2)
+      const start = cam.position.clone()
+      const target = controls.target.clone()
+      send('pointermove', 400, 590, 2)                        // 继续顶住边缘
+      send('pointermove', 400, 100, 2)                        // 反向
+      send('pointermove', 400, 310, 2)                        // 回到手势起点
+      send('pointerup', 400, 310, 2)
+      expect(cam.position.distanceTo(start)).toBeLessThan(1e-6)
+      expect(controls.target.distanceTo(target)).toBeLessThan(1e-6)
+    })
+
+    it('翻过高坡时不低于净空，回到原处恢复原高度', async () => {
+      stubTerrainAssets()
+      const { cam, send } = await setup({ pos: [-60, 26, 0], target: [-60, 11, -30] })
+      send('pointerdown', 700, 300, 1)
+      send('pointermove', 690, 300, 1)
+      const start = cam.position.clone()
+      let peak = 0
+      for (let x = 680; x >= -3000; x -= 200) {
+        send('pointermove', x, 300, 1)
+        peak = Math.max(peak, cam.position.y)
+        if (cam.position.x > -20) break
+      }
+      expect(peak).toBeGreaterThan(26)
+      send('pointermove', 690, 300, 1)
+      send('pointerup', 690, 300, 1)
+      expect(cam.position.distanceTo(start)).toBeLessThan(1e-6)
+    })
+
+    it('≤ 4px 算单击且相机不动，超过后不算单击', async () => {
+      const { cam, send, onVehicleSelect } = await setup()
+      const start = cam.position.clone()
+      send('pointerdown', 400, 300, 1)
+      send('pointermove', 403, 300, 1)
+      send('pointerup', 403, 300, 1)
+      expect(cam.position.equals(start)).toBe(true)
+      expect(onVehicleSelect).toHaveBeenCalledTimes(1)
+      send('pointerdown', 400, 300, 2)
+      send('pointermove', 420, 300, 2)
+      send('pointermove', 400, 300, 2)                        // 回到起点也不算单击
+      send('pointerup', 400, 300, 2)
+      expect(onVehicleSelect).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('双指', () => {
+    const lookCases = [
+      ['右', [40, 0], (a, b) => b.x > a.x],
+      ['左', [-40, 0], (a, b) => b.x < a.x],
+      ['上', [0, -40], (a, b) => b.y > a.y],
+      ['下', [0, 40], (a, b) => b.y < a.y],
+    ]
+    it.each(lookCases)('并拢一起向%s拖 = 转视角，相机不动', async (_, [dx, dy], changed) => {
+      const { cam, controls, send, dir, frame } = await setup()
+      const start = cam.position.clone()
+      const dir0 = dir()
+      send('pointerdown', 400, 300, 1)
+      send('pointerdown', 440, 300, 2)
+      send('pointermove', 400 + dx / 2, 300 + dy / 2, 1)
+      send('pointermove', 440 + dx / 2, 300 + dy / 2, 2)
+      frame()
+      send('pointermove', 400 + dx, 300 + dy, 1)
+      send('pointermove', 440 + dx, 300 + dy, 2)
+      expect(changed(dir0, dir())).toBe(true)
+      expect(dir().angleTo(dir0)).toBeGreaterThan(0.01)
+      expect(cam.position.equals(start)).toBe(true)
+      expect(controls.enabled).toBe(false)
+      expect(cam.position.distanceTo(controls.target)).toBeCloseTo(start.distanceTo(new THREE.Vector3(0, 0, 0)), 6)
+    })
+
+    it.each([
+      ['A A B', [[430, 1], [460, 1], [500, 2]]],
+      ['B A A', [[500, 2], [430, 1], [460, 1]]],
+    ])('同一帧内事件顺序 %s 不影响判定：两指同向 = 转视角', async (_, moves) => {
+      const { cam, send, dir, frame } = await setup()
+      const start = cam.position.clone()
+      const dir0 = dir()
+      send('pointerdown', 400, 300, 1)
+      send('pointerdown', 440, 300, 2)
+      for (const [x, id] of moves) send('pointermove', x, 300, id)
+      frame()
+      send('pointermove', 500, 300, 1)
+      send('pointermove', 540, 300, 2)
+      expect(dir().angleTo(dir0)).toBeGreaterThan(0.01)
+      expect(cam.position.equals(start)).toBe(true)
+    })
+
+    it('一帧内越过阈值又退回时不留下判定状态，之后同向拖动仍是转视角', async () => {
+      const { cam, send, dir, frame } = await setup()
+      const start = cam.position.clone()
+      const dir0 = dir()
+      send('pointerdown', 300, 300, 1)
+      send('pointerdown', 500, 300, 2)
+      send('pointermove', 313, 300, 1)
+      send('pointermove', 300, 300, 1)
+      frame()
+      send('pointermove', 300, 320, 1)
+      send('pointermove', 500, 320, 2)
+      frame()
+      send('pointermove', 300, 340, 1)
+      send('pointermove', 500, 340, 2)
+      expect(dir().angleTo(dir0)).toBeGreaterThan(0.01)
+      expect(cam.position.equals(start)).toBe(true)
+    })
+
+    it('判定帧到来前手势已结束时不留下残余状态', async () => {
+      const { cam, send, frame } = await setup()
+      const start = cam.position.clone()
+      send('pointerdown', 300, 300, 1)
+      send('pointerdown', 500, 300, 2)
+      send('pointermove', 340, 300, 1)
+      send('pointerup', 500, 300, 2)
+      send('pointerup', 340, 300, 1)
+      frame()
+      expect(cam.position.equals(start)).toBe(true)
+    })
+
+    it('指距分开较大时一起拖同样是转视角', async () => {
+      const { cam, send, dir, frame } = await setup()
+      const start = cam.position.clone()
+      const dir0 = dir()
+      send('pointerdown', 200, 300, 1)
+      send('pointerdown', 600, 300, 2)
+      send('pointermove', 200, 330, 1)
+      send('pointermove', 600, 330, 2)
+      frame()
+      send('pointermove', 200, 360, 1)
+      send('pointermove', 600, 360, 2)
+      expect(dir().angleTo(dir0)).toBeGreaterThan(0.01)
+      expect(cam.position.equals(start)).toBe(true)
+    })
+
+    it('转视角中指距变化不触发推拉', async () => {
+      const { cam, send, frame } = await setup()
+      const start = cam.position.clone()
+      send('pointerdown', 400, 300, 1)
+      send('pointerdown', 440, 300, 2)
+      send('pointermove', 400, 330, 1)
+      send('pointermove', 440, 330, 2)
+      frame()
+      send('pointermove', 300, 330, 1)
+      send('pointermove', 540, 330, 2)
+      expect(cam.position.equals(start)).toBe(true)
+    })
+
+    it.each([
+      ['从并拢分开', [400, 420], [[380, 1], [440, 2]], [465, 2], 1],
+      ['两指合拢', [300, 600], [[320, 1], [580, 2], [340, 1], [560, 2]], [500, 2], -1],
+      ['一指不动', [300, 400], [[420, 2], [440, 2]], [520, 2], 1],
+    ])('%s = 沿视线推拉，朝向不变', async (_, [x1, x2], moves, [lastX, lastId], sign) => {
+      const { cam, send, dir, frame } = await setup()
+      const dir0 = dir()
+      send('pointerdown', x1, 300, 1)
+      send('pointerdown', x2, 300, 2)
+      for (const [x, id] of moves) send('pointermove', x, 300, id)
+      frame()
+      const before = cam.position.clone()
+      send('pointermove', lastX, 300, lastId)
+      expect(cam.position.clone().sub(before).dot(dir0) * sign).toBeGreaterThan(0)
+      expect(dir().dot(dir0)).toBeCloseTo(1, 8)
+    })
+
+    it('捏合中两指改成同向移动也不转视角', async () => {
+      const { send, dir, frame } = await setup()
+      const dir0 = dir()
+      send('pointerdown', 300, 300, 1)
+      send('pointerdown', 500, 300, 2)
+      send('pointermove', 280, 300, 1)
+      send('pointermove', 520, 300, 2)
+      frame()
+      send('pointermove', 280, 400, 1)
+      send('pointermove', 520, 400, 2)
+      expect(dir().dot(dir0)).toBeCloseTo(1, 8)
+    })
+
+    it('判定前 12px 内相机不动', async () => {
+      const { cam, send, dir, frame } = await setup()
+      const start = cam.position.clone()
+      const dir0 = dir()
+      send('pointerdown', 300, 300, 1)
+      send('pointerdown', 500, 300, 2)
+      send('pointermove', 305, 300, 1)
+      send('pointermove', 495, 300, 2)
+      frame()
+      expect(cam.position.equals(start)).toBe(true)
+      expect(dir().dot(dir0)).toBeCloseTo(1, 10)
+    })
+
+    it('平移中加第二指立即停止；抬起后剩下的手指不平移也不选车', async () => {
+      const { cam, send, onVehicleSelect } = await setup()
+      send('pointerdown', 400, 300, 1)
+      send('pointermove', 410, 300, 1)
+      send('pointermove', 500, 300, 1)
+      const stopped = cam.position.clone()
+      send('pointerdown', 600, 300, 2)
+      send('pointerup', 600, 300, 2)
+      send('pointermove', 300, 300, 1)
+      expect(cam.position.equals(stopped)).toBe(true)
+      send('pointerup', 300, 300, 1)
+      expect(onVehicleSelect).not.toHaveBeenCalled()
+    })
+
+    it('两指轻点不选车', async () => {
+      const { send, onVehicleSelect } = await setup()
+      send('pointerdown', 300, 300, 1)
+      send('pointerdown', 500, 300, 2)
+      send('pointerup', 500, 300, 2)
+      send('pointerup', 300, 300, 1)
+      expect(onVehicleSelect).not.toHaveBeenCalled()
+    })
+
+    it('pointercancel 清空手势，下一次单指正常平移', async () => {
+      const { cam, send } = await setup()
+      send('pointerdown', 300, 300, 1)
+      send('pointerdown', 500, 300, 2)
+      send('pointercancel', 300, 300, 1)
+      send('pointercancel', 500, 300, 2)
+      const start = cam.position.clone()
+      send('pointerdown', 400, 300, 3)
+      send('pointermove', 410, 300, 3)
+      send('pointermove', 500, 300, 3)
+      send('pointerup', 500, 300, 3)
+      expect(cam.position.equals(start)).toBe(false)
+    })
+
+    it('第三根手指不留下残余手势', async () => {
+      const { cam, send } = await setup()
+      const start = cam.position.clone()
+      send('pointerdown', 300, 300, 1)
+      send('pointerdown', 500, 300, 2)
+      send('pointerdown', 400, 200, 3)
+      send('pointermove', 400, 100, 3)
+      send('pointerup', 400, 100, 3)
+      send('pointerup', 500, 300, 2)
+      send('pointerup', 300, 300, 1)
+      expect(cam.position.equals(start)).toBe(true)
+    })
+  })
+
+  describe('其他模式不走自由视角手势', () => {
+    it('绘制模式：单指不动相机，双指一起拖也只是捏合', async () => {
+      const { api, cam, send, dir } = await setup()
+      api.setAnnotationInteraction({ enabled: true, tool: 'pen', color: '#ff4d4f', width: 3, eraserWidth: 16 })
+      const start = cam.position.clone()
+      const dir0 = dir()
+      send('pointerdown', 400, 300, 1)
+      send('pointermove', 460, 300, 1)
+      expect(cam.position.equals(start)).toBe(true)
+      send('pointerdown', 500, 300, 2)
+      send('pointermove', 460, 360, 1)
+      send('pointermove', 500, 360, 2)
+      expect(dir().dot(dir0)).toBeCloseTo(1, 8)
+      send('pointerup', 500, 360, 2)
+      send('pointerup', 460, 360, 1)
+    })
+
+    it('沙盘：单指交给 OrbitControls，不走贴地平移', async () => {
+      const { api, controls, send } = await setup()
+      api.setCam('top')
+      const target = controls.target.clone()
+      send('pointerdown', 400, 300, 1)
+      send('pointermove', 500, 300, 1)
+      send('pointerup', 500, 300, 1)
+      expect(controls.target.equals(target)).toBe(true)
+      expect(controls.enabled).toBe(true)
+    })
+
+    it('平移中回到俯视机位后，手指继续移动不把相机拉回手势起点', async () => {
+      const { api, cam, send } = await setup()
+      send('pointerdown', 400, 300, 1)
+      send('pointermove', 410, 300, 1)
+      send('pointermove', 500, 300, 1)
+      api.setCam('top-view')
+      const top = cam.position.clone()
+      send('pointermove', 600, 300, 1)
+      expect(cam.position.equals(top)).toBe(true)
+    })
+
+    it('手势中切模式后不留下残余状态', async () => {
+      const { api, cam, send } = await setup()
+      send('pointerdown', 400, 300, 1)
+      send('pointermove', 410, 300, 1)
+      api.setCam('top')
+      api.setCam('free')
+      const start = cam.position.clone()
+      send('pointermove', 600, 300, 1)
+      expect(cam.position.equals(start)).toBe(true)
+    })
   })
 })
 
@@ -2153,6 +2594,309 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
     vi.stubGlobal('cancelAnimationFrame', vi.fn())
     return frames
   }
+
+  describe('recorder view', () => {
+    const facet = (overrides = {}) => ({
+      version: 1,
+      author_eid: 1,
+      aim: { t: [42, 200], yaw: [0, 0], pitch: [0, 0], ray_x: [0, 0], ray_y: [2, 2], ray_z: [100, 100] },
+      mode: { t: [42, 60, 70], raw: [1, 0, 1] },
+      zoom: { t: [60.1], raw: [27] },
+      bloom: { t: [], raw: [] },
+      client_options: { backward_zoom: null },
+      ...overrides,
+    })
+    const load = async ({ camera = facet(), vehicleOverrides = {} } = {}) => {
+      const frames = manualFrames()
+      vi.spyOn(THREE.Clock.prototype, 'getDelta').mockReturnValue(0.1)
+      source.loadRecorderCameraFromFile.mockResolvedValue(camera)
+      const data = rosterData([vehicle({ eid: 1, team: 1, nickname: 'A', tank_name: 'T', max_hp: 100, hp: [[42, 100]], ...vehicleOverrides })])
+      data.meta = { ...data.meta, author_eid: 1 }
+      source.loadPlaybackData.mockResolvedValue(data)
+      const reticle = { update: vi.fn(), hide: vi.fn() }
+      const store = createPlaybackStore()
+      const stage = mountContainer()
+      Object.defineProperty(stage, 'clientWidth', { value: 900, configurable: true })
+      Object.defineProperty(stage, 'clientHeight', { value: 600, configurable: true })
+      api = initPlayback(stage, store, null, { recorderReticle: reticle })
+      created.push(api)
+      await api.loadData({ kind: 'local', file: new File(['r'], 'recorder.wotbreplay') })
+      api.setPlaying(false)
+      await Promise.resolve()
+      const run = (count = 1) => { for (let i = 0; i < count; i++) frames.shift()?.() }
+      return { api, store, frames, run, reticle, vehicle: window.__pbV[0] }
+    }
+
+    it('becomes available once the facet is ready, then drives an arcade camera along the aim', async () => {
+      const { api, store, run, reticle } = await load()
+      expect(store.recorderCameraStatus).toBe('ready')
+      api.seekTime(50)
+      expect(store.recorderViewAvailable).toBe(true)
+      api.setCam('recorder')
+      expect(store.cam).toBe('recorder')
+      expect(window.__controls.enabled).toBe(false)
+      run(5)
+      const camera = window.__camera
+      const direction = new THREE.Vector3()
+      camera.getWorldDirection(direction)
+      expect(direction.z).toBeCloseTo(1, 5)
+      expect(camera.position.z).toBeLessThan(window.__pbV[0].group.position.z)
+      expect(camera.fov).toBe(55)
+      expect(reticle.update).toHaveBeenCalled()
+    })
+
+    it('accepts no camera input while active', async () => {
+      const { api, run } = await load()
+      api.seekTime(50)
+      api.setCam('recorder')
+      run(5)
+      const before = window.__camera.position.clone()
+      document.querySelector('canvas').dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }))
+      expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(false)
+      run(1)
+      expect(window.__camera.position.distanceTo(before)).toBeLessThan(1e-6)
+    })
+
+    it('enters the real sniper view: gun position, replay FOV and hidden own tank', async () => {
+      const { api, run, vehicle } = await load()
+      api.seekTime(50)
+      api.setCam('recorder')
+      run(5)
+      api.seekTime(65)
+      run(1)
+      const camera = window.__camera
+      expect(camera.fov).toBe(27)
+      // 只从渲染中摘掉：车辆仍「在场」，炮口与击毁特效依赖 group.visible
+      expect(vehicle.group.visible).toBe(true)
+      expect(vehicle.meshHull.layers.test(camera.layers)).toBe(false)
+      const gun = vehicle.gunPivot.getWorldPosition(new THREE.Vector3())
+      expect(camera.position.distanceTo(gun)).toBeLessThan(1e-6)
+
+      api.seekTime(75)
+      run(1)
+      expect(camera.fov).toBe(55)   // Arcade/Sniper 由回放驱动，硬切
+      expect(vehicle.meshHull.layers.test(camera.layers)).toBe(true)
+    })
+
+    it('clears nearby foliage only while the recorder view is active', async () => {
+      const { api, run } = await load()
+      api.seekTime(50)
+      expect(foliageClip.value).toBe(0)
+      api.setCam('recorder')
+      run(1)
+      const arcade = foliageClip.value
+      expect(arcade).toBeGreaterThan(0)
+      api.seekTime(65)
+      run(1)
+      expect(foliageClip.value).toBeGreaterThan(arcade)
+      api.setCam('free')
+      expect(foliageClip.value).toBe(0)
+    })
+
+    const pointer = (type, x, y, id, pointerType) => Object.assign(
+      new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: 1, clientX: x, clientY: y }),
+      { pointerId: id, pointerType },
+    )
+
+    it('keeps OrbitControls off through mouse drags and touch pinches', async () => {
+      const { api, run } = await load()
+      api.seekTime(50)
+      api.setCam('recorder')
+      run(5)
+      const before = window.__camera.position.clone()
+      const canvas = document.querySelector('canvas')
+      canvas.dispatchEvent(pointer('pointerdown', 100, 100, 1, 'mouse'))
+      expect(window.__controls.enabled).toBe(false)
+      canvas.dispatchEvent(pointer('pointermove', 180, 140, 1, 'mouse'))
+      canvas.dispatchEvent(pointer('pointerup', 180, 140, 1, 'mouse'))
+      canvas.dispatchEvent(pointer('pointerdown', 100, 100, 4, 'touch'))
+      canvas.dispatchEvent(pointer('pointermove', 260, 180, 4, 'touch'))
+      canvas.dispatchEvent(pointer('pointerup', 260, 180, 4, 'touch'))
+      canvas.dispatchEvent(pointer('pointerdown', 100, 100, 2, 'touch'))
+      canvas.dispatchEvent(pointer('pointerdown', 200, 100, 3, 'touch'))
+      canvas.dispatchEvent(pointer('pointermove', 260, 100, 3, 'touch'))
+      canvas.dispatchEvent(pointer('pointerup', 260, 100, 3, 'touch'))
+      canvas.dispatchEvent(pointer('pointerup', 100, 100, 2, 'touch'))
+      expect(window.__controls.enabled).toBe(false)
+      run(2)
+      expect(window.__camera.position.distanceTo(before)).toBeLessThan(1e-6)
+    })
+
+    it('keeps the aim dot centered while the gun circle follows the real gun when the turret lags', async () => {
+      const aim = { t: [42, 200], yaw: [0.3, 0.3], pitch: [0, 0], ray_x: [30, 30], ray_y: [2, 2], ray_z: [100, 100] }
+      const { api, run, reticle } = await load({ camera: facet({ aim }) })
+      api.seekTime(50)
+      api.setCam('recorder')
+      run(5)
+      const [dot, circle] = reticle.update.mock.lastCall
+      expect(Math.abs(dot.x - 450)).toBeLessThan(40)
+      // 炮塔朝 +z、相机朝右偏 0.3 rad：圆必须落在中心一侧，不能跟着相机锁在中间
+      expect(Math.abs(circle.x - dot.x)).toBeGreaterThan(100)
+    })
+
+    it('does not fake the center when the aim point cannot be projected', async () => {
+      const { api, run, reticle } = await load({
+        camera: facet({ aim: { t: [42, 200], yaw: [0, 0], pitch: [0, 0], ray_x: [0, 0], ray_y: [2, 2], ray_z: [-500, -500] } }),
+      })
+      api.seekTime(50)
+      api.setCam('recorder')
+      run(5)
+      expect(reticle.update.mock.lastCall[0]).toBeNull()
+    })
+
+    it('still bursts the recorder when it dies while scoped', async () => {
+      const { api, run } = await load({ vehicleOverrides: { death_t: 66 } })
+      api.seekTime(65.95)
+      api.setCam('recorder')
+      run(2)
+      const burst = vi.spyOn(window.__battleFx, 'spawnBurst')
+      api.setPlaying(true)
+      run(3)
+      expect(burst).toHaveBeenCalled()
+    })
+
+    it('renders the final restored FOV while paused', async () => {
+      const { api, run } = await load({ vehicleOverrides: { death_t: 80 } })
+      api.seekTime(65)
+      api.setCam('recorder')
+      run(5)
+      expect(window.__camera.fov).toBe(27)
+      const renderedFov = []
+      vi.spyOn(window.__renderer, 'render').mockImplementation((_scene, camera) => { renderedFov.push(camera.fov) })
+      api.seekTime(90)
+      run(8)
+      expect(window.__camera.fov).toBe(55)
+      expect(renderedFov.at(-1)).toBe(55)   // 记录渲染当时的值：暂停时最后一帧也要画出来
+    })
+
+    it('falls back to Free near the old pose when the recorder dies, and only re-enables on seek back', async () => {
+      const { api, store, run, reticle } = await load({ vehicleOverrides: { death_t: 80 } })
+      api.seekTime(65)
+      api.setCam('recorder')
+      run(5)
+      const before = window.__camera.position.clone()
+      api.seekTime(90)
+      run(1)
+      expect(store.cam).toBe('free')
+      expect(store.recorderViewAvailable).toBe(false)
+      expect(window.__camera.position.distanceTo(before)).toBeLessThan(50)
+      expect(reticle.hide).toHaveBeenCalled()
+      run(5)
+      expect(window.__camera.fov).toBeCloseTo(55)
+      api.setCam('recorder')
+      expect(store.cam).toBe('free')
+      api.seekTime(50)
+      expect(store.recorderViewAvailable).toBe(true)
+      run(1)
+      expect(store.cam).toBe('free')
+    })
+
+    it('stays disabled when the replay has no usable camera data', async () => {
+      const { api, store } = await load({ camera: null })
+      expect(store.recorderCameraStatus).toBe('unavailable')
+      api.setCam('recorder')
+      expect(store.cam).toBe('top')
+    })
+
+    it('rejects a facet for a different recorder', async () => {
+      const { store } = await load({ camera: facet({ author_eid: 2 }) })
+      expect(store.recorderCameraStatus).toBe('unavailable')
+    })
+
+    it('a parse failure leaves playback usable', async () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const frames = manualFrames()
+      source.loadRecorderCameraFromFile.mockRejectedValue(new Error('boom'))
+      source.loadPlaybackData.mockResolvedValue(rosterData([vehicle({ eid: 1, team: 1, nickname: 'A', tank_name: 'T', max_hp: 1, hp: [] })]))
+      const { api: scene, store } = createScene()
+      await scene.loadData({ kind: 'local', file: new File(['r'], 'recorder.wotbreplay') })
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(frames).toBeDefined()
+      expect(store.hasData).toBe(true)
+      expect(store.recorderCameraStatus).toBe('unavailable')
+    })
+
+    it('recorder mode on one replay opens the next at the default overview', async () => {
+      const { api, store, run } = await load()
+      api.seekTime(65)
+      api.setCam('recorder')
+      run(5)
+      await api.loadData({ kind: 'local', file: new File(['n'], 'next.wotbreplay') })
+      expect(store.cam).toBe('top')
+      run(5)
+      expect(window.__camera.fov).toBeCloseTo(55)
+    })
+
+    it('does not re-enable after a respawn, because a later life cannot prove camera ownership came back', async () => {
+      const { api, store, run } = await load({ vehicleOverrides: { death_t: 80, resurrection_times: [90] } })
+      api.seekTime(95)
+      expect(window.__pbV[0].group.visible).toBe(true)
+      expect(store.recorderViewAvailable).toBe(false)
+      api.setCam('recorder')
+      expect(store.cam).not.toBe('recorder')
+      api.seekTime(65)
+      expect(store.recorderViewAvailable).toBe(true)
+      api.setCam('recorder')
+      run(1)
+      expect(store.cam).toBe('recorder')
+      api.seekTime(95)
+      run(1)
+      expect(store.cam).toBe('free')
+    })
+
+    it('fails closed on an unknown Type23 mode instead of drawing an Arcade camera', async () => {
+      const mode = { t: [42, 60, 70], raw: [1, 2, 1] }
+      const { api, store, run, reticle } = await load({ camera: facet({ mode }) })
+      api.seekTime(50)
+      api.setCam('recorder')
+      run(1)
+      expect(store.cam).toBe('recorder')
+      api.seekTime(65)
+      run(1)
+      expect(store.cam).toBe('free')
+      expect(store.recorderViewAvailable).toBe(false)
+      expect(store.recorderModeUnknown).toBe(true)
+      expect(reticle.hide).toHaveBeenCalled()
+      api.setCam('recorder')
+      expect(store.cam).toBe('free')
+      api.seekTime(75)
+      expect(store.recorderViewAvailable).toBe(true)
+      expect(store.recorderModeUnknown).toBe(false)
+    })
+
+    it('reset then Start, as the file picker does, still opens the next replay at the default overview', async () => {
+      const { api, store, run } = await load()
+      const overviewHeight = window.__camera.position.y
+      api.seekTime(65)
+      api.setCam('recorder')
+      run(5)
+      expect(window.__camera.position.y).not.toBeCloseTo(overviewHeight, 3)
+      api.reset()
+      expect(store.cam).toBe('free')
+      run(5)
+      await api.loadData({ kind: 'local', file: new File(['n'], 'next.wotbreplay') })
+      expect(store.cam).toBe('top')
+      expect(window.__camera.position.y).toBeCloseTo(overviewHeight, 3)
+      run(5)
+      expect(window.__camera.fov).toBeCloseTo(55)
+    })
+  })
+
+  it('击杀公告带车型与敌我阵营', async () => {
+    manualFrames()
+    const { store, api } = createScene()
+    source.loadPlaybackData.mockResolvedValue(rosterData([
+      vehicle({ eid: 1, team: 1, nickname: 'Ally', tank_name: 'Maus', max_hp: 100 }),
+      vehicle({ eid: 2, team: 2, nickname: 'Enemy', tank_name: 'E 100', max_hp: 100, death_t: 60 }),
+    ], { kills: [{ t: 60, killer_eid: 1, victim_eid: 2, cause: 0 }] }))
+    await api.loadData({ kind: 'local', file: new File(['k'], 'kills.wotbreplay') })
+    api.seekTime(61)
+    expect(store.killfeed.at(-1)).toMatchObject({
+      kill: true, killer: 'Ally', killerTank: 'Maus', killerSide: 'ally',
+      victim: 'Enemy', victimTank: 'E 100', victimSide: 'enemy',
+    })
+  })
 
   it('seek 到更晚时刻：effect 观察到名册行的 hp / dead，而不是停在满血', async () => {
     manualFrames()
@@ -3092,7 +3836,7 @@ describe('turretless GLB（固定战斗室歼击车）挂载与摆姿', () => {
     vi.spyOn(GLTFLoader.prototype, 'parse').mockImplementation((_b, _p, done) => done({ scene: template }))
   }
 
-  async function loadTurretless(vehicles, detachedTurrets = []) {
+  async function loadTurretless(vehicles, detachedTurrets = [], meta = {}, sceneOptions = {}) {
     window.history.replaceState(null, '', '/?debug&q=high')
     const frames = []
     vi.stubGlobal('requestAnimationFrame', (cb) => frames.push(cb))
@@ -3100,14 +3844,75 @@ describe('turretless GLB（固定战斗室歼击车）挂载与摆姿', () => {
     vi.spyOn(THREE.Clock.prototype, 'getDelta').mockReturnValue(0.1)
     const overlay = { setLabels: vi.fn(), setAnchor: vi.fn(), clear: vi.fn() }
     const store = createPlaybackStore()
-    api = initPlayback(mountContainer(), store, overlay)
+    api = initPlayback(mountContainer(), store, overlay, sceneOptions)
     created.push(api)
     const state = { canonical: null }
-    const session = { loadScene: vi.fn().mockResolvedValue(mkData(vehicles, detachedTurrets)), getState: () => state }
+    const sceneData = mkData(vehicles, detachedTurrets)
+    sceneData.meta = { ...sceneData.meta, ...meta }
+    const session = { loadScene: vi.fn().mockResolvedValue(sceneData), getState: () => state }
     await api.loadData({ kind: 'local', file: new File(['replay'], 'td.wotbreplay'), session })
     api.setPlaying(false)
     return { api, store, frames, vehicles: window.__pbV }
   }
+
+  it('录像者开镜的相机在 GLB 配置炮位，不是低模枢轴', async () => {
+    stubTurretlessGlb()
+    vi.mocked(assetProvider.json).mockImplementation((path) => Promise.resolve(
+      String(path).startsWith('/tank/')
+        ? { model_origins: { track: [0, 0, 0], turret: [0, 3.5, 1.8] }, configs: [] }
+        : null))
+    source.loadRecorderCameraFromFile.mockResolvedValue({
+      version: 1, author_eid: 1,
+      aim: { t: [42, 300], yaw: [0, 0], pitch: [0, 0], ray_x: [0, 0], ray_y: [2, 2], ray_z: [100, 100] },
+      mode: { t: [42, 50], raw: [1, 0] }, zoom: { t: [50.1], raw: [27] }, bloom: { t: [], raw: [] },
+      client_options: { backward_zoom: null },
+    })
+    const { api, frames, vehicles } = await loadTurretless([mkVehicle()], [], { author_eid: 1 })
+    const v = vehicles[0]
+    expect(v.glb).toBeTruthy()
+    api.seekTime(60)
+    api.setCam('recorder')
+    for (let i = 0; i < 5; i++) frames.shift()?.()
+    const expected = v.glbParts.gunNodes[0].parent.localToWorld(new THREE.Vector3(...v.glbParts.gP))
+    expect(window.__camera.position.distanceTo(expected)).toBeLessThan(1e-3)
+    const proxy = v.gunPivot.getWorldPosition(new THREE.Vector3())
+    expect(window.__camera.position.distanceTo(proxy)).toBeGreaterThan(0.1)
+  })
+
+  it('录像者扩散圆沿渲染出的 GLB 炮管方向，含低模代理没有的 itr 补偿', async () => {
+    stubTurretlessGlb()
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(900)
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600)
+    const yaw = 1.2
+    const ray = [-Math.sin(yaw) * 300, 2, Math.cos(yaw) * 300]
+    source.loadRecorderCameraFromFile.mockResolvedValue({
+      version: 1, author_eid: 1,
+      aim: { t: [42, 300], yaw: [yaw, yaw], pitch: [0, 0], ray_x: [ray[0], ray[0]], ray_y: [2, 2], ray_z: [ray[2], ray[2]] },
+      mode: { t: [42], raw: [1] }, zoom: { t: [], raw: [] }, bloom: { t: [], raw: [] },
+      client_options: { backward_zoom: null },
+    })
+    const reticle = { update: vi.fn(), hide: vi.fn() }
+    const { api, frames, vehicles } = await loadTurretless(
+      [mkVehicle({ hull_yaw: [yaw], hull_pitch: [0.2], turret_yaw: [yaw], gun_pitch: [0.05] })],
+      [], { author_eid: 1 }, { recorderReticle: reticle },
+    )
+    const [v] = vehicles
+    v.glbParts.itr = { yaw: 6, pitch: 0, roll: 0 }
+    api.seekTime(60)
+    api.setCam('recorder')
+    for (let i = 0; i < 5; i++) frames.shift()?.()
+    const gun = v.glbParts.gunNodes[0]
+    gun.parent.updateWorldMatrix(true, false)
+    const rig = gun.matrix.clone().multiply(gun.userData.__bake.clone().invert())
+    const toWorld = gun.parent.matrixWorld.clone().multiply(rig)
+    const origin = new THREE.Vector3(...v.glbParts.gP).applyMatrix4(toWorld)
+    const direction = new THREE.Vector3(0, 1, 0).transformDirection(toWorld)
+    const distance = origin.distanceTo(new THREE.Vector3(-ray[0], 2, ray[2]))
+    const expected = origin.addScaledVector(direction, distance).project(window.__camera)
+    const circle = reticle.update.mock.lastCall[1]
+    expect(circle.x).toBeCloseTo((expected.x + 1) * 450, 1)
+    expect(circle.y).toBeCloseTo((1 - expected.y) * 300, 1)
+  })
 
   it('无 turret_N 但有炮管组：进场即挂载真模型，炮塔角改写炮管组（不再退代理）', async () => {
     stubTurretlessGlb()

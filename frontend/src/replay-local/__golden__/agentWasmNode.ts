@@ -14,10 +14,12 @@ import {
   normalizeAgentShotsOutcome,
   validateAgentAiReview,
   validateAgentAuthorInitialPosition,
+  validateAgentRecorderCamera,
   validateAgentBattleResult,
   validateAgentPlayback,
   type AgentAiReviewFacet,
   type AgentAuthorInitialPosition,
+  type AgentRecorderCamera,
   type AgentBattleResult,
   type AgentPlaybackFacet,
   type AgentShotsOutcome,
@@ -43,6 +45,7 @@ interface WasmModule {
   parseShotReplays: (bytes: Uint8Array, limits?: string, shells?: string) => string
   /** 第五入口（上游 v0.4.15）；旧产物缺省 */
   parseAuthorInitialPosition?: (bytes: Uint8Array) => string
+  parseRecorderCamera?: (bytes: Uint8Array) => string
 }
 
 let mod: WasmModule | null = null
@@ -150,6 +153,20 @@ export async function replayFacets(path: string): Promise<FixtureFacets> {
 export async function shotsViaPinnedWasm(bytes: Uint8Array): Promise<AgentShotsOutcome> {
   const m = await wasm()
   return normalizeAgentShotsOutcome(JSON.parse(m.parseShotReplays(bytes)) as unknown)
+}
+
+/**
+ * 第六入口（`parseRecorderCamera`，上游 v0.4.21）：录像者相机状态。
+ */
+export async function recorderCameraViaPinnedWasm(
+  bytes: Uint8Array,
+): Promise<AgentRecorderCamera | null> {
+  const m = await wasm()
+  const parse = m.parseRecorderCamera
+  if (typeof parse !== 'function') {
+    throw new Error('pinned agent WASM 缺 parseRecorderCamera（需要 v0.4.21+）')
+  }
+  return validateAgentRecorderCamera(JSON.parse(parse(bytes)) as unknown)
 }
 
 /**

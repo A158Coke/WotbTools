@@ -13,6 +13,12 @@ import * as THREE from 'three'
 // 烘焙页为一次性进程，无需清理。
 const sceneryMatCache = new Map();
 
+/**
+ * 植被视野穿透：相机这个半径（米）内的叶片不绘制，0 = 关闭。所有植被材质共享同一个
+ * uniform 对象，切换不用遍历场景；只在 fragment 里比一次距离，不增加 draw call。
+ */
+export const foliageClip = { value: 0 }
+
 export function cachedSceneryMat(key, factory) {
   let m = sceneryMatCache.get(key);
   if (!m) { m = factory(); sceneryMatCache.set(key, m); }
@@ -61,6 +67,7 @@ export function makeBillboardMaterial(m) {
       uOccMean: { value: occMean },
       uProdClamp: { value: newPack ? 2.0 : 1.35 },
       uAlphaCut: { value: CARD_ALPHA_CUT },
+      uFoliageClip: foliageClip,
     },
     vertexShader: `
       attribute vec4 _corner;
@@ -69,6 +76,7 @@ export function makeBillboardMaterial(m) {
       #include <common>
       varying vec2 vUv;
       varying float vOcc;
+      varying float vViewDist;
       #include <logdepthbuf_pars_vertex>
       void main() {
         // 实例化合批：USE_INSTANCING 下 instanceMatrix 由 WebGLProgram 自动声明
@@ -83,6 +91,7 @@ export function makeBillboardMaterial(m) {
         vec3 vp = (viewMatrix * wp).xyz;
         float ws = length(vec3(im[0][0], im[1][0], im[2][0]));
         vp += _corner.xyz * ws;
+        vViewDist = length(vp);
         gl_Position = projectionMatrix * vec4(vp, 1.0);
         #include <logdepthbuf_vertex>
         vUv = uv;
@@ -99,11 +108,14 @@ export function makeBillboardMaterial(m) {
       uniform float uOccMean;
       uniform float uProdClamp;
       uniform float uAlphaCut;
+      uniform float uFoliageClip;
       varying vec2 vUv;
       varying float vOcc;
+      varying float vViewDist;
       #include <logdepthbuf_pars_fragment>
       void main() {
         #include <logdepthbuf_fragment>
+        if (vViewDist < uFoliageClip) discard;
         vec4 c = texture2D(map, vUv);
         if (c.a < uAlphaCut) discard;
         float occ = min(vOcc / max(uOccMean, 0.001), 1.25);
@@ -136,6 +148,7 @@ export function makeSpeedtreeStaticMaterial(m, opaqueEnough) {
       uSH: { value: sh },
       uAlphaCut: { value: blend ? 0.05 : 0.33 },
       uOpacity: { value: m.opacity ?? 1 },
+      uFoliageClip: foliageClip,
     },
     vertexShader: `
       ${hasVC ? 'attribute vec4 color;' : ''}
@@ -143,6 +156,7 @@ export function makeSpeedtreeStaticMaterial(m, opaqueEnough) {
       #include <common>
       varying vec2 vUv;
       varying float vOcc;
+      varying float vViewDist;
       #include <logdepthbuf_pars_vertex>
       void main() {
         // 实例化合批（perf 分支）：ST| 静态几何按 (geometry, material) 合并为
@@ -155,7 +169,9 @@ export function makeSpeedtreeStaticMaterial(m, opaqueEnough) {
         #else
         mat4 im = modelViewMatrix;
         #endif
-        gl_Position = projectionMatrix * im * vec4(position, 1.0);
+        vec4 viewPosition = im * vec4(position, 1.0);
+        vViewDist = length(viewPosition.xyz);
+        gl_Position = projectionMatrix * viewPosition;
         #include <logdepthbuf_vertex>
         vUv = uv;
         vOcc = ${hasVC ? 'color.r' : '1.0'};
@@ -165,11 +181,14 @@ export function makeSpeedtreeStaticMaterial(m, opaqueEnough) {
       uniform vec3 uSH;
       uniform float uAlphaCut;
       uniform float uOpacity;
+      uniform float uFoliageClip;
       varying vec2 vUv;
       varying float vOcc;
+      varying float vViewDist;
       #include <logdepthbuf_pars_fragment>
       void main() {
         #include <logdepthbuf_fragment>
+        if (vViewDist < uFoliageClip) discard;
         vec4 c = texture2D(map, vUv);
         if (c.a < uAlphaCut) discard;
         gl_FragColor = vec4(c.rgb * (vOcc * uSH), c.a * uOpacity);
