@@ -263,7 +263,9 @@ function reloadMap() {
   if (!sceneApi || !props.mapId || !requireFeature(Feature.PLAYBACK_3D)) return
   sceneApi.loadMapOnly({ mapId: props.mapId, mapName: props.mapName })
 }
-watch(() => [props.mapId, props.mapName], () => {
+// 换图判定只看 mapId（图身份）：mapName 是 locale 派生的显示名——切语言会变，
+// 但图没换，标注与撤销栈不得清空（名称更新由页面 header 的 computed 承担）。
+watch(() => props.mapId, () => {
   resetAnnotationState()   // 换图 = 换标注语义；旧标注不跨图残留
   if (shouldHaveScene()) {
     ensureScene()

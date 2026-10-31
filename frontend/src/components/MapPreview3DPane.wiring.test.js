@@ -17,6 +17,13 @@ describe('MapPreview3DPane 场景接线（source regression）', () => {
     expect(paneSrc).not.toContain('<VehicleDetailsPanel')
   })
 
+  it('换图判定只看 mapId：locale 化的 mapName 变化不得清空标注（回归锁）', () => {
+    // 切语言 → selected.name（locale 派生）→ mapName prop 变化；图身份未变，
+    // 标注与撤销栈必须保留（Codex 复审 #4431969638）
+    expect(paneSrc).not.toContain('[props.mapId, props.mapName]')
+    expect(paneSrc).toMatch(/watch\(\(\) => props\.mapId/)
+  })
+
   it('内核 map 会话：stub DATA + 就绪门控 mapReady（hasData 保持回放专用）', () => {
     expect(kernelSrc).toContain('async function loadMapOnly(')
     expect(kernelSrc).toContain("SESSION_MODE = 'map'")
