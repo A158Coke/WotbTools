@@ -77,14 +77,10 @@ const PINNED_LOADOUT_UPGRADES: Record<string, number> = {
 }
 
 /**
- * 放行的 `loadout` 语义纠正（上游 **v0.4.18**）：Agent 按 `provisions.pb` 的 id 103..110
- * 与回放线码 0x46..0x4D 的逐项对应（每国 HQ(大)→regular(小)）重新闭合欧系食物块。
- * Java golden 由旧 WotbTools 映射生成，把 Swedish `0x49` 标成 LARGE；正确为
- * `0x49` = Crispbread/SMALL（id 106）。这里按 account 冻结纠正值，其余字段仍逐字段相等。
+ * 放行的 `loadout` 语义纠正：按 account 冻结纠正值，其余字段仍逐字段相等。
  */
 const PINNED_LOADOUT_CORRECTIONS: Record<string, Record<number, { provisions?: string[]; confidence?: string }>> = {
   'tournament-14-14-example.wotbreplay': {
-    3109171124: { provisions: ['SMALL_FOOD', 'ENHANCED_SANDBAG_ARMOR', 'IMPROVED_FUEL'] },
     // 波兰补给 0x6D 由 WotbTools 线码回退表闭合（Zurek/LARGE_FOOD）；Java 旧映射为 null/LOW
     3105519605: {
       provisions: ['LARGE_FOOD', 'IMPROVED_FUEL', 'IMPROVED_GEAR_OIL'],

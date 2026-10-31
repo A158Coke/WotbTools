@@ -442,6 +442,16 @@ WotBTools
   fail-closed）。无锚点实体以首个带血量快照为链起点；隐藏段死亡的重入快照哨兵按显示口径钳 0
   （死亡面权威仍在 `hp_state`/prop1/§4l）。AI 投影 golden 不受影响（投影不走 `hp_series`）。
 
+## 4n. 作者当前弹种时间线（`author_shell_timeline[]`，PlaybackData additive；上游 v0.4.22）
+
+- `author_shell_timeline[]`: `{t, shell_id}`，按 `t` 升序，skip-when-empty。来源为 Avatar
+  method 0x07，是服务器确认的当前弹种，切换即生效；`shell_id` 是 24 位全局弹种 id，与弹种表
+  同域。连续相同的确认已折叠，所以每条都是一次变更，首条是开局弹种。
+- **上游已按作者首次死亡截断**：之后的 0x07 可能跟随被观战车辆，不进入此字段，消费方不用
+  再截断。比较用未取整时钟，`t` 输出取整到 0.01 s。作者未识别时字段缺省。
+- 首条之前弹种未知，消费方不得用首发弹种顶替。语义证据见
+  `docs/research/replay/method07-current-shell.md`。
+
 ## 5. 射击复现能力（ShotReplays）
 
 - **契约 v0.1.9（breaking）**：WASM 入口输出由裸数组改为包装对象——
