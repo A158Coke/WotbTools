@@ -32,7 +32,7 @@ function arenaTeamIndex(teamSummaries) {
  *   teams: Array<{ key: string, name: string|null, wins: number }>|null,
  *   unresolved: number,
  *   battles: Array<{ sourceId: string, index: number, mapName: string|null, durationS: number|null,
- *     startTime: number|null, sourceName: string|null, winnerTeam: number|null, winnerKey: string|null, winnerName: string|null }>
+ *     startTime: number|null, sourceName: string|null, winnerTeam: number|null, draw: boolean, winnerKey: string|null, winnerName: string|null }>
  * }}
  */
 export function buildSeriesOverview(resp, teamNames = {}, battleTeamNames = {}) {
@@ -53,6 +53,7 @@ export function buildSeriesOverview(resp, teamNames = {}, battleTeamNames = {}) 
       startTime: battle.startTime ?? null,
       sourceName: battle.sourceName ?? null,
       winnerTeam: winner,
+      draw: !winner && battle.draw === true,
       winnerKey: summary ? summary.teamKey : null,
       // 单场里改过的队名（{arenaId:team}）优先于批次名，与单场概览一致
       winnerName: (winner && battleTeamNames[`${battle.arenaId}:${winner}`]) || (summary ? teamDisplayName(summary, teamNames) : null),
@@ -78,11 +79,11 @@ export function buildSeriesOverview(resp, teamNames = {}, battleTeamNames = {}) 
   return { teams, unresolved, battles: rows }
 }
 
-/** 逐场胜方文案：战队名 → 队伍编号 → 未知。 */
+/** 逐场胜方文案：战队名 → 队伍编号 → 平局 → 未知。 */
 export function battleWinnerText(battle, t) {
   if (battle.winnerName) return t('workspace.series_winner', { name: battle.winnerName })
   if (battle.winnerTeam) return t('workspace.series_team_winner', { team: battle.winnerTeam })
-  return t('workspace.series_unknown_winner')
+  return t(battle.draw ? 'workspace.series_draw' : 'workspace.series_unknown_winner')
 }
 
 /**

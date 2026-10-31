@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildSeriesOverview, replayCollectionRows } from './replaySeries.js'
+import { battleWinnerText, buildSeriesOverview, replayCollectionRows } from './replaySeries.js'
 
 function battle(i, winnerTeam, extra = {}) {
   return { sourceId: `r${i}`, arenaId: `a${i}`, mapName: `map_${i}`, durationS: 300 + i, startTime: 1_700_000_000 + i, winnerTeam, players: [], ...extra }
@@ -103,6 +103,23 @@ describe('buildSeriesOverview：平局与单场改名', () => {
   it('单场改过的队名优先', () => {
     const series = buildSeriesOverview(cwResp([battle(0, 1)], teams), { 'clan:A': '甲' }, { 'a0:1': '本场甲' })
     expect(series.battles[0].winnerName).toBe('本场甲')
+  })
+})
+
+describe('平局与胜负未知', () => {
+  const t = key => key
+  const text = battle => battleWinnerText(buildSeriesOverview({ battles: [{ sourceId: 'r0', winnerTeam: null, ...battle }] }).battles[0], t)
+
+  it('有结算但无胜方是平局', () => {
+    expect(text({ draw: true })).toBe('workspace.series_draw')
+  })
+
+  it('没有结算才是胜负未知', () => {
+    expect(text({ draw: false })).toBe('workspace.series_unknown_winner')
+  })
+
+  it('有胜方时不显示平局', () => {
+    expect(text({ winnerTeam: 2, draw: true })).toBe('workspace.series_team_winner')
   })
 })
 

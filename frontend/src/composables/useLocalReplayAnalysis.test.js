@@ -361,6 +361,22 @@ describe('useLocalReplayAnalysis', () => {
       expect(api.session.error.value).toBe('replay.analysis.engine_unavailable')
     })
 
+    it('marks a settled battle without a winner as a draw; no settlement stays unknown', async () => {
+      local.parseReplayFiles.mockImplementation(async files => parsedOf(files))
+      local.analyzeReplayBatch.mockImplementationOnce(() => ({
+        dataset: { battles: [
+          { arenaId: 'a', winnerTeam: null, settlementFinishReasonRaw: 3 },
+          { arenaId: 'b', winnerTeam: null, settlementFinishReasonRaw: null },
+          { arenaId: 'c', winnerTeam: 1, settlementFinishReasonRaw: 1 },
+        ] },
+        preview: { ...preview(0), battles: ['a', 'b', 'c'].map((arenaId, i) => ({ sourceId: `r${i}`, arenaId, winnerTeam: arenaId === 'c' ? 1 : null, players: [] })) },
+      }))
+      const api = setup()
+      api.updateFiles(['a', 'b', 'c'].map(name => replayFile(`${name}.wotbreplay`)))
+      await api.analyze()
+      expect(api.session.resp.value.battles.map(b => b.draw === true)).toEqual([true, false, false])
+    })
+
     it('removing the last valid replay leaves the failure state', async () => {
       const api = await ready(['a.wotbreplay', 'b.wotbreplay'])
       local.analyzeReplayBatch.mockImplementationOnce(() => { throw new NoValidReplaysError() })

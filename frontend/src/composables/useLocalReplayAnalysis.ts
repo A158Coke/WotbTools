@@ -4,7 +4,7 @@ import { isOfficialDemo } from '../replay-local/demo.js'
 import type { Composer } from 'vue-i18n'
 import { parseReplayFiles, ReplayEngineUnavailableError } from '../replay-local/parseReplays.js'
 import { analyzeReplayBatch } from '../replay-local/analyzeReplays.js'
-import { loadTankopedia, NoValidReplaysError, type ProcessedDataset, type Tankopedia } from '../replay-local/compute/index.js'
+import { loadTankopedia, markDraws, NoValidReplaysError, type ProcessedDataset, type Tankopedia } from '../replay-local/compute/index.js'
 import { downloadBlob } from '../utils/exportReplayPng.js'
 import type { TeamNamesInput } from '../replay-local/export/index.js'
 import type { ParsedReplayFile } from '../replay-local/parseWorkerProtocol.js'
@@ -143,7 +143,7 @@ export function useLocalReplayAnalysis(session: ReplaySession, { t }: I18nContex
       }
       const { dataset, preview } = analyzeReplayBatch(selection.map(file => parsedByFile.get(file) as ParsedReplayFile), tankopedia)
       lastDataset = { dataset, tankopedia }
-      commitReadyResult(preview as unknown as ReplayResult)
+      commitReadyResult(markDraws(preview, dataset) as unknown as ReplayResult)
       analysis.value = { phase: 'ready', done: selection.length, total: selection.length, failure: null }
       return { completed: true }
     } catch (e) {
