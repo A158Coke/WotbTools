@@ -170,6 +170,6 @@ Display 是锚定在 Gear 上、不可拖动的工作台面；空间允许时在
 
 当前场次的身份是 File（`useReplaySession.currentBattleFile`），`currentBattleId` 由它在 `files` 中的位置派生，写入时再解析回 File，因此只有一份状态。`sourceId = r{original sourceIndex}`；`rN → files[N]`。Sparse source IDs 是有意设计：失败首文件后可以从 `r1` 开始，重复文件后可以出现 `r0,r2`。不得按成功场次数重新编号。BattlePicker 仅列 finalized battles，切场始终使用对应原始 File。
 
-集合增删走 `changeFiles`：不清 `resp`、不动当前 File，首批按文件名排序，之后新文件追加到尾部（`rN` 与屏幕上的结果在后台加载期间保持对应），已有文件保持原实例，重复添加同一文件只提示。`parsedByFile` 按 File 缓存解析结果，只解析新文件；移除是同步重算，没有 await 窗口；显式重试才放弃失败项。连续添加放弃上一轮并以累积 `files` 重跑。移除当前文件时落到同位置的下一场，末位取前一场，且落点先于 `files` 写入，`currentTargetFile` 的 sync 观察者只看到一次真实换场。结果与 `files` 始终对齐：未解析的文件只在尾部，移除时若还有未解析文件，先在同一 tick 用已解析的前缀重算；后台加载中引擎失败时保留已有结果并退回没进来的新文件；只剩无效回放时进入 Failure。后台加载不显示恢复面板，取消只属于首批加载。取消首批加载回到 Empty，能力切换不重新解析。追加后「第 N 场」的编号可能变化，内容不变。赛后数据切到汇总不改变当前场次。
+集合增删走 `changeFiles`：不清 `resp`、不动当前 File，首批按文件名排序，之后新文件追加到尾部（`rN` 与屏幕上的结果在后台加载期间保持对应），已有文件保持原实例，重复添加同一文件只提示。`parsedByFile` 按 File 缓存解析结果，只解析新文件；移除是同步重算，没有 await 窗口；显式重试才放弃失败项。连续添加放弃上一轮并以累积 `files` 重跑。移除当前文件时落到同位置的下一场，末位取前一场，且落点先于 `files` 写入，`currentTargetFile` 的 sync 观察者只看到一次真实换场。结果与 `files` 始终对齐：移除时若还有未解析文件，先在同一 tick 用连续的已解析前缀重算；后台加载中引擎失败时保留已解析完的新文件，退回其余文件并重算，`files`、结果与导出始终来自同一份选择；只剩无效回放时进入 Failure。后台加载不显示恢复面板，取消只属于首批加载。取消首批加载回到 Empty，能力切换不重新解析。追加后「第 N 场」的编号可能变化，内容不变。赛后数据切到汇总不改变当前场次。
 
 AI 仅为当前 File 构建一场的投影，切场撤销旧 review 并清空旧结果；投影与流的 generation 隔离迟到结果。Shots 使用同一个 target/picker，不持有另一份 batch selection。

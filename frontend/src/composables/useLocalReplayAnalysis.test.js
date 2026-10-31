@@ -7,6 +7,7 @@ import { ReplayEngineUnavailableError } from '../replay-local/parseReplays.js'
 import { NoValidReplaysError } from '../replay-local/compute/index.js'
 import { useReplaySession } from './useReplaySession.js'
 import { useLocalReplayAnalysis } from './useLocalReplayAnalysis.js'
+import { battlePickerOptions, buildSeriesOverview } from '../utils/replaySeries.js'
 
 // 服务器没有 parser：分析 = 本机 Worker 解析 + 批次计算。mock 两个边界，保留真实错误类型。
 const local = vi.hoisted(() => ({
@@ -412,6 +413,51 @@ describe('useLocalReplayAnalysis', () => {
         expect(api.session.files.value.map(file => file.name)).toEqual(['b.wotbreplay', 'c.wotbreplay'])
         expect(aligned(api.session)).toBe(true)
         expect(api.session.currentBattle.value.sourceName).toBe('b.wotbreplay')
+      })
+
+      it('A Ready → 添加 B + C → B 解析成功 → Worker 在 C 崩溃：files、结果与导出都是 A + B', async () => {
+        const api = await ready(['a.wotbreplay'])
+        local.analyzeReplayBatch.mockImplementation(parsed => ({ ...byName(parsed), dataset: { names: parsed.map(file => file.name) } }))
+        const [b, c] = ['b', 'c'].map(name => replayFile(`${name}.wotbreplay`))
+        local.parseReplayFiles.mockImplementationOnce(async (_files, { onFile }) => {
+          onFile(0, parsedOf([b])[0])
+          throw new ReplayEngineUnavailableError('worker crashed')
+        })
+        await api.changeFiles([...api.files, b, c])
+
+        const names = ['a.wotbreplay', 'b.wotbreplay']
+        expect(api.session.files.value.map(file => file.name)).toEqual(names)
+        expect(api.session.parsedBattles.value.map(x => x.sourceName)).toEqual(names)
+        expect(aligned(api.session)).toBe(true)
+        const options = battlePickerOptions(buildSeriesOverview(api.session.resp.value), { t, locale: 'en', mapLabel: name => name })
+        expect(options.map(option => option.value)).toEqual(['r0', 'r1'])
+        expect(api.session.analysis.value.phase).toBe('ready')
+        expect(api.session.error.value).toBe('replay.analysis.engine_unavailable')
+
+        local.exportAggregateXlsx.mockResolvedValueOnce({ blob: new Blob(['x']), filename: 'x.xlsx' })
+        await api.exportExcel('aggregate')
+        expect(local.exportAggregateXlsx.mock.calls[0][0]).toEqual({ names })
+      })
+
+      it('onFile 乱序：只保留连续前缀，sourceId 不跨过未解析的文件', async () => {
+        const api = await pendingAdd()
+        const [, b, c] = api.files
+        const [e, f] = ['e', 'f'].map(name => replayFile(`${name}.wotbreplay`))
+        // 后面的文件先回包：e 还没解析，f 已经解析。
+        local.parseReplayFiles.mockImplementationOnce(async (_files, { onFile }) => {
+          onFile(2, parsedOf([f])[0])
+          throw new ReplayEngineUnavailableError('worker crashed')
+        })
+        await api.changeFiles([...api.files, api.d, e, f])
+        expect(aligned(api.session)).toBe(true)
+        expect(api.session.files.value.map(file => file.name)).toEqual(['a.wotbreplay', 'b.wotbreplay', 'c.wotbreplay'])
+
+        // 下一次移除同样只按前缀重算，已解析的 f 不会跨过 e 进入结果。
+        const pending = deferred()
+        local.parseReplayFiles.mockReturnValueOnce(pending.promise)
+        void api.changeFiles([b, c, e, f])
+        expect(aligned(api.session)).toBe(true)
+        expect(api.session.parsedBattles.value.map(x => x.sourceName)).toEqual(['b.wotbreplay', 'c.wotbreplay'])
       })
 
       it('移除后没有已解析的有效回放：转为首批加载，不留旧结果', async () => {

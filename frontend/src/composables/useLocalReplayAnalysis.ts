@@ -42,6 +42,8 @@ export function useLocalReplayAnalysis(session: ReplaySession, { t }: I18nContex
   let lastTankopedia: Tankopedia | null = null
   /** 最近一次成功分析的批次计算结果（导出等下游复用，不重复计算） */
   let lastDataset: { dataset: ProcessedDataset; tankopedia: Tankopedia } | null = null
+  /** 当前结果来自哪些文件：files、resp、lastDataset 回到 Ready 时必须是同一份选择。 */
+  let committedFiles: File[] = []
 
   function abortInFlight() {
     inFlight?.abort()
@@ -79,8 +81,8 @@ export function useLocalReplayAnalysis(session: ReplaySession, { t }: I18nContex
 
   /**
    * 集合增删：结果留在屏幕上，当前场次不受影响。sourceId 是 files 下标，所以任何时刻都要保证
-   * 结果与 files 对齐：追加不移动已有下标；移除会移动，此时有新文件未解析就先用已解析的部分重算。
-   * 未解析的文件只可能在尾部（新文件追加到尾部，失败时退回），已解析部分因此就是 files 的前缀。
+   * 结果与 files 对齐：追加不移动已有下标；移除会移动，此时有新文件未解析就先用已解析的前缀重算。
+   * 只取连续前缀：sourceId 是下标，中间缺一个文件，后面的场次就对不上了。
    */
   async function changeFiles(next: File[]): Promise<AnalyzeResult> {
     abortInFlight()
@@ -90,15 +92,21 @@ export function useLocalReplayAnalysis(session: ReplaySession, { t }: I18nContex
     return run(!!resp.value)
   }
 
+  function parsedPrefix(selection: File[]): File[] {
+    const firstMissing = selection.findIndex(file => !parsedByFile.has(file))
+    return firstMissing < 0 ? selection : selection.slice(0, firstMissing)
+  }
+
   function commitResult(selection: File[], tankopedia: Tankopedia): void {
     const { dataset, preview } = analyzeReplayBatch(selection.map(file => parsedByFile.get(file) as ParsedReplayFile), tankopedia)
+    committedFiles = selection
     lastDataset = { dataset, tankopedia }
     commitReadyResult(markDraws(preview, dataset) as unknown as ReplayResult)
   }
 
   /** 与 changeSelection 在同一 tick：观察者看不到 files 与结果错位的状态。 */
   function realignResult(): void {
-    const parsed = files.value.map(file => toRaw(file)).filter(file => parsedByFile.has(file))
+    const parsed = parsedPrefix(files.value.map(file => toRaw(file)))
     try {
       if (!lastTankopedia) throw new NoValidReplaysError()
       commitResult(parsed, lastTankopedia)
@@ -174,11 +182,15 @@ export function useLocalReplayAnalysis(session: ReplaySession, { t }: I18nContex
       operations.forEach((_, index) => settle(index, 'failure', failure === 'ENGINE_UNAVAILABLE' ? 'RESOURCE_UNAVAILABLE' : 'UNKNOWN'))
       if (failure === 'UNKNOWN') console.error('[replay-local] analysis failed', e)
       if (keepResult && failure === 'ENGINE_UNAVAILABLE') {
-        // 已有场次仍然可用：退回没进来的新文件，files 与结果继续对齐。
-        session.changeSelection(selection.filter(file => parsedByFile.has(file)))
-        error.value = t('replay.analysis.engine_unavailable')
-        analysis.value = { phase: 'ready', done: 0, total: 0, failure: null }
-        return { completed: false, reason: 'ENGINE_UNAVAILABLE' }
+        // 保留已解析完的新文件，退回其余的；有新文件留下就重算，让结果和导出同步进来。
+        const retained = parsedPrefix(selection)
+        session.changeSelection(retained)
+        if (retained.length !== committedFiles.length || retained.some((file, index) => file !== committedFiles[index])) realignResult()
+        if (resp.value) {
+          error.value = t('replay.analysis.engine_unavailable')
+          analysis.value = { phase: 'ready', done: 0, total: 0, failure: null }
+          return { completed: false, reason: 'ENGINE_UNAVAILABLE' }
+        }
       }
       resp.value = null
       analysis.value = { phase: 'failed', done: analysis.value.done, total: selection.length, failure }
