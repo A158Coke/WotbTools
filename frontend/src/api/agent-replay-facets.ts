@@ -874,6 +874,12 @@ function assertColumn(v: unknown, path: string, length: number): number[] {
   return values
 }
 
+function assertU32Column(v: unknown, path: string, length: number): number[] {
+  const values = assertArray(v, path).map((item, i) => assertNonNegativeInteger(item, `${path}[${i}]`, 0xffffffff))
+  if (values.length !== length) throw new Error(`agent facets: ${path} 长度必须等于时钟列`)
+  return values
+}
+
 /**
  * 录像者相机形状校验（`parseRecorderCamera`）：`null` 是上游结构校验未通过的合法结果；
  * 形状漂移一律 throw，由调用方按「不支持」处理，不做降级补值。
@@ -910,7 +916,7 @@ export function validateAgentRecorderCamera(value: unknown): AgentRecorderCamera
       ray_y: assertColumn(aim.ray_y, 'recorder_camera.aim.ray_y', aimT.length),
       ray_z: assertColumn(aim.ray_z, 'recorder_camera.aim.ray_z', aimT.length),
     },
-    mode: { t: modeT, raw: assertColumn(mode.raw, 'recorder_camera.mode.raw', modeT.length) },
+    mode: { t: modeT, raw: assertU32Column(mode.raw, 'recorder_camera.mode.raw', modeT.length) },
     zoom: { t: zoomT, raw: assertColumn(zoom.raw, 'recorder_camera.zoom.raw', zoomT.length) },
     bloom: { t: bloomT, raw: assertColumn(bloom.raw, 'recorder_camera.bloom.raw', bloomT.length) },
     client_options: { backward_zoom: backwardZoom },

@@ -16,4 +16,15 @@ describe('RecorderReticle', () => {
     wrapper.vm.hide()
     expect(root.element.style.display).toBe('none')
   })
+
+  it('stays hidden while UI is suppressed even if the scene keeps writing', async () => {
+    const wrapper = mount(RecorderReticle, { props: { suppressed: true } })
+    const root = wrapper.get('[data-testid="recorder-reticle"]')
+    wrapper.vm.update(10, 20, 30)
+    expect(root.element.style.display).toBe('none')
+    await wrapper.setProps({ suppressed: false })
+    expect(root.element.style.display).toBe('block')
+    await wrapper.setProps({ suppressed: true })
+    expect(root.element.style.display).toBe('none')
+  })
 })

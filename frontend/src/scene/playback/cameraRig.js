@@ -118,8 +118,8 @@ export function backwardZoomScale(current, reversing, dt) {
 }
 
 /**
- * raw → 渲染垂直 FOV 的唯一映射点。这是呈现选择，不是单位结论：
- * Type31 的物理单位未闭合。
+ * raw → 渲染垂直 FOV 的唯一映射点。这是校准映射，不是单位结论：
+ * Type31 的物理单位未闭合，以原客户端对照结果为准。
  */
 export function fovFromZoomRaw(raw) {
   if (!Number.isFinite(raw)) return BASE_FOV_DEG

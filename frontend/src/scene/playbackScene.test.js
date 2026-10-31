@@ -2087,6 +2087,9 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
       await api.loadData({ kind: 'local', file: new File(['r'], 'recorder.wotbreplay') })
       api.setPlaying(false)
       await Promise.resolve()
+      // 测试容器没有尺寸：给相机真实比例，否则准星投影恒为无效
+      window.__camera.aspect = 1.5
+      window.__camera.updateProjectionMatrix()
       const run = (count = 1) => { for (let i = 0; i < count; i++) frames.shift()?.() }
       return { api, store, frames, run, reticle, vehicle: window.__pbV[0] }
     }
@@ -2130,14 +2133,78 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
       run(1)
       const camera = window.__camera
       expect(camera.fov).toBe(27)
-      expect(vehicle.group.visible).toBe(false)
+      // 只从渲染中摘掉：车辆仍「在场」，炮口与击毁特效依赖 group.visible
+      expect(vehicle.group.visible).toBe(true)
+      expect(vehicle.meshHull.layers.test(camera.layers)).toBe(false)
       const gun = vehicle.gunPivot.getWorldPosition(new THREE.Vector3())
       expect(camera.position.distanceTo(gun)).toBeLessThan(1e-6)
 
       api.seekTime(75)
       run(1)
       expect(camera.fov).toBe(55)   // Arcade/Sniper 由回放驱动，硬切
-      expect(vehicle.group.visible).toBe(true)
+      expect(vehicle.meshHull.layers.test(camera.layers)).toBe(true)
+    })
+
+    const pointer = (type, x, y, id, pointerType) => Object.assign(
+      new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: 1, clientX: x, clientY: y }),
+      { pointerId: id, pointerType },
+    )
+
+    it('keeps OrbitControls off through mouse drags and touch pinches', async () => {
+      const { api, run } = await load()
+      api.seekTime(50)
+      api.setCam('recorder')
+      run(5)
+      const before = window.__camera.position.clone()
+      const canvas = document.querySelector('canvas')
+      canvas.dispatchEvent(pointer('pointerdown', 100, 100, 1, 'mouse'))
+      expect(window.__controls.enabled).toBe(false)
+      canvas.dispatchEvent(pointer('pointermove', 180, 140, 1, 'mouse'))
+      canvas.dispatchEvent(pointer('pointerup', 180, 140, 1, 'mouse'))
+      canvas.dispatchEvent(pointer('pointerdown', 100, 100, 2, 'touch'))
+      canvas.dispatchEvent(pointer('pointerdown', 200, 100, 3, 'touch'))
+      canvas.dispatchEvent(pointer('pointermove', 260, 100, 3, 'touch'))
+      canvas.dispatchEvent(pointer('pointerup', 260, 100, 3, 'touch'))
+      canvas.dispatchEvent(pointer('pointerup', 100, 100, 2, 'touch'))
+      expect(window.__controls.enabled).toBe(false)
+      run(2)
+      expect(window.__camera.position.distanceTo(before)).toBeLessThan(1e-6)
+    })
+
+    it('hides the reticle instead of faking the center when the aim point cannot be projected', async () => {
+      const { api, run, reticle } = await load({
+        camera: facet({ aim: { t: [42, 200], yaw: [0, 0], pitch: [0, 0], ray_x: [0, 0], ray_y: [2, 2], ray_z: [-500, -500] } }),
+      })
+      api.seekTime(50)
+      api.setCam('recorder')
+      run(5)
+      expect(reticle.update).not.toHaveBeenCalled()
+      expect(reticle.hide).toHaveBeenCalled()
+    })
+
+    it('still bursts the recorder when it dies while scoped', async () => {
+      const { api, run } = await load({ vehicleOverrides: { death_t: 66 } })
+      api.seekTime(65.95)
+      api.setCam('recorder')
+      run(2)
+      const burst = vi.spyOn(window.__battleFx, 'spawnBurst')
+      api.setPlaying(true)
+      run(3)
+      expect(burst).toHaveBeenCalled()
+    })
+
+    it('renders the final restored FOV while paused', async () => {
+      const { api, run } = await load({ vehicleOverrides: { death_t: 80 } })
+      api.seekTime(65)
+      api.setCam('recorder')
+      run(5)
+      expect(window.__camera.fov).toBe(27)
+      const renderedFov = []
+      vi.spyOn(window.__renderer, 'render').mockImplementation((_scene, camera) => { renderedFov.push(camera.fov) })
+      api.seekTime(90)
+      run(8)
+      expect(window.__camera.fov).toBe(55)
+      expect(renderedFov.at(-1)).toBe(55)   // 记录渲染当时的值：暂停时最后一帧也要画出来
     })
 
     it('falls back to Free near the old pose when the recorder dies, and only re-enables on seek back', async () => {
@@ -3138,7 +3205,7 @@ describe('turretless GLB（固定战斗室歼击车）挂载与摆姿', () => {
     vi.spyOn(GLTFLoader.prototype, 'parse').mockImplementation((_b, _p, done) => done({ scene: template }))
   }
 
-  async function loadTurretless(vehicles, detachedTurrets = []) {
+  async function loadTurretless(vehicles, detachedTurrets = [], meta = {}) {
     window.history.replaceState(null, '', '/?debug&q=high')
     const frames = []
     vi.stubGlobal('requestAnimationFrame', (cb) => frames.push(cb))
@@ -3149,11 +3216,37 @@ describe('turretless GLB（固定战斗室歼击车）挂载与摆姿', () => {
     api = initPlayback(mountContainer(), store, overlay)
     created.push(api)
     const state = { canonical: null }
-    const session = { loadScene: vi.fn().mockResolvedValue(mkData(vehicles, detachedTurrets)), getState: () => state }
+    const sceneData = mkData(vehicles, detachedTurrets)
+    sceneData.meta = { ...sceneData.meta, ...meta }
+    const session = { loadScene: vi.fn().mockResolvedValue(sceneData), getState: () => state }
     await api.loadData({ kind: 'local', file: new File(['replay'], 'td.wotbreplay'), session })
     api.setPlaying(false)
     return { api, store, frames, vehicles: window.__pbV }
   }
+
+  it('录像者开镜的相机在 GLB 配置炮位，不是低模枢轴', async () => {
+    stubTurretlessGlb()
+    vi.mocked(assetProvider.json).mockImplementation((path) => Promise.resolve(
+      String(path).startsWith('/tank/')
+        ? { model_origins: { track: [0, 0, 0], turret: [0, 3.5, 1.8] }, configs: [] }
+        : null))
+    source.loadRecorderCameraFromFile.mockResolvedValue({
+      version: 1, author_eid: 1,
+      aim: { t: [42, 300], yaw: [0, 0], pitch: [0, 0], ray_x: [0, 0], ray_y: [2, 2], ray_z: [100, 100] },
+      mode: { t: [42, 50], raw: [1, 0] }, zoom: { t: [50.1], raw: [27] }, bloom: { t: [], raw: [] },
+      client_options: { backward_zoom: null },
+    })
+    const { api, frames, vehicles } = await loadTurretless([mkVehicle()], [], { author_eid: 1 })
+    const v = vehicles[0]
+    expect(v.glb).toBeTruthy()
+    api.seekTime(60)
+    api.setCam('recorder')
+    for (let i = 0; i < 5; i++) frames.shift()?.()
+    const expected = v.glbParts.gunNodes[0].parent.localToWorld(new THREE.Vector3(...v.glbParts.gP))
+    expect(window.__camera.position.distanceTo(expected)).toBeLessThan(1e-3)
+    const proxy = v.gunPivot.getWorldPosition(new THREE.Vector3())
+    expect(window.__camera.position.distanceTo(proxy)).toBeGreaterThan(0.1)
+  })
 
   it('无 turret_N 但有炮管组：进场即挂载真模型，炮塔角改写炮管组（不再退代理）', async () => {
     stubTurretlessGlb()

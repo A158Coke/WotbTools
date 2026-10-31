@@ -820,7 +820,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         <div class="stage-square">
           <div ref="stage" class="scene"></div>
           <PlaybackVehicleLabels3D :gun-marks="gunMarks" ref="labelOverlay" :label-prefs="labelPrefs" :hp-prefs="hpPrefs" :marker-prefs="markerPrefs" :selected-eid="selectedEid" :hidden="uiHidden || !store.hasData" :interactive="!annotationTool" @select="handleSceneSelect" />
-          <RecorderReticle ref="recorderReticle" />
+          <RecorderReticle ref="recorderReticle" :suppressed="uiHidden" />
           <div v-if="showFps" class="pb-fps" :class="{ 'pb-fps-low': fpsJanky }" data-testid="replay3d-fps" aria-hidden="true">{{ fpsText }}</div>
         </div>
       </div>

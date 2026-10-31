@@ -191,7 +191,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let recorderCamera = null;
   const recorderSample = {};
   let recorderBoomScale = 1;
-  let scopedHiddenEid = 0;             // 开镜时相机在炮位，本车隐藏
+  // 开镜时相机在炮位，本车只从渲染里摘掉：group.visible 仍表示「车辆在场」，
+  // 炮口定位与击毁特效都依赖它。
+  let scopedHiddenEid = 0;
   let cameraBlend = null;              // 进入录像者视角的呈现过渡
   let fovRestore = null;               // 离开录像者视角时 FOV 的呈现过渡
   let shotPtr = 0;   //（killPtr 随击杀 feed 出仓 playback/hudFeed.js）
@@ -218,6 +220,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 缺失（未导出/404）时回退整图烘焙底图
   let groundLayers = null;
   let terrainMesh = null, heightField = null, heightMeta = null;  // 3D 地形
+  const SCOPED_HIDDEN_LAYER = 1;       // 相机不启用的 layer：开镜时本车留在场景里但不绘制
   const CAMERA_GROUND_CLEARANCE = 0.5;  // 初值：小于地形起伏尺度，真实地图视觉校准由人工验收
   // 高度场只有一份（客户端同构：渲染/查询/放置全用真值场）。让位掩码（v0.4.2 的"渲染场"副本
   // 概念）与"贴地结构脚印"细分判据均已撤销（2026-10-11 用户裁示：只对齐客户端，不自创补偿）。
@@ -605,6 +608,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       e.stopPropagation();
       return;
     }
+    // 录像者视角不接受相机输入：OrbitControls 保持关闭，选中语义仍由 renderer 接线。
+    if (CAM === 'recorder') return;
     // 非 free：恢复 OrbitControls 并走原选中语义（onScenePointerDown 由 renderer 接线）
     if (!controls.enabled) controls.enabled = true;
   }
@@ -2312,7 +2317,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       const x = labelClip.x / w, y = labelClip.y / w, z = labelClip.z / w;
       // projected = 车辆在视锥内；visible = 名牌本身是否显示。两者必须分开：伤害数字是
       // 战斗反馈而不是名牌内容，关掉名牌后它仍要有落点（覆盖层里回退到锚点上方）。
-      const projected = v.group.visible && w > 0
+      const projected = v.group.visible && v.def.eid !== scopedHiddenEid && w > 0
         && Number.isFinite(x) && Number.isFinite(y) && z >= -1 && z <= 1
         && x >= -1 && x <= 1 && y >= -1 && y <= 1;
       labelAnchorScratch.x = projected ? (x + 1) * container.clientWidth / 2 : 0;
@@ -3238,20 +3243,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       p.hullGroup.position.set(0, 0, 0);
     }
     if (!p) return;
-    const rel = wrapPi(turretAbsAt(v, t) - yawAt(v, t));
-    const tr = -rel;                       // 镜像系节点旋转角 = −rel
     const gr = gunPitchAt(v, t);           // glb 系 Rx(θ)：θ>0 = 前向(+Y)抬向 +Z = 仰角
-    if (p.itr) {
-      // Euler 序 'ZYX'：yaw (Z) 最外层 → pitch/roll 补偿在炮塔局部系内执行。
-      // 'XYZ' 会把 pitch 放在全局系，炮塔转开 90° 时 pitch 变成侧倾。
-      _glbEuler.set(-THREE.MathUtils.degToRad(p.itr.pitch || 0), -THREE.MathUtils.degToRad(p.itr.roll || 0),
-                    tr - THREE.MathUtils.degToRad(p.itr.yaw || 0), 'ZYX');
-      _mRot.makeRotationFromEuler(_glbEuler);
-    } else {
-      _mRot.makeRotationZ(tr);
-    }
-    const mT = _mT.makeTranslation(p.tP[0], p.tP[1], p.tP[2]).multiply(_mRot)
-      .multiply(_mTmpA.makeTranslation(-p.tP[0], -p.tP[1], -p.tP[2]));
+    const mT = glbTurretMatrix(v, p, t);
     const mG = _mG.copy(_mT).multiply(_mTmpB.makeTranslation(p.gP[0], p.gP[1], p.gP[2]))
       .multiply(_mTmpC.makeRotationX(gr))
       .multiply(_mTmpD.makeTranslation(-p.gP[0], -p.gP[1], -p.gP[2]));
@@ -3263,20 +3256,44 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       tn.matrix.copy(_mAcc.copy(mT).multiply(tn.userData.__bake));
     }
     // 固定战斗室（turretNode=null，歼击车）：炮管组直接吃 mG——mG = mT·Rx(gr)，
-    // 已含绕 tP 的横转（itr 补偿在内）与绕 gP 的俯仰，与客户端「TD 炮塔 = 炮架横转」同构。
+    // 已含绕 tP 的横转（itr 补偿在内）与绕 gP 的俯仰，与客户端「TD 炮塔 = 炮管」同构。
     for (const gn of p.gunNodes) {
       gn.updateMatrix();
       if (!gn.userData.__bake) { gn.userData.__bake = gn.matrix.clone(); gn.matrixAutoUpdate = false; }
       gn.matrix.copy(_mAcc.copy(mG).multiply(gn.userData.__bake));
     }
-    // 世界矩阵不在此强制刷新：renderer.render 的 scene.updateMatrixWorld() 从根向下传播，
+    // 世界矩阵不在此强制刷新：renderer.render 的 scene.updateMatrixWorld() 从根向下传播足矣。
     // v.glb 根 matrixAutoUpdate=true → updateMatrix 置脏 → force 覆盖 matrixAutoUpdate=false
     // 的炮塔/炮管节点，本行是每车全树一遍纯重复的 compose+multiply（14 车 ×60fps）。
-    // tick 与 render 之间唯一的车辆世界矩阵读者是开火定位炮口（flushMuzzles），它只在开火的
-    // tick 把射手一台摆到 t_fire、刷新、量完再摆回 T 并刷新；标签投影用位姿插值坐标、遮挡射线
+    // tick 与 render 之间唯一的车辆世界矩阵读者是开火定位炮口（flushMuzzles），它自己
+    // tick 把射手一台摆到 t_fire、刷新、量完再摆回 T 并刷新；标签投影用位姿，
     // 只打静态场景网格。
   }
-
+  /** 炮塔节点的枢轴旋转矩阵（模型系）：炮塔横转绕 tP，含 itr 补偿。 */
+  function glbTurretMatrix(v, p, t) {
+    const rel = wrapPi(turretAbsAt(v, t) - yawAt(v, t));
+    const tr = -rel;                       // 镜像系节点旋转角 = −rel
+    if (p.itr) {
+      // Euler 序 'ZYX'：yaw (Z) 最外层 → pitch/roll 补偿在炮塔局部系内执行。
+      // 'XYZ' 会把 pitch 放在全局系，炮塔转开 90° 时 pitch 变成侧倾。
+      _glbEuler.set(-THREE.MathUtils.degToRad(p.itr.pitch || 0), -THREE.MathUtils.degToRad(p.itr.roll || 0),
+                    tr - THREE.MathUtils.degToRad(p.itr.yaw || 0), 'ZYX');
+      _mRot.makeRotationFromEuler(_glbEuler);
+    } else {
+      _mRot.makeRotationZ(tr);
+    }
+    return _mT.makeTranslation(p.tP[0], p.tP[1], p.tP[2]).multiply(_mRot)
+      .multiply(_mTmpA.makeTranslation(-p.tP[0], -p.tP[1], -p.tP[2]));
+  }
+  /** 本车配置的真实炮位世界坐标；没有 GLB 时返回 false，由调用方退回低模枢轴。 */
+  function glbGunPivotWorld(v, out) {
+    const p = v.glb ? v.glbParts : null;
+    const parent = p && (p.turretNode ?? p.gunNodes[0])?.parent;
+    if (!parent) return false;
+    parent.updateWorldMatrix(true, false);
+    out.set(p.gP[0], p.gP[1], p.gP[2]).applyMatrix4(glbTurretMatrix(v, p, T)).applyMatrix4(parent.matrixWorld);
+    return true;
+  }
   async function applyGlbToggle(on) {
     const gen = sessionGen;
     glbOn = on;
@@ -3834,10 +3851,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const rel = wrapPi(turretAbsAt(v, T) - yawAt(v, T));
     v.turretG.rotation.y = -rel;
     v.gunPivot.rotation.x = -gunPitchAt(v, T);
-    if (v.def.eid === scopedHiddenEid) {
-      v.group.visible = false;
-      if (v.glb) v.glb.visible = false;
-    }
   }
 
   // 按需渲染的脏标记：状态跳变（seek/换相机/开关节/尺寸变化/特效到期）必须显式置脏，
@@ -4309,13 +4322,19 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     fovRestore = camera.fov === BASE_FOV_DEG ? null : { fov: camera.fov, elapsed: 0 };
     const hidden = scopedHiddenEid ? vehicleByEid(scopedHiddenEid) : null;
     scopedHiddenEid = 0;
-    if (hidden) applyPose(hidden);
+    if (hidden) setScopedLayer(hidden, false);
     recorderReticle?.hide();
+  }
+  function setScopedLayer(v, hidden) {
+    const layer = hidden ? SCOPED_HIDDEN_LAYER : 0;
+    v.group.traverse((node) => node.layers.set(layer));
+    v.glb?.traverse((node) => node.layers.set(layer));
   }
   function applyCameraFov(fov) {
     if (Math.abs(camera.fov - fov) < 1e-3) return;
     camera.fov = fov;
     camera.updateProjectionMatrix();
+    invalidate();
   }
   function stepFovRestore(dt) {
     fovRestore.elapsed += dt;
@@ -4342,12 +4361,16 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const hiddenEid = scoped ? v.def.eid : 0;
     if (hiddenEid !== scopedHiddenEid) {
       scopedHiddenEid = hiddenEid;
-      applyPose(v);
+      setScopedLayer(v, scoped);
+    } else if (scoped && v.glb && !v.glb.layers.isEnabled(SCOPED_HIDDEN_LAYER)) {
+      setScopedLayer(v, true);   // 开镜期间 GLB 才装配完成
     }
     let fov = BASE_FOV_DEG;
     if (scoped) {
-      v.gunPivot.updateWorldMatrix(true, false);
-      v.gunPivot.getWorldPosition(_recorderPos);
+      if (!glbGunPivotWorld(v, _recorderPos)) {
+        v.gunPivot.updateWorldMatrix(true, false);
+        v.gunPivot.getWorldPosition(_recorderPos);
+      }
       fov = fovFromZoomRaw(sample.zoomRaw);
       recorderBoomScale = 1;
     } else {
@@ -4393,10 +4416,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const width = container.clientWidth, height = container.clientHeight;
     camera.updateMatrixWorld();
     _recorderRay.set(-sample.rayX, sample.rayY, sample.rayZ).project(camera);
-    const visible = _recorderRay.z < 1 && Math.abs(_recorderRay.x) <= 1 && Math.abs(_recorderRay.y) <= 1;
+    // 中心标记只表示瞄准点的真实投影：投影不到就隐藏，不伪造屏幕中心。
+    if (![_recorderRay.x, _recorderRay.y, _recorderRay.z].every((n) => Number.isFinite(n) && Math.abs(n) <= 1)) {
+      recorderReticle.hide();
+      return;
+    }
     recorderReticle.update(
-      visible ? (_recorderRay.x + 1) * width / 2 : width / 2,
-      visible ? (1 - _recorderRay.y) * height / 2 : height / 2,
+      (_recorderRay.x + 1) * width / 2,
+      (1 - _recorderRay.y) * height / 2,
       reticleRadiusPx({ bloomRaw: sample.bloomRaw, fovDeg: camera.fov, viewportH: height }),
     );
   }

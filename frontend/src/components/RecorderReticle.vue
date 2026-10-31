@@ -1,22 +1,34 @@
 <script setup>
 // 录像者视角的 C-lite 准星：中心标记 = Type39 瞄准轴，扩散圆 = method36 bloom。
 // 位置与半径由场景逐帧写入，不走响应式；圆的绝对尺寸是校准值，不是协议结论。
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 
 defineOptions({ name: 'RecorderReticle' })
 
+const props = defineProps({
+  /** 「隐藏全部 UI」：场景逐帧写入也不能让准星重新出现。 */
+  suppressed: Boolean,
+})
+
 const root = ref(null)
 const circle = ref(null)
+let active = false
 
+function syncDisplay() {
+  if (root.value) root.value.style.display = active && !props.suppressed ? 'block' : 'none'
+}
 function update(x, y, radius) {
   if (!root.value) return
-  root.value.style.display = 'block'
+  active = true
   root.value.style.transform = `translate(${x}px, ${y}px)`
   circle.value?.setAttribute('r', String(radius))
+  syncDisplay()
 }
 function hide() {
-  if (root.value) root.value.style.display = 'none'
+  active = false
+  syncDisplay()
 }
+watch(() => props.suppressed, syncDisplay)
 
 defineExpose({ update, hide })
 </script>
