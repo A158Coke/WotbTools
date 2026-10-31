@@ -1922,8 +1922,10 @@ describe('Replay3DPane 待开播画质闸门', () => {
     playback.api.store.hasData = true
     await nextTick()
     const cams = wrapper.get('[data-testid="replay3d-camera"]')
-    expect(cams.findAll('button').map(b => b.attributes('data-value'))).toEqual(['free', 'recorder'])
+    // 俯视是持续模式（旋转中心 = 地图中心），与自由并列；录像者档位暂不支持
+    expect(cams.findAll('button').map(b => b.attributes('data-value'))).toEqual(['free', 'top', 'recorder'])
     expect(cams.text()).toContain('agentReplay.cam_free')
+    expect(cams.text()).toContain('agentReplay.cam_top')
     expect(wrapper.get('[data-testid="replay3d-top-view"]').text()).toBe('agentReplay.cam_top')
     const recorder = cams.get('[data-value="recorder"]')
     expect(recorder.attributes('disabled')).toBeDefined()

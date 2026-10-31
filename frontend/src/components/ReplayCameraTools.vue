@@ -37,7 +37,8 @@ function reselect(value) {
       @update:model-value="emit('update:cam', $event)"
       @reselect="reselect"
     />
-    <!-- 俯视是一次性动作，不是相机模式，所以不进 radio 组。 -->
+    <!-- 俯视是相机模式（radio 里有对应档位），此按钮是回到俯视机位的快捷入口：
+         紧凑控制条把 radio 收进 Display 面板时仍可一键对心（绕地图中心）。 -->
     <button type="button" class="top-view" data-testid="replay3d-top-view" @click="emit('update:cam', 'top')">
       {{ t('agentReplay.cam_top') }}
     </button>

@@ -395,6 +395,8 @@ const mapTitle = computed(() => {
 // 所以走 computed 每次重算——不得在 setup 里定死一次，也不用内核预设里的固定中文 label。
 const CAMERAS = computed(() => [
   { value: 'free', label: t('agentReplay.cam_free') },
+  // 俯视是持续模式（OrbitControls 绕**地图中心**旋转/缩放），与自由并列而非一次性动作
+  { value: 'top', label: t('agentReplay.cam_top') },
   {
     value: 'recorder',
     label: t('agentReplay.cam_recorder'),
