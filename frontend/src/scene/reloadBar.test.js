@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   PHASE_AMMO_COUNT, PHASE_DRUM_SHELL, PHASE_DURATION_CHANGE, PHASE_MAG_INTERVAL, PHASE_START, fillOf, groupByVehicle,
   hasReloadTelemetry, hasPerShellReloads, isTimedAmmoPhase, magazineSizeForVehicle, magazineSizeOfVehicle,
-  resolveMountedConfig,
+  resolveExactMountedConfig, resolveMountedConfig,
   createReloadStateResolver, shellStatesAt, usablePhases,
 } from './reloadBar.js'
 
@@ -158,6 +158,14 @@ describe('reloadBar · 客户端证据链解析实际搭载配置（resolveMount
     expect(resolveMountedConfig({ turret_local: 4, gun_local: 10 }, T69)).toBe(T69_CONFIGS[0])
     // 局部 id 无命中 → 落后续证据
     expect(resolveMountedConfig({ turret_local: 9, gun_local: 9 }, T69)).toBe(T69_CONFIGS[1]) // hp 区分
+  })
+
+  it('精确解析只认唯一配置或 locals 命中，不走弹种/血量/顶级推断', () => {
+    expect(resolveExactMountedConfig({ turret_local: 4, gun_local: 20 }, T69)).toBe(T69_CONFIGS[1])
+    expect(resolveExactMountedConfig({ turret_local: 9, gun_local: 9 }, T69)).toBeNull()
+    expect(resolveExactMountedConfig({ shell_ids: [201], max_hp: 11700 }, T69)).toBeNull()
+    expect(resolveExactMountedConfig(null, { configs: [T69_CONFIGS[0]] })).toBe(T69_CONFIGS[0])
+    expect(resolveExactMountedConfig(null, T69)).toBeNull()
   })
 
   it('证据 1：发射弹种 ⊆ 配置弹表（shell_global_ids）', () => {

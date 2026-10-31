@@ -75,7 +75,11 @@ import { TRACER_STREAK_M, createBattleFx, muzzleTipOf, trailOpacityAt } from './
 //（ROSTER_GROUPS/applyRosterRuntime/buildRosterRows/projectRoster 随名册桥接出仓
 // playback/hudFeed.js；hpPercentText 仍为本文件 HUD 消费）
 import { hpPercentText } from './rosterState.js'
-import { createReloadStateResolver, resolveMountedConfig } from './reloadBar.js'
+import { createReloadStateResolver, resolveExactMountedConfig, resolveMountedConfig } from './reloadBar.js'
+import {
+  aimedVehicle, armorEquipmentCoeffs, armorHighlightBlock, authorShellAt, createArmorHighlight, markPickBoundsStale,
+  mountedShell, reticleAimDirection,
+} from './playback/armorHighlight.js'
 import { pointsAt } from './supremacyPoints.js'
 import { teamHpTotals } from './teamHpTotals.js'   //（perspectiveScore 随计分桥接出仓 playback/hudFeed.js）
 // 战斗反馈时长：与 2D 共用同一组 canonical 常量（SSOT，避免两处各自漂移）
@@ -327,6 +331,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 不存在这两个开关（已移至待开播卡片）。
   let LOGDEPTH = prefOf('pb_logdepth', 'logdepth', false);
   let DYNRES = prefOf('pb_dynres', 'dynres', true);
+  let ARMOR_HIGHLIGHT = prefOf('pb_armor_highlight', 'armorhl', false);
   const persistPref = (key, on) => { try { localStorage.setItem(key, on ? '1' : '0'); } catch (_) {} };
 
   // ---------- 画质分档 ----------
@@ -350,6 +355,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   store.qualityLabel = '画质 · ' + Q.label;
   store.logdepth = LOGDEPTH;   // Display 面板开关的初始态（偏好解析见上方 prefOf）
   store.dynres = DYNRES;
+  store.armorHighlight = ARMOR_HIGHLIGHT;
   function setQuality(k) {
     if (!QUALITY_PRESETS[k] || k === QKEY) return;
     const apply = () => {
@@ -3098,6 +3104,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       modelRoot.add(hullGroup);
     }
     return { turretNode, gunNodes, tP, gP, hullGroup,
+             poseT: new THREE.Matrix4(), poseG: new THREE.Matrix4(),   // 本帧部件姿态（模型系），armor 网格同步用
              itr: (sd && sd.initial_turret_rotation) || null };
   }
 
@@ -3350,6 +3357,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
             applyChainToVertices(gp.posAttr.array, gp.basePos, gp.params,
                                  tg.chainZ, tg.restZ, gp.axis3);
             gp.posAttr.needsUpdate = true;
+            markPickBoundsStale(gp.mesh.geometry);
             if (redoNormals) {
               gp.mesh.geometry.computeVertexNormals();
               const na = gp.mesh.geometry.getAttribute('normal');
@@ -3412,6 +3420,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const mG = _mG.copy(_mT).multiply(_mTmpB.makeTranslation(p.gP[0], p.gP[1], p.gP[2]))
       .multiply(_mTmpC.makeRotationX(gr))
       .multiply(_mTmpD.makeTranslation(-p.gP[0], -p.gP[1], -p.gP[2]));
+    p.poseT.copy(mT);
+    p.poseG.copy(mG);
     const tn = p.turretNode;
     if (tn) {
       // 回转炮塔：横转（含 itr 补偿）写炮塔节点；炮管随父链继承横转。
@@ -3496,6 +3506,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
             }
             v.glb = inst;                       // 通过部位检查后才落库（否则会卡在半装载态）
             v.glbParts = parts;
+            v.tankData = loaded.sd;             // Sniper 穿深着色的配置/弹表来源
             // 悬挂部件（轮/带）逐车收集：几何逐车 clone（模板共享），数据缺 → null 回落刚体
             v.suspParts = collectSuspensionParts(inst, loaded.susp, v.def.tank_id);
             v.def.suspReaction = loaded.susp ? loaded.susp.wheels_reaction_speed : null;
@@ -4158,7 +4169,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     updateBattleFx();     // 战斗特效（壁钟特效暂停时也继续自然播完）
     const perfT1 = PERF ? performance.now() : 0;
     maybeRebuildTerrainLod();   // 地形 LOD 跟随相机姿态（视距滞回 + 绕转/FOV/aspect；120 ms 节流）
+    // 一帧可有多次 render：探针期间手动复位，info 才是整帧累计而不是最后一次 render
+    if (PERF) { renderer.info.autoReset = false; renderer.info.reset(); }
     renderer.render(scene, camera);
+    renderArmorHighlight();
     if (PERF) perfFrame(perfT1 - perfT0, performance.now() - perfT1);
   }
 
@@ -4177,7 +4191,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const now = performance.now();
     const dt = perfLast ? now - perfLast : 0;
     perfLast = now;
-    // draw call 数（renderer.info 是上一帧 render 的累计）：场景侧结构性优化（材质去重 /
+    // draw call 数（renderer.info 是本帧全部 render 的累计）：场景侧结构性优化（材质去重 /
     // 实例化 / 冻结）的收益直接体现在这个数上，没有它优化前后无法量化对比。
     const calls = renderer ? renderer.info.render.calls : 0;
     perfRing[perfRingN % PERF_RING] = { dt, updateMs, renderMs, t: T, calls,
@@ -4610,6 +4624,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
     updateRecorderReticle(sample, v);
   }
+  /** Type39 瞄准点（场景坐标）：准星与穿深着色的选目标共用这一点。 */
+  function recorderAimPoint(sample, out) {
+    return out.set(-sample.rayX, sample.rayY, sample.rayZ);
+  }
   /** 世界点 → 舞台像素；投影不到返回 null，不伪造屏幕位置。 */
   function projectToStage(point, out) {
     point.project(camera);
@@ -4630,8 +4648,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       v.gunPivot.getWorldPosition(_recorderGun);
       _recorderGunDir.set(0, 0, 1).transformDirection(v.gunPivot.matrixWorld);
     }
-    _recorderRay.set(-sample.rayX, sample.rayY, sample.rayZ);
-    const distance = Math.max(RETICLE_MIN_GUN_DISTANCE_M, _recorderGun.distanceTo(_recorderRay));
+    recorderAimPoint(sample, _recorderRay);
+    const distance =Math.max(RETICLE_MIN_GUN_DISTANCE_M, _recorderGun.distanceTo(_recorderRay));
     _recorderGun.addScaledVector(_recorderGunDir, distance);
     const aim = projectToStage(_recorderRay, _reticleAim);
     const gun = projectToStage(_recorderGun, _reticleGun);
@@ -4639,6 +4657,38 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     recorderReticle.update(aim, gun, reticleRadiusPx({
       bloomRaw: sample.bloomRaw, fovDeg: camera.fov, viewportH: container.clientHeight,
     }));
+  }
+  // ---------- Sniper 穿深着色 ----------
+  let armorHighlight = null;
+  const _armorAimPoint = new THREE.Vector3();
+  const _armorAimDir = new THREE.Vector3();
+  /** 主渲染之后的叠加 pass：只有录像者开镜才可能运行，其余路径没有任何额外 render。 */
+  function renderArmorHighlight() {
+    if (!ARMOR_HIGHLIGHT || CAM !== 'recorder' || !scopedHiddenEid) return;
+    const author = recorderVehicle();
+    if (!author?.tankData) return;
+    const friendlyTeam = DATA.meta.friendly_team;
+    const enemies = V.filter((v) => v.glb?.visible && v.group.visible && v.tankData
+      && (v.def.team === 1 || v.def.team === 2) && v.def.team !== friendlyTeam && !deathAt(v, T));
+    const aimDir = reticleAimDirection(camera, recorderAimPoint(recorderSample, _armorAimPoint), _armorAimDir);
+    if (!aimDir) return;
+    const target = aimedVehicle(camera.position, aimDir, enemies);
+    if (!target) return;
+    const shellId = authorShellAt(DATA.author_shell_timeline, T);
+    const config = resolveExactMountedConfig(target.def, target.tankData);
+    const authorConfig = resolveExactMountedConfig(author.def, author.tankData);
+    const blocked = armorHighlightBlock({
+      targetTankId: target.def.tank_id, targetConfig: config, authorConfig, shellId,
+      targetEquipment: target.def.equipment, authorEquipment: author.def.equipment,
+    });
+    if (blocked) return;
+    const { shell, caliber } = mountedShell(authorConfig, shellId);
+    armorHighlight ??= createArmorHighlight({ renderer, assetProvider });
+    armorHighlight.render({
+      scene, camera, vehicle: target, tankData: target.tankData, config, shell, caliber,
+      ...armorEquipmentCoeffs(shell, author.def.equipment, target.def.equipment),
+      onReady: invalidate,
+    });
   }
   /** 回到俯视机位：相机置地图中心正上方，target 锁地图中心。 */
   function applyTopView() {
@@ -4754,6 +4804,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       topViewOnLoad = true;
     }
     recorderCamera = null;
+    armorHighlight?.dispose();
+    armorHighlight = null;
     foliageClip.value = 0;
     store.recorderCameraStatus = 'idle';
     store.recorderViewAvailable = false;
@@ -5268,6 +5320,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       DYNRES = !!on;
       persistPref('pb_dynres', on);
       store.dynres = !!on;
+    },
+    setArmorHighlight: (on) => {
+      ARMOR_HIGHLIGHT = !!on;
+      persistPref('pb_armor_highlight', on);
+      store.armorHighlight = !!on;
+      invalidate();
     },
     setQuality,
     setPaused,

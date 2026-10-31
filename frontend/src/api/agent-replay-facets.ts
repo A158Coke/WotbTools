@@ -446,6 +446,12 @@ export interface AgentArmorStateTrack {
   state: number[]
 }
 
+/** 作者当前弹种变更事件（method 0x07 服务器确认；shell_id 与回放 shell 表同域） */
+export interface AgentAuthorShellEvent {
+  t: number
+  shell_id: number
+}
+
 export interface AgentPlaybackFacet {
   version: number
   meta: AgentPlaybackMeta
@@ -476,6 +482,11 @@ export interface AgentPlaybackFacet {
   reloads?: AgentReloadEvent[]
   /** v0.3.9：method 35 当前生效完整装填时长（仅本方） */
   reload_effective?: AgentReloadEffectiveEvent[]
+  /**
+   * 作者当前弹种时间线（additive）：切换即生效，无 selected/loaded 分离。
+   * 归属止于作者首次死亡，之后可能是被观战车辆。缺省 = 当前弹种未知。
+   */
+  author_shell_timeline?: AgentAuthorShellEvent[]
   /** 动态装甲 armorsStates 时间线（上游待发版 additive；仅 6 辆声明车非空，静态车缺省） */
   armor_states?: AgentArmorStateTrack[]
   /** 独立炮塔实体轨迹（additive）；缺省/空数组 = 没有可用的炮塔事实 */
@@ -945,6 +956,16 @@ export function validateAgentPlayback(value: unknown): AgentPlaybackFacet {
   if (pb.reload_effective !== undefined) {
     const events = assertArray(pb.reload_effective, 'playback.reload_effective')
     events.forEach((event, i) => validateReloadEffectiveEvent(event, `playback.reload_effective[${i}]`))
+  }
+  if (pb.author_shell_timeline !== undefined) {
+    const events = assertArray(pb.author_shell_timeline, 'playback.author_shell_timeline')
+    const clocks = events.map((event, i) => {
+      const ctx = `playback.author_shell_timeline[${i}]`
+      const obj = assertObject(event, ctx)
+      assertNonNegativeInteger(obj.shell_id, `${ctx}.shell_id`, 0xffffff)
+      return obj.t
+    })
+    assertAscendingClock(clocks, 'playback.author_shell_timeline.t')
   }
   if (pb.consumables !== undefined) {
     const events = assertArray(pb.consumables, 'playback.consumables')

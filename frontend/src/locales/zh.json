@@ -1545,6 +1545,8 @@
     "perf_logdepth_hint": "开启 = 600 米以上俯瞰视角深度排序确定（可消除远景闪烁），但禁用 early-z、植被像素开销大。默认关闭。",
     "perf_dynres": "动态分辨率",
     "perf_dynres_hint": "持续高负载时自动降低渲染分辨率、有余量时自动恢复，保持帧率稳定；代价是高负载瞬间画面稍软。默认开启。",
+    "perf_armor_highlight": "狙击镜穿深着色",
+    "perf_armor_highlight_hint": "录像者开镜时，按当前弹种给准星所指敌车的装甲着色。配置、弹种或装备不确定时不显示。默认关闭。",
     "display_scene": "场景",
     "hide_all_ui": "隐藏全部 UI",
     "show_all_ui": "显示 UI",
