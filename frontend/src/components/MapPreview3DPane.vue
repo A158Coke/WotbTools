@@ -246,6 +246,8 @@ function shouldHaveScene() {
 }
 function ensureScene() {
   if (sceneApi || !shouldHaveScene()) return false
+  // stage 必须已挂在文档上：canvas append 到游离节点会静默丢失（模板切换的残留防护）
+  if (!stage.value?.isConnected) return false
   sceneApi = initPlayback(stage.value, store, null, {
     onAnnotationCommit: commitAnnotationFromScene,
     onAnnotationErase: eraseFromScene,
@@ -272,6 +274,30 @@ watch(() => props.active, (active) => {
   sceneApi?.setPaused?.(!active)
   if (!active && annotationOpen.value) closeAnnotation()
 })
+/**
+ * 连通性翻转兜底（矿井阵地空白页根因）：组件可能在连通性检测仍 pending 时挂载
+ * （`online.available=false` → `shouldHaveScene()` false），而 onMounted 只拍一次、
+ * available 翻转后没有任何人拉起场景——stage 留空、零错误。这里对
+ * available/active 的每次变化做 reconcile：首次可建（含 pending→available 翻转）
+ * 装载当前图，active 翻转只改暂停态，离线则拆场景。
+ */
+watch(
+  () => [online.value.available, props.active],
+  ([available, active], [prevAvailable] = []) => {
+    if (!shouldHaveScene()) {
+      destroyScene()
+      return
+    }
+    nextTick(() => {
+      const created = ensureScene()
+      if (!sceneApi) return
+      sceneApi.setPaused?.(!active)
+      // 首次可建（含 pending→available 翻转）才装载；active 翻转不重复装图
+      if (created || (available === true && prevAvailable === false)) reloadMap()
+    })
+  },
+  { immediate: true },
+)
 
 // ---------- 「隐藏全部 UI」（与 3D 回放同一语义，不持久化）----------
 const uiHidden = ref(false)
@@ -311,12 +337,7 @@ const paneReady = computed(() => !online.value.available || !webgl.supported
 
 onMounted(() => {
   window.addEventListener('keydown', onUiToggleKeydown)
-  if (shouldHaveScene()) {
-    nextTick(() => {
-      ensureScene()
-      reloadMap()
-    })
-  }
+  // 场景拉起归上面的 immediate reconcile watcher（覆盖连通性 pending 竞态）
 })
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onUiToggleKeydown)
@@ -333,6 +354,10 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
 
 <template>
   <div ref="rootEl" class="map3d" :data-pane-ready="paneReady ? 'true' : undefined" data-testid="map-3d-pane">
+    <!-- 连通性不可用是环境事实，stage 不渲染（available 翻转后由 reconcile watcher 建场景）。
+         注意 loading/error **不得**走模板分支：initScene 的 canvas append 在 loadMapOnly
+         开跑时执行，分支切换会卸载 stage、把 canvas 丢进游离 DOM（矿井阵地空白页根因）。
+         因此 stage 常驻，加载/错误是覆盖层（与回放 3D 的 pb-root 同一结构）。 -->
     <template v-if="!online.available">
       <p v-if="!online.pending" class="map3d-note" data-testid="map-3d-connectivity">{{ $t(online.messageKey) }}</p>
     </template>
@@ -341,16 +366,17 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
       mode="unsupported"
       :webgl-status="webgl.status"
     />
-    <Scene3DStatus
-      v-else-if="statusMode"
-      :mode="statusMode"
-      :progress="store.assetProgress"
-      :message="statusMessage"
-      @retry="reloadMap"
-    />
     <div v-else class="map3d-root">
       <div class="map3d-stage" :style="{ height: stageH }" data-testid="map-3d-stage">
         <div ref="stage" class="scene"></div>
+        <Scene3DStatus
+          v-if="statusMode"
+          class="map3d-status-overlay"
+          :mode="statusMode"
+          :progress="store.assetProgress"
+          :message="statusMessage"
+          @retry="reloadMap"
+        />
         <div
           v-if="!uiHidden && store.mapReady"
           class="map3d-fps"
@@ -500,6 +526,13 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
 .map3d-stage {
   position: relative;
   min-height: 0;
+}
+
+/* 加载/错误覆盖层：stage 常驻（canvas 不可被模板切换卸载），状态浮在其上 */
+.map3d-status-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-sticky);
 }
 
 .map3d-stage .scene {

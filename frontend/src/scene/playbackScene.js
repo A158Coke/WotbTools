@@ -5068,6 +5068,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // 地图预览会话：地图资产就绪即完成——车辆/GLB/名册/传输/HUD 全部不建。
       // 相机（top/free）与地形钳制只依赖 heightField/WORLD_CENTER，照常可用；
       // 渲染由 animate() 常驻循环承担，就绪态由 loadMapOnly 落 store.mapReady。
+      // map 会话没有 tick() 驱动（PLAYING 恒 false、按需渲染），首帧必须显式标脏——
+      // 否则 canvas 初始为黑，直到用户第一次拖动相机。
+      invalidate();
       return true;
     }
     buildVehicles();
