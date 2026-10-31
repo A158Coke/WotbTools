@@ -3335,13 +3335,19 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     return _mT.makeTranslation(p.tP[0], p.tP[1], p.tP[2]).multiply(_mRot)
       .multiply(_mTmpA.makeTranslation(-p.tP[0], -p.tP[1], -p.tP[2]));
   }
-  /** 本车配置的真实炮位世界坐标；没有 GLB 时返回 false，由调用方退回低模枢轴。 */
-  function glbGunPivotWorld(v, out) {
+  /**
+   * 本车配置的真实炮位与炮管方向（世界系），与 poseGlbRig 走同一条变换链；低模代理
+   * 没有 itr 补偿，不能代表渲染出的炮管。没有 GLB 时返回 false，由调用方退回低模枢轴。
+   */
+  function glbGunWorld(v, pos, dir) {
     const p = v.glb ? v.glbParts : null;
     const parent = p && (p.turretNode ?? p.gunNodes[0])?.parent;
     if (!parent) return false;
     parent.updateWorldMatrix(true, false);
-    out.set(p.gP[0], p.gP[1], p.gP[2]).applyMatrix4(glbTurretMatrix(v, p, T)).applyMatrix4(parent.matrixWorld);
+    const turret = glbTurretMatrix(v, p, T);
+    const pitch = gunPitchAt(v, T);        // 模型前向 +Y，绕 X 俯仰，见 poseGlbRig
+    dir.set(0, Math.cos(pitch), Math.sin(pitch)).transformDirection(turret).transformDirection(parent.matrixWorld);
+    pos.set(p.gP[0], p.gP[1], p.gP[2]).applyMatrix4(turret).applyMatrix4(parent.matrixWorld);
     return true;
   }
   async function applyGlbToggle(on) {
@@ -4446,7 +4452,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     foliageClip.value = scoped ? FOLIAGE_CLIP_SCOPED_M : FOLIAGE_CLIP_ARCADE_M;
     let fov = BASE_FOV_DEG;
     if (scoped) {
-      if (!glbGunPivotWorld(v, _recorderPos)) {
+      if (!glbGunWorld(v, _recorderPos, _recorderGunDir)) {
         v.gunPivot.updateWorldMatrix(true, false);
         v.gunPivot.getWorldPosition(_recorderPos);
       }
@@ -4505,11 +4511,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function updateRecorderReticle(sample, v) {
     if (!recorderReticle) return;
     camera.updateMatrixWorld();
-    v.gunPivot.updateWorldMatrix(true, false);
-    if (!glbGunPivotWorld(v, _recorderGun)) v.gunPivot.getWorldPosition(_recorderGun);
+    if (!glbGunWorld(v, _recorderGun, _recorderGunDir)) {
+      v.gunPivot.updateWorldMatrix(true, false);
+      v.gunPivot.getWorldPosition(_recorderGun);
+      _recorderGunDir.set(0, 0, 1).transformDirection(v.gunPivot.matrixWorld);
+    }
     _recorderRay.set(-sample.rayX, sample.rayY, sample.rayZ);
     const distance = Math.max(RETICLE_MIN_GUN_DISTANCE_M, _recorderGun.distanceTo(_recorderRay));
-    _recorderGunDir.set(0, 0, 1).transformDirection(v.gunPivot.matrixWorld);
     _recorderGun.addScaledVector(_recorderGunDir, distance);
     const aim = projectToStage(_recorderRay, _reticleAim);
     const gun = projectToStage(_recorderGun, _reticleGun);

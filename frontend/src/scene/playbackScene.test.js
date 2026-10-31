@@ -3366,7 +3366,7 @@ describe('turretless GLB（固定战斗室歼击车）挂载与摆姿', () => {
     vi.spyOn(GLTFLoader.prototype, 'parse').mockImplementation((_b, _p, done) => done({ scene: template }))
   }
 
-  async function loadTurretless(vehicles, detachedTurrets = [], meta = {}) {
+  async function loadTurretless(vehicles, detachedTurrets = [], meta = {}, sceneOptions = {}) {
     window.history.replaceState(null, '', '/?debug&q=high')
     const frames = []
     vi.stubGlobal('requestAnimationFrame', (cb) => frames.push(cb))
@@ -3374,7 +3374,7 @@ describe('turretless GLB（固定战斗室歼击车）挂载与摆姿', () => {
     vi.spyOn(THREE.Clock.prototype, 'getDelta').mockReturnValue(0.1)
     const overlay = { setLabels: vi.fn(), setAnchor: vi.fn(), clear: vi.fn() }
     const store = createPlaybackStore()
-    api = initPlayback(mountContainer(), store, overlay)
+    api = initPlayback(mountContainer(), store, overlay, sceneOptions)
     created.push(api)
     const state = { canonical: null }
     const sceneData = mkData(vehicles, detachedTurrets)
@@ -3407,6 +3407,41 @@ describe('turretless GLB（固定战斗室歼击车）挂载与摆姿', () => {
     expect(window.__camera.position.distanceTo(expected)).toBeLessThan(1e-3)
     const proxy = v.gunPivot.getWorldPosition(new THREE.Vector3())
     expect(window.__camera.position.distanceTo(proxy)).toBeGreaterThan(0.1)
+  })
+
+  it('录像者扩散圆沿渲染出的 GLB 炮管方向，含低模代理没有的 itr 补偿', async () => {
+    stubTurretlessGlb()
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(900)
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600)
+    const yaw = 1.2
+    const ray = [-Math.sin(yaw) * 300, 2, Math.cos(yaw) * 300]
+    source.loadRecorderCameraFromFile.mockResolvedValue({
+      version: 1, author_eid: 1,
+      aim: { t: [42, 300], yaw: [yaw, yaw], pitch: [0, 0], ray_x: [ray[0], ray[0]], ray_y: [2, 2], ray_z: [ray[2], ray[2]] },
+      mode: { t: [42], raw: [1] }, zoom: { t: [], raw: [] }, bloom: { t: [], raw: [] },
+      client_options: { backward_zoom: null },
+    })
+    const reticle = { update: vi.fn(), hide: vi.fn() }
+    const { api, frames, vehicles } = await loadTurretless(
+      [mkVehicle({ hull_yaw: [yaw], hull_pitch: [0.2], turret_yaw: [yaw], gun_pitch: [0.05] })],
+      [], { author_eid: 1 }, { recorderReticle: reticle },
+    )
+    const [v] = vehicles
+    v.glbParts.itr = { yaw: 6, pitch: 0, roll: 0 }
+    api.seekTime(60)
+    api.setCam('recorder')
+    for (let i = 0; i < 5; i++) frames.shift()?.()
+    const gun = v.glbParts.gunNodes[0]
+    gun.parent.updateWorldMatrix(true, false)
+    const rig = gun.matrix.clone().multiply(gun.userData.__bake.clone().invert())
+    const toWorld = gun.parent.matrixWorld.clone().multiply(rig)
+    const origin = new THREE.Vector3(...v.glbParts.gP).applyMatrix4(toWorld)
+    const direction = new THREE.Vector3(0, 1, 0).transformDirection(toWorld)
+    const distance = origin.distanceTo(new THREE.Vector3(-ray[0], 2, ray[2]))
+    const expected = origin.addScaledVector(direction, distance).project(window.__camera)
+    const circle = reticle.update.mock.lastCall[1]
+    expect(circle.x).toBeCloseTo((expected.x + 1) * 450, 1)
+    expect(circle.y).toBeCloseTo((1 - expected.y) * 300, 1)
   })
 
   it('无 turret_N 但有炮管组：进场即挂载真模型，炮塔角改写炮管组（不再退代理）', async () => {
