@@ -21,6 +21,9 @@ const props = defineProps({
   /** 未缩放且非全屏时允许单指纵向滑动滚动页面（审计 PB-01）；缩放 / 标注时由地图接管手势。 */
   touchPan: { type: Boolean, default: false },
   viewportStyle: { type: [String, Array], default: '' },
+  /** 2.5D 地形起伏投影开关：回放宿主默认开启；独立地图预览（平底图 + 平面输入
+   *  转换）必须显式传 false，避免消费回放会话残留的全局投影模型。 */
+  terrainRelief: { type: Boolean, default: true },
   annotVisible: Boolean,
   renderedAnnotations: { type: Array, default: () => [] },
   annotFontSize: { type: Number, default: 14 },
@@ -51,6 +54,10 @@ const textInputRef = ref(null)
 defineExpose({ mapEl, textInputRef })
 
 const reliefModel = computed(() => {
+  // 2.5D 投影是**回放会话的 opt-in 能力**：全局 activeTerrainRelief 由回放组件
+  // 激活并在卸载时清理，但 ViewHost 会保活 ReplayWorkspace——独立地图预览等
+  // 非回放宿主必须显式关闭，否则消费到残留模型导致标注错位（平底图配起伏投影）。
+  if (!props.terrainRelief) return null
   const model = activeTerrainRelief.value
   return model && model.mapCode === String(props.pbOverview?.mapCode || '') ? model : null
 })
