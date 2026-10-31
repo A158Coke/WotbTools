@@ -17,7 +17,8 @@ import { WORLD_BOUNDS_300 } from '../data/mapImages.js'
 import { mapStaticUrl } from '../scene/replaySource.js'
 import { createMapView } from '../utils/mapView.js'
 import {
-  ANNOT_COLORS, ANNOT_FONT_SIZE, ANNOT_WIDTH_DEFAULT, ANNOT_WIDTH_MAX, ANNOT_WIDTH_MIN,
+  ANNOT_COLORS, ANNOT_ERASER_RADIUS_DEFAULT, ANNOT_ERASER_RADIUS_MAX, ANNOT_ERASER_RADIUS_MIN,
+  ANNOT_FONT_SIZE, ANNOT_WIDTH_DEFAULT, ANNOT_WIDTH_MAX, ANNOT_WIDTH_MIN,
   applyEraser, canRedo, canUndo, commit, polylinePoints, redo, screenToSemantic, semanticWidthFromSlider, undo,
 } from '../utils/annotation.js'
 import { clampViewPan, zoomViewAt } from '../utils/battlePlayback.js'
@@ -98,6 +99,9 @@ const annotWidth = computed(() => semanticWidthFromSlider(annotWidthSlider.value
   semanticSpan: mapView.value.renderBounds ? mapView.value.renderBounds.xMax - mapView.value.renderBounds.xMin : 0,
   logicalSpan: mapView.value.W,
 }))
+// 橡皮半径独立于画笔宽度（与回放同一语义）：allowedTools 让 toolbar 走 3D 形态
+// （宽度滑条隐藏），橡皮尺寸必须显式供给，否则没有任何尺寸控制可用。
+const annotationEraserRadius = ref(ANNOT_ERASER_RADIUS_DEFAULT)
 
 // ---------- 视图（contain fit / pan / pinch / wheel zoom）----------
 const rootEl = ref(null)
@@ -340,7 +344,7 @@ function endDrawing() {
     if (drawPoints.length >= 2) replaceAnnotations([...annotations.value, { type: 'pen', color: annotationColor.value, width: annotWidth.value, points: drawPoints }])
   } else if (tool === 'eraser') {
     if (drawPoints.length) {
-      const next = applyEraser(annotations.value, drawPoints, annotWidth.value)
+      const next = applyEraser(annotations.value, drawPoints, annotationEraserRadius.value)
       if (next !== annotations.value) replaceAnnotations(next)
     }
   }
@@ -589,6 +593,9 @@ const stubFloatClass = () => ''
           :annot-width-min="ANNOT_WIDTH_MIN"
           :annot-width-max="ANNOT_WIDTH_MAX"
           :allowed-tools="['pen', 'eraser']"
+          :eraser-radius-slider="annotationEraserRadius"
+          :eraser-radius-min="ANNOT_ERASER_RADIUS_MIN"
+          :eraser-radius-max="ANNOT_ERASER_RADIUS_MAX"
           :history-index="annotationIndex"
           :history="annotationHistory"
           :can-undo="canUndo"
@@ -596,6 +603,7 @@ const stubFloatClass = () => ''
           @toggle-tool="setAnnotationTool"
           @set-annot-color="annotationColor = $event"
           @update:annot-width="annotWidthSlider = $event"
+          @update:eraser-radius="annotationEraserRadius = $event"
           @undo="undoAnnotation"
           @redo="redoAnnotation"
           @clear-annotations="clearAnnotations"

@@ -221,9 +221,24 @@ async function importAnnotations(event) {
     flashImportMessage('mapPreview.annotations.importFailed', { reason: t('mapPreview.annotations.importReasonMap') })
     return
   }
-  const items = payload.annotations.filter((a) => a && typeof a === 'object')
+  // 几何逐条校验（fail-closed，整份拒绝；与 2D 导入同一口径）：内核标注只支持
+  // pen，半校验条目（如 route+null 点）会在渲染或 applyEraser 里 TypeError。
+  if (!payload.annotations.every(isImportableAnnotation)) {
+    flashImportMessage('mapPreview.annotations.importFailed', { reason: t('mapPreview.annotations.importReasonFormat') })
+    return
+  }
+  const items = payload.annotations
   replaceAnnotations(items)
   flashImportMessage('mapPreview.annotations.importedCount', { count: items.length })
+}
+
+/** 本面板的标注几何只有 pen（地形锚定画笔）：点列 ≥2、坐标有限、宽度为正。 */
+function isImportableAnnotation(a) {
+  return !!a && a.type === 'pen'
+    && typeof a.color === 'string'
+    && Number.isFinite(a.width) && a.width > 0
+    && Array.isArray(a.points) && a.points.length >= 2
+    && a.points.every((p) => !!p && Number.isFinite(p.x) && Number.isFinite(p.y))
 }
 
 // ---------- 会话生命周期 ----------
