@@ -433,6 +433,8 @@ describe('Replay3DPane', () => {
     expect(playback.init).toHaveBeenCalledTimes(2)
     expect(playback.api.loadData).not.toHaveBeenCalled()
     expect(wrapper.find('[data-test="replay3d-pending"]').exists()).toBe(true)
+    // 待开播是最终界面（视口 + 画质选择已渲染），不是加载中：工作台自动居中据此就绪
+    expect(wrapper.get('[data-pane-ready]').attributes('data-pane-ready')).toBe('true')
     await start(wrapper)
     expect(playback.api.loadData).toHaveBeenCalledTimes(1)
     connectivityState.state.value = 'online'

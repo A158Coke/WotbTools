@@ -1332,6 +1332,31 @@ describe('ReplayWorkspace 回放视窗自动居中', () => {
     wrapper.unmount()
   })
 
+  it('批次目标准备中（多文件未解析）不定位；落定后按真实视窗定位', async () => {
+    const wrapper = mountWorkspace('data')
+    await flushPromises()
+    Object.defineProperty(window, 'innerHeight', { value: 900, configurable: true })
+    // 多文件 + 尚无解析结果 + 解析中：targetFile 为空（ensureTargetBattle 在途）
+    withBattles(2)
+    replayState.resp.value = null
+    replayState.analysis.value = { phase: 'parsing', done: 0, total: 2, failure: null }
+    await flushPromises()
+    await switchTo(wrapper, 'playback')
+    const before = scrollCalls.length
+    // pane 已渲染就绪标记（空态外壳），但批次在途 → 不得消耗唯一一次定位
+    setStage(wrapper, { height: 90, ready: true })
+    expect(scrollCalls.length).toBe(before)
+
+    // 批次落定（analysis ready + resp/target 出现）→ 真实视窗就绪 → 定位一次
+    withBattles(2)
+    replayState.analysis.value = { phase: 'ready', done: 2, total: 2, failure: null }
+    await flushPromises()
+    setStage(wrapper, { height: 500, ready: true })
+    expect(scrollCalls.length).toBe(before + 1)
+    expect(lastBlock()).toBe('center')
+    wrapper.unmount()
+  })
+
   it('切到数据视图不触发居中（不动用户的数据页滚动位置）', async () => {
     const wrapper = mountWorkspace('playback')
     await flushPromises()

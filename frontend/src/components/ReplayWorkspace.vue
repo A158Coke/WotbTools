@@ -234,6 +234,13 @@ function onBattleSelect(sourceId) {
 
 /** 单场能力的目标文件：单文件直接用；多文件先批次分析，再选有效场次对应的原始 File */
 const targetFile = computed(() => workspace.currentTargetFile.value)
+/**
+ * 批次目标仍在准备：多文件未解析批次切到回放能力时 `ensureTargetBattle()` 异步分析，
+ * 期间 `currentTargetFile` 为空。这不是"没有选择"的终态——居中必须等它落定，
+ * 否则会在空态提示上用完唯一一次定位（Codex review P2）。
+ */
+const targetPreparing = computed(() => !targetFile.value && files.value.length > 0
+  && (analysis.value.phase === 'parsing' || analysis.value.phase === 'queued'))
 
 // Only presentation is collapsible; the uploader and selection keep their existing owner.
 const fileControlsOpen = ref(false)
@@ -346,6 +353,7 @@ function cancelPendingCenter() {
 }
 /** 当前 pane 已就绪：真实内容（或终态外壳）已布局 —— 标记在位且有高度。 */
 function paneIsReady(pane) {
+  if (targetPreparing.value) return false        // 批次目标在途：等它落定再定位
   if (!pane || !pane.querySelector(PANE_READY_SELECTOR)) return false
   return pane.getBoundingClientRect().height > 0
 }
@@ -644,7 +652,9 @@ watch(() => props.initialCapability, (val) => {
 .workspace-source { display: grid; gap: var(--space-3); margin-bottom: var(--space-4); }
 .workspace-demo-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
 .workspace-demo-label { color: var(--color-text-secondary); font: var(--type-caption); }
-.capability-pane { margin-top: var(--space-1); }
+/* 自动居中用 scrollIntoView 定位 pane 本身：`block: 'start'` 会贴到视口顶端，
+   必须让出固定顶栏 + 刘海，否则高 pane 的顶部内容被压在 AppTopBar 下面。 */
+.capability-pane { margin-top: var(--space-1); scroll-margin-top: calc(var(--header-h, 0px) + env(safe-area-inset-top)); }
 /* A single compact session row serves every single-battle capability. */
 .workspace-sessionbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); margin-bottom: var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); background: var(--color-surface-1); }
 .single-battle-picker { flex: 1; min-width: 0; }

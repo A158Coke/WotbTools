@@ -380,7 +380,9 @@ const loadingMessage = computed(() => t(store.assetStage ? 'agentReplay.loading_
 /** 视窗是否已过加载阶段：解析/资产加载中不置位（内容就绪、阻断、离线、WebGL 不支持、
  *  场景错误均为终态/就绪）。工作台自动居中只等这个信号。 */
 const paneReady = computed(() => !props.file || !!props.blockedReason || !online.value.available
-  || !webgl.supported || !!store.err || !!store.hasData)
+  || !webgl.supported || !!store.err || !!store.hasData
+  // 待开播（视口 + 画质选择已渲染，等用户按开始）：这是最终界面，不是加载中
+  || props.file !== startedFile.value)
 
 // 画质徽标按 qualityKey 三语计算（store.qualityLabel 为上游兼容中文字段）
 const qualityBadge = computed(() =>
