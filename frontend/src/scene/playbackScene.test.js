@@ -2357,6 +2357,23 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
       run(5)
       expect(window.__camera.fov).toBeCloseTo(55)
     })
+
+    it('reset then Start, as the file picker does, still opens the next replay at the default overview', async () => {
+      const { api, store, run } = await load()
+      const overviewHeight = window.__camera.position.y
+      api.seekTime(65)
+      api.setCam('recorder')
+      run(5)
+      expect(window.__camera.position.y).not.toBeCloseTo(overviewHeight, 3)
+      api.reset()
+      expect(store.cam).toBe('free')
+      run(5)
+      await api.loadData({ kind: 'local', file: new File(['n'], 'next.wotbreplay') })
+      expect(store.cam).toBe('top')
+      expect(window.__camera.position.y).toBeCloseTo(overviewHeight, 3)
+      run(5)
+      expect(window.__camera.fov).toBeCloseTo(55)
+    })
   })
 
   it('击杀公告带车型与敌我阵营', async () => {

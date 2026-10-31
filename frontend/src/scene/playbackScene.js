@@ -4612,6 +4612,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
   function teardownSession() {
     sessionGen++;
+    // 录像者不跨回放：同步退出，旧机位不能被下一场当成用户的自由相机保留。
+    if (CAM === 'recorder') {
+      setCam('free');
+      topViewOnLoad = true;
+    }
     recorderCamera = null;
     foliageClip.value = 0;
     store.recorderCameraStatus = 'idle';
