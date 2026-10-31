@@ -87,7 +87,7 @@ import { createFrameMeter } from './frameMeter.js'
 import { advancePlaybackTime } from '../utils/playbackClock'
 import { activeEntityAt, resolveReplayClock } from '../replay-local/canonical/facts'
 import { isPlaybackSpeed } from '../composables/usePlaybackTransport.js'
-import { isFlySpeedIndex, FLY_SPEEDS, DEFAULT_FLY_SPEED_INDEX, advanceFly as tickFlyImpl } from '../composables/useSceneFlyControls.js'
+import { isFlySpeedIndex, FLY_SPEEDS, DEFAULT_FLY_SPEED_INDEX, TOUCH_PAN_MIN_HEIGHT, advanceFly as tickFlyImpl, classifyTwoFinger, groundPanOffset } from '../composables/useSceneFlyControls.js'
 import { poseFromYPR, yprScene, cloneDetachedTurret, neutralizeDefaultMetalness, dropDuplicateGunMasks } from './glbRig.js'
 import {
   clampTravel, rateLimitTravel, spinStep, treadScrollStep, groundDropLocal,
@@ -481,17 +481,22 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   //   · 左键拖拽 = 转视角（yaw/pitch 直接作用在相机朝向上）；
   //   · 滚轮 = 沿视线推拉相机（OrbitControls 的 dolly 语义——推近/拉远，视角与视距不变）；
   //   · WASD/QE = 平移相机（flyTick → advanceFly，target 重钉 cam+dir×flyDist）。
+  // 触屏对应键鼠：单指 = WASD（贴地平移）；两指一起拖 = 左键拖拽；指距变化 = 滚轮。
   // 事件在 **container capture 阶段**拦截：祖先 capture 先于 canvas 的 target 阶段，
   // OrbitControls（挂 canvas）物理上收不到左键拖拽/滚轮。选中/拾取语义不变
   // （位移 ≤ SLOP 仍算单击，在 capture 处理器内联）。切回跟随/top 或销毁时恢复 controls。
   const flyLook = { active: false, lastX: 0, lastY: 0, yaw: 0, pitch: 0, dist: 30 };
   // 接管态 = 自由模式（派生）。**不按输入设备开关**：`(pointer: fine)` 之类的能力
   // 探测在触屏笔记本 / 平板模式下会报 coarse，把整条接管链关掉（用户实测：WASD 全灭、
-  // 拖拽退回 OrbitControls）。触屏走同一套手势：单指拖拽 = 转头，双指捏合 = 改视距。
+  // 拖拽退回 OrbitControls）。
   const flyMode = () => CAM === 'free';
-  // 触屏多点手势状态：pointerId → 最新坐标；pinch = 双指捏合起点（d0 指距 / dist0 视距）
+  // 触屏多点手势状态：pointerId → 最新坐标
   const flyPointers = new Map();
-  let flyPinch = null;
+  // 单指：armed 前是单击候选，armed 后是贴地平移（x0/y0/z0 手势起点相机 / height 平移平面 / offset0 抓取偏移）
+  let flyPan = null;
+  // 双指：mode = pending（判定中）| pinch（d0 指距 / dist0 视距）| look（cx/cy 两指中点）
+  let flyTwoFinger = null;
+  const FLY_LOOK_RAD_PER_PX = 0.0032;   // rad/px（与常见 FPS 灵敏度同量级）
   // [fly] 埋点：?debug 下走 console.info（默认级别可见，排障不用勾 Verbose）；
   // 非 debug 走 console.debug（默认隐藏）。每次交互只输出个位数行。
   const flyDbg = (tag, extra) => {
@@ -533,6 +538,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
   /** free↔其他模式切换的 OrbitControls 侧状态迁移（enabled/damping/惯性清理）。 */
   function flyLookApplyMode(mode) {
+    flyPan = null;   // 平移从手势起点重算：相机被模式切换挪动后，旧起点不能再用
     if (mode === 'free') {
       if (controls) {
         controls.enabled = false;
@@ -540,9 +546,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         flyLookSyncFromCamera('enter free');   // 进入自由：以当前视野为基准（top 的天顶朝向在此回落）
       }
     } else {
-      // 离开自由：手势状态一并清空（触屏指针表 / 捏合起点 / 转头态）
+      // 离开自由：手势状态一并清空（触屏指针表 / 平移 / 双指 / 转头态）
       flyPointers.clear();
-      flyPinch = null;
+      flyTwoFinger = null;
       flyLook.active = false;
       emptyDownAt = null;
       if (controls) {
@@ -585,6 +591,111 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     camera.lookAt(controls.target);
     invalidate();
   }
+  /** 手指当前射线的方向（单指平移用）；rect 不可用时返回 null。 */
+  function flyPanRay(clientX, clientY) {
+    const rect = container.getBoundingClientRect();
+    if (!(rect.width > 0) || !(rect.height > 0)) return null;
+    setRaycasterFromClient(clientX, clientY, rect);
+    return raycaster.ray.direction;
+  }
+  /** 单指越过单击阈值：抓住手指下的地面点。高度只决定平移比例，不用作净空。 */
+  function flyPanArm(clientX, clientY) {
+    if (!flyPanRay(clientX, clientY)) return;
+    const { x: x0, y: y0, z: z0 } = camera.position;
+    const refY = raycastAnnotationGround(clientX, clientY, container.getBoundingClientRect())?.point.y
+      ?? terrainHeightForCameraClamp(camera.position.x, camera.position.z)
+      ?? 0;
+    const height = Math.max(y0 - refY, TOUCH_PAN_MIN_HEIGHT);
+    const offset0 = groundPanOffset(flyPanRay(clientX, clientY), height);
+    Object.assign(flyPan, { armed: true, x0, y0, z0, height, offset0 });
+    emptyDownAt = null;
+  }
+  /** 单指平移一步：每次从手势起点重算，撞边修正不累积，手指回到起点相机就回到起点。 */
+  function flyPanStep(clientX, clientY) {
+    const dir = flyPanRay(clientX, clientY);
+    if (!dir) return;
+    const o = groundPanOffset(dir, flyPan.height);
+    camera.position.set(flyPan.x0 + flyPan.offset0.x - o.x, flyPan.y0, flyPan.z0 + flyPan.offset0.z - o.z);
+    topViewOnLoad = false;
+    flyLookApply();
+    // target 被钳制时相机同步修正：到地图边缘停下，而不是转头
+    const { x: bx, z: bz } = controls.target;
+    clampCameraTarget();
+    camera.position.x += controls.target.x - bx;
+    camera.position.z += controls.target.z - bz;
+    constrainFreeCameraAltitude();
+    camera.lookAt(controls.target);
+    invalidate();
+  }
+  /** 从当前前两根手指开始一轮双指手势（绘制模式固定捏合，其余先判定）。 */
+  function flyTwoFingerStart() {
+    const [[a, pa], [b, pb]] = flyPointers;
+    flyTwoFinger = { mode: 'pending', a, b, startA: pa, startB: pb };
+    if (annotationToolActive()) flyTwoFingerEnter('pinch', pa, pb);
+  }
+  /** 进入双指通道：以当前时刻为基准，判定瞬间相机不跳。 */
+  function flyTwoFingerEnter(mode, pa, pb) {
+    flyTwoFinger.mode = mode;
+    if (mode === 'pinch') {
+      flyTwoFinger.d0 = Math.hypot(pa.x - pb.x, pa.y - pb.y) || 1;
+      flyTwoFinger.dist0 = flyLook.dist;
+      flyTwoFinger.applied = 0;
+    } else {
+      flyTwoFinger.cx = (pa.x + pb.x) / 2;
+      flyTwoFinger.cy = (pa.y + pb.y) / 2;
+    }
+    flyDbg('two-finger', mode);
+  }
+  function flyTwoFingerStep() {
+    const g = flyTwoFinger;
+    const pa = flyPointers.get(g.a), pb = flyPointers.get(g.b);
+    if (!pa || !pb) return;
+    if (g.mode === 'pending') {
+      // pointermove 逐指派发，单个事件时另一指可能还是旧位置：一帧判定一次，
+      // 这一帧里两指的最新位置都到齐后再分类，结果不依赖派发顺序。
+      if (!g.sampling) {
+        g.sampling = true;
+        requestAnimationFrame(() => flyTwoFingerSample(g));
+      }
+      return;
+    }
+    if (g.mode === 'pinch') {
+      const d = Math.hypot(pa.x - pb.x, pa.y - pb.y) || 1;
+      // 双指捏合 = 沿视线推拉相机：以**手势基准**算**累计目标**，再应用目标与已应用量之差。
+      // 累计位移 = clamp((d−d0)/d0, ±0.5)·dist0：
+      //  · 回到 d0 ⇒ 目标 0 ⇒ 精确回位（不随事件分批漂移）；
+      //  · 单次触限只截断**累计目标**，不会丢掉后续回程位移（评审 P2：分别截断
+      //    每次增量 + 无条件推进基准，会让 200→350→275→200 净退 0.25×视距）。
+      const target = Math.max(-0.5, Math.min(0.5, (d - g.d0) / g.d0)) * g.dist0;
+      const delta = target - g.applied;
+      g.applied = target;
+      flyDolly(delta);
+      return;
+    }
+    const cx = (pa.x + pb.x) / 2, cy = (pa.y + pb.y) / 2;
+    flyLookBy(cx - g.cx, cy - g.cy);
+    g.cx = cx; g.cy = cy;
+    topViewOnLoad = false;
+    flyLookApply();
+    invalidate();
+  }
+  function flyTwoFingerSample(g) {
+    g.sampling = false;
+    if (flyTwoFinger !== g || g.mode !== 'pending') return;   // 这一帧里手势已结束或换了手指
+    const pa = flyPointers.get(g.a), pb = flyPointers.get(g.b);
+    if (!pa || !pb) return;
+    const mode = classifyTwoFinger(g.startA, g.startB, pa, pb);
+    if (mode) flyTwoFingerEnter(mode, pa, pb);
+  }
+  function flyLookBy(dx, dy) {
+    flyLook.yaw -= dx * FLY_LOOK_RAD_PER_PX;
+    flyLook.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, flyLook.pitch - dy * FLY_LOOK_RAD_PER_PX));
+  }
+  /** 手指数量变化：还有两指就重新判定，否则结束双指手势（剩下的手指不生效）。 */
+  function flyTouchCountChanged() {
+    if (flyPointers.size >= 2) flyTwoFingerStart();
+    else flyTwoFinger = null;
+  }
 
   // ---- container capture 拦截（祖先 capture 先于 canvas target 阶段）----
   //（SCENE_CLICK_SLOP_PX / emptyDownAt 沿用原选中语义的声明——同一闭包作用域）
@@ -598,20 +709,17 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       flyDbg('down', `button=${e.button} type=${e.pointerType || 'mouse'}`);
       if (e.pointerType === 'touch') {
         flyPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        flyLook.active = false;
+        emptyDownAt = null;
         if (flyPointers.size >= 2) {
-          // 双指 = 捏合缩放（沿视线推拉相机）；本次手势不再转头、也算不上单击
-          const [a, b] = [...flyPointers.values()];
-          const d0 = Math.hypot(a.x - b.x, a.y - b.y) || 1;
-          flyPinch = { d0, dist0: flyLook.dist, applied: 0 };
-          flyLook.active = false;
-          emptyDownAt = null;
+          // 第二指加入：平移立即停止，本次手势也算不上单击
+          flyPan = null;
+          flyTwoFingerStart();
         } else if (annotationToolActive()) {
-          // drawing mode：单指 owner 是 annotation；free camera 也不得转视角。
-          flyLook.active = false;
-          emptyDownAt = null;
+          // drawing mode：单指 owner 是 annotation；free camera 也不得移动。
+          flyPan = null;
         } else {
-          flyLook.active = true;
-          flyLook.lastX = e.clientX; flyLook.lastY = e.clientY;
+          flyPan = { armed: false, startX: e.clientX, startY: e.clientY };
           emptyDownAt = { x: e.clientX, y: e.clientY };
         }
       } else if (e.button === 0) {
@@ -640,21 +748,17 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (e.pointerType === 'touch') {
       if (!flyPointers.has(e.pointerId)) return;
       flyPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (flyPointers.size >= 2 && flyPinch) {
-        const [a, b] = [...flyPointers.values()];
-        const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
-        // 双指捏合 = 沿视线推拉相机：以**手势起点**为稳定基准算**累计目标**，
-        // 再应用目标与已应用量之差。累计位移 = clamp((d−d0)/d0, ±0.5)·dist0：
-        //  · 回到 d0 ⇒ 目标 0 ⇒ 精确回位（不随事件分批漂移）；
-        //  · 单次触限只截断**累计目标**，不会丢掉后续回程位移（评审 P2：分别截断
-        //    每次增量 + 无条件推进基准，会让 200→350→275→200 净退 0.25×视距）。
-        const target = Math.max(-0.5, Math.min(0.5, (d - flyPinch.d0) / flyPinch.d0)) * flyPinch.dist0;
-        const delta = target - flyPinch.applied;
-        flyPinch.applied = target;
-        flyDolly(delta);
-        e.stopPropagation();
+      if (flyTwoFinger) {
+        flyTwoFingerStep();
+      } else if (flyPan?.armed) {
+        flyPanStep(e.clientX, e.clientY);
+      } else if (flyPan && Math.hypot(e.clientX - flyPan.startX, e.clientY - flyPan.startY) > SCENE_CLICK_SLOP_PX) {
+        flyPanArm(e.clientX, e.clientY);
+      } else {
         return;
       }
+      e.stopPropagation();
+      return;
     }
     if (!flyLook.active) return;
     // 已无按键 = 在画布外松了键（捕获没拿到 up）：结束拖拽，且不当作单击
@@ -666,9 +770,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     for (const ev of events) {
       const dx = ev.clientX - flyLook.lastX, dy = ev.clientY - flyLook.lastY;
       flyLook.lastX = ev.clientX; flyLook.lastY = ev.clientY;
-      const k = 0.0032;   // rad/px（与常见 FPS 灵敏度同量级）
-      flyLook.yaw -= dx * k;
-      flyLook.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, flyLook.pitch - dy * k));
+      flyLookBy(dx, dy);
     }
     topViewOnLoad = false;
     flyLookApply();
@@ -679,19 +781,20 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function onFlyCaptureUp(e) {
     if (!flyMode()) return;
     try { container.releasePointerCapture(e.pointerId); } catch (_) {}
+    let wasActive = flyLook.active;
     if (e.pointerType === 'touch') {
       flyPointers.delete(e.pointerId);
-      if (flyPointers.size < 2) flyPinch = null;
-      // 双指手势收尾（还剩一指 / 刚结束）：不把它当单击，也不继续转头
-      if (flyPinch === null && flyPointers.size > 0) {
-        flyLook.active = false;
-        emptyDownAt = null;
+      flyTouchCountChanged();
+      // 双指手势收尾（还剩一指）：不把它当单击，剩下的手指也不生效
+      if (flyPointers.size > 0) {
         e.stopPropagation();
         return;
       }
+      // 只有没越过阈值的单指才是单击：平移过的手指回到起点也不算
+      wasActive = !!flyPan && !flyPan.armed;
+      flyPan = null;
     }
-    // 单击判定（≤SLOP）与拖拽转头共存：按下记录起点、抬起位移 ≤SLOP 才算单击
-    const wasActive = flyLook.active;
+    // 单击判定（≤SLOP）与拖拽共存：按下记录起点、抬起位移 ≤SLOP 才算单击
     flyLook.active = false;
     if (!wasActive || e.button !== 0) return;
     const moved = Math.hypot(e.clientX - (emptyDownAt?.x ?? e.clientX), e.clientY - (emptyDownAt?.y ?? e.clientY));
@@ -731,8 +834,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function onFlyCaptureCancel(e) {
     flyLook.active = false;
     emptyDownAt = null;
+    flyPan = null;
     if (e) flyPointers.delete(e.pointerId);
-    if (flyPointers.size < 2) flyPinch = null;
+    flyTouchCountChanged();
   }
 
   // ---------- 场景 ----------
@@ -1731,8 +1835,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     return { x: -point.x, y: point.y }
   }
 
-  function raycastAnnotationGround(clientX, clientY, rect) {
-    if (!camera || !raycaster || !controls || !rect || !(rect.width > 0) || !(rect.height > 0)) return null
+  function setRaycasterFromClient(clientX, clientY, rect) {
     const nd = new THREE.Vector2(
       ((clientX - rect.left) / rect.width) * 2 - 1,
       -((clientY - rect.top) / rect.height) * 2 + 1,
@@ -1746,13 +1849,18 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
     camera.updateMatrixWorld()
     raycaster.setFromCamera(nd, camera)
+  }
+
+  function raycastAnnotationGround(clientX, clientY, rect) {
+    if (!camera || !raycaster || !controls || !rect || !(rect.width > 0) || !(rect.height > 0)) return null
+    setRaycasterFromClient(clientX, clientY, rect)
     const origin = raycaster.ray.origin
     const direction = raycaster.ray.direction
     const maxT = Math.min(4000, Number.isFinite(camera.far) ? camera.far : 4000)
     const distance = camera.position.distanceTo(controls.target)
     const step = Math.max(1.5, Math.min(8, (Number.isFinite(distance) ? distance : 200) / 160))
     // ceiling 只用于向上射线提前退出；+100 m 是地形 zmax 之上的安全余量。
-    const ceiling = (Number.isFinite(Number(heightMeta && heightMeta.zmax)) ? Number(heightMeta.zmax) : 50) + 100
+    const ceiling = (Number.isFinite(Number(heightMeta?.zmax)) ? Number(heightMeta.zmax) : 50) + 100
     let prevT = 0
     for (let t = step; t <= maxT; t += step) {
       const x = origin.x + direction.x * t

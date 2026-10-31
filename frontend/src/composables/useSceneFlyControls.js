@@ -14,6 +14,9 @@ import { onBeforeUnmount, onMounted } from 'vue'
  * （INPUT 文本类 / TEXTAREA / SELECT / contentEditable）——按钮不跳过：模式按钮点击后
  * 仍持有焦点，若按 BUTTON 跳过，用户「点过自由按钮再按 WASD」会全部失效（实测）。
  * 跟随（follow）模式不接管——跟随语义是车体锚定；自由模式的高度边界由场景统一处理。
+ *
+ * 触屏手势的指针状态在场景内核（onFlyCapture*），这里只放它们用的纯函数：
+ * groundPanOffset（单指贴地平移）与 classifyTwoFinger（双指转视角 / 缩放判定）。
  */
 
 /** 焦点是否落在**文本输入**目标上（只有这类目标需要让出键盘）。
@@ -41,6 +44,39 @@ export function isFlySpeedIndex(n) {
 }
 
 const FLY_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE'])
+
+// 触屏手势初值，真机手感由用户验收后校准。
+export const TOUCH_PAN_MIN_HEIGHT = 5        // 相机贴地时平移比例的下限（米）
+const TOUCH_PAN_MIN_GRAZE_TAN = 0.14         // 射线掠地角下限（约 8°）：防贴地平线时手指动 1px 相机飞几百米
+const TWO_FINGER_DECIDE_PX = 12              // 快的手指走够这么多才判定，之前相机不动
+const TWO_FINGER_SAME_DIR_RATIO = 0.4        // 慢的手指至少走到快的手指这个比例，才算两指一起拖
+
+/**
+ * 手指射线落到相机下方 height 米水平面时，相对相机的水平偏移。
+ * 相机只做水平平移时射线方向不变，所以偏移只由屏幕位置决定：
+ * 相机 XZ 加上 offset(起点) − offset(当前) 就能让抓住的地面点留在手指下。
+ * 指向地平线以上的射线按最小掠地角处理（手指按在天空时只有横向分量起作用）。
+ */
+export function groundPanOffset(dir, height) {
+  const horiz = Math.hypot(dir.x, dir.z)
+  const down = Math.max(-dir.y, horiz * TOUCH_PAN_MIN_GRAZE_TAN)
+  if (!(down > 0)) return { x: 0, z: 0 }
+  return { x: dir.x * height / down, z: dir.z * height / down }
+}
+
+/**
+ * 双指手势判定：两指朝同一方向走 = 'look'（转视角），否则 = 'pinch'（缩放），
+ * 走得还不够远 = null（继续等）。只看运动不看指距：捏合放大本来就从两指并拢开始。
+ * a0/b0 是判定起点，a1/b1 是当前位置。
+ */
+export function classifyTwoFinger(a0, b0, a1, b1) {
+  const ax = a1.x - a0.x, ay = a1.y - a0.y
+  const bx = b1.x - b0.x, by = b1.y - b0.y
+  const ta = Math.hypot(ax, ay), tb = Math.hypot(bx, by)
+  const fast = Math.max(ta, tb), slow = Math.min(ta, tb)
+  if (fast < TWO_FINGER_DECIDE_PX) return null
+  return ax * bx + ay * by > 0 && slow >= fast * TWO_FINGER_SAME_DIR_RATIO ? 'look' : 'pinch'
+}
 
 /**
  * 纯推进一帧相机位移（模块级导出——playbackScene.flyTick 与工厂 tickFly 共用实现）。

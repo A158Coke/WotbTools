@@ -6,7 +6,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 import { mount } from '@vue/test-utils'
-import { FLY_SPEEDS, isFlySpeedIndex, advanceFly, isTextEntryTarget, useSceneFlyControls } from './useSceneFlyControls.js'
+import { FLY_SPEEDS, isFlySpeedIndex, advanceFly, classifyTwoFinger, groundPanOffset, isTextEntryTarget, useSceneFlyControls } from './useSceneFlyControls.js'
 
 // 测试桩：构造 camera/controls 与 pressed 集合，直接调**生产实现** advanceFly
 //（此前复制生产实现到桩里，Q/E 翻转时桩漏改导致测试与实现脱钩——已改为单一实现）。
@@ -28,6 +28,60 @@ describe('fly controls 速率档表', () => {
     expect(isFlySpeedIndex(0)).toBe(false)
     expect(isFlySpeedIndex(7)).toBe(false)
     expect(isFlySpeedIndex(2.5)).toBe(false)
+  })
+})
+
+describe('groundPanOffset 贴地平移几何', () => {
+  it('直下射线落在相机正下方', () => {
+    expect(groundPanOffset({ x: 0, y: -1, z: 0 }, 50)).toEqual({ x: 0, z: 0 })
+  })
+
+  it('斜视射线落到平面上的真实交点', () => {
+    const n = Math.SQRT1_2
+    const o = groundPanOffset({ x: n, y: -n, z: 0 }, 50)
+    expect(o.x).toBeCloseTo(50, 8)
+    expect(o.z).toBeCloseTo(0, 8)
+  })
+
+  it('掠射和地平线以上的射线不飞到天边，方向保留', () => {
+    for (const dir of [{ x: 1, y: -0.001, z: 0 }, { x: 1, y: 0, z: 0 }, { x: 1, y: 0.5, z: 0 }]) {
+      const o = groundPanOffset(dir, 100)
+      expect(o.x).toBeGreaterThan(0)
+      expect(o.x).toBeLessThanOrEqual(100 / 0.14 + 1e-6)
+    }
+  })
+
+  it('零向量返回零偏移而不是 NaN', () => {
+    expect(groundPanOffset({ x: 0, y: 0, z: 0 }, 100)).toEqual({ x: 0, z: 0 })
+  })
+})
+
+describe('classifyTwoFinger 判定', () => {
+  const p = (x, y) => ({ x, y })
+  const a0 = p(100, 300), b0 = p(300, 300)
+
+  it('走得不够远时继续等', () => {
+    expect(classifyTwoFinger(a0, b0, p(103, 300), p(308, 300))).toBeNull()
+  })
+
+  it('两指同向 = 转视角，方向不限', () => {
+    expect(classifyTwoFinger(a0, b0, p(100, 320), p(300, 318))).toBe('look')
+    expect(classifyTwoFinger(a0, b0, p(120, 300), p(322, 300))).toBe('look')
+  })
+
+  it('并拢起步：两指一起走是转视角，分开是缩放', () => {
+    const c0 = p(200, 300), d0 = p(230, 300)
+    expect(classifyTwoFinger(c0, d0, p(200, 330), p(230, 330))).toBe('look')
+    expect(classifyTwoFinger(c0, d0, p(170, 300), p(260, 300))).toBe('pinch')
+  })
+
+  it('两指反向 = 缩放', () => {
+    expect(classifyTwoFinger(a0, b0, p(120, 300), p(280, 300))).toBe('pinch')
+  })
+
+  it('一指不动（含抖动）= 缩放，不算一起拖', () => {
+    expect(classifyTwoFinger(a0, b0, p(100, 300), p(340, 300))).toBe('pinch')
+    expect(classifyTwoFinger(a0, b0, p(103, 301), p(340, 300))).toBe('pinch')
   })
 })
 
