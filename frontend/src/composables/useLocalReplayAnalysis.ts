@@ -146,7 +146,7 @@ export function useLocalReplayAnalysis(session: ReplaySession, { t }: I18nContex
       let tankopedia = lastTankopedia
       // 无新文件时不进 await：移除是一次同步提交，不存在旧结果与新 files 并存的窗口。
       if (missing.length || !tankopedia) {
-        const [parsed, loaded] = await Promise.all([
+        const [parsed, loaded]: [ParsedReplayFile[], Tankopedia] = await Promise.all([
           missing.length ? parseReplayFiles(missing, {
             signal: controller.signal,
             onFile: (index, file) => {
