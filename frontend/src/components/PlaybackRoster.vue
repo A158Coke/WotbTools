@@ -100,6 +100,7 @@ function decorate(row) {
     tank: row.tankName || row.tank || row.tankId || '—',
     hp,
     hpMode: hp.mode,
+    hpValue: hpValueOf(hp),
     // 2026-10-05：弹夹分段展示随行样式回归原始单行版（不再渲染）；decorate 不再投影
     // reload（props.reload 读取仍保留于上方，未来恢复展示无须重接线）。
     destroyed,
@@ -113,6 +114,12 @@ function decorate(row) {
  * 竖屏纵向流（`compact === false`）保持自然高，不参与铺满。
  */
 const fillHeight = computed(() => props.compact === true)
+/** 血条上方的数值：只写可证明的量，相对证据写百分比，阵亡不占位。 */
+function hpValueOf(hp) {
+  if (hp.mode === 'exact') return String(Math.round(hp.currentHp))
+  if (hp.mode === 'relative') return hp.text
+  return hp.mode === 'unknown' ? hp.text : ''
+}
 
 /**
  * 每行的可读下限：固定值只是 guard，正常高度由 `1fr` 连续决定。
@@ -171,6 +178,7 @@ function listRows(rowCount) {
             :aria-label="row.hp.text"
           >
             <span v-if="row.hp.fill > 0" class="pb-roster-hpfill" :style="{ width: (row.hp.fill * 100) + '%' }" aria-hidden="true"></span>
+            <span v-if="row.hpValue" class="pb-roster-hpvalue" data-test="roster-hp-value" aria-hidden="true">{{ row.hpValue }}</span>
           </span>
         </button>
       </div>
@@ -204,20 +212,32 @@ function listRows(rowCount) {
 .pb-roster-row .nick { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pb-roster-row .tank { flex: 0 1 auto; max-inline-size: 86px; min-width: 0; overflow: hidden; color: var(--color-text-secondary); text-overflow: ellipsis; white-space: nowrap; }
 
-/* —— HP 条（主 combat state）：行尾细条 52×5，fill 用本行队色（--roster-team-color）。 —— */
+/* —— HP 条（主 combat state）：行尾 52×16，fill 用本行队色（--roster-team-color），数值写在条内。 —— */
 .pb-roster-hpbar {
+  position: relative;
   display: block;
   flex: none;
   inline-size: 52px;
-  block-size: 5px;
-  border-radius: var(--radius-full);
+  block-size: var(--space-4);
+  border-radius: var(--radius-sm);
   background: var(--color-playback-label-track);
   overflow: hidden;
+}
+.pb-roster-hpvalue {
+  position: absolute;
+  inset: 0;
+  color: var(--color-text-primary);
+  font: var(--type-caption);
+  font-size: var(--font-size-caption-xs);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: var(--space-4);
+  text-align: center;
+  text-shadow: var(--text-shadow-playback-label);
 }
 .pb-roster-hpfill {
   display: block;
   block-size: 100%;
-  border-radius: var(--radius-full);
   background: var(--roster-team-color);
 }
 /* unknown / destroyed 没有可画的填充：fill 节点根本不渲染（见模板的 v-if），

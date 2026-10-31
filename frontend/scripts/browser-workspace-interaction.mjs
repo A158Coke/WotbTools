@@ -892,9 +892,8 @@ function rosterGeometryProbe() {
   // center 列宽：HUD 占满整列，直接量它的盒。
   out.centerWidth = root.querySelector('.hud')?.getBoundingClientRect().width ?? null
   out.laneIds = ['.side-left', '.side-right'].map((sel) => [...root.querySelectorAll(`${sel} .pl`)].map((el) => el.textContent.trim().split(/\s+/)[0]))
-  // 行的信息契约：玩家 / 车型 / HP 条（条内文字）——百分比已经收进 HP 条内部。
-  // 行内契约 = 玩家/车型（textContent）+ HP 条存在且 aria-label 非空（2026-10-05 名册回归
-  // 原版：HP 数值经 aria-label，条内无文字节点 → roster-hp 本身 textContent 为空是预期）。
+  // 行内契约 = 玩家/车型（textContent）+ HP 条存在且 aria-label 非空：
+  // 条内数值只是视觉呈现（aria-hidden），可访问名称以 aria-label 为准。
   out.rowsComplete = [...root.querySelectorAll('.team-lane .pl')].every((row) => {
     const bar = row.querySelector('[data-test="roster-hp"]')
     return ['pb-roster-player', 'pb-roster-tank']
@@ -1509,6 +1508,8 @@ async function runRosterGeometryScenario(env, scenario) {
     await page.tap({ x: hit.x, y: hit.y, touch: scenario.touch })
     await page.waitForValue(`document.querySelector(${JSON.stringify(toolbarSelector)})?.getAttribute('aria-expanded')`,
       value => value === String(!collapsed), { label: 'toolbar disclosure changes after raw input' })
+    await page.waitForValue("!document.querySelector('.controls-slide-enter-active, .controls-slide-leave-active')",
+      value => value === true, { label: 'toolbar slide animation finished' })
     await waitForStableLayout(page)
     const footprint = await page.evaluate(controlsFootprint)
     check(failures, collapsed ? footprint < expandedFootprint / 2 : Math.abs(footprint - expandedFootprint) < expandedFootprint * 0.02,
@@ -1642,7 +1643,7 @@ async function runRosterGeometryScenario(env, scenario) {
   } else if (scenario.layout !== 'portrait') {
     // 宽形态：车道轻微压入中心。这个量在紧凑例外的 15% 以内，严格判定必须红、放宽判定必须绿，
     // 两边都成立才证明例外确实没有漏到宽形态。
-    const LANE_MUTANT = '.pb-root.playback-workspace .team-lane.side-left { inset-inline-start: 22% !important; inset-block-start: 7% !important }'
+    const LANE_MUTANT = '.pb-root.playback-workspace .team-lane.side-left { inset-inline-start: 22% !important; inset-block-start: 7% !important; max-block-size: 200px !important }'
     const strict = await occlusionWithCss(LANE_MUTANT)
     const lenient = await occlusionWithCss(LANE_MUTANT, { ...SCENE_OCCLUSION, edgeDocked: EDGE_DOCKED })
     const intrusion = strict.items?.find((item) => item.label === '[replay3d-lane-left]')?.centralPct

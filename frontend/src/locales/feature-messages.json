@@ -604,7 +604,7 @@
         },
         "3d": {
           "title": "3D 回放",
-          "description": "选画质，进入场景，用自由视角、俯视复位和点车跟随观察战局。"
+          "description": "选画质，进入场景，用自由视角、沙盘、俯视复位和点车跟随观察战局。"
         },
         "shots": {
           "title": "射击分析与装甲",
@@ -698,7 +698,7 @@
         },
         "camera": {
           "title": "自由视角与跟随各有所长",
-          "description": "自由视角适合看交火关系；点「俯视」一键回到俯视机位看整体位置；点击车辆或名单跟随一辆车，点「自由」或「俯视」退出。"
+          "description": "自由视角适合看交火关系；沙盘绕地图中心看全局；点「俯视」一键回到俯视机位后继续自由移动；点击车辆或名单跟随一辆车，点「自由」或「俯视」退出。"
         },
         "aiFiles": {
           "title": "先选择要复盘的回放",
@@ -1555,7 +1555,7 @@
         },
         "3d": {
           "title": "3D playback",
-          "description": "Choose quality, enter the scene and use the free camera, top view reset and click-to-follow."
+          "description": "Choose quality, enter the scene and use the free camera, overview, top view reset and click-to-follow."
         },
         "shots": {
           "title": "Shots and armor",
@@ -1649,7 +1649,7 @@
         },
         "camera": {
           "title": "Choose the camera for your question",
-          "description": "Free reveals firing relationships, and Top jumps to the overhead view for overall positions. Click a tank or roster row to follow it; press Free or Top to stop."
+          "description": "Free reveals firing relationships, Overview orbits the map center, and Top jumps overhead and keeps Free active. Click a tank or roster row to follow it; press Free or Top to stop."
         },
         "aiFiles": {
           "title": "Choose a replay for review",
@@ -2506,7 +2506,7 @@
         },
         "3d": {
           "title": "3D-реплей",
-          "description": "Выберите качество, запустите сцену и используйте свободную камеру, быстрый вид сверху и слежение по клику."
+          "description": "Выберите качество, запустите сцену и используйте свободную камеру, обзор, быстрый вид сверху и слежение по клику."
         },
         "shots": {
           "title": "Выстрелы и броня",
@@ -2600,7 +2600,7 @@
         },
         "camera": {
           "title": "Выберите камеру под задачу",
-          "description": "Свободная камера показывает взаимодействие, кнопка «Сверху» сразу открывает общую расстановку. Нажмите на танк или строку списка, чтобы следить за ним; «Свободная» или «Сверху» отключат слежение."
+          "description": "Свободная камера показывает взаимодействие, «Обзор» вращается вокруг центра карты, кнопка «Сверху» сразу поднимает камеру и оставляет свободный режим. Нажмите на танк или строку списка, чтобы следить за ним; «Свободная» или «Сверху» отключат слежение."
         },
         "aiFiles": {
           "title": "Выберите реплей для разбора",

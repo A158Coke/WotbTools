@@ -1031,7 +1031,7 @@ describe('Replay3DPane', () => {
       store.cam = 'free'
       await nextTick()
       await wrapper.get('[data-testid="replay3d-top-view"]').trigger('click')
-      expect(playback.api.setCam).toHaveBeenLastCalledWith('top')
+      expect(playback.api.setCam).toHaveBeenLastCalledWith('top-view')
       wrapper.unmount()
       layout.portrait = false
     })
@@ -1054,7 +1054,7 @@ describe('Replay3DPane', () => {
       store.cam = 'free'
       await nextTick()
       await wrapper.get('[data-testid="replay3d-top-view"]').trigger('click')
-      expect(playback.api.setCam).toHaveBeenLastCalledWith('top')
+      expect(playback.api.setCam).toHaveBeenLastCalledWith('top-view')
       wrapper.unmount()
       layout.compact = false
     })
@@ -1320,7 +1320,7 @@ describe('Replay3DPane', () => {
       api.store.cam = 'free'
       await nextTick()
       await wrapper.get('[data-testid="replay3d-top-view"]').trigger('click')
-      expect(api.setCam).toHaveBeenLastCalledWith('top')
+      expect(api.setCam).toHaveBeenLastCalledWith('top-view')
       api.store.cam = 'free'
       await nextTick()
       expect(wrapper.get('[data-testid="replay3d-camera"] [data-value="free"]').attributes('aria-checked')).toBe('true')
@@ -1927,15 +1927,43 @@ describe('Replay3DPane 待开播画质闸门', () => {
     // 俯视是持续模式（旋转中心 = 地图中心），与自由并列；录像者档位暂不支持
     expect(cams.findAll('button').map(b => b.attributes('data-value'))).toEqual(['free', 'top', 'recorder'])
     expect(cams.text()).toContain('agentReplay.cam_free')
-    expect(cams.text()).toContain('agentReplay.cam_top')
+    expect(cams.text()).toContain('agentReplay.cam_sandbox')
     expect(wrapper.get('[data-testid="replay3d-top-view"]').text()).toBe('agentReplay.cam_top')
+    // 沙盘是模式，俯视是动作：两个入口走不同的相机命令
+    await cams.get('[data-value="top"]').trigger('click')
+    expect(playback.api.setCam).toHaveBeenLastCalledWith('top')
     const recorder = cams.get('[data-value="recorder"]')
     expect(recorder.attributes('disabled')).toBeDefined()
     expect(recorder.attributes('title')).toBe('agentReplay.cam_recorder_unsupported')
+    playback.api.store.recorderCameraStatus = 'loading'
+    await nextTick()
+    expect(recorder.attributes('title')).toBe('agentReplay.cam_recorder_loading')
+    playback.api.store.recorderCameraStatus = 'ready'
+    await nextTick()
+    expect(recorder.attributes('title')).toBe('agentReplay.cam_recorder_dead')
+    playback.api.store.recorderModeUnknown = true
+    await nextTick()
+    expect(recorder.attributes('title')).toBe('agentReplay.cam_recorder_unsupported')
+    playback.api.store.recorderModeUnknown = false
+    playback.api.store.recorderViewAvailable = true
+    await nextTick()
+    expect(recorder.attributes('disabled')).toBeUndefined()
+    await recorder.trigger('click')
+    expect(playback.api.setCam).toHaveBeenLastCalledWith('recorder')
+    playback.api.store.cam = 'recorder'
+    await nextTick()
+    expect(wrapper.get('[data-testid="replay3d-drawing-entry"]').attributes('disabled')).toBeDefined()
+    playback.api.setFollow.mockClear()
+    playback.init.mock.calls.at(-1)[3].onVehicleSelect(11)
+    expect(playback.api.setFollow).not.toHaveBeenCalled()
+    playback.api.store.cam = 'free'
+    playback.api.store.recorderViewAvailable = false
+    playback.api.store.recorderCameraStatus = 'idle'
+    await nextTick()
     playback.api.store.cam = 'free'
     await nextTick()
     await wrapper.get('[data-testid="replay3d-top-view"]').trigger('click')
-    expect(playback.api.setCam).toHaveBeenCalledWith('top')
+    expect(playback.api.setCam).toHaveBeenCalledWith('top-view')
     wrapper.unmount()
   })
 

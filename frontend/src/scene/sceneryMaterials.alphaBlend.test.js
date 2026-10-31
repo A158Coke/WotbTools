@@ -3,7 +3,7 @@
  *  透明管线，不能被 ST|/lightmap/decal 分支改成 alpha 裁切或 alpha=1。 */
 import { describe, it, expect } from 'vitest'
 import * as THREE from 'three'
-import { makeSpeedtreeStaticMaterial, makeLightmappedMaterial, makeDecalMaterial } from './sceneryMaterials.js'
+import { foliageClip, makeBillboardMaterial, makeSpeedtreeStaticMaterial, makeLightmappedMaterial, makeDecalMaterial } from './sceneryMaterials.js'
 
 const marked = (name = 'marked') => {
   const m = new THREE.MeshStandardMaterial({ name, transparent: true, opacity: 0.5 })
@@ -62,5 +62,15 @@ describe('extras.alphaBlend 专用材质路由', () => {
     expect(old.transparent).toBe(false)
     expect(old.defines.ALPHA_BLEND).toBeUndefined()
     expect(old.uniforms.uAlphaCut.value).toBeGreaterThan(0)
+  })
+})
+
+describe('foliage clip', () => {
+  it('shares one uniform so the recorder view can toggle every foliage material', () => {
+    const material = { map: null, color: null, opacity: 1, userData: {} }
+    for (const made of [makeBillboardMaterial(material), makeSpeedtreeStaticMaterial(material, true)]) {
+      expect(made.uniforms.uFoliageClip).toBe(foliageClip)
+      expect(made.fragmentShader).toContain('if (vViewDist < uFoliageClip) discard;')
+    }
   })
 })

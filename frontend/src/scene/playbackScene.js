@@ -16,7 +16,25 @@
 import { confirm as appConfirm } from '../composables/useConfirm.js'
 import * as THREE from 'three'
 
-import { loadPlaybackData, mapStaticUrl, resolveMapKey } from './replaySource.js'
+import { loadPlaybackData, loadRecorderCameraFromFile, mapStaticUrl, resolveMapKey } from './replaySource.js'
+import {
+  ANCHOR_HEIGHT_M,
+  ARCADE_BOOM_M,
+  BASE_FOV_DEG,
+  CAMERA_MODE,
+  FOLIAGE_CLIP_ARCADE_M,
+  FOLIAGE_CLIP_SCOPED_M,
+  recorderModeAt,
+  REVERSE_SAMPLE_OFFSET_SEC,
+  aimDirectionScene,
+  arcadeCameraPosition,
+  backwardZoomScale,
+  blendProgress,
+  fovFromZoomRaw,
+  isReversing,
+  reticleRadiusPx,
+  sampleRecorderCamera,
+} from './playback/cameraRig.js'
 import { battleEndTime } from './battleEnd.js'
 import { orientDiscUv } from './baseDecal.js'
 import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, foldSupremacyTransitions } from '../utils/baseStatus.js'
@@ -31,7 +49,7 @@ import {
 import { treeFrame } from './destructibles.js'
 import { writeHiddenInstance, fallMatrix } from './sceneryInstancing.js'
 import { createDynRes } from './dynRes.js'
-import { clearSceneryMatCache } from './sceneryMaterials.js'
+import { clearSceneryMatCache, foliageClip } from './sceneryMaterials.js'
 // 地面 pass SSOT（2026-10-14 抽层，用户裁示"直接完全照搬 3D 回放的代码"）：地形数据/几何、
 // 分层地表材质与俯视烘焙共用同一份——此前烘焙不渲染地面，底图用客户端自带
 // 地图图，与 3D 档实时分层渲染在夜图/带 lm 图上差异显著（见该模块头部）
@@ -130,7 +148,7 @@ export { QUALITY_PRESETS, tracerSpanSecs, occlusionCells, occlusionFootprintCell
 // 纯函数 tracerSpanSecs / occlusionCells / occlusionFootprintCells 在 ./playback/pure.js
 //（本文件 re-export，导入方零改动）。
 
-export function initPlayback(container, store, labelOverlay = null, { onVehicleSelect, onAnnotationCommit, onAnnotationErase } = {}) {
+export function initPlayback(container, store, labelOverlay = null, { onVehicleSelect, onAnnotationCommit, onAnnotationErase, recorderReticle = null } = {}) {
   // ---------- 全局状态 ----------
   let DATA = null;                 // PlaybackData（当前会话）
   /** eid → 协议精确 AoI 段 flat [t0,t1,...]（来自 DATA.visibility；3D 炮塔/侧倾采样用） */
@@ -172,6 +190,15 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let CAM = 'free', FOLLOW_EID = 0;
   // 新会话默认以俯视机位开局；用户一旦操作过相机，同一实例内不再覆盖其视角。
   let topViewOnLoad = true;
+  // 录像者视角：facet 随会话，相机由 driveRecorderCamera 逐帧写入。
+  let recorderCamera = null;
+  const recorderSample = {};
+  let recorderBoomScale = 1;
+  // 开镜时相机在炮位，本车只从渲染里摘掉：group.visible 仍表示「车辆在场」，
+  // 炮口定位与击毁特效都依赖它。
+  let scopedHiddenEid = 0;
+  let cameraBlend = null;              // 进入录像者视角的呈现过渡
+  let fovRestore = null;               // 离开录像者视角时 FOV 的呈现过渡
   let shotPtr = 0;   //（killPtr 随击杀 feed 出仓 playback/hudFeed.js）
   const tracers = [];
   const pendingMuzzles = [];   // 本 tick 开火、待炮管姿态摆完再定位的炮口特效（见 flushMuzzles）
@@ -196,6 +223,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 缺失（未导出/404）时回退整图烘焙底图
   let groundLayers = null;
   let terrainMesh = null, heightField = null, heightMeta = null;  // 3D 地形
+  const RETICLE_MIN_GUN_DISTANCE_M = 30;  // 瞄准点贴脸时扩散圆的最小投影距离
+  const SCOPED_HIDDEN_LAYER = 1;       // 相机不启用的 layer：开镜时本车留在场景里但不绘制
   const CAMERA_GROUND_CLEARANCE = 0.5;  // 初值：小于地形起伏尺度，真实地图视觉校准由人工验收
   // 高度场只有一份（客户端同构：渲染/查询/放置全用真值场）。让位掩码（v0.4.2 的"渲染场"副本
   // 概念）与"贴地结构脚印"细分判据均已撤销（2026-10-11 用户裁示：只对齐客户端，不自创补偿）。
@@ -601,6 +630,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       e.stopPropagation();
       return;
     }
+    // 录像者视角不接受相机输入：OrbitControls 保持关闭，选中语义仍由 renderer 接线。
+    if (CAM === 'recorder') return;
     // 非 free：恢复 OrbitControls 并走原选中语义（onScenePointerDown 由 renderer 接线）
     if (!controls.enabled) controls.enabled = true;
   }
@@ -683,6 +714,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     e.stopPropagation();
   }
   function onFlyCaptureWheel(e) {
+    if (CAM === 'recorder') { e.preventDefault(); e.stopPropagation(); return; }
     if (!flyMode()) return;
     // 滚轮 = 沿视线推拉相机（OrbitControls 的 dolly 语义）：相机与 target 一起前进/后退，
     // 视角与视距保持不变。旧实现只改 flyLook.dist 而相机不动——target 只沿视线挪，
@@ -858,7 +890,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
    */
   const _orbitTerrainDir = new THREE.Vector3();
   function clampOrbitCameraToTerrain() {
-    if (flyMode() || !camera || !controls || !heightField || !heightMeta) return false;
+    if (cameraDriven() || !camera || !controls || !heightField || !heightMeta) return false;
     const t = controls.target;
     if (!Number.isFinite(t.y) || !Number.isFinite(camera.position.y)) return false;
     const dir = _orbitTerrainDir.subVectors(camera.position, t);
@@ -2335,7 +2367,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       const x = labelClip.x / w, y = labelClip.y / w, z = labelClip.z / w;
       // projected = 车辆在视锥内；visible = 名牌本身是否显示。两者必须分开：伤害数字是
       // 战斗反馈而不是名牌内容，关掉名牌后它仍要有落点（覆盖层里回退到锚点上方）。
-      const projected = v.group.visible && w > 0
+      const projected = v.group.visible && v.def.eid !== scopedHiddenEid && w > 0
         && Number.isFinite(x) && Number.isFinite(y) && z >= -1 && z <= 1
         && x >= -1 && x <= 1 && y >= -1 && y <= 1;
       labelAnchorScratch.x = projected ? (x + 1) * viewW / 2 : 0;
@@ -3261,20 +3293,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       p.hullGroup.position.set(0, 0, 0);
     }
     if (!p) return;
-    const rel = wrapPi(turretAbsAt(v, t) - yawAt(v, t));
-    const tr = -rel;                       // 镜像系节点旋转角 = −rel
     const gr = gunPitchAt(v, t);           // glb 系 Rx(θ)：θ>0 = 前向(+Y)抬向 +Z = 仰角
-    if (p.itr) {
-      // Euler 序 'ZYX'：yaw (Z) 最外层 → pitch/roll 补偿在炮塔局部系内执行。
-      // 'XYZ' 会把 pitch 放在全局系，炮塔转开 90° 时 pitch 变成侧倾。
-      _glbEuler.set(-THREE.MathUtils.degToRad(p.itr.pitch || 0), -THREE.MathUtils.degToRad(p.itr.roll || 0),
-                    tr - THREE.MathUtils.degToRad(p.itr.yaw || 0), 'ZYX');
-      _mRot.makeRotationFromEuler(_glbEuler);
-    } else {
-      _mRot.makeRotationZ(tr);
-    }
-    const mT = _mT.makeTranslation(p.tP[0], p.tP[1], p.tP[2]).multiply(_mRot)
-      .multiply(_mTmpA.makeTranslation(-p.tP[0], -p.tP[1], -p.tP[2]));
+    const mT = glbTurretMatrix(v, p, t);
     const mG = _mG.copy(_mT).multiply(_mTmpB.makeTranslation(p.gP[0], p.gP[1], p.gP[2]))
       .multiply(_mTmpC.makeRotationX(gr))
       .multiply(_mTmpD.makeTranslation(-p.gP[0], -p.gP[1], -p.gP[2]));
@@ -3286,20 +3306,50 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       tn.matrix.copy(_mAcc.copy(mT).multiply(tn.userData.__bake));
     }
     // 固定战斗室（turretNode=null，歼击车）：炮管组直接吃 mG——mG = mT·Rx(gr)，
-    // 已含绕 tP 的横转（itr 补偿在内）与绕 gP 的俯仰，与客户端「TD 炮塔 = 炮架横转」同构。
+    // 已含绕 tP 的横转（itr 补偿在内）与绕 gP 的俯仰，与客户端「TD 炮塔 = 炮管」同构。
     for (const gn of p.gunNodes) {
       gn.updateMatrix();
       if (!gn.userData.__bake) { gn.userData.__bake = gn.matrix.clone(); gn.matrixAutoUpdate = false; }
       gn.matrix.copy(_mAcc.copy(mG).multiply(gn.userData.__bake));
     }
-    // 世界矩阵不在此强制刷新：renderer.render 的 scene.updateMatrixWorld() 从根向下传播，
+    // 世界矩阵不在此强制刷新：renderer.render 的 scene.updateMatrixWorld() 从根向下传播足矣。
     // v.glb 根 matrixAutoUpdate=true → updateMatrix 置脏 → force 覆盖 matrixAutoUpdate=false
     // 的炮塔/炮管节点，本行是每车全树一遍纯重复的 compose+multiply（14 车 ×60fps）。
-    // tick 与 render 之间唯一的车辆世界矩阵读者是开火定位炮口（flushMuzzles），它只在开火的
-    // tick 把射手一台摆到 t_fire、刷新、量完再摆回 T 并刷新；标签投影用位姿插值坐标、遮挡射线
+    // tick 与 render 之间唯一的车辆世界矩阵读者是开火定位炮口（flushMuzzles），它自己
+    // tick 把射手一台摆到 t_fire、刷新、量完再摆回 T 并刷新；标签投影用位姿，
     // 只打静态场景网格。
   }
-
+  /** 炮塔节点的枢轴旋转矩阵（模型系）：炮塔横转绕 tP，含 itr 补偿。 */
+  function glbTurretMatrix(v, p, t) {
+    const rel = wrapPi(turretAbsAt(v, t) - yawAt(v, t));
+    const tr = -rel;                       // 镜像系节点旋转角 = −rel
+    if (p.itr) {
+      // Euler 序 'ZYX'：yaw (Z) 最外层 → pitch/roll 补偿在炮塔局部系内执行。
+      // 'XYZ' 会把 pitch 放在全局系，炮塔转开 90° 时 pitch 变成侧倾。
+      _glbEuler.set(-THREE.MathUtils.degToRad(p.itr.pitch || 0), -THREE.MathUtils.degToRad(p.itr.roll || 0),
+                    tr - THREE.MathUtils.degToRad(p.itr.yaw || 0), 'ZYX');
+      _mRot.makeRotationFromEuler(_glbEuler);
+    } else {
+      _mRot.makeRotationZ(tr);
+    }
+    return _mT.makeTranslation(p.tP[0], p.tP[1], p.tP[2]).multiply(_mRot)
+      .multiply(_mTmpA.makeTranslation(-p.tP[0], -p.tP[1], -p.tP[2]));
+  }
+  /**
+   * 本车配置的真实炮位与炮管方向（世界系），与 poseGlbRig 走同一条变换链；低模代理
+   * 没有 itr 补偿，不能代表渲染出的炮管。没有 GLB 时返回 false，由调用方退回低模枢轴。
+   */
+  function glbGunWorld(v, pos, dir) {
+    const p = v.glb ? v.glbParts : null;
+    const parent = p && (p.turretNode ?? p.gunNodes[0])?.parent;
+    if (!parent) return false;
+    parent.updateWorldMatrix(true, false);
+    const turret = glbTurretMatrix(v, p, T);
+    const pitch = gunPitchAt(v, T);        // 模型前向 +Y，绕 X 俯仰，见 poseGlbRig
+    dir.set(0, Math.cos(pitch), Math.sin(pitch)).transformDirection(turret).transformDirection(parent.matrixWorld);
+    pos.set(p.gP[0], p.gP[1], p.gP[2]).applyMatrix4(turret).applyMatrix4(parent.matrixWorld);
+    return true;
+  }
   async function applyGlbToggle(on) {
     const gen = sessionGen;
     glbOn = on;
@@ -3595,36 +3645,39 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     dmgPtr = 0; burstPtr = 0;
   }
 
-  function buildBurstSources() {
+  /** 车辆每次死亡的场景时刻（issue #622 复活模式：同一 eid 可多次死亡），未排序。 */
+  function deathTimesOf(v) {
     const canonical = store.playbackSession?.canonical;
-    const hasCanonicalLife = canonical?.dataset?.vehicles && Number.isFinite(canonical.clock?.startRaw);
-    burstEvents = [];
-    for (const v of V) {
-      // 每次死亡各一次爆焰（issue #622 复活模式：同一 eid 可多次死亡）。
-      // 普通战斗每车至多一次死亡——单条行为与既往逐位一致。
-      const times = [];
-      if (hasCanonicalLife) {
-        const seenDeaths = new Set();
-        for (const life of canonicalLifeTrack(v, canonical)?.lifeTransitions ?? []) {
-          if (life.lifeState !== 'DESTROYED' || !Number.isFinite(life.timeSec)) continue;
-          const identityTime = (life.destroyedKnownAtSec ?? life.timeSec) + canonical.clock.startRaw;
-          if (!canonicalDeathAppliesTo(v, identityTime, canonical)) continue;
-          // 同一次死亡的重复迁移只爆一次（既有不变式）；真复活模式的多死 killedAtSec 互异
-          const key = Number.isFinite(life.destroyedKnownAtSec) ? life.destroyedKnownAtSec : life.timeSec;
-          if (seenDeaths.has(key)) continue;
-          seenDeaths.add(key);
-          times.push(life.timeSec + canonical.clock.startRaw);
-        }
-      } else {
-        const death = v.def.death_t;
-        if (Number.isFinite(death)) {
-          times.push(death);
-          for (const d of v.def.death_times ?? []) {
-            if (Number.isFinite(d) && d !== death) times.push(d);
-          }
+    const times = [];
+    if (canonical?.dataset?.vehicles && Number.isFinite(canonical.clock?.startRaw)) {
+      const seenDeaths = new Set();
+      for (const life of canonicalLifeTrack(v, canonical)?.lifeTransitions ?? []) {
+        if (life.lifeState !== 'DESTROYED' || !Number.isFinite(life.timeSec)) continue;
+        const identityTime = (life.destroyedKnownAtSec ?? life.timeSec) + canonical.clock.startRaw;
+        if (!canonicalDeathAppliesTo(v, identityTime, canonical)) continue;
+        // 同一次死亡的重复迁移只算一次（既有不变式）；真复活模式的多死 killedAtSec 互异
+        const key = Number.isFinite(life.destroyedKnownAtSec) ? life.destroyedKnownAtSec : life.timeSec;
+        if (seenDeaths.has(key)) continue;
+        seenDeaths.add(key);
+        times.push(life.timeSec + canonical.clock.startRaw);
+      }
+    } else {
+      const death = v.def.death_t;
+      if (Number.isFinite(death)) {
+        times.push(death);
+        for (const d of v.def.death_times ?? []) {
+          if (Number.isFinite(d) && d !== death) times.push(d);
         }
       }
-      for (const t of times) burstEvents.push({ t, eid: v.def.eid });
+    }
+    return times;
+  }
+
+  function buildBurstSources() {
+    burstEvents = [];
+    for (const v of V) {
+      // 每次死亡各一次爆焰；普通战斗每车至多一次死亡——单条行为与既往逐位一致。
+      for (const t of deathTimesOf(v)) burstEvents.push({ t, eid: v.def.eid });
     }
     burstEvents.sort((a, b) => a.t - b.t);
   }
@@ -3921,7 +3974,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         followAnchor = (followAnchor || new THREE.Vector3()).copy(tmpV);
       } else followAnchor = null;
     } else followAnchor = null;
-    clampCameraTarget();
+    if (CAM === 'recorder') driveRecorderCamera(dt);
+    else clampCameraTarget();
+    if (fovRestore) stepFovRestore(dt);
     // flyMode 接管期间 OrbitControls.update() 必须完全停跑：enabled=false 只挡输入
     // 事件、update 照常执行——其内部球面状态会按 target/相机重算，与 flyLook 的
     // target 重钉互相污染（表现 = 拖拽行为在 FPS 转头与 OrbitControls 环绕之间漂移、
@@ -3933,14 +3988,15 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 维持（target 是权威：拖拽 / 平移 / 缩放都会先重钉 target）。不补这一步，
     // 拖拽只改 target 不改朝向，画面不转（用户实测）。
     if (flyMode()) camera.lookAt(controls.target);
-    const cameraMoved = flyMode() ? false : controls.update();   // three 的 update() 返回相机是否变化（阻尼/交互）
-    if (!flyMode()) clampOrbitCameraToTerrain();
+    const cameraMoved = cameraDriven() ? false : controls.update();   // three 的 update() 返回相机是否变化（阻尼/交互）
+    clampOrbitCameraToTerrain();
     // ---------- 按需渲染（脏帧）----------
     // 暂停且没有在飞特效、相机也静止时，跳过整帧工作（标签/基地/transient 重算 + 全屏
     // render）。此前空闲也满速重绘，是移动端发热与笔记本耗电的第一来源。
     // 伤害数字不参与这个判定：它是覆盖层 DOM + CSS 动画，暂停时自己走完，不需要出帧。
     const busy = PLAYING
       || cameraMoved
+      || cameraBlend || fovRestore
       || frameDirty
       || (destruct && destruct.animating)
       || tracers.length > 0 || (battleFx && battleFx.active())
@@ -4159,6 +4215,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 名册与上面的总血量同帧写入：两侧名册与顶栏永远是同一个 T 的投影
     updateRoster();
     store.time = T;
+    store.recorderModeUnknown = !!recorderCamera && recorderModeAt(recorderCamera, T) === CAMERA_MODE.UNKNOWN;
+    store.recorderViewAvailable = recorderViewAvailable();
     const f = (T - START) / Math.max(0.001, END - START);
     if (!store.seeking) store.seekFrac = Math.round(f * 1000);
   }
@@ -4250,21 +4308,27 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
   function setCam(mode) {
     if (annotationGesture) cancelAnnotationGesture()   // 相机模式跳变不得继续旧 draft
-    // 俯视是**持续的战术总览模式**（用户 2026-10 要求）：OrbitControls 以**地图中心**为
-    // target，拖拽/滚轮围绕地图中心旋转与缩放——旋转中心不是相机。跟随以选中坦克为
-    // target；自由视角是 FPS 飞行（旋转中心 = 相机，由 flyLook 接管）。
-    CAM = mode;
-    store.cam = mode;
-    flyLookApplyMode(mode === 'free' ? 'free' : 'follow');
-    if (mode !== 'follow') FOLLOW_EID = 0;
-    if (mode !== 'top') topViewOnLoad = false;
+    // 沙盘（top）是持续的战术总览模式：OrbitControls 以**地图中心**为 target，拖拽/滚轮围绕
+    // 地图中心旋转与缩放。top-view 不是模式，只是快速回到俯视机位的动作（reset view）：
+    // 完成后就是自由视角，键盘、鼠标与触屏从同一帧起可用。跟随以选中坦克为 target；
+    // 自由视角是 FPS 飞行（旋转中心 = 相机，由 flyLook 接管）。
+    const topViewAction = mode === 'top-view';
+    const nextMode = topViewAction ? 'free' : mode;
+    if (nextMode === 'recorder' && !recorderViewAvailable()) return;
+    if (nextMode !== 'top') topViewOnLoad = false;
+    if (CAM === 'recorder' && nextMode !== 'recorder') leaveRecorderView();
+    if (nextMode === 'recorder' && CAM !== 'recorder') enterRecorderView();
+    CAM = nextMode;
+    store.cam = nextMode;
+    flyLookApplyMode(nextMode === 'free' ? 'free' : 'follow');
+    if (nextMode !== 'follow') FOLLOW_EID = 0;
     if (!controls) { invalidate(); return; }
-    controls.enabled = !flyMode();
+    controls.enabled = nextMode === 'follow';
     // 旋转/缩放中心语义要求 target 不被平移带走：Top 锁地图中心、Follow 锁坦克；
     // Free 由 flyLook 接管，OrbitControls 的 pan 不参与（恢复默认值供下次非 Free 入口设置）。
-    controls.enablePan = mode === 'free';
+    controls.enablePan = nextMode === 'free';
     invalidate();
-    if (mode === 'top') {
+    if (nextMode === 'top') {
       applyTopView();
       // 总览视角：可绕地图中心自由旋转（仍不沉到地平线以下），缩放上限放开到默认机位高度
       controls.minPolarAngle = 0;
@@ -4274,11 +4338,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       clampOrbitCameraToTerrain();
       camera.lookAt(controls.target);
       controls.enabled = true;
-    } else if (mode === 'free') {
+    } else if (nextMode === 'free') {
       controls.minPolarAngle = 0;
       controls.maxPolarAngle = Math.PI;
+      if (topViewAction) applyTopView();
       constrainFreeCameraAltitude();
-    } else {
+      if (topViewAction) camera.lookAt(controls.target);
+    } else if (nextMode === 'follow') {
       // 跟随绕转不得沉到 target 水平线以下：OrbitControls 的极角上限直接挡住
       // 「向下绕到地下」的输入；相机点仍由 clampOrbitCameraToTerrain 按地形净空校验。
       controls.minPolarAngle = 0;
@@ -4290,7 +4356,177 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 直接投影名册：播放中名册也不得跑到顶栏前面（两者始终同一个 T）。
     writeHud(true);
   }
-  /** 回到俯视机位：相机置地图中心正上方，target 锁地图中心（旋转中心 = 地图中心）。 */
+  // ---------- 录像者视角 ----------
+  const cameraDriven = () => flyMode() || CAM === 'recorder';
+  const recorderVehicle = () => vehicleByEid(DATA?.meta?.author_eid);
+  /** Type39/23/31 的归属止于第一次死亡：之后可能属于观战视点，复活不能证明相机回到录像者。 */
+  function recorderOwnsCamera(v) {
+    return !deathAt(v, T) && deathTimesOf(v).every((death) => T < death);
+  }
+  /** Type23 未知时不伪装成 Arcade：保留 raw，消费层退出。 */
+  function recorderViewAvailable() {
+    const v = recorderVehicle();
+    return !!recorderCamera && !!v && recorderOwnsCamera(v)
+      && recorderModeAt(recorderCamera, T) !== CAMERA_MODE.UNKNOWN;
+  }
+  function loadRecorderCamera(source, epoch) {
+    recorderCamera = null;
+    store.recorderCameraStatus = source?.file ? 'loading' : 'unavailable';
+    if (!source?.file) return;
+    const settle = (facet) => {
+      if (destroyed || epoch !== sessionEpoch) return;
+      const usable = !!facet && facet.author_eid === DATA?.meta?.author_eid;
+      recorderCamera = usable ? facet : null;
+      store.recorderCameraStatus = usable ? 'ready' : 'unavailable';
+      writeHud(true);
+    };
+    loadRecorderCameraFromFile(source.file, source.signal).then(settle).catch((err) => {
+      if (err?.name !== 'AbortError') console.warn('[playback] 录像者相机解析失败:', err);
+      settle(null);
+    });
+  }
+  function enterRecorderView() {
+    cameraBlend = {
+      position: camera.position.clone(),
+      quaternion: camera.quaternion.clone(),
+      fov: camera.fov,
+      elapsed: 0,
+    };
+    fovRestore = null;
+    recorderBoomScale = 1;
+  }
+  function leaveRecorderView() {
+    cameraBlend = null;
+    fovRestore = camera.fov === BASE_FOV_DEG ? null : { fov: camera.fov, elapsed: 0 };
+    const hidden = scopedHiddenEid ? vehicleByEid(scopedHiddenEid) : null;
+    scopedHiddenEid = 0;
+    if (hidden) setScopedLayer(hidden, false);
+    foliageClip.value = 0;
+    recorderReticle?.hide();
+  }
+  function setScopedLayer(v, hidden) {
+    const layer = hidden ? SCOPED_HIDDEN_LAYER : 0;
+    v.group.traverse((node) => node.layers.set(layer));
+    v.glb?.traverse((node) => node.layers.set(layer));
+  }
+  function applyCameraFov(fov) {
+    if (Math.abs(camera.fov - fov) < 1e-3) return;
+    camera.fov = fov;
+    camera.updateProjectionMatrix();
+    invalidate();
+  }
+  function stepFovRestore(dt) {
+    fovRestore.elapsed += dt;
+    const progress = blendProgress(fovRestore.elapsed);
+    applyCameraFov(fovRestore.fov + (BASE_FOV_DEG - fovRestore.fov) * progress);
+    if (progress >= 1) fovRestore = null;
+  }
+  const _recorderDir = {};
+  const _recorderPos = new THREE.Vector3();
+  const _recorderAnchor = new THREE.Vector3();
+  const _recorderPrev = new THREE.Vector3();
+  const _recorderLook = new THREE.Vector3();
+  const _recorderRay = new THREE.Vector3();
+  const _recorderGun = new THREE.Vector3();
+  const _recorderGunDir = new THREE.Vector3();
+  const _reticleAim = { x: 0, y: 0 };
+  const _reticleGun = { x: 0, y: 0 };
+  const _recorderQuat = new THREE.Quaternion();
+  const _recorderLastPos = new THREE.Vector3();
+  const _recorderLastQuat = new THREE.Quaternion();
+  /** 回放数据驱动相机：开镜相机在炮位、朝向与 FOV 全部来自回放，不做平滑。 */
+  function driveRecorderCamera(dt) {
+    const v = recorderVehicle();
+    if (!DATA || !recorderCamera || !v || !recorderOwnsCamera(v)) { setCam('free'); return; }
+    const sample = sampleRecorderCamera(recorderCamera, T, recorderSample);
+    if (sample.mode === CAMERA_MODE.UNKNOWN) { setCam('free'); return; }
+    aimDirectionScene(sample.yaw, sample.pitch, _recorderDir);
+    const scoped = sample.mode === CAMERA_MODE.SNIPER;
+    const hiddenEid = scoped ? v.def.eid : 0;
+    if (hiddenEid !== scopedHiddenEid) {
+      scopedHiddenEid = hiddenEid;
+      setScopedLayer(v, scoped);
+    } else if (scoped && v.glb && !v.glb.layers.isEnabled(SCOPED_HIDDEN_LAYER)) {
+      setScopedLayer(v, true);   // 开镜期间 GLB 才装配完成
+    }
+    foliageClip.value = scoped ? FOLIAGE_CLIP_SCOPED_M : FOLIAGE_CLIP_ARCADE_M;
+    let fov = BASE_FOV_DEG;
+    if (scoped) {
+      if (!glbGunWorld(v, _recorderPos, _recorderGunDir)) {
+        v.gunPivot.updateWorldMatrix(true, false);
+        v.gunPivot.getWorldPosition(_recorderPos);
+      }
+      fov = fovFromZoomRaw(sample.zoomRaw);
+      recorderBoomScale = 1;
+    } else {
+      posAt(v, T, _recorderAnchor);
+      _recorderAnchor.y += ANCHOR_HEIGHT_M;
+      if (recorderCamera.client_options.backward_zoom === true) {
+        posAt(v, T - REVERSE_SAMPLE_OFFSET_SEC, _recorderPrev);
+        const reversing = isReversing(
+          { x: -_recorderPrev.x, z: _recorderPrev.z },
+          { x: -_recorderAnchor.x, z: _recorderAnchor.z },
+          yawAt(v, T),
+        );
+        recorderBoomScale = backwardZoomScale(recorderBoomScale, reversing, dt);
+      }
+      arcadeCameraPosition(_recorderAnchor, _recorderDir, ARCADE_BOOM_M * recorderBoomScale, _recorderPos);
+      const terrainY = terrainHeightForCameraClamp(_recorderPos.x, _recorderPos.z);
+      if (Number.isFinite(terrainY)) _recorderPos.y = Math.max(_recorderPos.y, terrainY + CAMERA_GROUND_CLEARANCE);
+    }
+    _recorderLastPos.copy(camera.position);
+    _recorderLastQuat.copy(camera.quaternion);
+    const lastFov = camera.fov;
+    camera.position.copy(_recorderPos);
+    _recorderLook.set(_recorderDir.x, _recorderDir.y, _recorderDir.z);
+    camera.lookAt(_recorderPos.x + _recorderLook.x, _recorderPos.y + _recorderLook.y, _recorderPos.z + _recorderLook.z);
+    if (cameraBlend) {
+      cameraBlend.elapsed += dt;
+      const progress = blendProgress(cameraBlend.elapsed);
+      _recorderQuat.copy(camera.quaternion);
+      camera.position.lerpVectors(cameraBlend.position, _recorderPos, progress);
+      camera.quaternion.slerpQuaternions(cameraBlend.quaternion, _recorderQuat, progress);
+      fov = cameraBlend.fov + (fov - cameraBlend.fov) * progress;
+      if (progress >= 1) cameraBlend = null;
+    }
+    applyCameraFov(fov);
+    controls.target.copy(camera.position).addScaledVector(_recorderLook, 30);
+    if (!camera.position.equals(_recorderLastPos) || !camera.quaternion.equals(_recorderLastQuat) || camera.fov !== lastFov) {
+      invalidate();
+    }
+    updateRecorderReticle(sample, v);
+  }
+  /** 世界点 → 舞台像素；投影不到返回 null，不伪造屏幕位置。 */
+  function projectToStage(point, out) {
+    point.project(camera);
+    if (![point.x, point.y, point.z].every((n) => Number.isFinite(n) && Math.abs(n) <= 1)) return null;
+    out.x = (point.x + 1) * container.clientWidth / 2;
+    out.y = (1 - point.y) * container.clientHeight / 2;
+    return out;
+  }
+  /**
+   * Arcade 相机沿 Type39 看，所以中心点按定义在屏幕中间；扩散圆画在炮管实际指向上，
+   * 炮塔转动滞后时才会偏离中心再追上来，开镜时两者接近重合。
+   */
+  function updateRecorderReticle(sample, v) {
+    if (!recorderReticle) return;
+    camera.updateMatrixWorld();
+    if (!glbGunWorld(v, _recorderGun, _recorderGunDir)) {
+      v.gunPivot.updateWorldMatrix(true, false);
+      v.gunPivot.getWorldPosition(_recorderGun);
+      _recorderGunDir.set(0, 0, 1).transformDirection(v.gunPivot.matrixWorld);
+    }
+    _recorderRay.set(-sample.rayX, sample.rayY, sample.rayZ);
+    const distance = Math.max(RETICLE_MIN_GUN_DISTANCE_M, _recorderGun.distanceTo(_recorderRay));
+    _recorderGun.addScaledVector(_recorderGunDir, distance);
+    const aim = projectToStage(_recorderRay, _reticleAim);
+    const gun = projectToStage(_recorderGun, _reticleGun);
+    if (!aim && !gun) { recorderReticle.hide(); return; }
+    recorderReticle.update(aim, gun, reticleRadiusPx({
+      bloomRaw: sample.bloomRaw, fovDeg: camera.fov, viewportH: container.clientHeight,
+    }));
+  }
+  /** 回到俯视机位：相机置地图中心正上方，target 锁地图中心。 */
   function applyTopView() {
     const { cx, cz } = WORLD_CENTER;
     camera.position.set(cx, topCameraDefaultHeight(), cz + 0.01);
@@ -4396,6 +4632,16 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
   function teardownSession() {
     sessionGen++;
+    // 录像者不跨回放：同步退出，旧机位不能被下一场当成用户的自由相机保留。
+    if (CAM === 'recorder') {
+      setCam('free');
+      topViewOnLoad = true;
+    }
+    recorderCamera = null;
+    foliageClip.value = 0;
+    store.recorderCameraStatus = 'idle';
+    store.recorderViewAvailable = false;
+    store.recorderModeUnknown = false;
     resetMapLighting();   // 逐图光照随会话复位（否则换图时上一张的太阳会残留）
     animLayerMats = [];   // 动画混合层材质随会话失效（材质已随 mapScenery dispose）
     clearEffects();
@@ -4543,6 +4789,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       POSE_GRID.tStart = data.meta.t_start;
       POSE_GRID.samples = data.meta.samples;
       store.playbackSession = playbackSession;
+      loadRecorderCamera(source, epoch);
       // 资产阶段（地图/地形/地表/场景）内部有多个 await：被取代后必须立刻放弃，
       // 否则旧会话会走完 buildVehicles / buildRoster / setPlaying / tick / writeHud 复活自己。
       const ready = await startPlayback(epoch);
@@ -4851,6 +5098,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     qualityPresets: QUALITY_PRESETS,
     destroy() {
       destroyed = true;
+      foliageClip.value = 0;
       flyLookApplyMode('follow');   // 恢复 controls 原生状态（实例随即销毁，防残 handedness）
       loadGeneration++;
       sessionEpoch++;
