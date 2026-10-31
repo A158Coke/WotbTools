@@ -2742,8 +2742,12 @@ async function runReplayCollectionScenario(env) {
   try {
     await page.enable()
     await page.emulate({ width: 1440, height: 900, touch: false })
-    await page.goto(`${env.origin}/?view=battle-playback&ws-auth=1`)
+    // 从工作台之外进入：结尾用浏览器后退验证 KeepAlive 不会把弹层留在目标页上。
+    await page.goto(`${env.origin}/?view=agent-tankopedia&ws-auth=1`)
+    await hit('[data-testid="nav-replay"]')
     await page.waitFor(() => !!document.querySelector('[data-testid="file-uploader-empty"]'), { label: 'empty workspace' })
+    const entryLength = await page.evaluate('history.length')
+    await hit('[data-testid="ws-tab"][data-cap="playback"]')
 
     await setFiles([fixture('random-battle-example')])
     await page.waitFor(() => !!document.querySelector('[data-test="battle-playback"]') && !!document.querySelector('[data-testid="collection-trigger"]'), { timeout: 60_000, label: 'replay opens without a parse action' })
@@ -2822,6 +2826,14 @@ async function runReplayCollectionScenario(env) {
     await hit('[data-testid="collection-clear-confirm"]')
     await page.waitFor(() => !!document.querySelector('[data-testid="file-uploader-empty"]'), { label: 'clear returns to Empty' })
     check(failures, !await page.evaluate(`!!document.querySelector('[data-testid="playback-battle-picker"]')`), 'clear must remove the battle context')
+
+    await setFiles([fixture('random-battle-example')])
+    await hit('[data-testid="collection-trigger"]')
+    await page.waitFor(() => !!document.querySelector('[data-testid="replay-collection"]'), { label: 'list open before back' })
+    await page.evaluate(`history.go(-(history.length - ${entryLength} + 1))`)
+    await page.waitForValue('new URLSearchParams(location.search).get("view")', view => view !== 'replay' && view !== 'battle-playback', { label: 'browser back left the workspace' })
+    await page.waitFor(() => !document.querySelector('[data-testid="replay-collection"]'), { label: 'list closed after back' })
+    check(failures, !await page.evaluate(`!!document.querySelector('.dialog-scrim')`), 'no modal scrim may remain over the destination page')
   } finally {
     await env.chrome.client.send('Target.closeTarget', { targetId })
     await rm(tempDir, { recursive: true, force: true })

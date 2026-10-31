@@ -953,7 +953,7 @@ describe('ReplayWorkspace', () => {
     })
     await choose(wrapper, files)
     // 部分失败不是失败态：有警示，内容可用，当前是第一场有效回放。
-    expect(wrapper.find('[data-test="processing"]').text()).toBe('ready')
+    expect(wrapper.find('[data-test="processing"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="workspace-partial-failure"]').text()).toContain('workspace.partial_failure')
     expect(wrapper.get('.workspace-content').isVisible()).toBe(true)
     expect(replayState.currentBattleId.value).toBe('r1')
@@ -984,6 +984,19 @@ describe('ReplayWorkspace', () => {
     replayState.resp.value = { ...replayState.resp.value }
     await flushPromises()
     expect(warning().exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('background adding during a partial failure never offers the first-load Cancel', async () => {
+    withBattles(2)
+    replayState.resp.value = { ...replayState.resp.value, failures: [['broken.wotbreplay', 'parse failed']] }
+    const wrapper = mountWorkspace('playback')
+    await flushPromises()
+    replayState.analysis.value = { phase: 'parsing', done: 0, total: 1, failure: null }
+    await flushPromises()
+    expect(wrapper.find('[data-testid="workspace-partial-failure"]').exists()).toBe(true)
+    expect(wrapper.findComponent({ name: 'ReplayProcessingPanelMock' }).exists()).toBe(false)
+    expect(replayState.files.value).toHaveLength(2)
     wrapper.unmount()
   })
 

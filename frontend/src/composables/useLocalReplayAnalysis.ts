@@ -77,11 +77,35 @@ export function useLocalReplayAnalysis(session: ReplaySession, { t }: I18nContex
     return run(false)
   }
 
-  /** 集合增删：旧结果留在屏幕上直到新结果提交，当前场次不受影响。 */
+  /**
+   * 集合增删：结果留在屏幕上，当前场次不受影响。sourceId 是 files 下标，所以任何时刻都要保证
+   * 结果与 files 对齐：追加不移动已有下标；移除会移动，此时有新文件未解析就先用已解析的部分重算。
+   * 未解析的文件只可能在尾部（新文件追加到尾部，失败时退回），已解析部分因此就是 files 的前缀。
+   */
   async function changeFiles(next: File[]): Promise<AnalyzeResult> {
     abortInFlight()
+    const moved = files.value.some((file, index) => toRaw(file) !== toRaw(next[index]))
     session.changeSelection(next)
+    if (moved && resp.value && files.value.some(file => !parsedByFile.has(toRaw(file)))) realignResult()
     return run(!!resp.value)
+  }
+
+  function commitResult(selection: File[], tankopedia: Tankopedia): void {
+    const { dataset, preview } = analyzeReplayBatch(selection.map(file => parsedByFile.get(file) as ParsedReplayFile), tankopedia)
+    lastDataset = { dataset, tankopedia }
+    commitReadyResult(markDraws(preview, dataset) as unknown as ReplayResult)
+  }
+
+  /** 与 changeSelection 在同一 tick：观察者看不到 files 与结果错位的状态。 */
+  function realignResult(): void {
+    const parsed = files.value.map(file => toRaw(file)).filter(file => parsedByFile.has(file))
+    try {
+      if (!lastTankopedia) throw new NoValidReplaysError()
+      commitResult(parsed, lastTankopedia)
+    } catch {
+      // 剩下的已解析文件都没有有效场次：没有可保留的结果，转为首批加载。
+      resp.value = null
+    }
   }
 
   async function run(keepResult: boolean): Promise<AnalyzeResult> {
@@ -141,9 +165,7 @@ export function useLocalReplayAnalysis(session: ReplaySession, { t }: I18nContex
         if (stale()) return { completed: false, reason: 'SUPERSEDED' }
         parsed.forEach((file, index) => settle(index, file.result ? 'success' : 'failure', file.result ? undefined : 'PARSE_FAILED'))
       }
-      const { dataset, preview } = analyzeReplayBatch(selection.map(file => parsedByFile.get(file) as ParsedReplayFile), tankopedia)
-      lastDataset = { dataset, tankopedia }
-      commitReadyResult(markDraws(preview, dataset) as unknown as ReplayResult)
+      commitResult(selection, tankopedia)
       analysis.value = { phase: 'ready', done: selection.length, total: selection.length, failure: null }
       return { completed: true }
     } catch (e) {
@@ -152,7 +174,8 @@ export function useLocalReplayAnalysis(session: ReplaySession, { t }: I18nContex
       operations.forEach((_, index) => settle(index, 'failure', failure === 'ENGINE_UNAVAILABLE' ? 'RESOURCE_UNAVAILABLE' : 'UNKNOWN'))
       if (failure === 'UNKNOWN') console.error('[replay-local] analysis failed', e)
       if (keepResult && failure === 'ENGINE_UNAVAILABLE') {
-        // 已有场次仍然可用：只有新文件没进来。
+        // 已有场次仍然可用：退回没进来的新文件，files 与结果继续对齐。
+        session.changeSelection(selection.filter(file => parsedByFile.has(file)))
         error.value = t('replay.analysis.engine_unavailable')
         analysis.value = { phase: 'ready', done: 0, total: 0, failure: null }
         return { completed: false, reason: 'ENGINE_UNAVAILABLE' }

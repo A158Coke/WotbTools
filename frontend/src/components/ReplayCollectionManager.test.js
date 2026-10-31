@@ -2,7 +2,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { ref } from 'vue'
+import { KeepAlive, defineComponent, h, ref } from 'vue'
 import ReplayCollectionManager from './ReplayCollectionManager.vue'
 import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 
@@ -97,6 +97,30 @@ describe('ReplayCollectionManager', () => {
     const wrapper = await open({ progress: { done: 1, total: 3 } })
     expect(wrapper.get('[data-testid="collection-progress"]').text()).toBe('upload.adding_progress:1,3')
     expect(wrapper.get('[data-testid="collection-trigger"]').attributes('aria-busy')).toBe('true')
+    wrapper.unmount()
+  })
+
+  it('closes when KeepAlive deactivates the workspace, because the overlay lives in a portal', async () => {
+    breakpoint.compact = ref(false)
+    const show = ref(true)
+    const Host = defineComponent({
+      setup: () => () => h(KeepAlive, null, () => (show.value
+        ? h(ReplayCollectionManager, { rows: [row(0)] })
+        : h('div'))),
+    })
+    const wrapper = mount(Host, {
+      attachTo: document.body,
+      global: { provide: { [DIALOG_INLINE_KEY]: true }, mocks: { $t: key => key } },
+    })
+    await wrapper.get('[data-testid="collection-trigger"]').trigger('click')
+    await flushPromises()
+    expect(document.querySelector('[data-testid="replay-collection"]')).not.toBeNull()
+    show.value = false
+    await flushPromises()
+    expect(document.querySelector('[data-testid="replay-collection"]')).toBeNull()
+    show.value = true
+    await flushPromises()
+    expect(document.querySelector('[data-testid="replay-collection"]')).toBeNull()
     wrapper.unmount()
   })
 

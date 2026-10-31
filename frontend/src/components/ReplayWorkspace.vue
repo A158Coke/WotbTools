@@ -468,7 +468,11 @@ watch(wantsImmersive, (on) => {
   if (on) nextTick(() => workspaceContentEl.value?.scrollIntoView?.({ block: 'start' }))
 }, { immediate: true })
 onActivated(() => { pageActive.value = true })
-onDeactivated(() => { pageActive.value = false })
+onDeactivated(() => {
+  pageActive.value = false
+  // 确认框 portal 到 body，KeepAlive 停用不会带走它。
+  workspace.replay.cancelRemove()
+})
 
 function registerOnboarding() { onboarding?.registerWorkspace(onboardingWorkspace) }
 onMounted(registerOnboarding)
@@ -530,6 +534,7 @@ watch(() => props.initialCapability, (val) => {
 
     <div v-if="initialLoading || openFailed || partialFailureVisible || error" class="workspace-source">
       <ReplayProcessingPanel
+        v-if="initialLoading || openFailed"
         :analysis="analysis"
         :file-count="files.length"
         @cancel="onCancelLoading"

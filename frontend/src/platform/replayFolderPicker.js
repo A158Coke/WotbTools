@@ -1,6 +1,6 @@
 import { callBridge, getCapabilities, getNativeBridgeVersion, isNativeBridgeCompatible } from '../composables/usePlatformBridge.js'
 import { NATIVE_REPLAY_FOLDER_CAPABILITY, NATIVE_REPLAY_FOLDER_RESOURCE_URL } from './nativeBridgeContract.js'
-import { MAX_REPLAY_FILE_BYTES, MAX_REPLAY_TOTAL_BYTES } from '../utils/replayUpload.js'
+import { MAX_REPLAY_FILE_BYTES, MAX_REPLAY_TOTAL_BYTES, isReplayFileName } from '../utils/replayUpload.js'
 
 // Includes time in the system chooser; reading itself is abortable on component destruction.
 const FOLDER_PICKER_TIMEOUT_MS = 10 * 60 * 1000
@@ -86,11 +86,13 @@ export async function pickNativeReplayFolder({ signal, prepareFiles }) {
       throw new Error('Invalid native folder metadata')
     }
     const metadata = result.files.map(file => ({ ...file, webkitRelativePath: file.relativePath }))
-    const candidates = prepareFiles(metadata)
-    if (!candidates.length) return null
-    if (new Set(candidates.map(file => file.relativePath)).size !== candidates.length) {
+    // 先于 prepareFiles：它按路径 + 大小 + 时间去重，两个不同 fileId 会被合成一个而不报错。
+    const replayPaths = metadata.filter(file => isReplayFileName(file.name)).map(file => file.relativePath)
+    if (new Set(replayPaths).size !== replayPaths.length) {
       throw Object.assign(new Error('Ambiguous native folder paths'), { code: 'ambiguous-paths' })
     }
+    const candidates = prepareFiles(metadata)
+    if (!candidates.length) return null
     const readController = new AbortController()
     onAbort = () => readController.abort()
     signal?.addEventListener('abort', onAbort, { once: true })
