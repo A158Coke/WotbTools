@@ -2075,26 +2075,42 @@ describe('ReplayPage League 算法说明入口', () => {
 // 「sortKey='' → 默认行序」由 BattleTable 自身 sorted 语义保证（其单测覆盖）。
 
 describe('ReplayPage battleSorts 批次边界', () => {
+  // state.init 在首次 useReplay 后置空——每条用例前重建（与本文件其他 describe 同款）
+  beforeEach(() => {
+    state.clear()
+    state.init = { activeTab: 'aggregate', resp: makeResp(), error: '', loading: false, locale: 'en', files: [] }
+  })
+
   const sortAttr = (wrapper) => wrapper.get('.battle-table-stub').attributes('data-sort-key')
 
-  it('同批次切场保留排序；换文件批次（selectionRevision++）后新表回默认（空排序）', async () => {
-    state.init.resp = makeResp()
+  /** 挂载并把 battle 0 排到 damage_dealt（写入父组件状态 → 子表 prop 同步）。 */
+  async function mountSortedAtBattle0() {
     const wrapper = mountPage()
     await flushPromises()
     state.setActiveTab('b0')
     await flushPromises()
     expect(sortAttr(wrapper)).toBe('')
-    // 排序写入父组件状态 → 子表 prop 同步
     wrapper.vm.battleSorts[0] = { key: 'damage_dealt', reverse: false }
     await flushPromises()
     expect(sortAttr(wrapper)).toBe('damage_dealt')
-    // 同批次切场再回来：排序保留（v-if 卸载不丢状态——状态在父组件）
+    return wrapper
+  }
+
+  // 回归 1（同批次）：v-if 卸载不丢用户排序——状态在父组件，切场/汇总往返保留
+  it('同批次：battle 0 排序 → battle 1 → 回 battle 0，排序仍保留', async () => {
+    const wrapper = await mountSortedAtBattle0()
     state.setActiveTab('b1')
     await flushPromises()
     state.setActiveTab('b0')
     await flushPromises()
     expect(sortAttr(wrapper)).toBe('damage_dealt')
-    // 换文件批次（updateFiles → selectionRevision++）：排序清空，新表回默认
+    wrapper.unmount()
+  })
+
+  // 回归 2（跨批次）：replaceSelection（updateFiles → selectionRevision++）必须清空，
+  // 新批次 battle 0 回默认排序，不继承旧批次同 index 的排序
+  it('跨批次：旧批次排序 → replaceSelection → 新批次 battle 0 恢复默认排序', async () => {
+    const wrapper = await mountSortedAtBattle0()
     state.setResp(makeResp())
     state.replay.updateFiles(['next.wotbreplay'])
     await flushPromises()
