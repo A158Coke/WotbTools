@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref, useId, watch } from 'vue'
+import { computed, inject, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, onUnmounted, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ChevronDown, ChevronUp, CircleHelp, Files, Play } from 'lucide-vue-next'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
@@ -298,32 +298,73 @@ watch(activeCapability, (cap) => {
 
 /** 回放类视图（2D/3D/射击/AI）：打开时把视窗放到屏幕中间。 */
 const REPLAY_CAPABILITIES = new Set(['playback', '3d', 'shots', 'ai'])
+/** 能力 → 视窗容器（`.capability-pane` 的稳定 testid；测量目标是 pane 本身，不含工具栏）。 */
+const PANE_TEST_IDS = { playback: 'ws-playback', '3d': 'ws-3d', shots: 'ws-shots', ai: 'ws-ai' }
 // 回放内容容器（视图切换居中与手机横屏沉浸态共用；声明须早于下方 immediate watcher）
 const workspaceContentEl = ref(null)
+
+/** 当前能力的视窗容器（懒加载面板挂载前它是空 div，高度为 0）。 */
+function activePaneEl() {
+  const id = PANE_TEST_IDS[activeCapability.value]
+  if (!id) return null
+  const root = workspaceContentEl.value?.parentElement ?? (typeof document !== 'undefined' ? document : null)
+  return root?.querySelector?.(`[data-testid="${id}"]`) ?? null
+}
 
 /**
  * 打开 2D/3D 等回放视窗时**自动垂直居中**（用户 2026-10-31 要求：此前视窗偏上，
  * 每次都要手动往下滚一段）。规则：
- * - 内容比视口矮 → `block: 'center'`（这正是"偏上、要往下滚"的场景）；
- * - 内容比视口高 → `block: 'start'`（居中的话会裁掉顶部，继续往下滚才是浏览剩余内容的自然动作）。
+ * - 视窗比视口矮 → `block: 'center'`（这正是"偏上、要往下滚"的场景）；
+ * - 视窗比视口高 → `block: 'start'`（居中的话会裁掉顶部，继续往下滚才是浏览剩余内容的自然动作）。
  * 只在切换视图/首次进入时触发一次（边沿），不监听滚动、不覆盖用户后续滚动位置。
  * 手机横屏沉浸态另有 `scrollIntoView({block:'start'})`（见 wantsImmersive），两者目的不同。
  */
 function centerReplayPane() {
-  const el = workspaceContentEl.value
-  if (!el || typeof el.scrollIntoView !== 'function') return
-  const rect = el.getBoundingClientRect()
+  const pane = activePaneEl()
+  if (!pane || typeof pane.scrollIntoView !== 'function') return
+  const rect = pane.getBoundingClientRect()
   const viewportH = typeof window !== 'undefined' && Number.isFinite(window.innerHeight) ? window.innerHeight : 0
   // 高度不可测量（隐藏 / jsdom 无布局）时按居中处理：scrollIntoView 自身会安全退化为最近可滚位置
   const tallerThanViewport = viewportH > 0 && rect.height > viewportH
-  el.scrollIntoView({ block: tallerThanViewport ? 'start' : 'center' })
+  pane.scrollIntoView({ block: tallerThanViewport ? 'start' : 'center' })
 }
 
-// 视图切换（含首次进入非 data 视图）后自动居中；等两帧让懒挂载的回放视窗先完成布局。
+// 视图切换的正确时序：面板是**懒加载 chunk**（`defineLazyModule` 的动态 import），
+// nextTick 只等 Vue 更新队列、等不到 chunk —— 首次进入时 pane 还是空 div（高度 0），
+// 此时测高/滚动等于白做，且 activeCapability 不变不会再触发（Codex review P2）。
+// 因此以「视窗容器真正有高度」为就绪信号（ResizeObserver），并用激活令牌在切换/卸载时
+// 撤销过期请求，保证每次进入只定位一次。
+let centerToken = 0
+let centerObserver = null
+function cancelPendingCenter() {
+  centerToken += 1
+  centerObserver?.disconnect?.()
+  centerObserver = null
+}
+function scheduleCenterWhenLaidOut() {
+  const token = centerToken
+  const tryOnce = () => {
+    if (token !== centerToken) return true          // 已切换/离开：撤销
+    const pane = activePaneEl()
+    if (!pane || !(pane.getBoundingClientRect().height > 0)) return false
+    centerReplayPane()
+    return true
+  }
+  if (tryOnce()) return
+  const pane = activePaneEl()
+  if (!pane || typeof ResizeObserver === 'undefined') return
+  centerObserver = new ResizeObserver(() => {
+    if (tryOnce()) { centerObserver?.disconnect?.(); centerObserver = null }
+  })
+  centerObserver.observe(pane)
+}
+
 watch(activeCapability, (cap) => {
+  cancelPendingCenter()
   if (!REPLAY_CAPABILITIES.has(cap)) return
-  nextTick(() => { nextTick(centerReplayPane) })
+  nextTick(scheduleCenterWhenLaidOut)
 }, { immediate: true })
+onBeforeUnmount(cancelPendingCenter)
 
 function onFileRemoveRequest(f) {
   workspace.replay.askRemoveFile(f)

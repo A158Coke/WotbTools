@@ -1214,42 +1214,99 @@ describe('ReplayWorkspace', () => {
 describe('ReplayWorkspace 回放视窗自动居中', () => {
   let originalScrollIntoView
   let originalInnerHeight
+  let originalRO
   let scrollCalls
+  let roCallbacks
+  let paneHeights
+
+  /** 记录被测 pane 的高度；测试用 setPaneHeight() 模拟"懒加载 chunk 已挂载并可布局"。 */
+  const paneHeight = (el) => paneHeights.get(el) ?? 0
 
   beforeEach(() => {
     scrollCalls = []
+    roCallbacks = []
+    paneHeights = new Map()
     originalScrollIntoView = HTMLElement.prototype.scrollIntoView
     originalInnerHeight = window.innerHeight
-    HTMLElement.prototype.scrollIntoView = function (opts) {
-      scrollCalls.push({ el: this, opts })
+    HTMLElement.prototype.scrollIntoView = function (opts) { scrollCalls.push({ el: this, opts }) }
+    // 真实布局（getBoundingClientRect）在 jsdom 恒为 0；按 testid 注入高度模拟面板挂载
+    const originalRect = HTMLElement.prototype.getBoundingClientRect
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      const base = originalRect.call(this)
+      if (this.dataset?.testid?.startsWith('ws-')) {
+        const h = paneHeight(this)
+        return { ...base, height: h, top: 0, bottom: h, width: 800, left: 0, right: 800, x: 0, y: 0 }
+      }
+      return base
+    })
+    originalRO = globalThis.ResizeObserver
+    globalThis.ResizeObserver = class {
+      constructor(cb) { this.cb = cb; roCallbacks.push(this) }
+      observe(el) { this.el = el }
+      disconnect() { this.el = null }
     }
     withBattles(1)
   })
   afterEach(() => {
     HTMLElement.prototype.scrollIntoView = originalScrollIntoView
+    vi.restoreAllMocks()
     Object.defineProperty(window, 'innerHeight', { value: originalInnerHeight, configurable: true })
+    globalThis.ResizeObserver = originalRO
   })
 
   const lastBlock = () => scrollCalls.at(-1)?.opts?.block
+  const setPaneHeight = (wrapper, h) => {
+    const pane = wrapper.get('[data-testid="ws-playback"]').element
+    paneHeights.set(pane, h)
+    // 面板挂载 → ResizeObserver 回调（真实浏览器在布局完成时就是这样触发的）
+    roCallbacks.forEach((ro) => ro.el === pane && ro.cb([]))
+    return pane
+  }
 
-  it('切到 2D/3D：内容矮于视口 → 垂直居中；高于视口 → 对齐顶部', async () => {
+  it('懒加载面板挂载前不滚动；挂载后按 pane 高度居中/对齐顶端', async () => {
     const wrapper = mountWorkspace('data')
     await flushPromises()
-    const content = wrapper.get('.workspace-content').element
     Object.defineProperty(window, 'innerHeight', { value: 900, configurable: true })
+    const before = scrollCalls.length
 
-    // 内容比视口矮（默认 jsdom 布局 0 高度也走居中分支）
-    content.getBoundingClientRect = () => ({ height: 400, top: 100, bottom: 500, left: 0, right: 0, width: 800, x: 0, y: 100 })
+    // 切到 2D：此时懒加载 chunk 未完成 → pane 高度 0 → 不得滚动（不能按空容器测高）
     await switchTo(wrapper, 'playback')
-    expect(lastBlock()).toBe('center')
+    expect(scrollCalls.length).toBe(before)
 
-    await switchTo(wrapper, '3d')
+    // 面板就绪（高度 400 < 视口 900）→ 居中一次（测的是 pane 本身，不是整个 content）
+    setPaneHeight(wrapper, 400)
     expect(lastBlock()).toBe('center')
+    expect(scrollCalls.at(-1).el.dataset.testid).toBe('ws-playback')
 
-    // 内容高于视口：居中的话会裁掉顶部，改为对齐顶端
-    content.getBoundingClientRect = () => ({ height: 1600, top: 0, bottom: 1600, left: 0, right: 0, width: 800, x: 0, y: 0 })
+    // 同一次激活内不再重复定位（不跟用户后来的滚动/布局变化抢）
+    const settled = scrollCalls.length
+    setPaneHeight(wrapper, 1600)
+    expect(scrollCalls.length).toBe(settled)
+    wrapper.unmount()
+  })
+
+  it('pane 高于视口 → 对齐顶端（不居中裁掉顶部）', async () => {
+    const wrapper = mountWorkspace('data')
+    await flushPromises()
+    Object.defineProperty(window, 'innerHeight', { value: 900, configurable: true })
     await switchTo(wrapper, 'playback')
+    setPaneHeight(wrapper, 1600)
     expect(lastBlock()).toBe('start')
+    wrapper.unmount()
+  })
+
+  it('切走时撤销未完成的等待（迟到的挂载不再触发滚动）', async () => {
+    const wrapper = mountWorkspace('data')
+    await flushPromises()
+    Object.defineProperty(window, 'innerHeight', { value: 900, configurable: true })
+    await switchTo(wrapper, '3d')
+    const before = scrollCalls.length
+    // 还没挂载就切到数据视图
+    await switchTo(wrapper, 'data')
+    const pane = wrapper.get('[data-testid="ws-3d"]').element
+    paneHeights.set(pane, 400)
+    roCallbacks.forEach((ro) => ro.el === pane && ro.cb([]))
+    expect(scrollCalls.length).toBe(before)
     wrapper.unmount()
   })
 
