@@ -406,8 +406,9 @@ try {
         await tabGeometry(page, scenario.productionHome ? 10 : 9)
         if (scenario.productionHome && scenario.width === 320) {
           const y = await page.evaluate('document.querySelector("[data-testid=app-tab-bar]").getBoundingClientRect().top + 24')
-          await chrome.client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 140, y, id: 1 }] }, sessionId)
-          for (const x of [160, 190, 230]) await chrome.client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y, id: 1 }] }, sessionId)
+          await chrome.client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 40, y, id: 1 }] }, sessionId)
+          // 拖动距离要覆盖整段可滚动宽度，不能靠惯性补足：Tab 增多后 90px 不够，时过时不过。
+          for (const x of [90, 160, 230, 300]) await chrome.client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y, id: 1 }] }, sessionId)
           await chrome.client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }, sessionId)
           await page.waitForValue('document.querySelector("[data-testid=app-tab-bar]").scrollLeft', value => value <= 0.5)
         }

@@ -5,9 +5,10 @@ import type { Battle, ColumnDef, ReplayResult, SourceId } from '../types/replay.
 import type { DataViewMode, ReplayAnalysis, ReplayCapability } from '../types/workspace.js'
 import { toReplayCapability } from '../types/workspace.js'
 
-export type PendingRemove =
-  | { type: 'battle'; battle: Battle; label: string }
-  | { type: 'file'; file: File; label: string }
+export interface PendingRemove {
+  file: File
+  label: string
+}
 
 /**
  * Replay 的唯一 session state owner。
@@ -31,7 +32,22 @@ export function useReplaySession(initialCapability: ReplayCapability = 'data') {
   const analysis = ref<ReplayAnalysis>({ phase: 'idle', done: 0, total: 0, failure: null })
 
   const activeWorkspaceTab = ref<ReplayCapability>(toReplayCapability(initialCapability))
-  const currentBattleId = ref<SourceId | null>(null)
+  /**
+   * 当前场次的身份是 File，sourceId 只是它在 files 里的位置：集合增删会移动位置，但不能换场。
+   * 这里只有一份状态：currentBattleId 由它派生，写入时再解析回 File。
+   */
+  const currentBattleFile = shallowRef<File | null>(null)
+  const currentBattleId = computed<SourceId | null>({
+    get() {
+      const index = currentBattleFile.value ? files.value.indexOf(currentBattleFile.value) : -1
+      return index >= 0 ? makeSourceId(`r${index}`) : null
+    },
+    set(id) {
+      const match = /^r(\d+)$/.exec(id ?? '')
+      const file = match ? files.value[Number.parseInt(match[1], 10)] : null
+      currentBattleFile.value = file ? toRaw(file) : null
+    },
+  })
   const dataViewMode = ref<DataViewMode>('SUMMARY')
 
   const playerCols = computed<ColumnDef[]>(() => resp.value?.playerColumns || [])
@@ -85,6 +101,32 @@ export function useReplaySession(initialCapability: ReplayCapability = 'data') {
     dataViewMode.value = 'SUMMARY'
   }
 
+  /** 当前文件被移出时的落点：同位置的下一场，末位取前一场。 */
+  function fallbackBattleFile(current: File, next: Set<File>): File | null {
+    const battleFiles = parsedBattles.value
+      .map(b => files.value[Number.parseInt(String(b?.sourceId).slice(1), 10)])
+      .filter((file): file is File => !!file)
+      .map(file => toRaw(file))
+    const index = battleFiles.indexOf(current)
+    return battleFiles.slice(index + 1).find(file => next.has(file))
+      ?? battleFiles.slice(0, Math.max(index, 0)).reverse().find(file => next.has(file))
+      ?? null
+  }
+
+  /**
+   * 集合增删（有结果时）：保留结果与当前场次，只换 files。落点先于 files 写入，
+   * currentTargetFile 的 sync 观察者因此只会看到一次真实换场，看不到中间态。
+   */
+  function changeSelection(next: File[]) {
+    const current = currentBattleFile.value
+    const rawNext = next.map(file => toRaw(file))
+    const kept = new Set(rawNext)
+    if (current && !kept.has(current)) currentBattleFile.value = fallbackBattleFile(current, kept)
+    demoFile.value = null
+    files.value = rawNext
+    selectionRevision.value++
+  }
+
   /** Only the verified loader can supply this identity. Ordinary selection always revokes it. */
   function replaceDemoSelection(file: File) {
     if (!isOfficialDemo(file)) throw new Error('Unverified official replay')
@@ -122,7 +164,6 @@ export function useReplaySession(initialCapability: ReplayCapability = 'data') {
       return
     }
     dataViewMode.value = 'SUMMARY'
-    currentBattleId.value = parsedBattles.value[0]?.sourceId ?? null
   }
 
   // Result commit is the sole place that normalizes selected battle/view state.
@@ -133,6 +174,8 @@ export function useReplaySession(initialCapability: ReplayCapability = 'data') {
       return
     }
     const battles = Array.isArray(result.battles) ? result.battles : []
+    // 集合增删后的新结果：当前场次还在就原地不动，连同数据视图一起保留。
+    if (currentBattleId.value && battles.some(b => b?.sourceId === currentBattleId.value)) return
     currentBattleId.value = battles[0]?.sourceId ?? null
     dataViewMode.value = battles.length === 1 ? 'SINGLE' : 'SUMMARY'
   }, { immediate: true })
@@ -144,7 +187,7 @@ export function useReplaySession(initialCapability: ReplayCapability = 'data') {
     replayBatch, parsedBattles, singleReplay, currentBattleId, dataViewMode,
     activeWorkspaceTab, currentBattle, currentBattleIndex,
     currentTargetBattleId, currentSourceId, currentTargetFile,
-    replaceSelection, replaceDemoSelection, commitReadyResult,
+    replaceSelection, changeSelection, replaceDemoSelection, commitReadyResult,
     setWorkspaceTab, selectBattle, setDataViewMode,
   }
 }

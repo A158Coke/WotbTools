@@ -62,6 +62,15 @@ async function typeQuery(value) {
 }
 
 describe('BattlePicker', () => {
+  it('只有一场时显示同样的上下文，不给打不开的下拉', () => {
+    mountPicker({ options: options(1), modelValue: 'r0', 'data-testid': 'static-picker' })
+    const context = document.querySelector('[data-testid="static-picker"]')
+    expect(context.textContent).toContain('Battle 1 · Map 0')
+    expect(context.getAttribute('role')).toBe('group')
+    expect(context.querySelector('button')).toBeNull()
+    expect(document.querySelector('.picker-trigger')).toBeNull()
+  })
+
   it('触发按钮显示当前场次；打开后标记选中项', async () => {
     mountPicker({ options: options(3), modelValue: 'r1' })
     expect(triggerButton().text()).toContain('Battle 2 · Map 1')

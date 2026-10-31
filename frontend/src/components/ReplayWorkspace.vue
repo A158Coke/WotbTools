@@ -1,7 +1,7 @@
 <script setup>
-import { computed, inject, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, onUnmounted, ref, useId, watch } from 'vue'
+import { computed, inject, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronDown, ChevronUp, CircleHelp, Files, Play } from 'lucide-vue-next'
+import { CircleHelp, Play } from 'lucide-vue-next'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
@@ -23,12 +23,13 @@ import FileDrop from './FileDrop.vue'
 import ReplayProcessingPanel from './ReplayProcessingPanel.vue'
 import RemoveConfirmModal from './RemoveConfirmModal.vue'
 import ReplayCapabilityTabs from './ReplayCapabilityTabs.vue'
+import ReplayCollectionManager from './ReplayCollectionManager.vue'
 import ReplayCapabilityAuthGate from './ReplayCapabilityAuthGate.vue'
 import AppButton from './AppButton.vue'
 import Banner from './Banner.vue'
 import PageHeader from './PageHeader.vue'
 import BattlePicker from './BattlePicker.vue'
-import { battlePickerOptions, buildSeriesOverview } from '../utils/replaySeries.js'
+import { battlePickerOptions, buildSeriesOverview, replayCollectionRows } from '../utils/replaySeries.js'
 
 /**
  * 审计 PF-02：能力面板的代码块都不进主包（2D 回放带约 2.5MB 地图语义数据；3D 带 Three.js；
@@ -74,8 +75,8 @@ const aiBlocked = computed(() => !aiAvailability.value.available ? t(aiAvailabil
 const workspace = useReplayWorkspace(props.initialCapability || 'data')
 
 const {
-  files, loading, error, resp, updateFiles, updateDemoFile, isDemoSelection, selectionRevision,
-  analysis, analyze, cancelAnalysis, dismissAnalysis,
+  files, loading, error, resp, updateFiles, changeFiles, updateDemoFile, isDemoSelection, selectionRevision,
+  analysis, analyze, cancelAnalysis,
 } = workspace.replay
 
 const demoLoading = ref(false)
@@ -145,8 +146,7 @@ watch(selectionRevision, () => {
 /**
  * Android 外部 replay 完整自动解析契约：
  * pending File 导入 → 替换当前 selection → 本机分析一次 → data tab 展示结果。
- * 仅在 Android external intent 触发（isAndroidApp()); 普通 Web/FileDrop 手动选文件不经过此回调，
- * 保持现有手动 UX。绝不自动启动 AI Review。
+ * 仅在 Android external intent 触发（isAndroidApp()）。绝不自动启动 AI Review。
  *
  * 返回值是 Native pending 的 ACK 唯一依据：本机分析完成（无论有没有有效场次）才返回 true——
  * 重新导入同一份不会有不同结果；回放引擎装载失败（可重试）不 ACK，保留 pending。
@@ -235,22 +235,34 @@ function onBattleSelect(sourceId) {
 /** 单场能力的目标文件：单文件直接用；多文件先批次分析，再选有效场次对应的原始 File */
 const targetFile = computed(() => workspace.currentTargetFile.value)
 /**
- * 批次目标仍在准备：多文件未解析批次切到回放能力时 `ensureTargetBattle()` 异步分析，
- * 期间 `currentTargetFile` 为空。这不是"没有选择"的终态——居中必须等它落定，
- * 否则会在空态提示上用完唯一一次定位（Codex review P2）。
+ * 工作台四态由 session 派生，不另存状态：
+ * Empty（没有文件）/ Loading（首批加载中）/ Ready（有结果）/ Failure（没有可提交的批次结果）。
+ * Loading 与 Failure 时隐藏内容区但不卸载面板；批次里部分失败仍是 Ready。
  */
-const targetPreparing = computed(() => !targetFile.value && files.value.length > 0
-  && (analysis.value.phase === 'parsing' || analysis.value.phase === 'queued'))
+const initialLoading = computed(() => analysis.value.phase === 'parsing' && !resp.value)
+const openFailed = computed(() => analysis.value.phase === 'failed' && !resp.value)
+const workspaceReady = computed(() => !!resp.value && files.value.length > 0)
+const contentVisible = computed(() => !files.value.length || !!resp.value)
+const demoEntryVisible = computed(() => !files.value.length || onboarding?.guideActive?.value === true)
 
-// Only presentation is collapsible; the uploader and selection keep their existing owner.
-const fileControlsOpen = ref(false)
 const sourcePicker = ref(null)
-const sourceId = useId()
-const canCollapseSource = computed(() => !!resp.value && files.value.length > 0 && activeCapability.value !== 'data')
-const sourceCollapsed = computed(() => canCollapseSource.value && !fileControlsOpen.value && !loading.value && !error.value)
+const collectionManager = ref(null)
+/** 回放列表标「当前」：只在有当前场次语境时。赛后数据汇总看的是整批，没有当前场次。 */
+const collectionRows = computed(() => replayCollectionRows(files.value, battleOptions.value, resp.value, {
+  currentSourceId: activeCapability.value === 'data' && workspace.dataViewMode.value !== 'SINGLE' ? null : currentBattleId.value,
+  parsing: analysis.value.phase === 'parsing',
+}))
+const collectionProgress = computed(() => (analysis.value.phase === 'parsing' && resp.value
+  ? { done: analysis.value.done, total: analysis.value.total } : null))
+
+/** 批次部分失败：其余回放照常可用，提醒在每个能力都可见。确认只对当前这份结果有效。 */
+const failedReplayCount = computed(() => resp.value?.failures?.length || 0)
+const acknowledgedResult = shallowRef(null)
+const partialFailureVisible = computed(() => failedReplayCount.value > 0 && acknowledgedResult.value !== resp.value)
+
 const showBattlePicker = computed(() => {
   const cap = activeCapability.value
-  if (cap === 'data' || battleOptions.value.length < 2) return false
+  if (cap === 'data' || !battleOptions.value.length) return false
   if (cap === 'playback') return !playbackLoadError.value
   if (cap === '3d') return canUseDemoCapabilities.value && threeAvailability.value.available && !threeLoadError.value
   if (cap === 'shots') return canUseDemoCapabilities.value && !shotsLoadError.value
@@ -277,31 +289,6 @@ async function setCapability(key) {
   if (onlineFeatures[key]) requireFeature(onlineFeatures[key])
   if (navigate) navigate(viewFor(key))
 }
-
-async function onPreview() {
-  if (activeCapability.value === 'data' || files.value.length === 1) await analyze()
-  else await ensureTargetBattle({ allowRetry: true })
-}
-
-/** Prepare a single-battle capability using finalized, original source identities. */
-async function ensureTargetBattle({ allowRetry = false } = {}) {
-  if (!files.value.length || targetFile.value) return
-  const revision = selectionRevision.value
-  if (!resp.value) {
-    // Capability navigation must preserve cancellation/failure; only Preview authorizes retry.
-    if (analysis.value.phase === 'parsing' || (!allowRetry && analysis.value.phase !== 'idle')) return
-    const result = await analyze()
-    if (!result?.completed) return
-  }
-  if (disposed || selectionRevision.value !== revision) return
-  const firstBattle = resp.value?.battles?.[0]
-  if (!targetFile.value && firstBattle) workspace.selectBattle(firstBattle.sourceId)
-}
-
-// FileDrop keeps manual preview; entering another capability reuses/prepares the selection.
-watch(activeCapability, (cap) => {
-  if (cap !== 'data') void ensureTargetBattle()
-}, { immediate: true })
 
 /** 回放类视图（2D/3D/射击/AI）：打开时把视窗放到屏幕中间。 */
 const REPLAY_CAPABILITIES = new Set(['playback', '3d', 'shots', 'ai'])
@@ -353,7 +340,7 @@ function cancelPendingCenter() {
 }
 /** 当前 pane 已就绪：真实内容（或终态外壳）已布局 —— 标记在位且有高度。 */
 function paneIsReady(pane) {
-  if (targetPreparing.value) return false        // 批次目标在途：等它落定再定位
+  if (initialLoading.value) return false         // 首批在途：等内容区出现再定位
   if (!pane || !pane.querySelector(PANE_READY_SELECTOR)) return false
   return pane.getBoundingClientRect().height > 0
 }
@@ -398,10 +385,6 @@ onBeforeUnmount(() => {
   centerMutationObserver = null
 })
 
-function onFileRemoveRequest(f) {
-  workspace.replay.askRemoveFile(f)
-}
-
 function confirmRemove() {
   workspace.replay.confirmRemove()
 }
@@ -410,10 +393,41 @@ function clearSelection() {
   updateFiles([])
 }
 
-/** 上传条是唯一的清空入口（带确认）；清空时同时复位所有单场能力的引用。 */
+/** 选择即加载：这里是普通选择的唯一入口，Demo 与 Android 各自负责自己的那一次加载。 */
 function onFilesUpdate(next) {
-  if (!next.length) clearSelection()
-  else updateFiles(next)
+  if (!next.length) {
+    clearSelection()
+  } else if (files.value.length) {
+    void changeFiles(next)
+  } else {
+    updateFiles(next)
+    void analyze()
+  }
+}
+
+/** 没有手动解析入口后，「已取消」无处可去：取消就是不打开这批回放。 */
+function onCancelLoading() {
+  cancelAnalysis()
+  clearSelection()
+}
+
+async function onRemoveFile(file) {
+  if (resp.value) {
+    await nextTick()
+    workspace.replay.askRemoveFile(file)
+    return
+  }
+  onFilesUpdate(files.value.filter(item => item !== file))
+}
+
+async function openOtherReplay() {
+  clearSelection()
+  await nextTick()
+  sourcePicker.value?.chooseFiles()
+}
+
+function onWorkspaceDrop(event) {
+  sourcePicker.value?.addDropped(event.dataTransfer?.files)
 }
 
 /** 挂载后消费 Android pending replay（本机分析，不依赖登录状态）。 */
@@ -427,7 +441,6 @@ const onboardingWorkspace = {
   setCapability,
   chooseOwnReplay: async () => {
     if (isDemoSelection.value) clearSelection()
-    fileControlsOpen.value = true
     await setCapability('data')
     await nextTick()
     sourcePicker.value?.chooseFiles()
@@ -448,14 +461,18 @@ const pageActive = ref(true)
 const replayPaneShown = computed(() =>
   (activeCapability.value === 'playback' && playbackMounted.value) || (activeCapability.value === '3d' && threeMounted.value))
 const wantsImmersive = computed(() =>
-  pageActive.value && isPhone.value && !isPortrait.value && coarse.value && canCollapseSource.value && replayPaneShown.value)
+  pageActive.value && isPhone.value && !isPortrait.value && coarse.value && workspaceReady.value && replayPaneShown.value)
 watch(wantsImmersive, (on) => {
   shellChrome?.request(shellOwner, on)
   // 进入沉浸态时把回放区对齐到视口顶端（仅边沿触发一次，不监听滚动）
   if (on) nextTick(() => workspaceContentEl.value?.scrollIntoView?.({ block: 'start' }))
 }, { immediate: true })
 onActivated(() => { pageActive.value = true })
-onDeactivated(() => { pageActive.value = false })
+onDeactivated(() => {
+  pageActive.value = false
+  // 确认框 portal 到 body，KeepAlive 停用不会带走它。
+  workspace.replay.cancelRemove()
+})
 
 function registerOnboarding() { onboarding?.registerWorkspace(onboardingWorkspace) }
 onMounted(registerOnboarding)
@@ -477,17 +494,70 @@ watch(() => props.initialCapability, (val) => {
 </script>
 
 <template>
-  <div class="layout-data-workspace replay-workspace">
+  <div class="layout-data-workspace replay-workspace" @dragover.prevent @drop.prevent="onWorkspaceDrop">
     <PageHeader :title="$t('workspace.title')">
       <template #actions>
-        <ReplayCapabilityTabs data-tour="workspace-capabilities" :options="capabilityOptions" :active-capability="activeCapability" @select="setCapability" />
+        <ReplayCapabilityTabs class="workspace-capabilities" data-tour="workspace-capabilities" :options="capabilityOptions" :active-capability="activeCapability" @select="setCapability" />
         <AppButton v-if="onboarding" variant="ghost" size="sm" data-tour="workspace-help" @click="onboarding.openDirectory()">
           <CircleHelp :size="16" aria-hidden="true" />{{ $t('onboarding.help') }}
         </AppButton>
+        <ReplayCollectionManager
+          v-if="files.length"
+          ref="collectionManager"
+          data-tour="workspace-file-controls"
+          :rows="collectionRows"
+          :progress="collectionProgress"
+          :disabled="initialLoading"
+          :folder-available="sourcePicker?.folderAvailable ?? false"
+          :demo-disabled="demoLoading || loading"
+          @add-files="sourcePicker?.chooseFiles()"
+          @add-folder="sourcePicker?.chooseFolder()"
+          @open-demo="onDemoClick"
+          @remove="onRemoveFile"
+          @clear="clearSelection"
+        />
       </template>
     </PageHeader>
 
-    <div v-if="canCollapseSource || showBattlePicker" class="workspace-sessionbar">
+    <div v-if="demoEntryVisible || demoError" class="workspace-source">
+      <div v-if="demoEntryVisible" class="workspace-demo-actions">
+        <AppButton size="sm" data-tour="workspace-demo" data-testid="workspace-demo" :disabled="demoLoading || loading" @click="onDemoClick">
+          <Play :size="16" aria-hidden="true" />{{ $t(demoLoading ? 'onboarding.demo_loading' : 'onboarding.demo_action') }}
+        </AppButton>
+      </div>
+      <Banner v-if="demoError" tone="danger" data-testid="workspace-demo-error"><p>{{ demoError }}</p></Banner>
+    </div>
+
+    <div class="workspace-file-controls" :data-tour="files.length ? undefined : 'workspace-file-controls'" data-testid="workspace-file-controls">
+      <FileDrop ref="sourcePicker" :files="files" :loading="loading" @update:files="onFilesUpdate" />
+    </div>
+
+    <div v-if="initialLoading || openFailed || partialFailureVisible || error" class="workspace-source">
+      <ReplayProcessingPanel
+        v-if="initialLoading || openFailed"
+        :analysis="analysis"
+        :file-count="files.length"
+        @cancel="onCancelLoading"
+        @retry="analyze"
+        @open-other="openOtherReplay"
+        @clear="clearSelection"
+      />
+      <Banner v-if="partialFailureVisible" tone="warning" data-testid="workspace-partial-failure">
+        <p>{{ $t('workspace.partial_failure', { count: failedReplayCount }) }}</p>
+        <template #actions>
+          <AppButton size="sm" data-testid="partial-failure-view" @click="collectionManager?.open()">{{ $t('workspace.partial_failure_view') }}</AppButton>
+          <AppButton variant="ghost" size="sm" data-testid="partial-failure-ack" @click="acknowledgedResult = resp">{{ $t('workspace.partial_failure_ack') }}</AppButton>
+        </template>
+      </Banner>
+      <Banner v-if="error" tone="danger" data-testid="ws-error">
+        <p>{{ error }}</p>
+        <template v-if="error === t('workspace.native_replay_read_failed')" #actions>
+          <AppButton size="sm" data-testid="ws-native-retry" @click="consumePendingWhenReady">{{ $t('workspace.native_replay_retry') }}</AppButton>
+        </template>
+      </Banner>
+    </div>
+
+    <div v-if="showBattlePicker || isDemoSelection" class="workspace-sessionbar">
       <BattlePicker
         v-if="showBattlePicker"
         class="single-battle-picker"
@@ -497,56 +567,10 @@ watch(() => props.initialCapability, (val) => {
         :data-testid="battlePickerTestId"
         @update:model-value="onBattleSelect"
       />
-      <span v-else-if="targetFile" class="workspace-current-file" :title="targetFile.name">{{ targetFile.name }}</span>
-      <AppButton
-        v-if="canCollapseSource"
-        variant="ghost" size="sm" class="workspace-files-toggle"
-        data-testid="workspace-files-toggle"
-        :aria-expanded="!sourceCollapsed" :aria-controls="sourceId" :disabled="loading || !!error"
-        @click="fileControlsOpen = sourceCollapsed"
-      >
-        <Files :size="16" aria-hidden="true" />
-        {{ sourceCollapsed ? $t('upload.view_list', { count: files.length }) : $t('upload.hide_list') }}
-        <component :is="sourceCollapsed ? ChevronDown : ChevronUp" :size="16" aria-hidden="true" />
-      </AppButton>
+      <span v-if="isDemoSelection" class="workspace-demo-label" data-testid="workspace-demo-label">{{ $t('onboarding.demo_label') }}</span>
     </div>
 
-    <div class="workspace-source">
-      <div class="workspace-demo-actions">
-        <AppButton size="sm" data-tour="workspace-demo" data-testid="workspace-demo" :disabled="demoLoading || loading" @click="onDemoClick">
-          <Play :size="16" aria-hidden="true" />{{ $t(demoLoading ? 'onboarding.demo_loading' : 'onboarding.demo_action') }}
-        </AppButton>
-        <span v-if="isDemoSelection" class="workspace-demo-label" data-testid="workspace-demo-label">{{ $t('onboarding.demo_label') }}</span>
-      </div>
-      <Banner v-if="demoError" tone="danger" data-testid="workspace-demo-error"><p>{{ demoError }}</p></Banner>
-      <div v-show="!sourceCollapsed" :id="sourceId" data-tour="workspace-file-controls" data-testid="workspace-file-controls">
-        <FileDrop
-          ref="sourcePicker"
-          :files="files"
-          :loading="loading"
-          :confirm-remove="!!resp"
-          :compact="!!resp"
-          :allow-folder="['data', 'playback', '3d'].includes(activeCapability)"
-          @update:files="onFilesUpdate"
-          @preview="onPreview"
-          @remove-request="onFileRemoveRequest"
-        />
-      </div>
-      <ReplayProcessingPanel
-        :analysis="analysis"
-        :result="resp"
-        @cancel="cancelAnalysis"
-        @dismiss="dismissAnalysis"
-      />
-      <Banner v-if="error" tone="danger" data-testid="ws-error">
-        <p>{{ error }}</p>
-        <template v-if="error === t('workspace.native_replay_read_failed')" #actions>
-          <AppButton size="sm" data-testid="ws-native-retry" @click="consumePendingWhenReady">{{ $t('workspace.native_replay_retry') }}</AppButton>
-        </template>
-      </Banner>
-    </div>
-
-    <div ref="workspaceContentEl" class="workspace-content">
+    <div v-show="contentVisible" ref="workspaceContentEl" class="workspace-content">
       <ReplayPage
         v-show="activeCapability === 'data'"
         :active="activeCapability === 'data'"
@@ -655,12 +679,17 @@ watch(() => props.initialCapability, (val) => {
 /* 自动居中用 scrollIntoView 定位 pane 本身：`block: 'start'` 会贴到视口顶端，
    必须让出固定顶栏 + 刘海，否则高 pane 的顶部内容被压在 AppTopBar 下面。 */
 .capability-pane { margin-top: var(--space-1); scroll-margin-top: calc(var(--header-h, 0px) + env(safe-area-inset-top)); }
+/* 文件控件平时只有隐藏 input；有拖放区或校验提示时才占位。 */
+.workspace-file-controls:has(.dropzone, .banner) { margin-bottom: var(--space-4); }
 /* A single compact session row serves every single-battle capability. */
-.workspace-sessionbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); margin-bottom: var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); background: var(--color-surface-1); }
+.workspace-sessionbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin-bottom: var(--space-3); }
 .single-battle-picker { flex: 1; min-width: 0; }
-.workspace-files-toggle { margin-inline-start: auto; }
-.workspace-current-file { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-secondary); font: var(--type-caption); }
 @media (width < 768px) {
   .single-battle-picker { flex-basis: 100%; }
+  /* 手机：帮助与管理回放跟标题同行，能力切换独占下面一整行，页头少占一行。 */
+  .replay-workspace :deep(.page-header) { align-items: center; }
+  .replay-workspace :deep(.page-header-actions) { display: contents; }
+  .replay-workspace :deep(.page-header-text) { flex: 1 1 0; }
+  .workspace-capabilities { order: 1; flex-basis: 100%; }
 }
 </style>

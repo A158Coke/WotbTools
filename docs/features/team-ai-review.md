@@ -284,7 +284,7 @@ Team Call #2 通过 `AiPromptLibrary` 的模块化 include，按 INFORMATION/VIS
 
 - `ReplayWorkspace.vue`：工作台编排层（五种能力的唯一载体），capability=ai 的切换 / 深链直接挂载 `AiReviewWorkspacePane.vue` → `AiReviewPanel.vue`（登录门控 + 客户端投影可用性），触发分析并展示结果。
 - AI Review 权限：已登录且 realm role 含 `wotbtools-user` 或 `wotbtools-admin`；登录成功但缺 role 时渲染显式权限态，不静默隐藏入口。投影未就绪时显示准备中/失败状态，失败可触发重建投影。
-- `FileDrop.vue`：全站唯一的文件投放面（单文件选择替换而非追加），超限拒绝，单文件删除，clear all。前端不支持 drag-and-drop 文件上传。
+- `FileDrop.vue`：全站唯一的上传面，超限拒绝；回放列表的单个移除与清空全部由 `ReplayCollectionManager.vue` 提供，AI 复盘分析 BattlePicker 选中的当前场次。
 - `AnalysisResultPanel.vue`：个人路径渲染最终 Markdown 报告；团队路径按 `summary` / `episodes` / `trainingSuggestions` / `reviewFocus` / `highContributors` 分区渲染，空的可选区块不渲染；身份使用 `done.teamPlayers` 的 authoritative 映射，缺失时显示未知玩家/未知坦克。
 - `MarkdownContent`：渲染前对 `^(#{1,6})(?!#|\s)` 行补空格（跳过围栏代码块），避免 AI 输出 `##一、` 时 `##` 字面显示；归一化逻辑在 `utils/markdownHeadingNormalize.js`，语义由 utils 单测 + markdown-it 断言覆盖。
 - 个人路径 `analysis` 末尾由后端统一追加三语免责句（AI复盘仅供参考 / This AI review is for reference only / Разбор ИИ приведён только для справки）；团队结构化结果不追加。
