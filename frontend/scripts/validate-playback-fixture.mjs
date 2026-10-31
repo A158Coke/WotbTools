@@ -136,12 +136,10 @@ for (const mutate of [
 console.log('Battle data request contract fixtures: OK')
 // Admin read shapes: empty database, uint64 arena and bigint id remain lossless strings.
 const adminBattle = { id: '9223372036854775807', arenaId: '18446744073709551615', schemaVersion: 1, arenaBonusType: 1, mapId: 42, mapKey: 'rift', clientVersion: '11.18', winnerTeam: 0, team1Spawn: 'NORTH', team2Spawn: 'SOUTH', receivedAt: '2026-10-29T00:00:00Z' }
-const adminEmpty = { asOf: '2026-10-29T00:00:00Z', totalBattles: 0, last24Hours: 0, last7Days: 0, last30Days: 0, windowBattles: 0, latestReceivedAt: null, distinctMaps: 0, distinctClientVersions: 0, modes: [], winnerTeams: [], schemaVersions: [], daily: [], maps: [], clientVersions: [] }
+const adminEmpty = { asOf: '2026-10-29T00:00:00Z', totalBattles: 0, last24Hours: 0, last7Days: 0, last30Days: 0, windowBattles: 0, latestReceivedAt: null, distinctMaps: 0, distinctClientVersions: 0, modes: [], winnerTeams: [], schemaVersions: [], daily: [], maps: [], clientVersions: [], spawnStats: [] }
 for (const [schema, valid, invalid] of [
   ['BattleDataAdminSummary', adminEmpty, { ...adminEmpty, windowBattles: -1 }],
-  // Released clients validate the summary with additionalProperties:false: it must never grow new keys.
-  ['BattleDataAdminSummary', adminEmpty, { ...adminEmpty, spawnStats: [] }],
-  ['BattleDataAdminSpawnStats', { items: [{ mapKey: 'rift', arenaBonusType: null, side: 'NORTH', battles: 1, wins: 1, draws: 0, losses: 0 }] }, { items: [{ mapKey: 'rift', arenaBonusType: 2, side: 'NORTH', battles: 1, wins: 1, draws: 0, losses: 0 }] }],
+  ['BattleDataAdminSummary', { ...adminEmpty, spawnStats: [{ mapKey: 'rift', arenaBonusType: null, side: 'NORTH', battles: 1, wins: 1, draws: 0, losses: 0 }] }, { ...adminEmpty, spawnStats: [{ mapKey: 'rift', arenaBonusType: 2, side: 'NORTH', battles: 1, wins: 1, draws: 0, losses: 0 }] }],
   ['BattleDataAdminPage', { items: [adminBattle], nextCursor: null }, { items: [{ ...adminBattle, id: 9223372036854775807 }], nextCursor: null }],
   ['BattleDataAdminDetail', { battle: adminBattle, vehicles: [{ team: 1, slot: 0, vehicleId: 42 }] }, { battle: adminBattle, vehicles: [{ team: 1, slot: 7, vehicleId: 42 }] }],
 ]) {

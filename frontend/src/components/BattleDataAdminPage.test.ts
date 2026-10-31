@@ -3,14 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import BattleDataAdminPage from './BattleDataAdminPage.vue'
-const state = vi.hoisted(() => ({ summary: vi.fn(), spawnStats: vi.fn(), battles: vi.fn(), detail: vi.fn() }))
+const state = vi.hoisted(() => ({ summary: vi.fn(), battles: vi.fn(), detail: vi.fn() }))
 type SpawnStat = { mapKey: string; arenaBonusType: 1 | 7 | null; side: 'NORTH' | 'SOUTH' | 'WEST' | 'EAST'; battles: number; wins: number; draws: number; losses: number }
 const stat = (mapKey: string, arenaBonusType: SpawnStat['arenaBonusType'], side: SpawnStat['side'], wins: number, draws: number, losses: number): SpawnStat => ({ mapKey, arenaBonusType, side, battles: wins + draws + losses, wins, draws, losses })
 const spawnSummary = {
   maps: [{ key: 'erlenberg', count: 128, latestReceivedAt: '2026-10-29T00:00:00Z' }, { key: 'karieri', count: 83, latestReceivedAt: '2026-10-29T00:00:00Z' }],
-}
-const spawnResponse = {
-  items: [
+  spawnStats: [
     stat('erlenberg', null, 'NORTH', 70, 5, 53), stat('erlenberg', null, 'SOUTH', 53, 5, 70),
     stat('erlenberg', 1, 'NORTH', 60, 4, 36), stat('erlenberg', 1, 'SOUTH', 36, 4, 60),
     stat('erlenberg', 7, 'NORTH', 10, 1, 17), stat('erlenberg', 7, 'SOUTH', 17, 1, 10),
@@ -20,12 +18,12 @@ const spawnResponse = {
 const online = ref(true)
 const locale = ref('en')
 vi.mock('../composables/useFeatureGate.js', () => ({ useFeatureGate: () => ({ availability: () => ({ available: online.value, pending: false, messageKey: 'offline' }), requireFeature: () => online.value }) }))
-vi.mock('../api/admin-battle-data.js', () => ({ getSummary: state.summary, getSpawnStats: state.spawnStats, getBattles: state.battles, getBattle: state.detail }))
+vi.mock('../api/admin-battle-data.js', () => ({ getSummary: state.summary, getBattles: state.battles, getBattle: state.detail }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (s: string, p?: { side?: string }) => (p?.side ? `${s}[${p.side}]` : s), te: () => true, locale }) }))
-const summary = { asOf: '2026-10-29T00:00:00Z', totalBattles: 1, last24Hours: 1, last7Days: 1, last30Days: 1, windowBattles: 1, latestReceivedAt: '2026-10-29T00:00:00Z', distinctMaps: 1, distinctClientVersions: 1, modes: [{ key: 1, count: 1 }], winnerTeams: [{ key: 0, count: 1 }], schemaVersions: [{ key: 1, count: 1 }], daily: [], maps: [{ key: 'rift', count: 1, latestReceivedAt: '2026-10-29T00:00:00Z' }], clientVersions: [] }
+const summary = { asOf: '2026-10-29T00:00:00Z', totalBattles: 1, last24Hours: 1, last7Days: 1, last30Days: 1, windowBattles: 1, latestReceivedAt: '2026-10-29T00:00:00Z', distinctMaps: 1, distinctClientVersions: 1, modes: [{ key: 1, count: 1 }], winnerTeams: [{ key: 0, count: 1 }], schemaVersions: [{ key: 1, count: 1 }], daily: [], maps: [{ key: 'rift', count: 1, latestReceivedAt: '2026-10-29T00:00:00Z' }], clientVersions: [], spawnStats: [] as SpawnStat[] }
 const battle = { id: '1', arenaId: '18446744073709551615', schemaVersion: 1, arenaBonusType: 1, mapId: 1, mapKey: 'rift', clientVersion: '11.18', winnerTeam: 0, team1Spawn: 'NORTH', team2Spawn: 'SOUTH', receivedAt: '2026-10-29T00:00:00Z' }
 const vehicles = Array.from({ length: 14 }, (_, i) => ({ team: i < 7 ? 1 : 2, slot: i % 7, vehicleId: 10 + i }))
-beforeEach(() => { vi.clearAllMocks(); online.value = true; locale.value = 'en'; state.summary.mockResolvedValue(summary); state.spawnStats.mockResolvedValue({ items: [] }); state.battles.mockResolvedValue({ items: [battle], nextCursor: null }); state.detail.mockResolvedValue({ battle, vehicles }) })
+beforeEach(() => { vi.clearAllMocks(); online.value = true; locale.value = 'en'; state.summary.mockResolvedValue(summary); state.battles.mockResolvedValue({ items: [battle], nextCursor: null }); state.detail.mockResolvedValue({ battle, vehicles }) })
 function page() { return mount(BattleDataAdminPage, { global: { stubs: { AppDialog: { props: ['open'], template: '<div v-if="open"><slot /></div>' } } } }) }
 describe('BattleDataAdminPage', () => {
   it('shows bias, reviewed zero coverage and detail', async () => {
@@ -43,7 +41,7 @@ describe('BattleDataAdminPage', () => {
   })
   it.each([['zh', '米德尔堡'], ['en', 'Middleburg'], ['ru', 'Миддлбург']])('uses the canonical %s map name as the primary label', async (language, name) => {
     locale.value = language
-    state.summary.mockResolvedValueOnce({ ...summary, ...spawnSummary }); state.spawnStats.mockResolvedValueOnce(spawnResponse)
+    state.summary.mockResolvedValueOnce({ ...summary, ...spawnSummary })
     state.battles.mockResolvedValueOnce({ items: [{ ...battle, mapKey: 'erlenberg' }], nextCursor: null })
     const wrapper = page(); await flushPromises()
     expect(wrapper.find('[data-testid=spawn-stats] .map-name').text()).toBe(name)
@@ -69,7 +67,7 @@ describe('BattleDataAdminPage', () => {
     wrapper.unmount()
   })
   it('defaults spawn statistics to combined and switches modes without refetching', async () => {
-    state.summary.mockResolvedValueOnce({ ...summary, ...spawnSummary }); state.spawnStats.mockResolvedValueOnce(spawnResponse)
+    state.summary.mockResolvedValueOnce({ ...summary, ...spawnSummary })
     const wrapper = page(); await flushPromises()
     const row = () => wrapper.findAll('[data-testid=spawn-stats] tbody tr').find(item => item.text().includes('Middleburg'))!.findAll('td').map(cell => cell.text())
     expect(row().slice(1, 5)).toEqual(['128', '54.7% · 70/128', '41.4% · 53/128', '3.9%'])
@@ -78,11 +76,10 @@ describe('BattleDataAdminPage', () => {
     await wrapper.find('[data-testid=spawn-mode-rating]').trigger('click'); await flushPromises()
     expect(row().slice(1, 5)).toEqual(['28', '35.7% · 10/28', '60.7% · 17/28', '3.6%'])
     expect(state.summary).toHaveBeenCalledTimes(1)
-    expect(state.spawnStats).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
   it('labels north/south as top/bottom, keeps Copperfield west/east and renders both axes', async () => {
-    state.summary.mockResolvedValueOnce({ ...summary, ...spawnSummary }); state.spawnStats.mockResolvedValueOnce(spawnResponse)
+    state.summary.mockResolvedValueOnce({ ...summary, ...spawnSummary })
     const wrapper = page(); await flushPromises()
     const tables = wrapper.findAll('[data-testid=spawn-stats]')
     expect(tables).toHaveLength(2)
@@ -101,15 +98,6 @@ describe('BattleDataAdminPage', () => {
     expect(wrapper.text()).not.toContain('battleDataAdmin.unknown')
     const empty = wrapper.findAll('[data-testid=spawn-stats] tbody tr').find(item => item.text().includes('Middleburg'))!
     expect(empty.findAll('td').map(cell => cell.text()).slice(1, 5)).toEqual(['0', '—', '—', '—'])
-    wrapper.unmount()
-  })
-  it('keeps the page usable when the backend has no spawn statistics yet', async () => {
-    state.spawnStats.mockRejectedValueOnce(new Error('404'))
-    const wrapper = page(); await flushPromises()
-    expect(wrapper.text()).toContain('battleDataAdmin.total')
-    expect(wrapper.text()).toContain('18446744073709551615')
-    expect(wrapper.find('[data-testid=spawn-stats]').exists()).toBe(false)
-    expect(wrapper.findAll('[role=alert]')).toHaveLength(1)
     wrapper.unmount()
   })
   it('renders zero rows for the fixed mode and winner sanity buckets', async () => {

@@ -14,7 +14,6 @@ const { t, te, locale } = useI18n()
 const gate = useFeatureGate()
 const availability = computed(() => gate.availability(Feature.ADMIN_BATTLE_DATA))
 const summary = ref<api.Summary | null>(null)
-const spawnStats = ref<api.SpawnStats | null>(null)
 const battles = ref<api.BattlePage['items']>([])
 const nextCursor = ref<string | null>(null)
 const detail = ref<api.BattleDetail | null>(null)
@@ -30,7 +29,6 @@ const loading = ref(false)
 const moreLoading = ref(false)
 const detailLoading = ref(false)
 const summaryError = ref('')
-const spawnError = ref('')
 const listError = ref('')
 const detailError = ref('')
 let summaryGeneration = 0, listGeneration = 0, detailGeneration = 0
@@ -38,7 +36,7 @@ const coverage = computed(() => mapCoverage(summary.value?.maps || []))
 const modeRows = computed(() => [1, 7].map(key => ({ key, count: summary.value?.modes.find(row => row.key === key)?.count ?? 0 })))
 const winnerRows = computed(() => [0, 1, 2].map(key => ({ key, count: summary.value?.winnerTeams.find(row => row.key === key)?.count ?? 0 })))
 const observedMapCount = computed(() => summary.value?.maps.length ?? 0)
-const spawnGroups = computed(() => (spawnStats.value ? spawnTables(coverage.value, spawnStats.value, spawnMode.value) : []).map(table => ({
+const spawnGroups = computed(() => spawnTables(coverage.value, summary.value?.spawnStats ?? [], spawnMode.value).map(table => ({
   ...table,
   rows: [...table.rows].sort((a, b) => b.battles - a.battles || mapName(a.key).localeCompare(mapName(b.key), locale.value)),
 })))
@@ -88,7 +86,7 @@ async function refresh() {
   if (!gate.requireFeature(Feature.ADMIN_BATTLE_DATA)) return
   const generation = ++summaryGeneration
   const currentListGeneration = ++listGeneration
-  loading.value = true; moreLoading.value = false; summaryError.value = ''; spawnError.value = ''; listError.value = ''
+  loading.value = true; moreLoading.value = false; summaryError.value = ''; listError.value = ''
   // Invalidate the previous page before the replacement request settles: the old cursor/filter must not
   // be able to append a stale page while summary/list are switching ranges.
   nextCursor.value = null
@@ -97,12 +95,9 @@ async function refresh() {
   currentInterval.value = interval
   let query: api.Query
   try { query = filterQuery(interval) } catch { listError.value = t('battleDataAdmin.error'); loading.value = false; return }
-  const [a, b, c] = await Promise.allSettled([api.getSummary(interval), api.getBattles(query), api.getSpawnStats(interval)])
+  const [a, b] = await Promise.allSettled([api.getSummary(interval), api.getBattles(query)])
   if (generation !== summaryGeneration) return
   if (a.status === 'fulfilled') { summary.value = a.value; summaryInterval.value = interval; refreshed.value = new Date().toISOString() } else summaryError.value = explain(a.reason)
-  // Spawn stats are a separate read: a backend without them must not take the rest of the page down.
-  if (c.status === 'fulfilled') spawnStats.value = c.value
-  else { spawnStats.value = null; spawnError.value = explain(c.reason) }
   if (currentListGeneration === listGeneration) {
     if (b.status === 'fulfilled') { applied.value = query; battles.value = b.value.items; nextCursor.value = b.value.nextCursor } else listError.value = explain(b.reason)
   }
@@ -157,7 +152,7 @@ function time(value: string | null | undefined) {
 function share(count: number) { return summary.value?.windowBattles ? `${(100 * count / summary.value.windowBattles).toFixed(1)}%` : '0%' }
 function mode(n: number) { return t(n === 1 ? 'battleDataAdmin.random' : 'battleDataAdmin.rating') }
 function mapName(key: string) { return mapLabel(key, locale.value) }
-function sideName(side: api.SpawnStats['items'][number]['side']) { return t(`battleDataAdmin.side.${spawnSideKey(side)}`) }
+function sideName(side: api.Summary['spawnStats'][number]['side']) { return t(`battleDataAdmin.side.${spawnSideKey(side)}`) }
 function rate(count: number, battles: number) { return battles ? `${(100 * count / battles).toFixed(1)}%` : '—' }
 function winner(n: number) {
   if (n === 0) return t('battleDataAdmin.draw')
@@ -193,7 +188,6 @@ onBeforeUnmount(() => { ++summaryGeneration; ++listGeneration; ++detailGeneratio
       <div class="section-head"><h2>{{ t('battleDataAdmin.spawnStats') }}</h2><SegmentedControl v-model="spawnMode" :options="spawnModes" :ariaLabel="t('battleDataAdmin.mode')" /></div>
       <p class="meta">{{ t('battleDataAdmin.spawnRateNote') }}</p>
       <p class="meta">{{ t('battleDataAdmin.reviewedMaps') }}: {{ coverage.reviewed.length }} · {{ t('battleDataAdmin.mapsObserved') }}: {{ observedMapCount }} · {{ t('battleDataAdmin.reviewedZero') }}: {{ reviewedZeroCount }}</p>
-      <p v-if="spawnError" role="alert">{{ t('battleDataAdmin.error') }} {{ spawnError }}</p>
       <div v-for="table in spawnGroups" :key="table.axis[0]" class="table-wrap"><table data-testid="spawn-stats"><thead><tr><th>{{ t('battleDataAdmin.map') }}</th><th class="num">{{ t('battleDataAdmin.sample') }}</th><th v-for="side in table.axis" :key="side" class="num">{{ t('battleDataAdmin.sideWinRate', { side: sideName(side) }) }}</th><th class="num">{{ t('battleDataAdmin.drawRate') }}</th><th>{{ t('battleDataAdmin.latestData') }}</th></tr></thead><tbody>
         <tr v-for="row in table.rows" :key="row.key"><td><span class="map-name">{{ mapName(row.key) }}</span><small class="raw-key">{{ row.key }}<template v-if="row.observedOnly"> · {{ t('battleDataAdmin.observedOnly') }}</template></small></td><td class="num">{{ row.battles }}</td>
           <td v-for="side in row.sides" :key="side.side" class="num" :title="t('battleDataAdmin.outcomes', { wins: side.wins, draws: side.draws, losses: side.losses })">{{ side.battles ? `${rate(side.wins, side.battles)} · ${side.wins}/${side.battles}` : '—' }}</td>
