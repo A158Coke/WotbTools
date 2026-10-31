@@ -3339,6 +3339,33 @@ describe('3D annotation pointer ownership', () => {
     expect(onAnnotationCommit).not.toHaveBeenCalled()
   })
 
+  it('a terrain LOD change refreshes heights in place instead of rebuilding strokes', async () => {
+    const { api } = await setup()
+    const layer = window.__annotationLayer
+    api.setAnnotations([{ type: 'pen', color: '#ff4d4f', width: 3, points: [{ x: -5, y: 0 }, { x: 5, y: 0 }] }])
+    const builds = layer.stats.committedBuilds
+    const geometry = layer.committedMesh.geometry
+    const position = geometry.getAttribute('position')
+    const version = position.version
+    const xz = Array.from(position.array).filter((_, i) => i % 3 !== 1)
+    layer.reproject()
+    expect(layer.stats.committedBuilds).toBe(builds)
+    expect(layer.committedMesh.geometry).toBe(geometry)
+    expect(position.version).toBeGreaterThan(version)
+    expect(Array.from(position.array).filter((_, i) => i % 3 !== 1)).toEqual(xz)
+  })
+
+  it('reuses committed ribbon topology when another stroke is added', async () => {
+    const { api } = await setup()
+    const first = { type: 'pen', color: '#ff4d4f', width: 3, points: [{ x: -5, y: 0 }, { x: 5, y: 0 }] }
+    api.setAnnotations([first])
+    const vertices = window.__annotationLayer.stats.committedVertices
+    expect(vertices).toBeGreaterThan(0)
+    const second = { type: 'pen', color: '#40c4ff', width: 3, points: [{ x: -5, y: 4 }, { x: 5, y: 4 }] }
+    api.setAnnotations([first, second])
+    expect(window.__annotationLayer.stats.committedVertices).toBeGreaterThan(vertices)
+  })
+
   it('pen width and eraser radius keep identical map-space semantics across camera distances', async () => {
     const { api, canvas } = await setup({ mapKey: 'amigosville' })
     const layer = window.__annotationLayer

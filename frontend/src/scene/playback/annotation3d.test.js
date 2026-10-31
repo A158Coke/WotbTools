@@ -8,6 +8,7 @@ import {
   ANNOTATION_RING_SEGMENTS,
   buildEraserRing,
   buildPenRibbon,
+  reprojectRibbonPositions,
   normalizePenPoints,
   sanitizePoints,
   smoothPolyline,
@@ -320,6 +321,31 @@ describe('buildPenRibbon', () => {
     expect(ribbon.validation.unsafeCells).toBe(0)
     expect(ribbon.validation.iterations).toBeGreaterThan(0)
     expectTrianglesClear(ribbon, sampler)
+  })
+
+  it('reprojects heights once per vertex without touching XZ', () => {
+    const ribbon = buildPenRibbon(pen([{ x: -5, y: 0 }, { x: 5, y: 0 }], 2), { sampleHeight: () => 10, lift: ANNOTATION_LIFT })
+    const positions = ribbon.strips[0].positions
+    const xz = positions.filter((_, i) => i % 3 !== 1)
+    let samples = 0
+    reprojectRibbonPositions(positions, (x, z) => { samples++; return x === 0 ? null : 20 + z }, ANNOTATION_LIFT)
+    expect(samples).toBe(positions.length / 3)
+    expect(positions.filter((_, i) => i % 3 !== 1)).toEqual(xz)
+    for (let i = 0; i < positions.length; i += 3) {
+      if (positions[i] !== 0) expect(positions[i + 1]).toBeCloseTo(20 + positions[i + 2] + ANNOTATION_LIFT, 5)
+    }
+  })
+
+  it('skips cell validation for a draft', () => {
+    const surface = (x, z) => 20 + 0.04 * Math.sin(z * 80)
+    const count = (options) => {
+      let samples = 0
+      buildPenRibbon(pen([{ x: -2, y: 0 }, { x: 2, y: 0 }], 2), {
+        sampleHeight: (x, z) => { samples++; return surface(x, z) }, lift: 0, ...options,
+      })
+      return samples
+    }
+    expect(count({ refine: false }) * 10).toBeLessThan(count({}))
   })
 
   it('treats max-depth exhaustion as unresolved, never fail-open', () => {
