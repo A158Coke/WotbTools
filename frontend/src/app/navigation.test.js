@@ -80,20 +80,33 @@ describe('primary navigation', () => {
   })
 
   it('only offers Home on the production home host', () => {
-    expect(primaryNavItems('wotbtools.com').map(item => item.id)).toEqual(['home', 'replay', 'hof', 'tankopedia', 'techtree', 'tournament-points', 'league-broadcasts', 'creators', 'more'])
-    expect(primaryNavItems('localhost').map(item => item.id)).toEqual(['replay', 'hof', 'tankopedia', 'techtree', 'tournament-points', 'league-broadcasts', 'creators', 'more'])
+    expect(primaryNavItems('wotbtools.com').map(item => item.id)).toEqual(['home', 'replay', 'hof', 'tankopedia', 'techtree', 'maps', 'tournament-points', 'league-broadcasts', 'creators', 'more'])
+    expect(primaryNavItems('localhost').map(item => item.id)).toEqual(['replay', 'hof', 'tankopedia', 'techtree', 'maps', 'tournament-points', 'league-broadcasts', 'creators', 'more'])
   })
 
   it('omits Home in the APK and resolves startup or stale Home links to Replay', () => {
     vi.stubEnv('MODE', 'android')
     try {
-      const expected = ['replay', 'hof', 'tankopedia', 'techtree', 'tournament-points', 'league-broadcasts', 'creators', 'more']
+      const expected = ['replay', 'hof', 'tankopedia', 'techtree', 'maps', 'tournament-points', 'league-broadcasts', 'creators', 'more']
       expect(primaryNavItems('127.0.0.1').map(item => item.id)).toEqual(expected)
       expect(primaryNavItems('wotbtools.com').map(item => item.id)).toEqual(expected)
       expect(defaultView('127.0.0.1')).toBe('replay')
       expect(defaultView('wotbtools.com')).toBe('replay')
       expect(viewFromRoute({ path: '/', query: { view: 'home' } })).toBe('replay')
     } finally { vi.unstubAllEnvs() }
+  })
+
+  it('places the map preview after the tech tree as its own primary section', () => {
+    expect(viewFromRoute({ path: '/', query: { view: 'map-preview' } })).toBe('map-preview')
+    expect(primarySection('map-preview')).toBe('maps')
+    expect(sectionTitleKey('map-preview')).toBe('nav.maps')
+    expect(PRIMARY_NAV.findIndex(item => item.id === 'maps'))
+      .toBe(PRIMARY_NAV.findIndex(item => item.id === 'techtree') + 1)
+    expect(PRIMARY_NAV.find(item => item.id === 'maps').view).toBe('map-preview')
+    // 离开地图预览丢弃 map/mode 参数；进入方向保留（它们是目的地参数）
+    const leaving = { path: '/', query: { view: 'map-preview', map: 'erlenberg', mode: '3d', lang: 'ru' } }
+    expect(locationForView('replay', leaving).query).toEqual({ view: 'replay', lang: 'ru' })
+    expect(locationForView('map-preview', leaving).query).toEqual(leaving.query)
   })
 
   it('resolves the public league deep link to its own selected section and title', () => {

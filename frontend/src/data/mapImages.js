@@ -35,8 +35,10 @@ import yukonImg from '../assets/maps/yukon.webp'
  * （否则越靠近地图边缘，路线/出生点/网格越被向外放大推移）。
  * 当前 29 张已登记图均为 -300..300；新图以各自语义 JSON 为准，
  * 范围不同时给该图单独写对象，勿改共享常量。
+ * 地图预览的资产包 ground.webp 底图同框复用它（±300 契约框，X-Map-Meta 缺失时
+ * 3D 内核的恒等回退与之一致）。
  */
-const WORLD_BOUNDS_300 = { xMin: -300, xMax: 300, yMin: -300, yMax: 300 }
+export const WORLD_BOUNDS_300 = { xMin: -300, xMax: 300, yMin: -300, yMax: 300 }
 
 /**
  * 地图鸟瞰素材注册表（唯一权威，素材开关）：mapCode（meta.json 的 mapName）→ 图片资源与尺寸。

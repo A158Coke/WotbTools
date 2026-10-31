@@ -1,4 +1,30 @@
 {
+  "nav": {
+    "maps": "地图"
+  },
+  "mapPreview": {
+    "title": "地图预览",
+    "subtitle": "查看地图地形与场景，标注要点——无需回放文件",
+    "loginRequired": "登录后可使用地图预览",
+    "loadFailed": "地图清单加载失败",
+    "empty": "暂无可用地图",
+    "retry": "重试",
+    "mode3d": "3D 场景",
+    "mode2d": "2D 战术图",
+    "backToPicker": "选择其他地图",
+    "twoDBadge": "2D",
+    "annotations": {
+      "title": "标注",
+      "import": "导入标注",
+      "export": "导出标注",
+      "importFailed": "导入失败：{reason}",
+      "importedCount": "已导入 {count} 条标注",
+      "noAnnotations": "当前没有可导出的标注",
+      "importReasonFormat": "文件不是本视图的标注 JSON",
+      "importReasonMap": "标注属于其他地图"
+    },
+    "basemapFailed": "底图加载失败"
+  },
   "app": {
     "title": "WoTBTools",
     "subtitle": "回放解析 · 在线排行榜 · 实时评分 · AI 战术复盘",
