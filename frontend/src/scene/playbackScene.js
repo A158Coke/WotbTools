@@ -365,16 +365,32 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   const poseOf = (v, t) => sampleVehiclePoseGame(
     v.def, POSE_GRID, t, _poseOut, VIS_BY_EID.get(v.def.eid) ?? v.def.coverage,
   );
+  // 每车「最近一次采样」缓存：applyPose 一帧内经 yawAt/hullPitchAt/rollAt/turretAbsAt/
+  // gunPitchAt/posAt 对同一 (v, T) 触发 13 次全通道采样（网格插值 + 闭包分配 ×13 ≈ 纯
+  // 重复）。采样是纯函数（grid/def/VIS_BY_EID 均只在数据/会话边界重建，tick 内不变），
+  // 按 (车, t) 记忆后一帧只采一次；flushMuzzles 等以任意 t 摆位姿的调用点自动因 t 不匹配
+  // 重采样，语义不变。
+  function poseStash(v, t) {
+    const s = v.tickPose || (v.tickPose = { t: NaN, x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, turretAbs: 0, gunPitch: 0 });
+    if (s.t !== t) {
+      const p = poseOf(v, t);
+      s.t = t;
+      s.x = p.x; s.y = p.y; s.z = p.z;
+      s.yaw = p.yaw; s.pitch = p.pitch; s.roll = p.roll;
+      s.turretAbs = p.turretAbs; s.gunPitch = p.gunPitch;
+    }
+    return s;
+  }
   function posAt(v, t, out) {
-    const p = poseOf(v, t);
+    const p = poseStash(v, t);
     out.set(-p.x, p.y, p.z);
     return out;
   }
-  function yawAt(v, t) { return poseOf(v, t).yaw; }
-  function hullPitchAt(v, t) { return poseOf(v, t).pitch; }
-  function turretAbsAt(v, t) { return poseOf(v, t).turretAbs; }
-  function gunPitchAt(v, t) { return poseOf(v, t).gunPitch; }
-  const rollAt = (v, t) => poseOf(v, t).roll;
+  function yawAt(v, t) { return poseStash(v, t).yaw; }
+  function hullPitchAt(v, t) { return poseStash(v, t).pitch; }
+  function turretAbsAt(v, t) { return poseStash(v, t).turretAbs; }
+  function gunPitchAt(v, t) { return poseStash(v, t).gunPitch; }
+  const rollAt = (v, t) => poseStash(v, t).roll;
 
   function hpAt(v, t) {
     const hp = v.def.hp; let cur = v.def.max_hp;
@@ -1349,9 +1365,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const fx = (x / span + 0.5) * n, fy = (z / span + 0.5) * n;
     const x0 = Math.max(0, Math.min(n - 2, Math.floor(fx))), y0 = Math.max(0, Math.min(n - 2, Math.floor(fy)));
     const tx = Math.max(0, Math.min(1, fx - x0)), ty = Math.max(0, Math.min(1, fy - y0));
-    const at = (r, c) => heightField[r * n + c];
-    const top = at(y0, x0) * (1 - tx) + at(y0, x0 + 1) * tx;
-    const bot = at(y0 + 1, x0) * (1 - tx) + at(y0 + 1, x0 + 1) * tx;
+    // 直接下标（悬挂步每帧对每车 ~20 轮 + 2×40 链点 ≈ 3000 次调用，此前的逐调用
+    // 闭包 `at` 与元数据 revalidate 是纯开销）
+    const hf = heightField;
+    const top = hf[y0 * n + x0] * (1 - tx) + hf[y0 * n + x0 + 1] * tx;
+    const bot = hf[(y0 + 1) * n + x0] * (1 - tx) + hf[(y0 + 1) * n + x0 + 1] * tx;
     return top * (1 - ty) + bot * ty;
   }
 
@@ -2282,6 +2300,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       v.labelAnchor.y += labelLiftWorld(d);
     }
     updateLabelOcclusion();
+    // 视口尺寸在循环内恒定，循环外读一次（逐车 clientWidth/clientHeight 读取有强制布局风险）
+    const viewW = container.clientWidth, viewH = container.clientHeight;
     for (const v of V) {
       labelClip.set(v.labelAnchor.x, v.labelAnchor.y, v.labelAnchor.z, 1)
         .applyMatrix4(camera.matrixWorldInverse).applyMatrix4(camera.projectionMatrix);
@@ -2292,8 +2312,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       const projected = v.group.visible && w > 0
         && Number.isFinite(x) && Number.isFinite(y) && z >= -1 && z <= 1
         && x >= -1 && x <= 1 && y >= -1 && y <= 1;
-      labelAnchorScratch.x = projected ? (x + 1) * container.clientWidth / 2 : 0;
-      labelAnchorScratch.y = projected ? (1 - y) * container.clientHeight / 2 : 0;
+      labelAnchorScratch.x = projected ? (x + 1) * viewW / 2 : 0;
+      labelAnchorScratch.y = projected ? (1 - y) * viewH / 2 : 0;
       labelAnchorScratch.projected = projected;
       labelAnchorScratch.visible = projected && store.labelsOn;
       labelAnchorScratch.occluded = v.labelOccluded;

@@ -1735,6 +1735,7 @@
     "parsing": "Parsing…",
     "error_parse": "Parse failed: ",
     "author_path_error": "Author strict-path extraction failed — the table below only contains other players’ shots via the lenient path (degraded ballistics/verdicts, no method38 detail)",
+    "others_error": "Other-player shot extraction hit an internal invariant violation — other players’ shots are missing from the table (parser defect, not an empty result)",
     "shooter": "Shooter:",
     "all_shooters": "All players",
     "allies": "Allies",

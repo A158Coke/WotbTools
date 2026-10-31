@@ -43,8 +43,15 @@ const props = defineProps({
   selectedArenaId: { type: [Number, String], default: null },
   /** 呈现方式：table（默认）/ cards（手机卡片列表；表格保留在 DOM 里供 PNG 导出）。 */
   layout: { type: String, default: 'table' },
+  /**
+   * 排序状态（**由父组件持有**，见 ReplayPage battleSorts）：v-if 挂载口径下组件随
+   * 隐藏卸载，本地 ref 会让「排序 → 切场次 → 回来」丢失用户选择并改变后续 PNG 导出
+   * 的行序（Codex review 2026-10-31）。props 单一事实源 + update 事件回写。
+   */
+  sortKey: { type: String, default: '' },
+  sortReverse: { type: Boolean, default: false },
 })
-const emit = defineEmits(['update-team-name', 'select-player'])
+const emit = defineEmits(['update-team-name', 'select-player', 'update:sortKey', 'update:sortReverse'])
 
 /** CW UI 开关（显式 leagueMode；不再从 league != null 推断）。 */
 const isLeague = computed(() => props.leagueMode)
@@ -56,9 +63,6 @@ function rateCell(value) {
   return String(Math.round(Number(value) * 10) / 10)
 }
 
-const sortKey = ref('')
-const sortReverse = ref(false)
-
 /** 战队名称按用户最终看到的名（override → autoName）排序，不按隐藏 teamKey。 */
 function teamNameValue(row) {
   const teamNumber = row.team
@@ -69,13 +73,13 @@ function teamNameValue(row) {
 }
 
 const sorted = computed(() => {
-  if (!sortKey.value) return props.battle.players
-  const col = props.shownCols.find(c => c.key === sortKey.value)
-  const isTeamName = sortKey.value === 'team_name'
+  if (!props.sortKey) return props.battle.players
+  const col = props.shownCols.find(c => c.key === props.sortKey)
+  const isTeamName = props.sortKey === 'team_name'
   const valueGetter = isTeamName ? teamNameValue : undefined
   return stableSortRows(props.battle.players, {
-    key: sortKey.value,
-    direction: sortReverse.value ? -1 : 1,
+    key: props.sortKey,
+    direction: props.sortReverse ? -1 : 1,
     num: isTeamName ? false : !!col?.num,
     locale: locale.value,
     valueGetter,
@@ -85,12 +89,12 @@ const sorted = computed(() => {
 })
 
 function sortBy(col) {
-  if (sortKey.value === col.key) sortReverse.value = !sortReverse.value
-  else { sortKey.value = col.key; sortReverse.value = false }
+  if (props.sortKey === col.key) emit('update:sortReverse', !props.sortReverse)
+  else { emit('update:sortKey', col.key); emit('update:sortReverse', false) }
 }
 
 function arrow(key) {
-  return sortKey.value === key ? (sortReverse.value ? ' ▼' : ' ▲') : ''
+  return props.sortKey === key ? (props.sortReverse ? ' ▼' : ' ▲') : ''
 }
 
 function survivalClass(value) {
@@ -172,7 +176,7 @@ const { headerRefs, isStickyCol, colStyle, schedule } = useStickyColumns({
 })
 
 // 排序箭头变化可能改昵称列宽 → 重新调度测量
-watch([sortKey, sortReverse], schedule)
+watch([() => props.sortKey, () => props.sortReverse], schedule)
 
 // ---- 本场关键数字：胜方显示战队名（覆盖名 → 军团标签），没有名字时才用「队伍 N」 ----
 const battleStats = computed(() => {
@@ -224,8 +228,8 @@ const cardSortOptions = computed(() => props.shownCols
   .map(c => ({ key: c.key, label: t('player_labels.' + c.key) })))
 
 function onCardSort({ key, desc }) {
-  sortKey.value = key
-  sortReverse.value = desc
+  emit('update:sortKey', key)
+  emit('update:sortReverse', desc)
 }
 
 function onCardSelect(accountId) {

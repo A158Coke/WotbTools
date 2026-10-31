@@ -113,6 +113,50 @@ function trustedRoutePosition(route, t, poseAt = null) {
 }
 
 /**
+ * Per-segment cache of the validated + time-sorted sample list. Playback data is
+ * immutable after parse, so the filter/sort only needs to run once per segment;
+ * per-frame window extraction then costs two binary searches + a slice instead of
+ * re-filtering and re-sorting every sample of every observed segment at 60 fps.
+ */
+const trailSamplesCache = new WeakMap()
+
+function sortedTrailSamples(segment, segmentStart, segmentEnd) {
+  let sorted = trailSamplesCache.get(segment)
+  if (!sorted) {
+    sorted = segment.samples
+      .filter(sample => sample && Number.isFinite(sample.timeSec)
+        && Number.isFinite(sample.x) && Number.isFinite(sample.y)
+        && sample.timeSec >= segmentStart - 1e-6
+        && sample.timeSec <= segmentEnd + 1e-6)
+      .sort((a, b) => a.timeSec - b.timeSec)
+    trailSamplesCache.set(segment, sorted)
+  }
+  return sorted
+}
+
+function lowerBoundTimeSec(sorted, t) {
+  let lo = 0
+  let hi = sorted.length
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (sorted[mid].timeSec < t) lo = mid + 1
+    else hi = mid
+  }
+  return lo
+}
+
+function upperBoundTimeSec(sorted, t) {
+  let lo = 0
+  let hi = sorted.length
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (sorted[mid].timeSec <= t) lo = mid + 1
+    else hi = mid
+  }
+  return lo
+}
+
+/**
  * Build the last battle-relative two seconds of observed positions for each vehicle.
  * V2 segment boundaries and interpolationAllowed are the only interpolation authority:
  * segments are never joined, future samples are never emitted, and LAST_KNOWN/unknown
@@ -131,12 +175,7 @@ export function recentPositionTrails(vehicles, nowSec, windowSec = 2) {
         || !Array.isArray(segment.samples)) continue
       const segmentStart = Number.isFinite(segment.startSec) ? segment.startSec : Number.NEGATIVE_INFINITY
       const segmentEnd = Number.isFinite(segment.endSec) ? segment.endSec : Number.POSITIVE_INFINITY
-      const samples = segment.samples
-        .filter(sample => sample && Number.isFinite(sample.timeSec)
-          && Number.isFinite(sample.x) && Number.isFinite(sample.y)
-          && sample.timeSec >= segmentStart - 1e-6
-          && sample.timeSec <= segmentEnd + 1e-6)
-        .sort((a, b) => a.timeSec - b.timeSec)
+      const samples = sortedTrailSamples(segment, segmentStart, segmentEnd)
       if (samples.length === 0) continue
 
       const path = []
@@ -148,8 +187,11 @@ export function recentPositionTrails(vehicles, nowSec, windowSec = 2) {
           path.push({ ...clippedStart, timeSec: start })
         }
       }
-      path.push(...samples.filter(sample => sample.timeSec >= start - 1e-6
-        && sample.timeSec <= nowSec + 1e-6))
+      // window samples are contiguous in the time-sorted list: slice instead of filter
+      path.push(...samples.slice(
+        lowerBoundTimeSec(samples, start - 1e-6),
+        upperBoundTimeSec(samples, nowSec + 1e-6),
+      ))
       if (nowSec > first.timeSec + 1e-6 && nowSec < last.timeSec - 1e-6) {
         const current = positionAtV2([segment], nowSec)
         if (current && Math.abs(current.timeSec - nowSec) <= 1e-6) {
@@ -257,31 +299,13 @@ const TRACER_FLASH_PEAK_REAL_SEC = 0.2
 /** 同一次射击的判同窗口（秒）：同 attacker/target 且时间差 ≤ 该值的 DAMAGE/KILL 只画一条炮线。 */
 const SAME_SHOT_WINDOW_SEC = 0.25
 
-/**
- * 已知射击事件 → 当前可见炮线（纯函数：只依赖 now/speed，seek 与倍速天然正确，无一次性定时器）。
- * 候选 = DAMAGE 与 KILL（攻击者/目标均已解析）；同刻同 attacker/target 去重为一条（优先保留 DAMAGE）；
- * 两端都必须在事件时刻有可信位置（V2 使用 canonical positionSegments）且不是同一辆车/同一坐标才输出。
- * nowSec ∈ [timeSec, timeSec + TRACER_BASE_SEC × speed) 时可见。
- * 激光视觉派生：opacity 为「先亮后淡」（前 TRACER_HOLD_REAL_SEC × speed 秒全亮，
- * 之后线性淡出到窗口结束）；flashProgress 0→1 描述命中端闪光进度（窗口
- * TRACER_FLASH_REAL_SEC × speed 秒），flashOpacity 为峰值曲线（前
- * TRACER_FLASH_PEAK_REAL_SEC × speed 秒由 0 升至 0.9，之后线性淡出到 0；
- * flashProgress=1 时 opacity=0，组件不再渲染圆点，不残留孤立端点）。
- *
- * @param events         过滤后的 playback 事件（DAMAGE/KILL）
- * @param routesByAccount Map<accountId, VehiclePlaybackTrack | { points: [{x,y,timeSec}] }>
- * @param nowSec         当前播放时间（battle-relative 秒）
- * @param speed          播放倍速（1/2/4）
- * @param poseAt         可选：与 3D 同源的位姿通道 `(route, t) → { x, y } | null`
- *                       （只改端点取值；可信度门控仍是 canonical 观测区间）
- * @returns [{ x1, y1, x2, y2, opacity, flashProgress, flashOpacity, timeSec, attackerAccountId, targetAccountId }]
- */
-export function tracerLines(events, routesByAccount, nowSec, speed, poseAt = null) {
-  if (!Array.isArray(events) || !routesByAccount || !Number.isFinite(nowSec)) return []
-  const rate = Number.isFinite(speed) && speed > 0 ? speed : 1
-  const windowSec = TRACER_BASE_SEC * rate
-  // 按 (attacker,target) 分组，组内按实际时间差去重（时间差 ≤ SAME_SHOT_WINDOW_SEC 视为同一炮，
-  // 优先保留 DAMAGE）——不用固定时间桶，避免桶边界把相差 2ms 的两次事件拆成两条线
+/** tracerLines 的去重炮列表缓存（key = 事件数组身份；结果与事件数组同生命周期）。 */
+const tracerShotsCache = new WeakMap()
+
+/** tracerLines 的 (attacker,target) 分组去重（见 tracerLines 注释），按事件数组身份缓存。 */
+function dedupTracerShots(events) {
+  const cached = tracerShotsCache.get(events)
+  if (cached) return cached
   const byPair = new Map()
   for (const ev of events) {
     if (!ev || (ev.type !== 'DAMAGE' && ev.type !== 'KILL')) continue
@@ -310,6 +334,38 @@ export function tracerLines(events, routesByAccount, nowSec, speed, poseAt = nul
     }
     if (kept) shots.push(kept)
   }
+  tracerShotsCache.set(events, shots)
+  return shots
+}
+
+/**
+ * 已知射击事件 → 当前可见炮线（纯函数：只依赖 now/speed，seek 与倍速天然正确，无一次性定时器）。
+ * 候选 = DAMAGE 与 KILL（攻击者/目标均已解析）；同刻同 attacker/target 去重为一条（优先保留 DAMAGE）；
+ * 两端都必须在事件时刻有可信位置（V2 使用 canonical positionSegments）且不是同一辆车/同一坐标才输出。
+ * nowSec ∈ [timeSec, timeSec + TRACER_BASE_SEC × speed) 时可见。
+ * 激光视觉派生：opacity 为「先亮后淡」（前 TRACER_HOLD_REAL_SEC × speed 秒全亮，
+ * 之后线性淡出到窗口结束）；flashProgress 0→1 描述命中端闪光进度（窗口
+ * TRACER_FLASH_REAL_SEC × speed 秒），flashOpacity 为峰值曲线（前
+ * TRACER_FLASH_PEAK_REAL_SEC × speed 秒由 0 升至 0.9，之后线性淡出到 0；
+ * flashProgress=1 时 opacity=0，组件不再渲染圆点，不残留孤立端点）。
+ *
+ * @param events         过滤后的 playback 事件（DAMAGE/KILL）
+ * @param routesByAccount Map<accountId, VehiclePlaybackTrack | { points: [{x,y,timeSec}] }>
+ * @param nowSec         当前播放时间（battle-relative 秒）
+ * @param speed          播放倍速（1/2/4）
+ * @param poseAt         可选：与 3D 同源的位姿通道 `(route, t) → { x, y } | null`
+ *                       （只改端点取值；可信度门控仍是 canonical 观测区间）
+ * @returns [{ x1, y1, x2, y2, opacity, flashProgress, flashOpacity, timeSec, attackerAccountId, targetAccountId }]
+ */
+export function tracerLines(events, routesByAccount, nowSec, speed, poseAt = null) {
+  if (!Array.isArray(events) || !routesByAccount || !Number.isFinite(nowSec)) return []
+  const rate = Number.isFinite(speed) && speed > 0 ? speed : 1
+  const windowSec = TRACER_BASE_SEC * rate
+  // 按 (attacker,target) 分组，组内按实际时间差去重（时间差 ≤ SAME_SHOT_WINDOW_SEC 视为同一炮，
+  // 优先保留 DAMAGE）——不用固定时间桶，避免桶边界把相差 2ms 的两次事件拆成两条线。
+  // 去重结果只依赖事件数组本身（回放数据解析后不可变），按数组身份缓存，
+  // 避免 60fps 下每帧对全体事件重建 Map + 逐组排序。
+  const shots = dedupTracerShots(events)
   const lines = []
   for (const ev of shots) {
     const t = ev.timeSec
@@ -423,8 +479,51 @@ export function clampViewPan(view, viewW, viewH, mapW = viewW, mapH = viewH) {
  * cursor 上不重复触发——pause/resume 与 seek 到事件时刻都不补播），≤ to。
  * 返回事件引用数组（保持原顺序）。
  */
+/** 事件数组时钟升序缓存（key = 数组身份）：升序时 (fromSec, toSec] 窗口可二分；含
+ * 非 finite timeSec 视为无序，回退 filter（NaN 比较恒 false，升序判定不可信）。 */
+const eventsAscendingCache = new WeakMap()
+
+function eventsAscending(events) {
+  let ascending = eventsAscendingCache.get(events)
+  if (ascending === undefined) {
+    ascending = true
+    for (let i = 0; i < events.length; i += 1) {
+      const t = events[i] && events[i].timeSec
+      if (!Number.isFinite(t)) {
+        ascending = false
+        break
+      }
+      if (i > 0 && t < events[i - 1].timeSec) {
+        ascending = false
+        break
+      }
+    }
+    eventsAscendingCache.set(events, ascending)
+  }
+  return ascending
+}
+
+/** 升序数组中第一个 timeSec > t 的下标（严格上界，与 filter 的严格不等号逐位一致）。 */
+function firstIndexAfterTimeSec(sorted, t) {
+  let lo = 0
+  let hi = sorted.length
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (sorted[mid].timeSec > t) hi = mid
+    else lo = mid + 1
+  }
+  return lo
+}
+
 export function eventsCrossed(events, fromSec, toSec) {
   if (!Array.isArray(events) || !Number.isFinite(fromSec) || !Number.isFinite(toSec)) return []
+  // 播放事件流按回放时钟升序时，窗口 (fromSec, toSec] 是连续区间：二分 + slice 代替
+  // 每帧全量 filter（消费端 consumeEvents 在 rAF 帧内逐帧调用）。
+  if (eventsAscending(events)) {
+    const lo = firstIndexAfterTimeSec(events, fromSec + 1e-9)
+    const hi = firstIndexAfterTimeSec(events, toSec + 1e-9)
+    return lo < hi ? events.slice(lo, hi) : []
+  }
   return events.filter(ev =>
     Number.isFinite(ev && ev.timeSec) && ev.timeSec > fromSec + 1e-9 && ev.timeSec <= toSec + 1e-9)
 }

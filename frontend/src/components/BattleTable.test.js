@@ -91,15 +91,26 @@ describe('BattleTable columns', () => {
       { team: 1, accountId: 2, vehicleId: 2, cells: { nickname: 'B', damage_dealt: 2000, hit_rate: 9 } },
       { team: 1, accountId: 3, vehicleId: 3, cells: { nickname: 'C', damage_dealt: 1000, hit_rate: 21 } }
     ]), makeCols())
+    // 排序状态由父组件持有（props 单一事实源 + update 事件回写，见 ReplayPage battleSorts）：
+    // 测试模拟父组件把 update 事件回灌 props
+    const applySort = async () => {
+      const emitted = wrapper.emitted()
+      await wrapper.setProps({
+        sortKey: emitted['update:sortKey'].at(-1)[0],
+        sortReverse: emitted['update:sortReverse'].at(-1)[0],
+      })
+    }
 
     // click hit_rate header -> ascending numeric
     const th = wrapper.findAll('th').find(t => t.text().includes('hit_rate'))
     await th.trigger('click')
+    await applySort()
     let firstCols = wrapper.findAll('tbody tr').at(0).findAll('td')
     expect(firstCols.at(2).text()).toBe('9')
 
     // click again -> descending
     await th.trigger('click')
+    await applySort()
     firstCols = wrapper.findAll('tbody tr').at(0).findAll('td')
     expect(firstCols.at(2).text()).toBe('100')
   })
