@@ -1110,6 +1110,9 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
             <label class="toggle" :title="t('agentReplay.perf_dynres_hint')">
               <input type="checkbox" data-testid="perf-dynres" :checked="store.dynres" @change="sceneApi.setDynres($event.target.checked)"> {{ t('agentReplay.perf_dynres') }}
             </label>
+            <label class="toggle" :title="t('agentReplay.perf_armor_highlight_hint')">
+              <input type="checkbox" data-testid="perf-armor-highlight" :checked="store.armorHighlight" @change="sceneApi.setArmorHighlight($event.target.checked)"> {{ t('agentReplay.perf_armor_highlight') }}
+            </label>
             </div>
           </details>
           <AppButton variant="primary" data-test="replay3d-start" @click="startReplay">{{ t('agentReplay.start') }}</AppButton>

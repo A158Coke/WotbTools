@@ -104,3 +104,19 @@ describe('场景源码护栏：评审 P0 修复的接线锁定', () => {
     expect(src).toMatch(/if \(PERF\) \{\s*if \(perfBeatTimer\) \{ clearInterval\(perfBeatTimer\); perfBeatTimer = 0; \}\s*delete window\.__pbPerf;/)
   })
 })
+
+describe('Sniper 穿深着色接线', () => {
+  const source = readFileSync(resolve(__dirname, 'playbackScene.js'), 'utf8')
+
+  it('叠加 pass 排在主渲染之后，且只有录像者开镜才可能运行', () => {
+    expect(source).toMatch(/renderer\.render\(scene, camera\);\s+renderArmorHighlight\(\);/)
+    expect(source).toContain("if (!ARMOR_HIGHLIGHT || CAM !== 'recorder' || !scopedHiddenEid) return;")
+  })
+
+  it('配置解析不走带回退的 resolveMountedConfig', () => {
+    const start = source.indexOf('function renderArmorHighlight')
+    const body = source.slice(start, source.indexOf('回到俯视机位', start))
+    expect(body).toContain('resolveExactMountedConfig')
+    expect(body).not.toMatch(/resolveMountedConfig\(/)
+  })
+})

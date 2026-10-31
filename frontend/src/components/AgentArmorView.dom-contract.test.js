@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')
+// 板分类/配置选择/穿透场景构建的共享实现（装甲查看器与 3D 回放同用）
+const plateModel = read('../scene/viewer/armorPlateModel.js')
 
 describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
   const template = read('./AgentArmorView.vue')
@@ -76,13 +78,14 @@ describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
   // doubleSided，上表面条带绕序朝内——替换材质固定 FrontSide 会在厚度视图/热力图里把
   // 上表面剔除成空洞。模块替换材质/clone 必须沿用源材质的 side。
   it('模块替换材质沿用客户端材质的双面口径', () => {
-    expect(kernel).toMatch(/function moduleDoubleSided\(node\) \{/)
-    expect(kernel).toMatch(/node\.userData\.moduleDoubleSided = moduleDoubleSided\(node\);/)
+    expect(plateModel).toMatch(/function moduleDoubleSided\(node\) \{/)
+    expect(plateModel).toMatch(/node\.userData\.moduleDoubleSided = moduleDoubleSided\(node\)/)
     expect(kernel).toMatch(/const side = node\.userData\.moduleDoubleSided \? THREE\.DoubleSide : THREE\.FrontSide;/)
+    expect(plateModel).toMatch(/const side = node\.userData\.moduleDoubleSided \? THREE\.DoubleSide : THREE\.FrontSide/)
     expect(kernel).toMatch(/mat\.side = side;/)
-    expect(kernel).toMatch(/cmat\.side = side;/)
-    expect(kernel).toMatch(/m\.side = side;/)
-    expect(kernel).toMatch(/sm\.side = node\.userData\.moduleDoubleSided \? THREE\.DoubleSide : THREE\.FrontSide;/)
+    expect(plateModel).toMatch(/cmat\.side = side/)
+    expect(plateModel).toMatch(/m\.side = side/)
+    expect(plateModel).toMatch(/sm\.side = node\.userData\.moduleDoubleSided \? THREE\.DoubleSide : THREE\.FrontSide/)
   })
 })
 
@@ -302,16 +305,16 @@ describe('dolly-zoom world-overview scope guard', () => {
     // BlitzKit 口径（2026-10-28 用户裁定回退）：外部模块按 mask 标量选取——有 mask 值
     // → gun_0X* 全部网格（含 _mask/辅助件，由同一平面裁掉炮根）；无 mask 值 → 只取精确
     // gun_0X。辅助件必须并入模块（BlitzKit startsWith），不能按纯视觉 deco 隐藏。
-    expect(kernel).toMatch(/if \(node\.userData\.gunMaskPart && !hasMask\) return;\s*\n\s*externalMeshes\.push\(node\);/)
+    expect(plateModel).toMatch(/if \(node\.userData\.gunMaskPart && !hasMask\) return\s*\n\s*out\.push\(node\)/)
     expect(kernel).toMatch(/const hideMaskPart = collisionMode && !hasMask;/)
     expect(kernel).toMatch(/&& !\(hideMaskPart && node\.userData\.gunMaskPart\)/)
-    const tagFn = kernel.slice(kernel.indexOf('function tagModuleMeshes('), kernel.indexOf('let worldMetersPerUnit'))
+    const tagFn = plateModel.slice(plateModel.indexOf('function tagModuleMeshes('), plateModel.indexOf('function collectArmorPrefixes('))
     expect(tagFn).not.toContain("armorSection = 'deco'")
-    expect((tagFn.match(/gunMaskPart = true;/g) || [])).toHaveLength(2)
+    expect((tagFn.match(/gunMaskPart = true/g) || [])).toHaveLength(2)
     // 平面 = BlitzKit 同式：枪管局部系（法线=模型前向）过模型原点前方 gun_mask+原点链处，
     // 随炮塔/炮管姿态矩阵（gunPoseMatrix）与模型根变换进世界系；厚度视图实心炮管体与
     // 续飞着色器同步同一平面。不能再用「模型原点 + 炮口方向 × 距离」的近似。
-    expect(kernel).toMatch(/const maskOriginModel = cfg\.gun_mask \+ mo\.track\[1\] \+ mo\.turret\[1\] \+ cfg\.gun_origin\[1\];/)
+    expect(plateModel).toMatch(/return cfg\.gun_mask \+ mo\.track\[1\] \+ mo\.turret\[1\] \+ cfg\.gun_origin\[1\]/)
     expect(kernel).toMatch(/gunPoseMatrix\.copy\(mGun\);/)
     expect(kernel).toMatch(/_gunClipMatrix\.copy\(tankModel\.matrixWorld\)\.multiply\(gunPoseMatrix\);/)
     expect(kernel).toMatch(/plane\.applyMatrix4\(_gunClipMatrix\);/)
@@ -427,12 +430,12 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(kernel).toMatch(/function moduleStateMaterial\(clip\)/)
     expect(kernel).toMatch(/blendSrc: THREE\.ZeroFactor, blendDst: THREE\.OneFactor/)
     expect(kernel).toMatch(/blendSrcAlpha: THREE\.OneFactor, blendDstAlpha: THREE\.ZeroFactor/)
-    const stateScene = kernel.slice(kernel.indexOf('function buildSpacedStateScene'), kernel.indexOf('function buildPrimaryArmorScene'))
-    expect(stateScene).toMatch(/primaryMeshes\.forEach/)
+    const stateScene = plateModel.slice(plateModel.indexOf('function populateSpacedStateScene'), plateModel.indexOf('function populatePrimaryArmorScene'))
+    expect(stateScene).toMatch(/meshes\.primary\.forEach/)
     // 状态 clone 先用 moduleStateMaterial 建材质（再按源材质 side 设双面），再 addClone
-    expect(stateScene).toMatch(/const sm = moduleStateMaterial\(/)
-    expect(stateScene).toMatch(/sm\.side = node\.userData\.moduleDoubleSided \? THREE\.DoubleSide : THREE\.FrontSide;/)
-    expect(stateScene).toMatch(/addClone\(spacedStateScene, node, sm, 3\)/)
+    expect(stateScene).toMatch(/const sm = mats\.moduleStateMaterial\(/)
+    expect(stateScene).toMatch(/sm\.side = node\.userData\.moduleDoubleSided \? THREE\.DoubleSide : THREE\.FrontSide/)
+    expect(stateScene).toMatch(/addClone\(scene, node, sm, 3\)/)
     // PBR：RT0.R 已是逐层 normalized effective；直接累加，不再用 RT1.B 做最近层差额。
     expect(kernel).toMatch(/highp float totalConsume = spacedSatBlocked \? 1\.0 : max\(0\.0, rawTotal\);/)
     // B 的唯一消费者是上方锁定的诊断解码，不参与厚度或穿深计算。
@@ -462,10 +465,10 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     // dFdx/dFdy(vViewPos) 在移动端 mediump(fp16) 下逐像素导数量化/退化，导致热力图错乱
     // （2026-10-19 修复）；这里锁定三个热力图 shader 都使用 flat vNormal。
     // 视线方向必须 highp：500 m 处 mediump length(vViewPos) 在平方时溢出，角度会坏。
-    expect(kernel).toMatch(/toNonIndexed\(\)/)
-    expect(kernel).toMatch(/computeVertexNormals\(\)/)
+    expect(plateModel).toMatch(/toNonIndexed\(\)/)
+    expect(plateModel).toMatch(/computeVertexNormals\(\)/)
     expect([...kernel.matchAll(/highp vec3 nFace = normalize\(vNormal\);/g)]).toHaveLength(3)
-    expect([...kernel.matchAll(/varying highp vec3 vViewPos;/g)]).toHaveLength(4)
+    expect([...kernel.matchAll(/varying highp vec3 vViewPos;/g)]).toHaveLength(5)
     expect([...kernel.matchAll(/highp vec3 viewDir = normalize\(vViewPos\);/g)]).toHaveLength(3)
     expect([...kernel.matchAll(/highp float angle = acos\(/g)]).toHaveLength(3)
     expect(kernel).not.toMatch(/dFdx\(vViewPos\)/)
@@ -593,7 +596,7 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(kernel).not.toContain('shooterCaliber = 120')
     expect(kernel).toContain('function resolveCaliberFor')
     expect(kernel).toContain('resolveCaliberFor(sh)')
-    expect(kernel).toContain('未知弹种必须 fail-closed')
+    expect(plateModel).toContain('未知弹种 fail-closed')
     expect(kernel).toContain('resolveShotCaliber() > 0')
   })
 
@@ -812,10 +815,10 @@ describe('spaced armor surface selection', () => {
     expect(shaders).toMatch(/function spacedMaterial\(thickness, penetration, side\)/)
     expect(shaders).toMatch(/side,\s*\n\s*uniforms:/)
     expect(shaders).toMatch(/depthWrite: true, depthTest: true, blending: THREE\.NoBlending,\s*\n\s*side: THREE\.DoubleSide,/)
-    expect(kernel).toMatch(/isClosedSurfaceGeometry\(node\.geometry\) \? THREE\.FrontSide : THREE\.DoubleSide/)
-    expect(kernel).toMatch(/spacedMaterial\(t, pen, side\)/)
+    expect(plateModel).toMatch(/isClosedSurfaceGeometry\(node\.geometry\) \? THREE\.FrontSide : THREE\.DoubleSide/)
+    expect(plateModel).toMatch(/spacedMaterial\(t, pen, side\)/)
     expect(kernel).toMatch(/colorWrite: false, depthTest: true, depthWrite: true, side: THREE\.DoubleSide,/)
-    expect(kernel).toMatch(/addClone\(spacedArmorScene, node, spacedOmitMaterial, 5\)/)
+    expect(plateModel).toMatch(/addClone\(scene, node, mats\.spacedOmit, 5\)/)
   })
   it('间隙甲片元着色器按 gl_FrontFacing 翻转法线（PBR/间隙/状态三处）', () => {
     const flips = [...shaders.matchAll(/if \(!gl_FrontFacing\) nFace = -nFace;/g)]
