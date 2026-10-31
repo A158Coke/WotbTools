@@ -1454,7 +1454,9 @@ describe('Free Camera terrain floor', () => {
       return event
     }
     canvas.dispatchEvent(touch('pointerdown', 100, 7))
-    canvas.dispatchEvent(touch('pointerdown', 300, 9))
+    canvas.dispatchEvent(touch('pointerdown', 340, 9))
+    canvas.dispatchEvent(touch('pointermove', 320, 9))
+    canvas.dispatchEvent(touch('pointermove', 300, 9))   // 判定为捏合，基准指距 200px
     canvas.dispatchEvent(touch('pointermove', 260, 9))
     expect(cam.position.y).toBeCloseTo(topHeight, 5)
     canvas.dispatchEvent(touch('pointerup', 260, 9))
@@ -1523,7 +1525,9 @@ describe('Free Camera terrain floor', () => {
       return event
     }
     canvas.dispatchEvent(touch('pointerdown', 100, 7))
-    canvas.dispatchEvent(touch('pointerdown', 300, 9))
+    canvas.dispatchEvent(touch('pointerdown', 260, 9))
+    canvas.dispatchEvent(touch('pointermove', 280, 9))
+    canvas.dispatchEvent(touch('pointermove', 300, 9))   // 判定为捏合，基准指距 200px
     canvas.dispatchEvent(touch('pointermove', 340, 9))
     expect(cam.position.y).toBeGreaterThanOrEqual(27.5)
     canvas.dispatchEvent(touch('pointerup', 340, 9))
@@ -1984,8 +1988,8 @@ describe('scene vehicle selection intent', () => {
 
   // 回归（2026-10-24 用户实测）：曾按 `(pointer: fine)` 决定是否接管，触屏笔记本 /
   // 平板模式报 coarse ⇒ 自由模式整条接管链失效（WASD 全灭、拖拽退回 OrbitControls）。
-  // 语义改为「自由模式恒接管」，触屏用同一套手势。
-  it('自由模式接管与指针能力无关：touch 拖拽同样转头且相机不动', async () => {
+  // 语义改为「自由模式恒接管」，触屏手势见下方「自由视角触屏手势」。
+  it('自由模式接管与指针能力无关：touch 拖拽由 fly 接管且 OrbitControls 保持关闭', async () => {
     source.loadPlaybackData.mockResolvedValue(minimalData())
     const store = createPlaybackStore()
     const container = mountContainer()
@@ -1993,6 +1997,7 @@ describe('scene vehicle selection intent', () => {
     created.push(api)
     await api.loadData({ kind: 'local', file: new File(['x'], 'touch-look.wotbreplay') })
     api.setCam('free')
+    container.getBoundingClientRect = () => ({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600 })
     const canvas = container.querySelector('canvas')
     const cam = window.__camera
     const controls = window.__controls
@@ -2006,9 +2011,11 @@ describe('scene vehicle selection intent', () => {
     }
     canvas.dispatchEvent(touch('pointerdown', 100, 1))
     canvas.dispatchEvent(touch('pointermove', 180, 1))
-    expect(cam.position.equals(cam0)).toBe(true)          // 旋转中心 = 相机自身
-    expect(controls.target.equals(tgt0)).toBe(false)      // 朝向确实转了
-    canvas.dispatchEvent(touch('pointerup', 180, 0))
+    canvas.dispatchEvent(touch('pointermove', 240, 1))
+    expect(cam.position.equals(cam0)).toBe(false)
+    expect(controls.target.equals(tgt0)).toBe(false)
+    expect(controls.enabled).toBe(false)
+    canvas.dispatchEvent(touch('pointerup', 240, 0))
   })
 
   it('双指捏合：沿视线推拉相机，且手势往返精确回位（评审 P2）', async () => {
@@ -2031,10 +2038,12 @@ describe('scene vehicle selection intent', () => {
       Object.defineProperty(e, 'pointerId', { value: pointerId })
       return e
     }
-    // 一次完整手势：两指从 200px 起，依次移动到 xs（第二指），再回到 200px 收势
+    // 一次完整手势：两指走够判定距离后基准指距 200px，依次移动到 xs（第二指），再回到 200px 收势
     const gesture = (xs) => {
       canvas.dispatchEvent(touch('pointerdown', 100, 1, 7))
-      canvas.dispatchEvent(touch('pointerdown', 300, 1, 9))   // 指距 200px（= d0）
+      canvas.dispatchEvent(touch('pointerdown', 280, 1, 9))
+      canvas.dispatchEvent(touch('pointermove', 295, 1, 9))
+      canvas.dispatchEvent(touch('pointermove', 300, 1, 9))   // 判定为捏合：指距 200px（= d0）
       for (const x of xs) canvas.dispatchEvent(touch('pointermove', x, 1, 9))
       canvas.dispatchEvent(touch('pointerup', 300, 0, 9))
       canvas.dispatchEvent(touch('pointerup', 100, 0, 7))
@@ -2074,6 +2083,330 @@ describe('scene vehicle selection intent', () => {
     gesture([375, 450])                             // 分两步到同一指距 350
     const split = cam.position.clone().sub(base)
     expect(split.distanceTo(oneShot)).toBeCloseTo(0, 4)
+  })
+})
+
+describe('自由视角触屏手势', () => {
+  const touch = (type, x, y, pointerId) => Object.assign(
+    new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: type === 'pointerup' ? 0 : 1, clientX: x, clientY: y }),
+    { pointerId, pointerType: 'touch' },
+  )
+
+  async function setup({ pos = [0, 100, 100], target = [0, 0, 0] } = {}) {
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const onVehicleSelect = vi.fn()
+    const container = mountContainer()
+    container.getBoundingClientRect = () => ({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600 })
+    container.setPointerCapture = vi.fn()
+    container.releasePointerCapture = vi.fn()
+    const api = initPlayback(container, createPlaybackStore(), null, { onVehicleSelect })
+    created.push(api)
+    await api.loadData({ kind: 'local', file: new File(['x'], 'touch-gestures.wotbreplay') })
+    api.setPlaying(false)
+    api.setCam('free')
+    const cam = window.__camera
+    const controls = window.__controls
+    cam.position.set(...pos)
+    controls.target.set(...target)
+    cam.lookAt(controls.target)
+    const canvas = container.querySelector('canvas')
+    canvas.setPointerCapture = vi.fn()
+    canvas.releasePointerCapture = vi.fn()
+    const send = (...args) => canvas.dispatchEvent(touch(...args))
+    const dir = () => new THREE.Vector3().subVectors(controls.target, cam.position).normalize()
+    return { api, cam, controls, canvas, send, dir, onVehicleSelect }
+  }
+
+  // 手指当前射线与 y=0 平面的交点：不经过实现的平移计算，独立验证「地面跟手」
+  function groundUnder(cam, x, y) {
+    cam.updateMatrixWorld()
+    const raycaster = new THREE.Raycaster()
+    raycaster.setFromCamera(new THREE.Vector2(x / 800 * 2 - 1, -(y / 600 * 2 - 1)), cam)
+    return raycaster.ray.at(-cam.position.y / raycaster.ray.direction.y, new THREE.Vector3())
+  }
+
+  describe('单指平移', () => {
+    it('抓住的地面点留在手指下，朝向和高度不变，松手即停', async () => {
+      const { cam, controls, send, dir } = await setup()
+      const dir0 = dir()
+      send('pointerdown', 400, 300, 1)
+      send('pointermove', 410, 300, 1)                        // 越过单击阈值，抓住地面点
+      const grabbed = groundUnder(cam, 410, 300)
+      send('pointermove', 520, 380, 1)
+      expect(cam.position.y).toBe(100)
+      expect(dir().dot(dir0)).toBeCloseTo(1, 8)
+      expect(controls.enabled).toBe(false)
+      const under = groundUnder(cam, 520, 380)
+      expect(under.distanceTo(grabbed)).toBeLessThan(1e-3)
+      expect(cam.position.x).not.toBeCloseTo(0, 1)
+      send('pointerup', 520, 380, 1)
+      const stopped = cam.position.clone()
+      send('pointermove', 600, 300, 1)
+      expect(cam.position.equals(stopped)).toBe(true)
+    })
+
+    it('手指回到起点时相机精确回位', async () => {
+      const { cam, send } = await setup()
+      send('pointerdown', 400, 300, 1)
+      send('pointermove', 410, 300, 1)
+      const start = cam.position.clone()
+      send('pointermove', 600, 450, 1)
+      send('pointermove', 300, 200, 1)
+      send('pointermove', 410, 300, 1)
+      send('pointerup', 410, 300, 1)
+      expect(cam.position.distanceTo(start)).toBeLessThan(1e-6)
+    })
+
+    it('手指按在地平线以上也不会把相机甩飞', async () => {
+      const { cam, send } = await setup({ pos: [0, 100, 0], target: [0, 100, -100] })
+      send('pointerdown', 400, 100, 1)
+      send('pointermove', 410, 100, 1)
+      send('pointermove', 500, 100, 1)
+      send('pointerup', 500, 100, 1)
+      expect(Number.isFinite(cam.position.x)).toBe(true)
+      expect(Math.abs(cam.position.x)).toBeLessThan(800)
+      expect(cam.position.y).toBe(100)
+    })
+
+    it('平移到地图边缘时相机停下而不是转头', async () => {
+      const { cam, send, dir } = await setup()
+      const dir0 = dir()
+      let last = null
+      for (let i = 0; i < 40; i++) {
+        send('pointerdown', 400, 100, 1)
+        send('pointermove', 400, 110, 1)
+        send('pointermove', 400, 500, 1)
+        send('pointerup', 400, 500, 1)
+        expect(dir().dot(dir0)).toBeCloseTo(1, 6)
+        if (i === 39) expect(cam.position.distanceTo(last)).toBeLessThan(1e-6)
+        last = cam.position.clone()
+      }
+    })
+
+    it('翻过高坡时不低于净空，回到原处恢复原高度', async () => {
+      stubTerrainAssets()
+      const { cam, send } = await setup({ pos: [-60, 26, 0], target: [-60, 11, -30] })
+      send('pointerdown', 700, 300, 1)
+      send('pointermove', 690, 300, 1)
+      const start = cam.position.clone()
+      let peak = 0
+      for (let x = 680; x >= -3000; x -= 200) {
+        send('pointermove', x, 300, 1)
+        peak = Math.max(peak, cam.position.y)
+        if (cam.position.x > -20) break
+      }
+      expect(peak).toBeGreaterThan(26)
+      send('pointermove', 690, 300, 1)
+      send('pointerup', 690, 300, 1)
+      expect(cam.position.distanceTo(start)).toBeLessThan(1e-6)
+    })
+
+    it('≤ 4px 算单击且相机不动，超过后不算单击', async () => {
+      const { cam, send, onVehicleSelect } = await setup()
+      const start = cam.position.clone()
+      send('pointerdown', 400, 300, 1)
+      send('pointermove', 403, 300, 1)
+      send('pointerup', 403, 300, 1)
+      expect(cam.position.equals(start)).toBe(true)
+      expect(onVehicleSelect).toHaveBeenCalledTimes(1)
+      send('pointerdown', 400, 300, 2)
+      send('pointermove', 420, 300, 2)
+      send('pointermove', 400, 300, 2)                        // 回到起点也不算单击
+      send('pointerup', 400, 300, 2)
+      expect(onVehicleSelect).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('双指', () => {
+    const lookCases = [
+      ['右', [40, 0], (a, b) => b.x > a.x],
+      ['左', [-40, 0], (a, b) => b.x < a.x],
+      ['上', [0, -40], (a, b) => b.y > a.y],
+      ['下', [0, 40], (a, b) => b.y < a.y],
+    ]
+    it.each(lookCases)('并拢一起向%s拖 = 转视角，相机不动', async (_, [dx, dy], changed) => {
+      const { cam, controls, send, dir } = await setup()
+      const start = cam.position.clone()
+      const dir0 = dir()
+      send('pointerdown', 400, 300, 1)
+      send('pointerdown', 440, 300, 2)
+      // 逐指派发：第一个事件时第二指还是旧位置，不能因此判成捏合
+      send('pointermove', 400 + dx / 2, 300 + dy / 2, 1)
+      send('pointermove', 440 + dx / 2, 300 + dy / 2, 2)
+      send('pointermove', 400 + dx, 300 + dy, 1)
+      send('pointermove', 440 + dx, 300 + dy, 2)
+      expect(changed(dir0, dir())).toBe(true)
+      expect(dir().angleTo(dir0)).toBeGreaterThan(0.01)
+      expect(cam.position.equals(start)).toBe(true)
+      expect(controls.enabled).toBe(false)
+      expect(cam.position.distanceTo(controls.target)).toBeCloseTo(start.distanceTo(new THREE.Vector3(0, 0, 0)), 6)
+    })
+
+    it('一个事件走完整段的快速两指拖动不被判成捏合', async () => {
+      const { cam, send } = await setup()
+      const start = cam.position.clone()
+      send('pointerdown', 400, 300, 1)
+      send('pointerdown', 440, 300, 2)
+      send('pointermove', 400, 360, 1)
+      send('pointermove', 440, 360, 2)
+      expect(cam.position.equals(start)).toBe(true)
+    })
+
+    it('指距分开较大时一起拖同样是转视角', async () => {
+      const { cam, send, dir } = await setup()
+      const start = cam.position.clone()
+      const dir0 = dir()
+      send('pointerdown', 200, 300, 1)
+      send('pointerdown', 600, 300, 2)
+      send('pointermove', 200, 330, 1)
+      send('pointermove', 600, 330, 2)
+      send('pointermove', 200, 360, 1)
+      send('pointermove', 600, 360, 2)
+      expect(dir().angleTo(dir0)).toBeGreaterThan(0.01)
+      expect(cam.position.equals(start)).toBe(true)
+    })
+
+    it('转视角中指距变化不触发推拉', async () => {
+      const { cam, send } = await setup()
+      const start = cam.position.clone()
+      send('pointerdown', 400, 300, 1)
+      send('pointerdown', 440, 300, 2)
+      send('pointermove', 400, 330, 1)
+      send('pointermove', 440, 330, 2)
+      send('pointermove', 300, 330, 1)
+      send('pointermove', 540, 330, 2)
+      expect(cam.position.equals(start)).toBe(true)
+    })
+
+    it.each([
+      ['从并拢分开', [400, 420], [[380, 1], [440, 2]], [465, 2], 1],
+      ['两指合拢', [300, 600], [[320, 1], [580, 2], [340, 1], [560, 2]], [500, 2], -1],
+      ['一指不动', [300, 400], [[420, 2], [440, 2]], [520, 2], 1],
+    ])('%s = 沿视线推拉，朝向不变', async (_, [x1, x2], moves, [lastX, lastId], sign) => {
+      const { cam, send, dir } = await setup()
+      const dir0 = dir()
+      send('pointerdown', x1, 300, 1)
+      send('pointerdown', x2, 300, 2)
+      for (const [x, id] of moves) send('pointermove', x, 300, id)
+      const before = cam.position.clone()
+      send('pointermove', lastX, 300, lastId)
+      expect(cam.position.clone().sub(before).dot(dir0) * sign).toBeGreaterThan(0)
+      expect(dir().dot(dir0)).toBeCloseTo(1, 8)
+    })
+
+    it('捏合中两指改成同向移动也不转视角', async () => {
+      const { send, dir } = await setup()
+      const dir0 = dir()
+      send('pointerdown', 300, 300, 1)
+      send('pointerdown', 500, 300, 2)
+      send('pointermove', 280, 300, 1)
+      send('pointermove', 520, 300, 2)
+      send('pointermove', 280, 400, 1)
+      send('pointermove', 520, 400, 2)
+      expect(dir().dot(dir0)).toBeCloseTo(1, 8)
+    })
+
+    it('判定前 12px 内相机不动', async () => {
+      const { cam, send, dir } = await setup()
+      const start = cam.position.clone()
+      const dir0 = dir()
+      send('pointerdown', 300, 300, 1)
+      send('pointerdown', 500, 300, 2)
+      send('pointermove', 305, 300, 1)
+      send('pointermove', 495, 300, 2)
+      expect(cam.position.equals(start)).toBe(true)
+      expect(dir().dot(dir0)).toBeCloseTo(1, 10)
+    })
+
+    it('平移中加第二指立即停止；抬起后剩下的手指不平移也不选车', async () => {
+      const { cam, send, onVehicleSelect } = await setup()
+      send('pointerdown', 400, 300, 1)
+      send('pointermove', 410, 300, 1)
+      send('pointermove', 500, 300, 1)
+      const stopped = cam.position.clone()
+      send('pointerdown', 600, 300, 2)
+      send('pointerup', 600, 300, 2)
+      send('pointermove', 300, 300, 1)
+      expect(cam.position.equals(stopped)).toBe(true)
+      send('pointerup', 300, 300, 1)
+      expect(onVehicleSelect).not.toHaveBeenCalled()
+    })
+
+    it('两指轻点不选车', async () => {
+      const { send, onVehicleSelect } = await setup()
+      send('pointerdown', 300, 300, 1)
+      send('pointerdown', 500, 300, 2)
+      send('pointerup', 500, 300, 2)
+      send('pointerup', 300, 300, 1)
+      expect(onVehicleSelect).not.toHaveBeenCalled()
+    })
+
+    it('pointercancel 清空手势，下一次单指正常平移', async () => {
+      const { cam, send } = await setup()
+      send('pointerdown', 300, 300, 1)
+      send('pointerdown', 500, 300, 2)
+      send('pointercancel', 300, 300, 1)
+      send('pointercancel', 500, 300, 2)
+      const start = cam.position.clone()
+      send('pointerdown', 400, 300, 3)
+      send('pointermove', 410, 300, 3)
+      send('pointermove', 500, 300, 3)
+      send('pointerup', 500, 300, 3)
+      expect(cam.position.equals(start)).toBe(false)
+    })
+
+    it('第三根手指不留下残余手势', async () => {
+      const { cam, send } = await setup()
+      const start = cam.position.clone()
+      send('pointerdown', 300, 300, 1)
+      send('pointerdown', 500, 300, 2)
+      send('pointerdown', 400, 200, 3)
+      send('pointermove', 400, 100, 3)
+      send('pointerup', 400, 100, 3)
+      send('pointerup', 500, 300, 2)
+      send('pointerup', 300, 300, 1)
+      expect(cam.position.equals(start)).toBe(true)
+    })
+  })
+
+  describe('其他模式不走自由视角手势', () => {
+    it('绘制模式：单指不动相机，双指一起拖也只是捏合', async () => {
+      const { api, cam, send, dir } = await setup()
+      api.setAnnotationInteraction({ enabled: true, tool: 'pen', color: '#ff4d4f', width: 3, eraserWidth: 16 })
+      const start = cam.position.clone()
+      const dir0 = dir()
+      send('pointerdown', 400, 300, 1)
+      send('pointermove', 460, 300, 1)
+      expect(cam.position.equals(start)).toBe(true)
+      send('pointerdown', 500, 300, 2)
+      send('pointermove', 460, 360, 1)
+      send('pointermove', 500, 360, 2)
+      expect(dir().dot(dir0)).toBeCloseTo(1, 8)
+      send('pointerup', 500, 360, 2)
+      send('pointerup', 460, 360, 1)
+    })
+
+    it('沙盘：单指交给 OrbitControls，不走贴地平移', async () => {
+      const { api, controls, send } = await setup()
+      api.setCam('top')
+      const target = controls.target.clone()
+      send('pointerdown', 400, 300, 1)
+      send('pointermove', 500, 300, 1)
+      send('pointerup', 500, 300, 1)
+      expect(controls.target.equals(target)).toBe(true)
+      expect(controls.enabled).toBe(true)
+    })
+
+    it('手势中切模式后不留下残余状态', async () => {
+      const { api, cam, send } = await setup()
+      send('pointerdown', 400, 300, 1)
+      send('pointermove', 410, 300, 1)
+      api.setCam('top')
+      api.setCam('free')
+      const start = cam.position.clone()
+      send('pointermove', 600, 300, 1)
+      expect(cam.position.equals(start)).toBe(true)
+    })
   })
 })
 
@@ -2242,6 +2575,9 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
       expect(window.__controls.enabled).toBe(false)
       canvas.dispatchEvent(pointer('pointermove', 180, 140, 1, 'mouse'))
       canvas.dispatchEvent(pointer('pointerup', 180, 140, 1, 'mouse'))
+      canvas.dispatchEvent(pointer('pointerdown', 100, 100, 4, 'touch'))
+      canvas.dispatchEvent(pointer('pointermove', 260, 180, 4, 'touch'))
+      canvas.dispatchEvent(pointer('pointerup', 260, 180, 4, 'touch'))
       canvas.dispatchEvent(pointer('pointerdown', 100, 100, 2, 'touch'))
       canvas.dispatchEvent(pointer('pointerdown', 200, 100, 3, 'touch'))
       canvas.dispatchEvent(pointer('pointermove', 260, 100, 3, 'touch'))
