@@ -14,6 +14,7 @@ export const ALLOWED_VIEWS = Object.freeze([
   'home', 'replay', 'hof', 'more', 'hof-admin',
   'profile', 'admin-users', 'admin-battle-data', 'admin-ai-review-feedback', 'history', 'technical-evolution', 'contact',
   'ai-review', 'battle-playback', 'agent-replay', 'agent-tankopedia', 'agent-armor', 'agent-shots', 'agent-techtree',
+  'map-preview',
   'rating-docs', 'tournament-points', 'tournament-points-config', 'tournament-points-admin',
   'android', 'sponsor', 'league-broadcasts', 'recommendations', 'recommended-videos', 'creators', 'creators-config',
 ])
@@ -32,6 +33,7 @@ export const PRIMARY_NAV = Object.freeze([
   Object.freeze({ id: 'hof', view: 'hof', labelKey: 'nav.hof' }),
   Object.freeze({ id: 'tankopedia', view: 'agent-tankopedia', labelKey: 'nav.tankopedia' }),
   Object.freeze({ id: 'techtree', view: 'agent-techtree', labelKey: 'research.title' }),
+  Object.freeze({ id: 'maps', view: 'map-preview', labelKey: 'nav.maps' }),
   Object.freeze({ id: 'tournament-points', view: 'tournament-points', labelKey: 'tournament.title' }),
   Object.freeze({ id: 'league-broadcasts', view: 'league-broadcasts', labelKey: 'leagueBroadcasts.title', shortLabelKey: 'leagueBroadcasts.navTitle' }),
   Object.freeze({ id: 'creators', view: 'recommendations', labelKey: 'creators.nav' }),
@@ -66,6 +68,7 @@ const PRIMARY_SECTION_OF_VIEW = Object.freeze({
   'agent-tankopedia': 'tankopedia',
   'agent-armor': 'tankopedia',
   'agent-techtree': 'techtree',
+  'map-preview': 'maps',
   'tournament-points': 'tournament-points',
   'league-broadcasts': 'league-broadcasts',
   creators: 'creators',
@@ -141,6 +144,8 @@ const ARMOR_SCENE_QUERY_KEYS = [
   'az', 'h', 'd', 'eqcal', 'eqenh', 'quality', 'move', 'rel', 'clean', 'debug',
 ]
 const BROADCAST_QUERY_KEYS = ['lbServer', 'lbSeason', 'lbCategory']
+/** 地图预览写进 URL 的键（map=资产 key、mode=2d|3d）：只属于该视图，离开时丢掉。 */
+const MAP_PREVIEW_QUERY_KEYS = ['map', 'mode']
 
 /** Keep legacy query URLs as the public URL contract while Vue Router owns history. */
 export function locationForView(view, route) {
@@ -160,6 +165,10 @@ export function locationForView(view, route) {
   // 离开装甲场景时丢掉场景参数（进入方向见上面 ARMOR_SCENE_QUERY_KEYS 的说明）
   if (route.query?.view === 'agent-armor' && view !== 'agent-armor') {
     for (const key of ARMOR_SCENE_QUERY_KEYS) delete query[key]
+  }
+  // 离开地图预览时丢掉地图参数（同上：进入方向保留，map/mode 就是目的地参数）
+  if (route.query?.view === 'map-preview' && view !== 'map-preview') {
+    for (const key of MAP_PREVIEW_QUERY_KEYS) delete query[key]
   }
   if (view === 'home' || view === 'android' || view === 'sponsor') delete query.view
   else query.view = view

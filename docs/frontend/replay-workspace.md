@@ -6,13 +6,13 @@
 
 - 工作台的官方示例与帮助复用同一 Replay session。示例经固定 manifest 与 SHA-256 验证后，匿名可用 3D/射击；普通文件选择立即撤销示例资格，AI 与服务端写操作仍使用真实登录。真实页面教学与维护规则见 [onboarding.md](../features/onboarding.md)。
 
-- 回放优先的页面组织：能力切换放在页头操作区；单场能力共用紧凑选局行。数据 / 2D / 3D 支持一次选择多个文件，先分析再选局。完成分析后，2D / 3D / 射击 / AI 可收起文件区，文件选择器仍挂载并保持会话；解析中或出错时自动显示，数据页始终保留文件区。
+- 回放优先的页面组织：能力切换放在页头操作区；单场能力共用紧凑选局行。工作台分四态：Empty 显示示例入口与拖放区；Loading 只显示「正在加载回放…」、进度与取消；Ready 直接显示功能内容，页头只多一个「管理回放 · N」；Failure 表示当前选择没有可提交的批次结果（无有效场次、解析引擎不可用或批次分析失败），显示恢复面板（重试 / 打开其他回放 / 从列表移除或清空列表）。Loading 与 Failure 用 `v-show` 隐藏内容区，面板不卸载。只要有可提交的结果，即使批次里部分回放打不开也是 Ready：五个能力上方都显示可确认的警示条，其余回放照常使用，确认只对当前这份结果有效，失败数继续留在「管理回放」按钮上。
 - 能力栏随可用宽度自然换行，手机上每行按钮填满宽度，五个入口及中英俄标签完整可见，无需横向滑动。桌面空间足够时保留单行排列；选中态、键盘切换和至少 44px 的触屏目标继续由共享 `SegmentedControl` 提供。
 - 2D 默认无标注且关闭编辑，播放区提供直接的“标记模式”入口。进入时暂停，退出不自动继续；已完成标注常驻，可手动隐藏，切局或刷新清空。LT / MT / HT / TD、多点路线及编辑沿用现有 annotation owner，不与 3D 同步。3D 有独立的 session-only drawing（入口位于 3D tool-row，不进入 shared PlaybackTransport），语义 pen schema 与 2D 相同但不共享 state；具体行为见 [battle-playback.md](../features/battle-playback.md)。
 - 2D / 3D 共用时间轴在上、主要播放按钮在下的传输控件。3D 开始前直接选择画质，额外性能选项默认收在原生折叠区；相机与模型查看在单独的工具行。3D Drawing 入口在 3D 自己的 tool-row（Camera / GLB / Drawing）；shared PlaybackTransport 始终是六个 primary actions。打开 Drawing 时 tool-row 让位给 AnnotationToolbar，关闭后恢复；不新增 permanent row、不遮 play/timeline。
 
 - `frontend/src/components/ReplayWorkspace.vue` 是 `data`、`playback`、`3d`、`shots`、`ai` **五种能力**的统一工作台：选择一次文件，能力之间切换不重新选文件、不重建 session。
-- Workspace 页面本身是 orchestration layer：`PageHeader` 负责页面标题，`ReplayCapabilityTabs.vue` 负责能力切换（数据 · 2D 回放 · 3D 回放 · 射击分析 · AI 复盘，五种能力对所有用户可见，`wotbtools-admin` 不改变能力集合；五个能力都在本工作台内，没有"导航去另一个页面"的能力），`FileDrop.vue` 是全站唯一的上传面（空 / 已选择 / 解析完成三种状态，解析完成后折叠为一行，清空需确认，是唯一的清空入口），`BattlePicker.vue`（可搜索的场次选择器）在四个单场能力上方选择当前场次。它们只接收 Workspace 派生状态并发出显式命令，不复制 session owner。
+- Workspace 页面本身是 orchestration layer：`PageHeader` 负责页面标题，`ReplayCapabilityTabs.vue` 负责能力切换（赛后数据 · 2D 回放 · 3D 回放 · 射击分析 · AI 复盘，五种能力对所有用户可见，`wotbtools-admin` 不改变能力集合；五个能力都在本工作台内，没有"导航去另一个页面"的能力）。`FileDrop.vue` 是全站唯一的上传面：只在空列表时显示拖放区，有回放后只保留隐藏 input 与校验提示，并向工作台暴露选文件、选文件夹与拖放入口；工作台根元素接收任意位置的拖放。`ReplayCollectionManager.vue` 回答「加载了哪些回放」：桌面与平板是对话框，手机是底部 sheet，负责添加文件、添加文件夹、打开示例、单个移除与清空全部（两步确认），行信息来自 `replayCollectionRows()`，主文是场次与地图，文件名只进 tooltip 与搜索；它不切换场次。`BattlePicker.vue` 回答「当前看哪一场」，只有一场时显示静态上下文。它们只接收 Workspace 派生状态并发出显式命令，不复制 session owner。
 - 四个非数据能力面板由工作台按需异步加载、首次激活才挂载（`composables/useMountedWhenActive.js`）：3D / shots 还必须已登录或使用可信官方示例，3D / AI 还要求 capability 可用（连通性）；满足条件后切走只 `v-show` 隐藏：`BattlePlaybackPanel.vue`（2D）、`Replay3DPane.vue`（3D）、`ReplayShotsPane.vue`（射击）、`AiReviewWorkspacePane.vue`（AI）。四个面板共用 `file` / `active` / `blockedReason` props 契约；`active=false` 时停渲染不销毁会话（3D 场景 `setPaused` 停 rAF），切回保留 timeline / 相机且不重新解析。`BattlePlaybackPanel.vue` 直接接收目标文件，通过工作台的 canonical Worker 得到 2D 数据与地图概览，不等待 3D 的联网俯仰资料或显示名；已就绪的 scene facet 仍可复用；多文件未选场次时四个面板显示同一份 `workspace.single_replay_required`。
 - 3D 面板按「待开播 → 开始」两步进入播放：文件由工作台派生后就位，但解析与资产加载都要等用户在面板里按「开始」（卡片上先选画质档——内核 `startPlayback()` 惰性创建渲染器、首帧按当前档位定型，所以档位不能事后在加载中再改）。换场次 / 清空先 `reset()` 撤下上一场：`reset` 与 `destroy` 同等作废在途加载（`sessionEpoch` / `loadGeneration`），被撤下的解析 / 资产续体不得再回写 store，也不得把上一场继续画在待开播面板后面。
 - **画质四档**（SSOT 是 `scene/playbackScene.js` 的 `QUALITY_PRESETS`，UI 文案走 `agentReplay.q_*` 三语键）：`low 流畅`（盒代理 + 小地图底图，弱机/省电）→ `mid 均衡`（真车模 GLB + **俯视烘焙底图**（上游 tools/bake_ground_roofs.py 把屋顶/树冠/草丛烘进地形图）+ MSAA/DPR 1.25，**不拉 11–67MB 场景 GLB**——移动/Tauri 默认档）→ `high 高清`（场景 GLB + 分层地表 + DPR 1.5，桌面默认）→ `ultra 极致`（DPR 2 + 地形 512，4K/Retina 显式选择）。档位阶梯 = 相邻档各跨一个真实成本断崖（车模 / 场景下载 / 填充率）；URL `?q=` 覆盖，localStorage `pb_quality` 保存当前档位（四档键名兼容）。同一节另有 `?dynres=1` 动态分辨率（显式 A/B 开关）：持续超帧预算按 0.25 步长降 pixel ratio、有余量升回档位上限（迟滞 + 冷却防振荡，纯函数状态机 `scene/dynRes.js` 单测锁定）；`?perf` 报告带 pixel ratio 分位数供对比。
@@ -133,7 +133,7 @@ Playback 布局有两条**真实浏览器门禁**（jsdom / happy-dom 没有布�
 
 Display 是锚定在 Gear 上、不可拖动的工作台面；空间允许时在 Gear 上方，并夹在工作台内；竖屏使用全宽内联面、有界滚动，由宿主排序（2D `.pb-main` 跟随文档流，3D `.portrait-flow` 有明确顺序阶梯）。Details 仍是独立的可拖动上下文面。Persistent HUD 共享地图/时间、HP/比分与紧凑基地元数据；瞬态 kill feed 有界且不参与高度测量。
 
-真实浏览器矩阵还覆盖 1792×922 全屏，并检查最大 2D 正方形容量、3D 横屏填满/竖屏正方形、紧凑栈间距、流体名册边界、primary DOM/x 顺序、Display 锚定与竖屏 Display 顺序。740×360 重新选择 replay 文件使用原生 touch；不添加 synthetic click。文件 chip 上的拖动是滚动手势，不得选中任何内容；一次 tap 只选中一次，清除 pending replay 仍会在加载新文件前中止其解析。
+真实浏览器矩阵还覆盖 1792×922 全屏，并检查最大 2D 正方形容量、3D 横屏填满/竖屏正方形、紧凑栈间距、流体名册边界、primary DOM/x 顺序、Display 锚定与竖屏 Display 顺序。740×360 重新选择 replay 文件使用原生 touch；不添加 synthetic click。回放列表移除按钮上的拖动是滚动手势，不触发移除；一次 tap 只点击一次，清除 pending replay 仍会在加载新文件前中止其解析。
 
 | 几何职责 | 负责方 |
 |---|---|
@@ -166,10 +166,10 @@ Display 是锚定在 Gear 上、不可拖动的工作台面；空间允许时在
 
 `data` 是 batch capability；`playback` / `3d` / `shots` / `ai` 是共享 batch selection 之上的 single-battle capabilities。
 
-Workspace 的唯一 `ensureTargetBattle()` 复用现有 batch analysis，从 finalized `ReplayResult.battles` 自动选择第一场有效 battle，再通过 session 的 `currentBattleId` / `currentTargetBattleId` / `currentTargetFile` 交给当前 pane。文件选择仍由现有上传条与手动解析动作负责；进入单场能力时可准备已有多文件 selection。单文件保留无需先 batch analysis 的快速路径。3D 的画质选择与 Start、AI 的明确 Analyze 动作保持不变，不因选场自动提交 AI 请求。
+普通选择走 `onFilesUpdate`：空列表 → 清空；已有回放 → `changeFiles(next)`；否则 `updateFiles(next)` + `analyze()`。这是显式命令，不是 watcher，Demo 与 Android pending 各自负责自己的那一次加载。基础加载不启动 3D renderer，也不启动 AI：3D 的画质选择与 Start、AI 的明确 Analyze 动作保持不变。结果提交时，当前场次取 `ReplayResult.battles` 的第一场有效 battle，单文件在结果提交前已可由 `r0` 派生目标文件。
 
-`sourceId = r{original sourceIndex}`；`rN → files[N]`。Sparse source IDs 是有意设计：失败首文件后可以从 `r1` 开始，重复文件后可以出现 `r0,r2`。不得按成功场次数重新编号。BattlePicker 仅列 finalized battles，切场始终使用对应原始 File。
+当前场次的身份是 File（`useReplaySession.currentBattleFile`），`currentBattleId` 由它在 `files` 中的位置派生，写入时再解析回 File，因此只有一份状态。`sourceId = r{original sourceIndex}`；`rN → files[N]`。Sparse source IDs 是有意设计：失败首文件后可以从 `r1` 开始，重复文件后可以出现 `r0,r2`。不得按成功场次数重新编号。BattlePicker 仅列 finalized battles，切场始终使用对应原始 File。
 
-待分析与解析中由现有上传条/ProcessingPanel 表达，零有效场次显示真实解析失败，不报“只支持单回放”。已有结果和选中场次在能力切换间复用，不重复 batch parse。能力切换仅自动准备 idle selection；parsing 不重复启动，cancelled/failed 保留当前状态，仅显式 Preview 才允许重试。selection replacement 由 revision/abort 作废旧 batch 和 target preparation；per-File playbackSession 缓存与 canonical generation 保持独立，迟到工作不能覆盖新场次。
+集合增删走 `changeFiles`：不清 `resp`、不动当前 File，首批按文件名排序，之后新文件追加到尾部（`rN` 与屏幕上的结果在后台加载期间保持对应），已有文件保持原实例，重复添加同一文件只提示。`parsedByFile` 按 File 缓存解析结果，只解析新文件；移除是同步重算，没有 await 窗口；显式重试才放弃失败项。连续添加放弃上一轮并以累积 `files` 重跑。移除当前文件时落到同位置的下一场，末位取前一场，且落点先于 `files` 写入，`currentTargetFile` 的 sync 观察者只看到一次真实换场。结果与 `files` 始终对齐：移除时若还有未解析文件，先在同一 tick 用连续的已解析前缀重算；后台加载中引擎失败时保留已解析完的新文件，退回其余文件并重算，`files`、结果与导出始终来自同一份选择；只剩无效回放时进入 Failure。后台加载不显示恢复面板，取消只属于首批加载。取消首批加载回到 Empty，能力切换不重新解析。追加后「第 N 场」的编号可能变化，内容不变。赛后数据切到汇总不改变当前场次。
 
 AI 仅为当前 File 构建一场的投影，切场撤销旧 review 并清空旧结果；投影与流的 generation 隔离迟到结果。Shots 使用同一个 target/picker，不持有另一份 batch selection。

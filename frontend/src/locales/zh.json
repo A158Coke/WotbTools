@@ -1,4 +1,30 @@
 {
+  "nav": {
+    "maps": "地图"
+  },
+  "mapPreview": {
+    "title": "地图预览",
+    "subtitle": "查看地图地形与场景，标注要点——无需回放文件",
+    "loginRequired": "登录后可使用地图预览",
+    "loadFailed": "地图清单加载失败",
+    "empty": "暂无可用地图",
+    "retry": "重试",
+    "mode3d": "3D 场景",
+    "mode2d": "2D 战术图",
+    "backToPicker": "选择其他地图",
+    "twoDBadge": "2D",
+    "annotations": {
+      "title": "标注",
+      "import": "导入标注",
+      "export": "导出标注",
+      "importFailed": "导入失败：{reason}",
+      "importedCount": "已导入 {count} 条标注",
+      "noAnnotations": "当前没有可导出的标注",
+      "importReasonFormat": "文件不是本视图的标注 JSON",
+      "importReasonMap": "标注属于其他地图"
+    },
+    "basemapFailed": "底图加载失败"
+  },
   "app": {
     "title": "WoTBTools",
     "subtitle": "回放解析 · 在线排行榜 · 实时评分 · AI 战术复盘",
@@ -41,35 +67,37 @@
     "diagnostic_id_copied": "已复制"
   },
   "upload": {
+    "already_listed": "这些回放已在列表中。",
+    "manage": "管理回放 · {count}",
+    "manage_failed": "管理回放 · {count}（{failed} 个无法打开）",
+    "list_title": "回放列表 · {count}",
+    "row_loading": "加载中…",
+    "row_failed": "无法打开",
+    "row_duplicate": "与其他回放是同一场",
+    "row_excluded": "未计入本批结果",
+    "row_current": "当前",
+    "clear_all": "清空全部",
+    "adding_progress": "正在加载 {done} / {total}",
     "drop_hint": "拖拽 .wotbreplay 文件到这里",
     "sub_hint": "支持多选文件，或选择整个文件夹",
-    "sub_hint_single": "拖拽单个 .wotbreplay 文件到此处",
     "kicker": "批量解析",
     "title": "回放数据提取",
     "description": "上传或拖入 .wotbreplay 文件，预览战斗数据后导出 Excel。",
     "multi": "支持多选和文件夹",
-    "multi_single": "单文件",
     "excel": "导出汇总或单场 Excel",
     "privacy": "本页不保存回放文件",
-    "selected_title": "已选择回放",
     "select_files": "选择回放文件",
     "select_folder": "选择文件夹",
-    "add": "添加",
-    "folder": "文件夹",
     "clear": "清空",
     "files_count": "{count} 个文件",
     "remove_title": "移除该回放",
     "add_files_title": "添加回放文件",
     "add_folder_title": "添加文件夹",
-    "remove_file_aria": "删除回放文件 {name}",
-    "files_size": "{count} 个文件 · {size}",
-    "view_list": "查看文件列表",
-    "hide_list": "收起文件列表",
+    "remove_file_aria": "从列表移除 {name}",
     "reject_offending_title": "以下回放无法解析：",
     "reject_too_large_file": "{name} — {size}",
     "reject_invalid_type": "{name} 不是 .wotbreplay 文件",
     "reject_no_replay": "未找到 .wotbreplay 回放文件。",
-    "single_only": "单文件模式：一次只接受一个回放文件。",
     "reject_size_hint": "单个回放最大允许 20 MB。",
     "reject_count": "一次最多选择 {max} 个回放，当前 {current} 个。",
     "reject_total": "当前批次 {size}，最大允许 {max}。",
@@ -80,7 +108,6 @@
     "folder_ambiguous_paths": "文件夹中有路径相同的回放，无法可靠区分。请重命名文件或分别选择，已有回放保持不变。"
   },
   "action": {
-    "preview": "解析预览",
     "processing": "处理中…",
     "preview_hint": "解析后，导出按钮出现在结果区",
     "select_cols": "选择列",
@@ -95,8 +122,7 @@
     "aggregate_tab": "汇总 ({count} 名选手)",
     "single_tab": "单场视图",
     "scroll_hint": "← 左右滑动查看更多数据 →",
-    "duplicates": "已跳过 {count} 个重复上传：",
-    "failures": "{count} 个文件解析失败："
+    "duplicates": "已跳过 {count} 个重复上传："
   },
   "col_picker": {
     "title_player": "单场表",
@@ -119,9 +145,9 @@
     "player_count": "玩家"
   },
   "modal": {
-    "remove_title": "移除该场",
+    "remove_title": "移除该回放",
     "remove_confirm": "确定移除「{label}」这场回放吗？",
-    "remove_hint": "将从列表删除对应回放文件并重新汇总。可重新选择文件再解析。",
+    "remove_hint": "只从列表移除，不会删除你电脑上的文件，可以随时重新添加。",
     "confirm": "确认移除",
     "cancel": "取消"
   },
@@ -776,17 +802,17 @@
     "png_exporting": "正在导出 PNG…",
     "login_required_for_battle": "战局回放 / AI 复盘需要登录。登录后请重新选择回放文件。",
     "analysis": {
-      "parsing": "正在本机解析回放",
-      "progress": "已解析 {done} / {total}",
-      "ready": "解析完成",
-      "summary": "有效 {v} · 重复 {d} · 失败 {f}",
-      "failed": "解析失败",
-      "cancelled": "已取消",
+      "loading": "正在加载回放…",
+      "progress": "已加载 {done} / {total}",
+      "failed_open": "无法打开该回放",
       "cancel": "取消",
-      "dismiss": "关闭",
-      "engine_unavailable": "回放解析引擎加载失败，请刷新页面重试（解析在本机进行，文件不会上传）",
-      "no_valid_replays": "没有可分析的回放：全部解析失败或重复",
-      "failed_unknown": "分析时发生意外错误，请重试"
+      "retry": "重试",
+      "open_other": "打开其他回放",
+      "remove_from_list": "从列表移除",
+      "clear_list": "清空列表",
+      "engine_unavailable": "回放引擎加载失败，请刷新页面后重试。文件不会上传。",
+      "no_valid_replays": "这些回放都无法打开，文件可能已损坏或不完整。",
+      "failed_unknown": "打开时发生意外错误，请重试。"
     },
     "excel_exporting": "正在生成 Excel…",
     "excel_export_failed": "Excel 导出失败，请重试"
@@ -1369,7 +1395,6 @@
   },
   "workspace": {
     "tab_results": "解析结果",
-    "results_hint": "点击「解析预览」后，解析结果将显示在这里",
     "ai_empty": "选择一场回放后开始 AI 复盘",
     "playback_empty": "选择一场回放后查看战局回放",
     "dataset_preparing": "正在准备回放数据…",

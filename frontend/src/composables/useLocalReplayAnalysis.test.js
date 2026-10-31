@@ -7,6 +7,7 @@ import { ReplayEngineUnavailableError } from '../replay-local/parseReplays.js'
 import { NoValidReplaysError } from '../replay-local/compute/index.js'
 import { useReplaySession } from './useReplaySession.js'
 import { useLocalReplayAnalysis } from './useLocalReplayAnalysis.js'
+import { battlePickerOptions, buildSeriesOverview } from '../utils/replaySeries.js'
 
 // 服务器没有 parser：分析 = 本机 Worker 解析 + 批次计算。mock 两个边界，保留真实错误类型。
 const local = vi.hoisted(() => ({
@@ -98,7 +99,7 @@ describe('useLocalReplayAnalysis', () => {
     const parse = deferred()
     let onProgress
     local.parseReplayFiles.mockImplementation((files, options) => { onProgress = options.onProgress; return parse.promise })
-    const { session, updateFiles, analyze, parsedFiles } = setup()
+    const { session, updateFiles, analyze } = setup()
     const files = [replayFile('a.wotbreplay'), replayFile('b.wotbreplay')]
     updateFiles(files)
 
@@ -120,7 +121,6 @@ describe('useLocalReplayAnalysis', () => {
     expect(session.resp.value.battles).toHaveLength(2)
     expect(session.activeTab.value).toBe('b0')
     expect(session.loading.value).toBe(false)
-    expect(parsedFiles()).toBe(parsed)
   })
 
   it('a second analyze while parsing is rejected as ALREADY_ACTIVE', async () => {
@@ -288,18 +288,231 @@ describe('useLocalReplayAnalysis', () => {
     expect(signal.aborted).toBe(true)
   })
 
-  it('dismiss resets a terminal state but is ignored while parsing', async () => {
-    local.parseReplayFiles.mockRejectedValueOnce(new Error('x')).mockReturnValueOnce(new Promise(() => {}))
-    const { session, updateFiles, analyze, dismiss } = setup()
-    updateFiles([replayFile('a.wotbreplay')])
-    await analyze()
+  describe('changeFiles', () => {
+    async function ready(names) {
+      local.parseReplayFiles.mockImplementation(async files => parsedOf(files))
+      const api = setup()
+      const files = names.map(replayFile)
+      api.updateFiles(files)
+      await api.analyze()
+      await nextTick()
+      local.parseReplayFiles.mockClear()
+      return { ...api, files }
+    }
 
-    dismiss()
-    expect(session.analysis.value).toEqual({ phase: 'idle', done: 0, total: 0, failure: null })
+    it('adding parses only the new file and keeps the old result on screen until commit', async () => {
+      const api = await ready(['a.wotbreplay', 'b.wotbreplay'])
+      api.session.selectBattle('r1')
+      const pending = deferred()
+      local.parseReplayFiles.mockReturnValueOnce(pending.promise)
+      const c = replayFile('c.wotbreplay')
+      const previous = api.session.resp.value
 
-    analyze()
-    dismiss()
-    expect(session.analysis.value.phase).toBe('parsing')
+      const running = api.changeFiles([...api.files, c])
+      await nextTick()
+      expect(api.session.resp.value).toBe(previous)
+      expect(api.session.loading.value).toBe(false)
+      expect(api.session.analysis.value.phase).toBe('parsing')
+      expect(api.session.currentTargetFile.value.name).toBe('b.wotbreplay')
+
+      pending.resolve(parsedOf([c]))
+      await running
+      expect(local.parseReplayFiles).toHaveBeenCalledTimes(1)
+      expect(local.parseReplayFiles.mock.calls[0][0]).toEqual([c])
+      expect(api.session.resp.value.battles).toHaveLength(3)
+      expect(api.session.analysis.value.phase).toBe('ready')
+      await nextTick()
+      expect(api.session.currentTargetFile.value.name).toBe('b.wotbreplay')
+    })
+
+    it('removing is a synchronous commit with no parse', async () => {
+      const api = await ready(['a.wotbreplay', 'b.wotbreplay', 'c.wotbreplay'])
+      api.session.selectBattle('r2')
+      api.changeFiles(api.files.slice(1))
+      expect(local.parseReplayFiles).not.toHaveBeenCalled()
+      expect(api.session.resp.value.battles).toHaveLength(2)
+      expect(api.session.currentTargetFile.value.name).toBe('c.wotbreplay')
+    })
+
+    it('a second add supersedes the first and keeps every accumulated file', async () => {
+      const api = await ready(['a.wotbreplay'])
+      let firstSignal
+      local.parseReplayFiles.mockImplementationOnce((_files, { signal }) => {
+        firstSignal = signal
+        return new Promise(() => {})
+      })
+      const b = replayFile('b.wotbreplay')
+      const c = replayFile('c.wotbreplay')
+      void api.changeFiles([...api.files, b])
+      await api.changeFiles([...api.files, b, c])
+      expect(firstSignal.aborted).toBe(true)
+      expect(local.parseReplayFiles.mock.calls[1][0]).toEqual([b, c])
+      expect(api.session.files.value).toHaveLength(3)
+      expect(api.session.resp.value.battles).toHaveLength(3)
+    })
+
+    it('an engine failure while adding keeps the battles that already work', async () => {
+      const api = await ready(['a.wotbreplay'])
+      const previous = api.session.resp.value
+      local.parseReplayFiles.mockRejectedValueOnce(new ReplayEngineUnavailableError('wasm'))
+      await expect(api.changeFiles([...api.files, replayFile('b.wotbreplay')]))
+        .resolves.toEqual({ completed: false, reason: 'ENGINE_UNAVAILABLE' })
+      expect(api.session.resp.value).toBe(previous)
+      expect(api.session.analysis.value.phase).toBe('ready')
+      expect(api.session.error.value).toBe('replay.analysis.engine_unavailable')
+      expect(api.session.files.value.map(file => file.name)).toEqual(['a.wotbreplay'])
+    })
+
+    describe('sourceId 始终与 File 指向同一场', () => {
+      // preview() 只按下标造场次；这里让每场带上来源文件名，才能证明 sourceId 与 File 的对应。
+      const byName = parsed => ({ dataset: {}, preview: { ...preview(0), battles: parsed.map((file, i) => ({
+        sourceId: `r${i}`, sourceName: file.name, mapName: 'Lagoon', players: [],
+      })) } })
+      const aligned = (session) => session.parsedBattles.value.every((battle) => {
+        const index = Number(String(battle.sourceId).slice(1))
+        return session.files.value[index]?.name === battle.sourceName
+      })
+      async function pendingAdd(names = ['a', 'b', 'c']) {
+        const api = await ready(names.map(name => `${name}.wotbreplay`))
+        local.analyzeReplayBatch.mockImplementation(byName)
+        api.session.commitReadyResult(byName(names.map(name => ({ name: `${name}.wotbreplay` }))).preview)
+        await nextTick()
+        api.session.selectBattle('r1')
+        const pending = deferred()
+        local.parseReplayFiles.mockReturnValueOnce(pending.promise)
+        const d = replayFile('d.wotbreplay')
+        void api.changeFiles([...api.files, d])
+        await nextTick()
+        return { ...api, d, pending }
+      }
+
+      it('A/B/C → 追加 D 未完成 → 移除 A：B 仍是 B，C 仍是 C，全程可操作', async () => {
+        const api = await pendingAdd()
+        const [, b, c] = api.files
+        const running = api.changeFiles([b, c, api.d])
+        expect(aligned(api.session)).toBe(true)
+        expect(api.session.parsedBattles.value.map(x => x.sourceName)).toEqual(['b.wotbreplay', 'c.wotbreplay'])
+        expect(api.session.currentTargetFile.value.name).toBe('b.wotbreplay')
+        expect(api.session.currentBattle.value.sourceName).toBe('b.wotbreplay')
+        api.session.selectBattle('r1')
+        expect(api.session.currentTargetFile.value.name).toBe('c.wotbreplay')
+
+        local.parseReplayFiles.mockResolvedValueOnce(parsedOf([api.d]))
+        await running
+        expect(aligned(api.session)).toBe(true)
+        expect(api.session.parsedBattles.value).toHaveLength(3)
+        expect(api.session.currentBattle.value.sourceName).toBe('c.wotbreplay')
+      })
+
+      it('引擎失败不留下错位：移除后退回未解析文件，结果与列表一致', async () => {
+        const api = await pendingAdd()
+        const [, b, c] = api.files
+        local.parseReplayFiles.mockRejectedValueOnce(new ReplayEngineUnavailableError('wasm'))
+        await api.changeFiles([b, c, api.d])
+        expect(api.session.analysis.value.phase).toBe('ready')
+        expect(api.session.files.value.map(file => file.name)).toEqual(['b.wotbreplay', 'c.wotbreplay'])
+        expect(aligned(api.session)).toBe(true)
+        expect(api.session.currentBattle.value.sourceName).toBe('b.wotbreplay')
+      })
+
+      it('A Ready → 添加 B + C → B 解析成功 → Worker 在 C 崩溃：files、结果与导出都是 A + B', async () => {
+        const api = await ready(['a.wotbreplay'])
+        local.analyzeReplayBatch.mockImplementation(parsed => ({ ...byName(parsed), dataset: { names: parsed.map(file => file.name) } }))
+        const [b, c] = ['b', 'c'].map(name => replayFile(`${name}.wotbreplay`))
+        local.parseReplayFiles.mockImplementationOnce(async (_files, { onFile }) => {
+          onFile(0, parsedOf([b])[0])
+          throw new ReplayEngineUnavailableError('worker crashed')
+        })
+        await api.changeFiles([...api.files, b, c])
+
+        const names = ['a.wotbreplay', 'b.wotbreplay']
+        expect(api.session.files.value.map(file => file.name)).toEqual(names)
+        expect(api.session.parsedBattles.value.map(x => x.sourceName)).toEqual(names)
+        expect(aligned(api.session)).toBe(true)
+        const options = battlePickerOptions(buildSeriesOverview(api.session.resp.value), { t, locale: 'en', mapLabel: name => name })
+        expect(options.map(option => option.value)).toEqual(['r0', 'r1'])
+        expect(api.session.analysis.value.phase).toBe('ready')
+        expect(api.session.error.value).toBe('replay.analysis.engine_unavailable')
+
+        local.exportAggregateXlsx.mockResolvedValueOnce({ blob: new Blob(['x']), filename: 'x.xlsx' })
+        await api.exportExcel('aggregate')
+        expect(local.exportAggregateXlsx.mock.calls[0][0]).toEqual({ names })
+      })
+
+      it('onFile 乱序：只保留连续前缀，sourceId 不跨过未解析的文件', async () => {
+        const api = await pendingAdd()
+        const [, b, c] = api.files
+        const [e, f] = ['e', 'f'].map(name => replayFile(`${name}.wotbreplay`))
+        // 后面的文件先回包：e 还没解析，f 已经解析。
+        local.parseReplayFiles.mockImplementationOnce(async (_files, { onFile }) => {
+          onFile(2, parsedOf([f])[0])
+          throw new ReplayEngineUnavailableError('worker crashed')
+        })
+        await api.changeFiles([...api.files, api.d, e, f])
+        expect(aligned(api.session)).toBe(true)
+        expect(api.session.files.value.map(file => file.name)).toEqual(['a.wotbreplay', 'b.wotbreplay', 'c.wotbreplay'])
+
+        // 下一次移除同样只按前缀重算，已解析的 f 不会跨过 e 进入结果。
+        const pending = deferred()
+        local.parseReplayFiles.mockReturnValueOnce(pending.promise)
+        void api.changeFiles([b, c, e, f])
+        expect(aligned(api.session)).toBe(true)
+        expect(api.session.parsedBattles.value.map(x => x.sourceName)).toEqual(['b.wotbreplay', 'c.wotbreplay'])
+      })
+
+      it('移除后没有已解析的有效回放：转为首批加载，不留旧结果', async () => {
+        const api = await pendingAdd(['a'])
+        local.parseReplayFiles.mockResolvedValueOnce(parsedOf([api.d]))
+        local.analyzeReplayBatch.mockImplementationOnce(() => { throw new NoValidReplaysError() })
+        const running = api.changeFiles([api.d])
+        expect(api.session.resp.value).toBeNull()
+        expect(api.session.loading.value).toBe(true)
+        await running
+        expect(api.session.parsedBattles.value.map(x => x.sourceName)).toEqual(['d.wotbreplay'])
+      })
+    })
+
+    it('marks a settled battle without a winner as a draw; no settlement stays unknown', async () => {
+      local.parseReplayFiles.mockImplementation(async files => parsedOf(files))
+      local.analyzeReplayBatch.mockImplementationOnce(() => ({
+        dataset: { battles: [
+          { arenaId: 'a', winnerTeam: null, settlementFinishReasonRaw: 3 },
+          { arenaId: 'b', winnerTeam: null, settlementFinishReasonRaw: null },
+          { arenaId: 'c', winnerTeam: 1, settlementFinishReasonRaw: 1 },
+        ] },
+        preview: { ...preview(0), battles: ['a', 'b', 'c'].map((arenaId, i) => ({ sourceId: `r${i}`, arenaId, winnerTeam: arenaId === 'c' ? 1 : null, players: [] })) },
+      }))
+      const api = setup()
+      api.updateFiles(['a', 'b', 'c'].map(name => replayFile(`${name}.wotbreplay`)))
+      await api.analyze()
+      expect(api.session.resp.value.battles.map(b => b.draw === true)).toEqual([true, false, false])
+    })
+
+    it('removing the last valid replay leaves the failure state', async () => {
+      const api = await ready(['a.wotbreplay', 'b.wotbreplay'])
+      local.analyzeReplayBatch.mockImplementationOnce(() => { throw new NoValidReplaysError() })
+      await api.changeFiles(api.files.slice(1))
+      expect(api.session.resp.value).toBeNull()
+      expect(api.session.analysis.value).toMatchObject({ phase: 'failed', failure: 'NO_VALID_REPLAYS' })
+    })
+
+    it('explicit retry parses failed files again and reuses the good ones', async () => {
+      const [good, bad] = [replayFile('good.wotbreplay'), replayFile('bad.wotbreplay')]
+      local.parseReplayFiles.mockResolvedValueOnce([
+        { name: good.name, result: { ok: true }, error: null },
+        { name: bad.name, result: null, error: 'broken' },
+      ])
+      local.analyzeReplayBatch.mockImplementationOnce(() => { throw new NoValidReplaysError() })
+      const api = setup()
+      api.updateFiles([good, bad])
+      await api.analyze()
+      expect(api.session.analysis.value.phase).toBe('failed')
+
+      local.parseReplayFiles.mockResolvedValueOnce(parsedOf([bad]))
+      await api.analyze()
+      expect(local.parseReplayFiles.mock.calls[1][0]).toEqual([bad])
+      expect(api.session.analysis.value.phase).toBe('ready')
+    })
   })
 
   describe('exportExcel', () => {
@@ -359,7 +572,6 @@ describe('useLocalReplayAnalysis', () => {
 
       await expect(api.exportExcel('aggregate')).rejects.toThrow(/no analysis result/)
       expect(local.exportAggregateXlsx).not.toHaveBeenCalled()
-      expect(api.parsedFiles()).toEqual([])
     })
   })
 })

@@ -726,7 +726,8 @@ export function useOnboarding(options: {
   function reserveShotGuideSpace(pixels: number) {
     surfaces.value.shots?.setGuideInset?.(pixels)
   }
-  const context: OnboardingContext = { start, openDirectory, sampleOpened, registerWorkspace, registerSurface }
+  const guideActive = computed(() => mode.value === 'tour')
+  const context: OnboardingContext = { guideActive, start, openDirectory, sampleOpened, registerWorkspace, registerSurface }
   return { ...context, context, mode, topic, index, stageIndex, issue, currentStep, currentStage, steps, hasFiles, hintVisible, canResume, isSignedIn,
     begin, next, back, skip, interrupt, useOwnReplay, loginAiGuide, reserveShotGuideSpace, resume: () => begin(true), dismissHint: () => { hintVisible.value = false }, retry }
 }

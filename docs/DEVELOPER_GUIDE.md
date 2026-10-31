@@ -349,7 +349,7 @@ Web 登录回程先由 `useAuth` / keycloak-js 处理，再动态加载 Router�
 
 ### AI Review / Battle Playback
 
-`ReplayWorkspace` 是回放**五种能力**（数据 / 2D 回放 / 3D 回放 / 射击分析 / AI 复盘）的唯一统一载体：这些能力不是各自独立页面，深链只是能力入口（`app/viewRegistry.js` 的 `replayInitialCapability` 解析深链初始能力，`ReplayWorkspace.vue` 的 `viewFor` 为能力切换选择路由）。它通过唯一 `useReplay` 组合并消费 `useReplaySession` 持有的 selection / 分析状态 / 结果，分析生命周期由 `useLocalReplayAnalysis` 持有（Worker 解析 → 批次计算 → 提交结果；选择变化/取消即作废在途分析）。能力切换不重新选文件、不重建 session；能力面板首次激活才挂载（`useMountedWhenActive`）并按需异步加载，切走只隐藏（3D 停帧不销毁）。Workspace 的标题、能力切换、批次与当前回放 selector 分别由 `PageHeader`、`ReplayCapabilityTabs`、`FileDrop`、`BattlePicker` 展示；这些子组件只接收派生状态并发出命令，session 仍是唯一 selection owner。`ReplayPage` 只作为 data 结果 tab 嵌入，渲染结果/列系统/Export/Drawer。
+`ReplayWorkspace` 是回放**五种能力**（赛后数据 / 2D 回放 / 3D 回放 / 射击分析 / AI 复盘）的唯一统一载体：这些能力不是各自独立页面，深链只是能力入口（`app/viewRegistry.js` 的 `replayInitialCapability` 解析深链初始能力，`ReplayWorkspace.vue` 的 `viewFor` 为能力切换选择路由）。它通过唯一 `useReplay` 组合并消费 `useReplaySession` 持有的 selection / 分析状态 / 结果，分析生命周期由 `useLocalReplayAnalysis` 持有（Worker 解析 → 批次计算 → 提交结果；选择变化/取消即作废在途分析）。能力切换不重新选文件、不重建 session；能力面板首次激活才挂载（`useMountedWhenActive`）并按需异步加载，切走只隐藏（3D 停帧不销毁）。Workspace 的标题、能力切换、上传面、回放集合与当前场次 selector 分别由 `PageHeader`、`ReplayCapabilityTabs`、`FileDrop`、`ReplayCollectionManager`、`BattlePicker` 展示；这些子组件只接收派生状态并发出命令，session 仍是唯一 selection owner。`ReplayPage` 只作为 data 结果 tab 嵌入，渲染结果/列系统/Export/Drawer。
 
 **匿名可用**：服务器没有 parser，分析全部在本机，数据分析与 2D 挂载即可用，不等 Keycloak init。个人回放的 3D、射击与 AI 有登录门禁；可信官方示例可匿名使用 3D/射击，AI 仍需登录。3D 与 AI 还须满足对应的联网可用性门禁；名人堂等写操作另行鉴权。
 **能力解耦**：AI 与 Playback 不做跨 capability 状态 handoff；tab 切换经 Vue Router navigation 形成可 Back/Forward 的 history，返回时 selection/分析结果不丢，只恢复 activeCapability。

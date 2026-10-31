@@ -198,7 +198,7 @@ onScopeDispose(clearLocal)
           <h2>{{ $t('tournament.expectedGroups') }}</h2>
           <div class="tournament-toolbar"><label class="tournament-field"><span>{{ $t('tournament.expectedGroups') }}</span><input v-model="expected" type="number" min="1" max="10000" :disabled="!editable" data-testid="expected-group-count" /></label><AppButton :disabled="!editable || !Number.isInteger(Number(expected)) || Number(expected) < 1 || Number(expected) > 10000" @click="owner.setExpected(Number(expected))">{{ $t('tournament.saveExpected') }}</AppButton></div>
           <p class="tournament-muted">{{ $t('tournament.expectedHint') }}</p>
-          <FileDrop :files="files" purpose="image" :disabled="!canUpload" :loading="recognizing || busy" :show-preview="false" @update:files="files = $event" />
+          <FileDrop :files="files" purpose="image" :disabled="!canUpload" :loading="recognizing || busy" @update:files="files = $event" />
           <div class="tournament-actions"><AppButton :disabled="!canUpload || !files.length" @click="owner.recognize(files)">{{ $t('tournament.recognize') }}</AppButton><AppButton v-if="recognizing" @click="owner.cancelRecognition">{{ $t('tournament.stop') }}</AppButton><span v-if="recognizing" role="status">{{ $t('tournament.recognizing', { current: progress, total: files.length }) }}</span></div>
         </section>
         <template v-if="reviews.length">

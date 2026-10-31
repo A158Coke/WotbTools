@@ -401,11 +401,14 @@ try {
       if (scenario.compactNavigation) {
         await page.waitForValue('!!document.querySelector("[data-testid=more-page]")', Boolean)
         await page.waitForValue('!!document.querySelector("[data-testid=tab-creators]")', Boolean)
-        await tabGeometry(page, scenario.productionHome ? 9 : 8)
+        // Tab 数 = PRIMARY_NAV 导航契约（app/navigation.js）：2026-10-31 新增「地图」
+        // 栏后 10（production home 含首页）/ 9（其余）。
+        await tabGeometry(page, scenario.productionHome ? 10 : 9)
         if (scenario.productionHome && scenario.width === 320) {
           const y = await page.evaluate('document.querySelector("[data-testid=app-tab-bar]").getBoundingClientRect().top + 24')
-          await chrome.client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 140, y, id: 1 }] }, sessionId)
-          for (const x of [160, 190, 230]) await chrome.client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y, id: 1 }] }, sessionId)
+          await chrome.client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 40, y, id: 1 }] }, sessionId)
+          // 拖动距离要覆盖整段可滚动宽度，不能靠惯性补足：Tab 增多后 90px 不够，时过时不过。
+          for (const x of [90, 160, 230, 300]) await chrome.client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y, id: 1 }] }, sessionId)
           await chrome.client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }, sessionId)
           await page.waitForValue('document.querySelector("[data-testid=app-tab-bar]").scrollLeft', value => value <= 0.5)
         }
@@ -427,7 +430,9 @@ try {
       await tap(page, '[data-testid=recommendation-card-UP]', scenario.touch)
       await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 2)
       assert.equal(await page.evaluate(`document.querySelector(${JSON.stringify(primary)}).getAttribute('aria-current')`), 'page')
-      if (scenario.compactNavigation) await tabGeometry(page, scenario.productionHome ? 9 : 8)
+      if (scenario.compactNavigation) // Tab 数 = PRIMARY_NAV 导航契约（app/navigation.js）：2026-10-31 新增「地图」
+        // 栏后 10（production home 含首页）/ 9（其余）。
+        await tabGeometry(page, scenario.productionHome ? 10 : 9)
       assert.equal(await page.evaluate('document.querySelectorAll(".creator-card button").length'), 0, 'anonymous cards have no management or user-action buttons')
       assert.equal(await page.evaluate('window.__wsAuth.loginCalls.length'), 0); assert.equal(db.writes, 0)
       assert.equal(await page.evaluate('document.querySelector(".creator-card a").rel'), 'noopener noreferrer')

@@ -37,6 +37,7 @@ export interface Battle {
   durationS: number | null
   startTime: number | null
   winnerTeam: number | null
+  draw?: boolean
   sourceId: SourceId
   sourceName: string | null
   players: PlayerRow[]
