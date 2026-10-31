@@ -29,9 +29,9 @@ import { mapImages } from '../data/mapImages.js'
  * - 导出 = { version:1, kind:'map-preview-annotations-2d', mapKey, annotations }；
  *   导入 fail-closed：版本/kind/mapKey 任一不符即拒绝并提示，不污染当前标注。
  */
-function mountPane() {
+function mountPane(basemap = { kind: 'bundled', image: mapImages.erlenberg }) {
   return mount(MapPreview2DPane, {
-    props: { mapKey: 'erlenberg' },
+    props: { mapKey: 'erlenberg', basemap },
     global: { mocks: { $t: (key, params) => (params ? `${key}:${JSON.stringify(params)}` : key) } },
   })
 }
@@ -94,7 +94,7 @@ describe('MapPreview2DPane 标注导入导出', () => {
     expect(wrapper.find('[data-testid="map-2d-import-note"]').text()).toContain('importReasonMap')
   })
 
-  it('换地图 key 重置标注状态（props watch）', async () => {
+  it('换底图 key 重置标注状态（basemap props watch；ground 回退未就绪时不渲染 BattleMap）', async () => {
     const wrapper = mountPane()
     await importJson(wrapper, {
       version: 1,
@@ -103,9 +103,9 @@ describe('MapPreview2DPane 标注导入导出', () => {
       annotations: [{ type: 'pen', color: '#fff', width: 3, points: [{ x: 0, y: 0 }] }],
     })
     expect(wrapper.find('.bm-stub').attributes('data-count')).toBe('1')
-    await wrapper.setProps({ mapKey: 'moon' })
+    await wrapper.setProps({ mapKey: 'moon', basemap: { kind: 'ground', mapKey: 'moon' } })
     await nextTick()
-    // moon 无 2D 底图 → BattleMap 不渲染（页面层本会强制 3D；面板自身 fail-closed）
+    // ground 底图需异步解析（happy-dom Image 不触发 onload）→ BattleMap 暂不渲染
     expect(wrapper.find('.bm-stub').exists()).toBe(false)
   })
 })

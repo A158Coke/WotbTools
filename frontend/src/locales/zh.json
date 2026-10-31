@@ -23,7 +23,7 @@
       "importReasonFormat": "文件不是本视图的标注 JSON",
       "importReasonMap": "标注属于其他地图"
     },
-    "unsupportedMode": "该地图暂未收录 2D 战术图，请使用 3D 场景查看"
+    "basemapFailed": "底图加载失败"
   },
   "app": {
     "title": "WoTBTools",

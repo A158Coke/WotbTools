@@ -23,7 +23,7 @@
       "importReasonFormat": "Файл не является JSON отметок для этого режима",
       "importReasonMap": "Отметки принадлежат другой карте"
     },
-    "unsupportedMode": "Для этой карты пока нет 2D-изображения — используйте 3D-сцену"
+    "basemapFailed": "Не удалось загрузить подложку"
   },
   "app": {
     "title": "WoTBTools",

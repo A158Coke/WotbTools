@@ -23,7 +23,7 @@
       "importReasonFormat": "File is not an annotation JSON for this view",
       "importReasonMap": "Annotations belong to another map"
     },
-    "unsupportedMode": "This map has no 2D tactical image yet — use the 3D scene"
+    "basemapFailed": "Failed to load the basemap"
   },
   "app": {
     "title": "WoTBTools",

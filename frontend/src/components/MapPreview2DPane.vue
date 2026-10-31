@@ -1,7 +1,8 @@
 <script setup>
 /**
- * 地图预览 2D 面板：打包底图（mapImages registry）+ 拖拽/捏合/滚轮缩放 + 标注绘制
- * （pen/eraser，与 2D 回放同一坐标体系与撤销栈），无车辆、无回放。
+ * 地图预览 2D 面板：底图双源（打包 mapImages 注册表 / 资产包 ground.webp 回退）
+ * + 拖拽/捏合/滚轮缩放 + 标注绘制（pen/eraser，与 2D 回放同一坐标体系与撤销栈），
+ * 无车辆、无回放。
  *
  * 手势与坐标管线复用回放的纯函数（zoomViewAt / clampViewPan / screenToSemantic /
  * utils/annotation 全套）；渲染复用 BattleMap.vue（纯展示，车辆/浮层以空数组 +
@@ -12,7 +13,8 @@ import { useI18n } from 'vue-i18n'
 import { Download, PencilRuler, Upload } from 'lucide-vue-next'
 import BattleMap from './BattleMap.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
-import { mapImages } from '../data/mapImages.js'
+import { WORLD_BOUNDS_300 } from '../data/mapImages.js'
+import { mapStaticUrl } from '../scene/replaySource.js'
 import { createMapView } from '../utils/mapView.js'
 import {
   ANNOT_COLORS, ANNOT_FONT_SIZE, ANNOT_WIDTH_DEFAULT, ANNOT_WIDTH_MAX, ANNOT_WIDTH_MIN,
@@ -21,20 +23,60 @@ import {
 import { clampViewPan, zoomViewAt } from '../utils/battlePlayback.js'
 import { usePaneFillHeight } from '../composables/usePaneFillHeight.js'
 
-/** 笔迹抽稀阈值（屏幕 CSS px，与坐标体系无关；与回放 2D 同值，源内常量不外导）。 */
-const ANNOT_THIN_PX = 2
-
 const props = defineProps({
-  /** 资产面 key（= mapImages 注册码；标注导入/导出归属校验） */
+  /** 资产面 key（= 标注导入/导出归属校验） */
   mapKey: { type: String, required: true },
+  /**
+   * 底图描述符（页面对照双源解析后下发）：
+   * { kind:'bundled', image } —— 打包注册表条目（src/width/height/coordinateBounds）；
+   * { kind:'ground', mapKey } —— 资产包 ground.webp（异步加载，±300 契约框：
+   * 3D 内核 meta 恒等回退与打包图同框，坐标体系一致）。
+   */
+  basemap: { type: Object, required: true },
 })
 
 const { t } = useI18n()
 
 // ---------- 底图与坐标映射 ----------
-const image = computed(() => mapImages[props.mapKey] || null)
+const basemapImage = ref(null)   // { src, width, height, coordinateBounds }
+const basemapError = ref(false)
+const image = computed(() => basemapImage.value)
 const overview = computed(() => ({ mapCode: props.mapKey, spawnPoints: [] }))
 const mapView = computed(() => createMapView(image.value, overview.value))
+
+/** ground.webp 异步就位（naturalWidth/Height 就绪后才建映射；失败 fail-visible）。 */
+async function resolveBasemap(bm) {
+  basemapImage.value = null
+  basemapError.value = false
+  if (!bm) return
+  if (bm.kind === 'bundled') {
+    basemapImage.value = bm.image
+    return
+  }
+  const url = mapStaticUrl('map', null, bm.mapKey || props.mapKey)
+  if (!url) {
+    basemapError.value = true
+    return
+  }
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const el = new Image()
+      el.onload = () => resolve(el)
+      el.onerror = () => reject(new Error('basemap load failed'))
+      el.src = url
+    })
+    basemapImage.value = {
+      src: url,
+      width: img.naturalWidth || 1024,
+      height: img.naturalHeight || 1024,
+      coordinateBounds: WORLD_BOUNDS_300,
+    }
+  } catch {
+    basemapError.value = true
+  }
+}
+// 底图解析的 watch 注册在标注状态声明之后（见文件后部）——immediate 首评需要完整状态
+
 const semPerSvgX = computed(() => {
   const b = mapView.value.renderBounds
   return b && mapView.value.W > 0 ? (b.xMax - b.xMin) / mapView.value.W : 1
@@ -101,6 +143,8 @@ function fitView() {
   applyView({ scale: 1, tx: 0, ty: 0 })
 }
 let fitObserved = false
+/** 笔迹抽稀阈值（屏幕 CSS px，与坐标体系无关；与回放 2D 同值，源内常量不外导）。 */
+const ANNOT_THIN_PX = 2
 watch([image, stageHeight], () => {
   if (!image.value) return
   // 尺寸就绪后的首次 fit；用户手势之后的 resize 保持已生效视图（与回放同一所有权语义）
@@ -109,10 +153,6 @@ watch([image, stageHeight], () => {
     fitView()
   }
 }, { flush: 'post' })
-watch(() => props.mapKey, () => {
-  fitObserved = false
-  resetAnnotationState()
-})
 
 const viewportStyle = computed(() => [
   `transform: translate(${view.tx}px, ${view.ty}px)`,
@@ -319,6 +359,15 @@ function onPointerUp(e) {
 }
 
 /** BattleMap 渲染输入：pen 草稿并入渲染列表；无车辆/浮层（桩函数永不被调用）。 */
+// ---------- 底图切换 = 换图：标注清空（语义随图）+ 重解析底图 + 重新 fit ----------
+// 注册点在标注状态声明之后——immediate 首评需要完整状态（resolveBasemap 会触发
+// resetAnnotationState，其引用的 refs 此时必须已初始化）。
+watch(() => props.basemap, (bm) => {
+  fitObserved = false
+  resetAnnotationState()
+  resolveBasemap(bm)
+}, { immediate: true })
+
 const renderedAnnotations = computed(() => {
   const toX = mapView.value.toX
   const toY = mapView.value.toY
@@ -406,6 +455,7 @@ const stubFloatClass = () => ''
       @pointerup="onPointerUp"
       @pointercancel="onPointerUp"
     >
+      <p v-if="basemapError" class="map2d-error" data-testid="map-2d-basemap-error">{{ $t('mapPreview.basemapFailed') }}</p>
       <BattleMap
         v-if="image"
         ref="mapEl"
@@ -516,6 +566,18 @@ const stubFloatClass = () => ''
 .map2d-stage:focus-visible {
   outline: var(--focus-outline);
   outline-offset: calc(-1 * var(--focus-outline-offset));
+}
+
+.map2d-error {
+  position: absolute;
+  inset-block-start: var(--space-2);
+  inset-inline-start: var(--space-2);
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-danger);
+  font: var(--type-caption);
 }
 
 .map2d-battlemap {

@@ -13,7 +13,7 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Map as MapIcon } from 'lucide-vue-next'
 import { useAuth } from '../composables/useAuth.js'
-import { loadMapIndex } from '../scene/replaySource.js'
+import { loadMapIndex, mapStaticUrl } from '../scene/replaySource.js'
 import { mapImages } from '../data/mapImages.js'
 import { mapLabel } from '../utils/helpers.js'
 import { Feature } from '../app/featureCapabilities.js'
@@ -51,15 +51,19 @@ async function loadMaps() {
   for (const [id, m] of entries) {
     const key = String(m.key || '')
     if (!key || byKey.has(key)) continue   // 变体空间归并基础图（首个出现的 id = 基础 id）
-    const image = mapImages[key] || null
+    const bundled = mapImages[key] || null
     const localized = mapLabel(key, locale.value)
     byKey.set(key, {
       key,
       mapId: Number(id),
       packDisplay: m.display || '',
       name: localized !== key ? localized : (m.display || key),
-      has2d: !!image,
-      thumb: image ? image.src : null,
+      // 底图双源：打包注册表优先（离线 + 逐图校准）；未收录的 14 张图回退资产包
+      // ground.webp（每张图都有，±300 契约框——3D 内核 meta 恒等回退与之一致）。
+      basemap: bundled
+        ? { kind: 'bundled', image: bundled }
+        : { kind: 'ground', mapKey: key },
+      thumb: bundled ? bundled.src : mapStaticUrl('map', null, key),
     })
   }
   maps.value = [...byKey.values()].sort((a, b) => collator.compare(a.name, b.name))
@@ -67,14 +71,13 @@ async function loadMaps() {
 }
 watch(authenticated, (ok) => { if (ok && !indexLoaded.value) loadMaps() }, { immediate: true })
 
-// ---- URL 契约：?map=<key> &mode=3d|2d ----
+// ---- URL 契约：?map=<key> &mode=3d|2d（资产包底图双源后全部地图可进 2D）----
 const selected = computed(() => maps.value.find((m) => m.key === route.query.map) || null)
 const mode = computed(() => (route.query.mode === '2d' ? '2d' : '3d'))
-/** 该地图实际可用的模式：无 2D 底图的地图强制 3D（fail-closed，不渲染黑画布）。 */
-const effectiveMode = computed(() => (selected.value && !selected.value.has2d ? '3d' : mode.value))
+const effectiveMode = computed(() => mode.value)
 
 function openMap(entry) {
-  router.replace({ query: { ...route.query, map: entry.key, mode: entry.has2d ? mode.value : '3d' } })
+  router.replace({ query: { ...route.query, map: entry.key, mode: mode.value } })
 }
 function setMode(value) {
   router.replace({ query: { ...route.query, mode: value } })
@@ -137,7 +140,7 @@ const modeOptions = computed(() => [
                 <MapIcon v-else class="map-card-thumb-fallback" aria-hidden="true" />
               </span>
               <span class="map-card-name">{{ m.name }}</span>
-              <span v-if="m.has2d" class="map-card-badge">{{ $t('mapPreview.twoDBadge') }}</span>
+              <span class="map-card-badge">{{ $t('mapPreview.twoDBadge') }}</span>
             </button>
           </li>
         </ul>
@@ -152,7 +155,6 @@ const modeOptions = computed(() => [
           </AppButton>
           <h1 class="map-stage-name">{{ selected.name }}</h1>
           <SegmentedControl
-            v-if="selected.has2d"
             class="map-mode-switch"
             :model-value="effectiveMode"
             :options="modeOptions"
@@ -160,14 +162,11 @@ const modeOptions = computed(() => [
             @update:model-value="setMode"
           />
         </header>
-        <Banner v-if="!selected.has2d && mode === '2d'" tone="info" data-testid="map-2d-unsupported">
-          <p>{{ $t('mapPreview.unsupportedMode') }}</p>
-        </Banner>
         <div v-show="effectiveMode === '3d'" class="map-stage-pane">
           <MapPreview3DPane :map-id="selected.mapId" :map-name="selected.name" :map-key="selected.key" :active="effectiveMode === '3d'" />
         </div>
         <div v-show="effectiveMode === '2d'" class="map-stage-pane">
-          <MapPreview2DPane :map-key="selected.key" />
+          <MapPreview2DPane :map-key="selected.key" :basemap="selected.basemap" />
         </div>
       </div>
     </template>
