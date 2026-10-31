@@ -181,7 +181,9 @@ let mapSizeObserver = null
 watch(mapEl, (el, prev) => {
   if (prev && mapSizeObserver) mapSizeObserver.unobserve(prev)
   if (el && mapSizeObserver) mapSizeObserver.observe(el)
-  fitObserved = false   // 新 DOM = 新几何，重新 fit 一次
+  // 新底图 DOM：初始 fit 待完成——**只在真实 map DOM 有有效尺寸时**由 RO 登记
+  // fitObserved=true（慢速 ground 载入竞态：边长已测、图未载入时不抢登记）。
+  fitObserved = false
 }, { flush: 'post' })
 watch(stageHeight, measureSquare, { flush: 'post' })
 onMounted(() => {
@@ -189,26 +191,31 @@ onMounted(() => {
   if (typeof ResizeObserver === 'function') {
     let lastValidSide = 0
     mapSizeObserver = new ResizeObserver(() => {
-      const prevValid = lastValidSide
+      const prevSide = lastValidSide
       measureSquare()
-      // 零尺寸（v-show 隐藏 / 卸载中）：不动 view——否则 2D⇄3D 切换回来会
-      // 把用户的缩放/平移重置回 contain fit。
+      // 零尺寸（v-show 隐藏 / 卸载中）：不动 view、保留 prevSide——
+      // 2D⇄3D 切换回来时才能正确比较尺寸变化。
       if (!squareSide.value) return
-      const firstValid = prevValid === 0
-      const sideChanged = !firstValid && squareSide.value !== prevValid
+      const firstValid = prevSide === 0
+      const sideChanged = !firstValid && squareSide.value !== prevSide
       lastValidSide = squareSide.value
-      if (!firstValid && !sideChanged) return
-      // clamp/fit 必须等 Vue 把新方形尺寸写入 DOM（squareEl/mapEl 的 clientWidth
-      // 是同步读值）——post-flush 后按已生效边界执行，否则用旧尺寸夹出越界空白。
+      // 同尺寸且 fit 已完成：无需处理（慢速 ground 载入完成后的新 mapEl 同尺寸
+      // 通知走下面 !fitObserved 分支补 fit）。
+      if (!firstValid && !sideChanged && fitObserved) return
+      // clamp/fit 等 Vue 把新方形尺寸写入 DOM 后执行（post-flush）——同步读
+      // clientWidth 会拿到旧值，夹出越界空白。
       nextTick(() => {
         if (!squareSide.value) return
-        if (firstValid || !fitObserved) {
-          if (!fitObserved) fitObserved = true
-          fitView()
+        if (!fitObserved) {
+          // 当前底图的初始 fit：仅在真实 map DOM 有效尺寸时执行并登记完成；
+          // 底图未载入保持 pending，等后续通知补做。
+          if (mapEl.value && mapEl.value.clientWidth > 0) {
+            fitObserved = true
+            fitView()
+          }
           return
         }
-        // 已有用户视图：保留 scale/tx/ty，仅按新边界重新 clamp
-        applyView(view)
+        if (sideChanged) applyView(view)   // 保留用户 scale/tx/ty，按新边界 clamp
       })
     })
     if (mapEl.value) mapSizeObserver.observe(mapEl.value)
