@@ -20,6 +20,17 @@ class BattleDataAdminContractTest {
     }
 
     @Test
+    void serializedSummaryMatchesCurrentContract() {
+        final var mapper = JsonMapper.builder().findAndAddModules().build();
+        final var summary = new BattleDataAdminDtos.Summary(Instant.parse("2026-10-29T00:00:00Z"), 0, 0, 0, 0, 0, null, 0, 0,
+                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        assertThat(mapper.readTree(mapper.writeValueAsString(summary)).propertyNames()).containsExactlyInAnyOrder(
+                "asOf", "totalBattles", "last24Hours", "last7Days", "last30Days", "windowBattles", "latestReceivedAt",
+                "distinctMaps", "distinctClientVersions", "modes", "winnerTeams", "schemaVersions", "daily", "maps",
+                "clientVersions", "spawnStats");
+    }
+
+    @Test
     void serializedSpawnStatKeepsNullCombinedModeAndCarriesCountsOnly() {
         final var mapper = JsonMapper.builder().findAndAddModules().build();
         final var json = mapper.readTree(mapper.writeValueAsString(new BattleDataAdminDtos.SpawnStat("rift", null, "NORTH", 4, 1, 1, 2)));

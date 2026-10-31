@@ -377,6 +377,12 @@ watch(() => store.hasData, (has) => { if (!has && annotationOpen.value) closeAnn
 let lastFile = null
 const lastFileName = ref('')
 const loadingMessage = computed(() => t(store.assetStage ? 'agentReplay.loading_assets' : 'agentReplay.parsing'))
+/** 视窗是否已过加载阶段：解析/资产加载中不置位（内容就绪、阻断、离线、WebGL 不支持、
+ *  场景错误均为终态/就绪）。工作台自动居中只等这个信号。 */
+const paneReady = computed(() => !props.file || !!props.blockedReason || !online.value.available
+  || !webgl.supported || !!store.err || !!store.hasData
+  // 待开播（视口 + 画质选择已渲染，等用户按开始）：这是最终界面，不是加载中
+  || props.file !== startedFile.value)
 
 // 画质徽标按 qualityKey 三语计算（store.qualityLabel 为上游兼容中文字段）
 const qualityBadge = computed(() =>
@@ -395,6 +401,8 @@ const mapTitle = computed(() => {
 // 所以走 computed 每次重算——不得在 setup 里定死一次，也不用内核预设里的固定中文 label。
 const CAMERAS = computed(() => [
   { value: 'free', label: t('agentReplay.cam_free') },
+  // 俯视是持续模式（OrbitControls 绕**地图中心**旋转/缩放），与自由并列而非一次性动作
+  { value: 'top', label: t('agentReplay.cam_top') },
   {
     value: 'recorder',
     label: t('agentReplay.cam_recorder'),
@@ -406,12 +414,18 @@ const QUALITY_ORDER = Object.keys(QUALITY_PRESETS)
 
 // 顶栏双方总血量：数值用**完整整数**（§11 HUD 禁止 1k / 22.3k 缩写，与 2D HUD 同口径）；
 // 色条宽度用原始百分比（不取整，血量缓慢下降时条仍平滑），title 上给取整百分比。
-const hudHealth = (current, maximum) => ({
-  state: 'EXACT',
-  knownRemaining: Number.isFinite(Number(current)) ? Math.max(0, Number(current)) : 0,
-  totalMax: Number.isFinite(Number(maximum)) ? Math.max(0, Number(maximum)) : 0,
-  unknownMax: 0,
-})
+// computed 提升对象构造：模板内联函数调用在每次父渲染（~10Hz HUD 节流）都生成新 prop
+// 身份，击穿子组件的 props 等值短路。
+const hudFriendlyHp = computed(() => hudHealth(store.hpFriend, store.hpFriendMax))
+const hudEnemyHp = computed(() => hudHealth(store.hpEnemy, store.hpEnemyMax))
+function hudHealth(current, maximum) {
+  return {
+    state: 'EXACT',
+    knownRemaining: Number.isFinite(Number(current)) ? Math.max(0, Number(current)) : 0,
+    totalMax: Number.isFinite(Number(maximum)) ? Math.max(0, Number(maximum)) : 0,
+    unknownMax: 0,
+  }
+}
 
 /** Banner colors follow the current profile and Recorder perspective. */
 const teamColors = computed(() => {
@@ -787,7 +801,8 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 </script>
 
 <template>
-  <div class="pb-pane">
+  <!-- data-pane-ready：加载中（解析 / 资产阶段）不置位；终态与就绪态均置位。 -->
+  <div class="pb-pane" :data-pane-ready="paneReady ? 'true' : undefined">
     <!-- pending（首次检测未完成）：不下结论、不初始化 3D 场景，保持中性空白。 -->
     <template v-if="!online.available">
       <p v-if="!online.pending" class="pb-note" data-testid="replay3d-connectivity">{{ $t(online.messageKey) }}</p>
@@ -820,8 +835,8 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
           score-label-key="recon.map.playback.kills"
           :map-title="mapTitle"
           :battle-time="battleTimeLabel"
-          :friendly-hp="hudHealth(store.hpFriend, store.hpFriendMax)"
-          :enemy-hp="hudHealth(store.hpEnemy, store.hpEnemyMax)"
+          :friendly-hp="hudFriendlyHp"
+          :enemy-hp="hudEnemyHp"
           :friendly-points="store.scoreFriend"
           :enemy-points="store.scoreEnemy"
           :hp-no-transition="!store.playing"

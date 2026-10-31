@@ -5,8 +5,8 @@
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本由显式 `version` 输入决定：自动续跑传入 stage 解析出的同一版本，手动 recovery 由操作者显式给出（见下节）。
-当前源码版本：**3.22.1 / 3022001**（`android/gradle.properties`），Battle Data 出生侧统计并入 summary 随 APK 打包，说明见 [3.22.1](releases/3.22.1.md)。
-3.22.1 在 3.22.0 之后按 **patch** 递增；Native Bridge 仍为 v3，最低支持版本保持现有发布配置，详见 [3.22.1](releases/3.22.1.md)。
+当前源码版本：**3.22.3 / 3022003**（`android/gradle.properties`），Battle Data 出生侧统计并入 summary 随 APK 打包，说明见 [3.22.3](releases/3.22.3.md)。
+3.22.3 在 3.22.2 之后按 **patch** 递增；这是 admin-only API breaking，不抬门槛。Native Bridge 仍为 v3，详见 [3.22.3](releases/3.22.3.md)。
 3.21.0 在 3.20.0 之后按 **minor** 递增，承载管理员 Battle Data 只读审计页；Native Bridge 仍为 v3，最低支持版本保持现有发布配置，详见 [3.21.0](releases/3.21.0.md)。
 3.21.2 在 3.21.1 之后按 **patch** 递增，承载 3D 回放相机档位调整；Native Bridge 仍为 v3，最低支持版本保持现有发布配置，详见 [3.21.2](releases/3.21.2.md)。
 `android-v3.17.9` / `android-v3.17.10` 已有 immutable release identity，
@@ -81,9 +81,11 @@ PR B 的初始候选版本是 **2.0.1 / 2000001**。2026-10-03 的只读审计�
 
 | 等级 | 适用变更 | 示例 | 强制更新门槛 |
 |---|---|---|---|
-| **major** | breaking change（含 Native Bridge wire breaking、需要新客户端才能正确工作的数据/接口契约变化）、重大功能、删除功能、中大型 bug 修复 | `X.0.0` | **必须抬到该 major 的 `X.0.0`**：`ANDROID_MIN_SUPPORTED_VERSION_CODE` = `X×1_000_000`，随 publish 写入 |
+| **major** | breaking change（含 Native Bridge wire breaking、普通用户路径需要新客户端才能正确工作的公共或运行时关键数据/接口契约变化）、重大功能、删除功能、中大型 bug 修复 | `X.0.0` | **必须抬到该 major 的 `X.0.0`**：`ANDROID_MIN_SUPPORTED_VERSION_CODE` = `X×1_000_000`，随 publish 写入 |
 | **minor** | 增加中小功能 | `X.Y.0` | 不抬，保持现值（旧客户端只收到可选更新提示） |
 | **patch** | 小 bug 修复 | `X.Y.Z` | 默认不抬、不强制升级；用户明确要求强制更新时为例外（见下） |
+
+**HTTP API 只维护当前一版**：服务端不为旧客户端保留第二端点、版本协商、fallback response 或兼容 validator，客户端跟随 API。`/api/admin/**` 这类 admin-only 内部 API 的 breaking change 不算 major 触发条件，按改动规模选 patch/minor，不抬门槛、不要求全体用户更新；旧管理端在后端部署后失败属于预期行为，需在 release notes 写明，管理员更新 APK 即可。公共 API 或普通用户路径的 breaking change 仍按 major 处理。
 
 **用户指令例外**：用户明确要求把强制更新门槛抬到当前候选时，patch/minor 也可以抬；必须在 PR 描述、release notes 与门槛变更记录写明理由。该例外覆盖 patch 默认不抬门槛的惯例，但不改变 major 的默认义务。
 

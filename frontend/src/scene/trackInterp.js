@@ -26,12 +26,26 @@ export const GRID_DT = 0.1
 /**
  * 均匀网格：索引与段内比例。`i` = 左采样下标（clamp 到 [0, n-2]），`f` ∈ [0,1]。
  * 网格外（t 早于首采样/晚于末采样）钳位到端点——与位姿冻结语义一致。
+ *
+ * 热路径用 `segmentAtInto`（写入调用方复用的对象）；本公开包装按次分配，
+ * 语义逐位一致（单测锁定本函数）。
  */
 export function segmentAt(t, t0, dt, n) {
-  if (!(n >= 2) || !(dt > 0)) return { i: 0, f: 0 }
+  return segmentAtInto(t, t0, dt, n, { i: 0, f: 0 })
+}
+
+/** [`segmentAt`] 的零分配形态：结果写入 `out` 并返回它。 */
+export function segmentAtInto(t, t0, dt, n, out) {
+  if (!(n >= 2) || !(dt > 0)) {
+    out.i = 0
+    out.f = 0
+    return out
+  }
   const x = (t - t0) / dt
   const i = Math.max(0, Math.min(n - 2, Math.floor(x)))
-  return { i, f: Math.max(0, Math.min(1, x - i)) }
+  out.i = i
+  out.f = Math.max(0, Math.min(1, x - i))
+  return out
 }
 
 /**
@@ -40,10 +54,22 @@ export function segmentAt(t, t0, dt, n) {
  * @returns {{ i: number, f: number }} i = 左关键帧下标（clamp 到 [0, K-2]），f = 段内比例
  */
 export function keyframeAt(t, times) {
+  return keyframeAtInto(t, times, { i: 0, f: 0 })
+}
+
+/** [`keyframeAt`] 的零分配形态：结果写入 `out` 并返回它。 */
+export function keyframeAtInto(t, times, out) {
   const k = times.length
-  if (k === 0) return { i: 0, f: 0 }
-  if (k === 1 || t <= times[0]) return { i: 0, f: 0 }
-  if (t >= times[k - 1]) return { i: k - 2, f: 1 }
+  if (k === 0 || k === 1 || t <= times[0]) {
+    out.i = 0
+    out.f = 0
+    return out
+  }
+  if (t >= times[k - 1]) {
+    out.i = k - 2
+    out.f = 1
+    return out
+  }
   // 首个 > t 的下标减一 = 左端点（times 升序由上游保证）
   let lo = 0
   let hi = k - 1
@@ -54,8 +80,15 @@ export function keyframeAt(t, times) {
   }
   const span = times[lo + 1] - times[lo]
   const f = span > 0 ? (t - times[lo]) / span : 0
-  return { i: lo, f: Math.max(0, Math.min(1, f)) }
+  out.i = lo
+  out.f = Math.max(0, Math.min(1, f))
+  return out
 }
+
+// 采样热路径（每车每帧 × 多通道）共用的段定位草稿：sampleKeyframes/sampleChannel
+// 解构后立即使用，不跨调用持有，可安全复用（关键帧/网格插值层零分配）。
+const _kfScratch = { i: 0, f: 0 }
+const _segScratch = { i: 0, f: 0 }
 
 /**
  * 在关键帧折线上求值（标量通道：位置分量 / 角度）。
@@ -71,7 +104,7 @@ export function sampleKeyframes(get, times, t) {
   const k = times.length
   if (k === 0) return 0
   if (k === 1) return get(0)
-  const { i, f } = keyframeAt(t, times)
+  const { i, f } = keyframeAtInto(t, times, _kfScratch)
   const a = get(i)
   return a + (get(i + 1) - a) * f
 }
@@ -83,7 +116,7 @@ export function sampleKeyframes(get, times, t) {
 export function sampleChannel(get, n, t, t0, dt) {
   if (n === 0) return 0
   if (n === 1) return get(0)
-  const { i, f } = segmentAt(t, t0, dt, n)
+  const { i, f } = segmentAtInto(t, t0, dt, n, _segScratch)
   const a = get(i)
   return a + (get(i + 1) - a) * f
 }
@@ -108,22 +141,52 @@ export function coverageSpanAt(coverage, t) {
  * 位姿可见段定位（采样用）：优先返回包含 `t` 的段；`t` 落在两段之间时返回**前一段**
  * （最后已知），早于首段返回首段，晚于末段返回末段。与 `coverageSpanAt` 的 null 语义
  * 分开——采样器需要"夹到最近端点保持"，而不是退回无约束插值。
+ *
+ * 采样热路径（每车每帧）用 [`visibilitySpanForSamplingInto`]；本公开包装按次分配，
+ * 语义逐位一致（单测锁定本函数）。
  */
 export function visibilitySpanForSampling(coverage, t) {
+  return visibilitySpanForSamplingInto(coverage, t, [0, 0])
+}
+
+/** [`visibilitySpanForSampling`] 的零分配形态：命中的 `[start, end]` 写入 `out` 并返回它。 */
+export function visibilitySpanForSamplingInto(coverage, t, out) {
   if (!Array.isArray(coverage) || !Number.isFinite(t)) return null
-  let first = null
-  let prev = null
+  let hasFirst = false
+  let firstStart = 0
+  let firstEnd = 0
+  let hasPrev = false
+  let prevStart = 0
+  let prevEnd = 0
   for (let i = 0; i + 1 < coverage.length; i += 2) {
     const start = coverage[i]
     const end = coverage[i + 1]
     if (!Number.isFinite(start) || (!Number.isFinite(end) && end !== Number.POSITIVE_INFINITY)) continue
-    const span = [start, end]
-    if (first === null) first = span
-    if (t < start - 1e-6) return prev ?? span
-    if (t <= end + 1e-6) return span
-    prev = span
+    if (!hasFirst) {
+      hasFirst = true
+      firstStart = start
+      firstEnd = end
+    }
+    if (t < start - 1e-6) {
+      // t 落在段间空隙：取前一段（最后已知），无前段（早于首段）取本段
+      out[0] = hasPrev ? prevStart : start
+      out[1] = hasPrev ? prevEnd : end
+      return out
+    }
+    if (t <= end + 1e-6) {
+      out[0] = start
+      out[1] = end
+      return out
+    }
+    hasPrev = true
+    prevStart = start
+    prevEnd = end
   }
-  return prev ?? first
+  // 晚于末段：取末段（= prev）；无任何有效段：null
+  if (!hasPrev && !hasFirst) return null
+  out[0] = hasPrev ? prevStart : firstStart
+  out[1] = hasPrev ? prevEnd : firstEnd
+  return out
 }
 
 /** 段集合是否包含 t（闭区间 + 1e-6 容差；空/畸形 → false）。 */

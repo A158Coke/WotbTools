@@ -1486,8 +1486,11 @@ export interface AgentShotsOutcome {
   author_error?: string
   /** 作者 Avatar 实体 eid（0 = 未解析；旧裸数组产物不可知 → 0） */
   author_eid: number
-  /** 他人宽松路径跳过/兜底统计（旧产物不可知 → 全 0） */
-  others: AgentShotsOthersStats
+  /** 他人宽松路径跳过/兜底统计（上游 v0.4.20 起：仅他人路径 Ok 时存在；旧产物不可知 → 全 0） */
+  others?: AgentShotsOthersStats
+  /** 他人宽松路径内部不变量破坏原因（上游 v0.4.20 起，仅 others 缺失时存在；
+   * 数据缺失照旧走 skipped_* 统计，不会出现该键。消费方必须呈现，不静默当全 0） */
+  others_error?: string
 }
 
 const ZERO_OTHERS: AgentShotsOthersStats = {
@@ -1521,17 +1524,27 @@ export function normalizeAgentShotsOutcome(v: unknown): AgentShotsOutcome {
   }
   const o = (isObject(v.others) ? v.others : {}) as Record<string, unknown>
   const num = (x: unknown) => (typeof x === 'number' && x >= 0 ? x : 0)
+  // 上游 v0.4.20：others 与 others_error 互斥（他人路径内部不变量破坏 → 缺 others 带
+  // others_error；数据缺失照旧 skipped_*）。两者皆缺 = schema drift，拒绝显形。
+  if (v.others === undefined && v.others_error === undefined) {
+    throw new Error('agent shots: others 与 others_error 必须有其一（上游 v0.4.20 互斥契约）')
+  }
   return {
     shots: assertShotArray(v.shots),
     author_path: authorPath,
     ...(authorPath === 'error' ? { author_error: v.author_error as string } : {}),
     author_eid: typeof v.author_eid === 'number' ? v.author_eid : 0,
-    others: {
-      total_launches: num(o.total_launches),
-      skipped_no_endpoint: num(o.skipped_no_endpoint),
-      skipped_no_target_state: num(o.skipped_no_target_state),
-      muzzle_fallback: num(o.muzzle_fallback),
-    },
+    ...(typeof v.others_error === 'string' ? { others_error: v.others_error } : {}),
+    ...(v.others === undefined
+      ? {}
+      : {
+          others: {
+            total_launches: num(o.total_launches),
+            skipped_no_endpoint: num(o.skipped_no_endpoint),
+            skipped_no_target_state: num(o.skipped_no_target_state),
+            muzzle_fallback: num(o.muzzle_fallback),
+          },
+        }),
   }
 }
 

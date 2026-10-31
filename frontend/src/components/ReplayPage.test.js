@@ -275,8 +275,9 @@ function mountPage(overrides = {}) {
             '<p class="scroll-hint">Scroll</p></div>'
         },
         BattleTable: {
-          props: ['battle'],
-          template: '<div class="battle-table-stub" :data-export-role="\'battle-\' + battle.mapName">' +
+          props: ['battle', 'sortKey', 'sortReverse'],
+          template: '<div class="battle-table-stub" :data-export-role="\'battle-\' + battle.mapName" ' +
+            ':data-sort-key="sortKey || \'\'" :data-sort-reverse="String(!!sortReverse)">' +
             '<div class="mcards"><div class="mc"><div class="k">Map</div><div class="v">{{ battle.mapName }}</div></div></div>' +
             '<div class="tablewrap"><table style="width:2000px"><tbody>' +
             '<tr class="t1"><td><span class="rbadge">1500</span></td></tr>' +
@@ -1973,7 +1974,14 @@ describe('ReplayPage League failure UX separation', () => {
     })
     const wrapper = mountPage()
     await flushPromises()
-    expect(wrapper.findAll('.battle-table-stub').length).toBe(30)
+    // v-if 挂载口径（2026-10-31 批量优化，此前 v-show 全量挂载隐藏表）：
+    // 单场视图仅当前场表进 DOM；「逐场可看」= 切场次后对应表挂载
+    state.setActiveTab('b0')
+    await flushPromises()
+    expect(wrapper.findAll('.battle-table-stub').length).toBe(1)
+    state.setActiveTab('b29')
+    await flushPromises()
+    expect(wrapper.findAll('.battle-table-stub').length).toBe(1)
     wrapper.unmount()
   })
 
@@ -2018,7 +2026,13 @@ describe('ReplayPage League failure UX separation', () => {
     expect(notice.exists()).toBe(true)
     expect(notice.classes()).toContain('is-warning')
     expect(wrapper.text()).toContain('league.unavailable_mixed')
-    expect(wrapper.findAll('.battle-table-stub').length).toBe(2)
+    // v-if 挂载口径：逐场切换各挂载一张表（此前 v-show 两张全挂）
+    state.setActiveTab('b0')
+    await flushPromises()
+    expect(wrapper.findAll('.battle-table-stub').length).toBe(1)
+    state.setActiveTab('b1')
+    await flushPromises()
+    expect(wrapper.findAll('.battle-table-stub').length).toBe(1)
     expect(wrapper.find('[data-testid="result-failures"]').exists()).toBe(false)
     wrapper.unmount()
   })
@@ -2052,5 +2066,57 @@ describe('ReplayPage League 算法说明入口', () => {
     expect(btn.exists()).toBe(true)
     await btn.trigger('click')
     expect(navigate).toHaveBeenCalledWith('rating-docs')
+  })
+})
+
+// ---- battleSorts 批次边界（Codex round-2 复审回归）----
+// ReplayPage.test 的 BattleTable 是 stub（无真实行序），回归锁**接线与状态机**：
+// 父组件持有逐场排序 → 子表 prop 同步；同批次切场保留；selectionRevision++ 清空。
+// 「sortKey='' → 默认行序」由 BattleTable 自身 sorted 语义保证（其单测覆盖）。
+
+describe('ReplayPage battleSorts 批次边界', () => {
+  // state.init 在首次 useReplay 后置空——每条用例前重建（与本文件其他 describe 同款）
+  beforeEach(() => {
+    state.clear()
+    state.init = { activeTab: 'aggregate', resp: makeResp(), error: '', loading: false, locale: 'en', files: [] }
+  })
+
+  const sortAttr = (wrapper) => wrapper.get('.battle-table-stub').attributes('data-sort-key')
+
+  /** 挂载并把 battle 0 排到 damage_dealt（写入父组件状态 → 子表 prop 同步）。 */
+  async function mountSortedAtBattle0() {
+    const wrapper = mountPage()
+    await flushPromises()
+    state.setActiveTab('b0')
+    await flushPromises()
+    expect(sortAttr(wrapper)).toBe('')
+    wrapper.vm.battleSorts[0] = { key: 'damage_dealt', reverse: false }
+    await flushPromises()
+    expect(sortAttr(wrapper)).toBe('damage_dealt')
+    return wrapper
+  }
+
+  // 回归 1（同批次）：v-if 卸载不丢用户排序——状态在父组件，切场/汇总往返保留
+  it('同批次：battle 0 排序 → battle 1 → 回 battle 0，排序仍保留', async () => {
+    const wrapper = await mountSortedAtBattle0()
+    state.setActiveTab('b1')
+    await flushPromises()
+    state.setActiveTab('b0')
+    await flushPromises()
+    expect(sortAttr(wrapper)).toBe('damage_dealt')
+    wrapper.unmount()
+  })
+
+  // 回归 2（跨批次）：replaceSelection（updateFiles → selectionRevision++）必须清空，
+  // 新批次 battle 0 回默认排序，不继承旧批次同 index 的排序
+  it('跨批次：旧批次排序 → replaceSelection → 新批次 battle 0 恢复默认排序', async () => {
+    const wrapper = await mountSortedAtBattle0()
+    state.setResp(makeResp())
+    state.replay.updateFiles(['next.wotbreplay'])
+    await flushPromises()
+    state.setActiveTab('b0')
+    await flushPromises()
+    expect(sortAttr(wrapper)).toBe('')
+    wrapper.unmount()
   })
 })

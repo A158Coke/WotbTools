@@ -1122,8 +1122,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             camera.updateWorldMatrix(true, false);
         }
         function prepareRicochetFrame() {
-            updateCollisionWorldMatrices();
+            // 传播门控在 pack 上：packPoseChanged / raycastPackAll 这类 CPU 矩阵读者都以
+            // ricochetPack 存在为前提；无 pack（未进热力图）时无本帧 CPU 读者，传播交给
+            // renderer.render 的根遍历（显示分支各自自更新），不为每帧白付两棵全树重算。
             if (ricochetPack) {
+                updateCollisionWorldMatrices();
                 const changed = packPoseChanged(ricochetPack, ricochetPoseSnapshot);
                 const retryStopped = ricochetFailedPose && !packPoseChanged(ricochetPack, ricochetFailedPose);
                 if (ricochetPoseDirty || (changed && !retryStopped)) {
@@ -1817,6 +1820,16 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             for (const node of moduleMeshes) list.push(node);
             return list;
         }
+        // 高亮/复位共用的材质状态写入：needsUpdate 触发材质参数整体重评估（program 重选 +
+        // 缓存哈希），只有 transparent/depthWrite 这类参与渲染状态的开关真正变化时才置位；
+        // opacity 是逐 draw 读取的普通状态，不需要（每次点击全板置 needsUpdate 会让下一帧
+        // 对每块装甲材质多做一次参数重评估）。
+        function applyArmorMaterialState(m, transparent, opacity, depthWrite) {
+            if (m.transparent !== transparent || m.depthWrite !== depthWrite) m.needsUpdate = true;
+            m.transparent = transparent;
+            m.opacity = opacity;
+            m.depthWrite = depthWrite;
+        }
         function resetArmorHighlight() {
             highlightedArmorNode = null;
             // 普通/击穿视图的装甲材质是“透明覆盖层”，不能套用碰撞视图的透明度复位
@@ -1825,11 +1838,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             for (const node of collectHighlightMeshes()) {
                 const m = node.material;
                 if (!m) continue;
-                m.transparent = true;
-                m.opacity = modules.has(node) ? 1 : 0.95;
-                m.depthWrite = true;
+                applyArmorMaterialState(m, true, modules.has(node) ? 1 : 0.95, true);
                 if (m.emissive) { m.emissive.setHex(0x000000); m.emissiveIntensity = 0; }
-                m.needsUpdate = true;
             }
         }
         function applyArmorHighlight(selected) {
@@ -1838,19 +1848,14 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 const m = node.material;
                 if (!m) continue;
                 if (node === selected) {
-                    m.transparent = true;
-                    m.opacity = 1;
-                    m.depthWrite = true;
                     // 高亮只靠"选中板保持不透明、其余压暗"：不改厚度色相（用户 2026-10-28
                     // 报障：金色自发光让被点板颜色与点击前不一致）。
+                    applyArmorMaterialState(m, true, 1, true);
                     if (m.emissive) { m.emissive.setHex(0x000000); m.emissiveIntensity = 0; }
                 } else {
-                    m.transparent = true;
-                    m.opacity = modules.has(node) ? 0.15 : 0.18;
-                    m.depthWrite = false;
+                    applyArmorMaterialState(m, true, modules.has(node) ? 0.15 : 0.18, false);
                     if (m.emissive) { m.emissive.setHex(0x000000); m.emissiveIntensity = 0; }
                 }
-                m.needsUpdate = true;
             }
             highlightedArmorNode = selected;
         }
@@ -5000,6 +5005,19 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         // 最近一次实际应用的炮塔/炮管角（回放姿态、滑块、手动瞄准三种来源统一记录）——
         // 装甲状态应用重放姿态时的权威取值（review：回放设非零角后切态不得回 0）
         let lastAppliedTurretDeg = 0, lastAppliedGunDeg = 0;
+        // 炮塔/炮管姿态草稿（复用对象）：updateTurretGun 由 pointermove/滑块逐输入事件驱动，
+        // 此前每次调用 new 6~8 个 Matrix4 + 每块装甲板 1~2 个 clone（数百板 × 60Hz 输入
+        // = 纯 GC 压力）。草稿只在函数内同步消费，不跨调用持有。
+        const _aimPivotT = new THREE.Vector3();
+        const _aimPivotG = new THREE.Vector3();
+        const _aimTurretRot = new THREE.Matrix4();
+        const _aimItrEuler = new THREE.Euler();
+        const _aimMTurret = new THREE.Matrix4();
+        const _aimMGun = new THREE.Matrix4();
+        const _aimMAT = new THREE.Matrix4();
+        const _aimMAG = new THREE.Matrix4();
+        const _aimMNode = new THREE.Matrix4();
+
         function updateTurretGun(turretDeg, gunDeg) {
             if (!tankModel) return;
             if (!origMatrices) collectTurretGunNodes();
@@ -5009,79 +5027,72 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             ricochetPoseDirty = true;   // 炮塔/炮管旋转 → 世界系网格重建（下一帧类通道前）
 
             // 旋转枢轴 = models.pb 原点链（alignArmorModules 写入：track+turret / track+turret+gun）
-            const tPivot = armorPivotTurret ? armorPivotTurret.clone() : new THREE.Vector3(0, 0, 1.7);
-            const gPivot = armorPivotGun ? armorPivotGun.clone() : new THREE.Vector3(0, 0, 2.0);
+            const tPivot = armorPivotTurret ? _aimPivotT.copy(armorPivotTurret) : _aimPivotT.set(0, 0, 1.7);
+            const gPivot = armorPivotGun ? _aimPivotG.copy(armorPivotGun) : _aimPivotG.set(0, 0, 2.0);
 
             const tr = THREE.MathUtils.degToRad(turretDeg);
             const gr = THREE.MathUtils.degToRad(gunDeg);
 
-            let turretRot = new THREE.Matrix4().makeRotationZ(tr);
             const itr = tankData.initial_turret_rotation;
+            let turretRot = _aimTurretRot;
             if (itr) {
-                turretRot = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(
+                turretRot.makeRotationFromEuler(_aimItrEuler.set(
                     -THREE.MathUtils.degToRad(itr.pitch),
                     -THREE.MathUtils.degToRad(itr.roll),
                     tr - THREE.MathUtils.degToRad(itr.yaw),
                     'XYZ'));
+            } else {
+                turretRot.makeRotationZ(tr);
             }
-            const mTurret = new THREE.Matrix4();
+            const mTurret = _aimMTurret;
             mTurret.makeTranslation(tPivot.x, tPivot.y, tPivot.z);
             mTurret.multiply(turretRot);
-            mTurret.multiply(new THREE.Matrix4().makeTranslation(-tPivot.x, -tPivot.y, -tPivot.z));
+            mTurret.multiply(_aimMNode.makeTranslation(-tPivot.x, -tPivot.y, -tPivot.z));
 
-            const mGun = mTurret.clone();
-            mGun.multiply(new THREE.Matrix4().makeTranslation(gPivot.x, gPivot.y, gPivot.z));
-            mGun.multiply(new THREE.Matrix4().makeRotationX(gr));
-            mGun.multiply(new THREE.Matrix4().makeTranslation(-gPivot.x, -gPivot.y, -gPivot.z));
+            const mGun = _aimMGun.copy(mTurret);
+            mGun.multiply(_aimMNode.makeTranslation(gPivot.x, gPivot.y, gPivot.z));
+            mGun.multiply(_aimMNode.makeRotationX(gr));
+            mGun.multiply(_aimMNode.makeTranslation(-gPivot.x, -gPivot.y, -gPivot.z));
             // gun_mask 裁切面与 gun 节点共用同一姿态矩阵（BlitzKit 的 gun 局部系平面）
             gunPoseMatrix.copy(mGun);
 
             if (turretNode) {
                 const orig = origMatrices.get(turretNode);
-                const m = mTurret.clone();
-                m.multiply(orig);
-                turretNode.matrix.copy(m);
+                turretNode.matrix.copy(_aimMNode.copy(mTurret).multiply(orig));
                 turretNode.matrixWorldNeedsUpdate = true;
             }
             // 炮管本体 + 炮盾：炮塔旋转 × 俯仰（炮盾焊在炮管摇篮上，同链）
             const barrelNodes = gunBarrelNodes.length ? gunBarrelNodes : gunNodesList;
             for (const gn of barrelNodes) {
                 const orig = origMatrices.get(gn);
-                const m = mGun.clone();
-                m.multiply(orig);
-                gn.matrix.copy(m);
+                gn.matrix.copy(_aimMNode.copy(mGun).multiply(orig));
                 gn.matrixWorldNeedsUpdate = true;
             }
 
             if (armorModel) {
                 if (!armorOrigMatrices) collectArmorNodes();
                 if (armorOrigMatrices) {
-                    const aTP = tPivot.clone();
-                    const aGP = gPivot.clone();
-                    const mAT = new THREE.Matrix4();
-                    mAT.makeTranslation(aTP.x, aTP.y, aTP.z);
+                    // 装甲侧与视觉侧同一枢轴（此前的 aTP/aGP 克隆与 tPivot/gPivot 逐值相等）
+                    const mAT = _aimMAT;
+                    mAT.makeTranslation(tPivot.x, tPivot.y, tPivot.z);
                     // 与视觉炮塔同一旋转（含 initial_turret_rotation）——4 辆意大利固定战斗室 TD
                     // 依赖 itr 定型，漏叠会让装甲板与外观炮塔差 3~6.5° 俯仰
-                    mAT.multiply(turretRot.clone());
-                    mAT.multiply(new THREE.Matrix4().makeTranslation(-aTP.x, -aTP.y, -aTP.z));
+                    mAT.multiply(turretRot);
+                    mAT.multiply(_aimMNode.makeTranslation(-tPivot.x, -tPivot.y, -tPivot.z));
 
-                    const mAG = mAT.clone();
-                    mAG.multiply(new THREE.Matrix4().makeTranslation(aGP.x, aGP.y, aGP.z));
-                    mAG.multiply(new THREE.Matrix4().makeRotationX(gr));
-                    mAG.multiply(new THREE.Matrix4().makeTranslation(-aGP.x, -aGP.y, -aGP.z));
+                    const mAG = _aimMAG.copy(mAT);
+                    mAG.multiply(_aimMNode.makeTranslation(gPivot.x, gPivot.y, gPivot.z));
+                    mAG.multiply(_aimMNode.makeRotationX(gr));
+                    mAG.multiply(_aimMNode.makeTranslation(-gPivot.x, -gPivot.y, -gPivot.z));
 
                     for (const [node, orig] of armorOrigMatrices) {
                         const name = node.name || '';
                         // 正则容忍动态装甲的 state_XX 段（gun_01_state_00_armor_11 等）——
                         // 否则状态炮盾走 mAT（仅炮塔旋转）漏掉炮管俯仰 mAG（review P2-3）
                         if (/^gun_\d+(?:_state_\d+)?_armor_/.test(name)) {
-                            const m = mAG.clone();
-                            m.multiply(orig);
-                            node.matrix.copy(m);
+                            node.matrix.copy(_aimMNode.copy(mAG).multiply(orig));
                         } else {
-                            const m = mAT.clone();
-                            m.multiply(orig);
-                            node.matrix.copy(m);
+                            node.matrix.copy(_aimMNode.copy(mAT).multiply(orig));
                         }
                         node.matrixWorldNeedsUpdate = true;
                     }

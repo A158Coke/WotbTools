@@ -39,6 +39,8 @@ const reloadTelemetry = ref<PlaybackReloadTelemetry | null>(null)
 const result = ref<AgentBattleResult | null>(null)
 /** LOADING | FULL | PARTIAL | UNAVAILABLE | ERROR */
 const playbackV2State = ref('LOADING')
+/** 视窗是否已过加载阶段（内容就绪或终态）；工作台自动居中只等这个信号。 */
+const paneReady = computed(() => !props.file || !!props.blockedReason || playbackV2State.value !== 'LOADING')
 const playbackV2Error = ref('')
 
 /** V2 是 playback 核心事实源；MapOverview 只补 optional overlay。 */
@@ -186,7 +188,9 @@ onMounted(() => {
 </script>
 
 <template>
-  <div>
+  <!-- data-pane-ready：工作台据此判断"视窗已就绪"（加载中不定位）。
+       终态（无文件 / 阻断 / 不可用 / 失败）同样视为就绪——那不是加载中。 -->
+  <div :data-pane-ready="paneReady ? 'true' : undefined">
     <p v-if="blockedReason" class="ws-note map-dataset-error" data-test="map-dataset-status">{{ blockedReason }}</p>
     <p v-else-if="!file" class="ws-note">{{ $t('workspace.playback_empty') }}</p>
     <div v-else class="panel map-panel" data-test="map-panel">

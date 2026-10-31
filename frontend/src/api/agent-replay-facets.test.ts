@@ -723,8 +723,24 @@ describe('normalizeAgentShotsOutcome', () => {
     const o = api.normalizeAgentShotsOutcome([shot, { ...shot, index: 2 }])
     expect(o.author_path).toBe('ok')
     expect(o.author_eid).toBe(0)
-    expect(o.others.total_launches).toBe(0)
+    expect(o.others?.total_launches).toBe(0)
     expect(o.shots).toHaveLength(2)
+  })
+
+  it('上游 v0.4.20：others 缺失而 others_error 在场 → 透传（fail-visible）', () => {
+    const o = api.normalizeAgentShotsOutcome({
+      shots: [shot],
+      author_path: 'ok',
+      author_eid: 7,
+      others_error: '他人路径: shotId=9 非续段发射缺少命中通知窗口（build_notice_windows 不变量破坏）',
+    })
+    expect(o.others).toBeUndefined()
+    expect(o.others_error).toContain('build_notice_windows 不变量破坏')
+  })
+
+  it('上游 v0.4.20：others 与 others_error 皆缺 = schema drift（拒绝）', () => {
+    expect(() => api.normalizeAgentShotsOutcome({ shots: [], author_path: 'ok', author_eid: 0 }))
+      .toThrow(/others_error/)
   })
 
   it('非法顶层拒绝', () => {

@@ -1735,6 +1735,7 @@
     "parsing": "解析中…",
     "error_parse": "解析失败：",
     "author_path_error": "作者严格路径提取失败——下表仅含他人宽松路径射击（弹道/判定降级，无 method38 细节）",
+    "others_error": "他人射击提取命中内部不变量破坏——下表缺失其他玩家射击（解析器缺陷，非空结果）",
     "shooter": "射击者：",
     "all_shooters": "全部玩家",
     "allies": "我方",

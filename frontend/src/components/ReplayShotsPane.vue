@@ -65,6 +65,8 @@ const parsing = ref(false)
 const err = ref('')
 /** 作者严格路径 fail-visible（契约 v0.1.9）：author_path=error 时警示与空态并存 */
 const authorError = ref('')
+/** 他人宽松路径 fail-visible（上游 v0.4.20）：others_error 在场 = 他人链内部不变量破坏 */
+const othersError = ref('')
 const shooter = ref('own')
 const authorEid = ref(null)
 const recorderTankName = ref('')
@@ -220,6 +222,7 @@ async function decode(file) {
   parsing.value = true
   err.value = ''
   authorError.value = ''
+  othersError.value = ''
   selectedIndex.value = null
   shooter.value = 'own'
   authorEid.value = null
@@ -259,6 +262,8 @@ async function decode(file) {
     if (seq !== parseSeq) return
     // 作者严格路径 fail-visible（契约 v0.1.9）：失败不再静默，警示条 + 他人宽松全量
     authorError.value = outcome.author_error || ''
+    // 他人宽松路径 fail-visible（上游 v0.4.20）：others_error 在场 = 他人链内部不变量破坏
+    othersError.value = outcome.others_error || ''
     const parsedShots = outcome.shots
     // 富化失败不阻断主表（名册失败仅 3D 链接缺失；弹种反解失败走槽位/id 兜底）
     if (playback) {
@@ -327,6 +332,7 @@ watch([() => props.active, () => props.file, () => props.blockedReason], ([activ
     shooter.value = 'own'
     err.value = ''
     authorError.value = ''
+    othersError.value = ''
   }
   if (!active || !file || blocked) return
   if (parsedFile === file) return
@@ -652,7 +658,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="paneRoot" class="shots-pane" data-testid="replay-shots-pane" @keydown="onDetailKeydown">
+  <!-- data-pane-ready：解析中不置位（工作台自动居中要等真实内容）。 -->
+  <div ref="paneRoot" class="shots-pane" data-testid="replay-shots-pane" :data-pane-ready="parsing ? undefined : 'true'" @keydown="onDetailKeydown">
     <Scene3DStatus v-if="parsing" mode="loading" :message="$t('agentShots.parsing')" />
     <!-- 解析期间不显示"没选文件 / 被阻断 / 解析失败"：那些是解析**结果**，不是进行中的状态 -->
     <p v-else-if="blockedReason" class="shots-note" data-testid="shots-blocked">{{ blockedReason }}</p>
@@ -667,6 +674,12 @@ onBeforeUnmount(() => {
       <Banner v-if="authorError" tone="warning" data-testid="shots-author-error">
         <p>{{ $t('agentShots.author_path_error') }}</p>
         <p class="shots-cause">{{ authorError.slice(0, 160) }}</p>
+      </Banner>
+      <!-- 他人宽松路径 fail-visible（上游 v0.4.20）：others 缺失而 others_error 在场 =
+           内部不变量破坏（代码缺陷），不是"没有其他玩家射击"——绝不静默当全 0 统计 -->
+      <Banner v-if="othersError" tone="warning" data-testid="shots-others-error">
+        <p>{{ $t('agentShots.others_error') }}</p>
+        <p class="shots-cause">{{ othersError.slice(0, 160) }}</p>
       </Banner>
 
       <header class="shots-overview">
