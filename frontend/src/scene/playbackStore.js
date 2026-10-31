@@ -67,5 +67,8 @@ export function createPlaybackStore() {
     friendlyTeam: null, // Authoritative Recorder team; unknown never implies Team 1.
     roster: { team1: [], team2: [], unknown: [] },
     hasData: false,
+    // 地图预览会话就绪（loadMapOnly 写入）：3D 地图面资产装载完成、可交互。
+    // 与 hasData 互斥使用——传输/阵容/HUD 仍由 hasData 门控（地图会话恒 false）。
+    mapReady: false,
   })
 }

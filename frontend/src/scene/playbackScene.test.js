@@ -1021,6 +1021,55 @@ describe('playbackScene reset：撤下当前回放', () => {
   })
 })
 
+describe('playbackScene loadMapOnly：地图预览会话', () => {
+  it('地图资产就绪 → mapReady 落位、hasData 保持 false（传输/阵容门控不误开）', async () => {
+    stubTerrainAssets()
+    const { store } = createScene()
+    await api.loadMapOnly({ mapId: 17, mapName: 'Yukon' })
+    expect(store.mapReady).toBe(true)
+    expect(store.hasData).toBe(false)
+    expect(store.loading).toBe(false)
+    expect(store.assetStage).toBe(false)
+    expect(store.err).toBe('')
+    expect(store.mapName).toBe('Yukon')
+    expect(store.mapKey).toBe('probe_map')
+    expect(store.playing).toBe(false)
+  })
+
+  it('reset 撤下地图预览：mapReady 复位，不留就绪残留', async () => {
+    stubTerrainAssets()
+    const { store } = createScene()
+    await api.loadMapOnly({ mapId: 17, mapName: 'Yukon' })
+    expect(store.mapReady).toBe(true)
+    api.reset()
+    expect(store.mapReady).toBe(false)
+    expect(store.hasData).toBe(false)
+    expect(store.mapKey).toBe(null)
+  })
+
+  it('地图预览之后 loadData 正常接管回放会话（SESSION_MODE 复位）', async () => {
+    stubTerrainAssets()
+    const { store } = createScene()
+    await api.loadMapOnly({ mapId: 17, mapName: 'Yukon' })
+    expect(store.mapReady).toBe(true)
+    const session = { loadScene: vi.fn().mockResolvedValue(minimalData(7, 'map_b')), getState: () => null }
+    await api.loadData({ kind: 'local', file: new File(['x'], 'b.wotbreplay'), session })
+    expect(store.hasData).toBe(true)
+    expect(store.mapReady).toBe(false)
+    expect(store.mapName).toBe('map_b')
+  })
+
+  it('resolveMapKey 失败也 fail-soft：网格兜底照样就绪', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 404 })))
+    source.resolveMapKey.mockImplementation(() => Promise.reject(new Error('offline')))
+    const { store } = createScene()
+    await api.loadMapOnly({ mapId: 17, mapName: 'Yukon' })
+    expect(store.mapReady).toBe(true)
+    expect(store.hasData).toBe(false)
+    expect(store.err).toBe('')
+  })
+})
+
 describe('playbackScene 场景未初始化时的调用安全', () => {
   it('initScene 之前 pause → resume 会重新挂起被取消的 rAF，且场景 API 不炸', async () => {
     const raf = vi.fn()

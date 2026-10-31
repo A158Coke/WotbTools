@@ -1,4 +1,30 @@
 {
+  "nav": {
+    "maps": "Maps"
+  },
+  "mapPreview": {
+    "title": "Map Preview",
+    "subtitle": "Inspect terrain and scenery, mark key positions — no replay file needed",
+    "loginRequired": "Sign in to use the map preview",
+    "loadFailed": "Failed to load the map list",
+    "empty": "No maps available",
+    "retry": "Retry",
+    "mode3d": "3D Scene",
+    "mode2d": "2D Tactical Map",
+    "backToPicker": "Choose another map",
+    "twoDBadge": "2D",
+    "annotations": {
+      "title": "Annotations",
+      "import": "Import annotations",
+      "export": "Export annotations",
+      "importFailed": "Import failed: {reason}",
+      "importedCount": "Imported {count} annotations",
+      "noAnnotations": "Nothing to export yet",
+      "importReasonFormat": "File is not an annotation JSON for this view",
+      "importReasonMap": "Annotations belong to another map"
+    },
+    "unsupportedMode": "This map has no 2D tactical image yet — use the 3D scene"
+  },
   "app": {
     "title": "WoTBTools",
     "subtitle": "Replay parsing · Hall of Fame · Live rating · AI tactical review",

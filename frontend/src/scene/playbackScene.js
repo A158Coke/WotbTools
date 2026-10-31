@@ -252,6 +252,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
    * 与 sessionGen 分开的原因：teardown 是本次加载自己的提交流程，不能把自己判过期。
    */
   let sessionEpoch = 0;
+  /**
+   * 会话模式：'replay'（回放会话，startPlayback 走完整链）| 'map'（地图预览会话，
+   * loadMapOnly 提交 stub DATA，startPlayback 只走地图资产前缀——无车辆/传输/HUD）。
+   * 由 teardown 复位为 'replay'；startPlayback 在地图资产就绪后按它提前收口。
+   */
+  let SESSION_MODE = 'replay';
   // 渲染帧句柄：destroy 显式 cancel（旧实现依赖 destroyed 标志的自然退出，
   // 帧回调在 destroy 后仍可能再排队一次）
   let rafId = 0;
@@ -4396,6 +4402,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
   function teardownSession() {
     sessionGen++;
+    SESSION_MODE = 'replay';
+    store.mapReady = false;
     resetMapLighting();   // 逐图光照随会话复位（否则换图时上一张的太阳会残留）
     animLayerMats = [];   // 动画混合层材质随会话失效（材质已随 mapScenery dispose）
     clearEffects();
@@ -4557,6 +4565,55 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (ownsLoading()) store.loading = false;
     }
   }
+
+  /**
+   * 地图预览会话（MapPreview3DPane）：不依赖回放文件，只按地图 id 装载地图面资产
+   * （ground/terrain/lighting/IBL/scenery/destructibles 完好预状态），无车辆、无传输。
+   *
+   * 会话纪律与 `loadData` 完全同构（gen/epoch/loadGen 三计数 + ownsLoading 归属判定），
+   * 差异只有两处：数据是 stub（`minimalData` 同款形状，空车队已被内核测试证明安全），
+   * 且 `startPlayback` 在地图资产就绪后按 `SESSION_MODE === 'map'` 提前收口——就绪标记落
+   * `store.mapReady`，`store.hasData` 保持 false（传输/阵容/HUD 门控天然禁用）。
+   *
+   * @param {{ mapId: number, mapName?: string }} opts 资产面数字地图 id（resolveMapKey 'id='）
+   * @returns {Promise<void>} 就绪/失败都写 store（err / mapReady / assetStage），不抛
+   */
+  async function loadMapOnly({ mapId, mapName = '' }) {
+    const gen = ++sessionGen;
+    const epoch = ++sessionEpoch;
+    const loadGen = ++loadGeneration;
+    const ownsLoading = () => !destroyed && loadGen === loadGeneration;
+    store.hasData = false;
+    store.mapReady = false;
+    canonicalClock = null;
+    store.err = '';
+    store.loading = true;
+    store.assetStage = false;
+    store.assetProgress = null;
+    try {
+      if (gen !== sessionGen) return;
+      teardownSession();   // 拆旧会话资源（同时复位 SESSION_MODE，下行再声明本会话模式）
+      SESSION_MODE = 'map';
+      DATA = {
+        meta: { map_id: mapId || 0, map_name: mapName || '', t_start: 0, friendly_team: 1, duration: 0 },
+        vehicles: [],
+        shots: [],
+        periods: [],
+        destructible_events: [],
+      };
+      VIS_BY_EID = visibilitySpansByEid(undefined);
+      POSE_GRID.tStart = 0;
+      POSE_GRID.samples = 0;
+      store.playbackSession = null;
+      const ready = await startPlayback(epoch);
+      if (!ready || !ownsLoading()) return;
+      store.mapReady = true;
+    } catch (e) {
+      if (ownsLoading()) store.err = String(e?.message || e || 'unknown');
+    } finally {
+      if (ownsLoading()) store.loading = false;
+    }
+  }
   /**
    * 进入场景：等待运行所需全部资产（地图/地形/地表/场景 GLB 按画质档）后落成会话。
    *
@@ -4652,6 +4709,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (current()) store.assetStage = false;
     }
     if (!current()) return false;   // 地图资产期间被取代：后面全是 DATA 派生的会话状态
+    if (SESSION_MODE === 'map') {
+      // 地图预览会话：地图资产就绪即完成——车辆/GLB/名册/传输/HUD 全部不建。
+      // 相机（top/free）与地形钳制只依赖 heightField/WORLD_CENTER，照常可用；
+      // 渲染由 animate() 常驻循环承担，就绪态由 loadMapOnly 落 store.mapReady。
+      return true;
+    }
     buildVehicles();
     if (glbOn) {
       const attach = applyGlbToggle(true);   // 会话切换后按用户偏好恢复 GLB 车模
@@ -4716,6 +4779,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
 
   return {
     loadData,
+    loadMapOnly,
     /**
      * 撤下当前回放（工作台清空选择 / 多文件未选场次 / 玩家换选）：回到「无数据」等待态。
      * 渲染器、画质档与相机保持——重新选回放时不必重建 WebGL 上下文、也不必重选画质；
@@ -4734,6 +4798,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       teardownSession();               // 车辆/地图/地形/特效/GLB 模板全量释放 + roster/HP/点数归零
       setPlaying(false);
       store.hasData = false;
+      store.mapReady = false;
       store.loading = false;
       store.assetStage = false;
       store.assetProgress = null;

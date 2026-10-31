@@ -1,0 +1,579 @@
+<script setup>
+/**
+ * 地图预览 2D 面板：打包底图（mapImages registry）+ 拖拽/捏合/滚轮缩放 + 标注绘制
+ * （pen/eraser，与 2D 回放同一坐标体系与撤销栈），无车辆、无回放。
+ *
+ * 手势与坐标管线复用回放的纯函数（zoomViewAt / clampViewPan / screenToSemantic /
+ * utils/annotation 全套）；渲染复用 BattleMap.vue（纯展示，车辆/浮层以空数组 +
+ * 桩函数传入）。标注只取 pen/eraser（与 3D 预览同一工具集），会话内保存 + 文件导入导出。
+ */
+import { computed, reactive, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { Download, PencilRuler, Upload } from 'lucide-vue-next'
+import BattleMap from './BattleMap.vue'
+import AnnotationToolbar from './AnnotationToolbar.vue'
+import { mapImages } from '../data/mapImages.js'
+import { createMapView } from '../utils/mapView.js'
+import {
+  ANNOT_COLORS, ANNOT_FONT_SIZE, ANNOT_WIDTH_DEFAULT, ANNOT_WIDTH_MAX, ANNOT_WIDTH_MIN,
+  applyEraser, canRedo, canUndo, commit, polylinePoints, screenToSemantic, semanticWidthFromSlider,
+} from '../utils/annotation.js'
+import { clampViewPan, zoomViewAt } from '../utils/battlePlayback.js'
+import { usePaneFillHeight } from '../composables/usePaneFillHeight.js'
+
+/** 笔迹抽稀阈值（屏幕 CSS px，与坐标体系无关；与回放 2D 同值，源内常量不外导）。 */
+const ANNOT_THIN_PX = 2
+
+const props = defineProps({
+  /** 资产面 key（= mapImages 注册码；标注导入/导出归属校验） */
+  mapKey: { type: String, required: true },
+})
+
+const { t } = useI18n()
+
+// ---------- 底图与坐标映射 ----------
+const image = computed(() => mapImages[props.mapKey] || null)
+const overview = computed(() => ({ mapCode: props.mapKey, spawnPoints: [] }))
+const mapView = computed(() => createMapView(image.value, overview.value))
+const semPerSvgX = computed(() => {
+  const b = mapView.value.renderBounds
+  return b && mapView.value.W > 0 ? (b.xMax - b.xMin) / mapView.value.W : 1
+})
+const semPerSvgY = computed(() => {
+  const b = mapView.value.renderBounds
+  return b && mapView.value.H > 0 ? (b.yMax - b.yMin) / mapView.value.H : 1
+})
+const annotWidthSlider = ref(ANNOT_WIDTH_DEFAULT)
+const annotWidth = computed(() => semanticWidthFromSlider(annotWidthSlider.value, {
+  semanticSpan: mapView.value.renderBounds ? mapView.value.renderBounds.xMax - mapView.value.renderBounds.xMin : 0,
+  logicalSpan: mapView.value.W,
+}))
+
+// ---------- 视图（contain fit / pan / pinch / wheel zoom）----------
+const rootEl = ref(null)
+const stageEl = ref(null)
+const mapEl = ref(null)
+const importFile = ref(null)
+const { height: stageHeight } = usePaneFillHeight(rootEl)
+const view = reactive({ scale: 1, tx: 0, ty: 0 })
+const ZOOM_STEP = 1.2
+const PAN_THRESHOLD_PX = 5
+const PINCH_THRESHOLD_PX = 5
+const FIT_MARGIN = 0.98
+
+function stageWidth() {
+  return stageEl.value ? stageEl.value.clientWidth : (rootEl.value?.clientWidth || 0)
+}
+function stageHeightPx() {
+  return stageEl.value ? stageEl.value.clientHeight : (rootEl.value?.clientHeight || 0)
+}
+/** 当前渲染矩形（相对地图容器原点；宽 = stage 宽，高按图片比例）。 */
+function renderRect() {
+  const width = stageWidth()
+  const ratio = mapView.value.H / mapView.value.W
+  return { width, height: width * ratio }
+}
+function fitScale() {
+  const stageW = stageWidth()
+  const stageH = stageHeightPx()
+  const rect = renderRect()
+  if (stageW > 0 && stageH > 0 && rect.width > 0 && rect.height > 0) {
+    return Math.min(stageW / rect.width, stageH / rect.height) * FIT_MARGIN
+  }
+  return 1
+}
+function applyView(next) {
+  const clamped = clampViewPan(next, stageWidth(), stageHeightPx(), renderRect().width, renderRect().height)
+  view.scale = clamped.scale
+  view.tx = clamped.tx
+  view.ty = clamped.ty
+}
+/** 默认视图 = 完整地图 contain 居中（stage 尺寸就绪后 fit 一次）。 */
+function fitView() {
+  const stageW = stageWidth()
+  const stageH = stageHeightPx()
+  const rect = renderRect()
+  if (stageW > 0 && stageH > 0 && rect.width > 0 && rect.height > 0) {
+    const scale = fitScale()
+    applyView({ scale, tx: (stageW - rect.width * scale) / 2, ty: (stageH - rect.height * scale) / 2 })
+    return
+  }
+  applyView({ scale: 1, tx: 0, ty: 0 })
+}
+let fitObserved = false
+watch([image, stageHeight], () => {
+  if (!image.value) return
+  // 尺寸就绪后的首次 fit；用户手势之后的 resize 保持已生效视图（与回放同一所有权语义）
+  if (!fitObserved && stageWidth() > 0) {
+    fitObserved = true
+    fitView()
+  }
+}, { flush: 'post' })
+watch(() => props.mapKey, () => {
+  fitObserved = false
+  resetAnnotationState()
+})
+
+const viewportStyle = computed(() => [
+  `transform: translate(${view.tx}px, ${view.ty}px)`,
+  `width: ${view.scale * 100}%`,
+])
+function screenPoint(clientX, clientY) {
+  const rect = mapEl.value ? mapEl.value.getBoundingClientRect() : { left: 0, top: 0 }
+  return { x: clientX - rect.left, y: clientY - rect.top }
+}
+function onWheel(e) {
+  e.preventDefault()
+  const p = screenPoint(e.clientX, e.clientY)
+  applyView(zoomViewAt(view, p.x, p.y, e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP, fitScale()))
+}
+
+// ---------- 标注（pen/eraser，语义坐标 + undo 栈）----------
+const annotationOpen = ref(false)
+const annotationTool = ref(null)
+const annotationColor = ref(ANNOT_COLORS[0])
+const annotationsVisible = ref(true)
+const annotationHistory = ref([[]])
+const annotationIndex = ref(0)
+const annotations = computed(() => annotationHistory.value[annotationIndex.value] || [])
+const draft = ref(null)
+
+function replaceAnnotations(next) {
+  const state = commit(annotationHistory.value, annotationIndex.value, next)
+  annotationHistory.value = state.history
+  annotationIndex.value = state.index
+}
+function undoAnnotation() {
+  const state = undo(annotationHistory.value, annotationIndex.value)
+  annotationHistory.value = state.history
+  annotationIndex.value = state.index
+}
+function redoAnnotation() {
+  const state = redo(annotationHistory.value, annotationIndex.value)
+  annotationHistory.value = state.history
+  annotationIndex.value = state.index
+}
+function clearAnnotations() {
+  if (annotations.value.length) replaceAnnotations([])
+}
+function setAnnotationTool(tool) {
+  annotationTool.value = tool
+  if (!annotationsVisible.value) annotationsVisible.value = true
+}
+function openAnnotation() {
+  if (annotationOpen.value) return
+  annotationOpen.value = true
+  annotationTool.value = 'pen'
+  annotationsVisible.value = true
+}
+function closeAnnotation() {
+  annotationOpen.value = false
+  annotationTool.value = null
+  cancelDrawing()
+}
+function resetAnnotationState() {
+  annotationHistory.value = [[]]
+  annotationIndex.value = 0
+  annotationOpen.value = false
+  annotationTool.value = null
+  annotationsVisible.value = true
+  draft.value = null
+  pointers.clear()
+  drawingPointerId = null
+}
+
+/** 指针 client 坐标 → 语义坐标（无地形 relief 预览，直接 screenToSemantic）。 */
+function semanticPoint(e) {
+  const sp = screenPoint(e.clientX, e.clientY)
+  return screenToSemantic(view, mapView.value, sp.x, sp.y, renderRect().width, renderRect().height)
+}
+
+// ---------- 手势（单指平移 / 双指捏合 / 绘制），管线与回放 2D 同构 ----------
+const pointers = new Map()
+let panStart = null
+let pinchStart = null
+let drawingPointerId = null
+let drawPoints = []
+let drawScreen = []
+
+function pinchInfo() {
+  const [a, b] = [...pointers.values()]
+  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+  return { mid, dist: Math.hypot(a.x - b.x, a.y - b.y) }
+}
+function startDrawing(e) {
+  const p = semanticPoint(e)
+  if (!p || !annotationsVisible.value) return
+  drawingPointerId = e.pointerId
+  if (annotationTool.value === 'eraser' || annotationTool.value === 'pen') {
+    drawPoints = [p]
+    drawScreen = [{ x: e.clientX, y: e.clientY }]
+    draft.value = { type: annotationTool.value, color: annotationColor.value, width: annotWidth.value, points: [p] }
+  }
+}
+function moveDrawing(e) {
+  const p = semanticPoint(e)
+  if (!p) return
+  const last = drawScreen[drawScreen.length - 1]
+  if (last == null || Math.hypot(e.clientX - last.x, e.clientY - last.y) >= ANNOT_THIN_PX) {
+    drawScreen.push({ x: e.clientX, y: e.clientY })
+    drawPoints.push(p)
+    draft.value = { ...draft.value, points: [...drawPoints] }
+  }
+}
+function endDrawing() {
+  const tool = annotationTool.value
+  if (!tool) return
+  if (tool === 'pen') {
+    if (drawPoints.length >= 2) replaceAnnotations([...annotations.value, { type: 'pen', color: annotationColor.value, width: annotWidth.value, points: drawPoints }])
+  } else if (tool === 'eraser') {
+    if (drawPoints.length) {
+      const next = applyEraser(annotations.value, drawPoints, annotWidth.value)
+      if (next !== annotations.value) replaceAnnotations(next)
+    }
+  }
+  cancelDrawing()
+}
+function cancelDrawing() {
+  draft.value = null
+  drawPoints = []
+  drawScreen = []
+  drawingPointerId = null
+}
+function onPointerDown(e) {
+  if (e.button != null && e.button !== 0) return
+  if (e.pointerType === 'mouse' && e.button === 0) e.preventDefault()
+  e.currentTarget?.focus?.({ preventScroll: true })
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+  try {
+    if (typeof e.target.setPointerCapture === 'function') e.target.setPointerCapture(e.pointerId)
+  } catch {
+    // 测试环境可能不支持指针捕获
+  }
+  if (annotationOpen.value && annotationTool.value && pointers.size === 1) {
+    startDrawing(e)
+    return
+  }
+  if (drawingPointerId != null && pointers.size === 2) cancelDrawing()
+  if (pointers.size === 1) {
+    panStart = { x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty }
+  } else if (pointers.size === 2) {
+    const info = pinchInfo()
+    pinchStart = {
+      mid: info.mid,
+      dist: info.dist,
+      anchorScreen: screenPoint(info.mid.x, info.mid.y),
+      scale: view.scale,
+      tx: view.tx,
+      ty: view.ty,
+    }
+    panStart = null
+  }
+}
+function onPointerMove(e) {
+  if (!pointers.has(e.pointerId)) return
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+  if (drawingPointerId === e.pointerId && annotationTool.value) {
+    moveDrawing(e)
+    return
+  }
+  if (pointers.size === 2 && pinchStart) {
+    const { mid, dist } = pinchInfo()
+    if (pinchStart.dist > 0 && dist > 0) {
+      const next = zoomViewAt(
+        { scale: pinchStart.scale, tx: pinchStart.tx, ty: pinchStart.ty },
+        pinchStart.anchorScreen.x, pinchStart.anchorScreen.y, dist / pinchStart.dist,
+        fitScale(),
+      )
+      next.tx += mid.x - pinchStart.mid.x
+      next.ty += mid.y - pinchStart.mid.y
+      applyView(next)
+    }
+    return
+  }
+  if (pointers.size === 1 && panStart) {
+    const dx = e.clientX - panStart.x
+    const dy = e.clientY - panStart.y
+    if (Math.hypot(dx, dy) < PAN_THRESHOLD_PX) return
+    applyView({ scale: view.scale, tx: panStart.tx + dx, ty: panStart.ty + dy })
+  }
+}
+function onPointerUp(e) {
+  if (!pointers.delete(e.pointerId)) return
+  try {
+    if (typeof e.target.releasePointerCapture === 'function') e.target.releasePointerCapture(e.pointerId)
+  } catch {
+    // 忽略（无捕获或已释放）
+  }
+  if (drawingPointerId === e.pointerId) {
+    if (e.type === 'pointercancel') cancelDrawing()
+    else endDrawing()
+  }
+  if (pointers.size < 2) pinchStart = null
+  if (pointers.size === 0) {
+    panStart = null
+  } else if (pointers.size === 1 && pinchStart == null && panStart == null) {
+    const [p] = [...pointers.values()]
+    panStart = { x: p.x, y: p.y, tx: view.tx, ty: view.ty }
+  }
+}
+
+/** BattleMap 渲染输入：pen 草稿并入渲染列表；无车辆/浮层（桩函数永不被调用）。 */
+const renderedAnnotations = computed(() => {
+  const toX = mapView.value.toX
+  const toY = mapView.value.toY
+  const invX = 1 / Math.max(1e-9, semPerSvgX.value)
+  const list = [...annotations.value]
+  if (draft.value) list.push(draft.value)
+  return list.map((ann) => {
+    const out = { ...ann, widthSvg: (ann.width || annotWidth.value) * invX }
+    if (ann.type === 'pen') out.svgPoints = polylinePoints(ann.points, toX, toY)
+    return out
+  })
+})
+const mapTouchPan = computed(() => !annotationOpen.value && view.scale <= fitScale() + 1e-3)
+
+// ---------- 标注导入 / 导出（会话内文件落盘；fail-closed 校验）----------
+const IMPORT_KIND = 'map-preview-annotations-2d'
+const importMessage = ref('')
+let importMessageTimer = 0
+function flashImportMessage(key, values) {
+  importMessage.value = t(key, values)
+  clearTimeout(importMessageTimer)
+  importMessageTimer = setTimeout(() => { importMessage.value = '' }, 4000)
+}
+function exportAnnotations() {
+  if (!annotations.value.length) {
+    flashImportMessage('mapPreview.annotations.noAnnotations')
+    return
+  }
+  const payload = {
+    version: 1,
+    kind: IMPORT_KIND,
+    mapKey: props.mapKey,
+    exportedAt: new Date().toISOString(),
+    annotations: annotations.value,
+  }
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `map-annotations-${props.mapKey}-2d.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+async function importAnnotations(event) {
+  const file = event.target.files?.[0] || null
+  event.target.value = ''
+  if (!file) return
+  let payload = null
+  try {
+    payload = JSON.parse(await file.text())
+  } catch {
+    flashImportMessage('mapPreview.annotations.importFailed', { reason: t('mapPreview.annotations.importReasonFormat') })
+    return
+  }
+  if (!payload || payload.version !== 1 || payload.kind !== IMPORT_KIND || !Array.isArray(payload.annotations)) {
+    flashImportMessage('mapPreview.annotations.importFailed', { reason: t('mapPreview.annotations.importReasonFormat') })
+    return
+  }
+  if (payload.mapKey !== props.mapKey) {
+    flashImportMessage('mapPreview.annotations.importFailed', { reason: t('mapPreview.annotations.importReasonMap') })
+    return
+  }
+  const items = payload.annotations.filter((a) => a && typeof a === 'object')
+  replaceAnnotations(items)
+  flashImportMessage('mapPreview.annotations.importedCount', { count: items.length })
+}
+
+// BattleMap 必填的呈现函数在空车辆/浮层下不会被调用（预览无实体）
+const stubText = () => ''
+const stubNull = () => null
+const stubFloatClass = () => ''
+</script>
+
+<template>
+  <div ref="rootEl" class="map2d" data-testid="map-2d-pane">
+    <div
+      ref="stageEl"
+      class="map2d-stage"
+      :style="{ height: stageHeight }"
+      data-testid="map-2d-stage"
+      tabindex="0"
+      @wheel="onWheel"
+      @pointerdown="onPointerDown"
+      @pointermove="onPointerMove"
+      @pointerup="onPointerUp"
+      @pointercancel="onPointerUp"
+    >
+      <BattleMap
+        v-if="image"
+        ref="mapEl"
+        class="map2d-battlemap"
+        :image="image"
+        :map-view="mapView"
+        :pb-overview="overview"
+        :view-scale="view.scale"
+        :viewport-style="viewportStyle"
+        :touch-pan="mapTouchPan"
+        :annot-visible="annotationsVisible"
+        :rendered-annotations="renderedAnnotations"
+        :annot-font-size="ANNOT_FONT_SIZE"
+        :active-tool="annotationTool"
+        :marker-label="stubText"
+        :hp-for="stubNull"
+        :hp-prefs="{}"
+        :translate="t"
+        :ghost-for="stubNull"
+        :flash-for="stubNull"
+        :float-team-class="stubFloatClass"
+      />
+    </div>
+    <div class="map2d-controls">
+      <div v-if="annotationOpen" class="map2d-annotations" data-testid="map-2d-annotations">
+        <AnnotationToolbar
+          :open="annotationOpen"
+          :active-tool="annotationTool"
+          :annot-colors="ANNOT_COLORS"
+          :annot-color="annotationColor"
+          :annot-visible="annotationsVisible"
+          :annot-width-slider="annotWidthSlider"
+          :annot-width-min="ANNOT_WIDTH_MIN"
+          :annot-width-max="ANNOT_WIDTH_MAX"
+          :allowed-tools="['pen', 'eraser']"
+          :history-index="annotationIndex"
+          :history="annotationHistory"
+          :can-undo="canUndo"
+          :can-redo="canRedo"
+          @toggle-tool="setAnnotationTool"
+          @set-annot-color="annotationColor = $event"
+          @update:annot-width="annotWidthSlider = $event"
+          @undo="undoAnnotation"
+          @redo="redoAnnotation"
+          @clear-annotations="clearAnnotations"
+          @toggle-annotations="annotationsVisible = !annotationsVisible"
+          @close="closeAnnotation"
+        />
+      </div>
+      <div v-else class="map2d-toolrow">
+        <button
+          type="button"
+          class="map2d-btn"
+          data-testid="map-2d-drawing-entry"
+          :aria-label="t('recon.map.playback.annot.mode')"
+          :title="t('recon.map.playback.annot.mode')"
+          @click="openAnnotation"
+        >
+          <PencilRuler :size="16" aria-hidden="true" /> {{ t('recon.map.playback.annot.mode') }}
+        </button>
+        <button
+          type="button"
+          class="map2d-btn"
+          data-testid="map-2d-import"
+          :title="$t('mapPreview.annotations.import')"
+          @click="importFile.click()"
+        >
+          <Upload :size="16" aria-hidden="true" /> {{ $t('mapPreview.annotations.import') }}
+        </button>
+        <button
+          type="button"
+          class="map2d-btn"
+          data-testid="map-2d-export"
+          :title="$t('mapPreview.annotations.export')"
+          @click="exportAnnotations"
+        >
+          <Download :size="16" aria-hidden="true" /> {{ $t('mapPreview.annotations.export') }}
+        </button>
+        <input
+          ref="importFile"
+          type="file"
+          accept="application/json,.json"
+          class="map2d-file-input"
+          aria-hidden="true"
+          tabindex="-1"
+          @change="importAnnotations"
+        />
+      </div>
+      <p v-if="importMessage" class="map2d-import-note" role="status" data-testid="map-2d-import-note">{{ importMessage }}</p>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.map2d {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.map2d-stage {
+  position: relative;
+  overflow: hidden;
+  background: var(--color-canvas);
+  touch-action: none;
+}
+
+.map2d-stage:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: calc(-1 * var(--focus-outline-offset));
+}
+
+.map2d-battlemap {
+  height: 100%;
+}
+
+.map2d-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+
+.map2d-toolrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.map2d-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--control-h-sm);
+  padding: 0 var(--space-2);
+  border: var(--border-width) solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font: var(--type-caption);
+  cursor: pointer;
+}
+
+.map2d-btn:hover {
+  border-color: var(--color-border-strong);
+}
+
+.map2d-btn:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
+}
+
+.map2d-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.map2d-import-note {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font: var(--type-caption);
+}
+
+.map2d-annotations {
+  min-width: 0;
+}
+</style>
