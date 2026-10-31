@@ -113,6 +113,18 @@ describe('Sniper 穿深着色接线', () => {
     expect(source).toContain("if (!ARMOR_HIGHLIGHT || CAM !== 'recorder' || !scopedHiddenEid) return;")
   })
 
+  it('选目标与准星同源（Type39 瞄准点），不取相机正前方', () => {
+    const start = source.indexOf('function renderArmorHighlight')
+    const body = source.slice(start, source.indexOf('回到俯视机位', start))
+    expect(body).toContain('reticleAimDirection(camera, recorderAimPoint(recorderSample')
+    expect(body).not.toContain('getWorldDirection')
+    expect(source).toContain('recorderAimPoint(sample, _recorderRay)')
+  })
+
+  it('着色默认关闭：帧时间基线之前不进入默认路径', () => {
+    expect(source).toContain("prefOf('pb_armor_highlight', 'armorhl', false)")
+  })
+
   it('配置解析不走带回退的 resolveMountedConfig', () => {
     const start = source.indexOf('function renderArmorHighlight')
     const body = source.slice(start, source.indexOf('回到俯视机位', start))

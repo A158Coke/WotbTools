@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import * as THREE from 'three'
 import {
   aimedVehicle, armorEquipmentCoeffs, armorHighlightBlock, armorPosePart, armorWorldMatrix,
-  authorShellAt, isSolidOccluder, mountedShell,
+  authorShellAt, isSolidOccluder, mountedShell, reticleAimDirection,
 } from './armorHighlight.js'
 
 const AP = { type: 'ap', penetration: 200, caliber: 100 }
@@ -66,20 +66,86 @@ describe('armorEquipmentCoeffs', () => {
 })
 
 describe('aimedVehicle', () => {
-  const box = new THREE.Box3(new THREE.Vector3(-2, -1, -3), new THREE.Vector3(2, 1, 3))
+  const material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })
+  const part = (w, h, d) => new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material)
   const at = (x, z) => {
-    const glb = new THREE.Object3D()
+    const glb = new THREE.Group()
     glb.position.set(x, 0, z)
+    glb.add(part(4, 2, 6))
     glb.updateMatrixWorld(true)
     return { glb }
+  }
+  // 炮塔枢轴在车辆原点，炮管沿局部 +X 伸出 10 m
+  const withBarrel = (x, z) => {
+    const v = at(x, z)
+    const turret = new THREE.Group()
+    const barrel = part(10, 0.4, 0.4)
+    barrel.position.set(7, 0, 0)
+    turret.add(barrel)
+    v.glb.add(turret)
+    v.glb.updateMatrixWorld(true)
+    return { ...v, turret, barrel }
   }
   const origin = new THREE.Vector3(0, 0, 0)
   const forward = new THREE.Vector3(0, 0, 1)
 
-  it('取视线上最近的一台，偏离包围盒不算', () => {
+  it('取视线上最近的一台，偏离车模不算', () => {
     const near = at(0, 50), far = at(0, 120), aside = at(30, 20)
-    expect(aimedVehicle(origin, forward, [far, aside, near], () => box)).toBe(near)
-    expect(aimedVehicle(origin, forward, [aside], () => box)).toBeNull()
+    expect(aimedVehicle(origin, forward, [far, aside, near])).toBe(near)
+    expect(aimedVehicle(origin, forward, [aside])).toBeNull()
+  })
+
+  it('炮塔转动后按当前姿态命中，首次拾取的结果不残留', () => {
+    const v = withBarrel(0, 50)
+    const atBarrelTip = new THREE.Vector3(10, 0, 0)
+    expect(aimedVehicle(atBarrelTip, forward, [v])).toBe(v)
+    v.turret.rotation.y = Math.PI / 2   // 炮管转到 -Z，旧位置已空
+    v.glb.updateMatrixWorld(true)
+    expect(aimedVehicle(atBarrelTip, forward, [v])).toBeNull()
+    expect(aimedVehicle(origin, new THREE.Vector3(0, 0, 1), [v])).toBe(v)
+  })
+
+  it('两车重叠时取实际先碰到的表面，不看聚合包围盒', () => {
+    // far 的长炮管把聚合盒撑到 near 身前，但这条线只会先碰到 near 的车体
+    const near = at(0, 50), far = withBarrel(0, 60)
+    far.turret.rotation.y = Math.PI / 2
+    far.barrel.position.set(7, 3, 0)
+    far.glb.updateMatrixWorld(true)
+    expect(aimedVehicle(origin, forward, [far, near])).toBe(near)
+  })
+
+  it('隐藏的网格不参与命中', () => {
+    const v = at(0, 50)
+    v.glb.children[0].visible = false
+    expect(aimedVehicle(origin, forward, [v])).toBeNull()
+  })
+})
+
+describe('reticleAimDirection', () => {
+  const camera = () => {
+    const c = new THREE.PerspectiveCamera(60, 1, 0.1, 1000)
+    c.lookAt(0, 0, -1)
+    c.updateMatrixWorld(true)
+    return c
+  }
+
+  it('过渡中相机朝向偏离时，方向仍指向瞄准点而不是相机正前方', () => {
+    const c = camera()
+    c.rotation.y = 0.2
+    c.updateMatrixWorld(true)
+    const aim = new THREE.Vector3(0, 0, -100)
+    const dir = reticleAimDirection(c, aim, new THREE.Vector3())
+    expect(dir.x).toBeCloseTo(0, 6)
+    expect(dir.z).toBeCloseTo(-1, 6)
+    expect(c.getWorldDirection(new THREE.Vector3()).distanceTo(dir)).toBeGreaterThan(0.1)
+  })
+
+  it('瞄准点在画面外、身后或非有限时没有准星', () => {
+    const c = camera()
+    const out = new THREE.Vector3()
+    expect(reticleAimDirection(c, new THREE.Vector3(500, 0, -100), out)).toBeNull()
+    expect(reticleAimDirection(c, new THREE.Vector3(0, 0, 100), out)).toBeNull()
+    expect(reticleAimDirection(c, new THREE.Vector3(NaN, 0, -100), out)).toBeNull()
   })
 })
 

@@ -78,6 +78,7 @@ import { hpPercentText } from './rosterState.js'
 import { createReloadStateResolver, resolveExactMountedConfig, resolveMountedConfig } from './reloadBar.js'
 import {
   aimedVehicle, armorEquipmentCoeffs, armorHighlightBlock, authorShellAt, createArmorHighlight, mountedShell,
+  reticleAimDirection,
 } from './playback/armorHighlight.js'
 import { pointsAt } from './supremacyPoints.js'
 import { teamHpTotals } from './teamHpTotals.js'   //（perspectiveScore 随计分桥接出仓 playback/hudFeed.js）
@@ -330,7 +331,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 不存在这两个开关（已移至待开播卡片）。
   let LOGDEPTH = prefOf('pb_logdepth', 'logdepth', false);
   let DYNRES = prefOf('pb_dynres', 'dynres', true);
-  let ARMOR_HIGHLIGHT = prefOf('pb_armor_highlight', 'armorhl', true);
+  let ARMOR_HIGHLIGHT = prefOf('pb_armor_highlight', 'armorhl', false);
   const persistPref = (key, on) => { try { localStorage.setItem(key, on ? '1' : '0'); } catch (_) {} };
 
   // ---------- 画质分档 ----------
@@ -4622,6 +4623,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
     updateRecorderReticle(sample, v);
   }
+  /** Type39 瞄准点（场景坐标）：准星与穿深着色的选目标共用这一点。 */
+  function recorderAimPoint(sample, out) {
+    return out.set(-sample.rayX, sample.rayY, sample.rayZ);
+  }
   /** 世界点 → 舞台像素；投影不到返回 null，不伪造屏幕位置。 */
   function projectToStage(point, out) {
     point.project(camera);
@@ -4642,8 +4647,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       v.gunPivot.getWorldPosition(_recorderGun);
       _recorderGunDir.set(0, 0, 1).transformDirection(v.gunPivot.matrixWorld);
     }
-    _recorderRay.set(-sample.rayX, sample.rayY, sample.rayZ);
-    const distance = Math.max(RETICLE_MIN_GUN_DISTANCE_M, _recorderGun.distanceTo(_recorderRay));
+    recorderAimPoint(sample, _recorderRay);
+    const distance =Math.max(RETICLE_MIN_GUN_DISTANCE_M, _recorderGun.distanceTo(_recorderRay));
     _recorderGun.addScaledVector(_recorderGunDir, distance);
     const aim = projectToStage(_recorderRay, _reticleAim);
     const gun = projectToStage(_recorderGun, _reticleGun);
@@ -4654,6 +4659,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
   // ---------- Sniper 穿深着色 ----------
   let armorHighlight = null;
+  const _armorAimPoint = new THREE.Vector3();
   const _armorAimDir = new THREE.Vector3();
   /** 主渲染之后的叠加 pass：只有录像者开镜才可能运行，其余路径没有任何额外 render。 */
   function renderArmorHighlight() {
@@ -4663,7 +4669,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const friendlyTeam = DATA.meta.friendly_team;
     const enemies = V.filter((v) => v.glb?.visible && v.group.visible && v.tankData
       && (v.def.team === 1 || v.def.team === 2) && v.def.team !== friendlyTeam && !deathAt(v, T));
-    const target = aimedVehicle(camera.position, camera.getWorldDirection(_armorAimDir), enemies);
+    const aimDir = reticleAimDirection(camera, recorderAimPoint(recorderSample, _armorAimPoint), _armorAimDir);
+    if (!aimDir) return;
+    const target = aimedVehicle(camera.position, aimDir, enemies);
     if (!target) return;
     const shellId = authorShellAt(DATA.author_shell_timeline, T);
     const config = resolveExactMountedConfig(target.def, target.tankData);

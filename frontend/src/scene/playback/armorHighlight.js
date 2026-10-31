@@ -64,35 +64,42 @@ export function armorHighlightBlock({
   return null
 }
 
-/** 视觉模型在 GLB 根局部系的包围盒（选目标用；随 GLB 实例缓存一次）。 */
-function modelBox(glb) {
-  if (glb.userData.armorPickBox) return glb.userData.armorPickBox
-  const box = new THREE.Box3(), part = new THREE.Box3()
-  const inverse = new THREE.Matrix4().copy(glb.matrixWorld).invert()
-  const toRoot = new THREE.Matrix4()
-  glb.traverse((node) => {
-    if (!node.isMesh || !node.visible) return
-    if (!node.geometry.boundingBox) node.geometry.computeBoundingBox()
-    box.union(part.copy(node.geometry.boundingBox).applyMatrix4(toRoot.multiplyMatrices(inverse, node.matrixWorld)))
-  })
-  glb.userData.armorPickBox = box
-  return box
+const _aimNdc = new THREE.Vector3()
+/**
+ * 屏幕准星那条线的方向：相机 → Type39 瞄准点。进入录像者视角的过渡期相机朝向与它不同，
+ * 准星才是画面上指着的地方。瞄准点投影不到（与准星隐藏同判据）时返回 null。
+ */
+export function reticleAimDirection(camera, aimPoint, out) {
+  _aimNdc.copy(aimPoint).project(camera)
+  if (![_aimNdc.x, _aimNdc.y, _aimNdc.z].every((n) => Number.isFinite(n) && Math.abs(n) <= 1)) return null
+  out.subVectors(aimPoint, camera.position)
+  return out.lengthSq() > 0 ? out.normalize() : null
 }
 
-const _pickRay = new THREE.Ray()
-const _pickHit = new THREE.Vector3()
-const _pickInverse = new THREE.Matrix4()
-/** 视线命中的最近车辆（`boxOf` 给根局部系包围盒）；只是选目标，遮挡由深度 pass 决定。 */
-export function aimedVehicle(origin, direction, vehicles, boxOf = (v) => modelBox(v.glb)) {
+function collectVisibleMeshes(node, out) {
+  if (!node.visible) return
+  if (node.isMesh) out.push(node)
+  for (const child of node.children) collectVisibleMeshes(child, out)
+}
+
+const _pickRaycaster = new THREE.Raycaster()
+const _pickMeshes = []
+const _pickHits = []
+/**
+ * 视线最先碰到的车辆：对当前帧可见网格精确求交，炮塔转动、炮管俯仰都按实际姿态算。
+ * Mesh.raycast 自带逐网格包围球/盒粗筛；只是选目标，遮挡由深度 pass 决定。
+ */
+export function aimedVehicle(origin, direction, vehicles) {
+  _pickRaycaster.set(origin, direction)
   let best = null, bestDistance = Infinity
   for (const v of vehicles) {
-    _pickInverse.copy(v.glb.matrixWorld).invert()
-    _pickRay.origin.copy(origin)
-    _pickRay.direction.copy(direction)
-    _pickRay.applyMatrix4(_pickInverse)
-    if (!_pickRay.intersectBox(boxOf(v), _pickHit)) continue
-    const distance = _pickHit.distanceTo(_pickRay.origin)
-    if (distance < bestDistance) { best = v; bestDistance = distance }
+    _pickMeshes.length = 0
+    _pickHits.length = 0
+    collectVisibleMeshes(v.glb, _pickMeshes)
+    for (const mesh of _pickMeshes) mesh.raycast(_pickRaycaster, _pickHits)
+    for (const hit of _pickHits) {
+      if (hit.distance < bestDistance) { best = v; bestDistance = hit.distance }
+    }
   }
   return best
 }
