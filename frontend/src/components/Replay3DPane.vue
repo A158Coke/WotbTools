@@ -377,6 +377,12 @@ watch(() => store.hasData, (has) => { if (!has && annotationOpen.value) closeAnn
 let lastFile = null
 const lastFileName = ref('')
 const loadingMessage = computed(() => t(store.assetStage ? 'agentReplay.loading_assets' : 'agentReplay.parsing'))
+/** 视窗是否已过加载阶段：解析/资产加载中不置位（内容就绪、阻断、离线、WebGL 不支持、
+ *  场景错误均为终态/就绪）。工作台自动居中只等这个信号。 */
+const paneReady = computed(() => !props.file || !!props.blockedReason || !online.value.available
+  || !webgl.supported || !!store.err || !!store.hasData
+  // 待开播（视口 + 画质选择已渲染，等用户按开始）：这是最终界面，不是加载中
+  || props.file !== startedFile.value)
 
 // 画质徽标按 qualityKey 三语计算（store.qualityLabel 为上游兼容中文字段）
 const qualityBadge = computed(() =>
@@ -395,6 +401,8 @@ const mapTitle = computed(() => {
 // 所以走 computed 每次重算——不得在 setup 里定死一次，也不用内核预设里的固定中文 label。
 const CAMERAS = computed(() => [
   { value: 'free', label: t('agentReplay.cam_free') },
+  // 俯视是持续模式（OrbitControls 绕**地图中心**旋转/缩放），与自由并列而非一次性动作
+  { value: 'top', label: t('agentReplay.cam_top') },
   {
     value: 'recorder',
     label: t('agentReplay.cam_recorder'),
@@ -793,7 +801,8 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 </script>
 
 <template>
-  <div class="pb-pane">
+  <!-- data-pane-ready：加载中（解析 / 资产阶段）不置位；终态与就绪态均置位。 -->
+  <div class="pb-pane" :data-pane-ready="paneReady ? 'true' : undefined">
     <!-- pending（首次检测未完成）：不下结论、不初始化 3D 场景，保持中性空白。 -->
     <template v-if="!online.available">
       <p v-if="!online.pending" class="pb-note" data-testid="replay3d-connectivity">{{ $t(online.messageKey) }}</p>

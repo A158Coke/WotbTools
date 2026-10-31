@@ -96,7 +96,7 @@ function paneMock(name, testid) {
     default: {
       name,
       props: ['file', 'active', 'blockedReason', 'navigate', 'playbackSession'],
-      template: `<div data-test="${testid}" data-testid="${testid}">{{ file && file.name }}|{{ blockedReason }}|{{ active }}</div>`,
+      template: `<div data-test="${testid}" data-testid="${testid}" data-pane-ready="true">{{ file && file.name }}|{{ blockedReason }}|{{ active }}</div>`,
     },
   }
 }
@@ -1207,5 +1207,162 @@ describe('ReplayWorkspace', () => {
       await flushPromises()
       bare.unmount()
     })
+  })
+})
+
+// ---- 打开 2D/3D 等回放视图时自动把视窗垂直居中（用户 2026-10-31 要求）----
+describe('ReplayWorkspace 回放视窗自动居中', () => {
+  let originalScrollIntoView
+  let originalInnerHeight
+  let originalRO
+  let originalMO
+  let scrollCalls
+  let roCallbacks
+  let moCallbacks
+  let paneHeights
+  let paneReadyState
+
+  const paneHeight = (el) => paneHeights.get(el) ?? 0
+  /** 模拟真实 pane 的多阶段加载：加载外壳（无 data-pane-ready）→ 内容（置位）。 */
+  const setStage = (wrapper, { height, ready }) => {
+    const pane = wrapper.get('[data-testid="ws-playback"]').element
+    paneHeights.set(pane, height)
+    // 桩 pane 的根元素（testid 固定）；就绪标记按阶段挂/摘，模拟真实 pane 的加载阶段
+    const marker = pane.querySelector('[data-testid="ws-playback-pane"]')
+    if (marker) {
+      if (ready) marker.setAttribute('data-pane-ready', 'true')
+      else marker.removeAttribute('data-pane-ready')
+    }
+    roCallbacks.forEach((ro) => ro.el === pane && ro.cb([]))
+    moCallbacks.forEach((mo) => mo.cb([]))
+    return pane
+  }
+
+  beforeEach(() => {
+    scrollCalls = []
+    roCallbacks = []
+    moCallbacks = []
+    paneHeights = new Map()
+    paneReadyState = new Map()
+    originalScrollIntoView = HTMLElement.prototype.scrollIntoView
+    originalInnerHeight = window.innerHeight
+    HTMLElement.prototype.scrollIntoView = function (opts) { scrollCalls.push({ el: this, opts }) }
+    const originalRect = HTMLElement.prototype.getBoundingClientRect
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      const base = originalRect.call(this)
+      if (this.dataset?.testid?.startsWith('ws-')) {
+        const h = paneHeight(this)
+        return { ...base, height: h, top: 0, bottom: h, width: 800, left: 0, right: 800, x: 0, y: 0 }
+      }
+      return base
+    })
+    originalRO = globalThis.ResizeObserver
+    globalThis.ResizeObserver = class {
+      constructor(cb) { this.cb = cb; roCallbacks.push(this) }
+      observe(el) { this.el = el }
+      disconnect() { this.el = null }
+    }
+    originalMO = globalThis.MutationObserver
+    globalThis.MutationObserver = class {
+      constructor(cb) { this.cb = cb; moCallbacks.push(this) }
+      observe() {}
+      disconnect() {}
+    }
+    withBattles(1)
+  })
+  afterEach(() => {
+    HTMLElement.prototype.scrollIntoView = originalScrollIntoView
+    vi.restoreAllMocks()
+    Object.defineProperty(window, 'innerHeight', { value: originalInnerHeight, configurable: true })
+    globalThis.ResizeObserver = originalRO
+    globalThis.MutationObserver = originalMO
+  })
+
+  const lastBlock = () => scrollCalls.at(-1)?.opts?.block
+
+  it('多阶段加载：加载外壳有高度但不就绪 → 不滚动；真实视窗就绪后按最终高度定位一次', async () => {
+    const wrapper = mountWorkspace('data')
+    await flushPromises()
+    Object.defineProperty(window, 'innerHeight', { value: 900, configurable: true })
+    await switchTo(wrapper, 'playback')
+    const before = scrollCalls.length
+
+    // 阶段 1：懒加载 chunk 未完成 → pane 高度 0、无标记
+    setStage(wrapper, { height: 0, ready: false })
+    expect(scrollCalls.length).toBe(before)
+
+    // 阶段 2：标题栏 + LOADING 提示（高度 80，仍未就绪）→ 不得据此定位
+    setStage(wrapper, { height: 80, ready: false })
+    expect(scrollCalls.length).toBe(before)
+
+    // 阶段 3：真实视窗（高度 1600 高于视口）→ 定位一次，且对齐顶端
+    setStage(wrapper, { height: 1600, ready: true })
+    expect(scrollCalls.length).toBe(before + 1)
+    expect(lastBlock()).toBe('start')
+    expect(scrollCalls.at(-1).el.dataset.testid).toBe('ws-playback')
+
+    // 同一次激活内不再重复定位（不跟用户后来的滚动抢）
+    setStage(wrapper, { height: 1700, ready: true })
+    expect(scrollCalls.length).toBe(before + 1)
+    wrapper.unmount()
+  })
+
+  it('就绪后视窗矮于视口 → 垂直居中', async () => {
+    const wrapper = mountWorkspace('data')
+    await flushPromises()
+    Object.defineProperty(window, 'innerHeight', { value: 900, configurable: true })
+    await switchTo(wrapper, 'playback')
+    setStage(wrapper, { height: 400, ready: true })
+    expect(lastBlock()).toBe('center')
+    wrapper.unmount()
+  })
+
+  it('切走时撤销未完成的等待（迟到的就绪不再触发滚动）', async () => {
+    const wrapper = mountWorkspace('data')
+    await flushPromises()
+    Object.defineProperty(window, 'innerHeight', { value: 900, configurable: true })
+    await switchTo(wrapper, '3d')
+    const before = scrollCalls.length
+    await switchTo(wrapper, 'data')
+    const pane = wrapper.get('[data-testid="ws-3d"]').element
+    paneHeights.set(pane, 400)
+    roCallbacks.forEach((ro) => ro.el === pane && ro.cb([]))
+    moCallbacks.forEach((mo) => mo.cb([]))
+    expect(scrollCalls.length).toBe(before)
+    wrapper.unmount()
+  })
+
+  it('批次目标准备中（多文件未解析）不定位；落定后按真实视窗定位', async () => {
+    const wrapper = mountWorkspace('data')
+    await flushPromises()
+    Object.defineProperty(window, 'innerHeight', { value: 900, configurable: true })
+    // 多文件 + 尚无解析结果 + 解析中：targetFile 为空（ensureTargetBattle 在途）
+    withBattles(2)
+    replayState.resp.value = null
+    replayState.analysis.value = { phase: 'parsing', done: 0, total: 2, failure: null }
+    await flushPromises()
+    await switchTo(wrapper, 'playback')
+    const before = scrollCalls.length
+    // pane 已渲染就绪标记（空态外壳），但批次在途 → 不得消耗唯一一次定位
+    setStage(wrapper, { height: 90, ready: true })
+    expect(scrollCalls.length).toBe(before)
+
+    // 批次落定（analysis ready + resp/target 出现）→ 真实视窗就绪 → 定位一次
+    withBattles(2)
+    replayState.analysis.value = { phase: 'ready', done: 2, total: 2, failure: null }
+    await flushPromises()
+    setStage(wrapper, { height: 500, ready: true })
+    expect(scrollCalls.length).toBe(before + 1)
+    expect(lastBlock()).toBe('center')
+    wrapper.unmount()
+  })
+
+  it('切到数据视图不触发居中（不动用户的数据页滚动位置）', async () => {
+    const wrapper = mountWorkspace('playback')
+    await flushPromises()
+    const before = scrollCalls.length
+    await switchTo(wrapper, 'data')
+    expect(scrollCalls.length).toBe(before)
+    wrapper.unmount()
   })
 })

@@ -4224,27 +4224,34 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
   function setCam(mode) {
     if (annotationGesture) cancelAnnotationGesture()   // 相机模式跳变不得继续旧 draft
-    // 俯视不是模式，只是快速回到俯视机位的动作（reset view）：完成后就是自由视角，
-    // 键盘、鼠标与触屏从同一帧起可用。跟随以选中坦克为 target；自由视角是 FPS 飞行。
-    const topAction = mode === 'top';
-    const nextMode = topAction ? 'free' : mode;
-    if (!topAction) topViewOnLoad = false;
-    CAM = nextMode;
-    store.cam = nextMode;
-    flyLookApplyMode(nextMode === 'free' ? 'free' : 'follow');
-    if (nextMode !== 'follow') FOLLOW_EID = 0;
+    // 俯视是**持续的战术总览模式**（用户 2026-10 要求）：OrbitControls 以**地图中心**为
+    // target，拖拽/滚轮围绕地图中心旋转与缩放——旋转中心不是相机。跟随以选中坦克为
+    // target；自由视角是 FPS 飞行（旋转中心 = 相机，由 flyLook 接管）。
+    CAM = mode;
+    store.cam = mode;
+    flyLookApplyMode(mode === 'free' ? 'free' : 'follow');
+    if (mode !== 'follow') FOLLOW_EID = 0;
+    if (mode !== 'top') topViewOnLoad = false;
     if (!controls) { invalidate(); return; }
     controls.enabled = !flyMode();
-    // 跟随锁坦克：target 不被平移带走。Free 由 flyLook 接管，OrbitControls 的 pan 不参与
-    //（恢复默认值供下次非 Free 入口设置）。
-    controls.enablePan = nextMode === 'free';
+    // 旋转/缩放中心语义要求 target 不被平移带走：Top 锁地图中心、Follow 锁坦克；
+    // Free 由 flyLook 接管，OrbitControls 的 pan 不参与（恢复默认值供下次非 Free 入口设置）。
+    controls.enablePan = mode === 'free';
     invalidate();
-    if (nextMode === 'free') {
+    if (mode === 'top') {
+      applyTopView();
+      // 总览视角：可绕地图中心自由旋转（仍不沉到地平线以下），缩放上限放开到默认机位高度
+      controls.minPolarAngle = 0;
+      controls.maxPolarAngle = Math.PI * 0.49;
+      controls.minDistance = baseMinDistance;
+      controls.maxDistance = Math.max(controls.maxDistance, topCameraDefaultHeight());
+      clampOrbitCameraToTerrain();
+      camera.lookAt(controls.target);
+      controls.enabled = true;
+    } else if (mode === 'free') {
       controls.minPolarAngle = 0;
       controls.maxPolarAngle = Math.PI;
-      if (topAction) applyTopView();
       constrainFreeCameraAltitude();
-      if (topAction) camera.lookAt(controls.target);
     } else {
       // 跟随绕转不得沉到 target 水平线以下：OrbitControls 的极角上限直接挡住
       // 「向下绕到地下」的输入；相机点仍由 clampOrbitCameraToTerrain 按地形净空校验。
@@ -4257,6 +4264,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 直接投影名册：播放中名册也不得跑到顶栏前面（两者始终同一个 T）。
     writeHud(true);
   }
+  /** 回到俯视机位：相机置地图中心正上方，target 锁地图中心（旋转中心 = 地图中心）。 */
   function applyTopView() {
     const { cx, cz } = WORLD_CENTER;
     camera.position.set(cx, topCameraDefaultHeight(), cz + 0.01);
@@ -4601,8 +4609,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 跟随目标不跨回放：新回放回到俯视机位的自由视角，不留下无目标的 follow。
     if (CAM !== 'free') topViewOnLoad = true;
     buildWorld();
-    // 默认机位：俯视（仍是自由视角）；保留的自由视角要按新地图重新约束。
-    if (topViewOnLoad) setCam('top');
+    // 默认机位：俯视总览模式（旋转中心 = 地图中心）；仍处于俯视时新地图要重新对心，
+    // 保留的自由/跟随机位按新地图重新约束。
+    if (topViewOnLoad || CAM === 'top') setCam('top');
     else if (flyMode()) { clampCameraTarget(); constrainFreeCameraAltitude(); }
     // 进入场景前等待运行所需全部资产（评审要求：地图/地形/分层地表/场景 GLB 按
     // 画质档全部就绪后才进场，不再先进场后异步补图）。各段内部已 try/catch——

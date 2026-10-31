@@ -658,7 +658,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="paneRoot" class="shots-pane" data-testid="replay-shots-pane" @keydown="onDetailKeydown">
+  <!-- data-pane-ready：解析中不置位（工作台自动居中要等真实内容）。 -->
+  <div ref="paneRoot" class="shots-pane" data-testid="replay-shots-pane" :data-pane-ready="parsing ? undefined : 'true'" @keydown="onDetailKeydown">
     <Scene3DStatus v-if="parsing" mode="loading" :message="$t('agentShots.parsing')" />
     <!-- 解析期间不显示"没选文件 / 被阻断 / 解析失败"：那些是解析**结果**，不是进行中的状态 -->
     <p v-else-if="blockedReason" class="shots-note" data-testid="shots-blocked">{{ blockedReason }}</p>
