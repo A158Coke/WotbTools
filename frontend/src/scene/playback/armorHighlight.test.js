@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import * as THREE from 'three'
 import {
   aimedVehicle, armorEquipmentCoeffs, armorHighlightBlock, armorPosePart, armorWorldMatrix,
-  authorShellAt, isSolidOccluder, mountedShell, reticleAimDirection,
+  authorShellAt, isSolidOccluder, markPickBoundsStale, mountedShell, reticleAimDirection,
 } from './armorHighlight.js'
 
 const AP = { type: 'ap', penetration: 200, caliber: 100 }
@@ -112,6 +112,21 @@ describe('aimedVehicle', () => {
     far.barrel.position.set(7, 3, 0)
     far.glb.updateMatrixWorld(true)
     expect(aimedVehicle(origin, forward, [far, near])).toBe(near)
+  })
+
+  it('悬挂形变把顶点移出旧 bounds 后，边缘仍能命中', () => {
+    const v = at(0, 50)
+    const track = v.glb.children[0]
+    track.geometry.computeBoundingBox()
+    track.geometry.computeBoundingSphere()
+    const position = track.geometry.getAttribute('position')
+    for (let i = 0; i < position.count; i++) {
+      if (position.getY(i) < 0) position.setY(i, position.getY(i) - 3)   // 底段下移，球和盒都包不住
+    }
+    const newEdge = new THREE.Vector3(0, -3.5, 0)
+    expect(aimedVehicle(newEdge, forward, [v])).toBeNull()               // 不标记就被旧 bounds 筛掉
+    markPickBoundsStale(track.geometry)
+    expect(aimedVehicle(newEdge, forward, [v])).toBe(v)
   })
 
   it('隐藏的网格不参与命中', () => {

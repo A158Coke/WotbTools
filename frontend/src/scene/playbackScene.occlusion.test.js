@@ -121,6 +121,13 @@ describe('Sniper 穿深着色接线', () => {
     expect(source).toContain('recorderAimPoint(sample, _recorderRay)')
   })
 
+  it('悬挂改写履带顶点后只打标记，不在主路径重算或置空 bounds', () => {
+    expect(source).toMatch(/gp\.posAttr\.needsUpdate = true;\s+markPickBoundsStale\(gp\.mesh\.geometry\);/)
+    const start = source.indexOf('function suspensionStep')
+    const body = source.slice(start, source.indexOf('function ', start + 'function suspensionStep'.length))
+    expect(body).not.toMatch(/computeBounding|bounding(Box|Sphere) = null/)
+  })
+
   it('着色默认关闭：帧时间基线之前不进入默认路径', () => {
     expect(source).toContain("prefOf('pb_armor_highlight', 'armorhl', false)")
   })

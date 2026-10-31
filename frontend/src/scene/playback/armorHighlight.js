@@ -82,6 +82,21 @@ function collectVisibleMeshes(node, out) {
   for (const child of node.children) collectVisibleMeshes(child, out)
 }
 
+/**
+ * 顶点被改写后调用（悬挂形变）。这里只打标记、由拾取时重算：直接置空 bounds 会让视锥剔除
+ * 每帧为所有行驶中的车遍历顶点，而 Mesh.raycast 的粗筛用的正是这份 bounds。
+ */
+export function markPickBoundsStale(geometry) {
+  geometry.userData.pickBoundsStale = true
+}
+
+function refreshPickBounds(geometry) {
+  if (!geometry.userData.pickBoundsStale) return
+  geometry.computeBoundingBox()
+  geometry.computeBoundingSphere()
+  geometry.userData.pickBoundsStale = false
+}
+
 const _pickRaycaster = new THREE.Raycaster()
 const _pickMeshes = []
 const _pickHits = []
@@ -96,7 +111,10 @@ export function aimedVehicle(origin, direction, vehicles) {
     _pickMeshes.length = 0
     _pickHits.length = 0
     collectVisibleMeshes(v.glb, _pickMeshes)
-    for (const mesh of _pickMeshes) mesh.raycast(_pickRaycaster, _pickHits)
+    for (const mesh of _pickMeshes) {
+      refreshPickBounds(mesh.geometry)
+      mesh.raycast(_pickRaycaster, _pickHits)
+    }
     for (const hit of _pickHits) {
       if (hit.distance < bestDistance) { best = v; bestDistance = hit.distance }
     }

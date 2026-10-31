@@ -77,8 +77,8 @@ import { TRACER_STREAK_M, createBattleFx, muzzleTipOf, trailOpacityAt } from './
 import { hpPercentText } from './rosterState.js'
 import { createReloadStateResolver, resolveExactMountedConfig, resolveMountedConfig } from './reloadBar.js'
 import {
-  aimedVehicle, armorEquipmentCoeffs, armorHighlightBlock, authorShellAt, createArmorHighlight, mountedShell,
-  reticleAimDirection,
+  aimedVehicle, armorEquipmentCoeffs, armorHighlightBlock, authorShellAt, createArmorHighlight, markPickBoundsStale,
+  mountedShell, reticleAimDirection,
 } from './playback/armorHighlight.js'
 import { pointsAt } from './supremacyPoints.js'
 import { teamHpTotals } from './teamHpTotals.js'   //（perspectiveScore 随计分桥接出仓 playback/hudFeed.js）
@@ -3357,6 +3357,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
             applyChainToVertices(gp.posAttr.array, gp.basePos, gp.params,
                                  tg.chainZ, tg.restZ, gp.axis3);
             gp.posAttr.needsUpdate = true;
+            markPickBoundsStale(gp.mesh.geometry);
             if (redoNormals) {
               gp.mesh.geometry.computeVertexNormals();
               const na = gp.mesh.geometry.getAttribute('normal');
