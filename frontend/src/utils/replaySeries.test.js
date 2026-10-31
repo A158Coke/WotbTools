@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildSeriesOverview } from './replaySeries.js'
+import { buildSeriesOverview, replayCollectionRows } from './replaySeries.js'
 
 function battle(i, winnerTeam, extra = {}) {
   return { sourceId: `r${i}`, arenaId: `a${i}`, mapName: `map_${i}`, durationS: 300 + i, startTime: 1_700_000_000 + i, winnerTeam, players: [], ...extra }
@@ -103,5 +103,29 @@ describe('buildSeriesOverview：平局与单场改名', () => {
   it('单场改过的队名优先', () => {
     const series = buildSeriesOverview(cwResp([battle(0, 1)], teams), { 'clan:A': '甲' }, { 'a0:1': '本场甲' })
     expect(series.battles[0].winnerName).toBe('本场甲')
+  })
+})
+
+describe('replayCollectionRows', () => {
+  const file = name => new File(['x'], name, { lastModified: 1 })
+  const options = [
+    { value: 'r0', label: '第 1 场 · 绝望堡垒', meta: 'RFOUR 胜 · 10/02 15:47', search: 'a.wotbreplay' },
+    { value: 'r2', label: '第 2 场 · 马利诺夫卡', meta: '队伍 1 胜', search: 'c.wotbreplay' },
+  ]
+
+  it('leads with the battle, keeps the file name for tooltip and search, marks only the current row', () => {
+    const rows = replayCollectionRows([file('a.wotbreplay'), file('b.wotbreplay'), file('c.wotbreplay')], options,
+      { failures: [['b.wotbreplay', 'broken']], duplicates: [] }, { currentSourceId: 'r2' })
+    expect(rows[0]).toMatchObject({ status: 'ready', title: '第 1 场 · 绝望堡垒', meta: 'RFOUR 胜 · 10/02 15:47', fileName: 'a.wotbreplay', current: false })
+    expect(rows[0].search).toContain('a.wotbreplay')
+    expect(rows[1]).toMatchObject({ status: 'failed', title: 'b.wotbreplay' })
+    expect(rows[2]).toMatchObject({ status: 'ready', current: true })
+  })
+
+  it('tells duplicates, league conflicts and files still loading apart', () => {
+    const files = ['dup', 'conflict', 'new', 'lost'].map(name => file(`${name}.wotbreplay`))
+    const resp = { failures: [], duplicates: [['dup.wotbreplay', 'arena']], league: { failures: [{ fileName: 'conflict.wotbreplay' }] } }
+    expect(replayCollectionRows(files, [], resp, { parsing: true }).map(row => row.status)).toEqual(['duplicate', 'excluded', 'loading', 'loading'])
+    expect(replayCollectionRows(files, [], resp).map(row => row.status)).toEqual(['duplicate', 'excluded', 'failed', 'failed'])
   })
 })

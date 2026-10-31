@@ -6,6 +6,7 @@
  * arenaTeams 列出它在每场里对应的 `${arenaId}:${team}`。普通（非 CW）批次没有跨场队伍身份，
  * 只能给出逐场「队伍 1 / 2 胜」，不推算系列赛比分。
  */
+import { displayName, fileKey } from './helpers.js'
 
 /** 战队显示名：批次覆盖名 → 自动名（军团标签）→ null（待命名）。 */
 function teamDisplayName(summary, teamNames) {
@@ -99,6 +100,35 @@ export function battlePickerOptions(series, { t, locale, mapLabel, formatTime = 
       meta,
       search: [battle.sourceName, battle.mapName].filter(Boolean).join(' '),
     }
+  })
+}
+
+/**
+ * 回放列表的行：按 `sourceId = r{files 下标}` 把文件接到场次选项上，不产生第二份场次信息。
+ * failures / duplicates 只带文件名，没有下标，同名文件的行状态可能互串，只影响这一行的标签。
+ * @param {File[]} files
+ * @param {ReturnType<typeof battlePickerOptions>} options
+ * @param {object|null} resp ReplayResult
+ * @param {{ currentSourceId?: string|null, parsing?: boolean }} [state]
+ */
+export function replayCollectionRows(files, options, resp, { currentSourceId = null, parsing = false } = {}) {
+  const byId = new Map(options.map(option => [option.value, option]))
+  const failed = new Set((resp?.failures || []).map(entry => entry[0]))
+  const duplicates = new Set((resp?.duplicates || []).map(entry => entry[0]))
+  const excluded = new Set((resp?.league?.failures || []).map(entry => entry.fileName))
+  return files.map((file, index) => {
+    const sourceId = `r${index}`
+    const option = byId.get(sourceId)
+    const fileName = displayName(file)
+    const row = { key: fileKey(file), file, fileName, title: fileName, meta: '', current: false, search: fileName }
+    if (option) {
+      return { ...row, status: 'ready', title: option.label, meta: option.meta, current: sourceId === currentSourceId,
+        search: [option.label, option.meta, fileName].join(' ') }
+    }
+    if (failed.has(file.name)) return { ...row, status: 'failed' }
+    if (duplicates.has(file.name)) return { ...row, status: 'duplicate' }
+    if (excluded.has(file.name)) return { ...row, status: 'excluded' }
+    return { ...row, status: parsing ? 'loading' : 'failed' }
   })
 }
 

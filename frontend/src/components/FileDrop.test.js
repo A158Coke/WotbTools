@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 
 import { describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { mount } from '@vue/test-utils'
+import { toRaw } from 'vue'
 import FileDrop from './FileDrop.vue'
 
 const i18n = vi.hoisted(() => ({
@@ -21,10 +22,7 @@ function mountUploader(files = [], loading = false, options = {}) {
       props: {
         files,
         loading,
-        confirmRemove: false,
-        ...(options.purpose ? { purpose: options.purpose, imageSingle: options.imageSingle, imageLabel: options.imageLabel, imageHint: options.imageHint } : {}),
-        ...(options.allowFolder === undefined ? {} : { allowFolder: options.allowFolder }),
-        ...(options.showPreview === undefined ? {} : { showPreview: options.showPreview })
+        ...(options.purpose ? { purpose: options.purpose, imageSingle: options.imageSingle, imageLabel: options.imageLabel, imageHint: options.imageHint } : {})
       },
       global: {
         mocks: { $t: i18n.t },
@@ -78,42 +76,14 @@ async function expectNativePickerClick(wrapper, labelKey, testId) {
   clickSpy.mockRestore()
 }
 
-describe('FileDrop 文件列表与回放工作台', () => {
-  it('34 个文件默认折叠：只显示 summary，不铺开 filename', () => {
+describe('FileDrop 回放上传面', () => {
+  it('有回放后不再渲染上传卡或解析入口，只留 input', () => {
     const { wrapper } = mountUploader(makeFiles(34))
-    expect(wrapper.findAll('.chip').length).toBe(0)
-    expect(wrapper.find('[data-testid="file-list"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('upload.files_size:34,34.0 KB')
-  })
-
-  it('点击查看文件列表可展开和收起', async () => {
-    const { wrapper } = mountUploader(makeFiles(3))
-    await wrapper.findAll('button').find(b => b.text().includes('upload.view_list')).trigger('click')
-    expect(wrapper.findAll('.chip').length).toBe(3)
-    await wrapper.findAll('button').find(b => b.text().includes('upload.hide_list')).trigger('click')
-    expect(wrapper.findAll('.chip').length).toBe(0)
-  })
-
-  it('长 filename 用 title 暴露完整名称', async () => {
-    const longName = '20260725_1600__CHRD-A158布丁_A178_SPHT_9034890123456789_abcdef.wotbreplay'
-    const { wrapper } = mountUploader([new File(['x'], longName)])
-    await wrapper.findAll('button').find(b => b.text().includes('upload.view_list')).trigger('click')
-    expect(wrapper.find('.chip').attributes('title')).toBe(longName)
-  })
-
-  it('展开后可单独删除一个文件，并从真实 files 集合移除', async () => {
-    const { wrapper } = mountUploader(makeFiles(3))
-    await wrapper.findAll('button').find(b => b.text().includes('upload.view_list')).trigger('click')
-    await wrapper.findAll('.chipx')[1].trigger('click')
-    const emittedFiles = wrapper.emitted('update:files')[0][0]
-    expect(emittedFiles.map(f => f.name)).toEqual(['replay-0.wotbreplay', 'replay-2.wotbreplay'])
-  })
-
-  it('单文件删除按钮在长文件名后仍可点击', async () => {
-    const longName = `${'very-long-replay-name-'.repeat(12)}.wotbreplay`
-    const { wrapper } = mountUploader([new File(['x'], longName)])
-    await wrapper.findAll('button').find(b => b.text().includes('upload.view_list')).trigger('click')
-    expect(wrapper.find('.chipx').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="file-uploader-empty"]').exists()).toBe(false)
+    expect(wrapper.findAll('button')).toHaveLength(0)
+    expect(wrapper.text()).toBe('')
+    expect(wrapper.find('[data-testid="select-files-input"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="select-folder-input"]').exists()).toBe(true)
   })
 
   it('0 个文件显示空态上传卡', () => {
@@ -121,43 +91,7 @@ describe('FileDrop 文件列表与回放工作台', () => {
     expect(wrapper.text()).toContain('upload.drop_hint')
   })
 
-  it('清空按钮触发 update:files []', async () => {
-    const { wrapper } = mountUploader(makeFiles(2))
-    await wrapper.findAll('button').find(b => b.text().includes('upload.clear')).trigger('click')
-    expect(wrapper.emitted('update:files')[0][0]).toEqual([])
-  })
-
-  it('解析按钮在 loading 时 disabled', () => {
-    const { wrapper } = mountUploader(makeFiles(1), true)
-    const previewBtn = wrapper.findAll('button').find(b => b.text().includes('action.preview'))
-    expect(previewBtn.attributes('disabled')).toBeDefined()
-  })
-
-  it('allows the hidden Rating V2 page to reuse validation without exposing any action buttons', () => {
-    const { wrapper } = mountUploader(makeFiles(1), false, { showPreview: false })
-    expect(wrapper.find('.replay-primary-actions').exists()).toBe(false)
-  })
-
-  it('ReplayPage 场景（showPreview 默认）仍保留「解析预览」', () => {
-    const { wrapper } = mountUploader(makeFiles(1), false)
-    const previewBtn = wrapper.findAll('button').find(b => b.text().includes('action.preview'))
-    expect(previewBtn).toBeDefined()
-  })
-
   // ---- 共享 upload preflight（选择文件/文件夹/add/drop 同一 contract）----
-
-  it('file chip 显示 filename · size（1.8 MB）', async () => {
-    const files = [
-      { name: 'a.wotbreplay', size: Math.floor(1.8 * 1024 * 1024), lastModified: 1 },
-      { name: 'b.wotbreplay', size: 5 * 1024 * 1024, lastModified: 2 }
-    ]
-    const { wrapper } = mountUploader(files)
-    await wrapper.findAll('button').find(b => b.text().includes('upload.view_list')).trigger('click')
-    const chips = wrapper.findAll('.chip')
-    expect(chips[0].text()).toContain('a.wotbreplay')
-    expect(chips[0].text()).toContain('1.8 MB')
-    expect(chips[1].text()).toContain('5.0 MB')
-  })
 
   it('101 个文件 rejected：不更新 selection，显示数量上限', async () => {
     const { wrapper } = mountUploader([])
@@ -225,14 +159,34 @@ describe('FileDrop 文件列表与回放工作台', () => {
     const { wrapper } = mountUploader(existing)
     await pickFiles(wrapper, [
       { name: 'huge.wotbreplay', size: 21 * 1024 * 1024, lastModified: 3 }
-    ], 'add-files-input')
+    ])
     expect(wrapper.emitted('update:files')).toBeUndefined()
     expect(wrapper.get('[data-testid="upload-validation-error"]').exists()).toBe(true)
+  })
 
-    await wrapper.findAll('button').find(b => b.text().includes('upload.view_list')).trigger('click')
-    const chips = wrapper.findAll('.chip')
-    expect(chips.length).toBe(2)
-    expect(chips.map(c => c.find('.chip-name').text())).toEqual(['keep-0.wotbreplay', 'keep-1.wotbreplay'])
+  it('追加：已有文件保持实例与位置，新文件排序后接在尾部', async () => {
+    const z = new File(['z'], 'z.wotbreplay')
+    const { wrapper } = mountUploader([z])
+    const b = { name: 'b.wotbreplay', size: 1, lastModified: 2 }
+    const a = { name: 'a.wotbreplay', size: 1, lastModified: 3 }
+    await pickFiles(wrapper, [b, a])
+    const [next] = wrapper.emitted('update:files')[0]
+    expect(next.map(f => f.name)).toEqual(['z.wotbreplay', 'a.wotbreplay', 'b.wotbreplay'])
+    expect(toRaw(next[0])).toBe(z)
+  })
+
+  it('首批选择按文件名排序', async () => {
+    const { wrapper } = mountUploader([])
+    await pickFiles(wrapper, [{ name: 'b.wotbreplay', size: 1, lastModified: 1 }, { name: 'a.wotbreplay', size: 1, lastModified: 2 }])
+    expect(wrapper.emitted('update:files')[0][0].map(f => f.name)).toEqual(['a.wotbreplay', 'b.wotbreplay'])
+  })
+
+  it('重复添加同一文件：不触发 selection 变更，只提示已在列表', async () => {
+    const listed = { name: 'a.wotbreplay', size: 1, lastModified: 1 }
+    const { wrapper } = mountUploader([listed])
+    await pickFiles(wrapper, [{ ...listed }])
+    expect(wrapper.emitted('update:files')).toBeUndefined()
+    expect(wrapper.get('[data-testid="upload-validation-error"]').text()).toContain('upload.already_listed')
   })
 
   it('drag/drop 走同一 validator', async () => {
@@ -337,30 +291,6 @@ describe('FileDrop 文件列表与回放工作台', () => {
     expect(emitted[0][0].map(f => f.name)).toEqual(['b.wotbreplay'])
   })
 
-  it('single-file 模式：Add 单文件入口存在（multiple=false），folder 不出现；新选文件 replace，绝不合成 [A,B]', async () => {
-    const a = makeFiles(1)[0]
-    const b = makeFiles(1)[0]
-    const { wrapper } = mountUploader([a], false, { allowFolder: false })
-    // AI / Playback 单文件模式：允许重新选择（replace）→ Add 单文件入口存在，folder 入口隐藏。
-    expect(wrapper.find('[data-testid="add-files-input"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="add-files-input"]').attributes('multiple')).toBeUndefined()
-    expect(wrapper.find('[data-testid="add-folder-input"]').exists()).toBe(false)
-    // drag/drop 新文件 → replace 当前文件（emit [b]，仅 1 个，绝不先得到 [a,b] 再报 single_replay_required）
-    await wrapper.find('.uploadwrap').trigger('drop', { dataTransfer: { files: [b] } })
-    await flushPromises()
-    const emitted = wrapper.emitted('update:files')
-    const last = emitted[emitted.length - 1][0]
-    expect(last.length).toBe(1)
-    expect(last[0].name).toBe(b.name)
-  })
-
-  it('single-file 模式：drag/drop 多文件直接拒绝（singleOnly）', async () => {
-    const a = makeFiles(2)
-    const { wrapper } = mountUploader([makeFiles(1)[0]], false, { allowFolder: false })
-    await wrapper.find('.uploadwrap').trigger('drop', { dataTransfer: { files: a } })
-    await flushPromises()
-    expect(wrapper.text()).toContain('upload.single_only')
-  })
 })
 
 // ---- native picker：真实按钮点击必须落到对应隐藏 input 的 click()（WS-07）----
@@ -368,13 +298,6 @@ describe('FileDrop 文件列表与回放工作台', () => {
 // 实际对 file input 的 value 字符串调 click() → 生产环境 "P.click is not a function"。
 
 describe('FileDrop native picker（真实按钮 → 隐藏 input.click）', () => {
-  function mountCompact(files) {
-    return mount(FileDrop, {
-      props: { files, loading: false, confirmRemove: true, compact: true },
-      global: { mocks: { $t: key => key } }
-    })
-  }
-
   it('空态：Select files → select-files-input.click()', async () => {
     const { wrapper } = mountUploader([])
     await expectNativePickerClick(wrapper, 'upload.select_files', 'select-files-input')
@@ -385,63 +308,21 @@ describe('FileDrop native picker（真实按钮 → 隐藏 input.click）', () =
     await expectNativePickerClick(wrapper, 'upload.select_folder', 'select-folder-input')
   })
 
-  it('已有文件：Add files → add-files-input.click()', async () => {
+  it('已有文件：工作台通过暴露的命令打开同一组 input', () => {
     const { wrapper } = mountUploader(makeFiles(2))
-    await expectNativePickerClick(wrapper, 'upload.add', 'add-files-input')
+    const files = vi.spyOn(wrapper.get('[data-testid="select-files-input"]').element, 'click').mockImplementation(() => {})
+    const folder = vi.spyOn(wrapper.get('[data-testid="select-folder-input"]').element, 'click').mockImplementation(() => {})
+    wrapper.vm.chooseFiles()
+    wrapper.vm.chooseFolder()
+    expect(files).toHaveBeenCalledOnce()
+    expect(folder).toHaveBeenCalledOnce()
+    expect(wrapper.vm.folderAvailable).toBe(true)
   })
 
-  it('已有文件：Add folder → add-folder-input.click()', async () => {
-    const { wrapper } = mountUploader(makeFiles(2))
-    await expectNativePickerClick(wrapper, 'upload.folder', 'add-folder-input')
-  })
-
-  it('compact：Add files → compact-add-files-input.click()', async () => {
-    const wrapper = mountCompact(makeFiles(1))
-    await expectNativePickerClick(wrapper, 'upload.add', 'compact-add-files-input')
-  })
-
-  it('allowFolder=true：select-files 支持 multiple，folder input 带 webkitdirectory', () => {
+  it('select-files 支持 multiple，folder input 带 webkitdirectory', () => {
     const { wrapper } = mountUploader([])
     expect(wrapper.get('[data-testid="select-files-input"]').attributes('multiple')).toBeDefined()
     expect(wrapper.get('[data-testid="select-folder-input"]').attributes('webkitdirectory')).toBeDefined()
   })
 
-  it('allowFolder=false：Select files 仍是同一条 openPicker 路径，folder 按钮不存在', async () => {
-    const { wrapper } = mountUploader([], false, { allowFolder: false })
-    await expectNativePickerClick(wrapper, 'upload.select_files', 'select-files-input')
-    expect(wrapper.find('[data-testid="select-folder-input"]').exists()).toBe(false)
-    expect(wrapper.findAll('button').some(b => b.text().includes('upload.select_folder'))).toBe(false)
-  })
-
-  it('allowFolder=false + 已有文件：Add files（多次 replace 语义）可用，Add folder 不出现', async () => {
-    const { wrapper } = mountUploader(makeFiles(1), false, { allowFolder: false })
-    await expectNativePickerClick(wrapper, 'upload.add', 'add-files-input')
-    expect(wrapper.find('[data-testid="add-folder-input"]').exists()).toBe(false)
-    expect(wrapper.findAll('button').some(b => b.text().includes('upload.folder'))).toBe(false)
-  })
-})
-
-describe('FileDrop 解析完成后的批次条（compact）', () => {
-  function mountCompact(files) {
-    return mount(FileDrop, {
-      props: { files, loading: false, confirmRemove: true, compact: true },
-      global: { mocks: { $t: key => key } },
-    })
-  }
-
-  it('清空会丢掉已解析结果：先确认，再清空（WS-21）', async () => {
-    const wrapper = mountCompact([new File(['x'], 'a.wotbreplay')])
-    await wrapper.get('[data-testid="compact-clear"]').trigger('click')
-    expect(wrapper.emitted('update:files')).toBeUndefined()
-    await wrapper.get('[data-testid="compact-clear-confirm"]').trigger('click')
-    expect(wrapper.emitted('update:files')[0][0]).toEqual([])
-  })
-
-  it('取消确认后保留选择', async () => {
-    const wrapper = mountCompact([new File(['x'], 'a.wotbreplay')])
-    await wrapper.get('[data-testid="compact-clear"]').trigger('click')
-    await wrapper.get('[data-testid="compact-clear-cancel"]').trigger('click')
-    expect(wrapper.emitted('update:files')).toBeUndefined()
-    expect(wrapper.find('[data-testid="compact-clear"]').exists()).toBe(true)
-  })
 })

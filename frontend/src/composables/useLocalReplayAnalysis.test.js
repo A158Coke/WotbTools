@@ -98,7 +98,7 @@ describe('useLocalReplayAnalysis', () => {
     const parse = deferred()
     let onProgress
     local.parseReplayFiles.mockImplementation((files, options) => { onProgress = options.onProgress; return parse.promise })
-    const { session, updateFiles, analyze, parsedFiles } = setup()
+    const { session, updateFiles, analyze } = setup()
     const files = [replayFile('a.wotbreplay'), replayFile('b.wotbreplay')]
     updateFiles(files)
 
@@ -120,7 +120,6 @@ describe('useLocalReplayAnalysis', () => {
     expect(session.resp.value.battles).toHaveLength(2)
     expect(session.activeTab.value).toBe('b0')
     expect(session.loading.value).toBe(false)
-    expect(parsedFiles()).toBe(parsed)
   })
 
   it('a second analyze while parsing is rejected as ALREADY_ACTIVE', async () => {
@@ -288,18 +287,105 @@ describe('useLocalReplayAnalysis', () => {
     expect(signal.aborted).toBe(true)
   })
 
-  it('dismiss resets a terminal state but is ignored while parsing', async () => {
-    local.parseReplayFiles.mockRejectedValueOnce(new Error('x')).mockReturnValueOnce(new Promise(() => {}))
-    const { session, updateFiles, analyze, dismiss } = setup()
-    updateFiles([replayFile('a.wotbreplay')])
-    await analyze()
+  describe('changeFiles', () => {
+    async function ready(names) {
+      local.parseReplayFiles.mockImplementation(async files => parsedOf(files))
+      const api = setup()
+      const files = names.map(replayFile)
+      api.updateFiles(files)
+      await api.analyze()
+      await nextTick()
+      local.parseReplayFiles.mockClear()
+      return { ...api, files }
+    }
 
-    dismiss()
-    expect(session.analysis.value).toEqual({ phase: 'idle', done: 0, total: 0, failure: null })
+    it('adding parses only the new file and keeps the old result on screen until commit', async () => {
+      const api = await ready(['a.wotbreplay', 'b.wotbreplay'])
+      api.session.selectBattle('r1')
+      const pending = deferred()
+      local.parseReplayFiles.mockReturnValueOnce(pending.promise)
+      const c = replayFile('c.wotbreplay')
+      const previous = api.session.resp.value
 
-    analyze()
-    dismiss()
-    expect(session.analysis.value.phase).toBe('parsing')
+      const running = api.changeFiles([...api.files, c])
+      await nextTick()
+      expect(api.session.resp.value).toBe(previous)
+      expect(api.session.loading.value).toBe(false)
+      expect(api.session.analysis.value.phase).toBe('parsing')
+      expect(api.session.currentTargetFile.value.name).toBe('b.wotbreplay')
+
+      pending.resolve(parsedOf([c]))
+      await running
+      expect(local.parseReplayFiles).toHaveBeenCalledTimes(1)
+      expect(local.parseReplayFiles.mock.calls[0][0]).toEqual([c])
+      expect(api.session.resp.value.battles).toHaveLength(3)
+      expect(api.session.analysis.value.phase).toBe('ready')
+      await nextTick()
+      expect(api.session.currentTargetFile.value.name).toBe('b.wotbreplay')
+    })
+
+    it('removing is a synchronous commit with no parse', async () => {
+      const api = await ready(['a.wotbreplay', 'b.wotbreplay', 'c.wotbreplay'])
+      api.session.selectBattle('r2')
+      api.changeFiles(api.files.slice(1))
+      expect(local.parseReplayFiles).not.toHaveBeenCalled()
+      expect(api.session.resp.value.battles).toHaveLength(2)
+      expect(api.session.currentTargetFile.value.name).toBe('c.wotbreplay')
+    })
+
+    it('a second add supersedes the first and keeps every accumulated file', async () => {
+      const api = await ready(['a.wotbreplay'])
+      let firstSignal
+      local.parseReplayFiles.mockImplementationOnce((_files, { signal }) => {
+        firstSignal = signal
+        return new Promise(() => {})
+      })
+      const b = replayFile('b.wotbreplay')
+      const c = replayFile('c.wotbreplay')
+      void api.changeFiles([...api.files, b])
+      await api.changeFiles([...api.files, b, c])
+      expect(firstSignal.aborted).toBe(true)
+      expect(local.parseReplayFiles.mock.calls[1][0]).toEqual([b, c])
+      expect(api.session.files.value).toHaveLength(3)
+      expect(api.session.resp.value.battles).toHaveLength(3)
+    })
+
+    it('an engine failure while adding keeps the battles that already work', async () => {
+      const api = await ready(['a.wotbreplay'])
+      const previous = api.session.resp.value
+      local.parseReplayFiles.mockRejectedValueOnce(new ReplayEngineUnavailableError('wasm'))
+      await expect(api.changeFiles([...api.files, replayFile('b.wotbreplay')]))
+        .resolves.toEqual({ completed: false, reason: 'ENGINE_UNAVAILABLE' })
+      expect(api.session.resp.value).toBe(previous)
+      expect(api.session.analysis.value.phase).toBe('ready')
+      expect(api.session.error.value).toBe('replay.analysis.engine_unavailable')
+    })
+
+    it('removing the last valid replay leaves the failure state', async () => {
+      const api = await ready(['a.wotbreplay', 'b.wotbreplay'])
+      local.analyzeReplayBatch.mockImplementationOnce(() => { throw new NoValidReplaysError() })
+      await api.changeFiles(api.files.slice(1))
+      expect(api.session.resp.value).toBeNull()
+      expect(api.session.analysis.value).toMatchObject({ phase: 'failed', failure: 'NO_VALID_REPLAYS' })
+    })
+
+    it('explicit retry parses failed files again and reuses the good ones', async () => {
+      const [good, bad] = [replayFile('good.wotbreplay'), replayFile('bad.wotbreplay')]
+      local.parseReplayFiles.mockResolvedValueOnce([
+        { name: good.name, result: { ok: true }, error: null },
+        { name: bad.name, result: null, error: 'broken' },
+      ])
+      local.analyzeReplayBatch.mockImplementationOnce(() => { throw new NoValidReplaysError() })
+      const api = setup()
+      api.updateFiles([good, bad])
+      await api.analyze()
+      expect(api.session.analysis.value.phase).toBe('failed')
+
+      local.parseReplayFiles.mockResolvedValueOnce(parsedOf([bad]))
+      await api.analyze()
+      expect(local.parseReplayFiles.mock.calls[1][0]).toEqual([bad])
+      expect(api.session.analysis.value.phase).toBe('ready')
+    })
   })
 
   describe('exportExcel', () => {
@@ -359,7 +445,6 @@ describe('useLocalReplayAnalysis', () => {
 
       await expect(api.exportExcel('aggregate')).rejects.toThrow(/no analysis result/)
       expect(local.exportAggregateXlsx).not.toHaveBeenCalled()
-      expect(api.parsedFiles()).toEqual([])
     })
   })
 })

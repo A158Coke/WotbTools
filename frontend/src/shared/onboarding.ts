@@ -1,4 +1,4 @@
-import type { InjectionKey } from 'vue'
+import type { ComputedRef, InjectionKey } from 'vue'
 import type { ReplayCapability } from '../types/workspace.js'
 
 export type OnboardingTopic = 'core' | 'data' | 'playback' | 'annotations' | '3d' | 'shots' | 'ai' | 'tankopedia' | 'hof' | 'tournament' | 'settings'
@@ -26,6 +26,8 @@ export interface OnboardingSurface {
 export type OnboardingSurfaceId = 'playback' | 'annotations' | 'display' | '3d' | 'shots' | 'armor'
 
 export interface OnboardingContext {
+  /** 教学进行中：工作台据此保留教学要高亮的入口。 */
+  guideActive: ComputedRef<boolean>
   start(topic?: OnboardingTopic): void
   openDirectory(): void
   sampleOpened(): void

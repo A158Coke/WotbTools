@@ -1,4 +1,4 @@
-import { onUnmounted } from 'vue'
+import { onUnmounted, toRaw } from 'vue'
 import { recordUsage } from './useUsageTelemetry.js'
 import { isOfficialDemo } from '../replay-local/demo.js'
 import type { Composer } from 'vue-i18n'
@@ -37,8 +37,10 @@ export function useLocalReplayAnalysis(session: ReplaySession, { t }: I18nContex
   const { files, selectionRevision, loading, error, resp, analysis, analysisActive, replaceSelection, commitReadyResult } = session
 
   let inFlight: AbortController | null = null
-  /** 最近一次成功分析的逐文件解析结果与批次计算结果（导出等下游复用，不重复解析 / 计算） */
-  let lastParsed: ParsedReplayFile[] = []
+  /** 逐文件解析结果（含失败）：集合增删只解析新文件；显式重试才放弃失败项。 */
+  const parsedByFile = new WeakMap<File, ParsedReplayFile>()
+  let lastTankopedia: Tankopedia | null = null
+  /** 最近一次成功分析的批次计算结果（导出等下游复用，不重复计算） */
   let lastDataset: { dataset: ProcessedDataset; tankopedia: Tankopedia } | null = null
 
   function abortInFlight() {
@@ -48,7 +50,6 @@ export function useLocalReplayAnalysis(session: ReplaySession, { t }: I18nContex
 
   function resetAnalysis(): void {
     abortInFlight()
-    lastParsed = []
     lastDataset = null
   }
 
@@ -70,12 +71,26 @@ export function useLocalReplayAnalysis(session: ReplaySession, { t }: I18nContex
       return { completed: false, reason: 'EMPTY_SELECTION' }
     }
     if (analysisActive.value) return { completed: false, reason: 'ALREADY_ACTIVE' }
+    for (const file of files.value.map(item => toRaw(item))) {
+      if (!parsedByFile.get(file)?.result) parsedByFile.delete(file)
+    }
+    return run(false)
+  }
 
+  /** 集合增删：旧结果留在屏幕上直到新结果提交，当前场次不受影响。 */
+  async function changeFiles(next: File[]): Promise<AnalyzeResult> {
+    abortInFlight()
+    session.changeSelection(next)
+    return run(!!resp.value)
+  }
+
+  async function run(keepResult: boolean): Promise<AnalyzeResult> {
     const revision = selectionRevision.value
-    const selection = files.value
+    const selection = files.value.map(file => toRaw(file))
+    const missing = selection.filter(file => !parsedByFile.has(file))
     const controller = new AbortController()
     // Correlation IDs identify only this attempt, never the file or the user.
-    const operations = selection.map(() => {
+    const operations = missing.map(() => {
       let id: string | undefined
       try { id = crypto.randomUUID() } catch { /* Unsupported telemetry cannot break parsing. */ }
       return { id, settled: false }
@@ -96,28 +111,37 @@ export function useLocalReplayAnalysis(session: ReplaySession, { t }: I18nContex
     controller.signal.addEventListener('abort', () => operations.forEach((_, index) => settle(index, 'cancelled')), { once: true })
     inFlight = controller
     error.value = ''
-    loading.value = true
-    resp.value = null
-    analysis.value = { phase: 'parsing', done: 0, total: selection.length, failure: null }
+    if (!keepResult) {
+      loading.value = true
+      resp.value = null
+    }
+    analysis.value = { phase: 'parsing', done: 0, total: missing.length, failure: null }
     const stale = () => controller.signal.aborted || selectionRevision.value !== revision
 
     try {
-      const [parsed, tankopedia] = await Promise.all([
-        parseReplayFiles(selection, {
-          signal: controller.signal,
-          onFile: (index, file) => {
-            if (!stale()) settle(index, file.result ? 'success' : 'failure', file.result ? undefined : 'PARSE_FAILED')
-          },
-          onProgress: (done, total) => {
-            if (!stale()) analysis.value = { phase: 'parsing', done, total, failure: null }
-          },
-        }),
-        loadTankopedia(),
-      ])
-      if (stale()) return { completed: false, reason: 'SUPERSEDED' }
-      parsed.forEach((file, index) => settle(index, file.result ? 'success' : 'failure', file.result ? undefined : 'PARSE_FAILED'))
-      lastParsed = parsed
-      const { dataset, preview } = analyzeReplayBatch(parsed, tankopedia)
+      let tankopedia = lastTankopedia
+      // 无新文件时不进 await：移除是一次同步提交，不存在旧结果与新 files 并存的窗口。
+      if (missing.length || !tankopedia) {
+        const [parsed, loaded] = await Promise.all([
+          missing.length ? parseReplayFiles(missing, {
+            signal: controller.signal,
+            onFile: (index, file) => {
+              parsedByFile.set(missing[index], file)
+              if (!stale()) settle(index, file.result ? 'success' : 'failure', file.result ? undefined : 'PARSE_FAILED')
+            },
+            onProgress: (done, total) => {
+              if (!stale()) analysis.value = { phase: 'parsing', done, total, failure: null }
+            },
+          }) : [],
+          loadTankopedia(),
+        ])
+        parsed.forEach((file, index) => parsedByFile.set(missing[index], file))
+        tankopedia = loaded
+        lastTankopedia = loaded
+        if (stale()) return { completed: false, reason: 'SUPERSEDED' }
+        parsed.forEach((file, index) => settle(index, file.result ? 'success' : 'failure', file.result ? undefined : 'PARSE_FAILED'))
+      }
+      const { dataset, preview } = analyzeReplayBatch(selection.map(file => parsedByFile.get(file) as ParsedReplayFile), tankopedia)
       lastDataset = { dataset, tankopedia }
       commitReadyResult(preview as unknown as ReplayResult)
       analysis.value = { phase: 'ready', done: selection.length, total: selection.length, failure: null }
@@ -127,6 +151,13 @@ export function useLocalReplayAnalysis(session: ReplaySession, { t }: I18nContex
       const failure = failureOf(e)
       operations.forEach((_, index) => settle(index, 'failure', failure === 'ENGINE_UNAVAILABLE' ? 'RESOURCE_UNAVAILABLE' : 'UNKNOWN'))
       if (failure === 'UNKNOWN') console.error('[replay-local] analysis failed', e)
+      if (keepResult && failure === 'ENGINE_UNAVAILABLE') {
+        // 已有场次仍然可用：只有新文件没进来。
+        error.value = t('replay.analysis.engine_unavailable')
+        analysis.value = { phase: 'ready', done: 0, total: 0, failure: null }
+        return { completed: false, reason: 'ENGINE_UNAVAILABLE' }
+      }
+      resp.value = null
       analysis.value = { phase: 'failed', done: analysis.value.done, total: selection.length, failure }
       return failure === 'ENGINE_UNAVAILABLE' ? { completed: false, reason: 'ENGINE_UNAVAILABLE' } : { completed: true }
     } finally {
@@ -140,11 +171,6 @@ export function useLocalReplayAnalysis(session: ReplaySession, { t }: I18nContex
     abortInFlight()
     loading.value = false
     analysis.value = { ...analysis.value, phase: 'cancelled' }
-  }
-
-  function dismiss(): void {
-    if (analysisActive.value) return
-    analysis.value = { phase: 'idle', done: 0, total: 0, failure: null }
   }
 
   /**
@@ -167,12 +193,10 @@ export function useLocalReplayAnalysis(session: ReplaySession, { t }: I18nContex
 
   return {
     updateFiles,
+    changeFiles,
     updateDemoFile,
     analyze,
     cancel,
-    dismiss,
     exportExcel,
-    /** 最近一次分析的逐文件解析结果（与 files 同序） */
-    parsedFiles: () => lastParsed,
   }
 }

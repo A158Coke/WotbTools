@@ -554,16 +554,11 @@ function openRatingDocs() {
   <div :class="props.embedded ? 'replay-data-embedded' : 'layout-data-workspace'">
     <template v-if="files.length || resp">
       <div>
-        <p v-if="!resp" class="replay-empty-note">{{ $t('workspace.results_hint') }}</p>
         <template v-if="resp">
         <div class="result-notices">
         <Banner v-if="resp.duplicates.length" tone="warning" data-testid="result-duplicates">
           <p>{{ $t('result.duplicates', { count: resp.duplicates.length }) }}</p>
           <ul class="notice-files"><li v-for="(d, i) in resp.duplicates" :key="i">{{ d[0] }}</li></ul>
-        </Banner>
-        <Banner v-if="resp.failures.length" tone="danger" data-testid="result-failures">
-          <p>{{ $t('result.failures', { count: resp.failures.length }) }}</p>
-          <ul class="notice-files"><li v-for="(f, i) in resp.failures" :key="i">{{ f[0] }} ({{ f[1] }})</li></ul>
         </Banner>
         <Banner v-if="leagueUnavailableMessage" tone="warning" class="league-unavailable" data-testid="league-unavailable">
           <p>{{ leagueUnavailableMessage }}</p>
