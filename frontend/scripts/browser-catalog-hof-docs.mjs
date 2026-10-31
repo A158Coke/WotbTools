@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { Page } from './browser-page.mjs'
-import { measureReachability } from './browser-occlusion.mjs'
+import { measureReachability, measureTouchTargets } from './browser-occlusion.mjs'
 
 export const CATALOG_HOF_DOC_SCENARIOS = ['showcase', 'classic'].flatMap(profile => [
   { width: 390, height: 844 }, { width: 740, height: 360 },
-].flatMap(size => ['catalog', 'hof', 'docs'].map(mode => ({
+].flatMap(size => ['catalog', 'hof', 'docs', 'dialog'].map(mode => ({
   ...size, profile, mode, touch: true, name: `overlay-${mode}-${profile}-${size.width}x${size.height}`,
 })))).concat(['showcase', 'classic'].map(profile => ({
   width: 1440, height: 900, touch: false, profile, mode: 'docs', name: `overlay-docs-${profile}-1440x900`,
@@ -62,7 +62,14 @@ export async function runCatalogHofDocScenario(env, scenario) {
     await page.goto(`${env.origin}/scripts/browser-fixtures/catalog-hof-docs.html?mode=${scenario.mode}&profile=${scenario.profile}&assets=${encodeURIComponent(`${env.origin}/catalog-assets`)}`)
     await page.waitForValue('!!document.querySelector("[data-testid=catalog-hof-docs-fixture]")', Boolean)
 
-    if (scenario.mode === 'catalog') {
+    if (scenario.mode === 'dialog') {
+      // 选择器在 dialog 上下文内展开：列表不得被 dialog 的内容裁掉，选项要真实可点。
+      await tap('#dialog-vehicle')
+      await page.waitForValue('!!document.querySelector(".vp-option")', Boolean)
+      await reachableControls('.vp-option')
+      await tap('.vp-option:last-child')
+      await page.waitForValue('document.querySelector("#dialog-vehicle").getAttribute("aria-expanded")', value => value === 'false')
+    } else if (scenario.mode === 'catalog') {
       await tap('[data-testid=filter-toggle]')
       await page.waitForValue('!!document.querySelector(".sheet [data-testid=tank-filters]")', Boolean)
       await reachableControls('.sheet select, .sheet [data-testid=filter-sheet-done]')
@@ -121,6 +128,11 @@ export async function runCatalogHofDocScenario(env, scenario) {
       await page.waitForValue('window.scrollY < 2', Boolean)
     }
     assert.ok(await page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), '页面不得产生横向溢出')
+    if (scenario.touch !== false) {
+      const touch = await measureTouchTargets(page)
+      assert.ok(touch.scanned > 0, '触控扫描不得空跑')
+      assert.deepEqual(touch.failures, [])
+    }
   } catch (error) {
     failures.push(error.message, ...await page.diagnose(() => [...document.querySelectorAll('.sheet, .sheet-body, .lb-toolbar-host, .lb-sheet-head, [data-testid=filter-done]')].map(el => {
       const r = el.getBoundingClientRect(), s = getComputedStyle(el)

@@ -94,7 +94,7 @@ jobs:
         gate:
           - label: Playback layout
             script: test:browser-layout
-          # 交互门禁 48 场景 ≈ 全矩阵最慢一条（~5.5min）；`--shard i/n` 按**静态场景清单
+          # 交互门禁 ≈ 全矩阵最慢一条（~5.5min）；`--shard i/n` 按**静态场景清单
           # 下标取模**确定性切分，两片并行墙钟减半。清单变化不影响切分正确性（每片覆盖
           # 的是同一次 checkout 的同一份清单）。
           - label: Playback/Workspace interaction (1/2)

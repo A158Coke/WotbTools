@@ -19,6 +19,11 @@ public class BattleDataAdminController {
             @RequestParam(name = "to", required = false) final String to) {
         return service.summary(from, to);
     }
+    @GetMapping(ApiPaths.ADMIN_BATTLE_DATA + "/spawn-stats")
+    public BattleDataAdminDtos.SpawnStats spawnStats(@RequestParam(name = "from", required = false) final String from,
+            @RequestParam(name = "to", required = false) final String to) {
+        return service.spawnStats(from, to);
+    }
     @GetMapping(ApiPaths.ADMIN_BATTLE_DATA + "/battles")
     public BattleDataAdminDtos.Page list(@RequestParam(name = "from", required = false) final String from,
             @RequestParam(name = "to", required = false) final String to,

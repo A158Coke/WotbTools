@@ -62,6 +62,21 @@ paths:
         '401': { description: Authentication required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
         '403': { description: Admin role required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
         '500': { description: Internal error, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+  /api/admin/battle-data/spawn-stats:
+    get:
+      operationId: getBattleDataAdminSpawnStats
+      summary: Read persisted outcome counts per map and physical spawn side (wotbtools-admin only)
+      description: UTC interval [from,to) capped at the server clock; unbounded endpoints allowed. Separate from the summary so its shape stays readable by released clients.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: from, in: query, required: false, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: false, schema: { type: string, format: date-time } }
+      responses:
+        '200': { description: Spawn statistics, content: { application/json: { schema: { $ref: '#/components/schemas/BattleDataAdminSpawnStats' } } } }
+        '400': { description: Invalid interval, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '401': { description: Authentication required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '403': { description: Admin role required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '500': { description: Internal error, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
   /api/admin/battle-data/battles:
     get:
       operationId: getBattleDataAdminBattles
@@ -4270,6 +4285,24 @@ components:
         key: { type: string }
         count: { type: integer, minimum: 0 }
         latestReceivedAt: { type: string, format: date-time }
+    BattleDataAdminSpawnStat:
+      type: object
+      additionalProperties: false
+      required: [mapKey, arenaBonusType, side, battles, wins, draws, losses]
+      properties:
+        mapKey: { type: string }
+        arenaBonusType: { type: [integer, 'null'], enum: [1, 7, null], description: null is the Random + Rating combined row. }
+        side: { $ref: '#/components/schemas/BattleDataSpawn' }
+        battles: { type: integer, minimum: 0 }
+        wins: { type: integer, minimum: 0 }
+        draws: { type: integer, minimum: 0 }
+        losses: { type: integer, minimum: 0 }
+    BattleDataAdminSpawnStats:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/BattleDataAdminSpawnStat' }, description: Per map/side outcome counts for the selected interval; rates are a client display derivation. }
     BattleDataAdminSummary:
       type: object
       additionalProperties: false

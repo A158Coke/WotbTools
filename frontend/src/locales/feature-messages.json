@@ -477,7 +477,6 @@
       "window": "所选时间范围",
       "trend": "每日接收战斗（UTC）",
       "modes": "模式分布",
-      "maps": "地图分布与已审校覆盖",
       "schema": "协议版本",
       "winners": "胜方完整性",
       "recent": "最近战斗",
@@ -489,7 +488,22 @@
       "error": "数据加载失败。",
       "detailError": "战斗详情加载失败。",
       "arenaId": "战斗 ID",
-      "map": "地图键",
+      "map": "地图",
+      "allMaps": "全部地图",
+      "spawnStats": "出生侧胜率",
+      "spawnRateNote": "胜率 = 胜场 / 总场次，平局计入总场次。",
+      "sample": "样本",
+      "sideWinRate": "{side}胜率",
+      "drawRate": "平局率",
+      "latestData": "最近数据",
+      "outcomes": "胜 {wins} · 平 {draws} · 负 {losses}",
+      "advanced": "高级条件",
+      "side": {
+        "top": "上方",
+        "bottom": "下方",
+        "west": "西侧",
+        "east": "东侧"
+      },
       "mode": "模式",
       "version": "客户端版本",
       "winner": "胜方",
@@ -503,8 +517,6 @@
       "team2": "队伍 2",
       "spawn": "出生方向",
       "received": "接收时间",
-      "share": "占比",
-      "count": "场次",
       "view": "查看",
       "loadMore": "加载更多",
       "detail": "战斗详情",
@@ -517,8 +529,7 @@
       "apply": "应用筛选",
       "schemaVersion": "协议版本",
       "mapId": "地图 ID",
-      "range": "时间范围",
-      "unknown": "未知"
+      "range": "时间范围"
     },
     "featureOffline": {
       "adminBattleData": "战斗数据审计需要联网。",
@@ -593,7 +604,7 @@
         },
         "3d": {
           "title": "3D 回放",
-          "description": "选画质，进入场景，切换自由、跟随与俯视相机。"
+          "description": "选画质，进入场景，用自由视角、俯视复位和点车跟随观察战局。"
         },
         "shots": {
           "title": "射击分析与装甲",
@@ -651,7 +662,7 @@
         },
         "replay3dCamera": {
           "title": "换个视角看这场战斗",
-          "description": "在相机选项中切换自由、跟随和俯视。拖动场景调整视角，再用播放控件回到同一个关键时刻。"
+          "description": "拖动场景调整自由视角，点「俯视」可一键回到俯视机位。点击车辆或名单会跟随该车，点「自由」退出。再用播放控件回到同一个关键时刻。"
         },
         "shots": {
           "title": "从真实的一发开始",
@@ -686,8 +697,8 @@
           "description": "选中已有标记可修改它；用撤销、重做或清空整理画面。切局或刷新会清空这些临时标记。"
         },
         "camera": {
-          "title": "跟随与自由视角各有所长",
-          "description": "跟随适合观察一辆车，自由视角适合看交火关系，俯视适合看整体位置。按当前关注点切换。"
+          "title": "自由视角与跟随各有所长",
+          "description": "自由视角适合看交火关系；点「俯视」一键回到俯视机位看整体位置；点击车辆或名单跟随一辆车，点「自由」或「俯视」退出。"
         },
         "aiFiles": {
           "title": "先选择要复盘的回放",
@@ -1417,7 +1428,6 @@
       "window": "Selected window",
       "trend": "Accepted battles per UTC day",
       "modes": "Modes",
-      "maps": "Map distribution and reviewed coverage",
       "schema": "Schema versions",
       "winners": "Winner sanity",
       "recent": "Recent battles",
@@ -1429,7 +1439,22 @@
       "error": "Could not load data.",
       "detailError": "Could not load battle detail.",
       "arenaId": "Arena ID",
-      "map": "Map key",
+      "map": "Map",
+      "allMaps": "All maps",
+      "spawnStats": "Win rate by spawn side",
+      "spawnRateNote": "Win rate = wins / total battles; draws count towards the total.",
+      "sample": "Sample",
+      "sideWinRate": "{side} win rate",
+      "drawRate": "Draw rate",
+      "latestData": "Latest data",
+      "outcomes": "W {wins} · D {draws} · L {losses}",
+      "advanced": "Advanced filters",
+      "side": {
+        "top": "North side",
+        "bottom": "South side",
+        "west": "West side",
+        "east": "East side"
+      },
       "mode": "Mode",
       "version": "Client version",
       "winner": "Winner",
@@ -1443,8 +1468,6 @@
       "team2": "Team 2",
       "spawn": "Spawn",
       "received": "Received",
-      "share": "Share",
-      "count": "Battles",
       "view": "View",
       "loadMore": "Load more",
       "detail": "Battle detail",
@@ -1457,8 +1480,7 @@
       "apply": "Apply filters",
       "schemaVersion": "Schema version",
       "mapId": "Map ID",
-      "range": "Time range",
-      "unknown": "Unknown"
+      "range": "Time range"
     },
     "featureOffline": {
       "adminBattleData": "Battle data audit requires a connection.",
@@ -1533,7 +1555,7 @@
         },
         "3d": {
           "title": "3D playback",
-          "description": "Choose quality, enter the scene and switch between free, follow and top cameras."
+          "description": "Choose quality, enter the scene and use the free camera, top view reset and click-to-follow."
         },
         "shots": {
           "title": "Shots and armor",
@@ -1591,7 +1613,7 @@
         },
         "replay3dCamera": {
           "title": "See the battle from another angle",
-          "description": "Switch between free, follow and top cameras. Drag the scene to adjust the view, then use playback controls to revisit a moment."
+          "description": "Drag the scene to adjust the free camera, or press Top to jump back to the overhead view. Click a tank or roster row to follow it, and press Free to stop. Then use playback controls to revisit a moment."
         },
         "shots": {
           "title": "Start with a recorded shot",
@@ -1627,7 +1649,7 @@
         },
         "camera": {
           "title": "Choose the camera for your question",
-          "description": "Follow focuses on one tank, Free reveals firing relationships, and Top shows overall positions. Switch as needed."
+          "description": "Free reveals firing relationships, and Top jumps to the overhead view for overall positions. Click a tank or roster row to follow it; press Free or Top to stop."
         },
         "aiFiles": {
           "title": "Choose a replay for review",
@@ -2357,7 +2379,6 @@
       "window": "Выбранный период",
       "trend": "Полученные бои по дням UTC",
       "modes": "Режимы",
-      "maps": "Распределение и покрытие карт",
       "schema": "Версии схемы",
       "winners": "Проверка победителя",
       "recent": "Последние бои",
@@ -2369,7 +2390,22 @@
       "error": "Не удалось загрузить данные.",
       "detailError": "Не удалось загрузить бой.",
       "arenaId": "ID боя",
-      "map": "Ключ карты",
+      "map": "Карта",
+      "allMaps": "Все карты",
+      "spawnStats": "Доля побед по стороне появления",
+      "spawnRateNote": "Доля побед = победы / все бои; ничьи входят в общее число боёв.",
+      "sample": "Выборка",
+      "sideWinRate": "Доля побед: {side}",
+      "drawRate": "Доля ничьих",
+      "latestData": "Последние данные",
+      "outcomes": "П {wins} · Н {draws} · Пр {losses}",
+      "advanced": "Дополнительные фильтры",
+      "side": {
+        "top": "Северная сторона",
+        "bottom": "Южная сторона",
+        "west": "Западная сторона",
+        "east": "Восточная сторона"
+      },
       "mode": "Режим",
       "version": "Версия клиента",
       "winner": "Победитель",
@@ -2383,8 +2419,6 @@
       "team2": "Команда 2",
       "spawn": "Появление",
       "received": "Получено",
-      "share": "Доля",
-      "count": "Бои",
       "view": "Открыть",
       "loadMore": "Загрузить ещё",
       "detail": "Подробности боя",
@@ -2397,8 +2431,7 @@
       "apply": "Применить фильтры",
       "schemaVersion": "Версия схемы",
       "mapId": "ID карты",
-      "range": "Период",
-      "unknown": "Неизвестно"
+      "range": "Период"
     },
     "featureOffline": {
       "adminBattleData": "Для просмотра боевых данных требуется подключение.",
@@ -2473,7 +2506,7 @@
         },
         "3d": {
           "title": "3D-реплей",
-          "description": "Выберите качество, запустите сцену и переключайте свободную камеру, слежение и вид сверху."
+          "description": "Выберите качество, запустите сцену и используйте свободную камеру, быстрый вид сверху и слежение по клику."
         },
         "shots": {
           "title": "Выстрелы и броня",
@@ -2531,7 +2564,7 @@
         },
         "replay3dCamera": {
           "title": "Посмотрите с другого ракурса",
-          "description": "Переключайте свободную камеру, слежение и вид сверху. Перетаскивайте сцену и возвращайтесь к нужному моменту кнопками воспроизведения."
+          "description": "Перетаскивайте сцену, чтобы настроить свободную камеру, а кнопка «Сверху» сразу вернёт вид сверху. Нажмите на танк или строку списка, чтобы следить за ним, а «Свободная» отключит слежение. Кнопками воспроизведения возвращайтесь к нужному моменту."
         },
         "shots": {
           "title": "Начните с записанного выстрела",
@@ -2567,7 +2600,7 @@
         },
         "camera": {
           "title": "Выберите камеру под задачу",
-          "description": "Слежение показывает один танк, свободная камера — взаимодействие, вид сверху — общую расстановку. Переключайтесь по необходимости."
+          "description": "Свободная камера показывает взаимодействие, кнопка «Сверху» сразу открывает общую расстановку. Нажмите на танк или строку списка, чтобы следить за ним; «Свободная» или «Сверху» отключат слежение."
         },
         "aiFiles": {
           "title": "Выберите реплей для разбора",

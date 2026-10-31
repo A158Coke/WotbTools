@@ -1924,7 +1924,6 @@ watch(() => hofAvailability.value.available, (available, previous) => {
 .lb-card-name { overflow: hidden; font: var(--type-body); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .lb-card-tank {
   justify-self: start;
-  /* 行内链接：满足 WCAG 2.2 的 24px 下限即可，不按 44px 撑高整张卡 */
   min-height: var(--control-h-sm);
   padding: 0;
   border: 0;

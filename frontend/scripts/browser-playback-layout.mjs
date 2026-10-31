@@ -72,9 +72,10 @@ const scenarios = [
 
 // 负向对照：故意重新引入一块盖住主内容的常驻控件。门禁断言探针对它**失败**——
 // 这是「这套门禁真的能发现 #727 这类问题」的唯一证据，没有它，断言只是对当前实现的同义重复。
+// 它的类名不得传给 measureOcclusion：探针必须靠网格命中自己发现，换名字重新加回来才抓得到。
 function negativeOverlayMarkup(scenario) {
   if (!scenario.occlusionNegative) return ''
-  return '<div class="pb-quick-actions pb-occlusion-negative" data-test="pb-occlusion-negative" style="position:absolute;inset-block-start:30%;inset-inline-start:10%;inline-size:60%;block-size:30%;background:#333"></div>'
+  return '<div class="pb-occlusion-negative" data-test="pb-occlusion-negative" style="position:absolute;inset-block-start:30%;inset-inline-start:10%;inline-size:60%;block-size:30%;display:grid;z-index:var(--pb-z-controls)"><button type="button" style="background:#333">mutant</button></div>'
 }
 
 // 可达性探针自测夹具（PR #747 review）。每个元素对应一种判定，期望写在下面的断言里：
@@ -660,7 +661,7 @@ try {
     const occlusion = scenario.occlusion
       ? await measureOcclusion(page, {
         primary: '.pb-map',
-        persistent: ['.pb-map-quick-actions', '.pb-quick-action', '.pb-occlusion-negative'],
+        ignore: ['.pb-vehicle'],
       })
       : null
     await browser.client.send('Target.closeTarget', { targetId })

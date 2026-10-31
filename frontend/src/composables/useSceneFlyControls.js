@@ -143,7 +143,7 @@ export function useSceneFlyControls(adapter) {
    * 推进一帧相机位移（工厂内包装：速率取当前档，按键集合取本实例）。
    * 纯推进实现 = 模块级 {@link advanceFly}（playbackScene.flyTick 经它导入——
    * 保持单一实现；导出缺失会让整条 import 链在加载期失败，3D 面板白屏）。
-   * mode: 'free' | 'follow' | 'top'（follow 由调用方短路——跟随语义是车体锚定）。
+   * mode: 'free' | 'follow'（follow 由调用方短路——跟随语义是车体锚定）。
    * @returns {boolean} 是否发生位移（并入 cameraMoved 按需渲染判定）
    */
   function tickFly(dt, camera, controls) {

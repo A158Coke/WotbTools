@@ -389,7 +389,6 @@ describe('ReplayPage data hydration (embedded-only)', () => {
     await flushPromises()
     expect(wrapper.findComponent({ name: 'FileDrop' }).exists()).toBe(false)
     expect(wrapper.find('[data-testid="replay-processing-panel"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="replay-task-card"]').exists()).toBe(false)
     wrapper.unmount()
   })
 

@@ -96,7 +96,7 @@ export function createSceneCore({
     sizeObserver = new ResizeObserver(onResize);
     sizeObserver.observe(container);
   }
-  // 点选意图上报宿主；相机跟随由显式控件设置。
+  // 点选意图上报宿主；是否跟随由 Pane 决定。
   // pointerup 用于「空处单击」判定（拖拽相机 ≠ 点击其它地方，见 onScenePointerUp）。
   renderer.domElement.addEventListener('pointerdown', onPointerDown);
   renderer.domElement.addEventListener('pointerup', onPointerUp);

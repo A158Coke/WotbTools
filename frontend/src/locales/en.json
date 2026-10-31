@@ -1223,6 +1223,7 @@
           "text": "Text",
           "color": "Color",
           "width": "Width",
+          "eraser_radius": "Eraser radius",
           "undo": "Undo",
           "redo": "Redo",
           "clear": "Clear all",
@@ -1313,9 +1314,7 @@
         "declutter_hint": "Show tank names, class symbols and HP rings; hide player names, reload bars and other details. Click again to restore your settings; editing an option exits the preset.",
         "declutter_hint_3d": "Show tank names and class symbols only. Click again to restore your display settings; editing an option exits this preset.",
         "class_icons": "Replace vehicle models with class icons",
-        "show_status": "Vehicle badges and damage numbers",
-        "hide_rosters": "Hide teams",
-        "show_rosters": "Show teams"
+        "show_status": "Vehicle badges and damage numbers"
       }
     },
     "stages": {
@@ -1497,7 +1496,8 @@
     "assets_hint": "Asset source not configured: append ?assets=<remote-asset-base-url> to load map terrain / vehicle GLBs / tank data (replay parsing itself does not depend on it).",
     "cam_free": "Free",
     "cam_top": "Top",
-    "cam_follow": "Follow",
+    "cam_recorder": "Recorder",
+    "cam_recorder_unsupported": "This replay does not support the Recorder view",
     "camera": "Camera",
     "glb": "Real models (GLB)",
     "tread_marks": "Track marks (treads)",

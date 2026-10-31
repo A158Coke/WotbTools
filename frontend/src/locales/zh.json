@@ -1223,6 +1223,7 @@
           "text": "文字",
           "color": "颜色",
           "width": "粗细",
+          "eraser_radius": "橡皮半径",
           "undo": "撤回",
           "redo": "重做",
           "clear": "清空",
@@ -1313,9 +1314,7 @@
         "declutter_hint": "显示车型名、类型图标与血量环，隐藏昵称、装填条等信息；再点一次恢复之前的设置。手动调整显示选项会退出防遮预设。",
         "declutter_hint_3d": "仅显示车型名与类型图标；再点一次恢复之前的显示设置。手动调整显示选项会退出防遮预设。",
         "class_icons": "用类型图标替换车辆模型",
-        "show_status": "车辆状态标记与伤害数字",
-        "hide_rosters": "收起双方名单",
-        "show_rosters": "展开双方名单"
+        "show_status": "车辆状态标记与伤害数字"
       }
     },
     "stages": {
@@ -1497,7 +1496,8 @@
     "assets_hint": "未配置资产源：追加 ?assets=<remote-asset-base-url> 以加载地图地形/车模 GLB/坦克数据（回放解析本身不依赖）。",
     "cam_free": "自由",
     "cam_top": "俯视",
-    "cam_follow": "跟随",
+    "cam_recorder": "录像者",
+    "cam_recorder_unsupported": "此回放不支持录像者视角",
     "camera": "镜头",
     "glb": "真实车模（GLB）",
     "tread_marks": "地面履带印",

@@ -98,7 +98,7 @@ tbody tr.t2 td { background: color-mix(in oklab, var(--color-team-enemy) 8%, var
 .collist li { display: grid; grid-template-columns: var(--space-6) minmax(0, 1fr) auto auto; align-items: center; gap: var(--space-2); padding: var(--space-2); border-radius: var(--radius-sm); color: var(--color-text-primary); }
 .collist li.dragging { opacity: .5; }
 .grip { color: var(--color-text-tertiary); cursor: grab; font: var(--type-body); }
-.colitem { min-width: 0; display: inline-flex; align-items: center; gap: var(--space-2); font: var(--type-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.colitem { min-width: 0; min-height: var(--hit-min); display: inline-flex; align-items: center; gap: var(--space-2); font: var(--type-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cat { color: var(--color-text-tertiary); font: var(--type-caption); }
 .colmove { display: inline-flex; gap: var(--space-1); }
 .colmove-btn { width: max(var(--control-h-sm), var(--hit-min)); height: max(var(--control-h-sm), var(--hit-min)); padding: 0; border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm); background: var(--color-surface-1); color: var(--color-text-secondary); cursor: pointer; font: var(--type-caption); }

@@ -82,6 +82,9 @@ vi.mock('../scene/playbackScene.js', () => {
       setLabelPrefs: vi.fn(),
       setQuality: vi.fn(),
       setPaused: vi.fn(),
+      setAnnotations: vi.fn(),
+      setAnnotationInteraction: vi.fn(),
+      setAnnotationsVisible: vi.fn(),
     }
     playback.api = api
     playback.apis.push(api)
@@ -191,6 +194,7 @@ beforeEach(async () => {
   canonical.load.mockReset().mockResolvedValue({ dataset: null, reloadTelemetry: null })
   canonical.portrait.mockReset().mockResolvedValue(null)
   layout.compact = false
+  layout.portrait = false
   playback.api = null
   playback.apis.length = 0
   playback.init?.mockClear()
@@ -815,16 +819,16 @@ describe('Replay3DPane', () => {
     const store = playback.api.store
     store.time = 52
     const parseCount = playback.api.loadData.mock.calls.length
+    await wrapper.get('[data-testid="display-toggle"]').trigger('click')
     await wrapper.get('[data-test="pb-declutter"]').trigger('click')
     expect(wrapper.get('[data-test="pb-declutter"]').attributes('aria-pressed')).toBe('true')
     expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith({
       enabled: true, showPlayerName: false, showTankName: true, showHp: false, showReload: false,
       classIcons: true, showStatus: false,
     })
-    await wrapper.get('[data-test="pb-toggle-roster"]').trigger('click')
+    await wrapper.get('[data-testid="disp-roster"]').setValue(false)
     expect(wrapper.find('[data-testid="roster-surface"]').exists()).toBe(false)
-    expect(wrapper.get('[data-test="pb-toggle-roster"]').attributes('aria-expanded')).toBe('false')
-    await wrapper.get('[data-test="pb-toggle-roster"]').trigger('click')
+    await wrapper.get('[data-testid="disp-roster"]').setValue(true)
     expect(wrapper.find('[data-testid="roster-surface"]').exists()).toBe(true)
     await wrapper.get('[data-test="pb-declutter"]').trigger('click')
     expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith(expect.objectContaining({ classIcons: false, showHp: true, showReload: true, showStatus: true }))
@@ -883,6 +887,28 @@ describe('Replay3DPane', () => {
     wrapper.unmount()
   })
 
+  it.each([
+    [70, ['K2']],
+    [50, ['K1', 'K2']],
+  ])('击杀流行数预算决定实际渲染：HUD 底边 %ipx 时只渲染最新的 %j', async (hudBottom, expected) => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    const { store } = playback.api
+    store.hasData = true
+    store.killfeed = [0, 1, 2].map((id) => ({ id, kill: true, killer: `K${id}`, victim: `V${id}` }))
+    await nextTick()
+    const root = wrapper.get('[data-testid="replay3d-root"]').element
+    Object.defineProperty(root, 'clientHeight', { configurable: true, value: 500 })
+    vi.spyOn(wrapper.get('.hud').element, 'getBoundingClientRect').mockReturnValue({ bottom: hudBottom })
+    window.dispatchEvent(new Event('resize'))
+    await nextTick()
+    const rows = wrapper.get('[data-test="replay3d-killfeed"]').findAll('.kf').map((row) => row.text())
+    // 断言 DOM 里的条数：旧消息要真的没渲染，不是被 overflow 裁掉
+    expect(rows).toHaveLength(expected.length)
+    expected.forEach((killer, index) => expect(rows[index]).toContain(killer))
+    wrapper.unmount()
+  })
+
   it('显示面板可分别开关战场 UI 分块（顶栏 / 阵容 / 击杀流 / 基地条）', async () => {
     mockWebGL('webgl2')
     const wrapper = mountPane()
@@ -934,6 +960,7 @@ describe('Replay3DPane', () => {
     it('紧凑档与宽档共享 Display 相机设置；两档都没有「打开名册」按钮', async () => {
       mockWebGL('webgl2')
       layout.compact = true
+      layout.portrait = true
       const compactPane = mountPane()
       const compactStore = playback.api.store
       compactStore.hasData = true
@@ -948,6 +975,7 @@ describe('Replay3DPane', () => {
       compactPane.unmount()
 
       layout.compact = false
+      layout.portrait = false
       const widePane = mountPane()
       const wideStore = playback.api.store
       wideStore.hasData = true
@@ -991,6 +1019,7 @@ describe('Replay3DPane', () => {
     it('紧凑档：俯视动作在控制条直接触发，走同一个 setCam（不新建移动端相机状态）', async () => {
       mockWebGL('webgl2')
       layout.compact = true
+      layout.portrait = true
       const wrapper = mountPane()
       const store = playback.api.store
       store.hasData = true
@@ -999,7 +1028,30 @@ describe('Replay3DPane', () => {
       // 折叠状态也可切换（不依赖 Display 面板）；默认已是 top，先切到 free 再点 top
       store.cam = 'free'
       await nextTick()
-      await wrapper.get('[data-testid="replay3d-camera"] [data-value="top"]').trigger('click')
+      await wrapper.get('[data-testid="replay3d-top-view"]').trigger('click')
+      expect(playback.api.setCam).toHaveBeenLastCalledWith('top')
+      wrapper.unmount()
+      layout.portrait = false
+    })
+
+    it('手机横屏：控制条只留传输，镜头进 Display，且不新建第二份相机状态', async () => {
+      mockWebGL('webgl2')
+      layout.compact = true
+      const wrapper = mountPane()
+      const store = playback.api.store
+      store.hasData = true
+      store.roster = roster
+      await nextTick()
+      expect(wrapper.get('[data-testid="replay3d-root"]').classes()).toContain('compact-bar')
+      expect(wrapper.find('[data-testid="replay3d-camera"]').exists()).toBe(false)
+      await wrapper.get('[data-testid="display-toggle"]').trigger('click')
+      expect(wrapper.find('[data-testid="display-panel"] [data-testid="replay3d-camera"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="display-panel"] [data-testid="replay3d-drawing-entry"]').exists()).toBe(false)
+      expect(wrapper.get('[data-testid="replay3d-drawing-entry"]').element.parentElement.classList.contains('controls')).toBe(true)
+      expect(wrapper.get('[data-testid="replay3d-toolrow"] label').text()).toContain('agentReplay.glb')
+      store.cam = 'free'
+      await nextTick()
+      await wrapper.get('[data-testid="replay3d-top-view"]').trigger('click')
       expect(playback.api.setCam).toHaveBeenLastCalledWith('top')
       wrapper.unmount()
       layout.compact = false
@@ -1249,7 +1301,7 @@ describe('Replay3DPane', () => {
       wrapper.unmount()
     })
 
-    it('scene selection opens shared details; Top/Free preserve selection and Follow is explicit', async () => {
+    it('scene selection opens shared details and follows; Top/Free preserve selection', async () => {
       mockWebGL('webgl2')
       const wrapper = mountPane()
       const api = playback.api
@@ -1260,27 +1312,34 @@ describe('Replay3DPane', () => {
       onVehicleSelect(11)
       await nextTick()
       expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Alpha')
-      expect(api.setFollow).not.toHaveBeenCalled()
+      expect(api.setFollow).toHaveBeenCalledExactlyOnceWith(11)
       // 镜头挡位直接陈列在控制条（2026-10-05：从 Display 面板移出），不经菜单
       expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(false)
       api.store.cam = 'free'
       await nextTick()
-      await wrapper.get('[data-testid="replay3d-camera"] [data-value="top"]').trigger('click')
+      await wrapper.get('[data-testid="replay3d-top-view"]').trigger('click')
       expect(api.setCam).toHaveBeenLastCalledWith('top')
       api.store.cam = 'free'
       await nextTick()
       expect(wrapper.get('[data-testid="replay3d-camera"] [data-value="free"]').attributes('aria-checked')).toBe('true')
       expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Alpha')
-      await wrapper.get('[data-testid="replay3d-camera"] [data-value="follow"]').trigger('click')
-      expect(api.setFollow).toHaveBeenCalledExactlyOnceWith(11)
+      // 跟随没有档位：只由点车或点名单触发，radio 仍选中自由，再点一次退出
+      expect(wrapper.find('[data-testid="replay3d-camera"] [data-value="follow"]').exists()).toBe(false)
       onVehicleSelect(21)
       await nextTick()
-      expect(api.setFollow).toHaveBeenCalledTimes(1)
+      expect(api.setFollow).toHaveBeenLastCalledWith(21)
       expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Enemy')
-      // 点场景空处（eid=null）→ 详情窗隐藏（2026-10-05 需求）
+      api.store.cam = 'follow'
+      await nextTick()
+      const free = wrapper.get('[data-testid="replay3d-camera"] [data-value="free"]')
+      expect(free.attributes('aria-checked')).toBe('true')
+      await free.trigger('click')
+      expect(api.setCam).toHaveBeenLastCalledWith('free')
+      // 点场景空处（eid=null）→ 详情窗隐藏，跟随不变
       onVehicleSelect(null)
       await nextTick()
       expect(wrapper.find('[data-testid="replay3d-details"]').exists()).toBe(false)
+      expect(api.setFollow).toHaveBeenCalledTimes(2)
       wrapper.unmount()
     })
 
@@ -1384,7 +1443,7 @@ describe('Replay3DPane', () => {
       expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Alpha')
       expect(api.store.roster).toEqual(roster)
       expect(api.store.time).toBe(45)
-      expect(api.setFollow).not.toHaveBeenCalled()
+      expect(api.setFollow).toHaveBeenCalledExactlyOnceWith(11)
       await wrapper.get('[data-testid="disp-roster"]').setValue(true)
       expect(wrapper.get('[data-testid="replay3d-lane-left"] .pl').classes()).toContain('selected')
       expect(api.loadData).toHaveBeenCalledTimes(1)
@@ -1406,7 +1465,7 @@ describe('Replay3DPane', () => {
       expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Alpha')
       await wrapper.get('[data-test="pb-sb-close"]').trigger('click')
       expect(wrapper.find('[data-testid="replay3d-details"]').exists()).toBe(false)
-      expect(api.setFollow).not.toHaveBeenCalled()
+      expect(api.setFollow).toHaveBeenCalledExactlyOnceWith(11)   // 只来自点车，关详情不再调用
       expect(api.setCam).not.toHaveBeenCalled()
       expect(api.store.time).toBe(30)
       // 名册与详情互不影响：两条车道一直都在
@@ -1863,12 +1922,15 @@ describe('Replay3DPane 待开播画质闸门', () => {
     playback.api.store.hasData = true
     await nextTick()
     const cams = wrapper.get('[data-testid="replay3d-camera"]')
-    expect(cams.findAll('button').map(b => b.attributes('data-value'))).toEqual(['free', 'follow', 'top'])
+    expect(cams.findAll('button').map(b => b.attributes('data-value'))).toEqual(['free', 'recorder'])
     expect(cams.text()).toContain('agentReplay.cam_free')
-    expect(cams.text()).toContain('agentReplay.cam_top')
+    expect(wrapper.get('[data-testid="replay3d-top-view"]').text()).toBe('agentReplay.cam_top')
+    const recorder = cams.get('[data-value="recorder"]')
+    expect(recorder.attributes('disabled')).toBeDefined()
+    expect(recorder.attributes('title')).toBe('agentReplay.cam_recorder_unsupported')
     playback.api.store.cam = 'free'
     await nextTick()
-    await cams.get('[data-value="top"]').trigger('click')
+    await wrapper.get('[data-testid="replay3d-top-view"]').trigger('click')
     expect(playback.api.setCam).toHaveBeenCalledWith('top')
     wrapper.unmount()
   })
@@ -1923,6 +1985,229 @@ describe('Replay3DPane 顶栏双方血量', () => {
     await nextTick()
     expect(wrapper.get('[data-test="pb-hp-bars"]').text()).toContain('0 / 0')
     expect(wrapper.get('[data-test="pb-hp-bars"]').text()).not.toContain('NaN')
+    wrapper.unmount()
+  })
+})
+
+describe('Replay3DPane 3D annotation wiring', () => {
+  async function openDrawing({ playing = false } = {}) {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await start(wrapper)
+    playback.api.store.playing = playing
+    await nextTick()
+    await wrapper.get('[data-testid="replay3d-drawing-entry"]').trigger('click')
+    await flush()
+    return wrapper
+  }
+
+  function sceneOptions() {
+    return playback.init.mock.calls.at(-1)[3]
+  }
+
+  it('opens with pen without touching transport and exposes only pen/eraser plus shared actions', async () => {
+    const wrapper = await openDrawing({ playing: true })
+    const api = playback.api
+    expect(api.store.playing).toBe(true)
+    expect(api.setPlaying).not.toHaveBeenCalledWith(false)
+    expect(api.setAnnotations).toHaveBeenLastCalledWith([])
+    expect(api.setAnnotationInteraction).toHaveBeenLastCalledWith(expect.objectContaining({
+      enabled: true, tool: 'pen', width: 3, eraserWidth: 16,
+    }))
+    const panel = wrapper.get('[data-test="replay3d-annotations"]')
+    expect(panel.find('[data-test="pb-annot-pen"]').exists()).toBe(true)
+    expect(panel.find('[data-test="pb-annot-eraser"]').exists()).toBe(true)
+    expect(panel.find('[data-test="pb-annot-undo"]').exists()).toBe(true)
+    expect(panel.find('[data-test="pb-annot-redo"]').exists()).toBe(true)
+    expect(panel.find('[data-test="pb-annot-clear"]').exists()).toBe(true)
+    expect(panel.find('[data-test="pb-annot-toggle"]').exists()).toBe(true)
+    expect(panel.find('[data-test="pb-annot-close"]').exists()).toBe(true)
+    expect(panel.find('[data-test="pb-annot-toolbar"]').classes()).toContain('pb-annot-compact')
+    expect(panel.find('[data-test="pb-annot-width"]').exists()).toBe(true)
+    expect(panel.find('[data-test="pb-annot-eraser-radius"]').exists()).toBe(false)
+    expect(panel.find('[data-test="pb-annot-colors"]').exists()).toBe(true)
+    expect(panel.find('[data-test="pb-annot-select"]').exists()).toBe(false)
+    expect(panel.find('[data-test="pb-annot-route"]').exists()).toBe(false)
+    expect(panel.find('[data-test="pb-annot-arrow"]').exists()).toBe(false)
+    expect(panel.find('[data-test="pb-annot-LT"]').exists()).toBe(false)
+    expect(panel.find('[data-test="pb-annot-MT"]').exists()).toBe(false)
+    expect(panel.find('[data-test="pb-annot-HT"]').exists()).toBe(false)
+    expect(panel.find('[data-test="pb-annot-TD"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shows only the current tool slider in the compact 3D toolbar', async () => {
+    const wrapper = await openDrawing()
+    const panel = wrapper.get('[data-test="replay3d-annotations"]')
+    expect(panel.find('[data-test="pb-annot-width"]').exists()).toBe(true)
+    expect(panel.find('[data-test="pb-annot-eraser-radius"]').exists()).toBe(false)
+
+    await panel.find('[data-test="pb-annot-eraser"]').trigger('click')
+    await flush()
+    expect(panel.find('[data-test="pb-annot-width"]').exists()).toBe(false)
+    expect(panel.find('[data-test="pb-annot-colors"]').exists()).toBe(false)
+    expect(panel.find('[data-test="pb-annot-eraser-radius"]').exists()).toBe(true)
+
+    await panel.find('[data-test="pb-annot-pen"]').trigger('click')
+    await flush()
+    expect(panel.find('[data-test="pb-annot-width"]').exists()).toBe(true)
+    expect(panel.find('[data-test="pb-annot-colors"]').exists()).toBe(true)
+    expect(panel.find('[data-test="pb-annot-eraser-radius"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('pen/eraser activation and exit never change playback state', async () => {
+    const playingWrapper = await openDrawing({ playing: true })
+    const playingApi = playback.api
+    await playingWrapper.get('[data-test="pb-annot-eraser"]').trigger('click')
+    await flush()
+    expect(playingApi.store.playing).toBe(true)
+    await playingWrapper.get('[data-test="pb-annot-close"]').trigger('click')
+    await flush()
+    expect(playingApi.store.playing).toBe(true)
+    expect(playingApi.setPlaying).not.toHaveBeenCalledWith(false)
+    playingWrapper.unmount()
+
+    const pausedWrapper = await openDrawing({ playing: false })
+    const pausedApi = playback.api
+    await pausedWrapper.get('[data-test="pb-annot-eraser"]').trigger('click')
+    await flush()
+    expect(pausedApi.store.playing).toBe(false)
+    await pausedWrapper.get('[data-test="pb-annot-close"]').trigger('click')
+    await flush()
+    expect(pausedApi.store.playing).toBe(false)
+    expect(pausedApi.setPlaying).not.toHaveBeenCalledWith(true)
+    pausedWrapper.unmount()
+  })
+
+  it('keeps Drawing out of the shared transport and opens it from the 3D tool-row', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await start(wrapper)
+    const toolrow = wrapper.get('[data-testid="replay3d-toolrow"]')
+    expect(toolrow.find('[data-testid="replay3d-drawing-entry"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="pb-controls"]').find('[data-testid="replay3d-drawing-entry"]').exists()).toBe(false)
+
+    await toolrow.find('[data-testid="replay3d-drawing-entry"]').trigger('click')
+    await flush()
+    expect(wrapper.find('[data-testid="replay3d-toolrow"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-annot-toolbar"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="pb-controls"]').find('[data-testid="replay3d-drawing-entry"]').exists()).toBe(false)
+
+    await wrapper.get('[data-test="pb-annot-close"]').trigger('click')
+    await flush()
+    expect(wrapper.find('[data-testid="replay3d-toolrow"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-annot-toolbar"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('commits one annotation through the scene callback and supports undo/redo/clear', async () => {
+    const wrapper = await openDrawing()
+    const api = playback.api
+    const annotation = { type: 'pen', color: '#ff4d4f', width: 1.2, points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] }
+    sceneOptions().onAnnotationCommit(annotation)
+    await flush()
+    expect(api.setAnnotations).toHaveBeenLastCalledWith([annotation])
+    expect(wrapper.find('[data-test="pb-annot-clear"]').attributes('disabled')).toBeUndefined()
+
+    await wrapper.get('[data-test="pb-annot-undo"]').trigger('click')
+    await flush()
+    expect(api.setAnnotations).toHaveBeenLastCalledWith([])
+    await wrapper.get('[data-test="pb-annot-redo"]').trigger('click')
+    await flush()
+    expect(api.setAnnotations).toHaveBeenLastCalledWith([annotation])
+
+    await wrapper.get('[data-test="pb-annot-clear"]').trigger('click')
+    await flush()
+    expect(api.setAnnotations).toHaveBeenLastCalledWith([])
+    await wrapper.get('[data-test="pb-annot-undo"]').trigger('click')
+    await flush()
+    expect(api.setAnnotations).toHaveBeenLastCalledWith([annotation])
+    wrapper.unmount()
+  })
+
+  it('eraser callback applies semantically and adds one history entry', async () => {
+    const wrapper = await openDrawing()
+    const api = playback.api
+    const annotation = { type: 'pen', color: '#ff4d4f', width: 1.2, points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] }
+    sceneOptions().onAnnotationCommit(annotation)
+    await flush()
+    await wrapper.get('[data-test="pb-annot-eraser"]').trigger('click')
+    await flush()
+    expect(api.setAnnotationInteraction).toHaveBeenLastCalledWith(expect.objectContaining({ tool: 'eraser' }))
+    const before = api.setAnnotations.mock.calls.length
+    sceneOptions().onAnnotationErase({ points: [{ x: 0.5, y: 0.5 }], radius: 10 })
+    await flush()
+    expect(api.setAnnotations.mock.calls.length).toBe(before + 1)
+    expect(api.setAnnotations).toHaveBeenLastCalledWith([])
+    await wrapper.get('[data-test="pb-annot-undo"]').trigger('click')
+    await flush()
+    expect(api.setAnnotations).toHaveBeenLastCalledWith([annotation])
+    wrapper.unmount()
+  })
+
+  it('visibility toggle never changes history and does not reproject', async () => {
+    const wrapper = await openDrawing()
+    const api = playback.api
+    const annotation = { type: 'pen', color: '#ff4d4f', width: 1.2, points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] }
+    sceneOptions().onAnnotationCommit(annotation)
+    await flush()
+    const projections = api.setAnnotations.mock.calls.length
+    await wrapper.get('[data-test="pb-annot-toggle"]').trigger('click')
+    await flush()
+    expect(api.setAnnotationsVisible).toHaveBeenLastCalledWith(false)
+    expect(api.setAnnotations.mock.calls.length).toBe(projections)
+    await wrapper.get('[data-test="pb-annot-toggle"]').trigger('click')
+    await flush()
+    expect(api.setAnnotationsVisible).toHaveBeenLastCalledWith(true)
+    expect(api.setAnnotations.mock.calls.length).toBe(projections)
+    wrapper.unmount()
+  })
+
+  it('close keeps committed annotations and disables interaction; reopen restores them', async () => {
+    const wrapper = await openDrawing()
+    const api = playback.api
+    const annotation = { type: 'pen', color: '#ff4d4f', width: 1.2, points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] }
+    sceneOptions().onAnnotationCommit(annotation)
+    await flush()
+    const projections = api.setAnnotations.mock.calls.length
+    await wrapper.get('[data-test="pb-annot-close"]').trigger('click')
+    await flush()
+    expect(wrapper.find('[data-test="replay3d-annotations"]').exists()).toBe(false)
+    expect(api.setAnnotationInteraction).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: false, tool: null }))
+    expect(api.setAnnotations.mock.calls.length).toBe(projections)
+    await wrapper.get('[data-testid="replay3d-drawing-entry"]').trigger('click')
+    await flush()
+    expect(wrapper.find('[data-test="replay3d-annotations"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-annot-undo"]').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('opening Display or collapsing controls closes drawing mode', async () => {
+    const wrapper = await openDrawing()
+    await wrapper.get('[data-testid="display-toggle"]').trigger('click')
+    await flush()
+    expect(wrapper.find('[data-test="replay3d-annotations"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="replay3d-drawing-entry"]').trigger('click')
+    await flush()
+    expect(wrapper.find('[data-test="replay3d-annotations"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="replay3d-controls-toggle"]').trigger('click')
+    await flush()
+    expect(wrapper.find('[data-test="replay3d-annotations"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('changing the replay file clears history and closes drawing mode', async () => {
+    const wrapper = await openDrawing()
+    const api = playback.api
+    const annotation = { type: 'pen', color: '#ff4d4f', width: 1.2, points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] }
+    sceneOptions().onAnnotationCommit(annotation)
+    await flush()
+    await wrapper.setProps({ file: mkFile('next.wotbreplay') })
+    await flush()
+    expect(wrapper.find('[data-test="replay3d-annotations"]').exists()).toBe(false)
+    expect(api.setAnnotations).toHaveBeenLastCalledWith([])
     wrapper.unmount()
   })
 })

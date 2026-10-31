@@ -11,6 +11,8 @@ const props = defineProps({
   markerPrefs: { type: Object, default: () => ({ classIcons: false }) },
   selectedEid: { type: Number, default: null },
   hidden: Boolean,
+  /** drawing mode 下关闭 overlay 内唯一的可交互点（class icon），避免抢走/选中。 */
+  interactive: { type: Boolean, default: true },
 })
 const emit = defineEmits(['select'])
 // Only this child receives 10 Hz content snapshots. Screen coordinates bypass
@@ -228,7 +230,7 @@ defineExpose({ setLabels, setAnchor, clear, spawnDamage, removeDamage, clearDama
 </script>
 
 <template>
-  <div ref="rootEl" class="vehicle-label-overlay" :hidden="hidden" :style="occludedStyle" data-testid="vehicle-label-overlay">
+  <div ref="rootEl" class="vehicle-label-overlay" :class="{ 'label-layer-static': !props.interactive }" :hidden="hidden" :style="occludedStyle" data-testid="vehicle-label-overlay">
     <div v-for="row in labels" :key="row.eid" :ref="el => bind(row.eid, el)"
       class="vehicle-label-anchor" :data-eid="row.eid" hidden>
       <PlaybackVehicleLabel
@@ -260,6 +262,7 @@ defineExpose({ setLabels, setAnchor, clear, spawnDamage, removeDamage, clearDama
 <style scoped>
 .vehicle-label-overlay { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: var(--pb-z-canvas); }
 .vehicle-label-overlay[hidden], .vehicle-label-anchor[hidden] { display: none; }
+.vehicle-label-overlay.label-layer-static .vehicle-class-button { pointer-events: none; }
 .vehicle-label-anchor { position: absolute; left: 0; top: 0; pointer-events: none; display: flex; flex-direction: column; align-items: center; }
 .label-occluded { opacity: var(--pb-label-occluded-opacity, .35); }
 /* 伤害数字：血条右侧的战斗反馈数字。屏幕尺寸固定 px（远近缩放与自由/跟随/俯视镜头下
