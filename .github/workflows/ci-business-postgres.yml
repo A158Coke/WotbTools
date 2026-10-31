@@ -55,3 +55,5 @@ jobs:
           set -euo pipefail
           bash infra/tofu/postgres-business/test-validate-plan.sh
           bash deploy/test-business-postgres-runtime.sh
+
+# audit probe #740

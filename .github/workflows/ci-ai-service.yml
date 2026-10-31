@@ -52,3 +52,5 @@ jobs:
           file: docker/Dockerfile.ai-service
           push: false
           build-args: BUILD_COMMIT=${{ inputs.head_sha }}
+
+# audit probe #740

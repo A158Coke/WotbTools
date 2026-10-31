@@ -168,3 +168,5 @@ jobs:
           tofu validate
       - name: Validate local-root safety policy fixtures
         run: bash infra/tofu/komodo/test-validate-plan.sh
+
+# audit probe #740

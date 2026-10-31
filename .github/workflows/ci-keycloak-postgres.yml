@@ -59,3 +59,5 @@ jobs:
           tofu fmt -check -recursive
           tofu init -backend=false -input=false
           tofu validate
+
+# audit probe #740

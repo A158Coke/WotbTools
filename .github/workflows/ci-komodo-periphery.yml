@@ -36,3 +36,5 @@ jobs:
       # through the real install.sh, and a real ":8120 has no listener" probe.
       - name: Validate the Periphery owner contract and safety fixtures
         run: bash deploy/periphery/test-periphery.sh
+
+# audit probe #740

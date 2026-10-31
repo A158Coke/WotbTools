@@ -40,3 +40,5 @@ jobs:
       # are the point; every mutation happens inside a temporary fake host root.
       - name: Validate the production-worker owner contract and safety fixtures
         run: sudo -E bash deploy/production-worker/test-production-worker.sh
+
+# audit probe #740

@@ -116,3 +116,5 @@ jobs:
       - name: Runtime contract tests
         working-directory: frontend
         run: pnpm exec vitest run src/api/contract-runtime.test.ts
+
+# audit probe #740

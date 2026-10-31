@@ -147,3 +147,5 @@ jobs:
       - name: Real-browser ${{ matrix.gate.label }} regression
         working-directory: frontend
         run: pnpm run ${{ matrix.gate.script }} ${{ matrix.gate.args }}
+
+# audit probe #740

@@ -41,3 +41,5 @@ jobs:
       # cannot reach production with the compliance access log silently broken.
       - name: Public-site inventory and compliance access-log fixtures
         run: bash deploy/test-caddy-route-inventory.sh
+
+# audit probe #740
