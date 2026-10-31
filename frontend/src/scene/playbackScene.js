@@ -99,7 +99,7 @@ import { createBaseMarkers } from './playback/bases.js'
 import { createHudFeed } from './playback/hudFeed.js'
 import {
   ANNOTATION_LIFT, ANNOTATION_MAX_ERASER_POINTS, ANNOTATION_MAX_INPUT_POINTS,
-  buildEraserRing, buildPenRibbon, normalizePenPoints,
+  buildEraserRing, buildPenRibbon, normalizePenPoints, reprojectRibbonPositions,
 } from './playback/annotation3d.js'
 
 export { QUALITY_PRESETS, tracerSpanSecs, occlusionCells, occlusionFootprintCells }
@@ -220,6 +220,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // committed annotation 的权威 owner 是 Replay3DPane；本闭包只保存最后一次 projection
   // 引用作为 terrain rebuild 的派生缓存。draft/GPU 资源归本闭包，绝不回写 history。
   let projectedAnnotations = []
+  // 提交时算一次的 ribbon 拓扑：细分校验很贵，LOD 变化只刷新高度，不重算。
+  let annotationRibbons = new WeakMap()
   let annotationsVisible = true
   let annotationGroup = null
   let annotationCommittedMesh = null
@@ -1444,7 +1446,18 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
    * 把 pane 的 semantic annotations 投影成当前 terrain 上的 merged geometry。
    * 颜色写进 per-vertex color：一个 material / 一个 draw call，不需要 per-stroke material。
    */
-  function buildMergedAnnotationGeometry(annotations) {
+  function ribbonFor(ann, sceneAnn, refine) {
+    if (refine && annotationRibbons.has(ann)) return annotationRibbons.get(ann)
+    const ribbon = buildPenRibbon(sceneAnn, {
+      sampleHeight: annotationSurfaceHeightAt,
+      lift: ANNOTATION_LIFT,
+      refine,
+    })
+    if (refine) annotationRibbons.set(ann, ribbon)
+    return ribbon
+  }
+
+  function buildMergedAnnotationGeometry(annotations, { refine = true } = {}) {
     const positions = []
     const colors = []
     const indices = []
@@ -1459,10 +1472,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         ? ann.points.filter((point) => point && Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.y)))
         : []
       const sceneAnn = { ...ann, points: points.map((point) => ({ x: -point.x, y: point.y })) }
-      const ribbon = buildPenRibbon(sceneAnn, {
-        sampleHeight: annotationSurfaceHeightAt,
-        lift: ANNOTATION_LIFT,
-      })
+      const ribbon = ribbonFor(ann, sceneAnn, refine)
       if (!ribbon) continue
       const hex = typeof ann.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(ann.color) ? ann.color : '#ffffff'
       color.set(hex)
@@ -1478,7 +1488,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
     if (!positions.length) return { geometry: emptyAnnotationGeometry(), vertices: 0 }
     const geometry = new THREE.BufferGeometry()
-    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3))
+    const merged = reprojectRibbonPositions(new Float32Array(positions), annotationSurfaceHeightAt)
+    geometry.setAttribute('position', new THREE.BufferAttribute(merged, 3))
     geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3))
     geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1))
     geometry.computeBoundingSphere()
@@ -1546,6 +1557,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         pick: (x, y) => pickAnnotationGround(x, y),
         gesture: () => annotationGesture,
         rebuild: () => { rebuildAnnotationProjection(); return annotationStats.terrainRebuilds },
+        reproject: () => { reprojectAnnotationHeights(); return annotationStats.terrainRebuilds },
       }
     }
     rebuildCommittedAnnotations()
@@ -1572,7 +1584,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       annotationStats.draftVertices = 0
       return
     }
-    const result = buildMergedAnnotationGeometry([annotationDraft])
+    const result = buildMergedAnnotationGeometry([annotationDraft], { refine: false })
     replaceAnnotationGeometry(annotationDraftMesh, result.geometry)
     annotationStats.draftBuilds++
     annotationStats.draftVertices = result.vertices
@@ -1604,12 +1616,26 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     invalidate()
   }
 
-  /** terrain 重建后只重投影 Y（XZ 来自 semantic points），committed + draft 都重采样。 */
+  /** 地表整体更换（首次就绪 / 2D 回退）：拓扑失效，全部重建。 */
   function rebuildAnnotationProjection() {
     if (!annotationGroup) return
     annotationStats.terrainRebuilds++
+    annotationRibbons = new WeakMap()
     rebuildCommittedAnnotations()
     rebuildDraftAnnotation()
+  }
+
+  /** 地形 LOD 变化：XZ 来自 semantic points，只在原 geometry 上刷新 Y。 */
+  function reprojectAnnotationHeights() {
+    if (!annotationGroup) return
+    annotationStats.terrainRebuilds++
+    for (const mesh of [annotationCommittedMesh, annotationDraftMesh]) {
+      const position = mesh?.geometry.getAttribute('position')
+      if (!position?.count) continue
+      reprojectRibbonPositions(position.array, annotationSurfaceHeightAt)
+      position.needsUpdate = true
+    }
+    invalidate()
   }
 
   function clearAnnotationProjection() {
@@ -2049,7 +2075,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 当前 camera pose 触发的 LOD 几何将在本帧渲染；按新网格重新约束，避免旧 LOD
     // floor 与替换后的三角面之间留下一帧/停驻时的穿地。
     constrainFreeCameraAltitude();
-    rebuildAnnotationProjection();   // annotation 只重投影 Y，semantic XZ 不缓存旧值
+    reprojectAnnotationHeights();
   }
 
   // 依据 mapTexture/heightField 重建地面（2D 平面或 3D 地形二选一）

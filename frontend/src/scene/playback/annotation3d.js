@@ -392,6 +392,19 @@ function adaptiveCrossFractions(frames, sampleHeight, pointCount) {
 }
 
 /**
+ * 地形 LOD 变化后只刷新高度：ribbon 的 XZ 拓扑来自语义点，与 LOD 无关。
+ * 每个顶点采样一次，是逐帧可承受的量级；细分校验只在提交时做。
+ * 采样不到的顶点保持原高度。
+ */
+export function reprojectRibbonPositions(positions, sampleHeight, lift = ANNOTATION_LIFT) {
+  for (let i = 0; i + 2 < positions.length; i += 3) {
+    const y = sampleHeight(positions[i], positions[i + 2])
+    if (Number.isFinite(y)) positions[i + 1] = y + lift
+  }
+  return positions
+}
+
+/**
  * committed pen -> 贴地 ribbon。每个语义点生成 cross-width grid（center + adaptive fractions），
  * 每行顶点都采样 terrain；任一 cross sample 为 null 时该 row 断开 strip。
  * 最终对每个 cell 的两个 triangle interior 做 clearance validation；失败时同时细分
@@ -405,6 +418,7 @@ export function buildPenRibbon(annotation, {
   midpointError = ANNOTATION_MIDPOINT_ERROR,
   maxDepth = ANNOTATION_MAX_DEPTH,
   maxPoints = ANNOTATION_MAX_PROJECTED_POINTS,
+  refine = true,
 } = {}) {
   if (!annotation || annotation.type !== 'pen') return null
   if (typeof sampleHeight !== 'function') return null
@@ -432,6 +446,7 @@ export function buildPenRibbon(annotation, {
     const built = ribbonRows(frames, fractions, sampleHeight, liftValue)
     rows = built.rows
     valid = built.valid
+    if (!refine) break   // 草稿逐点重建，只做一次贴地，不跑逐 cell 校验
     failures = ribbonCellFailures(rows, valid, crossCount, sampleHeight, ANNOTATION_CLEARANCE_EPS)
     if (!failures.failing.length || iterations === ANNOTATION_MAX_REFINEMENT_ITERATIONS) break
 
