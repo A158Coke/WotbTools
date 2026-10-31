@@ -329,25 +329,35 @@ function centerReplayPane() {
   pane.scrollIntoView({ block: tallerThanViewport ? 'start' : 'center' })
 }
 
-// 视图切换的正确时序：面板是**懒加载 chunk**（`defineLazyModule` 的动态 import），
-// nextTick 只等 Vue 更新队列、等不到 chunk —— 首次进入时 pane 还是空 div（高度 0），
-// 此时测高/滚动等于白做，且 activeCapability 不变不会再触发（Codex review P2）。
-// 因此以「视窗容器真正有高度」为就绪信号（ResizeObserver），并用激活令牌在切换/卸载时
-// 撤销过期请求，保证每次进入只定位一次。
+// 视图切换的正确时序（Codex review P2）：面板是**懒加载 chunk**（`defineLazyModule` 动态
+// import），nextTick 等不到 chunk；而且「有高度」也不等于视窗就绪——2D 的标题栏 + LOADING
+// 提示、3D 的解析/资产阶段、射击的解析中、AI 的投影构建中都已经有高度。若此时定位会锁在
+// 加载提示上，真实视窗出现后不再定位。
+// 因此就绪信号是各 pane 自己给出的 **`data-pane-ready`**（内容就绪或终态；加载中不置位），
+// 由 ResizeObserver 在布局变化时重新检查；激活令牌在切换/卸载时撤销过期请求，每次进入只定位一次。
+const PANE_READY_SELECTOR = '[data-pane-ready="true"]'
 let centerToken = 0
 let centerObserver = null
+let centerMutationObserver = null
 function cancelPendingCenter() {
   centerToken += 1
   centerObserver?.disconnect?.()
   centerObserver = null
+}
+/** 当前 pane 已就绪：真实内容（或终态外壳）已布局 —— 标记在位且有高度。 */
+function paneIsReady(pane) {
+  if (!pane || !pane.querySelector(PANE_READY_SELECTOR)) return false
+  return pane.getBoundingClientRect().height > 0
 }
 function scheduleCenterWhenLaidOut() {
   const token = centerToken
   const tryOnce = () => {
     if (token !== centerToken) return true          // 已切换/离开：撤销
     const pane = activePaneEl()
-    if (!pane || !(pane.getBoundingClientRect().height > 0)) return false
+    if (!paneIsReady(pane)) return false
     centerReplayPane()
+    // 成功即收尾：RO / MO 两个监听都撤销，保证每次进入只定位一次
+    cancelPendingCenter()
     return true
   }
   if (tryOnce()) return
@@ -357,14 +367,28 @@ function scheduleCenterWhenLaidOut() {
     if (tryOnce()) { centerObserver?.disconnect?.(); centerObserver = null }
   })
   centerObserver.observe(pane)
+  // 子元素替换（pane 高度不变、仅内容切换）时 ResizeObserver 不触发：MutationObserver 补一道
+  if (typeof MutationObserver !== 'undefined') {
+    centerMutationObserver?.disconnect?.()
+    centerMutationObserver = new MutationObserver(() => {
+      if (tryOnce()) { centerMutationObserver?.disconnect?.(); centerMutationObserver = null }
+    })
+    centerMutationObserver.observe(pane, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-pane-ready'] })
+  }
 }
 
 watch(activeCapability, (cap) => {
   cancelPendingCenter()
+  centerMutationObserver?.disconnect?.()
+  centerMutationObserver = null
   if (!REPLAY_CAPABILITIES.has(cap)) return
   nextTick(scheduleCenterWhenLaidOut)
 }, { immediate: true })
-onBeforeUnmount(cancelPendingCenter)
+onBeforeUnmount(() => {
+  cancelPendingCenter()
+  centerMutationObserver?.disconnect?.()
+  centerMutationObserver = null
+})
 
 function onFileRemoveRequest(f) {
   workspace.replay.askRemoveFile(f)
