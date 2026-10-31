@@ -362,13 +362,29 @@ function teamNamesPayload() {
 watch(selectionRevision, () => {
   battleTeamNames.value = {}
   summaryTeamNames.value = {}
+  // 逐场排序状态随批次清空（Codex review round-2 复审）：replaceSelection 后新批次
+  // 不得继承旧批次同索引的排序（否则行序与 PNG 导出继承旧表的排序）。同批次内
+  // 切场/汇总往返不受影响（selectionRevision 不变）。
+  battleSorts.value = []
 })
 const exportingPng = ref(false)
 const aggregateRef = ref(null)
 const battleRefs = ref([])
 
 function setBattleRef(el, index) {
-  if (el) battleRefs.value[index] = el
+  // v-if 挂载/卸载都会以 el=null 回调：无条件写入让数组始终只反映当前在 DOM 里的表，
+  // 防止换批/切换后残留对已卸载元素的引用（导出恒取 currentSingleIndex，见 getExportTarget）
+  battleRefs.value[index] = el
+}
+
+// 逐场排序状态（Codex review 2026-10-31）：v-if 挂载口径下 BattleTable 隐藏即卸载，
+// 其本地排序 ref 会随之丢失——「排序 → 切场次 → 回来」重置行序并改变后续 PNG 导出。
+// 轻量 { key, reverse } 留在父组件，随表下传回写。
+const battleSorts = ref([])
+
+function setBattleSort(index, patch) {
+  const current = battleSorts.value[index] || { key: '', reverse: false }
+  battleSorts.value[index] = { ...current, ...patch }
 }
 
 function readTheme() {
@@ -655,17 +671,28 @@ function openRatingDocs() {
           </template>
         </div>
 
-        <div v-for="(b, i) in resp.battles" :key="i" v-show="!isSummaryView && currentSingleIndex === i"
-             :ref="(el) => setBattleRef(el, i)">
-          <BattleTable :battle="b" :shown-cols="shownCols"
-            :active="!isSummaryView && currentSingleIndex === i"
-            :league-mode="leagueMode" :league="b.league" :league-columns="leagueData?.columns || []"
-            :team-names="battleTeamNames" @update-team-name="updateBattleTeamName"
-            :selected-account-id="selectedPlayer?.accountId ?? null"
-            :selected-arena-id="selectedPlayer?.arenaId ?? null"
-            :layout="dataLayout"
-            @select-player="selectPlayer" />
-        </div>
+        <!-- 仅挂载当前批次表（此前 v-show 全量挂载：100 文件批次 = 100 张全表 DOM +
+             打开玩家抽屉时逐表 VDOM 重渲染）。PNG 导出恒取 currentSingleIndex 的表
+             （getExportTarget 只消费 battleRefs[current]，见 exportBattleIdx），隐藏表
+             从不需要 DOM 存在。Vue 3 中 v-if 与 v-for 同元素时 v-if 先求值（拿不到 i），
+             故用 template 包裹。 -->
+        <template v-for="(b, i) in resp.battles" :key="i">
+          <div v-if="!isSummaryView && currentSingleIndex === i"
+               :ref="(el) => setBattleRef(el, i)">
+            <BattleTable :battle="b" :shown-cols="shownCols"
+              :active="!isSummaryView && currentSingleIndex === i"
+              :sort-key="battleSorts[i]?.key || ''"
+              :sort-reverse="battleSorts[i]?.reverse || false"
+              @update:sort-key="k => setBattleSort(i, { key: k })"
+              @update:sort-reverse="r => setBattleSort(i, { reverse: r })"
+              :league-mode="leagueMode" :league="b.league" :league-columns="leagueData?.columns || []"
+              :team-names="battleTeamNames" @update-team-name="updateBattleTeamName"
+              :selected-account-id="selectedPlayer?.accountId ?? null"
+              :selected-arena-id="selectedPlayer?.arenaId ?? null"
+              :layout="dataLayout"
+              @select-player="selectPlayer" />
+          </div>
+        </template>
         </template>
       </div>
 

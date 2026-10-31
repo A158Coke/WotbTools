@@ -450,6 +450,15 @@ WotBTools
   原因（仅 error 态存在该键），`shots` 仍含他人宽松路径全量，消费方 fail-visible
   （WotBTools 射击复现页顶部警示条）。消费端 `normalizeAgentShotsOutcome` 对
   旧裸数组产物归一化兼容（author 状态不可知 → ok/eid=0/others 全 0）。
+- **契约 v0.1.9 续（上游 v0.4.20，消费端已实现）**：①`others?` / `others_error?` 互斥——
+  他人宽松路径对**数据**缺失仍按设计跳过计数（`skipped_*`），仅内部不变量破坏
+  （非续段 + 有终点发射缺少命中通知窗口）返回 Err；此时输出缺 `others` 键而
+  `others_error` 在场。消费端 `normalizeAgentShotsOutcome` 透传 `others_error`
+  （两者皆缺 = schema drift，拒绝），`ReplayShotsPane` 以独立警示条呈现
+  （`data-testid="shots-others-error"`），不静默当全 0 统计。
+  ②`limitsJson` / `shellsJson` **非空但非法**的注入 JSON → 整体解析 Err（此前静默
+  当空表会让俯仰/弹种无声降级且无逐发质量标记可查）；`tankNamesJson` 是展示串，
+  仍按未注入处理。
 - **受击方身份 = `target_eid`**：v0.1.9 起逐发直传受击方实体 id（作者 = method38 /
   他人 = method8，服务器权威）。此前仅 `target_name`，消费方按昵称反查 eid——
   名字缺失（昵称损坏/非 ASCII 旧版解析）时 hit/target 全丢；联表一律用 eid，

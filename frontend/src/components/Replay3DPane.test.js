@@ -433,6 +433,8 @@ describe('Replay3DPane', () => {
     expect(playback.init).toHaveBeenCalledTimes(2)
     expect(playback.api.loadData).not.toHaveBeenCalled()
     expect(wrapper.find('[data-test="replay3d-pending"]').exists()).toBe(true)
+    // 待开播是最终界面（视口 + 画质选择已渲染），不是加载中：工作台自动居中据此就绪
+    expect(wrapper.get('[data-pane-ready]').attributes('data-pane-ready')).toBe('true')
     await start(wrapper)
     expect(playback.api.loadData).toHaveBeenCalledTimes(1)
     connectivityState.state.value = 'online'
@@ -1029,7 +1031,7 @@ describe('Replay3DPane', () => {
       store.cam = 'free'
       await nextTick()
       await wrapper.get('[data-testid="replay3d-top-view"]').trigger('click')
-      expect(playback.api.setCam).toHaveBeenLastCalledWith('top')
+      expect(playback.api.setCam).toHaveBeenLastCalledWith('top-view')
       wrapper.unmount()
       layout.portrait = false
     })
@@ -1052,7 +1054,7 @@ describe('Replay3DPane', () => {
       store.cam = 'free'
       await nextTick()
       await wrapper.get('[data-testid="replay3d-top-view"]').trigger('click')
-      expect(playback.api.setCam).toHaveBeenLastCalledWith('top')
+      expect(playback.api.setCam).toHaveBeenLastCalledWith('top-view')
       wrapper.unmount()
       layout.compact = false
     })
@@ -1318,7 +1320,7 @@ describe('Replay3DPane', () => {
       api.store.cam = 'free'
       await nextTick()
       await wrapper.get('[data-testid="replay3d-top-view"]').trigger('click')
-      expect(api.setCam).toHaveBeenLastCalledWith('top')
+      expect(api.setCam).toHaveBeenLastCalledWith('top-view')
       api.store.cam = 'free'
       await nextTick()
       expect(wrapper.get('[data-testid="replay3d-camera"] [data-value="free"]').attributes('aria-checked')).toBe('true')
@@ -1922,9 +1924,14 @@ describe('Replay3DPane 待开播画质闸门', () => {
     playback.api.store.hasData = true
     await nextTick()
     const cams = wrapper.get('[data-testid="replay3d-camera"]')
-    expect(cams.findAll('button').map(b => b.attributes('data-value'))).toEqual(['free', 'recorder'])
+    // 俯视是持续模式（旋转中心 = 地图中心），与自由并列；录像者档位暂不支持
+    expect(cams.findAll('button').map(b => b.attributes('data-value'))).toEqual(['free', 'top', 'recorder'])
     expect(cams.text()).toContain('agentReplay.cam_free')
+    expect(cams.text()).toContain('agentReplay.cam_sandbox')
     expect(wrapper.get('[data-testid="replay3d-top-view"]').text()).toBe('agentReplay.cam_top')
+    // 沙盘是模式，俯视是动作：两个入口走不同的相机命令
+    await cams.get('[data-value="top"]').trigger('click')
+    expect(playback.api.setCam).toHaveBeenLastCalledWith('top')
     const recorder = cams.get('[data-value="recorder"]')
     expect(recorder.attributes('disabled')).toBeDefined()
     expect(recorder.attributes('title')).toBe('agentReplay.cam_recorder_unsupported')
@@ -1952,7 +1959,7 @@ describe('Replay3DPane 待开播画质闸门', () => {
     playback.api.store.cam = 'free'
     await nextTick()
     await wrapper.get('[data-testid="replay3d-top-view"]').trigger('click')
-    expect(playback.api.setCam).toHaveBeenCalledWith('top')
+    expect(playback.api.setCam).toHaveBeenCalledWith('top-view')
     wrapper.unmount()
   })
 

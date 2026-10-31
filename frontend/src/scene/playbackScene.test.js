@@ -1414,11 +1414,16 @@ describe('Free Camera terrain floor', () => {
     const controls = window.__controls
     api.setCam('top')
     const topHeight = cam.position.y
-    // 俯视是 reset view：完成后就是自由视角，飞行接管立即生效。
-    expect(store.cam).toBe('free')
-    expect(controls.enabled).toBe(false)
+    // 俯视是持续的战术总览模式：OrbitControls 接管，target 锁**地图中心**（旋转中心不是相机）
+    expect(store.cam).toBe('top')
+    expect(controls.enabled).toBe(true)
+    expect(controls.enablePan).toBe(false)
     const viewDirection = () => new THREE.Vector3().subVectors(controls.target, cam.position).normalize()
     expect(viewDirection().y).toBeLessThan(-0.99)   // 保持直下朝向，不回落到斜俯视
+    // 飞行（WASD）不接管总览视角：flyTick 在俯视模式下为惰性
+    expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(false)
+    api.setCam('free')
+    expect(controls.enabled).toBe(false)
     expect(controls.enablePan).toBe(true)
     expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
     const afterForward = cam.position.y
@@ -1567,16 +1572,42 @@ describe('Free Camera terrain floor', () => {
     source.loadPlaybackData.mockResolvedValue(minimalData())
     const { api, store } = createScene()
     await api.loadData({ kind: 'local', file: new File(['late-terrain'], 'late-terrain.wotbreplay') })
-    expect(store.cam).toBe('free')   // 默认以俯视机位进入自由视角
+    expect(store.cam).toBe('top')   // 默认进入俯视总览模式
     const cam = window.__camera
     const controls = window.__controls
     const tacticalHeight = 255 // minimalData 的 WORLD_CENTER.ext = 150
     api.setCam('top')
-    expect(store.cam).toBe('free')
+    expect(store.cam).toBe('top')
     expect(cam.position.x).toBeCloseTo(0)
     expect(Math.abs(cam.position.z)).toBeLessThan(0.1)
     expect(cam.position.y).toBeGreaterThanOrEqual(400.5)   // 地形净空优先于默认高度
     expect(new THREE.Vector3().subVectors(controls.target, cam.position).normalize().y).toBeLessThan(-0.99)
+  })
+
+  // 回归（用户要求）：默认俯视视角的**旋转中心 = 地图中心**，不是相机。
+  // 锁两件事：① target 钉在地图中心；② 绕转后 target 不随相机移动（OrbitControls 轨道语义），
+  // 且极角上限仍挡在地平线以上。此前曾被改成「一次性动作 + 落进 free」，free 的 flyLook 把
+  // target 重钉到 cam + dir×dist（旋转中心变成相机）。
+  it('top view orbits around the map center, not the camera', async () => {
+    stubTerrainAssets({ values: [0, 0, 0, 0], zmin: 0, zmax: 0 })
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const { api, store } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['a'], 'top-orbit.wotbreplay') })
+    const cam = window.__camera
+    const controls = window.__controls
+    expect(store.cam).toBe('top')
+    expect(controls.enabled).toBe(true)
+    // ① target = WORLD_CENTER（minimalData：ext=150、cx=cz=0）
+    expect(controls.target.x).toBeCloseTo(0, 3)
+    expect(controls.target.z).toBeCloseTo(0, 3)
+    // ② 模拟轨道绕转（相机绕 target 转到斜上方）：target 必须纹丝不动
+    const center = controls.target.clone()
+    const radius = cam.position.distanceTo(center)
+    cam.position.set(radius * 0.6, radius * 0.75, radius * 0.2)
+    controls.update()
+    expect(controls.target.distanceTo(center)).toBeLessThan(1e-6)
+    // ③ 不沉到地平线以下
+    expect(controls.maxPolarAngle).toBeLessThanOrEqual(Math.PI * 0.5)
   })
 
   describe('default top view across sessions', () => {
@@ -1590,13 +1621,19 @@ describe('Free Camera terrain floor', () => {
     }
     const loadNext = (api) => api.loadData({ kind: 'local', file: new File(['b'], 'second.wotbreplay') })
 
-    it('opens at the top view in Free, and repeats it while the camera is untouched', async () => {
+    it('opens at the top overview mode (map-center target) and repeats it while untouched', async () => {
       const { api, store } = await loadScene()
-      expect(store.cam).toBe('free')
-      expect(window.__controls.enabled).toBe(false)
+      // 俯视是持续模式：OrbitControls 接管，旋转中心 = 地图中心（不是相机）
+      expect(store.cam).toBe('top')
+      expect(window.__controls.enabled).toBe(true)
+      expect(window.__controls.target.x).toBeCloseTo(0, 3)
+      expect(window.__controls.target.z).toBeCloseTo(0, 3)
       expect(window.__camera.position.y).toBeCloseTo(TOP_HEIGHT, 3)
       await loadNext(api)
+      expect(store.cam).toBe('top')
       expect(window.__camera.position.y).toBeCloseTo(TOP_HEIGHT, 3)
+      expect(window.__controls.target.x).toBeCloseTo(0, 3)
+      expect(window.__controls.target.z).toBeCloseTo(0, 3)
     })
 
     const expectPoseKept = async (api) => {
@@ -1607,20 +1644,42 @@ describe('Free Camera terrain floor', () => {
       expect(window.__controls.target.distanceTo(target)).toBeLessThan(1e-6)
     }
 
+    it('top-view jumps to the overhead pose and stays in working Free, unlike the persistent overview', async () => {
+      const { api, store } = await loadScene()
+      expect(store.cam).toBe('top')
+      expect(window.__controls.enabled).toBe(true)
+      api.setCam('free')
+      window.__camera.position.set(10, 40, 10)
+      api.setCam('top-view')
+      expect(store.cam).toBe('free')
+      expect(window.__controls.enabled).toBe(false)
+      expect(window.__camera.position.y).toBeCloseTo(TOP_HEIGHT, 3)
+      const direction = new THREE.Vector3().subVectors(window.__controls.target, window.__camera.position).normalize()
+      expect(direction.y).toBeLessThan(-0.99)
+      expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
+      api.setCam('top')
+      expect(store.cam).toBe('top')
+      expect(window.__controls.enabled).toBe(true)
+      expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(false)
+    })
+
     it('keyboard flight keeps the full camera pose on the next replay', async () => {
       const { api } = await loadScene()
+      api.setCam('free')   // 飞行只在自由模式接管（俯视是轨道总览）
       expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
       await expectPoseKept(api)
     })
 
     it('wheel dolly keeps the full camera pose on the next replay', async () => {
       const { api } = await loadScene()
+      api.setCam('free')
       document.querySelector('canvas').dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }))
       await expectPoseKept(api)
     })
 
     it('drag look keeps the full camera pose on the next replay', async () => {
       const { api } = await loadScene()
+      api.setCam('free')
       const canvas = document.querySelector('canvas')
       canvas.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0, buttons: 1, clientX: 100, clientY: 100 }))
       canvas.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, button: 0, buttons: 1, clientX: 160, clientY: 120 }))
@@ -1630,6 +1689,7 @@ describe('Free Camera terrain floor', () => {
 
     it('a renderer rebuild keeps the pose and the flight heading', async () => {
       const { api } = await loadScene()
+      api.setCam('free')
       expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
       api.setLogdepth(true)
       try {
@@ -1644,6 +1704,7 @@ describe('Free Camera terrain floor', () => {
 
     it('a kept pose still obeys the next map terrain floor', async () => {
       const { api } = await loadScene()
+      api.setCam('free')
       expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
       window.__camera.position.y = 100
       window.__controls.target.y = 90
@@ -1652,15 +1713,19 @@ describe('Free Camera terrain floor', () => {
       expect(window.__camera.position.y).toBeGreaterThanOrEqual(150.5)
     })
 
-    it('Follow on one replay opens the next at the top view in working Free', async () => {
+    it('Follow on one replay opens the next at the top overview mode', async () => {
       const { api, store } = await loadScene()
       api.setFollow(1)
       expect(store.cam).toBe('follow')
       window.__camera.position.set(40, 60, 40)
       await loadNext(api)
-      expect(store.cam).toBe('free')
-      expect(window.__controls.enabled).toBe(false)
+      expect(store.cam).toBe('top')
+      expect(window.__controls.enabled).toBe(true)
+      expect(window.__controls.target.x).toBeCloseTo(0, 3)
+      expect(window.__controls.target.z).toBeCloseTo(0, 3)
       expect(window.__camera.position.y).toBeCloseTo(TOP_HEIGHT, 3)
+      // 要飞行先切自由模式（俯视下键盘飞行不接管）
+      api.setCam('free')
       expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
     })
   })
@@ -1819,7 +1884,7 @@ describe('scene vehicle selection intent', () => {
     expect(onVehicleSelect).toHaveBeenCalledOnce()
     expect(onVehicleSelect.mock.calls[0][0]).toBe(11)
     expect(onVehicleSelect.mock.calls[0][1]?.clientX).toBe(10)
-    expect(store.cam).toBe('free')   // 跟随由 Pane 收到 selection 后发起，场景本身不切相机
+    expect(store.cam).toBe('top')   // 跟随由 Pane 收到 selection 后发起，场景本身不切相机（默认俯视模式不变）
     expect(window.__camera.position.equals(beforeCamera)).toBe(true)
     canvas0.dispatchEvent(new MouseEvent('pointerdown', { button: 2 }))
     canvas0.dispatchEvent(new MouseEvent('pointerup', { button: 2 }))
@@ -2244,7 +2309,7 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
       const { api, store } = await load({ camera: null })
       expect(store.recorderCameraStatus).toBe('unavailable')
       api.setCam('recorder')
-      expect(store.cam).toBe('free')
+      expect(store.cam).toBe('top')
     })
 
     it('rejects a facet for a different recorder', async () => {
@@ -2266,13 +2331,13 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
       expect(store.recorderCameraStatus).toBe('unavailable')
     })
 
-    it('recorder mode on one replay opens the next at the top view in Free', async () => {
+    it('recorder mode on one replay opens the next at the default overview', async () => {
       const { api, store, run } = await load()
       api.seekTime(65)
       api.setCam('recorder')
       run(5)
       await api.loadData({ kind: 'local', file: new File(['n'], 'next.wotbreplay') })
-      expect(store.cam).toBe('free')
+      expect(store.cam).toBe('top')
       run(5)
       expect(window.__camera.fov).toBeCloseTo(55)
     })
@@ -2398,7 +2463,7 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
     expect(store.cam).toBe('follow')
     expect(followed).toEqual([2])
     api.setCam('top')
-    expect(store.cam).toBe('free')
+    expect(store.cam).toBe('top')
     expect(followed).toEqual([])
     stop()
   })

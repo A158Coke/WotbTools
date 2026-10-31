@@ -41,6 +41,9 @@ let builtFile: File | null = null
 let seq = 0
 
 const projectionError = computed(() => (errorKey.value ? t(errorKey.value) : ''))
+/** 视窗是否已过加载阶段：本机投影构建中（有 file、在线、已登录、无错误、无投影）不置位。 */
+const paneReady = computed(() => !online.value.available || !authenticated.value || !props.file
+  || !!errorKey.value || !!input.value)
 
 async function build() {
   const file = props.file
@@ -97,7 +100,8 @@ watch(() => [props.file, props.active, props.blockedReason, authenticated.value,
 </script>
 
 <template>
-  <div class="ai-workspace-pane" data-testid="ws-ai">
+  <!-- data-pane-ready：本机投影构建中不置位；终态（离线/未登录/无文件/错误）与就绪均置位。 -->
+  <div class="ai-workspace-pane" data-testid="ws-ai" :data-pane-ready="paneReady ? 'true' : undefined">
     <!-- pending（首次检测未完成）：不下结论、不挂载 AI 面板，保持中性空白。 -->
     <template v-if="!online.available">
       <p v-if="!online.pending" class="ws-note" data-testid="ai-connectivity">{{ $t(online.messageKey) }}</p>

@@ -39,8 +39,8 @@ function reselect(value) {
       @update:model-value="emit('update:cam', $event)"
       @reselect="reselect"
     />
-    <!-- 俯视是一次性动作，不是相机模式，所以不进 radio 组。 -->
-    <button type="button" class="top-view" data-testid="replay3d-top-view" @click="emit('update:cam', 'top')">
+    <!-- 沙盘是模式（radio）；这里是一次性回到俯视机位的动作，完成后是自由视角。 -->
+    <button type="button" class="top-view" data-testid="replay3d-top-view" @click="emit('update:cam', 'top-view')">
       {{ t('agentReplay.cam_top') }}
     </button>
     <span v-if="hint" class="dim" data-testid="replay3d-camera-hint">{{ hint }}</span>

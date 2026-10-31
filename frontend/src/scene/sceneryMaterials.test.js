@@ -1170,7 +1170,10 @@ describe('车体横滚（hull_roll）接线守卫', () => {
     .replace(/\/\*[\s\S]*?\*\//g, '')
 
   it('侧倾取值走共享位姿采样器：旧产物缺列时落 0（不拿 pitch 顶替）', () => {
-    expect(src).toMatch(/const rollAt = \(v, t\) => poseOf\(v, t\)\.roll;/)
+    // rollAt 经每车最近采样缓存（poseStash）读 .roll；poseStash 内部仍走共享采样器 poseOf
+    //（下一断言），缓存不改变通道选择的 SSOT 归属。
+    expect(src).toMatch(/const rollAt = \(v, t\) => poseStash\(v, t\)\.roll;/)
+    expect(src).toMatch(/function poseStash\(v, t\) \{(?:.|\n){0,400}?const p = poseOf\(v, t\);/)
     expect(poseSrc).toMatch(/if \(!arr \|\| !arr\.length\) return 0/)
     expect(poseSrc).toMatch(/out\.roll = gridChannel\(def\.hull_roll, t, grid, span\)/)
     expect(poseSrc).toMatch(/out\.turretAbs = gridChannel\(def\.turret_yaw, t, grid, span\)/)
