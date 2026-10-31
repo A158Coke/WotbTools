@@ -1,5 +1,5 @@
 import type { components } from './generated/http-contract.js'
-import { battleDataAdminSummaryValidator, battleDataAdminSpawnStatsValidator, battleDataAdminPageValidator, battleDataAdminDetailValidator } from './generated/contract-validators.js'
+import { battleDataAdminSummaryValidator, battleDataAdminPageValidator, battleDataAdminDetailValidator } from './generated/contract-validators.js'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { useAuth } from '../composables/useAuth.js'
@@ -7,7 +7,6 @@ import { ApiError, apiErrorFromResponse, apiFetch } from '../utils/http.js'
 
 type Schemas = components['schemas']
 export type Summary = Schemas['BattleDataAdminSummary']
-export type SpawnStats = Schemas['BattleDataAdminSpawnStats']
 export type BattlePage = Schemas['BattleDataAdminPage']
 export type BattleDetail = Schemas['BattleDataAdminDetail']
 export type Query = Record<string, string | number | null | undefined>
@@ -34,6 +33,5 @@ async function request<T>(path: string, query: Query, validate: (value: unknown)
   return value as T
 }
 export const getSummary = (query: Query) => request<Summary>('/api/admin/battle-data/summary', query, battleDataAdminSummaryValidator)
-export const getSpawnStats = (query: Query) => request<SpawnStats>('/api/admin/battle-data/spawn-stats', query, battleDataAdminSpawnStatsValidator)
 export const getBattles = (query: Query) => request<BattlePage>('/api/admin/battle-data/battles', query, battleDataAdminPageValidator)
 export const getBattle = (id: string) => request<BattleDetail>(`/api/admin/battle-data/battles/${encodeURIComponent(id)}`, {}, battleDataAdminDetailValidator)

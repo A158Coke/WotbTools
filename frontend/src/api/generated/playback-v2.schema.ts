@@ -246,22 +246,6 @@ export default {
         }
       }
     },
-    "BattleDataAdminSpawnStats": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "items"
-      ],
-      "properties": {
-        "items": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/BattleDataAdminSpawnStat"
-          },
-          "description": "Per map/side outcome counts for the selected interval; rates are a client display derivation."
-        }
-      }
-    },
     "BattleDataAdminSummary": {
       "type": "object",
       "additionalProperties": false,
@@ -280,7 +264,8 @@ export default {
         "schemaVersions",
         "daily",
         "maps",
-        "clientVersions"
+        "clientVersions",
+        "spawnStats"
       ],
       "properties": {
         "asOf": {
@@ -357,6 +342,13 @@ export default {
           "items": {
             "$ref": "#/$defs/BattleDataAdminNamedCount"
           }
+        },
+        "spawnStats": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BattleDataAdminSpawnStat"
+          },
+          "description": "Per map/side outcome counts for the selected interval; rates are a client display derivation."
         }
       }
     },

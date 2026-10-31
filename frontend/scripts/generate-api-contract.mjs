@@ -59,7 +59,7 @@ function responseDefinitions(root) {
   add(root)
   return definitions
 }
-for (const name of ['BattleDataRequest', 'BattleDataAdminSummary', 'BattleDataAdminSpawnStats', 'BattleDataAdminPage', 'BattleDataAdminDetail', 'TournamentEvent', 'TournamentConfig', 'TournamentStandings', 'TournamentDayView',
+for (const name of ['BattleDataRequest', 'BattleDataAdminSummary', 'BattleDataAdminPage', 'BattleDataAdminDetail', 'TournamentEvent', 'TournamentConfig', 'TournamentStandings', 'TournamentDayView',
   'TournamentDefaultRules', 'TournamentRuleSource',
   'TournamentAudit', 'TournamentRecognitionPermit', 'TournamentRecognitionResult',
   'TournamentHistoricalPreview', 'TournamentHistoricalPreviewRequest', 'TournamentHistoricalState',

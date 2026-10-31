@@ -149,9 +149,9 @@ dispatch 和发送前检查在线状态；无 IndexedDB/localStorage/Cache API �
 匿名输入只经过结构和领域校验，不能证明战斗真实性，也不能防止伪造客户端抢先占用 arenaId。
 
 管理员只读审计位于 `?view=admin-battle-data` 与 `/api/admin/battle-data/**`，后端只允许 `wotbtools-admin`。
-四个 GET 从同一 battle / vehicle 表读取 summary、出生侧统计、keyset recent list 和实际子行；没有管理写入 API。
+三个 GET 从同一 battle / vehicle 表读取 summary、keyset recent list 和实际子行；没有管理写入 API。
 时间窗口采用 UTC `[from,to)`，summary 使用只读一致快照，`received_at` 是服务端接收事务时间而非战斗时间。
-`GET /api/admin/battle-data/spawn-stats` 只返回 map / side / mode 维度的胜、平、负计数，`arenaBonusType=null` 是 Random + Rating 合计，胜率 `wins / battles` 由前端派生，平局计入分母。它独立于 summary：已发布客户端以 `additionalProperties:false` 校验 summary，summary 不能增加字段。
+Summary 的 `spawnStats` 只返回 map / side / mode 维度的胜、平、负计数，`arenaBonusType=null` 是 Random + Rating 合计，胜率 `wins / battles` 由前端派生，平局计入分母。
 页面同时列出当前 map-semantics 中可寻址、已审校但无观察的地图和未匹配观察；当前已审校集合会随语义更新，不能反推历史采样覆盖。
 数量是已持久化的 accepted observations，不是请求总数或无偏总体统计；匿名提交仍不能证明真实性。
 
