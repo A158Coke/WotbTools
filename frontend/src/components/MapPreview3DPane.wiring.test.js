@@ -24,6 +24,15 @@ describe('MapPreview3DPane 场景接线（source regression）', () => {
     expect(paneSrc).toMatch(/watch\(\(\) => props\.mapId/)
   })
 
+  it('destroyScene（GPU teardown/离线销毁）不触碰标注会话（回归锁）', () => {
+    // 断网 → reconcile destroyScene：未导出的绘制与撤销栈必须保留，
+    // 重连后由 mapReady watcher 补推（Codex #4431990895）。
+    const start = paneSrc.indexOf('function destroyScene')
+    const end = paneSrc.indexOf('function shouldHaveScene')
+    const body = paneSrc.slice(start, end)
+    expect(body).not.toContain('resetAnnotationState')
+  })
+
   it('内核 map 会话：stub DATA + 就绪门控 mapReady（hasData 保持回放专用）', () => {
     expect(kernelSrc).toContain('async function loadMapOnly(')
     expect(kernelSrc).toContain("SESSION_MODE = 'map'")

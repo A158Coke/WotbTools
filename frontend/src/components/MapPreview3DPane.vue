@@ -68,20 +68,13 @@ const qualityOptions = computed(() =>
   QUALITY_ORDER.map((k) => ({ value: k, label: t('agentReplay.q_' + k) })),
 )
 /** 画质切换：地图会话不整页 reload——拆场景重建（DATA=null 时 setQuality 直改档），重载当前图。
- *  标注状态跨重建保留（拆场景只回收 GPU 资源；撤销栈与画面归属是会话级的）。 */
+ *  destroyScene 不再触碰标注（GPU teardown 与标注会话分离），装载完成后 mapReady
+ *  watcher 把 pane 撤销栈整体补推回内核。 */
 function changeQuality(k) {
   if (k === store.qualityKey) return
-  const savedHistory = annotationHistory.value
-  const savedIndex = annotationIndex.value
-  const savedVisible = annotationsVisible.value
   destroyScene()
   ensureScene()
   sceneApi?.setQuality?.(k)
-  annotationHistory.value = savedHistory
-  annotationIndex.value = savedIndex
-  annotationsVisible.value = savedVisible
-  pushAnnotationProjection()
-  pushAnnotationVisibility()
   reloadMap()
 }
 const { isPhone } = usePlaybackPhoneForm()
@@ -234,8 +227,11 @@ async function importAnnotations(event) {
 }
 
 // ---------- 会话生命周期 ----------
+/** GPU/场景 teardown，**不触碰标注会话**：pane 撤销栈是权威，重建（离线恢复/
+ *  画质切换）后由 mapReady watcher 与 ensureScene 补推回内核——离线瞬间销毁场景
+ *  不得连带清掉未导出的绘制（Codex #4431990895）。标注重置只属于「换图」语义
+ *  （mapId watcher 显式调用）。 */
 function destroyScene() {
-  resetAnnotationState()
   fly.stopLoop()
   if (!sceneApi) return
   sceneApi.destroy?.()

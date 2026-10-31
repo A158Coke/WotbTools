@@ -8,7 +8,7 @@
  * utils/annotation 全套）；渲染复用 BattleMap.vue（纯展示，车辆/浮层以空数组 +
  * 桩函数传入）。标注只取 pen/eraser（与 3D 预览同一工具集），会话内保存 + 文件导入导出。
  */
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Download, PencilRuler, Upload } from 'lucide-vue-next'
 import BattleMap from './BattleMap.vue'
@@ -190,17 +190,22 @@ onMounted(() => {
       // 零尺寸（v-show 隐藏 / 卸载中）：不动 view——否则 2D⇄3D 切换回来会
       // 把用户的缩放/平移重置回 contain fit。
       if (!squareSide.value) return
+      const firstValid = prevValid === 0
+      const sideChanged = !firstValid && squareSide.value !== prevValid
       lastValidSide = squareSide.value
-      if (prevValid === 0 || !fitObserved) {
-        // 首次有效尺寸：contain fit（与 image watch 的 fitObserved 协同只做一次）
-        if (!fitObserved) fitObserved = true
-        fitView()
-        return
-      }
-      if (squareSide.value !== prevValid) {
-        // 已有用户视图：保留 scale/tx/ty，仅按新边界重新 clamp（窗口 resize 语义）
+      if (!firstValid && !sideChanged) return
+      // clamp/fit 必须等 Vue 把新方形尺寸写入 DOM（squareEl/mapEl 的 clientWidth
+      // 是同步读值）——post-flush 后按已生效边界执行，否则用旧尺寸夹出越界空白。
+      nextTick(() => {
+        if (!squareSide.value) return
+        if (firstValid || !fitObserved) {
+          if (!fitObserved) fitObserved = true
+          fitView()
+          return
+        }
+        // 已有用户视图：保留 scale/tx/ty，仅按新边界重新 clamp
         applyView(view)
-      }
+      })
     })
     if (mapEl.value) mapSizeObserver.observe(mapEl.value)
     if (stageEl.value) mapSizeObserver.observe(stageEl.value)
