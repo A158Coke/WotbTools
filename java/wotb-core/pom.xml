@@ -56,6 +56,20 @@
         </resources>
         <plugins>
             <plugin>
+                <groupId>org.pitest</groupId>
+                <artifactId>pitest-maven</artifactId>
+                <version>1.30.1</version>
+                <dependencies><dependency><groupId>org.pitest</groupId><artifactId>pitest-junit5-plugin</artifactId><version>1.2.3</version></dependency></dependencies>
+                <configuration>
+                    <fullMutationMatrix>true</fullMutationMatrix>
+                    <outputFormats><param>XML</param></outputFormats>
+                    <timestampedReports>false</timestampedReports>
+                    <threads>4</threads>
+                    <excludedGroups><param>ai-live</param></excludedGroups>
+                    <excludedTestClasses><param>*IntegrationTest</param><param>*ArchitectureTest</param><param>*ArchitectureMutationTest</param><param>*ArchitectureRuleMutationTest</param></excludedTestClasses>
+                </configuration>
+            </plugin>
+            <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.0</version>
