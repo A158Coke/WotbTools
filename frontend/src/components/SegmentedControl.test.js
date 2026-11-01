@@ -50,6 +50,38 @@ describe('SegmentedControl', () => {
     expect(wrapper.emitted('update:modelValue')).toHaveLength(1)
   })
 
+  it('presentation 只改呈现：chips / tiles 的语义、键盘与默认档一致', async () => {
+    for (const presentation of ['chips', 'tiles']) {
+      const wrapper = mountControl({ presentation, scrollable: true })
+      const group = wrapper.get('[role="radiogroup"]')
+      expect(group.classes()).toContain(`is-${presentation}`)
+      expect(group.classes()).not.toContain('is-scrollable')
+      expect(option(wrapper, 'data').attributes('aria-checked')).toBe('true')
+      await group.trigger('keydown', { key: 'End' })
+      expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['ai'])
+      wrapper.unmount()
+    }
+  })
+
+  it('chips 始终换行，默认档不带呈现变体', () => {
+    const chips = mountControl({ presentation: 'chips' })
+    expect(chips.get('[role="radiogroup"]').classes()).toContain('is-wrapping')
+    const segmented = mountControl({ scrollable: true })
+    expect(segmented.get('[role="radiogroup"]').classes()).toEqual(expect.arrayContaining(['is-segmented', 'is-scrollable']))
+    expect(segmented.get('[role="radiogroup"]').classes()).not.toContain('is-wrapping')
+    chips.unmount()
+    segmented.unmount()
+  })
+
+  it('全部选项禁用时不选中也不发事件（级联筛选的上一级未选）', async () => {
+    const wrapper = mountControl({ modelValue: '', presentation: 'chips', options: OPTIONS.map(item => ({ ...item, disabled: true })) })
+    expect(wrapper.findAll('[aria-checked="true"]')).toHaveLength(0)
+    await option(wrapper, 'data').trigger('click')
+    await wrapper.get('[role="radiogroup"]').trigger('keydown', { key: 'Home' })
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    wrapper.unmount()
+  })
+
   it('点已选中项只发 reselect，不改值', async () => {
     const wrapper = mountControl()
     await option(wrapper, 'data').trigger('click')
