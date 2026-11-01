@@ -110,8 +110,14 @@ jobs:
           - label: Playback/Workspace interaction (2/2)
             script: test:browser-interaction
             args: --shard 2/2
-          - label: Armor viewer mobile layout
+          # 串行 28 场景是矩阵里最长的一条；切分方式与交互门禁相同，picker 场景约占总耗时七成，
+          # 取模后两片各含 5 个。
+          - label: Armor viewer mobile layout (1/2)
             script: test:browser-armor-mobile
+            args: --shard 1/2
+          - label: Armor viewer mobile layout (2/2)
+            script: test:browser-armor-mobile
+            args: --shard 2/2
           # 装甲查看器瞄准交互（Pointer Events × OrbitControls）同样只有真浏览器 + 真实输入能验证。
           # 门禁自带确定性夹具资产包（frontend/scripts/browser-fixtures/fixture-asset-pack.mjs：
           # 进程内资产源 + 构造的 hull/turret_01/gun_01 GLB），不需要真实资产、不 SKIP。

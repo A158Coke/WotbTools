@@ -5,6 +5,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
+import { parseScenarioArgs, selectShard } from './browser-scenario-args.mjs'
 import { OCCLUSION_LIMITS, measureOcclusion, measurePaintOrder, measureReachability } from './browser-occlusion.mjs'
 import { SHELL_OVERLAY_SCENARIOS, runShellOverlayScenario } from './browser-shell-overlays.mjs'
 import { DIALOG_SHEET_SCENARIOS, runDialogSheetScenario } from './browser-dialog-sheet.mjs'
@@ -4079,26 +4080,14 @@ try {
     ...WORKSPACE_2D_SCENARIOS.map((scenario) => ({ scenario, run: () => runWorkspace2DScenario(env, scenario) })),
   ]
   // 可选场景名过滤（调试单个形态时不必跑满矩阵）。
-  const argv = process.argv.slice(2)
-  const shardFlagAt = argv.indexOf('--shard')
-  // CI 分片：`--shard i/n`（1 基）按**静态列表下标取模**切分——场景清单是编译期常量，
-  // 切分跨 run 稳定；两片并行把门禁墙钟减半（runners 换时间）。
-  const shardArg = shardFlagAt >= 0 ? argv[shardFlagAt + 1] : null
-  const shard = shardArg ? /^([1-9]\d*)\/([1-9]\d*)$/.exec(shardArg) : null
-  if (shardArg && !shard) throw new Error(`--shard 需要 i/n 形式（1 基）: ${shardArg}`)
-  const shardIndex = shard ? Number(shard[1]) - 1 : 0
-  const shardTotal = shard ? Number(shard[2]) : 1
-  // 名过滤器忽略 --shard 的**值**（`1/2` 不以 - 开头，否则会被误当场景名）
-  const nameFilter = argv.find((arg, i) => !arg.startsWith('-') && (shardFlagAt < 0 || i !== shardFlagAt + 1))
+  const scenarioArgs = parseScenarioArgs(process.argv.slice(2))
+  const { nameFilter } = scenarioArgs
   const base = process.argv.includes('--occlusion')
     ? runs.filter(({ scenario }) => /^(shell-overlay-|dialog-sheet-|drawer-tables-|overlay-|menu-viewport-|ws2d-|roster-geometry-|capability-normal-shots-armor-handoff)/.test(scenario.name))
     : process.argv.includes('--mobile-visual')
     ? runs.filter(({ scenario }) => scenario.width < 900 && /^(roster-geometry|ws2d)-/.test(scenario.name))
     : nameFilter ? runs.filter(({ scenario }) => scenario.name.includes(nameFilter)) : runs
-  const selected = shardTotal > 1 ? base.filter((_, idx) => idx % shardTotal === shardIndex) : base
-  if ((nameFilter || shard) && selected.length === 0) {
-    throw new Error(`no scenario matches (filter=${nameFilter ?? '-'} shard=${shardArg ?? '-'})`)
-  }
+  const selected = selectShard(base, scenarioArgs)
   for (const { scenario, run } of selected) {
     // 单个场景抛错（例如等不到元素）不得吞掉整轮结果：记为该场景的失败后继续。
     try {
