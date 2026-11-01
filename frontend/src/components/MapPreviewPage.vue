@@ -125,9 +125,9 @@ function onFallbackError(m) {
 }
 watch(authenticated, (ok) => { if (ok && !indexLoaded.value) loadMaps() }, { immediate: true })
 
-// ---- URL 契约：?map=<key> &mode=3d|2d &bases=supremacy|encounter ----
+// ---- URL 契约：?map=<key> &mode=3d|2d（缺省 2d） &bases=supremacy|encounter ----
 const selected = computed(() => maps.value.find((m) => m.key === route.query.map) || null)
-const mode = computed(() => (route.query.mode === '2d' ? '2d' : '3d'))
+const mode = computed(() => (route.query.mode === '3d' ? '3d' : '2d'))
 
 /**
  * 基地点位（贴地环 / 2D 圆标）模式：?bases=supremacy|encounter 显式选择；
