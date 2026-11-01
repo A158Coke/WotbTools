@@ -52,3 +52,5 @@ jobs:
           file: docker/Dockerfile.ai-service
           push: false
           build-args: BUILD_COMMIT=${{ inputs.head_sha }}
+          # 只读 main 的镜像缓存：PR 不写共享 scope，依赖层命中时不用再访问 Maven Central
+          cache-from: type=gha,scope=ai-service

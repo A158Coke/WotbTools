@@ -35,6 +35,28 @@
                     <snapshots><enabled>false</enabled></snapshots>
                 </repository>
             </repositories>
+            <!-- 插件不走 repositories，没有这段时插件解析只有 Central 一条路。
+                 这里的顺序排在默认 central 之前，所以 Central 放第一，Aliyun 只做备用；
+                 备用源校验和不符直接失败。 -->
+            <pluginRepositories>
+                <pluginRepository>
+                    <id>central-plugins</id>
+                    <name>Maven Central</name>
+                    <url>https://repo.maven.apache.org/maven2</url>
+                    <releases><enabled>true</enabled></releases>
+                    <snapshots><enabled>false</enabled></snapshots>
+                </pluginRepository>
+                <pluginRepository>
+                    <id>aliyun-public-plugins</id>
+                    <name>Aliyun Public</name>
+                    <url>https://maven.aliyun.com/repository/public</url>
+                    <releases>
+                        <enabled>true</enabled>
+                        <checksumPolicy>fail</checksumPolicy>
+                    </releases>
+                    <snapshots><enabled>false</enabled></snapshots>
+                </pluginRepository>
+            </pluginRepositories>
         </profile>
     </profiles>
 </settings>
