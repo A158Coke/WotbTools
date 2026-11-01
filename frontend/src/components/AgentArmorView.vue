@@ -337,6 +337,9 @@ async function resolvePitchAvailability(tankId, attempt = 0) {
     if (seq !== pitchAvailabilitySeq) return
     const modules = findTankModules(nationData, tankId)
     pitchFromModules.value = presetProvidesPitchDevice(modules, { devicePresets: devices?.devicePresets })
+    // 加成数值与可用性同源同一次成功读取：重试成功也必须把 bonus 恢复给场景，
+    // 否则 HUD/URL 已显示 122 已启用、拖炮仍用基础上下限。
+    pitchDeviceBonusValue.value = pitchDeviceBonus([122], devices)
     // 只有成功读到目录才允许后续「确认不支持 → 清理 URL 覆盖」。
     pitchFromModulesKnown.value = true
   } catch {
@@ -399,12 +402,17 @@ function onPickerKeydown(event) {
 }
 onMounted(() => window.addEventListener('keydown', onPickerKeydown))
 onBeforeUnmount(() => window.removeEventListener('keydown', onPickerKeydown))
-onBeforeUnmount(() => { if (pitchAvailabilityTimer) clearTimeout(pitchAvailabilityTimer) })
+onBeforeUnmount(() => {
+  // 先进位使在飞行请求的 seq 失效：卸载后 reject 不得再挂 5s 重试。
+  pitchAvailabilitySeq++
+  if (pitchAvailabilityTimer) {
+    clearTimeout(pitchAvailabilityTimer)
+    pitchAvailabilityTimer = null
+  }
+})
 
 // 122 的加成数值只有 devices.json 一个权威来源；场景通过 setter 接收，避免前端硬编码 +4/+3。
-loadDevices()
-    .then(data => { pitchDeviceBonusValue.value = pitchDeviceBonus([122], data) })
-    .catch(() => { /* 资产缺失：保持 null（不加成），原生勾选仍可显示 */ })
+// 成功读取目录（含首轮失败后的重试）会在 resolvePitchAvailability() 里同步恢复 bonus。
 watch(pitchDeviceBonusValue, value => { viewer?.setPitchDeviceBonus?.(value) })
 
 function startViewer(preserveSelection = false) {

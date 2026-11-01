@@ -31,7 +31,7 @@ const shots = [
   { index: 9, time_s: 95, shooter_tank_name: 'Object 907', target_tank_name: 'Maus', shooter_tank_id: 1, target_tank_id: 3, target_eid: 30, damage: 0, hit_flags: 0x8 },
 ]
 const mounted = [], scenes = [], restoredMedia = []
-function deferred() { let resolve; const promise = new Promise(r => { resolve = r }); return { promise, resolve } }
+function deferred() { let resolve, reject; const promise = new Promise((res, rej) => { resolve = res; reject = rej }); return { promise, resolve, reject } }
 async function setup({ query = { view: 'agent-armor', shot: '6' }, shellChrome = null, phone = false, portrait = false } = {}) {
   // 组件的手机形态 / 朝向判据直接读 window.matchMedia（shared/breakpoints 的查询字符串）；
   // happy-dom 无法逐条命中，测试里按字符串恒等桩掉，并在 afterEach 卸载后还原。
@@ -68,7 +68,7 @@ beforeEach(() => {
   mocks.modules.mockReset().mockResolvedValue({ tanks: {} })
   mocks.fetch.mockResolvedValue({ shots })
   mocks.query.mockImplementation(async shot => ({ view: 'agent-armor', shot: String(shot.index), tank: String(shot.target_tank_id) }))
-  mocks.init.mockImplementation(options => { const scene = { destroy: vi.fn(), options }; scenes.push(scene); options.onLoadState({ state: 'ready' }); return scene })
+  mocks.init.mockImplementation(options => { const scene = { destroy: vi.fn(), options, setPitchDeviceBonus: vi.fn(), setPitchDeviceAvailable: vi.fn() }; scenes.push(scene); options.onLoadState({ state: 'ready' }); return scene })
 })
 afterEach(() => {
   mounted.forEach(w => w.unmount()); mounted.length = 0
@@ -207,5 +207,40 @@ describe('122 可用性容错（网络失败 ≠ 不支持）', () => {
     await vi.advanceTimersByTimeAsync(5000)
     await flushPromises()
     expect(router.currentRoute.value.query.eqpitch).toBeUndefined()
+  })
+
+  it('devices 重试成功后恢复 122 加成并保留 eqpitch 覆盖', async () => {
+    vi.useFakeTimers()
+    // 目录的所有并发读者都先失败；重试前再整体切换为成功目录，避免首个调用被其他
+    // 组件（HUD/侧栏）抢走导致可用性路径根本没经历失败。
+    mocks.devices.mockRejectedValue(new Error('offline'))
+    mocks.modules.mockResolvedValue({
+      tanks: { 'Type71_stem': { tankId: 2, optDevicePreset: 'AlternatePitchGrouserPreset' } },
+    })
+    const { router } = await setup({ query: { view: 'agent-armor', tank: '2', eqpitch: '1' } })
+    mocks.devices.mockResolvedValue({
+      devices: [{ id: 122, script: { params: { bonusValues: { upperPitchLimitIncrease: 4, lowerPitchLimitIncrease: 3 } } } }],
+      devicePresets: { AlternatePitchGrouserPreset: [{ left: 'improvedPitchLimitsSystem' }] },
+    })
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushPromises()
+    expect(router.currentRoute.value.query.eqpitch).toBe('1', '重试成功且该车支持 122，覆盖必须保留')
+    expect(scenes.at(-1).setPitchDeviceAvailable).toHaveBeenCalledWith(true)
+    expect(scenes.at(-1).setPitchDeviceBonus).toHaveBeenCalledWith({ up: 4, down: 3 })
+  })
+
+  it('unmount 后迟到的目录失败不再挂重试', async () => {
+    vi.useFakeTimers()
+    const pending = deferred()
+    // 所有目录读者共用该挂起 promise：无论挂载期谁先调用，可用性请求都必然在飞行中。
+    mocks.devices.mockImplementation(() => pending.promise)
+    const { wrapper } = await setup({ query: { view: 'agent-armor', tank: '2', eqpitch: '1' } })
+    wrapper.unmount()
+    const callsAfterUnmount = mocks.devices.mock.calls.length
+    pending.reject(new Error('late offline'))
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushPromises()
+    expect(mocks.devices).toHaveBeenCalledTimes(callsAfterUnmount)
   })
 })
