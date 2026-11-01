@@ -31,7 +31,7 @@ const localParse = vi.hoisted(() => ({
 }))
 vi.mock('../api/agent-replay-facets.js', () => localParse)
 vi.mock('../replay-local/battleFacts.js', () => ({
-  toBattleFacts: (result) => ({ source: result.text }),
+  toBattleFacts: (result: { text: string }) => ({ source: result.text }),
 }))
 
 import {

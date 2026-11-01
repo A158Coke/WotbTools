@@ -45,6 +45,13 @@
 - UI reactive locale 的唯一运行时 owner 是 Vue i18n；`src/i18n/locale-preference.js` 独占 `wotb-lang` storage key 的读取、规范化与持久化。组件通过 i18n locale 更新语言，不直接访问该 key。纯显示 helper 必须接收显式 locale，缺省时只用固定 fallback，不读取 browser storage。
 - 路由历史、深链和 Back/Forward 由 Vue Router 所有；组件不得手写 `history.pushState`、`replaceState` 或 `popstate`。
 
+## TypeScript boundary
+
+- 新 production 模块使用 `.ts`，新 SFC 使用 `lang="ts"`；**不得把新文件加入 `typescript.legacy.json`**，CI 的 base→head 门禁（`scripts/check-typescript-baseline.mjs`）会拒绝名单新增路径或单文件 escape hatch 增加。迁移旧文件时把它从名单删除，import specifier 保持 `.js`。
+- 被 Node 脚本加载的模块（名单的 `retained`）保持 JavaScript：Node 不会把 `.js` specifier 解析到 `.ts`。
+- 不用 `any`、`as unknown as`、`@ts-ignore`、`@ts-nocheck` 换取 typecheck 通过；`@ts-expect-error` 只用于 `*.test.ts` 的负向类型证明。类型迁移不夹带行为改动。
+- 类型 owner 见 [`docs/frontend/architecture.md`](../docs/frontend/architecture.md)；不得手写 generated 类型已覆盖的 wire 形状，外部输入仍需运行时校验。
+
 ## Third-party UI primitives
 
 - `reka-ui` / `motion-v` 只能在 WotbTools 组件边界内使用（允许的文件集见 `src/shared/ui-dependency-ownership.test.ts`）；页面与 feature 使用 `AppDialog` / `AppSheet` / `AppTooltip` / `MenuButton` / `SegmentedControl`，不直接引入第三方 primitive。

@@ -1,3 +1,4 @@
+import type { VehiclePlaybackTrack } from '../types/playback-v2.js'
 import { positionCoveredAtV2, positionAtV2, orientationAtV2, lifeAt } from './battlePlaybackV2'
 import { screenRotation, turretWorldYawDeg } from './battlePlayback'
 
@@ -20,6 +21,24 @@ export type VehiclePoseInput = {
   turretRelRad: number
 } | null
 
+type ProjectVehicleStateInput = {
+  vehicle: { accountId: number | null; playerName?: string | null; tankName?: string | null; tankId?: number | null }
+  track: VehiclePlaybackTrack
+  time: number
+  pose?: VehiclePoseInput
+  recorderAccountId: number | null
+  model: unknown
+  markerSize?: MarkerSize | null
+  hullImage: unknown
+  turretImage: unknown
+  markerLeft: (x: number) => string
+  markerTop: (y: number) => string
+  markerTransform: string
+  overlayInverseScale: number | string
+  overlayInverse: string
+  translate: (key: string) => string
+}
+
 const HULL_HITBOX = Object.freeze({
   dedicated: Object.freeze({ w: 0.9, h: 0.9 }),
   generic: Object.freeze({ w: 0.58, h: 0.9 }),
@@ -38,10 +57,10 @@ export function projectVehicleState({
   vehicle,
   track,
   time,
-  pose = null as VehiclePoseInput,
+  pose = null,
   recorderAccountId,
   model,
-  markerSize = null as MarkerSize | null,
+  markerSize = null,
   hullImage,
   turretImage,
   markerLeft,
@@ -50,7 +69,7 @@ export function projectVehicleState({
   overlayInverseScale,
   overlayInverse,
   translate,
-}) {
+}: ProjectVehicleStateInput) {
   const life = lifeAt(track, time)
   const destroyed = life != null && life.lifeState === 'DESTROYED'
   const canonicalPos = positionAtV2(track.positionSegments, time)

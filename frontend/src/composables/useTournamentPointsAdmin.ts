@@ -315,7 +315,7 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
       confirmedNewClans: [...new Set(reviewSelection.value.reviews.flatMap(review => review.confirmedClans))],
     }
   }
-  async function write(task: (signal: AbortSignal) => Promise<TournamentDayView>, resetReviews = true) {
+  async function write(task: (signal: AbortSignal) => Promise<TournamentDayView>, resetReviews = true): Promise<TournamentDayView | void> {
     if (!allowed.value || !networkAvailable.value || busy.value || recognizing.value || stale.value || !dayState.value) return
     const gen = generation, epoch = auth.authEpoch()
     busy.value = true

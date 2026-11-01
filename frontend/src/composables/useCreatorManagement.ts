@@ -64,7 +64,7 @@ export function useCreatorManagement(deps: { type?: MaybeRefOrGetter<api.Recomme
     if (busy.value) return
     editorGeneration++; draftEpoch.value++; savedForm = null; editorOpen.value = false; editorLoading.value = false; detail.value = null; editorError.value = null; editingId = null
   }
-  function retryEditor() { if (editingId != null) return editCreator(editingId) }
+  function retryEditor(): Promise<void> | void { if (editingId != null) return editCreator(editingId) }
   async function mutation(run: (signal: AbortSignal) => Promise<void>, editor = false) {
     if (!allowed.value || !network.value.available || busy.value || loading.value) return false
     const gen = generation, epoch = auth.authEpoch()
@@ -75,7 +75,7 @@ export function useCreatorManagement(deps: { type?: MaybeRefOrGetter<api.Recomme
       if (owns(gen, epoch)) void Promise.resolve().then(() => {
         if (!owns(gen, epoch)) return
         const publicRefresh = availability.refreshPublicCategories()
-        return Promise.allSettled([publicRefresh, Promise.resolve().then(() => {
+        return Promise.allSettled([publicRefresh, Promise.resolve().then((): void | Promise<unknown> => {
           if (owns(gen, epoch)) return deps.onChanged?.()
         })])
       }).catch(() => { /* Best-effort refresh must not turn a committed write into a retryable failure. */ })

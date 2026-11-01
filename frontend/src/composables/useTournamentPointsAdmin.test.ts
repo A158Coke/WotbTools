@@ -361,7 +361,7 @@ describe('shared tournament draft owner', () => {
     f.owner.reviews.value[1].duplicateAction = 'REPLACE'
     expect(f.owner.reviewError.value).toBeNull()
     f.transport.saveTournamentDraft.mockImplementation(async (_id, _round, _day, request) => ({
-      ...structuredClone(f.state), groups: request.groups.map(({ duplicateAction, complete, ...group }) => group),
+      ...structuredClone(f.state), groups: request.groups.map(({ duplicateAction, complete, ...group }: Record<string, unknown>) => group),
     }))
     await f.owner.saveDraft()
     const submitted = f.transport.saveTournamentDraft.mock.calls[0][3]

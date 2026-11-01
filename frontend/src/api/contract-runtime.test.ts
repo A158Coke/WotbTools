@@ -168,11 +168,12 @@ function dataset(confidence = 'HIGH') {
 it('accepts optional recorded totals while retaining compatibility with datasets without them', () => {
   const playback = makeBattlePlaybackDataset()
   expect(validateBattlePlaybackDataset(playback).data).not.toBeNull()
-  playback.vehicles[0].damageDealtSamples = [{ timeSec: 10, total: 900 }]
+  const vehicle: (typeof playback.vehicles)[number] & { damageDealtSamples?: Array<{ timeSec: number; total: number }> } = playback.vehicles[0]
+  vehicle.damageDealtSamples = [{ timeSec: 10, total: 900 }]
   expect(validateBattlePlaybackDataset(playback).data).not.toBeNull()
-  playback.vehicles[0].damageDealtSamples[0].total = -1
+  vehicle.damageDealtSamples[0].total = -1
   expect(validateBattlePlaybackDataset(playback).data).toBeNull()
-  playback.vehicles[0].damageDealtSamples[0] = { timeSec: -1, total: 900 }
+  vehicle.damageDealtSamples[0] = { timeSec: -1, total: 900 }
   expect(validateBattlePlaybackDataset(playback).data).toBeNull()
 })
 

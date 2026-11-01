@@ -255,7 +255,7 @@ describe('装甲表（按所选炮塔解析）', () => {
   it('用该炮塔的 primaryArmor + 当前 config 的 turret_plates；缺失回退顶层摘要', () => {
     const modules = {
       ...MODULES,
-      turrets: MODULES.turrets.map((turret, index) => ({
+      turrets: MODULES.turrets.map((turret: Record<string, unknown>, index: number) => ({
         ...turret,
         primaryArmor: { front: 'armor_1', sides: 'armor_3', rear: 'armor_4' },
         plates: index,
@@ -435,7 +435,7 @@ describe('consumableTiming（装备 101/118 与客户端 script 计时）', () =
 })
 
 describe('devicesFromEquipmentIds（回放装配 → 槽位反解）', () => {
-  const modules = findTankModules(USSRS as any, 5137) ?? USSRS.tanks[Object.keys(USSRS.tanks)[0]]
+  const modules = findTankModules(USSRS as any, 5137) ?? Object.values(USSRS.tanks)[0]
 
   it('id 命中预设一侧 → 该侧；两侧都命中/都未命中 → null', () => {
     // level0 attack：左 rammer(100) / 右 calibratedShells(103)
