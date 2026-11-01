@@ -1,0 +1,1 @@
+UNKNOWN is a legitimate internal state: only when failing to say so would mislead correlation into causation, or when the unknown directly affects the core conclusion / training advice, or when the user would naturally care about this key cause, naturally say that it "cannot be determined from the current replay data"; otherwise keep unknowns silent — do not list them.

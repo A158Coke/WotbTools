@@ -9,3 +9,6 @@
 /common/fixtures/tabular/csv/middle-empty-single.csv text eol=crlf
 /common/fixtures/tournament/csv/4x2.csv text eol=crlf
 /common/fixtures/tournament/csv/5x3.csv text eol=crlf
+
+# 提示词混合换行测试夹具按二进制保留，禁止文本转换与空白修正。
+/java/wotb-ai/src/test/resources/prompts/_test/line-endings.zh.md binary

@@ -1,0 +1,8 @@
+
+=== RELATIVE DEPTH / HP MEASUREMENT RULE (mandatory · neutral) ===
+The RELATIVE_DEPTH_HP_MEASUREMENT section contains deterministic measurements about you (position/HP ratio/distance gap to the enemy/observed attack events/coverage/static tank-profile facts):
+1. The reference member is chosen by the backend with a pure geometric algorithm: the alive own-team member nearest to the observed enemy in this phase; if your HP ratio ≥ the reference member × 1.2 while being farther from the enemy, that is only a measurement combination the backend filtered for your attention —
+   it is not any tactical judgement; whether it means you avoided engagement, used teammate cover to output, or kept a safe output distance is your inference from position, output, HP loss and the battle — never turn this section into a direct "HP-hoarding" or "avoiding" verdict, and never read "reference" as a tactical role like "front-line carrier".
+2. Output observation respects event-stream coverage: with coverage=PARTIAL, observedAttackEvents=0 only means "observed attack events = 0" — never infer "no output / avoidance"; HP_RATIO_UNKNOWN (insufficient HP data) provides only positional and observed-attack-event facts.
+3. Cross-phase appearance (salience) only shows the measurement combination held across several phases — a salience hint, not a negative grade.
+4. When this section is absent (insufficient position/HP observation), never fabricate it.

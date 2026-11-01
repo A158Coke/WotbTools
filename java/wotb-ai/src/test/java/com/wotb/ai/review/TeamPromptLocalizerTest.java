@@ -21,7 +21,7 @@ class TeamPromptLocalizerTest {
         assertTrue(zh.contains("模式与目标战术技能 v0.2"));
         assertTrue(zh.contains("争霸赛复盘规范 v1.1"));
 
-        final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(zh, AllowedLanguage.EN);
+        final String en = TeamPromptLocalizer.systemPrompt(AllowedLanguage.EN);
         assertTrue(en.contains("INFORMATION AND VISION TACTICAL SKILL v0.2"));
         assertTrue(en.contains("LOCAL ENGAGEMENTS AND PROPAGATION TACTICAL SKILL v0.2"));
         assertTrue(en.contains("TEAM EXECUTION TACTICAL SKILL v0.2"));
@@ -37,7 +37,7 @@ class TeamPromptLocalizerTest {
         assertFalse(en.contains("模式与目标战术技能 v0.2"));
         assertFalse(en.contains("争霸赛复盘规范 v1.1"));
 
-        final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(zh, AllowedLanguage.RU);
+        final String ru = TeamPromptLocalizer.systemPrompt(AllowedLanguage.RU);
         assertTrue(ru.contains("ТАКТИЧЕСКИЙ НАВЫК ИНФОРМАЦИИ И ОБЗОРА v0.2"));
         assertTrue(ru.contains("ТАКТИЧЕСКИЙ НАВЫК ЛОКАЛЬНЫХ СТОЛКНОВЕНИЙ И РАСПРОСТРАНЕНИЯ v0.2"));
         assertTrue(ru.contains("ТАКТИЧЕСКИЙ НАВЫК КОМАНДНОГО ИСПОЛНЕНИЯ v0.2"));
@@ -55,8 +55,8 @@ class TeamPromptLocalizerTest {
     @Test
     void localizedCaptureRulesReplaceChineseSection() {
         final String zh = AiPromptLibrary.zh("team/single");
-        final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(zh, AllowedLanguage.EN);
-        final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(zh, AllowedLanguage.RU);
+        final String en = TeamPromptLocalizer.systemPrompt(AllowedLanguage.EN);
+        final String ru = TeamPromptLocalizer.systemPrompt(AllowedLanguage.RU);
         assertTrue(en.contains("SUPREMACY CAPTURE RULES"),
                 "EN must carry the localized capture rules");
         assertTrue(en.contains("BATTLE_RESULTS") && en.contains("business rules"),

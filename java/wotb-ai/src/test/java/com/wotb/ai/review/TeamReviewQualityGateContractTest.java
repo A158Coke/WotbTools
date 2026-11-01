@@ -80,18 +80,18 @@ class TeamReviewQualityGateContractTest {
     void openingSpreadStrategicInterpretationContractInThreeLanguages() {
         // 追加修正：三语都必须携带「信息覆盖 ↔ 局部兵力集中度」trade-off 语义
         for (final AllowedLanguage lang : java.util.List.of(AllowedLanguage.EN, AllowedLanguage.RU)) {
-            final String localized = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, lang);
+            final String localized = TeamPromptLocalizer.systemPrompt(lang);
             assertFalse(localized.contains("OPENING_MAP_CONTROL"),
                     lang + " 不得暴露 OPENING_MAP_CONTROL");
         }
-        final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.EN);
+        final String en = TeamPromptLocalizer.systemPrompt(AllowedLanguage.EN);
         assertTrue(en.contains("information/spatial coverage ↔ local force concentration")
                         || en.contains("information/spatial coverage"),
                 "EN 必须携带信息覆盖 vs 局部兵力 trade-off");
         assertTrue(en.contains("OPENING_SPREAD"), "EN 必须携带 OPENING_SPREAD");
         assertTrue(en.contains("do not call it map control / vision gathering"),
                 "EN 不得把开局分散当图控/拿视野");
-        final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.RU);
+        final String ru = TeamPromptLocalizer.systemPrompt(AllowedLanguage.RU);
         assertTrue(ru.contains("покрытие информацией/пространством ↔ концентрация локальных сил")
                         || ru.contains("покрытие информацией"),
                 "RU 必须携带信息覆盖 vs 局部兵力 trade-off");
@@ -196,14 +196,14 @@ class TeamReviewQualityGateContractTest {
 
     @Test
     void localizedReasoningContractIsAvailableInThreeLanguages() {
-        final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.EN);
+        final String en = TeamPromptLocalizer.systemPrompt(AllowedLanguage.EN);
         assertTrue(en.contains("TEAM REVIEW REASONING ORDER AND CAUSAL QUALITY CONTRACT"));
         assertTrue(en.contains("Distance is evidence, not a supportability verdict"));
         assertTrue(en.contains("State before -> Change -> Immediate local consequence -> Propagation"));
         assertTrue(en.contains("downstream validation"));
         assertFalse(en.contains("=== v0.4 信息链、支援能力与个人复查约束（强制） ==="));
 
-        final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.RU);
+        final String ru = TeamPromptLocalizer.systemPrompt(AllowedLanguage.RU);
         assertTrue(ru.contains("ПОРЯДОК РАССУЖДЕНИЯ КОМАНДНОГО РАЗБОРА"));
         assertTrue(ru.contains("Расстояние — evidence, а не verdict о возможности поддержки"));
         assertTrue(ru.contains("downstream validation"));
@@ -229,7 +229,7 @@ class TeamReviewQualityGateContractTest {
     @Test
     void localizedContractConsistentAcrossLanguages() {
         for (final AllowedLanguage lang : java.util.List.of(AllowedLanguage.EN, AllowedLanguage.RU)) {
-            final String localized = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, lang);
+            final String localized = TeamPromptLocalizer.systemPrompt(lang);
             // 中文证据契约规则段必须被替换，不残留
             assertFalse(localized.contains("证据契约（强制）：FACT / SUPPORTED INFERENCE"),
                     lang + " 残留中文证据契约");
@@ -242,7 +242,7 @@ class TeamReviewQualityGateContractTest {
             assertFalse(localized.contains("=== 内部证据与用户正文的关系（强制） ==="),
                     lang + " 残留中文内部证据规则");
         }
-        final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.EN);
+        final String en = TeamPromptLocalizer.systemPrompt(AllowedLanguage.EN);
         assertTrue(en.contains("EVIDENCE CONTRACT (mandatory): FACT / SUPPORTED INFERENCE / UNKNOWN / FORBIDDEN"),
                 "EN 必须携带证据契约");
         assertTrue(en.contains("UNKNOWN is a normal answer"), "EN 必须携带 UNKNOWN 语义");
@@ -250,7 +250,7 @@ class TeamReviewQualityGateContractTest {
         assertTrue(en.contains("Vehicle roles: never invent role labels"), "EN 必须禁止自创角色");
         assertFalse(en.contains("是图控/拿视野，不是脱节"), "EN 不得携带旧规则");
 
-        final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.RU);
+        final String ru = TeamPromptLocalizer.systemPrompt(AllowedLanguage.RU);
         assertTrue(ru.contains("КОНТРАКТ ДОКАЗАТЕЛЬСТВ"), "RU 必须携带证据契约");
         assertTrue(ru.contains("нормальный ответ, а не провал"), "RU 必须携带 UNKNOWN 语义");
         assertFalse(ru.contains("是图控/拿视野，不是脱节"), "RU 不得携带旧规则");
@@ -292,15 +292,15 @@ class TeamReviewQualityGateContractTest {
     @Test
     void regroupingContractLocalizedInThreeLanguages() {
         for (final AllowedLanguage lang : java.util.List.of(AllowedLanguage.EN, AllowedLanguage.RU)) {
-            final String localized = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, lang);
+            final String localized = TeamPromptLocalizer.systemPrompt(lang);
             assertTrue(localized.contains("anti-future-leak"), lang + " 必须携带 anti-future-leak");
         }
-        final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.EN);
+        final String en = TeamPromptLocalizer.systemPrompt(AllowedLanguage.EN);
         assertTrue(en.contains("REGROUPING INFERENCE RULE"), "EN 必须携带重新集中规则");
         assertTrue(en.contains("at least 4 enemy vehicles were observed"),
                 "EN 必须给出 unknown 措辞");
         assertFalse(en.contains("对方 7 辆主力已经集中在这一侧"), "EN 不得携带中文禁止句");
-        final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.RU);
+        final String ru = TeamPromptLocalizer.systemPrompt(AllowedLanguage.RU);
         assertTrue(ru.contains("ПРАВИЛО ВЫВОДА О ПЕРЕГРУППИРОВКЕ"), "RU 必须携带重新集中规则");
     }
 
@@ -342,7 +342,7 @@ class TeamReviewQualityGateContractTest {
     void opposingThreatOptionalContractLocalizedInThreeLanguages() {
         // D. EN/RU parity：同样不得强制威胁段 / 强制缺失 disclaimer
         for (final AllowedLanguage lang : java.util.List.of(AllowedLanguage.EN, AllowedLanguage.RU)) {
-            final String localized = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, lang);
+            final String localized = TeamPromptLocalizer.systemPrompt(lang);
             assertFalse(localized.contains("Analyze the opposing lineup and point out the opposing team's main threat vehicles"),
                     lang + " 不得强制 Analyze the opposing lineup");
             assertFalse(localized.contains("say so explicitly instead of guessing"),
@@ -352,12 +352,12 @@ class TeamReviewQualityGateContractTest {
             assertFalse(localized.contains("прямо скажите об этом"),
                     lang + " 不得强制 RU 缺失说明");
         }
-        final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.EN);
+        final String en = TeamPromptLocalizer.systemPrompt(AllowedLanguage.EN);
         assertTrue(en.contains("Opposing threats are optional content"), "EN 必须标记为可选");
         assertTrue(en.contains("only point out 1-3 enemy vehicles when they genuinely help"),
                 "EN 必须只在确有价值时输出");
         assertTrue(en.contains("selective-UNKNOWN"), "EN 必须引用全局选择性 UNKNOWN");
-        final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.RU);
+        final String ru = TeamPromptLocalizer.systemPrompt(AllowedLanguage.RU);
         assertTrue(ru.contains("опциональное содержание"), "RU 必须标记为可选");
         assertTrue(ru.contains("селективного UNKNOWN"), "RU 必须引用全局选择性 UNKNOWN");
     }

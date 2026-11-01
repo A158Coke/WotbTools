@@ -11,15 +11,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * AI 提示词加载器（单一事实源：classpath:/prompts/*.zh.md）。
- * <p>提示词正文以 Markdown 文件维护（可读、可 review、可 diff），运行期按 key 惰性加载并缓存。
- * 编辑约定：UTF-8、LF 换行；CRLF 会被归一化。规则片段（EN/RU 本地化替换锚点）仍留在
- * {@code PlayerPromptRules} / {@code TeamPromptLocalizer} 常量中，
- * 与 md 内 ZH 文本保持一致。</p>
- * <p>支持占位符包含：md 内的 {@code {{key}}} 会在加载时递归展开为
- * {@code prompts/{key}.zh.md} 的内容（如 {@code {{common/rules-core}}}），
- * 用于在多个 prompt 间复用公共规则块；循环包含会显式抛错（fail loud），
- * 不允许静默截断。占位符替换发生在缓存之前，缓存键仍是顶层 key。</p>
+ * 三语 AI 提示词加载器：classpath:/prompts/{key}.{zh,en,ru}.md。
+ * <p>UTF-8 正文按语言和 key 惰性缓存；{{key}} 递归包含同语言资源。
+ * 缺失资源与循环包含显式失败；归一化 CRLF/CR，保留尾换行。</p>
  */
 public final class AiPromptLibrary {
 
@@ -34,22 +28,32 @@ public final class AiPromptLibrary {
 
     /** 读取 prompts/{key}.zh.md 的展开文本（缓存）。 */
     public static String zh(final String key) {
-        return CACHE.computeIfAbsent(key, k -> load(k, new LinkedHashSet<>()));
+        return text(key, "zh");
     }
 
-    private static String load(final String key, final Set<String> chain) {
-        if (!chain.add(key)) {
+    /** 读取指定语言的展开文本；languageCode 必须为 zh/en/ru，不做语言回退。 */
+    public static String text(final String key, final String languageCode) {
+        if (!Set.of("zh", "en", "ru").contains(languageCode == null ? "" : languageCode)) {
+            throw new IllegalArgumentException("Unsupported AI prompt language: " + languageCode);
+        }
+        final String resourceKey = key + "." + languageCode;
+        return CACHE.computeIfAbsent(resourceKey, ignored -> load(key, languageCode, new LinkedHashSet<>()));
+    }
+
+    private static String load(final String key, final String languageCode, final Set<String> chain) {
+        final String resourceKey = key + "." + languageCode;
+        if (!chain.add(resourceKey)) {
             throw new IllegalStateException("AI prompt include cycle: "
-                    + String.join(" -> ", chain) + " -> " + key);
+                    + String.join(" -> ", chain) + " -> " + resourceKey);
         }
         try {
-            return expand(read(key), chain);
+            return expand(read(key, languageCode), languageCode, chain);
         } finally {
-            chain.remove(key);
+            chain.remove(resourceKey);
         }
     }
 
-    private static String expand(final String text, final Set<String> chain) {
+    private static String expand(final String text, final String languageCode, final Set<String> chain) {
         final Matcher matcher = INCLUDE.matcher(text);
         if (!matcher.find()) {
             return text;
@@ -58,15 +62,15 @@ public final class AiPromptLibrary {
         int last = 0;
         do {
             sb.append(text, last, matcher.start());
-            sb.append(load(matcher.group(1), chain));
+            sb.append(load(matcher.group(1), languageCode, chain));
             last = matcher.end();
         } while (matcher.find());
         sb.append(text, last, text.length());
         return sb.toString();
     }
 
-    private static String read(final String key) {
-        final String resource = "/prompts/" + key + ".zh.md";
+    private static String read(final String key, final String languageCode) {
+        final String resource = "/prompts/" + key + "." + languageCode + ".md";
         try (InputStream in = AiPromptLibrary.class.getResourceAsStream(resource)) {
             if (in == null) {
                 throw new IllegalStateException("Missing AI prompt resource: " + resource);
