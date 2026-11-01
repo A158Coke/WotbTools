@@ -107,6 +107,39 @@ describe('MapPreviewPage', () => {
     expect(moon.find('.map-card-thumb img').attributes('src')).toContain('/cover/moon.webp')
   })
 
+  it('cover URL 不可用（Android 离线门控抛错）→ 有 bundled 的图用打包底图兜底', async () => {
+    auth.authenticated.value = true
+    source.loadMapIndex.mockResolvedValue(IDX)
+    // 只让 cover URL 抛（模拟 NETWORK_ERROR），其余不变
+    assetProvider.url.mockImplementation((p) => {
+      if (p.startsWith('/cover/')) throw new Error('NETWORK_ERROR')
+      return 'https://assets.test' + p
+    })
+    const wrapper = await openAt()
+    const erlenberg = wrapper.find('[data-testid="map-card-erlenberg"]')
+    // 无 cover → 走 thumbFallback（打包底图），不落占位图标
+    expect(erlenberg.find('[data-testid="map-thumb-fallback-erlenberg"]').exists()).toBe(true)
+    expect(erlenberg.find('.map-card-thumb-fallback').exists()).toBe(false)
+    // moon 无打包图 → 占位图标
+    expect(wrapper.find('[data-testid="map-card-moon"]').find('.map-card-thumb-fallback').exists()).toBe(true)
+  })
+
+  it('cover 图片加载失败 → 切到 bundled 兜底且不重试远端', async () => {
+    auth.authenticated.value = true
+    source.loadMapIndex.mockResolvedValue(IDX)
+    const wrapper = await openAt()
+    const coverImg = wrapper.find('[data-testid="map-thumb-erlenberg"]')
+    expect(coverImg.attributes('src')).toContain('/cover/erlenberg.webp')
+    await coverImg.trigger('error')
+    await flushPromises()
+    // thumb 置空 → 模板改渲染 fallback（打包底图），远端 URL 不再出现
+    expect(wrapper.find('[data-testid="map-thumb-erlenberg"]').exists()).toBe(false)
+    const fb = wrapper.find('[data-testid="map-thumb-fallback-erlenberg"]')
+    expect(fb.exists()).toBe(true)
+    expect(fb.attributes('src')).toBeTruthy()
+    expect(fb.attributes('src')).not.toContain('/cover/')
+  })
+
   it('索引失败 → 可重试的失败态；重试成功回到 picker', async () => {
     auth.authenticated.value = true
     source.loadMapIndex.mockResolvedValueOnce(null)

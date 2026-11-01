@@ -34,12 +34,17 @@ const { authenticated } = useAuth()
 /** 目录数据保持 locale 中性（rawMaps 只存 key/id/display）；显示名与排序是
  *  当前 locale 的**派生投影**（computed）——运行中切语言即时生效，不残留旧语言。 */
 const rawMaps = ref([])
+const failedThumbs = ref(new Set())
 const nameOf = (m) => {
   const localized = mapLabel(m.key, locale.value)
   return localized !== m.key ? localized : (m.packDisplay || m.key)
 }
 const maps = computed(() => rawMaps.value
-  .map((m) => ({ ...m, name: nameOf(m) }))
+  .map((m) => ({
+    ...m,
+    name: nameOf(m),
+    thumb: failedThumbs.value.has(m.key) ? null : m.thumb,
+  }))
   .sort((a, b) => collator.compare(a.name, b.name)))
 const indexFailed = ref(false)
 const indexLoaded = ref(false)
@@ -87,6 +92,18 @@ function safeCoverUrl(key) {
   } catch {
     return null
   }
+}
+
+/**
+ * cover 加载失败 → 记住该 key，派生投影把 thumb 置空（模板走 thumbFallback
+ * 打包底图；无 bundled 才落占位图标）。集合式记录避免重试循环：同一 key 只
+ * 失败一次，渲染不再请求远端 URL。
+ */
+function onThumbError(m) {
+  if (!m.thumb || failedThumbs.value.has(m.key)) return
+  const next = new Set(failedThumbs.value)
+  next.add(m.key)
+  failedThumbs.value = next
 }
 watch(authenticated, (ok) => { if (ok && !indexLoaded.value) loadMaps() }, { immediate: true })
 
@@ -155,7 +172,21 @@ const modeOptions = computed(() => [
               @click="openMap(m)"
             >
               <span class="map-card-thumb">
-                <img v-if="m.thumb" :src="m.thumb" alt="" loading="lazy" />
+                <img
+                  v-if="m.thumb"
+                  :src="m.thumb"
+                  alt=""
+                  loading="lazy"
+                  :data-testid="`map-thumb-${m.key}`"
+                  @error="onThumbError(m)"
+                />
+                <img
+                  v-else-if="m.thumbFallback"
+                  :src="m.thumbFallback"
+                  alt=""
+                  loading="lazy"
+                  :data-testid="`map-thumb-fallback-${m.key}`"
+                />
                 <MapIcon v-else class="map-card-thumb-fallback" aria-hidden="true" />
               </span>
               <span class="map-card-name">{{ m.name }}</span>
