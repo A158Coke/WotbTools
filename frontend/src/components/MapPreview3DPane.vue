@@ -22,6 +22,7 @@ import { usePlaybackFullscreen } from '../composables/usePlaybackFullscreen.js'
 import { usePlaybackPhoneForm } from '../composables/usePlaybackPhoneForm.js'
 import { isInteractiveTarget } from '../composables/usePlaybackTransport.js'
 import { usePaneFillHeight } from '../composables/usePaneFillHeight.js'
+import SegmentedControl from './SegmentedControl.vue'
 import Scene3DStatus from './Scene3DStatus.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
 import {
@@ -525,25 +526,23 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
             @change="importAnnotations"
           />
           <span class="map3d-spacer"></span>
-          <label class="map3d-quality">
-            <span class="map3d-quality-label">{{ $t('agentReplay.quality') }}</span>
-            <select
+          <div class="map3d-quality">
+            <span class="map3d-quality-label" aria-hidden="true">{{ $t('agentReplay.quality') }}</span>
+            <SegmentedControl
+              :model-value="store.qualityKey"
+              :options="qualityOptions"
+              :aria-label="$t('agentReplay.quality')"
               data-testid="map-3d-quality"
-              :value="store.qualityKey"
-              @change="changeQuality($event.target.value)"
-            >
-              <option v-for="opt in qualityOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-            </select>
-          </label>
-          <select
-            data-testid="map-3d-camera"
-            class="map3d-cam"
-            :value="store.cam === 'follow' ? 'free' : store.cam"
+              @update:model-value="changeQuality"
+            />
+          </div>
+          <SegmentedControl
+            :model-value="store.cam === 'follow' ? 'free' : store.cam"
+            :options="CAMERAS"
             :aria-label="$t('agentReplay.camera')"
-            @change="chooseCamera($event.target.value)"
-          >
-            <option v-for="c in CAMERAS" :key="c.value" :value="c.value">{{ c.label }}</option>
-          </select>
+            data-testid="map-3d-camera"
+            @update:model-value="chooseCamera"
+          />
           <button
             v-if="fullscreenSupported"
             type="button"
@@ -711,22 +710,6 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
   gap: var(--space-1);
   color: var(--color-text-secondary);
   font: var(--type-caption);
-}
-
-.map3d-quality select,
-.map3d-cam {
-  min-height: var(--control-h-sm);
-  border: var(--border-width) solid var(--color-border-subtle);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-2);
-  color: var(--color-text-primary);
-  font: var(--type-caption);
-}
-
-.map3d-quality select:focus-visible,
-.map3d-cam:focus-visible {
-  outline: var(--focus-outline);
-  outline-offset: var(--focus-outline-offset);
 }
 
 .map3d-import-note {
