@@ -282,7 +282,7 @@ Android 9 等旧设备上，系统 WebView 版本由 ROM 决定：页面样式�
 
 ## 2026-11-01 — 地图预览默认进入 2D 战术图，并补齐战术标注/出图
 
-地图预览最初默认进入 3D 场景，但用户打开地图页要回答的首要问题是「这张图的战术几何是什么」，而不是复刻场景。因此选图后默认进入 2D，3D 仍由显式 `?mode=3d` 或视图切换进入。2D 同时补齐此前缺失的 canonical 出生点（直接取自回放同一份地图语义，无战局上下文时保持中性）与游戏内可玩边界（不是图片 ±300 外框）；边界与 3D 同源，缺数据 fail-closed。2D 标注工具与 Playback 2D 对齐（select/route、LT/MT/HT/TD、pen/eraser、arrow/line/rect/circle/text），支持完整 annotation JSON round-trip；并可导出当前视角 PNG（含底图、出生点、边界、基地与可见标注，不含页面/工具 UI），覆盖打包底图与资产包 map2d 两类底图。3D 仍保持 pen/eraser 地形标注，不扩展到全量工具。
+地图预览最初默认进入 3D 场景，但用户打开地图页要回答的首要问题是「这张图的战术几何是什么」，而不是复刻场景。因此选图后默认进入 2D，3D 仍由显式 `?mode=3d` 或视图切换进入。2D 同时补齐此前缺失的 canonical 出生点（直接取自回放同一份地图语义，无战局上下文时保持中性）与游戏内可玩边界（不是图片 ±300 外框）；边界与 3D 同源，缺数据 fail-closed。2D 标注工具与 Playback 2D 对齐（select/route、LT/MT/HT/TD、pen/eraser、arrow/line/rect/circle/text），支持完整 annotation JSON round-trip；并可导出当前视角 PNG（含底图、出生点、边界、基地与可见标注，不含页面/工具 UI），覆盖打包底图与资产包 map2d 两类底图。3D 仍保持 pen/eraser 地形标注，不扩展到全量工具。2D/3D 都提供原生全屏入口；2D 切到 3D 时自动退出全屏，避免全屏落在隐藏面板上。
 
 ## 长期产品主线
 
