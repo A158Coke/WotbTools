@@ -236,7 +236,7 @@ Keycloak 配置是硬编码的生产（`auth.wotbtools.com` / realm `wotbtools` 
   §Testing rules 为权威**，新增 gate 随其特性一起落地；改对应代码时保持通过）：
   - `pnpm run test:browser-layout` —— Playback 布局（PC / tablet / mobile 实际 CSS geometry 与 form isolation）；
   - `pnpm run test:browser-interaction` —— 交互（hit target、pointer-events、capability 切换、认证门禁、播放控件）。
-  - `pnpm run test:browser-armor-mobile` —— 装甲页三档布局与触控；选车弹窗与坦克百科共用 `TankCatalogMenu`，门禁通过真实名册响应覆盖共 121 张卡片（共享增量列表首屏 48，滚轮/哨兵/加载更多续页），在 Showcase / Classic 检查图片框、车型名和元数据不裁切、首末车型名实际可命中、内部滚动不带动外层页面、真实关闭按钮点击与弹窗关闭状态；手机上检查搜索框与筛选入口 44px、筛选 chips 打开 sheet 后四个筛选控件可用，并覆盖 4K、筛选和视口扩大时的名册补齐。夹具只验证图片框几何，不证明真实缩略图加载或 3D 视觉效果。
+  - `pnpm run test:browser-armor-mobile` —— 装甲页三档布局与触控；选车弹窗与坦克百科共用 `TankCatalogMenu`，门禁通过真实名册响应覆盖共 121 张卡片（共享增量列表首屏 48，滚轮/哨兵/加载更多续页），在 Showcase / Classic 检查图片框、车型名和元数据不裁切、首末车型名实际可命中、内部滚动不带动外层页面、真实关闭按钮点击与弹窗关闭状态；手机上检查搜索框与筛选入口 44px、筛选 chips 打开 sheet 后四个筛选控件可用，并覆盖 4K、筛选和视口扩大时的名册补齐。夹具只验证图片框几何，不证明真实缩略图加载或 3D 视觉效果。不带参数时跑完整 28 个场景；CI 用 `--shard 1/2`、`--shard 2/2` 分两片并行，本地可写 `pnpm run test:browser-armor-mobile -- --shard 1/2 [场景名]`，先按名过滤再分片，分片参数非法时直接失败。
   - `pnpm run test:browser-armor-aiming` —— 瞄准 / 指针交互；部位取样同时检查几何分类与
     `elementFromPoint` 实际命中 canvas，避免选车按钮等面板遮挡导致手势误入弹窗。
     既有像素扫描单测覆盖按钮 / 弹窗遮挡及空命中，浏览器门禁用临时覆盖控件验证重新取样。
@@ -258,7 +258,7 @@ Keycloak 配置是硬编码的生产（`auth.wotbtools.com` / realm `wotbtools` 
 恢复同一射手模型时也复用车辆 JSON，避免重复请求。
 同时覆盖普通检视的配置弹表来源、深链选弹与无效下标回退、手动换配置，以及同车型
 单发复现的射手 `scfg` 弹表与回放选弹隔离。
-这条门禁已加入 `ci-frontend.yml` 的 `browser-gates` 矩阵，随前端 PR 自动执行。
+这条门禁由 `ci-frontend.yml` 的 `browser-medium` job 执行，随前端 PR 自动运行。
 这条门禁负责异步初始化与销毁，独立于瞄准手势和移动端布局门禁，不做 3D 画面验收。
 macOS 可指定 `CHROME_BIN='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'`。
 
