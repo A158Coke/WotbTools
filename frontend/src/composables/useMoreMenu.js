@@ -1,10 +1,11 @@
 import { computed, getCurrentInstance, inject } from 'vue'
 import {
-  Cpu, Database, Download, FileText, Heart, History, Mail, ShieldCheck, Users, ListOrdered, Settings,
+  Cpu, Database, Download, FileText, Heart, History, Mail, MessageSquare, ShieldCheck, Users, ListOrdered, Settings,
 } from 'lucide-vue-next'
 import { useAuth } from './useAuth.js'
 import { useUiProfile } from './useUiProfile.js'
 import { isAndroidApp } from './usePlatformBridge.js'
+import { FEEDBACK_KEY } from '../shared/feedback.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import { useCreatorAvailability } from './useCreatorAvailability.js'
 import { persistLocale } from '../i18n/locale-preference.js'
@@ -14,8 +15,6 @@ import { persistLocale } from '../i18n/locale-preference.js'
  * 共用同一份设置项与链接清单，避免两处各写一份而漂移。
  * 只能在组件 setup 中调用（语言切换要拿到组件实例上的 $i18n）。
  */
-export const FEEDBACK_URL = 'https://github.com/A158Coke/WotbTools/issues/new'
-
 export const LANGUAGES = Object.freeze([
   { value: 'zh', label: '中文' },
   { value: 'en', label: 'English' },
@@ -24,6 +23,7 @@ export const LANGUAGES = Object.freeze([
 
 export function useMoreMenu() {
   const onboarding = inject(ONBOARDING_KEY, null)
+  const openFeedback = inject(FEEDBACK_KEY, null)
   const { isAdmin, isHofAdmin, isTournamentAdmin, isContentAdmin, authenticated } = useAuth()
   const { uiProfilePreference, setUiProfile } = useUiProfile()
   const { available: creatorsAvailable } = useCreatorAvailability()
@@ -46,6 +46,7 @@ export function useMoreMenu() {
     isAdmin.value && { view: 'admin-users', labelKey: 'admin.title', icon: Users },
     isAdmin.value && { view: 'admin-battle-data', labelKey: 'battleDataAdmin.title', icon: Database },
     isAdmin.value && { view: 'admin-ai-review-feedback', labelKey: 'aiFeedback.adminTitle', icon: Users },
+    isAdmin.value && { view: 'admin-site-feedback', labelKey: 'siteFeedback.adminTitle', icon: MessageSquare },
     isHofAdmin.value && { view: 'hof-admin', labelKey: 'hofAdmin.cardTitle', icon: ShieldCheck },
     isTournamentAdmin.value && { view: 'tournament-points-config', labelKey: 'tournament.configTitle', icon: Settings },
     isTournamentAdmin.value && { view: 'tournament-points-admin', labelKey: 'tournament.adminTitle', icon: ListOrdered },
@@ -63,5 +64,5 @@ export function useMoreMenu() {
   ].filter(Boolean))
 
   const openGuide = computed(() => authenticated?.value && onboarding ? () => onboarding.openDirectory() : null)
-  return { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, adminLinks, aboutLinks, openGuide }
+  return { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, adminLinks, aboutLinks, openGuide, openFeedback }
 }

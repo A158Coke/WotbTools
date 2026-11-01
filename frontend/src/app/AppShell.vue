@@ -10,9 +10,11 @@ import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { provideCreatorAvailability } from '../composables/useCreatorAvailability.js'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
 import { useOnboarding } from '../composables/useOnboarding.js'
+import { useSiteFeedback } from '../composables/useSiteFeedback.js'
 import { useUsageTelemetry } from '../composables/useUsageTelemetry.js'
 import { isAndroidApp } from '../composables/usePlatformBridge.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
+import { FEEDBACK_KEY } from '../shared/feedback.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 import { createShellChrome } from './shellChrome.js'
@@ -24,6 +26,7 @@ import AppSidebar from './AppSidebar.vue'
 import GlobalErrorDialog from './GlobalErrorDialog.vue'
 import ConnectivityNoticeDialog from './ConnectivityNoticeDialog.vue'
 import ConfirmDialogHost from '../components/ConfirmDialogHost.vue'
+import SiteFeedbackDialog from '../components/SiteFeedbackDialog.vue'
 import OnboardingHost from '../components/OnboardingHost.vue'
 import publicSecurityFilingIcon from '../assets/public-security-filing.png'
 
@@ -136,6 +139,9 @@ const onboarding = useOnboarding({
   canInvite: computed(() => !showGlobalError.value && !connectivityNotice.value && !failed.value),
 })
 provide(ONBOARDING_KEY, onboarding.context)
+const siteFeedback = useSiteFeedback(route)
+const { open: siteFeedbackOpen, pageView: siteFeedbackPage } = siteFeedback
+provide(FEEDBACK_KEY, siteFeedback.request)
 </script>
 
 <template>
@@ -178,6 +184,7 @@ provide(ONBOARDING_KEY, onboarding.context)
     @close="closeConnectivityNotice"
   />
   <ConfirmDialogHost />
+  <SiteFeedbackDialog v-if="siteFeedbackOpen" :page-view="siteFeedbackPage" @close="siteFeedbackOpen = false" />
   <OnboardingHost :onboarding="onboarding" />
 </template>
 

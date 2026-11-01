@@ -5,6 +5,7 @@ import { mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { ref } from 'vue'
 import { messages } from '../locales/messages.js'
+import { FEEDBACK_KEY } from '../shared/feedback.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import MorePage from './MorePage.vue'
@@ -24,7 +25,7 @@ vi.mock('../composables/useAuth.js', async () => {
   }
 })
 
-function mountPage(navigate = vi.fn(), onboarding = null, creatorsAvailable = true) {
+function mountPage(navigate = vi.fn(), onboarding = null, creatorsAvailable = true, openFeedback = null) {
   const i18n = createI18n({
     locale: 'zh',
     fallbackLocale: 'en',
@@ -33,7 +34,7 @@ function mountPage(navigate = vi.fn(), onboarding = null, creatorsAvailable = tr
   const wrapper = mount(MorePage, {
     global: {
       plugins: [i18n],
-      provide: { [NAVIGATE_VIEW_KEY]: navigate, [ONBOARDING_KEY]: onboarding,
+      provide: { [NAVIGATE_VIEW_KEY]: navigate, [ONBOARDING_KEY]: onboarding, [FEEDBACK_KEY]: openFeedback,
         [CREATOR_AVAILABILITY_KEY]: { available: ref(creatorsAvailable), directoryVisible: ref(false), contentKnown: ref(true), publicCategories: ref([]), loading: ref(false), refresh: vi.fn() } },
     },
   })
@@ -41,6 +42,16 @@ function mountPage(navigate = vi.fn(), onboarding = null, creatorsAvailable = tr
 }
 
 describe('MorePage language switcher', () => {
+  it('requests the in-app feedback dialog instead of linking out', async () => {
+    menuRole.authenticated = ref(false)
+    const openFeedback = vi.fn()
+    const { wrapper } = mountPage(vi.fn(), null, true, openFeedback)
+    const entry = wrapper.get('[data-testid="more-link-feedback"]')
+    expect(entry.element.tagName).toBe('BUTTON')
+    await entry.trigger('click')
+    expect(openFeedback).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps creator administration hidden on a legacy backend', () => {
     menuRole.tournament = true
     menuRole.content = true

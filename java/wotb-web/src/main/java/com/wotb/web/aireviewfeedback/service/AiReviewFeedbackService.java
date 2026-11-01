@@ -7,6 +7,7 @@ import com.wotb.web.aireviewfeedback.dto.FeedbackRecord;
 import com.wotb.web.aireviewfeedback.repository.AiReviewFeedbackRepository;
 import com.wotb.web.util.apierror.ApiErrorCode;
 import com.wotb.web.util.apierror.ApiException;
+import com.wotb.web.util.text.UserText;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.DeserializationFeature;
@@ -56,9 +57,9 @@ public class AiReviewFeedbackService {
         final String feedback = text(body.get("feedbackText"), 4000, false);
         final String response = text(body.get("aiResponseText"), 200000, true);
         final String model = text(body.get("model"), 128, false);
-        require(!reasons.isEmpty() || hasText(feedback));
-        require(hasText(response));
-        try { return repository.insert(reasons, hasText(feedback) ? feedback : null, response, model); }
+        require(!reasons.isEmpty() || UserText.hasText(feedback));
+        require(UserText.hasText(response));
+        try { return repository.insert(reasons, UserText.hasText(feedback) ? feedback : null, response, model); }
         catch (final RuntimeException ex) { throw new ApiException(ApiErrorCode.INTERNAL_ERROR); }
     }
 
@@ -97,21 +98,8 @@ public class AiReviewFeedbackService {
         if (node == null || node.isNull()) { require(!required); return null; }
         require(node.isString());
         final String value = node.asString();
-        require(value.codePointCount(0, value.length()) <= max);
-        // PostgreSQL text cannot store NUL; unpaired surrogates cannot round-trip as UTF-8.
-        require(value.codePoints().noneMatch(ch -> ch == 0 || (ch >= 0xd800 && ch <= 0xdfff)));
+        require(UserText.isStorable(value, max));
         return value;
-    }
-
-    private static boolean hasText(final String value) {
-        return value != null && value.codePoints().anyMatch(ch -> !isWhitespace(ch));
-    }
-
-    // ECMAScript String.trim whitespace, shared with the browser form.
-    private static boolean isWhitespace(final int ch) {
-        return (ch >= 0x09 && ch <= 0x0d) || ch == 0x20 || ch == 0xa0 || ch == 0x1680
-                || (ch >= 0x2000 && ch <= 0x200a) || ch == 0x2028 || ch == 0x2029
-                || ch == 0x202f || ch == 0x205f || ch == 0x3000 || ch == 0xfeff;
     }
 
     private static void require(final boolean valid) { if (!valid) { throw invalid(); } }

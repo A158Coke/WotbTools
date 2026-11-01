@@ -13,7 +13,7 @@ export const feedbackReasons: readonly FeedbackReason[] = Object.freeze([
   'TOO_VAGUE', 'TOO_VERBOSE', 'UNHELPFUL_ADVICE', 'OTHER',
 ])
 
-async function request(url: string, options: RequestInit = {}): Promise<unknown | null> {
+export async function request(url: string, options: RequestInit = {}): Promise<unknown | null> {
   const { token, ensureToken } = useAuth()
   if (!(await ensureToken(30))) throw new ApiError({ errorCode: 'AUTH_UNAUTHENTICATED', status: 401, retryable: false })
   const headers = { ...(options.headers || {}) } as Record<string, string>

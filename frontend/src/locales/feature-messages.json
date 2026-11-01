@@ -9,6 +9,15 @@
       "previous": "上一页", "next": "下一页", "detail": "反馈详情", "snapshot": "AI 回复原文",
       "reasons": { "FACT_ERROR": "事实错误", "BAD_JUDGMENT": "判断不好", "MISSED_KEY_POINT": "漏掉关键点", "TOO_AI_LIKE": "太像 AI", "TOO_VAGUE": "过于模糊", "TOO_VERBOSE": "太啰嗦", "UNHELPFUL_ADVICE": "建议没帮助", "OTHER": "其他" }
     },
+    "siteFeedback": {
+      "title": "反馈", "question": "遇到了什么问题，或者有什么建议？", "comment": "详细说明", "notice": "我们会记录你所在的页面，但不会保存账号信息，所以无法直接回复你。需要回复时，请在说明里留下联系方式，或前往联系页面。",
+      "cancel": "取消", "close": "关闭", "submit": "提交反馈", "success": "感谢你的反馈。", "tooLong": "文本超过长度限制。",
+      "adminTitle": "站点反馈", "loginRequired": "请登录以查看反馈。", "adminRequired": "需要站点管理员权限。",
+      "filter": "原因", "all": "全部", "refresh": "刷新", "loading": "加载中…", "empty": "没有反馈记录。",
+      "created": "时间", "page": "页面", "actions": "操作", "view": "查看", "delete": "删除", "deleteConfirm": "确定永久删除这条反馈？",
+      "previous": "上一页", "next": "下一页", "detail": "反馈详情",
+      "reasons": { "BUG": "功能故障", "FEATURE_REQUEST": "功能建议", "DATA_ERROR": "数据有误", "USABILITY": "使用不便", "OTHER": "其他" }
+    },
     "baseStatus": {
       "title": "基地状态",
       "owner_friendly": "友方持有",
@@ -546,6 +555,8 @@
       "adminUsers": "用户管理需要联网读取 Keycloak 与本地资料。",
       "aiFeedback": "提交复盘反馈需要联网。",
       "adminAiFeedback": "查看复盘反馈需要联网。",
+      "siteFeedback": "提交反馈需要联网。",
+      "adminSiteFeedback": "查看站点反馈需要联网。",
       "syncPaused": "离线状态，数据同步已暂停。",
       "leagueBroadcasts": "联赛直播回放需要联网，恢复连接后可继续浏览和管理。"
     },
@@ -963,6 +974,15 @@
       "created": "Date", "model": "Model", "actions": "Actions", "view": "View", "delete": "Delete", "deleteConfirm": "Permanently delete this feedback?",
       "previous": "Previous", "next": "Next", "detail": "Feedback details", "snapshot": "Original AI reply",
       "reasons": { "FACT_ERROR": "Factual error", "BAD_JUDGMENT": "Poor judgment", "MISSED_KEY_POINT": "Missed key point", "TOO_AI_LIKE": "Too AI-like", "TOO_VAGUE": "Too vague", "TOO_VERBOSE": "Too verbose", "UNHELPFUL_ADVICE": "Unhelpful advice", "OTHER": "Other" }
+    },
+    "siteFeedback": {
+      "title": "Feedback", "question": "What went wrong, or what would you like to see?", "comment": "Details", "notice": "We record the page you are on but do not save your account details, so we cannot reply to you directly. If you need a reply, leave contact details below or use the Contact page.",
+      "cancel": "Cancel", "close": "Close", "submit": "Submit feedback", "success": "Thank you for your feedback.", "tooLong": "The text exceeds the length limit.",
+      "adminTitle": "Site feedback", "loginRequired": "Sign in to view feedback.", "adminRequired": "Site administrator access is required.",
+      "filter": "Reason", "all": "All", "refresh": "Refresh", "loading": "Loading…", "empty": "No feedback found.",
+      "created": "Date", "page": "Page", "actions": "Actions", "view": "View", "delete": "Delete", "deleteConfirm": "Permanently delete this feedback?",
+      "previous": "Previous", "next": "Next", "detail": "Feedback details",
+      "reasons": { "BUG": "Something is broken", "FEATURE_REQUEST": "Feature request", "DATA_ERROR": "Incorrect data", "USABILITY": "Hard to use", "OTHER": "Other" }
     },
     "baseStatus": {
       "title": "Base status",
@@ -1501,6 +1521,8 @@
       "adminUsers": "User management needs a connection to read Keycloak and local profiles.",
       "aiFeedback": "Submitting review feedback requires a connection.",
       "adminAiFeedback": "Viewing review feedback requires a connection.",
+      "siteFeedback": "Submitting feedback requires a connection.",
+      "adminSiteFeedback": "Viewing site feedback requires a connection.",
       "syncPaused": "Offline: syncing is paused.",
       "leagueBroadcasts": "Tournament broadcasts require an internet connection. Reconnect to browse and manage them."
     },
@@ -1918,6 +1940,15 @@
       "created": "Дата", "model": "Модель", "actions": "Действия", "view": "Просмотр", "delete": "Удалить", "deleteConfirm": "Удалить отзыв без возможности восстановления?",
       "previous": "Назад", "next": "Далее", "detail": "Подробности отзыва", "snapshot": "Исходный ответ ИИ",
       "reasons": { "FACT_ERROR": "Фактическая ошибка", "BAD_JUDGMENT": "Неверная оценка", "MISSED_KEY_POINT": "Упущен важный момент", "TOO_AI_LIKE": "Слишком похоже на ИИ", "TOO_VAGUE": "Слишком расплывчато", "TOO_VERBOSE": "Слишком многословно", "UNHELPFUL_ADVICE": "Бесполезный совет", "OTHER": "Другое" }
+    },
+    "siteFeedback": {
+      "title": "Обратная связь", "question": "Что пошло не так или чего вам не хватает?", "comment": "Подробности", "notice": "Мы сохраняем страницу, на которой вы находитесь, но не данные аккаунта, поэтому не сможем ответить вам напрямую. Если нужен ответ, оставьте контакты в описании или воспользуйтесь страницей контактов.",
+      "cancel": "Отмена", "close": "Закрыть", "submit": "Отправить отзыв", "success": "Спасибо за отзыв.", "tooLong": "Текст превышает ограничение длины.",
+      "adminTitle": "Отзывы о сайте", "loginRequired": "Войдите, чтобы просматривать отзывы.", "adminRequired": "Требуются права администратора сайта.",
+      "filter": "Причина", "all": "Все", "refresh": "Обновить", "loading": "Загрузка…", "empty": "Отзывы не найдены.",
+      "created": "Дата", "page": "Страница", "actions": "Действия", "view": "Просмотр", "delete": "Удалить", "deleteConfirm": "Удалить отзыв без возможности восстановления?",
+      "previous": "Назад", "next": "Далее", "detail": "Подробности отзыва",
+      "reasons": { "BUG": "Что-то сломано", "FEATURE_REQUEST": "Предложение", "DATA_ERROR": "Неверные данные", "USABILITY": "Неудобно пользоваться", "OTHER": "Другое" }
     },
     "baseStatus": {
       "title": "Состояние баз",
@@ -2456,6 +2487,8 @@
       "adminUsers": "Для управления пользователями нужно подключение к Keycloak и локальным профилям.",
       "aiFeedback": "Для отправки отзыва требуется подключение.",
       "adminAiFeedback": "Для просмотра отзывов требуется подключение.",
+      "siteFeedback": "Для отправки отзыва о сайте требуется подключение.",
+      "adminSiteFeedback": "Для просмотра отзывов о сайте требуется подключение.",
       "syncPaused": "Нет сети: синхронизация приостановлена.",
       "leagueBroadcasts": "Для трансляций турниров нужен интернет. Подключитесь для просмотра и управления."
     },

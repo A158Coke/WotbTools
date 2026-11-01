@@ -538,5 +538,17 @@
   {
     "schema": "AdminAiReviewFeedbackPage",
     "value": { "items": [{ "id": "123", "reasonCodes": ["FACT_ERROR"], "feedbackText": "note", "model": null, "createdAt": "2026-10-01T12:00:00Z" }], "page": 0, "size": 25, "totalItems": 1, "totalPages": 1 }
+  },
+  {
+    "schema": "CreateSiteFeedbackResponse",
+    "value": { "id": "123", "createdAt": "2026-10-01T12:00:00Z" }
+  },
+  {
+    "schema": "AdminSiteFeedbackDetail",
+    "value": { "id": "123", "reasonCodes": ["BUG"], "feedbackText": "note", "pageView": "hof", "createdAt": "2026-10-01T12:00:00Z" }
+  },
+  {
+    "schema": "AdminSiteFeedbackPage",
+    "value": { "items": [{ "id": "123", "reasonCodes": ["BUG"], "feedbackText": "note", "pageView": "hof", "createdAt": "2026-10-01T12:00:00Z" }], "page": 0, "size": 25, "totalItems": 1, "totalPages": 1 }
   }
 ]
