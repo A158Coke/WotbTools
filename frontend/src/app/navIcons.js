@@ -1,5 +1,5 @@
 import {
-  BookOpen, Database, CircleUser, Clapperboard, House, Map, Menu, Network, Radio, ShieldCheck, Trophy, Users, ListOrdered, Settings,
+  BookOpen, Database, CircleUser, Clapperboard, House, Map, Menu, MessageSquare, Network, Radio, ShieldCheck, Trophy, Users, ListOrdered, Settings,
 } from 'lucide-vue-next'
 
 // 主导航图标（侧边栏与底部 Tab 栏共用，键为 PRIMARY_NAV.id / ADMIN_NAV.id）
@@ -20,6 +20,7 @@ export const ADMIN_NAV_ICONS = Object.freeze({
   'admin-users': Users,
   'admin-battle-data': Database,
   'admin-ai-review-feedback': Users,
+  'admin-site-feedback': MessageSquare,
   'hof-admin': ShieldCheck,
   'tournament-points-config': Settings,
   'tournament-points-admin': ListOrdered,

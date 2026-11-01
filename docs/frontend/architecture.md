@@ -81,6 +81,8 @@ generated 代码、`*.test.js` 与 `scripts/**` 不在基线内。
 
 Battle Data 管理视图由 `BattleDataAdminPage` lazy-load；`api/admin-battle-data.ts` 持有认证读取与 wire 校验，`ADMIN_BATTLE_DATA` 是 ONLINE_REQUIRED。深链由 ViewHost 要求站点管理员；离线保留已加载结果并阻止新请求。地图覆盖复用 Collector 的 map-semantics profile，不建立另一份审校清单；地图显示名只经 `mapLabel()` 读取 `common/map_names.json`，出生侧上方 / 下方 / 西侧 / 东侧是 `battleDataCoverage.ts` 的展示映射；地图筛选项覆盖全部可寻址地图，不随 summary 时间窗变化。
 
+站点反馈由 `AppShell` 经 `FEEDBACK_KEY` 向首页页脚与「更多」提供打开入口，`useSiteFeedback` 依次判定 `SITE_FEEDBACK`（ONLINE_REQUIRED）与登录：未登录直接进入登录并回到原位置，不打开表单；已登录时记录当前 view 并挂载 `SiteFeedbackDialog`。管理视图 `AdminSiteFeedbackPage` lazy-load，深链由 ViewHost 要求站点管理员；`api/site-feedback.ts` 持有请求与 wire 校验。
+
 业务 HTTP endpoint 的唯一 owner 是 `frontend/src/api/**`。`user-profile.ts` 持有用户资料、账号绑定与验证；`admin-users.ts` 持有管理用户搜索、详情与删除；`hall-of-fame.ts` 持有单场、百场、三环的公开/登录/管理请求、个人状态与证据上传下载；个人单场成绩 `getUserHofRecords` 也由该 owner 提供，`user-profile.ts` 不持有 HoF 请求。组件/composable 消费领域 API，资料 provisioning/retry 状态机仍归 `useBusinessUserBootstrap`。wire 类型以 generated OpenAPI transport 为准。
 
 用户资料与账号绑定的六条请求、管理用户的搜索/详情/删除、名人堂单场的公开分页、个人成绩、公开/管理车辆选项、上传、管理列表与审计，百场与三环的公开/提交/取消/个人状态/管理 JSON，以及单场/百场/三环的批量删除结果，在 API owner 内将网络 JSON 视为 `unknown`，通过 generated OpenAPI runtime validator 后才返回 typed wire value。积分赛、推荐与联赛直播也在各自 API owner 完成校验与视图投影。上述边界的 JSON 语法错误或形状不符均抛出不可重试的 `INVALID_RESPONSE`，不补字段、不接受契约外 enum；合法 optional/nullable 值保持原样。HoF 数组先检查数组形状，再逐项使用 generated validator；空数组合法，非 nullable 的 `null` 或非法条目失败。三环按自身 DTO 定义状态和可空字段，不复用百场的业务 shape。

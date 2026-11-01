@@ -69,6 +69,7 @@ for (const name of ['BattleDataRequest', 'BattleDataAdminSummary', 'BattleDataAd
   'HofVehicleOption', 'HofAdminPage', 'HofAdminAuditPage', 'Mark3CreateResult', 'Mark3SubmissionSummary', 'Mark3UserStatus', 'Mark3LeaderboardPage', 'Mark3AdminPage', 'Mark3AdminDetail', 'Mark3ReplayEvidence', 'HofUploadResponse',
   'UserProfile', 'AdminUserPage', 'AdminUserDetail', 'DeleteUsersResponse',
   'CreateAiReviewFeedbackResponse', 'AdminAiReviewFeedbackPage', 'AdminAiReviewFeedbackDetail',
+  'CreateSiteFeedbackResponse', 'AdminSiteFeedbackPage', 'AdminSiteFeedbackDetail',
   'HundredLeaderboardPage', 'HundredCreateResult', 'HundredSubmissionSummary', 'HundredUserStatus',
   'HundredAdminPage', 'HundredAdminDetail', 'HundredReplayEvidence', 'BulkDeleteResult',
   'CreatorLevel', 'CreatorNameRequest', 'BackendHealth',

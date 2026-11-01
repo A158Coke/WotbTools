@@ -33,6 +33,30 @@ const dialog = () => document.querySelector('[role="dialog"]')
 const settleFocus = () => new Promise(resolve => setTimeout(resolve, 10))
 
 describe('AppDialog', () => {
+  it('stacks by open order, not by mount order', async () => {
+    const Host = defineComponent({
+      setup() {
+        const first = ref(false)
+        const second = ref(false)
+        return () => h('div', [
+          h('button', { id: 'first', onClick: () => { first.value = true } }),
+          h('button', { id: 'second', onClick: () => { second.value = true } }),
+          h('button', { id: 'close-first', onClick: () => { first.value = false } }),
+          h(AppDialog, { open: first.value, title: 'Mounted first' }),
+          h(AppDialog, { open: second.value, title: 'Mounted second' }),
+        ])
+      },
+    })
+    wrapper = mount(Host, { attachTo: document.body, global: { mocks } })
+    await wrapper.get('#second').trigger('click')
+    await wrapper.get('#first').trigger('click')
+    await flushPromises()
+    const zIndexOf = title => [...document.querySelectorAll('[data-testid="dialog-scrim"]')]
+      .find(scrim => scrim.textContent.includes(title)).getAttribute('style')
+    expect(zIndexOf('Mounted second')).toContain('var(--z-dialog) + 1')
+    expect(zIndexOf('Mounted first')).toContain('var(--z-dialog) + 2')
+  })
+
   it('returns focus when a conditional editor is unmounted while open', async () => {
     const opener = document.createElement('button')
     document.body.appendChild(opener)

@@ -11,6 +11,7 @@ const ProfilePage = defineAsyncComponent(() => import('../components/ProfilePage
 const BattleDataAdminPage = defineAsyncComponent(() => import('../components/BattleDataAdminPage.vue'))
 const AdminUsersPage = defineAsyncComponent(() => import('../components/AdminUsersPage.vue'))
 const AdminAiReviewFeedbackPage = defineAsyncComponent(() => import('../components/AdminAiReviewFeedbackPage.vue'))
+const AdminSiteFeedbackPage = defineAsyncComponent(() => import('../components/AdminSiteFeedbackPage.vue'))
 const HistoryPage = defineAsyncComponent(() => import('../components/HistoryPage.vue'))
 const TechnicalEvolutionPage = defineAsyncComponent(() => import('../components/TechnicalEvolutionPage.vue'))
 const ContactPage = defineAsyncComponent(() => import('../components/ContactPage.vue'))
@@ -58,6 +59,7 @@ export const VIEW_COMPONENTS = Object.freeze({
   'admin-users': AdminUsersPage,
   'admin-battle-data': BattleDataAdminPage,
   'admin-ai-review-feedback': AdminAiReviewFeedbackPage,
+  'admin-site-feedback': AdminSiteFeedbackPage,
   history: HistoryPage,
   'technical-evolution': TechnicalEvolutionPage,
   contact: ContactPage,
