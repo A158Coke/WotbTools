@@ -73,27 +73,24 @@ const baseMarkers = computed(() => {
 })
 
 /**
- * 底图解析：bundled 同步就位；map2d（未收录 14 张的校准战术底图，1254²、~900KB）
- * 异步经资产包 map2d/index.json 解析（worldBounds 即 coordinateBounds），失败
- * fail-visible。naturalWidth/Height 就绪后才建映射。
- */
-/**
  * 底图解析：bundled 同步就位；map2d（全部 43 张的 canonical 1254² 校准战术底图，
- * ~900KB）异步加载，naturalWidth/Height 就绪后才建映射。失败 fail-visible。
+ * ~900KB）异步经 map2d/index.json 的几何 + 完整性契约解析，失败 fail-visible。
+ * 请求代际见 publishedUrl 注释：快速切图 A→B 时旧请求只清理自己的资源。
  */
 async function resolveBasemap(bm) {
+  const gen = ++basemapGen
+  releasePublishedUrl()
   basemapImage.value = null
   basemapError.value = false
-  releaseBasemapUrl()
   if (!bm) return
   if (bm.kind === 'bundled') {
     basemapImage.value = bm.image
     return
   }
   const key = bm.mapKey || props.mapKey
-  // 走 map2d/index.json 的几何 + 完整性契约（schema/generated、worldBounds/orientation、
-  // 图片字节 sha256）：任一不成立 fail-visible，绝不"能加载就当 ±300"。
-  // 世界框取自索引声明（geometryMatches 已保证与注册表逐值相等）。
+  // map2d/index.json 契约（schema/generated、worldBounds/orientation、图片字节 sha256）：
+  // 任一不成立 fail-visible，绝不"能加载就当 ±300"。世界框取自索引声明
+  // （geometryMatches 已保证与注册表逐值相等）。
   const resolved = await (async () => {
     try {
       return await resolveMap2dBasemap(key, WORLD_BOUNDS_300)
@@ -101,6 +98,7 @@ async function resolveBasemap(bm) {
       return { error: 'offline', detail: String(e && e.message || e) }
     }
   })()
+  if (gen !== basemapGen) return   // 过期（换图/卸载已介入）：未创建任何资源，直接退出
   if (resolved.error) {
     if (import.meta.env.DEV) {
       console.warn(`[map-preview] map2d 底图拒绝（${key}）:`, resolved.error, resolved.detail || '')
@@ -108,10 +106,8 @@ async function resolveBasemap(bm) {
     basemapError.value = true
     return
   }
-  // 校验通过的字节转 blob URL 供 <img> 使用（避免二次拉取；用完在换图/卸载时释放）
+  // 校验通过的字节转 blob URL 供 <img> 使用（避免二次拉取；释放见代际模型注释）
   const blobUrl = URL.createObjectURL(new Blob([resolved.bytes], { type: 'image/webp' }))
-  releaseBasemapUrl()
-  basemapObjectUrl.value = blobUrl
   try {
     const img = await new Promise((resolve, reject) => {
       const el = new Image()
@@ -119,19 +115,39 @@ async function resolveBasemap(bm) {
       el.onerror = () => reject(new Error('basemap decode failed'))
       el.src = blobUrl
     })
+    // 解码尺寸必须与 manifest 声明一致：index↔图片发布漂移（重导出/裁切）在此 fail-visible，
+    // 不静默改用解码尺寸渲染（那会让 ±300 映射整体错位且无任何提示）。
+    if (img.naturalWidth !== resolved.width || img.naturalHeight !== resolved.height) {
+      if (import.meta.env.DEV) {
+        console.warn(`[map-preview] map2d 底图尺寸漂移（${key}）:`, img.naturalWidth, 'x', img.naturalHeight, '!= manifest', resolved.width, 'x', resolved.height)
+      }
+      URL.revokeObjectURL(blobUrl)
+      basemapError.value = true
+      return
+    }
+    if (gen !== basemapGen) {
+      URL.revokeObjectURL(blobUrl)   // 过期：只清理自己创建的 URL，新代的 owner 不归我管
+      return
+    }
+    releasePublishedUrl()
+    publishedUrl.value = blobUrl
     basemapImage.value = {
       src: blobUrl,
-      width: img.naturalWidth || resolved.width || 1254,
-      height: img.naturalHeight || resolved.height || 1254,
+      width: resolved.width,
+      height: resolved.height,
       coordinateBounds: resolved.worldBounds || WORLD_BOUNDS_300,
     }
   } catch {
-    basemapError.value = true
+    URL.revokeObjectURL(blobUrl)     // 解码失败：自己清理自己的 URL
+    if (gen === basemapGen) basemapError.value = true
   }
 }
 
-/** blob URL 生命周期：换图/卸载时释放（否则每张 900KB 图片常驻）。 */
-onBeforeUnmount(releaseBasemapUrl)
+/** 卸载：在途请求全部过期，已发布 URL 释放（900KB/张不常驻）。 */
+onBeforeUnmount(() => {
+  basemapGen++
+  releasePublishedUrl()
+})
 // 底图解析的 watch 注册在标注状态声明之后（见文件后部）——immediate 首评需要完整状态
 
 const semPerSvgX = computed(() => {
@@ -299,11 +315,18 @@ function onWheel(e) {
   applyView(zoomViewAt(view, p.x, p.y, e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP, fitScale()))
 }
 
-const basemapObjectUrl = ref(null)
-function releaseBasemapUrl() {
-  if (basemapObjectUrl.value) {
-    URL.revokeObjectURL(basemapObjectUrl.value)
-    basemapObjectUrl.value = null
+/**
+ * blob URL 生命周期（请求代际模型）：换图/卸载递增 `basemapGen` 使所有在途请求过期；
+ * 每个请求只清理**自己创建**的资源——过期请求 revoke 自己的 URL 后退出，绝不触碰
+ * 新代已发布的 URL；`publishedUrl` 是唯一已发布 owner（revoke 它 = 换图/卸载释放）。
+ * 快速切图 A→B 的正确性：旧请求在每个 await 后核验代际，发布前再核验一次。
+ */
+let basemapGen = 0
+const publishedUrl = ref(null)
+function releasePublishedUrl() {
+  if (publishedUrl.value) {
+    URL.revokeObjectURL(publishedUrl.value)
+    publishedUrl.value = null
   }
 }
 

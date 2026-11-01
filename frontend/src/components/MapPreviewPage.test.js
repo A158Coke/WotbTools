@@ -140,6 +140,24 @@ describe('MapPreviewPage', () => {
     expect(fb.attributes('src')).not.toContain('/cover/')
   })
 
+  it('bundled 兜底图自身加载失败 → 落占位图标，两个 URL 都不再重试', async () => {
+    auth.authenticated.value = true
+    source.loadMapIndex.mockResolvedValue(IDX)
+    // cover 直接不可得（Android 离线门控）→ 模板走 bundled 兜底
+    assetProvider.url.mockImplementation((p) => {
+      if (p.startsWith('/cover/')) throw new Error('NETWORK_ERROR')
+      return 'https://assets.test' + p
+    })
+    const wrapper = await openAt()
+    const fb = wrapper.find('[data-testid="map-thumb-fallback-erlenberg"]')
+    expect(fb.exists()).toBe(true)
+    // bundled 兜底自己加载失败（@error）→ 独立失败集合置空 thumbFallback → 占位图标
+    await fb.trigger('error')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="map-thumb-fallback-erlenberg"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="map-card-erlenberg"]').find('.map-card-thumb-fallback').exists()).toBe(true)
+  })
+
   it('索引失败 → 可重试的失败态；重试成功回到 picker', async () => {
     auth.authenticated.value = true
     source.loadMapIndex.mockResolvedValueOnce(null)

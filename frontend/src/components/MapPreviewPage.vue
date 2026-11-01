@@ -36,6 +36,7 @@ const { authenticated } = useAuth()
  *  当前 locale 的**派生投影**（computed）——运行中切语言即时生效，不残留旧语言。 */
 const rawMaps = ref([])
 const failedThumbs = ref(new Set())
+const failedFallbacks = ref(new Set())
 const nameOf = (m) => {
   const localized = mapLabel(m.key, locale.value)
   return localized !== m.key ? localized : (m.packDisplay || m.key)
@@ -45,6 +46,7 @@ const maps = computed(() => rawMaps.value
     ...m,
     name: nameOf(m),
     thumb: failedThumbs.value.has(m.key) ? null : m.thumb,
+    thumbFallback: failedFallbacks.value.has(m.key) ? null : m.thumbFallback,
   }))
   .sort((a, b) => collator.compare(a.name, b.name)))
 const indexFailed = ref(false)
@@ -108,6 +110,18 @@ function onThumbError(m) {
   const next = new Set(failedThumbs.value)
   next.add(m.key)
   failedThumbs.value = next
+}
+
+/**
+ * bundled 兜底图自身加载失败（打包资产按理必可用，失败即环境异常）→ 记入独立
+ * 集合，派生投影把 thumbFallback 置空——模板落占位图标，不再重试任一 URL。
+ * 与 cover 失败集合分开：fallback 失败不回退 cover（那会回到已知失败的远端）。
+ */
+function onFallbackError(m) {
+  if (!m.thumbFallback || failedFallbacks.value.has(m.key)) return
+  const next = new Set(failedFallbacks.value)
+  next.add(m.key)
+  failedFallbacks.value = next
 }
 watch(authenticated, (ok) => { if (ok && !indexLoaded.value) loadMaps() }, { immediate: true })
 
@@ -220,6 +234,7 @@ const modeOptions = computed(() => [
                 <img
                   v-else-if="m.thumbFallback"
                   :src="m.thumbFallback"
+                  @error="onFallbackError(m)"
                   alt=""
                   loading="lazy"
                   :data-testid="`map-thumb-fallback-${m.key}`"
