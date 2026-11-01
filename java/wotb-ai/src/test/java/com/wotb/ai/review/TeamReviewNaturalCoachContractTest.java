@@ -19,9 +19,9 @@ class TeamReviewNaturalCoachContractTest {
 
     @Test
     void finalSystemPromptsPreserveEvidenceAndCoachingPolicy() {
-        final String zh = TeamPromptLocalizer.localizeTeamSystemPrompt(TeamPromptLocalizer.SINGLE_TEAM_PROMPT, AllowedLanguage.ZH);
-        final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(TeamPromptLocalizer.SINGLE_TEAM_PROMPT, AllowedLanguage.EN);
-        final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(TeamPromptLocalizer.SINGLE_TEAM_PROMPT, AllowedLanguage.RU);
+        final String zh = TeamPromptLocalizer.systemPrompt(AllowedLanguage.ZH);
+        final String en = TeamPromptLocalizer.systemPrompt(AllowedLanguage.EN);
+        final String ru = TeamPromptLocalizer.systemPrompt(AllowedLanguage.RU);
         for (String anchor : new String[]{"禁止先形成战术故事，再选择性挑证据支持", "则该复盘在事实完整性上失败", "事实从严，判断从宽", "不把未知改写成不存在", "旧快照、局部观测", "observed damage = 0", "grid occupancy 不等于实际参战人数", "离散 objective observation", "有限 roster 写成全队", "时间接近的死亡事件"}) {
             assertTrue(zh.contains(anchor), anchor);
         }
@@ -104,7 +104,7 @@ class TeamReviewNaturalCoachContractTest {
         assertTrue(ZH.contains("downstream validation"), "HP 必须是 downstream validation");
         assertTrue(ZH.contains("Trigger → Decision target → Training goal"), "建议必须绑定状态触发器");
         for (final AllowedLanguage lang : java.util.List.of(AllowedLanguage.EN, AllowedLanguage.RU)) {
-            final String localized = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, lang);
+            final String localized = TeamPromptLocalizer.systemPrompt(lang);
             assertFalse(localized.contains("=== 团队复盘推理顺序与因果质量约束（强制） ==="),
                     lang + " 残留中文 reasoning contract");
             assertTrue(localized.contains("Remaining uncertainty"), lang + " 必须携带 uncertainty contract");
@@ -113,11 +113,11 @@ class TeamReviewNaturalCoachContractTest {
                     lang + " 必须携带 local participation contract");
             assertTrue(localized.contains("downstream validation"), lang + " 必须携带 HP validation contract");
         }
-        final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.EN);
+        final String en = TeamPromptLocalizer.systemPrompt(AllowedLanguage.EN);
         assertTrue(en.contains("State before -> Change -> Immediate local consequence -> Propagation"),
                 "EN 必须携带 episode 因果链");
         assertTrue(en.contains("Trigger -> Decision target -> Training goal"), "EN 必须携带建议因果链");
-        final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.RU);
+        final String ru = TeamPromptLocalizer.systemPrompt(AllowedLanguage.RU);
         assertTrue(ru.contains("State before -> Change -> Immediate local consequence -> Propagation"),
                 "RU 必须携带 episode 因果链");
         assertTrue(ru.contains("Trigger -> Decision target -> Training goal"), "RU 必须携带建议因果链");
@@ -162,17 +162,17 @@ class TeamReviewNaturalCoachContractTest {
     @Test
     void localizedContractInThreeLanguages() {
         for (final AllowedLanguage lang : java.util.List.of(AllowedLanguage.EN, AllowedLanguage.RU)) {
-            final String localized = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, lang);
+            final String localized = TeamPromptLocalizer.systemPrompt(lang);
             assertFalse(localized.contains("=== 团队复盘输出结构（强制） ==="), lang + " 残留中文输出结构");
             assertFalse(localized.contains("=== 主判断（Primary Diagnosis，强制） ==="), lang + " 残留中文主判断");
             assertFalse(localized.contains("=== GROUNDING FACTS 与结构化输出（强制） ==="), lang + " 残留中文旧 GROUNDING");
         }
-        final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.EN);
+        final String en = TeamPromptLocalizer.systemPrompt(AllowedLanguage.EN);
         assertTrue(en.contains("FREE-FORM natural review"), "EN 必须声明 free-form natural review");
         assertTrue(en.contains("not a fixed-section template"), "EN 必须声明非固定章节模板");
         assertTrue(en.contains("PRIMARY DIAGNOSIS (mandatory)"), "EN 必须有主判断契约");
         assertTrue(en.contains("Team AI Review structured result"), "EN 必须有 structured result 契约");
-        final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.RU);
+        final String ru = TeamPromptLocalizer.systemPrompt(AllowedLanguage.RU);
         assertTrue(ru.contains("ОСНОВНОЙ ДИАГНОЗ (PRIMARY DIAGNOSIS, обязательно)"), "RU 必须有主判断契约");
         assertTrue(ru.contains("Team AI Review структурированный результат"), "RU 必须有 structured result 契约");
     }

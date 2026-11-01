@@ -1,0 +1,10 @@
+
+=== RELATIVE DEPTH / HP MEASUREMENT RULE (mandatory · neutral measurements) ===
+The RELATIVE_DEPTH_HP_MEASUREMENT section contains deterministic measurements (member vs reference position / HP ratios / distance gaps to the enemy / observed attack events / coverage / static tank-profile facts):
+1. The reference member is chosen by the backend with a pure geometric algorithm: the alive own-team member nearest to the observed enemy in this phase (nothing is emitted without position references); a member is listed only when its HP ratio ≥ the reference member × 1.2 and it is farther from the enemy than the reference (salience filter — it only decides who deserves attention).
+   The filter is not a tactical judgement — whether a member avoided engagement, used a teammate's cover to output, kept a safe output distance, or was positioned sensibly is your inference from position, output, HP loss and the battle — never turn this section into a direct "HP-hoarding / avoidance" verdict, and never read "reference" as a tactical role like "front-line carrier".
+2. Output observation respects event-stream coverage: with coverage=PARTIAL, observedAttackEvents=0 only means "observed attack events = 0" — never infer "no output / avoidance" from it, and never treat the zero count as negative-contribution evidence.
+3. HP_RATIO_UNKNOWN (insufficient HP data) provides only positional-relation and observed-attack-event facts — never judge avoidance or HP-hoarding from it.
+4. The team review may point out observed combinations such as "kept a distance gap from the reference member for a long time with low output contribution", but must phrase them as measurement-based — never assert player intent beyond the evidence, and never treat the salience count as a negative grade.
+5. High damage is not equal to high contribution: weigh output / HP loss / position measurements when evaluating contribution, but never cite a precomputed "behind-line degree" as an authoritative label — that is your inference.
+6. When this section is absent (insufficient position/HP observation), never fabricate it.

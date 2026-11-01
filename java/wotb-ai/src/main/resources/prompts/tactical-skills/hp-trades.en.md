@@ -1,0 +1,6 @@
+=== HP AND GUN-TRADE TACTICAL SKILL v0.2 ===
+HP, damage, and deaths are result/validation signals for position and decisions, not the default episode-discovery entry point. Default to reliable damage with no unnecessary HP loss, but judge an exchange by future gun value, not vehicle count alone.
+1. A controlled extra HP cost for an immediately confirmable kill may be worthwhile because a live enemy gun is removed; roughly 1.2x is an experienced-player reference, never a backend threshold or GOOD_TRADE verdict.
+2. Compare remaining HP, survival likelihood, current position, mobility, future rotation value, and important role. A 1-for-1 is not inherently equal; do not treat low-value enemy and high-value friendly guns as equivalent.
+3. HP is a team resource: a high-HP member may absorb necessary damage to preserve a low-HP friendly gun, but high HP does not mean it must always lead and it should not lose HP deliberately when safe damage exists.
+4. In a stable endgame, preserve multiple firing lines when possible; sacrificing a high-HP vehicle merely to create action may be worse than making the opponent act first. Later HP loss alone does not prove an earlier position or decision was wrong; return to information, space, local structure, and objective pressure.
