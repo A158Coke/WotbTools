@@ -44,6 +44,13 @@ jobs:
       - name: Type check
         working-directory: frontend
         run: pnpm run typecheck
+      - name: TypeScript baseline base→head monotonic guard
+        working-directory: frontend
+        env:
+          BASE_SHA: ${{ inputs.base_sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          node scripts/check-typescript-baseline.mjs --base "$BASE_SHA"
       - name: Style lint (design language)
         working-directory: frontend
         run: pnpm run lint:css

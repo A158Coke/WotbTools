@@ -5,7 +5,7 @@ import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 import legacy from '../../typescript.legacy.json'
 
-// typescript.legacy.json 是只减不增的迁移基线：新 prod 模块必须是 TS，迁完一个删一个。
+// typescript.legacy.json 必须等于当前源码；只减不增由 scripts/check-typescript-baseline.mjs 在 CI 中比较 base 与 head。
 const FRONTEND = fileURLToPath(new URL('../../', import.meta.url))
 const SRC = join(FRONTEND, 'src')
 
@@ -61,12 +61,12 @@ describe('TypeScript migration baseline', () => {
     expect(silenced.map(file => file.path).filter(path => path !== 'src/shared/typescript-ownership.test.ts')).toEqual([])
   })
 
-  it('keeps type escape hatches at the recorded count', () => {
-    const counted = typedProduction.map(file => escapeHatches(file.path, file.source))
-    expect({
-      any: counted.reduce((sum, counts) => sum + counts.any, 0),
-      asUnknownAs: counted.reduce((sum, counts) => sum + counts.asUnknownAs, 0),
-    }).toEqual(legacy.escapeHatches)
+  it('records the escape hatches of every production file', () => {
+    const counted = typedProduction.flatMap(file => {
+      const counts = escapeHatches(file.path, file.source)
+      return counts.any || counts.asUnknownAs ? [[file.path, counts] as const] : []
+    })
+    expect(Object.fromEntries(counted)).toEqual(legacy.escapeHatches)
   })
 
   it('counts every any spelling and ignores comments and strings', () => {

@@ -1,5 +1,5 @@
 {
-  "$comment": "迁移前的非 TypeScript 模块基线（见 docs/frontend/architecture.md）。只减不增：文件迁移到 TypeScript 后从此名单删除。retained = 刻意保留并写明理由；p1 = 复杂状态 / 算法模块；p2 = 普通模块，随改动迁移。",
+  "$comment": "迁移前的非 TypeScript 模块基线（见 docs/frontend/architecture.md）。只减不增：文件迁移到 TypeScript 后从此名单删除，CI 按 base→head 比较。retained = 刻意保留并写明理由；p1 = 复杂状态 / 算法模块；p2 = 普通模块，随改动迁移；escapeHatches = 逐文件的 any 与 as unknown as 数量。",
   "retained": {
     "src/app/navigation.js": "browser-league-broadcasts.mjs 在 Node 中直接 import",
     "src/platform/nativeBridgeContract.js": "build-android-bundle.mjs 加载 vite.config.js 时在 Node 中传递 import",
@@ -269,7 +269,41 @@
     "src/vehicle-portraits/runtime.js"
   ],
   "escapeHatches": {
-    "any": 68,
-    "asUnknownAs": 7
+    "src/api/agent-replay-facets.ts": {
+      "any": 0,
+      "asUnknownAs": 3
+    },
+    "src/components/BattlePlaybackPanel.vue": {
+      "any": 4,
+      "asUnknownAs": 0
+    },
+    "src/composables/useLocalReplayAnalysis.ts": {
+      "any": 0,
+      "asUnknownAs": 1
+    },
+    "src/replay-local/__golden__/goldenEntries.ts": {
+      "any": 0,
+      "asUnknownAs": 1
+    },
+    "src/replay-local/ai/index.ts": {
+      "any": 0,
+      "asUnknownAs": 1
+    },
+    "src/replay-local/compute/characteristics.ts": {
+      "any": 9,
+      "asUnknownAs": 0
+    },
+    "src/replay-local/compute/gunArc.ts": {
+      "any": 6,
+      "asUnknownAs": 0
+    },
+    "src/replay-local/compute/tankSetup.ts": {
+      "any": 49,
+      "asUnknownAs": 0
+    },
+    "src/shared/tabular/xlsx/render.ts": {
+      "any": 0,
+      "asUnknownAs": 1
+    }
   }
 }
