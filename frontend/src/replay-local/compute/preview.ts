@@ -80,6 +80,8 @@ export interface BattleDto {
   durationS: number | null
   startTime: number | null
   winnerTeam: number | null
+  /** 只由 markDraws 在客户端边界写入，见其注释。 */
+  draw?: boolean
   sourceId: string | null
   sourceName: string
   players: PlayerRowDto[]
@@ -430,4 +432,16 @@ export function toPreviewResponse(dataset: ProcessedDataset, tankopedia: Tankope
     playerColumns: playerColumns(), aggregateColumns: aggregateColumns(),
     league: null, leagueUnavailableCode: dataset.leagueUnavailableCode, leagueMode: false,
   }
+}
+
+/**
+ * 有结算但无胜方是平局；没有结算时胜负未知。Preview 与 Java golden 严格同形，
+ * 这个区分只服务工作台文案，所以在提交结果时补上，不进入 toPreviewResponse。
+ */
+export function markDraws(preview: PreviewResponse, dataset: Pick<ProcessedDataset, 'battles'>): PreviewResponse {
+  const drawn = new Set((dataset.battles ?? [])
+    .filter(b => b.winnerTeam === null && b.settlementFinishReasonRaw !== null)
+    .map(b => b.arenaId))
+  if (drawn.size === 0) return preview
+  return { ...preview, battles: preview.battles.map(b => (drawn.has(b.arenaId) ? { ...b, draw: true } : b)) }
 }

@@ -181,7 +181,7 @@ watch([() => props.sortKey, () => props.sortReverse], schedule)
 // ---- 本场关键数字：胜方显示战队名（覆盖名 → 军团标签），没有名字时才用「队伍 N」 ----
 const battleStats = computed(() => {
   const winner = props.battle.winnerTeam
-  const winnerName = winner ? (teamName(winner) || t('team.' + winner)) : t('team.unknown')
+  const winnerName = winner ? (teamName(winner) || t('team.' + winner)) : t(props.battle.draw ? 'workspace.series_draw' : 'team.unknown')
   return [
     { key: 'map', label: t('metric.map'), value: mapLabel(props.battle.mapName, locale.value) },
     { key: 'duration', label: t('metric.duration'), value: fmtDuration(props.battle.durationS, t) },

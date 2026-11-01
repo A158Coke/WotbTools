@@ -13,7 +13,7 @@ export type { Battle, EntryHpSource, ParsedEntry, PlayerResult, PlayerVehicleUsa
 export { finalizeBatch, NoValidReplaysError, MIXED_LEAGUE_AND_STANDARD_REPLAYS, type ProcessedDataset } from './finalize.js'
 export type { LeagueRatingBatch, PlayerLeagueSummary, TeamLeagueSummary } from './league-batch.js'
 export type { LeagueFailure, LeagueRatingResult, PlayerLeagueRating, TeamLeagueRating } from './league-rating.js'
-export { toPreviewResponse } from './preview.js'
+export { markDraws, toPreviewResponse } from './preview.js'
 export type {
   AggRowDto,
   BattleDto,

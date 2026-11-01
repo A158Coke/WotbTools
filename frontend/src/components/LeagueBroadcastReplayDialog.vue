@@ -127,7 +127,7 @@ function submit() {
       <section class="broadcast-cover">
         <h3>{{ t('leagueBroadcasts.cover') }}</h3>
         <Banner v-if="!coverUploadAvailable">{{ t('api_errors.BROADCAST_STORAGE_UNAVAILABLE') }}</Banner>
-        <FileDrop :files="files" purpose="image" image-single :image-label="t('leagueBroadcasts.chooseCover')" :image-hint="t('leagueBroadcasts.coverHint')" :disabled="busy || !coverUploadAvailable" :show-preview="false" :allow-folder="false" @update:files="files = $event" />
+        <FileDrop :files="files" purpose="image" image-single :image-label="t('leagueBroadcasts.chooseCover')" :image-hint="t('leagueBroadcasts.coverHint')" :disabled="busy || !coverUploadAvailable" @update:files="files = $event" />
         <img v-if="coverSource" :src="coverSource" :alt="t('leagueBroadcasts.coverAlt', { title: draft.title })" class="broadcast-cover-preview" data-testid="broadcast-cover-preview">
         <AppButton v-if="replay?.coverId && !files.length" :disabled="busy" data-testid="broadcast-remove-cover" @click="removeCover = !removeCover">{{ t(removeCover ? 'leagueBroadcasts.restoreCover' : 'leagueBroadcasts.removeCover') }}</AppButton>
       </section>

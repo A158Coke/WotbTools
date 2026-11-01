@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowRight, CloudUpload, FileText, FolderOpen, Plus, Trash2, X } from 'lucide-vue-next'
+import { CloudUpload, FileText, FolderOpen, X } from 'lucide-vue-next'
 import { fileKey, displayName } from '../utils/helpers.js'
 import {
   MAX_REPLAY_FILES,
@@ -15,7 +15,7 @@ import Banner from './Banner.vue'
 import { isAndroidApp } from '../composables/usePlatformBridge.js'
 import { pickNativeReplayFolder, supportsNativeReplayFolder } from '../platform/replayFolderPicker.js'
 
-const emit = defineEmits(['update:files', 'preview', 'remove-request'])
+const emit = defineEmits(['update:files'])
 const props = defineProps({
   files: Array,
   loading: Boolean,
@@ -25,18 +25,9 @@ const props = defineProps({
   imageSingle: { type: Boolean, default: false },
   imageLabel: { type: String, default: '' },
   imageHint: { type: String, default: '' },
-  confirmRemove: Boolean,
-  showPreview: { type: Boolean, default: true },
-  /** 解析完成后压缩上传区域：隐藏大卡/预览主按钮，只保留细条批次摘要 + 添加/清空。 */
-  compact: { type: Boolean, default: false },
-  /** AI 复盘 / 战局重建 单文件语义时禁 folder（默认 true 兼容批处理）。 */
-  allowFolder: { type: Boolean, default: true }
 })
 const dragging = ref(false)
-const listOpen = ref(false)
-/** 解析完成后的「清空」会丢掉已解析结果：先进入确认态（WS-21）。 */
-const confirmingClear = ref(false)
-/** preflight 拒绝结果（{offending, tooMany, totalTooLarge}；非空时 selection 保持不变）。 */
+/** preflight 结果（{offending, tooMany, totalTooLarge, alreadyListed}；非空时 selection 保持不变）。 */
 const validation = ref(null)
 const imageError = ref(false)
 const nativeFolderAvailable = ref(false)
@@ -44,7 +35,7 @@ const pickingFolder = ref(false)
 const folderError = ref('')
 let folderReadController = null
 let disposed = false
-const showFolderPicker = computed(() => props.allowFolder && (!isAndroidApp() || nativeFolderAvailable.value))
+const showFolderPicker = computed(() => !isAndroidApp() || nativeFolderAvailable.value)
 onMounted(async () => {
   if (isAndroidApp() && props.purpose === 'replay') {
     const supported = await supportsNativeReplayFolder()
@@ -62,14 +53,10 @@ const maxReplayTotal = formatReplaySize(MAX_REPLAY_TOTAL_BYTES)
 /** 原生 file input 视觉隐藏，由真正的按钮触发，保证键盘可达（WS-07）。 */
 const filesInput = ref(null)
 const folderInput = ref(null)
-const addFilesInput = ref(null)
-const addFolderInput = ref(null)
-const compactAddInput = ref(null)
 function openPicker(input) {
   if (props.loading || props.disabled || pickingFolder.value) return
   input?.click?.()
 }
-defineExpose({ chooseFiles: () => openPicker(filesInput.value) })
 
 async function openFolderPicker(input) {
   if (props.loading || props.disabled || pickingFolder.value) return
@@ -99,15 +86,12 @@ async function openFolderPicker(input) {
   }
 }
 
-const totalBytes = computed(() => props.files.reduce((sum, f) => sum + (f.size || 0), 0))
-
 // 父级已更新 files（remove/clear/替换）→ 清除过期的 preflight 拒绝信息（被拒的 add
 // 不会触发 update:files，因此错误会保留直到下一次成功 add 或 files 变化）。
 watch(() => props.files, () => {
   // A newer import owns this selection; a late folder result must not reset its parsed output.
   folderReadController?.abort()
   validation.value = null
-  confirmingClear.value = false
   folderError.value = ''
 })
 
@@ -140,52 +124,42 @@ function addFiles(list) {
   if (prepared) emit('update:files', prepared.prospective)
 }
 
-/** One preflight for Web files, Native metadata and fully-read Native files. */
+/**
+ * One preflight for Web files, Native metadata and fully-read Native files.
+ * 已在列表里的文件保持原实例与原位置，新文件追加到尾部：sourceId 是 files 下标，
+ * 现有结果在后台加载期间必须继续对得上。
+ */
 function prepareReplayFiles(picked) {
   const replays = picked.filter(f => isReplayFileName(f?.name))
   if (replays.length === 0) {
-    validation.value = { noReplay: true, offending: [], tooMany: false, totalTooLarge: false, singleOnly: false }
+    validation.value = { noReplay: true, offending: [], tooMany: false, totalTooLarge: false }
     return
   }
-  // 单文件模式（AI 复盘 / 战局重建）：一次只接受一个回放——文件选择器已去 multiple；
-  // drag/drop 多文件直接拒绝，不静默取第一个。
-  if (!props.allowFolder && replays.length > 1) {
-    validation.value = { noReplay: false, offending: [], tooMany: false, totalTooLarge: false, singleOnly: true }
+  const listed = new Set(props.files.map(fileKey))
+  const added = [...new Map(replays.filter(f => !listed.has(fileKey(f))).map(f => [fileKey(f), f])).values()]
+    .sort((a, b) => displayName(a).localeCompare(displayName(b)))
+  if (added.length === 0) {
+    validation.value = { alreadyListed: true, offending: [], tooMany: false, totalTooLarge: false }
     return
   }
-  let prospective
-  if (props.allowFolder) {
-    const byKey = new Map(props.files.map(f => [fileKey(f), f]))
-    replays.forEach(f => byKey.set(fileKey(f), f))
-    prospective = Array.from(byKey.values()).sort((a, b) => displayName(a).localeCompare(displayName(b)))
-  } else {
-    // single-file：新选择 replace 当前文件（不合并 → 不会出现先得到 [A,B] 再报 single_replay_required）。
-    prospective = [replays[replays.length - 1]]
-  }
+  const prospective = [...props.files, ...added]
   const result = validateReplaySelection(prospective)
   if (!result.valid) {
     validation.value = result
     return
   }
   validation.value = null
-  return { picked: replays, prospective }
+  return { picked: added, prospective }
 }
 
 function removeFile(f) {
-  if (props.loading || props.disabled || pickingFolder.value) return
-  validation.value = null
-  if (props.confirmRemove) {
-    emit('remove-request', f)
-    return
-  }
+  if (props.loading || props.disabled) return
   const k = fileKey(f)
   emit('update:files', props.files.filter(x => fileKey(x) !== k))
 }
 
 function clearFiles() {
-  if (props.loading || props.disabled || pickingFolder.value) return
-  validation.value = null
-  confirmingClear.value = false
+  if (props.loading || props.disabled) return
   emit('update:files', [])
 }
 
@@ -199,13 +173,20 @@ function onDrop(e) {
   addFiles(e.dataTransfer.files)
 }
 
+defineExpose({
+  chooseFiles: () => openPicker(filesInput.value),
+  chooseFolder: () => openFolderPicker(folderInput.value),
+  addDropped: addFiles,
+  folderAvailable: showFolderPicker,
+})
+
 </script>
 
 <template>
   <section class="uploadwrap" :class="{ 'is-dragging': dragging }"
            @dragover.prevent="dragging = true"
            @dragleave.prevent="dragging = false"
-           @drop.prevent="onDrop">
+           @drop.stop.prevent="onDrop">
     <template v-if="purpose === 'image'">
       <Banner v-if="imageError" tone="danger">{{ $t('tournament.imageInvalid') }}</Banner>
       <input ref="filesInput" class="visually-hidden" type="file" tabindex="-1" aria-hidden="true" :multiple="!imageSingle" accept="image/png,image/jpeg" :disabled="disabled || loading" data-testid="tournament-image-input" @change="onPick" />
@@ -224,9 +205,9 @@ function onDrop(e) {
       </div>
     </template>
     <template v-else>
-    <Banner v-if="validation" tone="danger" data-testid="upload-validation-error">
+    <Banner v-if="validation" :tone="validation.alreadyListed ? 'info' : 'danger'" data-testid="upload-validation-error">
+      <p v-if="validation.alreadyListed">{{ $t('upload.already_listed') }}</p>
       <p v-if="validation.noReplay">{{ $t('upload.reject_no_replay') }}</p>
-      <p v-if="validation.singleOnly">{{ $t('upload.single_only') }}</p>
       <p v-if="validation.offending.length" class="upload-errors-title">{{ $t('upload.reject_offending_title') }}</p>
       <ul v-if="validation.offending.length" class="upload-errors-list">
         <li v-for="off in validation.offending" :key="fileKey(off.file)">
@@ -242,71 +223,21 @@ function onDrop(e) {
     <Banner v-if="folderError" tone="danger" data-testid="folder-read-error">{{ $t(folderError) }}</Banner>
 
     <!-- 原生 input：视觉隐藏、不进 Tab 序列，由下方按钮触发 -->
-    <input ref="filesInput" class="visually-hidden" type="file" tabindex="-1" aria-hidden="true" :multiple="allowFolder" accept=".wotbreplay" data-testid="select-files-input" @change="onPick" />
+    <input ref="filesInput" class="visually-hidden" type="file" tabindex="-1" aria-hidden="true" multiple accept=".wotbreplay" data-testid="select-files-input" @change="onPick" />
     <input v-if="showFolderPicker && !isAndroidApp()" ref="folderInput" class="visually-hidden" type="file" tabindex="-1" aria-hidden="true" multiple webkitdirectory data-testid="select-folder-input" @change="onPick" />
-    <input ref="addFilesInput" class="visually-hidden" type="file" tabindex="-1" aria-hidden="true" :multiple="allowFolder" accept=".wotbreplay" data-testid="add-files-input" @change="onPick" />
-    <input v-if="showFolderPicker && !isAndroidApp()" ref="addFolderInput" class="visually-hidden" type="file" tabindex="-1" aria-hidden="true" multiple webkitdirectory data-testid="add-folder-input" @change="onPick" />
-    <input ref="compactAddInput" class="visually-hidden" type="file" tabindex="-1" aria-hidden="true" :multiple="allowFolder" accept=".wotbreplay" data-testid="compact-add-files-input" @change="onPick" />
 
-    <!-- 状态 1：空 —— 全宽拖放区 -->
+    <!-- 只有空列表才有上传面；有回放后入口在工作台的「管理回放」，这里只留 input 与校验提示 -->
     <div v-if="!files.length" class="dropzone" data-testid="file-uploader-empty">
       <CloudUpload class="dropzone-icon" :size="40" aria-hidden="true" />
       <p class="dropzone-title">{{ $t('upload.drop_hint') }}</p>
-      <p class="dropzone-hint">{{ $t(!allowFolder ? 'upload.sub_hint_single' : showFolderPicker ? 'upload.sub_hint' : 'upload.files_only_hint') }}</p>
+      <p class="dropzone-hint">{{ $t(showFolderPicker ? 'upload.sub_hint' : 'upload.files_only_hint') }}</p>
       <div class="dropzone-actions">
         <AppButton variant="primary" :disabled="disabled || loading || pickingFolder" @click="openPicker(filesInput)"><FileText :size="18" aria-hidden="true" />{{ $t('upload.select_files') }}</AppButton>
         <AppButton v-if="showFolderPicker" :disabled="disabled || loading || pickingFolder" :aria-busy="pickingFolder" @click="openFolderPicker(folderInput)"><FolderOpen :size="18" aria-hidden="true" />{{ $t(pickingFolder ? 'upload.reading_folder' : 'upload.select_folder') }}</AppButton>
       </div>
-      <p class="dropzone-meta">{{ $t(!allowFolder ? 'upload.multi_single' : showFolderPicker ? 'upload.multi' : 'upload.files_only_multi') }} · {{ $t('upload.excel') }} · {{ $t('upload.privacy') }}</p>
+      <p class="dropzone-meta">{{ $t(showFolderPicker ? 'upload.multi' : 'upload.files_only_multi') }} · {{ $t('upload.excel') }} · {{ $t('upload.privacy') }}</p>
     </div>
 
-    <!-- 状态 2：已选择、未解析 —— 批次条 + 解析主操作 -->
-    <div v-else-if="!compact" class="filebar">
-      <div class="filebar-row">
-        <div class="fb-summary">
-          <FileText :size="20" aria-hidden="true" />
-          <span><strong>{{ $t('upload.selected_title') }}</strong> <span class="fb-count">{{ $t('upload.files_size', { count: files.length, size: formatReplaySize(totalBytes) }) }}</span></span>
-        </div>
-        <div class="fb-actions">
-          <AppButton variant="ghost" size="sm" :aria-expanded="listOpen" @click="listOpen = !listOpen">
-            {{ listOpen ? $t('upload.hide_list') : $t('upload.view_list', { count: files.length }) }}
-          </AppButton>
-          <AppButton variant="ghost" size="sm" :disabled="disabled || loading || pickingFolder" :title="$t('upload.add_files_title')" @click="openPicker(addFilesInput)"><Plus :size="16" aria-hidden="true" />{{ $t('upload.add') }}</AppButton>
-          <AppButton v-if="showFolderPicker" :disabled="disabled || loading || pickingFolder" :aria-busy="pickingFolder" variant="ghost" size="sm" :title="$t('upload.add_folder_title')" @click="openFolderPicker(addFolderInput)"><FolderOpen :size="16" aria-hidden="true" />{{ $t('upload.folder') }}</AppButton>
-          <AppButton variant="ghost" size="sm" :disabled="disabled || loading || pickingFolder" @click="clearFiles"><Trash2 :size="16" aria-hidden="true" />{{ $t('upload.clear') }}</AppButton>
-        </div>
-      </div>
-      <div v-if="listOpen" class="fb-list" data-testid="file-list">
-        <span v-for="f in files" :key="fileKey(f)" class="chip" :title="displayName(f)">
-          <span class="chip-name">{{ displayName(f) }}</span>
-          <span class="chip-size">{{ formatReplaySize(f.size) }}</span>
-          <button type="button" class="chipx" :disabled="disabled || loading || pickingFolder" :title="$t('upload.remove_title')" :aria-label="$t('upload.remove_title')" @click.stop="removeFile(f)"><X :size="16" aria-hidden="true" /></button>
-        </span>
-      </div>
-      <div v-if="showPreview" class="replay-primary-actions">
-        <AppButton variant="primary" size="lg" :disabled="disabled || loading || pickingFolder" @click="$emit('preview')">
-          {{ $t('action.preview') }}<ArrowRight :size="18" aria-hidden="true" />
-        </AppButton>
-        <span v-if="loading" class="fb-count" role="status">{{ $t('action.processing') }}</span>
-      </div>
-    </div>
-
-    <!-- 状态 3：解析完成 —— 一行批次条，把空间让给结果 -->
-    <div v-else class="compactbar" data-testid="file-uploader-compact">
-      <div class="fb-summary">
-        <FileText :size="18" aria-hidden="true" />
-        <span class="fb-count">{{ $t('upload.files_size', { count: files.length, size: formatReplaySize(totalBytes) }) }}</span>
-      </div>
-      <div v-if="!confirmingClear" class="fb-actions">
-        <AppButton variant="ghost" size="sm" :disabled="disabled || loading || pickingFolder" :title="$t('upload.add_files_title')" @click="openPicker(compactAddInput)"><Plus :size="16" aria-hidden="true" />{{ $t('upload.add') }}</AppButton>
-        <AppButton variant="ghost" size="sm" :disabled="disabled || loading || pickingFolder" data-testid="compact-clear" @click="confirmingClear = true"><Trash2 :size="16" aria-hidden="true" />{{ $t('upload.clear') }}</AppButton>
-      </div>
-      <div v-else class="fb-actions" role="group" :aria-label="$t('upload.clear_confirm')">
-        <span class="fb-confirm">{{ $t('upload.clear_confirm') }}</span>
-        <AppButton variant="danger" size="sm" data-testid="compact-clear-confirm" @click="clearFiles">{{ $t('upload.clear') }}</AppButton>
-        <AppButton variant="ghost" size="sm" data-testid="compact-clear-cancel" @click="confirmingClear = false">{{ $t('upload.cancel') }}</AppButton>
-      </div>
-    </div>
     </template>
   </section>
 </template>
@@ -336,8 +267,7 @@ function onDrop(e) {
   transition: border-color var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard);
 }
 
-.is-dragging .dropzone,
-.is-dragging .filebar {
+.is-dragging .dropzone {
   border-color: var(--color-accent);
   background: color-mix(in oklab, var(--color-accent) 8%, var(--color-surface-1));
 }
@@ -348,31 +278,16 @@ function onDrop(e) {
 .dropzone-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); margin-top: var(--space-2); }
 .dropzone-meta { margin: var(--space-2) 0 0; color: var(--color-text-tertiary); font: var(--type-caption); }
 
-.filebar,
-.compactbar {
+.filebar {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-lg);
   background: var(--color-surface-1);
 }
 
-.filebar { display: grid; gap: var(--space-3); padding: var(--space-3) var(--space-4); }
-
-.filebar-row,
-.compactbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2) var(--space-4);
-}
-
-.compactbar { padding: var(--space-2) var(--space-3); }
-
-.fb-summary { display: flex; align-items: center; gap: var(--space-2); min-width: 0; color: var(--color-text-primary); font: var(--type-body); }
-.fb-summary > svg { flex: none; color: var(--color-text-secondary); }
-.fb-count { color: var(--color-text-secondary); font: var(--type-body); }
 .fb-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
-.fb-confirm { color: var(--color-text-primary); font: var(--type-body); }
 
 .fb-list {
   display: flex;
@@ -399,7 +314,6 @@ function onDrop(e) {
 }
 
 .chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chip-size { flex: none; color: var(--color-text-secondary); }
 
 .chipx {
   display: inline-flex;
@@ -421,15 +335,6 @@ function onDrop(e) {
 
 .upload-errors-title { font-weight: 600; }
 .upload-errors-list { margin: 0; padding-inline-start: var(--space-5); }
-
-.replay-primary-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-3);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--color-border-subtle);
-}
 
 @media (hover: hover) {
   .chipx:hover { background: var(--color-surface-3); color: var(--color-text-primary); }

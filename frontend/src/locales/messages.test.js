@@ -73,7 +73,7 @@ describe('locale message composition', () => {
   it('contains local replay analysis / export / verification copy in all supported locales', () => {
     for (const locale of ['zh', 'en', 'ru']) {
       const m = messages[locale]
-      for (const key of ['parsing', 'progress', 'ready', 'summary', 'failed', 'cancelled', 'cancel', 'dismiss',
+      for (const key of ['loading', 'progress', 'failed_open', 'cancel', 'retry', 'open_other', 'remove_from_list', 'clear_list',
         'engine_unavailable', 'no_valid_replays', 'failed_unknown']) {
         expect(m.replay.analysis[key], `${locale} replay.analysis.${key}`).toBeTruthy()
       }

@@ -108,7 +108,14 @@ onDeactivated(() => setOpen(false))
     </ListboxRoot>
   </DefineBody>
 
-  <div ref="root" class="battle-picker">
+  <!-- 只有一场时没有可选项：显示同样的上下文，不给用户一个打不开的下拉 -->
+  <div v-if="options.length === 1" class="battle-picker" role="group" :aria-label="ariaLabel" v-bind="$attrs">
+    <span class="picker-value picker-static">
+      <span class="picker-label">{{ options[0].label }}</span>
+      <span v-if="options[0].meta" class="picker-meta">{{ options[0].meta }}</span>
+    </span>
+  </div>
+  <div v-else ref="root" class="battle-picker">
     <PopoverRoot :open="open" @update:open="setOpen">
       <PopoverTrigger as-child>
         <button
@@ -164,6 +171,7 @@ onDeactivated(() => setOpen(false))
 .picker-value { display: inline-flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
 .picker-label { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .picker-meta { overflow: hidden; color: var(--color-text-secondary); font: var(--type-caption); text-overflow: ellipsis; white-space: nowrap; }
+.picker-static { align-items: center; min-height: var(--control-h-md); }
 
 /* Popper 内容有外层 wrapper：scoped 属性落在 wrapper 上，面板元素本身要用 :deep 命中 */
 :deep(.picker-panel) {

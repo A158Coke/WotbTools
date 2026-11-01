@@ -2002,16 +2002,14 @@ describe('ReplayPage League failure UX separation', () => {
     wrapper.unmount()
   })
 
-  it('Test 7: 真正 parser failure 仍显示红色「文件解析失败」（不降级成 warning）', async () => {
+  it('Test 7: 部分失败的提醒归工作台，赛后数据页不重复提示', async () => {
     state.init.resp = makeResp({
       failures: [['broken.wotbreplay', 'REPLAY_PROCESSING_FAILED']]
     })
     const wrapper = mountPage()
     await flushPromises()
-    const errBlock = wrapper.find('[data-testid="result-failures"]')
-    expect(errBlock.exists()).toBe(true)
-    expect(errBlock.text()).toContain('result.failures:1')
-    expect(errBlock.text()).toContain('broken.wotbreplay')
+    expect(wrapper.find('[data-testid="result-failures"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('REPLAY_PROCESSING_FAILED')
     wrapper.unmount()
   })
 

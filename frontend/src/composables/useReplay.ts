@@ -1,9 +1,8 @@
 import { useI18n } from 'vue-i18n'
-import { displayName, mapLabel, fileKey } from '../utils/helpers.js'
+import { displayName, fileKey } from '../utils/helpers.js'
 import { useReplaySession, chooseInitialResultTab } from './useReplaySession.js'
 import { useLocalReplayAnalysis } from './useLocalReplayAnalysis.js'
 import type { ReplayCapability } from '../types/workspace.js'
-import type { Battle } from '../types/replay.js'
 
 export { chooseInitialResultTab }
 
@@ -12,17 +11,13 @@ export { chooseInitialResultTab }
  * 与导出（客户端 xlsx）委托 useLocalReplayAnalysis。服务器没有 parser，也没有 job / 轮询。
  */
 export function useReplay(initialCapability: ReplayCapability = 'data') {
-  const { locale, t } = useI18n()
+  const { t } = useI18n()
   const session = useReplaySession(initialCapability)
   const analysis = useLocalReplayAnalysis(session, { t })
   const { files, pendingRemove } = session
 
-  function askRemoveBattle(battle: Battle, idx: number): void {
-    pendingRemove.value = { type: 'battle', battle, label: `${mapLabel(battle.mapName, locale.value)} #${idx + 1}` }
-  }
-
   function askRemoveFile(file: File): void {
-    pendingRemove.value = { type: 'file', file, label: displayName(file) }
+    pendingRemove.value = { file, label: displayName(file) }
   }
 
   function cancelRemove(): void {
@@ -33,16 +28,9 @@ export function useReplay(initialCapability: ReplayCapability = 'data') {
     const pending = pendingRemove.value
     pendingRemove.value = null
     if (!pending) return
-    const next = pending.type === 'battle'
-      ? files.value.filter(f => displayName(f) !== pending.battle.sourceName)
-      : files.value.filter(f => fileKey(f) !== fileKey(pending.file))
-    analysis.updateFiles(next)
-    if (next.length) analysis.analyze()
-  }
-
-  function confirmRemoveBattle(): void {
-    if (pendingRemove.value?.type === 'battle') confirmRemove()
-    else pendingRemove.value = null
+    const next = files.value.filter(f => fileKey(f) !== fileKey(pending.file))
+    if (next.length) void analysis.changeFiles(next)
+    else analysis.updateFiles([])
   }
 
   return {
@@ -61,12 +49,11 @@ export function useReplay(initialCapability: ReplayCapability = 'data') {
     analysis: session.analysis,
     analysisActive: session.analysisActive,
     updateFiles: analysis.updateFiles,
+    changeFiles: analysis.changeFiles,
     updateDemoFile: analysis.updateDemoFile,
     analyze: analysis.analyze,
     cancelAnalysis: analysis.cancel,
-    dismissAnalysis: analysis.dismiss,
     exportExcel: analysis.exportExcel,
-    parsedFiles: analysis.parsedFiles,
     replayBatch: session.replayBatch,
     parsedBattles: session.parsedBattles,
     singleReplay: session.singleReplay,
@@ -81,6 +68,6 @@ export function useReplay(initialCapability: ReplayCapability = 'data') {
     setWorkspaceTab: session.setWorkspaceTab,
     selectBattle: session.selectBattle,
     setDataViewMode: session.setDataViewMode,
-    askRemoveBattle, askRemoveFile, cancelRemove, confirmRemove, confirmRemoveBattle,
+    askRemoveFile, cancelRemove, confirmRemove,
   }
 }

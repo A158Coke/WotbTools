@@ -115,7 +115,7 @@ WotbTools 不把 interaction / segment 展开成额外“射击”，也不在�
 ## 匿名 Battle Data Collector
 
 数据批次 `parseReplays.ts` 与名人堂 `submissionFacts.ts:replayFactsJson` 在主事实构造成功后，
-同步触发 `replay-local/battle-data/collector.ts` 的 best-effort 旁路。主流程不等待采集，
+同步触发 `replay-local/battle-data/collector.ts` 的 best-effort 旁路。工作台选择回放后自动加载，因此选择即触发；集合增删只对新解析的文件触发。主流程不等待采集，
 Collector 的异常、超时、重复提交和断网均不改变主解析结果或用户错误状态。
 账号验证、AI 与其它底层 parser 调用不隐式触发采集。
 

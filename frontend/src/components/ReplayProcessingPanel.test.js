@@ -8,9 +8,9 @@ const i18n = vi.hoisted(() => ({
   t: vi.fn((key, params) => (params ? `${key} ${JSON.stringify(params)}` : key)),
 }))
 
-function mountPanel(analysis, result = null) {
+function mountPanel(analysis, fileCount = 1) {
   return mount(ReplayProcessingPanel, {
-    props: { analysis, result },
+    props: { analysis, fileCount },
     global: { mocks: { $t: i18n.t } },
   })
 }
@@ -27,39 +27,26 @@ describe('ReplayProcessingPanel (local analysis)', () => {
     expect(find(wrapper, 'replay-processing-panel').exists()).toBe(false)
   })
 
-  it('PARSING shows done/total + percent progress and a cancel action', async () => {
-    const wrapper = mountPanel(analysisOf({ done: 3, total: 4 }))
+  it('READY leaves no trace: content appearing is the success signal', () => {
+    const wrapper = mountPanel(analysisOf({ phase: 'ready', done: 4, total: 4 }))
+    expect(find(wrapper, 'replay-processing-panel').exists()).toBe(false)
+  })
 
-    expect(wrapper.text()).toContain('replay.analysis.parsing')
-    const progress = find(wrapper, 'analysis-progress').text()
-    expect(progress).toContain('replay.analysis.progress {"done":3,"total":4}')
-    expect(progress).toContain('75%')
+  it('PARSING speaks about loading, shows batch progress and a cancel action', async () => {
+    const wrapper = mountPanel(analysisOf({ done: 3, total: 4 }), 4)
+
+    expect(wrapper.text()).toContain('replay.analysis.loading')
+    expect(find(wrapper, 'analysis-progress').text()).toContain('replay.analysis.progress {"done":3,"total":4}')
     expect(wrapper.find('[role="progressbar"]').attributes('aria-valuenow')).toBe('75')
-    expect(find(wrapper, 'processing-dismiss').exists()).toBe(false)
 
     await find(wrapper, 'processing-cancel').trigger('click')
     expect(wrapper.emitted('cancel')).toHaveLength(1)
   })
 
-  it('PARSING with zero total stays at 0% instead of NaN', () => {
+  it('PARSING a single replay hides the file counter and never shows NaN', () => {
     const wrapper = mountPanel(analysisOf({ done: 0, total: 0 }))
-    expect(find(wrapper, 'analysis-progress').text()).toContain('0%')
-  })
-
-  it('READY collapses into one line with valid / duplicate / failure counts and dismiss', async () => {
-    const wrapper = mountPanel(
-      analysisOf({ phase: 'ready', done: 4, total: 4 }),
-      { battles: [{}, {}], duplicates: [{}], failures: [{}] },
-    )
-
-    expect(find(wrapper, 'replay-processing-panel').classes()).toContain('rpp-compact')
-    const ready = find(wrapper, 'processing-ready').text()
-    expect(ready).toContain('replay.analysis.ready')
-    expect(ready).toContain('replay.analysis.summary {"v":2,"d":1,"f":1}')
-    expect(find(wrapper, 'processing-cancel').exists()).toBe(false)
-
-    await find(wrapper, 'processing-dismiss').trigger('click')
-    expect(wrapper.emitted('dismiss')).toHaveLength(1)
+    expect(find(wrapper, 'analysis-progress').exists()).toBe(false)
+    expect(wrapper.find('[role="progressbar"]').attributes('aria-valuenow')).toBe('0')
   })
 
   it.each([
@@ -67,18 +54,23 @@ describe('ReplayProcessingPanel (local analysis)', () => {
     ['NO_VALID_REPLAYS', 'replay.analysis.no_valid_replays'],
     ['UNKNOWN', 'replay.analysis.failed_unknown'],
     [null, 'replay.analysis.failed_unknown'],
-  ])('FAILED (%s) surfaces %s with dismiss', (failure, key) => {
-    const wrapper = mountPanel(analysisOf({ phase: 'failed', done: 1, total: 2, failure }))
+  ])('FAILED (%s) offers recovery with %s', async (failure, key) => {
+    const wrapper = mountPanel(analysisOf({ phase: 'failed', failure }))
 
-    expect(wrapper.text()).toContain('replay.analysis.failed')
+    expect(wrapper.text()).toContain('replay.analysis.failed_open')
     expect(find(wrapper, 'analysis-failure').text()).toBe(key)
-    expect(find(wrapper, 'processing-dismiss').exists()).toBe(true)
-    expect(find(wrapper, 'processing-cancel').exists()).toBe(false)
+    expect(find(wrapper, 'processing-clear').text()).toBe('replay.analysis.remove_from_list')
+
+    await find(wrapper, 'processing-retry').trigger('click')
+    await find(wrapper, 'processing-open-other').trigger('click')
+    await find(wrapper, 'processing-clear').trigger('click')
+    expect(wrapper.emitted('retry')).toHaveLength(1)
+    expect(wrapper.emitted('open-other')).toHaveLength(1)
+    expect(wrapper.emitted('clear')).toHaveLength(1)
   })
 
-  it('CANCELLED shows cancelled state and dismiss', () => {
-    const wrapper = mountPanel(analysisOf({ phase: 'cancelled', done: 1, total: 3 }))
-    expect(wrapper.text()).toContain('replay.analysis.cancelled')
-    expect(find(wrapper, 'processing-dismiss').exists()).toBe(true)
+  it('FAILED with several files clears the list instead of removing one', () => {
+    const wrapper = mountPanel(analysisOf({ phase: 'failed', failure: 'NO_VALID_REPLAYS' }), 3)
+    expect(find(wrapper, 'processing-clear').text()).toBe('replay.analysis.clear_list')
   })
 })

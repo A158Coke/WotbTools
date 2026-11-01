@@ -10,7 +10,9 @@ vi.mock('../composables/usePlatformBridge.js', () => ({
   isNativeBridgeCompatible: version => version === 2,
 }))
 // Small byte budgets exercise the real streaming boundary without allocating 200 MiB per unit test.
-vi.mock('../utils/replayUpload.js', () => ({ MAX_REPLAY_FILE_BYTES: 4, MAX_REPLAY_TOTAL_BYTES: 6 }))
+vi.mock('../utils/replayUpload.js', () => ({
+  MAX_REPLAY_FILE_BYTES: 4, MAX_REPLAY_TOTAL_BYTES: 6, isReplayFileName: name => /\.wotbreplay$/i.test(name ?? ''),
+}))
 const metadata = (fileId, extra = {}) => ({
   fileId, name: 'same.wotbreplay', relativePath: `${fileId}/same.wotbreplay`, size: 1, lastModified: 1234, ...extra,
 })
@@ -97,6 +99,15 @@ describe('Native directory platform boundary', () => {
     expect(fetchMock).not.toHaveBeenCalled()
     expect(callBridge).toHaveBeenLastCalledWith('releaseReplayFolderSelection', { selectionId: 'selection-1' })
   })
+  it('fails closed on two native files that normal dedupe would merge into one', async () => {
+    const twin = { relativePath: 'same/same.wotbreplay', size: 1, lastModified: 1234 }
+    pickResponse(selected([metadata('a', twin), metadata('b', twin)]))
+    const mergingPreflight = vi.fn(files => [files[0]])
+    await expect(pickNativeReplayFolder({ prepareFiles: mergingPreflight })).rejects.toMatchObject({ code: 'ambiguous-paths' })
+    expect(mergingPreflight).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('ignored non-replay path collisions do not block the accepted replay', async () => {
     pickResponse(selected([
       metadata('a'), metadata('txt-1', { name: 'readme.txt', relativePath: 'readme.txt' }),

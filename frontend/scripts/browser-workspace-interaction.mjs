@@ -1,5 +1,6 @@
-import { mkdir, writeFile } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
@@ -46,14 +47,20 @@ const AUTH_BOUNDARY_STUBS = new Map([
   [resolve(frontendRoot, 'src/scene/tankViewer.js'), resolve(here, 'browser-fixtures/armor-handoff-stub.js')],
 ])
 
+/** 假文件场景专用：批次分析也换成替身，见 browser-fixtures/local-analysis-stub.js。 */
+const LOCAL_ANALYSIS_STUBS = new Map([
+  [resolve(frontendRoot, 'src/replay-local/parseReplays.ts'), resolve(here, 'browser-fixtures/local-analysis-stub.js')],
+  [resolve(frontendRoot, 'src/replay-local/analyzeReplays.ts'), resolve(here, 'browser-fixtures/local-analysis-stub.js')],
+])
+
 /** Vite 的 module id 在 Windows 上是正斜杠、可能带盘符前导斜杠，且大小写不敏感；比较前统一规整。 */
 function normalizeId(id) {
   const forward = id.replace(/\\/g, '/').replace(/^\/+/, '')
   return process.platform === 'win32' ? forward.toLowerCase() : forward
 }
 
-function authBoundaryStubPlugin({ realReplay = false } = {}) {
-  const normalizedStubs = new Map([...AUTH_BOUNDARY_STUBS]
+function authBoundaryStubPlugin({ realReplay = false, fakeAnalysis = false } = {}) {
+  const normalizedStubs = new Map([...AUTH_BOUNDARY_STUBS, ...(fakeAnalysis ? LOCAL_ANALYSIS_STUBS : [])]
     .filter(([, to]) => !realReplay || /use-(auth|business-user-bootstrap)-stub\.js$/.test(to))
     .map(([from, to]) => [normalizeId(from), to]))
   return {
@@ -72,14 +79,14 @@ function authBoundaryStubPlugin({ realReplay = false } = {}) {
 
 const delay = (ms) => new Promise((resolvePromise) => setTimeout(resolvePromise, ms))
 
-async function startFixtureServer({ realReplay = false } = {}) {
+async function startFixtureServer({ realReplay = false, fakeAnalysis = false } = {}) {
   const server = await createServer({
     configFile: resolve(frontendRoot, 'vite.config.js'),
     root: frontendRoot,
     // Stubbed dependency graphs must not invalidate an already-running developer server.
     cacheDir: resolve(frontendRoot, 'node_modules/.vite-browser-interaction'),
     logLevel: 'error',
-    plugins: [authBoundaryStubPlugin({ realReplay })],
+    plugins: [authBoundaryStubPlugin({ realReplay, fakeAnalysis })],
     // Keep the production WASM pin and safe dev artifact middleware from the real Vite config.
     define: { __BUILD_COMMIT__: '"browser-fixture"', __BUILD_TIME__: '"browser-fixture"' },
     // 与 vite.config.js 一致：logo / icon / silent-check-sso 等 public 资源来自 common/assets。
@@ -90,6 +97,13 @@ async function startFixtureServer({ realReplay = false } = {}) {
   const url = server.resolvedUrls?.local?.[0]
   if (!url) throw new Error('fixture Vite server did not publish a local URL')
   return { server, origin: url.replace(/\/$/, '') }
+}
+
+let fakeAnalysisServer = null
+/** 假文件场景的独立应用夹具；真实解析场景继续用主夹具。 */
+async function fakeAnalysisOrigin() {
+  if (!fakeAnalysisServer) fakeAnalysisServer = await startFixtureServer({ fakeAnalysis: true })
+  return fakeAnalysisServer.origin
 }
 
 /* ------------------------------------------------------------------ 页面内探针
@@ -563,7 +577,8 @@ async function runAuthCapabilityScenario(env, scenario) {
   lastPage = page
   await page.enable({ profile: scenario.profile ?? 'showcase' })
   await page.emulate(scenario)
-  await page.goto(`${env.origin}/?view=replay&ws-auth=${scenario.authenticated ? 1 : 0}&ws-shot-fixture=1&assets=${encodeURIComponent(`${env.origin}/fixture-assets`)}`)
+  const origin = await fakeAnalysisOrigin()
+  await page.goto(`${origin}/?view=replay&ws-auth=${scenario.authenticated ? 1 : 0}&ws-shot-fixture=1&assets=${encodeURIComponent(`${origin}/fixture-assets`)}`)
   await page.waitFor(() => !!document.querySelector('[data-testid="ws-data"]'), { label: 'data pane' })
   await page.evaluate(PARSE_LIFECYCLE_BRIDGE)
   await page.evaluate('window.__pbSelect("auth-capability.wotbreplay", [1, 2, 3, 4])')
@@ -592,9 +607,10 @@ async function runAuthCapabilityScenario(env, scenario) {
     check(failures, loginTrace?.testId === 'capability-login', `real login click landed on ${JSON.stringify(loginTrace)}`)
     check(failures, await page.evaluate('JSON.stringify(window.__wsAuth.loginCalls)') === JSON.stringify([scenario.view]),
       `login must preserve ${scenario.view} as destination`)
-    const fileToggle = await page.evaluate(clickCenterExpression('.filebar .fb-actions button[aria-expanded="false"]'))
-    if (fileToggle) await page.tap({ ...fileToggle, touch: scenario.touch })
-    check(failures, await page.evaluate('document.querySelector("[data-testid=file-list]")?.textContent.includes("auth-capability.wotbreplay") === true'),
+    const listTrigger = await page.waitForValue(clickCenterExpression('[data-testid="collection-trigger"]'), Boolean, { label: 'collection trigger' })
+    await page.tap({ ...listTrigger, touch: scenario.touch })
+    await page.waitFor(() => !!document.querySelector('[data-testid="collection-row"]'), { label: 'collection rows' })
+    check(failures, await page.evaluate('document.querySelector("[data-testid=collection-row]")?.title === "auth-capability.wotbreplay"'),
       'login gate must preserve the chosen replay')
   } else {
     await page.waitForValue(`!!document.querySelector(${JSON.stringify(paneSelector)})`, (present) => present === true,
@@ -1369,11 +1385,11 @@ async function runRosterGeometryScenario(env, scenario) {
 
   // ?debug：Replay3DPane 的状态注入口（与场景内核的 ?debug 钩子同一口径），
   // 必须在面板 setup 之前就在 URL 上。
-  await page.goto(`${env.origin}/?view=replay&ws-auth=1&ws-login=resolve&debug`)
+  await page.goto(`${await fakeAnalysisOrigin()}/?view=replay&ws-auth=1&ws-login=resolve&debug`)
   await page.waitFor(() => !!document.querySelector('[data-testid="ws-tab"][data-cap="3d"]'), { label: 'capability tabs' })
 
-  // 单文件选择（DataTransfer 写入真实 input + change 事件）：单文件时 currentTargetFile
-  // 直接派生为该 File，解析成败不影响 3D 面板拿到 file prop（稍后注入就绪态）。
+  // 单文件选择（DataTransfer 写入真实 input + change 事件）：批次分析是替身，
+  // 这里只负责让 3D 面板拿到 file prop（稍后注入就绪态）。
   await page.evaluate(`(() => {
     const input = document.querySelector('[data-testid="select-files-input"]')
     if (!input) throw new Error('file input missing')
@@ -1957,32 +1973,18 @@ async function runRosterGeometryScenario(env, scenario) {
   // 注意：本段必须先等 A 收敛（err / hasData）才能注入就绪态，所以它覆盖的是「A 已 settle
   // 后再换文件」；**A 仍在解析时就被清空**的线上真实序列由下面的
   // `runParseLifecycleScenario`（parse-lifecycle-* 场景）用闸门 Worker 覆盖。
-  // 撤下第一场（解析未完成 resp=null → per-file remove 无确认；列表默认折叠，先展开），
-  // 换入第二份文件再真实点击「开始」：第二场的解析必须收敛（loading 落下、err 或 ready），
-  // 不得因旧解析占着 Worker 队列永远停在「解析中」。
-  await page.evaluate(`(() => {
-    const toggle = document.querySelector('.filebar .fb-actions button[aria-expanded]')
-    if (toggle && toggle.getAttribute('aria-expanded') === 'false') toggle.click()
-  })()`)
-  await page.waitFor(() => !!document.querySelector('[data-testid="file-list"] .chipx'), { label: 'file chip after expanding list' })
-  const chipCenter = await page.evaluate(`(() => {
-    const chip = document.querySelector('[data-testid="file-list"] .chipx')
-    if (!chip) return { missing: true }
-    chip.scrollIntoView({ block: 'center', inline: 'nearest' })
-    const r = chip.getBoundingClientRect()
-    const hit = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2))
-    return (hit === chip || chip.contains(hit))
-      ? { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
-      : { occludedBy: hit ? hit.tagName + '.' + (hit.className || '') : 'null', rect: [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)], scrollY: window.scrollY }
-  })()`)
-  check(failures, !!(chipCenter && chipCenter.x), `file remove chip not hit-testable: ${JSON.stringify(chipCenter || null)}`)
+  // 从回放列表撤下第一场（真实触屏/鼠标 + 确认框），换入第二份文件再真实点击「开始」：
+  // 第二场的解析必须收敛（loading 落下、err 或 ready），不得因旧解析占着 Worker 队列永远停在「解析中」。
+  const chipCenter = await openCollectionRemove(page, scenario)
+  check(failures, !!(chipCenter && chipCenter.x), `collection remove button not hit-testable: ${JSON.stringify(chipCenter || null)}`)
   if (chipCenter && Number.isFinite(chipCenter.x)) {
     await page.installInputTrace()
     await page.tap({ ...chipCenter, touch: scenario.touch })
     const chipInput = await page.inputTrace()
-    check(failures, chipInput.clickCount === 1, `file remove chip must receive exactly one real click: ${JSON.stringify(chipInput)}`)
-    check(failures, chipInput.primary?.testId === 'file-list' && chipInput.click?.testId === 'file-list',
-      `file remove touch/click must hit the chip: ${JSON.stringify(chipInput)}`)
+    check(failures, chipInput.clickCount === 1, `collection remove must receive exactly one real click: ${JSON.stringify(chipInput)}`)
+    check(failures, chipInput.primary?.testId === 'collection-remove' && chipInput.click?.testId === 'collection-remove',
+      `collection remove touch/click must hit the button: ${JSON.stringify(chipInput)}`)
+    await confirmCollectionRemove(page, scenario)
     await page.waitFor(() => !document.querySelector('.pb-root'), { label: '3D pane torn down after clear' })
     await page.evaluate(`(() => {
       const input = document.querySelector('[data-testid="select-files-input"]')
@@ -2367,6 +2369,27 @@ const PARSE_LIFECYCLE_BRIDGE = `(() => {
   return true
 })()`
 
+/** 打开回放列表并返回第一行移除按钮的命中中心（含按钮盒，供事后证明真实 click 的落点）。 */
+async function openCollectionRemove(page, scenario) {
+  const trigger = await page.waitForValue(clickCenterExpression('[data-testid="collection-trigger"]'), Boolean, { label: 'collection trigger' })
+  await page.tap({ ...trigger, touch: scenario.touch })
+  await page.waitFor(() => !!document.querySelector('[data-testid="collection-remove"]'), { label: 'collection remove button' })
+  return page.waitForValue(`(() => {
+    const button = document.querySelector('[data-testid="collection-remove"]')
+    if (!button) return null
+    const r = button.getBoundingClientRect()
+    const hit = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2))
+    return (hit === button || button.contains(hit))
+      ? { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), box: { left: r.left, right: r.right, top: r.top, bottom: r.bottom } }
+      : null
+  })()`, Boolean, { label: 'collection remove hit-testable' }).catch(() => null)
+}
+
+async function confirmCollectionRemove(page, scenario) {
+  const confirm = await page.waitForValue(clickCenterExpression('[data-testid="remove-confirm-ok"]'), Boolean, { label: 'remove confirmation' })
+  await page.tap({ ...confirm, touch: scenario.touch })
+}
+
 /** 可点击中心点（hit-test 通过才返回；与其它场景同一口径） */
 function clickCenterExpression(selector) {
   return `(() => {
@@ -2412,7 +2435,7 @@ async function runParseLifecycleScenario(env, scenario) {
   await page.enable()
   await page.emulate(scenario)
 
-  await page.goto(`${env.origin}/?view=replay&ws-auth=1&ws-login=resolve&debug`)
+  await page.goto(`${await fakeAnalysisOrigin()}/?view=replay&ws-auth=1&ws-login=resolve&debug`)
   await page.waitFor(() => !!document.querySelector('[data-testid="ws-tab"][data-cap="3d"]'), { label: 'capability tabs' })
   await page.evaluate(PARSE_LIFECYCLE_BRIDGE)
 
@@ -2461,59 +2484,37 @@ async function runParseLifecycleScenario(env, scenario) {
   check(failures, inFlight?.paneStore?.err === '' && inFlight?.paneStore?.hasData === false,
     `battle A must still be pending (no err / no data) at clear time (state=${JSON.stringify(inFlight)})`)
 
-  // —— clear A：展开文件列表 → 真实点击 remove chip ——
-  await page.evaluate(`(() => {
-    const toggle = document.querySelector('.filebar .fb-actions button[aria-expanded]')
-    if (toggle && toggle.getAttribute('aria-expanded') === 'false') toggle.click()
-  })()`)
-  await page.waitFor(() => !!document.querySelector('[data-testid="file-list"] .chipx'), { label: 'file chip after expanding list' })
-  // Dragging a chip is a scroll gesture: it must leave A selected and its parse alive.
-  await page.installInputTrace()
-  const dragStart = await page.evaluate(clickCenterExpression('[data-testid="file-list"] .chipx'))
-  check(failures, !!dragStart, 'file chip must be hit-testable for a real scroll gesture')
-  if (dragStart) {
-    await dragPointer(page, dragStart, { x: dragStart.x - 24, y: dragStart.y - 24 }, { touch: scenario.touch })
-    const dragInput = await page.inputTrace()
-    check(failures, dragInput.clickCount === 0, `chip drag must not click: ${JSON.stringify(dragInput)}`)
-    check(failures, await page.evaluate(`!!document.querySelector('[data-testid="file-list"] .chipx') && !!window.__pbPane?.store.loading`),
-      'chip drag cleared selection or stopped battle A parse')
-    await page.resetInputTrace()
-  }
-  const chipCenter = await page.evaluate(`(() => {
-    const chip = document.querySelector('[data-testid="file-list"] .chipx')
-    if (!chip) return { missing: true }
-    if (!chip) return null
-    chip.scrollIntoView({ block: 'center', inline: 'nearest' })
-    const r = chip.getBoundingClientRect()
-    const hit = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2))
-    return (hit === chip || chip.contains(hit))
-      ? {
-        x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2),
-        box: { left: r.left, right: r.right, top: r.top, bottom: r.bottom },
-      }
-      : null
-  })()`)
-  check(failures, !!(chipCenter && chipCenter.x), `file remove chip not hit-testable: ${JSON.stringify(chipCenter || null)}`)
+  // —— clear A：打开回放列表 → 真实点击移除 → 确认 ——
+  const chipCenter = await openCollectionRemove(page, scenario)
+  check(failures, !!chipCenter, 'collection remove button must be hit-testable')
   if (!chipCenter) {
     await env.chrome.client.send('Target.closeTarget', { targetId })
     results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}`, xfail: scenario.xfail })
     return
   }
-  // 真实输入事件必须落在 remove chip 上：用页面内记录的真实 click 目标 + 坐标证明
-  // （点击完成后 chip 与列表都消失了，事后再 elementFromPoint 只会拿到别的东西）
+  // Dragging over the remove button is a scroll gesture: it must leave A selected and its parse alive.
+  await page.installInputTrace()
+  await dragPointer(page, chipCenter, { x: chipCenter.x - 24, y: chipCenter.y - 24 }, { touch: scenario.touch })
+  const dragInput = await page.inputTrace()
+  check(failures, dragInput.clickCount === 0, `remove-button drag must not click: ${JSON.stringify(dragInput)}`)
+  check(failures, await page.evaluate(`!!document.querySelector('[data-testid="collection-remove"]') && !!window.__pbPane?.store.loading`),
+    'remove-button drag cleared selection or stopped battle A parse')
+  await page.resetInputTrace()
+  // 真实输入事件必须落在移除按钮上：用页面内记录的真实 click 目标 + 坐标证明
   await page.tap({ ...chipCenter, touch: scenario.touch })
   const clearInput = await page.inputTrace()
   const click = clearInput?.click
   const insideChip = click && chipCenter.box
     && click.x >= chipCenter.box.left && click.x <= chipCenter.box.right
     && click.y >= chipCenter.box.top && click.y <= chipCenter.box.bottom
-  check(failures, click?.testId === 'file-list' && insideChip,
-    `the real click at (${click?.x},${click?.y}) must land on the remove chip ${JSON.stringify(chipCenter.box)} (target=${JSON.stringify(click)})`)
-  check(failures, clearInput.clickCount === 1, `chip tap must click exactly once: ${JSON.stringify(clearInput)}`)
-  check(failures, clearInput.pointers.some((event) => event.type === 'pointerdown' && event.testId === 'file-list')
-    && clearInput.pointers.some((event) => event.type === 'pointerup' && event.testId === 'file-list')
+  check(failures, click?.testId === 'collection-remove' && insideChip,
+    `the real click at (${click?.x},${click?.y}) must land on the remove button ${JSON.stringify(chipCenter.box)} (target=${JSON.stringify(click)})`)
+  check(failures, clearInput.clickCount === 1, `remove tap must click exactly once: ${JSON.stringify(clearInput)}`)
+  check(failures, clearInput.pointers.some((event) => event.type === 'pointerdown' && event.testId === 'collection-remove')
+    && clearInput.pointers.some((event) => event.type === 'pointerup' && event.testId === 'collection-remove')
     && !clearInput.pointers.some((event) => event.type === 'pointercancel'),
-    `chip tap must complete the real pointer sequence: ${JSON.stringify(clearInput)}`)
+    `remove tap must complete the real pointer sequence: ${JSON.stringify(clearInput)}`)
+  await confirmCollectionRemove(page, scenario)
   await page.waitFor(() => !document.querySelector('.pb-root'), { label: '3D pane torn down after clear' })
 
   // clear 必须**真的撤下** A 的解析：生产代码在 abort 时整体 terminate 当前 Worker
@@ -2678,8 +2679,6 @@ async function runOfflineWorkspaceScenario(env) {
   await env.chrome.client.send('DOM.setFileInputFiles', {
     nodeId, files: [resolve(frontendRoot, '../common/fixtures/replays/tournament-14-14-example.wotbreplay')],
   }, sessionId)
-  await page.waitFor(() => !!document.querySelector('.replay-primary-actions button'), { label: 'manual replay selected' })
-  await page.evaluate(`document.querySelector('.replay-primary-actions button').click()`)
   await page.waitFor(() => !!document.querySelector('[data-testid="data-toolbar"]'), { timeout: 60_000, label: 'real WASM local Result' })
   const ratings = await page.evaluate(`Array.from(document.querySelectorAll('.cw-player-summary tr.player-row td:nth-child(2)')).map(cell => cell.textContent.trim())`)
   check(failures, ratings.length > 0 && ratings.some(value => /[0-9]/.test(value)), 'deterministic local Rating has no scored rows')
@@ -2713,6 +2712,145 @@ async function runOfflineWorkspaceScenario(env) {
   results.push({ name: 'offline-local-workspace-matrix', failures, viewport: '1600x900' })
 }
 
+/**
+ * 回放集合管理（真实 WASM）：加文件不打断当前场次，部分失败可继续用其余回放，
+ * 键盘可完成管理，三档视口内容起点达标。只查状态与几何，不做 3D 画面验收。
+ */
+async function runReplayCollectionScenario(env) {
+  const failures = []
+  const { targetId, sessionId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  lastPage = page
+  const tempDir = await mkdtemp(join(tmpdir(), 'wotb-replay-collection-'))
+  const fixture = name => resolve(frontendRoot, `../common/fixtures/replays/${name}.wotbreplay`)
+  const setFiles = async (files) => {
+    const { root } = await env.chrome.client.send('DOM.getDocument', {}, sessionId)
+    const { nodeId } = await env.chrome.client.send('DOM.querySelector', { nodeId: root.nodeId, selector: '[data-testid="select-files-input"]' }, sessionId)
+    await env.chrome.client.send('DOM.setFileInputFiles', { nodeId, files }, sessionId)
+  }
+  const press = async (key, code) => {
+    await env.chrome.client.send('Input.dispatchKeyEvent', { type: 'keyDown', key, code: key, windowsVirtualKeyCode: code, ...(key === 'Enter' ? { text: '\r' } : {}) }, sessionId)
+    await env.chrome.client.send('Input.dispatchKeyEvent', { type: 'keyUp', key, code: key, windowsVirtualKeyCode: code }, sessionId)
+  }
+  const hit = async (selector) => {
+    const point = await page.waitForValue(clickCenterExpression(selector), Boolean, { label: selector })
+    await page.tap({ ...point, touch: false })
+  }
+  // 切能力后的自动居中是异步滚动：量到的坐标可能在点击前失效，所以以弹层真的出现为准。
+  const openList = async () => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await hit('[data-testid="collection-trigger"]')
+      const opened = await page.waitForValue(`!!document.querySelector('[data-testid="replay-collection"]')`, Boolean, { timeout: 3000, label: 'collection list' }).catch(() => false)
+      if (opened) return
+    }
+    throw new Error('collection list did not open')
+  }
+  const roster = `Array.from(document.querySelectorAll('[data-test="pb-roster-row"]')).map(row => row.dataset.accountId).join(',')`
+  const contentTop = `(() => { window.scrollTo(0, 0); return Math.round(document.querySelector('.workspace-content').getBoundingClientRect().top) })()`
+  const trigger = `document.querySelector('[data-testid="collection-trigger"]')?.textContent ?? ''`
+  try {
+    await page.enable()
+    await page.emulate({ width: 1440, height: 900, touch: false })
+    // 从工作台之外进入：结尾用浏览器后退验证 KeepAlive 不会把弹层留在目标页上。
+    await page.goto(`${env.origin}/?view=agent-tankopedia&ws-auth=1`)
+    await hit('[data-testid="nav-replay"]')
+    await page.waitFor(() => !!document.querySelector('[data-testid="file-uploader-empty"]'), { label: 'empty workspace' })
+    const entryLength = await page.evaluate('history.length')
+    await hit('[data-testid="ws-tab"][data-cap="playback"]')
+
+    await setFiles([fixture('random-battle-example')])
+    await page.waitFor(() => !!document.querySelector('[data-test="battle-playback"]') && !!document.querySelector('[data-testid="collection-trigger"]'), { timeout: 60_000, label: 'replay opens without a parse action' })
+    const before = await page.waitForValue(roster, Boolean, { timeout: 60_000, label: 'first battle roster' })
+    check(failures, !await page.evaluate(`!!document.querySelector('[data-testid="file-uploader-empty"]')`), 'Ready must not keep the upload card')
+    check(failures, await page.evaluate(`!!document.querySelector('[data-testid="playback-battle-picker"]:not(button)')`), 'a single replay shows static battle context')
+    const singleTop = await page.evaluate(contentTop)
+    check(failures, singleTop <= 175, `single-battle content must start within 175px at 1440: ${singleTop}`)
+
+    // 看第一场时加入两份新回放 + 一个损坏文件：内容不换场，也不重建面板。
+    const broken = join(tempDir, 'broken.wotbreplay')
+    await writeFile(broken, Buffer.alloc(64, 7))
+    await page.evaluate(`(window.__collectionPane = document.querySelector('[data-test="battle-playback"]'), true)`)
+    await setFiles([fixture('cw-training-15-14-example'), fixture('tournament-14-14-example'), broken])
+    await page.waitFor(() => !!document.querySelector('[data-testid="workspace-partial-failure"]'), { timeout: 60_000, label: 'partial failure warning' })
+    check(failures, await page.evaluate(`window.__collectionPane === document.querySelector('[data-test="battle-playback"]')`), 'adding replays must not rebuild the current pane')
+    check(failures, await page.evaluate(roster) === before, 'adding replays must not change the current battle')
+    check(failures, !await page.evaluate(`!!document.querySelector('[data-testid="replay-processing-panel"]')`), 'a partial failure must not show the failure page')
+    check(failures, (await page.evaluate(trigger)).includes('4'), `collection must count every file: ${await page.evaluate(trigger)}`)
+
+    await hit('[data-testid="partial-failure-ack"]')
+    await page.waitFor(() => !document.querySelector('[data-testid="workspace-partial-failure"]'), { label: 'warning acknowledged' })
+    check(failures, /1/.test((await page.evaluate(trigger)).replace(/.*·/, '').replace(/^\s*4/, '')), `acknowledged failure stays on the trigger: ${await page.evaluate(trigger)}`)
+
+    // 键盘：触发按钮 → Enter 打开 → Esc 关闭 → 焦点回到触发按钮。
+    await page.evaluate(`document.querySelector('[data-testid="collection-trigger"]').focus()`)
+    await press('Enter', 13)
+    await page.waitFor(() => !!document.querySelector('[data-testid="collection-row"]'), { label: 'keyboard opens the list' })
+    const rows = await page.evaluate(`Array.from(document.querySelectorAll('[data-testid="collection-row"]')).map(row => row.dataset.status)`)
+    check(failures, rows.filter(status => status === 'ready').length === 3 && rows.filter(status => status === 'failed').length === 1, `collection row statuses: ${rows}`)
+    await press('Tab', 9)
+    check(failures, await page.evaluate(`!!document.activeElement?.closest('[data-testid="collection-panel"]')`), 'focus must stay inside the list')
+    await press('Escape', 27)
+    await page.waitForValue(`document.activeElement?.dataset?.testid`, value => value === 'collection-trigger', { label: 'focus returns to the trigger' })
+
+    // 移除失败文件：先关列表再确认，确认后当前场次不变，焦点回到触发按钮。
+    await openList()
+    await page.waitFor(() => document.querySelectorAll('[data-testid="collection-remove"]').length === 4, { label: 'remove buttons' })
+    await page.evaluate(`document.querySelector('[data-testid="collection-row"][data-status="failed"] [data-testid="collection-remove"]').click()`)
+    await hit('[data-testid="remove-confirm-ok"]')
+    await page.waitFor(() => /· 3/.test(document.querySelector('[data-testid="collection-trigger"]')?.textContent ?? ''), { label: 'failed replay removed' })
+    check(failures, await page.evaluate(roster) === before, 'removing another replay must not change the current battle')
+    await page.waitForValue(`document.activeElement?.dataset?.testid`, value => value === 'collection-trigger', { label: 'focus returns after removal' })
+
+    for (const [width, height, touch, limit] of [[1440, 900, false, 120], [768, 1024, true, null], [390, 844, true, null]]) {
+      await page.emulate({ width, height, touch })
+      await page.evaluate(`document.querySelector('[data-testid="ws-tab"][data-cap="data"]').click()`)
+      await page.waitFor(() => !!document.querySelector('[data-testid="data-toolbar"]'), { label: 'Data capability' })
+      // 从单回放追加：赛后数据留在原来那一场，汇总由用户切换。
+      await page.evaluate(`document.querySelector('[data-testid="data-view-summary"]').click()`)
+      await page.waitFor(() => !!document.querySelector('[data-testid="series-overview"]'), { label: 'Data summary' })
+      const top = await page.evaluate(contentTop)
+      if (limit) check(failures, top <= limit, `Data content must start within ${limit}px at ${width}: ${top}`)
+      check(failures, !await page.evaluate(`!!document.querySelector('[data-testid="battle-picker"]')`), 'Data summary must not show a current battle picker')
+      await page.evaluate(`document.querySelector('[data-testid="ws-tab"][data-cap="playback"]').click()`)
+      await page.waitFor(() => !!document.querySelector('[data-testid="playback-battle-picker"]'), { label: 'single-battle picker' })
+      const metrics = await page.evaluate(`(() => {
+        window.scrollTo(0, 0)
+        const button = document.querySelector('[data-testid="collection-trigger"]').getBoundingClientRect()
+        return {
+          top: Math.round(document.querySelector('.workspace-content').getBoundingClientRect().top),
+          overflow: document.documentElement.scrollWidth - innerWidth,
+          trigger: Math.round(button.height),
+        }
+      })()`)
+      console.log(`[browser-interaction] replay-collection ${width}x${height} ${JSON.stringify({ dataTop: top, ...metrics })}`)
+      check(failures, metrics.overflow <= 0, `no horizontal overflow at ${width}: ${JSON.stringify(metrics)}`)
+      if (touch) check(failures, metrics.trigger >= 44, `manage trigger needs a 44px target at ${width}: ${JSON.stringify(metrics)}`)
+      if (width === 1440) check(failures, metrics.top <= 175, `single-battle content must start within 175px at 1440: ${JSON.stringify(metrics)}`)
+      if (width === 390) check(failures, metrics.top <= 350, `single-battle content must start within 350px at 390: ${JSON.stringify(metrics)}`)
+    }
+
+    await page.emulate({ width: 1440, height: 900, touch: false })
+    await page.evaluate(`document.querySelector('[data-testid="ws-tab"][data-cap="data"]').click()`)
+    await openList()
+    await hit('[data-testid="collection-clear"]')
+    await hit('[data-testid="collection-clear-confirm"]')
+    await page.waitFor(() => !!document.querySelector('[data-testid="file-uploader-empty"]'), { label: 'clear returns to Empty' })
+    check(failures, !await page.evaluate(`!!document.querySelector('[data-testid="playback-battle-picker"]')`), 'clear must remove the battle context')
+
+    await setFiles([fixture('random-battle-example')])
+    await page.waitFor(() => !!document.querySelector('[data-testid="collection-trigger"]:not([disabled])'), { timeout: 60_000, label: 'replay ready before back' })
+    await openList()
+    await page.evaluate(`history.go(-(history.length - ${entryLength} + 1))`)
+    await page.waitForValue('new URLSearchParams(location.search).get("view")', view => view !== 'replay' && view !== 'battle-playback', { label: 'browser back left the workspace' })
+    await page.waitFor(() => !document.querySelector('[data-testid="replay-collection"]'), { label: 'list closed after back' })
+    check(failures, !await page.evaluate(`!!document.querySelector('.dialog-scrim')`), 'no modal scrim may remain over the destination page')
+  } finally {
+    await env.chrome.client.send('Target.closeTarget', { targetId })
+    await rm(tempDir, { recursive: true, force: true })
+  }
+  results.push({ name: 'replay-collection', failures, viewport: '1440x900 → 768x1024 → 390x844' })
+}
+
 /** Real multi-file analysis and 2D switching; scene appearance remains manual acceptance. */
 async function runMultiFileWorkspaceScenario(env) {
   const failures = []
@@ -2736,7 +2874,6 @@ async function runMultiFileWorkspaceScenario(env) {
       const point = await page.waitForValue(clickCenterExpression(selector), Boolean, { label: selector })
       await page.tap({ ...point, touch })
     }
-    await hit('.replay-primary-actions button')
     await page.waitFor(() => !!document.querySelector('[data-test="battle-playback"]'), { timeout: 60_000, label: 'first batch battle loaded in 2D' })
     const roster = `Array.from(document.querySelectorAll('[data-test="pb-roster-row"]')).map(row => row.dataset.accountId).join(',')`
     const firstRoster = await page.evaluate(roster)
@@ -3922,6 +4059,7 @@ try {
     ...CATALOG_HOF_DOC_SCENARIOS.map(scenario => ({ scenario, run: async () => results.push(await runCatalogHofDocScenario(env, scenario)) })),
     ...MENU_VIEWPORT_SCENARIOS.map(scenario => ({ scenario, run: () => runMenuViewportScenario(env, scenario) })),
     { scenario: { name: 'multifile-workspace-playback', width: 1600, height: 900 }, run: () => runMultiFileWorkspaceScenario(env) },
+    { scenario: { name: 'replay-collection', width: 1440, height: 900 }, run: () => runReplayCollectionScenario(env) },
     { scenario: { name: 'offline-local-workspace-matrix', width: 1600, height: 900 }, run: () => runOfflineWorkspaceScenario(env) },
     ...APP_SCENARIOS.map((scenario) => ({ scenario, run: () => runAppScenario(env, scenario) })),
     ...AUTH_CAPABILITY_SCENARIOS.map((scenario) => ({ scenario, run: () => runAuthCapabilityScenario(env, scenario) })),
@@ -4024,5 +4162,6 @@ try {
   // Chrome 启动失败时也必须关掉 Vite server，否则脚本会挂在未释放的监听上而不是报错退出。
   if (chromeCdp) await chromeCdp.close()
   if (onboardingServer) await onboardingServer.server.close()
+  if (fakeAnalysisServer) await fakeAnalysisServer.server.close()
   await server.close()
 }

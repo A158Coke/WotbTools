@@ -40,8 +40,15 @@ import {
 import {
     PBR_VERT, PBR_FRAG, createArmorShaderContext,
 } from './viewer/armorShaders.js'
-// 间隙甲拓扑：闭合网格用单面累计，开放面片用双面渲染（同一块板不重复计厚）
-import { isClosedSurfaceGeometry } from './armorMeshTopology.js'
+import {
+    plateThickness, retagSpacedSections as retagSpacedPlates,
+    tagArmorPlates as tagArmorPlateNodes, useFaceNormals,
+    tagModuleMeshes as tagModuleNodes, collectArmorPrefixes as scanArmorPrefixes,
+    applyArmorConfigVisible as applyArmorPrefixVisibility, armorPivots, installArmorPivots,
+    hasGunMask, gunMaskOriginModel, partitionArmorMeshes, selectExternalMeshes,
+    shellTypeOf, calibratedPenMul, ENHANCED_ARMOR_THICK_MUL, shellAngles, rolledPenetration,
+    populateSpacedArmorScene, populateSpacedStateScene, populatePrimaryArmorScene,
+} from './viewer/armorPlateModel.js'
 // 点击判定的触发面分类（Primary = 主装甲板）；与判定本体同源，勿在此复制一份板面清单
 import { isPrimary, hasPrimaryLayer, matchHitsByOccurrence } from './penetration.js'
 // Armor Inspector 概率模型：±range = ±3σ 的正态 CDF + 逐层 1× 等效厚度传播
@@ -380,33 +387,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
 
         function getPlateThickness(section, plateId) {
-            // BlitzKit resolveArmor 语义：thickness = armor.thickness[index] ?? 0。
-            // 炮塔有两套（stock/top）：唯一权威来源是当前 config 的逐炮塔
-            // tank/{id}.json configs[].turret_plates（models.pb 逐炮塔透出）；
-            // 缺失即 0mm fail-closed，不回退到顶级炮塔摘要 armor_model。
-            const am = tankData.armor_model || {};
-            const id = String(plateId);
-            if (section === 'hull') return am.hull?.plates?.[id] ?? 0;
-            if (section === 'turret') return currentConfig()?.turret_plates?.[id] ?? 0;
-            if (section === 'gun') return currentConfig()?.gun_plates?.[id] ?? 0;
-            if (section === 'chassis') {
-                const ch = am.chassis;
-                if (!ch) return 0;
-                if (plateId === 'leftTrack') return ch.left_track ?? 0;
-                if (plateId === 'rightTrack') return ch.right_track ?? 0;
-            }
-            if (section === 'gunBarrel') {
-                // 炮管外部模块厚度：当前 config 的 gun_thickness 是唯一权威来源（models.pb
-                // 按主炮透出）；armor_model 的 'gun' 是顶级炮塔摘要，不再作为回退。
-                return currentConfig()?.gun_thickness ?? 0;
-            }
-            return 0;
-        }
-
-        function isRealArmorThickness(t) {
-            // BlitzKit resolveArmor：缺失/0 厚度按 0mm 渲染（thickness[index] ?? 0），
-            // 仅 null（两份数据源都缺失）才视为 deco 跳过
-            return typeof t === 'number' && t >= 0;
+            return plateThickness(tankData, currentConfig(), section, plateId);
         }
 
         function thicknessToColor(t) {
@@ -499,12 +480,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         function computeGunClipPlane() {
             gunClipPlane = null;
             const cfg = currentConfig();
-            const mo = tankData && tankData.model_origins;
-            if (!tankModel || !cfg || !mo || !mo.track || !mo.turret || !cfg.gun_origin) return;
-            // BlitzKit 真值语义：mask=0 视同无 mask（SpacedArmorScene `gunModelDefinition.mask ?`）
-            const hasMask = typeof cfg.gun_mask === 'number' && cfg.gun_mask !== 0;
-            if (!hasMask) return;
-            const maskOriginModel = cfg.gun_mask + mo.track[1] + mo.turret[1] + cfg.gun_origin[1];
+            if (!tankModel) return;
+            const maskOriginModel = gunMaskOriginModel(tankData, cfg);
+            if (maskOriginModel == null) return;
             // BlitzKit 同式：裁切面定义在枪管局部系（模型系）——法线 = 模型前向 +Y，过模型
             // 原点前方 maskOriginModel 处；再乘炮塔/炮管姿态矩阵（绕各自枢轴）与模型根变换
             // 进世界系。不能只取「模型原点 + 当前炮口方向 × 距离」：转炮塔/俯仰后平面应绕
@@ -518,39 +496,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             gunClipPlane = plane;
         }
         function collectPenetrationMeshes() {
-            primaryMeshes = []; spacedMeshes = [];
-            armorModel.traverse(function(node) {
-                if (!node.isMesh) return;
-                if (node.userData.configHidden) return;
-                // 动态装甲可控板（含非激活态）：构建进热力图场景但 clone 初始隐藏——
-                // 切态只翻 clone 可见性，零材质/着色器重建（消除切态闪烁）；
-                // 点击/跳弹的源网格口径不受影响（deco + visible=false 照旧排除）
-                if (node.userData.armorStateHidden === true) {
-                    const sec2 = node.userData.armorStateSection || 'hull';
-                    (sec2 === 'spaced' ? spacedMeshes : primaryMeshes).push(node);
-                    return;
-                }
-                if (node.visible === false) return;
-                const sec = node.userData.armorSection;
-                if (sec === 'deco') return;
-                if (sec === 'spaced') spacedMeshes.push(node);
-                else primaryMeshes.push(node);
-            });
-            externalMeshes = [];
-            const act = activeGunNumber();
-            const cfg = currentConfig();
-            // BlitzKit 真值语义：mask=0 视同无 mask（SpacedArmorScene `gunModelDefinition.mask ?`）
-            const hasMask = cfg && typeof cfg.gun_mask === 'number' && cfg.gun_mask !== 0;
+            ({ primary: primaryMeshes, spaced: spacedMeshes } = partitionArmorMeshes(armorModel));
             computeGunClipPlane();
-            moduleMeshes.forEach(function(node) {
-                if (!node.isMesh) return;
-                if (node.visible === false) return;
-                if (node.userData.gunConfig != null && act != null && node.userData.gunConfig !== act) return;
-                // BlitzKit 选择规则（models.pb mask 注释同义）：mask 有值 → gun_0X* 全部
-                // 网格都渲染并一起裁切；mask 无值 → 只渲染精确 gun_0X（辅助件不参与）。
-                if (node.userData.gunMaskPart && !hasMask) return;
-                externalMeshes.push(node);
-            });
+            externalMeshes = selectExternalMeshes(moduleMeshes, activeGunNumber(), currentConfig());
         }
 
         const omitMaterial = new THREE.MeshBasicMaterial({ colorWrite: false, depthTest: true, depthWrite: true });
@@ -569,25 +517,6 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         let ricochetFailedPose = null;
         let ricochetGridGeneration = 0;
         let ricochetPackReason = '';      // 最近一次失败原因（钩子透出，排查用）
-        function shellTypeOf(sh) {
-            // field9 枚举（权威，来自上游 tank 数据的 type_id：0=AP/1=APCR/2=HEAT/3=HE）优先；
-            // 缺 id 才回退 icon 串词表。词表是手工归纳的显示令牌映射，客户端可自由加变体。
-            const id = sh && sh.type_id;
-            if (typeof id === 'number') {
-                if (id === 0) return 'ap';
-                if (id === 1) return 'apcr';
-                if (id === 2) return 'heat';
-                if (id === 3) return 'he';
-            }
-            const t = ((sh && sh.type) || '').toLowerCase();
-            if (t === 'hc' || t === 'hc_premium' || t === 'heat' || t === 'atgm_heat') return 'heat';
-            if (t === 'ap_cr' || t === 'ap_cr_premium' || t === 'apcr') return 'apcr';
-            if (t === 'he' || t === 'he_premium' || t === 'hesh' || t === 'hesh_premium') return 'he';
-            if (t === 'ap' || t === 'ap_premium') return 'ap';
-            // 未知弹种必须 fail-closed：返回 null 让判定入口拒绝，而不是把原始串
-            // 交给 penetration.js 的“未知 → HE”上游兜底（会把 AP 变体当爆炸弹）。
-            return null;
-        }
         const SHELL_LABEL = { ap: 'AP', apcr: 'APCR', heat: 'HEAT', he: 'HE' };
         function shellLabel(s) { return SHELL_LABEL[shellTypeOf(s)] || (s && s.type) || '?'; }
         // 调试信息窗口：坐标等调试文字集中展示在窗口行内（颜色点 = 对应 3D 标记），不再往场景挂 sprite 标签
@@ -714,10 +643,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         function shellPenMul(s) {
             const calOn = effectiveCalibrated((s && s.shooter_equipment) || null);
             if (!calOn) return 1.0;
-            const t = shellTypeOf(s);
             // 未知弹种没有可用的装备口径系数；判定入口会 fail-closed，这里不猜 1.07。
-            if (!t) return 1.0;
-            return (t === 'ap' || t === 'apcr') ? 1.06 : 1.07;
+            return calibratedPenMul(shellTypeOf(s));
         }
         function shellOptionText(s) {
             const pen = Math.round((s.penetration || 0) * shellPenMul(s));
@@ -726,7 +653,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         function equipmentCoeffs() {
             const penMul = shellPenMul(selectedShell);
             const enhOn = effectiveEnhanced(null);
-            const thickMul = enhOn ? 1.04 : 1.0;
+            const thickMul = enhOn ? ENHANCED_ARMOR_THICK_MUL : 1.0;
             return { penMul, thickMul };
         }
         // 校准弹判定态变化后刷新下拉穿深文本：populateShellSelector 渲染时回放配件
@@ -785,110 +712,35 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         // 状态通道场景/目标（RT1）：只有最近间隙板能写状态（不可累加）——见 SPACED_STATE_FRAG
         let spacedStateScene = null;
 
-        // 穿透场景克隆工厂：原 addOmitClone/addColorClone/addDepthExcludeClone 三函数
-        // 完全同构仅材质不同，合并为单一函数，调用点传各自材质
-        function addClone(scene, src, mat, renderOrder) {
-            const m = new THREE.Mesh(src.geometry, mat);
-            m.renderOrder = renderOrder;
-            m.userData._src = src;
-            src.updateWorldMatrix(true, false);
-            m.matrixAutoUpdate = false;
-            m.matrix.copy(src.matrixWorld);
-            scene.add(m);
-            return m;
+        function heatMeshes() {
+            return { primary: primaryMeshes, spaced: spacedMeshes, external: externalMeshes };
         }
-
-        // 可控板 clone 打状态标记 + 按当前态设初始可见性（切态零重建的翻面入口）
-        function tagStateClone(clone, src) {
-            if (src && src.userData.armorStateKey) {
-                clone.userData._armorStateKey = src.userData.armorStateKey;
-                clone.visible = src.userData.armorStateHidden !== true;
-            }
+        function heatMaterials() {
+            return {
+                omit: omitMaterial, spacedOmit: spacedOmitMaterial, exclude: excludeMaterial,
+                externalDepth: externalDepthMaterial, externalMaterial, moduleStateMaterial,
+                spacedMaterial, spacedStateMaterial, penetrationMaterial,
+            };
         }
         function buildSpacedArmorScene() {
             if (!armorModel) return;
             if (spacedArmorScene) spacedArmorScene.clear();
             else spacedArmorScene = new THREE.Scene();
             const pen = ((selectedShell && selectedShell.penetration) || 200) * equipmentCoeffs().penMul;
-            primaryMeshes.forEach(function(node){
-                const c = addClone(spacedArmorScene, node, omitMaterial, 0);
-                tagStateClone(c, node);
-            });
-            spacedMeshes.forEach(function(node){
-                const t = node.userData.armorThickness || 0;
-                // 闭合网格只着色最近正面（每像素一块板一次）；开放面片双面着色，背面可见。
-                // additive 层之间不写深度，多块间隙板仍按层累加，不会被前板遮挡。
-                const side = isClosedSurfaceGeometry(node.geometry) ? THREE.FrontSide : THREE.DoubleSide;
-                const cm = addClone(spacedArmorScene, node, spacedMaterial(t, pen, side), 2);
-                cm.userData._baseThickness = t;
-                tagStateClone(cm, node);
-                // 间隙甲深度占位（renderOrder 5，着色之后）：供 HEAT gap 衰减读取最近
-                // 间隙板深度；状态通道另有自己的最近层深度测试。
-                const od = addClone(spacedArmorScene, node, spacedOmitMaterial, 5);
-                tagStateClone(od, node);
-            });
-            externalMeshes.forEach(function(node){
-                // 0 mm 是合法的 fail-closed 厚度，只有缺失/undefined 才使用外部模块兜底值
-                const t = node.userData.armorThickness ?? 20;
-                const clipped = node.userData.armorSection === 'gunBarrel' && gunClipPlane;
-                const side = node.userData.moduleDoubleSided ? THREE.DoubleSide : THREE.FrontSide;
-                // 深度/着色 clone 沿用源材质 side（履带双面；轮子单面）：FrontSide 会把
-                // 履带上表面（绕序朝内）剔除，热力图在履带顶部变成空洞/露出后方装甲色。
-                const dmat = (clipped || side === THREE.DoubleSide)
-                    ? (() => {
-                        const m = externalDepthMaterial.clone();
-                        m.side = side;
-                        m.clippingPlanes = clipped ? [gunClipPlane] : null;
-                        return m;
-                    })()
-                    : externalDepthMaterial;
-                const cmat = externalMaterial(t, pen, clipped ? gunClipPlane : null);
-                cmat.side = side;
-                const od = addClone(spacedArmorScene, node, omitMaterial, 3);
-                od.material = dmat;
-                const cm2 = addClone(spacedArmorScene, node, cmat, 4);
-                cm2.userData._baseThickness = t;
-            });
+            populateSpacedArmorScene(spacedArmorScene, heatMeshes(), heatMaterials(), pen, gunClipPlane);
         }
-        /** 状态通道场景（RT1）：主装甲深度（阻挡其后间隙板/模块）→ 间隙板状态（depthWrite
-         *  独占最近板；R/G=跳弹/续飞，A=0）→ 外部模块状态（更近时写 A=1，RGB 保留）。
-         *  模块不是装甲层：它在前时抑制其后间隙板的跳弹/续飞。 */
         function buildSpacedStateScene() {
             if (!armorModel) return;
             if (spacedStateScene) spacedStateScene.clear();
             else spacedStateScene = new THREE.Scene();
             const pen = ((selectedShell && selectedShell.penetration) || 200) * equipmentCoeffs().penMul;
-            // 主装甲深度：其后间隙板/模块不写状态（防止越过主装甲的板污染本像素状态）
-            primaryMeshes.forEach(function(node){
-                const c = addClone(spacedStateScene, node, omitMaterial, 0);
-                tagStateClone(c, node);
-            });
-            spacedMeshes.forEach(function(node){
-                const t = node.userData.armorThickness || 0;
-                const sm = addClone(spacedStateScene, node, spacedStateMaterial(t, pen), 2);
-                sm.userData._baseThickness = t;
-                tagStateClone(sm, node);
-            });
-            externalMeshes.forEach(function(node){
-                const clipped = node.userData.armorSection === 'gunBarrel' && gunClipPlane;
-                // 模块在最近间隙板之前时写 A=1（更远则深度测试失败）；RGB 保留间隙板状态。
-                const sm = moduleStateMaterial(clipped ? gunClipPlane : null);
-                sm.side = node.userData.moduleDoubleSided ? THREE.DoubleSide : THREE.FrontSide;
-                addClone(spacedStateScene, node, sm, 3);
-            });
+            populateSpacedStateScene(spacedStateScene, heatMeshes(), heatMaterials(), pen, gunClipPlane);
         }
         function buildPrimaryArmorScene() {
             if (!armorModel) return;
             if (primaryArmorScene) primaryArmorScene.clear();
             else primaryArmorScene = new THREE.Scene();
-            primaryMeshes.forEach(function(node){
-                const t = node.userData.armorThickness;
-                const d = addClone(primaryArmorScene, node, excludeMaterial, 0);               // 正面深度遮罩
-                const cm = addClone(primaryArmorScene, node, penetrationMaterial(t == null ? 0 : t), 1);  // 着色
-                cm.userData._baseThickness = t == null ? 0 : t;
-                tagStateClone(d, node);
-                tagStateClone(cm, node);
-            });
+            populatePrimaryArmorScene(primaryArmorScene, heatMeshes(), heatMaterials());
         }
         /** 切态零重建：按激活集翻可控板 clone 的可见性（主图 + spaced 覆盖层）。
          *  翻面后必须重刷穿透/跳弹 uniforms——构建期 updatePenetrationUniforms 跳过
@@ -935,9 +787,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const { penMul } = equipmentCoeffs();
             const pen = (sh.penetration || 0) * penMul;
             const cal = resolveCaliberFor(sh);
-            // BlitzKit：degToRad(shell.normalization ?? 0)
-            const norm = (sh.normalization != null ? sh.normalization : 0) * Math.PI / 180;
-            const rico = (isExplosive ? 90 : (sh.ricochet != null ? sh.ricochet : 70)) * Math.PI / 180;
+            const { norm, rico } = shellAngles(sh, isExplosive);
             [spacedArmorScene, spacedStateScene].forEach(function(scene){
                 if (!scene) return;
                 scene.traverse(function(node){
@@ -1022,7 +872,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             });
             const act = activeGunNumber();
             const cfg = currentConfig();
-            const hasMask = cfg && typeof cfg.gun_mask === 'number' && cfg.gun_mask !== 0;
+            const hasMask = hasGunMask(cfg);
             moduleMeshes.forEach(function(node) {
                 if (!node.isMesh) return;
                 if (node.userData.gunConfig != null && act != null && node.userData.gunConfig !== act) return;
@@ -1678,7 +1528,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 const ndcY = -((py - rect.top) / rect.height) * 2 + 1;
                 const act = activeGunNumber();
                 const cfg = currentConfig();
-                const hasMask = cfg && typeof cfg.gun_mask === 'number' && cfg.gun_mask !== 0;
+                const hasMask = hasGunMask(cfg);
                 const activeModules = act == null ? moduleMeshes : moduleMeshes.filter(m => {
                     if (m.userData.gunConfig != null) return m.userData.gunConfig === act;
                     return true;
@@ -1791,7 +1641,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // 值的车上不属于外部模块，需随外部模块口径隐藏；普通/击穿视图的视觉模型仍渲染
             // 全部部件（2026-10-28 用户报障：视觉模型缺件；厚度模式要求裁剪隐藏）。
             const cfg = currentConfig();
-            const hasMask = cfg && typeof cfg.gun_mask === 'number' && cfg.gun_mask !== 0;
+            const hasMask = hasGunMask(cfg);
             const hideMaskPart = collisionMode && !hasMask;
             for (const node of moduleMeshes) {
                 node.visible = baseNodeVisible(node)
@@ -2019,9 +1869,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const cal = resolveCaliberFor(sh);
             const { penMul } = equipmentCoeffs();
             const pen = (sh.penetration || 0) * penMul;
-            // BlitzKit：degToRad(shell.normalization ?? 0)
-            const norm = (sh.normalization != null ? sh.normalization : 0) * Math.PI / 180;
-            const rico = (isExplosive ? 90 : (sh.ricochet != null ? sh.ricochet : 70)) * Math.PI / 180;
+            const { norm, rico } = shellAngles(sh, isExplosive);
             const applyTo = (node) => {
                 if (!node.isMesh || node.visible === false) return;
                 if (!node.material || !node.material.uniforms) return;
@@ -2079,8 +1927,6 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         function updatePenetrationDistanceUniforms() {
             if (!selectedShell) return;
             const near = selectedShell.penetration || 0;
-            const farRaw = selectedShell.penetration_far;
-            const far = (typeof farRaw === 'number' && farRaw > 0) ? farRaw : near;
             const isHE = shellTypeOf(selectedShell) === 'he';
             const { penMul } = equipmentCoeffs();
             const origin = camera.position;
@@ -2104,12 +1950,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         world.setFromMatrixPosition(node.matrixWorld);
                     }
                     const d = shotLenForUniforms > 0 ? shotLenForUniforms : origin.distanceTo(world);
-                    let pen = near;
-                    if (!isHE && d > 100.0) {
-                        pen = near + (far - near) * (d - 100.0) / 400.0;
-                        if (pen < 0) pen = 0;
-                    }
-                    node.material.uniforms.penetration.value = pen * penMul;
+                    node.material.uniforms.penetration.value =
+                        rolledPenetration(near, selectedShell.penetration_far, d, isHE) * penMul;
                 });
             };
             apply(primaryArmorScene);
@@ -2185,21 +2027,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         function retagSpacedSections(model) {
             const root = model || armorModel;
             if (!root) return;
-            const cfg = currentConfig();
-            const am = tankData.armor_model || {};
-            const hullSpaced = new Set((tankData.hull_spaced ?? am.hull?.spaced ?? []).map(String));
-            const turretSpaced = new Set((cfg?.turret_spaced ?? []).map(String));
-            const gunSpaced = new Set((cfg?.gun_spaced ?? []).map(String));
-            root.traverse(function(node) {
-                if (!node.isMesh) return;
-                const section = node.userData.armorSectionOrig;
-                if (section !== 'hull' && section !== 'turret' && section !== 'gun') return;
-                const plateId = String(node.userData.armorPlateId);
-                const spaced = (section === 'hull' && hullSpaced.has(plateId)) ||
-                               (section === 'turret' && turretSpaced.has(plateId)) ||
-                               (section === 'gun' && gunSpaced.has(plateId));
-                node.userData.armorSection = spaced ? 'spaced' : (section === 'gun' ? 'turret' : section);
-            });
+            retagSpacedPlates(root, tankData, currentConfig());
         }
 
         function refreshConfigArmorThickness() {
@@ -2226,31 +2054,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
 
         function tagArmorPlates(model) {
-            model.traverse(function(node) {
-                if (!node.isMesh) return;
-                const name = node.name || '';
-                if (/state_01/.test(name)) {
-                    node.userData.armorSection = 'deco';
-                    node.userData.armorPlateId = '';
-                    node.userData.armorThickness = 0;
-                    return;
-                }
-                const m = name.match(/(hull|turret|gun)_\w*?_?armor_(\d+)/);
-                if (m) {
-                    const section = m[1], plateId = m[2];
-                    const t = getPlateThickness(section, plateId);
-                    if (!isRealArmorThickness(t)) {
-                        node.userData.armorSection = 'deco';
-                        node.userData.armorPlateId = plateId;
-                        node.userData.armorThickness = 0;
-                        return;
-                    }
-                    node.userData.armorSectionOrig = section;
-                    node.userData.armorPlateId = plateId;
-                    node.userData.armorThickness = t;
-                    node.userData.armorSection = section;
-                }
-            });
+            tagArmorPlateNodes(model, getPlateThickness);
             retagSpacedSections(model);
         }
 
@@ -2391,65 +2195,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             box.checked = armorStateCurrent === nonDefaultStateId(armorStateDecl);
         }
 
-        /** 源材质是否双面（GLB 的 doubleSided = 客户端 customCullMode NONE）。
-         *  模块替换材质与热力图 clone 必须沿用：履带是双面网格，且上表面条带的绕序朝内
-         *  （法线向下），FrontSide 下从上方看会被剔除成空洞，看起来像上表面位置不对。 */
-        function moduleDoubleSided(node) {
-            const mat = Array.isArray(node.material) ? node.material[0] : node.material;
-            return !!mat && mat.side === THREE.DoubleSide;
-        }
-
         function tagModuleMeshes(model) {
-            moduleMeshes = [];
-            model.traverse(function(node) {
-                if (!node.isMesh) return;
-                const parent = node.parent;
-                const parentName = parent ? (parent.name || '') : '';
-                let trackNode = null;
-                for (let p = node; p; p = p.parent) {
-                    const nm = p.name || '';
-                    if (/^chassis_track_/.test(nm) || /^chassis_wheel_/.test(nm)) { trackNode = nm; break; }
-                }
-                if (trackNode) {
-                    const isRight = /(^|_)R(_|$)/.test(trackNode);
-                    node.userData.armorSection = 'chassis';
-                    node.userData.armorPlateId = isRight ? 'rightTrack' : 'leftTrack';
-                    node.userData.armorThickness = getPlateThickness('chassis', node.userData.armorPlateId);
-                    node.userData.moduleDoubleSided = moduleDoubleSided(node);
-                    moduleMeshes.push(node);
-                } else if (/^gun_\d+$/.test(parentName)) {
-                    node.userData.armorSection = 'gunBarrel';
-                    node.userData.armorPlateId = 'gun';
-                    node.userData.armorThickness = getPlateThickness('gunBarrel', 'gun');
-                    node.userData.gunMaskPart = false;
-                    node.userData.moduleDoubleSided = moduleDoubleSided(node);
-                    const gm = parentName.match(/^gun_(\d+)/);
-                    node.userData.gunConfig = gm ? parseInt(gm[1], 10) : null;
-                    moduleMeshes.push(node);
-                } else if (/^gun_\d+_mask$/.test(parentName)) {
-                    node.userData.armorSection = 'gunBarrel';
-                    node.userData.armorPlateId = 'gun';
-                    node.userData.armorThickness = getPlateThickness('gunBarrel', 'gun');
-                    node.userData.gunMaskPart = true;
-                    node.userData.moduleDoubleSided = moduleDoubleSided(node);
-                    const gm = parentName.match(/^gun_(\d+)/);
-                    node.userData.gunConfig = gm ? parseInt(gm[1], 10) : null;
-                    moduleMeshes.push(node);
-                } else if (/^gun_\d+_/.test(parentName)) {
-                    // BlitzKit 口径：有 mask 的炮把 gun_0X* 全部网格并入外部模块（含
-                    // gun_XX_mask_nc 等辅助件），由裁切面统一裁掉炮根；active 配置无
-                    // mask 时这些辅助件在 collectPenetrationMeshes/applyCategoryFilters
-                    // 被过滤，只保留精确 gun_0X（与 `mask ? startsWith : ===` 一致）。
-                    node.userData.armorSection = 'gunBarrel';
-                    node.userData.armorPlateId = 'gun';
-                    node.userData.armorThickness = getPlateThickness('gunBarrel', 'gun');
-                    node.userData.gunMaskPart = true;
-                    node.userData.moduleDoubleSided = moduleDoubleSided(node);
-                    const gm = parentName.match(/^gun_(\d+)/);
-                    node.userData.gunConfig = gm ? parseInt(gm[1], 10) : null;
-                    moduleMeshes.push(node);
-                }
-            });
+            moduleMeshes = tagModuleNodes(model, getPlateThickness);
         }
 
         let worldMetersPerUnit = 1;      // 场景原生米制：1 单位 = 1 米（模型不再缩放）
@@ -2484,33 +2231,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             armorModel.updateMatrixWorld(true);
             tankModel.updateMatrixWorld(true);
 
-            const installPivot = (mesh, pivot) => {
-                if (!mesh.userData.origPos) mesh.userData.origPos = mesh.position.clone();
-                mesh.position.copy(mesh.userData.origPos).add(pivot);
-                mesh.updateMatrix();
-            };
-
-            const mo = tankData && tankData.model_origins;
-            const cfgO = currentConfig();
-            if (!(mo && mo.track && mo.turret)) return;
-            const vTrack = new THREE.Vector3(mo.track[0], mo.track[1], mo.track[2]);
-            const vTurret = new THREE.Vector3(mo.turret[0], mo.turret[1], mo.turret[2]);
-            const pHull = vTrack.clone();
-            const pTurret = vTrack.clone().add(vTurret);
-            const pGun = (cfgO && cfgO.gun_origin)
-                ? pTurret.clone().add(new THREE.Vector3(cfgO.gun_origin[0], cfgO.gun_origin[1], cfgO.gun_origin[2]))
-                : pTurret.clone();
-            armorPivotTurret = pTurret.clone();
-            armorPivotGun = pGun.clone();
-            armorModel.traverse(n => {
-                if (!n.isMesh) return;
-                const nm = n.name || '';
-                // 正则容忍动态装甲的 state_XX 段（turret_01_state_01_armor_12 等）——
-                // 否则可控板装不上枢轴：位置错、不随炮塔旋转
-                if (/^turret_\d+(?:_state_\d+)?_armor/.test(nm)) { installPivot(n, pTurret); }
-                else if (/^gun_\d+(?:_state_\d+)?_armor/.test(nm)) { installPivot(n, pGun); }
-                else if (/^hull(?:_state_\d+)?_armor/.test(nm)) { installPivot(n, pHull); }
-            });
+            const pivots = armorPivots(tankData, currentConfig());
+            if (!pivots) return;
+            armorPivotTurret = pivots.turret.clone();
+            armorPivotGun = pivots.gun.clone();
+            installArmorPivots(armorModel, pivots);
             armorModel.updateMatrixWorld(true);
 
         }
@@ -2622,16 +2347,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 armorModel = gltf.scene;
                 _armorPrefixCache = null;   // 装甲模型重建后前缀缓存失效
                 tagArmorPlates(armorModel);
-                armorModel.traverse(function(node) {
-                    if (node.isMesh && node.geometry) {
-                        // 逐面法线（非索引化 + 逐面重算）：热力图着色的法线必须与点击判定
-                        // 的 raycast 面法线同源——hit.face.normal 是几何面法线，若保留 GLB
-                        // 平滑法线，曲面/棱线处热力图入射角会偏离判定入射角（实测 T110E5
-                        // p90 差 6°，约 11% 表面击穿概率结论相反）。代价是逐面块状着色。
-                        if (node.geometry.index) node.geometry = node.geometry.toNonIndexed();
-                        node.geometry.computeVertexNormals();
-                    }
-                });
+                useFaceNormals(armorModel);
                 armorModel.traverse(function(node) {
                     if (node.isMesh) {
                         if (node.userData.armorSection === 'deco') { node.visible = false; return; }
@@ -4463,27 +4179,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
 
         function applyArmorConfigVisible(cfg) {
             if (!armorModel) { return; }
-            const pk = collectArmorPrefixes();
-            const gunPk = pk.gun, turPk = pk.turret;
-            const activeGun = gunPk.length ? gunPk[cfg.gun_index % gunPk.length] : null;
-            const activeTur = turPk.length ? turPk[cfg.turret_index % turPk.length] : null;
-            armorModel.traverse(function(node) {
-                if (!node.isMesh) return;
-                const name = node.name || '';
-                const gm = name.match(/^(gun_\d+)(?:_state_\d+)?_armor_/);
-                const tm = name.match(/^(turret_\d+)(?:_state_\d+)?_armor_/);
-                if (gm) {
-                    const visible = activeGun ? gm[1] === activeGun : true;
-                    node.visible = visible;
-                    node.userData.configHidden = !visible;
-                    if (visible) node.userData.armorSection = node.userData.armorSection || 'gun';
-                } else if (tm) {
-                    const visible = activeTur ? tm[1] === activeTur : true;
-                    node.visible = visible;
-                    node.userData.configHidden = !visible;
-                    if (visible) node.userData.armorSection = node.userData.armorSection || 'turret';
-                }
-            });
+            applyArmorPrefixVisibility(armorModel, cfg, collectArmorPrefixes());
         }
 
         function populateShellSelector(shells, requestedIndex = 0) {
@@ -5142,16 +4838,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         let _armorPrefixCache = null;   // { gun: [...], turret: [...] }
         function collectArmorPrefixes() {
             if (_armorPrefixCache) return _armorPrefixCache;
-            const gunSet = new Set(), turSet = new Set();
-            if (armorModel) armorModel.traverse(n => {
-                const name = n.name || '';
-                const gm = name.match(/^(gun_\d+)(?:_state_\d+)?_armor_/);
-                if (gm) gunSet.add(gm[1]);
-                const tm = name.match(/^(turret_\d+)(?:_state_\d+)?_armor_/);
-                if (tm) turSet.add(tm[1]);
-            });
-            const sortPk = (set) => Array.from(set).sort((a,b) => (a.match(/\d+/)?.[0]|0)-(b.match(/\d+/)?.[0]|0));
-            _armorPrefixCache = { gun: sortPk(gunSet), turret: sortPk(turSet) };
+            _armorPrefixCache = armorModel ? scanArmorPrefixes(armorModel) : { gun: [], turret: [] };
             return _armorPrefixCache;
         }
 
