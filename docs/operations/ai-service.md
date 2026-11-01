@@ -18,6 +18,7 @@ AI Review HTTP 边界分布在 `review.controller` / `review.converter` / `revie
 上传/并发限制与管理员操作见 [`积分赛功能契约`](../features/tournament-points.md)。
 
 - `.github/workflows/ai-service.yml` 在自身输入变化的 `main` push 上构建 GHCR 的 `sha-<commit>`，确认当前 main 后发布 `latest`，再用 `deploy/deploy.sh` 的 `ai-service` 选择器部署。镜像内保留 `BUILD_COMMIT`。
+- 镜像构建缓存：`docker/Dockerfile.ai-service` 的依赖单独成层（`dependency:go-offline`），只有 `java/**/pom.xml` 或 `java/settings-docker.xml` 变化才重新下载。`ai-service.yml` 读写 `type=gha,scope=ai-service`；PR 的 `ci-ai-service.yml` 只读，不写共享 scope。两个 Maven 步骤各最多试 3 次，带 `-U` 绕过本地记录的「找不到」。
 - `deploy/docker-compose.prod.yml` 仅将容器 `8080` 映射到 Yecao WireGuard 地址 `10.20.0.2:8089`。不添加公网映射，也不代理到 Business Backend；TX 侧唯一的反向代理是 `deploy/tx/nginx/frontend.conf.template` 里更具体的 `location ^~ /api/ai/`，upstream 为 `${AI_UPSTREAM}`（`TX_AI_UPSTREAM`，默认 `http://10.20.0.2:8089`，在 `deploy/tx/deploy.sh` fail-closed），不重写 path，`proxy_read/send_timeout 1120s`。资源上限为 1.5 CPU、1536 MiB；并发和队列默认各 2，后续用负载数据调节。
 - Yecao 运行时注入 `AI_API_KEY`；`AI_BASE_URL`、`AI_MODEL`、`KEYCLOAK_ISSUER_URI` 等非秘密项经 GitHub Variables/Compose 默认值配置。不得把 JWT、prompt、completion 或密钥写入仓库及日志。AI 服务不持有 PostgreSQL、RabbitMQ、MinIO 或 replay job 凭据。
 - `deploy/deploy.sh` 在 staging 阶段校验 Compose，部署后从宿主访问 `http://10.20.0.2:8089/actuator/health/readiness`。失败时停止该服务并报告，不更改其它 Yecao 服务。
