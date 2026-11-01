@@ -110,7 +110,7 @@ describe('global configuration editor', () => {
     const wrapper = await page(false)
     await wrapper.get('[data-testid="event-season"]').setValue('GLOBAL'); await flushPromises()
     await wrapper.get('[data-testid="event-year"]').setValue('2026'); await flushPromises()
-    await wrapper.get('[data-testid="event-region"]').setValue('CN'); await flushPromises()
+    await wrapper.get('[data-testid="event-region"] [data-value="CN"]').trigger('click'); await flushPromises()
     await wrapper.get('[data-testid="event-season"]').setValue('SUMMER'); await flushPromises()
     expect((wrapper.get('[data-testid="config-season"]').element as HTMLSelectElement).value).toBe('SUMMER')
     expect(wrapper.get('[data-testid="config-season"]').attributes('disabled')).toBeUndefined()

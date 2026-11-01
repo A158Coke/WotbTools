@@ -17,6 +17,14 @@ describe('MapPreview3DPane 场景接线（source regression）', () => {
     expect(paneSrc).not.toContain('<VehicleDetailsPanel')
   })
 
+  it('画质与相机走 SegmentedControl，与 Replay3DPane 同一控件（DC-SEL-08）', () => {
+    expect(paneSrc).toContain("import SegmentedControl from './SegmentedControl.vue'")
+    expect(paneSrc).not.toContain('<select')
+    expect(paneSrc).toContain('class="map3d-quality-label"')
+    expect(paneSrc).toMatch(/data-testid="map-3d-quality"\s+@update:model-value="changeQuality"/)
+    expect(paneSrc).toMatch(/data-testid="map-3d-camera"\s+@update:model-value="chooseCamera"/)
+  })
+
   it('换图判定只看 mapId：locale 化的 mapName 变化不得清空标注（回归锁）', () => {
     // 切语言 → selected.name（locale 派生）→ mapName prop 变化；图身份未变，
     // 标注与撤销栈必须保留（Codex 复审 #4431969638）

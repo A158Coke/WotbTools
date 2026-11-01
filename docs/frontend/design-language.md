@@ -403,7 +403,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | **Input / Select / Textarea** | — | 标签放在控件上方（不能只靠 placeholder）；下方放说明文字和错误文字；错误态 = 边框用 `danger` + 图标 + 文字 |
 | **SearchSelect** | 单选 / 多选 | 选型见 §7.1；选项超过 10 项时必须可搜索，例如名人堂的选车器 |
 | **FileDrop** | 单文件 / 多文件 | 上传交互遵守以下键盘规则。原生 `<input type=file>` 视觉隐藏、**不进 Tab 顺序**（`tabindex="-1"` + `aria-hidden`），由可见的真实按钮 `click()` 触发它——**禁止只有鼠标可点的容器**：键盘用户必须能 Tab 到那个按钮，且按钮是唯一的 picker 触发点（hidden input 不得再进 Tab 顺序，避免同一动作出现两个焦点目标） |
-| **SegmentedControl** | — | 页面内的视图切换，例如 汇总 / 单场、数据 / 2D / 3D / 射击 / AI。键盘：方向键循环、Home / End 跳首尾（radiogroup 模型）；`scrollable` 保持单行横向滚动；回放能力栏使用 `wrap`，空间不足时自然换行，手机上每行填满可用宽度、长标签完整显示 |
+| **SegmentedControl** | — | 页面内的视图切换，例如 汇总 / 单场、数据 / 2D / 3D / 射击 / AI。键盘：方向键循环、Home / End 跳首尾（radiogroup 模型）；`scrollable` 保持单行横向滚动；回放能力栏使用 `wrap`，空间不足时自然换行，手机上每行填满可用宽度、长标签完整显示。`presentation` 由调用方显式选择：`segmented`（默认）、`chips`（始终换行）、`tiles`（等宽平铺），只改呈现，不改语义与键盘 |
 | **Tabs** | — | 页面级分区。和 SegmentedControl 的区别：Tabs 切换的是内容区域，SegmentedControl 切换的是同一内容的呈现方式 |
 | **Chip** | 筛选 chip · 状态 chip | 已生效的筛选条件显示为可移除的 chip |
 | **Badge** | 中性 / 状态 / 阵营 | 只放短文本（≤ 6 个字） |
@@ -427,8 +427,8 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 | ID | 强度 | 范围 | 规则 | 例外 | 验证 |
 |---|---|---|---|---|---|
-| DC-SEL-01 | MUST | 单选 | 按下表取默认控件；候选数按数据域的可能上限判断，不按当前条数 | DC-SEL-04 | 人工 |
-| DC-SEL-02 | MUST | 2 个互斥选项 | 不用下拉 | 无 | 人工 |
+| DC-SEL-01 | MUST | 单选 | 按下表取默认控件；候选数按数据域的可能上限判断，不按当前条数；「请选择」「全部」这类空值项不算候选 | DC-SEL-04 | 人工 |
+| DC-SEL-02 | MUST | 2 个互斥选项 | 不用下拉 | `selection-policy.test.ts` 的只减不增名单 | `src/shared/selection-policy.test.ts`（静态选项）+ 人工（`v-for` 选项） |
 | DC-SEL-03 | MUST | 超过 10 个候选 | 必须可搜索 | 无 | 人工 |
 | DC-SEL-04 | MAY | 固定有序域 | Tier I–X 这类固定、有序的集合直接平铺，即使有 10 项 | 无 | 人工 |
 | DC-SEL-05 | MAY | 高信息熵集合 | 不到 10 项也可提前提供搜索，例如 `BattlePicker` 超过 6 项显示搜索 | 无 | 人工 |
@@ -446,7 +446,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | 已知自由标量 | typed input |
 | 多选 | Checkbox Group / multi-choice / searchable multi-select |
 
-单选 Choice Group 由 `SegmentedControl`（radiogroup 语义、方向键、Home / End）承载。
+单选 Choice Group 由 `SegmentedControl`（radiogroup 语义、方向键、Home / End）承载，呈现用 `presentation` 选择。级联筛选的固定候选域保持全部选项可见，上一级未选或当前无数据的选项置灰。
 
 ---
 
