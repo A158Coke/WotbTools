@@ -331,7 +331,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 不存在这两个开关（已移至待开播卡片）。
   let LOGDEPTH = prefOf('pb_logdepth', 'logdepth', false);
   let DYNRES = prefOf('pb_dynres', 'dynres', true);
-  let ARMOR_HIGHLIGHT = prefOf('pb_armor_highlight', 'armorhl', true);
+  let ARMOR_HIGHLIGHT = prefOf('pb_armor_highlight', 'armorhl', false);
   const persistPref = (key, on) => { try { localStorage.setItem(key, on ? '1' : '0'); } catch (_) {} };
 
   // ---------- 画质分档 ----------
