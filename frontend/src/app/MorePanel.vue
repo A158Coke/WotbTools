@@ -6,8 +6,8 @@
 // （如装甲查看器的 3D 浮层）盖住。测试用 DIALOG_INLINE_KEY 原地渲染。
 import { inject, nextTick, ref, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
-import { BookOpen, ExternalLink, MessageSquare } from 'lucide-vue-next'
-import { FEEDBACK_URL, LANGUAGES, useMoreMenu } from '../composables/useMoreMenu.js'
+import { BookOpen, MessageSquare } from 'lucide-vue-next'
+import { LANGUAGES, useMoreMenu } from '../composables/useMoreMenu.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 import SegmentedControl from '../components/SegmentedControl.vue'
@@ -22,7 +22,7 @@ const emit = defineEmits(['close'])
 
 const navigate = inject(NAVIGATE_VIEW_KEY, null)
 const inline = inject(DIALOG_INLINE_KEY, false)
-const { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, aboutLinks, openGuide } = useMoreMenu()
+const { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, aboutLinks, openGuide, openFeedback } = useMoreMenu()
 const panel = ref(null)
 
 function close({ restoreFocus = false } = {}) {
@@ -115,11 +115,10 @@ watch(() => props.open, async (open) => {
           </button>
         </li>
         <li>
-          <a class="more-panel-link" :href="FEEDBACK_URL" target="_blank" rel="noopener noreferrer" data-testid="more-link-feedback" @click="close()">
+          <button type="button" class="more-panel-link" data-testid="more-link-feedback" @click="close(); openFeedback?.()">
             <MessageSquare :size="18" aria-hidden="true" />
             <span>{{ $t('app.feedback') }}</span>
-            <ExternalLink class="more-panel-external" :size="14" aria-hidden="true" />
-          </a>
+          </button>
         </li>
       </ul>
     </section>
@@ -183,7 +182,6 @@ watch(() => props.open, async (open) => {
 }
 
 .more-panel-link > svg { flex: none; color: var(--color-text-secondary); }
-.more-panel-external { margin-inline-start: auto; }
 .more-panel-link:focus-visible { outline: var(--focus-outline); outline-offset: calc(var(--focus-outline-offset) * -1); }
 
 @media (hover: hover) {

@@ -5,7 +5,7 @@
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本由显式 `version` 输入决定：自动续跑传入 stage 解析出的同一版本，手动 recovery 由操作者显式给出（见下节）。
-当前源码版本：**3.27.2 / 3027002**（`android/gradle.properties`），地图预览基地点位直接进 2D/3D 视图（争霸/遭遇切换）+ picker 封面统一 cover.webp + 未收录图 2D 底图升级 map2d 校准图 + 标注导入导出跨视角随 APK 打包，说明见 [3.27.2](releases/3.27.2.md)；3.27.1 承载前端 strict 类型检查（功能行为不变），见 [3.27.1](releases/3.27.1.md)；3.27.0 承载 3D 开镜穿深着色，见 [3.27.0](releases/3.27.0.md)；3.25.0 承载地图预览主体，见 [3.25.0](releases/3.25.0.md)。
+当前源码版本：**3.28.0 / 3028000**（`android/gradle.properties`），站内反馈随 APK 打包，说明见 [3.28.0](releases/3.28.0.md)。
 3.22.0 在 3.21.2 之后按 **minor** 递增；Native Bridge 仍为 v3，最低支持版本保持现有发布配置，详见 [3.22.0](releases/3.22.0.md)。
 3.21.0 在 3.20.0 之后按 **minor** 递增，承载管理员 Battle Data 只读审计页；Native Bridge 仍为 v3，最低支持版本保持现有发布配置，详见 [3.21.0](releases/3.21.0.md)。
 3.21.2 在 3.21.1 之后按 **patch** 递增，承载 3D 回放相机档位调整；Native Bridge 仍为 v3，最低支持版本保持现有发布配置，详见 [3.21.2](releases/3.21.2.md)。
