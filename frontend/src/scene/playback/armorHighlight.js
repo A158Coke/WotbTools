@@ -169,6 +169,8 @@ const _occluderOffset = new THREE.Vector3()
 /** `view` = {frustum, origin, forward, maxDepth}：物体落在目标屏幕矩形外或完全在目标之后就挡不住它。 */
 export function canOccludeTarget(object, view) {
   if (object.frustumCulled === false) return true
+  // 悬挂形变后的 bounds 只在拾取时刷新，友军履带等非候选车辆可能还是旧值，不能据此剔除
+  if (object.geometry?.userData?.pickBoundsStale) return true
   // InstancedMesh 的包围球在对象上，几何上的只是单个实例；未算出时不能回落到几何
   const sphere = object.boundingSphere !== undefined ? object.boundingSphere : object.geometry?.boundingSphere
   if (!sphere) return true

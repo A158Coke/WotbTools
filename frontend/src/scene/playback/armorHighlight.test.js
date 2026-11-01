@@ -206,6 +206,20 @@ describe('遮挡 pass 裁剪', () => {
     expect(canOccludeTarget({ geometry: {} }, view)).toBe(true)
   })
 
+  it('形变后 bounds 未刷新的物体保留：友军履带不进拾取候选，旧包围球不可信', () => {
+    const c = camera()
+    const view = viewOf(c, screenRect(boxAt(0, 0, -100), c), 102)
+    const track = mesh(40, 0, -50)
+    track.material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })
+    expect(canOccludeTarget(track, view)).toBe(false)
+    // 顶点被悬挂移进目标矩形，包围球仍是旧的
+    const position = track.geometry.getAttribute('position')
+    for (let i = 0; i < position.count; i++) position.setX(i, position.getX(i) - 40)
+    expect(canOccludeTarget(track, view)).toBe(false)
+    markPickBoundsStale(track.geometry)
+    expect(canOccludeTarget(track, view)).toBe(true)
+  })
+
   it('InstancedMesh 不拿单实例几何的包围球判断整片实例', () => {
     const c = camera()
     const view = viewOf(c, screenRect(boxAt(0, 0, -100), c), 102)
