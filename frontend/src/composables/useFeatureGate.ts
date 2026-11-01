@@ -36,13 +36,13 @@ export function useFeatureGate() {
    * 读取 `settled.value` 让 computed 依赖它：首次结果恰好是 UNKNOWN 时 `connectivity` 不变，
    * 只有 settled false → true 能把 UI 从 pending 切到真实 UNKNOWN。
    */
-  function availability(feature) {
+  function availability(feature: string) {
     const result = getFeatureAvailability(feature, { connectivity: connectivity.value })
     const dependsOnConnectivity = result.requirement !== null && result.requirement !== FeatureRequirement.LOCAL
     return Object.freeze({ ...result, pending: dependsOnConnectivity && !settled.value })
   }
 
-  function isAvailable(feature) {
+  function isAvailable(feature: string) {
     return availability(feature).available
   }
 
@@ -57,7 +57,7 @@ export function useFeatureGate() {
    *    **补判 / 补提示**一次（在线则不提示），**不会**自动重放被拒绝的原始动作 ——
    *    需要恢复的页面由自己的可用性 watcher 负责。
    */
-  function requireFeature(feature) {
+  function requireFeature(feature: string) {
     const current = availability(feature)
     if (!current.pending) return evaluateFeatureGate(feature, connectivity.value)
     if (current.available) return true
@@ -80,7 +80,7 @@ export function useFeatureGate() {
  * 注：ONLINE_OPTIONAL 功能在离线时 `available === true`（本地动作照常），因此**不**提示；
  * 需要跳过联网部分的调用方读 `availability().online`，而不是让门禁替它决定。
  */
-export function evaluateFeatureGate(feature, connectivity, notify = showConnectivityNotice) {
+export function evaluateFeatureGate(feature: string, connectivity: unknown, notify = showConnectivityNotice) {
   const result = getFeatureAvailability(feature, { connectivity })
   if (!result.available && result.messageKey) notify(result)
   return result.available

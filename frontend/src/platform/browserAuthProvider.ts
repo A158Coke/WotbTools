@@ -1,4 +1,5 @@
-import Keycloak from 'keycloak-js'
+import Keycloak, { type KeycloakInitOptions } from 'keycloak-js'
+import type { AuthProvider } from '../types/auth.js'
 import { hasAuthReturn, recordLoginStart, recordReturnFacts } from './authDiagnostics.js'
 
 const KEYCLOAK_CONFIG = Object.freeze({
@@ -14,8 +15,8 @@ const KEYCLOAK_CONFIG = Object.freeze({
  * 每个 provider 实例懒加载自己的 adapter：一次 init transaction 一个实例，
  * 因此 retry / login-recovery 拿到的是全新 adapter，被放弃的一代无法写回新状态。
  */
-export function createBrowserAuthProvider() {
-  let keycloak = null
+export function createBrowserAuthProvider(): AuthProvider {
+  let keycloak: Keycloak | null = null
   // A failed refresh must not immediately destroy the browser's projected identity.
   // keycloak-js does not expose a stable OAuth-vs-transport error contract from updateToken(),
   // so treating every rejection as a terminal session loss causes transient network/KC failures
@@ -42,7 +43,7 @@ export function createBrowserAuthProvider() {
       recordReturnFacts(hasAuthReturn({ search: '', hash: window.location.hash })
         ? window.location.hash.slice(1) : window.location.search)
       const returning = hasAuthReturn()
-      const options = mode === 'login-recovery' || returning
+      const options: KeycloakInitOptions = mode === 'login-recovery' || returning
         ? {
             pkceMethod: 'S256',
             checkLoginIframe: false,
@@ -85,12 +86,12 @@ export function createBrowserAuthProvider() {
     },
 
     /** 浏览器：redirect 真的会回到本页，redirectUri 由调用方（SPA 自己）决定并保留 view。 */
-    login(redirectUri) {
+    login(redirectUri?: string) {
       recordLoginStart(typeof redirectUri === 'string' ? redirectUri : null)
       return adapter().login({ redirectUri })
     },
 
-    logout(redirectUri) {
+    logout(redirectUri?: string) {
       return adapter().logout({ redirectUri })
     },
 

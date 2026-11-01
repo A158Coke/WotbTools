@@ -20,25 +20,36 @@ const RESOURCE_TIMING_BUFFER_MAX = 4000
 const RESOURCE_TIMING_RECENT_LIMIT = 200
 
 /** One recovery state per target: timing capacity, observer cache and installed flag. */
-const recoveryStates = new WeakMap()
+const recoveryStates = new WeakMap<object, RecoveryState>()
 
-function ensureRecoveryState(target) {
+type ResourceRecord = { name: string; responseStatus: number }
+
+type RecoveryState = {
+  installed: boolean
+  timingBufferSize: number
+  recentResources: Map<string, ResourceRecord>
+  takePending(): void
+}
+
+type RecoveryTarget = Window & typeof globalThis
+
+function ensureRecoveryState(target: RecoveryTarget) {
   let state = recoveryStates.get(target)
   if (state) return state
 
-  state = {
+  const created: RecoveryState = {
     installed: false,
     timingBufferSize: RESOURCE_TIMING_BUFFER_SIZE,
     recentResources: new Map(),
     takePending() {},
   }
-  recoveryStates.set(target, state)
-  ensureResourceTimingCapacity(target, state)
-  ensureResourceTimingObserver(target, state)
-  return state
+  recoveryStates.set(target, created)
+  ensureResourceTimingCapacity(target, created)
+  ensureResourceTimingObserver(target, created)
+  return created
 }
 
-function ensureResourceTimingCapacity(target, state) {
+function ensureResourceTimingCapacity(target: RecoveryTarget, state: RecoveryState) {
   const performance = target.performance
   if (typeof performance?.setResourceTimingBufferSize !== 'function') return
 
@@ -62,7 +73,7 @@ function ensureResourceTimingCapacity(target, state) {
   }
 }
 
-function sameOriginAssetUrl(rawUrl, target) {
+function sameOriginAssetUrl(rawUrl: string | null | undefined, target: RecoveryTarget) {
   if (!rawUrl) return null
   try {
     const url = new URL(rawUrl, target.location.href)
@@ -73,7 +84,7 @@ function sameOriginAssetUrl(rawUrl, target) {
   }
 }
 
-function failedAssetUrl(error, target) {
+function failedAssetUrl(error: unknown, target: RecoveryTarget) {
   const message = error instanceof Error ? error.message : String(error || '')
   const rawUrl = STALE_ASSET_MESSAGES
     .map(pattern => message.match(pattern)?.[1])
@@ -87,13 +98,13 @@ function failedAssetUrl(error, target) {
  * lets the synchronous preloadError decision see a 404 even when that entry is
  * still in the secondary buffer or has not reached getEntriesByName() yet.
  */
-function ensureResourceTimingObserver(target, state) {
+function ensureResourceTimingObserver(target: RecoveryTarget, state: RecoveryState) {
   const performance = target.performance
   if (typeof performance?.getEntriesByName !== 'function') return
   const PerformanceObserverCtor = target.PerformanceObserver
   if (typeof PerformanceObserverCtor !== 'function') return
 
-  const remember = (entry) => {
+  const remember = (entry: PerformanceResourceTiming) => {
     const name = sameOriginAssetUrl(entry?.name, target)
     if (!name) return
     const record = { name, responseStatus: entry.responseStatus }
@@ -101,15 +112,15 @@ function ensureResourceTimingObserver(target, state) {
     state.recentResources.delete(name)
     state.recentResources.set(name, record)
     while (state.recentResources.size > RESOURCE_TIMING_RECENT_LIMIT) {
-      state.recentResources.delete(state.recentResources.keys().next().value)
+      state.recentResources.delete(state.recentResources.keys().next().value as string)
     }
   }
 
-  let observer
+  let observer: PerformanceObserver | undefined
   try {
     observer = new PerformanceObserverCtor((list) => {
       try {
-        for (const entry of list.getEntries()) remember(entry)
+        for (const entry of list.getEntries()) remember(entry as PerformanceResourceTiming)
       } catch {
         // Best-effort observation; getEntriesByName remains the URL-ful fallback.
       }
@@ -125,7 +136,7 @@ function ensureResourceTimingObserver(target, state) {
 
   state.takePending = () => {
     try {
-      for (const entry of observer.takeRecords()) remember(entry)
+      for (const entry of observer!.takeRecords()) remember(entry as PerformanceResourceTiming)
     } catch {
       // Partial implementations still expose entries delivered via callback.
     }
@@ -139,7 +150,7 @@ function ensureResourceTimingObserver(target, state) {
  * be safely correlated with one specific resource entry, so it intentionally
  * fails closed and keeps the existing user-controlled error path.
  */
-export function isConfirmedStaleAsset(error, target = window) {
+export function isConfirmedStaleAsset(error: unknown, target: RecoveryTarget = window) {
   const state = recoveryStates.get(target)
   state?.takePending()
 
@@ -148,14 +159,14 @@ export function isConfirmedStaleAsset(error, target = window) {
   return isConfirmedAsset404(url, target, state)
 }
 
-function isConfirmedAsset404(url, target, state) {
+function isConfirmedAsset404(url: string, target: RecoveryTarget, state: RecoveryState | undefined) {
   const recent = state?.recentResources.get(url)
   if (recent) return recent.responseStatus === 404
   const entries = target.performance?.getEntriesByName?.(url) || []
-  return entries.at(-1)?.responseStatus === 404
+  return (entries.at(-1) as PerformanceResourceTiming | undefined)?.responseStatus === 404
 }
 
-export function installPreloadErrorRecovery(target = window) {
+export function installPreloadErrorRecovery(target: RecoveryTarget = window) {
   const state = ensureRecoveryState(target)
   if (state.installed) return
   target.addEventListener('vite:preloadError', event => {

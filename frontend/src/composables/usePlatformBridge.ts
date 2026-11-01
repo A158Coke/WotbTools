@@ -17,13 +17,28 @@ import { isAndroidRuntime } from '../platform/runtime.js'
 import {
   SUPPORTED_NATIVE_BRIDGE_VERSIONS,
 } from '../platform/nativeBridgeContract.js'
+import { isRecord, isString } from '../types/guards.js'
+import type {
+  NativeBridgeMethod,
+  NativeBridgeRequest,
+  NativeBridgeResponse,
+} from '../api/generated/android-native-bridge.js'
+
+export type NativePendingReplay = NonNullable<NativeBridgeResponse<'getPendingReplay'>>
+
+type BridgeCallOptions = { timeoutMs?: number }
+
+/** 请求没有必填字段的方法才能省略 params。 */
+type BridgeCallArgs<M extends NativeBridgeMethod> = Record<string, never> extends NativeBridgeRequest<M>
+  ? [params?: NativeBridgeRequest<M>, options?: BridgeCallOptions]
+  : [params: NativeBridgeRequest<M>, options?: BridgeCallOptions]
 
 const BRIDGE_KEY = 'WotbNative'
 const BRIDGE_RPC_TIMEOUT_MS = 5000
 
 let seq = 0
 
-function bridge() {
+function bridge(): NativeBridgeTransport | null {
   if (typeof window === 'undefined') return null
   return window[BRIDGE_KEY] || null
 }
@@ -40,7 +55,12 @@ export function isAndroidApp() {
  * `timeoutMs` 允许按方法放宽：native-auth 的 RPC 需要 OIDC discovery / token refresh（网络），
  * 默认 5s 不够；调用方传 `NATIVE_AUTH_TIMEOUT_MS`。其余方法保持默认预算不变。
  */
-export function callBridge(method, params = {}, { timeoutMs = BRIDGE_RPC_TIMEOUT_MS } = {}) {
+export function callBridge<M extends NativeBridgeMethod>(method: M, ...args: BridgeCallArgs<M>): Promise<unknown>
+export function callBridge(
+  method: NativeBridgeMethod,
+  params: object = {},
+  { timeoutMs = BRIDGE_RPC_TIMEOUT_MS }: BridgeCallOptions = {},
+): Promise<unknown> {
   return new Promise(resolve => {
     const b = bridge()
     if (!b || typeof b.postMessage !== 'function') {
@@ -52,13 +72,13 @@ export function callBridge(method, params = {}, { timeoutMs = BRIDGE_RPC_TIMEOUT
       return
     }
     const id = ++seq
-    let timeoutId
-    const handler = (e) => {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined
+    const handler = (e: { data: unknown }) => {
       let data = e.data
       if (typeof data === 'string') {
         try { data = JSON.parse(data) } catch { return }
       }
-      if (data && data.id === id) {
+      if (isRecord(data) && data.id === id) {
         if (typeof b.removeEventListener === 'function') {
           b.removeEventListener('message', handler)
         }
@@ -88,27 +108,33 @@ export function callBridge(method, params = {}, { timeoutMs = BRIDGE_RPC_TIMEOUT
   })
 }
 
-export async function getCapabilities() {
+export async function getCapabilities(): Promise<string[]> {
   const c = await callBridge('getCapabilities')
-  return Array.isArray(c) ? c : []
+  return Array.isArray(c) && c.every(isString) ? c : []
 }
 
-export async function getNativeBridgeVersion() {
+export async function getNativeBridgeVersion(): Promise<number | null> {
   const version = await callBridge('getBridgeVersion')
-  return Number.isInteger(version) ? version : null
+  return typeof version === 'number' && Number.isInteger(version) ? version : null
 }
 
-export function isNativeBridgeCompatible(version) {
-  return SUPPORTED_NATIVE_BRIDGE_VERSIONS.includes(version)
+export function isNativeBridgeCompatible(version: number | null | undefined) {
+  return version != null && SUPPORTED_NATIVE_BRIDGE_VERSIONS.includes(version)
 }
 
-export async function supports(capability) {
+export async function supports(capability: string) {
   return (await getCapabilities()).includes(capability)
 }
 
 /** Result: { pendingId, name, size, uri }; uri is the fixed same-origin LocalRuntimeServer resource (NATIVE_REPLAY_RESOURCE_URL). */
-export async function getPendingReplay() {
-  return await callBridge('getPendingReplay')
+export async function getPendingReplay(): Promise<NativePendingReplay | null> {
+  const reply = await callBridge('getPendingReplay')
+  return isPendingReplay(reply) ? reply : null
+}
+
+function isPendingReplay(value: unknown): value is NativePendingReplay {
+  return isRecord(value) && isString(value.pendingId) && isString(value.name)
+    && typeof value.size === 'number' && isString(value.uri)
 }
 
 /**
@@ -116,7 +142,7 @@ export async function getPendingReplay() {
  * Native 执行 compare-and-clear：只有 identity 与当前 pending 完全一致才清理；
  * 不传 / 不匹配一律返回 false 且**绝不清掉当前 pending**（避免清掉后来取代它的新 replay）。
  */
-export async function consumePendingReplay(expectedPendingId) {
+export async function consumePendingReplay(expectedPendingId: string) {
   return (await callBridge('consumePendingReplay', { expectedPendingId })) === true
 }
 
