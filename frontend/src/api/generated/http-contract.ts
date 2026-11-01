@@ -1399,6 +1399,61 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/site-feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit site feedback
+         * @description JSON request bodies are limited to 64 KiB; larger or malformed requests return 400.
+         */
+        post: operations["createSiteFeedback"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/site-feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List site feedback for site administrators */
+        get: operations["listAdminSiteFeedback"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/site-feedback/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get: operations["getAdminSiteFeedback"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteAdminSiteFeedback"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/users": {
         parameters: {
             query?: never;
@@ -3129,6 +3184,42 @@ export interface components {
         };
         AdminAiReviewFeedbackPage: {
             items: components["schemas"]["AdminAiReviewFeedbackListItem"][];
+            page: number;
+            size: number;
+            totalItems: number;
+            totalPages: number;
+        };
+        /** @enum {string} */
+        SiteFeedbackReason: "BUG" | "FEATURE_REQUEST" | "DATA_ERROR" | "USABILITY" | "OTHER";
+        /** @description At least one reason or non-blank feedback text is required. Text is stored without modification. NUL and unpaired surrogates are invalid because they cannot round-trip through PostgreSQL UTF-8 text. */
+        CreateSiteFeedbackRequest: {
+            reasonCodes: components["schemas"]["SiteFeedbackReason"][];
+            feedbackText?: string | null;
+            pageView?: string | null;
+        };
+        CreateSiteFeedbackResponse: {
+            id: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        AdminSiteFeedbackListItem: {
+            id: string;
+            reasonCodes: components["schemas"]["SiteFeedbackReason"][];
+            feedbackText: string | null;
+            pageView: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        AdminSiteFeedbackDetail: {
+            id: string;
+            reasonCodes: components["schemas"]["SiteFeedbackReason"][];
+            feedbackText: string | null;
+            pageView: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        AdminSiteFeedbackPage: {
+            items: components["schemas"]["AdminSiteFeedbackListItem"][];
             page: number;
             size: number;
             totalItems: number;
@@ -8173,6 +8264,213 @@ export interface operations {
         };
     };
     deleteAdminAiReviewFeedback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Administrator required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Feedback not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    createSiteFeedback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSiteFeedbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateSiteFeedbackResponse"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    listAdminSiteFeedback: {
+        parameters: {
+            query?: {
+                page?: number;
+                size?: number;
+                reason?: components["schemas"]["SiteFeedbackReason"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Feedback page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminSiteFeedbackPage"];
+                };
+            };
+            /** @description Invalid filter or page */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Administrator required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getAdminSiteFeedback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Feedback detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminSiteFeedbackDetail"];
+                };
+            };
+            /** @description Invalid id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Administrator required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Feedback not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    deleteAdminSiteFeedback: {
         parameters: {
             query?: never;
             header?: never;

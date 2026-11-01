@@ -36,6 +36,7 @@ class WebModuleArchitectureTest {
                 Map.entry("mark3", "mark3.controller.Mark3Controller"),
                 Map.entry("observability", "observability.controller.ObservabilityController"),
                 Map.entry("replay", "replay.service.ReplayCapacityLimiter"),
+                Map.entry("sitefeedback", "sitefeedback.controller.SiteFeedbackController"),
                 Map.entry("tournament", "tournament.controller.TournamentController"),
                 Map.entry("user", "user.service.UserProfileService"),
                 Map.entry("config", "config.KeycloakAdminUserService"),

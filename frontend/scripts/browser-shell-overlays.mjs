@@ -68,7 +68,7 @@ export async function runShellOverlayScenario(env, scenario) {
       const reach = await measureReachability(page, { options: [last], touch: true })
       check(reach.sampled > 0, 'bottom support link not sampled')
       failures.push(...reach.failures)
-      // 返回页内链接使用真实路由，不点击会打开外部站点的反馈链接。
+      // 返回页内链接使用真实路由。
       await tap('[data-testid=more-link-history]')
       await page.waitForValue('new URL(location.href).searchParams.get("view")', v => v === 'history')
     } else {

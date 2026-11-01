@@ -2,9 +2,9 @@
 // 对话框（design-language §7 Dialog / 审计 PG-09）：确认 / 表单共用。
 // 焦点陷阱、Esc、aria-modal、body scroll lock 与嵌套层栈由 Reka Dialog 提供；这里只拥有
 // WotbTools policy：初始焦点优先级、关闭后焦点回到打开前的元素、手机底部 sheet 视觉与 inline 渲染。
-import { inject, nextTick, ref, watch } from 'vue'
+import { inject, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { DialogClose, DialogContent, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
-import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
+import { acquireDialogLayer, DIALOG_INLINE_KEY, releaseDialogLayer } from '../shared/dialog.js'
 import { X } from 'lucide-vue-next'
 import AppTooltip from './AppTooltip.vue'
 
@@ -28,6 +28,7 @@ defineOptions({ inheritAttrs: false })
 
 const inline = inject(DIALOG_INLINE_KEY, false)
 const content = ref(null)
+const layer = ref(0)
 
 let opener = null
 function restoreOpener(panel = content.value?.$el) {
@@ -63,11 +64,18 @@ function onCloseAutoFocus(event) {
   restoreOpener(event.target)
 }
 
+function syncLayer(open) {
+  if (open && !layer.value) layer.value = acquireDialogLayer()
+  else if (!open && layer.value) { layer.value = 0; releaseDialogLayer() }
+}
+
 watch(() => props.open, (open) => {
+  syncLayer(open)
   if (open) opener = document.activeElement
   // keepMounted 的内容不卸载，close-auto-focus 不会触发
   else if (props.keepMounted) nextTick(() => restoreOpener())
 }, { immediate: true, flush: 'sync' })
+onBeforeUnmount(() => syncLayer(false))
 </script>
 
 <template>
@@ -78,6 +86,7 @@ watch(() => props.open, (open) => {
         v-show="open"
         class="dialog-scrim"
         :class="scrimClass"
+        :style="{ zIndex: `calc(var(--z-dialog) + ${layer})` }"
         data-testid="dialog-scrim"
         @click.self="closeOnScrim && emit('close')"
       >
