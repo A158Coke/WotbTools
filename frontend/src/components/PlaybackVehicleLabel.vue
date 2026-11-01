@@ -46,6 +46,12 @@ const ghostWidth = computed(() => {
   return g && Number.isFinite(g.prevPct) && Number.isFinite(g.nextPct)
     && g.prevPct - g.nextPct > 0.5 ? g.prevPct - g.nextPct : null
 })
+const ghostStyle = computed(() => ({
+  left: `${props.hpGhost.nextPct}%`,
+  width: `${ghostWidth.value}%`,
+  // 未带寿命（2D）时沿用 CSS 默认时长
+  animationDuration: props.hpGhost.durationMs ? `${props.hpGhost.durationMs}ms` : undefined,
+}))
 /** 只展示正在生效且身份已闭合的定时消耗品（未知线码不占位，fail-closed）。 */
 const activeConsumables = computed(() => (Array.isArray(props.consumables) ? props.consumables : [])
   .filter((c) => c && typeof c.logicalItemId === 'string' && c.logicalItemId.length > 0
@@ -81,7 +87,9 @@ const classes = computed(() => ({
           </span>
           <span class="pb-hp-bar" :class="{ 'pb-hp-unknown-track': hpFillUnknown }">
             <span class="pb-hp-fill" :class="{ 'pb-hp-fill-unknown': hpFillUnknown }" :style="{ width: hpFillWidth }"></span>
-            <span v-if="ghostWidth != null" class="pb-hp-ghost" :style="{ left: hpGhost.nextPct + '%', width: ghostWidth + '%' }"></span>
+            <!-- key：每次掉血 nextPct 必变，换节点才能重启已结束的 forwards 动画；rerender 同值不重启。 -->
+            <span v-if="ghostWidth != null" :key="hpGhost.nextPct" class="pb-hp-ghost" data-test="pb-hp-ghost"
+              :data-born-ms="hpGhost.bornMs" :style="ghostStyle"></span>
             <span class="pb-hp-num" data-test="pb-hp-num">{{ hp.current ?? '—' }}</span>
           </span>
         </span>
@@ -145,7 +153,8 @@ const classes = computed(() => ({
 .pb-hp-fill, .pb-hp-ghost { position: absolute; inset-block: 0; left: 0; background: currentColor; }
 .pb-hp-fill { transition: width var(--duration-base) linear; }
 .pb-hp-fill-unknown { background: var(--color-playback-label-destroyed); opacity: .5; }
-.pb-hp-ghost { opacity: .55; animation: label-ghost var(--duration-slow) linear forwards; }
+/* 实心暗色段：只靠 opacity 在亮背景和窄血条上读不出。动画只管"停留后淡出"。 */
+.pb-hp-ghost { background: color-mix(in oklab, currentColor 55%, var(--color-canvas)); animation: label-ghost var(--duration-slow) linear forwards; }
 .pb-hp-flash .pb-hp-fill { filter: brightness(1.5); }
 .pb-hp-no-transition .pb-hp-fill { transition: none; }
 /* reload 是次级状态：等宽、更细。弹夹分段保持，每段仍按 state 区分 full / loading / locked / empty。
@@ -162,6 +171,6 @@ const classes = computed(() => ({
 .reload-shell { flex: 1; background: var(--color-playback-label-track); }
 .reload-shell[data-state="locked"] { background: var(--color-playback-label-locked); }
 .reload-fill { display: block; height: 100%; background: var(--color-playback-label-text); }
-@keyframes label-ghost { to { opacity: 0; } }
+@keyframes label-ghost { 0%, 20% { opacity: 1; } 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .pb-hp-ghost { animation: none; } }
 </style>

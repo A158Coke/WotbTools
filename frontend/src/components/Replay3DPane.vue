@@ -1061,7 +1061,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         <label class="toggle"><input type="checkbox" data-testid="disp-base" :checked="uiPrefs.showBaseStatus" @change="uiPrefs.showBaseStatus = $event.target.checked"> {{ t('agentReplay.display_base') }}</label>
         <p class="dp-title">{{ t('agentReplay.display_labels') }}</p>
         <label class="toggle"><input type="checkbox" data-testid="disp-class-icons" :checked="markerPrefs.classIcons" @change="markerPrefs.classIcons = $event.target.checked"> {{ t('recon.map.playback.class_icons') }}</label>
-        <label class="toggle"><input type="checkbox" data-testid="disp-status" :checked="markerPrefs.showStatus" @change="markerPrefs.showStatus = $event.target.checked"> {{ t('recon.map.playback.show_status') }}</label>
+        <label class="toggle"><input type="checkbox" data-testid="disp-status" :checked="markerPrefs.showStatus" @change="markerPrefs.showStatus = $event.target.checked"> {{ t('recon.map.playback.show_status_3d') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-player" :checked="labelPrefs.showPlayerName" @change="labelPrefs.showPlayerName = $event.target.checked"> {{ t('recon.map.playback.show_player_name') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-tank" :checked="labelPrefs.showTankName" @change="labelPrefs.showTankName = $event.target.checked"> {{ t('recon.map.playback.show_tank_name') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-hp" :checked="hpPrefs.showHp" @change="hpPrefs.showHp = $event.target.checked"> {{ t('recon.map.playback.show_hp') }}</label>

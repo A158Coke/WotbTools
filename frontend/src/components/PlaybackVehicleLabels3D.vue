@@ -45,11 +45,19 @@ const SIDE_LEFT = 'left'
 // 软遮挡下限的唯一来源在 utils/labelLayout.js；这里只做「常量 → CSS 变量」投影，
 // CSS 不再自带数值（否则同一契约又散成两处）。
 const occludedStyle = { '--pb-label-occluded-opacity': String(LABEL_OCCLUDED_OPACITY) }
+/** display:none 恢复会重启 CSS timeline：幽灵段按壁钟 age 续上，不从头再播。 */
+function syncGhostPhase(host) {
+  const ghost = host.querySelector('.pb-hp-ghost')
+  const bornMs = Number(ghost?.dataset.bornMs)
+  if (Number.isFinite(bornMs)) ghost.style.animationDelay = `${-Math.max(0, performance.now() - bornMs)}ms`
+}
 function paint(el, anchor) {
   if (!el || !anchor) return
+  const reappearing = el.hidden && anchor.visible
   el.hidden = !anchor.visible
   el.style.transform = `translate(${anchor.x}px, ${anchor.y}px) translate(-50%, -100%)`
   el.classList.toggle('label-occluded', !!anchor.occluded)
+  if (reappearing) syncGhostPhase(el)
 }
 function bind(eid, el) {
   if (el) { elements.set(eid, el); paint(el, anchors.get(eid)) }
@@ -170,17 +178,14 @@ function syncDamageAnimationPhase(d) {
 watch(() => props.hidden, (hidden, previous) => {
   if (previous === true && hidden === false) {
     for (const d of damages.value) syncDamageAnimationPhase(d)
+    for (const el of elements.values()) syncGhostPhase(el)
   }
 }, { flush: 'post' })
 function bindDamage(d, el) {
   if (!el) { d.el = null; return }
-  if (d.el === el) return      // 同一节点：inline ref 回调在每次 patch 重跑，不是 remount
-  const remount = d.everMounted === true
+  if (d.el === el) return      // 同一节点：inline ref 回调在每次 patch 重跑
   d.el = el
-  d.everMounted = true
   applyDamageDrift(d)
-  // remount 或关闭状态下出生后的延迟首次挂载需要补偿；普通 patch 不重复快进。
-  if (remount || d.delayedFirstMount) syncDamageAnimationPhase(d)
 }
 /**
  * 生成一个伤害数字：场景内核在伤害事件跨过播放时钟时调用一次。
@@ -196,8 +201,7 @@ function spawnDamage(eid, hpLoss, durationMs) {
   if (stack === DMG_STACK_SLOTS) stack = 0
   damages.value = [...damages.value, {
     id, eid, stack, text: '-' + hpLoss, bornMs: performance.now(), durationMs,
-    layout: null, layoutKey: null, side: null, el: null, everMounted: false,
-    wasProjected: null, delayedFirstMount: props.markerPrefs.showStatus === false,
+    layout: null, layoutKey: null, side: null, el: null, wasProjected: null,
   }]
   // 到期摘除走定时器而不是渲染循环：数字是 DOM，暂停时不需要（也不该依赖）场景继续出帧。
   // 非法寿命（NaN / ≤0）也要摘除——宁可短促，也不能把数字永远留在屏幕上。
@@ -249,8 +253,9 @@ defineExpose({ setLabels, setAnchor, clear, spawnDamage, removeDamage, clearDama
       </button>
     </div>
     <!-- 伤害数字排在所有名牌之后：同层内 DOM 顺序即层级，数字永远不会被名牌盖住。
-         初始 hidden，由 placeDamages 量到落点后再显示（避免在覆盖层原点闪一帧）。 -->
-    <div v-if="markerPrefs.showStatus !== false" class="pb-damage-layer" aria-hidden="true">
+         初始 hidden，由 placeDamages 量到落点后再显示（避免在覆盖层原点闪一帧）。
+         战斗反馈不受状态标记偏好控制，只随覆盖层根节点 hidden（隐藏全部 UI）消失。 -->
+    <div class="pb-damage-layer" aria-hidden="true">
       <span v-for="d in damages" :key="d.id" :ref="el => bindDamage(d, el)"
         class="pb-damage" data-test="pb-damage" hidden>
         <span class="pb-damage-text" :style="damageAnimStyle(d)">{{ d.text }}</span>
