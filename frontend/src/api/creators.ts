@@ -21,7 +21,7 @@ export const recommendationInputValid = (value: unknown): boolean => validators.
 export const creatorNameValid = (value: unknown): boolean => validators.creatorNameRequestValidator(value)
 
 export function validateCreator<K extends keyof Schemas>(schema: K, value: unknown): Schemas[K] {
-  const validate = validators[`${schema[0].toLowerCase()}${schema.slice(1)}Validator`] as ((value: unknown) => boolean) | undefined
+  const validate = (validators as Record<string, unknown>)[`${schema[0].toLowerCase()}${schema.slice(1)}Validator`] as ((value: unknown) => boolean) | undefined
   if (!validate?.(value)) throw new ApiError({ errorCode: 'INVALID_RESPONSE' })
   return value as Schemas[K]
 }

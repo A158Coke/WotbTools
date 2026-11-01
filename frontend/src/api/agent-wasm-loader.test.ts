@@ -25,7 +25,7 @@ const PINNED_RELEASE = PIN.artifact.release
 const FAKE_PIN = { release: 'v0.9.9', commit: 'a'.repeat(40) }
 const FAKE_MODULE = { parseResult: () => '{}', default: async () => {} }
 
-function fetchServing(fingerprint, { ok = true, status = 200 } = {}) {
+function fetchServing(fingerprint: unknown, { ok = true, status = 200 } = {}) {
   return vi.fn(async () => ({
     ok,
     status,

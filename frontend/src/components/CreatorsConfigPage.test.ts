@@ -15,7 +15,7 @@ vi.mock('../composables/useAuth.js', async original => ({ ...await original<type
 vi.mock('../composables/useFeatureGate.js', () => ({ useFeatureGate: () => ({ availability: () => ({ available: true }) }) }))
 vi.mock('../api/creators.js', async original => ({ ...await original<typeof import('../api/creators.js')>(),
   getRecommendationMetadata: vi.fn(async (type: string) => ({ type, categories: [{ id: type === 'UP' ? 1 : 2, name: 'category', type }], levels: type === 'UP' ? [{ id: 1, name: 'level' }] : [], imageUploadsAvailable: false })), saveRecommendation: vi.fn(async () => ({ id: 1 })),
-  addRecommendationCategory: vi.fn(async (type: string, name: string) => ({ id: 2, name })), addCreatorLevel: vi.fn(async (name: string) => ({ id: 2, name })),
+  addRecommendationCategory: vi.fn(async (_type: string, name: string) => ({ id: 2, name })), addCreatorLevel: vi.fn(async (name: string) => ({ id: 2, name })),
 }))
 vi.mock('../composables/useConfirm.js', () => ({ confirm: vi.fn(async () => true) }))
 let wrapper: ReturnType<typeof mount> | undefined

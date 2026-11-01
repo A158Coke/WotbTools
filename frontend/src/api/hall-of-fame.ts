@@ -7,6 +7,7 @@ import { appendReplayFacts, replayFactsJson } from '../replay-local/submissionFa
 import * as validators from './generated/contract-validators.js'
 
 type Schemas = components['schemas']
+type ResourceId = string | number
 type HallOfFamePage = Schemas['HallOfFamePage']
 type BulkDeleteModerationRequest = Schemas['BulkDeleteModerationRequest']
 
@@ -75,7 +76,7 @@ export async function hofVehicleOptions(): Promise<Schemas['HofVehicleOption'][]
 /**
  * 名人堂单场上传：本机解析回放得到结算事实（服务器没有 parser），事实 + 原始回放（证据附件）一并提交。
  */
-export async function hofUpload(file): Promise<Schemas['HofUploadResponse']> {
+export async function hofUpload(file: Blob): Promise<Schemas['HofUploadResponse']> {
   requireHofOnline()
   const { token, ensureToken, login } = useAuth()
   const facts = await replayFactsJson(file)
@@ -103,7 +104,7 @@ export async function hofUpload(file): Promise<Schemas['HofUploadResponse']> {
  * 名人堂回放下载（需登录）：authenticated fetch → blob → createObjectURL → 触发下载 → revoke。
  * 禁止 <a href> 裸链（SPA 不会自动携带 Authorization: Bearer）。
  */
-export async function hofDownload(id) {
+export async function hofDownload(id: ResourceId) {
   requireHofOnline()
   const { token, ensureToken, login } = useAuth()
   await ensureToken(30)
@@ -156,7 +157,7 @@ export async function hofAdminAudit(params = {}): Promise<Schemas['HofAdminAudit
 }
 
 /** Hard delete 记录（audit + delete 单事务；最后引用清理物理文件）。 */
-export async function hofAdminDelete(id) {
+export async function hofAdminDelete(id: ResourceId) {
   await hofAdminRequest(`/api/admin/hof/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
@@ -172,7 +173,7 @@ export async function hofAdminBulkDeleteRecords(ids: Schemas['BulkDeleteRecordsR
 }
 
 /** 管理后台下载 replay（复用统一下载机制）。 */
-export async function hofAdminDownload(id) {
+export async function hofAdminDownload(id: ResourceId) {
   const r = await hofAdminRequest(`/api/admin/hof/${encodeURIComponent(id)}/replay`)
   await downloadResponse(r, `replay-${id}.wotbreplay`)
 }
@@ -242,7 +243,7 @@ export async function hofHundredSubmit(formData: FormData): Promise<Schemas['Hun
 }
 
 /** 用户撤销自己的 PENDING submission。 */
-export async function hofHundredCancel(id): Promise<Schemas['HundredSubmissionSummary']> {
+export async function hofHundredCancel(id: ResourceId): Promise<Schemas['HundredSubmissionSummary']> {
   const r = await hofAuthRequest(`/api/hof/hundred/submissions/${encodeURIComponent(id)}/cancel`, { method: 'POST' })
   return readHofJson<Schemas['HundredSubmissionSummary']>(r, validators.hundredSubmissionSummaryValidator)
 }
@@ -262,13 +263,13 @@ export async function hofAdminHundredList(params = {}): Promise<Schemas['Hundred
 }
 
 /** 百场审核详情（proofScreenshot 仅 PENDING 返回；终态已清理）。 */
-export async function hofAdminHundredDetail(id): Promise<Schemas['HundredAdminDetail']> {
+export async function hofAdminHundredDetail(id: ResourceId): Promise<Schemas['HundredAdminDetail']> {
   const r = await hofAdminRequest(`/api/admin/hof/hundred/submissions/${encodeURIComponent(id)}`)
   return readHofJson<Schemas['HundredAdminDetail']>(r, validators.hundredAdminDetailValidator)
 }
 
 /** 百场审核证据列表（admin-only）：slot/originalFilename/fileSize/arenaId/sha256。旧记录可能为空。 */
-export async function hofAdminHundredReplays(submissionId): Promise<Schemas['HundredReplayEvidence'][]> {
+export async function hofAdminHundredReplays(submissionId: ResourceId): Promise<Schemas['HundredReplayEvidence'][]> {
   const r = await hofAdminRequest(`/api/admin/hof/hundred/submissions/${encodeURIComponent(submissionId)}/replays`)
   return readHofJson<Schemas['HundredReplayEvidence'][]>(r, value =>
     Array.isArray(value) && value.every(item => validators.hundredReplayEvidenceValidator(item)))
@@ -278,7 +279,7 @@ export async function hofAdminHundredReplays(submissionId): Promise<Schemas['Hun
  * 下载单个审核回放（admin-only）：authenticated fetch → blob → createObjectURL → 触发下载。
  * 禁止裸 <a href>（SPA 不会自动携带 Authorization: Bearer）。
  */
-export async function hofAdminHundredReplayDownload(submissionId, replayId) {
+export async function hofAdminHundredReplayDownload(submissionId: ResourceId, replayId: ResourceId) {
   const r = await hofAdminRequest(
     `/api/admin/hof/hundred/submissions/${encodeURIComponent(submissionId)}/replays/${encodeURIComponent(replayId)}`
   )
@@ -286,7 +287,7 @@ export async function hofAdminHundredReplayDownload(submissionId, replayId) {
 }
 
 /** APPROVE：管理员只改变状态，成绩由后端的冻结 submission 值决定。 */
-export async function hofAdminHundredApprove(id): Promise<Schemas['HundredSubmissionSummary']> {
+export async function hofAdminHundredApprove(id: ResourceId): Promise<Schemas['HundredSubmissionSummary']> {
   const r = await hofAdminRequest(`/api/admin/hof/hundred/submissions/${encodeURIComponent(id)}/approve`, {
     method: 'POST',
   })
@@ -294,7 +295,7 @@ export async function hofAdminHundredApprove(id): Promise<Schemas['HundredSubmis
 }
 
 /** REJECT：{rejectReason, rejectReasonText?}（原因强制）。 */
-export async function hofAdminHundredReject(id, body: Schemas['HundredRejectRequest']): Promise<Schemas['HundredSubmissionSummary']> {
+export async function hofAdminHundredReject(id: ResourceId, body: Schemas['HundredRejectRequest']): Promise<Schemas['HundredSubmissionSummary']> {
   const r = await hofAdminRequest(`/api/admin/hof/hundred/submissions/${encodeURIComponent(id)}/reject`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   })
@@ -302,7 +303,7 @@ export async function hofAdminHundredReject(id, body: Schemas['HundredRejectRequ
 }
 
 /** 删除 CURRENT：{deleteReason, deleteReasonText?}（原因强制）。 */
-export async function hofAdminHundredDelete(id, body: Schemas['HundredDeleteRequest']): Promise<Schemas['HundredSubmissionSummary']> {
+export async function hofAdminHundredDelete(id: ResourceId, body: Schemas['HundredDeleteRequest']): Promise<Schemas['HundredSubmissionSummary']> {
   const r = await hofAdminRequest(`/api/admin/hof/hundred/submissions/${encodeURIComponent(id)}/delete`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   })
@@ -340,7 +341,7 @@ export async function hofMark3Submit(formData: FormData): Promise<Schemas['Mark3
 }
 
 /** 用户撤销自己的 PENDING 三环 submission。 */
-export async function hofMark3Cancel(id): Promise<Schemas['Mark3SubmissionSummary']> {
+export async function hofMark3Cancel(id: ResourceId): Promise<Schemas['Mark3SubmissionSummary']> {
   const r = await hofAuthRequest(`/api/hof/mark3/submissions/${encodeURIComponent(id)}/cancel`, { method: 'POST' })
   return readHofJson<Schemas['Mark3SubmissionSummary']>(r, validators.mark3SubmissionSummaryValidator)
 }
@@ -360,19 +361,19 @@ export async function hofAdminMark3List(params = {}): Promise<Schemas['Mark3Admi
 }
 
 /** 三环审核详情（proofScreenshots 仅 PENDING 返回；终态已清理）。 */
-export async function hofAdminMark3Detail(id): Promise<Schemas['Mark3AdminDetail']> {
+export async function hofAdminMark3Detail(id: ResourceId): Promise<Schemas['Mark3AdminDetail']> {
   const r = await hofAdminRequest(`/api/admin/hof/mark3/submissions/${encodeURIComponent(id)}`)
   return readHofJson<Schemas['Mark3AdminDetail']>(r, validators.mark3AdminDetailValidator)
 }
 
 /** 三环审核证据列表（admin-only）：slot/originalFilename/fileSize/arenaId/sha256。 */
-export async function hofAdminMark3Replays(submissionId): Promise<Schemas['Mark3ReplayEvidence'][]> {
+export async function hofAdminMark3Replays(submissionId: ResourceId): Promise<Schemas['Mark3ReplayEvidence'][]> {
   const r = await hofAdminRequest(`/api/admin/hof/mark3/submissions/${encodeURIComponent(submissionId)}/replays`)
   return readHofJson<Schemas['Mark3ReplayEvidence'][]>(r, value => Array.isArray(value) && value.every(item => validators.mark3ReplayEvidenceValidator(item)))
 }
 
 /** 下载单个三环审核回放（admin-only）。 */
-export async function hofAdminMark3ReplayDownload(submissionId, replayId) {
+export async function hofAdminMark3ReplayDownload(submissionId: ResourceId, replayId: ResourceId) {
   const r = await hofAdminRequest(
     `/api/admin/hof/mark3/submissions/${encodeURIComponent(submissionId)}/replays/${encodeURIComponent(replayId)}`
   )
@@ -380,7 +381,7 @@ export async function hofAdminMark3ReplayDownload(submissionId, replayId) {
 }
 
 /** APPROVE：管理员只改变状态，三环数据由后端冻结的 submission 值决定。 */
-export async function hofAdminMark3Approve(id): Promise<Schemas['Mark3SubmissionSummary']> {
+export async function hofAdminMark3Approve(id: ResourceId): Promise<Schemas['Mark3SubmissionSummary']> {
   const r = await hofAdminRequest(`/api/admin/hof/mark3/submissions/${encodeURIComponent(id)}/approve`, {
     method: 'POST',
   })
@@ -388,7 +389,7 @@ export async function hofAdminMark3Approve(id): Promise<Schemas['Mark3Submission
 }
 
 /** REJECT：{rejectReason, rejectReasonText?}（原因强制）。 */
-export async function hofAdminMark3Reject(id, body: Schemas['Mark3RejectRequest']): Promise<Schemas['Mark3SubmissionSummary']> {
+export async function hofAdminMark3Reject(id: ResourceId, body: Schemas['Mark3RejectRequest']): Promise<Schemas['Mark3SubmissionSummary']> {
   const r = await hofAdminRequest(`/api/admin/hof/mark3/submissions/${encodeURIComponent(id)}/reject`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   })
@@ -396,7 +397,7 @@ export async function hofAdminMark3Reject(id, body: Schemas['Mark3RejectRequest'
 }
 
 /** 删除 CURRENT：{deleteReason, deleteReasonText?}（原因强制）。 */
-export async function hofAdminMark3Delete(id, body: Schemas['Mark3DeleteRequest']): Promise<Schemas['Mark3SubmissionSummary']> {
+export async function hofAdminMark3Delete(id: ResourceId, body: Schemas['Mark3DeleteRequest']): Promise<Schemas['Mark3SubmissionSummary']> {
   const r = await hofAdminRequest(`/api/admin/hof/mark3/submissions/${encodeURIComponent(id)}/delete`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   })

@@ -73,12 +73,12 @@ export function configIndexFor(configs: any[], turretLocal: number | null, gunLo
 
 function findTurretIndex(modules: any, localId: number | null) {
   if (localId == null) return -1
-  return (modules?.turrets || []).findIndex(t => Number(t?.localId) === Number(localId))
+  return (modules?.turrets || []).findIndex((t: { localId?: unknown }) => Number(t?.localId) === Number(localId))
 }
 
 function findGunIndex(turret: any, localId: number | null) {
   if (localId == null) return -1
-  return (turret?.guns || []).findIndex(g => Number(g?.localId) === Number(localId))
+  return (turret?.guns || []).findIndex((g: { localId?: unknown }) => Number(g?.localId) === Number(localId))
 }
 
 /** 解码 `?dev=`（0/1/-，右补 - 到 9 槽）。 */
@@ -106,7 +106,7 @@ export function gunCycleOf(config: any) {
   const intraClip = Number(config.burst_interval) || 0
   const shellCount = Number(config.burst_size) || 0
   const shellReloads = Array.isArray(config.burst_reloads)
-    ? config.burst_reloads.map(Number).filter(value => Number.isFinite(value) && value > 0)
+    ? config.burst_reloads.map(Number).filter((value: number) => Number.isFinite(value) && value > 0)
     : []
   // 连发组（PomPom 类）：tank/{id}.json 的 burst_group_*（上游 pb 的 GunDefinition.burst）。
   // 一次扳机连发 N 发、组内间隔秒；**不是** is_burst 判定依据（那只看车辆内联 clip/pump）。
@@ -169,7 +169,7 @@ export function standardShellOf(config: any, shellIndex: number | null = null) {
  */
 export function tankRef(detail: any, modules?: any) {
   const configs = Array.isArray(detail?.configs) ? detail.configs : []
-  const clip = configs.some(config => config?.is_drum || config?.is_burst)
+  const clip = configs.some((config: { is_drum?: boolean; is_burst?: boolean } | null) => config?.is_drum || config?.is_burst)
   return {
     nation: detail?.nation || 'unknown',
     // ids 规则需要 `nation:stem`；tank/{id}.json 无 stem，用模块键（findTankModules 补出）
@@ -279,8 +279,8 @@ export function normalizeSetup(
   const consSlots = Number(modules?.consumableSlots) || 0
   const availableCons = availableItems(catalog.consumables, tankRef(detail, modules))
   const availableProv = availableItems(catalog.provisions, tankRef(detail, modules))
-  const consStems = new Set(availableCons.map(item => item.stem))
-  const provStems = new Set(availableProv.map(item => item.stem))
+  const consStems = new Set(availableCons.map((item: { stem: string }) => item.stem))
+  const provStems = new Set(availableProv.map((item: { stem: string }) => item.stem))
   const skillIds = new Set(Object.keys(catalog.skills || {}))
   return {
     ...selection,
@@ -364,7 +364,7 @@ export function pitchAtBearing(pitch: any, bearing: number, bonus?: { up?: numbe
  */
 export function armorFactorFor(deviceIds: number[], catalog: any) {
   if (!deviceIds.includes(110)) return 1
-  const device = catalog?.devices?.find(item => item.id === 110)
+  const device = catalog?.devices?.find((item: { id: number }) => item.id === 110)
   const percent = Number(device?.script?.params?.bonusValues?.percent)
   return Number.isFinite(percent) && percent > 0 ? 1 + percent / 100 : 1
 }
@@ -406,7 +406,7 @@ export function buildComputeInput({ detail, modules, selection, catalog }: {
 }): ComputeInput {
   const config = detail?.configs?.[selection.config] || null
   const slots = presetSlots(modules, catalog)
-  const netScript = catalog?.devices?.find(device => device.stem === 'camouflageNet')?.script?.params || null
+  const netScript = catalog?.devices?.find((device: { stem: string }) => device.stem === 'camouflageNet')?.script?.params || null
   const paint = catalog?.camouflage?.categories?.[catalog.camouflage.defaultCategory] || null
   const deviceIds = resolveDeviceIds(slots, selection.devices, catalog?.devices)
   return {
@@ -467,7 +467,7 @@ export function pickTurret(selection: SetupSelection, modules: any, detail: any,
   if (!turret) return selection
   const currentGun = modules?.turrets?.[selection.turret]?.guns?.[selection.gun]
   const guns = turret.guns || []
-  const sameGun = guns.findIndex(g => g?.stem === currentGun?.stem)
+  const sameGun = guns.findIndex((g: { stem?: string } | null) => g?.stem === currentGun?.stem)
   const gunIndex = sameGun >= 0 ? sameGun : 0
   const config = configIndexFor(detail?.configs || [], turret?.localId, guns[gunIndex]?.localId)
   if (config < 0) return selection

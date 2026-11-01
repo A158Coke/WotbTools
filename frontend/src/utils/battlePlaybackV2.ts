@@ -8,7 +8,6 @@ import type {
   HealthAtResult,
   HealthTransition,
   LifeAtResult,
-  LifeTransition,
   ModuleCrewResult,
   ModuleCrewTransition,
   OrientationKnowledge,
@@ -216,7 +215,7 @@ export function friendlyHealthAt(
  * enemy switching from tankopedia provisional HP to replay HP cannot make the team bar jump to
  * PARTIAL/100%. A later positive replay capacity replaces the older scale naturally.
  */
-function presentationCapacityAt(track, t) {
+function presentationCapacityAt(track: Pick<VehiclePlaybackTrack, 'healthTransitions'> | null | undefined, t: number) {
   let capacity = null
   for (const tr of track?.healthTransitions || []) {
     if (!tr || !Number.isFinite(tr.timeSec) || tr.timeSec > t + 1e-6) continue
@@ -228,14 +227,14 @@ function presentationCapacityAt(track, t) {
   return capacity
 }
 
-function aggregateHealth(teamTracks, t) {
+function aggregateHealth(teamTracks: readonly Pick<VehiclePlaybackTrack, 'healthTransitions' | 'lifeTransitions'>[], t: number) {
   if (teamTracks.length === 0) {
     return { totalMax: 0, knownRemaining: 0, unknownMax: 0, spawnFullCount: 0, openingFullCount: 0, state: 'UNKNOWN' }
   }
 
   const displays = teamTracks.map(track => healthDisplayAt(track, t))
   const capacities = teamTracks.map(track => presentationCapacityAt(track, t))
-  const hasCompletePresentationScale = capacities.every(capacity => capacity != null && capacity > 0)
+  const hasCompletePresentationScale = capacities.every((capacity): capacity is number => capacity != null && capacity > 0)
   const exact = displays.every(display => display
     && display.currentHp != null
     && display.displayCapacityHp != null
@@ -413,7 +412,7 @@ export function cumulativeStatsAtV2(
 
 /** Canonical damage log: incoming/outgoing rows are direct projections of DamageLoss facts. */
 export function damageLogAtV2(
-  events: readonly BattleEvent[] | null | undefined,
+  _events: readonly BattleEvent[] | null | undefined,
   selectedTrack: Pick<VehiclePlaybackTrack, 'accountId' | 'damageLosses'> | null | undefined,
   t: number,
   maxRows = 8,
