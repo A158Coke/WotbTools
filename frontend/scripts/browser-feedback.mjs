@@ -36,6 +36,7 @@ try {
     import AdminAiReviewFeedbackPage from '/src/components/AdminAiReviewFeedbackPage.vue'
     import SiteFeedbackDialog from '/src/components/SiteFeedbackDialog.vue'
     import AdminSiteFeedbackPage from '/src/components/AdminSiteFeedbackPage.vue'
+    import AppDialog from '/src/components/AppDialog.vue'
     import messages from '/src/locales/feature-messages.json'
     const params = new URLSearchParams(location.search)
     const site = params.get('surface') === 'site'
@@ -55,9 +56,11 @@ try {
     }
     const i18n = createI18n({ legacy: false, locale: 'en', messages: { en: { ...messages.en, recon: { copy_footer: 'footer', copy: 'Copy', analysis_title_player: 'Review', collapse: 'Collapse' }, app: { close: 'Close' } } } })
     const siteOpen = ref(false)
+    const noticeOpen = ref(false)
     window.openSite = () => { siteOpen.value = true }
+    window.setNotice = value => { noticeOpen.value = value }
     createApp({ render: () => h('div', site
-      ? [siteOpen.value ? h(SiteFeedbackDialog, { pageView: 'hof', onClose: () => { siteOpen.value = false } }) : null, h(AdminSiteFeedbackPage)]
+      ? [h(AppDialog, { open: noticeOpen.value, title: 'Notice', size: 'sm', 'data-testid': 'notice', onClose: () => { noticeOpen.value = false } }, { default: () => 'Connection required' }), siteOpen.value ? h(SiteFeedbackDialog, { pageView: 'hof', onClose: () => { siteOpen.value = false } }) : null, h(AdminSiteFeedbackPage)]
       : [h(AnalysisResultPanel, { result: { analysis: 'review' } }), h(AdminAiReviewFeedbackPage)]) }).use(i18n).mount('#app')
   `)
   server = await createServer({ root, plugins: [plugin], server: { host: '127.0.0.1', port: 0 }, logLevel: 'error' })
@@ -88,6 +91,12 @@ try {
       let dialog = document.querySelector('[role=dialog]'); if (!dialog) throw Error('dialog missing')
       const rect = dialog.getBoundingClientRect(); if (rect.left < -1 || rect.right > innerWidth + 1) throw Error('dialog overflows viewport ' + JSON.stringify({left:rect.left,right:rect.right,width:innerWidth}))
       if (document.documentElement.scrollWidth > innerWidth) throw Error('page overflows viewport')
+      window.setNotice(true); await wait(100)
+      const notice = document.querySelector('[data-testid=notice]'); if (!notice) throw Error('notice missing')
+      const noticeRect = notice.getBoundingClientRect()
+      if (!notice.contains(document.elementFromPoint(noticeRect.left + noticeRect.width / 2, noticeRect.top + noticeRect.height / 2))) throw Error('notice is covered by the feedback dialog')
+      window.setNotice(false); await wait(100)
+      dialog = [...document.querySelectorAll('[role=dialog]')].find(x => x.querySelector('textarea'))
       const submitButton = form => [...form.querySelectorAll('button')].find(x => x.textContent.trim() === 'Submit feedback')
       const textarea = dialog.querySelector('textarea')
       textarea.value = 'preserve'; textarea.dispatchEvent(new Event('input', { bubbles: true })); await wait(30)

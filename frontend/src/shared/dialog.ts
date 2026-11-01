@@ -6,3 +6,16 @@ import type { InjectionKey } from 'vue'
  * Teleport 宿主呈现，避免把弹窗移出全屏可见子树。
  */
 export const DIALOG_INLINE_KEY: InjectionKey<boolean> = Symbol('dialog-inline')
+
+let openDialogs = 0
+let nextLayer = 0
+
+/** 模态按打开顺序叠放：Portal 的 DOM 顺序取决于挂载时机，不能代表谁后打开。 */
+export function acquireDialogLayer(): number {
+  openDialogs++
+  return ++nextLayer
+}
+
+export function releaseDialogLayer(): void {
+  if (--openDialogs === 0) nextLayer = 0
+}
