@@ -186,6 +186,45 @@ export function presetSlots(modules: any, catalog: any) {
   return presets[modules?.optDevicePreset] || presets.defaultPreset || []
 }
 
+type PitchPresetSlot = { left?: string | null; right?: string | null }
+type PitchPresetCatalog = { devicePresets?: Record<string, PitchPresetSlot[]> }
+type PitchModules = { optDevicePreset?: string }
+type PitchDeviceCatalog = {
+  devices?: Array<{
+    id?: number
+    script?: { params?: { bonusValues?: { upperPitchLimitIncrease?: unknown; lowerPitchLimitIncrease?: unknown } } }
+  }>
+}
+
+/**
+ * 该车预设是否提供 122「改进型垂直稳定器」（装甲查看器勾选可用性）。
+ * 预设两侧是 stem（不是 id）；按 stem 对号，目录缺该车/预设时返回 false。
+ */
+export function presetProvidesPitchDevice(
+  modules: PitchModules | null | undefined,
+  catalog: PitchPresetCatalog | null | undefined,
+) {
+  return presetSlots(modules, catalog).some(
+    (slot: PitchPresetSlot) => slot?.left === 'improvedPitchLimitsSystem' || slot?.right === 'improvedPitchLimitsSystem',
+  )
+}
+
+/**
+ * 装备 122 的俯仰加成（度）：`up` 加仰角上限、`down` 加俯角下限。
+ * 数值来自客户端 `devices.json` 的 `bonusValues`（upperPitchLimitIncrease /
+ * lowerPitchLimitIncrease）；未装/目录缺值 → null（fail-closed，不猜默认值）。
+ */
+export function pitchDeviceBonus(deviceIds: Iterable<number>, catalog: PitchDeviceCatalog | null | undefined) {
+  const ids = new Set(deviceIds)
+  if (!ids.has(122)) return null
+  const item = catalog?.devices?.find((device) => device.id === 122)
+  const params = item?.script?.params?.bonusValues
+  const up = Number(params?.upperPitchLimitIncrease)
+  const down = Number(params?.lowerPitchLimitIncrease)
+  if (!Number.isFinite(up) || !Number.isFinite(down)) return null
+  return { up, down }
+}
+
 /**
  * 回放装配 id 集合（`shooter_equipment.raw`，Type5 九字节、0=空槽）→ 装备槽位选择
  * （0=左候选 / 1=右候选 / null=空）。线上串**变长且空槽省略**，槽位信息不存在——

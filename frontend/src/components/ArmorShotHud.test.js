@@ -19,15 +19,15 @@ const TANK = {
     { label: 'Gun B', shells: [{ type: 'ap', damage: 300, penetration: 220 }, { type: 'ap_cr_premium', damage: 280, penetration: 300 }, { type: 'he', damage: 400, penetration: 70 }] },
   ],
 }
-const CATALOG = { devices: [{ id: 103, icon: 'calibrated' }, { id: 110, icon: 'enhanced' }] }
+const CATALOG = { devices: [{ id: 103, icon: 'calibrated' }, { id: 110, icon: 'enhanced' }, { id: 122, icon: 'improvedPitchLimitsSystem' }] }
 
 beforeEach(() => {
   data.fetchTankData.mockReset().mockResolvedValue(TANK)
   research.loadDevices.mockReset().mockResolvedValue(CATALOG)
 })
 
-describe('ArmorShotHud（右上角弹种 + 校准弹/强化装甲图标）', () => {
-  it('按射击方配置渲染弹种图标与两枚装备图标', async () => {
+describe('ArmorShotHud（右上角弹种 + 装备图标）', () => {
+  it('按射击方配置渲染弹种图标与装备图标', async () => {
     const wrapper = mount(ArmorShotHud, { props: { shooterId: 1, scfg: 1 } })
     await flushPromises()
     expect(wrapper.emitted('ready').at(-1)).toEqual([true])
@@ -35,6 +35,30 @@ describe('ArmorShotHud（右上角弹种 + 校准弹/强化装甲图标）', () 
     expect(wrapper.find('[data-testid="hud-calibrated"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="hud-enhanced"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="hud-shell-0"]').attributes('aria-pressed')).toBe('true')
+  })
+
+  it('目标车可用 122 时显示俯仰配件按钮；默认值来自回放，点击发出反向值', async () => {
+    const wrapper = mount(ArmorShotHud, {
+      props: { shooterId: 1, scfg: 1, pitchAvailable: true, pitchDefault: true },
+    })
+    await flushPromises()
+    const button = wrapper.find('[data-testid="hud-pitch-device"]')
+    expect(button.exists()).toBe(true)
+    expect(button.attributes('aria-pressed')).toBe('true')
+    await button.trigger('click')
+    expect(wrapper.emitted('pitch').at(-1)).toEqual([false])
+
+    const manual = mount(ArmorShotHud, {
+      props: { shooterId: 1, scfg: 1, pitchAvailable: true, eqpitch: '0' },
+    })
+    await flushPromises()
+    expect(manual.find('[data-testid="hud-pitch-device"]').attributes('aria-pressed')).toBe('false')
+  })
+
+  it('目标车没有 122 槽位时不显示俯仰配件按钮', async () => {
+    const wrapper = mount(ArmorShotHud, { props: { shooterId: 1, scfg: 1, pitchAvailable: false } })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="hud-pitch-device"]').exists()).toBe(false)
   })
 
   it('缺省 scfg/config 时使用最后一档（与 viewer 的缺省一致）', async () => {

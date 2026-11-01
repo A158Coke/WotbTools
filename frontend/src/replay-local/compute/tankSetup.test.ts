@@ -27,6 +27,8 @@ import {
   pickGun,
   pickTurret,
   pitchAtBearing,
+  pitchDeviceBonus,
+  presetProvidesPitchDevice,
   resolveArmor,
   resolveSetup,
   standardShellOf,
@@ -412,6 +414,24 @@ describe('pitchAtBearing（客户端 front/back 扇区 + transition）', () => {
     const pitch = { max: 6, min: -18, back: { max: 3, min: -18, range: 30 } }
     expect(pitchAtBearing(pitch, 0, { up: 4, down: 3 })).toEqual({ up: 22, down: -9 })
     expect(pitchAtBearing(pitch, 180, { up: 4, down: 3 })).toEqual({ up: 22, down: -6 })
+  })
+})
+
+describe('pitchDeviceBonus / presetProvidesPitchDevice（122 数据锚定）', () => {
+  it('未装 122 → null；装上 → 读 devices.json 的 bonusValues', () => {
+    expect(pitchDeviceBonus([103, 110], catalog)).toBeNull()
+    expect(pitchDeviceBonus([122], catalog)).toEqual({ up: 4, down: 3 })
+  })
+
+  it('目录缺 122 时 fail-closed，不猜默认值', () => {
+    expect(pitchDeviceBonus([122], { devices: [] })).toBeNull()
+  })
+
+  it('只有预设槽位含 improvedPitchLimitsSystem 的车才可用', () => {
+    expect(presetProvidesPitchDevice({ optDevicePreset: 'AlternatePitchGrouserPreset' }, catalog)).toBe(true)
+    expect(presetProvidesPitchDevice({ optDevicePreset: 'DrumGunPitchLimitsPreset' }, catalog)).toBe(true)
+    expect(presetProvidesPitchDevice({ optDevicePreset: 'defaultPreset' }, catalog)).toBe(false)
+    expect(presetProvidesPitchDevice(null, catalog)).toBe(false)
   })
 })
 

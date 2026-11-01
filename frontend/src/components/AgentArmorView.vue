@@ -14,12 +14,14 @@ import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, SlidersHorizontal, MousePointer2, ChevronDown } from 'lucide-vue-next'
-import { fetchReplayShots, shotViewerQuery } from '../scene/agentData.js'
+import { fetchReplayShots, shotViewerQuery, fetchTankData } from '../scene/agentData.js'
 import { shotResultBadge } from '../utils/shotPresentation.js'
 import { shellLabel, armorPartLabel, armorResultLabel, tankNationLabel, tankTypeLabel } from '../scene/tankMeta.js'
 import { formatPlaybackClock } from '../utils/playbackClock.js'
 import { shouldResetShellOnConfigChange } from '../utils/armorShellSelection.js'
 import { initTankViewer } from '../scene/tankViewer.js'
+import { loadDevices, loadTankModules } from '../utils/researchCatalog.js'
+import { findTankModules, pitchDeviceBonus, presetProvidesPitchDevice } from '../replay-local/compute/tankSetup'
 import { detectWebGL } from '../scene/webglSupport.js'
 import { usePointer } from '../composables/useBreakpoint.js'
 import { usePlaybackPhoneForm } from '../composables/usePlaybackPhoneForm.js'
@@ -98,6 +100,15 @@ const toolsOpen = ref(false)
 const shooterReady = ref(false)
 const targetReady = ref(false)
 const hudReady = ref(false)
+/** 目标/被展示车预设是否提供 122（装甲页俯仰配件勾选可用性；由 ArmorSideConfig 上报）。 */
+const pitchFromModules = ref(false)
+const pitchFromModulesKnown = ref(false)
+/** 122 的俯仰加成数值（宿主从 research/devices.json 读，注入场景；场景不硬编码）。 */
+const pitchDeviceBonusValue = ref(null)
+/** 可用性：模块目录确认有槽位，或射击真值证明目标实际装过 122。未知时 false（fail-closed）。 */
+const pitchDeviceAvailable = computed(
+  () => pitchFromModules.value || !!activeShot.value?.target_equipment?.improved_pitch_limits,
+)
 /** 两侧模块选择默认收起（2026-10-28 用户要求）；坦克切换按钮在卡片头部，与模块同一块。 */
 const shooterOpen = ref(false)
 const targetOpen = ref(false)
@@ -175,12 +186,22 @@ function syncNativeShell(index) {
 }
 
 function syncNativeEquipment(kind, value) {
-  if (kind !== 'calibrated' && kind !== 'enhanced') return
+  if (kind !== 'calibrated' && kind !== 'enhanced' && kind !== 'pitch') return
   replaceArmorSetupQuery((query) => {
     if (kind === 'calibrated') query.eqcal = value ? '1' : '0'
-    else query.eqenh = value ? '1' : '0'
+    else if (kind === 'enhanced') query.eqenh = value ? '1' : '0'
+    else query.eqpitch = value ? '1' : '0'
   })
 }
+
+/** 可用性改变时同步场景；模块目录确认该车没有 122 槽位时清掉共享链接的覆盖。 */
+watch([pitchDeviceAvailable, pitchFromModulesKnown], ([available, known]) => {
+  viewer?.setPitchDeviceAvailable?.(available)
+  if (!available && known && route.query.eqpitch != null) {
+    replaceArmorSetupQuery(query => { delete query.eqpitch })
+    viewer?.setEquipmentOverride?.('pitch', false)
+  }
+})
 
 function applyShotSetup(patch) {
   if (!patch) return
@@ -192,12 +213,14 @@ function applyShotSetup(patch) {
   if ('shell' in patch) put('shell', patch.shell)
   if ('eqcal' in patch) put('eqcal', patch.eqcal ? '1' : '0')
   if ('eqenh' in patch) put('eqenh', patch.eqenh ? '1' : '0')
+  if ('eqpitch' in patch) put('eqpitch', patch.eqpitch ? '1' : '0')
   // 先落 URL（状态 owner），再驱动场景：场景侧异常不应该把用户的选择丢掉
   pendingShotQuery = query
   router.replace({ query })
   if ('shell' in patch) viewer?.setShell?.(Number(patch.shell))
   if ('eqcal' in patch) viewer?.setEquipmentOverride?.('calibrated', patch.eqcal)
   if ('eqenh' in patch) viewer?.setEquipmentOverride?.('enhanced', patch.eqenh)
+  if ('eqpitch' in patch) viewer?.setEquipmentOverride?.('pitch', patch.eqpitch)
 }
 
 /**
@@ -289,8 +312,55 @@ const pickerSelectedId = computed(() => pickerMode.value === 'shooter' ? selecte
 // 选车器换车不写 route；子编辑器按 tank-id 重建，就绪标志必须随车重置，
 // 否则新车的编辑器不可用/加载失败时原生配置下拉仍被旧标志隐藏。
 // 必须放在 selectedShooterId/selectedTargetId 声明之后：watch 注册时立即求值 source。
+/**
+ * 122 可用性由常驻 HUD / URL 覆盖使用，不能等「参数」面板懒挂载 `ArmorSideConfig`
+ * 才给结论；这里按目标车独立预取（nation modules 有缓存，target 切换才重查）。
+ */
+let pitchAvailabilitySeq = 0
+let pitchAvailabilityTimer = null
+const PITCH_AVAILABILITY_RETRY_MS = 5000
+const PITCH_AVAILABILITY_MAX_ATTEMPTS = 3
+async function resolvePitchAvailability(tankId, attempt = 0) {
+  const seq = ++pitchAvailabilitySeq
+  if (pitchAvailabilityTimer) {
+    clearTimeout(pitchAvailabilityTimer)
+    pitchAvailabilityTimer = null
+  }
+  if (!(tankId > 0)) {
+    pitchFromModules.value = false
+    pitchFromModulesKnown.value = true
+    return
+  }
+  try {
+    const [detail, devices] = await Promise.all([fetchTankData(tankId), loadDevices()])
+    const nationData = await loadTankModules(detail.nation)
+    if (seq !== pitchAvailabilitySeq) return
+    const modules = findTankModules(nationData, tankId)
+    pitchFromModules.value = presetProvidesPitchDevice(modules, { devicePresets: devices?.devicePresets })
+    // 只有成功读到目录才允许后续「确认不支持 → 清理 URL 覆盖」。
+    pitchFromModulesKnown.value = true
+  } catch {
+    if (seq !== pitchAvailabilitySeq) return
+    // 瞬时网络/资产失败 ≠ 该车不支持：保留 unknown（不清理 eqpitch），临时停用加成并重试。
+    pitchFromModules.value = false
+    pitchFromModulesKnown.value = false
+    if (attempt + 1 < PITCH_AVAILABILITY_MAX_ATTEMPTS) {
+      pitchAvailabilityTimer = setTimeout(() => {
+        pitchAvailabilityTimer = null
+        if (seq === pitchAvailabilitySeq) resolvePitchAvailability(tankId, attempt + 1)
+      }, PITCH_AVAILABILITY_RETRY_MS)
+    }
+  }
+}
+
 watch(shooterSetupId, () => { shooterReady.value = false; hudReady.value = false })
-watch(targetSetupId, () => { targetReady.value = false })
+watch(targetSetupId, (id) => {
+  targetReady.value = false
+  // 换车后旧车的 122 可用性不再有效；先 fail-closed，等目标车模块目录返回。
+  pitchFromModules.value = false
+  pitchFromModulesKnown.value = false
+  resolvePitchAvailability(id)
+}, { immediate: true })
 
 function openPicker(mode) {
     if (!viewer?.canPick?.()) return
@@ -329,6 +399,13 @@ function onPickerKeydown(event) {
 }
 onMounted(() => window.addEventListener('keydown', onPickerKeydown))
 onBeforeUnmount(() => window.removeEventListener('keydown', onPickerKeydown))
+onBeforeUnmount(() => { if (pitchAvailabilityTimer) clearTimeout(pitchAvailabilityTimer) })
+
+// 122 的加成数值只有 devices.json 一个权威来源；场景通过 setter 接收，避免前端硬编码 +4/+3。
+loadDevices()
+    .then(data => { pitchDeviceBonusValue.value = pitchDeviceBonus([122], data) })
+    .catch(() => { /* 资产缺失：保持 null（不加成），原生勾选仍可显示 */ })
+watch(pitchDeviceBonusValue, value => { viewer?.setPitchDeviceBonus?.(value) })
 
 function startViewer(preserveSelection = false) {
     const seq = navigationSeq
@@ -355,6 +432,8 @@ function startViewer(preserveSelection = false) {
     viewer = initTankViewer({
         initialTankId: initialTarget,
         initialShooterId: initialShooter,
+        pitchDeviceBonus: pitchDeviceBonusValue.value,
+        pitchDeviceAvailable: pitchDeviceAvailable.value,
         labels: {
             loading: t('armor.loading'),
             shellUnavailable: t('armor.shell_unavailable'),
@@ -538,6 +617,7 @@ onBeforeUnmount(() => {
                     <label>{{ $t('armor.equip') }}</label>
                     <label class="eq-opt"><input type="checkbox" id="eq-calibrated"> <span class="eq-opt-label">{{ $t('armor.calibrated') }}</span></label>
                     <label class="eq-opt"><input type="checkbox" id="eq-enhanced"> <span class="eq-opt-label">{{ $t('armor.enhanced') }}</span></label>
+                    <label v-show="pitchDeviceAvailable" class="eq-opt" id="pitch-device-opt"><input type="checkbox" id="eq-pitch-device"> <span class="eq-opt-label">{{ $t('armor.pitch_device') }}</span></label>
                     <label class="eq-opt" id="armor-state-opt" style="display:none;"><input type="checkbox" id="armor-state-toggle"> <span class="eq-opt-label">{{ $t('armor.dynamic_armor') }}</span></label>
                 </div>
                 <!-- 射击方 / 受击方：坦克切换 + 模块选择同一张卡，模块默认收起。 -->
@@ -633,11 +713,15 @@ onBeforeUnmount(() => {
                 :shell="route.query.shell"
                 :eqcal="route.query.eqcal"
                 :eqenh="route.query.eqenh"
+                :eqpitch="route.query.eqpitch"
                 :calibrated-default="!!activeShot?.shooter_equipment?.calibrated_shells"
                 :enhanced-default="!!activeShot?.target_equipment?.enhanced_armor"
+                :pitch-default="!!activeShot?.target_equipment?.improved_pitch_limits"
+                :pitch-available="pitchDeviceAvailable"
                 @shell="index => applyShotSetup({ shell: index })"
                 @calibrated="value => applyShotSetup({ eqcal: value })"
                 @enhanced="value => applyShotSetup({ eqenh: value })"
+                @pitch="value => applyShotSetup({ eqpitch: value })"
                 @ready="value => hudReady = value"
             />
             <div id="shell-selector" style="display:none;">

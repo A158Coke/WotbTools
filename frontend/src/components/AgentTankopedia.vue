@@ -27,7 +27,7 @@ import { moduleTreeLayout } from '../utils/techTreeLayout.js'
 import { computeCharacteristics, penetrationCoefficient } from '../replay-local/compute/characteristics'
 import {
   buildComputeInput, decodeDevices, devicesFromEquipmentIds, encodeDevices,
-  defaultShellIndex, findTankModules, paramGroups, pickGun, pickTurret, resolveSetup,
+  defaultShellIndex, findTankModules, paramGroups, pickGun, pickTurret, pitchDeviceBonus, resolveSetup,
 } from '../replay-local/compute/tankSetup'
 import PageHeader from './PageHeader.vue'
 import EmptyState from './EmptyState.vue'
@@ -421,16 +421,12 @@ const yawLimits = computed(() => curCfg.value?.yaw_limits || null)
 const pitchBonus = computed(() => {
   const initialPitch = Number(modules.value?.initialTurretRotation?.pitch) || 0
   const hasStabilizer = deviceIds.value.has(122)
-  if (!hasStabilizer && !initialPitch) return null
-  let up = 0
-  let down = 0
-  if (hasStabilizer) {
-    const item = catalog.value?.devices?.find(device => device.id === 122)
-    const params = item?.script?.params?.bonusValues
-    up = Number(params?.upperPitchLimitIncrease)
-    down = Number(params?.lowerPitchLimitIncrease)
-    if (!Number.isFinite(up) || !Number.isFinite(down)) return null
-  }
+  const stabilizer = pitchDeviceBonus(deviceIds.value, catalog.value)
+  // 已选 122 但目录缺值：fail-closed（不把缺失数值当 0），保留原有边界。
+  if (hasStabilizer && !stabilizer) return null
+  if (!stabilizer && !initialPitch) return null
+  const up = stabilizer?.up || 0
+  const down = stabilizer?.down || 0
   return { up: up - initialPitch, down: down + initialPitch }
 })
 

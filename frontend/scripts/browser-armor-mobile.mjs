@@ -374,7 +374,8 @@ async function runMobileScenario(env, scenario) {
     `${label}: 参数面板高度 ${opened.selectors?.height}px 超过 46% 视口上限`)
   check(failures, opened.targetSelect?.visible === true, `${label}: 参数面板里没有可用的目标 / 选车按钮`)
   // 参数面板内的真实交互控件 ≥44px（评审 BLOCKER 1：配置下拉 + 装备复选框 label）。
-  // 动态装甲项（#armor-state-opt）只在有 XML 声明车出现，静态夹具下按设计 display:none——
+  // 动态装甲项（#armor-state-opt）只在有 XML 声明车出现，静态夹具下按设计 display:none；
+  // 122 俯仰配件项（#pitch-device-opt）只在目标车预设提供该槽位时显示，静态夹具同样隐藏——
   // 命中区/文案断言只对**可见**控件成立（隐藏项 0×0 不是违规），隐藏项按 id 单独锁定。
   if (!scenario.assetless) {
     check(failures, opened.configSelect?.visible === true && opened.configSelect.height >= 43.5,
@@ -382,9 +383,10 @@ async function runMobileScenario(env, scenario) {
     const visibleEq = opened.eqOpts.filter((option) => option.visible)
     check(failures, visibleEq.length === 2,
       `${label}: 可见装备复选框 label 数量 ${visibleEq.length}，期望 2（校准弹 / 强化装甲）`)
-    check(failures, opened.eqOpts.length === 3
-      && opened.eqOpts.some((option) => !option.visible && option.id === 'armor-state-opt'),
-      `${label}: 静态夹具应恰有 1 个隐藏装备项（#armor-state-opt 动态装甲，无声明不显示），`
+    check(failures, opened.eqOpts.length === 4
+      && opened.eqOpts.some((option) => !option.visible && option.id === 'armor-state-opt')
+      && opened.eqOpts.some((option) => !option.visible && option.id === 'pitch-device-opt'),
+      `${label}: 静态夹具应有 2 个隐藏装备项（#armor-state-opt 动态装甲、#pitch-device-opt 无 122 槽位），`
       + `实测隐藏项 [${opened.eqOpts.filter((option) => !option.visible).map((option) => option.id || option.text).join(',')}]`)
     for (const option of visibleEq) {
       check(failures, option.height >= 43.5,

@@ -730,7 +730,7 @@ describe('armor shell and readiness ownership', () => {
   })
   it('选车器换车时重置编辑器/HUD 就绪标志，HUD 不再套用受击方 config', () => {
     expect(view).toMatch(/watch\(shooterSetupId, \(\) => \{ shooterReady\.value = false; hudReady\.value = false \}\)/)
-    expect(view).toMatch(/watch\(targetSetupId, \(\) => \{ targetReady\.value = false \}\)/)
+    expect(view).toMatch(/watch\(targetSetupId, \(id\) => \{\s+targetReady\.value = false/)
     expect(view).toMatch(/@ready="value => shooterReady = value"/)
     expect(view).toMatch(/@ready="value => targetReady = value"/)
     expect(read('./ArmorSideConfig.vue')).toMatch(/const canConfigure = computed\(\(\) => selection\.value\?\.canConfigure === true\)/)

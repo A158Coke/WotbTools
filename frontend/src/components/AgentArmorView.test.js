@@ -7,9 +7,21 @@ import { PLAYBACK_PHONE_QUERY } from '../composables/usePlaybackPhoneForm.js'
 import { PLAYBACK_PORTRAIT_QUERY } from '../composables/usePlaybackPortraitViewport.js'
 import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 import { createShellChrome } from '../app/shellChrome.js'
-const mocks = vi.hoisted(() => ({ init: vi.fn(), fetch: vi.fn(), query: vi.fn(), coarse: { value: false } }))
+const mocks = vi.hoisted(() => ({
+  init: vi.fn(), fetch: vi.fn(), query: vi.fn(), coarse: { value: false },
+  tank: vi.fn(), devices: vi.fn(), modules: vi.fn(),
+}))
 vi.mock('../scene/tankViewer.js', () => ({ initTankViewer: mocks.init }))
-vi.mock('../scene/agentData.js', () => ({ fetchReplayShots: mocks.fetch, shotViewerQuery: mocks.query }))
+vi.mock('../scene/agentData.js', () => ({
+  fetchReplayShots: mocks.fetch,
+  shotViewerQuery: mocks.query,
+  fetchTankData: mocks.tank,
+}))
+vi.mock('../utils/researchCatalog.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  loadDevices: mocks.devices,
+  loadTankModules: mocks.modules,
+}))
 vi.mock('../scene/webglSupport.js', async (original) => ({ ...(await original()), detectWebGL: () => ({ supported: true }) }))
 vi.mock('../composables/useBreakpoint.js', () => ({ usePointer: () => ({ coarse: mocks.coarse }) }))
 const translate = (key, args) => args ? `${key} ${args.current}/${args.total}` : key
@@ -51,11 +63,20 @@ async function setup({ query = { view: 'agent-armor', shot: '6' }, shellChrome =
 }
 beforeEach(() => {
   mocks.init.mockReset(); mocks.fetch.mockReset(); mocks.query.mockReset(); scenes.length = 0
+  mocks.tank.mockReset().mockResolvedValue({ nation: 'germany' })
+  mocks.devices.mockReset().mockResolvedValue({ devicePresets: { defaultPreset: [] } })
+  mocks.modules.mockReset().mockResolvedValue({ tanks: {} })
   mocks.fetch.mockResolvedValue({ shots })
   mocks.query.mockImplementation(async shot => ({ view: 'agent-armor', shot: String(shot.index), tank: String(shot.target_tank_id) }))
   mocks.init.mockImplementation(options => { const scene = { destroy: vi.fn(), options }; scenes.push(scene); options.onLoadState({ state: 'ready' }); return scene })
 })
-afterEach(() => { mounted.forEach(w => w.unmount()); mounted.length = 0; restoredMedia.forEach(restore => restore()); restoredMedia.length = 0; mocks.coarse.value = false; vi.clearAllMocks() })
+afterEach(() => {
+  mounted.forEach(w => w.unmount()); mounted.length = 0
+  restoredMedia.forEach(restore => restore()); restoredMedia.length = 0
+  mocks.coarse.value = false
+  vi.useRealTimers()
+  vi.clearAllMocks()
+})
 describe('Armor recorded-shot navigation', () => {
   it('shows tank names and recorded facts, disposes the previous scene, and respects navigation bounds', async () => {
     const { wrapper, router } = await setup()
@@ -170,5 +191,21 @@ describe('Armor immersive shell chrome', () => {
     expect(() => bare.unmount()).not.toThrow()
     expect(chrome.immersive.value).toBe(false)
     wrapper.unmount()
+  })
+})
+
+describe('122 可用性容错（网络失败 ≠ 不支持）', () => {
+  it('目录请求失败保留 eqpitch 覆盖，重试成功确认无槽位后才清理', async () => {
+    vi.useFakeTimers()
+    mocks.tank.mockRejectedValueOnce(new Error('offline'))
+    const { router } = await setup({ query: { view: 'agent-armor', tank: '2', eqpitch: '1' } })
+    await flushPromises()
+    expect(router.currentRoute.value.query.eqpitch).toBe('1', '瞬时失败不得删除共享链接覆盖')
+    // 重试成功：目标车预设不含 122 → 这是「确认不支持」，此时才允许清理 URL
+    mocks.tank.mockResolvedValueOnce({ nation: 'germany' })
+    mocks.modules.mockResolvedValueOnce({ tanks: {} })
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushPromises()
+    expect(router.currentRoute.value.query.eqpitch).toBeUndefined()
   })
 })

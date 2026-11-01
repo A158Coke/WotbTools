@@ -328,6 +328,8 @@ export interface AgentVehicleEquipment {
   calibrated_shells?: boolean
   /** 携带强化装甲（id 110） */
   enhanced_armor?: boolean
+  /** 携带改进型垂直稳定器（id 122；炮管仰角 +4°/俯角 +3°，仅 true 时序列化） */
+  improved_pitch_limits?: boolean
   /** 九槽配件 id 原值（0=空槽垫底、空槽省略；**位置不承载槽位语义**，反解只能按 id 对号预设） */
   raw?: number[]
 }
@@ -721,7 +723,7 @@ export interface AgentShotReplay {
   shooter_tank_id?: number
   target_config_idx?: number
   shooter_config_idx?: number
-  /** Type5 配件串物化（上游 VehicleEquipment：calibrated_shells/enhanced_armor/raw；raw 变长、0=空槽垫底、空槽位置信息线上不存在） */
+  /** Type5 配件串物化（上游 VehicleEquipment：calibrated_shells/enhanced_armor/improved_pitch_limits/raw；raw 变长、0=空槽垫底、空槽位置信息线上不存在） */
   shooter_equipment?: AgentVehicleEquipment
   target_equipment?: AgentVehicleEquipment
   /** 逐发质量标注（降级/陈旧/兜底路径，UI ⚠ 悬停依据） */

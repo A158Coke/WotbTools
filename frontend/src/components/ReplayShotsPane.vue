@@ -119,6 +119,8 @@ const PITCH_ANCHOR_WAIT_MS = 1500
  * （dep = max 俯角上限、ele = −min 仰角上限）。注入后俯仰按车型极限解码，
  * 消解空表下的大面积「俯仰降级」标记；缺数据的玩家如实降级。**有界等待**：
  * 逐车请求并行、结果随到随写，PITCH_ANCHOR_WAIT_MS 到期即以已到部分返回。
+ * **只传基础极限**：122 改进型垂直稳定器的 +4°仰/+3°俯由 Agent core 按同 eid 的
+ * Type5 配件串叠加；在这里预加会双重计算。
  */
 async function buildPitchLimits(vehicles) {
   const limits = {}

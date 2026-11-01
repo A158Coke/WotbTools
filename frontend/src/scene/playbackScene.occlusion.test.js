@@ -109,7 +109,7 @@ describe('Sniper 穿深着色接线', () => {
   const source = readFileSync(resolve(__dirname, 'playbackScene.js'), 'utf8')
 
   it('叠加 pass 排在主渲染之后，只有录像者开镜且过渡结束才运行', () => {
-    expect(source).toMatch(/renderer\.render\(scene, camera\);\s+renderArmorHighlight\(\);/)
+    expect(source).toMatch(/renderer\.render\(scene, camera\);\s+(?:const perfR0[^\n]*\n\s+)?renderArmorHighlight\(\);/)
     expect(source).toContain("if (!ARMOR_HIGHLIGHT || CAM !== 'recorder' || !scopedHiddenEid || cameraBlend) return;")
   })
 
@@ -137,5 +137,21 @@ describe('Sniper 穿深着色接线', () => {
     const body = source.slice(start, source.indexOf('回到俯视机位', start))
     expect(body).toContain('resolveExactMountedConfig')
     expect(body).not.toMatch(/resolveMountedConfig\(/)
+  })
+
+  it('SNIPER→ARCADE 转换释放 RT（不只退出录像者模式）', () => {
+    const start = source.indexOf('function driveRecorderCamera')
+    const body = source.slice(start, source.indexOf('function ', start + 20))
+    expect(body).toMatch(/wasScoped\s*&&\s*!scoped/)
+    expect(body).toContain('armorHighlight?.releaseRenderTargets?.()')
+  })
+
+  it('关闭开关与退出录像者模式仍释放 RT', () => {
+    const leaveStart = source.indexOf('function leaveRecorderView')
+    const leaveBody = source.slice(leaveStart, source.indexOf('function ', leaveStart + 20))
+    expect(leaveBody).toContain('releaseRenderTargets')
+    const setStart = source.indexOf('setArmorHighlight:')
+    const setBody = source.slice(setStart, source.indexOf('setQuality', setStart))
+    expect(setBody).toContain('releaseRenderTargets')
   })
 })

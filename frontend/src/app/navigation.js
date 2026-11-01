@@ -141,7 +141,7 @@ const HOF_QUERY_KEYS = ['tab', 'page', 'tank', 'nation', 'type', 'tier', 'bt', '
  */
 const ARMOR_SCENE_QUERY_KEYS = [
   'tank', 'shooter', 'config', 'scfg', 'sengine', 'strack', 'sdev', 'shell', 'shot', 'world', 'heatmap',
-  'az', 'h', 'd', 'eqcal', 'eqenh', 'quality', 'move', 'rel', 'clean', 'debug',
+  'az', 'h', 'd', 'eqcal', 'eqenh', 'eqpitch', 'quality', 'move', 'rel', 'clean', 'debug',
 ]
 const BROADCAST_QUERY_KEYS = ['lbServer', 'lbSeason', 'lbCategory']
 /** 地图预览写进 URL 的键（map=资产 key、mode=2d|3d、bases=supremacy|encounter）：只属于该视图，离开时丢掉。 */
