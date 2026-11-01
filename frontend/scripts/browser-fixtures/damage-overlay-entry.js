@@ -49,10 +49,4 @@ window.__damageOverlay = {
     Object.assign(markerPrefs, patch.markerPrefs || {})
     await settle()
   },
-  async remount() {
-    markerPrefs.showStatus = false
-    await settle()
-    markerPrefs.showStatus = true
-    await settle()
-  },
 }

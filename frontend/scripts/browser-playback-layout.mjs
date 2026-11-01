@@ -465,33 +465,6 @@ async function probeDamageOverlay() {
     `animation-delay must stay stable across rerenders (${delayBefore} -> ${delayAfter})`)
   metrics.delay = delayAfter
 
-  // Force the previous mirrored side to stop fitting before testing right remount.
-  await api.setAnchor(7, anchorAt(20, 260))
-  const rightNode = dmgEl()
-  require(driftX() === 20, 'right side must be selected before remount')
-
-  // 5b) showStatus 关→开 = 真实 remount：只补偿一次相位，之后 rerender 不再改动
-  await api.remount()
-  require(dmgEl() !== rightNode, 'showStatus must create a new node')
-  require(driftX() === 20, 'right drift must be restored before placement')
-  await api.setAnchor(7, anchorAt(300, 260))
-  const afterRemount = getComputedStyle(dmgEl().firstElementChild).animationDelay
-  require(afterRemount !== delayAfter,
-    `remount must compensate the phase exactly once (${delayAfter} -> ${afterRemount})`)
-  await api.setLabels([row(7), row(8), row(9), row(10)])
-  require(getComputedStyle(dmgEl().firstElementChild).animationDelay === afterRemount,
-    'phase compensation must not be recomputed by later rerenders')
-  metrics.remountDelay = afterRemount
-
-  await api.setAnchor(7, anchorAt(stageW - 20, 260))
-  require(driftX() === -20, 'left side must be selected before remount')
-  const leftNode = dmgEl()
-  await api.remount()
-  require(dmgEl() !== leftNode, 'left damage must remount')
-  require(driftX() === -20, 'left drift must be restored before placement')
-  await api.setAnchor(7, anchorAt(stageW - 20, 260))
-  require(driftX() === -20, 'left drift must survive placement with unchanged side')
-
   // H 恢复实际 CSS phase，原始 removal timer 不延长。
   api.clearDamages()
   const waitUntil = async (predicate, timeoutMs = 6000) => {
@@ -588,18 +561,44 @@ async function probeDamageOverlay() {
   require(unseenRemovedAfterMs < 4400, 'delayed first display must not extend removal deadline')
   metrics.bornOffscreen = { firstTime, firstAgeMin, firstAgeMax, unseenRemovedAfterMs }
 
-  // showStatus=false 时出生：延迟首次挂载仍消费原始 wall-clock age。
+  // 状态标记关闭不影响战斗反馈：真实 CSS 下数字仍可见。
   await api.prefs({ markerPrefs: { showStatus: false } })
-  const delayedBorn = performance.now()
-  await api.spawn(7, 342, 4000)
-  await waitUntil(() => performance.now() - delayedBorn >= 700)
-  await api.prefs({ markerPrefs: { showStatus: true } })
+  await api.spawn(7, 415, 4000)
   await api.setAnchor(7, anchorAt(300, 260))
-  const delayedAnimation = dmgTextEl().getAnimations()[0]
-  const delayedTiming = delayedAnimation.effect.getComputedTiming()
-  require(delayedAnimation.currentTime - delayedTiming.delay >= 650,
-    'delayed first mount must compensate elapsed time')
+  require(dmgEl()?.textContent.trim() === '-415', 'showStatus=false must keep the damage number')
+  require(dmgTextEl().getBoundingClientRect().width > 0 && Number(getComputedStyle(dmgTextEl()).opacity) > 0,
+    'damage number must be painted while showStatus=false')
+  await api.prefs({ markerPrefs: { showStatus: true } })
   api.clearDamages()
+
+  // lost HP ghost：真实几何、停留后淡出、与主条有明显反差；受击闪与隐藏全部 UI 同层验证。
+  await api.setLabels([row(7, {
+    hp: { current: 615, pct: 30, state: 'CURRENT' }, hpFlash: true,
+    hpGhost: { id: 1, prevPct: 50, nextPct: 30, durationMs: 1200 },
+  })])
+  await api.setAnchor(7, anchorAt(300, 260))
+  const ghostEl = document.querySelector('[data-test="pb-hp-ghost"]')
+  const fillEl = document.querySelector('.pb-hp-fill')
+  require(!!ghostEl, 'ghost must render for a finite range')
+  const barBox = barEl().getBoundingClientRect()
+  const ghostBox = ghostEl.getBoundingClientRect()
+  const fillBox = fillEl.getBoundingClientRect()
+  require(Math.abs(ghostBox.left - fillBox.right) <= 1, 'ghost must start where the current HP ends')
+  require(Math.abs(ghostBox.width - barBox.width * 0.2) <= 1, 'ghost width must equal the lost HP share')
+  require(getComputedStyle(ghostEl).backgroundColor !== getComputedStyle(fillEl).backgroundColor,
+    'ghost must differ from the current HP colour')
+  require(getComputedStyle(fillEl).filter.includes('brightness'), 'hit flash must brighten the HP fill')
+  const ghostAnimation = ghostEl.getAnimations()[0]
+  require(ghostAnimation?.effect.getComputedTiming().duration === 1200, 'ghost must use the supplied lifetime')
+  ghostAnimation.pause()
+  ghostAnimation.currentTime = 200
+  require(Number(getComputedStyle(ghostEl).opacity) === 1, 'ghost must hold before fading')
+  ghostAnimation.currentTime = 1140
+  require(Number(getComputedStyle(ghostEl).opacity) < 0.2, 'ghost must fade out by the end of its lifetime')
+  await api.setHidden(true)
+  require(ghostEl.getBoundingClientRect().width === 0, 'Hide All UI must hide the ghost')
+  await api.setHidden(false)
+  await api.setLabels([row(7)])
 
   // 第一槽到期后再出生：三个仍存活的数字必须占三个不同位置。
   await api.spawn(7, 100, 500)

@@ -61,6 +61,36 @@ function resolvePx(expression) {
   return null
 }
 
+describe('PlaybackVehicleLabel lost HP ghost', () => {
+  const ghost = (overrides = {}) => ({ id: 1, prevPct: 50, nextPct: 30, durationMs: 1200, ...overrides })
+  const ghostEl = (wrapper) => wrapper.find('[data-test="pb-hp-ghost"]')
+
+  it('覆盖刚损失的区间：left = 新 HP，width = 损失量，寿命由调用方给', () => {
+    const { style } = ghostEl(mountLabel({ hp: { current: 600, pct: 30, state: 'CURRENT' }, hpGhost: ghost() })).element
+    expect(style.left).toBe('30%')
+    expect(style.width).toBe('20%')
+    expect(style.animationDuration).toBe('1200ms')
+  })
+
+  it('未给寿命时不写 inline 时长，沿用 CSS 默认（2D）', () => {
+    const wrapper = mountLabel({ hpGhost: ghost({ durationMs: undefined }) })
+    expect(ghostEl(wrapper).element.style.animationDuration).toBe('')
+  })
+
+  it.each([[NaN, 30], [50, NaN], [30, 30]])('非法或空区间不渲染：prev=%s next=%s', (prevPct, nextPct) => {
+    expect(ghostEl(mountLabel({ hpGhost: ghost({ prevPct, nextPct }) })).exists()).toBe(false)
+  })
+
+  it('同一次受击的 rerender 复用节点，新一次受击换节点重启动画', async () => {
+    const wrapper = mountLabel({ hpGhost: ghost() })
+    const original = ghostEl(wrapper).element
+    await wrapper.setProps({ hpGhost: ghost() })
+    expect(ghostEl(wrapper).element).toBe(original)
+    await wrapper.setProps({ hpGhost: ghost({ id: 2, nextPct: 20 }) })
+    expect(ghostEl(wrapper).element).not.toBe(original)
+  })
+})
+
 describe('PlaybackVehicleLabel 垂直层级', () => {
   it('DOM 顺序严格是 PlayerName → TankName → HP → Reload', () => {
     const wrapper = mountLabel()

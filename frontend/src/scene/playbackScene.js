@@ -2459,7 +2459,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         reload: destroyed ? null : reloadStateAt(v.def.eid, T),
         consumables: destroyed || !visibleAt(v, T) ? []
           : consumableStateAt(v.def.eid, T, spanStartAt(VIS_BY_EID.get(v.def.eid) ?? v.def.coverage, T)),
-        hpGhost: ghost ? { prevPct: (ghost.fromFrac + ghost.lossFrac) * 100, nextPct: ghost.fromFrac * 100 } : null,
+        hpGhost: ghost ? { id: ghost.id, prevPct: ghost.toFrac * 100, nextPct: ghost.fromFrac * 100, durationMs: GHOST_MS * FX_SCALE } : null,
         hpFlash: flashByEid.has(v.def.eid),
       };
     });
@@ -3758,9 +3758,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 无需特殊处理；seek 则清空并重置事件游标（不补播历史动画）。
   // FLOAT_DMG_MS / GHOST_MS / FLASH_MS 来自 ../utils/battlePlayback.js（2D SSOT）；
   // 3D 侧统一在**使用点**乘 FX_SCALE（不改进 SSOT 常量 → 2D 时序不动）
-  const ghostByEid = new Map();  // eid -> { fromFrac, toFrac, untilMs }
+  const ghostByEid = new Map();  // eid -> { id, fromFrac（掉血后）, toFrac（掉血前）, untilMs }
   const flashByEid = new Map();  // eid -> untilMs
-  let dmgEvents = [];          // { t, eid, hpLoss }（回放时钟，升序）
+  let ghostSeq = 0;
+  let dmgEvents = [];          // { t, eid, hpLoss, hpBefore, hpAfter }（回放时钟，升序）
   let burstEvents = [];        // { t, eid }（回放时钟，升序）
   let dmgPtr = 0, burstPtr = 0;
 
@@ -3771,7 +3772,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       const hp = def.hp || [];
       for (let i = 1; i < hp.length; i++) {
         const loss = hp[i - 1][1] - hp[i][1];
-        if (loss > 0) dmgEvents.push({ t: hp[i][0], eid: def.eid, hpLoss: loss });
+        if (loss > 0) dmgEvents.push({ t: hp[i][0], eid: def.eid, hpLoss: loss, hpBefore: hp[i - 1][1], hpAfter: hp[i][1] });
       }
     }
     dmgEvents.sort((a, b) => a.t - b.t);
@@ -3824,7 +3825,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 伤害数字的落点与动画完全在 HTML 覆盖层（PlaybackVehicleLabels3D）：canvas sprite 恒在
   // DOM 名牌之下，renderOrder / 世界空间偏移都压不住它，而数字要精确贴住血条右缘，只有同层
   // 读 DOM 几何才做得到（覆盖层内部按 px 定位，不做世界↔屏幕换算）。
-  function emitDamageFeedback(eid, hpLoss) {
+  function emitDamageFeedback({ eid, hpLoss, hpBefore, hpAfter }) {
     const v = vehicleByEid(eid);
     if (!v || !v.group.visible) return;
     labelOverlay?.spawnDamage?.(eid, hpLoss, FLOAT_DMG_MS * FX_SCALE);
@@ -3832,10 +3833,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const nowMs = performance.now();
     const maxHp = v.def.max_hp > 0 ? v.def.max_hp : 0;
     if (maxHp > 0) {
-      const curHp = Math.max(0, hpAt(v, T));
-      const fromFrac = Math.max(0, Math.min(1, curHp / maxHp));
-      const toFrac = Math.max(0, fromFrac + hpLoss / maxHp);   // 损失前比例（幽灵显示刚丢的量）
-      ghostByEid.set(eid, { fromFrac, toFrac, untilMs: nowMs + GHOST_MS * FX_SCALE });
+      const fromFrac = Math.max(0, Math.min(1, hpAfter / maxHp));
+      // 每车只有一段幽灵：存活期内连续受击 = 向下延伸同一段并重启寿命，不叠第二根 bar
+      const prev = ghostByEid.get(eid);
+      const carriedFrac = prev && nowMs < prev.untilMs ? prev.toFrac : 0;
+      const toFrac = Math.max(carriedFrac, Math.min(1, hpBefore / maxHp));
+      ghostByEid.set(eid, { id: ++ghostSeq, fromFrac, toFrac, untilMs: nowMs + GHOST_MS * FX_SCALE });
     }
     flashByEid.set(eid, nowMs + FLASH_MS * FX_SCALE);
     labelsTime = null;   // feedback expires independently of playback time
@@ -4298,8 +4301,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     updateTracers();
     // 战斗反馈事件泵（回放时钟；壁钟寿命见 transient 段）
     while (dmgPtr < dmgEvents.length && dmgEvents[dmgPtr].t <= T) {
-      const e = dmgEvents[dmgPtr++];
-      emitDamageFeedback(e.eid, e.hpLoss);
+      emitDamageFeedback(dmgEvents[dmgPtr++]);
     }
     while (burstPtr < burstEvents.length && burstEvents[burstPtr].t <= T) {
       spawnBurst(burstEvents[burstPtr++].eid);
@@ -5322,7 +5324,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
      *   的 anchor 仍带 `projected`，关名牌时数字回退到锚点上方继续显示；
      * - `showPlayerName / showTankName / showHp / showReload` → 名牌内部的行开关。
      * - `classIcons` → 使用 HTML 类型图标替换模型，保留事实 root 与拾取。
-     * - `showStatus` → 作者标记环 / 伤害数字（数字的显示开关在覆盖层，与标记同一偏好）。
+     * - `showStatus` → 作者标记环。战斗反馈（伤害数字 / 幽灵段 / 受击闪）不受它控制，
+     *   只随 `enabled:false`（隐藏全部 UI）对应的覆盖层整层隐藏一起消失。
      */
     setLabelPrefs: (prefs) => {
       const enabled = !prefs || prefs.enabled !== false;

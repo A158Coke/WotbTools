@@ -295,28 +295,6 @@ describe('PlaybackVehicleLabels3D 伤害数字落点', () => {
     wrapper.unmount()
   })
 
-  it('showStatus 关→开 = 真实 remount：只补偿一次相位，之后 rerender 不再改动 delay', async () => {
-    vi.useFakeTimers()
-    const { wrapper } = await mountedLabel()
-    stubRect(wrapper.get('.pb-hp-bar').element, rect(108, 64, 24, 16))
-    wrapper.vm.spawnDamage(7, 342, 2000)
-    await nextTick()
-    wrapper.vm.setAnchor(7, shownAnchor)
-    expect(textOf(wrapper).style.animationDelay).toBe('')
-
-    vi.advanceTimersByTime(400)
-    await wrapper.setProps({ markerPrefs: { classIcons: false, showStatus: false } })
-    expect(wrapper.find('[data-test="pb-damage"]').exists()).toBe(false)
-    await wrapper.setProps({ markerPrefs: { classIcons: false, showStatus: true } })
-    const compensated = textOf(wrapper).style.animationDelay
-    expect(compensated, 'remount 必须补偿相位（否则数字从头再飘一次）').toBe('-400ms')
-
-    wrapper.vm.setLabels([hpRow(7), hpRow(8)])
-    await nextTick()
-    expect(textOf(wrapper).style.animationDelay, '补偿只算一次').toBe(compensated)
-    wrapper.unmount()
-  })
-
   it('H 隐藏→恢复按壁钟补偿一次；普通更新不改 delay，到期不延长', async () => {
     vi.useFakeTimers()
     const { wrapper } = await mountedLabel()
@@ -343,26 +321,6 @@ describe('PlaybackVehicleLabels3D 伤害数字落点', () => {
     vi.advanceTimersByTime(1)
     await nextTick()
     expect(wrapper.find('[data-test="pb-damage"]').exists()).toBe(false)
-    wrapper.unmount()
-  })
-
-  it.each(['right', 'left'])('showStatus remount 恢复 %s 侧漂移方向', async (side) => {
-    vi.useFakeTimers()
-    const { wrapper } = await mountedLabel()
-    stubRect(wrapper.get('.pb-hp-bar').element, rect(108, 64, 24, 16))
-    stubNumber(wrapper.element, 'clientWidth', side === 'left' ? 150 : 600)
-    wrapper.vm.spawnDamage(7, 342, 4000)
-    await nextTick()
-    wrapper.vm.setAnchor(7, shownAnchor)
-    const original = damage(wrapper).element
-    const drift = side === 'left' ? '-20px' : '20px'
-    expect(original.style.getPropertyValue('--pb-damage-drift-x')).toBe(drift)
-    await wrapper.setProps({ markerPrefs: { showStatus: false } })
-    await wrapper.setProps({ markerPrefs: { showStatus: true } })
-    expect(damage(wrapper).element).not.toBe(original)
-    expect(damage(wrapper).element.style.getPropertyValue('--pb-damage-drift-x')).toBe(drift)
-    wrapper.vm.setAnchor(7, shownAnchor)
-    expect(damage(wrapper).element.style.getPropertyValue('--pb-damage-drift-x')).toBe(drift)
     wrapper.unmount()
   })
 
@@ -417,22 +375,6 @@ describe('PlaybackVehicleLabels3D 伤害数字落点', () => {
     wrapper.unmount()
   })
 
-  it('showStatus 关闭期间出生，延迟首次挂载按当前 age 恢复', async () => {
-    vi.useFakeTimers()
-    const { wrapper } = await mountedLabel({ markerPrefs: { showStatus: false } })
-    wrapper.vm.spawnDamage(7, 342, 4000)
-    await nextTick()
-    vi.advanceTimersByTime(700)
-    await wrapper.setProps({ markerPrefs: { showStatus: true } })
-    expect(textOf(wrapper).style.animationDelay).toBe('-700ms')
-    vi.advanceTimersByTime(300)
-    wrapper.vm.setAnchor(7, shownAnchor)
-    wrapper.vm.setLabels([hpRow(7), hpRow(8)])
-    await nextTick()
-    expect(textOf(wrapper).style.animationDelay).toBe('-700ms')
-    wrapper.unmount()
-  })
-
   it('旧数字到期后复用空槽，不与存活数字占同一槽', async () => {
     vi.useFakeTimers()
     const { wrapper } = await mountedLabel()
@@ -467,11 +409,30 @@ describe('PlaybackVehicleLabels3D 伤害数字落点', () => {
     wrapper.unmount()
   })
 
-  it('关掉"车辆徽章与伤害数字"（showStatus=false）→ 伤害层不渲染', async () => {
+  it('showStatus=false（状态标记关闭 / 防遮）不影响伤害数字', async () => {
     const { wrapper } = await mountedLabel({ markerPrefs: { classIcons: false, showStatus: false } })
-    wrapper.vm.spawnDamage(7, 400, 2000)
+    wrapper.vm.spawnDamage(7, 415, 2000)
     await nextTick()
-    expect(wrapper.find('[data-test="pb-damage"]').exists()).toBe(false)
+    wrapper.vm.setAnchor(7, shownAnchor)
+    expect(damage(wrapper).text()).toBe('-415')
+    expect(damage(wrapper).element.hidden).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('隐藏全部 UI 一起隐藏数字、幽灵段与受击闪；恢复后数字不重新计时', async () => {
+    vi.useFakeTimers()
+    const { wrapper } = await mountedLabel()
+    wrapper.vm.setLabels([{ ...hpRow(7), hpGhost: { id: 1, prevPct: 50, nextPct: 30, durationMs: 1200 }, hpFlash: true }])
+    wrapper.vm.spawnDamage(7, 415, 2000)
+    await nextTick()
+    wrapper.vm.setAnchor(7, shownAnchor)
+    expect(wrapper.find('[data-test="pb-hp-ghost"]').exists()).toBe(true)
+    expect(wrapper.find('.pb-hp-flash').exists()).toBe(true)
+    vi.advanceTimersByTime(500)
+    await wrapper.setProps({ hidden: true })
+    expect(wrapper.get('[data-testid="vehicle-label-overlay"]').element.hidden).toBe(true)
+    await wrapper.setProps({ hidden: false })
+    expect(textOf(wrapper).style.animationDelay).toBe('-500ms')
     wrapper.unmount()
   })
 

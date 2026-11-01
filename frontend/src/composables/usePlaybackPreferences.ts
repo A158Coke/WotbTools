@@ -19,7 +19,10 @@ export interface PlaybackTrailPreferences {
 
 export interface PlaybackMarkerPreferences {
   classIcons: boolean
-  /** Recorder/death badges and floating damage; battle facts remain unchanged. */
+  /**
+   * Recorder/death badges; battle facts remain unchanged. 2D floating damage also
+   * follows it, while 3D combat feedback only follows Hide All UI.
+   */
   showStatus: boolean
 }
 
