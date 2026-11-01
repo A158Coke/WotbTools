@@ -357,7 +357,7 @@ function onTwoFingerTouch(event) {
       </div>
     </div>
 
-    <input v-if="props.textSession" ref="textInputRef" :value="props.textSession.text" class="pb-text-input" :style="props.textInputStyle" :placeholder="$t('recon.map.playback.annot.text_placeholder')" data-test="pb-text-input" @input="emit('update-text', $event.target.value)" @keydown="onTextKeydown" @blur="emit('commit-text', props.textSession)" />
+    <input v-if="props.textSession" ref="textInputRef" :value="props.textSession.text" class="pb-text-input" :style="props.textInputStyle" :placeholder="$t('recon.map.playback.annot.text_placeholder')" data-test="pb-text-input" @pointerdown.stop @input="emit('update-text', $event.target.value)" @keydown="onTextKeydown" @blur="emit('commit-text', props.textSession)" />
     <div class="pb-feedback-layer" data-test="pb-feedback-layer" aria-hidden="true">
       <span v-for="float in props.visibleFloats" :key="'dmg-' + float.id" class="pb-float-dmg" data-test="pb-float-dmg" :class="props.floatTeamClass(float.friendly)" :style="{ left: float.x + 'px', top: float.y + 'px' }">-{{ float.hpLoss }}</span>
       <span v-for="burst in props.visibleBursts" :key="'burst-' + burst.id" class="pb-burst" data-test="pb-burst" :class="props.floatTeamClass(burst.friendly)" :style="{ left: burst.x + 'px', top: burst.y + 'px' }"></span>

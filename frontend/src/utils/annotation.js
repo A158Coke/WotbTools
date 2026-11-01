@@ -493,7 +493,7 @@ export function annotationDraftFromTool(tool, start, end, { color, width } = {})
 /** 零长度/零面积 draft 不进入 history。 */
 export function isDegenerateAnnotation(annotation) {
   if (!annotation) return true
-  if (annotation.type === 'rect') return annotation.w < 1e-9 && annotation.h < 1e-9
+  if (annotation.type === 'rect') return !(annotation.w > 1e-9 && annotation.h > 1e-9)
   if (annotation.type === 'circle') return annotation.r < 1e-9
   if (annotation.type === 'line' || annotation.type === 'arrow') {
     return Math.hypot(annotation.x2 - annotation.x1, annotation.y2 - annotation.y1) < 1e-9

@@ -363,6 +363,8 @@ describe('shared annotation helpers', () => {
     const rect = annotationDraftFromTool('rect', { x: 1, y: 2 }, { x: 4, y: 6 }, { color: '#fff', width: 2 })
     expect(rect).toMatchObject({ type: 'rect', w: 3, h: 4 })
     expect(isDegenerateAnnotation({ ...rect, w: 0, h: 0 })).toBe(true)
+    expect(isDegenerateAnnotation({ ...rect, w: 0, h: 4 })).toBe(true)
+    expect(isDegenerateAnnotation({ ...rect, w: 4, h: 0 })).toBe(true)
     const circle = annotationDraftFromTool('circle', { x: 0, y: 0 }, { x: 3, y: 4 }, { color: '#fff', width: 2 })
     expect(circle.r).toBe(2.5)
     expect(isDegenerateAnnotation(annotationDraftFromTool('arrow', { x: 0, y: 0 }, { x: 0, y: 0 }, {}))).toBe(true)

@@ -32,7 +32,7 @@ vi.mock('./BattleMap.vue', () => ({
     mounted() { this.mapEl = this.$refs.mapEl },
     expose: ['mapEl'],
     template: `<div ref="mapEl" class="bm-stub" :data-count="renderedAnnotations.length" :data-tool="activeTool || ''"
-      :data-bases="(bases || []).map(b => b.baseId + ':' + b.radius + ':' + b.status).join('|')" />`,
+      :data-bases="(bases || []).map(b => b.baseId + ':' + b.radius + ':' + b.status).join('|')"><input v-if="textSession" class="pb-text-input" data-test="pb-text-input-stub" /></div>`,
   },
 }))
 
@@ -310,6 +310,8 @@ describe('MapPreview2DPane 完整 tactical annotation', () => {
     expect(Number.isFinite(unit.y)).toBe(true)
     expect(unit.radius).toBeGreaterThan(0)
     expect(unit.friendly).toBeUndefined()
+    expect(wrapper.find('[data-test="pb-annot-LT"]').classes()).toContain('active')
+    expect(wrapper.find('[data-test="pb-annot-selection"]').exists()).toBe(false)
   })
 
   it('creates arrow/line/rect/circle from semantic pointer coordinates', async () => {
@@ -322,11 +324,22 @@ describe('MapPreview2DPane 完整 tactical annotation', () => {
       expect(annotation.type, tool).toBe(tool)
       expect(annotation.width).toBeGreaterThan(0)
       if (tool === 'rect') {
-        expect(annotation.w).toBeGreaterThanOrEqual(0)
-        expect(annotation.h).toBeGreaterThanOrEqual(0)
+        expect(annotation.w).toBeGreaterThan(0)
+        expect(annotation.h).toBeGreaterThan(0)
       }
       if (tool === 'circle') expect(annotation.r).toBeGreaterThan(0)
     }
+  })
+
+  it('does not commit rectangles with any zero side', async () => {
+    const wrapper = mountPane()
+    await openToolbar(wrapper)
+    await wrapper.find('[data-test="pb-annot-rect"]').trigger('click')
+    await draw(wrapper, [[100, 100], [100, 200]])
+    await draw(wrapper, [[100, 100], [200, 100]])
+    expect(rendered(wrapper)).toHaveLength(0)
+    await draw(wrapper, [[100, 100], [200, 200]])
+    expect(rendered(wrapper)).toHaveLength(1)
   })
 
   it('creates a route only after two points and Finish Route', async () => {
@@ -346,6 +359,8 @@ describe('MapPreview2DPane 完整 tactical annotation', () => {
     const route = rendered(wrapper).at(-1)
     expect(route).toMatchObject({ type: 'route' })
     expect(route.points).toHaveLength(2)
+    expect(wrapper.find('[data-test="pb-annot-route"]').classes()).toContain('active')
+    expect(wrapper.find('[data-test="pb-annot-selection"]').exists()).toBe(false)
   })
 
   it('creates text through the shared BattleMap text session', async () => {
@@ -361,6 +376,44 @@ describe('MapPreview2DPane 完整 tactical annotation', () => {
     battleMap(wrapper).vm.$emit('commit-text', session)
     await flushPromises()
     expect(rendered(wrapper).at(-1)).toMatchObject({ type: 'text', text: 'B point' })
+  })
+
+  it('keeps drawing tools active and does not repaint the previous annotation on color change', async () => {
+    const wrapper = mountPane()
+    await openToolbar(wrapper)
+    await wrapper.find('[data-test="pb-annot-line"]').trigger('click')
+    await draw(wrapper, [[80, 80], [180, 160]])
+    expect(rendered(wrapper)).toHaveLength(1)
+    expect(wrapper.find('[data-test="pb-annot-selection"]').exists()).toBe(false)
+    const originalColor = rendered(wrapper)[0].color
+    await wrapper.findAll('.pb-annot-color')[1].trigger('click')
+    expect(rendered(wrapper)[0].color).toBe(originalColor)
+    expect(wrapper.find('[data-test="pb-annot-line"]').classes()).toContain('active')
+  })
+
+  it('ignores pointerdown on the shared text input and refuses an empty text rename', async () => {
+    const wrapper = mountPane()
+    await openToolbar(wrapper)
+    await wrapper.find('[data-test="pb-annot-text"]').trigger('click')
+    await pointer(wrapper, 'pointerdown', 100, 100)
+    await pointer(wrapper, 'pointerup', 100, 100)
+    await flushPromises()
+    const session = battleMap(wrapper).props('textSession')
+    await wrapper.find('[data-test="pb-text-input-stub"]').trigger('pointerdown', { pointerId: 2, clientX: 100, clientY: 100, pointerType: 'mouse', button: 0 })
+    expect(battleMap(wrapper).props('textSession')).toBe(session)
+    battleMap(wrapper).vm.$emit('update-text', 'A point')
+    battleMap(wrapper).vm.$emit('commit-text', session)
+    await flushPromises()
+    await wrapper.find('[data-test="pb-annot-select"]').trigger('click')
+    await pointer(wrapper, 'pointerdown', 100, 100)
+    await pointer(wrapper, 'pointerup', 100, 100)
+    await flushPromises()
+    const input = wrapper.find('[data-test="pb-annot-name"]')
+    expect(input.exists()).toBe(true)
+    await input.setValue('   ')
+    await input.trigger('change')
+    await flushPromises()
+    expect(rendered(wrapper).at(-1).text).toBe('A point')
   })
 
   it('selects and moves an existing annotation, then supports undo/redo/delete', async () => {
@@ -405,6 +458,37 @@ describe('MapPreview2DPane 完整 tactical annotation', () => {
     expect(payload).toMatchObject({ version: 1, kind: 'map-preview-annotations', mapKey: 'erlenberg' })
     expect(payload.annotations).toEqual(mixed)
     expect(typeof payload.exportedAt).toBe('string')
+    click.mockRestore()
+    vi.unstubAllGlobals()
+  })
+
+  it('round-trips UI-created annotations through export JSON and the import validator', async () => {
+    const wrapper = mountPane()
+    await openToolbar(wrapper)
+    await wrapper.find('[data-test="pb-annot-rect"]').trigger('click')
+    await draw(wrapper, [[80, 80], [180, 160]])
+    await wrapper.find('[data-test="pb-annot-line"]').trigger('click')
+    await draw(wrapper, [[60, 60], [160, 120]])
+    await wrapper.find('[data-test="pb-annot-text"]').trigger('click')
+    await pointer(wrapper, 'pointerdown', 120, 120)
+    await pointer(wrapper, 'pointerup', 120, 120)
+    await flushPromises()
+    const session = battleMap(wrapper).props('textSession')
+    battleMap(wrapper).vm.$emit('update-text', 'A point')
+    battleMap(wrapper).vm.$emit('commit-text', session)
+    await flushPromises()
+    await wrapper.find('[data-test="pb-annot-close"]').trigger('click')
+    await flushPromises()
+    const blobs = []
+    const createObjectURL = vi.fn((blob) => { blobs.push(blob); return 'blob:ui-roundtrip' })
+    vi.stubGlobal('URL', Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() }))
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    await wrapper.find('[data-testid="map-2d-export"]').trigger('click')
+    const payload = JSON.parse(await blobs[0].text())
+    expect(payload.annotations.map(annotation => annotation.type)).toEqual(['rect', 'line', 'text'])
+    await importJson(wrapper, payload)
+    expect(rendered(wrapper).map(annotation => annotation.type)).toEqual(['rect', 'line', 'text'])
+    expect(wrapper.find('[data-testid="map-2d-import-note"]').text()).toContain('"count":3')
     click.mockRestore()
     vi.unstubAllGlobals()
   })

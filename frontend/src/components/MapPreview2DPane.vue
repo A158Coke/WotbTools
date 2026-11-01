@@ -404,7 +404,6 @@ function replaceAnnotations(next) {
 }
 function commitDraft(annotation) {
   replaceAnnotations([...annotations.value, annotation])
-  selectedAnnotationIndex.value = annotations.value.length - 1
 }
 function updateSelected(patch) {
   if (!selectedAnnotation.value) return
@@ -438,8 +437,11 @@ function deleteSelected() {
 function renameSelected(label) {
   const value = String(label).trim().slice(0, 60)
   if (!selectedAnnotation.value) return
-  if (selectedAnnotation.value.type === 'text') updateSelected({ text: value })
-  else updateSelected({ label: value })
+  if (selectedAnnotation.value.type === 'text') {
+    // 空 text 不是可持久化 schema；保持原值，避免导出的 JSON 无法重新导入。
+    if (!value) return
+    updateSelected({ text: value })
+  } else updateSelected({ label: value })
 }
 function setAnnotationTool(tool) {
   if (textSession.value) commitTextSession(textSession.value)
@@ -525,7 +527,6 @@ function finishRoute() {
   routePoints.value = []
   cancelDrawing()
   commitDraft(annotation)
-  annotationTool.value = 'select'
 }
 
 function selectionTolerance() {
@@ -607,7 +608,6 @@ function endDrawing() {
     return
   } else if (ANNOT_TANK_CLASSES.some(item => item.key === tool) && drawStart) {
     commitDraft({ type: 'unit', tankClass: tool, color: annotationColor.value, x: drawStart.x, y: drawStart.y, radius: 16 * semPerSvgX.value, label: '' })
-    annotationTool.value = 'select'
   } else if (tool === 'pen') {
     if (drawPoints.length >= 2) commitDraft({ type: 'pen', color: annotationColor.value, width: annotWidth.value, points: drawPoints })
   } else if (tool === 'eraser') {
@@ -633,6 +633,8 @@ function cancelDrawing() {
 
 function onPointerDown(e) {
   if (e.button != null && e.button !== 0) return
+  // 文本输入框是 BattleMap 内的真实交互控件：不能让 stage 抢焦点/开始绘图。
+  if (e.target instanceof Element && (e.target.closest('input, textarea') || e.target.isContentEditable)) return
   if (e.pointerType === 'mouse' && e.button === 0) e.preventDefault()
   e.currentTarget?.focus?.({ preventScroll: true })
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
