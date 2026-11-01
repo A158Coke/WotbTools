@@ -13,8 +13,8 @@
 | `vehicles/11.19-china.md` | 11.19 国服车辆定位表（SPHT = 肉车为人工确认，其余待确认） |
 
 维护约定：
-- 规则或判定变化时，先改本目录，再同步 `coach-standard.zh.md` 和 `TeamPromptLocalizer.COACH_STANDARD_RULE_EN/RU`（`PromptRuleContractTest`、`TeamPromptLocalizerTest` 与 golden case `team-tactical-skill-v01-i` 会检查）。
-- 随机战个人复盘规范变化时，先改 `solo-standard.md`，再判断新规则所需的证据是否在 `ClientAiReviewProjection` 里（`unavailableEvidence` 里的不进生产 prompt），然后同步 `solo-standard.zh.md` 和 `PlayerPromptRules.SOLO_STANDARD_RULE_EN/RU`（`PromptRuleContractTest` 会检查）。
+- 规则或判定变化时，先改本目录，再同步 `prompts/tactical-skills/coach-standard.{zh,en,ru}.md`（`PromptRuleContractTest`、`TeamPromptLocalizerTest` 与 golden case `team-tactical-skill-v01-i` 会检查）。
+- 随机战个人复盘规范变化时，先改 `solo-standard.md`，再判断新规则所需的证据是否在 `ClientAiReviewProjection` 里（`unavailableEvidence` 里的不进生产 prompt），然后同步 `prompts/tactical-skills/solo-standard.{zh,en,ru}.md`（`PromptRuleContractTest` 会检查）。
 - 精简进 prompt 的团队规则必须带上 `rules.md` 里的关键 Preconditions / Exceptions。
 - 新版本另建 `vehicles/<版本>.md`，不要沿用旧表。
 - 逐局分析、配图、回放与分析脚本保存在 Coach Lab 项目共享目录（体积大，不入库）；`casebook.md` 里的 Case ID 对应那里的 `analyses/` 与 `lessons/`。

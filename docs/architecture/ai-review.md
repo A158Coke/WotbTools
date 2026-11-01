@@ -186,33 +186,27 @@ Backend Evidence 层不得直接输出：正确/错误打法、拖延、无效�
 
 ### AI 提示词文件（单一事实源）
 
-AI 提示词正文维护在 `java/wotb-ai/src/main/resources/prompts/` 下的 `.zh.md` 文件（随 jar 打包到 classpath），运行期由 `AiPromptLibrary.zh("<key>")` 惰性加载并缓存（`classpath:/prompts/<key>.zh.md`）。md 支持 `{{key}}` 占位包含（`AiPromptLibrary` 加载时递归展开，循环包含 fail loud）；player×3 与 team/single 逐字重复的五块公共规则维护在 `prompts/common/{tank-noun,language,damage-semantics,hp-loss,evidence-logic}.zh.md` 复用，展开后内容与直接内联等价。`PromptRuleContractTest` 强制「展开后 ZH 片段与 Java 常量逐字一致 + EN/RU 本地化无中文残留」。
+AI 提示词正文维护在 `java/wotb-ai/src/main/resources/prompts/` 的三语 Markdown 资源中，随 jar 打包。`AiPromptLibrary.text("<key>", "zh"/"en"/"ru")` 按语言与 key 惰性缓存；`zh(key)` 是中文入口。`{{key}}` 递归包含同语言资源，缺失文件和循环包含显式失败，不回退到中文。Java 规则入口只负责资源选择，不依赖中文正文替换。
 
-| key | 文件 | 对应常量 |
-|---|---|---|
-| player/evidence-first | `prompts/player/evidence-first.zh.md` | `PlayerPromptRules.EVIDENCE_FIRST_RULE`（三语证据优先与教练判断，由三个 Player prompt include） |
-| player/fallback | `prompts/player/fallback.zh.md` | `PlayerPromptRules.SYSTEM_PROMPT`（单 Call 兜底） |
-| player/single | `prompts/player/single.zh.md` | `PlayerPromptRules.SINGLE_PLAYER_PROMPT` |
-| player/tactical | `prompts/player/tactical.zh.md` | `TacticalReviewPromptBuilder.TACTICAL_SYSTEM_PROMPT`（fallback + Harness 规则） |
-| team/single | `prompts/team/single.zh.md` | `TeamPromptLocalizer.SINGLE_TEAM_PROMPT` |
-| team/reasoning-contract | `prompts/team/reasoning-contract.zh.md` | `TeamPromptLocalizer.TEAM_REASONING_CONTRACT_RULE`（推理顺序契约，由 `team/single` include） |
-| prebattle/system | `prompts/prebattle/system.zh.md` | `PreBattlePromptBuilder.PRE_BATTLE_SYSTEM_PROMPT` |
-| prebattle/user-header | `prompts/prebattle/user-header.zh.md` | `PreBattlePromptBuilder.PRE_BATTLE_USER_HEADER`（含 `%s`/`%d` 占位，由 `.formatted()` 填充） |
-| prebattle/confidence-legend | `prompts/prebattle/confidence-legend.zh.md` | `PreBattlePromptBuilder.CONFIDENCE_LEGEND` |
-| tactical-skills/information-vision | `prompts/tactical-skills/information-vision.zh.md` | `TeamPromptLocalizer.INFORMATION_VISION_SKILL_RULE` |
-| tactical-skills/local-engagements | `prompts/tactical-skills/local-engagements.zh.md` | `TeamPromptLocalizer.LOCAL_ENGAGEMENTS_SKILL_RULE` |
-| tactical-skills/team-execution | `prompts/tactical-skills/team-execution.zh.md` | `TeamPromptLocalizer.TEAM_EXECUTION_SKILL_RULE` |
-| tactical-skills/position-tempo | `prompts/tactical-skills/position-tempo.zh.md` | `TeamPromptLocalizer.POSITION_TEMPO_SKILL_RULE` |
-| tactical-skills/hp-trades | `prompts/tactical-skills/hp-trades.zh.md` | `TeamPromptLocalizer.HP_TRADES_SKILL_RULE` |
-| tactical-skills/mode-objectives | `prompts/tactical-skills/mode-objectives.zh.md` | `TeamPromptLocalizer.MODE_OBJECTIVES_SKILL_RULE` |
-| tactical-skills/coach-standard | `prompts/tactical-skills/coach-standard.zh.md` | `TeamPromptLocalizer.COACH_STANDARD_RULE`（Coach Lab 争霸赛复盘规范，判定格式加条件规则，由 `team/single` 紧跟 `team/reasoning-contract` include） |
-| tactical-skills/solo-standard | `prompts/tactical-skills/solo-standard.zh.md` | `PlayerPromptRules.SOLO_STANDARD_RULE`（Coach Lab 随机战个人复盘规范，由 `player/single`、`player/fallback`、`player/tactical` 紧跟 `common/evidence-logic` include） |
+| key / 目录 | 用途与入口 |
+|---|---|
+| `player/fallback`、`player/single` | `PlayerSummaryBuilder` 通过 `PlayerPromptRules.systemPrompt` 选择三语复盘正文 |
+| `player/tactical` | `TacticalReviewPromptBuilder` 读取 ZH；非 ZH 由 `TacticalReviewHarness` 分派到 fallback |
+| `team/single` | `TeamReplayAnalysisService` 通过 `TeamPromptLocalizer.systemPrompt` 选择语言，recovery 另追加既有严格约束 |
+| `common/` | 坦克专名、输出语言、伤害语义、掉血时间、证据逻辑、时间格式与未知字段规则 |
+| `player/evidence-first`、`player/person`、`player/enemy-damage`、`player/points-situation`、`player/separation-evidence`、`player/relative-depth-hp` | 个人复盘规则片段，由所属顶层提示词 include |
+| `team/` 下其余资源 | 团队输出结构、证据契约、赛前基线、区域、占点、阵型与推理规则，由 `team/single` include |
+| `tactical-skills/` | 信息/视野、目标、局部交战、位置节奏、团队执行、HP 交换及 Coach Lab 规范 |
+| `prebattle/system`、`prebattle/user-header`、`prebattle/confidence-legend` | `PreBattlePromptBuilder` 保持 ZH 读取；user-header 由 `.formatted()` 填充占位 |
+| `tournament/recognize` | `TournamentGroupRecognizer` 保持 ZH 读取 |
 
 编辑约定：
 
-- UTF-8、LF 换行（加载器会把 CRLF 归一化为 LF；文件末尾换行保留——`confidence-legend` 以换行结尾，勿删）。
-- 文件是 ZH 完整 prompt；EN/RU 由 `PlayerPromptRules.localizePlayerSystemPrompt` / `TeamPromptLocalizer.localizeTeamSystemPrompt` 对 ZH 规则片段做字符串替换生成。**展开后 md 内中文规则片段必须与 Java 常量（`COMMON_*_RULE` / `TEAM_*_RULE` 等）逐字一致**，否则 EN/RU 替换失效（`PromptRuleContractTest` 强制）。
-- **单文件约束**：`POST /api/ai/reviews` 的 wire request 只承载一场战斗（一个 `battle` + 一个 `projection`），结构上不存在多文件/多视角批量形态。
+- 每个 key 必须同时具有 `.zh.md`、`.en.md`、`.ru.md`；`AiPromptLibraryTest` 独立枚举生产资源，校验三语键集合严格一致、所有正文非空且 include 可展开。
+- 使用 UTF-8、LF；加载器归一化 CRLF/CR 并保留末尾换行。include 不添加分隔符，不 trim，片段和引用位置共同决定空白。
+- 三语资源沿用各语言既有规则正文。EN/RU 保留未翻译的中文事实约束与专名；prebattle/tournament 的三语资源保留相同正文，文件齐备不代表生产路径切换语言。
+- `PromptRuleContractTest` 与语言/业务测试检查输出规则和证据边界；不要求 EN/RU 消除全部汉字，不维护平行 Java 正文。
+- **单文件约束**：`POST /api/ai/reviews` 只承载一场战斗（一个 `battle` + 一个 `projection`）。
 
 ### Team Tactical Skill
 
@@ -276,9 +270,9 @@ mvn -pl wotb-ai -am test `
 
 - **空间分离证据（后端证据边界）**：`TeamSeparationEvidenceSkill` / `PlayerSeparationEvidenceSkill`（wotb-core）从阵型簇/移动段/交火推导中性 `SPATIAL_SEPARATION` 证据（`kind=OPENING_SPREAD` / `SEPARATION_WINDOW` + 距离/距离增长/静止占比/局部敌情/损失血量/输出/阵亡/主力簇位移等确定性测量），`TeamEvidenceFormatter` 渲染 `SPATIAL_SEPARATION_EVIDENCE` 段（P3 optional）。不输出 `SOLO_DELAY` / `SOLO_DETACHED` / `teammateBenefit` 等战术 verdict——是否拖延/脱节由 LLM 综合判断。
 - **player 路径同规则**：`PlayerSeparationEvidenceSkill`（wotb-core）复用 `RouteSkill` 空间分离窗口推导同口径中性证据（个人复盘同样不输出拖延/脱节 verdict），在 `EvidenceSkillEngine` 注册；player prompt（fallback/single/tactical）包含三语 `SEPARATION_EVIDENCE_RULE`。
-- **争霸赛占点与点数胜负结束方式**：`FriendlyEnemyResult.resolveTeamBattle` 派生 `pointsEndReason`（`REACHED_1000`=双方均有存活 + 标准业务规则 + 时长<420s：某一方达到 1000 分上限导致提前结束，与胜方解耦，不使用任何点数字段；`TIME_EXPIRED`=标准规则 + 时长≥420s：时间耗尽，双方终局比分未解码；`UNKNOWN`=类别未知 / rosterComplete=false / 时长缺失；全歼=NOT_APPLICABLE），`TeamEvidenceFormatter` 在 `CAPTURE_AND_POINTS` 段输出 `pointsEndReason`（逐人/双方占点分、`pointsDecided`、占领点区域）；`TeamAiPromptBuilder` mandatory header 同时输出 `result` 与 `resultSource`（BATTLE_RESULTS 权威 / SURVIVOR_SETTLEMENT 结算存活推导 / UNKNOWN；POINTS_INFERENCE 枚举保留但不产出（fail closed））；**所有依赖完整逐人结算的存活/点数推断共享"结算阵容完整"前提**（`Battle.rosterComplete`：上游 Agent 的 `parseResult.roster_complete`（结算花名册与战绩账号集合一致，`contracts/agent/replay-facets-v2.md` §6）经客户端 `frontend/src/replay-local/battleFacts.ts` 写入 canonical facts，再随 `AiReviewBattle` 进入 ai-service；不写死每队 7 人，完整名册的非 7v7 训练房同样生效）：SURVIVOR_SETTLEMENT 推导与 `annihilationSuffix` 在阵容不完整时一律 fail-closed；winnerTeam 缺失 + 双方均有存活 → 胜方 UNKNOWN（结束方式仍按标准时限证据判定，用于结果行后缀，禁止比较占点字段推断）；winnerTeam 存在时胜方为 BATTLE_RESULTS，`pointsEndReason` 正常判定（rosterComplete=false 时 UNKNOWN，result 只写通用「点数判定」）；`CAPTURE_AND_POINTS` 在阵容不完整时输出 `SETTLEMENT_ROSTER_INCOMPLETE=true` / `pointsTotalsUnavailable=true` 并抑制占点分总量；提示词 `CAPTURE_RULE`（ZH/EN/RU，含 2d 条阵容不完整口径）写明结束条件三分法——全歼胜（双向：全歼敌方获胜 / 被敌方全歼落败）/ 1000 分提前结束（某一方达到 1000 分上限，具体胜方由 winnerTeam 决定；缺失时只写「某一方达到 1000 分导致提前结束，具体胜方未知」，双方终局比分一律 UNKNOWN，不把 1000 分配给任何队伍）/ 时间耗尽点数决胜（仅双方均有存活且标准规则可证），`TIME_EXPIRED` 叙述必须写「时间耗尽」，禁止用 <1000 的中间比分作为获胜理由，禁止把失败方被全歼写成「全歼敌方获胜」；团队复盘胜负标签按结束方式输出「（时间耗尽点数判定）/（达到 1000 分提前获胜）/（某一方达到 1000 分提前结束，具体胜方未知）/（时间耗尽点数判定，具体胜方未知）/（点数判定）/（全歼敌方）/（被敌方全歼）」。`TeamPromptLocalizer` 三语 `SOLO_INTENT_RULE` / `CAPTURE_RULE`。
+- **争霸赛占点与点数胜负结束方式**：`FriendlyEnemyResult.resolveTeamBattle` 派生 `pointsEndReason`（`REACHED_1000`=双方均有存活 + 标准业务规则 + 时长<420s：某一方达到 1000 分上限导致提前结束，与胜方解耦，不使用任何点数字段；`TIME_EXPIRED`=标准规则 + 时长≥420s：时间耗尽，双方终局比分未解码；`UNKNOWN`=类别未知 / rosterComplete=false / 时长缺失；全歼=NOT_APPLICABLE），`TeamEvidenceFormatter` 在 `CAPTURE_AND_POINTS` 段输出 `pointsEndReason`（逐人/双方占点分、`pointsDecided`、占领点区域）；`TeamAiPromptBuilder` mandatory header 同时输出 `result` 与 `resultSource`（BATTLE_RESULTS 权威 / SURVIVOR_SETTLEMENT 结算存活推导 / UNKNOWN；POINTS_INFERENCE 枚举保留但不产出（fail closed））；**所有依赖完整逐人结算的存活/点数推断共享"结算阵容完整"前提**（`Battle.rosterComplete`：上游 Agent 的 `parseResult.roster_complete`（结算花名册与战绩账号集合一致，`contracts/agent/replay-facets-v2.md` §6）经客户端 `frontend/src/replay-local/battleFacts.ts` 写入 canonical facts，再随 `AiReviewBattle` 进入 ai-service；不写死每队 7 人，完整名册的非 7v7 训练房同样生效）：SURVIVOR_SETTLEMENT 推导与 `annihilationSuffix` 在阵容不完整时一律 fail-closed；winnerTeam 缺失 + 双方均有存活 → 胜方 UNKNOWN（结束方式仍按标准时限证据判定，用于结果行后缀，禁止比较占点字段推断）；winnerTeam 存在时胜方为 BATTLE_RESULTS，`pointsEndReason` 正常判定（rosterComplete=false 时 UNKNOWN，result 只写通用「点数判定」）；`CAPTURE_AND_POINTS` 在阵容不完整时输出 `SETTLEMENT_ROSTER_INCOMPLETE=true` / `pointsTotalsUnavailable=true` 并抑制占点分总量；提示词 `CAPTURE_RULE`（ZH/EN/RU，含 2d 条阵容不完整口径）写明结束条件三分法——全歼胜（双向：全歼敌方获胜 / 被敌方全歼落败）/ 1000 分提前结束（某一方达到 1000 分上限，具体胜方由 winnerTeam 决定；缺失时只写「某一方达到 1000 分导致提前结束，具体胜方未知」，双方终局比分一律 UNKNOWN，不把 1000 分配给任何队伍）/ 时间耗尽点数决胜（仅双方均有存活且标准规则可证），`TIME_EXPIRED` 叙述必须写「时间耗尽」，禁止用 <1000 的中间比分作为获胜理由，禁止把失败方被全歼写成「全歼敌方获胜」；团队复盘胜负标签按结束方式输出「（时间耗尽点数判定）/（达到 1000 分提前获胜）/（某一方达到 1000 分提前结束，具体胜方未知）/（时间耗尽点数判定，具体胜方未知）/（点数判定）/（全歼敌方）/（被敌方全歼）」。三语资源 `team/capture`。
 - **争霸赛点数口径（未证明项，禁止用于终局比分）**：`victoryPointsEarned`(#32) 的精确定义及是否包含被动占点增长/击杀夺分等调整仍未证明；证据只输出原始结算字段（victoryPointsEarned/Seized、kills、deaths）；每据点每 tick 产分与 tick 间隔均未解码（无任何已验证的 tick 产分规则），不得用 tick 数或占点分计算终局比分；击杀夺分 40 分仅作叙述口径（`KILL_STEAL_POINTS` 不参与计算）；实时点数/基地占领/终局比分尚未解码（`PointsEvidenceProbeTest`/`ShotSpottingStreamProbeTest` 记录候选，语义 UNKNOWN）。
-- **点数局势证据与规则（PointsSituationSkill，P3 optional）**：wotb-core 纯函数 `PointsSituationSkill` 产出三类可证明信号——击杀夺分时间线（±40/击杀业务规则按双方阵亡时刻对齐，叙述口径非实时比分；只表达击杀换分项净差值，禁止说成整体点数领先/落后、禁止反推早期点数状态）、占领点区域位置存在（服务器位置流在 CONTAINS_CONTROL_POINT 九宫格内的存在，几何可证，位置存在≠占点产分）、进攻推进窗口（车辆从非占领点区域移动进入占领点区域，仅 MOVING 采样位移判定，不声称意图；同队窗口 8s 合并）；wotb-ai `PointsSituationEvidence` 复用 TeamEntityMapper（`wotb-core`）从重建事件流采集双方轨迹（2s 采样、battle-relative 秒），推进窗口与 `DamageWindowClusterer` 掉血窗口联接为「推进方窗口内承受伤害=防守方过路费」（OBSERVED_DAMAGE_IS_PARTIAL 时抑制数字）；接入点：团队复盘 `TeamEvidenceFormatter.appendPointsSituation`（与其它 P3 optional 同级、超预算整体裁剪）、随机战 Harness Call #2（裁剪阶梯在 phases 之后）、fallback 路径（伤害数字受 OBSERVED_DAMAGE_IS_PARTIAL 抑制；无重建路径仅击杀夺分时间线）。prompt 规则三语：team/single 占点规则 8（击杀换分项净劣势/优势只提示「点数压力方向」，是否抢点/防守拉交叉由 LLM 综合推断、禁止固定映射；进攻掉血情境化；过路费不足=防守失误必须由 LLM 形成 supported inference；fail-closed）、player tactical/single/fallback 点数局势规则（`PlayerPromptRules.POINTS_SITUATION_RULE` zh/en/ru 逐字契约）。
+- **点数局势证据与规则（PointsSituationSkill，P3 optional）**：wotb-core 纯函数 `PointsSituationSkill` 产出三类可证明信号——击杀夺分时间线（±40/击杀业务规则按双方阵亡时刻对齐，叙述口径非实时比分；只表达击杀换分项净差值，禁止说成整体点数领先/落后、禁止反推早期点数状态）、占领点区域位置存在（服务器位置流在 CONTAINS_CONTROL_POINT 九宫格内的存在，几何可证，位置存在≠占点产分）、进攻推进窗口（车辆从非占领点区域移动进入占领点区域，仅 MOVING 采样位移判定，不声称意图；同队窗口 8s 合并）；wotb-ai `PointsSituationEvidence` 复用 TeamEntityMapper（`wotb-core`）从重建事件流采集双方轨迹（2s 采样、battle-relative 秒），推进窗口与 `DamageWindowClusterer` 掉血窗口联接为「推进方窗口内承受伤害=防守方过路费」（OBSERVED_DAMAGE_IS_PARTIAL 时抑制数字）；接入点：团队复盘 `TeamEvidenceFormatter.appendPointsSituation`（与其它 P3 optional 同级、超预算整体裁剪）、随机战 Harness Call #2（裁剪阶梯在 phases 之后）、fallback 路径（伤害数字受 OBSERVED_DAMAGE_IS_PARTIAL 抑制；无重建路径仅击杀夺分时间线）。prompt 规则三语：team/single 占点规则 8（击杀换分项净劣势/优势只提示「点数压力方向」，是否抢点/防守拉交叉由 LLM 综合推断、禁止固定映射；进攻掉血情境化；过路费不足=防守失误必须由 LLM 形成 supported inference；fail-closed）、player tactical/single/fallback 点数局势规则（`prompts/player/points-situation.{zh,en,ru}.md` 规则契约）。
 - **生产反馈闭环**：人工评估 + 用户反馈登记模板见 `docs/ai-eval/feedback-checklist.md`；可复现反馈转 lesson + synthetic case 回归。评估人工，不引入 LLM-as-judge；真实回放不入库。
 
 关键约束：
@@ -405,7 +399,7 @@ AI 复盘区分两种 scope，互不混用：
 - **Call #1 覆盖可观测性**：`PreBattleStrategicService` 每次调用前输出 `Pre-battle Call #1 input`（map、mapSemantics=found/UNKNOWN、verified、areas/relationships/spawnSemantics 数量、source、displayName、team1/team2 人数、curatedProfiles/fallbackProfiles 车辆 Profile 覆盖），成功后输出 `Pre-battle Call #1 success`（hypotheses/matchups/winConditions/双方 strengths·plans 数量）；`TacticalReviewHarness` 输出 `Harness prior obtained`（prior 已注入 Call #2）与 `Harness fell back to old path: <reason>`。指标 `wotb_ai_review_map_semantics_total{status=found|unknown}`。按 requestId 可在 Loki 逐请求验证地图/车辆语义是否进入 Call #1 并注入 Call #2。
 - **回放解析覆盖率可观测**：包解码覆盖率在客户端投影里**不存在**——`ClientAiProjectionAdapter` 不读回放字节，投影不携带 packets / decoded / decodedRatio，因此 `coverage = null`，prompt 显示 `decodedPacketRatio=UNAVAILABLE`。
 - 测试不调用真实 AI API：`SpringAiChatGatewayTest`/`SpringAiChatGatewayMetricsTest` 使用 mock `ChatModel`。
-- **AI 输出语言跟随前端 locale**：`/api/ai/reviews` 的 JSON body 字段 `locale`（`AiReviewRequest` 请求体 `{locale, correlationId, battle, projection}`，必填，白名单 `zh-CN`/`en-US`/`ru-RU`，`contracts/http/openapi.yaml#AiReviewRequest`）控制 AI 复盘输出语言；未知值返回 `400 UNKNOWN_LOCALE`。语言穿透 `AiReviewRequestConverter` → `TacticalReviewHarness` / `TeamReplayAnalysisService` → Prompt Builder：ZH 使用中文 system prompt；EN/RU 在中文基座上替换互斥的中文输出强制句（输出语言、称谓、车种、时间格式、未知字段与无法确定措辞），业务事实约束（不编造、坦克专有名词原样、perspective/friendly-enemy、权威结算与观测子集、注入防护、数据限制）不变。en 时间格式统一为 `Xm Xs`（如 `1m 15s`、`3m 0s`、`3m 12s`），ru 为 `X мин X с`（如 `1 мин 15 с`、`3 мин 0 с`、`3 мин 12 с`）。覆盖 player fallback/single/tactical 与 team single 路径；地图/坦克/clan/昵称等专有名词不翻译；`limitations` 与错误码仍为英文稳定码、由前端本地化。前端由 vue-i18n 当前 locale 携带 `lang`。
+- **AI 输出语言跟随前端 locale**：`/api/ai/reviews` 的 JSON body 字段 `locale`（`AiReviewRequest` 请求体 `{locale, correlationId, battle, projection}`，必填，白名单 `zh-CN`/`en-US`/`ru-RU`，`contracts/http/openapi.yaml#AiReviewRequest`）控制 AI 复盘输出语言；未知值返回 `400 UNKNOWN_LOCALE`。语言穿透 `AiReviewRequestConverter` → `TacticalReviewHarness` / `TeamReplayAnalysisService` → Prompt Builder：ZH/EN/RU 从同 key 的语言资源读取 system prompt（输出语言、称谓、车种、时间格式、未知字段与无法确定措辞），业务事实约束（不编造、坦克专有名词原样、perspective/friendly-enemy、权威结算与观测子集、注入防护、数据限制）不变。en 时间格式统一为 `Xm Xs`（如 `1m 15s`、`3m 0s`、`3m 12s`），ru 为 `X мин X с`（如 `1 мин 15 с`、`3 мин 0 с`、`3 мин 12 с`）。三语覆盖 player fallback/single 与 team single；tactical harness 保持 ZH，非 ZH 走 fallback；地图/坦克/clan/昵称等专有名词不翻译；`limitations` 与错误码仍为英文稳定码、由前端本地化。前端由 vue-i18n 当前 locale 携带 `lang`。
 
 ---
 

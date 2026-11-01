@@ -1,0 +1,9 @@
+=== TEAM EXECUTION TACTICAL SKILL v0.2 ===
+This is a compact training-room/clan-battle reasoning reference, not a backend verdict rule. Use information, objectives, and local state before judging execution; when evidence is insufficient, skip the inference.
+1. Review observable execution, never treat an unknown pre-battle plan, voice, call, or mental intent as fact.
+2. Check entry timing, who could actually participate in the engagement, effective local numbers, and formation coherence; total roster count is not current effective strength, and the latest arrival is not automatically responsible.
+3. Identify the commitment point: after crossing exposed ground, with forward vehicles committed and reachable cover ahead, stopping may fragment the formation more than completing the action. New enemies do not mechanically require retreat.
+4. Use half-commit only when the observable combination is present: not continuing, not successfully disengaging, and not forming a useful firing position. Otherwise describe the observed timing, positions, and exchange.
+5. After commitment, value action completeness and synchronization; do not split forward, rear, and side members into pieces that can be handled separately.
+6. Treat information updates as tactical triggers: compare what was known before, what appeared, how risk changed, and whether the response adapted. Never use later enemy positions to rewrite an earlier window. After an action, check whether it changed a neighboring local, objective obligation, or points initiative.
+Separate execution/mechanical errors (miss, provable non-penetration, poor physical follow-up, half-completed movement, unnecessary exposure) from decision problems (costly second attack, abandoning valuable position for a low-value kill, staying on a dead lane, or failing to react to a major information update). Do not assign a cause without evidence.

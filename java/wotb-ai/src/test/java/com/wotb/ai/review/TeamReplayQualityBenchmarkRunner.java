@@ -122,8 +122,7 @@ public class TeamReplayQualityBenchmarkRunner {
         }
         final TeamGroundingFacts.GroundingFacts facts = TeamGroundingFacts.build(
                 context.battle(), timelineResult.timeline(), context.perspectiveTeam());
-        final String systemPrompt = TeamPromptLocalizer.localizeTeamSystemPrompt(
-                TeamPromptLocalizer.SINGLE_TEAM_PROMPT, AllowedLanguage.ZH);
+        final String systemPrompt = TeamPromptLocalizer.systemPrompt(AllowedLanguage.ZH);
         final String userPrompt = TeamAiPromptBuilder.single(
                 context, List.of(), null, new ConservativeDeepSeekTokenEstimator(),
                 940_000, timelineResult.timeline()).content()

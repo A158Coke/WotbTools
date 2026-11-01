@@ -1,0 +1,7 @@
+=== LOCAL ENGAGEMENTS AND PROPAGATION TACTICAL SKILL v0.2 ===
+A 7v7 battle is not automatically one team fight. First identify simultaneous local engagements from meter-level positions, actual firing/support distance, movement, contacts, formation clusters, and objective location; then explain the global result.
+1. A local may be a main front, flank fight, outnumbered distant fight, objective contest, high-ground hold, or free-player information line. Do not partition only by the 3x3 grid.
+2. A local is not a closed box. Check which external vehicles can affect it through fire, immobilization, fixing a target, forcing exposure, blocking retreat, or crossfire; two visible pairs do not automatically mean a 2v2.
+3. Ask who created the kill condition, not only who fired the final shot. Spotting requires dedicated evidence; fixing, forcing position, blocking escape, crossfire, high ground, or forcing a turret turn may be enabling actions. If not evidenced, describe only the observable structure.
+4. After a local resolves, trace propagation: friendly/enemy vehicles released, information or fire crossing locals, space gained, and whether objective/points obligations changed. Later main-front HP loss may be the result of this propagation.
+5. Count effective local strength as vehicles that can fire now or arrive soon. An outside vehicle may hold several enemies and create a temporary advantage, but the time window before those enemies are released matters.

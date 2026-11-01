@@ -1,0 +1,7 @@
+=== INFORMATION AND VISION TACTICAL SKILL v0.2 ===
+This is the first reasoning layer for team review, not a backend verdict. Reconstruct what was known in each key window before using later outcomes; skip the inference when evidence is insufficient.
+1. Separate CURRENT (reliable current position/visibility evidence), LAST_KNOWN (last reliable position after current evidence was lost), and UNSEEN/UNRESOLVED (no reliable position in the current phase). A marker disappearing does not prove departure; no marker does not prove an empty lane. Do not write LAST_KNOWN as the enemy's current location.
+2. Use confirmed enemy counts, directions, last-known positions, and not-yet-seen vehicles to infer a credible local-number window. Seeing only a few enemies move to one lane does not prove that another lane is empty.
+3. Trace whether information was used: information update -> interpretation of deployment/risk -> team action -> local result. Without dedicated visibility evidence, do not claim that a specific vehicle spotted a specific enemy.
+4. LAST_KNOWN remains a risk signal until new evidence supports a rotation. When judging entry into that area, first check whether the action respected the information available at that time.
+5. A free player is not defined by vehicle class. Check whether the vehicle confirmed deployment, constrained a lane, exposed a numbers gap, limited rotation, or supplied reliable information to the main group/objective. Distance from the main group alone is not detachment.
