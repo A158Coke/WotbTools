@@ -13,6 +13,7 @@
  */
 
 import { defLifeAt } from '../utils/battlePlaybackV2.ts';
+import { isFiniteNumber } from '../types/primitive-guards.js';
 
 type RosterGroupKey = 'team1' | 'team2' | 'unknown';
 type RosterDef = Partial<Parameters<typeof defLifeAt>[0]> & {
@@ -103,9 +104,9 @@ export function hpPercentText(hp: unknown, maxHp: unknown) {
  *            maxHp:number|null, pct:number|null, text:string, fill:number}}
  */
 export function hpPresentationFor(health: HealthInput | null | undefined, destroyed = false) {
-  const maxHp = Number.isFinite(health?.maxHp) && health.maxHp > 0 ? health.maxHp : null;
+  const maxHp = isFiniteNumber(health?.maxHp) && health.maxHp > 0 ? health.maxHp : null;
   const rawCurrent = health?.currentHp;
-  const currentHp = Number.isFinite(rawCurrent) ? Math.max(0, rawCurrent) : null;
+  const currentHp = isFiniteNumber(rawCurrent) ? Math.max(0, rawCurrent) : null;
 
   if (destroyed === true || health?.state === 'DESTROYED') {
     // 阵亡：有量程就写 0 / max（信息更完整），否则退回 0%——两者都明确表示「已归零」。
@@ -125,7 +126,7 @@ export function hpPresentationFor(health: HealthInput | null | undefined, destro
 
   // relative：只有相对证据（没有可证明的 exact 数值）→ 绝不伪造 current/max
   const pct = hpPercentText(currentHp, maxHp)
-    ?? (Number.isFinite(health?.pct) ? Math.max(0, Math.min(100, health.pct))
+    ?? (isFiniteNumber(health?.pct) ? Math.max(0, Math.min(100, health.pct))
       : health?.relativeFull === true ? 100 : null);
   if (pct != null) {
     return { mode: 'relative', currentHp: null, maxHp: null, pct: Math.round(pct), text: `${Math.round(pct)}%`, fill: Math.max(0, Math.min(1, pct / 100)) };
@@ -232,8 +233,8 @@ export function buildRosterRows(vehicles: RosterVehicle[] | null | undefined) {
     if (d.eid == null) continue;
     const row: RosterRow = {
       eid: d.eid,
-      accountId: Number.isFinite(d.account_id) && d.account_id > 0 ? d.account_id : null,
-      tankId: Number.isFinite(d.tank_id) && d.tank_id > 0 ? d.tank_id : null,
+      accountId: isFiniteNumber(d.account_id) && d.account_id > 0 ? d.account_id : null,
+      tankId: isFiniteNumber(d.tank_id) && d.tank_id > 0 ? d.tank_id : null,
       team: d.team === 1 || d.team === 2 ? d.team : null,
       // 作者标记直接烘进昵称（★ 前缀）：名册不再单独暴露 isAuthor，避免同一事实两个字段
       nick: d.is_author ? `★ ${d.nickname || 'Unknown'}` : (d.nickname || 'Unknown'),

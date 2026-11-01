@@ -12,6 +12,7 @@
  */
 import type { AgentConsumableEvent } from '../api/agent-replay-facets.js'
 import type { ConsumableTransition } from '../types/playback-v2.js'
+import { isFiniteNumber } from '../types/primitive-guards.js'
 
 /** 两种输入形状不能互相当作对方读取字段，只有下面的归一化视图同时看到两套字段名。 */
 export type ConsumableInput = ConsumableTransition | AgentConsumableEvent
@@ -55,12 +56,12 @@ const quantizeClock = (v: number) => Math.round(v / CLOCK_QUANTUM) * CLOCK_QUANT
 /** 事件时刻：canonical `timeSec` 或 facet 原始 `clock`（同 base，不做 origin 变换）。 */
 function eventTime(tr: ConsumableFields | null | undefined) {
   if (!tr) return null
-  if (Number.isFinite(tr.timeSec)) return tr.timeSec
-  return Number.isFinite(tr.clock) ? tr.clock : null
+  if (isFiniteNumber(tr.timeSec)) return tr.timeSec
+  return isFiniteNumber(tr.clock) ? tr.clock : null
 }
 
 function firstFinite(...values: unknown[]) {
-  for (const v of values) if (Number.isFinite(v)) return v
+  for (const v of values) if (isFiniteNumber(v)) return v
   return null
 }
 
@@ -68,11 +69,11 @@ function firstFinite(...values: unknown[]) {
 function slotBadge(slot: ActiveSlot, t: number) {
   if (!slot || !Number.isFinite(t)) return null
   if (slot.state !== 'ACTIVATED') return null
-  if (!(Number.isFinite(slot.durationSec) && slot.durationSec > 0)) return null
-  const end = Number.isFinite(slot.endsAt)
+  if (!(isFiniteNumber(slot.durationSec) && slot.durationSec > 0)) return null
+  const end = isFiniteNumber(slot.endsAt)
     ? slot.endsAt
-    : (Number.isFinite(slot.timeSec) ? slot.timeSec + slot.durationSec : null)
-  if (!Number.isFinite(end)) return null
+    : (isFiniteNumber(slot.timeSec) ? slot.timeSec + slot.durationSec : null)
+  if (!isFiniteNumber(end)) return null
   const remainingSec = Math.min(slot.durationSec, Math.max(0, end - t))
   if (remainingSec <= 0) return null
   return {
@@ -105,7 +106,7 @@ export function consumableRuntimeAt(
   since: number | null = null,
 ) {
   if (!Array.isArray(transitions) || !Number.isFinite(t)) return []
-  const floor = Number.isFinite(since) ? quantizeClock(since) : null
+  const floor = isFiniteNumber(since) ? quantizeClock(since) : null
   const bySlot = new Map<number, ActiveSlot>()
   for (const event of transitions) {
     const tr: ConsumableFields = event

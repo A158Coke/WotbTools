@@ -1,7 +1,7 @@
 import { callBridge, getCapabilities, getNativeBridgeVersion, isNativeBridgeCompatible } from '../composables/usePlatformBridge.js'
 import { NATIVE_REPLAY_FOLDER_CAPABILITY, NATIVE_REPLAY_FOLDER_RESOURCE_URL } from './nativeBridgeContract.js'
 import { MAX_REPLAY_FILE_BYTES, MAX_REPLAY_TOTAL_BYTES, isReplayFileName } from '../utils/replayUpload.js'
-import { isRecord } from '../types/primitive-guards.js'
+import { isRecord, isSafeCount } from '../types/primitive-guards.js'
 import type { NativeBridgeResponse } from '../api/generated/android-native-bridge.js'
 
 type NativeFolderFile = NativeBridgeResponse<'pickReplayFolder'>['files'][number]
@@ -19,10 +19,6 @@ export async function supportsNativeReplayFolder() {
 
 function identity(value: unknown): value is string {
   return typeof value === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(value)
-}
-
-function isSafeCount(value: unknown): value is number {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
 }
 
 function validFile(file: unknown): file is NativeFolderFile {

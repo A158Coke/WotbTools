@@ -25,6 +25,8 @@ describe('Native Bridge reply narrowing', () => {
     ['missing identity', { name: 'a.wotbreplay', size: 1, uri: 'x' }],
     ['non-string identity', { pendingId: 7, name: 'a.wotbreplay', size: 1, uri: 'x' }],
     ['missing size', { pendingId: 'p', name: 'a.wotbreplay', uri: 'x' }],
+    ['fractional size', { pendingId: 'p', name: 'a.wotbreplay', size: 1.5, uri: 'x' }],
+    ['negative size', { pendingId: 'p', name: 'a.wotbreplay', size: -1, uri: 'x' }],
     ['not an object', 'p'],
   ])('treats a pending replay with %s as no pending replay', async (_case, reply) => {
     stubReply(reply)

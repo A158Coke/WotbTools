@@ -53,11 +53,11 @@ describe('usePlatformBridge', () => {
     await expect(getCapabilities()).resolves.toEqual([])
     await expect(supports('replay-share')).resolves.toBe(false)
     await expect(getPendingReplay()).resolves.toBeNull()
-    await expect(consumePendingReplay()).resolves.toBe(false)
+    await expect(consumePendingReplay('pid-0')).resolves.toBe(false)
   })
 
   it('capability detection via injected bridge', async () => {
-    stubNative(['replay-share', 'replay-open', 'app-update'], { pendingId: 'pid-0', name: 'a.wotbreplay', size: 1, uri: 'http://127.0.0.1:21653/__native/replay-pending', size: 1 })
+    stubNative(['replay-share', 'replay-open', 'app-update'], { pendingId: 'pid-0', name: 'a.wotbreplay', uri: 'http://127.0.0.1:21653/__native/replay-pending', size: 1 })
     expect(isAndroidApp()).toBe(true)
     await expect(getCapabilities()).resolves.toEqual(['replay-share', 'replay-open', 'app-update'])
     await expect(supports('replay-share')).resolves.toBe(true)
@@ -66,8 +66,8 @@ describe('usePlatformBridge', () => {
     expect(isNativeBridgeCompatible(3)).toBe(true)
     expect(isNativeBridgeCompatible(2)).toBe(false)
     expect(isNativeBridgeCompatible(1)).toBe(false)
-    await expect(getPendingReplay()).resolves.toEqual({ pendingId: 'pid-0', name: 'a.wotbreplay', size: 1, uri: 'http://127.0.0.1:21653/__native/replay-pending', size: 1 })
-    await expect(consumePendingReplay()).resolves.toBe(true)
+    await expect(getPendingReplay()).resolves.toEqual({ pendingId: 'pid-0', name: 'a.wotbreplay', uri: 'http://127.0.0.1:21653/__native/replay-pending', size: 1 })
+    await expect(consumePendingReplay('pid-0')).resolves.toBe(true)
   })
 
   it('usePlatformBridge exposes the same surface', async () => {
@@ -77,7 +77,7 @@ describe('usePlatformBridge', () => {
   })
 
   it('consumePendingReplay 携带 expectedPendingId（identity-aware ACK 的 wire 边界）', async () => {
-    const native = stubNative(['replay-share'], { pendingId: 'pid-1', name: 'a.wotbreplay', size: 1, uri: 'http://127.0.0.1:21653/__native/replay-pending', size: 1 })
+    const native = stubNative(['replay-share'], { pendingId: 'pid-1', name: 'a.wotbreplay', uri: 'http://127.0.0.1:21653/__native/replay-pending', size: 1 })
     await expect(consumePendingReplay('pid-1')).resolves.toBe(true)
     expect(native.calls.at(-1)).toEqual({
       method: 'consumePendingReplay',
@@ -86,7 +86,7 @@ describe('usePlatformBridge', () => {
   })
 
   it('Native compare-and-clear 返回 false（identity 不匹配）时如实透传 false', async () => {
-    stubNative(['replay-share'], { pendingId: 'pid-2', name: 'a.wotbreplay', size: 1, uri: 'http://127.0.0.1:21653/__native/replay-pending', size: 1 }, false)
+    stubNative(['replay-share'], { pendingId: 'pid-2', name: 'a.wotbreplay', uri: 'http://127.0.0.1:21653/__native/replay-pending', size: 1 }, false)
     await expect(consumePendingReplay('pid-1')).resolves.toBe(false)
   })
 

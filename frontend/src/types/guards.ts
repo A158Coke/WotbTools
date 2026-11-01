@@ -2,16 +2,12 @@ import type { ApiErrorWirePayload, ApplicationErrorCode, KnownServerErrorCode } 
 import type { AggregateRow, Battle, ColumnDef, ReplayResult } from './replay.js'
 import { API_ERROR_CODES } from '../api/generated/api-error-codes'
 import { validateApiError } from '../api/contract-runtime.js'
-import { isRecord, isString } from './primitive-guards.js'
+import { isFiniteNumber, isRecord, isString } from './primitive-guards.js'
 
-export { isRecord, isString }
+export { isFiniteNumber, isRecord, isString }
 
 export function isNullableString(value: unknown): value is string | null {
   return value === null || isString(value)
-}
-
-export function isFiniteNumber(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value)
 }
 
 export function isInteger(value: unknown): value is number {

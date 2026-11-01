@@ -77,7 +77,7 @@ JavaScript 与 TypeScript 共存；`.js` import specifier 经 Vite/TypeScript re
 
 generated 代码、`*.test.js` 与 `scripts/**` 不在基线内。
 
-`callBridge` 的方法与参数来自生成类型，返回值是 `unknown`：Native 回复不可信，消费方必须用 guard 收窄后才能读取字段，违反契约的回复走已有的 fail-closed 路径。首屏 chunk 里的 auth 与 Bridge 模块只使用 `types/primitive-guards.ts`：`types/guards.ts` 依赖 contract validators，约 1MB 的 Ajv 产物不能进入首屏。`src/env.d.ts` 把 `Number.isFinite` 声明为类型守卫，判断为假时 TypeScript 也会排除 number，已是 number 的值不要在 else 分支继续使用。
+`callBridge` 的方法与参数来自生成类型，返回值是 `unknown`：Native 回复不可信，消费方必须用 guard 收窄后才能读取字段，违反契约的回复走已有的 fail-closed 路径。首屏 chunk 里的 auth 与 Bridge 模块只使用 `types/primitive-guards.ts`：`types/guards.ts` 依赖 contract validators，约 1MB 的 Ajv 产物不能进入首屏。需要收窄 `unknown` 或可空数值时使用 `primitive-guards.ts` 的 `isFiniteNumber` / `isSafeCount`，不改写标准库类型：`Number.isFinite` 为假时值仍可能是 `NaN` 或 `Infinity`，不能声明成类型守卫。
 
 Battle Data 管理视图由 `BattleDataAdminPage` lazy-load；`api/admin-battle-data.ts` 持有认证读取与 wire 校验，`ADMIN_BATTLE_DATA` 是 ONLINE_REQUIRED。深链由 ViewHost 要求站点管理员；离线保留已加载结果并阻止新请求。地图覆盖复用 Collector 的 map-semantics profile，不建立另一份审校清单；地图显示名只经 `mapLabel()` 读取 `common/map_names.json`，出生侧上方 / 下方 / 西侧 / 东侧是 `battleDataCoverage.ts` 的展示映射；地图筛选项覆盖全部可寻址地图，不随 summary 时间窗变化。
 

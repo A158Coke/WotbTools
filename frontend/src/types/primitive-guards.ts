@@ -10,3 +10,12 @@ export function isRecord(value: unknown): value is JsonObject {
 export function isString(value: unknown): value is string {
   return typeof value === 'string'
 }
+
+export function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+/** 非负安全整数：契约里的字节数、时间戳等 integer 字段。 */
+export function isSafeCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+}

@@ -17,7 +17,7 @@ import { isAndroidRuntime } from '../platform/runtime.js'
 import {
   SUPPORTED_NATIVE_BRIDGE_VERSIONS,
 } from '../platform/nativeBridgeContract.js'
-import { isRecord, isString } from '../types/primitive-guards.js'
+import { isRecord, isSafeCount, isString } from '../types/primitive-guards.js'
 import type {
   NativeBridgeMethod,
   NativeBridgeRequest,
@@ -134,7 +134,7 @@ export async function getPendingReplay(): Promise<NativePendingReplay | null> {
 
 function isPendingReplay(value: unknown): value is NativePendingReplay {
   return isRecord(value) && isString(value.pendingId) && isString(value.name)
-    && typeof value.size === 'number' && isString(value.uri)
+    && isSafeCount(value.size) && isString(value.uri)
 }
 
 /**
