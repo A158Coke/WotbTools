@@ -17,4 +17,3 @@ interface Window {
   wotbtoolsOnReplay?: () => unknown
   __pbReplaySource?: unknown
 }
-
