@@ -1,9 +1,7 @@
-# WotbTools 设计语言（Design Language）
+# WotbTools Design Contract v1（设计语言）
 
-> 状态：**v1.0 已批准**（2026-10-01）· 基础设施已落地：token 分层、`@layer`、stylelint（见 §12）· 适用范围：`frontend/` 全部页面、Android GeckoView
-> 维护方式：没有设计师，也没有 Storybook。本文件是设计规范入口，stylelint 执行其中可静态校验的约束（§12）；当前实现与迁移状态以代码、[ui-system.md](ui-system.md) 和 [replay-workspace.md](replay-workspace.md) 为准。
-> 原则：**以业界通用最佳实践为准**。本文件只保留当前成立的设计约束；事实描述漂移应按当前代码修正，不能把文档对齐任务隐式扩大为产品改动。每一节都注明依据。
-> 背景：v1.0 设计语言基于多端布局与 UI/UX 审计的现状盘点：313 种硬编码 hex、83 种字号、154 种内边距、14 种圆角、60 种阴影、约 40 个 z-index、945 处 `!important`；"简约"主题在关键页面约 30–80% 的文字对比度不达标。
+> 适用范围：`frontend/` 全部页面、Android GeckoView。
+> 本文件是视觉与交互规则的唯一 owner。token 数值以 `frontend/src/styles/tokens/` 为准，实现位置与页面现状见 [ui-system.md](ui-system.md) 和 [replay-workspace.md](replay-workspace.md)。规则与代码不一致时按代码核实：事实描述错了就修文档，规则被违反就修代码，不把文档对齐隐式扩大为产品改动。
 
 ---
 
@@ -15,9 +13,23 @@
 4. **可访问性是底线，不是加分项。** WCAG 2.2 AA：对比度、触控尺寸、键盘可达、减少动画。
 5. **一个概念一个名字。** 术语、图标、组件都遵守这条：同一件事在所有页面上叫法一致、长相一致。
 
+### 规则结构
+
+每节开头的规则表是可判定的契约，表后的说明是它的细节。引用规则时写稳定 ID（如 `DC-SEL-03`），ID 不复用，规则废止时删除整行。
+
+- **强度：** `MUST` 违反即不通过审查；`SHOULD` 默认遵守，偏离时在 PR 写明理由；`MAY` 明确允许的选择。
+- **验证：** 优先写可运行的命令或测试。写「人工」表示没有自动判定，由 PR 审查或用户验收按规则核对；不得把人工项说成已被门禁覆盖。
+- **存量：** `frontend/stylelint.legacy.json` 名单内的文件在迁移前不受静态校验，迁移时一并修复。
+- **外部资料：** 规则依据可以引用外部规范，但比例、弹簧参数这类经验值不自动成为规则，只有能在本项目验证并写进本文件才算数。
+
 ---
 
 ## 1. Token 架构
+
+| ID | 强度 | 范围 | 规则 | 例外 | 验证 |
+|---|---|---|---|---|---|
+| DC-TOK-01 | MUST | 全部组件 | 组件只用语义 token；需要新的视觉值时先加 token，不写字面量 | `src/styles/tokens/**` | `pnpm run lint:css` |
+| DC-TOK-02 | MUST | `stylelint.legacy.json` | 名单只减不增，新文件不进名单 | 无 | 人工 |
 
 **依据：** W3C Design Tokens Community Group（DTCG）的分层模型。Material 3、Adobe Spectrum、GitHub Primer 都用这种三层结构。
 
@@ -39,21 +51,31 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 
 ## 2. 主题
 
+| ID | 强度 | 范围 | 规则 | 例外 | 验证 |
+|---|---|---|---|---|---|
+| DC-THM-01 | MUST | 两档 Profile | 布局、组件结构、交互完全一致，只替换语义 token 和装饰插槽；不按 Profile fork 业务实现 | 无 | `src/styles/classic-profile-css.test.js`；`frontend/AGENTS.md` UI Profile 不变量 |
+| DC-THM-02 | MUST | 全站 | 背景图、渐变、毛玻璃只出现在本节列出的装饰插槽 | 无 | 人工 |
+| DC-THM-03 | MAY | 工作区页面 | 在数据区之上放一个 Showcase Hero | 无 | 人工 |
+| DC-THM-04 | MUST | Showcase Hero | 只放在数据区之上，不进入表格、筛选、表单、抽屉；expanded 档首屏必须能看到数据区 | 无 | 每页 PR 大屏截图，人工 |
+| DC-THM-05 | MUST | Showcase Hero | 文字落在纯色遮罩上，遮罩上最差取样点满足 §3 对比度，两档 Profile 都测 | 无 | 人工取样 |
+| DC-THM-06 | MUST | Showcase Hero | Classic 下降级为纯色；`prefers-reduced-motion: reduce` 下无动效 | 无 | 人工；首页由 `pnpm run test:browser-home` 覆盖动效 |
+
 | | **沉浸**（`dark`） | **简约**（`light`） |
 |---|---|---|
 | 定位 | 游戏氛围、夜间使用 | 白天、办公、截图分享、打印 |
 | 布局 / 组件 / 字号 / 密度 | **完全相同** | **完全相同** |
 | 语义色 | §3 暗色列 | §3 亮色列 |
-| 装饰图像 | 允许，只能出现在**装饰插槽**里 | 关闭（插槽为 `none`），或换成低饱和版本 |
+| 装饰图像 | 允许，只能出现在**装饰插槽**里 | 关闭（插槽为 `none`），Hero 降级为纯色 |
 | 系统界面 | `color-scheme: dark`，`<meta name="theme-color" content="#0b0f11">` | `color-scheme: light`，`theme-color` 为 `#f6f5f2` |
 
 **装饰插槽**（这是唯一允许放背景图、渐变、毛玻璃的地方）：
 
 1. 首页英雄区（`HomePage.vue` 自己拥有；`PageHeader` 不提供 `hero` 变体）
-2. 空状态插图
-3. 登录页
+2. 工作区 Showcase Hero（规则见 DC-THM-03 至 DC-THM-06）
+3. 空状态插图
+4. 登录页
 
-**工作区表面**，也就是表格、回放、筛选、表单、抽屉，**两套主题都用纯色**。依据：WCAG 1.4.3 要求文字对比度稳定，而文字压在图片上时，对比度会随图片内容变化，没法保证。
+**数据区**，也就是表格、回放、筛选、表单、抽屉，**两套主题都用纯色**。依据：WCAG 1.4.3 要求文字对比度稳定，而文字压在图片上时，对比度会随图片内容变化，没法保证。
 
 **选择逻辑：**
 - 首次访问跟随 `prefers-color-scheme`。
@@ -66,6 +88,13 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 ---
 
 ## 3. 颜色
+
+| ID | 强度 | 范围 | 规则 | 例外 | 验证 |
+|---|---|---|---|---|---|
+| DC-CLR-01 | MUST | 全站 | 正文 ≥ 4.5:1，大字与 UI 图形 ≥ 3:1，两档 Profile 都成立 | 无 | 人工 |
+| DC-CLR-02 | MUST | 单个视图 | 只保留一个橙色填充主操作 | 无 | 人工 |
+| DC-CLR-03 | MUST | 阵营表达 | 不能只靠红绿区分，必须再用位置、文字或形状表达一次 | 无 | 人工 |
+| DC-CLR-04 | MUST | 物理队伍色 | Team 1 / Team 2 颜色不随录像者交换 | 无 | 人工 |
 
 **依据：** WCAG 2.2 AA。正文 ≥ 4.5:1；大字（≥ 24px，或 ≥ 18.66px 且加粗）≥ 3:1；UI 组件和图形 ≥ 3:1（1.4.11）。
 下表每个值都已用脚本验证：在该主题的**全部 4 层表面**上取最差的一层，结果仍然达标。
@@ -123,7 +152,7 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
   严禁把 `team1 → ally 色 / team2 → enemy 色` 当成映射——那是把物理身份和记录者视角混成一个概念。名册呈现使用录像者视角：`rosterLanesFor` 将己方放左侧、敌方放右侧，`PlaybackRoster` 根据 `friendlyTeam` 使用视角色与标题；这不改变数据里的物理队伍身份。
 - `--color-team-ally` / `--color-team-enemy` 是物理队伍色的别名；地图标记、基地条、状态条使用视角色，需要「物理队伍」语义时直接用 `--color-team-1/2`。
 - **不能只靠红绿区分阵营。** 约 8% 的男性有红绿色觉障碍。阵营还必须通过**位置**（当前名册：左本方 / 右敌方；录像者队伍未知时回退到左 Team 1 / 右 Team 2）、**文字标签**或**形状**再表达一次（名册标题始终是文本）。
-- 敌方色的色盲替代色是紫色（`--color-team-enemy-cb`），与游戏内色盲模式一致；替代色不取消位置与文字标签要求。
+- 敌方色的色盲替代色是紫色（`--color-team-enemy-cb`），与游戏内色盲模式一致；替代色不取消位置与文字标签要求。当前只定义了 token，产品没有切换入口。
 - 2D、3D、表格、雷达图共用这几个 token，不各自定义红绿。
 
 Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图定位和 3D 相机投影
@@ -159,6 +188,13 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 ## 4. 字体排印
 
+| ID | 强度 | 范围 | 规则 | 例外 | 验证 |
+|---|---|---|---|---|---|
+| DC-TYP-01 | MUST | 全站 | 文字不小于 12px | `--font-size-caption-xs`（11px）只用于放不下 12px 的密集节点标签：地图卡角标、回放名册、科技树模块 | `pnpm run lint:css` + 人工 |
+| DC-TYP-02 | MUST | 表格、统计、计时 | 数字用 `tabular-nums`，格式走 `Intl.NumberFormat(locale)` | 无 | 人工 |
+| DC-TYP-03 | MUST | 展示字阶 | 超过 `--type-display-hero` 的字号只能用于 Showcase Hero 的标题和关键数字，上限 104px，由 `scale.css` 的 token 提供；数据区不得使用 | 无 | `pnpm run lint:css` + 人工 |
+| DC-TYP-04 | MUST | 字体 | 只用系统字体栈，不引入网络字体 | 无 | 人工 |
+
 **依据：** 系统字体栈加载为零、CJK 渲染最好；模块化字号阶梯；数字用等宽数字（tabular），便于对齐比较。
 
 - **字体：** `system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif`；代码用 `ui-monospace, "SF Mono", Consolas, monospace`。不引入网络字体。
@@ -166,7 +202,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 | token | 字号 / 行高 | 字重 | 用途 |
 |---|---|---|---|
-| `--type-display-hero` | `clamp(40, 6vw, 72)` / 1.05 | 700 | **仅**首页英雄区标题（装饰插槽，§2）。流体取值：手机 40px、宽屏 72px。工作区没有表面使用这一级 |
+| `--type-display-hero` | `clamp(40, 6vw, 72)` / 1.05 | 700 | 首页英雄区标题（装饰插槽，§2）。流体取值：手机 40px、宽屏 72px。数据区不使用这一级 |
 | `--type-display` | 32 / 40 | 700 | 装饰插槽内的强调数字（如首页实时数据带） |
 | `--type-h1` | 24 / 32 | 700 | 页面标题。**每页只有一个 h1** |
 | `--type-h2` | 20 / 28 | 600 | 区块标题 |
@@ -175,7 +211,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | `--type-body`（触控） | 15 / 22 | 400 | 正文（`pointer: coarse` 时自动替换） |
 | `--type-caption` | 12 / 16 | 400 / 600 | 标签、表头、辅助说明。**这是最小字号**，中文 < 12px 不可读 |
 
-- 字号只有这 8 级：7 级工作区字阶 + 仅限装饰插槽的 `display-hero`。**禁止出现 12px 以下的文字。**
+- 工作区只用 7 级字阶；`display-hero` 与 DC-TYP-03 的展示字阶只属于装饰插槽。
 - **token 形态：** 每一级有两个原子 token `--font-size-{级}`、`--line-height-{级}`，以及一个组合 token `--type-{级}`（字重 + 字号 / 行高 + 字体，用于 `font` 简写）。`font-size` / `line-height` 只能引用原子 token，`font` 只能引用组合 token；触控档只覆盖 `--font-size-body` / `--line-height-body`，组合 token 自动跟随。长文阅读另有 `--line-height-prose`（1.7，只用于文档类页面的正文）。
 - 字重只用 400 / 600 / 700。
 - 大写字母 + 字间距的 "kicker" 标签（如 `WOTBTOOLS · REPLAY WORKSPACE`）只能出现在装饰插槽里，工作区不用。
@@ -183,6 +219,16 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 ---
 
 ## 5. 间距、尺寸、圆角、阴影、层级
+
+| ID | 强度 | 范围 | 规则 | 例外 | 验证 |
+|---|---|---|---|---|---|
+| DC-SIZ-01 | MUST | 触控档 | 可交互元素命中区 ≥ 44×44 | 页脚备案链接等法定文字 | `pnpm run test:browser-interaction`、`pnpm run test:browser-armor-mobile` |
+| DC-SIZ-02 | MUST | 层级 | z-index 只用 token，不靠大数值收尾 | 场景型工作台内部用局部 1–9 | `pnpm run lint:css` |
+| DC-MOT-01 | MUST | 动效 | 时长与缓动只取自 `--duration-*` / `--ease-*`，JS 侧经 `motionPolicy.ts` 读取 | 无 | `src/shared/motion/motionPolicy.test.ts` |
+| DC-MOT-02 | MUST | 动效 | `prefers-reduced-motion: reduce` 时动效归零 | 无 | `motionPolicy.test.ts`、`pnpm run test:browser-home` |
+| DC-MOT-03 | MUST | 播放帧路径 | 3D、2D 场景、timeline、HP、camera 不使用 UI 动效 | 无 | `src/shared/ui-dependency-ownership.test.ts` + 人工 |
+| DC-MOT-04 | MUST | 动效 | 禁止 `transition: all`，列出具体属性 | 无 | 人工 |
+| DC-MOT-05 | SHOULD | 动效 | 优先动画 `transform` / `opacity`；动画可被用户操作打断 | 选中指示器等 shared layout | 人工 |
 
 **依据：** 4pt 网格（Material、Apple HIG、多数设计系统的做法），以及有限的离散刻度。
 
@@ -225,6 +271,13 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 需要越过该局部上下文的顶级浮层（手机底部 sheet、dialog、从工作台内部打开的菜单）必须 Teleport 到 `body`；提高 z-index 不会离开局部层叠上下文，仍会被根层 `AppTabBar` / 侧栏盖住。Teleport 出去的浮层不继承父级的 `display: none` / KeepAlive 停用，父级必须在 capability 隐藏或 `onDeactivated()` 时主动关闭。
 
 ### 遮挡与可达（occlusion / reachability）
+
+| ID | 强度 | 范围 | 规则 | 例外 | 验证 |
+|---|---|---|---|---|---|
+| DC-OCC-01 | MUST | 主内容 | 常驻 UI 不得实质遮挡主内容（下文规则 1） | game-style overlay HUD | `pnpm run test:browser-layout`、`pnpm run test:browser-interaction` |
+| DC-OCC-02 | MUST | 瞬态面 | 瞬态面压过同一上下文的常驻控件（下文规则 2） | 无 | `pnpm run test:browser-interaction` |
+| DC-OCC-03 | MUST | 可交互选项 | 可见即可达（下文规则 3） | 无 | `pnpm run test:browser-interaction` |
+| DC-OCC-04 | MUST | 四种形态 | 上述规则覆盖状态组合（下文规则 4） | 无 | `pnpm run test:browser-interaction --occlusion` |
 
 层级只决定「谁盖住谁」，不决定「盖住多少」和「还点不点得到」。下面三条和 z-index 刻度同级，是**可判定**的规则，由 `pnpm run test:browser-layout`（几何）与 `pnpm run test:browser-interaction`（真实命中）守护。判定靠网格命中发现常驻面，不靠控件清单。
 
@@ -271,6 +324,18 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 ## 6. 响应式与输入方式
 
+| ID | 强度 | 范围 | 规则 | 例外 | 验证 |
+|---|---|---|---|---|---|
+| DC-RSP-01 | MUST | 全站 | 断点只有 compact / medium / expanded 三档，CSS 写 range 语法 | 无 | `pnpm run lint:css` |
+| DC-RSP-02 | MUST | 全站 | 响应式只改 presentation，不改能力语义：同一能力在三档都可达 | 明确按平台隐藏的入口（如 APK 的首页与下载） | `pnpm run test:browser-interaction` |
+| DC-RSP-03 | MUST | compact | 360 与 390 宽度页面无横向溢出，宽表只在自身容器内滚动 | 无 | `pnpm run test:browser-layout`、`pnpm run test:browser-armor-mobile`，其余页面每页 PR 核对 |
+| DC-RSP-04 | MUST | 尺寸 | 断点决定 topology，普通尺寸走 §6.1 的 bounded fluid sizing | 无 | 人工 |
+| DC-RSP-05 | MUST | 贴边元素 | 顶栏、底栏、底部操作栏、全屏回放加 `env(safe-area-inset-*)` | 无 | 真机人工 |
+| DC-RSP-06 | MUST | hover | hover 效果包在 `@media (hover: hover)` 内，核心操作不依赖 hover | 无 | 人工 |
+| DC-RSP-07 | MUST | viewport | 不禁用缩放（`user-scalable=no`、`maximum-scale`） | 无 | 人工 |
+| DC-RSP-08 | MUST | 手势 | 手势不是唯一入口，拖动、滑动、捏合都有点击或键盘替代 | 3D 场景的相机操作 | 人工 |
+| DC-RSP-09 | SHOULD | sheet / 抽屉 | 浮层内滚动不传递到背景（`overscroll-behavior: contain`） | 无 | `pnpm run test:browser-interaction` + 人工 |
+
 **依据：** 布局按**可用空间**决定，交互尺寸按**输入方式**决定，两件事分开处理。这也是 Material 3 "window size classes" 的思路。
 
 - **断点只有三档：** `compact < 768` · `medium 768–1199` · `expanded ≥ 1200`。
@@ -308,6 +373,24 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 ## 7. 组件规范（最小集合）
 
+| ID | 强度 | 范围 | 规则 | 例外 | 验证 |
+|---|---|---|---|---|---|
+| DC-CMP-01 | MUST | 组件 | 具备适用的 `default / hover / focus-visible / active / disabled / loading` 状态 | 无 | 人工 |
+| DC-CMP-02 | MUST | 第三方 primitive | 页面只用 `AppDialog` / `AppSheet` / `AppTooltip` / `MenuButton` / `SegmentedControl`，不直接引入 Reka 或 motion | 无 | `src/shared/ui-dependency-ownership.test.ts` |
+| DC-FOC-01 | MUST | 可聚焦元素 | `:focus-visible` 显示统一焦点环；移除 outline 必须有替代 | 无 | 人工 |
+| DC-FOC-02 | MUST | 键盘 | 主流程键盘能走完；Dialog 关闭后焦点回到触发元素 | 无 | `pnpm run test:browser-interaction` + 人工 |
+| DC-FOC-03 | MUST | sticky / overlay | 不遮住当前焦点元素 | 无 | 人工 |
+| DC-A11-01 | MUST | 语义 | 操作用 `<button>`，导航用 `<a>` / router link；icon-only 按钮有 `aria-label` | 无 | 人工 |
+| DC-A11-02 | MUST | 表单 | 控件有 `<label>` 或 `aria-label`，不能只靠 placeholder | 无 | 人工 |
+| DC-A11-03 | SHOULD | 异步反馈 | toast、校验、加载结果用 `role="status"` / `role="alert"` 或 `aria-live` 通知 | 无 | 人工 |
+| DC-A11-04 | MUST | 图片 | 有 `alt`（装饰图 `alt=""`）；首屏外图片 `loading="lazy"`；有固有尺寸防抖版 | 无 | 人工 |
+| DC-FRM-01 | SHOULD | 输入 | 用正确的 `type`、`inputmode`、`autocomplete`；数字输入唤起数字键盘 | 无 | 人工 |
+| DC-FRM-02 | MUST | 输入 | 不拦截粘贴 | 无 | 人工 |
+| DC-FRM-03 | SHOULD | 校验 | 错误就近显示在字段旁，提交失败时聚焦第一个错误 | 无 | 人工 |
+| DC-FRM-04 | MUST | 表单浮层 | 含未提交内容的 `AppDialog` 设 `closeOnScrim=false`，不因误触遮罩丢失输入 | 无 | 人工 |
+| DC-FRM-05 | SHOULD | 表单页 | 有未保存内容时离开页面要提醒 | 无 | 人工 |
+| DC-FRM-06 | SHOULD | 回车提交 | 处理回车的中文输入框避开输入法组合态，选词确认不触发提交 | 无 | 人工 |
+
 每个组件都必须具备这些状态：`default / hover / focus-visible / active / disabled / loading`（适用的部分）。
 
 - **焦点环统一：** `outline: var(--focus-outline); outline-offset: var(--focus-outline-offset);`（即 2px 实线强调色、偏移 2px），只在 `:focus-visible` 时显示。旧的 `--focus-ring` 是颜色值。
@@ -317,7 +400,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | **Button** | `primary`（橙色填充）· `secondary`（描边）· `ghost`（无边框）· `danger` · 尺寸 sm/md/lg · 纯图标按钮 | 每个视图最多一个 `primary`。纯图标按钮必须有 `aria-label` 和 tooltip。加载时显示 spinner，同时保持按钮宽度不变 |
 | **IconButton** | — | 图标 20px，点击区域遵守 §5 的最小尺寸 |
 | **Input / Select / Textarea** | — | 标签放在控件上方（不能只靠 placeholder）；下方放说明文字和错误文字；错误态 = 边框用 `danger` + 图标 + 文字 |
-| **SearchSelect** | 单选 / 多选 | 选项超过 15 项时必须可搜索，例如名人堂的选车器 |
+| **SearchSelect** | 单选 / 多选 | 选型见 §7.1；选项超过 10 项时必须可搜索，例如名人堂的选车器 |
 | **FileDrop** | 单文件 / 多文件 | 上传交互遵守以下键盘规则。原生 `<input type=file>` 视觉隐藏、**不进 Tab 顺序**（`tabindex="-1"` + `aria-hidden`），由可见的真实按钮 `click()` 触发它——**禁止只有鼠标可点的容器**：键盘用户必须能 Tab 到那个按钮，且按钮是唯一的 picker 触发点（hidden input 不得再进 Tab 顺序，避免同一动作出现两个焦点目标） |
 | **SegmentedControl** | — | 页面内的视图切换，例如 汇总 / 单场、数据 / 2D / 3D / 射击 / AI。键盘：方向键循环、Home / End 跳首尾（radiogroup 模型）；`scrollable` 保持单行横向滚动；回放能力栏使用 `wrap`，空间不足时自然换行，手机上每行填满可用宽度、长标签完整显示 |
 | **Tabs** | — | 页面级分区。和 SegmentedControl 的区别：Tabs 切换的是内容区域，SegmentedControl 切换的是同一内容的呈现方式 |
@@ -337,9 +420,40 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | **EmptyState** | — | 插图（装饰插槽）+ 说明"为什么是空的" + 下一步操作按钮 |
 | **PlaybackControls** | — | 2D 和 3D **共用**：时间统一为 `mm:ss / mm:ss`，倍速 0.5 / 1 / 2 / 4 / 8× |
 
+### 7.1 选择控件（Selection Control Policy）
+
+**依据：** 候选越少，平铺的点击成本越低；候选越多，搜索才有效率。控件由调用方显式选择，不做按选项数自动变身的超级选择器。
+
+| ID | 强度 | 范围 | 规则 | 例外 | 验证 |
+|---|---|---|---|---|---|
+| DC-SEL-01 | MUST | 单选 | 按下表取默认控件；候选数按数据域的可能上限判断，不按当前条数 | DC-SEL-04 | 人工 |
+| DC-SEL-02 | MUST | 2 个互斥选项 | 不用下拉 | 无 | 人工 |
+| DC-SEL-03 | MUST | 超过 10 个候选 | 必须可搜索 | 无 | 人工 |
+| DC-SEL-04 | MAY | 固定有序域 | Tier I–X 这类固定、有序的集合直接平铺，即使有 10 项 | 无 | 人工 |
+| DC-SEL-05 | MAY | 高信息熵集合 | 不到 10 项也可提前提供搜索，例如 `BattlePicker` 超过 6 项显示搜索 | 无 | 人工 |
+| DC-SEL-06 | MUST | Switch | 只用于立即生效的布尔状态，不是「两选项」的通用组件；随表单提交用 Checkbox | 无 | 人工 |
+| DC-SEL-07 | MUST | 响应式 | 窄屏可换呈现（平铺转 sheet），不改变单选 / 多选语义 | 无 | 人工 |
+| DC-SEL-08 | MUST | 一致性 | 同一概念在各页面用同一种控件 | 无 | 人工 |
+
+| 候选数 / 数据类型 | 默认控件 |
+|---|---|
+| 1 个有效选项 | 直接显示值 |
+| 2 个互斥模式 | Radio / Segmented Choice |
+| 3–4 个固定短候选 | Choice Group / Chips / Tiles |
+| 5–10 个候选 | Select / Menu |
+| 超过 10 个候选 | SearchSelect / Combobox，必须有搜索 |
+| 已知自由标量 | typed input |
+| 多选 | Checkbox Group / multi-choice / searchable multi-select |
+
+单选 Choice Group 由 `SegmentedControl`（radiogroup 语义、方向键、Home / End）承载。
+
 ---
 
 ## 8. 图标
+
+| ID | 强度 | 范围 | 规则 | 例外 | 验证 |
+|---|---|---|---|---|---|
+| DC-ICN-01 | MUST | 全站 | 图标只用 Lucide，不用 emoji 或 Unicode 符号当图标 | 游戏资产（车辆图、国旗、车种图标） | 人工 |
 
 **依据：** 一个项目只用一套图标，风格才一致。emoji 在不同系统和 GeckoView 上渲染不一致，也无法控制颜色，不应该当图标用。
 
@@ -353,9 +467,18 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 ## 9. 布局模式
 
+| ID | 强度 | 范围 | 规则 | 例外 | 验证 |
+|---|---|---|---|---|---|
+| DC-ARC-01 | MUST | 页面 | 自上而下是 Showcase Hero（可选）+ 控制条 + 数据区；同一页不并存两套标题区 | 场景型工作台（2D / 3D、装甲查看器）、长文档页 | 人工 |
+| DC-ARC-02 | MUST | 工作区 | `PageHeader` 只用 `compact`；kicker + h1 + 说明 + 标签块不得占掉首屏 | 满足 DC-THM-04 的 Showcase Hero | 人工 |
+| DC-ARC-03 | MUST | 筛选 | expanded / medium 行内工具栏；compact 用「筛选」按钮 + sheet，已生效条件显示为 chip | 无 | `pnpm run test:browser-interaction`（`overlay-catalog-` / `overlay-hof-`） |
+| DC-ARC-04 | MUST | 主导航 | 成员与栏目归属只由 `app/navigation.js` 定义，外壳组件不复制列表 | 无 | `src/app/navigation.test.js` |
+| DC-ARC-05 | SHOULD | 页面状态 | 筛选、Tab、分页写进 URL，可深链和前进后退 | 无 | `src/app/router.test.js` + 人工 |
+| DC-ARC-06 | MUST | 表格 | 手机上复杂表格转卡片或关键列 + 容器内横向滚动，不撑破页面 | 无 | 人工 |
+
 | 模式 | 规则 |
 |---|---|
-| **AppShell** | 平板 / 桌面：左侧边栏（`--z-header`，铺满视口高度），没有顶栏（`--header-h: 0`）。桌面默认展开（240px，图标 + 文字），可折叠成 72px 图标栏并记住偏好；平板固定为图标栏。侧边栏从上到下：品牌 · 主栏目（首页 · 回放 · 名人堂 · 坦克百科 · 联赛积分榜 · 联赛直播回放 · UP 推荐）· 管理组（按角色）；底部：更多（弹出面板，只放低频的显示设置与关于 / 支持）· 账户 · 折叠开关。手机 / App：48px 标题栏 + 底部 Tab 栏（56px + 安全区），推荐目录后端就绪时主站八项导航（APK / 本地七项）的标签限制在各自栏目内、最多两行；直播入口使用短标题并保留完整辅助名称。手机横屏的回放工作台（2D / 3D，回放就绪）与装甲查看器（WebGL 可用）进入沉浸态：顶栏与 Tab 栏让出，`--header-h` / `--tabbar-h` 归零，转竖屏或离开页面即恢复。空间不足时底栏自身横向滚动，每个触控目标仍至少44px且互不重叠；路由切换和键盘焦点会显露对应栏目，不把主导航移入更多。更多是整页。当前侧边栏宽度写入 `--sidebar-w`（手机为 0），顶栏高度写入 `--header-h`；布局偏移只读这两个值 |
+| **AppShell** | 平板 / 桌面：左侧边栏（`--z-header`，铺满视口高度），没有顶栏（`--header-h: 0`）。桌面默认展开（240px，图标 + 文字），可折叠成 72px 图标栏并记住偏好；平板固定为图标栏。侧边栏从上到下：品牌 · 主栏目（`PRIMARY_NAV` 除「更多」外的各项）· 管理组（按角色）；底部：更多（弹出面板，只放低频的显示设置与关于 / 支持）· 账户 · 折叠开关。手机 / App：48px 标题栏 + 底部 Tab 栏（56px + 安全区），Tab 栏渲染 `PRIMARY_NAV`，主站比 APK / 本地多一个首页，推荐目录不可用时隐藏推荐；标签限制在各自栏目内、最多两行；直播入口使用短标题并保留完整辅助名称。手机横屏的回放工作台（2D / 3D，回放就绪）与装甲查看器（WebGL 可用）进入沉浸态：顶栏与 Tab 栏让出，`--header-h` / `--tabbar-h` 归零，转竖屏或离开页面即恢复。空间不足时底栏自身横向滚动，每个触控目标仍至少44px且互不重叠；路由切换和键盘焦点会显露对应栏目，不把主导航移入更多。更多是整页。当前侧边栏宽度写入 `--sidebar-w`（手机为 0），顶栏高度写入 `--header-h`；布局偏移只读这两个值 |
 | **PageHeader** | 只有 `compact`（工作区用：标题 + 右侧操作，一行，≤ 56px）。不提供 `hero` 变体；首页 hero 是 `HomePage.vue` 自己的整段落地页板块。**工作区禁止用 kicker + h1 + 说明 + 标签块占掉首屏** |
 | **容器宽度** | `content` → `--layout-content-max`；`wide` → `--layout-wide-max`；`workspace` → `--layout-workspace-max`；长文阅读宽度 → `--reading-measure`。具体数值由 `frontend/src/styles/tokens/scale.css` 定义，布局原语见 [UI 系统](ui-system.md) |
 | **Master–Detail** | expanded：列表 + 常驻详情。medium：列表 + 推开式详情。compact：列表 → 全屏详情（支持左右滑动切换）。回放工作台、射击分析、坦克百科都用这个模式 |
@@ -367,6 +490,15 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 ## 10. 状态与反馈
 
 新手引导通过独立中性遮罩与真实目标聚焦呈现；短卡、焦点范围和当前 fullscreen 宿主由 `OnboardingHost` 所有。它复用语义 token、Dialog 与 reduced-motion，不对工作区整体加滤镜，不克隆真实按钮。详见 [新手引导](../features/onboarding.md)。
+
+| ID | 强度 | 范围 | 规则 | 例外 | 验证 |
+|---|---|---|---|---|---|
+| DC-STA-01 | MUST | 数据区 | 覆盖理想、加载、空、错误、无权限五态 | 不涉及对应状态的静态内容 | 人工 |
+| DC-STA-02 | MUST | 失败 | 不静默失败，说明发生了什么与下一步 | 无 | 组件测试 + 人工 |
+| DC-STA-03 | MUST | 状态真实 | 未知就显示未知：不把缺失数据画成 0、完成或成功，加载态不冒充结果 | 无 | 组件测试 + 人工 |
+| DC-STA-04 | MUST | 破坏性操作 | 能撤销用 toast + 撤销，否则用 Dialog 确认；禁止 `window.confirm` | 无 | 人工 |
+| DC-STA-05 | SHOULD | 数值稳定 | 数字更新、加载切换不引起布局跳动，按钮加载时保持宽度 | 无 | 人工 |
+| DC-STA-06 | MUST | 长内容 | 长昵称、长车型名在容器内截断或换行，不撑宽布局（`min-width: 0`） | 无 | `pnpm run test:browser-layout` + 人工 |
 
 **依据：** Nielsen 可用性原则第 1 条"系统状态可见"。任何等待超过 1s 的操作都要有反馈，任何失败都要有提示。
 
@@ -382,6 +514,12 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 ---
 
 ## 11. 文案与术语
+
+| ID | 强度 | 范围 | 规则 | 例外 | 验证 |
+|---|---|---|---|---|---|
+| DC-CPY-01 | MUST | 全站 | 界面文字都走 i18n，三语齐全，枚举通过映射表翻译 | 无 | `src/locales/messages.test.js` |
+| DC-CPY-02 | MUST | 全站 | 不出现下文禁用词，术语遵守术语表 | 无 | 人工 |
+| DC-CPY-03 | SHOULD | 按钮与错误 | 按钮动词开头、写具体动作，错误文案带下一步 | 无 | 人工 |
 
 **依据：** 同一个概念只用一个名字；使用用户的语言，不用实现层的术语。
 
@@ -405,6 +543,13 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 ## 12. 执行与守护
 
+| ID | 强度 | 范围 | 规则 | 例外 | 验证 |
+|---|---|---|---|---|---|
+| DC-ACC-01 | MUST | 界面 PR | 说明涉及的规则 ID、影响的 Profile 与断点，以及哪些只能人工验证 | 无 | PR 审查 |
+| DC-ACC-02 | MUST | 页面视觉 PR | 附大屏、小屏前后截图，两档 Profile 都看 | 3D 与回放画面由用户验收，截图不作验收证据 | PR 审查，用户验收 |
+| DC-ACC-03 | MUST | 界面 PR | 受影响的 browser gate 通过，退步不靠放宽门禁解决 | 无 | PR CI |
+| DC-ACC-04 | MUST | Android / WebView | 只有行为确实与浏览器不同的规则才要求真机验证；Chromium 设备仿真不替代真机 | 无 | 真机人工 |
+
 1. **stylelint**（`pnpm run lint:css`，配置见 `frontend/stylelint.config.mjs`，CI 必过）：
    - `declaration-no-important`：禁止 `!important`。
    - `scale-unlimited/declaration-strict-value`：`*color`、`fill`、`stroke`、`z-index`、`font`、`font-size`、`line-height`、`border-radius`、`box-shadow` 只能用 `var(--*)` 或豁免值。豁免值（`TOKEN_EXEMPT_VALUES`）：`transparent`、`currentColor` / `currentcolor`（插件区分大小写）、`inherit`、`initial`、`unset`、`revert`、`none`、`0`、`auto`、`normal`。
@@ -419,20 +564,3 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
    - [ ] 三档宽度都截了图
    - [ ] 键盘能走完整个流程
    - [ ] 新文案进了 i18n 和术语表
-
----
-
-## 决策记录
-
-2026-10-01 已确认：
-- 两套主题的定位：沉浸 = 暗色 + 装饰插槽，简约 = 亮色 + 无装饰；布局、组件、密度完全一致。
-- 默认主题跟随系统（通过 profile 的 `auto` 值实现）。
-- 色盲模式的开关放在"我的 → 显示设置"。
-- 图标库使用 Lucide。
-- 每个视图只允许一个橙色主按钮。
-
-2026-10-02 已确认：
-- 平板 / 桌面的主导航从顶栏移到左侧边栏（顶栏放不下主栏目 + 管理入口）；"更多"在侧边栏里是弹出面板，只放不常用的设置与关于 / 支持。
-
-2026-10-04 已确认：
-- 全局采用 **fluid bounded sizing**：固定值只定义最小可用 / 最大合理边界，中间尺寸优先随所属 container 连续变化（百分比、`fr`、`clamp()`、`cqw/cqh`）；breakpoint 只负责 topology 变化，不再为普通尺寸维护多套 fixed values。Playback #518 是参考实现。
