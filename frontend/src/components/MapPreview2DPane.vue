@@ -13,6 +13,7 @@ import { useI18n } from 'vue-i18n'
 import { Download, PencilRuler, Upload } from 'lucide-vue-next'
 import BattleMap from './BattleMap.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
+import { mapBases } from '../data/mapBases.js'
 import { WORLD_BOUNDS_300 } from '../data/mapImages.js'
 import { resolveMap2dBasemap } from '../scene/replaySource.js'
 import { createMapView } from '../utils/mapView.js'
@@ -34,6 +35,11 @@ const props = defineProps({
    * 3D 内核 meta 恒等回退与打包图同框，坐标体系一致）。
    */
   basemap: { type: Object, required: true },
+  /**
+   * 基地点位组键（页面 ?bases= 解析后下发）：'supremacy' | 'assault' | null。
+   * null / 组无几何 → 不渲染（fail-closed，绝不从内容猜坐标）。
+   */
+  basesKind: { type: String, default: null },
 })
 
 const { t } = useI18n()
@@ -44,6 +50,27 @@ const basemapError = ref(false)
 const image = computed(() => basemapImage.value)
 const overview = computed(() => ({ mapCode: props.mapKey, spawnPoints: [] }))
 const mapView = computed(() => createMapView(image.value, overview.value))
+
+// ---------- 基地点位（BattleMap :bases，与 2D 回放同一渲染与口径）----------
+// 静态预览没有占领状态：固定 neutral、progress null（不渲染水位）。
+// 半径是世界坐标米：supremacy 条目缺省 15m、assault 缺省 20m（与回放同一
+// presentation fallback，BattleMap.baseRadius 负责米→SVG 像素换算）。
+// assault 组多 candidate 无证据 fail-closed（与 3D/回放同式）：几何不唯一就不画。
+const baseMarkers = computed(() => {
+  const kind = props.basesKind
+  if (kind !== 'supremacy' && kind !== 'assault') return []
+  const pts = mapBases[props.mapKey]?.[kind] || []
+  if (kind === 'assault' && pts.length !== 1) return []
+  return pts.map((b) => ({
+    baseId: kind === 'supremacy' ? b.baseId : 'BASE',
+    x: b.x,
+    y: b.y,
+    radius: b.radius || (kind === 'supremacy' ? 15 : 20),
+    status: 'neutral',
+    progress: null,
+    capturedBy: 'unknown',
+  }))
+})
 
 /**
  * 底图解析：bundled 同步就位；map2d（未收录 14 张的校准战术底图，1254²、~900KB）
@@ -606,6 +633,7 @@ const stubFloatClass = () => ''
           :image="image"
           :map-view="mapView"
           :pb-overview="overview"
+          :bases="baseMarkers"
           :view-scale="view.scale"
           :viewport-style="viewportStyle"
           :touch-pan="mapTouchPan"

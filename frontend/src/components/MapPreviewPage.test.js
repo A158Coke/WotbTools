@@ -193,6 +193,48 @@ describe('MapPreviewPage', () => {
     expect(pane.props('basemap').image.coordinateBounds).toEqual({ xMin: -300, xMax: 300, yMin: -300, yMax: 300 })
   })
 
+  // ---- 基地点位（?bases=）：争霸/遭遇切换，两个 pane 共用同一 kind ----
+  it('基地点位默认争霸：有几何的图下发 basesKind 且显示切换；无几何的图 kind=null 无切换', async () => {
+    auth.authenticated.value = true
+    source.loadMapIndex.mockResolvedValue(IDX)
+    // erlenberg 在 mapBases 里 supremacy 3 条 + assault 3 条 → 默认 supremacy
+    const wrapper = await openAt({ map: 'erlenberg' })
+    const pane3d = wrapper.findComponent({ name: 'MapPreview3DPane' })
+    expect(pane3d.props('basesKind')).toBe('supremacy')
+    expect(wrapper.find('.map-bases-switch').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="map-bases-supremacy"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="map-bases-encounter"]').exists()).toBe(true)
+    // moon 无基地几何 → null 且整个切换不渲染（fail-closed，不从内容猜）
+    const w2 = await openAt({ map: 'moon' })
+    expect(w2.findComponent({ name: 'MapPreview3DPane' }).props('basesKind')).toBe(null)
+    expect(w2.find('.map-bases-switch').exists()).toBe(false)
+  })
+
+  it('?bases=encounter 显式选遭遇组（assault 组键）；URL 变更同步两个 pane；返回 picker 清 bases 键', async () => {
+    auth.authenticated.value = true
+    source.loadMapIndex.mockResolvedValue(IDX)
+    const wrapper = await openAt({ map: 'erlenberg', bases: 'encounter' })
+    expect(wrapper.findComponent({ name: 'MapPreview3DPane' }).props('basesKind')).toBe('assault')
+    const w2d = await openAt({ map: 'erlenberg', mode: '2d', bases: 'encounter' })
+    expect(w2d.findComponent({ name: 'MapPreview2DPane' }).props('basesKind')).toBe('assault')
+    // URL 切回争霸（SegmentedControl 交互归组件自身，URL → kind 契约在这里锁）
+    await ROUTER.replace({ query: { view: 'map-preview', map: 'erlenberg', mode: '3d', bases: 'supremacy' } })
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'MapPreview3DPane' }).props('basesKind')).toBe('supremacy')
+    await wrapper.find('[data-testid="map-back"]').trigger('click')
+    await flushPromises()
+    expect(ROUTER.currentRoute.value.query).toEqual({ view: 'map-preview' })
+  })
+
+  it('?bases= 指向无几何的组 → 回落（有争霸先争霸），不显示空选项', async () => {
+    auth.authenticated.value = true
+    source.loadMapIndex.mockResolvedValue(IDX)
+    // moon 无任何几何：?bases=supremacy 无对应几何 → null（不是从 URL 硬套）
+    const w = await openAt({ map: 'moon', bases: 'supremacy' })
+    expect(w.findComponent({ name: 'MapPreview3DPane' }).props('basesKind')).toBe(null)
+    expect(w.find('.map-bases-switch').exists()).toBe(false)
+  })
+
   it('视图注册：PRIMARY_NAV 含 maps 且 view 值为 map-preview（导航测试之外的身份锁）', () => {
     expect(PRIMARY_NAV.some(item => item.id === 'maps' && item.view === 'map-preview')).toBe(true)
   })
