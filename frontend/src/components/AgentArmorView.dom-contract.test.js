@@ -844,3 +844,16 @@ describe('tank picker keyboard isolation from nested modal layers', () => {
     expect(body).toContain("layer.id !== 'tank-picker'")
   })
 })
+
+// 回放装备真值只属于射击记录的目标车：目标被选车器换掉后，场景内核不得继续把
+// 原目标的 122 当成当前车装备（否则 HUD 仍亮、拖炮仍加 4°/3°）。
+describe('122 装备真值的目标身份（场景内核）', () => {
+  const kernel = read('../scene/tankViewer.js')
+  it('瞄准/判定上下文按当前目标过滤回放装备真值', () => {
+    expect(kernel).toMatch(/function shotEquipmentCtx\(\)[\s\S]*?recordedTargetMatchesShot\(ctx\.shot, currentTargetId\)/)
+    expect(kernel).toMatch(/const recorded = recordedTargetMatchesShot\(s, currentTargetId\) \? \(s\.target_equipment \|\| null\) : null/)
+  })
+  it('换目标后原生勾选回到手动且不保留上一辆车的勾选态', () => {
+    expect(kernel).toMatch(/pit\.checked = equipmentOverride\.pitch \?\? false;/)
+  })
+})

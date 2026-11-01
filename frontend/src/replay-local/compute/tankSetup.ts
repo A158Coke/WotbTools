@@ -226,6 +226,19 @@ export function pitchDeviceBonus(deviceIds: Iterable<number>, catalog: PitchDevi
 }
 
 /**
+ * 回放装备真值只属于该枪记录的目标车：当前目标必须与 `target_tank_id` 一致。
+ * 记录/当前目标缺失或非正整数时返回 false（fail-closed，不继承旧目标的装备真值）。
+ */
+export function recordedTargetMatchesShot(
+  shot: { target_tank_id?: unknown } | null | undefined,
+  targetId: unknown,
+) {
+  const shotTarget = Number(shot?.target_tank_id)
+  const selected = Number(targetId)
+  return Number.isInteger(shotTarget) && shotTarget > 0 && shotTarget === selected
+}
+
+/**
  * 回放装配 id 集合（`shooter_equipment.raw`，Type5 九字节、0=空槽）→ 装备槽位选择
  * （0=左候选 / 1=右候选 / null=空）。线上串**变长且空槽省略**，槽位信息不存在——
  * 反解只能按 id 对号预设两侧候选：id 命中一侧 → 该侧；两侧同 id 或都未命中 → null。

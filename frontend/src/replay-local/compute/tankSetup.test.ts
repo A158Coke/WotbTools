@@ -29,6 +29,7 @@ import {
   pitchAtBearing,
   pitchDeviceBonus,
   presetProvidesPitchDevice,
+  recordedTargetMatchesShot,
   resolveArmor,
   resolveSetup,
   standardShellOf,
@@ -432,6 +433,16 @@ describe('pitchDeviceBonus / presetProvidesPitchDevice（122 数据锚定）', (
     expect(presetProvidesPitchDevice({ optDevicePreset: 'DrumGunPitchLimitsPreset' }, catalog)).toBe(true)
     expect(presetProvidesPitchDevice({ optDevicePreset: 'defaultPreset' }, catalog)).toBe(false)
     expect(presetProvidesPitchDevice(null, catalog)).toBe(false)
+  })
+
+  it('回放真值只匹配记录的目标车；换目标后不继承', () => {
+    const shot = { target_tank_id: 9057 }
+    expect(recordedTargetMatchesShot(shot, 9057)).toBe(true)
+    expect(recordedTargetMatchesShot(shot, '9057')).toBe(true)
+    expect(recordedTargetMatchesShot(shot, 9825)).toBe(false)
+    expect(recordedTargetMatchesShot({ target_tank_id: undefined }, 9057)).toBe(false)
+    expect(recordedTargetMatchesShot(null, 9057)).toBe(false)
+    expect(recordedTargetMatchesShot(shot, null)).toBe(false)
   })
 })
 

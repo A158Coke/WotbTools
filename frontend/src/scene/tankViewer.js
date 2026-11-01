@@ -15,7 +15,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { poseFromYPR, neutralizeDefaultMetalness, dropDuplicateGunMasks } from './glbRig.js'
-import { pitchAtBearing } from '../replay-local/compute/tankSetup'
+import { pitchAtBearing, recordedTargetMatchesShot } from '../replay-local/compute/tankSetup'
 import { romanLevel } from '../utils/tierFormat.js'
 import {
     fetchTankData,
@@ -623,9 +623,12 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         // 射手搭载配件自动判定（Type5 物化 9 字节选择串，103=校准弹 / 110=强化装甲）：
         // 回放数据在场（s.shooter_equipment / __shotCtx.eqShooter）时自动生效并禁用手动勾选框；
         // 数据缺失（AoI 未覆盖物化）时回退手动勾选框（旧行为）。
+        // 目标装备真值只属于射击记录的那辆车：换目标后不再把原目标的 122 继承过来。
+        let currentTargetId = null;
         function shotEquipmentCtx() {
             const ctx = window.__shotCtx || {};
-            return { shooter: ctx.eqShooter || null, target: ctx.eqTarget || null };
+            const target = recordedTargetMatchesShot(ctx.shot, currentTargetId) ? (ctx.eqTarget || null) : null;
+            return { shooter: ctx.eqShooter || null, target };
         }
         /** 手动覆盖（装甲页图形开关）：null = 跟随回放真值/旧勾选框。 */
         const equipmentOverride = { calibrated: null, enhanced: null, pitch: null };
@@ -705,10 +708,15 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             }
             const pit = document.getElementById('eq-pitch-device');
             if (pit) {
-                if (s.target_equipment) {
-                    pit.checked = equipmentOverride.pitch ?? !!s.target_equipment.improved_pitch_limits;
+                const recorded = recordedTargetMatchesShot(s, currentTargetId) ? (s.target_equipment || null) : null;
+                if (recorded) {
+                    pit.checked = equipmentOverride.pitch ?? !!recorded.improved_pitch_limits;
                     pit.disabled = true; pit.title = '回放自动判定（Type5 配件串）';
-                } else { pit.disabled = false; pit.title = ''; }
+                } else {
+                    // 换目标后回放真值不适用：回到手动勾选，且不保留上一辆车的勾选态。
+                    pit.checked = equipmentOverride.pitch ?? false;
+                    pit.disabled = false; pit.title = '';
+                }
             }
             updateHeatmapThickness();
             refreshShellOptionText();
@@ -4308,7 +4316,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
 
         let tanksList = [];
-        let currentShooterId = null, currentTargetId = null;
+        let currentShooterId = null;
 
         function updateTankLabels() {
             const find = (id) => tanksList.find(t => String(t.id) === String(id));

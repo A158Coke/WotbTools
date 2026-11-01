@@ -244,3 +244,48 @@ describe('122 可用性容错（网络失败 ≠ 不支持）', () => {
     expect(mocks.devices).toHaveBeenCalledTimes(callsAfterUnmount)
   })
 })
+
+describe('122 回放真值的目标身份', () => {
+  const pitchCatalog = {
+    devices: [{ id: 122, script: { params: { bonusValues: { upperPitchLimitIncrease: 4, lowerPitchLimitIncrease: 3 } } } }],
+    devicePresets: { AlternatePitchGrouserPreset: [{ left: 'improvedPitchLimitsSystem' }] },
+  }
+
+  it('回放已确认 122 时，模块目录失败不阻断 4/3 加成', async () => {
+    mocks.fetch.mockResolvedValue({
+      shots: [{ ...shots[0], target_equipment: { improved_pitch_limits: true } }],
+    })
+    mocks.devices.mockResolvedValue(pitchCatalog)
+    mocks.modules.mockRejectedValue(new Error('modules offline'))
+    await setup({ query: { view: 'agent-armor', shot: '6', tank: '2' } })
+    await flushPromises()
+    const scene = scenes.at(-1)
+    // bonus 可能在 viewer 创建前就绪（走构造参数），也可能之后才恢复（走 setter）。
+    expect([scene.options.pitchDeviceBonus, ...scene.setPitchDeviceBonus.mock.calls.map(([v]) => v)])
+      .toContainEqual({ up: 4, down: 3 })
+    expect([scene.options.pitchDeviceAvailable, ...scene.setPitchDeviceAvailable.mock.calls.map(([v]) => v)])
+      .toContain(true)
+  })
+
+  it('切到另一辆支持 122 但无装备记录的车不继承原目标真值', async () => {
+    mocks.fetch.mockResolvedValue({
+      shots: [{ ...shots[0], target_equipment: { improved_pitch_limits: true } }],
+    })
+    mocks.tank.mockResolvedValue({
+      nation: 'germany',
+      shells: [{ type: 'ap', damage: 400, penetration: 200 }],
+    })
+    mocks.devices.mockResolvedValue(pitchCatalog)
+    mocks.modules.mockResolvedValue({
+      tanks: { 'Type71_stem': { tankId: 3, optDevicePreset: 'AlternatePitchGrouserPreset' } },
+    })
+    const { wrapper } = await setup({ query: { view: 'agent-armor', shot: '6', tank: '2' } })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="hud-pitch-device"]').attributes('aria-pressed')).toBe('true')
+    // 选车器换目标：回放仍是原目标的射击记录，但当前目标已变成另一辆车。
+    mocks.init.mock.calls.at(-1)[0].onTankSelection({ shooter: 1, target: 3 })
+    await flushPromises()
+    const button = wrapper.get('[data-testid="hud-pitch-device"]')
+    expect(button.attributes('aria-pressed')).toBe('false')
+  })
+})
