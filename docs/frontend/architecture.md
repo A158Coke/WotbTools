@@ -56,7 +56,25 @@ app → features → shared
 
 每个业务状态只有一个权威所有者。Replay session 状态（selection、analysis state/results、workspace view state）由 `frontend/src/composables/useReplaySession.ts` 拥有；本地 parse → batch-compute → client-export 副作用由 `frontend/src/composables/useLocalReplayAnalysis.ts` 驱动（基于 `replay-local/parseReplays.ts` / `replay-local/analyzeReplays.ts`），而 `useReplay.ts` 将该契约作为 facade 暴露，`useReplayWorkspace.ts` 还拥有惰性 Playback session 结果，该结果由 2D、3D 与 Details 共享给 orchestration SFC 和 capability panels。不存在 Processing/Export job 状态（`useProcessingJob.ts` / `useExportJob.ts` 已移除——服务端没有 replay parser）。用 `computed` 派生值；只在真正的副作用或生命周期桥接中使用 `watch()`，绝不用它同步同一状态的重复副本。
 
-核心 Replay/API/AI/Playback 契约位于 `frontend/src/types/`，并在外部 JSON/SSE 边界处校验。迁移期间 JavaScript 与 TypeScript 可以共存；`.js` import specifier 可能经 Vite/TypeScript resolver 解析到其 `.ts` 实现，但只能有一个实现。
+核心 Replay/API/AI/Playback 契约位于 `frontend/src/types/`，并在外部 JSON/SSE 边界处校验。TypeScript 类型不替代运行时校验：外部 JSON、SSE、storage 与 Native 输入仍必须经过 validator 或 guard。
+
+JavaScript 与 TypeScript 共存；`.js` import specifier 经 Vite/TypeScript resolver 解析到其 `.ts` 实现，只能有一个实现，迁移时不改写 specifier。`tsconfig.app.json` 开启 `strict`、`noImplicitReturns`、`noFallthroughCasesInSwitch`、`noUnusedLocals`、`noUnusedParameters`，`checkJs` 关闭，因此 `.js` 与非 TS SFC 只参与类型推断。
+
+| 边界 | 类型 owner |
+|---|---|
+| HTTP wire | `api/generated/http-contract.ts`（`contracts/http/openapi.yaml` 生成） |
+| Playback facet | `api/agent-replay-facets.ts` |
+| Worker 消息 | `replay-local/*WorkerProtocol.ts`、`scene/playbackParse.worker.ts` |
+| 领域 / View model | `types/*.ts`，与 wire 类型分离 |
+
+`frontend/typescript.legacy.json` 是只减不增的迁移基线，由 `src/shared/typescript-ownership.test.ts` 守护：
+
+- `retained`：被 Node 脚本直接或传递加载的模块。Node 不会把 `.js` specifier 解析到 `.ts`，这些模块保持 JavaScript 并写明理由。
+- `p1`：复杂状态与算法模块（`src/scene/**`、Playback composables、地图状态）。`three` 没有内置类型，迁移 `scene` 模块需要 `@types/three`。
+- `p2`：普通模块与 SFC，随改动迁移。
+- `escapeHatches`：production TS 中 `any` 与 `as unknown as` 的数量。`@ts-ignore`、`@ts-nocheck` 禁用，`@ts-expect-error` 只用于 `*.test.ts` 的负向类型证明。
+
+generated 代码、`*.test.js` 与 `scripts/**` 不在基线内。
 
 Battle Data 管理视图由 `BattleDataAdminPage` lazy-load；`api/admin-battle-data.ts` 持有认证读取与 wire 校验，`ADMIN_BATTLE_DATA` 是 ONLINE_REQUIRED。深链由 ViewHost 要求站点管理员；离线保留已加载结果并阻止新请求。地图覆盖复用 Collector 的 map-semantics profile，不建立另一份审校清单；地图显示名只经 `mapLabel()` 读取 `common/map_names.json`，出生侧上方 / 下方 / 西侧 / 东侧是 `battleDataCoverage.ts` 的展示映射；地图筛选项覆盖全部可寻址地图，不随 summary 时间窗变化。
 
