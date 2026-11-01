@@ -129,13 +129,9 @@ export function magazineSizeOfVehicle(vehicle) {
 export function resolveMountedConfig(vehicle, tankJson) {
   const cfgs = (tankJson && tankJson.configs) || [];
   if (!cfgs.length) return null;
-  if (cfgs.length === 1) return cfgs[0];
+  const exact = resolveExactMountedConfig(vehicle, tankJson);
+  if (exact) return exact;
   if (!vehicle) return null;
-  const tl = vehicle.turret_local, gl = vehicle.gun_local;
-  if (tl != null && gl != null) {
-    const exact = cfgs.filter((c) => c && c.turret_local === tl && c.gun_local === gl);
-    if (exact.length) return exact[exact.length - 1];
-  }
   const fired = new Set((vehicle.shell_ids || []).filter((x) => Number.isFinite(x) && x > 0));
   const gunOk = cfgs.map((c) => {
     if (!fired.size) return true;
@@ -156,6 +152,19 @@ export function resolveMountedConfig(vehicle, tankJson) {
   if (!cands.length) cands = cfgs.map((_, i) => i).filter((i) => hpOk[i]);
   if (!cands.length) return null;
   return cfgs[cands[cands.length - 1]];
+}
+
+/**
+ * 证据 0 的无回退形态：唯一配置或 comp locals 精确命中，否则 null。
+ * 装甲着色的颜色本身就是结论，配置错了结论就错，不能走 `resolveMountedConfig` 的推断链。
+ */
+export function resolveExactMountedConfig(vehicle, tankJson) {
+  const cfgs = (tankJson && tankJson.configs) || [];
+  if (cfgs.length === 1) return cfgs[0];
+  const tl = vehicle?.turret_local, gl = vehicle?.gun_local;
+  if (tl == null || gl == null) return null;
+  const exact = cfgs.filter((c) => c && c.turret_local === tl && c.gun_local === gl);
+  return exact.length ? exact[exact.length - 1] : null;
 }
 
 /**

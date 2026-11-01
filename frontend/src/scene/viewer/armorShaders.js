@@ -15,7 +15,10 @@ import { RC_GLSL_CONST, RC_GLSL_FUNCS } from '../armorCollisionPack.js'
 // HE（canSplash）始终画随点击判定的溅射伤害渐变（Armor Inspector 口径，爆点由
 // heActive/heCenter 给出）；heatmapMask（击穿视图）时再把它判定为「可直穿」的像素
 // 盖成白色——白色与结果卡 PENETRATION 同源，优先级高于该点的渐变读数。
+// logdepthbuf 代码块只在 ?logdepth 渲染器下生效（3D 回放），装甲查看器展开为空。
 export const PBR_VERT = `
+    #include <common>
+    #include <logdepthbuf_pars_vertex>
     varying highp vec3 vNormal;
     varying highp vec3 vViewPos;
     void main() {
@@ -23,6 +26,7 @@ export const PBR_VERT = `
       vViewPos = mv.xyz;
       vNormal = normalMatrix * normal;
       gl_Position = projectionMatrix * mv;
+      #include <logdepthbuf_vertex>
     }
 `;
 export const PBR_FRAG = `
@@ -55,6 +59,7 @@ export const PBR_FRAG = `
     uniform sampler2D spacedStateBuffer;      // RT1 状态通道：R=首层跳弹标志, G=续飞结果编码
     uniform float spacedSatGuard;             // 8 位回退格式（无半浮点 RT）：R 饱和(>=1)时按整穿深保守处理；半浮点下恒 0
     uniform mat4 inverseProjectionMatrix;
+    #include <logdepthbuf_pars_fragment>
     #include <clipping_planes_pars_fragment>
     float getDist(vec2 coord, float depth) {
       vec4 clip = vec4(coord * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
@@ -82,6 +87,7 @@ export const PBR_FRAG = `
     ${RC_GLSL_CONST}
     ${RC_GLSL_FUNCS}
     void main() {
+      #include <logdepthbuf_fragment>
       #include <clipping_planes_fragment>
       vec2 sc = gl_FragCoord.xy / resolution;
       vec4 spacedData = texture2D(spacedArmorBuffer, sc);
@@ -210,7 +216,10 @@ export const PBR_FRAG = `
           // 衰减并进入 CDF（review 2026-10-18：spaced100→0.1m→hull1 卡片 13.19%）。
           if (isExplosive) {
             float spacedDist = getDist(sc, texture2D(spacedArmorDepth, sc).r);
-            float primaryDist = getDist(sc, gl_FragCoord.z);
+            // 主甲距离直接取视空间：gl_FragCoord.z 在对数深度下不能按标准投影反算；
+            // 间隙甲辅助 RT 恒为标准深度，getDist 口径不变。投影到 highp viewDir 而不用
+            // length()：与本文件其它距离同口径，避开 500 m 处 mediump 溢出。
+            highp float primaryDist = dot(vViewPos, viewDir);
             // 深度反投影得到视空间距离；场景原生米制，metersPerUnit=1（恒等）
             float distArmor = (primaryDist - spacedDist) * metersPerUnit;
             if (canSplash) {
@@ -359,6 +368,13 @@ const EXTERNAL_FRAG = `
       gl_FragColor = vec4(thickness / penetration, 0.0, thickness / penetration, 1.0);
     }
 `;
+/** 辅助 RT 的深度占位：内建材质在 ?logdepth 渲染器下写对数深度，与 spaced 标准深度不同域。 */
+export function standardDepthMaterial(side = THREE.FrontSide) {
+    return new THREE.ShaderMaterial({
+        vertexShader: EXTERNAL_VERT, fragmentShader: DEPTH_ONLY_FRAG,
+        colorWrite: false, depthTest: true, depthWrite: true, side, clipping: true,
+    });
+}
 export function externalMaterial(thickness, penetration, clip) {
     return new THREE.ShaderMaterial({
         vertexShader: EXTERNAL_VERT, fragmentShader: EXTERNAL_FRAG,
@@ -369,7 +385,24 @@ export function externalMaterial(thickness, penetration, clip) {
         uniforms: { thickness: { value: thickness }, penetration: { value: penetration || 200 } },
     });
 }
-const SPACED_VERT = PBR_VERT;
+// 辅助 RT 恒写标准深度（spaced 距离按标准投影反算），不挂 logdepthbuf。
+const SPACED_VERT = `
+    varying highp vec3 vNormal;
+    varying highp vec3 vViewPos;
+    void main() {
+      vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      vViewPos = mv.xyz;
+      vNormal = normalMatrix * normal;
+      gl_Position = projectionMatrix * mv;
+    }
+`;
+const DEPTH_ONLY_FRAG = `
+    #include <clipping_planes_pars_fragment>
+    void main() {
+      #include <clipping_planes_fragment>
+      gl_FragColor = vec4(0.0);
+    }
+`;
 // 厚度通道（RT0，additive，R 累计）：每块间隙板按 BlitzKit 独立计算
 // finalNorm（2× 口径增强按本层厚度）与 finalThickness，写 R=finalThickness/penetration；
 // G=间隙甲层标记；外部模块写 flat R/coverage、不写 G。

@@ -149,6 +149,15 @@ describe('时序能力（PlaybackData 校验）', () => {
     }).toThrow(/不支持的契约版本/)
   })
 
+  it('author_shell_timeline：additive，在场时校验 24 位 id 与时钟升序', () => {
+    const withTimeline = (author_shell_timeline: unknown) => ({ ...minimalPlayback(), author_shell_timeline })
+    expect(validateAgentPlayback(minimalPlayback()).author_shell_timeline).toBeUndefined()
+    const ok = [{ t: 5, shell_id: 32362 }, { t: 29.4, shell_id: 32618 }]
+    expect(validateAgentPlayback(withTimeline(ok)).author_shell_timeline).toEqual(ok)
+    expect(() => validateAgentPlayback(withTimeline([{ t: 5, shell_id: 0x1000000 }]))).toThrow(/shell_id/)
+    expect(() => validateAgentPlayback(withTimeline([{ t: 9, shell_id: 1 }, { t: 5, shell_id: 2 }]))).toThrow(/升序/)
+  })
+
   it('contract v2 新键：缺省合法、非数组拒绝', () => {
     const ok = validateAgentPlayback(minimalPlayback())
     expect(ok.supremacy_bases).toBeUndefined()

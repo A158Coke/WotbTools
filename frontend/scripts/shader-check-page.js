@@ -9,6 +9,7 @@ import {
 import { applyTankDestroyedVisual, prepareTankDestroyedVisual } from '../src/scene/tankDestroyedVisual.js'
 import { FX_BUDGETS, createBattleFx } from '../src/scene/battleFx.js'
 import { groundShaderMaterial } from '../src/scene/groundPass.js'
+import { createArmorShaderContext, standardDepthMaterial } from '../src/scene/viewer/armorShaders.js'
 
 window.__step = 'module-start'
 const log = []
@@ -126,6 +127,22 @@ try {
   }
   scene.add(battleFxScene().root)
   built.push('battle-fx(glow/smoke/sparks/tracer/trail)')
+  // 穿透材质族：回放开镜着色在 ?logdepth 渲染器下也要编译，两种渲染器各编一遍。
+  function armorScene() {
+    const ctx = createArmorShaderContext()
+    const clip = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
+    const penetration = ctx.penetrationMaterial(100)
+    penetration.uniforms.inverseProjectionMatrix.value = camera.projectionMatrixInverse
+    const group = new THREE.Scene()
+    for (const material of [
+      penetration, ctx.spacedMaterial(50, 200, THREE.DoubleSide), ctx.spacedStateMaterial(50, 200),
+      ctx.externalMaterial(20, 200, clip), ctx.moduleStateMaterial(clip), standardDepthMaterial(),
+    ]) group.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material))
+    return group
+  }
+  renderer.localClippingEnabled = true
+  renderer.render(armorScene(), camera)
+  built.push('armor-penetration(primary/spaced/external)')
   renderer.render(scene, camera)
   const logRenderer = new THREE.WebGLRenderer({ antialias: false, logarithmicDepthBuffer: true })
   logRenderer.setSize(64, 64)
@@ -134,6 +151,9 @@ try {
   fxScene.add(battleFxScene().root)
   logRenderer.render(fxScene, camera)
   built.push('battle-fx(logdepth)')
+  logRenderer.localClippingEnabled = true
+  logRenderer.render(armorScene(), camera)
+  built.push('armor-penetration(logdepth)')
   const programs = [...(renderer.info.programs || []), ...(logRenderer.info.programs || [])].map((p) => ({
     name: p.name,
     diag: p.diagnostics ? {

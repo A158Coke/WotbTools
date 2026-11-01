@@ -22,7 +22,7 @@ const CONSUMABLES: Record<number, string> = {
 }
 
 const PROVISIONS: Record<number, string> = {
-  // 上游 v0.4.19 wire 表：每国 HQ(大) → regular(小)。
+  // 上游 v0.4.22 wire 表（`provision_logical_id`）。线码逐条取证，不按数值邻接外推。
   0x0e: 'LARGE_FOOD', 0x0f: 'LARGE_FOOD', 0x10: 'LARGE_FOOD', 0x11: 'LARGE_FOOD',
   0x12: 'LARGE_FOOD', 0x13: 'LARGE_FOOD', 0x14: 'LARGE_FOOD',
   0x15: 'SMALL_FOOD', 0x16: 'SMALL_FOOD', 0x17: 'SMALL_FOOD', 0x18: 'SMALL_FOOD',
@@ -35,17 +35,14 @@ const PROVISIONS: Record<number, string> = {
   0x44: 'SANDBAG_ARMOR',
   0x45: 'ENHANCED_SANDBAG_ARMOR',
   0x46: 'LARGE_FOOD', 0x47: 'SMALL_FOOD',
-  0x48: 'LARGE_FOOD', 0x49: 'SMALL_FOOD',
+  // 瑞典大小顺序与欧系相反：0x49 由亲装大补给的受控实验钉死。
+  0x48: 'SMALL_FOOD', 0x49: 'LARGE_FOOD',
   0x4a: 'LARGE_FOOD', 0x4b: 'SMALL_FOOD',
-  0x4c: 'LARGE_FOOD', 0x4d: 'SMALL_FOOD',
   0x6a: 'GEAR_OIL',
   0x6b: 'IMPROVED_GEAR_OIL',
   0x6c: 'IMPROVED_GUNPOWDER',
   // 波兰补给 0x6D/0x6E：11.18/11.20 回放里只出现在波兰车（60TP 仅 0x6D；
-  // 53TP 同时带 0x6D+0x6E），且 0A 描述符带给养静态尾 f32 -1.0；按每国
-  // HQ(大)→regular(小) 线序闭合（0x6E 由成对线序推断）。上游 v0.4.19 的表把
-  // catalog 109/110 记为 0x4C/0x4D；本回退表两套线码都保留，避免旧产物因
-  // 版本差异丢标签。
+  // 53TP 同时带 0x6D+0x6E）；0x6D 受控实验钉死，0x6E 由成对消去。
   0x6d: 'LARGE_FOOD',
   0x6e: 'SMALL_FOOD',
 }
