@@ -1341,7 +1341,7 @@
         },
         "declutter": "Clear view",
         "declutter_hint": "Show tank names, class symbols and HP rings; hide player names, reload bars and other details. Click again to restore your settings; editing an option exits the preset.",
-        "declutter_hint_3d": "Show tank names and class symbols only. Click again to restore your display settings; editing an option exits this preset.",
+        "declutter_hint_3d": "Show tank names, class symbols and brief damage numbers; hide HP bars, player names and reload bars. Click again to restore your display settings; editing an option exits this preset.",
         "class_icons": "Replace vehicle models with class icons",
         "show_status": "Vehicle badges and damage numbers",
         "show_status_3d": "Vehicle badges"
