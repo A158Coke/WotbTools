@@ -153,7 +153,7 @@ describe('business profile bootstrap driver (policy + dedupe)', () => {
  */
 describe('browser-interaction stub surface', () => {
   it('exports every named export the real module provides', async () => {
-    const real = await readFile(new URL('./useBusinessUserBootstrap.js', import.meta.url), 'utf8')
+    const real = await readFile(new URL('./useBusinessUserBootstrap.ts', import.meta.url), 'utf8')
     const stub = await readFile(
       new URL('../../scripts/browser-fixtures/use-business-user-bootstrap-stub.js', import.meta.url), 'utf8')
     const names = source => (source.match(/export (?:async )?function (\w+)/g) || [])
