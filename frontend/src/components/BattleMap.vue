@@ -12,6 +12,9 @@ const props = defineProps({
   imageSrc: { type: String, default: null },
   mapView: { type: Object, required: true },
   pbOverview: { type: Object, required: true },
+  /** 可玩边界（2D 地图预览 opt-in）：默认关闭，回放 2D UI 不改变。
+   *  仅当 pbOverview.playableBounds 存在且投影出有效矩形时绘制，缺数据不画。 */
+  showPlayableBoundary: { type: Boolean, default: false },
   friendlyTeam: { type: [Number, String], default: null },
   bases: { type: Array, default: () => [] },
   visibleTracers: { type: Array, default: () => [] },
@@ -189,6 +192,23 @@ function fillTop(base) {
   return projectedY(base.x, base.y) + baseRadius(base) - fillHeight(base)
 }
 
+/** 可玩边界 rect（平底图）：语义 x/y → SVG；y 轴反转，所以先转换再取 min/abs。
+ *  opt-in 默认关闭；缺 bounds / 非有限值 / 退化矩形 → null（fail-closed）。 */
+const playableBoundaryRect = computed(() => {
+  if (!props.showPlayableBoundary) return null
+  const bounds = props.pbOverview?.playableBounds
+  if (!bounds) return null
+  const x1 = props.mapView.toX(bounds.xMin)
+  const x2 = props.mapView.toX(bounds.xMax)
+  const y1 = props.mapView.toY(bounds.yMin)
+  const y2 = props.mapView.toY(bounds.yMax)
+  if (![x1, x2, y1, y2].every(Number.isFinite)) return null
+  const width = Math.abs(x2 - x1)
+  const height = Math.abs(y2 - y1)
+  if (!(width > 0) || !(height > 0)) return null
+  return { x: Math.min(x1, x2), y: Math.min(y1, y2), width, height }
+})
+
 /** pan-y 下浏览器不处理捏合，但第一根手指先纵向移动会被当成滚动；两指时阻止默认行为，让地图自己的捏合生效。 */
 function onTwoFingerTouch(event) {
   if (props.touchPan && event.touches && event.touches.length >= 2 && event.cancelable) event.preventDefault()
@@ -226,6 +246,17 @@ function onTwoFingerTouch(event) {
             />
           </clipPath>
         </defs>
+        <rect
+          v-if="playableBoundaryRect"
+          class="pb-playable-boundary"
+          data-test="pb-playable-boundary"
+          :x="playableBoundaryRect.x"
+          :y="playableBoundaryRect.y"
+          :width="playableBoundaryRect.width"
+          :height="playableBoundaryRect.height"
+          fill="none"
+          :stroke-width="2 / props.viewScale"
+        />
         <g class="pb-bases" data-test="pb-bases">
           <g v-for="base in props.bases" :key="base.baseId" :class="[`pb-base-${base.status}`, { 'pb-base-assault': base.baseId === 'BASE' }]" :data-test="`pb-base-${base.baseId}`">
             <circle :cx="projectedX(base.x, base.y)" :cy="projectedY(base.x, base.y)" :r="baseRadius(base)" class="pb-base-circle" />
@@ -379,6 +410,8 @@ function onTwoFingerTouch(event) {
 .pb-spawn-friendly { fill: var(--map-spawn-friendly, #8ef7b0); }
 .pb-spawn-enemy { fill: var(--map-spawn-enemy, #ff8d8d); }
 .pb-spawn-neutral { fill: var(--text-muted, #999); }
+/* 可玩边界（2D 地图预览 opt-in）：与 3D 边界带同义色，不是阵营色 */
+.pb-playable-boundary { stroke: var(--color-map-playable-boundary); }
 .pb-feedback-layer { position: absolute; inset: 0; pointer-events: none; z-index: 9; overflow: hidden; }
 .pb-float-dmg { position: absolute; transform: translate(-50%, -50%); font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; text-shadow: 0 0 3px color-mix(in srgb, var(--bg) 90%, transparent), 0 1px 2px color-mix(in srgb, var(--bg) 80%, transparent); animation: pb-float-rise 1s ease-out forwards; white-space: nowrap; }
 .pb-float-friendly { color: var(--pb-team-text, #4ade80); }

@@ -15,7 +15,7 @@ vi.mock('vue-i18n', () => ({
 vi.mock('./BattleMap.vue', () => ({
   default: {
     name: 'BattleMap',
-    props: ['image', 'mapView', 'renderedAnnotations', 'activeTool', 'bases'],
+    props: ['image', 'mapView', 'renderedAnnotations', 'activeTool', 'bases', 'pbOverview', 'showPlayableBoundary'],
     template: `<div class="bm-stub" :data-count="renderedAnnotations.length" :data-tool="activeTool || ''"
       :data-bases="(bases || []).map(b => b.baseId + ':' + b.radius + ':' + b.status).join('|')" />`,
   },
@@ -23,6 +23,9 @@ vi.mock('./BattleMap.vue', () => ({
 
 import MapPreview2DPane from './MapPreview2DPane.vue'
 import { mapImages } from '../data/mapImages.js'
+import { playableBounds } from '../data/playableBounds.js'
+import mountainSemantic from '../../../common/map-semantics/21_mountain_mnt.semantic.json'
+import milbaseSemantic from '../../../common/map-semantics/24_milibase_mlb.semantic.json'
 
 /**
  * 地图预览 2D 标注契约：
@@ -161,5 +164,41 @@ describe('MapPreview2DPane 基地点位（与 2D 回放同一 :bases 口径）',
   it('basesKind=null → 不渲染任何点位', async () => {
     const wrapper = mountPane({ kind: 'bundled', image: mapImages.erlenberg }, { basesKind: null })
     expect(wrapper.find('.bm-stub').attributes('data-bases')).toBe('')
+  })
+})
+
+describe('MapPreview2DPane canonical 出生点 / 可玩边界', () => {
+  /** 语义文件的原始事实（不经被测 parser）：spawnpoint → {name, team, x, y}。 */
+  function rawSpawns(semantic) {
+    return semantic.sceneEvidence.battlePoints
+      .filter(point => point.type === 'spawnpoint')
+      .map(point => ({ name: point.name, team: point.team, x: point.position[0], y: point.position[1] }))
+  }
+
+  it.each([
+    ['mountain', mountainSemantic, mapImages.mountain],
+    ['milbase', milbaseSemantic, mapImages.milbase],
+  ])('%s：spawn 与语义 battlePoints 逐值相等（含 name/team/x/y）', (key, semantic, image) => {
+    // milbase 的语义文件名是 24_milibase_mlb（文件名片段 != mapCode），
+    // 证明查找必须走 mapCodes 索引而不是文件名。
+    const wrapper = mountPane({ kind: 'bundled', image }, { mapKey: key })
+    const battleMap = wrapper.findComponent({ name: 'BattleMap' })
+    expect(battleMap.props('pbOverview').spawnPoints).toEqual(rawSpawns(semantic))
+    expect(battleMap.props('showPlayableBoundary')).toBe(true)
+  })
+
+  it('mountain：playableBounds 同时等于 generated 表与语义 playableBoundsMeters', () => {
+    const wrapper = mountPane({ kind: 'bundled', image: mapImages.mountain }, { mapKey: 'mountain' })
+    const overview = wrapper.findComponent({ name: 'BattleMap' }).props('pbOverview')
+    expect(overview.playableBounds).toEqual(playableBounds.mountain)
+    expect(overview.playableBounds).toEqual(mountainSemantic.playableBoundsMeters)
+  })
+
+  it('moon（无语义 mapCodes）：spawn 为空且 overview 不带 playableBounds（fail-closed）', () => {
+    // bundled 底图让 BattleMap 立即渲染；底图身份与 fail-closed 断言无关。
+    const wrapper = mountPane({ kind: 'bundled', image: mapImages.erlenberg }, { mapKey: 'moon' })
+    const overview = wrapper.findComponent({ name: 'BattleMap' }).props('pbOverview')
+    expect(overview.spawnPoints).toEqual([])
+    expect('playableBounds' in overview).toBe(false)
   })
 })

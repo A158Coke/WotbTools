@@ -14,7 +14,9 @@ import { Download, PencilRuler, Upload } from 'lucide-vue-next'
 import BattleMap from './BattleMap.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
 import { mapBases } from '../data/mapBases.js'
+import { playableBounds } from '../data/playableBounds.js'
 import { WORLD_BOUNDS_300 } from '../data/mapImages.js'
+import { indexMapGridProfiles } from '../replay-local/playback/toMapOverview.js'
 import { resolveMap2dBasemap } from '../scene/replaySource.js'
 import { createMapView } from '../utils/mapView.js'
 import {
@@ -24,6 +26,19 @@ import {
 } from '../utils/annotation.js'
 import { clampViewPan, zoomViewAt } from '../utils/battlePlayback.js'
 import { usePaneFillHeight } from '../composables/usePaneFillHeight.js'
+
+/**
+ * 地图语义档案（`common/map-semantics/*.semantic.json` 唯一权威；与回放/3D 同一份文件）：
+ * 出生点取 `sceneEvidence.battlePoints`，边界表由 `playableBoundsMeters` 生成。
+ * 索引一次（eager glob 与回放同式），按 mapCode 小写查；缺档 fail-closed。
+ */
+let gridProfiles = null
+function mapGridProfile(mapKey) {
+  gridProfiles ??= indexMapGridProfiles(Object.values(import.meta.glob('../../../common/map-semantics/*.semantic.json', {
+    eager: true, import: 'default',
+  })))
+  return gridProfiles.get(String(mapKey).toLowerCase()) || null
+}
 
 const props = defineProps({
   /** 资产面 key（= 标注导入/导出归属校验） */
@@ -48,7 +63,18 @@ const { t } = useI18n()
 const basemapImage = ref(null)   // { src, width, height, coordinateBounds }
 const basemapError = ref(false)
 const image = computed(() => basemapImage.value)
-const overview = computed(() => ({ mapCode: props.mapKey, spawnPoints: [] }))
+/** 2D 预览只读消费 canonical 地图事实，不新增第二份数据：spawn 来自语义
+ *  `sceneEvidence.battlePoints`（预览无战局上下文 → 不传 friendlyTeam，BattleMap 画中性点），
+ *  边界来自 generated `playableBounds`（与 3D 边界 fallback 同一份）；缺档不猜。 */
+const overview = computed(() => {
+  const key = String(props.mapKey).toLowerCase()
+  const bounds = playableBounds[key]
+  return {
+    mapCode: props.mapKey,
+    spawnPoints: mapGridProfile(key)?.spawnPoints ?? [],
+    ...(bounds ? { playableBounds: bounds } : {}),
+  }
+})
 const mapView = computed(() => createMapView(image.value, overview.value))
 
 // ---------- 基地点位（BattleMap :bases，与 2D 回放同一渲染与口径）----------
@@ -658,6 +684,7 @@ const stubFloatClass = () => ''
           :image="image"
           :map-view="mapView"
           :pb-overview="overview"
+          :show-playable-boundary="true"
           :bases="baseMarkers"
           :view-scale="view.scale"
           :viewport-style="viewportStyle"
