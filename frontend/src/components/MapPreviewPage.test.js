@@ -60,6 +60,7 @@ const IDX = {
     3: { key: 'erlenberg', display: 'Middleburg' },
     54: { key: 'erlenberg', display: 'Middleburg - Town' },
     70: { key: 'moon', display: 'Sea of Tranquility' },
+    8: { key: 'canyon', display: 'Canyon' },
   },
 }
 
@@ -94,7 +95,7 @@ describe('MapPreviewPage', () => {
     source.loadMapIndex.mockResolvedValue(IDX)
     const wrapper = await openAt()
     const cards = wrapper.findAll('.map-card')
-    expect(cards).toHaveLength(2)
+    expect(cards).toHaveLength(3)
     const erlenberg = cards.find(c => c.attributes('data-testid') === 'map-card-erlenberg')
     const moon = cards.find(c => c.attributes('data-testid') === 'map-card-moon')
     expect(erlenberg).toBeTruthy()
@@ -102,10 +103,60 @@ describe('MapPreviewPage', () => {
     // 双图都有 2D 徽标（ground.webp 回退后 43 图全可进 2D）
     expect(erlenberg.find('.map-card-badge').exists()).toBe(true)
     expect(moon.find('.map-card-badge').exists()).toBe(true)
-    // 封面双源：bundled 打包图 vs ground.webp 资产回退
-    expect(erlenberg.find('.map-card-thumb img').attributes('src')).toBeTruthy()
-    expect(erlenberg.find('.map-card-thumb img').attributes('src')).not.toContain('ground.webp')
-    expect(moon.find('.map-card-thumb img').attributes('src')).toContain('/map/moon/ground.webp')
+    // 封面统一 cover.webp（512² 战术风格，43/43 同源）：bundled 不再走打包图
+    expect(erlenberg.find('.map-card-thumb img').attributes('src')).toContain('/cover/erlenberg.webp')
+    expect(moon.find('.map-card-thumb img').attributes('src')).toContain('/cover/moon.webp')
+  })
+
+  it('cover URL 不可用（Android 离线门控抛错）→ 有 bundled 的图用打包底图兜底', async () => {
+    auth.authenticated.value = true
+    source.loadMapIndex.mockResolvedValue(IDX)
+    // 只让 cover URL 抛（模拟 NETWORK_ERROR），其余不变
+    assetProvider.url.mockImplementation((p) => {
+      if (p.startsWith('/cover/')) throw new Error('NETWORK_ERROR')
+      return 'https://assets.test' + p
+    })
+    const wrapper = await openAt()
+    const erlenberg = wrapper.find('[data-testid="map-card-erlenberg"]')
+    // 无 cover → 走 thumbFallback（打包底图），不落占位图标
+    expect(erlenberg.find('[data-testid="map-thumb-fallback-erlenberg"]').exists()).toBe(true)
+    expect(erlenberg.find('.map-card-thumb-fallback').exists()).toBe(false)
+    // moon 无打包图 → 占位图标
+    expect(wrapper.find('[data-testid="map-card-moon"]').find('.map-card-thumb-fallback').exists()).toBe(true)
+  })
+
+  it('cover 图片加载失败 → 切到 bundled 兜底且不重试远端', async () => {
+    auth.authenticated.value = true
+    source.loadMapIndex.mockResolvedValue(IDX)
+    const wrapper = await openAt()
+    const coverImg = wrapper.find('[data-testid="map-thumb-erlenberg"]')
+    expect(coverImg.attributes('src')).toContain('/cover/erlenberg.webp')
+    await coverImg.trigger('error')
+    await flushPromises()
+    // thumb 置空 → 模板改渲染 fallback（打包底图），远端 URL 不再出现
+    expect(wrapper.find('[data-testid="map-thumb-erlenberg"]').exists()).toBe(false)
+    const fb = wrapper.find('[data-testid="map-thumb-fallback-erlenberg"]')
+    expect(fb.exists()).toBe(true)
+    expect(fb.attributes('src')).toBeTruthy()
+    expect(fb.attributes('src')).not.toContain('/cover/')
+  })
+
+  it('bundled 兜底图自身加载失败 → 落占位图标，两个 URL 都不再重试', async () => {
+    auth.authenticated.value = true
+    source.loadMapIndex.mockResolvedValue(IDX)
+    // cover 直接不可得（Android 离线门控）→ 模板走 bundled 兜底
+    assetProvider.url.mockImplementation((p) => {
+      if (p.startsWith('/cover/')) throw new Error('NETWORK_ERROR')
+      return 'https://assets.test' + p
+    })
+    const wrapper = await openAt()
+    const fb = wrapper.find('[data-testid="map-thumb-fallback-erlenberg"]')
+    expect(fb.exists()).toBe(true)
+    // bundled 兜底自己加载失败（@error）→ 独立失败集合置空 thumbFallback → 占位图标
+    await fb.trigger('error')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="map-thumb-fallback-erlenberg"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="map-card-erlenberg"]').find('.map-card-thumb-fallback').exists()).toBe(true)
   })
 
   it('索引失败 → 可重试的失败态；重试成功回到 picker', async () => {
@@ -134,7 +185,7 @@ describe('MapPreviewPage', () => {
     expect(wrapper.find('[data-testid="map-grid"]').exists()).toBe(true)
   })
 
-  it('mode=2d 直挂 2D 面板：bundled 图直接就绪，ground 回退图由面板异步解析', async () => {
+  it('mode=2d 直挂 2D 面板：map2d 底图由面板异步解析（bundled 图直挂）', async () => {
     auth.authenticated.value = true
     source.loadMapIndex.mockResolvedValue(IDX)
     const wrapper = await openAt({ map: 'moon', mode: '2d' })
@@ -146,8 +197,8 @@ describe('MapPreviewPage', () => {
     expect(pane3d.element.parentElement.style.display).toBe('none')
     const pane = wrapper.findComponent({ name: 'MapPreview2DPane' })
     expect(pane.props('mapKey')).toBe('moon')
-    // 页面只下发描述符；ground.webp 的异步解析与 fail-visible 在面板自身
-    expect(pane.props('basemap')).toEqual({ kind: 'ground', mapKey: 'moon' })
+    // 页面只下发描述符；map2d 1254² 的异步解析与 fail-visible 在面板自身
+    expect(pane.props('basemap')).toEqual({ kind: 'map2d', mapKey: 'moon' })
   })
 
   it('bundled 图 2D 模式：描述符携带打包注册表条目（3D 面板同场共存）', async () => {
@@ -159,6 +210,64 @@ describe('MapPreviewPage', () => {
     expect(pane.props('basemap')).toMatchObject({ kind: 'bundled' })
     expect(pane.props('basemap').image.src).toBeTruthy()
     expect(pane.props('basemap').image.coordinateBounds).toEqual({ xMin: -300, xMax: 300, yMin: -300, yMax: 300 })
+  })
+
+  // ---- 基地点位（?bases=）：争霸/遭遇切换，两个 pane 共用同一 kind ----
+  it('遭遇选项只在 assault 恰好 1 candidate 时提供：erlenberg（3 条）不出现，canyon（1 条）可选', async () => {
+    auth.authenticated.value = true
+    source.loadMapIndex.mockResolvedValue(IDX)
+    // erlenberg：supremacy 3 条 + assault 3 条（攻防/遭遇条目无法归属）→
+    // 默认回落 supremacy，且**不提供**遭遇选项（选中即 0 点位的假选项不给用户）
+    const wrapper = await openAt({ map: 'erlenberg' })
+    expect(wrapper.findComponent({ name: 'MapPreview3DPane' }).props('basesKind')).toBe('supremacy')
+    expect(wrapper.find('.map-bases-switch').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="map-bases-supremacy"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="map-bases-encounter"]').exists()).toBe(false)
+    // canyon：assault 恰 1 条 candidate → 遭遇可选，kind 下发 assault
+    const w2 = await openAt({ map: 'canyon' })
+    expect(w2.findComponent({ name: 'MapPreview3DPane' }).props('basesKind')).toBe('supremacy')
+    expect(w2.find('[data-testid="map-bases-encounter"]').exists()).toBe(true)
+    await ROUTER.replace({ query: { view: 'map-preview', map: 'canyon', bases: 'encounter' } })
+    await flushPromises()
+    expect(w2.findComponent({ name: 'MapPreview3DPane' }).props('basesKind')).toBe('assault')
+    // moon 无基地几何 → null 且整个切换不渲染（fail-closed，不从内容猜）
+    const w3 = await openAt({ map: 'moon' })
+    expect(w3.findComponent({ name: 'MapPreview3DPane' }).props('basesKind')).toBe(null)
+    expect(w3.find('.map-bases-switch').exists()).toBe(false)
+  })
+
+  it('?bases=encounter 指向多 candidate 组 → 拒绝并回落 supremacy（URL 接受同一判据）', async () => {
+    auth.authenticated.value = true
+    source.loadMapIndex.mockResolvedValue(IDX)
+    const wrapper = await openAt({ map: 'erlenberg', bases: 'encounter' })
+    expect(wrapper.findComponent({ name: 'MapPreview3DPane' }).props('basesKind')).toBe('supremacy')
+    const w2d = await openAt({ map: 'erlenberg', mode: '2d', bases: 'encounter' })
+    expect(w2d.findComponent({ name: 'MapPreview2DPane' }).props('basesKind')).toBe('supremacy')
+    // 单 candidate 图上 URL 正常接受：2D/3D 同步下发 assault
+    const w3 = await openAt({ map: 'canyon', mode: '2d', bases: 'encounter' })
+    expect(w3.findComponent({ name: 'MapPreview2DPane' }).props('basesKind')).toBe('assault')
+    // URL 切回争霸（SegmentedControl 交互归组件自身，URL → kind 契约在这里锁）
+    await ROUTER.replace({ query: { view: 'map-preview', map: 'canyon', mode: '3d', bases: 'supremacy' } })
+    await flushPromises()
+    expect(w3.findComponent({ name: 'MapPreview3DPane' }).props('basesKind')).toBe('supremacy')
+  })
+
+  it('返回 picker 清 map/mode/bases 键', async () => {
+    auth.authenticated.value = true
+    source.loadMapIndex.mockResolvedValue(IDX)
+    const wrapper = await openAt({ map: 'canyon', bases: 'encounter' })
+    await wrapper.find('[data-testid="map-back"]').trigger('click')
+    await flushPromises()
+    expect(ROUTER.currentRoute.value.query).toEqual({ view: 'map-preview' })
+  })
+
+  it('?bases= 指向无几何的组 → 回落（有争霸先争霸），不显示空选项', async () => {
+    auth.authenticated.value = true
+    source.loadMapIndex.mockResolvedValue(IDX)
+    // moon 无任何几何：?bases=supremacy 无对应几何 → null（不是从 URL 硬套）
+    const w = await openAt({ map: 'moon', bases: 'supremacy' })
+    expect(w.findComponent({ name: 'MapPreview3DPane' }).props('basesKind')).toBe(null)
+    expect(w.find('.map-bases-switch').exists()).toBe(false)
   })
 
   it('视图注册：PRIMARY_NAV 含 maps 且 view 值为 map-preview（导航测试之外的身份锁）', () => {

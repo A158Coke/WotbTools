@@ -11,12 +11,13 @@ vi.mock('vue-i18n', () => ({
   }),
 }))
 
-/** BattleMap 打桩为渲染数量探针：标注列表经 renderedAnnotations 进入展示层。 */
+/** BattleMap 打桩为渲染数量探针：标注列表经 renderedAnnotations、基地经 bases 进入展示层。 */
 vi.mock('./BattleMap.vue', () => ({
   default: {
     name: 'BattleMap',
-    props: ['image', 'mapView', 'renderedAnnotations', 'activeTool'],
-    template: '<div class="bm-stub" :data-count="renderedAnnotations.length" :data-tool="activeTool || \'\'" />',
+    props: ['image', 'mapView', 'renderedAnnotations', 'activeTool', 'bases'],
+    template: `<div class="bm-stub" :data-count="renderedAnnotations.length" :data-tool="activeTool || ''"
+      :data-bases="(bases || []).map(b => b.baseId + ':' + b.radius + ':' + b.status).join('|')" />`,
   },
 }))
 
@@ -29,9 +30,9 @@ import { mapImages } from '../data/mapImages.js'
  * - 导出 = { version:1, kind:'map-preview-annotations-2d', mapKey, annotations }；
  *   导入 fail-closed：版本/kind/mapKey 任一不符即拒绝并提示，不污染当前标注。
  */
-function mountPane(basemap = { kind: 'bundled', image: mapImages.erlenberg }) {
+function mountPane(basemap = { kind: 'bundled', image: mapImages.erlenberg }, overrides = {}) {
   return mount(MapPreview2DPane, {
-    props: { mapKey: 'erlenberg', basemap },
+    props: { mapKey: 'erlenberg', basemap, ...overrides },
     global: { mocks: { $t: (key, params) => (params ? `${key}:${JSON.stringify(params)}` : key) } },
   })
 }
@@ -85,11 +86,23 @@ describe('MapPreview2DPane 标注导入导出', () => {
     expect(wrapper.find('[data-testid="map-2d-import-note"]').text()).toContain('importReasonFormat')
   })
 
-  it('kind / mapKey 不符拒绝导入（fail-closed），当前标注不变', async () => {
+  it('3D 导出的标注（旧 -3d kind）跨视角导入被接受——同一张地图即可', async () => {
     const wrapper = mountPane()
     await importJson(wrapper, {
       version: 1,
       kind: 'map-preview-annotations-3d',
+      mapKey: 'erlenberg',
+      annotations: [{ type: 'pen', color: '#fff', width: 3, points: [{ x: 0, y: 0 }, { x: 5, y: 5 }] }],
+    })
+    expect(wrapper.find('.bm-stub').attributes('data-count')).toBe('1')
+    expect(wrapper.find('[data-testid="map-2d-import-note"]').text()).toContain('"count":1')
+  })
+
+  it('kind / mapKey 不符拒绝导入（fail-closed），当前标注不变', async () => {
+    const wrapper = mountPane()
+    await importJson(wrapper, {
+      version: 1,
+      kind: 'unrelated-annotations',
       mapKey: 'erlenberg',
       annotations: [{ type: 'pen', color: '#fff', width: 3, points: [{ x: 0, y: 0 }, { x: 5, y: 5 }] }],
     })
@@ -119,5 +132,34 @@ describe('MapPreview2DPane 标注导入导出', () => {
     await nextTick()
     // ground 底图需异步解析（happy-dom Image 不触发 onload）→ BattleMap 暂不渲染
     expect(wrapper.find('.bm-stub').exists()).toBe(false)
+  })
+})
+
+describe('MapPreview2DPane 基地点位（与 2D 回放同一 :bases 口径）', () => {
+  it('supremacy：A–C 全列、中立无水位、半径缺省 15m（世界坐标，BattleMap 换算像素）', async () => {
+    const wrapper = mountPane({ kind: 'bundled', image: mapImages.erlenberg }, { basesKind: 'supremacy' })
+    const stub = wrapper.find('.bm-stub')
+    const entries = stub.attributes('data-bases').split('|')
+    expect(entries).toEqual([
+      'A:15:neutral',
+      'B:15:neutral',
+      'C:15:neutral',
+    ])
+  })
+
+  it('assault：组内多 candidate 无证据 fail-closed（erlenberg 3 条 → 不画）', async () => {
+    const wrapper = mountPane({ kind: 'bundled', image: mapImages.erlenberg }, { basesKind: 'assault' })
+    expect(wrapper.find('.bm-stub').attributes('data-bases')).toBe('')
+  })
+
+  it('assault 单条 candidate → BASE 圆标 + 20m 缺省（与回放同一 presentation fallback）', async () => {
+    const wrapper = mountPane({ kind: 'bundled', image: mapImages.canyon }, { mapKey: 'canyon', basesKind: 'assault' })
+    // canyon.assault 恰 1 条且未声明 radius（null）→ 呈现兜底 20m
+    expect(wrapper.find('.bm-stub').attributes('data-bases')).toBe('BASE:20:neutral')
+  })
+
+  it('basesKind=null → 不渲染任何点位', async () => {
+    const wrapper = mountPane({ kind: 'bundled', image: mapImages.erlenberg }, { basesKind: null })
+    expect(wrapper.find('.bm-stub').attributes('data-bases')).toBe('')
   })
 })

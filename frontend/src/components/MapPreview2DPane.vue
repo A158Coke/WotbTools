@@ -13,8 +13,9 @@ import { useI18n } from 'vue-i18n'
 import { Download, PencilRuler, Upload } from 'lucide-vue-next'
 import BattleMap from './BattleMap.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
+import { mapBases } from '../data/mapBases.js'
 import { WORLD_BOUNDS_300 } from '../data/mapImages.js'
-import { mapStaticUrl } from '../scene/replaySource.js'
+import { resolveMap2dBasemap } from '../scene/replaySource.js'
 import { createMapView } from '../utils/mapView.js'
 import {
   ANNOT_COLORS, ANNOT_ERASER_RADIUS_DEFAULT, ANNOT_ERASER_RADIUS_MAX, ANNOT_ERASER_RADIUS_MIN,
@@ -34,6 +35,11 @@ const props = defineProps({
    * 3D 内核 meta 恒等回退与打包图同框，坐标体系一致）。
    */
   basemap: { type: Object, required: true },
+  /**
+   * 基地点位组键（页面 ?bases= 解析后下发）：'supremacy' | 'assault' | null。
+   * null / 组无几何 → 不渲染（fail-closed，绝不从内容猜坐标）。
+   */
+  basesKind: { type: String, default: null },
 })
 
 const { t } = useI18n()
@@ -45,8 +51,35 @@ const image = computed(() => basemapImage.value)
 const overview = computed(() => ({ mapCode: props.mapKey, spawnPoints: [] }))
 const mapView = computed(() => createMapView(image.value, overview.value))
 
-/** ground.webp 异步就位（naturalWidth/Height 就绪后才建映射；失败 fail-visible）。 */
+// ---------- 基地点位（BattleMap :bases，与 2D 回放同一渲染与口径）----------
+// 静态预览没有占领状态：固定 neutral、progress null（不渲染水位）。
+// 半径是世界坐标米：supremacy 条目缺省 15m、assault 缺省 20m（与回放同一
+// presentation fallback，BattleMap.baseRadius 负责米→SVG 像素换算）。
+// assault 组多 candidate 无证据 fail-closed（与 3D/回放同式）：几何不唯一就不画。
+const baseMarkers = computed(() => {
+  const kind = props.basesKind
+  if (kind !== 'supremacy' && kind !== 'assault') return []
+  const pts = mapBases[props.mapKey]?.[kind] || []
+  if (kind === 'assault' && pts.length !== 1) return []
+  return pts.map((b) => ({
+    baseId: kind === 'supremacy' ? b.baseId : 'BASE',
+    x: b.x,
+    y: b.y,
+    radius: b.radius || (kind === 'supremacy' ? 15 : 20),
+    status: 'neutral',
+    progress: null,
+    capturedBy: 'unknown',
+  }))
+})
+
+/**
+ * 底图解析：bundled 同步就位；map2d（全部 43 张的 canonical 1254² 校准战术底图，
+ * ~900KB）异步经 map2d/index.json 的几何 + 完整性契约解析，失败 fail-visible。
+ * 请求代际见 publishedUrl 注释：快速切图 A→B 时旧请求只清理自己的资源。
+ */
 async function resolveBasemap(bm) {
+  const gen = ++basemapGen
+  releasePublishedUrl()
   basemapImage.value = null
   basemapError.value = false
   if (!bm) return
@@ -54,36 +87,69 @@ async function resolveBasemap(bm) {
     basemapImage.value = bm.image
     return
   }
-  const url = (() => {
-    // mapStaticUrl 内部 assetProvider.url 在 Android 离线门控下可抛（NETWORK_ERROR）：
-    // 与下方 fetch 同一 try 语义，抛错归一为 basemapError（fail-visible）。
+  const key = bm.mapKey || props.mapKey
+  // map2d/index.json 契约（schema/generated、worldBounds/orientation、图片字节 sha256）：
+  // 任一不成立 fail-visible，绝不"能加载就当 ±300"。世界框取自索引声明
+  // （geometryMatches 已保证与注册表逐值相等）。
+  const resolved = await (async () => {
     try {
-      return mapStaticUrl('map', null, bm.mapKey || props.mapKey)
-    } catch {
-      return null
+      return await resolveMap2dBasemap(key, WORLD_BOUNDS_300)
+    } catch (e) {
+      return { error: 'offline', detail: String(e && e.message || e) }
     }
   })()
-  if (!url) {
+  if (gen !== basemapGen) return   // 过期（换图/卸载已介入）：未创建任何资源，直接退出
+  if (resolved.error) {
+    if (import.meta.env.DEV) {
+      console.warn(`[map-preview] map2d 底图拒绝（${key}）:`, resolved.error, resolved.detail || '')
+    }
     basemapError.value = true
     return
   }
+  // 校验通过的字节转 blob URL 供 <img> 使用（避免二次拉取；释放见代际模型注释）
+  const blobUrl = URL.createObjectURL(new Blob([resolved.bytes], { type: 'image/webp' }))
   try {
     const img = await new Promise((resolve, reject) => {
       const el = new Image()
       el.onload = () => resolve(el)
-      el.onerror = () => reject(new Error('basemap load failed'))
-      el.src = url
+      el.onerror = () => reject(new Error('basemap decode failed'))
+      el.src = blobUrl
     })
+    // 代际核验必须先于任何状态写入：过期请求只释放自己的 URL 后退出——
+    // 否则旧请求的尺寸失败/错误状态会误置到新代已发布的底图上。
+    if (gen !== basemapGen) {
+      URL.revokeObjectURL(blobUrl)   // 过期：只清理自己创建的 URL，新代的 owner 不归我管
+      return
+    }
+    // 解码尺寸必须与 manifest 声明一致：index↔图片发布漂移（重导出/裁切）在此 fail-visible，
+    // 不静默改用解码尺寸渲染（那会让 ±300 映射整体错位且无任何提示）。
+    if (img.naturalWidth !== resolved.width || img.naturalHeight !== resolved.height) {
+      if (import.meta.env.DEV) {
+        console.warn(`[map-preview] map2d 底图尺寸漂移（${key}）:`, img.naturalWidth, 'x', img.naturalHeight, '!= manifest', resolved.width, 'x', resolved.height)
+      }
+      URL.revokeObjectURL(blobUrl)
+      basemapError.value = true
+      return
+    }
+    releasePublishedUrl()
+    publishedUrl.value = blobUrl
     basemapImage.value = {
-      src: url,
-      width: img.naturalWidth || 1024,
-      height: img.naturalHeight || 1024,
-      coordinateBounds: WORLD_BOUNDS_300,
+      src: blobUrl,
+      width: resolved.width,
+      height: resolved.height,
+      coordinateBounds: resolved.worldBounds || WORLD_BOUNDS_300,
     }
   } catch {
-    basemapError.value = true
+    URL.revokeObjectURL(blobUrl)     // 解码失败：自己清理自己的 URL
+    if (gen === basemapGen) basemapError.value = true
   }
 }
+
+/** 卸载：在途请求全部过期，已发布 URL 释放（900KB/张不常驻）。 */
+onBeforeUnmount(() => {
+  basemapGen++
+  releasePublishedUrl()
+})
 // 底图解析的 watch 注册在标注状态声明之后（见文件后部）——immediate 首评需要完整状态
 
 const semPerSvgX = computed(() => {
@@ -249,6 +315,21 @@ function onWheel(e) {
   e.preventDefault()
   const p = screenPoint(e.clientX, e.clientY)
   applyView(zoomViewAt(view, p.x, p.y, e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP, fitScale()))
+}
+
+/**
+ * blob URL 生命周期（请求代际模型）：换图/卸载递增 `basemapGen` 使所有在途请求过期；
+ * 每个请求只清理**自己创建**的资源——过期请求 revoke 自己的 URL 后退出，绝不触碰
+ * 新代已发布的 URL；`publishedUrl` 是唯一已发布 owner（revoke 它 = 换图/卸载释放）。
+ * 快速切图 A→B 的正确性：旧请求在每个 await 后核验代际，发布前再核验一次。
+ */
+let basemapGen = 0
+const publishedUrl = ref(null)
+function releasePublishedUrl() {
+  if (publishedUrl.value) {
+    URL.revokeObjectURL(publishedUrl.value)
+    publishedUrl.value = null
+  }
 }
 
 // ---------- 标注（pen/eraser，语义坐标 + undo 栈）----------
@@ -466,7 +547,14 @@ const renderedAnnotations = computed(() => {
 const mapTouchPan = computed(() => !annotationOpen.value && view.scale <= fitScale() + 1e-3)
 
 // ---------- 标注导入 / 导出（会话内文件落盘；fail-closed 校验）----------
-const IMPORT_KIND = 'map-preview-annotations-2d'
+// kind 不区分视角：2D/3D 标注同为 ±300 语义系 pen 点列，同一张地图即可互导
+// （3D 地形锚定画笔落点也存语义坐标）。兼容合入前旧导出的 -2d/-3d 后缀 kind。
+const IMPORT_KIND = 'map-preview-annotations'
+const IMPORT_KINDS = new Set([
+  IMPORT_KIND,
+  'map-preview-annotations-2d',
+  'map-preview-annotations-3d',
+])
 /** 本面板的标注几何只有 pen：点列 ≥2、坐标有限、宽度为正。 */
 function isImportableAnnotation(a) {
   return !!a && a.type === 'pen'
@@ -513,7 +601,7 @@ async function importAnnotations(event) {
     flashImportMessage('mapPreview.annotations.importFailed', { reason: t('mapPreview.annotations.importReasonFormat') })
     return
   }
-  if (!payload || payload.version !== 1 || payload.kind !== IMPORT_KIND || !Array.isArray(payload.annotations)) {
+  if (!payload || payload.version !== 1 || !IMPORT_KINDS.has(payload.kind) || !Array.isArray(payload.annotations)) {
     flashImportMessage('mapPreview.annotations.importFailed', { reason: t('mapPreview.annotations.importReasonFormat') })
     return
   }
@@ -570,6 +658,7 @@ const stubFloatClass = () => ''
           :image="image"
           :map-view="mapView"
           :pb-overview="overview"
+          :bases="baseMarkers"
           :view-scale="view.scale"
           :viewport-style="viewportStyle"
           :touch-pan="mapTouchPan"

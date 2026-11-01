@@ -11,6 +11,9 @@
     "retry": "Повторить",
     "mode3d": "3D-сцена",
     "mode2d": "2D-тактическая карта",
+    "basesSwitch": "Базовые точки",
+    "basesSupremacy": "Превосходство",
+    "basesEncounter": "Встречный бой",
     "backToPicker": "Выбрать другую карту",
     "twoDBadge": "2D",
     "annotations": {
