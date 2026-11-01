@@ -2,7 +2,7 @@ import { computed, ref } from 'vue'
 import { Feature, getFeatureAvailability, profileBackendAllowed } from '../../src/app/featureCapabilities.js'
 
 /**
- * `src/composables/useBusinessUserBootstrap.js` 的浏览器测试替身（见 use-auth-stub.js 说明）。
+ * `src/composables/useBusinessUserBootstrap.ts` 的浏览器测试替身（见 use-auth-stub.js 说明）。
  *
  * 只在浏览器 harness 的 Vite 实例里经 alias 生效。存在的唯一理由是：真实实现会在认证后
  * 打 `/api/.../profile` ensure 请求，而 harness 没有后端；这里让它直接 ready，

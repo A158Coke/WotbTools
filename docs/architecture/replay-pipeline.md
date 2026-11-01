@@ -66,7 +66,7 @@ frontend/src/replay-local/
 | 3D 回放 / 射击分析 | `components/Replay3DPane.vue`、`components/ReplayShotsPane.vue`（回放工作台能力面板）、`scene/*` | 直接消费 WASM 时序 / 射击切面 |
 | 名人堂 / 百场 / 三环提交 | `api/hall-of-fame.ts` → `replay-local/submissionFacts.ts` | 本机解析得到 `Battle` 事实 JSON（`facts` 字段）+ 原始回放（证据附件） |
 | 账号验证 | `ProfilePage.vue` | 本机解析出录像者 accountId，提交给 `POST /api/users/wotb-account/verify-replay` |
-| Android | `useNativeReplayImport.js` | Native 只交接字节；本机分析完成后 ACK pending |
+| Android | `useNativeReplayImport.ts` | Native 只交接字节；本机分析完成后 ACK pending |
 
 射击分析的产品计数口径与上游 Shot 身份一致：**一次开火 = 一个 unique `shotId` = 表格一行**。
 同一 `shotId` 如果关联多条 method29、多个 type=32 命中段或多次装甲接触，仍属于同一个 Shot；
@@ -127,7 +127,7 @@ Collector 的异常、超时、重复提交和断网均不改变主解析结果�
 任务最多 15 秒、空闲 15 秒后释放 Worker。crash、messageerror、离线和 pagehide 丢弃活动及排队任务；
 新文件可重新创建 Worker，旧任务不重试、不恢复。
 
-3D 打开回放后，`scene/replaySource.js` 的 `loadRecorderCameraFromFile` 用同一 parse Worker 与 session
+3D 打开回放后，`scene/replaySource.ts` 的 `loadRecorderCameraFromFile` 用同一 parse Worker 与 session
 取消语义后台调用 `parseRecorderCamera`，不阻塞进场；返回 `null` 或解析失败时录像者视角禁用，回放不受影响。
 
 物理出生方向只读 [canonical 地图语义](../reference/maps.md)，通过 `map_key`/`mapCodes` 查找，

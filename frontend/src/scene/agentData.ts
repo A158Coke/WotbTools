@@ -11,6 +11,19 @@ import { assetProvider } from './assetProvider.js'
 
 export { assetProvider }
 
+type TankId = number | string
+type ShotTankConfig = { pitch_limits?: unknown; shell_global_ids?: Array<number | null> }
+type ShotViewerInput = {
+  index?: unknown
+  shooter_tank_id?: number | null
+  target_tank_id?: number | null
+  shell_id?: number | null
+  shooter_config_idx?: number | null
+  target_config_idx?: number | null
+  shell_slot?: number | null
+  is_author?: boolean | null
+}
+
 // ---------- per-tank 数据（dump-tank-data 物化 → /api/tank/{id} 同形状） ----------
 
 // 同坦克 JSON 的 in-flight 合并（key = tankId，**settle 即清槽**）：同车检视一次会
@@ -20,7 +33,7 @@ export { assetProvider }
 // 含失败/重试路径），失败也不缓存（重试必发新请求）。
 const tankDataInflight = new Map()
 
-export function fetchTankData(id) {
+export function fetchTankData(id: TankId) {
   const key = String(id)
   const pending = tankDataInflight.get(key)
   if (pending) return pending
@@ -35,10 +48,10 @@ export function fetchTankData(id) {
  *  与装甲查看器同源取资产包 tank/{id}.json，按射击链所需字段投影——内嵌快照已退役
  *  （2026-10-15，随上游 shellKinds 一并改为 COS 获取，数据随包更新不再依赖前端发版）。
  *  未知/超测车型由 assetProvider 抛 HTTP 404，调用方按各自降级语义处理。 */
-export async function fetchShotTankData(id) {
+export async function fetchShotTankData(id: TankId) {
   const data = await fetchTankData(id)
-  const configs = (Array.isArray(data?.configs) ? data.configs : []).map((config) => {
-    const compact = {}
+  const configs = (Array.isArray(data?.configs) ? data.configs : []).map((config: Record<string, unknown>): ShotTankConfig => {
+    const compact: Record<string, unknown> = {}
     for (const key of ['pitch_limits', 'shell_global_ids']) {
       if (key in config) compact[key] = config[key]
     }
@@ -49,7 +62,7 @@ export async function fetchShotTankData(id) {
 
 // ---------- 全景名册（tank_cache.json；无服务端聚合回退） ----------
 
-let tankCachePromise = null
+let tankCachePromise: ReturnType<typeof assetProvider.json> | null = null
 
 /** 静态 tank_cache.json（一次装载；坦克百科与 3D 选车共用同一原始缓存） */
 function fetchTankCacheStatic() {
@@ -73,11 +86,11 @@ export function fetchTankEncyclopedia() {
 
 // ---------- 封面图（tank_images/{id}.webp） ----------
 
-export function tankImageUrl(id) {
+export function tankImageUrl(id: TankId) {
   return assetProvider.url(`/tank_images/${id}.webp`)
 }
 
-let tankIconCropsPromise = null
+let tankIconCropsPromise: ReturnType<typeof assetProvider.json> | null = null
 
 /**
  * 逐车封面图内容框（`tank_images/crops.json`，alpha>0 紧裁，canvas 像素坐标）。
@@ -100,11 +113,11 @@ export function loadTankIconCrops() {
  * 服务端 /api/shells/{id} 的客户端等价：顶级配置（configs 末位 = 默认顶级变体）的
  * 弹链 + caliber + 全局弹种 id（shell_global_ids 与 configs[].shells 同序）。
  */
-export async function fetchShells(id) {
+export async function fetchShells(id: TankId) {
   const data = await fetchTankData(id)
   const cfgs = data.configs || []
   const cfg = cfgs.length ? cfgs[cfgs.length - 1] : null
-  const shells = (cfg && cfg.shells ? cfg.shells : data.shells || []).map((s, i) => ({
+  const shells = (cfg && cfg.shells ? cfg.shells : data.shells || []).map((s: Record<string, unknown>, i: number) => ({
     // 判定字段（type_id / normalization / ricochet / penetration_far / caliber）必须原样保留：
     // 这里曾只挑显示字段，导致走该回退路径的弹体丢失转正角/弹种 id，判定只能 fail-closed。
     ...s,
@@ -126,7 +139,7 @@ export async function fetchShells(id) {
 
 // ---------- 击穿判定（客户端移植；wire 形状与 /api/penetrate 响应一致） ----------
 
-export async function judgePenetration(req) {
+export async function judgePenetration(req: object) {
   const { calculate } = await import('./penetration.js')
   return calculate(req)
 }
@@ -137,18 +150,18 @@ const SHOTS_KEY = 'wotb_agent_shots'
 const SHOTS_TTL_MS = 30 * 60 * 1000
 
 /** Both the shot list and viewer navigation must resolve the same mounted gun / shell pair. */
-export async function shotViewerQuery(shot) {
+export async function shotViewerQuery(shot: ShotViewerInput) {
   const shooterTank = shot.shooter_tank_id || 0
   const tank = shot.target_tank_id || shooterTank
   if (!tank) return null
-  let hit = null
+  let hit: { cfg: number; idx: number } | null = null
   if (shot.shell_id && shooterTank) {
     try {
       const data = await fetchShotTankData(shooterTank)
       const configs = data.configs || []
-      const pinned = Number.isInteger(shot.shooter_config_idx) ? configs[shot.shooter_config_idx] : null
+      const pinned = Number.isInteger(shot.shooter_config_idx) ? configs[shot.shooter_config_idx as number] : null
       const pinnedShell = (pinned?.shell_global_ids || []).indexOf(shot.shell_id)
-      if (pinnedShell >= 0) hit = { cfg: shot.shooter_config_idx, idx: pinnedShell }
+      if (pinnedShell >= 0) hit = { cfg: shot.shooter_config_idx as number, idx: pinnedShell }
       for (let ci = configs.length - 1; !hit && ci >= 0; ci--) {
         const idx = (configs[ci].shell_global_ids || []).indexOf(shot.shell_id)
         if (idx >= 0) hit = { cfg: ci, idx }
@@ -179,9 +192,9 @@ export async function shotViewerQuery(shot) {
  * 而非相机到命中点的直线距离——用户裁定 2026-10-13）。字段缺失/非法返回 0，
  * 调用方回退相机距离。
  */
-export function shotBallisticLength(shot) {
+export function shotBallisticLength(shot: { ball_a?: unknown; via?: unknown; ball_b?: unknown } | null | undefined) {
   if (!shot) return 0
-  const pts = [shot.ball_a, ...(Array.isArray(shot.via) ? shot.via : []), shot.ball_b]
+  const pts = [shot.ball_a, ...(Array.isArray(shot.via) ? shot.via : []), shot.ball_b] as number[][]
   for (const p of pts) {
     if (!Array.isArray(p) || p.length !== 3 || !p.every((v) => Number.isFinite(v))) return 0
   }
@@ -192,7 +205,7 @@ export function shotBallisticLength(shot) {
   return len
 }
 
-export function storeShotsForViewer(shots) {
+export function storeShotsForViewer(shots: unknown) {
   const payload = JSON.stringify({ at: Date.now(), shots })
   try {
     localStorage.setItem(SHOTS_KEY, payload)

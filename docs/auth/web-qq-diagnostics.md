@@ -6,7 +6,7 @@ schema、失败分类法，以及需要在 TX 生产环境执行的取证清单�
 
 ## 1. SPA 侧诊断事件（`[auth-diag]`）
 
-`frontend/src/platform/authDiagnostics.js` 输出单行 JSON（`console.info('[auth-diag]', …)`，
+`frontend/src/platform/authDiagnostics.ts` 输出单行 JSON（`console.info('[auth-diag]', …)`，
 可 grep / jq），另有 30 条环形缓冲：控制台 `window.__authDiag === undefined` 时用
 `snapshot()` 由支持人员导出。
 

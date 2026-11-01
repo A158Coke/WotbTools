@@ -1,5 +1,11 @@
 import { readonly, ref } from 'vue'
-import { ConnectivityState, createConnectivity, selectConnectivitySource } from '../platform/connectivity.js'
+import {
+  ConnectivityState,
+  createConnectivity,
+  selectConnectivitySource,
+  type ConnectivitySource,
+  type ConnectivityStateValue,
+} from '../platform/connectivity.js'
 import { getCapabilities, isAndroidApp } from './usePlatformBridge.js'
 
 /**
@@ -15,10 +21,10 @@ import { getCapabilities, isAndroidApp } from './usePlatformBridge.js'
  *
  * 单例：整页共享一个 store（一次订阅、一次回读）。`start()` 幂等且只解析一次来源。
  */
-const state = ref(ConnectivityState.UNKNOWN)
-let store = null
-let unsubscribeProjection = null
-let startPromise = null
+const state = ref<ConnectivityStateValue>(ConnectivityState.UNKNOWN)
+let store: ReturnType<typeof createConnectivity> | null = null
+let unsubscribeProjection: (() => void) | null = null
+let startPromise: Promise<ConnectivityStateValue> | null = null
 
 /**
  * 首次检测是否已完成（**响应式**）。`state` 的初始 UNKNOWN 只是「还没测」，不是「测了但
@@ -29,7 +35,7 @@ let startPromise = null
  * 能驱动依赖它的 availability / UI 从「暂未下结论」切到「真实 UNKNOWN」。
  */
 const settled = ref(false)
-let settledWaiters = []
+let settledWaiters: Array<() => void> = []
 /** 首次 read() 已返回（非响应式；只决定下一次状态投影是否同时提交 settled）。 */
 let firstReadDone = false
 
@@ -41,7 +47,7 @@ let firstReadDone = false
  *  - `whenSettled()` 的等待者在状态写入**之后**才唤醒（start() 的 finally），补判读到的是
  *    首次回读的最终结果。
  */
-function settleOnFirstRead(source) {
+function settleOnFirstRead(source: ConnectivitySource): ConnectivitySource {
   return {
     ...source,
     async read() {
@@ -72,7 +78,7 @@ async function resolveSource() {
   return selectConnectivitySource({ android, capabilities })
 }
 
-function ensureStore(source) {
+function ensureStore(source?: ConnectivitySource) {
   if (store) return store
   store = createConnectivity(source ? { source } : {})
   unsubscribeProjection = store.subscribe(next => {
@@ -98,7 +104,7 @@ export function useConnectivity() {
     /** 首次检测完成后 resolve（已完成则立即 resolve）。不会触发 start。 */
     whenSettled() {
       if (settled.value) return Promise.resolve()
-      return new Promise(resolve => settledWaiters.push(resolve))
+      return new Promise<void>(resolve => settledWaiters.push(resolve))
     },
     /** 解析来源并启动监听（幂等）；返回启动后的状态。 */
     start() {
@@ -124,7 +130,7 @@ export function useConnectivity() {
      * 「谁读了连通性」的断言仍然走 `connectivity` / 门禁，这里只移动事实源。
      * 未 start 时是空操作（没有 store 可注入）。
      */
-    setStateForTest(next) {
+    setStateForTest(next: unknown) {
       if (!store) return state.value
       return store.setState(next)
     },

@@ -2030,7 +2030,7 @@ function sideAwayFromClientX(clientX) {
  * 名册每行显示的当前 HP（与地图标记同一个权威投影：healthDisplayAt）。
  *
  * 传的是**完整投影**而不只是 current/max：名册的 HP 呈现模型要区分 exact / relative /
- * unknown / destroyed（见 scene/rosterState.js 的 hpPresentationFor）。`pct` 只在
+ * unknown / destroyed（见 scene/rosterState.ts 的 hpPresentationFor）。`pct` 只在
  * `displayCapacityHp` 可信时才有值，`relativeFull` 是 backend 标注的「相对满状态」事实——
  * 两者都不可用时呈现层落到 unknown（`—`），绝不伪造 current/max。
  *

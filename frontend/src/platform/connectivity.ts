@@ -27,7 +27,20 @@ export const ConnectivityState = Object.freeze({
   UNKNOWN: 'unknown',
 })
 
-const KNOWN_STATES = Object.freeze(Object.values(ConnectivityState))
+export type ConnectivityStateValue = (typeof ConnectivityState)[keyof typeof ConnectivityState]
+
+export interface ConnectivitySource {
+  name: string
+  read(): ConnectivityStateValue | Promise<ConnectivityStateValue>
+  subscribe(onChange: (next: ConnectivityStateValue) => void): (() => void) | void
+  capabilities?: string[] | null
+}
+
+const KNOWN_STATES: readonly string[] = Object.freeze(Object.values(ConnectivityState))
+
+function isKnownState(token: string): token is ConnectivityStateValue {
+  return KNOWN_STATES.includes(token)
+}
 
 /**
  * 把任意来源的原始值规范化成状态 token。
@@ -35,15 +48,15 @@ const KNOWN_STATES = Object.freeze(Object.values(ConnectivityState))
  * 未知 / 缺失 / 类型不符一律落到 [ConnectivityState.UNKNOWN]（**不是** online）：
  * 连通性判断必须 fail-closed —— 宁可在已知离线时少发一次请求，也不能对着不可达的服务发请求。
  */
-export function normalizeConnectivityState(raw) {
+export function normalizeConnectivityState(raw: unknown): ConnectivityStateValue {
   if (typeof raw === 'boolean') return raw ? ConnectivityState.ONLINE : ConnectivityState.OFFLINE
   if (typeof raw !== 'string') return ConnectivityState.UNKNOWN
   const token = raw.trim().toLowerCase()
-  return KNOWN_STATES.includes(token) ? token : ConnectivityState.UNKNOWN
+  return isKnownState(token) ? token : ConnectivityState.UNKNOWN
 }
 
 /** 只有明确的 `online` 才算在线；`degraded` / `unknown` 一律按「不能依赖网络」处理。 */
-export function isOnlineState(state) {
+export function isOnlineState(state: unknown) {
   return normalizeConnectivityState(state) === ConnectivityState.ONLINE
 }
 
@@ -51,7 +64,9 @@ export function isOnlineState(state) {
  * 浏览器来源：`navigator.onLine` + 窗口 online/offline 事件。
  * 只能作为 Web 环境的近似（§4），Android 壳走 bridge 来源。
  */
-export function createBrowserConnectivitySource(target = typeof window === 'undefined' ? null : window) {
+export function createBrowserConnectivitySource(
+  target: Window | null = typeof window === 'undefined' ? null : window,
+): ConnectivitySource {
   const read = () => {
     const nav = target?.navigator
     if (!nav || typeof nav.onLine !== 'boolean') return ConnectivityState.UNKNOWN
@@ -80,7 +95,7 @@ export function createBrowserConnectivitySource(target = typeof window === 'unde
  * 「事件说在线、读回来是离线」的双事实源。缺少 bridge / 缺少 `connectivity` 能力时返回
  * UNKNOWN（fail-closed），绝不猜测。
  */
-export function createAndroidConnectivitySource(bridgeCapabilities = null) {
+export function createAndroidConnectivitySource(bridgeCapabilities: string[] | null = null): ConnectivitySource {
   return {
     name: 'android',
     async read() {
@@ -118,12 +133,16 @@ export function createAndroidConnectivitySource(bridgeCapabilities = null) {
  * Native 未声明 `connectivity` 能力时不视为错误：退回浏览器近似，
  * 仍能提供 offline/online 两态，只是权威性较低 —— 这也是 §4 允许的最低要求。
  */
-export function selectConnectivitySource({ android = isAndroidApp(), capabilities = null } = {}) {
+export function selectConnectivitySource(
+  { android = isAndroidApp(), capabilities = null }: { android?: boolean; capabilities?: string[] | null } = {},
+) {
   if (android && (capabilities === null || capabilities.includes(NATIVE_CONNECTIVITY_CAPABILITY))) {
     return createAndroidConnectivitySource(capabilities)
   }
   return createBrowserConnectivitySource()
 }
+
+type ConnectivityListener = (next: ConnectivityStateValue) => void
 
 /**
  * 连通性 store：持有当前状态、去重通知、驱动订阅者。
@@ -131,13 +150,13 @@ export function selectConnectivitySource({ android = isAndroidApp(), capabilitie
  * 状态迁移是同步可见的：`setState()` 先更新再通知，因此 capability 门禁在事件回调里
  * 读到的永远是**新**状态（计划 §29「offline → online / online → offline 能力更新」）。
  */
-export function createConnectivity({ source = selectConnectivitySource() } = {}) {
-  let state = ConnectivityState.UNKNOWN
+export function createConnectivity({ source = selectConnectivitySource() }: { source?: ConnectivitySource } = {}) {
+  let state: ConnectivityStateValue = ConnectivityState.UNKNOWN
   let started = false
-  let unsubscribe = null
-  const listeners = new Set()
+  let unsubscribe: (() => void) | null = null
+  const listeners = new Set<ConnectivityListener>()
 
-  function notify(listener, next) {
+  function notify(listener: ConnectivityListener, next: ConnectivityStateValue) {
     try {
       listener(next)
     } catch {
@@ -145,7 +164,7 @@ export function createConnectivity({ source = selectConnectivitySource() } = {})
     }
   }
 
-  function setState(next) {
+  function setState(next: unknown) {
     const normalized = normalizeConnectivityState(next)
     if (normalized === state) return state
     state = normalized
@@ -165,7 +184,7 @@ export function createConnectivity({ source = selectConnectivitySource() } = {})
       return isOnlineState(state)
     },
     /** 订阅状态变化，返回退订函数。订阅者会立刻收到一次当前状态（可能是 UNKNOWN）。 */
-    subscribe(listener) {
+    subscribe(listener: ConnectivityListener) {
       listeners.add(listener)
       notify(listener, state)
       return () => listeners.delete(listener)

@@ -5,6 +5,7 @@ import {
   getPendingReplay,
   isAndroidApp,
   isNativeBridgeCompatible,
+  type NativePendingReplay,
 } from './usePlatformBridge.js'
 import { NATIVE_REPLAY_GLOBAL, NATIVE_REPLAY_RESOURCE_URL } from '../platform/nativeBridgeContract.js'
 
@@ -40,13 +41,17 @@ import { NATIVE_REPLAY_GLOBAL, NATIVE_REPLAY_RESOURCE_URL } from '../platform/na
  * @param onPendingFile async (file, pending) => boolean
  *        业务受理结果：`true` = 本机分析已完成（可 ACK Native），否则不得 ACK。
  */
-export function useNativeReplayImport({ isReady = () => false, onPendingFile, onReadError } = {}) {
+export function useNativeReplayImport({ isReady = () => false, onPendingFile, onReadError }: {
+  isReady?: () => boolean
+  onPendingFile?: (file: File, pending: NativePendingReplay) => boolean | Promise<boolean>
+  onReadError?: (reason?: string) => void
+} = {}) {
   const inflight = ref(false)
   let rerunRequested = false
   const consumedIds = new Set()
 
   /** Identity travels in a header, never in the resource URL or logs. */
-  async function readPendingFile(pending) {
+  async function readPendingFile(pending: NativePendingReplay) {
     console.debug('[replay-native] pending stream fetch start')
     const resp = await fetch(pending.uri, {
       headers: { 'X-Wotb-Pending-Id': pending.pendingId },

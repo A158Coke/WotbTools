@@ -15,6 +15,24 @@
 
 import { UNPRESENTABLE_COLUMN_KEYS } from './helpers.js'
 
+type Cells = Record<string, unknown>
+type CwAggregateRow = { team: number; accountId: number | string; cells?: Cells | null }
+type CwPlayerSummary = {
+  accountId: number | string
+  nickname?: string | null
+  clan?: string | null
+  battles?: number | null
+  wins?: number | null
+  damageTotal?: number | null
+  assistTotal?: number | null
+  killsTotal?: number | null
+  rating?: number | null
+  observedMean?: number | null
+  dimensionMeans?: Array<number | null> | null
+  mvpCount?: number | null
+  ratedBattles?: number | null
+}
+
 /** League Rating 七维列 key（顺序与后端 LeagueColumns.DIM_KEYS 一致）。 */
 export const CW_DIM_KEYS = [
   'league_damage_score',
@@ -43,22 +61,25 @@ const LEAGUE_ONLY_KEYS = new Set([
  *   dimensionMeans/mvpCount/wins；dimensionMeans 原样透传到 row.league 供 Summary Radar）
  * @returns {Array<{team:number, accountId:number|string, cells:Object, league:Object|null}>}
  */
-export function mergeCwPlayerRows(aggregateRows, playerSummaries) {
+export function mergeCwPlayerRows<S extends CwPlayerSummary>(
+  aggregateRows: CwAggregateRow[] | null | undefined,
+  playerSummaries: S[] | null | undefined,
+) {
   const summaries = (playerSummaries || []).slice()
-  const byAccount = new Map(summaries.map(s => [String(s.accountId), s]))
+  const byAccount = new Map(summaries.map((s): [string, S] => [String(s.accountId), s]))
   const rows = (aggregateRows || []).map(row => {
-    const cells = { ...(row.cells || {}) }
+    const cells: Cells = { ...(row.cells || {}) }
     const summary = byAccount.get(String(row.accountId)) || null
     fillLeagueCells(cells, summary)
     if (summary) {
       byAccount.delete(String(row.accountId))
     }
-    return { team: row.team, accountId: row.accountId, cells, league: summary }
+    return { team: row.team, accountId: row.accountId, cells, league: summary as S | null }
   })
   // 防御兜底：playerSummary 中存在但 aggregate 未覆盖的玩家（当前 contract 下 CW 批次
   // 必生成 aggregate，正常不触发）——保留评分玩家，Aggregate 字段补 null。
   for (const s of byAccount.values()) {
-    const cells = {
+    const cells: Cells = {
       nickname: s.nickname ?? null,
       clan: s.clan ?? null,
       battles: s.battles ?? null,
@@ -75,7 +96,7 @@ export function mergeCwPlayerRows(aggregateRows, playerSummaries) {
 
 /** 把 League summary 字段写入统一行 cells（V6 主 Rating / Observed Mean / 七维均值 /
  * MVP 次数 / 评分场次）。身份（accountId）是结构化字段，不写回 cells。 */
-function fillLeagueCells(cells, summary) {
+function fillLeagueCells(cells: Cells, summary: CwPlayerSummary | null) {
   // V6：league_rating = pooled-sample Rating；Observed Mean 仅作透明度信息展示。
   cells.league_rating = summary?.rating ?? null
   cells.league_observed_mean = summary?.observedMean ?? null
@@ -94,9 +115,12 @@ function fillLeagueCells(cells, summary) {
  * @param {Array} aggregateCols resp.aggregateColumns
  * @returns {Array<{key:string, num:boolean}>}
  */
-export function mergeCwPlayerColumns(leagueSummaryCols, aggregateCols) {
-  const seen = new Set()
-  const out = []
+export function mergeCwPlayerColumns<T extends { key: string }>(
+  leagueSummaryCols: T[] | null | undefined,
+  aggregateCols: T[] | null | undefined,
+) {
+  const seen = new Set<string>()
+  const out: T[] = []
   for (const c of (leagueSummaryCols || [])) {
     if (!LEAGUE_ONLY_KEYS.has(c.key) || seen.has(c.key)) continue
     seen.add(c.key)

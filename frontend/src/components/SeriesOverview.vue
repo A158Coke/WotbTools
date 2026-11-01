@@ -1,6 +1,6 @@
 <script setup>
 // 汇总视图顶部的系列赛概览（审计 BZ-06）：两支稳定战队时显示比分，其后是逐场结果条。
-// 逐场条目可点击，跳到该场的单场视图。视图模型来自 utils/replaySeries.js。
+// 逐场条目可点击，跳到该场的单场视图。视图模型来自 utils/replaySeries.ts。
 import { useI18n } from 'vue-i18n'
 import { fmtDuration, mapLabel } from '../utils/helpers.js'
 import { battleWinnerText } from '../utils/replaySeries.js'

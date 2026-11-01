@@ -1,5 +1,15 @@
 import { ConnectivityState, isOnlineState, normalizeConnectivityState } from '../platform/connectivity.js'
 
+type NoticeKeys = { messageKey: string; titleKey: string }
+
+/** profile backend 准入与业务 bootstrap 共用的上下文；缺字段即 fail-closed。 */
+export type ProfileBackendContext = {
+  authInitState?: string
+  authenticated?: boolean
+  connectivity?: unknown
+  authEpoch?: number
+}
+
 /**
  * Feature capability model —— 「这个功能现在能不能用」的**唯一**判定入口（计划 §2）。
  *
@@ -52,7 +62,7 @@ export const Feature = Object.freeze({
   BACKGROUND_SYNC: 'backgroundSync',
 })
 
-const REQUIREMENTS = Object.freeze({
+const REQUIREMENTS: Readonly<Record<string, string>> = Object.freeze({
   [Feature.REPLAY_IMPORT]: FeatureRequirement.LOCAL,
   [Feature.REPLAY_PARSING]: FeatureRequirement.LOCAL,
   [Feature.REPLAY_RESULT]: FeatureRequirement.LOCAL,
@@ -92,7 +102,7 @@ export const SYNC_PAUSED_MESSAGE_KEY = 'featureOffline.syncPaused'
  * 语义区分（review P1）：`unknown` / `degraded` / `service-unavailable` **不能**复用
  * `featureOffline.*`，否则用户会被错误告知「你现在离线」。三者各有自己的 title/body。
  */
-export const CONNECTIVITY_NOTICE = Object.freeze({
+export const CONNECTIVITY_NOTICE: Readonly<Record<string, NoticeKeys>> = Object.freeze({
   [ConnectivityState.UNKNOWN]: Object.freeze({
     messageKey: 'connectivityNotice.unknown',
     titleKey: 'connectivityNotice.unknownTitle',
@@ -119,7 +129,7 @@ const CONNECTIVITY_HINT_KEY = 'connectivityNotice.retry'
  *   `connectivityNotice.*`（**不**说「你离线」）；
  * - `online`：没有任何提示（三者全为 null）。
  */
-function noticeFor(reason, offlineBodyKey) {
+function noticeFor(reason: string, offlineBodyKey: string) {
   const connectivity = CONNECTIVITY_NOTICE[reason]
   if (!connectivity) {
     return { messageKey: offlineBodyKey, titleKey: OFFLINE_TITLE_KEY, hintKey: OFFLINE_HINT_KEY }
@@ -131,15 +141,15 @@ function noticeFor(reason, offlineBodyKey) {
   }
 }
 
-export function featureRequirement(feature) {
+export function featureRequirement(feature: string) {
   return REQUIREMENTS[feature] ?? null
 }
 
-export function isKnownFeature(feature) {
+export function isKnownFeature(feature: string) {
   return Object.prototype.hasOwnProperty.call(REQUIREMENTS, feature)
 }
 
-export function featuresByRequirement(requirement) {
+export function featuresByRequirement(requirement: string) {
   return Object.keys(REQUIREMENTS).filter(feature => REQUIREMENTS[feature] === requirement)
 }
 
@@ -150,7 +160,7 @@ export function featuresByRequirement(requirement) {
  * offline / unknown / degraded / service-unavailable 一律拒绝 —— 后三者不是「用户离线」，
  * 但同样不能对着不可达的服务发请求。
  */
-export function profileBackendAllowed({ authInitState, authenticated, connectivity } = {}) {
+export function profileBackendAllowed({ authInitState, authenticated, connectivity }: ProfileBackendContext = {}) {
   if (authInitState !== 'authenticated' || authenticated !== true) return false
   return getFeatureAvailability(Feature.ACCOUNT_PROFILE, { connectivity }).available
 }
@@ -175,7 +185,7 @@ export function profileBackendAllowed({ authInitState, authenticated, connectivi
  * `degraded` / `service-unavailable` / `unknown` 一律**不**算在线（`isOnlineState`），
  * 因此不会对着一个不可达的服务发请求。
  */
-export function getFeatureAvailability(feature, { connectivity = ConnectivityState.UNKNOWN } = {}) {
+export function getFeatureAvailability(feature: string, { connectivity = ConnectivityState.UNKNOWN }: { connectivity?: unknown } = {}) {
   const state = normalizeConnectivityState(connectivity)
   const online = isOnlineState(state)
   const requirement = featureRequirement(feature)

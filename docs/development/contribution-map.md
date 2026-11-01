@@ -22,7 +22,7 @@
 | 新增 Replay 派生指标或导出列 | `../../frontend/src/replay-local/compute/`（导出在 `export/`） | 相关 golden（`../../frontend/src/replay-local/__golden__`）；缺回放字段先改上游 Rust Core |
 | 新增 Replay Workspace 能力 | `../frontend/replay-workspace.md` | `../../frontend/src/composables/useReplay*.ts`、`useLocalReplayAnalysis.ts`、`../../frontend/src/replay-local/`、Replay 相关页面组件 |
 | 改名人堂 / Hundred / Mark3 | 对应 `../features/*.md` | `../../java/wotb-web/src/main/java/com/wotb/web/hof`、`hundred`、`mark3`，以及前端对应页面 |
-| 改登录、用户档案、WG 账号绑定 | `../auth/*.md` | `../../java/wotb-web/src/main/java/com/wotb/web/user`、Keycloak 配置、`../../frontend/src/composables/useAuth.js` |
+| 改登录、用户档案、WG 账号绑定 | `../auth/*.md` | `../../java/wotb-web/src/main/java/com/wotb/web/user`、Keycloak 配置、`../../frontend/src/composables/useAuth.ts` |
 | 新增前端页面或视图 | `../frontend/architecture.md` | `../../frontend/src/app/viewRegistry.js`（组件与能力映射）、`navigation.js`（allowlist / 导航 / query 契约）、`router.js`、`../../frontend/src/components/`、`../../frontend/src/locales/*.json` |
 | 改新手引导或官方示例 | `../features/onboarding.md` | `../../frontend/src/composables/useOnboarding.ts`、`../../frontend/src/components/OnboardingHost.vue`、typed `shared/onboarding.ts`、`../../common/assets/onboarding/manifest.json` 与版本化示例 |
 | 新增静态数据或资源 | `../architecture/tankopedia-reference-data.md` 或相关 assets 文档 | `../../common/`、`../../frontend/public/`、`../assets/...`；避免多处手写同一份映射 |

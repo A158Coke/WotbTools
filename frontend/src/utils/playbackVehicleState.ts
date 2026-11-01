@@ -1,6 +1,7 @@
 import type { VehiclePlaybackTrack } from '../types/playback-v2.js'
 import { positionCoveredAtV2, positionAtV2, orientationAtV2, lifeAt } from './battlePlaybackV2'
 import { screenRotation, turretWorldYawDeg } from './battlePlayback'
+import { isFiniteNumber } from '../types/primitive-guards.js'
 
 type MarkerSize = {
   renderBox: { width: number; height: number }
@@ -84,10 +85,10 @@ export function projectVehicleState({
   const direction = orientationAtV2(track.orientationSegments, time)
   const hullYawDeg = pose && Number.isFinite(pose.yawRad)
     ? screenRotation(pose.yawRad * RAD2DEG)
-    : (direction && Number.isFinite(direction.hullYawDeg) ? screenRotation(direction.hullYawDeg) : null)
+    : (direction && isFiniteNumber(direction.hullYawDeg) ? screenRotation(direction.hullYawDeg) : null)
   const turretYawDeg = pose && Number.isFinite(pose.yawRad) && Number.isFinite(pose.turretRelRad)
     ? screenRotation(turretWorldYawDeg(pose.yawRad * RAD2DEG, pose.turretRelRad * RAD2DEG))
-    : (direction && Number.isFinite(direction.hullYawDeg) && Number.isFinite(direction.turretRelativeYawDeg)
+    : (direction && isFiniteNumber(direction.hullYawDeg) && isFiniteNumber(direction.turretRelativeYawDeg)
         ? screenRotation(turretWorldYawDeg(direction.hullYawDeg, direction.turretRelativeYawDeg))
         : null)
   // friendly is a canonical track fact. The perspective team is presentation

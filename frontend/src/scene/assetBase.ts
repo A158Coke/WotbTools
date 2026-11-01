@@ -9,7 +9,7 @@ import { ANDROID_ASSET_BASE, isAndroidRuntime } from '../platform/runtime.js'
 
 const productionDefault = (import.meta.env.VITE_ASSET_BASE_URL ?? '').replace(/\/+$/, '')
 
-let cached = null
+let cached: string | null = null
 
 export function assetBase() {
   // APK CSP and readiness gate review one production gateway; Web keeps its overrides.
@@ -22,7 +22,7 @@ export function assetBase() {
     // 只持久化真正的显式 override。`?assets=`（显式空）是"清除 override"的手段：
     // 若把回落到的生产默认写进 localStorage，后续更换生产 origin 时这些浏览器会被
     // 旧值钉住，永远取不到新的构建默认。
-    if (q) localStorage.setItem('wotb_asset_base', cached)
+    if (q) localStorage.setItem('wotb_asset_base', cached!)
     else localStorage.removeItem('wotb_asset_base')
   }
   return cached

@@ -1,5 +1,7 @@
 import { NATIVE_AUTH_CHANGED_GLOBAL, NATIVE_AUTH_METHODS } from './nativeBridgeContract.js'
 import { callBridge } from '../composables/usePlatformBridge.js'
+import { isRecord } from '../types/primitive-guards.js'
+import type { AuthClaims, AuthProvider } from '../types/auth.js'
 
 /**
  * native-auth RPC 的单次上限：Android 侧可能在回复前做 OIDC discovery + token refresh
@@ -12,15 +14,19 @@ const AUTH_TOKEN_MIN_VALIDITY_SECONDS = 30
 
 const AUTH_RPC_OPTIONS = Object.freeze({ timeoutMs: NATIVE_AUTH_TIMEOUT_MS })
 
+function isAuthenticatedState(state: unknown) {
+  return isRecord(state) && state.authenticated === true
+}
+
 /**
  * Android 壳的认证 owner：OIDC 会话在 Native（AppAuth + external user-agent），
  * 页面只经 Native Bridge 读取状态 / 触发登录登出，**从不导航、从不构造 keycloak-js**。
  *
- * 调用方（useAuth.js）已确认 bridge 版本受支持（SUPPORTED_NATIVE_BRIDGE_VERSIONS）+ `native-auth` 能力；这里只做协议映射。
+ * 调用方（useAuth.ts）已确认 bridge 版本受支持（SUPPORTED_NATIVE_BRIDGE_VERSIONS）+ `native-auth` 能力；这里只做协议映射。
  */
-export function createAndroidAuthProvider() {
+export function createAndroidAuthProvider(): AuthProvider {
   let authenticated = false
-  let claims = null
+  let claims: AuthClaims | null = null
   let accessToken = ''
   let generation = 0
 
@@ -37,26 +43,27 @@ export function createAndroidAuthProvider() {
    * Transient refresh failure invalidates the API token, not the Native-owned cached session.
    * Only a confirmed Native logout or malformed reply clears the local projection.
    */
-  async function applyTokenReply(reply, expectedGeneration) {
+  async function applyTokenReply(rawReply: unknown, expectedGeneration: number) {
     if (generation !== expectedGeneration) return false
+    const reply = isRecord(rawReply) ? rawReply : null
     if (reply?.error === 'refresh-failed') {
       accessToken = ''
       const state = await callBridge(NATIVE_AUTH_METHODS.getState, {}, AUTH_RPC_OPTIONS)
       if (generation !== expectedGeneration) return false
-      if (state?.authenticated !== true) return clear()
+      if (!isAuthenticatedState(state)) return clear()
       authenticated = true
       // Cached claims preserve local UI permissions; no expired token is exposed to API callers.
-      if (reply.claims && typeof reply.claims === 'object') claims = reply.claims
+      if (isRecord(reply?.claims)) claims = reply.claims as AuthClaims
       return false
     }
     if (reply?.error || typeof reply?.token !== 'string' || !reply.token) return clear()
     authenticated = true
     accessToken = reply.token
-    claims = reply.claims && typeof reply.claims === 'object' ? reply.claims : null
+    claims = isRecord(reply.claims) ? reply.claims as AuthClaims : null
     return true
   }
 
-  function readAccessToken(minValiditySeconds) {
+  function readAccessToken(minValiditySeconds: number) {
     return callBridge(
       NATIVE_AUTH_METHODS.getAccessToken,
       { minValiditySeconds },
@@ -72,7 +79,7 @@ export function createAndroidAuthProvider() {
     const expectedGeneration = ++generation
     const state = await callBridge(NATIVE_AUTH_METHODS.getState, {}, AUTH_RPC_OPTIONS)
     if (generation !== expectedGeneration) return false
-    if (state?.authenticated !== true) return clear()
+    if (!isAuthenticatedState(state)) return clear()
     return applyTokenReply(await readAccessToken(AUTH_TOKEN_MIN_VALIDITY_SECONDS), expectedGeneration)
   }
 
@@ -146,9 +153,9 @@ export function createAndroidAuthProvider() {
  * authInitState，由既有 UI 提示；强制更新由 Native 的 mandatory-update gate 负责。
  * **绝不构造 keycloak-js，绝不导航页面。**
  */
-export function createUnsupportedAuthProvider(reason) {
+export function createUnsupportedAuthProvider(reason: string): AuthProvider {
   function unsupportedError() {
-    const error = new Error(`NATIVE_AUTH_UNSUPPORTED: ${reason}`)
+    const error: Error & { code?: string; reason?: string } = new Error(`NATIVE_AUTH_UNSUPPORTED: ${reason}`)
     error.name = 'NATIVE_AUTH_UNSUPPORTED'
     error.code = 'NATIVE_AUTH_UNSUPPORTED'
     error.reason = reason

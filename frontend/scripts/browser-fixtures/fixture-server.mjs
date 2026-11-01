@@ -7,6 +7,7 @@
  *
  * 本文件从 browser-workspace-interaction.mjs 原样搬出（单一来源，避免第二份分叉）。
  */
+import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -22,9 +23,14 @@ const frontendRoot = resolve(here, '..', '..')
  * 再整体换掉，才不会拼出假路径。
  */
 const AUTH_BOUNDARY_STUBS = new Map([
-  [resolve(frontendRoot, 'src/composables/useAuth.js'), resolve(here, 'use-auth-stub.js')],
-  [resolve(frontendRoot, 'src/composables/useBusinessUserBootstrap.js'), resolve(here, 'use-business-user-bootstrap-stub.js')],
+  [resolve(frontendRoot, 'src/composables/useAuth.ts'), resolve(here, 'use-auth-stub.js')],
+  [resolve(frontendRoot, 'src/composables/useBusinessUserBootstrap.ts'), resolve(here, 'use-business-user-bootstrap-stub.js')],
 ])
+
+// 这些映射按解析后的绝对路径匹配：源文件改名后替身会静默失效，门禁就会走真实实现。
+for (const from of [...AUTH_BOUNDARY_STUBS.keys()]) {
+  if (!existsSync(from)) throw new Error(`Browser fixture stub source does not exist: ${from}`)
+}
 
 /** Vite 的 module id 在 Windows 上是正斜杠、可能带盘符前导斜杠，且大小写不敏感；比较前统一规整。 */
 function normalizeId(id) {

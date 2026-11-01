@@ -43,7 +43,7 @@ assetBase()  ← 解析出的 asset origin
 
 ## 配置来源与优先级
 
-`frontend/src/scene/assetBase.js`：
+`frontend/src/scene/assetBase.ts`：
 
 1. `?assets=<url>` URL 参数（开发/运维 override，非空时持久化到 localStorage）
 2. `localStorage.wotb_asset_base`（单浏览器 override）
@@ -190,6 +190,6 @@ CORS 未覆盖 `http://localhost:*`，本地 dev 直连该 origin 时 GLB/JSON �
 ## 相关
 
 - `frontend/src/scene/assetProvider.js` —— 唯一边界（logical path → origin → bytes/JSON/URL）
-- `frontend/src/scene/assetBase.js` —— origin 解析与优先级
+- `frontend/src/scene/assetBase.ts` —— origin 解析与优先级
 - `frontend/src/scene/assetBase.test.js` —— 优先级与空值语义的回归测试
 - 上游 `scripts/export_asset_pack.py`、`scripts/asset_manifest.py` —— 打包与清单

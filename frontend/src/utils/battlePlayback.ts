@@ -1,6 +1,20 @@
 /** Battle Playback presentation math, event aggregation and view utilities. */
 
 import { positionAtV2, positionCoveredAtV2 } from './battlePlaybackV2.js'
+import type { BattleEvent, PositionSegment, VehiclePlaybackTrack } from '../types/playback-v2.js'
+
+type TimedPoint = { x: number; y: number; timeSec: number }
+type RouteLike = { positionSegments?: PositionSegment[] | null; points?: TimedPoint[] | null }
+type PoseAt = (route: RouteLike, t: number) => { x: number; y: number } | null | undefined
+type TrailVehicle = RouteLike & Pick<VehiclePlaybackTrack, 'accountId' | 'friendly'>
+type PositionTrail = Pick<VehiclePlaybackTrack, 'accountId' | 'friendly'> & {
+  opacity: number
+  from?: TimedPoint
+  to?: TimedPoint
+  point?: TimedPoint
+}
+type TracerEvent = Pick<BattleEvent, 'type' | 'accountId' | 'targetAccountId' | 'timeSec'>
+type PanZoomView = { scale: number; tx: number; ty: number }
 
 /** Legacy point-route interpolation limit. V2 routes use canonical segment boundaries. */
 const LEGACY_OBSERVED_GAP_SEC = 5
@@ -12,7 +26,7 @@ const LEGACY_OBSERVED_GAP_SEC = 5
  * - gap > 5s（跨越断线/失察）→ null，不穿线
  * - 晚于末点 → 返回最后已知位置（供失察淡化/阵亡标记）
  */
-export function positionAt(points, t) {
+export function positionAt(points: TimedPoint[] | null | undefined, t: number) {
   if (!points || points.length === 0 || !Number.isFinite(t)) return null
   if (t < points[0].timeSec - 1e-6) return null
   // t 恰为采样点（含 gap 后重新上报的首点）：直接返回该点本身；
@@ -45,9 +59,13 @@ export function positionAt(points, t) {
 /** 争霸赛实时点数：t 时刻该队最近一次 ≤t 的广播值（type-8 subtype48 field13，PROVEN）；
  * 无 → null（非争霸赛/该队暂无广播时不显示，绝不用结算值冒充实时比分）。
  */
-export function teamPointsAt(samples, team, t) {
+export function teamPointsAt(
+  samples: Array<{ team: number; timeSec: number; points: number } | null> | null | undefined,
+  team: number,
+  t: number,
+) {
   if (!Array.isArray(samples) || !Number.isFinite(t)) return null
-  let points = null
+  let points: number | null = null
   for (const s of samples) {
     if (!s || s.team !== team || !Number.isFinite(s.timeSec) || !Number.isFinite(s.points)) continue
     if (s.timeSec <= t + 1e-6) points = s.points
@@ -57,7 +75,7 @@ export function teamPointsAt(samples, team, t) {
 }
 
 /** 角度归一化到 [-180, 180)。 */
-export function normalizeDeg(a) {
+export function normalizeDeg(a: number) {
   return (((a + 180) % 360) + 360) % 360 - 180
 }
 
@@ -66,12 +84,12 @@ export function normalizeDeg(a) {
  * 地图约定：yaw 从北(+Z)起顺时针为正；屏幕：+Y 向下。两次翻转（Z→−Y 镜像与 y-down 顺时针）抵消，
  * 故 screenRotate = yawDeg（0=朝上、90=朝右/东、180=朝下、270=朝左），四个基准方向已用公式验证。
  */
-export function screenRotation(yawDeg) {
+export function screenRotation(yawDeg: number) {
   return normalizeDeg(yawDeg)
 }
 
 /** 炮塔世界方向 = normalize(hullYaw + turretRelativeYaw)（单位：度）。 */
-export function turretWorldYawDeg(hullYawDeg, turretRelativeYawDeg) {
+export function turretWorldYawDeg(hullYawDeg: number, turretRelativeYawDeg: number) {
   return normalizeDeg(hullYawDeg + turretRelativeYawDeg)
 }
 
@@ -84,7 +102,7 @@ export { formatPlaybackClock as formatClock } from './playbackClock'
  * 末点之后的最后已知位置、gap 内、首点之前与非有限坐标一律 null——
  * 炮线端点禁止用最后已知位置伪造射击位置。
  */
-export function trustedPositionAt(points, t) {
+export function trustedPositionAt(points: TimedPoint[] | null | undefined, t: number) {
   const p = positionAt(points, t)
   if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return null
   if (Math.abs(p.timeSec - t) > 1e-6) return null
@@ -98,7 +116,7 @@ export function trustedPositionAt(points, t) {
  * **门控不变**：事件时刻必须落在观测区间（`positionCoveredAtV2`）才可信——位姿通道只改"取哪个值"，
  * 不放松"能不能画"（炮线端点禁止用最后已知位置 / 编造位置伪造射击位置）。
  */
-function trustedRoutePosition(route, t, poseAt = null) {
+function trustedRoutePosition(route: RouteLike, t: number, poseAt: PoseAt | null = null) {
   if (Array.isArray(route?.positionSegments)) {
     if (!positionCoveredAtV2(route.positionSegments, t)) return null
     if (poseAt) {
@@ -118,9 +136,9 @@ function trustedRoutePosition(route, t, poseAt = null) {
  * per-frame window extraction then costs two binary searches + a slice instead of
  * re-filtering and re-sorting every sample of every observed segment at 60 fps.
  */
-const trailSamplesCache = new WeakMap()
+const trailSamplesCache = new WeakMap<object, PositionSegment['samples']>()
 
-function sortedTrailSamples(segment, segmentStart, segmentEnd) {
+function sortedTrailSamples(segment: PositionSegment, segmentStart: number, segmentEnd: number) {
   let sorted = trailSamplesCache.get(segment)
   if (!sorted) {
     sorted = segment.samples
@@ -134,7 +152,7 @@ function sortedTrailSamples(segment, segmentStart, segmentEnd) {
   return sorted
 }
 
-function lowerBoundTimeSec(sorted, t) {
+function lowerBoundTimeSec(sorted: Array<{ timeSec: number }>, t: number) {
   let lo = 0
   let hi = sorted.length
   while (lo < hi) {
@@ -145,7 +163,7 @@ function lowerBoundTimeSec(sorted, t) {
   return lo
 }
 
-function upperBoundTimeSec(sorted, t) {
+function upperBoundTimeSec(sorted: Array<{ timeSec: number }>, t: number) {
   let lo = 0
   let hi = sorted.length
   while (lo < hi) {
@@ -163,11 +181,11 @@ function upperBoundTimeSec(sorted, t) {
  * intervals do not extend the visible trail. The current endpoint is queried through
  * canonical segment interpolation when the current time is inside that segment.
  */
-export function recentPositionTrails(vehicles, nowSec, windowSec = 2) {
+export function recentPositionTrails(vehicles: TrailVehicle[] | null | undefined, nowSec: number, windowSec = 2) {
   if (!Array.isArray(vehicles) || !Number.isFinite(nowSec)) return []
   const span = Number.isFinite(windowSec) && windowSec > 0 ? windowSec : 2
   const start = nowSec - span
-  const trails = []
+  const trails: PositionTrail[] = []
   for (const vehicle of vehicles) {
     for (const segment of vehicle?.positionSegments || []) {
       if (segment?.knowledge !== 'OBSERVED'
@@ -178,7 +196,7 @@ export function recentPositionTrails(vehicles, nowSec, windowSec = 2) {
       const samples = sortedTrailSamples(segment, segmentStart, segmentEnd)
       if (samples.length === 0) continue
 
-      const path = []
+      const path: TimedPoint[] = []
       const first = samples[0]
       const last = samples[samples.length - 1]
       if (start > first.timeSec + 1e-6 && start < last.timeSec - 1e-6) {
@@ -237,16 +255,23 @@ export function recentPositionTrails(vehicles, nowSec, windowSec = 2) {
  * @param poseAt     (vehicle, t) → { x, y } | null（y = 游戏 z）
  * @param coveredAt  (vehicle, t) → boolean（canonical 观测区间）
  */
-export function recentPositionTrailsFromPose(vehicles, poseAt, coveredAt, nowSec, windowSec = 2, stepSec = 0.1) {
+export function recentPositionTrailsFromPose(
+  vehicles: TrailVehicle[] | null | undefined,
+  poseAt: PoseAt,
+  coveredAt: (vehicle: TrailVehicle, t: number) => boolean,
+  nowSec: number,
+  windowSec = 2,
+  stepSec = 0.1,
+) {
   if (!Array.isArray(vehicles) || typeof poseAt !== 'function' || typeof coveredAt !== 'function'
     || !Number.isFinite(nowSec)) return []
   const span = Number.isFinite(windowSec) && windowSec > 0 ? windowSec : 2
   const step = Number.isFinite(stepSec) && stepSec > 0 ? stepSec : 0.1
   const start = nowSec - span
-  const trails = []
+  const trails: PositionTrail[] = []
   for (const vehicle of vehicles) {
     // 从当前时刻向回走；未观测处断链（绝不跨越 AoI 空隙连线）。
-    let chain = []
+    let chain: TimedPoint[] = []
     const emit = () => {
       for (let i = 1; i < chain.length; i += 1) {
         const from = chain[i - 1]
@@ -300,13 +325,13 @@ const TRACER_FLASH_PEAK_REAL_SEC = 0.2
 const SAME_SHOT_WINDOW_SEC = 0.25
 
 /** tracerLines 的去重炮列表缓存（key = 事件数组身份；结果与事件数组同生命周期）。 */
-const tracerShotsCache = new WeakMap()
+const tracerShotsCache = new WeakMap<object, TracerEvent[]>()
 
 /** tracerLines 的 (attacker,target) 分组去重（见 tracerLines 注释），按事件数组身份缓存。 */
-function dedupTracerShots(events) {
+function dedupTracerShots(events: Array<TracerEvent | null>) {
   const cached = tracerShotsCache.get(events)
   if (cached) return cached
-  const byPair = new Map()
+  const byPair = new Map<string, TracerEvent[]>()
   for (const ev of events) {
     if (!ev || (ev.type !== 'DAMAGE' && ev.type !== 'KILL')) continue
     if (ev.accountId == null || ev.targetAccountId == null || ev.accountId === ev.targetAccountId) continue
@@ -316,10 +341,10 @@ function dedupTracerShots(events) {
     if (list) list.push(ev)
     else byPair.set(key, [ev])
   }
-  const shots = []
+  const shots: TracerEvent[] = []
   for (const pair of byPair.values()) {
     pair.sort((a, b) => a.timeSec - b.timeSec)
-    let kept = null
+    let kept: TracerEvent | null = null
     for (const ev of pair) {
       if (!kept) {
         kept = ev
@@ -357,7 +382,13 @@ function dedupTracerShots(events) {
  *                       （只改端点取值；可信度门控仍是 canonical 观测区间）
  * @returns [{ x1, y1, x2, y2, opacity, flashProgress, flashOpacity, timeSec, attackerAccountId, targetAccountId }]
  */
-export function tracerLines(events, routesByAccount, nowSec, speed, poseAt = null) {
+export function tracerLines(
+  events: Array<TracerEvent | null> | null | undefined,
+  routesByAccount: Map<unknown, RouteLike> | null | undefined,
+  nowSec: number,
+  speed: number,
+  poseAt: PoseAt | null = null,
+) {
   if (!Array.isArray(events) || !routesByAccount || !Number.isFinite(nowSec)) return []
   const rate = Number.isFinite(speed) && speed > 0 ? speed : 1
   const windowSec = TRACER_BASE_SEC * rate
@@ -426,7 +457,7 @@ const VIEW_MAX_SCALE = 4
  * （(px − tx)/scale 与 (py − ty)/scale 保持不变），translate 单位为屏幕像素。
  * 调用方（wheel/pinch）必须传入屏幕坐标，不得混入内容坐标。
  */
-export function zoomViewAt(view, px, py, factor, minScale = VIEW_MIN_SCALE, maxScale = VIEW_MAX_SCALE) {
+export function zoomViewAt(view: PanZoomView, px: number, py: number, factor: number, minScale = VIEW_MIN_SCALE, maxScale = VIEW_MAX_SCALE) {
   if (!view || !Number.isFinite(view.scale) || !Number.isFinite(factor) || factor <= 0) return view
   const next = Math.min(maxScale, Math.max(minScale, view.scale * factor))
   const ratio = next / view.scale
@@ -444,7 +475,7 @@ export function zoomViewAt(view, px, py, factor, minScale = VIEW_MIN_SCALE, maxS
  * - 地图小于/等于 stage → 居中（tx = (viewW - scaledW)/2）。
  * pan bounds 依据 stage 与 rendered map rect，而非 map 自身尺寸。尺寸未知（≤0）时不做钳制。
  */
-export function clampViewPan(view, viewW, viewH, mapW = viewW, mapH = viewH) {
+export function clampViewPan(view: PanZoomView, viewW: number, viewH: number, mapW = viewW, mapH = viewH) {
   if (!view || !Number.isFinite(view.scale)) return view
   const s = view.scale
   const known = Number.isFinite(viewW) && viewW > 0 && Number.isFinite(viewH) && viewH > 0
@@ -481,9 +512,9 @@ export function clampViewPan(view, viewW, viewH, mapW = viewW, mapH = viewH) {
  */
 /** 事件数组时钟升序缓存（key = 数组身份）：升序时 (fromSec, toSec] 窗口可二分；含
  * 非 finite timeSec 视为无序，回退 filter（NaN 比较恒 false，升序判定不可信）。 */
-const eventsAscendingCache = new WeakMap()
+const eventsAscendingCache = new WeakMap<object, boolean>()
 
-function eventsAscending(events) {
+function eventsAscending(events: Array<{ timeSec: number }>) {
   let ascending = eventsAscendingCache.get(events)
   if (ascending === undefined) {
     ascending = true
@@ -504,7 +535,7 @@ function eventsAscending(events) {
 }
 
 /** 升序数组中第一个 timeSec > t 的下标（严格上界，与 filter 的严格不等号逐位一致）。 */
-function firstIndexAfterTimeSec(sorted, t) {
+function firstIndexAfterTimeSec(sorted: Array<{ timeSec: number }>, t: number) {
   let lo = 0
   let hi = sorted.length
   while (lo < hi) {
@@ -515,7 +546,7 @@ function firstIndexAfterTimeSec(sorted, t) {
   return lo
 }
 
-export function eventsCrossed(events, fromSec, toSec) {
+export function eventsCrossed<T extends { timeSec: number }>(events: T[] | null | undefined, fromSec: number, toSec: number) {
   if (!Array.isArray(events) || !Number.isFinite(fromSec) || !Number.isFinite(toSec)) return []
   // 播放事件流按回放时钟升序时，窗口 (fromSec, toSec] 是连续区间：二分 + slice 代替
   // 每帧全量 filter（消费端 consumeEvents 在 rAF 帧内逐帧调用）。
@@ -546,7 +577,7 @@ const KILL_FEED_MAX = 2
  * 过滤仍未过期的 transient 项：item 需携带 bornRealMs（performance.now 基准）与 durationMs。
  * 纯函数：由外层 wall-clock 驱动（播放帧 / 暂停时轻量时钟），seek 清空由调用方负责。
  */
-export function transientsActive(items, nowRealMs) {
+export function transientsActive<T extends { bornRealMs: number; durationMs: number }>(items: T[] | null | undefined, nowRealMs: number) {
   if (!Array.isArray(items) || !Number.isFinite(nowRealMs)) return []
   return items.filter(i =>
     i && Number.isFinite(i.bornRealMs) && Number.isFinite(i.durationMs)
@@ -559,10 +590,15 @@ export function transientsActive(items, nowRealMs) {
  * - 排队条目（shownAt 为空）且有展示空位时提升为「正在展示」（此刻起算 duration）。
  * - 绝不 slice 掉尚未展示完的旧事件：第 3 条及以后等待，待到空位才展示。
  */
-export function activeFeed(items, nowRealMs, shownAt, max = KILL_FEED_MAX) {
+export function activeFeed<T extends { id: unknown; durationMs: number }>(
+  items: T[] | null | undefined,
+  nowRealMs: number,
+  shownAt: Map<unknown, number>,
+  max = KILL_FEED_MAX,
+) {
   if (!Array.isArray(items) || !Number.isFinite(nowRealMs)) return []
-  const shownMs = (id) => (shownAt && shownAt.get(id)) ?? null
-  const visible = (it) => {
+  const shownMs = (id: unknown) => (shownAt && shownAt.get(id)) ?? null
+  const visible = (it: T) => {
     const s = shownMs(it.id)
     return s != null && Number.isFinite(it.durationMs) && nowRealMs - s < it.durationMs
   }
@@ -580,6 +616,6 @@ export function activeFeed(items, nowRealMs, shownAt, max = KILL_FEED_MAX) {
 }
 
 /** Event Banner 入队：只追加（排队展示由 activeFeed 决定，不直接 slice 挤掉旧事件）。 */
-export function pushFeed(items, entry) {
+export function pushFeed<T>(items: readonly T[], entry: T) {
   return [...items, entry]
 }

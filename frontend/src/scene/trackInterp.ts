@@ -30,12 +30,17 @@ export const GRID_DT = 0.1
  * 热路径用 `segmentAtInto`（写入调用方复用的对象）；本公开包装按次分配，
  * 语义逐位一致（单测锁定本函数）。
  */
-export function segmentAt(t, t0, dt, n) {
+type Sampler = (index: number) => number
+type Interval = { i: number; f: number }
+type Coverage = readonly number[] | null | undefined
+type Span = [start: number, end: number]
+
+export function segmentAt(t: number, t0: number, dt: number, n: number) {
   return segmentAtInto(t, t0, dt, n, { i: 0, f: 0 })
 }
 
 /** [`segmentAt`] 的零分配形态：结果写入 `out` 并返回它。 */
-export function segmentAtInto(t, t0, dt, n, out) {
+export function segmentAtInto(t: number, t0: number, dt: number, n: number, out: Interval) {
   if (!(n >= 2) || !(dt > 0)) {
     out.i = 0
     out.f = 0
@@ -53,12 +58,12 @@ export function segmentAtInto(t, t0, dt, n, out) {
  * 端点外按**保持**语义（返回首段/末段并 clamp 比例）——与上游 `PoseKeyframes` 契约一致。
  * @returns {{ i: number, f: number }} i = 左关键帧下标（clamp 到 [0, K-2]），f = 段内比例
  */
-export function keyframeAt(t, times) {
+export function keyframeAt(t: number, times: ArrayLike<number>) {
   return keyframeAtInto(t, times, { i: 0, f: 0 })
 }
 
 /** [`keyframeAt`] 的零分配形态：结果写入 `out` 并返回它。 */
-export function keyframeAtInto(t, times, out) {
+export function keyframeAtInto(t: number, times: ArrayLike<number>, out: Interval) {
   const k = times.length
   if (k === 0 || k === 1 || t <= times[0]) {
     out.i = 0
@@ -100,7 +105,7 @@ const _segScratch = { i: 0, f: 0 }
  * @param {number[]} times 关键帧时刻（升序）
  * @param {number} t 回放时刻（秒）
  */
-export function sampleKeyframes(get, times, t) {
+export function sampleKeyframes(get: Sampler, times: ArrayLike<number>, t: number) {
   const k = times.length
   if (k === 0) return 0
   if (k === 1) return get(0)
@@ -113,7 +118,7 @@ export function sampleKeyframes(get, times, t) {
  * 均匀网格上的线性插值（**回退路径**：旧 facet / 无关键帧的通道）。
  * 网格是滤波器输出的 10Hz 采样；缺失 `pose_kf` 时与历史行为逐值一致。
  */
-export function sampleChannel(get, n, t, t0, dt) {
+export function sampleChannel(get: Sampler, n: number, t: number, t0: number, dt: number) {
   if (n === 0) return 0
   if (n === 1) return get(0)
   const { i, f } = segmentAtInto(t, t0, dt, n, _segScratch)
@@ -125,7 +130,7 @@ export function sampleChannel(get, n, t, t0, dt) {
  * 位姿覆盖段（coverage 闭区间对）定位：返回包含 `t` 的段 `[start, end]`，无覆盖返回 null。
  * 浮点容差与 `poseCoveredAt` 一致（1e-6s）。
  */
-export function coverageSpanAt(coverage, t) {
+export function coverageSpanAt(coverage: Coverage, t: number): Span | null {
   if (!Array.isArray(coverage) || !Number.isFinite(t)) return null
   for (let i = 0; i + 1 < coverage.length; i += 2) {
     const start = coverage[i]
@@ -145,12 +150,12 @@ export function coverageSpanAt(coverage, t) {
  * 采样热路径（每车每帧）用 [`visibilitySpanForSamplingInto`]；本公开包装按次分配，
  * 语义逐位一致（单测锁定本函数）。
  */
-export function visibilitySpanForSampling(coverage, t) {
+export function visibilitySpanForSampling(coverage: Coverage, t: number) {
   return visibilitySpanForSamplingInto(coverage, t, [0, 0])
 }
 
 /** [`visibilitySpanForSampling`] 的零分配形态：命中的 `[start, end]` 写入 `out` 并返回它。 */
-export function visibilitySpanForSamplingInto(coverage, t, out) {
+export function visibilitySpanForSamplingInto(coverage: Coverage, t: number, out: Span) {
   if (!Array.isArray(coverage) || !Number.isFinite(t)) return null
   let hasFirst = false
   let firstStart = 0
@@ -190,7 +195,7 @@ export function visibilitySpanForSamplingInto(coverage, t, out) {
 }
 
 /** 段集合是否包含 t（闭区间 + 1e-6 容差；空/畸形 → false）。 */
-export function spansContainAt(coverage, t) {
+export function spansContainAt(coverage: Coverage, t: number) {
   if (!Array.isArray(coverage) || !Number.isFinite(t)) return false
   for (let i = 0; i + 1 < coverage.length; i += 2) {
     const start = coverage[i]
@@ -202,7 +207,7 @@ export function spansContainAt(coverage, t) {
 }
 
 /** 段集合中**包含 t** 的那一段的起点（闭区间 + 1e-6；无包含段 → null）。 */
-export function spanStartAt(coverage, t) {
+export function spanStartAt(coverage: Coverage, t: number) {
   if (!Array.isArray(coverage) || !Number.isFinite(t)) return null
   for (let i = 0; i + 1 < coverage.length; i += 2) {
     const start = coverage[i]
@@ -221,7 +226,9 @@ export function spanStartAt(coverage, t) {
  * 值缓慢滑到新值，表现为炮塔先指错方向再回正。段内第一个网格点之前保持该点值（与
  * 网格端点保持语义一致）；段短于一个网格间隔时取段内第一个点（不猜运动）。
  */
-export function sampleChannelWithin(get, n, t, t0, dt, spanStart, spanEnd) {
+export function sampleChannelWithin(
+  get: Sampler, n: number, t: number, t0: number, dt: number, spanStart: number, spanEnd: number,
+) {
   if (!(n >= 1) || !(dt > 0)) return 0
   const xMin = (spanStart - t0) / dt
   const xMax = (spanEnd - t0) / dt
@@ -244,9 +251,16 @@ export function sampleChannelWithin(get, n, t, t0, dt, spanStart, spanEnd) {
 /** Independent rigid-body sampling: never anticipate a pose or bridge an AoI gap.
  * Tracks are validated at the facet boundary. Out is reused by the scene hot path.
  */
-export function sampleDetachedPose(track, t, out) {
+export function sampleDetachedPose(
+  track: {
+    coverage: ArrayLike<number>
+    pose_kf: Record<'t' | 'pos' | 'yaw' | 'pitch' | 'roll', ArrayLike<number>>
+  },
+  t: number,
+  out: { x: number; y: number; z: number; yaw: number; pitch: number; roll: number },
+) {
   const spans = track.coverage, kf = track.pose_kf
-  let start, end
+  let start: number | undefined, end: number | undefined
   for (let i = 0; i < spans.length; i += 2) {
     if (t >= spans[i] && t <= spans[i + 1]) { start = spans[i]; end = spans[i + 1]; break }
   }
@@ -257,9 +271,9 @@ export function sampleDetachedPose(track, t, out) {
   while (lo < hi) { const mid = (lo + hi) >> 1; if (times[mid] <= t) lo = mid + 1; else hi = mid }
   const a = lo - 1
   if (a < 0 || times[a] < start) return false
-  const b = a + 1 < times.length && times[a + 1] <= end ? a + 1 : a
+  const b = a + 1 < times.length && times[a + 1] <= end! ? a + 1 : a
   const f = b === a ? 0 : (t - times[a]) / (times[b] - times[a])
-  const mix = (channel, stride, offset) => channel[a * stride + offset]
+  const mix = (channel: ArrayLike<number>, stride: number, offset: number) => channel[a * stride + offset]
     + (channel[b * stride + offset] - channel[a * stride + offset]) * f
   out.x = -mix(kf.pos, 3, 0)
   out.y = mix(kf.pos, 3, 1)

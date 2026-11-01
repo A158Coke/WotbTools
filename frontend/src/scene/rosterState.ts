@@ -13,12 +13,51 @@
  */
 
 import { defLifeAt } from '../utils/battlePlaybackV2.ts';
+import { isFiniteNumber } from '../types/primitive-guards.js';
+
+type RosterGroupKey = 'team1' | 'team2' | 'unknown';
+type RosterDef = Partial<Parameters<typeof defLifeAt>[0]> & {
+  eid?: number | null;
+  hp?: ReadonlyArray<readonly [number, number]> | null;
+  max_hp?: unknown;
+  account_id?: number | null;
+  tank_id?: number | null;
+  team?: number | null;
+  is_author?: boolean | null;
+  nickname?: string | null;
+  tank_name?: string | null;
+};
+type RosterVehicle = { def?: RosterDef | null } | null | undefined;
+type RosterRow = {
+  eid: number;
+  accountId: number | null;
+  tankId: number | null;
+  team: number | null;
+  nick: string;
+  tank: string;
+};
+type RosterRuntime = {
+  hp?: number;
+  maxHp?: number;
+  dead?: boolean;
+  followed?: boolean;
+  health?: unknown;
+  reload?: unknown;
+};
+type HealthInput = {
+  currentHp?: number | null;
+  maxHp?: number | null;
+  pct?: number | null;
+  relativeFull?: boolean;
+  knowledge?: string | null;
+  state?: string | null;
+};
 
 /** 物理队伍分组键：Team 1 / Team 2 / 未识别（绝不把未知并进任一队） */
 export const ROSTER_GROUPS = Object.freeze(['team1', 'team2', 'unknown']);
 
 /** Recorder perspective controls presentation only; unknown teams remain separate. */
-export function rosterLanesFor(groups, friendlyTeam) {
+export function rosterLanesFor(groups: Partial<Record<RosterGroupKey, RosterRow[]>>, friendlyTeam: number | null | undefined) {
   const leftKey = friendlyTeam === 2 ? 'team2' : 'team1';
   const rightKey = friendlyTeam === 2 ? 'team1' : 'team2';
   return {
@@ -32,7 +71,7 @@ export function rosterLanesFor(groups, friendlyTeam) {
  * **null ≠ 0**——"没有可证明的血量上限"不能上屏成"血量是 0"。
  * @returns {number|null} 0..100，未取整（取整交给呈现层，避免累积误差）
  */
-function hpPercent(hp, maxHp) {
+function hpPercent(hp: unknown, maxHp: unknown) {
   const max = Number(maxHp);
   if (!Number.isFinite(max) || max <= 0) return null;
   const cur = Number(hp);
@@ -41,7 +80,7 @@ function hpPercent(hp, maxHp) {
 }
 
 /** 呈现层取整（HP 数值与百分比都按整数上屏；名册与名牌同一口径） */
-export function hpPercentText(hp, maxHp) {
+export function hpPercentText(hp: unknown, maxHp: unknown) {
   const pct = hpPercent(hp, maxHp);
   return pct == null ? null : Math.round(pct);
 }
@@ -64,10 +103,10 @@ export function hpPercentText(hp, maxHp) {
  * @returns {{mode:'exact'|'relative'|'unknown'|'destroyed', currentHp:number|null,
  *            maxHp:number|null, pct:number|null, text:string, fill:number}}
  */
-export function hpPresentationFor(health, destroyed = false) {
-  const maxHp = Number.isFinite(health?.maxHp) && health.maxHp > 0 ? health.maxHp : null;
+export function hpPresentationFor(health: HealthInput | null | undefined, destroyed = false) {
+  const maxHp = isFiniteNumber(health?.maxHp) && health.maxHp > 0 ? health.maxHp : null;
   const rawCurrent = health?.currentHp;
-  const currentHp = Number.isFinite(rawCurrent) ? Math.max(0, rawCurrent) : null;
+  const currentHp = isFiniteNumber(rawCurrent) ? Math.max(0, rawCurrent) : null;
 
   if (destroyed === true || health?.state === 'DESTROYED') {
     // 阵亡：有量程就写 0 / max（信息更完整），否则退回 0%——两者都明确表示「已归零」。
@@ -87,7 +126,7 @@ export function hpPresentationFor(health, destroyed = false) {
 
   // relative：只有相对证据（没有可证明的 exact 数值）→ 绝不伪造 current/max
   const pct = hpPercentText(currentHp, maxHp)
-    ?? (Number.isFinite(health?.pct) ? Math.max(0, Math.min(100, health.pct))
+    ?? (isFiniteNumber(health?.pct) ? Math.max(0, Math.min(100, health.pct))
       : health?.relativeFull === true ? 100 : null);
   if (pct != null) {
     return { mode: 'relative', currentHp: null, maxHp: null, pct: Math.round(pct), text: `${Math.round(pct)}%`, fill: Math.max(0, Math.min(1, pct / 100)) };
@@ -120,7 +159,7 @@ export function hpPresentationFor(health, destroyed = false) {
  * 装满 / 阵亡清空）仍会通知。值语义不变（seek 确定性不受影响）；若未来要在名册重新
  * 渲染 progress，应显式按需重投影，而不是依赖行上两次相位跳变之间的旧值。
  */
-function sameShellStates(a, b) {
+function sameShellStates(a: unknown, b: unknown) {
   if (a === b) return true;
   if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
@@ -129,7 +168,10 @@ function sameShellStates(a, b) {
   return true;
 }
 
-export function applyRosterRuntime(row, { hp, maxHp, dead, followed, health = null, reload = null } = {}) {
+export function applyRosterRuntime<T extends RosterRuntime>(
+  row: T,
+  { hp, maxHp, dead, followed, health = null, reload = null }: RosterRuntime = {},
+) {
   if (!row) return row
   if (hp !== undefined && row.hp !== hp) row.hp = hp
   if (maxHp !== undefined && row.maxHp !== maxHp) row.maxHp = maxHp
@@ -147,16 +189,20 @@ export function applyRosterRuntime(row, { hp, maxHp, dead, followed, health = nu
  * @param {Function|null} isDestroyed scene-owned canonical/fallback life resolver
  * @returns {Map<number, {hp:number, maxHp:number, dead:boolean}>} 按 eid
  */
-export function projectRoster(vehicles, t, isDestroyed = null) {
+export function projectRoster(
+  vehicles: RosterVehicle[] | null | undefined,
+  t: number,
+  isDestroyed: ((vehicle: RosterVehicle, t: number) => boolean) | null = null,
+) {
   const out = new Map();
   for (const v of vehicles || []) {
-    const def = (v && v.def) || {};
+    const def: RosterDef = (v && v.def) || {};
     if (def.eid == null) continue;
     out.set(def.eid, {
       hp: hpAtSeries(def.hp, def.max_hp, t),
       maxHp: Number(def.max_hp) || 0,
       // def 层复活轨道感知（issue #622）：复活字段缺省 = 死亡终态（行为与既往一致）
-      dead: isDestroyed ? isDestroyed(v, t) : defLifeAt(def, t)?.lifeState === 'DESTROYED',
+      dead: isDestroyed ? isDestroyed(v, t) : defLifeAt(def as Parameters<typeof defLifeAt>[0], t)?.lifeState === 'DESTROYED',
     });
   }
   return out;
@@ -167,7 +213,7 @@ export function projectRoster(vehicles, t, isDestroyed = null) {
  * 与 playbackScene 的 `hpAt` 同口径——那条实现读的是已经解析好的运行时对象，
  * 这里读 def，两者必须给出一致结果（见 projectRoster.test.js 的同值断言）。
  */
-export function hpAtSeries(series, maxHp, t) {
+export function hpAtSeries(series: ReadonlyArray<readonly [number, number]> | null | undefined, maxHp: unknown, t: number) {
   let cur = Number(maxHp) || 0;
   for (const entry of series || []) {
     if (entry[0] <= t) cur = entry[1];
@@ -180,15 +226,15 @@ export function hpAtSeries(series, maxHp, t) {
  * 静态名册行 + 物理队伍分组。
  * @returns {{team1:Array, team2:Array, unknown:Array}} 每条 = 身份字段（eid/team/nick/tank）
  */
-export function buildRosterRows(vehicles) {
-  const groups = { team1: [], team2: [], unknown: [] };
+export function buildRosterRows(vehicles: RosterVehicle[] | null | undefined) {
+  const groups: Record<RosterGroupKey, RosterRow[]> = { team1: [], team2: [], unknown: [] };
   for (const v of vehicles || []) {
-    const d = (v && v.def) || {};
+    const d: RosterDef = (v && v.def) || {};
     if (d.eid == null) continue;
-    const row = {
+    const row: RosterRow = {
       eid: d.eid,
-      accountId: Number.isFinite(d.account_id) && d.account_id > 0 ? d.account_id : null,
-      tankId: Number.isFinite(d.tank_id) && d.tank_id > 0 ? d.tank_id : null,
+      accountId: isFiniteNumber(d.account_id) && d.account_id > 0 ? d.account_id : null,
+      tankId: isFiniteNumber(d.tank_id) && d.tank_id > 0 ? d.tank_id : null,
       team: d.team === 1 || d.team === 2 ? d.team : null,
       // 作者标记直接烘进昵称（★ 前缀）：名册不再单独暴露 isAuthor，避免同一事实两个字段
       nick: d.is_author ? `★ ${d.nickname || 'Unknown'}` : (d.nickname || 'Unknown'),
