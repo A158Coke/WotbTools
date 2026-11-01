@@ -15,6 +15,7 @@ import { ArrowLeft, Map as MapIcon } from 'lucide-vue-next'
 import { useAuth } from '../composables/useAuth.js'
 import { loadMapIndex, mapCoverUrl } from '../scene/replaySource.js'
 import { mapImages } from '../data/mapImages.js'
+import { mapBases } from '../data/mapBases.js'
 import { mapLabel } from '../utils/helpers.js'
 import { Feature } from '../app/featureCapabilities.js'
 import AppButton from './AppButton.vue'
@@ -24,6 +25,7 @@ import ReplayCapabilityAuthGate from './ReplayCapabilityAuthGate.vue'
 import SegmentedControl from './SegmentedControl.vue'
 import MapPreview3DPane from './MapPreview3DPane.vue'
 import MapPreview2DPane from './MapPreview2DPane.vue'
+import MapPreviewBasesPane from './MapPreviewBasesPane.vue'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -79,6 +81,9 @@ async function loadMaps() {
       // bundled.src 留作 cover 加载失败时的兜底（离线打包资产，必可用）。
       thumb: safeCoverUrl(key),
       thumbFallback: bundled ? bundled.src : null,
+      // 点位（遭遇/争霸基地）：仅打包注册表收录的 29 张有（客户端 .sc2 提取），
+      // 未收录图无几何数据——fail-closed 不显示点位开关，不做统计猜测。
+      bases: mapBases[key] || null,
     })
   }
   rawMaps.value = [...byKey.values()]
@@ -109,8 +114,12 @@ watch(authenticated, (ok) => { if (ok && !indexLoaded.value) loadMaps() }, { imm
 
 // ---- URL 契约：?map=<key> &mode=3d|2d（资产包底图双源后全部地图可进 2D）----
 const selected = computed(() => maps.value.find((m) => m.key === route.query.map) || null)
-const mode = computed(() => (route.query.mode === '2d' ? '2d' : '3d'))
-const effectiveMode = computed(() => mode.value)
+const mode = computed(() => (['2d', 'bases'].includes(route.query.mode) ? route.query.mode : '3d'))
+const effectiveMode = computed(() => {
+  // 点位模式需 bundled 几何（遭遇/争霸基地来自客户端 .sc2 提取）；无则回落 2D
+  if (mode.value === 'bases' && selected.value && !selected.value.bases) return '2d'
+  return mode.value
+})
 
 function openMap(entry) {
   router.replace({ query: { ...route.query, map: entry.key, mode: mode.value } })
@@ -128,6 +137,9 @@ function backToPicker() {
 const modeOptions = computed(() => [
   { value: '3d', label: t('mapPreview.mode3d'), testid: 'map-mode-3d' },
   { value: '2d', label: t('mapPreview.mode2d'), testid: 'map-mode-2d' },
+  ...(selected.value && selected.value.bases
+    ? [{ value: 'bases', label: t('mapPreview.modeBases'), testid: 'map-mode-bases' }]
+    : []),
 ])
 </script>
 
@@ -217,6 +229,9 @@ const modeOptions = computed(() => [
         </div>
         <div v-show="effectiveMode === '2d'" class="map-stage-pane">
           <MapPreview2DPane :map-key="selected.key" :basemap="selected.basemap" />
+        </div>
+        <div v-show="effectiveMode === 'bases'" class="map-stage-pane">
+          <MapPreviewBasesPane :map-key="selected.key" :bases="selected.bases" />
         </div>
       </div>
     </template>
