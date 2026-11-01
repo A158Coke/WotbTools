@@ -115,6 +115,12 @@ async function resolveBasemap(bm) {
       el.onerror = () => reject(new Error('basemap decode failed'))
       el.src = blobUrl
     })
+    // 代际核验必须先于任何状态写入：过期请求只释放自己的 URL 后退出——
+    // 否则旧请求的尺寸失败/错误状态会误置到新代已发布的底图上。
+    if (gen !== basemapGen) {
+      URL.revokeObjectURL(blobUrl)   // 过期：只清理自己创建的 URL，新代的 owner 不归我管
+      return
+    }
     // 解码尺寸必须与 manifest 声明一致：index↔图片发布漂移（重导出/裁切）在此 fail-visible，
     // 不静默改用解码尺寸渲染（那会让 ±300 映射整体错位且无任何提示）。
     if (img.naturalWidth !== resolved.width || img.naturalHeight !== resolved.height) {
@@ -123,10 +129,6 @@ async function resolveBasemap(bm) {
       }
       URL.revokeObjectURL(blobUrl)
       basemapError.value = true
-      return
-    }
-    if (gen !== basemapGen) {
-      URL.revokeObjectURL(blobUrl)   // 过期：只清理自己创建的 URL，新代的 owner 不归我管
       return
     }
     releasePublishedUrl()

@@ -106,6 +106,27 @@ describe('MapPreview2DPane 底图解析代际（review P2 回归锁）', () => {
     expect(revoked).toEqual(['blob:mock-1']) // 自己创建、自己释放；无泄漏
   })
 
+  it('旧 A 迟到解码尺寸不符 + 新 B 已正常发布 → B 的 src 与错误状态都不受影响（交叉时序）', async () => {
+    stubEnv()
+    resolver.current.mockImplementationOnce(async () => MANIFEST)   // A：正常返回，解码挂起
+    const wrapper = mountPane({ kind: 'map2d', mapKey: 'moon' })
+    await flushPromises()
+    // 切图 B：resolver 返回并解码发布（A 的解码仍挂起）
+    resolver.current.mockImplementationOnce(async () => MANIFEST)
+    await wrapper.setProps({ basemap: { kind: 'map2d', mapKey: 'moon' } })
+    await flushPromises()
+    decodeAt(1)                              // B 解码发布（imageRequests[1] = B）
+    await flushPromises()
+    expect(wrapper.find('.bm-stub').attributes('data-src')).toBe('blob:mock-2')
+    // A 迟到解码且尺寸不符（900² ≠ manifest 1254²）：代际过期 → 只清自己的 URL，
+    // 不得把 basemapError 置到已发布的 B 上（否则错误提示与有效底图并存）
+    decodeAt(0, 900, 900)
+    await flushPromises()
+    expect(revoked).toEqual(['blob:mock-1'])
+    expect(wrapper.find('.bm-stub').attributes('data-src')).toBe('blob:mock-2')
+    expect(wrapper.find('[data-testid="map-2d-basemap-error"]').exists()).toBe(false)
+  })
+
   it('解码尺寸与 manifest 不一致 → fail-visible，不静默按解码尺寸渲染', async () => {
     stubEnv()
     resolver.current.mockImplementationOnce(async () => MANIFEST)   // manifest 声明 1254²
