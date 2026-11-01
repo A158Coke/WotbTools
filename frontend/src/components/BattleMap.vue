@@ -313,7 +313,7 @@ function onTwoFingerTouch(event) {
             <g v-if="annotation.type === 'unit'" :transform="`translate(${projectedAnnotationPoint(annotation, 'x', 'y').x}, ${projectedAnnotationPoint(annotation, 'x', 'y').y})`" :data-test="'pb-annot-unit-' + annotation.tankClass">
               <circle r="22" class="pb-annot-unit-ring" :stroke="annotation.color" stroke-width="2" stroke-dasharray="4 3" />
               <path :d="ANNOT_TANK_CLASSES.find(tank => tank.key === annotation.tankClass)?.path" transform="translate(-12 -12)" :fill="annotation.color" />
-              <text y="38" text-anchor="middle" class="pb-annot-unit-label" :fill="annotation.color">{{ `${$t('recon.map.playback.annot.planned')} · ${annotation.tankClass}` }}<tspan v-if="annotation.label" x="0" dy="16">{{ annotation.label }}</tspan></text>
+              <text v-if="annotation.label" y="38" text-anchor="middle" class="pb-annot-unit-label" :fill="annotation.color">{{ annotation.label }}</text>
             </g>
             <g v-else-if="annotation.type === 'route'" data-test="pb-annot-route-shape">
               <polyline :points="annotation.routeSvgPoints" fill="none" :stroke="annotation.color" :stroke-width="annotation.widthSvg" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 5" />
@@ -367,7 +367,7 @@ function onTwoFingerTouch(event) {
 
 <style>
 .pb-annot-item.is-selected { filter: drop-shadow(0 0 var(--space-1) var(--color-accent)); }
-.pb-annot-unit-ring { fill: var(--color-surface-1); }
+.pb-annot-unit-ring { fill: none; }
 .pb-annot-unit-label { font: var(--type-caption); font-weight: 700; paint-order: stroke; stroke: var(--color-surface-1); stroke-width: 3; stroke-linejoin: round; }
 
 /* 场景自成局部层叠上下文（§5）：地图内部的反馈层 / 文本输入 / 车辆标记各自的叠放只在

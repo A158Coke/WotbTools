@@ -383,6 +383,7 @@ describe('shared annotation helpers', () => {
     }
     expect(headSpan(thickArrow.head)).toBeGreaterThan(headSpan(arrow.head))
     const rect = projectAnnotationToSvg({ type: 'rect', color: '#fff', width: 3, x: 0, y: 0, w: 10, h: 20 }, opts)
+    expect(rect.y).toBe(mapView.toY(20))
     expect(rect.w).toBeCloseTo(6)
     expect(rect.h).toBeCloseTo(8)
     const circle = projectAnnotationToSvg({ type: 'circle', color: '#fff', width: 3, cx: 0, cy: 0, r: 10 }, opts)

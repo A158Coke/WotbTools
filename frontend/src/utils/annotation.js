@@ -112,7 +112,7 @@ export function screenToSemantic(view, mapView, screenX, screenY, renderedW, ren
   return { x, y }
 }
 
-/** rect 两角点 → { x, y, w, h }（左上锚点，语义坐标）。 */
+/** rect 两角点 → { x, y, w, h }（x 左、y 语义下边界；SVG 投影用 y+h 取上边界）。 */
 export function rectFromCorners(a, b) {
   return {
     x: Math.min(a.x, b.x),
@@ -524,7 +524,8 @@ export function projectAnnotationToSvg(annotation, { toX, toY, invX = 1, invY = 
     }
   } else if (annotation.type === 'rect') {
     out.x = toX(annotation.x)
-    out.y = toY(annotation.y)
+    // y 存储的是语义下边界（rectFromCorners 的 min y；屏幕底边），SVG 的 rect.y 需要上边界。
+    out.y = toY(annotation.y + annotation.h)
     out.w = annotation.w * invX
     out.h = annotation.h * invY
   } else if (annotation.type === 'circle') {
