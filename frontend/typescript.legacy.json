@@ -269,7 +269,7 @@
     "src/vehicle-portraits/runtime.js"
   ],
   "escapeHatches": {
-    "any": 47,
+    "any": 68,
     "asUnknownAs": 7
   }
 }

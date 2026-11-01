@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 import legacy from '../../typescript.legacy.json'
 
@@ -24,8 +25,23 @@ const isTest = (path: string) => /\.test\./.test(path) || path.startsWith('src/t
 const production = files.filter(file => !isTest(file.path))
 const typedProduction = production.filter(file => file.path.endsWith('.ts') || /<script\b[^>]*\blang="ts"/.test(file.source))
 
-function occurrences(pattern: RegExp): number {
-  return typedProduction.reduce((sum, file) => sum + file.source.split('\n').filter(line => pattern.test(line)).length, 0)
+// 按 AST 计数：覆盖全部 any 语法，一行多处都算，注释与字符串不算。SFC 只解析 <script>。
+function escapeHatches(path: string, source: string) {
+  const code = path.endsWith('.vue')
+    ? [...source.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)].map(match => match[1]).join('\n')
+    : source
+  const counts = { any: 0, asUnknownAs: 0 }
+  const visit = (node: ts.Node) => {
+    if (node.kind === ts.SyntaxKind.AnyKeyword) counts.any++
+    if (ts.isAsExpression(node)) {
+      let inner = node.expression
+      while (ts.isParenthesizedExpression(inner)) inner = inner.expression
+      if (ts.isAsExpression(inner) && inner.type.kind === ts.SyntaxKind.UnknownKeyword) counts.asUnknownAs++
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(ts.createSourceFile('source.ts', code, ts.ScriptTarget.Latest, false, ts.ScriptKind.TS))
+  return counts
 }
 
 describe('TypeScript migration baseline', () => {
@@ -46,9 +62,25 @@ describe('TypeScript migration baseline', () => {
   })
 
   it('keeps type escape hatches at the recorded count', () => {
+    const counted = typedProduction.map(file => escapeHatches(file.path, file.source))
     expect({
-      any: occurrences(/:\s*any\b|<any>|\bas any\b|any\[\]/),
-      asUnknownAs: occurrences(/as unknown as/),
+      any: counted.reduce((sum, counts) => sum + counts.any, 0),
+      asUnknownAs: counted.reduce((sum, counts) => sum + counts.asUnknownAs, 0),
     }).toEqual(legacy.escapeHatches)
+  })
+
+  it('counts every any spelling and ignores comments and strings', () => {
+    const source = `
+      type Payload = any
+      const record: Record<string, any> = {}
+      const pair = call<any, any>(value as any)
+      const list: any[] = (value as unknown as string[])
+      const wrapped = (value as unknown) as string
+      // any as unknown as string
+      const text = 'as any'
+    `
+    expect(escapeHatches('sample.ts', source)).toEqual({ any: 6, asUnknownAs: 2 })
+    expect(escapeHatches('sample.vue', '<template><a :b="c as any" /></template><script setup lang="ts">let x: any</script>'))
+      .toEqual({ any: 1, asUnknownAs: 0 })
   })
 })
