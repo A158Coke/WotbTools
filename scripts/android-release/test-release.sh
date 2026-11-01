@@ -58,6 +58,24 @@ resolve workflow_dispatch | grep -qx "nativeBridgeVersion=$EXPECTED_BRIDGE" || f
 resolve push "android-v$COMMITTED_VERSION" | grep -qx "tagName=android-v$COMMITTED_VERSION" || fail "compatible tag"
 if resolve push android-v9.9.9 >/dev/null 2>&1; then fail "mismatched tag must fail"; fi
 
+# 当前源码版本必须与 release-process / bridge contract 一致。
+# docs/android/releases/*.md 是临时版本化记录：发布完成迁移到 GitHub Release/tag/APK/version.json
+# 后会被删除，因此这里只在记录仍存在时校验内容；删除后不把 CI 变成永久 SSOT。
+RELEASE_NOTE="$ROOT/docs/android/releases/$COMMITTED_VERSION.md"
+if [ -f "$RELEASE_NOTE" ]; then
+  grep -q "versionName：$COMMITTED_VERSION" "$RELEASE_NOTE" || fail "release note versionName mismatch"
+  grep -q "versionCode：$EXPECTED_CODE" "$RELEASE_NOTE" || fail "release note versionCode mismatch"
+  grep -q "Native Bridge：v$EXPECTED_BRIDGE" "$RELEASE_NOTE" || fail "release note Native Bridge mismatch"
+  grep -q "releases/$COMMITTED_VERSION.md" "$ROOT/docs/android/release-process.md" || fail "release-process is missing the current release note link"
+else
+  echo "release note archived/removed; skipping temporary note checks for $COMMITTED_VERSION"
+  if grep -q "releases/$COMMITTED_VERSION.md" "$ROOT/docs/android/release-process.md"; then
+    fail "release-process still links removed release note: docs/android/releases/$COMMITTED_VERSION.md"
+  fi
+fi
+grep -q "\*\*$COMMITTED_VERSION / $EXPECTED_CODE\*\*" "$ROOT/docs/android/release-process.md" || fail "release-process current version does not match committed wotbVersion"
+grep -qx "wotbNativeBridgeVersion=$EXPECTED_BRIDGE" "$ROOT/android/gradle.properties" || fail "committed Native Bridge version does not match the contract"
+
 # --- publish(version=X)：候选身份只能来自显式版本 + 它的 immutable tag target ---
 # 历史场景（review P2）：stage 2.0.1 → main 后来升到 2.0.2 → publish(version=2.0.1)。
 # 候选必须仍然是 2.0.1：不能因为当前 main 是 2.0.2 就去寻找 2.0.2。

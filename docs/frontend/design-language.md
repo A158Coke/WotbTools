@@ -154,6 +154,7 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 - **不能只靠红绿区分阵营。** 约 8% 的男性有红绿色觉障碍。阵营还必须通过**位置**（当前名册：左本方 / 右敌方；录像者队伍未知时回退到左 Team 1 / 右 Team 2）、**文字标签**或**形状**再表达一次（名册标题始终是文本）。
 - 敌方色的色盲替代色是紫色（`--color-team-enemy-cb`），与游戏内色盲模式一致；替代色不取消位置与文字标签要求。当前只定义了 token，产品没有切换入口。
 - 2D、3D、表格、雷达图共用这几个 token，不各自定义红绿。
+- 可玩边界（游戏内实际战斗范围）的 2D 红线使用 `--color-map-playable-boundary`（与 3D 边界带同义 `#ff2f2f`），它不是阵营色，不得改用 `--color-team-enemy`。
 
 Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图定位和 3D 相机投影
 只负责 anchor，不各自维护字色、背景、HP/装填样式。姓名/车型、HP 数值与百分比、逐发装填

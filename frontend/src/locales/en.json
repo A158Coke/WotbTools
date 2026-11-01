@@ -24,7 +24,10 @@
       "importedCount": "Imported {count} annotations",
       "noAnnotations": "Nothing to export yet",
       "importReasonFormat": "File is not an annotation JSON for this view",
-      "importReasonMap": "Annotations belong to another map"
+      "importReasonMap": "Annotations belong to another map",
+      "exportImage": "Export tactical map",
+      "exporting": "Exporting…",
+      "exportFailed": "PNG export failed"
     },
     "basemapFailed": "Failed to load the basemap"
   },

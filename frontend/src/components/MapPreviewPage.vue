@@ -125,9 +125,9 @@ function onFallbackError(m) {
 }
 watch(authenticated, (ok) => { if (ok && !indexLoaded.value) loadMaps() }, { immediate: true })
 
-// ---- URL 契约：?map=<key> &mode=3d|2d &bases=supremacy|encounter ----
+// ---- URL 契约：?map=<key> &mode=3d|2d（缺省 2d） &bases=supremacy|encounter ----
 const selected = computed(() => maps.value.find((m) => m.key === route.query.map) || null)
-const mode = computed(() => (route.query.mode === '2d' ? '2d' : '3d'))
+const mode = computed(() => (route.query.mode === '3d' ? '3d' : '2d'))
 
 /**
  * 基地点位（贴地环 / 2D 圆标）模式：?bases=supremacy|encounter 显式选择；
@@ -286,7 +286,7 @@ const modeOptions = computed(() => [
           <MapPreview3DPane :map-id="selected.mapId" :map-name="selected.name" :map-key="selected.key" :bases-kind="basesKind" :active="mode === '3d'" />
         </div>
         <div v-show="mode === '2d'" class="map-stage-pane">
-          <MapPreview2DPane :map-key="selected.key" :basemap="selected.basemap" :bases-kind="basesKind" />
+          <MapPreview2DPane :map-key="selected.key" :basemap="selected.basemap" :bases-kind="basesKind" :active="mode === '2d'" />
         </div>
       </div>
     </template>
