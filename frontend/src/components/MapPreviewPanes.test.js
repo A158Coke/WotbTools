@@ -85,11 +85,23 @@ describe('MapPreview2DPane 标注导入导出', () => {
     expect(wrapper.find('[data-testid="map-2d-import-note"]').text()).toContain('importReasonFormat')
   })
 
-  it('kind / mapKey 不符拒绝导入（fail-closed），当前标注不变', async () => {
+  it('3D 导出的标注（旧 -3d kind）跨视角导入被接受——同一张地图即可', async () => {
     const wrapper = mountPane()
     await importJson(wrapper, {
       version: 1,
       kind: 'map-preview-annotations-3d',
+      mapKey: 'erlenberg',
+      annotations: [{ type: 'pen', color: '#fff', width: 3, points: [{ x: 0, y: 0 }, { x: 5, y: 5 }] }],
+    })
+    expect(wrapper.find('.bm-stub').attributes('data-count')).toBe('1')
+    expect(wrapper.find('[data-testid="map-2d-import-note"]').text()).toContain('"count":1')
+  })
+
+  it('kind / mapKey 不符拒绝导入（fail-closed），当前标注不变', async () => {
+    const wrapper = mountPane()
+    await importJson(wrapper, {
+      version: 1,
+      kind: 'unrelated-annotations',
       mapKey: 'erlenberg',
       annotations: [{ type: 'pen', color: '#fff', width: 3, points: [{ x: 0, y: 0 }, { x: 5, y: 5 }] }],
     })

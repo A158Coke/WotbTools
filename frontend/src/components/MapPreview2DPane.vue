@@ -466,7 +466,14 @@ const renderedAnnotations = computed(() => {
 const mapTouchPan = computed(() => !annotationOpen.value && view.scale <= fitScale() + 1e-3)
 
 // ---------- 标注导入 / 导出（会话内文件落盘；fail-closed 校验）----------
-const IMPORT_KIND = 'map-preview-annotations-2d'
+// kind 不区分视角：2D/3D 标注同为 ±300 语义系 pen 点列，同一张地图即可互导
+// （3D 地形锚定画笔落点也存语义坐标）。兼容合入前旧导出的 -2d/-3d 后缀 kind。
+const IMPORT_KIND = 'map-preview-annotations'
+const IMPORT_KINDS = new Set([
+  IMPORT_KIND,
+  'map-preview-annotations-2d',
+  'map-preview-annotations-3d',
+])
 /** 本面板的标注几何只有 pen：点列 ≥2、坐标有限、宽度为正。 */
 function isImportableAnnotation(a) {
   return !!a && a.type === 'pen'
@@ -513,7 +520,7 @@ async function importAnnotations(event) {
     flashImportMessage('mapPreview.annotations.importFailed', { reason: t('mapPreview.annotations.importReasonFormat') })
     return
   }
-  if (!payload || payload.version !== 1 || payload.kind !== IMPORT_KIND || !Array.isArray(payload.annotations)) {
+  if (!payload || payload.version !== 1 || !IMPORT_KINDS.has(payload.kind) || !Array.isArray(payload.annotations)) {
     flashImportMessage('mapPreview.annotations.importFailed', { reason: t('mapPreview.annotations.importReasonFormat') })
     return
   }
