@@ -20,6 +20,7 @@ describe('MapPreview3DPane 场景接线（source regression）', () => {
   it('画质与相机走 SegmentedControl，与 Replay3DPane 同一控件（DC-SEL-08）', () => {
     expect(paneSrc).toContain("import SegmentedControl from './SegmentedControl.vue'")
     expect(paneSrc).not.toContain('<select')
+    expect(paneSrc).toContain('class="map3d-quality-label"')
     expect(paneSrc).toMatch(/data-testid="map-3d-quality"\s+@update:model-value="changeQuality"/)
     expect(paneSrc).toMatch(/data-testid="map-3d-camera"\s+@update:model-value="chooseCamera"/)
   })

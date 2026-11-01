@@ -526,13 +526,16 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
             @change="importAnnotations"
           />
           <span class="map3d-spacer"></span>
-          <SegmentedControl
-            :model-value="store.qualityKey"
-            :options="qualityOptions"
-            :aria-label="$t('agentReplay.quality')"
-            data-testid="map-3d-quality"
-            @update:model-value="changeQuality"
-          />
+          <div class="map3d-quality">
+            <span class="map3d-quality-label" aria-hidden="true">{{ $t('agentReplay.quality') }}</span>
+            <SegmentedControl
+              :model-value="store.qualityKey"
+              :options="qualityOptions"
+              :aria-label="$t('agentReplay.quality')"
+              data-testid="map-3d-quality"
+              @update:model-value="changeQuality"
+            />
+          </div>
           <SegmentedControl
             :model-value="store.cam === 'follow' ? 'free' : store.cam"
             :options="CAMERAS"
@@ -699,6 +702,14 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
 
 .map3d-spacer {
   flex: 1;
+}
+
+.map3d-quality {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-text-secondary);
+  font: var(--type-caption);
 }
 
 .map3d-import-note {
