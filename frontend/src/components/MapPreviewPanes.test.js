@@ -3,6 +3,17 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 
+const pngMock = vi.hoisted(() => ({ downloadBlob: vi.fn(async () => {}) }))
+const h2cMock = vi.hoisted(() => vi.fn(async () => ({
+  toBlob: (callback) => callback(new Blob(['png'], { type: 'image/png' })),
+})))
+
+vi.mock('../utils/exportReplayPng.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  downloadBlob: pngMock.downloadBlob,
+}))
+vi.mock('html2canvas', () => ({ default: h2cMock }))
+
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
     locale: { value: 'zh' },
@@ -15,8 +26,12 @@ vi.mock('vue-i18n', () => ({
 vi.mock('./BattleMap.vue', () => ({
   default: {
     name: 'BattleMap',
-    props: ['image', 'mapView', 'renderedAnnotations', 'activeTool', 'bases', 'pbOverview', 'showPlayableBoundary'],
-    template: `<div class="bm-stub" :data-count="renderedAnnotations.length" :data-tool="activeTool || ''"
+    props: ['image', 'mapView', 'renderedAnnotations', 'activeTool', 'bases', 'pbOverview', 'showPlayableBoundary', 'textSession', 'textInputStyle'],
+    emits: ['update-text', 'commit-text', 'cancel-text'],
+    data: () => ({ mapEl: null }),
+    mounted() { this.mapEl = this.$refs.mapEl },
+    expose: ['mapEl'],
+    template: `<div ref="mapEl" class="bm-stub" :data-count="renderedAnnotations.length" :data-tool="activeTool || ''"
       :data-bases="(bases || []).map(b => b.baseId + ':' + b.radius + ':' + b.status).join('|')" />`,
   },
 }))
@@ -50,6 +65,8 @@ async function importJson(wrapper, payload) {
 
 beforeEach(() => {
   expect(mapImages.erlenberg).toBeTruthy()
+  pngMock.downloadBlob.mockClear()
+  h2cMock.mockClear()
 })
 
 describe('MapPreview2DPane 标注导入导出', () => {
@@ -200,5 +217,228 @@ describe('MapPreview2DPane canonical 出生点 / 可玩边界', () => {
     const overview = wrapper.findComponent({ name: 'BattleMap' }).props('pbOverview')
     expect(overview.spawnPoints).toEqual([])
     expect('playableBounds' in overview).toBe(false)
+  })
+})
+
+describe('MapPreview2DPane 完整 tactical annotation', () => {
+  async function openToolbar(wrapper) {
+    await wrapper.find('[data-testid="map-2d-drawing-entry"]').trigger('click')
+    await flushPromises()
+  }
+  function battleMap(wrapper) {
+    return wrapper.findComponent({ name: 'BattleMap' })
+  }
+  function rendered(wrapper) {
+    return battleMap(wrapper).props('renderedAnnotations')
+  }
+  async function pointer(wrapper, type, x, y, pointerId = 1) {
+    await wrapper.find('[data-testid="map-2d-stage"]').trigger(type, { pointerId, clientX: x, clientY: y, pointerType: 'mouse', button: 0 })
+  }
+  async function draw(wrapper, points, pointerId = 1) {
+    await pointer(wrapper, 'pointerdown', points[0][0], points[0][1], pointerId)
+    for (const [x, y] of points.slice(1)) await pointer(wrapper, 'pointermove', x, y, pointerId)
+    await pointer(wrapper, 'pointerup', points.at(-1)[0], points.at(-1)[1], pointerId)
+    await flushPromises()
+  }
+
+  it('renders the full Playback 2D toolset instead of pen/eraser only', async () => {
+    const wrapper = mountPane()
+    await openToolbar(wrapper)
+    for (const tool of ['select', 'route', 'LT', 'MT', 'HT', 'TD', 'pen', 'eraser', 'arrow', 'line', 'rect', 'circle', 'text']) {
+      expect(wrapper.find(`[data-test="pb-annot-${tool}"]`).exists(), tool).toBe(true)
+    }
+  })
+
+  it('creates a planned unit from LT and keeps it semantic/neutral', async () => {
+    const wrapper = mountPane()
+    await openToolbar(wrapper)
+    await wrapper.find('[data-test="pb-annot-LT"]').trigger('click')
+    await pointer(wrapper, 'pointerdown', 100, 100)
+    await pointer(wrapper, 'pointerup', 100, 100)
+    await flushPromises()
+    const unit = rendered(wrapper).at(-1)
+    expect(unit).toMatchObject({ type: 'unit', tankClass: 'LT', label: '' })
+    expect(Number.isFinite(unit.x)).toBe(true)
+    expect(Number.isFinite(unit.y)).toBe(true)
+    expect(unit.radius).toBeGreaterThan(0)
+    expect(unit.friendly).toBeUndefined()
+  })
+
+  it('creates arrow/line/rect/circle from semantic pointer coordinates', async () => {
+    const wrapper = mountPane()
+    await openToolbar(wrapper)
+    for (const tool of ['arrow', 'line', 'rect', 'circle']) {
+      await wrapper.find(`[data-test="pb-annot-${tool}"]`).trigger('click')
+      await draw(wrapper, [[80, 80], [180, 160]])
+      const annotation = rendered(wrapper).at(-1)
+      expect(annotation.type, tool).toBe(tool)
+      expect(annotation.width).toBeGreaterThan(0)
+      if (tool === 'rect') {
+        expect(annotation.w).toBeGreaterThanOrEqual(0)
+        expect(annotation.h).toBeGreaterThanOrEqual(0)
+      }
+      if (tool === 'circle') expect(annotation.r).toBeGreaterThan(0)
+    }
+  })
+
+  it('creates a route only after two points and Finish Route', async () => {
+    const wrapper = mountPane()
+    await openToolbar(wrapper)
+    await wrapper.find('[data-test="pb-annot-route"]').trigger('click')
+    await pointer(wrapper, 'pointerdown', 100, 100)
+    await pointer(wrapper, 'pointerup', 100, 100)
+    // 单点 route 仍只是未提交 draft；Finish 前不得进入 history/可见路径。
+    expect(rendered(wrapper).filter(a => a.type === 'route' && a.points.length >= 2)).toHaveLength(0)
+    await pointer(wrapper, 'pointerdown', 200, 160)
+    await pointer(wrapper, 'pointerup', 200, 160)
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-annot-route-finish"]').exists()).toBe(true)
+    await wrapper.find('[data-test="pb-annot-route-finish"]').trigger('click')
+    await flushPromises()
+    const route = rendered(wrapper).at(-1)
+    expect(route).toMatchObject({ type: 'route' })
+    expect(route.points).toHaveLength(2)
+  })
+
+  it('creates text through the shared BattleMap text session', async () => {
+    const wrapper = mountPane()
+    await openToolbar(wrapper)
+    await wrapper.find('[data-test="pb-annot-text"]').trigger('click')
+    await pointer(wrapper, 'pointerdown', 100, 100)
+    await pointer(wrapper, 'pointerup', 100, 100)
+    await flushPromises()
+    const session = battleMap(wrapper).props('textSession')
+    expect(session).toBeTruthy()
+    battleMap(wrapper).vm.$emit('update-text', 'B point')
+    battleMap(wrapper).vm.$emit('commit-text', session)
+    await flushPromises()
+    expect(rendered(wrapper).at(-1)).toMatchObject({ type: 'text', text: 'B point' })
+  })
+
+  it('selects and moves an existing annotation, then supports undo/redo/delete', async () => {
+    const wrapper = mountPane()
+    await openToolbar(wrapper)
+    await wrapper.find('[data-test="pb-annot-line"]').trigger('click')
+    await draw(wrapper, [[80, 80], [180, 160]])
+    const before = rendered(wrapper).at(-1)
+    await wrapper.find('[data-test="pb-annot-select"]').trigger('click')
+    await pointer(wrapper, 'pointerdown', 130, 120)
+    await pointer(wrapper, 'pointermove', 150, 140)
+    await pointer(wrapper, 'pointerup', 150, 140)
+    await flushPromises()
+    expect(rendered(wrapper).at(-1).x1).not.toBe(before.x1)
+    await wrapper.find('[data-test="pb-annot-delete"]').trigger('click')
+    await flushPromises()
+    expect(rendered(wrapper)).toHaveLength(0)
+    await wrapper.find('[data-test="pb-annot-undo"]').trigger('click')
+    await flushPromises()
+    expect(rendered(wrapper)).toHaveLength(1)
+    await wrapper.find('[data-test="pb-annot-redo"]').trigger('click')
+    await flushPromises()
+    expect(rendered(wrapper)).toHaveLength(0)
+  })
+
+  it('exports the full schema as map-preview-annotations JSON', async () => {
+    const wrapper = mountPane()
+    const mixed = [
+      { type: 'pen', color: '#fff', width: 3, points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] },
+      { type: 'route', color: '#fff', width: 3, points: [{ x: 0, y: 0 }, { x: 2, y: 2 }] },
+      { type: 'unit', color: '#fff', x: 1, y: 1, tankClass: 'HT', radius: 4, label: '' },
+      { type: 'text', color: '#fff', x: 0, y: 0, text: 'A' },
+    ]
+    await importJson(wrapper, { version: 1, kind: 'map-preview-annotations-3d', mapKey: 'erlenberg', annotations: mixed })
+    const blobs = []
+    const createObjectURL = vi.fn((blob) => { blobs.push(blob); return 'blob:export' })
+    vi.stubGlobal('URL', Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() }))
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    await wrapper.find('[data-testid="map-2d-export"]').trigger('click')
+    expect(blobs).toHaveLength(1)
+    const payload = JSON.parse(await blobs[0].text())
+    expect(payload).toMatchObject({ version: 1, kind: 'map-preview-annotations', mapKey: 'erlenberg' })
+    expect(payload.annotations).toEqual(mixed)
+    expect(typeof payload.exportedAt).toBe('string')
+    click.mockRestore()
+    vi.unstubAllGlobals()
+  })
+
+  it('renames the selected unit/route label through the shared toolbar input', async () => {
+    const wrapper = mountPane()
+    await openToolbar(wrapper)
+    await wrapper.find('[data-test="pb-annot-LT"]').trigger('click')
+    await pointer(wrapper, 'pointerdown', 100, 100)
+    await pointer(wrapper, 'pointerup', 100, 100)
+    await flushPromises()
+    await wrapper.find('[data-test="pb-annot-select"]').trigger('click')
+    await pointer(wrapper, 'pointerdown', 100, 100)
+    await pointer(wrapper, 'pointerup', 100, 100)
+    await flushPromises()
+    const input = wrapper.find('[data-test="pb-annot-name"]')
+    expect(input.exists()).toBe(true)
+    await input.setValue('North push')
+    await input.trigger('change')
+    await flushPromises()
+    expect(rendered(wrapper).at(-1).label).toBe('North push')
+  })
+
+  it('round-trips a mixed full-schema payload and rejects malformed entries fail-closed', async () => {
+    const wrapper = mountPane()
+    const mixed = [
+      { type: 'pen', color: '#fff', width: 3, points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] },
+      { type: 'route', color: '#fff', width: 3, points: [{ x: 0, y: 0 }, { x: 2, y: 2 }], label: 'route' },
+      { type: 'unit', color: '#fff', x: 1, y: 1, tankClass: 'HT', radius: 4, label: '' },
+      { type: 'arrow', color: '#fff', width: 3, x1: 0, y1: 0, x2: 3, y2: 3 },
+      { type: 'line', color: '#fff', width: 3, x1: 0, y1: 0, x2: 3, y2: 3 },
+      { type: 'rect', color: '#fff', width: 3, x: 0, y: 0, w: 4, h: 5 },
+      { type: 'circle', color: '#fff', width: 3, cx: 0, cy: 0, r: 4 },
+      { type: 'text', color: '#fff', x: 0, y: 0, text: 'A' },
+    ]
+    await importJson(wrapper, { version: 1, kind: 'map-preview-annotations', mapKey: 'erlenberg', annotations: mixed })
+    expect(rendered(wrapper).map(a => a.type)).toEqual(mixed.map(a => a.type))
+    for (const invalid of [
+      { type: 'unit', color: '#fff', x: 0, y: 0, tankClass: 'XX', radius: 4 },
+      { type: 'route', color: '#fff', width: 3, points: [{ x: 0, y: 0 }] },
+      { type: 'rect', color: '#fff', width: 3, x: 0, y: 0, w: 0, h: 1 },
+      { type: 'circle', color: '#fff', width: 3, cx: 0, cy: 0, r: -1 },
+      { type: 'text', color: '#fff', x: 0, y: 0, text: '  ' },
+      { type: 'unknown', color: '#fff', x: 0, y: 0 },
+    ]) {
+      await importJson(wrapper, { version: 1, kind: 'map-preview-annotations', mapKey: 'erlenberg', annotations: [invalid] })
+      expect(wrapper.find('[data-testid="map-2d-import-note"]').text()).toContain('importReasonFormat')
+    }
+  })
+})
+
+describe('MapPreview2DPane PNG export', () => {
+  it('captures the BattleMap viewport (not the pane root) and downloads the current view PNG', async () => {
+    const wrapper = mountPane()
+    const battleMap = wrapper.findComponent({ name: 'BattleMap' })
+    Object.defineProperty(battleMap.element, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ x: 0, y: 0, top: 0, left: 0, right: 640, bottom: 480, width: 640, height: 480 }),
+    })
+    await wrapper.find('[data-testid="map-2d-export-image"]').trigger('click')
+    await flushPromises()
+    expect(h2cMock).toHaveBeenCalledTimes(1)
+    const [target, options] = h2cMock.mock.calls[0]
+    expect(target.classList.contains('bm-stub')).toBe(true)
+    expect(target.classList.contains('map2d')).toBe(false)
+    expect(options.useCORS).toBe(true)
+    expect(options.width).toBe(640)
+    expect(options.height).toBe(480)
+    expect(pngMock.downloadBlob).toHaveBeenCalledWith(expect.any(Blob), expect.stringMatching(/^wotb-map-erlenberg-\d{8}-\d{6}\.png$/))
+  })
+
+  it('fails visible and re-enables the button when PNG capture rejects', async () => {
+    const wrapper = mountPane()
+    const battleMap = wrapper.findComponent({ name: 'BattleMap' })
+    Object.defineProperty(battleMap.element, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ x: 0, y: 0, top: 0, left: 0, right: 640, bottom: 480, width: 640, height: 480 }),
+    })
+    h2cMock.mockRejectedValueOnce(new Error('capture failed'))
+    await wrapper.find('[data-testid="map-2d-export-image"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="map-2d-export-error"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="map-2d-export-image"]').attributes('disabled')).toBeUndefined()
   })
 })

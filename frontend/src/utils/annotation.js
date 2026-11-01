@@ -1,7 +1,7 @@
 /**
  * 战局回放地图标注（Battle Playback Annotation）纯工具：
  * 色板/线宽常量、屏幕→语义坐标换算、橡皮擦点擦、快照式 undo/redo。
- * 全部为纯函数，供 BattlePlayback.vue 与单测使用。
+ * 全部为纯函数，供 BattlePlayback.vue / MapPreview2DPane.vue 与单测使用。
  *
  * 标注对象契约（几何一律存语义坐标 x=回放 x，y=回放 z，渲染时经 createMapView 的 toX/toY 换算）：
  * - pen:    { type:'pen',    color, width, points:[{x,y},...] }（自由笔迹，多段）
@@ -21,7 +21,8 @@ export const ANNOT_COLORS = [
 ]
 
 // The palette and actual vehicles share one game-domain symbol definition.
-export { TANK_CLASS_ICONS as ANNOT_TANK_CLASSES } from './tankClassIcon.js'
+import { TANK_CLASS_ICONS } from './tankClassIcon.js'
+export { TANK_CLASS_ICONS as ANNOT_TANK_CLASSES }
 
 /** 粗细滑块范围与默认值（SVG 单位，随地图缩放）。 */
 export const ANNOT_WIDTH_MIN = 1
@@ -469,4 +470,103 @@ export function undo(history, index) {
 export function redo(history, index) {
   if (!canRedo(history, index)) return { history, index }
   return { history, index: index + 1 }
+}
+
+/**
+ * 由 tool + 两个语义点生成进行中的 shape draft；不是 shape tool 时返回 null。
+ * 只产出 schema geometry；颜色/宽度由宿主提供。
+ */
+export function annotationDraftFromTool(tool, start, end, { color, width } = {}) {
+  switch (tool) {
+    case 'arrow':
+    case 'line':
+      return { type: tool, color, width, x1: start.x, y1: start.y, x2: end.x, y2: end.y }
+    case 'rect':
+      return { type: 'rect', color, width, ...rectFromCorners(start, end) }
+    case 'circle':
+      return { type: 'circle', color, width, ...circleFromCorners(start, end) }
+    default:
+      return null
+  }
+}
+
+/** 零长度/零面积 draft 不进入 history。 */
+export function isDegenerateAnnotation(annotation) {
+  if (!annotation) return true
+  if (annotation.type === 'rect') return annotation.w < 1e-9 && annotation.h < 1e-9
+  if (annotation.type === 'circle') return annotation.r < 1e-9
+  if (annotation.type === 'line' || annotation.type === 'arrow') {
+    return Math.hypot(annotation.x2 - annotation.x1, annotation.y2 - annotation.y1) < 1e-9
+  }
+  return false
+}
+
+/**
+ * 语义 annotation → BattleMap 期望的 SVG 呈现字段（唯一投影实现，Playback 与 Map Preview 共用）。
+ * toX/toY 负责世界→SVG；invX/invY 是「每 SVG unit 的语义量」，用于宽度/半径/矩形尺寸。
+ * 注意：BattlePlayback 的 relief 路径仍有独立投影；本 helper 不改变其行为。
+ */
+export function projectAnnotationToSvg(annotation, { toX, toY, invX = 1, invY = 1, widthFallback = ANNOT_WIDTH_DEFAULT } = {}) {
+  const out = { ...annotation, widthSvg: (annotation.width || widthFallback) * invX }
+  if (annotation.type === 'pen' || annotation.type === 'route') {
+    out.svgPoints = polylinePoints(annotation.points, toX, toY)
+  } else if (annotation.type === 'line' || annotation.type === 'arrow') {
+    out.x1 = toX(annotation.x1)
+    out.y1 = toY(annotation.y1)
+    out.x2 = toX(annotation.x2)
+    out.y2 = toY(annotation.y2)
+    if (annotation.type === 'arrow') out.head = arrowHeadPoints(out.x1, out.y1, out.x2, out.y2)
+  } else if (annotation.type === 'rect') {
+    out.x = toX(annotation.x)
+    out.y = toY(annotation.y)
+    out.w = annotation.w * invX
+    out.h = annotation.h * invY
+  } else if (annotation.type === 'circle') {
+    out.cx = toX(annotation.cx)
+    out.cy = toY(annotation.cy)
+    out.r = annotation.r * invX
+  } else if (annotation.type === 'text' || annotation.type === 'unit') {
+    out.x = toX(annotation.x)
+    out.y = toY(annotation.y)
+  }
+  return out
+}
+
+/** 完整 annotation schema 的 fail-closed 校验；不信任未知字段/type。 */
+export function isValidAnnotation(annotation) {
+  if (!annotation || typeof annotation !== 'object' || Array.isArray(annotation)) return false
+  if (typeof annotation.color !== 'string' || annotation.color.length === 0) return false
+  if (annotation.label !== undefined && typeof annotation.label !== 'string') return false
+  const finite = (value) => typeof value === 'number' && Number.isFinite(value)
+  const positive = (value) => finite(value) && value > 0
+  const points = () => Array.isArray(annotation.points)
+    && annotation.points.length >= 2
+    && annotation.points.every(point => point && finite(point.x) && finite(point.y))
+  switch (annotation.type) {
+    case 'pen':
+      return positive(annotation.width) && points()
+    case 'route':
+      return positive(annotation.width) && points()
+    case 'line':
+    case 'arrow':
+      return positive(annotation.width)
+        && finite(annotation.x1) && finite(annotation.y1)
+        && finite(annotation.x2) && finite(annotation.y2)
+    case 'rect':
+      return positive(annotation.width)
+        && finite(annotation.x) && finite(annotation.y)
+        && positive(annotation.w) && positive(annotation.h)
+    case 'circle':
+      return positive(annotation.width)
+        && finite(annotation.cx) && finite(annotation.cy) && positive(annotation.r)
+    case 'text':
+      return finite(annotation.x) && finite(annotation.y)
+        && typeof annotation.text === 'string' && annotation.text.trim().length > 0
+    case 'unit':
+      return finite(annotation.x) && finite(annotation.y)
+        && positive(annotation.radius)
+        && TANK_CLASS_ICONS.some(icon => icon.key === annotation.tankClass)
+    default:
+      return false
+  }
 }

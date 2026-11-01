@@ -8,6 +8,10 @@ import {
   ANNOT_FONT_SIZE,
   ANNOT_WIDTH_MAX,
   ANNOT_WIDTH_MIN,
+  annotationDraftFromTool,
+  isDegenerateAnnotation,
+  isValidAnnotation,
+  projectAnnotationToSvg,
   UNDO_LIMIT,
   applyEraser,
   arrowHeadPoints,
@@ -347,5 +351,68 @@ describe('tactical annotation geometry', () => {
     expect(translateAnnotation({ type: 'rect', x: 2, y: 3, w: 4, h: 5 }, 10, 20)).toEqual({ type: 'rect', x: 12, y: 23, w: 4, h: 5 })
     expect(translateAnnotation({ type: 'circle', cx: 2, cy: 3, r: 4 }, 10, 20)).toEqual({ type: 'circle', cx: 12, cy: 23, r: 4 })
     expect(translateAnnotation({ type: 'arrow', x1: 2, y1: 3, x2: 4, y2: 5 }, 10, 20)).toEqual({ type: 'arrow', x1: 12, y1: 23, x2: 14, y2: 25 })
+  })
+})
+
+describe('shared annotation helpers', () => {
+  it('creates shape drafts from two semantic points and rejects degenerate shapes', () => {
+    const line = annotationDraftFromTool('line', { x: 0, y: 0 }, { x: 10, y: 5 }, { color: '#fff', width: 3 })
+    expect(line).toEqual({ type: 'line', color: '#fff', width: 3, x1: 0, y1: 0, x2: 10, y2: 5 })
+    expect(isDegenerateAnnotation(line)).toBe(false)
+    expect(isDegenerateAnnotation({ type: 'line', x1: 1, y1: 1, x2: 1, y2: 1 })).toBe(true)
+    const rect = annotationDraftFromTool('rect', { x: 1, y: 2 }, { x: 4, y: 6 }, { color: '#fff', width: 2 })
+    expect(rect).toMatchObject({ type: 'rect', w: 3, h: 4 })
+    expect(isDegenerateAnnotation({ ...rect, w: 0, h: 0 })).toBe(true)
+    const circle = annotationDraftFromTool('circle', { x: 0, y: 0 }, { x: 3, y: 4 }, { color: '#fff', width: 2 })
+    expect(circle.r).toBe(2.5)
+    expect(isDegenerateAnnotation(annotationDraftFromTool('arrow', { x: 0, y: 0 }, { x: 0, y: 0 }, {}))).toBe(true)
+  })
+
+  it('projects every schema type to BattleMap SVG fields with the shared inverse scale', () => {
+    const opts = { toX: mapView.toX, toY: mapView.toY, invX: 0.6, invY: 0.4 }
+    const pen = projectAnnotationToSvg({ type: 'pen', color: '#fff', width: 3, points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] }, opts)
+    expect(pen.svgPoints).toEqual(polylinePoints([{ x: 0, y: 0 }, { x: 1, y: 1 }], mapView.toX, mapView.toY))
+    expect(pen.widthSvg).toBeCloseTo(1.8)
+    const arrow = projectAnnotationToSvg({ type: 'arrow', color: '#fff', width: 3, x1: 0, y1: 0, x2: 10, y2: 0 }, opts)
+    expect(arrow.head).toEqual(arrowHeadPoints(arrow.x1, arrow.y1, arrow.x2, arrow.y2))
+    const rect = projectAnnotationToSvg({ type: 'rect', color: '#fff', width: 3, x: 0, y: 0, w: 10, h: 20 }, opts)
+    expect(rect.w).toBeCloseTo(6)
+    expect(rect.h).toBeCloseTo(8)
+    const circle = projectAnnotationToSvg({ type: 'circle', color: '#fff', width: 3, cx: 0, cy: 0, r: 10 }, opts)
+    expect(circle.r).toBeCloseTo(6)
+    const text = projectAnnotationToSvg({ type: 'text', color: '#fff', x: 0, y: 0, text: 'A' }, opts)
+    expect(text.x).toBe(mapView.toX(0))
+    expect(text.y).toBe(mapView.toY(0))
+    const unit = projectAnnotationToSvg({ type: 'unit', color: '#fff', x: 0, y: 0, tankClass: 'HT', radius: 4, label: '' }, opts)
+    expect(unit.x).toBe(mapView.toX(0))
+    expect(unit.widthSvg).toBeGreaterThan(0)
+  })
+
+  it('validates full annotation schema fail-closed', () => {
+    const valid = [
+      { type: 'pen', color: '#fff', width: 3, points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] },
+      { type: 'route', color: '#fff', width: 3, points: [{ x: 0, y: 0 }, { x: 1, y: 1 }], label: 'r' },
+      { type: 'unit', color: '#fff', x: 0, y: 0, tankClass: 'LT', radius: 4, label: '' },
+      { type: 'arrow', color: '#fff', width: 3, x1: 0, y1: 0, x2: 1, y2: 1 },
+      { type: 'line', color: '#fff', width: 3, x1: 0, y1: 0, x2: 1, y2: 1 },
+      { type: 'rect', color: '#fff', width: 3, x: 0, y: 0, w: 1, h: 1 },
+      { type: 'circle', color: '#fff', width: 3, cx: 0, cy: 0, r: 1 },
+      { type: 'text', color: '#fff', x: 0, y: 0, text: 'A' },
+    ]
+    for (const annotation of valid) expect(isValidAnnotation(annotation), annotation.type).toBe(true)
+    for (const invalid of [
+      null,
+      {},
+      { type: 'unknown', color: '#fff', x: 0, y: 0 },
+      { type: 'pen', color: '#fff', width: 3, points: [{ x: 0, y: 0 }] },
+      { type: 'route', color: '#fff', width: 3, points: [{ x: 0, y: 0 }] },
+      { type: 'line', color: '#fff', width: 3, x1: 0, y1: 0, x2: Infinity, y2: 1 },
+      { type: 'rect', color: '#fff', width: 3, x: 0, y: 0, w: 0, h: 1 },
+      { type: 'circle', color: '#fff', width: 3, cx: 0, cy: 0, r: -1 },
+      { type: 'text', color: '#fff', x: 0, y: 0, text: '   ' },
+      { type: 'unit', color: '#fff', x: 0, y: 0, tankClass: 'XX', radius: 4 },
+      { type: 'unit', color: '#fff', x: 0, y: 0, tankClass: 'HT', radius: 0 },
+      { type: 'line', color: 1, width: 3, x1: 0, y1: 0, x2: 1, y2: 1 },
+    ]) expect(isValidAnnotation(invalid)).toBe(false)
   })
 })

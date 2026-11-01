@@ -6,11 +6,12 @@
  *
  * 手势与坐标管线复用回放的纯函数（zoomViewAt / clampViewPan / screenToSemantic /
  * utils/annotation 全套）；渲染复用 BattleMap.vue（纯展示，车辆/浮层以空数组 +
- * 桩函数传入）。标注只取 pen/eraser（与 3D 预览同一工具集），会话内保存 + 文件导入导出。
+ * 桩函数传入）。标注与 Playback 2D 同一 schema/renderer/toolbar；本面板只负责
+ * static-map 上下文的 orchestration、会话内保存 + 完整 JSON 导入导出 + 当前视角 PNG。
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Download, PencilRuler, Upload } from 'lucide-vue-next'
+import { Download, Image as ImageIcon, PencilRuler, Upload } from 'lucide-vue-next'
 import BattleMap from './BattleMap.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
 import { mapBases } from '../data/mapBases.js'
@@ -21,10 +22,13 @@ import { resolveMap2dBasemap } from '../scene/replaySource.js'
 import { createMapView } from '../utils/mapView.js'
 import {
   ANNOT_COLORS, ANNOT_ERASER_RADIUS_DEFAULT, ANNOT_ERASER_RADIUS_MAX, ANNOT_ERASER_RADIUS_MIN,
-  ANNOT_FONT_SIZE, ANNOT_WIDTH_DEFAULT, ANNOT_WIDTH_MAX, ANNOT_WIDTH_MIN,
-  applyEraser, canRedo, canUndo, commit, polylinePoints, redo, screenToSemantic, semanticWidthFromSlider, undo,
+  ANNOT_FONT_SIZE, ANNOT_TANK_CLASSES, ANNOT_WIDTH_DEFAULT, ANNOT_WIDTH_MAX, ANNOT_WIDTH_MIN,
+  annotationDraftFromTool, applyEraser, canRedo, canUndo, commit, hitTestAnnotation, isDegenerateAnnotation,
+  isValidAnnotation, projectAnnotationToSvg, redo, screenToSemantic, semanticWidthFromSlider, svgToScreen,
+  translateAnnotation, undo,
 } from '../utils/annotation.js'
 import { clampViewPan, zoomViewAt } from '../utils/battlePlayback.js'
+import { computeExportDimensions, downloadBlob, sanitizeFilename } from '../utils/exportReplayPng.js'
 import { usePaneFillHeight } from '../composables/usePaneFillHeight.js'
 
 /**
@@ -358,7 +362,7 @@ function releasePublishedUrl() {
   }
 }
 
-// ---------- 标注（pen/eraser，语义坐标 + undo 栈）----------
+// ---------- 标注（Playback 2D 全量工具，语义坐标 + undo 栈）----------
 const annotationOpen = ref(false)
 const annotationTool = ref(null)
 const annotationColor = ref(ANNOT_COLORS[0])
@@ -366,40 +370,93 @@ const annotationsVisible = ref(true)
 const annotationHistory = ref([[]])
 const annotationIndex = ref(0)
 const annotations = computed(() => annotationHistory.value[annotationIndex.value] || [])
+const selectedAnnotationIndex = ref(-1)
+const selectedAnnotation = computed(() => annotations.value[selectedAnnotationIndex.value] || null)
+const routePoints = ref([])
+const textSession = ref(null)
 const draft = ref(null)
+let moveOriginal = null
+let drawStart = null
+let drawPoints = []
+let drawScreen = []
+let drawingPointerId = null
+let drawingStartScreen = null
+const exportingImage = ref(false)
+const exportError = ref('')
 
 function replaceAnnotations(next) {
   const state = commit(annotationHistory.value, annotationIndex.value, next)
   annotationHistory.value = state.history
   annotationIndex.value = state.index
 }
+function commitDraft(annotation) {
+  replaceAnnotations([...annotations.value, annotation])
+  selectedAnnotationIndex.value = annotations.value.length - 1
+}
+function updateSelected(patch) {
+  if (!selectedAnnotation.value) return
+  const index = selectedAnnotationIndex.value
+  replaceAnnotations(annotations.value.map((annotation, i) => i === index ? { ...annotation, ...patch } : annotation))
+}
 function undoAnnotation() {
+  cancelRoute()
+  selectedAnnotationIndex.value = -1
   const state = undo(annotationHistory.value, annotationIndex.value)
   annotationHistory.value = state.history
   annotationIndex.value = state.index
 }
 function redoAnnotation() {
+  cancelRoute()
+  selectedAnnotationIndex.value = -1
   const state = redo(annotationHistory.value, annotationIndex.value)
   annotationHistory.value = state.history
   annotationIndex.value = state.index
 }
 function clearAnnotations() {
+  cancelRoute()
+  selectedAnnotationIndex.value = -1
   if (annotations.value.length) replaceAnnotations([])
 }
+function deleteSelected() {
+  if (!selectedAnnotation.value) return
+  replaceAnnotations(annotations.value.filter((_, index) => index !== selectedAnnotationIndex.value))
+  selectedAnnotationIndex.value = -1
+}
+function renameSelected(label) {
+  const value = String(label).trim().slice(0, 60)
+  if (!selectedAnnotation.value) return
+  if (selectedAnnotation.value.type === 'text') updateSelected({ text: value })
+  else updateSelected({ label: value })
+}
 function setAnnotationTool(tool) {
+  if (textSession.value) commitTextSession(textSession.value)
+  cancelRoute()
+  selectedAnnotationIndex.value = -1
+  annotationsVisible.value = true
   annotationTool.value = tool
-  if (!annotationsVisible.value) annotationsVisible.value = true
+}
+function setAnnotationColor(color) {
+  annotationColor.value = color
+  if (selectedAnnotation.value) updateSelected({ color })
+  if (routePoints.value.length) draft.value = routeDraft()
+}
+function toggleAnnotations() {
+  cancelRoute()
+  selectedAnnotationIndex.value = -1
+  annotationsVisible.value = !annotationsVisible.value
 }
 function openAnnotation() {
   if (annotationOpen.value) return
   annotationOpen.value = true
-  annotationTool.value = 'pen'
+  annotationTool.value = 'select'
   annotationsVisible.value = true
 }
 function closeAnnotation() {
+  if (textSession.value) commitTextSession(textSession.value)
+  cancelRoute()
   annotationOpen.value = false
   annotationTool.value = null
-  cancelDrawing()
+  selectedAnnotationIndex.value = -1
 }
 function resetAnnotationState() {
   annotationHistory.value = [[]]
@@ -407,9 +464,20 @@ function resetAnnotationState() {
   annotationOpen.value = false
   annotationTool.value = null
   annotationsVisible.value = true
+  selectedAnnotationIndex.value = -1
+  routePoints.value = []
+  if (textSession.value) cancelTextSession(textSession.value)
+  textSession.value = null
   draft.value = null
+  exportError.value = ''
+  exportingImage.value = false
   pointers.clear()
   drawingPointerId = null
+  drawStart = null
+  drawPoints = []
+  drawScreen = []
+  moveOriginal = null
+  drawingStartScreen = null
 }
 
 /** 指针 client 坐标 → 语义坐标（无地形 relief 预览，直接 screenToSemantic）。 */
@@ -422,54 +490,134 @@ function semanticPoint(e) {
 const pointers = new Map()
 let panStart = null
 let pinchStart = null
-let drawingPointerId = null
-let drawPoints = []
-let drawScreen = []
 
 function pinchInfo() {
   const [a, b] = [...pointers.values()]
   const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
   return { mid, dist: Math.hypot(a.x - b.x, a.y - b.y) }
 }
+
+function cancelRoute() {
+  routePoints.value = []
+  cancelDrawing()
+}
+
+function routeDraft() {
+  return { type: 'route', color: annotationColor.value, width: annotWidth.value, points: [...routePoints.value] }
+}
+
+function finishRoute() {
+  if (routePoints.value.length < 2) return
+  const annotation = routeDraft()
+  routePoints.value = []
+  cancelDrawing()
+  commitDraft(annotation)
+  annotationTool.value = 'select'
+}
+
+function selectionTolerance() {
+  const rect = renderRect()
+  const width = rect.width || mapView.value.W
+  return 12 * semPerSvgX.value * mapView.value.W / width / Math.max(1, view.scale)
+}
+
 function startDrawing(e) {
-  const p = semanticPoint(e)
-  if (!p || !annotationsVisible.value) return
+  const point = semanticPoint(e)
+  if (!point || !annotationsVisible.value) return
   drawingPointerId = e.pointerId
-  if (annotationTool.value === 'eraser' || annotationTool.value === 'pen') {
-    drawPoints = [p]
+  drawingStartScreen = { x: e.clientX, y: e.clientY }
+  const tool = annotationTool.value
+  if (tool === 'select') {
+    selectedAnnotationIndex.value = hitTestAnnotation(annotations.value, point, selectionTolerance())
+    moveOriginal = selectedAnnotation.value
+    drawStart = point
+    return
+  }
+  if (tool === 'route' || ANNOT_TANK_CLASSES.some(item => item.key === tool)) {
+    drawStart = point
+    if (tool === 'route') draft.value = routeDraft()
+    return
+  }
+  if (tool === 'text') {
+    if (textSession.value) commitTextSession(textSession.value)
+    textSession.value = reactive({ point, text: '' })
+    nextTick(() => mapComponent.value?.textInputRef?.focus())
+    return
+  }
+  if (tool === 'pen' || tool === 'eraser') {
+    drawPoints = [point]
     drawScreen = [{ x: e.clientX, y: e.clientY }]
-    draft.value = { type: annotationTool.value, color: annotationColor.value, width: annotWidth.value, points: [p] }
+    draft.value = { type: tool, color: annotationColor.value, width: annotWidth.value, points: [point] }
+    return
   }
+  drawStart = point
+  draft.value = annotationDraftFromTool(tool, point, point, { color: annotationColor.value, width: annotWidth.value })
 }
+
 function moveDrawing(e) {
-  const p = semanticPoint(e)
-  if (!p) return
-  const last = drawScreen[drawScreen.length - 1]
-  if (last == null || Math.hypot(e.clientX - last.x, e.clientY - last.y) >= ANNOT_THIN_PX) {
-    drawScreen.push({ x: e.clientX, y: e.clientY })
-    drawPoints.push(p)
-    draft.value = { ...draft.value, points: [...drawPoints] }
+  const point = semanticPoint(e)
+  if (!point) return
+  const tool = annotationTool.value
+  if (tool === 'select' && moveOriginal && drawStart) {
+    if (Math.hypot(point.x - drawStart.x, point.y - drawStart.y) > 1e-9) {
+      draft.value = translateAnnotation(moveOriginal, point.x - drawStart.x, point.y - drawStart.y)
+    }
+    return
   }
+  if (tool === 'route' || ANNOT_TANK_CLASSES.some(item => item.key === tool)) return
+  if (tool === 'pen' || tool === 'eraser') {
+    const last = drawScreen[drawScreen.length - 1]
+    if (last == null || Math.hypot(e.clientX - last.x, e.clientY - last.y) >= ANNOT_THIN_PX) {
+      drawScreen.push({ x: e.clientX, y: e.clientY })
+      drawPoints.push(point)
+      draft.value = { ...draft.value, points: [...drawPoints] }
+    }
+    return
+  }
+  if (drawStart) draft.value = annotationDraftFromTool(tool, drawStart, point, { color: annotationColor.value, width: annotWidth.value })
 }
+
 function endDrawing() {
   const tool = annotationTool.value
   if (!tool) return
-  if (tool === 'pen') {
-    if (drawPoints.length >= 2) replaceAnnotations([...annotations.value, { type: 'pen', color: annotationColor.value, width: annotWidth.value, points: drawPoints }])
+  if (tool === 'select') {
+    if (draft.value && moveOriginal && selectedAnnotationIndex.value >= 0) {
+      const index = selectedAnnotationIndex.value
+      replaceAnnotations(annotations.value.map((annotation, i) => i === index ? draft.value : annotation))
+    }
+  } else if (tool === 'route') {
+    if (drawStart) {
+      const last = routePoints.value.at(-1)
+      if (!last || Math.hypot(last.x - drawStart.x, last.y - drawStart.y) > 1e-9) routePoints.value.push(drawStart)
+    }
+    cancelDrawing()
+    return
+  } else if (ANNOT_TANK_CLASSES.some(item => item.key === tool) && drawStart) {
+    commitDraft({ type: 'unit', tankClass: tool, color: annotationColor.value, x: drawStart.x, y: drawStart.y, radius: 16 * semPerSvgX.value, label: '' })
+    annotationTool.value = 'select'
+  } else if (tool === 'pen') {
+    if (drawPoints.length >= 2) commitDraft({ type: 'pen', color: annotationColor.value, width: annotWidth.value, points: drawPoints })
   } else if (tool === 'eraser') {
     if (drawPoints.length) {
       const next = applyEraser(annotations.value, drawPoints, annotationEraserRadius.value)
       if (next !== annotations.value) replaceAnnotations(next)
     }
+  } else if (draft.value && !isDegenerateAnnotation(draft.value)) {
+    commitDraft(draft.value)
   }
   cancelDrawing()
 }
+
 function cancelDrawing() {
-  draft.value = null
+  draft.value = routePoints.value.length ? routeDraft() : null
+  drawStart = null
   drawPoints = []
   drawScreen = []
+  moveOriginal = null
   drawingPointerId = null
+  drawingStartScreen = null
 }
+
 function onPointerDown(e) {
   if (e.button != null && e.button !== 0) return
   if (e.pointerType === 'mouse' && e.button === 0) e.preventDefault()
@@ -500,6 +648,7 @@ function onPointerDown(e) {
     panStart = null
   }
 }
+
 function onPointerMove(e) {
   if (!pointers.has(e.pointerId)) return
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
@@ -528,6 +677,7 @@ function onPointerMove(e) {
     applyView({ scale: view.scale, tx: panStart.tx + dx, ty: panStart.ty + dy })
   }
 }
+
 function onPointerUp(e) {
   if (!pointers.delete(e.pointerId)) return
   try {
@@ -548,47 +698,85 @@ function onPointerUp(e) {
   }
 }
 
-/** BattleMap 渲染输入：pen 草稿并入渲染列表；无车辆/浮层（桩函数永不被调用）。 */
+function onStageKeydown(e) {
+  if (!annotationOpen.value || e.isComposing) return
+  const tag = e.target?.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return
+  if (e.key === 'Enter' && annotationTool.value === 'route') {
+    e.preventDefault()
+    finishRoute()
+    return
+  }
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selectedAnnotation.value) {
+    e.preventDefault()
+    deleteSelected()
+    return
+  }
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    if (routePoints.value.length) cancelRoute()
+    else closeAnnotation()
+  }
+}
+
+function updateTextSession(value) {
+  if (textSession.value) textSession.value.text = String(value)
+}
+
+function commitTextSession(session) {
+  if (!session || session.cancelled || session.committed) return
+  if (textSession.value === session) textSession.value = null
+  session.committed = true
+  const text = session.text.trim()
+  if (!text) return
+  commitDraft({ type: 'text', color: annotationColor.value, x: session.point.x, y: session.point.y, text })
+}
+
+function cancelTextSession(session) {
+  if (textSession.value === session) textSession.value = null
+  if (session) session.cancelled = true
+}
+
+const textInputStyle = computed(() => {
+  const session = textSession.value
+  if (!session) return null
+  const point = svgToScreen(mapView.value, view, mapView.value.toX(session.point.x), mapView.value.toY(session.point.y), mapWidth(), mapHeight())
+  if (!point) return null
+  return { left: `${point.x}px`, top: `${point.y}px` }
+})
+
+/** 渲染输入：全类型 semantic → SVG；draft 覆盖被拖动的原 annotation。 */
+const renderedAnnotations = computed(() => {
+  const toX = mapView.value.toX
+  const toY = mapView.value.toY
+  const invX = 1 / Math.max(1e-9, semPerSvgX.value)
+  const invY = 1 / Math.max(1e-9, semPerSvgY.value)
+  const list = [...annotations.value]
+  if (draft.value) {
+    if (moveOriginal && selectedAnnotationIndex.value >= 0) list[selectedAnnotationIndex.value] = draft.value
+    else list.push(draft.value)
+  }
+  return list.map((annotation, index) => ({
+    ...projectAnnotationToSvg(annotation, { toX, toY, invX, invY, widthFallback: annotWidth.value }),
+    selected: annotationOpen.value && index === selectedAnnotationIndex.value,
+  }))
+})
+const mapTouchPan = computed(() => !annotationOpen.value && view.scale <= fitScale() + 1e-3)
+
 // ---------- 底图切换 = 换图：标注清空（语义随图）+ 重解析底图 + 重新 fit ----------
-// 注册点在标注状态声明之后——immediate 首评需要完整状态（resolveBasemap 会触发
-// resetAnnotationState，其引用的 refs 此时必须已初始化）。
 watch(() => props.basemap, (bm) => {
   fitObserved = false
   resetAnnotationState()
   resolveBasemap(bm)
 }, { immediate: true })
 
-const renderedAnnotations = computed(() => {
-  const toX = mapView.value.toX
-  const toY = mapView.value.toY
-  const invX = 1 / Math.max(1e-9, semPerSvgX.value)
-  const list = [...annotations.value]
-  if (draft.value) list.push(draft.value)
-  return list.map((ann) => {
-    const out = { ...ann, widthSvg: (ann.width || annotWidth.value) * invX }
-    if (ann.type === 'pen') out.svgPoints = polylinePoints(ann.points, toX, toY)
-    return out
-  })
-})
-const mapTouchPan = computed(() => !annotationOpen.value && view.scale <= fitScale() + 1e-3)
-
-// ---------- 标注导入 / 导出（会话内文件落盘；fail-closed 校验）----------
-// kind 不区分视角：2D/3D 标注同为 ±300 语义系 pen 点列，同一张地图即可互导
-// （3D 地形锚定画笔落点也存语义坐标）。兼容合入前旧导出的 -2d/-3d 后缀 kind。
+// ---------- 标注导入 / 导出（完整 schema；旧 pen-only / -2d / -3d 兼容）----------
 const IMPORT_KIND = 'map-preview-annotations'
 const IMPORT_KINDS = new Set([
   IMPORT_KIND,
   'map-preview-annotations-2d',
   'map-preview-annotations-3d',
 ])
-/** 本面板的标注几何只有 pen：点列 ≥2、坐标有限、宽度为正。 */
-function isImportableAnnotation(a) {
-  return !!a && a.type === 'pen'
-    && typeof a.color === 'string'
-    && Number.isFinite(a.width) && a.width > 0
-    && Array.isArray(a.points) && a.points.length >= 2
-    && a.points.every((p) => !!p && Number.isFinite(p.x) && Number.isFinite(p.y))
-}
 const importMessage = ref('')
 let importMessageTimer = 0
 function flashImportMessage(key, values) {
@@ -635,15 +823,74 @@ async function importAnnotations(event) {
     flashImportMessage('mapPreview.annotations.importFailed', { reason: t('mapPreview.annotations.importReasonMap') })
     return
   }
-  // 几何逐条校验（fail-closed，整份拒绝）：渲染层 polylinePoints 直接读 points[].x/y，
-  // 半校验的条目会让「导入成功」提示之后紧跟渲染 TypeError。
-  if (!payload.annotations.every(isImportableAnnotation)) {
+  if (!payload.annotations.every(isValidAnnotation)) {
     flashImportMessage('mapPreview.annotations.importFailed', { reason: t('mapPreview.annotations.importReasonFormat') })
     return
   }
-  const items = payload.annotations
-  replaceAnnotations(items)
-  flashImportMessage('mapPreview.annotations.importedCount', { count: items.length })
+  replaceAnnotations(payload.annotations)
+  selectedAnnotationIndex.value = -1
+  flashImportMessage('mapPreview.annotations.importedCount', { count: payload.annotations.length })
+}
+
+// ---------- 当前视角 PNG 导出（html2canvas 捕获 BattleMap 的 .pb-map）----------
+function mapPngFilename() {
+  const now = new Date()
+  const date = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('')
+  const time = [String(now.getHours()).padStart(2, '0'), String(now.getMinutes()).padStart(2, '0'), String(now.getSeconds()).padStart(2, '0')].join('')
+  return `wotb-map-${sanitizeFilename(props.mapKey)}-${date}-${time}.png`
+}
+
+async function exportImage() {
+  if (exportingImage.value) return
+  const target = mapComponent.value?.mapEl
+  if (!target || !image.value) {
+    exportError.value = t('mapPreview.annotations.exportFailed')
+    return
+  }
+  if (textSession.value) commitTextSession(textSession.value)
+  exportingImage.value = true
+  exportError.value = ''
+  let container = null
+  try {
+    await nextTick()
+    const rect = target.getBoundingClientRect()
+    if (!(rect.width > 0 && rect.height > 0)) throw new Error('map viewport has no size')
+    const clone = target.cloneNode(true)
+    clone.querySelectorAll('.pb-annot-item.is-selected').forEach((element) => element.classList.remove('is-selected'))
+    clone.querySelectorAll('.pb-text-input').forEach((element) => element.remove())
+    clone.style.width = `${rect.width}px`
+    clone.style.height = `${rect.height}px`
+    container = document.createElement('div')
+    container.style.position = 'fixed'
+    container.style.left = '-10000px'
+    container.style.top = '0'
+    container.style.pointerEvents = 'none'
+    container.setAttribute('aria-hidden', 'true')
+    container.appendChild(clone)
+    document.body.appendChild(container)
+    const dims = computeExportDimensions({ width: rect.width, height: rect.height })
+    const stageBackground = stageEl.value ? getComputedStyle(stageEl.value).backgroundColor : ''
+    const canvasBackground = stageBackground && stageBackground !== 'rgba(0, 0, 0, 0)'
+      ? stageBackground
+      : (getComputedStyle(document.documentElement).getPropertyValue('--color-canvas').trim() || '#000')
+    const html2canvas = (await import('html2canvas')).default
+    const canvas = await html2canvas(clone, {
+      scale: dims.scale,
+      useCORS: true,
+      backgroundColor: canvasBackground,
+      width: dims.width,
+      height: dims.height,
+    })
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'))
+    if (!blob) throw new Error('canvas.toBlob returned null')
+    await downloadBlob(blob, mapPngFilename())
+  } catch (error) {
+    console.error('[Map Preview PNG Export] failed', error)
+    exportError.value = t('mapPreview.annotations.exportFailed')
+  } finally {
+    if (container?.parentNode) container.parentNode.removeChild(container)
+    exportingImage.value = false
+  }
 }
 
 // BattleMap 必填的呈现函数在空车辆/浮层下不会被调用（预览无实体）
@@ -667,6 +914,7 @@ const stubFloatClass = () => ''
         @pointermove="onPointerMove"
         @pointerup="onPointerUp"
         @pointercancel="onPointerUp"
+        @keydown="onStageKeydown"
       >
       <!-- 居中方形舞台（边长 JS 实测 = min(舞台宽, 舞台高)）：底图 1:1 契约框是
            正方形，contain fit 以舞台为界（与回放正方形 stage 同构）——宽屏不留
@@ -694,6 +942,8 @@ const stubFloatClass = () => ''
           :rendered-annotations="renderedAnnotations"
           :annot-font-size="ANNOT_FONT_SIZE"
           :active-tool="annotationTool"
+          :text-session="textSession"
+          :text-input-style="textInputStyle"
           :marker-label="stubText"
           :hp-for="stubNull"
           :hp-prefs="{}"
@@ -701,6 +951,9 @@ const stubFloatClass = () => ''
           :ghost-for="stubNull"
           :flash-for="stubNull"
           :float-team-class="stubFloatClass"
+          @update-text="updateTextSession"
+          @commit-text="commitTextSession"
+          @cancel-text="cancelTextSession"
         />
       </div>
     </div>
@@ -715,7 +968,8 @@ const stubFloatClass = () => ''
           :annot-width-slider="annotWidthSlider"
           :annot-width-min="ANNOT_WIDTH_MIN"
           :annot-width-max="ANNOT_WIDTH_MAX"
-          :allowed-tools="['pen', 'eraser']"
+          :selected-annotation="selectedAnnotation"
+          :route-point-count="routePoints.length"
           :eraser-radius-slider="annotationEraserRadius"
           :eraser-radius-min="ANNOT_ERASER_RADIUS_MIN"
           :eraser-radius-max="ANNOT_ERASER_RADIUS_MAX"
@@ -724,13 +978,17 @@ const stubFloatClass = () => ''
           :can-undo="canUndo"
           :can-redo="canRedo"
           @toggle-tool="setAnnotationTool"
-          @set-annot-color="annotationColor = $event"
+          @set-annot-color="setAnnotationColor"
           @update:annot-width="annotWidthSlider = $event"
           @update:eraser-radius="annotationEraserRadius = $event"
           @undo="undoAnnotation"
           @redo="redoAnnotation"
           @clear-annotations="clearAnnotations"
-          @toggle-annotations="annotationsVisible = !annotationsVisible"
+          @toggle-annotations="toggleAnnotations"
+          @rename-selected="renameSelected"
+          @delete-selected="deleteSelected"
+          @finish-route="finishRoute"
+          @cancel-route="cancelRoute"
           @close="closeAnnotation"
         />
       </div>
@@ -772,6 +1030,19 @@ const stubFloatClass = () => ''
           tabindex="-1"
           @change="importAnnotations"
         />
+      </div>
+      <div class="map2d-image-row">
+        <button
+          type="button"
+          class="map2d-btn"
+          data-testid="map-2d-export-image"
+          :disabled="exportingImage || !image"
+          @click="exportImage"
+        >
+          <ImageIcon :size="16" aria-hidden="true" />
+          {{ exportingImage ? $t('mapPreview.annotations.exporting') : $t('mapPreview.annotations.exportImage') }}
+        </button>
+        <p v-if="exportError" class="map2d-export-error" role="alert" data-testid="map-2d-export-error">{{ exportError }}</p>
       </div>
       <p v-if="importMessage" class="map2d-import-note" role="status" data-testid="map-2d-import-note">{{ importMessage }}</p>
     </div>
@@ -849,11 +1120,18 @@ const stubFloatClass = () => ''
   padding: var(--space-2) var(--space-3);
 }
 
-.map2d-toolrow {
+.map2d-toolrow,
+.map2d-image-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
+}
+
+.map2d-export-error {
+  margin: 0;
+  color: var(--color-danger);
+  font: var(--type-caption);
 }
 
 .map2d-btn {

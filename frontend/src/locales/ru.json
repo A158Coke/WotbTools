@@ -24,7 +24,10 @@
       "importedCount": "Импортировано отметок: {count}",
       "noAnnotations": "Пока нечего экспортировать",
       "importReasonFormat": "Файл не является JSON отметок для этого режима",
-      "importReasonMap": "Отметки принадлежат другой карте"
+      "importReasonMap": "Отметки принадлежат другой карте",
+      "exportImage": "Экспорт тактической карты",
+      "exporting": "Экспорт…",
+      "exportFailed": "Не удалось экспортировать PNG"
     },
     "basemapFailed": "Не удалось загрузить подложку"
   },
