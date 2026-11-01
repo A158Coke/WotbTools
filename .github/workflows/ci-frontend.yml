@@ -90,6 +90,7 @@ jobs:
 
   # 浏览器门禁并行运行，复用 runner Chrome 和既有夹具，无需先跑 build。
   # Playback/Workspace 场景消费 pinned WASM；各功能的独立门禁仍在同一 owner 内执行。
+  # 分钟级门禁各占一个 job；短门禁合并进 browser-fast / browser-medium，省掉重复的 setup。
   # fail-fast: false 保留每条门禁的失败证据。
   browser-gates:
     name: Frontend / ${{ matrix.gate.label }}
@@ -99,8 +100,6 @@ jobs:
       fail-fast: false
       matrix:
         gate:
-          - label: Playback layout
-            script: test:browser-layout
           # 交互门禁 ≈ 全矩阵最慢一条（~5.5min）；`--shard i/n` 按**静态场景清单
           # 下标取模**确定性切分，两片并行墙钟减半。清单变化不影响切分正确性（每片覆盖
           # 的是同一次 checkout 的同一份清单）。
@@ -123,23 +122,8 @@ jobs:
           # 进程内资产源 + 构造的 hull/turret_01/gun_01 GLB），不需要真实资产、不 SKIP。
           - label: Armor viewer aiming interaction
             script: test:browser-armor-aiming
-          # 初始化、选弹、失败重试与销毁生命周期；同样自带夹具资产包，不需要真实资产。
-          - label: Armor viewer shot readiness
-            script: test:browser-armor-shot-readiness
-          - label: League broadcast directory
-            script: test:browser-broadcasts
           - label: Creator recommendations
             script: test:browser-creators
-          - label: Feedback flows
-            script: test:browser-feedback
-          # 首页 reduced-motion：真实浏览器媒体查询 + computed style + hover，而不是源码正则。
-          - label: Home reduced motion
-            script: test:browser-home
-          # 场景材质着色器编译门禁（真 three.js + headless Chrome）：编译失败在页面上
-          # 只表现为“物体不渲染”，普通单测/source 断言抓不到；覆盖 ST/lightmap/decal
-          # 的 alphaBlend 路由与共享地面 shader。
-          - label: Scenery shader compile
-            script: test:shader-check
     steps:
       - uses: actions/checkout@v5
         with:
@@ -160,3 +144,87 @@ jobs:
       - name: Real-browser ${{ matrix.gate.label }} regression
         working-directory: frontend
         run: pnpm run ${{ matrix.gate.script }} ${{ matrix.gate.args }}
+
+  # 秒级门禁串行共用一个 runner。一条失败时后续仍继续并让 job 变红，保留每条门禁的失败证据；
+  # step 级超时防止单条挂死吃掉整组。
+  browser-fast:
+    name: Frontend / Browser fast gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.head_sha }}
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+      - name: Fetch upstream agent WASM artifact (release pin, sha256 verified)
+        id: wasm
+        run: bash scripts/fetch-agent-wasm.sh
+      - name: Real-browser Playback layout regression
+        if: ${{ !cancelled() && steps.wasm.outcome == 'success' }}
+        timeout-minutes: 10
+        working-directory: frontend
+        run: pnpm run test:browser-layout
+      - name: Real-browser Feedback flows regression
+        if: ${{ !cancelled() && steps.wasm.outcome == 'success' }}
+        timeout-minutes: 10
+        working-directory: frontend
+        run: pnpm run test:browser-feedback
+      # 首页 reduced-motion：真实浏览器媒体查询 + computed style + hover，而不是源码正则。
+      - name: Real-browser Home reduced motion regression
+        if: ${{ !cancelled() && steps.wasm.outcome == 'success' }}
+        timeout-minutes: 10
+        working-directory: frontend
+        run: pnpm run test:browser-home
+      # 场景材质着色器编译门禁（真 three.js + headless Chrome）：编译失败在页面上
+      # 只表现为“物体不渲染”，普通单测/source 断言抓不到；覆盖 ST/lightmap/decal
+      # 的 alphaBlend 路由与共享地面 shader。
+      - name: Real-browser Scenery shader compile regression
+        if: ${{ !cancelled() && steps.wasm.outcome == 'success' }}
+        timeout-minutes: 10
+        working-directory: frontend
+        run: pnpm run test:shader-check
+
+  # 一分钟量级的门禁，失败语义与 browser-fast 相同。
+  browser-medium:
+    name: Frontend / Browser medium gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.head_sha }}
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+      - name: Fetch upstream agent WASM artifact (release pin, sha256 verified)
+        id: wasm
+        run: bash scripts/fetch-agent-wasm.sh
+      # 初始化、选弹、失败重试与销毁生命周期；同样自带夹具资产包，不需要真实资产。
+      - name: Real-browser Armor viewer shot readiness regression
+        if: ${{ !cancelled() && steps.wasm.outcome == 'success' }}
+        timeout-minutes: 10
+        working-directory: frontend
+        run: pnpm run test:browser-armor-shot-readiness
+      - name: Real-browser League broadcast directory regression
+        if: ${{ !cancelled() && steps.wasm.outcome == 'success' }}
+        timeout-minutes: 10
+        working-directory: frontend
+        run: pnpm run test:browser-broadcasts
