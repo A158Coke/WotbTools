@@ -200,7 +200,7 @@ describe('隐蔽加成（客户端数据：迷彩网 script / camouflages.xml）
     expect(invisibilityBonusFor(NET_SCRIPT.bonus, 'SPG')).toBe(0.07)
   })
   it('迷彩网仍静：bonus × activateBonusFactor(2.0) = LT .12 / MT .08 / HT .04 / TD .14', () => {
-    const still = cls => invisibilityBonusFor(NET_SCRIPT.bonus, cls) * Number(NET_SCRIPT.activateBonusFactor)
+    const still = (cls: string) => invisibilityBonusFor(NET_SCRIPT.bonus, cls) * Number(NET_SCRIPT.activateBonusFactor)
     expect(still('lightTank')).toBeCloseTo(0.12)
     expect(still('mediumTank')).toBeCloseTo(0.08)
     expect(still('heavyTank')).toBeCloseTo(0.04)

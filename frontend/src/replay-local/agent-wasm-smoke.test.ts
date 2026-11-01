@@ -124,10 +124,10 @@ describe('Agent WASM 五入口 smoke（pin 产物真实解析）', () => {
         if (!shot.is_author || shot.launch_velocity?.length !== 3) continue
         const [vx, vy, vz] = shot.launch_velocity
         const launchPitch = Math.atan2(vy, Math.hypot(vx, vz))
-        const aim = sampleRecorderCamera(camera, shot.time_s - LAUNCH_LAG_SEC)
+        const aim = sampleRecorderCamera(camera, shot.time_s - LAUNCH_LAG_SEC) as { yaw: number; pitch: number }
         yawErrors.push(wrapDeg(((aim.yaw - Math.atan2(vx, vz)) * 180) / Math.PI))
         pitchErrors.push(Math.abs((aim.pitch - launchPitch) * 180 / Math.PI))
-        const zeroLag = sampleRecorderCamera(camera, shot.time_s)
+        const zeroLag = sampleRecorderCamera(camera, shot.time_s) as { pitch: number }
         zeroLagPitchErrors.push(Math.abs((zeroLag.pitch - launchPitch) * 180 / Math.PI))
       }
     }

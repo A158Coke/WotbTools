@@ -41,7 +41,7 @@ function requireOnline() {
 
 export function validateTournament<K extends keyof Schemas>(schema: K, data: unknown): Schemas[K] {
   const name = `${schema[0].toLowerCase()}${schema.slice(1)}Validator`
-  const validate = validators[name] as ((value: unknown) => boolean) | undefined
+  const validate = (validators as Record<string, unknown>)[name] as ((value: unknown) => boolean) | undefined
   if (!validate?.(data)) throw new ApiError({ errorCode: 'INVALID_RESPONSE', retryable: false })
   return data as Schemas[K]
 }

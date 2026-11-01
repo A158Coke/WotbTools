@@ -628,6 +628,14 @@ commit 在远端**已不可达**（远端 `android-v1.0.0` 的目标不包含它
 guard 允许名单里的 drifted blob），在临时仓库里造出 base=drifted / HEAD=historical 的一对；
 同时仍然断言真实仓库的 V18 就是权威历史 blob——生产记录没有被改写，只是不再依赖已消失的 commit。
 
+## 26. 2026-11-01 — 前端类型检查转为 strict 与只减不增基线
+
+前端长期只开 `strictNullChecks`，`.js` 不受检查，新代码又沿用 JavaScript，JS 持续增长。实测 `strict` 只需修复
+约百处，而 `checkJs` 有 9,692 个错误且会把 JSDoc 固化成第二套类型体系，因此选择开启 `strict`、保持 `checkJs`
+关闭，并沿用 `stylelint.legacy.json` 的做法，用 `frontend/typescript.legacy.json` 冻结存量。迁移按风险边界分批，
+不以 TypeScript 文件占比为目标。同一 commit 的 Vite 构建是确定性的，因此归一化 chunk 哈希与短标识符后比对 dist，
+可以作为纯类型迁移保持行为的证据。
+
 ## 已退役 / 过渡架构
 
 - **Boost / Coaching** — 曾经形成完整有状态业务，后续连同 DB / frontend / roles 一并退役。

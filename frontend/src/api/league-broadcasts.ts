@@ -32,7 +32,7 @@ const coverBase = '/api/tournament-broadcasts/covers'
 
 export function validateBroadcast<K extends keyof Schemas>(schema: K, value: unknown): Schemas[K] {
   const name = `${schema[0].toLowerCase()}${schema.slice(1)}Validator`
-  const validate = validators[name] as ((value: unknown) => boolean) | undefined
+  const validate = (validators as Record<string, unknown>)[name] as ((value: unknown) => boolean) | undefined
   if (!validate?.(value)) throw new ApiError({ errorCode: 'INVALID_RESPONSE' })
   return value as Schemas[K]
 }

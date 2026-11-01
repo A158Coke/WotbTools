@@ -192,7 +192,7 @@ export function useReplaySession(initialCapability: ReplayCapability = 'data') {
   }
 }
 
-export function chooseInitialResultTab(result) {
+export function chooseInitialResultTab(result: Partial<Pick<ReplayResult, 'leagueMode' | 'aggregate' | 'battles'>> | null | undefined) {
   if (result?.leagueMode === true) return 'aggregate'
   if (Array.isArray(result?.aggregate) && result.aggregate.length > 0) return 'aggregate'
   if (Array.isArray(result?.battles) && result.battles.length > 0) return 'b0'
