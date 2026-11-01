@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import * as THREE from 'three'
 import {
   aimedVehicle, armorEquipmentCoeffs, armorHighlightBlock, armorPosePart, armorWorldMatrix,
-  authorShellAt, canOccludeTarget, cropFrustum, isSolidOccluder, markPickBoundsStale, mountedShell,
+  authorShellAt, canOccludeTarget, createLoadRetry, cropFrustum, isSolidOccluder, markPickBoundsStale, mountedShell,
   reticleAimDirection, screenRect,
 } from './armorHighlight.js'
 
@@ -142,6 +142,45 @@ describe('aimedVehicle', () => {
     const v = at(0, 50)
     v.glb.children[0].visible = false
     expect(aimedVehicle(origin, forward, [v])).toBeNull()
+  })
+})
+
+describe('createLoadRetry', () => {
+  const clock = () => {
+    const c = { t: 0, now: () => c.t }
+    return c
+  }
+
+  it('失败后等够间隔才能再试，临时错误过后可以恢复', () => {
+    const c = clock()
+    const retry = createLoadRetry({ attempts: 3, delayMs: 100, now: c.now })
+    expect(retry.allowed(1)).toBe(true)
+    retry.fail(1)
+    expect(retry.allowed(1)).toBe(false)
+    c.t = 100
+    expect(retry.allowed(1)).toBe(true)
+    retry.succeed(1)
+    retry.fail(1)
+    c.t = 200
+    expect(retry.allowed(1)).toBe(true)
+  })
+
+  it('试满次数后停止，永久错误不会反复下载', () => {
+    const c = clock()
+    const retry = createLoadRetry({ attempts: 2, delayMs: 100, now: c.now })
+    retry.fail(1)
+    c.t = 100
+    retry.fail(1)
+    c.t = 10_000
+    expect(retry.allowed(1)).toBe(false)
+  })
+
+  it('按车型独立计数', () => {
+    const c = clock()
+    const retry = createLoadRetry({ attempts: 1, delayMs: 100, now: c.now })
+    retry.fail(1)
+    expect(retry.allowed(1)).toBe(false)
+    expect(retry.allowed(2)).toBe(true)
   })
 })
 

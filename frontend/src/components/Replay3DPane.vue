@@ -1277,7 +1277,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 }
 .pre-start-card {
   display: grid; justify-items: center; gap: var(--space-3);
-  max-inline-size: min(100%, 560px);
+  max-inline-size: min(100%, var(--dialog-width));
   padding: var(--space-4) var(--space-5);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-lg);

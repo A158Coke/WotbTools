@@ -27,6 +27,29 @@ const EQ_ENHANCED_ARMOR = 110
 const VEHICLE_PICK_RADIUS_M = 15
 /** 裁剪矩形外扩的像素：包住光栅化取整，矩形边上不留缝。 */
 const SCISSOR_MARGIN_PX = 2
+const ARMOR_LOAD_ATTEMPTS = 3
+const ARMOR_LOAD_RETRY_MS = 5000
+
+/**
+ * 加载失败的有限重试：临时错误（断网、503）过后还能恢复，永久错误（404、坏文件）试满就停，
+ * 不会每帧重新下载。`succeed` 清掉记录，一次成功后不再占用次数。
+ */
+export function createLoadRetry({
+  attempts = ARMOR_LOAD_ATTEMPTS, delayMs = ARMOR_LOAD_RETRY_MS, now = () => performance.now(),
+} = {}) {
+  const failures = new Map()
+  return {
+    allowed(key) {
+      const failure = failures.get(key)
+      return !failure || (failure.count < attempts && now() >= failure.retryAt)
+    },
+    fail(key) {
+      const count = (failures.get(key)?.count ?? 0) + 1
+      failures.set(key, { count, retryAt: now() + delayMs })
+    },
+    succeed(key) { failures.delete(key) },
+  }
+}
 
 /** 时刻 t 的当前弹种（`timeline` 时间升序）；首条之前未知，返回 null。 */
 export function authorShellAt(timeline, t) {
@@ -210,6 +233,7 @@ export function createArmorHighlight({ renderer, assetProvider }) {
   const templates = new Map()    // tankId → Promise<armor 模板 | null>
   const targets = new Map()      // eid → 已构建的目标（外部模块引用该车的 GLB 实例）
   const pending = new Set()
+  const templateRetry = createLoadRetry()
   const excludeMaterial = new THREE.MeshBasicMaterial({ colorWrite: false, depthTest: true, depthWrite: true })
   const occluderMaterial = new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide })
   const depthMaterials = {
@@ -241,6 +265,11 @@ export function createArmorHighlight({ renderer, assetProvider }) {
       }))
       .then((model) => { if (model) useFaceNormals(model); return model })
       .catch((error) => { console.warn('[playback] armor 模型加载失败 tank_id=' + tankId + ':', error); return null })
+      .then((model) => {
+        if (model) templateRetry.succeed(tankId)
+        else { templates.delete(tankId); templateRetry.fail(tankId) }
+        return model
+      })
     templates.set(tankId, promise)
     return promise
   }
@@ -294,15 +323,12 @@ export function createArmorHighlight({ renderer, assetProvider }) {
     const known = targets.get(eid)
     if (known && known.glb === vehicle.glb) return known.armor
     if (known) { disposeTarget(known.armor); targets.delete(eid) }   // GLB 重建后外部模块引用已失效
-    if (pending.has(eid) || !tankData.model_url) return null
+    if (pending.has(eid) || !tankData.model_url || !templateRetry.allowed(vehicle.def.tank_id)) return null
     pending.add(eid)
     loadTemplate(vehicle.def.tank_id, tankData.model_url).then((template) => {
       pending.delete(eid)
-      if (disposed || !vehicle.glb) return
-      targets.set(eid, {
-        glb: vehicle.glb,
-        armor: template ? buildTarget(template, vehicle, tankData, cfg) : null,
-      })
+      if (disposed || !vehicle.glb || !template) return
+      targets.set(eid, { glb: vehicle.glb, armor: buildTarget(template, vehicle, tankData, cfg) })
       onReady()
     })
     return null
