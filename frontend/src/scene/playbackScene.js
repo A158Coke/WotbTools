@@ -2459,7 +2459,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         reload: destroyed ? null : reloadStateAt(v.def.eid, T),
         consumables: destroyed || !visibleAt(v, T) ? []
           : consumableStateAt(v.def.eid, T, spanStartAt(VIS_BY_EID.get(v.def.eid) ?? v.def.coverage, T)),
-        hpGhost: ghost ? { id: ghost.id, prevPct: ghost.toFrac * 100, nextPct: ghost.fromFrac * 100, durationMs: GHOST_MS * FX_SCALE } : null,
+        hpGhost: ghost ? { prevPct: ghost.toFrac * 100, nextPct: ghost.fromFrac * 100, bornMs: ghost.bornMs, durationMs: GHOST_MS * FX_SCALE } : null,
         hpFlash: flashByEid.has(v.def.eid),
       };
     });
@@ -3758,9 +3758,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 无需特殊处理；seek 则清空并重置事件游标（不补播历史动画）。
   // FLOAT_DMG_MS / GHOST_MS / FLASH_MS 来自 ../utils/battlePlayback.js（2D SSOT）；
   // 3D 侧统一在**使用点**乘 FX_SCALE（不改进 SSOT 常量 → 2D 时序不动）
-  const ghostByEid = new Map();  // eid -> { id, fromFrac（掉血后）, toFrac（掉血前）, untilMs }
+  const ghostByEid = new Map();  // eid -> { fromFrac（掉血后）, toFrac（掉血前）, bornMs, untilMs }
   const flashByEid = new Map();  // eid -> untilMs
-  let ghostSeq = 0;
   let dmgEvents = [];          // { t, eid, hpLoss, hpBefore, hpAfter }（回放时钟，升序）
   let burstEvents = [];        // { t, eid }（回放时钟，升序）
   let dmgPtr = 0, burstPtr = 0;
@@ -3838,7 +3837,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       const prev = ghostByEid.get(eid);
       const carriedFrac = prev && nowMs < prev.untilMs ? prev.toFrac : 0;
       const toFrac = Math.max(carriedFrac, Math.min(1, hpBefore / maxHp));
-      ghostByEid.set(eid, { id: ++ghostSeq, fromFrac, toFrac, untilMs: nowMs + GHOST_MS * FX_SCALE });
+      ghostByEid.set(eid, { fromFrac, toFrac, bornMs: nowMs, untilMs: nowMs + GHOST_MS * FX_SCALE });
     }
     flashByEid.set(eid, nowMs + FLASH_MS * FX_SCALE);
     labelsTime = null;   // feedback expires independently of playback time

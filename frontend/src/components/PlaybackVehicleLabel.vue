@@ -87,8 +87,9 @@ const classes = computed(() => ({
           </span>
           <span class="pb-hp-bar" :class="{ 'pb-hp-unknown-track': hpFillUnknown }">
             <span class="pb-hp-fill" :class="{ 'pb-hp-fill-unknown': hpFillUnknown }" :style="{ width: hpFillWidth }"></span>
-            <!-- key：新一次受击换节点才能重启已结束的 forwards 动画；10Hz rerender 同 id 不重启。 -->
-            <span v-if="ghostWidth != null" :key="hpGhost.id" class="pb-hp-ghost" data-test="pb-hp-ghost" :style="ghostStyle"></span>
+            <!-- key：每次掉血 nextPct 必变，换节点才能重启已结束的 forwards 动画；rerender 同值不重启。 -->
+            <span v-if="ghostWidth != null" :key="hpGhost.nextPct" class="pb-hp-ghost" data-test="pb-hp-ghost"
+              :data-born-ms="hpGhost.bornMs" :style="ghostStyle"></span>
             <span class="pb-hp-num" data-test="pb-hp-num">{{ hp.current ?? '—' }}</span>
           </span>
         </span>

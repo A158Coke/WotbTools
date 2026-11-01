@@ -574,7 +574,7 @@ async function probeDamageOverlay() {
   // lost HP ghost：真实几何、停留后淡出、与主条有明显反差；受击闪与隐藏全部 UI 同层验证。
   await api.setLabels([row(7, {
     hp: { current: 615, pct: 30, state: 'CURRENT' }, hpFlash: true,
-    hpGhost: { id: 1, prevPct: 50, nextPct: 30, durationMs: 1200 },
+    hpGhost: { prevPct: 50, nextPct: 30, durationMs: 1200 },
   })])
   await api.setAnchor(7, anchorAt(300, 260))
   const ghostEl = document.querySelector('[data-test="pb-hp-ghost"]')
@@ -598,6 +598,22 @@ async function probeDamageOverlay() {
   await api.setHidden(true)
   require(ghostEl.getBoundingClientRect().width === 0, 'Hide All UI must hide the ghost')
   await api.setHidden(false)
+
+  // 中后段隐藏再恢复（H / 出屏返回）：续当前相位，不回到满不透明。寿命放长，避免慢 CI 上采样时已淡完。
+  const midGhostOpacity = () => Number(getComputedStyle(document.querySelector('[data-test="pb-hp-ghost"]')).opacity)
+  const midBorn = performance.now()
+  await api.setLabels([row(7, {
+    hp: { current: 500, pct: 25, state: 'CURRENT' },
+    hpGhost: { prevPct: 50, nextPct: 25, bornMs: midBorn, durationMs: 8000 },
+  })])
+  await api.setAnchor(7, anchorAt(300, 260))
+  await waitUntil(() => performance.now() - midBorn >= 3200)   // 40%：已进入淡出段
+  await api.setHidden(true)
+  await api.setHidden(false)
+  require(midGhostOpacity() < 0.95, `ghost phase must survive Hide All UI (opacity ${midGhostOpacity()})`)
+  await api.setAnchor(7, { ...anchorAt(300, 260), visible: false, projected: false })
+  await api.setAnchor(7, anchorAt(300, 260))
+  require(midGhostOpacity() < 0.95, `ghost phase must survive leaving the view (opacity ${midGhostOpacity()})`)
   await api.setLabels([row(7)])
 
   // 第一槽到期后再出生：三个仍存活的数字必须占三个不同位置。

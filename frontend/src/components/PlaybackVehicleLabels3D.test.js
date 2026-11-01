@@ -419,10 +419,43 @@ describe('PlaybackVehicleLabels3D 伤害数字落点', () => {
     wrapper.unmount()
   })
 
+  describe('幽灵段从 display:none 恢复时按壁钟续播', () => {
+    const ghostOf = (wrapper) => wrapper.get('[data-test="pb-hp-ghost"]').element
+    async function withGhost() {
+      vi.useFakeTimers()
+      const { wrapper } = await mountedLabel()
+      const hpGhost = { prevPct: 50, nextPct: 30, bornMs: performance.now(), durationMs: 1200 }
+      wrapper.vm.setLabels([{ ...hpRow(7), hpGhost }])
+      await nextTick()
+      wrapper.vm.setAnchor(7, shownAnchor)
+      expect(ghostOf(wrapper).style.animationDelay).toBe('0ms')
+      vi.advanceTimersByTime(800)
+      return wrapper
+    }
+
+    it('隐藏全部 UI 后恢复', async () => {
+      const wrapper = await withGhost()
+      await wrapper.setProps({ hidden: true })
+      await wrapper.setProps({ hidden: false })
+      expect(ghostOf(wrapper).style.animationDelay).toBe('-800ms')
+      wrapper.unmount()
+    })
+
+    it('名牌出屏后返回；可见时逐帧更新不改相位', async () => {
+      const wrapper = await withGhost()
+      wrapper.vm.setAnchor(7, shownAnchor)
+      expect(ghostOf(wrapper).style.animationDelay).toBe('0ms')
+      wrapper.vm.setAnchor(7, { ...shownAnchor, visible: false, projected: false })
+      wrapper.vm.setAnchor(7, shownAnchor)
+      expect(ghostOf(wrapper).style.animationDelay).toBe('-800ms')
+      wrapper.unmount()
+    })
+  })
+
   it('隐藏全部 UI 一起隐藏数字、幽灵段与受击闪；恢复后数字不重新计时', async () => {
     vi.useFakeTimers()
     const { wrapper } = await mountedLabel()
-    wrapper.vm.setLabels([{ ...hpRow(7), hpGhost: { id: 1, prevPct: 50, nextPct: 30, durationMs: 1200 }, hpFlash: true }])
+    wrapper.vm.setLabels([{ ...hpRow(7), hpGhost: { prevPct: 50, nextPct: 30, durationMs: 1200 }, hpFlash: true }])
     wrapper.vm.spawnDamage(7, 415, 2000)
     await nextTick()
     wrapper.vm.setAnchor(7, shownAnchor)

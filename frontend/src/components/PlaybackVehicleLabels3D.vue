@@ -45,11 +45,19 @@ const SIDE_LEFT = 'left'
 // 软遮挡下限的唯一来源在 utils/labelLayout.js；这里只做「常量 → CSS 变量」投影，
 // CSS 不再自带数值（否则同一契约又散成两处）。
 const occludedStyle = { '--pb-label-occluded-opacity': String(LABEL_OCCLUDED_OPACITY) }
+/** display:none 恢复会重启 CSS timeline：幽灵段按壁钟 age 续上，不从头再播。 */
+function syncGhostPhase(host) {
+  const ghost = host.querySelector('.pb-hp-ghost')
+  const bornMs = Number(ghost?.dataset.bornMs)
+  if (Number.isFinite(bornMs)) ghost.style.animationDelay = `${-Math.max(0, performance.now() - bornMs)}ms`
+}
 function paint(el, anchor) {
   if (!el || !anchor) return
+  const reappearing = el.hidden && anchor.visible
   el.hidden = !anchor.visible
   el.style.transform = `translate(${anchor.x}px, ${anchor.y}px) translate(-50%, -100%)`
   el.classList.toggle('label-occluded', !!anchor.occluded)
+  if (reappearing) syncGhostPhase(el)
 }
 function bind(eid, el) {
   if (el) { elements.set(eid, el); paint(el, anchors.get(eid)) }
@@ -170,6 +178,7 @@ function syncDamageAnimationPhase(d) {
 watch(() => props.hidden, (hidden, previous) => {
   if (previous === true && hidden === false) {
     for (const d of damages.value) syncDamageAnimationPhase(d)
+    for (const el of elements.values()) syncGhostPhase(el)
   }
 }, { flush: 'post' })
 function bindDamage(d, el) {

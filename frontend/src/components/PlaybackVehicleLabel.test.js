@@ -62,7 +62,7 @@ function resolvePx(expression) {
 }
 
 describe('PlaybackVehicleLabel lost HP ghost', () => {
-  const ghost = (overrides = {}) => ({ id: 1, prevPct: 50, nextPct: 30, durationMs: 1200, ...overrides })
+  const ghost = (overrides = {}) => ({ prevPct: 50, nextPct: 30, durationMs: 1200, ...overrides })
   const ghostEl = (wrapper) => wrapper.find('[data-test="pb-hp-ghost"]')
 
   it('覆盖刚损失的区间：left = 新 HP，width = 损失量，寿命由调用方给', () => {
@@ -81,12 +81,13 @@ describe('PlaybackVehicleLabel lost HP ghost', () => {
     expect(ghostEl(mountLabel({ hpGhost: ghost({ prevPct, nextPct }) })).exists()).toBe(false)
   })
 
+  // 2D 调用方只传 { prevPct, nextPct }：重启动画是组件自身契约，不依赖调用方提供身份
   it('同一次受击的 rerender 复用节点，新一次受击换节点重启动画', async () => {
-    const wrapper = mountLabel({ hpGhost: ghost() })
+    const wrapper = mountLabel({ hpGhost: { prevPct: 50, nextPct: 30 } })
     const original = ghostEl(wrapper).element
-    await wrapper.setProps({ hpGhost: ghost() })
+    await wrapper.setProps({ hpGhost: { prevPct: 50, nextPct: 30 } })
     expect(ghostEl(wrapper).element).toBe(original)
-    await wrapper.setProps({ hpGhost: ghost({ id: 2, nextPct: 20 }) })
+    await wrapper.setProps({ hpGhost: { prevPct: 50, nextPct: 20 } })
     expect(ghostEl(wrapper).element).not.toBe(original)
   })
 })

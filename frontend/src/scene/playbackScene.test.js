@@ -3276,20 +3276,21 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     const { api, frames, overlay } = await playTo({ max_hp: 2000, hp: [[42, 1000], [50, 600]] })
     frames.shift()()
     const { hpGhost } = publishedRow(api, overlay)
-    expect(hpGhost).toEqual({ id: expect.any(Number), prevPct: 50, nextPct: 30, durationMs: GHOST_MS * 2 })
+    expect(hpGhost).toEqual({ prevPct: 50, nextPct: 30, bornMs: expect.any(Number), durationMs: GHOST_MS * 2 })
     expect(Number.isFinite(hpGhost.prevPct) && Number.isFinite(hpGhost.nextPct)).toBe(true)
     api.setPlaying(false)
   })
 
-  it('存活期内连续受击：同一段向下延伸并换 id，不产生第二段', async () => {
+  it('存活期内连续受击：同一段向下延伸并重启寿命，不产生第二段', async () => {
     const { api, frames, overlay } = await playTo({ max_hp: 1000, hp: [[42, 1000], [50, 800], [50.3, 500]] })
     frames.shift()()
     const first = publishedRow(api, overlay).hpGhost
     expect(first).toMatchObject({ prevPct: 100, nextPct: 80 })
+    vi.spyOn(performance, 'now').mockReturnValue(performance.now() + GHOST_MS)
     for (let i = 0; i < 5; i++) frames.shift()()
     const second = publishedRow(api, overlay).hpGhost
     expect(second).toMatchObject({ prevPct: 100, nextPct: 50 })
-    expect(second.id).not.toBe(first.id)
+    expect(second.bornMs).toBeGreaterThan(first.bornMs)
     api.setPlaying(false)
   })
 
