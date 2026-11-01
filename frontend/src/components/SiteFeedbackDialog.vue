@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, inject, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { siteFeedbackReasons, createSiteFeedback, type SiteFeedbackReason } from '../api/site-feedback.js'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
+import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { apiErrorLabel } from '../utils/display.js'
 import AppDialog from './AppDialog.vue'
 
@@ -12,6 +13,7 @@ const props = defineProps<{ pageView: string | null }>()
 const emit = defineEmits<{ close: [] }>()
 const { t, te } = useI18n()
 const { requireFeature } = useFeatureGate()
+const navigate = inject(NAVIGATE_VIEW_KEY, null)
 const reasons = ref<SiteFeedbackReason[]>([])
 const feedbackText = ref('')
 const busy = ref(false)
@@ -22,6 +24,10 @@ const valid = computed(() => (reasons.value.length > 0 || feedbackText.value.tri
 
 function toggle(reason: SiteFeedbackReason) {
   reasons.value = reasons.value.includes(reason) ? reasons.value.filter(item => item !== reason) : [...reasons.value, reason]
+}
+function openContact() {
+  emit('close')
+  navigate?.('contact')
 }
 async function submit() {
   if (busy.value || !valid.value || !requireFeature(Feature.SITE_FEEDBACK)) return
@@ -43,7 +49,7 @@ async function submit() {
     </template>
     <template v-else>
       <p>{{ $t('siteFeedback.question') }}</p>
-      <p>{{ $t('siteFeedback.notice') }}</p>
+      <p>{{ $t('siteFeedback.notice') }} <button type="button" class="contact-link" data-testid="site-feedback-contact" :disabled="busy" @click="openContact">{{ $t('siteFeedback.contactLink') }}</button></p>
       <div class="reasons">
         <button v-for="reason in siteFeedbackReasons" :key="reason" type="button" :aria-pressed="reasons.includes(reason)" :disabled="busy" @click="toggle(reason)">
           {{ $t(`siteFeedback.reasons.${reason}`) }}
@@ -62,6 +68,7 @@ async function submit() {
 </template>
 
 <style scoped>
+.contact-link { padding:0; border:0; background:transparent; color:var(--color-accent-text); font:inherit; text-decoration:underline; cursor:pointer; }
 .reasons { display:flex; flex-wrap:wrap; gap:var(--space-2); margin:var(--space-3) 0; }
 .reasons button[aria-pressed="true"] { border-color:var(--color-accent); color:var(--color-accent-text); }
 textarea { display:block; width:100%; box-sizing:border-box; margin-top:var(--space-2); }

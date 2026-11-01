@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import SiteFeedbackDialog from './SiteFeedbackDialog.vue'
 
 const state = vi.hoisted(() => ({ online: true }))
@@ -15,12 +16,21 @@ beforeEach(() => {
 })
 afterEach(() => vi.unstubAllGlobals())
 
-function mountDialog() {
-  return mount(SiteFeedbackDialog, { props: { pageView: 'hof' }, global: { mocks: { $t: key => key }, stubs: { AppDialog: dialogStub } } })
+function mountDialog(navigate = vi.fn()) {
+  return mount(SiteFeedbackDialog, { props: { pageView: 'hof' }, global: { mocks: { $t: key => key }, stubs: { AppDialog: dialogStub }, provide: { [NAVIGATE_VIEW_KEY]: navigate } } })
 }
 const submit = wrapper => wrapper.findAll('button').find(button => button.text() === 'siteFeedback.submit')
 
 describe('site feedback dialog', () => {
+  it('closes and navigates to the contact page from the notice', async () => {
+    const navigate = vi.fn()
+    const wrapper = mountDialog(navigate)
+    await wrapper.get('[data-testid="site-feedback-contact"]').trigger('click')
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    expect(navigate).toHaveBeenCalledWith('contact')
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
   it('submits reasons, text and the current page, then shows the thank-you state', async () => {
     const wrapper = mountDialog()
     expect(submit(wrapper).attributes('disabled')).toBeDefined()
