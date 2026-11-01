@@ -405,7 +405,7 @@ Keycloak 认证成功
 ```
 
 - **身份隔离**：全局 bootstrap 的缓存/在途请求按 `authEpoch` 作废；登出和直接切换账号均清理账户页旧投影，迟到成功/失败不得覆盖当前身份。
-- **canonical owner 只有全局 bootstrap**（`frontend/src/composables/useBusinessUserBootstrap.js`）。页面只等待其结果，不得各自实现「读不到资料 → 自己创建」。
+- **canonical owner 只有全局 bootstrap**（`frontend/src/composables/useBusinessUserBootstrap.ts`）。页面只等待其结果，不得各自实现「读不到资料 → 自己创建」。
 - **个人中心区分连通性与业务失败**：`whenBusinessUserSettled` 返回 false 时，`ACCOUNT_PROFILE` 不可用进入中性 connectivity 状态；仍可用则显示资料错误与显式重试，不停在 loading，也不自动循环重试。只有连通性不可用状态恢复可用时自动加载一次。真正调用 backend 前再次检查对应 capability；回放解析仍完全本地。
 - **KC-only 是允许的临时状态**：broker 刚注册但浏览器还没回站、用户回站前关掉浏览器、bootstrap 暂时失败、legacy 数据、管理员手工建 KC user。任何 KC-only 用户下一次成功进入 WotBTools 都会被自动补齐。
 - **不做强一致声明**：Keycloak 与业务 DB 之间没有分布式事务，也不在 Keycloak First Broker Login 里写业务库；provisioning 失败**不删除 Keycloak 用户**、**不回退认证状态**、**不永久缓存失败**（刷新/重新 bootstrap/页面重试都会重新 ensure）。

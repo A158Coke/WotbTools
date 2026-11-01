@@ -12,7 +12,7 @@ import { isAndroidRuntime } from '../platform/runtime.js'
  * Vue 业务用 supports() 能力探测。
  *
  * `callBridge` 是**唯一**的 RPC transport（一份实现 / 一份监听注册 / 一个序号计数器），
- * 也被 `platform/androidAuthProvider.js` 复用；禁止再造第二条通道或轮询。
+ * 也被 `platform/androidAuthProvider.ts` 复用；禁止再造第二条通道或轮询。
  */
 import {
   SUPPORTED_NATIVE_BRIDGE_VERSIONS,

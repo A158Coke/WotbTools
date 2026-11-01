@@ -22,7 +22,7 @@ function isAuthenticatedState(state: unknown) {
  * Android 壳的认证 owner：OIDC 会话在 Native（AppAuth + external user-agent），
  * 页面只经 Native Bridge 读取状态 / 触发登录登出，**从不导航、从不构造 keycloak-js**。
  *
- * 调用方（useAuth.js）已确认 bridge 版本受支持（SUPPORTED_NATIVE_BRIDGE_VERSIONS）+ `native-auth` 能力；这里只做协议映射。
+ * 调用方（useAuth.ts）已确认 bridge 版本受支持（SUPPORTED_NATIVE_BRIDGE_VERSIONS）+ `native-auth` 能力；这里只做协议映射。
  */
 export function createAndroidAuthProvider(): AuthProvider {
   let authenticated = false

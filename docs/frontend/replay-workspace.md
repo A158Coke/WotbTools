@@ -16,7 +16,7 @@
 - 四个非数据能力面板由工作台按需异步加载、首次激活才挂载（`composables/useMountedWhenActive.js`）：3D / shots 还必须已登录或使用可信官方示例，3D / AI 还要求 capability 可用（连通性）；满足条件后切走只 `v-show` 隐藏：`BattlePlaybackPanel.vue`（2D）、`Replay3DPane.vue`（3D）、`ReplayShotsPane.vue`（射击）、`AiReviewWorkspacePane.vue`（AI）。四个面板共用 `file` / `active` / `blockedReason` props 契约；`active=false` 时停渲染不销毁会话（3D 场景 `setPaused` 停 rAF），切回保留 timeline / 相机且不重新解析。`BattlePlaybackPanel.vue` 直接接收目标文件，通过工作台的 canonical Worker 得到 2D 数据与地图概览，不等待 3D 的联网俯仰资料或显示名；已就绪的 scene facet 仍可复用；多文件未选场次时四个面板显示同一份 `workspace.single_replay_required`。
 - 3D 面板按「待开播 → 开始」两步进入播放：文件由工作台派生后就位，但解析与资产加载都要等用户在面板里按「开始」（卡片上先选画质档——内核 `startPlayback()` 惰性创建渲染器、首帧按当前档位定型，所以档位不能事后在加载中再改）。换场次 / 清空先 `reset()` 撤下上一场：`reset` 与 `destroy` 同等作废在途加载（`sessionEpoch` / `loadGeneration`），被撤下的解析 / 资产续体不得再回写 store，也不得把上一场继续画在待开播面板后面。
 - **画质四档**（SSOT 是 `scene/playbackScene.js` 的 `QUALITY_PRESETS`，UI 文案走 `agentReplay.q_*` 三语键）：`low 流畅`（盒代理 + 小地图底图，弱机/省电）→ `mid 均衡`（真车模 GLB + **俯视烘焙底图**（上游 tools/bake_ground_roofs.py 把屋顶/树冠/草丛烘进地形图）+ MSAA/DPR 1.25，**不拉 11–67MB 场景 GLB**——移动/Tauri 默认档）→ `high 高清`（场景 GLB + 分层地表 + DPR 1.5，桌面默认）→ `ultra 极致`（DPR 2 + 地形 512，4K/Retina 显式选择）。档位阶梯 = 相邻档各跨一个真实成本断崖（车模 / 场景下载 / 填充率）；URL `?q=` 覆盖，localStorage `pb_quality` 保存当前档位（四档键名兼容）。同一节另有 `?dynres=1` 动态分辨率（显式 A/B 开关）：持续超帧预算按 0.25 步长降 pixel ratio、有余量升回档位上限（迟滞 + 冷却防振荡，纯函数状态机 `scene/dynRes.js` 单测锁定）；`?perf` 报告带 pixel ratio 分位数供对比。
-- 解析任务的**生命周期归当前会话所有**：`Replay3DPane` 持有 per-load 的 `AbortController`，清空 / 换场次 / 销毁经 `sceneApi.loadData({ signal })` 透传到 `scene/replaySource.js` 的解析边界——被撤下的解析立即以 `AbortError` 结束并让出 Worker 队列（仍在 Worker 上时整体 terminate）。`replaySource` 的每个解析请求带看门狗（120s 不回包也不报错 → terminate + 在途全部失败，下次请求重建 Worker）；WASM 装载链（fingerprint 拉取 / 产物 JS dynamic import / wasm 初始化）有 20s 看门狗（浏览器 fetch / import 没有默认超时）。装载超时后 dynamic import 换带序号的 specifier 强制全新装载（浏览器模块表按 URL 去重，同 URL 重试只会拿回同一个悬着的模块记录）。
+- 解析任务的**生命周期归当前会话所有**：`Replay3DPane` 持有 per-load 的 `AbortController`，清空 / 换场次 / 销毁经 `sceneApi.loadData({ signal })` 透传到 `scene/replaySource.ts` 的解析边界——被撤下的解析立即以 `AbortError` 结束并让出 Worker 队列（仍在 Worker 上时整体 terminate）。`replaySource` 的每个解析请求带看门狗（120s 不回包也不报错 → terminate + 在途全部失败，下次请求重建 Worker）；WASM 装载链（fingerprint 拉取 / 产物 JS dynamic import / wasm 初始化）有 20s 看门狗（浏览器 fetch / import 没有默认超时）。装载超时后 dynamic import 换带序号的 specifier 强制全新装载（浏览器模块表按 URL 去重，同 URL 重试只会拿回同一个悬着的模块记录）。
 - 3D 场景加载与就绪态由 `scene/playbackScene.js` 独占：进入解析阶段立即置 `loading=true`、`hasData=false`、`assetStage=false`、`assetProgress=null`；当前会话进入资产阶段才推进资产进度，完成后才标 ready。销毁清掉加载阶段状态。地图资产每个异步边界之后先复核会话身份，再发布地图 key、纹理、地形、分层地表或场景；迟到资源只释放局部结果。资产 URL 显式使用当前会话的地图 key，旧实例的地图解析不能改变当前会话后续请求。`Replay3DPane` 只负责编排，不新增加载令牌。
 - 3D 顶栏的双方总血量与比分都按**阵营视角**渲染，不是原始 `score1` / `score2`：`scene/teamHpTotals.js` 的 `teamHpTotals()` 按 `friendly_team` 把车辆血量归到己方 / 敌方，`perspectiveScore()` 把物理比分映射成 `scoreFriend` / `scoreEnemy`，store 只暴露视角字段，HUD 数值不缩写（完整整数 + 原始百分比色条）。
 - 3D / 射击面板不持有文件选择器，也不持有第二份 session：选择与 identity 仍只由 `useReplaySession` 拥有。
@@ -24,7 +24,7 @@
 - 数据模式（`ReplayPage.vue`）的结果区自上而下是：提示（`Banner`：重复 / 解析失败 / League 不可用 / 未评分场次）→ 工具栏（`SegmentedControl` 汇总 / 单场 · 单场时的 `BattlePicker` · Rating 说明 · 列 · `MenuButton` 导出 ▾：Excel 汇总 / Excel 逐场 / PNG 当前视图）→ 汇总视图顶部的 `SeriesOverview`（两支稳定战队时显示系列赛比分，其后是逐场结果条，点击跳到该场单场视图）→ 表格。
 - 玩家表默认只显示 6–8 个核心列（`utils/helpers.js` 的 `*_DEFAULT_VISIBLE`），其余在「列 N/M」面板里；localStorage 可见列与 `LEGACY_DEFAULT_VISIBLE` 中任一份默认列完全相同时视为未自定义，采用当前默认列。手机（<768）默认用 `PlayerCardList` 卡片列表（可切回表格，排序与表格共用）；卡片模式下表格仍在 DOM 中隐藏，PNG 导出始终导出表格。
 - 玩家详情 `PlayerDetailDrawer`：桌面可拖宽的推开式侧栏，平板固定 360px 推开式侧栏（都写 `--pd-drawer-offset` 让工作台让位），手机全屏 sheet，可左右滑动切换玩家。
-- 系列赛比分与场次选项由纯函数 `utils/replaySeries.js` 从 ReplayResult 派生：战队身份只认 League 批次 `teamSummaries` 的 `clan:` teamKey 与 `arenaTeams`；任何一方是 `arenaId:team` 兜底键、或不是恰好两支队伍时不推算比分；无法归属的（未评分）场次如实计数并说明，不计入比分。场次选项显示「第 N 场 · 地图」与「胜方 · 时间」，可按文件名检索。
+- 系列赛比分与场次选项由纯函数 `utils/replaySeries.ts` 从 ReplayResult 派生：战队身份只认 League 批次 `teamSummaries` 的 `clan:` teamKey 与 `arenaTeams`；任何一方是 `arenaId:team` 兜底键、或不是恰好两支队伍时不推算比分；无法归属的（未评分）场次如实计数并说明，不计入比分。场次选项显示「第 N 场 · 地图」与「胜方 · 时间」，可按文件名检索。
 - `frontend/src/composables/useReplaySession.ts` 是唯一 session state owner，持有 selection、当前 battle、本地分析状态（`analysis: { phase, done, total, failure }`）、结果与 Workspace view state。
 - `frontend/src/composables/useLocalReplayAnalysis.ts` 持有本机分析生命周期：Worker 解析（上游 Rust Core WASM）→ 批次计算 → 提交结果；选择变化 / 取消作废在途分析；`exportExcel` 复用最近一次的批次结果在客户端生成 xlsx / zip。服务器没有 parser，失败只显示原因（`ENGINE_UNAVAILABLE` / `NO_VALID_REPLAYS` / `UNKNOWN`），不回退服务端。
 - `frontend/src/composables/useReplay.ts` 是 facade/orchestrator，组合 session 与本地分析。
@@ -75,7 +75,7 @@
 - 3D 射击复现的 hash6 解码盒只取坦克数据里的客户端 `collision_boxes`（Parameters YAML 的部件代理盒，也是服务器量化框）；盒缺失时设置 `__segBoxMissing` 并在统一判定入口阻断（world 初始化、时间轴重判、换弹都覆盖，清除旧结果；普通相机点击不受影响），同时在常显 `#shot-replay-error` 错误条展示原因（不进入 debug details/隐藏面板），**不从 collision.glb 的装甲网格自算 AABB**——网格 AABB 与客户端量化框不是同一份数据。
 - 无主装甲门禁（`require_primary`）命中时 `penetration.js` 返回 `blocked_no_primary`，结果卡同步禁用概率链与满伤回填：保持 BLOCKED/0%，不会重新显示「可能击穿」或满伤；续飞路径同样传递该标记。
 - 射击面板按容器宽度使用 Master–Detail（expanded 常驻详情 / medium 有界双栏 / compact 模态详情）；窄屏详情保留焦点约束与关闭后焦点恢复。命中弹「在装甲查看器里打开」通过既有本地交接通道只保存当前筛选内可检查的命中弹，保留原始索引与时间，随后经注入的 `navigate` 打开装甲页。
-- 装甲页逐发导航复用 `scene/agentData.js` 的 `shotViewerQuery` 和 Router：上一发 / 下一发保持当前命中快照，返回恢复列表。相同页面 query 更新时先销毁旧场景再重建 DOM 契约；迟到的 snapshot、模型加载、计时器和状态回调不能覆盖下一发。页面顶部展示双方车型、记录时间、结果和伤害；模拟参数与记录结果明确分开，技术证据默认折叠。
+- 装甲页逐发导航复用 `scene/agentData.ts` 的 `shotViewerQuery` 和 Router：上一发 / 下一发保持当前命中快照，返回恢复列表。相同页面 query 更新时先销毁旧场景再重建 DOM 契约；迟到的 snapshot、模型加载、计时器和状态回调不能覆盖下一发。页面顶部展示双方车型、记录时间、结果和伤害；模拟参数与记录结果明确分开，技术证据默认折叠。
 - AI/Playback 详细接口与回放管线以以下文档为准，不在本索引重复维护：
   - [`docs/architecture/ai-review.md`](../architecture/ai-review.md)
   - [`docs/features/team-ai-review.md`](../features/team-ai-review.md)
@@ -101,7 +101,7 @@ Replay Workspace 有五个公开可发现的能力。匿名用户可使用 Data 
 
 ## 本地优先能力边界
 
-`app/featureCapabilities.js` 是唯一连通性能力模型；组件消费 `useFeatureGate()`，不自行读 `navigator.onLine`。连通性与登录是**两条独立门禁**：ONLINE_REQUIRED 能力在非-online 时连挂载都不做，登录门禁只决定「已连通但未登录」时的引导。连通性首次检测完成前（`availability().pending`）只 fail-closed、不下结论：不显示任何 connectivity 提示，也不落到登录门禁；检测完成后按真实结论（含仍为 UNKNOWN）渲染。
+`app/featureCapabilities.ts` 是唯一连通性能力模型；组件消费 `useFeatureGate()`，不自行读 `navigator.onLine`。连通性与登录是**两条独立门禁**：ONLINE_REQUIRED 能力在非-online 时连挂载都不做，登录门禁只决定「已连通但未登录」时的引导。连通性首次检测完成前（`availability().pending`）只 fail-closed、不下结论：不显示任何 connectivity 提示，也不落到登录门禁；检测完成后按真实结论（含仍为 UNKNOWN）渲染。
 
 | 能力 | 运行要求 | 离线行为 |
 |---|---|---|

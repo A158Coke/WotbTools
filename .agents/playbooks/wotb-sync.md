@@ -139,7 +139,7 @@
 ## 配方 K：Auth 改动
 
 1. Keycloak：`auth.wotbtools.com` 独立容器，realm `wotbtools`，client `wotbtools-web`。
-2. 前端：`useAuth.js` composable（Keycloak adapter check-sso 游客模式）。
+2. 前端：`useAuth.ts` composable（Keycloak adapter check-sso 游客模式）。
 3. 后端：Spring Security Resource Server + `application.yml` JWT 验证。
 4. 新表（user/binding）：Flyway migration，`ddl-auto: validate` 验证。
 5. 验证 + 文档（WG 登录/身份/安全契约见 `docs/auth/wargaming-asia-deployment.md`，Profile/绑定语义见 `docs/features/user-profile.md`，provider 约束见 `keycloak-wargaming-provider/AGENTS.md`）。

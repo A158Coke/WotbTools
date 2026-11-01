@@ -69,7 +69,7 @@ function updateScore() {
 
 // ---------- 名册 ----------
 // 静态身份（eid / 物理 team / 昵称 / 车型）与运行时状态（hp / 阵亡 / 跟随）**分开放**：
-// 前者只在会话开始时建一次，后者每次投影都按当前 getT() 重算（见 scene/rosterState.js）。
+// 前者只在会话开始时建一次，后者每次投影都按当前 getT() 重算（见 scene/rosterState.ts）。
 // 名册的物理阵营色由呈现层按 `team` 取语义 token（--color-team-1/2），内核不再下发颜色——
 // 否则「Team 1 是什么颜色」会有两份事实源。
 const rosterRowsByEid = new Map();

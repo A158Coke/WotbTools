@@ -38,7 +38,7 @@ const onboarding = inject(ONBOARDING_KEY, null)
 // 不把 `savanna` 这种原始 key 直接摆在 hero 上。
 const { locale } = useI18n()
 // Android App / WebView 内已经有应用本身，再给一个「下载 Android」既不可能也不合理。
-// 平台判断复用 `usePlatformBridge.js` 的唯一实现（与 useMoreMenu 的 Android 入口同一 owner）。
+// 平台判断复用 `usePlatformBridge.ts` 的唯一实现（与 useMoreMenu 的 Android 入口同一 owner）。
 const androidApp = isAndroidApp()
 
 const topRecord = ref(null)

@@ -3,7 +3,7 @@
  * Agent 3D 装甲查看器（?view=agent-armor）：tankViewer.js 场景内核宿主。
  * Vue owns navigation / recorded-shot summary / the shared tank picker (TankCatalogMenu);
  * tankViewer owns model controls via stable DOM IDs.
- * 数据面：tank/{id}.json + glb/{id}/*.glb 静态资产（agentData.js，?assets= 基址），
+ * 数据面：tank/{id}.json + glb/{id}/*.glb 静态资产（agentData.ts，?assets= 基址），
  * 击穿判定 penetration.js 客户端移植；射击复现数据经 sessionStorage 交接（AgentShots）。
  * URL 参数保持上游契约：?tank= &shooter= &config= &shell= &shot= &heatmap=1 &world=1 等。
  * 普通同车型检视：shell 是当前展示 config 的弹表下标；无效下标回退第一项。

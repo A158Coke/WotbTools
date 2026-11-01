@@ -1,6 +1,6 @@
 // 实时回放 three.js 场景内核：自上游 Agent 前端平移（会话生命周期修复版）。
 // 渲染语义（位姿滤波/炮塔随动/弹道动画/分层地表/画质档/GLB 姿态）沿用既有实现；
-// 唯一改动是原 DOM 面板触点（$('timer') 等）全部改写 store（playbackStore.js）。
+// 唯一改动是原 DOM 面板触点（$('timer') 等）全部改写 store（playbackStore.ts）。
 //
 // WotBTools 唯一分叉（评审 P0-3 client-only 拓扑）：资产访问只走 assetProvider
 //（?assets= 资产平面），上游的 /api/playback/*、/api/tank 同源服务端回退删除——
@@ -3743,9 +3743,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
 
   // ---------- 战斗反馈 transient（语义与 WotBTools 2D 对齐）----------
   // 关键语义：**壁钟（真实 ms）寿命**，而非回放时钟——任意倍速下可读时长相近
-  // （2D battlePlayback.js 同款常量与注释）。因用壁钟，暂停时 transient 自然走完，
+  // （2D battlePlayback.ts 同款常量与注释）。因用壁钟，暂停时 transient 自然走完，
   // 无需特殊处理；seek 则清空并重置事件游标（不补播历史动画）。
-  // FLOAT_DMG_MS / GHOST_MS / FLASH_MS 来自 ../utils/battlePlayback.js（2D SSOT）；
+  // FLOAT_DMG_MS / GHOST_MS / FLASH_MS 来自 ../utils/battlePlayback.ts（2D SSOT）；
   // 3D 侧统一在**使用点**乘 FX_SCALE（不改进 SSOT 常量 → 2D 时序不动）
   const ghostByEid = new Map();  // eid -> { fromFrac, toFrac, untilMs }
   const flashByEid = new Map();  // eid -> untilMs
