@@ -13,7 +13,7 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Map as MapIcon } from 'lucide-vue-next'
 import { useAuth } from '../composables/useAuth.js'
-import { loadMapIndex, mapMiniUrl } from '../scene/replaySource.js'
+import { loadMapIndex, mapCoverUrl } from '../scene/replaySource.js'
 import { mapImages } from '../data/mapImages.js'
 import { mapLabel } from '../utils/helpers.js'
 import { Feature } from '../app/featureCapabilities.js'
@@ -65,23 +65,25 @@ async function loadMaps() {
       key,
       mapId: Number(id),
       packDisplay: m.display || '',
-      // 底图双源：打包注册表优先（离线 + 逐图校准）；未收录的 14 张图回退资产包
-      // ground.webp（每张图都有，±300 契约框——3D 内核 meta 恒等回退与之一致）。
+      // 底图双源（2D 面板用）：bundled 打包注册表优先（离线 + 逐图校准），
+      // 未收录的图回退资产包 map2d 校准图（1254² 战术底图，±300 契约框）。
       basemap: bundled
         ? { kind: 'bundled', image: bundled }
-        : { kind: 'ground', mapKey: key },
-      thumb: bundled ? bundled.src : safeThumbUrl(key),
+        : { kind: 'map2d', mapKey: key },
+      // 封面统一 cover.webp（512² 战术风格，43/43 同源同风格，~100KB/张）；
+      // bundled.src 留作 cover 加载失败时的兜底（离线打包资产，必可用）。
+      thumb: safeCoverUrl(key),
+      thumbFallback: bundled ? bundled.src : null,
     })
   }
   rawMaps.value = [...byKey.values()]
   indexLoaded.value = true
 }
-/** 封面回退 URL（HUD 小地图 mini.webp，44–112KB）：assetProvider 在 Android 离线
- *  门控下可抛（NETWORK_ERROR）——picker 构建阶段吞为 null（封面回退占位图标），
- *  不让整份清单失败。 */
-function safeThumbUrl(key) {
+/** 封面 URL（cover.webp，512² 战术风格，43/43 同源）：assetProvider 在 Android 离线
+ *  门控下可抛（NETWORK_ERROR）——吞为 null 由 bundled.src 兜底，不让整份清单失败。 */
+function safeCoverUrl(key) {
   try {
-    return mapMiniUrl(key)
+    return mapCoverUrl(key)
   } catch {
     return null
   }

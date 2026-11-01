@@ -371,9 +371,18 @@ export function __resetMapIndexForTest() {
  * 缩略图——帧宽约 620m > ±300 契约框，**不进** 2D 坐标系（那仍是 ground.webp 的职责）。
  * 资产包每张图都有；Android 离线门控可抛（NETWORK_ERROR），调用方兜底。
  */
-export function mapMiniUrl(mapKey) {
+export function mapCoverUrl(mapKey) {
   if (!mapKey || !assetProvider.configured()) return null
-  return assetProvider.url(`/map/${mapKey}/mini.webp`)
+  return assetProvider.url(`/cover/${mapKey}.webp`)
+}
+
+/**
+ * 地图预览 2D 底图（canonical 1254² 战术风格，±300 契约框——export_2d_basemaps 产物）。
+ * 未收录打包注册表的 14 张图在预览 2D 模式用这份（bundled 29 张仍用打包 webp，离线优先）。
+ */
+export function map2dCanonicalUrl(mapKey) {
+  if (!mapKey || !assetProvider.configured()) return null
+  return assetProvider.url(`/map2d/${mapKey}.webp`)
 }
 
 /**

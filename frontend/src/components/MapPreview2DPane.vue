@@ -14,7 +14,7 @@ import { Download, PencilRuler, Upload } from 'lucide-vue-next'
 import BattleMap from './BattleMap.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
 import { WORLD_BOUNDS_300 } from '../data/mapImages.js'
-import { mapStaticUrl } from '../scene/replaySource.js'
+import { map2dCanonicalUrl } from '../scene/replaySource.js'
 import { createMapView } from '../utils/mapView.js'
 import {
   ANNOT_COLORS, ANNOT_ERASER_RADIUS_DEFAULT, ANNOT_ERASER_RADIUS_MAX, ANNOT_ERASER_RADIUS_MIN,
@@ -45,7 +45,15 @@ const image = computed(() => basemapImage.value)
 const overview = computed(() => ({ mapCode: props.mapKey, spawnPoints: [] }))
 const mapView = computed(() => createMapView(image.value, overview.value))
 
-/** ground.webp 异步就位（naturalWidth/Height 就绪后才建映射；失败 fail-visible）。 */
+/**
+ * 底图解析：bundled 同步就位；map2d（未收录 14 张的校准战术底图，1254²、~900KB）
+ * 异步经资产包 map2d/index.json 解析（worldBounds 即 coordinateBounds），失败
+ * fail-visible。naturalWidth/Height 就绪后才建映射。
+ */
+/**
+ * 底图解析：bundled 同步就位；map2d（全部 43 张的 canonical 1254² 校准战术底图，
+ * ~900KB）异步加载，naturalWidth/Height 就绪后才建映射。失败 fail-visible。
+ */
 async function resolveBasemap(bm) {
   basemapImage.value = null
   basemapError.value = false
@@ -54,11 +62,12 @@ async function resolveBasemap(bm) {
     basemapImage.value = bm.image
     return
   }
+  const key = bm.mapKey || props.mapKey
   const url = (() => {
-    // mapStaticUrl 内部 assetProvider.url 在 Android 离线门控下可抛（NETWORK_ERROR）：
-    // 与下方 fetch 同一 try 语义，抛错归一为 basemapError（fail-visible）。
+    // assetProvider.url 在 Android 离线门控下可抛（NETWORK_ERROR）：
+    // 归一为 basemapError（fail-visible）。
     try {
-      return mapStaticUrl('map', null, bm.mapKey || props.mapKey)
+      return map2dCanonicalUrl(key)
     } catch {
       return null
     }
@@ -76,8 +85,8 @@ async function resolveBasemap(bm) {
     })
     basemapImage.value = {
       src: url,
-      width: img.naturalWidth || 1024,
-      height: img.naturalHeight || 1024,
+      width: img.naturalWidth || 1254,
+      height: img.naturalHeight || 1254,
       coordinateBounds: WORLD_BOUNDS_300,
     }
   } catch {

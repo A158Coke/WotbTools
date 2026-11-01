@@ -102,10 +102,9 @@ describe('MapPreviewPage', () => {
     // 双图都有 2D 徽标（ground.webp 回退后 43 图全可进 2D）
     expect(erlenberg.find('.map-card-badge').exists()).toBe(true)
     expect(moon.find('.map-card-badge').exists()).toBe(true)
-    // 封面双源：bundled 打包图 vs 资产包 mini.webp 轻量回退（44–112KB，非 3MB ground）
-    expect(erlenberg.find('.map-card-thumb img').attributes('src')).toBeTruthy()
-    expect(erlenberg.find('.map-card-thumb img').attributes('src')).not.toContain('/map/')
-    expect(moon.find('.map-card-thumb img').attributes('src')).toContain('/map/moon/mini.webp')
+    // 封面统一 cover.webp（512² 战术风格，43/43 同源）：bundled 不再走打包图
+    expect(erlenberg.find('.map-card-thumb img').attributes('src')).toContain('/cover/erlenberg.webp')
+    expect(moon.find('.map-card-thumb img').attributes('src')).toContain('/cover/moon.webp')
   })
 
   it('索引失败 → 可重试的失败态；重试成功回到 picker', async () => {
@@ -134,7 +133,7 @@ describe('MapPreviewPage', () => {
     expect(wrapper.find('[data-testid="map-grid"]').exists()).toBe(true)
   })
 
-  it('mode=2d 直挂 2D 面板：bundled 图直接就绪，ground 回退图由面板异步解析', async () => {
+  it('mode=2d 直挂 2D 面板：map2d 底图由面板异步解析（bundled 图直挂）', async () => {
     auth.authenticated.value = true
     source.loadMapIndex.mockResolvedValue(IDX)
     const wrapper = await openAt({ map: 'moon', mode: '2d' })
@@ -146,8 +145,8 @@ describe('MapPreviewPage', () => {
     expect(pane3d.element.parentElement.style.display).toBe('none')
     const pane = wrapper.findComponent({ name: 'MapPreview2DPane' })
     expect(pane.props('mapKey')).toBe('moon')
-    // 页面只下发描述符；ground.webp 的异步解析与 fail-visible 在面板自身
-    expect(pane.props('basemap')).toEqual({ kind: 'ground', mapKey: 'moon' })
+    // 页面只下发描述符；map2d 1254² 的异步解析与 fail-visible 在面板自身
+    expect(pane.props('basemap')).toEqual({ kind: 'map2d', mapKey: 'moon' })
   })
 
   it('bundled 图 2D 模式：描述符携带打包注册表条目（3D 面板同场共存）', async () => {
