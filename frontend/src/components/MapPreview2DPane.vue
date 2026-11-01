@@ -14,7 +14,7 @@ import { Download, PencilRuler, Upload } from 'lucide-vue-next'
 import BattleMap from './BattleMap.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
 import { WORLD_BOUNDS_300 } from '../data/mapImages.js'
-import { map2dCanonicalUrl } from '../scene/replaySource.js'
+import { resolveMap2dBasemap } from '../scene/replaySource.js'
 import { createMapView } from '../utils/mapView.js'
 import {
   ANNOT_COLORS, ANNOT_ERASER_RADIUS_DEFAULT, ANNOT_ERASER_RADIUS_MAX, ANNOT_ERASER_RADIUS_MIN,
@@ -57,42 +57,54 @@ const mapView = computed(() => createMapView(image.value, overview.value))
 async function resolveBasemap(bm) {
   basemapImage.value = null
   basemapError.value = false
+  releaseBasemapUrl()
   if (!bm) return
   if (bm.kind === 'bundled') {
     basemapImage.value = bm.image
     return
   }
   const key = bm.mapKey || props.mapKey
-  const url = (() => {
-    // assetProvider.url 在 Android 离线门控下可抛（NETWORK_ERROR）：
-    // 归一为 basemapError（fail-visible）。
+  // 走 map2d/index.json 的几何 + 完整性契约（schema/generated、worldBounds/orientation、
+  // 图片字节 sha256）：任一不成立 fail-visible，绝不"能加载就当 ±300"。
+  // 世界框取自索引声明（geometryMatches 已保证与注册表逐值相等）。
+  const resolved = await (async () => {
     try {
-      return map2dCanonicalUrl(key)
-    } catch {
-      return null
+      return await resolveMap2dBasemap(key, WORLD_BOUNDS_300)
+    } catch (e) {
+      return { error: 'offline', detail: String(e && e.message || e) }
     }
   })()
-  if (!url) {
+  if (resolved.error) {
+    if (import.meta.env.DEV) {
+      console.warn(`[map-preview] map2d 底图拒绝（${key}）:`, resolved.error, resolved.detail || '')
+    }
     basemapError.value = true
     return
   }
+  // 校验通过的字节转 blob URL 供 <img> 使用（避免二次拉取；用完在换图/卸载时释放）
+  const blobUrl = URL.createObjectURL(new Blob([resolved.bytes], { type: 'image/webp' }))
+  releaseBasemapUrl()
+  basemapObjectUrl.value = blobUrl
   try {
     const img = await new Promise((resolve, reject) => {
       const el = new Image()
       el.onload = () => resolve(el)
-      el.onerror = () => reject(new Error('basemap load failed'))
-      el.src = url
+      el.onerror = () => reject(new Error('basemap decode failed'))
+      el.src = blobUrl
     })
     basemapImage.value = {
-      src: url,
-      width: img.naturalWidth || 1254,
-      height: img.naturalHeight || 1254,
-      coordinateBounds: WORLD_BOUNDS_300,
+      src: blobUrl,
+      width: img.naturalWidth || resolved.width || 1254,
+      height: img.naturalHeight || resolved.height || 1254,
+      coordinateBounds: resolved.worldBounds || WORLD_BOUNDS_300,
     }
   } catch {
     basemapError.value = true
   }
 }
+
+/** blob URL 生命周期：换图/卸载时释放（否则每张 900KB 图片常驻）。 */
+onBeforeUnmount(releaseBasemapUrl)
 // 底图解析的 watch 注册在标注状态声明之后（见文件后部）——immediate 首评需要完整状态
 
 const semPerSvgX = computed(() => {
@@ -258,6 +270,14 @@ function onWheel(e) {
   e.preventDefault()
   const p = screenPoint(e.clientX, e.clientY)
   applyView(zoomViewAt(view, p.x, p.y, e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP, fitScale()))
+}
+
+const basemapObjectUrl = ref(null)
+function releaseBasemapUrl() {
+  if (basemapObjectUrl.value) {
+    URL.revokeObjectURL(basemapObjectUrl.value)
+    basemapObjectUrl.value = null
+  }
 }
 
 // ---------- 标注（pen/eraser，语义坐标 + undo 栈）----------

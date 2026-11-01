@@ -377,12 +377,93 @@ export function mapCoverUrl(mapKey) {
 }
 
 /**
- * 地图预览 2D 底图（canonical 1254² 战术风格，±300 契约框——export_2d_basemaps 产物）。
- * 未收录打包注册表的 14 张图在预览 2D 模式用这份（bundled 29 张仍用打包 webp，离线优先）。
+ * 地图预览 2D 底图（canonical 1254² 战术风格——export_2d_basemaps 产物）。
+ * 未收录打包注册表的图在预览 2D 模式用这份（bundled 仍用打包 webp，离线优先）。
+ *
+ * **必须经 `map2d/index.json` 的几何/完整性契约**（与仓库既有 `data/map2dOverlay.js`
+ * 同一判据，不另建 SSOT）：schema + generated 有效、逐图 worldBounds/orientation 与
+ * 注册表逐值一致、图片字节 sha256 与索引一致——三者任一不成立即 fail-closed。
+ * `/map2d/<key>.webp` 是 mutable URL：上游重裁/改框后仅凭"能加载"就按 ±300 渲染
+ * 会整体错位且无报错。
  */
 export function map2dCanonicalUrl(mapKey) {
   if (!mapKey || !assetProvider.configured()) return null
   return assetProvider.url(`/map2d/${mapKey}.webp`)
+}
+
+let map2dIndexPromise = null
+
+/** 资产包 `map2d/index.json`（整页缓存；失败置空下轮重试，与 loadMapIndex 同模式）。 */
+export function loadMap2dIndex() {
+  if (!assetProvider.configured()) return Promise.resolve(null)
+  if (!map2dIndexPromise) {
+    map2dIndexPromise = assetProvider.json('/map2d/index.json').catch((e) => {
+      map2dIndexPromise = null
+      console.warn('map2d 索引加载失败（预览 2D 底图 fail-closed）:', e)
+      return null
+    })
+  }
+  return map2dIndexPromise
+}
+
+/** 测试专用：清空 map2d 索引缓存 */
+export function __resetMap2dIndexForTest() {
+  map2dIndexPromise = null
+}
+
+async function sha256Hex(buffer) {
+  if (typeof crypto === 'undefined' || !crypto.subtle) {
+    throw new Error('crypto.subtle 不可用（需要安全上下文）')
+  }
+  const digest = await crypto.subtle.digest('SHA-256', buffer)
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+/**
+ * 解析预览 2D 底图：按 `map2d/index.json` 校验几何 + 完整性后返回
+ * `{ url, bytes, sha256, width, height, worldBounds, orientation }`；任一判据不成立
+ * 返回 `{ error: 'index'|'entry'|'geometry'|'integrity'|'offline', detail? }`。
+ *
+ * `expectedBounds`：注册表世界框（`mapImages[key].coordinateBounds` 或 ±300 派生）——
+ * 索引声明必须与之逐值一致（几何契约的比对面）。
+ */
+export async function resolveMap2dBasemap(mapKey, expectedBounds, fetchImpl = null) {
+  const key = String(mapKey || '')
+  if (!key) return { error: 'entry' }
+  const url = map2dCanonicalUrl(key)
+  if (!url) return { error: 'offline' }
+  const index = await loadMap2dIndex()
+  // 延迟导入避免 replaySource ← map2dOverlay 的循环（map2dOverlay 只依赖本地常量）
+  const { isValidIndex, geometryMatches } = await import('../data/map2dOverlay.js')
+  if (!isValidIndex(index)) return { error: 'index' }
+  const entry = index.maps && index.maps[String(key)]
+  if (!entry) return { error: 'entry' }
+  if (!geometryMatches(entry, expectedBounds)) return { error: 'geometry' }
+  const doFetch = fetchImpl || ((u) => assetProvider.fetch(u))
+  let buffer
+  try {
+    const resp = await doFetch(url)
+    if (!resp || !resp.ok) return { error: 'integrity', detail: `http ${resp && resp.status}` }
+    buffer = await resp.arrayBuffer()
+  } catch (e) {
+    return { error: 'integrity', detail: String(e && e.message || e) }
+  }
+  let sha
+  try {
+    sha = await sha256Hex(buffer)
+  } catch (e) {
+    return { error: 'integrity', detail: String(e && e.message || e) }
+  }
+  if (sha !== entry.sha256) return { error: 'integrity', detail: 'sha256 mismatch' }
+  return {
+    bytes: buffer,
+    sha256: sha,
+    width: entry.width,
+    height: entry.height,
+    // 世界框取自**索引声明**（不硬编码）：geometryMatches 已保证它与注册表逐值相等
+    worldBounds: entry.worldBounds,
+    orientation: entry.orientation,
+  }
 }
 
 /**
