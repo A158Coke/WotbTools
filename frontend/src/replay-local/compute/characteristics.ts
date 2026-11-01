@@ -20,7 +20,7 @@ import { degressiveStat, progressiveStat } from './crewStats'
 export { degressiveStat, progressiveStat }
 
 /** 车辆类别 → 视野装备的类别加成（客户端 CoatedOptics script；AT-SPG/SPG 同 4%）。 */
-export function viewRangeBonusByClass(vehicleClass) {
+export function viewRangeBonusByClass(vehicleClass: string | null | undefined) {
   if (vehicleClass === 'lightTank') return 0.11
   if (vehicleClass === 'mediumTank') return 0.08
   if (vehicleClass === 'heavyTank') return 0.06
@@ -34,7 +34,7 @@ export function viewRangeBonusByClass(vehicleClass) {
  * - 涂装：`camouflages.xml` 的 `<invisibility><categories>`（配置器用 defaultCategory，通常 free）。
  * 缺失类别按 0（fail-closed：宁可少算，不臆造数值）。
  */
-export function invisibilityBonusFor(values, vehicleClass) {
+export function invisibilityBonusFor(values: Record<string, unknown> | null | undefined, vehicleClass: string | null | undefined) {
   if (!values || !vehicleClass) return 0
   // 涂装表只有 AT-SPG（无 SPG）；SPG 回退 AT-SPG。未知类别按 0，不借用别的车型桶。
   const raw = values[vehicleClass] ?? (vehicleClass === 'SPG' ? values['AT-SPG'] : undefined)
@@ -43,7 +43,7 @@ export function invisibilityBonusFor(values, vehicleClass) {
 }
 
 /** 从物品 script 读 crewLevelIncrease（Stimulator 族权威来源）。 */
-export function crewLevelIncreaseFromScript(script) {
+export function crewLevelIncreaseFromScript(script: { params?: { bonusValues?: { crewLevelIncrease?: unknown } } } | null | undefined) {
   const bonus = script?.params?.bonusValues?.crewLevelIncrease
   const v = bonus == null ? null : Number(bonus)
   return v == null || Number.isNaN(v) ? null : v / 100
@@ -54,7 +54,7 @@ export function crewLevelIncreaseFromScript(script) {
  * AP 族（ap / ap_premium / ap_cr / ap_cr_premium）×1.06；HEAT 族（hc / hc_premium / atgm_heat）
  * 与 HE 族（he / he_premium）×1.07。
  */
-export function penetrationCoefficient(type, calibrated) {
+export function penetrationCoefficient(type: string | null | undefined, calibrated: unknown) {
   if (!calibrated || !type) return 1
   return /^ap/.test(type) ? 1.06 : 1.07
 }
@@ -138,8 +138,8 @@ function bboxWithOffset(box: any, offset?: number[] | null): ModelBbox | null {
   if (values.every(value => value === 0)) return null
   const shift = offset || [0, 0, 0]
   return {
-    min: box.min.slice(0, 3).map((value, i) => value + (shift[i] || 0)),
-    max: box.max.slice(0, 3).map((value, i) => value + (shift[i] || 0)),
+    min: box.min.slice(0, 3).map((value: number, i: number) => value + (shift[i] || 0)),
+    max: box.max.slice(0, 3).map((value: number, i: number) => value + (shift[i] || 0)),
   }
 }
 
@@ -530,7 +530,7 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
 
   // ---- 装甲表（板值 × 强化装甲系数；系数来自客户端 script，未装 = 1）----
   const armorFactor = Number(input.armorFactor) > 0 ? Number(input.armorFactor) : 1
-  const armorValue = v => (v == null ? null : Math.round(v * armorFactor * 100) / 100)
+  const armorValue = (v: number | null | undefined) => (v == null ? null : Math.round(v * armorFactor * 100) / 100)
   const armor = input.armor || null
 
   // ---- 引擎起火 / 履带维修 ----

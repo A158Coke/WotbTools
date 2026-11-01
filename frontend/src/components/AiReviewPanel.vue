@@ -268,8 +268,8 @@ async function runAnalyze() {
  * 读取 SSE 响应体并分发事件（run context 显式传入）。
  * @returns {Promise<boolean>} 是否收到 done 事件
  */
-async function readAnalyzeStream(r, run) {
-  const reader = r.body.getReader()
+async function readAnalyzeStream(r: Response, run: AiReviewRunState) {
+  const reader = r.body!.getReader()
   const parser = createAiReviewSseParser()
   let receivedDone = false
   const deadlineMs = run.startedAt + AI_ANALYZE_TIMEOUT_MS
@@ -332,7 +332,7 @@ async function readAnalyzeStream(r, run) {
       if (receivedDone) break
     }
   } catch (e) {
-    if (e && e.name === 'AbortError') throw e
+    if (e && (e as Error).name === 'AbortError') throw e
     if (e instanceof ApiError) throw e
     const runtimeError = e as AiRuntimeError
     if (runtimeError.isLocalized) throw e

@@ -214,9 +214,9 @@ function gridChannel(
   if (!arr || !arr.length) return 0
   if (arr.length === 1) return arr[0]
   if (span) {
-    return sampleChannelWithin((i) => arr[i], arr.length, t, grid.tStart, GRID_DT, span[0], span[1])
+    return sampleChannelWithin((i: number) => arr[i], arr.length, t, grid.tStart, GRID_DT, span[0], span[1])
   }
-  return sampleChannel((i) => arr[i], arr.length, t, grid.tStart, GRID_DT)
+  return sampleChannel((i: number) => arr[i], arr.length, t, grid.tStart, GRID_DT)
 }
 
 /** 可见段定位草稿（采样热路径零分配）：单次采样内持有、不复用跨调用，段定位无重入。 */
