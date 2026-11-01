@@ -37,6 +37,12 @@ const props = defineProps({
   mapName: { type: String, default: '' },
   /** 资产面 key（标注导入/导出归属校验） */
   mapKey: { type: String, required: true },
+  /**
+   * 基地点位组键（页面 ?bases= 解析后下发）：'supremacy' | 'assault' | null。
+   * 推给内核 setMapBasesKind——画哪组贴地基地环由宿主显式指定，渲染与回放
+   * 同一条管线（playback/bases.js），几何 fail-closed 在内核。
+   */
+  basesKind: { type: String, default: null },
   /** 隐藏时停帧不销毁（页面 v-show 切 2D/3D） */
   active: { type: Boolean, default: true },
 })
@@ -174,7 +180,14 @@ function resetAnnotationState() {
 }
 
 // ---------- 标注导入 / 导出（会话内的文件落盘；fail-closed 校验）----------
-const IMPORT_KIND = 'map-preview-annotations-3d'
+// kind 不区分视角：2D/3D 标注同为 ±300 语义系 pen 点列，同一张地图即可互导。
+// 兼容合入前旧导出的 -2d/-3d 后缀 kind。
+const IMPORT_KIND = 'map-preview-annotations'
+const IMPORT_KINDS = new Set([
+  IMPORT_KIND,
+  'map-preview-annotations-2d',
+  'map-preview-annotations-3d',
+])
 const importMessage = ref('')
 let importMessageTimer = 0
 function flashImportMessage(key, values) {
@@ -213,7 +226,7 @@ async function importAnnotations(event) {
     flashImportMessage('mapPreview.annotations.importFailed', { reason: t('mapPreview.annotations.importReasonFormat') })
     return
   }
-  if (!payload || payload.version !== 1 || payload.kind !== IMPORT_KIND || !Array.isArray(payload.annotations)) {
+  if (!payload || payload.version !== 1 || !IMPORT_KINDS.has(payload.kind) || !Array.isArray(payload.annotations)) {
     flashImportMessage('mapPreview.annotations.importFailed', { reason: t('mapPreview.annotations.importReasonFormat') })
     return
   }
@@ -268,11 +281,21 @@ function ensureScene() {
   pushAnnotationProjection()
   pushAnnotationInteraction()
   pushAnnotationVisibility()
+  pushBasesKind()
   return true
 }
 function reloadMap() {
   if (!sceneApi || !props.mapId || !requireFeature(Feature.PLAYBACK_3D)) return
   sceneApi.loadMapOnly({ mapId: props.mapId, mapName: props.mapName })
+}
+/**
+ * 基地点位组的唯一推送方向（pane → scene，与标注投影同一纪律）：会话未就绪时
+ * 内核只记意图（startPlayback 的 map 分支按它 build），就绪则立即重建。三个触发
+ * 点共享：kind 变化、场景创建（记意图先于装载）、会话就绪（teardown 会把内核
+ * 意图复位，重建/换图后必须补推）。
+ */
+function pushBasesKind() {
+  sceneApi?.setMapBasesKind?.(props.basesKind || null)
 }
 // 换图判定只看 mapId（图身份）：mapName 是 locale 派生的显示名——切语言会变，
 // 但图没换，标注与撤销栈不得清空（名称更新由页面 header 的 computed 承担）。
@@ -295,6 +318,7 @@ watch(
   pushAnnotationInteraction,
 )
 watch(annotationsVisible, pushAnnotationVisibility)
+watch(() => props.basesKind, pushBasesKind)
 watch(() => store.mapReady, (ready) => {
   if (!ready && annotationOpen.value) closeAnnotation()
   // loadMapOnly 的 teardown 清空内核侧标注数组（会话纪律与回放一致）；pane 的
@@ -302,6 +326,7 @@ watch(() => store.mapReady, (ready) => {
   if (ready) {
     pushAnnotationProjection()
     pushAnnotationVisibility()
+    pushBasesKind()
   }
 })
 /**

@@ -1235,7 +1235,7 @@ jobs:
           set -euo pipefail
           # staged 源码自己的 contract 必须自洽（gradle bridge == staged contract bridge == staged frontend）。
           # 注意：这里用的全是 $RUNNER_TEMP 下的 tag target 副本，工作区文件不参与候选身份。
-          # 3.27.2 之前的 tag target 里该文件是 .js。
+          # 3.27.3 之前的 tag target 里该文件是 .js。
           AUTH_PROVIDER="$RUNNER_TEMP/frontend/src/platform/androidAuthProvider.ts"
           [ -f "$AUTH_PROVIDER" ] || AUTH_PROVIDER="${AUTH_PROVIDER%.ts}.js"
           python3 scripts/android-release/android_contract.py validate \

@@ -11,6 +11,9 @@
     "retry": "重试",
     "mode3d": "3D 场景",
     "mode2d": "2D 战术图",
+    "basesSwitch": "基地点位",
+    "basesSupremacy": "争霸",
+    "basesEncounter": "遭遇",
     "backToPicker": "选择其他地图",
     "twoDBadge": "2D",
     "annotations": {

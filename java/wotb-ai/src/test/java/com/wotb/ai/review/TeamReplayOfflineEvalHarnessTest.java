@@ -46,8 +46,7 @@ class TeamReplayOfflineEvalHarnessTest {
             final String prompt = TeamAiPromptBuilder.single(
                     context, List.of(), null, null, Integer.MAX_VALUE, timeline).content();
             assertTrue(prompt.contains("TACTICAL TIMELINE"), qualityCase.id() + " omitted production timeline");
-            final String systemPrompt = TeamPromptLocalizer.localizeTeamSystemPrompt(
-                    TeamPromptLocalizer.SINGLE_TEAM_PROMPT, AllowedLanguage.ZH);
+            final String systemPrompt = TeamPromptLocalizer.systemPrompt(AllowedLanguage.ZH);
             assertTrue(systemPrompt.contains("团队复盘推理顺序"),
                     qualityCase.id() + " omitted reasoning contract");
             assertFalse(prompt.contains(qualityCase.id()),

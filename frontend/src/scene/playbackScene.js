@@ -291,6 +291,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
    * 由 teardown 复位为 'replay'；startPlayback 在地图资产就绪后按它提前收口。
    */
   let SESSION_MODE = 'replay';
+  /**
+   * 地图预览会话的基地模式（'supremacy' | 'assault' | null）：宿主经 setMapBasesKind
+   * 显式选择画哪组贴地基地环。回放会话不消费它（模式由 DATA 轨迹判，语义红线）；
+   * teardown 随会话复位为 null。
+   */
+  let MAP_BASES_KIND = null;
   // 渲染帧句柄：destroy 显式 cancel（旧实现依赖 destroyed 标志的自然退出，
   // 帧回调在 destroy 后仍可能再排队一次）
   let rafId = 0;
@@ -2301,7 +2307,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     getData: () => DATA, getMapBases: () => currentMapBases,
     store, groundY,
   });
-  function buildBases() { bases.build(); }
+  // 回放会话：模式由 DATA 轨迹判（buildBases 原语义）；地图预览会话：宿主经
+  // setMapBasesKind 显式选组，几何仍是唯一事实（bases.buildStatic 内部 fail-closed）。
+  function buildBases() {
+    if (SESSION_MODE === 'map') bases.buildStatic(MAP_BASES_KIND);
+    else bases.build();
+  }
   function clearBases() { bases.clear(); }
   function regroundBases() { bases.reground(); }
   function updateBases() { bases.update(T); }
@@ -4800,6 +4811,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function teardownSession() {
     sessionGen++;
     SESSION_MODE = 'replay';
+    MAP_BASES_KIND = null;
     store.mapReady = false;
     // 录像者不跨回放：同步退出，旧机位不能被下一场当成用户的自由相机保留。
     if (CAM === 'recorder') {
@@ -5123,8 +5135,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // 地图预览会话：地图资产就绪即完成——车辆/GLB/名册/传输/HUD 全部不建。
       // 相机（top/free）与地形钳制只依赖 heightField/WORLD_CENTER，照常可用；
       // 渲染由 animate() 常驻循环承担，就绪态由 loadMapOnly 落 store.mapReady。
+      // 基地贴地环按宿主选的模式建（currentMapBases 已随 loadMapImage 解析）；
+      // 地形异步就绪后由 regroundBases 把环带/圆盘重新贴回新地表（与回放同链）。
       // map 会话没有 tick() 驱动（PLAYING 恒 false、按需渲染），首帧必须显式标脏——
       // 否则 canvas 初始为黑，直到用户第一次拖动相机。
+      buildBases();
       invalidate();
       return true;
     }
@@ -5193,6 +5208,19 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   return {
     loadData,
     loadMapOnly,
+    /**
+     * 地图预览会话：选择贴地基地环画哪组（'supremacy' | 'assault' | null=隐藏）。
+     * 非法值归一为 null（fail-closed）。会话未就绪时只记意图——startPlayback 的
+     * map 分支建场景时按它 build；已就绪则立即重建 + 标脏（按需渲染立即见效）。
+     * 回放会话调用只记值（会被 teardown 复位），不触碰回放的轨迹判模式语义。
+     */
+    setMapBasesKind(kind) {
+      MAP_BASES_KIND = (kind === 'supremacy' || kind === 'assault') ? kind : null;
+      if (SESSION_MODE === 'map' && store.mapReady) {
+        buildBases();
+        invalidate();
+      }
+    },
     /**
      * 撤下当前回放（工作台清空选择 / 多文件未选场次 / 玩家换选）：回到「无数据」等待态。
      * 渲染器、画质档与相机保持——重新选回放时不必重建 WebGL 上下文、也不必重选画质；

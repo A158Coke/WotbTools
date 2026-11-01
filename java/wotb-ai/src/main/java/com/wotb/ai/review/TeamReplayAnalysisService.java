@@ -224,9 +224,6 @@ public class TeamReplayAnalysisService {
 
     static final String SINGLE_TEAM_PROMPT = TeamPromptLocalizer.SINGLE_TEAM_PROMPT;
 
-    static String localizeTeamSystemPrompt(final String zhPrompt, final AllowedLanguage language) {
-        return TeamPromptLocalizer.localizeTeamSystemPrompt(zhPrompt, language);
-    }
 
     public SingleTeamBattleAnalysisContext buildSingleTeamContext(final Battle battle,
                                                                   final ReplayReconstruction reconstruction) {
@@ -241,8 +238,7 @@ public class TeamReplayAnalysisService {
             final long startNanos,
             final BattleTimeline timeline
     ) {
-        final String systemPrompt = TeamPromptLocalizer.localizeTeamSystemPrompt(
-                TeamPromptLocalizer.SINGLE_TEAM_PROMPT, language);
+        final String systemPrompt = TeamPromptLocalizer.systemPrompt(language);
         final TeamGroundingFacts.GroundingFacts facts = timeline != null
                 ? TeamGroundingFacts.build(context.battle(), timeline, context.perspectiveTeam())
                 : TeamGroundingFacts.build(context.battle(),
@@ -335,8 +331,7 @@ public class TeamReplayAnalysisService {
     }
 
     private static String recoverySystemPrompt(final AllowedLanguage language) {
-        return TeamPromptLocalizer.localizeTeamSystemPrompt(
-                        TeamPromptLocalizer.SINGLE_TEAM_PROMPT, language)
+        return TeamPromptLocalizer.systemPrompt(language)
                 + switch (language) {
                     case EN -> "\n\nRECOVERY STRICTNESS: output only the canonical TeamAiReviewResult object "
                             + "described above. Root and nested objects reject extra fields; never emit unknown_field, "

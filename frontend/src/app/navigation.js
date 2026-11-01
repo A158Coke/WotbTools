@@ -144,8 +144,8 @@ const ARMOR_SCENE_QUERY_KEYS = [
   'az', 'h', 'd', 'eqcal', 'eqenh', 'quality', 'move', 'rel', 'clean', 'debug',
 ]
 const BROADCAST_QUERY_KEYS = ['lbServer', 'lbSeason', 'lbCategory']
-/** 地图预览写进 URL 的键（map=资产 key、mode=2d|3d）：只属于该视图，离开时丢掉。 */
-const MAP_PREVIEW_QUERY_KEYS = ['map', 'mode']
+/** 地图预览写进 URL 的键（map=资产 key、mode=2d|3d、bases=supremacy|encounter）：只属于该视图，离开时丢掉。 */
+const MAP_PREVIEW_QUERY_KEYS = ['map', 'mode', 'bases']
 
 /** Keep legacy query URLs as the public URL contract while Vue Router owns history. */
 export function locationForView(view, route) {

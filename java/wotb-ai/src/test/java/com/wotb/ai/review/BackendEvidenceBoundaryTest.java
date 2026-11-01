@@ -162,9 +162,9 @@ class BackendEvidenceBoundaryTest {
         assertFalse(zh.contains("SOLO_DELAY"), "prompt 不得再引用 SOLO_DELAY 候选");
         assertFalse(zh.contains("SOLO_DETACHED"), "prompt 不得再引用 SOLO_DETACHED 候选");
         // EN/RU 同步
-        final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(zh, AllowedLanguage.EN);
+        final String en = TeamPromptLocalizer.systemPrompt(AllowedLanguage.EN);
         assertTrue(en.contains("NOT tactical verdicts"), "EN 必须声明不是战术 verdict");
-        final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(zh, AllowedLanguage.RU);
+        final String ru = TeamPromptLocalizer.systemPrompt(AllowedLanguage.RU);
         assertTrue(ru.contains("а НЕ тактические вердикты"), "RU 必须声明不是战术 verdict");
     }
 
@@ -215,11 +215,11 @@ class BackendEvidenceBoundaryTest {
         assertFalse(player.contains("PUSH_WINDOWS"), "player prompt 不得含 PUSH_WINDOWS");
         assertTrue(player.contains("CONTROL_REGION_ENTRY_WINDOWS"), "player prompt 必须统一 CONTROL_REGION_ENTRY_WINDOWS");
         // EN/RU 同步（本地化后不得残留中文规则、不得含旧术语）
-        final String teamEn = TeamPromptLocalizer.localizeTeamSystemPrompt(team, AllowedLanguage.EN);
+        final String teamEn = TeamPromptLocalizer.systemPrompt(AllowedLanguage.EN);
         assertFalse(teamEn.contains("PUSH_WINDOWS"), "team EN 不得含 PUSH_WINDOWS");
-        final String playerEn = PlayerPromptRules.localizePlayerSystemPrompt(player, AllowedLanguage.EN);
+        final String playerEn = PlayerPromptRules.systemPrompt("player/tactical", AllowedLanguage.EN);
         assertFalse(playerEn.contains("PUSH_WINDOWS"), "player EN 不得含 PUSH_WINDOWS");
-        final String teamRu = TeamPromptLocalizer.localizeTeamSystemPrompt(team, AllowedLanguage.RU);
+        final String teamRu = TeamPromptLocalizer.systemPrompt(AllowedLanguage.RU);
         assertFalse(teamRu.contains("PUSH_WINDOWS"), "team RU 不得含 PUSH_WINDOWS");
     }
 
@@ -266,8 +266,8 @@ class BackendEvidenceBoundaryTest {
     @Test
     void r14TeamPointsRuleSemanticsAlignedAcrossLanguages() {
         final String zh = AiPromptLibrary.zh("team/single");
-        final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(zh, AllowedLanguage.EN);
-        final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(zh, AllowedLanguage.RU);
+        final String en = TeamPromptLocalizer.systemPrompt(AllowedLanguage.EN);
+        final String ru = TeamPromptLocalizer.systemPrompt(AllowedLanguage.RU);
         assertFalse(en.contains("it needs to attack and capture"),
                 "Team EN 不得含旧 deterministic「净劣势⇒必须进攻抢点」措辞");
         assertFalse(en.contains("can more comfortably defend with crossfire"),
@@ -280,8 +280,7 @@ class BackendEvidenceBoundaryTest {
                 "RU 必须禁止固定映射");
         assertTrue(en.contains("whether to push and capture or defend with crossfire is your inference from the whole situation"),
                 "EN 必须声明是否抢点/防守由 LLM 推断");
-        final String playerEn = PlayerPromptRules.localizePlayerSystemPrompt(
-                AiPromptLibrary.zh("player/tactical"), AllowedLanguage.EN);
+        final String playerEn = PlayerPromptRules.systemPrompt("player/tactical", AllowedLanguage.EN);
         assertTrue(playerEn.contains("never write \"net deficit ⇒ must push to capture\" as a fixed rule"),
                 "Player EN 必须与 Team EN 语义一致");
     }

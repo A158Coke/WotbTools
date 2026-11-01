@@ -29,13 +29,13 @@ class PlayerPointsSituationRuleTest {
     }
 
     @Test
-    void localizedSingleAndFallbackReplaceTheChineseRule() {
+    void localizedSingleAndFallbackCarryThePointsRule() {
         final String single = AiPromptLibrary.zh("player/single");
         final String fallback = AiPromptLibrary.zh("player/fallback");
-        final String en = PlayerPromptRules.localizePlayerSystemPrompt(single, AllowedLanguage.EN);
-        final String ru = PlayerPromptRules.localizePlayerSystemPrompt(single, AllowedLanguage.RU);
-        final String enFallback = PlayerPromptRules.localizePlayerSystemPrompt(fallback, AllowedLanguage.EN);
-        final String ruFallback = PlayerPromptRules.localizePlayerSystemPrompt(fallback, AllowedLanguage.RU);
+        final String en = PlayerPromptRules.systemPrompt("player/single", AllowedLanguage.EN);
+        final String ru = PlayerPromptRules.systemPrompt("player/single", AllowedLanguage.RU);
+        final String enFallback = PlayerPromptRules.systemPrompt("player/fallback", AllowedLanguage.EN);
+        final String ruFallback = PlayerPromptRules.systemPrompt("player/fallback", AllowedLanguage.RU);
         assertTrue(en.contains("=== POINTS SITUATION AND ATTACK/DEFENSE POSTURE (mandatory, random-battle personal review) ==="));
         assertTrue(en.contains("The kill-steal timeline expresses only the cumulative net delta of the \"kill-steal component\""), "EN must scope the kill-steal component");
         assertTrue(ru.contains("компоненты очков за фраги"), "RU must scope the kill-steal component");

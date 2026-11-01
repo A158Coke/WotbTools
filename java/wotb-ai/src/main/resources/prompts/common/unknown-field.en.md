@@ -1,0 +1,1 @@
+If the structured field is unknown or absent, state “unknown”; do not infer it.

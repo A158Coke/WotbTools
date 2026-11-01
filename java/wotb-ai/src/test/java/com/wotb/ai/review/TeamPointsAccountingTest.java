@@ -162,12 +162,12 @@ class TeamPointsAccountingTest {
         assertFalse(zh.contains("压缩为1000"), zh);
         assertFalse(zh.contains("+3 或 +5"), zh);
         assertFalse(zh.contains("15/tick"), zh);
-        final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(zh, AllowedLanguage.EN);
+        final String en = TeamPromptLocalizer.systemPrompt(AllowedLanguage.EN);
         assertFalse(en.contains("+3 or +5"), en);
         assertFalse(en.contains("15 per tick"), en);
         assertFalse(en.contains("clamped to 1000"), en);
         assertFalse(en.contains("slightly exceed"), en);
-        final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(zh, AllowedLanguage.RU);
+        final String ru = TeamPromptLocalizer.systemPrompt(AllowedLanguage.RU);
         assertFalse(ru.contains("+3 или +5"), ru);
         assertFalse(ru.contains("15 за тик"), ru);
         assertFalse(ru.contains("сжат до 1000"), ru);

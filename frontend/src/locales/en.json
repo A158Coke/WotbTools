@@ -11,6 +11,9 @@
     "retry": "Retry",
     "mode3d": "3D Scene",
     "mode2d": "2D Tactical Map",
+    "basesSwitch": "Base markers",
+    "basesSupremacy": "Supremacy",
+    "basesEncounter": "Encounter",
     "backToPicker": "Choose another map",
     "twoDBadge": "2D",
     "annotations": {
