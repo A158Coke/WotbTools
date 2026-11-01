@@ -102,10 +102,10 @@ describe('MapPreviewPage', () => {
     // 双图都有 2D 徽标（ground.webp 回退后 43 图全可进 2D）
     expect(erlenberg.find('.map-card-badge').exists()).toBe(true)
     expect(moon.find('.map-card-badge').exists()).toBe(true)
-    // 封面双源：bundled 打包图 vs ground.webp 资产回退
+    // 封面双源：bundled 打包图 vs 资产包 mini.webp 轻量回退（44–112KB，非 3MB ground）
     expect(erlenberg.find('.map-card-thumb img').attributes('src')).toBeTruthy()
-    expect(erlenberg.find('.map-card-thumb img').attributes('src')).not.toContain('ground.webp')
-    expect(moon.find('.map-card-thumb img').attributes('src')).toContain('/map/moon/ground.webp')
+    expect(erlenberg.find('.map-card-thumb img').attributes('src')).not.toContain('/map/')
+    expect(moon.find('.map-card-thumb img').attributes('src')).toContain('/map/moon/mini.webp')
   })
 
   it('索引失败 → 可重试的失败态；重试成功回到 picker', async () => {

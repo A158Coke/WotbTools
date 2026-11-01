@@ -367,6 +367,16 @@ export function __resetMapIndexForTest() {
 }
 
 /**
+ * 地图预览封面的轻量 URL（HUD 小地图 `mini.webp`，512² / 44–112KB）：仅作 picker
+ * 缩略图——帧宽约 620m > ±300 契约框，**不进** 2D 坐标系（那仍是 ground.webp 的职责）。
+ * 资产包每张图都有；Android 离线门控可抛（NETWORK_ERROR），调用方兜底。
+ */
+export function mapMiniUrl(mapKey) {
+  if (!mapKey || !assetProvider.configured()) return null
+  return assetProvider.url(`/map/${mapKey}/mini.webp`)
+}
+
+/**
  * 静态模式 URL（已配置 origin 且 index 命中 → 打包器物化路径）；
  * mapKey 由当前会话显式传入；未解析/未配置 origin → null，调用方跳过该资产（无服务端回退）。
  * kind ∈ map | terrain | terrain-meta | scenery | groundmeta | groundtex

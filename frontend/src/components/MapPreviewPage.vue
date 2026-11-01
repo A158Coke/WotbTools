@@ -13,7 +13,7 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Map as MapIcon } from 'lucide-vue-next'
 import { useAuth } from '../composables/useAuth.js'
-import { loadMapIndex, mapStaticUrl } from '../scene/replaySource.js'
+import { loadMapIndex, mapMiniUrl } from '../scene/replaySource.js'
 import { mapImages } from '../data/mapImages.js'
 import { mapLabel } from '../utils/helpers.js'
 import { Feature } from '../app/featureCapabilities.js'
@@ -70,17 +70,18 @@ async function loadMaps() {
       basemap: bundled
         ? { kind: 'bundled', image: bundled }
         : { kind: 'ground', mapKey: key },
-      thumb: bundled ? bundled.src : safeGroundUrl(key),
+      thumb: bundled ? bundled.src : safeThumbUrl(key),
     })
   }
   rawMaps.value = [...byKey.values()]
   indexLoaded.value = true
 }
-/** ground.webp 回退 URL；assetProvider 在 Android 离线门控下可抛（NETWORK_ERROR）
- *  ——picker 构建阶段吞为 null（封面回退占位图标），不让整份清单失败。 */
-function safeGroundUrl(key) {
+/** 封面回退 URL（HUD 小地图 mini.webp，44–112KB）：assetProvider 在 Android 离线
+ *  门控下可抛（NETWORK_ERROR）——picker 构建阶段吞为 null（封面回退占位图标），
+ *  不让整份清单失败。 */
+function safeThumbUrl(key) {
   try {
-    return mapStaticUrl('map', null, key)
+    return mapMiniUrl(key)
   } catch {
     return null
   }
