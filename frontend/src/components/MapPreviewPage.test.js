@@ -60,6 +60,7 @@ const IDX = {
     3: { key: 'erlenberg', display: 'Middleburg' },
     54: { key: 'erlenberg', display: 'Middleburg - Town' },
     70: { key: 'moon', display: 'Sea of Tranquility' },
+    8: { key: 'canyon', display: 'Canyon' },
   },
 }
 
@@ -94,7 +95,7 @@ describe('MapPreviewPage', () => {
     source.loadMapIndex.mockResolvedValue(IDX)
     const wrapper = await openAt()
     const cards = wrapper.findAll('.map-card')
-    expect(cards).toHaveLength(2)
+    expect(cards).toHaveLength(3)
     const erlenberg = cards.find(c => c.attributes('data-testid') === 'map-card-erlenberg')
     const moon = cards.find(c => c.attributes('data-testid') === 'map-card-moon')
     expect(erlenberg).toBeTruthy()
@@ -212,33 +213,49 @@ describe('MapPreviewPage', () => {
   })
 
   // ---- 基地点位（?bases=）：争霸/遭遇切换，两个 pane 共用同一 kind ----
-  it('基地点位默认争霸：有几何的图下发 basesKind 且显示切换；无几何的图 kind=null 无切换', async () => {
+  it('遭遇选项只在 assault 恰好 1 candidate 时提供：erlenberg（3 条）不出现，canyon（1 条）可选', async () => {
     auth.authenticated.value = true
     source.loadMapIndex.mockResolvedValue(IDX)
-    // erlenberg 在 mapBases 里 supremacy 3 条 + assault 3 条 → 默认 supremacy
+    // erlenberg：supremacy 3 条 + assault 3 条（攻防/遭遇条目无法归属）→
+    // 默认回落 supremacy，且**不提供**遭遇选项（选中即 0 点位的假选项不给用户）
     const wrapper = await openAt({ map: 'erlenberg' })
-    const pane3d = wrapper.findComponent({ name: 'MapPreview3DPane' })
-    expect(pane3d.props('basesKind')).toBe('supremacy')
+    expect(wrapper.findComponent({ name: 'MapPreview3DPane' }).props('basesKind')).toBe('supremacy')
     expect(wrapper.find('.map-bases-switch').exists()).toBe(true)
     expect(wrapper.find('[data-testid="map-bases-supremacy"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="map-bases-encounter"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="map-bases-encounter"]').exists()).toBe(false)
+    // canyon：assault 恰 1 条 candidate → 遭遇可选，kind 下发 assault
+    const w2 = await openAt({ map: 'canyon' })
+    expect(w2.findComponent({ name: 'MapPreview3DPane' }).props('basesKind')).toBe('supremacy')
+    expect(w2.find('[data-testid="map-bases-encounter"]').exists()).toBe(true)
+    await ROUTER.replace({ query: { view: 'map-preview', map: 'canyon', bases: 'encounter' } })
+    await flushPromises()
+    expect(w2.findComponent({ name: 'MapPreview3DPane' }).props('basesKind')).toBe('assault')
     // moon 无基地几何 → null 且整个切换不渲染（fail-closed，不从内容猜）
-    const w2 = await openAt({ map: 'moon' })
-    expect(w2.findComponent({ name: 'MapPreview3DPane' }).props('basesKind')).toBe(null)
-    expect(w2.find('.map-bases-switch').exists()).toBe(false)
+    const w3 = await openAt({ map: 'moon' })
+    expect(w3.findComponent({ name: 'MapPreview3DPane' }).props('basesKind')).toBe(null)
+    expect(w3.find('.map-bases-switch').exists()).toBe(false)
   })
 
-  it('?bases=encounter 显式选遭遇组（assault 组键）；URL 变更同步两个 pane；返回 picker 清 bases 键', async () => {
+  it('?bases=encounter 指向多 candidate 组 → 拒绝并回落 supremacy（URL 接受同一判据）', async () => {
     auth.authenticated.value = true
     source.loadMapIndex.mockResolvedValue(IDX)
     const wrapper = await openAt({ map: 'erlenberg', bases: 'encounter' })
-    expect(wrapper.findComponent({ name: 'MapPreview3DPane' }).props('basesKind')).toBe('assault')
-    const w2d = await openAt({ map: 'erlenberg', mode: '2d', bases: 'encounter' })
-    expect(w2d.findComponent({ name: 'MapPreview2DPane' }).props('basesKind')).toBe('assault')
-    // URL 切回争霸（SegmentedControl 交互归组件自身，URL → kind 契约在这里锁）
-    await ROUTER.replace({ query: { view: 'map-preview', map: 'erlenberg', mode: '3d', bases: 'supremacy' } })
-    await flushPromises()
     expect(wrapper.findComponent({ name: 'MapPreview3DPane' }).props('basesKind')).toBe('supremacy')
+    const w2d = await openAt({ map: 'erlenberg', mode: '2d', bases: 'encounter' })
+    expect(w2d.findComponent({ name: 'MapPreview2DPane' }).props('basesKind')).toBe('supremacy')
+    // 单 candidate 图上 URL 正常接受：2D/3D 同步下发 assault
+    const w3 = await openAt({ map: 'canyon', mode: '2d', bases: 'encounter' })
+    expect(w3.findComponent({ name: 'MapPreview2DPane' }).props('basesKind')).toBe('assault')
+    // URL 切回争霸（SegmentedControl 交互归组件自身，URL → kind 契约在这里锁）
+    await ROUTER.replace({ query: { view: 'map-preview', map: 'canyon', mode: '3d', bases: 'supremacy' } })
+    await flushPromises()
+    expect(w3.findComponent({ name: 'MapPreview3DPane' }).props('basesKind')).toBe('supremacy')
+  })
+
+  it('返回 picker 清 map/mode/bases 键', async () => {
+    auth.authenticated.value = true
+    source.loadMapIndex.mockResolvedValue(IDX)
+    const wrapper = await openAt({ map: 'canyon', bases: 'encounter' })
     await wrapper.find('[data-testid="map-back"]').trigger('click')
     await flushPromises()
     expect(ROUTER.currentRoute.value.query).toEqual({ view: 'map-preview' })

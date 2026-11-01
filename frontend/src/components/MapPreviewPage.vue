@@ -131,19 +131,29 @@ const mode = computed(() => (route.query.mode === '2d' ? '2d' : '3d'))
 
 /**
  * 基地点位（贴地环 / 2D 圆标）模式：?bases=supremacy|encounter 显式选择；
- * 无该键或值无对应几何时按「有争霸先争霸」回落。kind 是下发到两个 pane 的
+ * 无该键或值不可选时按「有争霸先争霸」回落。kind 是下发到两个 pane 的
  * mapBases 组键（'supremacy' | 'assault' | null）；遭遇的几何承载在 mapBases
  * 的 assault 组（攻防/遭遇共用，客户端 .sc2 提取）。无几何 → null（不显示、
  * 不显示切换），绝不由内容猜。
  */
 const BASES_QUERY_KINDS = { supremacy: 'supremacy', encounter: 'assault' }
+/**
+ * 遭遇的可用性判据与 renderer 同一口径（选项 / URL 接受 / fallback 三处共用）：
+ * assault 组**恰好 1 个 candidate** 才可选——多 candidate（攻防/遭遇条目无法
+ * 归属，回放同式 fail-closed 不画）的图不提供遭遇选项，否则选中后两端渲染
+ * 0 个点位、得到必然空白的假选项。renderer 内部的防御性判据原样保留。
+ */
+function assaultSelectable(bases) {
+  return bases?.assault?.length === 1
+}
 const basesKind = computed(() => {
   const bases = selected.value?.bases
   if (!bases) return null
   const fromUrl = BASES_QUERY_KINDS[route.query.bases]
-  if (fromUrl && bases[fromUrl]?.length) return fromUrl
+  if (fromUrl === 'supremacy' && bases.supremacy?.length) return 'supremacy'
+  if (fromUrl === 'assault' && assaultSelectable(bases)) return 'assault'
   if (bases.supremacy?.length) return 'supremacy'
-  if (bases.assault?.length) return 'assault'
+  if (assaultSelectable(bases)) return 'assault'
   return null
 })
 const basesOptions = computed(() => {
@@ -153,7 +163,7 @@ const basesOptions = computed(() => {
     ...(bases.supremacy?.length
       ? [{ value: 'supremacy', label: t('mapPreview.basesSupremacy'), testid: 'map-bases-supremacy' }]
       : []),
-    ...(bases.assault?.length
+    ...(assaultSelectable(bases)
       ? [{ value: 'encounter', label: t('mapPreview.basesEncounter'), testid: 'map-bases-encounter' }]
       : []),
   ]
