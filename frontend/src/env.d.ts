@@ -15,4 +15,10 @@ interface Window {
   wotbtoolsOnAuthChanged?: () => unknown
   wotbtoolsOnConnectivityChanged?: () => unknown
   wotbtoolsOnReplay?: () => unknown
+  __pbReplaySource?: unknown
+}
+
+/** 判断为真时值一定是 number。为假时 TypeScript 也会排除 number，因此已是 number 的值不要在 else 分支继续使用。 */
+interface NumberConstructor {
+  isFinite(value: unknown): value is number
 }

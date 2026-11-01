@@ -8,16 +8,38 @@
  */
 import { displayName, fileKey } from './helpers.js'
 
+type TeamSummary = { teamKey: string; autoName?: string | null; arenaTeams?: unknown[] | null }
+type TeamNames = Record<string, string>
+type SeriesBattle = {
+  sourceId?: unknown
+  winnerTeam?: number | null
+  arenaId?: unknown
+  mapName?: string | null
+  durationS?: number | null
+  startTime?: number | null
+  sourceName?: string | null
+  draw?: boolean | null
+}
+type SeriesResult = {
+  battles?: SeriesBattle[] | null
+  leagueMode?: boolean | null
+  league?: { teamSummaries?: TeamSummary[] | null; failures?: Array<{ fileName: string }> | null } | null
+  failures?: unknown[][] | null
+  duplicates?: unknown[][] | null
+}
+type Translate = (key: string, params?: Record<string, unknown>) => string
+type BattleOption = { value: string; label: string; meta: string; search: string }
+
 /** 战队显示名：批次覆盖名 → 自动名（军团标签）→ null（待命名）。 */
-function teamDisplayName(summary, teamNames) {
+function teamDisplayName(summary: TeamSummary, teamNames: TeamNames | null | undefined) {
   const override = teamNames?.[summary.teamKey]
   if (override) return override
   return summary.autoName || null
 }
 
 /** `${arenaId}:${team}` → teamSummary 索引。 */
-function arenaTeamIndex(teamSummaries) {
-  const index = new Map()
+function arenaTeamIndex(teamSummaries: TeamSummary[]) {
+  const index = new Map<string, TeamSummary>()
   for (const summary of teamSummaries) {
     for (const arenaTeam of summary.arenaTeams || []) index.set(String(arenaTeam), summary)
   }
@@ -35,7 +57,11 @@ function arenaTeamIndex(teamSummaries) {
  *     startTime: number|null, sourceName: string|null, winnerTeam: number|null, draw: boolean, winnerKey: string|null, winnerName: string|null }>
  * }}
  */
-export function buildSeriesOverview(resp, teamNames = {}, battleTeamNames = {}) {
+export function buildSeriesOverview(
+  resp: SeriesResult | null | undefined,
+  teamNames: TeamNames = {},
+  battleTeamNames: TeamNames = {},
+) {
   const battles = Array.isArray(resp?.battles) ? resp.battles : []
   const teamSummaries = resp?.leagueMode === true && Array.isArray(resp?.league?.teamSummaries)
     ? resp.league.teamSummaries
@@ -80,7 +106,10 @@ export function buildSeriesOverview(resp, teamNames = {}, battleTeamNames = {}) 
 }
 
 /** 逐场胜方文案：战队名 → 队伍编号 → 平局 → 未知。 */
-export function battleWinnerText(battle, t) {
+export function battleWinnerText(
+  battle: { winnerName?: string | null; winnerTeam?: number | null; draw?: boolean },
+  t: Translate,
+) {
   if (battle.winnerName) return t('workspace.series_winner', { name: battle.winnerName })
   if (battle.winnerTeam) return t('workspace.series_team_winner', { team: battle.winnerTeam })
   return t(battle.draw ? 'workspace.series_draw' : 'workspace.series_unknown_winner')
@@ -91,7 +120,15 @@ export function battleWinnerText(battle, t) {
  * @param {ReturnType<typeof buildSeriesOverview>} series
  * @param {{ t: Function, locale: string, mapLabel: Function, formatTime?: (epochSeconds: number) => string }} format
  */
-export function battlePickerOptions(series, { t, locale, mapLabel, formatTime = defaultTimeFormatter(locale) }) {
+export function battlePickerOptions(
+  series: ReturnType<typeof buildSeriesOverview>,
+  { t, locale, mapLabel, formatTime = defaultTimeFormatter(locale) }: {
+    t: Translate
+    locale: string
+    mapLabel: (mapName: string, locale: string) => string
+    formatTime?: (epochSeconds: number) => string
+  },
+): BattleOption[] {
   return series.battles.map(battle => {
     const map = battle.mapName ? mapLabel(battle.mapName, locale) : '--'
     const meta = [battleWinnerText(battle, t), battle.startTime ? formatTime(battle.startTime) : null].filter(Boolean).join(' · ')
@@ -112,7 +149,12 @@ export function battlePickerOptions(series, { t, locale, mapLabel, formatTime = 
  * @param {object|null} resp ReplayResult
  * @param {{ currentSourceId?: string|null, parsing?: boolean }} [state]
  */
-export function replayCollectionRows(files, options, resp, { currentSourceId = null, parsing = false } = {}) {
+export function replayCollectionRows(
+  files: File[],
+  options: BattleOption[],
+  resp: SeriesResult | null | undefined,
+  { currentSourceId = null, parsing = false }: { currentSourceId?: string | null; parsing?: boolean } = {},
+) {
   const byId = new Map(options.map(option => [option.value, option]))
   const failed = new Set((resp?.failures || []).map(entry => entry[0]))
   const duplicates = new Set((resp?.duplicates || []).map(entry => entry[0]))
@@ -133,12 +175,12 @@ export function replayCollectionRows(files, options, resp, { currentSourceId = n
   })
 }
 
-function defaultTimeFormatter(locale) {
-  let format
+function defaultTimeFormatter(locale: string) {
+  let format: Intl.DateTimeFormat
   try {
     format = new Intl.DateTimeFormat(locale, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
   } catch {
     format = new Intl.DateTimeFormat(undefined, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
   }
-  return epochSeconds => format.format(new Date(epochSeconds * 1000))
+  return (epochSeconds: number) => format.format(new Date(epochSeconds * 1000))
 }

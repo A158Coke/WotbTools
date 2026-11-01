@@ -1,15 +1,10 @@
-import type { ApiErrorWirePayload, ApplicationErrorCode, JsonObject, KnownServerErrorCode } from './api.js'
+import type { ApiErrorWirePayload, ApplicationErrorCode, KnownServerErrorCode } from './api.js'
 import type { AggregateRow, Battle, ColumnDef, ReplayResult } from './replay.js'
 import { API_ERROR_CODES } from '../api/generated/api-error-codes'
 import { validateApiError } from '../api/contract-runtime.js'
+import { isRecord, isString } from './primitive-guards.js'
 
-export function isRecord(value: unknown): value is JsonObject {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-export function isString(value: unknown): value is string {
-  return typeof value === 'string'
-}
+export { isRecord, isString }
 
 export function isNullableString(value: unknown): value is string | null {
   return value === null || isString(value)

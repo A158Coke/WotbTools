@@ -10,28 +10,62 @@
  *
  * 纯函数，无 Vue/场景依赖；2D 与 3D 共用同一份状态语义。
  */
+import type { AgentConsumableEvent } from '../api/agent-replay-facets.js'
+import type { ConsumableTransition } from '../types/playback-v2.js'
+
+/** 两种输入形状不能互相当作对方读取字段，只有下面的归一化视图同时看到两套字段名。 */
+export type ConsumableInput = ConsumableTransition | AgentConsumableEvent
+
+type ConsumableFields = {
+  timeSec?: number
+  clock?: number
+  invalidation?: boolean
+  consumableSlot?: number | null
+  slot?: number | null
+  state?: string | number | null
+  state_name?: string
+  durationSec?: number | null
+  duration_s?: number | null
+  endsAt?: number | null
+  ends_at?: number | null
+  logicalItemId?: string | null
+  logical_item_id?: string | null
+  wireCode?: number | null
+  wire_code?: number | null
+}
+
+type ActiveSlot = {
+  consumableSlot: number
+  logicalItemId: string | null
+  wireCode: number | null
+  state: string
+  durationSec: number | null
+  endsAt: number | null
+  timeSec: number
+}
+
 const EPS = 1e-6
 // Agent 把 consumable.clock 序列化为 2 位小数（playback.rs `r2`），而 visibility.t_in
 // 保留原始 f32（如 120.0039978）。观测窗口下界必须归一到与事件相同的 0.01s 网格，
 // 否则「同一 tick 内、紧贴重入点」的新激活（120.00）会被误判为窗口前旧事件而整条丢失。
 // 这是与 producer 序列化精度一致的规范化，不是放宽容差。
 const CLOCK_QUANTUM = 0.01
-const quantizeClock = (v) => Math.round(v / CLOCK_QUANTUM) * CLOCK_QUANTUM
+const quantizeClock = (v: number) => Math.round(v / CLOCK_QUANTUM) * CLOCK_QUANTUM
 
 /** 事件时刻：canonical `timeSec` 或 facet 原始 `clock`（同 base，不做 origin 变换）。 */
-function eventTime(tr) {
+function eventTime(tr: ConsumableFields | null | undefined) {
   if (!tr) return null
   if (Number.isFinite(tr.timeSec)) return tr.timeSec
   return Number.isFinite(tr.clock) ? tr.clock : null
 }
 
-function firstFinite(...values) {
+function firstFinite(...values: unknown[]) {
   for (const v of values) if (Number.isFinite(v)) return v
   return null
 }
 
 /** 单个槽位在 t 时刻是否处于激活窗口，以及剩余秒数。 */
-function slotBadge(slot, t) {
+function slotBadge(slot: ActiveSlot, t: number) {
   if (!slot || !Number.isFinite(t)) return null
   if (slot.state !== 'ACTIVATED') return null
   if (!(Number.isFinite(slot.durationSec) && slot.durationSec > 0)) return null
@@ -65,11 +99,16 @@ function slotBadge(slot, t) {
  *   不得复用离开前的状态；由调用方传当前可见段起点，canonical 2D 用 invalidation 行）
  * @returns {{slot:number,logicalItemId:string|null,wireCode:number|null,remainingSec:number,durationSec:number}[]}
  */
-export function consumableRuntimeAt(transitions, t, since = null) {
+export function consumableRuntimeAt(
+  transitions: readonly ConsumableInput[] | null | undefined,
+  t: number,
+  since: number | null = null,
+) {
   if (!Array.isArray(transitions) || !Number.isFinite(t)) return []
   const floor = Number.isFinite(since) ? quantizeClock(since) : null
-  const bySlot = new Map()
-  for (const tr of transitions) {
+  const bySlot = new Map<number, ActiveSlot>()
+  for (const event of transitions) {
+    const tr: ConsumableFields = event
     const timeSec = eventTime(tr)
     if (timeSec === null || timeSec > t + EPS) continue
     if (floor !== null && timeSec < floor - EPS) continue
@@ -77,8 +116,8 @@ export function consumableRuntimeAt(transitions, t, since = null) {
       bySlot.clear()
       continue
     }
-    const slotIndex = Number.isInteger(tr.consumableSlot) ? tr.consumableSlot
-      : (Number.isInteger(tr.slot) ? tr.slot : null)
+    const slotIndex = Number.isInteger(tr.consumableSlot) ? tr.consumableSlot as number
+      : (Number.isInteger(tr.slot) ? tr.slot as number : null)
     if (slotIndex === null || slotIndex < 0 || slotIndex > 2) continue
     const state = (typeof tr.state === 'string' ? tr.state : null)
       ?? (typeof tr.state_name === 'string' ? tr.state_name : 'UNKNOWN')
@@ -103,14 +142,14 @@ export function consumableRuntimeAt(transitions, t, since = null) {
 }
 
 /** 按 eid 建一次索引，返回 `(eid, t, since?) => badge[]`（3D 10Hz 名牌快照用）。 */
-export function createConsumableStateResolver(telemetry) {
-  const byEid = new Map()
+export function createConsumableStateResolver(telemetry: { consumables?: AgentConsumableEvent[] | null } | null | undefined) {
+  const byEid = new Map<number, AgentConsumableEvent[]>()
   for (const tr of telemetry?.consumables ?? []) {
     if (!tr || !Number.isFinite(tr.eid)) continue
     if (!byEid.has(tr.eid)) byEid.set(tr.eid, [])
-    byEid.get(tr.eid).push(tr)
+    byEid.get(tr.eid)!.push(tr)
   }
-  const at = (tr) => eventTime(tr) ?? 0
+  const at = (tr: ConsumableFields) => eventTime(tr) ?? 0
   for (const list of byEid.values()) list.sort((a, b) => at(a) - at(b))
-  return (eid, t, since = null) => consumableRuntimeAt(byEid.get(eid), t, since)
+  return (eid: number, t: number, since: number | null = null) => consumableRuntimeAt(byEid.get(eid), t, since)
 }

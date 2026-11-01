@@ -17,7 +17,7 @@ import { isAndroidRuntime } from '../platform/runtime.js'
 import {
   SUPPORTED_NATIVE_BRIDGE_VERSIONS,
 } from '../platform/nativeBridgeContract.js'
-import { isRecord, isString } from '../types/guards.js'
+import { isRecord, isString } from '../types/primitive-guards.js'
 import type {
   NativeBridgeMethod,
   NativeBridgeRequest,

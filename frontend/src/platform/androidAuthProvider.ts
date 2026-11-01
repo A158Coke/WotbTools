@@ -1,6 +1,6 @@
 import { NATIVE_AUTH_CHANGED_GLOBAL, NATIVE_AUTH_METHODS } from './nativeBridgeContract.js'
 import { callBridge } from '../composables/usePlatformBridge.js'
-import { isRecord } from '../types/guards.js'
+import { isRecord } from '../types/primitive-guards.js'
 import type { AuthClaims, AuthProvider } from '../types/auth.js'
 
 /**
