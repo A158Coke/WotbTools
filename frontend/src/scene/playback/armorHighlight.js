@@ -23,6 +23,10 @@ import {
 const OCCLUDER_LAYER = 2
 const EQ_CALIBRATED_SHELLS = 103
 const EQ_ENHANCED_ARMOR = 110
+/** 炮管任意朝向下 GLB 根到车模最远点的上界（最长的车连炮管约 12 m）。 */
+const VEHICLE_PICK_RADIUS_M = 15
+/** 裁剪矩形外扩的像素：包住光栅化取整，矩形边上不留缝。 */
+const SCISSOR_MARGIN_PX = 2
 
 /** 时刻 t 的当前弹种（`timeline` 时间升序）；首条之前未知，返回 null。 */
 export function authorShellAt(timeline, t) {
@@ -100,14 +104,18 @@ function refreshPickBounds(geometry) {
 const _pickRaycaster = new THREE.Raycaster()
 const _pickMeshes = []
 const _pickHits = []
+const _pickRoot = new THREE.Vector3()
 /**
  * 视线最先碰到的车辆：对当前帧可见网格精确求交，炮塔转动、炮管俯仰都按实际姿态算。
- * Mesh.raycast 自带逐网格包围球/盒粗筛；只是选目标，遮挡由深度 pass 决定。
+ * 先按 GLB 根到视线的距离粗筛（半径与姿态无关），离视线远的车不重算 bounds、不逐网格求交；
+ * Mesh.raycast 自带逐网格包围球/盒粗筛。只是选目标，遮挡由深度 pass 决定。
  */
 export function aimedVehicle(origin, direction, vehicles) {
   _pickRaycaster.set(origin, direction)
   let best = null, bestDistance = Infinity
   for (const v of vehicles) {
+    _pickRoot.setFromMatrixPosition(v.glb.matrixWorld)
+    if (_pickRaycaster.ray.distanceSqToPoint(_pickRoot) > VEHICLE_PICK_RADIUS_M ** 2) continue
     _pickMeshes.length = 0
     _pickHits.length = 0
     collectVisibleMeshes(v.glb, _pickMeshes)
@@ -120,6 +128,54 @@ export function aimedVehicle(origin, direction, vehicles) {
     }
   }
   return best
+}
+
+const _rectCorner = new THREE.Vector3()
+/**
+ * 世界包围盒的屏幕矩形（NDC，已钳到视口）。盒子穿过近裁剪面时投影不可靠，退回整屏；
+ * 完全在视口外返回 null。
+ */
+export function screenRect(box, camera) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+  for (let i = 0; i < 8; i++) {
+    _rectCorner.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z)
+    _rectCorner.applyMatrix4(camera.matrixWorldInverse)
+    if (_rectCorner.z >= -camera.near) return { x0: -1, y0: -1, x1: 1, y1: 1 }
+    _rectCorner.applyMatrix4(camera.projectionMatrix)
+    x0 = Math.min(x0, _rectCorner.x); x1 = Math.max(x1, _rectCorner.x)
+    y0 = Math.min(y0, _rectCorner.y); y1 = Math.max(y1, _rectCorner.y)
+  }
+  const rect = { x0: Math.max(x0, -1), y0: Math.max(y0, -1), x1: Math.min(x1, 1), y1: Math.min(y1, 1) }
+  return rect.x1 > rect.x0 && rect.y1 > rect.y0 ? rect : null
+}
+
+const _cropMatrix = new THREE.Matrix4()
+const _viewProjection = new THREE.Matrix4()
+/** 只包住 `rect` 的视锥：屏幕矩形外的物体不可能挡住矩形内的像素。 */
+export function cropFrustum(camera, rect, out) {
+  const w = rect.x1 - rect.x0, h = rect.y1 - rect.y0
+  _cropMatrix.set(
+    2 / w, 0, 0, -(rect.x1 + rect.x0) / w,
+    0, 2 / h, 0, -(rect.y1 + rect.y0) / h,
+    0, 0, 1, 0,
+    0, 0, 0, 1,
+  )
+  _viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+  return out.setFromProjectionMatrix(_cropMatrix.multiply(_viewProjection), camera.coordinateSystem)
+}
+
+const _occluderSphere = new THREE.Sphere()
+const _occluderOffset = new THREE.Vector3()
+/** `view` = {frustum, origin, forward, maxDepth}：物体落在目标屏幕矩形外或完全在目标之后就挡不住它。 */
+export function canOccludeTarget(object, view) {
+  if (object.frustumCulled === false) return true
+  // InstancedMesh 的包围球在对象上，几何上的只是单个实例；未算出时不能回落到几何
+  const sphere = object.boundingSphere !== undefined ? object.boundingSphere : object.geometry?.boundingSphere
+  if (!sphere) return true
+  _occluderSphere.copy(sphere).applyMatrix4(object.matrixWorld)
+  if (!view.frustum.intersectsSphere(_occluderSphere)) return false
+  const depth = _occluderOffset.subVectors(_occluderSphere.center, view.origin).dot(view.forward)
+  return depth - _occluderSphere.radius <= view.maxDepth
 }
 
 /** 能挡住炮弹视线的世界几何：不透明、写深度，且不是植被（树丛不挡弹）。 */
@@ -167,6 +223,13 @@ export function createArmorHighlight({ renderer, assetProvider }) {
   const identity = new THREE.Matrix4()
   const clipNormal = new THREE.Vector3(0, 1, 0)
   const clipPoint = new THREE.Vector3()
+  const armorBox = new THREE.Box3()
+  const armorSphere = new THREE.Sphere()
+  const scissor = new THREE.Vector4()
+  const savedScissor = new THREE.Vector4()
+  const occluderView = {
+    frustum: new THREE.Frustum(), origin: new THREE.Vector3(), forward: new THREE.Vector3(), maxDepth: 0,
+  }
 
   function loadTemplate(tankId, url) {
     if (templates.has(tankId)) return templates.get(tankId)
@@ -309,19 +372,41 @@ export function createArmorHighlight({ renderer, assetProvider }) {
     })
   }
 
+  /** 目标 armor 的世界包围盒（逐块按本帧姿态，炮塔转动后仍贴合）。 */
+  function armorBounds(target) {
+    armorBox.makeEmpty()
+    for (const clone of target.clones) {
+      if (!clone.geometry.boundingSphere) clone.geometry.computeBoundingSphere()
+      armorSphere.copy(clone.geometry.boundingSphere).applyMatrix4(clone.matrix)
+      armorBox.expandByPoint(world.copy(armorSphere.center).addScalar(armorSphere.radius))
+      armorBox.expandByPoint(world.copy(armorSphere.center).subScalar(armorSphere.radius))
+    }
+    return armorBox
+  }
+
+  /** NDC 矩形 → 绘制缓冲像素（外扩后钳到缓冲内）。 */
+  function scissorRect(rect) {
+    const left = Math.max(Math.floor((rect.x0 + 1) / 2 * size.x) - SCISSOR_MARGIN_PX, 0)
+    const bottom = Math.max(Math.floor((rect.y0 + 1) / 2 * size.y) - SCISSOR_MARGIN_PX, 0)
+    const right = Math.min(Math.ceil((rect.x1 + 1) / 2 * size.x) + SCISSOR_MARGIN_PX, size.x)
+    const top = Math.min(Math.ceil((rect.y1 + 1) / 2 * size.y) + SCISSOR_MARGIN_PX, size.y)
+    return scissor.set(left, bottom, right - left, top - bottom)
+  }
+
   /** 目标整棵子树不进遮挡集：否则目标车模自己挡住装甲。 */
-  function markOccluders(scene, camera, vehicle) {
+  function markOccluders(scene, camera, vehicle, view) {
     scene.traverseVisible((object) => {
       if (!object.isMesh) return
-      if (object.layers.test(camera.layers) && isSolidOccluder(object)) object.layers.enable(OCCLUDER_LAYER)
-      else object.layers.disable(OCCLUDER_LAYER)
+      if (object.layers.test(camera.layers) && isSolidOccluder(object) && canOccludeTarget(object, view)) {
+        object.layers.enable(OCCLUDER_LAYER)
+      } else object.layers.disable(OCCLUDER_LAYER)
     })
     vehicle.glb.traverse((node) => node.layers.disable(OCCLUDER_LAYER))
     vehicle.group.traverse((node) => node.layers.disable(OCCLUDER_LAYER))
   }
 
-  function drawOccluderDepth(scene, camera, vehicle) {
-    markOccluders(scene, camera, vehicle)
+  function drawOccluderDepth(scene, camera, vehicle, view) {
+    markOccluders(scene, camera, vehicle, view)
     const mask = camera.layers.mask, background = scene.background
     camera.layers.set(OCCLUDER_LAYER)
     scene.background = null
@@ -343,11 +428,29 @@ export function createArmorHighlight({ renderer, assetProvider }) {
     if (!target) return
     ensureTargets()
     syncPose(target, vehicle)
+    const bounds = armorBounds(target)
+    const rect = screenRect(bounds, camera)
+    if (!rect) return
     syncUniforms(target, camera, frame)
     bindBuffers(target, camera)
 
+    // 所有叠加 pass 只碰目标的屏幕矩形；遮挡集只留能挡住它的物体，主渲染的画面不受影响
+    cropFrustum(camera, rect, occluderView.frustum)
+    occluderView.origin.copy(camera.position)
+    camera.getWorldDirection(occluderView.forward)
+    bounds.getBoundingSphere(armorSphere)
+    occluderView.maxDepth = world.subVectors(armorSphere.center, camera.position).dot(occluderView.forward)
+      + armorSphere.radius
+    scissorRect(rect)
+    for (const rt of [stateRT, spacedRT]) {
+      rt.scissor.copy(scissor)
+      rt.scissorTest = true
+    }
+
     const autoClear = renderer.autoClear, clipping = renderer.localClippingEnabled
     const shadows = renderer.shadowMap.autoUpdate, clearAlpha = renderer.getClearAlpha()
+    const scissorTest = renderer.getScissorTest()
+    renderer.getScissor(savedScissor)
     renderer.getClearColor(clearColor)
     renderer.localClippingEnabled = true
     renderer.shadowMap.autoUpdate = false
@@ -358,10 +461,16 @@ export function createArmorHighlight({ renderer, assetProvider }) {
     renderer.setRenderTarget(spacedRT)
     renderer.render(target.thickness, camera)
     renderer.setRenderTarget(null)
+    // 默认帧缓冲的 setScissor 按 CSS 像素，内部再乘 pixelRatio
+    const pixelRatio = renderer.getPixelRatio()
+    renderer.setScissor(scissor.x / pixelRatio, scissor.y / pixelRatio, scissor.z / pixelRatio, scissor.w / pixelRatio)
+    renderer.setScissorTest(true)
     renderer.autoClear = false
     renderer.clearDepth()
-    drawOccluderDepth(scene, camera, vehicle)
+    drawOccluderDepth(scene, camera, vehicle, occluderView)
     renderer.render(target.color, camera)
+    renderer.setScissorTest(scissorTest)
+    renderer.setScissor(savedScissor)
     renderer.autoClear = autoClear
     renderer.localClippingEnabled = clipping
     renderer.shadowMap.autoUpdate = shadows

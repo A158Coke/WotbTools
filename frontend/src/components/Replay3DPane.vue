@@ -1101,8 +1101,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
           />
           <!-- 渲染性能偏好与画质一同定型（同为此处的一次性选择；渲染上下文级
                参数，切换会重载会话——放在待开播阶段让「开始」总是按所选偏好起播） -->
-          <details class="pre-start-advanced">
-            <summary>{{ t('agentReplay.performance_options') }}</summary>
+          <div class="pre-start-advanced" role="group" :aria-label="t('agentReplay.performance_options')" data-test="replay3d-perf-options">
             <div class="pre-start-perf">
             <label class="toggle" :title="t('agentReplay.perf_logdepth_hint')">
               <input type="checkbox" data-testid="perf-logdepth" :checked="store.logdepth" @change="sceneApi.setLogdepth($event.target.checked)"> {{ t('agentReplay.perf_logdepth') }}
@@ -1114,7 +1113,8 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
               <input type="checkbox" data-testid="perf-armor-highlight" :checked="store.armorHighlight" @change="sceneApi.setArmorHighlight($event.target.checked)"> {{ t('agentReplay.perf_armor_highlight') }}
             </label>
             </div>
-          </details>
+            <p class="pre-start-perf-note">{{ t('agentReplay.perf_load_note') }}</p>
+          </div>
           <AppButton variant="primary" data-test="replay3d-start" @click="startReplay">{{ t('agentReplay.start') }}</AppButton>
         </div>
       </div>
@@ -1277,7 +1277,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 }
 .pre-start-card {
   display: grid; justify-items: center; gap: var(--space-3);
-  max-inline-size: min(100%, 420px);
+  max-inline-size: min(100%, 560px);
   padding: var(--space-4) var(--space-5);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-lg);
@@ -1286,14 +1286,13 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
   text-align: center;
 }
 .pre-start-card h3 { margin: 0; font: var(--type-h3); }
-/* 性能偏好行：两开关并排（窄卡内自动换行），说明走 title tooltip */
+/* 性能偏好常驻可见，说明走 title tooltip */
 .pre-start-advanced { inline-size: 100%; padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); text-align: start; }
-.pre-start-advanced summary { min-block-size: var(--control-h-md); display: list-item; align-content: center; color: var(--color-text-secondary); font: var(--type-caption); cursor: pointer; }
-.pre-start-advanced[open] summary { margin-block-end: var(--space-2); }
-.pre-start-advanced summary:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+/* 横排：卡片高度与单行一致，手机横屏（高约 390px）「开始」按钮才留在视口内 */
 .pre-start-perf {
-  display: grid; gap: var(--space-2);
+  display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3);
 }
+.pre-start-perf-note { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); }
 .pre-start-file { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); overflow-wrap: anywhere; }
 
 /* Persistent HUD appearance; row placement belongs to the shared workspace. */

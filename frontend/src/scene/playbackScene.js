@@ -331,7 +331,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 不存在这两个开关（已移至待开播卡片）。
   let LOGDEPTH = prefOf('pb_logdepth', 'logdepth', false);
   let DYNRES = prefOf('pb_dynres', 'dynres', true);
-  let ARMOR_HIGHLIGHT = prefOf('pb_armor_highlight', 'armorhl', false);
+  let ARMOR_HIGHLIGHT = prefOf('pb_armor_highlight', 'armorhl', true);
   const persistPref = (key, on) => { try { localStorage.setItem(key, on ? '1' : '0'); } catch (_) {} };
 
   // ---------- 画质分档 ----------
@@ -4662,9 +4662,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let armorHighlight = null;
   const _armorAimPoint = new THREE.Vector3();
   const _armorAimDir = new THREE.Vector3();
-  /** 主渲染之后的叠加 pass：只有录像者开镜才可能运行，其余路径没有任何额外 render。 */
+  /**
+   * 主渲染之后的叠加 pass：只有录像者开镜才可能运行，其余路径没有任何额外 render。
+   * 进入录像者的过渡期相机还没到炮位，距离衰减和入射角都不对，不着色。
+   */
   function renderArmorHighlight() {
-    if (!ARMOR_HIGHLIGHT || CAM !== 'recorder' || !scopedHiddenEid) return;
+    if (!ARMOR_HIGHLIGHT || CAM !== 'recorder' || !scopedHiddenEid || cameraBlend) return;
     const author = recorderVehicle();
     if (!author?.tankData) return;
     const friendlyTeam = DATA.meta.friendly_team;

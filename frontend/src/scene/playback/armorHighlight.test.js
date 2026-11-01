@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest'
 import * as THREE from 'three'
 import {
   aimedVehicle, armorEquipmentCoeffs, armorHighlightBlock, armorPosePart, armorWorldMatrix,
-  authorShellAt, isSolidOccluder, markPickBoundsStale, mountedShell, reticleAimDirection,
+  authorShellAt, canOccludeTarget, cropFrustum, isSolidOccluder, markPickBoundsStale, mountedShell,
+  reticleAimDirection, screenRect,
 } from './armorHighlight.js'
 
 const AP = { type: 'ap', penetration: 200, caliber: 100 }
@@ -129,10 +130,91 @@ describe('aimedVehicle', () => {
     expect(aimedVehicle(newEdge, forward, [v])).toBe(v)
   })
 
+  it('离视线远的车不重算 bounds', () => {
+    const v = at(40, 50)
+    const geometry = v.glb.children[0].geometry
+    markPickBoundsStale(geometry)
+    expect(aimedVehicle(origin, forward, [v])).toBeNull()
+    expect(geometry.userData.pickBoundsStale).toBe(true)
+  })
+
   it('隐藏的网格不参与命中', () => {
     const v = at(0, 50)
     v.glb.children[0].visible = false
     expect(aimedVehicle(origin, forward, [v])).toBeNull()
+  })
+})
+
+describe('遮挡 pass 裁剪', () => {
+  const camera = (fov = 30) => {
+    const c = new THREE.PerspectiveCamera(fov, 2, 0.5, 2000)
+    c.lookAt(0, 0, -1)
+    c.updateMatrixWorld(true)
+    c.updateProjectionMatrix()
+    return c
+  }
+  const boxAt = (x, y, z, half = 2) => new THREE.Box3(
+    new THREE.Vector3(x - half, y - half, z - half), new THREE.Vector3(x + half, y + half, z + half),
+  )
+  const mesh = (x, y, z, radius = 1) => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(radius))
+    m.position.set(x, y, z)
+    m.geometry.computeBoundingSphere()
+    m.updateMatrixWorld(true)
+    return m
+  }
+  const viewOf = (c, rect, maxDepth) => ({
+    frustum: cropFrustum(c, rect, new THREE.Frustum()),
+    origin: c.position.clone(), forward: c.getWorldDirection(new THREE.Vector3()), maxDepth,
+  })
+
+  it('screenRect 包住目标，只占屏幕一小块', () => {
+    const c = camera()
+    const rect = screenRect(boxAt(0, 0, -100), c)
+    expect(rect.x0).toBeLessThan(0)
+    expect(rect.x1).toBeGreaterThan(0)
+    expect(rect.x1 - rect.x0).toBeLessThan(0.3)
+  })
+
+  it('screenRect：穿过近裁剪面退回整屏，视口外返回 null', () => {
+    const c = camera()
+    expect(screenRect(boxAt(0, 0, -1), c)).toEqual({ x0: -1, y0: -1, x1: 1, y1: 1 })
+    expect(screenRect(boxAt(500, 0, -100), c)).toBeNull()
+  })
+
+  it('挡在目标与相机之间的物体保留，矩形外和目标之后的剔除', () => {
+    const c = camera()
+    const rect = screenRect(boxAt(0, 0, -100), c)
+    const view = viewOf(c, rect, 102)
+    expect(canOccludeTarget(mesh(0, 0, -50), view)).toBe(true)
+    expect(canOccludeTarget(mesh(40, 0, -50), view)).toBe(false)
+    expect(canOccludeTarget(mesh(0, 0, -300), view)).toBe(false)
+  })
+
+  it('物体只有边缘伸进矩形或压在目标深度上也保留', () => {
+    const c = camera()
+    const rect = screenRect(boxAt(0, 0, -100), c)
+    const view = viewOf(c, rect, 102)
+    expect(canOccludeTarget(mesh(0, 0, -105, 5), view)).toBe(true)
+    expect(canOccludeTarget(mesh(6, 0, -50, 5), view)).toBe(true)
+  })
+
+  it('无法判断范围的物体按能遮挡处理', () => {
+    const c = camera()
+    const view = viewOf(c, screenRect(boxAt(0, 0, -100), c), 102)
+    expect(canOccludeTarget({ frustumCulled: false }, view)).toBe(true)
+    expect(canOccludeTarget({ geometry: {} }, view)).toBe(true)
+  })
+
+  it('InstancedMesh 不拿单实例几何的包围球判断整片实例', () => {
+    const c = camera()
+    const view = viewOf(c, screenRect(boxAt(0, 0, -100), c), 102)
+    const far = mesh(40, 0, -50)
+    const forest = new THREE.InstancedMesh(far.geometry, far.material, 2)
+    forest.position.copy(far.position)
+    forest.updateMatrixWorld(true)
+    expect(forest.boundingSphere).toBeNull()
+    expect(canOccludeTarget(forest, view)).toBe(true)
   })
 })
 

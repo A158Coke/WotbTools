@@ -489,6 +489,12 @@ describe('Replay3DPane', () => {
     // 待开播：画质尚未定型，所以既不解析也不拉资产
     expect(playback.api.loadData).not.toHaveBeenCalled()
     expect(wrapper.get('[data-test="replay3d-pending"]').text()).toContain('battle.wotbreplay')
+    // 性能选项不折叠：三个开关不用展开就能看到
+    const perf = wrapper.get('[data-test="replay3d-perf-options"]')
+    expect(perf.element.closest('details')).toBeNull()
+    for (const id of ['perf-logdepth', 'perf-dynres', 'perf-armor-highlight']) {
+      expect(perf.find(`[data-testid="${id}"]`).exists()).toBe(true)
+    }
     await start(wrapper)
     expect(playback.api.loadData).toHaveBeenCalledWith(expect.objectContaining({ kind: 'local', file }))
     expect(wrapper.find('[data-test="replay3d-pending"]').exists()).toBe(false)

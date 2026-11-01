@@ -108,9 +108,9 @@ describe('场景源码护栏：评审 P0 修复的接线锁定', () => {
 describe('Sniper 穿深着色接线', () => {
   const source = readFileSync(resolve(__dirname, 'playbackScene.js'), 'utf8')
 
-  it('叠加 pass 排在主渲染之后，且只有录像者开镜才可能运行', () => {
+  it('叠加 pass 排在主渲染之后，只有录像者开镜且过渡结束才运行', () => {
     expect(source).toMatch(/renderer\.render\(scene, camera\);\s+renderArmorHighlight\(\);/)
-    expect(source).toContain("if (!ARMOR_HIGHLIGHT || CAM !== 'recorder' || !scopedHiddenEid) return;")
+    expect(source).toContain("if (!ARMOR_HIGHLIGHT || CAM !== 'recorder' || !scopedHiddenEid || cameraBlend) return;")
   })
 
   it('选目标与准星同源（Type39 瞄准点），不取相机正前方', () => {
@@ -128,8 +128,8 @@ describe('Sniper 穿深着色接线', () => {
     expect(body).not.toMatch(/computeBounding|bounding(Box|Sphere) = null/)
   })
 
-  it('着色默认关闭：帧时间基线之前不进入默认路径', () => {
-    expect(source).toContain("prefOf('pb_armor_highlight', 'armorhl', false)")
+  it('着色默认开启，?armorhl=0 可关闭', () => {
+    expect(source).toContain("prefOf('pb_armor_highlight', 'armorhl', true)")
   })
 
   it('配置解析不走带回退的 resolveMountedConfig', () => {
