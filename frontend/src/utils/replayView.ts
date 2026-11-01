@@ -6,6 +6,6 @@
  * 展示（`league.playerSummaries.length`），不得混入基础汇总人数——0 场可评分
  * 只意味着 League Summary 没数据，不意味着 Replay 汇总没数据。
  */
-export function replayAggregatePlayerCount(response) {
+export function replayAggregatePlayerCount(response: { aggregate?: unknown } | null | undefined) {
   return Array.isArray(response?.aggregate) ? response.aggregate.length : 0
 }

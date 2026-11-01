@@ -18,6 +18,18 @@
 // supremacy_bases/points），版本门禁形同虚设。
 import { loadAgentWasmModule, validateAgentPlayback, validateAgentRecorderCamera } from '../api/agent-replay-facets.js'
 import { buildPitchLimits } from './pitchLimits.js'
+import type { AgentPlaybackFacet } from '../api/agent-replay-facets.js'
+import type { PlaybackParseKind } from './playbackParse.worker.js'
+
+type ReplayFile = Blob & { name?: string; lastModified?: number }
+type ParseReply = { id?: number; json?: string; error?: string }
+interface ParsePending {
+  resolve: (json: string) => void
+  reject: (error: unknown) => void
+  signal?: AbortSignal
+  watchdog: ReturnType<typeof setTimeout> | null
+  onAbort: (() => void) | null
+}
 
 /**
  * 本地通道（唯一通道）：File/Blob → 浏览器文件接口 → WASM parsePlayback →
@@ -25,11 +37,11 @@ import { buildPitchLimits } from './pitchLimits.js'
  */
 // tank_id → 显示名（静态 tank_cache.json；资产源未配置/缺失 → 空表，label 走
 // tank_{id} 兜底）。解析/身份面保持 asset-independent——此处仅补**展示名**。
-let tankNamesPromise = null
+let tankNamesPromise: Promise<Map<number, string>> | null = null
 function tankNamesStatic() {
   if (!tankNamesPromise) {
-    tankNamesPromise = assetProvider.json('/data/tank_cache.json').then((cache) => {
-      const out = new Map()
+    tankNamesPromise = assetProvider.json('/data/tank_cache.json').then((cache: Record<string, { name?: string } | null> | null) => {
+      const out = new Map<number, string>()
       for (const [id, info] of Object.entries(cache || {})) {
         if (info && info.name) out.set(Number(id), info.name)
       }
@@ -54,10 +66,10 @@ function tankNamesStatic() {
 // - 每个请求可 **abort**（清空 / 换文件 / 销毁传入 signal）：被撤下的解析立即以
 //   AbortError 结束、若仍在 Worker 上则整体 terminate 让出队列——旧解析不得占位。
 const PLAYBACK_JSON_CACHE_MAX = 3;   // 每条 JSON 约 2–3MB，故只留最近 3 场
-const playbackJsonCache = new Map();
-let parseWorker = null;
+const playbackJsonCache = new Map<string, string>();
+let parseWorker: Worker | null = null;
 let parseSeq = 0;
-const parsePending = new Map();
+const parsePending = new Map<number, ParsePending>();
 /** 单场解析毫秒级、巨型文件秒级：120s 只兜「Worker 不回包也不报错」的真异常。 */
 const PARSE_WATCHDOG_MS = 120_000;
 
@@ -69,12 +81,12 @@ function playbackParseAbortError() {
 /** 整体放弃当前 Worker：在途 / 排队请求全部按给定错误结算（清看门狗、摘 abort 监听），
  *  Worker terminate 掉，下次请求自动重建。迟到回包走 onmessage 的 `pending 不在表内`
  *  分支被忽略，不会产生未处理拒绝。 */
-function abandonParseWorker(error) {
+function abandonParseWorker(error: unknown) {
   const pendings = [...parsePending.values()];
   parsePending.clear();
   for (const pending of pendings) {
     if (pending.watchdog) clearTimeout(pending.watchdog);
-    pending.signal?.removeEventListener('abort', pending.onAbort);
+    pending.signal?.removeEventListener('abort', pending.onAbort!);
     pending.reject(error);
   }
   if (parseWorker) {
@@ -83,18 +95,18 @@ function abandonParseWorker(error) {
   }
 }
 
-function wireParseWorker(worker) {
+function wireParseWorker(worker: Worker) {
   // 返回值 = **本回包是否被认领**（true=结算了在途请求，false=迟到回包被忽略）。
   // 真实 Worker 忽略返回值；这个契约存在的意义是让注入的假 Worker（unit / browser
   // 回归）能直接观察「迟到回包无人认领」，而不是只能间接推断。
-  worker.onmessage = (event) => {
-    const { id, json, error } = event.data || {};
-    const pending = parsePending.get(id);
+  worker.onmessage = (event: MessageEvent<ParseReply | null>) => {
+    const { id, json, error }: ParseReply = event.data || {};
+    const pending = parsePending.get(id as number);
     if (!pending) return false;   // 迟到回包（已被 abort / 看门狗结算）：无人认领，忽略
-    parsePending.delete(id);
+    parsePending.delete(id as number);
     if (pending.watchdog) clearTimeout(pending.watchdog);
-    pending.signal?.removeEventListener('abort', pending.onAbort);
-    if (error) pending.reject(new Error(error)); else pending.resolve(json);
+    pending.signal?.removeEventListener('abort', pending.onAbort!);
+    if (error) pending.reject(new Error(error)); else pending.resolve(json as string);
     return true;
   };
   // 崩溃/初始化失败：在飞请求全部失败、worker 置空待下次重建（不回退主线程——
@@ -107,8 +119,8 @@ function wireParseWorker(worker) {
 /** 仅测试用：注入假 Worker（happy-dom 造不出真 Worker；注入的 Worker 会走与真实
  *  Worker 完全相同的 onmessage / onerror 装配，看门狗 / 迟到回包语义由此验证）。
  *  传 null 复位为真实创建路径。 */
-let testParseWorker = null;
-export function __setParseWorkerForTest(worker) {
+let testParseWorker: Worker | (() => Worker) | null = null;
+export function __setParseWorkerForTest(worker: Worker | (() => Worker) | null) {
   testParseWorker = worker;
 }
 
@@ -137,20 +149,20 @@ function parseWorkerInstance() {
  * `bytes.buffer` 会把无关字节一起交给消费者（Worker 解析 / 内容摘要）。整段时零拷贝复用，
  * 切片时才复制这一段——Worker 传输与 SHA-256 共用同一份区间判定，避免两套逻辑漂移。
  */
-export function exactArrayBuffer(bytes) {
+export function exactArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   if (!(bytes instanceof Uint8Array)) {
     throw new TypeError('exact replay bytes expected (Uint8Array)')
   }
-  return bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
+  return (bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
     ? bytes.buffer
-    : bytes.slice().buffer;
+    : bytes.slice().buffer) as ArrayBuffer;
 }
 
 /**
  * Worker 传输载荷：Worker 契约是 ArrayBuffer（`playbackParse.worker.ts` 自己 `new Uint8Array`）。
  * 不转移所有权（`transfer`）：Worker 失败时主线程还要用同一份字节回退解析。
  */
-export function playbackParsePayload(bytes) {
+export function playbackParsePayload(bytes: Uint8Array) {
   return exactArrayBuffer(bytes);
 }
 
@@ -164,7 +176,7 @@ export function playbackParsePayload(bytes) {
  * WebCrypto 不可用（非安全上下文等）时返回 `null`，调用方必须**完全不使用缓存**：
  * cache miss / 不缓存只是性能退化，错误 cache hit 是 correctness bug——绝不回退到采样 hash。
  */
-export async function replayContentDigest(bytes) {
+export async function replayContentDigest(bytes: Uint8Array) {
   const subtle = globalThis.crypto?.subtle;
   if (!subtle) return null;
   const digest = await subtle.digest('SHA-256', exactArrayBuffer(bytes));
@@ -174,7 +186,7 @@ export async function replayContentDigest(bytes) {
 /** 缓存键：metadata（文件名 / 字节数 / mtime，便于可读与人工核对）+ **完整内容 SHA-256**。
  *  identity 只有摘要：metadata 相同不会命中，内容相同才会命中。
  *  WebCrypto 不可用（摘要为 null）时返回 null → 调用方本次不读也不写缓存。 */
-async function fileCacheKey(fileObject, bytes) {
+async function fileCacheKey(fileObject: ReplayFile, bytes: Uint8Array) {
   const digest = await replayContentDigest(bytes);
   if (!digest) return null;
   return [fileObject && fileObject.name ? fileObject.name : '',
@@ -185,7 +197,7 @@ async function fileCacheKey(fileObject, bytes) {
 /** 仅测试用：清空解析结果缓存（跨用例替换 WASM 桩时，同一份字节会产出不同结果） */
 export function __resetPlaybackJsonCacheForTest() { playbackJsonCache.clear(); }
 
-export async function loadFromLocalFile(fileObject, signal) {
+export async function loadFromLocalFile(fileObject: ReplayFile, signal?: AbortSignal) {
   if (signal?.aborted) throw playbackParseAbortError()
   const arrayBuffer = await fileObject.arrayBuffer()
   // 进入摘要 / Worker / 回退解析前统一 bytes 类型：三条路径都只认 Uint8Array
@@ -200,7 +212,7 @@ export async function loadFromLocalFile(fileObject, signal) {
   if (signal?.aborted) throw playbackParseAbortError()
   const cachedJson = cacheKey === null ? undefined : playbackJsonCache.get(cacheKey)
   if (cachedJson !== undefined) {
-    playbackJsonCache.delete(cacheKey); playbackJsonCache.set(cacheKey, cachedJson);   // LRU 触碰
+    playbackJsonCache.delete(cacheKey!); playbackJsonCache.set(cacheKey!, cachedJson);   // LRU 触碰
     return enrichPlayback(validateAgentPlayback(JSON.parse(cachedJson)))
   }
   let json = await parsePlaybackJsonOffThread(bytes, signal)
@@ -217,26 +229,31 @@ export async function loadFromLocalFile(fileObject, signal) {
   } catch (err) {
     // 会话取消必须原样上抛（调用方按 AbortError 判定归属）——不得吞成"保持首遍结果"。
     // 其余失败（锚定构建/重解析异常）：保持首遍结果（gun_pitch 兜底仍可用）。
-    if (err?.name === 'AbortError') throw err
+    if ((err as Error | null)?.name === 'AbortError') throw err
   }
   if (cacheKey !== null) {
     playbackJsonCache.set(cacheKey, json)
     if (playbackJsonCache.size > PLAYBACK_JSON_CACHE_MAX) {
-      playbackJsonCache.delete(playbackJsonCache.keys().next().value)   // 最旧一条
+      playbackJsonCache.delete(playbackJsonCache.keys().next().value as string)   // 最旧一条
     }
   }
   // 契约 v2 门禁：与 parseAgentPlaybackFromBytes 同一校验器（错版/陈旧 WASM
   // 在此抛出，而不是把缺字段的 v1 数据交给渲染层）
   return enrichPlayback(validateAgentPlayback(JSON.parse(json)))
 }
-async function parsePlaybackJsonOffThread(bytes, signal, limitsJson, kind = 'playback') {
+async function parsePlaybackJsonOffThread(
+  bytes: Uint8Array,
+  signal?: AbortSignal,
+  limitsJson?: string,
+  kind: PlaybackParseKind = 'playback',
+): Promise<string> {
   if (signal?.aborted) throw playbackParseAbortError()
   const worker = parseWorkerInstance();
   if (worker) {
     try {
-      return await new Promise((resolve, reject) => {
+      return await new Promise<string>((resolve, reject) => {
         const id = ++parseSeq;
-        const pending = { resolve, reject, signal, watchdog: null, onAbort: null };
+        const pending: ParsePending = { resolve, reject, signal, watchdog: null, onAbort: null };
         parsePending.set(id, pending);
         // 看门狗：Worker 不回包也不报错（装载链网络停滞一类）时不能无限「解析中」。
         // 超时判定 Worker 不可信 → 整体 terminate，在途 / 排队请求一起失败（可重试，
@@ -283,7 +300,7 @@ async function parsePlaybackJsonOffThread(bytes, signal, limitsJson, kind = 'pla
  * 录像者相机状态：与 Playback 分开解析，只有 3D 需要它。走同一 Worker 与 session
  * 取消语义；返回 `null` 表示上游结构校验未通过。
  */
-export async function loadRecorderCameraFromFile(fileObject, signal) {
+export async function loadRecorderCameraFromFile(fileObject: ReplayFile, signal?: AbortSignal) {
   if (signal?.aborted) throw playbackParseAbortError()
   const bytes = new Uint8Array(await fileObject.arrayBuffer())
   const json = await parsePlaybackJsonOffThread(bytes, signal, undefined, 'recorder-camera')
@@ -291,7 +308,7 @@ export async function loadRecorderCameraFromFile(fileObject, signal) {
 }
 
 /** 展示名富化（本地通道与缓存命中路径共用） */
-async function enrichPlayback(data) {
+async function enrichPlayback(data: AgentPlaybackFacet) {
   // 展示名富化：客户端 WASM 无 tank_names（数据边界），按静态资产补齐；
   // 仅补空值，不覆盖上游已有名。失败不阻断回放（兜底显示 tank_{id}）
   try {
@@ -312,7 +329,7 @@ async function enrichPlayback(data) {
  * session 所有权：清空 / 换文件 / 销毁时由调用方 abort，被撤下的解析立即以
  * AbortError 结束并让出 Worker 队列，不再无限排队。
  */
-export async function loadPlaybackData(source) {
+export async function loadPlaybackData(source: { kind?: string; file?: ReplayFile; signal?: AbortSignal } | null | undefined) {
   if (source && source.kind === 'local' && source.file) {
     return loadFromLocalFile(source.file, source.signal)
   }
@@ -323,9 +340,9 @@ export async function loadPlaybackData(source) {
 // 一律经 assetProvider（消费方不拼接任何基础设施域名）；无同源 /api/playback/* 回退（client-only）。
 import { assetProvider } from './assetProvider.js'
 
-let mapIndexPromise = null
+let mapIndexPromise: Promise<{ maps?: Record<string, { key: string }> } | null> | null = null
 /** 已点名告警过的索引 miss（按 id 去重）：同一张图反复加载不刷屏 */
-const mapIndexMissWarned = new Set()
+const mapIndexMissWarned = new Set<string>()
 
 /** 一次性装载资产源索引（数字 id → key）；未配置 origin 时为空。
  *  **失败不缓存**：index.json 一次瞬时失败（CDN 抖动 / 5xx / 超时）不得把整个页面会话
@@ -336,7 +353,7 @@ const mapIndexMissWarned = new Set()
 export function loadMapIndex() {
   if (!assetProvider.configured()) return Promise.resolve(null)
   if (!mapIndexPromise) {
-    mapIndexPromise = assetProvider.json('/index.json').catch((e) => {
+    mapIndexPromise = assetProvider.json('/index.json').catch((e: unknown) => {
       mapIndexPromise = null
       console.warn('地图资产索引加载失败（本场地图回退占位网格；下次加载重试）:', e)
       return null
@@ -349,7 +366,7 @@ export function loadMapIndex() {
  *  索引 miss（origin 已配置、索引也加载成功，但这张图的 id 不在索引里）是"这张图永远
  *  出不了地图"的一类（资产包过期 / 新图未入库），且 UI 上与"资产源没配 / 索引没拉到"
  *  无法区分——console 里点名 id。索引本身加载失败的情况由 loadMapIndex 的告警覆盖。 */
-export async function resolveMapKey(mapq) {
+export async function resolveMapKey(mapq: string) {
   const id = new URLSearchParams(mapq).get('id')
   const idx = assetProvider.configured() ? await loadMapIndex() : null
   const hit = idx && idx.maps && idx.maps[String(id)]
@@ -371,7 +388,7 @@ export function __resetMapIndexForTest() {
  * 缩略图——帧宽约 620m > ±300 契约框，**不进** 2D 坐标系（那仍是 ground.webp 的职责）。
  * 资产包每张图都有；Android 离线门控可抛（NETWORK_ERROR），调用方兜底。
  */
-export function mapCoverUrl(mapKey) {
+export function mapCoverUrl(mapKey: string | null | undefined) {
   if (!mapKey || !assetProvider.configured()) return null
   return assetProvider.url(`/cover/${mapKey}.webp`)
 }
@@ -386,12 +403,12 @@ export function mapCoverUrl(mapKey) {
  * `/map2d/<key>.webp` 是 mutable URL：上游重裁/改框后仅凭"能加载"就按 ±300 渲染
  * 会整体错位且无报错。
  */
-export function map2dCanonicalUrl(mapKey) {
+export function map2dCanonicalUrl(mapKey: string | null | undefined) {
   if (!mapKey || !assetProvider.configured()) return null
   return assetProvider.url(`/map2d/${mapKey}.webp`)
 }
 
-let map2dIndexPromise = null
+let map2dIndexPromise: ReturnType<typeof assetProvider.json> | null = null
 
 /** 资产包 `map2d/index.json`（整页缓存；失败置空下轮重试，与 loadMapIndex 同模式）。 */
 export function loadMap2dIndex() {
@@ -411,7 +428,7 @@ export function __resetMap2dIndexForTest() {
   map2dIndexPromise = null
 }
 
-async function sha256Hex(buffer) {
+async function sha256Hex(buffer: ArrayBuffer) {
   if (typeof crypto === 'undefined' || !crypto.subtle) {
     throw new Error('crypto.subtle 不可用（需要安全上下文）')
   }
@@ -427,7 +444,11 @@ async function sha256Hex(buffer) {
  * `expectedBounds`：注册表世界框（`mapImages[key].coordinateBounds` 或 ±300 派生）——
  * 索引声明必须与之逐值一致（几何契约的比对面）。
  */
-export async function resolveMap2dBasemap(mapKey, expectedBounds, fetchImpl = null) {
+export async function resolveMap2dBasemap(
+  mapKey: string | null | undefined,
+  expectedBounds: unknown,
+  fetchImpl: ((url: string) => Promise<Response>) | null = null,
+) {
   const key = String(mapKey || '')
   if (!key) return { error: 'entry' }
   const url = map2dCanonicalUrl(key)
@@ -439,20 +460,20 @@ export async function resolveMap2dBasemap(mapKey, expectedBounds, fetchImpl = nu
   const entry = index.maps && index.maps[String(key)]
   if (!entry) return { error: 'entry' }
   if (!geometryMatches(entry, expectedBounds)) return { error: 'geometry' }
-  const doFetch = fetchImpl || ((u) => assetProvider.fetch(u))
-  let buffer
+  const doFetch = fetchImpl || ((u: string) => assetProvider.fetch(u))
+  let buffer: ArrayBuffer
   try {
     const resp = await doFetch(url)
     if (!resp || !resp.ok) return { error: 'integrity', detail: `http ${resp && resp.status}` }
     buffer = await resp.arrayBuffer()
   } catch (e) {
-    return { error: 'integrity', detail: String(e && e.message || e) }
+    return { error: 'integrity', detail: String(e && (e as Error).message || e) }
   }
   let sha
   try {
     sha = await sha256Hex(buffer)
   } catch (e) {
-    return { error: 'integrity', detail: String(e && e.message || e) }
+    return { error: 'integrity', detail: String(e && (e as Error).message || e) }
   }
   if (sha !== entry.sha256) return { error: 'integrity', detail: 'sha256 mismatch' }
   return {
@@ -473,9 +494,9 @@ export async function resolveMap2dBasemap(mapKey, expectedBounds, fetchImpl = nu
  * （客户端 HUD 小地图 `minimap` res=mini **不再被消费**：它覆盖约 620 m > ±300 契约框，见
  *  playbackScene.loadMapImage 的说明与 Agent 仓 docs/game-data-sources.md §5.7）
  */
-export function mapStaticUrl(kind, layer, mapKey) {
+export function mapStaticUrl(kind: string, layer: string | null | undefined, mapKey: string | null | undefined) {
   if (!mapKey || !assetProvider.configured()) return null
-  const f = (name) => assetProvider.url(`/map/${mapKey}/${name}`)
+  const f = (name: string) => assetProvider.url(`/map/${mapKey}/${name}`)
   switch (kind) {
     case 'map': return f('ground.webp')
     case 'terrain': return f('terrain.u16.bin')

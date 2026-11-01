@@ -82,8 +82,8 @@ validate_native_sources(base := json.loads((root / "contracts/android-native-bri
 ])
 validate_frontend_sources(base, [
     str(root / "frontend/src/platform/nativeBridgeContract.js"),
-    str(root / "frontend/src/platform/androidAuthProvider.js"),
-    str(root / "frontend/src/platform/connectivity.js"),
+    str(root / "frontend/src/platform/androidAuthProvider.ts"),
+    str(root / "frontend/src/platform/connectivity.ts"),
 ])
 auth_methods, auth_capabilities, auth_globals = auth_surface(base)
 assert sorted(auth_methods) == ["authGetAccessToken", "authGetState", "authLogin", "authLogout"], auth_methods

@@ -109,7 +109,7 @@ Agent 深链不再有 admin route gate：匿名个人回放的 3D / shots 保留
 仓库代码**：测试者在本机 checkout 上自备一个 dev-gated 登录桩，只存在于本机、**随任何
 PR / commit 一律排除**（提交纪律见文末）。
 
-**做法（本机自备）**：在 `frontend/src/composables/useAuth.js` 加一个 dev-gated 登录桩——
+**做法（本机自备）**：在 `frontend/src/composables/useAuth.ts` 加一个 dev-gated 登录桩——
 `resolveAuthProvider()` 顶部命中时返回本机桩 provider（替代 Keycloak）：`authenticated = true`、
 角色恰为 `['wotbtools-user']`（普通用户）、`sub` 固定 `local-dev`。URL 带 `?localuser=1`
 即挂载，个人回放的 3D / shots 门禁（`ReplayWorkspace.canUseDemoCapabilities`）随之解锁。
@@ -117,7 +117,7 @@ PR / commit 一律排除**（提交纪律见文末）。
 gitignored、不入库）：
 
 ```js
-// useAuth.js —— dev 构建 + URL ?localuser 时以本机桩替代 Keycloak（本机自备，不入库）
+// useAuth.ts —— dev 构建 + URL ?localuser 时以本机桩替代 Keycloak（本机自备，不入库）
 const DEV_LOCAL_USER = import.meta.env.DEV
   && typeof window !== 'undefined'
   && new URLSearchParams(window.location.search).has('localuser')
@@ -152,9 +152,9 @@ function createLocalDevAuthProvider() {
 **提交纪律（硬要求）**：登录桩与其回归用例**不得随任何 PR / commit 提交**。提交前自查：
 
 ```bash
-git diff --stat            # useAuth.js / useAuth.test.js 不应出现本机登录桩相关改动
+git diff --stat            # useAuth.ts / useAuth.test.js 不应出现本机登录桩相关改动
 # 或提交前直接还原（补丁在 Agent 仓 tmp_analysis/ 有留存，可随时重打）：
-git checkout -- frontend/src/composables/useAuth.js frontend/src/composables/useAuth.test.js
+git checkout -- frontend/src/composables/useAuth.ts frontend/src/composables/useAuth.test.js
 ```
 
 ## 5. 能力分层：本地能全用什么，什么要真角色
@@ -173,7 +173,7 @@ git checkout -- frontend/src/composables/useAuth.js frontend/src/composables/use
 
 角色只能在 **Keycloak Admin Console** 授予（本仓只 provision realm JSON，没有授予 UI）。前端
 Keycloak 配置是硬编码的生产（`auth.wotbtools.com` / realm `wotbtools` / client `wotbtools-web`，
-见 `src/platform/browserAuthProvider.js`），本机没有"本地 realm"开关。
+见 `src/platform/browserAuthProvider.ts`），本机没有"本地 realm"开关。
 
 ## 6. 自检探针（不看画面）
 

@@ -1,5 +1,5 @@
 /**
- * 3D 回放战斗特效（只服务 3D 场景；2D 回放与 `utils/battlePlayback.js` 的 2D 常量不受影响）。
+ * 3D 回放战斗特效（只服务 3D 场景；2D 回放与 `utils/battlePlayback.ts` 的 2D 常量不受影响）。
  *
  * 职责：击毁爆炸、开火、命中、残骸持续烟、曳光弹头与弹道光迹的外观，画质档位预算，
  * 以及这些特效的 GPU 资源（唯一 owner）。`playbackScene.js` 只负责"何时发生"（事件泵、

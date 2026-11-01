@@ -11,10 +11,12 @@ import { computed, ref } from 'vue'
  * 离线不是错误状态（计划 §0），因此这里刻意与 `useError`（danger tone 的全局错误弹窗）分开：
  * 走同一套 AppDialog 设计体系，但不带危险语义，也不允许各功能自己写 toast / modal。
  */
-const notice = ref(null)
+type ConnectivityNotice = { titleKey: string | null; messageKey: string | null; hintKey: string | null }
+
+const notice = ref<ConnectivityNotice | null>(null)
 
 /** 展示提示；入参是 `getFeatureAvailability()` 的结果（无 messageKey 时静默忽略）。 */
-export function showConnectivityNotice(availability) {
+export function showConnectivityNotice(availability: ConnectivityNotice | null | undefined) {
   if (!availability?.messageKey) return
   notice.value = {
     titleKey: availability.titleKey,

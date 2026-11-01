@@ -11,6 +11,11 @@ export function shouldResetShellOnConfigChange({
   configChanged,
   sameTank,
   explicitShooterConfig,
+}: {
+  side: string
+  configChanged: boolean
+  sameTank: boolean
+  explicitShooterConfig: boolean
 }) {
   if (!configChanged) return false
   if (side === 'shooter') return true

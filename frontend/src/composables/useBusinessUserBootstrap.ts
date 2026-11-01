@@ -1,6 +1,6 @@
 import { computed, readonly, ref } from 'vue'
 import { ensureUserProfile } from '../api/user-profile.js'
-import { Feature, getFeatureAvailability, profileBackendAllowed } from '../app/featureCapabilities.js'
+import { Feature, getFeatureAvailability, profileBackendAllowed, type ProfileBackendContext } from '../app/featureCapabilities.js'
 
 /**
  * WotBTools 业务用户 bootstrap（KC User → user_profile 的 eventual self-healing）。
@@ -25,14 +25,14 @@ import { Feature, getFeatureAvailability, profileBackendAllowed } from '../app/f
  */
 
 /** idle | pending | ready | failed */
-const state = ref('idle')
-const error = ref(null)
+const state = ref<'idle' | 'pending' | 'ready' | 'failed'>('idle')
+const error = ref<unknown>(null)
 
 /**
  * 进行中的 bootstrap Promise。成功与失败都会在 finally 里清空，
  * 因此一个 rejected Promise 绝不会锁死后续 retry。
  */
-let inFlight = null
+let inFlight: Promise<boolean> | null = null
 let ownerEpoch = 0
 let generation = 0
 
@@ -58,7 +58,7 @@ async function run() {
 }
 
 /** Identity changes invalidate cached and in-flight bootstrap results. */
-function selectIdentity(context) {
+function selectIdentity(context: ProfileBackendContext) {
   if (context.authEpoch !== undefined && context.authEpoch !== ownerEpoch) {
     resetBusinessUserBootstrap()
     ownerEpoch = context.authEpoch
@@ -67,7 +67,7 @@ function selectIdentity(context) {
 }
 
 /** 业务资料功能当前的可用性（capability SSOT：ONLINE_REQUIRED）。 */
-export function businessProfileAvailability(connectivity) {
+export function businessProfileAvailability(connectivity: unknown) {
   return getFeatureAvailability(Feature.ACCOUNT_PROFILE, { connectivity })
 }
 
@@ -77,7 +77,7 @@ export function businessProfileAvailability(connectivity) {
  * 只有「已认证 + ACCOUNT_PROFILE 可用」才允许。`offline` / `unknown` / `degraded` /
  * `service-unavailable` 一律拒绝 —— 后三种**不是**「你离线」，但同样不能访问 backend。
  */
-export function shouldEnsureBusinessUser(context = {}) {
+export function shouldEnsureBusinessUser(context: ProfileBackendContext = {}) {
   // 策略本体在 capability 模块（profileBackendAllowed），浏览器测试替身共用同一实现。
   return profileBackendAllowed(context)
 }
@@ -107,7 +107,7 @@ function ensureBusinessUser() {
  * 若 bootstrap 尚未开始（页面比 AppShell 更早挂载、或上一次尝试已失败），允许时仍会主动
  * 触发一次 ensure —— 同一个 canonical 实现，不是第二套 provisioning。
  */
-export async function whenBusinessUserSettled(context = {}) {
+export async function whenBusinessUserSettled(context: ProfileBackendContext = {}) {
   const epoch = selectIdentity(context)
   if (!profileBackendAllowed(context)) return false
   if (state.value !== 'ready') {
@@ -117,7 +117,7 @@ export async function whenBusinessUserSettled(context = {}) {
 }
 
 /** gated ensure（页面 / 组件入口）：不允许时返回 false 且**不发请求**。 */
-export function ensureBusinessUserIfAllowed(context = {}) {
+export function ensureBusinessUserIfAllowed(context: ProfileBackendContext = {}) {
   selectIdentity(context)
   if (!profileBackendAllowed(context)) return Promise.resolve(false)
   return ensureBusinessUser()
@@ -131,7 +131,7 @@ function retryBusinessUser() {
 }
 
 /** gated retry（失败横幅入口）：离线 / 状态未知时返回 false 且**不发请求**，也不重置状态机。 */
-export function retryBusinessUserIfAllowed(context = {}) {
+export function retryBusinessUserIfAllowed(context: ProfileBackendContext = {}) {
   selectIdentity(context)
   if (!profileBackendAllowed(context)) return Promise.resolve(false)
   return retryBusinessUser()

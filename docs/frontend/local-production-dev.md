@@ -36,7 +36,7 @@
 
 Web 优先级与坑：`?assets=<URL>` > `localStorage.wotb_asset_base` > `VITE_ASSET_BASE_URL`。
 在 URL 上带过一次非空 `?assets=` 会持久化到 localStorage 并**盖住** `.env.local`；要回到默认，
-带一次空的 `?assets=`（`scene/assetBase.js` 的显式清除开关）。改 `.env.local` 后必须**重启 dev
+带一次空的 `?assets=`（`scene/assetBase.ts` 的显式清除开关）。改 `.env.local` 后必须**重启 dev
 server**（`import.meta.env.*` 在 transform 时内联，不是运行时读取）。APK 不使用这些 Web override，固定使用 `platform/runtime.js` 的 `ANDROID_ASSET_BASE`。
 
 自检（无需看画面）：开 `?debug` 后 `window.__gdbg.layers === true` 表示分层地表已就绪；

@@ -9,12 +9,12 @@ export const MAX_REPLAY_FILE_BYTES = 20 * 1024 * 1024
 export const MAX_REPLAY_TOTAL_BYTES = 200 * 1024 * 1024
 
 /** 候选文件是否 .wotbreplay（大小写不敏感）。 */
-export function isReplayFileName(name) {
+export function isReplayFileName(name: unknown): name is string {
   return typeof name === 'string' && name.toLowerCase().endsWith('.wotbreplay')
 }
 
 /** 人类可读文件大小（B/KB/MB/GB，与旧 formatBytes 输出一致：34.0 KB / 1.8 MB / 27.4 MB）。 */
-export function formatReplaySize(bytes) {
+export function formatReplaySize(bytes: number | null | undefined) {
   if (!bytes) return '0 B'
   const units = ['B', 'KB', 'MB', 'GB']
   let i = 0
@@ -37,10 +37,10 @@ export function formatReplaySize(bytes) {
  * - {@code count}：类型合法的回放文件数（非 .wotbreplay 不计入 100 上限）；
  * - {@code totalBytes}：类型合法文件的累计大小。
  */
-export function validateReplaySelection(files) {
+export function validateReplaySelection<T extends { name?: unknown; size?: number }>(files: Iterable<T> | ArrayLike<T> | null | undefined) {
   const candidate = Array.from(files || [])
-  const offending = []
-  const typeValid = []
+  const offending: Array<{ file: T; reason: 'INVALID_TYPE' | 'FILE_TOO_LARGE' }> = []
+  const typeValid: T[] = []
   let totalBytes = 0
   for (const f of candidate) {
     if (!isReplayFileName(f?.name)) {
@@ -49,7 +49,7 @@ export function validateReplaySelection(files) {
     }
     typeValid.push(f)
     totalBytes += f.size || 0
-    if (f.size > MAX_REPLAY_FILE_BYTES) {
+    if (f.size! > MAX_REPLAY_FILE_BYTES) {
       offending.push({ file: f, reason: 'FILE_TOO_LARGE' })
     }
   }

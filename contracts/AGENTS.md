@@ -5,6 +5,7 @@
 - `http/openapi.yaml` 是 FE ↔ BE HTTP wire contract 的唯一事实源；修改后必须在 `frontend/` 运行 `pnpm run api:generate`。
 - 这里描述序列化后的 HTTP shape，不承载 `wotb-core` domain 语义。服务器没有回放解析器：不存在 Control ↔ Worker / MQ 契约。
 - 新字段必须明确 `required`、nullable、enum、`$ref` 与兼容策略；不得把 internal exception 名称机械暴露为公共 error code。
+- `android-native-bridge.json` 是 Native Bridge wire 的唯一事实源；修改后同样运行 `pnpm run api:generate`，由它生成 `frontend/src/api/generated/android-native-bridge.ts`。生成器不认识的类型记法会直接报错。
 - `frontend/src/api/generated/` 是生成产物，不手工编辑；fixture 必须使用生产形状且不得包含凭据、token 或用户回放内容。
 - 修改 wire contract 时运行 `pnpm run api:lint`, `pnpm run api:check`, `pnpm run api:fixture` 及受影响的后端/前端测试。
 - `BattlePlaybackDataset` 等 playback schema 保留在 `components.schemas` 中，但已没有对应的 HTTP path：前端用它校验浏览器本地构建的 2D 数据集（`frontend/src/api/contract-runtime.ts`、`pnpm run api:fixture` 校验 `http/fixtures/battle-playback-v2.json`）。删 path 不等于可以删这些 schema。

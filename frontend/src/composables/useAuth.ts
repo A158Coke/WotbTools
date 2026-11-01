@@ -1,5 +1,5 @@
-import { computed, ref } from 'vue'
-import { stringifyQuery } from 'vue-router'
+import { computed, ref, type Ref } from 'vue'
+import { stringifyQuery, type LocationQueryRaw } from 'vue-router'
 import { NATIVE_AUTH_CAPABILITY } from '../platform/nativeBridgeContract.js'
 import { createBrowserAuthProvider } from '../platform/browserAuthProvider.js'
 import { hasAuthReturn } from '../platform/authDiagnostics.js'
@@ -15,6 +15,29 @@ import {
 } from './usePlatformBridge.js'
 import { useConnectivity } from './useConnectivity.js'
 import { ConnectivityState } from '../platform/connectivity.js'
+import type { AuthClaims, AuthInitMode, AuthProvider } from '../types/auth.js'
+
+type AuthInitState = 'idle' | 'initializing' | 'authenticated' | 'unauthenticated' | 'failed'
+type LoginDestination = string | { path?: string; query?: LocationQueryRaw; hash?: string } | null | undefined
+
+interface AuthTransaction {
+  generation: number
+  provider: AuthProvider | null
+  unsubscribe: (() => void) | null
+  reason: string
+  startedAt: number
+  settled: boolean
+  abandoned: boolean
+  watchdog: ReturnType<typeof setTimeout> | null
+  pendingLog: ReturnType<typeof setTimeout> | null
+  timeoutLogged: boolean
+  publicResolved: boolean
+  resolve: ((result: boolean) => void) | null
+  promise: Promise<boolean> | null
+}
+
+/** 角色判断只依赖这两个投影，因此也接受测试与模块内部传入的局部 session。 */
+type AuthRoleSource = { authenticated: Ref<boolean>; tokenParsed: Ref<AuthClaims | null> }
 
 const AUTH_INIT_WATCHDOG_MS = 12_000
 /**
@@ -26,15 +49,15 @@ const AUTH_INIT_WATCHDOG_MS = 12_000
 const AUTH_INIT_WATCHDOG_NATIVE_MS = 60_000
 const AUTH_INIT_PENDING_LOG_MS = 5_000
 
-let currentTransaction = null
+let currentTransaction: AuthTransaction | null = null
 let authGeneration = 0
 
-const authInitState = ref('idle')
+const authInitState = ref<AuthInitState>('idle')
 const initialized = ref(false)
 const authenticated = ref(false)
-const tokenParsed = ref(null)
-const initError = ref(null)
-const initFailureReason = ref(null)
+const tokenParsed = ref<AuthClaims | null>(null)
+const initError = ref<unknown>(null)
+const initFailureReason = ref<string | null>(null)
 
 /**
  * 只表示「此刻正有一个 login redirect 正在发起」的短生命周期状态。
@@ -54,13 +77,13 @@ function platformName() {
  * - Android 壳但 bridge 版本不受支持 / 版本未知 / 缺能力 → unsupported provider：只暴露失败，
  *   绝不退化成「WebView 里跑 keycloak-js」——那正是本次 cutover 要消灭的路径。
  */
-async function resolveAuthProvider() {
+async function resolveAuthProvider(): Promise<AuthProvider> {
   if (!isAndroidApp()) return createBrowserAuthProvider()
 
   const bridgeVersion = await getNativeBridgeVersion()
   if (!isNativeBridgeCompatible(bridgeVersion)) {
     return createUnsupportedAuthProvider(
-      Number.isInteger(bridgeVersion) ? `bridge-v${bridgeVersion}` : 'bridge-version-unknown',
+      bridgeVersion !== null ? `bridge-v${bridgeVersion}` : 'bridge-version-unknown',
     )
   }
   if (!(await supports(NATIVE_AUTH_CAPABILITY))) {
@@ -69,51 +92,52 @@ async function resolveAuthProvider() {
   return createAndroidAuthProvider()
 }
 
-function errorType(error) {
-  if (error?.name && typeof error.name === 'string') return error.name
-  if (error?.error && typeof error.error === 'string') return error.error
+function errorType(error: unknown) {
+  const failure = error as { name?: unknown; error?: unknown } | null | undefined
+  if (failure?.name && typeof failure.name === 'string') return failure.name
+  if (failure?.error && typeof failure.error === 'string') return failure.error
   return 'unknown'
 }
 
-function elapsedMs(transaction) {
+function elapsedMs(transaction: AuthTransaction) {
   return Date.now() - transaction.startedAt
 }
 
-function logInitStarted(transaction) {
+function logInitStarted(transaction: AuthTransaction) {
   console.debug(
     `[auth] init_started generation=${transaction.generation} platform=${platformName()} `
     + `reason=${transaction.reason}`,
   )
 }
 
-function resolveTransaction(transaction, result) {
+function resolveTransaction(transaction: AuthTransaction, result: boolean) {
   if (transaction.publicResolved) return
   transaction.publicResolved = true
-  transaction.resolve(result)
+  transaction.resolve!(result)
 }
 
 /** 退订 Native 推送：transaction 一旦不再是 owner（被放弃或被新一代取代）就必须解除。 */
-function releaseProvider(transaction) {
+function releaseProvider(transaction: AuthTransaction | null) {
   if (!transaction?.unsubscribe) return
   transaction.unsubscribe()
   transaction.unsubscribe = null
 }
 
-function abandonTransaction(transaction) {
+function abandonTransaction(transaction: AuthTransaction) {
   if (!transaction || transaction.settled || transaction.abandoned) return
   transaction.abandoned = true
-  clearTimeout(transaction.watchdog)
-  clearTimeout(transaction.pendingLog)
+  clearTimeout(transaction.watchdog!)
+  clearTimeout(transaction.pendingLog!)
   releaseProvider(transaction)
   resolveTransaction(transaction, false)
   console.debug(`[auth] init_abandoned generation=${transaction.generation}`)
 }
 
-function markFailed(transaction, error, reason) {
+function markFailed(transaction: AuthTransaction, error: unknown, reason: string) {
   if (currentTransaction !== transaction || transaction.settled) return
   transaction.settled = true
-  clearTimeout(transaction.watchdog)
-  clearTimeout(transaction.pendingLog)
+  clearTimeout(transaction.watchdog!)
+  clearTimeout(transaction.pendingLog!)
   initialized.value = true
   projectSession({ isAuthenticated: false, parsedToken: null, state: 'failed' })
   // Some SDK failures (including nonce rejection) reject without an error value.
@@ -142,10 +166,10 @@ function markFailed(transaction, error, reason) {
  * 同一身份的重复投影（如 token 刷新后 claims 更新）不前进。
  */
 let authIdentityEpoch = 0
-let projectedIdentity = null
+let projectedIdentity: string | null = null
 
 /** 身份键：已登录取 token 的 `sub`（缺失时用占位键——仍是"已登录"这个身份），未登录为 null。 */
-function identityKeyOf(isAuthenticatedValue, parsedToken) {
+function identityKeyOf(isAuthenticatedValue: boolean, parsedToken: AuthClaims | null | undefined) {
   if (!isAuthenticatedValue) return null
   const sub = parsedToken && typeof parsedToken === 'object' ? parsedToken.sub : null
   return typeof sub === 'string' && sub ? `sub:${sub}` : 'authenticated:unknown-sub'
@@ -155,7 +179,11 @@ function identityKeyOf(isAuthenticatedValue, parsedToken) {
  * 唯一的投影写入路径：init 落定、Native 推送（`wotbtoolsOnAuthChanged`）、logout、
  * ensureToken 失效都经这里，`authIdentityEpoch` 因而覆盖所有身份变化。
  */
-function projectSession({ isAuthenticated: isAuthed, parsedToken, state }) {
+function projectSession({ isAuthenticated: isAuthed, parsedToken, state }: {
+  isAuthenticated: boolean
+  parsedToken: AuthClaims | null | undefined
+  state?: AuthInitState
+}) {
   const nextIdentity = identityKeyOf(isAuthed, parsedToken)
   if (nextIdentity !== projectedIdentity) {
     projectedIdentity = nextIdentity
@@ -170,17 +198,17 @@ function projectSession({ isAuthenticated: isAuthed, parsedToken, state }) {
  * 把 provider 的当前状态投影到组件可见的 refs。init 落定、Native 推送
  * （`wotbtoolsOnAuthChanged`）与 Android logout 共用这一条投影路径：只有一个状态 owner。
  */
-function applyProviderState(provider) {
+function applyProviderState(provider: AuthProvider) {
   const isAuthed = Boolean(provider.authenticated)
   projectSession({ isAuthenticated: isAuthed, parsedToken: isAuthed ? provider.tokenParsed : null })
 }
 
-function completeTransaction(transaction) {
+function completeTransaction(transaction: AuthTransaction) {
   if (currentTransaction !== transaction || transaction.settled || transaction.abandoned) return
   transaction.settled = true
-  clearTimeout(transaction.watchdog)
-  clearTimeout(transaction.pendingLog)
-  applyProviderState(transaction.provider)
+  clearTimeout(transaction.watchdog!)
+  clearTimeout(transaction.pendingLog!)
+  applyProviderState(transaction.provider!)
   initialized.value = true
   initError.value = null
   initFailureReason.value = null
@@ -191,12 +219,12 @@ function completeTransaction(transaction) {
   resolveTransaction(transaction, authenticated.value)
 }
 
-function startAuthInit({ mode = 'normal', reason = 'startup' } = {}) {
+function startAuthInit({ mode = 'normal', reason = 'startup' }: { mode?: AuthInitMode; reason?: string } = {}) {
   if (currentTransaction && !currentTransaction.settled) abandonTransaction(currentTransaction)
   // 上一代（含已落定的一代）必须先退订：Native 的 authChanged 全局只有一个槽位。
   releaseProvider(currentTransaction)
 
-  const transaction = {
+  const transaction: AuthTransaction = {
     generation: ++authGeneration,
     provider: null,
     unsubscribe: null,
@@ -217,7 +245,8 @@ function startAuthInit({ mode = 'normal', reason = 'startup' } = {}) {
   initError.value = null
   initFailureReason.value = null
 
-  transaction.promise = new Promise(resolve => { transaction.resolve = resolve })
+  const promise = new Promise<boolean>(resolve => { transaction.resolve = resolve })
+  transaction.promise = promise
   logInitStarted(transaction)
 
   transaction.watchdog = setTimeout(() => {
@@ -258,7 +287,7 @@ function startAuthInit({ mode = 'normal', reason = 'startup' } = {}) {
     error => markFailed(transaction, error, 'init-error'),
   )
 
-  return transaction.promise
+  return promise
 }
 
 /**
@@ -296,14 +325,14 @@ async function initAuth() {
  */
 async function retryAuth() {
   const promise = startAuthInit({ reason: 'retry' })
-  console.debug(`[auth] init_retry generation=${currentTransaction.generation}`)
+  console.debug(`[auth] init_retry generation=${authGeneration}`)
   return promise
 }
 
 /** 浏览器登录目的地：同一 view 保留上下文，也接受完整 router location（仅本站）。 */
-function loginRedirectUri(destination) {
+function loginRedirectUri(destination: LoginDestination) {
   const current = new URL(window.location.href)
-  let url
+  let url: URL
   if (typeof destination === 'string') {
     url = current.searchParams.get('view') === destination
       ? current
@@ -343,7 +372,7 @@ function logoutRedirectUri() {
  * bootstrap 仍在进行或已失败时：放弃那一代并重建（浏览器走不带 check-sso 的
  * login-recovery），旧 promise 既不能阻塞本次跳转，也不能写回当前状态。
  */
-async function login(destination = 'profile') {
+async function login(destination: LoginDestination = 'profile') {
   if (loginInFlight.value) {
     console.debug(`[auth] login_deduplicated destination=${typeof destination === 'string' ? destination : 'location'} reason=redirect-in-flight`)
     return false
@@ -442,7 +471,7 @@ function offlineKnown() {
  * 权限事实源只有当前 access token 的 `realm_access.roles`。开发构建与生产构建走同一条
  * 角色判断路径；URL query（包括历史 `?admin=1`）不得合成或提升任何角色。
  */
-function hasRole(role) {
+function hasRole(role: string) {
   return Boolean(role) && Array.isArray(tokenParsed.value?.realm_access?.roles)
     && tokenParsed.value.realm_access.roles.includes(role)
 }
@@ -456,7 +485,7 @@ const isAdmin = computed(() => hasRole('wotbtools-admin'))
 const isHofAdmin = computed(() => hasRole('HoF-admin') || isAdmin.value)
 
 /** Real token claims are the shared tournament boundary; local visibility shortcuts never authorize it. */
-export function tournamentAdminAllowed(auth = useAuth()) {
+export function tournamentAdminAllowed(auth: AuthRoleSource = useAuth()) {
   const roles = auth.tokenParsed.value?.realm_access?.roles
   return auth.authenticated.value && Array.isArray(roles)
     && roles.includes('tournament-admin')
@@ -464,7 +493,7 @@ export function tournamentAdminAllowed(auth = useAuth()) {
 const isTournamentAdmin = computed(() => tournamentAdminAllowed({ authenticated, tokenParsed }))
 
 /** Content administration is its own domain boundary: tournament-admin never implies it. */
-export function contentAdminAllowed(auth = useAuth()) {
+export function contentAdminAllowed(auth: AuthRoleSource = useAuth()) {
   const roles = auth.tokenParsed.value?.realm_access?.roles
   return auth.authenticated.value && Array.isArray(roles)
     && roles.includes('content-admin')
@@ -472,7 +501,7 @@ export function contentAdminAllowed(auth = useAuth()) {
 const isContentAdmin = computed(() => contentAdminAllowed({ authenticated, tokenParsed }))
 
 /** Broadcast maintenance requires the real signed-in site administrator, including in development. */
-export function leagueBroadcastAdminAllowed(auth = useAuth()) {
+export function leagueBroadcastAdminAllowed(auth: AuthRoleSource = useAuth()) {
   const roles = auth.tokenParsed.value?.realm_access?.roles
   return auth.authenticated.value && Array.isArray(roles) && roles.includes('wotbtools-admin')
 }
@@ -503,7 +532,7 @@ function authEpoch() {
 async function ensureToken(minValidity = 30) {
   const provider = currentTransaction?.provider
   if (!provider || !provider.authenticated) return false
-  let refreshed
+  let refreshed: boolean
   try {
     refreshed = await provider.ensureToken(minValidity)
   } catch {

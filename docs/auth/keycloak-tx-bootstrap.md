@@ -128,7 +128,7 @@ Wargaming IdP representation 与 Keycloak runtime 共用**同一个**已存在�
 
 因此当前实现不是每 30 天固定强制重登，也不是无限滑动会话。realm 设置同时约束浏览器
 `wotbtools-web` 与原生 `wotbtools-android`；Web token 在 keycloak-js 内存中，重新打开页面由
-`frontend/src/platform/browserAuthProvider.js` 的 `check-sso` 恢复 SSO，不把 token 写入
+`frontend/src/platform/browserAuthProvider.ts` 的 `check-sso` 恢复 SSO，不把 token 写入
 localStorage。Web refresh 失败暂时扣住 API token、保留登录投影供后续重试；Native 则由
 `AuthManager.kt` 加密持久化会话、单飞 refresh，永久 token 拒绝才清会话，瞬时离线失败保留缓存。
 SSO 登录 cookie 与一次 broker 登录的 auth-session cookie 是不同生命周期；后者错误按

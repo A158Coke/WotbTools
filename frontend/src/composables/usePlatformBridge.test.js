@@ -53,11 +53,11 @@ describe('usePlatformBridge', () => {
     await expect(getCapabilities()).resolves.toEqual([])
     await expect(supports('replay-share')).resolves.toBe(false)
     await expect(getPendingReplay()).resolves.toBeNull()
-    await expect(consumePendingReplay()).resolves.toBe(false)
+    await expect(consumePendingReplay('pid-0')).resolves.toBe(false)
   })
 
   it('capability detection via injected bridge', async () => {
-    stubNative(['replay-share', 'replay-open', 'app-update'], { name: 'a.wotbreplay', uri: 'http://127.0.0.1:21653/__native/replay-pending', size: 1 })
+    stubNative(['replay-share', 'replay-open', 'app-update'], { pendingId: 'pid-0', name: 'a.wotbreplay', uri: 'http://127.0.0.1:21653/__native/replay-pending', size: 1 })
     expect(isAndroidApp()).toBe(true)
     await expect(getCapabilities()).resolves.toEqual(['replay-share', 'replay-open', 'app-update'])
     await expect(supports('replay-share')).resolves.toBe(true)
@@ -66,8 +66,8 @@ describe('usePlatformBridge', () => {
     expect(isNativeBridgeCompatible(3)).toBe(true)
     expect(isNativeBridgeCompatible(2)).toBe(false)
     expect(isNativeBridgeCompatible(1)).toBe(false)
-    await expect(getPendingReplay()).resolves.toEqual({ name: 'a.wotbreplay', uri: 'http://127.0.0.1:21653/__native/replay-pending', size: 1 })
-    await expect(consumePendingReplay()).resolves.toBe(true)
+    await expect(getPendingReplay()).resolves.toEqual({ pendingId: 'pid-0', name: 'a.wotbreplay', uri: 'http://127.0.0.1:21653/__native/replay-pending', size: 1 })
+    await expect(consumePendingReplay('pid-0')).resolves.toBe(true)
   })
 
   it('usePlatformBridge exposes the same surface', async () => {

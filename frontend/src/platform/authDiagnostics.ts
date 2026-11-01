@@ -17,10 +17,10 @@
  */
 
 const BUFFER_LIMIT = 30
-const buffer = []
+const buffer: unknown[] = []
 
 /** Keycloak/OIDC 错误码是固定枚举，允许出现在诊断里；未知码原样保留（仍是码不是值）。 */
-export function errorCategory(search) {
+export function errorCategory(search?: string | null) {
   let error = ''
   for (const [key, value] of new URLSearchParams(search || '')) {
     if (key === 'error') error = String(value || '')
@@ -29,7 +29,7 @@ export function errorCategory(search) {
 }
 
 /** Presence only: the SDK owns state, nonce and PKCE validation. */
-export function hasAuthReturn(location = window.location) {
+export function hasAuthReturn(location: Pick<Location, 'search' | 'hash'> = window.location) {
   return [location.search, location.hash.slice(1)].some(value => {
     const params = new URLSearchParams(value)
     return params.has('state') && (params.has('code') || params.has('error'))
@@ -37,7 +37,7 @@ export function hasAuthReturn(location = window.location) {
 }
 
 /** URL 参数存在性布尔（只读存在性，永不复制参数值）。 */
-export function returnParamFacts(search) {
+export function returnParamFacts(search?: string | null) {
   const params = new URLSearchParams(search || '')
   return {
     hasCode: params.has('code'),
@@ -51,7 +51,7 @@ export function returnParamFacts(search) {
   }
 }
 
-export function record(event, fields = {}) {
+export function record(event: string, fields: Record<string, unknown> = {}) {
   const entry = { at: new Date().toISOString(), event, ...fields }
   // 先序列化再入缓冲：缓冲里的每一项都是 JSON 安全的（快照导出永不炸），
   // 序列化失败则整条丢弃——诊断绝不反噬登录。
@@ -68,10 +68,10 @@ export function record(event, fields = {}) {
 
 /** 登录跳转前的最后一个 SPA 侧事实（之后整页离开，直到回程）。
  *  redirectUri 是本站 URL：只记 view 参数与路径，不记录完整 URL（纪律：最小事实）。 */
-export function recordLoginStart(redirectUri) {
+export function recordLoginStart(redirectUri: string | null) {
   let destination = 'invalid'
   try {
-    const url = new URL(redirectUri, typeof window !== 'undefined' ? window.location.origin : 'https://wotbtools.invalid')
+    const url = new URL(redirectUri as string, typeof window !== 'undefined' ? window.location.origin : 'https://wotbtools.invalid')
     destination = url.searchParams.get('view') || url.pathname
   } catch {
     destination = 'invalid'
