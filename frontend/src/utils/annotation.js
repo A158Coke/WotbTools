@@ -504,10 +504,11 @@ export function isDegenerateAnnotation(annotation) {
 /**
  * 语义 annotation → BattleMap 期望的 SVG 呈现字段（唯一投影实现，Playback 与 Map Preview 共用）。
  * toX/toY 负责世界→SVG；invX/invY 是「每 SVG unit 的语义量」，用于宽度/半径/矩形尺寸。
- * 注意：BattlePlayback 的 relief 路径仍有独立投影；本 helper 不改变其行为。
+ * 地形 relief 的屏幕投影仍由 BattleMap 负责；本 helper 只产出地图空间几何。
  */
 export function projectAnnotationToSvg(annotation, { toX, toY, invX = 1, invY = 1, widthFallback = ANNOT_WIDTH_DEFAULT } = {}) {
-  const out = { ...annotation, widthSvg: (annotation.width || widthFallback) * invX }
+  const widthSvg = (annotation.width || widthFallback) * invX
+  const out = { ...annotation, widthSvg }
   if (annotation.type === 'pen' || annotation.type === 'route') {
     out.svgPoints = polylinePoints(annotation.points, toX, toY)
   } else if (annotation.type === 'line' || annotation.type === 'arrow') {
@@ -515,7 +516,12 @@ export function projectAnnotationToSvg(annotation, { toX, toY, invX = 1, invY = 
     out.y1 = toY(annotation.y1)
     out.x2 = toX(annotation.x2)
     out.y2 = toY(annotation.y2)
-    if (annotation.type === 'arrow') out.head = arrowHeadPoints(out.x1, out.y1, out.x2, out.y2)
+    if (annotation.type === 'arrow') {
+      // 宽箭头的 head 必须随线宽增长，否则视觉上会变成圆头团块；短箭头再按线长收敛。
+      const length = Math.hypot(out.x2 - out.x1, out.y2 - out.y1)
+      const headSize = Math.max(10, Math.min(Math.max(14, widthSvg * 2.8), length * 0.45 || 10))
+      out.head = arrowHeadPoints(out.x1, out.y1, out.x2, out.y2, headSize)
+    }
   } else if (annotation.type === 'rect') {
     out.x = toX(annotation.x)
     out.y = toY(annotation.y)

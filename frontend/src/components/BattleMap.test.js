@@ -164,6 +164,18 @@ describe('BattleMap', () => {
     expect(wrapper.find('[data-test="pb-playable-boundary"]').exists()).toBe(false)
   })
 
+  it('renders arrows with a butt cap so the round shaft cannot bulge past the head tip', () => {
+    const wrapper = mountMap({
+      renderedAnnotations: [{
+        type: 'arrow', color: '#fff', width: 3, widthSvg: 3,
+        x1: 0, y1: 0, x2: 10, y2: 10, head: '10,10 0,0 0,0',
+      }],
+    })
+    const line = wrapper.find('[data-annotation-type="arrow"] line')
+    expect(line.exists()).toBe(true)
+    expect(line.attributes('stroke-linecap')).toBe('butt')
+  })
+
   it('标记严格落在真实位置：忽略任何残留 presentationOffset，且不画虚线引导线', () => {
     // 2026-10-16 用户裁定：删除防重叠位移与虚线引导线——车体必须落在真实位置
     //（密集处允许图标互相压盖），与 3D 一致（3D 从不移动车体模型）。

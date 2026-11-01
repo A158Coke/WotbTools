@@ -11,7 +11,7 @@
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Download, Image as ImageIcon, PencilRuler, Upload } from 'lucide-vue-next'
+import { Download, Image as ImageIcon, Maximize, Minimize, PencilRuler, Upload } from 'lucide-vue-next'
 import BattleMap from './BattleMap.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
 import { mapBases } from '../data/mapBases.js'
@@ -30,6 +30,8 @@ import {
 import { clampViewPan, zoomViewAt } from '../utils/battlePlayback.js'
 import { computeExportDimensions, downloadBlob, sanitizeFilename } from '../utils/exportReplayPng.js'
 import { usePaneFillHeight } from '../composables/usePaneFillHeight.js'
+import { usePlaybackFullscreen } from '../composables/usePlaybackFullscreen.js'
+import { usePlaybackPhoneForm } from '../composables/usePlaybackPhoneForm.js'
 
 /**
  * 地图语义档案（`common/map-semantics/*.semantic.json` 唯一权威；与回放/3D 同一份文件）：
@@ -59,6 +61,8 @@ const props = defineProps({
    * null / 组无几何 → 不渲染（fail-closed，绝不从内容猜坐标）。
    */
   basesKind: { type: String, default: null },
+  /** 页面 v-show 生命周期闸门：失活时退出全屏，避免全屏落在隐藏面板上 */
+  active: { type: Boolean, default: true },
 })
 
 const { t } = useI18n()
@@ -209,6 +213,15 @@ const mapComponent = ref(null)
 const mapEl = computed(() => mapComponent.value?.mapEl || null)
 const importFile = ref(null)
 const { height: stageHeight } = usePaneFillHeight(rootEl)
+const { isPhone } = usePlaybackPhoneForm()
+const { isFullscreen, fullscreenSupported, toggleFullscreen } = usePlaybackFullscreen({
+  target: () => rootEl.value,
+  isPhone,
+  isActive: () => props.active,
+})
+watch(() => props.active, (active) => {
+  if (!active && isFullscreen.value) toggleFullscreen()
+})
 const view = reactive({ scale: 1, tx: 0, ty: 0 })
 const ZOOM_STEP = 1.2
 const PAN_THRESHOLD_PX = 5
@@ -903,6 +916,17 @@ const stubFloatClass = () => ''
   <!-- 观察层（rootEl）与固定高度层（.map2d-body）分离：usePaneFillHeight 的 RO 观察
        外层——高度写在外层自身会让 RO 失活（固定盒不再 resize，陈旧测量死锁）。 -->
   <div ref="rootEl" class="map2d" data-testid="map-2d-pane">
+    <button
+      v-if="fullscreenSupported"
+      type="button"
+      class="map2d-btn map2d-fullscreen"
+      data-testid="map-2d-fullscreen"
+      :aria-label="t(isFullscreen ? 'recon.map.playback.exit_fullscreen' : 'recon.map.playback.enter_fullscreen')"
+      :title="t(isFullscreen ? 'recon.map.playback.exit_fullscreen' : 'recon.map.playback.enter_fullscreen')"
+      @click="toggleFullscreen()"
+    >
+      <component :is="isFullscreen ? Minimize : Maximize" :size="16" aria-hidden="true" />
+    </button>
     <div class="map2d-body" :style="{ height: stageHeight }">
       <div
         ref="stageEl"
@@ -1054,6 +1078,20 @@ const stubFloatClass = () => ''
 .map2d {
   position: relative;
   min-height: 0;
+}
+
+.map2d:fullscreen {
+  padding: 0;
+  background: var(--color-canvas);
+}
+
+.map2d-fullscreen {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  z-index: var(--z-sticky);
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
 }
 
 /* 固定高度层（usePaneFillHeight 写入）：舞台吃剩余、controls 固有高——

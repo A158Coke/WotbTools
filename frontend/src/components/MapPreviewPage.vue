@@ -286,7 +286,7 @@ const modeOptions = computed(() => [
           <MapPreview3DPane :map-id="selected.mapId" :map-name="selected.name" :map-key="selected.key" :bases-kind="basesKind" :active="mode === '3d'" />
         </div>
         <div v-show="mode === '2d'" class="map-stage-pane">
-          <MapPreview2DPane :map-key="selected.key" :basemap="selected.basemap" :bases-kind="basesKind" />
+          <MapPreview2DPane :map-key="selected.key" :basemap="selected.basemap" :bases-kind="basesKind" :active="mode === '2d'" />
         </div>
       </div>
     </template>

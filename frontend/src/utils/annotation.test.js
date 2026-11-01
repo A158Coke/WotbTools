@@ -374,7 +374,14 @@ describe('shared annotation helpers', () => {
     expect(pen.svgPoints).toEqual(polylinePoints([{ x: 0, y: 0 }, { x: 1, y: 1 }], mapView.toX, mapView.toY))
     expect(pen.widthSvg).toBeCloseTo(1.8)
     const arrow = projectAnnotationToSvg({ type: 'arrow', color: '#fff', width: 3, x1: 0, y1: 0, x2: 10, y2: 0 }, opts)
-    expect(arrow.head).toEqual(arrowHeadPoints(arrow.x1, arrow.y1, arrow.x2, arrow.y2))
+    expect(arrow.head.split(' ')).toHaveLength(3)
+    expect(arrow.head.startsWith(`${arrow.x2.toFixed(2)},${arrow.y2.toFixed(2)}`)).toBe(true)
+    const thickArrow = projectAnnotationToSvg({ type: 'arrow', color: '#fff', width: 12, x1: 0, y1: 0, x2: 30, y2: 0 }, opts)
+    const headSpan = (head) => {
+      const [tip, left] = head.split(' ').map(point => point.split(',').map(Number))
+      return Math.hypot(tip[0] - left[0], tip[1] - left[1])
+    }
+    expect(headSpan(thickArrow.head)).toBeGreaterThan(headSpan(arrow.head))
     const rect = projectAnnotationToSvg({ type: 'rect', color: '#fff', width: 3, x: 0, y: 0, w: 10, h: 20 }, opts)
     expect(rect.w).toBeCloseTo(6)
     expect(rect.h).toBeCloseTo(8)

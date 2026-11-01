@@ -69,6 +69,54 @@ beforeEach(() => {
   h2cMock.mockClear()
 })
 
+describe('MapPreview2DPane fullscreen', () => {
+  it('offers native fullscreen and follows the browser fullscreen element (not a manual boolean)', async () => {
+    let current = null
+    const reqDesc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'requestFullscreen')
+    const exitDesc = Object.getOwnPropertyDescriptor(document, 'exitFullscreen')
+    const fsDesc = Object.getOwnPropertyDescriptor(document, 'fullscreenElement')
+    Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => current })
+    Object.defineProperty(document, 'exitFullscreen', {
+      configurable: true,
+      value: vi.fn(() => {
+        current = null
+        document.dispatchEvent(new Event('fullscreenchange'))
+        return Promise.resolve()
+      }),
+    })
+    Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', {
+      configurable: true,
+      value: function requestFullscreen() {
+        current = this
+        document.dispatchEvent(new Event('fullscreenchange'))
+        return Promise.resolve()
+      },
+    })
+    try {
+      const wrapper = mountPane()
+      await flushPromises()
+      const button = wrapper.find('[data-testid="map-2d-fullscreen"]')
+      expect(button.exists()).toBe(true)
+      await button.trigger('click')
+      await flushPromises()
+      expect(current?.dataset.testid).toBe('map-2d-pane')
+      expect(wrapper.find('[data-testid="map-2d-fullscreen"]').attributes('aria-label')).toContain('exit_fullscreen')
+      await wrapper.find('[data-testid="map-2d-fullscreen"]').trigger('click')
+      await flushPromises()
+      expect(current).toBeNull()
+      expect(wrapper.find('[data-testid="map-2d-fullscreen"]').attributes('aria-label')).toContain('enter_fullscreen')
+      wrapper.unmount()
+    } finally {
+      if (reqDesc) Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', reqDesc)
+      else delete HTMLElement.prototype.requestFullscreen
+      if (exitDesc) Object.defineProperty(document, 'exitFullscreen', exitDesc)
+      else delete document.exitFullscreen
+      if (fsDesc) Object.defineProperty(document, 'fullscreenElement', fsDesc)
+      else delete document.fullscreenElement
+    }
+  })
+})
+
 describe('MapPreview2DPane 标注导入导出', () => {
   it('空标注导出给无内容提示，不产文件', async () => {
     const wrapper = mountPane()
