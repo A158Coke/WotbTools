@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import HomePage from './HomePage.vue'
 import { VIEW_COMPONENTS } from '../app/viewRegistry.js'
+import { FEEDBACK_KEY } from '../shared/feedback.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
 
 const api = vi.hoisted(() => ({
@@ -33,11 +34,11 @@ vi.mock('../composables/useConnectivity.js', async () => {
   return { useConnectivity: () => ({ connectivity: connectivityState.state, settled: connectivityState.settled, isSettled: () => connectivityState.settled.value, whenSettled: () => Promise.resolve() }) }
 })
 
-function mountPage(onboarding = null) {
+function mountPage(onboarding = null, openFeedback = null) {
   return mount(HomePage, {
     global: {
       mocks: { $t: key => key },
-      provide: { [ONBOARDING_KEY]: onboarding },
+      provide: { [ONBOARDING_KEY]: onboarding, [FEEDBACK_KEY]: openFeedback },
       stubs: {
         RouterLink: {
           props: ['to'],
@@ -91,7 +92,15 @@ describe('HomePage is a showcase, not a navigation surface', () => {
     expect(ctas.map(c => c.attributes('href'))).toEqual(['/download/android', '/sponsor'])
     expect(take.find('.home-take-phone img').exists()).toBe(true)
     expect(wrapper.get('.home-take-grid').classes()).not.toContain('is-sponsor-only')
-    expect(wrapper.get('.home-footer-bar').findAll('a')).toHaveLength(1)
+    expect(wrapper.get('.home-footer-bar').findAll('a')).toHaveLength(0)
+    wrapper.unmount()
+  })
+
+  it('opens in-app feedback from the footer instead of linking to an external site', async () => {
+    const openFeedback = vi.fn()
+    const wrapper = mountPage(null, openFeedback)
+    await wrapper.get('[data-testid="home-feedback"]').trigger('click')
+    expect(openFeedback).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
 

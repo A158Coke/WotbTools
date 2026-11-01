@@ -59,6 +59,7 @@ function assaultHasObjective() {
 }
 
 function clearBases() {
+  staticKind = null;
   for (const b of baseObjects) {
     getScene().remove(b.ring); b.ring.geometry.dispose(); b.ring.material.dispose();
     getScene().remove(b.disc); b.disc.geometry.dispose(); b.disc.material.dispose(); b.tex.dispose();
@@ -117,12 +118,39 @@ function buildBases() {
   }
 }
 
+// ---------- 静态地图预览（无回放轨迹）----------
+// 宿主（地图预览 map 会话）显式指定模式 kind：'supremacy' | 'assault' | null。
+// 几何仍是唯一事实——mapBases[key] 对应组缺几何就不画；assault 组多 candidate
+// 无证据 fail-closed（与回放同式）；null 清空。渲染走 addBaseMarker 同一条管线
+// （贴地环 + 随相机转正的圆盘贴图），呈现与回放中立基地逐像素一致。
+let staticKind = null;
+
+function buildStatic(kind) {
+  clearBases();
+  baseColors = readBaseColors();
+  staticKind = (kind === 'supremacy' || kind === 'assault') ? kind : null;
+  if (!staticKind) return;
+  const pts = (getMapBases() && getMapBases()[staticKind]) || [];
+  if (staticKind === 'supremacy') {
+    for (const p of pts) {
+      if (!SUPREMACY_BASE_IDS.includes(p.baseId)) continue;
+      addBaseMarker(p.baseId, 'supremacy', -p.x, p.y, p.radius || 15);
+    }
+    return;
+  }
+  if (pts.length === 1) addBaseMarker(ASSAULT_BASE_ID, 'assault', -pts[0].x, pts[0].y, pts[0].radius || ASSAULT_RADIUS_FALLBACK);
+}
+
 function regroundBases() {
   for (const b of baseObjects) b.reground();
 }
 
 /** 当前时刻的基地视图模型（与 2D 同一口径），状态条与贴地标记共用 */
 function baseViewsAt(t) {
+  if (staticKind) {
+    // 静态预览没有占领状态：画了什么就列什么，全部按无主中立（与回放未开占领同表现）
+    return baseObjects.map((b) => ({ baseId: b.baseId, kind: b.kind, owner: 'neutral', capturing: null, progress: null }));
+  }
   const ft = getData().meta.friendly_team;
   const views = [];
   if (supremacyBaseIds.length) {
@@ -249,6 +277,7 @@ function makeGroundedRing(gx, gz, radius, seg = 72) {
 }
   return {
     build: buildBases,
+    buildStatic,
     clear: clearBases,
     update: updateBases,
     reground: regroundBases,

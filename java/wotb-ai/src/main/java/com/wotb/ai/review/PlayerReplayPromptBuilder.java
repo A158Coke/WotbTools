@@ -22,7 +22,7 @@ public final class PlayerReplayPromptBuilder {
     private PlayerReplayPromptBuilder() {
     }
 
-    // ===== 规则与多语言：常量与 localize 已迁至 PlayerPromptRules，此处保留测试引用入口 =====
+    // ===== 提示词资源别名，保留现有测试引用入口 =====
 
     static final String COMMON_TANK_PROPER_NOUN_RULE = PlayerPromptRules.COMMON_TANK_PROPER_NOUN_RULE;
 
@@ -30,9 +30,6 @@ public final class PlayerReplayPromptBuilder {
 
     static final String SINGLE_PLAYER_PROMPT = PlayerPromptRules.SINGLE_PLAYER_PROMPT;
 
-    static String localizePlayerSystemPrompt(final String zhPrompt, final AllowedLanguage language) {
-        return PlayerPromptRules.localizePlayerSystemPrompt(zhPrompt, language);
-    }
 
     // ===== prepare* 编排：新逻辑在 PlayerSummaryBuilder，此处保留公开入口 =====
 

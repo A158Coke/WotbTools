@@ -1,0 +1,1 @@
+All battle times in the review must use the Xm Xs format (e.g., 75 seconds → 1m 15s, 180 seconds → 3m 0s, 192 seconds → 3m 12s); never use cumulative seconds or "1:15".

@@ -38,6 +38,32 @@ vi.mock('./replaySource.js', () => ({
 }))
 
 /**
+ * probe_map / probe_multi 只为本文件的基地环用例存在（真实 mapBases 不含测试键）。
+ * probe_multi.assault = 2 条 candidate：静态会话 fail-closed 判据（几何不唯一不画）的输入。
+ */
+vi.mock('../data/mapBases.js', async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    mapBases: {
+      ...actual.mapBases,
+      probe_map: {
+        supremacy: [
+          { baseId: 'A', x: -10, y: 20, radius: 15 },
+          { baseId: 'B', x: 0, y: 0, radius: 15 },
+          { baseId: 'C', x: 10, y: -20, radius: 15 },
+        ],
+        assault: [{ x: 5, y: 5, radius: null, team: 1 }],
+      },
+      probe_multi: {
+        supremacy: [{ baseId: 'A', x: 0, y: 0, radius: 15 }],
+        assault: [{ x: 0, y: 0, radius: null, team: 1 }, { x: 9, y: 9, radius: null, team: 2 }],
+      },
+    },
+  }
+})
+
+/**
  * 渲染器 stub：happy-dom 没有 WebGL，`initScene()` 里的 `new THREE.WebGLRenderer()` 必然抛错，
  * 于是 `startPlayback()` 在**第一个写入之前**就失败——资产阶段竞态根本无法在测试里触发。
  * 只替换 WebGLRenderer，其余 three 保持真实实现（OrbitControls / Scene / 贴图 loader 照旧）。
@@ -182,6 +208,12 @@ function stubFrames() {
   vi.stubGlobal('requestAnimationFrame', (cb) => frames.push(cb))
   vi.stubGlobal('cancelAnimationFrame', vi.fn())
   return () => { for (const cb of frames.splice(0)) cb() }
+}
+
+/** happy-dom 没有 2d canvas：基地圆盘贴图（drawBaseDecal）需要可写的 getContext('2d')。 */
+function stubCanvas2d() {
+  const ctx = new Proxy({}, { get: () => () => {} })
+  return vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx)
 }
 
 function createScene(existingStore = null) {
@@ -1079,6 +1111,63 @@ describe('playbackScene loadMapOnly：地图预览会话', () => {
     expect(store.mapReady).toBe(true)
     expect(store.hasData).toBe(false)
     expect(store.err).toBe('')
+  })
+
+  // ---- 静态基地环（setMapBasesKind）：与回放同一贴地管线，模式由宿主显式指定 ----
+  it('setMapBasesKind 显式选组：中立视图进 store.baseViews；非法值归一 null 清空', async () => {
+    stubTerrainAssets()
+    stubCanvas2d()
+    const frame = stubFrames()
+    const { store, api } = createScene()
+    await api.loadMapOnly({ mapId: 17, mapName: 'Yukon' })
+    frame()
+    expect(store.baseViews).toEqual([])
+    api.setMapBasesKind('supremacy')
+    frame()
+    // 争霸 A–C 全列、无占领状态（静态预览按无主中立，与回放未开占领同表现）
+    expect(store.baseViews.map((v) => [v.baseId, v.kind, v.owner, v.progress])).toEqual([
+      ['A', 'supremacy', 'neutral', null],
+      ['B', 'supremacy', 'neutral', null],
+      ['C', 'supremacy', 'neutral', null],
+    ])
+    api.setMapBasesKind('assault')
+    frame()
+    // 遭遇 = 单基地旗帜（ASSAULT_BASE_ID），probe_map.assault 恰 1 条 candidate
+    expect(store.baseViews.map((v) => [v.baseId, v.kind, v.owner, v.progress])).toEqual([
+      ['BASE', 'assault', 'neutral', null],
+    ])
+    api.setMapBasesKind('bogus')
+    frame()
+    expect(store.baseViews).toEqual([])
+  })
+
+  it('assault 组多 candidate 无证据 fail-closed：几何不唯一就不画（supremacy 不受影响）', async () => {
+    stubTerrainAssets()
+    stubCanvas2d()
+    source.resolveMapKey.mockResolvedValue('probe_multi')
+    const frame = stubFrames()
+    const { store, api } = createScene()
+    await api.loadMapOnly({ mapId: 18, mapName: 'Multi' })
+    api.setMapBasesKind('assault')
+    frame()
+    expect(store.baseViews).toEqual([])
+    api.setMapBasesKind('supremacy')
+    frame()
+    expect(store.baseViews).toHaveLength(1)
+  })
+
+  it('MAP_BASES_KIND 随 teardown 复位：重建会话在宿主补推前不画旧组', async () => {
+    stubTerrainAssets()
+    stubCanvas2d()
+    const frame = stubFrames()
+    const { store, api } = createScene()
+    await api.loadMapOnly({ mapId: 17, mapName: 'Yukon' })
+    api.setMapBasesKind('supremacy')
+    frame()
+    expect(store.baseViews).toHaveLength(3)
+    await api.loadMapOnly({ mapId: 17, mapName: 'Yukon' })
+    frame()
+    expect(store.baseViews).toEqual([])
   })
 })
 

@@ -54,20 +54,17 @@ class AllowedLanguagePromptTest {
     @Test
     void zhSystemPromptsRemainByteIdentical() {
         assertEquals(PlayerReplayPromptBuilder.SYSTEM_PROMPT,
-                PlayerReplayPromptBuilder.localizePlayerSystemPrompt(
-                        PlayerReplayPromptBuilder.SYSTEM_PROMPT, AllowedLanguage.ZH));
+                PlayerPromptRules.systemPrompt("player/fallback", AllowedLanguage.ZH));
         assertEquals(PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT,
-                PlayerReplayPromptBuilder.localizePlayerSystemPrompt(
-                        PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT, AllowedLanguage.ZH));
+                PlayerPromptRules.systemPrompt("player/single", AllowedLanguage.ZH));
         assertEquals(TeamReplayAnalysisService.SINGLE_TEAM_PROMPT,
-                TeamReplayAnalysisService.localizeTeamSystemPrompt(
-                        TeamReplayAnalysisService.SINGLE_TEAM_PROMPT, AllowedLanguage.ZH));
+                TeamPromptLocalizer.systemPrompt(AllowedLanguage.ZH));
     }
 
     @ParameterizedTest
     @MethodSource("playerBases")
-    void enPlayerPromptsHaveNoConflictingChineseRules(final String zhPrompt) {
-        final String en = PlayerReplayPromptBuilder.localizePlayerSystemPrompt(zhPrompt, AllowedLanguage.EN);
+    void enPlayerPromptsHaveNoConflictingChineseRules(final String promptKey) {
+        final String en = PlayerPromptRules.systemPrompt(promptKey, AllowedLanguage.EN);
         assertTrue(en.contains("natural, fluent English"));
         assertTrue(en.contains("1m 15s"));
         assertTrue(en.contains("3m 0s"));
@@ -84,8 +81,8 @@ class AllowedLanguagePromptTest {
 
     @ParameterizedTest
     @MethodSource("playerBases")
-    void ruPlayerPromptsHaveNoConflictingChineseRules(final String zhPrompt) {
-        final String ru = PlayerReplayPromptBuilder.localizePlayerSystemPrompt(zhPrompt, AllowedLanguage.RU);
+    void ruPlayerPromptsHaveNoConflictingChineseRules(final String promptKey) {
+        final String ru = PlayerPromptRules.systemPrompt(promptKey, AllowedLanguage.RU);
         assertTrue(ru.contains("естественном русском языке"));
         assertTrue(ru.contains("1 мин 15 с"));
         assertTrue(ru.contains("3 мин 0 с"));
@@ -99,10 +96,9 @@ class AllowedLanguagePromptTest {
                 "RU prompt must not contain forced Chinese or ordinal-time wording");
     }
 
-    @ParameterizedTest
-    @MethodSource("teamBases")
-    void enTeamPromptsHaveNoConflictingChineseRules(final String zhPrompt) {
-        final String en = TeamReplayAnalysisService.localizeTeamSystemPrompt(zhPrompt, AllowedLanguage.EN);
+    @Test
+    void enTeamPromptsHaveNoConflictingChineseRules() {
+        final String en = TeamPromptLocalizer.systemPrompt(AllowedLanguage.EN);
         assertTrue(en.contains("natural, fluent English"));
         assertTrue(en.contains("1m 15s"));
         assertTrue(en.contains("3m 0s"));
@@ -116,10 +112,9 @@ class AllowedLanguagePromptTest {
                 "EN team prompt must not contain forced Chinese or ordinal-time wording");
     }
 
-    @ParameterizedTest
-    @MethodSource("teamBases")
-    void ruTeamPromptsHaveNoConflictingChineseRules(final String zhPrompt) {
-        final String ru = TeamReplayAnalysisService.localizeTeamSystemPrompt(zhPrompt, AllowedLanguage.RU);
+    @Test
+    void ruTeamPromptsHaveNoConflictingChineseRules() {
+        final String ru = TeamPromptLocalizer.systemPrompt(AllowedLanguage.RU);
         assertTrue(ru.contains("естественном русском языке"));
         assertTrue(ru.contains("1 мин 15 с"));
         assertTrue(ru.contains("3 мин 0 с"));
@@ -175,14 +170,10 @@ class AllowedLanguagePromptTest {
 
     private static Stream<Arguments> playerBases() {
         return Stream.of(
-                Arguments.of(PlayerReplayPromptBuilder.SYSTEM_PROMPT),
-                Arguments.of(PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT));
+                Arguments.of("player/fallback"),
+                Arguments.of("player/single"));
     }
 
-    private static Stream<Arguments> teamBases() {
-        return Stream.of(
-                Arguments.of(TeamReplayAnalysisService.SINGLE_TEAM_PROMPT));
-    }
 
     private static boolean containsAny(final String text, final List<String> needles) {
         return needles.stream().anyMatch(text::contains);

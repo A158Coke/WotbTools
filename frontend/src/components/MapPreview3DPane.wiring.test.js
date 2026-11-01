@@ -33,6 +33,19 @@ describe('MapPreview3DPane 场景接线（source regression）', () => {
     expect(body).not.toContain('resetAnnotationState')
   })
 
+  it('基地点位：唯一推送方向 pane→scene（setMapBasesKind），三触发点齐全', () => {
+    // kind 变化 / 场景创建（先于装载记意图）/ 会话就绪（teardown 复位内核意图后补推）
+    expect(paneSrc).toContain('setMapBasesKind')
+    expect(paneSrc).toContain('function pushBasesKind')
+    expect(paneSrc).toContain('watch(() => props.basesKind, pushBasesKind)')
+    const ensure = paneSrc.indexOf('function ensureScene')
+    const ensureEnd = paneSrc.indexOf('function reloadMap')
+    expect(paneSrc.slice(ensure, ensureEnd)).toContain('pushBasesKind()')
+    const readyStart = paneSrc.indexOf('watch(() => store.mapReady')
+    const readyBody = paneSrc.slice(readyStart, paneSrc.indexOf('})', readyStart))
+    expect(readyBody).toContain('pushBasesKind()')
+  })
+
   it('内核 map 会话：stub DATA + 就绪门控 mapReady（hasData 保持回放专用）', () => {
     expect(kernelSrc).toContain('async function loadMapOnly(')
     expect(kernelSrc).toContain("SESSION_MODE = 'map'")

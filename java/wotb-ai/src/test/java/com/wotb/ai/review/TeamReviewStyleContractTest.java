@@ -103,7 +103,7 @@ class TeamReviewStyleContractTest {
                 "任何自然说明必须显式引用全局选择性 UNKNOWN 条件");
         // 5) EN / RU 同步：不得残留强制披露句式，必须携带选择性条件引用
         for (final AllowedLanguage lang : java.util.List.of(AllowedLanguage.EN, AllowedLanguage.RU)) {
-            final String localized = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, lang);
+            final String localized = TeamPromptLocalizer.systemPrompt(lang);
             assertFalse(localized.contains("explicitly write \"cannot be determined from the current replay data\""),
                     lang + " 不得残留强制写 cannot-be-determined");
             assertFalse(localized.contains("vision benefit of an opening spread is UNKNOWN (write"),
@@ -111,10 +111,10 @@ class TeamReviewStyleContractTest {
             assertFalse(localized.contains("пишите «невозможно определить по данным реплея»"),
                     lang + " 不得残留 RU 强制写 невозможно-определить");
         }
-        final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.EN);
+        final String en = TeamPromptLocalizer.systemPrompt(AllowedLanguage.EN);
         assertTrue(en.contains("selective-UNKNOWN"), "EN 必须携带全局选择性 UNKNOWN 条件");
         assertTrue(en.contains("stays internal UNKNOWN"), "EN 必须表达内部 UNKNOWN");
-        final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.RU);
+        final String ru = TeamPromptLocalizer.systemPrompt(AllowedLanguage.RU);
         assertTrue(ru.contains("селективного UNKNOWN"), "RU 必须携带全局选择性 UNKNOWN 条件");
         assertTrue(ru.contains("внутренним UNKNOWN"), "RU 必须表达内部 UNKNOWN");
     }

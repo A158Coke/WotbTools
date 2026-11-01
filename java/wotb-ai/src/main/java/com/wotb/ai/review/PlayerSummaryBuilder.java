@@ -71,7 +71,7 @@ final class PlayerSummaryBuilder {
                 + (enemySection.isEmpty() ? "" : "\n" + enemySection)
                 + (pointsSection.isEmpty() ? "" : "\n" + pointsSection)
                 + (timelineSection.isEmpty() ? "" : "\n" + timelineSection);
-        final String systemPrompt = PlayerPromptRules.localizePlayerSystemPrompt(PlayerPromptRules.SYSTEM_PROMPT, language);
+        final String systemPrompt = PlayerPromptRules.systemPrompt("player/fallback", language);
         return new PreparedAiPrompt(systemPrompt, summary, "SINGLE_PLAYER_SUMMARY",
                 EvidenceDensity.LEVEL_1_COMPRESSED, 0);
     }
@@ -145,7 +145,7 @@ final class PlayerSummaryBuilder {
                         ctx.battle(), null, recorderTeam, true, "你的队伍", "敌方");
         final String summary = buildPlayerContextSummary(ctx)
                 + (pointsSection.isEmpty() ? "" : "\n" + pointsSection);
-        final String systemPrompt = PlayerPromptRules.localizePlayerSystemPrompt(PlayerPromptRules.SINGLE_PLAYER_PROMPT, language);
+        final String systemPrompt = PlayerPromptRules.systemPrompt("player/single", language);
         final List<Map<String, Object>> messages = List.of(
                 Map.<String, Object>of("role", "system", "content", systemPrompt),
                 Map.<String, Object>of("role", "user", "content", summary));
@@ -222,7 +222,7 @@ final class PlayerSummaryBuilder {
             }
         }
         final String baseSummary = summaryBuilder.toString();
-        final String systemPrompt = PlayerPromptRules.localizePlayerSystemPrompt(PlayerPromptRules.SINGLE_PLAYER_PROMPT, language);
+        final String systemPrompt = PlayerPromptRules.systemPrompt("player/single", language);
         final SingleReplayPromptPlanner planner = new SingleReplayPromptPlanner(
                 estimator, maxInputTokens,
                 contextWindowTokens, maxOutputTokens, promptSafetyMarginTokens);
