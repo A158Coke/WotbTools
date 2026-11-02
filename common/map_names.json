@@ -148,5 +148,25 @@
     "zh": "矿井阵地",
     "en": "Mines",
     "ru": "Рудники"
+  },
+  "erlenberg_old": {
+    "zh": "米德尔博格 2014版",
+    "en": "Middleburg mod. 2014"
+  },
+  "grossberg": {
+    "zh": "王朝的珍珠",
+    "en": "Dynasty's Pearl"
+  },
+  "iceworld": {
+    "zh": "永冻",
+    "en": "Everfrost"
+  },
+  "moon": {
+    "zh": "寂静之海",
+    "en": "Sea of Tranquility"
+  },
+  "savanna_old": {
+    "zh": "沙漠之心2014版",
+    "en": "Oasis Palms mod. 2014"
   }
 }
