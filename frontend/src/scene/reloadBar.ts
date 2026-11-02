@@ -79,18 +79,90 @@ const MAX_PLAUSIBLE_MAG = 10;
 /**
  * 单发装填状态：`full`（在膛）/ `loading`（装填中，`progress` 0..1，横向条左→右填充）/
  * `locked`（空槽但排队待装，弹鼓）/ `empty`（空槽等整夹重装，弹夹）。客户端 Full/Active/Inactive 同义。
- * @typedef {{ state: 'full'|'loading'|'locked'|'empty', progress: number }} ShellState
  */
+export interface ShellState {
+  state: 'full' | 'loading' | 'locked' | 'empty'
+  progress: number
+}
 
-const clamp01 = (x) => Math.max(0, Math.min(1, Number.isFinite(x) ? x : 0));
+/** 相位条目（arena subtype 15/16/17 解码产物；facet reloads 的事件形状）。 */
+export interface ReloadPhaseEvent {
+  clock: number
+  eid?: number | null
+  phase: number
+  duration_s?: number | null
+  /** f4 = 服务器剩余发数快照（f2=5 上是就绪标志） */
+  count?: number | null
+}
+
+/** method 35「当前生效完整装填时长」条目。 */
+export interface ReloadEffectiveEntry {
+  clock: number
+  eid?: number | null
+  duration_s: number
+}
+
+/** 相位/时长条目的公共可排序形状（marks 归并按 clock 排序）。 */
+export type ReloadTimedEntry = ReloadPhaseEvent | ReloadEffectiveEntry
+
+/** scheduledReady 的时间线变更条目（kind 判别：phase = f2=4/新定时相位，eff = method 35）。 */
+type ScheduledChange =
+  | { clock: number; kind: 'phase'; e: ReloadPhaseEvent }
+  | { clock: number; kind: 'eff'; e: ReloadEffectiveEntry }
+
+/** 资产包 tank/{id}.json 的配置项中装填联表用到的字段。 */
+export interface MountedTankConfig extends MountedConfigEvidence {
+  shell_global_ids?: number[]
+  hull_hp?: number | null
+  turret_health?: number | null
+}
+
+/** 回放 facet 车辆上用于装填联表的证据字段。 */
+export interface MountedConfigEvidence {
+  burst_size?: number | null
+  turret_local?: number | null
+  gun_local?: number | null
+  shell_ids?: number[]
+  max_hp?: number | null
+}
+
+export interface ReloadVehicleEvidence extends MountedConfigEvidence {
+  eid: number
+  team?: number | null
+  tank_id?: number | null
+}
+
+export interface TankJsonLike {
+  configs?: readonly (MountedTankConfig | null | undefined)[] | null
+}
+
+/** reload 条目里可识别 shooter 的字段（shooter_eid 优先，shooter 兼容旧产物）。 */
+export interface ReloadShotTelemetry {
+  shooter_eid?: number | null
+  shooter?: number | null
+  t_fire: number
+}
+
+export interface ReloadTelemetry {
+  reloads?: readonly (ReloadPhaseEvent | null | undefined)[] | null
+  reload_effective?: readonly (ReloadEffectiveEntry | null | undefined)[] | null
+  /** facet 车辆（producer 保证条目完整；reloads/reload_effective 的逐条判空是既有防御，车辆没有） */
+  vehicles?: readonly ReloadVehicleEvidence[] | null
+  mountedConfigs?: Map<number, TankJsonLike> | null
+  friendlyTeam?: number | null
+  meta?: { friendly_team?: number | null } | null
+  shots?: readonly ReloadShotTelemetry[] | null
+}
+
+const clamp01 = (x: number): number => Math.max(0, Math.min(1, Number.isFinite(x) ? x : 0));
 
 /** 是否为有明确结束时刻的弹药阶段。f2=3/6 会在结束时改变弹量；f2=7 只结束推弹视觉，**不补弹**。 */
-export function isTimedAmmoPhase(e) {
+export function isTimedAmmoPhase(e: ReloadPhaseEvent | null | undefined): boolean {
   return !!e && (e.phase === PHASE_START || e.phase === PHASE_DRUM_SHELL || e.phase === PHASE_MAG_INTERVAL);
 }
 
 /** 该车是否"按发装填"（弹鼓：相位流里有 f2=6）——决定空槽画 locked(.69) 还是 used(.25) */
-export function hasPerShellReloads(events) {
+export function hasPerShellReloads(events: readonly (ReloadPhaseEvent | null | undefined)[] | null | undefined): boolean {
   return (events || []).some((e) => e && e.phase === PHASE_DRUM_SHELL);
 }
 
@@ -104,7 +176,7 @@ export function hasPerShellReloads(events) {
  * AC Wedge 0/6、Medium I 0/15 等），两者都会把未搭载炮的弹容钉到条上。
  * 无该字段 / ≤1 → 1（单发，不猜）；脏值夹到上限 [`MAX_PLAUSIBLE_MAG`]。
  */
-export function magazineSizeOfVehicle(vehicle) {
+export function magazineSizeOfVehicle(vehicle: { burst_size?: number | null } | null | undefined): number {
   const b = Number(vehicle && vehicle.burst_size);
   return Number.isFinite(b) && b > 1 ? Math.min(MAX_PLAUSIBLE_MAG, Math.round(b)) : 1;
 }
@@ -122,11 +194,12 @@ export function magazineSizeOfVehicle(vehicle) {
  * 依次回退（both → 弹种 → 血量），多匹配取**最后一档**（顶级偏好）；全无 → `null`。
  * configs ≤ 1 时无歧义，直接返回该唯一配置。
  *
- * @param {{turret_local?: number|null, gun_local?: number|null, shell_ids?: number[], max_hp?: number}} vehicle
- * @param {{configs?: Array}} tankJson 资产面 `tank/{id}.json`
- * @returns {object|null} 命中的配置项
+ * @returns 命中的配置项
  */
-export function resolveMountedConfig(vehicle, tankJson) {
+export function resolveMountedConfig(
+  vehicle: MountedConfigEvidence | null | undefined,
+  tankJson: TankJsonLike | null | undefined,
+): MountedTankConfig | null {
   const cfgs = (tankJson && tankJson.configs) || [];
   if (!cfgs.length) return null;
   const exact = resolveExactMountedConfig(vehicle, tankJson);
@@ -151,34 +224,40 @@ export function resolveMountedConfig(vehicle, tankJson) {
   let cands = both.length ? both : cfgs.map((_, i) => i).filter((i) => gunOk[i]);
   if (!cands.length) cands = cfgs.map((_, i) => i).filter((i) => hpOk[i]);
   if (!cands.length) return null;
-  return cfgs[cands[cands.length - 1]];
+  return cfgs[cands[cands.length - 1]] ?? null;
 }
 
 /**
  * 证据 0 的无回退形态：唯一配置或 comp locals 精确命中，否则 null。
  * 装甲着色的颜色本身就是结论，配置错了结论就错，不能走 `resolveMountedConfig` 的推断链。
  */
-export function resolveExactMountedConfig(vehicle, tankJson) {
+export function resolveExactMountedConfig(
+  vehicle: MountedConfigEvidence | null | undefined,
+  tankJson: TankJsonLike | null | undefined,
+): MountedTankConfig | null {
   const cfgs = (tankJson && tankJson.configs) || [];
-  if (cfgs.length === 1) return cfgs[0];
+  if (cfgs.length === 1) return cfgs[0] ?? null;
   const tl = vehicle?.turret_local, gl = vehicle?.gun_local;
   if (tl == null || gl == null) return null;
   const exact = cfgs.filter((c) => c && c.turret_local === tl && c.gun_local === gl);
-  return exact.length ? exact[exact.length - 1] : null;
+  return exact.length ? (exact[exact.length - 1] ?? null) : null;
 }
 
 /**
  * 弹容 N 的客户端联表取值：优先 `resolveMountedConfig` 命中配置的 `burst_size`；
  * 未命中时回退 facet `burst_size`（服务器路径产物 / 唯一配置）；都没有 → 1（不猜）。
  */
-export function magazineSizeForVehicle(vehicle, tankJson) {
+export function magazineSizeForVehicle(
+  vehicle: MountedConfigEvidence | null | undefined,
+  tankJson: TankJsonLike | null | undefined,
+): number {
   const cfg = resolveMountedConfig(vehicle, tankJson);
   const fromCfg = magazineSizeOfVehicle({ burst_size: cfg && cfg.burst_size });
   return fromCfg > 1 ? fromCfg : magazineSizeOfVehicle(vehicle);
 }
 
 /** 相位条目是否参与时间归并（带正时长；f2=7 也参与——它会打断/接续装填节奏） */
-export function isUsablePhase(e) {
+export function isUsablePhase(e: ReloadPhaseEvent | null | undefined): e is ReloadPhaseEvent {
   if (!e) return false;
   const p = e.phase;
   if (p !== PHASE_START && p !== PHASE_DRUM_SHELL && p !== PHASE_MAG_INTERVAL && p !== PHASE_DURATION_CHANGE) return false;
@@ -199,20 +278,21 @@ export function isUsablePhase(e) {
  *   - f2=1 的服务器剩余发数快照（权威计数）。
  * 只有 f2=5（就绪/取消）不算：它不带时长也不改弹量，单凭它无法断言在膛发数。
  */
-export function hasReloadTelemetry(events) {
-  return (events || []).some((e) => isUsablePhase(e) || (!!e && e.phase === PHASE_AMMO_COUNT));
+export function hasReloadTelemetry(events: readonly (ReloadPhaseEvent | null | undefined)[] | null | undefined): boolean {
+  // 判据顺序：f2=1 快照优先判（isUsablePhase 是 type predicate，false 分支会把 e 收窄成 never）
+  return (events || []).some((e) => !!e && (e.phase === PHASE_AMMO_COUNT || isUsablePhase(e)));
 }
 
 /** 取可用相位（保持原顺序；facet 已按 clock 升序） */
-export function usablePhases(reloads) {
+export function usablePhases(reloads: readonly (ReloadPhaseEvent | null | undefined)[] | null | undefined): ReloadPhaseEvent[] {
   return (reloads || []).filter(isUsablePhase);
 }
 
 /** 按 eid 分组：Map<eid, 该车全部相位条目（含未闭环码）>
  *  保留全量是有意的：`f4`（剩余发数）也出现在未闭环相位码上（实测 f2=1），
  *  在膛发数的权威重锚需要它；显示用的可用相位由 shellStatesAt 内部再筛。 */
-export function groupByVehicle(reloads) {
-  const m = new Map();
+export function groupByVehicle<E extends { eid?: number | null }>(reloads: readonly (E | null | undefined)[] | null | undefined): Map<number, E[]> {
+  const m = new Map<number, E[]>();
   for (const e of reloads || []) {
     if (!e || e.eid == null) continue;
     let a = m.get(e.eid);
@@ -233,29 +313,31 @@ export function groupByVehicle(reloads) {
  * tank/{id}.json, filled asynchronously by the caller — the shared Map is read live);
  * falls back to the facet's `burst_size`, then 1 (single shot).
  */
-export function createReloadStateResolver(telemetry) {
+export function createReloadStateResolver(telemetry: ReloadTelemetry | null | undefined): (vehicleId: number, time: number, size?: number) => ShellState[] | null {
   const eventsByEid = groupByVehicle(telemetry?.reloads);
   const durationsByEid = groupByVehicle(telemetry?.reload_effective);
-  const vehiclesByEid = new Map((telemetry?.vehicles || []).map((v) => [v.eid, v]));
+  const vehiclesByEid = new Map<number, ReloadVehicleEvidence>(
+    (telemetry?.vehicles || []).map((v) => [v.eid, v]),
+  );
   const mountedConfigs = telemetry?.mountedConfigs || null;
   const friendlyTeam = telemetry?.friendlyTeam ?? telemetry?.meta?.friendly_team;
-  const firesByEid = new Map();
+  const firesByEid = new Map<number, number[]>();
   for (const shot of telemetry?.shots || []) {
     const eid = shot.shooter_eid ?? shot.shooter;
     if (eid == null || !Number.isFinite(shot.t_fire)) continue;
     if (!firesByEid.has(eid)) firesByEid.set(eid, []);
-    firesByEid.get(eid).push(shot.t_fire);
+    firesByEid.get(eid)!.push(shot.t_fire);
   }
   // Sort copies: the producer's immutable telemetry remains untouched.
   for (const list of [...eventsByEid.values(), ...durationsByEid.values()]) {
     list.sort((a, b) => a.clock - b.clock);
   }
   for (const list of firesByEid.values()) list.sort((a, b) => a - b);
-  return function reloadStateAt(vehicleId, time, size) {
+  return function reloadStateAt(vehicleId: number, time: number, size?: number): ShellState[] | null {
     const vehicle = vehiclesByEid.get(vehicleId);
     if ((friendlyTeam !== 1 && friendlyTeam !== 2) || vehicle?.team !== friendlyTeam || !Number.isFinite(time)) return null;
     const events = eventsByEid.get(vehicleId) || [];
-    const defaultSize = magazineSizeForVehicle(vehicle, mountedConfigs ? mountedConfigs.get(vehicle.tank_id) : null);
+    const defaultSize = magazineSizeForVehicle(vehicle, mountedConfigs ? mountedConfigs.get(vehicle.tank_id ?? NaN) : null);
     return shellStatesAt(events, firesByEid.get(vehicleId) || [], time,
       size ?? defaultSize, durationsByEid.get(vehicleId) || []);
   };
@@ -266,15 +348,21 @@ export function createReloadStateResolver(telemetry) {
  * f2=4 与 method 35 按时间顺序折入同一 ready 时间线，直到结束或被下一条定时弹药相位取代。
  * method 35 仍只作用于 f2=3；缩放公式必须与 shellStatesAt 的运行时状态机完全一致。
  */
-function scheduledReady(usable, i, effList, effAt) {
+function scheduledReady(
+  usable: readonly ReloadPhaseEvent[],
+  i: number,
+  effList: readonly ReloadEffectiveEntry[],
+  effAt: (t: number) => number | null,
+): number {
   const s = usable[i];
-  let dur = s.duration_s;
+  // scheduledReady 只消费 isTimedAmmoPhase（可用相位，duration_s 恒为正有限数）；?? 0 与 JS 的 null 算术一致
+  let dur = s.duration_s ?? 0;
   if (s.phase === PHASE_START && effAt) dur = effAt(s.clock) ?? dur;
   let ready = s.clock + dur;
 
   // 预计算 end mark 时不能只看 f2=4：method 35 会在运行时动态修改 ready。
   // 将两类变化合并排序，确保静态 end mark 与下面 marks 归并得到同一个结束时刻。
-  const changes = [];
+  const changes: ScheduledChange[] = [];
   for (let j = i + 1; j < usable.length; j++) {
     const e = usable[j];
     if (e.phase === PHASE_DURATION_CHANGE || isTimedAmmoPhase(e)) {
@@ -303,9 +391,10 @@ function scheduledReady(usable, i, effList, effAt) {
       continue;
     }
     const e = change.e;
-    if (e.phase === PHASE_DURATION_CHANGE && e.duration_s > 0) {
-      ready = e.clock + Math.max(0, ready - e.clock) * (e.duration_s / dur);
-      dur = e.duration_s;
+    const dNew = e.duration_s;
+    if (e.phase === PHASE_DURATION_CHANGE && dNew != null && dNew > 0) {
+      ready = e.clock + Math.max(0, ready - e.clock) * (dNew / dur);
+      dur = dNew;
     } else if (isTimedAmmoPhase(e)) {
       break;                                          // 新定时相位取代本次
     }
@@ -314,7 +403,7 @@ function scheduledReady(usable, i, effList, effAt) {
 }
 
 /** 最后一个 clock ≤ t 的下标（二分；无 → -1） */
-export function lastIndexAtOrBefore(events, t) {
+export function lastIndexAtOrBefore(events: readonly { clock: number }[], t: number): number {
   let lo = 0, hi = events.length - 1, ans = -1;
   while (lo <= hi) {
     const mid = (lo + hi) >> 1;
@@ -343,24 +432,37 @@ export function lastIndexAtOrBefore(events, t) {
  * - **弹鼓逐发（f2=6）**：只补**最左空位**那一发，进度 = 该事件时长；其余保持。
  * - **射击间隔（f2=7）**：**不补发**——空位保持空（弹夹要等整夹装填，弹鼓等随后的 f2=6）。
  *
- * @param {Array} events 该车的相位条目（升序；可用相位由内部筛）
- * @param {Array<number>} fires 该车的开火时刻（升序）——每开火消耗一发
- * @returns {ShellState[]|null} 无遥测 → `null`（不画）
+ * @param events 该车的相位条目（升序；可用相位由内部筛）
+ * @param fires 该车的开火时刻（升序）——每开火消耗一发
+ * @returns 无遥测 → `null`（不画）
  */
-export function shellStatesAt(events, fires, t, size = 1, durations = null) {
+export function shellStatesAt(
+  events: readonly ReloadPhaseEvent[],
+  fires: readonly number[],
+  t: number,
+  size = 1,
+  durations: readonly (ReloadEffectiveEntry | null | undefined)[] | null = null,
+): ShellState[] | null {
   const n = Math.max(1, Math.round(size) || 1);
   // 没有可信装填遥测 = unknown：绝不返回可绘制的满弹状态（"absence of evidence ≠ full ammo"）
   if (!hasReloadTelemetry(events)) return null;
-  const full = () => Array.from({ length: n }, () => ({ state: 'full', progress: 1 }));
 
   // 归并「开火 / 相位开始 / 相位结束」三类时间标记（均 ≤ t）；只用可用相位建标记。
   // 定时弹药相位（f2=3/6/7）的结束时刻要折进其后的 f2=4 时长变更；只有 f2=3/6
   // 会在结束时改变弹量，f2=7 结束只代表推弹/射击间隔完成。
-  const marks = [];
+  type ReloadMark =
+    | { t: number; kind: 'begin'; e: ReloadPhaseEvent }
+    | { t: number; kind: 'end'; e: ReloadPhaseEvent }
+    | { t: number; kind: 'fire'; e: null }
+    | { t: number; kind: 'eff'; e: ReloadEffectiveEntry }
+    | { t: number; kind: 'count'; e: ReloadPhaseEvent }
+  const marks: ReloadMark[] = [];
   // 方法 35：权威"当前生效完整装填时长"（**长装填刻度**）——只用于 f2=3 的进度/结算基准
-  const effList = durations || [];
-  const effAt = (tt) => {
-    let v = null;
+  const effList: readonly ReloadEffectiveEntry[] = (durations || []).filter(
+    (d): d is ReloadEffectiveEntry => !!d,
+  );
+  const effAt = (tt: number): number | null => {
+    let v: number | null = null;
     for (const d of effList) {
       if (d.clock <= tt) v = d.duration_s;
       else break;
@@ -397,7 +499,7 @@ export function shellStatesAt(events, fires, t, size = 1, durations = null) {
   marks.sort((a, b) => (a.t - b.t) || (a.kind === 'end' ? -1 : (b.kind === 'end' ? 1 : 0)));
 
   const perShell = hasPerShellReloads(events);   // 弹鼓：空槽 = locked（排队待装），非弹鼓 = used
-  const emptyState = () => (perShell ? { state: 'locked', progress: 0 } : { state: 'empty', progress: 0 });
+  const emptyState = (): ShellState => (perShell ? { state: 'locked', progress: 0 } : { state: 'empty', progress: 0 });
   let loaded = n;          // 在膛发数（0..N）
   let active = null;       // 当前未结束的定时弹药相位（f2=3/6/7；f2=7 仅视觉上膛，不补弹）
   // 进度用「预测就绪时刻 ready + 当前生效完整时长 dur」表示：progress = 1 − max(0, ready−t)/dur。
@@ -430,10 +532,13 @@ export function shellStatesAt(events, fires, t, size = 1, durations = null) {
         // 故**不能**把基准重置成 clock+d——那样在真实数据里会出现 9/120 次"预测就绪晚于实际
         // 开火"（物理不可能）；改为**按比例缩放剩余时间**：ready ← t + (ready−t)·d′/d，
         // 同一数据集违例降到 1/120。不改变已装填发数。
-        if (active && dur > 0 && m.e.duration_s > 0) {
-          const rest = Math.max(0, ready - m.e.clock);
-          ready = m.e.clock + rest * (m.e.duration_s / dur);
-          dur = m.e.duration_s;
+        if (active && dur > 0) {
+          const dNew = m.e.duration_s;
+          if (dNew != null && dNew > 0) {
+            const rest = Math.max(0, ready - m.e.clock);
+            ready = m.e.clock + rest * (dNew / dur);
+            dur = dNew;
+          }
         }
         continue;
       }
@@ -441,7 +546,8 @@ export function shellStatesAt(events, fires, t, size = 1, durations = null) {
       // 方法 35 是**完整装填配置时长**（长装填刻度）——只对 f2=3（整夹装填）生效；
       // f2=6（弹鼓逐发）/f2=7（夹内小装填）必须用相位自带的 duration_s，否则小装填
       // 会按长装填的刻度走（曾致部分弹夹车小装填看起来像长装填）。
-      dur = m.e.phase === PHASE_START ? (effAt(m.e.clock) ?? m.e.duration_s) : m.e.duration_s;
+      // begin 只来自可用相位（duration_s 恒为正有限数），`?? 0` 与 JS 的 null 算术一致。
+      dur = m.e.phase === PHASE_START ? (effAt(m.e.clock) ?? m.e.duration_s ?? 0) : (m.e.duration_s ?? 0);
       ready = m.e.clock + dur;
       continue;
     }
@@ -480,7 +586,7 @@ export function shellStatesAt(events, fires, t, size = 1, durations = null) {
 }
 
 /** 逐发状态 → 聚合填充比（重绘门控与旧口径兼容用）；无遥测（`null`）→ 1（不影响重绘门控） */
-export function fillOf(states) {
+export function fillOf(states: readonly ShellState[] | null | undefined): number {
   if (!states || !states.length) return 1;
   let sum = 0;
   for (const s of states) sum += s.state === 'full' ? 1 : s.state === 'loading' ? clamp01(s.progress) : 0;

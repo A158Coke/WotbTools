@@ -12,7 +12,23 @@
  * 窗口内输出 fps（帧/窗口）、frameMs（平均帧间隔）与 peakMs（窗口内最差一帧间隔，
  * 用于暴露"平均还行但有顿挫"）。
  */
-export function createFrameMeter({ windowMs = 500 } = {}) {
+export interface FrameMeterSample {
+  fps: number
+  frameMs: number
+  peakMs: number
+}
+
+export interface FrameMeter {
+  /** 窗口结束时返回统计，否则 null */
+  sample(now: number): FrameMeterSample | null
+  readonly fps: number
+  readonly frameMs: number
+  readonly peakMs: number
+  /** 空闲 / 暂停 / 重建时由调用方显式调用（下一次 sample 重新起窗） */
+  reset(): void
+}
+
+export function createFrameMeter({ windowMs = 500 }: { windowMs?: number } = {}): FrameMeter {
   let active = false   // 用独立标志起窗：performance.now() 合法值为 0，不能拿 0 当哨兵
   let startedAt = 0
   let lastAt = 0
@@ -21,11 +37,10 @@ export function createFrameMeter({ windowMs = 500 } = {}) {
   let frameMs = 0
   let peakMs = 0
 
-  const round1 = (n) => Math.round(n * 10) / 10
+  const round1 = (n: number) => Math.round(n * 10) / 10
 
   return {
-    /** @returns {{fps:number, frameMs:number, peakMs:number}|null} 窗口结束时返回统计，否则 null */
-    sample(now) {
+    sample(now: number): FrameMeterSample | null {
       if (!active) { active = true; startedAt = now; lastAt = now; frames = 0; peakMs = 0; return null }
       const gap = now - lastAt
       lastAt = now

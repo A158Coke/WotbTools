@@ -8,14 +8,14 @@
  * —— 曾用 0.22s 下限"保证可见性"，实测 68% 的射击真飞行时长 <0.22s（J39 样本 155 发：
  * 中位 0.16s、p10 0.04s，弹速 560~1658 m/s），那些炮弹被拖慢最多 11×，与客户端不一致。
  */
-export function tracerSpanSecs(flightSecs) {
+export function tracerSpanSecs(flightSecs: number): number {
   const oneFrame = 1 / 60
   return Number.isFinite(flightSecs) && flightSecs > oneFrame ? flightSecs : oneFrame
 }
 
 /** 线段经过的格子键（2D DDA；纯函数，单测锁定；用于标签遮挡的候选格选取） */
-export function occlusionCells(ax, ay, bx, by, cell = 16) {
-  const out = new Set();
+export function occlusionCells(ax: number, ay: number, bx: number, by: number, cell = 16): Set<string> {
+  const out = new Set<string>();
   const dx = bx - ax, dy = by - ay;
   const len = Math.hypot(dx, dy);
   const steps = Math.max(1, Math.ceil(len / (cell / 2)));
@@ -32,7 +32,7 @@ export function occlusionCells(ax, ay, bx, by, cell = 16) {
  *  覆盖格子全部缺失——穿那些格子的相机→标签射线在候选表里查不到该遮挡物，标签
  *  隔楼可见（false-visible）。每轴格数钳制 64（16m 格 × 64 ≈ 1km，远超静态建筑
  *  尺度；防病态大包围球把登记表撑爆）。 */
-export function occlusionFootprintCells(minX, minY, maxX, maxY, cell = 16) {
+export function occlusionFootprintCells(minX: number, minY: number, maxX: number, maxY: number, cell = 16): string[] {
   let gx0 = Math.floor(minX / cell), gx1 = Math.floor(maxX / cell);
   let gy0 = Math.floor(minY / cell), gy1 = Math.floor(maxY / cell);
   const MAX_SPAN = 64;

@@ -6,19 +6,33 @@
 // 由 Agent core 按同 eid 的 Type5 配件串在解码时叠加；在这里预加会双重计算。
 import { assetProvider } from './assetProvider.js'
 
-/**
- * @param {Array<{nickname:string, tank_id:number}>} vehicles
- * @returns {Promise<Record<string, {dep:number, ele:number, front?:number[], back?:number[], transition?:number}>>}
- */
-export async function buildPitchLimits(vehicles) {
-  const limits = {}
-  const byTank = new Map()
+/** 单车俯仰锚定（dep = 俯角下限，ele = 仰角上限；front/back/transition 为火力组扇区，透传资产包原值）。 */
+export interface PitchRange {
+  dep: number
+  ele: number
+  front?: number[]
+  back?: number[]
+  transition?: number
+}
+
+/** playback 名册中 buildPitchLimits 需要的字段。 */
+export interface PitchLimitVehicle {
+  nickname: string
+  tank_id: number
+}
+
+export async function buildPitchLimits(vehicles: readonly PitchLimitVehicle[] | null | undefined): Promise<Record<string, PitchRange>> {
+  const limits: Record<string, PitchRange> = {}
+  const byTank = new Map<number, string[]>()
   for (const v of vehicles || []) {
-    if (v.nickname && v.tank_id && !byTank.has(v.tank_id)) byTank.set(v.tank_id, [])
-    if (v.nickname && v.tank_id) byTank.get(v.tank_id).push(v.nickname)
+    if (v.nickname && v.tank_id) {
+      let names = byTank.get(v.tank_id)
+      if (!names) { names = []; byTank.set(v.tank_id, names) }
+      names.push(v.nickname)
+    }
   }
   if (!byTank.size) return limits
-  const tankRange = new Map()
+  const tankRange = new Map<number, PitchRange>()
   await Promise.all([...byTank.keys()].map(async (tid) => {
     try {
       const data = await assetProvider.json(`/tank/${tid}.json`)

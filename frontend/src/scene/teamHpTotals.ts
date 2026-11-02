@@ -6,7 +6,26 @@
  * - `friendlyTeam` 未知（≠ 1/2）时谁都不归属，两队都按 0 计（不得把全队算进敌方）；
  * - 单车 `team` 不是 1/2（0 = 观察者 / 联表失败）不计入任一方。
  */
-export function teamHpTotals(vehicles, friendlyTeam) {
+
+/** 3D 场景内单车 HP 快照（teamHpTotals 只读 team / hp / maxHp）。 */
+export interface TeamHpVehicle {
+  team?: number | null
+  hp?: number | null
+  maxHp?: number | null
+}
+
+export interface TeamHpTotals {
+  hpFriend: number
+  hpFriendMax: number
+  hpEnemy: number
+  hpEnemyMax: number
+  hpFriendPct: number
+  hpEnemyPct: number
+}
+
+export type FriendlyTeam = 1 | 2
+
+export function teamHpTotals(vehicles: readonly TeamHpVehicle[], friendlyTeam: number | null | undefined): TeamHpTotals {
   let hpFriend = 0, hpFriendMax = 0, hpEnemy = 0, hpEnemyMax = 0;
   const friendlyKnown = friendlyTeam === 1 || friendlyTeam === 2;
   if (friendlyKnown) {
@@ -34,7 +53,7 @@ export function teamHpTotals(vehicles, friendlyTeam) {
  * `pointsAt`（friend / enemy 都是 null）同口径。unknown ≠ enemy——把物理 team1 当「己方」上屏，
  * 等于替用户猜一个不存在的视角，还会被 HUD 染成 ally / enemy 两色。
  */
-export function perspectiveScore(score1, score2, friendlyTeam) {
+export function perspectiveScore(score1: number, score2: number, friendlyTeam: number | null | undefined): { scoreFriend: number; scoreEnemy: number } {
   if (friendlyTeam === 1) return { scoreFriend: score1, scoreEnemy: score2 }
   if (friendlyTeam === 2) return { scoreFriend: score2, scoreEnemy: score1 }
   return { scoreFriend: 0, scoreEnemy: 0 }

@@ -11,10 +11,23 @@
 // 接线在 playbackScene.js（GLB 装载后、网格索引构建前调用一次）。
 
 /** map_id → 本局激活的变体标签；无映射/当前 id 不在映射（旧包/口径外）→ null（调用方 fail-closed） */
-export function activeVariantOf(variantByMapId, mapId) {
+export function activeVariantOf(variantByMapId: unknown, mapId: number | string): string | null {
   if (!variantByMapId || typeof variantByMapId !== 'object') return null
-  const v = variantByMapId[String(mapId)] ?? variantByMapId[Number(mapId)]
+  const byMapId = variantByMapId as Record<string | number, unknown>
+  const v = byMapId[String(mapId)] ?? byMapId[Number(mapId)]
   return typeof v === 'string' ? v : null
+}
+
+/** 变体裁剪消费的最小节点接口（three Object3D 结构兼容，可单测注入替身）。 */
+export interface VariantPruneNode {
+  userData?: { variantByMapId?: unknown; mdVariant?: unknown } & Record<string, unknown>
+  children?: readonly VariantPruneNode[]
+  parent?: { remove: (child: VariantPruneNode) => unknown } | null
+}
+
+export interface PruneForeignVariantsResult {
+  removed: number
+  failClosed: boolean
 }
 
 /**
@@ -27,19 +40,20 @@ export function activeVariantOf(variantByMapId, mapId) {
  * 行为那样 fail-open 全量渲染（Dead Rail/Middleburg 等 9 图会出现游戏里不存在的
  * 幻影布景）。无标记节点时仍是 no-op。
  */
-export function pruneForeignVariantsDetailed(root, mapId) {
+export function pruneForeignVariantsDetailed(root: VariantPruneNode | null | undefined, mapId: number | string): PruneForeignVariantsResult {
   const mapping = root?.userData?.variantByMapId
   const active = activeVariantOf(mapping, mapId)
-  const tagged = []
-  const stack = [...(root?.children || [])]
+  const tagged: VariantPruneNode[] = []
+  const stack: VariantPruneNode[] = [...(root?.children || [])]
   while (stack.length) {
     const o = stack.pop()
+    if (!o) break
     for (const c of o.children || []) stack.push(c)
     if (o.userData?.mdVariant) tagged.push(o)
   }
   if (!tagged.length) return { removed: 0, failClosed: false }
   if (!active) {
-    const hasMapping = !!(mapping && typeof mapping === 'object' && Object.keys(mapping).length)
+    const hasMapping = !!(mapping && typeof mapping === 'object' && Object.keys(mapping as object).length)
     const reason = hasMapping
       ? `map_id=${String(mapId)} 不在 variantByMapId`
       : '缺少 variantByMapId（旧包或变体映射不完整）'
@@ -52,7 +66,7 @@ export function pruneForeignVariantsDetailed(root, mapId) {
   }
   let pruned = 0
   for (const o of tagged) {
-    if (o.userData.mdVariant !== active && typeof o.parent?.remove === 'function') {
+    if (o.userData?.mdVariant !== active && typeof o.parent?.remove === 'function') {
       o.parent.remove(o)
       pruned++
     }
@@ -62,6 +76,6 @@ export function pruneForeignVariantsDetailed(root, mapId) {
 
 /** 兼容包装：旧调用方只关心剔除数量；需要 fail-closed 信号（运行时降级/烘焙中止）
  *  用 {@link pruneForeignVariantsDetailed}。 */
-export function pruneForeignVariants(root, mapId) {
+export function pruneForeignVariants(root: VariantPruneNode | null | undefined, mapId: number | string): number {
   return pruneForeignVariantsDetailed(root, mapId).removed
 }

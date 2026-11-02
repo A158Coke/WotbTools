@@ -12,9 +12,31 @@ export const WEBGL_STATUS = Object.freeze({
   WEBGL1_ONLY: 'webgl1-only',
   /** 完全拿不到 WebGL：硬件加速被关闭、黑名单驱动、无 GPU 的远程桌面等 */
   UNAVAILABLE: 'unavailable',
-})
+} as const)
 
-function tryContext(canvas, name) {
+export type WebGLSupportStatus = (typeof WEBGL_STATUS)[keyof typeof WEBGL_STATUS]
+
+export interface WebGLSupport {
+  supported: boolean
+  status: WebGLSupportStatus
+  version: 0 | 1 | 2
+}
+
+/** WebGL 上下文里 detectWebGL 用到的最小面（真实 WebGL2RenderingContext.getExtension 返回 any，结构兼容）。 */
+interface GlContext {
+  getExtension(name: string): { loseContext?(): void } | null
+}
+
+interface GlCanvas {
+  getContext(name: string): GlContext | null
+}
+
+/** 预检用 document 的最小面（可注入假 document）。 */
+export interface GlProbeDocument {
+  createElement(tag: string): GlCanvas
+}
+
+function tryContext(canvas: GlCanvas, name: string): GlContext | null {
   try {
     return canvas.getContext(name) || null
   } catch {
@@ -23,20 +45,17 @@ function tryContext(canvas, name) {
 }
 
 /** 预检用的上下文立刻释放：浏览器同时存活的 WebGL 上下文有上限（约 16 个） */
-function release(gl) {
+function release(gl: GlContext): void {
   try {
-    gl.getExtension?.('WEBGL_lose_context')?.loseContext()
+    const ext = gl.getExtension?.('WEBGL_lose_context')
+    ext?.loseContext?.()
   } catch {
     // 释放失败不影响结论
   }
 }
 
-/**
- * @param {{ createElement?: (tag: string) => any } | null | undefined} doc
- * @returns {{ supported: boolean, status: string, version: 0 | 1 | 2 }}
- */
-export function detectWebGL(doc = typeof document === 'undefined' ? null : document) {
-  const unavailable = { supported: false, status: WEBGL_STATUS.UNAVAILABLE, version: 0 }
+export function detectWebGL(doc: GlProbeDocument | null | undefined = typeof document === 'undefined' ? null : document): WebGLSupport {
+  const unavailable: WebGLSupport = { supported: false, status: WEBGL_STATUS.UNAVAILABLE, version: 0 }
   if (!doc || typeof doc.createElement !== 'function') return unavailable
   let canvas
   try {
