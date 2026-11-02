@@ -125,6 +125,34 @@ export function makeUnderWater(waterSurfaces) {
  *                   必须在实例化合批前调用——本函数即在该阶段）
  * @returns {{ animLayerMats: THREE.Material[], skyMeshes: number }}
  */
+/**
+ * decal 材质既用于纯地面 overlay，也用于**实体桥/石墙**（古老秘境 StoneBridgePart1/2
+ * 的 material extras 就是 decal:true）。纯 overlay 是薄片；实体桥有明确垂直厚度且包含
+ * 侧面/底面法线。用几何语义区分，避免把所有 decal 一刀切成不可绘制。
+ */
+const DECAL_SOLID_MIN_HEIGHT = 1.0
+
+function isSolidDecalGeometry(geometry) {
+  if (!geometry) return false
+  if (!geometry.boundingBox && typeof geometry.computeBoundingBox === 'function') {
+    geometry.computeBoundingBox()
+  }
+  const bb = geometry.boundingBox
+  if (!bb || bb.max.z - bb.min.z < DECAL_SOLID_MIN_HEIGHT) return false
+  const normals = geometry.attributes && geometry.attributes.normal
+  if (!normals || normals.count < 3) return false
+  let down = 0
+  let side = 0
+  let total = 0
+  for (let i = 0; i < normals.count; i++) {
+    const nz = normals.getZ(i)
+    if (nz < -0.1) down++
+    if (Math.abs(nz) <= 0.3) side++
+    total++
+  }
+  return down / total > 0.02 || side / total > 0.05
+}
+
 export function assembleSceneryMaterials(gltf, {
   strictSurfaces = false, masks, groundLayers = null, waterCoast = null, debug = false, onMesh = null,
   skyFlagsAvailable = null,
@@ -276,7 +304,7 @@ export function assembleSceneryMaterials(gltf, {
         const cmTex = ownDecal || groundLayers.texs.cm;
         if (cmTex) {
           const GL = groundLayers.layers || {};
-          annotationSurface = false;
+          if (!isSolidDecalGeometry(o.geometry)) annotationSurface = false;
           return makeDecalMaterial(m, cmTex, ownDecal ? null : groundLayers.texs.lm, {
             separateLm: (ud.decalSeparateLm !== undefined)
               ? !!ud.decalSeparateLm

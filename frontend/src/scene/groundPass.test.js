@@ -16,6 +16,8 @@ import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { loadTerrain, makeGroundMaterial } from './groundPass.js'
 import { assembleSceneryMaterials } from './sceneryAssembly.js'
+import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh } from './sceneryInstancing.js'
+import { buildAnnotationSurfaceGrid, pickDrawableSurfaceHit } from './playback/annotationSurface.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const strip = (s) => s.replace(/\r\n/g, '\n')   // LF 归一（CRLF 检出下 LF 锚点不匹配，CI 为 LF）
@@ -244,7 +246,7 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
     const root = new THREE.Group()
     const decalMat = new THREE.MeshStandardMaterial({ name: 'road_decal' })
     decalMat.userData.decal = true
-    const decal = new THREE.Mesh(new THREE.BoxGeometry(4, 0.1, 4), decalMat)
+    const decal = new THREE.Mesh(new THREE.BoxGeometry(4, 4, 0.1), decalMat)
     decal.geometry.setAttribute('uv1', new THREE.BufferAttribute(
       new Float32Array(decal.geometry.attributes.uv.count * 2), 2,
     ))
@@ -258,6 +260,68 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
     assembleSceneryMaterials({ scene: root }, { strictSurfaces: true, masks, groundLayers })
     expect(decal.material.userData.annotationSurface).toBe(false)
     expect(blend.material.userData.annotationSurface).toBe(false)
+  })
+
+  it('decal 材质用于实体桥时保留 drawable，薄 overlay 仍排除', () => {
+    const NO_TEX = () => null
+    const masks = {
+      maskTexOf: () => null, lmTexOf: NO_TEX, detailTexOf: NO_TEX,
+      envTexOf: NO_TEX, waterTexOf: NO_TEX, decalTexOf: NO_TEX,
+    }
+    const groundLayers = { layers: {}, texs: { cm: new THREE.Texture(), lm: null } }
+    const root = new THREE.Group()
+    const addUv1 = (mesh) => {
+      mesh.geometry.setAttribute('uv1', new THREE.BufferAttribute(
+        new Float32Array(mesh.geometry.attributes.position.count * 2), 2,
+      ))
+    }
+    const solidMat = new THREE.MeshStandardMaterial({ name: 'bridge_decal' })
+    solidMat.userData.decal = true
+    const solid = new THREE.Mesh(new THREE.BoxGeometry(20, 10, 10), solidMat)
+    addUv1(solid)
+    const overlayMat = new THREE.MeshStandardMaterial({ name: 'road_overlay' })
+    overlayMat.userData.decal = true
+    const overlay = new THREE.Mesh(new THREE.BoxGeometry(20, 20, 0.1), overlayMat)
+    addUv1(overlay)
+    root.add(solid, overlay)
+    assembleSceneryMaterials({ scene: root }, { strictSurfaces: true, masks, groundLayers })
+    expect(solid.material.userData.annotationSurface).not.toBe(false)
+    expect(overlay.material.userData.annotationSurface).toBe(false)
+  })
+
+  it('solid decal bridge 经 production assembly → batch → grid → pick 仍可命中', () => {
+    const NO_TEX = () => null
+    const masks = {
+      maskTexOf: () => null, lmTexOf: NO_TEX, detailTexOf: NO_TEX,
+      envTexOf: NO_TEX, waterTexOf: NO_TEX, decalTexOf: NO_TEX,
+    }
+    const groundLayers = { layers: {}, texs: { cm: new THREE.Texture(), lm: null } }
+    const root = new THREE.Group()
+    const add = (mesh) => {
+      mesh.geometry.setAttribute('uv1', new THREE.BufferAttribute(
+        new Float32Array(mesh.geometry.attributes.position.count * 2), 2,
+      ))
+      root.add(mesh)
+    }
+    const bridgeMat = new THREE.MeshStandardMaterial({ name: 'bridge_decal' })
+    bridgeMat.userData.decal = true
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(20, 10, 10), bridgeMat)
+    add(bridge)
+    const overlayMat = new THREE.MeshStandardMaterial({ name: 'road_overlay' })
+    overlayMat.userData.decal = true
+    add(new THREE.Mesh(new THREE.BoxGeometry(20, 20, 0.1), overlayMat))
+
+    assembleSceneryMaterials({ scene: root }, { strictSurfaces: true, masks, groundLayers })
+    root.updateMatrixWorld(true)
+    const batches = groupInstanceBatches(collectInstanceEntries(root))
+    for (const batch of batches) batch.mesh = buildInstancedMesh(batch)
+    const grid = buildAnnotationSurfaceGrid(batches)
+    const meshes = [...new Set([...grid.values()].flat())]
+    expect(meshes.length).toBeGreaterThan(0)
+    const rc = new THREE.Raycaster(new THREE.Vector3(0, 30, 0), new THREE.Vector3(0, -1, 0))
+    const hit = pickDrawableSurfaceHit(rc, meshes)
+    expect(hit).not.toBeNull()
+    expect(hit.point.y).toBeCloseTo(5, 5)
   })
 
   it('普通 ST| SpeedTree static geometry 同样不是可绘制表面（不依赖 _corner）', () => {

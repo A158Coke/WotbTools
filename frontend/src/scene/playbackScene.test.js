@@ -4723,6 +4723,9 @@ describe('3D annotation pointer ownership', () => {
     const picked = layer.pick(380, 300)
     expect(picked.semantic.surfaceY).toBeCloseTo(21, 5)
     expect(picked.semantic.surfaceN.y).toBeCloseTo(1, 5)
+    const diag = layer.pickDebug(380, 300)
+    expect(diag.candidateCount).toBeGreaterThan(0)
+    expect(diag.chosen.surfaceY).toBeCloseTo(21, 5)
 
     canvas.dispatchEvent(mouse('pointerdown', 380, 300))
     canvas.dispatchEvent(mouse('pointermove', 390, 300))

@@ -116,6 +116,7 @@ import { GRID_DT, ASSET_CONCURRENCY, mapLimit } from './playback/util.js'
 import { QUALITY_PRESETS } from './playback/quality.js'
 import { tracerSpanSecs, occlusionCells, occlusionFootprintCells } from './playback/pure.js'
 import { createPickReporter } from './playback/pickReport.js'
+import { chainVisible } from './pickDebug.js'
 import { createBoundaryBand, BOUNDARY_THICK } from './playback/boundary.js'
 import { createBaseMarkers } from './playback/bases.js'
 import { createHudFeed } from './playback/hudFeed.js'
@@ -1726,6 +1727,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         stats: annotationStats,
         sampler: annotationSurfaceHeightAt,
         pick: (x, y) => pickAnnotationSurface(x, y),
+        pickDebug: (x, y) => debugPickAnnotationSurface(x, y),
         setSurfaceGrid: (grid) => { annotationSurfaceGrid = grid },
         gesture: () => annotationGesture,
         rebuild: () => { rebuildAnnotationProjection(); return annotationStats.terrainRebuilds },
@@ -1978,6 +1980,97 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       surfaceY: hit.point.y,
       surfaceN: normal ? { x: normal.x, y: normal.y, z: normal.z } : undefined,
     }
+  }
+
+  /**
+   * 诊断专用：解释一次 annotation surface pick 的 grid/candidate/rejection。
+   * 与 pickAnnotationSurface 共用同一 grid/candidate/raycast/policy，不建立第二套 telemetry。
+   */
+  function debugPickAnnotationSurface(clientX, clientY) {
+    const rect = container.getBoundingClientRect()
+    const groundHit = raycastAnnotationGround(clientX, clientY, rect)
+    const diag = {
+      groundHit: groundHit ? { distance: groundHit.distance, point: groundHit.point.toArray() } : null,
+      gridCells: [],
+      gridSize: annotationSurfaceGrid ? annotationSurfaceGrid.size : 0,
+      candidateCount: 0,
+      rawHitCount: 0,
+      hits: [],
+      chosen: null,
+      reason: null,
+    }
+    const rc = annotationSurfaceRaycaster
+    if (!rc || !annotationSurfaceGrid || !(rect.width > 0) || !(rect.height > 0)) {
+      diag.reason = 'no-grid'
+      return diag
+    }
+    setRaycasterFromClient(clientX, clientY, rect, rc)
+    const maxFar = Math.min(4000, Number.isFinite(camera.far) ? camera.far : 4000)
+    const near = Number.isFinite(camera.near) ? Math.max(0.01, camera.near) : 0.01
+    const far = groundHit ? Math.min(groundHit.distance, maxFar) : maxFar
+    rc.near = near
+    rc.far = far
+    const target = groundHit ? groundHit.point : rc.ray.at(far, new THREE.Vector3())
+    const cells = occlusionCells(camera.position.x, camera.position.z, target.x, target.z)
+    diag.gridCells = cells
+    const cands = collectSurfaceCandidates(annotationSurfaceGrid, cells)
+    if (!cands) {
+      diag.reason = 'candidate-budget'
+      return diag
+    }
+    diag.candidateCount = cands.length
+    if (!cands.length) {
+      diag.reason = 'not-in-grid'
+      return diag
+    }
+    const raw = rc.intersectObjects(cands, false)
+    diag.rawHitCount = raw.length
+    const materialOf = (hit) => {
+      const material = hit.object && hit.object.material
+      if (Array.isArray(material)) return material[hit.face?.materialIndex ?? 0] || null
+      return material || null
+    }
+    for (const hit of raw.slice(0, 32)) {
+      const material = materialOf(hit)
+      const normal = hitWorldNormal(hit)
+      const terrainY = hit.point ? annotationSurfaceHeightAt(hit.point.x, hit.point.z) : null
+      const clearance = hit.point && Number.isFinite(terrainY) ? hit.point.y - terrainY : null
+      const normalY = normal ? normal.y : null
+      let reason = 'drawable'
+      if (!chainVisible(hit.object)) reason = 'invisible'
+      else if (!hit.face) reason = 'no-face'
+      else if (!hit.object.isMesh || !hit.object.geometry) reason = 'no-geometry'
+      else if (material && material.userData && material.userData.annotationSurface === false) reason = 'annotationSurface=false'
+      else if (clearance !== null && clearance < 0.5) reason = 'clearance<0.5'
+      else if (normalY !== null && normalY < 0.4) reason = 'normal.y<0.4'
+      diag.hits.push({
+        object: hit.object.name || hit.object.type || null,
+        material: material ? (material.name || material.type || null) : null,
+        isInstancedMesh: !!hit.object.isInstancedMesh,
+        instanceId: hit.instanceId != null ? hit.instanceId : null,
+        point: hit.point ? hit.point.toArray() : null,
+        distance: hit.distance,
+        normalY,
+        terrainY,
+        clearance,
+        annotationSurface: material?.userData?.annotationSurface,
+        reason,
+      })
+      if (!diag.reason && reason !== 'drawable') diag.reason = reason
+    }
+    const chosen = pickDrawableSurfaceHit(rc, cands, annotationSurfaceHeightAt)
+    if (chosen) {
+      const normal = hitWorldNormal(chosen)
+      diag.chosen = {
+        point: chosen.point.toArray(),
+        distance: chosen.distance,
+        surfaceY: chosen.point.y,
+        surfaceN: normal ? { x: normal.x, y: normal.y, z: normal.z } : null,
+      }
+    } else if (!diag.reason) {
+      diag.reason = 'no-drawable-hit'
+    }
+    return diag
   }
 
   /**
