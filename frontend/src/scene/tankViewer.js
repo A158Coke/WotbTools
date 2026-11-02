@@ -187,6 +187,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             phase: (phase) => phase,   // 加载阶段名（armor model / tank model / tank data / tank list）
             armorStateCheckbox: 'Dynamic armor',
             armorStateAutoTitle: 'Replay-detected (armor state at impact)',
+            // 122 装备徽标（射击诊断面板）：不得硬编码文案，宿主经 labels 传三语。
+            pitchDevice: 'Improved Vertical Stabilizer',
             ...labels,
         };
         const loadFailed = (phase, msg) => L.loadFailed(L.phase(phase), msg);
@@ -731,7 +733,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             if (!eq) return '<span style="color:var(--muted);">配件?</span>';
             const c = eq.calibrated_shells ? '<span style="color:var(--green);">校准弹✓</span>' : '<span style="color:var(--muted);">校准弹✗</span>';
             const e = eq.enhanced_armor ? '<span style="color:var(--green);">强化装甲✓</span>' : '<span style="color:var(--muted);">强化装甲✗</span>';
-            const p = eq.improved_pitch_limits ? '<span style="color:var(--green);">稳定器✓</span>' : '<span style="color:var(--muted);">稳定器✗</span>';
+            const p = eq.improved_pitch_limits ? '<span style="color:var(--green);">' + L.pitchDevice + '✓</span>' : '<span style="color:var(--muted);">' + L.pitchDevice + '✗</span>';
             return c + ' ' + e + ' ' + p;
         }
         function updateHeatmapThickness() {

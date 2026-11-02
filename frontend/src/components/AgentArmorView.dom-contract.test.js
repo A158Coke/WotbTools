@@ -863,3 +863,21 @@ describe('122 装备真值的目标身份（场景内核）', () => {
     expect(body).toContain("pit.title = ''")
   })
 })
+
+describe('122 装备徽标走 labels 边界（i18n 守卫）', () => {
+  const template = read('./AgentArmorView.vue')
+  const kernel = read('../scene/tankViewer.js')
+
+  it('eqBadge 不得硬编码文案：俯仰徽标使用 L.pitchDevice', () => {
+    const start = kernel.indexOf('function eqBadge(')
+    const body = kernel.slice(start, start + 600)
+    expect(body).toContain('L.pitchDevice')
+    // 中文徽标字面量不得回到内核（注释里出现「改进型垂直稳定器」不算 UI 文案）
+    expect(body).not.toMatch(/>[^<]*稳定器/)
+  })
+
+  it('宿主经 initTankViewer 的 labels 传三语 pitchDevice', () => {
+    expect(template).toContain("pitchDevice: t('armor.pitch_device')")
+    expect(kernel).toContain("pitchDevice: 'Improved Vertical Stabilizer'")
+  })
+})
