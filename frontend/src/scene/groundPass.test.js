@@ -16,6 +16,8 @@ import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { loadTerrain, makeGroundMaterial } from './groundPass.js'
 import { assembleSceneryMaterials } from './sceneryAssembly.js'
+import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh } from './sceneryInstancing.js'
+import { buildAnnotationSurfaceGrid, pickDrawableSurfaceHit } from './playback/annotationSurface.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const strip = (s) => s.replace(/\r\n/g, '\n')   // LF 归一（CRLF 检出下 LF 锚点不匹配，CI 为 LF）
@@ -201,8 +203,12 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
       stone.position.set(0, 0, 8)
       const plank = new THREE.Mesh(new THREE.BoxGeometry(4, 4, 0.1), new THREE.MeshStandardMaterial({ name: 'plank' }))
       plank.position.set(0, 0, 10.2)
-      root.add(water, stone, plank)
-      return { gltf: { scene: root }, stone, plank }
+      const cardGeo = new THREE.PlaneGeometry(2, 2)
+      cardGeo.setAttribute('_corner', new THREE.BufferAttribute(new Float32Array(cardGeo.attributes.position.count * 4), 4))
+      const card = new THREE.Mesh(cardGeo, new THREE.MeshStandardMaterial({ name: 'leaf' }))
+      card.position.set(5, 0, 10.5)
+      root.add(water, stone, plank, card)
+      return { gltf: { scene: root }, water, stone, plank, card }
     }
     const qFrame = () => {
       const g = new THREE.Group()
@@ -215,6 +221,11 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
     assembleSceneryMaterials(a.gltf, { strictSurfaces: true, masks })
     expect(a.stone.material.isMeshBasicMaterial).toBe(true)
     expect(a.plank.material.isMeshLambertMaterial).toBe(true)
+    // 3D annotation 可绘制表面语义：水面 / 水下件不是可绘制 3D 表面，水上薄板保留。
+    expect(a.water.material.userData.annotationSurface).toBe(false)
+    expect(a.stone.material.userData.annotationSurface).toBe(false)
+    expect(a.plank.material.userData.annotationSurface).not.toBe(false)
+    expect(a.card.material.userData.annotationSurface).toBe(false)
     // 反例（锁住"顺序承重"）：先挂 qFrame 且组世界矩阵已更新 ⇒ 高度轴变成 y，水上/水下互换
     const b = build()
     const g = qFrame()
@@ -223,6 +234,116 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
     assembleSceneryMaterials(b.gltf, { strictSurfaces: true, masks })
     expect(b.stone.material.isMeshBasicMaterial).toBeFalsy()
     expect(b.plank.material.isMeshBasicMaterial).toBe(true)
+  })
+
+  it('decal / blendLayer 装配分支同样标记为非 3D 可绘制表面', () => {
+    const NO_TEX = () => null
+    const masks = {
+      maskTexOf: () => new THREE.Texture(), lmTexOf: NO_TEX, detailTexOf: NO_TEX,
+      envTexOf: NO_TEX, waterTexOf: NO_TEX, decalTexOf: NO_TEX,
+    }
+    const groundLayers = { layers: {}, texs: { cm: new THREE.Texture(), lm: null } }
+    const root = new THREE.Group()
+    const decalMat = new THREE.MeshStandardMaterial({ name: 'road_decal' })
+    decalMat.userData.decal = true
+    const decal = new THREE.Mesh(new THREE.BoxGeometry(4, 4, 0.1), decalMat)
+    decal.geometry.setAttribute('uv1', new THREE.BufferAttribute(
+      new Float32Array(decal.geometry.attributes.uv.count * 2), 2,
+    ))
+    const blendMat = new THREE.MeshStandardMaterial({ name: 'smoke_layer' })
+    blendMat.userData.blendLayer = { tex0ShiftPerSecond: [0, 0] }
+    const blend = new THREE.Mesh(new THREE.BoxGeometry(4, 2, 4), blendMat)
+    blend.geometry.setAttribute('uv1', new THREE.BufferAttribute(
+      new Float32Array(blend.geometry.attributes.uv.count * 2), 2,
+    ))
+    root.add(decal, blend)
+    assembleSceneryMaterials({ scene: root }, { strictSurfaces: true, masks, groundLayers })
+    expect(decal.material.userData.annotationSurface).toBe(false)
+    expect(blend.material.userData.annotationSurface).toBe(false)
+  })
+
+  it('decal 材质用于实体桥时保留 drawable，薄 overlay 仍排除', () => {
+    const NO_TEX = () => null
+    const masks = {
+      maskTexOf: () => null, lmTexOf: NO_TEX, detailTexOf: NO_TEX,
+      envTexOf: NO_TEX, waterTexOf: NO_TEX, decalTexOf: NO_TEX,
+    }
+    const groundLayers = { layers: {}, texs: { cm: new THREE.Texture(), lm: null } }
+    const root = new THREE.Group()
+    const addUv1 = (mesh) => {
+      mesh.geometry.setAttribute('uv1', new THREE.BufferAttribute(
+        new Float32Array(mesh.geometry.attributes.position.count * 2), 2,
+      ))
+    }
+    const solidMat = new THREE.MeshStandardMaterial({ name: 'bridge_decal' })
+    solidMat.userData.decal = true
+    const solid = new THREE.Mesh(new THREE.BoxGeometry(20, 10, 10), solidMat)
+    addUv1(solid)
+    const overlayMat = new THREE.MeshStandardMaterial({ name: 'road_overlay' })
+    overlayMat.userData.decal = true
+    const overlay = new THREE.Mesh(new THREE.BoxGeometry(20, 20, 0.1), overlayMat)
+    addUv1(overlay)
+    root.add(solid, overlay)
+    assembleSceneryMaterials({ scene: root }, { strictSurfaces: true, masks, groundLayers })
+    expect(solid.material.userData.annotationSurface).not.toBe(false)
+    expect(overlay.material.userData.annotationSurface).toBe(false)
+  })
+
+  it('solid decal bridge 经 production assembly → batch → grid → pick 仍可命中', () => {
+    const NO_TEX = () => null
+    const masks = {
+      maskTexOf: () => null, lmTexOf: NO_TEX, detailTexOf: NO_TEX,
+      envTexOf: NO_TEX, waterTexOf: NO_TEX, decalTexOf: NO_TEX,
+    }
+    const groundLayers = { layers: {}, texs: { cm: new THREE.Texture(), lm: null } }
+    const root = new THREE.Group()
+    const add = (mesh) => {
+      mesh.geometry.setAttribute('uv1', new THREE.BufferAttribute(
+        new Float32Array(mesh.geometry.attributes.position.count * 2), 2,
+      ))
+      root.add(mesh)
+    }
+    const bridgeMat = new THREE.MeshStandardMaterial({ name: 'bridge_decal' })
+    bridgeMat.userData.decal = true
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(20, 10, 10), bridgeMat)
+    add(bridge)
+    const overlayMat = new THREE.MeshStandardMaterial({ name: 'road_overlay' })
+    overlayMat.userData.decal = true
+    add(new THREE.Mesh(new THREE.BoxGeometry(20, 20, 0.1), overlayMat))
+
+    assembleSceneryMaterials({ scene: root }, { strictSurfaces: true, masks, groundLayers })
+    root.updateMatrixWorld(true)
+    const batches = groupInstanceBatches(collectInstanceEntries(root))
+    for (const batch of batches) batch.mesh = buildInstancedMesh(batch)
+    const grid = buildAnnotationSurfaceGrid(batches)
+    const meshes = [...new Set([...grid.values()].flat())]
+    expect(meshes.length).toBeGreaterThan(0)
+    const rc = new THREE.Raycaster(new THREE.Vector3(0, 30, 0), new THREE.Vector3(0, -1, 0))
+    const hit = pickDrawableSurfaceHit(rc, meshes)
+    expect(hit).not.toBeNull()
+    expect(hit.point.y).toBeCloseTo(5, 5)
+  })
+
+  it('普通 ST| SpeedTree static geometry 同样不是可绘制表面（不依赖 _corner）', () => {
+    const masks = {
+      maskTexOf: () => null, lmTexOf: () => null, detailTexOf: () => null,
+      envTexOf: () => null, waterTexOf: () => null, decalTexOf: () => null,
+    }
+    const root = new THREE.Group()
+    const branches = new THREE.Mesh(
+      new THREE.BoxGeometry(4, 3, 4),
+      new THREE.MeshStandardMaterial({ name: 'ST|branches' }),
+    )
+    branches.name = 'ST|branches'
+    const trunk = new THREE.Mesh(
+      new THREE.BoxGeometry(1, 6, 1),
+      new THREE.MeshStandardMaterial({ name: 'bark' }),
+    )
+    trunk.name = 'ST|trunk'
+    root.add(branches, trunk)
+    assembleSceneryMaterials({ scene: root }, { strictSurfaces: true, masks })
+    expect(branches.material.userData.annotationSurface).toBe(false)
+    expect(trunk.material.userData.annotationSurface).toBe(false)
   })
 
   it('新包 sky 标记在装配期打 userData.isSky（实例化过滤不再按名字猜）', () => {

@@ -121,6 +121,44 @@ describe('MapPreview3DPane 首次激活生命周期', () => {
     expect(scene.api.setPaused).toHaveBeenLastCalledWith(false)
   })
 
+  it('exports annotations without session-local surfaceY and imports them stripped', async () => {
+    const wrapper = mountPane(true)
+    await flushPromises()
+    const options = scene.initPlayback.mock.calls.at(-1)[3]
+    const bridge = {
+      type: 'pen', color: '#ff4d4f', width: 3,
+      points: [{ x: 0, y: 0, surfaceY: 8 }, { x: 1, y: 1, surfaceY: 8 }],
+    }
+    options.onAnnotationCommit(bridge)
+    await flushPromises()
+
+    const blobs = []
+    const createObjectURL = vi.fn((blob) => { blobs.push(blob); return 'blob:surface-export' })
+    vi.stubGlobal('URL', Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() }))
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    await wrapper.get('[data-testid="map-3d-export"]').trigger('click')
+    expect(blobs).toHaveLength(1)
+    const payload = JSON.parse(await blobs[0].text())
+    expect(payload.annotations[0].points).toEqual([{ x: 0, y: 0 }, { x: 1, y: 1 }])
+    click.mockRestore()
+    vi.unstubAllGlobals()
+
+    scene.api.setAnnotations.mockClear()
+    const file = new File([JSON.stringify({
+      version: 1,
+      kind: 'map-preview-annotations',
+      mapKey: 'rudniki',
+      annotations: [bridge],
+    })], 'annotations.json', { type: 'application/json' })
+    const input = wrapper.find('input[type="file"]')
+    Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
+    await input.trigger('change')
+    await flushPromises()
+    expect(scene.api.setAnnotations).toHaveBeenLastCalledWith([
+      { ...bridge, points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] },
+    ])
+  })
+
   it('未激活时换图：只清标注状态，不抢建场景；首次激活装载的是新图', async () => {
     const wrapper = mountPane(false)
     await flushPromises()
