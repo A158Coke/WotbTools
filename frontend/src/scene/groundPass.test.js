@@ -14,7 +14,7 @@ import * as THREE from 'three'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
-import { loadTerrain, makeGroundMaterial } from './groundPass.js'
+import { buildCorridorRefineMask, loadTerrain, makeGroundMaterial } from './groundPass.js'
 import { assembleSceneryMaterials } from './sceneryAssembly.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -201,8 +201,12 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
       stone.position.set(0, 0, 8)
       const plank = new THREE.Mesh(new THREE.BoxGeometry(4, 4, 0.1), new THREE.MeshStandardMaterial({ name: 'plank' }))
       plank.position.set(0, 0, 10.2)
-      root.add(water, stone, plank)
-      return { gltf: { scene: root }, stone, plank }
+      const cardGeo = new THREE.PlaneGeometry(2, 2)
+      cardGeo.setAttribute('_corner', new THREE.BufferAttribute(new Float32Array(cardGeo.attributes.position.count * 4), 4))
+      const card = new THREE.Mesh(cardGeo, new THREE.MeshStandardMaterial({ name: 'leaf' }))
+      card.position.set(5, 0, 10.5)
+      root.add(water, stone, plank, card)
+      return { gltf: { scene: root }, water, stone, plank, card }
     }
     const qFrame = () => {
       const g = new THREE.Group()
@@ -215,6 +219,11 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
     assembleSceneryMaterials(a.gltf, { strictSurfaces: true, masks })
     expect(a.stone.material.isMeshBasicMaterial).toBe(true)
     expect(a.plank.material.isMeshLambertMaterial).toBe(true)
+    // 3D annotation 可绘制表面语义：水面 / 水下件不是可绘制 3D 表面，水上薄板保留。
+    expect(a.water.material.userData.annotationSurface).toBe(false)
+    expect(a.stone.material.userData.annotationSurface).toBe(false)
+    expect(a.plank.material.userData.annotationSurface).not.toBe(false)
+    expect(a.card.material.userData.annotationSurface).toBe(false)
     // 反例（锁住"顺序承重"）：先挂 qFrame 且组世界矩阵已更新 ⇒ 高度轴变成 y，水上/水下互换
     const b = build()
     const g = qFrame()
@@ -223,6 +232,54 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
     assembleSceneryMaterials(b.gltf, { strictSurfaces: true, masks })
     expect(b.stone.material.isMeshBasicMaterial).toBeFalsy()
     expect(b.plank.material.isMeshBasicMaterial).toBe(true)
+  })
+
+  it('decal / blendLayer 装配分支同样标记为非 3D 可绘制表面', () => {
+    const NO_TEX = () => null
+    const masks = {
+      maskTexOf: () => new THREE.Texture(), lmTexOf: NO_TEX, detailTexOf: NO_TEX,
+      envTexOf: NO_TEX, waterTexOf: NO_TEX, decalTexOf: NO_TEX,
+    }
+    const groundLayers = { layers: {}, texs: { cm: new THREE.Texture(), lm: null } }
+    const root = new THREE.Group()
+    const decalMat = new THREE.MeshStandardMaterial({ name: 'road_decal' })
+    decalMat.userData.decal = true
+    const decal = new THREE.Mesh(new THREE.BoxGeometry(4, 0.1, 4), decalMat)
+    decal.geometry.setAttribute('uv1', new THREE.BufferAttribute(
+      new Float32Array(decal.geometry.attributes.uv.count * 2), 2,
+    ))
+    const blendMat = new THREE.MeshStandardMaterial({ name: 'smoke_layer' })
+    blendMat.userData.blendLayer = { tex0ShiftPerSecond: [0, 0] }
+    const blend = new THREE.Mesh(new THREE.BoxGeometry(4, 2, 4), blendMat)
+    blend.geometry.setAttribute('uv1', new THREE.BufferAttribute(
+      new Float32Array(blend.geometry.attributes.uv.count * 2), 2,
+    ))
+    root.add(decal, blend)
+    assembleSceneryMaterials({ scene: root }, { strictSurfaces: true, masks, groundLayers })
+    expect(decal.material.userData.annotationSurface).toBe(false)
+    expect(blend.material.userData.annotationSurface).toBe(false)
+  })
+
+  it('corridor 类判据返回 candidate meshes：贴地薄板命中，高物体/水面不命中', () => {
+    const field = new Float32Array(64 * 64).fill(10)
+    const root = new THREE.Group()
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(20, 0.2, 20), new THREE.MeshBasicMaterial())
+    plate.position.set(0, 10.05, 0)
+    const tall = new THREE.Mesh(new THREE.BoxGeometry(2, 10, 2), new THREE.MeshBasicMaterial())
+    tall.position.set(30, 15, 0)
+    const water = new THREE.Mesh(new THREE.BoxGeometry(20, 0.2, 20), new THREE.MeshBasicMaterial())
+    water.position.set(-30, 10.05, 0)
+    root.add(plate, tall, water)
+    root.updateMatrixWorld(true)
+    const built = buildCorridorRefineMask({
+      meshes: [{ o: plate, water: false }, { o: tall, water: false }, { o: water, water: true }],
+      field, n: 64, span: 600,
+    })
+    expect(built).not.toBeNull()
+    expect(built.meshes).toContain(plate)
+    expect(built.meshes).not.toContain(tall)
+    expect(built.meshes).not.toContain(water)
+    expect(built.candidates).toBe(1)
   })
 
   it('新包 sky 标记在装配期打 userData.isSky（实例化过滤不再按名字猜）', () => {

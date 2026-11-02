@@ -584,3 +584,127 @@ describe('buildEraserRing', () => {
     expect(buildEraserRing({ x: 0, y: 0 }, 4, null)).toBeNull()
   })
 })
+
+describe('3D surface anchors (selected-surface drawing)', () => {
+  it('sanitizePoints keeps finite surfaceY (0 included) and drops invalid values', () => {
+    const pts = sanitizePoints([
+      { x: 0, y: 0, surfaceY: 8 },
+      { x: 1, y: 0, surfaceY: 0 },
+      { x: 2, y: 0, surfaceY: NaN },
+      { x: 3, y: 0, surfaceY: Infinity },
+      { x: 4, y: 0, surfaceY: '8' },
+      { x: 5, y: 0 },
+    ])
+    expect(pts).toEqual([
+      { x: 0, y: 0, surfaceY: 8 },
+      { x: 1, y: 0, surfaceY: 0 },
+      { x: 2, y: 0 },
+      { x: 3, y: 0 },
+      { x: 4, y: 0 },
+      { x: 5, y: 0 },
+    ])
+  })
+
+  it('Chaikin interpolates surfaceY only when both sides carry an anchor', () => {
+    const smoothed = smoothPolyline([
+      { x: 0, y: 0, surfaceY: 8 },
+      { x: 10, y: 0, surfaceY: 10 },
+      { x: 20, y: 0, surfaceY: 12 },
+    ], { strength: 0.25 })
+    expect(smoothed[1].surfaceY).toBeCloseTo(8.5, 6)
+    expect(smoothed[2].surfaceY).toBeCloseTo(9.5, 6)
+    expect(smoothed[3].surfaceY).toBeCloseTo(10.5, 6)
+
+    const mixed = smoothPolyline([
+      { x: 0, y: 0, surfaceY: 8 },
+      { x: 10, y: 0 },
+      { x: 20, y: 0, surfaceY: 12 },
+    ], { strength: 0.25 })
+    expect(mixed[1].surfaceY).toBeUndefined()
+    expect(mixed[2].surfaceY).toBeUndefined()
+    expect(mixed[3].surfaceY).toBeUndefined()
+  })
+
+  it('subdivision interpolates anchored midpoints and skips terrain midpoint probing', () => {
+    let samples = 0
+    const out = subdividePolyline(
+      [{ x: 0, y: 0, surfaceY: 8 }, { x: 10, y: 0, surfaceY: 8 }],
+      () => { samples++; return 0 },
+      { maxSegment: 2, maxPoints: 1000 },
+    )
+    expect(samples).toBe(0)
+    expect(out.length).toBeGreaterThan(2)
+    expect(out[0].surfaceY).toBe(8)
+    expect(out[out.length - 1].surfaceY).toBe(8)
+    expect(out.every((p) => p.surfaceY === 8)).toBe(true)
+
+    let mixedSamples = 0
+    const mixed = subdividePolyline(
+      [{ x: 0, y: 0 }, { x: 10, y: 10, surfaceY: 8 }],
+      (x, z) => { mixedSamples++; return x === 5 && z === 5 ? 30 : 0 },
+      { maxSegment: 100, maxPoints: 1000 },
+    )
+    expect(mixedSamples).toBeGreaterThan(0)
+    expect(mixed.length).toBeGreaterThan(2)
+    expect(mixed[1].surfaceY).toBeUndefined()
+  })
+
+  it('drapes an anchored wide stroke on the selected layer, not the terrain below', () => {
+    const options = { sampleHeight: () => 0, lift: 0, maxSegment: 100 }
+    const bridge = buildPenRibbon(pen([{ x: -5, y: 0, surfaceY: 8 }, { x: 5, y: 0, surfaceY: 8 }], 6), options)
+    expect(bridge).not.toBeNull()
+    const bridgeVerts = ribbonVertices(bridge)
+    expect(bridgeVerts.length).toBeGreaterThan(6)
+    expect(bridgeVerts.every((v) => Math.abs(v.y - 8) < 1e-6)).toBe(true)
+    expect(bridge.strips[0].anchored.every((flag) => flag === 1)).toBe(true)
+
+    const ground = buildPenRibbon(pen([{ x: -5, y: 0 }, { x: 5, y: 0 }], 6), options)
+    expect(ground).not.toBeNull()
+    expect(ribbonVertices(ground).every((v) => Math.abs(v.y) < 1e-6)).toBe(true)
+    expect(ground.strips[0].anchored.every((flag) => flag === 0)).toBe(true)
+  })
+
+  it('refinement keeps anchored rows on the selected layer and fails closed below terrain', () => {
+    const ribbon = buildPenRibbon(pen([{ x: -5, y: 0, surfaceY: 8 }, { x: 5, y: 0, surfaceY: 8 }], 4), {
+      sampleHeight: () => 12, // ribbon is below the terrain: every cell must fail closed
+      lift: 0,
+      maxSegment: 100,
+    })
+    expect(ribbon).not.toBeNull()
+    expect(ribbon.validation.iterations).toBeGreaterThan(0)
+    expect(ribbon.validation.unsafeCells).toBeGreaterThan(0)
+    expect(ribbonVertices(ribbon).every((v) => Math.abs(v.y - 8) < 1e-6)).toBe(true)
+  })
+
+  it('reprojection keeps anchored vertices and resamples only terrain vertices', () => {
+    const positions = new Float32Array([0, 8.08, 0, 10, 8.08, 0, 20, 10.08, 0])
+    const anchored = new Uint8Array([1, 1, 0])
+    reprojectRibbonPositions(positions, (x) => (x === 20 ? 30 : 0), ANNOTATION_LIFT, anchored)
+    expect(positions[1]).toBeCloseTo(8.08, 5)
+    expect(positions[4]).toBeCloseTo(8.08, 5)
+    expect(positions[7]).toBeCloseTo(30 + ANNOTATION_LIFT, 5)
+  })
+
+  it('eraser cut endpoints interpolate surfaceY while 2D points stay {x,y}', () => {
+    const stroke = pen([{ x: 0, y: 0, surfaceY: 8 }, { x: 10, y: 0, surfaceY: 12 }], 1)
+    const pieces = applyEraser([stroke], [{ x: 5, y: 0 }], 1)
+    expect(pieces).toHaveLength(2)
+    const all = pieces.flatMap((piece) => piece.points)
+    expect(all.every((p) => Number.isFinite(p.surfaceY))).toBe(true)
+    expect(all.some((p) => p.surfaceY > 9.5 && p.surfaceY < 10.5)).toBe(true)
+    expect(all[0].surfaceY).toBeCloseTo(8, 6)
+    expect(all[all.length - 1].surfaceY).toBeCloseTo(12, 6)
+
+    const flat = pen([{ x: 0, y: 0 }, { x: 10, y: 0 }], 1)
+    const flatPieces = applyEraser([flat], [{ x: 5, y: 0 }], 1)
+    expect(flatPieces.flatMap((piece) => piece.points)).toEqual([
+      { x: 0, y: 0 }, { x: 4, y: 0 }, { x: 6, y: 0 }, { x: 10, y: 0 },
+    ])
+  })
+
+  it('eraser ring stays on the selected layer when the cursor carries a surface anchor', () => {
+    const ring = buildEraserRing({ x: 0, y: 0, surfaceY: 8 }, 5, () => 0, { segments: 16, lift: 0 })
+    expect(ring).not.toBeNull()
+    expect(ringVertices(ring).every((v) => Math.abs(v.y - 8) < 1e-6)).toBe(true)
+  })
+})

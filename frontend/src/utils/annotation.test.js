@@ -23,6 +23,7 @@ import {
   rectFromCorners,
   redo,
   screenToSemantic,
+  stripSurfaceAnchors,
   semanticWidthFromSlider,
   screenToSvg,
   svgToScreen,
@@ -424,5 +425,30 @@ describe('shared annotation helpers', () => {
       { type: 'unit', color: '#fff', x: 0, y: 0, tankClass: 'HT', radius: 0 },
       { type: 'line', color: 1, width: 3, x1: 0, y1: 0, x2: 1, y2: 1 },
     ]) expect(isValidAnnotation(invalid)).toBe(false)
+  })
+})
+
+describe('3D surface anchors at the shared 2D boundary', () => {
+  it('translateAnnotation preserves optional surfaceY on pen points', () => {
+    const pen = {
+      type: 'pen', color: '#fff', width: 3,
+      points: [{ x: 0, y: 0, surfaceY: 8 }, { x: 10, y: 0, surfaceY: 12 }],
+    }
+    const moved = translateAnnotation(pen, 5, 7)
+    expect(moved.points).toEqual([{ x: 5, y: 7, surfaceY: 8 }, { x: 15, y: 7, surfaceY: 12 }])
+    expect(pen.points[0]).toEqual({ x: 0, y: 0, surfaceY: 8 })
+  })
+
+  it('stripSurfaceAnchors removes surfaceY without mutating or dropping annotations', () => {
+    const pen = { type: 'pen', color: '#fff', width: 3, points: [{ x: 0, y: 0, surfaceY: 8 }, { x: 1, y: 1 }] }
+    const route = { type: 'route', color: '#fff', width: 3, points: [{ x: 0, y: 0 }, { x: 2, y: 2 }], label: 'r' }
+    const unit = { type: 'unit', color: '#fff', x: 1, y: 1, tankClass: 'HT', radius: 4 }
+    const out = stripSurfaceAnchors([pen, route, unit])
+    expect(out[0].points).toEqual([{ x: 0, y: 0 }, { x: 1, y: 1 }])
+    expect(out[0]).not.toBe(pen)
+    expect(out[1].points).toEqual([{ x: 0, y: 0 }, { x: 2, y: 2 }])
+    expect(out[2]).toBe(unit)
+    expect(pen.points[0].surfaceY).toBe(8)
+    expect(stripSurfaceAnchors(null)).toEqual([])
   })
 })

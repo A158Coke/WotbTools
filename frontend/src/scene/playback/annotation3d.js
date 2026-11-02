@@ -1,9 +1,13 @@
 // 3D Playback 标注的纯几何：terrain-conforming pen ribbon 与 eraser ring。
 //
-// 坐标约定：本模块只认 scene-map XZ（x 右、z 北），输出 vertex Y = sampleHeight(x,z) + lift。
-// semantic(replay) XZ 与 scene 的 x 取负由 playbackScene 的 adapter 负责；annotation SSOT
-// 永远不存世界 Y，也不在这里解释 replay 坐标语义。
+// 坐标约定：本模块只认 scene-map XZ（x 右、z 北）。无 surfaceY 的 row 输出
+// vertex Y = sampleHeight(x,z) + lift；带 surfaceY 的 row 是选中表面层，整行用锚点高度
+// （水平截面），不再向下采 terrain。semantic(replay) XZ 与 scene 的 x 取负由 playbackScene
+// 的 adapter 负责；annotation SSOT 仍以 semantic XZ 为 canonical，surfaceY 只是可选的
+// session-local 锚点，不属于 replay 语义。
 //
+import * as THREE from 'three'
+
 // 初始阈值来自 Step 0 synthetic deviation/cost 实测（512²、600m span、camera (0,180,220)）；
 // 真实地图由人工验收后再调，不在模块里冒充最终产品值。
 
@@ -59,6 +63,45 @@ function sampleOrNull(sampleHeight, x, z) {
   return Number.isFinite(y) ? y : null
 }
 
+const _hitWorld = new THREE.Matrix4()
+const _hitInstance = new THREE.Matrix4()
+const _hitNormalMatrix = new THREE.Matrix3()
+const _hitNormal = new THREE.Vector3()
+
+/**
+ * 命中面的 world normal.y（InstancedMesh 先乘 instanceMatrix）。
+ * 3D annotation pick 的“朝上表面”判据；单独放纯几何模块便于 CPU 单测。
+ */
+export function hitWorldNormalY(hit) {
+  if (!hit || !hit.face || !hit.object) return 0
+  const object = hit.object
+  if (hit.instanceId != null && object.isInstancedMesh && typeof object.getMatrixAt === 'function') {
+    object.getMatrixAt(hit.instanceId, _hitInstance)
+    _hitWorld.multiplyMatrices(object.matrixWorld, _hitInstance)
+  } else {
+    _hitWorld.copy(object.matrixWorld)
+  }
+  _hitNormalMatrix.getNormalMatrix(_hitWorld)
+  _hitNormal.copy(hit.face.normal).applyMatrix3(_hitNormalMatrix).normalize()
+  return _hitNormal.y
+}
+
+/** 复制 semantic 点，保留可选的 3D 表面锚点（0 是合法值）。 */
+function copyPoint(p) {
+  const out = { x: p.x, y: p.y }
+  if (Number.isFinite(p.surfaceY)) out.surfaceY = p.surfaceY
+  return out
+}
+
+/** 两端都有 finite surfaceY 才插值锚点；单侧缺失不猜另一侧。 */
+function pointAt(a, b, t) {
+  const out = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
+  if (Number.isFinite(a.surfaceY) && Number.isFinite(b.surfaceY)) {
+    out.surfaceY = a.surfaceY + (b.surfaceY - a.surfaceY) * t
+  }
+  return out
+}
+
 /**
  * 过滤非有限点、连续重复点，并把单点/空输入归一成 []。
  * 不重新排序、不插值；保序是 semantic eraser 断段语义的前提。
@@ -74,7 +117,9 @@ export function sanitizePoints(points, { maxPoints = ANNOTATION_MAX_INPUT_POINTS
     if (!Number.isFinite(x) || !Number.isFinite(y)) continue
     const prev = out[out.length - 1]
     if (prev && Math.hypot(x - prev.x, y - prev.y) <= DUP_EPS) continue
-    out.push({ x, y })
+    const next = { x, y }
+    if (Number.isFinite(p.surfaceY)) next.surfaceY = Number(p.surfaceY)
+    out.push(next)
     if (Number.isFinite(limit) && out.length >= limit) break
   }
   return out.length >= 2 ? out : []
@@ -137,7 +182,9 @@ export function subdividePolyline(points, sampleHeight, {
       const dz = y.y - x.y
       const dist = Math.hypot(dx, dz)
       let split = dist > seg && d < depthLimit
-      if (!split) {
+      // 两端都锚定在场景表面时，midpoint 属于同一层，不得再按 terrain 跳动细分。
+      const anchored = Number.isFinite(x.surfaceY) && Number.isFinite(y.surfaceY)
+      if (!split && !anchored) {
         const sa = sampleOrNull(sampleHeight, x.x, x.y)
         const sb = sampleOrNull(sampleHeight, y.x, y.y)
         if (sa !== null && sb !== null) {
@@ -149,13 +196,13 @@ export function subdividePolyline(points, sampleHeight, {
       }
       if (split && used < budget) {
         used++
-        const mid = { x: (x.x + y.x) / 2, y: (x.y + y.y) / 2 }
+        const mid = pointAt(x, y, 0.5)
         recurse(x, mid, d + 1)
         recurse(mid, y, d + 1)
         return
       }
       // 预算耗尽也一定 append segment 终点：完整跨度优先于密度。
-      out.push({ x: y.x, y: y.y })
+      out.push(copyPoint(y))
     }
     recurse(a, b, depth)
   }
@@ -186,8 +233,8 @@ export function smoothPolyline(points, { iterations = 1, strength = 0.2 } = {}) 
     for (let i = 1; i < current.length; i++) {
       const a = current[i - 1]
       const b = current[i]
-      next.push({ x: a.x + (b.x - a.x) * s, y: a.y + (b.y - a.y) * s })
-      next.push({ x: a.x + (b.x - a.x) * (1 - s), y: a.y + (b.y - a.y) * (1 - s) })
+      next.push(pointAt(a, b, s))
+      next.push(pointAt(a, b, 1 - s))
     }
     next.push({ ...current[current.length - 1] })
     current = next
@@ -253,7 +300,10 @@ function ribbonFrames(points, half) {
     } else {
       return null
     }
-    frames.push({ x: cur.x, z: cur.y, nx: -dz, nz: dx, half: half * miter })
+    frames.push({
+      x: cur.x, z: cur.y, nx: -dz, nz: dx, half: half * miter,
+      surfaceY: Number.isFinite(cur.surfaceY) ? cur.surfaceY : undefined,
+    })
   }
   return frames
 }
@@ -264,8 +314,14 @@ function ribbonRows(frames, fractions, sampleHeight, liftValue) {
   for (const frame of frames) {
     const row = []
     let rowValid = true
+    const anchored = Number.isFinite(frame.surfaceY)
     for (const fraction of fractions) {
       const p = crossPoint(frame, fraction)
+      if (anchored) {
+        // anchored row：整行落在选中的表面层，水平截面不再采 terrain。
+        row.push({ x: p.x, y: frame.surfaceY + liftValue, z: p.z })
+        continue
+      }
       const y = sampleOrNull(sampleHeight, p.x, p.z)
       if (y === null) {
         row.push(null)
@@ -361,6 +417,11 @@ function crossIntervalNeedsSplit(frames, sampleHeight, fa, fb) {
   for (const frame of frames) {
     const pa = crossPoint(frame, fa)
     const pb = crossPoint(frame, fb)
+    // anchored row 是水平截面：只看跨度，terrain 起伏不驱动 cross 细分。
+    if (Number.isFinite(frame.surfaceY)) {
+      if (Math.hypot(pb.x - pa.x, pb.z - pa.z) > ANNOTATION_CROSS_MAX_SEGMENT) return true
+      continue
+    }
     const pm = crossPoint(frame, fm)
     const ha = sampleOrNull(sampleHeight, pa.x, pa.z)
     const hb = sampleOrNull(sampleHeight, pb.x, pb.z)
@@ -396,8 +457,10 @@ function adaptiveCrossFractions(frames, sampleHeight, pointCount) {
  * 每个顶点采样一次，是逐帧可承受的量级；细分校验只在提交时做。
  * 采样不到的顶点保持原高度。
  */
-export function reprojectRibbonPositions(positions, sampleHeight, lift = ANNOTATION_LIFT) {
+export function reprojectRibbonPositions(positions, sampleHeight, lift = ANNOTATION_LIFT, anchored = null) {
   for (let i = 0; i + 2 < positions.length; i += 3) {
+    // anchored 顶点属于选中表面层：LOD 重建只刷新 terrain 顶点，锚点高度保持。
+    if (anchored && anchored[i / 3]) continue
     const y = sampleHeight(positions[i], positions[i + 2])
     if (Number.isFinite(y)) positions[i + 1] = y + lift
   }
@@ -470,7 +533,7 @@ export function buildPenRibbon(annotation, {
         if (rowSplits.has(i)) {
           const a = rowPoints[i]
           const b = rowPoints[i + 1]
-          nextRows.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 })
+          nextRows.push(pointAt(a, b, 0.5))
         }
       }
       rowPoints = nextRows
@@ -500,6 +563,10 @@ export function buildPenRibbon(annotation, {
     while (j + 1 < rowPoints.length && valid[j + 1]) j++
     if (j > i) {
       const rowCount = j - i + 1
+      const anchored = new Uint8Array(rowCount)
+      for (let k = 0; k < rowCount; k++) {
+        anchored[k] = Number.isFinite(frames[i + k].surfaceY) ? 1 : 0
+      }
       const positions = new Float32Array(rowCount * crossCount * 3)
       const indices = []
       for (let k = 0; k < rowCount; k++) {
@@ -522,7 +589,7 @@ export function buildPenRibbon(annotation, {
           indices.push(a, b, d, b, e, d)
         }
       }
-      strips.push({ positions, indices: new Uint32Array(indices), rowCount, crossCount })
+      strips.push({ positions, indices: new Uint32Array(indices), rowCount, crossCount, anchored })
     }
     i = j + 1
   }
@@ -559,14 +626,16 @@ export function buildEraserRing(center, radius, sampleHeight, {
   const n = Math.max(8, Math.min(128, Math.floor(numberOr(segments, ANNOTATION_RING_SEGMENTS))))
   const cx = Number(center.x)
   const cz = Number(center.y)
-  const centerY = sampleOrNull(sampleHeight, cx, cz)
+  // eraser cursor 落在选中表面时，整个 ring 留在该层；否则沿用 terrain。
+  const centerAnchor = Number.isFinite(center.surfaceY) ? Number(center.surfaceY) : null
+  const centerY = centerAnchor !== null ? centerAnchor : sampleOrNull(sampleHeight, cx, cz)
   const liftValue = numberOr(lift, ANNOTATION_LIFT / 2)
   const positions = new Float32Array(n * 3)
   for (let i = 0; i < n; i++) {
     const angle = (i / n) * Math.PI * 2
     const x = cx + Math.cos(angle) * r
     const z = cz + Math.sin(angle) * r
-    const y = sampleOrNull(sampleHeight, x, z)
+    const y = centerAnchor !== null ? centerAnchor : sampleOrNull(sampleHeight, x, z)
     positions[i * 3] = x
     positions[i * 3 + 1] = (y === null ? (centerY === null ? 0 : centerY) : y) + liftValue
     positions[i * 3 + 2] = z

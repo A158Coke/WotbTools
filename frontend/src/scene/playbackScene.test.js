@@ -4237,6 +4237,27 @@ describe('3D annotation renderer (scene projection)', () => {
     expect(layer.committedMesh.geometry).not.toBe(before)
   })
 
+  it('keeps optional surface anchors through build and terrain reprojection', async () => {
+    stubTerrainAssets({ values: [0, 0, 0, 0], zmin: 10, zmax: 10 })
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const { api } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['anchor'], 'annotation-anchor.wotbreplay') })
+    const layer = window.__annotationLayer
+    const bridge = {
+      type: 'pen', color: '#ff4d4f', width: 2,
+      points: [{ x: -5, y: -5, surfaceY: 20 }, { x: 5, y: 5, surfaceY: 20 }],
+    }
+    api.setAnnotations([bridge])
+    expect(annotationVertices(layer).every((v) => Math.abs(v.y - (20 + ANNOTATION_LIFT)) < 1e-3)).toBe(true)
+
+    layer.reproject()
+    expect(annotationVertices(layer).every((v) => Math.abs(v.y - (20 + ANNOTATION_LIFT)) < 1e-3)).toBe(true)
+
+    // 纯地形笔迹仍按 terrain + lift 贴地（surface anchor 不影响 legacy 路径）。
+    api.setAnnotations([stroke()])
+    expect(annotationVertices(layer).every((v) => Math.abs(v.y - (10 + ANNOTATION_LIFT)) < 1e-3)).toBe(true)
+  })
+
   it('disposes the annotation layer on destroy', async () => {
     source.loadPlaybackData.mockResolvedValue(minimalData())
     const { api } = createScene()
@@ -4661,6 +4682,40 @@ describe('3D annotation pointer ownership', () => {
     expect(layer.sampler(0, 0)).toBe(0)
     expect(layer.sampler(10000, 0)).toBeNull()
     expect(layer.sampler(0, 10000)).toBeNull()
+  })
+
+  it('anchors a bridge stroke on the nearest drawable scenery surface', async () => {
+    const { canvas, api, onAnnotationCommit } = await setup()
+    const layer = window.__annotationLayer
+    const ground = layer.pick(380, 300)
+    expect(ground).toBeTruthy()
+    expect(ground.semantic.surfaceY).toBeUndefined()
+
+    const sx = -ground.semantic.x
+    const sz = ground.semantic.y
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(40, 2, 40), new THREE.MeshBasicMaterial())
+    bridge.position.set(sx, 20, sz)
+    window.__scene.add(bridge)
+    bridge.updateMatrixWorld(true)
+    layer.setSurfaceGrid(new Map([[`${Math.floor(sx / 16)},${Math.floor(sz / 16)}`, [bridge]]]))
+
+    const picked = layer.pick(380, 300)
+    expect(picked.semantic.surfaceY).toBeCloseTo(21, 5)
+
+    canvas.dispatchEvent(mouse('pointerdown', 380, 300))
+    canvas.dispatchEvent(mouse('pointermove', 390, 300))
+    canvas.dispatchEvent(mouse('pointerup', 390, 300))
+    expect(onAnnotationCommit).toHaveBeenCalledTimes(1)
+    const annotation = onAnnotationCommit.mock.calls[0][0]
+    expect(annotation.points.length).toBeGreaterThanOrEqual(2)
+    expect(annotation.points.every((p) => Number.isFinite(p.surfaceY))).toBe(true)
+
+    api.setAnnotations([annotation])
+    const position = layer.committedMesh.geometry.getAttribute('position')
+    expect(position.count).toBeGreaterThan(0)
+    for (let i = 0; i < position.count; i++) {
+      expect(position.getY(i)).toBeCloseTo(21 + ANNOTATION_LIFT, 2)
+    }
   })
 
   it('destroy removes annotation pointer listeners and state', async () => {

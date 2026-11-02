@@ -211,11 +211,18 @@ export function assembleSceneryMaterials(gltf, {
       // 着色，故不设 flatShading。
       return nm;
     })()));
+  // 3D annotation 的可绘制表面语义：水/天/植被/贴花/混合层/水下件是“地表/效果”而非 3D 层，
+  // 在装配期统一打标（材质工厂不复制 userData，pick 时无法再按 extras 判定）。
+  const markNotDrawable = (mats) => {
+    const ms = Array.isArray(mats) ? mats : [mats];
+    for (const mm of ms) if (mm && mm.userData) mm.userData.annotationSurface = false;
+  };
   gltf.scene.traverse((o) => {
     if (!o.isMesh || !o.material) return;
     // 网格清单钩子（运行时的走廊掩码取样）：水面/水下片按客户端水材质标记排除
     const waterMarked = materialIsWater(o.material);
     if (onMesh) onMesh(o, waterMarked);
+    let annotationSurface = !waterMarked && !isWaterNode(o.name, o.material, { strictSurfaces });
     // 天空穹：走 makeSkyMaterial 的"无限远"路径。语义判据 = 材质 extras.sky
     // （导出器按客户端 Skyobject 模板写入）；旧包无标记才退回节点名。⚠️ 水材质优先：
     // `SkySeaSurface.sc2`（NewBay 的海面）名字含 sky，但材质是 extras.water。
@@ -227,6 +234,7 @@ export function assembleSceneryMaterials(gltf, {
       // 语义标记：合批过滤必须按它排除天穹（新包天穹名可能不含 sky；材质转换后
       // extras 判据不可再取）。名字 fallback 已由 isSkyNode 统一处理。
       o.userData.isSky = true;
+      markNotDrawable(o.material);
       o.frustumCulled = false;
       skyMeshes++;
       if (debug && typeof window !== 'undefined') window.__skyMeshes = (window.__skyMeshes || 0) + 1;
@@ -234,8 +242,10 @@ export function assembleSceneryMaterials(gltf, {
     }
     // GLTFLoader 会把自定义属性名转小写：GLB 里的 _CORNER → geometry._corner
     const isCard = !!o.geometry.attributes._corner;
+    if (isCard) annotationSurface = false;
     // 该网格是否整个位于水面之下（客户端只经折射通道看到它们）
     const uw = !!o.geometry && underWater(o);
+    if (uw) annotationSurface = false;
     const assignMat = (m) => {
       const ud = (m && m.userData) || {};
       // 水面（客户端 water-fp.sl 的 **MEDIUM 档**）：导出器带数据时走专用材质；
@@ -244,11 +254,13 @@ export function assembleSceneryMaterials(gltf, {
         const wt = waterTexOf(m);
         if (wt) {
           if (debug && typeof window !== 'undefined' && window.__waterCoast) window.__waterCoast.materials++;
+          annotationSurface = false;
           return makeWaterMaterial(m, { normalTex: wt[0], cubeTex: wt[1], props: ud.water.props || {}, coast: waterCoast });
         }
       }
       // 视角淡出软混合效果片（客户端 AlphaBlend 预设 + BLEND_BY_ANGLE）
       if (ud.blendByAngle) {
+        annotationSurface = false;
         return makeBlendByAngleMaterial(m, ud.blendByAngle);
       }
       // 贴花（客户端 `MATERIAL_DECAL`）：`albedo(UV0) × colormap(UV1) × 2.0`，**不受光**——
@@ -261,6 +273,7 @@ export function assembleSceneryMaterials(gltf, {
         const cmTex = ownDecal || groundLayers.texs.cm;
         if (cmTex) {
           const GL = groundLayers.layers || {};
+          annotationSurface = false;
           return makeDecalMaterial(m, cmTex, ownDecal ? null : groundLayers.texs.lm, {
             separateLm: (ud.decalSeparateLm !== undefined)
               ? !!ud.decalSeparateLm
@@ -292,7 +305,10 @@ export function assembleSceneryMaterials(gltf, {
         }
       }
       const maskTex = ud.blendLayer ? maskTexOf(m) : null;
-      if (maskTex && o.geometry.attributes.uv1) return makeBlendLayerMaterial(m, maskTex);
+      if (maskTex && o.geometry.attributes.uv1) {
+        annotationSurface = false;
+        return makeBlendLayerMaterial(m, maskTex);
+      }
       // 水下静态件（兜底口径）：客户端折射通道 `VIEW_DIFFUSE=0` ⇒ `color = albedo`
       // （不乘 2、不受光）——正是 MeshBasicMaterial 的口径。
       if (uw) {
@@ -315,6 +331,7 @@ export function assembleSceneryMaterials(gltf, {
       return convMat(m, isCard);
     };
     o.material = Array.isArray(o.material) ? o.material.map(assignMat) : assignMat(o.material);
+    if (!annotationSurface) markNotDrawable(o.material);
     // 水体（海平面等半透明大面）：透明 + depthWrite=true + DoubleSide 会与地形/自身共面
     // 产生 z-fighting 与透明互遮挡闪烁；其几何极简且为全场唯一透明物 ⇒ 正常写深度最稳。
     // 不设 renderOrder：交给 THREE 在透明队列内按摄像机距离排序。

@@ -4,7 +4,8 @@
  * 全部为纯函数，供 BattlePlayback.vue / MapPreview2DPane.vue 与单测使用。
  *
  * 标注对象契约（几何一律存语义坐标 x=回放 x，y=回放 z，渲染时经 createMapView 的 toX/toY 换算）：
- * - pen:    { type:'pen',    color, width, points:[{x,y},...] }（自由笔迹，多段）
+ * - pen:    { type:'pen',    color, width, points:[{x,y,surfaceY?},...] }（自由笔迹，多段；
+ *           surfaceY 只由 3D 场景写入，是可选 session-local 表面锚点，2D 不消费）
  * - arrow:  { type:'arrow',  color, width, x1,y1,x2,y2 }
  * - line:   { type:'line',   color, width, x1,y1,x2,y2 }
  * - rect:   { type:'rect',   color, width, x, y, w, h }
@@ -200,7 +201,8 @@ export function hitTestAnnotation(annotations, point, tolerance) {
 
 /** Immutable translation keeps undo snapshots independent, including polyline vertices. */
 export function translateAnnotation(annotation, dx, dy) {
-  if (annotation.points) return { ...annotation, points: annotation.points.map(p => ({ x: p.x + dx, y: p.y + dy })) }
+  // 只平移 semantic XZ；未知字段（如 3D surfaceY）原样保留，避免编辑动作丢锚点。
+  if (annotation.points) return { ...annotation, points: annotation.points.map(p => ({ ...p, x: p.x + dx, y: p.y + dy })) }
   const next = { ...annotation }
   for (const key of ['x', 'cx', 'x1', 'x2']) if (Number.isFinite(next[key])) next[key] += dx
   for (const key of ['y', 'cy', 'y1', 'y2']) if (Number.isFinite(next[key])) next[key] += dy
@@ -356,7 +358,18 @@ function clipPenByEraser(points, eraserPoints, radius) {
     if (current.length >= 2 && pathLength(current) > 1e-9) pieces.push(current)
     current = []
   }
-  const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t })
+  const copyPoint = (p) => {
+    const out = { x: p.x, y: p.y }
+    if (Number.isFinite(p.surfaceY)) out.surfaceY = p.surfaceY
+    return out
+  }
+  const lerp = (a, b, t) => {
+    const out = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
+    if (Number.isFinite(a.surfaceY) && Number.isFinite(b.surfaceY)) {
+      out.surfaceY = a.surfaceY + (b.surfaceY - a.surfaceY) * t
+    }
+    return out
+  }
 
   for (let i = 1; i < cleanPoints.length; i++) {
     const a = cleanPoints[i - 1]
@@ -372,15 +385,15 @@ function clipPenByEraser(points, eraserPoints, radius) {
     }
     covered = mergeCoveredIntervals(covered)
     if (!covered.length) {
-      if (!current.length) current.push({ x: a.x, y: a.y })
-      current.push({ x: b.x, y: b.y })
+      if (!current.length) current.push(copyPoint(a))
+      current.push(copyPoint(b))
       continue
     }
     changed = true
     let cursor = 0
     for (const [lo, hi] of covered) {
       if (lo > cursor + 1e-9) {
-        const start = cursor <= 1e-9 ? { x: a.x, y: a.y } : lerp(a, b, cursor)
+        const start = cursor <= 1e-9 ? copyPoint(a) : lerp(a, b, cursor)
         if (!current.length) current.push(start)
         current.push(lerp(a, b, lo))
         flush()
@@ -390,9 +403,9 @@ function clipPenByEraser(points, eraserPoints, radius) {
       cursor = Math.max(cursor, hi)
     }
     if (cursor < 1 - 1e-9) {
-      const start = cursor <= 1e-9 ? { x: a.x, y: a.y } : lerp(a, b, cursor)
+      const start = cursor <= 1e-9 ? copyPoint(a) : lerp(a, b, cursor)
       if (!current.length) current.push(start)
-      current.push({ x: b.x, y: b.y })
+      current.push(copyPoint(b))
     } else {
       flush()
     }
@@ -440,6 +453,18 @@ export function applyEraser(annotations, eraserPoints, radius) {
     }
   }
   return changed ? result : annotations
+}
+
+/**
+ * 导出/导入边界的 3D 锚点剥离：文件 schema 保持 {x,y}，surfaceY 不落盘。
+ * 非点列标注原样返回；点列标注返回新对象，不改输入。
+ */
+export function stripSurfaceAnchors(annotations) {
+  if (!Array.isArray(annotations)) return []
+  return annotations.map((ann) => {
+    if (!ann || !Array.isArray(ann.points)) return ann
+    return { ...ann, points: ann.points.map((p) => ({ x: p.x, y: p.y })) }
+  })
 }
 
 

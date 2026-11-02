@@ -9,10 +9,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 
+const surfaceMesh = vi.hoisted(() => ({ userData: {} }))
 vi.mock('../sceneryAssembly.js', () => ({
   resolveSceneryExtras: async () => ({}),
   makeTexResolvers: () => ({ maskTexOf: null, lmTexOf: null, detailTexOf: null, envTexOf: null, waterTexOf: null, decalTexOf: null }),
-  assembleSceneryMaterials: (_gltf, opts) => { opts.onMesh({}, false); return { animLayerMats: [] } },
+  assembleSceneryMaterials: (_gltf, opts) => { opts.onMesh(surfaceMesh, false); return { animLayerMats: [] } },
 }))
 vi.mock('../sceneryAssemblyRules.js', () => ({
   sceneHasSkyFlags: () => false,
@@ -21,7 +22,12 @@ vi.mock('../sceneryAssemblyRules.js', () => ({
 }))
 vi.mock('../variantFilter.js', () => ({ pruneForeignVariantsDetailed: () => ({ removed: 0, failClosed: false }) }))
 vi.mock('../sceneryMaterials.js', () => ({ applyMaterialTextureAnisotropy: () => 0 }))
-vi.mock('../groundPass.js', () => ({ makeWaterCoast: () => null, buildCorridorRefineMask: () => ({ mask: 'MASK', candidates: 1, texels: 1 }) }))
+vi.mock('../groundPass.js', () => ({
+  makeWaterCoast: () => null,
+  buildCorridorRefineMask: ({ meshes }) => ({
+    mask: 'MASK', candidates: meshes.length, texels: 1, meshes: meshes.map((m) => m.o),
+  }),
+}))
 vi.mock('../sceneryInstancing.js', () => ({
   collectInstanceEntries: () => [],
   buildStandaloneLightmappedMeshes: () => {},
@@ -93,6 +99,9 @@ describe('assembleMapScenery 会话竞态（评审 P1/P2）', () => {
     expect(asm.writes.destruct.states).toBeInstanceOf(Array)
     expect(asm.writes.mapScenery).toBeTruthy()
     expect(asm.writes.occlGrid).toBeInstanceOf(Map)
+    expect(asm.writes.annotationSurfaceGrid).toBeInstanceOf(Map)
+    // 走廊类判据命中的贴地薄板必须被标记成“非 3D 可绘制表面”。
+    expect(surfaceMesh.userData.annotationSurface).toBe(false)
   })
 
   it('走廊掩码建成：onRefineMaskBuilt 携带 mask 且仅在宿主具备地形/相机/控件时调用（评审 P2）', async () => {
