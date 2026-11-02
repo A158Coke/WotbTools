@@ -230,7 +230,10 @@
     "hofPager": {
       "summary": "共 {items} 条 · 第 {page}/{total} 页",
       "pages": "第 {page}/{total} 页",
-      "page": "第 {page} 页"
+      "page": "第 {page} 页",
+      "jumpLabel": "跳转页码",
+      "jumpPlaceholder": "页码",
+      "jumpGo": "前往"
     },
     "hofRules": {
       "title": "上榜规则",
@@ -1209,7 +1212,10 @@
     "hofPager": {
       "summary": "{items} records · page {page} of {total}",
       "pages": "Page {page} of {total}",
-      "page": "Page {page}"
+      "page": "Page {page}",
+      "jumpLabel": "Go to page",
+      "jumpPlaceholder": "Page",
+      "jumpGo": "Go"
     },
     "hofRules": {
       "title": "Ranking rules",
@@ -2188,7 +2194,10 @@
     "hofPager": {
       "summary": "Записей: {items} · страница {page} из {total}",
       "pages": "Страница {page} из {total}",
-      "page": "Страница {page}"
+      "page": "Страница {page}",
+      "jumpLabel": "Перейти на страницу",
+      "jumpPlaceholder": "Стр.",
+      "jumpGo": "Перейти"
     },
     "hofRules": {
       "title": "Правила рейтинга",

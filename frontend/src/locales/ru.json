@@ -1053,6 +1053,9 @@
     "prev": "Назад",
     "next": "Вперёд",
     "pageInfo": "Стр. {page}/{total} · всего {items}",
+    "jumpLabel": "Перейти на страницу",
+    "jumpPlaceholder": "Стр.",
+    "jumpGo": "Перейти",
     "size": "На странице"
   },
   "adminPreview": {

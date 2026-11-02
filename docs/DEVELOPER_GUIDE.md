@@ -424,6 +424,8 @@ Keycloak 认证成功
 
 两个 segment 都不做「拉一页再在内存里筛」的伪造分页。`segment=local` 的代价是每页产生 N（≤ size）次 Keycloak Admin 调用——Keycloak 没有按 ids 批量查询用户的能力；这是能力事实，见 [`auth/keycloak-admin-user-search.md`](auth/keycloak-admin-user-search.md)。
 
+前端分页控件在上一页 / 下一页之外提供直接跳页：输入的是 UI 页码（1-based），提交时转换成后端 0-based `page`；非法页码与当前页不发请求，非 online 时控件禁用。Admin Users 不把页码写入 URL（HoF 公开榜会把 `page` 写进 query）。
+
 Admin DTO 在百场/三环的列表与详情携带 `wotbServer` + `wotbAccountId` 表示归属身份，避免把跨服同号看成同一个账号。`wotbServer` 的取值域是 `CN|ASIA|EU|NA`（DB CHECK 约束）。
 
 **批量删除契约（三个域共用形状，partial success）**：每个目标跑在**独立事务**中（`TransactionTemplate`，禁止 `this.method()` 自调用绕过 Spring 代理），允许 partial success；单批去重后上限 100 → 400 `BULK_LIMIT_EXCEEDED`。用户批量删除的 `confirm` 缺失/false → 整批 400 `CONFIRMATION_REQUIRED`，且逐用户复用 `deleteOneInternal` 的全部业务保护（self-delete 保护、打手依赖阻断、先删本地 profile 再删 Keycloak、审计日志）。HoF 批量删除**逐条复用权威单条删除语义**：单场仍 hard delete（audit 快照 + 真删行 + commit 后引用计数清理物理文件），百场/三环仍 soft delete（仅 CURRENT 可删，`CURRENT` → `DELETED`）；非 CURRENT 逐条失败于 `HUNDRED_NOT_CURRENT` / `MARK3_NOT_CURRENT` 而不阻塞其他记录。百场/三环的 reason 是批次级参数，先整体校验一次（参数错误整批 400，不表现为逐条失败）。
