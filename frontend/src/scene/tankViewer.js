@@ -189,6 +189,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             armorStateAutoTitle: 'Replay-detected (armor state at impact)',
             // 122 装备徽标（射击诊断面板）：不得硬编码文案，宿主经 labels 传三语。
             pitchDevice: 'Improved Vertical Stabilizer',
+            // Type5 配件串回放判定来源提示（勾选框禁用时的 tooltip）：同不得硬编码。
+            replayEquipmentAutoTitle: 'Replay-detected (Type5 equipment)',
             ...labels,
         };
         const loadFailed = (phase, msg) => L.loadFailed(L.phase(phase), msg);
@@ -704,13 +706,13 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             if (cal) {
                 if (s.shooter_equipment) {
                     cal.checked = equipmentOverride.calibrated ?? !!s.shooter_equipment.calibrated_shells;
-                    cal.disabled = true; cal.title = '回放自动判定（Type5 配件串）';
+                    cal.disabled = true; cal.title = L.replayEquipmentAutoTitle;
                 } else { cal.disabled = false; cal.title = ''; }
             }
             if (enh) {
                 if (s.target_equipment) {
                     enh.checked = equipmentOverride.enhanced ?? !!s.target_equipment.enhanced_armor;
-                    enh.disabled = true; enh.title = '回放自动判定（Type5 配件串）';
+                    enh.disabled = true; enh.title = L.replayEquipmentAutoTitle;
                 } else { enh.disabled = false; enh.title = ''; }
             }
             const pit = document.getElementById('eq-pitch-device');
@@ -719,7 +721,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 const checked = resolvePitchCheckboxChecked({ override: equipmentOverride.pitch, recorded: recorded ? !!recorded.improved_pitch_limits : null });
                 if (recorded) {
                     pit.checked = checked;
-                    pit.disabled = true; pit.title = '回放自动判定（Type5 配件串）';
+                    pit.disabled = true; pit.title = L.replayEquipmentAutoTitle;
                 } else {
                     // 换目标后回放真值不适用：回到手动勾选，且不保留上一辆车的勾选态。
                     pit.checked = checked;

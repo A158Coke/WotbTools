@@ -880,4 +880,13 @@ describe('122 装备徽标走 labels 边界（i18n 守卫）', () => {
     expect(template).toContain("pitchDevice: t('armor.pitch_device')")
     expect(kernel).toContain("pitchDevice: 'Improved Vertical Stabilizer'")
   })
+
+  it('勾选框回放判定 tooltip 不得硬编码：走 L.replayEquipmentAutoTitle', () => {
+    const start = kernel.indexOf('function syncEquipmentCheckboxes(')
+    const body = kernel.slice(start, start + 1600)
+    expect(body).toContain('L.replayEquipmentAutoTitle')
+    expect(body).not.toContain('回放自动判定')
+    expect(template).toContain("replayEquipmentAutoTitle: t('armor.equipment_auto')")
+    expect(kernel).toContain("replayEquipmentAutoTitle: 'Replay-detected (Type5 equipment)'")
+  })
 })

@@ -472,6 +472,7 @@ function startViewer(preserveSelection = false) {
             relativeView: t('armor.relative_view'),
             worldView: t('armor.world_view'),
             pitchDevice: t('armor.pitch_device'),
+            replayEquipmentAutoTitle: t('armor.equipment_auto'),
             partName: (name) => armorPartLabel(name, t),
             resultName: (result) => armorResultLabel(result, t),
             shotDamage: t('armor.shot_damage'),
