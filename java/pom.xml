@@ -102,6 +102,15 @@
                                     <version>[3.9.0,4.0.0-alpha)</version>
                                 </requireMavenVersion>
                                 <banDuplicatePomDependencyVersions/>
+                                <!-- java/AGENTS.md：不可变模型用 record，可变模型用公有字段 POJO；
+                                     Lombok 注解是 SOURCE retention（编译后不留字节码），依赖声明层拦截
+                                     是唯一可靠的机械门禁，覆盖 wotb-core / wotb-web / wotb-ai 全部 scope。 -->
+                                <bannedDependencies>
+                                    <excludes>
+                                        <exclude>org.projectlombok:lombok</exclude>
+                                    </excludes>
+                                    <message>wotbtools 不引入 Lombok（record / 公有字段 POJO 约定，见 java/AGENTS.md）</message>
+                                </bannedDependencies>
                             </rules>
                         </configuration>
                     </execution>

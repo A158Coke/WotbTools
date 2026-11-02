@@ -112,4 +112,44 @@ git commit -q -m 'add small source file'
 head=$(git rev-parse HEAD)
 expect_pass clean-change env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
+# Lifecycle governance: history-parking directories are banned outright in the
+# tracked tree.
+git switch -q -C archive-dir "$base"
+mkdir -p archive
+printf 'stale\n' > archive/notes.md
+git add archive/notes.md
+git commit -q -m 'add archive directory'
+head=$(git rev-parse HEAD)
+expect_fail archive-dir env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+
+# A parking-directory blob added and deleted inside the range must still fail:
+# it entered the commit trees the event introduces.
+git switch -q -C parking-dir-transient "$base"
+mkdir -p old
+printf 'stale\n' > old/notes.md
+git add old/notes.md
+git commit -q -m 'add old directory'
+git rm -q old/notes.md
+git commit -q -m 'remove old directory'
+head=$(git rev-parse HEAD)
+expect_fail parking-dir-transient env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+
+# Permanent source must not cite the ephemeral planning artifact as authority.
+git switch -q -C plan-reference "$base"
+mkdir -p src
+printf 'split plan: see docs/current-plan.md\n' > src/notes.js
+git add src/notes.js
+git commit -q -m 'add source citing the planning artifact'
+head=$(git rev-parse HEAD)
+expect_fail plan-reference env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+
+# Lifecycle skill/playbook files own the plan-carrier mechanism and stay allowed.
+git switch -q -C plan-reference-allowlist "$base"
+mkdir -p .agents/skills
+printf '唯一执行载体 docs/current-plan.md\n' > .agents/skills/example.md
+git add .agents/skills/example.md
+git commit -q -m 'add allowlisted lifecycle doc citing the plan carrier'
+head=$(git rev-parse HEAD)
+expect_pass plan-reference-allowlist env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+
 echo "repository hygiene regression tests: PASS"

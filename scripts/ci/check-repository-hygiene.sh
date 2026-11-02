@@ -40,6 +40,39 @@ is_forbidden_path() {
   esac
 }
 
+# Lifecycle rule (.agents/AGENTS.md document lifecycle): Git history is the
+# archive. History-parking directories are banned outright, in the tracked tree
+# and in any commit tree introduced by the event range.
+is_history_parking_path() {
+  local path="$1"
+  case "$path" in
+    archive/*|*/archive/*|old/*|*/old/*|legacy-docs/*|*/legacy-docs/*|historical/*|*/historical/*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+# Lifecycle-plan reference gate (.agents/AGENTS.md current-plan 门禁): permanent
+# source/config/docs must not cite docs/current-plan.md as an authority. The
+# allowlist is structural, by path role, never by content: lifecycle
+# skills/playbooks, the guard workflows and the governance docs own the
+# plan-carrier mechanism itself; the hygiene scripts embed the detection
+# pattern; applied Flyway migrations are an explicit rule exception.
+is_current_plan_allowlisted() {
+  local path="$1"
+  case "$path" in
+    .gitignore|AGENTS.md|docs/README.md|docs/current-plan.md|scripts/ci/check-repository-hygiene.sh|scripts/ci/test-repository-hygiene.sh|.agents/*|.github/workflows/ci-gate.yml|.github/workflows/repository-hygiene-main.yml|*/db/migration/*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 printable_path() {
   printf '%q' "$1"
 }
@@ -55,6 +88,20 @@ report_forbidden_path() {
   local scope="$1"
   local path="$2"
   echo "ERROR: forbidden generated/runtime path $scope: $(printable_path "$path")" >&2
+}
+
+report_history_parking_path() {
+  local scope="$1"
+  local path="$2"
+  echo "ERROR: history-parking directory path $scope: $(printable_path "$path")" >&2
+  echo "       archive/, old/, legacy-docs/ and historical/ directories are banned; Git history is the archive." >&2
+}
+
+report_current_plan_reference() {
+  local path="$1"
+  echo "ERROR: permanent file references the ephemeral planning artifact: $(printable_path "$path")" >&2
+  echo "       docs/current-plan.md is a gitignored task carrier, not an architecture/behavior authority." >&2
+  echo "       Move the statement to a canonical doc or a GitHub Issue; structural exceptions live in is_current_plan_allowlisted()." >&2
 }
 
 report_large_file() {
@@ -170,6 +217,12 @@ while IFS= read -r -d '' path; do
     continue
   fi
 
+  if is_history_parking_path "$path"; then
+    report_history_parking_path "is tracked" "$path"
+    violations=$((violations + 1))
+    continue
+  fi
+
   size=$(wc -c < "$path")
   if (( size > MAX_TRACKED_FILE_BYTES )) && ! is_allowlisted "$path"; then
     report_large_file "tracked file" "$path" "$size"
@@ -236,6 +289,12 @@ if [[ -n "$BASE_SHA" ]]; then
         continue
       fi
 
+      if is_history_parking_path "$path"; then
+        report_history_parking_path "entered Git history" "$path"
+        violations=$((violations + 1))
+        continue
+      fi
+
       if (( size > MAX_TRACKED_FILE_BYTES )) && ! is_allowlisted "$path"; then
         report_large_file "history blob" "$path" "$size"
         violations=$((violations + 1))
@@ -244,6 +303,32 @@ if [[ -n "$BASE_SHA" ]]; then
   done < <(git rev-list --reverse "${BASE_SHA}..${HEAD_SHA}")
 
   echo "Repository history hygiene checked $history_checked unique blob/path pair(s) across $history_commits commit tree(s) in ${BASE_SHA}..${HEAD_SHA}."
+
+  # Lifecycle-plan reference gate: newly or modified permanent files in the event
+  # range must not cite the ephemeral planning artifact as an authority. Legacy
+  # references in untouched files stay a documented governance debt; touching the
+  # file is exactly when the rule forces the migration, so the gate checks the
+  # working-tree content of changed paths. Transient references that appear and
+  # disappear inside the range are accepted noise — the harm is a lingering
+  # reference in the final tree, not a transient one.
+  mapfile -d '' changed_paths < <(git diff -z --name-only "$BASE_SHA" "$HEAD_SHA")
+  plan_reference_checked=0
+  plan_reference_violations=0
+  for changed_path in "${changed_paths[@]}"; do
+    [[ -f "$changed_path" ]] || continue
+    is_current_plan_allowlisted "$changed_path" && continue
+    plan_reference_checked=$((plan_reference_checked + 1))
+    if grep -I -q -E 'docs/current-plan|current-plan\.md' "$changed_path"; then
+      report_current_plan_reference "$changed_path"
+      plan_reference_violations=$((plan_reference_violations + 1))
+    fi
+  done
+  if (( plan_reference_violations > 0 )); then
+    violations=$((violations + plan_reference_violations))
+  fi
+  echo "Lifecycle-plan reference gate checked $plan_reference_checked changed file(s) in ${BASE_SHA}..${HEAD_SHA}."
+else
+  echo "Lifecycle-plan reference gate skipped: no BASE_SHA (workflow_dispatch or local full-history run)."
 fi
 
 if (( violations > 0 )); then
