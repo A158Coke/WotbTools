@@ -4,11 +4,11 @@
 
 ## 设计语言
 
-- 设计规则（颜色、字号、间距、圆角、层级、组件、状态、文案）的 canonical 是 [`design-language.md`](design-language.md)；本文件只记录实现位置与不变量。
+- 设计规则（颜色、字号、间距、圆角、层级、组件、选择控件、状态、文案）的 canonical 是 Design Contract [`design-language.md`](design-language.md)，规则用稳定 ID（`DC-*`）引用；本文件只记录实现位置与不变量。
 - 设计语言 token：`frontend/src/styles/tokens/scale.css`（刻度，并声明 `@layer` 顺序）与 `frontend/src/styles/tokens/color.css`（两套主题的语义色）。`data-theme` 由 profile 派生：`showcase → dark`、`classic → light`。
 - `frontend/src/styles/tokens.css` 是 deprecated 的旧 token 与 layout class 层，仅为保持现有视觉；新代码不得引用其中的旧 token。`classic-profile.css` 是 Classic profile 的语义覆盖层。
 - `pnpm run lint:css`（stylelint，CI 必过）强制执行设计语言；`frontend/stylelint.legacy.json` 是旧文件的忽略名单，只减不增。
-- 设计语言组件（`frontend/src/components/`，均只用语义 token）：`AppButton`（Button）· `SegmentedControl` · `PageHeader` · `EmptyState` · `Banner` · `MenuButton`（Menu：方向键 / Esc / 外部点击关闭）· `BattlePicker`（SearchSelect 单选：超过 6 项显示搜索；手机为底部 sheet）· `StatStrip`（Stat）· `PlayerCardList`（DataTable 的手机卡片形态） · `FilterChips`（手机筛选入口：「筛选」按钮 + 已生效条件 chip，配合底部 sheet） · `AppDialog`（Dialog：焦点陷阱、Esc、关闭后焦点回到触发元素、手机底部 sheet；`keepMounted` 保留表单草稿）· `confirm()` + `ConfirmDialogHost`（应用内确认，禁止 `window.confirm`）· `MarkdownDocPage`（长文档：二级标题目录、吸顶 / 折叠目录、回到顶部）· `ReplayCapabilityTabs`（Tabs）。新界面优先复用它们，不新增一次性按钮 / 下拉样式。
+- 设计语言组件（`frontend/src/components/`，均只用语义 token）：`AppButton`（Button）· `SegmentedControl` · `PageHeader` · `EmptyState` · `Banner` · `MenuButton`（Menu：方向键 / Esc / 外部点击关闭）· `BattlePicker`（SearchSelect 单选：超过 6 项显示搜索，属于 DC-SEL-05 的提前搜索；手机为底部 sheet）· `StatStrip`（Stat）· `PlayerCardList`（DataTable 的手机卡片形态） · `FilterChips`（手机筛选入口：「筛选」按钮 + 已生效条件 chip，配合底部 sheet） · `AppDialog`（Dialog：焦点陷阱、Esc、关闭后焦点回到触发元素、手机底部 sheet；`keepMounted` 保留表单草稿）· `confirm()` + `ConfirmDialogHost`（应用内确认，禁止 `window.confirm`）· `MarkdownDocPage`（长文档：二级标题目录、吸顶 / 折叠目录、回到顶部）· `ReplayCapabilityTabs`（Tabs）。新界面优先复用它们，不新增一次性按钮 / 下拉样式。
 
 共享 `MenuButton` 使用 Reka 碰撞定位给出的可用高度限制菜单面板，空间不足时在菜单内部纵向滚动，滚动不传递到背景页面。选项保留原有触控尺寸；键盘 Home / End 导航及指针选择均可触达全部选项。`test:browser-interaction menu-viewport` 以当前回放导出三项文案验证 Showcase / Classic、手机短视口、平板、桌面及打开期间的视口高度变化。
 
@@ -50,7 +50,7 @@
 - `tokens.css` 保留现有 layout class；它们从 `tokens/scale.css` 读取 `--layout-content-max` / `--layout-wide-max` / `--layout-workspace-max` 与 `--gutter`。当前最大宽度分别为 1420 / 1720 / 1760px；文本阅读区另用 `--reading-measure`，不限制表格宽度。
 - Showcase 页面层位于 `showcase.css`、`showcase-pages.css`、`showcase-rankings.css`、`showcase-cohesion.css` 和 `showcase-regressions.css`；Profile / HoF 的局部装饰与 Classic 桥接也在这层。
 - 页面底色由语义 token 提供，首页插图由首页组件的独立图片区域拥有；Home / Contact / 回放的通用按钮与表格由语义 token 提供，Classic 不另写一套覆盖。
-- 首页（`HomePage.vue`，**纯展示页**）**不承担导航**：`AppSidebar.vue` 与 `AppTabBar.vue` + `MorePage` 已覆盖 `PRIMARY_NAV` 的全部入口，三档都在，首页再摆功能卡就是抄侧边栏。功能导航只有 Replay Workspace 一个。此外 Web 首页保留 Android 下载、Sponsor、Feedback 等非功能 / 转化入口；Android App 内不展示 Android 下载入口（整张 promo 卡不渲染，Sponsor 卡保持）。由 `HomePage.test.js` 按语义锁定，不写死「恰好 N 个链接」。分段为 ① 全出血 Hero ② 实时数据带 ③ 能力展示（**整节无任何链接**）④ 带走它 / 赞助 ⑤ 极简页脚。
+- 首页（`HomePage.vue`，**纯展示页**）**不承担导航**：`AppSidebar.vue` 与 `AppTabBar.vue` + `MorePage` 已覆盖 `PRIMARY_NAV` 的全部入口，三档都在，首页再摆功能卡就是抄侧边栏。功能导航只有 Replay Workspace 一个。此外 Web 首页保留 Android 下载、Sponsor、站内反馈等非功能 / 转化入口；Android App 内不展示 Android 下载入口（整张 promo 卡不渲染，Sponsor 卡保持）。由 `HomePage.test.js` 按语义锁定，不写死「恰好 N 个链接」。分段为 ① 全出血 Hero ② 实时数据带 ③ 能力展示（**整节无任何链接**）④ 带走它 / 赞助 ⑤ 极简页脚。
   - 它是唯一启用 design-language §2 装饰插槽的页面：Hero 的 `--home-hero-decor` 背景（`assets/showcase/home/hero-v4.webp`，组件 import 后经内联 `--home-hero-image` 传入），在 Classic Profile 与 `width < 768px` 置 `none`，同时隐藏承载元素。插槽由首页自己按 `html[data-ui-profile="classic"]` 派生，`classic-profile.css` 不含任何首页类名（`classic-profile-css.test.js` 守卫）。文字落在 scrim 压出的纯色上，对比度不随图片内容变化。
   - **回放的五个 capability tab 不是独立目的地**：`viewRegistry.js` 的 `replay` / `battle-playback` / `ai-review` / `agent-replay` / `agent-shots` 全部落在同一个 `ReplayWorkspace`，只是初始 tab 不同。去重断言因此按 `VIEW_COMPONENTS` 的**组件对象引用**判定，不是 href 字符串（五个 href 指向同一个 workspace），也不是组件名（view 懒加载，全叫 `AsyncComponentWrapper`）。
   - ③ 的四张与 ④ 的 Android 手机图都是真实产品截图，来源与隐私边界见 [`frontend/src/assets/showcase/README.md`](../../frontend/src/assets/showcase/README.md)；只有第一张 `eager`，其余 `lazy` 且都带固有尺寸防抖版。动效默认关闭，只在 `prefers-reduced-motion: no-preference` 下启用；hover 位移 / 缩放同样如此。

@@ -18,6 +18,8 @@ const props = defineProps({
   scrollable: { type: Boolean, default: false },
   /** 按可用宽度换行，窄屏各行填满宽度，长标签仍完整可见。 */
   wrap: { type: Boolean, default: false },
+  /** 单选呈现（design-language §7.1）：由调用方显式选择；chips 始终换行，tiles 等宽平铺，两者不接受 scrollable。 */
+  presentation: { type: String, default: 'segmented', validator: v => ['segmented', 'chips', 'tiles'].includes(v) },
 })
 const emit = defineEmits(['update:modelValue', 'reselect'])
 
@@ -56,7 +58,10 @@ function onKeydown(event) {
 <template>
   <RadioGroupRoot
     class="segmented"
-    :class="{ 'is-scrollable': scrollable && !wrap, 'is-wrapping': wrap }"
+    :class="[`is-${presentation}`, {
+      'is-scrollable': scrollable && !wrap && presentation === 'segmented',
+      'is-wrapping': wrap || presentation === 'chips',
+    }]"
     :model-value="modelValue"
     :aria-label="ariaLabel"
     :required="false"
@@ -119,6 +124,20 @@ function onKeydown(event) {
   max-width: 100%;
 }
 
+.segmented.is-chips {
+  gap: var(--space-2);
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.segmented.is-tiles {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  width: 100%;
+}
+
 .segmented-option {
   position: relative;
   flex: none;
@@ -145,6 +164,27 @@ function onKeydown(event) {
   border-radius: var(--radius-sm);
   background: var(--color-surface-1);
   box-shadow: var(--elevation-1);
+}
+
+.segmented.is-chips .segmented-option {
+  min-height: var(--control-h-md);
+  border: var(--border-width) solid var(--color-border-subtle);
+  border-radius: var(--radius-full);
+}
+
+.segmented.is-chips .segmented-option.is-active { border-color: var(--color-accent); }
+
+.segmented.is-chips .segmented-indicator {
+  border-radius: var(--radius-full);
+  background: var(--color-surface-3);
+  box-shadow: none;
+}
+
+.segmented.is-tiles .segmented-option {
+  min-height: var(--control-h-lg);
+  padding: var(--space-2);
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .segmented-label { position: relative; }

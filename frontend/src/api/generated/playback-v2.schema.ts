@@ -5985,6 +5985,184 @@ export default {
         }
       }
     },
+    "SiteFeedbackReason": {
+      "type": "string",
+      "enum": [
+        "BUG",
+        "FEATURE_REQUEST",
+        "DATA_ERROR",
+        "USABILITY",
+        "OTHER"
+      ]
+    },
+    "CreateSiteFeedbackRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reasonCodes"
+      ],
+      "properties": {
+        "reasonCodes": {
+          "type": "array",
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/SiteFeedbackReason"
+          }
+        },
+        "feedbackText": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 4000
+        },
+        "pageView": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-z0-9-]{1,64}$"
+        }
+      },
+      "description": "At least one reason or non-blank feedback text is required. Text is stored without modification. NUL and unpaired surrogates are invalid because they cannot round-trip through PostgreSQL UTF-8 text."
+    },
+    "CreateSiteFeedbackResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "createdAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "AdminSiteFeedbackListItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "reasonCodes",
+        "feedbackText",
+        "pageView",
+        "createdAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "reasonCodes": {
+          "type": "array",
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/SiteFeedbackReason"
+          }
+        },
+        "feedbackText": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pageView": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "AdminSiteFeedbackDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "reasonCodes",
+        "feedbackText",
+        "pageView",
+        "createdAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "reasonCodes": {
+          "type": "array",
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/SiteFeedbackReason"
+          }
+        },
+        "feedbackText": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pageView": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "AdminSiteFeedbackPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items",
+        "page",
+        "size",
+        "totalItems",
+        "totalPages"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AdminSiteFeedbackListItem"
+          }
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "totalItems": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalPages": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
     "AdminUserPage": {
       "type": "object",
       "additionalProperties": false,

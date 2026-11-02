@@ -3064,6 +3064,52 @@ paths:
         '401': { description: Authentication required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
         '403': { description: Administrator required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
         '404': { description: Feedback not found, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+  /api/site-feedback:
+    post:
+      operationId: createSiteFeedback
+      summary: Submit site feedback
+      description: JSON request bodies are limited to 64 KiB; larger or malformed requests return 400.
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateSiteFeedbackRequest' } } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/CreateSiteFeedbackResponse' } } } }
+        '400': { description: Invalid request, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '401': { description: Authentication required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+  /api/admin/site-feedback:
+    get:
+      operationId: listAdminSiteFeedback
+      summary: List site feedback for site administrators
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+        - { name: reason, in: query, schema: { $ref: '#/components/schemas/SiteFeedbackReason' } }
+      responses:
+        '200': { description: Feedback page, content: { application/json: { schema: { $ref: '#/components/schemas/AdminSiteFeedbackPage' } } } }
+        '400': { description: Invalid filter or page, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '401': { description: Authentication required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '403': { description: Administrator required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+  /api/admin/site-feedback/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
+    get:
+      operationId: getAdminSiteFeedback
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Feedback detail, content: { application/json: { schema: { $ref: '#/components/schemas/AdminSiteFeedbackDetail' } } } }
+        '400': { description: Invalid id, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '401': { description: Authentication required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '403': { description: Administrator required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '404': { description: Feedback not found, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    delete:
+      operationId: deleteAdminSiteFeedback
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Deleted }
+        '400': { description: Invalid id, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '401': { description: Authentication required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '403': { description: Administrator required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '404': { description: Feedback not found, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
   /api/admin/users:
     get:
       operationId: searchAdminUsers
@@ -6957,6 +7003,55 @@ components:
       required: [items, page, size, totalItems, totalPages]
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/AdminAiReviewFeedbackListItem' } }
+        page: { type: integer, minimum: 0 }
+        size: { type: integer, minimum: 1, maximum: 100 }
+        totalItems: { type: integer, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
+    SiteFeedbackReason:
+      type: string
+      enum: [BUG, FEATURE_REQUEST, DATA_ERROR, USABILITY, OTHER]
+    CreateSiteFeedbackRequest:
+      type: object
+      additionalProperties: false
+      required: [reasonCodes]
+      properties:
+        reasonCodes: { type: array, maxItems: 5, uniqueItems: true, items: { $ref: '#/components/schemas/SiteFeedbackReason' } }
+        feedbackText: { type: [string, 'null'], maxLength: 4000 }
+        pageView: { type: [string, 'null'], pattern: '^[a-z0-9-]{1,64}$' }
+      description: At least one reason or non-blank feedback text is required. Text is stored without modification. NUL and unpaired surrogates are invalid because they cannot round-trip through PostgreSQL UTF-8 text.
+    CreateSiteFeedbackResponse:
+      type: object
+      additionalProperties: false
+      required: [id, createdAt]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        createdAt: { type: string, format: date-time }
+    AdminSiteFeedbackListItem:
+      type: object
+      additionalProperties: false
+      required: [id, reasonCodes, feedbackText, pageView, createdAt]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        reasonCodes: { type: array, maxItems: 5, uniqueItems: true, items: { $ref: '#/components/schemas/SiteFeedbackReason' } }
+        feedbackText: { type: [string, 'null'] }
+        pageView: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+    AdminSiteFeedbackDetail:
+      type: object
+      additionalProperties: false
+      required: [id, reasonCodes, feedbackText, pageView, createdAt]
+      properties:
+        id: { type: string, pattern: '^[1-9][0-9]*$' }
+        reasonCodes: { type: array, maxItems: 5, uniqueItems: true, items: { $ref: '#/components/schemas/SiteFeedbackReason' } }
+        feedbackText: { type: [string, 'null'] }
+        pageView: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+    AdminSiteFeedbackPage:
+      type: object
+      additionalProperties: false
+      required: [items, page, size, totalItems, totalPages]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AdminSiteFeedbackListItem' } }
         page: { type: integer, minimum: 0 }
         size: { type: integer, minimum: 1, maximum: 100 }
         totalItems: { type: integer, minimum: 0 }

@@ -47,6 +47,7 @@
 - **渲染坐标边界**：每条素材配置 `coordinateBounds`（图片对应的世界坐标范围，取自语义 JSON 的
   `coordinateSystem.worldBounds`；当前 29 张均为 -300..300）。渲染统一用它换算像素，
   分析网格仍用 `playableBounds`——两者分离，逐图可独立校准。
+- **地图预览 2D 的可玩边界**是另一层：消费 `frontend/src/data/playableBounds.js`（由语义 `playableBoundsMeters` 生成，与 3D 边界 fallback 同源），不改变底图 `coordinateBounds` 映射；缺少语义/边界的图不画。
 - **语义数据手工调整**：`common/map-semantics/*.semantic.json` 的区域 label/特征/风险等人类可读字段为中文，可直接手工修改；**改后不要重跑 map-semanticizer**（重新生成会整份覆盖），直到语义化器引入人工覆写合并。
 
 ## Collector 物理出生侧

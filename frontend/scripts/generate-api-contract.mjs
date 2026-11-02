@@ -69,6 +69,7 @@ for (const name of ['BattleDataRequest', 'BattleDataAdminSummary', 'BattleDataAd
   'HofVehicleOption', 'HofAdminPage', 'HofAdminAuditPage', 'Mark3CreateResult', 'Mark3SubmissionSummary', 'Mark3UserStatus', 'Mark3LeaderboardPage', 'Mark3AdminPage', 'Mark3AdminDetail', 'Mark3ReplayEvidence', 'HofUploadResponse',
   'UserProfile', 'AdminUserPage', 'AdminUserDetail', 'DeleteUsersResponse',
   'CreateAiReviewFeedbackResponse', 'AdminAiReviewFeedbackPage', 'AdminAiReviewFeedbackDetail',
+  'CreateSiteFeedbackResponse', 'AdminSiteFeedbackPage', 'AdminSiteFeedbackDetail',
   'HundredLeaderboardPage', 'HundredCreateResult', 'HundredSubmissionSummary', 'HundredUserStatus',
   'HundredAdminPage', 'HundredAdminDetail', 'HundredReplayEvidence', 'BulkDeleteResult',
   'CreatorLevel', 'CreatorNameRequest', 'BackendHealth',
@@ -97,3 +98,50 @@ await writeFile(new URL('../src/api/generated/contract-validators.js', import.me
   + 'const ucs2length = unicodeLengthModule.default ?? unicodeLengthModule;\n'
   + 'const equal = equalModule.default ?? equalModule;\n'
   + validators + '\n', 'utf8')
+
+// contracts/android-native-bridge.json → TS。响应类型只作消费方 guard 的收窄目标，不能当 transport 的断言。
+const bridgeContract = JSON.parse(await readFile(new URL('../../contracts/android-native-bridge.json', import.meta.url), 'utf8'))
+
+function bridgeFields(fields, indent) {
+  const pad = ' '.repeat(indent)
+  const lines = Object.entries(fields).map(([name, spec]) =>
+    `${pad}  ${name}${spec.required === false ? '?' : ''}: ${bridgeType(spec, indent + 2)}`)
+  return lines.length ? `{\n${lines.join('\n')}\n${pad}}` : 'Record<string, never>'
+}
+
+function bridgeBaseType(spec, indent) {
+  switch (spec.type) {
+    case 'string': return spec.enum ? spec.enum.map(value => `'${value}'`).join(' | ') : 'string'
+    case 'integer': return 'number'
+    case 'boolean': return 'boolean'
+    case 'string[]': return 'string[]'
+    case 'object': return spec.fields ? bridgeFields(spec.fields, indent) : 'Record<string, unknown>'
+    case 'object[]': return `Array<${bridgeFields(spec.fields, indent)}>`
+    default: throw new Error(`Unsupported Native Bridge contract type: ${spec.type}`)
+  }
+}
+
+function bridgeType(spec, indent) {
+  const type = bridgeBaseType(spec, indent)
+  return spec.nullable ? `${type} | null` : type
+}
+
+const bridgeMethods = Object.entries(bridgeContract.methods).map(([name, method]) => [
+  `  ${name}: {`,
+  `    request: ${bridgeFields(method.request.fields, 4)}`,
+  `    response: ${bridgeType(method.response, 4)}`,
+  '  }',
+].join('\n'))
+await writeFile(new URL('../src/api/generated/android-native-bridge.ts', import.meta.url), [
+  '// GENERATED FILE - DO NOT EDIT MANUALLY. Source: contracts/android-native-bridge.json',
+  `export type NativeBridgeCapability = ${bridgeContract.capabilities.map(value => `'${value}'`).join(' | ')}`,
+  '',
+  'export interface NativeBridgeMethods {',
+  ...bridgeMethods,
+  '}',
+  '',
+  'export type NativeBridgeMethod = keyof NativeBridgeMethods',
+  "export type NativeBridgeRequest<M extends NativeBridgeMethod> = NativeBridgeMethods[M]['request']",
+  "export type NativeBridgeResponse<M extends NativeBridgeMethod> = NativeBridgeMethods[M]['response']",
+  '',
+].join('\n'), 'utf8')

@@ -352,7 +352,7 @@ describe('BattlePlayback annotations', () => {
     await wrapper.get(`[data-test="pb-annot-${tankClass}"]`).trigger('click')
     await clickMap(wrapper, 300, 301)
     const marker = () => wrapper.get(`[data-test="pb-annot-unit-${tankClass}"]`)
-    expect(marker().text()).toContain(`计划 · ${tankClass}`)
+    expect(marker().text()).toBe('')
     expect(marker().attributes('transform')).toBe('translate(383, 384.5)')
     expect(wrapper.findAll('[data-test="pb-markers"] button')).toHaveLength(0)
     await wrapper.get('[data-test="pb-annot-name"]').setValue('A 点防守')

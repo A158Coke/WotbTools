@@ -56,7 +56,7 @@ WotbTools 是 WoT Blitz `.wotbreplay` 回放分析工具集：Java 25 + Spring B
 # Type check：cd frontend && pnpm run typecheck
 # Browser geometry gate（Playback 布局/形态）：cd frontend && pnpm run test:browser-layout
 # Browser interaction gate（Playback / Replay Workspace 交互）：cd frontend && pnpm run test:browser-interaction
-# AI 复盘反馈浏览器门禁：cd frontend && pnpm run test:browser-ai-feedback
+# 反馈流程浏览器门禁：cd frontend && pnpm run test:browser-feedback
 # 代表页面浮层/遮挡/触控可达矩阵：cd frontend && pnpm run test:browser-interaction --occlusion
 # Build（仅当改动涉及 build 范围）：cd frontend && pnpm run build
 # Local Frontend → Production Backend / Keycloak（开发代理，谨慎使用真实数据）
@@ -169,6 +169,7 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 - `tournament`：按年份/区服/季赛配置积分规则、截图排名的共享草稿、CSV 整表替换、正式榜单、修正与审计；同域 `Broadcast*` 管理五服联赛直播目录。契约见 [`features/tournament-points.md`](features/tournament-points.md) 与 [`features/league-broadcasts.md`](features/league-broadcasts.md)。
 - `replay`：只剩 `/api/health` 与名人堂共用的 `ReplayCapacityLimiter`。
 - `battledata`：匿名接收最小化 Random/Rating 战斗观察，站点管理员可只读审计持久化数据；验证后按 arenaId 首次有效写入，不解析回放、不关联用户。客户端隔离、隐私与数据归属见 [Replay Pipeline](architecture/replay-pipeline.md#匿名-battle-data-collector)，配额与开关见 [运维手册](operations/observability-runbook.md#battle-data-collector)。
+- `sitefeedback`：认证用户从首页页脚和「更多」提交站点反馈（原因标签、说明、当前 view id），站点管理员在独立的 `admin-site-feedback` 页查询和硬删除；不保存用户 ID，无法回复提交者。文本规则与 `aireviewfeedback` 共用 `util.text.UserText`；HTTP 字段以 OpenAPI 为准。
 - `aireviewfeedback`：认证用户提交 AI 复盘反馈及复制回复快照，站点管理员可查询和硬删除；不保存用户 ID 或回放。详情见 [AI Review](architecture/ai-review.md#用户反馈)。
 
 ### 客户端 Replay Engine
@@ -405,7 +406,7 @@ Keycloak 认证成功
 ```
 
 - **身份隔离**：全局 bootstrap 的缓存/在途请求按 `authEpoch` 作废；登出和直接切换账号均清理账户页旧投影，迟到成功/失败不得覆盖当前身份。
-- **canonical owner 只有全局 bootstrap**（`frontend/src/composables/useBusinessUserBootstrap.js`）。页面只等待其结果，不得各自实现「读不到资料 → 自己创建」。
+- **canonical owner 只有全局 bootstrap**（`frontend/src/composables/useBusinessUserBootstrap.ts`）。页面只等待其结果，不得各自实现「读不到资料 → 自己创建」。
 - **个人中心区分连通性与业务失败**：`whenBusinessUserSettled` 返回 false 时，`ACCOUNT_PROFILE` 不可用进入中性 connectivity 状态；仍可用则显示资料错误与显式重试，不停在 loading，也不自动循环重试。只有连通性不可用状态恢复可用时自动加载一次。真正调用 backend 前再次检查对应 capability；回放解析仍完全本地。
 - **KC-only 是允许的临时状态**：broker 刚注册但浏览器还没回站、用户回站前关掉浏览器、bootstrap 暂时失败、legacy 数据、管理员手工建 KC user。任何 KC-only 用户下一次成功进入 WotBTools 都会被自动补齐。
 - **不做强一致声明**：Keycloak 与业务 DB 之间没有分布式事务，也不在 Keycloak First Broker Login 里写业务库；provisioning 失败**不删除 Keycloak 用户**、**不回退认证状态**、**不永久缓存失败**（刷新/重新 bootstrap/页面重试都会重新 ensure）。
@@ -711,7 +712,7 @@ Sponsor QR 不进仓库：配置与收款码作为 **GitHub Release 资产**发�
 - Keycloak Admin API 通过 `KeycloakAdminUserService` 封装后 mock。
 - **架构测试**：ArchUnit 守护 core 禁 Spring Web/Boot、HTTP transport 与反向依赖 web，以及 Web
   domain 分包、分层、ownership、禁字段注入/Lombok。Spring Modulith 的 `WebModuleArchitectureTest`
-  验证 Web 十一个业务域和 `config/exceptionhandler/replayfile/util` 四个支持模块的显式依赖、公开边界及循环，
+  验证 Web 十二个业务域和 `config/exceptionhandler/replayfile/util` 四个支持模块的显式依赖、公开边界及循环，
   覆盖所有应用直接子包；各模块均为 CLOSED，根包和 named interfaces 是对外入口。
   user 的跨域契约仅在 `user.api`：`UserProfiles` 提供有限的资料查询、身份、可信登录同步与管理操作，
   `UserProfileSnapshot` / `WotbAccountIdentity` 提供值；四个消费者域只声明 `user :: api`。

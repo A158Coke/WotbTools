@@ -241,7 +241,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
   it('逐图 IBL：等距柱状环境贴图 + 倍率 + 时序守卫 + 会话释放', () => {
     // 客户端 IBLComponent：specular 立方图 → 上游转等距柱状（tools/export_map_ibl.py）。
     // 只影响 glTF PBR 材质（坦克）；自定义 ShaderMaterial 不吃 environment。
-    const rs = readSrc(resolve(here, 'replaySource.js'), 'utf8')
+    const rs = readSrc(resolve(here, 'replaySource.ts'), 'utf8')
     expect(rs).toMatch(/case 'ibl': return f\('ibl\.webp'\)/)
     expect(src).toMatch(/tex\.mapping = THREE\.EquirectangularReflectionMapping;/)
     expect(src).toMatch(/tex\.colorSpace = THREE\.SRGBColorSpace;/)
@@ -335,7 +335,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
   it('逐图太阳：lighting.json 驱动方向/色/强度与半球环境色，缺失回落兜底', () => {
     // 回归：目标光是硬编码的 (120,260,80)，与各图真实太阳无关——用 authored 法线后
     // 定向光真正塑形，错方位立刻显形（面向太阳的面反而暗，2026-10-09 用户报障）。
-    const rs = readSrc(resolve(here, 'replaySource.js'), 'utf8')
+    const rs = readSrc(resolve(here, 'replaySource.ts'), 'utf8')
     expect(rs).toMatch(/case 'lighting': return f\('lighting\.json'\)/)
     expect(src).toMatch(/applyMapLighting\(L\)/)
     // 应用体自 2026-10-14 抽到共享模块 mapLighting.js（SSOT，与俯视烘焙同一份——烘焙此前

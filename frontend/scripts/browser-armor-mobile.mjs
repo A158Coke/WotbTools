@@ -1,5 +1,6 @@
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page, delay } from './browser-page.mjs'
+import { parseScenarioArgs, selectShard } from './browser-scenario-args.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 import { FIXTURE_SECOND_TANK_ID, FIXTURE_TANK_CACHE, FIXTURE_TANK_DATA, FIXTURE_TANK_ID, startFixtureAssetPack } from './browser-fixtures/fixture-asset-pack.mjs'
 
@@ -1247,6 +1248,8 @@ async function runStaggeredLoadScenario(env, scenario) {
 
 /* ------------------------------------------------------------------ main */
 
+// 启动夹具前校验：非法分片参数不起 Chrome。
+const scenarioArgs = parseScenarioArgs(process.argv.slice(2))
 const chrome = findChrome()
 const { server, origin } = await startFixtureServer()
 const assets = await startFixtureAssetPack()
@@ -1295,10 +1298,15 @@ try {
     { scenario: ASSETLESS_SCENARIO, run: () => runMobileScenario(env, ASSETLESS_SCENARIO) },
     ...PICKER_SCENARIOS.map(scenario => ({ scenario, run: () => runPickerCardsScenario(env, scenario) })),
   ]
-  const nameFilter = process.argv.slice(2).find((arg) => !arg.startsWith('-'))
-  const selected = nameFilter ? runs.filter(({ scenario }) => scenario.name.includes(nameFilter)) : runs
-  if (nameFilter && selected.length === 0) throw new Error(`no scenario matches "${nameFilter}"`)
+  const { nameFilter, shard } = scenarioArgs
+  const named = nameFilter ? runs.filter(({ scenario }) => scenario.name.includes(nameFilter)) : runs
+  const selected = selectShard(named, scenarioArgs)
+  const shardLabel = shard?.label ?? 'full'
+  console.log(`[browser-armor-mobile] shard=${shardLabel} selected=${selected.length}`)
+  const suiteStartedAt = performance.now()
+  let failed = 0
   for (const { scenario, run } of selected) {
+    const startedAt = performance.now()
     try {
       await run()
     } catch (error) {
@@ -1308,24 +1316,19 @@ try {
         viewport: `${scenario.width}x${scenario.height}`,
       })
     }
-  }
-
-  let failed = 0
-  for (const result of results) {
+    // 逐场景实时输出：job 超时被杀时，日志仍保留已跑完场景的状态与耗时。
+    const elapsed = Math.round(performance.now() - startedAt)
+    const result = results.at(-1)
     if (result.failures.length === 0) {
-      console.log(`[browser-armor-mobile] ${result.name} OK (${result.viewport})`)
+      console.log(`[browser-armor-mobile] ${result.name} OK (${result.viewport}) elapsed=${elapsed}ms`)
       continue
     }
     failed += 1
-    console.error(`[browser-armor-mobile] ${result.name} FAILED (${result.viewport})`)
+    console.error(`[browser-armor-mobile] ${result.name} FAILED (${result.viewport}) elapsed=${elapsed}ms`)
     for (const failure of result.failures) console.error(`  - ${failure}`)
   }
-  if (failed > 0) {
-    process.exitCode = 1
-    console.error(`[browser-armor-mobile] ${failed}/${results.length} scenarios failed`)
-  } else {
-    console.log(`[browser-armor-mobile] all ${results.length} scenarios passed`)
-  }
+  if (failed > 0) process.exitCode = 1
+  console.log(`[browser-armor-mobile] summary shard=${shardLabel} selected=${selected.length} passed=${results.length - failed} failed=${failed} elapsed=${Math.round(performance.now() - suiteStartedAt)}ms`)
 } finally {
   if (chromeCdp) await chromeCdp.close()
   await server.close()

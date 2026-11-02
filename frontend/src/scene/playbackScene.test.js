@@ -25,7 +25,7 @@ import { fixtureFacets, requireFixtures } from '../replay-local/__golden__/agent
 import { buildCanonicalReplayFacts, entityFirstSeenByAccount } from '../replay-local/canonical/facts.js'
 import { toBattlePlaybackDataset } from '../replay-local/playback/toBattlePlaybackDataset.js'
 import { validateAgentAiReview, validateAgentBattleResult, validateAgentPlayback } from '../api/agent-replay-facets.js'
-import { FLOAT_DMG_MS } from '../utils/battlePlayback.js'
+import { FLOAT_DMG_MS, GHOST_MS } from '../utils/battlePlayback.js'
 import { mapImages } from '../data/mapImages.js'
 import { normalizePenPoints } from './playback/annotation3d.js'
 
@@ -2695,11 +2695,11 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
       client_options: { backward_zoom: null },
       ...overrides,
     })
-    const load = async ({ camera = facet(), vehicleOverrides = {} } = {}) => {
+    const load = async ({ camera = facet(), vehicleOverrides = {}, others = [], overlay = null } = {}) => {
       const frames = manualFrames()
       vi.spyOn(THREE.Clock.prototype, 'getDelta').mockReturnValue(0.1)
       source.loadRecorderCameraFromFile.mockResolvedValue(camera)
-      const data = rosterData([vehicle({ eid: 1, team: 1, nickname: 'A', tank_name: 'T', max_hp: 100, hp: [[42, 100]], ...vehicleOverrides })])
+      const data = rosterData([vehicle({ eid: 1, team: 1, nickname: 'A', tank_name: 'T', max_hp: 100, hp: [[42, 100]], ...vehicleOverrides }), ...others])
       data.meta = { ...data.meta, author_eid: 1 }
       source.loadPlaybackData.mockResolvedValue(data)
       const reticle = { update: vi.fn(), hide: vi.fn() }
@@ -2707,7 +2707,7 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
       const stage = mountContainer()
       Object.defineProperty(stage, 'clientWidth', { value: 900, configurable: true })
       Object.defineProperty(stage, 'clientHeight', { value: 600, configurable: true })
-      api = initPlayback(stage, store, null, { recorderReticle: reticle })
+      api = initPlayback(stage, store, overlay, { recorderReticle: reticle })
       created.push(api)
       await api.loadData({ kind: 'local', file: new File(['r'], 'recorder.wotbreplay') })
       api.setPlaying(false)
@@ -2831,6 +2831,45 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
       api.setCam('recorder')
       run(5)
       expect(reticle.update.mock.lastCall[0]).toBeNull()
+    })
+
+    describe('combat feedback while scoped', () => {
+      const hitAt = 65.05
+      const feedbackOverlay = () => {
+        const anchors = new Map()
+        return {
+          anchors,
+          setLabels: vi.fn(), clear: vi.fn(), spawnDamage: vi.fn(), clearDamages: vi.fn(),
+          setAnchor: vi.fn((eid, anchor) => anchors.set(eid, { ...anchor })),
+        }
+      }
+      const enemy = (overrides = {}) => vehicle({
+        eid: 2, team: 2, nickname: 'B', tank_name: 'Krvagn', max_hp: 2664, pos: [0, 0, 100], hp: [[42, 1030]], ...overrides,
+      })
+      async function playAcrossHit(options) {
+        const overlay = feedbackOverlay()
+        const { api, run, store } = await load({ ...options, overlay })
+        api.seekTime(65)
+        api.setCam('recorder')
+        run(12)   // 镜头过渡结束，开镜状态已生效
+        expect(store.cam).toBe('recorder')
+        api.setPlaying(true)
+        run(3)
+        api.setPlaying(false)
+        return overlay
+      }
+
+      it('enemy damage produces the same fact and stays projected', async () => {
+        const overlay = await playAcrossHit({ others: [enemy({ hp: [[42, 1030], [hitAt, 615]] })] })
+        expect(overlay.spawnDamage.mock.calls).toEqual([[2, 415, FLOAT_DMG_MS * 2]])
+        expect(overlay.anchors.get(2).projected).toBe(true)
+      })
+
+      it('own damage keeps the fact but has no projection point while hidden in the scope', async () => {
+        const overlay = await playAcrossHit({ vehicleOverrides: { hp: [[42, 100], [hitAt, 60]] } })
+        expect(overlay.spawnDamage.mock.calls).toEqual([[1, 40, FLOAT_DMG_MS * 2]])
+        expect(overlay.anchors.get(1).projected).toBe(false)
+      })
     })
 
     it('still bursts the recorder when it dies while scoped', async () => {
@@ -3208,6 +3247,70 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     api.setPlaying(false)
   })
 
+  /** 幽灵段契约走真实 writer → reader：强制发布一次标签后读场景交给覆盖层的行。 */
+  const publishedRow = (api, overlay) => {
+    api.setLabelPrefs({})
+    return overlay.setLabels.mock.lastCall[0].find((row) => row.eid === 1)
+  }
+  async function playTo(vehicleOverrides, startAt = 49.9) {
+    const loaded = await load([vehicle(vehicleOverrides)])
+    loaded.api.seekTime(startAt)
+    loaded.api.setPlaying(true)
+    return loaded
+  }
+
+  it('1030 → 615：数字、幽灵段、受击闪来自同一次掉血事实', async () => {
+    const { api, frames, overlay } = await playTo({ max_hp: 2000, hp: [[42, 1030], [50, 615]] })
+    frames.shift()()
+    expect(overlay.spawnDamage).toHaveBeenCalledTimes(1)
+    expect(overlay.spawnDamage).toHaveBeenCalledWith(1, 415, FLOAT_DMG_MS * 2)
+    const row = publishedRow(api, overlay)
+    expect(row.hp.current).toBe(615)
+    expect(row.hpFlash).toBe(true)
+    expect(row.hpGhost.prevPct).toBeCloseTo(51.5)
+    expect(row.hpGhost.nextPct).toBeCloseTo(30.75)
+    api.setPlaying(false)
+  })
+
+  it('幽灵段区间：损失前后比例直接来自 HP 链，全部是有限数', async () => {
+    const { api, frames, overlay } = await playTo({ max_hp: 2000, hp: [[42, 1000], [50, 600]] })
+    frames.shift()()
+    const { hpGhost } = publishedRow(api, overlay)
+    expect(hpGhost).toEqual({ prevPct: 50, nextPct: 30, bornMs: expect.any(Number), durationMs: GHOST_MS * 2 })
+    expect(Number.isFinite(hpGhost.prevPct) && Number.isFinite(hpGhost.nextPct)).toBe(true)
+    api.setPlaying(false)
+  })
+
+  it('存活期内连续受击：同一段向下延伸并重启寿命，不产生第二段', async () => {
+    const { api, frames, overlay } = await playTo({ max_hp: 1000, hp: [[42, 1000], [50, 800], [50.3, 500]] })
+    frames.shift()()
+    const first = publishedRow(api, overlay).hpGhost
+    expect(first).toMatchObject({ prevPct: 100, nextPct: 80 })
+    vi.spyOn(performance, 'now').mockReturnValue(performance.now() + GHOST_MS)
+    for (let i = 0; i < 5; i++) frames.shift()()
+    const second = publishedRow(api, overlay).hpGhost
+    expect(second).toMatchObject({ prevPct: 100, nextPct: 50 })
+    expect(second.bornMs).toBeGreaterThan(first.bornMs)
+    api.setPlaying(false)
+  })
+
+  it('一个 tick 跨过同车两次掉血：区间覆盖两次的总损失', async () => {
+    const { api, frames, overlay } = await playTo({ max_hp: 1000, hp: [[42, 1000], [49.92, 800], [49.95, 500]] })
+    frames.shift()()
+    expect(overlay.spawnDamage).toHaveBeenCalledTimes(2)
+    expect(publishedRow(api, overlay).hpGhost).toMatchObject({ prevPct: 100, nextPct: 50 })
+    api.setPlaying(false)
+  })
+
+  it('上一段过期后再受击：只显示新损失，不向上延伸', async () => {
+    const { api, frames, overlay } = await playTo({ max_hp: 1000, hp: [[42, 1000], [50, 800], [50.3, 500]] })
+    frames.shift()()
+    const now = performance.now()
+    vi.spyOn(performance, 'now').mockReturnValue(now + GHOST_MS * 2 + 1)
+    for (let i = 0; i < 5; i++) frames.shift()()
+    expect(publishedRow(api, overlay).hpGhost).toMatchObject({ prevPct: 80, nextPct: 50 })
+    api.setPlaying(false)
+  })
 
   const detachedTrack = () => ({ eid: 9, vehicle_eid: 1, coverage: [52, 60, 80, 100], pose_kf: {
     t: [52, 54, 80, 82], pos: [1, 2, 3, 3, 4, 5, 20, 2, 30, 22, 2, 32],

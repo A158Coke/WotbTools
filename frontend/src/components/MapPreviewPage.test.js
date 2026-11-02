@@ -34,10 +34,9 @@ import { assetProvider } from '../scene/assetProvider.js'
 /**
  * 地图预览页 contract：
  * - 登录门（未登录只给认证入口，不渲染任何清单/场景）。
- * - picker = 资产包 index.json 按 key 去重（变体空间归并基础图，首个 id 为 3D 装载入口）；
- *   2D 徽标只给 mapImages 已收录的图。
- * - URL 契约 ?map= &mode=：选中/切模式写 query，返回 picker 清掉两个键。
- * - 无 2D 底图的地图强制 3D（mode=2d 请求被归一为 3D + 明确提示）。
+ * - picker = 资产包 index.json 按 key 去重（变体空间归并基础图，首个 id 为 3D 装载入口）。
+ * - URL 契约 ?map= &mode=：点击地图缺省写 mode=2d；显式 mode=3d 仍直达 3D；
+ *   切模式/基地只改自己的键，返回 picker 清掉 map/mode/bases。
  */
 const ROUTER = createRouter({
   history: createMemoryHistory(),
@@ -171,18 +170,54 @@ describe('MapPreviewPage', () => {
     expect(wrapper.find('[data-testid="map-grid"]').exists()).toBe(true)
   })
 
-  it('选中地图写 ?map= &mode=；变体 id 不出现在 URL；返回 picker 清掉两个键', async () => {
+  it('选中地图缺省写 mode=2d；变体 id 不出现在 URL；返回 picker 清掉三个键', async () => {
     auth.authenticated.value = true
     source.loadMapIndex.mockResolvedValue(IDX)
     const wrapper = await openAt()
     await wrapper.find('[data-testid="map-card-erlenberg"]').trigger('click')
     await flushPromises()
-    expect(ROUTER.currentRoute.value.query).toMatchObject({ view: 'map-preview', map: 'erlenberg', mode: '3d' })
-    expect(wrapper.find('[data-testid="map-3d-pane"]').exists()).toBe(true)
+    expect(ROUTER.currentRoute.value.query).toMatchObject({ view: 'map-preview', map: 'erlenberg', mode: '2d' })
+    expect(wrapper.find('[data-testid="map-2d-pane"]').isVisible()).toBe(true)
+    expect(wrapper.find('[data-testid="map-3d-pane"]').element.parentElement.style.display).toBe('none')
     await wrapper.find('[data-testid="map-back"]').trigger('click')
     await flushPromises()
     expect(ROUTER.currentRoute.value.query).toEqual({ view: 'map-preview' })
     expect(wrapper.find('[data-testid="map-grid"]').exists()).toBe(true)
+  })
+
+  it('无 mode 深链默认 2D；显式 mode=3d 深链仍 3D', async () => {
+    auth.authenticated.value = true
+    source.loadMapIndex.mockResolvedValue(IDX)
+    const w = await openAt({ map: 'erlenberg' })
+    expect(ROUTER.currentRoute.value.query.mode).toBeUndefined()
+    expect(w.find('[data-testid="map-2d-pane"]').isVisible()).toBe(true)
+    expect(w.find('[data-testid="map-3d-pane"]').element.parentElement.style.display).toBe('none')
+    // 显式 3D 深链不被缺省值改写
+    const w3 = await openAt({ map: 'erlenberg', mode: '3d' })
+    expect(ROUTER.currentRoute.value.query.mode).toBe('3d')
+    expect(w3.find('[data-testid="map-3d-pane"]').element.parentElement.style.display).toBe('')
+    expect(w3.find('[data-testid="map-2d-pane"]').element.parentElement.style.display).toBe('none')
+  })
+
+  it('2D⇄3D 只改 mode，保留 map / bases；bases 切换保留 mode', async () => {
+    auth.authenticated.value = true
+    source.loadMapIndex.mockResolvedValue(IDX)
+    const wrapper = await openAt({ map: 'canyon', mode: '2d', bases: 'encounter' })
+    expect(wrapper.findComponent({ name: 'MapPreview2DPane' }).props('basesKind')).toBe('assault')
+    await wrapper.find('[data-testid="map-mode-3d"]').trigger('click')
+    await flushPromises()
+    expect(ROUTER.currentRoute.value.query).toMatchObject({
+      view: 'map-preview', map: 'canyon', bases: 'encounter', mode: '3d',
+    })
+    expect(wrapper.findComponent({ name: 'MapPreview3DPane' }).props('basesKind')).toBe('assault')
+    await wrapper.find('[data-testid="map-mode-2d"]').trigger('click')
+    await flushPromises()
+    expect(ROUTER.currentRoute.value.query).toMatchObject({ map: 'canyon', bases: 'encounter', mode: '2d' })
+    // 基地 selector 是独立维度：切争霸只改 bases
+    await wrapper.find('[data-testid="map-bases-supremacy"]').trigger('click')
+    await flushPromises()
+    expect(ROUTER.currentRoute.value.query).toMatchObject({ map: 'canyon', mode: '2d', bases: 'supremacy' })
+    expect(wrapper.findComponent({ name: 'MapPreview2DPane' }).props('basesKind')).toBe('supremacy')
   })
 
   it('mode=2d 直挂 2D 面板：map2d 底图由面板异步解析（bundled 图直挂）', async () => {

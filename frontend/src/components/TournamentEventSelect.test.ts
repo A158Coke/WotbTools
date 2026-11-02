@@ -23,8 +23,11 @@ function picker(initial: number | null = 7, includeGlobal = false) {
     }),
   })
   const wrapper = mount(host, { global: { plugins: [createI18n({ legacy: false, locale: 'en', messages })] } })
-  const values = () => wrapper.findAll('select').map(select => (select.element as HTMLSelectElement).value)
-  return { globalSelected, wrapper, model, loadedEvents, events, values }
+  const selectValue = (testid: string) => (wrapper.get(`[data-testid="${testid}"]`).element as HTMLSelectElement).value
+  const regionValue = () => wrapper.find('[data-testid="event-region"] [aria-checked="true"]')
+  const values = () => [selectValue('event-year'), regionValue().exists() ? regionValue().attributes('data-value') : '', selectValue('event-season')]
+  const chooseRegion = (value: string) => wrapper.get(`[data-testid="event-region"] [data-value="${value}"]`).trigger('click')
+  return { globalSelected, wrapper, model, loadedEvents, events, values, chooseRegion }
 }
 
 describe('controlled tournament event selection', () => {
@@ -45,7 +48,7 @@ describe('controlled tournament event selection', () => {
     p.model.value = null
     await nextTick()
     expect(p.values()).toEqual(['', '', ''])
-    expect(p.wrapper.get('[data-testid="event-region"]').attributes('disabled')).toBeDefined()
+    expect(p.wrapper.findAll('[data-testid="event-region"] [role="radio"]').every(option => option.attributes('disabled') !== undefined)).toBe(true)
     expect(p.wrapper.get('[data-testid="event-season"]').attributes('disabled')).toBeDefined()
   })
 
@@ -71,7 +74,7 @@ describe('controlled tournament event selection', () => {
     await p.wrapper.get('[data-testid="event-year"]').setValue('2025')
     expect(p.model.value).toBeNull()
     expect(p.values()).toEqual(['2025', '', ''])
-    await p.wrapper.get('[data-testid="event-region"]').setValue('EU')
+    await p.chooseRegion('EU')
     expect(p.values()).toEqual(['2025', 'EU', ''])
     await p.wrapper.get('[data-testid="event-season"]').setValue('FIRE_CUP')
     expect(p.model.value).toBe(8)
@@ -84,10 +87,25 @@ describe('controlled tournament event selection', () => {
   it('keeps initial year-first selection usable before any event is selected', async () => {
     const p = picker(null)
     await p.wrapper.get('[data-testid="event-year"]').setValue('2026')
-    await p.wrapper.get('[data-testid="event-region"]').setValue('CN')
+    await p.chooseRegion('CN')
     await p.wrapper.get('[data-testid="event-season"]').setValue('SUMMER')
     expect(p.model.value).toBe(7)
     expect(p.values()).toEqual(['2026', 'CN', 'SUMMER'])
+  })
+})
+
+describe('region choice group', () => {
+  it('keeps the fixed region domain and disables regions without an event that year', async () => {
+    const p = picker()
+    const region = (value: string) => p.wrapper.get(`[data-testid="event-region"] [data-value="${value}"]`)
+    expect(p.wrapper.find('[data-testid="event-region"]').element.tagName).not.toBe('SELECT')
+    expect(p.wrapper.findAll('[data-testid="event-region"] [role="radio"]').map(option => option.attributes('data-value'))).toEqual(['CN', 'ASIA', 'NA', 'EU'])
+    expect(region('CN').attributes('disabled')).toBeUndefined()
+    expect(region('EU').attributes('disabled')).toBeDefined()
+    expect(p.wrapper.get('[role="radiogroup"]').attributes('aria-label')).toBe('Region')
+    await p.chooseRegion('EU')
+    expect(p.model.value).toBe(7)
+    p.wrapper.unmount()
   })
 })
 
@@ -102,7 +120,7 @@ describe('optional global configuration selection', () => {
     await p.wrapper.get('[data-testid="event-year"]').setValue('2026')
     expect(p.globalSelected.value).toBe(false)
     expect(p.values()).toEqual(['2026', '', ''])
-    await p.wrapper.get('[data-testid="event-region"]').setValue('CN')
+    await p.chooseRegion('CN')
     await seasons.setValue('SUMMER')
     expect(p.model.value).toBe(7)
     p.wrapper.unmount()

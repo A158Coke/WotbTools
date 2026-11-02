@@ -1,6 +1,6 @@
 // 3D 装甲检视器：viewer.rs 嵌入 INDEX_HTML 的模块脚本整体抽取平移（含另一会话新增的
 // 配件自动判定逻辑），除包一层 initTankViewer() 外一行未改。
-// 数据面（WotBTools 增量）：tank 数据/名册/弹表/GLB/封面/射击数据经 agentData.js
+// 数据面（WotBTools 增量）：tank 数据/名册/弹表/GLB/封面/射击数据经 agentData.ts
 // 资产面优先 + /api 回退；击穿判定为 penetration.js 客户端移植（上游 Rust 单测同源）。
 // /api/hold、/api/ready 保留（Agent 自托管无头截图链专用，静态面缺席时静默无操作）。
 // 初始车辆/射手经 options.initialTankId / initialShooterId 显式传入（ArmorView 从路由

@@ -28,17 +28,19 @@ import shotRatingImg from '../assets/showcase/home/showcase-rating-v1.webp'
 import { useI18n } from 'vue-i18n'
 import { mapLabel } from '../utils/helpers.js'
 import { RouterLink } from 'vue-router'
+import { FEEDBACK_KEY } from '../shared/feedback.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { isAndroidApp } from '../composables/usePlatformBridge.js'
 
 const onboarding = inject(ONBOARDING_KEY, null)
+const openFeedback = inject(FEEDBACK_KEY, null)
 // 地图名走 common/map_names.json 的三语表（与 Playback / Workspace 同一个 mapLabel），
 // 不把 `savanna` 这种原始 key 直接摆在 hero 上。
 const { locale } = useI18n()
 // Android App / WebView 内已经有应用本身，再给一个「下载 Android」既不可能也不合理。
-// 平台判断复用 `usePlatformBridge.js` 的唯一实现（与 useMoreMenu 的 Android 入口同一 owner）。
+// 平台判断复用 `usePlatformBridge.ts` 的唯一实现（与 useMoreMenu 的 Android 入口同一 owner）。
 const androidApp = isAndroidApp()
 
 const topRecord = ref(null)
@@ -170,7 +172,7 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
 
     <!-- ⑤ 极简页脚 -->
     <section class="home-footer-bar layout-wide">
-      <a href="https://github.com/A158Coke/WotbTools/issues/new" target="_blank" rel="noopener">{{ $t('app.feedback') }} <ArrowRight :size="16" aria-hidden="true" /></a>
+      <button type="button" data-testid="home-feedback" @click="openFeedback?.()">{{ $t('app.feedback') }} <ArrowRight :size="16" aria-hidden="true" /></button>
     </section>
   </main>
 </template>
@@ -339,19 +341,19 @@ html[data-ui-profile="classic"] .home-hero-decor { display: none; }
 
 /* ⑤ 页脚条 */
 .home-footer-bar { display: flex; gap: var(--space-6); flex-wrap: wrap; padding-block: var(--space-6) var(--space-10); border-top: 1px solid var(--color-border-subtle); }
-.home-footer-bar a { display: inline-flex; align-items: center; gap: var(--space-2); min-height: var(--control-h-md); color: var(--color-accent-text); font: var(--type-body); font-weight: 600; text-decoration: none; }
-.home-footer-bar a svg { flex: none; }
-.home-footer-bar a:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+.home-footer-bar button { display: inline-flex; align-items: center; gap: var(--space-2); min-height: var(--control-h-md); padding: 0; border: 0; background: transparent; color: var(--color-accent-text); font: var(--type-body); font-weight: 600; cursor: pointer; }
+.home-footer-bar button svg { flex: none; }
+.home-footer-bar button:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 @media (hover: hover) {
-  .home-footer-bar a:hover { text-decoration: underline; }
+  .home-footer-bar button:hover { text-decoration: underline; }
   .home-take-card:hover { border-color: var(--color-accent); }
   .home-take-cta:hover { background: color-mix(in oklab, var(--color-accent) 16%, transparent); }
 }
 
 /* 位移 / 缩放 / 光晕都属于动效：reduce 用户连声明都拿不到，不依赖「补一条 reset」。 */
 @media (hover: hover) and (prefers-reduced-motion: no-preference) {
-  .home-footer-bar a svg { transition: transform var(--duration-base) var(--ease-standard); }
-  .home-footer-bar a:hover svg { transform: translateX(var(--space-1)); }
+  .home-footer-bar button svg { transition: transform var(--duration-base) var(--ease-standard); }
+  .home-footer-bar button:hover svg { transform: translateX(var(--space-1)); }
 
   /* 主 CTA：箭头前移 + 强调色光晕，给一个「可以往下走」的暗示 */
   .home-cta svg { transition: transform var(--duration-base) var(--ease-standard); }

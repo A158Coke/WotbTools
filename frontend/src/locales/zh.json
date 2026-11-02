@@ -24,7 +24,10 @@
       "importedCount": "已导入 {count} 条标注",
       "noAnnotations": "当前没有可导出的标注",
       "importReasonFormat": "文件不是本视图的标注 JSON",
-      "importReasonMap": "标注属于其他地图"
+      "importReasonMap": "标注属于其他地图",
+      "exportImage": "导出战术图",
+      "exporting": "正在导出…",
+      "exportFailed": "导出 PNG 失败"
     },
     "basemapFailed": "底图加载失败"
   },
@@ -1341,9 +1344,10 @@
         },
         "declutter": "一键防遮",
         "declutter_hint": "显示车型名、类型图标与血量环，隐藏昵称、装填条等信息；再点一次恢复之前的设置。手动调整显示选项会退出防遮预设。",
-        "declutter_hint_3d": "仅显示车型名与类型图标；再点一次恢复之前的显示设置。手动调整显示选项会退出防遮预设。",
+        "declutter_hint_3d": "显示车型名、类型图标与瞬时伤害数字，隐藏血条、昵称和装填条；再点一次恢复之前的显示设置。手动调整显示选项会退出防遮预设。",
         "class_icons": "用类型图标替换车辆模型",
-        "show_status": "车辆状态标记与伤害数字"
+        "show_status": "车辆状态标记与伤害数字",
+        "show_status_3d": "车辆状态标记"
       }
     },
     "stages": {

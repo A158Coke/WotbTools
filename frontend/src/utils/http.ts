@@ -226,6 +226,8 @@ export async function requireOk(response: Response): Promise<Response> {
 const API_PATH_FEATURES: readonly (readonly [string, string])[] = Object.freeze([
   ['/api/admin/ai-review-feedback', Feature.ADMIN_AI_FEEDBACK],
   ['/api/ai-review-feedback', Feature.AI_FEEDBACK],
+  ['/api/admin/site-feedback', Feature.ADMIN_SITE_FEEDBACK],
+  ['/api/site-feedback', Feature.SITE_FEEDBACK],
   ['/api/admin/users', Feature.ADMIN_USERS],
   ['/api/admin/battle-data', Feature.ADMIN_BATTLE_DATA],
   ['/api/admin/hof', Feature.HALL_OF_FAME],

@@ -79,16 +79,15 @@ import {
   ANNOT_WIDTH_DEFAULT,
   ANNOT_WIDTH_MAX,
   ANNOT_WIDTH_MIN,
+  annotationDraftFromTool,
   applyEraser,
-  arrowHeadPoints,
   canRedo,
   canUndo,
-  circleFromCorners,
   hitTestAnnotation,
+  isDegenerateAnnotation,
   translateAnnotation,
   commit,
-  polylinePoints,
-  rectFromCorners,
+  projectAnnotationToSvg,
   redo,
   screenToSemantic,
   semanticWidthFromSlider,
@@ -1196,17 +1195,7 @@ function finishRoute() {
 }
 
 function draftFromTool(tool, a, b) {
-  switch (tool) {
-    case 'arrow':
-    case 'line':
-      return { type: tool, color: annotColor.value, width: annotWidth.value, x1: a.x, y1: a.y, x2: b.x, y2: b.y }
-    case 'rect':
-      return { type: 'rect', color: annotColor.value, width: annotWidth.value, ...rectFromCorners(a, b) }
-    case 'circle':
-      return { type: 'circle', color: annotColor.value, width: annotWidth.value, ...circleFromCorners(a, b) }
-    default:
-      return null
-  }
+  return annotationDraftFromTool(tool, a, b, { color: annotColor.value, width: annotWidth.value })
 }
 
 /** 指针 client 坐标 → 语义坐标（CSS px → 撤销 viewport 变换 → CSS↔SVG 比例 → fromX/fromY）。 */
@@ -1279,15 +1268,6 @@ function moveDrawing(e) {
   }
 }
 
-function isDegenerate(ann) {
-  if (ann.type === 'rect') return ann.w < 1e-9 && ann.h < 1e-9
-  if (ann.type === 'circle') return ann.r < 1e-9
-  if (ann.type === 'line' || ann.type === 'arrow') {
-    return Math.hypot(ann.x2 - ann.x1, ann.y2 - ann.y1) < 1e-9
-  }
-  return false
-}
-
 function endDrawing() {
   const tool = activeTool.value
   if (!tool) return
@@ -1314,7 +1294,7 @@ function endDrawing() {
       const next = applyEraser(annotations.value, drawPoints, annotWidth.value)
       if (next !== annotations.value) replaceAnnotations(next)
     }
-  } else if (draft.value && !isDegenerate(draft.value)) {
+  } else if (draft.value && !isDegenerateAnnotation(draft.value)) {
     commitDraft(draft.value)
   }
   cancelDrawing()
@@ -1373,32 +1353,10 @@ const renderedAnnotations = computed(() => {
     if (moveOriginal && selectedAnnotationIndex.value >= 0) list[selectedAnnotationIndex.value] = draft.value
     else list.push(draft.value)
   }
-  return list.map((ann, index) => {
-    const out = { ...ann, selected: annotationOpen.value && index === selectedAnnotationIndex.value, widthSvg: (ann.width || annotWidth.value) * invX }
-    if (ann.type === 'pen' || ann.type === 'route') {
-      out.svgPoints = polylinePoints(ann.points, toX, toY)
-
-    } else if (ann.type === 'line' || ann.type === 'arrow') {
-      out.x1 = toX(ann.x1)
-      out.y1 = toY(ann.y1)
-      out.x2 = toX(ann.x2)
-      out.y2 = toY(ann.y2)
-      if (ann.type === 'arrow') out.head = arrowHeadPoints(out.x1, out.y1, out.x2, out.y2)
-    } else if (ann.type === 'rect') {
-      out.x = toX(ann.x)
-      out.y = toY(ann.y)
-      out.w = ann.w * invX
-      out.h = ann.h * invY
-    } else if (ann.type === 'circle') {
-      out.cx = toX(ann.cx)
-      out.cy = toY(ann.cy)
-      out.r = ann.r * invX
-    } else if (ann.type === 'text' || ann.type === 'unit') {
-      out.x = toX(ann.x)
-      out.y = toY(ann.y)
-    }
-    return out
-  })
+  return list.map((ann, index) => ({
+    ...projectAnnotationToSvg(ann, { toX, toY, invX, invY, widthFallback: annotWidth.value }),
+    selected: annotationOpen.value && index === selectedAnnotationIndex.value,
+  }))
 })
 
 onMounted(() => {
@@ -2030,7 +1988,7 @@ function sideAwayFromClientX(clientX) {
  * 名册每行显示的当前 HP（与地图标记同一个权威投影：healthDisplayAt）。
  *
  * 传的是**完整投影**而不只是 current/max：名册的 HP 呈现模型要区分 exact / relative /
- * unknown / destroyed（见 scene/rosterState.js 的 hpPresentationFor）。`pct` 只在
+ * unknown / destroyed（见 scene/rosterState.ts 的 hpPresentationFor）。`pct` 只在
  * `displayCapacityHp` 可信时才有值，`relativeFull` 是 backend 标注的「相对满状态」事实——
  * 两者都不可用时呈现层落到 unknown（`—`），绝不伪造 current/max。
  *

@@ -8,7 +8,7 @@
 - **Open With WotBTools**：`ACTION_VIEW`，文件管理器 → `content://` URI。
 
 `ReplayIntentHandler` 只提取 `name/uri/size`，**不解析 replay**；业务校验（`.wotbreplay`、
-20 MiB / 100 文件 / 200 MiB）由现有 `frontend/src/utils/replayUpload.js` 拥有
+20 MiB / 100 文件 / 200 MiB）由现有 `frontend/src/utils/replayUpload.ts` 拥有
 （Kotlin 不复制，规格 §40；本地解析入口没有后端 replay validator）。
 
 ## App 手动目录导入（独立于 external pending）
