@@ -473,13 +473,14 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | DC-ARC-01 | MUST | 页面 | 自上而下是 Showcase Hero（可选）+ 控制条 + 数据区；同一页不并存两套标题区 | 场景型工作台（2D / 3D、装甲查看器）、长文档页 | 人工 |
 | DC-ARC-02 | MUST | 工作区 | `PageHeader` 只用 `compact`；kicker + h1 + 说明 + 标签块不得占掉首屏 | 满足 DC-THM-04 的 Showcase Hero | 人工 |
 | DC-ARC-03 | MUST | 筛选 | expanded / medium 行内工具栏；compact 用「筛选」按钮 + sheet，已生效条件显示为 chip | 无 | `pnpm run test:browser-interaction`（`overlay-catalog-` / `overlay-hof-`） |
-| DC-ARC-04 | MUST | 主导航 | 成员与栏目归属只由 `app/navigation.js` 定义，外壳组件不复制列表 | 无 | `src/app/navigation.test.js` |
+| DC-ARC-04 | MUST | 主导航 | 成员、分组、小屏 Tab 与栏目归属只由 `app/navigation.js` 定义，外壳组件和「更多」页不复制列表 | 无 | `src/app/navigation.test.js` |
+| DC-ARC-07 | MUST | 主导航 | `PRIMARY_NAV` 的每个入口在大屏与小屏都能到达；小屏 Tab 不超过 5 项 | 首页在小屏由 Logo 进入 | `pnpm run test:browser-interaction shell-overlay` |
 | DC-ARC-05 | SHOULD | 页面状态 | 筛选、Tab、分页写进 URL，可深链和前进后退 | 无 | `src/app/router.test.js` + 人工 |
 | DC-ARC-06 | MUST | 表格 | 手机上复杂表格转卡片或关键列 + 容器内横向滚动，不撑破页面 | 无 | 人工 |
 
 | 模式 | 规则 |
 |---|---|
-| **AppShell** | 平板 / 桌面：左侧边栏（`--z-header`，铺满视口高度），没有顶栏（`--header-h: 0`）。桌面默认展开（240px，图标 + 文字），可折叠成 72px 图标栏并记住偏好；平板固定为图标栏。侧边栏从上到下：品牌 · 主栏目（`PRIMARY_NAV` 除「更多」外的各项）· 管理组（按角色）；底部：更多（弹出面板，只放低频的显示设置与关于 / 支持）· 账户 · 折叠开关。手机 / App：48px 标题栏 + 底部 Tab 栏（56px + 安全区），Tab 栏渲染 `PRIMARY_NAV`，主站比 APK / 本地多一个首页，推荐目录不可用时隐藏推荐；标签限制在各自栏目内、最多两行；直播入口使用短标题并保留完整辅助名称。手机横屏的回放工作台（2D / 3D，回放就绪）与装甲查看器（WebGL 可用）进入沉浸态：顶栏与 Tab 栏让出，`--header-h` / `--tabbar-h` 归零，转竖屏或离开页面即恢复。空间不足时底栏自身横向滚动，每个触控目标仍至少44px且互不重叠；路由切换和键盘焦点会显露对应栏目，不把主导航移入更多。更多是整页。当前侧边栏宽度写入 `--sidebar-w`（手机为 0），顶栏高度写入 `--header-h`；布局偏移只读这两个值 |
+| **AppShell** | 平板 / 桌面：左侧边栏（`--z-header`，铺满视口高度），没有顶栏（`--header-h: 0`）。桌面默认展开（240px，图标 + 文字），可折叠成 72px 图标栏并记住偏好；平板固定为图标栏。侧边栏从上到下：品牌 · 首页 · 按战斗、资料、赛事、社区分组的主栏目（`group`，图标栏用分隔线代替分组名）· 管理组（按角色）；底部：更多（弹出面板，只放低频的显示设置与关于 / 支持）· 账户 · 折叠开关。手机 / App：48px 标题栏 + 底部 Tab 栏（56px + 安全区）。Tab 栏固定 5 项：回放、名人堂、百科、联赛、更多（`compactTab`），不横向滚动，标签限制在各自栏目内、最多两行，短标题保留完整辅助名称。科技树、地图、联赛直播回放和推荐是「更多」页顶部的快捷入口，推荐目录不可用时隐藏推荐；打开这些页面时点亮「更多」（`compactSection()`）。Logo 回默认落地页：主站回首页，APK / 本地回回放。手机横屏的回放工作台（2D / 3D，回放就绪）与装甲查看器（WebGL 可用）进入沉浸态：顶栏与 Tab 栏让出，`--header-h` / `--tabbar-h` 归零，转竖屏或离开页面即恢复。更多是整页。当前侧边栏宽度写入 `--sidebar-w`（手机为 0），顶栏高度写入 `--header-h`；布局偏移只读这两个值 |
 | **PageHeader** | 只有 `compact`（工作区用：标题 + 右侧操作，一行，≤ 56px）。不提供 `hero` 变体；首页 hero 是 `HomePage.vue` 自己的整段落地页板块。**工作区禁止用 kicker + h1 + 说明 + 标签块占掉首屏** |
 | **容器宽度** | `content` → `--layout-content-max`；`wide` → `--layout-wide-max`；`workspace` → `--layout-workspace-max`；长文阅读宽度 → `--reading-measure`。具体数值由 `frontend/src/styles/tokens/scale.css` 定义，布局原语见 [UI 系统](ui-system.md) |
 | **Master–Detail** | expanded：列表 + 常驻详情。medium：列表 + 推开式详情。compact：列表 → 全屏详情（支持左右滑动切换）。回放工作台、射击分析、坦克百科都用这个模式 |

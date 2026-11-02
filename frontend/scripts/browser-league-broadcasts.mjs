@@ -5,7 +5,7 @@ import { createBroadcastFixture } from './browser-fixtures/broadcast-fixture.mjs
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
-import { primaryNavItems } from '../src/app/navigation.js'
+import { COMPACT_TAB_ITEMS } from '../src/app/navigation.js'
 
 // Exercise the production router, components, transport validators and CSS. Only external
 // auth and HTTP services are fixtures, shared by anonymous and administrator requests.
@@ -113,15 +113,19 @@ try {
       // SHELL_RAIL_QUERY 同口径，不再有底部 Tab 栏。
       const rail = scenario.touch && scenario.width < 768 && scenario.height <= 520
         && scenario.width > scenario.height
-      const navigation = rail || scenario.width >= 768 ? 'nav' : 'tab'
-      await tap(page, `[data-testid=${navigation}-league-broadcasts]`, scenario.touch)
+      // 小屏直播回放在"更多"页快捷区，属于"更多"栏目；大屏与横屏图标栏在侧边栏。
+      const activeEntry = rail || scenario.width >= 768 ? 'nav-league-broadcasts' : 'tab-more'
+      if (activeEntry === 'tab-more') {
+        await tap(page, '[data-testid=tab-more]', scenario.touch)
+        await page.waitForValue('!!document.querySelector("[data-testid=more-shortcut-league-broadcasts]")', Boolean)
+        await tap(page, '[data-testid=more-shortcut-league-broadcasts]', scenario.touch)
+      } else await tap(page, `[data-testid=${activeEntry}]`, scenario.touch)
       await page.waitForValue('document.querySelectorAll("[data-testid^=broadcast-server-]").length', value => value === 5)
-      assert.equal(await page.evaluate(`document.querySelector('[data-testid="${navigation}-league-broadcasts"]').getAttribute('aria-current')`), 'page')
-      const navLabel = await page.evaluate(`(() => { const link = document.querySelector('[data-testid="${navigation}-league-broadcasts"]'); return { visible: link.textContent.trim(), accessible: link.getAttribute('aria-label') }; })()`)
+      assert.equal(await page.evaluate(`document.querySelector('[data-testid="${activeEntry}"]').getAttribute('aria-current')`), 'page')
+      const navLabel = await page.evaluate(`(() => { const link = document.querySelector('[data-testid="${activeEntry}"]'); return { visible: link.textContent.trim(), accessible: link.getAttribute('aria-label') }; })()`)
       assert.ok(navLabel.accessible.includes(navLabel.visible), 'accessible name includes the visible navigation label')
-      if (navigation === 'tab') {
-        await page.waitForValue('!!document.querySelector("[data-testid=tab-creators]")', Boolean)
-        assert.equal(await page.evaluate('document.querySelectorAll("[data-testid=app-tab-bar] .tab").length'), primaryNavItems(new URL(scenarioOrigin).hostname).length)
+      if (activeEntry === 'tab-more') {
+        assert.equal(await page.evaluate('document.querySelectorAll("[data-testid=app-tab-bar] .tab").length'), COMPACT_TAB_ITEMS.length)
       }
       await serverGeometry(page, scenario, 5)
       if (screenshots && ['showcase-desktop', 'classic-mobile'].includes(scenario.name)) {

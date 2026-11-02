@@ -573,6 +573,7 @@ describe('App shell navigation, 更多 and account', () => {
     expect(wrapper.find('[data-testid="nav-more"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="tab-hof"]').attributes('aria-current')).toBe('page')
     expect(wrapper.find('[data-testid="tab-more"]').exists()).toBe(true)
+    expect(wrapper.findAll('[data-testid="app-tab-bar"] a')).toHaveLength(5)
     expect(wrapper.get('[data-testid="nav-account"]').attributes('aria-label')).toBe('nav.account')
   })
 

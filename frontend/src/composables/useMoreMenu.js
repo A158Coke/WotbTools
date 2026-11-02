@@ -7,6 +7,7 @@ import { useUiProfile } from './useUiProfile.js'
 import { isAndroidApp } from './usePlatformBridge.js'
 import { FEEDBACK_KEY } from '../shared/feedback.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
+import { COMPACT_SHORTCUT_ITEMS } from '../app/navigation.js'
 import { useCreatorAvailability } from './useCreatorAvailability.js'
 import { persistLocale } from '../i18n/locale-preference.js'
 
@@ -26,7 +27,7 @@ export function useMoreMenu() {
   const openFeedback = inject(FEEDBACK_KEY, null)
   const { isAdmin, isHofAdmin, isTournamentAdmin, isContentAdmin, authenticated } = useAuth()
   const { uiProfilePreference, setUiProfile } = useUiProfile()
-  const { available: creatorsAvailable } = useCreatorAvailability()
+  const { available: creatorsAvailable, directoryVisible: creatorsVisible } = useCreatorAvailability()
   // vue-i18n legacy 模式下 $i18n 由 mixin 在 setup 之后才挂上：setup 时只捕获实例，用户操作时再读
   const instance = getCurrentInstance()
 
@@ -40,6 +41,9 @@ export function useMoreMenu() {
     { value: 'classic', label: t('uiProfile.classic') },
     { value: 'auto', label: t('uiProfile.auto') },
   ]
+
+  /** 不在小屏 Tab 栏里的栏目：只由 PRIMARY_NAV 派生，手机"更多"页顶部的快捷入口。 */
+  const shortcuts = computed(() => COMPACT_SHORTCUT_ITEMS.filter(item => item.id !== 'creators' || creatorsVisible.value))
 
   /** 管理入口：平板 / 桌面在侧边栏管理组，手机在"更多"页。 */
   const adminLinks = computed(() => [
@@ -64,5 +68,5 @@ export function useMoreMenu() {
   ].filter(Boolean))
 
   const openGuide = computed(() => authenticated?.value && onboarding ? () => onboarding.openDirectory() : null)
-  return { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, adminLinks, aboutLinks, openGuide, openFeedback }
+  return { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, shortcuts, adminLinks, aboutLinks, openGuide, openFeedback }
 }

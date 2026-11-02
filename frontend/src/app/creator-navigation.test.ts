@@ -36,13 +36,10 @@ describe('creator primary and administration navigation', () => {
   it('reacts to content publication and removal in both primary navigation surfaces', async () => {
     await host()
     expect(wrapper!.find('[data-testid=nav-creators]').exists()).toBe(false)
-    expect(wrapper!.find('[data-testid=tab-creators]').exists()).toBe(false)
     vi.mocked(listRecommendationCategories).mockResolvedValueOnce([{ id: 1, name: 'Published', type: 'UP' }]); await owner.refresh(); await flushPromises()
     expect(wrapper!.find('[data-testid=nav-creators]').exists()).toBe(true)
-    expect(wrapper!.find('[data-testid=tab-creators]').exists()).toBe(true)
     await owner.refresh(); await flushPromises()
     expect(wrapper!.find('[data-testid=nav-creators]').exists()).toBe(false)
-    expect(wrapper!.find('[data-testid=tab-creators]').exists()).toBe(false)
   })
   it('keeps an empty directory and configuration reachable to real administrators, then hides them on logout', async () => {
     vi.mocked(getCreatorAvailability).mockResolvedValue({ supported: true })
@@ -50,12 +47,10 @@ describe('creator primary and administration navigation', () => {
     state.auth.tokenParsed.value = { realm_access: { roles: ['content-admin'] } }
     await host()
     expect(wrapper!.find('[data-testid=nav-creators]').exists()).toBe(true)
-    expect(wrapper!.find('[data-testid=tab-creators]').exists()).toBe(true)
     expect(wrapper!.find('[data-testid=nav-creators-config]').exists()).toBe(true)
     expect(listRecommendationCategories).toHaveBeenCalledTimes(1)
     state.auth.authenticated.value = false; await flushPromises()
     expect(wrapper!.find('[data-testid=nav-creators]').exists()).toBe(false)
-    expect(wrapper!.find('[data-testid=tab-creators]').exists()).toBe(false)
     expect(wrapper!.find('[data-testid=nav-creators-config]').exists()).toBe(false)
   })
 })

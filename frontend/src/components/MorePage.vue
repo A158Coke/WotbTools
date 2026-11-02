@@ -3,14 +3,15 @@ import { computed, inject } from 'vue'
 import { BookOpen, ChevronRight, MessageSquare } from 'lucide-vue-next'
 import { LANGUAGES, useMoreMenu } from '../composables/useMoreMenu.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
+import { PRIMARY_NAV_ICONS } from '../app/navIcons.js'
 import PageHeader from './PageHeader.vue'
 import SegmentedControl from './SegmentedControl.vue'
 
-// "更多"页：手机 / App 的低频入口（显示设置、管理、关于与支持）。
+// "更多"页：手机 / App 的快捷入口（不在 Tab 栏里的栏目）与低频入口（显示设置、管理、关于与支持）。
 // 平板 / 桌面的同一份内容在侧边栏底部的"更多"弹出面板里（useMoreMenu 是唯一内容源）；
 // 回放能力统一从回放工作台进入，坦克百科是主导航栏目，都不在这里重复。账户由顶栏头像进入 profile。
 const navigate = inject(NAVIGATE_VIEW_KEY)
-const { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, adminLinks, aboutLinks, openGuide, openFeedback } = useMoreMenu()
+const { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, shortcuts, adminLinks, aboutLinks, openGuide, openFeedback } = useMoreMenu()
 
 const groups = computed(() => [
   { id: 'admin', titleKey: 'more.sections.admin', links: adminLinks.value },
@@ -21,6 +22,21 @@ const groups = computed(() => [
 <template>
   <div class="more-page layout-content" data-testid="more-page">
     <PageHeader :title="$t('more.title')" />
+    <section class="more-section" :aria-label="$t('more.sections.shortcuts')">
+      <div class="more-shortcuts">
+        <button
+          v-for="item in shortcuts"
+          :key="item.id"
+          type="button"
+          class="more-shortcut"
+          :data-testid="`more-shortcut-${item.id}`"
+          @click="navigate(item.view)"
+        >
+          <component :is="PRIMARY_NAV_ICONS[item.id]" :size="24" aria-hidden="true" />
+          <span>{{ $t(item.labelKey) }}</span>
+        </button>
+      </div>
+    </section>
     <section v-if="openGuide" class="more-section">
       <div class="more-card"><button type="button" class="more-row" data-testid="more-link-guide" @click="openGuide"><BookOpen :size="20" aria-hidden="true" /><span class="more-row-label">{{ $t('onboarding.directory') }}</span><ChevronRight :size="20" aria-hidden="true" /></button></div>
     </section>
@@ -106,6 +122,33 @@ const groups = computed(() => [
   box-shadow: var(--elevation-1);
 }
 
+.more-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(var(--space-12) * 3)), 1fr));
+  gap: var(--space-2);
+}
+
+.more-shortcut {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: var(--row-h);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+  color: var(--color-text-primary);
+  font: var(--type-body);
+  font-weight: 600;
+  text-align: start;
+  cursor: pointer;
+}
+
+.more-shortcut > svg { flex: none; color: var(--color-accent-text); }
+.more-shortcut > span { min-width: 0; overflow-wrap: anywhere; }
+.more-shortcut:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+
 .more-row {
   display: flex;
   align-items: center;
@@ -141,6 +184,7 @@ const groups = computed(() => [
 .more-setting-label { color: var(--color-text-primary); font: var(--type-body); font-weight: 600; }
 
 @media (hover: hover) {
-  .more-row:hover { background: var(--color-surface-2); }
+  .more-row:hover,
+  .more-shortcut:hover { background: var(--color-surface-2); }
 }
 </style>
