@@ -210,6 +210,36 @@ export function presetProvidesPitchDevice(
 }
 
 /**
+ * 122 是否真实生效（装甲查看器拖炮钳制 / HUD 的同一裁决）：
+ * 可用性 fail-closed → 手动/URL 覆盖 → 当前目标录制真值 → 原生勾选回退。
+ * `recorded === null` 表示无适用真值（非射击页或目标身份不符）。
+ */
+export function resolvePitchDeviceEffective(input: {
+  available: unknown
+  override: boolean | null | undefined
+  recorded: boolean | null | undefined
+  checkboxChecked?: unknown
+}) {
+  if (!input.available) return false
+  if (input.override != null) return !!input.override
+  if (input.recorded != null) return !!input.recorded
+  return !!input.checkboxChecked
+}
+
+/**
+ * 原生 `eq-pitch-device` 勾选回退态：覆盖优先，其次当前目标录制真值，
+ * 否则默认关闭——不得保留上一辆车/已清 URL 的旧勾选（否则 effective 会
+ * 从残留 checkbox 重新启用 122，与已清 URL 的 HUD 不一致）。
+ */
+export function resolvePitchCheckboxChecked(input: {
+  override: boolean | null | undefined
+  recorded: boolean | null | undefined
+}) {
+  if (input.override != null) return !!input.override
+  return input.recorded != null ? !!input.recorded : false
+}
+
+/**
  * 装备 122 的俯仰加成（度）：`up` 加仰角上限、`down` 加俯角下限。
  * 数值来自客户端 `devices.json` 的 `bonusValues`（upperPitchLimitIncrease /
  * lowerPitchLimitIncrease）；未装/目录缺值 → null（fail-closed，不猜默认值）。

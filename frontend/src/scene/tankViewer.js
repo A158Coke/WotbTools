@@ -15,7 +15,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { poseFromYPR, neutralizeDefaultMetalness, dropDuplicateGunMasks } from './glbRig.js'
-import { pitchAtBearing, recordedTargetMatchesShot } from '../replay-local/compute/tankSetup'
+import { pitchAtBearing, recordedTargetMatchesShot, resolvePitchCheckboxChecked, resolvePitchDeviceEffective } from '../replay-local/compute/tankSetup'
 import { romanLevel } from '../utils/tierFormat.js'
 import {
     fetchTankData,
@@ -648,13 +648,18 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             return data ? !!data.enhanced_armor
                 : !!(document.getElementById('eq-enhanced') && document.getElementById('eq-enhanced').checked);
         }
-        /** 122 是否生效：宿主确认该车有槽位 +（手动/URL 覆盖 > 射击受击方装备真值 > 原生勾选）。 */
+        /**
+         * 122 是否生效：宿主确认该车有槽位 +（手动/URL 覆盖 > 射击受击方装备真值 > 原生勾选）。
+         * 裁决走 tankSetup 的纯函数（与勾选回退态同一份逻辑，单测覆盖）。
+         */
         function effectivePitchDevice(eq) {
-            if (!pitchDeviceAvailable) return false;
-            if (equipmentOverride.pitch != null) return equipmentOverride.pitch;
             const data = eq || shotEquipmentCtx().target;
-            return data ? !!data.improved_pitch_limits
-                : !!(document.getElementById('eq-pitch-device') && document.getElementById('eq-pitch-device').checked);
+            return resolvePitchDeviceEffective({
+                available: pitchDeviceAvailable,
+                override: equipmentOverride.pitch,
+                recorded: data ? !!data.improved_pitch_limits : null,
+                checkboxChecked: !!(document.getElementById('eq-pitch-device') && document.getElementById('eq-pitch-device').checked),
+            });
         }
         /** 宿主从 research/devices.json 读到 122 的 bonusValues 后注入（避免场景硬编码）。 */
         function setPitchDeviceBonus(value) {
@@ -709,12 +714,13 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const pit = document.getElementById('eq-pitch-device');
             if (pit) {
                 const recorded = recordedTargetMatchesShot(s, currentTargetId) ? (s.target_equipment || null) : null;
+                const checked = resolvePitchCheckboxChecked({ override: equipmentOverride.pitch, recorded: recorded ? !!recorded.improved_pitch_limits : null });
                 if (recorded) {
-                    pit.checked = equipmentOverride.pitch ?? !!recorded.improved_pitch_limits;
+                    pit.checked = checked;
                     pit.disabled = true; pit.title = '回放自动判定（Type5 配件串）';
                 } else {
                     // 换目标后回放真值不适用：回到手动勾选，且不保留上一辆车的勾选态。
-                    pit.checked = equipmentOverride.pitch ?? false;
+                    pit.checked = checked;
                     pit.disabled = false; pit.title = '';
                 }
             }
@@ -6281,7 +6287,20 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // 避免宿主清掉不可用车的 eqpitch 后 checkbox 仍显示勾选。
             if (kind === 'pitch') {
                 const pit = document.getElementById('eq-pitch-device');
-                if (pit && value != null) pit.checked = !!value;
+                if (pit) {
+                    if (value != null) {
+                        pit.checked = !!value;
+                    } else {
+                        // 撤销覆盖（review P2）：必须按当前目标录制真值/默认值重同步回退勾选。
+                        // 只把 override 置 null 会留下旧 checked=true——effectivePitchDevice
+                        // 在无真值时回退到 checkbox，122 会被残留勾选重新启用，与已清 URL 的 HUD 不一致。
+                        const recorded = shotEquipmentCtx().target;
+                        pit.checked = resolvePitchCheckboxChecked({
+                            override: null,
+                            recorded: recorded ? !!recorded.improved_pitch_limits : null,
+                        });
+                    }
+                }
             } else {
                 refreshEquipmentEffects();
             }

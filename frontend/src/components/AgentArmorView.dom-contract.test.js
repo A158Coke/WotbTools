@@ -854,6 +854,12 @@ describe('122 装备真值的目标身份（场景内核）', () => {
     expect(kernel).toMatch(/const recorded = recordedTargetMatchesShot\(s, currentTargetId\) \? \(s\.target_equipment \|\| null\) : null/)
   })
   it('换目标后原生勾选回到手动且不保留上一辆车的勾选态', () => {
-    expect(kernel).toMatch(/pit\.checked = equipmentOverride\.pitch \?\? false;/)
+    // 判据走 tankSetup 纯函数（override ?? recorded ?? false；recorded 缺失 ⇒ override ?? false，
+    // 与旧字面量行为等价，单测覆盖 null 分支）。这里锁住「回退态由共享判据决定且非录制分支解除禁用」。
+    expect(kernel).toContain('resolvePitchCheckboxChecked({ override: equipmentOverride.pitch')
+    const start = kernel.indexOf("const pit = document.getElementById('eq-pitch-device');")
+    const body = kernel.slice(start, start + 900)
+    expect(body).toContain('pit.disabled = false')
+    expect(body).toContain("pit.title = ''")
   })
 })

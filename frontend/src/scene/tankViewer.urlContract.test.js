@@ -102,11 +102,23 @@ describe('121/122 俯仰覆盖三态（source regression）', () => {
     expect(viewerSrc).toContain("if (QP.has('eqpitch')) equipmentOverride.pitch = QP.get('eqpitch') === '1';")
   })
 
-  it('effectivePitchDevice 只在覆盖 != null 时采用（null = 回落到 recorded truth / 勾选回退）', () => {
-    expect(viewerSrc).toContain('if (equipmentOverride.pitch != null) return equipmentOverride.pitch;')
+  it('effectivePitchDevice 走 tankSetup 纯函数裁决（可用性/覆盖/真值/勾选三态）', () => {
+    expect(viewerSrc).toContain('resolvePitchDeviceEffective')
+    expect(viewerSrc).toContain('override: equipmentOverride.pitch')
+    expect(viewerSrc).toContain('recorded: data ? !!data.improved_pitch_limits : null')
   })
 
   it('setEquipmentOverride 把 null 保留为 null（撤销覆盖，而非写死布尔）', () => {
     expect(viewerSrc).toContain('equipmentOverride[kind] = value == null ? null : !!value;')
+  })
+
+  it('撤销覆盖（null）时按当前目标真值重同步原生 checkbox（review P2）', () => {
+    // 只把 override 置 null 会留下旧 checked=true：effectivePitchDevice 无真值时
+    // 回退到 checkbox，122 被残留勾选重新启用 → 与已清 URL 的 HUD 不一致。
+    const start = viewerSrc.indexOf('function setEquipmentOverride')
+    const end = viewerSrc.indexOf('async function setShooterConfig')
+    const body = viewerSrc.slice(start, end)
+    expect(body).toContain('resolvePitchCheckboxChecked')
+    expect(body).toMatch(/value != null[\s\S]*resolvePitchCheckboxChecked/)
   })
 })

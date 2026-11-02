@@ -34,6 +34,8 @@ import {
   resolveSetup,
   standardShellOf,
   tankRef,
+  resolvePitchCheckboxChecked,
+  resolvePitchDeviceEffective,
 } from './tankSetup'
 import { availableItems } from '../../utils/researchCatalog'
 
@@ -487,5 +489,43 @@ describe('devicesFromEquipmentIds（回放装配 → 槽位反解）', () => {
     expect(devicesFromEquipmentIds([999], modules, catalog)).not.toContain(1)
     expect(devicesFromEquipmentIds(null, modules, catalog).every(s => s === null)).toBe(true)
     expect(devicesFromEquipmentIds([], modules, catalog).length).toBe(9)
+  })
+})
+
+describe('122 生效与原生回退勾选（review P2：撤销覆盖不得留 stale checkbox）', () => {
+  it('effective：可用性 fail-closed 先于一切', () => {
+    expect(resolvePitchDeviceEffective({ available: false, override: true, recorded: true, checkboxChecked: true })).toBe(false)
+  })
+
+  it('effective：覆盖 > 录制真值 > 原生勾选', () => {
+    expect(resolvePitchDeviceEffective({ available: true, override: false, recorded: true, checkboxChecked: true })).toBe(false)
+    expect(resolvePitchDeviceEffective({ available: true, override: true, recorded: false, checkboxChecked: false })).toBe(true)
+    expect(resolvePitchDeviceEffective({ available: true, override: null, recorded: true, checkboxChecked: false })).toBe(true)
+    expect(resolvePitchDeviceEffective({ available: true, override: null, recorded: false, checkboxChecked: true })).toBe(false)
+    expect(resolvePitchDeviceEffective({ available: true, override: null, recorded: null, checkboxChecked: true })).toBe(true)
+    expect(resolvePitchDeviceEffective({ available: true, override: null, recorded: null, checkboxChecked: false })).toBe(false)
+  })
+
+  it('checkbox 回退态：录制真值在场跟随真值，缺失则关闭（不清真值、不留旧勾选）', () => {
+    // 切回原目标：真值 true → 勾选保持（覆盖已撤销）
+    expect(resolvePitchCheckboxChecked({ override: null, recorded: true })).toBe(true)
+    expect(resolvePitchCheckboxChecked({ override: null, recorded: false })).toBe(false)
+    // 无适用真值：必须关闭，否则 effectivePitchDevice 会从残留勾选重新启用 122
+    expect(resolvePitchCheckboxChecked({ override: null, recorded: null })).toBe(false)
+    expect(resolvePitchCheckboxChecked({ override: null, recorded: undefined })).toBe(false)
+    // 覆盖优先
+    expect(resolvePitchCheckboxChecked({ override: false, recorded: true })).toBe(false)
+    expect(resolvePitchCheckboxChecked({ override: true, recorded: null })).toBe(true)
+  })
+
+  it('非 shot 切走→切回：清覆盖后勾选关闭，effective 不再被旧勾选点亮', () => {
+    // 非 shot 页面：无录制真值
+    const cleared = resolvePitchCheckboxChecked({ override: null, recorded: null })
+    expect(cleared).toBe(false)
+    expect(resolvePitchDeviceEffective({ available: true, override: null, recorded: null, checkboxChecked: cleared })).toBe(false)
+    // 切回支持 122 的车但无真值：默认关闭（与已清 URL 的 HUD 一致），用户可手动再勾
+    expect(resolvePitchDeviceEffective({ available: true, override: null, recorded: null, checkboxChecked: false })).toBe(false)
+    // 切到带真值的车：真值重新生效（覆盖已撤销，不被 stale false/null 压住）
+    expect(resolvePitchDeviceEffective({ available: true, override: null, recorded: true, checkboxChecked: false })).toBe(true)
   })
 })
