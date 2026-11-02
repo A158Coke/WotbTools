@@ -247,7 +247,10 @@ export function assembleSceneryMaterials(gltf, {
     const uw = !!o.geometry && underWater(o);
     if (uw) annotationSurface = false;
     const assignMat = (m) => {
-      const ud = (m && m.userData) || {};
+      const ud = (m && m.userData) || {}
+      // 普通 SpeedTree static geometry（没有 _corner 的 ST|branches/trunk/foliage）也走
+      // makeSpeedtreeStaticMaterial；它的朝上枝叶同样不是可绘制表面，按 semantic 排除。
+      if ((o.name || '').startsWith('ST|') || ((m && m.name) || '').startsWith('ST|')) annotationSurface = false;
       // 水面（客户端 water-fp.sl 的 **MEDIUM 档**）：导出器带数据时走专用材质；
       // 旧包/无数据（water 仅 bool）落回 convMat + 下面的水面修整分支
       if (ud.water && typeof ud.water === 'object') {

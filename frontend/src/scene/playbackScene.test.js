@@ -4701,6 +4701,7 @@ describe('3D annotation pointer ownership', () => {
 
     const picked = layer.pick(380, 300)
     expect(picked.semantic.surfaceY).toBeCloseTo(21, 5)
+    expect(picked.semantic.surfaceN.y).toBeCloseTo(1, 5)
 
     canvas.dispatchEvent(mouse('pointerdown', 380, 300))
     canvas.dispatchEvent(mouse('pointermove', 390, 300))
@@ -4709,6 +4710,7 @@ describe('3D annotation pointer ownership', () => {
     const annotation = onAnnotationCommit.mock.calls[0][0]
     expect(annotation.points.length).toBeGreaterThanOrEqual(2)
     expect(annotation.points.every((p) => Number.isFinite(p.surfaceY))).toBe(true)
+    expect(annotation.points.every((p) => Number.isFinite(p.surfaceN?.y))).toBe(true)
 
     api.setAnnotations([annotation])
     const position = layer.committedMesh.geometry.getAttribute('position')

@@ -260,6 +260,28 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
     expect(blend.material.userData.annotationSurface).toBe(false)
   })
 
+  it('普通 ST| SpeedTree static geometry 同样不是可绘制表面（不依赖 _corner）', () => {
+    const masks = {
+      maskTexOf: () => null, lmTexOf: () => null, detailTexOf: () => null,
+      envTexOf: () => null, waterTexOf: () => null, decalTexOf: () => null,
+    }
+    const root = new THREE.Group()
+    const branches = new THREE.Mesh(
+      new THREE.BoxGeometry(4, 3, 4),
+      new THREE.MeshStandardMaterial({ name: 'ST|branches' }),
+    )
+    branches.name = 'ST|branches'
+    const trunk = new THREE.Mesh(
+      new THREE.BoxGeometry(1, 6, 1),
+      new THREE.MeshStandardMaterial({ name: 'bark' }),
+    )
+    trunk.name = 'ST|trunk'
+    root.add(branches, trunk)
+    assembleSceneryMaterials({ scene: root }, { strictSurfaces: true, masks })
+    expect(branches.material.userData.annotationSurface).toBe(false)
+    expect(trunk.material.userData.annotationSurface).toBe(false)
+  })
+
   it('新包 sky 标记在装配期打 userData.isSky（实例化过滤不再按名字猜）', () => {
     const NO_TEX = () => null
     const masks = { maskTexOf: NO_TEX, lmTexOf: NO_TEX, detailTexOf: NO_TEX, envTexOf: NO_TEX, waterTexOf: NO_TEX, decalTexOf: NO_TEX }

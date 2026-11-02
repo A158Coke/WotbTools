@@ -358,15 +358,24 @@ function clipPenByEraser(points, eraserPoints, radius) {
     if (current.length >= 2 && pathLength(current) > 1e-9) pieces.push(current)
     current = []
   }
+  const validNormal = (n) => n && Number.isFinite(n.x) && Number.isFinite(n.y) && Number.isFinite(n.z)
   const copyPoint = (p) => {
     const out = { x: p.x, y: p.y }
     if (Number.isFinite(p.surfaceY)) out.surfaceY = p.surfaceY
+    if (validNormal(p.surfaceN)) out.surfaceN = { x: p.surfaceN.x, y: p.surfaceN.y, z: p.surfaceN.z }
     return out
   }
   const lerp = (a, b, t) => {
     const out = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
     if (Number.isFinite(a.surfaceY) && Number.isFinite(b.surfaceY)) {
       out.surfaceY = a.surfaceY + (b.surfaceY - a.surfaceY) * t
+    }
+    if (validNormal(a.surfaceN) && validNormal(b.surfaceN)) {
+      const nx = a.surfaceN.x + (b.surfaceN.x - a.surfaceN.x) * t
+      const ny = a.surfaceN.y + (b.surfaceN.y - a.surfaceN.y) * t
+      const nz = a.surfaceN.z + (b.surfaceN.z - a.surfaceN.z) * t
+      const len = Math.hypot(nx, ny, nz)
+      if (len > 1e-6) out.surfaceN = { x: nx / len, y: ny / len, z: nz / len }
     }
     return out
   }

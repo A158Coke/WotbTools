@@ -121,7 +121,7 @@ import { createBaseMarkers } from './playback/bases.js'
 import { createHudFeed } from './playback/hudFeed.js'
 import {
   ANNOTATION_LIFT, ANNOTATION_MAX_ERASER_POINTS, ANNOTATION_MAX_INPUT_POINTS,
-  buildEraserRing, buildPenRibbon, normalizePenPoints, reprojectRibbonPositions,
+  buildEraserRing, buildPenRibbon, hitWorldNormal, normalizePenPoints, reprojectRibbonPositions,
 } from './playback/annotation3d.js'
 import {
   chooseAnnotationHit, collectSurfaceCandidates, pickDrawableSurfaceHit,
@@ -1866,21 +1866,32 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     return annotationInteraction.enabled && !!annotationInteraction.tool
   }
 
-  function semanticFromScene(x, z, surfaceY) {
+  function semanticNormal(normal) {
+    if (!normal || !Number.isFinite(normal.x) || !Number.isFinite(normal.y) || !Number.isFinite(normal.z)) return undefined
+    return { x: normal.x, y: normal.y, z: normal.z }
+  }
+
+  function semanticFromScene(x, z, surfaceY, surfaceN) {
     const out = { x: -x, y: z }
     if (Number.isFinite(surfaceY)) out.surfaceY = surfaceY
+    const normal = semanticNormal(surfaceN)
+    if (normal) out.surfaceN = normal
     return out
   }
 
   function semanticPoint(point) {
     const out = { x: point.x, y: point.y }
     if (Number.isFinite(point.surfaceY)) out.surfaceY = point.surfaceY
+    const normal = semanticNormal(point.surfaceN)
+    if (normal) out.surfaceN = normal
     return out
   }
 
   function sceneFromSemantic(point) {
     const out = { x: -point.x, y: point.y }
     if (Number.isFinite(point.surfaceY)) out.surfaceY = point.surfaceY
+    const normal = semanticNormal(point.surfaceN)
+    if (normal) out.surfaceN = normal
     return out
   }
 
@@ -1960,7 +1971,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (!cands || !cands.length) return null
     const hit = pickDrawableSurfaceHit(rc, cands, annotationSurfaceHeightAt)
     if (!hit) return null
-    return { point: hit.point, distance: hit.distance, surfaceY: hit.point.y }
+    const normal = hitWorldNormal(hit)
+    return {
+      point: hit.point,
+      distance: hit.distance,
+      surfaceY: hit.point.y,
+      surfaceN: normal ? { x: normal.x, y: normal.y, z: normal.z } : undefined,
+    }
   }
 
   /**
@@ -1977,7 +1994,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (!hit) return null
     if (PERF) annotationStats.lastPickMs = performance.now() - startedAt
     const fromSurface = hit === surfaceHit
-    return { semantic: semanticFromScene(hit.point.x, hit.point.z, fromSurface ? hit.point.y : undefined) }
+    return {
+      semantic: semanticFromScene(
+        hit.point.x, hit.point.z,
+        fromSurface ? hit.point.y : undefined,
+        fromSurface ? hit.surfaceN : undefined,
+      ),
+    }
   }
 
   /**

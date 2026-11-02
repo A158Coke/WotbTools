@@ -242,8 +242,8 @@ export async function assembleMapScenery(gltf, ctx) {
   writes.annotationSurfaceGrid = buildAnnotationSurfaceGrid(batches, {
     cell: OCCL_CELL,
     project: (item) => ({
-      x: surfaceMatrix[0] * item.x + surfaceMatrix[4] * item.y + surfaceMatrix[12],
-      z: surfaceMatrix[2] * item.x + surfaceMatrix[6] * item.y + surfaceMatrix[14],
+      x: surfaceMatrix[0] * item.x + surfaceMatrix[4] * item.y + surfaceMatrix[8] * item.z + surfaceMatrix[12],
+      z: surfaceMatrix[2] * item.x + surfaceMatrix[6] * item.y + surfaceMatrix[10] * item.z + surfaceMatrix[14],
     }),
   });
   const findMeshes = (px, py, wantDestroyed, r = MESH_MATCH_R) => {

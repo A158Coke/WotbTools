@@ -159,6 +159,32 @@ describe('annotation surface picking policy', () => {
     expect([...grid.values()].flat()).toContain(mesh)
   })
 
+  it('uses transformed boundingSphere center and instance scale for the footprint', () => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial())
+    const identity = new THREE.Matrix4()
+    const offsetBatch = {
+      mesh,
+      geometry: {
+        boundingSphere: { center: new THREE.Vector3(40, 0, 0), radius: 2 },
+      },
+      material: mesh.material,
+      items: [{ x: 0, y: 0, matrix: { elements: identity.elements } }],
+    }
+    const offsetGrid = buildAnnotationSurfaceGrid([offsetBatch])
+    expect(offsetGrid.has('2,0')).toBe(true)
+    expect(offsetGrid.has('0,0')).toBe(false)
+
+    const scaled = new THREE.Matrix4().makeScale(10, 1, 1)
+    const scaledBatch = {
+      ...offsetBatch,
+      geometry: { boundingSphere: { center: new THREE.Vector3(0, 0, 0), radius: 2 } },
+      items: [{ x: 0, y: 0, matrix: { elements: scaled.elements } }],
+    }
+    const scaledGrid = buildAnnotationSurfaceGrid([scaledBatch])
+    expect(scaledGrid.has('1,0')).toBe(true)
+    expect(scaledGrid.has('-1,0')).toBe(true)
+  })
+
   it('projects gltf-local item coordinates into world XZ when asked', () => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial())
     const batch = {

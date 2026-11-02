@@ -97,7 +97,7 @@ const fly = useSceneFlyControls({
   getSceneApi: () => sceneApi,
 })
 
-// ---------- 标注（selected-surface drawing；无 surfaceY 时 terrain fallback）----------
+// ---------- 标注（selected-surface drawing；无 surfaceY/surfaceN 时 terrain fallback）----------
 const annotationOpen = ref(false)
 const annotationTool = ref(null)
 const annotationColor = ref(ANNOT_COLORS[0])
@@ -241,7 +241,7 @@ async function importAnnotations(event) {
     flashImportMessage('mapPreview.annotations.importFailed', { reason: t('mapPreview.annotations.importReasonFormat') })
     return
   }
-  // surfaceY 是 session-local 3D 锚点，不进入文件 schema；导入时同样剥离。
+  // surfaceY / surfaceN 是 session-local 3D 锚点，不进入文件 schema；导入时同样剥离。
   const items = stripSurfaceAnchors(payload.annotations)
   replaceAnnotations(items)
   flashImportMessage('mapPreview.annotations.importedCount', { count: items.length })

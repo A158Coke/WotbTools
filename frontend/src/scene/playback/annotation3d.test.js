@@ -200,6 +200,15 @@ describe('subdividePolyline', () => {
     expect(out.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))).toBe(true)
   })
 
+  it('does not drop an anchor-state transition when the committed budget resamples', () => {
+    const pts = subdividePolyline([
+      { x: 0, y: 0 }, { x: 10, y: 0 },
+      { x: 20, y: 0, surfaceY: 8 }, { x: 30, y: 0, surfaceY: 8 },
+    ], () => 0, { maxSegment: 100, maxPoints: 3 })
+    expect(pts).toHaveLength(3)
+    expect(pts.some((p) => p.surfaceY === 8)).toBe(true)
+  })
+
   it('caps output at maxPoints and keeps the result finite', () => {
     const pts = subdividePolyline([{ x: 0, y: 0 }, { x: 100, y: 0 }], () => 20, {
       maxSegment: 1, maxPoints: 5,
@@ -620,9 +629,27 @@ describe('3D surface anchors (selected-surface drawing)', () => {
       { x: 10, y: 0 },
       { x: 20, y: 0, surfaceY: 12 },
     ], { strength: 0.25 })
+    // ground / bridge / ground are separate runs; the two boundary anchors must survive.
+    expect(mixed).toHaveLength(3)
+    expect(mixed[0].surfaceY).toBe(8)
     expect(mixed[1].surfaceY).toBeUndefined()
-    expect(mixed[2].surfaceY).toBeUndefined()
-    expect(mixed[3].surfaceY).toBeUndefined()
+    expect(mixed[2].surfaceY).toBe(12)
+  })
+
+  it('preserves the first/last anchored control point across ground→bridge and bridge→ground transitions', () => {
+    const groundToBridge = normalizePenPoints([
+      { x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0, surfaceY: 8 },
+      { x: 30, y: 0, surfaceY: 8 }, { x: 40, y: 0, surfaceY: 8 },
+    ])
+    expect(groundToBridge.some((p) => p.x === 20 && p.surfaceY === 8)).toBe(true)
+    expect(groundToBridge.filter((p) => p.surfaceY === 8).length).toBeGreaterThan(0)
+
+    const bridgeToGround = normalizePenPoints([
+      { x: 0, y: 0, surfaceY: 8 }, { x: 10, y: 0, surfaceY: 8 },
+      { x: 20, y: 0, surfaceY: 8 }, { x: 30, y: 0 }, { x: 40, y: 0 },
+    ])
+    expect(bridgeToGround.some((p) => p.x === 20 && p.surfaceY === 8)).toBe(true)
+    expect(bridgeToGround[bridgeToGround.length - 1].surfaceY).toBeUndefined()
   })
 
   it('subdivision interpolates anchored midpoints and skips terrain midpoint probing', () => {
@@ -662,6 +689,45 @@ describe('3D surface anchors (selected-surface drawing)', () => {
     expect(ground).not.toBeNull()
     expect(ribbonVertices(ground).every((v) => Math.abs(v.y) < 1e-6)).toBe(true)
     expect(ground.strips[0].anchored.every((flag) => flag === 0)).toBe(true)
+  })
+
+  it('tilts the anchored cross-section to the picked surface plane', () => {
+    const normal = { x: 0, y: Math.SQRT1_2, z: Math.SQRT1_2 }
+    const bridge = buildPenRibbon(pen([
+      { x: -5, y: 0, surfaceY: 8, surfaceN: normal },
+      { x: 5, y: 0, surfaceY: 8, surfaceN: normal },
+    ], 6), { sampleHeight: () => 0, lift: 0, maxSegment: 100 })
+    expect(bridge).not.toBeNull()
+    const verts = ribbonVertices(bridge)
+    expect(Math.max(...verts.map((v) => v.y)) - Math.min(...verts.map((v) => v.y))).toBeGreaterThan(3)
+    // 45° plane through (0,8,0), normal (0,√½,√½): y + z = 8.
+    expect(verts.every((v) => Math.abs(v.y + v.z - 8) < 1e-6)).toBe(true)
+  })
+
+  it('keeps a ground→bridge normalized transition visible on both sides', () => {
+    const normalized = normalizePenPoints([
+      { x: 0, y: 0 }, { x: 10, y: 0 },
+      { x: 20, y: 0, surfaceY: 8 }, { x: 30, y: 0, surfaceY: 8 },
+    ])
+    const ribbon = buildPenRibbon(pen(normalized, 2), { sampleHeight: () => 0, lift: 0, maxSegment: 100 })
+    expect(ribbon).not.toBeNull()
+    const flags = ribbon.strips[0].anchored
+    expect(flags.some((f) => f === 0)).toBe(true)
+    expect(flags.some((f) => f === 1)).toBe(true)
+    expect(ribbonVertices(ribbon).some((v) => Math.abs(v.y - 8) < 1e-6)).toBe(true)
+  })
+
+  it('keeps a bridge→ground normalized transition visible on both sides', () => {
+    const normalized = normalizePenPoints([
+      { x: 0, y: 0, surfaceY: 8 }, { x: 10, y: 0, surfaceY: 8 },
+      { x: 20, y: 0 }, { x: 30, y: 0 },
+    ])
+    const ribbon = buildPenRibbon(pen(normalized, 2), { sampleHeight: () => 0, lift: 0, maxSegment: 100 })
+    expect(ribbon).not.toBeNull()
+    const flags = ribbon.strips[0].anchored
+    expect(flags.some((f) => f === 0)).toBe(true)
+    expect(flags.some((f) => f === 1)).toBe(true)
+    expect(ribbonVertices(ribbon).some((v) => Math.abs(v.y - 8) < 1e-6)).toBe(true)
   })
 
   it('refinement keeps anchored rows on the selected layer and fails closed below terrain', () => {

@@ -55,7 +55,10 @@ export interface AnnotationSurfaceRaycaster {
 export interface AnnotationSurfaceBatch {
   mesh: AnnotationSurfaceObject
   geometry?: {
-    boundingSphere?: { radius?: number } | null
+    boundingSphere?: {
+      radius?: number
+      center?: { x: number; y: number; z: number } | null
+    } | null
     computeBoundingSphere?: () => void
   } | null
   material?: AnnotationSurfaceMaterial | AnnotationSurfaceMaterial[] | null
@@ -63,6 +66,8 @@ export interface AnnotationSurfaceBatch {
     x: number
     y: number
     hidden?: boolean
+    /** gltf-local instance matrix（含 pivot/rotation/scale）；有则用完整足印，不再假设 origin==sphere center。 */
+    matrix?: { elements: ArrayLike<number> } | null
   }>
 }
 
@@ -146,7 +151,7 @@ export function buildAnnotationSurfaceGrid(
   }: {
     cell?: number
     /** 批次 item 是 gltf 局部系；运行时按装配根（gltf.scene）的 matrixWorld 投到世界 XZ。 */
-    project?: ((item: { x: number; y: number }) => { x: number; z: number }) | null
+    project?: ((item: { x: number; y: number; z: number }) => { x: number; z: number }) | null
   } = {},
 ): AnnotationSurfaceGrid {
   const grid: AnnotationSurfaceGrid = new Map()
@@ -161,12 +166,39 @@ export function buildAnnotationSurfaceGrid(
     if (geometry && !geometry.boundingSphere && typeof geometry.computeBoundingSphere === 'function') {
       geometry.computeBoundingSphere()
     }
-    const radius = geometry?.boundingSphere?.radius || 0
+    const sphere = geometry?.boundingSphere
+    const localRadius = Number(sphere?.radius) || 0
+    const sphereCenter = sphere?.center || null
     for (const item of batch.items) {
       if (!item || item.hidden) continue
       if (!Number.isFinite(item.x) || !Number.isFinite(item.y)) continue
-      const center = project ? project(item) : { x: item.x, z: item.y }
+      let localX = item.x
+      let localY = item.y
+      let localZ = 0
+      let scale = 1
+      const m = item.matrix?.elements
+      if (m && m.length >= 16) {
+        // item.matrix 是完整 gltf-local instance matrix：bounding sphere 的 pivot 偏移和
+        // 缩放都必须进足印，否则偏 pivot/放大的长桥会整批漏出候选格。
+        const cx = Number(sphereCenter?.x) || 0
+        const cy = Number(sphereCenter?.y) || 0
+        const cz = Number(sphereCenter?.z) || 0
+        localX = m[0] * cx + m[4] * cy + m[8] * cz + m[12]
+        localY = m[1] * cx + m[5] * cy + m[9] * cz + m[13]
+        localZ = m[2] * cx + m[6] * cy + m[10] * cz + m[14]
+        scale = Math.max(
+          Math.hypot(m[0], m[1], m[2]),
+          Math.hypot(m[4], m[5], m[6]),
+          Math.hypot(m[8], m[9], m[10]),
+        )
+      } else if (sphereCenter) {
+        localX += Number(sphereCenter.x) || 0
+        localY += Number(sphereCenter.y) || 0
+        localZ += Number(sphereCenter.z) || 0
+      }
+      const center = project ? project({ x: localX, y: localY, z: localZ }) : { x: localX, z: localY }
       if (!Number.isFinite(center.x) || !Number.isFinite(center.z)) continue
+      const radius = localRadius * scale
       const keys = occlusionFootprintCells(
         center.x - radius, center.z - radius, center.x + radius, center.z + radius, cell,
       )

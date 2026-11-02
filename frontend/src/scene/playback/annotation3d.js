@@ -1,10 +1,10 @@
 // 3D Playback 标注的纯几何：terrain-conforming pen ribbon 与 eraser ring。
 //
 // 坐标约定：本模块只认 scene-map XZ（x 右、z 北）。无 surfaceY 的 row 输出
-// vertex Y = sampleHeight(x,z) + lift；带 surfaceY 的 row 是选中表面层，整行用锚点高度
-// （水平截面），不再向下采 terrain。semantic(replay) XZ 与 scene 的 x 取负由 playbackScene
-// 的 adapter 负责；annotation SSOT 仍以 semantic XZ 为 canonical，surfaceY 只是可选的
-// session-local 锚点，不属于 replay 语义。
+// vertex Y = sampleHeight(x,z) + lift；带 surfaceY 的 row 是选中表面层，用锚点高度 +
+// surfaceN 的局部 plane 生成倾斜 cross-section（无 normal 时退化为水平截面），不再向下采
+// terrain。semantic(replay) XZ 与 scene 的 x 取负由 playbackScene 的 adapter 负责；annotation
+// SSOT 仍以 semantic XZ 为 canonical，surfaceY/surfaceN 只是可选的 session-local 锚点。
 //
 import * as THREE from 'three'
 
@@ -69,11 +69,11 @@ const _hitNormalMatrix = new THREE.Matrix3()
 const _hitNormal = new THREE.Vector3()
 
 /**
- * 命中面的 world normal.y（InstancedMesh 先乘 instanceMatrix）。
- * 3D annotation pick 的“朝上表面”判据；单独放纯几何模块便于 CPU 单测。
+ * 命中面的 world normal（InstancedMesh 先乘 instanceMatrix）。
+ * 3D annotation pick 的“朝上表面”判据和 anchored cross-section 的局部 plane normal。
  */
-export function hitWorldNormalY(hit) {
-  if (!hit || !hit.face || !hit.object) return 0
+export function hitWorldNormal(hit, target = null) {
+  if (!hit || !hit.face || !hit.object) return null
   const object = hit.object
   if (hit.instanceId != null && object.isInstancedMesh && typeof object.getMatrixAt === 'function') {
     object.getMatrixAt(hit.instanceId, _hitInstance)
@@ -83,21 +83,50 @@ export function hitWorldNormalY(hit) {
   }
   _hitNormalMatrix.getNormalMatrix(_hitWorld)
   _hitNormal.copy(hit.face.normal).applyMatrix3(_hitNormalMatrix).normalize()
-  return _hitNormal.y
+  return target ? target.copy(_hitNormal) : _hitNormal
+}
+
+export function hitWorldNormalY(hit) {
+  const normal = hitWorldNormal(hit)
+  return normal ? normal.y : 0
 }
 
 /** 复制 semantic 点，保留可选的 3D 表面锚点（0 是合法值）。 */
+function finiteNormal(n) {
+  return n && Number.isFinite(n.x) && Number.isFinite(n.y) && Number.isFinite(n.z)
+}
+
+function copyNormal(n) {
+  return finiteNormal(n) ? { x: n.x, y: n.y, z: n.z } : undefined
+}
+
+function normalizeNormal(n) {
+  if (!finiteNormal(n)) return undefined
+  const len = Math.hypot(n.x, n.y, n.z)
+  if (!(len > 1e-6)) return undefined
+  return { x: n.x / len, y: n.y / len, z: n.z / len }
+}
+
 function copyPoint(p) {
   const out = { x: p.x, y: p.y }
   if (Number.isFinite(p.surfaceY)) out.surfaceY = p.surfaceY
+  const normal = copyNormal(p.surfaceN)
+  if (normal) out.surfaceN = normal
   return out
 }
 
-/** 两端都有 finite surfaceY 才插值锚点；单侧缺失不猜另一侧。 */
+/** 两端都有 finite surfaceY / surfaceN 才插值；单侧缺失不猜另一侧。 */
 function pointAt(a, b, t) {
   const out = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
   if (Number.isFinite(a.surfaceY) && Number.isFinite(b.surfaceY)) {
     out.surfaceY = a.surfaceY + (b.surfaceY - a.surfaceY) * t
+  }
+  if (finiteNormal(a.surfaceN) && finiteNormal(b.surfaceN)) {
+    out.surfaceN = normalizeNormal({
+      x: a.surfaceN.x + (b.surfaceN.x - a.surfaceN.x) * t,
+      y: a.surfaceN.y + (b.surfaceN.y - a.surfaceN.y) * t,
+      z: a.surfaceN.z + (b.surfaceN.z - a.surfaceN.z) * t,
+    })
   }
   return out
 }
@@ -116,9 +145,19 @@ export function sanitizePoints(points, { maxPoints = ANNOTATION_MAX_INPUT_POINTS
     const y = Number(p && p.y)
     if (!Number.isFinite(x) || !Number.isFinite(y)) continue
     const prev = out[out.length - 1]
-    if (prev && Math.hypot(x - prev.x, y - prev.y) <= DUP_EPS) continue
+    if (prev && Math.hypot(x - prev.x, y - prev.y) <= DUP_EPS) {
+      // 同一 XZ 从 terrain 跨到 bridge 时，后一个点的锚点不能因去重被丢掉。
+      if (!Number.isFinite(prev.surfaceY) && Number.isFinite(p.surfaceY)) prev.surfaceY = Number(p.surfaceY)
+      if (!prev.surfaceN) {
+        const normal = normalizeNormal(p.surfaceN)
+        if (normal) prev.surfaceN = normal
+      }
+      continue
+    }
     const next = { x, y }
     if (Number.isFinite(p.surfaceY)) next.surfaceY = Number(p.surfaceY)
+    const normal = normalizeNormal(p.surfaceN)
+    if (normal) next.surfaceN = normal
     out.push(next)
     if (Number.isFinite(limit) && out.length >= limit) break
   }
@@ -128,13 +167,39 @@ export function sanitizePoints(points, { maxPoints = ANNOTATION_MAX_INPUT_POINTS
 /** 等距重采样（保留首尾）；只用于预算不足时的降密度，不丢整段尾部。 */
 function resampleByIndex(points, limit) {
   if (limit >= points.length) return points.map((p) => ({ ...p }))
-  const out = []
-  for (let i = 0; i < limit; i++) {
-    const idx = Math.round((i * (points.length - 1)) / (limit - 1))
-    out.push({ ...points[idx] })
+  // anchor-state transition 是 topology boundary：降密度也不得跳过它。
+  const anchored = (p) => Number.isFinite(p.surfaceY)
+  const mandatory = [0]
+  for (let i = 1; i < points.length; i++) {
+    if (anchored(points[i]) !== anchored(points[i - 1])) mandatory.push(i)
   }
-  out[0] = { ...points[0] }
-  out[out.length - 1] = { ...points[points.length - 1] }
+  if (mandatory[mandatory.length - 1] !== points.length - 1) mandatory.push(points.length - 1)
+  if (limit <= mandatory.length) return mandatory.slice(0, limit).map((idx) => ({ ...points[idx] }))
+  const extra = limit - mandatory.length
+  const spans = []
+  let totalSpan = 0
+  for (let i = 1; i < mandatory.length; i++) {
+    const span = mandatory[i] - mandatory[i - 1]
+    spans.push({ a: mandatory[i - 1], b: mandatory[i], span, take: 0 })
+    totalSpan += span
+  }
+  if (totalSpan <= 0) return points.slice(0, limit).map((p) => ({ ...p }))
+  let remaining = extra
+  for (const s of spans) {
+    s.take = Math.floor((extra * s.span) / totalSpan)
+    remaining -= s.take
+  }
+  // Largest-remainder allocation keeps the output exactly at limit.
+  const order = [...spans].sort((x, y) => (y.span * extra) % totalSpan - (x.span * extra) % totalSpan)
+  for (let i = 0; i < remaining; i++) order[i % order.length].take++
+  const out = [{ ...points[0] }]
+  for (const s of spans) {
+    for (let j = 1; j <= s.take; j++) {
+      const idx = s.a + Math.round(((s.b - s.a) * j) / (s.take + 1))
+      out.push({ ...points[idx] })
+    }
+    out.push({ ...points[s.b] })
+  }
   return out
 }
 
@@ -228,15 +293,30 @@ export function smoothPolyline(points, { iterations = 1, strength = 0.2 } = {}) 
   if (current.length < 3) return current
   const rounds = Math.max(0, Math.floor(numberOr(iterations, 1)))
   const s = Math.max(0, Math.min(0.49, numberOr(strength, 0.2)))
-  for (let round = 0; round < rounds; round++) {
-    const next = [{ ...current[0] }]
-    for (let i = 1; i < current.length; i++) {
-      const a = current[i - 1]
-      const b = current[i]
-      next.push(pointAt(a, b, s))
-      next.push(pointAt(a, b, 1 - s))
+  const anchored = (p) => Number.isFinite(p.surfaceY)
+  const chaikinRun = (run) => {
+    if (run.length < 3) return run.map((p) => ({ ...p }))
+    const out = [{ ...run[0] }]
+    for (let i = 1; i < run.length; i++) {
+      const a = run[i - 1]
+      const b = run[i]
+      out.push(pointAt(a, b, s))
+      out.push(pointAt(a, b, 1 - s))
     }
-    next.push({ ...current[current.length - 1] })
+    out.push({ ...run[run.length - 1] })
+    return out
+  }
+  for (let round = 0; round < rounds; round++) {
+    const next = []
+    let start = 0
+    for (let i = 1; i <= current.length; i++) {
+      // anchor-state transition 是 topology boundary：terrain run 与 surface-anchored run
+      // 分开做 Chaikin，边界控制点原样保留；否则第一个 bridge anchor 会被平滑吃掉。
+      if (i === current.length || anchored(current[i]) !== anchored(current[start])) {
+        next.push(...chaikinRun(current.slice(start, i)))
+        start = i
+      }
+    }
     current = next
   }
   return current
@@ -303,6 +383,7 @@ function ribbonFrames(points, half) {
     frames.push({
       x: cur.x, z: cur.y, nx: -dz, nz: dx, half: half * miter,
       surfaceY: Number.isFinite(cur.surfaceY) ? cur.surfaceY : undefined,
+      normal: normalizeNormal(cur.surfaceN) || null,
     })
   }
   return frames
@@ -316,12 +397,13 @@ function ribbonRows(frames, fractions, sampleHeight, liftValue) {
     let rowValid = true
     const anchored = Number.isFinite(frame.surfaceY)
     for (const fraction of fractions) {
-      const p = crossPoint(frame, fraction)
       if (anchored) {
-        // anchored row：整行落在选中的表面层，水平截面不再采 terrain。
-        row.push({ x: p.x, y: frame.surfaceY + liftValue, z: p.z })
+        // anchored row：整行落在选中的 surface 局部 plane；无 surfaceN 时退化为水平截面。
+        const p = crossPoint3D(frame, fraction, liftValue)
+        row.push({ x: p.x, y: p.y, z: p.z })
         continue
       }
+      const p = crossPoint(frame, fraction)
       const y = sampleOrNull(sampleHeight, p.x, p.z)
       if (y === null) {
         row.push(null)
@@ -411,17 +493,52 @@ function crossPoint(frame, fraction) {
   return { x: frame.x + frame.nx * offset, z: frame.z + frame.nz * offset }
 }
 
+/**
+ * Anchored row 的 cross vertex 投到命中 surface 的局部 plane：
+ * 水平 cross 方向减去 normal 分量后归一化；没有 surfaceN 时保持旧的纯水平截面。
+ */
+function crossPoint3D(frame, fraction, liftValue) {
+  const offset = frame.half * (1 - 2 * fraction)
+  let cx = frame.nx
+  let cy = 0
+  let cz = frame.nz
+  if (frame.normal) {
+    const n = frame.normal
+    const along = n.x * cx + n.z * cz
+    cx -= n.x * along
+    cy = -n.y * along
+    cz -= n.z * along
+    const len = Math.hypot(cx, cy, cz)
+    if (len > 1e-6) {
+      cx /= len
+      cy /= len
+      cz /= len
+    } else {
+      cx = frame.nx
+      cy = 0
+      cz = frame.nz
+    }
+  }
+  return {
+    x: frame.x + cx * offset,
+    y: frame.surfaceY + cy * offset + liftValue,
+    z: frame.z + cz * offset,
+  }
+}
+
 /** 在 A/B 中点检测 terrain error 或实际 transverse span（含 miter）。 */
 function crossIntervalNeedsSplit(frames, sampleHeight, fa, fb) {
   const fm = (fa + fb) / 2
   for (const frame of frames) {
-    const pa = crossPoint(frame, fa)
-    const pb = crossPoint(frame, fb)
-    // anchored row 是水平截面：只看跨度，terrain 起伏不驱动 cross 细分。
+    // anchored row 的 cross 在 surface plane 内；span 必须按 3D 长度判，不能只看水平投影。
     if (Number.isFinite(frame.surfaceY)) {
-      if (Math.hypot(pb.x - pa.x, pb.z - pa.z) > ANNOTATION_CROSS_MAX_SEGMENT) return true
+      const pa = crossPoint3D(frame, fa, 0)
+      const pb = crossPoint3D(frame, fb, 0)
+      if (Math.hypot(pb.x - pa.x, pb.y - pa.y, pb.z - pa.z) > ANNOTATION_CROSS_MAX_SEGMENT) return true
       continue
     }
+    const pa = crossPoint(frame, fa)
+    const pb = crossPoint(frame, fb)
     const pm = crossPoint(frame, fm)
     const ha = sampleOrNull(sampleHeight, pa.x, pa.z)
     const hb = sampleOrNull(sampleHeight, pb.x, pb.z)
