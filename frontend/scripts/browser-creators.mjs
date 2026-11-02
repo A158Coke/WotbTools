@@ -422,6 +422,13 @@ try {
           await page.waitForValue(`(() => {const e=document.activeElement,r=e.getBoundingClientRect();return {id:e.dataset.testid,left:r.left,right:r.right,width:innerWidth}})()`, value => value.id === target && value.left >= -0.5 && value.right <= value.width + 0.5)
         }
         assert.equal(await page.evaluate('window.scrollY'), scrollY)
+        if (scenario.productionHome) {
+          // 主站小屏没有首页 Tab，Logo 是首页唯一入口（APK 与本地回回放）。
+          assert.equal(await page.evaluate('!!document.querySelector("[data-testid=tab-home],[data-testid=more-shortcut-home]")'), false)
+          await tap(page, '[data-testid=app-top-bar] .brand', scenario.touch)
+          await page.waitForValue('!!document.querySelector("[data-testid=home-feedback]")', Boolean, { label: 'public home after logo' })
+          assert.deepEqual(await page.evaluate('[location.pathname, new URL(location.href).searchParams.has("view"), document.querySelectorAll("[data-testid=app-tab-bar] [aria-current]").length]'), ['/', false, 0])
+        }
       }
       await openCreators(page, scenario)
       await tap(page, '[data-testid=recommendation-card-UP]', scenario.touch)

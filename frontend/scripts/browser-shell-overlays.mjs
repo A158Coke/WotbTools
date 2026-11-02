@@ -64,6 +64,7 @@ export async function runShellOverlayScenario(env, scenario) {
       return
     }
     check(await page.evaluate('document.querySelectorAll("[data-testid=app-tab-bar] .tab").length') === COMPACT_TAB_ITEMS.length, 'compact tab count must follow COMPACT_TAB_ITEMS')
+    check(await page.evaluate(`[...document.querySelectorAll('[data-testid=app-tab-bar] .tab')].every(tab => tab.getAttribute('aria-label').includes(tab.querySelector('.tab-label').textContent.trim()))`), 'tab accessible name must contain its visible label')
     for (const item of COMPACT_TAB_ITEMS) {
       await tap(`[data-testid=tab-${item.id}]`)
       await viewIs(item.view)

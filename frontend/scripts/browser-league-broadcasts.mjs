@@ -109,6 +109,13 @@ try {
       await page.goto(`${scenarioOrigin}/?view=more&ws-auth=0`)
       await page.waitForValue('!!document.querySelector("[data-testid=more-page]")', Boolean)
       assert.equal(await page.evaluate('!!document.querySelector("[data-testid=more-link-league-broadcasts]")'), false)
+      if (scenario.productionHome && scenario.width >= 768) {
+        await tap(page, '[data-testid=app-sidebar] .sidebar-brand', scenario.touch)
+        await page.waitForValue('!!document.querySelector("[data-testid=home-feedback]")', Boolean, { label: 'public home after logo' })
+        assert.deepEqual(await page.evaluate('[location.pathname, new URL(location.href).searchParams.has("view"), document.querySelector("[data-testid=nav-home]")?.getAttribute("aria-current")]'), ['/', false, 'page'])
+        await page.goto(`${scenarioOrigin}/?view=more&ws-auth=0`)
+        await page.waitForValue('!!document.querySelector("[data-testid=more-page]")', Boolean)
+      }
       // 触屏横屏矮视口（≤520 高）由外壳改左侧图标栏：与 AppShell 的
       // SHELL_RAIL_QUERY 同口径，不再有底部 Tab 栏。
       const rail = scenario.touch && scenario.width < 768 && scenario.height <= 520

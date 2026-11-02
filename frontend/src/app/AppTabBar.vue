@@ -18,7 +18,7 @@ const activeSection = computed(() => compactSection(viewFromRoute(route)))
       :class="{ 'is-active': activeSection === item.id }"
       :to="locationForView(item.view, route)"
       :aria-current="activeSection === item.id ? 'page' : undefined"
-      :aria-label="$t(item.labelKey)"
+      :aria-label="item.compactLabelKey ? `${$t(item.compactLabelKey)}: ${$t(item.labelKey)}` : $t(item.labelKey)"
       :data-testid="`tab-${item.id}`"
     >
       <component :is="PRIMARY_NAV_ICONS[item.id]" :size="24" aria-hidden="true" />

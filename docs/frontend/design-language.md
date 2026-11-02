@@ -382,6 +382,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | DC-FOC-02 | MUST | 键盘 | 主流程键盘能走完；Dialog 关闭后焦点回到触发元素 | 无 | `pnpm run test:browser-interaction` + 人工 |
 | DC-FOC-03 | MUST | sticky / overlay | 不遮住当前焦点元素 | 无 | 人工 |
 | DC-A11-01 | MUST | 语义 | 操作用 `<button>`，导航用 `<a>` / router link；icon-only 按钮有 `aria-label` | 无 | 人工 |
+| DC-A11-05 | MUST | 可见标签 | 可访问名称包含可见文字（WCAG 2.5.3），短标题写成「短标题: 完整名称」，让语音输入能匹配 | 无 | `src/app/AppTabBar.test.js`、`pnpm run test:browser-interaction shell-overlay` |
 | DC-A11-02 | MUST | 表单 | 控件有 `<label>` 或 `aria-label`，不能只靠 placeholder | 无 | 人工 |
 | DC-A11-03 | SHOULD | 异步反馈 | toast、校验、加载结果用 `role="status"` / `role="alert"` 或 `aria-live` 通知 | 无 | 人工 |
 | DC-A11-04 | MUST | 图片 | 有 `alt`（装饰图 `alt=""`）；首屏外图片 `loading="lazy"`；有固有尺寸防抖版 | 无 | 人工 |
@@ -474,7 +475,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | DC-ARC-02 | MUST | 工作区 | `PageHeader` 只用 `compact`；kicker + h1 + 说明 + 标签块不得占掉首屏 | 满足 DC-THM-04 的 Showcase Hero | 人工 |
 | DC-ARC-03 | MUST | 筛选 | expanded / medium 行内工具栏；compact 用「筛选」按钮 + sheet，已生效条件显示为 chip | 无 | `pnpm run test:browser-interaction`（`overlay-catalog-` / `overlay-hof-`） |
 | DC-ARC-04 | MUST | 主导航 | 成员、分组、小屏 Tab 与栏目归属只由 `app/navigation.js` 定义，外壳组件和「更多」页不复制列表 | 无 | `src/app/navigation.test.js` |
-| DC-ARC-07 | MUST | 主导航 | `PRIMARY_NAV` 的每个入口在大屏与小屏都能到达；小屏 Tab 不超过 5 项 | 首页在小屏由 Logo 进入 | `pnpm run test:browser-interaction shell-overlay` |
+| DC-ARC-07 | MUST | 主导航 | `PRIMARY_NAV` 的每个入口在大屏与小屏都能到达；小屏 Tab 不超过 5 项 | 首页在小屏由 Logo 进入 | `pnpm run test:browser-interaction shell-overlay`；主站 Logo 回首页由 `test:browser-creators`（`production-`，小屏）与 `test:browser-broadcasts`（`-desktop`，大屏）验证 |
 | DC-ARC-05 | SHOULD | 页面状态 | 筛选、Tab、分页写进 URL，可深链和前进后退 | 无 | `src/app/router.test.js` + 人工 |
 | DC-ARC-06 | MUST | 表格 | 手机上复杂表格转卡片或关键列 + 容器内横向滚动，不撑破页面 | 无 | 人工 |
 
