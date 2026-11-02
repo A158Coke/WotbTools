@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest'
 import * as THREE from 'three'
 import {
   aimedVehicle, armorEquipmentCoeffs, armorHighlightBlock, armorPosePart, armorWorldMatrix,
-  authorShellAt, canOccludeTarget, createLoadRetry, cropFrustum, isSolidOccluder, markPickBoundsStale, mountedShell,
-  reticleAimDirection, screenRect,
+  authorShellAt, bucketedRtSize, canOccludeTarget, createLoadRetry, cropFrustum, isSolidOccluder,
+  markPickBoundsStale, mountedShell, reticleAimDirection, screenRect, spacedRectOf,
 } from './armorHighlight.js'
 
 const AP = { type: 'ap', penetration: 200, caliber: 100 }
@@ -342,5 +342,111 @@ describe('armor 姿态', () => {
     const p = new THREE.Vector3().applyMatrix4(armorWorldMatrix(root, pose, rest, new THREE.Matrix4()))
     expect(p.x).toBeCloseTo(10)
     expect(p.y).toBeCloseTo(1)
+  })
+})
+
+describe('装甲 RT 按目标矩形分配', () => {
+  it('bucketedRtSize：向上取整到 64 的倍数并钳到 drawing buffer 上限', () => {
+    expect(bucketedRtSize(1, 4096)).toBe(64)
+    expect(bucketedRtSize(64, 4096)).toBe(64)
+    expect(bucketedRtSize(65, 4096)).toBe(128)
+    expect(bucketedRtSize(3000, 2880)).toBe(2880)   // 满屏目标 = 旧全尺寸行为
+    expect(bucketedRtSize(0, 0)).toBe(1)            // 病态输入不为 0
+  })
+
+  it('spacedRectOf：全屏 = (0,0,1,1)，子矩形按整幅画面归一化（原点左下）', () => {
+    const out = new THREE.Vector4()
+    expect(spacedRectOf(0, 0, 1920, 1080, 1920, 1080, out).equals(new THREE.Vector4(0, 0, 1, 1))).toBe(true)
+    spacedRectOf(1200, 300, 300, 200, 1920, 1080, out)
+    expect(out.x).toBeCloseTo(1200 / 1920)
+    expect(out.y).toBeCloseTo(300 / 1080)
+    expect(out.z).toBeCloseTo(300 / 1920)
+    expect(out.w).toBeCloseTo(200 / 1080)
+  })
+})
+
+describe('遮挡剔除批次 AABB', () => {
+  const camera = () => {
+    const c = new THREE.PerspectiveCamera(1, 2, 0.5, 2000)   // 1° 窄视锥 ≈ 远目标长走廊
+    c.lookAt(0, 0, -1)
+    c.updateMatrixWorld(true)
+    c.updateProjectionMatrix()
+    return c
+  }
+  const viewOf = (c, maxDepth) => ({
+    frustum: cropFrustum(c, { x0: -1, y0: -1, x1: 1, y1: 1 }, new THREE.Frustum()),
+    origin: c.position.clone(),
+    forward: c.getWorldDirection(new THREE.Vector3()),
+    maxDepth,
+  })
+  const batch = (box) => {
+    const m = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial(), 1)
+    m.updateMatrixWorld(true)
+    m.userData.occluderBox = box
+    return m
+  }
+
+  it('盒在视锥外但包围球相交：不进遮挡集（宫格球整批重画的根因）', () => {
+    const view = viewOf(camera(), 120)
+    // 长盒沿 x 转 45°：中心 (24,0,-100)，世界 AABB 半宽 ≈21.9（够不到 ±1.7 的窄视锥），
+    // 包围球半径 ≈30（伸得进）——3.30.0 的球判定会把这类批次整批拉进遮挡集。
+    const mesh = batch(new THREE.Box3(new THREE.Vector3(2.1, -21.9, -101.9), new THREE.Vector3(45.9, 21.9, -98.1)))
+    expect(canOccludeTarget(mesh, view)).toBe(false)
+    mesh.userData.occluderBox = null                      // 可破坏物批次回退球
+    mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(24, 0, -100), 30)
+    expect(canOccludeTarget(mesh, view)).toBe(true)
+  })
+
+  it('盒支撑函数：球因半径膨胀误判可遮挡，盒按最小可能视线深度判退', () => {
+    const view = viewOf(camera(), 50)
+    // 细高盒（半 y=60）中心深度 100：支撑深度 99 > 50 → 不可遮挡；球半径 ≈60 → 40 ≤ 50 误判
+    const mesh = batch(new THREE.Box3(new THREE.Vector3(-1, -60, -101), new THREE.Vector3(1, 60, -99)))
+    expect(canOccludeTarget(mesh, view)).toBe(false)
+    mesh.userData.occluderBox = null
+    mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, -100), 60)
+    expect(canOccludeTarget(mesh, view)).toBe(true)
+  })
+
+  it('盒相交视锥且支撑深度在线内：保留（保守包围不漏画）', () => {
+    const view = viewOf(camera(), 120)
+    const mesh = batch(new THREE.Box3(new THREE.Vector3(-1, -60, -101), new THREE.Vector3(1, 60, -99)))
+    expect(canOccludeTarget(mesh, view)).toBe(true)
+  })
+
+  it('frustumCulled=false 与形变 bounds 未刷新的早退不受 AABB 影响', () => {
+    const view = viewOf(camera(), 120)
+    const mesh = batch(new THREE.Box3(new THREE.Vector3(2.1, -21.9, -101.9), new THREE.Vector3(45.9, 21.9, -98.1)))
+    mesh.frustumCulled = false
+    expect(canOccludeTarget(mesh, view)).toBe(true)
+    mesh.frustumCulled = true
+    mesh.geometry.userData.pickBoundsStale = true
+    expect(canOccludeTarget(mesh, view)).toBe(true)
+  })
+})
+
+describe('拾取 bounds 单趟重算（悬挂形变路径）', () => {
+  const material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })
+  it('aimedVehicle 刷新后的球是 AABB 半对角线保守球（覆盖全部顶点）', () => {
+    const glb = new THREE.Group()
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(4, 2, 6), material)
+    glb.add(mesh)
+    glb.updateMatrixWorld(true)
+    const v = { glb }
+    // 悬挂形变：底段下移出旧 bounds
+    const position = mesh.geometry.getAttribute('position')
+    for (let i = 0; i < position.count; i++) {
+      if (position.getY(i) < 0) position.setY(i, position.getY(i) - 3)
+    }
+    markPickBoundsStale(mesh.geometry)
+    aimedVehicle(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 1), [v])
+    const box = mesh.geometry.boundingBox
+    const sphere = mesh.geometry.boundingSphere
+    // 保守球：中心 = AABB 中心，半径 = 半对角线 ≥ 任意顶点到中心距离
+    expect(sphere.center.x).toBeCloseTo((box.min.x + box.max.x) / 2)
+    expect(sphere.radius).toBeGreaterThanOrEqual(sphere.center.distanceTo(new THREE.Vector3(box.min.x, box.min.y, box.min.z)))
+    // 形变后的最低顶点仍在覆盖内
+    let minY = Infinity
+    for (let i = 0; i < position.count; i++) minY = Math.min(minY, position.getY(i))
+    expect(sphere.radius).toBeGreaterThanOrEqual(Math.abs(minY - sphere.center.y) - 1e-6)
   })
 })

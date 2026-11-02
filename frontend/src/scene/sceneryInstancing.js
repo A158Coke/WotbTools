@@ -173,20 +173,33 @@ const _r = new THREE.Matrix4()
  *    （radius=-1），混合批次也不覆盖将来会恢复的合法位置——摧毁事件激活后
  *    模型虽可见，仍被旧球剔除、射线在球测先被拒。
  *  修法取评审建议的覆盖式：隐藏槽位按 base 位姿计入覆盖（不纳入 y=-1e6
- *  隐藏矩阵），显隐翻转无需再维护球。 */
+ *  隐藏矩阵），显隐翻转无需再维护球。
+ *
+ * 同时产出 `mesh.userData.occluderBox`：逐实例几何 **AABB** 并集（隐藏槽位同样按
+ * base 位姿计入，与球同口径），供开镜装甲高亮的遮挡剔除用——宫格批次的包围球是
+ * 整格尺寸，遮挡 pass 会把长视锥上的整批实例全部重画；AABB 是保守包围，只会少画。
+ * 可破坏物批次（实例矩阵运行期会变）由 mapAssets 把 occluderBox 置 null 回退球。 */
 export function refreshBatchSphere(mesh, batch, isHidden) {
   const sph = new THREE.Sphere()
   sph.makeEmpty()
   if (!batch.geometry.boundingSphere) batch.geometry.computeBoundingSphere()
+  if (!batch.geometry.boundingBox) batch.geometry.computeBoundingBox()
+  const box = new THREE.Box3()
+  box.makeEmpty()
   const m = new THREE.Matrix4()
   const tmp = new THREE.Sphere()
+  const tmpBox = new THREE.Box3()
   batch.items.forEach((it, i) => {
     if (isHidden && isHidden(it)) m.copy(it.matrix)   // 隐藏：base 位姿（合法可恢复位置）
     else mesh.getMatrixAt(i, m)                       // 可见：当前实例矩阵
     tmp.copy(batch.geometry.boundingSphere).applyMatrix4(m)
     sph.union(tmp)
+    tmpBox.copy(batch.geometry.boundingBox).applyMatrix4(m)
+    box.union(tmpBox)
   })
   if (mesh.boundingSphere) mesh.boundingSphere.copy(sph)
   else mesh.boundingSphere = sph
+  if (mesh.userData.occluderBox) mesh.userData.occluderBox.copy(box)
+  else mesh.userData.occluderBox = box
   return mesh.boundingSphere
 }
