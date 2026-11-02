@@ -232,12 +232,16 @@ find java -path '*/src/main/java' -type d -print
 必须实际运行：
 
 ```bash
-# 两行
-rg -n -U '@Autowired\s*\n\s*(?:private|protected|public)\s+' java/*/src/main/java
+# 两行 field declaration：以 ; 结束，且 ; 之前不含括号
+rg -n -U '@Autowired(?:\s*\([^)]*\))?[^\S\r\n]*\r?\n[^\S\r\n]*(?:private|protected|public)\s+[^(){}\r\n;]+;' java/*/src/main/java
 
-# 同行
-rg -n '@Autowired\s+(?:private|protected|public)\s+' java/*/src/main/java
+# 同行 field declaration
+rg -n '@Autowired(?:\s*\([^)]*\))?\s+(?:private|protected|public)\s+[^(){}\r\n;]+;' java/*/src/main/java
 ```
+
+命中必须结束于 `;`，且 `;` 之前不含 `(` / `)`：`@Autowired` 标注的 constructor / method declaration 因此不命中，而 `private` / `protected` / `public` field 都命中（不得靠删掉 `public` 规避）。`(?:\s*\([^)]*\))?` 覆盖 `@Autowired(required = false)` 写法。
+
+本 gate 是行邻接的文本搜索，不是符号解析：注解与字段声明之间夹了其它注解或注释、或字段带初始化器时不覆盖，需要时人工补查，不得据零命中断言「无 field injection」。
 
 必须证明普通两行与同行 field injection 都能命中，且命令本身不报 multiline error。发现后优先显式 constructor injection + `final` 字段（不引入 Lombok）；唯一可行时才保留并写具体原因。不引入 AST tooling。
 
