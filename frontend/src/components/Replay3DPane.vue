@@ -179,7 +179,7 @@ const detailsOpen = ref(false)
 /** 浮窗落位偏好：点左车道 → 落右侧，点右车道 → 落左侧，点场景里的车 → 与它相对的一侧。 */
 const detailsSide = ref('right')
 
-// ---------- 3D annotation（terrain-anchored drawing）----------
+// ---------- 3D annotation（selected-surface drawing；无 surfaceY 时 terrain fallback）----------
 // history/tool/color/width/visibility 的唯一 owner 是本面板；scene 只消费 projection 与
 // interaction 配置。V1 不持久化，换文件 / 场景销毁即清空（与 2D 的临时标注语义一致）。
 const annotationOpen = ref(false)

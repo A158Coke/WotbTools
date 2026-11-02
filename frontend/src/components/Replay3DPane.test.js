@@ -2164,6 +2164,51 @@ describe('Replay3DPane 3D annotation wiring', () => {
     wrapper.unmount()
   })
 
+  it('keeps optional surfaceY through commit / undo / redo', async () => {
+    const wrapper = await openDrawing()
+    const api = playback.api
+    const annotation = {
+      type: 'pen', color: '#ff4d4f', width: 1.2,
+      points: [{ x: 0, y: 0, surfaceY: 8 }, { x: 10, y: 0, surfaceY: 8 }],
+    }
+    sceneOptions().onAnnotationCommit(annotation)
+    await flush()
+    expect(api.setAnnotations).toHaveBeenLastCalledWith([annotation])
+
+    await wrapper.get('[data-test="pb-annot-undo"]').trigger('click')
+    await flush()
+    expect(api.setAnnotations).toHaveBeenLastCalledWith([])
+    await wrapper.get('[data-test="pb-annot-redo"]').trigger('click')
+    await flush()
+    const restored = api.setAnnotations.mock.calls.at(-1)[0]
+    expect(restored[0].points.every((p) => Number.isFinite(p.surfaceY))).toBe(true)
+    expect(restored[0]).toEqual(annotation)
+    wrapper.unmount()
+  })
+
+  it('eraser split keeps finite surfaceY on both generated endpoints', async () => {
+    const wrapper = await openDrawing()
+    const api = playback.api
+    const annotation = {
+      type: 'pen', color: '#ff4d4f', width: 1.2,
+      points: [{ x: 0, y: 0, surfaceY: 8 }, { x: 10, y: 0, surfaceY: 12 }],
+    }
+    sceneOptions().onAnnotationCommit(annotation)
+    await flush()
+    await wrapper.get('[data-test="pb-annot-eraser"]').trigger('click')
+    await flush()
+    sceneOptions().onAnnotationErase({ points: [{ x: 5, y: 0 }], radius: 1 })
+    await flush()
+    const pieces = api.setAnnotations.mock.calls.at(-1)[0]
+    expect(pieces).toHaveLength(2)
+    for (const piece of pieces) {
+      expect(piece.points.every((p) => Number.isFinite(p.surfaceY))).toBe(true)
+    }
+    expect(pieces[0].points.at(-1).surfaceY).toBeGreaterThan(8)
+    expect(pieces[0].points.at(-1).surfaceY).toBeLessThan(12)
+    wrapper.unmount()
+  })
+
   it('eraser callback applies semantically and adds one history entry', async () => {
     const wrapper = await openDrawing()
     const api = playback.api
