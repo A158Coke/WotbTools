@@ -15,8 +15,8 @@ describe('mapLabel locale selection', () => {
     expect(mapLabel('erlenberg_old', 'zh')).toBe('米德尔博格 2014版')
     expect(mapLabel('grossberg', 'zh')).toBe('王朝的珍珠')
     expect(mapLabel('savanna_old', 'zh')).toBe('沙漠之心2014版')
-    expect(mapLabel('moon', 'zh')).toBe('寂静之海')
-    expect(mapLabel('iceworld', 'zh')).toBe('永冻')
+    expect(mapLabel('moon', 'zh')).toBe('寂静星海')
+    expect(mapLabel('iceworld', 'zh')).toBe('永恒冻土')
     // en 保持国际服正式名（资产 display 原文），不因新增中文名而变
     expect(mapLabel('grossberg', 'en')).toBe("Dynasty's Pearl")
     expect(mapLabel('moon', 'en')).toBe('Sea of Tranquility')

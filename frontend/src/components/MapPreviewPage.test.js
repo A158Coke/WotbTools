@@ -160,8 +160,8 @@ describe('MapPreviewPage', () => {
       erlenberg_old: '米德尔博格 2014版',
       grossberg: '王朝的珍珠',
       savanna_old: '沙漠之心2014版',
-      moon: '寂静之海',
-      iceworld: '永冻',
+      moon: '寂静星海',
+      iceworld: '永恒冻土',
     }
     for (const [key, name] of Object.entries(expected)) {
       const card = wrapper.find(`[data-testid="map-card-${key}"]`)
