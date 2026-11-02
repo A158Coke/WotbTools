@@ -102,6 +102,15 @@
                                     <version>[3.9.0,4.0.0-alpha)</version>
                                 </requireMavenVersion>
                                 <banDuplicatePomDependencyVersions/>
+                                <!-- java/AGENTS.md：不可变模型用 record，可变模型用公有字段 POJO；
+                                     Lombok 注解是 SOURCE retention（编译后不留字节码），依赖声明层拦截
+                                     是唯一可靠的机械门禁，覆盖 wotb-core / wotb-web / wotb-ai 全部 scope。 -->
+                                <bannedDependencies>
+                                    <excludes>
+                                        <exclude>org.projectlombok:lombok</exclude>
+                                    </excludes>
+                                    <message>wotbtools 不引入 Lombok（record / 公有字段 POJO 约定，见 java/AGENTS.md）</message>
+                                </bannedDependencies>
                             </rules>
                         </configuration>
                     </execution>
@@ -142,6 +151,36 @@
                         <phase>verify</phase>
                         <goals>
                             <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- #821 negative fixture：证明 bannedDependencies 的 Lombok 禁令真的会红。
+                 src/it/lombok-ban 声明 org.projectlombok:lombok，invoker 以
+                 invoker.buildResult=failure 断言子构建失败，verify.groovy 断言
+                 enforcer 的预期报错文案。只在 parent 自身运行（inherited=false）。 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-invoker-plugin</artifactId>
+                <version>3.9.1</version>
+                <inherited>false</inherited>
+                <configuration>
+                    <projectsDirectory>src/it</projectsDirectory>
+                    <pomIncludes>
+                        <include>lombok-ban/pom.xml</include>
+                    </pomIncludes>
+                    <goals>
+                        <goal>validate</goal>
+                    </goals>
+                    <streamLogs>false</streamLogs>
+                    <postBuildHookScript>verify</postBuildHookScript>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>lombok-ban-negative-fixture</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>run</goal>
                         </goals>
                     </execution>
                 </executions>

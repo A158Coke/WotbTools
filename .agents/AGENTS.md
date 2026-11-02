@@ -35,9 +35,9 @@
      - `docs/android/releases/**`：**临时版本化发布记录**，豁免当前状态要求；迁移到 GitHub Release / tag / APK / `version.json` 后删除，迁移由 CI/CD 审计推进。
    - **future-only 内容不持久化为 repository docs**：属于当前 approved task → `docs/current-plan.md`；已经是明确独立 follow-up → GitHub Issue；其它 uncommitted / speculative wishlist → 删除，不保存。不得为 wishlist 新建 future/backlog/ideas 类文档，也不得塞进历史或 current-state owner。
    - **语言**：持久开发者/维护者/运维文档的人类可读正文统一使用简体中文；类名、函数/类型名、源路径、API path、HTTP method、环境/配置 key、error code、enum、event 名、schema 字段、命令、外部产品/项目名与上游原文引用保留规范英文。英文正文（非上述技术字面量）= BLOCKER。
-   - **current-plan 门禁**：新增/修改的永久源码、配置、文档不得引用 `docs/current-plan.md` 作为架构/行为权威（BLOCKER）。已应用 Flyway migration 注释与受 Android release 版本门禁控制的 runtime 文件属于明确例外，只能在合法 migration/版本发布中移除。其它遗留权威引用应在被触及或明确治理时迁移到 canonical owner。
+   - **current-plan 门禁**：新增/修改的永久源码、配置、文档不得引用 `docs/current-plan.md` 作为架构/行为权威（BLOCKER）；由 `scripts/ci/check-repository-hygiene.sh` 的 lifecycle-plan reference gate 对每个 PR 的变更文件强制，结构性例外见该脚本的 `is_current_plan_allowlisted()`。遗留权威引用在被触及或明确治理时迁移到 canonical owner。
    - **存量偏差过渡**：本治理规则首次进入仓库之前已经存在、且未被当前变更触及的 current-state / 历史文档偏差，在对应偏差被实际修复或登记为例外前按整改债务保留；新增或修改的持久文档必须满足本规则。
-   - 禁止 `archive/`、`old/`、`legacy-docs/`、`historical/` 等历史堆放目录，也禁止用 “Historical” 标签保留过期现状。Git 历史就是归档。
+   - 禁止 `archive/`、`old/`、`legacy-docs/`、`historical/` 等历史堆放目录（`scripts/ci/check-repository-hygiene.sh` 对 tracked tree 与 PR 引入的每个 commit tree 强制）；用 “Historical” 标签保留过期现状同样禁止。Git 历史就是归档。
    - **更新文档 = 描述结果状态，不是追加变更日记**。行为从 A 变成 B 再变成 C 时，canonical 文档只写「系统使用 C」；A/B 只在不写就会丢失产品/技术决策理由时分别进入 `HISTORY.md` 或 `TECHNICAL_EVOLUTION.md`，否则删除。禁止在 canonical 文档写「本 PR / 本次 / 审查基线 / Step / review P1 / 当前候选 / 未来 Kx / 以最终实现为准 / 迁移完成」等实现过程叙事。
    - 影响界面、导出、数据、构建、用法或运维时，同提交更新对应的 canonical 专题文档、`DEVELOPER_GUIDE.md` 或 README；新增知识先找现有 owner，不靠新建 Markdown 文件分摊旧段落。
 4. **跨层一致** — 列 key（snake_case）API/前端/导出三方一致；显示名前端三语 locale + 导出两处一致。跨层改动走 `.agents/playbooks/wotb-sync.md`（单一事实源）；增删列再走 `.agents/playbooks/column-sync.md`。
@@ -113,7 +113,7 @@
 
 ## 禁止
 
-- 改 `target/` `node_modules/` `dist/` `.m2repo/` 内文件
+- 改 `target/` `node_modules/` `dist/` `.m2repo/` 内文件（`scripts/ci/check-repository-hygiene.sh` 拒绝其入库）
 - 按终端乱码判文件损坏
 - API 塞中文；模块内放 tankopedia 副本
 - 使用公司 token/凭据；把 secret/环境变量写进仓库
