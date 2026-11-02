@@ -45,6 +45,16 @@ export function spacedRectOf(px, py, pw, ph, fullW, fullH, out) {
 }
 
 /**
+ * 全画面 UV → 辅助 RT 局部 UV（`PBR_FRAG` 里 `scBuf = (sc - spacedRect.xy) / spacedRect.zw`
+ * 的 JS 同式，行为测试的唯一权威）：辅助 RT 被 setViewOffset 把该 rect 拉伸铺满，所以
+ * rect 左下角映射到 (0,0)、右上角映射到 (1,1)；全屏 rect 是恒等映射。
+ */
+export function spacedBufferUv(scX, scY, rect, out) {
+  out.set((scX - rect.x) / rect.z, (scY - rect.y) / rect.w)
+  return out
+}
+
+/**
  * 加载失败的有限重试：临时错误（断网、503）过后还能恢复，永久错误（404、坏文件）试满就停，
  * 不会每帧重新下载。`succeed` 清掉记录，一次成功后不再占用次数。
  */
@@ -618,9 +628,10 @@ export function createArmorHighlight({ renderer, assetProvider }) {
     // UV 映射回 RT 局部。
     const rtW = bucketedRtSize(scissor.z, size.x)
     const rtH = bucketedRtSize(scissor.w, size.y)
-    // 收缩滞回：需求（面积）持续 ≤ 现有一半达 90 帧（≈1.5s @60fps）就按当前需求重建——
-    // 从近距目标（近满屏矩形）转打远距目标后，不再把近距时的全尺寸 RT 挂满整个开镜会话。
-    // 抖动保护：矩形在阈值附近来回时 streak 不断清零，不会频繁重建。
+    // 收缩滞回：需求**宽高各 ≤ 现有一半（面积 ≤ 1/4：rtW·rtH·4 ≤ 现有面积）**持续达 90 帧
+    //（≈1.5s @60fps）就按当前需求重建——从近距目标（近满屏矩形）转打远距目标后，不再把
+    // 近距时的全尺寸 RT 挂满整个开镜会话。抖动保护：矩形在阈值附近来回时 streak 不断
+    // 清零，不会频繁重建。
     if (stateRT && rtW * rtH * 4 <= stateRT.width * stateRT.height) {
       if (++rtShrinkStreak >= 90) { disposeTargets(); rtShrinkStreak = 0 }
     } else rtShrinkStreak = 0

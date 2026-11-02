@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import {
   aimedVehicle, armorEquipmentCoeffs, armorHighlightBlock, armorPosePart, armorWorldMatrix,
   authorShellAt, bucketedRtSize, canOccludeTarget, createLoadRetry, cropFrustum, isSolidOccluder,
-  markPickBoundsStale, mountedShell, reticleAimDirection, screenRect, spacedRectOf,
+  markPickBoundsStale, mountedShell, reticleAimDirection, screenRect, spacedBufferUv, spacedRectOf,
 } from './armorHighlight.js'
 
 const AP = { type: 'ap', penetration: 200, caliber: 100 }
@@ -362,6 +362,28 @@ describe('装甲 RT 按目标矩形分配', () => {
     expect(out.y).toBeCloseTo(300 / 1080)
     expect(out.z).toBeCloseTo(300 / 1920)
     expect(out.w).toBeCloseTo(200 / 1080)
+  })
+
+  it('spacedBufferUv（PBR_FRAG scBuf 公式的 JS 同式）：全画面 UV → rect 局部 RT UV', () => {
+    // review R1：scBuf = (sc − xy) / zw——rect 左下角 → (0,0)，右上角 → (1,1)，全屏恒等
+    const rect = new THREE.Vector4(0.4, 0.25, 0.2, 0.3)
+    const uv = new THREE.Vector2()
+    spacedBufferUv(0.4, 0.25, rect, uv)                       // rect 左下 → RT (0,0)
+    expect(uv.x).toBeCloseTo(0)
+    expect(uv.y).toBeCloseTo(0)
+    spacedBufferUv(0.4 + 0.1, 0.25 + 0.15, rect, uv)          // rect 中心 → RT (0.5,0.5)
+    expect(uv.x).toBeCloseTo(0.5)
+    expect(uv.y).toBeCloseTo(0.5)
+    spacedBufferUv(0.6, 0.55, rect, uv)                       // rect 右上 → RT (1,1)
+    expect(uv.x).toBeCloseTo(1)
+    expect(uv.y).toBeCloseTo(1)
+    const full = new THREE.Vector4(0, 0, 1, 1)
+    spacedBufferUv(0.37, 0.62, full, uv)                      // 全屏 rect 恒等
+    expect(uv.x).toBeCloseTo(0.37)
+    expect(uv.y).toBeCloseTo(0.62)
+    // 旧错误公式（sc*zw+xy）在这组输入下会得到 (0.48, 0.295) —— 方向反了
+    spacedBufferUv(0.4, 0.25, rect, uv)
+    expect(uv.x).toBeLessThan(0.01)
   })
 })
 

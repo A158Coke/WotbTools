@@ -4761,6 +4761,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
    * 进入录像者的过渡期相机还没到炮位，距离衰减和入射角都不对，不着色。
    */
   function renderArmorHighlight() {
+    // review R1：逐帧清零必须在**所有 early return 之前**——early return 的帧同样会被
+    // perfFrame 读取，不清零就会继承上一帧的分项数据、污染 __pbPerf.report() 验收依据。
+    if (PERF) {
+      armorStats.pickMs = 0; armorStats.stateMs = 0; armorStats.thicknessMs = 0;
+      armorStats.occluderMs = 0; armorStats.colorMs = 0; armorStats.calls = 0;
+    }
     if (!ARMOR_HIGHLIGHT || CAM !== 'recorder' || !scopedHiddenEid || cameraBlend) return;
     const author = recorderVehicle();
     if (!author?.tankData) return;

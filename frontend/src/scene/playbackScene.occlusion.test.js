@@ -165,14 +165,17 @@ describe('Sniper 穿深着色接线', () => {
     expect(mapAssets).toMatch(/mesh\.userData\.occluderBox = null/)
   })
 
-  it('装甲 RT 按目标矩形分配：视口偏移相机 + spacedRect 采样映射', () => {
+  it('装甲 RT 按目标矩形分配：视口偏移相机 + spacedRect 采样映射（full → rect 局部）', () => {
     const hl = readFileSync(resolve(__dirname, 'playback/armorHighlight.js'), 'utf8')
     expect(hl).toMatch(/armorCamera\.setViewOffset\(size\.x, size\.y, scissor\.x, size\.y - \(scissor\.y \+ scissor\.w\), scissor\.z, scissor\.w\)/)
     expect(hl).toMatch(/bucketedRtSize\(scissor\.z, size\.x\)/)
     expect(hl).toMatch(/bindBuffers\(target, camera, spacedRect\)/)
     const shaders = readFileSync(resolve(__dirname, 'viewer/armorShaders.js'), 'utf8')
     expect(shaders).toMatch(/uniform vec4 spacedRect/)
-    expect(shaders).toMatch(/sc \* spacedRect\.zw \+ spacedRect\.xy/)
+    // review R1 blocker：全画面 UV → **rect 局部** RT UV（rect 左下 → (0,0)，右上 → (1,1)）；
+    // 反向公式（sc*zw+xy）会让整车错误采样 RT 中央一小块
+    expect(shaders).toMatch(/\(sc - spacedRect\.xy\) \/ spacedRect\.zw/)
+    expect(shaders).not.toMatch(/sc \* spacedRect\.zw \+ spacedRect\.xy/)
     expect(shaders).toMatch(/spacedRect: \{ value: new THREE\.Vector4\(0, 0, 1, 1\) \}/)
   })
 

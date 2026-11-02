@@ -60,8 +60,10 @@ export const PBR_FRAG = `
     uniform float spacedSatGuard;             // 8 位回退格式（无半浮点 RT）：R 饱和(>=1)时按整穿深保守处理；半浮点下恒 0
     uniform mat4 inverseProjectionMatrix;
     // 辅助 RT 在整幅画面里的归一化矩形（x0,y0,w,h，原点左下）：3D 回放按目标屏幕矩形分配
-    // RT 时，buffer 采样从全画面 UV（gl_FragCoord/resolution）映射回 RT 局部。默认 (0,0,1,1)
-    // = 全屏，装甲查看器（不设置该 uniform）逐字节等价于旧行为。
+    // RT 时，buffer 采样从全画面 UV（gl_FragCoord/resolution）映射到 **rect 局部 RT UV**
+    //（scBuf = (sc − xy) / zw：rect 左下角 → (0,0)，右上角 → (1,1)——辅助 RT 由
+    // setViewOffset 把该 rect 拉伸铺满，局部 UV 才是 buffer 的采样坐标）。默认 (0,0,1,1)
+    // = 全屏恒等，装甲查看器（不设置该 uniform）逐字节等价于旧行为。
     uniform vec4 spacedRect;
     #include <logdepthbuf_pars_fragment>
     #include <clipping_planes_pars_fragment>
@@ -94,7 +96,7 @@ export const PBR_FRAG = `
       #include <logdepthbuf_fragment>
       #include <clipping_planes_fragment>
       vec2 sc = gl_FragCoord.xy / resolution;
-      vec2 scBuf = sc * spacedRect.zw + spacedRect.xy;
+      vec2 scBuf = (sc - spacedRect.xy) / spacedRect.zw;
       vec4 spacedData = texture2D(spacedArmorBuffer, scBuf);
       vec4 spacedState = texture2D(spacedStateBuffer, scBuf);
       bool underSpaced = spacedData.a != 0.0;
