@@ -128,9 +128,9 @@ HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/s
 |---|---|---|---|---|---|
 | Business API | Java web/core modules、HTTP contract、shared common data | business-api image、TX Compose、dependency readiness | Maven、HTTP contract | — | `business-api.yml` |
 | AI Service（生产） | `java/wotb-ai`、shared core | GHCR image、Yecao Compose、TX ingress `/api/ai/**` 反代（不重写 path）、WireGuard readiness；前端已解除维护（`AiReviewWorkspacePane` 直接挂载，无维护门） | Maven、AI image build、Compose | — | `ai-service.yml` |
-| Frontend | Vue、HTTP contract、shared assets/map/tier data | frontend image、nginx、TX Compose | typecheck、unit/browser、bundle | — | `frontend.yml` |
+| Frontend | Vue、HTTP contract、shared assets/map/tier/replay-fixture data | frontend image、nginx、TX Compose | typecheck、unit/browser、bundle | — | `frontend.yml` |
 | Keycloak | QQ/Wargaming/session providers、Keycloak image | realm runtime、TX Compose | provider/runtime、Tofu | `keycloak` | `keycloak.yml` |
-| Android | Android source、native bridge、release helpers | APK release | JVM/assemble、bridge/version | — | `android-release.yml` |
+| Android | Android source、native bridge、release helpers、Agent WASM pin | APK release | JVM/assemble、bridge/version | — | `android-release.yml` |
 | Business PostgreSQL | root config、backup/restore | TX Compose、local state | disposable PostgreSQL、Tofu | `postgres-business` | `business-postgres.yml` |
 | Keycloak PostgreSQL | root config、backup | TX Compose、local state | backup safety、Tofu | `postgres-keycloak` | `keycloak-postgres.yml` |
 | Observability | Prometheus/Loki/Alloy/Grafana config | Yecao Compose、local state | config/runtime、Tofu | `grafana` | `observability.yml` |
@@ -138,7 +138,7 @@ HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/s
 | Komodo 控制平面 | Core/Mongo Compose、plan guard | Yecao Core/Mongo runtime、`/opt/komodo` local state、DNSPod | Compose 契约、Tofu validation | `komodo` | `komodo-controller.yml` |
 | Komodo Periphery (Yecao / TX1 / TX2) | pinned release manifest、每宿主 target profile、共享 config/unit | 各宿主 `/usr/local/bin/periphery`、`/etc/komodo`、systemd unit；Yecao `/opt/periphery`、TX1 `/opt/wotb-tx/periphery`、TX2 `/opt/wotb-tx2/periphery` 暂存 | release/config/unit/target 契约、onboarding 生命周期与 lock fixture | — | `komodo-periphery.yml` |
 | Komodo 声明式资源 | `infra/komodo/resources/**` 的 ResourceSync 与 Server 期望状态 | Komodo 控制面（只由人工在 UI apply，CI 不 apply） | `scripts/ci/test-komodo-resources.py`（tomllib 结构契约） | — | —（仅 deployment PR gate） |
-| Deployment / Python | shared deploy policy / common Python tools | shared scripts | contract smokes / unit tests | — | — |
+| Deployment / Python | shared deploy policy / common Python tools、map-semanticizer 与 tools 的 stdlib unittest | shared scripts | contract smokes / unit tests | — | — |
 
 另有 `frontend-replica.yml`、`production-worker.yml`、`asset-origin.yml`、`tx-runtime-check.yml`、`database-backup.yml`、`cleanup-images.yml`、`prod-diagnostics.yml` 与 `android-offload-probe.yml` 等独立发布、运维与诊断入口，职责见 `.github/AGENTS.md`。
 

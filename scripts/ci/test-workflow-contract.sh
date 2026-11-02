@@ -108,12 +108,35 @@ for production_path in komodo_controller_events["on"]["push"]["paths"]:
 # Frontend production builds now publish from TX through the Gitee exact-SHA builder.
 # The GitHub-runner registry-list/retry helpers are no longer frontend-owned inputs;
 # the Agent WASM pin/fetch contract and freshness gate remain production inputs.
-assert affected("deploy/agent/source.json") == {"frontend"}
+# The pin is also an Android runtime input (the android owner's bundle→APK chain
+# consumes it; issue #828), while frontend/src/** stays frontend-only on purpose:
+# the frontend owner builds the same bundle, and the release workflow re-packs on main.
+assert affected("deploy/agent/source.json") == {"frontend", "android"}
 assert affected("scripts/fetch-agent-wasm.sh") == {"frontend"}
 assert affected("scripts/ci/run-with-network-retry.sh") == {"deployment"}
 assert affected("deploy/check-production-freshness.sh") == {
     "deployment", "frontend", "komodo_controller", "komodo_periphery", "production_worker",
 }
+# Issue #828 routing-gap verdicts — every row verified against real test-time consumers:
+# shared replay/tabular fixtures are read by frontend golden/pure tests and wotb-web
+# unit tests; replay-facts feed wotb-core/wotb-web (already ai_service); settings-ci.xml
+# is the maven settings of three owner workflows; name/crew data feed wotb-core and
+# common/python. frontend/src/** stays out of android (see the pin note above).
+assert affected("common/fixtures/replays/random-battle-example.wotbreplay") == {"frontend", "business_api"}
+assert affected("common/fixtures/hall-of-fame/training-room-example.wotbreplay") == {"frontend"}
+assert affected("common/fixtures/tabular/csv/x.csv") == {"frontend", "business_api"}
+assert affected("common/fixtures/tournament/csv/x.csv") == {"frontend", "business_api"}
+assert affected("common/fixtures/replay-facts/random-battle-example.json.gz") == {"ai_service", "business_api"}
+assert affected("java/settings-ci.xml") == {"business_api", "ai_service", "keycloak"}
+assert affected("common/tank-name-aliases.json") == {"business_api", "ai_service"}
+assert affected("common/crew-skills.json") == {"business_api", "ai_service", "python"}
+# The two formerly manual-only stdlib suites run in the python owner now.
+assert affected("map-semanticizer/tests/test_map_semanticizer.py") == {"python"}
+assert affected("tools/tests/test_cleanup_hundred_wargaming_api.py") == {"python"}
+python_ci = load(workflow_dir / "ci-python.yml")
+python_runs = [step.get("run", "") for job in python_ci["jobs"].values() for step in job.get("steps", [])]
+assert any("unittest discover -s map-semanticizer/tests" in run for run in python_runs), "map-semanticizer suite must run in CI"
+assert any("unittest discover -s tools/tests" in run for run in python_runs), "tools suite must run in CI"
 for owner in jobs["changes"]["outputs"]:
     caller = jobs[owner]
     assert caller["if"] == f"needs.changes.outputs.{owner} == 'true'", owner

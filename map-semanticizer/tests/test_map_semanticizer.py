@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """map_semanticizer.py 单元测试（标准库 unittest，无第三方依赖、无客户端资源）。
 
-由仓库维护者手动运行（不接入 CI）：
+接入 CI（ci-python.yml 的 Python unit tests job，issue #828）；本地手动：
     python -m unittest discover -s map-semanticizer/tests -p 'test_*.py'
 """
 
