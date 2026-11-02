@@ -271,6 +271,36 @@ describe('applyEraser (semantic capsule)', () => {
     expect(result.every((ann) => ann !== bridge)).toBe(true)
   })
 
+  it('clips only the layer-compatible prefix when a capsule interval crosses the layer threshold', () => {
+    const slope = Math.tan((5 * Math.PI) / 180)
+    const strokeNormal = { x: slope, y: 1, z: 0 }
+    const stroke = pen([
+      { x: 0, y: 0, surfaceY: 10.1, surfaceN: strokeNormal },
+      { x: 10, y: 0, surfaceY: 10.1 + 10 * slope, surfaceN: strokeNormal },
+    ])
+    const result = applyEraser([stroke], [{ x: 5, y: 0, surfaceY: 10, surfaceN: { x: 0, y: 1, z: 0 } }], 12.26)
+    expect(result).toHaveLength(1)
+    const points = result[0].points
+    expect(points[0].x).toBeGreaterThan(4.5)
+    expect(points[0].x).toBeLessThan(4.7)
+    expect(points[points.length - 1].x).toBeCloseTo(10, 6)
+  })
+
+  it('clips only the layer-compatible suffix for the reverse 5° slope', () => {
+    const slope = Math.tan((5 * Math.PI) / 180)
+    const strokeNormal = { x: -slope, y: 1, z: 0 }
+    const stroke = pen([
+      { x: 0, y: 0, surfaceY: 10.1 + 10 * slope, surfaceN: strokeNormal },
+      { x: 10, y: 0, surfaceY: 10.1, surfaceN: strokeNormal },
+    ])
+    const result = applyEraser([stroke], [{ x: 5, y: 0, surfaceY: 10, surfaceN: { x: 0, y: 1, z: 0 } }], 12.26)
+    expect(result).toHaveLength(1)
+    const points = result[0].points
+    expect(points[0].x).toBe(0)
+    expect(points[points.length - 1].x).toBeGreaterThan(5.3)
+    expect(points[points.length - 1].x).toBeLessThan(5.6)
+  })
+
   it('does not erase a parallel plane 2m away on the same 45° normal', () => {
     const normal = { x: 0, y: Math.SQRT1_2, z: Math.SQRT1_2 }
     const bridge = pen([

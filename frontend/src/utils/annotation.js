@@ -397,17 +397,17 @@ function clipPenByEraser(points, eraserPoints, radius) {
     // surfaceN 是 scene/world normal；eraser/stroke 坐标是 semantic XZ（x 取负）。
     return { x: -nx / len, y: ny / len, z: nz / len }
   }
-  // eraser 的 semantic capsule 仍是 2D；这里只加一层 hit gate：同 XZ 不同 surface 层不互相擦。
-  const segmentLayerMatch = (a, b, c, d, lo, hi) => {
+  // eraser 的 semantic capsule 仍是 2D；这里按 capsule interval 与 layer-compatible
+  // 子区间求交，不能只拿 interval 中点做一个 boolean gate。
+  const layerDeltaAt = (a, b, c, d, t) => {
     const ay = anchorY(a)
     const by = anchorY(b)
     const cy = anchorY(c)
     const dy = anchorY(d)
-    if ((ay === null) !== (by === null)) return false // stroke 自身跨层：不借 capsule 连两层
-    if ((cy === null) !== (dy === null)) return false // eraser 自身跨层：同上
-    if (ay === null) return cy === null       // terrain layer
-    if (cy === null) return false             // anchored stroke 不被 terrain eraser 擦
-    const t = Math.max(0, Math.min(1, (lo + hi) / 2))
+    if ((ay === null) !== (by === null)) return null // stroke 自身跨层：不借 capsule 连两层
+    if ((cy === null) !== (dy === null)) return null // eraser 自身跨层：同上
+    if (ay === null) return cy === null ? 0 : null   // terrain layer
+    if (cy === null) return null                     // anchored stroke 不被 terrain eraser 擦
     const sx = a.x + (b.x - a.x) * t
     const sz = a.y + (b.y - a.y) * t
     const ex = d.x - c.x
@@ -419,17 +419,60 @@ function clipPenByEraser(points, eraserPoints, radius) {
     const ey = cy + (dy - cy) * u
     const strokePoint = { x: sx, z: sz }
     const eraserPoint = { x: c.x + ex * u, z: c.y + ez * u }
-    const sn = normalAt(a, b, t)
     const en = normalAt(c, d, u)
-    if (!sn || !en) return Math.abs(sy - ey) <= ANNOT_ERASE_LAYER_EPS
-    // 同一 plane 在不同 XZ 的 raw Y 可以差很多；必须把 eraser plane 延伸到 stroke XZ，
-    // 再做反方向检查，避免平行但不同高度的 deck 被误判成同一层。
+    if (!en) return Math.abs(sy - ey)
+    // 同一 plane 在不同 XZ 的 raw Y 可以差很多；把 eraser plane 延伸到 stroke XZ。
+    // 单方向检查即可区分同层 / 平行 offset；不做 point-vs-far-anchor 的过严双检。
     const expectedStrokeY = ey
       - (en.x * (strokePoint.x - eraserPoint.x) + en.z * (strokePoint.z - eraserPoint.z)) / en.y
-    const expectedEraserY = sy
-      - (sn.x * (eraserPoint.x - strokePoint.x) + sn.z * (eraserPoint.z - strokePoint.z)) / sn.y
-    return Math.abs(sy - expectedStrokeY) <= ANNOT_ERASE_LAYER_EPS
-      && Math.abs(ey - expectedEraserY) <= ANNOT_ERASE_LAYER_EPS
+    return Math.abs(sy - expectedStrokeY)
+  }
+  const layerCompatibleIntervals = (a, b, c, d, lo, hi) => {
+    const t0 = Math.max(0, lo)
+    const t1 = Math.min(1, hi)
+    if (!(t1 > t0 + 1e-9)) return []
+    const ay = anchorY(a)
+    const by = anchorY(b)
+    const cy = anchorY(c)
+    const dy = anchorY(d)
+    if ((ay === null) !== (by === null)) return []
+    if ((cy === null) !== (dy === null)) return []
+    if (ay === null) return cy === null ? [[t0, t1]] : []
+    if (cy === null) return []
+    const compatible = (t) => {
+      const delta = layerDeltaAt(a, b, c, d, t)
+      return delta !== null && delta <= ANNOT_ERASE_LAYER_EPS
+    }
+    const samples = []
+    const N = 24
+    for (let i = 0; i <= N; i++) {
+      const t = t0 + ((t1 - t0) * i) / N
+      samples.push({ t, ok: compatible(t) })
+    }
+    if (samples.every((s) => s.ok)) return [[t0, t1]]
+    const boundary = (falseT, trueT) => {
+      let f = falseT
+      let t = trueT
+      for (let i = 0; i < 16; i++) {
+        const m = (f + t) / 2
+        if (compatible(m)) t = m
+        else f = m
+      }
+      return (f + t) / 2
+    }
+    const intervals = []
+    let start = null
+    for (let i = 0; i <= N; i++) {
+      if (samples[i].ok && start === null) start = i
+      if ((!samples[i].ok || i === N) && start !== null) {
+        const end = samples[i].ok ? i : i - 1
+        const from = start === 0 ? t0 : boundary(samples[start - 1].t, samples[start].t)
+        const to = end === N ? t1 : boundary(samples[end + 1].t, samples[end].t)
+        if (to > from + 1e-9) intervals.push([from, to])
+        start = null
+      }
+    }
+    return intervals
   }
   const lerp = (a, b, t) => {
     const out = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
@@ -458,9 +501,7 @@ function clipPenByEraser(points, eraserPoints, radius) {
       if (!boxesOverlap(strokeBox, boxes[k])) continue
       const intervals = capsuleIntervals(a, b, segments[k].a, segments[k].b, radius)
       for (const interval of intervals) {
-        if (segmentLayerMatch(a, b, segments[k].a, segments[k].b, interval[0], interval[1])) {
-          covered.push(interval)
-        }
+        covered.push(...layerCompatibleIntervals(a, b, segments[k].a, segments[k].b, interval[0], interval[1]))
       }
     }
     covered = mergeCoveredIntervals(covered)
