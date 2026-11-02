@@ -16,6 +16,14 @@ final class RequestParamFixture {
         // 红灯：无 name/value，且参数不是 Map 类型
     }
 
+    void emptyName(@RequestParam(name = "") String emptyNameParameter) {
+        // 红灯：空串 name——Spring 回退到 Java 参数名做隐式绑定
+    }
+
+    void emptyValue(@RequestParam(value = "") String emptyValueParameter) {
+        // 红灯：value 空串与空 name 等价
+    }
+
     void explicitName(@RequestParam(name = "q") String q) {
         // 绿灯：显式 name
     }

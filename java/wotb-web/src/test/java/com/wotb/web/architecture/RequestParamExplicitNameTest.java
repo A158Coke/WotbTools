@@ -45,8 +45,9 @@ class RequestParamExplicitNameTest {
     }
 
     /**
-     * 返回违规列表：参数标注 {@code @RequestParam} 且未显式声明 name/value，
-     * 且 raw 类型不是 Map 聚合绑定。
+     * 返回违规列表：参数标注 {@code @RequestParam} 且未提供显式绑定名
+     * （name/value 均未声明，或声明了但值为空串——Spring 对空 name 回退到
+     * Java 参数名，正是本 gate 要阻止的隐式绑定），且 raw 类型不是 Map 聚合绑定。
      */
     static List<String> unnamedRequestParamViolations(JavaClasses classes) {
         List<String> violations = new ArrayList<>();
@@ -60,21 +61,33 @@ class RequestParamExplicitNameTest {
                         if (!annotation.getRawType().isEquivalentTo(RequestParam.class)) {
                             continue;
                         }
-                        if (annotation.hasExplicitlyDeclaredProperty("name")
-                                || annotation.hasExplicitlyDeclaredProperty("value")) {
+                        if (hasNonEmptyProperty(annotation, "name")
+                                || hasNonEmptyProperty(annotation, "value")) {
                             continue;
                         }
                         if (rawParameterTypes.get(index).isAssignableTo(Map.class)) {
                             continue;
                         }
                         violations.add(clazz.getName() + "#" + method.getName() + " 参数 #" + index
-                                + ": @RequestParam 缺少显式 name/value"
-                                + "（unnamed 仅允许 Map/MultiValueMap 聚合绑定）");
+                                + ": @RequestParam 缺少非空显式 name/value"
+                                + "（unnamed 或空串仅允许 Map/MultiValueMap 聚合绑定）");
                     }
                 }
             }
         }
         return violations;
+    }
+
+    /**
+     * 显式绑定名 = 属性声明为字面量 String 且非空串。非字面量值（如常量字段
+     * 引用）按违规处理：gate 偏向红而非放行（当前存量全为字面量）。
+     */
+    private static boolean hasNonEmptyProperty(JavaAnnotation<JavaParameter> annotation, String property) {
+        return annotation.tryGetExplicitlyDeclaredProperty(property)
+                .filter(String.class::isInstance)
+                .map(String.class::cast)
+                .filter(value -> !value.isEmpty())
+                .isPresent();
     }
 
     @Test
@@ -85,12 +98,16 @@ class RequestParamExplicitNameTest {
     }
 
     @Test
-    void unnamedRequestParamFixtureIsRejectedButExplicitAndAggregateBindingsPass() {
+    void unnamedAndEmptyNameFixturesAreRejectedButExplicitAndAggregateBindingsPass() {
         JavaClasses fixtures = new ClassFileImporter()
                 .importPackages("com.wotb.web.archfixture.requestparam");
         List<String> violations = unnamedRequestParamViolations(fixtures);
-        assertEquals(1, violations.size(), () -> String.join("; ", violations));
-        assertTrue(violations.get(0).contains("#unnamed"),
-                () -> "命中的必须是 unnamed 形态：" + violations);
+        assertEquals(3, violations.size(), () -> String.join("; ", violations));
+        assertTrue(violations.stream().anyMatch(v -> v.contains("#unnamed")),
+                () -> "完全 unnamed 形态必须命中：" + violations);
+        assertTrue(violations.stream().anyMatch(v -> v.contains("#emptyName")),
+                () -> "空串 name 必须命中（Spring 回退参数名）：" + violations);
+        assertTrue(violations.stream().anyMatch(v -> v.contains("#emptyValue")),
+                () -> "空串 value 必须命中：" + violations);
     }
 }
