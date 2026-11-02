@@ -21,6 +21,8 @@ const page = ref(0)
 const size = ref(25)
 const totalItems = ref(0)
 const totalPages = ref(0)
+// 跳页输入是 UI 页码（1-based）；只有合法的 1..totalPages 才转换成后端 0-based page。
+const jumpPage = ref('')
 // segment=keycloak（Keycloak 权威）| segment=local（本地 user_profile 权威）。
 const segment = ref('keycloak')
 const idpAlias = ref('')
@@ -220,6 +222,25 @@ function goPage(nextPage) {
   clearSelection()
   page.value = nextPage
   loadUsers()
+}
+
+/** 跳页目标：只有 1..totalPages 的整数合法（空值 / 非整数 / 越界返回 null，调用方据此不发请求）。 */
+function jumpTargetPage(raw, total) {
+  const value = Number(raw)
+  return Number.isInteger(value) && value >= 1 && value <= total ? value : null
+}
+
+/**
+ * 直接跳页：UI 1-based → 后端 0-based。
+ * 门禁先于状态变更（与 search / segment / size 同一约定）：非-online 时不改已应用页码、不发请求；
+ * 选择集清空沿用 goPage() 内的 clearSelection()。
+ */
+function goJumpPage() {
+  const target = jumpTargetPage(jumpPage.value, totalPages.value)
+  if (target == null || target - 1 === page.value) return
+  if (!requireAdminUsersOnline()) return
+  jumpPage.value = ''
+  goPage(target - 1)
 }
 
 function toggleSelect(u, checked) {
@@ -458,9 +479,24 @@ function fmtTime(s) {
     <p v-else-if="!loading" class="admin-muted">{{ $t('admin.empty') }}</p>
 
     <div v-if="totalPages > 0" class="admin-pagination">
-      <button class="btn-sm" :disabled="page <= 0 || !adminAvailability.available" @click="goPage(page - 1)">{{ $t('admin.prev') }}</button>
+      <button class="btn-sm admin-page-prev" :disabled="page <= 0 || !adminAvailability.available" @click="goPage(page - 1)">{{ $t('admin.prev') }}</button>
       <span class="admin-page-info">{{ $t('admin.pageInfo', { page: page + 1, total: totalPages, items: totalItems }) }}</span>
-      <button class="btn-sm" :disabled="page + 1 >= totalPages || !adminAvailability.available" @click="goPage(page + 1)">{{ $t('admin.next') }}</button>
+      <span v-if="totalPages > 1" class="admin-page-jump">
+        <input
+          v-model="jumpPage"
+          type="number"
+          inputmode="numeric"
+          min="1"
+          :max="totalPages"
+          step="1"
+          :disabled="!adminAvailability.available"
+          :aria-label="$t('admin.jumpLabel')"
+          :placeholder="$t('admin.jumpPlaceholder')"
+          @keydown.enter.prevent="goJumpPage"
+        />
+        <button type="button" class="btn-sm admin-page-go" :disabled="!adminAvailability.available" @click="goJumpPage">{{ $t('admin.jumpGo') }}</button>
+      </span>
+      <button class="btn-sm admin-page-next" :disabled="page + 1 >= totalPages || !adminAvailability.available" @click="goPage(page + 1)">{{ $t('admin.next') }}</button>
       <label class="admin-filter">
         <span>{{ $t('admin.size') }}</span>
         <!-- 受控 select（同 segment）：非-online 时回滚，避免「每页显示 50 但表格还是 25 条」。 -->
@@ -725,6 +761,25 @@ td.cell-actions > * + * { margin-left: var(--space-1); }
 
 .admin-pagination { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-top: var(--space-3); }
 .admin-page-info { color: var(--color-text-secondary); }
+
+/* 直接跳页：输入框与 .btn-sm 同高，宽度按 3–5 位页码设计（含数字输入的步进箭头） */
+.admin-page-jump { display: inline-flex; align-items: center; gap: var(--space-2); }
+
+.admin-page-jump input {
+  inline-size: 5.5rem;
+  min-height: var(--control-h-sm);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+  color: var(--color-text-primary);
+  font: var(--type-body);
+  text-align: center;
+}
+
+.admin-page-jump input:disabled { cursor: not-allowed; opacity: .5; }
+.admin-page-jump input:focus-visible,
+.admin-page-jump .btn-sm:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 
 .btn-sm {
   display: inline-flex;

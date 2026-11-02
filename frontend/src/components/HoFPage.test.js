@@ -275,7 +275,8 @@ describe('HoFPage', () => {
     const versions = wrapper.findAll('.lb-version').map(cell => cell.text())
     expect(versions).toEqual(['10.6.0', '-'])
     expect(wrapper.find('[data-testid="hof-pager"]').text()).toContain('hofPager.summary')
-    expect(wrapper.find('[data-testid="hof-pager"]').findAll('button')).toHaveLength(2)
+    // 上一页 / 前往 / 下一页：三个按钮（跳页输入在 totalPages > 1 时出现）
+    expect(wrapper.find('[data-testid="hof-pager"]').findAll('button')).toHaveLength(3)
   })
 
   it('shows only the page number when the API omits the total, and no page buttons for one page', async () => {
@@ -299,7 +300,7 @@ describe('HoFPage', () => {
 
     let resolveNext
     lbApi.hofList.mockReturnValueOnce(new Promise(resolve => { resolveNext = resolve }))
-    await wrapper.find('[data-testid="hof-pager"] button:last-child').trigger('click')
+    await wrapper.find('[data-testid="hof-pager"] > button:last-child').trigger('click')
     await flushPromises()
     expect(scrollIntoView).toHaveBeenCalledWith(expect.objectContaining({ block: 'start' }))
     // 新一页还没回来：旧行仍在，只是变暗
@@ -308,6 +309,114 @@ describe('HoFPage', () => {
     resolveNext({ items: [makeRow({ id: 3 })], page: 2, size: 50, totalItems: 60, totalPages: 2 })
     await flushPromises()
     expect(wrapper.find('[data-hof-pane="single"] .tablewrap').classes()).not.toContain('is-stale')
+  })
+
+  // 指定页跳转：一次直达目标页（不加载中间页），非法值与当前页都不发请求
+  it('jumps straight to the requested page from the single-board pager', async () => {
+    lbApi.hofList.mockResolvedValue({ items: [makeRow()], page: 1, size: 50, totalItems: 6000, totalPages: 120 })
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(lbApi.hofList).toHaveBeenCalledTimes(1)
+
+    const input = wrapper.find('[data-testid="hof-pager"] .page-jump input')
+    await input.setValue('42')
+    await wrapper.find('[data-testid="hof-pager"] .page-jump button').trigger('click')
+    await flushPromises()
+
+    expect(lbApi.hofList).toHaveBeenCalledTimes(2)
+    expect(lbApi.hofList).toHaveBeenLastCalledWith(expect.objectContaining({ page: 42 }))
+    expect(input.element.value).toBe('')
+  })
+
+  it('jumps with Enter and ignores blank / out-of-range / non-integer / current page input', async () => {
+    lbApi.hofList.mockResolvedValue({ items: [makeRow()], page: 1, size: 50, totalItems: 6000, totalPages: 120 })
+    const wrapper = mountPage()
+    await flushPromises()
+    const input = wrapper.find('[data-testid="hof-pager"] .page-jump input')
+    const jumpButton = wrapper.find('[data-testid="hof-pager"] .page-jump button')
+
+    for (const raw of ['', '0', '121', '2.5', 'abc']) {
+      await input.setValue(raw)
+      await input.trigger('keydown.enter')
+      await jumpButton.trigger('click')
+      await flushPromises()
+      expect(lbApi.hofList).toHaveBeenCalledTimes(1)
+    }
+
+    // 当前页：不重复请求
+    await input.setValue('1')
+    await input.trigger('keydown.enter')
+    await flushPromises()
+    expect(lbApi.hofList).toHaveBeenCalledTimes(1)
+
+    // 回车提交合法页码
+    await input.setValue('7')
+    await input.trigger('keydown.enter')
+    await flushPromises()
+    expect(lbApi.hofList).toHaveBeenCalledTimes(2)
+    expect(lbApi.hofList).toHaveBeenLastCalledWith(expect.objectContaining({ page: 7 }))
+  })
+
+  it('jumps straight to the requested page on the hundred and mark3 boards', async () => {
+    lbApi.hofHundredList.mockResolvedValue({
+      vehicleId: null, vehicleName: '',
+      items: [{ id: 1, rank: 1, nickname: 'hundred', vehicleName: 'FV4005', approvedBattleCount: 100, approvedAverageDamage: 3000, approvedAt: null }],
+      page: 1, size: 50, totalItems: 6000, totalPages: 120,
+    })
+    lbApi.hofMark3List.mockResolvedValue({
+      vehicleId: null, vehicleName: '',
+      items: [{ id: 2, rank: 1, nickname: 'mark3', vehicleName: 'FV4005', approvedBattleCount: 90, approvedAverageDamage: 3000, approvedWinRate: 60, approvedAt: null }],
+      page: 1, size: 50, totalItems: 6000, totalPages: 120,
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await wrapper.findAll('.tabs button')[1].trigger('click')
+    await flushPromises()
+    expect(lbApi.hofHundredList).toHaveBeenCalledTimes(1)
+    const hundredInput = wrapper.find('[data-testid="hundred-pager"] .page-jump input')
+    await hundredInput.setValue('9')
+    await hundredInput.trigger('keydown.enter')
+    await flushPromises()
+    expect(lbApi.hofHundredList).toHaveBeenCalledTimes(2)
+    expect(lbApi.hofHundredList).toHaveBeenLastCalledWith(expect.objectContaining({ page: 9 }))
+
+    await wrapper.findAll('.tabs button')[2].trigger('click')
+    await flushPromises()
+    expect(lbApi.hofMark3List).toHaveBeenCalledTimes(1)
+    const mark3Input = wrapper.find('[data-testid="mark3-pager"] .page-jump input')
+    await mark3Input.setValue('11')
+    await mark3Input.trigger('keydown.enter')
+    await flushPromises()
+    expect(lbApi.hofMark3List).toHaveBeenCalledTimes(2)
+    expect(lbApi.hofMark3List).toHaveBeenLastCalledWith(expect.objectContaining({ page: 11 }))
+  })
+
+  it('keeps the jumped page in the HoF URL state', async () => {
+    const { createMemoryHistory, createRouter } = await import('vue-router')
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
+    await router.push({ path: '/', query: { view: 'hof' } })
+    await router.isReady()
+    lbApi.hofList.mockResolvedValue({ items: [makeRow()], page: 1, size: 50, totalItems: 6000, totalPages: 120 })
+
+    const wrapper = mount(HoFPage, {
+      global: { plugins: [router], mocks: { $t: key => key }, provide: { [DIALOG_INLINE_KEY]: true } },
+    })
+    try {
+      await flushPromises()
+      expect(lbApi.hofList).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1 }))
+
+      const input = wrapper.find('[data-testid="hof-pager"] .page-jump input')
+      await input.setValue('42')
+      await input.trigger('keydown.enter')
+      await flushPromises()
+
+      expect(lbApi.hofList).toHaveBeenCalledTimes(2)
+      expect(lbApi.hofList).toHaveBeenLastCalledWith(expect.objectContaining({ page: 42 }))
+      expect(router.currentRoute.value.query.page).toBe('42')
+    } finally {
+      wrapper.unmount()
+    }
   })
 
   // 审计 BZ-18：弹窗写明上榜规则；没有当前纪录时说明是第一条纪录，不提示「须高于当前纪录」
