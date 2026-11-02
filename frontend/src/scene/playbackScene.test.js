@@ -1413,16 +1413,26 @@ describe('playbackScene 资产发布顺序', () => {
     expect(store.assetIssues.some((i) => i.key === 'scenery' && i.status === 'failed' && i.detail.includes('assembly boom'))).toBe(true)
   })
 
-  it('#857 低档加载 scenery-lite + ground-terrain（绝不请求 full scenery/ground.webp）', async () => {
+  // ---- #857 pair 原子性矩阵（修复轮 §6）：GT = ground-terrain，Lite = scenery-lite ----
+  // 终态契约：lite mode 要求 GT+Lite 同时在场；任一失败收敛到 legacy coherent pair
+  //（ground.webp + 无场景）且 degraded。禁止组合：GT+无Lite、ground.webp+Lite。
+  const lowEnv = () => {
     window.history.replaceState(null, '', '/?debug&q=low')
-    prepareAssets(['scenery-lite', 'ground-terrain', 'terrain', 'terrain-meta', 'lighting'])
-    const loader = vi.spyOn(GLTFLoader.prototype, 'load').mockImplementation((_url, onLoad) => onLoad({
-      scene: new THREE.Group(),
-      parser: { json: { materials: [] }, associations: new Map() },
-    }))
-    const fetchUrls = []
     const bin = new Uint16Array([0, 65535, 0, 65535]).buffer
     const terrainFetch = terrainPairFetch({ size: 2, span: 600, zmin: 20, zmax: 100, terrainLayout: 2, terrainBinSha256: sha256Hex(bin) }, bin)
+    return { terrainFetch }
+  }
+  const liteOkLoader = () => vi.spyOn(GLTFLoader.prototype, 'load').mockImplementation((_url, onLoad) => onLoad({
+    scene: new THREE.Group(),
+    parser: { json: { materials: [] }, associations: new Map() },
+  }))
+
+  it('pair 矩阵 A — GT OK + Lite OK：lite mode 成立，不请求 ground.webp/full scenery，不降级', async () => {
+    window.history.replaceState(null, '', '/?debug&q=low')
+    prepareAssets(['scenery-lite', 'ground-terrain', 'terrain', 'terrain-meta', 'lighting'])
+    const loader = liteOkLoader()
+    const fetchUrls = []
+    const { terrainFetch } = lowEnv()
     vi.stubGlobal('fetch', vi.fn(async (url) => {
       fetchUrls.push(String(url))
       if (String(url).endsWith('ground-terrain')) return { ok: true, headers: new Headers(), blob: async () => new Blob(['ground']) }
@@ -1442,33 +1452,12 @@ describe('playbackScene 资产发布顺序', () => {
     expect(fetchUrls.some((u) => u.endsWith('/assets/scenery'))).toBe(false)
   })
 
-  it('#857 lite 缺失：显式降级无场景，绝不偷偷回退请求 full scenery', async () => {
-    window.history.replaceState(null, '', '/?debug&q=low')
-    prepareAssets(['scenery-lite'])
-    const loader = vi.spyOn(GLTFLoader.prototype, 'load')
-      .mockImplementation((_url, _onLoad, _onProgress, onError) => onError(new Error('http 404')))
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, headers: new Headers(), blob: async () => new Blob(['ground']) })))
-    vi.spyOn(THREE.TextureLoader.prototype, 'loadAsync').mockResolvedValue(new THREE.Texture())
-    const { api, store } = createScene()
-    await api.loadData({ kind: 'local', file: new File(['a'], 'a') })
-    expect(store.hasData).toBe(true)
-    expect(store.assetDegraded).toBe(true)
-    expect(store.assetIssues.some((i) => i.key === 'scenery' && i.status === 'failed' && i.detail.includes('不回退 full'))).toBe(true)
-    // 只尝试过 scenery-lite 一次；full scenery 从未被请求（档位下载税契约）
-    expect(loader.mock.calls.filter(([u]) => String(u).endsWith('/assets/scenery-lite')).length).toBe(1)
-    expect(loader.mock.calls.some(([u]) => String(u).endsWith('/assets/scenery'))).toBe(false)
-  })
-
-  it('#857 ground-terrain 缺失：显式降级回退 ground.webp（optional，不算整场降级）', async () => {
+  it('pair 矩阵 B — GT FAIL + Lite 名义可用：ground.webp + 无场景（不发起 lite），degraded', async () => {
     window.history.replaceState(null, '', '/?debug&q=low')
     prepareAssets(['ground-terrain', 'map', 'terrain', 'terrain-meta', 'lighting', 'scenery-lite'])
-    vi.spyOn(GLTFLoader.prototype, 'load').mockImplementation((_url, onLoad) => onLoad({
-      scene: new THREE.Group(),
-      parser: { json: { materials: [] }, associations: new Map() },
-    }))
+    const loader = liteOkLoader()   // 名义可用——但 pair gate 不得发起
     const fetchUrls = []
-    const bin = new Uint16Array([0, 65535, 0, 65535]).buffer
-    const terrainFetch = terrainPairFetch({ size: 2, span: 600, zmin: 20, zmax: 100, terrainLayout: 2, terrainBinSha256: sha256Hex(bin) }, bin)
+    const { terrainFetch } = lowEnv()
     vi.stubGlobal('fetch', vi.fn(async (url) => {
       fetchUrls.push(String(url))
       if (String(url).endsWith('ground-terrain')) return { ok: false, status: 404 }
@@ -1476,18 +1465,83 @@ describe('playbackScene 资产发布顺序', () => {
       if (String(url).includes('lighting')) return { ok: true, headers: new Headers(), json: async () => ({}) }
       return { ok: true, headers: new Headers(), blob: async () => new Blob(['ground']) }
     }))
-    const texture = new THREE.Texture()
-    vi.spyOn(THREE.TextureLoader.prototype, 'loadAsync').mockResolvedValue(texture)
+    const fallbackTexture = new THREE.Texture()
+    vi.spyOn(THREE.TextureLoader.prototype, 'loadAsync').mockResolvedValue(fallbackTexture)
     const { api, store } = createScene()
     await api.loadData({ kind: 'local', file: new File(['a'], 'a') })
     expect(store.hasData).toBe(true)
-    // 回退成功后不降级整场；缺失本身显式在案
-    expect(store.assetDegraded).toBe(false)
+    // pair 不完整 = degraded（GT 是 lite correctness 的一半，不是 cosmetic optional）
+    expect(store.assetDegraded).toBe(true)
     expect(store.assetIssues.some((i) => i.key === 'ground-terrain' && i.status === 'http-404')).toBe(true)
+    expect(store.assetIssues.some((i) => i.key === 'scenery' && i.status === 'degraded' && i.detail.includes('pair 不完整'))).toBe(true)
+    // legacy coherent pair：ground.webp 被用、lite 从未被发起、full scenery 从未被请求
     expect(fetchUrls.some((u) => u.endsWith('/assets/ground-terrain'))).toBe(true)
     expect(fetchUrls.some((u) => u.endsWith('/assets/map'))).toBe(true)
-    const ground = window.__scene.children.find((o) => o.material?.map === texture)
+    expect(loader.mock.calls.length).toBe(0)
+    const ground = window.__scene.children.find((o) => o.material?.map === fallbackTexture)
     expect(ground).toBeDefined()
+  })
+
+  it('pair 矩阵 C — GT OK + Lite FAIL：ground-terrain 被换回 ground.webp（旧纹理释放），无场景，degraded', async () => {
+    window.history.replaceState(null, '', '/?debug&q=low')
+    prepareAssets(['scenery-lite', 'ground-terrain', 'map', 'terrain', 'terrain-meta', 'lighting'])
+    const loader = vi.spyOn(GLTFLoader.prototype, 'load')
+      .mockImplementation((_url, _onLoad, _onProgress, onError) => onError(new Error('http 404')))
+    const fetchUrls = []
+    const { terrainFetch } = lowEnv()
+    vi.stubGlobal('fetch', vi.fn(async (url) => {
+      fetchUrls.push(String(url))
+      if (String(url).endsWith('ground-terrain')) return { ok: true, headers: new Headers(), blob: async () => new Blob(['gt']) }
+      if (String(url).includes('terrain')) return terrainFetch(url)
+      if (String(url).includes('lighting')) return { ok: true, headers: new Headers(), json: async () => ({}) }
+      return { ok: true, headers: new Headers(), blob: async () => new Blob(['ground']) }
+    }))
+    const gtTexture = new THREE.Texture()
+    const legacyTexture = new THREE.Texture()
+    const disposeSpy = vi.spyOn(gtTexture, 'dispose')
+    vi.spyOn(THREE.TextureLoader.prototype, 'loadAsync')
+      .mockResolvedValueOnce(gtTexture)
+      .mockResolvedValue(legacyTexture)
+    const { api, store } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['a'], 'a') })
+    expect(store.hasData).toBe(true)
+    expect(store.assetDegraded).toBe(true)
+    expect(store.assetIssues.some((i) => i.key === 'scenery' && i.status === 'degraded' && i.detail.includes('不回退 full'))).toBe(true)
+    // 只尝试过 scenery-lite 一次；full scenery 从未被请求（档位下载税契约）
+    expect(loader.mock.calls.filter(([u]) => String(u).endsWith('/assets/scenery-lite')).length).toBe(1)
+    expect(loader.mock.calls.some(([u]) => String(u).endsWith('/assets/scenery'))).toBe(false)
+    // GT 纹理被替换 + 释放；地面终态 = legacy ground.webp（禁止 GT + 无 lite 组合）
+    expect(fetchUrls.some((u) => u.endsWith('/assets/map'))).toBe(true)
+    expect(disposeSpy).toHaveBeenCalled()
+    expect(window.__scene.children.some((o) => o.material?.map === gtTexture)).toBe(false)
+    expect(window.__scene.children.some((o) => o.material?.map === legacyTexture)).toBe(true)
+  })
+
+  it('pair 矩阵 D — GT FAIL + Lite FAIL：legacy 兜底到底，degraded，无任何 lite/full 痕迹', async () => {
+    window.history.replaceState(null, '', '/?debug&q=low')
+    prepareAssets(['ground-terrain', 'map', 'terrain', 'terrain-meta', 'lighting'])
+    const loader = liteOkLoader()   // lite URL 都不在资产索引 ⇒ 连发起都不该发生
+    const fetchUrls = []
+    const { terrainFetch } = lowEnv()
+    vi.stubGlobal('fetch', vi.fn(async (url) => {
+      fetchUrls.push(String(url))
+      if (String(url).endsWith('ground-terrain')) return { ok: false, status: 404 }
+      if (String(url).includes('terrain')) return terrainFetch(url)
+      if (String(url).includes('lighting')) return { ok: true, headers: new Headers(), json: async () => ({}) }
+      return { ok: true, headers: new Headers(), blob: async () => new Blob(['ground']) }
+    }))
+    const legacyTexture = new THREE.Texture()
+    vi.spyOn(THREE.TextureLoader.prototype, 'loadAsync').mockResolvedValue(legacyTexture)
+    const { api, store } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['a'], 'a') })
+    expect(store.hasData).toBe(true)
+    expect(store.assetDegraded).toBe(true)
+    expect(store.assetIssues.some((i) => i.key === 'ground-terrain' && i.status === 'http-404')).toBe(true)
+    expect(store.assetIssues.some((i) => i.key === 'scenery' && i.status === 'degraded')).toBe(true)
+    expect(loader.mock.calls.length).toBe(0)
+    expect(fetchUrls.some((u) => u.endsWith('/assets/scenery-lite'))).toBe(false)
+    expect(fetchUrls.some((u) => u.endsWith('/assets/scenery'))).toBe(false)
+    expect(window.__scene.children.some((o) => o.material?.map === legacyTexture)).toBe(true)
   })
 
   it('terrain bin 与 terrain.json 不同批（sha256 不符）⇒ 不建地形、回退 2D', async () => {

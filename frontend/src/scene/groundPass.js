@@ -18,6 +18,7 @@ import {
   buildAdaptiveTerrain, buildRefineMask, groundMapUv, decodeTerrainField,
   pairedTerrainBinUrl, terrainBinMatchesMeta, terrainBoundsOk, terrainFieldMetaValid,
 } from './terrainMesh.js';
+import { isLiteDroppedMeshObject } from './sceneryAssemblyRules.js';
 
 /** 分层地表纹理键集（客户端 `height_blend` 决定是否带 hmap 对）。 */
 export function groundLayerKeys(L) {
@@ -168,8 +169,11 @@ export function buildCorridorRefineMask({ meshes, field, n, span, marginTexels =
   const box = new THREE.Box3();
   const v = new THREE.Vector3();
   const candidates = [];
-  for (const { o, water } of meshes) {
-    if (water) continue;
+  for (const { o, water, liteDropped } of meshes) {
+    // #857 pair gate：植被/效果/天空不是可通行结构——语义剔除类别（lite 档不存在的件）
+    // 不作为走廊候选，否则 full 与 lite 的 refine mask 无意义漂移。收集点（onMesh 时刻
+    // 材质仍是原始 extras）已打 `liteDropped` 标；此处对象判据兜底（直接构造的 mesh 清单）。
+    if (water || liteDropped === true || isLiteDroppedMeshObject(o)) continue;
     box.setFromObject(o);
     if (box.isEmpty() || box.max.y - box.min.y > 2.5) continue;
     let hug = false;

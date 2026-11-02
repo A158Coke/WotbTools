@@ -87,9 +87,10 @@ async function main() {
   mkdirSync(REPORT_DIR, { recursive: true })
 
   const { server, origin } = await startMeanColor()
+  let env = null
   try {
     const chrome = findChrome()
-    const env = await launchChromeForCdp(chrome, {})
+    env = await launchChromeForCdp(chrome, {})
     const { targetId, sessionId } = await env.openPage()
     const page = new Page(env.client, sessionId)
     await page.evaluate(`location.href = ${JSON.stringify(origin + '/mean')}`)
@@ -151,7 +152,13 @@ async function main() {
     console.error(`scenery-lite: ${ok}/${results.length} maps written (verify-gated)`)
     if (ok !== results.length) process.exitCode = 2   // 有图未过 verify：发布 gate 不通过
   } finally {
-    await server.close()
+    // Chrome/CDP/临时 profile 必须显式释放（success / verify failure / page readiness
+    // failure / per-map exception / summary write failure 全路径），不依赖 process exit
+    try {
+      await env?.close?.()
+    } finally {
+      await server.close()
+    }
   }
 }
 

@@ -9,7 +9,7 @@
 // 返回 { stale, writes }：stale=true 表示装配中途会话过期（调用方先落已完成的
 // writes 再 return，与原闭包逐段赋值 + 中途 return 的语义一致）；writes 只含已推进到的字段。
 import * as THREE from 'three'
-import { sceneHasSkyFlags, strictSurfacesOf, isWaterNode as isWaterNodeRule } from '../sceneryAssemblyRules.js'
+import { isLiteDroppedMeshObject, isWaterNode as isWaterNodeRule, sceneHasSkyFlags, strictSurfacesOf } from '../sceneryAssemblyRules.js'
 import { resolveSceneryExtras, makeTexResolvers, assembleSceneryMaterials } from '../sceneryAssembly.js'
 import { applyMaterialTextureAnisotropy } from '../sceneryMaterials.js'
 import { pruneForeignVariantsDetailed } from '../variantFilter.js'
@@ -103,7 +103,11 @@ export async function assembleMapScenery(gltf, ctx) {
     strictSurfaces,
     masks: { maskTexOf, lmTexOf, detailTexOf, envTexOf, waterTexOf, decalTexOf },
     groundLayers, waterCoast, debug: DEBUG,
-    onMesh: (o, waterMarked) => { sceneryMeshes.push({ o, water: waterMarked }); },
+    onMesh: (o, waterMarked) => {
+      // #857：收集点在材质转换**之前**（原始 extras 仍在）——此处打 liteDropped 标供
+      // buildCorridorRefineMask 的 candidate 语义策略消费
+      sceneryMeshes.push({ o, water: waterMarked, liteDropped: isLiteDroppedMeshObject(o) });
+    },
     skyFlagsAvailable,
   });
 

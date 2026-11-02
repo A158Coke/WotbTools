@@ -306,7 +306,7 @@ KILL / DAMAGE / DESTROYED 事件多重集（含 `observedHpLoss`）与掉血明�
 - **两通道高度 + morph**：高度图像素 = [本层原始高度, 与相距一个 step 的对侧邻居的均值]；顶点高度 = `lerp(averaged, accurate, morphAmount)`，`morphAmount` 由误差比经 `morphFunc(x) = 4(1−x)⁵ − 5(1−x)⁴ + 1` 整形；最外一圈退回原始值。误差贴近阈值的补片被双抽头均值抹平，这是客户端在墙顶 / 建筑基础吸附缝上不穿出的机制。
 - **无裂缝契约**：顶点高度取“该处最粗相邻叶所在层级”的边界直线 / 格点值（边端点递归）；同一 (i,j) 恒得同一高度，细侧折线落在粗侧直线上——不需要 2:1 平衡也没有 T 型接缝。按 (i,j) 去重顶点，法线跨叶连续。守卫：`terrainMesh.test.js`（三条判据 / 终止补片 / 单元格 ≤0.08·视距 / 混排层级无裂缝 / 无空洞 / 三角形朝上 / 预算）。
 - **单向滞回**：`terrainLodStale` 的输入是与 `buildAdaptiveTerrain` 同源的相机姿态快照（位置 / 视距 / 视轴 / FOV / aspect）：拉近 ≥5% 立即细化，拉远 ≥40% 才允许变粗；侧向位移 ≥5%·视距、FOV 或 aspect 相对变化 >0.1% 也触发重建；两次重建至少隔 120ms。网格永不比客户端同一相机位置允许的层级更粗。
-- **贴地薄构件走廊**：贴地薄构件（铁轨基板 / 压顶 / 铺装这类，世界 AABB 高 ≤2.5m、底面贴地形真值、排除水面 / 水下片）按三角形沿边以 ≤1 texel 采样足迹 → `buildCorridorRefineMask` → `buildRefineMask`；命中补片强制细分到最细层（1 texel），不改任何高度值，廊外层级仍按三条判据。运行时与俯视烘焙共用这一机制。守卫：`terrainMesh.test.js`（掩码内必到 1 texel、掩码前被盖 / 掩码后不被盖、不传掩码逐字节一致）与 `sceneryMaterials.test.js`（取样先于实例化合批）。
+- **贴地薄构件走廊**：贴地薄构件（铁轨基板 / 压顶 / 铺装这类，世界 AABB 高 ≤2.5m、底面贴地形真值、排除水面 / 水下片）按三角形沿边以 ≤1 texel 采样足迹 → `buildCorridorRefineMask` → `buildRefineMask`；命中补片强制细分到最细层（1 texel），不改任何高度值，廊外层级仍按三条判据。运行时与俯视烘焙共用这一机制。**candidate 语义策略（#857）**：植被（`ST|`）/ billboard 卡片（`_CORNER`）/ 效果卡片（`blendLayer` / `alphaBlend`）/ 天空穹（`extras.sky`）不是可通行结构，在候选收集点（材质转换前打 `liteDropped` 标）即排除——full 与 lite（scenery-lite 已剔这些类别）的 refine mask 因此逐 texel 一致，掩码不因档位漂移（`terrainQualityDifferential.test.js` 层 B 锁定）。守卫：`terrainMesh.test.js`（掩码内必到 1 texel、掩码前被盖 / 掩码后不被盖、不传掩码逐字节一致）与 `sceneryMaterials.test.js`（取样先于实例化合批）。
 - **画质无关**：客户端 Data/quality.yaml 没有 landscape 块，地形阈值恒为出厂默认；地形细分 / 几何不随画质档变化。画质档真正影响的是材质层（RELAXMAP 需 landscape 材质绑 relaxmap 槽才生效；HEIGHT_BLEND 按导出的 `ground.layers.json height_blend=true` 复刻）。
 
 ### 地面、水与天空

@@ -1,6 +1,6 @@
-// 四档渲染预设（2026-10-24 自 playbackScene.js 出仓，拆分计划见 docs/current-plan.md；
-// 代码与搬移前逐字一致——预设表同时被面板与场景消费，公开 API 仍由 playbackScene.js
-// re-export，导入方零改动）。
+// 四档渲染预设（2026-10-24 自 playbackScene.js 出仓；2026-11-02 #857 起 scenery/groundLayers
+// 布尔升级为 sceneryTier/groundMode 单枚举——预设表同时被面板与场景消费，公开 API 仍由
+// playbackScene.js re-export，导入方零改动）。
 import { FX_BUDGETS } from '../battleFx.js'
 
 // 四档渲染预设（面板与场景共用；桌面默认高清，Tauri/移动 WebView 默认均衡）。

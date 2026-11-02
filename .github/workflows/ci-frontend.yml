@@ -228,3 +228,8 @@ jobs:
         timeout-minutes: 10
         working-directory: frontend
         run: pnpm run test:browser-broadcasts
+      - name: Real-browser bake ground-terrain smoke
+        if: ${{ !cancelled() && steps.wasm.outcome == 'success' }}
+        timeout-minutes: 10
+        working-directory: frontend
+        run: pnpm run test:browser-bake-terrain

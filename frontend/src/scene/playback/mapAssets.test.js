@@ -19,6 +19,7 @@ vi.mock('../sceneryAssemblyRules.js', () => ({
   sceneHasSkyFlags: () => false,
   strictSurfacesOf: () => new Set(),
   isWaterNode: () => false,
+  isLiteDroppedMeshObject: () => false,
 }))
 vi.mock('../variantFilter.js', () => ({ pruneForeignVariantsDetailed: () => ({ removed: 0, failClosed: false }) }))
 vi.mock('../sceneryMaterials.js', () => ({ applyMaterialTextureAnisotropy: () => 0 }))

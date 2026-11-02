@@ -762,3 +762,20 @@ export function terrainSurfaceHeightAt({ positions, sizeAt, originIAt, originJAt
     ? y00 * (1 - tx - tz) + y01 * tx + y10 * tz
     : y01 * (1 - tz) + y10 * (1 - tx) + y11 * (tx + tz - 1);
 }
+
+/** 双线性高度场真值采样（production 唯一口径，#857 修复轮抽取为 SSOT）：
+ *  引擎 `Landscape::GetHeightAtPoint` 逐行——`fx = n·(x/span + 0.5)`（**除 size，不是
+ *  size−1**；此前用 (n−1) 造成 0.2% 水平拉伸），整数部 = texel 下标、小数部 = 相邻 texel
+ *  间权重；索引按 GetHeightClamp 口径夹到边缘（外侧不越界）。
+ *  消费方：playbackScene.sampleHeight（悬挂/约束/annotation 投影）、跨档差分基线的
+ *  truth oracle（terrainQualityDifferential.test.js）——不复制第二份 bilinear 实现。 */
+export function sampleTerrainField(field, n, span, x, z) {
+  if (!field || !Number.isInteger(n) || n < 2 || !Number.isFinite(span) || span <= 0
+    || !Number.isFinite(x) || !Number.isFinite(z)) return 0;
+  const fx = (x / span + 0.5) * n, fy = (z / span + 0.5) * n;
+  const x0 = Math.max(0, Math.min(n - 2, Math.floor(fx))), y0 = Math.max(0, Math.min(n - 2, Math.floor(fy)));
+  const tx = Math.max(0, Math.min(1, fx - x0)), ty = Math.max(0, Math.min(1, fy - y0));
+  const top = field[y0 * n + x0] * (1 - tx) + field[y0 * n + x0 + 1] * tx;
+  const bot = field[(y0 + 1) * n + x0] * (1 - tx) + field[(y0 + 1) * n + x0 + 1] * tx;
+  return top * (1 - ty) + bot * ty;
+}

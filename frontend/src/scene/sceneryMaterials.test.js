@@ -23,7 +23,7 @@ const mapAssetsSrc = readSrc(resolve(here, 'playback/mapAssets.js'), 'utf8')
 // 基地贴地标记 2026-10-24 出仓 playback/bases.js（Step A4；基地环/圆盘/画布 sRGB 断言随实现迁移）
 const basesSrc = readSrc(resolve(here, 'playback/bases.js'), 'utf8')
 // 材质实现（billboard/speedtree/缓存/常量/isWaterName）已平移至专用模块（SSOT，
-// bake-ground-overhead 烘焙页共用同一实现），守卫随迁读取新源
+// bake-page-server 烘焙页共用同一实现），守卫随迁读取新源
 const matSrc = readSrc(resolve(here, 'sceneryMaterials.js'), 'utf8')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
@@ -116,7 +116,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(asmSrc).toMatch(/\(m\.userData && m\.userData\.alphaBlend\) \|\| '',/);
     // 俯视烘焙页与内核同约定（SSOT 守卫：两侧消费**同一份装配模块**，键指纹与分流口径
     // 只有一处实现——烘焙页本地不得再复辟任何分流/键组成代码）
-    const bakeSrcBlend = readSrc(resolve(here, '..', '..', 'scripts', 'bake-ground-overhead.mjs'), 'utf8');
+    const bakeSrcBlend = readSrc(resolve(here, '..', '..', 'scripts', 'bake-page-server.mjs'), 'utf8');
     expect(bakeSrcBlend).toMatch(/from '\/src\/scene\/sceneryAssembly\.js'/);
     expect(bakeSrcBlend).toMatch(/assembleSceneryMaterials\(gltf, \{/);
     expect(bakeSrcBlend).not.toMatch(/!blendLayer && !softAlpha/);
@@ -326,7 +326,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(pfn).toMatch(/diffuseColor\.rgb \*= texture2D\(uDetailTex, vDetailUv\)\.rgb \* 2\.0;/);
     expect(pfn).toMatch(/\|scenery-detail/);
     // 烘焙页：消费同一装配模块（细节层路由不可能再与内核漂移），本地不得自建 convMat/detail 桩
-    const bake = readSrc(resolve(here, '../../scripts/bake-ground-overhead.mjs'), 'utf8')
+    const bake = readSrc(resolve(here, '../../scripts/bake-page-server.mjs'), 'utf8')
     expect(bake).toMatch(/assembleSceneryMaterials\(gltf, \{/);
     expect(bake).not.toMatch(/const convMat = \(m, isCard\)/);
     expect(bake).not.toMatch(/const detailTexOf = \(\) => null;/);
@@ -498,14 +498,17 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 回退/低档底图 UV（review P1）：几何必须带 uv——分层着色在片元反推 UV，
     // 但回退材质 `MeshBasicMaterial({ map })` 吃几何属性，缺了整张底图退化成单 texel
     expect(gpSrc).toMatch(/setAttribute\('uv', new THREE\.BufferAttribute\(groundMapUv\(positions, span, cx, cz\), 2\)\)/)
-    // sampleHeight 采引擎口径（除 n，非 n−1）
-    expect(src).toMatch(/const fx = \(x \/ span \+ 0\.5\) \* n, fy = \(z \/ span \+ 0\.5\) \* n;/)
     // 几何已建在场景系：不得再有 PlaneGeometry 地形 + sampleHeight 位移 + 旋转/平移放置
     expect(src).not.toMatch(/new THREE\.PlaneGeometry\(size, size, Q\.terrainSeg/)
     expect(src).not.toMatch(/setZ\(k, sampleHeight\(-pos\.getX\(k\)/)
     // 自适应网格模块与测试在位（客户端同构 LOD：顶点=texel 原值 + 视距容差细分）
     expect(src).toMatch(/aspect: camera && Number\.isFinite\(camera\.aspect\)/)
     const meshSrc = readSrc(resolve(here, 'terrainMesh.js'), 'utf8')
+    // sampleHeight 采引擎口径（除 n，非 n−1）——实现已抽为 terrainMesh.sampleTerrainField
+    // SSOT（#857 修复轮：playbackScene 与差分基线 truth oracle 共用，不复制第二份 bilinear）
+    expect(meshSrc).toMatch(/export function sampleTerrainField\(field, n, span, x, z\)/)
+    expect(meshSrc).toMatch(/const fx = \(x \/ span \+ 0\.5\) \* n, fy = \(z \/ span \+ 0\.5\) \* n;/)
+    expect(src).toMatch(/return sampleTerrainField\(heightField, n, span, x, z\);/)
     expect(meshSrc).toMatch(
       /export function buildAdaptiveTerrain\(\{ field, n, span, cam, fovY, aspect = 16 \/ 9, minStep = 1, tolScale = 1, hFovDeg = null, refineMask = null \}\)/)
     expect(meshSrc).toMatch(
@@ -515,7 +518,9 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(meshSrc).toMatch(/export function buildRefineMask\(pointsXZ, n, span, marginTexels = 2\)/)
     expect(meshSrc).toMatch(/\|\| corridorForced\(level, i0, j0\);/)
     // 水面样本随装配模块的 onMesh 钩子带回（water = 材质 extras.water 标记，装配模块判定）
-    expect(mapAssetsSrc).toMatch(/onMesh: \(o, waterMarked\) => \{ sceneryMeshes\.push\(\{ o, water: waterMarked \}\); \},/)
+    // #857：收集点在材质转换前打 liteDropped 标（走廊掩码 candidate 语义策略消费）
+    expect(mapAssetsSrc).toMatch(/onMesh: \(o, waterMarked\) => \{/)
+    expect(mapAssetsSrc).toMatch(/sceneryMeshes\.push\(\{ o, water: waterMarked, liteDropped: isLiteDroppedMeshObject\(o\) \}\);/)
     expect(asmSrc).toMatch(/const waterMarked = materialIsWater\(o\.material\);/)
     expect(asmSrc).toMatch(/if \(onMesh\) onMesh\(o, waterMarked\);/)
     expect(gpSrc).toMatch(/if \(box\.isEmpty\(\) \|\| box\.max\.y - box\.min\.y > 2\.5\) continue;/)
@@ -856,7 +861,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(asmSrc).toMatch(/sceneHasSkyFlags\(gltf\.scene\)/)
     expect(asmSrc).not.toMatch(/\/sky\/i\.test\(o\.name/)
     // 烘焙先剔天穹再装配：必须把剔除前的标记传进去，否则会退回 /sky/ 名字
-    const bakeSkySrc = readSrc(resolve(here, '..', '..', 'scripts', 'bake-ground-overhead.mjs'))
+    const bakeSkySrc = readSrc(resolve(here, '..', '..', 'scripts', 'bake-page-server.mjs'))
     expect(bakeSkySrc).toMatch(/assembleSceneryMaterials\(gltf, \{[\s\S]{0,500}skyFlagsAvailable,/)
     // 合批/透明/lm 与运行时同口径；烘焙同样拒绝不完整变体映射
     expect(mapAssetsSrc).toMatch(/buildStandaloneLightmappedMeshes\(allEntries/)
@@ -913,7 +918,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 硬边与烘焙法线被抹平。内核与俯视烘焙页（同一 SSOT 约定）都不得再设。
     expect(src).not.toMatch(/flatShading/);
     // 烘焙页同口径读法：先剥注释（注释里会提到反例写法，不得算作代码）
-    const bakeSrcNormals = readSrc(resolve(here, '..', '..', 'scripts', 'bake-ground-overhead.mjs'), 'utf8')
+    const bakeSrcNormals = readSrc(resolve(here, '..', '..', 'scripts', 'bake-page-server.mjs'), 'utf8')
       .replace(/\/\/[^\n]*/g, '');
     expect(bakeSrcNormals).not.toMatch(/flatShading/);
   });
@@ -923,7 +928,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 若与内核漂移，同一材质在两侧会拆成不同实例/不同观感。
     // 2026-10-14 抽层后两侧都消费 sceneryAssembly.js（convMat 唯一实现在 asmSrc），
     // 逐字比对具体键组成既无对象也无可比副本——改为锁"单实现 + 两侧都消费 + 无本地副本"。
-    const bakeSrc = readSrc(resolve(here, '..', '..', 'scripts', 'bake-ground-overhead.mjs'), 'utf8')
+    const bakeSrc = readSrc(resolve(here, '..', '..', 'scripts', 'bake-page-server.mjs'), 'utf8')
       .replace(/\/\/[^\n]*/g, '')
     expect(bakeSrc).toMatch(/from '\/src\/scene\/sceneryMaterials\.js'/)
     // 烘焙页消费共享装配（extras 解析 → 分派），本地不得再有 convMat/材质分派副本

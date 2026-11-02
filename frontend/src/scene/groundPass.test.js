@@ -26,7 +26,10 @@ const gpSrc = strip(readFileSync(resolve(here, 'groundPass.js'), 'utf8'))
 const src = strip(readFileSync(resolve(here, 'playbackScene.js'), 'utf8'))
 // 场景装配块 2026-10-24 出仓 playback/mapAssets.js（Step A3），运行时侧装配守卫随实现迁移
 const mapAssetsSrc = strip(readFileSync(resolve(here, 'playback/mapAssets.js'), 'utf8'))
-const bakeSrc = strip(readFileSync(resolve(here, '..', '..', 'scripts', 'bake-ground-overhead.mjs'), 'utf8'))
+// #857 修复轮抽层：页面代码（BAKE_HTML + 中间件）在 scripts/bake-page-server.mjs，
+// CLI（参数/主循环）留在 bake-ground-overhead.mjs——守卫读取页面所在模块
+const bakeSrc = strip(readFileSync(resolve(here, '..', '..', 'scripts', 'bake-page-server.mjs'), 'utf8'))
+const bakeCliSrc = strip(readFileSync(resolve(here, '..', '..', 'scripts', 'bake-ground-overhead.mjs'), 'utf8'))
 const bakeLayersSrc = strip(readFileSync(resolve(here, '..', '..', 'scripts', 'bake-ground-layers.js'), 'utf8'))
 
 describe('地面 pass SSOT（groundPass.js）：两侧消费同一份，本地零副本', () => {
@@ -145,7 +148,9 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
     // 烘焙：同一实现 + 同一收集口径（onMesh 的 water 标记）；次序=掩码先于实例化合批
     expect(bakeSrc).toMatch(/buildCorridorRefineMask\(\{/)
     expect(bakeSrc).toMatch(/meshes: sceneryMeshes, field,/)
-    expect(bakeSrc).toMatch(/onMesh: \(o, waterMarked\) => \{ sceneryMeshes\.push\(\{ o, water: waterMarked \}\); \},/)
+    // #857：收集点在材质转换前打 liteDropped 标（走廊掩码 candidate 语义策略消费）
+    expect(bakeSrc).toMatch(/onMesh: \(o, waterMarked\) => \{/)
+    expect(bakeSrc).toMatch(/sceneryMeshes\.push\(\{ o, water: waterMarked, liteDropped: isLiteDroppedMeshObject\(o\) \}\);/)
     expect(bakeSrc).toMatch(/refineMask: corridor \? corridor\.mask : null,/)
     const maskAt = bakeSrc.indexOf('buildCorridorRefineMask(')
     const instAt = bakeSrc.indexOf('collectInstanceEntries(gltf.scene)')
@@ -391,10 +396,12 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
   it('meta 携带 ground 标志与有效跨度（合成器据 ground 以"覆盖即替换"口径合并）', () => {
     // 逐图产物生命周期（删旧产物 / .tmp→rename / meta 内容）在 scripts/bake-overhead-key.mjs，
     // 行为回归见 bake-overhead-key.test.mjs；CLI 只调用、不得复辟本地副本
-    expect(bakeSrc).toMatch(/import \{ bakeKey \} from '\.\/bake-overhead-key\.mjs'/)
-    expect(bakeSrc).not.toMatch(/async function bakeKey\(/)
-    expect(bakeSrc).toMatch(/bakeKey\(\{ page, key, outDir, span: spans\[key\], size: SIZE,\s*mapId: primaryMapIdOf\(key\), uploadPath: UPLOAD,\s*pack: PACK, space: spaces\[key\] \}\)/)
-    expect(bakeSrc).toMatch(/writeFileSync\(UPLOAD, body\)/)
+    // CLI（参数/主循环）在 bake-ground-overhead.mjs；页面/中间件在 bake-page-server.mjs
+    expect(bakeCliSrc).toMatch(/import \{ bakeKey \} from '\.\/bake-overhead-key\.mjs'/)
+    expect(bakeCliSrc).not.toMatch(/async function bakeKey\(/)
+    expect(bakeCliSrc).toMatch(/bakeKey\(\{ page, key, outDir, span: spans\[key\], size: SIZE,\s*mapId: primaryMapIdOf\(key\), uploadPath: UPLOAD,\s*pack: PACK, space: spaces\[key\] \}\)/)
+    // /pixel-upload 落盘在页面服务器（uploadPath 由 startBakeServer 按 pack 解析并返回）
+    expect(bakeSrc).toMatch(/writeFileSync\(uploadPath, body\)/)
     expect(bakeSrc).toMatch(/return \{ ok: true, span: effSpan, ground: groundReady \}/)
     // 退化几何按 (ic/3)/vc 比率删除已撤除（同 3D 运行时；统计启发式不得复活）
     expect(bakeSrc).not.toMatch(/degenerate|\(ic \/ 3\) \/ vc > 15/)
@@ -431,7 +438,7 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
     expect(checkAt).toBeGreaterThan(addAt)
     expect(readyAt).toBeGreaterThan(checkAt)
     // 逐图失败不改变批处理策略：bakeKey 抛出由主循环逐图 catch（输出 {key,error}，继续下一张）
-    expect(bakeSrc).toMatch(/console\.log\(JSON\.stringify\(\{ key, error: String\(e\)\.slice\(0, 300\) \}\)\)/)
+    expect(bakeCliSrc).toMatch(/console\.log\(JSON\.stringify\(\{ key, error: String\(e\)\.slice\(0, 300\) \}\)\)/)
   })
 
   it('makeGroundMaterial 共享回退档不变：3D 运行时的真实 mapTexture 仍是合法回退（修复只落烘焙宿主）', () => {

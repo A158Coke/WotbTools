@@ -49,6 +49,24 @@ export function sceneHasSkyFlags(root) {
   return found
 }
 
+/** #857 语义弃件判定（three 对象视图；与 scripts/scenery-lite/deriveLiteCore.mjs 的
+ *  GLTF-JSON 视图同一语义标记集——`ST|` 前缀、`_CORNER` billboard 属性、材质 extras
+ *  sky/blendLayer/alphaBlend。两边共用 exporter 语义，无名字 heuristic）。
+ *  消费方：buildCorridorRefineMask 候选过滤——full 与 lite 的走廊掩码输入集合因此一致
+ *  （被 lite 剔除的植被/卡片/效果件本就不是贴地薄结构，不得成为 full 档的掩码假阳性）。 */
+export function isLiteDroppedObject(o) {
+  if (!o) return false
+  if ((o.name || '').startsWith('ST|')) return true
+  if (o.geometry && o.geometry.attributes && o.geometry.attributes._corner) return true
+  const mats = Array.isArray(o.material) ? o.material : [o.material]
+  return mats.some((m) => {
+    if (!m) return false
+    if ((m.name || '').startsWith('ST|')) return true
+    const ud = m.userData || {}
+    return ud.sky === true || ud.blendLayer === true || ud.alphaBlend === true
+  })
+}
+
 /** 水面语义判定：新包看材质标记，旧包回退节点名启发式（含 fountain）。 */
 export function isWaterNode(name, mat, { strictSurfaces }) {
   if (!strictSurfaces) return isWaterName(name)
@@ -115,4 +133,24 @@ export function bakeDropNode(name, mat, {
   if (!keepWater && isWaterNode(name, mat, { strictSurfaces })) return true
   if (isSkyShell(name, mat, { strictSurfaces, skyFlagsAvailable }) && !materialIsWater(mat)) return true
   return false
+}
+
+/** #857 lite 档剔除类别的 three-object 判据（消费 buildCorridorRefineMask 的 candidate
+ *  语义策略）。剔除类别 = deriveLiteCore 的 GLB-JSON 判据同语义镜像（scripts/scenery-lite/
+ *  deriveLiteCore.mjs `isLiteDropNode`——两侧数据模型不同：GLB JSON vs three 对象，标记集
+ *  必须一致）：SpeedTree（节点/材质名 `ST|` 前缀）、billboard 卡片（geometry `_CORNER`）、
+ *  效果卡片（材质 extras blendLayer/alphaBlend）、天空穹（材质 extras.sky）。
+ *  动因（#857 full-vs-lite refine mask gate）：植被/效果不是可通行结构，若进入走廊候选，
+ *  full 与 lite（已剔这些类别）的 refine mask 会无意义漂移——策略上两侧都排除。 */
+export function isLiteDroppedMeshObject(o) {
+  if (!o) return false;
+  if ((o.name || '').startsWith('ST|')) return true;
+  if (o.geometry && o.geometry.attributes && o.geometry.attributes._corner) return true;
+  const mats = Array.isArray(o.material) ? o.material : [o.material];
+  return mats.some((m) => {
+    if (!m) return false;
+    if ((m.name || '').startsWith('ST|')) return true;
+    const ud = m.userData || {};
+    return ud.sky === true || ud.blendLayer === true || ud.alphaBlend === true;
+  });
 }

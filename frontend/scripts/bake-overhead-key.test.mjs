@@ -114,19 +114,48 @@ describe('逐图产物 fail-closed：失败 = 本图无产物（含上一轮旧�
 
 describe('ground-terrain 相（#857 Step 4）：fail-closed 生命周期', () => {
   const gtPath = () => join(packDir, 'map', KEY, 'ground-terrain.webp')
+  const gtMetaPath = () => join(outDir, `${KEY}.terrain.meta.json`)
+  const seedStaleGt = () => {
+    writeFileSync(gtPath(), Buffer.from('old-product'))
+    writeFileSync(`${gtPath()}.tmp`, Buffer.from('old-tmp'))
+    writeFileSync(gtMetaPath(), JSON.stringify({ key: KEY, groundTerrain: { old: true } }))
+  }
 
   it('成功：webp 落盘包内最终路径，terrain.meta.json 携带合成回报，无 .tmp 残留', async () => {
-    writeFileSync(gtPath(), Buffer.from('old-product'))   // 上一轮旧成品
+    seedStaleGt()
     const res = await run(fakePage({}), { pack: packDir, space: 'karelia' })
     expect(res.groundTerrain).toMatchObject({ base: 'karelia', terrainRendered: true, coverPct: 99.5 })
     expect(readFileSync(gtPath(), 'utf8')).toBe('RIFFgtwebp')
     expect(existsSync(`${gtPath()}.tmp`)).toBe(false)
-    const meta = JSON.parse(readFileSync(join(outDir, `${KEY}.terrain.meta.json`), 'utf8'))
+    const meta = JSON.parse(readFileSync(gtMetaPath(), 'utf8'))
     expect(meta).toMatchObject({ key: KEY, span: 640, size: SIZE, groundTerrain: { base: 'karelia' } })
   })
 
+  it('早期失败（load 抛错，未到 groundTerrain 相）：旧 gt/.tmp/terrain.meta 全部已清（清理前移）', async () => {
+    seedStaleGt()
+    await expect(run(fakePage({ load: new Error('page exception: Error: ground layer 缺失: tile1（HTTP 404）') }), { pack: packDir, space: 'karelia' }))
+      .rejects.toThrow(/ground layer 缺失/)
+    expect(existsSync(gtPath())).toBe(false)
+    expect(existsSync(`${gtPath()}.tmp`)).toBe(false)
+    expect(existsSync(gtMetaPath())).toBe(false)
+    expect(existsSync(`${gtMetaPath()}.tmp`)).toBe(false)
+  })
+
+  it('render 抛错（load 之后、上传之前）：旧 gt/terrain.meta 同样不留', async () => {
+    seedStaleGt()
+    const page = fakePage({})
+    const orig = page.evaluate.bind(page)
+    page.evaluate = async (expr) => {
+      if (expr.startsWith('window.__bake.render(')) throw new Error('render boom')
+      return orig(expr)
+    }
+    await expect(run(page, { pack: packDir, space: 'karelia' })).rejects.toThrow('render boom')
+    expect(existsSync(gtPath())).toBe(false)
+    expect(existsSync(gtMetaPath())).toBe(false)
+  })
+
   it('页面合成失败：旧成品已删除、reject、无产物残留（不留旧 ground-terrain）', async () => {
-    writeFileSync(gtPath(), Buffer.from('old-product'))
+    seedStaleGt()
     await expect(run(fakePage({ groundTerrain: false }), { pack: packDir, space: 'karelia' }))
       .rejects.toThrow('ground-terrain upload missing')
     expect(existsSync(gtPath())).toBe(false)
@@ -134,6 +163,7 @@ describe('ground-terrain 相（#857 Step 4）：fail-closed 生命周期', () =>
   })
 
   it('页面异常同样 fail-closed', async () => {
+    seedStaleGt()
     await expect(run(fakePage({ groundTerrain: new Error('canvas boom') }), { pack: packDir, space: 'karelia' }))
       .rejects.toThrow('canvas boom')
     expect(existsSync(gtPath())).toBe(false)
@@ -143,6 +173,6 @@ describe('ground-terrain 相（#857 Step 4）：fail-closed 生命周期', () =>
     const res = await run(fakePage({}))
     expect(res.groundTerrain).toBeUndefined()
     expect(existsSync(gtPath())).toBe(false)
-    expect(existsSync(join(outDir, `${KEY}.terrain.meta.json`))).toBe(false)
+    expect(existsSync(gtMetaPath())).toBe(false)
   })
 })

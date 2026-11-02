@@ -21,7 +21,12 @@ export async function bakeKey({ page, key, outDir, span, size, mapId = null, upl
   const t0 = Date.now()
   const rgbaPath = join(outDir, `${key}.rgba`)
   const metaPath = join(outDir, `${key}.meta.json`)
-  for (const p of [metaPath, rgbaPath, `${metaPath}.tmp`, `${rgbaPath}.tmp`]) rmSync(p, { force: true })
+  // ground-terrain 相的产物路径在**任何 await 之前**先行清理：load/terrain/layer/render/
+  // pixel-upload 任一步失败都不得留下上一轮 ground-terrain（双重投影复活）。
+  const gtPath = pack ? join(pack, 'map', key, 'ground-terrain.webp') : null
+  const gtMetaPath = join(outDir, `${key}.terrain.meta.json`)
+  for (const p of [metaPath, rgbaPath, `${metaPath}.tmp`, `${rgbaPath}.tmp`, gtMetaPath, `${gtMetaPath}.tmp`,
+    ...(gtPath ? [gtPath, `${gtPath}.tmp`] : [])]) rmSync(p, { force: true })
   const load = await page.evaluate(`window.__bake.load(${JSON.stringify(key)}, ${span}, ${mapId})`)
   // 有效跨度 = terrain.json 自愈后的 span（页面加载时确定；相机必须与地面材质/海岸线同值）
   const spanEff = load && Number.isFinite(load.span) ? load.span : span
@@ -40,15 +45,12 @@ export async function bakeKey({ page, key, outDir, span, size, mapId = null, upl
   const result = { key, coverPct: stats.coverPct, mb: +(raw.length / 1048576).toFixed(1), ms: Date.now() - t0 }
 
   // ---- ground-terrain 相（#857 Step 4）：纯地形烘焙底图，low/mid 档 3D lite 场景的地面 ----
-  // fail-closed 与 rgba 同口径：开烘前删除本图上一轮成品（合成式消费旧成品 = 双重投影复活）；
-  // 页面合成失败 ⇒ 本图无 ground-terrain（调用方按 404 降级回退 ground.webp 并显式记 issue）。
+  // 产物已在首个 await 前清空（见函数首部）；此处只负责页面合成与提交。失败 ⇒ 本图无
+  // ground-terrain（运行时按 404 走 pair 降级契约，不消费旧成品）。
   if (pack && space) {
-    const gtPath = join(pack, 'map', key, 'ground-terrain.webp')
-    for (const p of [gtPath, `${gtPath}.tmp`]) rmSync(p, { force: true })
     const gt = await page.evaluate(
       `window.__bake.groundTerrain(${spanEff}, ${JSON.stringify(space)}, ${JSON.stringify(key)})`)
     if (!existsSync(gtPath)) throw new Error('ground-terrain upload missing')
-    const gtMetaPath = join(outDir, `${key}.terrain.meta.json`)
     writeFileSync(`${gtMetaPath}.tmp`, JSON.stringify({ key, span: spanEff, size, groundTerrain: gt }))
     renameSync(`${gtMetaPath}.tmp`, gtMetaPath)
     result.groundTerrain = gt
