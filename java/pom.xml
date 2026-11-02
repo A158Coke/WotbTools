@@ -155,6 +155,36 @@
                     </execution>
                 </executions>
             </plugin>
+            <!-- #821 negative fixture：证明 bannedDependencies 的 Lombok 禁令真的会红。
+                 src/it/lombok-ban 声明 org.projectlombok:lombok，invoker 以
+                 invoker.buildResult=failure 断言子构建失败，verify.groovy 断言
+                 enforcer 的预期报错文案。只在 parent 自身运行（inherited=false）。 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-invoker-plugin</artifactId>
+                <version>3.9.1</version>
+                <inherited>false</inherited>
+                <configuration>
+                    <projectsDirectory>src/it</projectsDirectory>
+                    <pomIncludes>
+                        <include>lombok-ban/pom.xml</include>
+                    </pomIncludes>
+                    <goals>
+                        <goal>validate</goal>
+                    </goals>
+                    <streamLogs>false</streamLogs>
+                    <postBuildHookScript>verify</postBuildHookScript>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>lombok-ban-negative-fixture</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 </project>

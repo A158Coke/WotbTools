@@ -29,7 +29,7 @@
 | ID | 强度 | 范围 | 规则 | 例外 | 验证 |
 |---|---|---|---|---|---|
 | DC-TOK-01 | MUST | 全部组件 | 组件只用语义 token；需要新的视觉值时先加 token，不写字面量 | `src/styles/tokens/**` | `pnpm run lint:css` |
-| DC-TOK-02 | MUST | `stylelint.legacy.json` | 名单只减不增，新文件不进名单 | 无 | 人工 |
+| DC-TOK-02 | MUST | `stylelint.legacy.json` | 名单只减不增，新文件不进名单 | 无 | `frontend/scripts/check-typescript-baseline.mjs`（CI base→head 单调门禁，与 `typescript.legacy.json` 同 gate） |
 
 **依据：** W3C Design Tokens Community Group（DTCG）的分层模型。Material 3、Adobe Spectrum、GitHub Primer 都用这种三层结构。
 

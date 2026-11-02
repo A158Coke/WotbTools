@@ -67,7 +67,7 @@ regression tests 即可，PR CI 负责最终发现遗漏影响。同一任务内
   schema 变化只能新增更高版本的 forward-only `V<N>__*.sql`，checksum drift 的恢复例外见检查脚本。
   实体列与迁移列逐列对齐。
 - `@RequestParam(name="x")` 必须显式写 name；字符串判空统一 `org.springframework.util.StringUtils.hasText`；集合遍历优先 Stream；禁止 `import *`；局部变量/入参 `final`；DI 用构造器注入（禁止 `@Autowired` 字段注入）。
-- 不可变模型用 `record`，可变模型用公有字段 POJO；不引入 Lombok——parent enforcer `bannedDependencies` 拒绝 `org.projectlombok:lombok`（全部模块、全部 scope），wotb-web 另有 ArchUnit package 依赖规则。
+- 不可变模型用 `record`，可变模型用公有字段 POJO；不引入 Lombok——parent enforcer `bannedDependencies` 拒绝 `org.projectlombok:lombok`（全部模块、全部 scope；negative fixture `java/src/it/lombok-ban/` 随 parent `mvn test` 证明会红），wotb-web 另有 ArchUnit package 依赖规则。
 
 ## AI Service 边界（`wotb-ai`：`com.wotb.ai`；共享领域模型：`wotb-core/.../replay`）
 

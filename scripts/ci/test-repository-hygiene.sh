@@ -17,6 +17,20 @@ expect_fail() {
   fi
 }
 
+# Same as expect_fail, but also proves the failure came from the intended gate
+# rather than any unrelated error: the log must contain the expected message.
+expect_fail_msg() {
+  local label="$1"
+  local pattern="$2"
+  shift 2
+  expect_fail "$label" "$@"
+  grep -q -e "$pattern" "$WORK/$label.log" || {
+    echo "expected failure message not found for $label: $pattern" >&2
+    cat "$WORK/$label.log" >&2
+    exit 1
+  }
+}
+
 expect_pass() {
   local label="$1"
   shift
@@ -120,7 +134,7 @@ printf 'stale\n' > archive/notes.md
 git add archive/notes.md
 git commit -q -m 'add archive directory'
 head=$(git rev-parse HEAD)
-expect_fail archive-dir env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail_msg archive-dir "history-parking directory" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
 # A parking-directory blob added and deleted inside the range must still fail:
 # it entered the commit trees the event introduces.
@@ -132,7 +146,7 @@ git commit -q -m 'add old directory'
 git rm -q old/notes.md
 git commit -q -m 'remove old directory'
 head=$(git rev-parse HEAD)
-expect_fail parking-dir-transient env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail_msg parking-dir-transient "history-parking directory" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
 # Permanent source must not cite the ephemeral planning artifact as authority.
 git switch -q -C plan-reference "$base"
@@ -141,7 +155,17 @@ printf 'split plan: see docs/current-plan.md\n' > src/notes.js
 git add src/notes.js
 git commit -q -m 'add source citing the planning artifact'
 head=$(git rev-parse HEAD)
-expect_fail plan-reference env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail_msg plan-reference "ephemeral planning artifact" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+
+# A root-level file whose name parses as a grep option must not bypass the
+# reference gate: the checker must pass `--` to grep and treat a grep execution
+# error as fatal (fail closed), never as a clean file.
+git switch -q -C plan-reference-dash "$base"
+printf 'split plan: see docs/current-plan.md\n' > ./-plan-ref.md
+git add ./-plan-ref.md
+git commit -q -m 'cite planning artifact from a dash-prefixed filename'
+head=$(git rev-parse HEAD)
+expect_fail_msg plan-reference-dash "ephemeral planning artifact" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
 # Lifecycle skill/playbook files own the plan-carrier mechanism and stay allowed.
 git switch -q -C plan-reference-allowlist "$base"

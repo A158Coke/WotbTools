@@ -318,7 +318,16 @@ if [[ -n "$BASE_SHA" ]]; then
     [[ -f "$changed_path" ]] || continue
     is_current_plan_allowlisted "$changed_path" && continue
     plan_reference_checked=$((plan_reference_checked + 1))
-    if grep -I -q -E 'docs/current-plan|current-plan\.md' "$changed_path"; then
+    # `--` keeps filenames that parse as options (e.g. a root-level `-notes.md`)
+    # from being eaten as grep flags; exit 1 is "no match", but any other status
+    # is a tool failure and must fail closed instead of reading as a clean file.
+    grep_status=0
+    grep -I -q -E 'docs/current-plan|current-plan\.md' -- "$changed_path" || grep_status=$?
+    if (( grep_status > 1 )); then
+      echo "ERROR: reference gate grep failed on $changed_path (exit $grep_status)." >&2
+      exit 2
+    fi
+    if (( grep_status == 0 )); then
       report_current_plan_reference "$changed_path"
       plan_reference_violations=$((plan_reference_violations + 1))
     fi
