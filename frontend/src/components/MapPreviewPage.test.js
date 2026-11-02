@@ -4,13 +4,18 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
-vi.mock('vue-i18n', () => ({
-  useI18n: () => ({
-    locale: ref('zh'),
-    t: (key, params) => (params ? `${key}:${JSON.stringify(params)}` : key),
-    te: () => false,
-  }),
-}))
+const i18n = vi.hoisted(() => ({ locale: null }))
+vi.mock('vue-i18n', async () => {
+  const { ref } = await import('vue')
+  i18n.locale = ref('zh')
+  return {
+    useI18n: () => ({
+      locale: i18n.locale,
+      t: (key, params) => (params ? `${key}:${JSON.stringify(params)}` : key),
+      te: () => false,
+    }),
+  }
+})
 
 const auth = vi.hoisted(() => ({ authenticated: null }))
 vi.mock('../composables/useAuth.js', async () => {
@@ -30,12 +35,18 @@ vi.mock('../scene/replaySource.js', async (importOriginal) => ({
 import MapPreviewPage from './MapPreviewPage.vue'
 import { PRIMARY_NAV } from '../app/navigation.js'
 import { assetProvider } from '../scene/assetProvider.js'
+import { hasChineseMapName } from '../utils/helpers.js'
+import zhMessages from '../locales/zh.json'
+import enMessages from '../locales/en.json'
+import ruMessages from '../locales/ru.json'
 
 /**
  * 地图预览页 contract：
  * - 登录门（未登录只给认证入口，不渲染任何清单/场景）。
- * - picker = 资产包 index.json 按 key 去重（变体空间归并基础图，首个 id 为 3D 装载入口）。
- * - URL 契约 ?map= &mode=：点击地图缺省写 mode=2d；显式 mode=3d 仍直达 3D；
+ * - picker = 资产包 index.json 按 key 去重（变体空间归并基础图，首个 id 为 3D 装载入口）；
+ *   默认只显示 common/map_names.json 登记了 zh 的 key（人工认可目录，与 UI locale 无关），
+ *   「显示全部地图」开关展开其余资产条目（会话状态：不写 URL、不写持久化）。
+ * - URL 契约 ?map= &mode=：默认隐藏的地图仍可由深链打开；点击地图缺省写 mode=2d；
  *   切模式/基地只改自己的键，返回 picker 清掉 map/mode/bases。
  */
 const ROUTER = createRouter({
@@ -58,9 +69,40 @@ const IDX = {
   maps: {
     3: { key: 'erlenberg', display: 'Middleburg' },
     54: { key: 'erlenberg', display: 'Middleburg - Town' },
-    70: { key: 'moon', display: 'Sea of Tranquility' },
     8: { key: 'canyon', display: 'Canyon' },
+    31: { key: 'grossberg', display: "Dynasty's Pearl" },
+    70: { key: 'moon', display: 'Sea of Tranquility' },
+    72: { key: 'iceworld', display: 'Everfrost' },
+    83: { key: 'erlenberg_old', display: 'Middleburg mod. 2014' },
+    89: { key: 'savanna_old', display: 'Oasis Palms mod. 2014' },
+    56: { key: 'canal_01', display: 'Canal - Factory' },
+    60: { key: 'rudniki_01', display: 'Mines - Hill' },
+    62: { key: 'rudniki_03', display: 'Mines - Center' },
   },
+}
+
+/** fixture 的去重 key（id 54 与 id 3 同为 erlenberg）。 */
+const ALL_KEYS = [
+  'canal_01', 'canyon', 'erlenberg', 'erlenberg_old', 'grossberg',
+  'iceworld', 'moon', 'rudniki_01', 'rudniki_03', 'savanna_old',
+]
+/** fixture 中 map_names.json 已登记 zh 的 key → 默认可见。 */
+const ZH_KEYS = [
+  'canyon', 'erlenberg', 'erlenberg_old', 'grossberg', 'iceworld', 'moon', 'savanna_old',
+]
+/** 资产条目存在、但目录没有中文名 → 默认隐藏。 */
+const HIDDEN_KEYS = ['canal_01', 'rudniki_01', 'rudniki_03']
+
+/** 渲染出的卡片 key（排序后比较，避免把排序/计数当 contract）。 */
+function cardKeys(wrapper) {
+  return wrapper.findAll('.map-card')
+    .map((card) => (card.attributes('data-testid') || '').replace('map-card-', ''))
+    .sort()
+}
+
+async function toggleShowAll(wrapper) {
+  await wrapper.find('[data-testid="map-show-all"]').trigger('click')
+  await flushPromises()
 }
 
 async function openAt(query = {}) {
@@ -72,6 +114,7 @@ async function openAt(query = {}) {
 
 beforeEach(() => {
   auth.authenticated.value = false
+  if (i18n.locale) i18n.locale.value = 'zh'
   source.loadMapIndex.mockReset()
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 404 })))
   // ground.webp 回退封面依赖资产源已配置（CI 无 .env.local）：与 replaySource.test.js
@@ -89,16 +132,110 @@ describe('MapPreviewPage', () => {
     expect(source.loadMapIndex).not.toHaveBeenCalled()
   })
 
-  it('清单按 key 去重：全部地图都有封面（bundled 优先、ground.webp 回退）与 2D 徽标', async () => {
+  it('fixture 自证：可见性判据是 map_names.json 的 zh，不是资产 display 文案', () => {
+    // 双锁：字面量列表与真实目录一致（避免用生产判据当唯一 oracle，也避免写死卡片总数）
+    expect(ZH_KEYS.every((key) => hasChineseMapName(key))).toBe(true)
+    expect(HIDDEN_KEYS.some((key) => hasChineseMapName(key))).toBe(false)
+    expect([...ZH_KEYS, ...HIDDEN_KEYS].sort()).toEqual([...ALL_KEYS].sort())
+    // 这些 key 的资产 display 都是英文，其中 grossberg 的 display 与 key 完全不同——
+    // 若实现改成「name !== key」或 CJK 正则判断，下面的默认过滤测试会失败
+    expect(IDX.maps[31].display).toBe("Dynasty's Pearl")
+  })
+
+  it('默认只显示已登记中文名的地图，其余资产条目隐藏', async () => {
     auth.authenticated.value = true
     source.loadMapIndex.mockResolvedValue(IDX)
     const wrapper = await openAt()
-    const cards = wrapper.findAll('.map-card')
-    expect(cards).toHaveLength(3)
-    const erlenberg = cards.find(c => c.attributes('data-testid') === 'map-card-erlenberg')
-    const moon = cards.find(c => c.attributes('data-testid') === 'map-card-moon')
-    expect(erlenberg).toBeTruthy()
-    expect(moon).toBeTruthy()
+    expect(cardKeys(wrapper)).toEqual([...ZH_KEYS].sort())
+    for (const key of HIDDEN_KEYS) {
+      expect(wrapper.find(`[data-testid="map-card-${key}"]`).exists(), key).toBe(false)
+    }
+  })
+
+  it('新增 5 张地图在 zh locale 显示用户确认的中文名', async () => {
+    auth.authenticated.value = true
+    source.loadMapIndex.mockResolvedValue(IDX)
+    const wrapper = await openAt()
+    const expected = {
+      erlenberg_old: '米德尔博格 2014版',
+      grossberg: '王朝的珍珠',
+      savanna_old: '沙漠之心2014版',
+      moon: '寂静之海',
+      iceworld: '永冻',
+    }
+    for (const [key, name] of Object.entries(expected)) {
+      const card = wrapper.find(`[data-testid="map-card-${key}"]`)
+      expect(card.exists(), key).toBe(true)
+      expect(card.find('.map-card-name').text(), key).toBe(name)
+    }
+  })
+
+  it('可见集合与 UI locale 无关：切到 en 只改显示名，不改变默认过滤', async () => {
+    auth.authenticated.value = true
+    source.loadMapIndex.mockResolvedValue(IDX)
+    const wrapper = await openAt()
+    const before = cardKeys(wrapper)
+    expect(wrapper.find('[data-testid="map-card-grossberg"] .map-card-name').text()).toBe('王朝的珍珠')
+    i18n.locale.value = 'en'
+    await flushPromises()
+    // 同一批卡片（可见集合不变），只是显示名切到英文
+    expect(cardKeys(wrapper)).toEqual(before)
+    expect(wrapper.find('[data-testid="map-card-grossberg"] .map-card-name').text()).toBe("Dynasty's Pearl")
+    expect(wrapper.find('[data-testid="map-card-moon"] .map-card-name').text()).toBe('Sea of Tranquility')
+    expect(wrapper.find('[data-testid="map-card-canal_01"]').exists()).toBe(false)
+  })
+
+  it('「显示全部地图」开关展开/收起未登记条目，且不写 URL', async () => {
+    auth.authenticated.value = true
+    source.loadMapIndex.mockResolvedValue(IDX)
+    const wrapper = await openAt()
+    const toggle = wrapper.find('[data-testid="map-show-all"]')
+    expect(toggle.attributes('aria-checked')).toBe('false')
+    await toggleShowAll(wrapper)
+    expect(toggle.attributes('aria-checked')).toBe('true')
+    expect(cardKeys(wrapper)).toEqual([...ALL_KEYS].sort())
+    expect(ROUTER.currentRoute.value.query).toEqual({ view: 'map-preview' })
+    await toggleShowAll(wrapper)
+    expect(toggle.attributes('aria-checked')).toBe('false')
+    expect(cardKeys(wrapper)).toEqual([...ZH_KEYS].sort())
+    expect(wrapper.find('[data-testid="map-card-rudniki_01"]').exists()).toBe(false)
+  })
+
+  it('默认隐藏的地图仍可被 ?map= 深链打开（2D/3D），返回 picker 后仍默认隐藏', async () => {
+    auth.authenticated.value = true
+    source.loadMapIndex.mockResolvedValue(IDX)
+    const w2d = await openAt({ map: 'moon', mode: '2d' })
+    expect(ROUTER.currentRoute.value.query).toMatchObject({ view: 'map-preview', map: 'moon', mode: '2d' })
+    expect(w2d.find('[data-testid="map-grid"]').exists()).toBe(false)
+    expect(w2d.find('[data-testid="map-2d-pane"]').isVisible()).toBe(true)
+    expect(w2d.findComponent({ name: 'MapPreview2DPane' }).props('mapKey')).toBe('moon')
+
+    const w3d = await openAt({ map: 'rudniki_03', mode: '3d' })
+    expect(w3d.find('[data-testid="map-3d-pane"]').element.parentElement.style.display).toBe('')
+    expect(w3d.findComponent({ name: 'MapPreview3DPane' }).props('mapKey')).toBe('rudniki_03')
+    await w3d.find('[data-testid="map-back"]').trigger('click')
+    await flushPromises()
+    expect(w3d.find('[data-testid="map-grid"]').exists()).toBe(true)
+    expect(w3d.find('[data-testid="map-card-rudniki_03"]').exists()).toBe(false)
+  })
+
+  it('「显示全部地图」三语键齐全（zh / en / ru）', () => {
+    for (const messages of [zhMessages, enMessages, ruMessages]) {
+      expect(typeof messages.mapPreview.showAllMaps).toBe('string')
+      expect(messages.mapPreview.showAllMaps.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('按 key 去重后的完整清单（显示全部）都有封面与 2D 徽标', async () => {
+    auth.authenticated.value = true
+    source.loadMapIndex.mockResolvedValue(IDX)
+    const wrapper = await openAt()
+    await toggleShowAll(wrapper)
+    // 变体 id 54 与 id 3 同为 erlenberg → 只渲染一张卡
+    expect(cardKeys(wrapper)).toEqual([...ALL_KEYS].sort())
+    expect(wrapper.findAll('[data-testid="map-card-erlenberg"]')).toHaveLength(1)
+    const erlenberg = wrapper.find('[data-testid="map-card-erlenberg"]')
+    const moon = wrapper.find('[data-testid="map-card-moon"]')
     // 双图都有 2D 徽标（ground.webp 回退后 43 图全可进 2D）
     expect(erlenberg.find('.map-card-badge').exists()).toBe(true)
     expect(moon.find('.map-card-badge').exists()).toBe(true)
@@ -116,6 +253,7 @@ describe('MapPreviewPage', () => {
       return 'https://assets.test' + p
     })
     const wrapper = await openAt()
+    await toggleShowAll(wrapper)
     const erlenberg = wrapper.find('[data-testid="map-card-erlenberg"]')
     // 无 cover → 走 thumbFallback（打包底图），不落占位图标
     expect(erlenberg.find('[data-testid="map-thumb-fallback-erlenberg"]').exists()).toBe(true)

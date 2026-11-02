@@ -5,6 +5,7 @@
   "mapPreview": {
     "title": "Map Preview",
     "subtitle": "Inspect terrain and scenery, mark key positions — no replay file needed",
+    "showAllMaps": "Show all maps",
     "loginRequired": "Sign in to use the map preview",
     "loadFailed": "Failed to load the map list",
     "empty": "No maps available",
