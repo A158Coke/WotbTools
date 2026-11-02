@@ -1958,7 +1958,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const cells = occlusionCells(camera.position.x, camera.position.z, target.x, target.z)
     const cands = collectSurfaceCandidates(annotationSurfaceGrid, cells)
     if (!cands || !cands.length) return null
-    const hit = pickDrawableSurfaceHit(rc, cands)
+    const hit = pickDrawableSurfaceHit(rc, cands, annotationSurfaceHeightAt)
     if (!hit) return null
     return { point: hit.point, distance: hit.distance, surfaceY: hit.point.y }
   }

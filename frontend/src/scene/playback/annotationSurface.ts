@@ -15,12 +15,14 @@ import { occlusionFootprintCells } from './pure.js'
 /** 候选格边长（米），与标签遮挡的 OCCL_CELL 同口径。 */
 export const ANNOTATION_SURFACE_CELL = 16
 /**
- * 可绘制表面的 world normal.y 下限（near-horizontal V1）。
- * 水平 cross-section 只在近水平表面成立：宽度 12 slider（约 8m half-width）时，
- * 允许边缘高差 ≤0.25m ⇒ tan(slope) ≤0.03125（约 1.8°）⇒ normal.y ≥ 1/√(1+s²) ≈ 0.9995。
- * 更陡表面仍会被 ray 拾取到但这里 fail-closed 回落到 terrain；不做 normal-aligned ribbon。
+ * 可绘制表面的 world normal.y 下限：只用来拒绝墙面/底面，不做整体坡度判据。
+ * 真实 Castilla 石桥的 top face 大量在 0.5–0.95（石材/拱面三角），旧的 0.9995
+ * 会让桥面几乎全部回落地形。V1 的主判据是 hit-local elevation（见下），
+ * horizontal cross-section 对高架桥面仍是近似；陡屋顶不在 V1 保证范围。
  */
-export const ANNOTATION_SURFACE_MIN_UP = 0.9995
+export const ANNOTATION_SURFACE_MIN_UP = 0.4
+/** 命中点必须高于该 XZ 的 terrain；用于把贴地铺装/地形层与高架桥面区分开。 */
+export const ANNOTATION_SURFACE_MIN_CLEARANCE = 0.5
 /** 单次 pick 的候选 batch 上限；超限 fail-open 到 terrain，避免密集场景尖峰。 */
 export const ANNOTATION_MAX_SURFACE_CANDIDATES = 400
 
@@ -39,7 +41,7 @@ export interface AnnotationSurfaceObject {
 export interface AnnotationSurfaceHit {
   object: AnnotationSurfaceObject
   face?: { materialIndex?: number } | null
-  point?: { y?: number } | null
+  point?: { x: number; y: number; z: number } | null
   distance: number
   instanceId?: number | null
   [key: string]: unknown
@@ -81,16 +83,24 @@ function hitMaterial(hit: AnnotationSurfaceHit): AnnotationSurfaceMaterial | nul
  * 可绘制表面判定：
  * - 必须是 Mesh 且有 face / 有限命中点；
  * - 装配期标记为 annotationSurface=false 的材质（水/天/植被/贴花/混合层/水下）跳过；
- * - 只接受近水平朝上表面（world normal.y ≥ 0.9995，约 1.8°），墙面/陡坡回落到地形。
+ * - hit-local elevation 必须高于该 XZ 的 terrain 至少 ANNOTATION_SURFACE_MIN_CLEARANCE；
+ * - world normal.y ≥ ANNOTATION_SURFACE_MIN_UP 只用于拒绝墙面/底面；真实石桥坡度面不会被一刀切。
  */
-export function isDrawableSurfaceHit(hit: AnnotationSurfaceHit): boolean {
+export function isDrawableSurfaceHit(
+  hit: AnnotationSurfaceHit,
+  terrainY: number | null = null,
+): boolean {
   if (!hit || !hit.object || !hit.face) return false
   const object = hit.object
   if (!object.isMesh || !object.geometry) return false
   if (object.userData && object.userData.isSky) return false
-  if (!Number.isFinite(hit.point?.y)) return false
+  const point = hit.point
+  if (!point || !Number.isFinite(point.y)) return false
   const material = hitMaterial(hit)
   if (material && material.userData && material.userData.annotationSurface === false) return false
+  // hit-local elevation：贴地铺装/地形层不是 selected surface；不按整 mesh 的 AABB 判。
+  if (terrainY !== null && Number.isFinite(terrainY)
+      && point.y - terrainY < ANNOTATION_SURFACE_MIN_CLEARANCE) return false
   return hitWorldNormalY(hit) >= ANNOTATION_SURFACE_MIN_UP
 }
 
@@ -98,12 +108,15 @@ export function isDrawableSurfaceHit(hit: AnnotationSurfaceHit): boolean {
 export function pickDrawableSurfaceHit(
   raycaster: AnnotationSurfaceRaycaster,
   objects: AnnotationSurfaceObject[],
+  terrainYAt: ((x: number, z: number) => number | null) | null = null,
 ): AnnotationSurfaceHit | null {
   if (!raycaster || !Array.isArray(objects) || objects.length === 0) return null
   const hits = raycaster.intersectObjects(objects, false)
   for (const hit of hits) {
     if (!chainVisible(hit.object)) continue
-    if (!isDrawableSurfaceHit(hit)) continue
+    const point = hit.point
+    const terrainY = terrainYAt && point ? terrainYAt(point.x, point.z) : null
+    if (!isDrawableSurfaceHit(hit, terrainY)) continue
     return hit
   }
   return null

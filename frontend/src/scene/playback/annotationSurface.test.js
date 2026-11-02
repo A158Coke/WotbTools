@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
 import {
   ANNOTATION_MAX_SURFACE_CANDIDATES,
-  ANNOTATION_SURFACE_MIN_UP,
+  ANNOTATION_SURFACE_MIN_CLEARANCE,
   buildAnnotationSurfaceGrid,
   chooseAnnotationHit,
   collectSurfaceCandidates,
@@ -40,52 +40,57 @@ describe('annotation surface picking policy', () => {
     const floor = ground()
     const bridge = box(20, 1, 10, 0, 8, 0)
     const { raycaster } = cameraFromAbove()
-    const hit = pickDrawableSurfaceHit(raycaster, [bridge, floor])
+    const hit = pickDrawableSurfaceHit(raycaster, [bridge, floor], () => 0)
     expect(hit).not.toBeNull()
     expect(hit.object).toBe(bridge)
     expect(hit.point.y).toBeCloseTo(8.5, 5)
     expect(hitWorldNormalY(hit)).toBeCloseTo(1, 5)
   })
 
-  it('falls through to the ground when the bridge is hidden or tagged non-drawable', () => {
+  it('falls through when the bridge is hidden or tagged non-drawable', () => {
     const floor = ground()
     const { raycaster } = cameraFromAbove()
 
     const hidden = box(20, 1, 10, 0, 8, 0)
     hidden.visible = false
-    expect(pickDrawableSurfaceHit(raycaster, [hidden, floor]).object).toBe(floor)
+    expect(pickDrawableSurfaceHit(raycaster, [hidden, floor], () => 0)).toBeNull()
 
     const tagged = box(20, 1, 10, 0, 8, 0)
     tagged.material.userData.annotationSurface = false
-    expect(pickDrawableSurfaceHit(raycaster, [tagged, floor]).object).toBe(floor)
+    expect(pickDrawableSurfaceHit(raycaster, [tagged, floor], () => 0)).toBeNull()
   })
 
-  it('rejects a steep/vertical face and keeps the terrain candidate', () => {
-    const floor = ground()
-    const sloped = box(20, 1, 10, 0, 8, 0)
-    sloped.rotation.x = Math.PI / 4
-    sloped.updateMatrixWorld(true)
-    const { raycaster } = cameraFromAbove()
-    const hits = raycaster.intersectObjects([sloped, floor], false)
-    const slopedHit = hits.find((h) => h.object === sloped)
-    expect(slopedHit).toBeTruthy()
-    expect(Math.abs(hitWorldNormalY(slopedHit))).toBeCloseTo(Math.SQRT1_2, 5)
-    expect(ANNOTATION_SURFACE_MIN_UP).toBeGreaterThan(Math.SQRT1_2)
-    expect(isDrawableSurfaceHit(slopedHit)).toBe(false)
-    expect(pickDrawableSurfaceHit(raycaster, [sloped, floor]).object).toBe(floor)
+  it('rejects vertical walls', () => {
+    const wall = new THREE.Mesh(new THREE.PlaneGeometry(20, 10), new THREE.MeshBasicMaterial())
+    wall.position.set(0, 5, 0)
+    wall.updateMatrixWorld(true)
+    const camera = new THREE.PerspectiveCamera(60, 1, 0.5, 1000)
+    camera.position.set(0, 5, 20)
+    camera.lookAt(0, 5, 0)
+    camera.updateMatrixWorld(true)
+    const raycaster = new THREE.Raycaster()
+    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera)
+    const hit = raycaster.intersectObject(wall, false)[0]
+    expect(hit).toBeTruthy()
+    expect(hitWorldNormalY(hit)).toBeCloseTo(0, 5)
+    expect(isDrawableSurfaceHit(hit, 0)).toBe(false)
   })
 
-  it('accepts only near-horizontal surfaces for the horizontal V1 cross-section', () => {
+  it('accepts a rough elevated bridge face but rejects a low flat terrain plate', () => {
     const { raycaster } = cameraFromAbove()
-    const shallow = box(20, 1, 10, 0, 8, 0)
-    shallow.rotation.x = Math.PI / 180 // 1°
-    shallow.updateMatrixWorld(true)
-    expect(pickDrawableSurfaceHit(raycaster, [shallow])).not.toBeNull()
+    const bridgeFace = box(20, 1, 10, 0, 8, 0)
+    bridgeFace.rotation.x = Math.PI / 4 // 45°: stone/roof facet, but elevated
+    bridgeFace.updateMatrixWorld(true)
+    expect(pickDrawableSurfaceHit(raycaster, [bridgeFace], () => 0)).not.toBeNull()
 
-    const steeper = box(20, 1, 10, 0, 8, 0)
-    steeper.rotation.x = (3 * Math.PI) / 180 // 3°
-    steeper.updateMatrixWorld(true)
-    expect(pickDrawableSurfaceHit(raycaster, [steeper])).toBeNull()
+    const plate = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.MeshBasicMaterial())
+    plate.rotation.x = -Math.PI / 2
+    plate.position.y = 0.1
+    plate.updateMatrixWorld(true)
+    const plateHit = raycaster.intersectObject(plate, false)[0]
+    expect(plateHit).toBeTruthy()
+    expect(plateHit.point.y - 0 < ANNOTATION_SURFACE_MIN_CLEARANCE).toBe(true)
+    expect(isDrawableSurfaceHit(plateHit, 0)).toBe(false)
   })
 
   it('keeps up-facing normals through the rotated map root', () => {
