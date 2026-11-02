@@ -2197,7 +2197,7 @@ describe('Replay3DPane 3D annotation wiring', () => {
     await flush()
     await wrapper.get('[data-test="pb-annot-eraser"]').trigger('click')
     await flush()
-    sceneOptions().onAnnotationErase({ points: [{ x: 5, y: 0 }], radius: 1 })
+    sceneOptions().onAnnotationErase({ points: [{ x: 5, y: 0, surfaceY: 10 }], radius: 1 })
     await flush()
     const pieces = api.setAnnotations.mock.calls.at(-1)[0]
     expect(pieces).toHaveLength(2)

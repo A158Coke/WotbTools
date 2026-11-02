@@ -4495,6 +4495,27 @@ describe('3D annotation pointer ownership', () => {
     expect(camera.position.distanceTo(before)).toBeLessThan(1e-9)
   })
 
+  it('eraser path keeps surfaceY/surfaceN for layer-aware clipping', async () => {
+    const { canvas, onAnnotationErase } = await setup({ tool: 'eraser' })
+    const layer = window.__annotationLayer
+    const ground = layer.pick(380, 300)
+    const sx = -ground.semantic.x
+    const sz = ground.semantic.y
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(40, 2, 40), new THREE.MeshBasicMaterial())
+    bridge.position.set(sx, 20, sz)
+    window.__scene.add(bridge)
+    bridge.updateMatrixWorld(true)
+    const key = Math.floor(sx / 16) + ',' + Math.floor(sz / 16)
+    layer.setSurfaceGrid(new Map([[key, [bridge]]]))
+
+    canvas.dispatchEvent(mouse('pointerdown', 380, 300))
+    canvas.dispatchEvent(mouse('pointerup', 380, 300))
+    expect(onAnnotationErase).toHaveBeenCalledTimes(1)
+    const path = onAnnotationErase.mock.calls[0][0]
+    expect(path.points[0].surfaceY).toBeCloseTo(21, 5)
+    expect(path.points[0].surfaceN.y).toBeCloseTo(1, 5)
+  })
+
   it('second touch cancels the draft, hands off to pinch, and the next fresh touch draws', async () => {
     const { api, canvas, onAnnotationCommit } = await setup()
     api.setCam('follow')

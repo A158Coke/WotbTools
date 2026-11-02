@@ -30,6 +30,9 @@ export const ANNOT_WIDTH_MIN = 1
 export const ANNOT_WIDTH_MAX = 12
 export const ANNOT_WIDTH_DEFAULT = 3
 
+/** 同一 XZ 多层 surface 的 eraser hit 高度容差（米）。 */
+const ANNOT_ERASE_LAYER_EPS = 0.5
+
 /** 3D 橡皮擦 visual radius（CSS/logical px；pen width 与 eraser radius 分离）。 */
 export const ANNOT_ERASER_RADIUS_MIN = 6
 export const ANNOT_ERASER_RADIUS_MAX = 40
@@ -323,11 +326,17 @@ function pathLength(points) {
  */
 function clipPenByEraser(points, eraserPoints, radius) {
   if (!Array.isArray(points) || points.length < 2) return null
+  const validNormal = (n) => n && Number.isFinite(n.x) && Number.isFinite(n.y) && Number.isFinite(n.z)
   const cleanPoints = []
   for (const point of points) {
     if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) continue
     const previous = cleanPoints[cleanPoints.length - 1]
-    if (previous && Math.hypot(point.x - previous.x, point.y - previous.y) <= 1e-9) continue
+    if (previous && Math.hypot(point.x - previous.x, point.y - previous.y) <= 1e-9) {
+      // 同 XZ 的 ground→bridge 点去重时不能丢掉后一个点的 layer anchor。
+      if (!Number.isFinite(previous.surfaceY) && Number.isFinite(point.surfaceY)) previous.surfaceY = point.surfaceY
+      if (!validNormal(previous.surfaceN) && validNormal(point.surfaceN)) previous.surfaceN = point.surfaceN
+      continue
+    }
     cleanPoints.push(point)
   }
   if (cleanPoints.length < 2) return null
@@ -358,7 +367,29 @@ function clipPenByEraser(points, eraserPoints, radius) {
     if (current.length >= 2 && pathLength(current) > 1e-9) pieces.push(current)
     current = []
   }
-  const validNormal = (n) => n && Number.isFinite(n.x) && Number.isFinite(n.y) && Number.isFinite(n.z)
+  const anchorY = (p) => (Number.isFinite(p.surfaceY) ? p.surfaceY : null)
+  // eraser 的 semantic capsule 仍是 2D；这里只加一层 hit gate：同 XZ 不同 surface 层不互相擦。
+  const segmentLayerMatch = (a, b, c, d, lo, hi) => {
+    const ay = anchorY(a)
+    const by = anchorY(b)
+    const cy = anchorY(c)
+    const dy = anchorY(d)
+    if ((ay === null) !== (by === null)) return false // stroke 自身跨层：不借 capsule 连两层
+    if ((cy === null) !== (dy === null)) return false // eraser 自身跨层：同上
+    if (ay === null) return cy === null       // terrain layer
+    if (cy === null) return false             // anchored stroke 不被 terrain eraser 擦
+    const t = Math.max(0, Math.min(1, (lo + hi) / 2))
+    const sx = a.x + (b.x - a.x) * t
+    const sz = a.y + (b.y - a.y) * t
+    const ex = d.x - c.x
+    const ez = d.y - c.y
+    const len2 = ex * ex + ez * ez
+    let u = 0
+    if (len2 > 1e-12) u = Math.max(0, Math.min(1, ((sx - c.x) * ex + (sz - c.y) * ez) / len2))
+    const sy = ay + (by - ay) * t
+    const ey = cy + (dy - cy) * u
+    return Math.abs(sy - ey) <= ANNOT_ERASE_LAYER_EPS
+  }
   const copyPoint = (p) => {
     const out = { x: p.x, y: p.y }
     if (Number.isFinite(p.surfaceY)) out.surfaceY = p.surfaceY
@@ -390,7 +421,12 @@ function clipPenByEraser(points, eraserPoints, radius) {
     let covered = []
     for (let k = 0; k < segments.length; k++) {
       if (!boxesOverlap(strokeBox, boxes[k])) continue
-      covered.push(...capsuleIntervals(a, b, segments[k].a, segments[k].b, radius))
+      const intervals = capsuleIntervals(a, b, segments[k].a, segments[k].b, radius)
+      for (const interval of intervals) {
+        if (segmentLayerMatch(a, b, segments[k].a, segments[k].b, interval[0], interval[1])) {
+          covered.push(interval)
+        }
+      }
     }
     covered = mergeCoveredIntervals(covered)
     if (!covered.length) {

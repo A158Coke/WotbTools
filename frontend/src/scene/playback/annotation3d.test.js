@@ -801,7 +801,7 @@ describe('3D surface anchors (selected-surface drawing)', () => {
 
   it('eraser cut endpoints interpolate surfaceY while 2D points stay {x,y}', () => {
     const stroke = pen([{ x: 0, y: 0, surfaceY: 8 }, { x: 10, y: 0, surfaceY: 12 }], 1)
-    const pieces = applyEraser([stroke], [{ x: 5, y: 0 }], 1)
+    const pieces = applyEraser([stroke], [{ x: 5, y: 0, surfaceY: 10 }], 1)
     expect(pieces).toHaveLength(2)
     const all = pieces.flatMap((piece) => piece.points)
     expect(all.every((p) => Number.isFinite(p.surfaceY))).toBe(true)

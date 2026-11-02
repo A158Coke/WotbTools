@@ -225,6 +225,41 @@ describe('applyEraser (semantic capsule)', () => {
     expect(result[1].points).toEqual([{ x: 6, y: 0 }, { x: 10, y: 0 }])
   })
 
+  it('isolates bridge eraser from a coincident terrain stroke', () => {
+    const terrain = pen([{ x: 0, y: 0 }, { x: 10, y: 0 }])
+    const bridge = pen([{ x: 0, y: 0, surfaceY: 10 }, { x: 10, y: 0, surfaceY: 10 }])
+    const result = applyEraser([terrain, bridge], [{ x: 5, y: 0, surfaceY: 10 }], 1)
+    expect(result).toContain(terrain)
+    const bridgePieces = result.filter((ann) => ann !== terrain)
+    expect(bridgePieces).toHaveLength(2)
+    expect(bridgePieces.every((ann) => ann.points.every((p) => p.surfaceY === 10))).toBe(true)
+  })
+
+  it('isolates terrain eraser from a coincident bridge stroke', () => {
+    const terrain = pen([{ x: 0, y: 0 }, { x: 10, y: 0 }])
+    const bridge = pen([{ x: 0, y: 0, surfaceY: 10 }, { x: 10, y: 0, surfaceY: 10 }])
+    const result = applyEraser([terrain, bridge], [{ x: 5, y: 0 }], 1)
+    expect(result).toContain(bridge)
+    const terrainPieces = result.filter((ann) => ann !== bridge)
+    expect(terrainPieces).toHaveLength(2)
+    expect(terrainPieces.every((ann) => ann.points.every((p) => p.surfaceY === undefined))).toBe(true)
+  })
+
+  it('isolates different anchored surface heights at the same XZ', () => {
+    const low = pen([{ x: 0, y: 0, surfaceY: 10 }, { x: 10, y: 0, surfaceY: 10 }])
+    const high = pen([{ x: 0, y: 0, surfaceY: 20 }, { x: 10, y: 0, surfaceY: 20 }])
+    const result = applyEraser([low, high], [{ x: 5, y: 0, surfaceY: 10 }], 1)
+    expect(result).toContain(high)
+    expect(result.filter((ann) => ann !== high)).toHaveLength(2)
+  })
+
+  it('does not connect a ground↔bridge transition with one capsule', () => {
+    const transition = pen([{ x: 0, y: 0 }, { x: 10, y: 0, surfaceY: 10 }])
+    const result = applyEraser([transition], [{ x: 5, y: 0, surfaceY: 10 }], 1)
+    expect(result).toHaveLength(1)
+    expect(result[0]).toBe(transition)
+  })
+
   it('treats a long eraser segment as a capsule, not as sparse points', () => {
     const result = applyEraser([pen([{ x: 0, y: 0 }, { x: 10, y: 0 }])], [{ x: 5, y: -50 }, { x: 5, y: 50 }], 1)
     expect(result).toHaveLength(2)

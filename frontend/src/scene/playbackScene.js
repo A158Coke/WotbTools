@@ -2147,7 +2147,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     } else if (gesture.points.length > 0) {
       annotationStats.eraseCallbacks++
       onAnnotationErase?.({
-        points: gesture.points.map((point) => ({ x: point.x, y: point.y })),
+        points: gesture.points.map((point) => semanticPoint(point)),
         radius: gesture.radius,
       })
     }
