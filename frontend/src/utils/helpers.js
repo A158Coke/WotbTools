@@ -123,6 +123,17 @@ export function fmtDuration(s, t) {
   return t('duration', { min: Math.floor(total / 60), sec: total % 60 })
 }
 
+/**
+ * 地图目录的「人工认可」判据：`common/map_names.json` 是否登记了该 key 的中文名。
+ * 地图页 picker 默认只显示判据为真的 key；与当前 UI locale 无关——切到 en/ru
+ * 不改变可见集合，也不依赖资产 display 文案（asset display 与 key 本来就不同）。
+ * 归一化与 `mapLabel()` 一致；legacy 字符串条目没有 zh，视为未登记。
+ */
+export function hasChineseMapName(key) {
+  const labels = MAP_NAMES[String(key || '').toLowerCase().trim()]
+  return typeof labels === 'object' && labels !== null && Boolean(labels.zh)
+}
+
 export function mapLabel(m, locale) {
   const key = (m || '').toLowerCase().trim()
   if (!key) return m
