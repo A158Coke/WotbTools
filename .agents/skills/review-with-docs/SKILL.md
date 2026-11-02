@@ -176,6 +176,47 @@ ocr delegate rule --format json <task-related-paths...>
 
 检查 requirement、acceptance criteria、遗漏、partial implementation、scope regression 与关键验证。requirement missing → 即使 OCR no findings 也 BLOCKER。
 
+### A1b. Verification receipt（证据，不是感觉）
+
+A1 的 `SATISFIED / PARTIAL / MISSING / BLOCKED` 是 **plan compliance** 结果；本节 receipt 是**每条 acceptance criterion 的证据状态**。两者不互相替代，也不新增第二份计划。
+
+每条 requirement 映射到实际观察到的 evidence，状态只有四个：
+
+| 状态 | 成立条件 |
+|---|---|
+| `PROVEN` | 至少一条 `PASS` evidence |
+| `FAILED` | 至少一条 `FAIL` evidence |
+| `UNVERIFIED` | 没有证据，或证据不足以证明（不得折叠进 `FAILED`） |
+| `NOT_APPLICABLE` | 必须写明原因 |
+
+证据必须区分来源：`MACHINE`（unit / integration test、typecheck、compiler、build、static diagnostics、Git diff、API test）与 `EXTERNAL`（窄屏浏览器渲染、Computer Use、Android 模拟器/真机、Android 生命周期、真实生产端点、外部 IdP 行为、已部署 IaC 行为、GPT Web Review）。机器测试不证明外部行为。
+
+硬规则：
+
+- 没有 evidence 不得写 `PROVEN`；缺证据只能写 `UNVERIFIED`。
+- `NOT_RUN` 永远不构成 `PASS`。
+- 不得把 `UNVERIFIED` 折叠成 `FAILED`，也不得把 `FAILED` 折叠成 `UNVERIFIED`。
+- 缺少 runtime evidence 不能用静态 fallback 替代验收（与 `## OCR failure` 末段一致）。
+- GPT Web Review 在本仓之外：receipt 只记录 `PENDING / DONE / NOT_APPLICABLE`，不调用、不上传、不模拟、不等待。
+
+```text
+Requirement R1
+Evidence:
+- [MACHINE] PASS pnpm test ...
+Status: PROVEN
+
+Requirement R3
+Required surface: Android real device
+Evidence:
+- none
+Status: UNVERIFIED
+
+External review:
+- GPT Web: PENDING
+```
+
+可用 `wotb_verification_receipt` 工具做确定性汇总与降级（advisory，无 gate）；不可用时就按本节格式手工产出。
+
 ### A2. Java DI gate
 
 存在 Java production 变更或直接受影响 Java DI 接线时执行本节；纯非 Java 任务记录 N/A + 原因。Constructor injection preferred；禁止无理由 field injection。
@@ -303,6 +344,7 @@ Findings:
 
 Validation:
 - runtime evidence: acceptance criteria 要求的 browser / device / runtime response / benchmark 结果，或 N/A + 具体理由
+- verification receipt: `PROVEN / FAILED / UNVERIFIED / NOT_APPLICABLE` 计数、未验证 acceptance criteria 清单、`MACHINE` / `EXTERNAL` 证据分布、GPT Web 状态
 - OCR: version, range/workspace, reviewable N, reviewed N, skipped N
 - DI scan: multiline / same-line result
 - targeted tests / contract evidence
