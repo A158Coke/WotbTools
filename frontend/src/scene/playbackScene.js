@@ -4613,6 +4613,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // SNIPER→ARCADE（含 seek 回 Arcade）：叠加渲染停止，释放全尺寸 RT；
       // 下次命中目标再按需重建。进入开镜/待在开镜不释放。
       if (wasScoped && !scoped) armorHighlight?.releaseRenderTargets?.();
+      // SNIPER 进入（含敌车 tankData 晚到后的再进入）：补预取敌方 armor 模板——
+      // enterRecorderView 的预取可能跑在部分敌车 tankData/GLB 就位之前。
+      if (scoped && !wasScoped && ARMOR_HIGHLIGHT) ensureArmorHighlight().prefetch(highlightEnemies());
     } else if (scoped && v.glb && !v.glb.layers.isEnabled(SCOPED_HIDDEN_LAYER)) {
       setScopedLayer(v, true);   // 开镜期间 GLB 才装配完成
     }
@@ -4721,6 +4724,26 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
   // ?perf 逐 pass 计时（pick 由这里填，四个叠加 pass 由 armorHighlight.render 填）。
   const armorStats = { pickMs: 0, stateMs: 0, thicknessMs: 0, occluderMs: 0, colorMs: 0, calls: 0, _t0: 0 };
+  const _occluderRoots = [];
+  /**
+   * 语义化遮挡根（开镜高亮遮挡 pass 的遍历范围，issue #850 F）：地形 / 场景 GLB /
+   * 占位地面 + 每车的低模组、GLB 与飞炮塔。特效 / 曳光轨迹 / 标注 / 基地 / 边界 /
+   * 网格线是透明或非网格、天穹在无穷远（frustumCulled=false 但深度恒最远），
+   * 本来就挡不住弹道——从遍历里省掉，遮挡语义不变（墙体/车辆遮挡、树丛不遮挡）。
+   * v.glb 是 v.group 的场景级兄弟节点，两者都要进根清单。
+   */
+  function occluderRoots() {
+    _occluderRoots.length = 0;
+    for (const root of [terrainMesh, mapScenery, mapPlane, groundMesh]) {
+      if (root) _occluderRoots.push(root);
+    }
+    for (const v of V) {
+      if (v.group) _occluderRoots.push(v.group);
+      if (v.glb) _occluderRoots.push(v.glb);
+      for (const head of v.detachedTurrets || []) _occluderRoots.push(head.root);
+    }
+    return _occluderRoots;
+  }
   /**
    * 主渲染之后的叠加 pass：只有录像者开镜才可能运行，其余路径没有任何额外 render。
    * 进入录像者的过渡期相机还没到炮位，距离衰减和入射角都不对，不着色。
@@ -4750,6 +4773,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       scene, camera, vehicle: target, tankData: target.tankData, config, shell, caliber,
       ...armorEquipmentCoeffs(shell, author.def.equipment, target.def.equipment),
       onReady: invalidate,
+      occluderRoots: occluderRoots(),
       stats: PERF ? armorStats : null,
     });
   }

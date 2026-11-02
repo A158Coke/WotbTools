@@ -546,19 +546,25 @@ export function createArmorHighlight({ renderer, assetProvider }) {
   }
 
   /** 目标整棵子树不进遮挡集：否则目标车模自己挡住装甲。 */
-  function markOccluders(scene, camera, vehicle, view) {
-    scene.traverseVisible((object) => {
-      if (!object.isMesh) return
-      if (object.layers.test(camera.layers) && isSolidOccluder(object) && canOccludeTarget(object, view)) {
-        object.layers.enable(OCCLUDER_LAYER)
-      } else object.layers.disable(OCCLUDER_LAYER)
-    })
+  function markOccluders(camera, vehicle, view, roots) {
+    // 语义化遮挡根（调用方给：地形/场景 GLB/占位地面/车辆组/飞炮塔），不做全场景
+    // traverseVisible——特效/轨迹/标注/基地/边界/天穹都是透明、非网格或无穷远，
+    // 本来就挡不住弹道，从遍历里省掉（遮挡语义不变：墙体/车辆遮挡、树丛不遮挡）。
+    for (const root of roots) {
+      if (!root || !root.visible) continue
+      root.traverseVisible((object) => {
+        if (!object.isMesh) return
+        if (object.layers.test(camera.layers) && isSolidOccluder(object) && canOccludeTarget(object, view)) {
+          object.layers.enable(OCCLUDER_LAYER)
+        } else object.layers.disable(OCCLUDER_LAYER)
+      })
+    }
     vehicle.glb.traverse((node) => node.layers.disable(OCCLUDER_LAYER))
     vehicle.group.traverse((node) => node.layers.disable(OCCLUDER_LAYER))
   }
 
-  function drawOccluderDepth(scene, camera, vehicle, view) {
-    markOccluders(scene, camera, vehicle, view)
+  function drawOccluderDepth(scene, camera, vehicle, view, roots) {
+    markOccluders(camera, vehicle, view, roots)
     const mask = camera.layers.mask, background = scene.background
     camera.layers.set(OCCLUDER_LAYER)
     scene.background = null
@@ -640,7 +646,7 @@ export function createArmorHighlight({ renderer, assetProvider }) {
     renderer.autoClear = false
     renderer.clearDepth()
     calls = passBegin(stats)
-    drawOccluderDepth(scene, camera, vehicle, occluderView)
+    drawOccluderDepth(scene, camera, vehicle, occluderView, frame.occluderRoots || [scene])
     passEnd(stats, 'occluderMs', calls)
     calls = passBegin(stats)
     renderer.render(target.color, camera)

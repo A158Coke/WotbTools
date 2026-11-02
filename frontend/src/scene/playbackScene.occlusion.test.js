@@ -183,4 +183,26 @@ describe('Sniper 穿深着色接线', () => {
     expect(hl).toMatch(/function prewarm\(camera\)/)
     expect(source).toMatch(/\.prewarm\(camera\)/)
   })
+
+  it('遮挡 pass 用语义化遮挡根，不再全场景 traverseVisible（issue #850 F）', () => {
+    const start = source.indexOf('function occluderRoots')
+    const body = source.slice(start, source.indexOf('function ', start + 20))
+    // 地形/场景 GLB/占位地面 + 每车低模组、GLB、飞炮塔
+    expect(body).toMatch(/terrainMesh, mapScenery, mapPlane, groundMesh/)
+    expect(body).toContain('v.glb')
+    expect(body).toContain('detachedTurrets')
+    // v.glb 是 v.group 的场景级兄弟，两者都必须在根清单里
+    expect(body).toContain('v.group')
+    expect(source).toMatch(/occluderRoots: occluderRoots\(\)/)
+    const hl = readFileSync(resolve(__dirname, 'playback/armorHighlight.js'), 'utf8')
+    expect(hl).toMatch(/function markOccluders\(camera, vehicle, view, roots\)/)
+    expect(hl).toMatch(/for \(const root of roots\)/)
+    expect(hl).toMatch(/frame\.occluderRoots \|\| \[scene\]/)
+  })
+
+  it('SNIPER 进入时补预取敌方 armor 模板（tankData 晚到缺口）', () => {
+    const start = source.indexOf('function driveRecorderCamera')
+    const body = source.slice(start, source.indexOf('function ', start + 20))
+    expect(body).toMatch(/scoped && !wasScoped && ARMOR_HIGHLIGHT\)\s+ensureArmorHighlight\(\)\.prefetch\(highlightEnemies\(\)\)/)
+  })
 })
