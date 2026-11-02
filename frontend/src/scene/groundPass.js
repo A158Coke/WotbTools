@@ -155,8 +155,7 @@ export function makeWaterCoast({ field, n, span, near, far, depthBits = 24 }) {
  *
  *  ⚠️ 前置条件：调用前 mesh 必须已置于**场景系**世界矩阵下（运行时=mapScenery 之下，烘焙=
  *  qFrame group 之下），且必须在"实例化合批"之前（合批会换掉逐节点 Mesh）。
- *  @returns {{ mask: Uint8Array, candidates: number, texels: number, meshes: THREE.Mesh[] } | null}
- *    `meshes` = 命中类判据的网格（运行时据此把地表薄板标记成非 3D 可绘制表面）。
+ *  @returns {{ mask: Uint8Array, candidates: number, texels: number } | null}
  */
 export function buildCorridorRefineMask({ meshes, field, n, span, marginTexels = 2 }) {
   if (!meshes || !meshes.length || !field) return null;
@@ -204,7 +203,7 @@ export function buildCorridorRefineMask({ meshes, field, n, span, marginTexels =
   const mask = buildRefineMask(pts, n, span, marginTexels);
   let texels = 0;
   for (let k = 0; k < mask.length; k++) texels += mask[k];
-  return { mask, candidates: candidates.length, texels, meshes: candidates };
+  return { mask, candidates: candidates.length, texels };
 }
 
 // 客户端 Landscape/tilemask-fp.sl 非 PBR 路径的实时合成材质（离线着色器解码

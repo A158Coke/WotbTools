@@ -14,8 +14,13 @@ import { occlusionFootprintCells } from './pure.js'
 
 /** 候选格边长（米），与标签遮挡的 OCCL_CELL 同口径。 */
 export const ANNOTATION_SURFACE_CELL = 16
-/** 可绘制表面的 world normal.y 下限（约 26°）。水平投影的 ribbon 在更陡表面上会明显偏离。 */
-export const ANNOTATION_SURFACE_MIN_UP = 0.9
+/**
+ * 可绘制表面的 world normal.y 下限（near-horizontal V1）。
+ * 水平 cross-section 只在近水平表面成立：宽度 12 slider（约 8m half-width）时，
+ * 允许边缘高差 ≤0.25m ⇒ tan(slope) ≤0.03125（约 1.8°）⇒ normal.y ≥ 1/√(1+s²) ≈ 0.9995。
+ * 更陡表面仍会被 ray 拾取到但这里 fail-closed 回落到 terrain；不做 normal-aligned ribbon。
+ */
+export const ANNOTATION_SURFACE_MIN_UP = 0.9995
 /** 单次 pick 的候选 batch 上限；超限 fail-open 到 terrain，避免密集场景尖峰。 */
 export const ANNOTATION_MAX_SURFACE_CANDIDATES = 400
 
@@ -56,7 +61,6 @@ export interface AnnotationSurfaceBatch {
     x: number
     y: number
     hidden?: boolean
-    node?: { userData?: Record<string, unknown> | null } | null
   }>
 }
 
@@ -117,7 +121,7 @@ export function chooseAnnotationHit(
 
 /**
  * 从装配期 batch 构建 annotation 候选格：
- * - 跳过材质/节点已标记 annotationSurface=false 的 batch；
+ * - 只按 batch 材质标记跳过（材质是批次共享身份；**不允许**单个 item 连坐整个 batch）；
  * - 跳过 hidden 实例（D_ 槽位在 y=-1e6）；
  * - 用实例足印（几何包围球半径）登记全部覆盖格，与 occlGrid 同粒度但**不要求节点名**。
  */
@@ -140,8 +144,6 @@ export function buildAnnotationSurfaceGrid(
       const materials = Array.isArray(batch.material) ? batch.material : [batch.material]
       if (materials.some((m) => m && m.userData && m.userData.annotationSurface === false)) continue
     }
-    if (batch.items.some((item) => item && item.node && item.node.userData
-      && item.node.userData.annotationSurface === false)) continue
     const geometry = batch.geometry
     if (geometry && !geometry.boundingSphere && typeof geometry.computeBoundingSphere === 'function') {
       geometry.computeBoundingSphere()

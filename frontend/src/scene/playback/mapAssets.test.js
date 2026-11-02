@@ -100,8 +100,9 @@ describe('assembleMapScenery 会话竞态（评审 P1/P2）', () => {
     expect(asm.writes.mapScenery).toBeTruthy()
     expect(asm.writes.occlGrid).toBeInstanceOf(Map)
     expect(asm.writes.annotationSurfaceGrid).toBeInstanceOf(Map)
-    // 走廊类判据命中的贴地薄板必须被标记成“非 3D 可绘制表面”。
-    expect(surfaceMesh.userData.annotationSurface).toBe(false)
+    // 走廊候选只服务 terrain refinement，不得把 mesh 全局标成“非 3D 可绘制表面”
+    //（薄桥一头贴地/同 batch 混合时会把桥也连坐掉）。
+    expect(surfaceMesh.userData.annotationSurface).toBeUndefined()
   })
 
   it('走廊掩码建成：onRefineMaskBuilt 携带 mask 且仅在宿主具备地形/相机/控件时调用（评审 P2）', async () => {

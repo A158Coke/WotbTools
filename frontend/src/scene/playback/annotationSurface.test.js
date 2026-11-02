@@ -75,6 +75,19 @@ describe('annotation surface picking policy', () => {
     expect(pickDrawableSurfaceHit(raycaster, [sloped, floor]).object).toBe(floor)
   })
 
+  it('accepts only near-horizontal surfaces for the horizontal V1 cross-section', () => {
+    const { raycaster } = cameraFromAbove()
+    const shallow = box(20, 1, 10, 0, 8, 0)
+    shallow.rotation.x = Math.PI / 180 // 1°
+    shallow.updateMatrixWorld(true)
+    expect(pickDrawableSurfaceHit(raycaster, [shallow])).not.toBeNull()
+
+    const steeper = box(20, 1, 10, 0, 8, 0)
+    steeper.rotation.x = (3 * Math.PI) / 180 // 3°
+    steeper.updateMatrixWorld(true)
+    expect(pickDrawableSurfaceHit(raycaster, [steeper])).toBeNull()
+  })
+
   it('keeps up-facing normals through the rotated map root', () => {
     const root = new THREE.Group()
     root.rotation.order = 'YXZ'
@@ -103,20 +116,17 @@ describe('annotation surface picking policy', () => {
     expect(hitWorldNormalY(hit)).toBeCloseTo(1, 5)
   })
 
-  it('builds a footprint grid and skips tagged / hidden batches', () => {
+  it('builds a footprint grid and skips material-tagged / hidden batches', () => {
     const drawable = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial())
     const taggedMaterial = new THREE.MeshBasicMaterial()
     taggedMaterial.userData.annotationSurface = false
     const tagged = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), taggedMaterial)
     const hidden = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial())
-    const nodeTagged = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial())
-    nodeTagged.userData.annotationSurface = false
 
     const batches = [
-      { mesh: drawable, geometry: { boundingSphere: new THREE.Sphere(new THREE.Vector3(), 5) }, material: drawable.material, items: [{ x: 0, y: 0, node: drawable }] },
-      { mesh: tagged, geometry: { boundingSphere: new THREE.Sphere(new THREE.Vector3(), 5) }, material: taggedMaterial, items: [{ x: 0, y: 0, node: tagged }] },
-      { mesh: hidden, geometry: { boundingSphere: new THREE.Sphere(new THREE.Vector3(), 5) }, material: hidden.material, items: [{ x: 0, y: 0, hidden: true, node: hidden }] },
-      { mesh: nodeTagged, geometry: { boundingSphere: new THREE.Sphere(new THREE.Vector3(), 5) }, material: nodeTagged.material, items: [{ x: 0, y: 0, node: nodeTagged }] },
+      { mesh: drawable, geometry: { boundingSphere: new THREE.Sphere(new THREE.Vector3(), 5) }, material: drawable.material, items: [{ x: 0, y: 0 }] },
+      { mesh: tagged, geometry: { boundingSphere: new THREE.Sphere(new THREE.Vector3(), 5) }, material: taggedMaterial, items: [{ x: 0, y: 0 }] },
+      { mesh: hidden, geometry: { boundingSphere: new THREE.Sphere(new THREE.Vector3(), 5) }, material: hidden.material, items: [{ x: 0, y: 0, hidden: true }] },
     ]
 
     const grid = buildAnnotationSurfaceGrid(batches)
@@ -124,8 +134,24 @@ describe('annotation surface picking policy', () => {
     expect(all).toContain(drawable)
     expect(all).not.toContain(tagged)
     expect(all).not.toContain(hidden)
-    expect(all).not.toContain(nodeTagged)
     expect(grid.has('0,0')).toBe(true)
+  })
+
+  it('does not let one item-level tag poison the whole instance batch', () => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial())
+    const batch = {
+      mesh,
+      geometry: { boundingSphere: new THREE.Sphere(new THREE.Vector3(), 5) },
+      material: mesh.material,
+      // 旧实现会把任一 node.userData.annotationSurface=false 当成整批不可绘制；
+      // 批次只共享 geometry/material，item 级 tag 不得连坐（bridge + ground plate 同批）。
+      items: [
+        { x: 0, y: 0, node: { userData: { annotationSurface: false } } },
+        { x: 0, y: 0, node: { userData: {} } },
+      ],
+    }
+    const grid = buildAnnotationSurfaceGrid([batch])
+    expect([...grid.values()].flat()).toContain(mesh)
   })
 
   it('projects gltf-local item coordinates into world XZ when asked', () => {

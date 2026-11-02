@@ -14,7 +14,7 @@ import * as THREE from 'three'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
-import { buildCorridorRefineMask, loadTerrain, makeGroundMaterial } from './groundPass.js'
+import { loadTerrain, makeGroundMaterial } from './groundPass.js'
 import { assembleSceneryMaterials } from './sceneryAssembly.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -258,28 +258,6 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
     assembleSceneryMaterials({ scene: root }, { strictSurfaces: true, masks, groundLayers })
     expect(decal.material.userData.annotationSurface).toBe(false)
     expect(blend.material.userData.annotationSurface).toBe(false)
-  })
-
-  it('corridor 类判据返回 candidate meshes：贴地薄板命中，高物体/水面不命中', () => {
-    const field = new Float32Array(64 * 64).fill(10)
-    const root = new THREE.Group()
-    const plate = new THREE.Mesh(new THREE.BoxGeometry(20, 0.2, 20), new THREE.MeshBasicMaterial())
-    plate.position.set(0, 10.05, 0)
-    const tall = new THREE.Mesh(new THREE.BoxGeometry(2, 10, 2), new THREE.MeshBasicMaterial())
-    tall.position.set(30, 15, 0)
-    const water = new THREE.Mesh(new THREE.BoxGeometry(20, 0.2, 20), new THREE.MeshBasicMaterial())
-    water.position.set(-30, 10.05, 0)
-    root.add(plate, tall, water)
-    root.updateMatrixWorld(true)
-    const built = buildCorridorRefineMask({
-      meshes: [{ o: plate, water: false }, { o: tall, water: false }, { o: water, water: true }],
-      field, n: 64, span: 600,
-    })
-    expect(built).not.toBeNull()
-    expect(built.meshes).toContain(plate)
-    expect(built.meshes).not.toContain(tall)
-    expect(built.meshes).not.toContain(water)
-    expect(built.candidates).toBe(1)
   })
 
   it('新包 sky 标记在装配期打 userData.isSky（实例化过滤不再按名字猜）', () => {

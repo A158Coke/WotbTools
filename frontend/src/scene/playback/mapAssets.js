@@ -140,11 +140,6 @@ export async function assembleMapScenery(gltf, ctx) {
       n: ctx.heightMeta?.size || 512, span: ctx.heightMeta?.span || 600,
     });
       if (built) {
-        // 与地表齐平的薄构件（铺装/铁轨基板/压顶）属于 terrain 语义，不是可选 3D 表面；
-        // 标记后 annotation pick 会跳过它们，避免水平截面在横坡上浮/穿。
-        for (const mesh of built.meshes || []) {
-          if (mesh && mesh.userData) mesh.userData.annotationSurface = false;
-        }
         writes.terrainRefineMask = built.mask;
         if (DEBUG) window.__terrainRefineMask = { meshes: built.candidates, texels: built.texels };
         // 地形通常已先建好（地面段在前）⇒ 立刻重算一次（terrainLodStale(null,…) 恒真）。
