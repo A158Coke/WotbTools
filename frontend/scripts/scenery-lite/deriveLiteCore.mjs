@@ -193,6 +193,7 @@ export async function deriveSceneryLite(fullJson, fullBin, { colorOf = null, key
   }
   const matRemap = new Map()
   const alphaMaskRisks = []
+  const alphaMaskMaterials = []
   out.materials = []
   for (const mi of [...usedMaterials].sort((a, b) => a - b)) {
     const m = JSON.parse(JSON.stringify(fullJson.materials[mi]))
@@ -211,16 +212,29 @@ export async function deriveSceneryLite(fullJson, fullBin, { colorOf = null, key
       const img = baseColorImage(fullJson, fullBin, fullJson.materials[mi])
       const mean = img ? await colorOf(fullJson.materials[mi], img.bytes, img.mimeType) : null
       if (mean) {
-        pbr.baseColorFactor = [mean[0], mean[1], mean[2], mean[3] !== undefined ? mean[3] : 1]
-        // #857 修复轮 §20：MASK 材质 constant-alpha 风险——lite 删 baseColor 贴图后若
-        // 均值 alpha < alphaCutoff，整个 retained 结构网格会被 alpha test 全部 discard。
-        // 先测不选方案：风险入报告（alphaMaskRisks），由真实资产 gate 决定「保留 alpha
-        // mask 贴图 vs 选中件转 opaque lite 表示」。
-        if ((m.alphaMode || '') === 'MASK') {
-          const cutoff = typeof m.alphaCutoff === 'number' ? m.alphaCutoff : 0.5
-          const meanAlpha = mean[3] !== undefined ? mean[3] : 1
-          if (meanAlpha < cutoff) {
-            alphaMaskRisks.push({ material: m.name || `#${out.materials.length}`, meanAlpha, alphaCutoff: cutoff })
+        // colorOf 契约（#857 修复轮 §13-14）：{ color: [r,g,b,a], alphaHistogram? }——
+        // histogram = 32 个等宽 alpha bin 的像素占比（同一扫描产出，不保存像素数组）；
+        // 兼容旧数组形态（无 histogram ⇒ 不计 coverage）。
+        const color = Array.isArray(mean) ? mean : (mean && mean.color) || null
+        const alphaHistogram = mean && !Array.isArray(mean) ? mean.alphaHistogram : undefined
+        if (color) {
+          pbr.baseColorFactor = [color[0], color[1], color[2], color[3] !== undefined ? color[3] : 1]
+          if ((m.alphaMode || '') === 'MASK') {
+            const cutoff = typeof m.alphaCutoff === 'number' ? m.alphaCutoff : 0.5
+            const meanAlpha = color[3] !== undefined ? color[3] : 1
+            const entry = { material: m.name || `#${out.materials.length}`, meanAlpha, alphaCutoff: cutoff }
+            if (Array.isArray(alphaHistogram) && alphaHistogram.length) {
+              // coverageAboveCutoff：bin 中心 ≥ cutoff 的像素占比（gate 用途的估算口径——
+              // 区分 "≈1 铺满（strip 大概率安全）" 与 "存在真实镂空拓扑（需决策）"）
+              const binW = 1 / alphaHistogram.length
+              let coverage = 0
+              for (let bi = 0; bi < alphaHistogram.length; bi++) {
+                if (bi * binW + binW / 2 >= cutoff) coverage += alphaHistogram[bi]
+              }
+              entry.coverageAboveCutoff = +coverage.toFixed(4)
+            }
+            alphaMaskMaterials.push(entry)
+            if (meanAlpha < cutoff) alphaMaskRisks.push(entry)
           }
         }
       }
@@ -301,6 +315,7 @@ export async function deriveSceneryLite(fullJson, fullBin, { colorOf = null, key
     liteMaterials: out.materials.length,
     droppedNodes: countDropped(fullJson),
     alphaMaskRisks,
+    alphaMaskMaterials,
   }
   return { json: out, bin, report }
 }

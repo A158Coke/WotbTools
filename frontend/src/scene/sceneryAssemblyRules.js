@@ -49,24 +49,6 @@ export function sceneHasSkyFlags(root) {
   return found
 }
 
-/** #857 语义弃件判定（three 对象视图；与 scripts/scenery-lite/deriveLiteCore.mjs 的
- *  GLTF-JSON 视图同一语义标记集——`ST|` 前缀、`_CORNER` billboard 属性、材质 extras
- *  sky/blendLayer/alphaBlend。两边共用 exporter 语义，无名字 heuristic）。
- *  消费方：buildCorridorRefineMask 候选过滤——full 与 lite 的走廊掩码输入集合因此一致
- *  （被 lite 剔除的植被/卡片/效果件本就不是贴地薄结构，不得成为 full 档的掩码假阳性）。 */
-export function isLiteDroppedObject(o) {
-  if (!o) return false
-  if ((o.name || '').startsWith('ST|')) return true
-  if (o.geometry && o.geometry.attributes && o.geometry.attributes._corner) return true
-  const mats = Array.isArray(o.material) ? o.material : [o.material]
-  return mats.some((m) => {
-    if (!m) return false
-    if ((m.name || '').startsWith('ST|')) return true
-    const ud = m.userData || {}
-    return ud.sky === true || ud.blendLayer === true || ud.alphaBlend === true
-  })
-}
-
 /** 水面语义判定：新包看材质标记，旧包回退节点名启发式（含 fountain）。 */
 export function isWaterNode(name, mat, { strictSurfaces }) {
   if (!strictSurfaces) return isWaterName(name)

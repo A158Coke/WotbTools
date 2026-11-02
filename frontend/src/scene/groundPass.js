@@ -15,6 +15,7 @@
 //     细分级不影响成像，故烘焙传 refineMask=null）。
 import * as THREE from 'three';
 import {
+  CLIENT_NORMAL_CAMERA_FOV_H,
   buildAdaptiveTerrain, buildRefineMask, groundMapUv, decodeTerrainField,
   pairedTerrainBinUrl, terrainBinMatchesMeta, terrainBoundsOk, terrainFieldMetaValid,
 } from './terrainMesh.js';
@@ -343,4 +344,25 @@ export function groundShaderMaterial(L, texs, size, cx, cz) {
         gl_FragColor = vec4(detail * shadowColor * 2.0, 1.0);
       }`,
   });
+}
+
+/** 地形几何宿主参数装配（#857 修复轮 §10）：production（playbackScene.buildTerrainGeometry）
+ *  与跨档差分基线共用同一份参数组装——画质档经 `quality` 形参**显式进入、有意忽略**：
+ *  返回值只含地形几何的真实宿主参数（field/n/span/cam/fovY/aspect/hFovDeg/refineMask/cx/cz），
+ *  `terrainSeg`/DPR/anisotropy 等 fidelity 参数在结构上进不了 buildGroundGeometry。
+ *  层 A 差分测试由此证明「Q.low..Q.ultra 经过 production argument assembly 后不改变几何」。 */
+export function terrainBuildArgs({
+  field, n, span, camera, quality, refineMask = null,
+  hFovDeg = CLIENT_NORMAL_CAMERA_FOV_H, cx = 0, cz = 0,
+}) {
+  void quality;   // 档位身份不是地形几何输入（#857 Gate A；形参只为调用点显式声明该契约）
+  return {
+    field, n, span,
+    cam: camera && Number.isFinite(camera.position?.x) ? camera.position : { x: 0, y: 320, z: 0 },
+    fovY: camera && Number.isFinite(camera.fov) ? (camera.fov * Math.PI) / 180 : 0.8,
+    aspect: camera && Number.isFinite(camera.aspect) && camera.aspect > 0 ? camera.aspect : 16 / 9,
+    hFovDeg,
+    refineMask,
+    cx, cz,
+  };
 }

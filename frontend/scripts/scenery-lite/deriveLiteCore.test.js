@@ -188,18 +188,28 @@ describe('deriveLiteCore：scenery-lite 派生（#857 Step 3）', () => {
     expect(verifyLite(json, bin, varTampered, lite.bin).ok).toBe(false)
   })
 
-  it('MASK 材质 constant-alpha 风险统计：均值 alpha < alphaCutoff 入报告（先测不选方案）', async () => {
+  it('MASK instrumentation：全部 retained MASK 材质入 alphaMaskMaterials（含 cutoff coverage），低均值入 risks', async () => {
     const { json, bin } = buildFixture()
-    // decal 材质 alphaMode=MASK：均值色 alpha 0.2 < cutoff 0.6 ⇒ 风险入报告
+    // decal 材质 alphaMode=MASK：均值色 alpha 0.2 < cutoff 0.6 ⇒ risks 命中；
+    // histogram 提供 coverageAboveCutoff（bin 中心 ≥ 0.6 ⇒ 后 20% bin，占比 0.3）
     json.materials[0].alphaCutoff = 0.6
-    const lowAlpha = async () => [0.8, 0.6, 0.4, 0.2]
+    const lowAlpha = async () => ({
+      color: [0.8, 0.6, 0.4, 0.2],
+      alphaHistogram: [...new Array(25).fill(0), ...new Array(7).fill(0.04)].slice(0, 32),
+    })
     const lite = await deriveSceneryLite(json, bin, { colorOf: lowAlpha, key: 'fixture' })
-    expect(lite.report.alphaMaskRisks).toEqual([
-      { material: 'Decal.material', meanAlpha: 0.2, alphaCutoff: 0.6 },
+    expect(lite.report.alphaMaskMaterials).toEqual([
+      { material: 'Decal.material', meanAlpha: 0.2, alphaCutoff: 0.6, coverageAboveCutoff: 0.28 },
     ])
-    // 高均值 alpha ⇒ 无风险
+    expect(lite.report.alphaMaskRisks).toEqual([
+      { material: 'Decal.material', meanAlpha: 0.2, alphaCutoff: 0.6, coverageAboveCutoff: 0.28 },
+    ])
+    // 高均值 alpha + 无 histogram（旧数组契约）⇒ 无 risks、entry 无 coverage
     const safe = await deriveSceneryLite(json, bin, { colorOf: async () => [0.8, 0.6, 0.4, 0.9] })
     expect(safe.report.alphaMaskRisks).toEqual([])
+    expect(safe.report.alphaMaskMaterials).toEqual([
+      { material: 'Decal.material', meanAlpha: 0.9, alphaCutoff: 0.6 },
+    ])
   })
 
   it('V1 边界 fail-closed：skins / extensionsRequired 拒绝派生', async () => {

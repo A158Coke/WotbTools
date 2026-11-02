@@ -45,7 +45,7 @@ describe('地面 pass SSOT（groundPass.js）：两侧消费同一份，本地�
 
   it('运行时侧：消费共享入口，本地不得再持有地面着色器/海岸线构造/地形解码副本', () => {
     expect(src).toMatch(/from '\.\/groundPass\.js'/)
-    expect(src).toMatch(/buildGroundGeometry\(\{/)
+    expect(src).toMatch(/buildGroundGeometry\(terrainBuildArgs\(\{/)   // #857 修复轮：production 参数装配
     expect(src).toMatch(/makeGroundMaterial\(\{/)
     expect(mapAssetsSrc).toMatch(/waterCoast = makeWaterCoast\(\{/)
     expect(src).toMatch(/const need = groundLayerKeys\(L\);/)

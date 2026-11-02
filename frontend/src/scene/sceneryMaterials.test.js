@@ -487,7 +487,10 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(gpSrc).toMatch(/buildAdaptiveTerrain, buildRefineMask, groundMapUv, decodeTerrainField,/)
     expect(src).toMatch(/const geo = buildTerrainGeometry\(\);/)
     expect(src).toMatch(/function buildTerrainGeometry\(\) \{/)
-    expect(src).toMatch(/field: heightField, n, span,/)
+    // #857 修复轮：参数装配抽为 terrainBuildArgs（quality 显式进入、有意忽略）
+    expect(src).toMatch(/field: heightField,/)
+    expect(src).toMatch(/quality: Q,/)
+    expect(src).toMatch(/refineMask: terrainRefineMask,/)
     expect(src).toMatch(/maybeRebuildTerrainLod\(\);/)
     // LOD 单向滞回（拉近立即细化、拉远才允许变粗）：旧的双向 25% 滞回会让网格长期停在
     // "更远视距"的更粗层级 ⇒ 同一相机位置可比客户端判据允许的更粗 ⇒ 地形抬过贴地薄结构
@@ -751,7 +754,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(meshSrc).not.toMatch(/shores/)
     expect(meshSrc).not.toMatch(/shoreHit/)
     expect(gpSrc).toMatch(/buildAdaptiveTerrain\(\{/)   // 地形构建入口在 groundPass（俯视烘焙同一份）
-    expect(src).toMatch(/buildGroundGeometry\(\{/)
+    expect(src).toMatch(/buildGroundGeometry\(terrainBuildArgs\(\{)/)
   })
 
   it('地面分层混合 uniform 类型对齐：uHbSoft 必须 vec4（曾误写 float ⇒ 值 NaN ⇒ 地面取错层色）', () => {

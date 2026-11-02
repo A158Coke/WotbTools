@@ -36,6 +36,8 @@ const REPORT_DIR = join(PACK, 'overhead', 'scenery-lite')
 // 均值色解码页：Canvas 2D alpha 加权均值（Chrome 原生 JPEG/PNG 解码；sRGB 像素直接平均，
 // 与 exporter 的 PIL 无贴图兜底同口径）
 const MEAN_HTML = `<!doctype html><html><body><script type="module">
+// 一次扫描产出：alpha 加权均值色 + 32-bin alpha 直方图（#857 修复轮 §13-14——
+// coverageAboveCutoff 由 derive core 按 per-material cutoff 从直方图估算，不保存像素数组）
 window.__mean = async (b64, mime) => {
   const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
   const bmp = await createImageBitmap(new Blob([bytes], { type: mime || 'image/png' }))
@@ -44,12 +46,17 @@ window.__mean = async (b64, mime) => {
   ctx.drawImage(bmp, 0, 0)
   const d = ctx.getImageData(0, 0, bmp.width, bmp.height).data
   let r = 0, g = 0, b = 0, a = 0, n = 0
+  const hist = new Array(32).fill(0)
   for (let i = 0; i < d.length; i += 4) {
     const w = d[i + 3] / 255
     r += d[i] * w; g += d[i + 1] * w; b += d[i + 2] * w; a += d[i + 3]; n++
+    hist[Math.min(31, Math.floor((d[i + 3] / 255) * 32))] += 1 / n
   }
   if (!n) return null
-  return [+(r / (n * 255)).toFixed(4), +(g / (n * 255)).toFixed(4), +(b / (n * 255)).toFixed(4), +(a / (n * 255)).toFixed(4)]
+  return {
+    color: [+(r / (n * 255)).toFixed(4), +(g / (n * 255)).toFixed(4), +(b / (n * 255)).toFixed(4), +(a / (n * 255)).toFixed(4)],
+    alphaHistogram: hist.map((v) => +v.toFixed(5)),
+  }
 }
 </script></body></html>`
 
