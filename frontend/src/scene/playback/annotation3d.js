@@ -171,24 +171,23 @@ function resampleByIndex(points, limit) {
   // 必须同时保护 transition 两侧 i-1 / i；只保 i 会在桥尾把最后一个 anchor 删掉。
   const anchored = (p) => Number.isFinite(p.surfaceY)
   const mandatorySet = new Set([0, points.length - 1])
+  const transitionPairs = []
   for (let i = 1; i < points.length; i++) {
     if (anchored(points[i]) !== anchored(points[i - 1])) {
       mandatorySet.add(i - 1)
       mandatorySet.add(i)
+      transitionPairs.push([i - 1, i])
     }
   }
   const mandatory = [...mandatorySet].sort((a, b) => a - b)
   if (limit <= mandatory.length) {
     // 预算连 mandatory 都放不下时，至少保住 first/last 与尽可能多的 transition pair；
-    // 绝不能简单 prefix 丢掉尾点。
+    // 绝不能简单 prefix 丢掉尾点。优先保靠近尾部的 pair（最接近当前 stroke 的跨层点）。
     const picked = new Set([0, points.length - 1])
-    for (let i = mandatory.length - 1; i >= 1 && picked.size + 2 <= limit; i--) {
-      const idx = mandatory[i]
-      if (idx === 0 || idx === points.length - 1) continue
-      const prev = mandatory[i - 1]
-      if (prev !== 0 && prev !== points.length - 1 && Math.abs(idx - prev) === 1) {
-        picked.add(prev)
-        picked.add(idx)
+    for (let t = transitionPairs.length - 1; t >= 0; t--) {
+      for (const idx of transitionPairs[t]) {
+        if (picked.size >= limit) break
+        if (idx !== 0 && idx !== points.length - 1) picked.add(idx)
       }
     }
     for (const idx of mandatory) {
