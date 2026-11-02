@@ -128,17 +128,42 @@ const _pickRaycaster = new THREE.Raycaster()
 const _pickMeshes = []
 const _pickHits = []
 const _pickRoot = new THREE.Vector3()
+const _pickOffset = new THREE.Vector3()
+const _pickSphere = new THREE.Sphere()
+const _pickFrustum = new THREE.Frustum()
+const _pickViewProjection = new THREE.Matrix4()
+const _pickCandidates = []
 /**
  * 视线最先碰到的车辆：对当前帧可见网格精确求交，炮塔转动、炮管俯仰都按实际姿态算。
  * 先按 GLB 根到视线的距离粗筛（半径与姿态无关），离视线远的车不重算 bounds、不逐网格求交；
  * Mesh.raycast 自带逐网格包围球/盒粗筛。只是选目标，遮挡由深度 pass 决定。
+ *
+ * 性能：候选车按「根包围球沿视线的最近可能距离」升序求交；已得到最近命中后，
+ * 后续候选的最近可能距离更大即可停止——精确剪枝，不改变「最近命中」语义。
+ * 传入 camera 时再按视锥剔除（包围球包含整台车，屏幕准星命中必然在视锥内）。
  */
-export function aimedVehicle(origin, direction, vehicles) {
+export function aimedVehicle(origin, direction, vehicles, camera = null) {
   _pickRaycaster.set(origin, direction)
-  let best = null, bestDistance = Infinity
+  if (camera) {
+    _pickViewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+    _pickFrustum.setFromProjectionMatrix(_pickViewProjection, camera.coordinateSystem)
+  }
+  _pickCandidates.length = 0
   for (const v of vehicles) {
     _pickRoot.setFromMatrixPosition(v.glb.matrixWorld)
     if (_pickRaycaster.ray.distanceSqToPoint(_pickRoot) > VEHICLE_PICK_RADIUS_M ** 2) continue
+    if (camera) {
+      _pickSphere.center.copy(_pickRoot)
+      _pickSphere.radius = VEHICLE_PICK_RADIUS_M
+      if (!_pickFrustum.intersectsSphere(_pickSphere)) continue
+    }
+    const along = _pickOffset.subVectors(_pickRoot, origin).dot(_pickRaycaster.ray.direction)
+    _pickCandidates.push({ v, lower: Math.max(0, along - VEHICLE_PICK_RADIUS_M) })
+  }
+  _pickCandidates.sort((a, b) => a.lower - b.lower)
+  let best = null, bestDistance = Infinity
+  for (const { v, lower } of _pickCandidates) {
+    if (lower > bestDistance) break
     _pickMeshes.length = 0
     _pickHits.length = 0
     collectVisibleMeshes(v.glb, _pickMeshes)
@@ -514,6 +539,21 @@ export function createArmorHighlight({ renderer, assetProvider }) {
     stateRT = spacedRT = null
   }
 
+  /** 离开开镜/关闭开关时释放全尺寸 RT；下次命中目标时 `ensureTargets` 按需重建。 */
+  function releaseRenderTargets() {
+    disposeTargets()
+  }
+
+  /** 进开镜后后台预取本场敌方车型的 armor 模板（按 tank_id 去重，失败走同一重试表）。 */
+  function prefetch(vehicles) {
+    for (const vehicle of vehicles) {
+      const tankId = vehicle.def?.tank_id
+      const url = vehicle.tankData?.model_url
+      if (!tankId || !url || templates.has(tankId) || !templateRetry.allowed(tankId)) continue
+      loadTemplate(tankId, url)
+    }
+  }
+
   function disposeTarget(target) {
     if (!target) return
     const released = new Set()
@@ -537,7 +577,7 @@ export function createArmorHighlight({ renderer, assetProvider }) {
     shaders.dispose()
   }
 
-  return { render, dispose }
+  return { render, prefetch, releaseRenderTargets, dispose }
 }
 
 /** 回放 equipment 原值 → 着色系数（调用方已确认双方 equipment 在场）。 */

@@ -7,9 +7,21 @@ import { PLAYBACK_PHONE_QUERY } from '../composables/usePlaybackPhoneForm.js'
 import { PLAYBACK_PORTRAIT_QUERY } from '../composables/usePlaybackPortraitViewport.js'
 import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 import { createShellChrome } from '../app/shellChrome.js'
-const mocks = vi.hoisted(() => ({ init: vi.fn(), fetch: vi.fn(), query: vi.fn(), coarse: { value: false } }))
+const mocks = vi.hoisted(() => ({
+  init: vi.fn(), fetch: vi.fn(), query: vi.fn(), coarse: { value: false },
+  tank: vi.fn(), devices: vi.fn(), modules: vi.fn(),
+}))
 vi.mock('../scene/tankViewer.js', () => ({ initTankViewer: mocks.init }))
-vi.mock('../scene/agentData.js', () => ({ fetchReplayShots: mocks.fetch, shotViewerQuery: mocks.query }))
+vi.mock('../scene/agentData.js', () => ({
+  fetchReplayShots: mocks.fetch,
+  shotViewerQuery: mocks.query,
+  fetchTankData: mocks.tank,
+}))
+vi.mock('../utils/researchCatalog.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  loadDevices: mocks.devices,
+  loadTankModules: mocks.modules,
+}))
 vi.mock('../scene/webglSupport.js', async (original) => ({ ...(await original()), detectWebGL: () => ({ supported: true }) }))
 vi.mock('../composables/useBreakpoint.js', () => ({ usePointer: () => ({ coarse: mocks.coarse }) }))
 const translate = (key, args) => args ? `${key} ${args.current}/${args.total}` : key
@@ -19,7 +31,7 @@ const shots = [
   { index: 9, time_s: 95, shooter_tank_name: 'Object 907', target_tank_name: 'Maus', shooter_tank_id: 1, target_tank_id: 3, target_eid: 30, damage: 0, hit_flags: 0x8 },
 ]
 const mounted = [], scenes = [], restoredMedia = []
-function deferred() { let resolve; const promise = new Promise(r => { resolve = r }); return { promise, resolve } }
+function deferred() { let resolve, reject; const promise = new Promise((res, rej) => { resolve = res; reject = rej }); return { promise, resolve, reject } }
 async function setup({ query = { view: 'agent-armor', shot: '6' }, shellChrome = null, phone = false, portrait = false } = {}) {
   // 组件的手机形态 / 朝向判据直接读 window.matchMedia（shared/breakpoints 的查询字符串）；
   // happy-dom 无法逐条命中，测试里按字符串恒等桩掉，并在 afterEach 卸载后还原。
@@ -51,11 +63,20 @@ async function setup({ query = { view: 'agent-armor', shot: '6' }, shellChrome =
 }
 beforeEach(() => {
   mocks.init.mockReset(); mocks.fetch.mockReset(); mocks.query.mockReset(); scenes.length = 0
+  mocks.tank.mockReset().mockResolvedValue({ nation: 'germany' })
+  mocks.devices.mockReset().mockResolvedValue({ devicePresets: { defaultPreset: [] } })
+  mocks.modules.mockReset().mockResolvedValue({ tanks: {} })
   mocks.fetch.mockResolvedValue({ shots })
   mocks.query.mockImplementation(async shot => ({ view: 'agent-armor', shot: String(shot.index), tank: String(shot.target_tank_id) }))
-  mocks.init.mockImplementation(options => { const scene = { destroy: vi.fn(), options }; scenes.push(scene); options.onLoadState({ state: 'ready' }); return scene })
+  mocks.init.mockImplementation(options => { const scene = { destroy: vi.fn(), options, setPitchDeviceBonus: vi.fn(), setPitchDeviceAvailable: vi.fn(), setEquipmentOverride: vi.fn() }; scenes.push(scene); options.onLoadState({ state: 'ready' }); return scene })
 })
-afterEach(() => { mounted.forEach(w => w.unmount()); mounted.length = 0; restoredMedia.forEach(restore => restore()); restoredMedia.length = 0; mocks.coarse.value = false; vi.clearAllMocks() })
+afterEach(() => {
+  mounted.forEach(w => w.unmount()); mounted.length = 0
+  restoredMedia.forEach(restore => restore()); restoredMedia.length = 0
+  mocks.coarse.value = false
+  vi.useRealTimers()
+  vi.clearAllMocks()
+})
 describe('Armor recorded-shot navigation', () => {
   it('shows tank names and recorded facts, disposes the previous scene, and respects navigation bounds', async () => {
     const { wrapper, router } = await setup()
@@ -170,5 +191,134 @@ describe('Armor immersive shell chrome', () => {
     expect(() => bare.unmount()).not.toThrow()
     expect(chrome.immersive.value).toBe(false)
     wrapper.unmount()
+  })
+})
+
+describe('122 可用性容错（网络失败 ≠ 不支持）', () => {
+  it('目录请求失败保留 eqpitch 覆盖，重试成功确认无槽位后才清理', async () => {
+    vi.useFakeTimers()
+    mocks.tank.mockRejectedValueOnce(new Error('offline'))
+    const { router } = await setup({ query: { view: 'agent-armor', tank: '2', eqpitch: '1' } })
+    await flushPromises()
+    expect(router.currentRoute.value.query.eqpitch).toBe('1', '瞬时失败不得删除共享链接覆盖')
+    // 重试成功：目标车预设不含 122 → 这是「确认不支持」，此时才允许清理 URL
+    mocks.tank.mockResolvedValueOnce({ nation: 'germany' })
+    mocks.modules.mockResolvedValueOnce({ tanks: {} })
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushPromises()
+    expect(router.currentRoute.value.query.eqpitch).toBeUndefined()
+  })
+
+  it('devices 重试成功后恢复 122 加成并保留 eqpitch 覆盖', async () => {
+    vi.useFakeTimers()
+    // 目录的所有并发读者都先失败；重试前再整体切换为成功目录，避免首个调用被其他
+    // 组件（HUD/侧栏）抢走导致可用性路径根本没经历失败。
+    mocks.devices.mockRejectedValue(new Error('offline'))
+    mocks.modules.mockResolvedValue({
+      tanks: { 'Type71_stem': { tankId: 2, optDevicePreset: 'AlternatePitchGrouserPreset' } },
+    })
+    const { router } = await setup({ query: { view: 'agent-armor', tank: '2', eqpitch: '1' } })
+    mocks.devices.mockResolvedValue({
+      devices: [{ id: 122, script: { params: { bonusValues: { upperPitchLimitIncrease: 4, lowerPitchLimitIncrease: 3 } } } }],
+      devicePresets: { AlternatePitchGrouserPreset: [{ left: 'improvedPitchLimitsSystem' }] },
+    })
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushPromises()
+    expect(router.currentRoute.value.query.eqpitch).toBe('1', '重试成功且该车支持 122，覆盖必须保留')
+    expect(scenes.at(-1).setPitchDeviceAvailable).toHaveBeenCalledWith(true)
+    expect(scenes.at(-1).setPitchDeviceBonus).toHaveBeenCalledWith({ up: 4, down: 3 })
+  })
+
+  it('unmount 后迟到的目录失败不再挂重试', async () => {
+    vi.useFakeTimers()
+    const pending = deferred()
+    // 所有目录读者共用该挂起 promise：无论挂载期谁先调用，可用性请求都必然在飞行中。
+    mocks.devices.mockImplementation(() => pending.promise)
+    const { wrapper } = await setup({ query: { view: 'agent-armor', tank: '2', eqpitch: '1' } })
+    wrapper.unmount()
+    const callsAfterUnmount = mocks.devices.mock.calls.length
+    pending.reject(new Error('late offline'))
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushPromises()
+    expect(mocks.devices).toHaveBeenCalledTimes(callsAfterUnmount)
+  })
+})
+
+describe('122 回放真值的目标身份', () => {
+  const pitchCatalog = {
+    devices: [{ id: 122, script: { params: { bonusValues: { upperPitchLimitIncrease: 4, lowerPitchLimitIncrease: 3 } } } }],
+    devicePresets: { AlternatePitchGrouserPreset: [{ left: 'improvedPitchLimitsSystem' }] },
+  }
+
+  it('回放已确认 122 时，模块目录失败不阻断 4/3 加成', async () => {
+    mocks.fetch.mockResolvedValue({
+      shots: [{ ...shots[0], target_equipment: { improved_pitch_limits: true } }],
+    })
+    mocks.devices.mockResolvedValue(pitchCatalog)
+    mocks.modules.mockRejectedValue(new Error('modules offline'))
+    await setup({ query: { view: 'agent-armor', shot: '6', tank: '2' } })
+    await flushPromises()
+    const scene = scenes.at(-1)
+    // bonus 可能在 viewer 创建前就绪（走构造参数），也可能之后才恢复（走 setter）。
+    expect([scene.options.pitchDeviceBonus, ...scene.setPitchDeviceBonus.mock.calls.map(([v]) => v)])
+      .toContainEqual({ up: 4, down: 3 })
+    expect([scene.options.pitchDeviceAvailable, ...scene.setPitchDeviceAvailable.mock.calls.map(([v]) => v)])
+      .toContain(true)
+  })
+
+  it('切到不支持 122 的车清覆盖时恢复 null（不写死 false），切回原目标 122 可再恢复', async () => {
+    // review P2：清理时若写 setEquipmentOverride('pitch', false)，effectivePitchDevice
+    // 的 `override != null 即采用` 会永久压住 after-switch-back 的 recorded truth。
+    mocks.fetch.mockResolvedValue({
+      shots: [{ ...shots[0], target_equipment: { improved_pitch_limits: true } }],
+    })
+    mocks.tank.mockResolvedValue({
+      nation: 'germany',
+      shells: [{ type: 'ap', damage: 400, penetration: 200 }],
+    })
+    mocks.devices.mockResolvedValue(pitchCatalog)
+    mocks.modules.mockResolvedValue({
+      tanks: {
+        'Type71_stem': { tankId: 2, optDevicePreset: 'AlternatePitchGrouserPreset' },
+        'Plain_stem': { tankId: 3, optDevicePreset: 'defaultPreset' },
+      },
+    })
+    const { router } = await setup({ query: { view: 'agent-armor', shot: '6', tank: '2', eqpitch: '1' } })
+    await flushPromises()
+    const scene = scenes.at(-1)
+    // 切到不支持 122 的目标：URL 覆盖被清，场景覆盖必须回 null（不是 false）
+    mocks.init.mock.calls.at(-1)[0].onTankSelection({ shooter: 1, target: 3 })
+    await flushPromises()
+    expect(router.currentRoute.value.query.eqpitch).toBeUndefined()
+    const pitchCalls = scene.setEquipmentOverride.mock.calls.filter(([kind]) => kind === 'pitch')
+    expect(pitchCalls.some(([, value]) => value === false)).toBe(false)
+    expect(pitchCalls.at(-1)).toEqual(['pitch', null])
+    // 切回原目标：可用性随真值恢复（覆盖已撤销，不再被 stale false 压住）
+    mocks.init.mock.calls.at(-1)[0].onTankSelection({ shooter: 1, target: 2 })
+    await flushPromises()
+    expect(scene.setPitchDeviceAvailable.mock.calls.at(-1)[0]).toBe(true)
+  })
+
+  it('切到另一辆支持 122 但无装备记录的车不继承原目标真值', async () => {
+    mocks.fetch.mockResolvedValue({
+      shots: [{ ...shots[0], target_equipment: { improved_pitch_limits: true } }],
+    })
+    mocks.tank.mockResolvedValue({
+      nation: 'germany',
+      shells: [{ type: 'ap', damage: 400, penetration: 200 }],
+    })
+    mocks.devices.mockResolvedValue(pitchCatalog)
+    mocks.modules.mockResolvedValue({
+      tanks: { 'Type71_stem': { tankId: 3, optDevicePreset: 'AlternatePitchGrouserPreset' } },
+    })
+    const { wrapper } = await setup({ query: { view: 'agent-armor', shot: '6', tank: '2' } })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="hud-pitch-device"]').attributes('aria-pressed')).toBe('true')
+    // 选车器换目标：回放仍是原目标的射击记录，但当前目标已变成另一辆车。
+    mocks.init.mock.calls.at(-1)[0].onTankSelection({ shooter: 1, target: 3 })
+    await flushPromises()
+    const button = wrapper.get('[data-testid="hud-pitch-device"]')
+    expect(button.attributes('aria-pressed')).toBe('false')
   })
 })

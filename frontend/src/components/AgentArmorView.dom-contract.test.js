@@ -730,7 +730,7 @@ describe('armor shell and readiness ownership', () => {
   })
   it('选车器换车时重置编辑器/HUD 就绪标志，HUD 不再套用受击方 config', () => {
     expect(view).toMatch(/watch\(shooterSetupId, \(\) => \{ shooterReady\.value = false; hudReady\.value = false \}\)/)
-    expect(view).toMatch(/watch\(targetSetupId, \(\) => \{ targetReady\.value = false \}\)/)
+    expect(view).toMatch(/watch\(targetSetupId, \(id\) => \{\s+targetReady\.value = false/)
     expect(view).toMatch(/@ready="value => shooterReady = value"/)
     expect(view).toMatch(/@ready="value => targetReady = value"/)
     expect(read('./ArmorSideConfig.vue')).toMatch(/const canConfigure = computed\(\(\) => selection\.value\?\.canConfigure === true\)/)
@@ -842,5 +842,51 @@ describe('tank picker keyboard isolation from nested modal layers', () => {
     expect(guard, '二级模态放行判定').toBeGreaterThan(-1)
     expect(guard, '必须先于 Escape / Tab 处理').toBeLessThan(escape)
     expect(body).toContain("layer.id !== 'tank-picker'")
+  })
+})
+
+// 回放装备真值只属于射击记录的目标车：目标被选车器换掉后，场景内核不得继续把
+// 原目标的 122 当成当前车装备（否则 HUD 仍亮、拖炮仍加 4°/3°）。
+describe('122 装备真值的目标身份（场景内核）', () => {
+  const kernel = read('../scene/tankViewer.js')
+  it('瞄准/判定上下文按当前目标过滤回放装备真值', () => {
+    expect(kernel).toMatch(/function shotEquipmentCtx\(\)[\s\S]*?recordedTargetMatchesShot\(ctx\.shot, currentTargetId\)/)
+    expect(kernel).toMatch(/const recorded = recordedTargetMatchesShot\(s, currentTargetId\) \? \(s\.target_equipment \|\| null\) : null/)
+  })
+  it('换目标后原生勾选回到手动且不保留上一辆车的勾选态', () => {
+    // 判据走 tankSetup 纯函数（override ?? recorded ?? false；recorded 缺失 ⇒ override ?? false，
+    // 与旧字面量行为等价，单测覆盖 null 分支）。这里锁住「回退态由共享判据决定且非录制分支解除禁用」。
+    expect(kernel).toContain('resolvePitchCheckboxChecked({ override: equipmentOverride.pitch')
+    const start = kernel.indexOf("const pit = document.getElementById('eq-pitch-device');")
+    const body = kernel.slice(start, start + 900)
+    expect(body).toContain('pit.disabled = false')
+    expect(body).toContain("pit.title = ''")
+  })
+})
+
+describe('122 装备徽标走 labels 边界（i18n 守卫）', () => {
+  const template = read('./AgentArmorView.vue')
+  const kernel = read('../scene/tankViewer.js')
+
+  it('eqBadge 不得硬编码文案：俯仰徽标使用 L.pitchDevice', () => {
+    const start = kernel.indexOf('function eqBadge(')
+    const body = kernel.slice(start, start + 600)
+    expect(body).toContain('L.pitchDevice')
+    // 中文徽标字面量不得回到内核（注释里出现「改进型垂直稳定器」不算 UI 文案）
+    expect(body).not.toMatch(/>[^<]*稳定器/)
+  })
+
+  it('宿主经 initTankViewer 的 labels 传三语 pitchDevice', () => {
+    expect(template).toContain("pitchDevice: t('armor.pitch_device')")
+    expect(kernel).toContain("pitchDevice: 'Improved Vertical Stabilizer'")
+  })
+
+  it('勾选框回放判定 tooltip 不得硬编码：走 L.replayEquipmentAutoTitle', () => {
+    const start = kernel.indexOf('function syncEquipmentCheckboxes(')
+    const body = kernel.slice(start, start + 1600)
+    expect(body).toContain('L.replayEquipmentAutoTitle')
+    expect(body).not.toContain('回放自动判定')
+    expect(template).toContain("replayEquipmentAutoTitle: t('armor.equipment_auto')")
+    expect(kernel).toContain("replayEquipmentAutoTitle: 'Replay-detected (Type5 equipment)'")
   })
 })

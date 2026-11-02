@@ -2,6 +2,8 @@
 // playback 名册 → tank_id → tank/{id}.json 的顶级 pitch_limits → GunPitchRange 形状。
 // 注入 WASM parsePlayback 的 limitsJson 后，prop2 俯仰按车型极限解码
 // （缺省空表时 gun_pitch 走 hull_pitch 兜底——坡上炮管俯仰不正确的根因）。
+// **只传基础 models.pb 极限**：实体实际携带的 122 改进型垂直稳定器（+4°仰/+3°俯）
+// 由 Agent core 按同 eid 的 Type5 配件串在解码时叠加；在这里预加会双重计算。
 import { assetProvider } from './assetProvider.js'
 
 /**

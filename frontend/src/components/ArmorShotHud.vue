@@ -2,12 +2,13 @@
 /**
  * 装甲查看器右上角的射击 HUD（BlitzKit 式布局）：
  *   - 弹种：射击方当前主炮的弹种图标（点击切换，穿深/伤害判定重跑）
- *   - 右侧两枚装备图标：射击方「校准弹」/ 受击方「强化装甲」，高亮 = 已装配
- * 只做图标交互，不出现文字按钮；图标来自资产包 devices 目录（103/110）。
+ *   - 右侧三枚装备图标：射击方「校准弹」/ 受击方「强化装甲」/ 受击方「改进型垂直稳定器」
+ *     （122，俯仰 +4°/+3°），高亮 = 已装配
+ * 只做图标交互，不出现文字按钮；图标来自资产包 devices 目录（103/110/122）。
  */
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Crosshair, Shield } from 'lucide-vue-next'
+import { Crosshair, MoveVertical, Shield } from 'lucide-vue-next'
 import { fetchTankData } from '../scene/agentData.js'
 import { loadDevices, shellIconUrl, itemIconUrl } from '../utils/researchCatalog.js'
 import { shellLabel } from '../scene/tankMeta.js'
@@ -20,23 +21,28 @@ const props = defineProps({
   shell: { type: [Number, String], default: null },
   eqcal: { type: [Number, String], default: null },
   eqenh: { type: [Number, String], default: null },
+  /** 122 改进型垂直稳定器（受击方/被展示车；手动勾选或射击复现自动判定） */
+  eqpitch: { type: [Number, String], default: null },
   calibratedDefault: { type: Boolean, default: false },
   enhancedDefault: { type: Boolean, default: false },
+  pitchDefault: { type: Boolean, default: false },
+  /** 目标车预设是否提供 122（无该配件的车不显示按钮） */
+  pitchAvailable: { type: Boolean, default: false },
 })
-const emit = defineEmits(['shell', 'calibrated', 'enhanced', 'ready'])
+const emit = defineEmits(['shell', 'calibrated', 'enhanced', 'pitch', 'ready'])
 
 const { t } = useI18n()
 const details = ref(null)
-const devices = ref({ calibrated: null, enhanced: null })
+const devices = ref({ calibrated: null, enhanced: null, pitch: null })
 let request = 0
 
 async function load(shooterId) {
   const seq = ++request
   details.value = null
-  devices.value = { calibrated: null, enhanced: null }
+  devices.value = { calibrated: null, enhanced: null, pitch: null }
   if (!(shooterId > 0)) return
   try {
-    // HUD 常驻且只读 devices：不要为两枚装备图标拉整份配置器目录（skills/camo/params…）。
+    // HUD 常驻且只读 devices：不要为三枚装备图标拉整份配置器目录（skills/camo/params…）。
     const [detail, catalog] = await Promise.all([fetchTankData(shooterId), loadDevices()])
     if (seq !== request) return
     details.value = detail
@@ -44,6 +50,7 @@ async function load(shooterId) {
     devices.value = {
       calibrated: list.find(item => item.id === 103) || null,
       enhanced: list.find(item => item.id === 110) || null,
+      pitch: list.find(item => item.id === 122) || null,
     }
   } catch {
     if (seq === request) details.value = null
@@ -77,6 +84,7 @@ const shellIndex = computed(() => {
 })
 const calibrated = computed(() => (props.eqcal == null ? props.calibratedDefault : String(props.eqcal) === '1'))
 const enhanced = computed(() => (props.eqenh == null ? props.enhancedDefault : String(props.eqenh) === '1'))
+const pitchDevice = computed(() => (props.eqpitch == null ? props.pitchDefault : String(props.eqpitch) === '1'))
 </script>
 
 <template>
@@ -123,6 +131,20 @@ const enhanced = computed(() => (props.eqenh == null ? props.enhancedDefault : S
       >
         <img v-if="devices.enhanced?.icon" :src="itemIconUrl('devices', devices.enhanced.icon)" alt="" width="28" height="28" loading="lazy">
         <Shield v-else :size="22" aria-hidden="true" />
+      </button>
+      <button
+        v-if="pitchAvailable"
+        type="button"
+        class="hud-eq"
+        :class="{ 'is-on': pitchDevice }"
+        :aria-pressed="pitchDevice"
+        :aria-label="t('armor.pitch_device')"
+        :title="t('armor.pitch_device')"
+        data-testid="hud-pitch-device"
+        @click="emit('pitch', !pitchDevice)"
+      >
+        <img v-if="devices.pitch?.icon" :src="itemIconUrl('devices', devices.pitch.icon)" alt="" width="28" height="28" loading="lazy">
+        <MoveVertical v-else :size="22" aria-hidden="true" />
       </button>
     </div>
   </div>
