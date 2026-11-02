@@ -515,36 +515,20 @@ function crossPoint(frame, fraction) {
 }
 
 /**
- * Anchored row 的 cross vertex 投到命中 surface 的局部 plane：
- * 水平 cross 方向减去 normal 分量后归一化；没有 surfaceN 时保持旧的纯水平截面。
+ * Anchored row 的 cross vertex：先保留 canonical semantic XZ offset，再仅用命中局部
+ * plane equation 求 Y。不能把 cross vector 投到 plane 后重新 normalize——那会让
+ * 斜面上的 XZ visible width 小于 semanticWidthFromSlider 的 map-space width。
  */
 function crossPoint3D(frame, fraction, liftValue) {
   const offset = frame.half * (1 - 2 * fraction)
-  let cx = frame.nx
-  let cy = 0
-  let cz = frame.nz
-  if (frame.normal) {
-    const n = frame.normal
-    const along = n.x * cx + n.z * cz
-    cx -= n.x * along
-    cy = -n.y * along
-    cz -= n.z * along
-    const len = Math.hypot(cx, cy, cz)
-    if (len > 1e-6) {
-      cx /= len
-      cy /= len
-      cz /= len
-    } else {
-      cx = frame.nx
-      cy = 0
-      cz = frame.nz
-    }
+  const x = frame.x + frame.nx * offset
+  const z = frame.z + frame.nz * offset
+  let y = frame.surfaceY
+  const n = frame.normal
+  if (n && Math.abs(n.y) > 1e-6) {
+    y = frame.surfaceY - (n.x * (x - frame.x) + n.z * (z - frame.z)) / n.y
   }
-  return {
-    x: frame.x + cx * offset,
-    y: frame.surfaceY + cy * offset + liftValue,
-    z: frame.z + cz * offset,
-  }
+  return { x, y: y + liftValue, z }
 }
 
 /** 在 A/B 中点检测 terrain error 或实际 transverse span（含 miter）。 */
@@ -555,7 +539,8 @@ function crossIntervalNeedsSplit(frames, sampleHeight, fa, fb) {
     if (Number.isFinite(frame.surfaceY)) {
       const pa = crossPoint3D(frame, fa, 0)
       const pb = crossPoint3D(frame, fb, 0)
-      if (Math.hypot(pb.x - pa.x, pb.y - pa.y, pb.z - pa.z) > ANNOTATION_CROSS_MAX_SEGMENT) return true
+      // canonical footprint 是 XZ；Y 只是 plane-derived，不能把斜率算进 width 细分。
+      if (Math.hypot(pb.x - pa.x, pb.z - pa.z) > ANNOTATION_CROSS_MAX_SEGMENT) return true
       continue
     }
     const pa = crossPoint(frame, fa)

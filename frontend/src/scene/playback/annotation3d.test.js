@@ -701,11 +701,14 @@ describe('3D surface anchors (selected-surface drawing)', () => {
     const bridgeVerts = ribbonVertices(bridge)
     expect(bridgeVerts.length).toBeGreaterThan(6)
     expect(bridgeVerts.every((v) => Math.abs(v.y - 8) < 1e-6)).toBe(true)
+    expect(Math.max(...bridgeVerts.map((v) => v.z)) - Math.min(...bridgeVerts.map((v) => v.z))).toBeCloseTo(6, 5)
     expect(bridge.strips[0].anchored.every((flag) => flag === 1)).toBe(true)
 
     const ground = buildPenRibbon(pen([{ x: -5, y: 0 }, { x: 5, y: 0 }], 6), options)
     expect(ground).not.toBeNull()
-    expect(ribbonVertices(ground).every((v) => Math.abs(v.y) < 1e-6)).toBe(true)
+    const groundVerts = ribbonVertices(ground)
+    expect(groundVerts.every((v) => Math.abs(v.y) < 1e-6)).toBe(true)
+    expect(Math.max(...groundVerts.map((v) => v.z)) - Math.min(...groundVerts.map((v) => v.z))).toBeCloseTo(6, 5)
     expect(ground.strips[0].anchored.every((flag) => flag === 0)).toBe(true)
   })
 
@@ -718,8 +721,35 @@ describe('3D surface anchors (selected-surface drawing)', () => {
     expect(bridge).not.toBeNull()
     const verts = ribbonVertices(bridge)
     expect(Math.max(...verts.map((v) => v.y)) - Math.min(...verts.map((v) => v.y))).toBeGreaterThan(3)
+    // canonical XZ footprint must stay 6m; only Y is derived from the plane.
+    expect(Math.max(...verts.map((v) => v.z)) - Math.min(...verts.map((v) => v.z))).toBeCloseTo(6, 5)
     // 45° plane through (0,8,0), normal (0,√½,√½): y + z = 8.
     expect(verts.every((v) => Math.abs(v.y + v.z - 8) < 1e-6)).toBe(true)
+  })
+
+  it('keeps canonical XZ width on a 5° anchored surface', () => {
+    const theta = (5 * Math.PI) / 180
+    const normal = { x: 0, y: Math.cos(theta), z: Math.sin(theta) }
+    const bridge = buildPenRibbon(pen([
+      { x: -5, y: 0, surfaceY: 8, surfaceN: normal },
+      { x: 5, y: 0, surfaceY: 8, surfaceN: normal },
+    ], 6), { sampleHeight: () => 0, lift: 0, maxSegment: 100 })
+    expect(bridge).not.toBeNull()
+    const verts = ribbonVertices(bridge)
+    expect(Math.max(...verts.map((v) => v.z)) - Math.min(...verts.map((v) => v.z))).toBeCloseTo(6, 5)
+    expect(verts.every((v) => Math.abs(Math.cos(theta) * (v.y - 8) + Math.sin(theta) * v.z) < 1e-6)).toBe(true)
+  })
+
+  it('keeps canonical XZ width and terrain sampling for an unanchored stroke', () => {
+    const bridge = buildPenRibbon(pen([{ x: -5, y: 0 }, { x: 5, y: 0 }], 6), {
+      sampleHeight: (x, z) => 0.1 * x + 0.2 * z,
+      lift: 0,
+      maxSegment: 100,
+    })
+    expect(bridge).not.toBeNull()
+    const verts = ribbonVertices(bridge)
+    expect(Math.max(...verts.map((v) => v.z)) - Math.min(...verts.map((v) => v.z))).toBeCloseTo(6, 5)
+    expect(verts.some((v) => Math.abs(v.y) > 1e-6)).toBe(true)
   })
 
   it('keeps a ground→bridge normalized transition visible on both sides', () => {
