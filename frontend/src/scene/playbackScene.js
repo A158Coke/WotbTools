@@ -2196,6 +2196,21 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
   /** 构建/重建地形几何（客户端同构自适应细分）。实现与 UV 契约在共享模块 groundPass.js
    *  （buildGroundGeometry，俯视烘焙同一份）；本处只传相机/掩码等宿主参数。 */
+  /**
+   * 阈值插值的水平 fov（客户端 `PrepareSubdivision` 吃 `Camera::GetFOV()`）：
+   * - 自由相机 = 客户端正常相机（无狙击镜档）⇒ 恒 `CLIENT_NORMAL_CAMERA_FOV_H`——不随画布
+   *   宽高比折算，否则窄画布把「55° 竖直 × aspect」折算成小水平角、阈值滑向狙击镜档（放宽
+   *   ~1.8×），同一机位网格比客户端更粗（2026-10-14 用户报障）；
+   * - **开镜相机**的客户端口径就是变焦后的相机 fov（变焦时 `GetFOV()` 返回变焦值）⇒ 按当前
+   *   竖直 fov × aspect 折算实际水平角。钉在 normal 档会让开镜网格比客户端密数倍（issue
+   *   #838 离线实测 vfov 6.75°：52 万 → 36 万三角面、单次重建 62 → 46 ms）。
+   */
+  function terrainHFovDeg() {
+    if (!scopedHiddenEid || !camera || !(camera.fov > 0) || !(camera.aspect > 0)) {
+      return CLIENT_NORMAL_CAMERA_FOV_H;
+    }
+    return (2 * Math.atan(Math.tan((camera.fov * Math.PI) / 360) * camera.aspect) * 180) / Math.PI;
+  }
   function buildTerrainGeometry() {
     const n = heightMeta?.size || 512;
     const span = terrainSpanOf();
@@ -2205,10 +2220,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       cam: camera ? camera.position : { x: 0, y: 320, z: 0 },   // 兜底：原生相机距离量级
       fovY: camera && Number.isFinite(camera.fov) ? (camera.fov * Math.PI) / 180 : 0.8,
       aspect: camera && Number.isFinite(camera.aspect) && camera.aspect > 0 ? camera.aspect : 16 / 9,
-      // 阈值插值的 fov 按**客户端口径**传：引擎 `GetFOV()` 是相机配置的水平 fov、与画面宽高比无关
-      // （宽高比只进投影项 tanFovY）。回放自由相机 = 客户端正常相机（无狙击镜档）⇒ 恒 normal。
-      // 不传这个的话，窄画布会把「55° 竖直 × aspect」折算成小水平角、阈值滑向狙击镜档（放宽 ~1.8×）。
-      hFovDeg: CLIENT_NORMAL_CAMERA_FOV_H,
+      hFovDeg: terrainHFovDeg(),
       // 贴地薄构件走廊（B）：只在这些块强制细分到最细层，廊外层级与客户端口径逐字节一致。
       refineMask: terrainRefineMask,
       cx: mapMetaInfo?.x || 0, cz: mapMetaInfo?.z || 0,

@@ -106,8 +106,10 @@ export function buildRefineMask(pointsXZ, n, span, marginTexels = 2) {
  *  @param aspect  宽/高
  *  @param tolScale 阈值系数（1 = 客户端原口径；越小越细——`?terrainlod`）
  *  @param hFovDegOverride 阈值插值用的**水平** fov（引擎 `Camera::GetFOV()` 口径）；缺省由
- *   fovY×aspect 折算（纯函数语义）。客户端该值来自相机配置、不随画布宽高比变化 ⇒ 运行时传
- *   `CLIENT_NORMAL_CAMERA_FOV_H`（否则窄画布会把我们的水平角折算小、滑动到狙击镜档的宽阈值）。 */
+ *   fovY×aspect 折算（纯函数语义）。自由相机 = 客户端正常相机（无狙击镜档）⇒ 运行时传
+ *   `CLIENT_NORMAL_CAMERA_FOV_H`（否则窄画布会把我们的水平角折算小、滑动到狙击镜档的宽阈值）；
+ *   **开镜相机**的客户端口径就是变焦后的相机 fov（变焦时 `GetFOV()` 返回变焦值）⇒ 运行时传
+ *   按当前竖直 fov 折算的实际水平角，钉在 normal 档会让开镜网格比客户端密数倍（issue #838）。 */
 export function subdivisionMetrics(fovYRad, aspect = 16 / 9, tolScale = 1, hFovDegOverride = null) {
   const v = Number.isFinite(fovYRad) && fovYRad > 0 ? fovYRad : 0.96;
   const a = Number.isFinite(aspect) && aspect > 0 ? aspect : 16 / 9;
