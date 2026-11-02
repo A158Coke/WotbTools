@@ -80,8 +80,8 @@ function hitMaterial(hit: AnnotationSurfaceHit): AnnotationSurfaceMaterial | nul
 /**
  * 可绘制表面判定：
  * - 必须是 Mesh 且有 face / 有限命中点；
- * - 装配期标记为 annotationSurface=false 的材质（水/天/植被/贴花/混合层/水下/地表薄板）跳过；
- * - 只接受朝上的表面（world normal.y ≥ 0.9），墙面/陡坡回落到地形。
+ * - 装配期标记为 annotationSurface=false 的材质（水/天/植被/贴花/混合层/水下）跳过；
+ * - 只接受近水平朝上表面（world normal.y ≥ 0.9995，约 1.8°），墙面/陡坡回落到地形。
  */
 export function isDrawableSurfaceHit(hit: AnnotationSurfaceHit): boolean {
   if (!hit || !hit.object || !hit.face) return false
