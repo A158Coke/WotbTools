@@ -187,7 +187,9 @@ async function load(key, span = 600, mapId = null) {
   // 变体布景的俯视图永久发布为正常资产。
   const variantPrune = pruneForeignVariantsDetailed(gltf.scene, mapId)
   if (variantPrune.failClosed || gltf.scene.userData?.variantMappingIncomplete === true) {
-    throw new Error(`变体映射缺失/不完整（mapId=${String(mapId)}）：拒绝烘焙不完整俯视图`)
+    // ⚠️ 本页整体处于 BAKE_HTML 模板串内：页面代码禁用反引号（PR #673 第八轮曾在此用
+    // 嵌套反引号令整个脚本语法失效、工具不可运行），一律字符串拼接
+    throw new Error('变体映射缺失/不完整（mapId=' + String(mapId) + '）：拒绝烘焙不完整俯视图')
   }
   // extras 贴图预解析（mask/lightmap/detail/env/water/decal）——共享装配模块同一实现
   const sceneryExtras = await resolveSceneryExtras(gltf)
@@ -344,11 +346,69 @@ function render(span) {
   return { covered, coverPct: +(100 * covered / (SIZE * SIZE)).toFixed(2) }
 }
 
-window.__bake = { init, load, render, renderIdPass, idAt }
+// ---- ground-terrain（#857 Step 4）：terrain-only 渲染 + 客户端底图合成 → webp ----
+// low/mid 档的地面 = 纯地形烘焙底图（无俯视 scenery 合成），与 3D 结构场景 lite 档配合
+// 消除"3D 桥 + 地面图画桥"双重投影。朝向 = 常量 ORIENT "YX"（与 composite_overhead.py
+// 同一坐标契约：渲染图左列 = −X_scene、顶行 = −Z_scene ⇒ 底图帧两轴各翻一次），纯索引
+// 重排零插值；合成 = base×(1−a) + render×a（canvas source-over 即该式）。
+// 无地形图（ground=false）：ground-terrain = 客户端底图原样（该档无 3D 地形/场景可叠）。
+function renderTerrainOnly(span) {
+  if (!groundMesh) return { ok: false, coverPct: null }   // 无地形图：合成走 base-only 分支
+  camera.left = -span / 2; camera.right = span / 2
+  camera.top = span / 2; camera.bottom = -span / 2
+  camera.updateProjectionMatrix()
+  const groupWasVisible = group ? group.visible : false
+  if (group) group.visible = false          // 只藏场景组；地形/水面海岸线资源保留渲染
+  renderer.render(scene, camera)
+  if (group) group.visible = groupWasVisible
+  const gl = renderer.getContext()
+  const buf = new Uint8Array(SIZE * SIZE * 4)
+  gl.readPixels(0, 0, SIZE, SIZE, gl.RGBA, gl.UNSIGNED_BYTE, buf)
+  const row = SIZE * 4
+  const flipped = new Uint8Array(buf.length)
+  for (let y = 0; y < SIZE; y++) flipped.set(buf.subarray(y * row, (y + 1) * row), (SIZE - 1 - y) * row)
+  let covered = 0
+  for (let i = 3; i < flipped.length; i += 4) if (flipped[i] > 8) covered++
+  return { ok: true, rgba: flipped, coverPct: +(100 * covered / (SIZE * SIZE)).toFixed(2) }
+}
+
+async function composeGroundTerrain(span, space, key) {
+  const baseResp = await fetch('/base/' + encodeURIComponent(space) + '.ground.webp')
+  if (!baseResp.ok) throw new Error('客户端底图缺失: ' + space + '.ground.webp (HTTP ' + baseResp.status + ')')
+  const bmp = await createImageBitmap(await baseResp.blob())
+  const canvas = document.createElement('canvas')
+  canvas.width = SIZE; canvas.height = SIZE
+  const ctx = canvas.getContext('2d')
+  ctx.drawImage(bmp, 0, 0, SIZE, SIZE)
+  const t = renderTerrainOnly(span)
+  if (t.ok) {
+    const tmp = document.createElement('canvas')
+    tmp.width = SIZE; tmp.height = SIZE
+    tmp.getContext('2d').putImageData(new ImageData(t.rgba, SIZE, SIZE), 0, 0)
+    ctx.save(); ctx.scale(-1, -1); ctx.drawImage(tmp, -SIZE, -SIZE); ctx.restore()   // ORIENT "YX"
+  }
+  const blob = await new Promise((res) => canvas.toBlob(res, 'image/webp', 0.82))
+  if (!blob) throw new Error('ground-terrain webp 编码失败')
+  // ⚠️ 本页整体处于 BAKE_HTML 模板串内：页面代码禁用反引号，一律字符串拼接
+  const resp = await fetch('/file-upload?rel=' + encodeURIComponent('map/' + key + '/ground-terrain.webp'),
+    { method: 'POST', body: blob })
+  if (!resp.ok) throw new Error('ground-terrain 上传失败: HTTP ' + resp.status)
+  return { base: space, terrainRendered: t.ok, coverPct: t.coverPct, bytes: blob.size }
+}
+
+window.__bake = { init, load, render, renderIdPass, idAt, groundTerrain: composeGroundTerrain }
 </script></body></html>`
 
-/** 极简 vite：只为 /bake 页面（import three）与 /pack/*（场景 GLB）服务。 */
+/** 极简 vite：只为 /bake 页面（import three）与 /pack/*（场景 GLB）服务；/base/* 伺服
+ *  客户端原始底图（ground-terrain 合成的 base，#857 Step 4）。 */
+function baseDirOf() {
+  // 客户端原始底图目录：上游 data/cache/maps（pack 的 ground.webp 已含俯视 scenery 合成，
+  // 不能做 base——会二次叠印）。可用 --base-dir 显式覆盖。
+  return resolve(argOf('base-dir', join(PACK, '..', '..', 'data', 'cache', 'maps')))
+}
+
 async function startServer() {
+  const BASE_DIR = baseDirOf()
   const server = await createServer({
     configFile: false,
     root: frontendRoot,
@@ -372,6 +432,13 @@ async function startServer() {
           res.setHeader('content-type', ct)
           createReadStream(file).pipe(res)
         })
+        server.middlewares.use('/base', (req, res) => {
+          const rel = decodeURIComponent(req.url.replace(/^\//, '')).split('?')[0]
+          const file = join(BASE_DIR, rel)
+          if (!file.startsWith(BASE_DIR) || !existsSync(file)) { res.statusCode = 404; return res.end('nf') }
+          res.setHeader('content-type', 'image/webp')
+          createReadStream(file).pipe(res)
+        })
         server.middlewares.use('/bake', (_req, res) => {
           res.setHeader('content-type', 'text/html')
           // transformIndexHtml：内联 module 脚本 → vite 虚拟模块（裸导入才有改写的机会，见 BAKE_HTML 注释）
@@ -386,6 +453,23 @@ async function startServer() {
           req.on('end', () => {
             const body = Buffer.concat(chunks, total)
             writeFileSync(UPLOAD, body)
+            res.end('ok:' + body.length)
+          })
+        })
+        // ground-terrain 相（#857 Step 4）：页面合成好的 webp 直传包内最终路径（tmp+rename，
+        // 与 .rgba 同口径——只有整文件成功才出现在最终路径）
+        server.middlewares.use('/file-upload', (req, res) => {
+          if (req.method !== 'POST') { res.statusCode = 405; return res.end() }
+          const rel = decodeURIComponent(new URL(req.url, 'http://local').searchParams.get('rel') || '')
+          if (!/^map\/[A-Za-z0-9_-]+\/ground-terrain\.webp$/.test(rel)) { res.statusCode = 400; return res.end('bad rel') }
+          const file = join(PACK, rel)
+          mkdirSync(dirname(file), { recursive: true })
+          const chunks = []
+          req.on('data', (c) => chunks.push(c))
+          req.on('end', () => {
+            const body = Buffer.concat(chunks)
+            writeFileSync(`${file}.tmp`, body)
+            renameSync(`${file}.tmp`, file)
             res.end('ok:' + body.length)
           })
         })
@@ -431,6 +515,20 @@ function spanOf(key) {
   }
 }
 
+function spaceOf(key) {
+  // key → space（ground-terrain 合成的客户端原始底图名 = {space}.ground.webp）；
+  // 缺注册表回退 key 本身（与 composite_overhead.py space_of 同式）
+  const mapIndex = argOf('map-index', 'D:/Class/Rust/Project/map_index.json')
+  try {
+    const idx = JSON.parse(readFileSync(mapIndex, 'utf8'))
+    const arr = Array.isArray(idx) ? idx : idx.maps || Object.values(idx)
+    const hit = arr.find((x) => x.key === key)
+    return hit?.space || key
+  } catch {
+    return key
+  }
+}
+
 const main = async () => {
   const outDir = join(PACK, 'overhead')
   mkdirSync(outDir, { recursive: true })
@@ -462,11 +560,13 @@ const main = async () => {
       ? readdirSync(join(PACK, 'map')).filter((d) => existsSync(join(PACK, 'map', d, 'scenery.glb')))
       : [argOf('map')]
     const spans = Object.fromEntries(keys.map((k) => [k, spanOf(k)]))   // 先算齐：fail-fast 不泄漏服务器
+    const spaces = Object.fromEntries(keys.map((k) => [k, spaceOf(k)]))
     console.error('bake origin:', origin, '| maps:', keys.length)
     for (const key of keys) {
       try {
         console.log(JSON.stringify(await bakeKey({ page, key, outDir, span: spans[key], size: SIZE,
-                                                   mapId: primaryMapIdOf(key), uploadPath: UPLOAD })))
+                                                   mapId: primaryMapIdOf(key), uploadPath: UPLOAD,
+                                                   pack: PACK, space: spaces[key] })))
         if (process.env.PICK) {
           const n = await page.evaluate(`window.__bake.renderIdPass(${spans[key]})`)
           const pts = [[60, 60], [SIZE >> 1, 60], [SIZE - 60, 60], [60, SIZE >> 1], [SIZE >> 1, SIZE >> 1], [SIZE - 60, SIZE >> 1], [60, SIZE - 60], [SIZE >> 1, SIZE - 60], [SIZE - 60, SIZE - 60]]

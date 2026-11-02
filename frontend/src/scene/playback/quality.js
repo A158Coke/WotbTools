@@ -7,13 +7,18 @@ import { FX_BUDGETS } from '../battleFx.js'
 // 抗锯齿/DPR/场景资源在渲染器与场景首次创建时一次性定型，加载后改档需整页刷新。
 // 档位阶梯 = 相邻档各跨一个真实成本断崖：
 //   流畅→均衡：车辆盒代理 → 真 GLB（最大的视觉跃迁，手机终于有真车模）；
-//   均衡→高清：场景 GLB + 分层地表（最大的下载/显存跃迁；P1 实例化后高清档
-//              draw call 已可控，均衡档跳过它把 11–67MB 下载留给 Wi-Fi/桌面）；
+//   均衡→高清：full 场景 GLB + 分层地表（最大的下载/显存跃迁；P1 实例化后高清档
+//              draw call 已可控，均衡档跳过 full 场景税把大下载留给 Wi-Fi/桌面）；
 //   高清→极致：纯填充率税（DPR 2 + 地形 512），服务 4K/Retina 台式机。
 // 均衡档 MSAA 开 + DPR 1.25：几何边缘上低 DPR + MSAA 优于高 DPR 无 AA。
-// 均衡档地面 = **俯视烘焙底图**（4096²，上游资产管线 tools/bake_ground_roofs.py
-// 把场景 GLB 的屋顶/树冠/草丛正交俯视烘进地形图——2026-10-07 用户需求：无 3D
-// 建筑的档位也要看到真实场景俯视内容；下载 ~5-6MB/图）。
+// sceneryTier / groundMode（2026-11-02，#857）：单一枚举替代布尔，杜绝非法组合——
+//   low/mid = `lite` + `terrain-baked`：加载由 full scenery 同批派生的 **结构场景轻量档**
+//   （scenery-lite.glb：保留桥/岩体/建筑等结构几何与语义 extras，剥离内嵌纹理/植被/效果卡片）
+//   + 纯地形烘焙底图（ground-terrain.webp，无俯视 scenery 合成，避免 3D 场景与地面图双重投影）。
+//   结构 world topology 四档一致（#857：低两档此前完全省略 structural scenery，斜视时
+//   桥梁/岩体"压平"），视觉 fidelity 仍 LOW < MID < HIGH < ULTRA。
+//   low/mid 地面 = **纯地形烘焙底图**（4096² 上游管线俯视烘焙的 terrain-only pass，
+//   下载 ~5-6MB/图；2026-10-07 曾用含俯视 scenery 的 composite ground.webp，#857 起退役）。
 // 2026-10-07 重分档（原三档）：旧「中」 paying 场景 GLB 却无 AA/分层，帧成本≈旧高
 // 而观感更差；旧值语义漂移随发版说明，localStorage 旧键名全部兼容无需迁移。
 // treadMarks / forceGlb（2026-10-11 用户裁示）：履带印只在高清/极致提供，且这两档
@@ -22,8 +27,8 @@ import { FX_BUDGETS } from '../battleFx.js'
 // fx（2026-10-13）：3D 战斗特效预算（粒子批次容量与各元素数量），数值表在 battleFx.js 的 FX_BUDGETS；
 // 信息类特效（曳光、光迹、命中火光、爆炸闪光）四档都有，氛围特效按档裁剪。
 export const QUALITY_PRESETS = {
-  low:   { label: '流畅', antialias: false, maxDpr: 1,    scenery: false, groundLayers: false, anisotropy: 1, terrainSeg: 192, allowGlb: false, treadMarks: false, forceGlb: false, fx: FX_BUDGETS.low },
-  mid:   { label: '均衡', antialias: true,  maxDpr: 1.25, scenery: false, groundLayers: false, anisotropy: 2, terrainSeg: 256, allowGlb: true,  treadMarks: false, forceGlb: false, fx: FX_BUDGETS.mid },
-  high:  { label: '高清', antialias: true,  maxDpr: 1.5,  scenery: true,  groundLayers: true,  anisotropy: 4, terrainSeg: 384, allowGlb: true,  treadMarks: true,  forceGlb: true, fx: FX_BUDGETS.high },
-  ultra: { label: '极致', antialias: true,  maxDpr: 2,    scenery: true,  groundLayers: true,  anisotropy: 8, terrainSeg: 512, allowGlb: true,  treadMarks: true,  forceGlb: true, fx: FX_BUDGETS.ultra },
+  low:   { label: '流畅', antialias: false, maxDpr: 1,    sceneryTier: 'lite', groundMode: 'terrain-baked', anisotropy: 1, terrainSeg: 192, allowGlb: false, treadMarks: false, forceGlb: false, fx: FX_BUDGETS.low },
+  mid:   { label: '均衡', antialias: true,  maxDpr: 1.25, sceneryTier: 'lite', groundMode: 'terrain-baked', anisotropy: 2, terrainSeg: 256, allowGlb: true,  treadMarks: false, forceGlb: false, fx: FX_BUDGETS.mid },
+  high:  { label: '高清', antialias: true,  maxDpr: 1.5,  sceneryTier: 'full', groundMode: 'layers',        anisotropy: 4, terrainSeg: 384, allowGlb: true,  treadMarks: true,  forceGlb: true, fx: FX_BUDGETS.high },
+  ultra: { label: '极致', antialias: true,  maxDpr: 2,    sceneryTier: 'full', groundMode: 'layers',        anisotropy: 8, terrainSeg: 512, allowGlb: true,  treadMarks: true,  forceGlb: true, fx: FX_BUDGETS.ultra },
 }

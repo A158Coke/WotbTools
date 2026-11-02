@@ -1232,42 +1232,59 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (!optional) store.assetDegraded = true;
       console.warn(`[map-assets] ${key}: ${status}${detail ? ' — ' + detail : ''}`);
     };
-    const mapUrlPlanned = mapStaticUrl('map', undefined, resolvedKey);
-    if (mapUrlPlanned) progress.expect('map');
+    // 地面底图链路（#857）：分层档走 `map`（ground.webp 兜底/2D 平面）；terrain-baked 档
+    // 先取纯地形烘焙底图 `ground-terrain`（无俯视 scenery 合成），缺失（旧包/发布异常）时
+    // **显式降级**回退 composite ground.webp（optional：3D lite 场景与地面图会有双重投影，
+    // 仅资产异常窗口出现，不得静默）。客户端 HUD 小地图不进地面链路（2026-10-16 裁定）。
+    const groundKinds = Q.groundMode === 'layers' ? ['map'] : ['ground-terrain', 'map'];
+    if (groundKinds.some((k) => mapStaticUrl(k, undefined, resolvedKey))) progress.expect('map');
     if (mapStaticUrl('terrain', undefined, resolvedKey)) progress.expect('terrain');
-    if (Q.groundLayers && mapStaticUrl('groundmeta', undefined, resolvedKey)) progress.expect('ground');
-    if (Q.scenery && mapStaticUrl('scenery', undefined, resolvedKey)) progress.expect('scenery');
+    if (Q.groundMode === 'layers' && mapStaticUrl('groundmeta', undefined, resolvedKey)) progress.expect('ground');
+    // 场景 GLB 按档位选 kind：full = scenery.glb；lite = scenery-lite.glb（#857 派生档，
+    // 缺失时显式降级无场景，绝不回退 full——档位下载税契约）
+    const sceneryKind = Q.sceneryTier === 'full' ? 'scenery' : 'scenery-lite';
+    if (mapStaticUrl(sceneryKind, undefined, resolvedKey)) progress.expect('scenery');
     try {
-      // 地面贴图统一用**契约化的 `ground.webp`**（±300 全幅，与 2D 底图同源同框）。
-      // 曾用客户端 HUD 小地图（资产面 res=mini）省流量：实测它覆盖约 620 m —— 比 ±300 契约框
-      // **多出外围一圈**（水面/场景在 Landscape 框外侧），按 600 m 铺会把内容压缩约 3%、并把圈外
-      // 内容摊进边界（2026-10-16 用户裁定：以 ±300 为准，外圈不呈现）。
+      // 地面底图统一 ±300 全幅契约（与 2D 底图同源同框）。曾用客户端 HUD 小地图
+      //（资产面 res=mini）省流量：实测它覆盖约 620 m —— 比 ±300 契约框**多出外围一圈**
+      //（水面/场景在 Landscape 框外侧），按 600 m 铺会把内容压缩约 3%、并把圈外内容摊进
+      // 边界（2026-10-16 用户裁定：以 ±300 为准，外圈不呈现）。
       // client-only：仅资产平面静态路径；未配置基址/索引未命中 → 无底图（回退网格），
       // 不存在服务端回退
-      const mapUrl = mapStaticUrl('map', undefined, resolvedKey);
-      if (!mapUrl) noteAsset('map', 'missing-url', resolvedKey ? 'ground.webp URL 为空' : '未解析到资产索引 key');
-      else {
+      for (const kind of groundKinds) {
+        const mapUrl = mapStaticUrl(kind, undefined, resolvedKey);
+        if (!mapUrl) {
+          noteAsset(kind, 'missing-url',
+            kind === 'map' ? (resolvedKey ? 'ground.webp URL 为空' : '未解析到资产索引 key')
+                           : '低档纯地形底图 URL 为空（回退 ground.webp）',
+            { optional: kind !== 'map' });
+          continue;
+        }
         const resp = await assetProvider.fetch(mapUrl);
         if (stale()) return;
-        if (!resp.ok) noteAsset('map', `http-${resp.status}`, 'ground.webp 获取失败');
-        else {
-          const meta = JSON.parse(resp.headers.get('X-Map-Meta') || '{}');
-          const blob = await resp.blob();
-          if (stale()) return;
-          const url = URL.createObjectURL(blob);
-          let texture;
-          try {
-            texture = await new THREE.TextureLoader().loadAsync(url);
-          } finally {
-            URL.revokeObjectURL(url);
-          }
-          if (stale()) { texture.dispose(); return; }
-          mapMetaInfo = meta;
-          mapTexture = texture;
-          mapTexture.colorSpace = THREE.SRGBColorSpace;
-          mapTexture.anisotropy = Math.min(Q.anisotropy, renderer.capabilities.getMaxAnisotropy());
-          if (mapMetaInfo.flip_x) { mapTexture.wrapS = THREE.RepeatWrapping; mapTexture.repeat.x = -1; mapTexture.offset.x = 1; }
+        if (!resp.ok) {
+          noteAsset(kind, `http-${resp.status}`,
+            kind === 'map' ? 'ground.webp 获取失败' : 'ground-terrain.webp 获取失败（回退 ground.webp）',
+            { optional: kind !== 'map' });
+          continue;
         }
+        const meta = JSON.parse(resp.headers.get('X-Map-Meta') || '{}');
+        const blob = await resp.blob();
+        if (stale()) return;
+        const url = URL.createObjectURL(blob);
+        let texture;
+        try {
+          texture = await new THREE.TextureLoader().loadAsync(url);
+        } finally {
+          URL.revokeObjectURL(url);
+        }
+        if (stale()) { texture.dispose(); return; }
+        mapMetaInfo = meta;
+        mapTexture = texture;
+        mapTexture.colorSpace = THREE.SRGBColorSpace;
+        mapTexture.anisotropy = Math.min(Q.anisotropy, renderer.capabilities.getMaxAnisotropy());
+        if (mapMetaInfo.flip_x) { mapTexture.wrapS = THREE.RepeatWrapping; mapTexture.repeat.x = -1; mapTexture.offset.x = 1; }
+        break;
       }
     } catch (e) { noteAsset('map', 'failed', e && e.message ? e.message : e); }
     if (stale()) return;
@@ -1357,7 +1374,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 注意分层一律无 alpha（Chrome 把带 alpha 的 webp 预乘解码，GPU 侧会压暗
     // 近黑），第 4 通道在独立灰度图里（tile1/mask1/hmap1 的 R）。
     // 低/中档跳过分层地表：直接走整图烘焙底图（省 4–8 张纹理下载与显存）
-    if (Q.groundLayers) try {
+    if (Q.groundMode === 'layers') try {
       const gmUrl = mapStaticUrl('groundmeta', undefined, resolvedKey);
       if (!gmUrl) {
         noteAsset('groundLayers', 'missing-url', '跳过分层地表（回退烘焙底图）', { optional: true });
@@ -1442,13 +1459,16 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         console.warn('地面重建回退失败（保留 2D 底图）:', e2);
       }
     }
-    // 静态场景模型（建筑/桥/岩石，tools/export_map_glb.py 预生成；缺失静默跳过）。
+    // 静态场景模型（建筑/桥/岩石，tools/export_map_glb.py 预生成；缺失按档位降级）。
     // GLB 为游戏系（z 上、+y 北），qFrame = Ry(π)·Rx(-π/2)（YXZ 序）转到回放场景系——
     // 与坦克 GLB 同一帧变换，纯旋转无镜像，绕序天然正确。
-    // 低/中档跳过场景 GLB（单图 11–67MB 下载 + 大块显存，是画质档最大的分流项；
-    // 均衡档定位 = 真车模 + 无场景下载税）；高档加载场景且地面走分层地表合成，
-    // 均衡档地面走高清烘焙底图（无分层）
-    if (Q.scenery) try {
+    // #857 场景档位：high/ultra 加载 full scenery.glb（11–67MB 下载 + 大块显存）；
+    // low/mid 加载同批派生的 **结构轻量档 scenery-lite.glb**（精确结构几何、无内嵌纹理/
+    // 植被/效果卡片——斜视时桥梁/岩体不再"压平"）。lite 缺失（资产发布异常）→ 显式
+    // 降级为无场景（本档位既有形态），**绝不回退 full**：不出现 low 档不可预测的
+    // 巨大资源跳变。均衡档地面走纯地形烘焙底图（无分层、无俯视 scenery 合成）。
+    if (Q.sceneryTier) try {
+      const sceneryKind = Q.sceneryTier === 'full' ? 'scenery' : 'scenery-lite';
       // 可破坏物清单（与场景 GLB 并行拉取；缺失/低档静默禁用该特性）
       // mapStaticUrl 返回完整 URL——assetProvider.json() 会再拼一次 base（逻辑路径专用），
       // 必须走透传的 fetch + resp.json()（与下方 terrain-meta 同款用法）
@@ -1463,9 +1483,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           })
         : Promise.resolve(null);
       if (DEBUG) destructDocPromise.then((d) => { window.__destructStage = d ? 'doc-ok' : 'doc-missing'; });
-      const sceneryUrl = mapStaticUrl('scenery', undefined, resolvedKey);
+      const sceneryUrl = mapStaticUrl(sceneryKind, undefined, resolvedKey);
       if (!sceneryUrl) {
-        noteAsset('scenery', 'missing-url', '未配置资产面/未命中索引（无场景 GLB）');
+        noteAsset('scenery', 'missing-url',
+          sceneryKind === 'scenery-lite'
+            ? '未配置资产面/未命中索引（无 lite 场景；降级无场景，不回退 full）'
+            : '未配置资产面/未命中索引（无场景 GLB）');
       }
       else {
       const gltf = await new Promise((res) => {
@@ -1478,7 +1501,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         if (gltf?.scene) disposeObject3D(gltf.scene);
         return;
       }
-      if (!gltf || !gltf.scene) noteAsset('scenery', 'failed', 'scenery.glb 加载/解析失败（建筑/场景缺失）');
+      if (!gltf || !gltf.scene) noteAsset('scenery', 'failed',
+        sceneryKind === 'scenery-lite'
+          ? 'scenery-lite.glb 加载/解析失败（降级无场景；不回退 full）'
+          : 'scenery.glb 加载/解析失败（建筑/场景缺失）');
       if (gltf && gltf.scene) {
         // 装配（变体裁剪 → 材质分派 → 合批 → 可破坏物槽位 → 矩阵冻结）在
         // playback/mapAssets.js（2026-10-24 Step A3 出仓；ctx 快照 + 增量 writes，

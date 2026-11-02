@@ -2,29 +2,36 @@
 // 本图失败时，该图上一轮的 <key>.rgba / <key>.meta.json 必须已不存在——composite_overhead.py 只按文件
 // 存在与否读取，留着旧成品即会被当作本轮结果合成。伪 page 模拟 /bake 页面的三次 evaluate。
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { bakeKey } from './bake-overhead-key.mjs'
 
 const SIZE = 4
 const KEY = 'faust'
-let outDir, uploadPath
+let outDir, uploadPath, packDir
 
 beforeEach(() => {
   outDir = mkdtempSync(join(tmpdir(), 'bake-overhead-key-'))
   uploadPath = join(outDir, 'upload.rgba')
+  packDir = mkdtempSync(join(tmpdir(), 'bake-overhead-pack-'))
+  mkdirSync(join(packDir, 'map', KEY), { recursive: true })
 })
-afterEach(() => rmSync(outDir, { recursive: true, force: true }))
+afterEach(() => {
+  rmSync(outDir, { recursive: true, force: true })
+  rmSync(packDir, { recursive: true, force: true })
+})
 
 function seedStale() {
   writeFileSync(join(outDir, `${KEY}.rgba`), Buffer.alloc(SIZE * SIZE * 4, 0xff))   // 上一轮成品（白图）
   writeFileSync(join(outDir, `${KEY}.meta.json`), JSON.stringify({ key: KEY, ground: true }))
 }
 
-/** 伪 /bake 页面：load/render/upload 三步；upload 默认把 pixels 写到 uploadPath（同中间件） */
-function fakePage({ load = { ok: true, span: 640, ground: true }, pixels = Buffer.alloc(SIZE * SIZE * 4, 7), upload = true } = {}) {
+/** 伪 /bake 页面：load/render/upload 三步；upload 默认把 pixels 写到 uploadPath（同中间件）。
+ *  pack 给出时模拟 ground-terrain 相：groundTerrain evaluate 把 webp 写到包内最终路径。 */
+function fakePage({ load = { ok: true, span: 640, ground: true }, pixels = Buffer.alloc(SIZE * SIZE * 4, 7), upload = true, groundTerrain = true } = {}) {
   const calls = []
+  const gtPath = join(packDir, 'map', KEY, 'ground-terrain.webp')
   return {
     calls,
     async evaluate(expr) {
@@ -34,6 +41,15 @@ function fakePage({ load = { ok: true, span: 640, ground: true }, pixels = Buffe
         return load
       }
       if (expr.startsWith('window.__bake.render(')) return { covered: 16, coverPct: 100 }
+      if (expr.startsWith('window.__bake.groundTerrain(')) {
+        if (groundTerrain === true) {
+          mkdirSync(dirname(gtPath), { recursive: true })
+          writeFileSync(gtPath, Buffer.from('RIFFgtwebp'))
+          return { base: 'karelia', terrainRendered: true, coverPct: 99.5, bytes: 9 }
+        }
+        if (groundTerrain === false) return null   // 页面合成失败：不落盘
+        throw groundTerrain
+      }
       if (expr.startsWith("fetch('/pixel-upload'")) {
         if (upload) writeFileSync(uploadPath, pixels)
         return 'ok'
@@ -43,7 +59,7 @@ function fakePage({ load = { ok: true, span: 640, ground: true }, pixels = Buffe
   }
 }
 
-const run = (page) => bakeKey({ page, key: KEY, outDir, span: 600, size: SIZE, mapId: 7, uploadPath })
+const run = (page, opts = {}) => bakeKey({ page, key: KEY, outDir, span: 600, size: SIZE, mapId: 7, uploadPath, ...opts })
 const outputs = () => readdirSync(outDir).filter((f) => f.startsWith(KEY)).sort()
 
 describe('逐图产物 fail-closed：失败 = 本图无产物（含上一轮旧成品）', () => {
@@ -93,5 +109,40 @@ describe('逐图产物 fail-closed：失败 = 本图无产物（含上一轮旧�
   it('ground 只取页面 load 的回报：无地形图写 ground=false', async () => {
     await run(fakePage({ load: { ok: true, span: 600, ground: false } }))
     expect(JSON.parse(readFileSync(join(outDir, `${KEY}.meta.json`), 'utf8')).ground).toBe(false)
+  })
+})
+
+describe('ground-terrain 相（#857 Step 4）：fail-closed 生命周期', () => {
+  const gtPath = () => join(packDir, 'map', KEY, 'ground-terrain.webp')
+
+  it('成功：webp 落盘包内最终路径，terrain.meta.json 携带合成回报，无 .tmp 残留', async () => {
+    writeFileSync(gtPath(), Buffer.from('old-product'))   // 上一轮旧成品
+    const res = await run(fakePage({}), { pack: packDir, space: 'karelia' })
+    expect(res.groundTerrain).toMatchObject({ base: 'karelia', terrainRendered: true, coverPct: 99.5 })
+    expect(readFileSync(gtPath(), 'utf8')).toBe('RIFFgtwebp')
+    expect(existsSync(`${gtPath()}.tmp`)).toBe(false)
+    const meta = JSON.parse(readFileSync(join(outDir, `${KEY}.terrain.meta.json`), 'utf8'))
+    expect(meta).toMatchObject({ key: KEY, span: 640, size: SIZE, groundTerrain: { base: 'karelia' } })
+  })
+
+  it('页面合成失败：旧成品已删除、reject、无产物残留（不留旧 ground-terrain）', async () => {
+    writeFileSync(gtPath(), Buffer.from('old-product'))
+    await expect(run(fakePage({ groundTerrain: false }), { pack: packDir, space: 'karelia' }))
+      .rejects.toThrow('ground-terrain upload missing')
+    expect(existsSync(gtPath())).toBe(false)
+    expect(existsSync(`${gtPath()}.tmp`)).toBe(false)
+  })
+
+  it('页面异常同样 fail-closed', async () => {
+    await expect(run(fakePage({ groundTerrain: new Error('canvas boom') }), { pack: packDir, space: 'karelia' }))
+      .rejects.toThrow('canvas boom')
+    expect(existsSync(gtPath())).toBe(false)
+  })
+
+  it('未传 pack/space（旧调用形态）不进 ground-terrain 相：产物只到 rgba/meta 为止', async () => {
+    const res = await run(fakePage({}))
+    expect(res.groundTerrain).toBeUndefined()
+    expect(existsSync(gtPath())).toBe(false)
+    expect(existsSync(join(outDir, `${KEY}.terrain.meta.json`))).toBe(false)
   })
 })

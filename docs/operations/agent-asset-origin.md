@@ -130,8 +130,17 @@ glb/{tank_id}/{model,collision}.glb
 tank_images/{id}.webp
 data/{tanks.pb,models.pb,tank_cache.json,data_version.json}
 map/{key}/{ground,mini}.webp  terrain.u16.bin  terrain.json
-map/{key}/{scenery.glb,ground.layers.json}  map/{key}/ground/*.webp
+map/{key}/{scenery.glb,scenery-lite.glb,ground-terrain.webp,ground.layers.json}  map/{key}/ground/*.webp
 ```
+
+`scenery-lite.glb` 与 `ground-terrain.webp` 是 **pack 后处理产物**（#857：3D 画质四档结构拓扑一致）：上游 pack 构建后在本仓补跑
+
+```bash
+node frontend/scripts/derive-scenery-lite.mjs --pack <pack> --all   # full scenery → 结构 lite（verifier 全绿才写）
+node frontend/scripts/bake-ground-overhead.mjs --pack <pack> --all  # 俯视烘焙 + terrain-only → ground-terrain.webp
+```
+
+再走 `tools/composite_overhead.py` 合成 ground.webp 与 `--refresh-manifest`（lite/ground-terrain 的 sha256 随 manifest 刷新）。发布 gate：全部正式支持地图两份产物齐备；运行时对缺失图按画质档显式降级（lite 缺失 → 无场景；ground-terrain 缺失 → 回退 ground.webp），不回退 full scenery。
 
 为维持旧 Android 客户端与回滚能力，资产包仍同步上传到 COS **桶根目录**（旧 APK 的 `AgentAssetProxy` 继续从此读取；新版本使用 Alibaba）：
 

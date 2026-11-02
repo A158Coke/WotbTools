@@ -11,10 +11,13 @@ import { join } from 'node:path'
 
 /**
  * @param {{ page: { evaluate: (expr: string) => Promise<any> }, key: string, outDir: string, span: number,
- *           size: number, mapId?: number|null, uploadPath: string }} opts
+ *           size: number, mapId?: number|null, uploadPath: string,
+ *           pack?: string|null, space?: string|null }} opts
  *   uploadPath = /pixel-upload 中间件的落盘路径（与 CLI 中间件同一常量）
+ *   pack + space 给出时（#857 Step 4）：追加 ground-terrain 相——页面 terrain-only 渲染 +
+ *   客户端底图合成（YX 常量翻转，与 composite_overhead.py 同帧）→ map/<key>/ground-terrain.webp
  */
-export async function bakeKey({ page, key, outDir, span, size, mapId = null, uploadPath }) {
+export async function bakeKey({ page, key, outDir, span, size, mapId = null, uploadPath, pack = null, space = null }) {
   const t0 = Date.now()
   const rgbaPath = join(outDir, `${key}.rgba`)
   const metaPath = join(outDir, `${key}.meta.json`)
@@ -34,5 +37,21 @@ export async function bakeKey({ page, key, outDir, span, size, mapId = null, upl
     JSON.stringify({ key, span: spanEff, size, ground: !!(load && load.ground), ...stats }))
   renameSync(`${rgbaPath}.tmp`, rgbaPath)
   renameSync(`${metaPath}.tmp`, metaPath)
-  return { key, coverPct: stats.coverPct, mb: +(raw.length / 1048576).toFixed(1), ms: Date.now() - t0 }
+  const result = { key, coverPct: stats.coverPct, mb: +(raw.length / 1048576).toFixed(1), ms: Date.now() - t0 }
+
+  // ---- ground-terrain 相（#857 Step 4）：纯地形烘焙底图，low/mid 档 3D lite 场景的地面 ----
+  // fail-closed 与 rgba 同口径：开烘前删除本图上一轮成品（合成式消费旧成品 = 双重投影复活）；
+  // 页面合成失败 ⇒ 本图无 ground-terrain（调用方按 404 降级回退 ground.webp 并显式记 issue）。
+  if (pack && space) {
+    const gtPath = join(pack, 'map', key, 'ground-terrain.webp')
+    for (const p of [gtPath, `${gtPath}.tmp`]) rmSync(p, { force: true })
+    const gt = await page.evaluate(
+      `window.__bake.groundTerrain(${spanEff}, ${JSON.stringify(space)}, ${JSON.stringify(key)})`)
+    if (!existsSync(gtPath)) throw new Error('ground-terrain upload missing')
+    const gtMetaPath = join(outDir, `${key}.terrain.meta.json`)
+    writeFileSync(`${gtMetaPath}.tmp`, JSON.stringify({ key, span: spanEff, size, groundTerrain: gt }))
+    renameSync(`${gtMetaPath}.tmp`, gtMetaPath)
+    result.groundTerrain = gt
+  }
+  return result
 }

@@ -393,7 +393,7 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
     // 行为回归见 bake-overhead-key.test.mjs；CLI 只调用、不得复辟本地副本
     expect(bakeSrc).toMatch(/import \{ bakeKey \} from '\.\/bake-overhead-key\.mjs'/)
     expect(bakeSrc).not.toMatch(/async function bakeKey\(/)
-    expect(bakeSrc).toMatch(/bakeKey\(\{ page, key, outDir, span: spans\[key\], size: SIZE,\s*mapId: primaryMapIdOf\(key\), uploadPath: UPLOAD \}\)/)
+    expect(bakeSrc).toMatch(/bakeKey\(\{ page, key, outDir, span: spans\[key\], size: SIZE,\s*mapId: primaryMapIdOf\(key\), uploadPath: UPLOAD,\s*pack: PACK, space: spaces\[key\] \}\)/)
     expect(bakeSrc).toMatch(/writeFileSync\(UPLOAD, body\)/)
     expect(bakeSrc).toMatch(/return \{ ok: true, span: effSpan, ground: groundReady \}/)
     // 退化几何按 (ic/3)/vc 比率删除已撤除（同 3D 运行时；统计启发式不得复活）
