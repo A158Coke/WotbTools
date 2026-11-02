@@ -200,6 +200,24 @@ describe('subdividePolyline', () => {
     expect(out.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))).toBe(true)
   })
 
+  it('preserves both bridge→ground transition endpoints across the 4096-point budget', () => {
+    const raw = []
+    for (let i = 0; i < ANNOTATION_MAX_COMMITTED_POINTS / 2; i++) raw.push({ x: i, y: 0 })
+    for (let i = ANNOTATION_MAX_COMMITTED_POINTS / 2; i < ANNOTATION_MAX_COMMITTED_POINTS; i++) {
+      raw.push({ x: i, y: 0, surfaceY: 8 })
+    }
+    const normalized = normalizePenPoints(raw)
+    expect(normalized).toHaveLength(ANNOTATION_MAX_COMMITTED_POINTS)
+    expect(normalized.some((p) => p.x === 2047 && p.surfaceY === undefined)).toBe(true)
+    expect(normalized.some((p) => p.x === 2048 && p.surfaceY === 8)).toBe(true)
+
+    const ribbon = buildPenRibbon(pen(normalized, 2), { sampleHeight: () => 0, lift: 0, maxSegment: 1000 })
+    expect(ribbon).not.toBeNull()
+    expect(ribbon.strips[0].anchored.some((f) => f === 0)).toBe(true)
+    expect(ribbon.strips[0].anchored.some((f) => f === 1)).toBe(true)
+    expect(ribbonVertices(ribbon).some((v) => Math.abs(v.y - 8) < 1e-6)).toBe(true)
+  })
+
   it('does not drop an anchor-state transition when the committed budget resamples', () => {
     const pts = subdividePolyline([
       { x: 0, y: 0 }, { x: 10, y: 0 },
@@ -766,6 +784,24 @@ describe('3D surface anchors (selected-surface drawing)', () => {
     expect(flatPieces.flatMap((piece) => piece.points)).toEqual([
       { x: 0, y: 0 }, { x: 4, y: 0 }, { x: 6, y: 0 }, { x: 10, y: 0 },
     ])
+  })
+
+  it('projects anchored eraser rings onto 5°/45° surface planes and falls back horizontally', () => {
+    for (const degrees of [5, 45]) {
+      const theta = (degrees * Math.PI) / 180
+      const normal = { x: 0, y: Math.cos(theta), z: Math.sin(theta) }
+      const ring = buildEraserRing({ x: 0, y: 0, surfaceY: 8, surfaceN: normal }, 5, () => 0, {
+        segments: 24, lift: 0,
+      })
+      expect(ring).not.toBeNull()
+      const verts = ringVertices(ring)
+      expect(Math.max(...verts.map((v) => v.y)) - Math.min(...verts.map((v) => v.y))).toBeGreaterThan(0.5)
+      // plane through (0, 8, 0), normal (0, cos, sin): y*cos + z*sin = 8*cos
+      expect(verts.every((v) => Math.abs(normal.y * (v.y - 8) + normal.z * v.z) < 1e-5)).toBe(true)
+    }
+
+    const flat = buildEraserRing({ x: 0, y: 0, surfaceY: 8 }, 5, () => 0, { segments: 24, lift: 0 })
+    expect(ringVertices(flat).every((v) => Math.abs(v.y - 8) < 1e-6)).toBe(true)
   })
 
   it('eraser ring stays on the selected layer when the cursor carries a surface anchor', () => {

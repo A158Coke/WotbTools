@@ -168,13 +168,35 @@ export function sanitizePoints(points, { maxPoints = ANNOTATION_MAX_INPUT_POINTS
 function resampleByIndex(points, limit) {
   if (limit >= points.length) return points.map((p) => ({ ...p }))
   // anchor-state transition 是 topology boundary：降密度也不得跳过它。
+  // 必须同时保护 transition 两侧 i-1 / i；只保 i 会在桥尾把最后一个 anchor 删掉。
   const anchored = (p) => Number.isFinite(p.surfaceY)
-  const mandatory = [0]
+  const mandatorySet = new Set([0, points.length - 1])
   for (let i = 1; i < points.length; i++) {
-    if (anchored(points[i]) !== anchored(points[i - 1])) mandatory.push(i)
+    if (anchored(points[i]) !== anchored(points[i - 1])) {
+      mandatorySet.add(i - 1)
+      mandatorySet.add(i)
+    }
   }
-  if (mandatory[mandatory.length - 1] !== points.length - 1) mandatory.push(points.length - 1)
-  if (limit <= mandatory.length) return mandatory.slice(0, limit).map((idx) => ({ ...points[idx] }))
+  const mandatory = [...mandatorySet].sort((a, b) => a - b)
+  if (limit <= mandatory.length) {
+    // 预算连 mandatory 都放不下时，至少保住 first/last 与尽可能多的 transition pair；
+    // 绝不能简单 prefix 丢掉尾点。
+    const picked = new Set([0, points.length - 1])
+    for (let i = mandatory.length - 1; i >= 1 && picked.size + 2 <= limit; i--) {
+      const idx = mandatory[i]
+      if (idx === 0 || idx === points.length - 1) continue
+      const prev = mandatory[i - 1]
+      if (prev !== 0 && prev !== points.length - 1 && Math.abs(idx - prev) === 1) {
+        picked.add(prev)
+        picked.add(idx)
+      }
+    }
+    for (const idx of mandatory) {
+      if (picked.size >= limit) break
+      picked.add(idx)
+    }
+    return [...picked].sort((a, b) => a - b).slice(0, limit).map((idx) => ({ ...points[idx] }))
+  }
   const extra = limit - mandatory.length
   const spans = []
   let totalSpan = 0
@@ -746,13 +768,20 @@ export function buildEraserRing(center, radius, sampleHeight, {
   // eraser cursor 落在选中表面时，整个 ring 留在该层；否则沿用 terrain。
   const centerAnchor = Number.isFinite(center.surfaceY) ? Number(center.surfaceY) : null
   const centerY = centerAnchor !== null ? centerAnchor : sampleOrNull(sampleHeight, cx, cz)
+  const normal = centerAnchor !== null ? normalizeNormal(center.surfaceN) : undefined
   const liftValue = numberOr(lift, ANNOTATION_LIFT / 2)
   const positions = new Float32Array(n * 3)
   for (let i = 0; i < n; i++) {
     const angle = (i / n) * Math.PI * 2
     const x = cx + Math.cos(angle) * r
     const z = cz + Math.sin(angle) * r
-    const y = centerAnchor !== null ? centerAnchor : sampleOrNull(sampleHeight, x, z)
+    let y = centerAnchor !== null ? centerAnchor : sampleOrNull(sampleHeight, x, z)
+    if (centerAnchor !== null && normal && Math.abs(normal.y) > 1e-6) {
+      // semantic eraser 仍是 XZ circle；visual ring 点投到同一 surface plane。
+      const dx = x - cx
+      const dz = z - cz
+      y = centerAnchor - (normal.x * dx + normal.z * dz) / normal.y
+    }
     positions[i * 3] = x
     positions[i * 3 + 1] = (y === null ? (centerY === null ? 0 : centerY) : y) + liftValue
     positions[i * 3 + 2] = z
