@@ -204,11 +204,14 @@ describe('MapPreviewPage', () => {
   it('默认隐藏的地图仍可被 ?map= 深链打开（2D/3D），返回 picker 后仍默认隐藏', async () => {
     auth.authenticated.value = true
     source.loadMapIndex.mockResolvedValue(IDX)
-    const w2d = await openAt({ map: 'moon', mode: '2d' })
-    expect(ROUTER.currentRoute.value.query).toMatchObject({ view: 'map-preview', map: 'moon', mode: '2d' })
+    // 2D/3D 都必须用真正没有 zh 的 hidden key（moon 已登记中文名，属默认可见）
+    expect(HIDDEN_KEYS).toContain('rudniki_01')
+    const w2d = await openAt({ map: 'rudniki_01', mode: '2d' })
+    expect(ROUTER.currentRoute.value.query).toMatchObject({ view: 'map-preview', map: 'rudniki_01', mode: '2d' })
     expect(w2d.find('[data-testid="map-grid"]').exists()).toBe(false)
     expect(w2d.find('[data-testid="map-2d-pane"]').isVisible()).toBe(true)
-    expect(w2d.findComponent({ name: 'MapPreview2DPane' }).props('mapKey')).toBe('moon')
+    expect(w2d.findComponent({ name: 'MapPreview2DPane' }).props('mapKey')).toBe('rudniki_01')
+    expect(w2d.findComponent({ name: 'MapPreview2DPane' }).props('basemap')).toEqual({ kind: 'map2d', mapKey: 'rudniki_01' })
 
     const w3d = await openAt({ map: 'rudniki_03', mode: '3d' })
     expect(w3d.find('[data-testid="map-3d-pane"]').element.parentElement.style.display).toBe('')
