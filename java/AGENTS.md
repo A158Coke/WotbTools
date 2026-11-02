@@ -61,13 +61,13 @@ regression tests 即可，PR CI 负责最终发现遗漏影响。同一任务内
 
 - Controller → Converter / Service → Repository：Controller 是 HTTP 聚合器，只接收 transport input、调用 Mapper / Converter 与 Service、返回 transport output；不得包含业务规则、流程编排、Repository / Gateway 调用或业务指标生命周期。新 endpoint 的业务逻辑写进 Service。简单、直接、无业务判断的结构映射使用 Mapper；多输入合并、条件分支、字段派生、规范化、上下文相关转换或多步骤装配使用 Converter。Mapper / Converter 只负责表示转换，不拥有业务规则、Repository、外部 provider I/O 或业务流程。
 - **Mapper 替代 toXxx**：禁止 Service/Entity 手写 `toDto()/toEntity()`；独立 Mapper 类（泛型接口 `Mapper<E,D>`）集中转换。
-- Flyway migration immutability：`src/main/resources/db/migration/V*.sql` 中已经存在于
-  base branch 的 versioned migration 是 immutable historical artifact，禁止修改、重命名、删除、
-  格式化、更新注释、转换换行或编码；schema 变化只能新增更高版本的 forward-only `V<N>__*.sql`。
-  只有在 Git history 证明生产已执行且当前文件发生 checksum drift 时，才允许恢复到 exact deployed blob。
+- Flyway migration immutability：已存在于 base branch 的 versioned migration（`src/main/resources/db/migration/V*.sql`）
+  是 immutable historical artifact——任何字节级变更（含重命名/格式化/注释/换行）都被
+  `deploy/check-flyway-immutability.sh` 拒绝（回归夹具 `deploy/test-flyway-immutability.sh`）；
+  schema 变化只能新增更高版本的 forward-only `V<N>__*.sql`，checksum drift 的恢复例外见检查脚本。
   实体列与迁移列逐列对齐。
-- `@RequestParam(name="x")` 必须显式写 name；字符串判空统一 `org.springframework.util.StringUtils.hasText`；集合遍历优先 Stream；禁止 `import *`；局部变量/入参 `final`；DI 用构造器注入（禁止 `@Autowired` 字段注入）。
-- 不可变模型用 `record`，可变模型用公有字段 POJO（不引入 Lombok）。
+- `@RequestParam(name="x")` 必须显式写 name（unnamed 或空串 name/value 仅允许 `Map`/`MultiValueMap` 聚合绑定例外——`RequestParamExplicitNameTest` 对 wotb-web 与 wotb-ai production classes 强制）；字符串判空统一 `org.springframework.util.StringUtils.hasText`；集合遍历优先 Stream；禁止 `import *`（`SourceImportStarBanTest` 经 javac parser 对三模块全部 Java 源码强制，resource fixture 覆盖多行/注间空白注释/Unicode 形态）；局部变量/入参 `final`；DI 用构造器注入（禁止 `@Autowired` 字段注入）。
+- 不可变模型用 `record`，可变模型用公有字段 POJO；不引入 Lombok——parent enforcer `bannedDependencies` 拒绝 `org.projectlombok:lombok`（全部模块、全部 scope；negative fixture `java/src/it/lombok-ban/` 随 parent `mvn test` 证明会红），wotb-web 另有 ArchUnit package 依赖规则。
 
 ## AI Service 边界（`wotb-ai`：`com.wotb.ai`；共享领域模型：`wotb-core/.../replay`）
 

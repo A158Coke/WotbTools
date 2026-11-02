@@ -61,14 +61,14 @@
 ## Design language
 
 - 改界面前按改动定位 Design Contract [`docs/frontend/design-language.md`](../docs/frontend/design-language.md) 的相关章节（token / 响应式 / 组件 / 选择控件 / 文案 / 可访问性等），不默认全文预载；PR 与审查用稳定规则 ID（`DC-*`）引用；本文件硬约束始终适用。组件只用语义 token（`--color-*`、`--space-*`、`--type-*` / `--font-size-*` / `--line-height-*`、`--radius-*`、`--z-*`、`--elevation-*`、`--control-h-*`）；需要新的视觉值时先加 token，不写字面量。
-- `pnpm run lint:css` 必须通过。新建的 `.css` / `.vue` 自动受严格规则约束；**不得把新文件加入 `stylelint.legacy.json`**。迁移旧文件时把它从名单中删除并修复全部报错。
-- 不新增 `!important`、非三档断点、`100vh` / `100vw`、emoji 图标或未进 i18n 的界面文字。
+- `pnpm run lint:css` 必须通过。新建的 `.css` / `.vue` 自动受严格规则约束；**不得把新文件加入 `stylelint.legacy.json`**（`scripts/check-typescript-baseline.mjs` 的 stylelint baseline 门禁强制名单 base→head 只减不增）。迁移旧文件时把它从名单中删除并修复全部报错。
+- 不新增 `!important`、非三档断点、`100vh` / `100vw`（前三者由 `pnpm run lint:css` 强制）；emoji 图标或未进 i18n 的界面文字仍属人工判断。
 
 ## UI Profile invariant
 
 - `showcase` / `classic` 是 Presentation Profile，共用同一套业务组件、状态、API 和结构。
 - `wotb-ui-profile` 是唯一持久化 profile；`data-theme` 只能由 profile 派生，不得恢复独立 theme state、存储 key 或 `useTheme`。
-- 切换 profile 不得通过 `:key` 重建组件，也不得创建 `classic/` 与 `showcase/` 两套业务实现。
+- 切换 profile 不得通过 `:key` 重建组件，也不得创建 `classic/` 与 `showcase/` 两套业务实现（`ui-profile-fork-guard.test.js` 强制）。
 - 主题 token、Profile 投影和例外覆盖见 [`docs/frontend/ui-system.md`](../docs/frontend/ui-system.md)。
 
 ## Responsive hard constraints
