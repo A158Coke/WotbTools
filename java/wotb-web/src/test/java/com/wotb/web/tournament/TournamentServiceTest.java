@@ -38,6 +38,7 @@ import java.util.Set;
 import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -397,6 +398,428 @@ class TournamentServiceTest {
         assertCode(ApiErrorCode.TOURNAMENT_CSV_WORKSPACE_BUSY, () -> service.previewCsv(1, 0, file));
         assertFalse(event.csvImported); assertTrue(auditRows.isEmpty());
     }
+    @Test void sanctionedClansAreHiddenFromThePublicBoardButVisibleInTheCanonicalSnapshot() {
+        day.expectedGroupCount = 1;
+        service.saveDraft(1, 1, 1, request(List.of(group(1, "ERROR", "A", "B", "C")), List.of("A", "B", "C")));
+        publish("once");
+        service.clearPoints("admin", 1, new TournamentDtos.ClearRequest(event.version, 1, 1, "A", "violation", false));
+        final List<TournamentDtos.StandingRow> board = service.publicStandings(1).rows();
+        assertEquals(0, board.stream().filter(row -> row.clanTag().equals("A")).findFirst().orElseThrow().totalPoints());
+        assertEquals(50, board.stream().filter(row -> row.clanTag().equals("B")).findFirst().orElseThrow().totalPoints());
+        final TournamentDtos.Standings canonical = service.day(1, 1, 1, true).canonicalStandings();
+        assertEquals(100, canonical.rows().stream().filter(row -> row.clanTag().equals("A")).findFirst().orElseThrow().totalPoints());
+        assertEquals(3, canonical.rows().size());
+    }
+
+    @Test void sanctionedHistoricalPointsStayVisibleOnlyInTheCanonicalSnapshot() {
+        service.importHistorical("admin", 1, historicalRequest(List.of(historicalRow("A", 100)), "import"));
+        service.clearPoints("admin", 1, new TournamentDtos.ClearRequest(event.version, 1, 1, "A", "violation", false));
+        assertEquals(0, service.publicStandings(1).rows().getFirst().totalPoints());
+        assertEquals(100, service.day(1, 1, 1, true).canonicalStandings().rows().getFirst().totalPoints());
+    }
+
+    @Test void finalizeRejectsStaleEventOrDayVersionsAndBadIdempotencyKeysWithoutPublishing() {
+        service.saveDraft(1, 1, 1, request(List.of(group(1, "ERROR", "A", "B", "C")), List.of("A", "B", "C")));
+        final long eventVersion = event.version; final long dayVersion = day.version;
+        assertCode(ApiErrorCode.TOURNAMENT_VERSION_CONFLICT,
+                () -> service.finalizeDay("admin", 1, 1, 1, new TournamentDtos.FinalizeRequest(eventVersion - 1, dayVersion, 1, "key")));
+        assertCode(ApiErrorCode.TOURNAMENT_VERSION_CONFLICT,
+                () -> service.finalizeDay("admin", 1, 1, 1, new TournamentDtos.FinalizeRequest(eventVersion, dayVersion - 1, 1, "key")));
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,
+                () -> service.finalizeDay("admin", 1, 1, 1, new TournamentDtos.FinalizeRequest(eventVersion, dayVersion, 1, "k".repeat(65))));
+        assertNull(day.publishedGroups); assertEquals(eventVersion, event.version); assertEquals(dayVersion, day.version);
+        assertTrue(auditRows.isEmpty());
+        day.expectedGroupCount = 1;
+        service.finalizeDay("admin", 1, 1, 1, new TournamentDtos.FinalizeRequest(eventVersion, dayVersion, 1, "valid"));
+        assertNotNull(day.publishedGroups);
+        assertEquals(eventVersion + 1, event.version); assertEquals(dayVersion + 1, day.version);
+    }
+
+    @Test void finalizeRequiresADeclaredGroupCountEvenWhenTheDraftMatches() {
+        service.saveDraft(1, 1, 1, request(List.of(group(1, "ERROR", "A", "B", "C")), List.of("A", "B", "C")));
+        day.expectedGroupCount = null;
+        assertCode(ApiErrorCode.TOURNAMENT_GROUP_COUNT_MISMATCH,
+                () -> service.finalizeDay("admin", 1, 1, 1, new TournamentDtos.FinalizeRequest(event.version, day.version, 1, "key")));
+        assertNull(day.publishedGroups);
+    }
+
+    @Test void draftWritesRejectStaleDayVersionsWithoutSideEffects() {
+        day.expectedGroupCount = null;
+        assertCode(ApiErrorCode.TOURNAMENT_VERSION_CONFLICT,
+                () -> service.expectedGroups(1, 1, 1, new TournamentDtos.ExpectedGroupsRequest(event.version, day.version + 1, 1)));
+        assertNull(day.expectedGroupCount); assertEquals(0, event.version);
+        final TournamentDtos.DraftRequest stale = new TournamentDtos.DraftRequest(event.version, day.version + 1, 1,
+                List.of(group(1, "ERROR", "A", "B", "C")), List.of("A", "B", "C"));
+        assertCode(ApiErrorCode.TOURNAMENT_VERSION_CONFLICT, () -> service.saveDraft(1, 1, 1, stale));
+        assertNull(day.draftGroups); assertTrue(clanRows.isEmpty());
+    }
+
+    @Test void historicalImportLandsEachCellOnItsConfiguredRoundAndDay() {
+        final List<TournamentDtos.HistoricalRow> input = List.of(historicalRow("A", 100, null, 50));
+        final TournamentDtos.HistoricalPreview result = service.importHistorical("admin", 1, historicalRequest(input, "import"));
+        final TournamentDtos.StandingRow row = result.standings().rows().getFirst();
+        assertEquals(150, row.totalPoints());
+        assertEquals(100L, row.rounds().get(0).days().get(0).points());
+        assertNull(row.rounds().get(0).days().get(1).points());
+        assertEquals(50L, row.rounds().get(1).days().get(0).points());
+        assertNull(row.rounds().get(1).days().get(1).points());
+        assertTrue(service.publicStandings(1).days().get(0).published());
+        assertFalse(service.publicStandings(1).days().get(1).published());
+        assertTrue(service.publicStandings(1).days().get(2).published());
+        assertFalse(service.publicStandings(1).days().get(3).published());
+    }
+
+    @Test void historicalImportRejectsStaleEventVersionsWithoutWritingAnything() {
+        assertCode(ApiErrorCode.TOURNAMENT_VERSION_CONFLICT, () -> service.importHistorical("admin", 1,
+                new TournamentDtos.HistoricalImportRequest(event.version + 1, "source.png", "a".repeat(64), List.of(historicalRow("A", 100)), true, "import")));
+        assertNull(event.historicalImportKey); assertTrue(clanRows.isEmpty()); assertEquals(1, dayRows.size()); assertEquals(0, event.version);
+        assertNull(day.publishedHistoricalPoints);
+    }
+
+    @Test void historicalImportAcceptsTheMaximumCellScoreAndBoundaryIdempotencyKeys() {
+        assertEquals(1_000_000, service.previewHistorical(1,
+                new TournamentDtos.HistoricalPreviewRequest(0, "source", "a".repeat(64), List.of(historicalRow("A", 1_000_000))))
+                .standings().rows().getFirst().totalPoints());
+        service.importHistorical("admin", 1, new TournamentDtos.HistoricalImportRequest(event.version, "source",
+                "a".repeat(64), List.of(historicalRow("A", 100)), true, "k".repeat(64)));
+        assertEquals("k".repeat(64), event.historicalImportKey);
+        assertCode(ApiErrorCode.INVALID_ARGUMENT, () -> service.importHistorical("admin", 1,
+                new TournamentDtos.HistoricalImportRequest(event.version, "source", "a".repeat(64), List.of(historicalRow("A", 100)), true, "k".repeat(65))));
+    }
+
+    @Test void csvImportRejectsStaleVersionsAndOversizedIdempotencyKeysBeforeAnyWrite() {
+        final var file = csv(csvText("A", "7", "", "7")); final var preview = service.previewCsv(1, 0, file);
+        assertCode(ApiErrorCode.TOURNAMENT_VERSION_CONFLICT,
+                () -> service.importCsv("admin", 1, event.version + 1, file, preview.sourceSha256(), true, "csv"));
+        assertFalse(event.csvImported); assertTrue(auditRows.isEmpty()); assertNull(day.publishedHistoricalPoints);
+        service.importCsv("admin", 1, event.version, file, preview.sourceSha256(), true, "k".repeat(64));
+        assertTrue(event.csvImported); assertEquals("k".repeat(64), auditRows.getFirst().afterState.get("idempotencyKey"));
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,
+                () -> service.importCsv("admin", 1, event.version, file, preview.sourceSha256(), true, "k".repeat(65)));
+        assertEquals("FROZEN", event.ruleSource);
+    }
+
+    @Test void csvImportReplacesAPublishedHistoricalDayAndPreservesSanctions() {
+        final TournamentClan sanctioned = new TournamentClan(); sanctioned.eventId = 1; sanctioned.clanTag = "A"; sanctioned.historicalPublished = true;
+        clanRows.add(sanctioned);
+        final TournamentClan departed = new TournamentClan(); departed.eventId = 1; departed.clanTag = "GONE"; departed.historicalPublished = true;
+        clanRows.add(departed);
+        day.publishedHistoricalPoints = Map.of("A", 100, "B", 50); day.clearedClans = Set.of("A"); day.expectedGroupCount = 2;
+        final long eventVersion = event.version; final long dayVersion = day.version;
+        final var file = csv(csvText("A", "", "", "0") + "B,5,,,,,,,,,,5\n");
+        final var preview = service.previewCsv(1, 0, file);
+        service.importCsv("admin", 1, eventVersion, file, preview.sourceSha256(), true, "csv-import");
+        assertEquals(Map.of("B", 5), day.publishedHistoricalPoints);
+        assertNull(day.expectedGroupCount);
+        assertEquals(eventVersion + 1, event.version); assertEquals(dayVersion + 1, day.version);
+        assertTrue(event.csvImported); assertTrue(event.configLocked);
+        assertEquals(Set.of("A"), day.clearedClans);
+        // A stays published (still present in the source with blank cells); a clan absent from the
+        // source loses its published flag so stale roster entries cannot linger on the board.
+        assertTrue(clanRows.stream().filter(row -> row.clanTag.equals("A")).findFirst().orElseThrow().historicalPublished);
+        assertTrue(clanRows.stream().filter(row -> row.clanTag.equals("B")).findFirst().orElseThrow().historicalPublished);
+        assertFalse(clanRows.stream().filter(row -> row.clanTag.equals("GONE")).findFirst().orElseThrow().historicalPublished);
+        assertEquals(1, auditRows.size()); assertEquals("CSV_IMPORTED", auditRows.getFirst().action);
+    }
+
+    @Test void csvAcceptsTheMaximumCellScore() {
+        final var preview = service.previewCsv(1, 0, csv(csvText("A", "1000000", "", "1000000")));
+        assertEquals(1_000_000L, preview.standings().rows().getFirst().rounds().getFirst().days().getFirst().points());
+    }
+
+    @Test void ruleSavesBumpExactlyTheTouchedVersionsAndUseTheConfiguredDayPoints() {
+        final List<TournamentSnapshot.RankPoints> dayOne = List.of(new TournamentSnapshot.RankPoints(1, 100), new TournamentSnapshot.RankPoints(2, 60), new TournamentSnapshot.RankPoints(3, 30), new TournamentSnapshot.RankPoints(4, 10));
+        final List<TournamentSnapshot.RankPoints> dayTwo = List.of(new TournamentSnapshot.RankPoints(1, 40), new TournamentSnapshot.RankPoints(2, 30), new TournamentSnapshot.RankPoints(3, 20), new TournamentSnapshot.RankPoints(4, 5));
+        rule.days = List.of(new TournamentSnapshot.RuleDay(1, dayOne), new TournamentSnapshot.RuleDay(2, dayTwo));
+        final TournamentDay dayTwoRow = new TournamentDay(); dayTwoRow.id = 2L; dayTwoRow.eventId = 1; dayTwoRow.roundNumber = 1; dayTwoRow.dayNumber = 2;
+        dayTwoRow.expectedGroupCount = 1; dayTwoRow.clearedClans = Set.of(); dayTwoRow.publicationKeys = Set.of(); dayTwoRow.draftGroups = List.of();
+        final TournamentDay otherRoundRow = new TournamentDay(); otherRoundRow.id = 3L; otherRoundRow.eventId = 1; otherRoundRow.roundNumber = 2; otherRoundRow.dayNumber = 1;
+        otherRoundRow.expectedGroupCount = 1; otherRoundRow.clearedClans = Set.of(); otherRoundRow.publicationKeys = Set.of(); otherRoundRow.draftGroups = List.of();
+        dayRows.add(dayTwoRow); dayRows.add(otherRoundRow);
+        day.draftGroups = List.of();
+        final long eventVersion = event.version; final long dayOneVersion = day.version;
+        final List<TournamentDtos.RuleDay> configured = rule.days.stream().map(value -> new TournamentDtos.RuleDay(value.dayNumber(),
+                value.points().stream().map(point -> new TournamentDtos.RankPoints(point.rank(), point.points())).toList())).toList();
+        service.saveRules("admin", 1, 1, new TournamentDtos.RuleRequest(eventVersion, 1, configured));
+        assertEquals(2, rule.rulesVersion); assertEquals(eventVersion + 1, event.version);
+        assertEquals(dayOneVersion + 1, day.version); assertEquals(dayOneVersion + 1, dayTwoRow.version);
+        assertEquals(dayOneVersion, otherRoundRow.version);
+        final TournamentDtos.DayView preview = service.preview(1, 1, 1, request(List.of(group(1, "ERROR", "A", "B", "C")), List.of("A", "B", "C")));
+        assertEquals(100L, preview.standings().rows().stream().filter(row -> row.clanTag().equals("A")).findFirst().orElseThrow().rounds().getFirst().days().getFirst().points());
+        assertEquals(60L, preview.standings().rows().stream().filter(row -> row.clanTag().equals("B")).findFirst().orElseThrow().rounds().getFirst().days().getFirst().points());
+    }
+
+    private List<TournamentDtos.Team> teamsOf(final String... tags) {
+        final List<TournamentDtos.Team> teams = new ArrayList<>();
+        for (int index = 0; index < tags.length; index++) { teams.add(new TournamentDtos.Team(tags[index], index + 1)); }
+        return teams;
+    }
+
+    @Test void rulesMissingRankCoverageForTheScoredDayAreRejectedEvenWhenAnotherDayIsComplete() {
+        rule.days = List.of(
+                new TournamentSnapshot.RuleDay(1, List.of(new TournamentSnapshot.RankPoints(1, 100), new TournamentSnapshot.RankPoints(2, 50), new TournamentSnapshot.RankPoints(3, 25), new TournamentSnapshot.RankPoints(4, 10))),
+                new TournamentSnapshot.RuleDay(2, List.of(new TournamentSnapshot.RankPoints(1, 40), new TournamentSnapshot.RankPoints(2, 30), new TournamentSnapshot.RankPoints(3, 20))));
+        assertCode(ApiErrorCode.TOURNAMENT_RULES_INCOMPLETE,
+                () -> service.preview(1, 1, 2, request(List.of(group(1, "ERROR", "A", "B", "C")), List.of("A", "B", "C"))));
+    }
+
+    @Test void draftGroupsMustCarryContiguousRanksStartingAtOne() {
+        final TournamentDtos.IncomingGroup valid = group(1, "ERROR", "A", "B", "C");
+        final List<TournamentDtos.Team> broken = List.of(new TournamentDtos.Team("A", 2), new TournamentDtos.Team("B", 3), new TournamentDtos.Team("C", 4));
+        final TournamentDtos.IncomingGroup invalid = new TournamentDtos.IncomingGroup(1, valid.evidenceId(), valid.imageHash(), broken, "ERROR", true);
+        assertCode(ApiErrorCode.INVALID_ARGUMENT, () -> service.preview(1, 1, 1, request(List.of(invalid), List.of("A", "B", "C"))));
+        assertNull(day.draftGroups);
+    }
+
+    @Test void outOfRangeRoundsAndDaysAreRejectedByEveryMutatingAndReadingEntry() {
+        for (final Runnable probing : List.of(
+                (Runnable) () -> service.day(1, 6, 1),
+                (Runnable) () -> service.day(1, 0, 1),
+                (Runnable) () -> service.day(1, 1, 3),
+                (Runnable) () -> service.historicalState(1, 6, 1),
+                (Runnable) () -> service.historicalState(1, 1, 0),
+                (Runnable) () -> service.preview(1, 6, 1, request(List.of(), List.of())),
+                (Runnable) () -> service.expectedGroups(1, 6, 1, new TournamentDtos.ExpectedGroupsRequest(event.version, 0, 1)),
+                (Runnable) () -> service.saveDraft(1, 6, 1, request(List.of(), List.of())),
+                (Runnable) () -> service.finalizeDay("admin", 1, 6, 1, new TournamentDtos.FinalizeRequest(event.version, 0, 1, "key")),
+                (Runnable) () -> service.correction("admin", 1, 6, 1, new TournamentDtos.CorrectionRequest(event.version, 0, 1, "fix")),
+                (Runnable) () -> service.deleteDraft(1, 6, 1, new TournamentDtos.Versions(event.version, 0)),
+                (Runnable) () -> service.clearPoints("admin", 1, new TournamentDtos.ClearRequest(event.version, 6, 1, "A", "fix", false)),
+                (Runnable) () -> service.saveRules("admin", 1, 6, new TournamentDtos.RuleRequest(event.version, 1, List.of())),
+                (Runnable) () -> service.recognitionPermit("admin", 1, 6, 1, event.version, 0, 1, evidenceFile))) {
+            assertCode(ApiErrorCode.INVALID_ARGUMENT, probing);
+        }
+        // Inclusive dimension boundaries stay open: the last configured round and day are reachable.
+        final List<TournamentRule> allRounds = new ArrayList<>(List.of(rule));
+        for (int round = 2; round <= 5; round++) {
+            final TournamentRule extra = new TournamentRule(); extra.eventId = 1; extra.roundNumber = round; extra.rulesVersion = 1; extra.days = List.of();
+            allRounds.add(extra);
+        }
+        when(rules.findByEventIdOrderByRoundNumber(1L)).thenReturn(allRounds);
+        assertEquals("EMPTY", service.day(1, 5, 1).status());
+        assertEquals("EMPTY", service.day(1, 1, 2).status());
+        assertEquals(1, dayRows.size()); assertEquals(0, event.version);
+    }
+
+    private final MockMultipartFile evidenceFile = new MockMultipartFile("image", "group.png", "image/png", new byte[] {1});
+
+    @Test void saveRulesRejectsStaleRulesVersionsWithoutTouchingTheConfiguredDays() {
+        final List<TournamentSnapshot.RuleDay> before = rule.days;
+        assertCode(ApiErrorCode.TOURNAMENT_VERSION_CONFLICT,
+                () -> service.saveRules("admin", 1, 1, new TournamentDtos.RuleRequest(event.version, 0, List.of())));
+        assertEquals(1, rule.rulesVersion); assertEquals(before, rule.days); assertEquals(0, event.version);
+    }
+
+    @Test void correctionRejectsStaleDayVersionsAndInvalidGroupCounts() {
+        day.expectedGroupCount = 1;
+        service.saveDraft(1, 1, 1, request(List.of(group(1, "ERROR", "A", "B", "C")), List.of("A", "B", "C")));
+        publish("once");
+        assertCode(ApiErrorCode.TOURNAMENT_VERSION_CONFLICT,
+                () -> service.correction("admin", 1, 1, 1, new TournamentDtos.CorrectionRequest(event.version, day.version - 1, 1, "fix")));
+        assertFalse(day.correction);
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,
+                () -> service.correction("admin", 1, 1, 1, new TournamentDtos.CorrectionRequest(event.version, day.version, 0, "fix")));
+        assertFalse(day.correction); assertEquals(1, day.expectedGroupCount);
+    }
+
+    @Test void draftWritesRequireADeclaredGroupCount() {
+        day.expectedGroupCount = null;
+        assertCode(ApiErrorCode.TOURNAMENT_GROUP_COUNT_MISMATCH,
+                () -> service.saveDraft(1, 1, 1, request(List.of(group(1, "ERROR", "A", "B", "C")), List.of("A", "B", "C"))));
+        assertNull(day.draftGroups);
+        assertCode(ApiErrorCode.TOURNAMENT_GROUP_COUNT_MISMATCH,
+                () -> service.preview(1, 1, 1, request(List.of(group(1, "ERROR", "A", "B", "C")), List.of("A", "B", "C"))));
+        assertCode(ApiErrorCode.TOURNAMENT_GROUP_COUNT_MISMATCH,
+                () -> service.recognitionPermit("admin", 1, 1, 1, event.version, 0, 1, evidenceFile));
+        verify(storage, never()).store(anyLong(), any(TournamentEvidenceStorage.Image.class));
+    }
+
+    @Test void eventConfigUpdatesValidateInputAndBumpTheVersionExactlyOnce() {
+        final long eventVersion = event.version;
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,
+                () -> service.update("admin", 1, new TournamentDtos.UpdateRequest(eventVersion, 1999, "CN", "FIRE_CUP", 5, 2, List.of("Day 1", "Day 2"))));
+        assertEquals(eventVersion, event.version); assertEquals("Day 1", event.dayLabels.getFirst());
+        service.update("admin", 1, new TournamentDtos.UpdateRequest(eventVersion, 2026, "CN", "FIRE_CUP", 5, 2, List.of("Group", "Finals")));
+        assertEquals(eventVersion + 1, event.version);
+        assertEquals("Finals", event.dayLabels.get(1)); assertEquals("Finals", service.publicStandings(1).days().get(1).label());
+    }
+
+    @Test void saveRulesRejectsRulesThatDropRanksUsedByStoredDrafts() {
+        day.expectedGroupCount = 2;
+        service.saveDraft(1, 1, 1, request(List.of(group(1, "ERROR", "A", "B", "C", "D")), List.of("A", "B", "C", "D")));
+        final List<TournamentSnapshot.RankPoints> threeRanks = List.of(new TournamentSnapshot.RankPoints(1, 100), new TournamentSnapshot.RankPoints(2, 50), new TournamentSnapshot.RankPoints(3, 25));
+        assertCode(ApiErrorCode.TOURNAMENT_RULES_INCOMPLETE,
+                () -> service.saveRules("admin", 1, 1, new TournamentDtos.RuleRequest(event.version, 1,
+                        List.of(new TournamentDtos.RuleDay(1, threeRanks.stream().map(point -> new TournamentDtos.RankPoints(point.rank(), point.points())).toList()),
+                                new TournamentDtos.RuleDay(2, threeRanks.stream().map(point -> new TournamentDtos.RankPoints(point.rank(), point.points())).toList())))));
+        assertTrue(day.draftGroups.getFirst().teams().stream().anyMatch(team -> team.rank() == 4));
+    }
+
+    @Test void ruleDayAndRankBoundariesAreEnforcedOnSave() {
+        final List<TournamentDtos.RankPoints> full = List.of(new TournamentDtos.RankPoints(1, 100), new TournamentDtos.RankPoints(2, 50), new TournamentDtos.RankPoints(3, 25), new TournamentDtos.RankPoints(4, 10));
+        assertCode(ApiErrorCode.INVALID_ARGUMENT, () -> service.saveRules("admin", 1, 1, new TournamentDtos.RuleRequest(event.version, 1,
+                List.of(new TournamentDtos.RuleDay(0, full), new TournamentDtos.RuleDay(1, full)))));
+        assertCode(ApiErrorCode.INVALID_ARGUMENT, () -> service.saveRules("admin", 1, 1, new TournamentDtos.RuleRequest(event.version, 1,
+                List.of(new TournamentDtos.RuleDay(3, full)))));
+        assertCode(ApiErrorCode.INVALID_ARGUMENT, () -> service.saveRules("admin", 1, 1, new TournamentDtos.RuleRequest(event.version, 1,
+                List.of(new TournamentDtos.RuleDay(1, full), new TournamentDtos.RuleDay(1, full)))));
+        assertCode(ApiErrorCode.INVALID_ARGUMENT, () -> service.saveRules("admin", 1, 1, new TournamentDtos.RuleRequest(event.version, 1,
+                List.of(new TournamentDtos.RuleDay(1, List.of(new TournamentDtos.RankPoints(0, 100), new TournamentDtos.RankPoints(2, 50), new TournamentDtos.RankPoints(3, 25), new TournamentDtos.RankPoints(4, 10))),
+                        new TournamentDtos.RuleDay(2, full)))));
+        assertCode(ApiErrorCode.INVALID_ARGUMENT, () -> service.saveRules("admin", 1, 1, new TournamentDtos.RuleRequest(event.version, 1,
+                List.of(new TournamentDtos.RuleDay(1, List.of(new TournamentDtos.RankPoints(1, 100), new TournamentDtos.RankPoints(2, 50), new TournamentDtos.RankPoints(3, 25), new TournamentDtos.RankPoints(6, 10))),
+                        new TournamentDtos.RuleDay(2, full)))));
+        assertCode(ApiErrorCode.INVALID_ARGUMENT, () -> service.saveRules("admin", 1, 1, new TournamentDtos.RuleRequest(event.version, 1,
+                List.of(new TournamentDtos.RuleDay(1, List.of(new TournamentDtos.RankPoints(1, -1), new TournamentDtos.RankPoints(2, 50), new TournamentDtos.RankPoints(3, 25), new TournamentDtos.RankPoints(4, 10))),
+                        new TournamentDtos.RuleDay(2, full)))));
+        assertCode(ApiErrorCode.INVALID_ARGUMENT, () -> service.saveRules("admin", 1, 1, new TournamentDtos.RuleRequest(event.version, 1,
+                List.of(new TournamentDtos.RuleDay(1, List.of(new TournamentDtos.RankPoints(1, 1_000_001), new TournamentDtos.RankPoints(2, 50), new TournamentDtos.RankPoints(3, 25), new TournamentDtos.RankPoints(4, 10))),
+                        new TournamentDtos.RuleDay(2, full)))));
+        // rulesVersion 0 never counts as a configured rule set even when the days are complete.
+        final long rulesVersion = rule.rulesVersion; rule.rulesVersion = 0;
+        assertCode(ApiErrorCode.TOURNAMENT_RULES_INCOMPLETE, () -> service.preview(1, 1, 1, request(List.of(), List.of())));
+        rule.rulesVersion = rulesVersion;
+        service.saveRules("admin", 1, 1, new TournamentDtos.RuleRequest(event.version, 1,
+                List.of(new TournamentDtos.RuleDay(1, List.of(new TournamentDtos.RankPoints(1, 1_000_000), new TournamentDtos.RankPoints(2, 50), new TournamentDtos.RankPoints(3, 25), new TournamentDtos.RankPoints(4, 0), new TournamentDtos.RankPoints(5, 5))),
+                        new TournamentDtos.RuleDay(2, full))));
+        assertEquals(2, rule.rulesVersion);
+    }
+
+    @Test void mergeRejectsGroupNumbersOutsideTheWireContract() {
+        final TournamentDtos.IncomingGroup template = group(1, "ERROR", "A", "B", "C");
+        assertCode(ApiErrorCode.INVALID_ARGUMENT, () -> service.preview(1, 1, 1, request(
+                List.of(new TournamentDtos.IncomingGroup(0, template.evidenceId(), template.imageHash(), template.teams(), "ERROR", true)), List.of("A", "B", "C"))));
+        assertCode(ApiErrorCode.INVALID_ARGUMENT, () -> service.preview(1, 1, 1, request(
+                List.of(new TournamentDtos.IncomingGroup(10001, template.evidenceId(), template.imageHash(), template.teams(), "ERROR", true)), List.of("A", "B", "C"))));
+        assertNull(day.draftGroups);
+    }
+
+    @Test void clearingASanctionForAWholeRoundCoversEveryConfiguredDayOfThatRound() {
+        day.expectedGroupCount = 1;
+        service.saveDraft(1, 1, 1, request(List.of(group(1, "ERROR", "A", "B", "C")), List.of("A", "B", "C")));
+        publish("first");
+        final TournamentDay dayTwo = new TournamentDay(); dayTwo.id = 9L; dayTwo.eventId = 1; dayTwo.roundNumber = 1; dayTwo.dayNumber = 2;
+        dayTwo.expectedGroupCount = 1; dayTwo.clearedClans = Set.of(); dayTwo.publicationKeys = Set.of(); dayTwo.version = 0;
+        dayRows.add(dayTwo);
+        service.saveDraft(1, 1, 2, new TournamentDtos.DraftRequest(event.version, dayTwo.version, rule.rulesVersion,
+                List.of(groupForDay(1, 2, "A", "B", "C")), List.of("A", "B", "C")));
+        service.finalizeDay("admin", 1, 1, 2, new TournamentDtos.FinalizeRequest(event.version, dayTwo.version, rule.rulesVersion, "second"));
+        final long eventVersion = event.version;
+        final TournamentDtos.Standings after = service.clearPoints("admin", 1,
+                new TournamentDtos.ClearRequest(eventVersion, 1, null, "A", "round-wide violation", false));
+        assertEquals(eventVersion + 1, event.version);
+        assertEquals(0, after.rows().stream().filter(row -> row.clanTag().equals("A")).findFirst().orElseThrow().totalPoints());
+        assertEquals(Set.of("A"), day.clearedClans); assertEquals(Set.of("A"), dayTwo.clearedClans);
+        assertEquals(200, service.day(1, 1, 1, true).canonicalStandings().rows().stream()
+                .filter(row -> row.clanTag().equals("A")).findFirst().orElseThrow().totalPoints());
+        assertEquals(0, service.publicStandings(1).rows().stream()
+                .filter(row -> row.clanTag().equals("A")).findFirst().orElseThrow().totalPoints());
+    }
+
+    private TournamentDtos.IncomingGroup groupForDay(final int round, final int dayNumber, final String... tags) {
+        final TournamentEvidence row = new TournamentEvidence(); row.id = UUID.randomUUID().toString(); row.eventId = 1;
+        row.roundNumber = round; row.dayNumber = dayNumber; row.createdAt = Instant.now(); row.imageHash = String.format("%064x", images.size() + 1);
+        images.put(row.id, row);
+        final List<TournamentDtos.Team> teams = new ArrayList<>();
+        for (int index = 0; index < tags.length; index++) { teams.add(new TournamentDtos.Team(tags[index], index + 1)); }
+        return new TournamentDtos.IncomingGroup(1, row.id, row.imageHash, teams, "ERROR", true);
+    }
+
+    @Test void correctionRejectsStaleVersionsAndBumpsBothVersionsExactlyOnce() {
+        day.expectedGroupCount = 1;
+        service.saveDraft(1, 1, 1, request(List.of(group(1, "ERROR", "A", "B", "C")), List.of("A", "B", "C")));
+        publish("once");
+        final long eventVersion = event.version; final long dayVersion = day.version;
+        assertCode(ApiErrorCode.TOURNAMENT_VERSION_CONFLICT,
+                () -> service.correction("admin", 1, 1, 1, new TournamentDtos.CorrectionRequest(eventVersion - 1, dayVersion, 1, "fix")));
+        assertFalse(day.correction); assertEquals(eventVersion, event.version);
+        service.correction("admin", 1, 1, 1, new TournamentDtos.CorrectionRequest(eventVersion, dayVersion, 1, "fix"));
+        assertTrue(day.correction); assertEquals(eventVersion + 1, event.version); assertEquals(dayVersion + 1, day.version);
+    }
+
+    @Test void discardingACorrectionDraftRestoresThePublishedShapeAndBumpsVersions() {
+        day.expectedGroupCount = 1;
+        service.saveDraft(1, 1, 1, request(List.of(group(1, "ERROR", "A", "B", "C")), List.of("A", "B", "C")));
+        publish("once");
+        service.correction("admin", 1, 1, 1, new TournamentDtos.CorrectionRequest(event.version, day.version, 3, "fix"));
+        assertEquals(3, day.expectedGroupCount);
+        final long eventVersion = event.version; final long dayVersion = day.version;
+        service.deleteDraft(1, 1, 1, new TournamentDtos.Versions(eventVersion, dayVersion));
+        assertFalse(day.correction); assertNull(day.draftGroups); assertNull(day.correctionReason);
+        assertEquals(1, day.expectedGroupCount);
+        assertEquals(eventVersion + 1, event.version); assertEquals(dayVersion + 1, day.version);
+        // Only the day version is stale here: the event version check must not mask the day check.
+        assertCode(ApiErrorCode.TOURNAMENT_VERSION_CONFLICT,
+                () -> service.deleteDraft(1, 1, 1, new TournamentDtos.Versions(event.version, dayVersion)));
+    }
+
+    @Test void sanctionsBumpVersionsExactlyOnceAuditTheActionAndOnlyZeroTheTargetClan() {
+        day.expectedGroupCount = 1;
+        service.saveDraft(1, 1, 1, request(List.of(group(1, "ERROR", "A", "B", "C")), List.of("A", "B", "C")));
+        publish("once");
+        final long eventVersion = event.version; final long dayVersion = day.version; final int auditsBefore = auditRows.size();
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,
+                () -> service.clearPoints("admin", 1, new TournamentDtos.ClearRequest(eventVersion, 1, 1, "A", " ", false)));
+        service.clearPoints("admin", 1, new TournamentDtos.ClearRequest(eventVersion, 1, 1, "A", "violation", false));
+        assertEquals(eventVersion + 1, event.version); assertEquals(dayVersion + 1, day.version);
+        assertEquals(auditsBefore + 1, auditRows.size()); assertEquals("POINTS_CLEARED", auditRows.getLast().action);
+        assertEquals(Set.of("A"), day.clearedClans);
+        assertEquals(0, service.publicStandings(1).rows().stream().filter(row -> row.clanTag().equals("A")).findFirst().orElseThrow().totalPoints());
+        assertEquals(50, service.publicStandings(1).rows().stream().filter(row -> row.clanTag().equals("B")).findFirst().orElseThrow().totalPoints());
+        service.clearPoints("admin", 1, new TournamentDtos.ClearRequest(event.version, 1, 1, "A", "appeal", true));
+        assertEquals(100, service.publicStandings(1).rows().stream().filter(row -> row.clanTag().equals("A")).findFirst().orElseThrow().totalPoints());
+        assertTrue(day.clearedClans.isEmpty());
+    }
+
+    @Test void sanctionAndGroupCountValidationUseInclusiveBoundaries() {
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,
+                () -> service.expectedGroups(1, 1, 1, new TournamentDtos.ExpectedGroupsRequest(event.version, day.version, 0)));
+        assertEquals(1, service.expectedGroups(1, 1, 1, new TournamentDtos.ExpectedGroupsRequest(event.version, day.version, 1)).version());
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,
+                () -> service.expectedGroups(1, 1, 1, new TournamentDtos.ExpectedGroupsRequest(event.version, day.version, 10001)));
+    }
+
+    @Test void clanTagsMayUseExactlyThirtyTwoCodePoints() {
+        final String tag = "😀".repeat(16);
+        final TournamentDtos.DayView result = service.preview(1, 1, 1, request(List.of(group(1, "ERROR", tag, "B", "C")), List.of(tag, "B", "C")));
+        assertEquals(tag, result.standings().rows().getFirst().clanTag());
+    }
+
+    @Test void correctionReasonsAreCappedAtFiveHundredCodePoints() {
+        assertCode(ApiErrorCode.TOURNAMENT_LOCKED,
+                () -> service.correction("admin", 1, 1, 1, new TournamentDtos.CorrectionRequest(event.version, day.version, 1, "r".repeat(500))));
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,
+                () -> service.correction("admin", 1, 1, 1, new TournamentDtos.CorrectionRequest(event.version, day.version, 1, "r".repeat(501))));
+    }
+
+    @Test void recognitionPermitsNeedThirtyTwoByteKeysAndStoreEvidenceForDownload() throws Exception {
+        final TournamentService smallKey = new TournamentService(events, rules, defaults, days, clans, evidence, audits,
+                new TournamentMapper(), storage, "k".repeat(31));
+        final TournamentService boundaryKey = new TournamentService(events, rules, defaults, days, clans, evidence, audits,
+                new TournamentMapper(), storage, "k".repeat(32));
+        final MockMultipartFile file = new MockMultipartFile("image", "group.png", "image/png", new byte[] {1});
+        when(storage.validate(file)).thenReturn(new TournamentEvidenceStorage.Image(new byte[] {1}, "b".repeat(64), "image/png"));
+        assertCode(ApiErrorCode.TOURNAMENT_RECOGNITION_UNAVAILABLE,
+                () -> smallKey.recognitionPermit("admin", 1, 1, 1, 0, 0, 1, file));
+        assertNotNull(boundaryKey.recognitionPermit("admin", 1, 1, 1, 0, 0, 1, file));
+        final TournamentDtos.RecognitionPermit permit = service.recognitionPermit("admin", 1, 1, 1, 0, 0, 1, file);
+        verify(storage, times(2)).store(eq(1L), any(TournamentEvidenceStorage.Image.class));
+        when(storage.load(1L, "b".repeat(64))).thenReturn(new byte[] {1});
+        assertEquals("image/png", service.download(1, permit.evidenceId()).contentType());
+        verify(storage).load(1L, "b".repeat(64));
+    }
+
+    @Test void previewRendersTheIncomingDraftRatherThanTheStoredOne() {
+        final long eventVersion = event.version; final long dayVersion = day.version;
+        service.saveDraft(1, 1, 1, request(List.of(group(1, "ERROR", "A", "B", "C")), List.of("A", "B", "C")));
+        assertEquals(eventVersion + 1, event.version); assertEquals(dayVersion + 1, day.version);
+        final TournamentDtos.IncomingGroup replacement = group(1, "REPLACE", "C", "B", "A");
+        final TournamentDtos.DayView preview = service.preview(1, 1, 1, request(List.of(replacement), List.of()));
+        assertEquals("C", preview.standings().rows().getFirst().clanTag());
+        assertEquals("DRAFT", preview.status()); assertFalse(preview.published());
+        assertEquals("A", service.day(1, 1, 1).standings().rows().getFirst().clanTag());
+    }
+
     private MockMultipartFile csv(final String text) { return new MockMultipartFile("file", "standings.csv", "text/csv", text.getBytes(StandardCharsets.UTF_8)); }
     private String csvText(final String tag, final String first, final String second, final String total) {
         return "军团标签,R1D1,R1D2,R2D1,R2D2,R3D1,R3D2,R4D1,R4D2,R5D1,R5D2,总积分\n" + tag + "," + first + "," + second + ",,,,,,,,," + total + "\n";
