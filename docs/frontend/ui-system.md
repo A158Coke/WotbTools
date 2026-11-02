@@ -20,7 +20,7 @@
 
 | 界面 | 验证内容 | 场景前缀 |
 |---|---|---|
-| 应用外壳、更多页/面板 | 固定导航与标题、滚动后选项可达、语言切换、Esc 还焦点、真实路由跳转 | `shell-overlay-` |
+| 应用外壳、更多页/面板 | 固定导航与标题、滚动后选项可达、语言切换、Esc 还焦点、真实路由跳转；导航能力矩阵按真实点击走完全部 `PRIMARY_NAV` 入口与「更多」快捷入口，并断言路由和当前栏目 | `shell-overlay-` |
 | 通用 AppDialog / AppSheet | 长内容内部滚动、常驻底栏层级、嵌套 dialog、关闭与焦点恢复、滚动条侧按钮边缘命中 | `dialog-sheet-` |
 | 玩家详情与三种数据表格 | sticky 昵称列打开详情、末列滚动可达、桌面拖宽、抽屉让位/覆盖、雷达设置与选项 | `drawer-tables-` |
 | AI 结果面板 | 折叠/预测真实点击、复制按钮几何可达 | `drawer-tables-` |
@@ -45,7 +45,7 @@
 
 ## 布局与响应式契约
 
-- 应用壳：`app/AppSidebar.vue`（平板图标栏 / 桌面可折叠侧栏）、`AppTopBar.vue` + `AppTabBar.vue`（手机标题栏 / 底部导航）。导航、账户及 Profile owner 不变；导航表面使用不透明语义色，当前栏目同时用背景、强调色和位置标识区分。
+- 应用壳：`app/AppSidebar.vue`（平板图标栏 / 桌面可折叠侧栏）、`AppTopBar.vue` + `AppTabBar.vue`（手机标题栏 / 5 Tab 底部导航，其余栏目在 `MorePage` 顶部快捷入口）。导航、账户及 Profile owner 不变；导航表面使用不透明语义色，当前栏目同时用背景、强调色和位置标识区分。
 - 通用元素：`frontend/src/styles/app-shell.css` 负责页面底色、基础按钮、表格、提示、footer 与列选择器；`PageHeader.vue` 负责标题 / 说明 / 操作的对齐与分隔；两者只使用设计语言 token，并受 CSS lint 严格检查。列选择器手机布局把分类说明放到下一行，重排按钮保持 `--hit-min`，不与字段名称争抢横向空间。
 - `tokens.css` 保留现有 layout class；它们从 `tokens/scale.css` 读取 `--layout-content-max` / `--layout-wide-max` / `--layout-workspace-max` 与 `--gutter`。当前最大宽度分别为 1420 / 1720 / 1760px；文本阅读区另用 `--reading-measure`，不限制表格宽度。
 - Showcase 页面层位于 `showcase.css`、`showcase-pages.css`、`showcase-rankings.css`、`showcase-cohesion.css` 和 `showcase-regressions.css`；Profile / HoF 的局部装饰与 Classic 桥接也在这层。

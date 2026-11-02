@@ -25,7 +25,7 @@ vi.mock('../composables/useAuth.js', async () => {
   }
 })
 
-function mountPage(navigate = vi.fn(), onboarding = null, creatorsAvailable = true, openFeedback = null) {
+function mountPage(navigate = vi.fn(), onboarding = null, creatorsAvailable = true, openFeedback = null, creatorsVisible = false) {
   const i18n = createI18n({
     locale: 'zh',
     fallbackLocale: 'en',
@@ -35,11 +35,27 @@ function mountPage(navigate = vi.fn(), onboarding = null, creatorsAvailable = tr
     global: {
       plugins: [i18n],
       provide: { [NAVIGATE_VIEW_KEY]: navigate, [ONBOARDING_KEY]: onboarding, [FEEDBACK_KEY]: openFeedback,
-        [CREATOR_AVAILABILITY_KEY]: { available: ref(creatorsAvailable), directoryVisible: ref(false), contentKnown: ref(true), publicCategories: ref([]), loading: ref(false), refresh: vi.fn() } },
+        [CREATOR_AVAILABILITY_KEY]: { available: ref(creatorsAvailable), directoryVisible: ref(creatorsVisible), contentKnown: ref(true), publicCategories: ref([]), loading: ref(false), refresh: vi.fn() } },
     },
   })
   return { wrapper, i18n }
 }
+
+describe('MorePage shortcuts', () => {
+  it('opens sections outside the tab bar, and shows recommendations only when the directory is visible', async () => {
+    menuRole.authenticated = ref(false)
+    const navigate = vi.fn()
+    const { wrapper } = mountPage(navigate, null, true, null, true)
+    expect(wrapper.findAll('[data-testid^="more-shortcut-"]').map(item => item.attributes('data-testid').replace('more-shortcut-', '')))
+      .toEqual(['techtree', 'maps', 'league-broadcasts', 'creators'])
+    await wrapper.get('[data-testid="more-shortcut-maps"]').trigger('click')
+    expect(navigate).toHaveBeenCalledWith('map-preview')
+    wrapper.unmount()
+    const hidden = mountPage(vi.fn(), null, true, null, false).wrapper
+    expect(hidden.find('[data-testid="more-shortcut-creators"]').exists()).toBe(false)
+    hidden.unmount()
+  })
+})
 
 describe('MorePage language switcher', () => {
   it('requests the in-app feedback dialog instead of linking out', async () => {

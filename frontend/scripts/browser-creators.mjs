@@ -5,6 +5,7 @@ import { Readable } from 'node:stream'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
+import { COMPACT_TAB_ITEMS } from '../src/app/navigation.js'
 
 // Production router, components, multipart transport and CSS; only external HTTP/auth are fixtures.
 let db
@@ -108,6 +109,13 @@ async function geometry(page, profile, configuration = false) {
   assert.equal(value.overflow, false); assert.equal(value.profile, profile); assert.deepEqual(value.tiny, [])
   if (configuration) assert.equal(value.stacked, await page.evaluate('innerWidth<768'))
 }
+/** 小屏的推荐入口在"更多"页快捷区（底部 Tab 固定 5 项），大屏在侧边栏。 */
+async function openCreators(page, scenario) {
+  if (scenario.width >= 768) return tap(page, '[data-testid=nav-creators]', scenario.touch)
+  await tap(page, '[data-testid=tab-more]', scenario.touch)
+  await page.waitForValue('!!document.querySelector("[data-testid=more-shortcut-creators]")', Boolean)
+  await tap(page, '[data-testid=more-shortcut-creators]', scenario.touch)
+}
 async function tabGeometry(page, expectedCount) {
   const value = await page.evaluate(`(() => {
     const bar = document.querySelector('[data-testid=app-tab-bar]'), bounds = bar.getBoundingClientRect();
@@ -115,7 +123,7 @@ async function tabGeometry(page, expectedCount) {
     return {tabs,left:bounds.left,right:bounds.right,overflow:document.documentElement.scrollWidth > innerWidth + 1};
   })()`)
   assert.equal(value.tabs.length, expectedCount)
-  assert.equal(value.overflow, false, 'tab overflow stays inside the navigation scroller')
+  assert.equal(value.overflow, false, 'tab bar never overflows the viewport')
   value.tabs.forEach((tab, index) => {
     assert.ok(tab.width >= 44 && tab.height >= 44, 'tabs retain 44px touch targets')
     if (index) assert.ok(tab.left >= value.tabs[index - 1].right - 0.5, 'adjacent tab targets never overlap')
@@ -201,7 +209,7 @@ async function cardPresentation(page, origin, scenario, chrome, sessionId) {
   assert.equal(db.writes, 0, 'presentation checks never mutate the directory')
 }
 async function videoLifecycle(page, origin, scenario) {
-  const touch = scenario.touch, primary = scenario.width < 768 ? '[data-testid=tab-creators]' : '[data-testid=nav-creators]'
+  const touch = scenario.touch
   db.categories.push({ id: 51, type: 'VIDEO', name: 'Video tutorials' }, { id: 52, type: 'VIDEO', name: 'Video highlights' }, { id: 53, type: 'VIDEO', name: 'Empty video category' })
   db.creators = [
     { ...db.creators[0], id: 101, type: 'VIDEO', bilibiliUid: 'BV1xx411c7mD', name: 'Tutorial video', categoryIds: [51], levelId: null },
@@ -210,7 +218,7 @@ async function videoLifecycle(page, origin, scenario) {
   await page.goto(`${origin}/?view=recommendations&ws-auth=0&keep=1#catalog`)
   await page.waitForValue('!!document.querySelector("[data-testid=recommendation-card-VIDEO]")', Boolean)
   assert.equal(await page.evaluate('!!document.querySelector("[data-testid=recommendation-card-UP]")'), false, 'only VIDEO content still publishes the main entry')
-  assert.equal(await page.evaluate(`!!document.querySelector(${JSON.stringify(primary)})`), true)
+  if (scenario.width >= 768) assert.equal(await page.evaluate('!!document.querySelector("[data-testid=nav-creators]")'), true)
   await geometry(page, scenario.profile)
   await tap(page, '[data-testid=recommendation-card-VIDEO]', touch)
   await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 2)
@@ -233,7 +241,7 @@ async function videoLifecycle(page, origin, scenario) {
     await page.goto(`${origin}/?view=${view}&ws-auth=1&ws-roles=content-admin`)
     await page.waitForValue('!!document.querySelector("[data-testid=creators-unavailable]")', Boolean)
     await page.waitForValue('document.querySelector("[data-testid=creators-availability-retry]")?.disabled', value => value === false)
-    assert.equal(await page.evaluate('!!document.querySelector("[data-testid=nav-creators],[data-testid=tab-creators]")'), false)
+    assert.equal(await page.evaluate('!!document.querySelector("[data-testid=nav-creators]")'), false)
   }
   assert.equal(db.recommendationReads, 0, 'obsolete capabilities never authorize recommendation API requests')
 
@@ -278,7 +286,7 @@ async function videoLifecycle(page, origin, scenario) {
   await page.waitForValue('document.querySelector("[data-testid=creator-name]")?.value', value => value === '')
   const created = db.creators.find(value => value.type === 'VIDEO')
   assert.ok(created?.avatarId); assert.equal(created.bilibiliUid, 'BV1xX411c7mD'); assert.equal(created.levelId, null); assert.equal(created.stars, 3)
-  await tap(page, primary, touch)
+  await openCreators(page, scenario)
   await tap(page, '[data-testid=recommendation-card-VIDEO]', touch)
   await page.waitForValue(`document.querySelector('[data-testid=creator-edit-${created.id}]')?.disabled`, value => value === false)
   await geometry(page, scenario.profile)
@@ -298,7 +306,7 @@ async function videoLifecycle(page, origin, scenario) {
   await page.evaluate('window.__wsAuth.tokenParsed.value={realm_access:{roles:[]}}')
   await page.waitForValue('!document.querySelector("[data-testid=recommendation-card-VIDEO]")', Boolean)
   assert.equal(await page.evaluate('!!document.querySelector("[data-testid=recommendation-card-UP]")'), true, 'deleting final VIDEO hides its public card while UP stays published')
-  assert.equal(await page.evaluate(`!!document.querySelector(${JSON.stringify(primary)})`), true)
+  if (scenario.width >= 768) assert.equal(await page.evaluate('!!document.querySelector("[data-testid=nav-creators]")'), true)
 }
 const { server, origin } = await startFixtureServer({ middleware, allowedHosts: ['wotbtools.com'] }), chrome = await launchChromeForCdp(findChrome(), { extraArgs: ['--host-resolver-rules=MAP wotbtools.com 127.0.0.1', '--no-proxy-server'] })
 const scenarios = ['showcase', 'classic'].flatMap(profile => [
@@ -307,7 +315,7 @@ const scenarios = ['showcase', 'classic'].flatMap(profile => [
   ...[1440, 1024, 390, 360, 767, 768, 1199, 1200].map(width => ({ name: `${profile}-${width}`, profile, width, height: 1000, touch: width < 1200, full: [1440, 1024, 390].includes(width), locale: width === 1024 ? 'zh' : width === 390 ? 'ru' : 'en' })),
   ...[320, 351, 352, 360].map(width => ({ name: `${profile}-production-${width}`, profile, width, height: 844, touch: true, locale: 'ru', productionHome: true, compactNavigation: true })),
   { name: `${profile}-old-backend`, profile, width: 1440, height: 900, touch: false, locale: 'en', oldBackend: true },
-  { name: `${profile}-content-lifecycle`, profile, width: 390, height: 1000, touch: true, locale: 'en', contentLifecycle: true },
+  { name: `${profile}-content-lifecycle`, profile, width: 1024, height: 1000, touch: false, locale: 'en', contentLifecycle: true },
   { name: `${profile}-local-320`, profile, width: 320, height: 844, touch: true, locale: 'zh', compactNavigation: true },
   ...[1440, 390].map(width => ({ name: `${profile}-videos-${width}`, profile, width, height: 1000, touch: width < 768, locale: 'en', videos: true })),
 ])
@@ -334,7 +342,7 @@ try {
         for (const authenticated of [0, 1]) {
           await page.goto(`${origin}/?view=creators&ws-auth=${authenticated}`)
           await page.waitForValue('!!document.querySelector("[data-testid=creators-not-published]")', Boolean)
-          assert.equal(await page.evaluate('!!document.querySelector("[data-testid=nav-creators],[data-testid=tab-creators]")'), false)
+          assert.equal(await page.evaluate('!!document.querySelector("[data-testid=nav-creators]")'), false)
         }
         assert.equal(db.publicListReads, 0, 'empty public directory never fetches cards')
         assert.equal(db.metadataReads, 0, 'ordinary users never fetch management metadata')
@@ -344,7 +352,7 @@ try {
         assert.equal(db.metadataReads, 0, 'a denied content page never reads management metadata')
         await page.goto(`${origin}/?view=creators-config&ws-auth=1&ws-roles=content-admin`)
         await page.waitForValue('!!document.querySelector("[data-testid=creator-form]")', Boolean)
-        assert.equal(await page.evaluate('!!document.querySelector("[data-testid=tab-creators]")'), true, 'admin keeps the directory entry before first UP')
+        assert.equal(await page.evaluate('!!document.querySelector("[data-testid=nav-creators]")'), true, 'admin keeps the directory entry before first UP')
         assert.equal(await page.evaluate('!!document.querySelector("[data-testid=creator-category-3]")'), true)
         await fill(page, { 'creator-name': 'First published creator', 'creator-uid': '123456' })
         await tap(page, '[data-testid=creator-category-1]', scenario.touch)
@@ -352,7 +360,7 @@ try {
         await page.waitForValue('document.querySelector("[data-testid=creator-name]")?.value', value => value === '')
         const created = db.creators[0]
         assert.ok(created, 'administrator can publish the first UP')
-        await tap(page, '[data-testid=tab-creators]', scenario.touch)
+        await tap(page, '[data-testid=nav-creators]', scenario.touch)
         await tap(page, '[data-testid=recommendation-card-UP]', scenario.touch)
         await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 1)
         await tap(page, '[data-testid=creator-categories-toggle]', scenario.touch)
@@ -371,15 +379,15 @@ try {
         assert.equal(await page.evaluate('!!document.querySelector("[data-testid=creators-page]")'), true)
         await page.evaluate('window.__wsAuth.tokenParsed.value={realm_access:{roles:[]}}')
         await page.waitForValue('!!document.querySelector("[data-testid=creators-not-published]")', Boolean)
-        assert.equal(await page.evaluate('!!document.querySelector("[data-testid=tab-creators]")'), false, 'delete ACK removes the public entry without a reload')
+        assert.equal(await page.evaluate('!!document.querySelector("[data-testid=nav-creators]")'), false, 'delete ACK removes the public entry without a reload')
         db.creators = [published]
         await page.evaluate('window.dispatchEvent(new Event("focus"))')
         await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 1)
-        assert.equal(await page.evaluate('!!document.querySelector("[data-testid=tab-creators]")'), true)
+        assert.equal(await page.evaluate('!!document.querySelector("[data-testid=nav-creators]")'), true)
         db.creators = []
         await page.evaluate('window.dispatchEvent(new Event("focus"))')
         await page.waitForValue('!!document.querySelector("[data-testid=creators-not-published]")', Boolean)
-        assert.equal(await page.evaluate('!!document.querySelector("[data-testid=tab-creators]")'), false, 'focus refresh also detects removal of the final UP')
+        assert.equal(await page.evaluate('!!document.querySelector("[data-testid=nav-creators]")'), false, 'focus refresh also detects removal of the final UP')
         assert.deepEqual(page.consoleErrors, []); console.log(`PASS ${scenario.name}`); continue
       }
       if (scenario.oldBackend) {
@@ -387,7 +395,7 @@ try {
         await page.goto(`${origin}/?view=creators&ws-auth=1&ws-roles=content-admin`)
         await page.waitForValue('!!document.querySelector("[data-testid=creators-unavailable]")', Boolean)
         await page.waitForValue('document.querySelector("[data-testid=creators-availability-retry]")?.disabled', value => value === false)
-        assert.equal(await page.evaluate('!!document.querySelector("[data-testid=nav-creators],[data-testid=tab-creators],[data-testid=nav-creators-config],[data-testid=more-link-creators-config]")'), false)
+        assert.equal(await page.evaluate('!!document.querySelector("[data-testid=nav-creators],[data-testid=nav-creators-config],[data-testid=more-link-creators-config]")'), false)
         assert.equal(db.creatorReads, 0, 'legacy backend is never queried for creator directory or management metadata')
         db.apiAvailable = true
         await tap(page, '[data-testid=creators-availability-retry]', false)
@@ -400,18 +408,8 @@ try {
       await page.goto(`${scenarioOrigin}/?view=more&ws-auth=0`)
       if (scenario.compactNavigation) {
         await page.waitForValue('!!document.querySelector("[data-testid=more-page]")', Boolean)
-        await page.waitForValue('!!document.querySelector("[data-testid=tab-creators]")', Boolean)
-        // Tab 数 = PRIMARY_NAV 导航契约（app/navigation.js）：2026-10-31 新增「地图」
-        // 栏后 10（production home 含首页）/ 9（其余）。
-        await tabGeometry(page, scenario.productionHome ? 10 : 9)
-        if (scenario.productionHome && scenario.width === 320) {
-          const y = await page.evaluate('document.querySelector("[data-testid=app-tab-bar]").getBoundingClientRect().top + 24')
-          await chrome.client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 40, y, id: 1 }] }, sessionId)
-          // 拖动距离要覆盖整段可滚动宽度，不能靠惯性补足：Tab 增多后 90px 不够，时过时不过。
-          for (const x of [90, 160, 230, 300]) await chrome.client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y, id: 1 }] }, sessionId)
-          await chrome.client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }, sessionId)
-          await page.waitForValue('document.querySelector("[data-testid=app-tab-bar]").scrollLeft', value => value <= 0.5)
-        }
+        await page.waitForValue('!!document.querySelector("[data-testid=more-shortcut-creators]")', Boolean)
+        await tabGeometry(page, COMPACT_TAB_ITEMS.length)
         // Tab traversal must reveal every target without moving the page vertically.
         const scrollY = await page.evaluate('window.scrollY')
         const targets = await page.evaluate('[...document.querySelectorAll("[data-testid=app-tab-bar] .tab")].map(el=>el.dataset.testid)')
@@ -424,15 +422,20 @@ try {
           await page.waitForValue(`(() => {const e=document.activeElement,r=e.getBoundingClientRect();return {id:e.dataset.testid,left:r.left,right:r.right,width:innerWidth}})()`, value => value.id === target && value.left >= -0.5 && value.right <= value.width + 0.5)
         }
         assert.equal(await page.evaluate('window.scrollY'), scrollY)
+        if (scenario.productionHome) {
+          // 主站小屏没有首页 Tab，Logo 是首页唯一入口（APK 与本地回回放）。
+          assert.equal(await page.evaluate('!!document.querySelector("[data-testid=tab-home],[data-testid=more-shortcut-home]")'), false)
+          await tap(page, '[data-testid=app-top-bar] .brand', scenario.touch)
+          await page.waitForValue('!!document.querySelector("[data-testid=home-feedback]")', Boolean, { label: 'public home after logo' })
+          assert.deepEqual(await page.evaluate('[location.pathname, new URL(location.href).searchParams.has("view"), document.querySelectorAll("[data-testid=app-tab-bar] [aria-current]").length]'), ['/', false, 0])
+        }
       }
-      const primary = scenario.width < 768 ? '[data-testid=tab-creators]' : '[data-testid=nav-creators]'
-      await tap(page, primary, scenario.touch)
+      await openCreators(page, scenario)
       await tap(page, '[data-testid=recommendation-card-UP]', scenario.touch)
       await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 2)
-      assert.equal(await page.evaluate(`document.querySelector(${JSON.stringify(primary)}).getAttribute('aria-current')`), 'page')
-      if (scenario.compactNavigation) // Tab 数 = PRIMARY_NAV 导航契约（app/navigation.js）：2026-10-31 新增「地图」
-        // 栏后 10（production home 含首页）/ 9（其余）。
-        await tabGeometry(page, scenario.productionHome ? 10 : 9)
+      const activeEntry = scenario.width < 768 ? '[data-testid=tab-more]' : '[data-testid=nav-creators]'
+      assert.equal(await page.evaluate(`document.querySelector(${JSON.stringify(activeEntry)}).getAttribute('aria-current')`), 'page')
+      if (scenario.compactNavigation) await tabGeometry(page, COMPACT_TAB_ITEMS.length)
       assert.equal(await page.evaluate('document.querySelectorAll(".creator-card button").length'), 0, 'anonymous cards have no management or user-action buttons')
       assert.equal(await page.evaluate('window.__wsAuth.loginCalls.length'), 0); assert.equal(db.writes, 0)
       assert.equal(await page.evaluate('document.querySelector(".creator-card a").rel'), 'noopener noreferrer')

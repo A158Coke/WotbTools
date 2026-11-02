@@ -1,5 +1,6 @@
 import { Page } from './browser-page.mjs'
 import { measureOcclusion, measureReachability, measureTouchTargets } from './browser-occlusion.mjs'
+import { COMPACT_SHORTCUT_ITEMS, COMPACT_TAB_ITEMS, primaryNavItems } from '../src/app/navigation.js'
 
 export const SHELL_OVERLAY_SCENARIOS = ['showcase', 'classic'].flatMap(profile => [
   { width: 390, height: 844, touch: true },
@@ -42,6 +43,45 @@ export async function runShellOverlayScenario(env, scenario) {
     const point = await page.evaluate(`(() => { const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2} })()`)
     await page.tap({ ...point, touch: scenario.touch })
   }
+  const viewIs = (view) => page.waitForValue('new URL(location.href).searchParams.get("view")', value => value === view, { label: `view=${view}` })
+  const isCurrent = (selector) => page.waitForValue(`document.querySelector(${JSON.stringify(selector)})?.getAttribute('aria-current')`, value => value === 'page', { label: `${selector} current` })
+
+  /** 能力矩阵：PRIMARY_NAV 的每个入口都按真实点击到达，并断言路由与当前栏目。 */
+  async function assertNavigationMatrix() {
+    try { await walkNavigation() } finally {
+      // 夹具不提供百科与科技树的资产数据，矩阵只判导航；其余 console.error 仍算失败。
+      page.consoleErrors = page.consoleErrors.filter(message => !/(tech tree|tank cache|tankopedia) load failed/.test(message))
+    }
+  }
+  async function walkNavigation() {
+    const tabBar = await page.evaluate('!!document.querySelector("[data-testid=app-tab-bar]")')
+    if (!tabBar) {
+      for (const item of primaryNavItems('127.0.0.1').filter(entry => entry.id !== 'more')) {
+        await tap(`[data-testid=nav-${item.id}]`)
+        await viewIs(item.view)
+        await isCurrent(`[data-testid=nav-${item.id}]`)
+      }
+      return
+    }
+    check(await page.evaluate('document.querySelectorAll("[data-testid=app-tab-bar] .tab").length') === COMPACT_TAB_ITEMS.length, 'compact tab count must follow COMPACT_TAB_ITEMS')
+    check(await page.evaluate(`[...document.querySelectorAll('[data-testid=app-tab-bar] .tab')].every(tab => tab.getAttribute('aria-label').includes(tab.querySelector('.tab-label').textContent.trim()))`), 'tab accessible name must contain its visible label')
+    for (const item of COMPACT_TAB_ITEMS) {
+      await tap(`[data-testid=tab-${item.id}]`)
+      await viewIs(item.view)
+      await isCurrent(`[data-testid=tab-${item.id}]`)
+    }
+    for (const item of COMPACT_SHORTCUT_ITEMS) {
+      await tap('[data-testid=tab-more]')
+      await page.waitForValue(`!!document.querySelector("[data-testid=more-shortcut-${item.id}]")`, Boolean, { label: `shortcut ${item.id}` })
+      await tap(`[data-testid=more-shortcut-${item.id}]`)
+      await viewIs(item.view)
+      await isCurrent('[data-testid=tab-more]')
+    }
+    await tap('[data-testid=app-top-bar] .brand')
+    await viewIs('replay')
+    await isCurrent('[data-testid=tab-replay]')
+  }
+
   try {
     await page.emulate(scenario)
     await page.goto(`${env.origin}/?view=more&ws-auth=0`)
@@ -71,6 +111,7 @@ export async function runShellOverlayScenario(env, scenario) {
       // 返回页内链接使用真实路由。
       await tap('[data-testid=more-link-history]')
       await page.waitForValue('new URL(location.href).searchParams.get("view")', v => v === 'history')
+      await assertNavigationMatrix()
     } else {
       await tap('[data-testid=nav-more]')
       await page.waitForValue('!!document.querySelector("[data-testid=more-panel]")', Boolean)
@@ -100,6 +141,7 @@ export async function runShellOverlayScenario(env, scenario) {
       await tap('[data-testid=more-panel] [data-testid=more-link-history]')
       await page.waitForValue('new URL(location.href).searchParams.get("view")', v => v === 'history')
       check(await page.evaluate('!document.querySelector("[data-testid=more-panel]")'), 'navigation left More panel open')
+      await assertNavigationMatrix()
     }
   } catch (error) {
     failures.push(error.message, ...await page.diagnose())

@@ -177,14 +177,25 @@
       "account": "账户",
       "tankopedia": "坦克百科",
       "collapseSidebar": "收起侧边栏",
-      "expandSidebar": "展开侧边栏"
+      "expandSidebar": "展开侧边栏",
+      "groups": {
+        "battle": "战斗",
+        "reference": "资料",
+        "events": "赛事",
+        "community": "社区"
+      },
+      "compact": {
+        "tankopedia": "百科",
+        "tournament": "联赛"
+      }
     },
     "more": {
       "title": "更多",
       "sections": {
         "display": "显示设置",
         "admin": "管理",
-        "about": "关于与支持"
+        "about": "关于与支持",
+        "shortcuts": "快捷入口"
       },
       "language": "语言",
       "sponsor": "支持项目",
@@ -1145,14 +1156,25 @@
       "account": "Account",
       "tankopedia": "Tankopedia",
       "collapseSidebar": "Collapse sidebar",
-      "expandSidebar": "Expand sidebar"
+      "expandSidebar": "Expand sidebar",
+      "groups": {
+        "battle": "Battle",
+        "reference": "Reference",
+        "events": "Events",
+        "community": "Community"
+      },
+      "compact": {
+        "tankopedia": "Tanks",
+        "tournament": "League"
+      }
     },
     "more": {
       "title": "More",
       "sections": {
         "display": "Display",
         "admin": "Administration",
-        "about": "About & support"
+        "about": "About & support",
+        "shortcuts": "Shortcuts"
       },
       "language": "Language",
       "sponsor": "Support the project",
@@ -2113,14 +2135,25 @@
       "account": "Аккаунт",
       "tankopedia": "Энциклопедия",
       "collapseSidebar": "Свернуть боковую панель",
-      "expandSidebar": "Развернуть боковую панель"
+      "expandSidebar": "Развернуть боковую панель",
+      "groups": {
+        "battle": "Бой",
+        "reference": "Справочник",
+        "events": "Турниры",
+        "community": "Сообщество"
+      },
+      "compact": {
+        "tankopedia": "Танки",
+        "tournament": "Лига"
+      }
     },
     "more": {
       "title": "Ещё",
       "sections": {
         "display": "Отображение",
         "admin": "Администрирование",
-        "about": "О проекте и поддержка"
+        "about": "О проекте и поддержка",
+        "shortcuts": "Быстрый доступ"
       },
       "language": "Язык",
       "sponsor": "Поддержать проект",

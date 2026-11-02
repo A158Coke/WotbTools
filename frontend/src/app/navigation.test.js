@@ -2,10 +2,14 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   ALLOWED_VIEWS,
+  compactSection,
+  COMPACT_SHORTCUT_ITEMS,
+  COMPACT_TAB_ITEMS,
   defaultView,
   locationForView,
   PRIMARY_NAV,
   ADMIN_NAV,
+  NAV_GROUPS,
   primaryNavItems,
   primarySection,
   sectionTitleKey,
@@ -79,6 +83,33 @@ describe('primary navigation', () => {
     expect(primarySection('home')).toBe('home')
   })
 
+  it('keeps five compact tabs and exposes every other section as a More shortcut', () => {
+    expect(COMPACT_TAB_ITEMS.map(item => item.id)).toEqual(['replay', 'hof', 'tankopedia', 'tournament-points', 'more'])
+    expect(COMPACT_SHORTCUT_ITEMS.map(item => item.id)).toEqual(['techtree', 'maps', 'league-broadcasts', 'creators'])
+    const reachable = [...COMPACT_TAB_ITEMS, ...COMPACT_SHORTCUT_ITEMS].map(item => item.id)
+    expect(PRIMARY_NAV.filter(item => !reachable.includes(item.id)).map(item => item.id)).toEqual(['home'])
+  })
+
+  it('maps every view to one compact section', () => {
+    expect(compactSection('battle-playback')).toBe('replay')
+    expect(compactSection('agent-armor')).toBe('tankopedia')
+    expect(compactSection('tournament-points')).toBe('tournament-points')
+    for (const view of ['agent-techtree', 'map-preview', 'league-broadcasts', 'creators', 'recommended-videos', 'history', 'sponsor', 'admin-users', 'hof-admin']) {
+      expect(compactSection(view)).toBe('more')
+    }
+    expect(compactSection('home')).toBeNull()
+    expect(compactSection('profile')).toBeNull()
+  })
+
+  it('places every section except Home and More in one sidebar group', () => {
+    const groups = NAV_GROUPS.map(group => group.id)
+    for (const item of PRIMARY_NAV) {
+      if (['home', 'more'].includes(item.id)) expect(item.group).toBeUndefined()
+      else expect(groups).toContain(item.group)
+    }
+    expect(NAV_GROUPS.map(group => PRIMARY_NAV.filter(item => item.group === group.id).length)).toEqual([2, 3, 2, 1])
+  })
+
   it('only offers Home on the production home host', () => {
     expect(primaryNavItems('wotbtools.com').map(item => item.id)).toEqual(['home', 'replay', 'hof', 'tankopedia', 'techtree', 'maps', 'tournament-points', 'league-broadcasts', 'creators', 'more'])
     expect(primaryNavItems('localhost').map(item => item.id)).toEqual(['replay', 'hof', 'tankopedia', 'techtree', 'maps', 'tournament-points', 'league-broadcasts', 'creators', 'more'])
@@ -93,6 +124,8 @@ describe('primary navigation', () => {
       expect(defaultView('127.0.0.1')).toBe('replay')
       expect(defaultView('wotbtools.com')).toBe('replay')
       expect(viewFromRoute({ path: '/', query: { view: 'home' } })).toBe('replay')
+      expect(COMPACT_TAB_ITEMS.every(item => expected.includes(item.id))).toBe(true)
+      expect(COMPACT_SHORTCUT_ITEMS.every(item => expected.includes(item.id))).toBe(true)
     } finally { vi.unstubAllEnvs() }
   })
 
