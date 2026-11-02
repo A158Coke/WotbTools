@@ -1271,9 +1271,9 @@ describe('炮线渲染守卫（阵营语义色直出）', () => {
   it('性能探针：`?perf` 才挂载、只读记录（不改渲染行为）', () => {
     expect(src).toMatch(/new URLSearchParams\(window\.location\.search\)\.has\('perf'\)/)
     expect(src).toMatch(/window\.__pbPerf = \{/)
-    // 分阶段计时包住「状态更新」「主渲染」与「装甲叠加」三段
+    // 分阶段计时包住「状态更新」「主渲染」与「装甲叠加」三段（含装甲逐 pass stats）
     expect(src).toMatch(/const perfT1 = PERF \? performance\.now\(\) : 0;/)
-    expect(src).toMatch(/if \(PERF\) perfFrame\(perfT1 - perfT0, perfR0 - perfT1, perfR1 - perfR0\);/)
+    expect(src).toMatch(/if \(PERF\) perfFrame\(perfT1 - perfT0, perfR0 - perfT1, perfR1 - perfR0, armorStats\);/)
   })
 
 })

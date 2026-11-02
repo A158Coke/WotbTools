@@ -306,6 +306,15 @@ export async function assembleMapScenery(gltf, ctx) {
       }
     }
     destruct = { states, ptr: 0, lastT: -1, animating: false };
+    // 可破坏物批次实例矩阵运行期会变（树倒 / 换模翻转），refreshBatchSphere 按构建位姿算的
+    // 批次 AABB 不再保守——置 null 回退包围球（树批次的球已被上方扩张到覆盖倒伏触及）。
+    const volatileBatches = new Set();
+    for (const st of states) {
+      for (const s of st.slots || []) volatileBatches.add(s.mesh);
+      for (const s of st.intactSlots || []) volatileBatches.add(s.mesh);
+      for (const s of st.deadSlots || []) volatileBatches.add(s.mesh);
+    }
+    for (const mesh of volatileBatches) mesh.userData.occluderBox = null;
     // 动态批次包围球保守扩张（评审 P2 二轮修正）：树倒 = 绕基点旋转，树梢会
     // 伸出 buildInstancedMesh 按直立位算的包围球。扩张量必须计入**槽位实际
     // 变换**——heightM 是原型几何高度，导出节点带非均匀缩放（erlenberg

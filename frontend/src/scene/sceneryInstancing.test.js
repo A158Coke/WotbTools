@@ -341,3 +341,54 @@ describe('透明+光照图网格保留逐节点 lm 变换', () => {
     expect(node.parent).toBe(null)
   })
 })
+
+describe('批次 AABB（开镜装甲高亮遮挡剔除）', () => {
+  it('refreshBatchSphere 产出 occluderBox：覆盖全部实例，隐藏槽位按 base 位姿计入', async () => {
+    const { buildInstancedMesh, groupInstanceBatches, collectInstanceEntries, writeHiddenInstance, refreshBatchSphere }
+      = await import('./sceneryInstancing.js')
+    const root = new THREE.Object3D()
+    const shared = geo(2)
+    const m1 = mat()
+    for (const x of [0, 60]) {
+      const t = new THREE.Mesh(shared, m1)
+      t.position.set(x, 0, 0)
+      root.add(t)
+    }
+    root.updateMatrixWorld(true)
+    const batches = groupInstanceBatches(collectInstanceEntries(root), 75)
+    const batch = batches[0]
+    batch.items.forEach((it, i) => { it.batch = batch; it.idx = i })
+    const mesh = buildInstancedMesh(batch)
+    const hidden = batch.items.find((e) => e.x === 60)
+    writeHiddenInstance(mesh, hidden.idx)
+    hidden.hidden = true
+    refreshBatchSphere(mesh, batch, (e) => e.hidden)
+    const box = mesh.userData.occluderBox
+    expect(box).toBeInstanceOf(THREE.Box3)
+    // 两个实例都在盒覆盖内——含隐藏槽位的 base 位姿 (60,0,0)（激活后无需重算）
+    expect(box.containsPoint(new THREE.Vector3(0, 0, 0))).toBe(true)
+    expect(box.containsPoint(new THREE.Vector3(60, 0, 0))).toBe(true)
+    expect(box.max.y).toBeGreaterThanOrEqual(1.5)   // 几何高 2 → 顶面进入盒
+  })
+
+  it('可见槽位按当前实例矩阵计入（重算刷新同一 Box3）', async () => {
+    const { buildInstancedMesh, groupInstanceBatches, collectInstanceEntries, refreshBatchSphere }
+      = await import('./sceneryInstancing.js')
+    const root = new THREE.Object3D()
+    const shared = geo(2)
+    root.add(new THREE.Mesh(shared, mat()))
+    root.updateMatrixWorld(true)
+    const batches = groupInstanceBatches(collectInstanceEntries(root), 75)
+    const batch = batches[0]
+    batch.items.forEach((it, i) => { it.batch = batch; it.idx = i })
+    const mesh = buildInstancedMesh(batch)
+    refreshBatchSphere(mesh, batch, () => false)
+    const box = mesh.userData.occluderBox
+    // 运行期把实例挪远后重算：盒随新矩阵扩张（静态批次一次性计算的前提语义）
+    mesh.setMatrixAt(0, new THREE.Matrix4().makeTranslation(120, 0, 0))
+    mesh.instanceMatrix.needsUpdate = true
+    refreshBatchSphere(mesh, batch, () => false)
+    expect(box.containsPoint(new THREE.Vector3(120, 0, 0))).toBe(true)
+    expect(mesh.userData.occluderBox).toBe(box)   // 复用同一实例，不逐批新分配
+  })
+})

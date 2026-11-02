@@ -154,4 +154,33 @@ describe('Sniper 穿深着色接线', () => {
     const setBody = source.slice(setStart, source.indexOf('setQuality', setStart))
     expect(setBody).toContain('releaseRenderTargets')
   })
+
+  it('遮挡剔除优先批次 AABB；可破坏物批次回退球', () => {
+    const hl = readFileSync(resolve(__dirname, 'playback/armorHighlight.js'), 'utf8')
+    expect(hl).toMatch(/const box = object\.userData\?\.occluderBox/)
+    expect(hl).toMatch(/view\.frustum\.intersectsBox\(_occluderBox\)/)
+    const inst = readFileSync(resolve(__dirname, 'sceneryInstancing.js'), 'utf8')
+    expect(inst).toMatch(/userData\.occluderBox = box/)
+    const mapAssets = readFileSync(resolve(__dirname, 'playback/mapAssets.js'), 'utf8')
+    expect(mapAssets).toMatch(/mesh\.userData\.occluderBox = null/)
+  })
+
+  it('装甲 RT 按目标矩形分配：视口偏移相机 + spacedRect 采样映射', () => {
+    const hl = readFileSync(resolve(__dirname, 'playback/armorHighlight.js'), 'utf8')
+    expect(hl).toMatch(/armorCamera\.setViewOffset\(size\.x, size\.y, scissor\.x, size\.y - \(scissor\.y \+ scissor\.w\), scissor\.z, scissor\.w\)/)
+    expect(hl).toMatch(/bucketedRtSize\(scissor\.z, size\.x\)/)
+    expect(hl).toMatch(/bindBuffers\(target, camera, spacedRect\)/)
+    const shaders = readFileSync(resolve(__dirname, 'viewer/armorShaders.js'), 'utf8')
+    expect(shaders).toMatch(/uniform vec4 spacedRect/)
+    expect(shaders).toMatch(/sc \* spacedRect\.zw \+ spacedRect\.xy/)
+    expect(shaders).toMatch(/spacedRect: \{ value: new THREE\.Vector4\(0, 0, 1, 1\) \}/)
+  })
+
+  it('?perf 逐 pass 计时与装甲预热接线', () => {
+    expect(source).toMatch(/perfFrame\(perfT1 - perfT0, perfR0 - perfT1, perfR1 - perfR0, armorStats\)/)
+    expect(source).toMatch(/stats: PERF \? armorStats : null/)
+    const hl = readFileSync(resolve(__dirname, 'playback/armorHighlight.js'), 'utf8')
+    expect(hl).toMatch(/function prewarm\(camera\)/)
+    expect(source).toMatch(/\.prewarm\(camera\)/)
+  })
 })
