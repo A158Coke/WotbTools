@@ -96,6 +96,16 @@ describe('aimedVehicle', () => {
     expect(aimedVehicle(origin, forward, [aside])).toBeNull()
   })
 
+  it('已命中更近车辆后不再对更远候选做逐网格求交（按根包围球最近距离剪枝）', () => {
+    const near = at(0, 50), far = at(0, 120)
+    const farMesh = far.glb.children[0]
+    let farRaycasts = 0
+    const realRaycast = farMesh.raycast
+    farMesh.raycast = function (...args) { farRaycasts++; return realRaycast.apply(this, args) }
+    expect(aimedVehicle(origin, forward, [far, near])).toBe(near)
+    expect(farRaycasts).toBe(0)
+  })
+
   it('炮塔转动后按当前姿态命中，首次拾取的结果不残留', () => {
     const v = withBarrel(0, 50)
     const atBarrelTip = new THREE.Vector3(10, 0, 0)

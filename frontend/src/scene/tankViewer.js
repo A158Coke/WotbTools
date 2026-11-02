@@ -15,6 +15,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { poseFromYPR, neutralizeDefaultMetalness, dropDuplicateGunMasks } from './glbRig.js'
+import { pitchAtBearing, recordedTargetMatchesShot, resolvePitchCheckboxChecked, resolvePitchDeviceEffective } from '../replay-local/compute/tankSetup'
 import { romanLevel } from '../utils/tierFormat.js'
 import {
     fetchTankData,
@@ -144,7 +145,7 @@ export function mirrorShotData(s) {
     
 }
 
-export function initTankViewer({ labels = {}, onLoadState = null, onTankList = null, onTankSelection = null, onConfigSelection = null, onShellSelection = null, onEquipmentSelection = null, initialTankId = null, initialShooterId = null } = {}) {
+export function initTankViewer({ labels = {}, onLoadState = null, onTankList = null, onTankSelection = null, onConfigSelection = null, onShellSelection = null, onEquipmentSelection = null, initialTankId = null, initialShooterId = null, pitchDeviceBonus = null, pitchDeviceAvailable: initialPitchDeviceAvailable = false } = {}) {
         // 穿透材质族的**每实例**运行态（分辨率/跳弹 uniforms/占位纹理 + 绑定它们的材质工厂）。
         // 不能是模块单例：两个 viewer 生命周期重叠时，A 的更新/重建/清理会直接改到 B 的 uniforms
         //（评审 P1）。解构命名与拆分前一致，消费点零改动。
@@ -186,6 +187,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             phase: (phase) => phase,   // 加载阶段名（armor model / tank model / tank data / tank list）
             armorStateCheckbox: 'Dynamic armor',
             armorStateAutoTitle: 'Replay-detected (armor state at impact)',
+            // 122 装备徽标（射击诊断面板）：不得硬编码文案，宿主经 labels 传三语。
+            pitchDevice: 'Improved Vertical Stabilizer',
+            // Type5 配件串回放判定来源提示（勾选框禁用时的 tooltip）：同不得硬编码。
+            replayEquipmentAutoTitle: 'Replay-detected (Type5 equipment)',
             ...labels,
         };
         const loadFailed = (phase, msg) => L.loadFailed(L.phase(phase), msg);
@@ -622,12 +627,19 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         // 射手搭载配件自动判定（Type5 物化 9 字节选择串，103=校准弹 / 110=强化装甲）：
         // 回放数据在场（s.shooter_equipment / __shotCtx.eqShooter）时自动生效并禁用手动勾选框；
         // 数据缺失（AoI 未覆盖物化）时回退手动勾选框（旧行为）。
+        // 目标装备真值只属于射击记录的那辆车：换目标后不再把原目标的 122 继承过来。
+        let currentTargetId = null;
         function shotEquipmentCtx() {
             const ctx = window.__shotCtx || {};
-            return { shooter: ctx.eqShooter || null, target: ctx.eqTarget || null };
+            const target = recordedTargetMatchesShot(ctx.shot, currentTargetId) ? (ctx.eqTarget || null) : null;
+            return { shooter: ctx.eqShooter || null, target };
         }
         /** 手动覆盖（装甲页图形开关）：null = 跟随回放真值/旧勾选框。 */
-        const equipmentOverride = { calibrated: null, enhanced: null };
+        const equipmentOverride = { calibrated: null, enhanced: null, pitch: null };
+        /** 装备 122 的俯仰加成（度，{up,down}）；由宿主从 research/devices.json 注入。 */
+        let pitchDeviceBonusValue = pitchDeviceBonus;
+        /** 目标/被展示车是否存在 122 槽位；未知/不适用时 fail-closed 不加成。 */
+        let pitchDeviceAvailable = !!initialPitchDeviceAvailable;
         function effectiveCalibrated(eq) {
             if (equipmentOverride.calibrated != null) return equipmentOverride.calibrated;
             const data = eq || shotEquipmentCtx().shooter;
@@ -639,6 +651,27 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const data = eq || shotEquipmentCtx().target;
             return data ? !!data.enhanced_armor
                 : !!(document.getElementById('eq-enhanced') && document.getElementById('eq-enhanced').checked);
+        }
+        /**
+         * 122 是否生效：宿主确认该车有槽位 +（手动/URL 覆盖 > 射击受击方装备真值 > 原生勾选）。
+         * 裁决走 tankSetup 的纯函数（与勾选回退态同一份逻辑，单测覆盖）。
+         */
+        function effectivePitchDevice(eq) {
+            const data = eq || shotEquipmentCtx().target;
+            return resolvePitchDeviceEffective({
+                available: pitchDeviceAvailable,
+                override: equipmentOverride.pitch,
+                recorded: data ? !!data.improved_pitch_limits : null,
+                checkboxChecked: !!(document.getElementById('eq-pitch-device') && document.getElementById('eq-pitch-device').checked),
+            });
+        }
+        /** 宿主从 research/devices.json 读到 122 的 bonusValues 后注入（避免场景硬编码）。 */
+        function setPitchDeviceBonus(value) {
+            pitchDeviceBonusValue = value || null;
+        }
+        /** 宿主确认目标车预设暴露 122（或射击真值已装备）后开启；未知时 fail-closed。 */
+        function setPitchDeviceAvailable(value) {
+            pitchDeviceAvailable = !!value;
         }
         function shellPenMul(s) {
             const calOn = effectiveCalibrated((s && s.shooter_equipment) || null);
@@ -673,14 +706,27 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             if (cal) {
                 if (s.shooter_equipment) {
                     cal.checked = equipmentOverride.calibrated ?? !!s.shooter_equipment.calibrated_shells;
-                    cal.disabled = true; cal.title = '回放自动判定（Type5 配件串）';
+                    cal.disabled = true; cal.title = L.replayEquipmentAutoTitle;
                 } else { cal.disabled = false; cal.title = ''; }
             }
             if (enh) {
                 if (s.target_equipment) {
                     enh.checked = equipmentOverride.enhanced ?? !!s.target_equipment.enhanced_armor;
-                    enh.disabled = true; enh.title = '回放自动判定（Type5 配件串）';
+                    enh.disabled = true; enh.title = L.replayEquipmentAutoTitle;
                 } else { enh.disabled = false; enh.title = ''; }
+            }
+            const pit = document.getElementById('eq-pitch-device');
+            if (pit) {
+                const recorded = recordedTargetMatchesShot(s, currentTargetId) ? (s.target_equipment || null) : null;
+                const checked = resolvePitchCheckboxChecked({ override: equipmentOverride.pitch, recorded: recorded ? !!recorded.improved_pitch_limits : null });
+                if (recorded) {
+                    pit.checked = checked;
+                    pit.disabled = true; pit.title = L.replayEquipmentAutoTitle;
+                } else {
+                    // 换目标后回放真值不适用：回到手动勾选，且不保留上一辆车的勾选态。
+                    pit.checked = checked;
+                    pit.disabled = false; pit.title = '';
+                }
             }
             updateHeatmapThickness();
             refreshShellOptionText();
@@ -689,7 +735,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             if (!eq) return '<span style="color:var(--muted);">配件?</span>';
             const c = eq.calibrated_shells ? '<span style="color:var(--green);">校准弹✓</span>' : '<span style="color:var(--muted);">校准弹✗</span>';
             const e = eq.enhanced_armor ? '<span style="color:var(--green);">强化装甲✓</span>' : '<span style="color:var(--muted);">强化装甲✗</span>';
-            return c + ' ' + e;
+            const p = eq.improved_pitch_limits ? '<span style="color:var(--green);">' + L.pitchDevice + '✓</span>' : '<span style="color:var(--muted);">' + L.pitchDevice + '✗</span>';
+            return c + ' ' + e + ' ' + p;
         }
         function updateHeatmapThickness() {
             const { thickMul } = equipmentCoeffs();
@@ -1031,33 +1078,16 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 }
             }
             let pitchDeg = aimStartGun - dy;
-            let lower = -pl.max, upper = -pl.min;
-            const transition = pl.transition || 20;
-            if (pl.back) {
-                const yawRotatedAbs = Math.abs(norm180(yawDeg - 180));
-                if (yawRotatedAbs <= pl.back.range / 2 + transition) {
-                    if (yawRotatedAbs <= pl.back.range / 2) {
-                        lower = -pl.back.max; upper = -pl.back.min;
-                    } else {
-                        const tp = (yawRotatedAbs - pl.back.range / 2) / transition;
-                        lower = -((1 - tp) * pl.back.max + tp * pl.max);
-                        upper = -((1 - tp) * pl.back.min + tp * pl.min);
-                    }
-                }
+            // 复用 tankSetup.pitchAtBearing（射界图与装甲页同一套 front/back 扇区 +
+            // 122 加成），场景只把请求角夹到返回的上下限，不另写第二份业务规则。
+            if (pl) {
+                const limits = pitchAtBearing(
+                    pl,
+                    yawDeg,
+                    effectivePitchDevice() ? pitchDeviceBonusValue : null,
+                );
+                pitchDeg = Math.min(limits.up, Math.max(limits.down, pitchDeg));
             }
-            if (pl.front) {
-                const yawAbs = Math.abs(norm180(yawDeg));
-                if (yawAbs <= pl.front.range / 2 + transition) {
-                    if (yawAbs <= pl.front.range / 2) {
-                        lower = -pl.front.max; upper = -pl.front.min;
-                    } else {
-                        const tp = (yawAbs - pl.front.range / 2) / transition;
-                        lower = -((1 - tp) * pl.front.max + tp * pl.max);
-                        upper = -((1 - tp) * pl.front.min + tp * pl.min);
-                    }
-                }
-            }
-            pitchDeg = Math.max(lower, Math.min(upper, pitchDeg));
             currentTurretDeg = yawDeg;
             currentGunDeg = pitchDeg;
             document.getElementById('turret-val').textContent = currentTurretDeg.toFixed(0) + '°';
@@ -2432,6 +2462,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         // 装甲页图形开关的手动覆盖（&eqcal=0/1、&eqenh=0/1）：场景初始化即生效
         if (QP.has('eqcal')) equipmentOverride.calibrated = QP.get('eqcal') === '1';
         if (QP.has('eqenh')) equipmentOverride.enhanced = QP.get('eqenh') === '1';
+        // 122 改进型垂直稳定器（装甲页手动 what-if；射击复现由 target_equipment 自动判定）
+        if (QP.has('eqpitch')) equipmentOverride.pitch = QP.get('eqpitch') === '1';
         // 本机复现开关：?armordebug=1（仅 dev）。点击后复制/查看本次判定的完整输入与层链。
         const ARMOR_DEBUG = import.meta.env.DEV && QP.get('armordebug') === '1';
         let urlApplied = false;
@@ -4294,7 +4326,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
 
         let tanksList = [];
-        let currentShooterId = null, currentTargetId = null;
+        let currentShooterId = null;
 
         function updateTankLabels() {
             const find = (id) => tanksList.find(t => String(t.id) === String(id));
@@ -4476,6 +4508,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             if (initialCal && equipmentOverride.calibrated != null) initialCal.checked = equipmentOverride.calibrated;
             const initialEnh = document.getElementById('eq-enhanced');
             if (initialEnh && equipmentOverride.enhanced != null) initialEnh.checked = equipmentOverride.enhanced;
+            const initialPitch = document.getElementById('eq-pitch-device');
+            if (initialPitch && equipmentOverride.pitch != null) initialPitch.checked = equipmentOverride.pitch;
             document.getElementById('shell-select').addEventListener('change', function() {
                 if (destroyed || shooterLoading) return;
                 const idx = parseInt(this.value);
@@ -4514,6 +4548,12 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 equipmentOverride.enhanced = null;
                 refreshEquipmentEffects();
                 onEquipmentSelection?.('enhanced', this.checked);
+            });
+            const pitchToggle = document.getElementById('eq-pitch-device');
+            if (pitchToggle) pitchToggle.addEventListener('change', function() {
+                // 只影响炮管俯仰钳制（不碰穿深/厚度），下一次拖动按新上下限生效。
+                equipmentOverride.pitch = null;
+                onEquipmentSelection?.('pitch', this.checked);
             });
             document.getElementById('armor-state-toggle').addEventListener('change', function() {
                 if (!armorStateDecl) return;   // 静态车无声明：不得读 states（review P2 崩溃点）
@@ -6245,9 +6285,29 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
 
         /** 校准弹/强化装甲手动覆盖（null = 跟随回放真值/旧勾选框）。 */
         function setEquipmentOverride(kind, value) {
-            if (kind !== 'calibrated' && kind !== 'enhanced') return;
+            if (kind !== 'calibrated' && kind !== 'enhanced' && kind !== 'pitch') return;
             equipmentOverride[kind] = value == null ? null : !!value;
-            refreshEquipmentEffects();
+            // 俯仰只改下一轮拖动钳制，不影响穿深/厚度 uniform；同步原生勾选，
+            // 避免宿主清掉不可用车的 eqpitch 后 checkbox 仍显示勾选。
+            if (kind === 'pitch') {
+                const pit = document.getElementById('eq-pitch-device');
+                if (pit) {
+                    if (value != null) {
+                        pit.checked = !!value;
+                    } else {
+                        // 撤销覆盖（review P2）：必须按当前目标录制真值/默认值重同步回退勾选。
+                        // 只把 override 置 null 会留下旧 checked=true——effectivePitchDevice
+                        // 在无真值时回退到 checkbox，122 会被残留勾选重新启用，与已清 URL 的 HUD 不一致。
+                        const recorded = shotEquipmentCtx().target;
+                        pit.checked = resolvePitchCheckboxChecked({
+                            override: null,
+                            recorded: recorded ? !!recorded.improved_pitch_limits : null,
+                        });
+                    }
+                }
+            } else {
+                refreshEquipmentEffects();
+            }
         }
 
         /**
@@ -6275,6 +6335,6 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         return {
             destroy, retry, selectTank, canPick, isContextLost,
             setConfig: applyConfig, setConfigUiVisible, setShellUiVisible,
-            setShell, setShooterConfig, setEquipmentOverride,
+            setShell, setShooterConfig, setEquipmentOverride, setPitchDeviceBonus, setPitchDeviceAvailable,
         };
     }

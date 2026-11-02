@@ -4185,8 +4185,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 一帧可有多次 render：探针期间手动复位，info 才是整帧累计而不是最后一次 render
     if (PERF) { renderer.info.autoReset = false; renderer.info.reset(); }
     renderer.render(scene, camera);
+    const perfR0 = PERF ? performance.now() : 0;
     renderArmorHighlight();
-    if (PERF) perfFrame(perfT1 - perfT0, performance.now() - perfT1);
+    const perfR1 = PERF ? performance.now() : 0;
+    if (PERF) perfFrame(perfT1 - perfT0, perfR0 - perfT1, perfR1 - perfR0);
   }
 
   // ---------- 性能探针（`?perf`；只读测量，不改变任何渲染行为） ----------
@@ -4200,21 +4202,21 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let rendererCaps = null;   // 当前渲染器实际装配的 { logdepth, dynres }（reset 保留渲染器时用于失配检测）
   const PERF_RING = 240;              // ≈4s 窗口（60fps）
   let perfRing = [], perfRingN = 0, perfLast = 0, perfSlow = [];
-  function perfFrame(updateMs, renderMs) {
+  function perfFrame(updateMs, renderMs, armorMs) {
     const now = performance.now();
     const dt = perfLast ? now - perfLast : 0;
     perfLast = now;
     // draw call 数（renderer.info 是本帧全部 render 的累计）：场景侧结构性优化（材质去重 /
     // 实例化 / 冻结）的收益直接体现在这个数上，没有它优化前后无法量化对比。
     const calls = renderer ? renderer.info.render.calls : 0;
-    perfRing[perfRingN % PERF_RING] = { dt, updateMs, renderMs, t: T, calls,
+    perfRing[perfRingN % PERF_RING] = { dt, updateMs, renderMs, armorMs, t: T, calls,
       dpr: renderer ? Math.round(renderer.getPixelRatio() * 100) / 100 : 0,
       tracers: tracers.length, traj: trajLines.length, impacts: battleFx ? battleFx.stats().impacts : 0,
       burst: battleFx ? battleFx.stats().bursts : 0,
       veh: V.filter((v) => v.group.visible).length };
     perfRingN++;
     if (dt > 33) {
-      perfSlow.push({ dt, updateMs, renderMs, t: T });
+      perfSlow.push({ dt, updateMs, renderMs, armorMs, t: T });
       perfSlow.sort((a, b) => b.dt - a.dt);
       if (perfSlow.length > 12) perfSlow.length = 12;
     }
@@ -4235,12 +4237,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       `frame ms  med=${f(q('dt', 0.5))} p90=${f(q('dt', 0.9))} max=${f(q('dt', 0.99))}`,
       `update ms med=${f(q('updateMs', 0.5))} p90=${f(q('updateMs', 0.9))}`,
       `render ms med=${f(q('renderMs', 0.5))} p90=${f(q('renderMs', 0.9))}`,
+      `armor ms med=${f(q('armorMs', 0.5))} p90=${f(q('armorMs', 0.9))} max=${f(q('armorMs', 0.99))}`,
       `draw calls med=${f(q('calls', 0.5))} p90=${f(q('calls', 0.9))} max=${f(q('calls', 0.99))}`,
       `pixel ratio med=${f(q('dpr', 0.5))} min=${f(q('dpr', 0.05))}`,
       `now: T=${last.t.toFixed(1)} veh=${last.veh} tracers=${last.tracers} trajBoxes=${last.traj} impacts=${last.impacts} burst=${last.burst}`,
       `annotation committedBuilds=${annotationStats.committedBuilds} draftBuilds=${annotationStats.draftBuilds} terrainRebuilds=${annotationStats.terrainRebuilds} eraseCallbacks=${annotationStats.eraseCallbacks} lastBuildMs=${annotationStats.lastBuildMs.toFixed(2)} pickMs=${annotationStats.lastPickMs.toFixed(2)} verts=${annotationStats.committedVertices}/${annotationStats.draftVertices}`,
-      'slowest frames (dt ms / update / render / T):',
-      ...perfSlow.map((r) => `  ${f(r.dt)} / ${f(r.updateMs)} / ${f(r.renderMs)} @T=${r.t.toFixed(1)}`),
+      'slowest frames (dt ms / update / render / armor / T):',
+      ...perfSlow.map((r) => `  ${f(r.dt)} / ${f(r.updateMs)} / ${f(r.renderMs)} / ${f(r.armorMs)} @T=${r.t.toFixed(1)}`),
       `main-thread stalls >${PERF_HEARTBEAT_MS * 2}ms: ${perfStalls.length}`,
       ...perfStalls.map((r) => `  ${f(r.gap)} ms @T=${r.t.toFixed(1)}`),
     ];
@@ -4534,6 +4537,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     };
     fovRestore = null;
     recorderBoomScale = 1;
+    // 开镜前预取敌方车型 armor 模板，减少首次瞄准新车型的 GLB 下载/解析卡顿。
+    if (ARMOR_HIGHLIGHT) ensureArmorHighlight().prefetch(highlightEnemies());
   }
   function leaveRecorderView() {
     cameraBlend = null;
@@ -4543,6 +4548,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (hidden) setScopedLayer(hidden, false);
     foliageClip.value = 0;
     recorderReticle?.hide();
+    // 开镜结束即释放全尺寸 RT（下次开镜命中目标时按需重建），不把 2×W×H 显存挂到会话结束。
+    armorHighlight?.releaseRenderTargets?.();
   }
   function setScopedLayer(v, hidden) {
     const layer = hidden ? SCOPED_HIDDEN_LAYER : 0;
@@ -4583,9 +4590,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     aimDirectionScene(sample.yaw, sample.pitch, _recorderDir);
     const scoped = sample.mode === CAMERA_MODE.SNIPER;
     const hiddenEid = scoped ? v.def.eid : 0;
+    const wasScoped = scopedHiddenEid !== 0;
     if (hiddenEid !== scopedHiddenEid) {
       scopedHiddenEid = hiddenEid;
       setScopedLayer(v, scoped);
+      // SNIPER→ARCADE（含 seek 回 Arcade）：叠加渲染停止，释放全尺寸 RT；
+      // 下次命中目标再按需重建。进入开镜/待在开镜不释放。
+      if (wasScoped && !scoped) armorHighlight?.releaseRenderTargets?.();
     } else if (scoped && v.glb && !v.glb.layers.isEnabled(SCOPED_HIDDEN_LAYER)) {
       setScopedLayer(v, true);   // 开镜期间 GLB 才装配完成
     }
@@ -4674,6 +4685,17 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let armorHighlight = null;
   const _armorAimPoint = new THREE.Vector3();
   const _armorAimDir = new THREE.Vector3();
+  /** 当前时刻可被准星选中的敌车（可见、复活/存活、真实车模）。 */
+  function highlightEnemies() {
+    if (!DATA?.meta) return [];
+    const friendlyTeam = DATA.meta.friendly_team;
+    return V.filter((v) => v.glb?.visible && v.group.visible && v.tankData
+      && (v.def.team === 1 || v.def.team === 2) && v.def.team !== friendlyTeam && !deathAt(v, T));
+  }
+  function ensureArmorHighlight() {
+    armorHighlight ??= createArmorHighlight({ renderer, assetProvider });
+    return armorHighlight;
+  }
   /**
    * 主渲染之后的叠加 pass：只有录像者开镜才可能运行，其余路径没有任何额外 render。
    * 进入录像者的过渡期相机还没到炮位，距离衰减和入射角都不对，不着色。
@@ -4682,12 +4704,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (!ARMOR_HIGHLIGHT || CAM !== 'recorder' || !scopedHiddenEid || cameraBlend) return;
     const author = recorderVehicle();
     if (!author?.tankData) return;
-    const friendlyTeam = DATA.meta.friendly_team;
-    const enemies = V.filter((v) => v.glb?.visible && v.group.visible && v.tankData
-      && (v.def.team === 1 || v.def.team === 2) && v.def.team !== friendlyTeam && !deathAt(v, T));
+    const enemies = highlightEnemies();
     const aimDir = reticleAimDirection(camera, recorderAimPoint(recorderSample, _armorAimPoint), _armorAimDir);
     if (!aimDir) return;
-    const target = aimedVehicle(camera.position, aimDir, enemies);
+    const target = aimedVehicle(camera.position, aimDir, enemies, camera);
     if (!target) return;
     const shellId = authorShellAt(DATA.author_shell_timeline, T);
     const config = resolveExactMountedConfig(target.def, target.tankData);
@@ -4698,8 +4718,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     });
     if (blocked) return;
     const { shell, caliber } = mountedShell(authorConfig, shellId);
-    armorHighlight ??= createArmorHighlight({ renderer, assetProvider });
-    armorHighlight.render({
+    ensureArmorHighlight().render({
       scene, camera, vehicle: target, tankData: target.tankData, config, shell, caliber,
       ...armorEquipmentCoeffs(shell, author.def.equipment, target.def.equipment),
       onReady: invalidate,
@@ -5358,6 +5377,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       ARMOR_HIGHLIGHT = !!on;
       persistPref('pb_armor_highlight', on);
       store.armorHighlight = !!on;
+      if (!ARMOR_HIGHLIGHT) {
+        // 关闭即释放 RT；模板与目标保留，重新打开时不再重新下载/构建。
+        armorHighlight?.releaseRenderTargets?.();
+      } else if (CAM === 'recorder') {
+        ensureArmorHighlight().prefetch(highlightEnemies());
+      }
       invalidate();
     },
     setQuality,

@@ -186,6 +186,88 @@ export function presetSlots(modules: any, catalog: any) {
   return presets[modules?.optDevicePreset] || presets.defaultPreset || []
 }
 
+type PitchPresetSlot = { left?: string | null; right?: string | null }
+type PitchPresetCatalog = { devicePresets?: Record<string, PitchPresetSlot[]> }
+type PitchModules = { optDevicePreset?: string }
+type PitchDeviceCatalog = {
+  devices?: Array<{
+    id?: number
+    script?: { params?: { bonusValues?: { upperPitchLimitIncrease?: unknown; lowerPitchLimitIncrease?: unknown } } }
+  }>
+}
+
+/**
+ * 该车预设是否提供 122「改进型垂直稳定器」（装甲查看器勾选可用性）。
+ * 预设两侧是 stem（不是 id）；按 stem 对号，目录缺该车/预设时返回 false。
+ */
+export function presetProvidesPitchDevice(
+  modules: PitchModules | null | undefined,
+  catalog: PitchPresetCatalog | null | undefined,
+) {
+  return presetSlots(modules, catalog).some(
+    (slot: PitchPresetSlot) => slot?.left === 'improvedPitchLimitsSystem' || slot?.right === 'improvedPitchLimitsSystem',
+  )
+}
+
+/**
+ * 122 是否真实生效（装甲查看器拖炮钳制 / HUD 的同一裁决）：
+ * 可用性 fail-closed → 手动/URL 覆盖 → 当前目标录制真值 → 原生勾选回退。
+ * `recorded === null` 表示无适用真值（非射击页或目标身份不符）。
+ */
+export function resolvePitchDeviceEffective(input: {
+  available: unknown
+  override: boolean | null | undefined
+  recorded: boolean | null | undefined
+  checkboxChecked?: unknown
+}) {
+  if (!input.available) return false
+  if (input.override != null) return !!input.override
+  if (input.recorded != null) return !!input.recorded
+  return !!input.checkboxChecked
+}
+
+/**
+ * 原生 `eq-pitch-device` 勾选回退态：覆盖优先，其次当前目标录制真值，
+ * 否则默认关闭——不得保留上一辆车/已清 URL 的旧勾选（否则 effective 会
+ * 从残留 checkbox 重新启用 122，与已清 URL 的 HUD 不一致）。
+ */
+export function resolvePitchCheckboxChecked(input: {
+  override: boolean | null | undefined
+  recorded: boolean | null | undefined
+}) {
+  if (input.override != null) return !!input.override
+  return input.recorded != null ? !!input.recorded : false
+}
+
+/**
+ * 装备 122 的俯仰加成（度）：`up` 加仰角上限、`down` 加俯角下限。
+ * 数值来自客户端 `devices.json` 的 `bonusValues`（upperPitchLimitIncrease /
+ * lowerPitchLimitIncrease）；未装/目录缺值 → null（fail-closed，不猜默认值）。
+ */
+export function pitchDeviceBonus(deviceIds: Iterable<number>, catalog: PitchDeviceCatalog | null | undefined) {
+  const ids = new Set(deviceIds)
+  if (!ids.has(122)) return null
+  const item = catalog?.devices?.find((device) => device.id === 122)
+  const params = item?.script?.params?.bonusValues
+  const up = Number(params?.upperPitchLimitIncrease)
+  const down = Number(params?.lowerPitchLimitIncrease)
+  if (!Number.isFinite(up) || !Number.isFinite(down)) return null
+  return { up, down }
+}
+
+/**
+ * 回放装备真值只属于该枪记录的目标车：当前目标必须与 `target_tank_id` 一致。
+ * 记录/当前目标缺失或非正整数时返回 false（fail-closed，不继承旧目标的装备真值）。
+ */
+export function recordedTargetMatchesShot(
+  shot: { target_tank_id?: unknown } | null | undefined,
+  targetId: unknown,
+) {
+  const shotTarget = Number(shot?.target_tank_id)
+  const selected = Number(targetId)
+  return Number.isInteger(shotTarget) && shotTarget > 0 && shotTarget === selected
+}
+
 /**
  * 回放装配 id 集合（`shooter_equipment.raw`，Type5 九字节、0=空槽）→ 装备槽位选择
  * （0=左候选 / 1=右候选 / null=空）。线上串**变长且空槽省略**，槽位信息不存在——
