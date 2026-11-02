@@ -372,7 +372,10 @@ watch([pitchDeviceAvailable, pitchFromModulesKnown], ([available, known]) => {
   viewer?.setPitchDeviceAvailable?.(available)
   if (!available && known && route.query.eqpitch != null) {
     replaceArmorSetupQuery(query => { delete query.eqpitch })
-    viewer?.setEquipmentOverride?.('pitch', false)
+    // 必须回到 null（撤销覆盖），不能写 false：effectivePitchDevice 的优先级是
+    // equipmentOverride.pitch != null 即直接采用——显式 false 会永久压住后续
+    // 恢复的 recorded target truth（切走再切回原目标时拖炮不再得到 +4°/+3°）。
+    viewer?.setEquipmentOverride?.('pitch', null)
   }
 })
 

@@ -68,7 +68,7 @@ beforeEach(() => {
   mocks.modules.mockReset().mockResolvedValue({ tanks: {} })
   mocks.fetch.mockResolvedValue({ shots })
   mocks.query.mockImplementation(async shot => ({ view: 'agent-armor', shot: String(shot.index), tank: String(shot.target_tank_id) }))
-  mocks.init.mockImplementation(options => { const scene = { destroy: vi.fn(), options, setPitchDeviceBonus: vi.fn(), setPitchDeviceAvailable: vi.fn() }; scenes.push(scene); options.onLoadState({ state: 'ready' }); return scene })
+  mocks.init.mockImplementation(options => { const scene = { destroy: vi.fn(), options, setPitchDeviceBonus: vi.fn(), setPitchDeviceAvailable: vi.fn(), setEquipmentOverride: vi.fn() }; scenes.push(scene); options.onLoadState({ state: 'ready' }); return scene })
 })
 afterEach(() => {
   mounted.forEach(w => w.unmount()); mounted.length = 0
@@ -265,6 +265,39 @@ describe('122 回放真值的目标身份', () => {
       .toContainEqual({ up: 4, down: 3 })
     expect([scene.options.pitchDeviceAvailable, ...scene.setPitchDeviceAvailable.mock.calls.map(([v]) => v)])
       .toContain(true)
+  })
+
+  it('切到不支持 122 的车清覆盖时恢复 null（不写死 false），切回原目标 122 可再恢复', async () => {
+    // review P2：清理时若写 setEquipmentOverride('pitch', false)，effectivePitchDevice
+    // 的 `override != null 即采用` 会永久压住 after-switch-back 的 recorded truth。
+    mocks.fetch.mockResolvedValue({
+      shots: [{ ...shots[0], target_equipment: { improved_pitch_limits: true } }],
+    })
+    mocks.tank.mockResolvedValue({
+      nation: 'germany',
+      shells: [{ type: 'ap', damage: 400, penetration: 200 }],
+    })
+    mocks.devices.mockResolvedValue(pitchCatalog)
+    mocks.modules.mockResolvedValue({
+      tanks: {
+        'Type71_stem': { tankId: 2, optDevicePreset: 'AlternatePitchGrouserPreset' },
+        'Plain_stem': { tankId: 3, optDevicePreset: 'defaultPreset' },
+      },
+    })
+    const { router } = await setup({ query: { view: 'agent-armor', shot: '6', tank: '2', eqpitch: '1' } })
+    await flushPromises()
+    const scene = scenes.at(-1)
+    // 切到不支持 122 的目标：URL 覆盖被清，场景覆盖必须回 null（不是 false）
+    mocks.init.mock.calls.at(-1)[0].onTankSelection({ shooter: 1, target: 3 })
+    await flushPromises()
+    expect(router.currentRoute.value.query.eqpitch).toBeUndefined()
+    const pitchCalls = scene.setEquipmentOverride.mock.calls.filter(([kind]) => kind === 'pitch')
+    expect(pitchCalls.some(([, value]) => value === false)).toBe(false)
+    expect(pitchCalls.at(-1)).toEqual(['pitch', null])
+    // 切回原目标：可用性随真值恢复（覆盖已撤销，不再被 stale false 压住）
+    mocks.init.mock.calls.at(-1)[0].onTankSelection({ shooter: 1, target: 2 })
+    await flushPromises()
+    expect(scene.setPitchDeviceAvailable.mock.calls.at(-1)[0]).toBe(true)
   })
 
   it('切到另一辆支持 122 但无装备记录的车不继承原目标真值', async () => {

@@ -413,6 +413,30 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
     })
   })
 
+  it('配置器选了 122（改进型垂直稳定器）→ 装甲查看器入口携带 eqpitch=1', async () => {
+    // review P2：装甲查看器初始化 122 what-if 只读 eqpitch，不从 dev= 推导。
+    // 预设 AlternatePitchGrouserPreset 槽位 2 左 = improvedPitchLimitsSystem（设备 122）；
+    // dev 编码里 '0' = 左槽、'1' = 右槽，故第 3 位 '0' 即勾选该槽位。
+    const fixture = moduleFixture()
+    fixture.optDevicePreset = 'AlternatePitchGrouserPreset'
+    research.loadTankModules.mockResolvedValue({ tanks: { 'IS-7': fixture } })
+    const { wrapper, router } = await mountAt({ tank: '999', dev: '--0' })
+    await wrapper.find('[data-testid="tank-open3d"]').trigger('click')
+    await flushPromises()
+    const query = router.currentRoute.value.query
+    expect(query.view).toBe('agent-armor')
+    expect(query.dev).toBe('--0')
+    expect(query.eqpitch).toBe('1')
+  })
+
+  it('配置器未选 122 → 入口不带 eqpitch（不把无槽位选项带进装甲页）', async () => {
+    const { wrapper, router } = await mountAt({ tank: '999' })
+    await wrapper.find('[data-testid="tank-open3d"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.view).toBe('agent-armor')
+    expect(router.currentRoute.value.query.eqpitch).toBeUndefined()
+  })
+
   it('模块对号成立时渲染配置面板；默认顶级配置，参数区用引擎值 + 上次值 delta（BK useDelta）', async () => {
     const { wrapper } = await mountAt({ tank: '999' })
     expect(wrapper.find('[data-testid="tank-configurator"]').exists()).toBe(true)

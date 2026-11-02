@@ -532,6 +532,13 @@ function open3d() {  // 审计 3D-09：在当前标签页打开装甲查看器�
         prov: setup.value.provisions.join(','),
         ...(deviceIds.value.has(103) ? { eqcal: '1' } : {}),
         ...(deviceIds.value.has(110) ? { eqenh: '1' } : {}),
+        // 122 改进型垂直稳定器：装甲查看器初始化 122 what-if 读的是 eqpitch，
+        // 只带 dev= 不会自动推导——配置器选了 122 必须折成 eqpitch=1，否则
+        // 进入装甲页后拖炮仍按基础俯仰扇区限制。
+        ...(deviceIds.value.has(122) ? { eqpitch: '1' } : {}),
+        // 122 改进型垂直稳定器：装甲查看器初始化 122 what-if 读的是 eqpitch，
+        // 只带 dev= 不会自动推导——配置器选了 122 必须折成 eqpitch=1，否则
+        // 进入装甲页后拖炮仍按基础俯仰扇区限制。
       }
     : {}
   router.push({
