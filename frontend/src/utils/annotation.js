@@ -327,6 +327,12 @@ function pathLength(points) {
 function clipPenByEraser(points, eraserPoints, radius) {
   if (!Array.isArray(points) || points.length < 2) return null
   const validNormal = (n) => n && Number.isFinite(n.x) && Number.isFinite(n.y) && Number.isFinite(n.z)
+  const copyPoint = (p) => {
+    const out = { x: p.x, y: p.y }
+    if (Number.isFinite(p.surfaceY)) out.surfaceY = p.surfaceY
+    if (validNormal(p.surfaceN)) out.surfaceN = { x: p.surfaceN.x, y: p.surfaceN.y, z: p.surfaceN.z }
+    return out
+  }
   const cleanPoints = []
   for (const point of points) {
     if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) continue
@@ -337,7 +343,8 @@ function clipPenByEraser(points, eraserPoints, radius) {
       if (!validNormal(previous.surfaceN) && validNormal(point.surfaceN)) previous.surfaceN = point.surfaceN
       continue
     }
-    cleanPoints.push(point)
+    // cleanup 必须脱离原 annotation：duplicate merge 会写回，不能让 no-op 污染 history。
+    cleanPoints.push(copyPoint(point))
   }
   if (cleanPoints.length < 2) return null
   const cleanEraser = []
@@ -368,6 +375,28 @@ function clipPenByEraser(points, eraserPoints, radius) {
     current = []
   }
   const anchorY = (p) => (Number.isFinite(p.surfaceY) ? p.surfaceY : null)
+  const normalAt = (p, q, k) => {
+    const np = validNormal(p.surfaceN) ? p.surfaceN : null
+    const nq = validNormal(q.surfaceN) ? q.surfaceN : null
+    if (!np && !nq) return null
+    let nx = 0
+    let ny = 0
+    let nz = 0
+    if (np && nq) {
+      nx = np.x + (nq.x - np.x) * k
+      ny = np.y + (nq.y - np.y) * k
+      nz = np.z + (nq.z - np.z) * k
+    } else {
+      const n = np || nq
+      nx = n.x
+      ny = n.y
+      nz = n.z
+    }
+    const len = Math.hypot(nx, ny, nz)
+    if (!(len > 1e-6)) return null
+    // surfaceN 是 scene/world normal；eraser/stroke 坐标是 semantic XZ（x 取负）。
+    return { x: -nx / len, y: ny / len, z: nz / len }
+  }
   // eraser 的 semantic capsule 仍是 2D；这里只加一层 hit gate：同 XZ 不同 surface 层不互相擦。
   const segmentLayerMatch = (a, b, c, d, lo, hi) => {
     const ay = anchorY(a)
@@ -388,13 +417,19 @@ function clipPenByEraser(points, eraserPoints, radius) {
     if (len2 > 1e-12) u = Math.max(0, Math.min(1, ((sx - c.x) * ex + (sz - c.y) * ez) / len2))
     const sy = ay + (by - ay) * t
     const ey = cy + (dy - cy) * u
-    return Math.abs(sy - ey) <= ANNOT_ERASE_LAYER_EPS
-  }
-  const copyPoint = (p) => {
-    const out = { x: p.x, y: p.y }
-    if (Number.isFinite(p.surfaceY)) out.surfaceY = p.surfaceY
-    if (validNormal(p.surfaceN)) out.surfaceN = { x: p.surfaceN.x, y: p.surfaceN.y, z: p.surfaceN.z }
-    return out
+    const strokePoint = { x: sx, z: sz }
+    const eraserPoint = { x: c.x + ex * u, z: c.y + ez * u }
+    const sn = normalAt(a, b, t)
+    const en = normalAt(c, d, u)
+    if (!sn || !en) return Math.abs(sy - ey) <= ANNOT_ERASE_LAYER_EPS
+    // 同一 plane 在不同 XZ 的 raw Y 可以差很多；必须把 eraser plane 延伸到 stroke XZ，
+    // 再做反方向检查，避免平行但不同高度的 deck 被误判成同一层。
+    const expectedStrokeY = ey
+      - (en.x * (strokePoint.x - eraserPoint.x) + en.z * (strokePoint.z - eraserPoint.z)) / en.y
+    const expectedEraserY = sy
+      - (sn.x * (eraserPoint.x - strokePoint.x) + sn.z * (eraserPoint.z - strokePoint.z)) / sn.y
+    return Math.abs(sy - expectedStrokeY) <= ANNOT_ERASE_LAYER_EPS
+      && Math.abs(ey - expectedEraserY) <= ANNOT_ERASE_LAYER_EPS
   }
   const lerp = (a, b, t) => {
     const out = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }

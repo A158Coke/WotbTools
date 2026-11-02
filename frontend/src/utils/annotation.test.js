@@ -260,6 +260,40 @@ describe('applyEraser (semantic capsule)', () => {
     expect(result[0]).toBe(transition)
   })
 
+  it('erases a stroke on the same 45° plane even when raw surfaceY differs by XZ offset', () => {
+    const normal = { x: 0, y: Math.SQRT1_2, z: Math.SQRT1_2 }
+    const bridge = pen([
+      { x: 0, y: 1, surfaceY: 7, surfaceN: normal },
+      { x: 10, y: 1, surfaceY: 7, surfaceN: normal },
+    ])
+    const result = applyEraser([bridge], [{ x: 5, y: 0, surfaceY: 8, surfaceN: normal }], 1.1)
+    expect(result).toHaveLength(2)
+    expect(result.every((ann) => ann !== bridge)).toBe(true)
+  })
+
+  it('does not erase a parallel plane 2m away on the same 45° normal', () => {
+    const normal = { x: 0, y: Math.SQRT1_2, z: Math.SQRT1_2 }
+    const bridge = pen([
+      { x: 0, y: 1, surfaceY: 7, surfaceN: normal },
+      { x: 10, y: 1, surfaceY: 7, surfaceN: normal },
+    ])
+    const annotations = [bridge]
+    const result = applyEraser(annotations, [{ x: 5, y: 0, surfaceY: 10, surfaceN: normal }], 1.1)
+    expect(result).toBe(annotations)
+    expect(result).toHaveLength(1)
+    expect(result[0]).toBe(bridge)
+  })
+
+  it('does not mutate annotation points on a no-op eraser pass', () => {
+    const points = [{ x: 0, y: 0 }, { x: 0, y: 0, surfaceY: 10 }]
+    const bridge = pen(points)
+    const annotations = [bridge]
+    const snapshot = structuredClone(annotations)
+    const result = applyEraser(annotations, [{ x: 100, y: 100 }], 1)
+    expect(result).toBe(annotations)
+    expect(annotations).toEqual(snapshot)
+  })
+
   it('treats a long eraser segment as a capsule, not as sparse points', () => {
     const result = applyEraser([pen([{ x: 0, y: 0 }, { x: 10, y: 0 }])], [{ x: 5, y: -50 }, { x: 5, y: 50 }], 1)
     expect(result).toHaveLength(2)
