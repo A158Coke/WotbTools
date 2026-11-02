@@ -77,3 +77,7 @@ frontend/dist-android/
 
 # 本地工具/运行时落到工作区的目录，绝不入库（2026-10-16 误提交事故的护栏）
 /Python/
+
+# maven-invoker 原地运行 IT（java/src/it）产生的临时产物
+java/src/it/**/build.log
+java/src/it/**/interpolated-pom.xml
