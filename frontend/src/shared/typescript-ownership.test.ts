@@ -3,6 +3,7 @@ import { join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
+import { stylelintBaselineViolations } from '../../scripts/check-typescript-baseline.mjs'
 import legacy from '../../typescript.legacy.json'
 
 // typescript.legacy.json 必须等于当前源码；只减不增由 scripts/check-typescript-baseline.mjs 在 CI 中比较 base 与 head。
@@ -82,5 +83,21 @@ describe('TypeScript migration baseline', () => {
     expect(escapeHatches('sample.ts', source)).toEqual({ any: 6, asUnknownAs: 2 })
     expect(escapeHatches('sample.vue', '<template><a :b="c as any" /></template><script setup lang="ts">let x: any</script>'))
       .toEqual({ any: 1, asUnknownAs: 0 })
+  })
+})
+
+describe('stylelint legacy baseline', () => {
+  // 这两个用例锁定 check-typescript-baseline.mjs 的 stylelintBaselineViolations：
+  // 名单只减不增——新增豁免必须红，删除与持平必须绿（故意违规的合成输入，不依赖仓库现状）。
+  it('rejects a path added to the legacy list', () => {
+    const base = { files: ['src/App.vue'] }
+    const head = { files: ['src/App.vue', 'src/components/NewThing.vue'] }
+    expect(stylelintBaselineViolations(base, head)).toEqual(['src/components/NewThing.vue: 新增了 stylelint legacy 豁免'])
+  })
+
+  it('allows removal and stability', () => {
+    const base = { files: ['src/App.vue', 'src/components/Old.vue'] }
+    expect(stylelintBaselineViolations(base, { files: ['src/App.vue'] })).toEqual([])
+    expect(stylelintBaselineViolations(base, base)).toEqual([])
   })
 })
