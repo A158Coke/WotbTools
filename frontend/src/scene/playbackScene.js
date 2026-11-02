@@ -2469,6 +2469,53 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     rebuildAnnotationProjection();
   }
 
+  // Issue #857 Step 0 测量面（仅 ?debug；纯读取、无行为）：跨档地形/场景资源基线。
+  // 控制台 `__terrainQuality()` 返回当前 quality、terrain field 身份与几何摘要（FNV-1a
+  // 哈希 + quads/overBudget）、走廊掩码 texel、场景 GLB 装配规模与 renderer 资源计数；
+  // 四档各调一次即 Step 0 baseline（性能 Outside Judge 用）。field 哈希按 field 身份
+  // 缓存（26 万 float 全量扫不必每次重算）。
+  if (DEBUG) {
+    const __tqFieldHashCache = new WeakMap();
+    const __tqHash = (typed, seed) => {
+      let h = seed | 0;
+      const bytes = new Uint8Array(typed.buffer, typed.byteOffset, typed.byteLength);
+      for (let k = 0; k < bytes.length; k++) { h = Math.imul(h ^ bytes[k], 0x01000193) | 0; }
+      return (h >>> 0).toString(16);
+    };
+    window.__terrainQuality = () => {
+      const build = terrainMesh && terrainMesh.geometry && terrainMesh.geometry.userData.terrainBuild;
+      let maskTexels = 0;
+      if (terrainRefineMask) for (let k = 0; k < terrainRefineMask.length; k++) maskTexels += terrainRefineMask[k];
+      let meshCount = 0, sceneryTris = 0;
+      if (mapScenery) mapScenery.traverse((o) => {
+        if (!o.isMesh) return;
+        meshCount++;
+        const idx = o.geometry && o.geometry.index;
+        const verts = o.geometry && o.geometry.attributes.position ? o.geometry.attributes.position.count : 0;
+        sceneryTris += ((idx ? idx.count : verts) / 3) * (o.isInstancedMesh ? o.count : 1);
+      });
+      return {
+        quality: QKEY,
+        terrain: build ? {
+          n: heightMeta && heightMeta.size, span: terrainSpanOf(),
+          fieldHash: (() => {
+            let h = __tqFieldHashCache.get(heightField);
+            if (!h) { h = __tqHash(heightField, 0x811c9dc5); __tqFieldHashCache.set(heightField, h); }
+            return h;
+          })(),
+          geometryHash: __tqHash(build.positions, 0x811c9dc5) + '-' + __tqHash(terrainMesh.geometry.index.array, 0x811c9dc5),
+          quads: build.quads, overBudget: build.overBudget,
+          refineMaskTexels: terrainRefineMask ? maskTexels : null,
+        } : null,
+        scenery: { loaded: !!mapScenery, meshCount, triangles: Math.round(sceneryTris) },
+        renderer: {
+          calls: renderer.info.render.calls, triangles: renderer.info.render.triangles,
+          geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures,
+        },
+      };
+    };
+  }
+
   function teamColor(v) {
     const f = DATA.meta.friendly_team, t = v.def.team;
     if (t === 0 || f === 0) return COLOR_UNKNOWN;   // 中立＝白（green / red / white 口径）
@@ -5600,6 +5647,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (DEBUG) {
         delete window.__scene; delete window.__camera; delete window.__controls; delete window.__setFollow; delete window.__renderer;
         delete window.__pbV; delete window.__gdbg; delete window.__battleFx;
+        delete window.__terrainQuality;
         delete window.__destructStage; delete window.__destructDebug;
         delete window.__waterCoast;
       }
