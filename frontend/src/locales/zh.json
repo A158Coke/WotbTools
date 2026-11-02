@@ -1054,6 +1054,9 @@
     "prev": "上一页",
     "next": "下一页",
     "pageInfo": "第 {page}/{total} 页 · 共 {items} 个用户",
+    "jumpLabel": "跳转页码",
+    "jumpPlaceholder": "页码",
+    "jumpGo": "前往",
     "size": "每页"
   },
   "adminPreview": {

@@ -1054,6 +1054,9 @@
     "prev": "Prev",
     "next": "Next",
     "pageInfo": "Page {page}/{total} · {items} users",
+    "jumpLabel": "Go to page",
+    "jumpPlaceholder": "Page",
+    "jumpGo": "Go",
     "size": "Per page"
   },
   "adminPreview": {

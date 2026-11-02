@@ -31,6 +31,7 @@ const limit = ref(50)
 const page = ref(1)
 const totalPages = ref(0)
 const totalItems = ref(null)
+const jumpPage = ref('')
 const uploading = ref(false)
 const uploadMsg = ref('')
 const uploadOk = ref(false)
@@ -201,6 +202,12 @@ function pagerLabel(current, total, items) {
   return t('hofPager.page', { page: current })
 }
 
+/** 跳页目标：只有 1..totalPages 的整数合法（空值 / 非整数 / 越界返回 null，调用方据此不发请求）。 */
+function jumpTargetPage(raw, total) {
+  const value = Number(raw)
+  return Number.isInteger(value) && value >= 1 && value <= total ? value : null
+}
+
 function uniqueValues(values) {
   return [...new Set(values.filter(Boolean))].sort()
 }
@@ -221,6 +228,14 @@ function goPage(p) {
   page.value = p
   load()
   scrollBoardIntoView()
+}
+
+/** 单场直接跳页：非法值 / 当前页不发请求；URL 的 page 由 load() 内的 writeHofQuery() 同步。 */
+function goJumpPage() {
+  const target = jumpTargetPage(jumpPage.value, totalPages.value)
+  if (target == null || target === page.value) return
+  jumpPage.value = ''
+  goPage(target)
 }
 
 async function upload(file) {
@@ -504,6 +519,7 @@ const h100Error = ref('')
 const h100Page = ref(1)
 const h100TotalPages = ref(0)
 const h100TotalItems = ref(null)
+const h100JumpPage = ref('')
 const h100Size = 50
 let h100LoadGeneration = 0
 
@@ -609,6 +625,14 @@ function goHundredPage(p) {
   h100Page.value = p
   loadHundredList()
   scrollBoardIntoView()
+}
+
+/** 百场直接跳页：与单场同一校验；URL 的 page 由 loadHundredList() 内的 writeHofQuery() 同步。 */
+function goHundredJumpPage() {
+  const target = jumpTargetPage(h100JumpPage.value, h100TotalPages.value)
+  if (target == null || target === h100Page.value) return
+  h100JumpPage.value = ''
+  goHundredPage(target)
 }
 
 // ── 百场：提交弹窗 ──────────────────────────────────────────────
@@ -863,6 +887,7 @@ const mark3Error = ref('')
 const mark3Page = ref(1)
 const mark3TotalPages = ref(0)
 const mark3TotalItems = ref(null)
+const mark3JumpPage = ref('')
 const mark3Size = 50
 let mark3LoadGeneration = 0
 
@@ -962,6 +987,14 @@ function goMark3Page(nextPage) {
   mark3Page.value = nextPage
   loadMark3List()
   scrollBoardIntoView()
+}
+
+/** 三环直接跳页：与单场同一校验；URL 的 page 由 loadMark3List() 内的 writeHofQuery() 同步。 */
+function goMark3JumpPage() {
+  const target = jumpTargetPage(mark3JumpPage.value, mark3TotalPages.value)
+  if (target == null || target === mark3Page.value) return
+  mark3JumpPage.value = ''
+  goMark3Page(target)
 }
 
 // ── 三环：人工提交弹窗 ─────────────────────────────────────────
@@ -1479,6 +1512,21 @@ watch(() => hofAvailability.value.available, (available, previous) => {
       <div v-if="rows.length && !error" class="pagination" data-testid="hof-pager">
         <button v-if="totalPages > 1" type="button" :disabled="page <= 1" @click="goPage(page - 1)">{{ $t('hof.prev') }}</button>
         <span aria-live="polite">{{ pagerLabel(page, totalPages, totalItems) }}</span>
+        <span v-if="totalPages > 1" class="page-jump">
+          <input
+            v-model="jumpPage"
+            class="page-jump-input"
+            type="number"
+            inputmode="numeric"
+            min="1"
+            :max="totalPages"
+            step="1"
+            :aria-label="$t('hofPager.jumpLabel')"
+            :placeholder="$t('hofPager.jumpPlaceholder')"
+            @keydown.enter.prevent="goJumpPage"
+          />
+          <button type="button" @click="goJumpPage">{{ $t('hofPager.jumpGo') }}</button>
+        </span>
         <button v-if="totalPages > 1" type="button" :disabled="page >= totalPages" @click="goPage(page + 1)">{{ $t('hof.next') }}</button>
       </div>
     </div>
@@ -1595,6 +1643,21 @@ watch(() => hofAvailability.value.available, (available, previous) => {
       <div v-if="h100Rows.length && !h100Error" class="pagination" data-testid="hundred-pager">
         <button v-if="h100TotalPages > 1" type="button" :disabled="h100Page <= 1" @click="goHundredPage(h100Page - 1)">{{ $t('hundred.prev') }}</button>
         <span aria-live="polite">{{ pagerLabel(h100Page, h100TotalPages, h100TotalItems) }}</span>
+        <span v-if="h100TotalPages > 1" class="page-jump">
+          <input
+            v-model="h100JumpPage"
+            class="page-jump-input"
+            type="number"
+            inputmode="numeric"
+            min="1"
+            :max="h100TotalPages"
+            step="1"
+            :aria-label="$t('hofPager.jumpLabel')"
+            :placeholder="$t('hofPager.jumpPlaceholder')"
+            @keydown.enter.prevent="goHundredJumpPage"
+          />
+          <button type="button" @click="goHundredJumpPage">{{ $t('hofPager.jumpGo') }}</button>
+        </span>
         <button v-if="h100TotalPages > 1" type="button" :disabled="h100Page >= h100TotalPages" @click="goHundredPage(h100Page + 1)">{{ $t('hundred.next') }}</button>
       </div>
     </div>
@@ -1724,6 +1787,21 @@ watch(() => hofAvailability.value.available, (available, previous) => {
       <div v-if="mark3Rows.length && !mark3Error" class="pagination" data-testid="mark3-pager">
         <button v-if="mark3TotalPages > 1" type="button" :disabled="mark3Page <= 1" @click="goMark3Page(mark3Page - 1)">{{ $t('mark3.prev') }}</button>
         <span aria-live="polite">{{ pagerLabel(mark3Page, mark3TotalPages, mark3TotalItems) }}</span>
+        <span v-if="mark3TotalPages > 1" class="page-jump">
+          <input
+            v-model="mark3JumpPage"
+            class="page-jump-input"
+            type="number"
+            inputmode="numeric"
+            min="1"
+            :max="mark3TotalPages"
+            step="1"
+            :aria-label="$t('hofPager.jumpLabel')"
+            :placeholder="$t('hofPager.jumpPlaceholder')"
+            @keydown.enter.prevent="goMark3JumpPage"
+          />
+          <button type="button" @click="goMark3JumpPage">{{ $t('hofPager.jumpGo') }}</button>
+        </span>
         <button v-if="mark3TotalPages > 1" type="button" :disabled="mark3Page >= mark3TotalPages" @click="goMark3Page(mark3Page + 1)">{{ $t('mark3.next') }}</button>
       </div>
     </div>
@@ -2057,10 +2135,25 @@ span.lb-card-tank { min-height: 0; color: var(--color-text-secondary); }
 .lb-upload-card .filebtn.lb-uploading { opacity: .6; pointer-events: none; }
 .lb-upload-msg { margin-top: 10px; font-size: 13px; text-align: center; }
 .lb-upload-msg.err { color: var(--error); }
-.pagination { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 16px 0; font-size: .85rem; }
+.pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 12px; padding: 16px 0; font-size: .85rem; }
 .pagination button { padding: 6px 14px; border: 1px solid var(--border-ghost); border-radius: 7px; background: var(--bg-card2); color: var(--text-label); cursor: pointer; font-family: inherit; font-size: .82rem; }
 .pagination button:disabled { opacity: .4; cursor: not-allowed; }
 .pagination button:hover:not(:disabled) { background: var(--bg-card-hover); }
+/* 直接跳页：输入框与相邻按钮同高同字号，宽度按 3–5 位页码设计（含数字输入的步进箭头） */
+.page-jump { display: inline-flex; align-items: center; gap: 8px; }
+.page-jump input {
+  width: 5.5rem;
+  padding: 6px 10px;
+  border: 1px solid var(--border-ghost);
+  border-radius: 7px;
+  background: var(--bg-card2);
+  color: var(--text-label);
+  font-family: inherit;
+  font-size: .82rem;
+  text-align: center;
+}
+.page-jump input:focus-visible,
+.page-jump button:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 
 /* ── 百场 Tab ─────────────────────────────────── */
 .h100-vehicle-filter, .mark3-vehicle-filter { flex-wrap: wrap; }
