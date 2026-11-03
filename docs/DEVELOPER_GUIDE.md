@@ -634,6 +634,7 @@ Frontend 的 TX1/TX2 发布在切换线上文件或容器前，校验实际 Busi
   `observability.yml` 分别拥有两个 PostgreSQL 和 Yecao 观测运行时/Grafana root。
   各 workflow 自己执行 root 专属 safety guard、apply 后 clean second-plan/readiness；observability
   失败仍按现有契约显示为 degraded，不改变应用服务结果。
+- SAST workflow `codeql.yml`（issue #738）：push main + 每周 + dispatch，observe 阶段不进 required gate；第三方 action 全部 pin 到 immutable SHA
 - 三个数据更新 workflow (`update-tankopedia.yml`、`update-equipment.yml`、`update-crew-skills.yml`)
   保持独立，生成 PR 后核对 open PR 的 main base、自动化 head branch 和精确 head SHA，再 dispatch
   `ci-gate.yml`；CI 通过只读 GitHub API 核对该 run 仍验证同一 PR head。它们不自动 merge。

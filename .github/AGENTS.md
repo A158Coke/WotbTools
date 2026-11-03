@@ -24,6 +24,6 @@
 
 ## Workflow 清单（40）
 
-`ci-gate.yml`、15 个 reusable `ci-<owner>.yml` workflow、`business-api.yml`、`frontend.yml`、`frontend-replica.yml`、`caddy.yml`、`keycloak.yml`、`ai-service.yml`、`business-postgres.yml`、`keycloak-postgres.yml`、`observability.yml`、`alloy-tx.yml`、`komodo-controller.yml`、`komodo-periphery.yml`、`asset-origin.yml`、`production-worker.yml`、`tx-runtime-check.yml`、`android-release.yml`、`android-auto-publish.yml`、`android-offload-probe.yml`、`database-backup.yml`、`cleanup-images.yml`、`prod-diagnostics.yml`、`update-tankopedia.yml`、`update-equipment.yml` 与 `update-crew-skills.yml`。
+`ci-gate.yml`、15 个 reusable `ci-<owner>.yml` workflow、`business-api.yml`、`frontend.yml`、`frontend-replica.yml`、`caddy.yml`、`keycloak.yml`、`ai-service.yml`、`business-postgres.yml`、`keycloak-postgres.yml`、`observability.yml`、`alloy-tx.yml`、`komodo-controller.yml`、`komodo-periphery.yml`、`asset-origin.yml`、`production-worker.yml`、`tx-runtime-check.yml`、`android-release.yml`、`android-auto-publish.yml`、`android-offload-probe.yml`、`database-backup.yml`、`cleanup-images.yml`、`prod-diagnostics.yml`、`update-tankopedia.yml`、`update-equipment.yml` 与 `update-crew-skills.yml`、`codeql.yml`（CodeQL SAST，push main + 每周 + dispatch；observe 阶段不进 required gate）。
 
 一次性 `tx-gitee-build-path-validation.yml` benchmark 已退役：Business API 与 Frontend 拥有 production Gitee exact-SHA build/TCR publication 路径。已删除的 workflow 文件可以保留历史 Actions run；这些记录不是激活入口。按职责维护 reusable owner CI、release、deployment、data-update 与周期性/手动操作 workflow，不要按运行次数决定。

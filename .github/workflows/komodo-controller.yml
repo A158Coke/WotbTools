@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
@@ -61,7 +61,7 @@ jobs:
       # `/opt/komodo/incoming`, and the SHA directory must all be real directories
       # (mode 700) before SCP is allowed to write into them.
       - name: Prepare safe Komodo staging root on Yecao
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
@@ -75,7 +75,7 @@ jobs:
           KOMODO_STAGING_ACTION: prepare
 
       - name: Stage exact Komodo controller inputs on Yecao
-        uses: appleboy/scp-action@v1
+        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
@@ -100,7 +100,7 @@ jobs:
       # All mutation logic lives in the staged `reconcile.sh`; this step only
       # forwards the exact SHA and the owner's secrets under the host lock.
       - name: Reconcile Core, apply the exact DNS plan, and verify
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
@@ -128,7 +128,7 @@ jobs:
       # `/opt/komodo/backups` are out of reach here.
       - name: Cleanup staged Komodo controller inputs
         if: always()
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}

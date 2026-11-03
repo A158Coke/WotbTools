@@ -33,7 +33,7 @@ jobs:
       base_sha: ${{ steps.revisions.outputs.base_sha }}
       head_sha: ${{ steps.revisions.outputs.head_sha }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
       - name: Reject tracked local development plan
@@ -170,7 +170,7 @@ jobs:
       komodo_periphery: ${{ steps.filter.outputs.komodo_periphery }}
       production_worker: ${{ steps.filter.outputs.production_worker }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           ref: ${{ needs.pr_identity.outputs.head_sha }}
           fetch-depth: 0
@@ -178,7 +178,7 @@ jobs:
         env:
           HEAD_SHA: ${{ needs.pr_identity.outputs.head_sha }}
         run: test "$(git rev-parse HEAD)" = "$HEAD_SHA"
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@15192bc058cc28a13dbf6cde61f19e18988b7af6 # v3
         id: filter
         with:
           base: ${{ needs.pr_identity.outputs.base_sha }}

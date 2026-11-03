@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
@@ -73,7 +73,7 @@ jobs:
           bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
       - name: Prepare TX Caddy staging
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         with:
           host: ${{ secrets.TX_VPS_HOST }}
           username: ${{ secrets.TX_VPS_USER }}
@@ -86,7 +86,7 @@ jobs:
             rm -rf -- "$root/deploy.incoming/deploy/tx"
             mkdir -p "$root/deploy.incoming/deploy/tx"
       - name: Stage the TX Caddy configuration and shared runtime contract
-        uses: appleboy/scp-action@v1
+        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1
         with:
           host: ${{ secrets.TX_VPS_HOST }}
           username: ${{ secrets.TX_VPS_USER }}
@@ -107,7 +107,7 @@ jobs:
           bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
       - name: Reconcile and verify Caddy under one TX host lock
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         with:
           host: ${{ secrets.TX_VPS_HOST }}
           username: ${{ secrets.TX_VPS_USER }}
