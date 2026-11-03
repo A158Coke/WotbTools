@@ -325,7 +325,7 @@ assert freshness["env"]["EVENT_SHA"] == "${{ github.sha }}"
 
 apply_step = next(step for step in deploy_steps
                   if step.get("name") == "Reconcile Keycloak, apply realm Tofu, and verify under one host lock")
-assert apply_step["uses"] == "appleboy/ssh-action@v1"
+assert re.search(r"appleboy/ssh-action@[0-9a-f]{40}", apply_step["uses"]), "ssh-action must stay SHA-pinned"
 apply_script = apply_step["with"]["script"]
 assert "exec 9>/opt/wotb-tx/.deploy.lock" in apply_script
 assert "flock -n 9" in apply_script

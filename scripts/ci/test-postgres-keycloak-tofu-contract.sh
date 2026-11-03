@@ -221,7 +221,7 @@ assert "infra/tofu/postgres-keycloak" in ci_text
 # --- never materialized into tfvars or a server env file -------------------
 apply_step = next(step for step in owner_job["steps"]
                   if step.get("name") == "Reconcile runtime, apply exact Keycloak PostgreSQL plan, and verify")
-assert "appleboy/ssh-action@v1" in apply_step["uses"]
+assert re.search(r"appleboy/ssh-action@[0-9a-f]{40}", apply_step["uses"]), "ssh-action must stay SHA-pinned"
 assert "TF_VAR_" not in apply_step["with"]["envs"], "SSH envs must carry runtime names, not TF_VAR names"
 assert apply_step["env"]["KC_POSTGRES_ADMIN_PASSWORD"] == "${{ secrets.TX_KC_POSTGRES_ADMIN_PASSWORD }}"
 assert apply_step["env"]["KC_DB_PASSWORD"] == "${{ secrets.TX_KC_DB_PASSWORD }}"
