@@ -11,6 +11,7 @@
 import * as THREE from 'three'
 import { isLiteDroppedMeshObject, isWaterNode as isWaterNodeRule, sceneHasSkyFlags, strictSurfacesOf } from '../sceneryAssemblyRules.js'
 import { resolveSceneryExtras, makeTexResolvers, assembleSceneryMaterials } from '../sceneryAssembly.js'
+import { sharedOwnedTextures } from '../materialDispose.js'
 import { applyMaterialTextureAnisotropy } from '../sceneryMaterials.js'
 import { pruneForeignVariantsDetailed } from '../variantFilter.js'
 import { makeWaterCoast, buildCorridorRefineMask } from '../groundPass.js'
@@ -133,9 +134,13 @@ export async function assembleMapScenery(gltf, ctx) {
   if (DEBUG) window.__sceneryAniso = { value: aniso, textures: anisoTextures };
   } catch (e) {
     // handoff 前失败（Invariant B）：candidate 尚未挂载、宿主绑定未动——唯一的
-    // cleanup owner 是本函数。heightTex 先于 GLTF 子树释放（两者无共享资源）。
+    // cleanup owner 是本函数。heightTex 由本函数（明确 owner）释放恰一次；子树
+    // 回收时排除 root 外持有者纹理（贴花/水面材质经 uniforms 引用 groundLayers
+    // 分层与 heightTex，不得替 owner 释放——评审 P2 纹理归属）。
     try { waterCoast?.heightTex?.dispose(); } catch (ce) { console.warn('waterCoast 高度纹理清理失败:', ce); }
-    try { ctx.disposeObject3D(gltf.scene); } catch (ce) { console.warn('场景 candidate 清理失败:', ce); }
+    try {
+      ctx.disposeObject3D(gltf.scene, sharedOwnedTextures(groundLayers, waterCoast ? waterCoast.heightTex : null));
+    } catch (ce) { console.warn('场景 candidate 清理失败:', ce); }
     throw e;
   }
 

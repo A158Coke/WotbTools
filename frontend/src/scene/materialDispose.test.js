@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { collectMaterialTextures } from './materialDispose.js'
+import { collectMaterialTextures, sharedOwnedTextures } from './materialDispose.js'
 
 const tex = (id) => ({ isTexture: true, id, dispose: vi.fn() })
 
@@ -18,5 +18,19 @@ describe('collectMaterialTextures', () => {
   it('普通材质无 uniforms 不抛错；空材质返回空集合', () => {
     expect(collectMaterialTextures({}).size).toBe(0)
     expect(collectMaterialTextures({ uniforms: {} }).size).toBe(0)
+  })
+})
+
+describe('sharedOwnedTextures', () => {
+  it('收齐 groundLayers.texs 全部共享纹理与 heightTex；空入参不抛错', () => {
+    const cm = tex(1), lm = tex(2)
+    const h = tex(3)
+    const out = sharedOwnedTextures({ texs: { cm, lm, mask0: null } }, h)
+    expect(out.size).toBe(3)
+    expect(out.has(cm) && out.has(lm) && out.has(h)).toBe(true)
+  })
+  it('无 groundLayers / 无 heightTex 时返回空集合（调用方不必判空）', () => {
+    expect(sharedOwnedTextures(null, null).size).toBe(0)
+    expect(sharedOwnedTextures({ texs: {} }, null).size).toBe(0)
   })
 })

@@ -1459,6 +1459,85 @@ describe('playbackScene 资产发布顺序', () => {
     expect(leaked).toBe(false)
   })
 
+  it('挂载前抛错不替 owner 释放共享纹理：groundLayers cm/lm 不 dispose 且地面仍绑定，heightTex 只释放一次', async () => {
+    // 评审 P2 纹理归属：candidate 贴花材质（makeDecalMaterial colormap/colormapLm）
+    // 与水面材质（makeWaterMaterial uHeightmap）经 uniforms 引用 groundLayers 分层
+    // 与 waterCoast.heightTex——candidate 失败回收必须排除 owner 持有的纹理。
+    window.history.replaceState(null, '', '/?debug&q=low')
+    prepareAssets(['map', 'terrain', 'terrain-meta', 'groundmeta', 'groundtex', 'scenery'])
+    const base = terrainPairFetchStub()
+    vi.stubGlobal('fetch', vi.fn(async (url) => {
+      const u = String(url)
+      if (u.endsWith('groundmeta')) return { ok: true, status: 200, json: async () => groundLayersFixture() }
+      if (u.endsWith('groundtex')) return { ok: true, status: 200, blob: async () => new Blob(['x']) }
+      return base(url)
+    }))
+    // 每张纹理创建即挂 dispose spy（创建早于任何 dispose 时机），事后按身份断言
+    const createdTextures = []
+    vi.spyOn(THREE.TextureLoader.prototype, 'loadAsync').mockImplementation(() => {
+      const t = new THREE.Texture()
+      createdTextures.push(t)
+      vi.spyOn(t, 'dispose')
+      return Promise.resolve(t)
+    })
+    // 注入点：两个材质转换（decal/water）都成功之后、anisotropy（handoff 前最后一步）抛错
+    const sm = await import('./sceneryMaterials.js')
+    vi.spyOn(sm, 'applyMaterialTextureAnisotropy').mockImplementation(() => { throw new Error('late pre-mount boom') })
+    // decal 网格：userData.decal + uv1 ⇒ colormap/colormapLm 绑定 groundLayers.cm/lm
+    const decalGeo = new THREE.BoxGeometry(1, 1, 1)
+    decalGeo.setAttribute('uv1', new THREE.Float32BufferAttribute(new Array(48).fill(0.5), 2))
+    const privateMap = new THREE.Texture()
+    const privateMapDispose = vi.spyOn(privateMap, 'dispose')
+    const decalMat = new THREE.MeshLambertMaterial({ map: privateMap })
+    decalMat.userData.decal = true
+    const decalDispose = vi.spyOn(decalGeo, 'dispose')
+    // water 网格：userData.water 对象 + parser extras ⇒ makeWaterMaterial 绑定 coast.heightTex
+    const waterGeo = new THREE.BoxGeometry(1, 1, 1)
+    const waterMat = new THREE.MeshLambertMaterial()
+    waterMat.userData.water = {}
+    const waterDispose = vi.spyOn(waterGeo, 'dispose')
+    const root = new THREE.Group()
+    root.add(new THREE.Mesh(decalGeo, decalMat), new THREE.Mesh(waterGeo, waterMat))
+    const dataTexDispose = vi.spyOn(THREE.DataTexture.prototype, 'dispose')
+    const shaderMatDispose = vi.spyOn(THREE.ShaderMaterial.prototype, 'dispose')
+    const parser = {
+      json: { materials: [{ extras: { water: { normal: 0, cube: 1 } } }] },
+      associations: new Map([[waterMat, { materials: 0 }]]),
+      getDependency: async () => new THREE.Texture(),   // 水面 normal/cube：candidate 私有
+    }
+    vi.spyOn(GLTFLoader.prototype, 'load').mockImplementationOnce((_url, onLoad) => onLoad({
+      scene: root, parser,
+    }))
+    const { api, store } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['a'], 'a') })
+    expect(store.hasData).toBe(true)
+    // groundLayers 已先于场景装配成功安装（地面材质即真值来源）
+    const groundMat = window.__terrain.material
+    expect(groundMat.isShaderMaterial).toBe(true)
+    const cm = groundMat.uniforms.uCM.value
+    const lm = groundMat.uniforms.uLM.value
+    expect(cm).toBeTruthy()
+    expect(lm).toBeTruthy()
+    // 共享纹理归属地面：dispose 次数为 0，且失败后地面材质仍持有同一实例
+    expect(cm.dispose).toHaveBeenCalledTimes(0)
+    expect(lm.dispose).toHaveBeenCalledTimes(0)
+    expect(groundMat.uniforms.uCM.value).toBe(cm)
+    expect(groundMat.uniforms.uLM.value).toBe(lm)
+    // heightTex 唯一 owner（装配段）显式释放恰一次；经 water 材质 uniforms 的路径被排除
+    expect(dataTexDispose).toHaveBeenCalledTimes(1)
+    // candidate 私有资源：decal/water 两个转换后 ShaderMaterial + 几何 + 私有贴图各释放一次
+    expect(shaderMatDispose).toHaveBeenCalledTimes(2)
+    expect(decalDispose).toHaveBeenCalledTimes(1)
+    expect(waterDispose).toHaveBeenCalledTimes(1)
+    expect(privateMapDispose).toHaveBeenCalledTimes(1)
+    // candidate 不残留在场景树
+    let leaked = false
+    window.__scene.traverse((o) => { if (o === root) leaked = true })
+    expect(leaked).toBe(false)
+    expect(store.assetDegraded).toBe(true)
+    expect(store.assetIssues.some((i) => i.key === 'scenery' && i.status === 'failed' && i.detail.includes('late pre-mount boom'))).toBe(true)
+  })
+
 
   it('完整场景挂载后装配失败时回滚场景及派生状态', async () => {
     window.history.replaceState(null, '', '/?debug&q=low')

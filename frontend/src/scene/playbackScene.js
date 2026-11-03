@@ -62,7 +62,7 @@ import { assembleMapScenery } from './playback/mapAssets.js'
 import { applyMapLighting as applyMapLightingCore, resetMapLighting as resetMapLightingCore } from './mapLighting.js'
 //（pickDebug 的纯函数随拾取报告器移入 playback/pickReport.js；buildMeshOwnerMap 随场景
 // 装配块移入 playback/mapAssets.js）
-import { collectMaterialTextures } from './materialDispose.js'
+import { collectMaterialTextures, sharedOwnedTextures } from './materialDispose.js'
 import { applyTankDestroyedVisual, destroyedVisualAmount, disposeTankDestroyedVisual, prepareTankDestroyedVisual } from './tankDestroyedVisual.js'
 import { lifeAt, defLifeAt } from '../utils/battlePlaybackV2.ts'
 //（pruneForeignVariantsDetailed 随场景装配块移入 playback/mapAssets.js）
@@ -1514,7 +1514,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (sceneryBaseline) {
         if (mapScenery && mapScenery !== sceneryBaseline.mapScenery) {
           scene.remove(mapScenery);
-          disposeObject3D(mapScenery);
+          // 候选贴花/水面材质经 uniforms 引用 groundLayers 分层与新 waterTexDispose
+          //（后者由下一行 owner 显式释放恰一次）——排除后只回收 candidate 私有资源
+          disposeObject3D(mapScenery, sharedOwnedTextures(groundLayers, waterTexDispose));
         }
         if (waterTexDispose && waterTexDispose !== sceneryBaseline.waterTexDispose) waterTexDispose.dispose();
         ({ mapScenery, waterTexDispose, animLayerMats, terrainRefineMask, occlGrid,
@@ -5039,10 +5041,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
 
   // 递归收集 Object3D 子树的 geometry / material / texture 并各自 dispose 一次
   //（Set 去重：clone 共享的模板资源多路径命中只 dispose 一遍；three dispose 幂等，
-  // 此处集合化只为省去重复遍历开销）
-  function disposeObject3D(root, shared = null) {
+  // 此处集合化只为省去重复遍历开销）。
+  // 第二参数（评审 P2 纹理归属，原占位参数转正）：root 外持有者的纹理排除集
+  //（materialDispose.sharedOwnedTextures）——candidate 材质经 uniforms 引用的
+  // groundLayers 分层 / waterCoast 高度纹理不在此释放，释放责任在原 owner。
+  function disposeObject3D(root, sharedTexs = null) {
     const geos = new Set(), mats = new Set(), texs = new Set();
-    void shared;   // 去重由调用方的 disposed 集合按 root 级完成（资源级去重见 materialDispose）
     root.traverse((o) => {
       // InstancedMesh 的 instanceMatrix 是实例专属的 InstancedBufferAttribute，
       // 不随 geometry.dispose 释放，必须走 InstancedMesh.dispose 自己清理
@@ -5054,7 +5058,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         collectMaterialTextures(m, texs);   // 直接属性 + uniforms（ShaderMaterial 纹理在 uniforms.value）
       }
     });
-    for (const t of texs) t.dispose();
+    for (const t of texs) if (!sharedTexs || !sharedTexs.has(t)) t.dispose();
     for (const m of mats) m.dispose();
     for (const g of geos) g.dispose();
   }

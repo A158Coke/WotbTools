@@ -18,3 +18,22 @@ export function collectMaterialTextures(m, out = new Set()) {
   }
   return out;
 }
+
+/** root 外持有者的纹理排除集（disposeObject3D 第二参数消费）：candidate 场景材质
+ *  经 uniforms 引用地面分层（makeDecalMaterial 的 colormap/colormapLm）与海岸线
+ *  高度纹理（makeWaterMaterial 的 uHeightmap），但释放责任在 groundLayers /
+ *  waterCoast 一侧——candidate 失败回收时排除，不替 owner 释放（评审 P2 纹理归属）。
+ *  @param {object|null} groundLayers  会话分层地表（.texs 值为共享纹理）
+ *  @param {THREE.Texture|null} waterHeightTex  已建未移交的 waterCoast.heightTex
+ */
+export function sharedOwnedTextures(groundLayers, waterHeightTex = null) {
+  const out = new Set();
+  if (groundLayers && groundLayers.texs) {
+    for (const k in groundLayers.texs) {
+      const t = groundLayers.texs[k];
+      if (t) out.add(t);
+    }
+  }
+  if (waterHeightTex) out.add(waterHeightTex);
+  return out;
+}
