@@ -121,7 +121,7 @@ dependencies {
     implementation("org.mozilla.geckoview:geckoview:$geckoViewVersion")
     // 原生认证（RFC 8252 external user-agent + PKCE S256 + Custom Tabs + App Links）：
     // 库只经浏览器完成授权、**从不使用 WebView**；固定 0.11.1 是因为上游发布节奏停滞
-    // （审计记录在 docs/current-plan.md），升级需单独评审。
+    // 升级需单独评审。
     implementation("net.openid:appauth:0.11.1")
     // Pure JVM policy tests.
     testImplementation("junit:junit:4.13.2")
