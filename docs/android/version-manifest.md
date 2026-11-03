@@ -58,6 +58,14 @@ API 26 ARM 正式包仍未验证，不能把这些数据外推成所有更新均
 不可变落位，以及公网重定向后的字节数和 SHA 回读；任一环节不可用时新候选只发布完整包，已经固定的
 增量 evidence 无法验证时则停止发布。不得以本地替身或空补丁列表声称真实云端链路已通过。
 
+同一 staged identity 的 `patches`、`stagedAt` 与其他 evidence 字节不可在重试时重算。stage 分别在 TX1/TX2
+宿主锁内读取记录，公共负载均衡 URL 的 404 不代表两节点均缺失；任一节点存在有效记录时，先校验版本、
+source SHA、APK SHA、bundle 身份与 immutable patch artifact，再复用该记录的原始字节补齐缺失节点。
+两节点均明确缺失且没有相反的可信 release identity 证据时，才允许新建 full-only evidence；节点不可达、
+记录无效或冲突、既有补丁无法验证均 fail closed，不能把既有非空 `patches` 降级成空列表。
+锁内安装采用同文件系统临时文件和原子 no-clobber 落位：相同字节幂等成功，不同字节拒绝覆盖；
+stage 和 publish 都要求两节点 evidence 一致并通过远端 artifact 校验。完整恢复规则见 [发布流程](release-process.md#证据的存续)。
+
 `latestVersionCode`、`latestVersionName` 来自 staged 源码（tag target）的 `android/gradle.properties`；
 `nativeBridgeVersion` 来自同一 source 的 `contracts/android-native-bridge.json`；`sourceSha` 是生成 APK
 所 checkout 的精确 commit。workflow 只有在**两阶段**都通过之后才写入 manifest：

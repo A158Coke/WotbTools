@@ -6,7 +6,7 @@
 # published to the object-storage asset plane, see docs/operations/agent-asset-origin.md.)
 #
 # `*.staging.json` 和内容寻址的增量补丁是例外：android-release 的 stage 会把「已 stage、未发布」版本的发布身份
-# 装进这棵树，而 publish 只按公开 URL 校验它——wotbtools.com 由 Caddy 在 TX1/TX2 之间负载，
+# 装进这棵树，publish 会分别核验两台源站和公开 URL；wotbtools.com 由 Caddy 在 TX1/TX2 之间负载，
 # 两台中缺一台就可能让 publish 拿到 404 而 fail closed。因此整树替换必须保留证据和增量补丁。
 #
 # **调用方必须已持有宿主部署锁**（Frontend Replica 在 /opt/wotb-tx2/.deploy.lock 下执行本脚本；
@@ -92,17 +92,18 @@ if expected:
 PY
 
 # 未发布版本的 staging evidence 只存在于这棵树里，整树替换前原样带走（见文件头；调用方须已持锁）。
-# 只带走能解析的完整 JSON：锁 + 原子落位已保证「可见即完整」，这条是对历史/外来残留文件的兜底
-# ——半截证据比没有更糟，它会让 publish 死在解析上，而不是给出「未 stage」这个已知且可处置的结论。
+# 无效证据不能被丢弃并误判为不存在：停止换树，保留原始字节以供恢复。
 for evidence in "$RUNTIME_ROOT"/android-release/*.staging.json; do
-  [ -e "$evidence" ] || continue
-  python3 -c 'import json,sys; json.load(open(sys.argv[1], encoding="utf-8"))' "$evidence" 2>/dev/null || continue
+  [ -e "$evidence" ] || [ -L "$evidence" ] || continue
+  [ -f "$evidence" ] && [ ! -L "$evidence" ] && [ -r "$evidence" ] || fail "invalid immutable staging evidence file: $evidence"
+  python3 -c 'import json,sys; json.load(open(sys.argv[1], encoding="utf-8"))' "$evidence" 2>/dev/null || fail "invalid immutable staging evidence: $evidence"
   cp "$evidence" "$stage/android-release/"
 done
 
 # 已 staged 的不可变增量须与 evidence 一同跨换树保留；文件名绑定 SHA，损坏不得进入新树。
 for delta in "$RUNTIME_ROOT"/android-release/wotbtools-android-delta-*.vcdiff; do
-  [ -e "$delta" ] || continue
+  [ -e "$delta" ] || [ -L "$delta" ] || continue
+  [ -f "$delta" ] && [ ! -L "$delta" ] && [ -r "$delta" ] || fail "invalid immutable delta file: $delta"
   name="${delta##*/}"
   [[ "$name" =~ ^wotbtools-android-delta-[0-9]+-[0-9]+-([0-9a-f]{64})\.vcdiff$ ]] \
     || fail "invalid delta filename: $name"

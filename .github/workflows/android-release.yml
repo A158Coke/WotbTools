@@ -887,6 +887,15 @@ jobs:
         if: steps.preflight.outputs.releaseAction == 'publish'
         id: delta
         shell: bash
+        env:
+          TX1_SSH_HOST: ${{ secrets.TX_VPS_HOST }}
+          TX1_SSH_USER: ${{ secrets.TX_VPS_USER }}
+          TX1_SSH_PORT: ${{ secrets.TX_VPS_PORT }}
+          TX1_SSH_KEY: ${{ secrets.TX_VPS_SSH_KEY }}
+          TX2_SSH_HOST: ${{ secrets.TX2_VPS_HOST }}
+          TX2_SSH_USER: ${{ secrets.TX2_VPS_USER }}
+          TX2_SSH_PORT: ${{ secrets.TX2_VPS_PORT }}
+          TX2_SSH_KEY: ${{ secrets.TX2_VPS_SSH_KEY }}
         run: |
           set -euo pipefail
           TARGET="android/app/build/outputs/apk/release/app-release.apk"
@@ -896,8 +905,12 @@ jobs:
           STAGING_NAME="${APK_NAME%.apk}.staging.json"
           EXISTING="$RUNNER_TEMP/delta-existing-staging.json"
           META="$RUNNER_TEMP/delta-metadata.json"
-          STATUS="$(curl -sS --connect-timeout 5 --max-time 20 -o "$EXISTING" -w '%{http_code}' "https://wotbtools.com/download/android/$STAGING_NAME")"
+          STATUS="$(bash scripts/android-release/staging-evidence.sh collect "$STAGING_NAME" "$EXISTING")"
           if [ "$STATUS" = 200 ]; then
+            python3 scripts/android-release/android_contract.py bundle \
+              --badging "$RUNNER_TEMP/apk-badging.txt" --apk "$TARGET" --contract contracts/android-native-bridge.json \
+              --pin deploy/agent/source.json --source "${{ steps.version.outputs.commit }}" \
+              --version "${{ steps.version.outputs.versionName }}" --evidence "$EXISTING" >/dev/null
             python3 scripts/android-release/delta_artifact.py verify --target "$TARGET" --target-sha "$TARGET_SHA" --target-code "$TARGET_CODE" --evidence "$EXISTING" > "$META"
             PATCH_URL="$(jq -r '.patches[0].url // empty' "$META")"
             if [ -n "$PATCH_URL" ]; then
@@ -907,6 +920,10 @@ jobs:
             fi
           elif [ "$STATUS" = 404 ]; then
             BASE_MANIFEST="$RUNNER_TEMP/prod-version.json"
+            if [ -s "$BASE_MANIFEST" ] && jq -e --argjson target "$TARGET_CODE" '.latestVersionCode == $target' "$BASE_MANIFEST" >/dev/null; then
+              echo "::error::Production already advertises this version but both staging evidence files are missing" >&2
+              exit 1
+            fi
             BASE_APK="$RUNNER_TEMP/delta-base.apk"
             XDELTA="$RUNNER_TEMP/xdelta3-3.2.2-linux-x86_64/xdelta3"
             built=false
@@ -1117,17 +1134,16 @@ jobs:
           # 本阶段绝不触碰它 —— 真机 A14 验证失败或未完成时，线上 manifest 必须原样不动。
           APK_NAME="${{ steps.artifact.outputs.apkName }}"
           STAGING_NAME="${APK_NAME%.apk}.staging.json"
-          EXISTING="$RUNNER_TEMP/existing-staging.json"
-          STATUS="$(curl -sS --connect-timeout 5 --max-time 20 -o "$EXISTING" -w '%{http_code}' \
-            "https://wotbtools.com/download/android/$STAGING_NAME")"
+          EXISTING="$RUNNER_TEMP/delta-existing-staging.json"
+          STATUS="${{ steps.delta.outputs.existingEvidence }}"
           case "$STATUS" in
             404) jq --slurpfile delta "$RUNNER_TEMP/delta-metadata.json" '. + $delta[0]' "$RUNNER_TEMP/bundle-evidence.json" > "release-staging/$STAGING_NAME" ;;
             200)
               python3 scripts/android-release/android_contract.py bundle \
                 --badging "$RUNNER_TEMP/apk-badging.txt" --apk "android/app/build/outputs/apk/release/app-release.apk" --contract contracts/android-native-bridge.json \
                 --pin deploy/agent/source.json --source "${{ steps.version.outputs.commit }}" \
-                --version "${{ steps.version.outputs.versionName }}" --evidence "$EXISTING" \
-                --output "release-staging/$STAGING_NAME"
+                --version "${{ steps.version.outputs.versionName }}" --evidence "$EXISTING" >/dev/null
+              cp "$EXISTING" "release-staging/$STAGING_NAME"
               ;;
             *) echo "::error::Cannot verify existing immutable staging evidence (HTTP $STATUS)" >&2; exit 1 ;;
           esac
@@ -1222,8 +1238,19 @@ jobs:
       - name: Verify production staging evidence (HTTP 200 + content)
         if: steps.preflight.outputs.releaseAction == 'publish'
         shell: bash
+        env:
+          TX1_SSH_HOST: ${{ secrets.TX_VPS_HOST }}
+          TX1_SSH_USER: ${{ secrets.TX_VPS_USER }}
+          TX1_SSH_PORT: ${{ secrets.TX_VPS_PORT }}
+          TX1_SSH_KEY: ${{ secrets.TX_VPS_SSH_KEY }}
+          TX2_SSH_HOST: ${{ secrets.TX2_VPS_HOST }}
+          TX2_SSH_USER: ${{ secrets.TX2_VPS_USER }}
+          TX2_SSH_PORT: ${{ secrets.TX2_VPS_PORT }}
+          TX2_SSH_KEY: ${{ secrets.TX2_VPS_SSH_KEY }}
         run: |
           set -euo pipefail
+          bash scripts/android-release/staging-evidence.sh collect-required "${{ steps.staging.outputs.stagingName }}" "$RUNNER_TEMP/staging-origins.json" >/dev/null
+          cmp "$RUNNER_TEMP/staging-origins.json" "release-staging/${{ steps.staging.outputs.stagingName }}"
           URL="https://wotbtools.com/download/android/${{ steps.staging.outputs.stagingName }}"
           TMP_STAGING="$RUNNER_TEMP/prod-staging-verify.json"
           curl -fsSL -o "$TMP_STAGING" "$URL"
@@ -1507,6 +1534,14 @@ jobs:
         id: staged
         shell: bash
         env:
+          TX1_SSH_HOST: ${{ secrets.TX_VPS_HOST }}
+          TX1_SSH_USER: ${{ secrets.TX_VPS_USER }}
+          TX1_SSH_PORT: ${{ secrets.TX_VPS_PORT }}
+          TX1_SSH_KEY: ${{ secrets.TX_VPS_SSH_KEY }}
+          TX2_SSH_HOST: ${{ secrets.TX2_VPS_HOST }}
+          TX2_SSH_USER: ${{ secrets.TX2_VPS_USER }}
+          TX2_SSH_PORT: ${{ secrets.TX2_VPS_PORT }}
+          TX2_SSH_KEY: ${{ secrets.TX2_VPS_SSH_KEY }}
           REQUESTED_VERSION: ${{ inputs.version }}
           TAG_TARGET: ${{ steps.stagedref.outputs.tagTarget }}
           # staged versionCode 的**唯一**来源：stagedref（= 显式版本 → immutable tag target 的
@@ -1526,10 +1561,12 @@ jobs:
           BASE="https://wotbtools.com/download/android"
 
           STAGING="$RUNNER_TEMP/staging.json"
+          bash scripts/android-release/staging-evidence.sh collect-required "$STAGING_NAME" "$RUNNER_TEMP/staging-origins.json" >/dev/null
           if ! curl -fsSL -o "$STAGING" "$BASE/$STAGING_NAME"; then
             echo "::error::No staging evidence at $BASE/$STAGING_NAME; stage version $REQUESTED_VERSION first." >&2
             exit 1
           fi
+          cmp "$STAGING" "$RUNNER_TEMP/staging-origins.json" || { echo "::error::Public staging evidence differs from origins" >&2; exit 1; }
           git show "$TAG_TARGET:contracts/android-native-bridge.json" > "$RUNNER_TEMP/staged-contract.json"
           git show "$TAG_TARGET:deploy/agent/source.json" > "$RUNNER_TEMP/staged-agent.json"
           # staged 源码的 gradle.properties 已在 stagedref 步骤导出到 $RUNNER_TEMP（git archive），

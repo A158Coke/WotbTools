@@ -196,14 +196,14 @@ Bundle schema 2 的 `files` 清单列出每个内容文件的路径、大小、S
 
 ### 证据的存续
 
-publish 的第一步就是按公开 URL 取证据（`https://wotbtools.com/download/android/<STAGING>`，经 Caddy 在 TX1/TX2 之间负载），因此证据不是「写一次就结束」的中间产物：
+stage 和 publish 分别在两台 origin 的部署锁内读取证据；公开 URL 经 TX1/TX2 负载，单次 404 不能证明两台均无记录：
 
-- stage 先把它传进各自宿主**不被服务**的中转目录（`/opt/wotb-tx{,2}/android-evidence.incoming`），再由 `deploy/tx/install-staging-evidence.sh` 在**宿主部署锁**（TX1 `/opt/wotb-tx/.deploy.lock`、TX2 `/opt/wotb-tx2/.deploy.lock`）下同文件系统 rename 进被服务目录。锁下 rename 同时给两侧保证：安装与 Replica 的「扫描 → 整树替换」互斥，且读取侧永远看不到半截 JSON。
+- stage 先把它传进各自宿主**不被服务**的中转目录（`/opt/wotb-tx{,2}/android-evidence.incoming`），再由 `deploy/tx/install-staging-evidence.sh` 在**宿主部署锁**（TX1 `/opt/wotb-tx/.deploy.lock`、TX2 `/opt/wotb-tx2/.deploy.lock`）下复制到目标文件系统的临时文件并以硬链接原子落位。已有相同字节时幂等成功，不同字节时拒绝覆盖；安装与 Replica 换树互斥，读取侧不会看到半截 JSON。
 - TX2 那棵树由 Frontend Replica 的 `deploy/tx/k7c-sync-runtime-content.sh` 整树替换，而该调用已在 `exec 9>/opt/wotb-tx2/.deploy.lock` + `flock` 内（锁覆盖 sync 的扫描与 swap）。它按设计只复制当前公开面（`version.json` + 该 manifest 指向的 APK），`*.staging.json` 是唯一例外：未发布版本的记录必须整份带走，否则证据在发布前消失，公开 URL 退化成按 origin 掷硬币。只把复制点前移到 swap 前一刻**不够**：扫描结束后、换树前落地的写入仍会随旧树进 `.previous`，互斥才是那个不变量。K7C 侧口径见 [operations/komodo-k7c-frontend-cutover.md](../operations/komodo-k7c-frontend-cutover.md)。
 - 不变量由 `deploy/test-k7c-runtime-content.sh` 锁定：静态部分断言 Replica 在同一步里先取锁再跑 sync、stage 只经安装器在锁下落位、证据绝不直接 scp 进被服务目录；行为部分用真实脚本跑真实流程（换树后未发布证据仍在、已发布 APK 不进树、安装器在锁被占住时不可见且不落位、缺锁/缺目录/非证据文件一律 fail closed）。
 - 人工执行 sync 必须自备同一把锁（`WOTB_TX_DEPLOY_LOCK_FILE=/opt/wotb-tx2/.deploy.lock bash deploy/tx/with-deploy-lock.sh …`），否则会重新引入与 stage 安装的交错。
-- 因此 publish 第一步的 404 有两个已知含义：该版本从未 stage，或某台 origin 缺文件。先确认两台的文件是否都在，再按 stage 流程重跑该版本；**不要**在证据缺失时绕过 publish 的身份校验手工写 `version.json`。
-- stage 末尾的「Verify production staging evidence」只对公开 URL 取样一次，命中任一 origin 即通过：它证明「至少一台在服务」，两台的一致性由上面的锁 + 不变量 + 契约测试保证，而不是由那次取样保证。
+- 两台均明确缺失时才创建新证据；任一台已有有效证据时校验其身份并复用原始字节，补齐缺失节点。两台冲突、节点不可达或已有补丁无法验证时停止，不能将既有补丁改成 full-only。
+- stage 完成和 publish 前均要求两台证据存在且字节一致，再核验公网回读；缺失或不一致时不要绕过身份校验手工写 `version.json`。
 
 ## 发布前真实依赖
 
