@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { orientDiscUv } from './baseDecal.js'
+import { orientDiscUv } from './baseDecal.ts'
 
 // 顶点：北（-z）、东（+x）、南（+z）、西（-x）
 const offsets = new Float32Array([0, -1, 1, 0, 0, 1, -1, 0])

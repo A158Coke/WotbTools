@@ -5,7 +5,7 @@ import { dirname, resolve } from 'node:path'
 import {
   nameChainOf, nearestInstance, chainVisible,
   buildMeshOwnerMap, meshOwnerKey, stateVisualLabel, formatPickReport,
-} from './pickDebug.js'
+} from './pickDebug.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -87,11 +87,11 @@ const sceneSrc = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 // 拾取报告器 2026-10-24 出仓 playback/pickReport.js（工厂 + ctx 快照），守卫随实现迁移
-const pickSrc = readFileSync(resolve(here, 'playback/pickReport.js'), 'utf8')
+const pickSrc = readFileSync(resolve(here, 'playback/pickReport.ts'), 'utf8')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 // 场景装配块（含可破坏物发布时序）2026-10-24 出仓 playback/mapAssets.js，守卫随实现迁移
-const mapAssetsSrc = readFileSync(resolve(here, 'playback/mapAssets.js'), 'utf8')
+const mapAssetsSrc = readFileSync(resolve(here, 'playback/mapAssets.ts'), 'utf8')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 
@@ -217,11 +217,11 @@ describe('拾取报告诊断行接线（playbackScene 源级守卫）', () => {
   // 2026-10-11 回归：诊断变量曾声明在 `if (heightField && heightMeta)` 块内、return 在块外
   // 引用 ⇒ ReferenceError: render is not defined ⇒ 整个拾取面板"点击没反应"。锁定共声明。
   it('terrain / render 诊断变量在 buildPickReport 函数作用域共声明（return 可达）', () => {
-    const src = readFileSync(resolve(here, 'playback/pickReport.js'), 'utf8')
+    const src = readFileSync(resolve(here, 'playback/pickReport.ts'), 'utf8')
     expect(src).toMatch(/let terrain = null;\s*\r?\n\s*let render = null;/)
   })
   it('拾取失败必须可见（禁止静默 catch）', () => {
-    const src = readFileSync(resolve(here, 'playback/pickReport.js'), 'utf8')
+    const src = readFileSync(resolve(here, 'playback/pickReport.ts'), 'utf8')
     expect(src).toMatch(/showPickPanel\(`\[scene-pick\] failed:/)
   })
 })

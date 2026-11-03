@@ -4,7 +4,7 @@ import {
   cloneDetachedTurret, dropDuplicateGunMasks, neutralizeDefaultMetalness,
   poseFromYPR, yprScene, poseLocalBetween,
   terrainPitchRoll, clampHullAttitude, SUSP_TRAVEL_M,
-} from './glbRig.js'
+} from './glbRig.ts'
 
 // 复刻 GLTFLoader 的赋值：省略 metallicFactor 时取 glTF 规范默认 1.0（three 自己的
 // MeshStandardMaterial 默认是 0.0，所以必须显式设成 1 才是真实的装载结果）；

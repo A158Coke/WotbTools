@@ -38,7 +38,7 @@ AI 复盘结果的反馈弹窗与复制按钮使用同一回复文本 formatter�
 
 AI Review 正常挂载：`?view=ai-review` deep link 与 workspace tab 都解析为同一个 keep-alive 的 Replay Workspace 及其 `ai` 能力，该 pane 在共享的 auth + local-projection 门控之后挂载 `AiReviewWorkspacePane.vue` / `AiReviewPanel.vue`（不存在前端维护门控；`ai_maintenance` locale 字符串没有消费者）。传输逻辑留在 `api/ai-review.ts`；AI 输入是客户端规范投影（`replay-local/ai`），后端是 Yecao ai-service（见 `docs/operations/ai-service.md`）。Replay 解析与 Battle Playback 仍可通过各自现有的 tabs 使用。
 
-`app/viewRegistry.js` 是 view 名称的唯一事实来源：`VIEW_COMPONENTS` 将受支持的 query views 和由 path 派生的 views（`android`、`sponsor`）映射到各自组件。`app/navigation.js` 在其上拥有 deep-link 契约，未知 view 会回退到默认 view，因此 `ALLOWED_VIEWS` 必须与已注册的 view 名称保持相等——`frontend/src/App.test.js` 锁定这一相等性。新增或重命名 view 意味着要同时更新 registry、allowlist 及其导航入口；只改一侧会静默降级到默认 view，而不是显式失败。只有落地 views（`HomePage`、`ReplayWorkspace`）是立即导入的；其他每个 view 都是 `defineAsyncComponent` chunk，而在 workspace 内部，四个能力 pane（`BattlePlaybackPanel`、`Replay3DPane`、`ReplayShotsPane`、`AiReviewWorkspacePane`）经过 `utils/lazyModule.ts` 的 `defineLazyModule` 失败边界，因此确认过期的同源 `/assets/*` 404 会走 `platform/preloadRecovery.ts` 中受守护的一次性 fresh-bundle reload 路径（共享 60s cooldown），而网络失败、5xx、未知状态、无 URL 的 dynamic-import 失败（无法安全关联）以及无法关联的失败都会保留既有的、可见且由用户控制的 `defineLazyModule` pane 内状态，而不是卸载 workspace。为这些模块提供 mock 的测试必须返回 `__esModule: true`，并用 `vi.dynamicImportSettled()` 等待。`main.js` 让 `<html lang>` 与 `document.title`（`<section> · WoTBTools`）保持与 locale 和 route 同步。
+`app/viewRegistry.js` 是 view 名称的唯一事实来源：`VIEW_COMPONENTS` 将受支持的 query views 和由 path 派生的 views（`android`、`sponsor`）映射到各自组件。`app/navigation.js` 在其上拥有 deep-link 契约，未知 view 会回退到默认 view，因此 `ALLOWED_VIEWS` 必须与已注册的 view 名称保持相等——`frontend/src/App.test.js` 锁定这一相等性。新增或重命名 view 意味着要同时更新 registry、allowlist 及其导航入口；只改一侧会静默降级到默认 view，而不是显式失败。只有落地 views（`HomePage`、`ReplayWorkspace`）是立即导入的；其他每个 view 都经 `viewRegistry.js` 的 `defineLazyView`（`defineAsyncComponent` 统一入口）创建：加载超过反馈阈值（`VIEW_LOAD_FEEDBACK_DELAY_MS`，与 motion token 无关——reduced-motion 会把动画时长归零）时 `ViewLoadingState` 在 main 内容区显示 loading surface，chunk 失败时 `ViewLoadError` 提供复用 `reloadForFreshBundle()` 的重新加载恢复；latest-wins、卸载后丢弃结果与 timer 清理由 Vue async component 语义保证，gates（登录 / 权限 / 可用性）先于组件挂载，loading/error 永不越过它们。而在 workspace 内部，四个能力 pane（`BattlePlaybackPanel`、`Replay3DPane`、`ReplayShotsPane`、`AiReviewWorkspacePane`）经过 `utils/lazyModule.ts` 的 `defineLazyModule` 失败边界，因此确认过期的同源 `/assets/*` 404 会走 `platform/preloadRecovery.ts` 中受守护的一次性 fresh-bundle reload 路径（共享 60s cooldown），而网络失败、5xx、未知状态、无 URL 的 dynamic-import 失败（无法安全关联）以及无法关联的失败都会保留既有的、可见且由用户控制的 `defineLazyModule` pane 内状态，而不是卸载 workspace。为这些模块提供 mock 的测试必须返回 `__esModule: true`，并用 `vi.dynamicImportSettled()` 等待。`main.js` 让 `<html lang>` 与 `document.title`（`<section> · WoTBTools`）保持与 locale 和 route 同步。
 
 `ViewHost.vue` 将现有的扁平页面组件映射到由 route 派生的产品 view。扁平布局是当前实现；不要把另一种目录布局视为已经存在。不要给组件添加手动的 `history.pushState`、`replaceState` 或 `popstate` 监听器；应使用注入的导航命令，它会委托给 Vue Router。
 
@@ -68,12 +68,15 @@ JavaScript 与 TypeScript 共存；`.js` import specifier 经 Vite/TypeScript re
 | Native Bridge wire | `api/generated/android-native-bridge.ts`（`contracts/android-native-bridge.json` 生成） |
 | Playback facet | `api/agent-replay-facets.ts` |
 | Worker 消息 | `replay-local/*WorkerProtocol.ts`、`scene/playbackParse.worker.ts` |
+| Three.js 场景 / 装甲 | 模块内自持（armorShaders / armorCollisionPack / armorPlateModel 等）；wire 形状复用 `api/agent-replay-facets.ts` |
 | 领域 / View model | `types/*.ts`，与 wire 类型分离 |
 
 `frontend/typescript.legacy.json` 是只减不增的迁移基线。`src/shared/typescript-ownership.test.ts` 保证名单等于当前源码；`scripts/check-typescript-baseline.mjs` 在 CI 中比较 PR base 与 head，名单不得新增路径，单个文件的 escape hatch 不得增加，新文件必须为 0，因此不能靠同时修改 JSON 放行。TypeScript 文件改名按新文件计算。
 
+**#741 Wave C（2026-11）已把 p1 全部迁入 TypeScript**（scene 核心、playback 子模块、Playback composables、map2dOverlay），并引入 `@types/three@0.185.x` 作为 Three.js 类型基础。Wave C 的负向类型证明分布在各批次的 `*TypeProofs.test.ts` 文件中（`scenePureTypeProofs` / `sceneGeometryTypeProofs` / `sceneAssetOwnershipTypeProofs` / `playbackStateTypeProofs` / `composableTypeProofs`）。剩余 p1 名单只剩两个巨型文件，均有 `p1BlockedBy` 注解。
+
 - `retained`：被 Node 脚本直接或传递加载的模块。Node 不会把 `.js` specifier 解析到 `.ts`，这些模块保持 JavaScript 并写明理由。
-- `p1`：复杂状态与算法模块（`src/scene/**`、Playback composables、地图状态）。`three` 没有内置类型，迁移 `scene` 模块需要 `@types/three`。
+- `p1`：复杂状态与算法模块。现在只剩 `src/scene/tankViewer.js`（6340 行）与 `src/scene/playbackScene.js`（5630 行），二者**blocked by #820**（巨型文件先按职责拆分，TypeScript migration before split 不可审查）；拆分后的稳定 boundary 随 Wave D 迁移。
 - `p2`：普通模块与 SFC，随改动迁移。
 - `escapeHatches`：production TS 逐文件的 `any` 与 `as unknown as` 数量，按 TypeScript AST 统计。`@ts-ignore`、`@ts-nocheck` 禁用，`@ts-expect-error` 只用于 `*.test.ts` 的负向类型证明。
 

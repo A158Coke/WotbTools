@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
-import { BURST_SECS, FX_BUDGETS, TRAIL_FADE_SECS, TRAIL_HOLD_SECS, createBattleFx, muzzleTipOf, trailOpacityAt } from './battleFx.js'
+import { BURST_SECS, FX_BUDGETS, TRAIL_FADE_SECS, TRAIL_HOLD_SECS, createBattleFx, muzzleTipOf, trailOpacityAt } from './battleFx.ts'
 
 const TIERS = ['low', 'mid', 'high', 'ultra']
 const CHUNK_TILE = 6

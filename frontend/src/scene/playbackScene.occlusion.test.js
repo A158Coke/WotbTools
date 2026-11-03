@@ -29,7 +29,7 @@ describe('occlusionCells（标签遮挡候选格：线段经过的 16m 格）', 
 describe('标签遮挡：只对候选格做 raycast（禁止整场景递归检测）', () => {
   const src = readFileSync(resolve(__dirname, 'playbackScene.js'), 'utf8')
   // 候选表登记随场景装配块 2026-10-24 出仓 playback/mapAssets.js（Step A3），守卫随实现迁移
-  const mapAssetsSrc = readFileSync(resolve(__dirname, 'playback/mapAssets.js'), 'utf8')
+  const mapAssetsSrc = readFileSync(resolve(__dirname, 'playback/mapAssets.ts'), 'utf8')
   it('源码护栏：不再对 mapScenery 全量 intersectObject，改用候选列表 intersectObjects', () => {
     expect(src).not.toMatch(/intersectObject\(mapScenery, true\)/)
     expect(src).toMatch(/raycaster\.intersectObjects\(cands, false\)/)
@@ -92,7 +92,7 @@ describe('occlusionFootprintCells（occGrid 登记：足印 AABB 全枚举）', 
 describe('场景源码护栏：评审 P0 修复的接线锁定', () => {
   const src = readFileSync(resolve(__dirname, 'playbackScene.js'), 'utf8')
   // 候选表登记随场景装配块 2026-10-24 出仓 playback/mapAssets.js（Step A3），守卫随实现迁移
-  const mapAssetsSrc = readFileSync(resolve(__dirname, 'playback/mapAssets.js'), 'utf8')
+  const mapAssetsSrc = readFileSync(resolve(__dirname, 'playback/mapAssets.ts'), 'utf8')
   it('occGrid 登记必须用足印全枚举，不得用线段遍历', () => {
     expect(mapAssetsSrc).toMatch(/occlusionFootprintCells\(e\.x - r, e\.y - r, e\.x \+ r, e\.y \+ r, OCCL_CELL\)/)
     expect(src).not.toMatch(/occlusionCells\(wx - r/)

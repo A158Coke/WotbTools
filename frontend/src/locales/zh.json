@@ -117,7 +117,10 @@
     "feedback": "反馈",
     "global_error_title": "错误",
     "close": "关闭",
-    "agent_replay_tab": "三维回放（Agent）"
+    "agent_replay_tab": "三维回放（Agent）",
+    "view_loading": "正在加载…",
+    "view_load_error": "页面加载失败",
+    "view_load_reload": "重新加载"
   },
   "errors": {
     "auth_unauthenticated": "登录已失效，请重新登录。",
