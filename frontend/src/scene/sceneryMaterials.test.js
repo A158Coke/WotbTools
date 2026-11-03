@@ -544,8 +544,8 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // ⇒ 运行时恒传客户端正常相机；不传的话窄画布把「55° 竖直 × aspect」折算成小水平角、阈值滑到
     // 狙击镜档（放松最多 ~1.8×），同一机位我们的网格比客户端更粗（2026-10-14 用户报障）
     expect(meshSrc).toMatch(/export const CLIENT_NORMAL_CAMERA_FOV_H = 70/)
-    expect(src).toMatch(/hFovDeg: CLIENT_NORMAL_CAMERA_FOV_H,/)
-    expect(src).toMatch(/import \{[^}]*\bCLIENT_NORMAL_CAMERA_FOV_H\b[^}]*\} from '\.\/terrainMesh\.js'/)
+    expect(gpSrc).toMatch(/hFovDeg = CLIENT_NORMAL_CAMERA_FOV_H/)
+    expect(gpSrc).toMatch(/import \{[^}]*\bCLIENT_NORMAL_CAMERA_FOV_H\b[^}]*\} from '\.\/terrainMesh\.js'/)
     // 引擎 `SubdivisionMetrics` 两套 fov 预设（LandscapeSubdivision.h:44-58）——阈值随 fov 插值
     expect(meshSrc).toMatch(/normalFov: 70, zoomFov: 6\.5/)
     expect(meshSrc).toMatch(
@@ -754,7 +754,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(meshSrc).not.toMatch(/shores/)
     expect(meshSrc).not.toMatch(/shoreHit/)
     expect(gpSrc).toMatch(/buildAdaptiveTerrain\(\{/)   // 地形构建入口在 groundPass（俯视烘焙同一份）
-    expect(src).toMatch(/buildGroundGeometry\(terrainBuildArgs\(\{)/)
+    expect(src).toMatch(/buildGroundGeometry\(terrainBuildArgs\(\{/)
   })
 
   it('地面分层混合 uniform 类型对齐：uHbSoft 必须 vec4（曾误写 float ⇒ 值 NaN ⇒ 地面取错层色）', () => {

@@ -15,10 +15,10 @@
 // scenery-lite）：掩码差异不再按档位划分，只按 full/lite 装配集划分。
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
-import { buildCorridorRefineMask, buildGroundGeometry } from './groundPass.js'
+import { buildCorridorRefineMask, buildGroundGeometry, terrainBuildArgs } from './groundPass.js'
 import { QUALITY_PRESETS } from './playback/quality.js'
 import {
-  CLIENT_NORMAL_CAMERA_FOV_H, buildRefineMask, sampleTerrainField, terrainSurfaceHeightAt,
+  buildRefineMask, sampleTerrainField, terrainSurfaceHeightAt,
 } from './terrainMesh.js'
 import { isLiteDroppedMeshObject } from './sceneryAssemblyRules.js'
 
@@ -40,10 +40,7 @@ function featureField(n) {
 }
 
 const FIELD = featureField(N)
-const CAM = { x: 0, y: 2000, z: 0 }   // 远机位 ⇒ 三条客户端判据在平缓场上保持粗层
-const FOV_Y = (55 * Math.PI) / 180
-const ASPECT = 16 / 9
-const HFov = CLIENT_NORMAL_CAMERA_FOV_H
+const CAMERA = { position: new THREE.Vector3(0, 2000, 0), fov: 55, aspect: 16 / 9 }
 
 // 走廊：沿 x 轴穿过地图中心的贴地薄构件走廊（语义 = 铁轨基板类结构）。
 function corridorMask() {
@@ -64,12 +61,14 @@ function createSha(arr) {
     .digest('hex')
 }
 
-/** 固定输入建几何：只传几何宿主参数——preset 身份必须不是输入（层 A）。 */
-function buildForPreset(refineMask) {
-  return buildGroundGeometry({
-    field: FIELD, n: N, span: SPAN,
-    cam: CAM, fovY: FOV_Y, aspect: ASPECT, hFovDeg: HFov, refineMask,
+function argsForPreset(key, refineMask) {
+  return terrainBuildArgs({
+    field: FIELD, n: N, span: SPAN, camera: CAMERA,
+    quality: QUALITY_PRESETS[key], refineMask,
   })
+}
+function buildForPreset(key, refineMask) {
+  return buildGroundGeometry(argsForPreset(key, refineMask))
 }
 
 // ---- 装配集 fixture（层 B）：薄板结构 + 语义剔除类别（ST| 灌木 / _corner 草卡）----
@@ -143,14 +142,17 @@ function diffMasks(a, b) {
 }
 
 describe('跨画质档地形差分基线（#857 Step 0，修复轮三层契约）', () => {
-  const PRESET_KEYS = Object.keys(QUALITY_PRESETS)
+  const PRESET_KEYS = ['low', 'mid', 'high', 'ultra']
 
   it('层 A — height-field truth：四档共用同一 field/n/span，几何（含掩码）逐字节一致', () => {
     const mask = corridorMask()
-    const digests = PRESET_KEYS.map(() => geometryDigest(buildForPreset(mask)))
+    const digests = PRESET_KEYS.map(key => geometryDigest(buildForPreset(key, mask)))
     for (const d of digests) expect(d).toEqual(digests[0])
-    const noMask = PRESET_KEYS.map(() => geometryDigest(buildForPreset(null)))
+    const noMask = PRESET_KEYS.map(key => geometryDigest(buildForPreset(key, null)))
     for (const d of noMask) expect(d).toEqual(noMask[0])
+    const args = PRESET_KEYS.map(key => argsForPreset(key, mask))
+    for (const arg of args) expect(arg).toEqual(args[0])
+    expect(Object.keys(args[0]).sort()).toEqual(['aspect', 'cam', 'cx', 'cz', 'field', 'fovY', 'hFovDeg', 'n', 'refineMask', 'span'])
     // truth oracle = terrainMesh.sampleTerrainField（production SSOT，与 playbackScene.sampleHeight 同源）
     expect(sampleTerrainField(FIELD, N, SPAN, 0, 0)).toBeCloseTo(FIELD[(N / 2) * N + N / 2], 6)
   })
@@ -178,8 +180,8 @@ describe('跨画质档地形差分基线（#857 Step 0，修复轮三层契约�
   it('层 C — rendered surface delta：full-mask vs lite-mask 跨装配集一致；掩码细分对粗层表面有实测差异', () => {
     const full = buildCorridorRefineMask({ meshes: FULL_SET(), field: FIELD, n: N, span: SPAN })
     const lite = buildCorridorRefineMask({ meshes: LITE_SET(), field: FIELD, n: N, span: SPAN })
-    const fullGeo = buildForPreset(full.mask)
-    const liteGeo = buildForPreset(lite.mask)
+    const fullGeo = buildForPreset('high', full.mask)
+    const liteGeo = buildForPreset('low', lite.mask)
     // 掩码逐 texel 相等 ⇒ 渲染几何逐字节相等（表面 delta 恒为 0——记录而非预设）
     expect(geometryDigest(fullGeo)).toEqual(geometryDigest(liteGeo))
     const statsFull = surfaceErrorStats(fullGeo)
@@ -188,12 +190,12 @@ describe('跨画质档地形差分基线（#857 Step 0，修复轮三层契约�
     expect(statsFull.count).toBeGreaterThan(0)
 
     // 仪器有效性：掩码强制局部细化相对无掩码粗层确有表面差异（max > 0，实测记录）
-    const statsBase = surfaceErrorStats(buildForPreset(null))
-    const base = geometryDigest(buildForPreset(null))
+    const statsBase = surfaceErrorStats(buildForPreset('low', null))
+    const base = geometryDigest(buildForPreset('low', null))
     const refined = geometryDigest(fullGeo)
     expect(base).not.toEqual(refined)
-    const build = buildForPreset(null).userData.terrainBuild
-    expect(buildForPreset(corridorMask()).userData.terrainBuild.quads).toBeGreaterThan(build.quads)
+    const build = buildForPreset('low', null).userData.terrainBuild
+    expect(buildForPreset('low', corridorMask()).userData.terrainBuild.quads).toBeGreaterThan(build.quads)
     expect(statsFull.max).toBeGreaterThan(0)
     expect(statsBase.max).toBeGreaterThan(0)
   })

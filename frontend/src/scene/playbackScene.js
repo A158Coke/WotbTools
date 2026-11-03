@@ -1513,7 +1513,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       const previous = mapTexture;
       mapTexture = null;
       mapMetaInfo = null;
-      try { rebuildGround(); } catch (e) { console.warn('fail-closed 地面重建失败（维持现状）:', e); }
+      try { rebuildGround(); } catch (e) {
+        if (mapPlane) { scene.remove(mapPlane); mapPlane = null; }
+        if (terrainMesh) { scene.remove(terrainMesh); terrainMesh = null; }
+        if (DEBUG) window.__terrain = null;
+        console.warn('fail-closed 地面重建失败:', e);
+      }
       if (previous) previous.dispose();
     }
     /** lite pair 回退（#857）：scenery-lite 不可用时把地面从 ground-terrain 换回 legacy
@@ -1523,6 +1528,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
      *  failClosedLegacyGround 终态。full 档不经过此路径。 */
     async function fallbackLegacyGround(key) {
       liteGroundReady = false;
+      let texture;
+      let previousTexture;
+      let previousMeta;
+      let installed = false;
       try {
         const mapUrl = mapStaticUrl('map', undefined, key);
         if (!mapUrl) { noteAsset('map', 'missing-url', key ? 'ground.webp URL 为空' : '未解析到资产索引 key'); return false; }
@@ -1533,15 +1542,25 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         const blob = await resp.blob();
         if (stale()) return false;
         const url = URL.createObjectURL(blob);
-        let texture;
         try { texture = await new THREE.TextureLoader().loadAsync(url); } finally { URL.revokeObjectURL(url); }
         if (stale()) { texture.dispose(); return false; }
-        const previous = mapTexture;
+        previousTexture = mapTexture;
+        previousMeta = mapMetaInfo;
+        installed = true;
         applyGroundTexture(meta, texture);
         rebuildGround();
-        if (previous && previous !== texture) previous.dispose();   // ground-terrain 纹理随重建释放
+        if (previousTexture && previousTexture !== texture) previousTexture.dispose();
         return true;
       } catch (e) {
+        if (installed) {
+          mapTexture = previousTexture;
+          mapMetaInfo = previousMeta;
+          // 清掉可能已部分安装的 candidate；后续调用方继续执行 fail-closed 重建。
+          if (mapPlane) { scene.remove(mapPlane); mapPlane = null; }
+          if (terrainMesh) { scene.remove(terrainMesh); terrainMesh = null; }
+          if (DEBUG) window.__terrain = null;
+        }
+        if (texture && texture !== previousTexture) texture.dispose();
         if (!stale()) noteAsset('map', 'failed', e && e.message ? e.message : e);
         return false;
       }
@@ -1572,7 +1591,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (!sceneryUrl) {
         if (sceneryKind === 'scenery-lite') {
           noteAsset('scenery', 'degraded', '未配置资产面/未命中索引（无 lite 场景）——回退 legacy ground.webp + 无场景；不回退 full');
-          if (!(await fallbackLegacyGround(resolvedKey))) failClosedLegacyGround();
+          const fallbackOk = await fallbackLegacyGround(resolvedKey);
+          if (stale()) return;
+          if (!fallbackOk) failClosedLegacyGround();
         } else {
           noteAsset('scenery', 'missing-url', '未配置资产面/未命中索引（无场景 GLB）');
         }
@@ -1591,7 +1612,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (!gltf || !gltf.scene) {
         if (sceneryKind === 'scenery-lite') {
           noteAsset('scenery', 'degraded', 'scenery-lite.glb 加载/解析失败——回退 legacy ground.webp + 无场景；不回退 full');
-          if (!(await fallbackLegacyGround(resolvedKey))) failClosedLegacyGround();
+          const fallbackOk = await fallbackLegacyGround(resolvedKey);
+          if (stale()) return;
+          if (!fallbackOk) failClosedLegacyGround();
         } else {
           noteAsset('scenery', 'failed', 'scenery.glb 加载/解析失败（建筑/场景缺失）');
         }
@@ -1646,7 +1669,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           occlGrid: null, annotationSurfaceGrid: null, destructPickList: null, meshOwner: null, destruct: null,
         });
         noteAsset('scenery', 'degraded', 'scenery-lite 装配失败——回退 legacy ground.webp + 无场景；不回退 full');
-        if (!(await fallbackLegacyGround(resolvedKey))) failClosedLegacyGround();
+        const fallbackOk = await fallbackLegacyGround(resolvedKey);
+        if (stale()) return;
+        if (!fallbackOk) failClosedLegacyGround();
       } else {
         console.warn('场景模型加载失败（忽略）:', e);
         // 装配/变体裁剪/实例化等后续步骤抛错同样意味着建筑缺失，必须进入降级状态
@@ -2642,6 +2667,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           refineMaskTexels: terrainRefineMask ? maskTexels : null,
         } : null,
         scenery: { loaded: !!mapScenery, meshCount, triangles: Math.round(sceneryTris) },
+        ground: { texture: !!mapTexture, meta: !!mapMetaInfo },
         // 派生索引在位状态（#857 修复轮 §5：rollback 后不得残留引用已 dispose 场景的
         // secondary index；?debug 可直接观察 rollback 是否清干净）
         derived: {

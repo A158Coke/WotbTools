@@ -231,7 +231,7 @@ export async function deriveSceneryLite(fullJson, fullBin, { colorOf = null, key
               for (let bi = 0; bi < alphaHistogram.length; bi++) {
                 if (bi * binW + binW / 2 >= cutoff) coverage += alphaHistogram[bi]
               }
-              entry.coverageAboveCutoff = +coverage.toFixed(4)
+              entry.coverageAboveCutoff = +Math.min(1, Math.max(0, coverage)).toFixed(4)
             }
             alphaMaskMaterials.push(entry)
             if (meanAlpha < cutoff) alphaMaskRisks.push(entry)

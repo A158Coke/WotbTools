@@ -1646,6 +1646,84 @@ describe('playbackScene 资产发布顺序', () => {
     expect(loader.mock.calls.some(([u]) => String(u).endsWith('/assets/scenery'))).toBe(false)
   })
 
+
+
+  it('过期 legacy fallback 不清除新会话的 lite ground', async () => {
+    prepareAssets(['scenery-lite', 'ground-terrain', 'map', 'terrain', 'terrain-meta', 'lighting'])
+    const { terrainFetch } = lowEnv()
+    const parked = track(deferred())
+    const fetchMap = vi.fn(() => parked.promise)
+    vi.stubGlobal('fetch', vi.fn(async url => {
+      if (String(url).endsWith('/map')) return fetchMap()
+      if (String(url).endsWith('ground-terrain')) return { ok: true, headers: new Headers(), blob: async () => new Blob(['gt']) }
+      if (String(url).includes('terrain')) return terrainFetch(url)
+      if (String(url).includes('lighting')) return { ok: true, headers: new Headers(), json: async () => ({}) }
+      return { ok: false, status: 404 }
+    }))
+    vi.spyOn(GLTFLoader.prototype, 'load')
+      .mockImplementationOnce((_url, _ok, _progress, fail) => fail(new Error('lite unavailable')))
+      .mockImplementation((_url, ok) => ok({ scene: new THREE.Group(), parser: { json: { materials: [] }, associations: new Map() } }))
+    const gtA = new THREE.Texture(), gtB = new THREE.Texture()
+    const disposeB = vi.spyOn(gtB, 'dispose')
+    vi.spyOn(THREE.TextureLoader.prototype, 'loadAsync').mockResolvedValueOnce(gtA).mockResolvedValue(gtB)
+    const { api } = createScene()
+    const loadA = api.loadData({ kind: 'local', file: new File(['a'], 'a') })
+    await vi.waitFor(() => expect(fetchMap).toHaveBeenCalledOnce())
+    await api.loadData({ kind: 'local', file: new File(['b'], 'b') })
+    expect(window.__terrainQuality().scenery.loaded).toBe(true)
+    parked.resolve({ ok: false, status: 404 })
+    await expect(loadA).resolves.toBeUndefined()
+    expect(disposeB).not.toHaveBeenCalled()
+    expect(window.__terrainQuality().ground.texture).toBe(true)
+    expect(window.__terrainQuality().scenery.loaded).toBe(true)
+    expect(window.__scene.children.some(o => o.material?.map === gtB)).toBe(true)
+  })
+
+  for (const [label, failures] of [['H', 1], ['I', 2]]) {
+    it(`pair 矩阵 ${label} — fallback rebuild 失败 ${failures} 次后 fail-closed`, async () => {
+      prepareAssets(['scenery-lite', 'ground-terrain', 'map', 'terrain', 'terrain-meta', 'lighting'])
+      const groundPass = await import('./groundPass.js')
+      const originalBuild = groundPass.buildGroundGeometry
+      const build = vi.spyOn(groundPass, 'buildGroundGeometry')
+      const loader = vi.spyOn(GLTFLoader.prototype, 'load').mockImplementation((_url, _onLoad, _progress, onError) => {
+        build.mockClear()
+        let remaining = failures
+        build.mockImplementation((...args) => {
+          if (remaining-- > 0) throw new Error('injected rebuild failure')
+          return originalBuild(...args)
+        })
+        onError(new Error('lite unavailable'))
+      })
+      const urls = []
+      const { terrainFetch } = lowEnv()
+      vi.stubGlobal('fetch', vi.fn(async (url) => {
+        urls.push(String(url))
+        if (String(url).endsWith('ground-terrain')) return { ok: true, headers: new Headers(), blob: async () => new Blob(['gt']) }
+        if (String(url).includes('terrain')) return terrainFetch(url)
+        if (String(url).includes('lighting')) return { ok: true, headers: new Headers(), json: async () => ({}) }
+        return { ok: true, headers: new Headers(), blob: async () => new Blob(['legacy']) }
+      }))
+      const gt = new THREE.Texture(), candidate = new THREE.Texture()
+      const gtDispose = vi.spyOn(gt, 'dispose'), candidateDispose = vi.spyOn(candidate, 'dispose')
+      vi.spyOn(THREE.TextureLoader.prototype, 'loadAsync').mockResolvedValueOnce(gt).mockResolvedValue(candidate)
+      const { api, store } = createScene()
+      await expect(api.loadData({ kind: 'local', file: new File(['a'], 'a') })).resolves.toBeUndefined()
+      expect(store.hasData).toBe(true)
+      expect(store.assetIssues.some(i => i.key === 'map' && i.status === 'failed' && i.detail.includes('injected rebuild failure'))).toBe(true)
+      expect(candidateDispose).toHaveBeenCalledTimes(1)
+      expect(gtDispose).toHaveBeenCalledTimes(1)
+      expect(window.__scene.children.some(o => o.material?.map === gt || o.material?.map === candidate)).toBe(false)
+      const state = window.__terrainQuality()
+      expect(state.scenery.loaded).toBe(false)
+      expect(state.ground).toEqual({ texture: false, meta: false })
+      expect(state.derived).toMatchObject({ occlGrid: false, annotationSurfaceGrid: false, terrainRefineMask: false })
+      expect(loader.mock.calls.some(([url]) => String(url).endsWith('/assets/scenery'))).toBe(false)
+      expect(urls.some(url => url.endsWith('/assets/scenery'))).toBe(false)
+      expect(build).toHaveBeenCalledTimes(2)
+      build.mockRestore()
+    })
+  }
+
   it('terrain bin 与 terrain.json 不同批（sha256 不符）⇒ 不建地形、回退 2D', async () => {
     prepareAssets(['terrain', 'terrain-meta'])
     window.__terrain = undefined

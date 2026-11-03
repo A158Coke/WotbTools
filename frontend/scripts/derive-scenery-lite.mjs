@@ -50,12 +50,12 @@ window.__mean = async (b64, mime) => {
   for (let i = 0; i < d.length; i += 4) {
     const w = d[i + 3] / 255
     r += d[i] * w; g += d[i + 1] * w; b += d[i + 2] * w; a += d[i + 3]; n++
-    hist[Math.min(31, Math.floor((d[i + 3] / 255) * 32))] += 1 / n
+    hist[Math.min(31, Math.floor((d[i + 3] / 255) * 32))] += 1
   }
   if (!n) return null
   return {
     color: [+(r / (n * 255)).toFixed(4), +(g / (n * 255)).toFixed(4), +(b / (n * 255)).toFixed(4), +(a / (n * 255)).toFixed(4)],
-    alphaHistogram: hist.map((v) => +v.toFixed(5)),
+    alphaHistogram: hist.map((v) => +(v / n).toFixed(5)),
   }
 }
 </script></body></html>`
@@ -82,6 +82,48 @@ async function startMeanColor() {
   const origin = server.resolvedUrls?.local?.[0]?.replace(/\/$/, '')
   if (!origin) throw new Error('vite did not publish a local URL')
   return { server, origin }
+}
+
+// 单图失败时撤销旧产物，避免本轮失败后继续消费上一轮 lite。
+export async function deriveMap({ mapDir, reportDir, key, colorOf }) {
+  const scenePath = join(mapDir, key, 'scenery.glb')
+  const outPath = join(mapDir, key, 'scenery-lite.glb')
+  const liteTmp = `${outPath}.tmp`
+  const reportPath = join(reportDir, `${key}.report.json`)
+  let report
+  try {
+    rmSync(outPath, { force: true })
+    rmSync(liteTmp, { force: true })
+    const buf = readFileSync(scenePath)
+    const { json, bin } = parseGlb(buf)
+    const derived = await deriveSceneryLite(json, bin, { colorOf, key })
+    const v = verifyLite(json, bin, derived.json, derived.bin)
+    report = {
+      key,
+      sourceSha256: createHash('sha256').update(buf).digest('hex'),
+      sourceBytes: buf.length,
+      ...derived.report,
+      verify: {
+        ok: v.ok, problems: v.problems,
+        structuralNodes: v.report.structuralNodes, geometryHash: v.report.geometryHash,
+      },
+    }
+    if (!v.ok) {
+      report.written = false
+    } else {
+      writeFileSync(liteTmp, buildGlb(derived.json, derived.bin))
+      renameSync(liteTmp, outPath)
+      report.written = true
+      report.outBytes = statSync(outPath).size
+    }
+    writeFileSync(reportPath, JSON.stringify(report, null, 2))
+  } catch (e) {
+    rmSync(outPath, { force: true })
+    rmSync(liteTmp, { force: true })
+    report = { key, written: false, error: String(e && e.message || e).slice(0, 300) }
+  }
+  console.log(JSON.stringify(report))
+  return report
 }
 
 async function main() {
@@ -115,43 +157,7 @@ async function main() {
 
     const results = []
     for (const key of keys) {
-      const scenePath = join(mapDir, key, 'scenery.glb')
-      const outPath = join(mapDir, key, 'scenery-lite.glb')
-      const liteTmp = `${outPath}.tmp`
-      const reportPath = join(REPORT_DIR, `${key}.report.json`)
-      let report
-      try {
-        rmSync(liteTmp, { force: true })
-        const buf = readFileSync(scenePath)
-        const { json, bin } = parseGlb(buf)
-        const derived = await deriveSceneryLite(json, bin, { colorOf, key })
-        const v = verifyLite(json, bin, derived.json, derived.bin)
-        report = {
-          key,
-          sourceSha256: createHash('sha256').update(buf).digest('hex'),
-          sourceBytes: buf.length,
-          ...derived.report,
-          verify: {
-            ok: v.ok, problems: v.problems,
-            structuralNodes: v.report.structuralNodes, geometryHash: v.report.geometryHash,
-          },
-        }
-        if (!v.ok) {
-          // fail-closed（计划 §16）：验证不过不写 lite 产物，运行时按 §14 显式降级
-          report.written = false
-        } else {
-          writeFileSync(liteTmp, buildGlb(derived.json, derived.bin))
-          renameSync(liteTmp, outPath)
-          report.written = true
-          report.outBytes = statSync(outPath).size
-        }
-        writeFileSync(reportPath, JSON.stringify(report, null, 2))
-        console.log(JSON.stringify(report))
-      } catch (e) {
-        report = { key, written: false, error: String(e && e.message || e).slice(0, 300) }
-        console.log(JSON.stringify(report))
-      }
-      results.push(report)
+      results.push(await deriveMap({ mapDir, reportDir: REPORT_DIR, key, colorOf }))
     }
     writeFileSync(join(REPORT_DIR, 'summary.json'),
       JSON.stringify({ pack: PACK, generatedAt: new Date().toISOString(), maps: results }, null, 2))
@@ -169,4 +175,4 @@ async function main() {
   }
 }
 
-await main()
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main()

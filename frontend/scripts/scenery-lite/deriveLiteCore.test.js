@@ -1,7 +1,13 @@
 // deriveLiteCore 单测（#857 Step 3）：合成 fixture GLB 驱动分类/重写/重建/验证全链。
 // 锁定的 invariant：剔除分类只走 exporter 语义标记；retained 几何字节恒等；无纹理载荷；
 // extras/变体元数据保真；verifier 对篡改（几何/变换/extras/载荷）fail-closed。
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import * as deriveCore from './deriveLiteCore.mjs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { deriveMap } from '../derive-scenery-lite.mjs'
+import { runInNewContext } from 'node:vm'
 import { buildGlb, deriveSceneryLite, isLiteDropNode, parseGlb, verifyLite } from './deriveLiteCore.mjs'
 
 // ---- fixture GLB：单 buffer，内嵌伪纹理；覆盖全部语义类别 ----
@@ -216,5 +222,89 @@ describe('deriveLiteCore：scenery-lite 派生（#857 Step 3）', () => {
     const { json, bin } = buildFixture()
     await expect(deriveSceneryLite({ ...json, skins: [{}] }, bin, { colorOf })).rejects.toThrow(/skins/)
     await expect(deriveSceneryLite({ ...json, extensionsRequired: ['KHR_draco_mesh_compression'] }, bin, { colorOf })).rejects.toThrow(/extensionsRequired/)
+  })
+})
+
+describe('实际解码页 alpha histogram', () => {
+  async function sample(alphas) {
+    const source = readFileSync(new URL('../derive-scenery-lite.mjs', import.meta.url), 'utf8')
+    const script = source.split('<script type="module">')[1].split('</script>')[0]
+    const pixels = new Uint8ClampedArray(alphas.flatMap(alpha => [100, 100, 100, alpha]))
+    const window = {}
+    class Canvas {
+      getContext() { return { drawImage() {}, getImageData: () => ({ data: pixels }) } }
+    }
+    runInNewContext(script, {
+      window, Uint8Array, Blob, atob: () => '', OffscreenCanvas: Canvas,
+      createImageBitmap: async () => ({ width: alphas.length, height: 1 }),
+    })
+    return window.__mean('', 'image/png')
+  }
+
+  it('opaque 与 50/50 已知答案、顺序无关及 cutoff coverage', async () => {
+    const opaque = await sample([255, 255, 255, 255])
+    const mixed = await sample([0, 255, 0, 255])
+    const reversed = await sample([255, 255, 0, 0])
+    for (const result of [opaque, mixed, reversed]) {
+      expect(result.alphaHistogram.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 4)
+    }
+    expect(opaque.alphaHistogram[31]).toBe(1)
+    expect(mixed.alphaHistogram[0]).toBe(0.5)
+    expect(mixed.alphaHistogram[31]).toBe(0.5)
+    expect(Array.from(mixed.alphaHistogram)).toEqual(Array.from(reversed.alphaHistogram))
+    const coverage = async (mean) => {
+      const { json, bin } = buildFixture()
+      json.materials[0].alphaCutoff = 0.6
+      const lite = await deriveSceneryLite(json, bin, { colorOf: async () => mean })
+      return lite.report.alphaMaskMaterials[0].coverageAboveCutoff
+    }
+    expect(await coverage(opaque)).toBe(1)
+    const actual = await coverage(mixed)
+    expect(actual).toBe(0.5)
+    expect(await coverage(reversed)).toBe(actual)
+    expect(actual).toBeGreaterThanOrEqual(0)
+    expect(actual).toBeLessThanOrEqual(1)
+  })
+})
+
+describe('单图派生的旧产物清理', () => {
+  it('成功替换；解析、贴图解码或报告写入失败时旧产物和临时文件均不存在', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'lite-derive-'))
+    try {
+      const mapDir = join(root, 'map'), dir = join(mapDir, 'fixture'), reportDir = join(root, 'reports')
+      mkdirSync(dir, { recursive: true })
+      mkdirSync(reportDir)
+      const scene = join(dir, 'scenery.glb'), out = join(dir, 'scenery-lite.glb')
+      const { json, bin } = buildFixture()
+      const valid = buildGlb(json, bin)
+      const seed = () => { writeFileSync(out, 'old'); writeFileSync(out + '.tmp', 'old tmp') }
+      const run = (opts = {}) => deriveMap({ mapDir, reportDir, key: 'fixture', colorOf, ...opts })
+      seed()
+      writeFileSync(scene, valid)
+      expect((await run()).written).toBe(true)
+      expect(parseGlb(readFileSync(out)).json.asset.version).toBe('2.0')
+      expect(existsSync(out + '.tmp')).toBe(false)
+      seed()
+      const verify = vi.spyOn(deriveCore, 'verifyLite').mockReturnValueOnce({
+        ok: false, problems: ['injected mismatch'], report: { structuralNodes: 0, geometryHash: '' },
+      })
+      expect((await run()).written).toBe(false)
+      expect(existsSync(out)).toBe(false)
+      expect(existsSync(out + '.tmp')).toBe(false)
+      verify.mockRestore()
+      for (const mode of ['parse', 'decode', 'report']) {
+        seed()
+        writeFileSync(scene, mode === 'parse' ? 'bad' : valid)
+        const result = await run({
+          ...(mode === 'decode' ? { colorOf: async () => { throw new Error('decode failed') } } : {}),
+          ...(mode === 'report' ? { reportDir: join(root, 'missing') } : {}),
+        })
+        expect(result.written).toBe(false)
+        expect(existsSync(out)).toBe(false)
+        expect(existsSync(out + '.tmp')).toBe(false)
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })
