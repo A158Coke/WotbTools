@@ -1,5 +1,5 @@
 // playbackScene 内核的纯函数（无场景状态；2026-10-24 自 playbackScene.js 出仓，
-// 拆分计划见 docs/current-plan.md；代码与搬移前逐字一致——公开 API 仍由
+// 拆分计划见 #820；代码与搬移前逐字一致——公开 API 仍由
 // playbackScene.js re-export，导入方零改动）。
 
 /**

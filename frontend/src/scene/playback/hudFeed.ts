@@ -1,4 +1,4 @@
-// 击杀 feed / 计分 / 名册桥接（2026-10-24 自 initPlayback 闭包出仓，current-plan.md
+// 击杀 feed / 计分 / 名册桥接（2026-10-24 自 initPlayback 闭包出仓，#741
 // Step A5 叶子段；代码与搬移前逐字一致，闭包读数改经 getter 快照：getData/getT/getV/
 // getSessionGen/getFollowEid，deathAt / reloadStateAt 为闭包函数注入（创建期引用安全）。
 // 语义注释（响应式代理登记、阵营视角映射、resolver 单源）随代码原样保留。

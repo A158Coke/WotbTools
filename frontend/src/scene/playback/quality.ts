@@ -1,4 +1,4 @@
-// 四档渲染预设（2026-10-24 自 playbackScene.js 出仓，拆分计划见 docs/current-plan.md；
+// 四档渲染预设（2026-10-24 自 playbackScene.js 出仓，拆分计划见 #820；
 // 代码与搬移前逐字一致——预设表同时被面板与场景消费，公开 API 仍由 playbackScene.js
 // re-export，导入方零改动）。
 import { FX_BUDGETS } from '../battleFx.js'

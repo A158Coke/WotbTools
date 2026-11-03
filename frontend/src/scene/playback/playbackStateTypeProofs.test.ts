@@ -2,7 +2,7 @@
 // 锁定：地图取景几何契约（map2d index 的 worldBounds/orientation）、AnnotationHitLike
 // 结构面、recorder facet 判别、erase ring 形状。@ts-expect-error 仅限本文件。
 import { describe, expect, it } from 'vitest'
-import { geometryMatches, selectMap2dSources, isValidIndex } from '../../data/map2dOverlay.js'
+import { geometryMatches, selectMap2dSources, isValidIndex, pickNewestIndex } from '../../data/map2dOverlay.js'
 import type { Map2dBounds, Map2dIndex } from '../../data/map2dOverlay.js'
 import { recorderModeAt, sampleRecorderCamera, isReversing, reticleRadiusPx } from './cameraRig.js'
 import { buildEraserRing, sanitizePoints } from './annotation3d.js'
@@ -27,8 +27,11 @@ describe('C4 playback state / annotation / camera 的编译期负向证明', () 
   })
 
   it('map2d：决策纯函数的输入形状（schema/timestamp 门控）', () => {
-    // @ts-expect-error — negative compile proof: 候选缺 source 判别（stored/remote）编译失败
-    selectMap2dSources({ remoteIndex: null, storedIndex: null, embedded: null, boundsByCode: {} }, [{ index: null }])
+    // Negative: candidate 缺 source（stored/remote 判别必填）
+    // @ts-expect-error — negative compile proof: candidate 缺 source 字段编译失败
+    pickNewestIndex([{ index: null }])
+    // Positive: 提供合法 source 后编译通过且返回 null（index 无效）
+    expect(pickNewestIndex([{ index: null, source: 'remote' }])).toBeNull()
     // schemaVersion 错误 → 全部包内（fail-closed）
     const bad = selectMap2dSources({
       remoteIndex: { schemaVersion: 1, generated: '2026-01-01T00:00:00Z', maps: {} } as Map2dIndex,

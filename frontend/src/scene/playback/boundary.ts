@@ -1,5 +1,5 @@
 // 地图边界带（2026-10-24 自 initPlayback 闭包出仓为工厂，拆分计划见
-// docs/current-plan.md；代码与搬移前逐字一致，boundaryGroup 改由本工厂私有持有）。
+// #741；代码与搬移前逐字一致，boundaryGroup 改由本工厂私有持有）。
 import * as THREE from 'three'
 import type { Object3D, Scene } from 'three'
 

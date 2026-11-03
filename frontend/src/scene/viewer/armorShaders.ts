@@ -1,4 +1,4 @@
-// 装甲查看器穿透材质族（2026-10-24 自 tankViewer 闭包出仓，current-plan.md Step B2；
+// 装甲查看器穿透材质族（2026-10-24 自 tankViewer 闭包出仓，#741；
 // 代码与搬移前逐字一致，仅去一层闭包缩进并加 export）。
 // 覆盖：PBR 穿透热力图主材质（penetrationMaterial，逐行对齐 BlitzKit
 // PrimaryArmorSceneComponent fragment.glsl）、外部模块/履带等效层（externalMaterial、

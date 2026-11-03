@@ -1,4 +1,4 @@
-// 基地贴地标记系统（2026-10-24 自 initPlayback 闭包出仓，current-plan.md Step A4
+// 基地贴地标记系统（2026-10-24 自 initPlayback 闭包出仓，#741
 // 叶子段；代码与搬移前逐字一致，闭包读数改经 getter 快照：getScene/getCamera/
 // getData/getMapBases，groundY 由宿主注入——闭包内函数声明，创建期引用安全）。
 // 语义注释（设计语言 token、语义红线、fail-closed 判据）随代码原样保留。

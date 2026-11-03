@@ -1,5 +1,5 @@
 // playbackScene 内核的共享常量与并发工具（2026-10-24 自 initPlayback 所在文件出仓，
-// 拆分计划与模式说明见 docs/current-plan.md；代码与搬移前逐字一致）。
+// 拆分计划与模式说明见 #820；代码与搬移前逐字一致）。
 
 export const GRID_DT = 0.1
 

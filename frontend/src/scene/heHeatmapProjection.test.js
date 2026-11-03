@@ -5,7 +5,7 @@ import fs from 'node:fs';
 // 主装甲深度遮罩（renderOrder 0 的 omit 克隆）先写深度，renderOrder 1 的着色克隆
 // 再按深度测试只让最近的主装甲通过。若给 HE 单独关闭遮罩，后层主装甲的颜色会
 // 穿透前板参与混合，画面上的颜色就不再属于可见主装甲。
-// 穿透材质族 2026-10-24 出仓 viewer/armorShaders.js（current-plan.md Step B2）：
+// 穿透材质族 2026-10-24 出仓 viewer/armorShaders.js（#741）：
 // 着色器模式断言随实现覆盖两份源（拼接读取，not.toMatch 同时约束两侧）
 const viewer = fs.readFileSync(new URL('./tankViewer.js', import.meta.url), 'utf8')
     + fs.readFileSync(new URL('./viewer/armorShaders.ts', import.meta.url), 'utf8');

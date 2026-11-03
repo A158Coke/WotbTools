@@ -1,5 +1,5 @@
 // 点击拾取调试报告器（2026-10-24 自 initPlayback 闭包出仓为工厂，拆分计划与
-// 模式说明见 docs/current-plan.md；代码与搬移前逐字一致，仅闭包读数改经 ctx 快照）。
+// 模式说明见 #741；代码与搬移前逐字一致，仅闭包读数改经 ctx 快照）。
 // 纯函数（报告组装/格式化/链可见性）在 scene/pickDebug.js；本工厂只持有会话级
 // 调试件（pickMarker 网格 + pickPanel DOM）。
 //
@@ -7,7 +7,7 @@
 // terrainMesh, groundMesh, destruct, destructPickList, meshOwner, heightField,
 // heightMeta, camera, raycaster, container, scene, terrainSpan }——这些在闭包里都是
 // 可变绑定，工厂创建期捕获会拿到过期值；快照式传参是「显式 state」拆分模式在
-// 事件处理器上的落地形式（见 current-plan.md Design 节）。
+// 事件处理器上的落地形式（见 #741 Design 节）。
 import * as THREE from 'three'
 import type { Camera, Intersection, Mesh, Object3D, Raycaster, Scene } from 'three'
 import { nameChainOf, nearestInstance, chainVisible, meshOwnerKey, stateVisualLabel, formatPickReport } from '../pickDebug.js'
