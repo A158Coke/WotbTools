@@ -37,7 +37,7 @@ import {
     isClippedModuleHit, isBackfaceNormal,
 } from './armorCollisionPack.js'
 // 穿透材质族（PBR 热力图/间隙甲双通道/外部模块层 + 跳弹续飞共享 uniforms）2026-10-24
-// 出仓 viewer/armorShaders.js（current-plan.md Step B2）；材质语义注释随实现迁往该模块
+// 出仓 viewer/armorShaders.js（#741）；材质语义注释随实现迁往该模块
 import {
     PBR_VERT, PBR_FRAG, createArmorShaderContext,
 } from './viewer/armorShaders.js'

@@ -5,8 +5,8 @@ import { describe, it, expect } from 'vitest'
 import {
   strictSurfacesOf, materialIsWater, isWaterNode, isSkyShellName,
   isNonIntactStateName, bakeDropNode, materialHasSky, materialAllSky, sceneHasSkyFlags, isSkyShell,
-} from './sceneryAssemblyRules.js'
-import { pruneForeignVariants } from './variantFilter.js'
+} from './sceneryAssemblyRules.ts'
+import { pruneForeignVariants } from './variantFilter.ts'
 
 const water = () => ({ userData: { water: { props: {} } } })
 const sky = () => ({ userData: { sky: true } })
