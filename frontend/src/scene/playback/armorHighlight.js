@@ -729,6 +729,9 @@ export function createArmorHighlight({ renderer, assetProvider }) {
    */
   function prewarm(camera) {
     if (warmMaterials || disposed) return
+    // 测试 stub / 降级容器没有 renderer.compile：best-effort 语义直接静默跳过，
+    // 不刷 catch 日志（CI 单测日志曾被此淹没）。
+    if (typeof renderer.compile !== 'function') return
     try {
       const clipPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
       const clippedDepth = depthMaterials.externalDepth.clone()
