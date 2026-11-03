@@ -7,7 +7,7 @@ import {
   resetTrailState, resolveTreadParams, textureStemOf,
   trailStampCorners, treadAlphaAt, treadScaleFor, TRAIL_LIFT, TREAD_FADE, TREAD_RING,
   TREAD_ACTIVATE,
-} from './treadMarks.js'
+} from './treadMarks.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const sceneSrc = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')

@@ -8,7 +8,7 @@ import {
   evaluateProbabilityChain,
   formatProbabilityPercent,
   resolveCardChance,
-} from './armorInspectorChance.js'
+} from './armorInspectorChance.ts'
 
 describe('normalCdf（高斯 CDF）', () => {
   it('标准点与对称性', () => {

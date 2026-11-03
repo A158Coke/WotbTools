@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createI18n } from 'vue-i18n'
 import messages from '../locales/feature-messages.json'
-import { armorPartLabel, armorResultLabel, tankNationLabel, tankTypeLabel } from './tankMeta.js'
+import { armorPartLabel, armorResultLabel, tankNationLabel, tankTypeLabel } from './tankMeta.ts'
 
 const { t, te } = createI18n({ legacy: false, locale: 'zh', messages }).global
 

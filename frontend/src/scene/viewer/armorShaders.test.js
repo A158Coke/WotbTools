@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createArmorShaderContext } from './armorShaders.js'
+import { createArmorShaderContext } from './armorShaders.ts'
 
 // 评审 P1：穿透材质族的运行态（分辨率/跳弹 uniforms/占位纹理）必须**每个 viewer 一份**。
 // 拆分前它们位于 initTankViewer 闭包；出仓时不得提升为模块单例——两个 viewer 生命周期

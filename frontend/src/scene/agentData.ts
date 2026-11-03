@@ -100,7 +100,7 @@ let tankIconCropsPromise: ReturnType<typeof assetProvider.json> | null = null
 export function loadTankIconCrops() {
   if (!tankIconCropsPromise) {
     tankIconCropsPromise = assetProvider
-      .json('/tank_images/crops.json')
+      .json<{ icons?: Record<string, unknown> | null } | null>('/tank_images/crops.json')
       .then((doc) => doc?.icons ?? null)
       .catch(() => null)
   }
