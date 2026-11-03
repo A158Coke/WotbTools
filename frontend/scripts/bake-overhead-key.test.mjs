@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { bakeKey } from './bake-overhead-key.mjs'
 
 const SIZE = 4
@@ -61,6 +63,14 @@ function fakePage({ load = { ok: true, span: 640, ground: true }, pixels = Buffe
 
 const run = (page, opts = {}) => bakeKey({ page, key: KEY, outDir, span: 600, size: SIZE, mapId: 7, uploadPath, ...opts })
 const outputs = () => readdirSync(outDir).filter((f) => f.startsWith(KEY)).sort()
+
+it('CLI 缺原始底图目录时在启动浏览器前明确失败', () => {
+  const cli = fileURLToPath(new URL('./bake-ground-overhead.mjs', import.meta.url))
+  const result = spawnSync(process.execPath, [cli, '--pack', packDir, '--map', KEY, '--base-dir', join(packDir, 'missing')], { encoding: 'utf8' })
+  expect(result.status).not.toBe(0)
+  expect(result.stderr).toContain('客户端原始底图目录不存在')
+  expect(result.stderr).not.toContain('baseDirOf is not defined')
+})
 
 describe('逐图产物 fail-closed：失败 = 本图无产物（含上一轮旧成品）', () => {
   it('预置旧 .rgba/.meta.json + 分层 404 ⇒ reject 且两份旧产物都已删除', async () => {

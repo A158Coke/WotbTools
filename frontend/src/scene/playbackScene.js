@@ -1231,25 +1231,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (!optional) store.assetDegraded = true;
       console.warn(`[map-assets] ${key}: ${status}${detail ? ' — ' + detail : ''}`);
     };
-    // 地面底图链路（#857 pair 契约）：分层档走 `map`（ground.webp 兜底/2D 平面）；terrain-baked
-    // 档先取纯地形烘焙底图 `ground-terrain`（无俯视 scenery 合成）。**pair 原子性**：
-    // ground-terrain 是 lite mode correctness 的一半，不是 cosmetic optional——成功 ⇒
-    // `liteGroundReady = true`（本次加载的 transaction state，非第二 SSOT）；失败 ⇒ 显式
-    // 降级（assetDegraded，非 optional）回退 legacy ground.webp，且场景阶段保持 legacy
-    // coherent pair（ground.webp + 无场景）。禁止组合：ground-terrain + 无 lite、
-    // ground.webp + lite。客户端 HUD 小地图不进地面链路（2026-10-16 裁定）。
-    let liteGroundReady = false;
-    // 本次 lite transaction 的 ownership baseline（assemble 前捕获；catch 回滚路径引用 ⇒
-    // 必须声明在函数体层——try 块内 let 对 catch 不可见）
-    let liteBaseline = null;
-    const groundKinds = Q.groundMode === 'layers' ? ['map'] : ['ground-terrain', 'map'];
-    if (groundKinds.some((k) => mapStaticUrl(k, undefined, resolvedKey))) progress.expect('map');
+    if (mapStaticUrl('map', undefined, resolvedKey)) progress.expect('map');
     if (mapStaticUrl('terrain', undefined, resolvedKey)) progress.expect('terrain');
-    if (Q.groundMode === 'layers' && mapStaticUrl('groundmeta', undefined, resolvedKey)) progress.expect('ground');
-    // 场景 GLB 按档位选 kind：full = scenery.glb；lite = scenery-lite.glb（#857 派生档，
-    // 缺失时显式降级无场景，绝不回退 full——档位下载税契约）
-    const sceneryKind = Q.sceneryTier === 'full' ? 'scenery' : 'scenery-lite';
-    if (mapStaticUrl(sceneryKind, undefined, resolvedKey)) progress.expect('scenery');
+    if (mapStaticUrl('groundmeta', undefined, resolvedKey)) progress.expect('ground');
+    if (mapStaticUrl('scenery', undefined, resolvedKey)) progress.expect('scenery');
     try {
       // 地面底图统一 ±300 全幅契约（与 2D 底图同源同框）。曾用客户端 HUD 小地图
       //（资产面 res=mini）省流量：实测它覆盖约 620 m —— 比 ±300 契约框**多出外围一圈**
@@ -1257,36 +1242,29 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // 边界（2026-10-16 用户裁定：以 ±300 为准，外圈不呈现）。
       // client-only：仅资产平面静态路径；未配置基址/索引未命中 → 无底图（回退网格），
       // 不存在服务端回退
-      for (const kind of groundKinds) {
-        const mapUrl = mapStaticUrl(kind, undefined, resolvedKey);
-        if (!mapUrl) {
-          noteAsset(kind, 'missing-url',
-            kind === 'map' ? (resolvedKey ? 'ground.webp URL 为空' : '未解析到资产索引 key')
-                           : '低档纯地形底图 URL 为空（lite pair 不完整，回退 legacy ground.webp）');
-          continue;
-        }
+      const mapUrl = mapStaticUrl('map', undefined, resolvedKey);
+      if (!mapUrl) {
+        noteAsset('map', 'missing-url', resolvedKey ? 'ground.webp URL 为空' : '未解析到资产索引 key');
+      } else {
         const resp = await assetProvider.fetch(mapUrl);
         if (stale()) return;
         if (!resp.ok) {
-          noteAsset(kind, `http-${resp.status}`,
-            kind === 'map' ? 'ground.webp 获取失败'
-                           : 'ground-terrain.webp 获取失败（lite pair 不完整，回退 legacy ground.webp）');
-          continue;
+          noteAsset('map', `http-${resp.status}`, 'ground.webp 获取失败');
+        } else {
+          const meta = JSON.parse(resp.headers.get('X-Map-Meta') || '{}');
+          const blob = await resp.blob();
+          if (stale()) return;
+          const url = URL.createObjectURL(blob);
+          let texture;
+          try { texture = await new THREE.TextureLoader().loadAsync(url); }
+          finally { URL.revokeObjectURL(url); }
+          if (stale()) { texture.dispose(); return; }
+          mapMetaInfo = meta;
+          mapTexture = texture;
+          mapTexture.colorSpace = THREE.SRGBColorSpace;
+          mapTexture.anisotropy = Math.min(Q.anisotropy, renderer.capabilities.getMaxAnisotropy());
+          if (meta.flip_x) { mapTexture.wrapS = THREE.RepeatWrapping; mapTexture.repeat.x = -1; mapTexture.offset.x = 1; }
         }
-        const meta = JSON.parse(resp.headers.get('X-Map-Meta') || '{}');
-        const blob = await resp.blob();
-        if (stale()) return;
-        const url = URL.createObjectURL(blob);
-        let texture;
-        try {
-          texture = await new THREE.TextureLoader().loadAsync(url);
-        } finally {
-          URL.revokeObjectURL(url);
-        }
-        if (stale()) { texture.dispose(); return; }
-        applyGroundTexture(meta, texture);
-        if (kind === 'ground-terrain') liteGroundReady = true;
-        break;
       }
     } catch (e) { noteAsset('map', 'failed', e && e.message ? e.message : e); }
     if (stale()) return;
@@ -1375,8 +1353,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 分辨率限制。任一分层缺失则整体回退烘焙底图。
     // 注意分层一律无 alpha（Chrome 把带 alpha 的 webp 预乘解码，GPU 侧会压暗
     // 近黑），第 4 通道在独立灰度图里（tile1/mask1/hmap1 的 R）。
-    // 低/中档跳过分层地表：直接走整图烘焙底图（省 4–8 张纹理下载与显存）
-    if (Q.groundMode === 'layers') try {
+    // 各画质档均使用分层地表，资产不完整时回退整图底图。
+    try {
       const gmUrl = mapStaticUrl('groundmeta', undefined, resolvedKey);
       if (!gmUrl) {
         noteAsset('groundLayers', 'missing-url', '跳过分层地表（回退烘焙底图）', { optional: true });
@@ -1464,113 +1442,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 静态场景模型（建筑/桥/岩石，tools/export_map_glb.py 预生成；缺失按档位降级）。
     // GLB 为游戏系（z 上、+y 北），qFrame = Ry(π)·Rx(-π/2)（YXZ 序）转到回放场景系——
     // 与坦克 GLB 同一帧变换，纯旋转无镜像，绕序天然正确。
-    // #857 场景档位：high/ultra 加载 full scenery.glb（11–67MB 下载 + 大块显存）；
-    // low/mid 加载同批派生的 **结构轻量档 scenery-lite.glb**（精确结构几何、无内嵌纹理/
-    // 植被/效果卡片——斜视时桥梁/岩体不再"压平"）。lite 缺失（资产发布异常）→ 显式
-    // 降级为无场景（本档位既有形态），**绝不回退 full**：不出现 low 档不可预测的
-    // 巨大资源跳变。均衡档地面走纯地形烘焙底图（无分层、无俯视 scenery 合成）。
-    /** lite 装配 rollback 边界（#857 修复轮 §1-5）：assembleMapScenery 在**完整 assembly
-     *  成功前**就可能 publish（onSceneryMounted → corridor mask → instancing → occlGrid →
-     *  annotationSurfaceGrid → destructibles），之后任何 throw 若只回退地面，会留下
-     *  "ground.webp + 已挂载 lite 场景"的非法 pair。rollback 只处理**本次 load transaction
-     *  已获取 ownership 的状态**（baseline = assemble 前的宿主引用快照；上一会话的值由
-     *  teardown/reset 先行清空，这里恢复到 baseline 即不触碰其他 session/full scenery）：
-     *  移除并 dispose 已挂载场景组、释放水面高度场纹理、恢复全部 scenery-derived 宿主
-     *  引用，走廊掩码回退后按既有 rebuild contract 重建地形 LOD（否则 legacy 地面仍携带
-     *  lite-derived terrain geometry）。不是全局 asset transaction service。 */
-    /** 地面底图贴图统一接线（sRGB + 各向异性 + flip_x）：主链路与 lite pair 回退共用一份
-     *  （C3 守卫口径：SRGBColorSpace 只出现在显示内容链，站点数不因回退路径翻倍）。 */
-    function applyGroundTexture(meta, texture) {
-      mapMetaInfo = meta;
-      mapTexture = texture;
-      mapTexture.colorSpace = THREE.SRGBColorSpace;
-      mapTexture.anisotropy = Math.min(Q.anisotropy, renderer.capabilities.getMaxAnisotropy());
-      if (meta.flip_x) { mapTexture.wrapS = THREE.RepeatWrapping; mapTexture.repeat.x = -1; mapTexture.offset.x = 1; }
-    }
-    function rollbackLiteScenery(baseline) {
-      if (mapScenery && mapScenery !== baseline.mapScenery) {
-        scene.remove(mapScenery);
-        disposeObject3D(mapScenery);
-      }
-      if (waterTexDispose && waterTexDispose !== baseline.waterTexDispose) waterTexDispose.dispose();
-      mapScenery = baseline.mapScenery;
-      waterTexDispose = baseline.waterTexDispose;
-      animLayerMats = baseline.animLayerMats;
-      occlGrid = baseline.occlGrid;
-      annotationSurfaceGrid = baseline.annotationSurfaceGrid;
-      destructPickList = baseline.destructPickList;
-      meshOwner = baseline.meshOwner;
-      destruct = baseline.destruct;
-      terrainRefineMask = baseline.terrainRefineMask;
-      terrainLodPrev = null;          // 掩码变了 ⇒ LOD 缓存失效，按回退后状态重建
-      maybeRebuildTerrainLod();
-    }
-    /** legacy ground 也不可用 ⇒ fail-closed 终态（#857 修复轮 §7）：无 lite 场景、
-     *  无 ground-terrain 贴图、mapTexture=null 按 rebuildGround 既有契约走 textureless
-     *  地形/网格回退；绝不回退 full scenery。 */
-    function failClosedLegacyGround() {
-      liteGroundReady = false;
-      const previous = mapTexture;
-      mapTexture = null;
-      mapMetaInfo = null;
-      try { rebuildGround(); } catch (e) {
-        clearGroundRenderables();
-        if (DEBUG) window.__terrain = null;
-        console.warn('fail-closed 地面重建失败:', e);
-      }
-      if (previous) previous.dispose();
-    }
-    /** lite pair 回退（#857）：scenery-lite 不可用时把地面从 ground-terrain 换回 legacy
-     *  ground.webp 并重建地面。**返回 Promise<boolean>**（修复轮 §6）：true = legacy 地面
-     *  完整加载/接线/重建/提交；false = legacy 不可建立（missing URL / HTTP / blob /
-     *  TextureLoader / rebuild 任一步）——内部自捕获不外泄，调用方据 false 走
-     *  failClosedLegacyGround 终态。full 档不经过此路径。 */
-    async function fallbackLegacyGround(key) {
-      liteGroundReady = false;
-      let texture;
-      let previousTexture;
-      let previousMeta;
-      let installed = false;
-      try {
-        const mapUrl = mapStaticUrl('map', undefined, key);
-        if (!mapUrl) { noteAsset('map', 'missing-url', key ? 'ground.webp URL 为空' : '未解析到资产索引 key'); return false; }
-        const resp = await assetProvider.fetch(mapUrl);
-        if (stale()) return false;
-        if (!resp.ok) { noteAsset('map', `http-${resp.status}`, 'ground.webp 获取失败'); return false; }
-        const meta = JSON.parse(resp.headers.get('X-Map-Meta') || '{}');
-        const blob = await resp.blob();
-        if (stale()) return false;
-        const url = URL.createObjectURL(blob);
-        try { texture = await new THREE.TextureLoader().loadAsync(url); } finally { URL.revokeObjectURL(url); }
-        if (stale()) { texture.dispose(); return false; }
-        previousTexture = mapTexture;
-        previousMeta = mapMetaInfo;
-        installed = true;
-        applyGroundTexture(meta, texture);
-        rebuildGround();
-        if (previousTexture && previousTexture !== texture) previousTexture.dispose();
-        return true;
-      } catch (e) {
-        if (installed) {
-          mapTexture = previousTexture;
-          mapMetaInfo = previousMeta;
-          // 清掉可能已部分安装的 candidate；后续调用方继续执行 fail-closed 重建。
-          clearGroundRenderables();
-          if (DEBUG) window.__terrain = null;
-        }
-        if (texture && texture !== previousTexture) texture.dispose();
-        if (!stale()) noteAsset('map', 'failed', e && e.message ? e.message : e);
-        return false;
-      }
-    }
-    if (Q.sceneryTier) {
-      // pair 契约：lite mode 需要 ground-terrain + scenery-lite 同时在场。ground-terrain
-      // 失败 ⇒ 不发起 scenery-lite（legacy coherent pair：ground.webp + 无场景）；full 档不受限。
-      if (Q.sceneryTier === 'lite' && !liteGroundReady) {
-        noteAsset('scenery', 'degraded',
-          'lite pair 不完整（ground-terrain 缺失）——保持 legacy ground.webp + 无场景；不加载 lite，不回退 full');
-      } else try {
-      const sceneryKind = Q.sceneryTier === 'full' ? 'scenery' : 'scenery-lite';
+    // 所有画质档均加载同一完整场景，其他渲染预算仍由画质档控制。
+    let sceneryBaseline = null;
+    try {
       // 可破坏物清单（与场景 GLB 并行拉取；缺失/低档静默禁用该特性）
       // mapStaticUrl 返回完整 URL——assetProvider.json() 会再拼一次 base（逻辑路径专用），
       // 必须走透传的 fetch + resp.json()（与下方 terrain-meta 同款用法）
@@ -1585,16 +1459,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           })
         : Promise.resolve(null);
       if (DEBUG) destructDocPromise.then((d) => { window.__destructStage = d ? 'doc-ok' : 'doc-missing'; });
-      const sceneryUrl = mapStaticUrl(sceneryKind, undefined, resolvedKey);
+      const sceneryUrl = mapStaticUrl('scenery', undefined, resolvedKey);
       if (!sceneryUrl) {
-        if (sceneryKind === 'scenery-lite') {
-          noteAsset('scenery', 'degraded', '未配置资产面/未命中索引（无 lite 场景）——回退 legacy ground.webp + 无场景；不回退 full');
-          const fallbackOk = await fallbackLegacyGround(resolvedKey);
-          if (stale()) return;
-          if (!fallbackOk) failClosedLegacyGround();
-        } else {
-          noteAsset('scenery', 'missing-url', '未配置资产面/未命中索引（无场景 GLB）');
-        }
+        noteAsset('scenery', 'missing-url', '未配置资产面/未命中索引（无场景 GLB）');
       }
       else {
       const gltf = await new Promise((res) => {
@@ -1607,28 +1474,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         if (gltf?.scene) disposeObject3D(gltf.scene);
         return;
       }
-      if (!gltf || !gltf.scene) {
-        if (sceneryKind === 'scenery-lite') {
-          noteAsset('scenery', 'degraded', 'scenery-lite.glb 加载/解析失败——回退 legacy ground.webp + 无场景；不回退 full');
-          const fallbackOk = await fallbackLegacyGround(resolvedKey);
-          if (stale()) return;
-          if (!fallbackOk) failClosedLegacyGround();
-        } else {
-          noteAsset('scenery', 'failed', 'scenery.glb 加载/解析失败（建筑/场景缺失）');
-        }
-      }
+      if (!gltf || !gltf.scene) noteAsset('scenery', 'failed', 'scenery.glb 加载/解析失败（建筑/场景缺失）');
       if (gltf && gltf.scene) {
         // 装配（变体裁剪 → 材质分派 → 合批 → 可破坏物槽位 → 矩阵冻结）在
         // playback/mapAssets.js（2026-10-24 Step A3 出仓；ctx 快照 + 增量 writes，
         // stale 语义与原闭包逐段赋值 + 中途 return 一致——见该模块头注释）
-        // 修复轮 §1-3：assemble 在完整成功**之前**就可能 publish（onSceneryMounted →
-        // corridor mask → instancing → occl/annotation → destructibles），先捕获本次
-        // transaction 的 baseline，装配任一步 throw 由 rollbackLiteScenery 收敛到
-        // legacy coherent pair（防止 "ground.webp + 已挂载 lite" 非法终态）。
-        liteBaseline = sceneryKind === 'scenery-lite' ? {
-          mapScenery, waterTexDispose, animLayerMats, terrainRefineMask,
-          occlGrid, annotationSurfaceGrid, destructPickList, meshOwner, destruct,
-        } : null;
+        sceneryBaseline = { mapScenery, waterTexDispose, animLayerMats, terrainRefineMask,
+          occlGrid, annotationSurfaceGrid, destructPickList, meshOwner, destruct };
         const asm = await assembleMapScenery(gltf, {
           DATA, Q, DEBUG,
           camera, renderer, scene, controls, terrainMesh,
@@ -1658,24 +1510,22 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       }
       }
     } catch (e) {
-      if (sceneryKind === 'scenery-lite') {
-        // 装配/变体裁剪/实例化/掩码等步骤抛错同样意味着 lite 不可用——但 assemble 可能
-        // 已在 mount 后 publish（场景组/掩码/occl/annotation/destruct 索引），必须先回滚
-        // 本次 transaction 拿到的 ownership，再回退地面，收敛到 legacy coherent pair
-        rollbackLiteScenery(liteBaseline || {
-          mapScenery: null, waterTexDispose: null, animLayerMats: [], terrainRefineMask: null,
-          occlGrid: null, annotationSurfaceGrid: null, destructPickList: null, meshOwner: null, destruct: null,
-        });
-        noteAsset('scenery', 'degraded', 'scenery-lite 装配失败——回退 legacy ground.webp + 无场景；不回退 full');
-        const fallbackOk = await fallbackLegacyGround(resolvedKey);
-        if (stale()) return;
-        if (!fallbackOk) failClosedLegacyGround();
-      } else {
-        console.warn('场景模型加载失败（忽略）:', e);
-        // 装配/变体裁剪/实例化等后续步骤抛错同样意味着建筑缺失，必须进入降级状态
-        noteAsset('scenery', 'failed', e && e.message ? e.message : e);
+      if (stale()) return;
+      if (sceneryBaseline) {
+        if (mapScenery && mapScenery !== sceneryBaseline.mapScenery) {
+          scene.remove(mapScenery);
+          disposeObject3D(mapScenery);
+        }
+        if (waterTexDispose && waterTexDispose !== sceneryBaseline.waterTexDispose) waterTexDispose.dispose();
+        ({ mapScenery, waterTexDispose, animLayerMats, terrainRefineMask, occlGrid,
+          annotationSurfaceGrid, destructPickList, meshOwner, destruct } = sceneryBaseline);
+        terrainLodPrev = null;
+        try { maybeRebuildTerrainLod(); } catch (rollbackError) {
+          console.warn('场景回滚后地形重建失败:', rollbackError);
+        }
       }
-    }
+      console.warn('场景模型加载失败（忽略）:', e);
+      noteAsset('scenery', 'failed', e && e.message ? e.message : e);
     }
     if (stale()) return;
     progress.complete('scenery');

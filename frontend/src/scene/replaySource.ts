@@ -499,17 +499,9 @@ export function mapStaticUrl(kind: string, layer: string | null | undefined, map
   const f = (name: string) => assetProvider.url(`/map/${mapKey}/${name}`)
   switch (kind) {
     case 'map': return f('ground.webp')
-    // 纯地形烘焙底图（#857）：terrain-only 俯视烘焙 pass，无俯视 scenery 合成——
-    // 供加载 3D 结构场景 lite 档（scenery-lite）的低两档使用，避免"3D 桥 + 地面图画桥"
-    // 双重投影。缺失（旧包）→ 调用方显式降级回退 `map`。
-    case 'ground-terrain': return f('ground-terrain.webp')
     case 'terrain': return f('terrain.u16.bin')
     case 'terrain-meta': return f('terrain.json')
     case 'scenery': return f('scenery.glb')
-    // 结构场景轻量档（#857）：full scenery 同批派生的结构几何子集（精确几何、
-    // 剥离内嵌纹理与植被/效果卡片、保留语义 extras 与变体元数据），low/mid 档消费。
-    // 缺失（资产发布异常）→ 显式降级无场景，**绝不回退 full scenery**（档位下载税契约）。
-    case 'scenery-lite': return f('scenery-lite.glb')
     // 逐图光照参数（上游 tools/export_map_lighting.py：太阳方向/色/强度 + 环境色 + 雾 + IBL）。
     // 缺失（旧包）→ 3D 侧保留硬编码灯光，不阻断加载。
     case 'lighting': return f('lighting.json')

@@ -40,6 +40,8 @@ const argOf = (name, def) => {
 const has = (name) => args.includes(`--${name}`)
 const PACK = resolve(argOf('pack', 'D:/Class/Rust/Project/release/asset_pack'))
 const SIZE = Number(argOf('size', 4096))
+// 客户端原始底图与已合成的 ground.webp 不同，不能以成品代替。
+const BASE_DIR = resolve(argOf('base-dir', resolve(PACK, '..', '..', 'data', 'cache', 'maps')))
 
 function primaryMapIdOf(key) {
   const mapIndex = argOf('map-index', 'D:/Class/Rust/Project/map_index.json')
@@ -88,15 +90,17 @@ function spaceOf(key) {
 }
 
 const main = async () => {
+  if (!existsSync(BASE_DIR)) throw new Error(`客户端原始底图目录不存在: ${BASE_DIR}（请通过 --base-dir 指定）`)
   const outDir = join(PACK, 'overhead')
   mkdirSync(outDir, { recursive: true })
-  const { server, origin, uploadPath: UPLOAD } = await startBakeServer({ pack: PACK, baseDir: baseDirOf(), size: SIZE })
-  const chrome = findChrome()
-  // gpu 模式显式指定 Windows ANGLE D3D11 后端——headless 默认会回落 SwiftShader
-  const env = await launchChromeForCdp(chrome, has('gpu')
-    ? { gpu: true, extraArgs: ['--use-gl=angle', '--use-angle=d3d11'] }
-    : {})   // --gpu：真 GPU（RTX）+ D3D11 ANGLE；缺省 SwiftShader 软渲染
+  const { server, origin, uploadPath: UPLOAD } = await startBakeServer({ pack: PACK, baseDir: BASE_DIR, size: SIZE })
+  let env = null
   try {
+    const chrome = findChrome()
+    // gpu 模式显式指定 Windows ANGLE D3D11 后端——headless 默认会回落 SwiftShader
+    env = await launchChromeForCdp(chrome, has('gpu')
+      ? { gpu: true, extraArgs: ['--use-gl=angle', '--use-angle=d3d11'] }
+      : {})
     const { targetId, sessionId } = await env.openPage()
     const page = new Page(env.client, sessionId)
     await page.evaluate(`location.href = ${JSON.stringify(origin + '/bake')}`)
@@ -120,6 +124,7 @@ const main = async () => {
     const spans = Object.fromEntries(keys.map((k) => [k, spanOf(k)]))   // 先算齐：fail-fast 不泄漏服务器
     const spaces = Object.fromEntries(keys.map((k) => [k, spaceOf(k)]))
     console.error('bake origin:', origin, '| maps:', keys.length)
+    let failed = 0
     for (const key of keys) {
       try {
         console.log(JSON.stringify(await bakeKey({ page, key, outDir, span: spans[key], size: SIZE,
@@ -133,12 +138,13 @@ const main = async () => {
           console.log(JSON.stringify({ key, pick: Object.assign(...pts.map(([x, y], i) => ({ [x + ',' + y]: picks[i] }))) }))
         }
       } catch (e) {
+        failed++
         console.log(JSON.stringify({ key, error: String(e).slice(0, 300) }))
       }
     }
+    if (failed) process.exitCode = 2
   } finally {
-    await env.close()
-    await server.close()
+    try { await env?.close() } finally { await server.close() }
   }
 }
 await main()

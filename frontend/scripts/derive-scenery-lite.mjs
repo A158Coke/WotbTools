@@ -101,8 +101,8 @@ export async function deriveMap({ mapDir, reportDir, key, colorOf }) {
     report = {
       key,
       sourceSha256: createHash('sha256').update(buf).digest('hex'),
-      sourceBytes: buf.length,
       ...derived.report,
+      sourceBytes: buf.length,
       verify: {
         ok: v.ok, problems: v.problems,
         structuralNodes: v.report.structuralNodes, geometryHash: v.report.geometryHash,

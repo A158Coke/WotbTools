@@ -168,6 +168,14 @@ describe('deriveLiteCore：scenery-lite 派生（#857 Step 3）', () => {
     expect(v.report.geometryHash).toMatch(/^[0-9a-f]{64}$/)
   })
 
+  it('只有贴图引用的 extras 被剥除后与空语义等价', async () => {
+    const { json, bin } = buildFixture()
+    json.materials[5].extras = { lightmap: 0 }
+    const lite = await deriveSceneryLite(json, bin, { colorOf })
+    expect(lite.json.materials.find(m => m.name === 'rock_mat').extras).toBeUndefined()
+    expect(verifyLite(json, bin, lite.json, lite.bin).problems).toEqual([])
+  })
+
   it('verifier fail-closed：几何字节/变换/extras/载荷 任一篡改都被抓出', async () => {
     const { json, bin } = buildFixture()
     const lite = await deriveSceneryLite(json, bin, { colorOf })
@@ -281,7 +289,9 @@ describe('单图派生的旧产物清理', () => {
       const run = (opts = {}) => deriveMap({ mapDir, reportDir, key: 'fixture', colorOf, ...opts })
       seed()
       writeFileSync(scene, valid)
-      expect((await run()).written).toBe(true)
+      const successful = await run()
+      expect(successful.written).toBe(true)
+      expect(successful.sourceBytes).toBe(valid.byteLength)
       expect(parseGlb(readFileSync(out)).json.asset.version).toBe('2.0')
       expect(existsSync(out + '.tmp')).toBe(false)
       seed()

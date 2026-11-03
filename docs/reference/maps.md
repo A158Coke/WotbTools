@@ -120,14 +120,6 @@ python common/python/extract_map_bases.py <同上> --check   # CI：过期即失
 - canonical 目录只维护**一套** 2D 底图（来源见下节），**Web 与 APK 共用同一份字节**；
   对照材料与中间产物不进入运行时或前端镜像。
 
-## 结构场景轻量档与纯地形底图（#857，2026-11）
-
-3D 画质四档的结构 world topology 一致（桥/岩体/建筑低两档不再"压平"），视觉 fidelity 递增。低两档新增两类**由 full 场景派生**的 pack 产物（不引入第二套地图几何 SSOT）：
-
-- `map/<key>/scenery-lite.glb`：从同包 full `scenery.glb`（唯一 SSOT）确定性派生的结构子集——结构网格几何逐字节恒等，语义 extras（decal / 变体 / 水面）与变体组全保留；剥离内嵌纹理（材质退化为贴图均值色）、SpeedTree 植被（`ST|`）、billboard 卡片（`_CORNER`）、天空穹（`extras.sky`）与效果卡片（`blendLayer` / `alphaBlend`）。工具 = `frontend/scripts/derive-scenery-lite.mjs`；full ↔ lite 结构差分 verifier（几何字节 / 变换 / extras / 变体元数据 / 禁止载荷）**全绿才写盘**，逐图报告在 `<pack>/overhead/scenery-lite/<key>.report.json`。运行时 low/mid 档消费，且与 `ground-terrain.webp` 构成**原子 pair**：任一成员缺失 ⇒ 整 pair 回退 legacy（ground.webp + 无场景，不回退 full）。
-- `map/<key>/ground-terrain.webp`：纯地形俯视烘焙底图（`bake-ground-overhead.mjs` 的 terrain-only pass：隐藏场景组渲染地形 + 常量 ORIENT "YX" 翻转 + 客户端原始底图 `{space}.ground.webp` canvas 合成）。与 `ground.webp` 的唯一差异是不含俯视 scenery 合成——low/mid 档 3D 加载 lite 场景后，地面不能再画桥/屋顶俯视色（双重投影）。与 `scenery-lite.glb` 构成原子 pair（任一缺失 ⇒ 整 pair 回退 legacy ground.webp + 无场景，不回退 full）。
-- 两者的发布 gate：全部正式支持地图均生成（derive CLI 对 verify 失败图拒写并退出码 2；逐图产物缺失 = 发布不完整）。
-
 ## 2026-10-16 底图来源更换：客户端原图 × AI 增强 → pack `ground.webp` 派生
 
 - 29 张底图改由 Agent 仓 `release/asset_pack/map/<key>/ground.webp`（4096²，含俯视屋顶/树冠烘焙）

@@ -378,7 +378,7 @@ export function verifyLite(fullJson, fullBin, liteJson, liteBin) {
       if (fp.material !== undefined) {
         const fmat = fullJson.materials[fp.material], lmat = liteJson.materials[lp.material]
         if ((fmat.name || '') !== (lmat.name || '')) problems.push(`material name 漂移 @#${idx}[${pi}]`)
-        if (JSON.stringify(semanticExtras(fmat.extras || null)) !== JSON.stringify(semanticExtras(lmat.extras || null))) {
+        if (JSON.stringify(semanticExtras(fmat.extras) || {}) !== JSON.stringify(semanticExtras(lmat.extras) || {})) {
           problems.push(`material 语义 extras 漂移 @#${idx}[${pi}]`)
         }
         if ((fmat.alphaMode || 'OPAQUE') !== (lmat.alphaMode || 'OPAQUE')) problems.push(`alphaMode 漂移 @#${idx}[${pi}]`)
