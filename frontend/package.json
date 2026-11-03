@@ -16,6 +16,7 @@
     "test:browser-creators": "node scripts/browser-creators.mjs",
     "test:browser-feedback": "node scripts/browser-feedback.mjs",
     "test:browser-home": "node scripts/browser-home-reduced-motion.mjs",
+    "test:browser-view-transition": "node scripts/browser-view-transition.mjs",
     "test:browser-interaction": "node scripts/browser-workspace-interaction.mjs",
     "test:browser-armor-mobile": "node scripts/browser-armor-mobile.mjs",
     "test:browser-armor-aiming": "node scripts/browser-armor-aiming.mjs",
