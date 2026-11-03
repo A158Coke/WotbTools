@@ -9,11 +9,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent, h, nextTick } from 'vue'
 import { asyncView, VIEW_LOAD_DELAY_MS } from './viewRegistry.js'
+import * as motionPolicy from '../shared/motion/motionPolicy'
 
-const ReadMotionTokens = vi.hoisted(() => ({ slow: 0.3 }))
-vi.mock('../shared/motion/motionPolicy', () => ({
-  readMotionTokens: () => ({ slow: ReadMotionTokens.slow, fast: 0.15, base: 0.2, ease: [0.2, 0, 0, 1] }),
-}))
+// 用 spy 而不是 vi.mock：isolate=false 的 threads pool 下模块 mock 会跨文件泄漏
+//（全量跑时毒害 Scene3DViews 等 WebGL 预检用例）；spy 由 restoreAllMocks 还原。
+const ReadMotionTokens = { slow: 0.3 }
 
 const settle = async (ms = 0) => {
   await vi.advanceTimersByTimeAsync(ms)
@@ -37,6 +37,8 @@ describe('asyncView（View 切换统一加载/错误契约，#845）', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     ReadMotionTokens.slow = 0.3
+    vi.spyOn(motionPolicy, 'readMotionTokens').mockImplementation(
+      () => ({ slow: ReadMotionTokens.slow, fast: 0.15, base: 0.2, ease: [0.2, 0, 0, 1] }))
     vi.spyOn(console, 'error').mockImplementation(() => {})
   })
   afterEach(() => {
