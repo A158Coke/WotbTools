@@ -43,7 +43,10 @@
     "feedback": "Feedback",
     "global_error_title": "Error",
     "close": "Close",
-    "agent_replay_tab": "Agent 3D Replay"
+    "agent_replay_tab": "Agent 3D Replay",
+    "view_loading": "Loading…",
+    "view_load_error": "This page failed to load",
+    "view_load_reload": "Reload"
   },
   "errors": {
     "auth_unauthenticated": "Your session has expired. Please sign in again.",
