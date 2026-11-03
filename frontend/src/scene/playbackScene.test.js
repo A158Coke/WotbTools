@@ -1685,7 +1685,11 @@ describe('playbackScene 资产发布顺序', () => {
       const groundPass = await import('./groundPass.js')
       const originalBuild = groundPass.buildGroundGeometry
       const build = vi.spyOn(groundPass, 'buildGroundGeometry')
+      let outgoing
       const loader = vi.spyOn(GLTFLoader.prototype, 'load').mockImplementation((_url, _onLoad, _progress, onError) => {
+        outgoing = window.__terrain
+        vi.spyOn(outgoing.geometry, 'dispose')
+        vi.spyOn(outgoing.material, 'dispose')
         build.mockClear()
         let remaining = failures
         build.mockImplementation((...args) => {
@@ -1710,6 +1714,8 @@ describe('playbackScene 资产发布顺序', () => {
       await expect(api.loadData({ kind: 'local', file: new File(['a'], 'a') })).resolves.toBeUndefined()
       expect(store.hasData).toBe(true)
       expect(store.assetIssues.some(i => i.key === 'map' && i.status === 'failed' && i.detail.includes('injected rebuild failure'))).toBe(true)
+      expect(outgoing.geometry.dispose).toHaveBeenCalledTimes(1)
+      expect(outgoing.material.dispose).toHaveBeenCalledTimes(1)
       expect(candidateDispose).toHaveBeenCalledTimes(1)
       expect(gtDispose).toHaveBeenCalledTimes(1)
       expect(window.__scene.children.some(o => o.material?.map === gt || o.material?.map === candidate)).toBe(false)
@@ -1721,6 +1727,98 @@ describe('playbackScene 资产发布顺序', () => {
       expect(urls.some(url => url.endsWith('/assets/scenery'))).toBe(false)
       expect(build).toHaveBeenCalledTimes(2)
       build.mockRestore()
+    })
+  }
+
+
+
+  it('地面材质创建失败时释放尚未挂载的 geometry', async () => {
+    prepareAssets(['scenery-lite', 'ground-terrain', 'map', 'terrain', 'terrain-meta', 'lighting'])
+    const { terrainFetch } = lowEnv()
+    vi.stubGlobal('fetch', vi.fn(async url => {
+      if (String(url).endsWith('ground-terrain')) return { ok: true, headers: new Headers(), blob: async () => new Blob(['gt']) }
+      if (String(url).includes('terrain')) return terrainFetch(url)
+      if (String(url).includes('lighting')) return { ok: true, headers: new Headers(), json: async () => ({}) }
+      return { ok: true, headers: new Headers(), blob: async () => new Blob(['legacy']) }
+    }))
+    vi.spyOn(THREE.TextureLoader.prototype, 'loadAsync').mockResolvedValueOnce(new THREE.Texture()).mockResolvedValue(new THREE.Texture())
+    const groundPass = await import('./groundPass.js')
+    const buildOriginal = groundPass.buildGroundGeometry
+    let candidateGeometry
+    vi.spyOn(GLTFLoader.prototype, 'load').mockImplementation((_url, _ok, _progress, fail) => {
+      vi.spyOn(groundPass, 'buildGroundGeometry').mockImplementationOnce((...args) => {
+        candidateGeometry = buildOriginal(...args)
+        vi.spyOn(candidateGeometry, 'dispose')
+        return candidateGeometry
+      })
+      vi.spyOn(groundPass, 'makeGroundMaterial').mockImplementationOnce(() => { throw new Error('material failure') })
+      fail(new Error('lite unavailable'))
+    })
+    const { api } = createScene()
+    await expect(api.loadData({ kind: 'local', file: new File(['a'], 'a') })).resolves.toBeUndefined()
+    expect(candidateGeometry.dispose).toHaveBeenCalledTimes(1)
+    expect(window.__terrainQuality().ground).toEqual({ texture: false, meta: false })
+  })
+
+  for (const [label, failAfterMount] of [['J', false], ['K', true]]) {
+    it(`pair 矩阵 ${label} — ground shell 资源归属`, async () => {
+      prepareAssets(['scenery-lite', 'ground-terrain', 'map', 'terrain', 'terrain-meta', 'lighting'])
+      const { terrainFetch } = lowEnv()
+      const gt = new THREE.Texture(), candidate = new THREE.Texture()
+      const gtDispose = vi.spyOn(gt, 'dispose'), candidateDispose = vi.spyOn(candidate, 'dispose')
+      vi.spyOn(THREE.TextureLoader.prototype, 'loadAsync').mockResolvedValueOnce(gt).mockResolvedValue(candidate)
+      vi.stubGlobal('fetch', vi.fn(async url => {
+        if (String(url).endsWith('ground-terrain')) return { ok: true, headers: new Headers(), blob: async () => new Blob(['gt']) }
+        if (String(url).includes('terrain')) return terrainFetch(url)
+        if (String(url).includes('lighting')) return { ok: true, headers: new Headers(), json: async () => ({}) }
+        return { ok: true, headers: new Headers(), blob: async () => new Blob(['legacy']) }
+      }))
+      let outgoing, replacement, closedGround
+      vi.spyOn(GLTFLoader.prototype, 'load').mockImplementation((_url, _ok, _progress, fail) => {
+        outgoing = window.__terrain
+        vi.spyOn(outgoing.geometry, 'dispose')
+        vi.spyOn(outgoing.material, 'dispose')
+        const scene = window.__scene
+        const add = scene.add
+        vi.spyOn(scene, 'add').mockImplementation(function (...objects) {
+          const result = add.apply(this, objects)
+          const ground = objects.find(o => o.material?.map === candidate)
+          if (ground) {
+            replacement = ground
+            vi.spyOn(ground.geometry, 'dispose')
+            vi.spyOn(ground.material, 'dispose')
+            if (failAfterMount) throw new Error('post-mount ground failure')
+          }
+          if (failAfterMount && replacement && !closedGround) {
+            const closed = objects.find(o => o.geometry?.userData?.terrainBuild && !o.material?.map)
+            if (closed) {
+              closedGround = closed
+              vi.spyOn(closed.geometry, 'dispose')
+              vi.spyOn(closed.material, 'dispose')
+              throw new Error('post-mount fail-closed failure')
+            }
+          }
+          return result
+        })
+        fail(new Error('lite unavailable'))
+      })
+      const { api, store } = createScene()
+      await expect(api.loadData({ kind: 'local', file: new File(['a'], 'a') })).resolves.toBeUndefined()
+      expect(store.hasData).toBe(true)
+      expect(outgoing.geometry.dispose).toHaveBeenCalledTimes(1)
+      expect(outgoing.material.dispose).toHaveBeenCalledTimes(1)
+      expect(gtDispose).toHaveBeenCalledTimes(1)
+      expect(replacement).toBeDefined()
+      expect(replacement.geometry.dispose).toHaveBeenCalledTimes(failAfterMount ? 1 : 0)
+      expect(replacement.material.dispose).toHaveBeenCalledTimes(failAfterMount ? 1 : 0)
+      expect(candidateDispose).toHaveBeenCalledTimes(failAfterMount ? 1 : 0)
+      expect(window.__scene.children.includes(replacement)).toBe(!failAfterMount)
+      if (failAfterMount) {
+        expect(window.__terrainQuality().ground).toEqual({ texture: false, meta: false })
+        expect(closedGround.geometry.dispose).toHaveBeenCalledTimes(1)
+        expect(closedGround.material.dispose).toHaveBeenCalledTimes(1)
+        expect(window.__scene.children.includes(closedGround)).toBe(false)
+      }
     })
   }
 

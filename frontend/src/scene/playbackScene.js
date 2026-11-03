@@ -1514,8 +1514,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       mapTexture = null;
       mapMetaInfo = null;
       try { rebuildGround(); } catch (e) {
-        if (mapPlane) { scene.remove(mapPlane); mapPlane = null; }
-        if (terrainMesh) { scene.remove(terrainMesh); terrainMesh = null; }
+        clearGroundRenderables();
         if (DEBUG) window.__terrain = null;
         console.warn('fail-closed 地面重建失败:', e);
       }
@@ -1556,8 +1555,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           mapTexture = previousTexture;
           mapMetaInfo = previousMeta;
           // 清掉可能已部分安装的 candidate；后续调用方继续执行 fail-closed 重建。
-          if (mapPlane) { scene.remove(mapPlane); mapPlane = null; }
-          if (terrainMesh) { scene.remove(terrainMesh); terrainMesh = null; }
+          clearGroundRenderables();
           if (DEBUG) window.__terrain = null;
         }
         if (texture && texture !== previousTexture) texture.dispose();
@@ -2567,9 +2565,23 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // `groundShaderMaterial`——3D 运行时与俯视烘焙共用同一份。
   // 依据 mapTexture/heightField 重建地面（2D 平面或 3D 地形二选一）的宿主流程如下。
 
+  // 地面贴图由 mapTexture / groundLayers 持有，此处只释放 renderable 自身的资源。
+  function clearGroundRenderables() {
+    for (const root of [mapPlane, terrainMesh]) {
+      if (!root) continue;
+      scene.remove(root);
+      root.traverse((o) => {
+        o.geometry?.dispose?.();
+        const materials = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+        for (const material of materials) material?.dispose?.();
+      });
+    }
+    mapPlane = null;
+    terrainMesh = null;
+  }
+
   function rebuildGround() {
-    if (mapPlane) { scene.remove(mapPlane); mapPlane = null; }
-    if (terrainMesh) { scene.remove(terrainMesh); terrainMesh = null; }
+    clearGroundRenderables();
     if (!mapTexture && !heightField) return;
     const meta = mapMetaInfo || {};
     const size = meta.size_m || heightMeta?.span || 600;
@@ -2594,10 +2606,17 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // toneMapped=false 保持烘焙色彩逐像素对齐客户端）。材质选择在共享模块
       // groundPass.makeGroundMaterial（俯视烘焙同一份）。
       // 几何已直接建在场景系（顶点 = texel 中心的世界坐标）⇒ 不再旋转/平移
-      terrainMesh = new THREE.Mesh(geo, makeGroundMaterial({
-        layers: groundLayers && groundLayers.layers, texs: groundLayers && groundLayers.texs,
-        size, cx: meta.x || 0, cz: meta.z || 0, mapTexture,
-      }));
+      let material;
+      try {
+        material = makeGroundMaterial({
+          layers: groundLayers && groundLayers.layers, texs: groundLayers && groundLayers.texs,
+          size, cx: meta.x || 0, cz: meta.z || 0, mapTexture,
+        });
+      } catch (e) {
+        geo.dispose();
+        throw e;
+      }
+      terrainMesh = new THREE.Mesh(geo, material);
       scene.add(terrainMesh);
       constrainFreeCameraAltitude();
       if (DEBUG) window.__terrain = terrainMesh;   // 诊断/测试钩子：地形网格身份（免按几何猜）
