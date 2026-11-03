@@ -66,12 +66,15 @@ JavaScript 与 TypeScript 共存；`.js` import specifier 经 Vite/TypeScript re
 | Native Bridge wire | `api/generated/android-native-bridge.ts`（`contracts/android-native-bridge.json` 生成） |
 | Playback facet | `api/agent-replay-facets.ts` |
 | Worker 消息 | `replay-local/*WorkerProtocol.ts`、`scene/playbackParse.worker.ts` |
+| Three.js 场景 / 装甲 | 模块内自持（armorShaders / armorCollisionPack / armorPlateModel 等）；wire 形状复用 `api/agent-replay-facets.ts` |
 | 领域 / View model | `types/*.ts`，与 wire 类型分离 |
 
 `frontend/typescript.legacy.json` 是只减不增的迁移基线。`src/shared/typescript-ownership.test.ts` 保证名单等于当前源码；`scripts/check-typescript-baseline.mjs` 在 CI 中比较 PR base 与 head，名单不得新增路径，单个文件的 escape hatch 不得增加，新文件必须为 0，因此不能靠同时修改 JSON 放行。TypeScript 文件改名按新文件计算。
 
+**#741 Wave C（2026-11）已把 p1 全部迁入 TypeScript**（scene 核心、playback 子模块、Playback composables、map2dOverlay），并引入 `@types/three@0.185.x` 作为 Three.js 类型基础。Wave C 的负向类型证明分布在各批次的 `*TypeProofs.test.ts` 文件中（`scenePureTypeProofs` / `sceneGeometryTypeProofs` / `sceneAssetOwnershipTypeProofs` / `playbackStateTypeProofs` / `composableTypeProofs`）。剩余 p1 名单只剩两个巨型文件，均有 `p1BlockedBy` 注解。
+
 - `retained`：被 Node 脚本直接或传递加载的模块。Node 不会把 `.js` specifier 解析到 `.ts`，这些模块保持 JavaScript 并写明理由。
-- `p1`：复杂状态与算法模块（`src/scene/**`、Playback composables、地图状态）。`three` 没有内置类型，迁移 `scene` 模块需要 `@types/three`。
+- `p1`：复杂状态与算法模块。现在只剩 `src/scene/tankViewer.js`（6340 行）与 `src/scene/playbackScene.js`（5630 行），二者**blocked by #820**（巨型文件先按职责拆分，TypeScript migration before split 不可审查）；拆分后的稳定 boundary 随 Wave D 迁移。
 - `p2`：普通模块与 SFC，随改动迁移。
 - `escapeHatches`：production TS 逐文件的 `any` 与 `as unknown as` 数量，按 TypeScript AST 统计。`@ts-ignore`、`@ts-nocheck` 禁用，`@ts-expect-error` 只用于 `*.test.ts` 的负向类型证明。
 

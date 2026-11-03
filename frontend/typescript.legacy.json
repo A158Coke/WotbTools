@@ -16,6 +16,10 @@
     "src/scene/playbackScene.js",
     "src/scene/tankViewer.js"
   ],
+  "p1BlockedBy": {
+    "src/scene/playbackScene.js": "blocked by #820（巨型文件先按职责拆分；TypeScript migration before split 不可审查）",
+    "src/scene/tankViewer.js": "blocked by #820（同上；拆分后的稳定 boundary 随 Wave D 迁移）"
+  },
   "p2": [
     "src/app/AppShell.vue",
     "src/app/AppSidebar.vue",
