@@ -212,3 +212,29 @@ describe('locationForView：名人堂筛选只属于名人堂', () => {
       .toEqual({ view: 'agent-armor', world: '1', heatmap: '1', clean: '1' })
   })
 })
+
+describe('sponsor 与 android 专用路径：深链往返保持各自的目的地', () => {
+  it('sponsor 路径解析为 sponsor 视图且覆盖同名 view 参数，返回时映射回专用路径', () => {
+    expect(viewFromRoute({ path: '/sponsor', query: {} })).toBe('sponsor')
+    expect(viewFromRoute({ path: '/sponsor/', query: {} })).toBe('sponsor')
+    // 专用路径优先于 query.view：/sponsor?view=replay 仍落在 sponsor
+    expect(viewFromRoute({ path: '/sponsor', query: { view: 'replay' } })).toBe('sponsor')
+    const target = locationForView('sponsor', { path: '/', query: { view: 'sponsor', utm: 'video' } })
+    expect(target.path).toBe('/sponsor')
+    expect(target.query).not.toHaveProperty('view')
+    expect(target.query).toHaveProperty('utm', 'video')
+  })
+
+  it('android 路径解析为 android 视图，返回时映射回 /download/android 且不携带 view', () => {
+    expect(viewFromRoute({ path: '/download/android', query: {} })).toBe('android')
+    expect(viewFromRoute({ path: '/download/android/', query: {} })).toBe('android')
+    const target = locationForView('android', { path: '/', query: { view: 'android', lang: 'ru' } })
+    expect(target.path).toBe('/download/android')
+    expect(target.query).not.toHaveProperty('view')
+    expect(target.query).toHaveProperty('lang', 'ru')
+  })
+
+  it('无 view 参数的普通路径回到默认视图（本机 Web 为 replay）', () => {
+    expect(viewFromRoute({ path: '/whatever', query: {} })).toBe('replay')
+  })
+})
