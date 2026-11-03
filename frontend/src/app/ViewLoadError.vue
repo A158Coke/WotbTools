@@ -8,7 +8,8 @@ import { reloadForFreshBundle } from '../utils/lazyModule'
 // 失败的 import URL 无法原地重试（浏览器实测证据见 lazyModule.ts 头注），reload 是唯一可靠恢复。
 function reload() {
   // 不能把 click event 直接绑到 reloadForFreshBundle：它的首参是 beforeReload 回调。
-  reloadForFreshBundle()
+  // explicit：用户主动刷新不被 automatic cooldown 静默拦截（guard 仍会写入）。
+  reloadForFreshBundle({ explicit: true })
 }
 
 // Vue 会把失败原因作为 `error` attr 传给 errorComponent。按 #845 只给可操作文案，
