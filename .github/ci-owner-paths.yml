@@ -6,9 +6,19 @@ business_api:
   - 'common/map_names.json'
   - 'common/tank_tactical_profiles.json'
   - 'common/map-semantics/**'
+  # 测试期实读的共享夹具/数据（issue #828 逐项核实）：wotb-web CsvDecoderTest 与
+  # TournamentCsvConverterTest 读 tabular、tournament/csv；WebApiTest 无夹具时跳过的
+  # 真实回放路径；wotb-core/wotb-web 的 replay-facts 冻结投影；wotb-core 的名称
+  # 别名与乘员技能数据。改这些输入必须重跑 java 测试。
+  - 'common/fixtures/replays/**'
+  - 'common/fixtures/replay-facts/**'
+  - 'common/fixtures/tabular/**'
+  - 'common/fixtures/tournament/**'
+  - 'common/tank-name-aliases.json'
   - 'java/pom.xml'
   - 'java/**/pom.xml'
   - 'java/settings-docker.xml'
+  - 'java/settings-ci.xml'
   - 'java/wotb-core/**'
   - 'java/wotb-ai/**'
   - 'java/wotb-web/**'
@@ -32,11 +42,13 @@ ai_service:
   - 'java/pom.xml'
   - 'java/**/pom.xml'
   - 'java/settings-docker.xml'
+  - 'java/settings-ci.xml'
   - 'java/wotb-core/**'
   - 'java/wotb-ai/**'
   - 'contracts/http/**'
   - 'common/fixtures/ai-projection/**'
   - 'common/fixtures/replay-facts/**'
+  - 'common/tank-name-aliases.json'
   - 'common/tankopedia-tier*.json'
   - 'common/map_names.json'
   - 'common/tank_tactical_profiles.json'
@@ -48,6 +60,13 @@ frontend:
   - 'docker/Dockerfile.frontend'
   - 'frontend/**'
   - 'common/map_names.json'
+  # 前端 golden / 纯函数测试实读的共享回放与表格夹具（issue #828 核实）：
+  # agentWasmNode golden 读 replays + hall-of-fame，spawnResolver.test 读 replays，
+  # tabular/csv encode.test 与 tournamentPointsExport.test 各读同名夹具。
+  - 'common/fixtures/replays/**'
+  - 'common/fixtures/hall-of-fame/**'
+  - 'common/fixtures/tabular/**'
+  - 'common/fixtures/tournament/**'
   - 'common/tankopedia-tier*.json'
   # Tankopedia 搜索别名（构建期 import 进前端包）：改它必须重跑 frontend 测试
   - 'common/tank_aliases.json'
@@ -83,6 +102,7 @@ keycloak:
   - 'docker/Dockerfile.keycloak'
   - 'docker/keycloak/**'
   - 'java/settings-docker.xml'
+  - 'java/settings-ci.xml'
   - 'keycloak-qq-provider/**'
   - 'keycloak-wargaming-provider/**'
   - 'keycloak-session-provider/**'
@@ -104,6 +124,11 @@ android:
   - 'android/**'
   - 'contracts/android-native-bridge.json'
   - 'frontend/src/platform/nativeBridgeContract.js'
+  # Agent WASM pin 是 Android runtime 输入（AGENTS「Android Version-as-Code」）：
+  # ci-android 的 bundle→APK 装配链真实消费它，是 PR 级唯一验证「新 pin 能进 APK」
+  # 的地方（issue #828）。frontend/src/** 不路由（frontend owner 已构建同一 bundle，
+  # 全量路由让每个前端 PR 付 gradle/SDK 成本）。
+  - 'deploy/agent/source.json'
   - 'scripts/android-release/**'
 observability:
   - 'deploy/list-image-tags.sh'
@@ -160,6 +185,16 @@ python:
   - 'common/tank_aliases.json'
   - 'common/tank_ids.json'
   - 'common/tankopedia-tier*.json'
+  # update_crew_skills.py 的数据输入（issue #828）
+  - 'common/crew-skills.json'
+  # 原本只由维护者手动运行的两个 stdlib unittest 面，随 ci-python 的 discover 接入：
+  # map-semanticizer 校验 common/map-semantics/** + map_names.json（review R1 P2：数据
+  # 单独改动必须触发 python owner，否则新接入的逐图完整性测试漏触发）；tools/tests
+  # 校验 cleanup-hundred-wargaming-api.py
+  - 'common/map_names.json'
+  - 'common/map-semantics/**'
+  - 'map-semanticizer/**'
+  - 'tools/**'
 business_postgres:
   - '.github/workflows/business-postgres.yml'
   - 'deploy/tx/deploy.sh'
