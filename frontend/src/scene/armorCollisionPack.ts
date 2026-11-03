@@ -1,0 +1,1210 @@
+/**
+ * 跳弹续飞 GPU 求交数据包（装甲查看器热力图 v5.2，网格加速版）：
+ * 装甲板 + 外部模块的碰撞几何 → 世界系均匀网格（cell 条目表 + 条目表 + 世界
+ * 三角形顶点三张浮点纹理），供热力图低清类通道 pass 在跳弹分支做 DDA 求交 +
+ * 续飞层链模拟（只测路径 cell 内三角形，~10² 级；全量逐三角形扫描是 v5.1 的
+ * 性能事故，已废弃）。网格随炮塔/配置变化重建（相机移动不重建），静止视图
+ * 复用上一帧类通道 RT——开销与原热力图同量级。
+ *
+ * 语义对齐：续飞段 = penetration.js `calculate()` 的出射段（点击判定跳弹后
+ * judgePenetration 的续飞内核）——外部模块按 variant 去重 + flat 消耗、间隙/主装甲
+ * 角度等效 + 2×口径增强转正、每段首个命中层可再次跳弹、严格大于才穿透、末层状态
+ * 定结论；反射线几何口径 = 点击链的出射 raycaster
+ * （起点=跳弹点无偏移、近段仅滤数值自命中、射程 60m、FrontSide 背面剔除）。
+ * gunBarrel 命中另按当前 gun_mask 裁切面过滤：裁切面负侧的炮管后段在视觉上
+ * 不存在，不得作为外部模块消费穿深（点击/GPU/JS/HE 同一判据）。
+ *
+ * 单一事实来源：所有数值常量只在本文件 RC 定义；GLSL 常量串由它生成注入
+ * tankViewer 的 PBR_FRAG——着色器里禁止手写这些字面量。
+ *
+ * 本模块同时导出 JS 参考实现（raycastPackAll / simulateContinuation，暴力全量、
+ * 与 GLSL 网格版语义等价），供单测对拍 THREE.Raycaster 与 penetration.js
+ * （等价性锁）及浏览器差分调试（window.__armorRicochet.predict/readClass）。
+ *
+ * 坐标口径：buildPack 打包网格局部三角形（几何属性原样）；buildRicochetGrid
+ * 以当前 matrixWorld 变换到世界系建网格。打包时逐网格校验矩阵刚性（缩放≈1），
+ * 非刚性/超限/网格过密 → fail-closed，调用方禁用续飞（跳弹维持紫色 = 现状）。
+ */
+import * as THREE from 'three';
+import type { DataTexture, Mesh, Plane, Texture, Vector3 } from 'three';
+import { AI_NORMAL_CDF_GLSL, penetrationChanceForInterval } from './armorInspectorChance.js';
+
+/** 碰撞 section 码名（buildPack entries 的 section；texel0.w 编码见 RC.SECTION）。 */
+export type ArmorSection = 'hull' | 'turret' | 'gun' | 'spaced' | 'chassis' | 'gunBarrel'
+
+/** buildPack 的输入条目（装甲板/外部模块碰撞几何；variant 仅模块去重用）。 */
+export interface PackEntry {
+  mesh: Mesh
+  section: ArmorSection
+  thickness: number
+  variant: 'track' | 'gun' | null
+}
+
+/** 打包单元（大网格按连续三角形段分块；同 section/thickness/variant/矩阵）。 */
+export interface PackUnit {
+  mesh: Mesh
+  section: ArmorSection
+  thickness: number
+  /** variant 去重位（VARIANTS 位掩码；非模块 = 0） */
+  variant: number
+  triStart: number
+  triCount: number
+  /** 该块在源几何内的起始三角形（分块网格 >256 三角形） */
+  localFrom: number
+}
+
+/** buildPack 成功结果（调用方在 ok=false 时必须禁用续飞，fail-closed）。 */
+export interface CollisionPack {
+  ok: true
+  units: PackUnit[]
+  meshes: Mesh[]
+  meshCount: number
+  triTotal: number
+  triRows: number
+  triData: Float32Array
+  metaData: Float32Array
+  matsData: Float32Array
+  /** updatePackMatrices 每帧计算的世界包围盒（着色器早退 uniform 用） */
+  worldMin?: [number, number, number]
+  worldMax?: [number, number, number]
+  /** GPU 纹理句柄（调用方持有；矩阵更新时置 needsUpdate） */
+  textures?: { matsTex: Texture } | null
+}
+
+export interface CollisionPackFailure {
+  ok: false
+  reason: string
+}
+
+export type BuildPackResult = CollisionPack | CollisionPackFailure
+
+/** raycastPackAll 的命中条目（全量、按 t 升序、世界系输出）。 */
+export interface CollisionHit {
+  t: number
+  meshIdx: number
+  section: string
+  thickness: number
+  triangleId: number
+  /** variant 去重位（0 = 非模块/间隙/主装） */
+  variant: number
+  /** 全局三角形槽（网格验证用） */
+  slot: number
+  point: Vector3
+  normal: Vector3
+}
+
+/** raycastGridAll 的命中条目（不输出 point 之外的归属信息；HE 采样只消费 t/section/thickness）。 */
+export interface GridCollisionHit {
+  t: number
+  section: string
+  thickness: number
+  variant: null
+  slot: number
+  normal: Vector3
+  point: Vector3
+}
+
+/** buildRicochetGrid 成功结果（GPU DDA 求交数据面）。 */
+export interface RicochetGrid {
+  ok: true
+  dims: number[]
+  cellSize: number
+  gridMin: [number, number, number]
+  cellTotal: number
+  entryTotal: number
+  triRows: number
+  cellsData: Float32Array
+  entriesData: Float32Array
+  worldTrisData: Float32Array
+}
+
+export type BuildRicochetGridResult = RicochetGrid | { ok: false; reason: string }
+
+/** simulateContinuation 的单层快照（调试/测试用）。 */
+export interface ContinuationLayer {
+  meshName: string
+  plateId?: unknown
+  triangleId: number
+  slot: number
+  point: number[]
+  normal: number[]
+  section: string
+  t: number
+  thickness: number
+  eff: number
+  remBefore: number
+  penetrated: boolean
+  ricochet: boolean
+  angle?: number
+  seg: number
+}
+
+/** 续飞链常量（GLSL 与 JS 参考实现共用；改这里即改两边） */
+export const RC = Object.freeze({
+    /** 续飞参考实现射程 60m。点击链的 Raycaster 未设 far（真实坦克几何 <12m）；
+     *  游戏的距离穿深衰减只计算到首次命中点，续飞段沿用剩余穿深，不再按距离衰减。 */
+    FAR: 60.0,
+    /**
+     * 续飞射线【初始命中接受阈】（评审 P1：click / JS 参考 / GLSL 三路唯一语义常量）：
+     * 反射线上 t ≤ 该值的命中一律滤除——只是滤数值级自命中（0.1mm），不是"推进步长"。
+     * 起点=跳弹点（BlitzKit 对齐，无偏移）；BlitzKit 无过滤但依赖浮点侥幸，这里确定性兜底。
+     * 原实现 0.05 偏移 + 0.1m 窗口曾把接缝另一侧板丢弃（接缝点击 bug 根因）。
+     * 三路一致口径：click `hit.distance <= RC.MIN_CONTINUATION_T → 滤`、
+     * JS `raycastPackAll(..., RC.MIN_CONTINUATION_T)`、GLSL `tStart = max(tStart, RC_TSKIP)`。
+     */
+    MIN_CONTINUATION_T: 0.0001,
+    /**
+     * 【层推进 eps】（评审 P1 拆出）：仅用于"已命中一层之后"的推进——下一层必须比
+     * 已吞掉的层严格更远（DDA 游标 tCur = bestT + ADV、cell 窗口上界容差），
+     * 不得叠加到初始接受阈上（此前 tStart = TSKIP + T_EPS = 0.2mm → 三路阈值不一致）。
+     */
+    ADVANCE_EPSILON: 0.0001,
+    /** 兼容别名（GLSL 定义名不变） */
+    ORIGIN_OFFSET: 0.0,
+    /** 跳弹剩余穿深系数（penetration.js ricochetRemainingPen = remaining*0.75） */
+    RICO_REMAIN_MUL: 0.75,
+    /** 首段之后最多再执行的续飞段数：第二次跳弹即为终态，炮弹消失 */
+    MAX_CONTINUATIONS: 1,
+    /** 层链上限（碰撞模型实际 ≤4/射线；超限按"无续飞"保守处理=维持紫） */
+    MAX_LAYER: 8,
+    /** DDA 步进上限 = RC_GRID_DIM_MAX×3（144）：cell 交叉上界 = dims.x+dims.y+dims.z ≤ 48×3 */
+    MAX_STEPS: 144,
+    /** 单 cell 条目上限（构建器超限自动放粗 cell；着色器循环常量上界） */
+    MAX_CELL_ENTRIES: 256,
+    /** 单片元求交全局纹理取数预算（正常路径 ~300；超预算保守返回紫——防着色器执行超时被驱动杀 draw） */
+    FETCH_BUDGET: 1024,
+    /** 顶点纹理每行 texel 数（= 256 三角形 × 3 顶点，着色器与打包器共用） */
+    TRI_ROW: 768,
+    /** cell 纹理每行 texel 数 */
+    CELL_ROW: 256,
+    /** 条目纹理每行 texel 数 */
+    ENTRY_ROW: 1024,
+    /** 网格目标 cell 尺寸（米；重建时超限自动 ×2 放粗） */
+    GRID_CELL_SIZE: 0.45,
+    /** 网格各轴 cell 数上限（纹理行数与步进常量的约束） */
+    GRID_DIM_MAX: 48,
+    MAX_MESH: 128,
+    MAX_TRI_PER_MESH: 256,
+    /** Armor Inspector 正态 CDF：±5% 随机化范围 = ±3σ；区间两端平移，σ 不重算 */
+    BAND: 0.05,
+    /** 90° 防 f32 负 cos 下限（penetration.js 同值） */
+    COS_EPS: 1e-6,
+    /** 2×口径增强转正系数（BlitzKit/penetration.js 同源） */
+    TWO_CAL_NORM: 1.4,
+    /** 装甲 section 码（texel0.w；primary = 码≤2，外部模块 = 码≥4） */
+    SECTION: Object.freeze({ hull: 0, turret: 1, gun: 2, spaced: 3, chassis: 4, gunBarrel: 5 }),
+    /** 外部模块 variant 去重位（texel2.z） */
+    VARIANT_BIT: Object.freeze({ track: 1, gun: 2 }),
+});
+
+/** Stable raw diagnostic codes; class 0 alone must not hide budget exhaustion. */
+export const RC_DIAG = Object.freeze({ NO_HIT: 0, PENETRATED: 1, BLOCKED: 2, FETCH_BUDGET: 3, LAYER_LIMIT: 4, STEP_LIMIT: 5 });
+
+/** GLSL 常量声明（注入 PBR_FRAG；由 RC 生成，禁止手写数值） */
+export const RC_GLSL_CONST = `
+${Object.entries(RC_DIAG).map(([key, value]) => `#define RC_DIAG_${key} ${value}.0`).join("\n")}
+// ==== 跳弹续飞常量（单一来源 armorCollisionPack.js RC；禁止手改数值）====
+#define RC_FAR ${RC.FAR.toFixed(1)}
+#define RC_OFF ${RC.ORIGIN_OFFSET.toFixed(6)}
+#define RC_TSKIP ${RC.MIN_CONTINUATION_T.toFixed(6)}
+#define RC_ADV_EPS ${RC.ADVANCE_EPSILON.toFixed(6)}
+#define RC_RICO_MUL ${RC.RICO_REMAIN_MUL.toFixed(3)}
+#define RC_MAX_LAYER ${RC.MAX_LAYER}
+#define RC_MAX_STEPS ${RC.MAX_STEPS}
+#define RC_BUDGET ${RC.FETCH_BUDGET}
+#define RC_MAX_CELL ${RC.MAX_CELL_ENTRIES}
+#define RC_TRI_ROW ${RC.TRI_ROW}
+#define RC_TRI_ROW_I ${RC.TRI_ROW}
+#define RC_CELL_ROW ${RC.CELL_ROW}
+#define RC_CELL_ROW_I ${RC.CELL_ROW}
+#define RC_ENTRY_ROW ${RC.ENTRY_ROW}
+#define RC_ENTRY_ROW_I ${RC.ENTRY_ROW}
+#define RC_BAND ${RC.BAND.toFixed(3)}
+#define RC_COS_EPS ${RC.COS_EPS.toFixed(8)}
+#define RC_TWO_CAL ${RC.TWO_CAL_NORM.toFixed(1)}
+#define RC_SEC_HULL ${RC.SECTION.hull}
+#define RC_SEC_SPACED ${RC.SECTION.spaced}
+#define RC_SEC_CHASSIS ${RC.SECTION.chassis}
+#define RC_SEC_GUN_BARREL ${RC.SECTION.gunBarrel}
+`;
+
+/**
+ * GLSL 续飞实现（uniforms + rcContinue），注入 PBR_FRAG 的 main() 之前。
+ * 依赖主着色器既有 uniform：caliber / normalization（弧度）。
+ * 精度：几何量全部 highp；注入的片元 shader 现在整体 `precision highp float`
+ * （PR #713），这里仍保留显式标注，避免被误改回 mediump。
+ */
+export const RC_GLSL_FUNCS = `
+${AI_NORMAL_CDF_GLSL}
+// ==== 跳弹续飞：反射线网格 DDA 求交 + 出射段层链（语义=penetration.js calculate；每段首个命中层可再跳弹）====
+// 数据面：世界系均匀网格（炮塔/配置变化时 CPU 重建上传）——每 cell 一条目表（triSlot+section+thickness），
+// 世界系三角形顶点纹理。着色器沿 DDA 步进，只测路径覆盖的 cell 内三角形（~10² 级，替代全量 10³ 级扫描），
+// 命中天然按 t 有序（无需逐层重扫）；背面剔除 = Raycaster FrontSide 口径（绕序法线）。
+uniform int rcMode;                 // 1/2=全分辨率逐像素续飞（v5.3） 0=关闭
+uniform float rcThickMul;     // 每层厚度乘子：参与后续层判定，不得先量化成 mediump
+uniform highp sampler2D rcWorldTris;  // 世界系顶点：每 texel 一顶点 (x,y,z)（网格重建时上传）
+uniform float rcTriRows;
+uniform highp sampler2D rcGridCells;   // 每 cell 1 texel: (entryOffset, entryCount)
+uniform highp sampler2D rcGridEntries; // 每条目 1 texel: (triSlot, sectionCode, thickness, 0)
+// issue #711 第二批：网格原点是世界系米制坐标（可达数百米），mediump 在该量级
+// 只有分米级分辨率——DDA 的 cell 归属与 t 会成块翻转。原点/步长/尺寸统一 highp。
+uniform vec3 rcGridMin;
+uniform float rcCell;
+uniform vec3 rcGridDimsF;
+uniform float rcCellRows;
+uniform float rcEntryRows;
+uniform int rcEntryTotal;
+// gun_mask 裁切面（世界系）：xyz=法线, w=constant；只过滤 gunBarrel 命中。
+// 与 THREE.Plane.distanceToPoint 同式：dot(n, p) + w < 0 → 被裁掉。
+uniform vec4 rcClipPlane;
+uniform bool rcClipEnabled;
+
+vec3 rcVertW(int vid) {
+    return texelFetch(rcWorldTris, ivec2(vid % RC_TRI_ROW_I, vid / RC_TRI_ROW_I), 0).xyz;
+}
+vec4 rcCellAt(int idx) {
+    return texelFetch(rcGridCells, ivec2(idx % RC_CELL_ROW_I, idx / RC_CELL_ROW_I), 0);
+}
+vec4 rcEntryAt(int idx) {
+    return texelFetch(rcGridEntries, ivec2(idx % RC_ENTRY_ROW_I, idx / RC_ENTRY_ROW_I), 0);
+}
+// Möller–Trumbore（世界系；t ∈ (tLo, tHi]；背面剔除）
+bool rcTriW(int slot, vec3 ro, vec3 rd, float tLo, float tHi, out float tHit) {
+    vec3 a = rcVertW(slot * 3), b = rcVertW(slot * 3 + 1), c = rcVertW(slot * 3 + 2);
+    vec3 e1 = b - a, e2 = c - a;
+    if (dot(cross(e1, e2), rd) >= 0.0) return false;
+    vec3 pv = cross(rd, e2);
+    float det = dot(e1, pv);
+    if (abs(det) < 1e-9) return false;
+    float invD = 1.0 / det;
+    vec3 tv = ro - a;
+    float u = dot(tv, pv) * invD;
+    if (u < 0.0 || u > 1.0) return false;
+    vec3 qv = cross(tv, e1);
+    float v = dot(rd, qv) * invD;
+    if (v < 0.0 || u + v > 1.0) return false;
+    float t = dot(e2, qv) * invD;
+    if (t <= tLo || t > tHi) return false;
+    tHit = t;
+    return true;
+}
+// 出射段层链（网格 DDA 在线推进）。返回 0=无续飞(维持紫) 1=续飞击穿(绿, penOut=±5%带概率) 2=续飞被挡(红)
+int rcSegment(vec3 bouncePos, vec3 reflDir, float remIn, out float penOut, out float rcDiag, out vec3 nextOrigin, out vec3 nextDir, out float nextRem) {
+    penOut = 0.0;
+    rcDiag = 0.0;
+    vec3 ro = bouncePos + reflDir * RC_OFF;
+    // 整车包围盒（= 网格包围盒）裁剪：反射线不穿整车 → 直接无续飞（掠射视角下大多数
+    // 跳弹反射向空处，一次 AABB 测试代替求交）
+    ivec3 dims = ivec3(rcGridDimsF);
+    vec3 gMax = rcGridMin + rcGridDimsF * rcCell;
+    // 已知数值边界（评审记录，非 merge blocker）：分量恰为 0 的 slab 走 1/0=inf 口径——
+    // 射线不在该 slab 内时 t 区间为 (-inf,inf)，结果正确；恰在边界（ro 面向分量 == gMin/gMax）
+    // 时可能出 0*inf=NaN，NaN 比较为假 → 走不到 return 0 而给出无命中 → 维持紫（fail-closed，
+    // 不会伪造续飞结论）。如需严格化：改显式 zero-direction slab 分支（逐轴 if 判定 inside/miss），
+    // 代价是热路径多三条分支——当前口径在 GPU↔CPU 差分校准下已验证。
+    vec3 ginv = 1.0 / reflDir;
+    vec3 ga = (rcGridMin - ro) * ginv;
+    vec3 gb = (gMax - ro) * ginv;
+    vec3 gsm = min(ga, gb), gbg = max(ga, gb);
+    float tEnd = min(min(gbg.x, gbg.y), gbg.z);
+    float tStart = max(max(gsm.x, gsm.y), gsm.z);
+    if (tEnd <= RC_TSKIP) { rcDiag = RC_DIAG_NO_HIT; return 0; }
+    tStart = max(tStart, RC_TSKIP);    // 初始接受阈（三路一致）：t > RC_TSKIP 才接受（rcTriW 的 t<=tLo 滤）
+    if (tStart >= tEnd) { rcDiag = RC_DIAG_NO_HIT; return 0; }
+    // DDA 初始化（Amanatides & Woo）
+    vec3 p0 = ro + reflDir * (tStart + RC_ADV_EPS * 4.0);
+    ivec3 cell = clamp(ivec3(floor((p0 - rcGridMin) / rcCell)), ivec3(0), dims - ivec3(1));
+    ivec3 stp = ivec3(reflDir.x > 0.0 ? 1 : (reflDir.x < 0.0 ? -1 : 0),
+                      reflDir.y > 0.0 ? 1 : (reflDir.y < 0.0 ? -1 : 0),
+                      reflDir.z > 0.0 ? 1 : (reflDir.z < 0.0 ? -1 : 0));
+    vec3 nb = rcGridMin + (vec3(cell) + max(vec3(stp), vec3(0.0))) * rcCell;
+    vec3 tMax = vec3(1e30);
+    if (stp.x != 0) tMax.x = (nb.x - ro.x) / reflDir.x;
+    if (stp.y != 0) tMax.y = (nb.y - ro.y) / reflDir.y;
+    if (stp.z != 0) tMax.z = (nb.z - ro.z) / reflDir.z;
+    vec3 tDelta = abs(rcCell / reflDir);
+    float tCur = tStart;         // 层游标：剩余命中须 t > tCur（吞层后 tCur = bestT + RC_ADV_EPS）
+    bool anyPrimary = false;           // 前端门：整条射线存在主装甲原始命中（ricHasPrimary）
+    bool blocked = false;              // 链中途被挡（待定：anyPrimary→红 否则紫）
+    float rem = remIn;
+    // Armor Inspector 概率区间：±5% = ±3σ；后续层两端一起平移，σ 不随 rem 重算。
+    float pMin = remIn * (1.0 - RC_BAND);
+    float pMax = remIn * (1.0 + RC_BAND);
+    float probChance = 1.0;
+    int variantSeen = 0;
+    int prevTri = -1;                  // 同三角形跨 cell 重复列表去重（凸区域连续出现）
+    int L = 0;
+    int hitIndex = 0;                  // 段内已消费层（模块/间隙/主装）序号
+    int budget = RC_BUDGET;            // 全局取数预算：超出即保守退出（防执行超时杀 draw）
+    rcDiag = RC_DIAG_STEP_LIMIT;
+    for (int s = 0; s < RC_MAX_STEPS; s++) {
+        if (budget <= 0) { rcDiag = RC_DIAG_FETCH_BUDGET; return 0; }
+        float tCell = min(min(tMax.x, tMax.y), tMax.z);
+        float hi = min(tCell + RC_ADV_EPS, tEnd);
+        int cidx = cell.x + dims.x * (cell.y + dims.y * cell.z);
+        vec4 cel = rcCellAt(cidx);
+        int cnt = int(cel.y + 0.5);
+        int off = int(cel.x + 0.5);
+        // 当前 cell 窗口 (tCur, hi] 内逐层收集（同一 cell 可含多层）
+        for (int l = 0; l < RC_MAX_LAYER; l++) {
+            if (L >= RC_MAX_LAYER) { rcDiag = RC_DIAG_LAYER_LIMIT; return 0; }            // 层上限 → 保守紫
+            float bestT = hi;
+            int bestSlot = -1;
+            vec4 bestEnt = vec4(0.0);
+            for (int e = 0; e < RC_MAX_CELL; e++) {
+                if (e >= cnt) break;
+                budget -= 1;
+                if (budget < 0) { rcDiag = RC_DIAG_FETCH_BUDGET; return 0; }
+                vec4 ent = rcEntryAt(off + e);
+                int slot = int(ent.x + 0.5);
+                if (slot == prevTri) continue;
+                int candidateSection = int(ent.y + 0.5);
+                float tHit;
+                if (!rcTriW(slot, ro, reflDir, tCur, hi, tHit)) continue;
+                // gun_mask 裁切面负侧的炮管后段在视觉上被裁掉，不是外部模块层。
+                // 与点击链 isClippedModuleHit / THREE.Raycaster 侧同一判据；其它 section
+                // （包括炮盾装甲板）不受影响。
+                if (rcClipEnabled && candidateSection == RC_SEC_GUN_BARREL) {
+                    vec3 clipPoint = ro + reflDir * tHit;
+                    if (dot(rcClipPlane.xyz, clipPoint) + rcClipPlane.w < 0.0) continue;
+                }
+                // 首个候选即使恰好落在 cell 窗口上界（tHit == hi）也必须接受；
+                // 严格的 tHit < bestT 会把 cell 边界上的主装甲/模块静默丢掉。
+                if (bestSlot < 0 || tHit < bestT) {
+                    bestT = tHit; bestSlot = slot; bestEnt = ent;
+                }
+            }
+            if (bestSlot < 0) break;                    // 本 cell 无更多层 → 前进
+            prevTri = bestSlot;
+            int sec = int(bestEnt.y + 0.5);
+            float th = bestEnt.z * rcThickMul;
+            if (sec <= 2) anyPrimary = true;            // 主装甲原始命中在场（无论链是否已断）
+            // 注意：blocked 后不能立即返回——点击卡的概率链仍会继续评估到首个
+            // Primary（例如 spaced100 → hull1 名义被挡但概率约 13.7%）；这里继续
+            // 累计概率，但确定性结论保持 BLOCKED，由首个 Primary 分支统一返回 2。
+            if (sec >= RC_SEC_CHASSIS) {                // 外部模块：variant 去重 + flat 消耗
+                int vbit = (sec == RC_SEC_CHASSIS) ? 1 : 2;
+                if ((variantSeen & vbit) != 0) { tCur = bestT + RC_ADV_EPS; continue; }   // 同 variant 已消耗（不计层）
+                variantSeen |= vbit;
+                hitIndex++;
+                bool modPen = rem > th;
+                if (modPen) rem -= th;
+                // 概率区间按 Armor Inspector 的 flat 消耗平移（即便确定性模块已挡下，
+                // 也继续让概率链看到后续层；结论由首个 Primary 决定）。
+                pMin -= th;
+                pMax -= th;
+                if (!modPen) blocked = true;   // 模块挡下：余下只查主装甲存在性
+                tCur = bestT + RC_ADV_EPS; continue;
+            }
+            // 间隙/主装甲：角度等效 + 2×口径增强转正
+            vec3 a = rcVertW(bestSlot * 3), b = rcVertW(bestSlot * 3 + 1), c = rcVertW(bestSlot * 3 + 2);
+            vec3 nW = normalize(cross(b - a, c - a));   // 背面已剔除，恒朝来向 = face.normal 同口径
+            float cosA = min(abs(dot(nW, reflDir)), 1.0);
+            float angle = acos(cosA);
+            // 0mm 合法板厚：2× 增强转正在 thickness=0、normalization=0 时是 0/0，
+            // 只对正厚度应用（与 penetration.js 同规则），0mm 板等效保持 0。
+            bool twoCal = th > 0.0 && caliber > th * 2.0;
+            // BlitzKit：每个非外部层都用自身 thickness/angle 重新套用转正
+            // （2× 口径增强转正也按本层厚度计算）；外部模块 flat 不计入。
+            float normR = twoCal
+                ? (RC_TWO_CAL * normalization * caliber) / (2.0 * th)
+                : normalization;
+            float finA = max(angle - normR, 0.0);
+            float eff = th / max(cos(finA), RC_COS_EPS);
+            // 每层先用当前区间乘 CDF，再把两端平移一次 eff（σ 保持初值/段首值）。
+            float sigma = max((pMax - pMin) / 6.0, 1e-4);
+            float mu = 0.5 * (pMin + pMax);
+            probChance *= pMax > 0.0
+                ? clamp(aiNormalCdf((mu - eff) / sigma), 0.0, 1.0)
+                : 0.0;
+            pMin -= eff;
+            pMax -= eff;
+            bool layPen = rem > eff;                    // 严格大于才穿透（penetration.js 同）
+            // 跳弹后的炮弹可以再次跳弹：仅本段首个非外部层（主装甲或间隙甲）、
+            // 非 3× 口径、入射角达到当前弹种跳弹角时，带 75% 剩余穿深反射进入下一段。
+            // 外部模块（chassis/gunBarrel）已在上面 flat 消费并递增 hitIndex，不会走到这里。
+            // 0mm 是合法板厚：3× 口径规则按 0 计算为 true（与 penetration.js 同），
+            // 不能因厚度为 0 而漏掉 overmatch 并误判跳弹。
+            bool threeCal = caliber > th * 3.0;
+            if (sec <= 3 && hitIndex == 0 && !threeCal && angle >= ricochet) {
+                nextOrigin = ro + reflDir * bestT;
+                nextDir = normalize(reflect(reflDir, nW));
+                nextRem = rem * RC_RICO_MUL;
+                penOut = 0.0;
+                rcDiag = RC_DIAG_NO_HIT;
+                return 3;
+            }
+            if (sec <= 2) {                             // 首个主装甲 = 末层，定结论
+                if (!blocked && layPen) {
+                    // 确定性 layPen 已成立；补充概率为 0 时仍呈现确定性击穿（不把绿翻红）。
+                    penOut = probChance > 0.0 ? clamp(probChance, 0.0, 1.0) : 1.0;
+                    rcDiag = RC_DIAG_PENETRATED;
+                    return 1;
+                }
+                // 名义被挡（本层或之前层）也可能是 1–99% 的边界情形：把部分概率
+                // 交给状态通道，让热力图与点击卡“可能击穿 p%”一致（review 2026-10-18）。
+                penOut = clamp(probChance, 0.0, 1.0);
+                rcDiag = RC_DIAG_BLOCKED;
+                return 2;
+            }
+            if (!layPen) { blocked = true; hitIndex++; tCur = bestT + RC_ADV_EPS; continue; }
+            rem -= eff;
+            hitIndex++;
+            tCur = bestT + RC_ADV_EPS;
+            L++;                                        // 消耗一层才计数
+        }
+        // 前进到下一 cell
+        if (tMax.x <= tMax.y && tMax.x <= tMax.z) { cell.x += stp.x; tCur = max(tCur, tMax.x); tMax.x += tDelta.x; }
+        else if (tMax.y <= tMax.z) { cell.y += stp.y; tCur = max(tCur, tMax.y); tMax.y += tDelta.y; }
+        else { cell.z += stp.z; tCur = max(tCur, tMax.z); tMax.z += tDelta.z; }
+        if (cell.x < 0 || cell.x >= dims.x || cell.y < 0 || cell.y >= dims.y || cell.z < 0 || cell.z >= dims.z || tCur >= tEnd) {
+            rcDiag = RC_DIAG_NO_HIT;
+            break;
+        }
+    }
+    if (blocked) {
+        rcDiag = anyPrimary ? RC_DIAG_BLOCKED : RC_DIAG_NO_HIT;
+        return anyPrimary ? 2 : 0;
+    }
+    rcDiag = RC_DIAG_NO_HIT;
+    return 0;
+}
+
+// 总跳弹次数上限 = 2：首段一次 + 续飞段一次。续飞段若再次跳弹（第二次），
+// 炮弹消失，返回 0（无后续判定）。
+int rcContinue(vec3 bouncePos, vec3 reflDir, float remIn, out float penOut, out float rcDiag) {
+    vec3 no;
+    vec3 nd;
+    float nr;
+    int cls = rcSegment(bouncePos, reflDir, remIn, penOut, rcDiag, no, nd, nr);
+    if (cls == 3) {
+        penOut = 0.0;
+        rcDiag = RC_DIAG_NO_HIT;
+        return 0;
+    }
+    return cls;
+}
+`;
+
+const PRIMARY_SECTIONS = new Set(['hull', 'turret', 'gun']);
+const MODULE_SECTIONS = new Set(['chassis', 'gunBarrel']);
+const VARIANTS: Partial<Record<ArmorSection, number>> = { chassis: RC.VARIANT_BIT.track, gunBarrel: RC.VARIANT_BIT.gun };
+
+/**
+ * 打包碰撞几何。entries: [{ mesh, section('hull'|'turret'|'gun'|'spaced'|'chassis'|'gunBarrel'),
+ * thickness(基础厚度), variant('track'|'gun'|null, 模块去重用) }]。
+ * 单网格三角形数超过 RC.MAX_TRI_PER_MESH 时按连续三角形段【分块】为多个包单元
+ * （同 section/thickness/variant/矩阵）——命中集合与整网格完全一致；履带等多块
+ * 同 variant 在判定链里照常去重，与点击链（raycaster 对整网格多命中 + variant 去重）等价。
+ * 返回 { ok, reason?, meshCount(=包单元数), triTotal, triRows, triData, metaData, matsData }；
+ * ok=false 表示超限/非刚性，调用方必须禁用续飞（fail-closed）。
+ */
+export function buildPack(entries: readonly PackEntry[]): BuildPackResult {
+    const units: PackUnit[] = [];   // 打包单元：{ mesh, section, thickness, variant, triStart, triCount }
+    const triChunks: Float32Array[] = [];
+    const metaOut: number[] = [];
+    let triTotal = 0;
+    const _pos = new THREE.Vector3();
+    const _quat = new THREE.Quaternion();
+    const _scale = new THREE.Vector3();
+    for (const e of entries) {
+        if (!PRIMARY_SECTIONS.has(e.section) && e.section !== 'spaced' && !MODULE_SECTIONS.has(e.section)) {
+            return { ok: false, reason: 'bad-section:' + e.section };
+        }
+        // 板厚是判定输入：NaN/负数不是“0mm 板”，是数据坏了 → 整包 fail-closed。
+        if (!Number.isFinite(e.thickness) || e.thickness < 0) {
+            return { ok: false, reason: 'bad-thickness:' + (e.section || '?') };
+        }
+        const mesh = e.mesh;
+        mesh.updateWorldMatrix(true, false);
+        mesh.matrixWorld.decompose(_pos, _quat, _scale);
+        // 刚性校验：着色器用 R^T 求逆，非刚性矩阵会让求交失真
+        if (Math.abs(_scale.x - 1) > 1e-3 || Math.abs(_scale.y - 1) > 1e-3 || Math.abs(_scale.z - 1) > 1e-3) {
+            return { ok: false, reason: 'non-rigid-matrix:' + (mesh.name || '?') };
+        }
+        const pos = mesh.geometry && mesh.geometry.attributes && mesh.geometry.attributes.position;
+        // 装甲 mesh 缺顶点属性是模型/数据损坏，不能静默把它从判定几何里剔除。
+        if (!pos) return { ok: false, reason: 'no-position:' + (mesh.name || '?') };
+        const idx = mesh.geometry.index;
+        const triCountAll = Math.floor((idx ? idx.count : pos.count) / 3);
+        if (triCountAll <= 0) continue;
+
+        const secCode = RC.SECTION[e.section];
+        const variantBit = VARIANTS[e.section] || 0;
+        // 局部 AABB + 三角形顶点（局部坐标原样，无世界烘焙）；按段分块写入包单元
+        const chunkCount = Math.ceil(triCountAll / RC.MAX_TRI_PER_MESH);
+        const chunkTri = Math.ceil(triCountAll / chunkCount);
+        const verts = new Float32Array(triCountAll * 9);
+        // 顶点读取必须走抽象访问（getX/getY/getZ）：GLB 属性可能是 interleaved buffer，
+        // 直接 pos.array[vi*3] 裸索引在交叉布局下会读到垃圾（包围盒错乱、求交全错）
+        for (let t = 0; t < triCountAll; t++) {
+            for (let k = 0; k < 3; k++) {
+                const vi = idx ? idx.getX(t * 3 + k) : t * 3 + k;
+                verts[t * 9 + k * 3] = pos.getX(vi);
+                verts[t * 9 + k * 3 + 1] = pos.getY(vi);
+                verts[t * 9 + k * 3 + 2] = pos.getZ(vi);
+            }
+        }
+        for (let c = 0; c < chunkCount; c++) {
+            if (units.length >= RC.MAX_MESH) return { ok: false, reason: 'too-many-meshes' };
+            const from = c * chunkTri;
+            const to = Math.min(from + chunkTri, triCountAll);
+            const n = to - from;
+            if (n <= 0) break;
+            let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+            for (let t = from; t < to; t++) {
+                for (let k = 0; k < 3; k++) {
+                    const x = verts[t * 9 + k * 3], y = verts[t * 9 + k * 3 + 1], z = verts[t * 9 + k * 3 + 2];
+                    if (x < minX) minX = x; if (x > maxX) maxX = x;
+                    if (y < minY) minY = y; if (y > maxY) maxY = y;
+                    if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+                }
+            }
+            metaOut.push(minX, minY, minZ, secCode, maxX, maxY, maxZ, triTotal, n, e.thickness, variantBit, 0);
+            units.push({ mesh, section: e.section, thickness: e.thickness, variant: variantBit, triStart: triTotal, triCount: n, localFrom: from });
+            triChunks.push(verts.subarray(from * 9, to * 9));
+            triTotal += n;
+        }
+    }
+    if (!units.length || !triTotal) return { ok: false, reason: 'empty' };
+
+    // 顶点纹理数据：RGBA 每 texel 一顶点（xyz + 0）
+    const texels = triTotal * 3;
+    const triRows = Math.ceil(texels / RC.TRI_ROW);
+    const triData = new Float32Array(triRows * RC.TRI_ROW * 4);
+    let w = 0;
+    for (const chunk of triChunks) {
+        for (let i = 0; i < chunk.length; i += 3) {
+            triData[w] = chunk[i]; triData[w + 1] = chunk[i + 1]; triData[w + 2] = chunk[i + 2];
+            w += 4;
+        }
+    }
+    const metaData = new Float32Array(metaOut);
+    const meshes = units.map(u => u.mesh);
+    const matsData = new Float32Array(units.length * 16);
+    updatePackMatrices({ meshes, matsData, metaData });
+    return { ok: true, units, meshes, meshCount: units.length, triTotal, triRows, triData, metaData, matsData };
+}
+
+/** Copy doubles, not Float32 GPU data or mutable Matrix4 references. */
+export function snapshotPackPose(pack: CollisionPack): number[][] {
+    return pack.meshes.map(mesh => mesh.matrixWorld.elements.slice());
+}
+
+/** Caller propagates source matrices before comparing; camera motion is irrelevant. */
+export function packPoseChanged(pack: CollisionPack, snapshot: number[][] | null | undefined): boolean {
+    return !snapshot || snapshot.length !== pack.meshes.length || pack.meshes.some((mesh, i) =>
+        mesh.matrixWorld.elements.some((value, j) => value !== snapshot[i][j]));
+}
+
+/**
+ * 每帧把 pack.meshes 的当前世界矩阵写入矩阵纹理数据，并计算整车世界包围盒
+ * （pack.worldMin/worldMax，供着色器早退 uniform）。tankViewer 渲染循环调用。
+ */
+export function updatePackMatrices(pack: {
+    meshes: Mesh[]
+    matsData: Float32Array
+    metaData?: Float32Array | null
+    worldMin?: [number, number, number] | null
+    worldMax?: [number, number, number] | null
+    textures?: { matsTex: Texture } | null
+} | null | undefined): void {
+    if (!pack || !pack.meshes) return;
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    const metaData = pack.metaData;
+    const withAabb = !!metaData;   // buildPack 内部先于 metaData 落盘调用（只写矩阵）
+    const corner = new THREE.Vector3();
+    for (let i = 0; i < pack.meshes.length; i++) {
+        const m = pack.meshes[i];
+        m.updateWorldMatrix(true, false);
+        m.matrixWorld.toArray(pack.matsData, i * 16);
+        if (!withAabb || !metaData) continue;
+        const base = i * 12;
+        const lo = [metaData[base], metaData[base + 1], metaData[base + 2]];
+        const hi = [metaData[base + 4], metaData[base + 5], metaData[base + 6]];
+        for (let c = 0; c < 8; c++) {
+            corner.set(c & 1 ? hi[0] : lo[0], c & 2 ? hi[1] : lo[1], c & 4 ? hi[2] : lo[2])
+                .applyMatrix4(m.matrixWorld);
+            if (corner.x < minX) minX = corner.x; if (corner.x > maxX) maxX = corner.x;
+            if (corner.y < minY) minY = corner.y; if (corner.y > maxY) maxY = corner.y;
+            if (corner.z < minZ) minZ = corner.z; if (corner.z > maxZ) maxZ = corner.z;
+        }
+    }
+    if (withAabb) {
+        pack.worldMin = [minX, minY, minZ];
+        pack.worldMax = [maxX, maxY, maxZ];
+    }
+    if (pack.textures) pack.textures.matsTex.needsUpdate = true;
+}
+
+
+/**
+ * 世界系均匀网格加速结构（GPU DDA 求交数据面）。
+ * 以各单元【当前 matrixWorld】把三角形变换到世界系：顶点写入 worldTrisData（全局
+ * triSlot 与 pack 一致），三角形 AABB 覆盖的每个 cell 追加一条 entry（triSlot +
+ * sectionCode + thickness）。炮塔/配置变化时重建（相机移动无需重建）——这就是
+ * 着色器只测路径 cell 内三角形（~10² 级）代替全量扫描的结构基础。
+ * cell 条目超限时按对半【细化】重试（0.45 → 0.225 → … → coverageFloor，最多 4 次尝试；
+ * 细化降低单 cell 条目数），到覆盖下界仍超限 → ok=false（调用方禁用续飞，fail-closed）。
+ */
+export function buildRicochetGrid(pack: CollisionPack | CollisionPackFailure | null | undefined): BuildRicochetGridResult {
+    if (!pack || !pack.ok || !pack.units) return { ok: false, reason: 'no-pack' };
+    // 世界系顶点（全局 triSlot 布局）
+    const worldVerts = new Float32Array(pack.triTotal * 9);
+    const secOf = new Int32Array(pack.triTotal);
+    const thOf = new Float32Array(pack.triTotal);
+    const v = new THREE.Vector3();
+    let nanCount = 0;
+    for (let u = 0; u < pack.units.length; u++) {
+        const unit = pack.units[u];
+        const mesh = unit.mesh;
+        mesh.updateWorldMatrix(true, false);
+        const mw = mesh.matrixWorld;
+        const pos = mesh.geometry.attributes.position;
+        const idx = mesh.geometry.index;
+        const secCode = RC.SECTION[unit.section];
+        for (let t = 0; t < unit.triCount; t++) {
+            const lt = unit.localFrom + t;
+            const slot = unit.triStart + t;
+            secOf[slot] = secCode;
+            thOf[slot] = unit.thickness;
+            for (let k = 0; k < 3; k++) {
+                const vi = idx ? idx.getX(lt * 3 + k) : lt * 3 + k;
+                v.set(pos.getX(vi), pos.getY(vi), pos.getZ(vi)).applyMatrix4(mw);
+                if (!Number.isFinite(v.x) || !Number.isFinite(v.y) || !Number.isFinite(v.z)) {
+                    nanCount++;
+                    v.set(0, 0, 0);   // 保持数组有限，包围盒不致 NaN 化
+                }
+                worldVerts[slot * 9 + k * 3] = v.x;
+                worldVerts[slot * 9 + k * 3 + 1] = v.y;
+                worldVerts[slot * 9 + k * 3 + 2] = v.z;
+            }
+        }
+    }
+    if (nanCount > 0) return { ok: false, reason: 'nan-verts:' + nanCount };
+    // 稳健性诊断：包围盒异常膨胀时定位元凶单元（防单个坏矩阵拖垮整个网格）。
+    // 阈值 80m：高于一切真实车辆几何（含长炮管整车 ~12m），只拦矩阵腐蚀的天文坐标；
+    // 覆盖不变量测试（长几何 60m）不受影响。
+    {
+        const culprits: string[] = [];
+        const bb = new THREE.Box3();
+        const sz = new THREE.Vector3();
+        for (let u = 0; u < pack.units.length; u++) {
+            const unit = pack.units[u];
+            bb.setFromObject(unit.mesh);
+            if (bb.isEmpty()) continue;
+            bb.getSize(sz);
+            const diag = sz.length();
+            if (diag > 80) culprits.push(`${unit.mesh.name || '?'}(${sz.x.toFixed(1)},${sz.y.toFixed(1)},${sz.z.toFixed(1)})`);
+        }
+        if (culprits.length) {
+            return { ok: false, reason: 'bad-unit:' + culprits.slice(0, 3).join('|') + (culprits.length > 3 ? `+${culprits.length - 3}` : '') };
+        }
+    }
+    // 世界包围盒
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    for (let i = 0; i < worldVerts.length; i += 3) {
+        const x = worldVerts[i], y = worldVerts[i + 1], z = worldVerts[i + 2];
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+        if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+    }
+    if (!Number.isFinite(minX)) return { ok: false, reason: 'empty' };
+    const ext = [maxX - minX, maxY - minY, maxZ - minZ];
+    // 覆盖不变量（评审 P1）：cellSize 下界 = max(extAxis)/GRID_DIM_MAX —— 该尺寸下任何轴
+    // 都不超过 cell 数上限，网格恒覆盖全部几何；后续放细只在该下界之内，被截断的
+    // capped 成功路径（GPU 网格 AABB 小于几何 → DDA 永不可达 → 静默紫）不可能再出现。
+    const coverageFloor = Math.max(ext[0], ext[1], ext[2]) / RC.GRID_DIM_MAX;
+    // 初始 cell 尺寸：目标 0.45m，但不低于覆盖下界（长几何抬高初始值）。注意这与覆盖下界
+    // 是两个概念——此前把 GRID_CELL_SIZE 也并入 floor，初始 cell 恰等于 floor →
+    // `cellSize/2 < floor` 恒真 → 密度细化重试的 attempt 2..4 成为死代码（评审 P1）。
+    let cellSize = Math.max(RC.GRID_CELL_SIZE, coverageFloor);
+    let dims: number[] = [0, 0, 0];
+    let cells: Map<number, number[]> = new Map();
+    for (let attempt = 0; attempt < 4; attempt++) {
+        dims = [0, 1, 2].map(a => Math.min(RC.GRID_DIM_MAX, Math.max(1, Math.ceil((ext[a] + 1e-4) / cellSize))));
+        const capped = dims.some((d, a) => d === RC.GRID_DIM_MAX && ext[a] / RC.GRID_DIM_MAX > cellSize);
+        if (capped) return { ok: false, reason: 'grid-capped' };   // 防御断言：下界保证下不可达
+        const total = dims[0] * dims[1] * dims[2];
+        cells = new Map<number, number[]>();
+        let maxCnt = 0;
+        for (let slot = 0; slot < pack.triTotal; slot++) {
+            let tx0 = Infinity, ty0 = Infinity, tz0 = Infinity, tx1 = -Infinity, ty1 = -Infinity, tz1 = -Infinity;
+            for (let k = 0; k < 3; k++) {
+                const x = worldVerts[slot * 9 + k * 3], y = worldVerts[slot * 9 + k * 3 + 1], z = worldVerts[slot * 9 + k * 3 + 2];
+                if (x < tx0) tx0 = x; if (x > tx1) tx1 = x;
+                if (y < ty0) ty0 = y; if (y > ty1) ty1 = y;
+                if (z < tz0) tz0 = z; if (z > tz1) tz1 = z;
+            }
+            const cx0 = Math.min(dims[0] - 1, Math.max(0, Math.floor((tx0 - minX) / cellSize)));
+            const cx1 = Math.min(dims[0] - 1, Math.max(0, Math.floor((tx1 - minX) / cellSize)));
+            const cy0 = Math.min(dims[1] - 1, Math.max(0, Math.floor((ty0 - minY) / cellSize)));
+            const cy1 = Math.min(dims[1] - 1, Math.max(0, Math.floor((ty1 - minY) / cellSize)));
+            const cz0 = Math.min(dims[2] - 1, Math.max(0, Math.floor((tz0 - minZ) / cellSize)));
+            const cz1 = Math.min(dims[2] - 1, Math.max(0, Math.floor((tz1 - minZ) / cellSize)));
+            for (let cz = cz0; cz <= cz1; cz++)
+                for (let cy = cy0; cy <= cy1; cy++)
+                    for (let cx = cx0; cx <= cx1; cx++) {
+                        const ci = cx + dims[0] * (cy + dims[1] * cz);
+                        let list = cells.get(ci);
+                        if (!list) { list = []; cells.set(ci, list); }
+                        list.push(slot);
+                        if (list.length > maxCnt) maxCnt = list.length;
+                    }
+        }
+        void total;
+        if (maxCnt <= RC.MAX_CELL_ENTRIES) {
+            // 展平：cellsData（offset,count）+ entriesData（triSlot,section,thickness,0）
+            const cellTotal = dims[0] * dims[1] * dims[2];
+            const cellsData = new Float32Array(cellTotal * 4);
+            const entryLists = [...cells.entries()];
+            let entryTotal = 0;
+            for (const [, list] of entryLists) entryTotal += list.length;
+            const entriesData = new Float32Array(entryTotal * 4);
+            let off = 0;
+            for (const [ci, list] of entryLists) {
+                cellsData[ci * 4] = off;
+                cellsData[ci * 4 + 1] = list.length;
+                for (let i = 0; i < list.length; i++) {
+                    const slot = list[i];
+                    entriesData[(off + i) * 4] = slot;
+                    entriesData[(off + i) * 4 + 1] = secOf[slot];
+                    entriesData[(off + i) * 4 + 2] = thOf[slot];
+                }
+                off += list.length;
+            }
+            // 世界顶点纹理数据（RGBA 每 texel 一顶点）
+            const triRows = Math.ceil((pack.triTotal * 3) / RC.TRI_ROW);
+            const worldTrisData = new Float32Array(triRows * RC.TRI_ROW * 4);
+            let w = 0;
+            for (let i = 0; i < worldVerts.length; i += 3) {
+                worldTrisData[w] = worldVerts[i];
+                worldTrisData[w + 1] = worldVerts[i + 1];
+                worldTrisData[w + 2] = worldVerts[i + 2];
+                w += 4;
+            }
+            return {
+                ok: true, dims, cellSize,
+                gridMin: [minX, minY, minZ],
+                cellTotal, entryTotal, triRows,
+                cellsData, entriesData, worldTrisData,
+            };
+        }
+        // 密度重试：只要还没到覆盖下界就继续对半细化（0.45 → 0.225 → … → coverageFloor，
+        // 最多 4 次尝试）；细化到覆盖下界仍过密 → fail-closed（跳弹紫），不允许截断成功
+        if (cellSize <= coverageFloor) break;
+        cellSize = Math.max(cellSize / 2, coverageFloor);
+    }
+    return { ok: false, reason: 'grid-too-dense' };
+}
+
+/** 网格三张纹理（cell 表 / 条目表 / 世界顶点）。
+ * 数据长度必须补齐到 w×h×4：行宽向上取整后纹理需求常大于有效数据，
+ * 缓冲不足的 texImage2D 会触发 GL INVALID_OPERATION（1282）→ 纹理不完整 →
+ * 采样恒零（条目表全零 → DDA 永不命中 → 跳弹区永久紫——本 bug 的根因）。 */
+export function createGridTextures(grid: RicochetGrid): { cellsTex: DataTexture; entriesTex: DataTexture; worldTrisTex: DataTexture } {
+    const mk = (data: Float32Array, w: number, h: number): DataTexture => {
+        const need = w * h * 4;
+        let buf = data;
+        if (data.length < need) {
+            buf = new Float32Array(need);
+            buf.set(data);
+        }
+        const t = new THREE.DataTexture(buf, w, h, THREE.RGBAFormat, THREE.FloatType);
+        t.minFilter = THREE.NearestFilter;
+        t.magFilter = THREE.NearestFilter;
+        t.generateMipmaps = false;
+        t.needsUpdate = true;
+        return t;
+    };
+    return {
+        cellsTex: mk(grid.cellsData, RC.CELL_ROW, Math.ceil(grid.cellTotal / RC.CELL_ROW)),
+        entriesTex: mk(grid.entriesData, RC.ENTRY_ROW, Math.ceil(grid.entryTotal / RC.ENTRY_ROW)),
+        worldTrisTex: mk(grid.worldTrisData, RC.TRI_ROW, grid.triRows),
+    };
+}
+
+const _inv = new THREE.Matrix4();
+
+function meshData(pack: CollisionPack & { metaData: Float32Array }, m: number) {
+    const u = pack.units[m];
+    const base = m * 12;
+    return {
+        sec: pack.metaData[base + 3],
+        localFrom: u.localFrom,   // 该块在源几何内的起始三角形（分块网格 >256 三角形）
+        triCount: u.triCount,
+        thickness: u.thickness,
+        variant: u.variant,
+        aabbMin: [pack.metaData[base], pack.metaData[base + 1], pack.metaData[base + 2]],
+        aabbMax: [pack.metaData[base + 4], pack.metaData[base + 5], pack.metaData[base + 6]],
+        mesh: pack.meshes[m],
+    };
+}
+
+/**
+ * JS 参考实现：沿射线收集全部命中（不去重、不截断），t 从 ro 起量，世界系输出。
+ * 与 THREE.Raycaster(intersectObjects) 同口径（AABB/求交顺序内各异但全量+按 t 排序）。
+ * 供单测与差分调试；GLSL rcContinue 与本函数+simulateContinuation 同语义。
+ * clipPlane = 当前 gun_mask 裁切面；只滤 gunBarrel 命中（见 isClippedModuleHit）。
+ */
+export function raycastPackAll(
+    pack: CollisionPack,
+    ro: Vector3,
+    dir: Vector3,
+    tMin: number = 0,
+    tMax: number = RC.FAR,
+    twoSidedSpaced = false,
+    clipPlane: Plane | null = null,
+): CollisionHit[] {
+    const hits: CollisionHit[] = [];
+    for (let m = 0; m < pack.meshCount; m++) {
+        const md = meshData(pack, m);
+        if (md.triCount <= 0) continue;
+        const mw = md.mesh.matrixWorld;
+        _inv.copy(mw).invert();
+        const lro = new THREE.Vector3(ro.x, ro.y, ro.z).applyMatrix4(_inv);
+        // 方向的世界→局部同样过逆矩阵（transformDirection(mw) 是局部→世界，方向会反）
+        const lrd = new THREE.Vector3(dir.x, dir.y, dir.z).transformDirection(_inv);
+        // 局部 AABB slab
+        let tmin = -Infinity, tmax = Infinity;
+        let miss = false;
+        for (let a = 0; a < 3; a++) {
+            const o = a === 0 ? lro.x : a === 1 ? lro.y : lro.z;
+            const d = a === 0 ? lrd.x : a === 1 ? lrd.y : lrd.z;
+            const lo = md.aabbMin[a], hi = md.aabbMax[a];
+            if (Math.abs(d) < 1e-12) {
+                if (o < lo || o > hi) { miss = true; break; }
+                continue;
+            }
+            let t1 = (lo - o) / d, t2 = (hi - o) / d;
+            if (t1 > t2) { const s = t1; t1 = t2; t2 = s; }
+            if (t1 > tmin) tmin = t1;
+            if (t2 < tmax) tmax = t2;
+        }
+        // 与 GLSL 同式：窗口 (tMin, tMax) 相交即保留（平面类零厚度包围盒 tmin==tmax，相切不可剔除）
+        if (miss || !(tmax > tMin && tmin < tMax)) continue;
+        const pos = md.mesh.geometry.attributes.position;
+        const idx = md.mesh.geometry.index;
+        const section = sectionName(md.sec);
+        for (let t = 0; t < md.triCount; t++) {
+            const lt = md.localFrom + t;
+            const vi = [0, 1, 2].map(k => (idx ? idx.getX(lt * 3 + k) : lt * 3 + k));
+            const P = vi.map(i2 => new THREE.Vector3(pos.getX(i2), pos.getY(i2), pos.getZ(i2)));
+            const e1 = P[1].clone().sub(P[0]);
+            const e2 = P[2].clone().sub(P[0]);
+            const pv = new THREE.Vector3().crossVectors(lrd, e2);
+            const det = e1.dot(pv);
+            if (Math.abs(det) < 1e-9) continue;
+            const invD = 1 / det;
+            const tv = lro.clone().sub(P[0]);
+            const u = tv.dot(pv) * invD;
+            if (u < 0 || u > 1) continue;
+            const qv = new THREE.Vector3().crossVectors(tv, e1);
+            const v = lrd.dot(qv) * invD;
+            if (v < 0 || u + v > 1) continue;
+            const tHit = e2.dot(qv) * invD;
+            if (tHit <= tMin || tHit >= tMax) continue;
+            // 背面剔除（= THREE.Raycaster FrontSide）；间隙甲可选双面（从背面命中的
+            // 间隙屏必须参与判定），双面命中把绕序法线翻回朝向来向。
+            const n0 = new THREE.Vector3().crossVectors(e1, e2);
+            const back = n0.dot(lrd) >= 0;
+            if (back && !(twoSidedSpaced && section === 'spaced')) continue;
+            if (back) n0.negate();
+            const point = lro.clone().addScaledVector(lrd, tHit).applyMatrix4(mw);
+            if (isClippedModuleHit(section, point, clipPlane)) continue;
+            hits.push({
+                t: tHit, meshIdx: m, section, thickness: md.thickness,
+                triangleId: pack.units[m].localFrom + t,
+                variant: md.variant, slot: pack.units[m].triStart + t,   // 全局三角形槽（网格验证用）
+                point,
+                normal: n0.transformDirection(mw),
+            });
+        }
+    }
+    hits.sort((x, y) => x.t - y.t);
+    return hits;
+}
+
+const SECTION_NAME_BY_CODE: Readonly<Record<number, string>> = Object.freeze(Object.fromEntries(
+    Object.entries(RC.SECTION).map(([name, code]) => [code, name]),
+)) as Readonly<Record<number, string>>;
+function sectionName(code: number): string {
+    return SECTION_NAME_BY_CODE[code] || '?';
+}
+
+/**
+ * gun_mask 裁切面之后的炮管不参与判定：视觉上被 clipping plane 裁掉，
+ * 点击主判定/续飞、GPU rcContinue、JS 参考与 HE 采样必须同一口径。
+ * 只对 gunBarrel 生效；炮盾装甲板（turret/gun primary）不受影响。
+ * @param section section 码名
+ * @param point 世界系命中点
+ * @param clipPlane 世界系 gunClipPlane
+ */
+export function isClippedModuleHit(section: string, point: Vector3, clipPlane: Plane | null | undefined): boolean {
+    return section === 'gunBarrel' && !!clipPlane && clipPlane.distanceToPoint(point) < 0;
+}
+
+/**
+ * FrontSide 背面判据（与 `raycastPackAll`/GLSL 的绕序背面剔除同义）：世界法线
+ * 朝来向时该交点是实体背面。点击主链对间隙甲做双面求交（临时 DoubleSide），收集时
+ * 只放行「该板前面未计过」的间隙甲背面——闭合间隙甲正/背面各计一层会重复消耗厚度；
+ * 主装甲/外部模块仍只认迎面命中。判定包与 GLSL 路径默认仍按 FrontSide 剔除。
+ * @param normal 世界系绕序法线（翻面之前）
+ * @param rayDir 世界系射线方向（单位向量）
+ */
+export function isBackfaceNormal(normal: Vector3, rayDir: Vector3): boolean {
+    return normal.dot(rayDir) > 0;
+}
+
+/**
+ * JS 网格版射线求交：与 `raycastPackAll` 同口径（全量命中、FrontSide 背面剔除、按 t
+ * 排序），但只访问 DDA 覆盖的 cell 内三角形。HE 的 800 射线采样用它替代逐个三角形
+ * 全扫（评审 P1：800 × triTotal 会卡住 UI 线程）。返回 null 表示网格不可用，调用方
+ * 回退暴力实现。
+ *
+ * 数据布局与 `buildRicochetGrid` 一致：世界顶点每 texel 4 float、每条目
+ * (triSlot, section, thickness, 0)、每 cell (entryOffset, entryCount)。
+ * 不输出 point/normal/variant——HE 采样只消费 t/section/thickness。
+ */
+export function raycastGridAll(
+    grid: BuildRicochetGridResult | null | undefined,
+    ro: Vector3,
+    dir: Vector3,
+    tMin: number = 0,
+    tMax: number = RC.FAR,
+    twoSidedSpaced = false,
+): GridCollisionHit[] | null {
+    if (!grid || !grid.ok) return null;
+    const { dims, cellSize, gridMin, cellsData, entriesData, worldTrisData } = grid;
+    const o = [ro.x, ro.y, ro.z];
+    const d = [dir.x, dir.y, dir.z];
+    const lo = [gridMin[0], gridMin[1], gridMin[2]];
+    const hi = [lo[0] + dims[0] * cellSize, lo[1] + dims[1] * cellSize, lo[2] + dims[2] * cellSize];
+    // 网格 AABB slab：把射线限制在网格内（也用于空方向分量的 inside/miss 判定）
+    let t0 = tMin, t1 = Math.min(tMax, RC.FAR);
+    for (let a = 0; a < 3; a++) {
+        if (Math.abs(d[a]) < 1e-12) {
+            if (o[a] < lo[a] || o[a] > hi[a]) return [];
+            continue;
+        }
+        let ta = (lo[a] - o[a]) / d[a];
+        let tb = (hi[a] - o[a]) / d[a];
+        if (ta > tb) { const s = ta; ta = tb; tb = s; }
+        if (ta > t0) t0 = ta;
+        if (tb < t1) t1 = tb;
+    }
+    if (!(t1 > t0)) return [];
+    const startT = t0 + Math.min(1e-7, (t1 - t0) * 0.5);
+    const px = o[0] + d[0] * startT;
+    const py = o[1] + d[1] * startT;
+    const pz = o[2] + d[2] * startT;
+    const cell = (v: number, a: number) => Math.min(dims[a] - 1, Math.max(0, Math.floor((v - lo[a]) / cellSize)));
+    let cx = cell(px, 0), cy = cell(py, 1), cz = cell(pz, 2);
+    const stepX = d[0] > 0 ? 1 : d[0] < 0 ? -1 : 0;
+    const stepY = d[1] > 0 ? 1 : d[1] < 0 ? -1 : 0;
+    const stepZ = d[2] > 0 ? 1 : d[2] < 0 ? -1 : 0;
+    const inf = Infinity;
+    const tDeltaX = stepX ? Math.abs(cellSize / d[0]) : inf;
+    const tDeltaY = stepY ? Math.abs(cellSize / d[1]) : inf;
+    const tDeltaZ = stepZ ? Math.abs(cellSize / d[2]) : inf;
+    let tMaxX = stepX ? (lo[0] + (cx + (stepX > 0 ? 1 : 0)) * cellSize - o[0]) / d[0] : inf;
+    let tMaxY = stepY ? (lo[1] + (cy + (stepY > 0 ? 1 : 0)) * cellSize - o[1]) / d[1] : inf;
+    let tMaxZ = stepZ ? (lo[2] + (cz + (stepZ > 0 ? 1 : 0)) * cellSize - o[2]) / d[2] : inf;
+    const hits: GridCollisionHit[] = [];
+    const seen = new Set<number>();
+    const maxSteps = dims[0] + dims[1] + dims[2] + 8;
+    for (let s = 0; s < maxSteps; s++) {
+        const ci = cx + dims[0] * (cy + dims[1] * cz);
+        const off = cellsData[ci * 4] | 0;
+        const cnt = cellsData[ci * 4 + 1] | 0;
+        for (let e = 0; e < cnt; e++) {
+            const ei = (off + e) * 4;
+            const slot = entriesData[ei] | 0;
+            if (seen.has(slot)) continue;
+            const b = slot * 12;
+            const ax = worldTrisData[b], ay = worldTrisData[b + 1], az = worldTrisData[b + 2];
+            const bx = worldTrisData[b + 4], by = worldTrisData[b + 5], bz = worldTrisData[b + 6];
+            const cx2 = worldTrisData[b + 8], cy2 = worldTrisData[b + 9], cz2 = worldTrisData[b + 10];
+            const e1x = bx - ax, e1y = by - ay, e1z = bz - az;
+            const e2x = cx2 - ax, e2y = cy2 - ay, e2z = cz2 - az;
+            const secCode = entriesData[ei + 1] | 0;
+            // FrontSide：绕序法线必须朝来向（与 raycastPackAll/GLSL rcTriW 同）；
+            // 间隙甲双面：背面命中参与 HE 采样（从背面命中的间隙屏）。
+            const nx = e1y * e2z - e1z * e2y;
+            const ny = e1z * e2x - e1x * e2z;
+            const nz = e1x * e2y - e1y * e2x;
+            const back = nx * d[0] + ny * d[1] + nz * d[2] >= 0;
+            // sectionName 是逐候选三角形的字符串查找；只在真正需要判断双面时才做，
+            // 否则一帧几十万条方向射线会被这个查找拖慢数倍。
+            if (back && !(twoSidedSpaced && sectionName(secCode) === 'spaced')) continue;
+            const pvx = d[1] * e2z - d[2] * e2y;
+            const pvy = d[2] * e2x - d[0] * e2z;
+            const pvz = d[0] * e2y - d[1] * e2x;
+            const det = e1x * pvx + e1y * pvy + e1z * pvz;
+            if (Math.abs(det) < 1e-9) continue;
+            const inv = 1 / det;
+            const tvx = o[0] - ax, tvy = o[1] - ay, tvz = o[2] - az;
+            const u = (tvx * pvx + tvy * pvy + tvz * pvz) * inv;
+            if (u < 0 || u > 1) continue;
+            const qvx = tvy * e1z - tvz * e1y;
+            const qvy = tvz * e1x - tvx * e1z;
+            const qvz = tvx * e1y - tvy * e1x;
+            const v = (d[0] * qvx + d[1] * qvy + d[2] * qvz) * inv;
+            if (v < 0 || u + v > 1) continue;
+            const tHit = (e2x * qvx + e2y * qvy + e2z * qvz) * inv;
+            if (tHit <= tMin || tHit > t1) continue;
+            seen.add(slot);
+            const nLen = Math.hypot(nx, ny, nz);
+            const normal = nLen > 1e-12
+                ? new THREE.Vector3(nx / nLen, ny / nLen, nz / nLen)
+                : new THREE.Vector3(0, 1, 0);
+            // 与 raycastPackAll 同口径：双面间隙甲的背面命中把法线翻向射线来向，
+            // 供逐面有效装甲/角度判定使用。
+            if (normal.x * d[0] + normal.y * d[1] + normal.z * d[2] > 0) normal.negate();
+            hits.push({
+                t: tHit,
+                section: sectionName(secCode),
+                thickness: entriesData[ei + 2],
+                variant: null,
+                slot,
+                normal,
+                // 世界系命中点：HE 采样用 gunClipPlane 过滤被裁掉的炮管段。
+                point: new THREE.Vector3(o[0] + d[0] * tHit, o[1] + d[1] * tHit, o[2] + d[2] * tHit),
+            });
+        }
+        const tExit = Math.min(tMaxX, tMaxY, tMaxZ);
+        if (!(tExit <= t1)) break;
+        if (tMaxX <= tMaxY && tMaxX <= tMaxZ) {
+            if (!stepX) break;
+            cx += stepX;
+            if (cx < 0 || cx >= dims[0]) break;
+            tMaxX += tDeltaX;
+        } else if (tMaxY <= tMaxZ) {
+            if (!stepY) break;
+            cy += stepY;
+            if (cy < 0 || cy >= dims[1]) break;
+            tMaxY += tDeltaY;
+        } else {
+            if (!stepZ) break;
+            cz += stepZ;
+            if (cz < 0 || cz >= dims[2]) break;
+            tMaxZ += tDeltaZ;
+        }
+    }
+    hits.sort((x, y) => x.t - y.t);
+    return hits;
+}
+
+const _PRIM = new Set(['hull', 'turret', 'gun']);
+
+/**
+ * JS 参考实现：跳弹续飞层链（与 GLSL rcContinue 同常量同语义，在线推进 tCur）。
+ * params: { remIn(=pen×0.75), caliber, normalizationRad, thickMul, ricochetRad?, clipPlane? }。
+ * 跳弹后的炮弹可以再次跳弹：首段之后执行一段续飞（剩余穿深 ×0.75）；该段
+ * 首个命中层若满足跳弹角/3×口径规则，则发生第二次跳弹，炮弹消失，不再有第三段。
+ * clipPlane = 世界系 gun_mask 裁切面；负侧 gunBarrel 命中在命中收集阶段即剔除。
+ * 返回 { cls(0 紫|1 绿|2 红), penChance, layers[层快照（调试/测试）] }。
+ */
+export function simulateContinuation(
+    pack: CollisionPack,
+    bouncePos: Vector3,
+    reflDir: Vector3,
+    params: {
+        remIn: number
+        caliber: number
+        normalizationRad: number
+        thickMul: number
+        ricochetRad?: number | null
+        clipPlane?: Plane | null
+    },
+): { cls: 0 | 1 | 2; penChance: number; layers: ContinuationLayer[] } {
+    const { remIn, caliber, normalizationRad, thickMul } = params;
+    const ricochetRad = params.ricochetRad != null ? params.ricochetRad : 70 * Math.PI / 180;
+    const clipPlane = params.clipPlane || null;
+    let rem = remIn;
+    let origin = bouncePos.clone();
+    let dir = reflDir.clone();
+    const allLayers: ContinuationLayer[] = [];
+    // 本函数从第一次跳弹点开始：只执行第二段；该段若再次跳弹即为终态。
+    for (let seg = 1; seg <= 1; seg++) {
+        const ro = origin.clone().addScaledVector(dir, RC.ORIGIN_OFFSET);
+        const hits = raycastPackAll(pack, ro, dir, RC.MIN_CONTINUATION_T, RC.FAR, false, clipPlane);
+        // 前端门：原始命中无主装甲 → 不做二次判定（维持紫）
+        if (!hits.some(h => _PRIM.has(h.section))) break;
+        // 收集：variant 去重；确定性判定与概率链都停在首个 primary（含）
+        const seen = new Set<number>();
+        const collected: CollisionHit[] = [];
+        for (const h of hits) {
+            const prev = collected[collected.length - 1];
+            if (prev && Math.abs(h.t - prev.t) < 1e-6 && h.section === prev.section) continue;
+            if (h.variant) {
+                if (seen.has(h.variant)) continue;
+                seen.add(h.variant);
+                collected.push(h);
+            } else {
+                collected.push(h);
+                if (_PRIM.has(h.section)) break;
+            }
+        }
+        if (collected.length > RC.MAX_LAYER) return { cls: 0, penChance: 0, layers: allLayers };
+        let probMin = rem * (1 - RC.BAND);
+        let probMax = rem * (1 + RC.BAND);
+        let probChance = 1;
+        let blocked = false;
+        let hitIndex = 0;
+        for (const h of collected) {
+            const th = h.thickness * thickMul;
+            let eff: number, layPen: boolean;
+            const isPrimary = _PRIM.has(h.section);
+            if (h.variant) {
+                eff = th;
+                layPen = rem > eff;
+                if (layPen) rem -= eff;
+                probMin -= eff;
+                probMax -= eff;
+                allLayers.push({ meshName: pack.meshes[h.meshIdx].name, plateId: pack.meshes[h.meshIdx].userData.armorPlateId, triangleId: h.triangleId, slot: h.slot, point: h.point.toArray(), normal: h.normal.toArray(), section: h.section, t: h.t, thickness: th, eff, remBefore: rem + (layPen ? eff : 0), penetrated: layPen, ricochet: false, seg });
+                if (!layPen) blocked = true;
+                hitIndex++;
+                continue;
+            }
+            const cosA = Math.min(Math.abs(h.normal.dot(dir)), 1);
+            const angle = Math.acos(cosA);
+            // 与 penetration.js 一致：0mm 板也满足 3× 口径规则（overmatch）。
+            const threeCal = caliber > th * 3;
+            // 与 penetration.js 相同：只有本段首个非外部层可以新跳弹（首个命中可以是
+            // 间隙甲；外部模块已在 variant 分支 flat 消费并递增 hitIndex）。
+            const ricocheted = (isPrimary || h.section === 'spaced') && hitIndex === 0 && !threeCal && angle >= ricochetRad;
+            if (ricocheted) {
+                allLayers.push({ meshName: pack.meshes[h.meshIdx].name, plateId: pack.meshes[h.meshIdx].userData.armorPlateId, triangleId: h.triangleId, slot: h.slot, point: h.point.toArray(), normal: h.normal.toArray(), section: h.section, t: h.t, thickness: th, eff: 0, remBefore: rem, penetrated: false, ricochet: true, angle, seg });
+                // 第二次跳弹：炮弹消失，不再做后续判定。
+                return { cls: 0, penChance: 0, layers: allLayers };
+            }
+            // 0mm 合法板厚：只对正厚度应用 2× 增强转正。
+            const twoCal = th > 0 && caliber > th * 2;
+            const normR = twoCal
+              ? (RC.TWO_CAL_NORM * normalizationRad * caliber) / (2 * th)
+              : normalizationRad;
+            const finA = Math.max(angle - normR, 0);
+            eff = th / Math.max(Math.cos(finA), RC.COS_EPS);
+            layPen = rem > eff;
+            probChance *= penetrationChanceForInterval(probMin, probMax, eff);
+            probMin -= eff;
+            probMax -= eff;
+            allLayers.push({ meshName: pack.meshes[h.meshIdx].name, plateId: pack.meshes[h.meshIdx].userData.armorPlateId, triangleId: h.triangleId, slot: h.slot, point: h.point.toArray(), normal: h.normal.toArray(), section: h.section, t: h.t, thickness: th, eff, remBefore: rem, penetrated: layPen, ricochet: false, seg });
+            if (isPrimary) {
+                if (!blocked && layPen) {
+                    return { cls: 1, penChance: probChance > 0 ? Math.max(0, Math.min(1, probChance)) : 1, layers: allLayers };
+                }
+                const p = Math.max(0, Math.min(1, probChance));
+                const pct = Math.round(p * 100);
+                return { cls: 2, penChance: pct >= 1 && pct <= 99 ? p : 0, layers: allLayers };
+            }
+            if (!layPen) blocked = true;
+            else rem -= eff;
+            hitIndex++;
+        }
+    }
+    return { cls: 0, penChance: 0, layers: allLayers };
+}

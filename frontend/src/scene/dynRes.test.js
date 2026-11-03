@@ -2,7 +2,7 @@
 // 真实场景里的失效形态是"分辨率在阈值附近反复横跳"或"掉下去回不来"——
 // 都由这里锁定。
 import { describe, expect, it } from 'vitest'
-import { createDynRes } from './dynRes.js'
+import { createDynRes } from './dynRes.ts'
 
 /** 喂 n 帧恒定 dt，返回最后一次非空调整（无调整则 null） */
 function feed(dyn, dtMs, n) {

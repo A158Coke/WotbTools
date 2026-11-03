@@ -41,16 +41,16 @@ vi.mock('../composables/useFeatureGate.js', () => ({
 vi.mock('../scene/webglSupport.js', () => ({
   detectWebGL: () => ({ supported: true, status: 'webgl2' }),
 }))
-vi.mock('../composables/useSceneFlyControls.js', () => ({
+vi.mock('../composables/useSceneFlyControls.ts', () => ({
   useSceneFlyControls: () => ({ stopLoop: vi.fn(), flySpeedIndex: () => 1 }),
 }))
-vi.mock('../composables/usePlaybackFullscreen.js', () => ({
+vi.mock('../composables/usePlaybackFullscreen.ts', () => ({
   usePlaybackFullscreen: () => ({ isFullscreen: ref(false), fullscreenSupported: false, toggleFullscreen: vi.fn() }),
 }))
-vi.mock('../composables/usePlaybackPhoneForm.js', () => ({
+vi.mock('../composables/usePlaybackPhoneForm.ts', () => ({
   usePlaybackPhoneForm: () => ({ isPhone: { value: false } }),
 }))
-vi.mock('../composables/usePlaybackTransport.js', () => ({
+vi.mock('../composables/usePlaybackTransport.ts', () => ({
   isInteractiveTarget: () => false,
 }))
 vi.mock('./Scene3DStatus.vue', () => ({ default: { template: '<div class="s3d-stub" />' } }))
