@@ -16,6 +16,16 @@
 本机全功能联调（资产面 / Agent 引擎 / 认证门禁 / 自检探针 / 故障对照）的权威手册：
 [`docs/frontend/local-testing.md`](../docs/frontend/local-testing.md)。最短路径：
 
+**用户要求本地人工验收时，固定使用 `localhost:5173`**：启动 Vite 时显式传
+`--port 5173 --strictPort`，端口占用时先确认进程归属，不自动换到 5174，也不擅自终止其他任务。
+需要真实资源服务器且只开放 5173 时，设置 `WOTB_ASSET_PROXY=https://assets.wotbtools.com`
+和 `VITE_ASSET_BASE_URL=http://localhost:5173/__assets`，通过 Vite 同源代理访问资产，
+无需本地 8123；需要生产 API / 真实登录时使用 `production-remote` 模式，其他情况下沿用本地 API。
+完整命令和检查见 [`docs/frontend/local-production-dev.md`](../docs/frontend/local-production-dev.md)。
+交付链接前核对进程仍在监听、页面及 `/__assets/index.json` 返回 200；回放入口为
+`http://localhost:5173/?view=agent-replay&assets=`，空 `assets` 清除浏览器既有覆盖。
+HTTP 200 不证明每张地图的资产齐备，缺失的具体资产应如实报告；不要凭进程启动日志认定服务仍存活。
+
 1. WoT-Blitz-Agent 仓**根目录**：`node scripts/serve_asset_pack.mjs 8123`（脚本按 cwd 解析 `release/asset_pack`，起错目录会静默 404）。
 2. 本仓 `frontend/.env.local`（gitignored）写 `VITE_ASSET_BASE_URL=http://127.0.0.1:8123`；改后**必须重启 dev server**（env 在 transform 时内联）。
 3. 依赖上游引擎的调试先 `bash scripts/fetch-agent-wasm.sh`（`deploy/agent/source.json` pin 变更后必须重跑；**换 pin 还须重生成 AI 投影 golden**：`WOTB_UPDATE_AI_PROJECTION_GOLDEN=1 pnpm exec vitest run src/replay-local/ai/toClientAiReviewProjection.test.ts`，golden 内嵌 pin provenance，漏跑则 3 个 fixture 红）。
