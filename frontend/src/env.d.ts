@@ -16,4 +16,12 @@ interface Window {
   wotbtoolsOnConnectivityChanged?: () => unknown
   wotbtoolsOnReplay?: () => unknown
   __pbReplaySource?: unknown
+  /** 逐图光照调试（?debug；mapLighting.ts 写入） */
+  __mapLighting?: { direction?: number[]; color?: unknown; intensity?: unknown; ambient?: unknown }
+  /** 逐图曝光调试（?debug；mapLighting.ts 写入） */
+  __mapExposure?: number
+  /** 场景装配调试计数（?debug；sceneryAssembly.ts 写入） */
+  __skyMeshes?: number
+  /** 水面海岸线调试（sceneryAssembly.ts 写入） */
+  __waterCoast?: { materials?: number }
 }

@@ -8,8 +8,8 @@ import fs from 'node:fs';
 // 穿透材质族 2026-10-24 出仓 viewer/armorShaders.js（current-plan.md Step B2）：
 // 着色器模式断言随实现覆盖两份源（拼接读取，not.toMatch 同时约束两侧）
 const viewer = fs.readFileSync(new URL('./tankViewer.js', import.meta.url), 'utf8')
-    + fs.readFileSync(new URL('./viewer/armorShaders.js', import.meta.url), 'utf8');
-const splash = fs.readFileSync(new URL('./heSplash.js', import.meta.url), 'utf8');
+    + fs.readFileSync(new URL('./viewer/armorShaders.ts', import.meta.url), 'utf8');
+const splash = fs.readFileSync(new URL('./heSplash.ts', import.meta.url), 'utf8');
 
 describe('HE 热力图投影到可见主装甲（源码级锁）', () => {
     it('主装甲深度遮罩对所有弹种开启，HE 不得关闭', () => {

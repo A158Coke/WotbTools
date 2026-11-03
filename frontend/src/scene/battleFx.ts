@@ -23,6 +23,21 @@
  * 且不做 tone mapping（特效颜色直出，不被逐图曝光压暗）。
  */
 import * as THREE from 'three'
+import type { Color, LineSegments, Mesh, Object3D, PerspectiveCamera, ShaderMaterial, Texture, Vector3 } from 'three'
+
+/** 画质档位的特效预算（FX_BUDGETS 各档的同形状）。 */
+export type FxBudget = (typeof FX_BUDGETS)[keyof typeof FX_BUDGETS]
+
+/** battleFx 生命周期内的爆炸事件（壁钟驱动）。 */
+export interface BurstEvent { x: number; y: number; z: number; seed: number; bornMs: number }
+/** 开火事件（含炮口朝向与侧向单位向量）。 */
+export interface MuzzleEvent extends BurstEvent { dx: number; dy: number; dz: number; sx: number; sz: number }
+/** 命中事件（kind = impactKind() 的结果；跳弹时带出射方向）。 */
+export interface ImpactEvent extends BurstEvent { kind: ImpactKind; dx: number; dy: number; dz: number; ox: number; oy: number; oz: number }
+export type ImpactKind = 'pen' | 'nonpen' | 'ricochet'
+
+/** 条带网格（tracer/trail 池化对象；material 恒为 ShaderMaterial）。 */
+type RibbonMesh = Mesh<THREE.BufferGeometry, ShaderMaterial>
 
 /**
  * 画质档位预算（键与 `QUALITY_PRESETS` 一一对应；`QUALITY_PRESETS[k].fx` 引用这里）。
@@ -58,8 +73,8 @@ export const TRACER_STREAK_M = 14
 
 const MUZZLE_FLASH_SECS = 0.24
 const MUZZLE_SMOKE_SECS = 1.8
-const IMPACT_FLASH_SECS = { pen: 0.18, nonpen: 0.13, ricochet: 0.1 }
-const IMPACT_SMOKE_SECS = { pen: 1.8, nonpen: 1.4, ricochet: 1.2 }
+const IMPACT_FLASH_SECS: Record<ImpactKind, number> = { pen: 0.18, nonpen: 0.13, ricochet: 0.1 }
+const IMPACT_SMOKE_SECS: Record<ImpactKind, number> = { pen: 1.8, nonpen: 1.4, ricochet: 1.2 }
 const IMPACT_SPARK_SECS = 0.8
 /**
  * 命中特效最小屏幕尺寸。应用相机最近也在视点 max(20 m, 地图尺寸×0.08) 之外，2 m 的命中火光
@@ -77,7 +92,7 @@ const G = 9.8
 const TAU = Math.PI * 2
 
 /** 弹道光迹不透明度系数：`secsAfterFlight` = 回放时刻 − 弹头到达终点时刻（飞行中为负）。 */
-export function trailOpacityAt(secsAfterFlight) {
+export function trailOpacityAt(secsAfterFlight: number): number {
   if (!(secsAfterFlight > TRAIL_HOLD_SECS)) return 1
   return Math.max(0, 1 - (secsAfterFlight - TRAIL_HOLD_SECS) / TRAIL_FADE_SECS)
 }
@@ -94,13 +109,14 @@ const _corner = new THREE.Vector3()
  * @param {THREE.Vector3} from 开火起点
  * @param {THREE.Vector3} dir 弹道方向（单位向量）
  */
-export function muzzleTipOf(barrelNodes, from, dir, out = new THREE.Vector3()) {
+export function muzzleTipOf(barrelNodes: readonly Object3D[] | null | undefined, from: Vector3, dir: Vector3, out: Vector3 = new THREE.Vector3()): Vector3 {
   let reach = -Infinity
   for (const node of barrelNodes || []) {
-    node.traverse((o) => {
+    node.traverse((n) => {
+      const o = n as Mesh
       if (!o.isMesh || !o.geometry) return
       if (!o.geometry.boundingBox) o.geometry.computeBoundingBox()
-      const { min, max } = o.geometry.boundingBox
+      const { min, max } = o.geometry.boundingBox as THREE.Box3
       for (let i = 0; i < 8; i++) {
         _corner.set(i & 1 ? max.x : min.x, i & 2 ? max.y : min.y, i & 4 ? max.z : min.z).applyMatrix4(o.matrixWorld)
         reach = Math.max(reach, _corner.sub(from).dot(dir))
@@ -112,18 +128,18 @@ export function muzzleTipOf(barrelNodes, from, dir, out = new THREE.Vector3()) {
   return out
 }
 
-const clamp01 = (x) => Math.max(0, Math.min(1, x))
-const easeOut = (x) => 1 - (1 - clamp01(x)) ** 3
-const smooth = (x) => { const t = clamp01(x); return t * t * (3 - 2 * t) }
+const clamp01 = (x: number): number => Math.max(0, Math.min(1, x))
+const easeOut = (x: number): number => 1 - (1 - clamp01(x)) ** 3
+const smooth = (x: number): number => { const t = clamp01(x); return t * t * (3 - 2 * t) }
 /** 确定性哈希随机 [0,1)：同一 (seed, i, k) 永远同值——特效外观只依赖年龄。 */
-function rnd(seed, i, k) {
+function rnd(seed: number, i: number, k: number): number {
   let x = Math.imul((seed | 0) ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(i + 1, 0xc2b2ae35) ^ Math.imul(k + 1, 0x27d4eb2f)
   x ^= x >>> 15; x = Math.imul(x, 0x2c1b3c6d)
   x ^= x >>> 12; x = Math.imul(x, 0x297a2d39)
   x ^= x >>> 15
   return (x >>> 0) / 4294967296
 }
-const noop = () => {}
+const noop = (): void => {}
 
 // ---------- 程序化贴图图集（4×2 格，每格 128 px，只用 alpha） ----------
 const TILE = 128
@@ -134,9 +150,9 @@ const SOOT_TILES = [2, 3]
 const GLOW_TILE = 4
 const STAR_TILE = 5
 const CHUNK_TILE = 6
-const turb = (u, v, p) => Math.sin(u * 9 + p + Math.sin(v * 7 + p * 1.3)) * Math.cos(v * 11 - u * 4 + p * 0.7)
+const turb = (u: number, v: number, p: number): number => Math.sin(u * 9 + p + Math.sin(v * 7 + p * 1.3)) * Math.cos(v * 11 - u * 4 + p * 0.7)
   + 0.5 * Math.sin(u * 19 + v * 13 + p * 2.1)
-const TILE_ALPHA = [
+const TILE_ALPHA: Array<(u: number, v: number) => number> = [
   (u, v) => flameAlpha(u, v, 0.6),
   (u, v) => flameAlpha(u, v, 2.5),
   (u, v) => sootAlpha(u, v, 1.3),
@@ -154,17 +170,17 @@ const TILE_ALPHA = [
   },
   (u, v) => flameAlpha(u, v, 4.4),
 ]
-function flameAlpha(u, v, p) {
+function flameAlpha(u: number, v: number, p: number): number {
   const r = Math.hypot(u, v), t1 = turb(u, v, p), t2 = turb(u * 1.7, v * 1.7, p + 2.3)
   return Math.max(0, 1 - r * (1 + 0.18 * t1 + 0.08 * t2)) ** 1.4 * (0.8 + 0.2 * t2)
 }
-function sootAlpha(u, v, p) {
+function sootAlpha(u: number, v: number, p: number): number {
   const r = Math.hypot(u, v), t1 = turb(u, v, p), t2 = turb(u * 1.6, v * 1.6, p + 1.1)
   return Math.max(0, 1 - r * (1 + 0.22 * t1 + 0.1 * t2)) ** 1.1 * (0.62 + 0.24 * t1 + 0.14 * t2)
 }
-let atlasPixels = null
+let atlasPixels: Uint8Array | null = null
 /** 图集像素只算一次（模块级缓存）；每个会话的 DataTexture 共用同一份只读数据。 */
-function atlasData() {
+function atlasData(): Uint8Array {
   if (atlasPixels) return atlasPixels
   const w = TILE * ATLAS_COLS, h = TILE * ATLAS_ROWS
   const px = new Uint8Array(w * h * 4)
@@ -262,7 +278,7 @@ void main() {
 }`
 
 // ---------- 颜色（three 线性空间；shader 末尾转输出色彩空间） ----------
-const C = (hex) => new THREE.Color(hex)
+const C = (hex: number) => new THREE.Color(hex)
 const HOT = C(0xfff4dc), YEL = C(0xffc864), ORA = C(0xff7f2a), RED = C(0xa6381a)
 const LIT = C(0x6e3d22), SOOT = C(0x1f1b18), ASH = C(0x46423d), WRECK_TOP = C(0x5f5a54)
 const DUST0 = C(0x8c7c63), DUST1 = C(0x6f685e)
@@ -270,10 +286,20 @@ const SPARK0 = C(0xfff0c0), SPARK1 = C(0xff6a1a)
 const FLASH = C(0xfff0cc), GROUND_GLOW = C(0xff8a3a), MUZZLE = C(0xffc777), WHITE = C(0xffffff)
 const PEN_SMOKE0 = C(0x48433d), PEN_SMOKE1 = C(0x6c6660), GREY0 = C(0x9d978d), GREY1 = C(0x847e76)
 const MUZZLE_SMOKE = C(0xa29c92), DEBRIS = C(0x23201d)
-const TRACER_HOT = C(0xff4d0f)
 
 // ---------- 粒子批次 ----------
-function createBatch(capacity, map, { additive, sorted, name }) {
+/** 实例化粒子批次（加色 / 普通混合各一；容量按档位封顶）。 */
+export interface ParticleBatch {
+  mesh: Mesh
+  capacity: number
+  readonly count: number
+  begin(): void
+  push(x: number, y: number, z: number, rot: number, w: number, h: number, tile: number, color: Color, alpha: number): void
+  finish(view?: ArrayLike<number>): void
+  dispose(): void
+}
+
+function createBatch(capacity: number, map: Texture, { additive, sorted, name }: { additive: boolean; sorted: boolean; name: string }): ParticleBatch {
   const geometry = new THREE.InstancedBufferGeometry()
   geometry.setIndex([0, 2, 1, 2, 3, 1])
   geometry.setAttribute('position', new THREE.Float32BufferAttribute([-0.5, 0.5, 0, 0.5, 0.5, 0, -0.5, -0.5, 0, 0.5, -0.5, 0], 3))
@@ -298,16 +324,16 @@ function createBatch(capacity, map, { additive, sorted, name }) {
   mesh.visible = false
   mesh.raycast = noop   // 单位四边形几何在原点：不参与拾取
   // 排序批次先写暂存区，按视深排序后再拷进 GPU 数组；加色批次与顺序无关，直写。
-  const stage = sorted ? attrs.map(() => new Float32Array(capacity * 4)) : attrs.map((attr) => attr.array)
+  const stage: Float32Array[] = sorted ? attrs.map(() => new Float32Array(capacity * 4)) : attrs.map((attr) => attr.array as Float32Array)
   const depth = sorted ? new Float32Array(capacity) : null
-  const order = []
+  const order: number[] = []
   let count = 0, uploaded = 0
   return {
     mesh,
     capacity,
     get count() { return count },
     begin() { count = 0 },
-    push(x, y, z, rot, w, h, tile, color, alpha) {
+    push(x: number, y: number, z: number, rot: number, w: number, h: number, tile: number, color: Color, alpha: number): void {
       if (count >= capacity || !(alpha > 0.002) || !(w > 0) || !(h > 0)) return
       const o = count * 4
       const [A, B, D] = stage
@@ -316,8 +342,8 @@ function createBatch(capacity, map, { additive, sorted, name }) {
       D[o] = color.r; D[o + 1] = color.g; D[o + 2] = color.b; D[o + 3] = Math.min(1, alpha)
       count++
     },
-    finish(view) {
-      if (sorted && count > 0) {
+    finish(view?: ArrayLike<number>): void {
+      if (sorted && depth && view && count > 0) {
         const A = stage[0]
         order.length = count
         for (let i = 0; i < count; i++) {
@@ -344,11 +370,20 @@ function createBatch(capacity, map, { additive, sorted, name }) {
       geometry.instanceCount = count
       mesh.visible = count > 0
     },
-    dispose() { geometry.dispose(); material.dispose() },
+    dispose(): void { geometry.dispose(); material.dispose() },
   }
 }
 
-function createSparkLines(capacity) {
+export interface SparkLineBatch {
+  lines: LineSegments
+  readonly count: number
+  begin(): void
+  push(x: number, y: number, z: number, tx: number, ty: number, tz: number, color: Color, k: number): void
+  finish(): void
+  dispose(): void
+}
+
+function createSparkLines(capacity: number): SparkLineBatch {
   const geometry = new THREE.BufferGeometry()
   const pos = new THREE.BufferAttribute(new Float32Array(capacity * 6), 3).setUsage(THREE.DynamicDrawUsage)
   const col = new THREE.BufferAttribute(new Float32Array(capacity * 6), 3).setUsage(THREE.DynamicDrawUsage)
@@ -369,20 +404,20 @@ function createSparkLines(capacity) {
     lines,
     get count() { return count },
     begin() { count = 0 },
-    push(x, y, z, tx, ty, tz, color, k) {
+    push(x: number, y: number, z: number, tx: number, ty: number, tz: number, color: Color, k: number): void {
       if (count >= capacity) return
-      const p = pos.array, c = col.array, o = count * 6
+      const p = pos.array as Float32Array, c = col.array as Float32Array, o = count * 6
       p[o] = x; p[o + 1] = y; p[o + 2] = z; p[o + 3] = tx; p[o + 4] = ty; p[o + 5] = tz
       c[o] = color.r * k; c[o + 1] = color.g * k; c[o + 2] = color.b * k
       c[o + 3] = color.r * k * 0.15; c[o + 4] = color.g * k * 0.15; c[o + 5] = color.b * k * 0.15
       count++
     },
-    finish() {
+    finish(): void {
       geometry.setDrawRange(0, count * 2)
       pos.needsUpdate = col.needsUpdate = count > 0
       lines.visible = count > 0
     },
-    dispose() { geometry.dispose(); material.dispose() },
+    dispose(): void { geometry.dispose(); material.dispose() },
   }
 }
 
@@ -390,7 +425,7 @@ function createSparkLines(capacity) {
  * 创建一个会话的战斗特效实例。`root` 由调用方加进场景；`dispose()` 释放全部 GPU 资源。
  * @param {typeof FX_BUDGETS.low} budget
  */
-export function createBattleFx(budget) {
+export function createBattleFx(budget: FxBudget) {
   const root = new THREE.Group()
   root.name = 'battle-fx'
   const atlas = new THREE.DataTexture(atlasData(), TILE * ATLAS_COLS, TILE * ATLAS_ROWS)
@@ -406,16 +441,16 @@ export function createBattleFx(budget) {
   glow.mesh.renderOrder = sparks.lines.renderOrder = 12
   root.add(smoke.mesh, glow.mesh, sparks.lines)
 
-  const pxScale = { value: 0.001 }
+  const pxScale: { value: number } = { value: 0.001 }
   const ribbonGeometry = new THREE.PlaneGeometry(1, 1, 1, 1)
-  const ribbonPool = { tracer: [], trail: [] }
-  const ribbonsOut = new Set()
-  const teamColors = new Map()
-  const bursts = [], muzzles = [], impacts = []
+  const ribbonPool: { tracer: RibbonMesh[]; trail: RibbonMesh[] } = { tracer: [], trail: [] }
+  const ribbonsOut = new Set<RibbonMesh>()
+  const teamColors = new Map<number, { team: Color; head: Color; glow: Color }>()
+  const bursts: BurstEvent[] = [], muzzles: MuzzleEvent[] = [], impacts: ImpactEvent[] = []
   const _c = new THREE.Color()
   const camPos = new THREE.Vector3()
 
-  function makeRibbon(kind) {
+  function makeRibbon(kind: 'tracer' | 'trail'): RibbonMesh {
     const additive = kind === 'tracer'
     const mesh = new THREE.Mesh(ribbonGeometry, new THREE.ShaderMaterial({
       name: 'battle-fx-' + kind, vertexShader: RIBBON_VS, fragmentShader: RIBBON_FS,
@@ -436,7 +471,7 @@ export function createBattleFx(budget) {
     mesh.raycast = noop
     return mesh
   }
-  function teamColor(hex) {
+  function teamColor(hex: number) {
     let entry = teamColors.get(hex)
     if (!entry) {
       const team = new THREE.Color(hex)
@@ -445,7 +480,7 @@ export function createBattleFx(budget) {
     }
     return entry
   }
-  function writeRibbon(mesh, a, b, wA, wB, minPx, cA, cB, aA, aB, core, coreAlong, opacity) {
+  function writeRibbon(mesh: RibbonMesh, a: Vector3, b: Vector3, wA: number, wB: number, minPx: number, cA: Color, cB: Color, aA: number, aB: number, core: number, coreAlong: number, opacity: number): void {
     const u = mesh.material.uniforms
     u.uA.value.copy(a); u.uB.value.copy(b)
     u.uWA.value = wA; u.uWB.value = wB; u.uMinPx.value = minPx
@@ -455,12 +490,12 @@ export function createBattleFx(budget) {
   }
 
   /** 加色粒子 + 拖尾线段组成的一颗火星。 */
-  function spark(x, y, z, vx, vy, vz, color, k, tail, size = 0.28) {
+  function spark(x: number, y: number, z: number, vx: number, vy: number, vz: number, color: Color, k: number, tail: number, size = 0.28): void {
     glow.push(x, y, z, 0, size, size, GLOW_TILE, color, k)
     sparks.push(x, y, z, x - vx * tail, y - vy * tail, z - vz * tail, color, k)
   }
 
-  function emitBurst(e, a) {
+  function emitBurst(e: BurstEvent, a: number): void {
     const { x, y, z, seed } = e
     if (a < 0.22) {
       const s = 9 + 8 * easeOut(a / 0.12)
@@ -544,7 +579,7 @@ export function createBattleFx(budget) {
     }
   }
 
-  function emitMuzzle(e, m) {
+  function emitMuzzle(e: MuzzleEvent, m: number): void {
     const { x, y, z, dx, dy, dz, sx, sz, seed } = e
     if (m < MUZZLE_FLASH_SECS) {
       const f = m / MUZZLE_FLASH_SECS
@@ -577,14 +612,14 @@ export function createBattleFx(budget) {
   // 命中点就在车体表面：面向相机的火光 / 烟四边形有一半插进车体，被深度测试裁掉（实机近景里
   // 暗烟完全看不见、火光被切掉一块）。沿视线朝相机挪半个粒子尺寸：屏幕位置不变，只把四边形
   // 从车体里拉出来。
-  function pushTowardCamera(batch, x, y, z, rot, w, h, tile, color, alpha) {
+  function pushTowardCamera(batch: ParticleBatch, x: number, y: number, z: number, rot: number, w: number, h: number, tile: number, color: Color, alpha: number): void {
     const vx = camPos.x - x, vy = camPos.y - y, vz = camPos.z - z
     const d = Math.hypot(vx, vy, vz)
     const k = d > 1e-3 ? Math.min(0.5 * w, 0.5 * d) / d : 0
     batch.push(x + vx * k, y + vy * k, z + vz * k, rot, w, h, tile, color, alpha)
   }
 
-  function emitImpact(e, a) {
+  function emitImpact(e: ImpactEvent, a: number): void {
     const { kind, x, y, z, dx, dy, dz, seed } = e
     // 屏幕尺寸下限（见 IMPACT_MIN_PX）：zoom ≥ 1 时大小与散布等比放大
     const zoom = Math.min(IMPACT_MAX_ZOOM, Math.max(1,
@@ -655,7 +690,7 @@ export function createBattleFx(budget) {
   }
 
   /** 残骸持续烟（+ 极致档余火）。`since` 回放秒（未知死亡时刻传 Infinity），`phase` 播放中壁钟累计秒。 */
-  function emitWreck(x, y, z, yaw, since, phase, seed) {
+  function emitWreck(x: number, y: number, z: number, yaw: number, since: number, phase: number, seed: number): void {
     // 车体局部 (lx, lz) → 世界 xz（绕 Y 转 yaw；车头 +z，发动机舱在 -z 侧）
     const cos = Math.cos(yaw), sin = Math.sin(yaw)
     const n = budget.wreckSmoke
@@ -691,24 +726,27 @@ export function createBattleFx(budget) {
     }
   }
 
-  const replayEmit = {
+  const replayEmit: {
+    headGlow(pos: Vector3, hex: number): void
+    wreck(x: number, y: number, z: number, yaw: number, since: number, phase: number, seed: number): void
+  } = {
     /** 曳光弹头光晕（阵营色偏白）。 */
-    headGlow(pos, hex) {
+    headGlow(pos: Vector3, hex: number): void {
       glow.push(pos.x, pos.y, pos.z, 0, 2.2, 2.2, GLOW_TILE, teamColor(hex).glow, 0.9)
     },
     wreck: emitWreck,
   }
 
-  function expireAndEmit(list, lifeSecs, nowMs, emit) {
+  function expireAndEmit<T extends { bornMs: number }>(list: T[], lifeSecs: (e: T) => number, nowMs: number, emit: (e: T, age: number) => void): void {
     for (let i = list.length - 1; i >= 0; i--) {
       const e = list[i], age = (nowMs - e.bornMs) / 1000
       if (age >= lifeSecs(e)) { list.splice(i, 1); continue }
       emit(e, Math.max(0, age))
     }
   }
-  const burstLife = () => BURST_SECS
-  const muzzleLife = () => (budget.muzzleSmoke > 0 ? MUZZLE_SMOKE_SECS : MUZZLE_FLASH_SECS)
-  const impactLife = (e) => Math.max(IMPACT_SPARK_SECS, budget.impactSmoke > 0 ? IMPACT_SMOKE_SECS[e.kind] + 0.15 : 0,
+  const burstLife = (): number => BURST_SECS
+  const muzzleLife = (): number => (budget.muzzleSmoke > 0 ? MUZZLE_SMOKE_SECS : MUZZLE_FLASH_SECS)
+  const impactLife = (e: ImpactEvent): number => Math.max(IMPACT_SPARK_SECS, budget.impactSmoke > 0 ? IMPACT_SMOKE_SECS[e.kind] + 0.15 : 0,
     e.kind === 'pen' ? 0.9 : 0)
 
   return {
@@ -716,41 +754,41 @@ export function createBattleFx(budget) {
     budget,
 
     /** 借一条条带（`tracer` = 加色曳光弹头，`trail` = 普通混合弹道光迹），已挂进 root。 */
-    takeRibbon(kind) {
+    takeRibbon(kind: 'tracer' | 'trail'): RibbonMesh {
       const mesh = ribbonPool[kind].pop() || makeRibbon(kind)
       mesh.visible = true
       ribbonsOut.add(mesh)
       root.add(mesh)
       return mesh
     },
-    giveRibbon(mesh) {
+    giveRibbon(mesh: RibbonMesh): void {
       if (!ribbonsOut.delete(mesh)) return
       root.remove(mesh)
       mesh.visible = false
-      ribbonPool[mesh.userData.ribbonKind].push(mesh)
+      ribbonPool[mesh.userData.ribbonKind as 'tracer' | 'trail'].push(mesh)
     },
     /** 曳光弹头：tail → head，白热弹头 + 阵营色渐隐尾迹。 */
-    setTracer(mesh, tail, head, hex) {
+    setTracer(mesh: RibbonMesh, tail: Vector3, head: Vector3, hex: number): void {
       const c = teamColor(hex)
       writeRibbon(mesh, tail, head, 0.08, 0.6, 2.4, c.team, c.head, 0, 1, 0.35, 1, 1)
     },
     /** 弹道光迹：阵营色细线、柔边、整段等宽，`opacity` 见 trailOpacityAt。 */
-    setTrail(mesh, a, b, hex, opacity) {
+    setTrail(mesh: RibbonMesh, a: Vector3, b: Vector3, hex: number, opacity: number): void {
       const c = teamColor(hex)
       writeRibbon(mesh, a, b, 0.16, 0.16, 1.6, c.team, c.team, 0.62, 0.62, 0.3, 0, opacity)
     },
 
-    spawnBurst(pos, nowMs, seed) {
+    spawnBurst(pos: Vector3, nowMs: number, seed: number): void {
       bursts.push({ x: pos.x, y: pos.y, z: pos.z, seed: seed | 0, bornMs: nowMs })
     },
     /** dir：炮口朝向（单位向量）。 */
-    spawnMuzzle(pos, dir, nowMs, seed) {
+    spawnMuzzle(pos: Vector3, dir: Vector3, nowMs: number, seed: number): void {
       const sl = Math.hypot(dir.z, dir.x) || 1
       muzzles.push({ x: pos.x, y: pos.y, z: pos.z, dx: dir.x, dy: dir.y, dz: dir.z,
         sx: dir.z / sl, sz: -dir.x / sl, seed: seed | 0, bornMs: nowMs })
     },
     /** kind：impactKind() 的结果；dir：来弹方向；out：跳弹出射方向（缺省按来弹方向上挑）。 */
-    spawnImpact(kind, pos, dir, out, nowMs, seed) {
+    spawnImpact(kind: ImpactKind, pos: Vector3, dir: Vector3, out: { x: number; y: number; z: number } | null | undefined, nowMs: number, seed: number): void {
       if (!IMPACT_FLASH_SECS[kind]) return
       let ox = 0, oy = 0, oz = 0
       if (kind === 'ricochet') {
@@ -763,22 +801,22 @@ export function createBattleFx(budget) {
     },
 
     /** 有尚未播完的壁钟特效（爆炸 / 开火 / 命中）：调用方据此保持逐帧重绘。 */
-    active() { return bursts.length > 0 || muzzles.length > 0 || impacts.length > 0 },
+    active(): boolean { return bursts.length > 0 || muzzles.length > 0 || impacts.length > 0 },
     /** 存活中的爆炸（只读快照：位置、种子、出生壁钟）。 */
-    activeBursts() { return bursts.map(({ x, y, z, seed, bornMs }) => ({ x, y, z, seed, bornMs })) },
-    stats() {
+    activeBursts(): BurstEvent[] { return bursts.map(({ x, y, z, seed, bornMs }) => ({ x, y, z, seed, bornMs })) },
+    stats(): { bursts: number; muzzles: number; impacts: number; glow: number; smoke: number; sparks: number; ribbons: number } {
       return { bursts: bursts.length, muzzles: muzzles.length, impacts: impacts.length,
         glow: glow.count, smoke: smoke.count, sparks: sparks.count, ribbons: ribbonsOut.size }
     },
     /** seek：壁钟特效直接清空，不补播；回放时钟驱动的条带由调用方归还。 */
-    clearTransients() { bursts.length = 0; muzzles.length = 0; impacts.length = 0 },
+    clearTransients(): void { bursts.length = 0; muzzles.length = 0; impacts.length = 0 },
 
     /**
      * 每个渲染帧调用一次（render 之前）：按优先级（命中 → 开火 → 爆炸 → 回放驱动粒子）
      * 写粒子，容量满时低优先级的先被丢弃。
      * @param {(emit: typeof replayEmit) => void} [emitReplay] 回放时钟驱动的粒子（弹头光晕、残骸烟）
      */
-    frame(nowMs, camera, viewportHeightPx, emitReplay) {
+    frame(nowMs: number, camera: PerspectiveCamera, viewportHeightPx: number, emitReplay?: (emit: typeof replayEmit) => void): void {
       pxScale.value = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) / Math.max(1, viewportHeightPx)
       camera.updateMatrixWorld()
       camPos.setFromMatrixPosition(camera.matrixWorld)
@@ -793,7 +831,7 @@ export function createBattleFx(budget) {
     },
 
     /** 着色器预热：临时显示批次与两种条带样本，交给调用方的 compile。 */
-    prewarm(compile) {
+    prewarm(compile: () => void): void {
       const samples = [this.takeRibbon('tracer'), this.takeRibbon('trail')]
       const objects = [glow.mesh, smoke.mesh, sparks.lines]
       const was = objects.map((o) => o.visible)
@@ -804,7 +842,7 @@ export function createBattleFx(budget) {
       }
     },
 
-    dispose() {
+    dispose(): void {
       root.parent?.remove(root)
       glow.dispose(); smoke.dispose(); sparks.dispose()
       for (const mesh of [...ribbonsOut, ...ribbonPool.tracer, ...ribbonPool.trail]) mesh.material.dispose()

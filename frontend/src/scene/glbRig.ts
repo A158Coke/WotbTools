@@ -7,6 +7,7 @@
 // - 炮塔绕 models.pb 原点链枢轴 Rz(−rel) 旋转、炮管 Rx(俯仰)，见各自 poseGlb /
 //   poseShooterTurretGun（消费方还带 bake 捕获与炮盾随动，留在场景侧）。
 import * as THREE from 'three'
+import type { BufferAttribute, BufferGeometry, InterleavedBufferAttribute, Material, Mesh, Object3D, Quaternion } from 'three'
 
 // 模块级常量与 scratch：poseFromYPR 在 3D 回放里**每车每帧**被调用（14 车 × 60fps），
 // 原实现每次分配 5 个 Quaternion + 3 个 Vector3——是每帧 GC 抖动的主要来源之一。
@@ -22,15 +23,13 @@ const Q_FRAME = new THREE.Quaternion()
 const _qYaw = new THREE.Quaternion()
 const _qPitch = new THREE.Quaternion()
 const _qRoll = new THREE.Quaternion()
-const _qTmpA = new THREE.Quaternion()
-const _qTmpB = new THREE.Quaternion()
 
 /**
  * 场景系 YPR（**不含** z-up→y-up 帧变换）——给"节点已经在场景系"的场合用
  * （低模代理车的 group/hullGroup；GLB 内部节点请用 {@link poseLocalBetween} 的逆合成，
  * 不要手推轴号）。语义与 {@link poseFromYPR} 的前半段逐字一致。
  */
-export function yprScene(yaw, pitch, roll, out) {
+export function yprScene(yaw: number | null | undefined, pitch: number | null | undefined, roll: number | null | undefined, out?: Quaternion): Quaternion {
   const q = out || new THREE.Quaternion()
   _qYaw.setFromAxisAngle(AXIS_Y, yaw || 0)
   _qPitch.setFromAxisAngle(AXIS_X, pitch || 0)
@@ -46,7 +45,7 @@ export function yprScene(yaw, pitch, roll, out) {
  * 就是子树的局部残差——用逆合成而不是手推"绕 −X/−Z"轴号，避免坐标系（GLB 内部系
  * x右/y前/z上 vs 场景系 y 上）混用出错。
  */
-export function poseLocalBetween(parentW, childW, out) {
+export function poseLocalBetween(parentW: Quaternion, childW: Quaternion, out?: Quaternion): Quaternion {
   const q = out || new THREE.Quaternion()
   return q.copy(parentW).invert().multiply(childW)
 }
@@ -55,7 +54,7 @@ export function poseLocalBetween(parentW, childW, out) {
  * GLB 根节点四元数：yaw/pitch/roll（场景系）× z-up→y-up 帧变换。
  * `out` 传入时写入并返回它（热路径零分配）；省略则返回新对象（兼容既有调用点）。
  */
-export function poseFromYPR(yaw, pitch, roll, out) {
+export function poseFromYPR(yaw: number | null | undefined, pitch: number | null | undefined, roll: number | null | undefined, out?: Quaternion): Quaternion {
   const q = out || new THREE.Quaternion()
   _qYaw.setFromAxisAngle(AXIS_Y, yaw || 0)
   _qPitch.setFromAxisAngle(AXIS_X, pitch || 0)
@@ -89,9 +88,20 @@ export const TERRAIN_PROBE_HALF_WID = 1.5
  *
  * 与记录姿态相减即"车体相对地面的残差"——两者同域，故可直接相减、无需换轴。
  */
-export function terrainPitchRoll(sampleHeight, x, z, yaw, out,
-                                 halfLen = TERRAIN_PROBE_HALF_LEN,
-                                 halfWid = TERRAIN_PROBE_HALF_WID) {
+export interface TerrainAttitude {
+  pitch: number
+  roll: number
+}
+
+export function terrainPitchRoll(
+  sampleHeight: (x: number, z: number) => number,
+  x: number,
+  z: number,
+  yaw: number,
+  out?: TerrainAttitude,
+  halfLen: number = TERRAIN_PROBE_HALF_LEN,
+  halfWid: number = TERRAIN_PROBE_HALF_WID,
+): TerrainAttitude {
   const fx = Math.sin(yaw), fz = Math.cos(yaw)
   const rx = -Math.cos(yaw), rz = Math.sin(yaw)
   const hF = sampleHeight(x + fx * halfLen, z + fz * halfLen)
@@ -109,12 +119,25 @@ export function terrainPitchRoll(sampleHeight, x, z, yaw, out,
  * `recPitch/recRoll` = 回放记录（数据域），`terr` = {@link terrainPitchRoll} 的结果。
  * 返回 {pitch, roll, dy}：**限幅后的车体世界俯仰/侧倾**（数据域）与竖直偏移（米）。
  */
-export function clampHullAttitude(recPitch, recRoll, recY, terr, terrY, out,
-                                  halfLen = TERRAIN_PROBE_HALF_LEN,
-                                  halfWid = TERRAIN_PROBE_HALF_WID) {
+export interface ClampedHullAttitude {
+  pitch: number
+  roll: number
+  dy: number
+}
+
+export function clampHullAttitude(
+  recPitch: number,
+  recRoll: number,
+  recY: number,
+  terr: TerrainAttitude,
+  terrY: number,
+  out?: ClampedHullAttitude,
+  halfLen: number = TERRAIN_PROBE_HALF_LEN,
+  halfWid: number = TERRAIN_PROBE_HALF_WID,
+): ClampedHullAttitude {
   const maxP = Math.atan2(SUSP_TRAVEL_M, halfLen)
   const maxR = Math.atan2(SUSP_TRAVEL_M, halfWid)
-  const cl = (v, m) => Math.max(-m, Math.min(m, v))
+  const cl = (v: number, m: number) => Math.max(-m, Math.min(m, v))
   const o = out || { pitch: 0, roll: 0, dy: 0 }
   o.pitch = terr.pitch + cl(recPitch - terr.pitch, maxP)
   o.roll = terr.roll + cl(recRoll - terr.roll, maxR)
@@ -127,7 +150,11 @@ export function clampHullAttitude(recPitch, recRoll, recY, terr, terrY, out,
  *  array 是整块交织 buffer，直接比会因其它属性混在同一 buffer 里而误判「不同」）。
  *  遇到不认识的属性实现（无 `getComponent`）一律判**不同**——本判据会删节点，
  *  宁可漏删也不能误删。 */
-function sameAttributeValues(a, b, epsilon) {
+function sameAttributeValues(
+  a: BufferAttribute | InterleavedBufferAttribute | null | undefined,
+  b: BufferAttribute | InterleavedBufferAttribute | null | undefined,
+  epsilon: number,
+): boolean {
   if (!a || !b) return a === b
   if (a.itemSize !== b.itemSize || a.count !== b.count) return false
   if (typeof a.getComponent !== 'function' || typeof b.getComponent !== 'function') return false
@@ -144,7 +171,7 @@ function sameAttributeValues(a, b, epsilon) {
  *  相等、morph 键集合一致。属性集合比较是**全量**的（不是只挑 position/uv）——真实 GLB 里
  *  车体类 primitive 还带 TEXCOORD_1，漏比一个属性就等于给误删留了盲点。
  *  不比较 material（材质跨节点复用，与几何副本无关）。 */
-function sameMeshGeometry(ga, gb) {
+function sameMeshGeometry(ga: BufferGeometry, gb: BufferGeometry): boolean {
   if (ga === gb) return true
   const namesA = Object.keys(ga.attributes).sort()
   const namesB = Object.keys(gb.attributes).sort()
@@ -180,20 +207,20 @@ function sameMeshGeometry(ga, gb) {
  * 释放被删几何会连带把保留部件仍在用的 GPU buffer 一起回收。materials / textures
  * 一律不在此处释放。
  *
- * @returns {number} 丢弃的节点数（0 = 无副本，正常）
+ * @returns 丢弃的节点数（0 = 无副本，正常）
  */
-export function dropDuplicateGunMasks(root) {
+export function dropDuplicateGunMasks(root: Object3D | null | undefined): number {
   if (!root) return 0
-  const meshesOf = (node) => {
-    const out = []
-    node.traverse((n) => { if (n.isMesh && n.geometry) out.push(n) })
+  const meshesOf = (node: Object3D): Mesh[] => {
+    const out: Mesh[] = []
+    node.traverse((n) => { const m = n as Mesh; if (m.isMesh && m.geometry) out.push(m) })
     return out
   }
-  const sameGeometry = (a, b) => {
+  const sameGeometry = (a: Mesh[], b: Mesh[]): boolean => {
     if (a.length !== b.length || !a.length) return false
     return a.every((ma, i) => sameMeshGeometry(ma.geometry, b[i].geometry))
   }
-  const byName = new Map()
+  const byName = new Map<string, Object3D>()
   root.traverse((n) => { if (n.name) byName.set(n.name, n) })
   let dropped = 0
   for (const [name, node] of byName) {
@@ -205,12 +232,13 @@ export function dropDuplicateGunMasks(root) {
     const removedSet = new Set(removed)
     // 保留节点仍在引用的 GPU 资源：geometry 本身 + 它的每个 attribute + index
     // （GLTFLoader 按 accessor 缓存属性对象，两个几何可以共享同一份 uv/index）
-    const stillReferenced = new Set()
+    const stillReferenced = new Set<BufferAttribute | BufferGeometry | InterleavedBufferAttribute>()
     root.traverse((n) => {
-      if (!n.isMesh || !n.geometry || removedSet.has(n)) return
-      stillReferenced.add(n.geometry)
-      for (const key of Object.keys(n.geometry.attributes)) stillReferenced.add(n.geometry.attributes[key])
-      if (n.geometry.index) stillReferenced.add(n.geometry.index)
+      const mesh = n as Mesh
+      if (!mesh.isMesh || !mesh.geometry || removedSet.has(mesh)) return
+      stillReferenced.add(mesh.geometry)
+      for (const key of Object.keys(mesh.geometry.attributes)) stillReferenced.add(mesh.geometry.attributes[key])
+      if (mesh.geometry.index) stillReferenced.add(mesh.geometry.index)
     })
     for (const mesh of removed) {
       const geometry = mesh.geometry
@@ -241,12 +269,25 @@ export function dropDuplicateGunMasks(root) {
  * metallicRoughness 贴图即非 PBR。只动「无贴图且仍为默认 1」的材质——显式声明过
  * 金属度的材质不受影响。
  */
-export function neutralizeDefaultMetalness(root) {
+export function neutralizeDefaultMetalness(root: Object3D): void {
   root.traverse((node) => {
-    if (!node.isMesh) return
-    const material = node.material
+    const mesh = node as Mesh
+    if (!mesh.isMesh) return
+    const material = mesh.material as (Material & { metalnessMap?: Material | null; metalness?: number }) | undefined
     if (material && !material.metalnessMap && material.metalness === 1) material.metalness = 0
   })
+}
+
+/** cloneDetachedTurret 的装配输入（models.pb 原点链 + initial_turret_rotation 补偿）。 */
+export interface DetachedTurretParts {
+  /** 炮塔节点（固定战斗室车辆 = null，独立「炮塔」件由炮管组构成） */
+  turretNode: Object3D | null
+  gunNodes: Object3D[]
+  /** 炮塔枢轴（GLB 局部系 [x, y, z]） */
+  tP: [number, number, number]
+  /** 炮管枢轴（GLB 局部系 [x, y, z]） */
+  gP: [number, number, number]
+  itr?: { pitch?: number; roll?: number; yaw?: number } | null
 }
 
 /** Clone only the mounted turret/gun meshes, centred on the turret entity's pivot.
@@ -254,7 +295,7 @@ export function neutralizeDefaultMetalness(root) {
  * textures remain borrowed; prepareTankDestroyedVisual owns the new material clones.
  * Flattening mesh transforms preserves nested GLB bakes without copying the hull.
  */
-export function cloneDetachedTurret(model, parts, gunPitch) {
+export function cloneDetachedTurret(model: Object3D, parts: DetachedTurretParts, gunPitch: number): THREE.Group {
   model.updateMatrixWorld(true)
   const toModel = model.matrixWorld.clone().invert()
   const { turretNode, gunNodes, tP, gP, itr } = parts
@@ -269,14 +310,14 @@ export function cloneDetachedTurret(model, parts, gunPitch) {
   const gunRotation = new THREE.Matrix4().makeTranslation(...gP)
     .multiply(new THREE.Matrix4().makeRotationX(gunPitch))
     .multiply(new THREE.Matrix4().makeTranslation(-gP[0], -gP[1], -gP[2]))
-  const gunMeshes = new Set()
-  for (const node of gunNodes) node.traverseVisible(mesh => { if (mesh.isMesh) gunMeshes.add(mesh) })
-  const meshes = new Set()
+  const gunMeshes = new Set<Mesh>()
+  for (const node of gunNodes) node.traverseVisible(n => { const m = n as Mesh; if (m.isMesh) gunMeshes.add(m) })
+  const meshes = new Set<Mesh>()
   // 固定战斗室（turretNode=null，歼击车）：独立「炮塔」件由当前选中炮管组构成——
   // TD 的炮塔 = 炮架横转，脱落件即炮管组（与 playbackScene poseGlbRig 同一语义）。
   // detached_turrets 契约只约束 vehicle_eid 关联，不保证 owner 有 turret_N 节点。
   const assemblyNodes = turretNode ? [turretNode, ...gunNodes] : gunNodes
-  for (const node of assemblyNodes) node.traverseVisible(mesh => { if (mesh.isMesh) meshes.add(mesh) })
+  for (const node of assemblyNodes) node.traverseVisible(n => { const m = n as Mesh; if (m.isMesh) meshes.add(m) })
   for (const mesh of meshes) {
     const copy = mesh.clone(false)
     copy.matrixAutoUpdate = false

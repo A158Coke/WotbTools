@@ -12,9 +12,54 @@
 // 本文件只放纯函数（联表 / 寻址 / 倒向运动学），场景接线在 playbackScene.js。
 // 坐标约定：destructibles.json 的 pos 与 scenery.glb 节点位置同为**游戏场景系**
 // （x/y 水平、z 上、直接对应回放 x/z——无镜像）。
+import type { AgentDestructibleArea, AgentDestructibleEvent } from '../api/agent-replay-facets.js'
+
+/** destructibles.json 实例条目（本模块与 pickDebug 消费的字段；其余字段由场景侧消费）。 */
+export interface DestructibleInstance {
+  id: string
+  /** 实例锚点（游戏场景系水平坐标，与 scenery.glb 节点位置同系） */
+  pos?: number[] | null
+  /** 类别（destructibles.json 的类别字符串） */
+  kind?: string
+  name?: string
+  serverId?: { cell: [number, number]; slot: number } | null
+}
+
+/** 区域实体锚点（wire owner：agent-replay-facets.ts 的 AgentDestructibleArea）。 */
+export type DestructibleArea = AgentDestructibleArea
+
+/** playback.destructible_events 事件条目（wire owner：AgentDestructibleEvent）。 */
+export type DestructibleEvent = AgentDestructibleEvent
+
+/** 树倒状态项（场景侧追加 heightM/stopRad/fallQuat；settled 由本模块的 rewind-safe getter 拥有）。 */
+export interface DestructibleFoldState {
+  key: string
+  clock: number
+  prop: number
+  fallDir: number
+  inst: DestructibleInstance
+  /** 终态只写一次的每帧缓存；时间轴回退时必须由调用方显式清零（rewind-safe getter 是第二道防线） */
+  settled?: boolean
+  /** 实例化场景侧随每次倒伏写入同步维护的裸 {w} 四元数 */
+  fallQuat?: { w: number } | null
+  /** pivot 装配时代的旧四元数来源 */
+  pivot?: { quaternion?: { w: number } } | null
+  heightM?: number
+  stopRad?: number
+}
+
+export interface TreeFrameResult {
+  axis: number[]
+  angle: number
+  animating: boolean
+}
 
 /** 事件→实例解析结果（寻址失败 = null，调用方静默跳过） */
-export function resolveDestructibleEvent(ev, areasByEid, index) {
+export function resolveDestructibleEvent(
+  ev: DestructibleEvent,
+  areasByEid: Map<number, DestructibleArea>,
+  index: Map<string, DestructibleInstance>,
+): DestructibleInstance | null {
   const area = areasByEid.get(ev.area_eid)
   if (!area) return null
   const cx = Math.floor(area.x / 100)
@@ -30,8 +75,8 @@ export function resolveDestructibleEvent(ev, areasByEid, index) {
 }
 
 /** destructibles.json → (cell,slot) → 实例 索引（重复键保首个，与导出器去重一致） */
-export function buildDestructibleIndex(doc) {
-  const index = new Map()
+export function buildDestructibleIndex(doc: { instances?: readonly DestructibleInstance[] | null } | null | undefined): Map<string, DestructibleInstance> {
+  const index = new Map<string, DestructibleInstance>()
   if (!doc || !Array.isArray(doc.instances)) return index
   for (const inst of doc.instances) {
     const srv = inst.serverId
@@ -46,7 +91,7 @@ export function buildDestructibleIndex(doc) {
  * 倒向 → 树顶运动方向（游戏场景系水平单位向量 [dx, dy]）。
  * fall_dir 指向冲量来源（实测 = 碾压车速方向 + 180°），树向**反向**倒下。
  */
-export function fallTipVector(fallDir8) {
+export function fallTipVector(fallDir8: number): [number, number] {
   const a = (fallDir8 / 256) * Math.PI * 2
   return [-Math.sin(a), -Math.cos(a)]
 }
@@ -82,8 +127,8 @@ export const TREE_FALL_MIN_STOP_RAD = (20 * Math.PI) / 180
 const GROUND_PROBES = 10
 
 /** 倒伏时长（秒）：T = 1.51·√(L/g)，按 [TREE_FALL_MIN_S, TREE_FALL_MAX_S] 钳位。 */
-export function fallDurationS(heightM) {
-  const L = Number.isFinite(heightM) && heightM > 0 ? heightM : TREE_FALL_DEFAULT_HEIGHT_M
+export function fallDurationS(heightM: number | null | undefined): number {
+  const L = typeof heightM === 'number' && Number.isFinite(heightM) && heightM > 0 ? heightM : TREE_FALL_DEFAULT_HEIGHT_M
   const t = 1.51 * Math.sqrt(L / 9.81)
   return Math.min(TREE_FALL_MAX_S, Math.max(TREE_FALL_MIN_S, t))
 }
@@ -91,21 +136,26 @@ export function fallDurationS(heightM) {
 /**
  * 停止角（弧度）：树干绕根部转到**触及地形**为止的角度。
  *
- * @param {number} fallDir8 倒向字节（倒向 = tip 方向的反向，见 fallTipVector）
- * @param {{x:number,y:number,z:number}} base 树根位置（**gltf.scene 局部系**：x/y 水平、z 上）
- * @param {number} heightM 树高（米）
- * @param {((lx:number,ly:number)=>number)|null} sampleGround 局部系 (x,y) → 地面高度（米，
- *        与 base.z 同基准）；缺失（无高度场）→ 平坦地面假设，返回 90°。
- * @param {number} [minStopRad] 停止角下限（默认 TREE_FALL_MIN_STOP_RAD）
- * @returns {number} 停止角 ∈ [minStop, π/2]
+ * @param fallDir8 倒向字节（倒向 = tip 方向的反向，见 fallTipVector）
+ * @param base 树根位置（**gltf.scene 局部系**：x/y 水平、z 上）
+ * @param heightM 树高（米）
+ * @param sampleGround 局部系 (x,y) → 地面高度（米，与 base.z 同基准）；缺失（无高度场）→ 平坦地面假设，返回 90°。
+ * @param minStopRad 停止角下限（默认 TREE_FALL_MIN_STOP_RAD）
+ * @returns 停止角 ∈ [minStop, π/2]
  *
  * 判据：θ 从下限起每 1° 扫描，树干轴上的采样点世界高度 = base.z + h·cosθ，
  * 水平位置 = base + tip·h·sinθ；任一采样点落到地面（≤ 地面高度）即认为已停靠。
  */
-export function fallStopAngle(fallDir8, base, heightM, sampleGround, minStopRad = TREE_FALL_MIN_STOP_RAD) {
+export function fallStopAngle(
+  fallDir8: number,
+  base: { x: number; y: number; z: number },
+  heightM: number | null | undefined,
+  sampleGround: ((lx: number, ly: number) => number) | null | undefined,
+  minStopRad: number = TREE_FALL_MIN_STOP_RAD,
+): number {
   const flat = Math.PI / 2
   if (typeof sampleGround !== 'function') return flat
-  const L = Number.isFinite(heightM) && heightM > 0.5 ? heightM : TREE_FALL_DEFAULT_HEIGHT_M
+  const L = typeof heightM === 'number' && Number.isFinite(heightM) && heightM > 0.5 ? heightM : TREE_FALL_DEFAULT_HEIGHT_M
   const minStop = Math.min(Math.max(minStopRad, 0), flat)
   const [dx, dy] = fallTipVector(fallDir8)
   const step = Math.PI / 180
@@ -128,11 +178,16 @@ export function fallStopAngle(fallDir8, base, heightM, sampleGround, minStopRad 
  * 角度 = stopRad·u（u = elapsed/时长，**恒定角速度**，到停止角硬停）；
  * 返回 {axis, angle, durationS, stopRad}，elapsed<0 → null（未发生）。
  */
-export function fallRotation(fallDir8, elapsedS, heightM, stopRad = Math.PI / 2) {
+export function fallRotation(
+  fallDir8: number,
+  elapsedS: number,
+  heightM: number | null | undefined,
+  stopRad: number | null | undefined = Math.PI / 2,
+): { axis: number[]; angle: number; durationS: number; stopRad: number } | null {
   if (!(elapsedS >= 0)) return null
   const durationS = fallDurationS(heightM)
   const u = Math.min(1, elapsedS / durationS)
-  const stop = Math.min(Math.max(Number.isFinite(stopRad) ? stopRad : Math.PI / 2, 0), Math.PI / 2)
+  const stop = Math.min(Math.max(typeof stopRad === 'number' && Number.isFinite(stopRad) ? stopRad : Math.PI / 2, 0), Math.PI / 2)
   const [dx, dy] = fallTipVector(fallDir8)
   return { axis: [-dy, dx, 0], angle: stop * u, durationS, stopRad: stop }
 }
@@ -149,7 +204,7 @@ export function fallRotation(fallDir8, elapsedS, heightM, stopRad = Math.PI / 2)
  * 跳过，触地旋转不会重写（树直立或停在中间角）。`makeTreeStateRewindSafe` 的
  * getter（pivot 未达停止角 ⇒ 视为未终态）是第二道防线；两道机制独立，谁先兜住都行。
  */
-export function treeFrame(st, active, T) {
+export function treeFrame(st: DestructibleFoldState, active: unknown, T: number): TreeFrameResult | null {
   if (!active) return null
   const elapsed = T - st.clock
   if (!(elapsed >= 0)) return null
@@ -174,7 +229,7 @@ export function treeFrame(st, active, T) {
  * 兼容旧 `pivot.quaternion`（pivot 装配时代的场景侧与既有测试）。
  * 保持模块无 THREE 依赖，只读取 Quaternion 的标量字段。
  */
-function makeTreeStateRewindSafe(state) {
+function makeTreeStateRewindSafe(state: DestructibleFoldState): DestructibleFoldState {
   let settled = false
   Object.defineProperty(state, 'settled', {
     enumerable: true,
@@ -183,7 +238,7 @@ function makeTreeStateRewindSafe(state) {
       if (!settled) return false
       const q = state.fallQuat ?? state.pivot?.quaternion
       if (!q || !Number.isFinite(q.w)) return settled
-      const stop = Number.isFinite(state.stopRad) ? state.stopRad : Math.PI / 2
+      const stop = typeof state.stopRad === 'number' && Number.isFinite(state.stopRad) ? state.stopRad : Math.PI / 2
       const w = Math.min(1, Math.max(0, Math.abs(q.w)))
       const angle = 2 * Math.acos(w)
       return angle >= Math.max(0, stop - 1e-4)
@@ -197,14 +252,18 @@ function makeTreeStateRewindSafe(state) {
  * 把事件流折叠成「每物体一个状态项」（同物体多事件取最早——摧毁是单次语义）。
  * 返回按 clock 升序的 [{ key, clock, prop, fallDir, inst }]，供场景逐帧应用。
  */
-export function foldDestructibleStates(events, areasByEid, index) {
-  const byKey = new Map()
+export function foldDestructibleStates(
+  events: readonly DestructibleEvent[] | null | undefined,
+  areasByEid: Map<number, DestructibleArea>,
+  index: Map<string, DestructibleInstance>,
+): DestructibleFoldState[] {
+  const byKey = new Map<string, DestructibleFoldState>()
   for (const ev of events || []) {
     const inst = resolveDestructibleEvent(ev, areasByEid, index)
     if (!inst) continue
     const prev = byKey.get(inst.id)
     if (!prev || ev.clock < prev.clock) {
-      const state = { key: inst.id, clock: ev.clock, prop: ev.prop, fallDir: ev.fall_dir, inst }
+      const state: DestructibleFoldState = { key: inst.id, clock: ev.clock, prop: ev.prop, fallDir: ev.fall_dir, inst }
       byKey.set(inst.id, ev.prop === 3 ? makeTreeStateRewindSafe(state) : state)
     }
   }

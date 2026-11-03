@@ -68,7 +68,7 @@ export const TREAD_FADE = { start: 5.45, end: 7.62 };
  * ——`start` 前恒 1，`start→end` 平滑降 0，之后 0。
  * 负年龄 = 回放时钟早于该戳出生时刻（seek 到其出生前）：隐藏（0），只容忍 1e-9 浮点抖动。
  */
-export function treadAlphaAt(age, fade = TREAD_FADE) {
+export function treadAlphaAt(age: number, fade: { start: number; end: number } = TREAD_FADE): number {
   if (age < -1e-9) return 0;
   if (!(age > fade.start)) return 1;
   if (age >= fade.end) return 0;
@@ -92,10 +92,18 @@ export function treadAlphaAt(age, fade = TREAD_FADE) {
  * 丢斜杠会拼出 `http://host:8123tread/…`，Image 立即失败、`tex.image` 永远为空，
  * 空纹理采样 (0,0,0,0) 在透明混合下**完全隐形**（2026-10-11 测试页实测报障的根因）。
  */
-export function resolveTreadParams(json) {
-  const texPath = (v) =>
+/** resolveTreadParams 的结果（texture 恒带前导斜杠；width null = 未 authored）。 */
+export interface TreadParams {
+  texture: string
+  width: number | null
+  space: number
+  authored: boolean
+}
+
+export function resolveTreadParams(json: { texture?: unknown; manual_width?: unknown; manual_space?: unknown; fallback?: unknown } | null | undefined): TreadParams {
+  const texPath = (v: unknown): string =>
     (typeof v === 'string' && v ? '/' + v.replace(/^\/+/, '') : GENERIC_TREAD_TEXTURE);
-  const widthOf = (v) => (Number.isFinite(v) && v > 1e-3 ? v : null);
+  const widthOf = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) && v > 1e-3 ? v : null);
   if (!json || typeof json !== 'object') {
     return { texture: GENERIC_TREAD_TEXTURE, width: null, space: TREAD_FALLBACK.space, authored: false };
   }
@@ -103,14 +111,14 @@ export function resolveTreadParams(json) {
     texture: texPath(json.texture),
     // 数字 → authored 宽度；null/缺失/非法 → null（未 authored，调用方模型实测）
     width: widthOf(json.manual_width),
-    space: Number.isFinite(json.manual_space) && json.manual_space > 1e-3
+    space: typeof json.manual_space === 'number' && Number.isFinite(json.manual_space) && json.manual_space > 1e-3
       ? json.manual_space : TREAD_FALLBACK.space,
     authored: json.fallback !== true,
   };
 }
 
 /** 贴图路径 → stem（`/tread/textures/GB_01_tread.webp` → `GB_01_tread`）。 */
-export function textureStemOf(path) {
+export function textureStemOf(path: unknown): string {
   if (typeof path !== 'string') return '';
   const name = path.split('/').pop() || '';
   return name.replace(/\.webp$/i, '');
@@ -121,10 +129,15 @@ export function textureStemOf(path) {
  * 归一，消除跨贴图 1.7~4× 的密度差——2026-10-11 用户裁示"统一颜色深浅"）。
  * 缺失/异常一律 1（fail-open 到原始贴图观感）。
  */
-export function treadScaleFor(meta, texturePath) {
+/** /tread/textures.json 的 per-stem 条目。 */
+export interface TreadTextureMeta {
+  scale?: number
+}
+
+export function treadScaleFor(meta: { textures?: Record<string, TreadTextureMeta> | null } | null | undefined, texturePath: string): number {
   const stem = textureStemOf(texturePath);
   const v = meta && meta.textures && stem ? meta.textures[stem] : null;
-  const s = v && Number.isFinite(v.scale) && v.scale > 0 ? v.scale : 1;
+  const s = v && typeof v.scale === 'number' && Number.isFinite(v.scale) && v.scale > 0 ? v.scale : 1;
   return s;
 }
 
@@ -137,7 +150,45 @@ export function treadScaleFor(meta, texturePath) {
  *   环满（count = cap）后覆写 head 槽（`total - cap`）；
  * - `written` = 消费侧书签（已写进 GPU 的绝对戳数）。
  */
-export function createTrailState() {
+/** 已提交（定型）的戳：两个横截面之间的扫掠四边形。 */
+export interface TrailStamp {
+  x0: number
+  z0: number
+  yaw0: number
+  x1: number
+  z1: number
+  yaw1: number
+  /** 戳 t = 锚点时刻 */
+  t: number
+}
+
+/** 活戳（未定型）的末端横截面。 */
+export interface OpenStampCross {
+  x1: number
+  z1: number
+  yaw1: number
+}
+
+/** 单侧履带的路径累积态（客户端槽位模型，0x727b80 同构）。 */
+export interface TrailState {
+  hasLast: boolean
+  x: number
+  z: number
+  yaw: number
+  t: number
+  anchor: { x: number; z: number; yaw: number; t: number }
+  open: OpenStampCross | null
+  /** 固定槽位环（cap 槽含活戳）；segs[k % cap] = 绝对序号 k 的戳 */
+  segs: TrailStamp[]
+  /** 已提交（定型）数；活戳占 total % cap */
+  total: number
+  /** 消费侧书签（已写进 GPU 的绝对戳数） */
+  written: number
+  breakPending: boolean
+  lastSegT: number
+}
+
+export function createTrailState(): TrailState {
   return { hasLast: false, x: 0, z: 0, yaw: 0, t: 0,
            anchor: { x: 0, z: 0, yaw: 0, t: 0 }, open: null,
            segs: [], total: 0, written: 0,
@@ -154,13 +205,13 @@ export function createTrailState() {
  *
  * 这样避免把“断链”错误实现成“删除历史印记”（#587 review blocker）。
  */
-export function resetTrailState(st) {
+export function resetTrailState(st: TrailState): void {
   st.hasLast = false;
   st.breakPending = true;
   st.open = null;
 }
 
-function clearTrailHistory(st) {
+function clearTrailHistory(st: TrailState): void {
   st.segs.length = 0;
   st.total = 0;
   st.written = 0;
@@ -189,13 +240,21 @@ function clearTrailHistory(st) {
  * @param {number} cap 戳环槽数（TREAD_RING）
  * @returns {number} 本次提交的戳数
  */
-export function advanceTrail(st, pts, space, cap) {
+/** advanceTrail 的采样点。 */
+export interface TrailSample {
+  x: number
+  z: number
+  t?: number
+  yaw?: number
+}
+
+export function advanceTrail(st: TrailState, pts: readonly TrailSample[], space: number, cap: number): number {
   if (!(space > 1e-3)) return 0;
   let added = 0;
   for (let i = 0; i < pts.length; i++) {
     const p = pts[i];
     const pyaw = p.yaw || 0;
-    const pt = Number.isFinite(p.t) ? p.t : 0;
+    const pt = Number.isFinite(p.t) ? (p.t as number) : 0;
     if (!st.hasLast) {
       // resetTrailState 同时承担“断链”和“即将全量重建”的入口。真正区别在下一 anchor：
       // AoI/传送恢复一定向前走（pt > lastSegT）⇒ 保留历史；seek/重开从 START 重喂
@@ -262,7 +321,7 @@ export function advanceTrail(st, pts, space, cap) {
  * 短暂重叠）远低于代价，整层移除：重叠由自然淡出收敛。若后续反汇编确认客户端确有
  * 去重提交规则，再按其真实机制实现。
  */
-function pushSeg(st, seg, cap) {
+function pushSeg(st: TrailState, seg: TrailStamp, cap: number): void {
   // 环内绝对序号 k 占槽 k % cap（活戳 = 未定型的 total 槽）；count 封顶 cap 后
   // 覆写最老槽（head = total - cap）——与客户端 0x727b80 的
   // `count=min(count+1,50); head=write; write=(write+1)%50` 同构。
@@ -273,7 +332,7 @@ function pushSeg(st, seg, cap) {
 }
 
 /** 活戳是否可画（长度非退化）——场景侧写活戳槽位前判退化用。 */
-export function openStampOf(st) {
+export function openStampOf(st: TrailState): TrailStamp | null {
   if (!st.open) return null;
   if (!(Math.hypot(st.open.x1 - st.anchor.x, st.open.z1 - st.anchor.z) > 1e-6)) return null;
   return { x0: st.anchor.x, z0: st.anchor.z, yaw0: st.anchor.yaw,
@@ -303,7 +362,7 @@ export const TRAIL_LIFT = 0.12;
  * @param {Float32Array|number[]} out 长度 ≥12 的输出数组（就地写 [x,y,z]×4）
  * @returns {boolean} 是否写入（false = 戳退化，调用方跳过）
  */
-export function trailStampCorners(seg, width, heightAt, out) {
+export function trailStampCorners(seg: TrailStamp, width: number, heightAt: (x: number, z: number) => number, out: Float32Array | number[]): boolean {
   const hw = width / 2;
   // 横截面两端：中心 ± 横向量·半宽。横向量取车队 heading 的水平右向（左右对称无语义）。
   const fx0 = -Math.sin(seg.yaw0), fz0 = Math.cos(seg.yaw0);

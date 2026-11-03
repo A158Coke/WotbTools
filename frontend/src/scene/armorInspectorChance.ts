@@ -29,11 +29,41 @@ export const ARMOR_INSPECTOR_PC_RANDOMIZATION = 0.25
 const EXTERNAL_SECTIONS = new Set(['chassis', 'gunBarrel'])
 
 /**
- * 标准正态 CDF，Abramowitz-Stegun 7.1.26（|误差| < 1.5e-7）。
- * @param {number} z
- * @returns {number} P(Z <= z)
+ * 概率链层条目：接受 penetration.js 的 probability_layers（snake_case）或
+ * tankViewer trajLayers（camelCase）。已知字段显式声明，其余字段经索引签名
+ * 透传进结果卡的层链（record 直接展开原层）。
  */
-export function normalCdf(z) {
+export interface ProbabilityChainLayer {
+  effective?: number | null
+  eff?: number | null
+  remaining_before?: number | null
+  remainBefore?: number | null
+  gap?: boolean
+  gap_distance?: number | null
+  gapDistance?: number | null
+  external?: boolean
+  section?: string | null
+  name?: string | null
+  part_name?: string | null
+  angle?: number | null
+  thickness?: number | null
+  ricochet?: boolean
+  seg?: number | null
+  [key: string]: unknown
+}
+
+export interface ProbabilityChainEvaluation extends ProbabilityChainLayer {
+  chance: number
+  probChance: number
+  layerChance: number
+}
+
+/**
+ * 标准正态 CDF，Abramowitz-Stegun 7.1.26（|误差| < 1.5e-7）。
+ * @param z
+ * @returns P(Z <= z)
+ */
+export function normalCdf(z: number): number {
   if (Number.isNaN(z)) return NaN
   if (z === Infinity) return 1
   if (z === -Infinity) return 0
@@ -51,10 +81,10 @@ export function normalCdf(z) {
  * 0 < chance < 1 且四舍五入为 100 时显示 `>99`（而不是 `100`），
  * 亚 1% 显示 `<1`；精确 1 才是 `100`。返回值不含 `%`。
  *
- * @param {number} chance 0..1
- * @returns {string}
+ * @param chance 0..1
+ * @returns 不含 `%` 的百分比文本
  */
-export function formatProbabilityPercent(chance) {
+export function formatProbabilityPercent(chance: number): string {
   const value = Number(chance)
   if (!(value > 0)) return '0'
   if (value >= 1) return '100'
@@ -65,14 +95,14 @@ export function formatProbabilityPercent(chance) {
 }
 
 /** ±range 随机化区间；randomization=0 时退化为单点（确定性穿深）。 */
-function intervalFor(penetration, randomization) {
+function intervalFor(penetration: number, randomization: number): { min: number; max: number } {
   const p = Number.isFinite(penetration) ? Math.max(0, penetration) : 0
   if (!(randomization > 0)) return { min: p, max: p }
   return { min: p * (1 - randomization), max: p * (1 + randomization) }
 }
 
 /** 区间 [min,max] 上 P(roll > thickness)。 */
-function cdfForInterval(min, max, thickness) {
+function cdfForInterval(min: number, max: number, thickness: number): number {
   if (max <= 0) return 0
   if (min === max) return min > thickness ? 1 : 0
   if (thickness <= min) return 1
@@ -84,12 +114,12 @@ function cdfForInterval(min, max, thickness) {
 
 /**
  * 区间 [min,max] 上的单层击穿概率（供续飞 JS/GLSL 参考共用）。
- * @param {number} min
- * @param {number} max
- * @param {number} thickness
- * @returns {number} 0..1
+ * @param min
+ * @param max
+ * @param thickness
+ * @returns 0..1
  */
-export function penetrationChanceForInterval(min, max, thickness) {
+export function penetrationChanceForInterval(min: number, max: number, thickness: number): number {
   if (!Number.isFinite(min) || !Number.isFinite(max) || !Number.isFinite(thickness)) return 0
   return cdfForInterval(min, max, thickness)
 }
@@ -98,39 +128,39 @@ export function penetrationChanceForInterval(min, max, thickness) {
  * 单层击穿概率：穿深 ~ N(P, (P*randomization/3)^2)，求 P(pen > T)。
  * 区间外与 Armor Inspector 一致夹到 1/0（±3σ 外不再累积尾部）。
  *
- * @param {number} penetration 当前剩余穿深（mm）
- * @param {number} thickness 该层等效厚度（mm）
- * @param {number} [randomization] 随机化范围（0.05=Blitz，0.25=PC）
- * @returns {number} 0..1
+ * @param penetration 当前剩余穿深（mm）
+ * @param thickness 该层等效厚度（mm）
+ * @param randomization 随机化范围（0.05=Blitz，0.25=PC）
+ * @returns 0..1
  */
-export function penetrationChanceForLayer(penetration, thickness, randomization = ARMOR_INSPECTOR_BLITZ_RANDOMIZATION) {
+export function penetrationChanceForLayer(penetration: number, thickness: number, randomization: number = ARMOR_INSPECTOR_BLITZ_RANDOMIZATION): number {
   if (!(penetration > 0) || !Number.isFinite(thickness)) return 0
   const { min, max } = intervalFor(penetration, randomization)
   return penetrationChanceForInterval(min, max, thickness)
 }
 
-function layerEffectiveThickness(layer) {
+function layerEffectiveThickness(layer: ProbabilityChainLayer | null | undefined): number | null {
   const eff = layer?.effective ?? layer?.eff
-  return Number.isFinite(eff) ? eff : null
+  return typeof eff === 'number' && Number.isFinite(eff) ? eff : null
 }
 
-function layerRemainingBefore(layer) {
+function layerRemainingBefore(layer: ProbabilityChainLayer | null | undefined): number | null {
   const before = layer?.remaining_before ?? layer?.remainBefore
-  return Number.isFinite(before) ? before : null
+  return typeof before === 'number' && Number.isFinite(before) ? before : null
 }
 
-function isGapLayer(layer) {
+function isGapLayer(layer: ProbabilityChainLayer | null | undefined): boolean {
   return layer?.gap === true || String(layer?.name ?? layer?.part_name ?? '').startsWith('Gap ')
 }
 
-function gapDistance(layer) {
+function gapDistance(layer: ProbabilityChainLayer | null | undefined): number {
   const direct = layer?.gap_distance ?? layer?.gapDistance
-  if (Number.isFinite(direct)) return Math.max(0, direct)
+  if (typeof direct === 'number' && Number.isFinite(direct)) return Math.max(0, direct)
   const match = /^Gap\s+([\d.]+)m/.exec(String(layer?.name ?? layer?.part_name ?? ''))
   return match ? Math.max(0, parseFloat(match[1])) : 0
 }
 
-function isExternalLayer(layer) {
+function isExternalLayer(layer: ProbabilityChainLayer): boolean {
   if (typeof layer?.external === 'boolean') return layer.external
   if (layer?.section) return EXTERNAL_SECTIONS.has(layer.section)
   // 点击面板的 trajLayers 不带 section；外部模块没有角度，间隙层由名字区分。
@@ -152,17 +182,21 @@ function isExternalLayer(layer) {
  * tankViewer trajLayers（camelCase）。normal 层不再读取 remaining_before——
  * 它是确定性截断链的产物，不能作为概率区间来源；只有续飞段起点例外。
  *
- * @param {number} penetration 首层前的有效穿深（mm）
- * @param {Array<object>} layers 完整命中链
- * @param {number} [randomization]
- * @returns {number} 0..1
+ * @param penetration 首层前的有效穿深（mm）
+ * @param layers 完整命中链（非空条目；producer 保证）
+ * @param randomization
+ * @returns 0..1 与逐层累计链
  */
-export function evaluateProbabilityChain(penetration, layers, randomization = ARMOR_INSPECTOR_BLITZ_RANDOMIZATION) {
+export function evaluateProbabilityChain(
+  penetration: number,
+  layers: readonly ProbabilityChainLayer[] | null | undefined,
+  randomization: number = ARMOR_INSPECTOR_BLITZ_RANDOMIZATION,
+): { chance: number; layers: ProbabilityChainEvaluation[] } {
   const all = layers || []
   // 空链没有可判定的层：fail-closed 返回 0%，不得默认必穿。
   if (all.length === 0) return { chance: 0, layers: [] }
 
-  const firstContinuation = all.findIndex(layer => layer?.seg > 0)
+  const firstContinuation = all.findIndex(layer => (layer?.seg ?? 0) > 0)
   let startIndex = 0
   let { min, max } = intervalFor(penetration, randomization)
   if (firstContinuation >= 0) {
@@ -173,9 +207,9 @@ export function evaluateProbabilityChain(penetration, layers, randomization = AR
 
   let chance = 1
   let pendingSegmentReset = false
-  const evaluations = []
+  const evaluations: ProbabilityChainEvaluation[] = []
   // 单层累计概率是 UI 的唯一层链：红色 0%、黄色 1–99%、绿色 100%。
-  const record = (layer, layerChance) => {
+  const record = (layer: ProbabilityChainLayer, layerChance: number): void => {
     evaluations.push({
       ...layer,
       chance,
@@ -183,7 +217,7 @@ export function evaluateProbabilityChain(penetration, layers, randomization = AR
       layerChance,
     })
   }
-  const fail = (index, layer, layerChance = 0) => {
+  const fail = (index: number, layer: ProbabilityChainLayer | null | undefined, layerChance = 0): { chance: number; layers: ProbabilityChainEvaluation[] } => {
     chance = 0
     if (layer) record(layer, layerChance)
     // 概率归零后仍保留到首个 Primary 的完整层链：结果卡/轨迹用这条链，
@@ -195,7 +229,7 @@ export function evaluateProbabilityChain(penetration, layers, randomization = AR
   for (let i = startIndex; i < all.length; i++) {
     const layer = all[i]
     // 同一续飞段内的后续层共享区间；只有再次跳弹后的新段才重置一次。
-    if (layer?.seg > 0 && i !== startIndex && pendingSegmentReset) {
+    if ((layer?.seg ?? 0) > 0 && i !== startIndex && pendingSegmentReset) {
       const start = layerRemainingBefore(layer)
       ;({ min, max } = intervalFor(start != null ? start : penetration, randomization))
       chance = 1
@@ -203,7 +237,7 @@ export function evaluateProbabilityChain(penetration, layers, randomization = AR
     }
 
     if (layer?.ricochet) {
-      const hasLaterContinuation = all.slice(i + 1).some(l => l?.seg > 0)
+      const hasLaterContinuation = all.slice(i + 1).some(l => (l?.seg ?? 0) > 0)
       if (!hasLaterContinuation) return fail(i, layer)
       record(layer, 1)
       pendingSegmentReset = true
@@ -223,7 +257,7 @@ export function evaluateProbabilityChain(penetration, layers, randomization = AR
       continue
     }
 
-    const thickness = Number.isFinite(layer?.thickness) ? Math.max(0, layer.thickness) : 0
+    const thickness = Number.isFinite(layer?.thickness) ? Math.max(0, layer.thickness as number) : 0
     if (isExternalLayer(layer)) {
       min -= thickness
       max -= thickness
@@ -255,24 +289,31 @@ export function evaluateProbabilityChain(penetration, layers, randomization = AR
 
 /**
  * 兼容旧调用：只返回总概率。
- * @param {number} penetration
- * @param {Array<object>} layers
- * @param {number} [randomization]
- * @returns {number}
+ * @param penetration
+ * @param layers
+ * @param randomization
+ * @returns 0..1
  */
-export function penetrationChance(penetration, layers, randomization = ARMOR_INSPECTOR_BLITZ_RANDOMIZATION) {
+export function penetrationChance(penetration: number, layers: readonly ProbabilityChainLayer[] | null | undefined, randomization: number = ARMOR_INSPECTOR_BLITZ_RANDOMIZATION): number {
   return evaluateProbabilityChain(penetration, layers, randomization).chance
+}
+
+/** resolveCardChance 的输入（结果卡击穿概率口径）。 */
+export interface CardChanceInput {
+  heInfo: object | null
+  heChance: number
+  probabilityMode: boolean
+  overallChance: number | null
+  rawChance: number
+  allowChance: boolean
 }
 
 /**
  * 结果卡击穿概率的单一取值口径。无效 HE（零/缺失爆炸半径导致 heInfo=null 且
  * allowChance=false）必须 fail-closed 为 0%，不能沿用穿透原始值 rawChance。
  * 正常 HE 用 heChance；概率模式用累计概率；其余用穿透链概率。
- * @param {{heInfo:object|null, heChance:number, probabilityMode:boolean,
- *   overallChance:number|null, rawChance:number, allowChance:boolean}} input
- * @returns {{chance:number, unavailable:boolean}}
  */
-export function resolveCardChance({ heInfo, heChance, probabilityMode, overallChance, rawChance, allowChance }) {
+export function resolveCardChance({ heInfo, heChance, probabilityMode, overallChance, rawChance, allowChance }: CardChanceInput): { chance: number; unavailable: boolean } {
   const unavailable = !heInfo && allowChance === false
   const chance = unavailable
     ? 0

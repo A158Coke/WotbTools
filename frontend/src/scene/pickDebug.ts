@@ -5,10 +5,12 @@
 //
 // 坐标约定与 destructibles.js 一致：游戏场景系 = gltf.scene 局部系（x/y 水平、z 上），
 // 即 destructibles.json `pos` 与 scenery.glb 节点位置所用坐标系（直接对应回放 x/z）。
+import type { Object3D } from 'three'
+import type { DestructibleInstance } from './destructibles.js'
 
 /** 节点 → 命名祖先链（自底向上，只收集有 name 的层级；到 stopAt 为止不含 stopAt） */
-export function nameChainOf(object, stopAt = null) {
-  const out = []
+export function nameChainOf(object: Object3D | null | undefined, stopAt: Object3D | null = null): string[] {
+  const out: string[] = []
   let o = object
   while (o && o !== stopAt) {
     if (o.name) out.push(o.name)
@@ -17,13 +19,20 @@ export function nameChainOf(object, stopAt = null) {
   return out
 }
 
+/** 可见性链检查的最小节点面（three Object3D 与 playback/annotationSurface 的结构化替身都兼容）。 */
+export interface VisibilityChainNode {
+  visible?: boolean
+  parent?: VisibilityChainNode | null
+  [key: string]: unknown
+}
+
 /**
  * 命中对象 → 整条祖先链是否可见（Raycaster 不按 Object3D.visible 过滤：
  * 隐藏的 D_ 损毁替换网格、sky、隐藏父节点下的车辆都会被 intersect 命中，
  * 拾取前必须按链上可见性筛选，否则报告指向画面里不存在的模型）。
  * stopAt 及其祖先不计入（如场景根）。
  */
-export function chainVisible(object, stopAt = null) {
+export function chainVisible(object: VisibilityChainNode | null | undefined, stopAt: VisibilityChainNode | null = null): boolean {
   let o = object
   while (o && o !== stopAt) {
     if (o.visible === false) return false
@@ -37,9 +46,14 @@ export function chainVisible(object, stopAt = null) {
  * 与本局是否发生过破坏事件无关——事件状态表只含被撞过的物体）。
  * 超出 radiusM / 空列表 → null（调用方按「非可破坏物」呈现）。
  */
-export function nearestInstance(instances, sx, sy, radiusM = 3) {
+export function nearestInstance(
+  instances: readonly (DestructibleInstance | null | undefined)[] | null,
+  sx: number,
+  sy: number,
+  radiusM = 3,
+): DestructibleInstance | null {
   if (!Array.isArray(instances)) return null
-  let best = null
+  let best: DestructibleInstance | null = null
   let bestD = radiusM
   for (const inst of instances) {
     const p = inst?.pos
@@ -65,11 +79,27 @@ export function nearestInstance(instances, sx, sy, radiusM = 3) {
  * `mesh.uuid#instanceId` 复合键。值携带 `{ inst, name }`：inst 供状态关联，
  * name 保留原节点名（合批后原 Mesh 已摘除，报告仍能报出真实物体名）。
  */
-export function meshOwnerKey(mesh, instanceId) {
+export function meshOwnerKey(mesh: { uuid: string }, instanceId: number | null | undefined): string {
   return `${mesh.uuid}#${instanceId}`
 }
 
-export function buildMeshOwnerMap(instances, findMeshes, out = new Map()) {
+/** findMeshes 的命中条目（场景侧实例化批次装配的投影）。 */
+export interface PickMeshEntry {
+  batch: { mesh: { uuid: string } }
+  idx: number
+  name: string
+}
+
+export interface MeshOwnerValue {
+  inst: DestructibleInstance
+  name: string
+}
+
+export function buildMeshOwnerMap(
+  instances: readonly (DestructibleInstance | null | undefined)[] | null,
+  findMeshes: (x: number, y: number, destroyed: boolean) => Iterable<PickMeshEntry>,
+  out: Map<string, MeshOwnerValue> = new Map(),
+): Map<string, MeshOwnerValue> {
   if (!Array.isArray(instances)) return out
   for (const inst of instances) {
     const p = inst?.pos
@@ -88,30 +118,89 @@ export function buildMeshOwnerMap(instances, findMeshes, out = new Map()) {
  * - prop=1/2（换模）：损毁态网格可见且完好态不可见 = destroyed。
  * 无状态对象图时 label 恒 'intact'（fail-open，只影响展示不影响拾取）。
  */
-export function stateVisualLabel(st) {
+/** 装配层的实例状态对象图（stateVisualLabel 消费；prop=3 为树倒）。 */
+export interface PickInstanceState {
+  prop?: number
+  /** 树倒：倒伏四元数的 w（w≈1 直立/未触发，其余 = 倒伏中或已倒） */
+  fallQuat?: { w: number } | null
+  /** 建筑/switcher：损毁态已激活（完好槽隐藏、损毁槽显示） */
+  applied?: boolean
+}
+
+export interface PickStateVisual {
+  prop: number
+  label: string
+}
+
+export function stateVisualLabel(st: PickInstanceState | null | undefined): PickStateVisual | null {
   if (!st) return null
   if (st.prop === 3) {
     // 实例化槽位模型：倒伏状态写 fallQuat（w = cos(倒角/2)）——w≈1 直立/未触发，
     // 其余 = 倒伏中或已倒；倒带复位后 w 回 1
     const w = st.fallQuat?.w
-    const fallen = Number.isFinite(w) && Math.abs(1 - w) > 1e-3
+    const fallen = Number.isFinite(w) && Math.abs(1 - (w as number)) > 1e-3
     return { prop: 3, label: fallen ? 'fallen/falling' : 'standing' }
   }
   // 建筑/switcher：applied = 损毁态已激活（完好槽隐藏、损毁槽显示）
   const destroyed = st.applied === true
-  return { prop: st.prop, label: destroyed ? 'destroyed' : 'intact' }
+  return { prop: st.prop as number, label: destroyed ? 'destroyed' : 'intact' }
 }
 
-const PROP_LABEL = { 0: 'modules', 1: 'fragiles', 2: 'pole', 3: 'tree-fall' }
+const PROP_LABEL: Record<number, string> = { 0: 'modules', 1: 'fragiles', 2: 'pole', 3: 'tree-fall' }
+
+/** 地形诊断块（2026-10-11 塌陷排查工具）。 */
+export interface PickTerrainDiagnostics {
+  truth: number
+  meshH?: number | null
+  sizeAt?: number | null
+  morph?: number | null
+  quads?: number | null
+  overBudget?: number | null
+}
+
+/** 渲染身份块（2026-10-11 "表面可拾取但不可见"排查）。 */
+export interface PickRenderDiagnostics {
+  type: string
+  name?: string | null
+  matName?: string | null
+  matType?: string | null
+  matVisible?: boolean
+  transparent?: boolean
+  opacity?: number
+  alphaTest?: number
+  depthWrite?: boolean
+  objVisible?: boolean
+  frustumCulled?: boolean
+  instanceId?: number | null
+  instScale?: number[] | null
+  world?: unknown
+  sphere?: { c: unknown; r: unknown } | null
+}
+
+/** 拾取报告（formatPickReport 与面板/console/window.__pbPickText 三渠道共享）。 */
+export interface PickReport {
+  clock?: number
+  kind?: string
+  err?: string
+  node?: string
+  chain?: string[]
+  vehicle?: { eid: number; name?: string; tank_id?: number | null } | null
+  world?: number[] | null
+  scene?: number[] | null
+  material?: string | null
+  inst?: DestructibleInstance | null
+  vis?: PickStateVisual | null
+  terrain?: PickTerrainDiagnostics | null
+  render?: PickRenderDiagnostics | null
+}
 
 /**
  * 拾取报告 → 单文本（面板显示 / console / window.__pbPickText 三渠道同一份）。
- * r = { clock, kind, node, chain, vehicle, world, scene, material, inst, vis, err }
  * 坐标一律保留 1 位小数；scene 为游戏场景系（destructibles pos 同系）。
  */
-export function formatPickReport(r) {
-  const L = []
-  L.push(`[scene-pick] t=${Number.isFinite(r.clock) ? r.clock.toFixed(2) : '?'}s kind=${r.kind}`)
+export function formatPickReport(r: PickReport): string {
+  const L: string[] = []
+  L.push(`[scene-pick] t=${typeof r.clock === 'number' && Number.isFinite(r.clock) ? r.clock.toFixed(2) : '?'}s kind=${r.kind}`)
   if (r.err) L.push(`  err: ${r.err}`)
   if (r.vehicle) L.push(`  vehicle: eid=${r.vehicle.eid} ${r.vehicle.name || `tank_${r.vehicle.tank_id ?? '?'}`}`)
   if (r.node) L.push(`  node: ${r.node}`)

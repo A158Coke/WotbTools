@@ -7,25 +7,39 @@
  * sceneryMaterials.test.js 锁定行为，改这里必须同步过测。
  */
 import * as THREE from 'three'
+import type { Mesh, MeshLambertMaterial, MeshStandardMaterial, Object3D, ShaderMaterial, Texture } from 'three'
+
+/**
+ * GLTFLoader 解析出的场景材质（extras 由 assignExtrasToUserData 平铺进 userData）。
+ * 同 name+map 的 MASK 与 OPAQUE 只靠 alphaTest/transparent 区分（GLTFLoader 不暴露 alphaMode）。
+ */
+export type GltfSceneMaterial = MeshStandardMaterial & { alphaMode?: string }
 
 // 场景材质实例缓存（键 = 材质身份指纹，见 playbackScene 的 convMat）。
 // 生命周期：3D 侧 teardown 时 clearSceneryMatCache()（勿复用已 dispose 实例）；
 // 烘焙页为一次性进程，无需清理。
-const sceneryMatCache = new Map();
+const sceneryMatCache = new Map<string, THREE.Material>();
 
 /**
  * 植被视野穿透：相机这个半径（米）内的叶片不绘制，0 = 关闭。所有植被材质共享同一个
  * uniform 对象，切换不用遍历场景；只在 fragment 里比一次距离，不增加 draw call。
  */
-export const foliageClip = { value: 0 }
+export const foliageClip: { value: number } = { value: 0 }
 
-export function cachedSceneryMat(key, factory) {
-  let m = sceneryMatCache.get(key);
-  if (!m) { m = factory(); sceneryMatCache.set(key, m); }
+/** 材质 → 可枚举属性视图（鸭子扫描边界；three 材质子类的自有属性逐类各异）。 */
+function duckProps(src: unknown): Record<string, { isTexture?: unknown } | undefined> {
+  return src as Record<string, { isTexture?: unknown } | undefined>
+}
+
+export function cachedSceneryMat<T extends THREE.Material>(key: string, factory: () => T): T {
+  const cached = sceneryMatCache.get(key);
+  if (cached) return cached as T;
+  const m = factory();
+  sceneryMatCache.set(key, m);
   return m;
 }
 
-export function clearSceneryMatCache() {
+export function clearSceneryMatCache(): void {
   sceneryMatCache.clear();
 }
 
@@ -36,9 +50,9 @@ const CARD_ALPHA_CUT = 0.33;
 // 这套光照是按坦克 GLB 调的，场景降级到 Lambert 后朝上面过曝；系数 <1 压回过曝而不动光照。
 export const SCENERY_LAMBERT_EXPOSURE = 0.75;
 // 水体判定（GLB mesh/材质名启发式：seaplane/water/fountain/lake/river）
-export const isWaterName = (n) => /water|sea|lake|river|fountain/i.test(n || '');
+export const isWaterName = (n: string | null | undefined): boolean => /water|sea|lake|river|fountain/i.test(n || '');
 
-export function makeBillboardMaterial(m) {
+export function makeBillboardMaterial(m: GltfSceneMaterial): ShaderMaterial {
   // GLB 的 material.extras 由 GLTFLoader 的 assignExtrasToUserData 用 Object.assign
   // 平铺进 userData（不是嵌在 userData.extras 下）——写成 userData.extras.occMean 会
   // 恒取到 undefined，退化成 0.8 固定值，使各材质"按自身贴图均值归一化遮挡"的标定失效。
@@ -132,7 +146,7 @@ export function makeBillboardMaterial(m) {
 // 叶（直通）差约 28% → 同树叶片双色（2026-10-07 erlenberg 实测报障）。
 // toneMapped=false 只去掉出屏曲线与曝光、去不掉 sRGB 输出编码，故必须走自定义 ShaderMaterial
 // 与叶卡同方程。vOcc = COLOR_0.r（gen2 刚体叶片带该属性；无属性的正则树干 = 1）。
-export function makeSpeedtreeStaticMaterial(m, opaqueEnough) {
+export function makeSpeedtreeStaticMaterial(m: GltfSceneMaterial, opaqueEnough: boolean): ShaderMaterial {
   if (m.map) { m.map.colorSpace = THREE.NoColorSpace; m.map.needsUpdate = true; }
   // extras.alphaBlend（新包 BLEND 语义）优先于「不透明度≈1 → 裁切」的旧包启发式：
   // 软混合效果片必须留在透明管线，不能削成硬边。
@@ -216,7 +230,7 @@ export function makeSpeedtreeStaticMaterial(m, opaqueEnough) {
 // 口径（客户端无输出重编码，我们写 raw 值到 sRGB 画布即色彩等价）。
 // ⚠️ 云的 flowmap 动画（客户端 flowAnimSpeed/flowAnimOffset + flowmap 贴图）尚未随包
 // （导出器只导 albedo）——当前是**静态天空**，待导出器补两个属性 + flowmap 槽后再接。
-export function makeSkyMaterial(m) {
+export function makeSkyMaterial(m: GltfSceneMaterial): ShaderMaterial {
   if (m.map) { m.map.colorSpace = THREE.NoColorSpace; m.map.needsUpdate = true; }
   return new THREE.ShaderMaterial({
     uniforms: { map: { value: m.map || null } },
@@ -258,18 +272,21 @@ export function makeSkyMaterial(m) {
  *  掠射角下建筑/道路贴图发糊、随镜头闪烁（客户端有各向异性档位）。
  *  覆盖材质直接属性（map 等）与 ShaderMaterial.uniforms（叶卡/ST|/天穹的贴图在那里）。
  *  返回设置的纹理数（DEBUG 用）。 */
-export function applyMaterialTextureAnisotropy(root, anisotropy) {
-  const seen = new Set();
-  root.traverse((o) => {
+export function applyMaterialTextureAnisotropy(root: Object3D, anisotropy: number): number {
+  const seen = new Set<string>();
+  root.traverse((node) => {
+    const o = node as Mesh
     const ms = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
     for (const m of ms) {
       if (!m) continue;
-      const texs = [];
-      for (const k in m) { const v = m[k]; if (v && v.isTexture) texs.push(v); }
-      if (m.uniforms) {
-        for (const k in m.uniforms) {
-          const v = m.uniforms[k] && m.uniforms[k].value;
-          if (v && v.isTexture) texs.push(v);
+      const texs: Texture[] = [];
+      const props = duckProps(m)
+      for (const k in props) { const v = props[k]; if (v && v.isTexture) texs.push(v as Texture); }
+      const uniforms = (m as { uniforms?: Record<string, { value?: unknown }> }).uniforms;
+      if (uniforms) {
+        for (const k in uniforms) {
+          const v = uniforms[k] && uniforms[k].value as { isTexture?: unknown } | undefined;
+          if (v && v.isTexture) texs.push(v as Texture);
         }
       }
       for (const t of texs) {
@@ -291,7 +308,7 @@ export function applyMaterialTextureAnisotropy(root, anisotropy) {
 // 因此导出器把掩码单独成贴图（`extras.maskTexture` + 网格 TEXCOORD_1），本材质双采样器复刻：
 //   color = albedo(uv0 + 位移) × tint   ；alpha = mask(uv1)
 // ⚠️ 位移用**回放时钟**（pause 即停、seek 后相位确定、截图可复现），不用墙钟。
-export function makeBlendLayerMaterial(m, maskTex) {
+export function makeBlendLayerMaterial(m: GltfSceneMaterial, maskTex: Texture | null | undefined): ShaderMaterial {
   const map = m.map || null;
   if (map) { map.colorSpace = THREE.NoColorSpace; map.needsUpdate = true; }
   if (maskTex) { maskTex.colorSpace = THREE.NoColorSpace; maskTex.needsUpdate = true; }
@@ -351,7 +368,10 @@ export function makeBlendLayerMaterial(m, maskTex) {
 
 /** 逐图太阳（供环境反射的高光项）：playbackScene.applyMapLighting 每次换图更新。
  *  uSunDirScene = 阳光**传播**方向（场景系，单位向量）；uSunColor = 客户端 color × intensity。 */
-export const sunUniforms = {
+export const sunUniforms: {
+  uSunDirScene: { value: THREE.Vector3 }
+  uSunColor: { value: THREE.Vector3 }
+} = {
   uSunDirScene: { value: new THREE.Vector3(0, -1, 0) },
   uSunColor: { value: new THREE.Vector3(1, 1, 1) },
 };
@@ -371,7 +391,33 @@ export const sunUniforms = {
 // 与拼花砖 TILED_DECAL_MASK 同段，本材质尚无拼花砖，故紧跟环境反射）。detail 贴图是
 // 平铺的砖缝/岩面细节，×2 把均值 ~0.5 的贴图拉回 1.0 附近（客户端同式）。实测 36 图
 // 453 实例 / 10 图（forgecity 121、rift 103、skit 63、fort 50、holland 39、lumber 28…）。
-export function makeLightmappedMaterial(m, atlasTex, env, detail) {
+/** 环境反射 props（extras.env 的消费字段）。 */
+export interface EnvReflectionProps {
+  reflectionSpecParamGloss?: number
+  reflectionMetalFresnelReflectance?: number[]
+  reflectionSpecular?: number
+  reflectionBrightenEnvMap?: number
+  reflectionLerpEnvMap?: number
+  reflectionAddDiffuse?: number
+  reflectionMaskMultiplier?: number
+  reflectionMultLightmap?: number
+  cubemapIntensity?: number[]
+  [key: string]: unknown
+}
+
+export interface EnvReflectionInput {
+  maskTex: Texture
+  cubeTex: Texture
+  props: EnvReflectionProps
+}
+
+export interface DetailLayerInput {
+  tex: Texture
+  /** 平铺倍率 [sx, sy]（缺省 [1, 1]） */
+  scale?: ArrayLike<number> | null
+}
+
+export function makeLightmappedMaterial(m: GltfSceneMaterial, atlasTex: Texture | null | undefined, env: EnvReflectionInput | null, detail: DetailLayerInput | null): ShaderMaterial {
   const map = m.map || null;
   if (map) { map.colorSpace = THREE.NoColorSpace; map.needsUpdate = true; }
   if (atlasTex) { atlasTex.colorSpace = THREE.NoColorSpace; atlasTex.needsUpdate = true; }
@@ -379,6 +425,9 @@ export function makeLightmappedMaterial(m, atlasTex, env, detail) {
   const softAlpha = !!(m.userData && m.userData.alphaBlend);
   const cut = softAlpha ? 0 : ((m.alphaTest > 0 || (m.transparent && (m.opacity ?? 1) >= 0.99))
     ? Math.max(m.alphaTest || 0, 0.33) : 0);
+  const num = (v: unknown, d: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+  const vec3Of = (v: unknown, d: number[]): THREE.Vector3 =>
+    new THREE.Vector3(...((Array.isArray(v) && v.length === 3 ? v : d) as number[]));
   return new THREE.ShaderMaterial({
     uniforms: Object.assign(
       env ? {
@@ -388,21 +437,21 @@ export function makeLightmappedMaterial(m, atlasTex, env, detail) {
         envMask: { value: env.maskTex },
         envCube: { value: env.cubeTex },
         uEnvOn: { value: 1 },
-        uEnvGloss: { value: env.props.reflectionSpecParamGloss ?? 0.45 },
-        uEnvFresnel: { value: new THREE.Vector3(...(env.props.reflectionMetalFresnelReflectance || [0.5, 0.55, 0.3])) },
-        uEnvSpecular: { value: env.props.reflectionSpecular ?? 1.0 },
-        uEnvBrighten: { value: env.props.reflectionBrightenEnvMap ?? 2.8 },
-        uEnvLerp: { value: env.props.reflectionLerpEnvMap ?? 0.5 },
-        uEnvAddDiffuse: { value: env.props.reflectionAddDiffuse ?? 0.0 },
-        uEnvMaskMul: { value: env.props.reflectionMaskMultiplier ?? 100.0 },
-        uEnvMultLM: { value: env.props.reflectionMultLightmap ?? 2.0 },
-        uEnvCubeIntensity: { value: new THREE.Vector3(...(env.props.cubemapIntensity || [1, 1, 1])) },
+        uEnvGloss: { value: num(env.props.reflectionSpecParamGloss, 0.45) },
+        uEnvFresnel: { value: vec3Of(env.props.reflectionMetalFresnelReflectance, [0.5, 0.55, 0.3]) },
+        uEnvSpecular: { value: num(env.props.reflectionSpecular, 1.0) },
+        uEnvBrighten: { value: num(env.props.reflectionBrightenEnvMap, 2.8) },
+        uEnvLerp: { value: num(env.props.reflectionLerpEnvMap, 0.5) },
+        uEnvAddDiffuse: { value: num(env.props.reflectionAddDiffuse, 0.0) },
+        uEnvMaskMul: { value: num(env.props.reflectionMaskMultiplier, 100.0) },
+        uEnvMultLM: { value: num(env.props.reflectionMultLightmap, 2.0) },
+        uEnvCubeIntensity: { value: vec3Of(env.props.cubemapIntensity, [1, 1, 1]) },
       } : {},
       detail && detail.tex ? {
         uDetailTex: { value: detail.tex },
         uDetailScale: { value: new THREE.Vector2(
-          Number.isFinite(detail.scale?.[0]) ? detail.scale[0] : 1,
-          Number.isFinite(detail.scale?.[1]) ? detail.scale[1] : 1) },
+          num(detail.scale?.[0], 1),
+          num(detail.scale?.[1], 1)) },
       } : {},
       {
         map: { value: map },
@@ -555,7 +604,15 @@ export function makeLightmappedMaterial(m, atlasTex, env, detail) {
 // 数据：导出器把 `extras.decal = true` 挂材质、并**随导 TEXCOORD_1**（同 albedo 的 UV0 管线，
 // 无需翻转——实测铁轨顶点 UV1 与地面着色器的世界→UV 公式同空间：样例 (0.4219, 0.2775) vs
 // 公式 (0.422, 0.2767)）。
-export function makeDecalMaterial(m, cmTex, lmTex, opts = {}) {
+export interface DecalMaterialOpts {
+  /** LSC 逐实例 define（extras.decalSeparateLm 显式布尔，旧包回退逐图） */
+  separateLm?: unknown
+  /** materialLightmapAdjustment = [brightness, contrast, gamma] */
+  lmAdjust?: number[] | null
+  globalTint?: boolean
+}
+
+export function makeDecalMaterial(m: GltfSceneMaterial, cmTex: Texture | null | undefined, lmTex: Texture | null | undefined, opts: DecalMaterialOpts = {}): ShaderMaterial {
   const map = m.map || null;
   if (map) { map.colorSpace = THREE.NoColorSpace; map.needsUpdate = true; }
   if (cmTex) { cmTex.colorSpace = THREE.NoColorSpace; cmTex.needsUpdate = true; }
@@ -565,16 +622,17 @@ export function makeDecalMaterial(m, cmTex, lmTex, opts = {}) {
     ? Math.max(m.alphaTest || 0, 0.33) : 0);
   const adj = Array.isArray(opts.lmAdjust) && opts.lmAdjust.length === 3 ? opts.lmAdjust : null;
   const useAdj = !!(adj && opts.globalTint);
+  const uniforms: Record<string, THREE.IUniform> = {
+    map: { value: map },
+    colormap: { value: cmTex || map },
+    colormapLm: { value: lmTex || cmTex || map },
+    uTint: { value: m.color ? m.color.clone() : new THREE.Color(0xffffff) },
+    uAlphaCut: { value: cut },
+    uOpacity: { value: m.opacity ?? 1 },
+  }
+  if (useAdj) uniforms.uLmAdjust = { value: new THREE.Vector3(adj[0], adj[1], adj[2]) }
   return new THREE.ShaderMaterial({
-    uniforms: Object.assign(
-      { map: { value: map },
-        colormap: { value: cmTex || map },
-        colormapLm: { value: lmTex || cmTex || map },
-        uTint: { value: m.color ? m.color.clone() : new THREE.Color(0xffffff) },
-        uAlphaCut: { value: cut },
-        uOpacity: { value: m.opacity ?? 1 } },
-      useAdj ? { uLmAdjust: { value: new THREE.Vector3(adj[0], adj[1], adj[2]) } } : {},
-    ),
+    uniforms,
     vertexShader: `
       attribute vec2 uv1;    // 贴花 UV（客户端 texcoord1，colormap 空间）
       // <common> 必须先于 logdepthbuf_vertex（isPerspectiveMatrix 定义在 common 里）
@@ -668,38 +726,67 @@ export function makeDecalMaterial(m, cmTex, lmTex, opts = {}) {
  *    **俯视时深水也被压成透明**（2026-10-10 用户"从上往下看水面基本都是透明的，只有视角接近
  *    水面才反射"）——该口径已废，勿回退。地形高取高度场（真值一份到底；让位掩码已撤销）；缺则 fail-open。
  *    `coast = { heightTex, mapSpan, near, far, depthUlp }`。 */
-export function makeWaterMaterial(m, { normalTex, cubeTex, props, coast = null }) {
+/** 水面 props（extras.water.props 的消费字段）。 */
+export interface WaterProps {
+  normal0Scale?: number
+  normal1Scale?: number
+  normal0ShiftPerSecond?: number[]
+  normal1ShiftPerSecond?: number[]
+  fresnelBias?: number
+  fresnelPow?: number
+  reflectionTintColor?: number[]
+  [key: string]: unknown
+}
+
+/** 海岸线高度场字段（运行时 waterCoast；烘焙传 null）。 */
+export interface WaterCoastField {
+  heightTex?: Texture | null
+  mapSpan?: number
+  near?: number
+  far?: number
+  depthUlp?: number
+}
+
+export function makeWaterMaterial(m: GltfSceneMaterial, { normalTex, cubeTex, props, coast = null }: {
+  normalTex?: Texture | null
+  cubeTex?: Texture | null
+  props?: WaterProps | null
+  coast?: WaterCoastField | null
+}): ShaderMaterial {
   const map = m.map || null;
   if (map) { map.colorSpace = THREE.NoColorSpace; map.needsUpdate = true; }
   if (normalTex) { normalTex.colorSpace = THREE.NoColorSpace; normalTex.needsUpdate = true; }
   if (cubeTex) { cubeTex.colorSpace = THREE.NoColorSpace; cubeTex.needsUpdate = true; }
   const p = props || {};
-  const v2 = (v, d) => new THREE.Vector2(...(Array.isArray(v) && v.length === 2 ? v : d));
+  const num = (v: unknown, d: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+  const v2 = (v: unknown, d: number[]): THREE.Vector2 => new THREE.Vector2(...((Array.isArray(v) && v.length === 2 ? v : d) as number[]));
   return new THREE.ShaderMaterial({
     uniforms: {
       normalmap: { value: normalTex || map },
       cubemap: { value: cubeTex || map },
       uTime: { value: 0 },                     // 回放秒数（playbackScene 每帧写）
-      uN0Scale: { value: Number.isFinite(p.normal0Scale) ? p.normal0Scale : 1 },
-      uN1Scale: { value: Number.isFinite(p.normal1Scale) ? p.normal1Scale : 1 },
+      uN0Scale: { value: num(p.normal0Scale, 1) },
+      uN1Scale: { value: num(p.normal1Scale, 1) },
       uShift0: { value: v2(p.normal0ShiftPerSecond, [0, 0]) },
       uShift1: { value: v2(p.normal1ShiftPerSecond, [0, 0]) },
-      uFresnelBias: { value: Number.isFinite(p.fresnelBias) ? p.fresnelBias : 0 },
-      uFresnelPow: { value: Number.isFinite(p.fresnelPow) ? p.fresnelPow : 0 },
-      uReflTint: { value: new THREE.Vector3(...(Array.isArray(p.reflectionTintColor) ? p.reflectionTintColor : [1, 1, 1])) },
+      uFresnelBias: { value: num(p.fresnelBias, 0) },
+      uFresnelPow: { value: num(p.fresnelPow, 0) },
+      uReflTint: { value: new THREE.Vector3(...((Array.isArray(p.reflectionTintColor) ? p.reflectionTintColor : [1, 1, 1]) as number[])) },
       // 海岸线用：渲染用高度场（R = 世界高度，米）。sampler 不能判空/取分量 ⇒ 用浮点开关 +
       // 兜底绑定一张在用贴图（缺高度场时分支不采样）。
       uHeightmap: { value: (coast && coast.heightTex) || map || normalTex || null },
       uHasHeightmap: { value: coast && coast.heightTex ? 1 : 0 },
-      uMapSpan: { value: coast && Number.isFinite(coast.mapSpan) ? coast.mapSpan : 600 },
+      uMapSpan: { value: coast && typeof coast.mapSpan === 'number' && Number.isFinite(coast.mapSpan) ? coast.mapSpan : 600 },
       // 高度纹理 1 texel 的 UV 宽（1/n）：顶点 j 在 `j/n`（corner 口径），GPU 纹素中心在 `(j+0.5)/n`
       // ⇒ 采样须加半个纹素，否则岸线高度沿 x/z 各偏半格（与地形网格错位）
-      uHmTexel: { value: coast && coast.heightTex && coast.heightTex.image && coast.heightTex.image.width > 0
-        ? 1 / coast.heightTex.image.width : 0 },
-      uNear: { value: coast && Number.isFinite(coast.near) ? coast.near : 0.5 },
-      uFar: { value: coast && Number.isFinite(coast.far) ? coast.far : 4000 },
+      uHmTexel: { value: (() => {
+        const img = coast?.heightTex?.image as { width?: number } | null | undefined
+        return img && typeof img.width === 'number' && img.width > 0 ? 1 / img.width : 0
+      })() },
+      uNear: { value: coast && typeof coast.near === 'number' && Number.isFinite(coast.near) ? coast.near : 0.5 },
+      uFar: { value: coast && typeof coast.far === 'number' && Number.isFinite(coast.far) ? coast.far : 4000 },
       // 深度缓冲 1 ulp 的 NDC 值（= 2/2^depthBits，由 renderer 上下文实测传入；缺省 24bit）
-      uDepthUlp: { value: coast && Number.isFinite(coast.depthUlp) ? coast.depthUlp : 2 / 16777216 },
+      uDepthUlp: { value: coast && typeof coast.depthUlp === 'number' && Number.isFinite(coast.depthUlp) ? coast.depthUlp : 2 / 16777216 },
     },
     vertexShader: `
       // <common> 必须先于 logdepthbuf_vertex（isPerspectiveMatrix 定义在 common 里）
@@ -804,18 +891,19 @@ export function makeWaterMaterial(m, { normalTex, cubeTex, props, coast = null }
 // 仅 5% 像素高于 0.33）——按裁切（alphaTest 0.33）渲染会裁掉 95% 内容、剩下硬边暖白块
 // （2026-10-09 用户"贴图像解码错误"报障）；且缺视角因子时俯视会一直全亮，而客户端会淡掉。
 // 不受光：效果片自发光；FLATCOLOR 染色已在导出期烘进贴图（`apply_flat_tint`）。
-export function makeBlendByAngleMaterial(m, props) {
+export function makeBlendByAngleMaterial(m: GltfSceneMaterial, props: { bounds?: number[]; power?: number; inversion?: number } | null | undefined): ShaderMaterial {
   const map = m.map || null;
   if (map) { map.colorSpace = THREE.NoColorSpace; map.needsUpdate = true; }
   const p = props || {};
+  const num = (v: unknown, d: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
   const b = Array.isArray(p.bounds) && p.bounds.length === 2 ? p.bounds : [0, 1];
   return new THREE.ShaderMaterial({
     uniforms: {
       map: { value: map },
       uTint: { value: m.color ? m.color.clone() : new THREE.Color(0xffffff) },
       uBounds: { value: new THREE.Vector2(b[0], b[1]) },
-      uPower: { value: Number.isFinite(p.power) ? p.power : 1 },
-      uInversion: { value: Number.isFinite(p.inversion) ? p.inversion : 0 },
+      uPower: { value: num(p.power, 1) },
+      uInversion: { value: num(p.inversion, 0) },
     },
     vertexShader: `
       // <common> 必须先于 logdepthbuf_vertex（isPerspectiveMatrix 定义在 common 里）
@@ -880,26 +968,28 @@ export function makeBlendByAngleMaterial(m, props) {
 // `TANK_ENV_INTENSITY` 是后续可调旋钮（1 = 沿用逐图 `environmentMultiplier` 的 IBL 总量；
 // 实测客户端立方图另带 `environmentGamma/Multiplier`（引擎侧作用），若仍偏差可在此标定）。
 export const TANK_ENV_INTENSITY = 1;
-export function patchTankMaterial(m) {
-  if (!m || !m.isMeshStandardMaterial) return m;
-  if (m.userData && m.userData.__tankAmbientFixed) return m;
-  if (m.userData) m.userData.__tankAmbientFixed = true;
-  if (Number.isFinite(TANK_ENV_INTENSITY)) m.envMapIntensity = TANK_ENV_INTENSITY;
-  const prev = m.onBeforeCompile;
-  m.onBeforeCompile = (shader, renderer) => {
-    if (typeof prev === 'function') prev.call(m, shader, renderer);
+export function patchTankMaterial(m: THREE.Material | null | undefined): THREE.Material | null | undefined {
+  if (!m) return m;
+  const sm = m as MeshStandardMaterial
+  if (!sm.isMeshStandardMaterial) return m;
+  if (sm.userData && sm.userData.__tankAmbientFixed) return m;
+  if (sm.userData) sm.userData.__tankAmbientFixed = true;
+  if (Number.isFinite(TANK_ENV_INTENSITY)) sm.envMapIntensity = TANK_ENV_INTENSITY;
+  const prev = sm.onBeforeCompile;
+  sm.onBeforeCompile = (shader, renderer) => {
+    if (typeof prev === 'function') prev.call(sm, shader, renderer);
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <lights_fragment_begin>',
       '#include <lights_fragment_begin>\n\tirradiance = vec3( 0.0 );   // 坦克：环境项只留 IBL（客户端 ULTRA 口径）',
     );
   };
   // 程序缓存键必须带标记：否则会复用"未打补丁"的同参数程序（three 按 key 缓存）
-  const prevKey = m.customProgramCacheKey;
-  m.customProgramCacheKey = function () {
-    const base = (typeof prevKey === 'function') ? prevKey.call(this) : '';
+  const prevKey = sm.customProgramCacheKey;
+  sm.customProgramCacheKey = () => {
+    const base = (typeof prevKey === 'function') ? prevKey.call(sm) : '';
     return base + '|tank-noambient';
   };
-  m.needsUpdate = true;
+  sm.needsUpdate = true;
   return m;
 }
 /** 细节层补丁（B1，非光照图批次专用）：给 three 内建 Lambert 材质注入
@@ -913,14 +1003,15 @@ export function patchTankMaterial(m) {
  *  已是该类的降级偏差——客户端这一类是 unlit）。
  *  ⚠️ 纹理/scale 逐材质不同，调用方（convMat 的缓存键）必须把 detail 身份计进键，
  *  否则同图不同 detail 的材质会串用；program 缓存键同样带标记（与坦克补丁同法）。 */
-export function patchSceneryDetail(m, detailTex, scale) {
+export function patchSceneryDetail(m: MeshLambertMaterial | null | undefined, detailTex: Texture | null | undefined, scale?: ArrayLike<number> | null): MeshLambertMaterial | null | undefined {
   if (!m || !detailTex) return m;
   if (m.userData && m.userData.__sceneryDetail) return m;
   if (m.userData) m.userData.__sceneryDetail = true;
   detailTex.colorSpace = THREE.NoColorSpace;
   detailTex.needsUpdate = true;
-  const sx = Number.isFinite(scale?.[0]) ? scale[0] : 1;
-  const sy = Number.isFinite(scale?.[1]) ? scale[1] : 1;
+  const num = (v: unknown, d: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+  const sx = num(scale?.[0], 1);
+  const sy = num(scale?.[1], 1);
   const prev = m.onBeforeCompile;
   m.onBeforeCompile = (shader, renderer) => {
     if (typeof prev === 'function') prev.call(m, shader, renderer);
@@ -935,8 +1026,8 @@ export function patchSceneryDetail(m, detailTex, scale) {
                '#include <map_fragment>\ndiffuseColor.rgb *= texture2D(uDetailTex, vDetailUv).rgb * 2.0;');
   };
   const prevKey = m.customProgramCacheKey;
-  m.customProgramCacheKey = function () {
-    const base = (typeof prevKey === 'function') ? prevKey.call(this) : '';
+  m.customProgramCacheKey = () => {
+    const base = (typeof prevKey === 'function') ? prevKey.call(m) : '';
     return base + '|scenery-detail';
   };
   m.needsUpdate = true;
@@ -948,19 +1039,22 @@ export function patchSceneryDetail(m, detailTex, scale) {
  *  ShaderMaterial.uniforms.map.value，只枚举直接属性会漏掉（评审实测
  *  material dispose=1、texture dispose=0，显存随图数累积）。顺手清空
  *  材质实例缓存：缓存若保留已 dispose 的材质，下一张图会拿到失效实例。 */
-export function disposeSceneGroup(g) {
-  const mats = new Set(), texs = new Set()
-  g.traverse((o) => {
+export function disposeSceneGroup(g: Object3D): { materials: number; textures: number } {
+  const mats = new Set<THREE.Material>(), texs = new Set<Texture>()
+  g.traverse((node) => {
+    const o = node as Mesh
     if (o.geometry) o.geometry.dispose()
     const ms = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : [])
     for (const m of ms) {
       if (!m) continue
       mats.add(m)
-      for (const k in m) { const v = m[k]; if (v && v.isTexture) texs.add(v) }
-      if (m.uniforms) {
-        for (const k in m.uniforms) {
-          const v = m.uniforms[k] && m.uniforms[k].value
-          if (v && v.isTexture) texs.add(v)
+      const props = duckProps(m)
+      for (const k in props) { const v = props[k]; if (v && v.isTexture) texs.add(v as Texture) }
+      const uniforms = (m as { uniforms?: Record<string, { value?: unknown }> }).uniforms
+      if (uniforms) {
+        for (const k in uniforms) {
+          const v = uniforms[k] && uniforms[k].value as { isTexture?: unknown } | undefined
+          if (v && v.isTexture) texs.add(v as Texture)
         }
       }
     }

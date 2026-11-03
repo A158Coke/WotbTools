@@ -30,7 +30,8 @@ export interface AnnotationSurfaceMaterial {
   userData?: Record<string, unknown> | null
 }
 
-export interface AnnotationSurfaceObject {
+// type 别名（非 interface）：调用方需要把它传给带索引签名的结构化节点面（pickDebug.chainVisible）。
+export type AnnotationSurfaceObject = {
   userData?: Record<string, unknown> | null
   material?: AnnotationSurfaceMaterial | AnnotationSurfaceMaterial[] | null
   isMesh?: boolean

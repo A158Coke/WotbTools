@@ -1,3 +1,15 @@
+/** 争霸实时点数采样（按 clock 升序；`pointsSamples` 投影条目）。 */
+export interface SupremacySample {
+  clock: number
+  team: number
+  points: number
+}
+
+export interface PointsAtResult {
+  friend: number | null
+  enemy: number | null
+}
+
 /**
  * 争霸实时点数：取 `clock <= t` 的最后一组采样，按阵营拆成 friend / enemy。
  *
@@ -7,14 +19,13 @@
  * **unknown ≠ enemy**：只有 `friendlyTeam` 显式为 1 或 2 才建立 friend/enemy 映射；
  * 否则一律 `null`，绝不把某一方猜成敌方。采样里既非 friend 也非 enemy 的队伍
  * （如 `team=0` 未知）不参与统计。
- *
- * @param {Array<{clock:number, team:number, points:number}>} [samples] 按 clock 升序
- * @param {number} t 回放时刻（含）
- * @param {number} friendlyTeam 本方阵营（必须显式 1/2 才建立映射）
- * @returns {{friend: number|null, enemy: number|null}}
  */
-export function pointsAt(samples, t, friendlyTeam) {
-  const out = { friend: null, enemy: null }
+export function pointsAt(
+  samples: readonly SupremacySample[] | null | undefined,
+  t: number,
+  friendlyTeam: number | null | undefined,
+): PointsAtResult {
+  const out: PointsAtResult = { friend: null, enemy: null }
   if (friendlyTeam !== 1 && friendlyTeam !== 2) return out
   if (!samples || !samples.length) return out
   const enemyTeam = friendlyTeam === 1 ? 2 : 1

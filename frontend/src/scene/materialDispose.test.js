@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { collectMaterialTextures } from './materialDispose.js'
+import { collectMaterialTextures } from './materialDispose.ts'
 
 const tex = (id) => ({ isTexture: true, id, dispose: vi.fn() })
 

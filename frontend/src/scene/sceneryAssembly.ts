@@ -10,6 +10,7 @@
 //   烘焙：  剔除表（sceneryAssemblyRules.bakeDropNode）+ 正交俯拍单帧；groundLayers 传
 //           null ⇒ 贴花件回落（已知残留，档 2 收尾项）。
 import * as THREE from 'three';
+import type { BufferGeometry, Mesh, Object3D, ShaderMaterial, Texture } from 'three'
 import {
   cachedSceneryMat, makeBillboardMaterial, makeBlendByAngleMaterial, makeBlendLayerMaterial,
   makeDecalMaterial, makeLightmappedMaterial, makeSkyMaterial, makeSpeedtreeStaticMaterial,
@@ -18,43 +19,70 @@ import {
 import {
   materialIsWater, isWaterNode, isSkyShell, sceneHasSkyFlags,
 } from './sceneryAssemblyRules.js';
+import type { GltfSceneMaterial } from './sceneryMaterials.js';
 
 /** extras 贴图预解析（material.extras 里存 glTF **texture 下标**；GLTFLoader 的 texture
  *  依赖是异步的、材质转换遍历是同步的 ⇒ 先解析成 Map，遍历时同步取用）。
  *  解析不到（旧包/无 extras）⇒ 各分支自然回落（行为与无 extras 时期一致）。 */
-export async function resolveSceneryExtras(gltf) {
-  const maskTexByMatIndex = new Map();
-  const lmTexByMatIndex = new Map();
-  const detailTexByMatIndex = new Map();   // 细节层贴图（extras.detail.texture；B1）
-  const envTexByMatIndex = new Map();      // 环境反射：[遮罩, 立方图]（extras.envMask/envCube）
-  const waterTexByMatIndex = new Map();    // 水面：[法线, 立方图]（extras.water.normal / .cube）
-  const decalTexByMatIndex = new Map();    // 贴花槽自有贴图（extras.decalTexture）
+/** GLTFLoader 解析结果中本模块消费的面（scene/parser）。 */
+export interface ParsedGltf {
+  scene: Object3D
+  parser?: {
+    json?: { materials?: Array<{ extras?: Record<string, unknown> } | null> | null }
+    associations?: Map<object, { materials?: number }>
+    getDependency(type: 'texture', index: number): Promise<Texture | null>
+  } | null
+}
+
+/** extras 贴图解析结果（材质下标 → 贴图；双联 = [遮罩/法线, 立方图]）。 */
+export interface SceneryExtrasMaps {
+  maskTexByMatIndex: Map<number, Texture>
+  lmTexByMatIndex: Map<number, Texture>
+  detailTexByMatIndex: Map<number, Texture>
+  envTexByMatIndex: Map<number, [Texture, Texture]>
+  waterTexByMatIndex: Map<number, [Texture, Texture]>
+  decalTexByMatIndex: Map<number, Texture>
+}
+
+export async function resolveSceneryExtras(gltf: ParsedGltf): Promise<SceneryExtrasMaps> {
+  const maskTexByMatIndex = new Map<number, Texture>();
+  const lmTexByMatIndex = new Map<number, Texture>();
+  const detailTexByMatIndex = new Map<number, Texture>();   // 细节层贴图（extras.detail.texture；B1）
+  const envTexByMatIndex = new Map<number, [Texture, Texture]>();      // 环境反射：[遮罩, 立方图]（extras.envMask/envCube）
+  const waterTexByMatIndex = new Map<number, [Texture, Texture]>();    // 水面：[法线, 立方图]（extras.water.normal / .cube）
+  const decalTexByMatIndex = new Map<number, Texture>();    // 贴花槽自有贴图（extras.decalTexture）
   try {
-    const jsonMats = (gltf.parser && gltf.parser.json && gltf.parser.json.materials) || [];
+    const parser = gltf.parser;
+    const jsonMats = (parser?.json?.materials) || [];
     for (let i = 0; i < jsonMats.length; i++) {
-      const ex = (jsonMats[i] && jsonMats[i].extras) || {};
+      const mat = jsonMats[i];
+      const ex = (mat && mat.extras) || {};
+      const dep = async (index: unknown): Promise<Texture> =>
+        (await parser!.getDependency('texture', index as number)) as Texture;
       if (ex.maskTexture !== undefined) {
-        maskTexByMatIndex.set(i, await gltf.parser.getDependency('texture', ex.maskTexture));
+        maskTexByMatIndex.set(i, await dep(ex.maskTexture));
       }
       if (ex.lightmap !== undefined) {
-        lmTexByMatIndex.set(i, await gltf.parser.getDependency('texture', ex.lightmap));
+        lmTexByMatIndex.set(i, await dep(ex.lightmap));
       }
       if (ex.decalTexture !== undefined) {
-        decalTexByMatIndex.set(i, await gltf.parser.getDependency('texture', ex.decalTexture));
+        decalTexByMatIndex.set(i, await dep(ex.decalTexture));
       }
-      if (ex.detail && ex.detail.texture !== undefined) {
-        detailTexByMatIndex.set(i, await gltf.parser.getDependency('texture', ex.detail.texture));
+      const detail = ex.detail as { texture?: number } | undefined;
+      if (detail && detail.texture !== undefined) {
+        detailTexByMatIndex.set(i, await dep(detail.texture));
       }
-      if (ex.water && typeof ex.water === 'object' && ex.water.normal !== undefined) {
+      const water = ex.water as { normal?: number; cube?: number } | undefined;
+      if (water && typeof water === 'object' && water.normal !== undefined) {
         waterTexByMatIndex.set(i, [
-          await gltf.parser.getDependency('texture', ex.water.normal),
-          await gltf.parser.getDependency('texture', ex.water.cube),
+          await dep(water.normal),
+          await dep(water.cube),
         ]);
       }
       if (ex.envMask !== undefined && ex.envCube !== undefined) {
         envTexByMatIndex.set(i, [
-          await gltf.parser.getDependency('texture', ex.envMask),
-          await gltf.parser.getDependency('texture', ex.envCube),
+          await dep(ex.envMask),
+          await dep(ex.envCube),
         ]);
       }
     }
@@ -62,12 +90,22 @@ export async function resolveSceneryExtras(gltf) {
   return { maskTexByMatIndex, lmTexByMatIndex, detailTexByMatIndex, envTexByMatIndex, waterTexByMatIndex, decalTexByMatIndex };
 }
 
+/** makeTexResolvers 返回的六个取贴图函数。 */
+export interface SceneryTexResolvers {
+  maskTexOf(m: THREE.Material): Texture | null
+  lmTexOf(m: THREE.Material): Texture | null
+  detailTexOf(m: THREE.Material): Texture | null
+  envTexOf(m: THREE.Material): [Texture, Texture] | null
+  waterTexOf(m: THREE.Material): [Texture, Texture] | null
+  decalTexOf(m: THREE.Material): Texture | null
+}
+
 /** 按材质对象取已解析贴图：键 = `gltf.parser.associations` 的材质下标。 */
-export function makeTexResolvers(gltf, maps) {
-  const texOf = (m, table) => {
+export function makeTexResolvers(gltf: ParsedGltf, maps: SceneryExtrasMaps): SceneryTexResolvers {
+  const texOf = <T,>(m: THREE.Material, table: Map<number, T>): T | null => {
     const assoc = gltf.parser && gltf.parser.associations && gltf.parser.associations.get(m);
     const idx = assoc && assoc.materials;
-    return idx === undefined ? null : (table.get(idx) || null);
+    return idx == null ? null : (table.get(idx) || null);
   };
   return {
     maskTexOf: (m) => texOf(m, maps.maskTexByMatIndex),
@@ -76,16 +114,26 @@ export function makeTexResolvers(gltf, maps) {
     envTexOf: (m) => texOf(m, maps.envTexByMatIndex),
     waterTexOf: (m) => texOf(m, maps.waterTexByMatIndex),
     decalTexOf: (m) => texOf(m, maps.decalTexByMatIndex),
-  };
+  } as SceneryTexResolvers;
 }
 
 /** "被水面完全盖住"的静态件预计算：水面片（材质 extras.water 标记）的世界变换与各片
  *  占地面积/标高。GLB 仍是**场景系**（z = 高度，x/y = 地面；前端 group 旋转在后），
  *  故这里的"高度"取 z、地面取 (x,y)，与导出器的 glb_world_xyz 同一约定。 */
-export function collectWaterSurfaces(root) {
+/** 水面片的世界变换足迹（GLB 场景系：z = 高度、x/y = 地面）。 */
+export interface WaterSurfaceFootprint {
+  h: number
+  x0: number
+  x1: number
+  y0: number
+  y1: number
+}
+
+export function collectWaterSurfaces(root: Object3D): WaterSurfaceFootprint[] {
   root.updateMatrixWorld(true);
-  const waterSurfaces = [];
-  root.traverse((o) => {
+  const waterSurfaces: WaterSurfaceFootprint[] = [];
+  root.traverse((node) => {
+    const o = node as Mesh
     if (!o.isMesh || !o.material) return;
     if (!materialIsWater(o.material)) return;
     const bb = new THREE.Box3().setFromObject(o);
@@ -96,7 +144,7 @@ export function collectWaterSurfaces(root) {
 }
 
 /** 该网格是否整个位于某片水面之下（含 0.5 m 边缘余量、5 cm 高度余量）。 */
-export function makeUnderWater(waterSurfaces) {
+export function makeUnderWater(waterSurfaces: readonly WaterSurfaceFootprint[]): (o: Mesh) => boolean {
   return (o) => {
     if (!waterSurfaces.length || !o.geometry) return false;
     const bb = new THREE.Box3().setFromObject(o);
@@ -132,7 +180,7 @@ export function makeUnderWater(waterSurfaces) {
  */
 const DECAL_SOLID_MIN_HEIGHT = 1.0
 
-function isSolidDecalGeometry(geometry) {
+function isSolidDecalGeometry(geometry: BufferGeometry | null | undefined): boolean {
   if (!geometry) return false
   if (!geometry.boundingBox && typeof geometry.computeBoundingBox === 'function') {
     geometry.computeBoundingBox()
@@ -153,10 +201,28 @@ function isSolidDecalGeometry(geometry) {
   return down / total > 0.02 || side / total > 0.05
 }
 
-export function assembleSceneryMaterials(gltf, {
+/** 运行时逐图地表分层（贴花 cm/lm）；烘焙传 null ⇒ 贴花回落。 */
+export interface GroundLayersField {
+  texs: { cm?: Texture | null; lm?: Texture | null }
+  layers?: { separate_lm?: unknown; flatcolor?: unknown }
+}
+
+export interface AssembleSceneryOpts {
+  strictSurfaces?: boolean
+  masks: SceneryTexResolvers
+  groundLayers?: GroundLayersField | null
+  waterCoast?: import('./sceneryMaterials.js').WaterCoastField | null
+  debug?: boolean
+  /** 遍历中逐网格回调（运行时走廊掩码取样用；必须在实例化合批前调用） */
+  onMesh?: ((o: Mesh, waterMarked: boolean) => void) | null
+  /** 新包判据必须由调用方在任何剔除之前采样；缺省从当前场景现算 */
+  skyFlagsAvailable?: boolean | null
+}
+
+export function assembleSceneryMaterials(gltf: ParsedGltf, {
   strictSurfaces = false, masks, groundLayers = null, waterCoast = null, debug = false, onMesh = null,
   skyFlagsAvailable = null,
-} = {}) {
+}: AssembleSceneryOpts): { animLayerMats: ShaderMaterial[]; skyMeshes: number } {
   const { maskTexOf, lmTexOf, detailTexOf, envTexOf, waterTexOf, decalTexOf } = masks;
   const waterSurfaces = collectWaterSurfaces(gltf.scene);
   const underWater = makeUnderWater(waterSurfaces);
@@ -167,10 +233,10 @@ export function assembleSceneryMaterials(gltf, {
   // 新包判据必须由调用方在**任何剔除之前**采样（烘焙会先移除天穹再装配）；缺省从当前
   // 场景现算。判定本身只走共享 SSOT `isSkyShell`，本文件不得再复制一套开关。
   const skyFlagAvailable = skyFlagsAvailable ?? sceneHasSkyFlags(gltf.scene);
-  const isSkyNode = (o) => isSkyShell(o.name, o.material, { skyFlagsAvailable: skyFlagAvailable });
+  const isSkyNode = (o: Mesh) => isSkyShell(o.name, o.material, { skyFlagsAvailable: skyFlagAvailable });
   // 材质转换：与内核共享同一份实现。键组成必须与两侧历史口径一致——同 key 同材质、
   // 跨端观感一致（守卫锁定）。convMat 键指纹即本模块为准一来源（2026-10-14 抽层）。
-  const convMat = (m, isCard) => cachedSceneryMat(
+  const convMat = (m: GltfSceneMaterial, isCard: boolean) => cachedSceneryMat(
     // alphaTest/transparent 必须进键：GLTFLoader 不暴露 alphaMode，同 name+map
     // 的 MASK 与 OPAQUE 材质只靠这两项区分，漏掉会串用（先建的赢）
     // （`m.alphaMode` 当前恒为 undefined，保留仅作将来 GLTFLoader 补上时的保护）
@@ -241,11 +307,12 @@ export function assembleSceneryMaterials(gltf, {
     })()));
   // 3D annotation 的可绘制表面语义：水/天/植被/贴花/混合层/水下件是“地表/效果”而非 3D 层，
   // 在装配期统一打标（材质工厂不复制 userData，pick 时无法再按 extras 判定）。
-  const markNotDrawable = (mats) => {
+  const markNotDrawable = (mats: THREE.Material | THREE.Material[]): void => {
     const ms = Array.isArray(mats) ? mats : [mats];
     for (const mm of ms) if (mm && mm.userData) mm.userData.annotationSurface = false;
   };
-  gltf.scene.traverse((o) => {
+  gltf.scene.traverse((node) => {
+    const o = node as Mesh
     if (!o.isMesh || !o.material) return;
     // 网格清单钩子（运行时的走廊掩码取样）：水面/水下片按客户端水材质标记排除
     const waterMarked = materialIsWater(o.material);
@@ -257,8 +324,8 @@ export function assembleSceneryMaterials(gltf, {
     // ⚠️ frustumCulled 必须关：天穹顶点在网格局部空间里只是 ~10m 的小球，
     // 按真实包围球剔锥时镜头一转向天就整片消失——客户端由 w=0 的无限远投影天然免疫。
     if (!waterMarked && isSkyNode(o)) {
-      o.material = Array.isArray(o.material) ? o.material.map((m) => makeSkyMaterial(m))
-                                             : makeSkyMaterial(o.material);
+      o.material = Array.isArray(o.material) ? o.material.map((m) => makeSkyMaterial(m as GltfSceneMaterial))
+                                             : makeSkyMaterial(o.material as GltfSceneMaterial);
       // 语义标记：合批过滤必须按它排除天穹（新包天穹名可能不含 sky；材质转换后
       // extras 判据不可再取）。名字 fallback 已由 isSkyNode 统一处理。
       o.userData.isSky = true;
@@ -274,7 +341,7 @@ export function assembleSceneryMaterials(gltf, {
     // 该网格是否整个位于水面之下（客户端只经折射通道看到它们）
     const uw = !!o.geometry && underWater(o);
     if (uw) annotationSurface = false;
-    const assignMat = (m) => {
+    const assignMat = (m: GltfSceneMaterial): THREE.Material => {
       const ud = (m && m.userData) || {}
       // 普通 SpeedTree static geometry（没有 _corner 的 ST|branches/trunk/foliage）也走
       // makeSpeedtreeStaticMaterial；它的朝上枝叶同样不是可绘制表面，按 semantic 排除。
@@ -284,7 +351,7 @@ export function assembleSceneryMaterials(gltf, {
       if (ud.water && typeof ud.water === 'object') {
         const wt = waterTexOf(m);
         if (wt) {
-          if (debug && typeof window !== 'undefined' && window.__waterCoast) window.__waterCoast.materials++;
+          if (debug && typeof window !== 'undefined' && window.__waterCoast) window.__waterCoast.materials = (window.__waterCoast.materials || 0) + 1;
           annotationSurface = false;
           return makeWaterMaterial(m, { normalTex: wt[0], cubeTex: wt[1], props: ud.water.props || {}, coast: waterCoast });
         }
@@ -361,7 +428,7 @@ export function assembleSceneryMaterials(gltf, {
       }
       return convMat(m, isCard);
     };
-    o.material = Array.isArray(o.material) ? o.material.map(assignMat) : assignMat(o.material);
+    o.material = Array.isArray(o.material) ? o.material.map((m) => assignMat(m as GltfSceneMaterial)) : assignMat(o.material as GltfSceneMaterial);
     if (!annotationSurface) markNotDrawable(o.material);
     // 水体（海平面等半透明大面）：透明 + depthWrite=true + DoubleSide 会与地形/自身共面
     // 产生 z-fighting 与透明互遮挡闪烁；其几何极简且为全场唯一透明物 ⇒ 正常写深度最稳。
@@ -382,13 +449,15 @@ export function assembleSceneryMaterials(gltf, {
     }
   });
   // 动画混合层材质登记：uTime 每帧写回放秒数（运行时）；烘焙单帧不消费
-  const animLayerMats = [];
-  gltf.scene.traverse((o) => {
+  const animLayerMats: ShaderMaterial[] = [];
+  gltf.scene.traverse((node) => {
+    const o = node as Mesh
     if (!o.isMesh) return;
     const ms = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
     for (const mm of ms) {
       // 任何带 uTime 的材质都按回放时钟驱动（混合层的 uShiftRate、水面的 uShift0/1）
-      if (mm && mm.uniforms && mm.uniforms.uTime) animLayerMats.push(mm);
+      const u = (mm as ShaderMaterial | undefined)?.uniforms
+      if (mm && u && u.uTime) animLayerMats.push(mm as ShaderMaterial);
     }
   });
   return { animLayerMats, skyMeshes };

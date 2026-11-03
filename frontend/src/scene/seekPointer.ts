@@ -6,13 +6,13 @@
  * 一次性补播（飘字/爆散全部同时刷出）。与 2D 同语义：seek 只恢复确定性状态，
  * **不重放历史 transient**。
  *
- * @param {Array} events 按时间升序的事件数组
- * @param {number} t 目标时刻（含）
- * @param {(e: any) => number} [keyOf] 取时刻的函数，缺省 `e => e.t`
- * @returns {number} 第一个时刻 > t 的下标（全部 <= t 时返回 events.length）
+ * @param events 按时间升序的事件数组
+ * @param t 目标时刻（含）
+ * @param keyOf 取时刻的函数，缺省 `e => e.t`（事件缺 t 时与旧 JS 的 undefined 比较同语义：停在原处）
+ * @returns 第一个时刻 > t 的下标（全部 <= t 时返回 events.length）
  */
-export function firstIndexAfter(events, t, keyOf) {
-  const at = keyOf || ((e) => e.t)
+export function firstIndexAfter<E>(events: readonly E[], t: number, keyOf?: (e: E) => number): number {
+  const at: (e: E) => number = keyOf ?? ((e) => (e as { t?: number }).t as number)
   let i = 0
   while (i < events.length && at(events[i]) <= t) i++
   return i

@@ -6,7 +6,12 @@
  * 观者右手方向 R = (−uz, ux)。CanvasTexture 默认 flipY：画布顶边对应 v = 1，
  * 所以 v 轴沿 U、u 轴沿 R。
  */
-export function orientDiscUv(offsets, uv, ux, uz) {
+export function orientDiscUv(
+  offsets: ArrayLike<number>,
+  uv: { [index: number]: number },
+  ux: number,
+  uz: number,
+): { [index: number]: number } {
   const rx = -uz, rz = ux
   for (let i = 0; i < offsets.length / 2; i++) {
     const dx = offsets[i * 2], dz = offsets[i * 2 + 1]

@@ -7,6 +7,7 @@
 // 材质，grid 侧单点更新全体生效；数据面机制在 armorCollisionPack.js）。
 // 消费方 tankViewer 经导入使用；材质语义/通道口径的注释随代码原样保留。
 import * as THREE from 'three'
+import type { Plane, Side, ShaderMaterial } from 'three'
 import { RC_GLSL_CONST, RC_GLSL_FUNCS } from '../armorCollisionPack.js'
 
 // ===== 实时穿透热力图（逐行对齐 BlitzKit PrimaryArmorSceneComponent fragment.glsl）=====
@@ -369,19 +370,19 @@ const EXTERNAL_FRAG = `
     }
 `;
 /** 辅助 RT 的深度占位：内建材质在 ?logdepth 渲染器下写对数深度，与 spaced 标准深度不同域。 */
-export function standardDepthMaterial(side = THREE.FrontSide) {
+export function standardDepthMaterial(side: Side = THREE.FrontSide): ShaderMaterial {
     return new THREE.ShaderMaterial({
         vertexShader: EXTERNAL_VERT, fragmentShader: DEPTH_ONLY_FRAG,
         colorWrite: false, depthTest: true, depthWrite: true, side, clipping: true,
     });
 }
-export function externalMaterial(thickness, penetration, clip) {
+export function externalMaterial(thickness: number, penetration: number | null | undefined, clip: Plane | null | undefined): ShaderMaterial {
     return new THREE.ShaderMaterial({
         vertexShader: EXTERNAL_VERT, fragmentShader: EXTERNAL_FRAG,
         depthWrite: false, depthTest: true,
         blending: THREE.AdditiveBlending,
-        clipping: clip != null,
-        clippingPlanes: clip ? [clip] : null,
+        // 无裁切面时省略 clipping/clippingPlanes（与传 false/null 的默认值等价）
+        ...(clip != null ? { clipping: true, clippingPlanes: [clip] } : {}),
         uniforms: { thickness: { value: thickness }, penetration: { value: penetration || 200 } },
     });
 }
@@ -501,7 +502,7 @@ const MODULE_STATE_FRAG = `
       gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
     }
 `;
-export function moduleStateMaterial(clip) {
+export function moduleStateMaterial(clip: Plane | null | undefined): ShaderMaterial {
     return new THREE.ShaderMaterial({
         vertexShader: EXTERNAL_VERT, fragmentShader: MODULE_STATE_FRAG,
         depthWrite: true, depthTest: true,
@@ -510,8 +511,7 @@ export function moduleStateMaterial(clip) {
         blendSrc: THREE.ZeroFactor, blendDst: THREE.OneFactor,
         blendEquationAlpha: THREE.AddEquation,
         blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.ZeroFactor,
-        clipping: clip != null,
-        clippingPlanes: clip ? [clip] : null,
+        ...(clip != null ? { clipping: true, clippingPlanes: [clip] } : {}),
     });
 }
 
@@ -523,7 +523,7 @@ export function moduleStateMaterial(clip) {
 export function createArmorShaderContext() {
     const resUniform = { value: new THREE.Vector2(1, 1) };   // 共享分辨率（低清/全清 pass 每帧切换）
 
-    const rcUniforms = {
+    const rcUniforms: Record<string, { value: unknown }> = {
         rcThickMul: { value: 1 },
         rcEnabled: { value: false },
         rcMode: { value: 0 },
@@ -541,7 +541,7 @@ export function createArmorShaderContext() {
         rcClipPlane: { value: new THREE.Vector4() },
         rcClipEnabled: { value: false },
     };
-    function penetrationMaterial(thickness) {
+    function penetrationMaterial(thickness: number): ShaderMaterial {
         return new THREE.ShaderMaterial({
             vertexShader: PBR_VERT, fragmentShader: PBR_FRAG,
             transparent: true, depthWrite: false,
@@ -588,7 +588,7 @@ export function createArmorShaderContext() {
         });
     }
     /** 间隙板两通道共享 uniforms（与穿透材质同一对象引用共享续飞变量——单点更新全体生效）。 */
-    function spacedCommonUniforms(thickness, penetration) {
+    function spacedCommonUniforms(thickness: number, penetration: number | null | undefined) {
         return {
             thickness: { value: thickness }, penetration: { value: penetration || 200 },
             caliber: { value: 120 }, ricochet: { value: 70 * Math.PI / 180 }, normalization: { value: 0 },
@@ -609,7 +609,7 @@ export function createArmorShaderContext() {
             rcClipEnabled: rcUniforms.rcClipEnabled,
         };
     }
-    function spacedMaterial(thickness, penetration, side) {
+    function spacedMaterial(thickness: number, penetration: number | null | undefined, side: Side): ShaderMaterial {
         return new THREE.ShaderMaterial({
             vertexShader: SPACED_VERT, fragmentShader: SPACED_FRAG,
             depthWrite: false, depthTest: true,
@@ -620,7 +620,7 @@ export function createArmorShaderContext() {
             uniforms: spacedCommonUniforms(thickness, penetration),
         });
     }
-    function spacedStateMaterial(thickness, penetration) {
+    function spacedStateMaterial(thickness: number, penetration: number | null | undefined): ShaderMaterial {
         return new THREE.ShaderMaterial({
             vertexShader: SPACED_VERT, fragmentShader: SPACED_STATE_FRAG,
             // 状态不可累加：最近板写入后，其余板深度测试失败（独占写入）
@@ -629,8 +629,8 @@ export function createArmorShaderContext() {
             uniforms: spacedCommonUniforms(thickness, penetration),
         });
     }
-    let _emptySpacedTex = null;
-    function emptySpacedTexture() {
+    let _emptySpacedTex: THREE.DataTexture | null = null;
+    function emptySpacedTexture(): THREE.DataTexture {
         if (!_emptySpacedTex) {
             const d = new Uint8Array([0, 0, 0, 0]);
             _emptySpacedTex = new THREE.DataTexture(d, 1, 1, THREE.RGBAFormat);
@@ -640,7 +640,7 @@ export function createArmorShaderContext() {
     }
 
     /** 释放本 context 的占位纹理（材质由场景 traverse 释放；这里只收 context 私有资源） */
-    function dispose() {
+    function dispose(): void {
         if (_emptySpacedTex) { _emptySpacedTex.dispose(); _emptySpacedTex = null }
     }
     return {

@@ -9,26 +9,44 @@
  * 不代表 GPU 负载）；返回新 DPR 仅在发生调整时，调用方负责 setPixelRatio +
  * 重设画布尺寸。ceilDpr ≤ floorDpr 时本控制器无调整空间（调用方应跳过装配）。
  */
+export interface DynResOptions {
+  ceilDpr: number
+  floorDpr?: number
+  step?: number
+  /** ≈45fps 以下视为超预算 */
+  downMs?: number
+  /** ≈60fps 即视为有余量。必须 > 16.7ms（60Hz VSync 帧间隔）：调用方喂的是 rAF 帧间隔而非渲染耗时——
+   *  真机上即使渲染只花几毫秒，帧间隔也被 VSync 钳在 16.7ms，恢复阈值低于它 = 降档后永远回不去
+   *  （评审复现：60Hz 下 2000 帧停在 DPR 1） */
+  upMs?: number
+  /** 滚动均值窗口（≈0.75s @60fps） */
+  windowN?: number
+  /** 一次调整后至少隔多少渲染帧才允许下一次（≈1s @60fps） */
+  cooldownFrames?: number
+}
+
+export interface DynResController {
+  dpr(): number
+  /** 喂一帧的 dt(ms)；返回调整后的 DPR（未调整返回 null）。 */
+  frame(dtMs: number): number | null
+}
+
 export function createDynRes({
   ceilDpr,
   floorDpr = 1,
   step = 0.25,
-  downMs = 22,        // ≈45fps 以下视为超预算
-  upMs = 17,          // ≈60fps 即视为有余量。必须 > 16.7ms（60Hz VSync 帧间隔）：
-                      // 调用方喂的是 rAF 帧间隔而非渲染耗时——真机上即使渲染只花
-                      // 几毫秒，帧间隔也被 VSync 钳在 16.7ms，恢复阈值低于它 =
-                      // 降档后永远回不去（评审复现：60Hz 下 2000 帧停在 DPR 1）
-  windowN = 45,       // 滚动均值窗口（≈0.75s @60fps）
-  cooldownFrames = 60,// 一次调整后至少隔多少渲染帧才允许下一次（≈1s @60fps）
-} = {}) {
+  downMs = 22,
+  upMs = 17,
+  windowN = 45,
+  cooldownFrames = 60,
+}: DynResOptions): DynResController {
   if (!(ceilDpr > floorDpr)) throw new Error(`dynRes: 无调整空间 (ceil ${ceilDpr} ≤ floor ${floorDpr})`)
   let dpr = ceilDpr
-  const window = []
+  const window: number[] = []
   let cooldown = 0
   return {
     dpr: () => dpr,
-    /** 喂一帧的 dt(ms)；返回调整后的 DPR（未调整返回 null）。 */
-    frame(dtMs) {
+    frame(dtMs: number): number | null {
       window.push(dtMs)
       if (window.length > windowN) window.shift()
       if (cooldown > 0) { cooldown -= 1; return null }

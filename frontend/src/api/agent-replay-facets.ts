@@ -454,6 +454,19 @@ export interface AgentAuthorShellEvent {
   shell_id: number
 }
 
+/** 可破坏地形区域实体（100m 格子锚点；游戏场景系 x/z） */
+export interface AgentDestructibleArea {
+  eid: number
+  x: number
+  z: number
+}
+
+/** 可破坏事件 envelope（prop：1=fragiles、2=柱状物、3=树倒；fall_dir = 8 位倒向角，LSB=1.40625°） */
+export interface AgentDestructibleEvent {
+  clock: number; area_eid: number; prop: number; slot: number
+  fall_dir: number; body_len: number; args: number[]
+}
+
 export interface AgentPlaybackFacet {
   version: number
   meta: AgentPlaybackMeta
@@ -494,11 +507,8 @@ export interface AgentPlaybackFacet {
   /** 独立炮塔实体轨迹（additive）；缺省/空数组 = 没有可用的炮塔事实 */
   detached_turrets?: AgentDetachedTurretTrack[]
   /** 可破坏地形（上游 2026-10-05 起 additive；旧产物缺失 = 特性禁用） */
-  destructible_areas?: { eid: number; x: number; z: number }[]
-  destructible_events?: {
-    clock: number; area_eid: number; prop: number; slot: number
-    fall_dir: number; body_len: number; args: number[]
-  }[]
+  destructible_areas?: AgentDestructibleArea[]
+  destructible_events?: AgentDestructibleEvent[]
 }
 
 // ---------- AI 事件数据：AiReviewFacet（v1；上游 v0.3.5 起含原始 HP 与 method8 证据） ----------

@@ -9,21 +9,25 @@
 //      被从俯视底图剔除；
 //   ② 漏剔除：`skit_ocean.sc2`/`port_ocean.sc2`（"ocean" 不被任何 token 命中）、malinovka
 //      25 块浮冰 `env_ma_ice02_*`（water 标记、名字不含水词）被当固体烘进底图。
+import type { Material, Mesh, Object3D } from 'three'
 import { isWaterName } from './sceneryMaterials.js'
 
+/** 场景材质上的语义标记（GLTFLoader 导出器写入 extras；键值由本模块鸭子判定）。 */
+export type SurfaceMaterial = Material | Material[]
+
 /** 新包判据：`asset.extras.surfaceFlags`（导出器 2026-10-09 起写入）——材质级 water 标记为权威。 */
-export function strictSurfacesOf(gltfScene) {
+export function strictSurfacesOf(gltfScene: Object3D | null | undefined): boolean {
   return !!(gltfScene && gltfScene.userData && gltfScene.userData.surfaceFlags)
 }
 
 /** 材质级水面标记（`extras.water`；材质或材质数组，取首个——数组是 GLTFLoader 的多材质网格）。 */
-export function materialIsWater(mat) {
+export function materialIsWater(mat: SurfaceMaterial | null | undefined): boolean {
   const m0 = Array.isArray(mat) ? mat[0] : mat
   return !!(m0 && m0.userData && m0.userData.water)
 }
 
 /** 材质级天空标记（`extras.sky`；材质或材质数组，任一命中）。 */
-export function materialHasSky(mat) {
+export function materialHasSky(mat: SurfaceMaterial | null | undefined): boolean {
   const ms = Array.isArray(mat) ? mat : [mat]
   return ms.some((m) => !!(m && m.userData && m.userData.sky))
 }
@@ -31,18 +35,19 @@ export function materialHasSky(mat) {
 /** 整份材质组都是天空语义（多材质网格按 group 共享一个节点；混合组无法安全拆分
  *  无限远/普通两种投影，按 fail-closed 整件当普通网格处理，避免把普通 group 投到
  *  无限远或让烘焙丢掉整件）。 */
-export function materialAllSky(mat) {
+export function materialAllSky(mat: SurfaceMaterial | null | undefined): boolean {
   const ms = Array.isArray(mat) ? mat : [mat]
   return ms.length > 0 && ms.every((m) => !!(m && m.userData && m.userData.sky))
 }
 
 /** 场景里是否存在任何 sky 语义标记（新包由导出器按 Skyobject 材质写入）。
  *  存在时天空判据只认材质标记；整份 GLB 都没有标记（旧包）才允许名字 fallback。 */
-export function sceneHasSkyFlags(root) {
+export function sceneHasSkyFlags(root: Object3D | null | undefined): boolean {
   let found = false
-  const walk = (o) => {
+  const walk = (o: Object3D | null | undefined): void => {
     if (found || !o) return
-    if (o.isMesh && materialHasSky(o.material)) { found = true; return }
+    const mesh = o as Mesh
+    if (mesh.isMesh && materialHasSky(mesh.material)) { found = true; return }
     for (const c of o.children || []) walk(c)
   }
   walk(root)
@@ -50,7 +55,7 @@ export function sceneHasSkyFlags(root) {
 }
 
 /** 水面语义判定：新包看材质标记，旧包回退节点名启发式（含 fountain）。 */
-export function isWaterNode(name, mat, { strictSurfaces }) {
+export function isWaterNode(name: string, mat: SurfaceMaterial | null | undefined, { strictSurfaces }: { strictSurfaces?: boolean }): boolean {
   if (!strictSurfaces) return isWaterName(name)
   return materialIsWater(mat)
 }
@@ -66,12 +71,12 @@ export function isWaterNode(name, mat, { strictSurfaces }) {
  *  渲染——烘焙 2026-10-14 起同样保留（此前"≥90% 图幅"几何剔除会把它们整块剔掉，露出可玩
  *  区外客户端 colormap 的暗色边带 = 用户报的"米德尔堡右上角黑块"；探针实证保留后该处
  *  恢复山体）。 */
-export function isSkyShellName(name) {
+export function isSkyShellName(name: string | null | undefined): boolean {
   return /sky/i.test(name || '')
 }
 
 /** 天空语义判定：新包（存在 sky 标记）只认材质 `extras.sky`；旧包回退节点名。 */
-export function isSkyShell(name, mat, { skyFlagsAvailable = false } = {}) {
+export function isSkyShell(name: string, mat: SurfaceMaterial | null | undefined, { skyFlagsAvailable = false }: { skyFlagsAvailable?: boolean } = {}): boolean {
   // 新包只要存在 sky 标记就按材质语义判定；`strictSurfaces` 属于水面判定，不得把天空
   // 退回节点名（否则烘焙与 3D 运行时会保留/剔除不同的网格）。多材质网格必须整组
   // 命中才走天空路径（混合组见 materialAllSky 的 fail-closed 说明）。
@@ -81,7 +86,7 @@ export function isSkyShell(name, mat, { skyFlagsAvailable = false } = {}) {
 
 /** 非完好态可破坏件（`D_` 前缀 / `State N`，N≥1，与旧烘焙正则逐字同式）：
  *  烘焙只烘当前完好态；运行时按回放时刻切换（不走此判定）。 */
-export function isNonIntactStateName(name) {
+export function isNonIntactStateName(name: string | null | undefined): boolean {
   return /^D_|State ?[1-9]/i.test(name || '')
 }
 
@@ -106,13 +111,13 @@ export function isNonIntactStateName(name) {
  *
  * `mdVariant`（跨变体标记节点）另算。
  */
-export function bakeDropNode(name, mat, {
+export function bakeDropNode(name: string, mat: SurfaceMaterial | null | undefined, {
   strictSurfaces, mdVariant = false, keepWater = false, skyFlagsAvailable = false,
-} = {}) {
+}: { strictSurfaces?: boolean; mdVariant?: boolean; keepWater?: boolean; skyFlagsAvailable?: boolean } = {}): boolean {
   if (mdVariant) return true
   if (isNonIntactStateName(name)) return true
   if (/invisible/i.test(name || '')) return true
   if (!keepWater && isWaterNode(name, mat, { strictSurfaces })) return true
-  if (isSkyShell(name, mat, { strictSurfaces, skyFlagsAvailable }) && !materialIsWater(mat)) return true
+  if (isSkyShell(name, mat, { skyFlagsAvailable }) && !materialIsWater(mat)) return true
   return false
 }

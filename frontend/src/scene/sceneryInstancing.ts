@@ -13,41 +13,57 @@
  * 两者相差的 T(p)·T(−p) 在矩阵乘法下消去，浮点序差异 ~1e-7 量级。
  */
 import * as THREE from 'three'
+import type { BufferGeometry, InstancedMesh, Material, Matrix4, Mesh, Object3D, Sphere, Vector3 } from 'three'
 
-/** 展平可渲染叶子：{ node, name, geometry, material, matrix, x, y, z }。
- *  matrix = 以 root 为父系的完整局部变换（含整条父链，.GLTFLoader 产出的叶子
- *  Mesh 单 primitive 单材质）。调用方负责先 root.updateMatrixWorld(true)（或等价地
- *  保证局部矩阵新鲜），本函数只读不写。 */
+/** 展平可渲染叶子。matrix = 以 root 为父系的完整局部变换（含整条父链；GLTFLoader 产出的叶子
+ *  Mesh 单 primitive 单材质——material 按 Material 建模）。调用方负责先 root.updateMatrixWorld(true)
+ *  （或等价地保证局部矩阵新鲜），本函数只读不写。 */
+export interface InstanceEntry {
+  node: Mesh
+  name: string
+  geometry: BufferGeometry
+  material: Material
+  matrix: Matrix4
+  x: number
+  y: number
+  z: number
+  /** 烘焙光照图的逐实例 UV 变换 [sx, sy, ox, oy]（导出器节点 extras.lm；缺失 = null） */
+  lm: number[] | null
+}
+
 /** 透明材质不能进 InstancedMesh：three 只按 object 排序，批内实例顺序固定，
  *  重叠软混合物（alphaBlend 树/效果片）会随镜头出现错误混合。返回 true = 保留独立节点。 */
-export function hasTransparentMaterial(material) {
+export function hasTransparentMaterial(material: Material | Material[] | null | undefined): boolean {
   const ms = Array.isArray(material) ? material : [material]
   return ms.some((m) => !!(m && m.transparent))
 }
 
-export function collectInstanceEntries(root) {
-  const out = []
-  const stack = [{ node: root, parent: new THREE.Matrix4() }]
+export function collectInstanceEntries(root: Object3D): InstanceEntry[] {
+  const out: InstanceEntry[] = []
+  const stack: Array<{ node: Object3D; parent: Matrix4 }> = [{ node: root, parent: new THREE.Matrix4() }]
   while (stack.length) {
-    const { node, parent } = stack.pop()
+    const top = stack.pop()
+    if (!top) break
+    const { node, parent } = top
     // 本地矩阵必须新鲜：collect 通常发生在首次 render 之前（GLTFLoader 解析完只写了
     // position/quaternion/scale，node.matrix 尚未 compose），updateMatrix 幂等且廉价
     if (node.matrixAutoUpdate) node.updateMatrix()
     // 与节点本地矩阵合成（node.matrix 含自身 position/rotation/scale）
     const world = parent.clone().multiply(node.matrix)
     for (const child of node.children) stack.push({ node: child, parent: world })
-    if (!node.isMesh || !node.geometry) continue
+    const mesh = node as Mesh
+    if (!mesh.isMesh || !mesh.geometry) continue
     const e = world.elements
     out.push({
-      node,
-      name: node.name || '',
-      geometry: node.geometry,
-      material: node.material,
+      node: mesh,
+      name: mesh.name || '',
+      geometry: mesh.geometry,
+      material: mesh.material as Material,   // GLTFLoader 叶子单 primitive 单材质（见文件头契约）
       matrix: world,
       x: e[12], y: e[13], z: e[14],
       // 烘焙光照图的逐实例 UV 变换 [sx, sy, ox, oy]（导出器节点 extras.lm；
       // 客户端 `varTexCoord1 = uvScale*texcoord1 + uvOffset` 是逐材质实例的）
-      lm: (node.userData && Array.isArray(node.userData.lm)) ? node.userData.lm : null,
+      lm: (mesh.userData && Array.isArray(mesh.userData.lm)) ? mesh.userData.lm : null,
     })
   }
   return out
@@ -58,9 +74,20 @@ export function collectInstanceEntries(root) {
  *  视锥剔除（镜头看半张图，视野外的实例也全量提交，林荫图实测减半的树渲染
  *  量全靠它）；分片后每片包围球局部化，剔除恢复到格粒度，draw call 总量
  *  仍 ≈ 片数（远小于实例数）。cellSize = Infinity 关闭分片（单批，兼容旧形态）。 */
-export function groupInstanceBatches(entries, cellSize = Infinity) {
-  const out = []
-  const byGeoMat = new Map()
+export interface InstanceBatch {
+  geometry: BufferGeometry
+  material: Material
+  items: InstanceEntry[]
+}
+
+/** 按 (geometry, material, 宫格) 分组：每片独立 InstancedMesh。
+ *  cellSize 有限时按世界坐标宫格分片——整批一个跨全图的包围球会失去逐实例
+ *  视锥剔除（镜头看半张图，视野外的实例也全量提交，林荫图实测减半的树渲染
+ *  量全靠它）；分片后每片包围球局部化，剔除恢复到格粒度，draw call 总量
+ *  仍 ≈ 片数（远小于实例数）。cellSize = Infinity 关闭分片（单批，兼容旧形态）。 */
+export function groupInstanceBatches(entries: readonly InstanceEntry[], cellSize = Infinity): InstanceBatch[] {
+  const out: InstanceBatch[] = []
+  const byGeoMat = new Map<string, { geometry: BufferGeometry; material: Material; cells: Map<string, InstanceEntry[]> }>()
   for (const e of entries) {
     const gk = `${e.geometry.uuid}|${e.material.uuid}`
     let g = byGeoMat.get(gk)
@@ -86,7 +113,7 @@ export function groupInstanceBatches(entries, cellSize = Infinity) {
 /** 由批次构造 InstancedMesh（矩阵在构造时写入；动态改写由调用方 needsUpdate）。
  *  必须在全部实例矩阵写入后 computeBoundingSphere——视锥剔除用的球要罩住**所有**
  *  实例，用几何自身球会按原点剔错（远处实例整批消失）。 */
-export function buildInstancedMesh(batch) {
+export function buildInstancedMesh(batch: InstanceBatch): InstancedMesh {
   const mesh = new THREE.InstancedMesh(batch.geometry, batch.material, batch.items.length)
   // 烘焙光照图的逐实例 UV 变换：材质（extras.lightmap）按客户端公式
   // `albedo(UV0) × lightmap(UV1×uvScale+uvOffset) × 2` 采样，变换必须逐实例给
@@ -125,10 +152,10 @@ export function buildInstancedMesh(batch) {
  * 不可合批（透明排序/单独节点）但带逐节点光照图变换的网格：用**单实例 InstancedMesh**
  * 承载。这样既保留"一个 object 一个透明排序单位"，又复用 buildInstancedMesh 的 aLm
  * 逐实例 UV 变换（否则非实例路径按原始 uv1 采样，会读错 atlas 区域）。
- * @returns {{entry:object, mesh:THREE.InstancedMesh}[]}
+ * @returns {entry, mesh} 列表（单实例 InstancedMesh 与其来源 entry）
  */
-export function buildStandaloneLightmappedMeshes(entries, target) {
-  const out = []
+export function buildStandaloneLightmappedMeshes(entries: readonly InstanceEntry[], target: Object3D): Array<{ entry: InstanceEntry; mesh: InstancedMesh }> {
+  const out: Array<{ entry: InstanceEntry; mesh: InstancedMesh }> = []
   for (const e of entries) {
     if (!e || !e.lm || !e.geometry || !e.material) continue
     const mesh = buildInstancedMesh({ geometry: e.geometry, material: e.material, items: [e] })
@@ -141,7 +168,7 @@ export function buildStandaloneLightmappedMeshes(entries, target) {
 
 /** 隐藏实例 = 远处 + 微缩：不用精确零矩阵（奇异矩阵进 raycast 的求逆会产生 NaN 路径），
  *  微缩退化三角形 GPU 直接丢弃、包围球/射线球测都不可能命中。 */
-export function writeHiddenInstance(mesh, idx) {
+export function writeHiddenInstance(mesh: InstancedMesh, idx: number): void {
   _m.compose(_hiddenPos, _idQ, _tinyScale)
   mesh.setMatrixAt(idx, _m)
 }
@@ -155,7 +182,7 @@ const _tinyScale = new THREE.Vector3(1e-6, 1e-6, 1e-6)
  * 树倒实例矩阵：out = T(pivot) · R(axis, angle) · T(−pivot) · base。
  * 与旧 pivot 装配逐值等价（见文件头）；axis 为 root 局部系（z 上）的世界轴。
  */
-export function fallMatrix(base, pivotX, pivotY, pivotZ, axis, angle, out) {
+export function fallMatrix(base: Matrix4, pivotX: number, pivotY: number, pivotZ: number, axis: Vector3, angle: number, out: Matrix4): Matrix4 {
   _t1.makeTranslation(-pivotX, -pivotY, -pivotZ)
   _t2.makeTranslation(pivotX, pivotY, pivotZ)
   _r.makeRotationAxis(axis, angle)
@@ -174,16 +201,21 @@ const _r = new THREE.Matrix4()
  *    模型虽可见，仍被旧球剔除、射线在球测先被拒。
  *  修法取评审建议的覆盖式：隐藏槽位按 base 位姿计入覆盖（不纳入 y=-1e6
  *  隐藏矩阵），显隐翻转无需再维护球。 */
-export function refreshBatchSphere(mesh, batch, isHidden) {
+export function refreshBatchSphere(
+  mesh: InstancedMesh,
+  batch: Pick<InstanceBatch, 'geometry' | 'items'>,
+  isHidden?: (it: InstanceEntry) => boolean,
+): Sphere {
   const sph = new THREE.Sphere()
   sph.makeEmpty()
   if (!batch.geometry.boundingSphere) batch.geometry.computeBoundingSphere()
+  const geoSphere = batch.geometry.boundingSphere as Sphere   // computeBoundingSphere 必然落球
   const m = new THREE.Matrix4()
   const tmp = new THREE.Sphere()
   batch.items.forEach((it, i) => {
     if (isHidden && isHidden(it)) m.copy(it.matrix)   // 隐藏：base 位姿（合法可恢复位置）
     else mesh.getMatrixAt(i, m)                       // 可见：当前实例矩阵
-    tmp.copy(batch.geometry.boundingSphere).applyMatrix4(m)
+    tmp.copy(geoSphere).applyMatrix4(m)
     sph.union(tmp)
   })
   if (mesh.boundingSphere) mesh.boundingSphere.copy(sph)

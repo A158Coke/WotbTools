@@ -33,7 +33,7 @@ describe('playbackScene 手写 shader 的实例化接线', () => {
   // 手写 vertexShader 直接乘 modelViewMatrix/modelMatrix 而不带 USE_INSTANCING 分支，
   // 整批实例会全部叠画在原点（叶卡、ST| 树干各踩过一次）。锁定：每个手写顶点着色器
   // 只要用了模型矩阵就必须有实例分支。场景自定义 shader 已平移至 sceneryMaterials.js。
-  const matSrc = readFileSync(resolve(here, 'sceneryMaterials.js'), 'utf8')
+  const matSrc = readFileSync(resolve(here, 'sceneryMaterials.ts'), 'utf8')
     .replace(/\/\/[^\n]*/g, '')
     .replace(/\/\*[\s\S]*?\*\//g, '')
   it('每个使用模型矩阵的 vertexShader 都必须处理 USE_INSTANCING（单 mesh 地形除外）', () => {

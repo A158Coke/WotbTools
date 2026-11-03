@@ -5,7 +5,7 @@ import { dirname, resolve } from 'node:path'
 import {
   nameChainOf, nearestInstance, chainVisible,
   buildMeshOwnerMap, meshOwnerKey, stateVisualLabel, formatPickReport,
-} from './pickDebug.js'
+} from './pickDebug.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 

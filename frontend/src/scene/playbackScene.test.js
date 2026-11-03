@@ -19,7 +19,7 @@ import { createHash } from 'node:crypto'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { assetProvider } from './assetProvider.js'
-import { foliageClip } from './sceneryMaterials.js'
+import { foliageClip } from './sceneryMaterials.ts'
 import { createPlaybackStore } from './playbackStore.js'
 import { fixtureFacets, requireFixtures } from '../replay-local/__golden__/agentWasmNode.js'
 import { buildCanonicalReplayFacts, entityFirstSeenByAccount } from '../replay-local/canonical/facts.js'
@@ -93,7 +93,7 @@ vi.mock('three', async (importOriginal) => {
  * "炮管里那段不画"时把 `muzzleTip.reach` 设成炮管长度，模拟炮口在起点前方 reach 米处。
  */
 const muzzleTip = vi.hoisted(() => ({ reach: 0 }))
-vi.mock('./battleFx.js', async (importOriginal) => {
+vi.mock('./battleFx.ts', async (importOriginal) => {
   const actual = await importOriginal()
   return {
     ...actual,
@@ -106,7 +106,7 @@ vi.mock('./battleFx.js', async (importOriginal) => {
 import { initPlayback, QUALITY_PRESETS } from './playbackScene.js'
 import { buildGroundGeometry } from './groundPass.js'
 import { ANNOTATION_LIFT } from './playback/annotation3d.js'
-import { BURST_SECS, FX_BUDGETS } from './battleFx.js'
+import { BURST_SECS, FX_BUDGETS } from './battleFx.ts'
 
 /** 最小可用 PlaybackData：空车队 + 一张地图。资产阶段与空名册都不会因此抛错。
  *  t_start 用非 0 值：`startTime` 只在 startPlayback 尾部写入，可作为「过期续体是否

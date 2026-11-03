@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
-import { pointsAt } from './supremacyPoints.js'
+import { pointsAt } from './supremacyPoints.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 

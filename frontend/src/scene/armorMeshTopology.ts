@@ -6,20 +6,24 @@
  * 顶点按 1e-5 m 量化后焊接：glTF 导出会复制顶点（法线/UV 接缝），只有位置相同
  * 才算同一条边。
  */
-const _cache = new WeakMap()
+import type { BufferAttribute, BufferGeometry, InterleavedBufferAttribute } from 'three'
+
+const _cache = new WeakMap<BufferGeometry, boolean>()
 const QUANTIZE = 1e5
 
-function vertexKey(position, index) {
+type PositionAttribute = BufferAttribute | InterleavedBufferAttribute
+
+function vertexKey(position: PositionAttribute, index: number): string {
     return `${Math.round(position.getX(index) * QUANTIZE)},${Math.round(position.getY(index) * QUANTIZE)},${Math.round(position.getZ(index) * QUANTIZE)}`
 }
 
 /** 闭合流形 → true；开放面片 / 空几何 / 非流形 → false（按开放面处理，双面可见）。 */
-export function isClosedSurfaceGeometry(geometry) {
+export function isClosedSurfaceGeometry(geometry: BufferGeometry | null | undefined): boolean {
     if (!geometry) return false
     const cached = _cache.get(geometry)
     if (cached !== undefined) return cached
 
-    const position = geometry.attributes && geometry.attributes.position
+    const position = geometry.attributes && geometry.attributes.position as PositionAttribute | undefined
     const index = geometry.index
     const vertexCount = index ? index.count : (position ? position.count : 0)
     if (!position || vertexCount < 3) {
@@ -27,7 +31,7 @@ export function isClosedSurfaceGeometry(geometry) {
         return false
     }
 
-    const edges = new Map()
+    const edges = new Map<string, number>()
     let closed = true
     for (let i = 0; i + 2 < vertexCount; i += 3) {
         const a = index ? index.getX(i) : i

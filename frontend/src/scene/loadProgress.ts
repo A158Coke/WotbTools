@@ -6,17 +6,39 @@
  */
 
 /** 单项进度：完成 = 1；字节总量已知 = loaded/total；未知 = 0（只在完成时跳到 1） */
-function itemFraction(item) {
+interface LoadItem {
+  loaded: number
+  total: number
+  done: boolean
+}
+
+export interface LoadProgressSnapshot {
+  fraction: number | null
+  done: number
+  total: number
+}
+
+export type LoadProgressOnChange = (snapshot: LoadProgressSnapshot) => void
+
+function itemFraction(item: LoadItem): number {
   if (item.done) return 1
   if (item.total > 0) return Math.min(1, Math.max(0, item.loaded / item.total))
   return 0
 }
 
-/**
- * @param {(snapshot: { fraction: number | null, done: number, total: number }) => void} [onChange]
- */
-export function createLoadProgress(onChange) {
-  const items = new Map()
+export interface LoadProgressTracker {
+  /** 登记一项（重复登记无副作用） */
+  expect(key: string): void
+  /** 字节进度（XHR ProgressEvent：loaded / total；lengthComputable=false 时 total=0） */
+  update(key: string, loaded: number, total: number): void
+  /** 完成（成功或失败都算结束；未登记项忽略，避免虚构工作量） */
+  complete(key: string): void
+  reset(): void
+  snapshot(): LoadProgressSnapshot
+}
+
+export function createLoadProgress(onChange?: LoadProgressOnChange): LoadProgressTracker {
+  const items = new Map<string, LoadItem>()
   let last = 0
 
   function snapshot() {
@@ -39,12 +61,12 @@ export function createLoadProgress(onChange) {
 
   return {
     /** 登记一项（重复登记无副作用） */
-    expect(key) {
+    expect(key: string) {
       if (!items.has(key)) items.set(key, { loaded: 0, total: 0, done: false })
       emit()
     },
     /** 字节进度（XHR ProgressEvent：loaded / total；lengthComputable=false 时 total=0） */
-    update(key, loaded, total) {
+    update(key: string, loaded: number, total: number) {
       const item = items.get(key)
       if (!item) return
       item.loaded = Number(loaded) || 0
@@ -52,7 +74,7 @@ export function createLoadProgress(onChange) {
       emit()
     },
     /** 完成（成功或失败都算结束；未登记项忽略，避免虚构工作量） */
-    complete(key) {
+    complete(key: string) {
       const item = items.get(key)
       if (!item) return
       item.done = true
@@ -68,7 +90,7 @@ export function createLoadProgress(onChange) {
 }
 
 /** 0–1 → 0–100 的整数百分比；null（未知）保持 null，进度条显示为不确定态 */
-export function progressPercent(fraction) {
+export function progressPercent(fraction: number | null | undefined): number | null {
   if (fraction == null || !Number.isFinite(fraction)) return null
   return Math.round(Math.min(1, Math.max(0, fraction)) * 100)
 }

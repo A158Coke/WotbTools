@@ -1,5 +1,10 @@
 /**
  * 实时装填条求值（纯函数；2D / 3D 共用）。**逐发状态模型**，对齐游戏客户端。
+ */
+import type { AgentPlaybackShot, AgentReloadEffectiveEvent, AgentReloadEvent } from '../api/agent-replay-facets.js'
+
+/**
+ * 实时装填条求值（纯函数；2D / 3D 共用）。**逐发状态模型**，对齐游戏客户端。
  *
  * ── 客户端证据（Steam 客户端 `Data/`，均为 DVPL 容器） ──
  * 位置/结构：`UI/Screens/Battle/VehicleUIObjectMarker/VehicleUIObjectMarker.yaml` 的
@@ -85,25 +90,12 @@ export interface ShellState {
   progress: number
 }
 
-/** 相位条目（arena subtype 15/16/17 解码产物；facet reloads 的事件形状）。 */
-export interface ReloadPhaseEvent {
-  clock: number
-  eid?: number | null
-  phase: number
-  duration_s?: number | null
-  /** f4 = 服务器剩余发数快照（f2=5 上是就绪标志） */
-  count?: number | null
-}
-
-/** method 35「当前生效完整装填时长」条目。 */
-export interface ReloadEffectiveEntry {
-  clock: number
-  eid?: number | null
-  duration_s: number
-}
-
-/** 相位/时长条目的公共可排序形状（marks 归并按 clock 排序）。 */
-export type ReloadTimedEntry = ReloadPhaseEvent | ReloadEffectiveEntry
+/**
+ * 相位/时长条目 = Playback facet 的 wire 形状（agent-replay-facets.ts 是唯一 owner，
+ * 本模块只建 view 别名，不复制 wire DTO）。
+ */
+export type ReloadPhaseEvent = AgentReloadEvent
+export type ReloadEffectiveEntry = AgentReloadEffectiveEvent
 
 /** scheduledReady 的时间线变更条目（kind 判别：phase = f2=4/新定时相位，eff = method 35）。 */
 type ScheduledChange =
@@ -136,12 +128,8 @@ export interface TankJsonLike {
   configs?: readonly (MountedTankConfig | null | undefined)[] | null
 }
 
-/** reload 条目里可识别 shooter 的字段（shooter_eid 优先，shooter 兼容旧产物）。 */
-export interface ReloadShotTelemetry {
-  shooter_eid?: number | null
-  shooter?: number | null
-  t_fire: number
-}
+/** reload 消费的 shot 字段：facet shot（wire owner）+ 旧产物兼容的 `shooter` 字段。 */
+export type ReloadShotTelemetry = AgentPlaybackShot & { shooter?: number | null }
 
 export interface ReloadTelemetry {
   reloads?: readonly (ReloadPhaseEvent | null | undefined)[] | null

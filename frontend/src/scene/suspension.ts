@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import type { Object3D, Quaternion, Vector3 } from 'three'
 
 /**
  * 坦克悬挂求解（客户端同构）——纯函数层。
@@ -32,7 +33,7 @@ export const SUSP_FALLBACK = { travelUp: 0.08, travelDown: 0.08, reaction: 1.0 }
  * @param {number} up 上行（压缩）行程（m）
  * @param {number} down 下行（下垂）行程（m）
  */
-export function clampTravel(delta, up, down) {
+export function clampTravel(delta: number, up: number, down: number): number {
   const hi = Number.isFinite(up) ? up : SUSP_FALLBACK.travelUp;
   const lo = Number.isFinite(down) ? down : SUSP_FALLBACK.travelDown;
   return delta > hi ? hi : (delta < -lo ? -lo : delta);
@@ -42,7 +43,7 @@ export function clampTravel(delta, up, down) {
  * 限速逼近（客户端 `copysign(min(|Δ|, wheelsReactionSpeed·dt), Δ)`）：
  * 首次可见（`snap`）直接吸附——与客户端"首帧不插值"一致。
  */
-export function rateLimitTravel(current, target, rate, dt, snap) {
+export function rateLimitTravel(current: number, target: number, rate: number, dt: number, snap: unknown): number {
   if (snap || !(dt > 0)) return target;
   const step = (Number.isFinite(rate) && rate > 0 ? rate : SUSP_FALLBACK.reaction) * dt;
   const d = target - current;
@@ -54,7 +55,7 @@ export function rateLimitTravel(current, target, rate, dt, snap) {
 const TWO_PI = Math.PI * 2;
 
 /** 周期折叠到 ±2π（客户端 `θ = wrap(θ + …)`） */
-export function wrapSpin(theta) {
+export function wrapSpin(theta: number): number {
   let t = theta % TWO_PI;
   if (t > Math.PI) t -= TWO_PI;
   if (t < -Math.PI) t += TWO_PI;
@@ -66,7 +67,7 @@ export function wrapSpin(theta) {
  * 符号：模型系（y 前 / z 上 / x 右）里"向前滚动且不打滑" ⇒ 绕 **+X** 的角速度 ω = −v/r
  * （顶部随车向前、底部相对车向后），与客户端写骨骼旋转块的 (−θ/2) 半角域一致。
  */
-export function spinStep(theta, distSide, radius) {
+export function spinStep(theta: number, distSide: number, radius: number): number {
   if (!(radius > 1e-4)) return theta;
   return wrapSpin(theta - distSide / radius);
 }
@@ -81,7 +82,7 @@ export function spinStep(theta, distSide, radius) {
  * 网格真实斜率**大 3.4~19×**（30 辆抽样，中位 4.5×）。原因是那条常数活在客户端自己的
  * shader V 空间（一个 chunk 一份原型），与导出网格的图集式 per-link V 不同量纲。
  */
-export function treadScrollStep(vOffset, distSide, dvPerM) {
+export function treadScrollStep(vOffset: number, distSide: number, dvPerM: number): number {
   if (!(Math.abs(dvPerM) > 1e-6)) return vOffset;
   return vOffset + distSide * dvPerM;
 }
@@ -90,10 +91,20 @@ export function treadScrollStep(vOffset, distSide, dvPerM) {
  * 地形"掉高"折算到车体系局部 +z：把世界竖直差除以车体 up 轴的世界 y 分量。
  * 车体倾倒到 |upY| 过小时返回 0（求解停摆而非发散，fail-safe）。
  */
-export function groundDropLocal(terrainH, restWorldY, upWorldY) {
+export function groundDropLocal(terrainH: number, restWorldY: number, upWorldY: number): number {
   if (!(Math.abs(upWorldY) > 0.25)) return 0;
   return (terrainH - restWorldY) / upWorldY;
 }
+
+/** 客户端 wheels 记录中求解层消费的几何字段（链坐标系）。 */
+export interface SuspensionWheel {
+  longitudinal: number
+  radius?: number
+  centerZ?: number
+}
+
+/** 静止链路点：`[纵向 y, 高度 z]`（模型系纵剖面，米）。 */
+export type ChainPoint = [number, number]
 
 /**
  * 链点 → 负重轮 挂接表（客户端 `SuspensionGenerator` 的「点→轮」映射的等价重建）：
@@ -104,7 +115,7 @@ export function groundDropLocal(terrainH, restWorldY, upWorldY) {
  * @param {Array<{longitudinal:number, radius:number}>} wheels 逐轮（纵向位置 = 链坐标系里的 y）
  * @returns {Int32Array} 每点的轮号，−1 = 无
  */
-export function attachChainToWheels(chain, wheels, tolFactor = 0.45) {
+export function attachChainToWheels(chain: readonly ChainPoint[], wheels: readonly SuspensionWheel[], tolFactor = 0.45): Int32Array {
   const out = new Int32Array(chain.length).fill(-1);
   // 判据 = 「链点在**该轮圆周上**」：|‖p − c‖ − r| 落在履带板厚容差内。
   // 单看纵向会误挂——上支段与底段同纵向，但上支段在轮顶上方一个直径处（客户端真正的
@@ -139,17 +150,17 @@ export function attachChainToWheels(chain, wheels, tolFactor = 0.45) {
  * @param {{upper_factor:number, length_power:number}} bend 垂弧系数
  * @returns {{maxAbs:number}} 本次解算的最大绝对位移（脏判据用）
  */
-export function solveChain(out, rest, attach, wheelDelta, groundDrop, wheels, bend) {
+export function solveChain(out: Float64Array | number[], rest: readonly ChainPoint[], attach: Int32Array, wheelDelta: readonly number[], groundDrop: readonly number[], wheels: readonly SuspensionWheel[], bend: { upper_factor?: number; length_power?: number } | null | undefined): { maxAbs: number } {
   const n = rest.length;
   let maxAbs = 0;
   // 1) 逐轮偏移：挂接点随轮移动（客户端 `chain[i] += wheelInfo.offset`）
   for (let i = 0; i < n; i++) {
     const w = attach[i];
-    out[i] = rest[i][1] + (w >= 0 ? wheelDelta[w] || 0 : 0);
+    out[i] = rest[i][1] + (w >= 0 ? (wheelDelta[w] ?? 0) : 0);
   }
   // 2) 悬空段垂弧：在**支承点**（挂接点）之间按 `(t − t²)` 抛物线向下垂
-  const sagFactor = bend && Number.isFinite(bend.upper_factor) ? Math.max(0, bend.upper_factor) : 0;
-  const sagPow = bend && Number.isFinite(bend.length_power) ? bend.length_power : 0.5;
+  const sagFactor = bend && typeof bend.upper_factor === 'number' && Number.isFinite(bend.upper_factor) ? Math.max(0, bend.upper_factor) : 0;
+  const sagPow = bend && typeof bend.length_power === 'number' && Number.isFinite(bend.length_power) ? bend.length_power : 0.5;
   let i = 0;
   while (i < n) {
     if (attach[i] < 0) { i++; continue; }
@@ -183,7 +194,7 @@ export function solveChain(out, rest, attach, wheelDelta, groundDrop, wheels, be
   }
   // 4) 铺地（客户端 Laying）：低于地面的点抬到地面；地面在下方（drop<0）时**不跟**下来
   for (let k = 0; k < n; k++) {
-    const laid = rest[k][1] + (groundDrop[k] || 0);
+    const laid = rest[k][1] + (groundDrop[k] ?? 0);
     if (out[k] < laid) out[k] = laid;
   }
   for (let k = 0; k < n; k++) {
@@ -201,7 +212,7 @@ export function solveChain(out, rest, attach, wheelDelta, groundDrop, wheels, be
  * @param {Array<[number, number]>} rest 静止链路
  * @returns {{seg: Int32Array, t: Float32Array}}
  */
-export function vertexChainParams(pos, rest) {
+export function vertexChainParams(pos: ArrayLike<number>, rest: readonly ChainPoint[]): { seg: Int32Array; t: Float32Array } {
   const nv = pos.length / 3;
   const seg = new Int32Array(nv);
   const t = new Float32Array(nv);
@@ -228,7 +239,7 @@ export function vertexChainParams(pos, rest) {
 /** 两条解算链的**逐点最大偏差**（米）。用途：履带**法线**重算闸门——与"上次重算法线时的链"
  *  比较。累计统计量（最大幅度 / 均值）表达不了空间分布：把 0.1 m 的形变从一处挪到另一处时
  *  两者都不变、而法线必须重算（2026-10-10 review 复审 P2）。空 / 长度不符 ⇒ Infinity（fail-safe）。 */
-export function chainDrift(prev, cur) {
+export function chainDrift(prev: ArrayLike<number> | null | undefined, cur: ArrayLike<number> | null | undefined): number {
   if (!prev || !cur || prev.length !== cur.length) return Infinity;
   let m = 0;
   for (let i = 0; i < cur.length; i++) {
@@ -242,7 +253,7 @@ export function chainDrift(prev, cur) {
  *  链相同 ⇒ 顶点逐点相同、无需重传 GPU。形变"下发判定"用它而不是最大幅度——
  *  幅度相同但分布不同（如把 0.1 的形变从一处挪到另一处）时 max 不变、顶点已变
  *  （2026-10-10 review P2）。空/长度不符视为变化（首帧 fail-safe）。 */
-export function chainChanged(prev, cur) {
+export function chainChanged(prev: ArrayLike<number> | null | undefined, cur: ArrayLike<number> | null | undefined): boolean {
   if (!prev || !cur || prev.length !== cur.length) return true;
   for (let i = 0; i < cur.length; i++) if (prev[i] !== cur[i]) return true;
   return false;
@@ -260,7 +271,7 @@ export function chainChanged(prev, cur) {
  * @param {number[]} [axis] 位移方向（网格局部系里的"模型 +z"；缺省 [0,0,1]）
  * @returns {number} 本帧最大 |位移|（m）
  */
-export function applyChainToVertices(out, base, params, chainZ, restZ, axis) {
+export function applyChainToVertices(out: Float32Array | number[], base: ArrayLike<number>, params: { seg: Int32Array; t: Float32Array }, chainZ: ArrayLike<number>, restZ: readonly number[], axis?: readonly number[] | null): number {
   const nv = out.length / 3;
   const { seg, t } = params;
   const ax = axis ? axis[0] : 0, ay = axis ? axis[1] : 0, az = axis ? axis[2] : 1;
@@ -297,7 +308,7 @@ export function applyChainToVertices(out, base, params, chainZ, restZ, axis) {
  * @param {number} offset 累计偏移（V 单位，由 `treadScrollStep` 累计）
  * @returns {number} 写入用的相位（= frac(offset)）
  */
-export function writeUvOffsetV(uvArray, uvBase, offset) {
+export function writeUvOffsetV(uvArray: { [index: number]: number }, uvBase: ArrayLike<number>, offset: number): number {
   const phase = offset - Math.floor(offset);
   for (let i = 0; i < uvBase.length / 2; i++) {
     uvArray[i * 2 + 1] = uvBase[i * 2 + 1] + phase;
@@ -311,7 +322,7 @@ export function writeUvOffsetV(uvArray, uvBase, offset) {
  * 用途：花纹滚动方向的物理判据——底段履带材料相对车体**向后**流动（接地段在世界里静止），
  * 而链路坐标的"向后"是 +s 还是 −s 取决于链路自身的点序，故先取走向再定符号。
  */
-export function chainBottomRunDir(chain, eps = 0.05) {
+export function chainBottomRunDir(chain: readonly ChainPoint[], eps = 0.05): number {
   if (!Array.isArray(chain) || chain.length < 3) return 1;
   let zmin = Infinity;
   for (const p of chain) if (p[1] < zmin) zmin = p[1];
@@ -344,8 +355,8 @@ const _wpV = new THREE.Vector3();
  * @param {THREE.Vector3} travelAxis 行程方向（局部 +z 等效轴）
  * @param {number} travel 行程位移（m）
  */
-export function applyWheelSpin(node, restPos, restQuat, pivot, restPivotRot, spinQuat,
-                               travelAxis, travel) {
+export function applyWheelSpin(node: Object3D, restPos: Vector3, restQuat: Quaternion, pivot: Vector3, restPivotRot: Vector3, spinQuat: Quaternion,
+                               travelAxis: Vector3, travel: number): void {
   node.quaternion.copy(restQuat).multiply(spinQuat);
   _wpV.copy(pivot).applyQuaternion(spinQuat).applyQuaternion(restQuat);   // R_rest·R_spin·pivot
   node.position.copy(restPos).add(restPivotRot).sub(_wpV)
@@ -366,7 +377,7 @@ export function applyWheelSpin(node, restPos, restQuat, pivot, restPivotRot, spi
  * @param {Array<[number, number]>} samples `[弧长(m), V]`
  * @returns {{slope:number, pairs:number, ok:boolean}} ok = 样本对足够且 |slope| 有效
  */
-export function measureBeltUvSlope(samples, opts) {
+export function measureBeltUvSlope(samples: readonly (readonly [number, number])[], opts?: { bucket?: number; minStep?: number; maxStep?: number; maxJump?: number; minPairs?: number }): { slope: number; pairs: number; ok: boolean } {
   const o = opts || {};
   const bucket = o.bucket || 0.01;
   const minStep = o.minStep || 0.02;
@@ -411,9 +422,9 @@ export function measureBeltUvSlope(samples, opts) {
 
 /** 桶内 V 去重（0.01 网格）：横向重复行的同值 V 只留一个——重复行是几何事实
  *  （履带板同弧长多行顶点），不剔除会把逐顶点对的斜率中位稀释向 0。 */
-function dedupeV(vArr) {
-  const seen = new Set();
-  const out = [];
+function dedupeV(vArr: number[]): number[] {
+  const seen = new Set<number>();
+  const out: number[] = [];
   for (const v of vArr) {
     const k = Math.round(v / 0.01);
     if (seen.has(k)) continue;
@@ -427,33 +438,33 @@ function dedupeV(vArr) {
  * 节点名解析：`chassis_wheel_{L,R}_NN` → `{side, index}`（客户端 `chassis_wheel_L_%.2d`
  * 同款绑定，编号从 01 起 = yaml `wheels` 数组下标 + 1）。
  */
-export function parseWheelNodeName(name) {
+export function parseWheelNodeName(name: string | null | undefined): { side: 'L' | 'R'; index: number } | null {
   const m = /^chassis_wheel_([LR])_(\d{2})$/.exec(name || '');   // 与客户端 `%.2d` 格式串同宽
   if (!m) return null;
-  return { side: m[1], index: parseInt(m[2], 10) };
+  return { side: m[1] as 'L' | 'R', index: parseInt(m[2], 10) };
 }
 
 /**
  * 节点名解析：`chassis_track_{L,R}`（单段）或 `chassis_track_{L,R}_NN`（多段模型，
  * 4/735 辆）→ `{side, segment}`；单段 segment = 0。
  */
-export function parseTrackNodeName(name) {
+export function parseTrackNodeName(name: string | null | undefined): { side: 'L' | 'R'; segment: number } | null {
   const m = /^chassis_track_([LR])(?:_(\d+))?$/.exec(name || '');
   if (!m) return null;
-  return { side: m[1], segment: m[2] ? parseInt(m[2], 10) : 0 };
+  return { side: m[1] as 'L' | 'R', segment: m[2] ? parseInt(m[2], 10) : 0 };
 }
 
 /**
  * 轮半径：纵剖面（模型 y/z）半跨的均值——圆柱轮胎的两个投影各给一条直径；
  * 取均值对网格偏心/多零件更稳（客户端从骨骼几何现算，同量级口径）。
  */
-export function wheelRadiusFromExtents(extentY, extentZ) {
+export function wheelRadiusFromExtents(extentY: number, extentZ: number): number {
   const r = (extentY + extentZ) / 4;
   return r > 1e-3 ? r : 0.3;
 }
 
 /** 链路平均段长 = 客户端的 `chunkLength`（相邻链点间距；多段模型取首段） */
-export function chainAverageSegment(chain) {
+export function chainAverageSegment(chain: readonly ChainPoint[]): number {
   if (!Array.isArray(chain) || chain.length < 2) return 0.25;
   let sum = 0;
   for (let i = 0; i + 1 < chain.length; i++) {
@@ -468,6 +479,6 @@ export function chainAverageSegment(chain) {
  * 侧向履带纵向位移（图省事的等价形）：由两侧"接触线中心"的世界位置差投影到车体前向。
  * 调用方传入上一帧与当前帧的侧中心位置与前向单位向量；返回带符号位移（m）。
  */
-export function sideTravel(prevX, prevZ, curX, curZ, fwdX, fwdZ) {
+export function sideTravel(prevX: number, prevZ: number, curX: number, curZ: number, fwdX: number, fwdZ: number): number {
   return (curX - prevX) * fwdX + (curZ - prevZ) * fwdZ;
 }

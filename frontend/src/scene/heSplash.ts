@@ -31,7 +31,64 @@
  */
 
 import * as THREE from 'three'
+import type { Plane, Vector3 } from 'three'
 import { raycastGridAll, RC, isClippedModuleHit } from './armorCollisionPack.js'
+import type { BuildRicochetGridResult, CollisionPack, CollisionPackFailure } from './armorCollisionPack.js'
+
+/** 单条射线的碰撞命中（armorCollisionPack 射线输出中 HE 采样消费的字段）。 */
+export interface HeRayHit {
+  t: number
+  section: string
+  thickness: number
+  variant?: number | null
+  point?: Vector3 | null
+}
+
+/** 单条射线的采样层（主装之前含主装的名义装甲链）。 */
+export interface HeLayer {
+  armor: number
+  primary: boolean
+  distance: number
+  section: string
+}
+
+export interface HeSampleOpts {
+  damage: number
+  explosionRadius: number
+  liningFactor?: number
+}
+
+export interface HeRaySample {
+  armor: number
+  distance: number
+  upper: number
+  lower: number
+  valid: boolean
+}
+
+export interface HeBestSample {
+  upper: number
+  lower: number
+  armor: number
+  distance: number
+  index: number
+  layers: HeLayer[]
+  direction?: number[]
+}
+
+export interface HeSplashResult {
+  min: number
+  max: number
+  avg: number
+  samples: number
+  best: HeBestSample | null
+  bestLower: HeBestSample | null
+  sampleStats: HeRaySample[] | null
+  /** 真实爆点：沿射向外移后的 origin（非点击表面点） */
+  origin?: number[]
+  /** 方向表约定最后一个方向 = 该顶点内法线（直射）时的层链 */
+  inwardLayers?: HeLayer[]
+}
 
 export const HE_SAMPLE = Object.freeze({
     LAT_STEPS: 20,
@@ -46,8 +103,8 @@ const PRIMARY = new Set(['hull', 'turret', 'gun'])
 const STEP = Math.PI / HE_SAMPLE.LAT_STEPS
 
 /** 固定球面方向表（模块加载时构造一次；世界坐标，不随装甲法线旋转）。 */
-export const HE_SAMPLE_DIRECTIONS = Object.freeze((() => {
-    const dirs = []
+export const HE_SAMPLE_DIRECTIONS: readonly Vector3[] = Object.freeze((() => {
+    const dirs: Vector3[] = []
     for (let i = 0; i < HE_SAMPLE.LON_STEPS; i++) {
         const phi = i * STEP
         const cosPhi = Math.cos(phi)
@@ -77,11 +134,11 @@ export const HE_SAMPLE_DIRECTIONS = Object.freeze((() => {
  * （AI 的履带/轮组层会连续累加，见文件头）；同一位置同 section 的重合三角形
  * 只算一层（射线掠过四边形对角线时是同一块板，不是两层）。收集到首个主装（含）为止。
  *
- * @param {Array<{t:number, section:string, thickness:number, variant:string|null}>} hits
- * @returns {Array<{armor:number, primary:boolean, distance:number, section:string}>}
+ * @param hits 单条射线的碰撞命中列表
+ * @returns 采样层列表（首个主装截断）
  */
-export function heLayersFromHits(hits) {
-    const layers = []
+export function heLayersFromHits(hits: readonly HeRayHit[]): HeLayer[] {
+    const layers: HeLayer[] = []
     for (const h of hits) {
         const prev = layers[layers.length - 1]
         if (prev && Math.abs(h.t - prev.distance) < 1e-6 && h.section === prev.section) continue
@@ -100,16 +157,16 @@ export function heLayersFromHits(hits) {
  * 同一口径，但不物化层对象/样本统计。热力图每顶点只读 avg，构建时 52 万条射线
  * 若都建层数组和 sampleStats 会产生上百万个小对象，这是纯分配开销。
  *
- * @param {Array<{t:number, section:string, thickness:number}>} hits
- * @param {{damage:number, explosionRadius:number, liningFactor?:number}} opts
- * @returns {{armor:number, distance:number, upper:number, lower:number, valid:boolean}}
+ * @param hits 单条射线的原始命中列表
+ * @param opts damage / explosionRadius / liningFactor
+ * @returns 名义装甲与归一化前 upper/lower（valid=false = 无主装）
  */
-export function heSampleFromHits(hits, { damage, explosionRadius, liningFactor = 1.0 }) {
+export function heSampleFromHits(hits: readonly HeRayHit[] | null | undefined, { damage, explosionRadius, liningFactor = 1.0 }: HeSampleOpts): HeRaySample {
     let armor = 0
     let dist = 0
     let hitPrimary = false
     let prevT = Infinity
-    let prevSection = null
+    let prevSection: string | null = null
     if (Array.isArray(hits)) {
         for (const h of hits) {
             if (!(dist < explosionRadius)) break
@@ -148,14 +205,15 @@ export function heSampleFromHits(hits, { damage, explosionRadius, liningFactor =
  *   sampleStats:Array<{armor:number, distance:number, upper:number, lower:number, valid:boolean}>}|null}
  *   null 仅表示入参非法（damage/radius 非正、rays 非数组）。
  */
-export function computeHeSplash(rays, { damage, explosionRadius, liningFactor = 1.0 }) {
+export function computeHeSplash(rays: readonly (readonly HeLayer[] | null | undefined)[] | null | undefined, opts: HeSampleOpts): HeSplashResult | null {
+    const { damage, explosionRadius, liningFactor = 1.0 } = opts
     if (!(damage > 0) || !(explosionRadius > 0) || !Array.isArray(rays)) return null
     let maxUpper = -Infinity
     let maxLower = -Infinity
-    let best = null
-    let bestLower = null
+    let best: HeBestSample | null = null
+    let bestLower: HeBestSample | null = null
     let samples = 0
-    const sampleStats = new Array(rays.length)
+    const sampleStats: HeRaySample[] = new Array(rays.length)
     for (let i = 0; i < rays.length; i++) {
         const layers = rays[i]
         // 与 func7695 一致：距离判断用“上一层距离”，因此可能多吃一个刚越过 R 的层；
@@ -219,11 +277,32 @@ export function computeHeSplash(rays, { damage, explosionRadius, liningFactor = 
  *   null = 采样器**跑不了**（pack/grid/入参不合法），调用方必须报错或显式降级，
  *   不得用单射线公式冒充采样结果。samples === 0 = 跑了但没有有效射线（权威 0）。
  */
-export function sampleHeSplash(pack, origin, opts) {
+export interface SampleHeSplashOpts extends HeSampleOpts {
+  /** 命中点指向射手/相机的外向单位向量（优先）；缺省时退回 normal */
+  originDir?: Vector3 | null
+  normal?: Vector3 | null
+  /** buildRicochetGrid() 结果，**必须有**：800 条射线走 DDA；缺失/失败 fail-closed 返回 null */
+  grid?: BuildRicochetGridResult | null
+  /** 可选方向子集（热力图预计算用低分辨率方向表）；缺省固定 800 方向 */
+  directions?: readonly Vector3[] | null
+  /** 当前 gun_mask 裁切面；被裁掉的炮管命中不参与采样 */
+  clipPlane?: Plane | null
+  originOffset?: number | null
+  /** 间隙甲按双面参与 HE 采样（背面命中的间隙屏可见）；需要单面时显式传 false */
+  twoSidedSpaced?: boolean
+  /** lean = true 时只累计 min/max/avg（热力图逐顶点场），不物化层链与 sampleStats */
+  lean?: boolean
+}
+
+export function sampleHeSplash(
+  pack: CollisionPack | CollisionPackFailure | null | undefined,
+  origin: Vector3 | null | undefined,
+  opts: SampleHeSplashOpts,
+): HeSplashResult | null {
     const { originDir, normal, damage, explosionRadius, liningFactor = 1.0 } = opts
     if (!pack || !pack.ok || !origin || !(damage > 0) || !(explosionRadius > 0)) return null
     if (!opts.grid || !opts.grid.ok) return null
-    const dirs = Array.isArray(opts.directions) && opts.directions.length
+    const dirs: readonly Vector3[] = Array.isArray(opts.directions) && opts.directions.length
         ? opts.directions : HE_SAMPLE_DIRECTIONS
     const offset = opts.originOffset != null ? opts.originOffset : HE_SAMPLE.ORIGIN_OFFSET
     const clipPlane = opts.clipPlane || null
@@ -240,7 +319,7 @@ export function sampleHeSplash(pack, origin, opts) {
         const n = out.clone().normalize()
         ro.addScaledVector(n, offset)
     }
-    const rays = lean ? null : new Array(dirs.length)
+    const rays: HeLayer[][] = lean ? [] : new Array<HeLayer[]>(dirs.length)
     let leanMin = -Infinity, leanMax = -Infinity, leanSamples = 0
     // 超过爆炸半径 R 的层不可能产生正伤害：computeHeSplash 的衰减项在 d ≥ R 时
     // ≤ 0，取 max 后夹 0；越过 R 的模块层也不可能抬高结果。因此把射线截到 R
@@ -282,7 +361,7 @@ export function sampleHeSplash(pack, origin, opts) {
             result.inwardLayers = rays[rays.length - 1] || []
         }
         // 可视化/诊断：记录 max-upper / max-lower 两个样本的方向（世界系）。
-        for (const key of ['best', 'bestLower']) {
+        for (const key of ['best', 'bestLower'] as const) {
             const sample = result[key]
             if (!sample) continue
             const idx = rays.indexOf(sample.layers)

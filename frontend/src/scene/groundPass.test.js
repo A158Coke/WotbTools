@@ -15,8 +15,8 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { loadTerrain, makeGroundMaterial } from './groundPass.js'
-import { assembleSceneryMaterials } from './sceneryAssembly.js'
-import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh } from './sceneryInstancing.js'
+import { assembleSceneryMaterials } from './sceneryAssembly.ts'
+import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh } from './sceneryInstancing.ts'
 import { buildAnnotationSurfaceGrid, pickDrawableSurfaceHit } from './playback/annotationSurface.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
