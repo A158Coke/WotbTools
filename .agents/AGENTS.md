@@ -73,7 +73,7 @@
    ├─ build / config / dependency / architecture → broader validation（可能触发 Full）
    └─ 无法确定影响范围 → Full-test 例外，先说明原因
 
-   **CI 结果归属**：实现 Agent 完成本地必要验证并 push/open PR 后即停止，不等待或监控 CI；由审计侧之后读取 CI 结果。PR CI 执行 repository-level authoritative validation。CI 失败后只复现失败 job 对应的本地范围，修复后 push 让 PR CI 重新验证。
+   **CI 结果归属**：实现 Agent 完成本地必要验证并 push/open PR 后，PR CI 作为 repository-level authoritative validation 自主运行；CI 失败后只复现失败 job 对应的本地范围，修复后 push 让 PR CI 重新验证。push/open PR 不是「停止点」而是「交接点」：PR 处于用户要求跟进的 review 修复循环时，按规则 15 的等待姿态后台监控 CI 与 review 状态，mergeable/CI 异常由 Agent 自主发现并处理，不依赖用户指出。
 
    迭代验证去重与失效：
    - CI 失败后只复现失败 job 对应的本地范围，修复后 push 让 PR CI 重新成为权威验证；
@@ -98,6 +98,12 @@
    仅当 1~6 条均确认现有结构无法合理承载该职责时才允许新建 abstraction。禁止单调用方无必要 wrapper/helper/manager/resolver/facade、机械 clean-architecture abstraction、第二份业务 switch/rule/validation contract。Skills 只引用并执行本规则，不复制第二份完整定义。
 13. **外部数据生命周期** — 持久化外部 API 返回的个人或统计数据时，必须同时提供明确的 retention/deletion path；删除流程需限定数据来源、遵守真实 FK 顺序，并保护仍被其他业务引用的共享文件或记录。
 14. **Android Version-as-Code** — Android production runtime 改动必须递增 committed `android/gradle.properties:wotbVersion`；不得手工编辑 `versionCode` 或依赖 release workflow 版本参数。Native Bridge wire breaking change 必须同时更新 `contracts/android-native-bridge.json`、递增 `bridgeVersion`、更新 Native/FE，并在同一 PR 通过 deterministic compatibility tests。FE 远程加载时先让 FE 兼容旧/新协议，再发布 Native；FE 随 APK 打包（local-first）时 FE 与 Native 同版本发布，由 contract gate 与 `guard_bridge_covered` 强制 support floor 覆盖 cutover。完整发布与版本锁定规则以 [`docs/android/release-process.md`](../docs/android/release-process.md) 为 authority；production `version.json` 与该文档共同定义当前 support floor，frontend architecture 不重复固定 floor。
+
+15. **PR 跟进循环：状态自检 + 后台等待姿态** — 处于用户要求跟进的 PR（review 修复循环）时，状态问题必须由 Agent 自主发现并处理，不得等用户指出；等待只能发生在后台：
+    - **每轮 push 后立即自查两项**（再挂等待）：`gh pr view --json mergeable,mergeStateStatus`（CONFLICTING → 立即 merge 最新 main 解决；版本链冲突按规则 14 以 main 的完整文件为准递增重排，`release-process.md` 版本行与 release note 同步，不得整文件覆盖）与 `gh pr checks`（fail → 先 `gh run view <run-id> --log-failed` 定位再修，靠猜改代码禁止）；
+    - **CI / review 进度只能后台查询**：等待一律放后台监视器（工具层 `run_in_background`），轮询 sleep 循环只允许存在于后台任务内，以完成通知取结果，当前回合继续其它工作或收尾；禁止前台阻塞等待（`gh pr checks --watch` / `gh run watch` 不加 `run_in_background` 会挂住整个回合），禁止前台 `sleep N` 轮询，「继续 / 等它跑完」类措辞同此执行；
+    - **监视器触发条件**：新 review 提交、`reviewDecision=APPROVED`、`mergeable` 变为 CONFLICTING——三者任一即回到修复循环；`reviewDecision=REVIEW_REQUIRED` 是分支保护初始态，不算信号；多 PR 并行时逐个检查、以监视器启动时间为基准只报新增 review；每轮修复一个 commit、修完在 PR 上逐条回应 review finding；
+    - **轮次操作卫生**：跨 PR 工作切分支后必须切回（操作前 `git branch --show-current` 确认）；同一 PR 的多 finding 修复合并为一个 commit；PR 被外部合入 main 时本地对齐远端（`reset --hard origin/<branch>` 只允许丢弃本地未推送提交，不得改写已推送历史）。
 
 ## 视觉验证归属（2026-10-03）
 
