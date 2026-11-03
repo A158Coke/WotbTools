@@ -82,7 +82,7 @@ with tempfile.TemporaryDirectory() as work:
         raise AssertionError("tampered patch accepted")
     except ValueError:
         pass
-    for update in ({"size": target.stat().st_size // 10 + 1}, {"url": "https://other.invalid/patch"},
+    for update in ({"size": target.stat().st_size // delta.MAX_DELTA_RATIO_DENOMINATOR + 1}, {"url": "https://other.invalid/patch"},
                    {"fromVersionCode": 3999999}, {"algorithm": "unsupported"}, {"sha256": "0" * 64}):
         invalid = json.loads(json.dumps(doc)); invalid["patches"][0].update(update)
         try:

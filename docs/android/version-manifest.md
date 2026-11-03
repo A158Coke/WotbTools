@@ -53,6 +53,11 @@ API 26 ARM 正式包仍未验证，不能把这些数据外推成所有更新均
 只有检测到线上 Caddy 已将 `.vcdiff` 跳转到清华云盘才会为新证据启用补丁；发布阶段重新核对
 实际 APK 长度、补丁和原始 staging evidence 后才复制字段到 production manifest。
 
+4.0.0 首发只走完整包，不以尚未上线的增量分流作为发布门禁。首次在后续版本的 production manifest
+声明非空 `patches` 前，stage 必须在真实分发路径完成补丁生成与重建、清华副本上传和校验、TX1/TX2
+不可变落位，以及公网重定向后的字节数和 SHA 回读；任一环节不可用时新候选只发布完整包，已经固定的
+增量 evidence 无法验证时则停止发布。不得以本地替身或空补丁列表声称真实云端链路已通过。
+
 `latestVersionCode`、`latestVersionName` 来自 staged 源码（tag target）的 `android/gradle.properties`；
 `nativeBridgeVersion` 来自同一 source 的 `contracts/android-native-bridge.json`；`sourceSha` 是生成 APK
 所 checkout 的精确 commit。workflow 只有在**两阶段**都通过之后才写入 manifest：
