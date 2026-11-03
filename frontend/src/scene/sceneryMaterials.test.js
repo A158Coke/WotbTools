@@ -796,8 +796,11 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 规则模块（SSOT，与俯视烘焙**同一份**——烘焙此前复制名字启发式而漂移出双向错剔），
     // 本页只保留委托与本地签名；判定本体与真名案例回归见 sceneryAssemblyRules.test.js。
     expect(mapAssetsSrc).toMatch(/import \{[^}]*isWaterNode as isWaterNodeRule[^}]*\} from '\.\.\/sceneryAssemblyRules\.js'/)
-    expect(mapAssetsSrc).toMatch(/const strictSurfaces = strictSurfacesOf\(gltf\.scene\);/)
-    expect(mapAssetsSrc).toMatch(/const isWaterNode = \(name, mat\) => isWaterNodeRule\(name, mat, \{ strictSurfaces \}\);/)
+    // pre-mount ownership（评审 P2）：strictSurfaces/isWaterNode/sceneryMeshes 声明提到 try 外
+    // （post-mount 合批过滤仍消费），赋值仍在装配段内
+    expect(mapAssetsSrc).toMatch(/let strictSurfaces = null;/)
+    expect(mapAssetsSrc).toMatch(/strictSurfaces = strictSurfacesOf\(gltf\.scene\);/)
+    expect(mapAssetsSrc).toMatch(/isWaterNode = \(name, mat\) => isWaterNodeRule\(name, mat, \{ strictSurfaces \}\);/)
     expect(mapAssetsSrc).toMatch(/!\(e\.node\.userData && e\.node\.userData\.isSky\)[\s\S]{0,120}!isWaterNode\(e\.name, e\.material\)[\s\S]{0,120}!hasTransparentMaterial\(e\.material\)/)
     expect(asmSrc).toMatch(/o\.userData\.isSky = true;/)
     // 运行时：包级天空标记在变体裁剪之前采样，并显式传入装配

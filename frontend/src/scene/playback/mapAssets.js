@@ -29,6 +29,19 @@ const OCCL_CELL = 16;
 export async function assembleMapScenery(gltf, ctx) {
   const { DATA, Q, DEBUG, groundLayers } = ctx;
   const writes = {};
+  // Pre-mount ownership（评审 P2）：handoff（onSceneryMounted）之前的任何异常都必须
+  // 就地回收 candidate——gltf.scene 与已建未移交的 waterCoast.heightTex（异常会丢失
+  // writes ⇒ 宿主绑定看不到它们，只能由本装配段释放），然后重抛给宿主 catch。
+  // 宿主绑定此时未动 ⇒ 宿主 catch 的 rollback 不会二次释放；handoff 之后的生命周期
+  // （含 post-mount rollback）只归宿主，本 catch 不得再碰。best-effort：traverse 都
+  // 抛错的病态场景下无法枚举资源，cleanup 自身的错误不得掩盖原始异常。
+  let waterCoast = null;
+  // post-mount 段（走廊掩码取样 / 合批过滤）仍要消费的装配产物：声明在 try 外，
+  // 赋值在 try 内——抛错路径走不到 post-mount，未赋值不会被读到。
+  let strictSurfaces = null;
+  let isWaterNode = null;
+  const sceneryMeshes = [];   // onMesh 收集（材质转换前），走廊掩码在挂载后消费
+  try {
   // 包级天空标记必须在**变体裁剪之前**采样：变体组里的唯一 sky 节点被裁掉后，
   // 再从缩减场景重算会退化为 false 并误启 /sky/ 名字 fallback（烘焙同理）。
   const skyFlagsAvailable = sceneHasSkyFlags(gltf.scene);
@@ -51,8 +64,8 @@ export async function assembleMapScenery(gltf, ctx) {
   // extras 贴图预解析（mask/lightmap/detail/env/water/decal）——共享模块同一实现
   const sceneryExtras = await resolveSceneryExtras(gltf);
   if (ctx.stale()) { ctx.disposeObject3D(gltf.scene); return { stale: true, writes }; }
-  const strictSurfaces = strictSurfacesOf(gltf.scene);
-  const isWaterNode = (name, mat) => isWaterNodeRule(name, mat, { strictSurfaces });
+  strictSurfaces = strictSurfacesOf(gltf.scene);
+  isWaterNode = (name, mat) => isWaterNodeRule(name, mat, { strictSurfaces });
   // 材质→贴图解析器（键 = gltf.parser.associations 的材质下标）：装配模块同源的
   // makeTexResolvers，六个槽同表（mask/lm/detail/env/water/decal）
   const { maskTexOf, lmTexOf, detailTexOf, envTexOf, waterTexOf, decalTexOf } =
@@ -64,12 +77,10 @@ export async function assembleMapScenery(gltf, ctx) {
   // 场景网格清单（材质转换段顺带收集；`water` = 任一材质带 extras.water ⇒ 水面/水下片）：
   // 供"贴地薄构件走廊掩码"的类筛选用——必须在"实例化合批"之前取样（合批会换掉逐节点 Mesh）。
   // 见 terrainRefineMask 声明处的方案说明。
-  const sceneryMeshes = [];
   // 水面"海岸线"（客户端 water-fp.sl 的 coastLine，见 makeWaterMaterial 注释）用的共享资源：
   // 高度场（真值，与地形网格/深度缓冲同一份）做成可线性滤波的浮点纹理。
   // 资源构造在共享模块 groundPass.makeWaterCoast（俯视烘焙同一份）；本处只探测
   // 深度位深（上下文实测）与相机 near/far，并登记会话 teardown 释放。
-  let waterCoast = null;
   if (ctx.heightField && ctx.heightMeta) {
     try {
       const hn = ctx.heightMeta.size || 512;
@@ -120,6 +131,13 @@ export async function assembleMapScenery(gltf, ctx) {
   const aniso = Math.min(Q.anisotropy, ctx.renderer.capabilities.getMaxAnisotropy());
   const anisoTextures = applyMaterialTextureAnisotropy(gltf.scene, aniso);
   if (DEBUG) window.__sceneryAniso = { value: aniso, textures: anisoTextures };
+  } catch (e) {
+    // handoff 前失败（Invariant B）：candidate 尚未挂载、宿主绑定未动——唯一的
+    // cleanup owner 是本函数。heightTex 先于 GLTF 子树释放（两者无共享资源）。
+    try { waterCoast?.heightTex?.dispose(); } catch (ce) { console.warn('waterCoast 高度纹理清理失败:', ce); }
+    try { ctx.disposeObject3D(gltf.scene); } catch (ce) { console.warn('场景 candidate 清理失败:', ce); }
+    throw e;
+  }
 
   const mapScenery = new THREE.Group();
   mapScenery.rotation.order = 'YXZ';

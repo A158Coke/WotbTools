@@ -1413,6 +1413,52 @@ describe('playbackScene 资产发布顺序', () => {
     expect(store.assetIssues.some((i) => i.key === 'scenery' && i.status === 'failed' && i.detail.includes('assembly boom'))).toBe(true)
   })
 
+  it('场景装配挂载前抛错：candidate 几何/材质/贴图与辅助高度纹理就地释放各一次', async () => {
+    // Invariant A/B（评审 P2）：handoff（onSceneryMounted）之前 candidate 的唯一 owner 是
+    // 装配段——异常路径必须释放 gltf.scene 子树与已建未移交的 waterCoast.heightTex，
+    // 释放后重抛（宿主 catch 记 scenery failed，绑定未动 ⇒ 不二次释放）。
+    window.history.replaceState(null, '', '/?debug&q=low')
+    prepareAssets(['map', 'terrain', 'terrain-meta', 'scenery'])
+    const bin = new Uint16Array([0, 65535, 0, 65535]).buffer
+    const sha = sha256Hex(bin)
+    vi.stubGlobal('fetch', vi.fn(async (url) => {
+      const u = String(url)
+      if (u.endsWith('terrain-meta')) return { ok: true, status: 200, json: async () => ({ size: 2, span: 600, zmin: 20, zmax: 100, terrainLayout: 2, terrainBinSha256: sha }) }
+      if (u.startsWith('/assets/terrain')) return { ok: true, status: 200, arrayBuffer: async () => bin }
+      return { ok: true, status: 200, headers: new Headers(), blob: async () => new Blob(['map']) }
+    }))
+    // 高度场就位 ⇒ waterCoast.heightTex（DataTexture）在抛错点之前已被创建
+    vi.spyOn(THREE.TextureLoader.prototype, 'loadAsync').mockResolvedValue(new THREE.Texture())
+    const sa = await import('./sceneryAssembly.js')
+    vi.spyOn(sa, 'assembleSceneryMaterials').mockImplementation(() => { throw new Error('pre-mount boom') })
+    const geo = new THREE.BoxGeometry(1, 1, 1)
+    const tex = new THREE.Texture()
+    const mat = new THREE.MeshLambertMaterial({ map: tex })
+    const root = new THREE.Group()
+    root.add(new THREE.Mesh(geo, mat))
+    const geoDispose = vi.spyOn(geo, 'dispose')
+    const matDispose = vi.spyOn(mat, 'dispose')
+    const texDispose = vi.spyOn(tex, 'dispose')
+    const dataTexDispose = vi.spyOn(THREE.DataTexture.prototype, 'dispose')
+    vi.spyOn(GLTFLoader.prototype, 'load').mockImplementationOnce((_url, onLoad) => onLoad({
+      scene: root, parser: { json: { materials: [] }, associations: new Map() },
+    }))
+    const { api, store } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['a'], 'a') })
+    expect(store.hasData).toBe(true)
+    expect(store.assetDegraded).toBe(true)
+    expect(store.assetIssues.some((i) => i.key === 'scenery' && i.status === 'failed' && i.detail.includes('pre-mount boom'))).toBe(true)
+    // 真实资源释放证据（不只 scene.children 为空）：各恰好一次
+    expect(geoDispose).toHaveBeenCalledTimes(1)
+    expect(matDispose).toHaveBeenCalledTimes(1)
+    expect(texDispose).toHaveBeenCalledTimes(1)
+    expect(dataTexDispose).toHaveBeenCalledTimes(1)   // 无 owner 可移交的高度纹理
+    // candidate 不残留在场景树
+    let leaked = false
+    window.__scene.traverse((o) => { if (o === root) leaked = true })
+    expect(leaked).toBe(false)
+  })
+
 
   it('完整场景挂载后装配失败时回滚场景及派生状态', async () => {
     window.history.replaceState(null, '', '/?debug&q=low')
@@ -1420,25 +1466,92 @@ describe('playbackScene 资产发布顺序', () => {
     const instancing = await import('./sceneryInstancing.js')
     vi.spyOn(instancing, 'collectInstanceEntries').mockImplementation(() => { throw new Error('instancing boom') })
     const root = new THREE.Group()
-    root.add(new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshLambertMaterial()))
+    // 挂载后（handoff 已发生）失败：rollback 是唯一释放路径，pre-mount cleanup 不得再碰
+    const rollbackGeo = new THREE.BoxGeometry()
+    root.add(new THREE.Mesh(rollbackGeo, new THREE.MeshLambertMaterial()))
+    const rollbackGeoDispose = vi.spyOn(rollbackGeo, 'dispose')
     vi.spyOn(GLTFLoader.prototype, 'load').mockImplementation((_url, onLoad) => onLoad({
       scene: root, parser: { json: { materials: [] }, associations: new Map() },
     }))
     const { api, store } = createScene()
     await api.loadData({ kind: 'local', file: new File(['a'], 'a') })
     expect(store.assetIssues.some(i => i.key === 'scenery' && i.status === 'failed')).toBe(true)
+    expect(rollbackGeoDispose).toHaveBeenCalledTimes(1)   // rollback 释放一次，无 double-dispose
     expect(window.__scene.children.includes(root)).toBe(false)
     expect(window.__terrainQuality().derived).toMatchObject({ occlGrid: false, annotationSurfaceGrid: false, terrainRefineMask: false })
   })
 
-  it.each(['low', 'mid', 'high', 'ultra'])('画质 %s 加载完整场景和分层地面', async (quality) => {
+  // 合法 ground.layers.json（非 height_blend 形状；groundShaderMaterial 无条件读取
+  // tiling/tile_scale/tile_colors/flat_color/lm_adjust/tilemask_weight 与 hb_* 四组）。
+  // 纹理键集 = groundLayerKeys：['cm','lm','tile0','tile1','mask0','mask1']。
+  function groundLayersFixture() {
+    return {
+      tiling: [4, 4], tile_scale: [1, 1, 1, 1],
+      tile_colors: [[1, 1, 1], [1, 1, 1], [1, 1, 1], [1, 1, 1]],
+      flat_color: [1, 1, 1], lm_adjust: [0, 1, 1], tilemask_weight: 1,
+      flatcolor: true, separate_lm: true, scaled_tiles: false, height_blend: false,
+      hb_scale: [0, 0, 0, 0], hb_offset: [0, 0, 0, 0], hb_softness: [0, 0, 0, 0],
+    }
+  }
+  function terrainPairFetchStub() {
+    const bin = new Uint16Array([0, 65535, 0, 65535]).buffer
+    const sha = sha256Hex(bin)
+    return vi.fn(async (url) => {
+      const u = String(url)
+      if (u.endsWith('terrain-meta')) return { ok: true, status: 200, json: async () => ({ size: 2, span: 600, zmin: 20, zmax: 100, terrainLayout: 2, terrainBinSha256: sha }) }
+      if (u.startsWith('/assets/terrain')) return { ok: true, status: 200, arrayBuffer: async () => bin }
+      return { ok: true, status: 200, headers: new Headers(), blob: async () => new Blob(['map']) }
+    })
+  }
+
+  it.each(['low', 'mid', 'high', 'ultra'])('画质 %s 成功路径：完整场景 + 分层地表安装并绑定到地面材质', async (quality) => {
     window.history.replaceState(null, '', '/?debug&q=' + quality)
-    prepareAssets(['map', 'groundmeta', 'scenery'])
-    const urls = []
-    vi.stubGlobal('fetch', vi.fn(async url => {
-      urls.push(String(url))
+    prepareAssets(['map', 'terrain', 'terrain-meta', 'groundmeta', 'groundtex', 'scenery'])
+    const base = terrainPairFetchStub()
+    vi.stubGlobal('fetch', vi.fn(async (url) => {
+      const u = String(url)
+      if (u.endsWith('groundmeta')) return { ok: true, status: 200, json: async () => groundLayersFixture() }
+      if (u.endsWith('groundtex')) return { ok: true, status: 200, blob: async () => new Blob(['x']) }
+      return base(url)
+    }))
+    // 每次调用独立纹理实例：地面材质的 uniform 绑定可按实例身份核对
+    const createdTextures = []
+    vi.spyOn(THREE.TextureLoader.prototype, 'loadAsync').mockImplementation(() => {
+      const t = new THREE.Texture()
+      createdTextures.push(t)
+      return Promise.resolve(t)
+    })
+    const loader = vi.spyOn(GLTFLoader.prototype, 'load').mockImplementation((_url, onLoad) => onLoad({
+      scene: new THREE.Group(), parser: { json: { materials: [] }, associations: new Map() },
+    }))
+    const { api, store } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['a'], 'a') })
+    expect(store.hasData).toBe(true)
+    // 请求完整 scenery + groundmeta + map；不请求 lite / ground-terrain / map-mini
+    expect(loader.mock.calls.some(([url]) => String(url).endsWith('/assets/scenery'))).toBe(true)
+    expect(source.mapStaticUrl.mock.calls.some(([kind]) => kind === 'scenery-lite' || kind === 'ground-terrain')).toBe(false)
+    expect(source.mapStaticUrl.mock.calls.some(([kind]) => kind === 'map-mini')).toBe(false)
+    // 成功安装（不只 fetch 被调用）：诊断钩子 + 真实地面 ShaderMaterial 的纹理绑定
+    expect(window.__gdbg.layers).toBe(true)
+    expect(window.__gdbg.texs.length).toBe(6)
+    expect(new Set(window.__gdbg.texs)).toEqual(new Set(['cm', 'lm', 'tile0', 'tile1', 'mask0', 'mask1']))
+    const groundMat = window.__terrain.material
+    expect(groundMat.isShaderMaterial).toBe(true)
+    expect(createdTextures.length).toBe(7)   // 底图 map + 6 层分层纹理
+    const bound = ['uCM', 'uLM', 'uTile0', 'uTile1', 'uMask0', 'uMask1'].map((k) => groundMat.uniforms[k].value)
+    for (const t of bound) expect(createdTextures).toContain(t)
+    expect(new Set(bound).size).toBe(6)   // 六层各绑定独立纹理实例（不共享/不缺位）
+    // 成功路径不得产生 groundLayers 降级记录
+    expect(store.assetIssues.some((i) => i.key === 'groundLayers')).toBe(false)
+  })
+
+  it.each(['low', 'mid', 'high', 'ultra'])('画质 %s 分层地表请求失败时回退 legacy 烘焙底图', async (quality) => {
+    window.history.replaceState(null, '', '/?debug&q=' + quality)
+    prepareAssets(['map', 'terrain', 'terrain-meta', 'groundmeta', 'groundtex', 'scenery'])
+    const fetchStub = terrainPairFetchStub()
+    vi.stubGlobal('fetch', vi.fn(async (url) => {
       if (String(url).endsWith('groundmeta')) return { ok: false, status: 404 }
-      return { ok: true, headers: new Headers(), blob: async () => new Blob(['map']) }
+      return fetchStub(url)
     }))
     vi.spyOn(THREE.TextureLoader.prototype, 'loadAsync').mockResolvedValue(new THREE.Texture())
     const loader = vi.spyOn(GLTFLoader.prototype, 'load').mockImplementation((_url, onLoad) => onLoad({
@@ -1447,11 +1560,14 @@ describe('playbackScene 资产发布顺序', () => {
     const { api, store } = createScene()
     await api.loadData({ kind: 'local', file: new File(['a'], 'a') })
     expect(store.hasData).toBe(true)
+    // 场景 GLB 仍加载；分层地表 404 记为 optional 降级（不进核心资产降级）
     expect(loader.mock.calls.some(([url]) => String(url).endsWith('/assets/scenery'))).toBe(true)
-    expect(urls.some(url => url.endsWith('/assets/groundmeta'))).toBe(true)
-    expect(urls.some(url => url.endsWith('/assets/map'))).toBe(true)
-    expect(source.mapStaticUrl.mock.calls.some(([kind]) => kind === 'scenery-lite' || kind === 'ground-terrain')).toBe(false)
-    expect(source.mapStaticUrl.mock.calls.some(([kind]) => kind === 'map-mini')).toBe(false)
+    expect(store.assetIssues.some((i) => i.key === 'groundLayers' && i.status === 'http-404')).toBe(true)
+    expect(store.assetDegraded).toBe(false)
+    // legacy 底图路径：地面材质回退整图烘焙贴图（MeshBasicMaterial），分层诊断为 false
+    expect(window.__gdbg.layers).toBe(false)
+    expect(window.__terrain.material.isMeshBasicMaterial).toBe(true)
+    expect(window.__terrain.material.map).toBeTruthy()
   })
 
 
