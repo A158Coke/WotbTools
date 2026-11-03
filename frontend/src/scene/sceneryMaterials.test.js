@@ -17,9 +17,9 @@ const pbUtilSrc = readSrc(resolve(here, 'playback/util.js'), 'utf8')
 const bandSrc = readSrc(resolve(here, 'playback/boundary.js'), 'utf8')
 // 渲染器创建核心 2026-10-24 出仓 playback/renderer.js（Step A2；出屏口径/对数深度/兜底灯光
 // 的装配断言随实现迁移）
-const rendererSrc = readSrc(resolve(here, 'playback/renderer.js'), 'utf8')
+const rendererSrc = readSrc(resolve(here, 'playback/renderer.ts'), 'utf8')
 // 场景装配块 2026-10-24 出仓 playback/mapAssets.js（Step A3；运行时侧装配断言随实现迁移）
-const mapAssetsSrc = readSrc(resolve(here, 'playback/mapAssets.js'), 'utf8')
+const mapAssetsSrc = readSrc(resolve(here, 'playback/mapAssets.ts'), 'utf8')
 // 基地贴地标记 2026-10-24 出仓 playback/bases.js（Step A4；基地环/圆盘/画布 sRGB 断言随实现迁移）
 const basesSrc = readSrc(resolve(here, 'playback/bases.js'), 'utf8')
 // 材质实现（billboard/speedtree/缓存/常量/isWaterName）已平移至专用模块（SSOT，
@@ -527,7 +527,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(src).toMatch(/refineMask: terrainRefineMask,/)
     expect(src).toMatch(/terrainRefineMask = null;/)
     expect(gpSrc).toMatch(/buildRefineMask,[\s\S]{0,200}from '\.\/terrainMesh\.js'/)
-    const maskAt = mapAssetsSrc.indexOf('const sceneryMeshes = []')
+    const maskAt = mapAssetsSrc.indexOf('const sceneryMeshes: SceneryMeshSample[] = []')
     const instAt = mapAssetsSrc.indexOf('collectInstanceEntries(gltf.scene)')
     expect(maskAt).toBeGreaterThan(-1)
     expect(instAt).toBeGreaterThan(maskAt)                       // 掩码取样先于实例化合批
@@ -789,7 +789,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 本页只保留委托与本地签名；判定本体与真名案例回归见 sceneryAssemblyRules.test.js。
     expect(mapAssetsSrc).toMatch(/import \{[^}]*isWaterNode as isWaterNodeRule[^}]*\} from '\.\.\/sceneryAssemblyRules\.js'/)
     expect(mapAssetsSrc).toMatch(/const strictSurfaces = strictSurfacesOf\(gltf\.scene\);/)
-    expect(mapAssetsSrc).toMatch(/const isWaterNode = \(name, mat\) => isWaterNodeRule\(name, mat, \{ strictSurfaces \}\);/)
+    expect(mapAssetsSrc).toMatch(/const isWaterNode = \(name: string, mat: import\('\.\.\/sceneryAssemblyRules\.js'\)\.SurfaceMaterial \| null \| undefined\) =>\n    isWaterNodeRule\(name, mat, \{ strictSurfaces \}\);/)
     expect(mapAssetsSrc).toMatch(/!\(e\.node\.userData && e\.node\.userData\.isSky\)[\s\S]{0,120}!isWaterNode\(e\.name, e\.material\)[\s\S]{0,120}!hasTransparentMaterial\(e\.material\)/)
     expect(asmSrc).toMatch(/o\.userData\.isSky = true;/)
     // 运行时：包级天空标记在变体裁剪之前采样，并显式传入装配
@@ -1070,7 +1070,7 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
     // 伤害数字迁到 HTML 覆盖层后，反馈层不再需要 renderer 的第二次 render。
     expect(src).not.toMatch(/labelRenderer/)
     // 渲染器创建 2026-10-24 出仓 playback/renderer.js（Step A2）：仍全仓（src+创建核心）恰一个 WebGL 上下文
-    const rendererSrc = readSrc(resolve(here, 'playback/renderer.js'), 'utf8')
+    const rendererSrc = readSrc(resolve(here, 'playback/renderer.ts'), 'utf8')
     const ctor = [...(src.match(/new THREE\.WebGLRenderer\(/g) || []), ...(rendererSrc.match(/new THREE\.WebGLRenderer\(/g) || [])]
     expect(ctor.length).toBe(1)
     const animate = src.slice(src.indexOf('function animate()'))

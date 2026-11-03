@@ -18,7 +18,7 @@ import type { AgentDestructibleArea, AgentDestructibleEvent } from '../api/agent
 export interface DestructibleInstance {
   id: string
   /** 实例锚点（游戏场景系水平坐标，与 scenery.glb 节点位置同系） */
-  pos?: number[] | null
+  pos: [number, number]
   /** 类别（destructibles.json 的类别字符串） */
   kind?: string
   name?: string
@@ -31,6 +31,14 @@ export type DestructibleArea = AgentDestructibleArea
 /** playback.destructible_events 事件条目（wire owner：AgentDestructibleEvent）。 */
 export type DestructibleEvent = AgentDestructibleEvent
 
+/** 可破坏物槽位（实例化批次装配后由 mapAssets 回填；mesh = 槽位所在批次）。 */
+export interface DestructibleSlot {
+  mesh: import('three').InstancedMesh
+  idx: number
+  /** 槽位 base 位姿（装配时的实例矩阵） */
+  base: import('three').Matrix4
+}
+
 /** 树倒状态项（场景侧追加 heightM/stopRad/fallQuat；settled 由本模块的 rewind-safe getter 拥有）。 */
 export interface DestructibleFoldState {
   key: string
@@ -38,6 +46,14 @@ export interface DestructibleFoldState {
   prop: number
   fallDir: number
   inst: DestructibleInstance
+  /** 树倒槽位（mapAssets 装配段回填） */
+  slots?: DestructibleSlot[]
+  /** 建筑/switcher：完好/损毁槽位（mapAssets 装配段回填） */
+  intactSlots?: DestructibleSlot[]
+  deadSlots?: DestructibleSlot[]
+  /** 树高（米；装配段按命中网格包围盒回填） */
+  pivotPos?: { x: number; y: number; z: number }
+  upright?: boolean
   /** 终态只写一次的每帧缓存；时间轴回退时必须由调用方显式清零（rewind-safe getter 是第二道防线） */
   settled?: boolean
   /** 实例化场景侧随每次倒伏写入同步维护的裸 {w} 四元数 */

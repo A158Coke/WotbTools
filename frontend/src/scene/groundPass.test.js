@@ -25,7 +25,7 @@ const strip = (s) => s.replace(/\r\n/g, '\n')   // LF 归一（CRLF 检出下 LF
 const gpSrc = strip(readFileSync(resolve(here, 'groundPass.js'), 'utf8'))
 const src = strip(readFileSync(resolve(here, 'playbackScene.js'), 'utf8'))
 // 场景装配块 2026-10-24 出仓 playback/mapAssets.js（Step A3），运行时侧装配守卫随实现迁移
-const mapAssetsSrc = strip(readFileSync(resolve(here, 'playback/mapAssets.js'), 'utf8'))
+const mapAssetsSrc = strip(readFileSync(resolve(here, 'playback/mapAssets.ts'), 'utf8'))
 const bakeSrc = strip(readFileSync(resolve(here, '..', '..', 'scripts', 'bake-ground-overhead.mjs'), 'utf8'))
 const bakeLayersSrc = strip(readFileSync(resolve(here, '..', '..', 'scripts', 'bake-ground-layers.js'), 'utf8'))
 

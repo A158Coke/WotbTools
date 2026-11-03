@@ -91,7 +91,7 @@ const pickSrc = readFileSync(resolve(here, 'playback/pickReport.js'), 'utf8')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 // 场景装配块（含可破坏物发布时序）2026-10-24 出仓 playback/mapAssets.js，守卫随实现迁移
-const mapAssetsSrc = readFileSync(resolve(here, 'playback/mapAssets.js'), 'utf8')
+const mapAssetsSrc = readFileSync(resolve(here, 'playback/mapAssets.ts'), 'utf8')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 

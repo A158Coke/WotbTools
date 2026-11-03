@@ -15,6 +15,11 @@ export interface PitchRange {
   transition?: number
 }
 
+/** tank/{id}.json configs[] 条目中 buildPitchLimits 消费的形状（资产包 producer 保证条目完整）。 */
+export interface TankPitchConfig {
+  pitch_limits?: { max?: number; min?: number; front?: number[]; back?: number[]; transition?: number } | null
+}
+
 /** playback 名册中 buildPitchLimits 需要的字段。 */
 export interface PitchLimitVehicle {
   nickname: string
@@ -35,7 +40,7 @@ export async function buildPitchLimits(vehicles: readonly PitchLimitVehicle[] | 
   const tankRange = new Map<number, PitchRange>()
   await Promise.all([...byTank.keys()].map(async (tid) => {
     try {
-      const data = await assetProvider.json(`/tank/${tid}.json`)
+      const data = await assetProvider.json<{ configs?: TankPitchConfig[] | null }>(`/tank/${tid}.json`)
       const cfgs = data.configs || []
       const pl = cfgs.length ? cfgs[cfgs.length - 1].pitch_limits : null
       if (pl && pl.max != null && pl.min != null) {

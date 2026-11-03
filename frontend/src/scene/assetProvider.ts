@@ -24,7 +24,7 @@ import { useFeatureGate } from '../composables/useFeatureGate.js'
 //（错误信息指导配置，而不是让地图/车模静默消失）。
 import { assetBase } from './assetBase.js'
 
-function requireBase() {
+function requireBase(): string {
   if (isAndroidRuntime() && !useFeatureGate().requireFeature(Feature.PLAYBACK_3D)) {
     throw new Error('NETWORK_ERROR')
   }
@@ -37,33 +37,37 @@ function requireBase() {
   return base
 }
 
+/** logical asset path（`/glb/…`、`/tank/…`）——相对 configured origin 的路径段。 */
+export type AssetPath = string
+
 export const assetProvider = {
   /** Recheck availability at dispatch, even when a scene resolved its URL earlier. */
-  fetch(url, init) {
+  fetch(url: string, init?: RequestInit): Promise<Response> {
     requireBase()
     return fetch(url, init)
   },
   /** 资产直连 URL（<img> / TextureLoader 等需要 URL 的消费方）；未配置 origin 抛错 */
-  url(path) {
+  url(path: AssetPath): string {
     return requireBase() + path
   },
 
   /** 资产字节（GLB/二进制）；非 2xx 抛错（含状态码） */
-  async bytes(path) {
+  async bytes(path: AssetPath): Promise<Uint8Array> {
     const resp = await this.fetch(this.url(path))
     if (!resp.ok) throw new Error(`asset ${path}: HTTP ${resp.status}`)
     return new Uint8Array(await resp.arrayBuffer())
   },
 
-  /** 资产 JSON；非 2xx 抛错 */
-  async json(path) {
+  /** 资产 JSON；非 2xx 抛错。返回值是 untrusted wire 数据——默认宽松 Record，
+   *  消费方用显式泛型声明期望形状并保留字段级 guard（本仓从未在此做 schema 校验）。 */
+  async json<T = Record<string, unknown>>(path: AssetPath): Promise<T> {
     const resp = await this.fetch(this.url(path))
     if (!resp.ok) throw new Error(`asset ${path}: HTTP ${resp.status}`)
-    return resp.json()
+    return await resp.json() as T
   },
 
   /** 资产 origin 是否已配置（UI 决定提示 vs 直接尝试） */
-  configured() {
+  configured(): boolean {
     return !!assetBase()
   },
 }

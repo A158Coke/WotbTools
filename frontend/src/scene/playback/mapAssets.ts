@@ -9,6 +9,7 @@
 // 返回 { stale, writes }：stale=true 表示装配中途会话过期（调用方先落已完成的
 // writes 再 return，与原闭包逐段赋值 + 中途 return 的语义一致）；writes 只含已推进到的字段。
 import * as THREE from 'three'
+import type { Group, InstancedMesh, Mesh, Object3D, ShaderMaterial, Texture } from 'three'
 import { sceneHasSkyFlags, strictSurfacesOf, isWaterNode as isWaterNodeRule } from '../sceneryAssemblyRules.js'
 import { resolveSceneryExtras, makeTexResolvers, assembleSceneryMaterials } from '../sceneryAssembly.js'
 import { applyMaterialTextureAnisotropy } from '../sceneryMaterials.js'
@@ -22,13 +23,79 @@ import { buildMeshOwnerMap } from '../pickDebug.js'
 import { buildDestructibleIndex, foldDestructibleStates, fallStopAngle } from '../destructibles.js'
 import { occlusionFootprintCells } from './pure.js'
 import { buildAnnotationSurfaceGrid } from './annotationSurface.ts'
+import type { GroundLayersField } from '../sceneryAssembly.js'
+import type { WaterCoastField } from '../sceneryMaterials.js'
+import type { DestructibleArea, DestructibleEvent, DestructibleFoldState, DestructibleInstance, DestructibleSlot } from '../destructibles.js'
+import type { MeshOwnerValue, PickMeshEntry } from '../pickDebug.js'
+import type { InstanceBatch, InstanceEntry } from '../sceneryInstancing.js'
 
 // 标签遮挡候选格边长（16m，见 occlusionCells/occlusionFootprintCells 注释）
 const OCCL_CELL = 16;
 
-export async function assembleMapScenery(gltf, ctx) {
+/** 走廊掩码取样的场景网格清单条目（onMesh 钩子收集；water = 任一材质带 extras.water）。 */
+interface SceneryMeshSample {
+  o: Mesh
+  water: boolean
+}
+
+/** 装配后的实例槽位（分派阶段把 batch/idx 回填进 collectInstanceEntries 的 entry）。 */
+type SlottedEntry = InstanceEntry & { batch?: InstanceBatch; idx?: number; hidden?: boolean }
+/** 已建 InstancedMesh 的批次（assembleMapScenery 装配段回填 mesh）。 */
+type BuiltBatch = InstanceBatch & { mesh: InstancedMesh }
+/** 已完成合批归属的 entry（batch/idx 回填之后；findMeshes / 槽位装配消费）。 */
+type BatchedEntry = InstanceEntry & { batch: BuiltBatch; idx: number; hidden?: boolean }
+
+/**
+ * assembleMapScenery 的会话上下文（调用时刻快照/回调；宿主 = playbackScene 的
+ * loadMapImage 闭包）。字段语义见文件头注释。
+ */
+export interface MapAssemblyContext {
+  DATA: {
+    meta: { map_id: number | string }
+    destructible_areas?: DestructibleArea[] | null
+    destructible_events?: DestructibleEvent[] | null
+  }
+  Q: { anisotropy: number }
+  DEBUG: boolean
+  /** 运行时逐图地表分层（贴花 cm/lm）；烘焙/缺失传 null */
+  groundLayers: GroundLayersField | null
+  camera: { near: number; far: number } | null
+  renderer: { capabilities: { getMaxAnisotropy(): number }; getContext?: () => WebGLRenderingContext | null }
+  scene: Object3D
+  controls?: unknown
+  terrainMesh?: unknown
+  /** 地形高度场（真值；世界系引擎顶点网格，与地面 pass 同一份） */
+  heightField: Float32Array | null
+  heightMeta?: { size?: number; span?: number } | null
+  terrainSpan: number
+  /** 会话过期判定（装配中各 await 返回点复查） */
+  stale(): boolean
+  disposeObject3D(o: Object3D): void
+  noteAsset(key: string, status: string, detail?: string): void
+  sampleHeight(x: number, z: number): number
+  onSceneryMounted(group: Object3D, heightTex: Texture | null): void
+  onRefineMaskBuilt(mask: unknown): void
+  destructDocPromise: Promise<{ instances?: DestructibleInstance[] } | null | undefined>
+}
+
+/** 装配产出（宿主按 `'key' in w` 逐字段发布；stale 中途返回时只含已推进字段）。 */
+export interface MapAssemblyWrites {
+  /** 水面海岸线高度纹理（会话 teardown 释放） */
+  waterTexDispose?: Texture | null
+  animLayerMats?: ShaderMaterial[]
+  mapScenery?: Group
+  terrainRefineMask?: unknown
+  /** 遮挡检测候选表（旧会话的由 teardown 置 null） */
+  occlGrid?: Map<string, Mesh[]>
+  annotationSurfaceGrid?: unknown
+  destructPickList?: DestructibleInstance[] | null
+  meshOwner?: Map<string, MeshOwnerValue> | null
+  destruct?: { states: DestructibleFoldState[]; ptr: number; lastT: number; animating: boolean } | null
+}
+
+export async function assembleMapScenery(gltf: import('../sceneryAssembly.js').ParsedGltf, ctx: MapAssemblyContext): Promise<{ stale: boolean; writes: MapAssemblyWrites }> {
   const { DATA, Q, DEBUG, groundLayers } = ctx;
-  const writes = {};
+  const writes: MapAssemblyWrites = {};
   // 包级天空标记必须在**变体裁剪之前**采样：变体组里的唯一 sky 节点被裁掉后，
   // 再从缩减场景重算会退化为 false 并误启 /sky/ 名字 fallback（烘焙同理）。
   const skyFlagsAvailable = sceneHasSkyFlags(gltf.scene);
@@ -38,7 +105,8 @@ export async function assembleMapScenery(gltf, ctx) {
   // 幻影物体——游戏一局只激活 LabelComponent 变体组中的一组。映射与
   // 节点标签由导出器随 GLB extras 下发；有变体节点但没有可用映射时
   // 消费端 fail-closed（隐藏全部带标记节点），不再全量渲染。
-  const variantPrune = pruneForeignVariantsDetailed(gltf.scene, DATA.meta.map_id);
+  // gltf.scene 是真实 Object3D；VariantPruneNode 是它的最小结构面
+  const variantPrune = pruneForeignVariantsDetailed(gltf.scene as Object3D & import('../variantFilter.js').VariantPruneNode, DATA.meta.map_id);
   const prunedVariants = variantPrune.removed;
   if (prunedVariants && DEBUG) window.__prunedVariantNodes = prunedVariants;
   if (variantMappingIncomplete || variantPrune.failClosed) {
@@ -52,7 +120,8 @@ export async function assembleMapScenery(gltf, ctx) {
   const sceneryExtras = await resolveSceneryExtras(gltf);
   if (ctx.stale()) { ctx.disposeObject3D(gltf.scene); return { stale: true, writes }; }
   const strictSurfaces = strictSurfacesOf(gltf.scene);
-  const isWaterNode = (name, mat) => isWaterNodeRule(name, mat, { strictSurfaces });
+  const isWaterNode = (name: string, mat: import('../sceneryAssemblyRules.js').SurfaceMaterial | null | undefined) =>
+    isWaterNodeRule(name, mat, { strictSurfaces });
   // 材质→贴图解析器（键 = gltf.parser.associations 的材质下标）：装配模块同源的
   // makeTexResolvers，六个槽同表（mask/lm/detail/env/water/decal）
   const { maskTexOf, lmTexOf, detailTexOf, envTexOf, waterTexOf, decalTexOf } =
@@ -64,12 +133,12 @@ export async function assembleMapScenery(gltf, ctx) {
   // 场景网格清单（材质转换段顺带收集；`water` = 任一材质带 extras.water ⇒ 水面/水下片）：
   // 供"贴地薄构件走廊掩码"的类筛选用——必须在"实例化合批"之前取样（合批会换掉逐节点 Mesh）。
   // 见 terrainRefineMask 声明处的方案说明。
-  const sceneryMeshes = [];
+  const sceneryMeshes: SceneryMeshSample[] = [];
   // 水面"海岸线"（客户端 water-fp.sl 的 coastLine，见 makeWaterMaterial 注释）用的共享资源：
   // 高度场（真值，与地形网格/深度缓冲同一份）做成可线性滤波的浮点纹理。
   // 资源构造在共享模块 groundPass.makeWaterCoast（俯视烘焙同一份）；本处只探测
   // 深度位深（上下文实测）与相机 near/far，并登记会话 teardown 释放。
-  let waterCoast = null;
+  let waterCoast: WaterCoastField | null = null;
   if (ctx.heightField && ctx.heightMeta) {
     try {
       const hn = ctx.heightMeta.size || 512;
@@ -126,7 +195,7 @@ export async function assembleMapScenery(gltf, ctx) {
   // 挂载即归属当前会话（评审 P1 复核）：group/水面纹理在 destructibles 悬挂期间也必须
   // 被 teardownSession 认领（宿主绑定立即拿到引用，恢复原闭包「装配即赋值」语义）——
   // 否则 reset/切场时这些资源无人释放，直到（可能永不）resolve 的请求返回。
-  ctx.onSceneryMounted(mapScenery, waterCoast ? waterCoast.heightTex : null);
+  ctx.onSceneryMounted(mapScenery, waterCoast ? (waterCoast.heightTex ?? null) : null);
 
   // ---- 贴地薄构件走廊掩码（B：走廊强制细分）----
   // 实现（类判据/足迹取样/掩码生成）在共享模块 groundPass.buildCorridorRefineMask——
@@ -167,8 +236,8 @@ export async function assembleMapScenery(gltf, ctx) {
   // 天穹排除按装配期语义标记（extras.sky 或旧包名字 fallback 都会打标）；
   // 不得再用 /sky/i 猜名字——新包天穹名可能不含 sky，旧实现会把它合批后丢失
   // frustumCulled=false 的无限远语义。
-  const allEntries = collectInstanceEntries(gltf.scene);
-  const batchable = (e) =>
+  const allEntries: SlottedEntry[] = collectInstanceEntries(gltf.scene);
+  const batchable = (e: SlottedEntry) =>
     !(e.node.userData && e.node.userData.isSky)
       && !isWaterNode(e.name, e.material)
       && !hasTransparentMaterial(e.material);
@@ -181,32 +250,33 @@ export async function assembleMapScenery(gltf, ctx) {
       && !(e.node.userData && e.node.userData.isSky)
       && !isWaterNode(e.name, e.material)), gltf.scene);
   // 可破坏匹配索引（旧 meshGrid 语义）：展平位置 → entry，2cm 半径邻域查找
-  const meshGrid = new Map();
-  const gridKey = (x, y) => `${Math.round(x / 2)},${Math.round(y / 2)}`;
-  for (const e of entries) {
+  const meshGrid = new Map<string, BatchedEntry[]>();
+  const gridKey = (x: number, y: number): string => `${Math.round(x / 2)},${Math.round(y / 2)}`;
+  for (const e of entries as BatchedEntry[]) {
     const k = gridKey(e.x, e.y);
-    (meshGrid.get(k) || meshGrid.set(k, []).get(k)).push(e);
+    const list = meshGrid.get(k) ?? meshGrid.set(k, []).get(k)!
+    list.push(e);
   }
   // 宫格分块：8×8（600m 图 → 75m/格）——整批跨全图的包围球会失去逐实例
   // 视锥剔除（镜头看半张图，视野外的实例也全量提交；林荫图极致档实测卡顿
   // 的主因）。分片后每片包围球局部化，剔除恢复到格粒度。
   // span 取地形 sidecar（地面段已装载）；缺失回退 600（与 python 管线一致）
   const cellSize = Math.max(75, (ctx.heightMeta?.span || 600) / 8);
-  const batches = groupInstanceBatches(entries, cellSize);
-  for (const b of batches) b.items.forEach((e, i) => { e.batch = b; e.idx = i; });
+  const batches = groupInstanceBatches(entries as InstanceEntry[], cellSize) as BuiltBatch[];
+  for (const b of batches) (b.items as BatchedEntry[]).forEach((e, i) => { e.batch = b; e.idx = i; });
   for (const b of batches) { b.mesh = buildInstancedMesh(b); gltf.scene.add(b.mesh); }
   // 原节点摘除：几何/材质已由批次持有（GPU 只上传批次侧），原 Mesh 不再进渲染图
   for (const e of entries) e.node.removeFromParent();
   // D_ 损毁态实例初始隐藏：实例化后没有逐实例 visible，用「远处 + 微缩」矩阵
   // （精确零矩阵是奇异矩阵，raycast 求逆走 NaN 路径，见 writeHiddenInstance）。
-  for (const e of entries) {
+  for (const e of entries as BatchedEntry[]) {
     if (e.name && e.name.startsWith('D_')) { writeHiddenInstance(e.batch.mesh, e.idx); e.hidden = true; }
   }
   // 隐藏槽位落位后重算批次球：可见实例用当前矩阵、隐藏的 D_ 槽位用 base
   // 位姿计入覆盖——three 的 union 会把 y=-1e6 的隐藏矩阵撑爆半径（剔除
   // 全失效），而只按可见重算又会让全 D_ 批次空球、损毁激活后被整批剔除
   // （评审二轮/五轮两次指出的两个方向）
-  for (const b of batches) refreshBatchSphere(b.mesh, b, (e) => e.hidden);
+  for (const b of batches) refreshBatchSphere(b.mesh, b, (e) => (e as BatchedEntry).hidden === true);
   // 标签遮挡候选格（16m，见 occlusionCells 注释）：登记粒度 = 批次。射线候选走
   // InstancedMesh 逐实例球测（成本 ≈ 候选实例数 × 球测，配合 far 钳制与 4ms 预算
   // 化轮转可控）。足印仍按**合法实例**逐一枚举（occlusionFootprintCells 语义不变；
@@ -217,11 +287,11 @@ export async function assembleMapScenery(gltf, ctx) {
   // 的网格一起卷进来（malinovka 579 棵树里 22 棵会拖走邻居几何：一棵树倒，旁边草丛
   // 跟着转）。半径收紧后邻居不再误配；无对应网格 = 该物体不在 GLB（不渲染）。
   const MESH_MATCH_R = 0.02;
-  const occGrid = new Map();
+  const occGrid = new Map<string, InstancedMesh[]>();
   for (const b of batches) {
     if (!b.geometry.boundingSphere) b.geometry.computeBoundingSphere();
     const r = b.geometry.boundingSphere ? b.geometry.boundingSphere.radius : 0;
-    for (const e of b.items) {
+    for (const e of b.items as BatchedEntry[]) {
       if (e.hidden || !e.name) continue;
       const c = occlusionFootprintCells(e.x - r, e.y - r, e.x + r, e.y + r, OCCL_CELL);
       for (const key of c) {
@@ -246,8 +316,8 @@ export async function assembleMapScenery(gltf, ctx) {
       z: surfaceMatrix[2] * item.x + surfaceMatrix[6] * item.y + surfaceMatrix[10] * item.z + surfaceMatrix[14],
     }),
   });
-  const findMeshes = (px, py, wantDestroyed, r = MESH_MATCH_R) => {
-    const out = [];
+  const findMeshes = (px: number, py: number, wantDestroyed: boolean, r = MESH_MATCH_R): BatchedEntry[] => {
+    const out: BatchedEntry[] = [];
     const gx = Math.round(px / 2), gy = Math.round(py / 2);
     for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
       for (const e of meshGrid.get(`${gx + dx},${gy + dy}`) || []) {
@@ -271,12 +341,12 @@ export async function assembleMapScenery(gltf, ctx) {
   if (DEBUG) window.__destructStage = destructDoc
     ? (Array.isArray(DATA.destructible_events) ? `events-${DATA.destructible_events.length}` : 'no-events-old-wasm')
     : 'doc-missing';
-  let destruct = null;
-  let destructPickList = null;
-  let meshOwner = null;
+  let destruct: MapAssemblyWrites['destruct'] = null;
+  let destructPickList: DestructibleInstance[] | null = null;
+  let meshOwner: Map<string, MeshOwnerValue> | null = null;
   if (destructDoc && Array.isArray(destructDoc.instances)) {
     destructPickList = destructDoc.instances;   // 守卫内发布（拾取用全量清单）
-    meshOwner = buildMeshOwnerMap(destructPickList, findMeshes);
+    meshOwner = buildMeshOwnerMap(destructPickList, (px, py, wantDestroyed): Iterable<PickMeshEntry> => findMeshes(px, py, wantDestroyed));
   }
   if (destructDoc && Array.isArray(DATA.destructible_events)) {
     const areasByEid = new Map((DATA.destructible_areas || []).map((a) => [a.eid, a]));
@@ -286,7 +356,7 @@ export async function assembleMapScenery(gltf, ctx) {
     // 树倒 = T(p)·R·T(−p)·base 逐实例矩阵（与旧 pivot 装配逐值等价，等价性由
     // sceneryInstancing.test.js 随机位姿锁定）；建筑换模 = 完好/损毁槽位在 base
     // 与隐藏矩阵之间翻转。pivot 原点/树高/停止角公式与旧实现逐项一致。
-    const slotOf = (e) => ({ mesh: e.batch.mesh, idx: e.idx, base: e.matrix });
+    const slotOf = (e: BatchedEntry): DestructibleSlot => ({ mesh: e.batch.mesh, idx: e.idx, base: e.matrix });
     for (const st of states) {
       const [px, py] = st.inst.pos;
       if (st.prop === 3) {
@@ -297,7 +367,7 @@ export async function assembleMapScenery(gltf, ctx) {
         // 同实例批次同锚点）——倒伏时长 T ∝ √(L/g) 用它（见 destructibles.js）。
         let heightM = 0;
         for (const h of hits) {
-          const geo = h.geometry;
+          const geo = h.node.geometry;
           if (!geo) continue;
           if (!geo.boundingBox) geo.computeBoundingBox();
           const bb = geo.boundingBox;
@@ -313,7 +383,7 @@ export async function assembleMapScenery(gltf, ctx) {
         // gltf.scene 局部系（z 上）→ 采样用 (lx, ly) → (世界 −lx, 世界 lz=ly)。
         // 无高度场（2D 资源平面）→ sampleHeight 恒 0，此时按平坦地面（90°）。
         st.stopRad = ctx.heightField
-          ? fallStopAngle(st.fallDir, st.pivotPos, heightM, (lx, ly) => ctx.sampleHeight(-lx, ly))
+          ? fallStopAngle(st.fallDir, st.pivotPos, heightM, (lx: number, ly: number) => ctx.sampleHeight(-lx, ly))
           : Math.PI / 2;
       } else {
         st.intactSlots = findMeshes(px, py, false).map(slotOf);
@@ -329,7 +399,7 @@ export async function assembleMapScenery(gltf, ctx) {
     // 再算该球到 pivot 的最远距离 = |center−pivot| + radius；hidden 槽位
     // （y=-1e6）不参与。
     for (const st of states) {
-      if (st.prop !== 3 || !st.slots) continue;
+      if (st.prop !== 3 || !st.slots || !st.pivotPos) continue;
       for (const s of st.slots) {
         const sph = s.mesh.boundingSphere;
         if (!sph) continue;
@@ -357,14 +427,17 @@ export async function assembleMapScenery(gltf, ctx) {
         if (need > sph.radius) sph.radius = need;
       }
     }
-    if (DEBUG) window.__destructStage = `ready states=${destruct.states.length}`;
-    if (DEBUG) window.__destructDebug = () => ({
-      events: (DATA.destructible_events || []).length,
-      states: destruct.states.length,
-      trees: destruct.states.filter((st) => st.slots).length,
-      swaps: destruct.states.filter((st) => st.intactSlots).length,
-      ptr: destruct.ptr,
-    });
+    const readyDestruct = destruct;
+    if (DEBUG && readyDestruct) {
+      window.__destructStage = `ready states=${readyDestruct.states.length}`;
+      window.__destructDebug = (): Record<string, unknown> => ({
+        events: (DATA.destructible_events || []).length,
+        states: readyDestruct.states.length,
+        trees: readyDestruct.states.filter((st) => st.slots).length,
+        swaps: readyDestruct.states.filter((st) => st.intactSlots).length,
+        ptr: readyDestruct.ptr,
+      });
+    }
   }
   writes.destructPickList = destructPickList;
   writes.meshOwner = meshOwner;

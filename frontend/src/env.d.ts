@@ -22,6 +22,24 @@ interface Window {
   __mapExposure?: number
   /** 场景装配调试计数（?debug；sceneryAssembly.ts 写入） */
   __skyMeshes?: number
-  /** 水面海岸线调试（sceneryAssembly.ts 写入） */
-  __waterCoast?: { materials?: number }
+  /** 水面海岸线调试（mapAssets.ts 写入：present/span；sceneryAssembly.ts 累加 materials） */
+  __waterCoast?: { present?: boolean; span?: number; materials?: number }
+  /** 变体裁剪计数（mapAssets.ts ?debug 写入） */
+  __prunedVariantNodes?: number
+  /** 动画混合层材质数（mapAssets.ts ?debug 写入） */
+  __animLayerMats?: number
+  /** 场景各向异性诊断（mapAssets.ts ?debug 写入） */
+  __sceneryAniso?: { value: number; textures: number }
+  /** 可破坏物装配阶段诊断（mapAssets.ts ?debug 写入） */
+  __destructStage?: string
+  /** 走廊掩码诊断（mapAssets.ts ?debug 写入） */
+  __terrainRefineMask?: { meshes: number; texels: number }
+  /** 可破坏物明细诊断（mapAssets.ts ?debug 写入） */
+  __destructDebug?: () => Record<string, unknown>
+  /** 3D 场景核心诊断钩子（renderer.ts ?debug 写入；仅创建后引用） */
+  __scene?: unknown
+  __renderer?: unknown
+  __camera?: unknown
+  __controls?: unknown
+  __setFollow?: unknown
 }

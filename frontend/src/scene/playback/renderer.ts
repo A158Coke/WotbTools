@@ -4,9 +4,58 @@
 // 模式：**创建逻辑出仓、状态所有权留在闭包**——返回创建产物（含诊断钩子挂载与
 // resize/pointer 事件接线），宿主解构赋值回自己的可变绑定；onResize 回调由宿主注入。
 import * as THREE from 'three'
+import type { PerspectiveCamera, Scene, Texture, WebGLRenderer } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import type { Clock, Raycaster, HemisphereLight, DirectionalLight } from 'three'
 import { createDynRes } from '../dynRes.js'
 import { DEFAULT_HEMI_SKY, DEFAULT_HEMI_GROUND, DEFAULT_HEMI_INTENSITY, DEFAULT_SUN_INTENSITY } from '../mapLighting.js'
+
+/** 画质档（playback/quality.js 的 QUALITY_PRESETS 条目形状；fx 见 battleFx 的 FxBudget）。 */
+export type QualityPreset = typeof import('./quality.js').QUALITY_PRESETS['high']
+
+/** createSceneCore 的装配参数（创建逻辑出仓、状态所有权留在宿主闭包）。 */
+export interface SceneCoreOptions {
+  /** 视口容器（SPA 壳内 main 区域，非整窗） */
+  container: HTMLElement
+  /** 画质档（Q） */
+  quality: QualityPreset
+  /** 对数深度偏好（LOGDEPTH） */
+  logdepth: boolean
+  /** 动态分辨率偏好（DYNRES） */
+  dynres: boolean
+  /** 诊断钩子开关（仅显式 ?debug 才挂 window.__*） */
+  debug: boolean
+  /** 逐图 IBL（资产阶段早于场景创建时补挂） */
+  envTexture?: Texture | null
+  /** 逐图 IBL 强度（scene.environmentIntensity） */
+  envMultiplier?: number
+  onResize: () => void
+  onPointerDown: (e: PointerEvent) => void
+  onPointerUp: (e: PointerEvent) => void
+  /** 诊断钩子（宿主闭包内函数声明，提升后传入） */
+  setFollow?: unknown
+}
+
+/** 渲染器实际装配快照（复用渲染器时校验偏好是否仍一致）。 */
+export interface RendererCaps {
+  logdepth: boolean
+  dynres: boolean
+}
+
+export interface SceneCore {
+  scene: Scene
+  camera: PerspectiveCamera
+  renderer: WebGLRenderer
+  controls: OrbitControls
+  clock: Clock
+  raycaster: Raycaster
+  hemiLight: HemisphereLight
+  sunLight: DirectionalLight
+  /** 动态分辨率控制器（DYNRES 且 baseDpr > 1 时装配；否则 null） */
+  dynResCtl: ReturnType<typeof createDynRes> | null
+  sizeObserver: ResizeObserver | null
+  rendererCaps: RendererCaps
+}
 
 /**
  * @param {Object} opts
@@ -26,7 +75,7 @@ export function createSceneCore({
   container, quality: Q, logdepth: LOGDEPTH, dynres: DYNRES, debug: DEBUG,
   envTexture = null, envMultiplier = 1,
   onResize, onPointerDown, onPointerUp, setFollow,
-}) {
+}: SceneCoreOptions): SceneCore {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x11161d);
   if (DEBUG) window.__scene = scene;   // 诊断钩子（仅显式 ?debug，destroy 时清除）
@@ -48,7 +97,7 @@ export function createSceneCore({
     logarithmicDepthBuffer: LOGDEPTH,
     powerPreference: 'high-performance',
   });
-  const rendererCaps = { logdepth: LOGDEPTH, dynres: DYNRES };   // 实际装配快照（复用渲染器时校验偏好是否仍一致）
+  const rendererCaps: RendererCaps = { logdepth: LOGDEPTH, dynres: DYNRES };   // 实际装配快照（复用渲染器时校验偏好是否仍一致）
   // 着色器预热（`renderer.compile`）：three 在**首次渲染某材质**时才编译程序，编译会阻塞
   // 数十~数百 ms，落在"战斗第一次开火/命中"的那一帧就是用户实测的"打起来就卡"。
   // 场景就绪后立即编译在用材质（含地面分层着色器/FX 池），成本挪到加载阶段（那时本来在等资产）。
@@ -91,7 +140,7 @@ export function createSceneCore({
     scene.environmentIntensity = envMultiplier;
   }
   addEventListener('resize', onResize);
-  let sizeObserver = null;
+  let sizeObserver: ResizeObserver | null = null;
   if (typeof ResizeObserver !== 'undefined') {
     sizeObserver = new ResizeObserver(onResize);
     sizeObserver.observe(container);

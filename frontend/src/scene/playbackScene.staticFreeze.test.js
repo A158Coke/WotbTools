@@ -10,7 +10,7 @@ import { dirname, resolve } from 'node:path'
 const here = dirname(fileURLToPath(import.meta.url))
 const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8').replace(/\/\/[^\n]*/g, '')
 // 场景装配块 2026-10-24 出仓 playback/mapAssets.js（Step A3），冻结/合批守卫随实现迁移
-const mapAssetsSrc = readFileSync(resolve(here, 'playback/mapAssets.js'), 'utf8').replace(/\/\/[^\n]*/g, '')
+const mapAssetsSrc = readFileSync(resolve(here, 'playback/mapAssets.ts'), 'utf8').replace(/\/\/[^\n]*/g, '')
 
 describe('playbackScene 静态子树矩阵冻结（场景 GLB）', () => {
   it('场景加载定型后 bake 世界矩阵并关全树 matrixAutoUpdate（含 mapScenery 根组）', () => {
@@ -51,7 +51,7 @@ describe('playbackScene 手写 shader 的实例化接线', () => {
 
 describe('playbackScene 场景 GLB 实例化合批接线', () => {
   it('合批后原节点必须摘除渲染图（漏摘 = 优化失效：原 Mesh 照常画一遍）', () => {
-    const at = mapAssetsSrc.indexOf('const batches = groupInstanceBatches(entries, cellSize)')
+    const at = mapAssetsSrc.indexOf('const batches = groupInstanceBatches(entries as InstanceEntry[], cellSize) as BuiltBatch[]')
     expect(at).toBeGreaterThan(0)
     const body = mapAssetsSrc.slice(at, at + 600)
     expect(body).toMatch(/for \(const b of batches\) \{ b\.mesh = buildInstancedMesh\(b\); gltf\.scene\.add\(b\.mesh\); \}/)
@@ -59,7 +59,7 @@ describe('playbackScene 场景 GLB 实例化合批接线', () => {
   })
 
   it('D_ 损毁态实例必须初始隐藏（writeHiddenInstance），且隐藏实例不进遮挡候选', () => {
-    const at = mapAssetsSrc.indexOf('const batches = groupInstanceBatches(entries, cellSize)')
+    const at = mapAssetsSrc.indexOf('const batches = groupInstanceBatches(entries as InstanceEntry[], cellSize) as BuiltBatch[]')
     const body = mapAssetsSrc.slice(at, mapAssetsSrc.indexOf('const destructDoc = await ctx.destructDocPromise', at))
     expect(body).toMatch(/if \(e\.name && e\.name\.startsWith\('D_'\)\) \{ writeHiddenInstance\(e\.batch\.mesh, e\.idx\); e\.hidden = true; \}/)
     // 遮挡足印登记跳过 hidden / 无名字实例
@@ -91,7 +91,7 @@ describe('playbackScene 动态分辨率接线（?dynres）', () => {
   it('装配有空间判定（DPR 无下调空间则跳过）、只喂实际渲染帧、调整即重设尺寸', () => {
     // 2026-10-24 渲染器创建核心出仓 playback/renderer.js（Step A2），装配断言随实现迁移；
     // 逐帧喂入/调整侧仍在 playbackScene（animate / onResize）
-    const rendererSrc = readFileSync(resolve(here, 'playback/renderer.js'), 'utf8')
+    const rendererSrc = readFileSync(resolve(here, 'playback/renderer.ts'), 'utf8')
     expect(rendererSrc).toMatch(/dynResCtl = DYNRES && baseDpr > 1/)
     expect(rendererSrc).toMatch(/createDynRes\(\{ ceilDpr: baseDpr \}\)/)
     expect(rendererSrc).toMatch(/renderer\.setSize\(container\.clientWidth, container\.clientHeight\);/)

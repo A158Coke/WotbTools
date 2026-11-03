@@ -40,7 +40,7 @@ interface ParsePending {
 let tankNamesPromise: Promise<Map<number, string>> | null = null
 function tankNamesStatic() {
   if (!tankNamesPromise) {
-    tankNamesPromise = assetProvider.json('/data/tank_cache.json').then((cache: Record<string, { name?: string } | null> | null) => {
+    tankNamesPromise = assetProvider.json<Record<string, { name?: string } | null>>('/data/tank_cache.json').then((cache) => {
       const out = new Map<number, string>()
       for (const [id, info] of Object.entries(cache || {})) {
         if (info && info.name) out.set(Number(id), info.name)
@@ -453,11 +453,23 @@ export async function resolveMap2dBasemap(
   if (!key) return { error: 'entry' }
   const url = map2dCanonicalUrl(key)
   if (!url) return { error: 'offline' }
-  const index = await loadMap2dIndex()
+  // map2d/index.json 条目形状（runtime guard：isValidIndex 验 schema/timestamp，
+  // geometryMatches 验 geometry 与注册表逐值相等——sha256/width/height/worldBounds 只在
+  // 通过这两个 guard 的条目上读取，与 JS 时代同一信任结构）
+  interface Map2dIndex {
+    maps?: Record<string, {
+      sha256?: string
+      width?: number
+      height?: number
+      worldBounds?: unknown
+      orientation?: unknown
+    } | null>
+  }
+  const index = await loadMap2dIndex() as Map2dIndex | null
   // 延迟导入避免 replaySource ← map2dOverlay 的循环（map2dOverlay 只依赖本地常量）
   const { isValidIndex, geometryMatches } = await import('../data/map2dOverlay.js')
   if (!isValidIndex(index)) return { error: 'index' }
-  const entry = index.maps && index.maps[String(key)]
+  const entry = index?.maps?.[String(key)]
   if (!entry) return { error: 'entry' }
   if (!geometryMatches(entry, expectedBounds)) return { error: 'geometry' }
   const doFetch = fetchImpl || ((u: string) => assetProvider.fetch(u))
