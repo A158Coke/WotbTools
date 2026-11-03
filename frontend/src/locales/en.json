@@ -45,6 +45,11 @@
     "close": "Close",
     "agent_replay_tab": "Agent 3D Replay"
   },
+  "viewHost": {
+    "loading": "Loading…",
+    "loadFailed": "Couldn't load this view",
+    "retry": "Retry"
+  },
   "errors": {
     "auth_unauthenticated": "Your session has expired. Please sign in again.",
     "auth_forbidden": "You are signed in but do not have permission for this action.",

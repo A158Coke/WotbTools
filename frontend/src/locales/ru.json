@@ -45,6 +45,11 @@
     "close": "Закрыть",
     "agent_replay_tab": "3D-повторение (Agent)"
   },
+  "viewHost": {
+    "loading": "Загрузка…",
+    "loadFailed": "Не удалось загрузить раздел",
+    "retry": "Повторить"
+  },
   "errors": {
     "auth_unauthenticated": "Сеанс истёк. Войдите снова.",
     "auth_forbidden": "Вы вошли в систему, но у вас нет прав на это действие.",
