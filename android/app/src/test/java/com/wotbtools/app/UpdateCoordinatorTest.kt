@@ -20,7 +20,7 @@ import org.robolectric.shadow.api.Shadow
 import org.robolectric.shadows.ShadowDownloadManager
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34], manifest = Config.NONE)
+@Config(sdk = [34])
 class UpdateCoordinatorTest {
     private lateinit var context: Context
 
@@ -34,6 +34,8 @@ class UpdateCoordinatorTest {
 
     @Before fun setup() {
         context = RuntimeEnvironment.getApplication()
+        @Suppress("DEPRECATION")
+        shadowOf(context.packageManager).getInternalMutablePackageInfo(context.packageName).versionCode = 3027002
         context.getSharedPreferences("android-updates", Context.MODE_PRIVATE).edit().clear().commit()
     }
 
@@ -332,6 +334,11 @@ class UpdateCoordinatorTest {
         coordinator.reconcile()
         finish(state, io)
         assertEquals("ready", coordinator.status.download.state)
+        val notifications = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        val notification = notifications.activeNotifications.single().notification
+        val destination = shadowOf(notification.contentIntent).savedIntent
+        assertEquals(MainActivity::class.java.name, destination.component?.className)
+        assertTrue(destination.getBooleanExtra(UpdateCoordinator.OPEN_UPDATE_PANEL, false))
         nextManifest = manifest(latest = 3029000).copy(sha256 = "b".repeat(64))
         coordinator.refresh(true)
         finish(state, io)
@@ -354,8 +361,212 @@ class UpdateCoordinatorTest {
         assertNull(prepared)
         assertEquals("verifyFailed", coordinator.status.download.state)
         assertEquals("hashMismatch", coordinator.status.download.failureReason)
+        assertTrue(notifications.activeNotifications.isEmpty())
         assertFalse(updater.privateFile(task).exists())
         assertEquals(0, downloads.requestCount) // 坏包及其系统任务已清理，绝不保留为可安装下载。
+    }
+
+    @Test fun readyInstallWaitsForInFlightReconcile() {
+        val bytes = "ready fixture".toByteArray()
+        val hash = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
+            .joinToString("") { "%02x".format(it) }
+        val state = QueueExecutor()
+        val io = QueueExecutor()
+        val coordinator = UpdateCoordinator(context, 3027002, "3.27.2",
+            { StartupGate.Result.Ok(manifest().copy(sha256 = hash)) }, state, io)
+        coordinator.refresh(true)
+        finish(state, io)
+        coordinator.beginDownload(3028000) { assertTrue(it) }
+        finish(state, io)
+        val updater = ApkUpdater(context)
+        val task = updater.loadTask()!!
+        File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "updates/${task.token}.apk")
+            .apply { parentFile!!.mkdirs(); writeBytes(bytes) }
+        val downloads: ShadowDownloadManager = Shadow.extract(context.getSystemService(Context.DOWNLOAD_SERVICE))
+        Shadow.extract<ShadowDownloadManager.ShadowRequest>(downloads.getRequest(task.downloadId!!)).status = DownloadManager.STATUS_SUCCESSFUL
+        coordinator.reconcile()
+        finish(state, io)
+        assertEquals("ready", coordinator.status.download.state)
+        coordinator.reconcile()
+        state.drain() // 保持对账 I/O 尚未执行。
+        val replies = mutableListOf<File?>()
+        coordinator.prepareInstall(task.token) { replies.add(it) }
+        state.drain()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue("ready install must wait for reconcile", replies.isEmpty())
+        finish(state, io)
+        assertEquals(1, replies.size)
+        assertNotNull(replies.single())
+    }
+
+    @Test fun pendingInstallRejectsDuplicateAndRechecksTaskAndFile() {
+        for (mutation in listOf("none", "tamper", "missing", "replace", "cancel", "cancelInFlight")) {
+            ShadowDownloadManager.reset()
+            val bytes = "pending fixture $mutation".toByteArray()
+            val hash = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
+                .joinToString("") { "%02x".format(it) }
+            val state = QueueExecutor()
+            val io = QueueExecutor()
+            val coordinator = UpdateCoordinator(context, 3027002, "3.27.2",
+                { StartupGate.Result.Ok(manifest().copy(sha256 = hash)) }, state, io)
+            coordinator.refresh(true); finish(state, io)
+            coordinator.beginDownload(3028000) { assertTrue(it) }; finish(state, io)
+            val updater = ApkUpdater(context)
+            val task = updater.loadTask()!!
+            File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "updates/${task.token}.apk")
+                .apply { parentFile!!.mkdirs(); writeBytes(bytes) }
+            val downloads: ShadowDownloadManager = Shadow.extract(context.getSystemService(Context.DOWNLOAD_SERVICE))
+            Shadow.extract<ShadowDownloadManager.ShadowRequest>(downloads.getRequest(task.downloadId!!)).status = DownloadManager.STATUS_SUCCESSFUL
+            coordinator.reconcile(); finish(state, io)
+            coordinator.reconcile(); state.drain()
+            val replies = mutableListOf<File?>()
+            val duplicates = mutableListOf<File?>()
+            coordinator.prepareInstall(task.token) { replies.add(it) }
+            coordinator.prepareInstall(task.token) { duplicates.add(it) }
+            state.drain(); shadowOf(Looper.getMainLooper()).idle()
+            assertTrue(replies.isEmpty())
+            assertEquals(listOf<File?>(null), duplicates)
+            when (mutation) {
+                "tamper" -> updater.privateFile(task).writeText("tampered")
+                "missing" -> {
+                    updater.privateFile(task).delete()
+                    File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "updates/${task.token}.apk").delete()
+                }
+                "replace" -> {
+                    updater.cleanup(task)
+                    updater.begin(manifest(latest = 3029000).copy(sha256 = "b".repeat(64)))
+                }
+                "cancel" -> coordinator.cancelPendingInstall(task.token)
+                "cancelInFlight" -> {
+                    io.drain(); state.drain() // 对账完成、安装校验 I/O 已排队。
+                    coordinator.cancelPendingInstall(task.token)
+                }
+            }
+            finish(state, io)
+            when (mutation) {
+                "none" -> assertNotNull(replies.single())
+                "cancel", "cancelInFlight" -> assertTrue(replies.isEmpty())
+                else -> assertNull("mutation $mutation must not yield install file", replies.single())
+            }
+            updater.loadTask()?.let { updater.cleanup(it) }
+        }
+    }
+
+    @Test fun pendingInstallRejectsRaisedMinimum() {
+        val bytes = "floor fixture".toByteArray()
+        val hash = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
+            .joinToString("") { "%02x".format(it) }
+        var next = manifest().copy(sha256 = hash)
+        val state = QueueExecutor()
+        val io = QueueExecutor()
+        val coordinator = UpdateCoordinator(context, 3027002, "3.27.2", { StartupGate.Result.Ok(next) }, state, io)
+        coordinator.refresh(true); finish(state, io)
+        coordinator.beginDownload(3028000) { assertTrue(it) }; finish(state, io)
+        val updater = ApkUpdater(context)
+        val task = updater.loadTask()!!
+        File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "updates/${task.token}.apk")
+            .apply { parentFile!!.mkdirs(); writeBytes(bytes) }
+        val downloads: ShadowDownloadManager = Shadow.extract(context.getSystemService(Context.DOWNLOAD_SERVICE))
+        Shadow.extract<ShadowDownloadManager.ShadowRequest>(downloads.getRequest(task.downloadId!!)).status = DownloadManager.STATUS_SUCCESSFUL
+        coordinator.reconcile(); finish(state, io)
+        coordinator.reconcile(); state.drain()
+        val replies = mutableListOf<File?>()
+        coordinator.prepareInstall(task.token) { replies.add(it) }
+        state.drain()
+        next = manifest(latest = 3029000, minimum = 3029000)
+        coordinator.refresh(true)
+        finish(state, io)
+        assertEquals(listOf<File?>(null), replies)
+        assertEquals("unsupportedArtifact", coordinator.status.download.failureReason)
+    }
+
+    @Test fun removedTaskCancelsObsoleteReadyNotification() {
+        val (coordinator, updater, task, state, io) = readyFixture()
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        assertEquals(1, manager.activeNotifications.size)
+        updater.cleanup(task)
+        coordinator.reconcile()
+        finish(state, io)
+        assertTrue("removed task must not advertise READY", manager.activeNotifications.isEmpty())
+        assertNotEquals("ready", coordinator.status.download.state)
+        val replies = mutableListOf<File?>()
+        coordinator.prepareInstall(task.token) { replies.add(it) }
+        finish(state, io)
+        assertEquals(listOf<File?>(null), replies)
+    }
+
+    @Test fun readyNotificationIsExplicitImmutableNavigationOnlyOnApi26And34() {
+        val (_, _, _, _, _) = readyFixture()
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        val notification = manager.activeNotifications.single().notification
+        val pending = shadowOf(notification.contentIntent)
+        val intent = pending.savedIntent
+        assertEquals(MainActivity::class.java.name, intent.component?.className)
+        assertEquals(setOf(UpdateCoordinator.OPEN_UPDATE_PANEL), intent.extras!!.keySet())
+        assertTrue(intent.getBooleanExtra(UpdateCoordinator.OPEN_UPDATE_PANEL, false))
+        assertEquals(android.app.PendingIntent.FLAG_IMMUTABLE,
+            pending.flags and android.app.PendingIntent.FLAG_IMMUTABLE)
+        assertNotNull(manager.getNotificationChannel(notification.channelId))
+    }
+
+    @Test @Config(sdk = [26]) fun readyNotificationSupportsApi26Channel() {
+        readyNotificationIsExplicitImmutableNavigationOnlyOnApi26And34()
+    }
+
+    @Test fun restartedCoordinatorReverifiesReadyWithoutRedownload() {
+        val (first, updater, task, _, _) = readyFixture()
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        val state = QueueExecutor()
+        val io = QueueExecutor()
+        val restarted = UpdateCoordinator(context, 3027002, "3.27.2",
+            { StartupGate.Result.Ok(first.latestManifest!!) }, state, io)
+        assertTrue("restart drops unverified old notification", manager.activeNotifications.isEmpty())
+        restarted.refresh(true)
+        restarted.reconcile()
+        finish(state, io)
+        assertEquals("ready", restarted.status.download.state)
+        assertEquals(task.token, restarted.status.download.taskToken)
+        assertEquals(task.downloadId, updater.loadTask()?.downloadId)
+        assertEquals(1, manager.activeNotifications.size)
+        val downloads: ShadowDownloadManager = Shadow.extract(context.getSystemService(Context.DOWNLOAD_SERVICE))
+        assertEquals(1, downloads.requestCount)
+    }
+
+    @Test fun raisedFloorBeforeMainThreadHandoffRejectsVerifiedFile() {
+        val next = java.util.concurrent.atomic.AtomicReference<VersionManifest>()
+        val (coordinator, _, task, state, io) = readyFixture(next)
+        val replies = mutableListOf<File?>()
+        coordinator.prepareInstall(task.token) { replies.add(it) }
+        state.drain(); io.drain(); state.drain() // hash done; main callback not dispatched
+        next.set(next.get().copy(latestVersionCode = 3029000, minSupportedVersionCode = 3029000))
+        coordinator.refresh(true)
+        state.drain(); io.drain(); state.drain()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals("floor changed before delivery", listOf<File?>(null), replies)
+    }
+
+    private data class ReadyFixture(val coordinator: UpdateCoordinator, val updater: ApkUpdater,
+        val task: ApkUpdater.Task, val state: QueueExecutor, val io: QueueExecutor)
+
+    private fun readyFixture(next: java.util.concurrent.atomic.AtomicReference<VersionManifest>? = null): ReadyFixture {
+        val bytes = "notification and install fixture".toByteArray()
+        val hash = java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+        val update = manifest().copy(sha256 = hash)
+        next?.set(update)
+        val state = QueueExecutor()
+        val io = QueueExecutor()
+        val coordinator = UpdateCoordinator(context, 3027002, "3.27.2", { StartupGate.Result.Ok(next?.get() ?: update) }, state, io)
+        coordinator.refresh(true); finish(state, io)
+        coordinator.beginDownload(3028000) { assertTrue(it) }; finish(state, io)
+        val updater = ApkUpdater(context)
+        val task = updater.loadTask()!!
+        File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "updates/${task.token}.apk")
+            .apply { parentFile!!.mkdirs(); writeBytes(bytes) }
+        val downloads: ShadowDownloadManager = Shadow.extract(context.getSystemService(Context.DOWNLOAD_SERVICE))
+        Shadow.extract<ShadowDownloadManager.ShadowRequest>(downloads.getRequest(task.downloadId!!)).status = DownloadManager.STATUS_SUCCESSFUL
+        coordinator.reconcile(); finish(state, io)
+        assertEquals("ready", coordinator.status.download.state)
+        return ReadyFixture(coordinator, updater, task, state, io)
     }
 
     @Test fun newMinimumInvalidatesPinnedPackageBeforeInstallerHandoff() {

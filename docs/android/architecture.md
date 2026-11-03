@@ -183,6 +183,8 @@ DownloadManager 拥有用户发起的大文件下载生命周期。任务只保�
 Content-Length 未知时使用不定进度。前台采样进度，后台由系统继续；重新进入、完成通知都以系统 query 为准，
 广播不能直接使 APK 变为已验证。网络等待、等待重试、空间不足、存储不可用和不可续传使用有界原因，实际续传能力受系统与下载端点影响。
 
+DownloadManager 只显示下载进度；当前任务的最终 APK 验证为 ready 后由应用发布通知，点击只打开更新面板，安装资格仍由 coordinator 校验。通知权限被拒绝不影响下载与手动安装；下载期间进程被终止时，重新打开应用会触发对账。
+
 下载先到 app-specific external 的 updates 目录，再流式复制到内部 `files/updates` 同时计算 SHA-256，
 匹配后原子落位为 ready。更新 APK 只通过 FileProvider 的内部 updates 窄目录交接；现有 cache 路径仍服务 replay，不把 DownloadManager 完成 URI 直接交给 installer。
 恢复进程及安装前重新验证私有包；哈希不符删除产物并禁止安装。新 latest 不改变旧任务的版本/哈希；

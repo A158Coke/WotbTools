@@ -8,6 +8,10 @@ import android.content.BroadcastReceiver
 import android.content.Intent
 import android.content.IntentFilter
 import android.app.DownloadManager
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Notification
 import androidx.core.content.ContextCompat
 import java.io.File
 import java.util.concurrent.CopyOnWriteArraySet
@@ -26,34 +30,20 @@ internal class UpdateCoordinator internal constructor(
     private val ioExecutor: Executor = Executors.newSingleThreadExecutor(),
     private val updaterOverride: ApkUpdater? = null,
 ) {
-    /** 系统通知是额外用户入口；只认本任务 downloadId，不允许任意 intent/URL。 */
-    class NotificationReceiver : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action != DownloadManager.ACTION_NOTIFICATION_CLICKED) return
-            val ids = intent.getLongArrayExtra(DownloadManager.EXTRA_NOTIFICATION_CLICK_DOWNLOAD_IDS) ?: return
-            val pending = goAsync()
-            val app = context.applicationContext
-            val coordinator = get(app)
-            coordinator.ioExecutor.execute {
-                try {
-                    val task = coordinator.updater.loadTask() ?: return@execute
-                    val id = coordinator.updater.query(task).task.downloadId ?: return@execute
-                    if (id !in ids) return@execute
-                    app.startActivity(Intent(app, MainActivity::class.java)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                        .putExtra(OPEN_UPDATE_PANEL, true))
-                } catch (_: Exception) {
-                    // 系统任务不可确认时不猜测，不打开任意页面或安装器。
-                } finally { pending.finish() }
-            }
-        }
-    }
     private val applicationContext = context.applicationContext
+    init {
+        // 进程重启后旧通知不再作为 READY 证明；恢复对账重新验证后才重新显示。
+        (applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+            .cancel(READY_NOTIFICATION_ID)
+    }
     private val updater by lazy { updaterOverride ?: ApkUpdater(applicationContext) }
     internal val preferences = context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val listeners = CopyOnWriteArraySet<() -> Unit>()
     private val pendingRefreshReplies = mutableListOf<(JSONObject) -> Unit>()
+    private class InstallRequest(val token: String, @Volatile var callback: ((File?) -> Unit)?)
+    private var pendingInstall: InstallRequest? = null
+    @Volatile private var activeInstall: InstallRequest? = null
     private var downloadBusy = false
     @Volatile private var verifiedToken: String? = null
     @Volatile private var activeDownloadId: Long? = null
@@ -69,7 +59,8 @@ internal class UpdateCoordinator internal constructor(
         override fun onReceive(context: Context?, intent: Intent?) {
             // 广播只触发对账；真实状态和完整性仍取自系统 query / SHA。
             if (intent?.action == DownloadManager.ACTION_DOWNLOAD_COMPLETE &&
-                intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1) == activeDownloadId) reconcile()
+                intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1) == activeDownloadId &&
+                instance === this@UpdateCoordinator) reconcile()
         }
     }
     private var receiverRegistered = false
@@ -161,8 +152,43 @@ internal class UpdateCoordinator internal constructor(
         }
     }
 
+    /** 通知仅是导航入口；文件身份和安装资格仍由 coordinator 校验。 */
+    private fun updateReadyNotification(snapshot: Status) {
+        val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val download = snapshot.download
+        val valid = download.state == "ready" && download.taskToken != null &&
+            download.taskToken == verifiedToken && download.versionCode != null &&
+            download.versionCode > currentVersionCode && download.failureReason != "unsupportedArtifact" &&
+            snapshot.manifest?.let { download.versionCode >= it.minSupportedVersionCode } != false
+        if (!valid) {
+            manager.cancel(READY_NOTIFICATION_ID)
+            return
+        }
+        try {
+            manager.createNotificationChannel(NotificationChannel(READY_CHANNEL,
+                applicationContext.getString(R.string.update_notification_channel), NotificationManager.IMPORTANCE_DEFAULT))
+            val intent = Intent(applicationContext, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                .putExtra(OPEN_UPDATE_PANEL, true)
+            val pending = PendingIntent.getActivity(applicationContext, 0, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            val notification = Notification.Builder(applicationContext, READY_CHANNEL)
+                .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                .setContentTitle(applicationContext.getString(R.string.update_notification_title))
+                .setContentText(applicationContext.getString(R.string.update_notification_text, download.versionName ?: ""))
+                .setContentIntent(pending).setAutoCancel(true).setOnlyAlertOnce(true).build()
+            manager.notify(READY_NOTIFICATION_ID, notification)
+        } catch (_: SecurityException) {
+            // 通知权限是可选入口，拒绝时不影响校验和安装。
+        } catch (error: RuntimeException) {
+            // 通知服务异常不能使更新状态机停止。
+            Log.w(TAG, "update_notification_failed", error)
+        }
+    }
+
     private fun publish(next: Status) {
         status = next.copy(revision = status.revision + 1)
+        updateReadyNotification(status)
         notifyListeners()
     }
 
@@ -247,9 +273,6 @@ internal class UpdateCoordinator internal constructor(
                     receiverRegistered = true
                 }
                 progressTick.run()
-            } else if (receiverRegistered) {
-                applicationContext.unregisterReceiver(completionReceiver)
-                receiverRegistered = false
             }
         }
     }
@@ -340,7 +363,13 @@ internal class UpdateCoordinator internal constructor(
                             Log.i(TAG, "update_download_failed reason=$foundFailure")
                         }
                         installed -> { verifiedToken = null; publishDownload(DownloadSnapshot()) }
-                        foundTask == null -> Unit // 保留刚才的失败，直到显式用户重试。
+                        foundTask == null -> {
+                            verifiedToken = null
+                            activeDownloadId = null
+                            if (status.download.state in setOf("ready", "verifying", "installPermissionRequired", "installRequestFailed", "installRequested"))
+                                publishDownload(DownloadSnapshot())
+                            // 保留刚才的下载/校验失败，直到显式用户重试。
+                        }
                         foundReport != null -> {
                             activeDownloadId = foundTask.downloadId
                             val ready = foundReport.state == "verifying" && verifiedToken == foundTask.token
@@ -351,6 +380,10 @@ internal class UpdateCoordinator internal constructor(
                             publishDownload(taskSnapshot(foundTask, state, foundReport.downloadedBytes,
                                 foundReport.totalBytes, if (state == "installPermissionRequired") "permissionDenied" else foundReport.reason))
                         }
+                    }
+                    pendingInstall?.let { request ->
+                        pendingInstall = null
+                        prepareInstallOnState(request)
                     }
                 }
             }
@@ -402,12 +435,56 @@ internal class UpdateCoordinator internal constructor(
 
     /** 不信任 ready 标志；每次显式安装都离开主线程重新校验当前私有文件。 */
     fun prepareInstall(expectedToken: String, reply: (File?) -> Unit) {
+        val request = InstallRequest(expectedToken, reply)
+        stateExecutor.execute { prepareInstallOnState(request) }
+    }
+
+    /** Activity 销毁后移除尚未执行的回调，避免进程级 coordinator 持有过期界面。 */
+    fun cancelPendingInstall(expectedToken: String) {
+        // 主线程先释放正在校验或等待主线程分发的回调；I/O 不持有 Activity。
+        activeInstall?.takeIf { it.token == expectedToken }?.callback = null
         stateExecutor.execute {
-            val download = status.download
-            if (downloadBusy || download.taskToken != expectedToken || download.failureReason == "unsupportedArtifact" ||
-                download.state !in setOf("ready", "installPermissionRequired", "installRequestFailed")) {
-                mainHandler.post { reply(null) }; return@execute
+            if (pendingInstall?.token == expectedToken) {
+                pendingInstall?.callback = null
+                pendingInstall = null
             }
+            if (activeInstall?.token == expectedToken) activeInstall = null
+        }
+    }
+
+    private fun replyInstall(request: InstallRequest, file: File?) {
+        mainHandler.post {
+            val callback = request.callback
+            request.callback = null
+            if (activeInstall === request) activeInstall = null
+            val download = status.download
+            val stillValid = file != null && file.isFile && download.taskToken == request.token &&
+                verifiedToken == request.token && download.state in setOf("ready", "installPermissionRequired", "installRequestFailed") &&
+                download.versionCode?.let { code -> code > currentVersionCode &&
+                    status.manifest?.let { code >= it.minSupportedVersionCode } != false } == true &&
+                download.failureReason != "unsupportedArtifact"
+            callback?.invoke(file.takeIf { stillValid })
+        }
+    }
+
+    private fun prepareInstallOnState(request: InstallRequest) {
+            val expectedToken = request.token
+            val download = status.download
+            if (download.taskToken != expectedToken || download.failureReason == "unsupportedArtifact" ||
+                download.state !in setOf("ready", "installPermissionRequired", "installRequestFailed")) {
+                replyInstall(request, null); return
+            }
+            if (downloadBusy) {
+                if (pendingInstall == null && activeInstall == null) {
+                    pendingInstall = request
+                    activeInstall = request
+                } else replyInstall(request, null)
+                return
+            }
+            if (activeInstall != null && activeInstall !== request) {
+                replyInstall(request, null); return
+            }
+            activeInstall = request
             downloadBusy = true
             publishDownload(download.copy(state = "verifying", failureReason = null))
             ioExecutor.execute {
@@ -443,23 +520,25 @@ internal class UpdateCoordinator internal constructor(
                     val unsupported = verifiedTask != null && status.manifest?.let {
                         verifiedTask.versionCode < it.minSupportedVersionCode
                     } == true
-                    if (fallbackTask != null) {
+                    if (status.download.taskToken != expectedToken) {
+                        replyInstall(request, null)
+                    } else if (fallbackTask != null) {
                         publishDownload(taskSnapshot(fallbackTask, "queued"))
-                        mainHandler.post { reply(null) }
+                        replyInstall(request, null)
                         reconcile()
-                    } else if (failed == null && verifiedTask != null && verifiedFile != null && !unsupported) {
+                    } else if (failed == null && verifiedTask != null && verifiedFile != null && !unsupported &&
+                        status.download.taskToken == expectedToken && verifiedTask.versionCode > currentVersionCode) {
                         Log.i(TAG, "update_verify_success")
                         verifiedToken = expectedToken
                         publishDownload(taskSnapshot(verifiedTask, "ready", download.downloadedBytes, download.totalBytes))
-                        mainHandler.post { reply(verifiedFile) }
+                        replyInstall(request, verifiedFile)
                     } else {
                         publishDownload(download.copy(state = if (failed == "hashMismatch") "verifyFailed" else "installRequestFailed",
                             failureReason = if (unsupported) "unsupportedArtifact" else failed ?: "artifactMissing"))
-                        mainHandler.post { reply(null) }
+                        replyInstall(request, null)
                     }
                 }
             }
-        }
     }
 
     private fun installationState(token: String, state: String, failure: String? = null) {
@@ -485,6 +564,8 @@ internal class UpdateCoordinator internal constructor(
 
     companion object {
         internal const val OPEN_UPDATE_PANEL = "com.wotbtools.app.OPEN_UPDATE_PANEL"
+        private const val READY_CHANNEL = "verified-update"
+        private const val READY_NOTIFICATION_ID = 4000
         private const val TAG = "WotbUpdate"
         private const val PREFERENCES = "android-updates"
         private const val DISMISSED_VERSION = "dismissedLatestVersionCode"

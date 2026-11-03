@@ -73,6 +73,7 @@ android {
     }
 
     buildFeatures { buildConfig = true }
+    testOptions { unitTests.isIncludeAndroidResources = true }
     // 侧载分发：压缩 Gecko native libs，优先减小下载体积（代价是安装时解压）。
     packaging { jniLibs { useLegacyPackaging = true } }
 

@@ -51,6 +51,9 @@ class ApkUpdaterTest {
 
     @Before fun setup() {
         context = RuntimeEnvironment.getApplication()
+        @Suppress("DEPRECATION")
+        org.robolectric.Shadows.shadowOf(context.packageManager)
+            .getInternalMutablePackageInfo(context.packageName).versionCode = 3027002
         originalSourceDir = context.applicationInfo.sourceDir
         context.getSharedPreferences("android-updates", Context.MODE_PRIVATE).edit().clear().commit()
         InitialDestinationShadow.destinationUnknown = false
@@ -93,7 +96,7 @@ class ApkUpdaterTest {
         val delta = updater.begin(update)
         assertEquals("delta", delta.packageType)
         assertEquals(patch.url, request(delta).uri.toString())
-        assertEquals(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED, request(delta).notificationVisibility)
+        assertEquals(DownloadManager.Request.VISIBILITY_VISIBLE, request(delta).notificationVisibility)
         assertEquals(delta, ApkUpdater(context).loadTask())
         request(delta).status = DownloadManager.STATUS_SUCCESSFUL
         source(delta).writeBytes(byteArrayOf(8, 9))
@@ -134,7 +137,7 @@ class ApkUpdaterTest {
         assertEquals(1, shadow.requestCount)
         assertEquals(manifest().apkUrl, request(task).uri.toString())
         assertEquals(source(task).canonicalFile, File(request(task).destination.path!!).canonicalFile)
-        assertEquals(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED, request(task).notificationVisibility)
+        assertEquals(DownloadManager.Request.VISIBILITY_VISIBLE, request(task).notificationVisibility)
         assertEquals("application/octet-stream", request(task).mimeType)
     }
 

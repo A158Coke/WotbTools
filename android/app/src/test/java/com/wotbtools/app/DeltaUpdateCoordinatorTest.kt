@@ -22,7 +22,7 @@ import org.robolectric.shadow.api.Shadow
 import org.robolectric.shadows.ShadowDownloadManager
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34], manifest = Config.NONE)
+@Config(sdk = [34])
 class DeltaUpdateCoordinatorTest {
     private class QueueExecutor : Executor {
         private val tasks = ArrayDeque<Runnable>()
@@ -41,6 +41,8 @@ class DeltaUpdateCoordinatorTest {
 
     @Before fun setup() {
         context = RuntimeEnvironment.getApplication()
+        @Suppress("DEPRECATION")
+        shadowOf(context.packageManager).getInternalMutablePackageInfo(context.packageName).versionCode = 3027002
         originalSource = context.applicationInfo.sourceDir
         context.getSharedPreferences("android-updates", Context.MODE_PRIVATE).edit().clear().commit()
         ShadowDownloadManager.reset()
@@ -145,10 +147,40 @@ class DeltaUpdateCoordinatorTest {
         assertTrue(full.fallback)
         assertFalse(updater.privateFile(full).exists())
         assertNotEquals("ready", coordinator.status.download.state)
+        val notifications = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        assertTrue(notifications.activeNotifications.isEmpty())
         assertEquals("https://example.invalid/update.apk", request(full).uri.toString())
         repeat(2) { coordinator.reconcile(); finish() }
         assertEquals(full.downloadId, updater.loadTask()!!.downloadId)
         assertEquals(1, downloads.requestCount)
+    }
+
+    @Test fun completionNotificationWaitsForExactReconstructedTargetSha() {
+        val target = ByteArray(1000) { 42 }
+        val update = manifest(patchSize = 2).copy(sha256 = sha(target))
+        val notifications = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        lateinit var coordinator: UpdateCoordinator
+        var applied = false
+        val updater = ApkUpdater(context) { _, _, output, _ ->
+            state.drain() // 发布真实 verifyDelta 的 applyingDelta，再检查通知。
+            assertEquals("applyingDelta", coordinator.status.download.state)
+            assertTrue(notifications.activeNotifications.isEmpty())
+            output.writeBytes(target)
+            applied = true
+        }
+        val started = start(update, updater)
+        coordinator = started.first
+        val delta = started.second
+        assertTrue(notifications.activeNotifications.isEmpty())
+        File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "updates/${delta.token}.apk")
+            .apply { parentFile!!.mkdirs(); writeBytes(byteArrayOf(1, 2)) }
+        request(delta).status = DownloadManager.STATUS_SUCCESSFUL
+        coordinator.reconcile()
+        finish()
+        assertTrue(applied)
+        assertEquals(update.sha256, sha(updater.privateFile(delta).readBytes()))
+        assertEquals("ready", coordinator.status.download.state)
+        assertEquals(1, notifications.activeNotifications.size)
     }
 
     @Test fun tamperedReadyDeltaFallsBackBeforeInstallerHandoff() {

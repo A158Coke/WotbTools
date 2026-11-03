@@ -566,7 +566,9 @@ class MainActivity : Activity() {
             bridgeInstallUpdate(download.taskToken) { }
         } else {
             updateCoordinator.latestManifest?.let { manifest ->
-                updateCoordinator.beginDownload(manifest.latestVersionCode) { }
+                updateCoordinator.beginDownload(manifest.latestVersionCode) { accepted ->
+                    if (accepted) requestUpdateNotificationPermission()
+                }
             }
         }
     }
@@ -605,6 +607,7 @@ class MainActivity : Activity() {
     override fun onPause() {
         updateForeground = false
         legacyInstallVersionCode = null
+        preparingInstallToken?.let { updateCoordinator.cancelPendingInstall(it) }
         preparingInstallToken = null
         installAttempt++
         updateCoordinator.setForeground(false)
@@ -993,7 +996,18 @@ class MainActivity : Activity() {
 
     fun bridgeBeginUpdateDownload(expectedVersionCode: Int?, reply: (Boolean) -> Unit) {
         if (expectedVersionCode == null) { reply(false); return }
-        updateCoordinator.beginDownload(expectedVersionCode, reply)
+        updateCoordinator.beginDownload(expectedVersionCode) { accepted ->
+            if (accepted) requestUpdateNotificationPermission()
+            reply(accepted)
+        }
+    }
+
+    private fun requestUpdateNotificationPermission() {
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED &&
+            !isFinishing && !isDestroyed) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 0x1201)
+        }
     }
 
     fun bridgeDismissOptionalUpdate(expectedVersionCode: Int?, reply: (Boolean) -> Unit) {
@@ -1015,7 +1029,8 @@ class MainActivity : Activity() {
                     updateCoordinator.status.download.taskToken == expectedToken &&
                     updateCoordinator.status.download.failureReason != "unsupportedArtifact"
                 if (installAttempt == attempt) preparingInstallToken = null
-                if (!stillValid || file == null) { reply(false); return@prepareInstall }
+                if (!stillValid) return@prepareInstall
+                if (file == null) { reply(false); return@prepareInstall }
                 if (!packageManager.canRequestPackageInstalls()) {
                     updateCoordinator.installPermissionRequired(expectedToken)
                     reply(openInstallPermissionSettings(expectedToken))
@@ -1041,6 +1056,7 @@ class MainActivity : Activity() {
                 val manifest = updateCoordinator.latestManifest ?: return@runOnUiThread
                 legacyInstallVersionCode = manifest.latestVersionCode
                 updateCoordinator.beginDownload(manifest.latestVersionCode) { accepted ->
+                    if (accepted) requestUpdateNotificationPermission()
                     if (!accepted) legacyInstallVersionCode = null
                 }
             }

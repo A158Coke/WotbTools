@@ -60,7 +60,10 @@ class UpdateExperienceDeviceTest {
             // 外部 adb 明确 SIGKILL 后，只允许恢复同一个测试夹具任务，不接受任意设备任务。
             assertEquals(restoreToken, existing?.token)
             val deltaUrl = InstrumentationRegistry.getArguments().getString("deltaPatchUrl")
-            if (deltaUrl == null) {
+            if (InstrumentationRegistry.getArguments().getString("restoreReadyNotification") == "true") {
+                assertEquals(SMALL_URL, existing?.apkUrl)
+                assertEquals(SMALL_SHA, existing?.sha256)
+            } else if (deltaUrl == null) {
                 assertEquals(LARGE_URL, existing?.apkUrl)
                 assertEquals(LARGE_SHA, existing?.sha256)
             } else {
@@ -153,42 +156,50 @@ class UpdateExperienceDeviceTest {
         Log.i(TAG, "mandatory_gate_back_blocked version_name_visible failure_keeps_gate")
     }
 
-    @Test fun completedDownloadNotificationReceiverRecognizesOnlyOwnedTask() {
+    @Test fun verifiedCompletionNotificationOpensUpdatePanel() {
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            shell("pm grant ${context.packageName} android.permission.POST_NOTIFICATIONS")
+        }
         result.set(StartupGate.Result.Ok(manifest()))
         awaitReply<JSONObject> { coordinator.refresh(true, it) }
         val first = instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
         var opened: MainActivity? = null
         try {
-            waitUntil("real bundled Gecko bridge connected", 120_000) {
-                val ready = AtomicReference(false)
-                instrumentation.runOnMainSync {
-                    val field = MainActivity::class.java.getDeclaredField("runtime").apply { isAccessible = true }
-                    val runtime = field.get(first) as GeckoWebRuntime
-                    val port = GeckoWebRuntime::class.java.getDeclaredField("port").apply { isAccessible = true }
-                    ready.set(port.get(runtime) != null)
-                }
-                ready.get()
-            }
             assertTrue(awaitReply<Boolean> { coordinator.beginDownload(latestCode, it) })
             waitUntil("HTTPS fixture ready", 90_000) { coordinator.status.download.state == "ready" }
             val task = requireNotNull(updater.loadTask())
             val id = requireNotNull(task.downloadId)
+            val installer = installerMonitor()
             shell("input keyevent KEYCODE_HOME")
-            val activityMonitor = instrumentation.addMonitor(MainActivity::class.java.name, null, false).also(monitors::add)
-            fun sendClick(clicked: Long) {
-                context.sendBroadcast(Intent(DownloadManager.ACTION_NOTIFICATION_CLICKED)
-                    .setClass(context, UpdateCoordinator.NotificationReceiver::class.java)
-                    .putExtra(DownloadManager.EXTRA_NOTIFICATION_CLICK_DOWNLOAD_IDS, longArrayOf(clicked)))
+            val monitor = instrumentation.addMonitor(MainActivity::class.java.name, null, false).also(monitors::add)
+            shell("cmd statusbar expand-notifications")
+            val automation = instrumentation.uiAutomation
+            val serviceInfo = automation.serviceInfo
+            serviceInfo.flags = serviceInfo.flags or
+                android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
+                android.accessibilityservice.AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
+            automation.serviceInfo = serviceInfo
+            waitUntil("verified notification in system UI", 30_000) {
+                val bounds = android.graphics.Rect()
+                val title = context.getString(R.string.update_notification_title)
+                val roots = listOfNotNull(automation.rootInActiveWindow) + automation.windows.mapNotNull { it.root }
+                // Search notification body, not a status-bar icon whose content description
+                // also contains the title. The fixture version identifies this task's row.
+                roots.asSequence().flatMap { it.findAccessibilityNodeInfosByViewId("android:id/text").asSequence() }
+                    .firstOrNull { it.text?.toString()?.contains("WotBTools ${task.versionName}") == true }
+                    ?.getBoundsInScreen(bounds)
+                if (bounds.isEmpty) return@waitUntil false
+                Log.i(TAG, "actual_system_ui_notification_tap api=${android.os.Build.VERSION.SDK_INT} title=$title bounds=$bounds before=${focusedWindowLine()}")
+                shell("input tap ${bounds.centerX()} ${bounds.centerY()}")
+                true
             }
-            sendClick(id + 1_000_000)
-            SystemClock.sleep(1_000)
-            assertEquals("unrelated task must not reopen app", 0, activityMonitor.hits)
-            assertEquals(id, updater.loadTask()?.downloadId)
-            sendClick(id)
-            opened = activityMonitor.waitForActivityWithTimeout(30_000) as? MainActivity
-            assertNotNull("owned notification reopens MainActivity", opened)
-            waitUntil("owned notification routes to update panel", 30_000) {
+            waitUntil("notification reopens MainActivity", 30_000) {
+                focusedWindowLine().contains("com.wotbtools.app/com.wotbtools.app.MainActivity")
+            }
+            // singleTask may deliver onNewIntent to the existing Activity instead of creating one.
+            opened = (monitor.waitForActivityWithTimeout(1_000) as? MainActivity) ?: first
+            waitUntil("notification routes to update panel", 30_000) {
                 val url = AtomicReference<String?>()
                 instrumentation.runOnMainSync {
                     val field = MainActivity::class.java.getDeclaredField("runtime").apply { isAccessible = true }
@@ -198,11 +209,148 @@ class UpdateExperienceDeviceTest {
             }
             assertEquals(id, updater.loadTask()?.downloadId)
             assertEquals(task.token, updater.loadTask()?.token)
-            Log.i(TAG, "owned_notification_routes_update_panel id=$id unrelated_ignored no_redownload")
+            assertEquals(0, installer.hits)
+            Log.i(TAG, "verified_system_notification_clicked api=${android.os.Build.VERSION.SDK_INT} task_id=$id token=${task.token} same_token no_redownload no_installer focus=${focusedWindowLine()}")
         } finally {
             instrumentation.runOnMainSync { opened?.finish(); first.finish() }
         }
     }
+
+    @Test fun readyInstallWaitsForBlockedReconcileWithoutSecondClick() {
+        // 使用系统安装 intent 监控器阻止真正安装；下载和文件校验均为真实执行。
+        assertTrue("Grant REQUEST_INSTALL_PACKAGES app-op before running this test",
+            context.packageManager.canRequestPackageInstalls())
+        val installer = installerMonitor()
+        launch(manifest())
+        assertTrue(awaitReply<Boolean> { coordinator.beginDownload(latestCode, it) })
+        waitUntil("real download verified ready", 90_000) { coordinator.status.download.state == "ready" }
+        val task = requireNotNull(updater.loadTask())
+        val downloadId = requireNotNull(task.downloadId)
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val replied = CountDownLatch(1)
+        val accepted = AtomicReference<Boolean>()
+        try {
+            // 队列屏障让 reconcile 真正进入 busy，再由 UI 发出一次安装请求。
+            ioExecutor.execute {
+                entered.countDown()
+                check(release.await(45, TimeUnit.SECONDS))
+            }
+            assertTrue("I/O barrier entered", entered.await(10, TimeUnit.SECONDS))
+            coordinator.reconcile()
+            stateExecutor.submit {}.get(10, TimeUnit.SECONDS)
+            onActivity { activity ->
+                activity.bridgeInstallUpdate(task.token) { value -> accepted.set(value); replied.countDown() }
+            }
+            stateExecutor.submit {}.get(10, TimeUnit.SECONDS)
+            assertEquals("install must wait for reconcile", 1L, replied.count)
+            release.countDown()
+            assertTrue("queued install completes", replied.await(45, TimeUnit.SECONDS))
+            assertEquals(true, accepted.get())
+            waitUntil("one installer intent") { installer.hits == 1 }
+            assertEquals(task.token, updater.loadTask()?.token)
+            assertEquals(downloadId, updater.loadTask()?.downloadId)
+            assertEquals(1, installer.hits)
+            Log.i(TAG, "ready_reconcile_install queued_one_click installer_requests=1 task_id=$downloadId")
+        } finally {
+            release.countDown()
+        }
+    }
+
+    @Test fun activityRecreationCancelsQueuedInstallAndPreservesVerifiedApk() {
+        val installer = installerMonitor()
+        launch(manifest())
+        assertTrue(awaitReply<Boolean> { coordinator.beginDownload(latestCode, it) })
+        waitUntil("verified ready") { coordinator.status.download.state == "ready" }
+        val task = requireNotNull(updater.loadTask())
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val callbacks = java.util.concurrent.atomic.AtomicInteger()
+        try {
+            ioExecutor.execute { entered.countDown(); check(release.await(45, TimeUnit.SECONDS)) }
+            assertTrue(entered.await(10, TimeUnit.SECONDS))
+            coordinator.reconcile()
+            stateExecutor.submit {}.get(10, TimeUnit.SECONDS)
+            onActivity { it.bridgeInstallUpdate(task.token) { callbacks.incrementAndGet() } }
+            stateExecutor.submit {}.get(10, TimeUnit.SECONDS)
+            assertEquals(0, callbacks.get())
+            scenario!!.recreate()
+            stateExecutor.submit {}.get(10, TimeUnit.SECONDS)
+            release.countDown()
+            repeat(3) { ioExecutor.submit {}.get(45, TimeUnit.SECONDS); stateExecutor.submit {}.get(45, TimeUnit.SECONDS) }
+            instrumentation.waitForIdleSync()
+            assertEquals("destroyed Activity must not receive install callback", 0, callbacks.get())
+            assertEquals(0, installer.hits)
+            waitUntil("new Activity recovered READY") { coordinator.status.download.state == "ready" }
+            assertEquals(task.token, updater.loadTask()?.token)
+            assertEquals(task.downloadId, updater.loadTask()?.downloadId)
+            assertEquals(SMALL_SHA, fileSha256(updater.privateFile(task)))
+            assertNotNull(awaitReply<File?> { coordinator.prepareInstall(task.token, it) })
+            Log.i(TAG, "recreated_activity_queued_install_cancelled old_callbacks=0 installer=0 ready_preserved id=${task.downloadId}")
+        } finally { release.countDown() }
+    }
+
+    @Test fun notificationPermissionDenialKeepsManualPanelAndMandatoryGateUsable() {
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            shell("pm revoke ${context.packageName} android.permission.POST_NOTIFICATIONS")
+            assertFalse(context.getSystemService(android.app.NotificationManager::class.java).areNotificationsEnabled())
+        }
+        val installer = installerMonitor()
+        launch(manifest())
+        assertTrue(awaitReply<Boolean> { coordinator.beginDownload(latestCode, it) })
+        waitUntil("READY despite denied notification permission", 90_000) { coordinator.status.download.state == "ready" }
+        val task = requireNotNull(updater.loadTask())
+        if (android.os.Build.VERSION.SDK_INT >= 33) assertTrue(readyNotifications().isEmpty())
+        context.startActivity(Intent(context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            .putExtra(UpdateCoordinator.OPEN_UPDATE_PANEL, true))
+        waitUntil("manual update panel without notification") {
+            onActivityValue { activity ->
+                val field = MainActivity::class.java.getDeclaredField("runtime").apply { isAccessible = true }
+                (field.get(activity) as GeckoWebRuntime).currentUrl?.contains("view=android") == true
+            }
+        }
+        assertNotNull(awaitReply<File?> { coordinator.prepareInstall(task.token, it) })
+        assertEquals(0, installer.hits)
+        result.set(StartupGate.Result.Ok(manifest(minimum = latestCode)))
+        awaitReply<JSONObject> { coordinator.refresh(true, it) }
+        instrumentation.waitForIdleSync()
+        assertMandatoryVisible()
+        assertEquals(task.token, updater.loadTask()?.token)
+        assertEquals(task.downloadId, updater.loadTask()?.downloadId)
+        Log.i(TAG, "notification_denial_safe api=${android.os.Build.VERSION.SDK_INT} manual_panel=true mandatory_gate=true verified_file=true")
+    }
+
+    @Test fun verifiedReadyNotificationRecoversAfterProcessRestart() {
+        val args = InstrumentationRegistry.getArguments()
+        if (android.os.Build.VERSION.SDK_INT >= 33)
+            shell("pm grant ${context.packageName} android.permission.POST_NOTIFICATIONS")
+        val installer = installerMonitor()
+        val restoredToken = args.getString("restoreTaskToken")
+        launch(manifest())
+        if (restoredToken == null) assertTrue(awaitReply<Boolean> { coordinator.beginDownload(latestCode, it) })
+        else coordinator.reconcile()
+        waitUntil("recovered and reverified READY notification", 90_000) {
+            coordinator.status.download.state == "ready" && readyNotifications().size == 1
+        }
+        val task = requireNotNull(updater.loadTask())
+        assertEquals(SMALL_SHA, fileSha256(updater.privateFile(task)))
+        assertEquals(DownloadManager.STATUS_SUCCESSFUL, systemStatus(requireNotNull(task.downloadId)))
+        if (restoredToken != null) {
+            assertEquals(restoredToken, task.token)
+            assertEquals(args.getString("restoreDownloadId")!!.toLong(), task.downloadId)
+        }
+        assertEquals(0, installer.hits)
+        Log.i(TAG, "ready_notification_recovery pid=${android.os.Process.myPid()} restored=${restoredToken != null} token=${task.token} id=${task.downloadId} exact_sha=true no_installer")
+        if (args.getString("killAfterReady") == "true") {
+            // Host 将这个已持久化的精确 identity 传入新 instrumentation；进程退出本身不是 PASS。
+            android.os.Process.killProcess(android.os.Process.myPid())
+            fail("Process did not terminate")
+        }
+    }
+
+    private fun readyNotifications() = context.getSystemService(android.app.NotificationManager::class.java)
+        .activeNotifications.filter { it.notification.channelId == "verified-update" }
 
     @Test fun realHttpsBadHashNeverRequestsInstaller() {
         val installer = installerMonitor()
@@ -210,6 +358,7 @@ class UpdateExperienceDeviceTest {
         assertTrue(awaitReply<Boolean> { coordinator.beginDownload(latestCode, it) })
         waitUntil("actual DM bad-hash rejection", 90_000) { coordinator.status.download.state == "verifyFailed" }
         assertEquals("hashMismatch", coordinator.status.download.failureReason)
+        assertTrue(readyNotifications().isEmpty())
         val token = coordinator.status.download.taskToken
         assertNotNull(token)
         assertFalse(File(context.filesDir, "updates/$token.apk").exists())
