@@ -16,7 +16,7 @@
 ```
 
 现象是「回放能播、标签与伤害数字都在，但地图/建筑/车模没了」——因为回放解析与场景内核的
-数据部分不依赖资产，只有资产面缺失。**标准本机测试姿势（以后按这个来）**：
+数据部分不依赖资产，只有资产面缺失。使用本机资产包时：
 
 1. 在 **WoT-Blitz-Agent 仓**（资产包的生产者）启动本机资产服务：
 
@@ -38,6 +38,27 @@ Web 优先级与坑：`?assets=<URL>` > `localStorage.wotb_asset_base` > `VITE_A
 在 URL 上带过一次非空 `?assets=` 会持久化到 localStorage 并**盖住** `.env.local`；要回到默认，
 带一次空的 `?assets=`（`scene/assetBase.ts` 的显式清除开关）。改 `.env.local` 后必须**重启 dev
 server**（`import.meta.env.*` 在 transform 时内联，不是运行时读取）。APK 不使用这些 Web override，固定使用 `platform/runtime.js` 的 `ANDROID_ASSET_BASE`。
+
+## 仅用 5173 连接真实资产
+
+用户要求本地人工验收且只使用 5173 时，可复用 Vite 的 `/__assets` 代理访问真实资产，
+无需启动本机 8123。以下命令在目标 worktree 的 `frontend/` PowerShell 中执行：
+
+```powershell
+$env:WOTB_ASSET_PROXY = 'https://assets.wotbtools.com'
+$env:VITE_ASSET_BASE_URL = 'http://localhost:5173/__assets'
+pnpm exec vite --mode production-remote --host 127.0.0.1 --port 5173 --strictPort
+```
+
+`production-remote` 同时把 `/api` 指向生产站点；只在用户要求或授权使用生产后端时选用。
+只需要真实资产而使用本地 API 时去掉 `--mode production-remote`。保持服务进程运行；
+端口占用时先核对占用进程所属 worktree，不自动换端口或终止其他任务。
+
+回放入口：`http://localhost:5173/?view=agent-replay&assets=`。空 `assets` 清除先前的
+localStorage 资产覆盖，使本次环境变量生效。向用户交付前，实际检查 5173 监听进程、
+页面和 `http://localhost:5173/__assets/index.json` 的 HTTP 结果；需要回放引擎时再检查
+`/wasm/<deploy/agent/source.json 的 ref>/wotb_replay_wasm.js`。检查应在服务启动后进行，
+不能只依据启动日志；索引可访问不代表每张地图或未发布资产均存在。
 
 自检（无需看画面）：开 `?debug` 后 `window.__gdbg.layers === true` 表示分层地表已就绪；
 `window.__pbV.filter(v => v.glb).length` 等于车辆数表示车模 GLB 全部挂上。
