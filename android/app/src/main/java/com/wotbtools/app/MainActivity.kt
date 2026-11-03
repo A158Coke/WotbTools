@@ -16,6 +16,7 @@ import android.webkit.URLUtil
 import android.webkit.MimeTypeMap
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import com.wotbtools.app.auth.AuthFailureReason
@@ -70,6 +71,7 @@ class MainActivity : Activity() {
 
         /** 连通性变化后推给页面的全局（与 contracts/android-native-bridge.json 的 events 一致）。 */
         private const val CONNECTIVITY_CHANGED_GLOBAL = "wotbtoolsOnConnectivityChanged"
+        private const val UPDATE_CHANGED_GLOBAL = "wotbtoolsOnUpdateStatusChanged"
 
         /** 已在 replay workspace 时通知页面消费 pending（与 contracts/android-native-bridge.json 的 events 一致）。 */
         private const val REPLAY_GLOBAL = "wotbtoolsOnReplay"
@@ -122,7 +124,7 @@ class MainActivity : Activity() {
     private lateinit var runtimeView: GeckoView
     private lateinit var runtime: GeckoWebRuntime
     private var localServer: LocalRuntimeServer? = null
-    private lateinit var versionGateView: LinearLayout
+    private lateinit var versionGateView: View
     private lateinit var runtimeErrorView: LinearLayout
     private lateinit var versionTitle: TextView
     private lateinit var versionMessage: TextView
@@ -132,7 +134,16 @@ class MainActivity : Activity() {
     private lateinit var runtimeErrorBrowserButton: Button
     private lateinit var runtimeErrorDiagnostics: TextView
     private lateinit var versionPrimaryButton: Button
-    private lateinit var versionLaterButton: Button
+    private lateinit var versionProgress: ProgressBar
+    private lateinit var versionStatus: TextView
+    private lateinit var versionBytes: TextView
+    private lateinit var updateCoordinator: UpdateCoordinator
+    private var updateForeground = false
+    private var legacyInstallVersionCode: Int? = null
+    private var preparingInstallToken: String? = null
+    private var installAttempt = 0L
+    private var permissionInstallToken: String? = null
+    private val updateListener: () -> Unit = { onUpdateStateChanged() }
     private lateinit var runtimeErrorTitle: TextView
 
     private lateinit var apkUpdater: ApkUpdater
@@ -143,9 +154,6 @@ class MainActivity : Activity() {
 
     @Volatile private var pendingReplay: PendingReplay? = null
     @Volatile private var pendingReplayEligible = true
-    @Volatile private var latestManifest: VersionManifest? = null
-    private var versionCheckInFlight = false
-    @Volatile private var downloadedApk: File? = null
     /** 进行中的普通 `<input type=file>` 选择（Gecko PromptDelegate）；同一时刻只有一个。 */
     private var filePrompt: Triple<Int, PromptDelegate.FilePrompt, GeckoResult<PromptDelegate.PromptResponse>>? = null
     private var filePromptCopying = false
@@ -167,7 +175,6 @@ class MainActivity : Activity() {
         var scanTimeout: Runnable? = null
         var scanTask: Future<*>? = null
     }
-    @Volatile private var awaitingUnknownSourcesPermission = false
 
     /** 引擎是否已销毁：晚到的 bridge 回复 / 页面通知都必须先看这一位。 */
     @Volatile private var destroyedRuntime = false
@@ -197,9 +204,12 @@ class MainActivity : Activity() {
         runtimeErrorDiagnostics = findViewById(R.id.runtimeErrorDiagnostics)
         runtimeErrorTitle = findViewById(R.id.runtimeErrorTitle)
         versionPrimaryButton = findViewById(R.id.versionPrimaryButton)
-        versionLaterButton = findViewById(R.id.versionLaterButton)
+        versionProgress = findViewById(R.id.versionProgress)
+        versionStatus = findViewById(R.id.versionStatus)
+        versionBytes = findViewById(R.id.versionBytes)
 
-        apkUpdater = ApkUpdater(this)
+        apkUpdater = ApkUpdater(applicationContext)
+        updateCoordinator = UpdateCoordinator.get(applicationContext)
         nativeBridge = NativeBridge(this)
         authManager = AuthManager.getInstance(applicationContext, MainActivity::class.java)
         authManager.addListener(authChangedListener)
@@ -209,14 +219,9 @@ class MainActivity : Activity() {
         connectivityMonitor.start()
         if (connectivityMonitor.state == "online") authManager.warmUp()
 
-        runtimeErrorRetryButton.setOnClickListener { hideAllGates(); loadWeb() }
+        runtimeErrorRetryButton.setOnClickListener { loadWeb() }
         runtimeErrorBrowserButton.setOnClickListener { openExternal(WEB_APP_URL) }
         versionPrimaryButton.setOnClickListener { onUpdatePrimary() }
-        versionLaterButton.setOnClickListener {
-            hideAllGates()
-            runtimeView.visibility = View.VISIBLE
-            dispatchPendingReplayIfAllowed()
-        }
 
         runtime = GeckoWebRuntime(this, runtimeView, runtimeHost)
         // 冷启动顺序：先恢复 active pending（跨进程重建存活），再清理不再被它引用的 orphan replay cache
@@ -321,7 +326,8 @@ class MainActivity : Activity() {
         override fun onExternalResponse(response: WebResponse) = saveExternalResponse(response)
 
         override fun onFullScreen(fullScreen: Boolean) {
-            if (fullScreen) enterFullscreen() else exitFullscreen()
+            if (fullScreen && updateCoordinator.state() == "mandatory") runtime.exitFullScreen()
+            else if (fullScreen) enterFullscreen() else exitFullscreen()
         }
 
         /**
@@ -420,35 +426,41 @@ class MainActivity : Activity() {
     }
 
     private fun checkForUpdateAsync() {
-        if (connectivityMonitor.state != "online" || versionCheckInFlight) return
-        versionCheckInFlight = true
-        executor.execute {
-            val result = StartupGate.checkVersion()
-            runOnUiThread {
-                versionCheckInFlight = false
-                if (isDestroyed || destroyedRuntime) return@runOnUiThread
-                if (result is StartupGate.Result.Ok) onVersionReady(result.manifest)
-            }
+        if (!destroyedRuntime && ::updateCoordinator.isInitialized) {
+            updateCoordinator.refresh(connectivityMonitor.state == "online")
         }
     }
 
-    private fun onVersionReady(manifest: VersionManifest) {
-        latestManifest = manifest
-        val installed = installedVersionCode()
-        when {
-            installed < manifest.minSupportedVersionCode -> showMandatoryUpdate(manifest, installed)
-            installed < manifest.latestVersionCode -> showOptionalUpdate(manifest, installed)
-            else -> Unit
+    /** Native 和 Vue 消费同一快照；optional 绝不改变运行时可见性。 */
+    private fun onUpdateStateChanged() {
+        if (destroyedRuntime || !::runtime.isInitialized) return
+        val snapshot = updateCoordinator.status
+        if (updateCoordinator.state(snapshot) == "mandatory") {
+            showMandatoryUpdate(snapshot)
+        } else if (versionGateView.visibility == View.VISIBLE) {
+            loadWeb()
+        }
+        if (!runtime.currentUrl.isNullOrEmpty()) runtime.postEvent(UPDATE_CHANGED_GLOBAL)
+        val legacyVersion = legacyInstallVersionCode
+        if (updateForeground && legacyVersion != null && snapshot.download.versionCode == legacyVersion &&
+            snapshot.download.state == "ready" && snapshot.download.taskToken != null) {
+            legacyInstallVersionCode = null
+            bridgeInstallUpdate(snapshot.download.taskToken) { }
         }
     }
 
     /** Entry URL：有 pending replay 就进 replay canonical view，否则首页。认证回程不经这里。 */
-    private fun entryUrl(): String = if (pendingReplay != null) REPLAY_URL else LOCAL_APP_ENTRY
+    private fun entryUrl(): String {
+        if (intent.getBooleanExtra(UpdateCoordinator.OPEN_UPDATE_PANEL, false)) {
+            intent.removeExtra(UpdateCoordinator.OPEN_UPDATE_PANEL)
+            return LOCAL_APP_ENTRY + "?view=more&androidUpdate=1"
+        }
+        return if (pendingReplay != null) REPLAY_URL else LOCAL_APP_ENTRY
+    }
 
     private fun loadWeb() {
-        val manifest = latestManifest
-        if (manifest != null && installedVersionCode() < manifest.minSupportedVersionCode) {
-            showMandatoryUpdate(manifest, installedVersionCode())
+        if (updateCoordinator.state() == "mandatory") {
+            showMandatoryUpdate(updateCoordinator.status)
             return
         }
         hideAllGates()
@@ -466,6 +478,10 @@ class MainActivity : Activity() {
 
     /** 本地运行时错误页：标题说明原因，诊断行可长按复制（引擎 / 设备 / crash 计数，不含账号或回放信息）。 */
     private fun showRuntimeError(titleRes: Int) {
+        if (updateCoordinator.state() == "mandatory") {
+            showMandatoryUpdate(updateCoordinator.status)
+            return
+        }
         hideAllGates()
         runtimeErrorTitle.text = getString(titleRes)
         runtimeErrorDiagnostics.text = runtime.diagnostics()
@@ -473,99 +489,131 @@ class MainActivity : Activity() {
         Log.w(TAG, "runtime error ${runtimeErrorDiagnostics.text}")
     }
 
-    private fun showMandatoryUpdate(manifest: VersionManifest, installed: Int) {
-        // Best-effort discovery can finish after a local replay entered HTML fullscreen.
+    private fun showMandatoryUpdate(snapshot: UpdateCoordinator.Status) {
         if (fullscreen) runtime.exitFullScreen()
         hideAllGates()
         versionGateView.visibility = View.VISIBLE
         versionTitle.text = getString(R.string.update_mandatory_title)
         versionMessage.text = getString(R.string.update_mandatory_message)
-        versionCurrent.text = getString(R.string.update_current_version, installed.toString())
-        versionLatest.text = getString(R.string.update_latest_version, manifest.latestVersionName)
-        versionPrimaryButton.text = getString(R.string.update_now)
-        versionLaterButton.visibility = View.GONE
+        versionCurrent.text = getString(R.string.update_current_version, updateCoordinator.currentVersionName)
+        versionLatest.text = getString(R.string.update_latest_version, snapshot.manifest?.latestVersionName.orEmpty())
+        val download = snapshot.download
+        val active = download.state in setOf("selectingPackage", "queued", "downloading", "downloadingDelta", "paused", "verifying", "verifyingDelta", "applyingDelta", "verifyingTargetApk", "fallbackFull", "installRequested")
+        versionPrimaryButton.isEnabled = (!active || download.failureReason == "unsupportedArtifact") && preparingInstallToken == null
+        versionPrimaryButton.text = getString(when {
+            download.failureReason == "unsupportedArtifact" -> R.string.update_replace_download
+            download.state == "installPermissionRequired" -> R.string.update_allow_install
+            download.state in setOf("ready", "installRequestFailed") -> R.string.update_install
+            download.state in setOf("downloadFailed", "verifyFailed") -> R.string.update_retry
+            else -> R.string.update_now
+        })
+        versionStatus.text = getString(download.failureReason?.let(::updateFailureText) ?: when (download.state) {
+            "selectingPackage" -> R.string.update_selecting
+            "queued" -> R.string.update_queued
+            "downloading" -> R.string.update_downloading
+            "downloadingDelta" -> R.string.update_downloading_delta
+            "verifyingDelta" -> R.string.update_verifying_delta
+            "applyingDelta" -> R.string.update_applying_delta
+            "verifyingTargetApk" -> R.string.update_verifying_target
+            "fallbackFull" -> R.string.update_fallback_full
+            "paused" -> R.string.update_paused
+            "verifying" -> R.string.update_verifying
+            "ready" -> R.string.update_ready
+            "installRequested" -> R.string.update_install_requested
+            "installPermissionRequired" -> R.string.update_unknown_source_hint
+            "downloadFailed", "verifyFailed", "installRequestFailed" -> R.string.update_failed
+            else -> if (snapshot.checkState == "failed") R.string.update_check_failed else R.string.update_download_hint
+        })
+        versionProgress.visibility = if (download.state in setOf("selectingPackage", "queued", "downloading", "downloadingDelta", "paused", "verifying", "verifyingDelta", "applyingDelta", "verifyingTargetApk", "fallbackFull")) View.VISIBLE else View.GONE
+        versionProgress.isIndeterminate = download.progressPercent == null || download.state in setOf("selectingPackage", "verifying", "verifyingDelta", "applyingDelta", "verifyingTargetApk", "fallbackFull")
+        if (!versionProgress.isIndeterminate) versionProgress.progress = download.progressPercent ?: 0
+        versionBytes.text = when {
+            download.downloadedBytes == null -> ""
+            download.totalBytes != null && download.progressPercent != null -> getString(R.string.update_bytes_progress,
+                download.progressPercent,
+                android.text.format.Formatter.formatShortFileSize(this, download.downloadedBytes),
+                android.text.format.Formatter.formatShortFileSize(this, download.totalBytes))
+            download.totalBytes != null -> getString(R.string.update_bytes,
+                android.text.format.Formatter.formatShortFileSize(this, download.downloadedBytes),
+                android.text.format.Formatter.formatShortFileSize(this, download.totalBytes))
+            else -> android.text.format.Formatter.formatShortFileSize(this, download.downloadedBytes)
+        }
+        versionBytes.visibility = if (versionBytes.text.isEmpty()) View.GONE else View.VISIBLE
     }
 
-    private fun showOptionalUpdate(manifest: VersionManifest, installed: Int) {
-        hideAllGates()
-        versionGateView.visibility = View.VISIBLE
-        versionTitle.text = getString(R.string.update_optional_title)
-        versionMessage.text = getString(R.string.update_optional_message)
-        versionCurrent.text = getString(R.string.update_current_version, installed.toString())
-        versionLatest.text = getString(R.string.update_latest_version, manifest.latestVersionName)
-        versionPrimaryButton.text = getString(R.string.update_now)
-        versionLaterButton.visibility = View.VISIBLE
-        versionLaterButton.text = getString(R.string.update_later)
+    private fun updateFailureText(reason: String): Int = when (reason) {
+        "waitingNetwork" -> R.string.update_wait_network
+        "waitingRetry" -> R.string.update_wait_retry
+        "waitingWifi" -> R.string.update_wait_wifi
+        "pausedUnknown" -> R.string.update_paused
+        "insufficientStorage" -> R.string.update_storage_full
+        "storageUnavailable" -> R.string.update_storage_unavailable
+        "hashMismatch" -> R.string.update_hash_failed
+        "unsupportedArtifact" -> R.string.update_unsupported_artifact
+        "permissionDenied" -> R.string.update_unknown_source_hint
+        "installerUnavailable" -> R.string.update_installer_unavailable
+        "artifactMissing", "taskMissing" -> R.string.update_artifact_missing
+        "cannotResume" -> R.string.update_cannot_resume
+        "network", "http" -> R.string.update_network_failed
+        "fileIo" -> R.string.update_file_failed
+        else -> R.string.update_failed
     }
-
-    // ── 更新（fail-closed：SHA-256 必校验；未授权可恢复）──
 
     private fun onUpdatePrimary() {
-        if (!packageManager.canRequestPackageInstalls()) {
-            openInstallPermissionSettings()
-            return
-        }
-        startDownload()
-    }
-
-    private fun startDownload() {
-        val manifest = latestManifest ?: return
-        versionPrimaryButton.isEnabled = false
-        versionPrimaryButton.text = getString(R.string.update_downloading)
-        executor.execute {
-            val result = apkUpdater.downloadAndInstall(manifest.apkUrl, manifest.sha256)
-            runOnUiThread {
-                versionPrimaryButton.isEnabled = true
-                versionPrimaryButton.text = getString(R.string.update_now)
-                when (result) {
-                    is ApkUpdater.Result.Ok -> {
-                        downloadedApk = result.apk
-                        if (!installDownloadedApk()) openInstallPermissionSettings()
-                    }
-                    is ApkUpdater.Result.Fail -> toast(result.message)
-                }
+        val download = updateCoordinator.status.download
+        if (download.taskToken != null && download.failureReason != "unsupportedArtifact" &&
+            download.state in setOf("ready", "installPermissionRequired", "installRequestFailed")) {
+            bridgeInstallUpdate(download.taskToken) { }
+        } else {
+            updateCoordinator.latestManifest?.let { manifest ->
+                updateCoordinator.beginDownload(manifest.latestVersionCode) { }
             }
         }
     }
 
-    private fun installDownloadedApk(): Boolean {
-        val apk = downloadedApk ?: return false
-        if (!packageManager.canRequestPackageInstalls()) return false
-        return apkUpdater.requestInstall(apk)
+    private fun openInstallPermissionSettings(token: String): Boolean {
+        permissionInstallToken = token
+        return try {
+            startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+            true
+        } catch (_: Exception) {
+            permissionInstallToken = null
+            updateCoordinator.installFailed(token, "permissionDenied")
+            toast(getString(R.string.update_unknown_source_hint))
+            false
+        }
     }
 
-    private fun openInstallPermissionSettings() {
-        awaitingUnknownSourcesPermission = true
-        try {
-            startActivity(
-                Intent(
-                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                    Uri.parse("package:$packageName")
-                )
-            )
-        } catch (_: Exception) {
-            toast(getString(R.string.update_unknown_source_hint))
-        }
+    override fun onStart() {
+        super.onStart()
+        updateCoordinator.addListener(updateListener)
     }
 
     override fun onResume() {
         super.onResume()
-        // 后台期间 content 进程被系统回收：回到前台静默重载（不算故障）。
+        updateForeground = true
         runtime.onResume()
-        // 返回后保持可操作；缺权限时明确提示并可再次点击去授权。
-        if (versionGateView.visibility == View.VISIBLE) {
-            versionPrimaryButton.isEnabled = true
-            versionPrimaryButton.text = getString(R.string.update_now)
-            if (awaitingUnknownSourcesPermission) {
-                // 仅从「未知来源」授权页返回才自动继续 installer；普通 Package Installer 返回不自动重开。
-                awaitingUnknownSourcesPermission = false
-                if (downloadedApk != null && packageManager.canRequestPackageInstalls()) {
-                    installDownloadedApk()
-                } else if (downloadedApk != null) {
-                    versionMessage.text = getString(R.string.update_unknown_source_hint)
-                }
-            }
-        }
+        updateCoordinator.setForeground(true)
+        val token = permissionInstallToken
+        permissionInstallToken = null
+        if (token != null && updateCoordinator.status.download.taskToken == token) {
+            if (packageManager.canRequestPackageInstalls()) bridgeInstallUpdate(token) { }
+            else updateCoordinator.installPermissionRequired(token)
+        } else updateCoordinator.reconcile()
+    }
+
+    override fun onPause() {
+        updateForeground = false
+        legacyInstallVersionCode = null
+        preparingInstallToken = null
+        installAttempt++
+        updateCoordinator.setForeground(false)
+        super.onPause()
+    }
+
+    override fun onStop() {
+        updateCoordinator.removeListener(updateListener)
+        super.onStop()
     }
 
     // ── Replay 意图生命周期（冷启动 / 热启动 / 后台恢复）──
@@ -573,6 +621,11 @@ class MainActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (intent.getBooleanExtra(UpdateCoordinator.OPEN_UPDATE_PANEL, false)) {
+            if (updateCoordinator.state() == "mandatory") showMandatoryUpdate(updateCoordinator.status)
+            else runtime.load(entryUrl())
+            return
+        }
         // 授权回程（external user-agent 回来）归 auth 所有，绝不进入 replay ingress / 分发。
         if (handleAuthorizationIntent(intent)) return
         handleIncomingIntent(intent)
@@ -598,6 +651,7 @@ class MainActivity : Activity() {
         Log.d(TAG, "replay-pending dispatched")
         val notifyWeb = action == ReplayDispatchAction.NOTIFY_WEB
         runtimeView.post {
+            if (destroyedRuntime || updateCoordinator.state() == "mandatory") return@post
             if (notifyWeb) {
                 // 已在 replay workspace：直接通知导入（exactly-once 由 pending 被 consume 清空保证）。
                 runtime.postEvent(REPLAY_GLOBAL)
@@ -706,7 +760,7 @@ class MainActivity : Activity() {
     private fun notifyConnectivityChanged() {
         if (!destroyedRuntime) checkForUpdateAsync()
         runOnUiThread {
-            if (destroyedRuntime || runtime.currentUrl.isNullOrEmpty()) return@runOnUiThread
+            if (destroyedRuntime || !::runtime.isInitialized || runtime.currentUrl.isNullOrEmpty()) return@runOnUiThread
             runtime.postEvent(CONNECTIVITY_CHANGED_GLOBAL)
         }
     }
@@ -716,7 +770,7 @@ class MainActivity : Activity() {
     fun bridgeVersion(): Int = BuildConfig.NATIVE_BRIDGE_VERSION
 
     fun bridgeCapabilities(): List<String> =
-        listOf("native-auth", "replay-share", "replay-open", "app-update", "connectivity", "replay-folder-picker")
+        listOf("native-auth", "replay-share", "replay-open", "app-update", "app-update-status", "connectivity", "replay-folder-picker")
 
     /**
      * 连通性状态 token（`connectivityGetState` 的 result）：Android 系统 `ConnectivityManager` 的
@@ -929,14 +983,68 @@ class MainActivity : Activity() {
             .put("files", files)
     }
 
-    fun bridgeCheckForUpdate(): Boolean {
-        val manifest = latestManifest ?: return false
-        return installedVersionCode() < manifest.latestVersionCode
+    fun bridgeCheckForUpdate(): Boolean = updateCoordinator.legacyCheckForUpdate()
+
+    fun bridgeGetUpdateStatus(): JSONObject = updateCoordinator.snapshot()
+
+    fun bridgeRefreshUpdateStatus(reply: (JSONObject) -> Unit) {
+        updateCoordinator.refresh(connectivityMonitor.state == "online", reply)
     }
 
-    /** bridge 调用可能来自后台线程（认证分发）；UI 动作必须分发到主线程。 */
+    fun bridgeBeginUpdateDownload(expectedVersionCode: Int?, reply: (Boolean) -> Unit) {
+        if (expectedVersionCode == null) { reply(false); return }
+        updateCoordinator.beginDownload(expectedVersionCode, reply)
+    }
+
+    fun bridgeDismissOptionalUpdate(expectedVersionCode: Int?, reply: (Boolean) -> Unit) {
+        if (expectedVersionCode == null) { reply(false); return }
+        updateCoordinator.dismissOptionalUpdate(expectedVersionCode, reply)
+    }
+
+    /** 显式安装动作；异步哈希完成后仍须检查前台状态和同一任务 identity。 */
+    fun bridgeInstallUpdate(expectedToken: String?, reply: (Boolean) -> Unit) {
+        runOnUiThread {
+            if (expectedToken.isNullOrBlank() || !updateForeground || destroyedRuntime || preparingInstallToken != null) {
+                reply(false)
+                return@runOnUiThread
+            }
+            preparingInstallToken = expectedToken
+            val attempt = ++installAttempt
+            updateCoordinator.prepareInstall(expectedToken) { file ->
+                val stillValid = installAttempt == attempt && preparingInstallToken == expectedToken && updateForeground && !destroyedRuntime &&
+                    updateCoordinator.status.download.taskToken == expectedToken &&
+                    updateCoordinator.status.download.failureReason != "unsupportedArtifact"
+                if (installAttempt == attempt) preparingInstallToken = null
+                if (!stillValid || file == null) { reply(false); return@prepareInstall }
+                if (!packageManager.canRequestPackageInstalls()) {
+                    updateCoordinator.installPermissionRequired(expectedToken)
+                    reply(openInstallPermissionSettings(expectedToken))
+                } else {
+                    val accepted = try { apkUpdater.requestInstall(file) } catch (_: Exception) { false }
+                    if (accepted) updateCoordinator.installRequested(expectedToken)
+                    else updateCoordinator.installFailed(expectedToken, "installerUnavailable")
+                    reply(accepted)
+                }
+            }
+        }
+    }
+
+    /** 兼容旧调用的前台“一键更新”意图，不影响新下载 API 的只下载行为。 */
     fun bridgeStartUpdate() {
-        runOnUiThread { onUpdatePrimary() }
+        runOnUiThread {
+            if (!updateForeground || destroyedRuntime) return@runOnUiThread
+            val download = updateCoordinator.status.download
+            if (download.taskToken != null && download.failureReason != "unsupportedArtifact" &&
+                download.state in setOf("ready", "installPermissionRequired", "installRequestFailed")) {
+                bridgeInstallUpdate(download.taskToken) { }
+            } else {
+                val manifest = updateCoordinator.latestManifest ?: return@runOnUiThread
+                legacyInstallVersionCode = manifest.latestVersionCode
+                updateCoordinator.beginDownload(manifest.latestVersionCode) { accepted ->
+                    if (!accepted) legacyInstallVersionCode = null
+                }
+            }
+        }
     }
 
     // ── 认证 bridge 投影（在后台线程调用，结果经 reply 回调）──
@@ -1015,14 +1123,6 @@ class MainActivity : Activity() {
         versionGateView.visibility = View.GONE
         runtimeErrorView.visibility = View.GONE
         runtimeView.visibility = View.GONE
-    }
-
-    private fun installedVersionCode(): Int {
-        return try {
-            packageManager.getPackageInfo(packageName, 0).versionCode
-        } catch (_: Exception) {
-            1
-        }
     }
 
     /** Blob bytes already belong to Gecko: spool off the UI thread, never refetch the URL. */
@@ -1217,6 +1317,10 @@ class MainActivity : Activity() {
     }
 
     override fun onBackPressed() {
+        if (updateCoordinator.state() == "mandatory") {
+            showMandatoryUpdate(updateCoordinator.status)
+            return
+        }
         if (fullscreen) {
             // 通知 Gecko 退出 fullscreen，使 document.fullscreenElement / fullscreenchange 与 Vue 状态同步；
             // 系统 UI 在随后的 onFullScreen(false) 中恢复。
@@ -1229,6 +1333,12 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         exitFullscreen()
         destroyedRuntime = true
+        legacyInstallVersionCode = null
+        preparingInstallToken = null
+        installAttempt++
+        permissionInstallToken = null
+        updateCoordinator.removeListener(updateListener)
+        updateCoordinator.setForeground(false)
         val folderRequest = folderPickRequest
         folderPickRequest = null
         replayFolderPicker.destroy()

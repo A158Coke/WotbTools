@@ -20,6 +20,19 @@
 }
 ```
 
+增量字段是可选的：`apkSizeBytes` 是签名目标 APK 的实际字节数，`patches` 是最多一个
+直接从已发布版本到该目标版本的条目。条目包含 `fromVersionCode`、`fromSha256`、
+`algorithm`（`xdelta3-vcdiff`）、`url`、`sha256` 和 `size`。客户端仍以完整 APK 的
+`sha256` 为最终身份；缺少或无效的增量字段只使用完整 APK。历史 staging evidence 不补造字段。
+
+stage 只考虑当前 production 中 4.0.0 或更高版本，校验包名、版本、签名和 SHA 后以
+xdelta3 3.2.2 的 `-A -a -S none` 生成并重建验证；只有补丁不超过目标 APK 的 10% 才发布。
+该阈值基于两组约 2.25%–2.57% 的样本，未来版本不保证满足，失败时退回完整包。
+4.0 首发没有满足条件的 base，因此仅提供完整包。补丁以 SHA 内容寻址，清华云盘提供
+公开下载，TX1/TX2 保留不可覆盖的源副本；TX2 整树替换时保留所有补丁，当前没有自动清理。每节点补丁总量上限为 1 GiB；超限时新的候选只提供完整包，既有补丁不删除。
+只有检测到线上 Caddy 已将 `.vcdiff` 跳转到清华云盘才会为新证据启用补丁；发布阶段重新核对
+实际 APK 长度、补丁和原始 staging evidence 后才复制字段到 production manifest。
+
 `latestVersionCode`、`latestVersionName` 来自 staged 源码（tag target）的 `android/gradle.properties`；
 `nativeBridgeVersion` 来自同一 source 的 `contracts/android-native-bridge.json`；`sourceSha` 是生成 APK
 所 checkout 的精确 commit。workflow 只有在**两阶段**都通过之后才写入 manifest：

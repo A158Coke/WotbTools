@@ -120,6 +120,10 @@ root = pathlib.Path(sys.argv[1])
 PY
 printf '{"versionName":"2.1.18","versionCode":2001018}\n' > "$live_root/android-release/wotbtools-android-v2.1.18.staging.json"
 printf 'stale-apk\n' > "$live_root/android-release/wotbtools-android-v2.1.17.apk"
+printf 'delta-fixture\n' > "$work/delta"
+delta_sha="$(sha256sum "$work/delta" | awk '{print $1}')"
+delta_name="wotbtools-android-delta-4000000-4001000-$delta_sha.vcdiff"
+cp "$work/delta" "$live_root/android-release/$delta_name"
 
 port="$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()')"
 python3 -m http.server --directory "$source_root" --bind 127.0.0.1 "$port" >/dev/null 2>&1 &
@@ -137,6 +141,7 @@ grep -Fq 'K7C_RUNTIME_CONTENT_READY=PASS' "$work/sync.log" \
 
 [ -f "$live_root/android-release/wotbtools-android-v2.1.18.staging.json" ] \
   || fail "the tree rebuild must carry the unpublished staging evidence forward (2026-10-09 regression)"
+cmp -s "$work/delta" "$live_root/android-release/$delta_name" || fail "the tree rebuild must preserve the exact immutable delta"
 [ -f "$live_root/android-release/version.json" ] \
   || fail "the tree rebuild must refresh version.json from the authoritative source"
 cmp -s "$live_root/android-release/wotbtools-android-v2.1.18.apk" "$source_root/download/android/wotbtools-android-v2.1.18.apk" \
@@ -201,5 +206,26 @@ printf 'not evidence\n' > "$incoming/random.txt"
 bash "$installer" --source "$incoming/random.txt" --dest-dir "$served" --lock "$lock_dir/.deploy.lock" >/dev/null 2>&1 \
   && fail "the installer must refuse to install a non-evidence file"
 [ ! -e "$served/random.txt" ] || fail "a refused install must leave the served tree untouched"
+
+# Delta installs are idempotent and cannot overwrite an existing name.
+cp "$work/delta" "$incoming/$delta_name"
+bash "$installer" --source "$incoming/$delta_name" --dest-dir "$served" --lock "$lock_dir/.deploy.lock" >/dev/null
+cp "$work/delta" "$incoming/$delta_name"
+bash "$installer" --source "$incoming/$delta_name" --dest-dir "$served" --lock "$lock_dir/.deploy.lock" >/dev/null
+printf 'conflict\n' > "$served/$delta_name"
+cp "$work/delta" "$incoming/$delta_name"
+bash "$installer" --source "$incoming/$delta_name" --dest-dir "$served" --lock "$lock_dir/.deploy.lock" >/dev/null 2>&1 && fail "delta conflict must fail closed"
+[ "$(cat "$served/$delta_name")" = conflict ] || fail "delta conflict must not overwrite existing bytes"
+printf 'bad\n' > "$incoming/$delta_name"
+bash "$installer" --source "$incoming/$delta_name" --dest-dir "$served" --lock "$lock_dir/.deploy.lock" >/dev/null 2>&1 && fail "delta with incorrect content-addressed hash must fail"
+# 稀疏文件模拟达到保留上限：新补丁不得落位，既有内容不得删除。
+truncate -s 1073741824 "$served/wotbtools-android-delta-4001000-4002000-cap.vcdiff"
+printf 'another delta\n' > "$work/new-delta"
+new_sha="$(sha256sum "$work/new-delta" | awk '{print $1}')"
+new_name="wotbtools-android-delta-4002000-4003000-$new_sha.vcdiff"
+cp "$work/new-delta" "$incoming/$new_name"
+bash "$installer" --source "$incoming/$new_name" --dest-dir "$served" --lock "$lock_dir/.deploy.lock" >/dev/null 2>&1 && fail "delta storage limit must fail closed"
+[ ! -e "$served/$new_name" ] || fail "over-budget delta must not be installed"
+[ -f "$served/wotbtools-android-delta-4001000-4002000-cap.vcdiff" ] || fail "storage cap must not delete existing files"
 
 echo "K7C runtime content contract: PASS"

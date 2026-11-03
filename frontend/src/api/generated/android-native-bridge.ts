@@ -1,5 +1,5 @@
 // GENERATED FILE - DO NOT EDIT MANUALLY. Source: contracts/android-native-bridge.json
-export type NativeBridgeCapability = 'native-auth' | 'replay-share' | 'replay-open' | 'app-update' | 'connectivity' | 'replay-folder-picker'
+export type NativeBridgeCapability = 'native-auth' | 'replay-share' | 'replay-open' | 'app-update' | 'app-update-status' | 'connectivity' | 'replay-folder-picker'
 
 export interface NativeBridgeMethods {
   getBridgeVersion: {
@@ -31,6 +31,80 @@ export interface NativeBridgeMethods {
   }
   startUpdate: {
     request: Record<string, never>
+    response: boolean
+  }
+  getUpdateStatus: {
+    request: Record<string, never>
+    response: {
+      revision: number
+      state: 'unknown' | 'checking' | 'upToDate' | 'optional' | 'mandatory' | 'checkFailed'
+      checkState: 'idle' | 'checking' | 'succeeded' | 'failed'
+      checkFailureReason: 'offline' | 'network' | 'invalidManifest' | null
+      currentVersionName: string
+      currentVersionCode: number
+      latestVersionName: string | null
+      latestVersionCode: number | null
+      minSupportedVersionCode: number | null
+      publishedAt: string | null
+      releaseNotes: string | null
+      optionalPromptSuppressed: boolean
+      download: {
+        taskToken: string | null
+        versionName: string | null
+        versionCode: number | null
+        packageType?: 'full' | 'delta' | null
+        state: 'idle' | 'queued' | 'downloading' | 'selectingPackage' | 'downloadingDelta' | 'verifyingDelta' | 'applyingDelta' | 'verifyingTargetApk' | 'fallbackFull' | 'paused' | 'verifying' | 'ready' | 'installRequested' | 'downloadFailed' | 'verifyFailed' | 'installPermissionRequired' | 'installRequestFailed'
+        downloadedBytes: number | null
+        totalBytes: number | null
+        progressPercent: number | null
+        failureReason: 'waitingNetwork' | 'waitingRetry' | 'waitingWifi' | 'pausedUnknown' | 'network' | 'http' | 'cannotResume' | 'insufficientStorage' | 'storageUnavailable' | 'fileIo' | 'taskMissing' | 'hashMismatch' | 'baseHashMismatch' | 'patchDownloadFailed' | 'patchHashMismatch' | 'patchApplyFailed' | 'targetHashMismatch' | 'artifactMissing' | 'unsupportedArtifact' | 'permissionDenied' | 'installerUnavailable' | 'unknown' | null
+      }
+    }
+  }
+  refreshUpdateStatus: {
+    request: Record<string, never>
+    response: {
+      revision: number
+      state: 'unknown' | 'checking' | 'upToDate' | 'optional' | 'mandatory' | 'checkFailed'
+      checkState: 'idle' | 'checking' | 'succeeded' | 'failed'
+      checkFailureReason: 'offline' | 'network' | 'invalidManifest' | null
+      currentVersionName: string
+      currentVersionCode: number
+      latestVersionName: string | null
+      latestVersionCode: number | null
+      minSupportedVersionCode: number | null
+      publishedAt: string | null
+      releaseNotes: string | null
+      optionalPromptSuppressed: boolean
+      download: {
+        taskToken: string | null
+        versionName: string | null
+        versionCode: number | null
+        packageType?: 'full' | 'delta' | null
+        state: 'idle' | 'queued' | 'downloading' | 'selectingPackage' | 'downloadingDelta' | 'verifyingDelta' | 'applyingDelta' | 'verifyingTargetApk' | 'fallbackFull' | 'paused' | 'verifying' | 'ready' | 'installRequested' | 'downloadFailed' | 'verifyFailed' | 'installPermissionRequired' | 'installRequestFailed'
+        downloadedBytes: number | null
+        totalBytes: number | null
+        progressPercent: number | null
+        failureReason: 'waitingNetwork' | 'waitingRetry' | 'waitingWifi' | 'pausedUnknown' | 'network' | 'http' | 'cannotResume' | 'insufficientStorage' | 'storageUnavailable' | 'fileIo' | 'taskMissing' | 'hashMismatch' | 'baseHashMismatch' | 'patchDownloadFailed' | 'patchHashMismatch' | 'patchApplyFailed' | 'targetHashMismatch' | 'artifactMissing' | 'unsupportedArtifact' | 'permissionDenied' | 'installerUnavailable' | 'unknown' | null
+      }
+    }
+  }
+  beginUpdateDownload: {
+    request: {
+      expectedLatestVersionCode: number
+    }
+    response: boolean
+  }
+  installUpdate: {
+    request: {
+      expectedTaskToken: string
+    }
+    response: boolean
+  }
+  dismissOptionalUpdate: {
+    request: {
+      expectedLatestVersionCode: number
+    }
     response: boolean
   }
   authGetState: {

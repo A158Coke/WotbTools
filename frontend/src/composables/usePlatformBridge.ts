@@ -15,6 +15,7 @@ import { isAndroidRuntime } from '../platform/runtime.js'
  * 也被 `platform/androidAuthProvider.ts` 复用；禁止再造第二条通道或轮询。
  */
 import {
+  NATIVE_UPDATE_METHODS,
   SUPPORTED_NATIVE_BRIDGE_VERSIONS,
 } from '../platform/nativeBridgeContract.js'
 import { isRecord, isSafeCount, isString } from '../types/primitive-guards.js'
@@ -154,6 +155,28 @@ export async function startUpdate() {
   return (await callBridge('startUpdate')) === true
 }
 
+/** 只读 Native snapshot；输入验证与展示投影归 useAndroidUpdate。 */
+export async function getUpdateStatus() {
+  return await callBridge(NATIVE_UPDATE_METHODS.getStatus)
+}
+
+/** Native fetch 预算为 connect/read 各 3s，给异步回复保留独立的 15s RPC 预算。 */
+export async function refreshUpdateStatus() {
+  return await callBridge(NATIVE_UPDATE_METHODS.refreshStatus, {}, { timeoutMs: 15_000 })
+}
+
+export async function beginUpdateDownload(expectedLatestVersionCode: number) {
+  return (await callBridge(NATIVE_UPDATE_METHODS.beginDownload, { expectedLatestVersionCode }, { timeoutMs: 120_000 })) === true
+}
+
+export async function installUpdate(expectedTaskToken: string) {
+  return (await callBridge(NATIVE_UPDATE_METHODS.install, { expectedTaskToken })) === true
+}
+
+export async function dismissOptionalUpdate(expectedLatestVersionCode: number) {
+  return (await callBridge(NATIVE_UPDATE_METHODS.dismiss, { expectedLatestVersionCode })) === true
+}
+
 export function usePlatformBridge() {
   return {
     isAndroidApp,
@@ -165,5 +188,10 @@ export function usePlatformBridge() {
     consumePendingReplay,
     checkForUpdate,
     startUpdate,
+    getUpdateStatus,
+    refreshUpdateStatus,
+    beginUpdateDownload,
+    installUpdate,
+    dismissOptionalUpdate,
   }
 }

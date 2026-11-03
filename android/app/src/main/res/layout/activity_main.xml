@@ -9,68 +9,98 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <LinearLayout
+    <ScrollView
         android:id="@+id/versionGateView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="@color/bg"
-        android:gravity="center"
-        android:orientation="vertical"
-        android:padding="24dp"
+        android:fillViewport="true"
         android:visibility="gone">
 
-        <TextView
-            android:id="@+id/versionTitle"
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/update_mandatory_title"
-            android:textColor="#F0F6FC"
-            android:textSize="22sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/versionMessage"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
             android:gravity="center"
-            android:text="@string/update_mandatory_message"
-            android:textColor="#8B949E"
-            android:textSize="16sp" />
+            android:orientation="vertical"
+            android:padding="24dp">
 
-        <TextView
-            android:id="@+id/versionCurrent"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="@string/update_current_version"
-            android:textColor="#8B949E"
-            android:textSize="14sp" />
+            <TextView
+                android:id="@+id/versionTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="@string/update_mandatory_title"
+                android:textColor="#F0F6FC"
+                android:textSize="22sp"
+                android:textStyle="bold" />
 
-        <TextView
-            android:id="@+id/versionLatest"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="@string/update_latest_version"
-            android:textColor="#8B949E"
-            android:textSize="14sp" />
+            <TextView
+                android:id="@+id/versionMessage"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:gravity="center"
+                android:text="@string/update_mandatory_message"
+                android:textColor="#8B949E"
+                android:textSize="16sp" />
 
-        <Button
-            android:id="@+id/versionPrimaryButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:text="@string/update_now" />
+            <TextView
+                android:id="@+id/versionCurrent"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/update_current_version"
+                android:textColor="#8B949E"
+                android:textSize="14sp" />
 
-        <Button
-            android:id="@+id/versionLaterButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:visibility="gone"
-            android:text="@string/update_later" />
-    </LinearLayout>
+            <TextView
+                android:id="@+id/versionLatest"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/update_latest_version"
+                android:textColor="#8B949E"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/versionStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:accessibilityLiveRegion="polite"
+                android:gravity="center"
+                android:text="@string/update_download_hint"
+                android:textColor="#F0F6FC"
+                android:textSize="16sp" />
+
+            <ProgressBar
+                android:id="@+id/versionProgress"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:contentDescription="@string/update_progress"
+                android:max="100"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/versionBytes"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textColor="#8B949E"
+                android:textSize="14sp"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/versionPrimaryButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:minHeight="48dp"
+                android:text="@string/update_now" />
+        </LinearLayout>
+    </ScrollView>
 
     <LinearLayout
         android:id="@+id/runtimeErrorView"

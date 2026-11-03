@@ -5,9 +5,9 @@
 # Historical APKs are not copied. (Sponsor QR content is not host content anymore — it is
 # published to the object-storage asset plane, see docs/operations/agent-asset-origin.md.)
 #
-# `*.staging.json` 是唯一例外：android-release 的 stage 会把「已 stage、未发布」版本的发布身份
+# `*.staging.json` 和内容寻址的增量补丁是例外：android-release 的 stage 会把「已 stage、未发布」版本的发布身份
 # 装进这棵树，而 publish 只按公开 URL 校验它——wotbtools.com 由 Caddy 在 TX1/TX2 之间负载，
-# 两台中缺一台就可能让 publish 拿到 404 而 fail closed。因此整树替换必须整份带走它。
+# 两台中缺一台就可能让 publish 拿到 404 而 fail closed。因此整树替换必须保留证据和增量补丁。
 #
 # **调用方必须已持有宿主部署锁**（Frontend Replica 在 /opt/wotb-tx2/.deploy.lock 下执行本脚本；
 # 人工执行必须自备同一把锁：`WOTB_TX_DEPLOY_LOCK_FILE=/opt/wotb-tx2/.deploy.lock \
@@ -98,6 +98,18 @@ for evidence in "$RUNTIME_ROOT"/android-release/*.staging.json; do
   [ -e "$evidence" ] || continue
   python3 -c 'import json,sys; json.load(open(sys.argv[1], encoding="utf-8"))' "$evidence" 2>/dev/null || continue
   cp "$evidence" "$stage/android-release/"
+done
+
+# 已 staged 的不可变增量须与 evidence 一同跨换树保留；文件名绑定 SHA，损坏不得进入新树。
+for delta in "$RUNTIME_ROOT"/android-release/wotbtools-android-delta-*.vcdiff; do
+  [ -e "$delta" ] || continue
+  name="${delta##*/}"
+  [[ "$name" =~ ^wotbtools-android-delta-[0-9]+-[0-9]+-([0-9a-f]{64})\.vcdiff$ ]] \
+    || fail "invalid delta filename: $name"
+  expected_delta_sha="${BASH_REMATCH[1]}"
+  [ "$(sha256sum "$delta" | awk '{print $1}')" = "$expected_delta_sha" ] \
+    || fail "immutable delta sha mismatch: $name"
+  cp "$delta" "$stage/android-release/$name"
 done
 
 sudo mkdir -p "$(dirname "$RUNTIME_ROOT")"

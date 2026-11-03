@@ -115,7 +115,8 @@ android/
         AgentAssetProxy.kt    # /agent-assets/* → 对象存储 + ETag 磁盘缓存
         StartupGate.kt        # bounded best-effort version.json discovery
         VersionManifest.kt    # version.json 解析
-        ApkUpdater.kt         # 下载 / SHA-256 / installer
+        UpdateCoordinator.kt  # 进程级更新分类、快照、任务恢复与安装状态
+        ApkUpdater.kt         # 系统 DownloadManager / 私有 APK / SHA-256 / installer
         ReplayIntentHandler.kt# ACTION_SEND/ACTION_VIEW → PendingReplay（+ metadata 持久化/恢复）
         ReplayDispatchPolicy.kt # pending replay 分发决策（纯逻辑，JVM 单测）
         NativeBridge.kt       # 方法白名单分发（含 auth*）
@@ -132,7 +133,7 @@ android/
       res/
         layout/activity_main.xml         # GeckoView + versionGate + runtimeError（含诊断行）
         values/{strings,colors,themes}.xml
-        xml/file_paths.xml               # FileProvider cache-path
+        xml/file_paths.xml               # FileProvider cache 与私有 updates 窄目录
         mipmap-anydpi-v26/{ic_launcher,ic_launcher_round}.xml
 ```
 
@@ -149,10 +150,54 @@ exact URL 优先，其次 `/agent-assets/*`，其余是 bundled assets；缺失�
 扩展用 `installBuiltIn`（每次进程启动都重装），升级 APK 后一定运行新的 `bridge.js`，不需要维护扩展版本号。
 
 启动先加载 bundled document，再在系统确认 online 时异步获取版本 manifest（connect/read 各 3 秒）。
-离线、manifest 获取失败或非法都不阻断本地界面；可达且有效的 manifest 仍执行
-`installed < minSupportedVersionCode` mandatory update，较新版本使用 existing optional update。
+首次离线、manifest 获取失败或非法都不阻断本地界面。有效 manifest 的唯一分类归
+`UpdateCoordinator`：`installed < minSupportedVersionCode` 强制更新，其次 `installed < latestVersionCode`
+可选更新，其余已是最新版。同进程已发现的强制门槛不会因刷新失败而撤销；不额外持久化离线发布策略。
 恢复联网会触发一次 coalesced 检查，不 reload 页面或清空回放。Native 错误页只表示本机页面 / 引擎故障
 （加载失败、扩展安装失败、content 进程连续崩溃、端口被占用）；不存在 Network Gate 或远程 frontend retry-only 页面。
+
+### 更新界面与桥接
+
+可选更新仅在 Vue 应用壳显示非模态提示，不隐藏 Gecko、不打开启动弹窗。用户选择「稍后」时 Native
+只保存该 latestVersionCode 的提示偏好；相同版本不重复主动提示，手动入口仍可查看，更高版本可再次提示。
+强制更新忽略提示偏好，由 Native 全屏门禁独占处理，显示 versionName、下载进度、校验、重试与安装授权，不提供「稍后」。
+
+Android 的「更多 → 版本 / 关于 WotBTools」打开同一更新面板。检查必须明确显示检查中、最新版、可选更新、
+停止支持或失败；打开面板只读取状态，显式检查才重新请求 manifest。下载需要用户主动点击，关闭面板不取消任务，
+下载完成只进入「更新已准备好」，显式安装才交给系统。
+
+`contracts/android-native-bridge.json` 是更新桥接权威。v3 保留 `app-update` 与旧 Boolean
+`checkForUpdate` / `startUpdate`，新增能力 `app-update-status` 区分支持完整状态的新客户端。
+`getUpdateStatus` 不联网，`refreshUpdateStatus` 合并并发检查并异步返回终态；检查状态与已知版本分类分开，
+失败不伪装为最新版。`updateStatusChanged` 无 payload，消费者首次订阅和收到通知后回读快照，以 revision
+过滤迟到响应。`beginUpdateDownload`、`installUpdate`、`dismissOptionalUpdate` 以期望版本或任务 token
+做 compare-and-act；页面不能提交任意 URL、路径或哈希，也不自行比较版本决定 mandatory。
+
+### 下载恢复与完整性
+
+DownloadManager 拥有用户发起的大文件下载生命周期。任务只保存 token、固定版本/哈希、稳定原始 APK URL、
+受限 destination 与系统 downloadId，不复制 release manifest 或最低支持策略。先 durable 保存 intent，再入队并保存 ID；
+进程死在 ID 保存之前时，按本 App 的精确 destination 与原始 URI 查询并认领，不能盲目重新下载。
+
+系统 queued、running、paused、failed、complete 分别投影为排队、下载、等待原因、失败和正在校验；
+Content-Length 未知时使用不定进度。前台采样进度，后台由系统继续；重新进入、完成通知都以系统 query 为准，
+广播不能直接使 APK 变为已验证。网络等待、等待重试、空间不足、存储不可用和不可续传使用有界原因，实际续传能力受系统与下载端点影响。
+
+下载先到 app-specific external 的 updates 目录，再流式复制到内部 `files/updates` 同时计算 SHA-256，
+匹配后原子落位为 ready。更新 APK 只通过 FileProvider 的内部 updates 窄目录交接；现有 cache 路径仍服务 replay，不把 DownloadManager 完成 URI 直接交给 installer。
+恢复进程及安装前重新验证私有包；哈希不符删除产物并禁止安装。新 latest 不改变旧任务的版本/哈希；
+旧包若低于新 minimum，必须由用户显式改下受支持版本，不能自动下载或安装已失效包。
+
+符合版本、base SHA、单 APK、空间和收益条件时，可先下载增量补丁；补丁复制到私有目录并校验后由
+受限 xdelta 解码器重建，只有目标完整 APK 的长度和 SHA 均匹配才进入 ready。增量不可用或失败时最多
+自动回退一次完整包；安装前仍重新校验目标。发布字段和补丁保留策略见 [version-manifest.md](version-manifest.md)。
+
+未知来源授权只在安装阶段申请。拒绝权限保留已验证 APK，授权往返可继续同次安装，普通恢复和 installer
+取消不会循环拉起安装页。installRequested 只表示交接；成功由实际已安装版本判定。Ready 包在安装完成、
+用户显式替换、验证失败或文件丢失前保留；清理仅限本 updater 任务和目录，不影响用户导出。
+
+诊断沿用 Logcat `WotbUpdate`，记录检查、分类、入队/恢复、下载失败、校验与安装交接事件及有界 reason。
+不记录令牌、完整下载 URL、用户回放或每秒进度，不引入更新遥测服务。
 
 ## 网络与业务边界
 

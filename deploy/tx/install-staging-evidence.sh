@@ -20,7 +20,7 @@
 set -Eeuo pipefail
 
 fail(){ echo "install staging evidence: FAIL: $*" >&2; exit 1; }
-for cmd in flock mv chmod sha256sum; do command -v "$cmd" >/dev/null || fail "missing command: $cmd"; done
+for cmd in flock mv ln chmod sha256sum stat; do command -v "$cmd" >/dev/null || fail "missing command: $cmd"; done
 
 source_file=''; dest_dir=''; lock_file=''
 wait_secs="${EVIDENCE_LOCK_WAIT_SEC:-900}"
@@ -37,7 +37,11 @@ done
 
 # 只搬运证据：名字不对就拒绝，避免把任意文件搬进公开目录。
 case "${source_file##*/}" in
-  *.staging.json) ;;
+  *.staging.json) kind=evidence ;;
+  wotbtools-android-delta-*.vcdiff)
+    [[ "${source_file##*/}" =~ ^wotbtools-android-delta-[0-9]+-[0-9]+-[0-9a-f]{64}\.vcdiff$ ]] \
+      || fail "invalid immutable delta name: $source_file"
+    kind=delta ;;
   *) fail "refusing to install a non-evidence file: $source_file" ;;
 esac
 [ -f "$lock_file" ] || fail "host deploy lock is missing (owner-provided, never created here): $lock_file"
@@ -57,5 +61,32 @@ flock -w "$wait_secs" 9 \
   || fail "timed out after ${wait_secs}s waiting for $lock_file (holder diagnostics: .agents/AGENTS.md §TX host lock)"
 # 取到锁 = 换树已收尾（本进程不会撞上 swap 中间态）：此刻目录仍缺才是宿主真的未就绪。
 [ -d "$dest_dir" ] || fail "served destination directory is missing after acquiring the lock: $dest_dir"
-mv -f "$source_file" "$dest"
-echo "staging evidence installed: $dest sha256=$(sha256sum "$dest" | awk '{print $1}')"
+if [ "$kind" = delta ]; then
+  expected="${name%.vcdiff}"; expected="${expected##*-}"
+  actual="$(sha256sum "$source_file" | awk '{print $1}')"
+  [ "$actual" = "$expected" ] || fail "incoming delta does not match its content-addressed name"
+  # 保留不可变补丁但限制每台节点总占用；超限时由 stage 选择完整包，不删除已有证据。
+  # 1 GiB 约可容纳两组实测补丁中较大值的 200 份；达到上限后需运维明确处理保留策略。
+  if [ ! -e "$dest" ]; then
+    total=0
+    for existing in "$dest_dir"/wotbtools-android-delta-*.vcdiff; do
+      [ -f "$existing" ] || continue
+      size="$(stat -c '%s' "$existing")"
+      [[ "$size" =~ ^[0-9]+$ ]] || fail "invalid existing delta size: $existing"
+      total=$((total + size))
+      [ "$total" -le 1073741824 ] || fail "immutable delta storage limit exceeded"
+    done
+    incoming_size="$(stat -c '%s' "$source_file")"
+    [[ "$incoming_size" =~ ^[0-9]+$ ]] || fail "invalid incoming delta size"
+    [ "$incoming_size" -le $((1073741824 - total)) ] || fail "immutable delta storage limit exceeded"
+  fi
+  # 同目录硬链接提供 no-clobber：并发出现的旧文件只能是完全相同的字节。
+  if ! ln "$source_file" "$dest" 2>/dev/null; then
+    [ -f "$dest" ] && [ "$(sha256sum "$dest" | awk '{print $1}')" = "$expected" ] \
+      || fail "immutable delta conflict: $dest"
+  fi
+  rm -f -- "$source_file"
+else
+  mv -f "$source_file" "$dest"
+fi
+echo "staging artifact installed: $dest sha256=$(sha256sum "$dest" | awk '{print $1}')"

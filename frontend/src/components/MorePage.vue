@@ -1,6 +1,6 @@
 <script setup>
 import { computed, inject } from 'vue'
-import { BookOpen, ChevronRight, MessageSquare } from 'lucide-vue-next'
+import { BookOpen, ChevronRight, Download, MessageSquare } from 'lucide-vue-next'
 import { LANGUAGES, useMoreMenu } from '../composables/useMoreMenu.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { PRIMARY_NAV_ICONS } from '../app/navIcons.js'
@@ -11,7 +11,7 @@ import SegmentedControl from './SegmentedControl.vue'
 // 平板 / 桌面的同一份内容在侧边栏底部的"更多"弹出面板里（useMoreMenu 是唯一内容源）；
 // 回放能力统一从回放工作台进入，坦克百科是主导航栏目，都不在这里重复。账户由顶栏头像进入 profile。
 const navigate = inject(NAVIGATE_VIEW_KEY)
-const { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, shortcuts, adminLinks, aboutLinks, openGuide, openFeedback } = useMoreMenu()
+const { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, shortcuts, adminLinks, aboutLinks, openGuide, openFeedback, openAndroidUpdate } = useMoreMenu()
 
 const groups = computed(() => [
   { id: 'admin', titleKey: 'more.sections.admin', links: adminLinks.value },
@@ -69,6 +69,9 @@ const groups = computed(() => [
       </div>
     </section>
 
+    <section v-if="openAndroidUpdate" class="more-section">
+      <div class="more-card"><button type="button" class="more-row" data-testid="more-link-app-update" @click="openAndroidUpdate()"><Download :size="20" aria-hidden="true" /><span class="more-row-label">{{ $t('androidUpdate.title') }}</span><ChevronRight :size="20" aria-hidden="true" /></button></div>
+    </section>
     <section v-for="group in groups" :key="group.id" class="more-section" :aria-labelledby="`more-${group.id}`">
       <h2 :id="`more-${group.id}`" class="more-section-title">{{ $t(group.titleKey) }}</h2>
       <div class="more-card">

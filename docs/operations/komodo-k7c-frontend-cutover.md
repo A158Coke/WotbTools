@@ -44,7 +44,7 @@ TX2 本地复制根为 `/opt/wotb-tx2/runtime-content`，只复制当前公开�
 - Android `version.json`；
 - 该 manifest 实际引用的 APK。
 
-历史 APK 不复制。`*.staging.json` 是唯一例外：android-release stage 在 `/opt/wotb-tx2/.deploy.lock` 下原子写入 staged-but-unpublished release identity，publish 阶段通过公网 URL 读回；Sync 在同一把锁下携带现有记录，保证 install 与整树替换互斥。TX2 从不 bind-mount `/opt/wotb-tx`，也不直接读取 TX1 文件系统。细则见 [android/release-process.md](../android/release-process.md)「证据的存续」。
+历史 APK 不复制。`*.staging.json` 与内容寻址的 `*.vcdiff` 增量补丁例外：android-release stage 在 `/opt/wotb-tx2/.deploy.lock` 下安装不可变记录和补丁，publish 阶段通过公网 URL 校验；Sync 在同一把锁下校验补丁文件名与 SHA 并携带现有记录，保证安装与整树替换互斥。TX2 从不 bind-mount `/opt/wotb-tx`，也不直接读取 TX1 文件系统。细则见 [android/release-process.md](../android/release-process.md)「证据的存续」。
 
 Frontend Replica workflow 在 TX2 被接受前刷新该 runtime content。
 

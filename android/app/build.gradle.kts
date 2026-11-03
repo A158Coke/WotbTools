@@ -46,6 +46,8 @@ val keyPass = (project.findProperty("wotbKeyPass") as String?) ?: ""
 
 android {
     namespace = "com.wotbtools.app"
+    ndkVersion = "27.3.13750724"
+    externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
     // GeckoView 158 的 AAR metadata 要求 minCompileSdk=37 / minCompileMinorSdk=2。
     // 只抬 compileSdk；targetSdk 不动（改 targetSdk 会改变运行时行为，不属于本次引擎迁移）。
     compileSdk {
@@ -58,7 +60,8 @@ android {
         applicationId = "com.wotbtools.app"
         minSdk = 26
         targetSdk = 34
-        // 单个 APK 覆盖全部 ARM 设备（不做 ABI split）；debug 另加 x86_64 供模拟器手测。
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // 单个 release APK 覆盖 ARM（不做 ABI split）；debug 的 x86_64 用于完整模拟器，x86 仅用于 32 位 JNI 测试（Gecko 不支持 x86）。
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         versionCode = resolvedVersionCode
         versionName = resolvedWotbVersion
@@ -86,7 +89,7 @@ android {
 
     buildTypes {
         debug {
-            ndk { abiFilters += "x86_64" }
+            ndk { abiFilters += listOf("x86_64", "x86") }
         }
         release {
             isMinifyEnabled = false
@@ -124,4 +127,6 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     // Exercise ContentResolver/provider streams without a connected device.
     testImplementation("org.robolectric:robolectric:4.16.1")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test:core:1.7.0")
 }

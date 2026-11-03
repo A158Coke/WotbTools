@@ -19,6 +19,8 @@ ENV COREPACK_NPM_REGISTRY=https://registry.npmmirror.com COREPACK_ENABLE_DOWNLOA
 COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml frontend/.npmrc ./
 RUN corepack enable && pnpm install --frozen-lockfile
 COPY frontend/ .
+# 更新快照运行时校验直接消费 Native Bridge canonical contract，保持仓库相对路径。
+COPY contracts/android-native-bridge.json /contracts/android-native-bridge.json
 COPY common/map_names.json /common/map_names.json
 # Assault static geometry is resolved by mapCode from semantic JSON at build time.
 COPY common/map-semantics /common/map-semantics

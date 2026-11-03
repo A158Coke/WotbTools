@@ -1,5 +1,7 @@
 # 前端架构
 
+Android 更新展示在 AppShell 中只有一个 useAndroidUpdate 投影，状态与分类由 Native UpdateCoordinator 拥有。Android 且声明 app-update-status 能力时，「更多」的手机页与桌面面板提供同一个版本入口并打开 AndroidUpdatePanel（AppSheet）；可选更新提示不抢焦点、不隐藏运行时，沉浸态不覆盖工作区。更新面板只调用既有 Native Bridge RPC，首次订阅与无 payload 更新通知后回读快照，不从前端请求 version.json 或比较版本。检查、下载、安装是显式操作；关闭面板不取消系统下载。详情见 [Android 架构](../android/architecture.md#更新界面与桥接)。
+
 ## 当前基础
 
 产品使用遥测在 `AppShell` 中只有唯一的前台生命周期所有者（`useUsageTelemetry`）。它观察规范的 router view（包括 workspace 能力路由）；仅在 query 中变化的 tank/file/filter 改动不会重新打开某个功能。Replay Data 没有 page-open 事件：`useLocalReplayAnalysis` 对每个选中文件记录一次 start 和至多一次 terminal，并使用 `parseReplayFiles.onFile` 处理部分批次完成。取消只会结算尚未完成的文件。只有 attempt UUID、枚举后的 outcome 和安全错误类别会离开客户端；文件名、内容和原始错误保留在本地。
