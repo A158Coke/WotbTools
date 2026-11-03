@@ -14,8 +14,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { effectScope } from 'vue'
 import { PLAYBACK_MOBILE_QUERY } from '../shared/breakpoints.js'
-import { PLAYBACK_PHONE_QUERY, usePlaybackPhoneForm } from './usePlaybackPhoneForm.js'
-import { usePlaybackFullscreen } from './usePlaybackFullscreen.js'
+import { PLAYBACK_PHONE_QUERY, usePlaybackPhoneForm } from './usePlaybackPhoneForm.ts'
+import { usePlaybackFullscreen } from './usePlaybackFullscreen.ts'
 
 /** 与仓库既有写法一致：按 query 字符串返回命中与否 */
 function stubMatchMedia(matchesByQuery = {}) {

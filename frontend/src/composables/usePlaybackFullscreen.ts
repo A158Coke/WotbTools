@@ -22,12 +22,25 @@
  *        调用方不要再自己 addEventListener，否则同一事件会有两个监听、且退出解锁路径分叉。
  */
 import { computed, onScopeDispose, readonly, ref } from 'vue'
+import type { Ref } from 'vue'
 
 // Orientation is browser-global; only the consumer that requested its current
 // lock may release it. Hidden keep-alive panes must not unlock the visible pane.
-let orientationOwner = null
+let orientationOwner: symbol | null = null
 
-export function usePlaybackFullscreen({ target, isPhone, isActive = () => true, onChange }) {
+/** usePlaybackFullscreen 的装配参数（见文件头产品语义注释）。 */
+export interface PlaybackFullscreenOptions {
+  /** 全屏目标（回放根，不是整个应用外壳）；响应式 getter */
+  target: () => Element | null
+  /** 是否手机形态（决定是否锁横屏） */
+  isPhone?: Ref<boolean> | { value: boolean }
+  /** 生命周期闸门（如 capability 是否仍激活） */
+  isActive?: () => boolean
+  /** 全屏状态变化后的布局反应（2D 需要在新形态下重算几何）。唯一的 fullscreenchange 监听点 */
+  onChange?: (fullscreen: boolean) => void
+}
+
+export function usePlaybackFullscreen({ target, isPhone, isActive = () => true, onChange }: PlaybackFullscreenOptions) {
   /** 与 `document.fullscreenElement` 同步；由 fullscreenchange 驱动 */
   const isFullscreen = ref(ownsFullscreen())
   const owner = Symbol('playback-fullscreen')
@@ -42,8 +55,8 @@ export function usePlaybackFullscreen({ target, isPhone, isActive = () => true, 
     if (orientationOwner !== owner) return
     orientationOwner = null
     const orientation = typeof screen !== 'undefined' ? screen.orientation : null
-    if (orientation && typeof orientation.unlock === 'function') {
-      try { orientation.unlock() } catch { /* unsupported browsers may throw */ }
+    if (orientation && typeof (orientation as ScreenOrientation & { unlock?: () => void }).unlock === 'function') {
+      try { (orientation as ScreenOrientation & { unlock: () => void }).unlock() } catch { /* unsupported browsers may throw */ }
     }
   }
 
@@ -57,9 +70,10 @@ export function usePlaybackFullscreen({ target, isPhone, isActive = () => true, 
     if (!ownsFullscreen()) return
     if (!phoneForm()) return
     const orientation = typeof screen !== 'undefined' ? screen.orientation : null
-    if (!orientation || typeof orientation.lock !== 'function') return
+    const lockable = orientation as (ScreenOrientation & { lock?: (o: string) => Promise<void> }) | null
+    if (!lockable || typeof lockable.lock !== 'function') return
     try {
-      const result = orientation.lock('landscape')
+      const result = lockable.lock('landscape')
       orientationOwner = owner
       if (result && typeof result.catch === 'function') {
         result.catch(() => { if (orientationOwner === owner) orientationOwner = null })

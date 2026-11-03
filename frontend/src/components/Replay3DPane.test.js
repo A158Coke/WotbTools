@@ -115,13 +115,13 @@ vi.mock('../composables/useBreakpoint.js', async () => {
  * 手机形态来自 `usePlaybackPhoneForm`（宽度 <768 **或** 触屏且视口高 ≤500），
  * 不是纯宽度断点——手机全屏横屏后内宽可 >768，仍必须保持手机呈现。
  */
-vi.mock('../composables/usePlaybackPhoneForm.js', async () => {
+vi.mock('../composables/usePlaybackPhoneForm.ts', async () => {
   const { computed } = await import('vue')
   return { usePlaybackPhoneForm: () => ({ isPhone: computed(() => layout.compact) }) }
 })
 /** 竖屏判据（与 2D 共用 usePlaybackPortraitViewport）：手机竖屏 = compact + portrait，
  *  手机横屏 / 全屏横屏 = compact 但不是 portrait。 */
-vi.mock('../composables/usePlaybackPortraitViewport.js', async () => {
+vi.mock('../composables/usePlaybackPortraitViewport.ts', async () => {
   const { computed } = await import('vue')
   return { usePlaybackPortraitViewport: () => ({ isPortrait: computed(() => layout.portrait) }) }
 })

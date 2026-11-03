@@ -22,11 +22,48 @@
  * 调用时机再多也不会互相打架。
  */
 import { nextTick, onBeforeUnmount, onMounted, ref, unref, watch } from 'vue'
+import type { Ref } from 'vue'
+
+/** 已应用的位置（workspace 内像素坐标）；null = 还没定位（首帧交给 CSS 的默认角落）。 */
+export interface PanelPosition {
+  left: number
+  top: number
+}
+
+/** clampToBounds 的返回（left/top 为夹紧后位置；maxHeight 为可用高度上限）。 */
+export interface ClampedPlacement {
+  left: number
+  top: number
+  maxHeight: number
+}
+
+/** 拖动会话：pointerId + 指针相对面板原点的偏移。同时 live 的只可能有一个。 */
+interface DragSession {
+  pointerId: number | null
+  dx: number
+  dy: number
+}
 
 /** 左侧/顶部的最小可见余量：贴边时不能整个压出 workspace。 */
 const EDGE_MARGIN = 8
 /** 初始落位为避让中心栏而收窄时的下限：再窄就不收（宁可压住中心栏边缘，也不把内容挤成一列字）。 */
 const MIN_PANEL_WIDTH = 240
+
+/** usePlaybackDetailsPlacement 的装配参数。 */
+export interface DetailsPlacementOptions {
+  /** 面板是否处于打开状态（生命周期闸门） */
+  isActive: () => boolean
+  /** workspace 宿主元素（边界测量的基准） */
+  hostEl: Ref<HTMLElement | null>
+  panelEl: Ref<HTMLElement | null>
+  /** 中心栏参考元素（传输控件所在列；缺省退化成 host 边界） */
+  boundsEl?: Ref<HTMLElement | null> | null
+  /** 初始水平偏好（'left' | 'right'；可为 ref / computed——按选择来源实时给偏好） */
+  initialSide?: Ref<'left' | 'right' | null> | 'left' | 'right' | null
+  /** 初始纵向落位：'top'（默认，2D 顶部两侧）| 'bottom'（3D：贴底左下/右下——
+   *  悬浮名册占住顶部两角，浮窗从顶部开出来会盖住名册）。 */
+  initialVertical?: Ref<'top' | 'bottom'> | 'top' | 'bottom'
+}
 
 export function usePlaybackDetailsPlacement({
   isActive,
@@ -34,27 +71,25 @@ export function usePlaybackDetailsPlacement({
   panelEl,
   boundsEl = null,
   initialSide = null,
-  /** 初始纵向落位：'top'（默认，2D 顶部两侧）| 'bottom'（3D：贴底左下/右下——
-   *  悬浮名册占住顶部两角，浮窗从顶部开出来会盖住名册）。 */
   initialVertical = 'top',
-}) {
+}: DetailsPlacementOptions) {
   /** 已应用的位置；null = 还没定位（首帧交给 CSS 的默认角落）。 */
-  const pos = ref(null)
-  const maxPanelHeight = ref(null)
+  const pos = ref<PanelPosition | null>(null)
+  const maxPanelHeight = ref<number | null>(null)
   /** 初始落位为不压中心栏而给出的宽度上限；null = 不限（按面板自身宽度）。 */
-  const maxPanelWidth = ref(null)
+  const maxPanelWidth = ref<number | null>(null)
   /** 用户是否亲手拖过：拖过之后初始位置启发式永久让位。 */
   const userPositioned = ref(false)
 
   // 拖动期间的会话：pointerId + 指针相对面板原点的偏移。同时 live 的只可能有一个。
-  let session = null
+  let session: DragSession | null = null
 
   /**
    * 把一组候选坐标夹进当前可用矩形。
    * `panelWidth`：已决定但 DOM 尚未应用的宽度（初始落位收窄时），缺省用实测宽度。
    * @returns {{left:number, top:number, maxHeight:number}|null} 尺寸不可测量时为 null
    */
-  function clampToBounds(left, top, panelWidth = null) {
+  function clampToBounds(left: number, top: number, panelWidth: number | null = null): ClampedPlacement | null {
     const host = hostEl.value
     const panel = panelEl.value
     if (!host || !panel) return null
@@ -66,11 +101,11 @@ export function usePlaybackDetailsPlacement({
     const rect = { width: panelWidth ?? measured.width, height: measured.height }
     // 宿主的左右内边距不属于 workspace（竖屏 / 全屏时那里是容器的留白与顶部 HUD）。
     const hostStyle = typeof getComputedStyle === 'function' ? getComputedStyle(host) : null
-    const padStart = parseFloat(hostStyle?.paddingLeft) || 0
-    const padEnd = parseFloat(hostStyle?.paddingRight) || 0
+    const padStart = parseFloat(hostStyle?.paddingLeft ?? '') || 0
+    const padEnd = parseFloat(hostStyle?.paddingRight ?? '') || 0
     const minLeft = padStart + EDGE_MARGIN
     // 上内边距同理：手机 / 桌面全屏时那里是顶部 HUD，浮窗的拖动柄不能钻到 HUD 下面。
-    const minTop = (parseFloat(hostStyle?.paddingTop) || 0) + EDGE_MARGIN
+    const minTop = (parseFloat(hostStyle?.paddingTop ?? '') || 0) + EDGE_MARGIN
     const maxLeft = Math.max(minLeft, hostRect.width - padEnd - rect.width - EDGE_MARGIN)
     // 传输控件是保护区：浮窗**下缘**不得越过它的上缘（控件缺失 → 只受 host 约束）。
     const bounds = boundsEl?.value
@@ -93,14 +128,14 @@ export function usePlaybackDetailsPlacement({
     }
   }
 
-  function apply(next) {
+  function apply(next: ClampedPlacement | null): void {
     if (!next) return
     pos.value = { left: next.left, top: next.top }
     maxPanelHeight.value = next.maxHeight
   }
 
   /** 重新夹紧当前位置（ResizeObserver / 全屏 / 方向变化）。未定位时不做任何事。 */
-  function clampIntoHost() {
+  function clampIntoHost(): void {
     if (!pos.value) return
     apply(clampToBounds(pos.value.left, pos.value.top))
   }
@@ -109,7 +144,7 @@ export function usePlaybackDetailsPlacement({
    * 选择变化时的初始位置：`origin` 是点击原点（workspace 内坐标，可为 null）。
    * 点右半 → 落左半；点左半 → 落右半。原点未知时按 `initialSide` 偏好，缺省左上。
    */
-  function placeInitial(origin = null) {
+  function placeInitial(origin: { x: number } | null = null): void {
     if (userPositioned.value) return
     const host = hostEl.value
     const panel = panelEl.value
@@ -118,13 +153,13 @@ export function usePlaybackDetailsPlacement({
     const rect = panel.getBoundingClientRect()
     if (!hostRect.width || !rect.width) return
     // `initialSide` 可以是字符串也可以是 ref / computed（调用方按选择来源实时给偏好）。
-    let side = unref(initialSide)
+    let side: 'left' | 'right' | null = unref(initialSide) ?? null
     if (origin && Number.isFinite(origin.x)) {
       side = origin.x > hostRect.width / 2 ? 'left' : 'right'
     }
     const gutter = EDGE_MARGIN * 2
-    const padStart = parseFloat(getComputedStyle?.(host)?.paddingLeft) || 0
-    const room = sideRoom(side, hostRect, gutter, padStart)
+    const padStart = parseFloat(getComputedStyle?.(host)?.paddingLeft ?? '') || 0
+    const room = side ? sideRoom(side, hostRect, gutter, padStart) : null
     maxPanelWidth.value = room
     const width = room == null ? rect.width : Math.min(rect.width, room)
     const left = side === 'right'
@@ -145,7 +180,12 @@ export function usePlaybackDetailsPlacement({
    * 浮窗所在一侧、中心栏之外的可用宽度。中心栏 = 受保护的传输控件所在列（HUD / Stage 同列）。
    * null = 不需要 / 不能收窄：量不到控件，或侧边不足 MIN_PANEL_WIDTH（名册关闭时中心栏铺满）。
    */
-  function sideRoom(side, hostRect, gutter, padStart) {
+  function sideRoom(
+    side: 'left' | 'right',
+    hostRect: DOMRect,
+    gutter: number,
+    padStart: number,
+  ): number | null {
     const bounds = boundsEl?.value
     if (!bounds) return null
     const center = bounds.getBoundingClientRect()
@@ -156,7 +196,7 @@ export function usePlaybackDetailsPlacement({
     return room >= MIN_PANEL_WIDTH ? Math.floor(room) : null
   }
 
-  function onPointerDown(event) {
+  function onPointerDown(event: PointerEvent): void {
     if (event.button != null && event.button !== 0) return
     const panel = panelEl.value
     if (!panel) return
@@ -171,7 +211,8 @@ export function usePlaybackDetailsPlacement({
     }
     // 指针捕获让指针离开面板后仍然收到 move/up（触屏尤其需要）。
     try {
-      event.currentTarget?.setPointerCapture?.(event.pointerId)
+      const currentTarget = event.currentTarget as Element | null
+      currentTarget?.setPointerCapture?.(event.pointerId)
     } catch {
       /* 无捕获能力（测试环境 / 老浏览器）时 window 监听已经足够 */
     }
@@ -180,7 +221,7 @@ export function usePlaybackDetailsPlacement({
     window.addEventListener('pointercancel', onPointerUp)
   }
 
-  function onPointerMove(event) {
+  function onPointerMove(event: PointerEvent): void {
     if (!session || (session.pointerId != null && event.pointerId !== session.pointerId)) return
     const host = hostEl.value
     if (!host) return
@@ -188,7 +229,7 @@ export function usePlaybackDetailsPlacement({
     apply(clampToBounds(event.clientX - hostRect.left - session.dx, event.clientY - hostRect.top - session.dy))
   }
 
-  function onPointerUp() {
+  function onPointerUp(): void {
     session = null
     window.removeEventListener('pointermove', onPointerMove)
     window.removeEventListener('pointerup', onPointerUp)
@@ -197,8 +238,8 @@ export function usePlaybackDetailsPlacement({
   }
 
   // 面板内容随选择变化（车型名长短、是否有 V2 检查器），尺寸一变就可能越界 → 重新夹紧。
-  let panelObserver = null
-  let hostObserver = null
+  let panelObserver: ResizeObserver | null = null
+  let hostObserver: ResizeObserver | null = null
   onMounted(() => {
     // 父组件常常是「选中 → v-if 挂载」：挂载那一刻就已经是打开状态，下面的 watch 不会触发，
     // 这里补一次初始落位。
@@ -234,7 +275,7 @@ export function usePlaybackDetailsPlacement({
    * 同一次打开期间换选中车辆：用户还没拖过 → 按新的落位偏好重新摆放（点左边名册落右侧、
    * 点右边名册落左侧）；用户拖过 → **一动不动**（位置只在尺寸 / 全屏 / 旋转迫使夹紧时才变）。
    */
-  function onSelectionChange() {
+  function onSelectionChange(): void {
     if (userPositioned.value || pos.value == null) return
     nextTick(() => placeInitial())
   }

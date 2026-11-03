@@ -78,8 +78,8 @@ describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
   // doubleSided，上表面条带绕序朝内——替换材质固定 FrontSide 会在厚度视图/热力图里把
   // 上表面剔除成空洞。模块替换材质/clone 必须沿用源材质的 side。
   it('模块替换材质沿用客户端材质的双面口径', () => {
-    expect(plateModel).toMatch(/function moduleDoubleSided\(node\) \{/)
-    expect(plateModel).toMatch(/node\.userData\.moduleDoubleSided = moduleDoubleSided\(node\)/)
+    expect(plateModel).toMatch(/function moduleDoubleSided\(node: Mesh\): boolean \{/)
+    expect(plateModel).toMatch(/n\.userData\.moduleDoubleSided = moduleDoubleSided\(n\)/)
     expect(kernel).toMatch(/const side = node\.userData\.moduleDoubleSided \? THREE\.DoubleSide : THREE\.FrontSide;/)
     expect(plateModel).toMatch(/const side = node\.userData\.moduleDoubleSided \? THREE\.DoubleSide : THREE\.FrontSide/)
     expect(kernel).toMatch(/mat\.side = side;/)
@@ -427,7 +427,7 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(kernel).toMatch(/function spacedStateMaterial[\s\S]{0,420}?depthWrite: true, depthTest: true, blending: THREE\.NoBlending,/)
     // 外部模块状态：只写 A=1，RGB 保留；自定义混合 RGB src=0/dst=1、A src=1/dst=0；
     // PBR 用 A 抑制其后间隙板跳弹。
-    expect(kernel).toMatch(/function moduleStateMaterial\(clip\)/)
+    expect(kernel).toMatch(/function moduleStateMaterial\(clip: Plane \| null \| undefined\): ShaderMaterial \{/)
     expect(kernel).toMatch(/blendSrc: THREE\.ZeroFactor, blendDst: THREE\.OneFactor/)
     expect(kernel).toMatch(/blendSrcAlpha: THREE\.OneFactor, blendDstAlpha: THREE\.ZeroFactor/)
     const stateScene = plateModel.slice(plateModel.indexOf('function populateSpacedStateScene'), plateModel.indexOf('function populatePrimaryArmorScene'))
@@ -812,7 +812,7 @@ describe('spaced armor surface selection', () => {
   const shaders = read('../scene/viewer/armorShaders.ts')
   const kernel = read('../scene/tankViewer.js')
   it('闭合网格单面、开放面片双面；深度占位保持双面且在着色之后', () => {
-    expect(shaders).toMatch(/function spacedMaterial\(thickness, penetration, side\)/)
+    expect(shaders).toMatch(/function spacedMaterial\(thickness: number, penetration: number \| null \| undefined, side: Side\): ShaderMaterial \{/)
     expect(shaders).toMatch(/side,\s*\n\s*uniforms:/)
     expect(shaders).toMatch(/depthWrite: true, depthTest: true, blending: THREE\.NoBlending,\s*\n\s*side: THREE\.DoubleSide,/)
     expect(plateModel).toMatch(/isClosedSurfaceGeometry\(node\.geometry\) \? THREE\.FrontSide : THREE\.DoubleSide/)

@@ -13,12 +13,6 @@
     "src/vehicle-models/validate.js": "validate-vehicle-models.mjs 在 Node 中直接 import"
   },
   "p1": [
-    "src/composables/usePlaybackDetailsPlacement.js",
-    "src/composables/usePlaybackFullscreen.js",
-    "src/composables/usePlaybackPhoneForm.js",
-    "src/composables/usePlaybackPortraitViewport.js",
-    "src/composables/usePlaybackTransport.js",
-    "src/composables/useSceneFlyControls.js",
     "src/scene/playbackScene.js",
     "src/scene/tankViewer.js"
   ],

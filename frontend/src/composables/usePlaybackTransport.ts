@@ -13,15 +13,20 @@ export const PLAYBACK_SPEEDS = Object.freeze([0.5, 1, 2, 4, 8])
 export const DEFAULT_PLAYBACK_SPEED = 1
 export const PLAYBACK_STEP_SECONDS = 5
 
-export function isPlaybackSpeed(value) {
-  return PLAYBACK_SPEEDS.includes(value)
+export function isPlaybackSpeed(value: unknown): boolean {
+  return PLAYBACK_SPEEDS.includes(value as number)
 }
 
 /** 键盘事件落在可输入 / 可操作控件上时不劫持（空格要留给按钮和输入框本身） */
-export function isInteractiveTarget(target) {
+interface EventTargetLike {
+  isContentEditable?: boolean
+  tagName?: string
+}
+
+export function isInteractiveTarget(target: EventTargetLike | null | undefined): boolean {
   if (!target) return false
   if (target.isContentEditable) return true
-  return ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(target.tagName)
+  return ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(target.tagName as string)
 }
 
 /**
@@ -37,7 +42,23 @@ export function isInteractiveTarget(target) {
  * @param {object} [options]
  * @param {boolean} [options.keyboard=true]   是否在组件生命周期内挂全局键盘监听
  */
-export function usePlaybackTransport(adapter, { keyboard = true } = {}) {
+/** usePlaybackTransport 的播放器 adapter（2D BattlePlayback / 3D playbackScene 各自实现）。 */
+export interface PlaybackTransportAdapter {
+  isPlaying: () => boolean
+  play: () => void
+  pause: () => void
+  step: (deltaSeconds: number) => void
+  /** 播放器当前是否可见 / 可交互（缺省视为可交互） */
+  isActive?: () => boolean
+  /** 时间轴是否已就绪（缺省视为就绪） */
+  isReady?: () => boolean
+  /** 是否停在时间轴终点（缺省视为否） */
+  isAtEnd?: () => boolean
+  /** 回到时间轴起点（终点按播放时先调用） */
+  restart?: () => void
+}
+
+export function usePlaybackTransport(adapter: PlaybackTransportAdapter, { keyboard = true }: { keyboard?: boolean } = {}) {
   let resumeAfterScrub = false
   let scrubbing = false
 
@@ -65,10 +86,10 @@ export function usePlaybackTransport(adapter, { keyboard = true } = {}) {
     resumeAfterScrub = false
   }
 
-  function handleKeydown(event) {
+  function handleKeydown(event: KeyboardEvent): void {
     if (adapter.isActive && !adapter.isActive()) return
     if (adapter.isReady && !adapter.isReady()) return
-    if (isInteractiveTarget(event.target)) return
+    if (isInteractiveTarget(event.target as EventTargetLike | null)) return
     if (event.code === 'Space' || event.key === ' ') {
       event.preventDefault()
       togglePlay()
