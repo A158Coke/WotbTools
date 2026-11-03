@@ -138,7 +138,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 装配：掩码贴图经 GLTFLoader associations 预解析（texture 依赖异步、遍历同步）
     // ——2026-10-14 抽层后在共享装配模块（asmSrc）
     expect(asmSrc).toMatch(/getDependency\('texture', ex\.maskTexture\)/)
-    expect(asmSrc).toMatch(/if \(maskTex && o\.geometry\.attributes\.uv1\) return makeBlendLayerMaterial\(m, maskTex\);/)
+    expect(asmSrc).toMatch(/if \(maskTex && o\.geometry\.attributes\.uv1\) \{\s*annotationSurface = false;\s*return makeBlendLayerMaterial\(m, maskTex\);\s*\}/)
     // 逐帧写 uTime（回放秒数）：暂停即停、seek 后相位确定——时钟驱动留在运行时
     expect(src).toMatch(/for \(const mm of animLayerMats\) mm\.uniforms\.uTime\.value = secs;/)
     expect(src).toMatch(/const secs = T \/ 1000;/)

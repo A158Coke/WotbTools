@@ -200,6 +200,33 @@ describe('subdividePolyline', () => {
     expect(out.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))).toBe(true)
   })
 
+  it('preserves both bridge→ground transition endpoints across the 4096-point budget', () => {
+    const raw = []
+    for (let i = 0; i < ANNOTATION_MAX_COMMITTED_POINTS / 2; i++) raw.push({ x: i, y: 0 })
+    for (let i = ANNOTATION_MAX_COMMITTED_POINTS / 2; i < ANNOTATION_MAX_COMMITTED_POINTS; i++) {
+      raw.push({ x: i, y: 0, surfaceY: 8 })
+    }
+    const normalized = normalizePenPoints(raw)
+    expect(normalized).toHaveLength(ANNOTATION_MAX_COMMITTED_POINTS)
+    expect(normalized.some((p) => p.x === 2047 && p.surfaceY === undefined)).toBe(true)
+    expect(normalized.some((p) => p.x === 2048 && p.surfaceY === 8)).toBe(true)
+
+    const ribbon = buildPenRibbon(pen(normalized, 2), { sampleHeight: () => 0, lift: 0, maxSegment: 1000 })
+    expect(ribbon).not.toBeNull()
+    expect(ribbon.strips[0].anchored.some((f) => f === 0)).toBe(true)
+    expect(ribbon.strips[0].anchored.some((f) => f === 1)).toBe(true)
+    expect(ribbonVertices(ribbon).some((v) => Math.abs(v.y - 8) < 1e-6)).toBe(true)
+  })
+
+  it('does not drop an anchor-state transition when the committed budget resamples', () => {
+    const pts = subdividePolyline([
+      { x: 0, y: 0 }, { x: 10, y: 0 },
+      { x: 20, y: 0, surfaceY: 8 }, { x: 30, y: 0, surfaceY: 8 },
+    ], () => 0, { maxSegment: 100, maxPoints: 3 })
+    expect(pts).toHaveLength(3)
+    expect(pts.some((p) => p.surfaceY === 8)).toBe(true)
+  })
+
   it('caps output at maxPoints and keeps the result finite', () => {
     const pts = subdividePolyline([{ x: 0, y: 0 }, { x: 100, y: 0 }], () => 20, {
       maxSegment: 1, maxPoints: 5,
@@ -582,5 +609,234 @@ describe('buildEraserRing', () => {
     expect(buildEraserRing({ x: 0, y: 0 }, 0, () => 0)).toBeNull()
     expect(buildEraserRing(null, 4, () => 0)).toBeNull()
     expect(buildEraserRing({ x: 0, y: 0 }, 4, null)).toBeNull()
+  })
+})
+
+describe('3D surface anchors (selected-surface drawing)', () => {
+  it('sanitizePoints keeps finite surfaceY (0 included) and drops invalid values', () => {
+    const pts = sanitizePoints([
+      { x: 0, y: 0, surfaceY: 8 },
+      { x: 1, y: 0, surfaceY: 0 },
+      { x: 2, y: 0, surfaceY: NaN },
+      { x: 3, y: 0, surfaceY: Infinity },
+      { x: 4, y: 0, surfaceY: '8' },
+      { x: 5, y: 0 },
+    ])
+    expect(pts).toEqual([
+      { x: 0, y: 0, surfaceY: 8 },
+      { x: 1, y: 0, surfaceY: 0 },
+      { x: 2, y: 0 },
+      { x: 3, y: 0 },
+      { x: 4, y: 0 },
+      { x: 5, y: 0 },
+    ])
+  })
+
+  it('Chaikin interpolates surfaceY only when both sides carry an anchor', () => {
+    const smoothed = smoothPolyline([
+      { x: 0, y: 0, surfaceY: 8 },
+      { x: 10, y: 0, surfaceY: 10 },
+      { x: 20, y: 0, surfaceY: 12 },
+    ], { strength: 0.25 })
+    expect(smoothed[1].surfaceY).toBeCloseTo(8.5, 6)
+    expect(smoothed[2].surfaceY).toBeCloseTo(9.5, 6)
+    expect(smoothed[3].surfaceY).toBeCloseTo(10.5, 6)
+
+    const mixed = smoothPolyline([
+      { x: 0, y: 0, surfaceY: 8 },
+      { x: 10, y: 0 },
+      { x: 20, y: 0, surfaceY: 12 },
+    ], { strength: 0.25 })
+    // ground / bridge / ground are separate runs; the two boundary anchors must survive.
+    expect(mixed).toHaveLength(3)
+    expect(mixed[0].surfaceY).toBe(8)
+    expect(mixed[1].surfaceY).toBeUndefined()
+    expect(mixed[2].surfaceY).toBe(12)
+  })
+
+  it('preserves the first/last anchored control point across ground→bridge and bridge→ground transitions', () => {
+    const groundToBridge = normalizePenPoints([
+      { x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0, surfaceY: 8 },
+      { x: 30, y: 0, surfaceY: 8 }, { x: 40, y: 0, surfaceY: 8 },
+    ])
+    expect(groundToBridge.some((p) => p.x === 20 && p.surfaceY === 8)).toBe(true)
+    expect(groundToBridge.filter((p) => p.surfaceY === 8).length).toBeGreaterThan(0)
+
+    const bridgeToGround = normalizePenPoints([
+      { x: 0, y: 0, surfaceY: 8 }, { x: 10, y: 0, surfaceY: 8 },
+      { x: 20, y: 0, surfaceY: 8 }, { x: 30, y: 0 }, { x: 40, y: 0 },
+    ])
+    expect(bridgeToGround.some((p) => p.x === 20 && p.surfaceY === 8)).toBe(true)
+    expect(bridgeToGround[bridgeToGround.length - 1].surfaceY).toBeUndefined()
+  })
+
+  it('subdivision interpolates anchored midpoints and skips terrain midpoint probing', () => {
+    let samples = 0
+    const out = subdividePolyline(
+      [{ x: 0, y: 0, surfaceY: 8 }, { x: 10, y: 0, surfaceY: 8 }],
+      () => { samples++; return 0 },
+      { maxSegment: 2, maxPoints: 1000 },
+    )
+    expect(samples).toBe(0)
+    expect(out.length).toBeGreaterThan(2)
+    expect(out[0].surfaceY).toBe(8)
+    expect(out[out.length - 1].surfaceY).toBe(8)
+    expect(out.every((p) => p.surfaceY === 8)).toBe(true)
+
+    let mixedSamples = 0
+    const mixed = subdividePolyline(
+      [{ x: 0, y: 0 }, { x: 10, y: 10, surfaceY: 8 }],
+      (x, z) => { mixedSamples++; return x === 5 && z === 5 ? 30 : 0 },
+      { maxSegment: 100, maxPoints: 1000 },
+    )
+    expect(mixedSamples).toBeGreaterThan(0)
+    expect(mixed.length).toBeGreaterThan(2)
+    expect(mixed[1].surfaceY).toBeUndefined()
+  })
+
+  it('drapes an anchored wide stroke on the selected layer, not the terrain below', () => {
+    const options = { sampleHeight: () => 0, lift: 0, maxSegment: 100 }
+    const bridge = buildPenRibbon(pen([{ x: -5, y: 0, surfaceY: 8 }, { x: 5, y: 0, surfaceY: 8 }], 6), options)
+    expect(bridge).not.toBeNull()
+    const bridgeVerts = ribbonVertices(bridge)
+    expect(bridgeVerts.length).toBeGreaterThan(6)
+    expect(bridgeVerts.every((v) => Math.abs(v.y - 8) < 1e-6)).toBe(true)
+    expect(Math.max(...bridgeVerts.map((v) => v.z)) - Math.min(...bridgeVerts.map((v) => v.z))).toBeCloseTo(6, 5)
+    expect(bridge.strips[0].anchored.every((flag) => flag === 1)).toBe(true)
+
+    const ground = buildPenRibbon(pen([{ x: -5, y: 0 }, { x: 5, y: 0 }], 6), options)
+    expect(ground).not.toBeNull()
+    const groundVerts = ribbonVertices(ground)
+    expect(groundVerts.every((v) => Math.abs(v.y) < 1e-6)).toBe(true)
+    expect(Math.max(...groundVerts.map((v) => v.z)) - Math.min(...groundVerts.map((v) => v.z))).toBeCloseTo(6, 5)
+    expect(ground.strips[0].anchored.every((flag) => flag === 0)).toBe(true)
+  })
+
+  it('tilts the anchored cross-section to the picked surface plane', () => {
+    const normal = { x: 0, y: Math.SQRT1_2, z: Math.SQRT1_2 }
+    const bridge = buildPenRibbon(pen([
+      { x: -5, y: 0, surfaceY: 8, surfaceN: normal },
+      { x: 5, y: 0, surfaceY: 8, surfaceN: normal },
+    ], 6), { sampleHeight: () => 0, lift: 0, maxSegment: 100 })
+    expect(bridge).not.toBeNull()
+    const verts = ribbonVertices(bridge)
+    expect(Math.max(...verts.map((v) => v.y)) - Math.min(...verts.map((v) => v.y))).toBeGreaterThan(3)
+    // canonical XZ footprint must stay 6m; only Y is derived from the plane.
+    expect(Math.max(...verts.map((v) => v.z)) - Math.min(...verts.map((v) => v.z))).toBeCloseTo(6, 5)
+    // 45° plane through (0,8,0), normal (0,√½,√½): y + z = 8.
+    expect(verts.every((v) => Math.abs(v.y + v.z - 8) < 1e-6)).toBe(true)
+  })
+
+  it('keeps canonical XZ width on a 5° anchored surface', () => {
+    const theta = (5 * Math.PI) / 180
+    const normal = { x: 0, y: Math.cos(theta), z: Math.sin(theta) }
+    const bridge = buildPenRibbon(pen([
+      { x: -5, y: 0, surfaceY: 8, surfaceN: normal },
+      { x: 5, y: 0, surfaceY: 8, surfaceN: normal },
+    ], 6), { sampleHeight: () => 0, lift: 0, maxSegment: 100 })
+    expect(bridge).not.toBeNull()
+    const verts = ribbonVertices(bridge)
+    expect(Math.max(...verts.map((v) => v.z)) - Math.min(...verts.map((v) => v.z))).toBeCloseTo(6, 5)
+    expect(verts.every((v) => Math.abs(Math.cos(theta) * (v.y - 8) + Math.sin(theta) * v.z) < 1e-6)).toBe(true)
+  })
+
+  it('keeps canonical XZ width and terrain sampling for an unanchored stroke', () => {
+    const bridge = buildPenRibbon(pen([{ x: -5, y: 0 }, { x: 5, y: 0 }], 6), {
+      sampleHeight: (x, z) => 0.1 * x + 0.2 * z,
+      lift: 0,
+      maxSegment: 100,
+    })
+    expect(bridge).not.toBeNull()
+    const verts = ribbonVertices(bridge)
+    expect(Math.max(...verts.map((v) => v.z)) - Math.min(...verts.map((v) => v.z))).toBeCloseTo(6, 5)
+    expect(verts.some((v) => Math.abs(v.y) > 1e-6)).toBe(true)
+  })
+
+  it('keeps a ground→bridge normalized transition visible on both sides', () => {
+    const normalized = normalizePenPoints([
+      { x: 0, y: 0 }, { x: 10, y: 0 },
+      { x: 20, y: 0, surfaceY: 8 }, { x: 30, y: 0, surfaceY: 8 },
+    ])
+    const ribbon = buildPenRibbon(pen(normalized, 2), { sampleHeight: () => 0, lift: 0, maxSegment: 100 })
+    expect(ribbon).not.toBeNull()
+    const flags = ribbon.strips[0].anchored
+    expect(flags.some((f) => f === 0)).toBe(true)
+    expect(flags.some((f) => f === 1)).toBe(true)
+    expect(ribbonVertices(ribbon).some((v) => Math.abs(v.y - 8) < 1e-6)).toBe(true)
+  })
+
+  it('keeps a bridge→ground normalized transition visible on both sides', () => {
+    const normalized = normalizePenPoints([
+      { x: 0, y: 0, surfaceY: 8 }, { x: 10, y: 0, surfaceY: 8 },
+      { x: 20, y: 0 }, { x: 30, y: 0 },
+    ])
+    const ribbon = buildPenRibbon(pen(normalized, 2), { sampleHeight: () => 0, lift: 0, maxSegment: 100 })
+    expect(ribbon).not.toBeNull()
+    const flags = ribbon.strips[0].anchored
+    expect(flags.some((f) => f === 0)).toBe(true)
+    expect(flags.some((f) => f === 1)).toBe(true)
+    expect(ribbonVertices(ribbon).some((v) => Math.abs(v.y - 8) < 1e-6)).toBe(true)
+  })
+
+  it('refinement keeps anchored rows on the selected layer and fails closed below terrain', () => {
+    const ribbon = buildPenRibbon(pen([{ x: -5, y: 0, surfaceY: 8 }, { x: 5, y: 0, surfaceY: 8 }], 4), {
+      sampleHeight: () => 12, // ribbon is below the terrain: every cell must fail closed
+      lift: 0,
+      maxSegment: 100,
+    })
+    expect(ribbon).not.toBeNull()
+    expect(ribbon.validation.iterations).toBeGreaterThan(0)
+    expect(ribbon.validation.unsafeCells).toBeGreaterThan(0)
+    expect(ribbonVertices(ribbon).every((v) => Math.abs(v.y - 8) < 1e-6)).toBe(true)
+  })
+
+  it('reprojection keeps anchored vertices and resamples only terrain vertices', () => {
+    const positions = new Float32Array([0, 8.08, 0, 10, 8.08, 0, 20, 10.08, 0])
+    const anchored = new Uint8Array([1, 1, 0])
+    reprojectRibbonPositions(positions, (x) => (x === 20 ? 30 : 0), ANNOTATION_LIFT, anchored)
+    expect(positions[1]).toBeCloseTo(8.08, 5)
+    expect(positions[4]).toBeCloseTo(8.08, 5)
+    expect(positions[7]).toBeCloseTo(30 + ANNOTATION_LIFT, 5)
+  })
+
+  it('eraser cut endpoints interpolate surfaceY while 2D points stay {x,y}', () => {
+    const stroke = pen([{ x: 0, y: 0, surfaceY: 8 }, { x: 10, y: 0, surfaceY: 12 }], 1)
+    const pieces = applyEraser([stroke], [{ x: 5, y: 0, surfaceY: 10 }], 1)
+    expect(pieces).toHaveLength(2)
+    const all = pieces.flatMap((piece) => piece.points)
+    expect(all.every((p) => Number.isFinite(p.surfaceY))).toBe(true)
+    expect(all.some((p) => p.surfaceY > 9.5 && p.surfaceY < 10.5)).toBe(true)
+    expect(all[0].surfaceY).toBeCloseTo(8, 6)
+    expect(all[all.length - 1].surfaceY).toBeCloseTo(12, 6)
+
+    const flat = pen([{ x: 0, y: 0 }, { x: 10, y: 0 }], 1)
+    const flatPieces = applyEraser([flat], [{ x: 5, y: 0 }], 1)
+    expect(flatPieces.flatMap((piece) => piece.points)).toEqual([
+      { x: 0, y: 0 }, { x: 4, y: 0 }, { x: 6, y: 0 }, { x: 10, y: 0 },
+    ])
+  })
+
+  it('projects anchored eraser rings onto 5°/45° surface planes and falls back horizontally', () => {
+    for (const degrees of [5, 45]) {
+      const theta = (degrees * Math.PI) / 180
+      const normal = { x: 0, y: Math.cos(theta), z: Math.sin(theta) }
+      const ring = buildEraserRing({ x: 0, y: 0, surfaceY: 8, surfaceN: normal }, 5, () => 0, {
+        segments: 24, lift: 0,
+      })
+      expect(ring).not.toBeNull()
+      const verts = ringVertices(ring)
+      expect(Math.max(...verts.map((v) => v.y)) - Math.min(...verts.map((v) => v.y))).toBeGreaterThan(0.5)
+      // plane through (0, 8, 0), normal (0, cos, sin): y*cos + z*sin = 8*cos
+      expect(verts.every((v) => Math.abs(normal.y * (v.y - 8) + normal.z * v.z) < 1e-5)).toBe(true)
+    }
+
+    const flat = buildEraserRing({ x: 0, y: 0, surfaceY: 8 }, 5, () => 0, { segments: 24, lift: 0 })
+    expect(ringVertices(flat).every((v) => Math.abs(v.y - 8) < 1e-6)).toBe(true)
+  })
+
+  it('eraser ring stays on the selected layer when the cursor carries a surface anchor', () => {
+    const ring = buildEraserRing({ x: 0, y: 0, surfaceY: 8 }, 5, () => 0, { segments: 16, lift: 0 })
+    expect(ring).not.toBeNull()
+    expect(ringVertices(ring).every((v) => Math.abs(v.y - 8) < 1e-6)).toBe(true)
   })
 })

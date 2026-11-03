@@ -176,6 +176,59 @@ ocr delegate rule --format json <task-related-paths...>
 
 检查 requirement、acceptance criteria、遗漏、partial implementation、scope regression 与关键验证。requirement missing → 即使 OCR no findings 也 BLOCKER。
 
+### A1b. Verification receipt（证据，不是感觉）
+
+A1 的 `SATISFIED / PARTIAL / MISSING / BLOCKED` 是 **plan compliance** 结果；本节 receipt 是**每条 acceptance criterion 的证据状态**。两者不互相替代，也不新增第二份计划。
+
+每条 requirement 映射到实际观察到的 evidence，状态只有四个：
+
+| 状态 | 成立条件 |
+|---|---|
+| `PROVEN` | 至少一条相关 `PASS`、**没有任何相关 `FAIL`**，且该 criterion 明确要求的每个 evidence / surface 都已覆盖 |
+| `FAILED` | 存在能证伪该 criterion 的 `FAIL` evidence；`PASS` 与 `FAIL` 并存时判 `FAILED`，不因部分通过升格 |
+| `UNVERIFIED` | 没有证伪性 `FAIL`，但 required evidence / surface 缺失、`NOT_RUN`，或证据不足以覆盖完整 criterion（不得折叠进 `FAILED`） |
+| `NOT_APPLICABLE` | 必须写明原因 |
+
+`PROVEN` 判定的是**完整 criterion**，不是某一条 evidence。criterion 要求多个 surface 时逐条核对，任一 required surface 为 `NOT_RUN` 或缺失即整条 `UNVERIFIED`：
+
+```text
+criterion: mobile web 正常 AND Android 正常
+Evidence:
+- [MACHINE] PASS pnpm run typecheck
+- [EXTERNAL] Android: NOT_RUN
+Status: UNVERIFIED          # 不是 PROVEN：Android surface 未覆盖
+```
+
+证据必须区分来源：`MACHINE`（unit / integration test、typecheck、compiler、build、static diagnostics、Git diff、API test）与 `EXTERNAL`（窄屏浏览器渲染、Computer Use、Android 模拟器/真机、Android 生命周期、真实生产端点、外部 IdP 行为、已部署 IaC 行为、GPT Web Review）。机器测试不证明外部行为。
+
+硬规则：
+
+- 没有 evidence 不得写 `PROVEN`；缺证据只能写 `UNVERIFIED`。
+- `NOT_RUN` 永远不构成 `PASS`。
+- 不得把 `UNVERIFIED` 折叠成 `FAILED`，也不得把 `FAILED` 折叠成 `UNVERIFIED`。
+- 缺少 runtime evidence 不能用静态 fallback 替代验收（与 `## OCR failure` 末段一致）。
+- 只有相关 evidence 参与判定：与 criterion 无关的 `PASS` 不能补足缺失的 surface，也不能抵消相关的 `FAIL`。
+- `wotb_verification_receipt` 的自动汇总只是 advisory：它按传入 evidence 归类，不判断 criterion 的 evidence coverage 是否完整。coverage 不完整时 Review 必须降级为 `UNVERIFIED`，不得因为工具返回「至少一条 PASS」就盖章 `PROVEN`。
+- GPT Web Review 在本仓之外：receipt 只记录 `PENDING / DONE / NOT_APPLICABLE`，不调用、不上传、不模拟、不等待。
+
+```text
+Requirement R1
+Evidence:
+- [MACHINE] PASS pnpm test ...
+Status: PROVEN
+
+Requirement R3
+Required surface: Android real device
+Evidence:
+- none
+Status: UNVERIFIED
+
+External review:
+- GPT Web: PENDING
+```
+
+可用 `wotb_verification_receipt` 工具做确定性汇总与降级（advisory，无 gate）；不可用时就按本节格式手工产出。
+
 ### A2. Java DI gate
 
 存在 Java production 变更或直接受影响 Java DI 接线时执行本节；纯非 Java 任务记录 N/A + 原因。Constructor injection preferred；禁止无理由 field injection。
@@ -191,12 +244,16 @@ find java -path '*/src/main/java' -type d -print
 必须实际运行：
 
 ```bash
-# 两行
-rg -n -U '@Autowired\s*\n\s*(?:private|protected|public)\s+' java/*/src/main/java
+# 两行 field declaration：以 ; 结束，且 ; 之前不含括号
+rg -n -U '@Autowired(?:\s*\([^)]*\))?[^\S\r\n]*\r?\n[^\S\r\n]*(?:(?:private|protected|public)\s+)?[^(){}\r\n;]+;' java/*/src/main/java
 
-# 同行
-rg -n '@Autowired\s+(?:private|protected|public)\s+' java/*/src/main/java
+# 同行 field declaration
+rg -n '@Autowired(?:\s*\([^)]*\))?\s+(?:(?:private|protected|public)\s+)?[^(){}\r\n;]+;' java/*/src/main/java
 ```
+
+命中必须结束于 `;`，且 `;` 之前不含 `(` / `)`：`@Autowired` 标注的 constructor / method declaration 因此不命中。访问修饰符可有可无，因此 `private` / `protected` / `public` 与 package-private field 都命中（不得靠删除 `public` 或只匹配显式修饰符规避）。`(?:\s*\([^)]*\))?` 覆盖 `@Autowired(required = false)` 写法。
+
+本 gate 是行邻接的文本搜索，不是符号解析：注解与字段声明之间夹了其它注解或注释、或字段带初始化器时不覆盖，需要时人工补查，不得据零命中断言「无 field injection」；注释或字符串里出现同样文本也会误报，命中一律人工确认。
 
 必须证明普通两行与同行 field injection 都能命中，且命令本身不报 multiline error。发现后优先显式 constructor injection + `final` 字段（不引入 Lombok）；唯一可行时才保留并写具体原因。不引入 AST tooling。
 
@@ -303,6 +360,7 @@ Findings:
 
 Validation:
 - runtime evidence: acceptance criteria 要求的 browser / device / runtime response / benchmark 结果，或 N/A + 具体理由
+- verification receipt: `PROVEN / FAILED / UNVERIFIED / NOT_APPLICABLE` 计数、未验证 acceptance criteria 清单、`MACHINE` / `EXTERNAL` 证据分布、GPT Web 状态
 - OCR: version, range/workspace, reviewable N, reviewed N, skipped N
 - DI scan: multiline / same-line result
 - targeted tests / contract evidence

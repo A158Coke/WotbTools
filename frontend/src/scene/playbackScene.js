@@ -116,13 +116,17 @@ import { GRID_DT, ASSET_CONCURRENCY, mapLimit } from './playback/util.js'
 import { QUALITY_PRESETS } from './playback/quality.js'
 import { tracerSpanSecs, occlusionCells, occlusionFootprintCells } from './playback/pure.js'
 import { createPickReporter } from './playback/pickReport.js'
+import { chainVisible } from './pickDebug.js'
 import { createBoundaryBand, BOUNDARY_THICK } from './playback/boundary.js'
 import { createBaseMarkers } from './playback/bases.js'
 import { createHudFeed } from './playback/hudFeed.js'
 import {
   ANNOTATION_LIFT, ANNOTATION_MAX_ERASER_POINTS, ANNOTATION_MAX_INPUT_POINTS,
-  buildEraserRing, buildPenRibbon, normalizePenPoints, reprojectRibbonPositions,
+  buildEraserRing, buildPenRibbon, hitWorldNormal, normalizePenPoints, reprojectRibbonPositions,
 } from './playback/annotation3d.js'
+import {
+  chooseAnnotationHit, collectSurfaceCandidates, pickDrawableSurfaceHit,
+} from './playback/annotationSurface.ts'
 
 export { QUALITY_PRESETS, tracerSpanSecs, occlusionCells, occlusionFootprintCells }
 
@@ -249,12 +253,16 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let destructPickList = null;   // 拾取用全量实例清单（destructibles.json instances，与事件无关）
   let meshOwner = null;          // mesh → 实例 精确归属（buildMeshOwnerMap，拾取主路径）
   let groundMesh = null, gridHelper = null;           // buildWorld 的占位地面/网格（会话拥有）
-  // ---------- 3D annotation（terrain-anchored drawing）----------
+  // ---------- 3D annotation（selected-surface drawing；无 surfaceY 时 terrain fallback）----------
   // committed annotation 的权威 owner 是 Replay3DPane；本闭包只保存最后一次 projection
   // 引用作为 terrain rebuild 的派生缓存。draft/GPU 资源归本闭包，绝不回写 history。
   let projectedAnnotations = []
   // 提交时算一次的 ribbon 拓扑：细分校验很贵，LOD 变化只刷新高度，不重算。
   let annotationRibbons = new WeakMap()
+  // 3D annotation 的 scenery 候选格（装配期构建；与 occlGrid 同粒度，不依赖节点名）。
+  let annotationSurfaceGrid = null
+  // 独立 raycaster：不给共享 raycaster 留 near/far 副作用（fly/selection 仍用共享实例）。
+  let annotationSurfaceRaycaster = null
   let annotationsVisible = true
   let annotationGroup = null
   let annotationCommittedMesh = null
@@ -869,6 +877,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     });
     scene = core.scene; camera = core.camera; renderer = core.renderer;
     controls = core.controls; clock = core.clock; raycaster = core.raycaster;
+    annotationSurfaceRaycaster = new THREE.Raycaster();
     hemiLight = core.hemiLight; sunLight = core.sunLight;
     dynResCtl = core.dynResCtl; sizeObserver = core.sizeObserver; rendererCaps = core.rendererCaps;
     // annotation 先于 fly capture 注册：mouse/pen 命中地形时消费事件；touch 不消费，
@@ -1190,6 +1199,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (waterTexDispose) { waterTexDispose.dispose(); waterTexDispose = null; }
     terrainLodPrev = null;   // 会话场景失效：下一场首帧必重建地形 LOD
     occlGrid = null;   // 标签遮挡候选格属于会话场景，随场景一起失效
+    annotationSurfaceGrid = null;   // 3D annotation 表面候选格同样属于会话场景
     groundLayers = null;
     // 地面加载方式由画质档决定（低=小地图底图、中=高清烘焙底图、高=分层地表），3D 地形有高度场即开启
     // 地图端点用回放数字 id（与客户端 arenaTypeID → maps.yaml 同链）；
@@ -1495,6 +1505,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         if ('mapScenery' in w) mapScenery = w.mapScenery;
         if ('terrainRefineMask' in w) terrainRefineMask = w.terrainRefineMask;
         if ('occlGrid' in w) occlGrid = w.occlGrid;
+        if ('annotationSurfaceGrid' in w) annotationSurfaceGrid = w.annotationSurfaceGrid;
         destructPickList = w.destructPickList;
         meshOwner = w.meshOwner;
         destruct = w.destruct;
@@ -1615,6 +1626,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const positions = []
     const colors = []
     const indices = []
+    const anchored = []
     const color = new THREE.Color()
     let vertexOffset = 0
     const list = Array.isArray(annotations) ? annotations : []
@@ -1625,7 +1637,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       const points = Array.isArray(ann.points)
         ? ann.points.filter((point) => point && Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.y)))
         : []
-      const sceneAnn = { ...ann, points: points.map((point) => ({ x: -point.x, y: point.y })) }
+      const sceneAnn = { ...ann, points: points.map((point) => sceneFromSemantic(point)) }
       const ribbon = ribbonFor(ann, sceneAnn, refine)
       if (!ribbon) continue
       const hex = typeof ann.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(ann.color) ? ann.color : '#ffffff'
@@ -1636,13 +1648,19 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           positions.push(strip.positions[i * 3], strip.positions[i * 3 + 1], strip.positions[i * 3 + 2])
           colors.push(color.r, color.g, color.b)
         }
+        for (let row = 0; row < strip.rowCount; row++) {
+          const flag = strip.anchored && strip.anchored[row] ? 1 : 0
+          for (let col = 0; col < strip.crossCount; col++) anchored.push(flag)
+        }
         for (let i = 0; i < strip.indices.length; i++) indices.push(strip.indices[i] + vertexOffset)
         vertexOffset += count
       }
     }
     if (!positions.length) return { geometry: emptyAnnotationGeometry(), vertices: 0 }
     const geometry = new THREE.BufferGeometry()
-    const merged = reprojectRibbonPositions(new Float32Array(positions), annotationSurfaceHeightAt)
+    const anchoredMask = new Uint8Array(anchored)
+    geometry.userData.annotationAnchored = anchoredMask
+    const merged = reprojectRibbonPositions(new Float32Array(positions), annotationSurfaceHeightAt, ANNOTATION_LIFT, anchoredMask)
     geometry.setAttribute('position', new THREE.BufferAttribute(merged, 3))
     geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3))
     geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1))
@@ -1708,7 +1726,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         ringOutline: annotationRingOutline,
         stats: annotationStats,
         sampler: annotationSurfaceHeightAt,
-        pick: (x, y) => pickAnnotationGround(x, y),
+        pick: (x, y) => pickAnnotationSurface(x, y),
+        pickDebug: (x, y) => debugPickAnnotationSurface(x, y),
+        setSurfaceGrid: (grid) => { annotationSurfaceGrid = grid },
         gesture: () => annotationGesture,
         rebuild: () => { rebuildAnnotationProjection(); return annotationStats.terrainRebuilds },
         reproject: () => { reprojectAnnotationHeights(); return annotationStats.terrainRebuilds },
@@ -1786,7 +1806,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     for (const mesh of [annotationCommittedMesh, annotationDraftMesh]) {
       const position = mesh?.geometry.getAttribute('position')
       if (!position?.count) continue
-      reprojectRibbonPositions(position.array, annotationSurfaceHeightAt)
+      reprojectRibbonPositions(
+        position.array, annotationSurfaceHeightAt, ANNOTATION_LIFT,
+        mesh.geometry.userData.annotationAnchored || null,
+      )
       position.needsUpdate = true
     }
     invalidate()
@@ -1845,15 +1868,36 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     return annotationInteraction.enabled && !!annotationInteraction.tool
   }
 
-  function semanticFromScene(x, z) {
-    return { x: -x, y: z }
+  function semanticNormal(normal) {
+    if (!normal || !Number.isFinite(normal.x) || !Number.isFinite(normal.y) || !Number.isFinite(normal.z)) return undefined
+    return { x: normal.x, y: normal.y, z: normal.z }
+  }
+
+  function semanticFromScene(x, z, surfaceY, surfaceN) {
+    const out = { x: -x, y: z }
+    if (Number.isFinite(surfaceY)) out.surfaceY = surfaceY
+    const normal = semanticNormal(surfaceN)
+    if (normal) out.surfaceN = normal
+    return out
+  }
+
+  function semanticPoint(point) {
+    const out = { x: point.x, y: point.y }
+    if (Number.isFinite(point.surfaceY)) out.surfaceY = point.surfaceY
+    const normal = semanticNormal(point.surfaceN)
+    if (normal) out.surfaceN = normal
+    return out
   }
 
   function sceneFromSemantic(point) {
-    return { x: -point.x, y: point.y }
+    const out = { x: -point.x, y: point.y }
+    if (Number.isFinite(point.surfaceY)) out.surfaceY = point.surfaceY
+    const normal = semanticNormal(point.surfaceN)
+    if (normal) out.surfaceN = normal
+    return out
   }
 
-  function setRaycasterFromClient(clientX, clientY, rect) {
+  function setRaycasterFromClient(clientX, clientY, rect, rc = raycaster) {
     const nd = new THREE.Vector2(
       ((clientX - rect.left) / rect.width) * 2 - 1,
       -((clientY - rect.top) / rect.height) * 2 + 1,
@@ -1866,7 +1910,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       camera.updateProjectionMatrix()
     }
     camera.updateMatrixWorld()
-    raycaster.setFromCamera(nd, camera)
+    rc.setFromCamera(nd, camera)
   }
 
   function raycastAnnotationGround(clientX, clientY, rect) {
@@ -1907,17 +1951,149 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
 
   /**
-   * client px -> semantic ground point. 不触碰车辆/建筑/树/水：只查
-   * terrain build / heightfield / flat ground。Width/radius 不使用 camera scale。
+   * camera ray × 可绘制 static scenery：候选来自装配期 16m 足印格，不遍历整张 GLB。
+   * far 收到 terrain hit 距离之前，因此只有真正位于地面之前的表面才会被选中。
    */
-  function pickAnnotationGround(clientX, clientY) {
+  function raycastAnnotationScenery(clientX, clientY, rect, groundHit) {
+    if (!camera || !annotationSurfaceRaycaster || !annotationSurfaceGrid || !rect) return null
+    if (!(rect.width > 0) || !(rect.height > 0)) return null
+    const rc = annotationSurfaceRaycaster
+    setRaycasterFromClient(clientX, clientY, rect, rc)
+    const maxFar = Math.min(4000, Number.isFinite(camera.far) ? camera.far : 4000)
+    const near = Number.isFinite(camera.near) ? Math.max(0.01, camera.near) : 0.01
+    const far = groundHit ? Math.min(groundHit.distance, maxFar) : maxFar
+    if (!(far > near)) return null
+    rc.near = near
+    rc.far = far
+    const target = groundHit
+      ? groundHit.point
+      : rc.ray.at(far, new THREE.Vector3())
+    const cells = occlusionCells(camera.position.x, camera.position.z, target.x, target.z)
+    const cands = collectSurfaceCandidates(annotationSurfaceGrid, cells)
+    if (!cands || !cands.length) return null
+    const hit = pickDrawableSurfaceHit(rc, cands, annotationSurfaceHeightAt)
+    if (!hit) return null
+    const normal = hitWorldNormal(hit)
+    return {
+      point: hit.point,
+      distance: hit.distance,
+      surfaceY: hit.point.y,
+      surfaceN: normal ? { x: normal.x, y: normal.y, z: normal.z } : undefined,
+    }
+  }
+
+  /**
+   * 诊断专用：解释一次 annotation surface pick 的 grid/candidate/rejection。
+   * 与 pickAnnotationSurface 共用同一 grid/candidate/raycast/policy，不建立第二套 telemetry。
+   */
+  function debugPickAnnotationSurface(clientX, clientY) {
+    const rect = container.getBoundingClientRect()
+    const groundHit = raycastAnnotationGround(clientX, clientY, rect)
+    const diag = {
+      groundHit: groundHit ? { distance: groundHit.distance, point: groundHit.point.toArray() } : null,
+      gridCells: [],
+      gridSize: annotationSurfaceGrid ? annotationSurfaceGrid.size : 0,
+      candidateCount: 0,
+      rawHitCount: 0,
+      hits: [],
+      chosen: null,
+      reason: null,
+    }
+    const rc = annotationSurfaceRaycaster
+    if (!rc || !annotationSurfaceGrid || !(rect.width > 0) || !(rect.height > 0)) {
+      diag.reason = 'no-grid'
+      return diag
+    }
+    setRaycasterFromClient(clientX, clientY, rect, rc)
+    const maxFar = Math.min(4000, Number.isFinite(camera.far) ? camera.far : 4000)
+    const near = Number.isFinite(camera.near) ? Math.max(0.01, camera.near) : 0.01
+    const far = groundHit ? Math.min(groundHit.distance, maxFar) : maxFar
+    rc.near = near
+    rc.far = far
+    const target = groundHit ? groundHit.point : rc.ray.at(far, new THREE.Vector3())
+    const cells = occlusionCells(camera.position.x, camera.position.z, target.x, target.z)
+    diag.gridCells = cells
+    const cands = collectSurfaceCandidates(annotationSurfaceGrid, cells)
+    if (!cands) {
+      diag.reason = 'candidate-budget'
+      return diag
+    }
+    diag.candidateCount = cands.length
+    if (!cands.length) {
+      diag.reason = 'not-in-grid'
+      return diag
+    }
+    const raw = rc.intersectObjects(cands, false)
+    diag.rawHitCount = raw.length
+    const materialOf = (hit) => {
+      const material = hit.object && hit.object.material
+      if (Array.isArray(material)) return material[hit.face?.materialIndex ?? 0] || null
+      return material || null
+    }
+    for (const hit of raw.slice(0, 32)) {
+      const material = materialOf(hit)
+      const normal = hitWorldNormal(hit)
+      const terrainY = hit.point ? annotationSurfaceHeightAt(hit.point.x, hit.point.z) : null
+      const clearance = hit.point && Number.isFinite(terrainY) ? hit.point.y - terrainY : null
+      const normalY = normal ? normal.y : null
+      let reason = 'drawable'
+      if (!chainVisible(hit.object)) reason = 'invisible'
+      else if (!hit.face) reason = 'no-face'
+      else if (!hit.object.isMesh || !hit.object.geometry) reason = 'no-geometry'
+      else if (material && material.userData && material.userData.annotationSurface === false) reason = 'annotationSurface=false'
+      else if (clearance !== null && clearance < 0.5) reason = 'clearance<0.5'
+      else if (normalY !== null && normalY < 0.4) reason = 'normal.y<0.4'
+      diag.hits.push({
+        object: hit.object.name || hit.object.type || null,
+        material: material ? (material.name || material.type || null) : null,
+        isInstancedMesh: !!hit.object.isInstancedMesh,
+        instanceId: hit.instanceId != null ? hit.instanceId : null,
+        point: hit.point ? hit.point.toArray() : null,
+        distance: hit.distance,
+        normalY,
+        terrainY,
+        clearance,
+        annotationSurface: material?.userData?.annotationSurface,
+        reason,
+      })
+      if (!diag.reason && reason !== 'drawable') diag.reason = reason
+    }
+    const chosen = pickDrawableSurfaceHit(rc, cands, annotationSurfaceHeightAt)
+    if (chosen) {
+      const normal = hitWorldNormal(chosen)
+      diag.chosen = {
+        point: chosen.point.toArray(),
+        distance: chosen.distance,
+        surfaceY: chosen.point.y,
+        surfaceN: normal ? { x: normal.x, y: normal.y, z: normal.z } : null,
+      }
+    } else if (!diag.reason) {
+      diag.reason = 'no-drawable-hit'
+    }
+    return diag
+  }
+
+  /**
+   * client px -> semantic surface point. terrain 走既有 raycast；scenery 表面只在更近时胜出。
+   * Width/radius 不使用 camera scale。
+   */
+  function pickAnnotationSurface(clientX, clientY) {
     if (!annotationToolActive() || !annotationsVisible) return null
     const startedAt = PERF ? performance.now() : 0
     const rect = container.getBoundingClientRect()
-    const hit = raycastAnnotationGround(clientX, clientY, rect)
+    const groundHit = raycastAnnotationGround(clientX, clientY, rect)
+    const surfaceHit = raycastAnnotationScenery(clientX, clientY, rect, groundHit)
+    const hit = chooseAnnotationHit(groundHit, surfaceHit)
     if (!hit) return null
     if (PERF) annotationStats.lastPickMs = performance.now() - startedAt
-    return { semantic: semanticFromScene(hit.point.x, hit.point.z) }
+    const fromSurface = hit === surfaceHit
+    return {
+      semantic: semanticFromScene(
+        hit.point.x, hit.point.z,
+        fromSurface ? hit.point.y : undefined,
+        fromSurface ? hit.surfaceN : undefined,
+      ),
+    }
   }
 
   /**
@@ -1962,7 +2138,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
 
   function beginAnnotationGesture(e, pick) {
     const tool = annotationInteraction.tool
-    const semantic = { x: pick.semantic.x, y: pick.semantic.y }
+    const semantic = semanticPoint(pick.semantic)
     annotationGesture = {
       pointerId: e.pointerId,
       pointerType: e.pointerType || 'mouse',
@@ -1982,7 +2158,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         type: 'pen',
         color: annotationGesture.color,
         width: annotationGesture.width,
-        points: [{ x: semantic.x, y: semantic.y }],
+        points: [semanticPoint(semantic)],
       }
       rebuildDraftAnnotation()
     } else {
@@ -1996,7 +2172,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function appendAnnotationPoint(e) {
     const gesture = annotationGesture
     if (!gesture || gesture.frozen) return
-    const pick = pickAnnotationGround(e.clientX, e.clientY)
+    const pick = pickAnnotationSurface(e.clientX, e.clientY)
     if (!pick) {
       // 连续有效 hit 之间的大跳只是 fast swipe / 低帧率 / 合并事件，不是 reconnect；
       // 只有真的经过 terrain miss 后才允许用 maxReconnect 保护。
@@ -2019,7 +2195,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       gesture.frozen = true
       return
     }
-    const next = { x: pick.semantic.x, y: pick.semantic.y }
+    const next = semanticPoint(pick.semantic)
     gesture.points.push(next)
     if (gesture.tool === 'pen') {
       // Draft 与 commit 用同一个 deterministic normalizer，避免 pointerup 时视觉 snap。
@@ -2064,7 +2240,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     } else if (gesture.points.length > 0) {
       annotationStats.eraseCallbacks++
       onAnnotationErase?.({
-        points: gesture.points.map((point) => ({ x: point.x, y: point.y })),
+        points: gesture.points.map((point) => semanticPoint(point)),
         radius: gesture.radius,
       })
     }
@@ -2102,13 +2278,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         return
       }
       if (annotationSuppressUntilAllUp || annotationGesture || !annotationsVisible) return
-      const pick = pickAnnotationGround(e.clientX, e.clientY)
+      const pick = pickAnnotationSurface(e.clientX, e.clientY)
       if (!pick) return
       beginAnnotationGesture(e, pick)
       return
     }
     if (annotationSuppressUntilAllUp || annotationGesture || !annotationsVisible) return
-    const pick = pickAnnotationGround(e.clientX, e.clientY)
+    const pick = pickAnnotationSurface(e.clientX, e.clientY)
     if (!pick) return
     beginAnnotationGesture(e, pick)
     let captured = false
@@ -4974,6 +5150,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (o) { scene.remove(o); disposeObject3D(o); }
     }
     mapPlane = null; terrainMesh = null; mapScenery = null; groundMesh = null; gridHelper = null;
+    annotationSurfaceGrid = null;
     clearSceneryMatCache();   // 材质已随 mapScenery dispose，缓存须清空（勿复用已 dispose 实例）
     if (mapTexture) { mapTexture.dispose(); mapTexture = null; }
     // 逐图 IBL：先摘 scene.environment 再 dispose（three 的 PMREM 缓存随纹理释放）；

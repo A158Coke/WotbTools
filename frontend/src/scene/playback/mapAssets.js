@@ -21,6 +21,7 @@ import {
 import { buildMeshOwnerMap } from '../pickDebug.js'
 import { buildDestructibleIndex, foldDestructibleStates, fallStopAngle } from '../destructibles.js'
 import { occlusionFootprintCells } from './pure.js'
+import { buildAnnotationSurfaceGrid } from './annotationSurface.ts'
 
 // 标签遮挡候选格边长（16m，见 occlusionCells/occlusionFootprintCells 注释）
 const OCCL_CELL = 16;
@@ -231,6 +232,20 @@ export async function assembleMapScenery(gltf, ctx) {
     }
   }
   writes.occlGrid = occGrid;   // 遮挡检测的候选表（旧会话的由 teardown 置 null）
+  // 3D annotation 的可绘制表面候选格：与 occlGrid 同粒度/同足印，但登记**所有**可见 batch
+  // （不要求节点名），只按共享材质语义跳过非 3D 表面（水/天/植被/贴花/混合层/水下）。
+  // 批次 item 坐标是 gltf 局部系（x/y 水平、z 上），而 pick 的 camera/target 是 mapScenery
+  // 世界系（局部 x → 世界 −x、局部 y → 世界 z）：必须投影后再登记格，否则候选格整体镜像。
+  mapScenery.updateMatrixWorld(true);
+  // item 坐标相对 gltf.scene（装配根），故用 gltf.scene.matrixWorld 一次性投到世界 XZ。
+  const surfaceMatrix = gltf.scene.matrixWorld.elements;
+  writes.annotationSurfaceGrid = buildAnnotationSurfaceGrid(batches, {
+    cell: OCCL_CELL,
+    project: (item) => ({
+      x: surfaceMatrix[0] * item.x + surfaceMatrix[4] * item.y + surfaceMatrix[8] * item.z + surfaceMatrix[12],
+      z: surfaceMatrix[2] * item.x + surfaceMatrix[6] * item.y + surfaceMatrix[10] * item.z + surfaceMatrix[14],
+    }),
+  });
   const findMeshes = (px, py, wantDestroyed, r = MESH_MATCH_R) => {
     const out = [];
     const gx = Math.round(px / 2), gy = Math.round(py / 2);

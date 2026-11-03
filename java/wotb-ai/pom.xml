@@ -84,6 +84,14 @@
             <artifactId>spring-security-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- 架构 gate：@RequestParam 显式 name 检查（RequestParamExplicitNameTest，
+             与 wotb-web 的同名 gate 同型镜像——per-module arch gate 模式）。 -->
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit</artifactId>
+            <version>${archunit.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
