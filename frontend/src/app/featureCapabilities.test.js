@@ -10,6 +10,7 @@ import {
   featuresByRequirement,
   getFeatureAvailability,
   isKnownFeature,
+  profileBackendAllowed,
 } from './featureCapabilities.js'
 
 /**
@@ -217,5 +218,30 @@ describe('capability message keys resolve in every locale', () => {
     const offlineCopy = featuresByRequirement(FeatureRequirement.ONLINE_REQUIRED)
       .map(feature => lookup('zh', `featureOffline.${feature}`))
     expect(new Set(offlineCopy).size).toBe(offlineCopy.length)
+  })
+})
+
+describe('profile backend 准入策略（authenticated + ACCOUNT_PROFILE 可用）', () => {
+  const admitted = { authInitState: 'authenticated', authenticated: true, connectivity: ConnectivityState.ONLINE }
+
+  it('已认证且在线时放行', () => {
+    expect(profileBackendAllowed(admitted)).toBe(true)
+  })
+
+  it('未完成认证或缺字段一律拒绝（fail-closed）', () => {
+    expect(profileBackendAllowed({ ...admitted, authInitState: 'checking' })).toBe(false)
+    expect(profileBackendAllowed({ ...admitted, authInitState: undefined })).toBe(false)
+    expect(profileBackendAllowed({ ...admitted, authenticated: false })).toBe(false)
+    expect(profileBackendAllowed({})).toBe(false)
+    expect(profileBackendAllowed()).toBe(false)
+  })
+
+  it('offline / unknown / degraded / service-unavailable 一律拒绝，不对不可达服务发请求', () => {
+    for (const connectivity of [
+      ConnectivityState.OFFLINE, ConnectivityState.UNKNOWN,
+      ConnectivityState.DEGRADED, ConnectivityState.SERVICE_UNAVAILABLE,
+    ]) {
+      expect(profileBackendAllowed({ ...admitted, connectivity })).toBe(false)
+    }
   })
 })
