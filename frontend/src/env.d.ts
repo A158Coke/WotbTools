@@ -36,6 +36,12 @@ interface Window {
   __terrainRefineMask?: { meshes: number; texels: number }
   /** 可破坏物明细诊断（mapAssets.ts ?debug 写入） */
   __destructDebug?: () => Record<string, unknown>
+  /** map2d OTA 覆盖层诊断面（map2dOverlay Android/DEV 挂载） */
+  __wotbMap2d?: unknown
+  /** 拾取报告调试（pickReport ?debug 写入；面板/console/window 三渠道同一份） */
+  __pbPick?: unknown
+  __pbPickText?: string
+  __pbPickMesh?: unknown
   /** 3D 场景核心诊断钩子（renderer.ts ?debug 写入；仅创建后引用） */
   __scene?: unknown
   __renderer?: unknown

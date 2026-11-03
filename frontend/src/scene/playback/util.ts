@@ -8,7 +8,7 @@ export const GRID_DT = 0.1
 export const ASSET_CONCURRENCY = 4
 
 /** 有限并发映射（保持结果顺序）；用于资产下载/解析 */
-export async function mapLimit(items, limit, fn) {
+export async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
   const out = new Array(items.length)
   let next = 0
   const worker = async () => {

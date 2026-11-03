@@ -4,24 +4,85 @@
 // 语义注释（响应式代理登记、阵营视角映射、resolver 单源）随代码原样保留。
 import { perspectiveScore } from '../teamHpTotals.js'
 import { ROSTER_GROUPS, applyRosterRuntime, buildRosterRows, projectRoster } from '../rosterState.js'
+import type { ShellState } from '../reloadBar.js'
 
-export function createHudFeed({ store, getData, getT, getV, getSessionGen, deathAt, getReloadStateAt, getFollowEid }) {
+/** hudFeed 消费的场景数据面（DATA 中本模块读取的字段；其余由场景内核持有）。 */
+export interface HudFeedData {
+  meta: { friendly_team?: number | null }
+  kills: Array<{ t: number; killer_eid: number; victim_eid: number; cause?: number }>
+}
+
+/** 名册车辆视图（与 rosterState 的 RosterDef 结构同面：身份字段 + team）。 */
+export interface HudFeedVehicleDef {
+  eid: number
+  account_id?: number | null
+  tank_id?: number | null
+  team?: number | null
+  is_author?: boolean | null
+  nickname?: string | null
+  tank_name?: string | null
+}
+
+/** 击杀 feed 条目（store.killfeed 的元素形状；呈现层只读渲染）。 */
+export interface KillfeedEntry {
+  id: number
+  kill: boolean
+  killer: string
+  victim: string
+  text: string
+  killerTank: string
+  victimTank: string
+  killerSide: '' | 'ally' | 'enemy'
+  victimSide: '' | 'ally' | 'enemy'
+}
+
+/** 名册行 = 静态身份（rosterState.buildRosterRows）+ 运行时状态（applyRosterRuntime 写入）。 */
+export type HudRosterRow = ReturnType<typeof buildRosterRows>['team1'][number] & {
+  hp?: number
+  maxHp?: number
+  dead?: boolean
+  followed?: boolean
+  health?: unknown
+  reload?: unknown
+}
+
+/** hudFeed 触碰的 store 字段（playbackStore 响应式对象的结构面）。 */
+export interface HudFeedStore {
+  killfeed: KillfeedEntry[]
+  scoreFriend: number
+  scoreEnemy: number
+  friendlyTeam: number | null
+  roster: Record<'team1' | 'team2' | 'unknown', HudRosterRow[]>
+}
+
+export function createHudFeed({ store, getData, getT, getV, getSessionGen, deathAt, getReloadStateAt, getFollowEid }: {
+  store: HudFeedStore
+  getData: () => HudFeedData
+  getT: () => number
+  getV: () => Array<{ def?: HudFeedVehicleDef | null } | null>
+  getSessionGen: () => number
+  /** scene-owned canonical/fallback life resolver（projectRoster 的 isDestroyed 入参） */
+  deathAt: Parameters<typeof projectRoster>[2]
+  /** 场景自己的 reload resolver（与车辆名牌同一事实源；每次调用返回新数组） */
+  getReloadStateAt: () => ((eid: number, t: number) => ShellState[] | null) | null
+  getFollowEid: () => number | null
+}) {
   //（killPtr / kfId 原声明在闭包状态区，随本段出仓迁入工厂；初值 0 与原闭包一致）
   let killPtr = 0;
   let kfId = 0;
 // ---------- 击杀 feed / 计分 ----------
-function feedEntry(k) {
+function feedEntry(k: { t: number; killer_eid: number; victim_eid: number; cause?: number }): void {
   const gen = getSessionGen();
-  const name = (eid) => { const v = getV().find((x) => x.def.eid === eid);
-    return v ? (v.def.nickname || 'Unknown') : eid === 0 ? '环境' : String(eid); };
-  const causeMap = { 0: '', 1: '（火焰）', 2: '（撞击）', 3: '（环境）', 5: '（溺水）' };
+  const name = (eid: number): string => { const v = getV().find((x) => x?.def?.eid === eid);
+    return v ? (v.def!.nickname || 'Unknown') : eid === 0 ? '环境' : String(eid); };
+  const causeMap: Record<number, string> = { 0: '', 1: '（火焰）', 2: '（撞击）', 3: '（环境）', 5: '（溺水）' };
   const text = k.killer_eid !== 0
     ? `${name(k.killer_eid)} 击毁 ${name(k.victim_eid)}`
-    : `${name(k.victim_eid)}${causeMap[k.cause] || '阵亡'}`;
-  const vehicleOf = (eid) => getV().find((x) => x.def.eid === eid)?.def;
-  const sideOf = (def) => {
+    : `${name(k.victim_eid)}${causeMap[k.cause ?? 0] || '阵亡'}`;
+  const vehicleOf = (eid: number): HudFeedVehicleDef | undefined => getV().find((x) => x?.def?.eid === eid)?.def ?? undefined;
+  const sideOf = (def: HudFeedVehicleDef | undefined): '' | 'ally' | 'enemy' => {
     const friendlyTeam = getData().meta.friendly_team;
-    if (!def || ![1, 2].includes(friendlyTeam) || ![1, 2].includes(def.team)) return '';
+    if (!def || (friendlyTeam !== 1 && friendlyTeam !== 2) || (def.team !== 1 && def.team !== 2)) return '';
     return def.team === friendlyTeam ? 'ally' : 'enemy';
   };
   const killerDef = vehicleOf(k.killer_eid), victimDef = vehicleOf(k.victim_eid);
@@ -56,13 +117,13 @@ function resetScore() { scorePtr = 0; score1 = 0; score2 = 0; }
 function updateScore() {
   while (scorePtr < getData().kills.length && getData().kills[scorePtr].t <= getT()) {
     const k = getData().kills[scorePtr++];
-    const victim = getV().find((x) => x.def.eid === k.victim_eid);
-    if (!victim) continue;
+    const victim = getV().find((x) => x?.def?.eid === k.victim_eid);
+    if (!victim?.def) continue;
     if (victim.def.team === 1) score2++; else if (victim.def.team === 2) score1++;
   }
   // 上屏前映射到阵营视角：击杀计数是物理队伍（score1 = team 1），而顶栏布局是
   // 「己方 HP | 己方比分 : 敌方比分 | 敌方 HP」——不映射在 `friendly_team = 2` 时左右相反。
-  const perspective = perspectiveScore(score1, score2, getData().meta.friendly_team);
+  const perspective = perspectiveScore(score1, score2, getData().meta.friendly_team ?? null);
   if (store.scoreFriend !== perspective.scoreFriend) store.scoreFriend = perspective.scoreFriend;
   if (store.scoreEnemy !== perspective.scoreEnemy) store.scoreEnemy = perspective.scoreEnemy;
 }
@@ -72,16 +133,17 @@ function updateScore() {
 // 前者只在会话开始时建一次，后者每次投影都按当前 getT() 重算（见 scene/rosterState.ts）。
 // 名册的物理阵营色由呈现层按 `team` 取语义 token（--color-team-1/2），内核不再下发颜色——
 // 否则「Team 1 是什么颜色」会有两份事实源。
-const rosterRowsByEid = new Map();
+const rosterRowsByEid = new Map<number, HudRosterRow>();
 function buildRoster() {
-  store.friendlyTeam = [1, 2].includes(getData().meta.friendly_team) ? getData().meta.friendly_team : null;
+  const ft = getData().meta.friendly_team;
+  store.friendlyTeam = ft === 1 || ft === 2 ? ft : null;
   const groups = buildRosterRows(getV());
   rosterRowsByEid.clear();
-  for (const key of ROSTER_GROUPS) {
+  for (const key of ROSTER_GROUPS as readonly (keyof typeof store.roster)[]) {
     store.roster[key] = groups[key].map((row) => applyRosterRuntime(
-      { ...row },
+      { ...row, hp: 0, maxHp: 0, dead: false, followed: false },
       { hp: 0, maxHp: 0, dead: false, followed: false, reload: null },
-    ));
+    )) as HudRosterRow[];
     // 索引登记的必须是**响应式代理**（读回 store 得到的行），不能是上面的原始对象：
     // store 只存原始对象、读取时才包代理，直接改原始对象 Vue 收不到通知——名册就会
     // 停在旧 HP，直到别的状态（如选中行）碰巧触发重绘。
@@ -102,16 +164,18 @@ function buildRoster() {
 function updateRoster() {
   const projected = projectRoster(getV(), getT(), deathAt);
   for (const v of getV()) {
-    const e = rosterRowsByEid.get(v.def.eid);
-    const p = projected.get(v.def.eid);
+    const eid = v?.def?.eid;
+    if (eid == null) continue;
+    const e = rosterRowsByEid.get(eid);
+    const p = projected.get(eid);
     if (!e || !p) continue;
     applyRosterRuntime(e, {
       hp: p.hp,
       maxHp: p.maxHp,
       dead: p.dead,
-      followed: getFollowEid() === v.def.eid,
+      followed: getFollowEid() === eid,
       // 阵亡不展示 reload（与名牌同一判据：destroyed 时不显示次级瞬时状态）
-      reload: p.dead ? null : getReloadStateAt()(v.def.eid, getT()),
+      reload: p.dead ? null : getReloadStateAt()?.(eid, getT()) ?? null,
     });
   }
 }

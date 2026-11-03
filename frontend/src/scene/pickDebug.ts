@@ -23,7 +23,6 @@ export function nameChainOf(object: Object3D | null | undefined, stopAt: Object3
 export interface VisibilityChainNode {
   visible?: boolean
   parent?: VisibilityChainNode | null
-  [key: string]: unknown
 }
 
 /**
@@ -32,7 +31,10 @@ export interface VisibilityChainNode {
  * 拾取前必须按链上可见性筛选，否则报告指向画面里不存在的模型）。
  * stopAt 及其祖先不计入（如场景根）。
  */
-export function chainVisible(object: VisibilityChainNode | null | undefined, stopAt: VisibilityChainNode | null = null): boolean {
+export function chainVisible(
+  object: VisibilityChainNode | Object3D | null | undefined,
+  stopAt: VisibilityChainNode | Object3D | null = null,
+): boolean {
   let o = object
   while (o && o !== stopAt) {
     if (o.visible === false) return false
@@ -164,11 +166,12 @@ export interface PickRenderDiagnostics {
   name?: string | null
   matName?: string | null
   matType?: string | null
-  matVisible?: boolean
-  transparent?: boolean
-  opacity?: number
-  alphaTest?: number
-  depthWrite?: boolean
+  /** 多材质网格按 join(',') 拼接（诊断文本，非布尔） */
+  matVisible?: string | null
+  transparent?: string | null
+  opacity?: string | null
+  alphaTest?: string | null
+  depthWrite?: string | null
   objVisible?: boolean
   frustumCulled?: boolean
   instanceId?: number | null
@@ -189,6 +192,8 @@ export interface PickReport {
   scene?: number[] | null
   material?: string | null
   inst?: DestructibleInstance | null
+  /** 命中实例的 serverId 是否在 destructibles.json 登记过（面板诊断） */
+  serverIdKnown?: boolean
   vis?: PickStateVisual | null
   terrain?: PickTerrainDiagnostics | null
   render?: PickRenderDiagnostics | null

@@ -339,6 +339,7 @@ export async function loadPlaybackData(source: { kind?: string; file?: ReplayFil
 // ---------- 地图静态路径（logical asset path；打包器 export_asset_pack.py 布局） ----------
 // 一律经 assetProvider（消费方不拼接任何基础设施域名）；无同源 /api/playback/* 回退（client-only）。
 import { assetProvider } from './assetProvider.js'
+import type { Map2dIndex, Map2dBounds } from '../data/map2dOverlay.js'
 
 let mapIndexPromise: Promise<{ maps?: Record<string, { key: string }> } | null> | null = null
 /** 已点名告警过的索引 miss（按 id 去重）：同一张图反复加载不刷屏 */
@@ -408,13 +409,13 @@ export function map2dCanonicalUrl(mapKey: string | null | undefined) {
   return assetProvider.url(`/map2d/${mapKey}.webp`)
 }
 
-let map2dIndexPromise: ReturnType<typeof assetProvider.json> | null = null
+let map2dIndexPromise: Promise<Map2dIndex | null> | null = null
 
 /** 资产包 `map2d/index.json`（整页缓存；失败置空下轮重试，与 loadMapIndex 同模式）。 */
 export function loadMap2dIndex() {
   if (!assetProvider.configured()) return Promise.resolve(null)
   if (!map2dIndexPromise) {
-    map2dIndexPromise = assetProvider.json('/map2d/index.json').catch((e) => {
+    map2dIndexPromise = assetProvider.json<Map2dIndex>('/map2d/index.json').catch((e) => {
       map2dIndexPromise = null
       console.warn('map2d 索引加载失败（预览 2D 底图 fail-closed）:', e)
       return null
@@ -446,7 +447,7 @@ async function sha256Hex(buffer: ArrayBuffer) {
  */
 export async function resolveMap2dBasemap(
   mapKey: string | null | undefined,
-  expectedBounds: unknown,
+  expectedBounds: Map2dBounds | null | undefined,
   fetchImpl: ((url: string) => Promise<Response>) | null = null,
 ) {
   const key = String(mapKey || '')
@@ -456,16 +457,7 @@ export async function resolveMap2dBasemap(
   // map2d/index.json 条目形状（runtime guard：isValidIndex 验 schema/timestamp，
   // geometryMatches 验 geometry 与注册表逐值相等——sha256/width/height/worldBounds 只在
   // 通过这两个 guard 的条目上读取，与 JS 时代同一信任结构）
-  interface Map2dIndex {
-    maps?: Record<string, {
-      sha256?: string
-      width?: number
-      height?: number
-      worldBounds?: unknown
-      orientation?: unknown
-    } | null>
-  }
-  const index = await loadMap2dIndex() as Map2dIndex | null
+  const index = await loadMap2dIndex()
   // 延迟导入避免 replaySource ← map2dOverlay 的循环（map2dOverlay 只依赖本地常量）
   const { isValidIndex, geometryMatches } = await import('../data/map2dOverlay.js')
   if (!isValidIndex(index)) return { error: 'index' }

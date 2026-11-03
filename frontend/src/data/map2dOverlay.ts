@@ -40,6 +40,59 @@ import { reactive, ref } from 'vue'
 import { ANDROID_ASSET_BASE, isAndroidRuntime } from '../platform/runtime.js'
 import { mapImages } from './mapImages.js'
 
+/** map2d 索引条目（Agent 仓 INDEX_SCHEMA v2；几何契约字段见文件头）。 */
+export interface Map2dIndexEntry {
+  sha256?: unknown
+  path?: unknown
+  bytes?: unknown
+  width?: unknown
+  height?: unknown
+  orientation?: unknown
+  worldBounds?: { xMin?: unknown; xMax?: unknown; yMin?: unknown; yMax?: unknown } | null
+  [key: string]: unknown
+}
+
+/** map2d 索引（schemaVersion 2；`maps` 缺省 = 旧产物，按 no-index 处理）。 */
+export interface Map2dIndex {
+  schemaVersion?: unknown
+  generated?: unknown
+  contentGeneratedAt?: unknown
+  maps?: Record<string, Map2dIndexEntry | null> | null
+  [key: string]: unknown
+}
+
+/** 包内清单（`/map2d-embedded.json`；contentGeneratedAt 与 COS 索引 generated 同源）。 */
+export interface Map2dEmbeddedManifest {
+  contentGeneratedAt?: unknown
+  maps?: Record<string, { sha256?: unknown } | null> | null
+  [key: string]: unknown
+}
+
+/** 世界框（注册表 coordinateBounds；几何契约的比对面）。 */
+export interface Map2dBounds {
+  xMin: number
+  xMax: number
+  yMin: number
+  yMax: number
+}
+
+export interface Map2dUseEntry {
+  sha256: string
+  path: string
+  bytes: number | null
+  width: number | null
+  height: number | null
+}
+
+export interface Map2dDecision {
+  active: boolean
+  reason: string
+  index: Map2dIndex | null
+  source: 'remote' | 'stored' | null
+  use: Record<string, Map2dUseEntry>
+  rejected: Record<string, string>
+}
+
 const EMBEDDED_URL = '/map2d-embedded.json'
 const INDEX_URL = `${ANDROID_ASSET_BASE}/map2d/index.json`
 const STORE_KEY = 'wotb.map2d.index.v1'
@@ -53,8 +106,24 @@ const IMAGE_TIMEOUT_MS = 20000
 /** 任一覆盖生效即 +1：给"必须感知换图"的命令式消费方（如 2.5D 贴图）一个可 watch 的信号。 */
 export const map2dRevision = ref(0)
 
+/** map2dState.maps 条目（诊断面）。 */
+export interface Map2dDiagnosticEntry {
+  source: 'embedded' | 'remote' | 'pending' | 'rejected'
+  reason?: string
+  bytes?: number | null
+}
+
 /** 诊断面（本地测试/自检用；不含任何凭据）。 */
-export const map2dState = reactive({
+export interface Map2dState {
+  status: 'off' | 'no-embedded' | 'no-index' | 'schema' | 'timestamp' | 'stale-index' | 'active' | 'error'
+  contentGeneratedAt: string | null
+  indexGenerated: string | null
+  indexSource: 'remote' | 'stored' | null
+  maps: Record<string, Map2dDiagnosticEntry>
+}
+
+/** 诊断面（本地测试/自检用；不含任何凭据）。 */
+export const map2dState = reactive<Map2dState>({
   status: 'off',        // off | no-embedded | no-index | schema | timestamp | stale-index | active | error
   contentGeneratedAt: null,
   indexGenerated: null,
@@ -62,18 +131,18 @@ export const map2dState = reactive({
   maps: {},             // code → { source: embedded|remote|pending|rejected, reason?, bytes? }
 })
 
-const overrides = reactive({})   // code → { url, sha256, bytes }
-const triggered = new Set()
-let readyPromise = null
+const overrides = reactive<Record<string, { url: string; sha256: string; bytes: number }>>({})   // code → { url, sha256, bytes }
+const triggered = new Set<string>()
+let readyPromise: Promise<Map2dDecision> | null = null
 
-function timeoutSignal(ms) {
+function timeoutSignal(ms: number): { signal: AbortSignal | undefined; done: () => void } {
   if (typeof AbortController === 'undefined') return { signal: undefined, done: () => {} }
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), ms)
   return { signal: controller.signal, done: () => clearTimeout(timer) }
 }
 
-async function fetchJson(url) {
+async function fetchJson<T = unknown>(url: string): Promise<T | null> {
   const { signal, done } = timeoutSignal(INDEX_TIMEOUT_MS)
   try {
     const response = await fetch(url, { signal, cache: 'no-store' })
@@ -86,7 +155,7 @@ async function fetchJson(url) {
   }
 }
 
-function readStoredIndex() {
+function readStoredIndex(): Map2dIndex | null {
   try {
     const raw = localStorage.getItem(STORE_KEY)
     if (!raw) return null
@@ -97,7 +166,7 @@ function readStoredIndex() {
   }
 }
 
-function writeStoredIndex(index) {
+function writeStoredIndex(index: Map2dIndex): void {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(index))
   } catch {
@@ -106,13 +175,13 @@ function writeStoredIndex(index) {
 }
 
 /** 索引可用性：schema 受支持且 `generated` 可解析。 */
-export function isValidIndex(index) {
+export function isValidIndex(index: Map2dIndex | null | undefined): boolean {
   if (!index || typeof index !== 'object') return false
   if (index.schemaVersion !== SCHEMA_VERSION) return false
   return Number.isFinite(Date.parse(String(index.generated ?? '')))
 }
 
-function invalidReason(index) {
+function invalidReason(index: Map2dIndex | null | undefined): string {
   if (!index || typeof index !== 'object') return 'no-index'
   if (index.schemaVersion !== SCHEMA_VERSION) return 'schema'
   return 'timestamp'
@@ -122,12 +191,12 @@ function invalidReason(index) {
  * 从候选（`{ index, source }`）里取 **`generated` 最大**的有效索引；全都无效返回 null。
  * 并列时按传入顺序取后者（调用方按 stored → remote 传，因此并列偏向 live 的 remote）。
  */
-export function pickNewestIndex(candidates) {
-  let best = null
+export function pickNewestIndex(candidates: Array<{ index: Map2dIndex | null | undefined; source: 'remote' | 'stored' }>): { index: Map2dIndex; source: 'remote' | 'stored'; time: number } | null {
+  let best: { index: Map2dIndex; source: 'remote' | 'stored'; time: number } | null = null
   for (const candidate of candidates) {
     if (!isValidIndex(candidate?.index)) continue
-    const time = Date.parse(String(candidate.index.generated))
-    if (!best || time >= best.time) best = { index: candidate.index, source: candidate.source, time }
+    const time = Date.parse(String(candidate.index!.generated))
+    if (!best || time >= best.time) best = { index: candidate.index!, source: candidate.source, time }
   }
   return best
 }
@@ -140,7 +209,13 @@ export function pickNewestIndex(candidates) {
  * 生产调用传 `mapImages` 派生表；索引条目声明 `worldBounds`/`orientation` 且与注册表逐值一致
  * 才允许换图——见头部「几何契约」段。
  */
-export function selectMap2dSources({ remoteIndex = null, storedIndex = null, embedded = null, boundsByCode = {} } = {}) {
+export function selectMap2dSources({ remoteIndex = null, storedIndex = null, embedded = null, boundsByCode = {} }: {
+  remoteIndex?: Map2dIndex | null
+  storedIndex?: Map2dIndex | null
+  embedded?: Map2dEmbeddedManifest | null
+  /** code → 注册表 coordinateBounds（几何契约的比对面；生产调用传 mapImages 派生表） */
+  boundsByCode?: Record<string, Map2dBounds | undefined>
+} = {}): Map2dDecision {
   const embeddedMaps = embedded && typeof embedded === 'object' ? embedded.maps : null
   if (!embeddedMaps || typeof embeddedMaps !== 'object' || Object.keys(embeddedMaps).length === 0) {
     return { active: false, reason: 'no-embedded', index: null, source: null, use: {}, rejected: {} }
@@ -154,15 +229,15 @@ export function selectMap2dSources({ remoteIndex = null, storedIndex = null, emb
     return { active: false, reason: supplied ? invalidReason(remoteIndex || storedIndex) : 'no-index',
              index: null, source: null, use: {}, rejected: {} }
   }
-  const contentStamp = Date.parse(String(embedded.contentGeneratedAt ?? ''))
+  const contentStamp = Date.parse(String(embedded?.contentGeneratedAt ?? ''))
   if (!Number.isFinite(contentStamp)) {
     return { active: false, reason: 'timestamp', index: newest.index, source: newest.source, use: {}, rejected: {} }
   }
   if (newest.time <= contentStamp) {
     return { active: false, reason: 'stale-index', index: newest.index, source: newest.source, use: {}, rejected: {} }
   }
-  const use = {}
-  const rejected = {}
+  const use: Record<string, Map2dUseEntry> = {}
+  const rejected: Record<string, string> = {}
   const indexMaps = newest.index.maps && typeof newest.index.maps === 'object' ? newest.index.maps : {}
   for (const [code, entry] of Object.entries(indexMaps)) {
     const local = embeddedMaps[code]
@@ -173,9 +248,9 @@ export function selectMap2dSources({ remoteIndex = null, storedIndex = null, emb
     use[code] = {
       sha256: entry.sha256,
       path: entry.path,
-      bytes: Number.isFinite(entry.bytes) ? entry.bytes : null,
-      width: Number.isFinite(entry.width) ? entry.width : null,
-      height: Number.isFinite(entry.height) ? entry.height : null,
+      bytes: typeof entry.bytes === 'number' && Number.isFinite(entry.bytes) ? entry.bytes : null,
+      width: typeof entry.width === 'number' && Number.isFinite(entry.width) ? entry.width : null,
+      height: typeof entry.height === 'number' && Number.isFinite(entry.height) ? entry.height : null,
     }
   }
   return { active: true, reason: newest.source === 'remote' ? 'remote-index' : 'stored-index',
@@ -187,40 +262,44 @@ export function selectMap2dSources({ remoteIndex = null, storedIndex = null, emb
  * 取向常量逐字相等、像素尺寸为正方形、世界框与注册表 `coordinateBounds` 逐值相等
  * （无注册表条目 ⇒ 判否）。任何一项不成立 ⇒ 该图不换（回落包内）。
  */
-export function geometryMatches(entry, bounds) {
+export function geometryMatches(entry: Map2dIndexEntry | null | undefined, bounds: Map2dBounds | null | undefined): boolean {
   if (!entry || typeof entry !== 'object') return false
   if (entry.orientation !== ORIENTATION) return false
   if (!(Number.isFinite(entry.width) && Number.isFinite(entry.height)) || entry.width !== entry.height) return false
   const wb = entry.worldBounds
   if (!wb || typeof wb !== 'object') return false
   if (!bounds || typeof bounds !== 'object') return false
-  return ['xMin', 'xMax', 'yMin', 'yMax'].every((k) => Number.isFinite(wb[k]) && wb[k] === bounds[k])
+  const b = bounds as Map2dBounds
+  return (['xMin', 'xMax', 'yMin', 'yMax'] as const).every((k) => {
+    const v = wb[k]
+    return typeof v === 'number' && Number.isFinite(v) && v === b[k]
+  })
 }
 
-async function init() {
+async function init(): Promise<Map2dDecision> {
   if (!isAndroidRuntime()) {
     map2dState.status = 'off'
-    return { active: false, reason: 'off', use: {} }
+    return { active: false, reason: 'off', index: null, source: null, use: {}, rejected: {} }
   }
-  const embedded = await fetchJson(EMBEDDED_URL)
+  const embedded = await fetchJson<Map2dEmbeddedManifest>(EMBEDDED_URL)
   if (!embedded) {
     map2dState.status = 'no-embedded'
-    return { active: false, reason: 'no-embedded', use: {} }
+    return { active: false, reason: 'no-embedded', index: null, source: null, use: {}, rejected: {} }
   }
-  map2dState.contentGeneratedAt = embedded.contentGeneratedAt ?? null
+  map2dState.contentGeneratedAt = (embedded.contentGeneratedAt ?? null) as string | null
   const stored = readStoredIndex()
-  const remote = await fetchJson(INDEX_URL)
+  const remote = await fetchJson<Map2dIndex>(INDEX_URL)
   // 只在远端**不旧于**已持久化副本时覆盖：proxy 的陈旧缓存不得把见过的新版打回去。
-  if (isValidIndex(remote)) {
+  if (remote && isValidIndex(remote)) {
     const remoteTime = Date.parse(String(remote.generated))
-    const storedTime = isValidIndex(stored) ? Date.parse(String(stored.generated)) : Number.NEGATIVE_INFINITY
+    const storedTime = stored && isValidIndex(stored) ? Date.parse(String(stored.generated)) : Number.NEGATIVE_INFINITY
     if (remoteTime >= storedTime) writeStoredIndex(remote)
   }
   const decision = selectMap2dSources({ remoteIndex: remote, storedIndex: readStoredIndex(), embedded, boundsByCode: registryBounds() })
-  map2dState.status = decision.active ? 'active' : decision.reason
-  map2dState.indexGenerated = decision.index?.generated ?? null
-  map2dState.indexSource = decision.source ?? null
-  for (const code of Object.keys(embedded.maps)) {
+  map2dState.status = (decision.active ? 'active' : decision.reason) as Map2dState['status']
+  map2dState.indexGenerated = (decision.index?.generated ?? null) as string | null
+  map2dState.indexSource = decision.source
+  for (const code of Object.keys(embedded.maps ?? {})) {
     if (decision.use[code]) map2dState.maps[code] = { source: 'pending', bytes: decision.use[code].bytes }
     else if (decision.rejected?.[code]) map2dState.maps[code] = { source: 'rejected', reason: decision.rejected[code] }
     else map2dState.maps[code] = { source: 'embedded' }
@@ -229,8 +308,8 @@ async function init() {
 }
 
 /** 注册表世界框（几何契约的比对面）：`code → coordinateBounds`。 */
-function registryBounds() {
-  const out = {}
+function registryBounds(): Record<string, Map2dBounds> {
+  const out: Record<string, Map2dBounds> = {}
   for (const [code, entry] of Object.entries(mapImages || {})) {
     if (entry && entry.coordinateBounds) out[code] = entry.coordinateBounds
   }
@@ -238,12 +317,16 @@ function registryBounds() {
 }
 
 /** 共享一次初始化（首次真正需要 2D 底图时才触发，不占启动时间）。 */
-export function ensureMap2dReady() {
-  if (!readyPromise) readyPromise = init().catch(() => ({ active: false, reason: 'error', use: {} }))
+export function ensureMap2dReady(): Promise<Map2dDecision> {
+  if (!readyPromise) {
+    readyPromise = init().catch((): Map2dDecision => ({
+      active: false, reason: 'error', index: null, source: null, use: {}, rejected: {},
+    }))
+  }
   return readyPromise
 }
 
-async function sha256Hex(buffer) {
+async function sha256Hex(buffer: ArrayBuffer): Promise<string | null> {
   const subtle = globalThis.crypto?.subtle
   if (!subtle) return null                       // 无 SubtleCrypto ⇒ 无法校验 ⇒ 不启用远端
   const digest = await subtle.digest('SHA-256', buffer)
@@ -254,7 +337,7 @@ async function sha256Hex(buffer) {
  * 取该 code 的可用 URL（远端已校验并通过时返回 blob URL；否则 null = 沿用包内）。
  * 供命令式消费方（2.5D 贴图）在**后台** await；2D 渲染走 `map2dSrc`（同步 + 反应式）。
  */
-export async function ensureMap2dImage(code) {
+export async function ensureMap2dImage(code: string): Promise<string | null> {
   const decision = await ensureMap2dReady()
   const want = decision && decision.active ? decision.use[code] : null
   if (!want) return null
@@ -282,7 +365,7 @@ export async function ensureMap2dImage(code) {
     map2dRevision.value += 1
     return url
   } catch (error) {
-    map2dState.maps[code] = { source: 'rejected', reason: String(error?.message || error) }
+    map2dState.maps[code] = { source: 'rejected', reason: String((error as Error)?.message || error) }
     return null                                   // fail closed：回落包内
   } finally {
     done()
@@ -290,8 +373,8 @@ export async function ensureMap2dImage(code) {
 }
 
 /** 解码远端底图并核对像素尺寸（与索引声明一致；WebView/浏览器共用同一路径）。 */
-async function assertDecodedGeometry(url, want) {
-  if (!(Number.isFinite(want.width) && Number.isFinite(want.height))) throw new Error('geometry:no-dims')
+async function assertDecodedGeometry(url: string, want: Map2dUseEntry): Promise<void> {
+  if (!(typeof want.width === 'number' && typeof want.height === 'number')) throw new Error('geometry:no-dims')
   const image = new Image()
   image.src = url
   if (typeof image.decode === 'function') await image.decode()
@@ -305,7 +388,7 @@ async function assertDecodedGeometry(url, want) {
  * 2D 渲染层用的同步解析：返回当前应加载的 URL，并**惰性**触发该图的升级（不阻塞渲染）。
  * 在 computed 中调用即可获得反应式更新（overrides 是 reactive）。
  */
-export function map2dSrc(code, fallbackSrc) {
+export function map2dSrc(code: string, fallbackSrc: string): string {
   const override = overrides[code]
   if (override) return override.url
   if (code && !triggered.has(code)) {
@@ -324,7 +407,7 @@ export function __resetMap2dForTests() {
   map2dState.status = 'off'
   map2dState.contentGeneratedAt = null
   map2dState.indexGenerated = null
-  map2dState.indexSource = null
+  map2dState.indexSource = null  // reset
   map2dRevision.value = 0
 }
 

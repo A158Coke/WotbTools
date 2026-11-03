@@ -7,6 +7,28 @@
 // SSOT 仍以 semantic XZ 为 canonical，surfaceY/surfaceN 只是可选的 session-local 锚点。
 //
 import * as THREE from 'three'
+import type { Object3D, Vector3 } from 'three'
+
+/** semantic annotation 点：X = 回放 x、Y = 回放 z（canonical 语义）；可选 3D 表面锚点。 */
+export interface SemanticPoint {
+  x: number
+  y: number
+  /** session-local 3D 表面锚点高度（0 是合法值） */
+  surfaceY?: number
+  /** 表面锚点的局部 plane normal */
+  surfaceN?: { x: number; y: number; z: number }
+}
+
+/** 3D pen annotation（renderer/eraser 共用的 durable centerline；type 收窄在调用侧）。 */
+export interface PenAnnotation {
+  type: 'pen'
+  color?: unknown
+  width?: number
+  points: SemanticPoint[]
+}
+
+/** 语义高度采样（scene terrain 真值；NaN/越界由返回值表达）。 */
+export type HeightSampler = (x: number, z: number) => number | null
 
 // 初始阈值来自 Step 0 synthetic deviation/cost 实测（512²、600m span、camera (0,180,220)）；
 // 真实地图由人工验收后再调，不在模块里冒充最终产品值。
@@ -52,12 +74,12 @@ export const ANNOTATION_MAX_ERASER_POINTS = 1024
 const EPS = 1e-9
 const DUP_EPS = 1e-6
 
-function numberOr(value, fallback) {
+function numberOr(value: unknown, fallback: number): number {
   const n = Number(value)
   return Number.isFinite(n) ? n : fallback
 }
 
-function sampleOrNull(sampleHeight, x, z) {
+function sampleOrNull(sampleHeight: HeightSampler | null | undefined, x: number, z: number): number | null {
   if (typeof sampleHeight !== 'function') return null
   const y = sampleHeight(x, z)
   return Number.isFinite(y) ? y : null
@@ -72,43 +94,53 @@ const _hitNormal = new THREE.Vector3()
  * 命中面的 world normal（InstancedMesh 先乘 instanceMatrix）。
  * 3D annotation pick 的“朝上表面”判据和 anchored cross-section 的局部 plane normal。
  */
-export function hitWorldNormal(hit, target = null) {
+/** 结构化命中面（three Intersection 与 playback/annotationSurface 的替身都兼容）。 */
+export interface AnnotationHitLike {
+  object?: { matrixWorld?: THREE.Matrix4 | null } | null | undefined
+  face?: { normal?: { x: number; y: number; z: number } } | null | undefined
+  instanceId?: number | null | undefined
+}
+
+export function hitWorldNormal(hit: AnnotationHitLike | null | undefined, target: Vector3 | null = null): Vector3 | null {
   if (!hit || !hit.face || !hit.object) return null
-  const object = hit.object
+  const object = hit.object as (Object3D & { isInstancedMesh?: boolean; getMatrixAt(index: number, matrix: THREE.Matrix4): void }) | null | undefined
+  if (!object || !object.matrixWorld) return null
   if (hit.instanceId != null && object.isInstancedMesh && typeof object.getMatrixAt === 'function') {
     object.getMatrixAt(hit.instanceId, _hitInstance)
     _hitWorld.multiplyMatrices(object.matrixWorld, _hitInstance)
   } else {
     _hitWorld.copy(object.matrixWorld)
   }
+  const faceNormal = hit.face?.normal
+  if (!faceNormal || !Number.isFinite(faceNormal.x)) return null
   _hitNormalMatrix.getNormalMatrix(_hitWorld)
-  _hitNormal.copy(hit.face.normal).applyMatrix3(_hitNormalMatrix).normalize()
+  _hitNormal.copy(faceNormal).applyMatrix3(_hitNormalMatrix).normalize()
   return target ? target.copy(_hitNormal) : _hitNormal
 }
 
-export function hitWorldNormalY(hit) {
+export function hitWorldNormalY(hit: AnnotationHitLike | null | undefined): number {
   const normal = hitWorldNormal(hit)
   return normal ? normal.y : 0
 }
 
 /** 复制 semantic 点，保留可选的 3D 表面锚点（0 是合法值）。 */
-function finiteNormal(n) {
-  return n && Number.isFinite(n.x) && Number.isFinite(n.y) && Number.isFinite(n.z)
+function finiteNormal(n: SemanticPoint['surfaceN']): n is { x: number; y: number; z: number } {
+  return !!n && Number.isFinite(n.x) && Number.isFinite(n.y) && Number.isFinite(n.z)
 }
 
-function copyNormal(n) {
+function copyNormal(n: SemanticPoint['surfaceN']): SemanticPoint['surfaceN'] {
   return finiteNormal(n) ? { x: n.x, y: n.y, z: n.z } : undefined
 }
 
-function normalizeNormal(n) {
+function normalizeNormal(n: SemanticPoint['surfaceN']): SemanticPoint['surfaceN'] {
   if (!finiteNormal(n)) return undefined
   const len = Math.hypot(n.x, n.y, n.z)
   if (!(len > 1e-6)) return undefined
   return { x: n.x / len, y: n.y / len, z: n.z / len }
 }
 
-function copyPoint(p) {
-  const out = { x: p.x, y: p.y }
+function copyPoint(p: SemanticPoint): SemanticPoint {
+  const out: SemanticPoint = { x: p.x, y: p.y }
   if (Number.isFinite(p.surfaceY)) out.surfaceY = p.surfaceY
   const normal = copyNormal(p.surfaceN)
   if (normal) out.surfaceN = normal
@@ -116,16 +148,18 @@ function copyPoint(p) {
 }
 
 /** 两端都有 finite surfaceY / surfaceN 才插值；单侧缺失不猜另一侧。 */
-function pointAt(a, b, t) {
-  const out = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
-  if (Number.isFinite(a.surfaceY) && Number.isFinite(b.surfaceY)) {
+function pointAt(a: SemanticPoint, b: SemanticPoint, t: number): SemanticPoint {
+  const out: SemanticPoint = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
+  if (a.surfaceY != null && b.surfaceY != null && Number.isFinite(a.surfaceY) && Number.isFinite(b.surfaceY)) {
     out.surfaceY = a.surfaceY + (b.surfaceY - a.surfaceY) * t
   }
   if (finiteNormal(a.surfaceN) && finiteNormal(b.surfaceN)) {
+    const an = a.surfaceN
+    const bn = b.surfaceN
     out.surfaceN = normalizeNormal({
-      x: a.surfaceN.x + (b.surfaceN.x - a.surfaceN.x) * t,
-      y: a.surfaceN.y + (b.surfaceN.y - a.surfaceN.y) * t,
-      z: a.surfaceN.z + (b.surfaceN.z - a.surfaceN.z) * t,
+      x: an.x + (bn.x - an.x) * t,
+      y: an.y + (bn.y - an.y) * t,
+      z: an.z + (bn.z - an.z) * t,
     })
   }
   return out
@@ -135,11 +169,11 @@ function pointAt(a, b, t) {
  * 过滤非有限点、连续重复点，并把单点/空输入归一成 []。
  * 不重新排序、不插值；保序是 semantic eraser 断段语义的前提。
  */
-export function sanitizePoints(points, { maxPoints = ANNOTATION_MAX_INPUT_POINTS } = {}) {
+export function sanitizePoints(points: readonly (SemanticPoint | null | undefined)[] | null | undefined, { maxPoints = ANNOTATION_MAX_INPUT_POINTS as number | null }: { maxPoints?: number | null } = {}): SemanticPoint[] {
   if (!Array.isArray(points)) return []
-  const finiteLimit = Number.isFinite(maxPoints) && maxPoints >= 2
-  const limit = finiteLimit ? Math.floor(maxPoints) : (maxPoints == null || maxPoints === Infinity ? Infinity : ANNOTATION_MAX_INPUT_POINTS)
-  const out = []
+  const finiteLimit = typeof maxPoints === 'number' && Number.isFinite(maxPoints) && maxPoints >= 2
+  const limit: number = finiteLimit ? Math.floor(maxPoints as number) : (maxPoints == null || maxPoints === Infinity ? Infinity : ANNOTATION_MAX_INPUT_POINTS)
+  const out: SemanticPoint[] = []
   for (const p of points) {
     const x = Number(p && p.x)
     const y = Number(p && p.y)
@@ -154,7 +188,7 @@ export function sanitizePoints(points, { maxPoints = ANNOTATION_MAX_INPUT_POINTS
       }
       continue
     }
-    const next = { x, y }
+    const next: SemanticPoint = { x, y }
     if (Number.isFinite(p.surfaceY)) next.surfaceY = Number(p.surfaceY)
     const normal = normalizeNormal(p.surfaceN)
     if (normal) next.surfaceN = normal
@@ -165,11 +199,11 @@ export function sanitizePoints(points, { maxPoints = ANNOTATION_MAX_INPUT_POINTS
 }
 
 /** 等距重采样（保留首尾）；只用于预算不足时的降密度，不丢整段尾部。 */
-function resampleByIndex(points, limit) {
+function resampleByIndex(points: SemanticPoint[], limit: number): SemanticPoint[] {
   if (limit >= points.length) return points.map((p) => ({ ...p }))
   // anchor-state transition 是 topology boundary：降密度也不得跳过它。
   // 必须同时保护 transition 两侧 i-1 / i；只保 i 会在桥尾把最后一个 anchor 删掉。
-  const anchored = (p) => Number.isFinite(p.surfaceY)
+  const anchored = (p: SemanticPoint): boolean => Number.isFinite(p.surfaceY)
   const mandatorySet = new Set([0, points.length - 1])
   const transitionPairs = []
   for (let i = 1; i < points.length; i++) {
@@ -234,13 +268,19 @@ function resampleByIndex(points, limit) {
  * budget。输出预算不足时按 segment 长度分配额外细分点，并始终保留每个输入 segment 的终点，
  * 因此首点、尾点和完整 span 都不会被 prefix truncation 丢掉；最多在密度上降级。
  */
-export function subdividePolyline(points, sampleHeight, {
+export function subdividePolyline(points: readonly (SemanticPoint | null | undefined)[] | null | undefined, sampleHeight: HeightSampler | null | undefined, {
   maxSegment = ANNOTATION_MAX_SEGMENT,
   midpointError = ANNOTATION_MIDPOINT_ERROR,
   maxDepth = ANNOTATION_MAX_DEPTH,
   maxPoints = ANNOTATION_MAX_PROJECTED_POINTS,
-  maxInputPoints = ANNOTATION_MAX_INPUT_POINTS,
-} = {}) {
+  maxInputPoints = ANNOTATION_MAX_INPUT_POINTS as number | null,
+}: {
+  maxSegment?: number
+  midpointError?: number
+  maxDepth?: number
+  maxPoints?: number
+  maxInputPoints?: number | null
+} = {}): SemanticPoint[] {
   const clean = sanitizePoints(points, { maxPoints: maxInputPoints })
   if (clean.length < 2) return []
   const limit = Number.isFinite(maxPoints) && maxPoints >= 2 ? Math.floor(maxPoints) : ANNOTATION_MAX_PROJECTED_POINTS
@@ -261,9 +301,9 @@ export function subdividePolyline(points, sampleHeight, {
   const totalExtra = Math.max(0, limit - clean.length)
   const out = [{ ...clean[0] }]
 
-  const subdivideSegment = (a, b, depth, budget) => {
+  const subdivideSegment = (a: SemanticPoint, b: SemanticPoint, depth: number, budget: number): void => {
     let used = 0
-    const recurse = (x, y, d) => {
+    const recurse = (x: SemanticPoint, y: SemanticPoint, d: number): void => {
       const dx = y.x - x.x
       const dz = y.y - x.y
       const dist = Math.hypot(dx, dz)
@@ -309,13 +349,13 @@ export function subdividePolyline(points, sampleHeight, {
  * 轻量 semantic XZ 平滑：一次 Chaikin corner cutting（默认 strength=0.2），只处理 x/y，
  * 不接触 world Y。首尾点保留，输出始终落在相邻输入 segment 的包围盒内（不会越出战场）。
  */
-export function smoothPolyline(points, { iterations = 1, strength = 0.2 } = {}) {
+export function smoothPolyline(points: readonly (SemanticPoint | null | undefined)[] | null | undefined, { iterations = 1, strength = 0.2 }: { iterations?: number; strength?: number } = {}): SemanticPoint[] {
   let current = sanitizePoints(points, { maxPoints: null })
   if (current.length < 3) return current
   const rounds = Math.max(0, Math.floor(numberOr(iterations, 1)))
   const s = Math.max(0, Math.min(0.49, numberOr(strength, 0.2)))
-  const anchored = (p) => Number.isFinite(p.surfaceY)
-  const chaikinRun = (run) => {
+  const anchored = (p: SemanticPoint): boolean => Number.isFinite(p.surfaceY)
+  const chaikinRun = (run: SemanticPoint[]): SemanticPoint[] => {
     if (run.length < 3) return run.map((p) => ({ ...p }))
     const out = [{ ...run[0] }]
     for (let i = 1; i < run.length; i++) {
@@ -328,7 +368,7 @@ export function smoothPolyline(points, { iterations = 1, strength = 0.2 } = {}) 
     return out
   }
   for (let round = 0; round < rounds; round++) {
-    const next = []
+    const next: SemanticPoint[] = []
     let start = 0
     for (let i = 1; i <= current.length; i++) {
       // anchor-state transition 是 topology boundary：terrain run 与 surface-anchored run
@@ -348,7 +388,7 @@ export function smoothPolyline(points, { iterations = 1, strength = 0.2 } = {}) 
  * committed budget resample。首尾/完整 span 保留；返回的 points 就是 renderer 与
  * eraser 共同消费的 durable centerline，renderer 不再二次平滑。
  */
-export function normalizePenPoints(points) {
+export function normalizePenPoints(points: readonly (SemanticPoint | null | undefined)[] | null | undefined): SemanticPoint[] {
   const clean = sanitizePoints(points, { maxPoints: null })
   if (clean.length < 3) return clean.map((p) => ({ ...p }))
   const smoothed = smoothPolyline(clean)
@@ -367,7 +407,20 @@ const TRIANGLE_CLEARANCE_SAMPLES = [
   [0.5, 0, 0.5],
 ]
 
-function ribbonFrames(points, half) {
+interface RibbonFrame {
+  /** semantic 水平坐标（x = 回放 x，z = 回放 y） */
+  x: number
+  z: number
+  /** 横向单位向量（左法线） */
+  nx: number
+  nz: number
+  /** miter 后的半宽（米） */
+  half: number
+  surfaceY?: number
+  normal: { x: number; y: number; z: number } | null
+}
+
+function ribbonFrames(points: SemanticPoint[], half: number): RibbonFrame[] | null {
   const frames = []
   for (let i = 0; i < points.length; i++) {
     const prev = points[i - 1]
@@ -410,11 +463,11 @@ function ribbonFrames(points, half) {
   return frames
 }
 
-function ribbonRows(frames, fractions, sampleHeight, liftValue) {
-  const rows = []
-  const valid = []
+function ribbonRows(frames: RibbonFrame[], fractions: number[], sampleHeight: HeightSampler | null | undefined, liftValue: number) {
+  const rows: Array<Array<{ x: number; y: number; z: number } | null>> = []
+  const valid: boolean[] = []
   for (const frame of frames) {
-    const row = []
+    const row: Array<{ x: number; y: number; z: number } | null> = []
     let rowValid = true
     const anchored = Number.isFinite(frame.surfaceY)
     for (const fraction of fractions) {
@@ -439,7 +492,7 @@ function ribbonRows(frames, fractions, sampleHeight, liftValue) {
   return { rows, valid }
 }
 
-function triangleClear(a, b, c, sampleHeight, clearance, depth = 0) {
+function triangleClear(a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }, c: { x: number; y: number; z: number }, sampleHeight: HeightSampler | null | undefined, clearance: number, depth = 0): boolean {
   const ta = sampleOrNull(sampleHeight, a.x, a.z)
   const tb = sampleOrNull(sampleHeight, b.x, b.z)
   const tc = sampleOrNull(sampleHeight, c.x, c.z)
@@ -475,9 +528,12 @@ function triangleClear(a, b, c, sampleHeight, clearance, depth = 0) {
     && triangleClear(ab, bc, ca, sampleHeight, clearance, depth + 1)
 }
 
+/** 贴地行网格 cell（ribbonRows 的行内条目；null = 采样空洞，row 断 strip）。 */
+type RibbonCell = { x: number; y: number; z: number } | null
+
 /** 对最终 triangulation 的两个 triangle 做 interior clearance 检查；失败 cell 会触发 2D refinement。 */
-function ribbonCellFailures(rows, valid, crossCount, sampleHeight, clearance) {
-  const failing = []
+function ribbonCellFailures(rows: RibbonCell[][], valid: boolean[], crossCount: number, sampleHeight: HeightSampler | null | undefined, clearance: number) {
+  const failing: Array<{ i: number; j: number }> = []
   let checked = 0
   for (let i = 0; i < rows.length - 1; i++) {
     if (!valid[i] || !valid[i + 1]) continue
@@ -486,6 +542,7 @@ function ribbonCellFailures(rows, valid, crossCount, sampleHeight, clearance) {
       const b = rows[i][j + 1]
       const c = rows[i + 1][j + 1]
       const d = rows[i + 1][j]
+      if (!a || !b || !c || !d) continue   // valid 行内 cell 不会是 null；防御性跳过（与 valid 门控同语义）
       checked++
       if (!triangleClear(a, b, d, sampleHeight, clearance)
         || !triangleClear(b, c, d, sampleHeight, clearance)) {
@@ -496,7 +553,7 @@ function ribbonCellFailures(rows, valid, crossCount, sampleHeight, clearance) {
   return { failing, checked }
 }
 
-function unitDirection(a, b) {
+function unitDirection(a: SemanticPoint, b: SemanticPoint) {
   const dx = b.x - a.x
   const dz = b.y - a.y
   const len = Math.hypot(dx, dz)
@@ -505,11 +562,11 @@ function unitDirection(a, b) {
 }
 
 /** Cross sample 上限由单笔 vertex budget 约束；至少 2，最多 33（含 center）。 */
-function annotationCrossBudget(pointCount) {
+function annotationCrossBudget(pointCount: number): number {
   return Math.max(2, Math.min(ANNOTATION_MAX_CROSS_SAMPLES, Math.floor(ANNOTATION_MAX_RIBBON_VERTICES / Math.max(1, pointCount))))
 }
 
-function crossPoint(frame, fraction) {
+function crossPoint(frame: RibbonFrame, fraction: number) {
   const offset = frame.half * (1 - 2 * fraction)
   return { x: frame.x + frame.nx * offset, z: frame.z + frame.nz * offset }
 }
@@ -519,20 +576,22 @@ function crossPoint(frame, fraction) {
  * plane equation 求 Y。不能把 cross vector 投到 plane 后重新 normalize——那会让
  * 斜面上的 XZ visible width 小于 semanticWidthFromSlider 的 map-space width。
  */
-function crossPoint3D(frame, fraction, liftValue) {
+function crossPoint3D(frame: RibbonFrame, fraction: number, liftValue: number) {
   const offset = frame.half * (1 - 2 * fraction)
   const x = frame.x + frame.nx * offset
   const z = frame.z + frame.nz * offset
-  let y = frame.surfaceY
+  // anchored row 恒带 finite surfaceY（ribbonFrames 只在 finite 时写入锚点）
+  const anchor = frame.surfaceY as number
+  let y = anchor
   const n = frame.normal
   if (n && Math.abs(n.y) > 1e-6) {
-    y = frame.surfaceY - (n.x * (x - frame.x) + n.z * (z - frame.z)) / n.y
+    y = anchor - (n.x * (x - frame.x) + n.z * (z - frame.z)) / n.y
   }
   return { x, y: y + liftValue, z }
 }
 
 /** 在 A/B 中点检测 terrain error 或实际 transverse span（含 miter）。 */
-function crossIntervalNeedsSplit(frames, sampleHeight, fa, fb) {
+function crossIntervalNeedsSplit(frames: RibbonFrame[], sampleHeight: HeightSampler | null | undefined, fa: number, fb: number): boolean {
   const fm = (fa + fb) / 2
   for (const frame of frames) {
     // anchored row 的 cross 在 surface plane 内；span 必须按 3D 长度判，不能只看水平投影。
@@ -557,7 +616,7 @@ function crossIntervalNeedsSplit(frames, sampleHeight, fa, fb) {
 }
 
 /** 从 center sample 开始，自适应细分 cross fractions，直到误差合格或 vertex budget 用尽。 */
-function adaptiveCrossFractions(frames, sampleHeight, pointCount) {
+function adaptiveCrossFractions(frames: RibbonFrame[], sampleHeight: HeightSampler | null | undefined, pointCount: number): number[] {
   const maxSamples = annotationCrossBudget(pointCount)
   if (maxSamples < 3) return [0, 1]
   let fractions = [0, 0.5, 1]
@@ -580,12 +639,12 @@ function adaptiveCrossFractions(frames, sampleHeight, pointCount) {
  * 每个顶点采样一次，是逐帧可承受的量级；细分校验只在提交时做。
  * 采样不到的顶点保持原高度。
  */
-export function reprojectRibbonPositions(positions, sampleHeight, lift = ANNOTATION_LIFT, anchored = null) {
+export function reprojectRibbonPositions(positions: Float32Array, sampleHeight: HeightSampler, lift = ANNOTATION_LIFT, anchored?: boolean[] | null): Float32Array {
   for (let i = 0; i + 2 < positions.length; i += 3) {
     // anchored 顶点属于选中表面层：LOD 重建只刷新 terrain 顶点，锚点高度保持。
     if (anchored && anchored[i / 3]) continue
     const y = sampleHeight(positions[i], positions[i + 2])
-    if (Number.isFinite(y)) positions[i + 1] = y + lift
+    if (y != null && Number.isFinite(y)) positions[i + 1] = y + lift
   }
   return positions
 }
@@ -597,7 +656,32 @@ export function reprojectRibbonPositions(positions, sampleHeight, lift = ANNOTAT
  * longitudinal row 与 cross fraction，预算耗尽则跳过 unsafe cell（不输出已知穿地 triangle）。
  * 返回 { strips, pointCount, crossCount, vertexCount, vertexBudget, validation } 或 null。
  */
-export function buildPenRibbon(annotation, {
+/** 贴地 ribbon 的单条 strip（顶点/索引已按 unsafe-cell 断 strip 处理）。 */
+export interface PenRibbonStrip {
+  positions: Float32Array
+  indices: Uint32Array
+  rowCount: number
+  crossCount: number
+  /** 逐 row 的锚点标记（LOD 重建时锚点行保持表面高度） */
+  anchored: Uint8Array
+}
+
+export interface PenRibbonResult {
+  strips: PenRibbonStrip[]
+  pointCount: number
+  crossCount: number
+  vertexCount: number
+  vertexBudget: number
+  validation: {
+    iterations: number
+    cellsChecked: number
+    unsafeCells: number
+    rowCount: number
+    crossCount: number
+  }
+}
+
+export function buildPenRibbon(annotation: PenAnnotation | null | undefined, {
   sampleHeight,
   lift = ANNOTATION_LIFT,
   maxSegment = ANNOTATION_MAX_SEGMENT,
@@ -605,7 +689,16 @@ export function buildPenRibbon(annotation, {
   maxDepth = ANNOTATION_MAX_DEPTH,
   maxPoints = ANNOTATION_MAX_PROJECTED_POINTS,
   refine = true,
-} = {}) {
+}: {
+  /** 缺省时 buildPenRibbon fail-closed 返回 null（与 JS 同式 typeof 守卫） */
+  sampleHeight?: HeightSampler
+  lift?: number
+  maxSegment?: number
+  midpointError?: number
+  maxDepth?: number
+  maxPoints?: number
+  refine?: boolean
+} = {}): PenRibbonResult | null {
   if (!annotation || annotation.type !== 'pen') return null
   if (typeof sampleHeight !== 'function') return null
   const width = Number(annotation.width)
@@ -623,9 +716,9 @@ export function buildPenRibbon(annotation, {
   if (!frames) return null
   let fractions = adaptiveCrossFractions(frames, sampleHeight, rowPoints.length)
   let crossCount = fractions.length
-  let rows = []
-  let valid = []
-  let failures = { failing: [], checked: 0 }
+  let rows: RibbonCell[][] = []
+  let valid: boolean[] = []
+  let failures: { failing: Array<{ i: number; j: number }>; checked: number } = { failing: [], checked: 0 }
   let iterations = 0
 
   for (; iterations <= ANNOTATION_MAX_REFINEMENT_ITERATIONS; iterations++) {
@@ -691,10 +784,11 @@ export function buildPenRibbon(annotation, {
         anchored[k] = Number.isFinite(frames[i + k].surfaceY) ? 1 : 0
       }
       const positions = new Float32Array(rowCount * crossCount * 3)
-      const indices = []
+      const indices: number[] = []
       for (let k = 0; k < rowCount; k++) {
         for (let c = 0; c < crossCount; c++) {
           const cell = rows[i + k][c]
+          if (!cell) continue   // unsafe/断 strip 行已由 strip 边界排除；防御性跳过
           const o = (k * crossCount + c) * 3
           positions[o] = cell.x
           positions[o + 1] = cell.y
@@ -739,10 +833,13 @@ export function buildPenRibbon(annotation, {
  * 边缘采样失败（出地形）时回退 center 高度，保证 ring 不会缺段；这是预览 affordance，
  * 不是 durable geometry。
  */
-export function buildEraserRing(center, radius, sampleHeight, {
+export function buildEraserRing(center: SemanticPoint | null | undefined, radius: number, sampleHeight: HeightSampler, {
   segments = ANNOTATION_RING_SEGMENTS,
   lift = ANNOTATION_LIFT / 2,
-} = {}) {
+}: {
+  segments?: number
+  lift?: number
+} = {}): { positions: Float32Array; segments: number } | null {
   if (!center || !Number.isFinite(Number(center.x)) || !Number.isFinite(Number(center.y))) return null
   const r = Number(radius)
   if (!Number.isFinite(r) || r <= 0 || typeof sampleHeight !== 'function') return null

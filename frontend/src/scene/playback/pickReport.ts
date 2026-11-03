@@ -9,17 +9,42 @@
 // 可变绑定，工厂创建期捕获会拿到过期值；快照式传参是「显式 state」拆分模式在
 // 事件处理器上的落地形式（见 current-plan.md Design 节）。
 import * as THREE from 'three'
+import type { Camera, Intersection, Mesh, Object3D, Raycaster, Scene } from 'three'
 import { nameChainOf, nearestInstance, chainVisible, meshOwnerKey, stateVisualLabel, formatPickReport } from '../pickDebug.js'
+import type { PickReport } from '../pickDebug.js'
+import type { DestructibleFoldState, DestructibleInstance } from '../destructibles.js'
+import type { MeshOwnerValue } from '../pickDebug.js'
+import type { HudFeedVehicleDef } from './hudFeed.js'
+
+/** createPickReporter 的事件时刻快照契约（可变绑定现取现传；见文件头注释）。 */
+export interface PickReporterCtx {
+  clock: number
+  vehicles: Array<{ def?: HudFeedVehicleDef | null; group: Object3D }>
+  scenery: Object3D | null
+  terrainMesh: Object3D | null
+  groundMesh: Object3D | null
+  destruct: { states: DestructibleFoldState[] } | null
+  destructPickList: DestructibleInstance[] | null
+  meshOwner: Map<string, MeshOwnerValue> | null
+  heightField: Float32Array | null
+  heightMeta: { size?: number } | null
+  camera: Camera
+  raycaster: Raycaster
+  container: HTMLElement
+  scene: Scene
+  terrainSpan: number
+}
 
 export function createPickReporter() {
-  let pickMarker = null;
-  let pickPanel = null;
-  function reportPick(e, ctx) {
+  let pickMarker: THREE.Mesh | null = null;
+  let pickPanel: HTMLPreElement | null = null;
+  function reportPick(e: PointerEvent, ctx: PickReporterCtx): void {
     try {
       const r = ctx.container.getBoundingClientRect();
       const nd = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
       ctx.raycaster.setFromCamera(nd, ctx.camera);
-      const roots = [ctx.scenery, ctx.terrainMesh, ctx.groundMesh, ...ctx.vehicles.map((v) => v.group)].filter(Boolean);
+      const roots = [ctx.scenery, ctx.terrainMesh, ctx.groundMesh, ...ctx.vehicles.map((v) => v.group)]
+        .filter((root): root is Object3D => !!root);
       const hits = roots.length ? ctx.raycaster.intersectObjects(roots, true) : [];
       // Raycaster 不过滤 visible：隐藏 D_ 损毁网格/sky/隐藏父节点下的车辆会被
       // 命中——按整条祖先链可见性取最近可见命中，否则报告指向画面里没有的模型
@@ -34,20 +59,21 @@ export function createPickReporter() {
     } catch (err) {
       // 失败必须可见（禁止静默）：面板直接显示错误，否则表现为"点击没反应"难排查
       console.warn('[scene-pick] failed:', err);
-      try { showPickPanel(`[scene-pick] failed: ${(err && (err.stack || err.message)) || err}`, ctx.container); } catch (_) {}
+      const errObj = err as { stack?: string; message?: string }
+      try { showPickPanel(`[scene-pick] failed: ${(errObj.stack || errObj.message) || String(err)}`, ctx.container); } catch (_) {}
     }
   }
-  function buildPickReport(hit, ctx) {
+  function buildPickReport(hit: Intersection | null, ctx: PickReporterCtx): PickReport {
     if (!hit) return { clock: ctx.clock, kind: 'empty', err: 'no hit（天空/空处）' };
     // 车辆归属：沿父链找 userData.eid（车辆拾取与既有选中逻辑同式）
-    let o = hit.object, eid = 0;
-    while (o) { if (o.userData && o.userData.eid) { eid = o.userData.eid; break; } o = o.parent; }
+    let o: Object3D | null = hit.object, eid = 0;
+    while (o) { if (o.userData && o.userData.eid) { eid = o.userData.eid as number; break; } o = o.parent; }
     if (eid) {
-      const v = ctx.vehicles.find((x) => x.def.eid === eid);
-      return { clock: ctx.clock, kind: 'vehicle', vehicle: v ? v.def : { eid } };
+      const v = ctx.vehicles.find((x) => x.def?.eid === eid);
+      return { clock: ctx.clock, kind: 'vehicle', vehicle: v?.def ?? { eid } };
     }
     const onTerrain = (() => {
-      let n = hit.object;
+      let n: Object3D | null = hit.object;
       while (n) { if (n === ctx.terrainMesh || n === ctx.groundMesh) return true; n = n.parent; }
       return false;
     })();
@@ -58,7 +84,7 @@ export function createPickReporter() {
       try { scenePt = ctx.scenery.worldToLocal(hit.point.clone()).toArray(); } catch (_) {}
     }
     const chain = nameChainOf(hit.object, ctx.scenery || null);
-    const mat = hit.object.material;
+    const mat = (hit.object as Mesh).material;
     const matName = Array.isArray(mat) ? mat.map((m) => m?.name || '?').join('|') : (mat?.name || '');
     // 实例归属：命中网格的精确归属优先（meshOwner——6m 倒树的树梢按「属于哪棵
     // 树」归到树上，而非按表面点到锚点的距离错联邻树）；无归属网格才按位置兜底。
@@ -66,7 +92,7 @@ export function createPickReporter() {
     // 实例归属：合批后命中 = 批次 InstancedMesh + instanceId——按复合键查归属表
     //（值携带原节点名：合批后原 Mesh 已摘除，报告仍报真实物体名）；无表项才按位置兜底
     const owner = (ctx.meshOwner && hit.instanceId != null)
-      ? ctx.meshOwner.get(meshOwnerKey(hit.object, hit.instanceId)) : null;
+      ? ctx.meshOwner.get(meshOwnerKey(hit.object, hit.instanceId)) ?? null : null;  // eslint-disable-line @typescript-eslint/no-unnecessary-condition
     const inst = (owner && owner.inst)
       || (scenePt ? nearestInstance(ctx.destructPickList, scenePt[0], scenePt[1], 3) : null);
     const st = inst ? (ctx.destruct?.states || []).find((x) => x.inst === inst) || null : null;
@@ -88,7 +114,8 @@ export function createPickReporter() {
         const j0 = Math.min(Math.max(Math.floor(fx), 0), n - 1), j1 = Math.min(j0 + 1, n - 1);
         const i0 = Math.min(Math.max(Math.floor(fz), 0), n - 1), i1 = Math.min(i0 + 1, n - 1);
         const tx = Math.min(Math.max(fx - j0, 0), 1), tz = Math.min(Math.max(fz - i0, 0), 1);
-        const H = (i, j) => ctx.heightField[Math.min(i, n - 1) * n + Math.min(j, n - 1)];
+        const heightField = ctx.heightField
+        const H = (i: number, j: number): number => heightField![Math.min(i, n - 1) * n + Math.min(j, n - 1)];
         const truth = (H(i0, j0) * (1 - tx) + H(i0, j1) * tx) * (1 - tz)
                     + (H(i1, j0) * (1 - tx) + H(i1, j1) * tx) * tz;
         const jj = Math.min(Math.max(Math.round(fx), 0), n - 1);
@@ -97,10 +124,10 @@ export function createPickReporter() {
         if (ctx.terrainMesh) {
           const rc = new THREE.Raycaster(
             new THREE.Vector3(hit.point.x, 600, hit.point.z), new THREE.Vector3(0, -1, 0));
-          const th = rc.intersectObject(ctx.terrainMesh, false);
+          const th = rc.intersectObject(ctx.terrainMesh as Object3D, false);
           if (th.length) meshH = th[0].point.y;
         }
-        const build = ctx.terrainMesh?.geometry?.userData?.terrainBuild || null;
+        const build = (ctx.terrainMesh as Mesh | null)?.geometry?.userData?.terrainBuild || null;
         terrain = {
           truth,
           meshH,
@@ -116,14 +143,15 @@ export function createPickReporter() {
     // ⚠️ 不依赖 heightField/heightMeta——terrain 下载失败/元数据缺失/降级时（恰是最值得排障的
     // 一类场景）本段仍必须出报告（2026-10-11 PR 评审 P3：此前被错误地包在 terrain 可用性里）。
     try {
-      const o = hit.object;
+      const o = hit.object as Mesh;
       const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
       const worldPos = new THREE.Vector3();
       o.getWorldPosition(worldPos);
-      let instScale = null;
-      if (o.isInstancedMesh && hit.instanceId != null) {
+      let instScale: number[] | null = null;
+      const imNode = o as Mesh & { isInstancedMesh?: boolean; getMatrixAt(index: number, matrix: THREE.Matrix4): void }
+      if (imNode.isInstancedMesh && hit.instanceId != null) {
         const im = new THREE.Matrix4();
-        o.getMatrixAt(hit.instanceId, im);
+        imNode.getMatrixAt(hit.instanceId, im);
         instScale = new THREE.Vector3().setFromMatrixScale(im).toArray();
       }
       render = {
@@ -163,7 +191,7 @@ export function createPickReporter() {
       render,
     };
   }
-  function showPickPanel(text, container) {
+  function showPickPanel(text: string, container: HTMLElement): void {
     if (!pickPanel) {
       pickPanel = document.createElement('pre');
       pickPanel.style.cssText = 'position:absolute;top:8px;left:8px;z-index:30;max-width:52ch;'
@@ -174,7 +202,7 @@ export function createPickReporter() {
     }
     pickPanel.textContent = text;
   }
-  function movePickMarker(p, scene) {
+  function movePickMarker(p: THREE.Vector3, scene: Scene): void {
     if (!pickMarker) {
       pickMarker = new THREE.Mesh(
         new THREE.SphereGeometry(0.5, 12, 8),
@@ -187,7 +215,7 @@ export function createPickReporter() {
     scene.add(pickMarker);
   }
   /** 会话 teardown 回收调试件（标记网格 + 面板 DOM） */
-  function dispose({ scene, disposeObject3D }) {
+  function dispose({ scene, disposeObject3D }: { scene: Scene; disposeObject3D: (root: Object3D, shared?: unknown) => void }): void {
     if (pickMarker) { scene.remove(pickMarker); disposeObject3D(pickMarker); pickMarker = null; }
     if (pickPanel) { pickPanel.remove(); pickPanel = null; }
   }

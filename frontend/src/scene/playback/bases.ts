@@ -3,8 +3,68 @@
 // getData/getMapBases，groundY 由宿主注入——闭包内函数声明，创建期引用安全）。
 // 语义注释（设计语言 token、语义红线、fail-closed 判据）随代码原样保留。
 import * as THREE from 'three'
+import type { PerspectiveCamera, Scene, Texture } from 'three'
+import type { AgentAssaultBaseTransition, AgentSupremacyBaseTransition } from '../../api/agent-replay-facets.js'
 import { orientDiscUv } from '../baseDecal.js'
 import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, foldSupremacyTransitions } from '../../utils/baseStatus.js'
+
+/** 基地视图模型（utils/baseStatus.js baseView 的返回形状；owner/capturing 是 baseSide 侧别词）。 */
+export type BaseSide = 'friendly' | 'enemy' | 'neutral'
+export type BaseView = ReturnType<typeof baseView>
+
+/** 地图静态基地几何（data/mapBases.js 注册表条目；游戏坐标，scene 侧 x 镜像）。 */
+export interface MapBasePoint {
+  baseId: string
+  x: number
+  y: number
+  radius?: number
+}
+
+/** getMapBases 快照（对应地图 key 的 mapBases 注册表条目；缺几何的组不画）。 */
+export interface MapBasesEntry {
+  supremacy?: MapBasePoint[]
+  assault?: MapBasePoint[]
+}
+
+/** DATA 中本模块消费的基地状态字段（playbackData facet 面）。 */
+export interface BasesData {
+  meta: { friendly_team?: number | null }
+  supremacy_bases?: AgentSupremacyBaseTransition[] | null
+  assault_bases?: AgentAssaultBaseTransition[] | null
+  assault_objective_present?: boolean
+}
+
+/** 基地颜色（设计语言阵营 token 读不到时的兜底见 BASE_COLOR_FALLBACK）。 */
+export interface BaseColors {
+  friendly: string
+  enemy: string
+  neutral: string
+  objective: string
+  onNeutral: string
+}
+
+/** 贴地基地标记（环 + 随相机转正的圆盘贴图；reground 在地形异步就绪后重建几何）。 */
+interface BaseMarkerObject {
+  baseId: string
+  kind: 'supremacy' | 'assault'
+  gx: number
+  gz: number
+  r: number
+  ring: THREE.Mesh
+  disc: THREE.Mesh
+  canvas: HTMLCanvasElement
+  ctx: CanvasRenderingContext2D
+  tex: Texture
+  stateKey: string | undefined
+  uvDir: [number, number] | null
+  ringHex: string | null
+  reground(): void
+}
+
+/** createBaseMarkers 触碰的 store 字段（playbackStore 响应式对象的结构面）。 */
+export interface BasesStore {
+  baseViews: BaseView[]
+}
 
 // ---------- 基地（争霸 A–D / 单基地）：贴地标记 ----------
 // 几何来自 mapBases[key]（客户端 .sc2 提取，世界坐标；scene x = −游戏 x 镜像）；
@@ -15,18 +75,31 @@ import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, fol
 // 圆盘贴图随相机水平朝向转正——平躺在地上，但从任何方向看字都是正的。空中不再有 HUD。
 // 颜色取自设计语言阵营 token（design-language §3.3：2D、3D 共用），读不到时用同值兜底。
 
-export function createBaseMarkers({ getScene, getCamera, getData, getMapBases, store, groundY }) {
+export function createBaseMarkers({ getScene, getCamera, getData, getMapBases, store, groundY }: {
+  getScene: () => Scene
+  getCamera: () => PerspectiveCamera
+  getData: () => BasesData
+  getMapBases: () => MapBasesEntry | null
+  store: BasesStore
+  groundY: (x: number, z: number) => number
+}): {
+  build(): void
+  buildStatic(kind: 'supremacy' | 'assault' | null): void
+  clear(): void
+  update(clock: number): void
+  reground(): void
+} {
 const BASE_TEX = 256;
 const BASE_COLOR_FALLBACK = { friendly: '#5cc280', enemy: '#f2786d', neutral: '#f5f5f5', objective: '#ffc24b', onNeutral: '#1c1f1d' };
-let baseObjects = [];   // { baseId, kind, gx, gz, r, ring, disc, canvas, ctx, tex, stateKey, uvDir, ringHex }
-let baseColors = BASE_COLOR_FALLBACK;
-let supremacyBaseIds = [];   // 本场出现过的争霸基地（轨迹 ∪ 几何），状态条按它列出
+let baseObjects: BaseMarkerObject[] = [];
+let baseColors: BaseColors = BASE_COLOR_FALLBACK;
+let supremacyBaseIds: string[] = [];   // 本场出现过的争霸基地（轨迹 ∪ 几何），状态条按它列出
 let lastBaseViewsKey = '';
 
 function readBaseColors() {
   if (typeof getComputedStyle !== 'function' || typeof document === 'undefined') return BASE_COLOR_FALLBACK;
   const cs = getComputedStyle(document.documentElement);
-  const read = (name, fallback) => (cs.getPropertyValue(name) || '').trim() || fallback;
+  const read = (name: string, fallback: string): string => (cs.getPropertyValue(name) || '').trim() || fallback;
   return {
     friendly: read('--color-team-ally', BASE_COLOR_FALLBACK.friendly),
     enemy: read('--color-team-enemy', BASE_COLOR_FALLBACK.enemy),
@@ -49,11 +122,10 @@ function readBaseColors() {
 // 回退"有进度广播"。存在性只是前提——真正落地的标记还要求该地图 verified semantics
 // 给出**唯一**单基地 controlpoint（多 candidate fail-closed，见 buildBases）。
 const ASSAULT_RADIUS_FALLBACK = 20;      // 客户端 scene 常不声明 radius：20m 仅呈现兜底
-const ASSAULT_PROGRESS_COLOR = 0xffc24b; // 呈现强调色（非阵营语义）
-function assaultHasObjective() {
+function assaultHasObjective(): boolean {
   if (getData().assault_objective_present === true) return true;
   if (getData().assault_objective_present === undefined) {
-    return !!(getData().assault_bases && getData().assault_bases.length);
+    return !!(getData().assault_bases?.length);
   }
   return false;
 }
@@ -61,8 +133,8 @@ function assaultHasObjective() {
 function clearBases() {
   staticKind = null;
   for (const b of baseObjects) {
-    getScene().remove(b.ring); b.ring.geometry.dispose(); b.ring.material.dispose();
-    getScene().remove(b.disc); b.disc.geometry.dispose(); b.disc.material.dispose(); b.tex.dispose();
+    getScene().remove(b.ring); b.ring.geometry.dispose(); (b.ring.material as THREE.Material).dispose();
+    getScene().remove(b.disc); b.disc.geometry.dispose(); (b.disc.material as THREE.Material).dispose(); b.tex.dispose();
   }
   baseObjects = [];
   supremacyBaseIds = [];
@@ -70,7 +142,7 @@ function clearBases() {
   store.baseViews = [];
 }
 
-function addBaseMarker(baseId, kind, gx, gz, r) {
+function addBaseMarker(baseId: string, kind: 'supremacy' | 'assault', gx: number, gz: number, r: number): void {
   const ring = new THREE.Mesh(
     makeGroundedRing(gx, gz, r),
     new THREE.MeshBasicMaterial({ color: baseColors.neutral, side: THREE.DoubleSide,
@@ -85,7 +157,7 @@ function addBaseMarker(baseId, kind, gx, gz, r) {
                                   toneMapped: false,
                                   polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
   getScene().add(disc);
-  const b = { baseId, kind, gx, gz, r, ring, disc, canvas, ctx: canvas.getContext('2d'), tex,
+  const b: BaseMarkerObject = { baseId, kind, gx, gz, r, ring, disc, canvas, ctx: canvas.getContext('2d')!, tex,
               stateKey: undefined, uvDir: null, ringHex: null,
               // 地形异步就绪后：按新高度场重建贴地环带与圆盘
               reground: () => {
@@ -103,7 +175,7 @@ function buildBases() {
   if (tracks.length) {
     // 非争霸场次不画（不靠静态几何猜模式）；无几何的地图不猜坐标，但状态条照样列出
     const seen = new Set(tracks.map((tr) => SUPREMACY_BASE_IDS[tr.base_id]).filter(Boolean));
-    const pts = (getMapBases() && getMapBases().supremacy) || [];
+    const pts = getMapBases()?.supremacy ?? [];
     for (const p of pts) {
       if (!SUPREMACY_BASE_IDS.includes(p.baseId)) continue;
       seen.add(p.baseId);
@@ -112,7 +184,7 @@ function buildBases() {
     supremacyBaseIds = SUPREMACY_BASE_IDS.filter((id) => seen.has(id));
   }
   if (assaultHasObjective()) {
-    const pts = (getMapBases() && getMapBases().assault) || [];
+    const pts = getMapBases()?.assault ?? [];
     // 多 candidate 无证据 fail-closed（与 2D basesAt 同式）：几何不唯一就不画地面标记
     if (pts.length === 1) addBaseMarker(ASSAULT_BASE_ID, 'assault', -pts[0].x, pts[0].y, pts[0].radius || ASSAULT_RADIUS_FALLBACK);
   }
@@ -123,14 +195,14 @@ function buildBases() {
 // 几何仍是唯一事实——mapBases[key] 对应组缺几何就不画；assault 组多 candidate
 // 无证据 fail-closed（与回放同式）；null 清空。渲染走 addBaseMarker 同一条管线
 // （贴地环 + 随相机转正的圆盘贴图），呈现与回放中立基地逐像素一致。
-let staticKind = null;
+let staticKind: 'supremacy' | 'assault' | null = null;
 
-function buildStatic(kind) {
+function buildStatic(kind: 'supremacy' | 'assault' | null): void {
   clearBases();
   baseColors = readBaseColors();
   staticKind = (kind === 'supremacy' || kind === 'assault') ? kind : null;
   if (!staticKind) return;
-  const pts = (getMapBases() && getMapBases()[staticKind]) || [];
+  const pts = getMapBases()?.[staticKind] ?? [];
   if (staticKind === 'supremacy') {
     for (const p of pts) {
       if (!SUPREMACY_BASE_IDS.includes(p.baseId)) continue;
@@ -146,13 +218,13 @@ function regroundBases() {
 }
 
 /** 当前时刻的基地视图模型（与 2D 同一口径），状态条与贴地标记共用 */
-function baseViewsAt(t) {
+function baseViewsAt(t: number): BaseView[] {
   if (staticKind) {
     // 静态预览没有占领状态：画了什么就列什么，全部按无主中立（与回放未开占领同表现）
     return baseObjects.map((b) => ({ baseId: b.baseId, kind: b.kind, owner: 'neutral', capturing: null, progress: null }));
   }
   const ft = getData().meta.friendly_team;
-  const views = [];
+  const views: BaseView[] = [];
   if (supremacyBaseIds.length) {
     for (const state of foldSupremacyTransitions(getData().supremacy_bases, t)) {
       if (supremacyBaseIds.includes(state.baseId)) views.push(baseView(state, ft));
@@ -162,14 +234,14 @@ function baseViewsAt(t) {
   return views;
 }
 
-function drawBaseDecal(b, view) {
+function drawBaseDecal(b: BaseMarkerObject, view: BaseView): void {
   const ctx = b.ctx, S = BASE_TEX, c = S / 2, R = S / 2 - 2;
-  const owner = baseColors[view.owner];
+  const owner = baseColors[view.owner as BaseSide];
   ctx.clearRect(0, 0, S, S);
   ctx.save();
   ctx.beginPath(); ctx.arc(c, c, R, 0, Math.PI * 2); ctx.clip();
   ctx.globalAlpha = 0.2; ctx.fillStyle = owner; ctx.fillRect(0, 0, S, S);
-  const fillColor = view.kind === 'assault' ? baseColors.objective : (view.capturing ? baseColors[view.capturing] : null);
+  const fillColor = view.kind === 'assault' ? baseColors.objective : (view.capturing ? baseColors[view.capturing as BaseSide] : null);
   if (fillColor && view.progress != null) {
     // 从下往上"灌水"（下 = 靠近相机一侧，贴图随视角转正）
     const h = 2 * R * (view.progress / 100);
@@ -190,7 +262,7 @@ function drawBaseDecal(b, view) {
   b.tex.needsUpdate = true;
 }
 
-function updateBases(clock) {
+function updateBases(clock: number): void {
   if (!getData()) return;
   const views = baseViewsAt(clock);
   const key = views.map((v) => v.baseId + ':' + v.owner + '/' + v.capturing + '/' + v.progress).join('|');
@@ -200,8 +272,8 @@ function updateBases(clock) {
     if (!view) continue;
     const stateKey = view.owner + '/' + view.capturing + '/' + view.progress;
     if (b.stateKey !== stateKey) { b.stateKey = stateKey; drawBaseDecal(b, view); }
-    const ringHex = baseColors[view.owner];
-    if (b.ringHex !== ringHex) { b.ring.material.color.set(ringHex); b.ringHex = ringHex; }
+    const ringHex = baseColors[view.owner as BaseSide];
+    if (b.ringHex !== ringHex) { (b.ring.material as THREE.MeshBasicMaterial).color.set(ringHex); b.ringHex = ringHex; }
     // 贴图转正：字母"上"指向远离相机的方向；水平朝向变化超过约 2° 才重算 UV
     const dx = b.gx - getCamera().position.x, dz = b.gz - getCamera().position.z;
     const len = Math.hypot(dx, dz);
@@ -216,7 +288,7 @@ function updateBases(clock) {
 
 // 逐顶点贴地圆盘（极坐标网格，中心 + rings 圈）。offsets 记录每个顶点相对圆心的归一化偏移，
 // UV 由 orientDiscUv 按观察方向旋转计算，几何本身不随视角重建。
-function makeGroundedDisc(gx, gz, radius, rings = 10, seg = 48) {
+function makeGroundedDisc(gx: number, gz: number, radius: number, rings = 10, seg = 48): THREE.BufferGeometry {
   const count = 1 + rings * seg;
   const pos = new Float32Array(count * 3);
   const offsets = new Float32Array(count * 2);
@@ -232,7 +304,7 @@ function makeGroundedDisc(gx, gz, radius, rings = 10, seg = 48) {
       k++;
     }
   }
-  const idx = [];
+  const idx: number[] = [];
   for (let j = 0; j < seg; j++) idx.push(0, 1 + j, 1 + ((j + 1) % seg));
   for (let i = 1; i < rings; i++) {
     const a0 = 1 + (i - 1) * seg, b0 = 1 + i * seg;
@@ -249,15 +321,15 @@ function makeGroundedDisc(gx, gz, radius, rings = 10, seg = 48) {
   return geo;
 }
 
-function orientDisc(geo, ux, uz) {
+function orientDisc(geo: THREE.BufferGeometry, ux: number, uz: number): void {
   orientDiscUv(geo.userData.offsets, geo.attributes.uv.array, ux, uz);
   geo.attributes.uv.needsUpdate = true;
 }
 
 // 逐顶点贴地圆环（与地面/边界同构：起伏地形上平面圆环会被坡地埋掉）
-function makeGroundedRing(gx, gz, radius, seg = 72) {
+function makeGroundedRing(gx: number, gz: number, radius: number, seg = 72): THREE.BufferGeometry {
   const pos = new Float32Array((seg + 1) * 2 * 3);
-  const idx = [];
+  const idx: number[] = [];
   for (let i = 0; i <= seg; i++) {
     const a = (i / seg) * Math.PI * 2;
     const ca = Math.cos(a), sa = Math.sin(a);

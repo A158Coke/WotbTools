@@ -1,6 +1,15 @@
 // 地图边界带（2026-10-24 自 initPlayback 闭包出仓为工厂，拆分计划见
 // docs/current-plan.md；代码与搬移前逐字一致，boundaryGroup 改由本工厂私有持有）。
 import * as THREE from 'three'
+import type { Object3D, Scene } from 'three'
+
+/** 边界矩形（游戏内可玩范围，米；cx/cz 中心、hx/hz 半宽）。 */
+export interface BoundaryBounds {
+  cx: number
+  cz: number
+  hx: number
+  hz: number
+}
 
 // ---------- 地图边界带 ----------
 // 边界 = 游戏内实际战场范围（playableBoundsMeters），比真实地图 worldBounds(±300) 小。
@@ -19,8 +28,15 @@ const BOUNDARY_STEP = 2.0;    // 采样步长（米）：越小越贴合地形
  * @param {(x: number, z: number) => number} deps.groundY 贴地高度采样（闭包内
  *   函数声明，创建期引用安全——调用时才求值）
  */
-export function createBoundaryBand({ getScene, disposeObject3D, groundY }) {
-  let boundaryGroup = null;
+export function createBoundaryBand({ getScene, disposeObject3D, groundY }: {
+  /** 场景 getter（scene 在 initScene 才创建，工厂创建期不可直接捕获） */
+  getScene: () => Scene
+  /** 会话统一的子树释放器（与场景其余 teardown 同一份） */
+  disposeObject3D: (root: Object3D, shared?: unknown) => void
+  /** 贴地高度采样（闭包内函数声明，创建期引用安全——调用时才求值） */
+  groundY: (x: number, z: number) => number
+}): { build(bounds: BoundaryBounds | null | undefined, thick: number): void; clear(): void } {
+  let boundaryGroup: THREE.Group | null = null;
 
   function clear() {
     if (!boundaryGroup) return;
@@ -35,14 +51,14 @@ export function createBoundaryBand({ getScene, disposeObject3D, groundY }) {
   // 车辆范围 / 地形 span / worldBounds 都不是「游戏内红色战场边界」的证据，
   // 不得作为兜底（历史实现曾用车辆 ext 与 terrain span 兜底，会凭空画出一条
   // 与玩法不符的边界）。
-  function build(bounds, thick) {
+  function build(bounds: BoundaryBounds | null | undefined, thick: number): void {
     clear();
     if (!bounds) return;
     const { cx, cz, hx, hz } = bounds;
     const x0 = cx - hx, x1 = cx + hx, z0 = cz - hz, z1 = cz + hz;
     // 闭合路径（顺时针四条边，角点精确落在 (±hx, ±hz)）
-    const path = [];
-    const push = (ax, az, bx, bz) => {
+    const path: Array<[number, number]> = [];
+    const push = (ax: number, az: number, bx: number, bz: number): void => {
       const len = Math.hypot(bx - ax, bz - az);
       const n = Math.max(2, Math.ceil(len / BOUNDARY_STEP));
       for (let i = 0; i < n; i++) {
@@ -56,7 +72,7 @@ export function createBoundaryBand({ getScene, disposeObject3D, groundY }) {
     push(x0, z1, x0, z0);   // 西
     const N = path.length;
     const pos = new Float32Array(N * 2 * 3);
-    const idx = [];
+    const idx: number[] = [];
     const half = thick / 2;
     for (let i = 0; i < N; i++) {
       const [px, pz] = path[i];

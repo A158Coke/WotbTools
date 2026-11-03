@@ -13,15 +13,15 @@ const src = readSrc(resolve(here, 'playbackScene.js'), 'utf8')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 // 常量/并发工具与边界带 2026-10-24 出仓 playback/（巨石拆分 Step A1，守卫随实现迁移）
-const pbUtilSrc = readSrc(resolve(here, 'playback/util.js'), 'utf8')
-const bandSrc = readSrc(resolve(here, 'playback/boundary.js'), 'utf8')
+const pbUtilSrc = readSrc(resolve(here, 'playback/util.ts'), 'utf8')
+const bandSrc = readSrc(resolve(here, 'playback/boundary.ts'), 'utf8')
 // 渲染器创建核心 2026-10-24 出仓 playback/renderer.js（Step A2；出屏口径/对数深度/兜底灯光
 // 的装配断言随实现迁移）
 const rendererSrc = readSrc(resolve(here, 'playback/renderer.ts'), 'utf8')
 // 场景装配块 2026-10-24 出仓 playback/mapAssets.js（Step A3；运行时侧装配断言随实现迁移）
 const mapAssetsSrc = readSrc(resolve(here, 'playback/mapAssets.ts'), 'utf8')
 // 基地贴地标记 2026-10-24 出仓 playback/bases.js（Step A4；基地环/圆盘/画布 sRGB 断言随实现迁移）
-const basesSrc = readSrc(resolve(here, 'playback/bases.js'), 'utf8')
+const basesSrc = readSrc(resolve(here, 'playback/bases.ts'), 'utf8')
 // 材质实现（billboard/speedtree/缓存/常量/isWaterName）已平移至专用模块（SSOT，
 // bake-ground-overhead 烘焙页共用同一实现），守卫随迁读取新源
 const matSrc = readSrc(resolve(here, 'sceneryMaterials.ts'), 'utf8')
@@ -1122,7 +1122,7 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
 
   it('比分/点数走增量而非每 tick 全量扫描', () => {
     // 计分/击杀游标 2026-10-24 随 hudFeed 出仓 playback/hudFeed.js（Step A5），游标断言随实现迁移
-    const feedSrc = readSrc(resolve(here, 'playback/hudFeed.js'), 'utf8')
+    const feedSrc = readSrc(resolve(here, 'playback/hudFeed.ts'), 'utf8')
     expect(feedSrc).toMatch(/let scorePtr = 0, score1 = 0, score2 = 0;/)
     expect(feedSrc).toMatch(/function resetScore\(\)/)
     expect(feedSrc).toMatch(/while \(scorePtr < getData\(\)\.kills\.length && getData\(\)\.kills\[scorePtr\]\.t <= getT\(\)\)/)

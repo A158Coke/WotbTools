@@ -1,5 +1,29 @@
 // 录像者相机的纯数学：不依赖 Three，scene 负责接线。
 // 回放只证明瞄准方向、开镜时机与缩放 raw 值；第三人称机位和准星绝对尺寸都是重建。
+import type { AgentRecorderCamera } from '../../api/agent-replay-facets.js'
+
+/** 录像者相机 facet（wire owner：agent-replay-facets.ts 的 AgentRecorderCamera）。 */
+export type RecorderCameraFacet = AgentRecorderCamera
+
+/** sampleRecorderCamera / 几何写入器的三维输出面（Vector3-like 裸对象即可）。 */
+export interface CameraVec3 {
+  x: number
+  y: number
+  z: number
+}
+
+/** 回放时刻 t 的录像者相机采样（out 对象逐帧复用；无内部游标）。 */
+export interface RecorderCameraSample {
+  rawMode: number
+  mode: string
+  zoomRaw: number | null
+  yaw: number
+  pitch: number
+  rayX: number
+  rayY: number
+  rayZ: number
+  bloomRaw: number | null
+}
 
 export const CAMERA_MODE = Object.freeze({ ARCADE: 'ARCADE', SNIPER: 'SNIPER', UNKNOWN: 'UNKNOWN' })
 
@@ -29,7 +53,7 @@ const RETICLE_MIN_PX = 10
 const RETICLE_MAX_VIEWPORT = 0.2
 
 /** `values` 中最后一个 ≤ t 的下标；全部大于 t 时返回 -1。 */
-function lastIndexAtOrBefore(values, t) {
+function lastIndexAtOrBefore(values: ArrayLike<number>, t: number): number {
   let lo = 0
   let hi = values.length - 1
   let found = -1
@@ -40,7 +64,7 @@ function lastIndexAtOrBefore(values, t) {
   return found
 }
 
-function modeOf(raw) {
+function modeOf(raw: number): string {
   const code = raw & MODE_CODE_MASK
   if (code === 1) return CAMERA_MODE.ARCADE
   if (code === 0) return CAMERA_MODE.SNIPER
@@ -48,7 +72,7 @@ function modeOf(raw) {
 }
 
 /** 回放时刻 t 的 Type23 模式，供可用性门控逐帧读取。 */
-export function recorderModeAt(facet, t) {
+export function recorderModeAt(facet: RecorderCameraFacet, t: number): string {
   const index = lastIndexAtOrBefore(facet.mode.t, t)
   return modeOf(index >= 0 ? facet.mode.raw[index] : MODE_DEFAULT_RAW)
 }
@@ -57,7 +81,7 @@ export function recorderModeAt(facet, t) {
  * Type31 只在当前开镜 session 内取最近样本：连续流的保持误差约 8ms，而稀疏流线性插值
  * 会凭空造出数秒的缓变。session 刚开始还没有样本时取本 session 的第一个样本。
  */
-function zoomInSession(zoom, sessionStart, sessionEnd, t) {
+function zoomInSession(zoom: RecorderCameraFacet['zoom'], sessionStart: number, sessionEnd: number, t: number): number | null {
   const floor = sessionStart - ZOOM_SESSION_SLACK_SEC
   const index = lastIndexAtOrBefore(zoom.t, t)
   if (index >= 0 && zoom.t[index] >= floor) return zoom.raw[index]
@@ -66,7 +90,7 @@ function zoomInSession(zoom, sessionStart, sessionEnd, t) {
 }
 
 /** 回放时刻 t 的录像者相机状态；无内部游标，seek 与顺播结果一致。 */
-export function sampleRecorderCamera(facet, t, out = {}) {
+export function sampleRecorderCamera(facet: RecorderCameraFacet, t: number, out: RecorderCameraSample = {} as RecorderCameraSample): RecorderCameraSample {
   const modeIndex = lastIndexAtOrBefore(facet.mode.t, t)
   const rawMode = modeIndex >= 0 ? facet.mode.raw[modeIndex] : MODE_DEFAULT_RAW
   out.rawMode = rawMode
@@ -83,7 +107,7 @@ export function sampleRecorderCamera(facet, t, out = {}) {
   const next = Math.min(last, index + 1)
   const span = aim.t[next] - aim.t[index]
   const ratio = span > 0 ? Math.max(0, Math.min(1, (t - aim.t[index]) / span)) : 0
-  const mix = (column) => column[index] + (column[next] - column[index]) * ratio
+  const mix = (column: ArrayLike<number>): number => column[index] + (column[next] - column[index]) * ratio
   out.yaw = mix(aim.yaw)
   out.pitch = mix(aim.pitch)
   out.rayX = mix(aim.ray_x)
@@ -96,7 +120,7 @@ export function sampleRecorderCamera(facet, t, out = {}) {
 }
 
 /** 游戏系瞄准角 → 场景系单位方向（场景系 = 游戏系 x 取负）。 */
-export function aimDirectionScene(yaw, pitch, out = {}) {
+export function aimDirectionScene(yaw: number, pitch: number, out: CameraVec3 = {} as CameraVec3): CameraVec3 {
   const horizontal = Math.cos(pitch)
   out.x = -Math.sin(yaw) * horizontal
   out.y = Math.sin(pitch)
@@ -105,7 +129,7 @@ export function aimDirectionScene(yaw, pitch, out = {}) {
 }
 
 /** Arcade 机位：从车辆锚点沿瞄准水平方向后退并抬高。 */
-export function arcadeCameraPosition(anchor, direction, boom, out = {}) {
+export function arcadeCameraPosition(anchor: CameraVec3, direction: CameraVec3, boom: number, out: CameraVec3 = {} as CameraVec3): CameraVec3 {
   const length = Math.hypot(direction.x, direction.z) || 1
   out.x = anchor.x - (direction.x / length) * boom
   out.y = anchor.y + ARCADE_HEIGHT_M * (boom / ARCADE_BOOM_M)
@@ -114,14 +138,14 @@ export function arcadeCameraPosition(anchor, direction, boom, out = {}) {
 }
 
 /** 倒车判定：比较最近一段位移与车体前向，无内部状态，seek 后立即正确。 */
-export function isReversing(previous, current, hullYaw) {
+export function isReversing(previous: CameraVec3, current: CameraVec3, hullYaw: number): boolean {
   const along = (current.x - previous.x) * Math.sin(hullYaw) + (current.z - previous.z) * Math.cos(hullYaw)
   return along / REVERSE_WINDOW_SEC < -REVERSE_MIN_SPEED_MPS
 }
 export const REVERSE_SAMPLE_OFFSET_SEC = REVERSE_WINDOW_SEC
 
 /** 倒车拉远的呈现平滑；这一段是重建，不是回放数据。 */
-export function backwardZoomScale(current, reversing, dt) {
+export function backwardZoomScale(current: number, reversing: boolean, dt: number): number {
   const target = reversing ? BACKWARD_ZOOM_SCALE : 1
   return target + (current - target) * Math.exp(-Math.max(0, dt) / BACKWARD_ZOOM_TAU_SEC)
 }
@@ -130,21 +154,21 @@ export function backwardZoomScale(current, reversing, dt) {
  * raw → 渲染垂直 FOV 的唯一映射点。这是校准映射，不是单位结论：
  * Type31 的物理单位未闭合，以原客户端对照结果为准。
  */
-export function fovFromZoomRaw(raw) {
+export function fovFromZoomRaw(raw: number): number {
   if (!Number.isFinite(raw)) return BASE_FOV_DEG
   return Math.max(ZOOM_RAW_MIN, Math.min(ZOOM_RAW_MAX, raw))
 }
 
 /** 扩散圆像素半径：bloom 视为角半径按当前 FOV 投影，绝对尺寸是校准值，不是协议结论。 */
-export function reticleRadiusPx({ bloomRaw, fovDeg, viewportH }) {
-  const bloom = Number.isFinite(bloomRaw) ? bloomRaw : 1
+export function reticleRadiusPx({ bloomRaw, fovDeg, viewportH }: { bloomRaw: number | null; fovDeg: number; viewportH: number }): number {
+  const bloom = typeof bloomRaw === 'number' && Number.isFinite(bloomRaw) ? bloomRaw : 1
   const halfFov = (fovDeg * Math.PI) / 360
   const radius = (Math.tan(bloom * RETICLE_BASE_RAD) / Math.tan(halfFov)) * (viewportH / 2)
   return Math.max(RETICLE_MIN_PX, Math.min(viewportH * RETICLE_MAX_VIEWPORT, radius))
 }
 
 /** 模式切换的呈现缓动进度。 */
-export function blendProgress(elapsedSec) {
+export function blendProgress(elapsedSec: number): number {
   const ratio = Math.max(0, Math.min(1, elapsedSec / MODE_BLEND_SEC))
   return ratio * ratio * (3 - 2 * ratio)
 }

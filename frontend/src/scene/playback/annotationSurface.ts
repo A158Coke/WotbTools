@@ -9,6 +9,7 @@
 // 本模块保持无 three import（three 尚未随包提供 d.ts，scene 侧 TS 无法直接引用）；
 // world normal 的矩阵运算在既有 JS 几何模块 annotation3d.js（hitWorldNormalY）。
 import { chainVisible } from '../pickDebug.js'
+import type { Matrix4, Object3D } from 'three'
 import { hitWorldNormalY } from './annotation3d.js'
 import { occlusionFootprintCells } from './pure.js'
 
@@ -36,12 +37,14 @@ export type AnnotationSurfaceObject = {
   material?: AnnotationSurfaceMaterial | AnnotationSurfaceMaterial[] | null
   isMesh?: boolean
   geometry?: unknown
+  /** 真实命中是 three 节点：hitWorldNormal 消费世界矩阵 */
+  matrixWorld?: Matrix4 | null
 }
 
 /** THREE.Intersection 的结构子集；不直接 import three 的类型。 */
 export interface AnnotationSurfaceHit {
   object: AnnotationSurfaceObject
-  face?: { materialIndex?: number } | null
+  face?: { materialIndex?: number; normal: { x: number; y: number; z: number } } | null
   point?: { x: number; y: number; z: number } | null
   distance: number
   instanceId?: number | null
@@ -119,7 +122,7 @@ export function pickDrawableSurfaceHit(
   if (!raycaster || !Array.isArray(objects) || objects.length === 0) return null
   const hits = raycaster.intersectObjects(objects, false)
   for (const hit of hits) {
-    if (!chainVisible(hit.object)) continue
+    if (!chainVisible(hit.object as Object3D)) continue
     const point = hit.point
     const terrainY = terrainYAt && point ? terrainYAt(point.x, point.z) : null
     if (!isDrawableSurfaceHit(hit, terrainY)) continue
