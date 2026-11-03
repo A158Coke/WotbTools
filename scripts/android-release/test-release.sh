@@ -23,6 +23,12 @@ path = pathlib.Path(sys.argv[1]) / "scripts/android-release/delta_artifact.py"
 spec = importlib.util.spec_from_file_location("delta_artifact", path)
 delta = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(delta)
+# Runtime 和 stage/publish verifier 使用相同的有界整数比较，禁止静默漂移。
+import re
+client = (pathlib.Path(sys.argv[1]) / "android/app/src/main/java/com/wotbtools/app/ApkUpdater.kt").read_text(encoding="utf-8")
+match = re.search(r"const val MAX_DELTA_RATIO_DENOMINATOR = ([0-9]+)", client)
+assert match and int(match.group(1)) == delta.MAX_DELTA_RATIO_DENOMINATOR
+assert "patch.size > targetSize / MAX_DELTA_RATIO_DENOMINATOR" in client
 sha = lambda b: hashlib.sha256(b).hexdigest()
 with tempfile.TemporaryDirectory() as work:
     root = pathlib.Path(work)
@@ -48,6 +54,9 @@ with tempfile.TemporaryDirectory() as work:
     assert len(doc["patches"]) == 1
     patch_item = doc["patches"][0]
     assert delta.validate(doc, args.target_code, args.target_sha, target.stat().st_size) == doc["patches"]
+    boundary = json.loads(json.dumps(doc))
+    boundary["patches"][0]["size"] = target.stat().st_size // delta.MAX_DELTA_RATIO_DENOMINATOR
+    assert delta.validate(boundary, args.target_code, args.target_sha, target.stat().st_size) == boundary["patches"]
     assert delta.validate({}, args.target_code, args.target_sha, target.stat().st_size) == []
     p = root / patch_item["url"].rsplit("/", 1)[-1]
     verify = argparse.Namespace(target=str(target), target_sha=args.target_sha, target_code=args.target_code,

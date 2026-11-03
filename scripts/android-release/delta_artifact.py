@@ -11,6 +11,7 @@ import tempfile
 from urllib.parse import urlsplit
 
 ALGORITHM = "xdelta3-vcdiff"
+MAX_DELTA_RATIO_DENOMINATOR = 10
 MIN_BASE_CODE = 4_000_000  # 4.0.0 首次携带增量解码能力。
 BASE_URL = "https://wotbtools.com/download/android/"
 SHA = re.compile(r"^[0-9a-f]{64}$")
@@ -55,7 +56,7 @@ def validate(meta, target_code, target_sha, target_size):
             raise ValueError("invalid base sha")
         if not isinstance(patch_sha, str) or not SHA.fullmatch(patch_sha):
             raise ValueError("invalid patch sha")
-        if type(patch_size) is not int or patch_size <= 0 or patch_size * 10 > target_size:
+        if type(patch_size) is not int or patch_size <= 0 or patch_size * MAX_DELTA_RATIO_DENOMINATOR > target_size:
             raise ValueError("patch size exceeds the release benefit limit")
         if patch.get("algorithm") != ALGORITHM or not isinstance(url, str):
             raise ValueError("unsupported patch algorithm or URL")
@@ -93,7 +94,7 @@ def build(args):
                     header = stream.read(5)
                 if header != bytes.fromhex("d6c3c40000"):
                     raise ValueError("patch uses an unsupported VCDIFF header")
-                if patch.stat().st_size * 10 <= target_size:
+                if patch.stat().st_size * MAX_DELTA_RATIO_DENOMINATOR <= target_size:
                     subprocess.run([args.xdelta, "-d", "-s", args.base_file, str(patch), str(rebuilt)], check=True)
                     if rebuilt.stat().st_size != target_size or digest(rebuilt) != target_sha:
                         raise ValueError("reconstructed target differs from signed APK")

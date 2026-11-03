@@ -82,6 +82,31 @@ class DeltaApplierDeviceTest {
             rejected(out) { DeltaApplier.apply(base, patch, out, 100000) }
         }
     }
+    @Test fun benchmarksOfficialDeltaWhenFixtureProvided() {
+        val args = InstrumentationRegistry.getArguments()
+        val basePath = args.getString("benchmarkBasePath")
+        assumeTrue("Provide verified official delta fixtures", basePath != null)
+        val patch = File(requireNotNull(args.getString("benchmarkPatchPath")))
+        val targetSize = requireNotNull(args.getString("benchmarkTargetSize")).toLong()
+        val targetSha = requireNotNull(args.getString("benchmarkTargetSha"))
+        val label = requireNotNull(args.getString("benchmarkLabel"))
+        val output = File(instrumentation.targetContext.cacheDir, "delta-benchmark-${System.nanoTime()}.apk")
+        try {
+            val started = android.os.SystemClock.elapsedRealtime()
+            DeltaApplier.apply(File(basePath!!), patch, output, targetSize)
+            val elapsed = android.os.SystemClock.elapsedRealtime() - started
+            assertEquals(targetSize, output.length())
+            val digest = MessageDigest.getInstance("SHA-256")
+            output.inputStream().use { input ->
+                val bytes = ByteArray(1024 * 1024)
+                while (true) { val count = input.read(bytes); if (count < 0) break; digest.update(bytes, 0, count) }
+            }
+            assertEquals(targetSha, digest.digest().joinToString("") { "%02x".format(it) })
+            val peak = File("/proc/self/status").useLines { lines -> lines.firstOrNull { it.startsWith("VmHWM:") } }.orEmpty()
+            android.util.Log.i("DeltaBenchmark", "label=$label elapsed_ms=$elapsed temporary_bytes=${patch.length() + output.length()} $peak exact_sha=true")
+        } finally { output.delete() }
+    }
+
     @Test fun reconstructsInstallableDebugUpgradeWhenFixtureProvided() {
         val args = InstrumentationRegistry.getArguments()
         val patchPath = args.getString("upgradePatchPath")

@@ -153,6 +153,57 @@ class UpdateExperienceDeviceTest {
         Log.i(TAG, "mandatory_gate_back_blocked version_name_visible failure_keeps_gate")
     }
 
+    @Test fun completedDownloadNotificationReceiverRecognizesOnlyOwnedTask() {
+        result.set(StartupGate.Result.Ok(manifest()))
+        awaitReply<JSONObject> { coordinator.refresh(true, it) }
+        val first = instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
+        var opened: MainActivity? = null
+        try {
+            waitUntil("real bundled Gecko bridge connected", 120_000) {
+                val ready = AtomicReference(false)
+                instrumentation.runOnMainSync {
+                    val field = MainActivity::class.java.getDeclaredField("runtime").apply { isAccessible = true }
+                    val runtime = field.get(first) as GeckoWebRuntime
+                    val port = GeckoWebRuntime::class.java.getDeclaredField("port").apply { isAccessible = true }
+                    ready.set(port.get(runtime) != null)
+                }
+                ready.get()
+            }
+            assertTrue(awaitReply<Boolean> { coordinator.beginDownload(latestCode, it) })
+            waitUntil("HTTPS fixture ready", 90_000) { coordinator.status.download.state == "ready" }
+            val task = requireNotNull(updater.loadTask())
+            val id = requireNotNull(task.downloadId)
+            shell("input keyevent KEYCODE_HOME")
+            val activityMonitor = instrumentation.addMonitor(MainActivity::class.java.name, null, false).also(monitors::add)
+            fun sendClick(clicked: Long) {
+                context.sendBroadcast(Intent(DownloadManager.ACTION_NOTIFICATION_CLICKED)
+                    .setClass(context, UpdateCoordinator.NotificationReceiver::class.java)
+                    .putExtra(DownloadManager.EXTRA_NOTIFICATION_CLICK_DOWNLOAD_IDS, longArrayOf(clicked)))
+            }
+            sendClick(id + 1_000_000)
+            SystemClock.sleep(1_000)
+            assertEquals("unrelated task must not reopen app", 0, activityMonitor.hits)
+            assertEquals(id, updater.loadTask()?.downloadId)
+            sendClick(id)
+            opened = activityMonitor.waitForActivityWithTimeout(30_000) as? MainActivity
+            assertNotNull("owned notification reopens MainActivity", opened)
+            waitUntil("owned notification routes to update panel", 30_000) {
+                val url = AtomicReference<String?>()
+                instrumentation.runOnMainSync {
+                    val field = MainActivity::class.java.getDeclaredField("runtime").apply { isAccessible = true }
+                    url.set((field.get(opened!!) as GeckoWebRuntime).currentUrl)
+                }
+                url.get()?.contains("androidUpdate=1") == true
+            }
+            assertEquals(id, updater.loadTask()?.downloadId)
+            assertEquals(task.token, updater.loadTask()?.token)
+            Log.i(TAG, "owned_notification_routes_update_panel id=$id unrelated_ignored no_redownload")
+        } finally {
+            instrumentation.runOnMainSync { opened?.finish(); first.finish() }
+        }
+    }
+
     @Test fun realHttpsBadHashNeverRequestsInstaller() {
         val installer = installerMonitor()
         launch(manifest(sha = "0".repeat(64)))

@@ -93,6 +93,7 @@ class ApkUpdaterTest {
         val delta = updater.begin(update)
         assertEquals("delta", delta.packageType)
         assertEquals(patch.url, request(delta).uri.toString())
+        assertEquals(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED, request(delta).notificationVisibility)
         assertEquals(delta, ApkUpdater(context).loadTask())
         request(delta).status = DownloadManager.STATUS_SUCCESSFUL
         source(delta).writeBytes(byteArrayOf(8, 9))
@@ -133,7 +134,7 @@ class ApkUpdaterTest {
         assertEquals(1, shadow.requestCount)
         assertEquals(manifest().apkUrl, request(task).uri.toString())
         assertEquals(source(task).canonicalFile, File(request(task).destination.path!!).canonicalFile)
-        assertEquals(DownloadManager.Request.VISIBILITY_VISIBLE, request(task).notificationVisibility)
+        assertEquals(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED, request(task).notificationVisibility)
         assertEquals("application/octet-stream", request(task).mimeType)
     }
 

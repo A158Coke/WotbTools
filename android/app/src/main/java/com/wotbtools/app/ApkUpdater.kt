@@ -117,7 +117,7 @@ class ApkUpdater(context: Context, private val applyDelta: (File, File, File, Lo
         @Suppress("DEPRECATION")
         val installed = try { appContext.packageManager.getPackageInfo(appContext.packageName, 0).versionCode } catch (_: Exception) { return full }
         val patch = manifest.patches.singleOrNull { it.fromVersionCode == installed } ?: return full
-        if (patch.algorithm != "xdelta3-vcdiff" || patch.size > targetSize / 10) return full
+        if (patch.algorithm != "xdelta3-vcdiff" || patch.size > targetSize / MAX_DELTA_RATIO_DENOMINATOR) return full
         val base = File(info.sourceDir ?: return full)
         return try {
             if (!base.isFile || !patch.fromSha256.equals(hash(base), true)) return full
@@ -136,7 +136,7 @@ class ApkUpdater(context: Context, private val applyDelta: (File, File, File, Lo
             val request = DownloadManager.Request(Uri.parse(downloadUrl(task)))
                 .setTitle("WotBTools " + task.versionName)
                 .setMimeType("application/octet-stream")
-                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                 .setDestinationInExternalFilesDir(appContext, Environment.DIRECTORY_DOWNLOADS, "updates/${task.token}.apk")
             val id = downloads.enqueue(request)
             task.copy(downloadId = id).also(::save)
@@ -454,6 +454,7 @@ class ApkUpdater(context: Context, private val applyDelta: (File, File, File, Lo
     private fun hex(bytes: ByteArray): String = bytes.joinToString("") { "%02x".format(it) }
 
     internal companion object {
+        internal const val MAX_DELTA_RATIO_DENOMINATOR = 10
         internal const val TASK_KEY = "downloadTask"
         private val SHA256 = Regex("^[0-9a-fA-F]{64}$")
         internal fun reason(status: Int, code: Int): String? = when (status) {
