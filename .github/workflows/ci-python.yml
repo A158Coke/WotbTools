@@ -20,4 +20,8 @@ jobs:
         with:
           ref: ${{ inputs.head_sha }}
       - name: Python unit tests
-        run: python3 -m unittest discover -s common/python/tests -p 'test_*.py'
+        # issue #828：map-semanticizer 与 tools 两个原本手动运行的 stdlib unittest 面一并接入
+        run: |
+          python3 -m unittest discover -s common/python/tests -p 'test_*.py'
+          python3 -m unittest discover -s map-semanticizer/tests -p 'test_*.py'
+          python3 -m unittest discover -s tools/tests -p 'test_*.py'
