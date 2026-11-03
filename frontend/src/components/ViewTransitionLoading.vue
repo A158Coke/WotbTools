@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 // View 切换的统一加载面（#845）：由 viewRegistry.asyncView 挂到每个异步视图的
 // defineAsyncComponent loadingComponent 上，只在 chunk 加载超过阈值后出现（flicker-free）。
 // 只覆盖 main 内容区（宿主是 ViewHost 的 <main>），App Shell / Sidebar 不受影响。

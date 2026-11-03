@@ -1,10 +1,10 @@
-<script setup>
+<script setup lang="ts">
 // View 异步 chunk 加载失败的统一错误面（#845）：defineAsyncComponent errorComponent。
 // 重试经 viewRegistry.asyncView 捕获的 onError retry 重新执行 loader；错误呈现复用
 // 现有 UI primitives（AppButton），不做每页专属 skeleton。
 import AppButton from './AppButton.vue'
 
-defineEmits(['retry'])
+defineEmits<{ retry: [] }>()
 </script>
 
 <template>
