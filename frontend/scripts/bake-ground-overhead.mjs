@@ -41,7 +41,9 @@ const has = (name) => args.includes(`--${name}`)
 const PACK = resolve(argOf('pack', 'D:/Class/Rust/Project/release/asset_pack'))
 const SIZE = Number(argOf('size', 4096))
 // 客户端原始底图与已合成的 ground.webp 不同，不能以成品代替。
-const BASE_DIR = resolve(argOf('base-dir', resolve(PACK, '..', '..', 'data', 'cache', 'maps')))
+function baseDirOf() {
+  return resolve(argOf('base-dir', join(PACK, '..', '..', 'data', 'cache', 'maps')))
+}
 
 function primaryMapIdOf(key) {
   const mapIndex = argOf('map-index', 'D:/Class/Rust/Project/map_index.json')
@@ -90,10 +92,11 @@ function spaceOf(key) {
 }
 
 const main = async () => {
-  if (!existsSync(BASE_DIR)) throw new Error(`客户端原始底图目录不存在: ${BASE_DIR}（请通过 --base-dir 指定）`)
+  const baseDir = baseDirOf()
+  if (!existsSync(baseDir)) throw new Error(`客户端原始底图目录不存在: ${baseDir}（请通过 --base-dir 指定）`)
   const outDir = join(PACK, 'overhead')
   mkdirSync(outDir, { recursive: true })
-  const { server, origin, uploadPath: UPLOAD } = await startBakeServer({ pack: PACK, baseDir: BASE_DIR, size: SIZE })
+  const { server, origin, uploadPath: UPLOAD } = await startBakeServer({ pack: PACK, baseDir, size: SIZE })
   let env = null
   try {
     const chrome = findChrome()

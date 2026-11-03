@@ -15,6 +15,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page } from './browser-page.mjs'
 import { startBakeServer } from './bake-page-server.mjs'
@@ -60,8 +62,10 @@ async function makeWebp(page, r, g, b) {
 }
 
 const main = async () => {
-  const pack = mkdtempSync(join(tmpdir(), 'bake-smoke-pack-'))
+  const root = mkdtempSync(join(tmpdir(), 'bake-smoke-pack-'))
+  const pack = join(root, 'release', 'asset_pack')
   const baseDir = mkdtempSync(join(tmpdir(), 'bake-smoke-base-'))
+  const defaultBaseDir = join(root, 'data', 'cache', 'maps')
   const mapDir = join(pack, 'map', KEY)
   mkdirSync(join(mapDir, 'ground'), { recursive: true })
 
@@ -101,6 +105,8 @@ const main = async () => {
     const layers = { cm: [90, 90, 90], lm: [40, 40, 40], tile0: [120, 110, 100], tile1: [80, 90, 120], mask0: [128, 128, 128], mask1: [64, 64, 64] }
     for (const [k, [r, g, b]] of Object.entries(layers)) writeFileSync(join(mapDir, 'ground', `${k}.webp`), await makeWebp(page, r, g, b))
     writeFileSync(join(baseDir, `${SPACE}.ground.webp`), await makeWebp(page, 70, 130, 70))
+    mkdirSync(defaultBaseDir, { recursive: true })
+    writeFileSync(join(defaultBaseDir, `${SPACE}.ground.webp`), await makeWebp(page, 180, 40, 40))
 
     const started = await startBakeServer({ pack, baseDir, size: SIZE })
     server = started.server
@@ -143,10 +149,33 @@ const main = async () => {
       gt: { coverPct: gt.coverPct, bytes: gt.bytes },
       out: { bytes: raw.length },
     }))
+
+    // 子进程经过真实 CLI 和 startBakeServer；仅选中目录有原始底图，验证路径接线。
+    const cli = fileURLToPath(new URL('./bake-ground-overhead.mjs', import.meta.url))
+    function runCli(label, args) {
+      rmSync(gtPath, { force: true })
+      const run = spawnSync(process.execPath, [cli, '--pack', pack, '--size', String(SIZE), ...args],
+        { encoding: 'utf8', timeout: 120000 })
+      if (run.error || run.status !== 0 || !existsSync(gtPath)) {
+        throw new Error(`${label} CLI 失败: ${run.error || run.status}\n${run.stdout}\n${run.stderr}`)
+      }
+      if (run.stderr.includes('ReferenceError')) throw new Error(`${label}: ${run.stderr}`)
+      const records = run.stdout.trim().split(/\r?\n/).map(line => JSON.parse(line))
+      if (!records.some(record => record.key === KEY && record.groundTerrain?.base === SPACE)) {
+        throw new Error(`${label} 未完成 fixture 烘焙: ${run.stdout}`)
+      }
+    }
+    rmSync(join(defaultBaseDir, `${SPACE}.ground.webp`))
+    runCli('--map --base-dir', ['--map', KEY, '--base-dir', baseDir])
+    runCli('--all --base-dir', ['--all', '--base-dir', baseDir])
+    writeFileSync(join(defaultBaseDir, `${SPACE}.ground.webp`), await makeWebp(page, 180, 40, 40))
+    rmSync(join(baseDir, `${SPACE}.ground.webp`))
+    runCli('--map 默认目录', ['--map', KEY])
+    console.log('bake CLI startup: OK (--map explicit, --all explicit, default base-dir)')
   } finally {
     try { await env?.close?.() } catch { /* 尽力关闭 */ }
     await server?.close?.()
-    rmSync(pack, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
     rmSync(baseDir, { recursive: true, force: true })
   }
 }
