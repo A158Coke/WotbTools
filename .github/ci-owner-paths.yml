@@ -15,7 +15,6 @@ business_api:
   - 'common/fixtures/tabular/**'
   - 'common/fixtures/tournament/**'
   - 'common/tank-name-aliases.json'
-  - 'common/crew-skills.json'
   - 'java/pom.xml'
   - 'java/**/pom.xml'
   - 'java/settings-docker.xml'
@@ -50,7 +49,6 @@ ai_service:
   - 'common/fixtures/ai-projection/**'
   - 'common/fixtures/replay-facts/**'
   - 'common/tank-name-aliases.json'
-  - 'common/crew-skills.json'
   - 'common/tankopedia-tier*.json'
   - 'common/map_names.json'
   - 'common/tank_tactical_profiles.json'
@@ -190,8 +188,11 @@ python:
   # update_crew_skills.py 的数据输入（issue #828）
   - 'common/crew-skills.json'
   # 原本只由维护者手动运行的两个 stdlib unittest 面，随 ci-python 的 discover 接入：
-  # map-semanticizer 校验 common/map-semantics/** + map_names.json；tools/tests 校验
-  # cleanup-hundred-wargaming-api.py
+  # map-semanticizer 校验 common/map-semantics/** + map_names.json（review R1 P2：数据
+  # 单独改动必须触发 python owner，否则新接入的逐图完整性测试漏触发）；tools/tests
+  # 校验 cleanup-hundred-wargaming-api.py
+  - 'common/map_names.json'
+  - 'common/map-semantics/**'
   - 'map-semanticizer/**'
   - 'tools/**'
 business_postgres:

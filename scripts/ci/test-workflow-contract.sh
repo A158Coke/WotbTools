@@ -129,7 +129,12 @@ assert affected("common/fixtures/tournament/csv/x.csv") == {"frontend", "busines
 assert affected("common/fixtures/replay-facts/random-battle-example.json.gz") == {"ai_service", "business_api"}
 assert affected("java/settings-ci.xml") == {"business_api", "ai_service", "keycloak"}
 assert affected("common/tank-name-aliases.json") == {"business_api", "ai_service"}
-assert affected("common/crew-skills.json") == {"business_api", "ai_service", "python"}
+# review R1 P3：crew-skills 无任何 Java 消费方（pom classpath 无此资源），只归 python
+assert affected("common/crew-skills.json") == {"python"}
+# review R1 P2：map-semanticizer 的 DataIntegrityTest 直接读取这两类数据，
+# 单独改动必须触发 python owner（与 business_api/ai_service/frontend 共享 fan-out）
+assert "python" in affected("common/map_names.json")
+assert "python" in affected("common/map-semantics/rift.semantic.json")
 # The two formerly manual-only stdlib suites run in the python owner now.
 assert affected("map-semanticizer/tests/test_map_semanticizer.py") == {"python"}
 assert affected("tools/tests/test_cleanup_hundred_wargaming_api.py") == {"python"}
