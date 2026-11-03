@@ -199,6 +199,48 @@ Step 0 — Evidence Collection / Baseline
 ### Files / Components Affected
 给出初始 impact map；跨层改动按需加载 `.agents/playbooks/wotb-sync.md`、`column-sync.md`、`frontend-architecture.md`、`keycloak-upgrade/`、`komodo-server-lifecycle.md`。
 
+#### Impact evidence contract（`# Impact Surface` 的写法约束）
+
+影响面是**证据收集与 scope 风险检测**，不是实现设计，也不是架构判决。每条观察到的影响必须带证据等级，四类永不合并：
+
+| 等级 | 含义 | 例子 |
+|---|---|---|
+| `DIRECT` | 机器观测到的直接关系 | import、函数调用、符号引用、schema consumer、显式 route 使用 |
+| `TRANSITIVE` | 经过一个或多个中间节点观测到的依赖/调用路径 | A → B → C |
+| `HEURISTIC` | 本仓特有的检查提示，**不是证明** | 「replay 改动应看 Android 入口」 |
+| `UNVERIFIED` | 仓库检查本身无法证明的边界 | 真机生命周期、浏览器渲染、生产回调、外部服务行为 |
+
+`# Impact Surface` 只允许按等级分块，禁止输出一份无差别的「受影响文件」清单。每行写明 `subject / relation / target / method`，`method` 记录实际使用的能力（`lsp references`、`ast structural search`、文本搜索、直接阅读）。
+
+能力优先级与诚实降级：语义引用优先 LSP → AST 结构搜索 → 仓库文本搜索 + 直接阅读；诊断优先 LSP diagnostics → 编译器 / typecheck / build。能力缺失时降低证据等级并写明，不得把文本命中冒充符号引用。默认递归搜索会跳过隐藏目录（`.github/`、`.agents/`、`.opencodereview/` 需显式路径）；未显式搜索过的区域不得写成「无引用」。
+
+影响面**不得**变成架构判决：可以说「B 与 A 直接相关」，不得自动推出「因此 B 必须修改」，也不得据此扩大实现 scope。计划是否需要变更由用户 / Designer 决定；现实与计划冲突时报告 plan mismatch，不自动改计划。
+
+`PLAN COVERAGE` 与同一份证据一起产出：
+
+```text
+PLAN COVERAGE
+Covered:
+- R1 ...
+Observed but not represented in plan:
+- docs/DEVELOPER_GUIDE.md [DIRECT]
+- Android lifecycle [HEURISTIC]
+Plan items without observed evidence:
+- R3 [UNVERIFIED]
+```
+
+可用 `wotb_impact_evidence` 工具做确定性分类与交叉核对（advisory，不修改 plan、无 gate）；不可用时就按本节格式手工产出。
+
+WotBTools 最小检查提示——只描述去哪看，不声明架构真相，不建架构数据库，不新增 `.wotbtools/architecture.yml` 之类的第二事实源：
+
+| 改动类型 | 必须检查 |
+|---|---|
+| replay 相关 | Web replay 表面、Android replay 入口、后端 replay/处理消费者、共享 contracts/schema |
+| auth 相关 | token 创建、传递、callback 完成、取消/重试、生命周期/进程恢复 |
+| 响应式 / 移动 UI | 桌面浏览器、窄屏浏览器、Android 显示、导航差异 |
+| 共享 schema | producer、全部已知 consumer、兼容性测试 |
+| IaC / runtime | 声明式配置、实际部署/运行时健康路径 |
+
 ### Migration / Compatibility
 适用时明确兼容窗口、数据/API/schema/version migration 顺序。
 

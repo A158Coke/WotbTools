@@ -153,7 +153,8 @@ describe('AdminUsersPage', () => {
     expect(wrapper.find('.admin-page-info').text())
       .toBe('admin.pageInfo(page=1,total=3,items=60)')
 
-    const [prev, next] = wrapper.findAll('.admin-pagination button')
+    const prev = wrapper.find('.admin-page-prev')
+    const next = wrapper.find('.admin-page-next')
     expect(prev.attributes('disabled')).toBeDefined()
     expect(next.attributes('disabled')).toBeUndefined()
 
@@ -165,7 +166,7 @@ describe('AdminUsersPage', () => {
     expect(wrapper.find('.admin-page-info').text())
       .toBe('admin.pageInfo(page=2,total=3,items=60)')
 
-    await wrapper.findAll('.admin-pagination button')[0].trigger('click')
+    await wrapper.find('.admin-page-prev').trigger('click')
     await flushPromises()
     expect(api.searchUsers).toHaveBeenLastCalledWith('', {
       segment: 'keycloak', idpAlias: '', page: 0, size: 25
@@ -179,13 +180,83 @@ describe('AdminUsersPage', () => {
     })
   })
 
+  // 指定页跳转：UI 页码 1-based → 后端 page 0-based，一次直达目标页（不加载中间页）
+  it('jumps straight to the requested page with 1-based input mapped to 0-based backend page', async () => {
+    api.searchUsers.mockImplementation((_query, options) => Promise.resolve(
+      pageResult([kcUser(`kc-page-${options.page}`)], options.page, options.size, 6000, 120)
+    ))
+    wrapper = mountPage()
+    await flushPromises()
+    expect(api.searchUsers).toHaveBeenCalledTimes(1)
+
+    const input = wrapper.find('.admin-page-jump input')
+    await input.setValue('20')
+    await input.trigger('keydown.enter')
+    await flushPromises()
+    expect(api.searchUsers).toHaveBeenCalledTimes(2)
+    expect(api.searchUsers).toHaveBeenLastCalledWith('', {
+      segment: 'keycloak', idpAlias: '', page: 19, size: 25,
+    })
+    expect(wrapper.find('.admin-page-info').text()).toBe('admin.pageInfo(page=20,total=120,items=6000)')
+    expect(input.element.value).toBe('')
+
+    // UI 第 1 页 → 后端 page=0
+    await input.setValue('1')
+    await wrapper.find('.admin-page-go').trigger('click')
+    await flushPromises()
+    expect(api.searchUsers).toHaveBeenLastCalledWith('', expect.objectContaining({ page: 0 }))
+    expect(wrapper.find('.admin-page-info').text()).toBe('admin.pageInfo(page=1,total=120,items=6000)')
+  })
+
+  it('ignores blank / out-of-range / non-integer / current-page jump input', async () => {
+    api.searchUsers.mockImplementation((_query, options) => Promise.resolve(
+      pageResult([kcUser('kc-a')], options.page, options.size, 6000, 120)
+    ))
+    wrapper = mountPage()
+    await flushPromises()
+    const input = wrapper.find('.admin-page-jump input')
+    const go = wrapper.find('.admin-page-go')
+
+    for (const raw of ['', '0', '121', '2.5', 'abc']) {
+      await input.setValue(raw)
+      await input.trigger('keydown.enter')
+      await go.trigger('click')
+      await flushPromises()
+      expect(api.searchUsers).toHaveBeenCalledTimes(1)
+    }
+
+    // 当前页（UI 第 1 页）不重复请求
+    await input.setValue('1')
+    await input.trigger('keydown.enter')
+    await flushPromises()
+    expect(api.searchUsers).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears the current-page selection when jumping to another page', async () => {
+    api.searchUsers.mockImplementation((_query, options) => Promise.resolve(
+      pageResult([kcUser('kc-a'), kcUser('kc-b')], options.page, options.size, 6000, 120)
+    ))
+    wrapper = mountPage()
+    await flushPromises()
+    await wrapper.find('.admin-table thead input[type="checkbox"]').setValue(true)
+    expect(wrapper.find('.admin-selected').text()).toBe('admin.selectedCount(count=2)')
+
+    const input = wrapper.find('.admin-page-jump input')
+    await input.setValue('3')
+    await input.trigger('keydown.enter')
+    await flushPromises()
+
+    expect(api.searchUsers).toHaveBeenLastCalledWith('', expect.objectContaining({ page: 2 }))
+    expect(wrapper.find('.admin-bulk-bar').exists()).toBe(false)
+  })
+
   it('resets to page 0 when the search query changes', async () => {
     api.searchUsers.mockImplementation((_query, options) => Promise.resolve(
       pageResult([kcUser('kc-a')], options.page, options.size, 60, 3)
     ))
     wrapper = mountPage()
     await flushPromises()
-    await wrapper.findAll('.admin-pagination button')[1].trigger('click')
+    await wrapper.find('.admin-page-next').trigger('click')
     await flushPromises()
     expect(api.searchUsers).toHaveBeenLastCalledWith('', expect.objectContaining({ page: 1 }))
 
@@ -276,9 +347,9 @@ describe('AdminUsersPage', () => {
     })
     wrapper = mountPage()
     await flushPromises()
-    await wrapper.findAll('.admin-pagination button')[1].trigger('click')
+    await wrapper.find('.admin-page-next').trigger('click')
     await flushPromises()
-    await wrapper.findAll('.admin-pagination button')[1].trigger('click')
+    await wrapper.find('.admin-page-next').trigger('click')
     await flushPromises()
     expect(api.searchUsers).toHaveBeenLastCalledWith('', expect.objectContaining({ page: 2 }))
 
@@ -291,8 +362,8 @@ describe('AdminUsersPage', () => {
     // 先按 page=2 重新加载，发现 totalPages=1 后回落到最后一个有效页 page=0。
     expect(requestedPages.slice(-2)).toEqual([2, 0])
     expect(wrapper.find('.admin-page-info').text()).toBe('admin.pageInfo(page=1,total=1,items=5)')
-    expect(wrapper.findAll('.admin-pagination button')[0].attributes('disabled')).toBeDefined()
-    expect(wrapper.findAll('.admin-pagination button')[1].attributes('disabled')).toBeDefined()
+    expect(wrapper.find('.admin-page-prev').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('.admin-page-next').attributes('disabled')).toBeDefined()
   })
 
   it('switches to the local profile segment and never sends an IdP alias there', async () => {
@@ -523,7 +594,16 @@ describe('AdminUsersPage connectivity gating', () => {
     await wrapper.find('.admin-filters input').trigger('keyup.enter')
     await wrapper.find('.admin-filters select').setValue('local')
     await wrapper.find('.admin-pagination select').setValue('50')
-    await wrapper.findAll('.admin-pagination button')[1].trigger('click')
+    await wrapper.find('.admin-page-next').trigger('click')
+    // 跳页控件本身 disabled；再绕过 disabled 直接派发输入 / click，handler 的门禁仍必须挡住。
+    const jumpInput = wrapper.find('.admin-page-jump input')
+    const jumpGo = wrapper.find('.admin-page-go')
+    expect(jumpInput.attributes('disabled')).toBeDefined()
+    expect(jumpGo.attributes('disabled')).toBeDefined()
+    jumpInput.element.removeAttribute('disabled')
+    jumpGo.element.removeAttribute('disabled')
+    await jumpInput.setValue('3')
+    jumpGo.element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     await flushPromises()
 
     // 掉线后所有会改可见行集合的动作都没有 backend 出口（也不再走 token 路径）。
@@ -597,7 +677,7 @@ describe('AdminUsersPage connectivity gating', () => {
     ))
     wrapper = mountPage()
     await flushPromises()
-    await wrapper.findAll('.admin-pagination button')[1].trigger('click')
+    await wrapper.find('.admin-page-next').trigger('click')
     await flushPromises()
     await wrapper.find('.admin-table thead input[type="checkbox"]').setValue(true)
     expect(wrapper.find('.admin-selected').text()).toBe('admin.selectedCount(count=1)')
@@ -612,9 +692,10 @@ describe('AdminUsersPage connectivity gating', () => {
     expect(wrapper.find('[data-testid="admin-connectivity-unavailable"]').exists()).toBe(true)
     expect(api.searchUsers).toHaveBeenCalledTimes(2)
     // 会改变 server-backed 结果集的控件在非-online 时不可用，避免「显示改了、数据没改」。
-    const paginationButtons = wrapper.findAll('.admin-pagination button')
-    expect(paginationButtons[0].attributes('disabled')).toBeDefined()
-    expect(paginationButtons[1].attributes('disabled')).toBeDefined()
+    expect(wrapper.find('.admin-page-prev').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('.admin-page-next').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('.admin-page-jump input').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('.admin-page-go').attributes('disabled')).toBeDefined()
     expect(wrapper.find('.admin-pagination select').attributes('disabled')).toBeDefined()
     expect(wrapper.find('.admin-search button').attributes('disabled')).toBeDefined()
     expect(wrapper.find('.admin-filters select').attributes('disabled')).toBeDefined()
@@ -719,7 +800,7 @@ describe('AdminUsersPage applied-state consistency while offline', () => {
     // 正常路径：按钮 disabled（浏览器不会派发 click）；这里摘掉 disabled 再点击，等于绕过控件层
     // 直接调用 handler，证明「门禁」本身也守住了 applied page —— 否则 UI 会显示 page=2 而 rows
     // 还是第 1 页。（happy-dom 对 disabled 元素不会派发 click，因此必须先摘掉。）
-    const next = wrapper.findAll('.admin-pagination button')[1]
+    const next = wrapper.find('.admin-page-next')
     expect(next.attributes('disabled')).toBeDefined()
     next.element.removeAttribute('disabled')
     next.element.dispatchEvent(new MouseEvent('click', { bubbles: true }))

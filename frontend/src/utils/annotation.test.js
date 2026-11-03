@@ -23,6 +23,7 @@ import {
   rectFromCorners,
   redo,
   screenToSemantic,
+  stripSurfaceAnchors,
   semanticWidthFromSlider,
   screenToSvg,
   svgToScreen,
@@ -222,6 +223,105 @@ describe('applyEraser (semantic capsule)', () => {
     expect(result).toHaveLength(2)
     expect(result[0].points).toEqual([{ x: 0, y: 0 }, { x: 4, y: 0 }])
     expect(result[1].points).toEqual([{ x: 6, y: 0 }, { x: 10, y: 0 }])
+  })
+
+  it('isolates bridge eraser from a coincident terrain stroke', () => {
+    const terrain = pen([{ x: 0, y: 0 }, { x: 10, y: 0 }])
+    const bridge = pen([{ x: 0, y: 0, surfaceY: 10 }, { x: 10, y: 0, surfaceY: 10 }])
+    const result = applyEraser([terrain, bridge], [{ x: 5, y: 0, surfaceY: 10 }], 1)
+    expect(result).toContain(terrain)
+    const bridgePieces = result.filter((ann) => ann !== terrain)
+    expect(bridgePieces).toHaveLength(2)
+    expect(bridgePieces.every((ann) => ann.points.every((p) => p.surfaceY === 10))).toBe(true)
+  })
+
+  it('isolates terrain eraser from a coincident bridge stroke', () => {
+    const terrain = pen([{ x: 0, y: 0 }, { x: 10, y: 0 }])
+    const bridge = pen([{ x: 0, y: 0, surfaceY: 10 }, { x: 10, y: 0, surfaceY: 10 }])
+    const result = applyEraser([terrain, bridge], [{ x: 5, y: 0 }], 1)
+    expect(result).toContain(bridge)
+    const terrainPieces = result.filter((ann) => ann !== bridge)
+    expect(terrainPieces).toHaveLength(2)
+    expect(terrainPieces.every((ann) => ann.points.every((p) => p.surfaceY === undefined))).toBe(true)
+  })
+
+  it('isolates different anchored surface heights at the same XZ', () => {
+    const low = pen([{ x: 0, y: 0, surfaceY: 10 }, { x: 10, y: 0, surfaceY: 10 }])
+    const high = pen([{ x: 0, y: 0, surfaceY: 20 }, { x: 10, y: 0, surfaceY: 20 }])
+    const result = applyEraser([low, high], [{ x: 5, y: 0, surfaceY: 10 }], 1)
+    expect(result).toContain(high)
+    expect(result.filter((ann) => ann !== high)).toHaveLength(2)
+  })
+
+  it('does not connect a ground↔bridge transition with one capsule', () => {
+    const transition = pen([{ x: 0, y: 0 }, { x: 10, y: 0, surfaceY: 10 }])
+    const result = applyEraser([transition], [{ x: 5, y: 0, surfaceY: 10 }], 1)
+    expect(result).toHaveLength(1)
+    expect(result[0]).toBe(transition)
+  })
+
+  it('erases a stroke on the same 45° plane even when raw surfaceY differs by XZ offset', () => {
+    const normal = { x: 0, y: Math.SQRT1_2, z: Math.SQRT1_2 }
+    const bridge = pen([
+      { x: 0, y: 1, surfaceY: 7, surfaceN: normal },
+      { x: 10, y: 1, surfaceY: 7, surfaceN: normal },
+    ])
+    const result = applyEraser([bridge], [{ x: 5, y: 0, surfaceY: 8, surfaceN: normal }], 1.1)
+    expect(result).toHaveLength(2)
+    expect(result.every((ann) => ann !== bridge)).toBe(true)
+  })
+
+  it('clips only the layer-compatible prefix when a capsule interval crosses the layer threshold', () => {
+    const slope = Math.tan((5 * Math.PI) / 180)
+    const strokeNormal = { x: slope, y: 1, z: 0 }
+    const stroke = pen([
+      { x: 0, y: 0, surfaceY: 10.1, surfaceN: strokeNormal },
+      { x: 10, y: 0, surfaceY: 10.1 + 10 * slope, surfaceN: strokeNormal },
+    ])
+    const result = applyEraser([stroke], [{ x: 5, y: 0, surfaceY: 10, surfaceN: { x: 0, y: 1, z: 0 } }], 12.26)
+    expect(result).toHaveLength(1)
+    const points = result[0].points
+    expect(points[0].x).toBeGreaterThan(4.5)
+    expect(points[0].x).toBeLessThan(4.7)
+    expect(points[points.length - 1].x).toBeCloseTo(10, 6)
+  })
+
+  it('clips only the layer-compatible suffix for the reverse 5° slope', () => {
+    const slope = Math.tan((5 * Math.PI) / 180)
+    const strokeNormal = { x: -slope, y: 1, z: 0 }
+    const stroke = pen([
+      { x: 0, y: 0, surfaceY: 10.1 + 10 * slope, surfaceN: strokeNormal },
+      { x: 10, y: 0, surfaceY: 10.1, surfaceN: strokeNormal },
+    ])
+    const result = applyEraser([stroke], [{ x: 5, y: 0, surfaceY: 10, surfaceN: { x: 0, y: 1, z: 0 } }], 12.26)
+    expect(result).toHaveLength(1)
+    const points = result[0].points
+    expect(points[0].x).toBe(0)
+    expect(points[points.length - 1].x).toBeGreaterThan(5.3)
+    expect(points[points.length - 1].x).toBeLessThan(5.6)
+  })
+
+  it('does not erase a parallel plane 2m away on the same 45° normal', () => {
+    const normal = { x: 0, y: Math.SQRT1_2, z: Math.SQRT1_2 }
+    const bridge = pen([
+      { x: 0, y: 1, surfaceY: 7, surfaceN: normal },
+      { x: 10, y: 1, surfaceY: 7, surfaceN: normal },
+    ])
+    const annotations = [bridge]
+    const result = applyEraser(annotations, [{ x: 5, y: 0, surfaceY: 10, surfaceN: normal }], 1.1)
+    expect(result).toBe(annotations)
+    expect(result).toHaveLength(1)
+    expect(result[0]).toBe(bridge)
+  })
+
+  it('does not mutate annotation points on a no-op eraser pass', () => {
+    const points = [{ x: 0, y: 0 }, { x: 0, y: 0, surfaceY: 10 }]
+    const bridge = pen(points)
+    const annotations = [bridge]
+    const snapshot = structuredClone(annotations)
+    const result = applyEraser(annotations, [{ x: 100, y: 100 }], 1)
+    expect(result).toBe(annotations)
+    expect(annotations).toEqual(snapshot)
   })
 
   it('treats a long eraser segment as a capsule, not as sparse points', () => {
@@ -424,5 +524,30 @@ describe('shared annotation helpers', () => {
       { type: 'unit', color: '#fff', x: 0, y: 0, tankClass: 'HT', radius: 0 },
       { type: 'line', color: 1, width: 3, x1: 0, y1: 0, x2: 1, y2: 1 },
     ]) expect(isValidAnnotation(invalid)).toBe(false)
+  })
+})
+
+describe('3D surface anchors at the shared 2D boundary', () => {
+  it('translateAnnotation preserves optional surfaceY on pen points', () => {
+    const pen = {
+      type: 'pen', color: '#fff', width: 3,
+      points: [{ x: 0, y: 0, surfaceY: 8 }, { x: 10, y: 0, surfaceY: 12 }],
+    }
+    const moved = translateAnnotation(pen, 5, 7)
+    expect(moved.points).toEqual([{ x: 5, y: 7, surfaceY: 8 }, { x: 15, y: 7, surfaceY: 12 }])
+    expect(pen.points[0]).toEqual({ x: 0, y: 0, surfaceY: 8 })
+  })
+
+  it('stripSurfaceAnchors removes surfaceY without mutating or dropping annotations', () => {
+    const pen = { type: 'pen', color: '#fff', width: 3, points: [{ x: 0, y: 0, surfaceY: 8 }, { x: 1, y: 1 }] }
+    const route = { type: 'route', color: '#fff', width: 3, points: [{ x: 0, y: 0 }, { x: 2, y: 2 }], label: 'r' }
+    const unit = { type: 'unit', color: '#fff', x: 1, y: 1, tankClass: 'HT', radius: 4 }
+    const out = stripSurfaceAnchors([pen, route, unit])
+    expect(out[0].points).toEqual([{ x: 0, y: 0 }, { x: 1, y: 1 }])
+    expect(out[0]).not.toBe(pen)
+    expect(out[1].points).toEqual([{ x: 0, y: 0 }, { x: 2, y: 2 }])
+    expect(out[2]).toBe(unit)
+    expect(pen.points[0].surfaceY).toBe(8)
+    expect(stripSurfaceAnchors(null)).toEqual([])
   })
 })

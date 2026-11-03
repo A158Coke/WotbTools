@@ -2,7 +2,7 @@
 /**
  * 地图预览 3D 面板：playbackScene.loadMapOnly 的宿主——地图面资产
  * （ground/terrain/lighting/IBL/scenery/destructibles 完好预状态）+ 相机（俯视 / 自由飞行）
- * + 地形锚定标注绘制，无车辆、无传输、不依赖回放文件。
+ * + 表面锚定标注绘制（无 scenery 锚点时回落地形），无车辆、无传输、不依赖回放文件。
  *
  * 会话生命周期与 Replay3DPane 同一不变量（sceneApi 存在 ⟺ 活的 stage DOM ∧ WebGL 可用
  * ∧ 资产连通），加载纪律（loading/err/assetStage/assetProgress 唯一写入权）归内核
@@ -28,7 +28,7 @@ import AnnotationToolbar from './AnnotationToolbar.vue'
 import {
   ANNOT_COLORS, ANNOT_ERASER_RADIUS_DEFAULT, ANNOT_ERASER_RADIUS_MAX, ANNOT_ERASER_RADIUS_MIN,
   ANNOT_WIDTH_DEFAULT, ANNOT_WIDTH_MAX, ANNOT_WIDTH_MIN,
-  applyEraser, canRedo, canUndo, commit, redo, undo,
+  applyEraser, canRedo, canUndo, commit, redo, undo, stripSurfaceAnchors,
 } from '../utils/annotation.js'
 
 const props = defineProps({
@@ -97,7 +97,7 @@ const fly = useSceneFlyControls({
   getSceneApi: () => sceneApi,
 })
 
-// ---------- 标注（terrain-anchored drawing）----------
+// ---------- 标注（selected-surface drawing；无 surfaceY/surfaceN 时 terrain fallback）----------
 const annotationOpen = ref(false)
 const annotationTool = ref(null)
 const annotationColor = ref(ANNOT_COLORS[0])
@@ -206,7 +206,7 @@ function exportAnnotations() {
     kind: IMPORT_KIND,
     mapKey: props.mapKey,
     exportedAt: new Date().toISOString(),
-    annotations: annotations.value,
+    annotations: stripSurfaceAnchors(annotations.value),
   }
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
@@ -241,12 +241,13 @@ async function importAnnotations(event) {
     flashImportMessage('mapPreview.annotations.importFailed', { reason: t('mapPreview.annotations.importReasonFormat') })
     return
   }
-  const items = payload.annotations
+  // surfaceY / surfaceN 是 session-local 3D 锚点，不进入文件 schema；导入时同样剥离。
+  const items = stripSurfaceAnchors(payload.annotations)
   replaceAnnotations(items)
   flashImportMessage('mapPreview.annotations.importedCount', { count: items.length })
 }
 
-/** 本面板的标注几何只有 pen（地形锚定画笔）：点列 ≥2、坐标有限、宽度为正。 */
+/** 本面板的标注几何只有 pen（表面锚定画笔，缺锚点时回落地形）：点列 ≥2、坐标有限、宽度为正。 */
 function isImportableAnnotation(a) {
   return !!a && a.type === 'pen'
     && typeof a.color === 'string'

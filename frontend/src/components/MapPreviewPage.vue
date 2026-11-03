@@ -6,7 +6,10 @@
  * 职责边界：本页只拥有**地图选择与模式切换**（URL 契约 ?map= &mode=）；场景生命周期
  * 归 3D 面板（playbackScene.loadMapOnly），2D 手势与标注归 2D 面板。地图清单来自
  * 资产包 /index.json（loadMapIndex），按 key 去重——变体空间（milbase 50-54 等）归并
- * 基础图，取首个出现的 id 作为 3D 装载入口。
+ * 基础图，取首个出现的 id 作为 3D 装载入口。picker 默认只列 `common/map_names.json`
+ * 已登记中文名的 key（= 人工认可的地图目录，hasChineseMapName），其余资产条目由
+ * 「显示全部地图」开关展开；可见性只作用于列表渲染，?map= 深链与 2D/3D 加载始终
+ * 使用完整清单（maps），因此默认隐藏的地图仍可被旧链接打开。
  */
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -16,7 +19,7 @@ import { useAuth } from '../composables/useAuth.js'
 import { loadMapIndex, mapCoverUrl } from '../scene/replaySource.js'
 import { mapImages } from '../data/mapImages.js'
 import { mapBases } from '../data/mapBases.js'
-import { mapLabel } from '../utils/helpers.js'
+import { hasChineseMapName, mapLabel } from '../utils/helpers.js'
 import { Feature } from '../app/featureCapabilities.js'
 import AppButton from './AppButton.vue'
 import Banner from './Banner.vue'
@@ -49,6 +52,12 @@ const maps = computed(() => rawMaps.value
     thumbFallback: failedFallbacks.value.has(m.key) ? null : m.thumbFallback,
   }))
   .sort((a, b) => collator.compare(a.name, b.name)))
+/** picker 默认可见性：有中文名 = 人工认可（与当前 UI locale 无关，切 en/ru 集合不变）。
+ *  开关只是本页会话状态——不写 localStorage、不占 URL 键，每次进入都回到干净默认。 */
+const showAllMaps = ref(false)
+const visibleMaps = computed(() => (showAllMaps.value
+  ? maps.value
+  : maps.value.filter((m) => hasChineseMapName(m.key))))
 const indexFailed = ref(false)
 const indexLoaded = ref(false)
 const collator = new Intl.Collator()
@@ -221,11 +230,26 @@ const modeOptions = computed(() => [
       <!-- 地图选择网格 -->
       <div v-else-if="!selected" class="map-picker">
         <header class="map-picker-head">
-          <h1 class="map-picker-title">{{ $t('mapPreview.title') }}</h1>
-          <p class="map-picker-subtitle">{{ $t('mapPreview.subtitle') }}</p>
+          <div class="map-picker-heading">
+            <h1 class="map-picker-title">{{ $t('mapPreview.title') }}</h1>
+            <p class="map-picker-subtitle">{{ $t('mapPreview.subtitle') }}</p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            class="map-picker-switch"
+            :aria-checked="showAllMaps"
+            data-testid="map-show-all"
+            @click="showAllMaps = !showAllMaps"
+          >
+            <span class="map-picker-switch-track" aria-hidden="true">
+              <span class="map-picker-switch-thumb" />
+            </span>
+            <span>{{ $t('mapPreview.showAllMaps') }}</span>
+          </button>
         </header>
         <ul class="map-grid" data-testid="map-grid">
-          <li v-for="m in maps" :key="m.key">
+          <li v-for="m in visibleMaps" :key="m.key">
             <button
               type="button"
               class="map-card"
@@ -309,8 +333,69 @@ const modeOptions = computed(() => [
 
 .map-picker-head {
   display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.map-picker-heading {
+  display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  min-width: 0;
+}
+
+/* Switch（DC-SEL-06：只用于立即生效的布尔状态）：track/thumb 与仓库既有
+   role="switch" 同一套 token，不新建共享组件（第二个使用方）。 */
+.map-picker-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-h-lg);
+  padding: var(--space-1);
+  border: 0;
+  background: transparent;
+  color: var(--color-text-primary);
+  font: var(--type-body);
+  text-align: start;
+  cursor: pointer;
+}
+
+.map-picker-switch:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
+  border-radius: var(--radius-md);
+}
+
+.map-picker-switch-track {
+  box-sizing: content-box;
+  display: flex;
+  flex: none;
+  align-items: center;
+  width: calc(var(--control-check) * 2 + var(--space-2));
+  padding: var(--space-1);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-3);
+}
+
+.map-picker-switch-thumb {
+  width: var(--control-check);
+  height: var(--control-check);
+  border-radius: var(--radius-full);
+  background: var(--color-text-primary);
+  transition: transform var(--duration-fast);
+}
+
+.map-picker-switch[aria-checked='true'] .map-picker-switch-track {
+  background: var(--color-info);
+  border-color: var(--color-info);
+}
+
+.map-picker-switch[aria-checked='true'] .map-picker-switch-thumb {
+  background: var(--color-surface-1);
+  transform: translateX(calc(var(--control-check) + var(--space-2)));
 }
 
 .map-picker-title {

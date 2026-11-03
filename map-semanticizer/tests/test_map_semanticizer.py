@@ -172,7 +172,11 @@ class MapCodeDerivationTest(unittest.TestCase):
         self.assertEqual(ms.resolve_display_name("03_erlenberg_er", names), "Middleburg")
         self.assertEqual(ms.resolve_display_name("18_canal_cn", names), "Canal")
         self.assertEqual(ms.resolve_display_name("24_milibase_mlb", names), "Yamato Harbor")
-        self.assertIsNone(ms.resolve_display_name("40_moon_mn", names))
+        # 目录已覆盖这些资产 key（地图页默认可见性以 zh 登记为门槛）：派生结果随之变为正式英文名。
+        self.assertEqual(ms.resolve_display_name("40_moon_mn", names), "Sea of Tranquility")
+        self.assertEqual(ms.resolve_display_name("30_grossberg_sh", names), "Dynasty's Pearl")
+        self.assertEqual(ms.resolve_display_name("41_iceworld_ic", names), "Everfrost")
+        self.assertIsNone(ms.resolve_display_name("99_uncovered_zz", names))
         self.assertIsNone(ms.resolve_display_name("03_erlenberg_er", None))
 
 
@@ -225,10 +229,15 @@ class DataIntegrityTest(unittest.TestCase):
                 )
                 self.assertEqual(area["gridRegions"], expected, path.name + ":" + area_id)
 
+    # 资产包里的历史/复刻变体没有客户端 mapId（因此没有语义文件）：它们只服务地图页
+    # 目录与显示名（common/map_names.json）。新增未覆盖的 key 必须在这里显式登记。
+    ASSET_ONLY_MAP_NAMES = {"erlenberg_old", "savanna_old"}
+
     def test_every_production_map_code_covered_exactly_once(self):
         names = json.loads(MAP_NAMES_FILE.read_text(encoding="utf-8"))
         docs = {path.name: json.loads(path.read_text(encoding="utf-8"))
                 for path in SEMANTIC_DIR.glob("*.semantic.json")}
+        uncovered = []
         for map_code in names:
             matches = []
             for name, doc in docs.items():
@@ -236,10 +245,14 @@ class DataIntegrityTest(unittest.TestCase):
                     matches.append(name)
                 elif map_code in ms.derive_map_codes(doc["mapId"], [map_code]):
                     matches.append(name)
+            if not matches:
+                uncovered.append(map_code)
+                continue
             self.assertEqual(
                 len(set(matches)), 1,
                 f"{map_code} must be covered by exactly one semantic file: {sorted(set(matches))}",
             )
+        self.assertEqual(sorted(uncovered), sorted(self.ASSET_ONLY_MAP_NAMES))
 
     def test_coordinate_validation_uses_p90_not_mae(self):
         milibase = json.loads(

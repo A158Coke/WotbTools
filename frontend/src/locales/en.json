@@ -5,6 +5,7 @@
   "mapPreview": {
     "title": "Map Preview",
     "subtitle": "Inspect terrain and scenery, mark key positions — no replay file needed",
+    "showAllMaps": "Show all maps",
     "loginRequired": "Sign in to use the map preview",
     "loadFailed": "Failed to load the map list",
     "empty": "No maps available",
@@ -1053,6 +1054,9 @@
     "prev": "Prev",
     "next": "Next",
     "pageInfo": "Page {page}/{total} · {items} users",
+    "jumpLabel": "Go to page",
+    "jumpPlaceholder": "Page",
+    "jumpGo": "Go",
     "size": "Per page"
   },
   "adminPreview": {
