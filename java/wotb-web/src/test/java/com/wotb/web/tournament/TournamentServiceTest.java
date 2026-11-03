@@ -780,7 +780,9 @@ class TournamentServiceTest {
     }
 
     @Test void clanTagsMayUseExactlyThirtyTwoCodePoints() {
-        final String tag = "😀".repeat(16);
+        final String tag = "😀".repeat(32);
+        // 合法上界是 32 个 Unicode code points（不是 UTF-16 code units）；33 已在上方用例拒绝。
+        assertEquals(32, tag.codePointCount(0, tag.length()));
         final TournamentDtos.DayView result = service.preview(1, 1, 1, request(List.of(group(1, "ERROR", tag, "B", "C")), List.of(tag, "B", "C")));
         assertEquals(tag, result.standings().rows().getFirst().clanTag());
     }

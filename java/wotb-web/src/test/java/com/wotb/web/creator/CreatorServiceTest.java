@@ -207,8 +207,13 @@ class CreatorServiceTest {
     void updateWithOwnExternalIdDoesNotFalselyConflict() {
         category(1, "UP");
         final Creator creator = existingUp();
-        assertEquals(6, service.updateRecommendation(creator.id, save(5L), null).version());
+        // 提交当前 creator 自己的 externalId：只有 IdNot 自排除正确时更新才能成功。
+        final RecommendationDtos.Detail detail = service.updateRecommendation(creator.id,
+                new RecommendationDtos.SaveRequest("UP", "100", "Creator", null, List.of(1L), null, 3, "KEEP", 5L), null);
+        assertEquals(6, detail.version());
+        assertEquals("100", detail.externalId());
         assertEquals(1, rows.size());
+        verify(creators).existsByTypeAndExternalIdAndIdNot("UP", "100", creator.id);
     }
 
     @Test
@@ -240,19 +245,30 @@ class CreatorServiceTest {
     }
 
     @Test
-    void missingCategoryOrMissingLevelAreConfigConflicts() {
+    void missingCategoryIsAConfigConflict() {
         final Creator creator = existingUp();
-        category(2, "UP");
-        final ApiException missingCategory = assertThrows(ApiException.class,
+        final ApiException error = assertThrows(ApiException.class,
                 () -> service.updateRecommendation(creator.id,
                         new RecommendationDtos.SaveRequest("UP", "100", "Creator", null, List.of(9L), null, 3, "KEEP", 5L), null));
-        assertEquals(ApiErrorCode.CREATOR_CONFIG_CONFLICT, missingCategory.errorCode());
-        final ApiException missingLevel = assertThrows(ApiException.class,
-                () -> service.updateRecommendation(creator.id,
-                        new RecommendationDtos.SaveRequest("UP", "100", "Creator", null, List.of(1L), 7L, 3, "KEEP", 5L), null));
-        assertEquals(ApiErrorCode.CREATOR_CONFIG_CONFLICT, missingLevel.errorCode());
+        assertEquals(ApiErrorCode.CREATOR_CONFIG_CONFLICT, error.errorCode());
         assertEquals(1, creator.categoryIds.size());
         assertEquals(5, rows.get(creator.id).version);
+        verify(creators, never()).saveAndFlush(any(Creator.class));
+    }
+
+    @Test
+    void missingLevelIsAConfigConflict() {
+        // category 存在且类型正确，使 missing-level 守卫成为唯一会拒绝该请求的分支。
+        final Creator creator = existingUp();
+        category(1, "UP");
+        final ApiException error = assertThrows(ApiException.class,
+                () -> service.updateRecommendation(creator.id,
+                        new RecommendationDtos.SaveRequest("UP", "100", "Creator", null, List.of(1L), 7L, 3, "KEEP", 5L), null));
+        assertEquals(ApiErrorCode.CREATOR_CONFIG_CONFLICT, error.errorCode());
+        verify(levels).existsById(7L);
+        assertEquals(5, rows.get(creator.id).version);
+        assertEquals("Original", rows.get(creator.id).name);
+        verify(creators, never()).saveAndFlush(any(Creator.class));
     }
 
     @Test
