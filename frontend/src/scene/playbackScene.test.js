@@ -3166,8 +3166,8 @@ describe('画质四档阶梯契约（2026-10-07 重分档）', () => {
     }
     for (const t of keys) {
       expect(QUALITY_PRESETS[t].allowGlb).toBe(t !== 'low')
-      expect(QUALITY_PRESETS[t].scenery).toBe(t === 'high' || t === 'ultra')
-      expect(QUALITY_PRESETS[t].groundLayers).toBe(t === 'high' || t === 'ultra')
+      expect(QUALITY_PRESETS[t].scenery).toBe(true)   // #857：四档共享完整场景
+      expect(QUALITY_PRESETS[t].groundLayers).toBe(true)  // #857：四档共享分层地表
       expect(QUALITY_PRESETS[t].antialias).toBe(t !== 'low')
       expect(QUALITY_PRESETS[t].fx).toBe(FX_BUDGETS[t])   // 战斗特效预算与画质档同一键
     }
