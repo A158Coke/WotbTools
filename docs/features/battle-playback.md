@@ -282,7 +282,7 @@ KILL / DAMAGE / DESTROYED 事件多重集（含 `observedHpLoss`）与掉血明�
 
 ### 画质、加载与 3D 详情
 
-- **画质档位**：`QUALITY_PRESETS` 四档（流畅 / 均衡 / 高清 / 极致）分别控制 antialias、maxDpr、scenery、groundLayers、anisotropy、allowGlb、treadMarks、forceGlb 与 FX 预算。地形细分与几何不随档位变化（客户端没有 landscape 画质覆盖块，阈值恒为出厂默认）；画质档真正影响地形的是材质层（RELAXMAP 需要 landscape 材质绑 relaxmap 槽才生效；HEIGHT_BLEND 按导出时的 `ground.layers.json height_blend=true` 复刻）。
+- **画质档位**：`QUALITY_PRESETS` 四档（流畅 / 均衡 / 高清 / 极致）控制 antialias、maxDpr、groundLayers、anisotropy、allowGlb、treadMarks、forceGlb 与 FX 预算；四档均加载完整 scenery。客户端没有 landscape 画质覆盖块，地形细分阈值恒为出厂默认；scenery 装配生成的贴地走廊掩码可能影响地形几何。画质档影响地形材质层（RELAXMAP 需要 landscape 材质绑 relaxmap 槽才生效；HEIGHT_BLEND 按导出时的 `ground.layers.json height_blend=true` 复刻）。
 - **履带印档位**：`treadMarks` 仅高清 / 极致开启，且这两档强制 GLB 真实车模（`forceGlb`：`setGlb(false)` 被忽略、开关停用并提示）——印记左右轨距取自 suspension 解析的模型 `halfW`，中途切低模会让同一车前后的印记轨距突变。均衡档仍可自由开关 GLB 但无印记。
 - **进场预载**：高 / 极致在 `startPlayback` 资产阶段 `await applyGlbToggle(true)`——双方全部车辆模型就绪才开播，避免开局数秒的盒子代理、轨距跳变与起步印记折线。
 - **3D Details**：与 2D 共用 canonical 查询及 `V2VehicleInspector`：选中账号对应的 track 提供时刻统计、伤害日志、最后已知时间、装备、物资与消耗品状态，肖像按车型懒加载。3D 按独立 `clock.startRaw` 转换场景时钟（不依赖 reload telemetry，与播放条 / 顶栏同一个原点）；数据缺失保持 unavailable，不使用终局汇总代替当前统计。
@@ -306,7 +306,7 @@ KILL / DAMAGE / DESTROYED 事件多重集（含 `observedHpLoss`）与掉血明�
 - **无裂缝契约**：顶点高度取“该处最粗相邻叶所在层级”的边界直线 / 格点值（边端点递归）；同一 (i,j) 恒得同一高度，细侧折线落在粗侧直线上——不需要 2:1 平衡也没有 T 型接缝。按 (i,j) 去重顶点，法线跨叶连续。守卫：`terrainMesh.test.js`（三条判据 / 终止补片 / 单元格 ≤0.08·视距 / 混排层级无裂缝 / 无空洞 / 三角形朝上 / 预算）。
 - **单向滞回**：`terrainLodStale` 的输入是与 `buildAdaptiveTerrain` 同源的相机姿态快照（位置 / 视距 / 视轴 / FOV / aspect）：拉近 ≥5% 立即细化，拉远 ≥40% 才允许变粗；侧向位移 ≥5%·视距、FOV 或 aspect 相对变化 >0.1% 也触发重建；两次重建至少隔 120ms。网格永不比客户端同一相机位置允许的层级更粗。
 - **贴地薄构件走廊**：贴地薄构件（铁轨基板 / 压顶 / 铺装这类，世界 AABB 高 ≤2.5m、底面贴地形真值、排除水面 / 水下片）按三角形沿边以 ≤1 texel 采样足迹 → `buildCorridorRefineMask` → `buildRefineMask`；命中补片强制细分到最细层（1 texel），不改任何高度值，廊外层级仍按三条判据。运行时与俯视烘焙共用这一机制。守卫：`terrainMesh.test.js`（掩码内必到 1 texel、掩码前被盖 / 掩码后不被盖、不传掩码逐字节一致）与 `sceneryMaterials.test.js`（取样先于实例化合批）。
-- **画质无关**：客户端 Data/quality.yaml 没有 landscape 块，地形阈值恒为出厂默认；地形细分 / 几何不随画质档变化。画质档真正影响的是材质层（RELAXMAP 需 landscape 材质绑 relaxmap 槽才生效；HEIGHT_BLEND 按导出的 `ground.layers.json height_blend=true` 复刻）。
+- **画质无关**：客户端 Data/quality.yaml 没有 landscape 块，地形阈值恒为出厂默认；地形 LOD 阈值不随画质档变化；场景装配产生的走廊掩码可影响细分与几何。画质档影响材质层（RELAXMAP 需 landscape 材质绑 relaxmap 槽才生效；HEIGHT_BLEND 按导出的 `ground.layers.json height_blend=true` 复刻）。
 
 ### 地面、水与天空
 
