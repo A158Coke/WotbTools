@@ -7,7 +7,7 @@ import * as THREE from 'three'
 import {
   collectInstanceEntries, groupInstanceBatches, buildInstancedMesh,
   writeHiddenInstance, fallMatrix, hasTransparentMaterial, buildStandaloneLightmappedMeshes,
-} from './sceneryInstancing.ts'
+} from './sceneryInstancing.js'
 
 const geo = (h = 1) => {
   const g = new THREE.BoxGeometry(1, h, 1)
@@ -164,7 +164,7 @@ describe('非均匀缩放槽位的包围球保守性（评审二轮）', () => {
   // （d + 原型 heightM + 2）不保守，倒伏射线仍 0 命中。锁定：扩张量必须按
   // base 变换后的实高（含缩放）计算，倒伏扫掠被球覆盖。
   it('非均匀缩放树倒伏后的最远触及点仍在扩张后的批次球内', async () => {
-    const { fallMatrix } = await import('./sceneryInstancing.ts')
+    const { fallMatrix } = await import('./sceneryInstancing.js')
     // 原型树：局部高 6m（树梢在 z=6），节点缩放 [3.105, 2.389, 2.389] → 实高 ≈18.6m
     const scale = [3.1051428, 2.3885715, 2.3885715]
     const root = new THREE.Object3D()
@@ -201,7 +201,7 @@ describe('非均匀缩放槽位的包围球保守性（评审二轮）', () => {
 describe('同格双树批次球（评审四轮反例）', () => {
   it('批次球心到 pivot 的距离计入扩张——右树倒伏后射线可命中', async () => {
     const { buildInstancedMesh, groupInstanceBatches, collectInstanceEntries, fallMatrix, refreshBatchSphere }
-      = await import('./sceneryInstancing.ts')
+      = await import('./sceneryInstancing.js')
     // 评审反例：同一 75m 格内两棵树（x=0 与 x=60）→ 同一批次，球心 ≈ x=30；
     // 右树（x=60）倒伏后，扩张若只算「几何球心→pivot」会漏 30m 的球心距离。
     const root = new THREE.Object3D()
@@ -249,7 +249,7 @@ describe('同格双树批次球（评审四轮反例）', () => {
 describe('损毁态批次球（评审五轮回归）', () => {
   it('全隐藏批次：球按 base 位姿非空，激活后视锥与射线均通过', async () => {
     const { buildInstancedMesh, groupInstanceBatches, collectInstanceEntries, writeHiddenInstance, refreshBatchSphere }
-      = await import('./sceneryInstancing.ts')
+      = await import('./sceneryInstancing.js')
     // 评审复现：只含损毁模型的批次（D_Rubble@x=60），初始全部隐藏——
     // 球若跳过隐藏槽位 = radius -1 空球，激活后被整批剔除/漏拾取
     const root = new THREE.Object3D()
@@ -285,7 +285,7 @@ describe('损毁态批次球（评审五轮回归）', () => {
 
   it('混合批次：隐藏槽位的 base 位姿同样在覆盖内（激活前后同一球可用）', async () => {
     const { buildInstancedMesh, groupInstanceBatches, collectInstanceEntries, writeHiddenInstance, refreshBatchSphere }
-      = await import('./sceneryInstancing.ts')
+      = await import('./sceneryInstancing.js')
     const root = new THREE.Object3D()
     const shared = geo(2)
     const m1 = mat()
@@ -339,5 +339,56 @@ describe('透明+光照图网格保留逐节点 lm 变换', () => {
     expect(out[0].mesh.geometry.attributes.aLm.getZ(0)).toBeCloseTo(0.5)
     expect(out[0].mesh.geometry.attributes.aLm.getW(0)).toBeCloseTo(0.5)
     expect(node.parent).toBe(null)
+  })
+})
+
+describe('批次 AABB（开镜装甲高亮遮挡剔除）', () => {
+  it('refreshBatchSphere 产出 occluderBox：覆盖全部实例，隐藏槽位按 base 位姿计入', async () => {
+    const { buildInstancedMesh, groupInstanceBatches, collectInstanceEntries, writeHiddenInstance, refreshBatchSphere }
+      = await import('./sceneryInstancing.js')
+    const root = new THREE.Object3D()
+    const shared = geo(2)
+    const m1 = mat()
+    for (const x of [0, 60]) {
+      const t = new THREE.Mesh(shared, m1)
+      t.position.set(x, 0, 0)
+      root.add(t)
+    }
+    root.updateMatrixWorld(true)
+    const batches = groupInstanceBatches(collectInstanceEntries(root), 75)
+    const batch = batches[0]
+    batch.items.forEach((it, i) => { it.batch = batch; it.idx = i })
+    const mesh = buildInstancedMesh(batch)
+    const hidden = batch.items.find((e) => e.x === 60)
+    writeHiddenInstance(mesh, hidden.idx)
+    hidden.hidden = true
+    refreshBatchSphere(mesh, batch, (e) => e.hidden)
+    const box = mesh.userData.occluderBox
+    expect(box).toBeInstanceOf(THREE.Box3)
+    // 两个实例都在盒覆盖内——含隐藏槽位的 base 位姿 (60,0,0)（激活后无需重算）
+    expect(box.containsPoint(new THREE.Vector3(0, 0, 0))).toBe(true)
+    expect(box.containsPoint(new THREE.Vector3(60, 0, 0))).toBe(true)
+    expect(box.max.y).toBeGreaterThanOrEqual(1.5)   // 几何高 2 → 顶面进入盒
+  })
+
+  it('可见槽位按当前实例矩阵计入（重算刷新同一 Box3）', async () => {
+    const { buildInstancedMesh, groupInstanceBatches, collectInstanceEntries, refreshBatchSphere }
+      = await import('./sceneryInstancing.js')
+    const root = new THREE.Object3D()
+    const shared = geo(2)
+    root.add(new THREE.Mesh(shared, mat()))
+    root.updateMatrixWorld(true)
+    const batches = groupInstanceBatches(collectInstanceEntries(root), 75)
+    const batch = batches[0]
+    batch.items.forEach((it, i) => { it.batch = batch; it.idx = i })
+    const mesh = buildInstancedMesh(batch)
+    refreshBatchSphere(mesh, batch, () => false)
+    const box = mesh.userData.occluderBox
+    // 运行期把实例挪远后重算：盒随新矩阵扩张（静态批次一次性计算的前提语义）
+    mesh.setMatrixAt(0, new THREE.Matrix4().makeTranslation(120, 0, 0))
+    mesh.instanceMatrix.needsUpdate = true
+    refreshBatchSphere(mesh, batch, () => false)
+    expect(box.containsPoint(new THREE.Vector3(120, 0, 0))).toBe(true)
+    expect(mesh.userData.occluderBox).toBe(box)   // 复用同一实例，不逐批新分配
   })
 })

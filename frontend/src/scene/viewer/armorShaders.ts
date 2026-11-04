@@ -58,7 +58,13 @@ export const PBR_FRAG = `
     uniform sampler2D spacedArmorBuffer;   // R=外部/间隙甲 thickness/penetration, alpha!=0 表示有覆盖
     uniform highp sampler2D spacedArmorDepth; // 深度（HE 溅射用）
     uniform sampler2D spacedStateBuffer;      // RT1 状态通道：R=首层跳弹标志, G=续飞结果编码
-    uniform float spacedSatGuard;             // 8 位回退格式（无半浮点 RT）：R 饱和(>=1)时按整穿深保守处理；半浮点下恒 0
+    uniform float spacedSatGuard;
+    // 辅助 RT 在整幅画面里的归一化矩形（x0,y0,w,h，原点左下）：3D 回放按目标屏幕矩形分配
+    // RT 时，buffer 采样从全画面 UV（gl_FragCoord/resolution）映射到 **rect 局部 RT UV**
+    //（scBuf = (sc − xy) / zw：rect 左下角 → (0,0)，右上角 → (1,1)——辅助 RT 由
+    // setViewOffset 把该 rect 拉伸铺满，局部 UV 才是 buffer 的采样坐标）。默认 (0,0,1,1)
+    // = 全屏恒等，装甲查看器（不设置该 uniform）逐字节等价于旧行为。
+    uniform vec4 spacedRect;             // 8 位回退格式（无半浮点 RT）：R 饱和(>=1)时按整穿深保守处理；半浮点下恒 0
     uniform mat4 inverseProjectionMatrix;
     #include <logdepthbuf_pars_fragment>
     #include <clipping_planes_pars_fragment>
@@ -91,8 +97,9 @@ export const PBR_FRAG = `
       #include <logdepthbuf_fragment>
       #include <clipping_planes_fragment>
       vec2 sc = gl_FragCoord.xy / resolution;
-      vec4 spacedData = texture2D(spacedArmorBuffer, sc);
-      vec4 spacedState = texture2D(spacedStateBuffer, sc);
+      vec2 scBuf = (sc - spacedRect.xy) / spacedRect.zw;
+      vec4 spacedData = texture2D(spacedArmorBuffer, scBuf);
+      vec4 spacedState = texture2D(spacedStateBuffer, scBuf);
       bool underSpaced = spacedData.a != 0.0;
       // RT1.A = 1：最近覆盖层是外部模块（moduleStateMaterial 写；间隙甲写 0）。
       // 模块在前时，其后间隙板不得跳弹/续飞（用户 2026-10-17）。
@@ -216,7 +223,7 @@ export const PBR_FRAG = `
           // HEAT 没有溅射，名义 rem 耗尽时随机区间仍可能有正尾，必须继续 gap
           // 衰减并进入 CDF（review 2026-10-18：spaced100→0.1m→hull1 卡片 13.19%）。
           if (isExplosive) {
-            float spacedDist = getDist(sc, texture2D(spacedArmorDepth, sc).r);
+            float spacedDist = getDist(sc, texture2D(spacedArmorDepth, scBuf).r);
             // 主甲距离直接取视空间：gl_FragCoord.z 在对数深度下不能按标准投影反算；
             // 间隙甲辅助 RT 恒为标准深度，getDist 口径不变。投影到 highp viewDir 而不用
             // length()：与本文件其它距离同口径，避开 500 m 处 mediump 溢出。
@@ -568,6 +575,7 @@ export function createArmorShaderContext() {
                 spacedArmorDepth: { value: null },
                 spacedStateBuffer: { value: emptySpacedTexture() },
                 spacedSatGuard: { value: 0 },
+                spacedRect: { value: new THREE.Vector4(0, 0, 1, 1) },
                 inverseProjectionMatrix: { value: null },
                 rcThickMul: rcUniforms.rcThickMul,
                 rcEnabled: rcUniforms.rcEnabled,

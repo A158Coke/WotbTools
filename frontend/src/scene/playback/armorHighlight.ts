@@ -23,6 +23,29 @@ import {
 
 /** 重画世界深度专用 layer（0 = 默认，1 = 开镜隐藏本车）。 */
 const OCCLUDER_LAYER = 2
+
+/** 装甲 RT 分配粒度（px，向上取整）：按目标矩形分配时避免逐像素反复重建。 */
+export const RT_BUCKET_PX = 64
+
+/** RT 边长：px 向上取整到 RT_BUCKET_PX 的倍数，钳到 ≤ drawing buffer 上限且 ≥1（零尺寸 RT 非法）。 */
+export function bucketedRtSize(px: number, cap: number): number {
+  return Math.min(Math.max(Math.ceil(px / RT_BUCKET_PX) * RT_BUCKET_PX, 1), Math.max(1, Math.floor(cap)))
+}
+
+/** 目标屏幕矩形（GL 像素，含 margin）在整幅画面里的归一化矩形 → spacedRect uniform
+ *  （x0,y0,w,h，原点左下）。全屏时 = (0,0,1,1)，与装甲查看器（不设该 uniform）同口径。 */
+export function spacedRectOf(px: number, py: number, pw: number, ph: number, fullW: number, fullH: number, out: THREE.Vector4): THREE.Vector4 {
+  return out.set(px / fullW, py / fullH, pw / fullW, ph / fullH)
+}
+
+/**
+ * 全画面 UV → 辅助 RT 局部 UV（`PBR_FRAG` 里 `scBuf = (sc - spacedRect.xy) / spacedRect.zw`
+ * 的 JS 同式，行为测试的唯一权威）：辅助 RT 被 setViewOffset 把该 rect 拉伸铺满，所以
+ * rect 左下角映射到 (0,0)、右上角映射到 (1,1)；全屏 rect 是恒等映射。
+ */
+export function spacedBufferUv(scX: number, scY: number, rect: THREE.Vector4, out: THREE.Vector2): THREE.Vector2 {
+  return out.set((scX - rect.x) / rect.z, (scY - rect.y) / rect.w)
+}
 const EQ_CALIBRATED_SHELLS = 103
 const EQ_ENHANCED_ARMOR = 110
 /** 炮管任意朝向下 GLB 根到车模最远点的上界（最长的车连炮管约 12 m）。 */
@@ -144,10 +167,48 @@ export function markPickBoundsStale(geometry: BufferGeometry): void {
   geometry.userData.pickBoundsStale = true
 }
 
+const _pickBox = new THREE.Box3()
+const _pickCenter = new THREE.Vector3()
+/**
+ * 单趟顶点遍历求 AABB，再令球 = AABB 中心 + 半对角线（保守球，只会多测三角形、不会漏命中）。
+ * three 自带的 computeBoundingBox + computeBoundingSphere 合计 3 次全顶点遍历；悬挂形变的
+ * 履带每次拾取都要重算，这里是拾取路径上最热的逐顶点成本。
+ */
 function refreshPickBounds(geometry: BufferGeometry): void {
   if (!geometry.userData.pickBoundsStale) return
-  geometry.computeBoundingBox()
-  geometry.computeBoundingSphere()
+  const pos = geometry.getAttribute('position')
+  if (!pos || 'isInterleavedBufferAttribute' in pos) {
+    geometry.computeBoundingBox()
+    geometry.computeBoundingSphere()
+    geometry.userData.pickBoundsStale = false
+    return
+  }
+  const a = pos.array as ArrayLike<number>
+  const count = pos.count
+  let minX = Infinity, minY = Infinity, minZ = Infinity
+  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity
+  for (let i = 0; i < count; i++) {
+    const x = a[i * 3], y = a[i * 3 + 1], z = a[i * 3 + 2]
+    if (x < minX) minX = x
+    if (x > maxX) maxX = x
+    if (y < minY) minY = y
+    if (y > maxY) maxY = y
+    if (z < minZ) minZ = z
+    if (z > maxZ) maxZ = z
+  }
+  if (minX > maxX) { minX = maxX = 0; minY = maxY = 0; minZ = maxZ = 0 }
+  _pickBox.min.set(minX, minY, minZ)
+  _pickBox.max.set(maxX, maxY, maxZ)
+  if (geometry.boundingBox) geometry.boundingBox.copy(_pickBox)
+  else geometry.boundingBox = _pickBox.clone()
+  _pickCenter.addVectors(_pickBox.min, _pickBox.max).multiplyScalar(0.5)
+  const half = _pickCenter.distanceTo(_pickBox.max)
+  if (geometry.boundingSphere) {
+    geometry.boundingSphere.center.copy(_pickCenter)
+    geometry.boundingSphere.radius = half
+  } else {
+    geometry.boundingSphere = new THREE.Sphere(_pickCenter.clone(), half)
+  }
   geometry.userData.pickBoundsStale = false
 }
 
@@ -159,7 +220,9 @@ const _pickOffset = new THREE.Vector3()
 const _pickSphere = new THREE.Sphere()
 const _pickFrustum = new THREE.Frustum()
 const _pickViewProjection = new THREE.Matrix4()
-const _pickCandidates: Array<{ v: AimedVehicleCandidate; lower: number }> = []
+const _pickCandidates: Array<{ v: AimedVehicleCandidate | null; lower: number }> = []
+const _pickPool: Array<{ v: AimedVehicleCandidate | null; lower: number }> = []
+let _pickPoolUsed = 0
 /**
  * 视线最先碰到的车辆：对当前帧可见网格精确求交，炮塔转动、炮管俯仰都按实际姿态算。
  * 先按 GLB 根到视线的距离粗筛（半径与姿态无关），离视线远的车不重算 bounds、不逐网格求交；
@@ -186,6 +249,7 @@ export function aimedVehicle(origin: THREE.Vector3, direction: THREE.Vector3, ve
     _pickFrustum.setFromProjectionMatrix(_pickViewProjection, camera.coordinateSystem)
   }
   _pickCandidates.length = 0
+  _pickPoolUsed = 0
   for (const v of vehicles) {
     _pickRoot.setFromMatrixPosition(v.glb.matrixWorld)
     if (_pickRaycaster.ray.distanceSqToPoint(_pickRoot) > VEHICLE_PICK_RADIUS_M ** 2) continue
@@ -195,12 +259,18 @@ export function aimedVehicle(origin: THREE.Vector3, direction: THREE.Vector3, ve
       if (!_pickFrustum.intersectsSphere(_pickSphere)) continue
     }
     const along = _pickOffset.subVectors(_pickRoot, origin).dot(_pickRaycaster.ray.direction)
-    _pickCandidates.push({ v, lower: Math.max(0, along - VEHICLE_PICK_RADIUS_M) })
+    const c = _pickPool[_pickPoolUsed] || (_pickPool[_pickPoolUsed] = { v: null as AimedVehicleCandidate | null, lower: 0 })
+    _pickPoolUsed++
+    c.v = v
+    c.lower = Math.max(0, along - VEHICLE_PICK_RADIUS_M)
+    _pickCandidates.push(c)
   }
   _pickCandidates.sort((a, b) => a.lower - b.lower)
   let best: AimedVehicleCandidate | null = null, bestDistance = Infinity
-  for (const { v, lower } of _pickCandidates) {
-    if (lower > bestDistance) break
+  for (const cand of _pickCandidates) {
+    const v = cand.v
+    const lower = cand.lower
+    if (!v || lower > bestDistance) continue
     _pickMeshes.length = 0
     _pickHits.length = 0
     collectVisibleMeshes(v.glb, _pickMeshes)
@@ -260,11 +330,34 @@ export interface OccluderView {
   maxDepth: number
 }
 
+const _occluderBox = new THREE.Box3()
+const _occluderHalf = new THREE.Vector3()
 export function canOccludeTarget(object: Object3D, view: OccluderView): boolean {
   if (object.frustumCulled === false) return true
   const withGeometry = object as Object3D & Partial<Mesh> & { boundingSphere?: Sphere | null }
   // 悬挂形变后的 bounds 只在拾取时刷新，友军履带等非候选车辆可能还是旧值，不能据此剔除
   if (withGeometry.geometry?.userData?.pickBoundsStale) return true
+  // InstancedMesh 批次优先用批次世界 AABB（refreshBatchSphere 产出的 userData.occluderBox，
+  // 局部系批次盒——宫格批次的包围球是整格尺寸，远目标长视锥会把整批实例拉进遮挡集；
+  // AABB 是保守包围，只少画不漏画。可破坏物批次（实例矩阵运行期会变）置 null 回退球。
+  const occluderBox = (object.userData as { occluderBox?: THREE.Box3 | null } | undefined)?.occluderBox
+  if (occluderBox) {
+    _occluderBox.copy(occluderBox).applyMatrix4(object.matrixWorld)
+    if (!view.frustum.intersectsBox(_occluderBox)) return false
+    _occluderHalf.subVectors(_occluderBox.max, _occluderBox.min).multiplyScalar(0.5)
+    const depth = _occluderOffset
+      .set(
+        (_occluderBox.min.x + _occluderBox.max.x) / 2,
+        (_occluderBox.min.y + _occluderBox.max.y) / 2,
+        (_occluderBox.min.z + _occluderBox.max.z) / 2,
+      )
+      .sub(view.origin)
+      .dot(view.forward)
+      - _occluderHalf.x * Math.abs(view.forward.x)
+      - _occluderHalf.y * Math.abs(view.forward.y)
+      - _occluderHalf.z * Math.abs(view.forward.z)
+    return depth <= view.maxDepth
+  }
   // InstancedMesh 的包围球在对象上，几何上的只是单个实例；未算出时不能回落到几何
   const sphere = withGeometry.boundingSphere !== undefined ? withGeometry.boundingSphere : withGeometry.geometry?.boundingSphere
   if (!sphere) return true
@@ -301,6 +394,17 @@ function shellUniforms(shell: AgentPlaybackShot | Record<string, unknown>, calib
 }
 
 /** render(frame) 的装配参数（宿主 renderArmorHighlight 现取现传）。 */
+export interface ArmorHighlightPerfStats {
+  pickMs: number
+  stateMs: number
+  thicknessMs: number
+  occluderMs: number
+  colorMs: number
+  calls: number
+  /** passBegin 的工作字段（perfFrame 读取前由 renderArmorHighlight 每帧清零） */
+  _t0: number
+}
+
 export interface ArmorHighlightFrame {
   scene: Scene
   camera: PerspectiveCamera
@@ -312,13 +416,17 @@ export interface ArmorHighlightFrame {
   penMul: number
   thickMul: number
   onReady: () => void
+  /** ?perf 逐 pass 计时（仅 PERF 传入；调用方已关闭 info.autoReset 并逐帧 reset） */
+  stats?: ArmorHighlightPerfStats
+  /** 语义化遮挡根（issue #850 F）：地形/场景 GLB/占位地面/每车低模组、GLB/飞炮塔 */
+  occluderRoots?: Object3D[]
 }
 
 export function createArmorHighlight({ renderer, assetProvider }: {
   renderer: WebGLRenderer
   /** logical asset API（scene/assetProvider 的结构面） */
   assetProvider: { bytes(path: string): Promise<Uint8Array> }
-}): { render(frame: ArmorHighlightFrame): void; prefetch(vehicles: AimedVehicleCandidate[]): void; releaseRenderTargets(): void; dispose(): void } {
+}): { render(frame: ArmorHighlightFrame): void; prefetch(vehicles: AimedVehicleCandidate[]): void; prewarm(camera: PerspectiveCamera): void; releaseRenderTargets(): void; dispose(): void } {
   const shaders = createArmorShaderContext()
   const templates = new Map<number, Promise<Object3D | null>>()    // tankId → Promise<armor 模板 | null>
   const targets = new Map<number, { glb: Group; armor: BuiltTarget | null }>()      // eid → 已构建的目标（外部模块引用该车的 GLB 实例）
@@ -345,6 +453,20 @@ export function createArmorHighlight({ renderer, assetProvider }: {
   const savedScissor = new THREE.Vector4()
   const occluderView = {
     frustum: new THREE.Frustum(), origin: new THREE.Vector3(), forward: new THREE.Vector3(), maxDepth: 0,
+  }
+  // 辅助 RT pass 的视口偏移相机（主相机的拷贝 + setViewOffset 到目标矩形）；color pass 仍用主相机。
+  const armorCamera = new THREE.PerspectiveCamera()
+  const spacedRect = new THREE.Vector4(0, 0, 1, 1)
+  /** ?perf 逐 pass 计时：renderer.render 返回 ≠ GPU 完成，这些是 CPU submit 时间。 */
+  function passBegin(stats: ArmorHighlightPerfStats | null): number {
+    if (!stats) return 0
+    stats._t0 = performance.now()
+    return renderer.info.render.calls
+  }
+  function passEnd(stats: ArmorHighlightPerfStats | null, key: 'stateMs' | 'thicknessMs' | 'occluderMs' | 'colorMs', beginCalls: number): void {
+    if (!stats) return
+    stats[key] += performance.now() - stats._t0
+    stats.calls += renderer.info.render.calls - beginCalls
   }
 
   function loadTemplate(tankId: number, url: string): Promise<Object3D | null> {
@@ -477,22 +599,20 @@ function buildTarget(template: Object3D, vehicle: AimedVehicleCandidate, tankDat
     }
   }
 
-  function ensureTargets(): void {
-    renderer.getDrawingBufferSize(size)
-    if (stateRT && stateRT.width === size.x && stateRT.height === size.y) return
+  function ensureTargets(rtW: number, rtH: number): void {
+    if (stateRT && stateRT.width >= rtW && stateRT.height >= rtH) return
     disposeTargets()
     const floatCapable = renderer.extensions.has('EXT_color_buffer_float')
       || renderer.extensions.has('EXT_color_buffer_half_float')
     const options = () => ({
       type: floatCapable ? THREE.HalfFloatType : THREE.UnsignedByteType,
-      depthTexture: new THREE.DepthTexture(size.x, size.y),
+      depthTexture: new THREE.DepthTexture(rtW, rtH),
     })
-    stateRT = new THREE.WebGLRenderTarget(size.x, size.y, options())
-    spacedRT = new THREE.WebGLRenderTarget(size.x, size.y, options())
-    shaders.resUniform.value.copy(size)
+    stateRT = new THREE.WebGLRenderTarget(rtW, rtH, options())
+    spacedRT = new THREE.WebGLRenderTarget(rtW, rtH, options())
   }
 
-  function bindBuffers(target: BuiltTarget, camera: PerspectiveCamera): void {
+  function bindBuffers(target: BuiltTarget, camera: PerspectiveCamera, spacedRect: THREE.Vector4): void {
     const rt = stateRT as THREE.WebGLRenderTarget
     const spaced = spacedRT as THREE.WebGLRenderTarget
     const satGuard = rt.texture.type === THREE.HalfFloatType ? 0 : 1
@@ -507,6 +627,7 @@ function buildTarget(template: Object3D, vehicle: AimedVehicleCandidate, tankDat
       u.spacedArmorDepth.value = spaced.depthTexture
       u.spacedSatGuard.value = satGuard
       u.inverseProjectionMatrix.value = camera.projectionMatrixInverse
+      if (u.spacedRect) u.spacedRect.value = spacedRect.clone()
     })
   }
 
@@ -533,20 +654,32 @@ function buildTarget(template: Object3D, vehicle: AimedVehicleCandidate, tankDat
   }
 
   /** 目标整棵子树不进遮挡集：否则目标车模自己挡住装甲。 */
-  function markOccluders(scene: Scene, camera: PerspectiveCamera, vehicle: ArmorHighlightFrame['vehicle'], view: OccluderView): void {
-    scene.traverseVisible((object) => {
-      const meshNode = object as Mesh
-      if (!meshNode.isMesh) return
-      if (object.layers.test(camera.layers) && isSolidOccluder(object) && canOccludeTarget(object, view)) {
-        object.layers.enable(OCCLUDER_LAYER)
-      } else object.layers.disable(OCCLUDER_LAYER)
-    })
+  function markOccluders(camera: PerspectiveCamera, vehicle: ArmorHighlightFrame['vehicle'], view: OccluderView, roots: Object3D[]): number {
+    // 语义化遮挡根（调用方给：地形/场景 GLB/占位地面/每车低模组、GLB/飞炮塔），不做全场景
+    // traverseVisible——特效/轨迹/标注/基地/边界/天穹都是透明、非网格或无穷远，本来就
+    // 挡不住弹道，从遍历里省掉（遮挡语义不变：墙体/车辆遮挡、树丛不遮挡）。
+    let count = 0
+    for (const root of roots) {
+      if (!root || !root.visible) continue
+      root.traverseVisible((object) => {
+        const meshNode = object as Mesh
+        if (!meshNode.isMesh) return
+        if (object.layers.test(camera.layers) && isSolidOccluder(object) && canOccludeTarget(object, view)) {
+          object.layers.enable(OCCLUDER_LAYER)
+          count++
+        } else object.layers.disable(OCCLUDER_LAYER)
+      })
+    }
     vehicle.glb.traverse((node) => node.layers.disable(OCCLUDER_LAYER))
     vehicle.group?.traverse((node) => node.layers.disable(OCCLUDER_LAYER))
+    return count
   }
 
-  function drawOccluderDepth(scene: Scene, camera: PerspectiveCamera, vehicle: ArmorHighlightFrame['vehicle'], view: OccluderView): void {
-    markOccluders(scene, camera, vehicle, view)
+  function drawOccluderDepth(scene: Scene, camera: PerspectiveCamera, vehicle: ArmorHighlightFrame['vehicle'], view: OccluderView, roots: Object3D[]): void {
+    const count = markOccluders(camera, vehicle, view, roots)
+    // 零遮挡快速路径：走廊内没有任何能挡住目标的实体（开阔地直射的常见形态），
+    // clearDepth 已把目标矩形深度清空——装甲不被任何世界几何挡住，跳过整个世界重绘。
+    if (count === 0) return
     const mask = camera.layers.mask, background = scene.background
     camera.layers.set(OCCLUDER_LAYER)
     scene.background = null
@@ -558,21 +691,23 @@ function buildTarget(template: Object3D, vehicle: AimedVehicleCandidate, tankDat
   }
 
   let disposed = false
+  let rtShrinkStreak = 0
   /**
    * 主渲染之后调用。`frame` = {scene, camera, vehicle, tankData, config, shell, caliber,
    * penMul, thickMul, onReady}；目标 armor 未就绪时不画（本帧画面与关闭时相同）。
    */
   function render(frame: ArmorHighlightFrame): void {
     const { scene, camera, vehicle } = frame
+    const stats = frame.stats ?? null
+    if (stats) { stats.stateMs = 0; stats.thicknessMs = 0; stats.occluderMs = 0; stats.colorMs = 0; stats.calls = 0 }
     const target = targetArmor(vehicle, frame.tankData, frame.config as import('../viewer/armorPlateModel.js').TankArmorConfig | null, frame.onReady)
     if (!target) return
-    ensureTargets()
+    renderer.getDrawingBufferSize(size)
     syncPose(target, vehicle)
     const bounds = armorBounds(target)
     const rect = screenRect(bounds, camera)
     if (!rect) return
     syncUniforms(target, camera, frame)
-    bindBuffers(target, camera)
 
     // 所有叠加 pass 只碰目标的屏幕矩形；遮挡集只留能挡住它的物体，主渲染的画面不受影响
     cropFrustum(camera, rect, occluderView.frustum)
@@ -582,10 +717,26 @@ function buildTarget(template: Object3D, vehicle: AimedVehicleCandidate, tankDat
     occluderView.maxDepth = world.subVectors(armorSphere.center, camera.position).dot(occluderView.forward)
       + armorSphere.radius
     scissorRect(rect)
+
+    // RT 只需罩住目标矩形（64px 取整、只增不减 + 收缩滞回）；两张辅助 RT 用视口偏移相机
+    // 把该矩形拉伸到整张 RT（setViewOffset 只偏移投影 xy，NDC z 与主相机逐位一致）。
+    // color pass 仍画回默认帧缓冲的目标矩形，buffer 采样经 spacedRect 从全画面 UV 映射回 RT 局部。
+    const rtW = bucketedRtSize(scissor.z, size.x)
+    const rtH = bucketedRtSize(scissor.w, size.y)
+    if (stateRT && rtW * rtH * 4 <= stateRT.width * stateRT.height) {
+      if (++rtShrinkStreak >= 90) { disposeTargets(); rtShrinkStreak = 0 }
+    } else rtShrinkStreak = 0
+    ensureTargets(rtW, rtH)
+    shaders.resUniform.value.copy(size)
+    spacedRectOf(scissor.x, scissor.y, scissor.z, scissor.w, size.x, size.y, spacedRect)
+    armorCamera.copy(camera)
+    armorCamera.setViewOffset(size.x, size.y, scissor.x, size.y - (scissor.y + scissor.w), scissor.z, scissor.w)
+    armorCamera.updateProjectionMatrix()
+    bindBuffers(target, camera, spacedRect)
     for (const rt of [stateRT, spacedRT]) {
       if (!rt) continue
-      rt.scissor.copy(scissor)
-      rt.scissorTest = true
+      rt.scissor.set(0, 0, rtW, rtH)
+      rt.scissorTest = false
     }
 
     const autoClear = renderer.autoClear, clipping = renderer.localClippingEnabled
@@ -597,19 +748,26 @@ function buildTarget(template: Object3D, vehicle: AimedVehicleCandidate, tankDat
     renderer.shadowMap.autoUpdate = false
     renderer.setClearColor(0x000000, 0)
     renderer.autoClear = true
+    let calls = passBegin(stats)
     renderer.setRenderTarget(stateRT)
-    renderer.render(target.state, camera)
+    renderer.render(target.state, armorCamera)
+    passEnd(stats, 'stateMs', calls)
+    calls = passBegin(stats)
     renderer.setRenderTarget(spacedRT)
-    renderer.render(target.thickness, camera)
+    renderer.render(target.thickness, armorCamera)
+    passEnd(stats, 'thicknessMs', calls)
     renderer.setRenderTarget(null)
-    // 默认帧缓冲的 setScissor 按 CSS 像素，内部再乘 pixelRatio
     const pixelRatio = renderer.getPixelRatio()
     renderer.setScissor(scissor.x / pixelRatio, scissor.y / pixelRatio, scissor.z / pixelRatio, scissor.w / pixelRatio)
     renderer.setScissorTest(true)
     renderer.autoClear = false
     renderer.clearDepth()
-    drawOccluderDepth(scene, camera, vehicle, occluderView)
+    calls = passBegin(stats)
+    drawOccluderDepth(scene, camera, vehicle, occluderView, frame.occluderRoots ?? [scene])
+    passEnd(stats, 'occluderMs', calls)
+    calls = passBegin(stats)
     renderer.render(target.color, camera)
+    passEnd(stats, 'colorMs', calls)
     renderer.setScissorTest(scissorTest)
     renderer.setScissor(savedScissor)
     renderer.autoClear = autoClear
@@ -627,9 +785,10 @@ function buildTarget(template: Object3D, vehicle: AimedVehicleCandidate, tankDat
     stateRT = spacedRT = null
   }
 
-  /** 离开开镜/关闭开关时释放全尺寸 RT；下次命中目标时 `ensureTargets` 按需重建。 */
+  /** 离开开镜/关闭开关时释放装甲 RT；下次命中目标时 `ensureTargets` 按需重建。 */
   function releaseRenderTargets(): void {
     disposeTargets()
+    rtShrinkStreak = 0
   }
 
   /** 进开镜后后台预取本场敌方车型的 armor 模板（按 tank_id 去重，失败走同一重试表）。 */
@@ -662,10 +821,49 @@ function buildTarget(template: Object3D, vehicle: AimedVehicleCandidate, tankDat
     templates.clear()
     disposeTargets()
     for (const material of [excludeMaterial, occluderMaterial, ...Object.values(depthMaterials)]) material.dispose()
+    for (const material of warmMaterials ?? []) material.dispose()
+    warmMaterials = null
     shaders.dispose()
   }
 
-  return { render, prefetch, releaseRenderTargets, dispose }
+  let warmMaterials: Material[] | null = null
+  /** 装甲材质变体预热：占位几何 + 每个运行期变体（含裁切/双面分支）提前 `renderer.compile`，
+   *  把首次编译从「第一次瞄准新车型的那一帧」挪到加载阶段。预热材质必须持有引用不释放
+   *  （program 缓存按 cacheKey 共享，材质释放会连同释放 program）。幂等。 */
+  function prewarm(camera: PerspectiveCamera): void {
+    if (warmMaterials || disposed) return
+    if (typeof renderer.compile !== 'function') return
+    try {
+      const clipPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
+      const clippedDepth = depthMaterials.externalDepth.clone()
+      clippedDepth.side = THREE.DoubleSide
+      clippedDepth.clippingPlanes = [clipPlane]
+      warmMaterials = [
+        excludeMaterial, occluderMaterial,
+        depthMaterials.omit, depthMaterials.spacedOmit, depthMaterials.externalDepth, clippedDepth,
+        shaders.penetrationMaterial(0), shaders.penetrationMaterial(60),
+        shaders.spacedMaterial(0, 200, THREE.FrontSide), shaders.spacedMaterial(0, 200, THREE.DoubleSide),
+        shaders.spacedStateMaterial(0, 200),
+        shaders.externalMaterial(20, 200, null), shaders.externalMaterial(20, 200, clipPlane),
+        shaders.moduleStateMaterial(null), shaders.moduleStateMaterial(clipPlane),
+      ]
+      const geo = new THREE.BoxGeometry(1, 1, 1)
+      const scene = new THREE.Scene()
+      for (const material of warmMaterials) {
+        const mesh = new THREE.Mesh(geo, material)
+        mesh.frustumCulled = false
+        scene.add(mesh)
+      }
+      const wasClipping = renderer.localClippingEnabled
+      renderer.localClippingEnabled = true
+      try { renderer.compile(scene, camera) } finally { renderer.localClippingEnabled = wasClipping }
+      scene.clear()
+    } catch (e) {
+      console.warn('[playback] armor 材质预热失败（忽略）:', e)
+    }
+  }
+
+  return { render, prefetch, prewarm, releaseRenderTargets, dispose }
 }
 
 /** 回放 equipment 原值 → 着色系数（调用方已确认双方 equipment 在场）。 */
