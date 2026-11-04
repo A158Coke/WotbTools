@@ -155,6 +155,7 @@ deployment:
   - 'docker/Dockerfile.ai-service'
   - '.github/workflows/ci-deployment.yml'
   - '.github/workflows/ci-gate.yml'
+  - '.github/workflows/codeql.yml'
   - '.github/ci-owner-paths.yml'
   - '.github/AGENTS.md'
   - 'scripts/ci/**'

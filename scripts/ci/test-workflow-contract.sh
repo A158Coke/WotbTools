@@ -164,10 +164,18 @@ codeql_init_with = codeql_init.get("with", {})
 assert "config" in codeql_init_with, "codeql init must use `config` (not `configs`)"
 assert "configs" not in codeql_init_with, "codeql init must NOT use `configs` (unsupported input)"
 codeql_config_text = codeql_init_with["config"]
+# review R2 P2-2：子串检查不够——必须解析内嵌 YAML，验证 paths-ignore 是包含
+# 四项预期 glob 的列表；注释中放路径、paths-ignore 误写成 paths、或 YAML 语法
+# 无效时都必须 fail。
+codeql_paths_ignore = yaml.safe_load(codeql_config_text).get("paths-ignore", [])
+assert isinstance(codeql_paths_ignore, list), "codeql paths-ignore must be a list"
 for excluded in ("frontend/dist/**", "contracts/http/generated/**",
                  "frontend/src/api/generated/**",
                  "java/wotb-web/src/test/resources/archfixture/**"):
-    assert excluded in codeql_config_text, f"codeql paths-ignore missing {excluded}"
+    assert excluded in codeql_paths_ignore, f"codeql paths-ignore missing {excluded}"
+# review R2 P2-1：codeql.yml 变更必须触发 deployment owner（否则仅改 CodeQL 文件时契约不执行）
+assert affected(".github/workflows/codeql.yml") == {"deployment"}, (
+    "codeql.yml must route to deployment (and only deployment)")
 
 ci_text = json.dumps(ci, ensure_ascii=False)
 for forbidden in (
