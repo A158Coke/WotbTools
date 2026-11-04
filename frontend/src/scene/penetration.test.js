@@ -2,7 +2,7 @@
 // 上游 Rust 判定语义变更时，本文件与 penetration.js 同版本跟随——两仓不变量保持同源。
 import { describe, it, expect } from 'vitest'
 import { calculate, isPrimary, ArmorSection, hasPrimaryLayer, matchHitsByOccurrence } from './penetration.js'
-import { penetrationChance, resolveCardChance, evaluateProbabilityChain } from './armorInspectorChance.js'
+import { penetrationChance, resolveCardChance, evaluateProbabilityChain } from './armorInspectorChance.ts'
 
 function hit(section, thickness, point, extra = {}) {
   return {

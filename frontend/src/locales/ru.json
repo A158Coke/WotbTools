@@ -43,7 +43,10 @@
     "feedback": "Обратная связь",
     "global_error_title": "Ошибка",
     "close": "Закрыть",
-    "agent_replay_tab": "3D-повторение (Agent)"
+    "agent_replay_tab": "3D-повторение (Agent)",
+    "view_loading": "Загрузка…",
+    "view_load_error": "Не удалось загрузить страницу",
+    "view_load_reload": "Обновить"
   },
   "viewHost": {
     "loading": "Загрузка…",

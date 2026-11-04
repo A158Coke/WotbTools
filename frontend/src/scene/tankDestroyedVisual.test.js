@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
-import { patchTankMaterial } from './sceneryMaterials.js'
-import { applyTankDestroyedVisual, destroyedVisualAmount, disposeTankDestroyedVisual, prepareTankDestroyedVisual } from './tankDestroyedVisual.js'
+import { patchTankMaterial } from './sceneryMaterials.ts'
+import { applyTankDestroyedVisual, destroyedVisualAmount, disposeTankDestroyedVisual, prepareTankDestroyedVisual } from './tankDestroyedVisual.ts'
 
 const dead = { lifeState: 'DESTROYED', destroyedKnownAtSec: 10 }
 

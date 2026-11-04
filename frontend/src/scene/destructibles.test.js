@@ -3,7 +3,7 @@ import {
   buildDestructibleIndex, resolveDestructibleEvent, fallTipVector, fallRotation, fallDurationS,
   fallStopAngle, foldDestructibleStates, treeFrame, TREE_FALL_MIN_S, TREE_FALL_MAX_S,
   TREE_FALL_DEFAULT_HEIGHT_M, TREE_FALL_MIN_STOP_RAD,
-} from './destructibles.js'
+} from './destructibles.ts'
 
 const doc = {
   instances: [

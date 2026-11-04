@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest'
-import { DEFAULT_PLAYBACK_SPEED, PLAYBACK_SPEEDS, isPlaybackSpeed, usePlaybackTransport } from './usePlaybackTransport.js'
+import { DEFAULT_PLAYBACK_SPEED, PLAYBACK_SPEEDS, isPlaybackSpeed, usePlaybackTransport } from './usePlaybackTransport.ts'
 
 function makeAdapter(initiallyPlaying = false) {
   const state = { playing: initiallyPlaying }

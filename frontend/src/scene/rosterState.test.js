@@ -128,7 +128,7 @@ describe('rosterState · 投影接线守卫', () => {
   const here = dirname(fileURLToPath(import.meta.url))
   const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8').replace(/\/\/[^\n]*/g, '')
   // 名册桥接 2026-10-24 出仓 playback/hudFeed.js（Step A5），投影守卫随实现迁移
-  const feedSrc = readFileSync(resolve(here, 'playback/hudFeed.js'), 'utf8').replace(/\/\/[^\n]*/g, '')
+  const feedSrc = readFileSync(resolve(here, 'playback/hudFeed.ts'), 'utf8').replace(/\/\/[^\n]*/g, '')
 
   it('名册 HP 由 projectRoster 投影，死亡判据复用场景 resolver', () => {
     const at = feedSrc.indexOf('function updateRoster()')

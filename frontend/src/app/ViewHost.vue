@@ -77,4 +77,13 @@ const initialCapability = computed(() => replayInitialCapability(activeView.valu
   flex: 1 0 auto;
   padding-top: calc(var(--header-h) + env(safe-area-inset-top));
 }
+
+/* view loading/error surface（#845）在场时是 main 的唯一元素子节点（KeepAlive 不产生 DOM）：
+   main 临时变成列 flex、surface flex:1 填满 main 的增长高度 —— Footer 贴底不上跳，
+   不需要任何视口减法 magic number。 */
+:global(.app-main:has(> .view-loading)),
+:global(.app-main:has(> .view-load-error)) {
+  display: flex;
+  flex-direction: column;
+}
 </style>
