@@ -32,6 +32,7 @@ import { shotResultClass } from '../utils/shotResultClass.js'
 import { isCompactShotResultCard, shotResultCardMaxWidth as resultCardMaxWidth, shotResultCardMetrics } from '../utils/shotResultCardMetrics.js'
 import { placeShotResultCard } from '../utils/shotResultCardPlacement.js'
 import { renderShotResultCardHtml } from './viewer/shotResultCard.js'
+import { createShotTrajectoryGroup, trajectoryChanceColor } from './viewer/shotTrajectoryGeometry.js'
 import {
     RC,
     buildPack, snapshotPackPose, packPoseChanged, buildRicochetGrid, createGridTextures, simulateContinuation, raycastPackAll,
@@ -5762,12 +5763,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             });
 
             if (trajGroup) fxScene.remove(trajGroup);
-            trajGroup = new THREE.Group();
 
             // 概率色按精确累计概率分档：0 红、0–1 黄、1 绿；显示用四舍五入百分比，
             // <1% 时显示 <1%，但伤害仍按“只要 >0”给全额（用户裁定）。
             // 卡片侧的 Css 变体（标题/概率行/层着色）已随结果卡出仓 viewer/shotResultCard.ts。
-            const probabilityColorHex = (chance) => chance >= 1 ? 0x4CAF50 : (chance > 0 ? 0xffcf5c : 0xf44336);
+            const probabilityColorHex = trajectoryChanceColor;
             const finalOutcome = probabilityMode
                 ? (overallChance >= 1 ? 'PENETRATION' : (hasChance ? 'MAY_PENETRATE' : 'BLOCKED'))
                 : result.split('→').pop().trim();
@@ -5776,63 +5776,19 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 : (finalOutcome === 'PENETRATION' ? 0x4CAF50
                     : (finalOutcome === 'RICOCHET' ? 0xFF8800
                     : (finalOutcome === 'BLOCKED' || finalOutcome === 'ERROR' ? 0xf44336 : 0xff8800)));
-            const camDir = camera.position.clone().sub(firstPoint).normalize();
-
-            // 轨迹管原点：调用方传入的弹道起点（如炮口）优先；否则沿视线反向
-            // 长距离回退（300m），入射弹向一眼可见（原 15m 太短——用户反馈）
-            const origin = trajOrigin || firstPoint.clone().add(camDir.clone().multiplyScalar(300));
-            const trajMat = new THREE.MeshBasicMaterial({ color: color, depthTest: false, transparent: true, opacity: 0.85 });
-
-            const ricLayer = layers.find(l => l.ricochet);
-            const ricPoint = ricLayer ? ricLayer.point : null;
-
-            const incoming = [origin];
-            for (const l of layers) {
-                incoming.push(l.point);
-                if (l.ricochet) break; // stop at ricochet point
-            }
-            if (incoming.length >= 2) {
-                const curve = new THREE.CatmullRomCurve3(incoming, false, 'catmullrom', 0);
-                const geo = new THREE.TubeGeometry(curve, Math.max(2, incoming.length * 2), 0.025, 8, false);
-                const mesh = new THREE.Mesh(geo, trajMat);
-                mesh.renderOrder = 999;
-                trajGroup.add(mesh);
-            }
-
-            const reflected = [];
-            let sawRicPoint = false;
-            for (const l of layers) {
-                if (l.ricochet) { sawRicPoint = true; reflected.push(l.point); continue; }
-                if (l.seg === 1) {
-                    if (!sawRicPoint) { reflected.push(ricPoint); sawRicPoint = true; }
-                    reflected.push(l.point);
-                }
-            }
-            if (sawRicPoint && reflected.length >= 2) {
-                const curve = new THREE.CatmullRomCurve3(reflected, false, 'catmullrom', 0);
-                const geo = new THREE.TubeGeometry(curve, Math.max(2, reflected.length * 2), 0.025, 8, false);
-                const mesh = new THREE.Mesh(geo, trajMat);
-                mesh.renderOrder = 999;
-                trajGroup.add(mesh);
-            }
-
-            for (let i = 0; i < layers.length; i++) {
-                const l = layers[i];
-                const layerChance = probabilityMode ? (l.chance ?? 0) : null;
-                const pColor = probabilityMode
-                    ? probabilityColorHex(layerChance)
-                    : (l.penetrated ? 0x4CAF50 : (l.ricochet ? 0xFF8800 : 0xf44336));
-
-                const dotGeo = new THREE.SphereGeometry(0.04, 8, 8);
-                const dotMat = new THREE.MeshBasicMaterial({ color: pColor, depthTest: false, transparent: true, opacity: 0.95 });
-                const dotMesh = new THREE.Mesh(dotGeo, dotMat);
-                dotMesh.position.copy(l.point);
-                dotMesh.renderOrder = 999;
-                trajGroup.add(dotMesh);
-            }
-
-            const lastPt = layers.length > 0 ? layers[layers.length - 1].point : firstPoint;
-            trajInfoPos = lastPt.clone();
+            // 轨迹几何已出仓 viewer/shotTrajectoryGeometry.ts（Wave B3B）：场景仍拥有
+            // 判定/概率计算、fxScene/trajGroup 生命周期与 DOM 挂载；factory 按已算好的
+            // 层链/轨迹色构建等价的 Mesh/材质/renderOrder，不挂载到任何 scene。
+            const { group: builtTrajGroup, lastPoint } = createShotTrajectoryGroup({
+                firstPoint,
+                cameraPosition: camera.position,
+                trajOrigin,
+                layers,
+                color,
+                probabilityMode,
+            });
+            trajGroup = builtTrajGroup;
+            trajInfoPos = lastPoint;
             const div = document.getElementById('traj-info');
             // 结果面板 presentation 已出仓 viewer/shotResultCard.ts（Wave B3A）：场景仍拥有
             // 判定/概率计算、轨迹几何与 DOM 挂载；卡片 HTML 由纯 renderer 按已算好的输入渲染。
@@ -5863,9 +5819,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             }
             // 轨迹线与轨迹面板无条件展示(用户要求:与正常点击判定一致的轨迹展示)
             updateTrajInfoPos();
-            // 轨迹画在溅射球壳之上（996）、命中标记之下（999）：三者的深度测试都关闭，
-            // 玻璃球壳不能把轨迹线/层点糊掉。
-            trajGroup.traverse((o) => { if (o.isMesh) o.renderOrder = 997; });
+            // renderOrder 997（溅射球壳 996 之上、命中标记 999 之下）由 factory 统一设置。
             fxScene.add(trajGroup);
         }
 
