@@ -33,16 +33,8 @@ import enemyTurret from '../assets/tank-icons/tank-marker-enemy-turret.png'
 import friendlyHull from '../assets/tank-icons/tank-marker-friendly-hull.png'
 import friendlyTurret from '../assets/tank-icons/tank-marker-friendly-turret.png'
 import {
-  BURST_MS,
-  FLOAT_DMG_MS,
-  activeFeed,
-  FLASH_MS,
-  GHOST_MS,
-  KILL_FEED_MS,
   clampViewPan,
-  eventsCrossed,
   formatClock,
-  pushFeed,
   recentPositionTrails,
   recentPositionTrailsFromPose,
   teamPointsAt,
@@ -53,12 +45,10 @@ import {
 import {
   cumulativeStatsAtV2,
   friendlyHealthAt,
-  ghostAroundV2,
   healthDisplayAt,
-  positionAtV2,
   positionCoveredAtV2,
-  victimFeedbackAllowedV2,
 } from '../utils/battlePlaybackV2'
+import { usePlaybackTransients } from '../composables/usePlaybackTransients.js'
 import { projectVehicleState } from '../utils/playbackVehicleState'
 import { observedFreezeTimeAt } from '../utils/battlePlaybackV2'
 import { poseCoveredAt, selectActiveDef, sampleVehiclePoseGame } from '../replay-local/pose/vehiclePose.js'
@@ -339,17 +329,10 @@ const visibleTrails = computed(() => trailPrefs.showTrail
 // transient 全部 wall-clock（performance.now）驱动，播放帧推进时消费新跨过的事件，
 // seek 清空（§20.1 不补播）、pause 自然完成（§20.2）、resume 不重复已消费事件（§20.3，
 // eventCursor 严格左开：恰在 cursor 上的事件不重复触发）。
+// transient 状态与消费/过期规则的唯一 owner = usePlaybackTransients（#820 Wave B5A）；
+// 本组件只保留 playback clock（frame/pause RAF）与地图投影（markerScreen → visibleFloats/Bursts）。
 // Blocker 1：consumption 源 = authoritativeEvents（原始 playback events），
 // 不受 Event Panel 折叠状态影响。
-let transientSeq = 0
-const eventCursor = ref(0)
-const floatItems = ref([]) // [{ id, victimAccountId, damage, bornRealMs, durationMs }]
-const burstItems = ref([]) // [{ id, victimAccountId, bornRealMs, durationMs }]
-const feedItems = ref([]) // [{ id, victimAccountId, victimPlayerName, victimName, victimFriendly, durationMs }]
-// Event Banner 真实队列：id -> 展示起点 realMs（非响应式，避免 computed 副作用循环）。
-const feedShownAt = new Map()
-const ghostByAccount = reactive(new Map()) // accountId -> { prevPct, nextPct, untilRealMs }
-const flashByAccount = reactive(new Map()) // accountId -> untilRealMs
 // seek/状态恢复帧：禁用 HP bar 过渡动画（§20.1 seek 只恢复状态不补动画）
 const hpNoTransition = ref(false)
 
@@ -357,123 +340,23 @@ function realNowMs() {
   return typeof performance !== 'undefined' ? performance.now() : Date.now()
 }
 
-/** seek/恢复：清空全部 transient 并重置事件 cursor（§20.1 不补播历史动画）。 */
-function resetTransients(sec) {
-  eventCursor.value = sec
-  floatItems.value = []
-  burstItems.value = []
-  feedItems.value = []
-  feedShownAt.clear()
-  ghostByAccount.clear()
-  flashByAccount.clear()
-}
-
-/** 播放时钟跨过 (fromSec, toSec] 的新事件 → 生成 transient feedback（§10/§12/§16）。 */
-function consumeEvents(fromSec, toSec) {
-  // Blocker 1：combat feedback 消费 authoritative playback events（不依赖事件列表 UI 过滤——
-  // 「战斗事实有没有发生」不取决于 DAMAGE/KILL checkbox 是否显示）。
-  // 左界 = max(fromSec, eventCursor)（严格左开 cursor：seek/回绕把 cursor 重置到新时间点后，
-  // prev 滞后不会把旧时间点事件重复消费——Blocker 2 loop 下一轮不重复上一轮末尾事件）。
-  const damageLeft = Math.max(fromSec, eventCursor.value)
-  const crossed = eventsCrossed(authoritativeEvents.value, damageLeft, toSec)
-  const damageCrossed = hpVehicles.value.some(track =>
-    (track.damageLosses || []).some(loss => loss && loss.toSec > damageLeft + 1e-6 && loss.toSec <= toSec + 1e-6))
-  if (crossed.length === 0 && !damageCrossed) {
-    eventCursor.value = Math.max(eventCursor.value, toSec)
-    return
-  }
-  const now = realNowMs()
-  // 消费时刻资格判定（Codex review 2026-10-31）：以**帧末 toSec** 的 canonical 位置为准，
-  // 与 projectVehicleState 的排除谓词同源（positionAtV2 为空 = 该车尚未入场）。
-  // 此前的守卫读 vehicleStates（派生自节流发布的 currentTime，落后内部钟至多 1/30s）——
-  // 车辆首次 canonical 位置与首个合格事件落在同一消费帧时会被旧快照误删浮动伤害/击毁
-  // burst，且 cursor 随后永久跳过该事件。事件稀疏：逐 track 的 segment 位置检查远轻于
-  // 整表状态快照。
-  const hasPositionAtConsumption = (track) => positionAtV2(track.positionSegments, toSec) != null
-  // DamageLoss is the sole numeric damage authority. Notification events below
-  // remain responsible for lifecycle feedback only.
-  for (const track of hpVehicles.value) {
-    for (const loss of track.damageLosses || []) {
-      if (!loss || loss.toSec <= damageLeft + 1e-6 || loss.toSec > toSec + 1e-6) continue
-      const victim = vehiclesByAccount.value.get(track.accountId)
-      if (!victim || loss.transientAllowed !== true) continue
-      if (!hasPositionAtConsumption(track)) continue
-      floatItems.value.push({
-        id: ++transientSeq,
-        victimAccountId: track.accountId,
-        hpLoss: loss.hpLoss,
-        bornRealMs: now,
-        durationMs: FLOAT_DMG_MS,
-      })
-      const g = ghostAroundV2(loss)
-      if (g) ghostByAccount.set(track.accountId, { prevPct: g.prevPct, nextPct: g.nextPct, untilRealMs: now + GHOST_MS })
-      flashByAccount.set(track.accountId, now + FLASH_MS)
-    }
-  }
-  for (const ev of crossed) {
-    if (ev.type === 'DAMAGE') {
-      continue
-    } else if (ev.type === 'DESTROYED') {
-      // §12：击毁 burst（轻量 2D，克制；仅受击方位置流覆盖时锚定）
-      const victim = vehiclesByAccount.value.get(ev.accountId)
-      if (!victim || !victimFeedbackAllowedV2(victim, ev.timeSec)) continue
-      if (!hasPositionAtConsumption(victim)) continue
-      burstItems.value.push({
-        id: ++transientSeq,
-        victimAccountId: ev.accountId,
-        bornRealMs: now,
-        durationMs: BURST_MS,
-      })
-    } else if (ev.type === 'KILL') {
-      // §16 kill feed：只显示受害者被击毁（§15.2——回放只能证明后端事后解析
-      // attackerAccountId，无法证明客户端当时可见击杀者身份，禁止伪造 "未知 ☠ IS-7"）。
-      const victim = vehiclesByAccount.value.get(ev.targetAccountId)
-      if (!victim) continue
-      feedItems.value = pushFeed(feedItems.value, {
-        id: ++transientSeq,
-        victimAccountId: ev.targetAccountId,
-        // §15：banner 使用 canonical vehicle identity（playerName + tankName），
-        // 显示「玩家名（车辆名）被击毁」；不猜车型、不解析 label 字符串。
-        victimPlayerName: victim.playerName || '',
-        victimName: victim.tankName || String(victim.tankId),
-        victimFriendly: victim.friendly,
-        bornRealMs: now,
-        durationMs: KILL_FEED_MS,
-      })
-    }
-  }
-  eventCursor.value = Math.max(eventCursor.value, toSec)
-}
-
-/** 暂停时 transient 是否仍有未决（驱动轻量时钟自然完成，§20.2）。 */
-function hasPendingTransients(now) {
-  if (transientsActive(floatItems.value, now).length) return true
-  if (transientsActive(burstItems.value, now).length) return true
-  // Event Banner queue：以 shownAt 计时（activeFeed）。存在「排队等待」或「正在展示且未过期」的
-  // 条目都算 pending —— pause 下也要完整展示 4s 并自然消失（不能按 bornRealMs 判断 feed）。
-  if (feedItems.value.some(it => {
-    const s = feedShownAt.get(it.id)
-    return s == null || !Number.isFinite(it.durationMs) || now - s < it.durationMs
-  })) return true
-  for (const g of ghostByAccount.values()) if (g.untilRealMs > now) return true
-  for (const u of flashByAccount.values()) if (u > now) return true
-  return false
-}
-
-/** 过期 transient 清理（由 nowMs/currentTime 变化驱动，Map 不无限增长）。 */
-function pruneTransients(now) {
-  for (const [id, g] of ghostByAccount) if (g.untilRealMs <= now) ghostByAccount.delete(id)
-  for (const [id, u] of flashByAccount) if (u <= now) flashByAccount.delete(id)
-  // Event Banner 队列：移除已完整展示并过期的条目及其 shownAt 记录；
-  // 排队中（shownAt 空）的条目保留（待空位展示，不直接挤出）。
-  feedItems.value = feedItems.value.filter(it => {
-    const s = feedShownAt.get(it.id)
-    return s == null || !Number.isFinite(it.durationMs) || now - s < it.durationMs
-  })
-  for (const id of [...feedShownAt.keys()]) {
-    if (!feedItems.value.some(it => it.id === id)) feedShownAt.delete(id)
-  }
-}
+const {
+  eventCursor,
+  floatItems,
+  burstItems,
+  resetTransients,
+  consumeEvents,
+  hasPendingTransients,
+  pruneTransients,
+  ghostFor,
+  flashFor,
+  visibleFeed,
+} = usePlaybackTransients({
+  nowMs,
+  authoritativeEvents: () => authoritativeEvents.value,
+  hpVehicles: () => hpVehicles.value,
+  vehiclesByAccount: () => vehiclesByAccount.value,
+})
 
 // ---- 单车 HP HUD 数据（§4/§5/§6/§7）----
 function hpFor(vehicle) {
@@ -493,16 +376,7 @@ function hpFor(vehicle) {
 function hpDisplayNumText(hp) {
   return hp.current != null ? String(hp.current) : '—'
 }
-function ghostFor(accountId) {
-  const g = ghostByAccount.get(accountId)
-  if (!g || g.untilRealMs <= nowMs.value) return null
-  return { prevPct: g.prevPct, nextPct: g.nextPct }
-}
-function flashFor(accountId) {
-  return (flashByAccount.get(accountId) || 0) > nowMs.value
-}
-
-// ---- transient 渲染视图（wall-clock 过滤 + 屏幕定位）----
+// ---- transient 渲染视图（wall-clock 过滤 + 屏幕定位；状态 owner = usePlaybackTransients）----
 const visibleFloats = computed(() => {
   const now = nowMs.value
   const active = transientsActive(floatItems.value, now)
@@ -538,7 +412,7 @@ const visibleBursts = computed(() => {
     return { ...item, x: p.x, y: p.y, friendly: st.vehicle.friendly }
   }).filter(Boolean)
 })
-const visibleFeed = computed(() => activeFeed(feedItems.value, nowMs.value, feedShownAt))
+// visibleFeed 由 usePlaybackTransients 提供（activeFeed 权威队列投影）。
 const selectedAccountId = ref(null)
 const uiHidden = ref(false)
 function setUiHidden(hidden) {
@@ -2186,13 +2060,19 @@ function ensurePauseClock(now) {
     pauseRafId = requestAnimationFrame(() => {
       pauseRafId = null
       nowMs.value = typeof performance !== 'undefined' ? performance.now() : Date.now()
-      // nowMs 变化 → transient watch → ensurePauseClock(新鲜 now) 决定续/停
+      // nowMs 变化 → transient watch → pruneTransients + ensurePauseClock(新鲜 now) 决定续/停
     })
   }
 }
 
-// transient 过期清理（nowMs/currentTime 变化驱动；reactive Map 不无限增长）
-watch([nowMs, currentTime], () => pruneTransients(nowMs.value))
+// transient 过期清理（nowMs/currentTime 变化驱动；reactive Map 不无限增长）。
+// prune 后按新鲜 now 重估 pending：暂停期间仍有未决动画（如 kill feed 4s 展示）时
+// 续约轻量 RAF 让其自然完成（§20.2）；播放中调用会被 ensurePauseClock 的 playing
+// 守卫挡下，不会产生第二个循环。
+watch([nowMs, currentTime], () => {
+  pruneTransients(nowMs.value)
+  ensurePauseClock(nowMs.value)
+})
 
 /** VehicleMarker label prop（每 marker 一个：显示开关 + 碰撞位移 +
  *  §25 blockHidden/hpHidden：不可分离碰撞时的优先级隐藏兼容输出，恒 false）。 */
