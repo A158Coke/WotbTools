@@ -14,6 +14,89 @@ trap 'rm -rf "$TMP"' EXIT
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
+# Delta 身份与实际重建必须同时成立；不依赖正式网络、密钥或持久化环境。
+python3 - "$ROOT" <<'PY'
+import argparse, hashlib, importlib.util, json, pathlib, tempfile
+from unittest.mock import patch
+import sys
+path = pathlib.Path(sys.argv[1]) / "scripts/android-release/delta_artifact.py"
+spec = importlib.util.spec_from_file_location("delta_artifact", path)
+delta = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(delta)
+# Runtime 和 stage/publish verifier 使用相同的有界整数比较，禁止静默漂移。
+import re
+client = (pathlib.Path(sys.argv[1]) / "android/app/src/main/java/com/wotbtools/app/ApkUpdater.kt").read_text(encoding="utf-8")
+match = re.search(r"const val MAX_DELTA_RATIO_DENOMINATOR = ([0-9]+)", client)
+assert match and int(match.group(1)) == delta.MAX_DELTA_RATIO_DENOMINATOR
+assert "patch.size > targetSize / MAX_DELTA_RATIO_DENOMINATOR" in client
+sha = lambda b: hashlib.sha256(b).hexdigest()
+with tempfile.TemporaryDirectory() as work:
+    root = pathlib.Path(work)
+    base, target, meta = root / "base.apk", root / "target.apk", root / "metadata.json"
+    base.write_bytes(b"official base")
+    target.write_bytes(b"signed target" * 1000)
+    base_manifest = root / "base.json"
+    base_manifest.write_text(json.dumps({"latestVersionCode": 4000000, "sha256": sha(base.read_bytes())}))
+    args = argparse.Namespace(target=str(target), target_sha=sha(target.read_bytes()), target_code=4001000,
+        xdelta="fake-xdelta", output_dir=str(root), output=str(meta), base_manifest=str(base_manifest), base_file=str(base))
+    def valid_command(command, check):
+        assert check
+        output = pathlib.Path(command[-1])
+        if "-e" in command:
+            assert "-A" in command and "-a" in command and command[command.index("-S") + 1] == "none"
+            output.write_bytes(bytes.fromhex("d6c3c40000") + b"valid patch")
+        else:
+            output.write_bytes(target.read_bytes())
+    with patch.object(delta.subprocess, "run", valid_command):
+        delta.build(args)
+    doc = json.loads(meta.read_text())
+    assert doc["apkSizeBytes"] == len(target.read_bytes())
+    assert len(doc["patches"]) == 1
+    patch_item = doc["patches"][0]
+    assert delta.validate(doc, args.target_code, args.target_sha, target.stat().st_size) == doc["patches"]
+    boundary = json.loads(json.dumps(doc))
+    boundary["patches"][0]["size"] = target.stat().st_size // delta.MAX_DELTA_RATIO_DENOMINATOR
+    assert delta.validate(boundary, args.target_code, args.target_sha, target.stat().st_size) == boundary["patches"]
+    assert delta.validate({}, args.target_code, args.target_sha, target.stat().st_size) == []
+    p = root / patch_item["url"].rsplit("/", 1)[-1]
+    verify = argparse.Namespace(target=str(target), target_sha=args.target_sha, target_code=args.target_code,
+        evidence=str(meta), patch_dir=str(root))
+    delta.check(verify)
+    # 即使 identity 自洽，也不能发布 Android decoder 不支持的应用头。
+    wrong = bytes.fromhex("d6c3c40004") + b"valid patch"
+    wrong_sha = sha(wrong)
+    wrong_doc = json.loads(json.dumps(doc))
+    wrong_doc["patches"][0]["sha256"] = wrong_sha
+    wrong_doc["patches"][0]["url"] = patch_item["url"].replace(patch_item["sha256"], wrong_sha)
+    (root / wrong_doc["patches"][0]["url"].rsplit("/", 1)[-1]).write_bytes(wrong)
+    meta.write_text(json.dumps(wrong_doc))
+    try:
+        delta.check(verify)
+        raise AssertionError("unsupported VCDIFF header accepted")
+    except ValueError:
+        pass
+    meta.write_text(json.dumps(doc))
+    p.write_bytes(b"bad bytes")
+    try:
+        delta.check(verify)
+        raise AssertionError("tampered patch accepted")
+    except ValueError:
+        pass
+    for update in ({"size": target.stat().st_size // delta.MAX_DELTA_RATIO_DENOMINATOR + 1}, {"url": "https://other.invalid/patch"},
+                   {"fromVersionCode": 3999999}, {"algorithm": "unsupported"}, {"sha256": "0" * 64}):
+        invalid = json.loads(json.dumps(doc)); invalid["patches"][0].update(update)
+        try:
+            delta.validate(invalid, args.target_code, args.target_sha, target.stat().st_size)
+            raise AssertionError(f"invalid patch accepted: {update}")
+        except ValueError:
+            pass
+    base_manifest.write_text(json.dumps({"latestVersionCode": 3999000, "sha256": sha(base.read_bytes())}))
+    with patch.object(delta.subprocess, "run", side_effect=AssertionError("old client should not generate delta")):
+        delta.build(args)
+    assert json.loads(meta.read_text())["patches"] == []
+print("Android delta metadata and reconstruction: PASS")
+PY
+
 python3 - "$ROOT" "$ROOT/.github/workflows/android-release.yml" <<'PY'
 from pathlib import Path
 import sys
@@ -29,6 +112,16 @@ android_proxy = (root / "android/app/src/main/java/com/wotbtools/app/AgentAssetP
 assert 'REMOTE_ASSET_BASE = "https://assets.wotbtools.com"' in android_proxy
 assert "COS_BASE" not in android_proxy
 release_workflow = yaml.safe_load((root / ".github/workflows/android-release.yml").read_text(encoding="utf-8"))
+delta_step = next(step for step in release_workflow["jobs"]["stage"]["steps"] if step.get("id") == "delta")
+assert 'delta-base-staging.json' in delta_step["run"] and '.versionCode == $code and .sha256 == $sha' in delta_step["run"]
+delta_upload = next(step for step in release_workflow["jobs"]["stage"]["steps"] if step.get("name") == "Upload Android delta to Tsinghua Cloud")
+assert 'replace=0' in delta_upload["run"]
+delta_ids = ("delta_cloud", "delta_tx_prepare", "delta_tx_upload", "delta_tx_install",
+             "delta_tx2_prepare", "delta_tx2_upload", "delta_tx2_install", "delta_public")
+steps = release_workflow["jobs"]["stage"]["steps"]
+assert all(next(step for step in steps if step.get("id") == item).get("continue-on-error") is True for item in delta_ids)
+resolution = next(step for step in steps if step.get("name") == "Resolve optional Android delta availability")["run"]
+assert 'EXISTING_EVIDENCE' in resolution and "'.patches = []'" in resolution and 'exit 1' in resolution
 staged_source = next(step for step in release_workflow["jobs"]["publish"]["steps"] if step.get("id") == "stagedref")
 assert "android/app/src/main/java/com/wotbtools/app/AgentAssetProxy.kt" in staged_source["run"]
 staged = next(step for step in release_workflow["jobs"]["publish"]["steps"] if step.get("id") == "staged")
@@ -41,6 +134,85 @@ for name in ("frontend.yml", "frontend-replica.yml"):
     web_workflow = yaml.safe_load((root / ".github/workflows" / name).read_text(encoding="utf-8"))
     assert web_workflow["env"]["ASSET_BASE_URL"] == "https://assets.wotbtools.com", name
 PY
+
+# 对 workflow 的真实 shell 逻辑执行成功、首次可选失败和不可变重试失败三条路径。
+if command -v jq >/dev/null; then
+  POLICY_DIR="$TMP/delta-policy"
+  mkdir -p "$POLICY_DIR"
+  python3 - "$ROOT/.github/workflows/android-release.yml" > "$POLICY_DIR/run.sh" <<'PYCODE'
+import sys, yaml
+with open(sys.argv[1], encoding="utf-8") as stream:
+    workflow = yaml.safe_load(stream)
+print(next(step["run"] for step in workflow["jobs"]["stage"]["steps"]
+           if step.get("name") == "Resolve optional Android delta availability"))
+PYCODE
+  printf '%s\n' '{"apkSizeBytes":100,"patches":[{"sha256":"fixed"}]}' > "$POLICY_DIR/delta-metadata.json"
+  RUNNER_TEMP="$POLICY_DIR" DELTA_RESULTS='success,success,success,success,success,success,success,success' EXISTING_EVIDENCE=404 bash "$POLICY_DIR/run.sh"
+  jq -e '.patches | length == 1' "$POLICY_DIR/delta-metadata.json" >/dev/null || fail 'successful delta was dropped'
+  RUNNER_TEMP="$POLICY_DIR" DELTA_RESULTS='failure,success,success,success,success,success,success,success' EXISTING_EVIDENCE=404 bash "$POLICY_DIR/run.sh"
+  jq -e '.patches | length == 0' "$POLICY_DIR/delta-metadata.json" >/dev/null || fail 'new delta failure did not use full-only'
+  printf '%s\n' '{"apkSizeBytes":100,"patches":[{"sha256":"fixed"}]}' > "$POLICY_DIR/delta-metadata.json"
+  if RUNNER_TEMP="$POLICY_DIR" DELTA_RESULTS='failure,success,success,success,success,success,success,success' EXISTING_EVIDENCE=200 bash "$POLICY_DIR/run.sh"; then
+    fail 'existing immutable delta failure must stop staging'
+  fi
+  jq -e '.patches | length == 1' "$POLICY_DIR/delta-metadata.json" >/dev/null || fail 'existing evidence was changed'
+  echo 'Android optional delta stage policy: PASS'
+
+  # 执行实际上传 step 的 shell；模拟云端同字节、缺失和冲突，不接触网络或密钥。
+  mkdir -p "$POLICY_DIR/bin" "$POLICY_DIR/release-staging"
+  printf 'immutable patch\n' > "$POLICY_DIR/release-staging/fixture.vcdiff"
+  expected_sha="$(sha256sum "$POLICY_DIR/release-staging/fixture.vcdiff" | awk '{print $1}')"
+  printf '{"patches":[{"sha256":"%s"}]}\n' "$expected_sha" > "$POLICY_DIR/delta-metadata.json"
+  python3 - "$ROOT/.github/workflows/android-release.yml" > "$POLICY_DIR/upload.sh" <<'PYCODE'
+import sys, yaml
+with open(sys.argv[1], encoding="utf-8") as stream:
+    workflow = yaml.safe_load(stream)
+script = next(step["run"] for step in workflow["jobs"]["stage"]["steps"]
+              if step.get("name") == "Upload Android delta to Tsinghua Cloud")
+print(script.replace('${{ steps.delta.outputs.patchName }}', 'fixture.vcdiff'))
+PYCODE
+  cat > "$POLICY_DIR/bin/curl" <<'CURL'
+#!/usr/bin/env bash
+set -eu
+out=''; write=''; url=''; upload=false
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    -w) write="$2"; shift 2 ;;
+    -F) upload=true; shift 2 ;;
+    -H|--connect-timeout|--max-time) shift 2 ;;
+    -*) shift ;;
+    *) url="$1"; shift ;;
+  esac
+done
+if [ "$upload" = true ]; then
+  : > "$RUNNER_TEMP/upload-called"
+  [ -z "$out" ] || : > "$out"
+elif [[ "$url" == *upload-link* ]]; then
+  printf '%s' '"https://fixture.invalid/upload"'
+elif [ -n "$write" ]; then
+  case "$MOCK_EXISTING" in
+    same) cp "$RUNNER_TEMP/release-staging/fixture.vcdiff" "$out"; printf '200 application/octet-stream' ;;
+    absent) printf '<html>missing</html>' > "$out"; printf '200 text/html; charset=utf-8' ;;
+    conflict) printf 'conflict' > "$out"; printf '200 application/octet-stream' ;;
+  esac
+else
+  cp "$RUNNER_TEMP/release-staging/fixture.vcdiff" "$out"
+fi
+CURL
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$POLICY_DIR/bin/sleep"
+  chmod +x "$POLICY_DIR/bin/curl" "$POLICY_DIR/bin/sleep"
+  (cd "$POLICY_DIR"; PATH="$POLICY_DIR/bin:$PATH" RUNNER_TEMP="$POLICY_DIR" MOCK_EXISTING=same TSINGHUA_CLOUD_TOKEN=fixture bash upload.sh)
+  [ ! -e "$POLICY_DIR/upload-called" ] || fail 'identical delta must not be uploaded again'
+  (cd "$POLICY_DIR"; PATH="$POLICY_DIR/bin:$PATH" RUNNER_TEMP="$POLICY_DIR" MOCK_EXISTING=absent TSINGHUA_CLOUD_TOKEN=fixture bash upload.sh)
+  [ -e "$POLICY_DIR/upload-called" ] || fail 'absent delta must be uploaded'
+  rm "$POLICY_DIR/upload-called"
+  if (cd "$POLICY_DIR"; PATH="$POLICY_DIR/bin:$PATH" RUNNER_TEMP="$POLICY_DIR" MOCK_EXISTING=conflict TSINGHUA_CLOUD_TOKEN=fixture bash upload.sh); then
+    fail 'conflicting immutable cloud delta must fail'
+  fi
+  [ ! -e "$POLICY_DIR/upload-called" ] || fail 'conflicting delta must not be overwritten'
+  echo 'Android immutable delta cloud retry: PASS'
+fi
 
 resolve() {
   WOTB_ROOT="$ROOT" WOTB_TRIGGER="$1" WOTB_TAG_NAME="${2:-}" WOTB_COMMIT="deadbeef" bash "$RESOLVE"
@@ -325,6 +497,139 @@ agent_wasm_block = workflow[agent_wasm:frontend]
 assert "bash scripts/fetch-agent-wasm.sh" in agent_wasm_block, \
     "Android release frontend validation must fetch the pinned Agent WASM first"
 PY
+
+
+# 执行真实 delta/staging step；只替换 SSH/HTTP 传输，身份校验、分支与产物处理不 mock。
+if command -v jq >/dev/null && command -v flock >/dev/null; then
+python3 - "$ROOT" "$TMP" <<'PYFLOW'
+import hashlib, importlib.util, json, os, re, shutil, subprocess, sys
+from pathlib import Path
+import yaml
+root, tmp = map(Path, sys.argv[1:])
+work = tmp / "immutable-workflow"
+for directory in ("scripts/android-release", "contracts", "deploy/agent", "release-staging", "bin", "tx1", "tx2", "runner", "android/app/build/outputs/apk/release"):
+    (work / directory).mkdir(parents=True, exist_ok=True)
+for name in ("android_contract.py", "delta_artifact.py", "staging-evidence.sh"):
+    shutil.copyfile(root / "scripts/android-release" / name, work / "scripts/android-release" / name)
+shutil.copyfile(tmp / "contract.json", work / "contracts/android-native-bridge.json")
+shutil.copyfile(tmp / "pin.json", work / "deploy/agent/source.json")
+target = work / "android/app/build/outputs/apk/release/app-release.apk"
+shutil.copyfile(tmp / "bundle.apk", target)
+sha = hashlib.sha256(target.read_bytes()).hexdigest()
+runner = work / "runner"
+(runner / "apk-badging.txt").write_text("package: name='com.wotbtools.app' versionCode='4000001' versionName='4.0.1'")
+spec = importlib.util.spec_from_file_location("gates", root / "scripts/android-release/android_contract.py")
+gates = importlib.util.module_from_spec(spec); spec.loader.exec_module(gates)
+evidence = gates.apk_bundle_identity(str(target), json.loads((tmp / "contract.json").read_text()), json.loads((tmp / "pin.json").read_text()), "a" * 40, "4.0.1")
+patch_bytes = bytes.fromhex("d6c3c40000") + b"immutable patch"
+patch_sha = hashlib.sha256(patch_bytes).hexdigest()
+patch_name = f"wotbtools-android-delta-4000000-4000001-{patch_sha}.vcdiff"
+evidence.update(stagedAt="2026-10-01T00:00:00Z", apkSizeBytes=target.stat().st_size, patches=[{
+    "fromVersionCode": 4000000, "fromSha256": "b" * 64, "algorithm": "xdelta3-vcdiff",
+    "url": "https://wotbtools.com/download/android/" + patch_name, "sha256": patch_sha, "size": len(patch_bytes)}])
+# 非标准空白及额外字段也属于不可变字节，禁止重序列化。
+evidence["fixtureNote"] = "preserve exact bytes"
+original = (json.dumps(evidence, indent=3) + "\n\n").encode()
+name = "wotbtools-android-v4.0.1.staging.json"
+(work / "patch").write_bytes(patch_bytes)
+for node in ("tx1", "tx2"):
+    (work / (node + ".lock")).touch()
+(work / "bin/ssh").write_text('''#!/usr/bin/env python3
+import os, shlex, subprocess, sys
+from pathlib import Path
+node = next((n for n in ("tx1", "tx2") if "user@" + n in sys.argv), None)
+if node is None or os.environ.get("UNREACHABLE_NODE") == node: sys.exit(255)
+args = shlex.split(sys.argv[-1])
+base = Path(os.environ["FIXTURE_ROOT"])
+args[4:6] = [str(base / node), str(base / (node + ".lock"))]
+sys.exit(subprocess.run(args, stdin=sys.stdin.buffer).returncode)
+''')
+(work / "bin/curl").write_text('''#!/usr/bin/env bash
+set -eu
+printf '%s\\n' "$*" >> "$FIXTURE_ROOT/curl.log"
+out=''; headers=false
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    -I) headers=true; shift ;;
+    --retry|--connect-timeout|--max-time|-w) shift 2 ;;
+    -*) shift ;;
+    *) url="$1"; shift ;;
+  esac
+done
+if [ "$headers" = true ]; then
+  printf 'location: https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/files/\\r\\n' > "$out"
+  printf 302
+elif [[ "$url" == *.vcdiff ]]; then
+  [ "${MOCK_PATCH:-same}" != missing ] || exit 22
+  if [ "${MOCK_PATCH:-same}" = corrupt ]; then printf corrupt > "$out"; else cp "$FIXTURE_ROOT/patch" "$out"; fi
+else
+  # 即使有一个 origin 的 E[P] 存在，public E/base 仍返回 404。
+  printf '{}' > "$out"; printf 404; exit 22
+fi
+''')
+for command in ("ssh", "curl"):
+    (work / "bin" / command).chmod(0o755)
+workflow = yaml.safe_load((root / ".github/workflows/android-release.yml").read_text(encoding="utf-8"))
+steps = workflow["jobs"]["stage"]["steps"]
+values = {"steps.version.outputs.versionCode": "4000001", "steps.version.outputs.versionName": "4.0.1",
+          "steps.version.outputs.commit": "a" * 40, "steps.artifact.outputs.sha256": sha,
+          "steps.artifact.outputs.apkName": "wotbtools-android-v4.0.1.apk"}
+def script(step, extra=None):
+    mapping = values | (extra or {})
+    return re.sub(r"\$\{\{\s*(.*?)\s*\}\}", lambda m: mapping[m[1]], step["run"])
+delta = script(next(s for s in steps if s.get("id") == "delta"))
+staging = next(s for s in steps if s.get("id") == "staging")
+env = dict(os.environ, FIXTURE_ROOT=str(work), RUNNER_TEMP=str(runner), GITHUB_OUTPUT=str(work / "output"), PATH=str(work / "bin") + os.pathsep + os.environ["PATH"])
+for node in ("TX1", "TX2"):
+    for key, value in {"HOST": node.lower(), "USER": "user", "PORT": "22", "KEY": "fixture"}.items():
+        env[node + "_SSH_" + key] = value
+def run(text, success=True, **overrides):
+    result = subprocess.run(["bash", "-c", text], cwd=work, env=env | overrides, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert (result.returncode == 0) == success, result.stdout + result.stderr
+    return result
+# A1: partial E[P], public E=404 and base fetch unavailable. Reuse E[P], no patch regeneration.
+(work / "tx1" / name).write_bytes(original)
+run(delta)
+assert (runner / "delta-existing-staging.json").read_bytes() == original
+assert not ".staging.json" in (work / "curl.log").read_text()
+run(script(staging, {"steps.delta.outputs.existingEvidence": "200"}))
+assert (work / "release-staging" / name).read_bytes() == original
+# Existing patch failure/tampering cannot silently turn E[P] into full-only.
+run(delta, False, MOCK_PATCH="missing")
+run(delta, False, MOCK_PATCH="corrupt")
+assert (work / "tx1" / name).read_bytes() == original
+# A2: even semantically equal JSON with different bytes is a conflict.
+(work / "tx2" / name).write_text(json.dumps(evidence))
+run(delta, False)
+# A4: same bytes on both nodes is idempotent, with identity validation still enforced.
+(work / "tx2" / name).write_bytes(original)
+run(delta)
+invalid = dict(evidence, sourceSha="c" * 40)
+for node in ("tx1", "tx2"): (work / node / name).write_text(json.dumps(invalid))
+run(delta, False)
+for node in ("tx1", "tx2"): (work / node / name).write_bytes(original)
+# A5: unreachable never becomes missing (including when the other node is missing).
+run(delta, False, UNREACHABLE_NODE="tx2")
+for node in ("tx1", "tx2"): (work / node / name).unlink()
+run(delta, False, UNREACHABLE_NODE="tx2")
+# A3: both origins explicitly missing; optional base HTTP failure yields a NEW full-only E.
+(runner / "prod-version.json").write_text(json.dumps({"latestVersionCode":4000000, "sha256":"b"*64,
+    "apkUrl":"https://wotbtools.com/download/android/wotbtools-android-v4.0.0.apk"}))
+run(delta)
+meta = json.loads((runner / "delta-metadata.json").read_text())
+assert meta == {"apkSizeBytes":target.stat().st_size, "patches":[]}
+(runner / "bundle-evidence.json").write_text(json.dumps(evidence | {"patches":[]}))
+run(script(staging, {"steps.delta.outputs.existingEvidence":"404"}))
+assert json.loads((work / "release-staging" / name).read_text())["patches"] == []
+# A version already advertised without either immutable record must not mint new evidence.
+(runner / "prod-version.json").write_text(json.dumps({"latestVersionCode":4000001}))
+run(delta, False)
+print("Android immutable workflow A1-A5 (real shell and identity verifiers): PASS")
+PYFLOW
+else
+  echo 'jq/flock unavailable; immutable origin workflow behavior requires Linux PR CI'
+fi
 
 # 发布上传链（2026-10-08 优化后锁死，防回退）：APK 不得再走 scp-action 跨洋直推
 #（drone-scp 的 SFTP 单流实测 12.6–13.8 KB/s → 15MB × 2 台 ≈ 40 分钟，占 stage job 89%）；
@@ -703,6 +1008,11 @@ workflow = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))
 sim = Path(sys.argv[2])
 step = next(s for s in workflow["jobs"]["publish"]["steps"] if s.get("id") == "staged")
 run = step["run"]
+# The origin collector has its own locked-host integration test; this fixture supplies
+# identical origin bytes so the staged identity test remains independent of SSH.
+collector = 'bash scripts/android-release/staging-evidence.sh collect-required "$STAGING_NAME" "$RUNNER_TEMP/staging-origins.json" >/dev/null'
+assert collector in run
+run = run.replace(collector, 'cp "$WOTB_SIM_STAGING" "$RUNNER_TEMP/staging-origins.json"')
 # 展开 GitHub expression（模拟 runner 渲染后的脚本）：先替换被测身份，再用中性字面量吃掉其余
 # 表达式（它们的下游命令都被 stub 掉了，值不影响本用例）。
 run = run.replace("${{ steps.stagedref.outputs.apkName }}", "wotbtools-android-vSTAGED.apk")

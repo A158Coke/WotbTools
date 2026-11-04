@@ -22,15 +22,19 @@ object StartupGate {
             conn.instanceFollowRedirects = true
             try {
                 if (conn.responseCode != 200) {
-                    return Result.VersionUnavailable("HTTP ${conn.responseCode}")
+                    return Result.VersionUnavailable("network")
                 }
                 val body = conn.inputStream.bufferedReader().use { it.readText() }
                 Result.Ok(VersionManifest.fromJson(body))
             } finally {
                 conn.disconnect()
             }
-        } catch (e: Exception) {
-            Result.VersionUnavailable(e.message ?: "network error")
+        } catch (_: IllegalArgumentException) {
+            Result.VersionUnavailable("invalidManifest")
+        } catch (_: org.json.JSONException) {
+            Result.VersionUnavailable("invalidManifest")
+        } catch (_: Exception) {
+            Result.VersionUnavailable("network")
         }
     }
 }

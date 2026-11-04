@@ -13,6 +13,8 @@ import { useOnboarding } from '../composables/useOnboarding.js'
 import { useSiteFeedback } from '../composables/useSiteFeedback.js'
 import { useUsageTelemetry } from '../composables/useUsageTelemetry.js'
 import { isAndroidApp } from '../composables/usePlatformBridge.js'
+import { useAndroidUpdate } from '../composables/useAndroidUpdate.js'
+import { ANDROID_UPDATE_KEY } from '../shared/androidUpdate.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { FEEDBACK_KEY } from '../shared/feedback.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
@@ -28,6 +30,7 @@ import ConnectivityNoticeDialog from './ConnectivityNoticeDialog.vue'
 import ConfirmDialogHost from '../components/ConfirmDialogHost.vue'
 import SiteFeedbackDialog from '../components/SiteFeedbackDialog.vue'
 import OnboardingHost from '../components/OnboardingHost.vue'
+import AndroidUpdatePanel from '../components/AndroidUpdatePanel.vue'
 import publicSecurityFilingIcon from '../assets/public-security-filing.png'
 
 const APP_ICP_FILING = '闽ICP备2026036303号-2A'
@@ -128,6 +131,8 @@ provide(NAVIGATE_VIEW_KEY, navigate)
 // 并把 --header-h / --tabbar-h 归零（scale.css 是这两个 token 的唯一 owner），预算公式无需改。
 const shellChrome = createShellChrome()
 provide(SHELL_CHROME_KEY, shellChrome)
+const androidUpdate = useAndroidUpdate({ route, router })
+provide(ANDROID_UPDATE_KEY, androidUpdate)
 watchEffect(() => {
   if (shellChrome.immersive.value) document.documentElement.dataset.shellChrome = 'immersive'
   else delete document.documentElement.dataset.shellChrome
@@ -151,6 +156,11 @@ provide(FEEDBACK_KEY, siteFeedback.request)
     <span>{{ $t('bootstrap.profileFailed') }}</span>
     <button type="button" class="business-bootstrap-retry" @click="retryBusinessBootstrap">{{ $t('bootstrap.retry') }}</button>
   </div>
+  <aside v-if="androidUpdate.showPrompt.value && !shellChrome.immersive.value" class="android-update-notice" data-testid="android-update-notice" :aria-label="$t('androidUpdate.noticeLabel')">
+    <span>{{ $t('androidUpdate.available', { version: androidUpdate.snapshot.value?.latestVersionName }) }}</span>
+    <button type="button" class="btn btn-secondary" @click="androidUpdate.open">{{ $t('androidUpdate.view') }}</button>
+    <button type="button" class="btn btn-secondary" :disabled="androidUpdate.acting.value" @click="androidUpdate.dismiss">{{ $t('androidUpdate.later') }}</button>
+  </aside>
   <RouterView />
   <footer class="app-footer" data-testid="app-footer">
     <div class="app-footer-filings">
@@ -186,6 +196,7 @@ provide(FEEDBACK_KEY, siteFeedback.request)
   <ConfirmDialogHost />
   <SiteFeedbackDialog v-if="siteFeedbackOpen" :page-view="siteFeedbackPage" @close="siteFeedbackOpen = false" />
   <OnboardingHost :onboarding="onboarding" />
+  <AndroidUpdatePanel v-if="androidUpdate.supported.value" :update="androidUpdate" />
 </template>
 
 <style scoped>
@@ -208,6 +219,20 @@ provide(FEEDBACK_KEY, siteFeedback.request)
 .app-footer {
   margin-top: auto;
 }
+
+.android-update-notice {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-3) var(--gutter);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+}
+.android-update-notice button { min-height: var(--hit-min-comfortable); }
 
 .app-footer a {
   color: var(--color-text-tertiary);

@@ -369,6 +369,7 @@ APK 由自带 GeckoView 渲染同一套 Vue 产品，从固定 loopback `http://
 
 - **文件选择与目录导入**：Gecko file prompt 的系统 picker URI 先在后台复制到独立 private cache，整批成功后才确认本地文件给 Gecko（1h TTL）；`FileDrop` 按可选 Native bridge capability `replay-folder-picker` 使用 SAF `ACTION_OPEN_DOCUMENT_TREE`，取消、超限或读取失败保留当前回放，目录不触发自动分析，授权不持久化。未提供该 capability 的 APK 保留文件多选，普通 Web 使用 `webkitdirectory`。详见 [`Android 架构`](android/architecture.md)。
 - **外部 replay 自动解析**：仅 Android external intent 触发——Native 以固定同源 `__native/replay-pending` stream 缓存字节，Web 构造 `File` 后替换 selection 并本机分析一次（完成后 data tab 展示结果，绝不自动启动 AI）。读取用 `X-Wotb-Pending-Id` 校验 metadata 与文件 identity；无 pending 404、identity 不匹配 409、读取失败 500，禁止网络 fallback，响应 no-store。ACK 边界是「本机分析已完成」，回放引擎装载失败不 ACK；pending metadata（1h TTL）持久化并跨 process death 恢复。认证不参与页面导航。生命周期与验收见 [`Android Replay Intent`](android/replay-intent.md#app-手动目录导入独立于-external-pending)。
+- **应用更新**：Native 管理可恢复的系统下载、增量重建与安装前 SHA 校验；增量条件不满足或校验失败时回退完整包。构建需要固定版本的 Android NDK 和 CMake，发布产物与不可变补丁的校验和保留规则见 [`Android 版本清单`](android/version-manifest.md) 与 [`发布流程`](android/release-process.md)。
 - **资产**：Tier X 车型图位于 `frontend/src/assets/tank-portraits/tier-x/<tankId>.webp`，由 BlitzKit 确定性生成，production 不访问 BlitzKit；规则见 [`assets/tier-x-models/README.md`](assets/tier-x-models/README.md)。
 
 发布与 Bridge 契约见 [`android/release-process.md`](android/release-process.md)；逐版本发布说明在 `docs/android/releases/`。

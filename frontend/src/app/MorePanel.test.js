@@ -7,6 +7,7 @@ import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 import { FEEDBACK_KEY } from '../shared/feedback.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
+import { ANDROID_UPDATE_KEY } from '../shared/androidUpdate.js'
 
 const authState = vi.hoisted(() => ({ authenticated: null }))
 
@@ -14,14 +15,14 @@ vi.mock('../composables/useAuth.js', () => ({
   useAuth: () => ({ isAdmin: { value: false }, isHofAdmin: { value: false }, isTournamentAdmin: { value: false }, isContentAdmin: { value: false }, authenticated: authState.authenticated }),
 }))
 
-function mountPanel(navigate = vi.fn(), onboarding = null, openFeedback = null) {
+function mountPanel(navigate = vi.fn(), onboarding = null, openFeedback = null, androidUpdate = null) {
   const anchor = document.createElement('button')
   document.body.appendChild(anchor)
   const wrapper = mount(MorePanel, {
     attachTo: document.body,
     props: { open: false, anchor, id: 'p' },
     global: {
-      provide: { [DIALOG_INLINE_KEY]: true, [NAVIGATE_VIEW_KEY]: navigate, [ONBOARDING_KEY]: onboarding, [FEEDBACK_KEY]: openFeedback },
+      provide: { [DIALOG_INLINE_KEY]: true, [NAVIGATE_VIEW_KEY]: navigate, [ONBOARDING_KEY]: onboarding, [FEEDBACK_KEY]: openFeedback, [ANDROID_UPDATE_KEY]: androidUpdate },
       mocks: { $t: key => key, $i18n: { locale: 'zh' } },
     },
   })
@@ -29,6 +30,16 @@ function mountPanel(navigate = vi.fn(), onboarding = null, openFeedback = null) 
 }
 
 describe('MorePanel', () => {
+  it('closes More and opens the shell update panel without navigating', async () => {
+    const update = { supported: ref(true), open: vi.fn() }
+    const { wrapper, navigate } = mountPanel(vi.fn(), null, null, update)
+    await wrapper.setProps({ open: true })
+    await wrapper.get('[data-testid="more-link-app-update"]').trigger('click')
+    expect(update.open).toHaveBeenCalledTimes(1)
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    expect(navigate).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
   beforeEach(() => { authState.authenticated = ref(false) })
   afterEach(() => { document.body.innerHTML = '' })
   it('keeps anonymous guide entries hidden and enables them reactively after sign-in', async () => {

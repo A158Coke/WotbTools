@@ -8,6 +8,7 @@ import { messages } from '../locales/messages.js'
 import { FEEDBACK_KEY } from '../shared/feedback.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
+import { ANDROID_UPDATE_KEY } from '../shared/androidUpdate.js'
 import MorePage from './MorePage.vue'
 import { CREATOR_AVAILABILITY_KEY } from '../composables/useCreatorAvailability.js'
 const menuRole = vi.hoisted(() => ({ tournament: false, content: false, authenticated: null }))
@@ -25,7 +26,7 @@ vi.mock('../composables/useAuth.js', async () => {
   }
 })
 
-function mountPage(navigate = vi.fn(), onboarding = null, creatorsAvailable = true, openFeedback = null, creatorsVisible = false) {
+function mountPage(navigate = vi.fn(), onboarding = null, creatorsAvailable = true, openFeedback = null, creatorsVisible = false, androidUpdate = null) {
   const i18n = createI18n({
     locale: 'zh',
     fallbackLocale: 'en',
@@ -34,7 +35,7 @@ function mountPage(navigate = vi.fn(), onboarding = null, creatorsAvailable = tr
   const wrapper = mount(MorePage, {
     global: {
       plugins: [i18n],
-      provide: { [NAVIGATE_VIEW_KEY]: navigate, [ONBOARDING_KEY]: onboarding, [FEEDBACK_KEY]: openFeedback,
+      provide: { [NAVIGATE_VIEW_KEY]: navigate, [ONBOARDING_KEY]: onboarding, [FEEDBACK_KEY]: openFeedback, [ANDROID_UPDATE_KEY]: androidUpdate,
         [CREATOR_AVAILABILITY_KEY]: { available: ref(creatorsAvailable), directoryVisible: ref(creatorsVisible), contentKnown: ref(true), publicCategories: ref([]), loading: ref(false), refresh: vi.fn() } },
     },
   })
@@ -68,6 +69,16 @@ describe('MorePage language switcher', () => {
     expect(openFeedback).toHaveBeenCalledTimes(1)
   })
 
+  it('exposes the same shell update action only when the new Native capability is supported', async () => {
+    const update = { supported: ref(false), open: vi.fn() }
+    const { wrapper } = mountPage(vi.fn(), null, true, null, false, update)
+    expect(wrapper.find('[data-testid="more-link-app-update"]').exists()).toBe(false)
+    update.supported.value = true
+    await wrapper.vm.$nextTick()
+    await wrapper.get('[data-testid="more-link-app-update"]').trigger('click')
+    expect(update.open).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
   it('keeps creator administration hidden on a legacy backend', () => {
     menuRole.tournament = true
     menuRole.content = true

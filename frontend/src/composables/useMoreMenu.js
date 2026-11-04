@@ -8,6 +8,7 @@ import { isAndroidApp } from './usePlatformBridge.js'
 import { FEEDBACK_KEY } from '../shared/feedback.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import { COMPACT_SHORTCUT_ITEMS } from '../app/navigation.js'
+import { ANDROID_UPDATE_KEY } from '../shared/androidUpdate.js'
 import { useCreatorAvailability } from './useCreatorAvailability.js'
 import { persistLocale } from '../i18n/locale-preference.js'
 
@@ -25,6 +26,7 @@ export const LANGUAGES = Object.freeze([
 export function useMoreMenu() {
   const onboarding = inject(ONBOARDING_KEY, null)
   const openFeedback = inject(FEEDBACK_KEY, null)
+  const androidUpdate = inject(ANDROID_UPDATE_KEY, null)
   const { isAdmin, isHofAdmin, isTournamentAdmin, isContentAdmin, authenticated } = useAuth()
   const { uiProfilePreference, setUiProfile } = useUiProfile()
   const { available: creatorsAvailable, directoryVisible: creatorsVisible } = useCreatorAvailability()
@@ -68,5 +70,6 @@ export function useMoreMenu() {
   ].filter(Boolean))
 
   const openGuide = computed(() => authenticated?.value && onboarding ? () => onboarding.openDirectory() : null)
-  return { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, shortcuts, adminLinks, aboutLinks, openGuide, openFeedback }
+  const openAndroidUpdate = computed(() => androidUpdate?.supported.value ? opener => androidUpdate.open(opener) : null)
+  return { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, shortcuts, adminLinks, aboutLinks, openGuide, openFeedback, openAndroidUpdate }
 }

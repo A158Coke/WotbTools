@@ -22,6 +22,7 @@
     "replay-share",
     "replay-open",
     "app-update",
+    "app-update-status",
     "connectivity",
     "replay-folder-picker"
   ],
@@ -62,6 +63,430 @@
     "startUpdate": {
       "request": { "fields": {} },
       "response": { "type": "boolean" }
+    },
+    "getUpdateStatus": {
+      "request": {
+        "fields": {}
+      },
+      "response": {
+        "type": "object",
+        "fields": {
+          "revision": {
+            "type": "integer",
+            "required": true,
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "state": {
+            "type": "string",
+            "required": true,
+            "enum": [
+              "unknown",
+              "checking",
+              "upToDate",
+              "optional",
+              "mandatory",
+              "checkFailed"
+            ]
+          },
+          "checkState": {
+            "type": "string",
+            "required": true,
+            "enum": [
+              "idle",
+              "checking",
+              "succeeded",
+              "failed"
+            ]
+          },
+          "checkFailureReason": {
+            "type": "string",
+            "nullable": true,
+            "required": true,
+            "enum": [
+              "offline",
+              "network",
+              "invalidManifest"
+            ]
+          },
+          "currentVersionName": {
+            "type": "string",
+            "required": true
+          },
+          "currentVersionCode": {
+            "type": "integer",
+            "required": true,
+            "minimum": 0
+          },
+          "latestVersionName": {
+            "type": "string",
+            "nullable": true,
+            "required": true
+          },
+          "latestVersionCode": {
+            "type": "integer",
+            "nullable": true,
+            "required": true,
+            "minimum": 0
+          },
+          "minSupportedVersionCode": {
+            "type": "integer",
+            "nullable": true,
+            "required": true,
+            "minimum": 0
+          },
+          "publishedAt": {
+            "type": "string",
+            "nullable": true,
+            "required": true
+          },
+          "releaseNotes": {
+            "type": "string",
+            "nullable": true,
+            "required": true
+          },
+          "optionalPromptSuppressed": {
+            "type": "boolean",
+            "required": true
+          },
+          "download": {
+            "type": "object",
+            "required": true,
+            "fields": {
+              "taskToken": {
+                "type": "string",
+                "nullable": true,
+                "required": true
+              },
+              "versionName": {
+                "type": "string",
+                "nullable": true,
+                "required": true
+              },
+              "versionCode": {
+                "type": "integer",
+                "nullable": true,
+                "required": true,
+                "minimum": 0
+              },
+              "packageType": {
+                "type": "string",
+                "nullable": true,
+                "required": false,
+                "enum": ["full", "delta"]
+              },
+              "state": {
+                "type": "string",
+                "required": true,
+                "enum": [
+                  "idle",
+                  "queued",
+                  "downloading",
+                  "selectingPackage",
+                  "downloadingDelta",
+                  "verifyingDelta",
+                  "applyingDelta",
+                  "verifyingTargetApk",
+                  "fallbackFull",
+                  "paused",
+                  "verifying",
+                  "ready",
+                  "installRequested",
+                  "downloadFailed",
+                  "verifyFailed",
+                  "installPermissionRequired",
+                  "installRequestFailed"
+                ]
+              },
+              "downloadedBytes": {
+                "type": "integer",
+                "nullable": true,
+                "required": true,
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "totalBytes": {
+                "type": "integer",
+                "nullable": true,
+                "required": true,
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "progressPercent": {
+                "type": "integer",
+                "nullable": true,
+                "required": true,
+                "minimum": 0,
+                "maximum": 100
+              },
+              "failureReason": {
+                "type": "string",
+                "nullable": true,
+                "required": true,
+                "enum": [
+                  "waitingNetwork",
+                  "waitingRetry",
+                  "waitingWifi",
+                  "pausedUnknown",
+                  "network",
+                  "http",
+                  "cannotResume",
+                  "insufficientStorage",
+                  "storageUnavailable",
+                  "fileIo",
+                  "taskMissing",
+                  "hashMismatch",
+                  "baseHashMismatch",
+                  "patchDownloadFailed",
+                  "patchHashMismatch",
+                  "patchApplyFailed",
+                  "targetHashMismatch",
+                  "artifactMissing",
+                  "unsupportedArtifact",
+                  "permissionDenied",
+                  "installerUnavailable",
+                  "unknown"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "notes": "只读取 Native-owned snapshot，不触发网络；可空字段始终显式返回 null。"
+    },
+    "refreshUpdateStatus": {
+      "request": {
+        "fields": {}
+      },
+      "response": {
+        "type": "object",
+        "fields": {
+          "revision": {
+            "type": "integer",
+            "required": true,
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "state": {
+            "type": "string",
+            "required": true,
+            "enum": [
+              "unknown",
+              "checking",
+              "upToDate",
+              "optional",
+              "mandatory",
+              "checkFailed"
+            ]
+          },
+          "checkState": {
+            "type": "string",
+            "required": true,
+            "enum": [
+              "idle",
+              "checking",
+              "succeeded",
+              "failed"
+            ]
+          },
+          "checkFailureReason": {
+            "type": "string",
+            "nullable": true,
+            "required": true,
+            "enum": [
+              "offline",
+              "network",
+              "invalidManifest"
+            ]
+          },
+          "currentVersionName": {
+            "type": "string",
+            "required": true
+          },
+          "currentVersionCode": {
+            "type": "integer",
+            "required": true,
+            "minimum": 0
+          },
+          "latestVersionName": {
+            "type": "string",
+            "nullable": true,
+            "required": true
+          },
+          "latestVersionCode": {
+            "type": "integer",
+            "nullable": true,
+            "required": true,
+            "minimum": 0
+          },
+          "minSupportedVersionCode": {
+            "type": "integer",
+            "nullable": true,
+            "required": true,
+            "minimum": 0
+          },
+          "publishedAt": {
+            "type": "string",
+            "nullable": true,
+            "required": true
+          },
+          "releaseNotes": {
+            "type": "string",
+            "nullable": true,
+            "required": true
+          },
+          "optionalPromptSuppressed": {
+            "type": "boolean",
+            "required": true
+          },
+          "download": {
+            "type": "object",
+            "required": true,
+            "fields": {
+              "taskToken": {
+                "type": "string",
+                "nullable": true,
+                "required": true
+              },
+              "versionName": {
+                "type": "string",
+                "nullable": true,
+                "required": true
+              },
+              "versionCode": {
+                "type": "integer",
+                "nullable": true,
+                "required": true,
+                "minimum": 0
+              },
+              "packageType": {
+                "type": "string",
+                "nullable": true,
+                "required": false,
+                "enum": ["full", "delta"]
+              },
+              "state": {
+                "type": "string",
+                "required": true,
+                "enum": [
+                  "idle",
+                  "queued",
+                  "downloading",
+                  "selectingPackage",
+                  "downloadingDelta",
+                  "verifyingDelta",
+                  "applyingDelta",
+                  "verifyingTargetApk",
+                  "fallbackFull",
+                  "paused",
+                  "verifying",
+                  "ready",
+                  "installRequested",
+                  "downloadFailed",
+                  "verifyFailed",
+                  "installPermissionRequired",
+                  "installRequestFailed"
+                ]
+              },
+              "downloadedBytes": {
+                "type": "integer",
+                "nullable": true,
+                "required": true,
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "totalBytes": {
+                "type": "integer",
+                "nullable": true,
+                "required": true,
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "progressPercent": {
+                "type": "integer",
+                "nullable": true,
+                "required": true,
+                "minimum": 0,
+                "maximum": 100
+              },
+              "failureReason": {
+                "type": "string",
+                "nullable": true,
+                "required": true,
+                "enum": [
+                  "waitingNetwork",
+                  "waitingRetry",
+                  "waitingWifi",
+                  "pausedUnknown",
+                  "network",
+                  "http",
+                  "cannotResume",
+                  "insufficientStorage",
+                  "storageUnavailable",
+                  "fileIo",
+                  "taskMissing",
+                  "hashMismatch",
+                  "baseHashMismatch",
+                  "patchDownloadFailed",
+                  "patchHashMismatch",
+                  "patchApplyFailed",
+                  "targetHashMismatch",
+                  "artifactMissing",
+                  "unsupportedArtifact",
+                  "permissionDenied",
+                  "installerUnavailable",
+                  "unknown"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "notes": "显式刷新，异步返回本次检查的 terminal snapshot；并发检查合并。已有分类在检查中或失败时保留，checkState 表示本次结果。客户端 RPC 预算 15000ms。"
+    },
+    "beginUpdateDownload": {
+      "request": {
+        "fields": {
+          "expectedLatestVersionCode": {
+            "type": "integer",
+            "required": true,
+            "minimum": 0
+          }
+        }
+      },
+      "response": {
+        "type": "boolean"
+      },
+      "notes": "Compare-and-act：仅为当前最新版本启动用户主动下载；true 表示动作被接受，不代表下载完成。不接受 URL、路径或 SHA。"
+    },
+    "installUpdate": {
+      "request": {
+        "fields": {
+          "expectedTaskToken": {
+            "type": "string",
+            "required": true
+          }
+        }
+      },
+      "response": {
+        "type": "boolean"
+      },
+      "notes": "Compare-and-act：仅对同一任务的已验证 APK 请求安装。true 表示动作被接受，不代表安装成功；缺权限或失败状态回读 snapshot。"
+    },
+    "dismissOptionalUpdate": {
+      "request": {
+        "fields": {
+          "expectedLatestVersionCode": {
+            "type": "integer",
+            "required": true,
+            "minimum": 0
+          }
+        }
+      },
+      "response": {
+        "type": "boolean"
+      },
+      "notes": "仅抑制同一 optional 版本的主动提示；不影响手动检查，mandatory 永远忽略抑制。"
     },
     "authGetState": {
       "request": { "fields": {} },
@@ -192,6 +617,11 @@
       "global": "wotbtoolsOnConnectivityChanged",
       "payload": "none",
       "notes": "Notification only: the page re-reads connectivityGetState, so there is no second source of truth."
+    },
+    "updateStatusChanged": {
+      "global": "wotbtoolsOnUpdateStatusChanged",
+      "payload": "none",
+      "notes": "仅通知状态变化；页面订阅后首读 getUpdateStatus，事件后重新回读，revision 拒绝迟到快照。"
     },
     "replay": {
       "global": "wotbtoolsOnReplay",
