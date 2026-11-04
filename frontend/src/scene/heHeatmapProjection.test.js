@@ -9,6 +9,9 @@ import fs from 'node:fs';
 // 着色器模式断言随实现覆盖两份源（拼接读取，not.toMatch 同时约束两侧）
 const viewer = fs.readFileSync(new URL('./tankViewer.js', import.meta.url), 'utf8')
     + fs.readFileSync(new URL('./viewer/armorShaders.ts', import.meta.url), 'utf8');
+// 轨迹几何 2026-11-04 出仓 viewer/shotTrajectoryGeometry.ts（#820 Wave B3B）：
+// renderOrder 定序断言随实现读取 factory 源。
+const trajectoryGeometry = fs.readFileSync(new URL('./viewer/shotTrajectoryGeometry.ts', import.meta.url), 'utf8');
 // 结果卡判定规则 2026-11-04 出仓 viewer/shotResultCard.ts（#820 Wave B3A）：
 // 卡片侧权威断言随实现读取 renderer 源。
 const card = fs.readFileSync(new URL('./viewer/shotResultCard.ts', import.meta.url), 'utf8');
@@ -110,7 +113,10 @@ describe('HE 热力图投影到可见主装甲（源码级锁）', () => {
         // → 命中点 999 → 靶环 1000。renderOrder 不随父级继承，必须写在 mesh 上。
         expect(viewer).toContain('sphere.renderOrder = 996;');
         expect(viewer).not.toContain('group.renderOrder = 998;');
-        expect(viewer).toContain("trajGroup.traverse((o) => { if (o.isMesh) o.renderOrder = 997; });");
+        // 轨迹 997 的 renderOrder 定序已随几何出仓 viewer/shotTrajectoryGeometry.ts（Wave B3B）：
+        // 由 factory 的 traverse 统一写在 mesh 上，场景侧不再出现第二处设置。
+        expect(viewer).toContain('fxScene.add(trajGroup);');
+        expect(trajectoryGeometry).toContain('group.traverse((o) => { if (o instanceof THREE.Mesh) o.renderOrder = 997 })');
         expect(viewer).toContain('ring.renderOrder = 1000;');
         // fxScene 没有背景：pass 内必须临时关闭 autoClear，否则整帧被清空。
         expect(viewer).toMatch(/const prevAutoClear = renderer\.autoClear;\s*\n\s*renderer\.autoClear = false;\s*\n\s*renderer\.render\(fxScene, camera\);\s*\n\s*renderer\.autoClear = prevAutoClear;/);
