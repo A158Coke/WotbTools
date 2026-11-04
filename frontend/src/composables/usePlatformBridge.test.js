@@ -187,12 +187,51 @@ describe('usePlatformBridge', () => {
       addEventListener: vi.fn((type, cb) => { listener = cb }),
       removeEventListener: vi.fn(),
     }
-    const result = installUpdate('task-1')
+    const onTimeout = vi.fn()
+    let settled = false
+    const result = installUpdate('task-1', onTimeout).then(value => { settled = true; return value })
     await vi.advanceTimersByTimeAsync(120_000)
-    await expect(result).resolves.toBeNull()
+    expect(onTimeout).toHaveBeenCalledTimes(1)
+    expect(settled).toBe(false)
+    expect(window.WotbNative.removeEventListener).not.toHaveBeenCalled()
     listener({ data: { id: request.id, result: true } })
-    await expect(result).resolves.toBeNull()
+    await expect(result).resolves.toBe(true)
+    expect(window.WotbNative.removeEventListener).toHaveBeenCalledExactlyOnceWith('message', listener)
     expect(window.WotbNative.postMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([0, 120_000])('aborts only page install listeners at %sms without another Native request', async elapsed => {
+    vi.useFakeTimers()
+    const listeners = new Set()
+    window.WotbNative = {
+      postMessage: vi.fn(),
+      addEventListener: vi.fn((_type, listener) => { listeners.add(listener) }),
+      removeEventListener: vi.fn((_type, listener) => { listeners.delete(listener) }),
+    }
+    const onTimeout = vi.fn()
+    const abort = new AbortController()
+    const result = installUpdate('task-1', onTimeout, abort.signal)
+    expect(listeners.size).toBe(1)
+    await vi.advanceTimersByTimeAsync(elapsed)
+    expect(listeners.size).toBe(1)
+    abort.abort()
+    await expect(result).resolves.toBeNull()
+    expect(listeners.size).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
+    const observed = onTimeout.mock.calls.length
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(onTimeout).toHaveBeenCalledTimes(observed)
+    expect(window.WotbNative.postMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it('removes the install deadline even when Native replies synchronously', async () => {
+    vi.useFakeTimers()
+    stubNative(['app-update-status'], null, true, 3, { installUpdate: true })
+    const onTimeout = vi.fn()
+    await expect(installUpdate('task-1', onTimeout)).resolves.toBe(true)
+    expect(vi.getTimerCount()).toBe(0)
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(onTimeout).not.toHaveBeenCalled()
   })
 
   it('consumePendingReplay 携带 expectedPendingId（identity-aware ACK 的 wire 边界）', async () => {

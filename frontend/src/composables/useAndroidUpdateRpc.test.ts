@@ -47,9 +47,11 @@ it('keeps one real bridge RPC pending beyond five seconds and resolves from Nati
     expect(update.acting.value).toBe(false)
     expect(update.error.value).toBeNull()
     expect(installs).toBe(1)
-    const uncertain = update.install()
+    let settled = false
+    const uncertain = update.install().then(() => { settled = true })
     await vi.advanceTimersByTimeAsync(120_000)
-    await uncertain
+    expect(settled).toBe(false)
+    expect(listeners.size).toBe(1)
     expect(update.error.value).toBe('confirming')
     expect(update.acting.value).toBe(true)
     await update.install()
@@ -60,7 +62,12 @@ it('keeps one real bridge RPC pending beyond five seconds and resolves from Nati
     current = { ...ready, revision: 2, download: { ...ready.download, state: 'installRequested' } }
     window.dispatchEvent(new Event('focus'))
     await vi.advanceTimersByTimeAsync(0)
+    expect(update.acting.value).toBe(true) // snapshot 不能代替仍在等待的关联回复。
+    respond(installRequest!.id, true)
+    await vi.advanceTimersByTimeAsync(0)
+    await uncertain
     expect(update.acting.value).toBe(false)
     expect(update.error.value).toBeNull()
+    expect(listeners.size).toBe(0)
   } finally { wrapper.unmount() }
 })

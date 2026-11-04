@@ -141,6 +141,7 @@ class MainActivity : Activity() {
     private var updateForeground = false
     private var legacyInstallVersionCode: Int? = null
     private var preparingInstallToken: String? = null
+    private var preparingInstallReply: ((Boolean) -> Unit)? = null
     private var installAttempt = 0L
     private var permissionInstallToken: String? = null
     private val updateListener: () -> Unit = { onUpdateStateChanged() }
@@ -610,6 +611,10 @@ class MainActivity : Activity() {
         preparingInstallToken?.let { updateCoordinator.cancelPendingInstall(it) }
         preparingInstallToken = null
         installAttempt++
+        // 取消并使旧回调失效后，在 Activity 销毁前确认请求不会再启动安装器。
+        val cancelledReply = preparingInstallReply
+        preparingInstallReply = null
+        cancelledReply?.invoke(false)
         updateCoordinator.setForeground(false)
         super.onPause()
     }
@@ -1023,22 +1028,25 @@ class MainActivity : Activity() {
                 return@runOnUiThread
             }
             preparingInstallToken = expectedToken
+            preparingInstallReply = reply
             val attempt = ++installAttempt
             updateCoordinator.prepareInstall(expectedToken) { file ->
                 val stillValid = installAttempt == attempt && preparingInstallToken == expectedToken && updateForeground && !destroyedRuntime &&
                     updateCoordinator.status.download.taskToken == expectedToken &&
                     updateCoordinator.status.download.failureReason != "unsupportedArtifact"
-                if (installAttempt == attempt) preparingInstallToken = null
-                if (!stillValid) return@prepareInstall
-                if (file == null) { reply(false); return@prepareInstall }
+                if (installAttempt != attempt) return@prepareInstall
+                preparingInstallToken = null
+                val completedReply = preparingInstallReply
+                preparingInstallReply = null
+                if (!stillValid || file == null) { completedReply?.invoke(false); return@prepareInstall }
                 if (!packageManager.canRequestPackageInstalls()) {
                     updateCoordinator.installPermissionRequired(expectedToken)
-                    reply(openInstallPermissionSettings(expectedToken))
+                    completedReply?.invoke(openInstallPermissionSettings(expectedToken))
                 } else {
                     val accepted = try { apkUpdater.requestInstall(file) } catch (_: Exception) { false }
                     if (accepted) updateCoordinator.installRequested(expectedToken)
                     else updateCoordinator.installFailed(expectedToken, "installerUnavailable")
-                    reply(accepted)
+                    completedReply?.invoke(accepted)
                 }
             }
         }
@@ -1350,6 +1358,7 @@ class MainActivity : Activity() {
         exitFullscreen()
         destroyedRuntime = true
         legacyInstallVersionCode = null
+        preparingInstallReply = null
         preparingInstallToken = null
         installAttempt++
         permissionInstallToken = null

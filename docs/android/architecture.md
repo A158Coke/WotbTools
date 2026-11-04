@@ -172,7 +172,7 @@ Android 的「更多 → 版本 / 关于 WotBTools」打开同一更新面板。
 失败不伪装为最新版。`updateStatusChanged` 无 payload，消费者首次订阅和收到通知后回读快照，以 revision
 过滤迟到响应。`beginUpdateDownload`、`installUpdate`、`dismissOptionalUpdate` 以期望版本或任务 token
 做 compare-and-act；页面不能提交任意 URL、路径或哈希，也不自行比较版本决定 mandatory。
-安装请求使用独立的桥接等待预算；通信超时表示结果待确认，不等于 Native 已拒绝或取消，页面保持防重复提交并通过状态快照对账。
+安装请求使用独立的 120 秒桥接等待预算；超过预算只显示结果待确认，不等于 Native 已拒绝或取消。页面保持防重复提交并继续接收原请求的关联回复，同时通过状态快照对账；确定的 Boolean 回复才结束当前请求。Activity 暂停时先取消安装准备并使旧回调失效，再在销毁前回复 false，已验证 APK 与下载任务保持可恢复。
 
 ### 下载恢复与完整性
 

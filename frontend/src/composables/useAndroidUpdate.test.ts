@@ -168,7 +168,7 @@ describe('Android update Native projection', () => {
     bridge.getUpdateStatus.mockResolvedValue(ready)
     await update.open()
     await update.install()
-    expect(bridge.installUpdate).toHaveBeenCalledWith('task-one')
+    expect(bridge.installUpdate).toHaveBeenCalledWith('task-one', expect.any(Function), expect.any(AbortSignal))
     await update.dismiss()
     expect(bridge.dismissOptionalUpdate).toHaveBeenCalledWith(3028000)
     bridge.beginUpdateDownload.mockResolvedValue(false)
