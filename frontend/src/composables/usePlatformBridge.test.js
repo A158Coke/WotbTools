@@ -3,18 +3,25 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
 import {
   callBridge,
+  beginUpdateDownload,
+  checkForUpdate,
   consumePendingReplay,
+  dismissOptionalUpdate,
   getCapabilities,
   getNativeBridgeVersion,
   getPendingReplay,
+  getUpdateStatus,
+  installUpdate,
   isAndroidApp,
   isNativeBridgeCompatible,
   supports,
+  refreshUpdateStatus,
+  startUpdate,
   usePlatformBridge,
 } from './usePlatformBridge.js'
 
 /** 模拟 origin-scoped bridge：postMessage → native reply → 'message' 事件。 */
-function stubNative(capabilities, pending, consumeResult = true, bridgeVersion = 3) {
+function stubNative(capabilities, pending, consumeResult = true, bridgeVersion = 3, overrides = {}) {
   const listeners = []
   const calls = []
   const results = {
@@ -24,6 +31,7 @@ function stubNative(capabilities, pending, consumeResult = true, bridgeVersion =
     consumePendingReplay: consumeResult,
     checkForUpdate: true,
     startUpdate: true,
+    ...overrides,
   }
   window.WotbNative = {
     postMessage: vi.fn((json) => {
@@ -74,6 +82,156 @@ describe('usePlatformBridge', () => {
     const p = usePlatformBridge()
     expect(p.isAndroidApp()).toBe(false)
     await expect(p.supports('app-update')).resolves.toBe(false)
+    expect(p.getUpdateStatus).toBe(getUpdateStatus)
+    expect(p.refreshUpdateStatus).toBe(refreshUpdateStatus)
+    expect(p.beginUpdateDownload).toBe(beginUpdateDownload)
+    expect(p.installUpdate).toBe(installUpdate)
+    expect(p.dismissOptionalUpdate).toBe(dismissOptionalUpdate)
+  })
+
+  it('保留旧更新 Boolean wire，新增动作只传 expected identity', async () => {
+    const snapshot = { revision: 4, state: 'optional' }
+    const native = stubNative(['app-update', 'app-update-status'], null, true, 3, {
+      getUpdateStatus: snapshot,
+      refreshUpdateStatus: snapshot,
+      beginUpdateDownload: true,
+      installUpdate: true,
+      dismissOptionalUpdate: false,
+    })
+    await expect(checkForUpdate()).resolves.toBe(true)
+    await expect(startUpdate()).resolves.toBe(true)
+    await expect(getUpdateStatus()).resolves.toEqual(snapshot)
+    await expect(refreshUpdateStatus()).resolves.toEqual(snapshot)
+    await expect(beginUpdateDownload(3028000)).resolves.toBe(true)
+    await expect(installUpdate('task-1')).resolves.toBe(true)
+    await expect(dismissOptionalUpdate(3028000)).resolves.toBe(false)
+    expect(native.calls).toEqual([
+      { method: 'checkForUpdate', params: {} },
+      { method: 'startUpdate', params: {} },
+      { method: 'getUpdateStatus', params: {} },
+      { method: 'refreshUpdateStatus', params: {} },
+      { method: 'beginUpdateDownload', params: { expectedLatestVersionCode: 3028000 } },
+      { method: 'installUpdate', params: { expectedTaskToken: 'task-1' } },
+      { method: 'dismissOptionalUpdate', params: { expectedLatestVersionCode: 3028000 } },
+    ])
+  })
+
+  it('无桥时新方法返回未知/拒绝，动作不把 truthy 非 Boolean 误判为成功', async () => {
+    await expect(getUpdateStatus()).resolves.toBeNull()
+    await expect(refreshUpdateStatus()).resolves.toBeNull()
+    await expect(beginUpdateDownload(3028000)).resolves.toBe(false)
+    await expect(installUpdate('task-1')).rejects.toThrow('Native bridge unavailable')
+    await expect(dismissOptionalUpdate(3028000)).resolves.toBe(false)
+    stubNative(['app-update-status'], null, true, 3, {
+      beginUpdateDownload: 'true', installUpdate: 1, dismissOptionalUpdate: {},
+    })
+    await expect(beginUpdateDownload(3028000)).resolves.toBe(false)
+    await expect(installUpdate('task-1')).resolves.toBeNull()
+    await expect(dismissOptionalUpdate(3028000)).resolves.toBe(false)
+  })
+
+  it('refresh 独用 15s 预算，读取 snapshot 仍为默认 5s', async () => {
+    vi.useFakeTimers()
+    window.WotbNative = {
+      postMessage: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }
+    let readSettled = false
+    let refreshSettled = false
+    const read = getUpdateStatus().then(value => { readSettled = true; return value })
+    const refresh = refreshUpdateStatus().then(value => { refreshSettled = true; return value })
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(readSettled).toBe(true)
+    expect(refreshSettled).toBe(false)
+    await vi.advanceTimersByTimeAsync(9999)
+    expect(refreshSettled).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    await expect(read).resolves.toBeNull()
+    await expect(refresh).resolves.toBeNull()
+  })
+
+  it('allows package selection up to 120 seconds and still times out', async () => {
+    vi.useFakeTimers()
+    window.WotbNative = { postMessage: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn() }
+    let settled = false
+    const result = beginUpdateDownload(4000000).then(value => { settled = true; return value })
+    await vi.advanceTimersByTimeAsync(119_999)
+    expect(settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    await expect(result).resolves.toBe(false)
+  })
+
+  it('keeps an install request pending beyond five seconds and accepts a later native reply', async () => {
+    vi.useFakeTimers()
+    let listener
+    let request
+    window.WotbNative = {
+      postMessage: vi.fn(json => { request = JSON.parse(json) }),
+      addEventListener: vi.fn((type, cb) => { listener = cb }),
+      removeEventListener: vi.fn(),
+    }
+    let settled = false
+    const result = installUpdate('task-1').then(value => { settled = true; return value })
+    await vi.advanceTimersByTimeAsync(6000)
+    expect(settled).toBe(false)
+    listener({ data: { id: request.id, result: true } })
+    await expect(result).resolves.toBe(true)
+    expect(window.WotbNative.postMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports an install deadline without asserting that Native cancelled it', async () => {
+    vi.useFakeTimers()
+    let listener
+    let request
+    window.WotbNative = {
+      postMessage: vi.fn(json => { request = JSON.parse(json) }),
+      addEventListener: vi.fn((type, cb) => { listener = cb }),
+      removeEventListener: vi.fn(),
+    }
+    const onTimeout = vi.fn()
+    let settled = false
+    const result = installUpdate('task-1', onTimeout).then(value => { settled = true; return value })
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(onTimeout).toHaveBeenCalledTimes(1)
+    expect(settled).toBe(false)
+    expect(window.WotbNative.removeEventListener).not.toHaveBeenCalled()
+    listener({ data: { id: request.id, result: true } })
+    await expect(result).resolves.toBe(true)
+    expect(window.WotbNative.removeEventListener).toHaveBeenCalledExactlyOnceWith('message', listener)
+    expect(window.WotbNative.postMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([0, 120_000])('aborts only page install listeners at %sms without another Native request', async elapsed => {
+    vi.useFakeTimers()
+    const listeners = new Set()
+    window.WotbNative = {
+      postMessage: vi.fn(),
+      addEventListener: vi.fn((_type, listener) => { listeners.add(listener) }),
+      removeEventListener: vi.fn((_type, listener) => { listeners.delete(listener) }),
+    }
+    const onTimeout = vi.fn()
+    const abort = new AbortController()
+    const result = installUpdate('task-1', onTimeout, abort.signal)
+    expect(listeners.size).toBe(1)
+    await vi.advanceTimersByTimeAsync(elapsed)
+    expect(listeners.size).toBe(1)
+    abort.abort()
+    await expect(result).resolves.toBeNull()
+    expect(listeners.size).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
+    const observed = onTimeout.mock.calls.length
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(onTimeout).toHaveBeenCalledTimes(observed)
+    expect(window.WotbNative.postMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it('removes the install deadline even when Native replies synchronously', async () => {
+    vi.useFakeTimers()
+    stubNative(['app-update-status'], null, true, 3, { installUpdate: true })
+    const onTimeout = vi.fn()
+    await expect(installUpdate('task-1', onTimeout)).resolves.toBe(true)
+    expect(vi.getTimerCount()).toBe(0)
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(onTimeout).not.toHaveBeenCalled()
   })
 
   it('consumePendingReplay 携带 expectedPendingId（identity-aware ACK 的 wire 边界）', async () => {

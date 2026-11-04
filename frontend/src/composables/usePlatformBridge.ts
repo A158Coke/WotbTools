@@ -15,6 +15,7 @@ import { isAndroidRuntime } from '../platform/runtime.js'
  * 也被 `platform/androidAuthProvider.ts` 复用；禁止再造第二条通道或轮询。
  */
 import {
+  NATIVE_UPDATE_METHODS,
   SUPPORTED_NATIVE_BRIDGE_VERSIONS,
 } from '../platform/nativeBridgeContract.js'
 import { isRecord, isSafeCount, isString } from '../types/primitive-guards.js'
@@ -26,7 +27,7 @@ import type {
 
 export type NativePendingReplay = NonNullable<NativeBridgeResponse<'getPendingReplay'>>
 
-type BridgeCallOptions = { timeoutMs?: number }
+type BridgeCallOptions = { timeoutMs?: number, onTimeout?: () => void, signal?: AbortSignal }
 
 /** 请求没有必填字段的方法才能省略 params。 */
 type BridgeCallArgs<M extends NativeBridgeMethod> = Record<string, never> extends NativeBridgeRequest<M>
@@ -35,6 +36,7 @@ type BridgeCallArgs<M extends NativeBridgeMethod> = Record<string, never> extend
 
 const BRIDGE_KEY = 'WotbNative'
 const BRIDGE_RPC_TIMEOUT_MS = 5000
+const INSTALL_UPDATE_RPC_TIMEOUT_MS = 120_000
 
 let seq = 0
 
@@ -50,7 +52,8 @@ export function isAndroidApp() {
 
 /**
  * 单次 RPC：postMessage → 同 id 的 reply 'message' → `data.result`。
- * 无 bridge / 超时一律 resolve `null`（绝不 reject）：调用方按 null 走 fail-closed 分支。
+ * 无 bridge / 默认超时 resolve `null`（绝不 reject）；onTimeout 仅通知截止，保留关联回复。
+ * AbortSignal 仅释放页面监听，不取消 Native 已接受的工作。
  *
  * `timeoutMs` 允许按方法放宽：native-auth 的 RPC 需要 OIDC discovery / token refresh（网络），
  * 默认 5s 不够；调用方传 `NATIVE_AUTH_TIMEOUT_MS`。其余方法保持默认预算不变。
@@ -59,7 +62,7 @@ export function callBridge<M extends NativeBridgeMethod>(method: M, ...args: Bri
 export function callBridge(
   method: NativeBridgeMethod,
   params: object = {},
-  { timeoutMs = BRIDGE_RPC_TIMEOUT_MS }: BridgeCallOptions = {},
+  { timeoutMs = BRIDGE_RPC_TIMEOUT_MS, onTimeout, signal }: BridgeCallOptions = {},
 ): Promise<unknown> {
   return new Promise(resolve => {
     const b = bridge()
@@ -71,40 +74,40 @@ export function callBridge(
       resolve(null)
       return
     }
+    if (signal?.aborted) { resolve(null); return }
     const id = ++seq
     let timeoutId: ReturnType<typeof setTimeout> | undefined
+    function cleanup() {
+      b?.removeEventListener?.('message', handler)
+      clearTimeout(timeoutId)
+      signal?.removeEventListener('abort', abort)
+    }
+    function abort() { cleanup(); resolve(null) }
     const handler = (e: { data: unknown }) => {
       let data = e.data
       if (typeof data === 'string') {
         try { data = JSON.parse(data) } catch { return }
       }
       if (isRecord(data) && data.id === id) {
-        if (typeof b.removeEventListener === 'function') {
-          b.removeEventListener('message', handler)
-        }
-        clearTimeout(timeoutId)
+        cleanup()
         resolve(data.result)
       }
     }
     b.addEventListener('message', handler)
+    signal?.addEventListener('abort', abort, { once: true })
+    timeoutId = setTimeout(() => {
+      if (onTimeout) { onTimeout(); return }
+      cleanup()
+      resolve(null)
+    }, timeoutMs)
     try {
       b.postMessage(JSON.stringify({ id, method, params }))
     } catch {
       // postMessage 抛错（页面引擎已销毁 / 桥实现异常）也必须遵守「绝不 reject」的契约：
       // 否则 async 调用方（例如 connectivity 事件 handler）会产生 unhandled rejection。
-      if (typeof b.removeEventListener === 'function') {
-        b.removeEventListener('message', handler)
-      }
-      clearTimeout(timeoutId)
+      cleanup()
       resolve(null)
-      return
     }
-    timeoutId = setTimeout(() => {
-      if (typeof b.removeEventListener === 'function') {
-        b.removeEventListener('message', handler)
-      }
-      resolve(null)
-    }, timeoutMs)
   })
 }
 
@@ -154,6 +157,34 @@ export async function startUpdate() {
   return (await callBridge('startUpdate')) === true
 }
 
+/** 只读 Native snapshot；输入验证与展示投影归 useAndroidUpdate。 */
+export async function getUpdateStatus() {
+  return await callBridge(NATIVE_UPDATE_METHODS.getStatus)
+}
+
+/** Native fetch 预算为 connect/read 各 3s，给异步回复保留独立的 15s RPC 预算。 */
+export async function refreshUpdateStatus() {
+  return await callBridge(NATIVE_UPDATE_METHODS.refreshStatus, {}, { timeoutMs: 15_000 })
+}
+
+export async function beginUpdateDownload(expectedLatestVersionCode: number) {
+  return (await callBridge(NATIVE_UPDATE_METHODS.beginDownload, { expectedLatestVersionCode }, { timeoutMs: 120_000 })) === true
+}
+
+export async function installUpdate(expectedTaskToken: string, onTimeout: () => void = () => {}, signal?: AbortSignal) {
+  const transport = bridge()
+  if (!transport || typeof transport.postMessage !== 'function' || typeof transport.addEventListener !== 'function') {
+    throw new Error('Native bridge unavailable')
+  }
+  const result = await callBridge(NATIVE_UPDATE_METHODS.install, { expectedTaskToken }, { timeoutMs: INSTALL_UPDATE_RPC_TIMEOUT_MS, onTimeout, signal })
+  // 超时不取消 Native 工作，未知结果不能被解释成拒绝。
+  return typeof result === 'boolean' ? result : null
+}
+
+export async function dismissOptionalUpdate(expectedLatestVersionCode: number) {
+  return (await callBridge(NATIVE_UPDATE_METHODS.dismiss, { expectedLatestVersionCode })) === true
+}
+
 export function usePlatformBridge() {
   return {
     isAndroidApp,
@@ -165,5 +196,10 @@ export function usePlatformBridge() {
     consumePendingReplay,
     checkForUpdate,
     startUpdate,
+    getUpdateStatus,
+    refreshUpdateStatus,
+    beginUpdateDownload,
+    installUpdate,
+    dismissOptionalUpdate,
   }
 }

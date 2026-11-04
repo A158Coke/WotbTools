@@ -7,7 +7,7 @@
 // Native 再按 sender（content script / top frame / 当前 session / exact origin）复核，这里只是第一道门。
 (() => {
   // 只允许 Native 触发 contract events 列出的 global，绝不执行任意名字。
-  const EVENT_GLOBALS = new Set(["wotbtoolsOnAuthChanged", "wotbtoolsOnConnectivityChanged", "wotbtoolsOnReplay"]);
+  const EVENT_GLOBALS = new Set(["wotbtoolsOnAuthChanged", "wotbtoolsOnConnectivityChanged", "wotbtoolsOnReplay", "wotbtoolsOnUpdateStatusChanged"]);
 
   // 第一道门：exact local origin（`http://127.0.0.1:21653`）的 top frame。
   // manifest 的 `http://127.0.0.1/*` 只是粗粒度注入范围——Firefox 的 WebExtension match pattern

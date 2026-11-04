@@ -74,7 +74,7 @@ with tempfile.TemporaryDirectory() as temp:
             pass
         else:
             raise AssertionError(f"malformed staged asset origin must fail closed: {malformed!r}")
-validate_native_sources(base := json.loads((root / "contracts/android-native-bridge.json").read_text()), [
+validate_native_sources(base := json.loads((root / "contracts/android-native-bridge.json").read_text(encoding="utf-8")), [
     str(root / "android/app/src/main/java/com/wotbtools/app/NativeBridge.kt"),
     str(root / "android/app/src/main/java/com/wotbtools/app/MainActivity.kt"),
     str(root / "android/app/src/main/java/com/wotbtools/app/ReplayIntentHandler.kt"),
@@ -90,12 +90,63 @@ assert sorted(auth_methods) == ["authGetAccessToken", "authGetState", "authLogin
 assert auth_capabilities == ["native-auth"], auth_capabilities
 # 事件集合逐字固定（auth_surface 返回契约里的**全部**事件全局）：新增事件必须在这里显式登记，
 # 不允许悄悄多出一个页面全局。
-assert auth_globals == ["wotbtoolsOnAuthChanged", "wotbtoolsOnConnectivityChanged", "wotbtoolsOnReplay"], auth_globals
+assert auth_globals == ["wotbtoolsOnAuthChanged", "wotbtoolsOnConnectivityChanged", "wotbtoolsOnUpdateStatusChanged", "wotbtoolsOnReplay"], auth_globals
 # connectivity 是 PR B 新增的 wire surface：方法与能力同样逐字固定（additive 不等于随手加）。
 connectivity_methods = [name for name in base["methods"] if name.startswith("connectivity")]
 assert connectivity_methods == ["connectivityGetState"], connectivity_methods
 assert [name for name in base["capabilities"] if name == "connectivity"] == ["connectivity"]
 assert base["methods"]["connectivityGetState"]["response"]["enum"] == ["online", "offline"]
+
+# 更新状态是 capability-gated additive surface，旧 Boolean 方法与 bridge v3 保持不变。
+update_methods = ["getUpdateStatus", "refreshUpdateStatus", "beginUpdateDownload", "installUpdate", "dismissOptionalUpdate"]
+assert base["bridgeVersion"] == 3
+assert "app-update" in base["capabilities"] and "app-update-status" in base["capabilities"]
+for method in ("checkForUpdate", "startUpdate"):
+    assert base["methods"][method] == {"request": {"fields": {}}, "response": {"type": "boolean"}}, method
+assert base["events"]["updateStatusChanged"]["payload"] == "none"
+snapshot = base["methods"]["getUpdateStatus"]["response"]
+assert base["methods"]["refreshUpdateStatus"]["response"] == snapshot
+assert snapshot["type"] == "object"
+assert set(snapshot["fields"]) == {
+    "revision", "state", "checkState", "checkFailureReason", "currentVersionName", "currentVersionCode",
+    "latestVersionName", "latestVersionCode", "minSupportedVersionCode", "publishedAt", "releaseNotes",
+    "optionalPromptSuppressed", "download",
+}
+assert snapshot["fields"]["state"]["enum"] == ["unknown", "checking", "upToDate", "optional", "mandatory", "checkFailed"]
+download = snapshot["fields"]["download"]
+assert download["fields"]["progressPercent"]["nullable"]
+assert download["fields"]["totalBytes"]["minimum"] == 1
+assert "verifying" in download["fields"]["state"]["enum"]
+assert "installPermissionRequired" in download["fields"]["state"]["enum"]
+assert download["fields"]["packageType"] == {
+    "type": "string", "nullable": True, "required": False, "enum": ["full", "delta"]
+}
+assert {"selectingPackage", "downloadingDelta", "verifyingDelta", "applyingDelta", "verifyingTargetApk", "fallbackFull"} <= set(download["fields"]["state"]["enum"])
+pre_delta_contract = json.loads(json.dumps(base))
+for method in ("getUpdateStatus", "refreshUpdateStatus"):
+    pre_delta_download = pre_delta_contract["methods"][method]["response"]["fields"]["download"]["fields"]
+    del pre_delta_download["packageType"]
+    for phase in ("selectingPackage", "downloadingDelta", "verifyingDelta", "applyingDelta", "verifyingTargetApk", "fallbackFull"):
+        pre_delta_download["state"]["enum"].remove(phase)
+    for reason in ("baseHashMismatch", "patchDownloadFailed", "patchHashMismatch", "patchApplyFailed", "targetHashMismatch"):
+        pre_delta_download["failureReason"]["enum"].remove(reason)
+assert not contract_result(pre_delta_contract, base)["breaking"]
+for fields in (snapshot["fields"], download["fields"]):
+    assert all(spec.get("required") is True for name, spec in fields.items() if name != "packageType")
+for method, parameter, kind in (
+    ("beginUpdateDownload", "expectedLatestVersionCode", "integer"),
+    ("installUpdate", "expectedTaskToken", "string"),
+    ("dismissOptionalUpdate", "expectedLatestVersionCode", "integer"),
+):
+    fields = base["methods"][method]["request"]["fields"]
+    assert list(fields) == [parameter] and fields[parameter]["type"] == kind and fields[parameter]["required"]
+    assert base["methods"][method]["response"] == {"type": "boolean"}
+legacy_update_contract = json.loads(json.dumps(base))
+for method in update_methods:
+    del legacy_update_contract["methods"][method]
+legacy_update_contract["capabilities"].remove("app-update-status")
+del legacy_update_contract["events"]["updateStatusChanged"]
+assert not contract_result(legacy_update_contract, base)["breaking"]
 
 # Trusted local origin addition retains Bridge v2 RPC semantics and both production origins.
 # Historical v2 fixture (the current contract is v3 / loopback): this guards the reviewed
