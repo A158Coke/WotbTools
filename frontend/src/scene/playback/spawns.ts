@@ -28,10 +28,12 @@ export interface MapSpawnPoint {
   y: number
 }
 
-/** 出生点标记对象（贴地几何 + 材质；reground 按新高度场重建几何）。 */
+/** 出生点标记对象（贴地几何 + 材质；reground 按新高度场重建几何，
+ *  refreshColors 按 team 原位重着色——UI Profile 切换 token 变化时用）。 */
 interface SpawnMarkerObject {
   gx: number
   gz: number
+  team: number | undefined | null
   disc: THREE.Mesh
   ring: THREE.Mesh
   reground(): void
@@ -55,6 +57,7 @@ export function createSpawnMarkers({ getScene, groundY }: {
   build(points: readonly MapSpawnPoint[] | null | undefined): void
   clear(): void
   reground(): void
+  refreshColors(): void
 } {
 let markers: SpawnMarkerObject[] = [];
 
@@ -105,7 +108,7 @@ function addSpawnMarker(gx: number, gz: number, team: number | undefined | null)
                                   polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
   getScene().add(ring);
   markers.push({
-    gx, gz, disc, ring,
+    gx, gz, team, disc, ring,
     // 地形异步就绪后：按新高度场重建贴地几何（与基地 reground 同链）
     reground: () => {
       disc.geometry.dispose(); disc.geometry = makeGroundedDisc(groundY, sx, sz, SPAWN_DISC_R, 4, 24);
@@ -127,9 +130,21 @@ function regroundSpawns() {
   for (const m of markers) m.reground();
 }
 
+/** UI Profile 切换（showcase ↔ classic）后 token 值变化：已有标记原位重着色，
+ *  不重建几何 / 场景 / 相机。与 reground 同为宿主显式调用的刷新面。 */
+function refreshSpawnColors() {
+  for (const m of markers) {
+    const teamColor = isTeamColor(m.team);
+    (m.disc.material as THREE.MeshBasicMaterial).color.set(spawnColor(m.team));
+    (m.ring.material as THREE.MeshBasicMaterial).color.set(
+      teamColor ? tokenColor('--color-on-team-neutral', SPAWN_RING_OUTLINE_FALLBACK) : spawnColor(m.team));
+  }
+}
+
   return {
     build: buildSpawns,
     clear: clearSpawns,
     reground: regroundSpawns,
+    refreshColors: refreshSpawnColors,
   };
 }

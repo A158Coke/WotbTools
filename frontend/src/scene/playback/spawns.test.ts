@@ -190,3 +190,94 @@ describe('场景 Team 身份色（#835 后续：Team 1 绿 / Team 2 红 / 未知
     expect(r.zMax).toBeLessThan(-196.5)
   })
 })
+
+describe('UI Profile 切换后 refreshColors 原位重着色（#877 review P3）', () => {
+  /** token 面板模拟：showcase(dark) ↔ classic(light) 的 team 色板（tokens/color.css 实值）。 */
+  const PROFILES = {
+    showcase: { '--color-team-1': '#5cc280', '--color-team-2': '#f2786d', '--color-on-team-neutral': '#1c1f1d' },
+    classic: { '--color-team-1': '#16703c', '--color-team-2': '#b8352a', '--color-on-team-neutral': '#1c1f1d' },
+  } as const
+  let prevGetComputedStyle: typeof globalThis.getComputedStyle | undefined
+  let prevDocument: typeof globalThis.document | undefined
+  let tokens: Record<string, string> = { ...PROFILES.showcase }
+
+  function useProfile(name: keyof typeof PROFILES) {
+    tokens = { ...PROFILES[name] }
+  }
+
+  function stubCss() {
+    prevGetComputedStyle = globalThis.getComputedStyle
+    prevDocument = globalThis.document
+    ;(globalThis as Record<string, unknown>).document = {}
+    globalThis.getComputedStyle = (() => ({
+      getPropertyValue: (name: string) => tokens[name] ?? '',
+    })) as unknown as typeof globalThis.getComputedStyle
+  }
+
+  function restoreCss() {
+    if (prevGetComputedStyle) globalThis.getComputedStyle = prevGetComputedStyle
+    else delete (globalThis as Record<string, unknown>).getComputedStyle
+    if (prevDocument !== undefined) (globalThis as Record<string, unknown>).document = prevDocument
+    else delete (globalThis as Record<string, unknown>).document
+  }
+
+  function hexOf(o: THREE.Object3D): string {
+    return ((o as THREE.Mesh).material as THREE.MeshBasicMaterial).color.getHexString()
+  }
+
+  it('showcase → classic → showcase 双向：颜色随 token 更新，几何/对象原位保留', () => {
+    stubCss()
+    try {
+      useProfile('showcase')
+      const { scene, added } = fakeScene()
+      const markers = createSpawnMarkers({ getScene: () => scene, groundY: () => 0 })
+      markers.build([
+        { x: 1, y: 1, team: 1 },
+        { x: 2, y: 2, team: 2 },
+        { x: 3, y: 3, team: null as unknown as number },
+      ])
+      expect(hexOf(added[0])).toBe('5cc280')
+      expect(hexOf(added[2])).toBe('f2786d')
+
+      // classic（light 主题深色变体）：不重建场景，同批对象原位换色
+      const identityBefore = added.map(o => (o as THREE.Mesh).geometry)
+      useProfile('classic')
+      markers.refreshColors()
+      expect(hexOf(added[0])).toBe('16703c')
+      expect(hexOf(added[2])).toBe('b8352a')
+      // 中性盘：classic 无 --text-muted 覆盖（stub 未给）→ fallback，不误入 team 色
+      expect(hexOf(added[4])).toBe('858f81')
+      expect(added.map(o => (o as THREE.Mesh).geometry)).toEqual(identityBefore)
+
+      // 切回 showcase：双向回归
+      useProfile('showcase')
+      markers.refreshColors()
+      expect(hexOf(added[0])).toBe('5cc280')
+      expect(hexOf(added[2])).toBe('f2786d')
+
+      // 换 profile 后 build 新点：直接用新 token（不只 refresh 路径生效）
+      markers.build([{ x: 9, y: 9, team: 1 }])
+      expect(hexOf(added.at(-2)!)).toBe('5cc280')
+    } finally {
+      restoreCss()
+    }
+  })
+
+  it('refreshColors 后 ring 深色轮廓保持、reground 链不受影响', () => {
+    stubCss()
+    try {
+      useProfile('classic')
+      const { scene, added } = fakeScene()
+      const markers = createSpawnMarkers({ getScene: () => scene, groundY: () => 0 })
+      markers.build([{ x: 0, y: 0, team: 2 }])
+      markers.refreshColors()
+      expect(hexOf(added[1])).toBe('1c1f1d')
+      // reground 与 refreshColors 正交：几何重建不改颜色
+      const colorBefore = hexOf(added[0])
+      markers.reground()
+      expect(hexOf(added[0])).toBe(colorBefore)
+    } finally {
+      restoreCss()
+    }
+  })
+})
