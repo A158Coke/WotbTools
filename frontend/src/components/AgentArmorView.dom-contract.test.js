@@ -370,15 +370,21 @@ describe('engagement-distance result line localization', () => {
   const kernel = read('../scene/tankViewer.js')
   const view = read('./AgentArmorView.vue')
   it('结果卡距离行插值 L.shotDistance / L.distanceUnit', () => {
-    expect(kernel).toMatch(/\$\{escapeText\(L\.shotDistance\)\}: \$\{fmtNum\(distVal\)\} \$\{escapeText\(L\.distanceUnit\)\}/)
+    // 卡片 HTML 已出仓 viewer/shotResultCard.ts（Wave B3A）：距离行插值的行为断言
+    // 在 src/scene/viewer/shotResultCard.test.ts（含三语）；这里只锁场景内核的接线——
+    // 把三语 labels 与 distVal 交给 renderer，不得在内核绕过 renderer 直拼卡片文案。
+    expect(kernel).toContain('renderShotResultCardHtml({')
+    expect(kernel).toMatch(/renderShotResultCardHtml\(\{[\s\S]*?labels: L,/)
     expect(kernel).not.toMatch(/交战距离: \$\{fmtNum/)
   })
   it('labels 装配与三语键在位（en/ru 结果卡不再出中文）', () => {
+    const card = read('../scene/viewer/shotResultCard.ts')
     expect(view).toContain("shotDistance: t('armor.distance')")
     expect(view).toContain("distanceUnit: t('armor.distance_unit')")
     expect(view).toContain("effectivePenetration: t('armor.effective_penetration')")
     expect(view).toContain("shotAvgShort: t('armor.avg_short')")
-    expect(kernel).toContain('L.shotAvgShort')
+    // 消费方已出仓 viewer/shotResultCard.ts（Wave B3A）：labels 子集由 renderer 消费。
+    expect(card).toContain('L.shotAvgShort')
     const locales = JSON.parse(read('../locales/feature-messages.json'))
     expect(locales.en.armor.distance).toBe('Engagement distance')
     expect(locales.ru.armor.distance).toBe('Дистанция боя')
@@ -547,17 +553,15 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     // 概率 0/100 不得覆盖确定性 PENETRATION/BLOCKED；否则 252AP 打
     // 21.5+207mm 的确定性穿透会被 3× 概率误判成未击穿。
     expect(kernel).not.toMatch(/chanceOutcome/)
-    expect(kernel).toMatch(/title = partial \? L\.mayPenetrate : L\.resultName\(st\);/)
-    // 统一概率行：所有弹种同一口径（0%/1–99%/100%），不再按 partial 生成 chanceHtml。
-    expect(kernel).toMatch(/L\.shotPenChance\}: \$\{formatProbabilityPercent\(cardChance\)\}%/)
-    // AP/APCR/HEAT：完整概率链作为唯一层链，层点用累计概率色，概率>0 显示伤害。
+    // 卡片 presentation（标题 partial / 概率行 / 层概率着色 / hasChance→满伤口径）
+    // 已出仓 viewer/shotResultCard.ts（Wave B3A），对应行为断言在
+    // src/scene/viewer/shotResultCard.test.ts；这里锁定内核侧的判定与接线。
     expect(kernel).toMatch(/evaluateProbabilityChain\(chancePen, probLayers\)/)
     expect(kernel).toMatch(/const probabilityMode = options\.probabilityMode === true && !blockedNoPrimary;/)
     // 无主装甲阻断是终态：概率/满伤不得回填。
     expect(kernel).toMatch(/allowChance = allowChance && !blockedNoPrimary/)
     expect(kernel).toMatch(/!isHE && !blockedNoPrimary/)
-    expect(kernel).toMatch(/probabilityColorCss\(layerChance\)/)
-    expect(kernel).toMatch(/hasChance \? dmgVal : 0/)
+    expect(kernel).toMatch(/const \{ chance: cardChance \} = resolveCardChance\(\{/)
     // HE 命中首个 Primary 也走概率卡；非 Primary 的间隙/模块保留首面爆炸分支。
     expect(kernel).toMatch(/const heFirstPrimary = isHE && hitsForCheck\.length > 0/)
     expect(kernel).toMatch(/heFirstPrimary && hasProbabilityChain\s*\n\s*&& hasPrimaryLayer\(res\.probability_layers\)/)
@@ -587,8 +591,9 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(kernel).toContain("'collision-pack:'")
     expect(kernel).toContain("'collision-grid:'")
     expect(kernel).toContain("'sampler:invalid-input'")
-    expect(kernel).toContain('heInfo.unavailable')
-    expect(kernel).toContain('L.heSamplingUnavailable')
+    // unavailable/原因展示随结果卡出仓 viewer/shotResultCard.ts（行为断言在
+    // shotResultCard.test.ts）；内核侧锁 heInfo 原样交给 renderer。
+    expect(kernel).toMatch(/renderShotResultCardHtml\(\{[\s\S]*?heInfo,/)
   })
 
   it('判定输入缺数据时 fail-closed：无 120mm 静默默认、未知弹种不落到 HE', () => {
@@ -640,15 +645,19 @@ describe('production gun_mask clip wiring (2026-10-21)', () => {
     expect(kernel).toContain('const { chance: cardChance } = resolveCardChance({')
   })
   it('非跳弹的 0mm 板不显示“跳弹 (-25% 穿深)”子标签', () => {
-    expect(kernel).toContain("sub = l.ricochet ? L.shotRicochetSeg : '';")
+    // 子标签行为随结果卡出仓 viewer/shotResultCard.ts（行为断言在 shotResultCard.test.ts）。
+    expect(kernel).toMatch(/renderShotResultCardHtml\(\{[\s\S]*?result, layers, partialChainLayers,/)
   })
   it('跳弹续飞 1–99% 的中段卡片显示满伤，而不是确定性 0', () => {
-    expect(kernel).toContain(': (chancePartial ? dmgVal : dmgDealt));')
+    // 满伤口径（chancePartial ? dmgVal : dmgDealt）的行为断言在 shotResultCard.test.ts；
+    // 内核侧锁 chancePartial 的判定与传递。
+    expect(kernel).toMatch(/renderShotResultCardHtml\(\{[\s\S]*?chancePartial, blockedNoPrimary,/)
   })
   it('跳弹续飞 1–99% 时最终段装甲板按概率链累计 chance 着色（可能击穿）', () => {
-    expect(kernel).toContain('const partialEval = !probabilityMode && chancePartial')
-    expect(kernel).toContain('const partialChance = probabilityMode ? null : nextPartialChance(l);')
-    expect(kernel).toContain('partialChance != null')
+    // 概率链累计是领域计算，仍在内核执行后交给 renderer 着色；游标着色行为断言
+    // 在 shotResultCard.test.ts。
+    expect(kernel).toContain('const partialChainLayers = !probabilityMode && chancePartial')
+    expect(kernel).toMatch(/partialChainLayers = !probabilityMode && chancePartial\s*\n\s*\? evaluateProbabilityChain\(chancePen, probLayers\)\.layers/)
   })
 })
 
