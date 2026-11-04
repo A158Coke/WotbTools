@@ -106,7 +106,8 @@
       "exporting": "Exporting…",
       "exportFailed": "PNG export failed"
     },
-    "basemapFailed": "Failed to load the basemap"
+    "basemapFailed": "Failed to load the basemap",
+    "controlsHint": "Wheel zoom · Drag to look · WASD/QE move & rise · Keys 1–6 change fly speed"
   },
   "app": {
     "title": "WoTBTools",

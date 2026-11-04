@@ -54,6 +54,19 @@ describe('MapPreview3DPane 场景接线（source regression）', () => {
     expect(readyBody).toContain('pushBasesKind()')
   })
 
+  it('出生点：唯一推送方向 pane→scene（setMapSpawns），三触发点齐全（#835）', () => {
+    // 点列变化 / 场景创建（先于装载记意图）/ 会话就绪（teardown 复位内核意图后补推）
+    expect(paneSrc).toContain('setMapSpawns')
+    expect(paneSrc).toContain('function pushSpawnPoints')
+    expect(paneSrc).toContain('watch(() => props.spawnPoints, pushSpawnPoints)')
+    const ensure = paneSrc.indexOf('function ensureScene')
+    const ensureEnd = paneSrc.indexOf('function reloadMap')
+    expect(paneSrc.slice(ensure, ensureEnd)).toContain('pushSpawnPoints()')
+    const readyStart = paneSrc.indexOf('watch(() => store.mapReady')
+    const readyBody = paneSrc.slice(readyStart, paneSrc.indexOf('})', readyStart))
+    expect(readyBody).toContain('pushSpawnPoints()')
+  })
+
   it('内核 map 会话：stub DATA + 就绪门控 mapReady（hasData 保持回放专用）', () => {
     expect(kernelSrc).toContain('async function loadMapOnly(')
     expect(kernelSrc).toContain("SESSION_MODE = 'map'")
@@ -62,5 +75,16 @@ describe('MapPreview3DPane 场景接线（source regression）', () => {
     // 地图会话提前收口必须发生在 buildVehicles 之前（回放尾部不得执行）
     expect(kernelSrc.indexOf('if (SESSION_MODE === \'map\') {'))
       .toBeLessThan(kernelSrc.indexOf('buildVehicles();'))
+    // 出生点（#835）：会话态 + map 会话建点 + teardown 复位清场景 + 回放不消费
+    expect(kernelSrc).toContain('setMapSpawns(points)')
+    expect(kernelSrc).toContain('function buildSpawns()')
+    expect(kernelSrc).toContain("spawnMarkers.build(SESSION_MODE === 'map' ? MAP_SPAWN_POINTS : null)")
+    expect(kernelSrc).toContain('MAP_SPAWN_POINTS = null;')
+    expect(kernelSrc).toContain('clearSpawns();   // 出生点贴地标记随会话释放')
+    // 触屏手势接线同源（#835 项 3）：触屏 pan/look/pinch 全部在内核 capture 链（与回放同一实现），
+    // 面板只经 initPlayback 继承——不存在 Map-only 缺失的第二套 touch 实现；真机可用性验收归用户。
+    expect(kernelSrc).toContain("container.addEventListener('pointerdown', onFlyCaptureDown, true)")
+    expect(kernelSrc).toContain("container.addEventListener('pointermove', onFlyCaptureMove, true)")
+    expect(kernelSrc).toContain("container.addEventListener('pointerup', onFlyCaptureUp, true)")
   })
 })

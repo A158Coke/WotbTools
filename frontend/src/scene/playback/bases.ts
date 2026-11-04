@@ -75,6 +75,64 @@ export interface BasesStore {
 // 圆盘贴图随相机水平朝向转正——平躺在地上，但从任何方向看字都是正的。空中不再有 HUD。
 // 颜色取自设计语言阵营 token（design-language §3.3：2D、3D 共用），读不到时用同值兜底。
 
+// ---------- 贴地几何（模块级导出：spawns.ts 出生点标记复用同一实现，不复制第二份）----------
+// 逐顶点贴地圆盘（极坐标网格，中心 + rings 圈）。offsets 记录每个顶点相对圆心的归一化偏移，
+// UV 由 orientDiscUv 按观察方向旋转计算，几何本身不随视角重建。
+export function makeGroundedDisc(groundY: (x: number, z: number) => number, gx: number, gz: number, radius: number, rings = 10, seg = 48): THREE.BufferGeometry {
+  const count = 1 + rings * seg;
+  const pos = new Float32Array(count * 3);
+  const offsets = new Float32Array(count * 2);
+  pos[0] = gx; pos[1] = groundY(gx, gz) + 0.05; pos[2] = gz;
+  let k = 1;
+  for (let i = 1; i <= rings; i++) {
+    const rr = (i / rings) * radius;
+    for (let j = 0; j < seg; j++) {
+      const a = (j / seg) * Math.PI * 2;
+      const dx = Math.cos(a) * rr, dz = Math.sin(a) * rr;
+      pos[k * 3] = gx + dx; pos[k * 3 + 1] = groundY(gx + dx, gz + dz) + 0.05; pos[k * 3 + 2] = gz + dz;
+      offsets[k * 2] = dx / radius; offsets[k * 2 + 1] = dz / radius;
+      k++;
+    }
+  }
+  const idx: number[] = [];
+  for (let j = 0; j < seg; j++) idx.push(0, 1 + j, 1 + ((j + 1) % seg));
+  for (let i = 1; i < rings; i++) {
+    const a0 = 1 + (i - 1) * seg, b0 = 1 + i * seg;
+    for (let j = 0; j < seg; j++) {
+      const j1 = (j + 1) % seg;
+      idx.push(a0 + j, b0 + j, b0 + j1, a0 + j, b0 + j1, a0 + j1);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(count * 2), 2));
+  geo.setIndex(idx);
+  geo.userData.offsets = offsets;
+  return geo;
+}
+
+// 逐顶点贴地圆环（与地面/边界同构：起伏地形上平面圆环会被坡地埋掉）
+export function makeGroundedRing(groundY: (x: number, z: number) => number, gx: number, gz: number, radius: number, seg = 72): THREE.BufferGeometry {
+  const pos = new Float32Array((seg + 1) * 2 * 3);
+  const idx: number[] = [];
+  for (let i = 0; i <= seg; i++) {
+    const a = (i / seg) * Math.PI * 2;
+    const ca = Math.cos(a), sa = Math.sin(a);
+    const xo = gx + ca * radius, zo = gz + sa * radius;
+    const xi = gx + ca * radius * 0.9, zi = gz + sa * radius * 0.9;
+    pos[i * 6] = xo; pos[i * 6 + 1] = groundY(xo, zo) + 0.08; pos[i * 6 + 2] = zo;
+    pos[i * 6 + 3] = xi; pos[i * 6 + 4] = groundY(xi, zi) + 0.08; pos[i * 6 + 5] = zi;
+  }
+  for (let i = 0; i < seg; i++) {
+    idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  return geo;
+}
+
 export function createBaseMarkers({ getScene, getCamera, getData, getMapBases, store, groundY }: {
   getScene: () => Scene
   getCamera: () => PerspectiveCamera
@@ -144,7 +202,7 @@ function clearBases() {
 
 function addBaseMarker(baseId: string, kind: 'supremacy' | 'assault', gx: number, gz: number, r: number): void {
   const ring = new THREE.Mesh(
-    makeGroundedRing(gx, gz, r),
+    makeGroundedRing(groundY, gx, gz, r),
     new THREE.MeshBasicMaterial({ color: baseColors.neutral, side: THREE.DoubleSide,
                                   transparent: true, opacity: 0.9, depthWrite: false, toneMapped: false,
                                   polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
@@ -152,7 +210,7 @@ function addBaseMarker(baseId: string, kind: 'supremacy' | 'assault', gx: number
   const canvas = document.createElement('canvas'); canvas.width = BASE_TEX; canvas.height = BASE_TEX;
   const tex = new THREE.CanvasTexture(canvas); tex.colorSpace = THREE.SRGBColorSpace;
   const disc = new THREE.Mesh(
-    makeGroundedDisc(gx, gz, r * 0.9),
+    makeGroundedDisc(groundY, gx, gz, r * 0.9),
     new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide, transparent: true, depthWrite: false,
                                   toneMapped: false,
                                   polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
@@ -161,8 +219,8 @@ function addBaseMarker(baseId: string, kind: 'supremacy' | 'assault', gx: number
               stateKey: undefined, uvDir: null, ringHex: null,
               // 地形异步就绪后：按新高度场重建贴地环带与圆盘
               reground: () => {
-                ring.geometry.dispose(); ring.geometry = makeGroundedRing(gx, gz, r);
-                disc.geometry.dispose(); disc.geometry = makeGroundedDisc(gx, gz, r * 0.9);
+                ring.geometry.dispose(); ring.geometry = makeGroundedRing(groundY, gx, gz, r);
+                disc.geometry.dispose(); disc.geometry = makeGroundedDisc(groundY, gx, gz, r * 0.9);
                 b.uvDir = null;
               } };
   baseObjects.push(b);
@@ -286,66 +344,9 @@ function updateBases(clock: number): void {
   }
 }
 
-// 逐顶点贴地圆盘（极坐标网格，中心 + rings 圈）。offsets 记录每个顶点相对圆心的归一化偏移，
-// UV 由 orientDiscUv 按观察方向旋转计算，几何本身不随视角重建。
-function makeGroundedDisc(gx: number, gz: number, radius: number, rings = 10, seg = 48): THREE.BufferGeometry {
-  const count = 1 + rings * seg;
-  const pos = new Float32Array(count * 3);
-  const offsets = new Float32Array(count * 2);
-  pos[0] = gx; pos[1] = groundY(gx, gz) + 0.05; pos[2] = gz;
-  let k = 1;
-  for (let i = 1; i <= rings; i++) {
-    const rr = (i / rings) * radius;
-    for (let j = 0; j < seg; j++) {
-      const a = (j / seg) * Math.PI * 2;
-      const dx = Math.cos(a) * rr, dz = Math.sin(a) * rr;
-      pos[k * 3] = gx + dx; pos[k * 3 + 1] = groundY(gx + dx, gz + dz) + 0.05; pos[k * 3 + 2] = gz + dz;
-      offsets[k * 2] = dx / radius; offsets[k * 2 + 1] = dz / radius;
-      k++;
-    }
-  }
-  const idx: number[] = [];
-  for (let j = 0; j < seg; j++) idx.push(0, 1 + j, 1 + ((j + 1) % seg));
-  for (let i = 1; i < rings; i++) {
-    const a0 = 1 + (i - 1) * seg, b0 = 1 + i * seg;
-    for (let j = 0; j < seg; j++) {
-      const j1 = (j + 1) % seg;
-      idx.push(a0 + j, b0 + j, b0 + j1, a0 + j, b0 + j1, a0 + j1);
-    }
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(count * 2), 2));
-  geo.setIndex(idx);
-  geo.userData.offsets = offsets;
-  return geo;
-}
-
 function orientDisc(geo: THREE.BufferGeometry, ux: number, uz: number): void {
   orientDiscUv(geo.userData.offsets, geo.attributes.uv.array, ux, uz);
   geo.attributes.uv.needsUpdate = true;
-}
-
-// 逐顶点贴地圆环（与地面/边界同构：起伏地形上平面圆环会被坡地埋掉）
-function makeGroundedRing(gx: number, gz: number, radius: number, seg = 72): THREE.BufferGeometry {
-  const pos = new Float32Array((seg + 1) * 2 * 3);
-  const idx: number[] = [];
-  for (let i = 0; i <= seg; i++) {
-    const a = (i / seg) * Math.PI * 2;
-    const ca = Math.cos(a), sa = Math.sin(a);
-    const xo = gx + ca * radius, zo = gz + sa * radius;
-    const xi = gx + ca * radius * 0.9, zi = gz + sa * radius * 0.9;
-    pos[i * 6] = xo; pos[i * 6 + 1] = groundY(xo, zo) + 0.08; pos[i * 6 + 2] = zo;
-    pos[i * 6 + 3] = xi; pos[i * 6 + 4] = groundY(xi, zi) + 0.08; pos[i * 6 + 5] = zi;
-  }
-  for (let i = 0; i < seg; i++) {
-    idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2);
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  geo.setIndex(idx);
-  geo.computeVertexNormals();
-  return geo;
 }
   return {
     build: buildBases,

@@ -119,7 +119,9 @@ import { createPickReporter } from './playback/pickReport.js'
 import { chainVisible } from './pickDebug.js'
 import { createBoundaryBand, BOUNDARY_THICK } from './playback/boundary.js'
 import { createBaseMarkers } from './playback/bases.js'
+import { createSpawnMarkers } from './playback/spawns.js'
 import { createHudFeed } from './playback/hudFeed.js'
+import { createFlyZoomSmoother, createZoomSmoother, flyWheelFactor, orbitWheelFactor } from './playback/zoomSmoothing.js'
 import {
   ANNOTATION_LIFT, ANNOTATION_MAX_ERASER_POINTS, ANNOTATION_MAX_INPUT_POINTS,
   buildEraserRing, buildPenRibbon, hitWorldNormal, normalizePenPoints, reprojectRibbonPositions,
@@ -305,6 +307,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
    * teardown 随会话复位为 null。
    */
   let MAP_BASES_KIND = null;
+  /**
+   * 地图预览会话的出生点列（#835）：宿主经 setMapSpawns 下发语义档案
+   * （common/map-semantics → parseMapGridProfile.spawnPoints）解析出的点列；
+   * 几何与渲染 fail-closed 在 playback/spawns.ts，本闭包只持数组的引用。
+   * 回放会话不消费；teardown 随会话复位为 null。
+   */
+  let MAP_SPAWN_POINTS = null;
   // 渲染帧句柄：destroy 显式 cancel（旧实现依赖 destroyed 标志的自然退出，
   // 帧回调在 destroy 后仍可能再排队一次）
   let rafId = 0;
@@ -512,6 +521,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // OrbitControls（挂 canvas）物理上收不到左键拖拽/滚轮。选中/拾取语义不变
   // （位移 ≤ SLOP 仍算单击，在 capture 处理器内联）。切回跟随/top 或销毁时恢复 controls。
   const flyLook = { active: false, lastX: 0, lastY: 0, yaw: 0, pitch: 0, dist: 30 };
+  // 滚轮缩放平滑（#835）：两条滚轮路径（fly 拦截 / top·follow 的 OrbitControls 拦截）
+  // 都只把事件比例 push 进预算，zoomTick 每帧向目标收敛——事件当帧立即生效一小步，
+  // 约 0.4s 收敛到终点（公式/界限与原即时实现逐值一致，只改节奏不改步长）。
+  const zoomSmoother = createZoomSmoother();
+  // fly 路径用独立的**可加世界位移**预算（旧 flyDolly 语义）：比例预算对视距不变的
+  // fly 不等价（各帧比例份额相加 ≠ 事件时刻的一次性位移，且随帧率漂移）——见
+  // zoomSmoothing.createFlyZoomSmoother 注释。orbit 路径（top/follow）仍用比例预算。
+  const flyZoomSmoother = createFlyZoomSmoother();
   // 接管态 = 自由模式（派生）。**不按输入设备开关**：`(pointer: fine)` 之类的能力
   // 探测在触屏笔记本 / 平板模式下会报 coarse，把整条接管链关掉（用户实测：WASD 全灭、
   // 拖拽退回 OrbitControls）。
@@ -565,6 +582,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   /** free↔其他模式切换的 OrbitControls 侧状态迁移（enabled/damping/惯性清理）。 */
   function flyLookApplyMode(mode) {
     flyPan = null;   // 平移从手势起点重算：相机被模式切换挪动后，旧起点不能再用
+    zoomSmoother.reset();   // 滚轮预算一并清空：旧目标在新机位上继续生效会突然一跳
+    flyZoomSmoother.reset();
     if (mode === 'free') {
       if (controls) {
         controls.enabled = false;
@@ -615,6 +634,35 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     controls.target.z += dz * step;
     constrainFreeCameraAltitude();
     camera.lookAt(controls.target);
+    invalidate();
+  }
+  // 滚轮缩放的逐帧推进（animate 每帧调用；预算见 zoomSmoothing.js）：
+  //   · fly：可加世界位移预算，advance 返回本帧位移直接交给 flyDolly——各帧位移之和
+  //     恒等于事件时刻按旧公式算出的总位移，终点与旧即时实现逐值一致且帧率无关；
+  //   · top/follow：f = 本帧视距比例，沿 target→camera 缩放视距（OrbitControls dolly
+  //     的同一几何）。min/maxDistance 已含地形净空锁定值，随后的
+  //     clampOrbitCameraToTerrain 逐帧再校验——被钳掉的部分自然吸收（与即时缩放同一
+  //     钳制语义，只改节奏）。
+  const _zoomDir = new THREE.Vector3();
+  function zoomTick(dt) {
+    if (!renderer) return;
+    if (flyMode()) {
+      if (!flyZoomSmoother.active()) return;
+      flyDolly(flyZoomSmoother.advance(dt));
+    } else {
+      if (!zoomSmoother.active()) return;
+      const f = zoomSmoother.advance(dt);
+      if (f === 1) return;
+      if (controls && controls.enabled) {
+        const off = _zoomDir.subVectors(camera.position, controls.target);
+        const len = off.length();
+        if (len > 1e-6) {
+          const next = Math.min(controls.maxDistance, Math.max(controls.minDistance, len * f));
+          camera.position.copy(controls.target).addScaledVector(off.divideScalar(len), next);
+          camera.lookAt(controls.target);
+        }
+      }
+    }
     invalidate();
   }
   /** 手指当前射线的方向（单指平移用）；rect 不可用时返回 null。 */
@@ -849,13 +897,42 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 视角与视距保持不变。旧实现只改 flyLook.dist 而相机不动——target 只沿视线挪，
     // 画面毫无变化（用户实测「滚轮没有缩放」）。
     flyLookSyncIfStale('wheel');
-    // 线性步进（对 |deltaY| 对称，往返可精确抵消）：一格鼠标滚轮（deltaY≈100）≈12% 视距；
-    // 触控板的小 delta 逐次累积；单次上限 30%，防一帧飞越半个地图。
-    const f = Math.max(-0.3, Math.min(0.3, -e.deltaY * 0.0012));
-    flyDolly(flyLook.dist * f);
+    // 事件只累积**可加世界位移**（旧即时公式：step = clamp(−deltaY×0.0012, ±0.3)，
+    // 位移 = 当前视距 × step——flyDolly 平移 camera+target，视距不变，故为可加量），
+    // 实际推拉由 zoomTick 逐帧收敛——平滑只改变时间分布，最终位移与旧即时实现逐值
+    // 一致（#835「缩放生硬」）。
+    flyZoomSmoother.pushDisplacement(flyLook.dist * (1 - flyWheelFactor(e.deltaY)));
+    invalidate();
     e.preventDefault();
     e.stopPropagation();
-    flyDbg('wheel', `step=${(flyLook.dist * f).toFixed(1)}`);
+    flyDbg('wheel', `pushed=${(flyLook.dist * (1 - flyWheelFactor(e.deltaY))).toFixed(3)}`);
+  }
+  /** three 0.185.1 OrbitControls._customWheelEvent 的归一化等价（对照 node_modules
+   *  安装源码）：deltaMode 1（行）×16、2（页）×100；`ctrlKey && !_controlActive` =
+   *  触控板模拟 pinch（实体 Control 按键按下时 OrbitControls 经 keydown 维护
+   *  _controlActive=true），再 ×10。我们的 capture 拦截发生在 OrbitControls 收到事件
+   *  之前，必须先复刻该归一化再换算比例，否则行/页单位设备与触控板捏合的实际缩放
+   *  幅度都会变小。 */
+  function orbitWheelNormalizedDelta(e) {
+    let deltaY = e.deltaY;
+    if (e.deltaMode === 1) deltaY *= 16;
+    else if (e.deltaMode === 2) deltaY *= 100;
+    if (e.ctrlKey && controls?._controlActive !== true) deltaY *= 10;
+    return deltaY;
+  }
+  /** top/follow（OrbitControls 路径）的滚轮拦截：只累积缩放预算，几何推进归 zoomTick。
+   *  事件幅度与 OrbitControls 直收滚轮逐值一致（先过 _customWheelEvent 等价归一化，
+   *  再走 orbitWheelFactor 公式），拦截只是把「当帧一步到位」换成短窗收敛；单事件不改
+   *  min/max/地形钳制语义。 */
+  function onOrbitZoomWheel(e) {
+    if (flyMode()) return;   // fly/recorder 已由 onFlyCaptureWheel（先注册）处理或拦截
+    if (!controls || !controls.enabled || controls.enableZoom === false) return;   // 输入关闭态不劫持
+    const deltaY = orbitWheelNormalizedDelta(e);
+    zoomSmoother.push(orbitWheelFactor(deltaY, controls.zoomSpeed));
+    invalidate();
+    e.preventDefault();
+    e.stopPropagation();
+    flyDbg('wheel', `orbit pushed=${orbitWheelFactor(deltaY, controls.zoomSpeed).toFixed(3)}`);
   }
   function onFlyCaptureCancel(e) {
     flyLook.active = false;
@@ -895,6 +972,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     container.addEventListener('pointerup', onFlyCaptureUp, true);
     container.addEventListener('pointercancel', onFlyCaptureCancel, true);
     container.addEventListener('wheel', onFlyCaptureWheel, { capture: true, passive: false });
+    // top/follow 的滚轮拦截（#835）：OrbitControls 的 wheel dolly 当帧生效、无过渡。
+    // 在 container capture 拦下（先于 canvas 的 target 阶段，OrbitControls 收不到），
+    // 比例公式与其 _getZoomScale 逐值同构（orbitWheelFactor）——单事件幅度不变，
+    // 只把「一步到位」换成 zoomTick 的短窗收敛。fly/recorder 模式在 onFlyCaptureWheel
+    // 内已处理/拦截，此处理器只服务 OrbitControls 路径。
+    container.addEventListener('wheel', onOrbitZoomWheel, { capture: true, passive: false });
     ensureAnnotationLayer();   // annotation layer 跟随 renderer 生命周期（lazy，材质/geometry 可复用）
     applyAnnotationTouchMode();   // pane 可能在 initScene 之前就推送了 interaction
     if (CAM === 'free') flyLookApplyMode('free');   // 初始 CAM 可能已是 'free'（默认值）
@@ -2467,8 +2550,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 边界按权威可玩范围重建（terrain meta 的 playableBounds 优先，否则 mapCode 表）；
     // 两者皆缺则不画（fail-closed，绝不用 terrain span 冒充战场边界）
     buildBoundary(playableBoundsFor(), BOUNDARY_THICK);
-    // 地形异步就绪后把基地环带/HUD 重新贴回地表
+    // 地形异步就绪后把基地环带/HUD 与出生点标记重新贴回地表
     regroundBases();
+    regroundSpawns();
     // terrain 首次就绪 / 2D 回退切换：annotation 必须重投影到当前地表
     rebuildAnnotationProjection();
   }
@@ -2496,6 +2580,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function clearBases() { bases.clear(); }
   function regroundBases() { bases.reground(); }
   function updateBases() { bases.update(T); }
+
+  // ---------- 出生点贴地标记（#835；实现在 playback/spawns.ts；快照式工厂） ----------
+  //（数据面 / 呈现口径 / fail-closed 判据见该模块头：宿主经 setMapSpawns 下发语义
+  //  档案解析出的点列，回放会话不消费；几何 fail-closed 在 spawns.build 内部。）
+  const spawnMarkers = createSpawnMarkers({ getScene: () => scene, groundY });
+  function buildSpawns() { spawnMarkers.build(SESSION_MODE === 'map' ? MAP_SPAWN_POINTS : null); }
+  function clearSpawns() { spawnMarkers.clear(); }
+  function regroundSpawns() { spawnMarkers.reground(); }
 
   function groundY(x, z) {
     return sampleHeight(x, z) + 0.12;
@@ -4294,6 +4386,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     } else followAnchor = null;
     if (CAM === 'recorder') driveRecorderCamera(dt);
     else clampCameraTarget();
+    zoomTick(dt);   // 滚轮缩放预算逐帧收敛（先于 controls.update()：本帧位移当帧可见）
     if (fovRestore) stepFovRestore(dt);
     // flyMode 接管期间 OrbitControls.update() 必须完全停跑：enabled=false 只挡输入
     // 事件、update 照常执行——其内部球面状态会按 target/相机重算，与 flyLook 的
@@ -5052,6 +5145,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     sessionGen++;
     SESSION_MODE = 'replay';
     MAP_BASES_KIND = null;
+    MAP_SPAWN_POINTS = null;   // 出生点列随会话复位（宿主就绪后经 setMapSpawns 补推）
     store.mapReady = false;
     // 录像者不跨回放：同步退出，旧机位不能被下一场当成用户的自由相机保留。
     if (CAM === 'recorder') {
@@ -5082,6 +5176,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     currentMapKey = null;
     clearAnnotationProjection();   // 旧会话的 annotation 派生几何不得跨图残留（权威在 pane）
     clearBases();   // 基地贴地标记（圆环 + 圆盘贴图）随会话释放
+    clearSpawns();   // 出生点贴地标记随会话释放（#835，与基地同一生命周期）
     currentMapBases = null;
     for (const v of V) {
       for (const head of v.detachedTurrets) {
@@ -5381,6 +5476,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // map 会话没有 tick() 驱动（PLAYING 恒 false、按需渲染），首帧必须显式标脏——
       // 否则 canvas 初始为黑，直到用户第一次拖动相机。
       buildBases();
+      buildSpawns();   // 出生点贴地标记（#835；宿主下发的语义点列，缺档不画）
       invalidate();
       return true;
     }
@@ -5459,6 +5555,20 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       MAP_BASES_KIND = (kind === 'supremacy' || kind === 'assault') ? kind : null;
       if (SESSION_MODE === 'map' && store.mapReady) {
         buildBases();
+        invalidate();
+      }
+    },
+    /**
+     * 地图预览会话：下发出生点列（#835；语义档案 parseMapGridProfile.spawnPoints 的
+     * 解析产物）。非数组归一为 null（fail-closed：缺档/脏值不画不猜，逐条兜底在
+     * spawns.build）。推送纪律与 setMapBasesKind 完全一致：会话未就绪时只记意图
+     * （startPlayback 的 map 分支按它 build）；已就绪则立即重建 + 标脏。回放会话
+     * 调用只记值（会被 teardown 复位），buildSpawns 在回放会话恒传 null。
+     */
+    setMapSpawns(points) {
+      MAP_SPAWN_POINTS = Array.isArray(points) ? points : null;
+      if (SESSION_MODE === 'map' && store.mapReady) {
+        buildSpawns();
         invalidate();
       }
     },
@@ -5641,6 +5751,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       try { container.removeEventListener('pointerup', onFlyCaptureUp, true); } catch (_) {}
       try { container.removeEventListener('pointercancel', onFlyCaptureCancel, true); } catch (_) {}
       try { container.removeEventListener('wheel', onFlyCaptureWheel, true); } catch (_) {}
+      try { container.removeEventListener('wheel', onOrbitZoomWheel, true); } catch (_) {}
       sizeObserver?.disconnect();
       sizeObserver = null;
       if (DEBUG) {

@@ -210,6 +210,33 @@ function stubFrames() {
   return () => { for (const cb of frames.splice(0)) cb() }
 }
 
+/** 滚轮缩放平滑（#835）的确定性收敛泵（recorder 视图 manualFrames + Clock 假 dt 同款）：
+ *  派发 wheel 时动画循环还挂在**真实 rAF** 上——首次调用装 stubFrames，让出一个真实
+ *  macrotask 供循环自转一帧（其内部下一帧注册落进 stub，此后不再有自发帧），随后按
+ *  假 dt=0.1s 泵 17 帧：预算每帧释放 ~67%，5 帧内收敛。同一用例多次调用复用同一
+ *  stub（循环的下一帧始终在既有 stub 队列里）；跨用例由 unstubAllGlobals 检测失效重建。 */
+let zoomPump = null
+async function settleZoomFrames() {
+  vi.spyOn(THREE.Clock.prototype, 'getDelta').mockReturnValue(0.1)
+  if (!zoomPump || globalThis.requestAnimationFrame !== zoomPump.stub) {
+    const frame = stubFrames()
+    zoomPump = { stub: globalThis.requestAnimationFrame, frame }
+    await new Promise((r) => setTimeout(r, 25))   // 循环自转一帧并迁入 stub
+  }
+  for (let i = 0; i < 17; i++) zoomPump.frame()
+}
+
+/** 指定 dt 的滚轮收敛泵（帧率无关性回归用）：与 settleZoomFrames 同一 stub 复用逻辑。 */
+async function pumpZoomAt(dt, frames) {
+  vi.spyOn(THREE.Clock.prototype, 'getDelta').mockReturnValue(dt)
+  if (!zoomPump || globalThis.requestAnimationFrame !== zoomPump.stub) {
+    const frame = stubFrames()
+    zoomPump = { stub: globalThis.requestAnimationFrame, frame }
+    await new Promise((r) => setTimeout(r, 25))
+  }
+  for (let i = 0; i < frames; i++) zoomPump.frame()
+}
+
 /** happy-dom 没有 2d canvas：基地圆盘贴图（drawBaseDecal）需要可写的 getContext('2d')。 */
 function stubCanvas2d() {
   const ctx = new Proxy({}, { get: () => () => {} })
@@ -1617,6 +1644,7 @@ describe('Free Camera terrain floor', () => {
     cam.position.y = topHeight - 0.1
     controls.target.y = topHeight - 5.1
     canvas.dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }))
+    await settleZoomFrames()   // #835：滚轮只累积预算，净空钳制在逐帧收敛中逐帧校验
     expect(cam.position.y).toBeCloseTo(topHeight, 5)
 
     cam.position.y = topHeight - 0.1
@@ -1689,6 +1717,7 @@ describe('Free Camera terrain floor', () => {
     controls.target.set(-20, 22.51, 0)
     const canvas = document.querySelector('canvas')
     canvas.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true }))
+    await settleZoomFrames()
     expect(cam.position.y).toBeGreaterThanOrEqual(27.5)
 
     cam.position.set(-30, 27.51, 0)
@@ -1855,6 +1884,7 @@ describe('Free Camera terrain floor', () => {
       const { api } = await loadScene()
       api.setCam('free')
       document.querySelector('canvas').dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }))
+      await settleZoomFrames()   // 预算收敛到终点后：滚轮造成的机位变化跨回放保留
       await expectPoseKept(api)
     })
 
@@ -2150,6 +2180,7 @@ describe('scene vehicle selection intent', () => {
     }
     const p0 = cam.position.clone()
     wheel(100)                                                   // 下滚 = 后退
+    await settleZoomFrames()                                     // 预算收敛到终点（#835 平滑）
     const back = cam.position.clone().sub(p0)
     expect(back.length()).toBeGreaterThan(1)
     expect(back.dot(aim0)).toBeLessThan(0)                       // 位移沿视线反方向
@@ -2159,7 +2190,191 @@ describe('scene vehicle selection intent', () => {
     expect(cam.getWorldDirection(new THREE.Vector3()).dot(aim1)).toBeCloseTo(1, 4)  // 朝向仍对准 target
     const p1 = cam.position.clone()
     wheel(-100)                                                  // 上滚 = 前进
+    await settleZoomFrames()
     expect(cam.position.clone().sub(p1).dot(aim0)).toBeGreaterThan(0)
+  })
+
+  // 回归（PR #872 review）：fly 平滑必须保持旧 flyDolly 的**可加世界位移**语义——
+  // 旧即时公式：step = clamp(−Δ×0.0012, ±0.3)，一次性位移 = 事件时刻视距 × step
+  // （flyDolly 平移 camera+target，视距不变）。平滑只改时间分布：终点位移与旧实现
+  // 逐值一致、帧率无关、同帧相反输入精确抵消、连续同向正确累加。
+  it('fly 滚轮终点位移 = 旧即时公式（+100/−100/往返/3×连续），真实 flyDolly 接线', async () => {
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const store = createPlaybackStore()
+    const container = mountContainer()
+    api = initPlayback(container, store, null, { onVehicleSelect: vi.fn() })
+    created.push(api)
+    await api.loadData({ kind: 'local', file: new File(['x'], 'fly-additive.wotbreplay') })
+    api.setCam('free')
+    const canvas = container.querySelector('canvas')
+    const cam = window.__camera
+    const controls = window.__controls
+    // 注意：初始 fit 机位贴 maxY（topCameraDefaultHeight）且首次 wheel 会触发
+    // flyLookSyncIfStale 重解朝向——先发一格「预热」滚轮完成同步并离开天花板
+    // （钳制场景由既有「constrains mode entry…wheel」用例覆盖），再断言后续
+    // 滚轮与旧即时公式逐值一致。
+    const wheel = (deltaY) => {
+      canvas.dispatchEvent(new WheelEvent('wheel', { deltaY, clientX: 100, clientY: 100, bubbles: true, cancelable: true }))
+    }
+    wheel(-100); await settleZoomFrames()   // 预热：同步朝向 + 离开天花板
+    const dist0 = cam.position.distanceTo(controls.target)
+    // 位移方向 = flyLook 视线方向（初始 top 天顶机位的 pitch 回落是既有语义，新旧实现
+    // 一致），它与 target−cam 方向的偏离是进入状态，不是本次回归的对象——旧公式的
+    // 可验证不变量是：位移模长 = dist×step、视距不变、同向共线（净位移 = 份额之和）。
+    const expected = (deltaY) => dist0 * Math.max(-0.3, Math.min(0.3, -deltaY * 0.0012))   // 旧即时步长
+
+    // −100 单格：前进 0.12·dist（10 FPS 泵）
+    const p0 = cam.position.clone()
+    wheel(-100); await settleZoomFrames()
+    expect(cam.position.distanceTo(p0)).toBeCloseTo(expected(-100), 4)
+    expect(cam.position.distanceTo(controls.target)).toBeCloseTo(dist0, 4)   // 视距不变
+
+    // +100 单格：后退 0.12·dist（已离开天花板，无钳制）
+    const p1 = cam.position.clone()
+    wheel(100); await settleZoomFrames()
+    expect(cam.position.distanceTo(p1)).toBeCloseTo(Math.abs(expected(100)), 4)
+
+    // 往返：同帧 +100、−100 净位移为 0（预算精确抵消）
+    const p2 = cam.position.clone()
+    wheel(100); wheel(-100); await settleZoomFrames()
+    expect(cam.position.distanceTo(p2)).toBeCloseTo(0, 4)
+
+    // 连续同向 3 × −100：净位移 = 3 × 单次（旧语义视距不变 → 位移可加且共线）
+    const p3 = cam.position.clone()
+    wheel(-100); wheel(-100); wheel(-100); await settleZoomFrames()
+    expect(cam.position.distanceTo(p3)).toBeCloseTo(3 * expected(-100), 3)
+  })
+
+  it('fly 滚轮位移帧率无关：60 FPS 与 10 FPS 收敛到同一终点', async () => {
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const store = createPlaybackStore()
+    const container = mountContainer()
+    api = initPlayback(container, store, null, { onVehicleSelect: vi.fn() })
+    created.push(api)
+    await api.loadData({ kind: 'local', file: new File(['x'], 'fly-fps.wotbreplay') })
+    api.setCam('free')
+    const canvas = container.querySelector('canvas')
+    const cam = window.__camera
+    const controls = window.__controls
+    // 预热：首次 wheel 触发 flyLookSyncIfStale 重解朝向，先消耗掉再取测量基准
+    canvas.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, clientX: 100, clientY: 100, bubbles: true, cancelable: true }))
+    await settleZoomFrames()
+    const dist0 = cam.position.distanceTo(controls.target)
+    const expected = dist0 * Math.max(-0.3, Math.min(0.3, 100 * 0.0012))   // 前滚 −100：远离天花板
+    const p0 = cam.position.clone()
+    canvas.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, clientX: 100, clientY: 100, bubbles: true, cancelable: true }))
+    await pumpZoomAt(1 / 60, 120)   // 60 FPS 逐帧推进（10 FPS 用例已锚定同一模长）
+    expect(cam.position.distanceTo(p0)).toBeCloseTo(expected, 4)   // 与 10 FPS 终点一致 = 帧率无关
+    expect(cam.position.distanceTo(controls.target)).toBeCloseTo(dist0, 4)
+  })
+
+  // 回归（PR #872 review）：滚轮预算在模式切换 / 销毁时必须清空，旧目标不得在新机位继续生效。
+  it('fly 滚轮未收敛预算在模式切换时清零：切换后不再产生位移', async () => {
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const store = createPlaybackStore()
+    const container = mountContainer()
+    api = initPlayback(container, store, null, { onVehicleSelect: vi.fn() })
+    created.push(api)
+    await api.loadData({ kind: 'local', file: new File(['x'], 'fly-reset.wotbreplay') })
+    api.setCam('free')
+    const canvas = container.querySelector('canvas')
+    const cam = window.__camera
+    const wheel = (deltaY) => {
+      canvas.dispatchEvent(new WheelEvent('wheel', { deltaY, clientX: 100, clientY: 100, bubbles: true, cancelable: true }))
+    }
+    wheel(100)   // 预算未收敛
+    api.setCam('follow')
+    api.setCam('free')
+    const p = cam.position.clone()
+    await settleZoomFrames()
+    expect(cam.position.distanceTo(p)).toBeCloseTo(0, 4)
+  })
+
+  // 回归（PR #872 review）：orbit 拦截发生在 OrbitControls 收到事件之前，必须先复刻
+  // three 0.185.1 _customWheelEvent 的归一化（行 ×16 / 页 ×100 / 触控板 pinch ×10，
+  // 实体 Control 按键不乘），否则行/页设备与触控板捏合的实际缩放幅度都变小。
+  it('orbit 滚轮保留 three 归一化：行/页/触控板 pinch/实体 Ctrl 终点倍率与 OrbitControls 一致', async () => {
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const store = createPlaybackStore()
+    const container = mountContainer()
+    api = initPlayback(container, store, null, { onVehicleSelect: vi.fn() })
+    created.push(api)
+    await api.loadData({ kind: 'local', file: new File(['x'], 'orbit-normalize.wotbreplay') })
+    const canvas = container.querySelector('canvas')
+    const cam = window.__camera
+    const controls = window.__controls
+    // OrbitControls 直收滚轮的终点倍率（_getZoomScale 于归一化后的 delta）
+    const factorOf = (deltaY) => {
+      const scale = Math.pow(0.95, controls.zoomSpeed * Math.abs(deltaY) * 0.01)
+      return deltaY > 0 ? 1 / scale : scale
+    }
+    const wheel = (init) => {
+      const e = new WheelEvent('wheel', { clientX: 100, clientY: 100, bubbles: true, cancelable: true, ...init })
+      if (init.ctrlKey !== undefined) Object.defineProperty(e, 'ctrlKey', { value: init.ctrlKey })   // happy-dom 未实现 WheelEvent.ctrlKey
+      canvas.dispatchEvent(e)
+      return settleZoomFrames()
+    }
+    const expectRatio = (d0, f) => {
+      expect(cam.position.distanceTo(controls.target) / d0).toBeCloseTo(f, 3)
+    }
+
+    let d0 = cam.position.distanceTo(controls.target)
+    await wheel({ deltaY: 3, deltaMode: 1 })          // 行单位：×16 → 48
+    expectRatio(d0, factorOf(48))
+
+    d0 = cam.position.distanceTo(controls.target)
+    await wheel({ deltaY: 2, deltaMode: 2 })          // 页单位：×100 → 200
+    expectRatio(d0, factorOf(200))
+
+    d0 = cam.position.distanceTo(controls.target)
+    await wheel({ deltaY: -10, ctrlKey: true })       // 触控板 pinch：×10 → −100
+    expectRatio(d0, factorOf(-100))
+
+    d0 = cam.position.distanceTo(controls.target)
+    controls._controlActive = true                    // 实体 Control 按键按下（three keydown 维护）
+    await wheel({ deltaY: -10, ctrlKey: true })       // 不乘 10 → −10
+    expectRatio(d0, factorOf(-10))
+    controls._controlActive = false
+
+    d0 = cam.position.distanceTo(controls.target)
+    controls.enableZoom = false                       // 输入关闭态不劫持：距离不变
+    await wheel({ deltaY: 100 })
+    expect(cam.position.distanceTo(controls.target)).toBeCloseTo(d0, 6)
+    controls.enableZoom = true
+  })
+
+  // 回归（PR #872 review）：destroy 必须解除新增的 orbit wheel capture 监听——宿主
+  // （MapPreview3DPane）复用 container 重建场景时，旧闭包会残留并继续消费 wheel。
+  it('destroy 摘除 orbit wheel 监听：同 container 重建后旧实例不再消费 wheel', async () => {
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const container = mountContainer()
+    // dispatch 目标 = container 本身：只有 scene 的 capture wheel 处理器会 preventDefault
+    // （OrbitControls 的监听挂在 canvas 上，不参与；fly 处理器在 follow 模式提前返回）。
+    class CountingWheelEvent extends WheelEvent {
+      constructor(init) { super('wheel', init); this.preventDefaultCalls = 0 }
+      preventDefault() { this.preventDefaultCalls++; super.preventDefault() }
+    }
+    const consumeCount = () => {
+      const e = new CountingWheelEvent({ deltaY: 100, cancelable: true })
+      container.dispatchEvent(e)
+      return e.preventDefaultCalls
+    }
+    const mk = async () => {
+      const store = createPlaybackStore()
+      const instance = initPlayback(container, store, null, { onVehicleSelect: vi.fn() })
+      created.push(instance)
+      try { await instance.loadData({ kind: 'local', file: new File(['x'], 'orbit-listener.wotbreplay') }) } catch (err) { console.log('DBG3 loadData threw', err && err.message) }
+      await new Promise((r) => setTimeout(r, 25))   // 场景初始化/首帧让位（同 settleZoomFrames 前置）
+      return instance
+    }
+    let instance = await mk()
+    expect(consumeCount()).toBe(1)      // 单实例：恰好一个处理器消费
+    instance.destroy()
+    instance = await mk()
+    expect(consumeCount()).toBe(1)      // 销毁 + 重建：旧实例监听已摘除，新实例恰好一份
+    instance.destroy()
+    instance = await mk()
+    expect(consumeCount()).toBe(1)      // 多轮创建/销毁：监听数量不增长
   })
 
   // 回归（2026-10-24 用户实测）：曾按 `(pointer: fine)` 决定是否接管，触屏笔记本 /
