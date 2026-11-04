@@ -1445,11 +1445,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 静态场景模型（建筑/桥/岩石，tools/export_map_glb.py 预生成；缺失静默跳过）。
     // GLB 为游戏系（z 上、+y 北），qFrame = Ry(π)·Rx(-π/2)（YXZ 序）转到回放场景系——
     // 与坦克 GLB 同一帧变换，纯旋转无镜像，绕序天然正确。
-    // 低/中档跳过场景 GLB（单图 11–67MB 下载 + 大块显存，是画质档最大的分流项；
-    // 均衡档定位 = 真车模 + 无场景下载税）；高档加载场景且地面走分层地表合成，
-    // 均衡档地面走高清烘焙底图（无分层）
+    // 四档加载完整场景；流畅和均衡仍用烘焙底图，高档使用分层地表。
     if (Q.scenery) try {
-      // 可破坏物清单（与场景 GLB 并行拉取；缺失/低档静默禁用该特性）
+      // 可破坏物清单（与场景 GLB 并行拉取；缺失时禁用该特性）
       // mapStaticUrl 返回完整 URL——assetProvider.json() 会再拼一次 base（逻辑路径专用），
       // 必须走透传的 fetch + resp.json()（与下方 terrain-meta 同款用法）
       const destructUrl = mapStaticUrl('destructibles', undefined, resolvedKey);
