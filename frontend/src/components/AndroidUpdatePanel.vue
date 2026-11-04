@@ -24,7 +24,7 @@ function bytes(value: number | null | undefined): string {
 </script>
 
 <template>
-  <AppSheet :open="update.panelOpen.value" :return-focus-to="update.returnFocusTo.value" :title="$t('androidUpdate.title')" visible-title @close="update.close">
+  <AppSheet id="android-update-panel" :open="update.panelOpen.value" :return-focus-to="update.returnFocusTo.value" :title="$t('androidUpdate.title')" visible-title @close="update.close">
     <section class="android-update" data-testid="android-update-panel">
       <dl v-if="snapshot" class="android-update-versions">
         <div><dt>{{ $t('androidUpdate.current') }}</dt><dd data-testid="update-current-version">{{ snapshot.currentVersionName }}</dd></div>

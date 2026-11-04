@@ -160,18 +160,28 @@ class UpdateExperienceDeviceTest {
         if (android.os.Build.VERSION.SDK_INT >= 33) {
             shell("pm grant ${context.packageName} android.permission.POST_NOTIFICATIONS")
         }
-        result.set(StartupGate.Result.Ok(manifest()))
+        val realApk = InstrumentationRegistry.getArguments().getString("notificationRealApk") == "true"
+        val expectedSha = if (realApk) LARGE_SHA else SMALL_SHA
+        result.set(StartupGate.Result.Ok(manifest(url = if (realApk) LARGE_URL else SMALL_URL, sha = expectedSha)))
         awaitReply<JSONObject> { coordinator.refresh(true, it) }
         val first = instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
         var opened: MainActivity? = null
+        val installer = installerMonitor()
+        val coldStart = InstrumentationRegistry.getArguments().getString("notificationColdStart") == "true"
         try {
             assertTrue(awaitReply<Boolean> { coordinator.beginDownload(latestCode, it) })
-            waitUntil("HTTPS fixture ready", 90_000) { coordinator.status.download.state == "ready" }
+            waitUntil("HTTPS fixture ready", if (realApk) 180_000 else 90_000) { coordinator.status.download.state == "ready" }
             val task = requireNotNull(updater.loadTask())
             val id = requireNotNull(task.downloadId)
-            val installer = installerMonitor()
+            assertEquals(expectedSha, fileSha256(updater.privateFile(task)))
+            if (realApk) assertNotNull(context.packageManager.getPackageArchiveInfo(updater.privateFile(task).path, 0))
             shell("input keyevent KEYCODE_HOME")
+            if (coldStart) instrumentation.runOnMainSync { first.finish() }
+            waitUntil("launcher foreground before notification shade") {
+                val focus = focusedWindowLine()
+                focus.isNotEmpty() && !focus.contains(context.packageName)
+            }
             val monitor = instrumentation.addMonitor(MainActivity::class.java.name, null, false).also(monitors::add)
             shell("cmd statusbar expand-notifications")
             val automation = instrumentation.uiAutomation
@@ -180,16 +190,32 @@ class UpdateExperienceDeviceTest {
                 android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
                 android.accessibilityservice.AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
             automation.serviceInfo = serviceInfo
+            var lastExpand = SystemClock.elapsedRealtime()
             waitUntil("verified notification in system UI", 30_000) {
                 val bounds = android.graphics.Rect()
                 val title = context.getString(R.string.update_notification_title)
                 val roots = listOfNotNull(automation.rootInActiveWindow) + automation.windows.mapNotNull { it.root }
                 // Search notification body, not a status-bar icon whose content description
                 // also contains the title. The fixture version identifies this task's row.
-                roots.asSequence().flatMap { it.findAccessibilityNodeInfosByViewId("android:id/text").asSequence() }
-                    .firstOrNull { it.text?.toString()?.contains("WotBTools ${task.versionName}") == true }
-                    ?.getBoundsInScreen(bounds)
-                if (bounds.isEmpty) return@waitUntil false
+                fun findBody(node: android.view.accessibility.AccessibilityNodeInfo): Boolean {
+                    if (node.viewIdResourceName == "android:id/text" &&
+                        node.text?.toString()?.contains("WotBTools ${task.versionName}") == true) {
+                        node.getBoundsInScreen(bounds)
+                        return !bounds.isEmpty
+                    }
+                    for (i in 0 until node.childCount) if (node.getChild(i)?.let(::findBody) == true) return true
+                    return false
+                }
+                roots.any(::findBody)
+                if (bounds.isEmpty) {
+                    val focus = focusedWindowLine()
+                    if (!focus.contains("NotificationShade") && !focus.contains("StatusBar") &&
+                        SystemClock.elapsedRealtime() - lastExpand > 1_000) {
+                        shell("cmd statusbar expand-notifications")
+                        lastExpand = SystemClock.elapsedRealtime()
+                    }
+                    return@waitUntil false
+                }
                 Log.i(TAG, "actual_system_ui_notification_tap api=${android.os.Build.VERSION.SDK_INT} title=$title bounds=$bounds before=${focusedWindowLine()}")
                 shell("input tap ${bounds.centerX()} ${bounds.centerY()}")
                 true
@@ -198,19 +224,16 @@ class UpdateExperienceDeviceTest {
                 focusedWindowLine().contains("com.wotbtools.app/com.wotbtools.app.MainActivity")
             }
             // singleTask may deliver onNewIntent to the existing Activity instead of creating one.
-            opened = (monitor.waitForActivityWithTimeout(1_000) as? MainActivity) ?: first
-            waitUntil("notification routes to update panel", 30_000) {
-                val url = AtomicReference<String?>()
-                instrumentation.runOnMainSync {
-                    val field = MainActivity::class.java.getDeclaredField("runtime").apply { isAccessible = true }
-                    url.set((field.get(opened!!) as GeckoWebRuntime).currentUrl)
-                }
-                url.get()?.contains("androidUpdate=1") == true
-            }
+            val notifiedActivity = (monitor.waitForActivityWithTimeout(1_000) as? MainActivity)
+                ?: first.also { assertFalse("cold start must create an Activity", coldStart) }
+            opened = notifiedActivity
+            waitUntil("notification opens visible update panel", 60_000) { updatePanelVisible(notifiedActivity) }
+            instrumentation.waitForIdleSync()
+            assertTrue("update panel remains visible after route marker is consumed", updatePanelVisible(notifiedActivity))
             assertEquals(id, updater.loadTask()?.downloadId)
             assertEquals(task.token, updater.loadTask()?.token)
             assertEquals(0, installer.hits)
-            Log.i(TAG, "verified_system_notification_clicked api=${android.os.Build.VERSION.SDK_INT} task_id=$id token=${task.token} same_token no_redownload no_installer focus=${focusedWindowLine()}")
+            Log.i(TAG, "verified_system_notification_clicked api=${android.os.Build.VERSION.SDK_INT} cold_start=$coldStart real_apk=$realApk task_id=$id token=${task.token} same_token no_redownload no_installer focus=${focusedWindowLine()}")
         } finally {
             instrumentation.runOnMainSync { opened?.finish(); first.finish() }
         }
@@ -266,31 +289,44 @@ class UpdateExperienceDeviceTest {
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
         val callbacks = java.util.concurrent.atomic.AtomicInteger()
+        val cancelled = AtomicReference<Boolean>()
         try {
             ioExecutor.execute { entered.countDown(); check(release.await(45, TimeUnit.SECONDS)) }
             assertTrue(entered.await(10, TimeUnit.SECONDS))
             coordinator.reconcile()
             stateExecutor.submit {}.get(10, TimeUnit.SECONDS)
-            onActivity { it.bridgeInstallUpdate(task.token) { callbacks.incrementAndGet() } }
+            onActivity { it.bridgeInstallUpdate(task.token) { accepted -> cancelled.set(accepted); callbacks.incrementAndGet() } }
             stateExecutor.submit {}.get(10, TimeUnit.SECONDS)
             assertEquals(0, callbacks.get())
             scenario!!.recreate()
+            assertEquals("pause confirms cancellation before destruction", false, cancelled.get())
+            assertEquals(1, callbacks.get())
             stateExecutor.submit {}.get(10, TimeUnit.SECONDS)
             release.countDown()
             repeat(3) { ioExecutor.submit {}.get(45, TimeUnit.SECONDS); stateExecutor.submit {}.get(45, TimeUnit.SECONDS) }
             instrumentation.waitForIdleSync()
-            assertEquals("destroyed Activity must not receive install callback", 0, callbacks.get())
+            assertEquals("destroyed Activity must not receive another install callback", 1, callbacks.get())
             assertEquals(0, installer.hits)
             waitUntil("new Activity recovered READY") { coordinator.status.download.state == "ready" }
             assertEquals(task.token, updater.loadTask()?.token)
             assertEquals(task.downloadId, updater.loadTask()?.downloadId)
             assertEquals(SMALL_SHA, fileSha256(updater.privateFile(task)))
             assertNotNull(awaitReply<File?> { coordinator.prepareInstall(task.token, it) })
-            Log.i(TAG, "recreated_activity_queued_install_cancelled old_callbacks=0 installer=0 ready_preserved id=${task.downloadId}")
+            Log.i(TAG, "recreated_activity_queued_install_cancelled cancellation_callbacks=1 post_destroy_callbacks=0 installer=0 ready_preserved id=${task.downloadId}")
         } finally { release.countDown() }
     }
 
     @Test fun notificationPermissionDenialKeepsManualPanelAndMandatoryGateUsable() {
+        assumeTrue(android.os.Build.VERSION.SDK_INT >= 33)
+        assertManualPanelAndMandatoryGate()
+    }
+
+    @Test fun api26ManualPanelAndMandatoryGateWithoutRuntimeNotificationPermission() {
+        assumeTrue(android.os.Build.VERSION.SDK_INT == 26)
+        assertManualPanelAndMandatoryGate()
+    }
+
+    private fun assertManualPanelAndMandatoryGate() {
         if (android.os.Build.VERSION.SDK_INT >= 33) {
             shell("pm revoke ${context.packageName} android.permission.POST_NOTIFICATIONS")
             assertFalse(context.getSystemService(android.app.NotificationManager::class.java).areNotificationsEnabled())
@@ -301,15 +337,27 @@ class UpdateExperienceDeviceTest {
         waitUntil("READY despite denied notification permission", 90_000) { coordinator.status.download.state == "ready" }
         val task = requireNotNull(updater.loadTask())
         if (android.os.Build.VERSION.SDK_INT >= 33) assertTrue(readyNotifications().isEmpty())
-        context.startActivity(Intent(context, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            .putExtra(UpdateCoordinator.OPEN_UPDATE_PANEL, true))
-        waitUntil("manual update panel without notification") {
+        onActivity { activity ->
+            val runtime = MainActivity::class.java.getDeclaredField("runtime").apply { isAccessible = true }.get(activity) as GeckoWebRuntime
+            runtime.load(MainActivity.LOCAL_APP_ENTRY + "?view=more")
+        }
+        waitUntil("More route without update panel") {
             onActivityValue { activity ->
-                val field = MainActivity::class.java.getDeclaredField("runtime").apply { isAccessible = true }
-                (field.get(activity) as GeckoWebRuntime).currentUrl?.contains("view=android") == true
+                val runtime = MainActivity::class.java.getDeclaredField("runtime").apply { isAccessible = true }.get(activity) as GeckoWebRuntime
+                runtime.currentUrl?.contains("view=more") == true
             }
         }
+        assertFalse("More foreground alone must not satisfy the panel oracle", updatePanelVisible(onActivityValue { it }))
+        onActivity { activity ->
+            // ActivityScenario 1.7.0 的 lifecycle observer 按 launch intent 的 action/categories 匹配。
+            // 复制 launcher identity，仍通过真实 singleTask onNewIntent 递交打开面板的 extra。
+            activity.startActivity(Intent(activity.intent)
+                .setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                .putExtra(UpdateCoordinator.OPEN_UPDATE_PANEL, true))
+        }
+        waitUntil("manual update panel without notification", 60_000) { updatePanelVisible(onActivityValue { it }) }
+        instrumentation.waitForIdleSync()
+        assertTrue("update panel remains visible after route marker is consumed", updatePanelVisible(onActivityValue { it }))
         assertNotNull(awaitReply<File?> { coordinator.prepareInstall(task.token, it) })
         assertEquals(0, installer.hits)
         result.set(StartupGate.Result.Ok(manifest(minimum = latestCode)))
@@ -318,7 +366,10 @@ class UpdateExperienceDeviceTest {
         assertMandatoryVisible()
         assertEquals(task.token, updater.loadTask()?.token)
         assertEquals(task.downloadId, updater.loadTask()?.downloadId)
-        Log.i(TAG, "notification_denial_safe api=${android.os.Build.VERSION.SDK_INT} manual_panel=true mandatory_gate=true verified_file=true")
+        Log.i(TAG, "manual_panel_safe api=${android.os.Build.VERSION.SDK_INT} notification_denied=${android.os.Build.VERSION.SDK_INT >= 33} marker_consumed=true mandatory_gate=true verified_file=true")
+        // 显式结束本测试 Activity，并断言 DESTROYED，避免遗留任务污染下一条测试。
+        onActivity { it.finish() }
+        waitUntil("manual panel Activity destroyed") { scenario!!.state == Lifecycle.State.DESTROYED }
     }
 
     @Test fun verifiedReadyNotificationRecoversAfterProcessRestart() {
@@ -592,6 +643,36 @@ class UpdateExperienceDeviceTest {
             .also(monitors::add)
     }
 
+    private fun updatePanelVisible(activity: MainActivity): Boolean {
+        val url = AtomicReference<String?>()
+        instrumentation.runOnMainSync {
+            val runtime = MainActivity::class.java.getDeclaredField("runtime").apply { isAccessible = true }.get(activity)
+            url.set((runtime as GeckoWebRuntime).currentUrl)
+        }
+        if (url.get()?.contains("view=more") != true || url.get()?.contains("androidUpdate=1") == true) return false
+        val screen = android.graphics.Rect(0, 0, context.resources.displayMetrics.widthPixels,
+            context.resources.displayMetrics.heightPixels)
+        fun visiblePanel(node: android.view.accessibility.AccessibilityNodeInfo): Boolean {
+            if (node.viewIdResourceName == "android-update-panel" && node.className == "android.app.Dialog") {
+                val bounds = android.graphics.Rect(); node.getBoundsInScreen(bounds)
+                return node.isVisibleToUser && !bounds.isEmpty && android.graphics.Rect.intersects(bounds, screen)
+            }
+            return (0 until node.childCount).any { index -> node.getChild(index)?.let(::visiblePanel) == true }
+        }
+        // Gecko virtual descendants need traversal; release notes may be outside the sheet viewport.
+        // A transiently unavailable accessibility tree is not evidence of a visible panel.
+        return try {
+            val automation = instrumentation.uiAutomation
+            val info = automation.serviceInfo
+            val reportIds = android.accessibilityservice.AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
+            if (info.flags and reportIds == 0) {
+                info.flags = info.flags or reportIds
+                automation.serviceInfo = info
+            }
+            automation.rootInActiveWindow?.let(::visiblePanel) == true
+        } catch (_: NullPointerException) { false }
+    }
+
     private fun onActivity(action: (MainActivity) -> Unit) { scenario!!.onActivity(action) }
 
     private fun <T> onActivityValue(action: (MainActivity) -> T): T {
@@ -614,7 +695,24 @@ class UpdateExperienceDeviceTest {
             if (condition()) return
             SystemClock.sleep(100)
         }
+        logAccessibilityHierarchy()
         fail("Timed out: $label; status=${if (::coordinator.isInitialized) coordinator.snapshot() else "uninitialized"}")
+    }
+
+    private fun logAccessibilityHierarchy() {
+        Log.e(TAG, "accessibility_timeout focus=${focusedWindowLine()}")
+        var remaining = 300
+        fun logNode(node: android.view.accessibility.AccessibilityNodeInfo, depth: Int) {
+            if (depth > 30 || remaining-- <= 0) return
+            val bounds = android.graphics.Rect(); node.getBoundsInScreen(bounds)
+            Log.e(TAG, "accessibility_node depth=$depth class=${node.className} id=${node.viewIdResourceName} text=${node.text} visible=${node.isVisibleToUser} bounds=$bounds")
+            for (i in 0 until node.childCount) node.getChild(i)?.let { logNode(it, depth + 1) }
+        }
+        try {
+            val automation = instrumentation.uiAutomation
+            (listOfNotNull(automation.rootInActiveWindow) + automation.windows.mapNotNull { it.root })
+                .forEach { logNode(it, 0) }
+        } catch (error: Exception) { Log.e(TAG, "accessibility_dump_unavailable", error) }
     }
 
     private fun shell(command: String): String = instrumentation.uiAutomation.executeShellCommand(command).use { descriptor ->
