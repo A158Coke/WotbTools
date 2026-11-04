@@ -2372,6 +2372,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
   /** 构建/重建地形几何（客户端同构自适应细分）。实现与 UV 契约在共享模块 groundPass.js
    *  （buildGroundGeometry，俯视烘焙同一份）；本处只传相机/掩码等宿主参数。 */
+  function terrainHFovDeg() {
+    if (!scopedHiddenEid || !camera || !(camera.fov > 0) || !(camera.aspect > 0)) {
+      return CLIENT_NORMAL_CAMERA_FOV_H;
+    }
+    return (2 * Math.atan(Math.tan((camera.fov * Math.PI) / 360) * camera.aspect) * 180) / Math.PI;
+  }
   function buildTerrainGeometry() {
     const n = heightMeta?.size || 512;
     const span = terrainSpanOf();
@@ -2384,7 +2390,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // 阈值插值的 fov 按**客户端口径**传：引擎 `GetFOV()` 是相机配置的水平 fov、与画面宽高比无关
       // （宽高比只进投影项 tanFovY）。回放自由相机 = 客户端正常相机（无狙击镜档）⇒ 恒 normal。
       // 不传这个的话，窄画布会把「55° 竖直 × aspect」折算成小水平角、阈值滑向狙击镜档（放宽 ~1.8×）。
-      hFovDeg: CLIENT_NORMAL_CAMERA_FOV_H,
+      hFovDeg: terrainHFovDeg(),
       // 贴地薄构件走廊（B）：只在这些块强制细分到最细层，廊外层级与客户端口径逐字节一致。
       refineMask: terrainRefineMask,
       cx: mapMetaInfo?.x || 0, cz: mapMetaInfo?.z || 0,
@@ -4915,6 +4921,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (root) _occluderRoots.push(root);
     }
     for (const v of V) {
+      if (v.def.eid === targetEid) continue;   // 目标子树不进遮挡集（review P2）
       if (v.group) _occluderRoots.push(v.group);
       if (v.glb) _occluderRoots.push(v.glb);
       for (const head of v.detachedTurrets || []) _occluderRoots.push(head.root);
@@ -4956,7 +4963,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       scene, camera, vehicle: target, tankData: target.tankData, config, shell, caliber,
       ...armorEquipmentCoeffs(shell, author.def.equipment, target.def.equipment),
       onReady: invalidate,
-      occluderRoots: occluderRoots(),
+      occluderRoots: occluderRoots(target.def.eid),
       stats: PERF ? armorStats : null,
     });
   }
