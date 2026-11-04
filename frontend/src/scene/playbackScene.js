@@ -119,6 +119,7 @@ import { createPickReporter } from './playback/pickReport.js'
 import { chainVisible } from './pickDebug.js'
 import { createBoundaryBand, BOUNDARY_THICK } from './playback/boundary.js'
 import { createBaseMarkers } from './playback/bases.js'
+import { createSpawnMarkers } from './playback/spawns.js'
 import { createHudFeed } from './playback/hudFeed.js'
 import { createZoomSmoother, flyWheelFactor, orbitWheelFactor } from './playback/zoomSmoothing.js'
 import {
@@ -306,6 +307,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
    * teardown 随会话复位为 null。
    */
   let MAP_BASES_KIND = null;
+  /**
+   * 地图预览会话的出生点列（#835）：宿主经 setMapSpawns 下发语义档案
+   * （common/map-semantics → parseMapGridProfile.spawnPoints）解析出的点列；
+   * 几何与渲染 fail-closed 在 playback/spawns.ts，本闭包只持数组的引用。
+   * 回放会话不消费；teardown 随会话复位为 null。
+   */
+  let MAP_SPAWN_POINTS = null;
   // 渲染帧句柄：destroy 显式 cancel（旧实现依赖 destroyed 标志的自然退出，
   // 帧回调在 destroy 后仍可能再排队一次）
   let rafId = 0;
@@ -2512,8 +2520,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 边界按权威可玩范围重建（terrain meta 的 playableBounds 优先，否则 mapCode 表）；
     // 两者皆缺则不画（fail-closed，绝不用 terrain span 冒充战场边界）
     buildBoundary(playableBoundsFor(), BOUNDARY_THICK);
-    // 地形异步就绪后把基地环带/HUD 重新贴回地表
+    // 地形异步就绪后把基地环带/HUD 与出生点标记重新贴回地表
     regroundBases();
+    regroundSpawns();
     // terrain 首次就绪 / 2D 回退切换：annotation 必须重投影到当前地表
     rebuildAnnotationProjection();
   }
@@ -2541,6 +2550,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function clearBases() { bases.clear(); }
   function regroundBases() { bases.reground(); }
   function updateBases() { bases.update(T); }
+
+  // ---------- 出生点贴地标记（#835；实现在 playback/spawns.ts；快照式工厂） ----------
+  //（数据面 / 呈现口径 / fail-closed 判据见该模块头：宿主经 setMapSpawns 下发语义
+  //  档案解析出的点列，回放会话不消费；几何 fail-closed 在 spawns.build 内部。）
+  const spawnMarkers = createSpawnMarkers({ getScene: () => scene, groundY });
+  function buildSpawns() { spawnMarkers.build(SESSION_MODE === 'map' ? MAP_SPAWN_POINTS : null); }
+  function clearSpawns() { spawnMarkers.clear(); }
+  function regroundSpawns() { spawnMarkers.reground(); }
 
   function groundY(x, z) {
     return sampleHeight(x, z) + 0.12;
@@ -5058,6 +5075,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     sessionGen++;
     SESSION_MODE = 'replay';
     MAP_BASES_KIND = null;
+    MAP_SPAWN_POINTS = null;   // 出生点列随会话复位（宿主就绪后经 setMapSpawns 补推）
     store.mapReady = false;
     // 录像者不跨回放：同步退出，旧机位不能被下一场当成用户的自由相机保留。
     if (CAM === 'recorder') {
@@ -5088,6 +5106,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     currentMapKey = null;
     clearAnnotationProjection();   // 旧会话的 annotation 派生几何不得跨图残留（权威在 pane）
     clearBases();   // 基地贴地标记（圆环 + 圆盘贴图）随会话释放
+    clearSpawns();   // 出生点贴地标记随会话释放（#835，与基地同一生命周期）
     currentMapBases = null;
     for (const v of V) {
       for (const head of v.detachedTurrets) {
@@ -5387,6 +5406,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // map 会话没有 tick() 驱动（PLAYING 恒 false、按需渲染），首帧必须显式标脏——
       // 否则 canvas 初始为黑，直到用户第一次拖动相机。
       buildBases();
+      buildSpawns();   // 出生点贴地标记（#835；宿主下发的语义点列，缺档不画）
       invalidate();
       return true;
     }
@@ -5465,6 +5485,20 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       MAP_BASES_KIND = (kind === 'supremacy' || kind === 'assault') ? kind : null;
       if (SESSION_MODE === 'map' && store.mapReady) {
         buildBases();
+        invalidate();
+      }
+    },
+    /**
+     * 地图预览会话：下发出生点列（#835；语义档案 parseMapGridProfile.spawnPoints 的
+     * 解析产物）。非数组归一为 null（fail-closed：缺档/脏值不画不猜，逐条兜底在
+     * spawns.build）。推送纪律与 setMapBasesKind 完全一致：会话未就绪时只记意图
+     * （startPlayback 的 map 分支按它 build）；已就绪则立即重建 + 标脏。回放会话
+     * 调用只记值（会被 teardown 复位），buildSpawns 在回放会话恒传 null。
+     */
+    setMapSpawns(points) {
+      MAP_SPAWN_POINTS = Array.isArray(points) ? points : null;
+      if (SESSION_MODE === 'map' && store.mapReady) {
+        buildSpawns();
         invalidate();
       }
     },
