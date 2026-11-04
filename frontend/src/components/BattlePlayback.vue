@@ -2078,9 +2078,14 @@ watch([nowMs, currentTime], () => {
 })
 
 // kill feed 恢复显示（showKillfeed / 沉浸态切换）：隐藏期间排队条目不驱动暂停时钟，
-// 恢复后重启轻量时钟让待展示条目自然完成（§20.2）。
+// 恢复后重启轻量时钟让待展示条目自然完成（§20.2）。必须先把 nowMs 同步到新鲜墙钟
+// 再调度：visibleFeed 首次渲染提升排队条目时以 nowMs 记 shownAt——暂停超过 4s 后
+// nowMs 仍是旧值，不同步会把刚展示的条目下一帧判成早已过期（只闪现一帧）。
 watch(() => !uiHidden.value && !!uiPrefs.showKillfeed, (visible) => {
-  if (visible) ensurePauseClock(realNowMs())
+  if (!visible) return
+  const now = realNowMs()
+  nowMs.value = now
+  ensurePauseClock(now)
 })
 
 /** VehicleMarker label prop（每 marker 一个：显示开关 + 碰撞位移 +

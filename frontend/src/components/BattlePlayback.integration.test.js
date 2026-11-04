@@ -2521,19 +2521,35 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
     }
     expect(counts[counts.length - 1]).toBe(counts[counts.length - 4]) // 末 3 帧无新调度
     expect(wrapper.find('[data-test="pb-kill-feed"]').exists()).toBe(false)
+    // 暂停期间墙钟前移 10s（不执行任何 RAF）：nowMs 保持旧值
+    clock.now += 10_000
     // 恢复显示：watch 重启时钟，队列提升并可见
     prefs.uiPrefs.showKillfeed = true
     await flushPromises()
     expect(rafScheduled).toBeGreaterThan(counts[counts.length - 1]) // 时钟被重启
     expect(wrapper.find('[data-test="pb-kill-feed"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-kill-feed"]').text()).toContain('EnemyA（T49）')
-    // 展示完毕（4s）后再次收敛，feed 自然消失
-    for (let i = 0; i < 14; i++) {
+    // 恢复后 +2s 仍可见（shownAt 必须取新鲜时钟——旧 nowMs 会把首帧渲染的
+    // shownAt 记成暂停前旧值，下一帧新鲜时间一到立即过期 → 只闪现一帧）
+    for (let i = 0; i < 4; i++) {
+      clock.now += 500
+      if (rafCb) rafCb(clock.now)
+      await flushPromises()
+    }
+    expect(wrapper.find('[data-test="pb-kill-feed"]').exists()).toBe(true)
+    // 恢复后累计 >4s：自然消失
+    for (let i = 0; i < 6; i++) {
       clock.now += 500
       if (rafCb) rafCb(clock.now)
       await flushPromises()
     }
     expect(wrapper.find('[data-test="pb-kill-feed"]').exists()).toBe(false)
+    // 动画结束后 RAF 停止续约
+    const scheduledAtEnd = rafScheduled
+    clock.now += 500
+    if (rafCb) rafCb(clock.now)
+    await flushPromises()
+    expect(rafScheduled).toBe(scheduledAtEnd)
   })
 })
 
