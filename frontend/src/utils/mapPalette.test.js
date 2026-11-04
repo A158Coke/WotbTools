@@ -68,8 +68,10 @@ describe('luminanceOfImage（64×64 降采样亮度，issue #861）', () => {
           if (kind !== '2d') return null
           return {
             drawImage: (_img, dx, dy, w, h) => {
+              // review R2 P2：记录**实际画布 el.width/el.height**（生产代码在 drawImage
+              // 前设 canvas.width=64——只改画布尺寸而保留绘制参数时仍会被抓红）
+              calls.canvasSizes.push({ w: el.width, h: el.height })
               calls.drawImage.push({ dx, dy, w, h })
-              calls.canvasSizes.push({ w, h })
             },
             getImageData: (sx, sy, w, h) => {
               calls.getImageData.push({ sx, sy, w, h })
@@ -90,7 +92,10 @@ describe('luminanceOfImage（64×64 降采样亮度，issue #861）', () => {
     return calls
   }
 
-  /** 64×64 采样契约断言（#861 / review P2）：采样路径必须逐字保持。 */
+  /** 64×64 采样契约断言（#861 / review P2）：采样路径必须逐字保持。
+   *  canvasSizes 断言的是 **实际画布 el.width/el.height**（createElement 时记录），
+   *  独立于 drawImage/getImageData 形参——生产代码只改画布尺寸而保留绘制参数
+   *  时仍会被抓红（review R2 P2）。 */
   function expectSamplingContract(calls) {
     expect(calls.canvasSizes).toEqual([{ w: 64, h: 64 }])
     expect(calls.drawImage).toEqual([{ dx: 0, dy: 0, w: 64, h: 64 }])
