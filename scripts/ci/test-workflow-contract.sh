@@ -36,7 +36,8 @@ assert required["name"] == "CI / Required Gate" and required["if"] == "always()"
 assert set(required["needs"]) == set(jobs) - {"required"}
 assert "ci-impact.py" not in json.dumps(ci)
 assert "test-path-filters.py" not in json.dumps(ci)
-assert "dorny/paths-filter@v3" in json.dumps(jobs["changes"])
+# #738：第三方 action 一律 pin 到 immutable SHA（版本号保留在 YAML 行尾注释，parse 后不存在）。
+assert re.search(r"dorny/paths-filter@[0-9a-f]{40}", json.dumps(jobs["changes"])), "paths-filter must stay SHA-pinned"
 assert set(jobs["changes"]["outputs"]) == set(jobs) - {"pr_identity", "changes", "required"}
 filter_path = next(step for step in jobs["changes"]["steps"]
                    if step.get("id") == "filter")["with"]["filters"]
@@ -150,8 +151,32 @@ for owner in jobs["changes"]["outputs"]:
     assert workflow["on"].keys() == {"workflow_call"}
     for job in workflow["jobs"].values():
         for step in job.get("steps", []):
-            if step.get("uses") == "actions/checkout@v5":
+            if step.get("uses", "").startswith("actions/checkout@") and len(step.get("uses", "").split("@", 1)[1].split(" ")[0]) == 40:
                 assert step.get("with", {}).get("ref") == "${{ inputs.head_sha }}", owner
+# Issue #738 review R2：CodeQL workflow 的 init 输入名与排除路径必须受 PR 契约保护
+#（CodeQL 不由 PR 触发——输入名写错时实际扫描不会发现，只能靠这里阻断回归）。
+codeql_wf = load(workflow_dir / "codeql.yml")
+codeql_init = next(
+    step for job in codeql_wf["jobs"].values() for step in job.get("steps", [])
+    if str(step.get("uses", "")).startswith("github/codeql-action/init@")
+)
+codeql_init_with = codeql_init.get("with", {})
+assert "config" in codeql_init_with, "codeql init must use `config` (not `configs`)"
+assert "configs" not in codeql_init_with, "codeql init must NOT use `configs` (unsupported input)"
+codeql_config_text = codeql_init_with["config"]
+# review R2 P2-2：子串检查不够——必须解析内嵌 YAML，验证 paths-ignore 是包含
+# 四项预期 glob 的列表；注释中放路径、paths-ignore 误写成 paths、或 YAML 语法
+# 无效时都必须 fail。
+codeql_paths_ignore = yaml.safe_load(codeql_config_text).get("paths-ignore", [])
+assert isinstance(codeql_paths_ignore, list), "codeql paths-ignore must be a list"
+for excluded in ("frontend/dist/**", "contracts/http/generated/**",
+                 "frontend/src/api/generated/**",
+                 "java/wotb-web/src/test/resources/archfixture/**"):
+    assert excluded in codeql_paths_ignore, f"codeql paths-ignore missing {excluded}"
+# review R2 P2-1：codeql.yml 变更必须触发 deployment owner（否则仅改 CodeQL 文件时契约不执行）
+assert affected(".github/workflows/codeql.yml") == {"deployment"}, (
+    "codeql.yml must route to deployment (and only deployment)")
+
 ci_text = json.dumps(ci, ensure_ascii=False)
 for forbidden in (
     "secrets.", "appleboy/ssh-action", "appleboy/scp-action",
@@ -191,7 +216,9 @@ assert tx_runtime["env"]["PRODUCTION_INPUT_PATHS"].splitlines() == [
 tx_runtime_job = tx_runtime["jobs"]["runtime_check"]
 assert tx_runtime_job["name"] == "TX_RUNTIME_READY"
 tx_runtime_steps = tx_runtime_job["steps"]
-tx_runtime_checkout = next(step for step in tx_runtime_steps if step.get("uses") == "actions/checkout@v5")
+tx_runtime_checkout = next(step for step in tx_runtime_steps
+                           if step.get("uses", "").startswith("actions/checkout@")
+                           and len(step.get("uses", "").split("@", 1)[1].split(" ")[0]) == 40)
 assert tx_runtime_checkout["with"]["ref"] == "${{ github.sha }}"
 assert tx_runtime_checkout["with"]["fetch-depth"] == "0"
 tx_runtime_freshness = [
@@ -202,7 +229,7 @@ assert len(tx_runtime_freshness) == 2
 assert all(step.get("env", {}).get("EVENT_SHA") == "${{ github.sha }}" for step in tx_runtime_freshness)
 
 tx_runtime_stage = next(step for step in tx_runtime_steps if step.get("name") == "Stage exact-SHA verifier bundle")
-assert tx_runtime_stage["uses"] == "appleboy/scp-action@v1"
+assert re.search(r"appleboy/scp-action@[0-9a-f]{40}", tx_runtime_stage["uses"]), "scp-action must stay SHA-pinned"
 assert tx_runtime_stage["with"]["source"] == (
     "deploy/tx/runtime-check.sh,deploy/tx/runtime-check-lib.sh,"
     "deploy/tx/deploy.sh,deploy/tx/with-deploy-lock.sh"
@@ -229,7 +256,7 @@ assert tx_runtime_run["env"]["VERIFIER_DIR"] == "/tmp/wotb-tx-runtime-check-${{ 
 
 tx_runtime_cleanup = next(step for step in tx_runtime_steps if step.get("name") == "Clean up exact-SHA verifier bundle")
 assert tx_runtime_cleanup["if"] == "always()"
-assert tx_runtime_cleanup["uses"] == "appleboy/ssh-action@v1"
+assert re.search(r"appleboy/ssh-action@[0-9a-f]{40}", tx_runtime_cleanup["uses"]), "ssh-action must stay SHA-pinned"
 assert 'rmdir -- "$VERIFIER_DIR"' in tx_runtime_cleanup["with"]["script"]
 
 tx_runtime_text = json.dumps(tx_runtime, ensure_ascii=False)
@@ -270,8 +297,8 @@ for _name in ("ci-android.yml", "android-release.yml"):
   _stage_sources.append((_name, (workflow_dir / _name).read_text(encoding="utf-8")))
 _release_source = dict(_stage_sources)["android-release.yml"]
 _stage_block = _release_source.split("\n  publish:", 1)[0]
-assert _stage_block.count("actions/setup-node@v4") == 1, \
-  f"android-release.yml stage must declare actions/setup-node@v4 exactly once, got {_stage_block.count('actions/setup-node@v4')}"
+assert _stage_block.count("actions/setup-node@") == 1, \
+  f"android-release.yml stage must declare actions/setup-node exactly once (SHA-pinned), got {_stage_block.count('actions/setup-node@v4')}"
 
 for android_workflow in ("ci-android.yml", "android-release.yml"):
   android_text = (workflow_dir / android_workflow).read_text(encoding="utf-8")

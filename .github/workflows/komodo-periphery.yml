@@ -42,7 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
@@ -116,7 +116,7 @@ jobs:
       # incoming directory, and the SHA directory must all be real directories
       # (mode 700) before SCP is allowed to write into them.
       - name: Prepare safe Yecao staging root
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
@@ -133,7 +133,7 @@ jobs:
       # Only the production inputs plus this target's own reviewed profile are
       # staged: the fixtures and every other host's profile stay in CI.
       - name: Stage exact Periphery inputs on Yecao
-        uses: appleboy/scp-action@v1
+        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
@@ -167,7 +167,7 @@ jobs:
       # deleted, so this job forwards no secret at all: it must succeed from the
       # committed marker plus the persistent identity.
       - name: Reconcile Yecao Periphery under the Yecao host lock
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
@@ -188,7 +188,7 @@ jobs:
       # helper re-proved the root and its incoming directory are real directories.
       - name: Cleanup staged Yecao inputs
         if: always()
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
@@ -210,7 +210,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
@@ -279,7 +279,7 @@ jobs:
       # under TX's deploy-owned root and this step needs no privilege. The root
       # still has to be a real directory before SCP may write into it.
       - name: Prepare safe TX1 staging root
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         with:
           host: ${{ secrets.TX_VPS_HOST }}
           username: ${{ secrets.TX_VPS_USER }}
@@ -294,7 +294,7 @@ jobs:
           PERIPHERY_STAGING_ROOT: ${{ steps.target.outputs.staging_root }}
 
       - name: Stage exact Periphery inputs on TX1
-        uses: appleboy/scp-action@v1
+        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1
         with:
           host: ${{ secrets.TX_VPS_HOST }}
           username: ${{ secrets.TX_VPS_USER }}
@@ -328,7 +328,7 @@ jobs:
       # non-interactive sudo and preserves that one variable through the
       # environment, so the credential never reaches argv, disk, or the log.
       - name: Reconcile TX1 Periphery under the TX1 host lock
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         with:
           host: ${{ secrets.TX_VPS_HOST }}
           username: ${{ secrets.TX_VPS_USER }}
@@ -348,7 +348,7 @@ jobs:
 
       - name: Cleanup staged TX1 inputs
         if: always()
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         with:
           host: ${{ secrets.TX_VPS_HOST }}
           username: ${{ secrets.TX_VPS_USER }}
@@ -371,7 +371,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
@@ -440,7 +440,7 @@ jobs:
       # under TX2's deploy-owned root and this step needs no privilege. The root
       # still has to be a real directory before SCP may write into it.
       - name: Prepare safe TX2 staging root
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         with:
           host: ${{ secrets.TX2_VPS_HOST }}
           username: ${{ secrets.TX2_VPS_USER }}
@@ -455,7 +455,7 @@ jobs:
           PERIPHERY_STAGING_ROOT: ${{ steps.target.outputs.staging_root }}
 
       - name: Stage exact Periphery inputs on TX2
-        uses: appleboy/scp-action@v1
+        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1
         with:
           host: ${{ secrets.TX2_VPS_HOST }}
           username: ${{ secrets.TX2_VPS_USER }}
@@ -491,7 +491,7 @@ jobs:
       # later runs the secret may already be deleted: the committed marker plus the
       # persistent identity then make the reconcile succeed without it.
       - name: Reconcile TX2 Periphery under the TX2 host lock
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         with:
           host: ${{ secrets.TX2_VPS_HOST }}
           username: ${{ secrets.TX2_VPS_USER }}
@@ -511,7 +511,7 @@ jobs:
 
       - name: Cleanup staged TX2 inputs
         if: always()
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         with:
           host: ${{ secrets.TX2_VPS_HOST }}
           username: ${{ secrets.TX2_VPS_USER }}

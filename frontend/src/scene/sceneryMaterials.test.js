@@ -536,7 +536,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // ⇒ 运行时恒传客户端正常相机；不传的话窄画布把「55° 竖直 × aspect」折算成小水平角、阈值滑到
     // 狙击镜档（放松最多 ~1.8×），同一机位我们的网格比客户端更粗（2026-10-14 用户报障）
     expect(meshSrc).toMatch(/export const CLIENT_NORMAL_CAMERA_FOV_H = 70/)
-    expect(src).toMatch(/hFovDeg: CLIENT_NORMAL_CAMERA_FOV_H,/)
+    expect(src).toMatch(/hFovDeg: terrainHFovDeg\(\),/)
     expect(src).toMatch(/import \{[^}]*\bCLIENT_NORMAL_CAMERA_FOV_H\b[^}]*\} from '\.\/terrainMesh\.js'/)
     // 引擎 `SubdivisionMetrics` 两套 fov 预设（LandscapeSubdivision.h:44-58）——阈值随 fov 插值
     expect(meshSrc).toMatch(/normalFov: 70, zoomFov: 6\.5/)
@@ -1273,7 +1273,7 @@ describe('炮线渲染守卫（阵营语义色直出）', () => {
     expect(src).toMatch(/window\.__pbPerf = \{/)
     // 分阶段计时包住「状态更新」「主渲染」与「装甲叠加」三段
     expect(src).toMatch(/const perfT1 = PERF \? performance\.now\(\) : 0;/)
-    expect(src).toMatch(/if \(PERF\) perfFrame\(perfT1 - perfT0, perfR0 - perfT1, perfR1 - perfR0\);/)
+    expect(src).toMatch(/if \(PERF\) perfFrame\(perfT1 - perfT0, perfR0 - perfT1, perfR1 - perfR0, armorStats\);/)
   })
 
 })

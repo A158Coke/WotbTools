@@ -1,0 +1,61 @@
+# CodeQL SAST（issue #738）：Java + JavaScript/TypeScript 双语言矩阵。
+#
+# 运行面：push main + 每周计划扫描 + 手动 dispatch——**不进 PR gate**（observe 阶段，
+# #738 验收口径：稳定低误报的问题才考虑接入 required gate；当前所有 finding 只在
+# code scanning UI 呈现，不阻塞任何 PR）。
+#
+# 扫描范围排除（paths-ignore）：生成物、契约产物、测试夹具与受控探针之外的全部
+# 非 Sources 目录不在扫描根内；`scripts/codeql-probe/` 是**受控 canary**（见下方
+# 注释），保持被扫描——它是「扫描真实工作」的持续证据：canary 中的刻意注入模式
+# 必须持续产出 code scanning alert（#738 验收项），若某天 alert 消失说明扫描链路
+# 断了。canary 是纯 Node 侧文件，不进前端 bundle、不被任何 runtime 消费。
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '23 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      # CodeQL 上传 SARIF 需要 security-events: write；其余收敛到只读
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: java-kotlin
+            build-mode: none   # 无需完整编译的提取模式；Maven 源码语法级分析
+          - language: javascript-typescript
+            build-mode: none
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        if: matrix.language == 'java-kotlin'
+        with:
+          distribution: temurin
+          java-version: "25"
+      - uses: github/codeql-action/init@5c8ea125689a2c5ae2672d1d914ac4bcd95d1b4b # v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          # 高噪声面收敛：生成契约、测试夹具与历史 .md 渲染目录不产生 finding
+          config: |
+            paths-ignore:
+              - 'frontend/dist/**'
+              - 'contracts/http/generated/**'
+              - 'frontend/src/api/generated/**'
+              - 'java/wotb-web/src/test/resources/archfixture/**'
+      - uses: github/codeql-action/analyze@5c8ea125689a2c5ae2672d1d914ac4bcd95d1b4b # v3
+        with:
+          category: '/language:${{ matrix.language }}'

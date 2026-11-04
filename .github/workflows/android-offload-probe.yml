@@ -79,7 +79,7 @@ jobs:
           echo "probe size: ${PROBE_MIB} MiB (decimal)"
 
       - name: Checkout main (exact dispatched SHA)
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
@@ -244,7 +244,7 @@ jobs:
       #    secrets.TSINGHUA_CLOUD_TOKEN；两种都会打印来源，便于确认收敛进度。
       #    本步骤不取 /opt/wotb-tx 的宿主部署锁：探针只写 /tmp 与网盘数据目录，不改被服务的宿主机状态。
       - name: Probe TX1 (COS pull, drive push, read-back, delete)
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         env:
           PROBE_NAME: ${{ steps.blob.outputs.name }}
           PROBE_SIZE: ${{ steps.blob.outputs.size }}

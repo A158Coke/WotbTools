@@ -1246,6 +1246,34 @@ describe('playbackScene 资产发布顺序', () => {
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
   }
 
+  it.each(['low', 'mid'])('%s 加载并挂载场景；reset 后撤下场景', async (quality) => {
+    window.history.replaceState(null, '', `/?debug&q=${quality}`)
+    prepareAssets(['scenery'])
+    const root = new THREE.Group()
+    vi.spyOn(GLTFLoader.prototype, 'load').mockImplementationOnce((_url, onLoad) => onLoad({
+      scene: root, parser: { json: { materials: [] }, associations: new Map() },
+    }))
+    const { api, store } = createScene()
+    await api.loadMapOnly({ mapId: 1, mapName: 'probe_map' })
+    expect(store.mapReady).toBe(true)
+    expect(root.parent?.parent).toBe(window.__scene)
+    expect(store.assetIssues.some((issue) => issue.key === 'scenery')).toBe(false)
+    api.reset()
+    expect(store.mapReady).toBe(false)
+    expect(root.parent?.parent).toBeNull()
+  })
+
+  it.each(['low', 'mid'])('%s 场景资源失败时记录降级并完成会话', async (quality) => {
+    window.history.replaceState(null, '', `/?debug&q=${quality}`)
+    prepareAssets(['scenery'])
+    vi.spyOn(GLTFLoader.prototype, 'load').mockImplementationOnce((_url, _ok, _progress, onError) => onError(new Error('missing')))
+    const { api, store } = createScene()
+    await api.loadMapOnly({ mapId: 1, mapName: 'probe_map' })
+    expect(store.mapReady).toBe(true)
+    expect(store.assetDegraded).toBe(true)
+    expect(store.assetIssues.some((issue) => issue.key === 'scenery' && issue.status === 'failed')).toBe(true)
+  })
+
   it('迟到底图只 dispose A；B 的当前贴图引用仍由会话持有', async () => {
     prepareAssets(['map'])
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
@@ -1467,8 +1495,8 @@ describe('playbackScene 资产发布顺序', () => {
     expect(raw).toMatch(/VIS_BY_EID\.get\(v\.def\.eid\) \?\? v\.def\.coverage/)
   })
 
-  it('迟到 scenery GLB 不入 B 场景，且释放局部资源与隔离进度', async () => {
-    window.history.replaceState(null, '', '/?debug&q=high')
+  it.each(['low', 'mid', 'high'])('%s 迟到 scenery GLB 不入 B 场景，且释放局部资源与隔离进度', async (quality) => {
+    window.history.replaceState(null, '', `/?debug&q=${quality}`)
     prepareAssets(['scenery'])
     const gltfA = new THREE.Group()
     const geometryA = new THREE.BoxGeometry()
@@ -3381,11 +3409,20 @@ describe('画质四档阶梯契约（2026-10-07 重分档）', () => {
     }
     for (const t of keys) {
       expect(QUALITY_PRESETS[t].allowGlb).toBe(t !== 'low')
-      expect(QUALITY_PRESETS[t].scenery).toBe(t === 'high' || t === 'ultra')
+      expect(QUALITY_PRESETS[t].scenery).toBe(true)
       expect(QUALITY_PRESETS[t].groundLayers).toBe(t === 'high' || t === 'ultra')
       expect(QUALITY_PRESETS[t].antialias).toBe(t !== 'low')
       expect(QUALITY_PRESETS[t].fx).toBe(FX_BUDGETS[t])   // 战斗特效预算与画质档同一键
     }
+    expect(keys.map((t) => {
+      const { antialias, maxDpr, anisotropy, terrainSeg, allowGlb, treadMarks, forceGlb, groundLayers } = QUALITY_PRESETS[t]
+      return { antialias, maxDpr, anisotropy, terrainSeg, allowGlb, treadMarks, forceGlb, groundLayers }
+    })).toEqual([
+      { antialias: false, maxDpr: 1, anisotropy: 1, terrainSeg: 192, allowGlb: false, treadMarks: false, forceGlb: false, groundLayers: false },
+      { antialias: true, maxDpr: 1.25, anisotropy: 2, terrainSeg: 256, allowGlb: true, treadMarks: false, forceGlb: false, groundLayers: false },
+      { antialias: true, maxDpr: 1.5, anisotropy: 4, terrainSeg: 384, allowGlb: true, treadMarks: true, forceGlb: true, groundLayers: true },
+      { antialias: true, maxDpr: 2, anisotropy: 8, terrainSeg: 512, allowGlb: true, treadMarks: true, forceGlb: true, groundLayers: true },
+    ])
   })
 
   it('地面贴图四档统一用契约化的 `map`（ground.webp）；客户端 HUD 小地图不再进地面链路', async () => {
