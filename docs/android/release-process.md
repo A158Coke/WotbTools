@@ -5,7 +5,7 @@
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本由显式 `version` 输入决定：自动续跑传入 stage 解析出的同一版本，手动 recovery 由操作者显式给出（见下节）。
-当前源码版本：**4.0.2 / 4000002**（`android/gradle.properties`），装甲查看器射击结果卡 presentation 出仓重构，说明见 [4.0.2](releases/4.0.2.md)。Native Bridge 保持 v3；最低支持版本不因本版本抬升。
+当前源码版本：**4.1.1 / 4001001**（`android/gradle.properties`），装甲查看器射击结果卡 presentation 出仓重构，说明见 [4.1.1](releases/4.1.1.md)。Native Bridge 保持 v3；最低支持版本保持 4.1.0 / 4001000，不因本版本抬升。
 `contracts/android-native-bridge.json` 是协议 SSOT；Gradle、Native 与前端声明必须一致。
 
 Native Bridge 为 **v3**（3.0.0 起）：可信本地 origin 是 LocalRuntimeServer 的固定 loopback
@@ -232,6 +232,8 @@ Native Bearer runtime 请求头集合为 Authorization、Content-Type、Content-
 设置变量本身**不动** production `version.json`，因此**不会立刻**强制线上旧客户端更新——真正影响客户端的 commit point 仍是 publish 最后写入 `version.json`。但变量设为 `X×1_000_000` 之后，**不要再 stage / publish 任何低于该门槛的旧 major 候选**；这是有意的 cutover。若顺序搞错导致 stage fail-closed，修好变量后对同一版本幂等重跑即可（恢复路径，不是正常流程）——floor 守卫在 stage preflight 就失败，发生在任何 immutable artifact 之前，版本未被消耗。
 
 客户端语义（`MainActivity.onVersionReady`，读 `version.json`）：`installedVersionCode < minSupportedVersionCode` ⇒ **强制更新**屏（阻塞入口）；`installedVersionCode < latestVersionCode` ⇒ 仅可选更新提示；其余不动。
+
+- **4001000（4.1.0；2026-11-04 用户明确要求，随候选 publish 生效）** —— 用户选择 minor 版本强制更新例外，要求低于 4.1.0 的客户端升级，以取得完整场景立体结构。仓库变量需在该候选合并前设置；设置变量不等于线上门槛已生效。
 
 - **3017007（3.17.7；2026-10-27 用户要求，随本候选 publish 生效）** —— 用户指令的 patch 强制更新例外延续：所有低于 3.17.7 的客户端必须升级，以取得隐藏段（盲炮）掉血在二次点亮兑现的血量链修复。目标为 `latestVersionCode = minSupportedVersionCode = 3017007`；设置仓库变量或完成 stage 均不代表该门槛已经对线上客户端生效。
 
