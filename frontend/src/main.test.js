@@ -80,6 +80,9 @@ describe('application startup preserves the authentication callback', () => {
     expect(location.search).toContain(`view=${legacy}`)
     expect(shell()).toBeNull()
     pending.resolve(true)
+    // bootstrap intentionally defers router/App imports until the callback settles.
+    // Await those modules, rather than treating their cold-transform time as an auth SLA.
+    await vi.dynamicImportSettled()
     await vi.waitFor(() => expect(shell()?.dataset.auth).toBe('authenticated'))
     const { default: router } = await import('./app/router.js')
     expect(router.currentRoute.value.query).toEqual({ view: canonical, tank: '13825' })

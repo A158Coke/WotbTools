@@ -4,7 +4,7 @@ import { ANDROID_APP_ORIGIN } from './runtime.js'
 // CI fails if it drifts from contracts/android-native-bridge.json.
 //
 // Bridge v3 = Android 3.0 GeckoView runtime（本机 loopback origin + 内置扩展 transport），
-// RPC 方法与 v2 完全相同。这份前端随 APK 打包、与 Native 同版本发布，因此只声明 [3]；
+// Additive 方法由 capability 区分；这份前端随 APK 打包、与 Native 同版本发布，因此只声明 [3]；
 // 旧 v2 客户端由 publish 的 minSupportedVersionCode 强制更新（guard_bridge_covered），
 // 绝不在页面里静默回退到 keycloak-js。
 export const SUPPORTED_NATIVE_BRIDGE_VERSIONS = Object.freeze([3])
@@ -36,6 +36,17 @@ export const NATIVE_CONNECTIVITY_METHODS = Object.freeze({
 
 /** Native → Web connectivity change notification (mirrors the JSON contract `events`). */
 export const NATIVE_CONNECTIVITY_CHANGED_GLOBAL = 'wotbtoolsOnConnectivityChanged'
+
+/** 更新状态能力独立于旧 app-update，避免把同为 v3 的旧 Native 当成新接口。 */
+export const NATIVE_UPDATE_CAPABILITY = 'app-update-status'
+export const NATIVE_UPDATE_METHODS = Object.freeze({
+  getStatus: 'getUpdateStatus',
+  refreshStatus: 'refreshUpdateStatus',
+  beginDownload: 'beginUpdateDownload',
+  install: 'installUpdate',
+  dismiss: 'dismissOptionalUpdate',
+})
+export const NATIVE_UPDATE_CHANGED_GLOBAL = 'wotbtoolsOnUpdateStatusChanged'
 
 /** Native → Web: pending replay arrived while the replay workspace is loaded (mirrors the JSON contract `events`). */
 export const NATIVE_REPLAY_GLOBAL = 'wotbtoolsOnReplay'

@@ -20,6 +20,52 @@
 }
 ```
 
+增量字段是可选的：`apkSizeBytes` 是签名目标 APK 的实际字节数，`patches` 是最多一个
+直接从已发布版本到该目标版本的条目。条目包含 `fromVersionCode`、`fromSha256`、
+`algorithm`（`xdelta3-vcdiff`）、`url`、`sha256` 和 `size`。客户端仍以完整 APK 的
+`sha256` 为最终身份；缺少或无效的增量字段只使用完整 APK。历史 staging evidence 不补造字段。
+
+stage 只考虑当前 production 中 4.0.0 或更高版本，校验包名、版本、签名和 SHA 后以
+xdelta3 3.2.2 的 `-A -a -S none` 生成并重建验证；只有补丁不超过目标 APK 的 10% 才发布。
+当前保守策略保留 10%：只有至少节省 90% 完整包下载字节才值得增加一次重建和磁盘开销；
+它不是对所有设备或未来版本的最优阈值保证。客户端、stage 和 publish verifier 使用同一命名分母，
+发布测试同时检查两端常量和边界行为；不满足条件时使用完整包。
+
+已发布、同一签名证书的历史 APK 样本（本机 xdelta3 3.2.2 `-A -a -S none`，设备为测试 APK 内实际 JNI）：
+
+| Base → target | 目标完整包字节 | 补丁字节 | 占比 | 生成（主机） | 重建 API 26 x86 32 位 / API 34 ARM64 翻译 | 目标 SHA-256 |
+|---|---:|---:|---:|---:|---:|---|
+| 3.29.0 → 3.30.0 | 203737234 | 4932144 | 2.42% | 1.06 s | 4.69 s / 3.74 s | `636e029736284e76752065ecfb1e850ba9ca77d082d4e1a0c3a3eda5c530db0b` |
+| 3.30.0 → 3.31.0 | 203737938 | 4532034 | 2.22% | 0.86 s | 2.51 s / 4.47 s | `8b1b748ff223c05e4700bec8b3c363f801820d715f61cdfb2d80749b5b67facb` |
+| 3.30.0 → 3.32.0 | 203738834 | 4584770 | 2.25% | 0.99 s | 4.27 s / 1.24 s | `cd00d0c2fda31b3d418b093c994586c8eed2b6b90d8b2e659054b05713c5c0bf` |
+| 3.31.0 → 3.34.0 | 203744302 | 4187279 | 2.06% | 0.95 s | 4.06 s / 1.02 s | `5d0b4784e71e19ebcbfc54075b0ad12a7957f5bd36af5c618adec5ad28f8e09c` |
+
+每组重建结果均与正式 target SHA 一致；按表格顺序目标与单份补丁合计临时字节分别为 208669378、
+208269972、208323604、207931581；客户端还会保留下载副本并按更保守的空间条件检查。设备进程峰值
+VmHWM 最高约 101 MiB（API 26）和 143 MiB（API 34，含整个测试进程），时间受缓存影响。相邻版本
+3.30.0 → 3.31.0 为导航改动，3.30.0 → 3.32.0 为分页功能；3.29.0 → 3.30.0 的 Agent WASM pin 从
+`f0b70592e98adbd6259a2ca786315dac32e65c05` 更新为 `97ce7b55a0ca3e5f22792090504df3c72e73f1c4`，
+覆盖一个回放引擎变化。四组均为 GeckoView 158；
+2.4.0 → 3.0.0 的系统 WebView → GeckoView 切换正式 APK 公网地址目前返回 HTML，不能用于验证，因此该切换样本和
+API 26 ARM 正式包仍未验证，不能把这些数据外推成所有更新均满足该策略。
+4.0 首发没有满足条件的 base，因此仅提供完整包。补丁以 SHA 内容寻址，清华云盘提供
+公开下载，TX1/TX2 保留不可覆盖的源副本；TX2 整树替换时保留所有补丁，当前没有自动清理。每节点补丁总量上限为 1 GiB；超限时新的候选只提供完整包，既有补丁不删除。
+只有检测到线上 Caddy 已将 `.vcdiff` 跳转到清华云盘才会为新证据启用补丁；发布阶段重新核对
+实际 APK 长度、补丁和原始 staging evidence 后才复制字段到 production manifest。
+
+4.0.0 首发只走完整包，不以尚未上线的增量分流作为发布门禁。首次在后续版本的 production manifest
+声明非空 `patches` 前，stage 必须在真实分发路径完成补丁生成与重建、清华副本上传和校验、TX1/TX2
+不可变落位，以及公网重定向后的字节数和 SHA 回读；任一环节不可用时新候选只发布完整包，已经固定的
+增量 evidence 无法验证时则停止发布。不得以本地替身或空补丁列表声称真实云端链路已通过。
+
+同一 staged identity 的 `patches`、`stagedAt` 与其他 evidence 字节不可在重试时重算。stage 分别在 TX1/TX2
+宿主锁内读取记录，公共负载均衡 URL 的 404 不代表两节点均缺失；任一节点存在有效记录时，先校验版本、
+source SHA、APK SHA、bundle 身份与 immutable patch artifact，再复用该记录的原始字节补齐缺失节点。
+两节点均明确缺失且没有相反的可信 release identity 证据时，才允许新建 full-only evidence；节点不可达、
+记录无效或冲突、既有补丁无法验证均 fail closed，不能把既有非空 `patches` 降级成空列表。
+锁内安装采用同文件系统临时文件和原子 no-clobber 落位：相同字节幂等成功，不同字节拒绝覆盖；
+stage 和 publish 都要求两节点 evidence 一致并通过远端 artifact 校验。完整恢复规则见 [发布流程](release-process.md#证据的存续)。
+
 `latestVersionCode`、`latestVersionName` 来自 staged 源码（tag target）的 `android/gradle.properties`；
 `nativeBridgeVersion` 来自同一 source 的 `contracts/android-native-bridge.json`；`sourceSha` 是生成 APK
 所 checkout 的精确 commit。workflow 只有在**两阶段**都通过之后才写入 manifest：

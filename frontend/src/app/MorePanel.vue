@@ -6,7 +6,7 @@
 // （如装甲查看器的 3D 浮层）盖住。测试用 DIALOG_INLINE_KEY 原地渲染。
 import { inject, nextTick, ref, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
-import { BookOpen, MessageSquare } from 'lucide-vue-next'
+import { BookOpen, Download, MessageSquare } from 'lucide-vue-next'
 import { LANGUAGES, useMoreMenu } from '../composables/useMoreMenu.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
@@ -22,7 +22,7 @@ const emit = defineEmits(['close'])
 
 const navigate = inject(NAVIGATE_VIEW_KEY, null)
 const inline = inject(DIALOG_INLINE_KEY, false)
-const { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, aboutLinks, openGuide, openFeedback } = useMoreMenu()
+const { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, aboutLinks, openGuide, openFeedback, openAndroidUpdate } = useMoreMenu()
 const panel = ref(null)
 
 function close({ restoreFocus = false } = {}) {
@@ -105,6 +105,9 @@ watch(() => props.open, async (open) => {
     <section class="more-panel-section" aria-labelledby="more-panel-about">
       <h2 id="more-panel-about" class="more-panel-title">{{ $t('more.sections.about') }}</h2>
       <ul class="more-panel-links">
+        <li v-if="openAndroidUpdate">
+          <button type="button" class="more-panel-link" data-testid="more-link-app-update" @click="close(); openAndroidUpdate(anchor)"><Download :size="18" aria-hidden="true" /><span>{{ $t('androidUpdate.title') }}</span></button>
+        </li>
         <li v-if="openGuide">
           <button type="button" class="more-panel-link" data-testid="more-link-guide" @click="close(); openGuide()"><BookOpen :size="18" aria-hidden="true" /><span>{{ $t('onboarding.directory') }}</span></button>
         </li>

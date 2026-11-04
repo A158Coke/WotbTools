@@ -104,6 +104,16 @@ server_pid=''
 cleanup(){ [ -z "$server_pid" ] || kill "$server_pid" 2>/dev/null || true; rm -rf "$work"; }
 trap cleanup EXIT
 
+# 同步只消费本机 HTTP fixture；禁止测试探测真实公开 APK。
+mkdir -p "$work/sync-bin"
+export REAL_CURL="$(command -v curl)"
+cat > "$work/sync-bin/curl" <<'CURL'
+#!/usr/bin/env bash
+for arg in "$@"; do [[ "$arg" != https://wotbtools.com/* ]] || exit 22; done
+exec "$REAL_CURL" "$@"
+CURL
+chmod +x "$work/sync-bin/curl"
+
 # --- 1) sync 脚本 E2E：整树替换必须带走未发布版本的证据（原故障回归），历史 APK 仍不带走 ---
 source_root="$work/source"; live_root="$work/runtime-content"
 mkdir -p "$source_root/download/android" "$live_root/android-release"
@@ -120,6 +130,10 @@ root = pathlib.Path(sys.argv[1])
 PY
 printf '{"versionName":"2.1.18","versionCode":2001018}\n' > "$live_root/android-release/wotbtools-android-v2.1.18.staging.json"
 printf 'stale-apk\n' > "$live_root/android-release/wotbtools-android-v2.1.17.apk"
+printf 'delta-fixture\n' > "$work/delta"
+delta_sha="$(sha256sum "$work/delta" | awk '{print $1}')"
+delta_name="wotbtools-android-delta-4000000-4001000-$delta_sha.vcdiff"
+cp "$work/delta" "$live_root/android-release/$delta_name"
 
 port="$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()')"
 python3 -m http.server --directory "$source_root" --bind 127.0.0.1 "$port" >/dev/null 2>&1 &
@@ -129,7 +143,7 @@ for _ in $(seq 1 60); do
   sleep 0.1
 done
 
-K7C_RUNTIME_SOURCE_BASE="http://127.0.0.1:$port" K7C_RUNTIME_ROOT="$live_root" \
+PATH="$work/sync-bin:$PATH" K7C_RUNTIME_SOURCE_BASE="http://127.0.0.1:$port" K7C_RUNTIME_ROOT="$live_root" \
   bash "$sync" > "$work/sync.log" 2>&1 \
   || { cat "$work/sync.log" >&2; fail "the runtime sync must succeed against a valid source"; }
 grep -Fq 'K7C_RUNTIME_CONTENT_READY=PASS' "$work/sync.log" \
@@ -137,12 +151,25 @@ grep -Fq 'K7C_RUNTIME_CONTENT_READY=PASS' "$work/sync.log" \
 
 [ -f "$live_root/android-release/wotbtools-android-v2.1.18.staging.json" ] \
   || fail "the tree rebuild must carry the unpublished staging evidence forward (2026-10-09 regression)"
+cmp -s "$work/delta" "$live_root/android-release/$delta_name" || fail "the tree rebuild must preserve the exact immutable delta"
 [ -f "$live_root/android-release/version.json" ] \
   || fail "the tree rebuild must refresh version.json from the authoritative source"
 cmp -s "$live_root/android-release/wotbtools-android-v2.1.18.apk" "$source_root/download/android/wotbtools-android-v2.1.18.apk" \
   || fail "the tree rebuild must fetch the APK referenced by the manifest, byte for byte"
 [ ! -e "$live_root/android-release/wotbtools-android-v2.1.17.apk" ] \
   || fail "historical APKs must not be carried into the rebuilt tree"
+printf 'invalid immutable evidence' > "$live_root/android-release/wotbtools-android-v4.0.1.staging.json"
+PATH="$work/sync-bin:$PATH" K7C_RUNTIME_SOURCE_BASE="http://127.0.0.1:$port" K7C_RUNTIME_ROOT="$live_root" \
+  bash "$sync" > "$work/invalid-sync.log" 2>&1 && fail 'invalid evidence must stop the tree swap'
+[ "$(cat "$live_root/android-release/wotbtools-android-v4.0.1.staging.json")" = 'invalid immutable evidence' ] \
+  || fail 'invalid evidence must remain available for recovery'
+rm "$live_root/android-release/wotbtools-android-v4.0.1.staging.json"
+
+ln -s "$work/missing-evidence" "$live_root/android-release/wotbtools-android-v4.0.1.staging.json"
+PATH="$work/sync-bin:$PATH" K7C_RUNTIME_SOURCE_BASE="http://127.0.0.1:$port" K7C_RUNTIME_ROOT="$live_root" \
+  bash "$sync" > "$work/symlink-sync.log" 2>&1 && fail 'dangling evidence must stop the tree swap, not become missing'
+[ -L "$live_root/android-release/wotbtools-android-v4.0.1.staging.json" ] || fail 'invalid evidence must not disappear during a rebuild'
+rm "$live_root/android-release/wotbtools-android-v4.0.1.staging.json"
 
 # --- 2) 安装器：宿主锁下原子落位；锁被占住时不可见、不落位；缺锁/缺目录/非证据文件 fail closed ---
 lock_dir="$work/lock"; incoming="$work/incoming"; served="$work/served"
@@ -201,5 +228,149 @@ printf 'not evidence\n' > "$incoming/random.txt"
 bash "$installer" --source "$incoming/random.txt" --dest-dir "$served" --lock "$lock_dir/.deploy.lock" >/dev/null 2>&1 \
   && fail "the installer must refuse to install a non-evidence file"
 [ ! -e "$served/random.txt" ] || fail "a refused install must leave the served tree untouched"
+
+# Delta installs are idempotent and cannot overwrite an existing name.
+cp "$work/delta" "$incoming/$delta_name"
+bash "$installer" --source "$incoming/$delta_name" --dest-dir "$served" --lock "$lock_dir/.deploy.lock" >/dev/null
+cp "$work/delta" "$incoming/$delta_name"
+bash "$installer" --source "$incoming/$delta_name" --dest-dir "$served" --lock "$lock_dir/.deploy.lock" >/dev/null
+printf 'conflict\n' > "$served/$delta_name"
+cp "$work/delta" "$incoming/$delta_name"
+bash "$installer" --source "$incoming/$delta_name" --dest-dir "$served" --lock "$lock_dir/.deploy.lock" >/dev/null 2>&1 && fail "delta conflict must fail closed"
+[ "$(cat "$served/$delta_name")" = conflict ] || fail "delta conflict must not overwrite existing bytes"
+printf 'bad\n' > "$incoming/$delta_name"
+bash "$installer" --source "$incoming/$delta_name" --dest-dir "$served" --lock "$lock_dir/.deploy.lock" >/dev/null 2>&1 && fail "delta with incorrect content-addressed hash must fail"
+# 稀疏文件模拟达到保留上限：新补丁不得落位，既有内容不得删除。
+truncate -s 1073741824 "$served/wotbtools-android-delta-4001000-4002000-cap.vcdiff"
+printf 'another delta\n' > "$work/new-delta"
+new_sha="$(sha256sum "$work/new-delta" | awk '{print $1}')"
+new_name="wotbtools-android-delta-4002000-4003000-$new_sha.vcdiff"
+cp "$work/new-delta" "$incoming/$new_name"
+bash "$installer" --source "$incoming/$new_name" --dest-dir "$served" --lock "$lock_dir/.deploy.lock" >/dev/null 2>&1 && fail "delta storage limit must fail closed"
+[ ! -e "$served/$new_name" ] || fail "over-budget delta must not be installed"
+[ -f "$served/wotbtools-android-delta-4001000-4002000-cap.vcdiff" ] || fail "storage cap must not delete existing files"
+
+# Exercise origin classification over the real locked reader with a local SSH transport.
+origin="$work/origins"; mkdir -p "$origin/tx1" "$origin/tx2" "$origin/bin"
+: > "$origin/tx1.lock"; : > "$origin/tx2.lock"
+cat > "$origin/bin/ssh" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  *user@tx1*) node=tx1 ;;
+  *user@tx2*) node=tx2 ;;
+  *) exit 255 ;;
+esac
+[ "${UNREACHABLE_NODE:-}" != "$node" ] || exit 255
+if [[ "$*" == *read-patch* ]]; then
+  exec bash -s -- read-patch "$ORIGIN_TEST_ROOT/$node" "$ORIGIN_TEST_ROOT/$node.lock" "$EVIDENCE_PATCH_NAME" "$EVIDENCE_PATCH_SHA" "$EVIDENCE_PATCH_SIZE"
+fi
+exec bash -s -- read "$ORIGIN_TEST_ROOT/$node" "$ORIGIN_TEST_ROOT/$node.lock" "$EVIDENCE_TEST_NAME"
+SH
+chmod +x "$origin/bin/ssh"
+export ORIGIN_TEST_ROOT="$origin" EVIDENCE_TEST_NAME=wotbtools-android-v4.0.1.staging.json
+export TX1_SSH_HOST=tx1 TX2_SSH_HOST=tx2 TX1_SSH_USER=user TX2_SSH_USER=user TX1_SSH_PORT=22 TX2_SSH_PORT=22 TX1_SSH_KEY=fixture TX2_SSH_KEY=fixture
+export RUNNER_TEMP="$work" PATH="$origin/bin:$PATH"
+collector="$ROOT/scripts/android-release/staging-evidence.sh"
+collect() { bash "$collector" "$1" "$EVIDENCE_TEST_NAME" "$origin/result"; }
+[ "$(collect collect)" = 404 ] || fail 'both missing must permit a new full-only identity'
+printf 'fixture' > "$origin/patch"
+export EVIDENCE_PATCH_SHA="$(sha256sum "$origin/patch" | awk '{print $1}')" EVIDENCE_PATCH_SIZE=7
+export EVIDENCE_PATCH_NAME="wotbtools-android-delta-4000000-4000001-$EVIDENCE_PATCH_SHA.vcdiff"
+cp "$origin/patch" "$origin/tx1/$EVIDENCE_PATCH_NAME"; cp "$origin/patch" "$origin/tx2/$EVIDENCE_PATCH_NAME"
+printf '{"patches":[{"url":"https://wotbtools.com/download/android/%s","sha256":"%s","size":%s}]}\n' "$EVIDENCE_PATCH_NAME" "$EVIDENCE_PATCH_SHA" "$EVIDENCE_PATCH_SIZE" > "$origin/tx1/$EVIDENCE_TEST_NAME"
+[ "$(collect collect)" = 200 ] || fail 'partial stage must recover the existing identity'
+cmp "$origin/result" "$origin/tx1/$EVIDENCE_TEST_NAME" || fail 'partial stage changed evidence'
+collect collect-required >/dev/null 2>&1 && fail 'publish must require both origins'
+cp "$origin/result" "$origin/tx2/$EVIDENCE_TEST_NAME"
+[ "$(collect collect-required)" = 200 ] || fail 'identical origins must be idempotent'
+printf 'bad' > "$origin/tx2/$EVIDENCE_PATCH_NAME"
+collect collect-required >/dev/null 2>&1 && fail 'publish must reject an origin patch mismatch'
+cp "$origin/patch" "$origin/tx2/$EVIDENCE_PATCH_NAME"
+printf '{"patches":[]}\n' > "$origin/tx2/$EVIDENCE_TEST_NAME"
+collect collect >/dev/null 2>&1 && fail 'conflicting origins must fail closed'
+UNREACHABLE_NODE=tx2 collect collect >/dev/null 2>&1 && fail 'unreachable origin must not be treated as missing'
+printf 'invalid' > "$origin/tx2/$EVIDENCE_TEST_NAME"
+collect collect >/dev/null 2>&1 && fail 'invalid evidence must fail closed'
+
+# Two concurrent installs of the same filename: equal bytes succeed, unequal bytes never clobber.
+concurrent="$work/concurrent"; mkdir -p "$concurrent/a" "$concurrent/b" "$concurrent/served"
+: > "$concurrent/lock"
+name=wotbtools-android-v4.0.2.staging.json
+printf '{"patches":[1]}\n' > "$concurrent/a/$name"; cp "$concurrent/a/$name" "$concurrent/b/$name"
+bash "$installer" --source "$concurrent/a/$name" --dest-dir "$concurrent/served" --lock "$concurrent/lock" > "$work/concurrent-a.log" 2>&1 & p1=$!
+bash "$installer" --source "$concurrent/b/$name" --dest-dir "$concurrent/served" --lock "$concurrent/lock" > "$work/concurrent-b.log" 2>&1 & p2=$!
+wait "$p1" || fail 'first identical concurrent install failed'; wait "$p2" || fail 'second identical concurrent install failed'
+printf '{"patches":[]}\n' > "$concurrent/a/$name"
+bash "$installer" --source "$concurrent/a/$name" --dest-dir "$concurrent/served" --lock "$concurrent/lock" >/dev/null 2>&1 && fail 'different evidence must not overwrite'
+python3 -c 'import json,sys; assert json.load(open(sys.argv[1])) == {"patches":[1]}' "$concurrent/served/$name" || fail 'existing evidence changed or was partly written'
+name=wotbtools-android-v4.0.3.staging.json
+printf '{"patches":[1]}\n' > "$concurrent/a/$name"; printf '{"patches":[]}\n' > "$concurrent/b/$name"
+bash "$installer" --source "$concurrent/a/$name" --dest-dir "$concurrent/served" --lock "$concurrent/lock" > "$work/conflict-a.log" 2>&1 & p1=$!
+bash "$installer" --source "$concurrent/b/$name" --dest-dir "$concurrent/served" --lock "$concurrent/lock" > "$work/conflict-b.log" 2>&1 & p2=$!
+successes=0
+if wait "$p1"; then successes=$((successes+1)); fi
+if wait "$p2"; then successes=$((successes+1)); fi
+[ "$successes" -eq 1 ] || fail 'different concurrent evidence must have exactly one winner'
+python3 -c 'import json,sys; assert json.load(open(sys.argv[1])) in ({"patches": [1]}, {"patches": []})' "$concurrent/served/$name" || fail 'concurrent winner must be complete JSON'
+
+
+# 安装中的复制允许中断，但公开文件不得出现半截 JSON；失败必须保留输入并清理临时文件。
+copy_test="$work/copy-failure"; mkdir -p "$copy_test/bin" "$copy_test/incoming" "$copy_test/served"
+: > "$copy_test/lock"
+export REAL_CP="$(command -v cp)" COPY_TEST_ROOT="$copy_test"
+cat > "$copy_test/bin/cp" <<'CP'
+#!/usr/bin/env bash
+set -eu
+[ "$1" != -- ] || shift
+head -c 5 "$1" > "$2"
+: > "$COPY_TEST_ROOT/copy-started"
+while [ ! -e "$COPY_TEST_ROOT/copy-release" ]; do sleep 0.05; done
+[ "${INJECT_COPY_FAILURE:-0}" = 0 ] || exit 1
+exec "$REAL_CP" "$@"
+CP
+chmod +x "$copy_test/bin/cp"
+name=wotbtools-android-v4.0.4.staging.json
+printf '{"patches":[],"identity":"complete"}\n' > "$copy_test/incoming/$name"
+for failure in 1 0; do
+  rm -f "$copy_test/copy-started" "$copy_test/copy-release"
+  PATH="$copy_test/bin:$PATH" INJECT_COPY_FAILURE="$failure" bash "$installer" \
+    --source "$copy_test/incoming/$name" --dest-dir "$copy_test/served" --lock "$copy_test/lock" > "$work/copy-$failure.log" 2>&1 & copy_pid=$!
+  for _ in $(seq 1 100); do [ ! -e "$copy_test/copy-started" ] || break; sleep 0.05; done
+  [ -e "$copy_test/copy-started" ] || fail 'slow-copy injection did not start'
+  [ ! -e "$copy_test/served/$name" ] || fail 'partial JSON became visible during copy'
+  : > "$copy_test/copy-release"
+  if [ "$failure" = 1 ]; then
+    wait "$copy_pid" && fail 'injected copy failure was ignored'
+    [ -f "$copy_test/incoming/$name" ] && [ ! -e "$copy_test/served/$name" ] || fail 'copy failure consumed input or published partial JSON'
+  else
+    wait "$copy_pid" || fail 'slow successful copy failed'
+    python3 -c 'import json,sys; assert json.load(open(sys.argv[1]))["identity"] == "complete"' "$copy_test/served/$name"
+  fi
+  [ -z "$(find "$copy_test/served" -name '.android-evidence.*' -print -quit)" ] || fail 'installer leaked a partial scratch file'
+done
+# 中转文件误指向线上文件或其硬链接，不得成功后把线上产物删除。
+bash "$installer" --source "$copy_test/served/$name" --dest-dir "$copy_test/served" --lock "$copy_test/lock" >/dev/null 2>&1 && fail 'served source must not be consumed'
+ln "$copy_test/served/$name" "$copy_test/incoming/$name"
+bash "$installer" --source "$copy_test/incoming/$name" --dest-dir "$copy_test/served" --lock "$copy_test/lock" >/dev/null 2>&1 && fail 'served hard-link alias must not be consumed'
+[ -f "$copy_test/served/$name" ] || fail 'scratch alias removed served evidence'
+rm "$copy_test/incoming/$name"
+# 目标即便是目录，也不可被 ln 当作目标目录写入。
+mkdir "$copy_test/served/dir.staging.json"
+printf '{}\n' > "$copy_test/incoming/dir.staging.json"
+bash "$installer" --source "$copy_test/incoming/dir.staging.json" --dest-dir "$copy_test/served" --lock "$copy_test/lock" >/dev/null 2>&1 && fail 'destination directory must fail closed'
+[ -z "$(find "$copy_test/served/dir.staging.json" -mindepth 1 -print -quit)" ] || fail 'invalid directory destination was mutated'
+# Linux CI 的 /dev/shm 与默认 /tmp 通常位于不同文件系统；可用时实际跨文件系统安装。
+if [ -d /dev/shm ] && [ -w /dev/shm ] && [ "$(stat -c %d /dev/shm)" != "$(stat -c %d "$work")" ]; then
+  cross="$(mktemp -d /dev/shm/android-evidence-test.XXXXXXXX)"
+  printf '{"crossFilesystem":true}\n' > "$cross/$name"
+  if ! bash "$installer" --source "$cross/$name" --dest-dir "$served" --lock "$lock_dir/.deploy.lock" > "$work/crossfs.log" 2>&1; then
+    rm -rf -- "$cross"; fail 'cross-filesystem evidence install failed'
+  fi
+  [ ! -e "$cross/$name" ] || fail 'cross-filesystem successful install did not consume scratch'
+  rm -rf -- "$cross"
+  python3 -c 'import json,sys; assert json.load(open(sys.argv[1])) == {"crossFilesystem":True}' "$served/$name"
+else
+  echo 'cross-filesystem fixture unavailable; cross-filesystem runtime verification not run'
+fi
 
 echo "K7C runtime content contract: PASS"

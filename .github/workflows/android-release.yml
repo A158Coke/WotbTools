@@ -383,6 +383,13 @@ jobs:
         with:
           gradle-version: "9.6.1"
 
+      - name: Install pinned Android native toolchain
+        if: steps.preflight.outputs.releaseAction == 'publish'
+        shell: bash
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+          bash scripts/ci/run-with-network-retry.sh "Android native SDK installation" "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'ndk;27.3.13750724' 'cmake;3.22.1'
+
       - name: Prepare staging directory (workspace-relative, 服务器路径严格)
         if: steps.preflight.outputs.releaseAction == 'publish'
         shell: bash
@@ -874,6 +881,248 @@ jobs:
               ;;
           esac
 
+      # 增量是可选优化；仅使用当前 production 中已有解码能力的单个 base。
+      # 有既存 evidence 时绝不重新生成或修改 patch 集合。
+      - name: Prepare verified direct Android delta
+        if: steps.preflight.outputs.releaseAction == 'publish'
+        id: delta
+        shell: bash
+        env:
+          TX1_SSH_HOST: ${{ secrets.TX_VPS_HOST }}
+          TX1_SSH_USER: ${{ secrets.TX_VPS_USER }}
+          TX1_SSH_PORT: ${{ secrets.TX_VPS_PORT }}
+          TX1_SSH_KEY: ${{ secrets.TX_VPS_SSH_KEY }}
+          TX2_SSH_HOST: ${{ secrets.TX2_VPS_HOST }}
+          TX2_SSH_USER: ${{ secrets.TX2_VPS_USER }}
+          TX2_SSH_PORT: ${{ secrets.TX2_VPS_PORT }}
+          TX2_SSH_KEY: ${{ secrets.TX2_VPS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          TARGET="android/app/build/outputs/apk/release/app-release.apk"
+          TARGET_CODE="${{ steps.version.outputs.versionCode }}"
+          TARGET_SHA="${{ steps.artifact.outputs.sha256 }}"
+          APK_NAME="${{ steps.artifact.outputs.apkName }}"
+          STAGING_NAME="${APK_NAME%.apk}.staging.json"
+          EXISTING="$RUNNER_TEMP/delta-existing-staging.json"
+          META="$RUNNER_TEMP/delta-metadata.json"
+          STATUS="$(bash scripts/android-release/staging-evidence.sh collect "$STAGING_NAME" "$EXISTING")"
+          if [ "$STATUS" = 200 ]; then
+            python3 scripts/android-release/android_contract.py bundle \
+              --badging "$RUNNER_TEMP/apk-badging.txt" --apk "$TARGET" --contract contracts/android-native-bridge.json \
+              --pin deploy/agent/source.json --source "${{ steps.version.outputs.commit }}" \
+              --version "${{ steps.version.outputs.versionName }}" --evidence "$EXISTING" >/dev/null
+            python3 scripts/android-release/delta_artifact.py verify --target "$TARGET" --target-sha "$TARGET_SHA" --target-code "$TARGET_CODE" --evidence "$EXISTING" > "$META"
+            PATCH_URL="$(jq -r '.patches[0].url // empty' "$META")"
+            if [ -n "$PATCH_URL" ]; then
+              PATCH_NAME="${PATCH_URL##*/}"
+              curl -fsSL --retry 3 --connect-timeout 10 --max-time 300 -o "release-staging/$PATCH_NAME" "$PATCH_URL"
+              python3 scripts/android-release/delta_artifact.py verify --target "$TARGET" --target-sha "$TARGET_SHA" --target-code "$TARGET_CODE" --evidence "$EXISTING" --patch-dir release-staging >/dev/null
+            fi
+          elif [ "$STATUS" = 404 ]; then
+            BASE_MANIFEST="$RUNNER_TEMP/prod-version.json"
+            if [ -s "$BASE_MANIFEST" ] && jq -e --argjson target "$TARGET_CODE" '.latestVersionCode == $target' "$BASE_MANIFEST" >/dev/null; then
+              echo "::error::Production already advertises this version but both staging evidence files are missing" >&2
+              exit 1
+            fi
+            BASE_APK="$RUNNER_TEMP/delta-base.apk"
+            XDELTA="$RUNNER_TEMP/xdelta3-3.2.2-linux-x86_64/xdelta3"
+            built=false
+            if [ -s "$BASE_MANIFEST" ] && jq -e --argjson target "$TARGET_CODE" '(.latestVersionCode | type == "number" and . >= 4000000 and . < $target) and (.sha256 | type == "string" and test("^[0-9a-f]{64}$")) and (.apkUrl | type == "string" and test("^https://wotbtools[.]com/download/android/wotbtools-android-v[0-9]+[.][0-9]+[.][0-9]+[.]apk$"))' "$BASE_MANIFEST" >/dev/null; then
+              BASE_URL="$(jq -r '.apkUrl' "$BASE_MANIFEST")"
+              BASE_SHA="$(jq -r '.sha256' "$BASE_MANIFEST")"
+              BASE_CODE="$(jq -r '.latestVersionCode' "$BASE_MANIFEST")"
+              TOOL_URL="https://github.com/jmacd/xdelta/releases/download/v3.2.2/xdelta3-3.2.2-linux-x86_64.tar.gz"
+              BASE_STAGING="${BASE_URL%.apk}.staging.json"
+              if curl -fsSL --retry 2 --connect-timeout 10 --max-time 30 -o "$RUNNER_TEMP/delta-base-staging.json" "$BASE_STAGING" &&
+                 jq -e --argjson code "$BASE_CODE" --arg sha "$BASE_SHA" '.versionCode == $code and .sha256 == $sha' "$RUNNER_TEMP/delta-base-staging.json" >/dev/null &&
+                 curl -fsSL --retry 2 --connect-timeout 10 --max-time 300 -o "$BASE_APK" "$BASE_URL" &&
+                 [ "$(sha256sum "$BASE_APK" | awk '{print $1}')" = "$BASE_SHA" ] &&
+                 curl -fsSL --retry 2 --connect-timeout 10 --max-time 60 -o "$RUNNER_TEMP/xdelta3.tar.gz" "$TOOL_URL" &&
+                 echo 'a8ce7d2c943ae2b3d308942643cb36d4805a1f16775abe1be64fee292d7c2506  '"$RUNNER_TEMP/xdelta3.tar.gz" | sha256sum -c - &&
+                 tar -xzf "$RUNNER_TEMP/xdelta3.tar.gz" -C "$RUNNER_TEMP"; then
+                AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)"
+                APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
+                BASE_BADGING="$("$AAPT" dump badging "$BASE_APK")" || BASE_BADGING=""
+                TARGET_CERT="$("$APKSIGNER" verify --print-certs "$TARGET" | sed -n 's/^Signer #[0-9]* certificate SHA-256 digest: //p')" || TARGET_CERT=""
+                BASE_CERT="$("$APKSIGNER" verify --print-certs "$BASE_APK" | sed -n 's/^Signer #[0-9]* certificate SHA-256 digest: //p')" || BASE_CERT=""
+                if [[ "$BASE_BADGING" == "package: name='com.wotbtools.app' versionCode='$BASE_CODE' "* ]] && [ -n "$TARGET_CERT" ] && [ "$BASE_CERT" = "$TARGET_CERT" ] &&
+                   python3 scripts/android-release/delta_artifact.py build --target "$TARGET" --target-sha "$TARGET_SHA" --target-code "$TARGET_CODE" --xdelta "$XDELTA" --output-dir release-staging --output "$META" --base-manifest "$BASE_MANIFEST" --base-file "$BASE_APK"; then
+                  built=true
+                fi
+              fi
+            fi
+            if [ "$built" = false ]; then
+              echo "::notice::Direct delta unavailable; stage the full APK without a patch."
+              python3 scripts/android-release/delta_artifact.py build --target "$TARGET" --target-sha "$TARGET_SHA" --target-code "$TARGET_CODE" --xdelta "$XDELTA" --output-dir release-staging --output "$META"
+            fi
+          else
+            echo "::error::Cannot check immutable staging evidence (HTTP $STATUS)" >&2
+            exit 1
+          fi
+          # Immutable evidence is reused only when the live edge routes deltas to offload.
+          if [ "$(jq '.patches | length' "$META")" -gt 0 ]; then
+            headers="$RUNNER_TEMP/delta-offload-headers"
+            code="$(curl -sS -I --connect-timeout 5 --max-time 20 -o "$headers" -w '%{http_code}' 'https://wotbtools.com/download/android/wotbtools-android-delta-probe.vcdiff')" || code=000
+            if [ "$code" != 302 ] || ! tr -d '\r' < "$headers" | grep -Fqi 'location: https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/files/'; then
+              if [ "$STATUS" = 200 ]; then echo "::error::Immutable delta requires offload" >&2; exit 1; fi
+              echo "::notice::Delta offload inactive; release full APK only."
+              jq '.patches = []' "$META" > "$META.tmp" && mv "$META.tmp" "$META"
+            fi
+          fi
+          PATCH_NAME="$(jq -r '.patches[0].url // empty | split("/") | last' "$META")"
+          echo "patchName=$PATCH_NAME" >> "$GITHUB_OUTPUT"
+          echo "existingEvidence=$STATUS" >> "$GITHUB_OUTPUT"
+          cat "$META"
+
+      - name: Upload Android delta to Tsinghua Cloud
+        id: delta_cloud
+        continue-on-error: true
+        if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
+        shell: bash
+        env:
+          TSINGHUA_CLOUD_TOKEN: ${{ secrets.TSINGHUA_CLOUD_TOKEN }}
+        run: |
+          set -euo pipefail
+          name="${{ steps.delta.outputs.patchName }}"
+          expected="$(jq -r '.patches[0].sha256' "$RUNNER_TEMP/delta-metadata.json")"
+          repo="a757b2fa-9bc9-42f9-bc90-d6a2c0a94ed0"
+          dir="/wotbtools-android"
+          public="https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/files/?p=/$name&dl=1"
+          # 已有相同字节直接复用，避免 replace=0 的重试生成重复副本；任何现存二进制冲突都 fail closed。
+          probe="$(curl -sSL --connect-timeout 10 --max-time 300 -o "$RUNNER_TEMP/thu-delta-existing" -w '%{http_code} %{content_type}' "$public")" || exit 1
+          code="${probe%% *}"; content_type="${probe#* }"
+          if [ "$code" = 200 ] && [ "$(sha256sum "$RUNNER_TEMP/thu-delta-existing" | awk '{print $1}')" = "$expected" ]; then exit 0; fi
+          case "$code:$content_type" in
+            404:*|200:text/html*) ;; # 该共享链接对不存在的文件返回 HTML 页面。
+            *) echo "::error::Existing delta is unreadable or conflicts with its immutable name" >&2; exit 1 ;;
+          esac
+          link="$(curl -fsS -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" "https://cloud.tsinghua.edu.cn/api2/repos/$repo/upload-link/?p=$dir&reuse=1" | jq -r '.')"
+          case "$link" in https://*) ;; *) exit 1 ;; esac
+          curl -sS --connect-timeout 10 --max-time 2700 -o "$RUNNER_TEMP/thu-delta-upload.txt" -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" -F "parent_dir=$dir" -F "replace=0" -F "file=@release-staging/$name" "$link" || true
+          for attempt in 1 2 3 4 5; do
+            sleep 3
+            if curl -fsSL --connect-timeout 5 --max-time 900 -o "$RUNNER_TEMP/thu-delta.vcdiff" "$public" && [ "$(sha256sum "$RUNNER_TEMP/thu-delta.vcdiff" | awk '{print $1}')" = "$expected" ]; then exit 0; fi
+          done
+          echo "::error::Tsinghua delta offload verification failed" >&2
+          exit 1
+
+      - name: Prepare TX incoming dir for Android delta
+        id: delta_tx_prepare
+        continue-on-error: true
+        if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          script: mkdir -p /opt/wotb-tx/android-evidence.incoming
+
+      - name: Upload Android delta to TX incoming dir
+        id: delta_tx_upload
+        continue-on-error: true
+        if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          source: release-staging/${{ steps.delta.outputs.patchName }},deploy/tx/install-staging-evidence.sh
+          target: /opt/wotb-tx/android-evidence.incoming
+          strip_components: 0
+          overwrite: true
+
+      - name: Install immutable Android delta on TX
+        id: delta_tx_install
+        continue-on-error: true
+        if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          command_timeout: 20m
+          script: |
+            set -euo pipefail
+            bash /opt/wotb-tx/android-evidence.incoming/deploy/tx/install-staging-evidence.sh \
+              --source "/opt/wotb-tx/android-evidence.incoming/release-staging/${{ steps.delta.outputs.patchName }}" \
+              --dest-dir /opt/wotb-tx/android-release --lock /opt/wotb-tx/.deploy.lock
+
+      - name: Prepare TX2 incoming dir for Android delta
+        id: delta_tx2_prepare
+        continue-on-error: true
+        if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX2_VPS_HOST }}
+          username: ${{ secrets.TX2_VPS_USER }}
+          port: ${{ secrets.TX2_VPS_PORT }}
+          key: ${{ secrets.TX2_VPS_SSH_KEY }}
+          script: mkdir -p /opt/wotb-tx2/android-evidence.incoming
+
+      - name: Upload Android delta to TX2 incoming dir
+        id: delta_tx2_upload
+        continue-on-error: true
+        if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.TX2_VPS_HOST }}
+          username: ${{ secrets.TX2_VPS_USER }}
+          port: ${{ secrets.TX2_VPS_PORT }}
+          key: ${{ secrets.TX2_VPS_SSH_KEY }}
+          source: release-staging/${{ steps.delta.outputs.patchName }},deploy/tx/install-staging-evidence.sh
+          target: /opt/wotb-tx2/android-evidence.incoming
+          strip_components: 0
+          overwrite: true
+
+      - name: Install immutable Android delta on TX2
+        id: delta_tx2_install
+        continue-on-error: true
+        if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX2_VPS_HOST }}
+          username: ${{ secrets.TX2_VPS_USER }}
+          port: ${{ secrets.TX2_VPS_PORT }}
+          key: ${{ secrets.TX2_VPS_SSH_KEY }}
+          command_timeout: 20m
+          script: |
+            set -euo pipefail
+            bash /opt/wotb-tx2/android-evidence.incoming/deploy/tx/install-staging-evidence.sh \
+              --source "/opt/wotb-tx2/android-evidence.incoming/release-staging/${{ steps.delta.outputs.patchName }}" \
+              --dest-dir /opt/wotb-tx2/runtime-content/android-release --lock /opt/wotb-tx2/.deploy.lock
+
+      - name: Verify public Android delta
+        id: delta_public
+        continue-on-error: true
+        if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          PATCH_NAME="${{ steps.delta.outputs.patchName }}"
+          curl -fsSL --retry 3 --connect-timeout 10 --max-time 300 -o "$RUNNER_TEMP/delta-public.vcdiff" "https://wotbtools.com/download/android/$PATCH_NAME"
+          test "$(sha256sum "$RUNNER_TEMP/delta-public.vcdiff" | awk '{print $1}')" = "$(jq -r '.patches[0].sha256' "$RUNNER_TEMP/delta-metadata.json")"
+          test "$(wc -c < "$RUNNER_TEMP/delta-public.vcdiff")" -eq "$(jq -r '.patches[0].size' "$RUNNER_TEMP/delta-metadata.json")"
+
+      - name: Resolve optional Android delta availability
+        if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
+        shell: bash
+        env:
+          DELTA_RESULTS: ${{ steps.delta_cloud.outcome }},${{ steps.delta_tx_prepare.outcome }},${{ steps.delta_tx_upload.outcome }},${{ steps.delta_tx_install.outcome }},${{ steps.delta_tx2_prepare.outcome }},${{ steps.delta_tx2_upload.outcome }},${{ steps.delta_tx2_install.outcome }},${{ steps.delta_public.outcome }}
+          EXISTING_EVIDENCE: ${{ steps.delta.outputs.existingEvidence }}
+        run: |
+          set -euo pipefail
+          if [ "$DELTA_RESULTS" = 'success,success,success,success,success,success,success,success' ]; then exit 0; fi
+          if [ "$EXISTING_EVIDENCE" = 200 ]; then
+            echo "::error::Existing immutable delta cannot be verified or restored" >&2
+            exit 1
+          fi
+          echo "::notice::Optional delta unavailable; stage the full APK only. Orphaned content-addressed files are retained."
+          jq '.patches = []' "$RUNNER_TEMP/delta-metadata.json" > "$RUNNER_TEMP/delta-metadata.json.tmp"
+          mv "$RUNNER_TEMP/delta-metadata.json.tmp" "$RUNNER_TEMP/delta-metadata.json"
+
       - name: Write immutable staging evidence (production version.json 保持不变)
         if: steps.preflight.outputs.releaseAction == 'publish'
         id: staging
@@ -885,17 +1134,16 @@ jobs:
           # 本阶段绝不触碰它 —— 真机 A14 验证失败或未完成时，线上 manifest 必须原样不动。
           APK_NAME="${{ steps.artifact.outputs.apkName }}"
           STAGING_NAME="${APK_NAME%.apk}.staging.json"
-          EXISTING="$RUNNER_TEMP/existing-staging.json"
-          STATUS="$(curl -sS --connect-timeout 5 --max-time 20 -o "$EXISTING" -w '%{http_code}' \
-            "https://wotbtools.com/download/android/$STAGING_NAME")"
+          EXISTING="$RUNNER_TEMP/delta-existing-staging.json"
+          STATUS="${{ steps.delta.outputs.existingEvidence }}"
           case "$STATUS" in
-            404) cp "$RUNNER_TEMP/bundle-evidence.json" "release-staging/$STAGING_NAME" ;;
+            404) jq --slurpfile delta "$RUNNER_TEMP/delta-metadata.json" '. + $delta[0]' "$RUNNER_TEMP/bundle-evidence.json" > "release-staging/$STAGING_NAME" ;;
             200)
               python3 scripts/android-release/android_contract.py bundle \
                 --badging "$RUNNER_TEMP/apk-badging.txt" --apk "android/app/build/outputs/apk/release/app-release.apk" --contract contracts/android-native-bridge.json \
                 --pin deploy/agent/source.json --source "${{ steps.version.outputs.commit }}" \
-                --version "${{ steps.version.outputs.versionName }}" --evidence "$EXISTING" \
-                --output "release-staging/$STAGING_NAME"
+                --version "${{ steps.version.outputs.versionName }}" --evidence "$EXISTING" >/dev/null
+              cp "$EXISTING" "release-staging/$STAGING_NAME"
               ;;
             *) echo "::error::Cannot verify existing immutable staging evidence (HTTP $STATUS)" >&2; exit 1 ;;
           esac
@@ -990,8 +1238,19 @@ jobs:
       - name: Verify production staging evidence (HTTP 200 + content)
         if: steps.preflight.outputs.releaseAction == 'publish'
         shell: bash
+        env:
+          TX1_SSH_HOST: ${{ secrets.TX_VPS_HOST }}
+          TX1_SSH_USER: ${{ secrets.TX_VPS_USER }}
+          TX1_SSH_PORT: ${{ secrets.TX_VPS_PORT }}
+          TX1_SSH_KEY: ${{ secrets.TX_VPS_SSH_KEY }}
+          TX2_SSH_HOST: ${{ secrets.TX2_VPS_HOST }}
+          TX2_SSH_USER: ${{ secrets.TX2_VPS_USER }}
+          TX2_SSH_PORT: ${{ secrets.TX2_VPS_PORT }}
+          TX2_SSH_KEY: ${{ secrets.TX2_VPS_SSH_KEY }}
         run: |
           set -euo pipefail
+          bash scripts/android-release/staging-evidence.sh collect-required "${{ steps.staging.outputs.stagingName }}" "$RUNNER_TEMP/staging-origins.json" >/dev/null
+          cmp "$RUNNER_TEMP/staging-origins.json" "release-staging/${{ steps.staging.outputs.stagingName }}"
           URL="https://wotbtools.com/download/android/${{ steps.staging.outputs.stagingName }}"
           TMP_STAGING="$RUNNER_TEMP/prod-staging-verify.json"
           curl -fsSL -o "$TMP_STAGING" "$URL"
@@ -1275,6 +1534,14 @@ jobs:
         id: staged
         shell: bash
         env:
+          TX1_SSH_HOST: ${{ secrets.TX_VPS_HOST }}
+          TX1_SSH_USER: ${{ secrets.TX_VPS_USER }}
+          TX1_SSH_PORT: ${{ secrets.TX_VPS_PORT }}
+          TX1_SSH_KEY: ${{ secrets.TX_VPS_SSH_KEY }}
+          TX2_SSH_HOST: ${{ secrets.TX2_VPS_HOST }}
+          TX2_SSH_USER: ${{ secrets.TX2_VPS_USER }}
+          TX2_SSH_PORT: ${{ secrets.TX2_VPS_PORT }}
+          TX2_SSH_KEY: ${{ secrets.TX2_VPS_SSH_KEY }}
           REQUESTED_VERSION: ${{ inputs.version }}
           TAG_TARGET: ${{ steps.stagedref.outputs.tagTarget }}
           # staged versionCode 的**唯一**来源：stagedref（= 显式版本 → immutable tag target 的
@@ -1294,10 +1561,12 @@ jobs:
           BASE="https://wotbtools.com/download/android"
 
           STAGING="$RUNNER_TEMP/staging.json"
+          bash scripts/android-release/staging-evidence.sh collect-required "$STAGING_NAME" "$RUNNER_TEMP/staging-origins.json" >/dev/null
           if ! curl -fsSL -o "$STAGING" "$BASE/$STAGING_NAME"; then
             echo "::error::No staging evidence at $BASE/$STAGING_NAME; stage version $REQUESTED_VERSION first." >&2
             exit 1
           fi
+          cmp "$STAGING" "$RUNNER_TEMP/staging-origins.json" || { echo "::error::Public staging evidence differs from origins" >&2; exit 1; }
           git show "$TAG_TARGET:contracts/android-native-bridge.json" > "$RUNNER_TEMP/staged-contract.json"
           git show "$TAG_TARGET:deploy/agent/source.json" > "$RUNNER_TEMP/staged-agent.json"
           # staged 源码的 gradle.properties 已在 stagedref 步骤导出到 $RUNNER_TEMP（git archive），
@@ -1339,6 +1608,23 @@ jobs:
             --badging "$RUNNER_TEMP/apk-badging.txt" --apk "$RUNNER_TEMP/staged.apk" --contract "$RUNNER_TEMP/staged-contract.json" \
             --pin "$RUNNER_TEMP/staged-agent.json" --source "$TAG_TARGET" \
             --version "$REQUESTED_VERSION" --evidence "$STAGING"
+          # 只消费已经固定的 staged patch 清单；publish 绝不重建或修改其身份。
+          python3 scripts/android-release/delta_artifact.py verify --target "$RUNNER_TEMP/staged.apk" \
+            --target-sha "$ACTUAL_APK_SHA" --target-code "$STAGED_VERSION_CODE" --evidence "$STAGING" > "$RUNNER_TEMP/delta-publish.json"
+          PATCH_URL="$(jq -r '.patches[0].url // empty' "$RUNNER_TEMP/delta-publish.json")"
+          if [ -n "$PATCH_URL" ]; then
+            PATCH_NAME="${PATCH_URL##*/}"
+            mkdir -p "$RUNNER_TEMP/delta-publish"
+            curl -fsSL --retry 3 --connect-timeout 10 --max-time 300 -o "$RUNNER_TEMP/delta-publish/$PATCH_NAME" "$PATCH_URL"
+            python3 scripts/android-release/delta_artifact.py verify --target "$RUNNER_TEMP/staged.apk" \
+              --target-sha "$ACTUAL_APK_SHA" --target-code "$STAGED_VERSION_CODE" --evidence "$STAGING" --patch-dir "$RUNNER_TEMP/delta-publish" >/dev/null
+            BASE_CODE="$(jq -r '.patches[0].fromVersionCode' "$RUNNER_TEMP/delta-publish.json")"
+            BASE_SHA="$(jq -r '.patches[0].fromSha256' "$RUNNER_TEMP/delta-publish.json")"
+            BASE_VERSION="$(python3 -c 'import sys; v=int(sys.argv[1]); print(f"{v//1000000}.{v//1000%1000}.{v%1000}")' "$BASE_CODE")"
+            curl -fsSL --connect-timeout 10 --max-time 30 -o "$RUNNER_TEMP/delta-base-staging.json" "$BASE/wotbtools-android-v$BASE_VERSION.staging.json"
+            jq -e --argjson code "$BASE_CODE" --arg sha "$BASE_SHA" '.versionCode == $code and .sha256 == $sha' "$RUNNER_TEMP/delta-base-staging.json" >/dev/null \
+              || { echo "::error::Delta base staging identity differs from patch" >&2; exit 1; }
+          fi
           git merge-base --is-ancestor "$TAG_TARGET" origin/main || {
             echo "::error::The staged Android source is outside current main history" >&2
             exit 1
@@ -1411,6 +1697,9 @@ jobs:
               if [ "$PUBLISHED_SHA" != "${{ steps.staged.outputs.apkSha }}" ]; then
                 echo "::error::Published manifest sha256=$PUBLISHED_SHA does not match the staged APK; refusing." >&2
                 exit 1
+              fi
+              if ! jq -n -e --slurpfile prod "$PROD_JSON" --slurpfile staged "$RUNNER_TEMP/delta-publish.json" '($prod[0].apkSizeBytes // null) == ($staged[0].apkSizeBytes // null) and ($prod[0].patches // []) == ($staged[0].patches // [])' >/dev/null; then
+                echo "::error::Published delta metadata differs from immutable staging evidence" >&2; exit 1
               fi
               echo "This version is already published with identical metadata and APK SHA; no-op success."
               echo "publishAction=already-published" >> "$GITHUB_OUTPUT"
@@ -1511,6 +1800,11 @@ jobs:
             "${{ steps.stagedref.outputs.apkName }}" \
             "${{ steps.staged.outputs.apkSha }}" \
             "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "release-staging/version.json"
+          # 兼容旧 staged evidence：没有 target size 的旧候选不生成新字段。
+          jq --slurpfile delta "$RUNNER_TEMP/delta-publish.json" \
+            'if $delta[0].apkSizeBytes == null then . else . + {apkSizeBytes: $delta[0].apkSizeBytes, patches: $delta[0].patches} end' \
+            "release-staging/version.json" > "release-staging/version.json.tmp"
+          mv "release-staging/version.json.tmp" "release-staging/version.json"
           cat "release-staging/version.json"
 
       - name: Mirror release manifest to TX1 rollback runtime
@@ -1556,6 +1850,9 @@ jobs:
              and .minSupportedVersionCode == $min and .nativeBridgeVersion == $bridge
              and .sourceSha == $source and .apkUrl == $url and .sha256 == $sha' "$TMP_JSON" \
             || { echo "::error::Production version.json content does not match the staged artifact" >&2; exit 1; }
+          jq -e --slurpfile delta "$RUNNER_TEMP/delta-publish.json" \
+            'if $delta[0].apkSizeBytes == null then ((has("apkSizeBytes") | not) and (has("patches") | not)) else (.apkSizeBytes == $delta[0].apkSizeBytes and .patches == $delta[0].patches) end' "$TMP_JSON" >/dev/null \
+            || { echo "::error::Production delta metadata differs from immutable staging evidence" >&2; exit 1; }
           echo "Production version.json verified; mandatory update to ${{ steps.staged.outputs.versionName }} is live."
 
       - name: Write publish summary

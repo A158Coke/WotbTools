@@ -41,6 +41,8 @@ jobs:
           if [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
             yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
           fi
+      - name: Install pinned Android native toolchain
+        run: bash scripts/ci/run-with-network-retry.sh "Android native SDK installation" "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'ndk;27.3.13750724' 'cmake;3.22.1'
       # PR B §30：APK 里必须真的带着可离线运行的前端 bundle（index + JS/CSS + Agent WASM + 本地资源）。
       # 只断言「能构建」不够 —— 这里构建 bundle、校验 commit-addressed WASM 产物，再把 bundle 复制进
       # assets，最后在 assembleDebug 之后直接检查 APK 内容。

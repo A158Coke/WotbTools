@@ -14,7 +14,8 @@ import java.util.concurrent.Executors
  * 消息形状 `{id, method, params}`；ACK / folder release 携带 exact identity，认证 token 可带有效期。
  *
  * **回复是异步的**：[handleMessage] 不返回字符串，而是把回复交给 `reply` 回调。replay / update /
- * capability 这些纯本地读仍在**同一个调用栈内**立即回复（延迟与改动前一致）；认证方法离开
+ * capability 与 getUpdateStatus 这些纯本地读仍在**同一个调用栈内**立即回复；refreshUpdateStatus
+ * 由进程级更新状态 owner 异步回复，下载和安装动作等待 compare-and-act / 完整性检查。认证方法离开
  * 主线程（`authGetAccessToken` 可能需要 refresh 网络往返，`authLogin` 可能需要 discovery），
  * 在后台线程完成后回调 `reply`。目录选择同样异步：系统 picker → 后台 SAF 扫描 → 回复。
  * 主线程绝不做网络 / document I/O。
@@ -56,6 +57,17 @@ class NativeBridge(private val host: MainActivity) {
                     host.bridgeStartUpdate()
                     reply(envelope(id, true))
                 }
+                "getUpdateStatus" -> reply(envelope(id, host.bridgeGetUpdateStatus()))
+                "refreshUpdateStatus" -> host.bridgeRefreshUpdateStatus { result -> reply(envelope(id, result)) }
+                "beginUpdateDownload" -> host.bridgeBeginUpdateDownload(
+                    updateVersionCodeOf(params?.opt("expectedLatestVersionCode"))
+                ) { result -> reply(envelope(id, result)) }
+                "installUpdate" -> host.bridgeInstallUpdate(
+                    (params?.opt("expectedTaskToken") as? String)?.takeIf { it.isNotBlank() }
+                ) { result -> reply(envelope(id, result)) }
+                "dismissOptionalUpdate" -> host.bridgeDismissOptionalUpdate(
+                    updateVersionCodeOf(params?.opt("expectedLatestVersionCode"))
+                ) { result -> reply(envelope(id, result)) }
 
                 // ── 认证：离开主线程，完成后回复（绝不阻塞页面）──
                 "authGetState" -> dispatch(id, reply) { host.bridgeAuthGetState() }
@@ -97,9 +109,15 @@ class NativeBridge(private val host: MainActivity) {
         .put("result", result ?: JSONObject.NULL)
         .toString()
 
-    private companion object {
+    internal companion object {
+        /** 不接受字符串、浮点数或溢出的版本 identity，避免 optInt 的静默截断。 */
+        internal fun updateVersionCodeOf(raw: Any?): Int? = when (raw) {
+            is Int -> raw.takeIf { it >= 0 }
+            is Long -> raw.takeIf { it in 0..Int.MAX_VALUE.toLong() }?.toInt()
+            else -> null
+        }
         /** `minValiditySeconds` 缺省 0（「现在可用即可」）；负数一律归零，绝不放宽判定。 */
-        fun minValiditySecondsOf(raw: Any?): Long = when (raw) {
+        private fun minValiditySecondsOf(raw: Any?): Long = when (raw) {
             is Number -> raw.toLong().coerceAtLeast(0L)
             else -> 0L
         }
