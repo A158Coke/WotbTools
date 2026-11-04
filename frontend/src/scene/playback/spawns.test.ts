@@ -121,3 +121,72 @@ describe('坐标与几何', () => {
     expect(removed.length).toBe(4)   // 旧图 2 点 × 盘+环
   })
 })
+
+describe('场景 Team 身份色（#835 后续：Team 1 绿 / Team 2 红 / 未知中性）', () => {
+  /** 直接检查 MeshBasicMaterial 的实际颜色，不只看代码字符串。 */
+  function matOf(o: THREE.Object3D): THREE.MeshBasicMaterial {
+    return (o as THREE.Mesh).material as THREE.MeshBasicMaterial
+  }
+  const hex = (o: THREE.Object3D) => matOf(o).color.getHexString()
+
+  it('Team 1 → 绿（--color-team-1）；Team 2 → 红（--color-team-2）；环为深色轮廓', () => {
+    const { scene, added } = fakeScene()
+    const markers = createSpawnMarkers({ getScene: () => scene, groundY: () => 0 })
+    markers.build([{ x: 1, y: 1, team: 1 }, { x: 2, y: 2, team: 2 }])
+    // disc / ring 交替（每点两个对象）；node 测试环境无 getComputedStyle → 按
+    // tokens.css 同值 fallback 断言（token 名 ↔ fallback 的映射守卫在本模块常量）
+    expect(hex(added[0])).toBe('5cc280')   // --color-team-1（green-400）
+    expect(hex(added[2])).toBe('f2786d')   // --color-team-2（red-400）
+    // 环是深色轮廓（--color-on-team-neutral），不是阵营色
+    expect(hex(added[1])).toBe('1c1f1d')
+    expect(hex(added[3])).toBe('1c1f1d')
+  })
+
+  it('未知 / null / 0 / 3 → 中性（不误归 Team 2），保持原半透明中性材质', () => {
+    const { scene, added } = fakeScene()
+    const markers = createSpawnMarkers({ getScene: () => scene, groundY: () => 0 })
+    markers.build([
+      { x: 1, y: 1 },
+      { x: 2, y: 2, team: null as unknown as number },
+      { x: 3, y: 3, team: 0 },
+      { x: 4, y: 4, team: 3 },
+    ])
+    for (const i of [0, 2, 4, 6]) {
+      expect(hex(added[i])).toBe('858f81')   // --text-muted
+      expect(matOf(added[i]).transparent).toBe(true)
+      expect(matOf(added[i]).opacity).toBe(0.85)
+    }
+  })
+
+  it('红绿盘不透明（opacity 1、非 transparent）；中性盘维持半透明', () => {
+    const { scene, added } = fakeScene()
+    const markers = createSpawnMarkers({ getScene: () => scene, groundY: () => 0 })
+    markers.build([{ x: 1, y: 1, team: 1 }, { x: 2, y: 2, team: 2 }, { x: 3, y: 3, team: 9 }])
+    expect(matOf(added[0]).transparent).toBe(false)
+    expect(matOf(added[0]).opacity).toBe(1)
+    expect(matOf(added[2]).transparent).toBe(false)
+    expect(matOf(added[2]).opacity).toBe(1)
+    expect(matOf(added[4]).transparent).toBe(true)
+    expect(matOf(added[4]).opacity).toBe(0.85)
+  })
+
+  it('reground 重建几何后材质颜色保持', () => {
+    const { scene, added } = fakeScene()
+    const markers = createSpawnMarkers({ getScene: () => scene, groundY: () => 0 })
+    markers.build([{ x: 0, y: 0, team: 2 }])
+    const before = hex(added[0])
+    markers.reground()
+    expect(hex(added[0])).toBe(before)
+  })
+
+  it('坐标/数量不变：team 只影响颜色，不影响镜像与几何', () => {
+    const { scene, added } = fakeScene()
+    const markers = createSpawnMarkers({ getScene: () => scene, groundY: () => 5 })
+    markers.build([{ x: 100, y: -200, team: 1 }])
+    const r = geomXZRange(added[0])
+    expect(r.xMin).toBeGreaterThan(-103.5)
+    expect(r.xMax).toBeLessThan(-96.5)
+    expect(r.zMin).toBeGreaterThan(-203.5)
+    expect(r.zMax).toBeLessThan(-196.5)
+  })
+})
