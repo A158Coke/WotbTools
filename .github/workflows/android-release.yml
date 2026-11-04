@@ -1023,7 +1023,7 @@ jobs:
         id: delta_tx_prepare
         continue-on-error: true
         if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         with:
           host: ${{ secrets.TX_VPS_HOST }}
           username: ${{ secrets.TX_VPS_USER }}
@@ -1035,7 +1035,7 @@ jobs:
         id: delta_tx_upload
         continue-on-error: true
         if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
-        uses: appleboy/scp-action@v1
+        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1
         with:
           host: ${{ secrets.TX_VPS_HOST }}
           username: ${{ secrets.TX_VPS_USER }}
@@ -1050,7 +1050,7 @@ jobs:
         id: delta_tx_install
         continue-on-error: true
         if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         with:
           host: ${{ secrets.TX_VPS_HOST }}
           username: ${{ secrets.TX_VPS_USER }}
@@ -1067,7 +1067,7 @@ jobs:
         id: delta_tx2_prepare
         continue-on-error: true
         if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         with:
           host: ${{ secrets.TX2_VPS_HOST }}
           username: ${{ secrets.TX2_VPS_USER }}
@@ -1079,7 +1079,7 @@ jobs:
         id: delta_tx2_upload
         continue-on-error: true
         if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
-        uses: appleboy/scp-action@v1
+        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1
         with:
           host: ${{ secrets.TX2_VPS_HOST }}
           username: ${{ secrets.TX2_VPS_USER }}
@@ -1094,7 +1094,7 @@ jobs:
         id: delta_tx2_install
         continue-on-error: true
         if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         with:
           host: ${{ secrets.TX2_VPS_HOST }}
           username: ${{ secrets.TX2_VPS_USER }}
