@@ -9,6 +9,9 @@ import fs from 'node:fs';
 // 着色器模式断言随实现覆盖两份源（拼接读取，not.toMatch 同时约束两侧）
 const viewer = fs.readFileSync(new URL('./tankViewer.js', import.meta.url), 'utf8')
     + fs.readFileSync(new URL('./viewer/armorShaders.ts', import.meta.url), 'utf8');
+// 结果卡判定规则 2026-11-04 出仓 viewer/shotResultCard.ts（#820 Wave B3A）：
+// 卡片侧权威断言随实现读取 renderer 源。
+const card = fs.readFileSync(new URL('./viewer/shotResultCard.ts', import.meta.url), 'utf8');
 const splash = fs.readFileSync(new URL('./heSplash.ts', import.meta.url), 'utf8');
 
 describe('HE 热力图投影到可见主装甲（源码级锁）', () => {
@@ -46,8 +49,8 @@ describe('HE 热力图投影到可见主装甲（源码级锁）', () => {
         // 才写 PENETRATION；首面非主装走 SPLASH/BLOCKED，0%<chance<100% 是“可能击穿”。
         expect(viewer).toContain('const heFirstPrimary = isHE && hitsForCheck.length > 0');
         expect(viewer).toContain('&& isPrimary(hitsForCheck[0].section);');
-        expect(viewer).toContain(': (heChance >= 1');
-        expect(viewer).toContain("? L.resultName('PENETRATION')");
+        expect(card).toContain(': (heChance >= 1');
+        expect(card).toContain("? L.resultName('PENETRATION')");
     });
     it('默认视图 HE 渐变复用热力图机械：点击建/放、逐帧管线与 uniforms 刷新随机械走', () => {
         expect(viewer).toContain('function heGradientWanted()');
