@@ -209,16 +209,24 @@ export function refreshBatchSphere(
   const sph = new THREE.Sphere()
   sph.makeEmpty()
   if (!batch.geometry.boundingSphere) batch.geometry.computeBoundingSphere()
+  if (!batch.geometry.boundingBox) batch.geometry.computeBoundingBox()
   const geoSphere = batch.geometry.boundingSphere as Sphere   // computeBoundingSphere 必然落球
+  const box = new THREE.Box3()
+  box.makeEmpty()
   const m = new THREE.Matrix4()
   const tmp = new THREE.Sphere()
+  const tmpBox = new THREE.Box3()
   batch.items.forEach((it, i) => {
     if (isHidden && isHidden(it)) m.copy(it.matrix)   // 隐藏：base 位姿（合法可恢复位置）
     else mesh.getMatrixAt(i, m)                       // 可见：当前实例矩阵
     tmp.copy(geoSphere).applyMatrix4(m)
     sph.union(tmp)
+    tmpBox.copy(batch.geometry.boundingBox as THREE.Box3).applyMatrix4(m)
+    box.union(tmpBox)
   })
   if (mesh.boundingSphere) mesh.boundingSphere.copy(sph)
   else mesh.boundingSphere = sph
+  if (mesh.userData.occluderBox) mesh.userData.occluderBox.copy(box)
+  else mesh.userData.occluderBox = box
   return mesh.boundingSphere
 }
