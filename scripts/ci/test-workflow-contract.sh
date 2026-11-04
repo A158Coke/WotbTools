@@ -125,6 +125,22 @@ for owner in jobs["changes"]["outputs"]:
         for step in job.get("steps", []):
             if step.get("uses", "").startswith("actions/checkout@") and len(step.get("uses", "").split("@", 1)[1].split(" ")[0]) == 40:
                 assert step.get("with", {}).get("ref") == "${{ inputs.head_sha }}", owner
+# Issue #738 review R2：CodeQL workflow 的 init 输入名与排除路径必须受 PR 契约保护
+#（CodeQL 不由 PR 触发——输入名写错时实际扫描不会发现，只能靠这里阻断回归）。
+codeql_wf = load(workflow_dir / "codeql.yml")
+codeql_init = next(
+    step for job in codeql_wf["jobs"].values() for step in job.get("steps", [])
+    if str(step.get("uses", "")).startswith("github/codeql-action/init@")
+)
+codeql_init_with = codeql_init.get("with", {})
+assert "config" in codeql_init_with, "codeql init must use `config` (not `configs`)"
+assert "configs" not in codeql_init_with, "codeql init must NOT use `configs` (unsupported input)"
+codeql_config_text = codeql_init_with["config"]
+for excluded in ("frontend/dist/**", "contracts/http/generated/**",
+                 "frontend/src/api/generated/**",
+                 "java/wotb-web/src/test/resources/archfixture/**"):
+    assert excluded in codeql_config_text, f"codeql paths-ignore missing {excluded}"
+
 ci_text = json.dumps(ci, ensure_ascii=False)
 for forbidden in (
     "secrets.", "appleboy/ssh-action", "appleboy/scp-action",
