@@ -901,7 +901,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
    *  「当帧一步到位」换成短窗收敛；单事件不改 min/max/地形钳制语义。 */
   function onOrbitZoomWheel(e) {
     if (flyMode()) return;   // fly/recorder 已由 onFlyCaptureWheel（先注册）处理或拦截
-    if (!controls || !controls.enabled) return;   // recorder 等输入关闭态不劫持
+    if (!controls || !controls.enabled || controls.enableZoom === false) return;   // 输入关闭态不劫持
     zoomSmoother.push(orbitWheelFactor(e.deltaY, controls.zoomSpeed));
     invalidate();
     e.preventDefault();
