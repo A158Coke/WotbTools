@@ -2372,12 +2372,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
   /** 构建/重建地形几何（客户端同构自适应细分）。实现与 UV 契约在共享模块 groundPass.js
    *  （buildGroundGeometry，俯视烘焙同一份）；本处只传相机/掩码等宿主参数。 */
-  function terrainHFovDeg() {
-    if (!scopedHiddenEid || !camera || !(camera.fov > 0) || !(camera.aspect > 0)) {
-      return CLIENT_NORMAL_CAMERA_FOV_H;
-    }
-    return (2 * Math.atan(Math.tan((camera.fov * Math.PI) / 360) * camera.aspect) * 180) / Math.PI;
-  }
   function buildTerrainGeometry() {
     const n = heightMeta?.size || 512;
     const span = terrainSpanOf();
@@ -2390,7 +2384,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // 阈值插值的 fov 按**客户端口径**传：引擎 `GetFOV()` 是相机配置的水平 fov、与画面宽高比无关
       // （宽高比只进投影项 tanFovY）。回放自由相机 = 客户端正常相机（无狙击镜档）⇒ 恒 normal。
       // 不传这个的话，窄画布会把「55° 竖直 × aspect」折算成小水平角、阈值滑向狙击镜档（放宽 ~1.8×）。
-      hFovDeg: terrainHFovDeg(),
+      hFovDeg: CLIENT_NORMAL_CAMERA_FOV_H,
       // 贴地薄构件走廊（B）：只在这些块强制细分到最细层，廊外层级与客户端口径逐字节一致。
       refineMask: terrainRefineMask,
       cx: mapMetaInfo?.x || 0, cz: mapMetaInfo?.z || 0,
@@ -4391,12 +4385,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // draw call 数（renderer.info 是本帧全部 render 的累计）：场景侧结构性优化（材质去重 /
     // 实例化 / 冻结）的收益直接体现在这个数上，没有它优化前后无法量化对比。
     const calls = renderer ? renderer.info.render.calls : 0;
-    const a = armorStats || {};
     perfRing[perfRingN % PERF_RING] = { dt, updateMs, renderMs, armorMs, t: T, calls,
-      armorPick: a.pickMs || 0, armorState: a.stateMs || 0, armorThick: a.thicknessMs || 0,
-      armorOcc: a.occluderMs || 0, armorColor: a.colorMs || 0, armorCalls: a.calls || 0,
-      // RT 三 pass 合计按**逐帧求和**入行（分位数的和 ≠ 和的分位数，报告口径才成立）
-      armorRt: (a.stateMs || 0) + (a.thicknessMs || 0) + (a.colorMs || 0),
       dpr: renderer ? Math.round(renderer.getPixelRatio() * 100) / 100 : 0,
       tracers: tracers.length, traj: trajLines.length, impacts: battleFx ? battleFx.stats().impacts : 0,
       burst: battleFx ? battleFx.stats().bursts : 0,
@@ -4425,10 +4414,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       `update ms med=${f(q('updateMs', 0.5))} p90=${f(q('updateMs', 0.9))}`,
       `render ms med=${f(q('renderMs', 0.5))} p90=${f(q('renderMs', 0.9))}`,
       `armor ms med=${f(q('armorMs', 0.5))} p90=${f(q('armorMs', 0.9))} max=${f(q('armorMs', 0.99))}`,
-      `armor pick ms med=${f(q('armorPick', 0.5))} p90=${f(q('armorPick', 0.9))}`,
-      `armor occ ms med=${f(q('armorOcc', 0.5))} p90=${f(q('armorOcc', 0.9))}`,
-      `armor rt ms (state/thick/color) med=${f(q('armorRt', 0.5))} p90=${f(q('armorRt', 0.9))}`,
-      `armor calls (4 pass) med=${f(q('armorCalls', 0.5))} max=${f(q('armorCalls', 0.99))}`,
       `draw calls med=${f(q('calls', 0.5))} p90=${f(q('calls', 0.9))} max=${f(q('calls', 0.99))}`,
       `pixel ratio med=${f(q('dpr', 0.5))} min=${f(q('dpr', 0.05))}`,
       `now: T=${last.t.toFixed(1)} veh=${last.veh} tracers=${last.tracers} trajBoxes=${last.traj} impacts=${last.impacts} burst=${last.burst}`,
@@ -4476,8 +4461,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       ensureBattleFx().prewarm(() => {
         renderer.compile(scene, camera);
       });
-      // 装甲材质变体预热（幂等）：开镜高亮开启时才值得付这份编译成本
-      if (ARMOR_HIGHLIGHT) ensureArmorHighlight().prewarm(camera);
     } catch (e) { console.warn('着色器预热失败（忽略）:', e); }
   }
 
@@ -4730,13 +4713,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     };
     fovRestore = null;
     recorderBoomScale = 1;
-    // 开镜前预取敌方车型 armor 模板 + 预热装甲材质变体，减少首次瞄准新车型的
-    // GLB 下载/解析与 shader 编译卡顿（prewarm 幂等，重复调用零成本）。
-    if (ARMOR_HIGHLIGHT && renderer) {
-      const highlight = ensureArmorHighlight();
-      highlight.prewarm(camera);
-      highlight.prefetch(highlightEnemies());
-    }
+    // 开镜前预取敌方车型 armor 模板，减少首次瞄准新车型的 GLB 下载/解析卡顿。
+    if (ARMOR_HIGHLIGHT) ensureArmorHighlight().prefetch(highlightEnemies());
   }
   function leaveRecorderView() {
     cameraBlend = null;
@@ -4795,9 +4773,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // SNIPER→ARCADE（含 seek 回 Arcade）：叠加渲染停止，释放全尺寸 RT；
       // 下次命中目标再按需重建。进入开镜/待在开镜不释放。
       if (wasScoped && !scoped) armorHighlight?.releaseRenderTargets?.();
-      // SNIPER 进入（含敌车 tankData/GLB 晚到后的再进入）：补预取敌方 armor 模板——
-      // enterRecorderView 的预取可能跑在部分敌车 tankData 就位之前。
-      if (scoped && !wasScoped && ARMOR_HIGHLIGHT) ensureArmorHighlight().prefetch(highlightEnemies());
     } else if (scoped && v.glb && !v.glb.layers.isEnabled(SCOPED_HIDDEN_LAYER)) {
       setScopedLayer(v, true);   // 开镜期间 GLB 才装配完成
     }
@@ -4887,84 +4862,42 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   const _armorAimPoint = new THREE.Vector3();
   const _armorAimDir = new THREE.Vector3();
   /** 当前时刻可被准星选中的敌车（可见、复活/存活、真实车模）。 */
-  const _highlightEnemies = [];   // 逐帧复用的候选数组（aimedVehicle 同步消费，不跨帧持有）
-  /** 当前时刻可被准星选中的敌车（可见、复活/存活、真实车模）。 */
   function highlightEnemies() {
-    _highlightEnemies.length = 0;
-    if (!DATA?.meta) return _highlightEnemies;
+    if (!DATA?.meta) return [];
     const friendlyTeam = DATA.meta.friendly_team;
-    for (const v of V) {
-      if (v.glb?.visible && v.group.visible && v.tankData
-        && (v.def.team === 1 || v.def.team === 2) && v.def.team !== friendlyTeam && !deathAt(v, T)) {
-        _highlightEnemies.push(v);
-      }
-    }
-    return _highlightEnemies;
+    return V.filter((v) => v.glb?.visible && v.group.visible && v.tankData
+      && (v.def.team === 1 || v.def.team === 2) && v.def.team !== friendlyTeam && !deathAt(v, T));
   }
   function ensureArmorHighlight() {
     armorHighlight ??= createArmorHighlight({ renderer, assetProvider });
     return armorHighlight;
-  }
-  // ?perf 逐 pass 计时（pick 由这里填，四个叠加 pass 由 armorHighlight.render 填）。
-  const armorStats = { pickMs: 0, stateMs: 0, thicknessMs: 0, occluderMs: 0, colorMs: 0, calls: 0, _t0: 0 };
-  const _occluderRoots = [];
-  /**
-   * 语义化遮挡根（开镜高亮遮挡 pass 的遍历范围，issue #850 F）：地形 / 场景 GLB /
-   * 占位地面 + 每车的低模组、GLB 与飞炮塔。特效 / 曳光轨迹 / 标注 / 基地 / 边界 /
-   * 网格线是透明或非网格、天穹在无穷远（frustumCulled=false 但深度恒最远），本来就
-   * 挡不住弹道——从遍历里省掉，遮挡语义不变（墙体/车辆遮挡、树丛不遮挡）。
-   * v.glb 是 v.group 的场景级兄弟节点，两者都要进根清单。
-   */
-  function occluderRoots() {
-    _occluderRoots.length = 0;
-    for (const root of [terrainMesh, mapScenery, mapPlane, groundMesh]) {
-      if (root) _occluderRoots.push(root);
-    }
-    for (const v of V) {
-      if (v.def.eid === targetEid) continue;   // 目标子树不进遮挡集（review P2）
-      if (v.group) _occluderRoots.push(v.group);
-      if (v.glb) _occluderRoots.push(v.glb);
-      for (const head of v.detachedTurrets || []) _occluderRoots.push(head.root);
-    }
-    return _occluderRoots;
   }
   /**
    * 主渲染之后的叠加 pass：只有录像者开镜才可能运行，其余路径没有任何额外 render。
    * 进入录像者的过渡期相机还没到炮位，距离衰减和入射角都不对，不着色。
    */
   function renderArmorHighlight() {
-    // review R1：逐帧清零必须在**所有 early return 之前**——early return 的帧同样会被
-    // perfFrame 读取，不清零就会继承上一帧的分项数据、污染 __pbPerf.report() 验收依据。
-    if (PERF) {
-      armorStats.pickMs = 0; armorStats.stateMs = 0; armorStats.thicknessMs = 0;
-      armorStats.occluderMs = 0; armorStats.colorMs = 0; armorStats.calls = 0;
-    }
     if (!ARMOR_HIGHLIGHT || CAM !== 'recorder' || !scopedHiddenEid || cameraBlend) return;
     const author = recorderVehicle();
     if (!author?.tankData) return;
-    const tPick0 = PERF ? performance.now() : 0;
     const enemies = highlightEnemies();
     const aimDir = reticleAimDirection(camera, recorderAimPoint(recorderSample, _armorAimPoint), _armorAimDir);
-    let target = null;
-    if (aimDir) target = aimedVehicle(camera.position, aimDir, enemies, camera);
-    const shellId = target == null ? null : authorShellAt(DATA.author_shell_timeline, T);
-    const config = target == null ? null : resolveExactMountedConfig(target.def, target.tankData);
-    const authorConfig = target == null ? null : resolveExactMountedConfig(author.def, author.tankData);
-    const blocked = target == null ? 'no_target' : armorHighlightBlock({
+    if (!aimDir) return;
+    const target = aimedVehicle(camera.position, aimDir, enemies, camera);
+    if (!target) return;
+    const shellId = authorShellAt(DATA.author_shell_timeline, T);
+    const config = resolveExactMountedConfig(target.def, target.tankData);
+    const authorConfig = resolveExactMountedConfig(author.def, author.tankData);
+    const blocked = armorHighlightBlock({
       targetTankId: target.def.tank_id, targetConfig: config, authorConfig, shellId,
       targetEquipment: target.def.equipment, authorEquipment: author.def.equipment,
     });
-    if (PERF) {
-      armorStats.pickMs = performance.now() - tPick0;   // 选目标 + 配置/弹种/资格判定
-      if (blocked) return;
-    } else if (blocked) return;
+    if (blocked) return;
     const { shell, caliber } = mountedShell(authorConfig, shellId);
     ensureArmorHighlight().render({
       scene, camera, vehicle: target, tankData: target.tankData, config, shell, caliber,
       ...armorEquipmentCoeffs(shell, author.def.equipment, target.def.equipment),
       onReady: invalidate,
-      occluderRoots: occluderRoots(target.def.eid),
-      stats: PERF ? armorStats : null,
     });
   }
   /** 回到俯视机位：相机置地图中心正上方，target 锁地图中心。 */
@@ -5624,10 +5557,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (!ARMOR_HIGHLIGHT) {
         // 关闭即释放 RT；模板与目标保留，重新打开时不再重新下载/构建。
         armorHighlight?.releaseRenderTargets?.();
-      } else if (CAM === 'recorder' && renderer) {
-        const highlight = ensureArmorHighlight();
-        highlight.prewarm(camera);
-        highlight.prefetch(highlightEnemies());
+      } else if (CAM === 'recorder') {
+        ensureArmorHighlight().prefetch(highlightEnemies());
       }
       invalidate();
     },
