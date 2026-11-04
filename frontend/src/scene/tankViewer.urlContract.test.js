@@ -1,4 +1,4 @@
-// tankViewer URL 契约基线（2026-10-24，current-plan.md Step B1）：装甲查看器的
+// tankViewer URL 契约基线（2026-10-24，#741）：装甲查看器的
 // `?shooter=&shell=&shot=&heatmap=1` 参数链最终落到这两个纯导出——dollyZoomFov
 // （相机 FOV 标定）与 mirrorShotData（世界镜像一次性变换）。本文件锁**当前数值行为**
 // 作为拆分（Step B2+）前的回归基线：解析恒等式 + 单调性 + 夹取边界 + 镜像不变性。

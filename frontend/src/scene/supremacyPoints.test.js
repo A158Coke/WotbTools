@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
-import { pointsAt } from './supremacyPoints.js'
+import { pointsAt } from './supremacyPoints.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -72,7 +72,7 @@ describe('playbackScene 的 HUD 状态接线（防回归）', () => {
     // 基地视图模型随贴地标记一起清空（clearBases 内 store.baseViews = []）
     expect(td).toMatch(/clearBases\(\);/)
     // 基地贴地标记 2026-10-24 出仓 playback/bases.js（Step A4），清空断言随实现迁移
-    const basesSrc = readFileSync(resolve(here, 'playback/bases.js'), 'utf8')
+    const basesSrc = readFileSync(resolve(here, 'playback/bases.ts'), 'utf8')
     expect(basesSrc.slice(basesSrc.indexOf('function clearBases'))).toMatch(/store\.baseViews = \[\];/)
   })
 })
@@ -80,7 +80,7 @@ describe('playbackScene 的 HUD 状态接线（防回归）', () => {
 describe('中立 / 未知阵营色（PR #411 非阻塞：green / red / white）', () => {
   const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
   // 基地色 token 兜底 2026-10-24 随基地系统出仓 playback/bases.js，守卫随实现迁移
-  const basesSrc = readFileSync(resolve(here, 'playback/bases.js'), 'utf8')
+  const basesSrc = readFileSync(resolve(here, 'playback/bases.ts'), 'utf8')
 
   it('中立与阵营未知收敛到 white（不再用灰）', () => {
     // 基地中立色走阵营 token --color-team-neutral，兜底同为白色

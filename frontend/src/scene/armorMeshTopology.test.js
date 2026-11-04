@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
-import { isClosedSurfaceGeometry } from './armorMeshTopology.js'
+import { isClosedSurfaceGeometry } from './armorMeshTopology.ts'
 
 describe('isClosedSurfaceGeometry', () => {
   it('闭合盒体（含 non-indexed 副本）判定为闭合', () => {

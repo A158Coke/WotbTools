@@ -1,0 +1,34 @@
+/**
+ * 命中类型判定（纯函数，供 3D 弹着点特效分型；与 2D 判定同源语义）。
+ *
+ * - 作者路径：看 `hit_flags` 位（服务器逐发下发，权威）——`0x0008` 跳弹；
+ *   `0x0010 | 0x0040 | 0x0100 | 0x1000` 击穿族。
+ * - 非作者路径：按 `game_hit_result` 枚举降级，**该枚举里没有"跳弹"取值**
+ *   （`0` 无 / `1` 未击穿 / `2` 间隙止 / `3` 有伤害 / `4` raw 未定 / `255` 未获取）——
+ *   `1`、`2` 绝不能当跳弹；`4` 保持 null（不生成 impact），避免伪造未穿/履带。
+ * - 无 `target_eid`（脱靶或目标未知）一律 `null`，不生成 target impact。
+ */
+export type ImpactKind = 'pen' | 'nonpen' | 'ricochet'
+
+/** 回放 shot 事件中影响命中分型的字段（其余字段由消费方自行读取）。 */
+export interface ImpactKindShot {
+  target_eid?: number | null
+  hit_flags?: number
+  is_author?: boolean
+  game_hit_result?: number
+}
+
+export function impactKind(shot: ImpactKindShot): ImpactKind | null {
+  if (shot.target_eid == null) return null
+  const f = shot.hit_flags || 0
+  if (shot.is_author && f) {
+    if (f & 0x0008) return 'ricochet'
+    if (f & (0x0010 | 0x0040 | 0x0100 | 0x1000)) return 'pen'
+    return 'nonpen'
+  }
+  const r = shot.game_hit_result
+  if (r === 3) return 'pen'
+  if (r === 1 || r === 2) return 'nonpen'
+  // result=4 语义未定（上游 cross-reference §三.2）：不生成 impact 特效，避免伪造未穿。
+  return null
+}

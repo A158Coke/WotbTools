@@ -3,9 +3,9 @@
 import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
 import * as THREE from 'three'
-import { computeHeSplash, heLayersFromHits, heSampleFromHits, sampleHeSplash, HE_SAMPLE_DIRECTIONS } from './heSplash.js'
+import { computeHeSplash, heLayersFromHits, heSampleFromHits, sampleHeSplash, HE_SAMPLE_DIRECTIONS } from './heSplash.ts'
 
-const splashSource = fs.readFileSync(new URL('./heSplash.js', import.meta.url), 'utf8')
+const splashSource = fs.readFileSync(new URL('./heSplash.ts', import.meta.url), 'utf8')
 
 const L = (armor, primary, distance) => ({ armor, primary, distance })
 const splash = (rays, damage = 200, R = 1.09) => computeHeSplash(rays, { damage, explosionRadius: R })

@@ -3,7 +3,7 @@
  *  透明管线，不能被 ST|/lightmap/decal 分支改成 alpha 裁切或 alpha=1。 */
 import { describe, it, expect } from 'vitest'
 import * as THREE from 'three'
-import { foliageClip, makeBillboardMaterial, makeSpeedtreeStaticMaterial, makeLightmappedMaterial, makeDecalMaterial } from './sceneryMaterials.js'
+import { foliageClip, makeBillboardMaterial, makeSpeedtreeStaticMaterial, makeLightmappedMaterial, makeDecalMaterial } from './sceneryMaterials.ts'
 
 const marked = (name = 'marked') => {
   const m = new THREE.MeshStandardMaterial({ name, transparent: true, opacity: 0.5 })

@@ -32,12 +32,12 @@ const nav = vi.hoisted(() => ({ navigate: null }))
 
 // 手机横屏沉浸态的三个输入（形态 / 朝向 / 触屏）：以真实 ref 驱动，不依赖 matchMedia 仿真。
 const formState = vi.hoisted(() => ({ isPhone: null, isPortrait: null, coarse: null }))
-vi.mock('../composables/usePlaybackPhoneForm.js', async () => {
+vi.mock('../composables/usePlaybackPhoneForm.ts', async () => {
   const { ref } = await import('vue')
   formState.isPhone = ref(false)
   return { usePlaybackPhoneForm: () => ({ isPhone: formState.isPhone }) }
 })
-vi.mock('../composables/usePlaybackPortraitViewport.js', async () => {
+vi.mock('../composables/usePlaybackPortraitViewport.ts', async () => {
   const { ref } = await import('vue')
   formState.isPortrait = ref(false)
   return { usePlaybackPortraitViewport: () => ({ isPortrait: formState.isPortrait }) }
