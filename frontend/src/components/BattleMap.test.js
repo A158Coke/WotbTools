@@ -156,6 +156,94 @@ describe('BattleMap', () => {
     expect(Number(circles[0].attributes('cy'))).toBeCloseTo(((cb.yMax - first.y) / (cb.yMax - cb.yMin)) * image.height, 6)
   })
 
+  it('scene-team mode colors spawns by scene group team, unknown stays neutral (#835)', async () => {
+    const { mapImages: canonicalMapImages } = await vi.importActual('../data/mapImages.js')
+    const image = canonicalMapImages.mountain
+    // 真实语义档（21_mountain_mnt，东西向分组）：严格取 type=spawnpoint、原序不重排
+    const spawnPoints = mountainSemantic.sceneEvidence.battlePoints
+      .filter(point => point.type === 'spawnpoint')
+      .map(point => ({ name: point.name, team: point.team, x: point.position[0], y: point.position[1] }))
+    const overview = { mapCode: 'mountain', spawnPoints, playableBounds: mountainSemantic.playableBoundsMeters }
+    const wrapper = mountMap({
+      image,
+      mapView: createMapView(image, overview),
+      pbOverview: overview,
+      friendlyTeam: null,
+      spawnColorMode: 'scene-team',
+      bases: [],
+      visibleTracers: [],
+    })
+    const team1 = wrapper.findAll('.pb-spawn-team-1')
+    const team2 = wrapper.findAll('.pb-spawn-team-2')
+    const neutral = wrapper.findAll('.pb-spawn-neutral')
+    expect(team1.length + team2.length + neutral.length).toBe(spawnPoints.length)
+    expect(team1.length).toBe(spawnPoints.filter(p => p.team === 1).length)
+    expect(team2.length).toBe(spawnPoints.filter(p => p.team === 2).length)
+    // 未知 team 不会映射为 enemy
+    expect(wrapper.findAll('.pb-spawn-enemy')).toHaveLength(0)
+    expect(wrapper.findAll('.pb-spawn-friendly')).toHaveLength(0)
+  })
+
+  it('scene-team mode maps synthetic unknown team values (null/0/3) to neutral, never enemy', async () => {
+    const spawnPoints = [
+      { name: 'a', x: 1, y: 1, team: null },
+      { name: 'b', x: 2, y: 2, team: 0 },
+      { name: 'c', x: 3, y: 3, team: 3 },
+    ]
+    const wrapper = mountMap({
+      pbOverview: { mapCode: 'mystery', spawnPoints },
+      friendlyTeam: null,
+      spawnColorMode: 'scene-team',
+      bases: [],
+      visibleTracers: [],
+    })
+    expect(wrapper.findAll('.pb-spawn-neutral')).toHaveLength(3)
+    expect(wrapper.findAll('.pb-spawn-team-1')).toHaveLength(0)
+    expect(wrapper.findAll('.pb-spawn-team-2')).toHaveLength(0)
+    expect(wrapper.findAll('.pb-spawn-enemy')).toHaveLength(0)
+  })
+
+  it('scene-team mode ignores friendlyTeam (fixed group colors, not relative semantics)', async () => {
+    const spawnPoints = [{ name: 'a', x: 1, y: 1, team: 1 }, { name: 'b', x: 2, y: 2, team: 2 }]
+    const wrapper = mountMap({
+      pbOverview: { mapCode: 'mystery', spawnPoints },
+      friendlyTeam: 1,
+      spawnColorMode: 'scene-team',
+      bases: [],
+      visibleTracers: [],
+    })
+    // scene-team 显式 opt-in 时：按场景分组 1/2，与 friendlyTeam 无关
+    expect(wrapper.findAll('.pb-spawn-team-1')).toHaveLength(1)
+    expect(wrapper.findAll('.pb-spawn-team-2')).toHaveLength(1)
+    expect(wrapper.findAll('.pb-spawn-friendly')).toHaveLength(0)
+    expect(wrapper.findAll('.pb-spawn-enemy')).toHaveLength(0)
+  })
+
+  it('replay mode default: friendlyTeam drives relative colors, scene-team classes unused', async () => {
+    const spawnPoints = [{ name: 'a', x: 1, y: 1, team: 1 }, { name: 'b', x: 2, y: 2, team: 2 }]
+    const friendly = mountMap({
+      pbOverview: { mapCode: 'mystery', spawnPoints },
+      friendlyTeam: 1,
+      bases: [],
+      visibleTracers: [],
+    })
+    expect(friendly.findAll('.pb-spawn-friendly')).toHaveLength(1)
+    expect(friendly.findAll('.pb-spawn-enemy')).toHaveLength(1)
+    expect(friendly.findAll('.pb-spawn-team-1')).toHaveLength(0)
+    expect(friendly.findAll('.pb-spawn-team-2')).toHaveLength(0)
+    const noContext = mountMap({
+      pbOverview: { mapCode: 'mystery', spawnPoints },
+      friendlyTeam: null,
+      bases: [],
+      visibleTracers: [],
+    })
+    expect(noContext.findAll('.pb-spawn-neutral')).toHaveLength(2)
+    // 2D 地图坐标不受配色模式影响：cx/cy 与既有公式一致
+    const circle = noContext.findAll('.pb-spawns circle')[0]
+    expect(Number(circle.attributes('cx'))).toBeCloseTo(1, 6)
+    expect(Number(circle.attributes('cy'))).toBeCloseTo(99, 6)   // toY = 100 - y
+  })
+
   it('fails closed when the opted-in boundary has no canonical bounds', () => {
     const wrapper = mountMap({
       showPlayableBoundary: true,
