@@ -16,6 +16,11 @@ const props = defineProps({
    *  仅当 pbOverview.playableBounds 存在且投影出有效矩形时绘制，缺数据不画。 */
   showPlayableBoundary: { type: Boolean, default: false },
   friendlyTeam: { type: [Number, String], default: null },
+  /** 出生点配色模式（纯展示选择，不持久化、不写入任何业务状态）：
+   *  'replay'（默认）＝既有相对阵营语义（friendlyTeam vs spawn.team）；
+   *  'scene-team'＝地图预览的场景分组身份色（spawn.team 严格 1/2，其余中性）——
+   *  这是**固定场景分组**，不是 friendly/enemy 相对语义，绝不复用 friendlyTeam 判断。 */
+  spawnColorMode: { type: String, default: 'replay' },
   bases: { type: Array, default: () => [] },
   visibleTracers: { type: Array, default: () => [] },
   visibleTrails: { type: Array, default: () => [] },
@@ -55,6 +60,19 @@ const emit = defineEmits([
 const mapEl = ref(null)
 const textInputRef = ref(null)
 defineExpose({ mapEl, textInputRef })
+
+/** 出生点 class：默认 replay 模式行为逐字不变（无 friendlyTeam → 全中性）；
+ *  scene-team 模式只按 spawn.team 严格 1/2 选身份色，未知值 fail-closed 落中性。 */
+function spawnClass(spawn) {
+  if (props.spawnColorMode === 'scene-team') {
+    if (spawn.team === 1) return 'pb-spawn-team-1'
+    if (spawn.team === 2) return 'pb-spawn-team-2'
+    return 'pb-spawn-neutral'
+  }
+  return props.friendlyTeam === null || props.friendlyTeam === undefined
+    ? 'pb-spawn-neutral'
+    : (spawn.team === props.friendlyTeam ? 'pb-spawn-friendly' : 'pb-spawn-enemy')
+}
 
 const reliefModel = computed(() => {
   // 2.5D 投影是**回放会话的 opt-in 能力**：全局 activeTerrainRelief 由回放组件
@@ -274,7 +292,7 @@ function onTwoFingerTouch(event) {
           </g>
         </g>
         <g class="pb-spawns">
-          <circle v-for="(spawn, index) in props.pbOverview.spawnPoints" :key="`${spawn.name}-${index}`" :cx="projectedX(spawn.x, spawn.y)" :cy="projectedY(spawn.x, spawn.y)" r="4" :class="props.friendlyTeam === null || props.friendlyTeam === undefined ? 'pb-spawn-neutral' : (spawn.team === props.friendlyTeam ? 'pb-spawn-friendly' : 'pb-spawn-enemy')" />
+          <circle v-for="(spawn, index) in props.pbOverview.spawnPoints" :key="`${spawn.name}-${index}`" :cx="projectedX(spawn.x, spawn.y)" :cy="projectedY(spawn.x, spawn.y)" r="4" :class="spawnClass(spawn)" />
         </g>
         <g class="pb-trails" data-test="pb-trails" aria-hidden="true">
           <template v-for="(trail, index) in props.visibleTrails" :key="`trail-${trail.accountId}-${index}`">
@@ -410,6 +428,11 @@ function onTwoFingerTouch(event) {
 .pb-spawn-friendly { fill: var(--map-spawn-friendly, #8ef7b0); }
 .pb-spawn-enemy { fill: var(--map-spawn-enemy, #ff8d8d); }
 .pb-spawn-neutral { fill: var(--text-muted, #999); }
+/* 场景分组身份色（仅 scene-team 模式，spawnColorMode opt-in）：--color-team-1/2 与
+   3D 出生点标记同一 token（固定分组色，非 friendly/enemy 相对语义）；轻量深色描边
+   提高草地/道路/建筑背景上的辨识度（与 3D 外环 --color-on-team-neutral 同 token）。 */
+.pb-spawn-team-1 { fill: var(--color-team-1, #5cc280); stroke: var(--color-on-team-neutral, #1c1f1d); stroke-width: 1.5; }
+.pb-spawn-team-2 { fill: var(--color-team-2, #f2786d); stroke: var(--color-on-team-neutral, #1c1f1d); stroke-width: 1.5; }
 /* 可玩边界（2D 地图预览 opt-in）：与 3D 边界带同义色，不是阵营色 */
 .pb-playable-boundary { stroke: var(--color-map-playable-boundary); }
 .pb-feedback-layer { position: absolute; inset: 0; pointer-events: none; z-index: 9; overflow: hidden; }

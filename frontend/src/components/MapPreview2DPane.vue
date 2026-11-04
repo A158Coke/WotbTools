@@ -62,7 +62,8 @@ const basemapImage = ref(null)   // { src, width, height, coordinateBounds }
 const basemapError = ref(false)
 const image = computed(() => basemapImage.value)
 /** 2D 预览只读消费 canonical 地图事实，不新增第二份数据：spawn 来自语义
- *  `sceneEvidence.battlePoints`（预览无战局上下文 → 不传 friendlyTeam，BattleMap 画中性点），
+ *  `sceneEvidence.battlePoints`（预览无战局上下文 → 不传 friendlyTeam；spawnColorMode
+ *  'scene-team' 让 BattleMap 按场景分组 team 画固定身份色，非 friendly/enemy 相对语义），
  *  边界来自 generated `playableBounds`（与 3D 边界 fallback 同一份）；缺档不猜。 */
 const overview = computed(() => {
   const key = String(props.mapKey).toLowerCase()
@@ -948,6 +949,7 @@ const stubFloatClass = () => ''
           :image="image"
           :map-view="mapView"
           :pb-overview="overview"
+          spawn-color-mode="scene-team"
           :show-playable-boundary="true"
           :bases="baseMarkers"
           :view-scale="view.scale"

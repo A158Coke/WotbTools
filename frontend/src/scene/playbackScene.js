@@ -2591,6 +2591,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function buildSpawns() { spawnMarkers.build(SESSION_MODE === 'map' ? MAP_SPAWN_POINTS : null); }
   function clearSpawns() { spawnMarkers.clear(); }
   function regroundSpawns() { spawnMarkers.reground(); }
+  /** UI Profile 切换后 token 色板变化（showcase↔classic / auto 随系统）：已有出生点
+   *  材质原位重着色——不重建场景、不动相机。仅 map 会话有意义（回放无出生点）。 */
+  function refreshSpawnColors() {
+    if (SESSION_MODE !== 'map') return;
+    spawnMarkers.refreshColors();
+    invalidate();
+  }
 
   function groundY(x, z) {
     return sampleHeight(x, z) + 0.12;
@@ -5464,6 +5471,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         buildSpawns();
         invalidate();
       }
+    },
+    /**
+     * UI Profile 切换（useUiProfile 不 reload/remount）后刷新已有出生点材质颜色：
+     * 与 setMapSpawns 同一 map 会话门控；非 map 会话 no-op。宿主（MapPreview3DPane）
+     * watch `uiProfile` 触发——2D 出生点随 CSS 自动更新，3D 必须显式同步。
+     */
+    refreshSpawnColors() {
+      refreshSpawnColors();
     },
     /**
      * 撤下当前回放（工作台清空选择 / 多文件未选场次 / 玩家换选）：回到「无数据」等待态。

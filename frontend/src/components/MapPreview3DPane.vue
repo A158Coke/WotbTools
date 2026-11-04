@@ -22,6 +22,7 @@ import { usePlaybackFullscreen } from '../composables/usePlaybackFullscreen.js'
 import { usePlaybackPhoneForm } from '../composables/usePlaybackPhoneForm.js'
 import { isInteractiveTarget } from '../composables/usePlaybackTransport.js'
 import { usePaneFillHeight } from '../composables/usePaneFillHeight.js'
+import { uiProfile } from '../composables/useUiProfile.js'
 import SegmentedControl from './SegmentedControl.vue'
 import Scene3DStatus from './Scene3DStatus.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
@@ -334,6 +335,12 @@ watch(
 watch(annotationsVisible, pushAnnotationVisibility)
 watch(() => props.basesKind, pushBasesKind)
 watch(() => props.spawnPoints, pushSpawnPoints)
+// UI Profile 切换（showcase↔classic / auto 随系统，不 reload/remount）：2D 出生点
+// 随 CSS token 自动换色，3D 材质颜色是 build 时快照——必须显式原位刷新（内核
+// refreshSpawnColors 只重着色已有标记，不重建场景、不动相机）。
+watch(uiProfile, () => {
+  sceneApi?.refreshSpawnColors?.()
+})
 watch(() => store.mapReady, (ready) => {
   if (!ready && annotationOpen.value) closeAnnotation()
   // loadMapOnly 的 teardown 清空内核侧标注数组（会话纪律与回放一致）；pane 的
