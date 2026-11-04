@@ -154,4 +154,74 @@ describe('Sniper 穿深着色接线', () => {
     const setBody = source.slice(setStart, source.indexOf('setQuality', setStart))
     expect(setBody).toContain('releaseRenderTargets')
   })
+
+  it('遮挡剔除优先批次 AABB；可破坏物批次回退球', () => {
+    const hl = readFileSync(resolve(__dirname, 'playback/armorHighlight.ts'), 'utf8')
+    expect(hl).toMatch(/occluderBox.*applyMatrix4/)
+    expect(hl).toMatch(/intersectsBox\(_occluderBox\)/)
+    const inst = readFileSync(resolve(__dirname, 'sceneryInstancing.ts'), 'utf8')
+    expect(inst).toMatch(/userData\.occluderBox = box/)
+    const mapAssets = readFileSync(resolve(__dirname, 'playback/mapAssets.ts'), 'utf8')
+    expect(mapAssets).toMatch(/mesh\.userData\.occluderBox = null/)
+  })
+
+  it('装甲 RT 按目标矩形分配：视口偏移相机 + spacedRect 采样映射（full → rect 局部）', () => {
+    const hl = readFileSync(resolve(__dirname, 'playback/armorHighlight.ts'), 'utf8')
+    expect(hl).toMatch(/armorCamera\.setViewOffset\(size\.x, size\.y, scissor\.x, size\.y - \(scissor\.y \+ scissor\.w\), scissor\.z, scissor\.w\)/)
+    expect(hl).toMatch(/bucketedRtSize\(scissor\.z, size\.x\)/)
+    expect(hl).toMatch(/bindBuffers\(target, camera, spacedRect\)/)
+    const shaders = readFileSync(resolve(__dirname, 'viewer/armorShaders.ts'), 'utf8')
+    expect(shaders).toMatch(/uniform vec4 spacedRect/)
+    // review R1 blocker：全画面 UV → **rect 局部** RT UV（rect 左下 → (0,0)，右上 → (1,1)）；
+    // 反向公式（sc*zw+xy）会让整车错误采样 RT 中央一小块
+    expect(shaders).toMatch(/\(sc - spacedRect\.xy\) \/ spacedRect\.zw/)
+    expect(shaders).not.toMatch(/sc \* spacedRect\.zw \+ spacedRect\.xy/)
+    expect(shaders).toMatch(/spacedRect: \{ value: new THREE\.Vector4\(0, 0, 1, 1\) \}/)
+  })
+
+  it('?perf 逐 pass 计时与装甲预热接线', () => {
+    expect(source).toMatch(/perfFrame\(perfT1 - perfT0, perfR0 - perfT1, perfR1 - perfR0, armorStats\)/)
+    expect(source).toMatch(/stats: PERF \? armorStats : null/)
+    const hl = readFileSync(resolve(__dirname, 'playback/armorHighlight.ts'), 'utf8')
+    expect(hl).toMatch(/function prewarm\(camera: PerspectiveCamera\)/)
+    expect(source).toMatch(/\.prewarm\(camera\)/)
+  })
+
+  it('遮挡 pass 用语义化遮挡根，不再全场景 traverseVisible（issue #850 F）', () => {
+    const start = source.indexOf('function occluderRoots')
+    const body = source.slice(start, source.indexOf('function ', start + 20))
+    // 地形/场景 GLB/占位地面 + 每车低模组、GLB、飞炮塔
+    expect(body).toMatch(/terrainMesh, mapScenery, mapPlane, groundMesh/)
+    expect(body).toContain('v.glb')
+    expect(body).toContain('detachedTurrets')
+    // v.glb 是 v.group 的场景级兄弟，两者都必须在根清单里
+    expect(body).toContain('v.group')
+    expect(source).toMatch(/occluderRoots: occluderRoots\(\)/)
+    const hl = readFileSync(resolve(__dirname, 'playback/armorHighlight.ts'), 'utf8')
+    expect(hl).toMatch(/function markOccluders\(camera: PerspectiveCamera, vehicle: ArmorHighlightFrame\['vehicle'\], view: OccluderView, roots: Object3D\[\]\): number/)
+    expect(hl).toMatch(/for \(const root of roots\)/)
+    expect(hl).toMatch(/frame\.occluderRoots \?\? \[scene\]/)
+  })
+
+  it('SNIPER 进入时补预取敌方 armor 模板（tankData 晚到缺口）', () => {
+    const start = source.indexOf('function driveRecorderCamera')
+    const body = source.slice(start, source.indexOf('function ', start + 20))
+    expect(body).toMatch(/scoped && !wasScoped && ARMOR_HIGHLIGHT\)\s+ensureArmorHighlight\(\)\.prefetch\(highlightEnemies\(\)\)/)
+  })
+
+  it('零遮挡快速路径：走廊内无遮挡物时跳过世界深度重绘', () => {
+    const hl = readFileSync(resolve(__dirname, 'playback/armorHighlight.ts'), 'utf8')
+    expect(hl).toMatch(/let count = 0/)
+    expect(hl).toMatch(/object\.layers\.enable\(OCCLUDER_LAYER\)\s*\n\s*count\+\+/)
+    expect(hl).toMatch(/const count = markOccluders\(camera, vehicle, view, roots\)/)
+    expect(hl).toMatch(/if \(count === 0\) return/)
+  })
+
+  it('RT 收缩滞回：需求持续减半才重建，防近距全尺寸 RT 挂满会话', () => {
+    const hl = readFileSync(resolve(__dirname, 'playback/armorHighlight.ts'), 'utf8')
+    expect(hl).toMatch(/let rtShrinkStreak = 0/)
+    expect(hl).toMatch(/rtW \* rtH \* 4 <= stateRT\.width \* stateRT\.height/)
+    expect(hl).toMatch(/\+\+rtShrinkStreak >= 90/)
+    expect(hl).toMatch(/releaseRenderTargets\(\): void \{\s*disposeTargets\(\)\s*rtShrinkStreak = 0\s*\}/)
+  })
 })

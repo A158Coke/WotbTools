@@ -1273,7 +1273,7 @@ describe('炮线渲染守卫（阵营语义色直出）', () => {
     expect(src).toMatch(/window\.__pbPerf = \{/)
     // 分阶段计时包住「状态更新」「主渲染」与「装甲叠加」三段
     expect(src).toMatch(/const perfT1 = PERF \? performance\.now\(\) : 0;/)
-    expect(src).toMatch(/if \(PERF\) perfFrame\(perfT1 - perfT0, perfR0 - perfT1, perfR1 - perfR0\);/)
+    expect(src).toMatch(/if \(PERF\) perfFrame\(perfT1 - perfT0, perfR0 - perfT1, perfR1 - perfR0, armorStats\);/)
   })
 
 })

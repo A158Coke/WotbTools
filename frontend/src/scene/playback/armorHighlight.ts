@@ -37,6 +37,15 @@ export function bucketedRtSize(px: number, cap: number): number {
 export function spacedRectOf(px: number, py: number, pw: number, ph: number, fullW: number, fullH: number, out: THREE.Vector4): THREE.Vector4 {
   return out.set(px / fullW, py / fullH, pw / fullW, ph / fullH)
 }
+
+/**
+ * 全画面 UV → 辅助 RT 局部 UV（`PBR_FRAG` 里 `scBuf = (sc - spacedRect.xy) / spacedRect.zw`
+ * 的 JS 同式，行为测试的唯一权威）：辅助 RT 被 setViewOffset 把该 rect 拉伸铺满，所以
+ * rect 左下角映射到 (0,0)、右上角映射到 (1,1)；全屏 rect 是恒等映射。
+ */
+export function spacedBufferUv(scX: number, scY: number, rect: THREE.Vector4, out: THREE.Vector2): THREE.Vector2 {
+  return out.set((scX - rect.x) / rect.z, (scY - rect.y) / rect.w)
+}
 const EQ_CALIBRATED_SHELLS = 103
 const EQ_ENHANCED_ARMOR = 110
 /** 炮管任意朝向下 GLB 根到车模最远点的上界（最长的车连炮管约 12 m）。 */
