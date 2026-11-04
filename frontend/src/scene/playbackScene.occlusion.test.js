@@ -196,7 +196,7 @@ describe('Sniper 穿深着色接线', () => {
     expect(body).toContain('detachedTurrets')
     // v.glb 是 v.group 的场景级兄弟，两者都必须在根清单里
     expect(body).toContain('v.group')
-    expect(source).toMatch(/occluderRoots: occluderRoots\(\)/)
+    expect(source).toMatch(/occluderRoots: occluderRoots\(target\.def\.eid\)/)
     const hl = readFileSync(resolve(__dirname, 'playback/armorHighlight.ts'), 'utf8')
     expect(hl).toMatch(/function markOccluders\(camera: PerspectiveCamera, vehicle: ArmorHighlightFrame\['vehicle'\], view: OccluderView, roots: Object3D\[\]\): number/)
     expect(hl).toMatch(/for \(const root of roots\)/)

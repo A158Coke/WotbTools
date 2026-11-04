@@ -4391,7 +4391,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // draw call 数（renderer.info 是本帧全部 render 的累计）：场景侧结构性优化（材质去重 /
     // 实例化 / 冻结）的收益直接体现在这个数上，没有它优化前后无法量化对比。
     const calls = renderer ? renderer.info.render.calls : 0;
+    const a = armorStats || {};
     perfRing[perfRingN % PERF_RING] = { dt, updateMs, renderMs, armorMs, t: T, calls,
+      armorPick: a.pickMs || 0, armorState: a.stateMs || 0, armorThick: a.thicknessMs || 0,
+      armorOcc: a.occluderMs || 0, armorColor: a.colorMs || 0, armorCalls: a.calls || 0,
+      armorRt: (a.stateMs || 0) + (a.thicknessMs || 0) + (a.colorMs || 0),
       dpr: renderer ? Math.round(renderer.getPixelRatio() * 100) / 100 : 0,
       tracers: tracers.length, traj: trajLines.length, impacts: battleFx ? battleFx.stats().impacts : 0,
       burst: battleFx ? battleFx.stats().bursts : 0,
@@ -4420,6 +4424,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       `update ms med=${f(q('updateMs', 0.5))} p90=${f(q('updateMs', 0.9))}`,
       `render ms med=${f(q('renderMs', 0.5))} p90=${f(q('renderMs', 0.9))}`,
       `armor ms med=${f(q('armorMs', 0.5))} p90=${f(q('armorMs', 0.9))} max=${f(q('armorMs', 0.99))}`,
+      `armor pick ms med=${f(q('armorPick', 0.5))} p90=${f(q('armorPick', 0.9))}`,
+      `armor occ ms med=${f(q('armorOcc', 0.5))} p90=${f(q('armorOcc', 0.9))}`,
+      `armor rt ms (state/thick/color) med=${f(q('armorRt', 0.5))} p90=${f(q('armorRt', 0.9))}`,
+      `armor calls (4 pass) med=${f(q('armorCalls', 0.5))} max=${f(q('armorCalls', 0.99))}`,
       `draw calls med=${f(q('calls', 0.5))} p90=${f(q('calls', 0.9))} max=${f(q('calls', 0.99))}`,
       `pixel ratio med=${f(q('dpr', 0.5))} min=${f(q('dpr', 0.05))}`,
       `now: T=${last.t.toFixed(1)} veh=${last.veh} tracers=${last.tracers} trajBoxes=${last.traj} impacts=${last.impacts} burst=${last.burst}`,
