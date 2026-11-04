@@ -216,6 +216,8 @@ describe('MapPreviewPage', () => {
     const w3d = await openAt({ map: 'rudniki_03', mode: '3d' })
     expect(w3d.find('[data-testid="map-3d-pane"]').element.parentElement.style.display).toBe('')
     expect(w3d.findComponent({ name: 'MapPreview3DPane' }).props('mapKey')).toBe('rudniki_03')
+    // #835：无语义档的地图 spawnPoints 下发 null（fail-closed，内核不画、不猜坐标）
+    expect(w3d.findComponent({ name: 'MapPreview3DPane' }).props('spawnPoints')).toBeNull()
     await w3d.find('[data-testid="map-back"]').trigger('click')
     await flushPromises()
     expect(w3d.find('[data-testid="map-grid"]').exists()).toBe(true)
@@ -324,6 +326,21 @@ describe('MapPreviewPage', () => {
     await flushPromises()
     expect(ROUTER.currentRoute.value.query).toEqual({ view: 'map-preview' })
     expect(wrapper.find('[data-testid="map-grid"]').exists()).toBe(true)
+  })
+
+  it('有语义档的地图把 spawnPoints 下发给 3D 面板（与 2D 同一数据源，#835）', async () => {
+    auth.authenticated.value = true
+    source.loadMapIndex.mockResolvedValue(IDX)
+    const wrapper = await openAt({ map: 'erlenberg', mode: '3d' })
+    const pane = wrapper.findComponent({ name: 'MapPreview3DPane' })
+    const points = pane.props('spawnPoints')
+    expect(Array.isArray(points)).toBe(true)
+    expect(points.length).toBeGreaterThan(0)
+    // 解析面契约：每点至少有限 x/y（parseMapGridProfile 已过滤非有限条目）
+    for (const pt of points) {
+      expect(Number.isFinite(pt.x)).toBe(true)
+      expect(Number.isFinite(pt.y)).toBe(true)
+    }
   })
 
   it('无 mode 深链默认 2D；显式 mode=3d 深链仍 3D', async () => {

@@ -44,6 +44,11 @@ const props = defineProps({
    * 同一条管线（playback/bases.js），几何 fail-closed 在内核。
    */
   basesKind: { type: String, default: null },
+  /**
+   * 出生点列（#835；页面按 mapKey 从语义档案解析后下发）：内核 setMapSpawns
+   * 建贴地标记——缺档/非数组不画（fail-closed 在内核与解析器两端）。
+   */
+  spawnPoints: { type: Array, default: null },
   /** 隐藏时停帧不销毁（页面 v-show 切 2D/3D） */
   active: { type: Boolean, default: true },
 })
@@ -284,6 +289,7 @@ function ensureScene() {
   pushAnnotationInteraction()
   pushAnnotationVisibility()
   pushBasesKind()
+  pushSpawnPoints()
   return true
 }
 function reloadMap() {
@@ -298,6 +304,12 @@ function reloadMap() {
  */
 function pushBasesKind() {
   sceneApi?.setMapBasesKind?.(props.basesKind || null)
+}
+/** 出生点列的唯一推送方向（pane → scene，与基地 kind 同一纪律）：会话未就绪时
+ *  内核只记意图，就绪则立即重建。三个触发点共享：点列变化、场景创建（记意图
+ *  先于装载）、会话就绪（teardown 会把内核意图复位，重建/换图后必须补推）。 */
+function pushSpawnPoints() {
+  sceneApi?.setMapSpawns?.(props.spawnPoints || null)
 }
 // 换图判定只看 mapId（图身份）：mapName 是 locale 派生的显示名——切语言会变，
 // 但图没换，标注与撤销栈不得清空（名称更新由页面 header 的 computed 承担）。
@@ -321,6 +333,7 @@ watch(
 )
 watch(annotationsVisible, pushAnnotationVisibility)
 watch(() => props.basesKind, pushBasesKind)
+watch(() => props.spawnPoints, pushSpawnPoints)
 watch(() => store.mapReady, (ready) => {
   if (!ready && annotationOpen.value) closeAnnotation()
   // loadMapOnly 的 teardown 清空内核侧标注数组（会话纪律与回放一致）；pane 的
@@ -329,6 +342,7 @@ watch(() => store.mapReady, (ready) => {
     pushAnnotationProjection()
     pushAnnotationVisibility()
     pushBasesKind()
+    pushSpawnPoints()
   }
 })
 /**
@@ -556,6 +570,8 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
           </button>
         </div>
         <p v-if="importMessage" class="map3d-import-note" role="status" data-testid="map-3d-import-note">{{ importMessage }}</p>
+        <!-- #835：飞行/缩放操作提示（速度档 1–6 此前完全不可发现；桌面手感验收见 PR 清单） -->
+        <p class="map3d-hint" data-testid="map-3d-controls-hint">{{ t('mapPreview.controlsHint') }}</p>
       </div>
       <button
         v-if="uiHidden"
@@ -717,6 +733,13 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
   margin: 0;
   color: var(--color-text-secondary);
   font: var(--type-caption);
+}
+
+.map3d-hint {
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font: var(--type-caption-xs);
+  line-height: var(--line-height-caption-xs);
 }
 
 .map3d-annotations {

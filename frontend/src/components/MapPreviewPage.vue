@@ -19,6 +19,7 @@ import { useAuth } from '../composables/useAuth.js'
 import { loadMapIndex, mapCoverUrl } from '../scene/replaySource.js'
 import { mapImages } from '../data/mapImages.js'
 import { mapBases } from '../data/mapBases.js'
+import { mapGridProfile } from '../data/mapSemantics.js'
 import { hasChineseMapName, mapLabel } from '../utils/helpers.js'
 import { Feature } from '../app/featureCapabilities.js'
 import AppButton from './AppButton.vue'
@@ -165,6 +166,16 @@ const basesKind = computed(() => {
   if (assaultSelectable(bases)) return 'assault'
   return null
 })
+/**
+ * 出生点（#835）：语义档案 sceneEvidence.battlePoints 的 spawnpoint 条目
+ * （parseMapGridProfile 解析，非有限坐标/缺档已在其内 fail-closed）。3D 预览
+ * 贴地标记与 2D 预览（BattleMap spawnPoints）同一份数据源；预览无 friendlyTeam
+ * 上下文，两端都按中性点呈现。下发引用只读，内核侧 fail-closed 兜底。
+ */
+const spawnPoints = computed(() => {
+  if (!selected.value) return null
+  return mapGridProfile(selected.value.key)?.spawnPoints ?? null
+})
 const basesOptions = computed(() => {
   const bases = selected.value?.bases
   if (!bases) return []
@@ -307,7 +318,7 @@ const modeOptions = computed(() => [
           />
         </header>
         <div v-show="mode === '3d'" class="map-stage-pane">
-          <MapPreview3DPane :map-id="selected.mapId" :map-name="selected.name" :map-key="selected.key" :bases-kind="basesKind" :active="mode === '3d'" />
+          <MapPreview3DPane :map-id="selected.mapId" :map-name="selected.name" :map-key="selected.key" :bases-kind="basesKind" :spawn-points="spawnPoints" :active="mode === '3d'" />
         </div>
         <div v-show="mode === '2d'" class="map-stage-pane">
           <MapPreview2DPane :map-key="selected.key" :basemap="selected.basemap" :bases-kind="basesKind" :active="mode === '2d'" />

@@ -17,7 +17,7 @@ import AnnotationToolbar from './AnnotationToolbar.vue'
 import { mapBases } from '../data/mapBases.js'
 import { playableBounds } from '../data/playableBounds.js'
 import { WORLD_BOUNDS_300 } from '../data/mapImages.js'
-import { indexMapGridProfiles } from '../replay-local/playback/toMapOverview.js'
+import { mapGridProfile } from '../data/mapSemantics.js'
 import { resolveMap2dBasemap } from '../scene/replaySource.js'
 import { createMapView } from '../utils/mapView.js'
 import {
@@ -33,18 +33,8 @@ import { usePaneFillHeight } from '../composables/usePaneFillHeight.js'
 import { usePlaybackFullscreen } from '../composables/usePlaybackFullscreen.js'
 import { usePlaybackPhoneForm } from '../composables/usePlaybackPhoneForm.js'
 
-/**
- * 地图语义档案（`common/map-semantics/*.semantic.json` 唯一权威；与回放/3D 同一份文件）：
- * 出生点取 `sceneEvidence.battlePoints`，边界表由 `playableBoundsMeters` 生成。
- * 索引一次（eager glob 与回放同式），按 mapCode 小写查；缺档 fail-closed。
- */
-let gridProfiles = null
-function mapGridProfile(mapKey) {
-  gridProfiles ??= indexMapGridProfiles(Object.values(import.meta.glob('../../../common/map-semantics/*.semantic.json', {
-    eager: true, import: 'default',
-  })))
-  return gridProfiles.get(String(mapKey).toLowerCase()) || null
-}
+// 地图语义档案读取已收敛到 data/mapSemantics.js（与 3D 预览/回放同一入口；
+// 出生点取 `sceneEvidence.battlePoints`，边界表由 `playableBoundsMeters` 生成，缺档 fail-closed）。
 
 const props = defineProps({
   /** 资产面 key（= 标注导入/导出归属校验） */

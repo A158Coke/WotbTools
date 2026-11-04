@@ -19,6 +19,7 @@ const scene = vi.hoisted(() => {
     destroy: vi.fn(),
     setQuality: vi.fn(),
     setCam: vi.fn(),
+    setMapSpawns: vi.fn(),
     reset: vi.fn(),
     invalidate: vi.fn(),
   }
@@ -60,11 +61,11 @@ import MapPreview3DPane from './MapPreview3DPane.vue'
 import { afterEach } from 'vitest'
 
 let wrappers = []
-function mountPane(active) {
+function mountPane(active, extraProps = {}) {
   // attachTo：ensureScene 的 isConnected 护栏要求 stage 真实挂载（防游离 append），
   // 与生产语义一致；afterEach unmount 清理。
   const wrapper = mount(MapPreview3DPane, {
-    props: { mapId: 6, mapName: '矿井阵地', mapKey: 'rudniki', active },
+    props: { mapId: 6, mapName: '矿井阵地', mapKey: 'rudniki', active, ...extraProps },
     attachTo: document.body,
     global: { mocks: { $t: (k) => k } },
   })
@@ -101,6 +102,19 @@ describe('MapPreview3DPane 首次激活生命周期', () => {
     expect(scene.api.loadMapOnly).toHaveBeenCalledTimes(1)
     expect(scene.api.loadMapOnly).toHaveBeenCalledWith({ mapId: 6, mapName: '矿井阵地' })
     expect(scene.api.setPaused).toHaveBeenCalledWith(false)
+  })
+
+  it('出生点：装载后按 pane prop 推送内核；点列变化补推（#835）', async () => {
+    const points = [{ x: 10, y: -20, name: 'spawn1' }]
+    const wrapper = mountPane(true, { spawnPoints: points })
+    await flushPromises()
+    expect(scene.api.setMapSpawns).toHaveBeenCalledWith(points)
+    scene.api.setMapSpawns.mockClear()
+    // 换图：页面重算点列（新数组）→ prop 变化即补推（内核 teardown 复位由 mapReady watcher 兜底）
+    const next = [{ x: 1, y: 2 }, { x: 3, y: 4 }]
+    await wrapper.setProps({ spawnPoints: next })
+    await flushPromises()
+    expect(scene.api.setMapSpawns).toHaveBeenCalledWith(next)
   })
 
   it('激活后切走：场景保留暂停，不销毁、不重装；切回不重建不重装', async () => {
