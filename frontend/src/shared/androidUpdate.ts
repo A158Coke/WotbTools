@@ -11,7 +11,7 @@ export interface AndroidUpdateController {
   returnFocusTo: Readonly<Ref<HTMLElement | null>>
   checking: Readonly<Ref<boolean>>
   acting: Readonly<Ref<boolean>>
-  error: Readonly<Ref<'unavailable' | 'rejected' | null>>
+  error: Readonly<Ref<'unavailable' | 'rejected' | 'confirming' | null>>
   showPrompt: ComputedRef<boolean>
   open(returnFocusTo?: HTMLElement | null): Promise<void>
   close(): void

@@ -8,6 +8,8 @@
     "checkFailed": "Unable to check for updates",
     "checkRetryHint": "Check your connection and try again.",
     "actionRejected": "The update state changed. Review the latest status and try again.",
+    "actionProcessing": "Processing update request…",
+    "actionConfirming": "Confirming the installation request. Please wait.",
     "check": "Check for updates",
     "download": "Download update",
     "replaceDownload": "Download supported version",

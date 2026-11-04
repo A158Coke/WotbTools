@@ -176,6 +176,82 @@ describe('Android update Native projection', () => {
     expect(update.error.value).toBe('rejected')
   })
 
+  it('keeps an unconfirmed install locked until Native reports a terminal change', async () => {
+    const ready = snapshot(2)
+    ready.download = { ...ready.download, state: 'ready', taskToken: 'task-one', versionName: '3.28.0', versionCode: 3028000 }
+    bridge.getUpdateStatus.mockResolvedValue(ready)
+    bridge.installUpdate.mockResolvedValue(null)
+    const update = start()
+    await flushPromises()
+    await update.install()
+    expect(update.error.value).toBe('confirming')
+    expect(update.acting.value).toBe(true)
+    await update.install()
+    expect(bridge.installUpdate).toHaveBeenCalledTimes(1)
+    // 普通 READY 对账无法证明 Native 已取消排队请求。
+    bridge.getUpdateStatus.mockResolvedValue({ ...ready, revision: 3 })
+    window.dispatchEvent(new Event('focus'))
+    await flushPromises()
+    expect(update.acting.value).toBe(true)
+    expect(update.error.value).toBe('confirming')
+    bridge.getUpdateStatus.mockResolvedValue({ ...ready, revision: 4,
+      download: { ...ready.download, state: 'installRequested' } })
+    window.dispatchEvent(new Event('focus'))
+    await flushPromises()
+    expect(update.acting.value).toBe(false)
+    expect(update.error.value).toBeNull()
+  })
+
+  it('only shows rejected when Native explicitly rejects an install', async () => {
+    const ready = snapshot(2)
+    ready.download = { ...ready.download, state: 'ready', taskToken: 'task-one' }
+    bridge.getUpdateStatus.mockResolvedValue(ready)
+    bridge.installUpdate.mockResolvedValue(false)
+    const update = start()
+    await flushPromises()
+    await update.install()
+    expect(update.error.value).toBe('rejected')
+    expect(update.acting.value).toBe(false)
+  })
+
+  it('shows unavailable and releases the action when the Native bridge is absent', async () => {
+    const ready = snapshot(2)
+    ready.download = { ...ready.download, state: 'ready', taskToken: 'task-one' }
+    bridge.getUpdateStatus.mockResolvedValue(ready)
+    bridge.installUpdate.mockRejectedValue(new Error('Native bridge unavailable'))
+    const update = start()
+    await flushPromises()
+    await update.install()
+    expect(update.error.value).toBe('unavailable')
+    expect(update.acting.value).toBe(false)
+  })
+
+  it.each(['installPermissionRequired', 'installRequestFailed'] as const)(
+    'does not mistake an unchanged %s snapshot for completion', async initialState => {
+      const ready = snapshot(2)
+      ready.download = { ...ready.download, state: initialState, taskToken: 'task-one',
+        failureReason: initialState === 'installPermissionRequired' ? 'permissionDenied' : 'installerUnavailable' }
+      bridge.getUpdateStatus.mockResolvedValue(ready)
+      bridge.installUpdate.mockResolvedValue(null)
+      const update = start()
+      await flushPromises()
+      await update.install()
+      bridge.getUpdateStatus.mockResolvedValue({ ...ready, revision: 3 })
+      window.dispatchEvent(new Event('focus'))
+      await flushPromises()
+      expect(update.acting.value).toBe(true)
+      expect(update.error.value).toBe('confirming')
+      await update.install()
+      expect(bridge.installUpdate).toHaveBeenCalledTimes(1)
+      bridge.getUpdateStatus.mockResolvedValue({ ...ready, revision: 4,
+        download: { ...ready.download, state: 'verifyFailed', failureReason: 'hashMismatch' } })
+      window.dispatchEvent(new Event('focus'))
+      await flushPromises()
+      expect(update.acting.value).toBe(false)
+      expect(update.snapshot.value?.download.failureReason).toBe('hashMismatch')
+    },
+  )
+
   it('rejects missing fields, invalid enums and invalid/unknown progress without classifying versions', () => {
     expect(isAndroidUpdateSnapshot(snapshot())).toBe(true)
     expect(isAndroidUpdateSnapshot({ ...snapshot(), state: 'invented' })).toBe(false)

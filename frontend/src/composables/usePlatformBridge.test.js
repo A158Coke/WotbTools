@@ -120,13 +120,13 @@ describe('usePlatformBridge', () => {
     await expect(getUpdateStatus()).resolves.toBeNull()
     await expect(refreshUpdateStatus()).resolves.toBeNull()
     await expect(beginUpdateDownload(3028000)).resolves.toBe(false)
-    await expect(installUpdate('task-1')).resolves.toBe(false)
+    await expect(installUpdate('task-1')).rejects.toThrow('Native bridge unavailable')
     await expect(dismissOptionalUpdate(3028000)).resolves.toBe(false)
     stubNative(['app-update-status'], null, true, 3, {
       beginUpdateDownload: 'true', installUpdate: 1, dismissOptionalUpdate: {},
     })
     await expect(beginUpdateDownload(3028000)).resolves.toBe(false)
-    await expect(installUpdate('task-1')).resolves.toBe(false)
+    await expect(installUpdate('task-1')).resolves.toBeNull()
     await expect(dismissOptionalUpdate(3028000)).resolves.toBe(false)
   })
 
@@ -158,6 +158,41 @@ describe('usePlatformBridge', () => {
     expect(settled).toBe(false)
     await vi.advanceTimersByTimeAsync(1)
     await expect(result).resolves.toBe(false)
+  })
+
+  it('keeps an install request pending beyond five seconds and accepts a later native reply', async () => {
+    vi.useFakeTimers()
+    let listener
+    let request
+    window.WotbNative = {
+      postMessage: vi.fn(json => { request = JSON.parse(json) }),
+      addEventListener: vi.fn((type, cb) => { listener = cb }),
+      removeEventListener: vi.fn(),
+    }
+    let settled = false
+    const result = installUpdate('task-1').then(value => { settled = true; return value })
+    await vi.advanceTimersByTimeAsync(6000)
+    expect(settled).toBe(false)
+    listener({ data: { id: request.id, result: true } })
+    await expect(result).resolves.toBe(true)
+    expect(window.WotbNative.postMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports an install deadline without asserting that Native cancelled it', async () => {
+    vi.useFakeTimers()
+    let listener
+    let request
+    window.WotbNative = {
+      postMessage: vi.fn(json => { request = JSON.parse(json) }),
+      addEventListener: vi.fn((type, cb) => { listener = cb }),
+      removeEventListener: vi.fn(),
+    }
+    const result = installUpdate('task-1')
+    await vi.advanceTimersByTimeAsync(120_000)
+    await expect(result).resolves.toBeNull()
+    listener({ data: { id: request.id, result: true } })
+    await expect(result).resolves.toBeNull()
+    expect(window.WotbNative.postMessage).toHaveBeenCalledTimes(1)
   })
 
   it('consumePendingReplay 携带 expectedPendingId（identity-aware ACK 的 wire 边界）', async () => {

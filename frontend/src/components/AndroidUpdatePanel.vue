@@ -36,6 +36,7 @@ function bytes(value: number | null | undefined): string {
       </p>
       <p v-if="checkingFailed" class="android-update-hint">{{ $t('androidUpdate.checkRetryHint') }}</p>
       <p v-if="update.error.value === 'rejected'" role="alert">{{ $t('androidUpdate.actionRejected') }}</p>
+      <p v-if="update.acting.value" role="status">{{ $t(update.error.value === 'confirming' ? 'androidUpdate.actionConfirming' : 'androidUpdate.actionProcessing') }}</p>
       <p v-if="snapshot?.releaseNotes" class="android-update-notes">{{ snapshot.releaseNotes }}</p>
       <section v-if="download && download.state !== 'idle'" class="android-update-download" data-testid="update-download">
         <h3 v-if="download.versionName">{{ $t('androidUpdate.packageVersion', { version: download.versionName }) }}</h3>

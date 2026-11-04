@@ -91,6 +91,28 @@ describe('Android update panel', () => {
     wrapper.unmount()
   })
 
+  it('shows processing and confirmation while preventing a second install', async () => {
+    const update = controller()
+    if (update.snapshot.value) update.snapshot.value.download.state = 'ready'
+    update.acting = ref(true)
+    const error = ref<'confirming' | null>(null)
+    update.error = error
+    const wrapper = render(update)
+    expect(wrapper.text()).toContain(messages.en.androidUpdate.actionProcessing)
+    expect(wrapper.get('[data-testid="update-install"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="update-refresh"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-testid="update-install"]').trigger('click')
+    expect(update.install).not.toHaveBeenCalled()
+    error.value = 'confirming'
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain(messages.en.androidUpdate.actionConfirming)
+    expect(wrapper.text()).not.toContain(messages.en.androidUpdate.actionRejected)
+    expect(wrapper.get('[data-testid="update-install"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-testid="update-install"]').trigger('click')
+    expect(update.install).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('shows an explicit check failure and removes Later for mandatory updates', async () => {
     const update = controller('mandatory')
     if (update.snapshot.value) update.snapshot.value.checkState = 'failed'

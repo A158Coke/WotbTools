@@ -8,6 +8,8 @@
     "checkFailed": "无法检查更新",
     "checkRetryHint": "请检查网络后重试。",
     "actionRejected": "更新状态已改变，请查看最新状态后重试。",
+    "actionProcessing": "正在处理更新操作…",
+    "actionConfirming": "正在确认安装请求的结果，请稍候。",
     "check": "检查更新",
     "download": "下载更新",
     "replaceDownload": "下载受支持版本",

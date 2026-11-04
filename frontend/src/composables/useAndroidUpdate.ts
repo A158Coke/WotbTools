@@ -48,7 +48,8 @@ export function useAndroidUpdate(routing?: { route: RouteLocationNormalizedLoade
   const returnFocusTo = shallowRef<HTMLElement | null>(null)
   const checking = ref(false)
   const acting = ref(false)
-  const error = ref<'unavailable' | 'rejected' | null>(null)
+  const error = ref<'unavailable' | 'rejected' | 'confirming' | null>(null)
+  let uncertainInstall: { token: string, initialState: string, initialReason: string | null } | null = null
   let disposed = false
   let priorNotification: unknown
   let listening = false
@@ -62,7 +63,16 @@ export function useAndroidUpdate(routing?: { route: RouteLocationNormalizedLoade
     }
     if (snapshot.value && raw.revision < snapshot.value.revision) return true
     snapshot.value = raw
-    error.value = null
+    if (uncertainInstall) {
+      const download = raw.download
+      const changed = download.state !== uncertainInstall.initialState || download.failureReason !== uncertainInstall.initialReason
+      const terminal = ['installRequested', 'installPermissionRequired', 'installRequestFailed', 'verifyFailed', 'downloadFailed'].includes(download.state)
+      if (download.taskToken !== uncertainInstall.token || download.failureReason === 'unsupportedArtifact' || (changed && terminal)) {
+        uncertainInstall = null
+        acting.value = false
+        error.value = null
+      } else error.value = 'confirming'
+    } else error.value = null
     return true
   }
 
@@ -131,15 +141,19 @@ export function useAndroidUpdate(routing?: { route: RouteLocationNormalizedLoade
     finally { if (!disposed) checking.value = false }
   }
 
-  async function act(command: () => Promise<boolean>) {
+  async function act(command: () => Promise<boolean | null>, install?: { token: string, initialState: string, initialReason: string | null }) {
     if (!supported.value || acting.value || disposed) return
     acting.value = true
     try {
       const accepted = await command()
+      if (accepted === null && install) {
+        uncertainInstall = install
+        error.value = 'confirming'
+      }
       await read()
-      if (!disposed && !accepted) error.value = 'rejected'
+      if (!disposed && accepted === false) error.value = 'rejected'
     } catch { if (!disposed) error.value = 'unavailable' }
-    finally { if (!disposed) acting.value = false }
+    finally { if (!disposed && !uncertainInstall) acting.value = false }
   }
 
   return {
@@ -156,8 +170,11 @@ export function useAndroidUpdate(routing?: { route: RouteLocationNormalizedLoade
       if (expected !== undefined && expected !== null) await act(() => beginUpdateDownload(expected))
     },
     async install() {
-      const expected = snapshot.value?.download.taskToken
-      if (expected) await act(() => installUpdate(expected))
+      const download = snapshot.value?.download
+      const expected = download?.taskToken
+      if (expected && download) await act(() => installUpdate(expected), {
+        token: expected, initialState: download.state, initialReason: download.failureReason,
+      })
     },
     async dismiss() {
       const expected = snapshot.value?.latestVersionCode

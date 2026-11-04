@@ -36,6 +36,7 @@ type BridgeCallArgs<M extends NativeBridgeMethod> = Record<string, never> extend
 
 const BRIDGE_KEY = 'WotbNative'
 const BRIDGE_RPC_TIMEOUT_MS = 5000
+const INSTALL_UPDATE_RPC_TIMEOUT_MS = 120_000
 
 let seq = 0
 
@@ -170,7 +171,13 @@ export async function beginUpdateDownload(expectedLatestVersionCode: number) {
 }
 
 export async function installUpdate(expectedTaskToken: string) {
-  return (await callBridge(NATIVE_UPDATE_METHODS.install, { expectedTaskToken })) === true
+  const transport = bridge()
+  if (!transport || typeof transport.postMessage !== 'function' || typeof transport.addEventListener !== 'function') {
+    throw new Error('Native bridge unavailable')
+  }
+  const result = await callBridge(NATIVE_UPDATE_METHODS.install, { expectedTaskToken }, { timeoutMs: INSTALL_UPDATE_RPC_TIMEOUT_MS })
+  // 超时不取消 Native 工作，未知结果不能被解释成拒绝。
+  return typeof result === 'boolean' ? result : null
 }
 
 export async function dismissOptionalUpdate(expectedLatestVersionCode: number) {
