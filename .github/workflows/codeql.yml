@@ -50,7 +50,7 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
           # 高噪声面收敛：生成契约、测试夹具与历史 .md 渲染目录不产生 finding
-          configs: |
+          config: |
             paths-ignore:
               - 'frontend/dist/**'
               - 'contracts/http/generated/**'
