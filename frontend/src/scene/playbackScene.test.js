@@ -210,6 +210,22 @@ function stubFrames() {
   return () => { for (const cb of frames.splice(0)) cb() }
 }
 
+/** 滚轮缩放平滑（#835）的确定性收敛泵（recorder 视图 manualFrames + Clock 假 dt 同款）：
+ *  派发 wheel 时动画循环还挂在**真实 rAF** 上——首次调用装 stubFrames，让出一个真实
+ *  macrotask 供循环自转一帧（其内部下一帧注册落进 stub，此后不再有自发帧），随后按
+ *  假 dt=0.1s 泵 17 帧：预算每帧释放 ~67%，5 帧内收敛。同一用例多次调用复用同一
+ *  stub（循环的下一帧始终在既有 stub 队列里）；跨用例由 unstubAllGlobals 检测失效重建。 */
+let zoomPump = null
+async function settleZoomFrames() {
+  vi.spyOn(THREE.Clock.prototype, 'getDelta').mockReturnValue(0.1)
+  if (!zoomPump || globalThis.requestAnimationFrame !== zoomPump.stub) {
+    const frame = stubFrames()
+    zoomPump = { stub: globalThis.requestAnimationFrame, frame }
+    await new Promise((r) => setTimeout(r, 25))   // 循环自转一帧并迁入 stub
+  }
+  for (let i = 0; i < 17; i++) zoomPump.frame()
+}
+
 /** happy-dom 没有 2d canvas：基地圆盘贴图（drawBaseDecal）需要可写的 getContext('2d')。 */
 function stubCanvas2d() {
   const ctx = new Proxy({}, { get: () => () => {} })
@@ -1589,6 +1605,7 @@ describe('Free Camera terrain floor', () => {
     cam.position.y = topHeight - 0.1
     controls.target.y = topHeight - 5.1
     canvas.dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }))
+    await settleZoomFrames()   // #835：滚轮只累积预算，净空钳制在逐帧收敛中逐帧校验
     expect(cam.position.y).toBeCloseTo(topHeight, 5)
 
     cam.position.y = topHeight - 0.1
@@ -1661,6 +1678,7 @@ describe('Free Camera terrain floor', () => {
     controls.target.set(-20, 22.51, 0)
     const canvas = document.querySelector('canvas')
     canvas.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true }))
+    await settleZoomFrames()
     expect(cam.position.y).toBeGreaterThanOrEqual(27.5)
 
     cam.position.set(-30, 27.51, 0)
@@ -1827,6 +1845,7 @@ describe('Free Camera terrain floor', () => {
       const { api } = await loadScene()
       api.setCam('free')
       document.querySelector('canvas').dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }))
+      await settleZoomFrames()   // 预算收敛到终点后：滚轮造成的机位变化跨回放保留
       await expectPoseKept(api)
     })
 
@@ -2122,6 +2141,7 @@ describe('scene vehicle selection intent', () => {
     }
     const p0 = cam.position.clone()
     wheel(100)                                                   // 下滚 = 后退
+    await settleZoomFrames()                                     // 预算收敛到终点（#835 平滑）
     const back = cam.position.clone().sub(p0)
     expect(back.length()).toBeGreaterThan(1)
     expect(back.dot(aim0)).toBeLessThan(0)                       // 位移沿视线反方向
@@ -2131,6 +2151,7 @@ describe('scene vehicle selection intent', () => {
     expect(cam.getWorldDirection(new THREE.Vector3()).dot(aim1)).toBeCloseTo(1, 4)  // 朝向仍对准 target
     const p1 = cam.position.clone()
     wheel(-100)                                                  // 上滚 = 前进
+    await settleZoomFrames()
     expect(cam.position.clone().sub(p1).dot(aim0)).toBeGreaterThan(0)
   })
 

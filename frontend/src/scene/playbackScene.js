@@ -120,6 +120,7 @@ import { chainVisible } from './pickDebug.js'
 import { createBoundaryBand, BOUNDARY_THICK } from './playback/boundary.js'
 import { createBaseMarkers } from './playback/bases.js'
 import { createHudFeed } from './playback/hudFeed.js'
+import { createZoomSmoother, flyWheelFactor, orbitWheelFactor } from './playback/zoomSmoothing.js'
 import {
   ANNOTATION_LIFT, ANNOTATION_MAX_ERASER_POINTS, ANNOTATION_MAX_INPUT_POINTS,
   buildEraserRing, buildPenRibbon, hitWorldNormal, normalizePenPoints, reprojectRibbonPositions,
@@ -512,6 +513,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // OrbitControls（挂 canvas）物理上收不到左键拖拽/滚轮。选中/拾取语义不变
   // （位移 ≤ SLOP 仍算单击，在 capture 处理器内联）。切回跟随/top 或销毁时恢复 controls。
   const flyLook = { active: false, lastX: 0, lastY: 0, yaw: 0, pitch: 0, dist: 30 };
+  // 滚轮缩放平滑（#835）：两条滚轮路径（fly 拦截 / top·follow 的 OrbitControls 拦截）
+  // 都只把事件比例 push 进预算，zoomTick 每帧向目标收敛——事件当帧立即生效一小步，
+  // 约 0.4s 收敛到终点（公式/界限与原即时实现逐值一致，只改节奏不改步长）。
+  const zoomSmoother = createZoomSmoother();
   // 接管态 = 自由模式（派生）。**不按输入设备开关**：`(pointer: fine)` 之类的能力
   // 探测在触屏笔记本 / 平板模式下会报 coarse，把整条接管链关掉（用户实测：WASD 全灭、
   // 拖拽退回 OrbitControls）。
@@ -565,6 +570,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   /** free↔其他模式切换的 OrbitControls 侧状态迁移（enabled/damping/惯性清理）。 */
   function flyLookApplyMode(mode) {
     flyPan = null;   // 平移从手势起点重算：相机被模式切换挪动后，旧起点不能再用
+    zoomSmoother.reset();   // 滚轮预算一并清空：旧目标在新机位上继续生效会突然一跳
     if (mode === 'free') {
       if (controls) {
         controls.enabled = false;
@@ -615,6 +621,30 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     controls.target.z += dz * step;
     constrainFreeCameraAltitude();
     camera.lookAt(controls.target);
+    invalidate();
+  }
+  // 滚轮缩放的逐帧推进（animate 每帧调用；预算见 zoomSmoothing.js）。f = 本帧视距比例：
+  //   · fly：flyDolly 的 step 语义（>0 沿视线前进 = 视距收缩）⇒ 比例 f 对应步长
+  //     dist×(1−f)，f>1（滚轮下推）为负步长 = 拉远，与原即时实现逐格乘比例一致；
+  //   · top/follow：沿 target→camera 缩放视距（OrbitControls dolly 的同一几何）。
+  //     min/maxDistance 已含地形净空锁定值，随后的 clampOrbitCameraToTerrain 逐帧
+  //     再校验——被钳掉的部分自然吸收（与即时缩放同一钳制语义，只改节奏）。
+  const _zoomDir = new THREE.Vector3();
+  function zoomTick(dt) {
+    if (!renderer || !zoomSmoother.active()) return;
+    const f = zoomSmoother.advance(dt);
+    if (f === 1) return;
+    if (flyMode()) {
+      flyDolly(flyLook.dist * (1 - f));
+    } else if (controls && controls.enabled) {
+      const off = _zoomDir.subVectors(camera.position, controls.target);
+      const len = off.length();
+      if (len > 1e-6) {
+        const next = Math.min(controls.maxDistance, Math.max(controls.minDistance, len * f));
+        camera.position.copy(controls.target).addScaledVector(off.divideScalar(len), next);
+        camera.lookAt(controls.target);
+      }
+    }
     invalidate();
   }
   /** 手指当前射线的方向（单指平移用）；rect 不可用时返回 null。 */
@@ -849,13 +879,26 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 视角与视距保持不变。旧实现只改 flyLook.dist 而相机不动——target 只沿视线挪，
     // 画面毫无变化（用户实测「滚轮没有缩放」）。
     flyLookSyncIfStale('wheel');
-    // 线性步进（对 |deltaY| 对称，往返可精确抵消）：一格鼠标滚轮（deltaY≈100）≈12% 视距；
-    // 触控板的小 delta 逐次累积；单次上限 30%，防一帧飞越半个地图。
-    const f = Math.max(-0.3, Math.min(0.3, -e.deltaY * 0.0012));
-    flyDolly(flyLook.dist * f);
+    // 事件只累积视距比例（旧公式：比例 = 1 + clamp(deltaY*0.0012, ±0.3)，即每格
+    // 滚轮把当前视距乘上该比例），实际推拉由 zoomTick 逐帧收敛——一格滚轮从视距
+    // 突变变成短窗缓动（#835「缩放生硬」），连滚 k 格的总视距变化与旧实现逐值一致。
+    zoomSmoother.push(flyWheelFactor(e.deltaY));
+    invalidate();
     e.preventDefault();
     e.stopPropagation();
-    flyDbg('wheel', `step=${(flyLook.dist * f).toFixed(1)}`);
+    flyDbg('wheel', `pushed=${flyWheelFactor(e.deltaY).toFixed(3)}`);
+  }
+  /** top/follow（OrbitControls 路径）的滚轮拦截：只累积缩放预算，几何推进归 zoomTick。
+   *  事件幅度与 OrbitControls 直收滚轮逐值一致（orbitWheelFactor 注释），拦截只是把
+   *  「当帧一步到位」换成短窗收敛；单事件不改 min/max/地形钳制语义。 */
+  function onOrbitZoomWheel(e) {
+    if (flyMode()) return;   // fly/recorder 已由 onFlyCaptureWheel（先注册）处理或拦截
+    if (!controls || !controls.enabled) return;   // recorder 等输入关闭态不劫持
+    zoomSmoother.push(orbitWheelFactor(e.deltaY, controls.zoomSpeed));
+    invalidate();
+    e.preventDefault();
+    e.stopPropagation();
+    flyDbg('wheel', `orbit pushed=${orbitWheelFactor(e.deltaY, controls.zoomSpeed).toFixed(3)}`);
   }
   function onFlyCaptureCancel(e) {
     flyLook.active = false;
@@ -895,6 +938,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     container.addEventListener('pointerup', onFlyCaptureUp, true);
     container.addEventListener('pointercancel', onFlyCaptureCancel, true);
     container.addEventListener('wheel', onFlyCaptureWheel, { capture: true, passive: false });
+    // top/follow 的滚轮拦截（#835）：OrbitControls 的 wheel dolly 当帧生效、无过渡。
+    // 在 container capture 拦下（先于 canvas 的 target 阶段，OrbitControls 收不到），
+    // 比例公式与其 _getZoomScale 逐值同构（orbitWheelFactor）——单事件幅度不变，
+    // 只把「一步到位」换成 zoomTick 的短窗收敛。fly/recorder 模式在 onFlyCaptureWheel
+    // 内已处理/拦截，此处理器只服务 OrbitControls 路径。
+    container.addEventListener('wheel', onOrbitZoomWheel, { capture: true, passive: false });
     ensureAnnotationLayer();   // annotation layer 跟随 renderer 生命周期（lazy，材质/geometry 可复用）
     applyAnnotationTouchMode();   // pane 可能在 initScene 之前就推送了 interaction
     if (CAM === 'free') flyLookApplyMode('free');   // 初始 CAM 可能已是 'free'（默认值）
@@ -4290,6 +4339,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     } else followAnchor = null;
     if (CAM === 'recorder') driveRecorderCamera(dt);
     else clampCameraTarget();
+    zoomTick(dt);   // 滚轮缩放预算逐帧收敛（先于 controls.update()：本帧位移当帧可见）
     if (fovRestore) stepFovRestore(dt);
     // flyMode 接管期间 OrbitControls.update() 必须完全停跑：enabled=false 只挡输入
     // 事件、update 照常执行——其内部球面状态会按 target/相机重算，与 flyLook 的
