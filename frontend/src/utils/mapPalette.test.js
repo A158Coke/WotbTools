@@ -43,22 +43,23 @@ describe('mapPalette', () => {
 describe('luminanceOfImage（64×64 降采样亮度，issue #861）', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()   // review P3：vi.stubGlobal 不受 restoreAllMocks 影响
   })
 
   /** happy-dom 的 Image 不触发 onload：src 赋值后异步回 onload（失败用例单独 stub onerror）。 */
   function stubLoadedImage() {
-    const realImage = global.Image
     class LoadedImage {
       set src(_v) { setTimeout(() => this.onload?.(), 0) }
     }
     vi.stubGlobal('Image', LoadedImage)
-    return realImage
   }
 
   /** 铺受控像素的 canvas stub：happy-dom 的 canvas 无 2D 后端（node-canvas 缺席），
-   *  直接返回受控 ImageData 的 2D context——drawImage 只记尺寸，getImageData 返回
-   *  整面单色的 Uint8ClampedArray，保住「读 64×64」的采样路径语义。 */
+   *  直接返回受控 ImageData 的 2D context——**记录** canvas 尺寸、drawImage 与
+   *  getImageData 的实参，供 64×64 采样契约断言（review P2：no-op stub 会让生产
+   *  代码把采样尺寸改错也照样通过）。getImageData 按传入的 w×h 生成整面单色。 */
   function stubCanvasPixels(r, g, b) {
+    const calls = { canvasSizes: [], drawImage: [], getImageData: [] }
     const realCreateElement = document.createElement.bind(document)
     vi.spyOn(document, 'createElement').mockImplementation((tag) => {
       const el = realCreateElement(tag)
@@ -66,8 +67,12 @@ describe('luminanceOfImage（64×64 降采样亮度，issue #861）', () => {
         el.getContext = (kind) => {
           if (kind !== '2d') return null
           return {
-            drawImage: (_img, _dx, _dy, _w, _h) => {},
-            getImageData: (_sx, _sy, w, h) => {
+            drawImage: (_img, dx, dy, w, h) => {
+              calls.drawImage.push({ dx, dy, w, h })
+              calls.canvasSizes.push({ w, h })
+            },
+            getImageData: (sx, sy, w, h) => {
+              calls.getImageData.push({ sx, sy, w, h })
               const data = new Uint8ClampedArray(w * h * 4)
               for (let i = 0; i < w * h; i++) {
                 data[i * 4] = r
@@ -82,6 +87,14 @@ describe('luminanceOfImage（64×64 降采样亮度，issue #861）', () => {
       }
       return el
     })
+    return calls
+  }
+
+  /** 64×64 采样契约断言（#861 / review P2）：采样路径必须逐字保持。 */
+  function expectSamplingContract(calls) {
+    expect(calls.canvasSizes).toEqual([{ w: 64, h: 64 }])
+    expect(calls.drawImage).toEqual([{ dx: 0, dy: 0, w: 64, h: 64 }])
+    expect(calls.getImageData).toEqual([{ sx: 0, sy: 0, w: 64, h: 64 }])
   }
 
   it('缺少 image / image.src → null（调用方回退暗图色板）', async () => {
@@ -91,30 +104,28 @@ describe('luminanceOfImage（64×64 降采样亮度，issue #861）', () => {
   })
 
   it('图片加载失败（onerror）→ null，不抛错', async () => {
-    const realImage = global.Image
     class FailingImage {
       set src(_v) { setTimeout(() => this.onerror?.(new Error('404')), 0) }
     }
     vi.stubGlobal('Image', FailingImage)
-    try {
-      await expect(luminanceOfImage({ src: '/missing.webp' })).resolves.toBeNull()
-    } finally {
-      global.Image = realImage
-    }
+    await expect(luminanceOfImage({ src: '/missing.webp' })).resolves.toBeNull()
   })
 
   it('纯白 → 亮度接近 1；纯黑 → 接近 0（sRGB 线性化 0.2126/0.7152/0.0722 加权）', async () => {
     stubLoadedImage()
-    stubCanvasPixels(255, 255, 255)
+    const calls = stubCanvasPixels(255, 255, 255)
     await expect(luminanceOfImage({ src: 'white.webp' })).resolves.toBeCloseTo(1, 3)
-    stubCanvasPixels(0, 0, 0)
+    expectSamplingContract(calls)
+    const callsBlack = stubCanvasPixels(0, 0, 0)
     await expect(luminanceOfImage({ src: 'black.webp' })).resolves.toBeCloseTo(0, 3)
+    expectSamplingContract(callsBlack)
   })
 
   it('中灰 (128) 线性化 ≈ 0.216：锁线性化与加权公式不漂移（落在暗图阈值侧）', async () => {
     stubLoadedImage()
-    stubCanvasPixels(128, 128, 128)
+    const calls = stubCanvasPixels(128, 128, 128)
     const gray = await luminanceOfImage({ src: 'gray.webp' })
+    expectSamplingContract(calls)
     expect(gray).toBeGreaterThan(0.2)
     expect(gray).toBeLessThan(0.235)
   })
