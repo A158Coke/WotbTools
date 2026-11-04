@@ -6,12 +6,14 @@
  * （返回 null，消费方不得猜坐标）。原先 MapPreview2DPane 内联了同一份 glob+索引，
  * 3D 预览的出生点标记（#835）需要同一入口，这里收敛为唯一读取面。
  */
-import { indexMapGridProfiles } from '../replay-local/playback/toMapOverview.js'
+import { indexMapGridProfiles, type MapGridProfile } from '../replay-local/playback/toMapOverview.js'
 
-let gridProfiles = null
-export function mapGridProfile(mapKey) {
+let gridProfiles: Map<string, MapGridProfile> | null = null
+
+/** 按 mapKey（mapId 或任一 mapCode，大小写不敏感）取语义档案；缺档返回 null。 */
+export function mapGridProfile(mapKey: string | number): MapGridProfile | null {
   gridProfiles ??= indexMapGridProfiles(Object.values(import.meta.glob('../../../common/map-semantics/*.semantic.json', {
     eager: true, import: 'default',
-  })))
-  return gridProfiles.get(String(mapKey).toLowerCase()) || null
+  }) as Record<string, unknown>))
+  return gridProfiles.get(String(mapKey).toLowerCase()) ?? null
 }

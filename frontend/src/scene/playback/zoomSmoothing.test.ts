@@ -1,7 +1,7 @@
 // zoomSmoothing 纯函数测试：预算收敛、帧率无关、钳制吸收与事件公式锚点（#835）。
 import { describe, expect, it } from 'vitest'
 import {
-  createZoomSmoother, flyWheelFactor, orbitWheelFactor,
+  createFlyZoomSmoother, createZoomSmoother, flyWheelFactor, orbitWheelFactor,
   ZOOM_SMOOTH_TAU_SEC, ZOOM_SETTLE_LOG_EPS,
 } from './zoomSmoothing.js'
 
@@ -127,6 +127,65 @@ describe('滚轮事件公式锚点（与既有实现逐值同构）', () => {
     expect(Math.abs(flyWheelFactor(100) - 1)).toBeCloseTo(1 - flyWheelFactor(-100), 12)
     // orbit：与 OrbitControls dollyIn/dollyOut 同构，log 坐标严格互逆（精确往返抵消）
     expect(Math.log(orbitWheelFactor(100)) + Math.log(orbitWheelFactor(-100))).toBeCloseTo(0, 12)
+  })
+})
+
+describe('createFlyZoomSmoother 可加位移预算（fly 旧语义）', () => {
+  /** 把预算按固定 dt 逐帧耗干，返回各帧位移之和（= 终点总位移，无钳制时）。 */
+  function drain(smoother: ReturnType<typeof createFlyZoomSmoother>, dt: number, maxFrames: number): number {
+    let total = 0
+    for (let i = 0; i < maxFrames && smoother.active(); i++) total += smoother.advance(dt)
+    expect(smoother.active()).toBe(false)   // maxFrames 内必须收敛
+    return total
+  }
+
+  it('总量守恒：各帧位移之和恒等于 push 总量（平滑只改时间分布）', () => {
+    const s = createFlyZoomSmoother()
+    s.pushDisplacement(-3.6)
+    expect(drain(s, 0.1, 17)).toBeCloseTo(-3.6, 9)
+  })
+
+  it('同帧相反输入精确抵消：+100/-100 往返净位移为 0', () => {
+    const s = createFlyZoomSmoother()
+    s.pushDisplacement(3.6)
+    s.pushDisplacement(-3.6)
+    expect(s.active()).toBe(false)
+    expect(s.advance(0.1)).toBe(0)
+  })
+
+  it('连续同向累加：3 × +100 的总位移 = 3 × 单次（视距不变的旧语义）', () => {
+    const s = createFlyZoomSmoother()
+    s.pushDisplacement(3.6); s.pushDisplacement(3.6); s.pushDisplacement(3.6)
+    expect(drain(s, 1 / 60, 120)).toBeCloseTo(10.8, 9)
+  })
+
+  it('帧率无关：同一预算在 10/30/60 FPS 下收敛终点一致', () => {
+    for (const [dt, frames] of [[0.1, 17], [1 / 30, 60], [1 / 60, 120]] as const) {
+      const s = createFlyZoomSmoother()
+      s.pushDisplacement(-10.8)
+      expect(drain(s, dt, frames)).toBeCloseTo(-10.8, 9)
+    }
+  })
+
+  it('尾段不拖尾：残差 ≤ FLY_SETTLE_EPS 时整段付清', () => {
+    const s = createFlyZoomSmoother()
+    s.pushDisplacement(0.008)
+    expect(s.advance(0)).toBeCloseTo(0.008, 12)   // dt=0 也不拖尾（残差已小于阈值）
+  })
+
+  it('fail-closed：非有限位移不进预算', () => {
+    const s = createFlyZoomSmoother()
+    s.pushDisplacement(Number.NaN)
+    s.pushDisplacement(Number.POSITIVE_INFINITY)
+    expect(s.active()).toBe(false)
+  })
+
+  it('reset 清空预算', () => {
+    const s = createFlyZoomSmoother()
+    s.pushDisplacement(3.6)
+    s.reset()
+    expect(s.active()).toBe(false)
+    expect(s.advance(0.1)).toBe(0)
   })
 })
 
