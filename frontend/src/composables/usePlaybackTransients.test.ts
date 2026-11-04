@@ -49,13 +49,14 @@ function track(accountId: number, overrides: Partial<TransientVehicleTrack> = {}
 }
 
 /** 真实 composable 状态机：驱动 consume/reset/prune/visibleFeed 的真实转换。 */
-function setup(events: BattleEvent[], tracks: TransientVehicleTrack[]) {
+function setup(events: BattleEvent[], tracks: TransientVehicleTrack[], feedVisible?: () => boolean) {
   const nowMs = ref(1000)
   const t = usePlaybackTransients({
     nowMs,
     authoritativeEvents: () => events,
     hpVehicles: () => tracks,
     vehiclesByAccount: () => new Map(tracks.map(v => [v.accountId, v])),
+    feedVisible,
   })
   return { nowMs, ...t }
 }
@@ -241,6 +242,37 @@ describe('usePlaybackTransients — loop 回绕与跨战局隔离', () => {
     second.consumeEvents(0, 13)
     expect(second.floatItems.value).toHaveLength(1)
     expect(first.floatItems.value).toHaveLength(1) // 首个实例不受影响
+  })
+
+  it('feed 隐藏时排队条目不算 pending（不驱动暂停时钟）；恢复可见后重新算 pending', () => {
+    const victim = track(2)
+    const events = [ev('KILL', 12, 1, 2)]
+    // 隐藏（模板不消费 visibleFeed → 排队条目无 shownAt）：不得让暂停时钟无限续约
+    const hidden = setup(events, [track(1), victim], () => false)
+    hidden.consumeEvents(0, 13)
+    expect(hidden.feedItems.value).toHaveLength(1)
+    hidden.nowMs.value = clockMs
+    // 模板不消费 visibleFeed → 无 shownAt 提升（这里刻意不读 visibleFeed，与模板一致）
+    expect(hidden.hasPendingTransients(clockMs)).toBe(false)
+    // 已展示条目（shownAt 已记录）仍按原寿命 pending，即使此刻隐藏
+    const shown = setup(events, [track(1), victim], () => false)
+    shown.consumeEvents(0, 13)
+    shown.nowMs.value = clockMs
+    void shown.visibleFeed.value // 提升并记录 shownAt
+    expect(shown.hasPendingTransients(clockMs)).toBe(true)
+    clockMs += KILL_FEED_MS + 1
+    shown.nowMs.value = clockMs
+    expect(shown.hasPendingTransients(clockMs)).toBe(false)
+    // 可见时排队条目照常 pending（caller 据此续约暂停时钟）
+    const visible = setup(events, [track(1), victim], () => true)
+    visible.consumeEvents(0, 13)
+    expect(visible.hasPendingTransients(clockMs)).toBe(true)
+  })
+
+  it('feedVisible 缺省为可见（向后兼容既有 pending 判定）', () => {
+    const t = setup([ev('KILL', 12, 1, 2)], [track(1), track(2)])
+    t.consumeEvents(0, 13)
+    expect(t.hasPendingTransients(clockMs)).toBe(true)
   })
 
   it('DESTROYED burst：位置覆盖时生成，wall-clock 到期后消失', () => {

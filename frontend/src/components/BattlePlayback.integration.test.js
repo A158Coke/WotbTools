@@ -2487,6 +2487,54 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
     expect(wrapper.find('[data-test="pb-float-dmg"]').exists()).toBe(false) // 上一轮 float 到期，未重复
     expect(wrapper.findAll('.pb-feed-item')).toHaveLength(1) // 上一轮 feed 仍在自然存活，未重复
   })
+
+  it('B5A-fix kill feed 隐藏时不无限续约暂停时钟；恢复显示重启时钟并展示队列', async () => {
+    // 记录 RAF 调度次数：隐藏 feed 时暂停时钟必须收敛，不得为不可见内容无限续约
+    let rafScheduled = 0
+    vi.stubGlobal('requestAnimationFrame', (cb) => { rafScheduled += 1; rafCb = cb; return 1 })
+    vi.stubGlobal('cancelAnimationFrame', () => {})
+    const clock = fakeClock()
+    const prefs = usePlaybackPreferences()
+    prefs.uiPrefs.showKillfeed = false
+    const overview = makeOverview()
+    const ds = makePlaybackV2()
+    ds.events.push({ type: 'KILL', timeSec: 16, accountId: 1001, targetAccountId: 2001, rawProtocolValue: null })
+    const wrapper = mountPlayback(overview, 11, ds)
+    await flushPromises()
+    Object.defineProperty(wrapper.find('[data-test="pb-map"]').element, 'clientWidth', { value: 800, configurable: true })
+    await wrapper.find('[data-test="pb-play"]').trigger('click')
+    clock.now = 100
+    rafCb(0)
+    clock.now = 6000
+    rafCb(6000) // t=17：消费 DAMAGE@12 + KILL@16（feed 隐藏 → 排队无 shownAt）
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-kill-feed"]').exists()).toBe(false)
+    // 暂停：隐藏 feed 不算 pending；可见 float/ghost 按原寿命完成后调度必须收敛
+    await wrapper.find('[data-test="pb-play"]').trigger('click')
+    await flushPromises()
+    const counts = []
+    for (let i = 0; i < 12; i++) {
+      clock.now += 500
+      if (rafCb) rafCb(clock.now)
+      await flushPromises()
+      counts.push(rafScheduled)
+    }
+    expect(counts[counts.length - 1]).toBe(counts[counts.length - 4]) // 末 3 帧无新调度
+    expect(wrapper.find('[data-test="pb-kill-feed"]').exists()).toBe(false)
+    // 恢复显示：watch 重启时钟，队列提升并可见
+    prefs.uiPrefs.showKillfeed = true
+    await flushPromises()
+    expect(rafScheduled).toBeGreaterThan(counts[counts.length - 1]) // 时钟被重启
+    expect(wrapper.find('[data-test="pb-kill-feed"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-kill-feed"]').text()).toContain('EnemyA（T49）')
+    // 展示完毕（4s）后再次收敛，feed 自然消失
+    for (let i = 0; i < 14; i++) {
+      clock.now += 500
+      if (rafCb) rafCb(clock.now)
+      await flushPromises()
+    }
+    expect(wrapper.find('[data-test="pb-kill-feed"]').exists()).toBe(false)
+  })
 })
 
 describe('V2 HP regression (restored critical coverage)', () => {

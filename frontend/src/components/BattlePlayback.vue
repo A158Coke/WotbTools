@@ -356,6 +356,9 @@ const {
   authoritativeEvents: () => authoritativeEvents.value,
   hpVehicles: () => hpVehicles.value,
   vehiclesByAccount: () => vehiclesByAccount.value,
+  // 与 kill feed 模板消费条件（!uiHidden && uiPrefs.showKillfeed）同口径：隐藏时
+  // visibleFeed 不被读取、排队条目永远没有 shownAt，不驱动暂停时钟（防 RAF 无限续约）。
+  feedVisible: () => !uiHidden.value && !!uiPrefs.showKillfeed,
 })
 
 // ---- 单车 HP HUD 数据（§4/§5/§6/§7）----
@@ -2072,6 +2075,12 @@ function ensurePauseClock(now) {
 watch([nowMs, currentTime], () => {
   pruneTransients(nowMs.value)
   ensurePauseClock(nowMs.value)
+})
+
+// kill feed 恢复显示（showKillfeed / 沉浸态切换）：隐藏期间排队条目不驱动暂停时钟，
+// 恢复后重启轻量时钟让待展示条目自然完成（§20.2）。
+watch(() => !uiHidden.value && !!uiPrefs.showKillfeed, (visible) => {
+  if (visible) ensurePauseClock(realNowMs())
 })
 
 /** VehicleMarker label prop（每 marker 一个：显示开关 + 碰撞位移 +

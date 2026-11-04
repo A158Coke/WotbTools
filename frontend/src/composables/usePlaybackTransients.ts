@@ -66,6 +66,13 @@ export function usePlaybackTransients(options: {
   hpVehicles: () => TransientVehicleTrack[]
   /** accountId → canonical vehicle identity（feed banner 显示字段来源）。 */
   vehiclesByAccount: () => Map<number, TransientVehicleTrack>
+  /**
+   * kill feed 当前是否可见（模板消费条件：UI 未隐藏且 showKillfeed 开启）。
+   * 隐藏时排队条目永远不会被 activeFeed 提升（shownAt 为空），若仍判定 pending
+   * 会让暂停轻量 RAF 无限续约；因此隐藏期间排队条目不驱动暂停时钟，
+   * 已展示条目仍按原寿命自然完成。恢复显示由调用方重启时钟。
+   */
+  feedVisible?: () => boolean
 }) {
   const { nowMs } = options
 
@@ -178,9 +185,13 @@ export function usePlaybackTransients(options: {
     if (transientsActive(burstItems.value, now).length) return true
     // Event Banner queue：以 shownAt 计时（activeFeed）。存在「排队等待」或「正在展示且未过期」的
     // 条目都算 pending —— pause 下也要完整展示 4s 并自然消失（不能按 bornRealMs 判断 feed）。
+    // feed 隐藏时模板不消费 visibleFeed → 排队条目永远没有 shownAt；它们不算 pending
+    //（不能让暂停时钟为不可见内容无限续约），恢复显示后由调用方重启时钟。
+    const feedVisible = options.feedVisible?.() ?? true
     if (feedItems.value.some(it => {
       const s = feedShownAt.get(it.id)
-      return s == null || !Number.isFinite(it.durationMs) || now - s < it.durationMs
+      if (s == null) return feedVisible
+      return !Number.isFinite(it.durationMs) || now - s < it.durationMs
     })) return true
     for (const g of ghostByAccount.values()) if (g.untilRealMs > now) return true
     for (const u of flashByAccount.values()) if (u > now) return true
