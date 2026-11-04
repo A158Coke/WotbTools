@@ -25,7 +25,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Prune ai-service versions
-        uses: actions/delete-package-versions@v5
+        uses: actions/delete-package-versions@e5bc658cc4c965c472efe991f8beea3981499c55 # v5
         with:
           package-name: ai-service
           package-type: container

@@ -50,7 +50,7 @@ jobs:
           }
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           ref: ${{ steps.source.outputs.source_sha }}
           fetch-depth: 1
@@ -97,7 +97,7 @@ jobs:
           chmod 600 ~/.ssh/known_hosts
 
       - name: Prepare TX2 replica staging
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         with:
           host: ${{ secrets.TX2_VPS_HOST }}
           username: ${{ secrets.TX2_VPS_USER }}
@@ -110,7 +110,7 @@ jobs:
             mkdir -p "$root/deploy/tx"
 
       - name: Stage TX2 frontend replica inputs
-        uses: appleboy/scp-action@v1
+        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1
         with:
           host: ${{ secrets.TX2_VPS_HOST }}
           username: ${{ secrets.TX2_VPS_USER }}

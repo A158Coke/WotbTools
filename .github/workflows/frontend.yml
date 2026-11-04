@@ -82,7 +82,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
@@ -358,7 +358,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
@@ -376,7 +376,7 @@ jobs:
             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
 
       - name: Prepare TX staging directories
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         with:
           host: ${{ secrets.TX_VPS_HOST }}
           username: ${{ secrets.TX_VPS_USER }}
@@ -393,7 +393,7 @@ jobs:
             mkdir -p "$root/deploy.incoming/deploy/tx"
 
       - name: Stage TX runtime files
-        uses: appleboy/scp-action@v1
+        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1
         with:
           host: ${{ secrets.TX_VPS_HOST }}
           username: ${{ secrets.TX_VPS_USER }}
@@ -408,7 +408,7 @@ jobs:
         # 与"无 pin ⇒ 无赞助内容"的发布路径对齐（2026-10-10 复审 P2）。target 与必选步骤一致，
         # 保证远端路径仍是 deploy.incoming/deploy/sponsor/content.json（identity 派生依赖它）。
         if: ${{ hashFiles('deploy/sponsor/content.json') != '' }}
-        uses: appleboy/scp-action@v1
+        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1
         with:
           host: ${{ secrets.TX_VPS_HOST }}
           username: ${{ secrets.TX_VPS_USER }}
@@ -431,7 +431,7 @@ jobs:
             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
 
       - name: Reconcile only Frontend under the TX host lock
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         with:
           host: ${{ secrets.TX_VPS_HOST }}
           username: ${{ secrets.TX_VPS_USER }}

@@ -43,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
@@ -81,7 +81,7 @@ jobs:
       # directory, and the SHA directory must all be real directories (mode 700)
       # before SCP is allowed to write into them.
       - name: Prepare safe TX2 worker staging root
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         with:
           host: ${{ secrets.TX2_VPS_HOST }}
           username: ${{ secrets.TX2_VPS_USER }}
@@ -99,7 +99,7 @@ jobs:
       # every other owner's files stay in CI, so the host lock is never taken with
       # anything the review did not read.
       - name: Stage exact worker inputs on TX2
-        uses: appleboy/scp-action@v1
+        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1
         with:
           host: ${{ secrets.TX2_VPS_HOST }}
           username: ${{ secrets.TX2_VPS_USER }}
@@ -133,7 +133,7 @@ jobs:
       # environment and is preserved across sudo by name only; the run asserts the
       # host-scoped readiness token instead of trusting the exit status alone.
       - name: Reconcile the TX2 production worker under the TX2 host lock
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         with:
           host: ${{ secrets.TX2_VPS_HOST }}
           username: ${{ secrets.TX2_VPS_USER }}
@@ -168,7 +168,7 @@ jobs:
       # helper re-proved the root and its incoming directory are real directories.
       - name: Cleanup staged TX2 worker inputs
         if: always()
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         with:
           host: ${{ secrets.TX2_VPS_HOST }}
           username: ${{ secrets.TX2_VPS_USER }}
