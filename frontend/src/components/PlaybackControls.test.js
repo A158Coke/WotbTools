@@ -3,7 +3,7 @@
 import { defineComponent, h, nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { PLAYBACK_PHONE_QUERY } from '../composables/usePlaybackPhoneForm.js'
+import { PLAYBACK_PHONE_QUERY } from '../composables/usePlaybackPhoneForm.ts'
 import PlaybackControls from './PlaybackControls.vue'
 
 const timelineStub = defineComponent({

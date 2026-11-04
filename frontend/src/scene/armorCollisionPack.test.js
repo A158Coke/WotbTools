@@ -12,7 +12,7 @@ import * as THREE from 'three'
 import {
     snapshotPackPose, packPoseChanged, RC, RC_GLSL_CONST, RC_GLSL_FUNCS, buildPack, buildRicochetGrid, createGridTextures, updatePackMatrices,
     raycastPackAll, raycastGridAll, simulateContinuation, isClippedModuleHit, isBackfaceNormal,
-} from './armorCollisionPack.js'
+} from './armorCollisionPack.ts'
 import { calculate } from './penetration.js'
 
 const PRIM = new Set(['hull', 'turret', 'gun'])
@@ -708,7 +708,7 @@ describe('续飞初始接受阈三路一致（评审 P1）', () => {
         expect(RC_GLSL_FUNCS).toContain('tCur = bestT + RC_ADV_EPS;');
     });
     it('JS 参考入口与 click 路径使用同一初始接受阈（源码级锁，防回归到 +eps 口径）', () => {
-        const src = require('fs').readFileSync(new URL('./armorCollisionPack.js', import.meta.url), 'utf8');
+        const src = require('fs').readFileSync(new URL('./armorCollisionPack.ts', import.meta.url), 'utf8');
         expect(src).toContain('raycastPackAll(pack, ro, dir, RC.MIN_CONTINUATION_T, RC.FAR, false, clipPlane);');
         expect(src).not.toContain('RC.MIN_CONTINUATION_T + RC.ADVANCE_EPSILON');
         // click 路径（tankViewer.js）严格同一口径：t <= MIN 滤（此前是 t < MIN，且 GLSL/JS 侧 +eps）

@@ -3,8 +3,8 @@
 // 复位语义、sunUniforms 写入。用真 THREE 灯泡对象测（模块导入 three，vitest 环境可实例化）。
 import { describe, it, expect } from 'vitest'
 import * as THREE from 'three'
-import { applyMapLighting, resetMapLighting, DEFAULT_HEMI_INTENSITY, DEFAULT_SUN_INTENSITY } from './mapLighting.js'
-import { sunUniforms } from './sceneryMaterials.js'
+import { applyMapLighting, resetMapLighting, DEFAULT_HEMI_INTENSITY, DEFAULT_SUN_INTENSITY } from './mapLighting.ts'
+import { sunUniforms } from './sceneryMaterials.ts'
 
 function rig() {
   const renderer = { toneMappingExposure: 1.0 }

@@ -1,10 +1,12 @@
 package com.wotb.core.ref;
 
+import com.wotb.core.model.TankInfo;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TankopediaTest {
 
@@ -47,5 +49,36 @@ class TankopediaTest {
     void publishedNameSetIsImmutable() {
         final var names = TankopediaReferenceData.tankopedia().names();
         assertThrows(UnsupportedOperationException.class, () -> names.add("not-a-real-tank"));
+    }
+
+    @Test
+    void publishedNameSetIsBuiltFromTheTierFilesRatherThanLeftEmpty() {
+        final var names = TankopediaReferenceData.tankopedia().names();
+        assertTrue(names.contains("KV-2"));
+        assertTrue(names.contains("Tiger II"));
+        assertTrue(names.size() > 100);
+    }
+
+    @Test
+    void structuredVehicleFieldsComeFromTheTierFilesWithStableFallbacks() {
+        final Tankopedia tankopedia = TankopediaReferenceData.tankopedia();
+        assertEquals("Heavy tank", tankopedia.info(10497).type());
+        assertEquals("USSR", tankopedia.info(10497).nation());
+        assertEquals("", tankopedia.info(10497).extraInfo());
+        final TankInfo tiger = tankopedia.info(5137);
+        assertEquals("Tiger II", tiger.name());
+        assertEquals(8, tiger.tier());
+        assertEquals(1850, tiger.maxHp());
+        assertEquals(310, tiger.alphaDamage());
+        final TankInfo unknown = tankopedia.info(987654321L);
+        assertEquals("", unknown.type());
+        assertEquals("", unknown.nation());
+        assertEquals("", unknown.extraInfo());
+    }
+
+    @Test
+    void resourceBootstrapProducesTheSharedInstanceWithoutReloads() {
+        final Tankopedia loaded = TankopediaReferenceData.tankopedia();
+        assertTrue(loaded.size() > 100);
     }
 }

@@ -2,34 +2,55 @@ import { defineAsyncComponent } from 'vue'
 import HomePage from '../components/HomePage.vue'
 import ReplayWorkspace from '../components/ReplayWorkspace.vue'
 import { toReplayCapability } from '../types/workspace.js'
+import ViewLoadingState from './ViewLoadingState.vue'
+import ViewLoadError from './ViewLoadError.vue'
 
 // 审计 PF-02：只有落地页（首页 / 回放工作台）同步加载，其余页面按需拆包，
 // 管理页、markdown-it、DOMPurify、历史 .md 不再进主包。
-const HoFPage = defineAsyncComponent(() => import('../components/HoFPage.vue'))
-const HoFAdminPage = defineAsyncComponent(() => import('../components/HoFAdminPage.vue'))
-const ProfilePage = defineAsyncComponent(() => import('../components/ProfilePage.vue'))
-const BattleDataAdminPage = defineAsyncComponent(() => import('../components/BattleDataAdminPage.vue'))
-const AdminUsersPage = defineAsyncComponent(() => import('../components/AdminUsersPage.vue'))
-const AdminAiReviewFeedbackPage = defineAsyncComponent(() => import('../components/AdminAiReviewFeedbackPage.vue'))
-const AdminSiteFeedbackPage = defineAsyncComponent(() => import('../components/AdminSiteFeedbackPage.vue'))
-const HistoryPage = defineAsyncComponent(() => import('../components/HistoryPage.vue'))
-const TechnicalEvolutionPage = defineAsyncComponent(() => import('../components/TechnicalEvolutionPage.vue'))
-const ContactPage = defineAsyncComponent(() => import('../components/ContactPage.vue'))
-const AndroidDownloadPage = defineAsyncComponent(() => import('../components/AndroidDownloadPage.vue'))
-const SponsorPage = defineAsyncComponent(() => import('../components/SponsorPage.vue'))
-const MorePage = defineAsyncComponent(() => import('../components/MorePage.vue'))
-const AgentTankopediaPage = defineAsyncComponent(() => import('../components/AgentTankopedia.vue'))
-const AgentArmorViewPage = defineAsyncComponent(() => import('../components/AgentArmorView.vue'))
-const AgentTechTreePage = defineAsyncComponent(() => import('../components/AgentTechTree.vue'))
-const MapPreviewPage = defineAsyncComponent(() => import('../components/MapPreviewPage.vue'))
-const RatingDocsPage = defineAsyncComponent(() => import('../components/RatingDocsPage.vue'))
-const TournamentPointsPage = defineAsyncComponent(() => import('../components/TournamentPointsPage.vue'))
-const TournamentPointsConfigPage = defineAsyncComponent(() => import('../components/TournamentPointsConfigPage.vue'))
-const TournamentPointsAdminPage = defineAsyncComponent(() => import('../components/TournamentPointsAdminPage.vue'))
-const LeagueBroadcastsPage = defineAsyncComponent(() => import('../components/LeagueBroadcastsPage.vue'))
-const RecommendationsPage = defineAsyncComponent(() => import('../components/RecommendationsPage.vue'))
-const CreatorsPage = defineAsyncComponent(() => import('../components/CreatorsPage.vue'))
-const CreatorsConfigPage = defineAsyncComponent(() => import('../components/CreatorsConfigPage.vue'))
+//
+// 统一的 View transition 边界（#845）：慢加载在 main 内容区显示 loading surface，
+// chunk 失败显示可恢复的 error surface。delay 是「异步延迟反馈阈值」，不是动画时长，
+// 不能绑定 --duration-*（prefers-reduced-motion 会把它归零，反而立即闪 loader）。
+export const VIEW_LOAD_FEEDBACK_DELAY_MS = 300
+
+/**
+ * 全部 lazy View 的唯一创建入口：loading / error presentation 只在这里配置一次。
+ * latest-wins、timer 清理与「卸载后丢弃结果」由 Vue async component 语义保证：
+ * 每个 wrapper 实例持有自己的 loaded/error/delayed，resolve/reject 先检查
+ * `instance.isUnmounted`，delay timer 在 onUnmounted 清除（runtime-core 3.5 实测）。
+ */
+export const defineLazyView = loader => defineAsyncComponent({
+  loader,
+  delay: VIEW_LOAD_FEEDBACK_DELAY_MS,
+  loadingComponent: ViewLoadingState,
+  errorComponent: ViewLoadError,
+})
+
+const HoFPage = defineLazyView(() => import('../components/HoFPage.vue'))
+const HoFAdminPage = defineLazyView(() => import('../components/HoFAdminPage.vue'))
+const ProfilePage = defineLazyView(() => import('../components/ProfilePage.vue'))
+const BattleDataAdminPage = defineLazyView(() => import('../components/BattleDataAdminPage.vue'))
+const AdminUsersPage = defineLazyView(() => import('../components/AdminUsersPage.vue'))
+const AdminAiReviewFeedbackPage = defineLazyView(() => import('../components/AdminAiReviewFeedbackPage.vue'))
+const AdminSiteFeedbackPage = defineLazyView(() => import('../components/AdminSiteFeedbackPage.vue'))
+const HistoryPage = defineLazyView(() => import('../components/HistoryPage.vue'))
+const TechnicalEvolutionPage = defineLazyView(() => import('../components/TechnicalEvolutionPage.vue'))
+const ContactPage = defineLazyView(() => import('../components/ContactPage.vue'))
+const AndroidDownloadPage = defineLazyView(() => import('../components/AndroidDownloadPage.vue'))
+const SponsorPage = defineLazyView(() => import('../components/SponsorPage.vue'))
+const MorePage = defineLazyView(() => import('../components/MorePage.vue'))
+const AgentTankopediaPage = defineLazyView(() => import('../components/AgentTankopedia.vue'))
+const AgentArmorViewPage = defineLazyView(() => import('../components/AgentArmorView.vue'))
+const AgentTechTreePage = defineLazyView(() => import('../components/AgentTechTree.vue'))
+const MapPreviewPage = defineLazyView(() => import('../components/MapPreviewPage.vue'))
+const RatingDocsPage = defineLazyView(() => import('../components/RatingDocsPage.vue'))
+const TournamentPointsPage = defineLazyView(() => import('../components/TournamentPointsPage.vue'))
+const TournamentPointsConfigPage = defineLazyView(() => import('../components/TournamentPointsConfigPage.vue'))
+const TournamentPointsAdminPage = defineLazyView(() => import('../components/TournamentPointsAdminPage.vue'))
+const LeagueBroadcastsPage = defineLazyView(() => import('../components/LeagueBroadcastsPage.vue'))
+const RecommendationsPage = defineLazyView(() => import('../components/RecommendationsPage.vue'))
+const CreatorsPage = defineLazyView(() => import('../components/CreatorsPage.vue'))
+const CreatorsConfigPage = defineLazyView(() => import('../components/CreatorsConfigPage.vue'))
 
 /**
  * 回放工作台是唯一 capability orchestrator：`replay` / `battle-playback` / `ai-review`

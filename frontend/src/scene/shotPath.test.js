@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   pathPointsOf, legSecsOf, legEndTimes, pointAt, legArcEnds, arcAtTime, pointAtArc,
-} from './shotPath.js'
+} from './shotPath.ts'
 
 // 跳弹样本（20260821_1917 Intotherainy/KRV）：炮口 → 受击方装甲处（跳弹点）→ 服务器终点（天上）
 const ricochet = {
@@ -95,7 +95,7 @@ describe('shotPath：折线弹道求值（跳弹/穿透续段）', () => {
 describe('Into 变体输出契约（评审 P1 回归锁）', () => {
   it('out 为 THREE.Vector3 时写入 x/y/z（仅数组下标会让炮弹停在原点）', async () => {
     const THREE = await import('three')
-    const { pointAtInto, pointAtArcInto } = await import('./shotPath.js')
+    const { pointAtInto, pointAtArcInto } = await import('./shotPath.ts')
     // 评审用例形状：from=[10,0,10] → to=[60,0,30]，flight 1s，t−t0 = 0.5
     const points = [[10, 0, 10], [60, 0, 30]]
     const legEnds = [1]           // 单段，段末 t0+1

@@ -7,7 +7,7 @@ import * as THREE from 'three'
 import {
   collectInstanceEntries, groupInstanceBatches, buildInstancedMesh,
   writeHiddenInstance, fallMatrix, hasTransparentMaterial, buildStandaloneLightmappedMeshes,
-} from './sceneryInstancing.js'
+} from './sceneryInstancing.ts'
 
 const geo = (h = 1) => {
   const g = new THREE.BoxGeometry(1, h, 1)
@@ -164,7 +164,7 @@ describe('非均匀缩放槽位的包围球保守性（评审二轮）', () => {
   // （d + 原型 heightM + 2）不保守，倒伏射线仍 0 命中。锁定：扩张量必须按
   // base 变换后的实高（含缩放）计算，倒伏扫掠被球覆盖。
   it('非均匀缩放树倒伏后的最远触及点仍在扩张后的批次球内', async () => {
-    const { fallMatrix } = await import('./sceneryInstancing.js')
+    const { fallMatrix } = await import('./sceneryInstancing.ts')
     // 原型树：局部高 6m（树梢在 z=6），节点缩放 [3.105, 2.389, 2.389] → 实高 ≈18.6m
     const scale = [3.1051428, 2.3885715, 2.3885715]
     const root = new THREE.Object3D()
@@ -201,7 +201,7 @@ describe('非均匀缩放槽位的包围球保守性（评审二轮）', () => {
 describe('同格双树批次球（评审四轮反例）', () => {
   it('批次球心到 pivot 的距离计入扩张——右树倒伏后射线可命中', async () => {
     const { buildInstancedMesh, groupInstanceBatches, collectInstanceEntries, fallMatrix, refreshBatchSphere }
-      = await import('./sceneryInstancing.js')
+      = await import('./sceneryInstancing.ts')
     // 评审反例：同一 75m 格内两棵树（x=0 与 x=60）→ 同一批次，球心 ≈ x=30；
     // 右树（x=60）倒伏后，扩张若只算「几何球心→pivot」会漏 30m 的球心距离。
     const root = new THREE.Object3D()
@@ -249,7 +249,7 @@ describe('同格双树批次球（评审四轮反例）', () => {
 describe('损毁态批次球（评审五轮回归）', () => {
   it('全隐藏批次：球按 base 位姿非空，激活后视锥与射线均通过', async () => {
     const { buildInstancedMesh, groupInstanceBatches, collectInstanceEntries, writeHiddenInstance, refreshBatchSphere }
-      = await import('./sceneryInstancing.js')
+      = await import('./sceneryInstancing.ts')
     // 评审复现：只含损毁模型的批次（D_Rubble@x=60），初始全部隐藏——
     // 球若跳过隐藏槽位 = radius -1 空球，激活后被整批剔除/漏拾取
     const root = new THREE.Object3D()
@@ -285,7 +285,7 @@ describe('损毁态批次球（评审五轮回归）', () => {
 
   it('混合批次：隐藏槽位的 base 位姿同样在覆盖内（激活前后同一球可用）', async () => {
     const { buildInstancedMesh, groupInstanceBatches, collectInstanceEntries, writeHiddenInstance, refreshBatchSphere }
-      = await import('./sceneryInstancing.js')
+      = await import('./sceneryInstancing.ts')
     const root = new THREE.Object3D()
     const shared = geo(2)
     const m1 = mat()

@@ -6,7 +6,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 import { mount } from '@vue/test-utils'
-import { FLY_SPEEDS, isFlySpeedIndex, advanceFly, classifyTwoFinger, groundPanOffset, isTextEntryTarget, useSceneFlyControls } from './useSceneFlyControls.js'
+import { FLY_SPEEDS, isFlySpeedIndex, advanceFly, classifyTwoFinger, groundPanOffset, isTextEntryTarget, useSceneFlyControls } from './useSceneFlyControls.ts'
 
 // 测试桩：构造 camera/controls 与 pressed 集合，直接调**生产实现** advanceFly
 //（此前复制生产实现到桩里，Q/E 翻转时桩漏改导致测试与实现脱钩——已改为单一实现）。

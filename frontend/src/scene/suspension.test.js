@@ -18,7 +18,7 @@ import {
   parseWheelNodeName, parseTrackNodeName, wheelRadiusFromExtents, chainAverageSegment,
   measureBeltUvSlope, chainBottomRunDir, writeUvOffsetV,
   SUSP_FALLBACK,
-} from './suspension.js'
+} from './suspension.ts'
 
 describe('轮自转位姿：枢轴补偿（导出的轮节点在原点，几何烘进顶点）', () => {
   // 复现真实导出形态：节点在原点、identity 旋转；轮心在父空间 (0, 3, 0.4)，半径 0.37
