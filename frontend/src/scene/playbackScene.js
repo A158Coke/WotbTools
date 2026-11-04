@@ -357,7 +357,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (!QUALITY_PRESETS[q]) { try { q = localStorage.getItem('pb_quality') || ''; } catch (e) {} }
     if (!QUALITY_PRESETS[q]) {
       const mobile = !!window.__TAURI__ || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
-      // 移动/Tauri 默认**均衡**（真车模 + 无场景 GLB 下载税）；4K/Retina 想吃满
+      // 移动/Tauri 默认**均衡**（真车模、完整场景和烘焙地表）；4K/Retina 想吃满
       // 填充率的显式选极致，桌面默认不背 DPR 2 的税。
       q = mobile ? 'mid' : 'high';
     }
