@@ -346,6 +346,30 @@ describe('tryReloadForFreshBundle contract', () => {
     expect(reload).not.toHaveBeenCalled()
   })
 
+  it('explicit：automatic 刚写入 guard（cooldown 内）→ 用户主动点击仍 reload', () => {
+    const { target, reload } = reloadTarget()
+    // automatic 恢复已触发并写入 guard
+    expect(tryReloadForFreshBundle(() => {}, target, { requirePersistentGuard: true })).toBe(true)
+    reload.mockClear()
+    // 用户在同一 cooldown 窗口内主动点击 Reload：不被静默拦截
+    expect(tryReloadForFreshBundle(() => {}, target, { explicit: true })).toBe(true)
+    expect(reload).toHaveBeenCalledTimes(1)
+  })
+
+  it('explicit：reload 后仍写入 guard，后续 automatic 恢复继续受 cooldown 保护', () => {
+    const { target, reload } = reloadTarget()
+    expect(tryReloadForFreshBundle(() => {}, target, { explicit: true })).toBe(true)
+    reload.mockClear()
+    expect(tryReloadForFreshBundle(() => {}, target, { requirePersistentGuard: true })).toBe(false)
+    expect(reload).not.toHaveBeenCalled()
+  })
+
+  it('explicit：storage 不可用仍 reload（manual 语义不变）', () => {
+    const { target, reload } = reloadTarget({ readThrows: true })
+    expect(tryReloadForFreshBundle(() => {}, target, { explicit: true })).toBe(true)
+    expect(reload).toHaveBeenCalledTimes(1)
+  })
+
   it('返回值与真实 reload 次数严格对应（true ⇔ 1 次，false ⇔ 0 次）', () => {
     const cases: Array<{
       options?: { requirePersistentGuard?: boolean }

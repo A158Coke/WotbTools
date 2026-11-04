@@ -10,30 +10,30 @@ import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 
 const surfaceMesh = vi.hoisted(() => ({ userData: {} }))
-vi.mock('../sceneryAssembly.js', () => ({
+vi.mock('../sceneryAssembly.ts', () => ({
   resolveSceneryExtras: async () => ({}),
   makeTexResolvers: () => ({ maskTexOf: null, lmTexOf: null, detailTexOf: null, envTexOf: null, waterTexOf: null, decalTexOf: null }),
   assembleSceneryMaterials: (_gltf, opts) => { opts.onMesh(surfaceMesh, false); return { animLayerMats: [] } },
 }))
-vi.mock('../sceneryAssemblyRules.js', () => ({
+vi.mock('../sceneryAssemblyRules.ts', () => ({
   sceneHasSkyFlags: () => false,
   strictSurfacesOf: () => new Set(),
   isWaterNode: () => false,
 }))
-vi.mock('../variantFilter.js', () => ({ pruneForeignVariantsDetailed: () => ({ removed: 0, failClosed: false }) }))
-vi.mock('../sceneryMaterials.js', () => ({ applyMaterialTextureAnisotropy: () => 0 }))
+vi.mock('../variantFilter.ts', () => ({ pruneForeignVariantsDetailed: () => ({ removed: 0, failClosed: false }) }))
+vi.mock('../sceneryMaterials.ts', () => ({ applyMaterialTextureAnisotropy: () => 0 }))
 vi.mock('../groundPass.js', () => ({
   makeWaterCoast: () => null,
   buildCorridorRefineMask: ({ meshes }) => ({
     mask: 'MASK', candidates: meshes.length, texels: 1, meshes: meshes.map((m) => m.o),
   }),
 }))
-vi.mock('../sceneryInstancing.js', () => ({
+vi.mock('../sceneryInstancing.ts', () => ({
   collectInstanceEntries: () => [],
   buildStandaloneLightmappedMeshes: () => {},
   groupInstanceBatches: () => [],
 }))
-vi.mock('../pickDebug.js', () => ({ buildMeshOwnerMap: () => new Map() }))
+vi.mock('../pickDebug.ts', () => ({ buildMeshOwnerMap: () => new Map() }))
 
 import { assembleMapScenery } from './mapAssets.js'
 

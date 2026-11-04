@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createLoadProgress, progressPercent } from './loadProgress.js'
+import { createLoadProgress, progressPercent } from './loadProgress.ts'
 
 describe('createLoadProgress', () => {
   it('没有登记任何项时进度未知', () => {

@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest'
 
 const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')
 // 板分类/配置选择/穿透场景构建的共享实现（装甲查看器与 3D 回放同用）
-const plateModel = read('../scene/viewer/armorPlateModel.js')
+const plateModel = read('../scene/viewer/armorPlateModel.ts')
 
 describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
   const template = read('./AgentArmorView.vue')
@@ -78,8 +78,8 @@ describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
   // doubleSided，上表面条带绕序朝内——替换材质固定 FrontSide 会在厚度视图/热力图里把
   // 上表面剔除成空洞。模块替换材质/clone 必须沿用源材质的 side。
   it('模块替换材质沿用客户端材质的双面口径', () => {
-    expect(plateModel).toMatch(/function moduleDoubleSided\(node\) \{/)
-    expect(plateModel).toMatch(/node\.userData\.moduleDoubleSided = moduleDoubleSided\(node\)/)
+    expect(plateModel).toMatch(/function moduleDoubleSided\(node: Mesh\): boolean \{/)
+    expect(plateModel).toMatch(/n\.userData\.moduleDoubleSided = moduleDoubleSided\(n\)/)
     expect(kernel).toMatch(/const side = node\.userData\.moduleDoubleSided \? THREE\.DoubleSide : THREE\.FrontSide;/)
     expect(plateModel).toMatch(/const side = node\.userData\.moduleDoubleSided \? THREE\.DoubleSide : THREE\.FrontSide/)
     expect(kernel).toMatch(/mat\.side = side;/)
@@ -398,7 +398,7 @@ describe('engagement-distance result line localization', () => {
 describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
   // 穿透材质族 2026-10-24 出仓 viewer/armorShaders.js（Step B2）：着色器模式断言
   // 拼接读取两份源（not.toMatch 同时约束两侧；RT/注入点等留在 tankViewer 的代码两处都可命中）
-  const kernel = read('../scene/tankViewer.js') + '\n' + read('../scene/viewer/armorShaders.js')
+  const kernel = read('../scene/tankViewer.js') + '\n' + read('../scene/viewer/armorShaders.ts')
   const pen = read('../scene/penetration.js')
   it('逐层归一化：SPACED_FRAG 写每层最终等效厚度，PBR 直接累加', () => {
     const thickness = kernel.slice(kernel.indexOf('const SPACED_FRAG'), kernel.indexOf('const SPACED_STATE_FRAG'))
@@ -422,12 +422,12 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(state).toMatch(/float pct = floor\(p \* 100\.0 \+ 0\.5\);/)
     expect(state).toMatch(/bCode = \(pct >= 1\.0 && pct <= 99\.0\) \? 0\.2 \+ 0\.6 \* p : 1\.0;/)
     expect(kernel).toMatch(/if \(pct >= 1\.0 && pct <= 99\.0\) penChance = p;/)
-    const packSrc = read('../scene/armorCollisionPack.js')
+    const packSrc = read('../scene/armorCollisionPack.ts')
     expect(packSrc).toMatch(/pct >= 1 && pct <= 99 \? p : 0/)
     expect(kernel).toMatch(/function spacedStateMaterial[\s\S]{0,420}?depthWrite: true, depthTest: true, blending: THREE\.NoBlending,/)
     // 外部模块状态：只写 A=1，RGB 保留；自定义混合 RGB src=0/dst=1、A src=1/dst=0；
     // PBR 用 A 抑制其后间隙板跳弹。
-    expect(kernel).toMatch(/function moduleStateMaterial\(clip\)/)
+    expect(kernel).toMatch(/function moduleStateMaterial\(clip: Plane \| null \| undefined\): ShaderMaterial \{/)
     expect(kernel).toMatch(/blendSrc: THREE\.ZeroFactor, blendDst: THREE\.OneFactor/)
     expect(kernel).toMatch(/blendSrcAlpha: THREE\.OneFactor, blendDstAlpha: THREE\.ZeroFactor/)
     const stateScene = plateModel.slice(plateModel.indexOf('function populateSpacedStateScene'), plateModel.indexOf('function populatePrimaryArmorScene'))
@@ -523,7 +523,7 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(rem16).toBeLessThan(25)
   })
   it('rcContinue 双实现：每个非外部层独立转正（BlitzKit）', () => {
-    const packSrc = read('../scene/armorCollisionPack.js')
+    const packSrc = read('../scene/armorCollisionPack.ts')
     expect(packSrc).not.toMatch(/armorIdx|hitIdx/)
     expect(packSrc).toMatch(/float normR = twoCal/)
     expect(packSrc).toMatch(/const normR = twoCal/)
@@ -626,7 +626,7 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
 describe('production gun_mask clip wiring (2026-10-21)', () => {
   // 穿透材质族 2026-10-24 出仓 viewer/armorShaders.js（Step B2）：uniform 注入断言拼接读取两份源。
   // 2026-10-28：保持 BlitzKit 口径——gun_mask 标量重建的裁切面每帧同步到续飞着色器。
-  const kernel = read('../scene/tankViewer.js') + '\n' + read('../scene/viewer/armorShaders.js')
+  const kernel = read('../scene/tankViewer.js') + '\n' + read('../scene/viewer/armorShaders.ts')
   it('PBR 与间隙甲状态材质都注入同一 rcClipPlane/rcClipEnabled，且每帧同步 gunClipPlane', () => {
     const occurrences = [...kernel.matchAll(/rcClipPlane:\s*rcUniforms\.rcClipPlane/g)]
     expect(occurrences).toHaveLength(2)
@@ -809,10 +809,10 @@ describe('armor shell and readiness ownership', () => {
 // 间隙甲渲染：additive 层按网格拓扑选面——闭合网格单面累计（正/背两表面只算一次），
 // 开放面片双面（背面命中仍可见）；背面片元把法线翻向相机（与 classifyHit 同口径）。
 describe('spaced armor surface selection', () => {
-  const shaders = read('../scene/viewer/armorShaders.js')
+  const shaders = read('../scene/viewer/armorShaders.ts')
   const kernel = read('../scene/tankViewer.js')
   it('闭合网格单面、开放面片双面；深度占位保持双面且在着色之后', () => {
-    expect(shaders).toMatch(/function spacedMaterial\(thickness, penetration, side\)/)
+    expect(shaders).toMatch(/function spacedMaterial\(thickness: number, penetration: number \| null \| undefined, side: Side\): ShaderMaterial \{/)
     expect(shaders).toMatch(/side,\s*\n\s*uniforms:/)
     expect(shaders).toMatch(/depthWrite: true, depthTest: true, blending: THREE\.NoBlending,\s*\n\s*side: THREE\.DoubleSide,/)
     expect(plateModel).toMatch(/isClosedSurfaceGeometry\(node\.geometry\) \? THREE\.FrontSide : THREE\.DoubleSide/)

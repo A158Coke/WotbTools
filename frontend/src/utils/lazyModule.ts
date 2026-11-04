@@ -168,6 +168,12 @@ interface FreshBundleReloadOptions {
    * 缺省 = manual reload：storage 不可用时仍允许用户主动 reload，不能被 storage failure 吞掉。
    */
   requirePersistentGuard?: boolean
+  /**
+   * true = 用户显式点击的 Reload：不被 automatic cooldown 静默拦截（冷却窗口内的
+   * automatic 恢复仍被 guard 阻止，但用户主动刷新是本人决策）。仍然写入 guard——
+   * 显式刷新后 60s 内的 automatic 恢复继续受「防刷新成环」保护。
+   */
+  explicit?: boolean
 }
 
 /**
@@ -183,15 +189,16 @@ interface FreshBundleReloadOptions {
 export function tryReloadForFreshBundle(
   beforeReload: () => void = () => {},
   target: FreshBundleReloadTarget = window,
-  { requirePersistentGuard = false }: FreshBundleReloadOptions = {},
+  { requirePersistentGuard = false, explicit = false }: FreshBundleReloadOptions = {},
 ): boolean {
   const now = Date.now()
   try {
     const last = Number(target.sessionStorage.getItem(RELOAD_GUARD_KEY) || 0)
-    if (last && now - last < RELOAD_GUARD_WINDOW_MS) return false
+    // explicit 是用户本人的点击决策，不做 cooldown 拦截；guard 窗口只约束 automatic 恢复。
+    if (!explicit && last && now - last < RELOAD_GUARD_WINDOW_MS) return false
     target.sessionStorage.setItem(RELOAD_GUARD_KEY, String(now))
   } catch {
-    // sessionStorage 不可用（隐私模式）：manual reload 仍继续（reload 本身不依赖 storage）；
+    // sessionStorage 不可用（隐私模式）：manual reload 仍继续，reload 本身不依赖 storage；
     // automatic recovery 必须放弃，否则这次 reload 不会被持久 guard 约束。
     if (requirePersistentGuard) return false
   }
@@ -204,9 +211,9 @@ export function tryReloadForFreshBundle(
 /**
  * 拿到与新部署一致的 bundle：chunk 名是内容哈希，旧 URL 不可恢复，只有重新加载有效。
  *
- * 用共享 guard 防止「部署本身坏掉」时刷新成环：窗口内第二次调用不再自动跳转，
- * 让用户看清失败态而不是被无限刷新。
+ * 用共享 guard 防止「部署本身坏掉」时刷新成环：窗口内 automatic 第二次调用不再自动跳转；
+ * 用户显式点击（`explicit: true`）不被 cooldown 拦截，但仍会写入 guard。
  */
-export function reloadForFreshBundle(): void {
-  tryReloadForFreshBundle()
+export function reloadForFreshBundle(options: FreshBundleReloadOptions = {}): void {
+  tryReloadForFreshBundle(undefined, window, options)
 }

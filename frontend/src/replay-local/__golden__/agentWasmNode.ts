@@ -22,7 +22,6 @@ import {
   type AgentRecorderCamera,
   type AgentBattleResult,
   type AgentPlaybackFacet,
-  type AgentReloadEvent,
   type AgentShotsOutcome,
 } from '../../api/agent-replay-facets.js'
 import { groupByVehicle, magazineSizeOfVehicle, shellStatesAt, usablePhases, type ShellState } from '../../scene/reloadBar.js'
@@ -222,7 +221,7 @@ export function reloadTelemetryFor(playback: AgentPlaybackFacet): ReloadTelemetr
   const authorVehicle = (playback.vehicles ?? []).find((v) => v.eid === authorEid)
   const magazineSize = magazineSizeOfVehicle(authorVehicle)
   const authorFires = fires.get(authorEid) ?? []
-  const samples = usablePhases(events).map((event: AgentReloadEvent) => {
+  const samples = usablePhases(events).map((event) => {
     const t = event.clock + Number(event.duration_s) / 2
     return { t, states: shellStatesAt(events, authorFires, t, magazineSize) }
   })
