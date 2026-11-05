@@ -76,14 +76,12 @@ import {
   hitTestAnnotation,
   isDegenerateAnnotation,
   translateAnnotation,
-  commit,
   projectAnnotationToSvg,
-  redo,
   screenToSemantic,
   semanticWidthFromSlider,
-  svgToScreen,
-  undo
+  svgToScreen
 } from '../utils/annotation'
+import { usePlaybackAnnotations } from '../composables/usePlaybackAnnotations.js'
 
 /**
  * 战局回放（Battle Playback）：地图鸟瞰中的主播放视图。
@@ -893,9 +891,9 @@ function fitViewIfReady(force = false) {
 }
 
 // ---- 地图标注（临时纯前端：切视图/切文件即清空；几何一律存语义坐标） ----
+// 历史快照 / 草稿 / 选中项的唯一 owner 是 usePlaybackAnnotations（#820 Wave B5B）；
+// 工具、颜色/宽度、routePoints 等 gesture 临时状态仍在宿主。
 const activeTool = ref(null) // null outside marking mode; select, tank classes, route or legacy drawing tools
-const selectedAnnotationIndex = ref(-1)
-const selectedAnnotation = computed(() => annotations.value[selectedAnnotationIndex.value] || null)
 const routePoints = ref([])
 let moveOriginal = null
 const annotColor = ref(ANNOT_COLORS[0])
@@ -914,10 +912,25 @@ const annotWidth = computed(() => semanticWidthFromSlider(annotWidthSlider.value
   semanticSpan: mapView.value.renderBounds ? mapView.value.renderBounds.xMax - mapView.value.renderBounds.xMin : 0,
   logicalSpan: mapView.value.W
 }))
-const history = ref([[]]) // 快照栈（不可变数组），history[0] = 初始空
-const historyIndex = ref(0)
-const annotations = computed(() => history.value[historyIndex.value] || [])
-const draft = ref(null) // 进行中的标注（未提交）
+const {
+  history,
+  historyIndex,
+  annotations,
+  draft,
+  selectedAnnotationIndex,
+  selectedAnnotation,
+  reset: resetAnnotationState,
+  clearSelection,
+  replaceAnnotations,
+  commitDraft,
+  undo: undoHistory,
+  redo: redoHistory,
+  clearAll: clearAllAnnotations,
+  updateSelected,
+  deleteSelected,
+  renameSelected,
+  finishRoute: finishRouteCommit,
+} = usePlaybackAnnotations({ getRouteDraft: () => routeDraft() })
 const textSession = ref(null) // reactive({ point, text })，文字输入会话
 const textInputRef = computed(() => mapComponent.value?.textInputRef || null)
 const ANNOT_THIN_PX = 2 // 笔迹抽稀阈值（屏幕 CSS px，与坐标体系无关）
@@ -928,16 +941,13 @@ let drawingPointerId = null
 let drawingStartScreen = null
 
 function resetAnnotations() {
-  history.value = [[]]
-  historyIndex.value = 0
+  resetAnnotationState()
   activeTool.value = null
   annotationOpen.value = false
   annotVisible.value = true
-  selectedAnnotationIndex.value = -1
   routePoints.value = []
   moveOriginal = null
   pointers.clear()
-  draft.value = null
   if (textSession.value) cancelSession(textSession.value)
   drawStart = null
   drawPoints = []
@@ -1008,67 +1018,35 @@ defineExpose({
   },
   closeAnnotations: closeAnnotation,
 })
-function replaceAnnotations(next) {
-  const s = commit(history.value, historyIndex.value, next)
-  history.value = s.history
-  historyIndex.value = s.index
-}
 function undoAnnot() {
   cancelRoute()
-  selectedAnnotationIndex.value = -1
-  const s = undo(history.value, historyIndex.value)
-  history.value = s.history
-  historyIndex.value = s.index
+  undoHistory()
 }
 function redoAnnot() {
   cancelRoute()
-  selectedAnnotationIndex.value = -1
-  const s = redo(history.value, historyIndex.value)
-  history.value = s.history
-  historyIndex.value = s.index
+  redoHistory()
 }
 function clearAll() {
   cancelRoute()
-  selectedAnnotationIndex.value = -1
-  if (annotations.value.length) replaceAnnotations([])
-}
-function commitDraft(ann) {
-  replaceAnnotations([...annotations.value, ann])
-}
-function updateSelected(patch) {
-  if (!selectedAnnotation.value) return
-  const index = selectedAnnotationIndex.value
-  replaceAnnotations(annotations.value.map((ann, i) => i === index ? { ...ann, ...patch } : ann))
+  clearAllAnnotations()
 }
 function setAnnotColor(color) {
   annotColor.value = color
   if (selectedAnnotation.value) updateSelected({ color })
   if (routePoints.value.length) draft.value = routeDraft()
 }
-function renameSelected(label) {
-  const value = String(label).trim().slice(0, 60)
-  if (selectedAnnotation.value?.type === 'text') updateSelected({ text: value })
-  else updateSelected({ label: value })
-}
-function deleteSelected() {
-  if (!selectedAnnotation.value) return
-  replaceAnnotations(annotations.value.filter((_, i) => i !== selectedAnnotationIndex.value))
-  selectedAnnotationIndex.value = -1
-}
 function toggleAnnotations() {
   cancelRoute()
-  selectedAnnotationIndex.value = -1
+  clearSelection()
   annotVisible.value = !annotVisible.value
 }
 function routeDraft() {
   return { type: 'route', color: annotColor.value, width: annotWidth.value, points: [...routePoints.value] }
 }
 function finishRoute() {
-  if (routePoints.value.length < 2) return
-  commitDraft(routeDraft())
+  if (!finishRouteCommit()) return
   cancelRoute()
   activeTool.value = 'select'
-  selectedAnnotationIndex.value = annotations.value.length - 1
 }
 
 function draftFromTool(tool, a, b) {
