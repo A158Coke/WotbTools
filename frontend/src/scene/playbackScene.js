@@ -4301,8 +4301,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       viewport: [container.clientWidth, container.clientHeight], dpr: renderer ? renderer.getPixelRatio() : window.devicePixelRatio });
   }
   const perfHandle = PERF ? {
-    report: () => { gpu.poll(); updatePerfIdentity(); const s = perf.report() + `\ngpu: ${JSON.stringify(gpu.snapshot())}` + `\nmain-thread stalls >${PERF_HEARTBEAT_MS * 2}ms: ${perfStalls.length}\n` + perfStalls.map(r => `  ${r.gap.toFixed(1)} ms @T=${r.t.toFixed(1)}`).join('\n'); console.log(s); return s; },
-    snapshot: () => (gpu.poll(), updatePerfIdentity(), { ...perf.snapshot(), resources: { geometries: renderer?.info?.memory?.geometries ?? null, textures: renderer?.info?.memory?.textures ?? null }, armorRt: armorStats.rt ? { ...armorStats.rt } : null, gpu: gpu.snapshot() }),
+    report: () => { gpu.poll(); updatePerfIdentity(); const s = perf.report() + `\ngpu_total_ms: sum of successfully measured render-pass GPU timings (not a full GPU frame; null unless all required queries succeed)` + `\nannotation: ${JSON.stringify(annotationStats)}` + `\ngpu: ${JSON.stringify(gpu.snapshot())}` + `\nmain-thread stalls >${PERF_HEARTBEAT_MS * 2}ms: ${perfStalls.length}\n` + perfStalls.map(r => `  ${r.gap.toFixed(1)} ms @T=${r.t.toFixed(1)}`).join('\n'); console.log(s); return s; },
+    snapshot: () => (gpu.poll(), updatePerfIdentity(), { ...perf.snapshot(), annotation: { ...annotationStats }, resources: { geometries: renderer?.info?.memory?.geometries ?? null, textures: renderer?.info?.memory?.textures ?? null }, armorRt: armorStats.rt ? { ...armorStats.rt } : null, gpu: gpu.snapshot() }),
     startCapture: (options) => { if (paused) throw new Error('scene is inactive'); updatePerfIdentity(); perf.startCapture(options); },
     stopCapture: () => { gpu.poll(); return perf.stopCapture(); },
     reset: () => { gpu.reset(); perf.reset(); perfTerrainChecks = 0; perfTerrainRebuilds = 0; perfStalls = []; perfBeat = performance.now(); },

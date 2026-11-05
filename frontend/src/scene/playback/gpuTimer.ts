@@ -231,6 +231,8 @@ export function createGpuFrameTracker(sink: GpuFrameSink, maxFrames = 240) {
 
   function complete(frame: FrameQuery): void {
     if (!frame.submitted || !frame.recorded || frame.completed !== frame.expected) return
+    // Sum only successfully measured render passes; this is not the complete GPU frame time.
+    // A failed required pass invalidates the sum rather than contributing zero.
     sink.gpuResult(frame.id, 'total', frame.failure ? null : frame.total)
     sink.gpuStatus(frame.id, frame.failure ?? 'complete')
     frames.delete(frame.id)

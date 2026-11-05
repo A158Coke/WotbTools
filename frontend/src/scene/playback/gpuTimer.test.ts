@@ -236,6 +236,20 @@ describe('GPU frame tracker', () => {
     tracker.dispose()
   })
 
+  it('does not report a total when one of multiple required pass queries fails', () => {
+    const { f, sink, tracker } = setup()
+    const id = tracker.beginFrame()
+    expect(tracker.begin('main')).toBe(true); tracker.end()
+    f.gl.createQuery.mockReturnValueOnce(null as never)
+    expect(tracker.begin('color')).toBe(false)
+    tracker.submitFrame(); tracker.recorded(id)
+    f.available(true); tracker.poll()
+    expect(sink.gpuResult).toHaveBeenCalledWith(id, 'main', 2.5)
+    expect(sink.gpuResult).toHaveBeenCalledWith(id, 'total', null)
+    expect(sink.gpuStatus).toHaveBeenCalledWith(id, 'dropped')
+    tracker.dispose()
+  })
+
   it('marks disjoint frames invalid without reporting a total duration', () => {
     const { f, sink, tracker } = setup()
     const id = tracker.beginFrame(); tracker.begin('main'); tracker.end(); tracker.submitFrame(); tracker.recorded(id)

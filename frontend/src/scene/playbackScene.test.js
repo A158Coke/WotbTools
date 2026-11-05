@@ -267,6 +267,25 @@ describe('opt-in profiler ownership', () => {
     expect(window.__pbPerf).toBeUndefined()
   })
 
+  it('reads all annotation metrics from the existing owner without changing its state', async () => {
+    window.history.replaceState(null, '', '/?perf&debug&q=low')
+    const { api } = createScene()
+    await api.loadMapOnly({ mapId: 1 })
+    const stats = window.__annotationLayer.stats
+    const expected = { committedBuilds: 1, draftBuilds: 2, terrainRebuilds: 3, eraseCallbacks: 4,
+      lastBuildMs: 5, lastPickMs: 6, committedVertices: 7, draftVertices: 8 }
+    Object.assign(stats, expected)
+    const snapshot = window.__pbPerf.snapshot()
+    expect(snapshot.annotation).toEqual(expected)
+    expect(snapshot.annotation).not.toBe(stats)
+    snapshot.annotation.committedBuilds = 99
+    expect(window.__pbPerf.snapshot().annotation).toEqual(expected)
+    const report = window.__pbPerf.report()
+    expect(JSON.parse(report.split('\n').find(line => line.startsWith('annotation: ')).slice('annotation: '.length))).toEqual(expected)
+    expect(report).toContain('gpu_total_ms: sum of successfully measured render-pass GPU timings')
+    expect(stats).toEqual(expected)
+  })
+
   it('keeps the new owner when an older scene is destroyed', () => {
     window.history.replaceState(null, '', '/?perf')
     const first = createScene().api
