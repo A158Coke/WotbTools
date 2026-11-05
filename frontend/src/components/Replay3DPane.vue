@@ -870,11 +870,12 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         data-testid="playback-fullscreen"
         @toggle="toggleFullscreen()"
       />
-      <!-- 移动端竖向距离滑条：全屏按钮正下方；Follow/Recorder 相机所有权不动
+      <!-- 移动端竖向距离滑条：仅手机横屏显示（竖屏隐藏，判据与布局同一
+           usePlaybackPortraitViewport）；全屏按钮正下方；Follow/Recorder 相机所有权不动
            （free/top 才可用），Hide All UI 时随控件一起隐藏。 -->
       <SceneDistanceSlider
         :get-scene-api="() => sceneApi"
-        :visible="isPhone && !uiHidden && (store.cam === 'free' || store.cam === 'top')"
+        :visible="isPhone && !isPortrait && !uiHidden && (store.cam === 'free' || store.cam === 'top')"
       />
       <div class="pb-stage" data-testid="replay3d-stage">
         <div class="stage-square">

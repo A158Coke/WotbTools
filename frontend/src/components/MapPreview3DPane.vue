@@ -20,6 +20,7 @@ import { detectWebGL } from '../scene/webglSupport.js'
 import { useSceneFlyControls } from '../composables/useSceneFlyControls.js'
 import { usePlaybackFullscreen } from '../composables/usePlaybackFullscreen.js'
 import { usePlaybackPhoneForm } from '../composables/usePlaybackPhoneForm.js'
+import { usePlaybackPortraitViewport } from '../composables/usePlaybackPortraitViewport.js'
 import { isInteractiveTarget } from '../composables/usePlaybackTransport.js'
 import { usePaneFillHeight } from '../composables/usePaneFillHeight.js'
 import { uiProfile } from '../composables/useUiProfile.js'
@@ -93,6 +94,7 @@ function changeQuality(k) {
   reloadMap()
 }
 const { isPhone } = usePlaybackPhoneForm()
+const { isPortrait } = usePlaybackPortraitViewport()
 const { isFullscreen, fullscreenSupported, toggleFullscreen } = usePlaybackFullscreen({
   target: () => rootEl.value,
   isPhone,
@@ -593,11 +595,12 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
       data-testid="map-3d-fullscreen"
       @toggle="toggleFullscreen()"
     />
-    <!-- 移动端竖向距离滑条：全屏按钮正下方，free/top 可用，follow/recorder 场景返回
-         unavailable（这里以 cam 判定隐藏）；Hide All UI 时随控件一起隐藏。 -->
+    <!-- 移动端竖向距离滑条：仅手机横屏显示（竖屏隐藏，判据与回放同一
+         usePlaybackPortraitViewport）；全屏按钮正下方，free/top 可用，follow/recorder
+         场景返回 unavailable（这里以 cam 判定隐藏）；Hide All UI 时随控件一起隐藏。 -->
     <SceneDistanceSlider
       :get-scene-api="() => sceneApi"
-      :visible="isPhone && !uiHidden && (store.cam === 'free' || store.cam === 'top')"
+      :visible="isPhone && !isPortrait && !uiHidden && (store.cam === 'free' || store.cam === 'top')"
     />
   </div>
 </template>

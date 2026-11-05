@@ -107,7 +107,7 @@
       "exportFailed": "PNG export failed"
     },
     "basemapFailed": "Failed to load the basemap",
-    "controlsHint": "Drag to look · WASD/QE move & rise · Wheel or side slider for distance · Fixed mode orbits the center · Fullscreen top-right · Keys 1–6 fly speed",
+    "controlsHint": "Drag to look · WASD/QE move & rise · Wheel for distance (side slider on phones in landscape) · Fixed mode orbits the center · Fullscreen top-right · Keys 1–6 fly speed",
     "controlsHint2d": "Drag to pan · Wheel or pinch to zoom · Fullscreen top-right"
   },
   "app": {
