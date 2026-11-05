@@ -694,11 +694,11 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(wSrc).toMatch(/uHmTexel: \{ value: \(\(\) => \{[\s\S]*?img\.width > 0 \? 1 \/ img\.width : 0\s*\}\)\(\) \},/)
     // 高度场唯一解码口径（场景系引擎顶点；旧包列翻转偏一格在读取边界补正）——网格/采样/岸线共用这一份；
     // 读取在 groundPass.loadTerrain（俯视烘焙同一份）
-    expect(gpSrc).toMatch(/if \(await terrainBinMatchesMeta\(tbuf, meta\)\) return out\(decodeTerrainField\(tbuf, meta\)\);/)
+    expect(gpSrc).toMatch(/const matched = await terrainBinMatchesMeta\(tbuf, meta\);[\s\S]*?if \(matched\) \{[\s\S]*?decodeTerrainField\(tbuf, meta\)/)
     // json/bin 配对（PR #615 review P2）：bin 以 terrainBinSha256 作缓存键、解码前核对字节
     expect(src).toMatch(/fetchFn: \(u\) => assetProvider\.fetch\(u\),/)
     expect(gpSrc).toMatch(/fetchFn\(pairedTerrainBinUrl\(binUrl, meta\)\)/)
-    expect(gpSrc).toMatch(/if \(await terrainBinMatchesMeta\(tbuf, meta\)\)/)
+    expect(gpSrc).toMatch(/const matched = await terrainBinMatchesMeta\(tbuf, meta\)/)
     expect(src).not.toMatch(/heightField\[i\] = u16\[i\]/)
     expect(wSrc).toMatch(/gl_FragColor = vec4\(refl, clamp\(fresnel, 0\.0, 1\.0\) \* coastLine\);/)
     expect(wSrc).not.toMatch(/uCoastCellPerDist|cellPerDist/)
@@ -1272,15 +1272,6 @@ describe('炮线渲染守卫（阵营语义色直出）', () => {
     expect(src).toMatch(/PERF_HEARTBEAT_MS = 50/)
     expect(src).toMatch(/main-thread stalls/)
   })
-
-  it('性能探针：`?perf` 才挂载、只读记录（不改渲染行为）', () => {
-    expect(src).toMatch(/new URLSearchParams\(window\.location\.search\)\.has\('perf'\)/)
-    expect(src).toMatch(/window\.__pbPerf = \{/)
-    // 分阶段计时包住「状态更新」「主渲染」与「装甲叠加」三段
-    expect(src).toMatch(/const perfT1 = PERF \? performance\.now\(\) : 0;/)
-    expect(src).toMatch(/if \(PERF\) perfFrame\(perfT1 - perfT0, perfR0 - perfT1, perfR1 - perfR0, armorStats\);/)
-  })
-
 })
 
 describe('disposeSceneGroup —— 双图资源生命周期（评审 P2）', () => {

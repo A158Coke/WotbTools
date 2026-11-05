@@ -49,6 +49,10 @@ import {
 import { treeFrame } from './destructibles.js'
 import { writeHiddenInstance, fallMatrix } from './sceneryInstancing.js'
 import { createDynRes } from './dynRes.js'
+import { isAndroidRuntime } from '../platform/runtime.js'
+import { createPerf } from './playback/perf.ts'
+import { createGpuFrameTracker } from './playback/gpuTimer.ts'
+import { AGENT_WASM_COMMIT, AGENT_WASM_RELEASE } from '../api/agent-replay-facets.js'
 import { clearSceneryMatCache, foliageClip } from './sceneryMaterials.js'
 // 地面 pass SSOT（2026-10-14 抽层，用户裁示"直接完全照搬 3D 回放的代码"）：地形数据/几何、
 // 分层地表材质与俯视烘焙共用同一份——此前烘焙不渲染地面，底图用客户端自带
@@ -387,6 +391,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function setQuality(k) {
     if (!QUALITY_PRESETS[k] || k === QKEY) return;
     const apply = () => {
+      if (perf) perf.interrupt('quality-change');
       QKEY = k; Q = QUALITY_PRESETS[k];
       try { localStorage.setItem('pb_quality', k); } catch (e) {}
       store.qualityKey = QKEY;
@@ -398,6 +403,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // （Tauri WebView 不弹 confirm 对话框，直接重载）
       // 应用内确认对话框（审计 PG-09：不用 window.confirm）；文案沿用本模块的上游中文
       const reload = () => {
+        if (perf) perf.interrupt('quality-change');
         try { localStorage.setItem('pb_quality', k); } catch (e) {}
         const u = new URL(location.href); u.searchParams.set('q', k); location.replace(u);
       };
@@ -959,6 +965,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     });
     scene = core.scene; camera = core.camera; renderer = core.renderer;
     controls = core.controls; clock = core.clock; raycaster = core.raycaster;
+    gpu?.attach(renderer);
     annotationSurfaceRaycaster = new THREE.Raycaster();
     hemiLight = core.hemiLight; sunLight = core.sunLight;
     dynResCtl = core.dynResCtl; sizeObserver = core.sizeObserver; rendererCaps = core.rendererCaps;
@@ -1174,6 +1181,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 用 sessionEpoch（不是 sessionGen）：新的 loadData / destroy 都会换掉身份，
     // 旧会话的资源续体因此无法再写共享 store。
     const epoch = sessionEpoch;
+    const diagnosticEpoch = perf?.epoch;
     const stale = () => destroyed || epoch !== sessionEpoch;
     // ASYNC SESSION RULE: await into locals → revalidate ownership → dispose obsolete
     // local resources → only then publish session state or mutate the scene.
@@ -1234,19 +1242,29 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // client-only：仅资产平面静态路径；未配置基址/索引未命中 → 无底图（回退网格），
       // 不存在服务端回退
       const mapUrl = mapStaticUrl('map', undefined, resolvedKey);
-      if (!mapUrl) noteAsset('map', 'missing-url', resolvedKey ? 'ground.webp URL 为空' : '未解析到资产索引 key');
-      else {
+      if (!mapUrl) {
+        if (perf) for (const stage of ['map.fetch', 'map.body', 'map.texture-decode-aggregate']) perf.event({ stage, status: 'skipped' }, diagnosticEpoch);
+        noteAsset('map', 'missing-url', resolvedKey ? 'ground.webp URL 为空' : '未解析到资产索引 key');
+      } else {
+        const mapFetchAt = perf ? performance.now() : 0;
         const resp = await assetProvider.fetch(mapUrl);
+        if (perf && !stale()) perf.event({ stage: 'map.fetch', durationMs: performance.now() - mapFetchAt, status: resp.ok ? 'complete' : 'fallback' }, diagnosticEpoch);
         if (stale()) return;
-        if (!resp.ok) noteAsset('map', `http-${resp.status}`, 'ground.webp 获取失败');
-        else {
+        if (!resp.ok) {
+          if (perf) for (const stage of ['map.body', 'map.texture-decode-aggregate']) perf.event({ stage, status: 'skipped' }, diagnosticEpoch);
+          noteAsset('map', `http-${resp.status}`, 'ground.webp 获取失败');
+        } else {
           const meta = JSON.parse(resp.headers.get('X-Map-Meta') || '{}');
+          const mapBodyAt = perf ? performance.now() : 0;
           const blob = await resp.blob();
+          if (perf && !stale()) perf.event({ stage: 'map.body', durationMs: performance.now() - mapBodyAt }, diagnosticEpoch);
           if (stale()) return;
           const url = URL.createObjectURL(blob);
           let texture;
+          const mapDecodeAt = perf ? performance.now() : 0;
           try {
             texture = await new THREE.TextureLoader().loadAsync(url);
+            if (perf && !stale()) perf.event({ stage: 'map.texture-decode-aggregate', durationMs: performance.now() - mapDecodeAt }, diagnosticEpoch);
           } finally {
             URL.revokeObjectURL(url);
           }
@@ -1258,7 +1276,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           if (mapMetaInfo.flip_x) { mapTexture.wrapS = THREE.RepeatWrapping; mapTexture.repeat.x = -1; mapTexture.offset.x = 1; }
         }
       }
-    } catch (e) { noteAsset('map', 'failed', e && e.message ? e.message : e); }
+    } catch (e) { if (perf && !stale()) perf.event({ stage: 'map.load', status: 'fallback' }, diagnosticEpoch); noteAsset('map', 'failed', e && e.message ? e.message : e); }
     if (stale()) return;
     progress.complete('map');
     // 逐图光照（客户端 DirectionalLightComponent → lighting.json）：方向/色/强度 + 环境色。
@@ -1321,6 +1339,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         metaUrl: mapStaticUrl('terrain-meta', undefined, resolvedKey),
         fetchFn: (u) => assetProvider.fetch(u),
         stale,
+        onDiagnostics: perf ? (event) => { if (!stale()) perf.event(event, diagnosticEpoch); } : undefined,
       });
       if (stale()) return;
       // 只在完整元数据下发布 heightField：loadTerrain 已 fail-closed，这里再守一次
@@ -1337,7 +1356,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       } else {
         noteAsset('terrain', 'unavailable', `meta=${metaStatus} bin=${binStatus}（回退 2D）`);
       }
-    } catch (e) { noteAsset('terrain', 'failed', e && e.message ? e.message : e); }
+    } catch (e) { if (perf && !stale()) perf.event({ stage: 'terrain.load', status: 'fallback' }, diagnosticEpoch); noteAsset('terrain', 'failed', e && e.message ? e.message : e); }
     if (stale()) return;
     progress.complete('terrain');
     // 客户端同款分层地表：colormap/lightmap/tile 细节/mask/(HeightBlend 高度图)，
@@ -2380,10 +2399,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       hFovDeg: terrainHFovDeg(),
       // 贴地薄构件走廊（B）：只在这些块强制细分到最细层，廊外层级与客户端口径逐字节一致。
       refineMask: terrainRefineMask,
+      onDiagnostics: perf ? (data) => perf.event({ stage: 'terrain-build', ...data }) : undefined,
       cx: mapMetaInfo?.x || 0, cz: mapMetaInfo?.z || 0,
     });
   }
   let terrainLodPrev = null, terrainLodAt = 0;
+  let perfTerrainChecks = 0, perfTerrainRebuilds = 0;
   /** 相机姿态变化时重建地形几何（见 terrainMesh.js `terrainLodStale`——滞回输入与
    *  `buildAdaptiveTerrain` 的判据同源：相机位置/视距/FOV/aspect）。视距单向滞回（拉近立即细化、
    *  拉远 ≥40% 才允许变粗）+ 侧向绕转（≥5% 视距）与 FOV/aspect 变化按新相机位置重算，两次重建
@@ -2391,18 +2412,22 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
    *  把地形抬到贴地薄结构之上（2026-10-10 用户"铁轨被盖、转视角又正常"）。重建成本 ≈ 一次四叉
    *  遍历（~18 ms/帧预算内节流）。 */
   function maybeRebuildTerrainLod(now = performance.now()) {
+    if (perf) perfTerrainChecks++;
     if (!terrainMesh || !heightField || !camera || !controls) return;
     const cur = terrainLodState(camera, controls.target, camera.aspect);
     if (!terrainLodStale(terrainLodPrev, cur, now - terrainLodAt)) return;
     terrainLodPrev = cur;
     terrainLodAt = now;
+    if (perf) perfTerrainRebuilds++;
     const old = terrainMesh.geometry;
+    const perfRebuildAt = perf ? performance.now() : 0;
     terrainMesh.geometry = buildTerrainGeometry();
     old.dispose();
     // 当前 camera pose 触发的 LOD 几何将在本帧渲染；按新网格重新约束，避免旧 LOD
     // floor 与替换后的三角面之间留下一帧/停驻时的穿地。
     constrainFreeCameraAltitude();
     reprojectAnnotationHeights();
+    if (perf) perf.event({ stage: 'terrain-rebuild-inclusive', durationMs: performance.now() - perfRebuildAt });
   }
 
   // 依据 mapTexture/heightField 重建地面（2D 平面或 3D 地形二选一）
@@ -4074,6 +4099,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (paused) { rafId = 0; return; }   // 停帧：不排队下一帧，场景与状态原样保留
     rafId = requestAnimationFrame(animate);
     if (!renderer) return;   // 渲染器惰性创建（首次 startPlayback）：数据加载完成前无场景可渲染
+    const cpuStarted = PERF ? performance.now() : 0;
     const dt = Math.min(clock.getDelta(), 0.1);
     if (DATA && PLAYING) {
       // 推进 + 钳制合并到纯函数里（NaN/负增量不会污染时钟）；终点是比赛结束 END，不是录像流结束
@@ -4084,6 +4110,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       tick();
       if (T >= END) setPlaying(false);   // 先 tick 后停：停播时的 HUD/名册补写要包含终点帧的事件
     }
+    const tickFinished = PERF ? performance.now() : 0;
     // 动画混合层（烟雾/瀑布/浪）：纹理位移按**回放时钟**走——暂停即停、seek 后相位
     // 由回放时刻唯一确定（不随壁钟漂移，截图可复现）。未装载时该数组为空。
     if (animLayerMats.length) {
@@ -4136,6 +4163,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (flyMode()) camera.lookAt(controls.target);
     const cameraMoved = cameraDriven() ? false : controls.update();   // three 的 update() 返回相机是否变化（阻尼/交互）
     clampOrbitCameraToTerrain();
+    const cameraFinished = PERF ? performance.now() : 0;
     // ---------- 按需渲染（脏帧）----------
     // 暂停且没有在飞特效、相机也静止时，跳过整帧工作（标签/基地/transient 重算 + 全屏
     // render）。此前空闲也满速重绘，是移动端发热与笔记本耗电的第一来源。
@@ -4148,6 +4176,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       || tracers.length > 0 || (battleFx && battleFx.active())
       || transients.hasActive();
     if (!busy) {
+      if (perf) perf.idle();
       // 空闲（场景确实停画，而不是渲染很慢）：显式重起统计窗，避免把空闲间隙
       // 算成一帧；超过 0.6s 把角标归零（显示 —），别让旧帧率冒充“当前”。
       // 注意判定只在这里做——PLAYING 期间即使 300ms/帧也照常计入长帧（评审 P2）。
@@ -4190,13 +4219,28 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     updateBattleFx();     // 战斗特效（壁钟特效暂停时也继续自然播完）
     const perfT1 = PERF ? performance.now() : 0;
     maybeRebuildTerrainLod();   // 地形 LOD 跟随相机姿态（视距滞回 + 绕转/FOV/aspect；120 ms 节流）
+    const terrainFinished = PERF ? performance.now() : 0;
     // 一帧可有多次 render：探针期间手动复位，info 才是整帧累计而不是最后一次 render
-    if (PERF) { renderer.info.autoReset = false; renderer.info.reset(); }
-    renderer.render(scene, camera);
-    const perfR0 = PERF ? performance.now() : 0;
-    renderArmorHighlight();
-    const perfR1 = PERF ? performance.now() : 0;
-    if (PERF) perfFrame(perfT1 - perfT0, perfR0 - perfT1, perfR1 - perfR0, armorStats);
+    const perfAutoReset = PERF ? renderer.info.autoReset : null;
+    try {
+      if (PERF) { renderer.info.autoReset = false; renderer.info.reset(); }
+      const gpuFrameId = perfReadySession === sessionEpoch ? gpu?.beginFrame() ?? null : null;
+      const gpuMainStarted = gpu?.begin('main') ?? false;
+      try { renderer.render(scene, camera); } finally { if (gpuMainStarted) gpu.end(); }
+      if (perf && !perfFirstSubmitted && (store.hasData || store.mapReady) && perfReadySession === sessionEpoch && perfLoadingEpoch === perf.epoch) {
+        perfFirstSubmitted = true;
+        perf.event({ stage: 'firstReadyFrameSubmittedMs', durationMs: performance.now() - perfLoadingStart }, perfLoadingEpoch);
+      }
+      const perfR0 = PERF ? performance.now() : 0;
+      renderArmorHighlight();
+      gpu?.submitFrame();
+      const perfR1 = PERF ? performance.now() : 0;
+      if (PERF && perfReadySession === sessionEpoch) perfFrame(perfT1 - perfT0, perfR0 - terrainFinished, perfR1 - perfR0, armorStats, { cpuFrameMs: perfR1 - cpuStarted, tickMs: tickFinished - cpuStarted, cameraMs: cameraFinished - tickFinished, terrainCheckInclusiveMs: terrainFinished - perfT1, gpuFrameId, gpu_total_ms: null });
+      gpu?.recorded(gpuFrameId);
+    } finally {
+      if (PERF) renderer.info.autoReset = perfAutoReset;
+      gpu?.abortFrame();
+    }
   }
 
   // ---------- 性能探针（`?perf`；只读测量，不改变任何渲染行为） ----------
@@ -4208,62 +4252,29 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     && new URLSearchParams(window.location.search).has('perf');
   let dynResCtl = null;
   let rendererCaps = null;   // 当前渲染器实际装配的 { logdepth, dynres }（reset 保留渲染器时用于失配检测）
-  const PERF_RING = 240;              // ≈4s 窗口（60fps）
-  let perfRing = [], perfRingN = 0, perfLast = 0, perfSlow = [];
-  function perfFrame(updateMs, renderMs, armorMs, armorStats) {
-    const now = performance.now();
-    const dt = perfLast ? now - perfLast : 0;
-    perfLast = now;
-    // draw call 数（renderer.info 是本帧全部 render 的累计）：场景侧结构性优化（材质去重 /
-    // 实例化 / 冻结）的收益直接体现在这个数上，没有它优化前后无法量化对比。
-    const calls = renderer ? renderer.info.render.calls : 0;
+  const perf = PERF ? createPerf() : null;
+  let perfLoadingStart = 0, perfLoadingEpoch = 0, perfFirstSubmitted = false, perfReadySession = null;
+  const gpu = PERF ? createGpuFrameTracker(perf) : null;
+  if (perf) perf.setIdentity({ buildCommit: typeof __BUILD_COMMIT__ !== 'undefined' ? __BUILD_COMMIT__ : null,
+    buildTime: typeof __BUILD_TIME__ !== 'undefined' ? __BUILD_TIME__ : null,
+    wasmCommit: AGENT_WASM_COMMIT, wasmRelease: AGENT_WASM_RELEASE, replayDigest: null, runtime: isAndroidRuntime() ? 'android' : 'browser',
+    userAgent: navigator.userAgent, viewport: [window.innerWidth, window.innerHeight],
+    dpr: window.devicePixelRatio, quality: QKEY, assetIdentity: null, identityComplete: false });
+  function perfFrame(updateMs, renderMs, armorMs, armorStats, stages) {
     const a = armorStats || {};
-    perfRing[perfRingN % PERF_RING] = { dt, updateMs, renderMs, armorMs, t: T, calls,
-      armorPick: a.pickMs || 0, armorState: a.stateMs || 0, armorThick: a.thicknessMs || 0,
-      armorOcc: a.occluderMs || 0, armorColor: a.colorMs || 0, armorCalls: a.calls || 0,
-      armorRt: (a.stateMs || 0) + (a.thicknessMs || 0) + (a.colorMs || 0),
-      dpr: renderer ? Math.round(renderer.getPixelRatio() * 100) / 100 : 0,
-      tracers: tracers.length, traj: trajLines.length, impacts: battleFx ? battleFx.stats().impacts : 0,
+    perf.record({ ...stages, updateMs, renderMs, armorMs, t: T,
+      calls: renderer ? renderer.info.render.calls : 0, terrainChecks: perfTerrainChecks, terrainRebuilds: perfTerrainRebuilds,
+      armorPick: a.pickMs ?? 0, armorState: a.stateMs ?? 0,
+      armorThick: a.thicknessMs ?? 0, armorOcc: a.occluderMs ?? 0,
+      armorColor: a.colorMs ?? 0, armorCalls: a.calls ?? 0,
+      armorStateCalls: a.stateCalls ?? 0, armorThicknessCalls: a.thicknessCalls ?? 0, armorOccluderCalls: a.occluderCalls ?? 0, armorColorCalls: a.colorCalls ?? 0,
+      armorRtWidth: a.rt?.width ?? null, armorRtHeight: a.rt?.height ?? null, armorRtCreates: a.rt?.creates ?? null,
+      armorRtResizes: a.rt?.resizes ?? null, armorRtDisposes: a.rt?.disposes ?? null, armorRtColorEstimateBytes: a.rt?.colorEstimateBytes ?? null,
+      dpr: renderer ? renderer.getPixelRatio() : 0,
+      tracers: tracers.length, traj: trajLines.length,
+      impacts: battleFx ? battleFx.stats().impacts : 0,
       burst: battleFx ? battleFx.stats().bursts : 0,
-      veh: V.filter((v) => v.group.visible).length };
-    perfRingN++;
-    if (dt > 33) {
-      perfSlow.push({ dt, updateMs, renderMs, armorMs, t: T });
-      perfSlow.sort((a, b) => b.dt - a.dt);
-      if (perfSlow.length > 12) perfSlow.length = 12;
-    }
-  }
-  function perfReport() {
-    const n = Math.min(perfRingN, PERF_RING);
-    const rows = [];
-    for (let i = 0; i < n; i++) rows.push(perfRing[i]);
-    if (!rows.length) return 'no frames';
-    const q = (key, p) => {
-      const a = rows.map((r) => r[key]).sort((x, y) => x - y);
-      return a[Math.min(a.length - 1, Math.floor(a.length * p))];
-    };
-    const f = (v) => v.toFixed(1);
-    const last = rows[rows.length - 1];
-    const out = [
-      `frames=${perfRingN} (window ${n})`,
-      `frame ms  med=${f(q('dt', 0.5))} p90=${f(q('dt', 0.9))} max=${f(q('dt', 0.99))}`,
-      `update ms med=${f(q('updateMs', 0.5))} p90=${f(q('updateMs', 0.9))}`,
-      `render ms med=${f(q('renderMs', 0.5))} p90=${f(q('renderMs', 0.9))}`,
-      `armor ms med=${f(q('armorMs', 0.5))} p90=${f(q('armorMs', 0.9))} max=${f(q('armorMs', 0.99))}`,
-      `armor pick ms med=${f(q('armorPick', 0.5))} p90=${f(q('armorPick', 0.9))}`,
-      `armor occ ms med=${f(q('armorOcc', 0.5))} p90=${f(q('armorOcc', 0.9))}`,
-      `armor rt ms (state/thick/color) med=${f(q('armorRt', 0.5))} p90=${f(q('armorRt', 0.9))}`,
-      `armor calls (4 pass) med=${f(q('armorCalls', 0.5))} max=${f(q('armorCalls', 0.99))}`,
-      `draw calls med=${f(q('calls', 0.5))} p90=${f(q('calls', 0.9))} max=${f(q('calls', 0.99))}`,
-      `pixel ratio med=${f(q('dpr', 0.5))} min=${f(q('dpr', 0.05))}`,
-      `now: T=${last.t.toFixed(1)} veh=${last.veh} tracers=${last.tracers} trajBoxes=${last.traj} impacts=${last.impacts} burst=${last.burst}`,
-      `annotation committedBuilds=${annotationStats.committedBuilds} draftBuilds=${annotationStats.draftBuilds} terrainRebuilds=${annotationStats.terrainRebuilds} eraseCallbacks=${annotationStats.eraseCallbacks} lastBuildMs=${annotationStats.lastBuildMs.toFixed(2)} pickMs=${annotationStats.lastPickMs.toFixed(2)} verts=${annotationStats.committedVertices}/${annotationStats.draftVertices}`,
-      'slowest frames (dt ms / update / render / armor / T):',
-      ...perfSlow.map((r) => `  ${f(r.dt)} / ${f(r.updateMs)} / ${f(r.renderMs)} / ${f(r.armorMs)} @T=${r.t.toFixed(1)}`),
-      `main-thread stalls >${PERF_HEARTBEAT_MS * 2}ms: ${perfStalls.length}`,
-      ...perfStalls.map((r) => `  ${f(r.gap)} ms @T=${r.t.toFixed(1)}`),
-    ];
-    return out.join(String.fromCharCode(10));
+      veh: V.filter((v) => v.group.visible).length });
   }
   // 主线程停顿看门狗（`?perf`）：帧循环之外的**长任务**（例如解析/投影跑在主线程）不会出现在
   // 帧间隔里——它们表现为"下一帧的 dt 巨大、但 update/render 都很小"。看门狗用 50ms 心跳量真实
@@ -4279,18 +4290,25 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       perfBeat = now;
       if (gap > PERF_HEARTBEAT_MS * 2) {
         perfStalls.push({ gap, t: T });
+        perf.event({ stage: 'main-thread-stall', durationMs: gap, replayTime: T });
         perfStalls.sort((a, b) => b.gap - a.gap);
         if (perfStalls.length > 8) perfStalls.length = 8;
       }
     }, PERF_HEARTBEAT_MS);
   }
-  if (PERF) {
-    perfStartWatchdog();
-    window.__pbPerf = {
-      report: () => { const s = perfReport(); console.log(s); return s; },
-      reset: () => { perfRing = []; perfRingN = 0; perfSlow = []; perfStalls = []; perfBeat = performance.now(); },
-    };
+  function updatePerfIdentity() {
+    perf.setIdentity({ quality: QKEY, cameraMode: CAM, armorhl: ARMOR_HIGHLIGHT,
+      viewport: [container.clientWidth, container.clientHeight], dpr: renderer ? renderer.getPixelRatio() : window.devicePixelRatio });
   }
+  const perfHandle = PERF ? {
+    report: () => { gpu.poll(); updatePerfIdentity(); const s = perf.report() + `\ngpu: ${JSON.stringify(gpu.snapshot())}` + `\nmain-thread stalls >${PERF_HEARTBEAT_MS * 2}ms: ${perfStalls.length}\n` + perfStalls.map(r => `  ${r.gap.toFixed(1)} ms @T=${r.t.toFixed(1)}`).join('\n'); console.log(s); return s; },
+    snapshot: () => (gpu.poll(), updatePerfIdentity(), { ...perf.snapshot(), resources: { geometries: renderer?.info?.memory?.geometries ?? null, textures: renderer?.info?.memory?.textures ?? null }, armorRt: armorStats.rt ? { ...armorStats.rt } : null, gpu: gpu.snapshot() }),
+    startCapture: (options) => { if (paused) throw new Error('scene is inactive'); updatePerfIdentity(); perf.startCapture(options); },
+    stopCapture: () => { gpu.poll(); return perf.stopCapture(); },
+    reset: () => { gpu.reset(); perf.reset(); perfTerrainChecks = 0; perfTerrainRebuilds = 0; perfStalls = []; perfBeat = performance.now(); },
+  } : null;
+  if (PERF) { perfStartWatchdog(); window.__pbPerf = perfHandle; }
+
 
   /** 预热在用材质（见 renderer 初始化处注释）：把首次编译的数十~数百 ms 从"战斗第一次
    *  开火/命中"挪到加载阶段。失败不影响播放（best-effort）。 */
@@ -4394,11 +4412,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (value === paused) return;
     paused = value;
     if (paused) {
+      if (perf) { perf.idle(); perf.interrupt('background'); }
+      if (perfBeatTimer) { clearInterval(perfBeatTimer); perfBeatTimer = 0; }
       if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
     } else if (!destroyed) {
       // pre-init 也必须把被 pause 取消的唯一 rAF 重新挂回去：animate() 本身在 renderer
       // 尚未创建时只排下一帧并安全返回。否则「待开播切走 → 切回 → Start」会进入
       // paused=false / renderer!=null / rafId=0 的死态，场景 ready 但时间与画面都不再推进。
+      perfStartWatchdog();
       if (clock) clock.getDelta();   // 已初始化时丢弃暂停期间累积的 dt
       frameMeter.reset();            // 恢复后重新起窗：暂停间隙不得计入帧间隔
       if (!rafId) animate();
@@ -4736,6 +4757,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (PERF) {
       armorStats.pickMs = 0; armorStats.stateMs = 0; armorStats.thicknessMs = 0;
       armorStats.occluderMs = 0; armorStats.colorMs = 0; armorStats.calls = 0;
+      armorStats.stateCalls = 0; armorStats.thicknessCalls = 0; armorStats.occluderCalls = 0; armorStats.colorCalls = 0;
     }
     if (!ARMOR_HIGHLIGHT || CAM !== 'recorder' || !scopedHiddenEid || cameraBlend) return;
     const author = recorderVehicle();
@@ -4763,6 +4785,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       onReady: invalidate,
       occluderRoots: occluderRoots(target.def.eid),
       stats: PERF ? armorStats : null,
+      gpu: gpu ?? undefined,
     });
   }
   /** 回到俯视机位：相机置地图中心正上方，target 锁地图中心。 */
@@ -4994,6 +5017,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
 
   async function loadData(source) {
+    if (perf) { perf.interrupt('file-change'); perf.beginSession(); perf.setIdentity({ replayDigest: null }); perfReadySession = null; perfLoadingStart = performance.now(); perfLoadingEpoch = perf.epoch; perfFirstSubmitted = false; }
     // source 仅接受 { kind:'local', file }（client-only 拓扑，replaySource 对
     // 其他形态显式拒绝）；字符串路径等 server 形态在本拓扑中不存在
     //
@@ -5024,10 +5048,18 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     store.loading = true;
     store.assetStage = false;
     store.assetProgress = null;
+    const diagnosticEpoch = perf?.epoch;
     try {
       // 数据获取在 teardown 之前：新回放解析失败时当前回放保持完好（替换语义 =
       // 新数据就位才拆旧会话）
-      const data = source?.session ? await source.session.loadScene(source.file) : await loadPlaybackData(source);
+      const observer = perf ? (event) => {
+        if (ownsLoading() && gen === sessionGen && diagnosticEpoch === perf.epoch && event.stage === 'replay.identity' && event.digest) perf.setIdentity({ replayDigest: event.digest });
+        if (ownsLoading() && gen === sessionGen) perf.event({ stage: event.stage, durationMs: event.durationMs ?? null,
+          status: event.status ?? null, digest: event.digest ?? null }, diagnosticEpoch);
+      } : undefined;
+      const data = source?.session
+        ? await (observer ? source.session.loadScene(source.file, observer) : source.session.loadScene(source.file))
+        : await loadPlaybackData(observer ? { ...source, observer } : source);
       const playbackSession = source?.session ? source.session.getState(source.file) : null;
       if (gen !== sessionGen) return;   // 迟到：新数据随旧代数 GC（loading 由新所有者管理）
       teardownSession();   // 拆旧会话资源；会话身份已在入口领取，本调用仍是当前会话
@@ -5042,10 +5074,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       const ready = await startPlayback(epoch);
       if (!ready || !ownsLoading()) return;
       store.hasData = true;
+      if (perf) { perfReadySession = epoch; invalidate(); }
     } catch (e) {
       // 只写原因；标题与重试由宿主页（Scene3DStatus）按当前语言呈现。
       // 只有最新一次加载可以写：旧加载的失败不得覆盖新加载的状态。
-      if (ownsLoading()) store.err = String(e?.message || e || 'unknown');
+      if (ownsLoading()) {
+        if (perf) perf.event({ stage: 'replay.load', status: 'error' }, diagnosticEpoch);
+        store.err = String(e?.message || e || 'unknown');
+      }
     } finally {
       // 只有最新一次加载可以落下 loading；被取代的加载不得提前结束新会话的加载态。
       if (ownsLoading()) store.loading = false;
@@ -5065,6 +5101,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
    * @returns {Promise<void>} 就绪/失败都写 store（err / mapReady / assetStage），不抛
    */
   async function loadMapOnly({ mapId, mapName = '' }) {
+    if (perf) { perf.interrupt('map-change'); perf.beginSession(); perfReadySession = null; perfLoadingStart = performance.now(); perfLoadingEpoch = perf.epoch; perfFirstSubmitted = false; }
     const gen = ++sessionGen;
     const epoch = ++sessionEpoch;
     const loadGen = ++loadGeneration;
@@ -5094,6 +5131,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       const ready = await startPlayback(epoch);
       if (!ready || !ownsLoading()) return;
       store.mapReady = true;
+      if (perf) { perfReadySession = epoch; invalidate(); }
     } catch (e) {
       if (ownsLoading()) store.err = String(e?.message || e || 'unknown');
     } finally {
@@ -5125,6 +5163,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (renderer) {
       try { renderer.domElement.removeEventListener('pointerdown', onScenePointerDown); } catch (_) {}
       try { renderer.domElement.removeEventListener('pointerup', onScenePointerUp); } catch (_) {}
+      gpu?.detach();
       renderer.dispose();
       try { renderer.forceContextLoss(); } catch (_) {}
       renderer.domElement.remove();
@@ -5171,7 +5210,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       const mq0 = mid0 ? ('id=' + mid0) : ('name=' + encodeURIComponent(DATA.meta.map_name || ''));
       // 场景自己的 currentMapKey（playableBoundsFor 读这个）必须在此赋值——只调不接曾让
       // buildWorld 拿不到可玩矩形、中心回退到车辆云心。
+      const perfMapResolveAt = perf ? performance.now() : 0;
       const resolvedKey = await resolveMapKey(mq0).catch(() => null);
+      if (perf && current()) perf.event({ stage: 'map-resolution', durationMs: performance.now() - perfMapResolveAt }, perfLoadingEpoch);
       if (!current()) return false;   // 资产解析期间被取代：不得继续动场景
       currentMapKey = resolvedKey;
     }
@@ -5187,6 +5228,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 资产缺失按档位语义降级（回退网格/2D/烘焙底图），等待不因单项缺失而悬挂。
     store.assetStage = true;
     store.assetProgress = null;
+    const perfMapAt = perf ? performance.now() : 0;
     try {
       await loadMapImage();
     } catch (e) {
@@ -5194,8 +5236,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     } finally {
       if (current()) store.assetStage = false;
     }
+    if (perf && current()) perf.event({ stage: 'map-assets-aggregate', durationMs: performance.now() - perfMapAt }, perfLoadingEpoch);
     if (!current()) return false;   // 地图资产期间被取代：后面全是 DATA 派生的会话状态
     if (SESSION_MODE === 'map') {
+      if (perf) { perf.event({ stage: 'vehicle-construction', status: 'skipped' }, perfLoadingEpoch); perf.event({ stage: 'glb-wait', status: 'skipped' }, perfLoadingEpoch); perf.event({ stage: 'shader-prewarm', status: 'skipped' }, perfLoadingEpoch); }
       // 地图预览会话：地图资产就绪即完成——车辆/GLB/名册/传输/HUD 全部不建。
       // 相机（top/free）与地形钳制只依赖 heightField/WORLD_CENTER，照常可用；
       // 渲染由 animate() 常驻循环承担，就绪态由 loadMapOnly 落 store.mapReady。
@@ -5208,7 +5252,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       invalidate();
       return true;
     }
+    const perfVehiclesAt = perf ? performance.now() : 0;
     buildVehicles();
+    if (perf && current()) perf.event({ stage: 'vehicle-construction', durationMs: performance.now() - perfVehiclesAt }, perfLoadingEpoch);
+    const perfGlbAt = perf ? performance.now() : 0;
     if (glbOn) {
       const attach = applyGlbToggle(true);   // 会话切换后按用户偏好恢复 GLB 车模
       if (Q.forceGlb) {
@@ -5220,6 +5267,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         if (!current()) return false;
       }
     }
+    if (perf && current()) perf.event({ stage: 'glb-wait', durationMs: glbOn && Q.forceGlb ? performance.now() - perfGlbAt : null, status: !glbOn ? 'skipped' : Q.forceGlb ? 'complete' : 'background-pending' }, perfLoadingEpoch);
     buildRoster();
     // 会话级 mounted-configs 缓存（tank_id → tank/{id}.json）：先建 Map 再建 resolver——
     // resolver 闭包持有同一引用，异步填充后自动生效
@@ -5253,7 +5301,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     transients.rewindBursts(T);   // 伤害游标由 rebuildSources 归零（开战时刻的事件不跳过）
     shotPtr = 0; hudFeed.resetKillPtr();
     if (DEBUG) window.__pbV = V;   // 调试钩子：控制台可查每车 GLB/位姿状态（仅 ?debug）
+    const perfWarmAt = perf ? performance.now() : 0;
     prewarmShaders();
+    if (perf && current()) perf.event({ stage: 'shader-prewarm', durationMs: performance.now() - perfWarmAt }, perfLoadingEpoch);
     // 会话常量一次写清（此前每 tick 重写，值不变不会触发响应式，但语义上属会话级）
     store.startTime = START;
     store.duration = END;
@@ -5321,6 +5371,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
      * `DATA` 后旧续体会在 `DATA.vehicles` 上抛错，把内部异常当「加载失败」写给用户）。
      */
     reset() {
+      if (perf) { perf.interrupt('session-reset'); perf.beginSession(); perfReadySession = null; perf.setIdentity({ replayDigest: null }); }
       loadGeneration++;
       sessionEpoch++;
       teardownSession();               // 车辆/地图/地形/特效/GLB 模板全量释放 + roster/HP/点数归零
@@ -5441,6 +5492,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       store.dynres = !!on;
     },
     setArmorHighlight: (on) => {
+      if (perf && ARMOR_HIGHLIGHT !== !!on) perf.interrupt('armor-setting-change');
       ARMOR_HIGHLIGHT = !!on;
       persistPref('pb_armor_highlight', on);
       store.armorHighlight = !!on;
@@ -5500,7 +5552,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // setInterval 不清会永久空转，window.__pbPerf 会指向已销毁实例的旧数据。
       if (PERF) {
         if (perfBeatTimer) { clearInterval(perfBeatTimer); perfBeatTimer = 0; }
-        delete window.__pbPerf;
+        perf.reset();
+        if (window.__pbPerf === perfHandle) delete window.__pbPerf;
       }
       if (renderer) {
         try { renderer.domElement.removeEventListener('pointerdown', onScenePointerDown); } catch (_) {}
@@ -5514,6 +5567,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         try { controls.dispose(); } catch (_) {}
       }
       if (renderer) {
+        gpu?.dispose();
         renderer.dispose();
         try { renderer.forceContextLoss(); } catch (_) {}
         renderer.domElement.remove();

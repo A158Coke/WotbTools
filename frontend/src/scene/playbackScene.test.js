@@ -77,9 +77,12 @@ vi.mock('three', async (importOriginal) => {
       this.toneMappingExposure = 1
       this.shadowMap = { enabled: false }
       this.capabilities = { getMaxAnisotropy: () => 8 }
+      this.info = { autoReset: true, reset() {}, render: { calls: 0 } }
     }
     setSize() {}
     setPixelRatio() {}
+    getPixelRatio() { return 1 }
+    getContext() { return null }
     render() {}
     dispose() {}
     forceContextLoss() {}
@@ -257,6 +260,197 @@ function createInstance(store) {
   api = instance
   return instance
 }
+
+describe('opt-in profiler ownership', () => {
+  it('does not publish a profiler when perf is disabled', () => {
+    createScene()
+    expect(window.__pbPerf).toBeUndefined()
+  })
+
+  it('keeps the new owner when an older scene is destroyed', () => {
+    window.history.replaceState(null, '', '/?perf')
+    const first = createScene().api
+    const firstHandle = window.__pbPerf
+    createScene()
+    const secondHandle = window.__pbPerf
+    expect(secondHandle).not.toBe(firstHandle)
+    first.destroy()
+    expect(window.__pbPerf).toBe(secondHandle)
+    expect(secondHandle.snapshot().identity.identityComplete).toBe(false)
+    expect(secondHandle.snapshot().gpu.status).toBe('not-initialized')
+  })
+
+  it('records map ready submission only after an actual render', async () => {
+    window.history.replaceState(null, '', '/?perf&q=low')
+    const frame = stubFrames()
+    const { api, store } = createScene()
+    await api.loadMapOnly({ mapId: 1 })
+    expect(store.mapReady).toBe(true)
+    expect(window.__pbPerf.snapshot().events.some(e => e.stage === 'firstReadyFrameSubmittedMs')).toBe(false)
+    frame()
+    const snapshot = window.__pbPerf.snapshot()
+    expect(snapshot.events.filter(e => e.stage === 'firstReadyFrameSubmittedMs')).toHaveLength(1)
+    expect(snapshot.latest.cpuFrameMs).toBeGreaterThanOrEqual(0)
+    expect(snapshot.gpu.status).toBe('unsupported')
+  })
+
+  it('records terrain fetch and decode stages for the current map session', async () => {
+    window.history.replaceState(null, '', '/?perf&q=low')
+    stubTerrainAssets()
+    const { api } = createScene()
+    await api.loadMapOnly({ mapId: 1 })
+    const events = window.__pbPerf.snapshot().events
+    for (const stage of ['terrain.meta.fetch', 'terrain.meta.body-json-aggregate', 'terrain.bin.fetch', 'terrain.bin.body', 'terrain.pair-check-aggregate', 'terrain.decode']) {
+      expect(events).toContainEqual(expect.objectContaining({ stage, status: 'complete', durationMs: expect.any(Number) }))
+    }
+  })
+
+  it('records replay ready submission after rendering, not on load completion', async () => {
+    window.history.replaceState(null, '', '/?perf&q=low')
+    const frame = stubFrames()
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const { api, store } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['x'], 'x') })
+    expect(store.hasData).toBe(true)
+    expect(window.__pbPerf.snapshot().events.some(e => e.stage === 'firstReadyFrameSubmittedMs')).toBe(false)
+    frame()
+    expect(window.__pbPerf.snapshot().events.filter(e => e.stage === 'firstReadyFrameSubmittedMs')).toHaveLength(1)
+  })
+
+  it('does not attribute an old scene render to a loading session', async () => {
+    window.history.replaceState(null, '', '/?perf&q=low')
+    const frame = stubFrames()
+    const { api } = createScene()
+    await api.loadMapOnly({ mapId: 1 }); frame()
+    const pendingLoad = track(deferred())
+    source.loadPlaybackData.mockReturnValue(pendingLoad.promise)
+    const task = api.loadData({ kind: 'local', file: new File(['x'], 'x') })
+    api.setCam('free'); frame()
+    const snapshot = window.__pbPerf.snapshot()
+    expect(snapshot.sampleCount).toBe(0)
+    expect(snapshot.events.filter(e => e.sessionId === snapshot.sessionId && e.stage === 'firstReadyFrameSubmittedMs')).toHaveLength(0)
+    api.destroy(); pendingLoad.resolve(null); await task
+  })
+
+  it('associates asynchronous GPU results with the submitted frame', async () => {
+    window.history.replaceState(null, '', '/?perf&q=low')
+    const ext = { TIME_ELAPSED_EXT: 1, GPU_DISJOINT_EXT: 2 }
+    const gl = { QUERY_RESULT_AVAILABLE: 3, QUERY_RESULT: 4,
+      getExtension: () => ext, createQuery: () => ({}), beginQuery: vi.fn(), endQuery: vi.fn(),
+      deleteQuery: vi.fn(), getParameter: () => false,
+      getQueryParameter: (_query, key) => key === 3 ? true : 2000000 }
+    vi.spyOn(THREE.WebGLRenderer.prototype, 'getContext').mockReturnValue(gl)
+    const frame = stubFrames()
+    const { api } = createScene()
+    await api.loadMapOnly({ mapId: 1 })
+    window.__pbPerf.startCapture({ scenarioId: 'gpu' })
+    frame()
+    const capture = window.__pbPerf.stopCapture()
+    expect(capture.frames[0].gpu_main_ms).toBe(2)
+    expect(capture.frames[0].gpu_total_ms).toBe(2)
+    expect(gl.beginQuery).toHaveBeenCalledTimes(gl.endQuery.mock.calls.length)
+  })
+
+  it('keeps main CPU submission separate from the terrain check', async () => {
+    window.history.replaceState(null, '', '/?perf&q=low')
+    let now = 100
+    vi.spyOn(performance, 'now').mockImplementation(() => now)
+    vi.spyOn(THREE.WebGLRenderer.prototype, 'render').mockImplementation(() => { now += 30 })
+    const frame = stubFrames()
+    const { api } = createScene()
+    await api.loadMapOnly({ mapId: 1 }); frame()
+    expect(window.__pbPerf.snapshot().latest).toMatchObject({ renderMs: 30, terrainCheckInclusiveMs: 0, cpuFrameMs: 30 })
+  })
+
+  it('restores renderer statistics after a render exception', async () => {
+    window.history.replaceState(null, '', '/?perf&q=low')
+    const frame = stubFrames()
+    const render = vi.spyOn(THREE.WebGLRenderer.prototype, 'render').mockImplementation(() => { throw new Error('render failed') })
+    const { api } = createScene()
+    await api.loadMapOnly({ mapId: 1 })
+    expect(frame).toThrow('render failed')
+    expect(render.mock.instances[0].info.autoReset).toBe(true)
+  })
+
+  it('starts a fresh interval after even a short idle', async () => {
+    window.history.replaceState(null, '', '/?perf&q=low')
+    let now = 100
+    vi.spyOn(performance, 'now').mockImplementation(() => now)
+    const frame = stubFrames()
+    const { api } = createScene()
+    await api.loadMapOnly({ mapId: 1 })
+    frame()
+    now = 150; frame()
+    now = 200; api.setCam('free'); frame()
+    expect(window.__pbPerf.snapshot().latest.frameIntervalMs).toBeNull()
+  })
+
+  it('interrupts capture and clears the window when the session is reset', async () => {
+    window.history.replaceState(null, '', '/?perf&q=low')
+    const frame = stubFrames()
+    const { api } = createScene()
+    await api.loadMapOnly({ mapId: 1 })
+    window.__pbPerf.startCapture({ scenarioId: 'clear' }); frame()
+    api.reset()
+    const snapshot = window.__pbPerf.snapshot()
+    expect(snapshot.sampleCount).toBe(0)
+    expect(snapshot.capture).toMatchObject({ interrupted: true, reason: 'session-reset' })
+  })
+
+  it('keeps a capture running when an invalid quality is requested', () => {
+    window.history.replaceState(null, '', '/?perf&q=low')
+    const { api } = createScene()
+    window.__pbPerf.startCapture({ scenarioId: 'quality' })
+    api.setQuality('not-a-quality')
+    expect(window.__pbPerf.snapshot().capture).toMatchObject({ interrupted: false, reason: null })
+  })
+
+  it('cannot start a capture while the scene is suspended', () => {
+    window.history.replaceState(null, '', '/?perf')
+    const { api } = createScene()
+    api.setPaused(true)
+    expect(() => window.__pbPerf.startCapture({ scenarioId: 'hidden' })).toThrow()
+    expect(window.__pbPerf.snapshot().capture).toBeNull()
+  })
+
+  it('does not count a background watchdog gap as a stall', () => {
+    vi.useFakeTimers()
+    window.history.replaceState(null, '', '/?perf')
+    const { api } = createScene()
+    api.setPaused(true)
+    vi.advanceTimersByTime(5000)
+    api.setPaused(false)
+    vi.advanceTimersByTime(50)
+    expect(window.__pbPerf.report()).toContain('main-thread stalls >100ms: 0')
+    api.destroy()
+    vi.useRealTimers()
+  })
+
+  it('reports a failed load without exporting its error text', async () => {
+    window.history.replaceState(null, '', '/?perf')
+    source.loadPlaybackData.mockRejectedValue(new Error('private-path-or-token'))
+    const { api } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['x'], 'x') })
+    const events = window.__pbPerf.snapshot().events
+    expect(events).toContainEqual(expect.objectContaining({ stage: 'replay.load', status: 'error' }))
+    expect(JSON.stringify(events)).not.toContain('private-path-or-token')
+  })
+
+  it('ignores loading diagnostics sent after reset or session replacement', async () => {
+    window.history.replaceState(null, '', '/?perf')
+    const { api } = createScene()
+    let observer
+    const pendingLoad = track(deferred())
+    const session = { loadScene: vi.fn((_file, cb) => { observer = cb; return pendingLoad.promise }), getState: () => null }
+    const task = api.loadData({ kind: 'local', file: new File(['x'], 'x'), session })
+    observer({ stage: 'first', durationMs: 1 })
+    expect(window.__pbPerf.snapshot().events.some(e => e.stage === 'first')).toBe(true)
+    window.__pbPerf.reset()
+    observer({ stage: 'late', durationMs: 2 })
+    expect(window.__pbPerf.snapshot().events.some(e => e.stage === 'late')).toBe(false)
+    api.destroy(); pendingLoad.resolve(null); await task
+  })
+})
 
 describe('playbackScene 会话代数契约', () => {
   it('prepared session feeds scene and Details without another raw parse', async () => {
