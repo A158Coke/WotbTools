@@ -2400,7 +2400,7 @@ const mapStyle = computed(() => ({
         </template>
       </PlaybackDisplaySurface>
 
-      <button v-if="uiHidden" type="button" class="pb-ui-restore" data-test="pb-show-all-ui" :title="$t('agentReplay.show_all_ui_hint')" @click="setUiHidden(false)">{{ $t('agentReplay.show_all_ui') }}</button>
+      <button v-if="uiHidden" type="button" class="pb-ui-restore" :class="{ 'pb-ui-restore-shifted': isMobileDevice && fullscreenSupported }" data-test="pb-show-all-ui" :title="$t('agentReplay.show_all_ui_hint')" @click="setUiHidden(false)">{{ $t('agentReplay.show_all_ui') }}</button>
 
       <!-- §square-stage 手机竖屏纵向流：传输控件之后是详情（inline）与 Team 1 / Team 2。
            竖屏利用的是**纵向**空间，所以这一段就是普通流内容，跟着页面滚，不设高度上限。
@@ -2468,6 +2468,9 @@ const mapStyle = computed(() => ({
 .pb-display-close { inline-size: auto; min-inline-size: var(--hit-min); min-block-size: var(--hit-min); align-self: flex-end; color: var(--color-text-secondary); }
 .pb-panel-tools { display: grid; gap: var(--space-1); }
 .pb-ui-restore { position: absolute; inset-block-start: var(--space-2); inset-inline-end: var(--space-2); z-index: var(--pb-z-modal); min-block-size: var(--hit-min); padding: var(--space-2); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-sm); background: var(--color-surface-2); color: var(--color-text-primary); font: var(--type-caption); }
+
+/* 手机形态右上角有浮动全屏按钮：restore 按钮下移一行，两者不互抢命中区 */
+.pb-ui-restore.pb-ui-restore-shifted { inset-block-start: calc(var(--space-2) + var(--hit-min) + var(--space-2)); }
 
 .pb-wheel-hint {
   position: absolute;

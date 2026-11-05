@@ -587,6 +587,7 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
         v-if="uiHidden"
         type="button"
         class="map3d-restore map3d-btn"
+        :class="{ 'map3d-restore-shifted': isPhone && fullscreenSupported }"
         data-testid="map-3d-restore-ui"
         :title="t('agentReplay.show_all_ui_hint')"
         @click="toggleUiHidden"
@@ -777,6 +778,11 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
   position: absolute;
   inset-block-start: var(--space-2);
   inset-inline-end: var(--space-2);
+}
+
+/* 手机形态右上角有浮动全屏按钮：restore 按钮下移一行，两者不互抢命中区 */
+.map3d-restore.map3d-restore-shifted {
+  inset-block-start: calc(var(--space-2) + var(--control-h-sm) + var(--space-2));
   z-index: var(--z-sticky);
 }
 </style>
