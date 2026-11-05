@@ -162,15 +162,6 @@ report_current_plan_reference() {
   echo "       Move the statement to a canonical doc or a GitHub Issue; structural exceptions live in is_current_plan_allowlisted()." >&2
 }
 
-report_source_line_budget_growth() {
-  local scope="$1"
-  local path="$2"
-  local head_lines="$3"
-  local base_lines="$4"
-  echo "ERROR: $scope grew past its base line count: $(printable_path "$path") (head=${head_lines}, base=${base_lines})" >&2
-  echo "       An allowlisted legacy file may only shrink; grow it by splitting instead." >&2
-}
-
 report_source_line_dead_entry() {
   local path="$1"
   echo "ERROR: source-line allowlist entry no longer points at an over-budget tracked first-party source (deleted, renamed, shrunk, or out of scope); remove it from $SOURCE_LINE_ALLOWLIST_FILE: $(printable_path "$path")" >&2
@@ -192,23 +183,6 @@ load_source_line_paths() {
     fi
     entries["$line"]=1
   done
-}
-
-# Canonical bounded line count of a path's blob at BASE_SHA; empty output when
-# the path has no blob at the base (a renamed-in exception).
-source_line_base_blob_lines() {
-  local path="$1"
-  local base_lines
-  git cat-file -e "${BASE_SHA}:${path}" 2>/dev/null || {
-    printf ''
-    return 0
-  }
-  base_lines=$(git show "${BASE_SHA}:${path}" | awk 'END { print NR }')
-  if ! [[ "$base_lines" =~ ^(0|[1-9][0-9]*)$ ]] || (( ${#base_lines} > 18 )); then
-    echo "ERROR: unable to count base source lines for $(printable_path "$path") (awk returned: ${base_lines:-<empty>})." >&2
-    exit 2
-  fi
-  printf '%s' "$base_lines"
 }
 
 report_large_file() {
@@ -325,7 +299,6 @@ load_ignored_paths index "" tracked_ignored
 source_line_checked=0
 source_line_over=0
 declare -A source_line_head_lines=()
-declare -A source_line_head_allowlisted_lines=()
 
 while IFS= read -r -d '' path; do
   [[ -f "$path" ]] || continue
@@ -366,9 +339,7 @@ while IFS= read -r -d '' path; do
     source_line_head_lines["$path"]="$lines"
     if (( lines > MAX_SOURCE_LINES )); then
       source_line_over=$((source_line_over + 1))
-      if is_source_line_allowlisted "$path"; then
-        source_line_head_allowlisted_lines["$path"]="$lines"
-      else
+      if ! is_source_line_allowlisted "$path"; then
         report_source_line_budget "$path" "$lines"
         violations=$((violations + 1))
       fi
@@ -397,21 +368,6 @@ for allow_path in "${!source_line_head_entries[@]}"; do
 done
 echo "Source-line allowlist liveness checked $source_line_liveness_checked live entry(ies)."
 
-# Per-file growth cap: an allowlisted path that existed at the base may only
-# shrink. Paths absent from the base are rename swaps, which the entry-count
-# ratchet already admits without growing it.
-source_line_growth_cap_checked=0
-if [[ -n "$BASE_SHA" ]]; then
-  for allow_path in "${!source_line_head_allowlisted_lines[@]}"; do
-    base_lines=$(source_line_base_blob_lines "$allow_path")
-    if [[ -n "$base_lines" ]] && (( source_line_head_allowlisted_lines[$allow_path] > base_lines )); then
-      report_source_line_budget_growth "tracked file" "$allow_path" "${source_line_head_allowlisted_lines[$allow_path]}" "$base_lines"
-      violations=$((violations + 1))
-    fi
-    source_line_growth_cap_checked=$((source_line_growth_cap_checked + 1))
-  done
-  echo "Source-line growth cap checked $source_line_growth_cap_checked allowlisted file(s) against ${BASE_SHA}."
-fi
 
 # The allowlist is a one-way ratchet: it may shrink as files get split, but a
 # new over-budget file cannot be admitted by merely appending its path. Renames

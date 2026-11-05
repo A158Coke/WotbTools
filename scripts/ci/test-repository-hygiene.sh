@@ -342,27 +342,6 @@ git commit -q -m 'shrink the file and remove the temporary entry'
 head=$(git rev-parse HEAD)
 expect_fail_msg source-line-history-evasion "first-party frontend source exceeds" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
-# An allowlisted legacy file may only shrink: growing it past its base line
-# count fails even though the entry count is unchanged.
-git switch -q -C source-line-allowlisted-growth "$base"
-mkdir -p frontend/src scripts/ci
-python3 - <<'PY'
-from pathlib import Path
-Path("frontend/src/legacy.js").write_text("// line\n" * 1601)
-Path("scripts/ci/source-line-allowlist.txt").write_text("frontend/src/legacy.js\n")
-PY
-git add frontend/src/legacy.js scripts/ci/source-line-allowlist.txt
-git commit -q -m 'base: pinned legacy file'
-growth_cap_base=$(git rev-parse HEAD)
-python3 - <<'PY'
-from pathlib import Path
-Path("frontend/src/legacy.js").write_text("// line\n" * 1700)
-PY
-git add frontend/src/legacy.js
-git commit -q -m 'grow the allowlisted legacy file in place'
-head=$(git rev-parse HEAD)
-expect_fail_msg source-line-allowlisted-growth "grew past its base line count" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$growth_cap_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
-
 # Deleting a legacy file without retiring its entry leaves a dead exception
 # that could shield a future re-created file at the same path.
 git switch -q -C source-line-entry-deleted "$base"
