@@ -222,21 +222,31 @@ try {
     penetrations.forEach((pen, index) => assert.ok(state.options[index].includes(`${pen}mm`), `shell ${index} uses configuration penetration ${pen}`))
   }
   for (const scenario of [
-    { query: '&config=0&shell=1', value: 1, pens: [200, 300], manual: true },
+    // Shooter/target decoupling (2026-11-05): the shooter shell table belongs to
+    // the shooter (&scfg= or its own default top-level config = configs tail).
+    // Target &config= must not switch the shooter table; target gun switches
+    // keep the selected shell index.
+    { query: '&config=0&shell=1', value: 1, pens: [400, 500], retarget: true },
     { query: '&shell=1', value: 1, pens: [400, 500] },
-    { query: '&config=0&shell=99', value: 0, pens: [200, 300] },
+    { query: '&config=0&shell=99', value: 0, pens: [400, 500] },
     { query: '&config=1&shell=-1', value: 0, pens: [400, 500] },
-    { query: '&config=0&shell=invalid', value: 0, pens: [200, 300] },
+    { query: '&config=0&shell=invalid', value: 0, pens: [400, 500] },
+    // Explicit &scfg= stays authoritative for the shooter regardless of target config.
+    { query: '&config=0&scfg=0&shell=1', value: 1, pens: [200, 300] },
   ]) {
     await page.goto(plainUrl + scenario.query)
     await page.waitFor(() => !document.querySelector('[data-testid="scene3d-loading"]') && !document.querySelector('[data-testid="scene3d-error"]') && window.__armorRicochet?.info().meshCount > 0, { timeout: 30000, label: 'plain viewer ready' })
     await assertShellTable(scenario.value, scenario.pens)
-    if (scenario.manual) {
+    if (scenario.retarget) {
+      // Switching the target gun (via the native select) must not touch the
+      // shooter shell table or the selected shell index.
       await page.evaluate(`document.querySelector('#config-select').value = '1'; document.querySelector('#config-select').dispatchEvent(new Event('change'))`)
-      await assertShellTable(0, [400, 500])
+      await assertShellTable(scenario.value, scenario.pens)
+      await page.evaluate(`document.querySelector('#config-select').value = '0'; document.querySelector('#config-select').dispatchEvent(new Event('change'))`)
+      await assertShellTable(scenario.value, scenario.pens)
     }
   }
-  console.log('[shot-readiness] PASS: plain configuration ammo, deep-link selection, invalid indices and manual configuration switch')
+  console.log('[shot-readiness] PASS: plain configuration ammo, deep-link selection, invalid indices and shooter/target gun independence')
 
   // Same tank type still does not make the victim's configuration authoritative
   // for replay ammunition. scfg=0 and replay shell_id=2 must win over config=1.

@@ -1,26 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { shouldResetShellOnConfigChange } from './armorShellSelection.js'
 
-const base = { side: 'target', configChanged: true, sameTank: true, explicitShooterConfig: false }
-
 describe('shouldResetShellOnConfigChange', () => {
   it('射手换炮时弹表必变，清除 shell', () => {
-    expect(shouldResetShellOnConfigChange({ ...base, side: 'shooter', explicitShooterConfig: true })).toBe(true)
+    expect(shouldResetShellOnConfigChange({ side: 'shooter', configChanged: true })).toBe(true)
   })
 
-  it('普通同车检视未独立选炮时，受击方换配置会同步射手弹表', () => {
-    expect(shouldResetShellOnConfigChange(base)).toBe(true)
+  it('受击方换炮保留射击方 shell（同车型检视也不得清除）', () => {
+    expect(shouldResetShellOnConfigChange({ side: 'target', configChanged: true })).toBe(false)
   })
 
-  it('独立 scfg 下受击方换配置不改变射手弹表，保留 shell', () => {
-    expect(shouldResetShellOnConfigChange({ ...base, explicitShooterConfig: true })).toBe(false)
-  })
-
-  it('非同车检视的受击方换配置不影响射手弹表', () => {
-    expect(shouldResetShellOnConfigChange({ ...base, sameTank: false })).toBe(false)
-  })
-
-  it('配置未变化时不清除 shell', () => {
-    expect(shouldResetShellOnConfigChange({ ...base, configChanged: false })).toBe(false)
+  it('受击方只换发动机/履带（configChanged=false）不清除 shell', () => {
+    expect(shouldResetShellOnConfigChange({ side: 'target', configChanged: false })).toBe(false)
+    expect(shouldResetShellOnConfigChange({ side: 'shooter', configChanged: false })).toBe(false)
   })
 })
