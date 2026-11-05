@@ -1,0 +1,19 @@
+# Exact first-party frontend production paths allowed to exceed the 1500-line
+# source budget enforced by scripts/ci/check-repository-hygiene.sh.
+#
+# Scope: frontend/src/**/*.{js,ts,vue,mjs,cjs}, excluding *.test.*, *.spec.*,
+# *.d.ts and frontend/src/api/generated/**. Keep this list small and exact.
+# It may only shrink: adding an entry requires removing another one, and every
+# removal is the proof of a completed split. A rename may swap one path for
+# another without changing the entry count.
+#
+# #820 split targets
+frontend/src/scene/tankViewer.js
+frontend/src/scene/playbackScene.js
+frontend/src/components/BattlePlayback.vue
+#
+# Legacy over-budget files outside #820's three-file scope. Each needs its own
+# split issue before it can leave this list.
+frontend/src/components/HoFPage.vue
+frontend/src/components/HoFAdminPage.vue
+frontend/src/api/agent-replay-facets.ts

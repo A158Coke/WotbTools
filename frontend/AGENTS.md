@@ -62,6 +62,12 @@ HTTP 200 不证明每张地图的资产齐备，缺失的具体资产应如实�
 - 不用 `any`、`as unknown as`、`@ts-ignore`、`@ts-nocheck` 换取 typecheck 通过；`@ts-expect-error` 只用于 `*.test.ts` 的负向类型证明。类型迁移不夹带行为改动。
 - 类型 owner 见 [`docs/frontend/architecture.md`](../docs/frontend/architecture.md)；不得手写 generated 类型已覆盖的 wire 形状，外部输入仍需运行时校验。
 
+## Source size budget
+
+- `src/**/*.{js,ts,vue,mjs,cjs}`（排除 `*.test.*`、`*.spec.*`、`*.d.ts`、`src/api/generated/**`）是 first-party production source，单文件上限 **1500 物理行**；超过时必须按职责拆分，不得继续堆叠。
+- 现存超限文件只能以 exact path 记入 `../scripts/ci/source-line-allowlist.txt`；该名单只减不增（重命名可等量替换），拆分完成后同步移除条目。门禁已存在于 base 时，删除名单不会重置基线：缺失名单按 0 条比较，之后重新创建仍受只减不增约束。
+- 门禁是 `bash scripts/ci/check-repository-hygiene.sh`（PR CI 无条件执行）；回归 fixture 为 `scripts/ci/test-repository-hygiene.sh`。
+
 ## Third-party UI primitives
 
 - `reka-ui` / `motion-v` 只能在 WotbTools 组件边界内使用（允许的文件集见 `src/shared/ui-dependency-ownership.test.ts`）；页面与 feature 使用 `AppDialog` / `AppSheet` / `AppTooltip` / `MenuButton` / `SegmentedControl`，不直接引入第三方 primitive。
