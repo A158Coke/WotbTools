@@ -4257,20 +4257,21 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 // 射手实际搭载配置弹表（&scfg= = shooter_config_idx，射击复现表注入）：
                 // 多炮坦克 stock 弹表与发射炮的穿深/弹种清单不同（KV-1 发射 85mm F-30 AP
                 // 120mm，stock ZiS-5 表只有 86/102/20），选择器必须用发射炮的表。
-                // 无 scfg 时用射手自身默认顶级变体（configs 末位）——与 ArmorShotHud/
-                // ArmorSideConfig/fetchShells 的缺省口径一致，不从目标配置推导。
-                const scfg = parseInt(QP.get('scfg'), 10);
+                // 解析与 ArmorShotHud.cfgIndex 完全同口径：显式且有效的 scfg 选该配置，
+                // 缺失/无效用射手自身默认顶级变体（configs 末位）；被选配置弹表为空时
+                // 回退车辆顶层 shells（不跳到默认配置），再空走 fetchShells 兜底——
+                // 不从目标配置推导。scfg 用 Number 严格解析（parseInt('2x') 会偏离 HUD）。
+                const scfgRaw = QP.get('scfg');
+                const scfgWanted = (scfgRaw == null || scfgRaw === '') ? NaN : Number(scfgRaw);
                 const cfgArr = shooterData.configs || [];
                 const defaultCfg = cfgArr.length ? cfgArr[cfgArr.length - 1] : null;
+                const scfgCfg = (Number.isInteger(scfgWanted) && scfgWanted >= 0 && scfgWanted < cfgArr.length)
+                    ? cfgArr[scfgWanted] : defaultCfg;
                 let shells = null, caliber = null;
-                if (!isNaN(scfg) && scfg >= 0 && scfg < cfgArr.length && (cfgArr[scfg].shells || []).length) {
-                    shells = cfgArr[scfg].shells;
-                    caliber = cfgArr[scfg].caliber;
-                }
-                if ((!shells || shells.length === 0) && defaultCfg && (defaultCfg.shells || []).length) {
-                    shells = defaultCfg.shells;
-                    caliber = (Number.isFinite(defaultCfg.caliber) && defaultCfg.caliber > 0)
-                        ? defaultCfg.caliber : null;
+                if (scfgCfg && (scfgCfg.shells || []).length) {
+                    shells = scfgCfg.shells;
+                    caliber = (Number.isFinite(scfgCfg.caliber) && scfgCfg.caliber > 0)
+                        ? scfgCfg.caliber : null;
                 }
                 if (!shells || shells.length === 0) {
                     shells = shooterData.shells || [];
