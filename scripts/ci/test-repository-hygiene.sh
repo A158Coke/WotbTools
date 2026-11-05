@@ -253,4 +253,44 @@ git commit -q -m 'grow the source-line allowlist'
 head=$(git rev-parse HEAD)
 expect_fail_msg source-line-allowlist-growth "source-line allowlist must not grow" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$growth_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
+# Once the gate exists, retiring the last exception (deleting the allowlist)
+# must not reset the ratchet: a later change that recreates the file with a new
+# entry is growth from zero, not a first-time introduction.
+git switch -q -C source-line-allowlist-recreated "$base"
+mkdir -p frontend/src scripts/ci
+cp "$CHECK" scripts/ci/check-repository-hygiene.sh
+python3 - <<'PY'
+from pathlib import Path
+Path("frontend/src/existing.js").write_text("// line\n" * 1501)
+Path("scripts/ci/source-line-allowlist.txt").write_text("frontend/src/existing.js\n")
+PY
+git add scripts/ci/check-repository-hygiene.sh frontend/src/existing.js scripts/ci/source-line-allowlist.txt
+git commit -q -m 'seed the source-line gate and its allowlist'
+git rm -q frontend/src/existing.js scripts/ci/source-line-allowlist.txt
+git commit -q -m 'retire the last source-line exception'
+recreated_base=$(git rev-parse HEAD)
+mkdir -p frontend/src
+python3 - <<'PY'
+from pathlib import Path
+Path("frontend/src/new.js").write_text("// line\n" * 1501)
+Path("scripts/ci/source-line-allowlist.txt").write_text("frontend/src/new.js\n")
+PY
+git add frontend/src/new.js scripts/ci/source-line-allowlist.txt
+git commit -q -m 'recreate the deleted source-line allowlist'
+head=$(git rev-parse HEAD)
+expect_fail_msg source-line-allowlist-recreated "source-line allowlist must not grow" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$recreated_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+
+# A limit that Bash would parse as octal must abort the gate, not disable the
+# comparison. The 1501-line file proves the gate did not silently pass.
+git switch -q -C source-line-invalid-limit "$base"
+mkdir -p frontend/src
+python3 - <<'PY'
+from pathlib import Path
+Path("frontend/src/oversized.js").write_text("// line\n" * 1501)
+PY
+git add frontend/src/oversized.js
+git commit -q -m 'add oversized file for an invalid-limit fixture'
+head=$(git rev-parse HEAD)
+expect_fail_msg source-line-invalid-limit "MAX_SOURCE_LINES must be a non-negative decimal integer without leading zeros" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" MAX_SOURCE_LINES=08 bash "$CHECK"
+
 echo "repository hygiene regression tests: PASS"

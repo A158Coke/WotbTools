@@ -65,7 +65,7 @@ HTTP 200 不证明每张地图的资产齐备，缺失的具体资产应如实�
 ## Source size budget
 
 - `src/**/*.{js,ts,vue,mjs,cjs}`（排除 `*.test.*`、`*.spec.*`、`*.d.ts`、`src/api/generated/**`）是 first-party production source，单文件上限 **1500 物理行**；超过时必须按职责拆分，不得继续堆叠。
-- 现存超限文件只能以 exact path 记入 `../scripts/ci/source-line-allowlist.txt`；该名单只减不增（重命名可等量替换），拆分完成后同步移除条目。
+- 现存超限文件只能以 exact path 记入 `../scripts/ci/source-line-allowlist.txt`；该名单只减不增（重命名可等量替换），拆分完成后同步移除条目。门禁已存在于 base 时，删除名单不会重置基线：缺失名单按 0 条比较，之后重新创建仍受只减不增约束。
 - 门禁是 `bash scripts/ci/check-repository-hygiene.sh`（PR CI 无条件执行）；回归 fixture 为 `scripts/ci/test-repository-hygiene.sh`。
 
 ## Third-party UI primitives

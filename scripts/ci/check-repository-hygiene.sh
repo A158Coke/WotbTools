@@ -8,15 +8,25 @@ SOURCE_LINE_ALLOWLIST_FILE="${SOURCE_LINE_ALLOWLIST_FILE:-scripts/ci/source-line
 BASE_SHA="${BASE_SHA:-}"
 HEAD_SHA="${HEAD_SHA:-HEAD}"
 
-if ! [[ "$MAX_TRACKED_FILE_BYTES" =~ ^[0-9]+$ ]]; then
-  echo "MAX_TRACKED_FILE_BYTES must be an integer, got: $MAX_TRACKED_FILE_BYTES" >&2
-  exit 2
-fi
+# Limits feed Bash integer arithmetic. Accept only canonical bounded decimals:
+# leading-zero forms such as 08 would be parsed as octal at the comparison
+# (where set -e does not abort from an if condition), and values beyond intmax_t
+# would wrap silently. Either case must abort the gate instead of disabling it.
+validate_decimal_limit() {
+  local name="$1"
+  local raw="$2"
+  if ! [[ "$raw" =~ ^(0|[1-9][0-9]*)$ ]]; then
+    echo "$name must be a non-negative decimal integer without leading zeros, got: $raw" >&2
+    exit 2
+  fi
+  if (( ${#raw} > 18 )); then
+    echo "$name is out of range (more than 18 digits), got: $raw" >&2
+    exit 2
+  fi
+}
 
-if ! [[ "$MAX_SOURCE_LINES" =~ ^[0-9]+$ ]]; then
-  echo "MAX_SOURCE_LINES must be an integer, got: $MAX_SOURCE_LINES" >&2
-  exit 2
-fi
+validate_decimal_limit MAX_TRACKED_FILE_BYTES "$MAX_TRACKED_FILE_BYTES"
+validate_decimal_limit MAX_SOURCE_LINES "$MAX_SOURCE_LINES"
 
 is_allowlisted() {
   local candidate="$1"
@@ -297,7 +307,7 @@ while IFS= read -r -d '' path; do
   if is_source_line_candidate "$path"; then
     source_line_checked=$((source_line_checked + 1))
     lines=$(awk 'END { print NR }' "$path")
-    if ! [[ "$lines" =~ ^[0-9]+$ ]]; then
+    if ! [[ "$lines" =~ ^(0|[1-9][0-9]*)$ ]] || (( ${#lines} > 18 )); then
       echo "Unable to count source lines for $(printable_path "$path") (awk returned: ${lines:-<empty>})." >&2
       exit 2
     fi
@@ -314,17 +324,46 @@ done < <(git ls-files -z)
 # The allowlist is a one-way ratchet: it may shrink as files get split, but a
 # new over-budget file cannot be admitted by merely appending its path. Renames
 # remain possible by swapping one exact path for another (equal entry count).
-if [[ -n "$BASE_SHA" ]] && [[ -f "$SOURCE_LINE_ALLOWLIST_FILE" ]] \
-  && git cat-file -e "${BASE_SHA}:${SOURCE_LINE_ALLOWLIST_FILE}" 2>/dev/null; then
-  base_source_allowlist_entries=$(git show "${BASE_SHA}:${SOURCE_LINE_ALLOWLIST_FILE}" | count_allowlist_entries)
+#
+# A missing allowlist is only a free starting point while the gate itself is
+# being introduced. Once the gate exists in the base commit, a missing allowlist
+# means every prior exception was retired, so the base count is zero: deleting
+# and later recreating the file must not reset the ratchet.
+SOURCE_LINE_GATE_SCRIPT="scripts/ci/check-repository-hygiene.sh"
+
+source_line_gate_present_at_base() {
+  [[ -n "$BASE_SHA" ]] || return 1
+  local base_script
+  base_script=$(git show "${BASE_SHA}:${SOURCE_LINE_GATE_SCRIPT}" 2>/dev/null) || return 1
+  [[ "$base_script" == *"is_source_line_candidate()"* ]]
+}
+
+head_source_allowlist_entries=0
+if [[ -f "$SOURCE_LINE_ALLOWLIST_FILE" ]]; then
   head_source_allowlist_entries=$(count_allowlist_entries < "$SOURCE_LINE_ALLOWLIST_FILE")
-  if (( head_source_allowlist_entries > base_source_allowlist_entries )); then
-    report_source_line_allowlist_growth "$base_source_allowlist_entries" "$head_source_allowlist_entries"
-    violations=$((violations + 1))
+fi
+
+growth_guard_checked=0
+if [[ -n "$BASE_SHA" ]]; then
+  if git cat-file -e "${BASE_SHA}:${SOURCE_LINE_ALLOWLIST_FILE}" 2>/dev/null; then
+    base_source_allowlist_entries=$(git show "${BASE_SHA}:${SOURCE_LINE_ALLOWLIST_FILE}" | count_allowlist_entries)
+    growth_guard_checked=1
+  elif source_line_gate_present_at_base; then
+    base_source_allowlist_entries=0
+    growth_guard_checked=1
   fi
-  echo "Source-line allowlist growth guard checked ${base_source_allowlist_entries} -> ${head_source_allowlist_entries} entries."
+
+  if (( growth_guard_checked )); then
+    if (( head_source_allowlist_entries > base_source_allowlist_entries )); then
+      report_source_line_allowlist_growth "$base_source_allowlist_entries" "$head_source_allowlist_entries"
+      violations=$((violations + 1))
+    fi
+    echo "Source-line allowlist growth guard checked ${base_source_allowlist_entries} -> ${head_source_allowlist_entries} entries."
+  else
+    echo "Source-line allowlist growth guard skipped: gate is introduced by this change (no base gate in ${BASE_SHA})."
+  fi
 else
-  echo "Source-line allowlist growth guard skipped: no base allowlist in ${BASE_SHA:-<no BASE_SHA>}."
+  echo "Source-line allowlist growth guard skipped: no BASE_SHA (workflow_dispatch or local full-history run)."
 fi
 
 echo "Source line budget checked $source_line_checked first-party frontend source file(s); limit=$MAX_SOURCE_LINES lines; over-limit allowlisted=$source_line_over."
