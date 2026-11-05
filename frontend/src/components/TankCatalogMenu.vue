@@ -460,6 +460,15 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
   min-block-size: 44px;
 }
 
+/* Choice Group（type/sort）的选项是 SegmentedControl 的子组件按钮：它的 scoped
+   `.segmented.is-chips .segmented-option`（3 class + scope 属性）压过上面的
+   `:deep(button)`（2 class + 属性 + 元素），在**细指针**的手机档（767px 断点边界）
+   会落回 --control-h-md=32px。本 sheet 的产品规则是「所有控件 ≥44px」，这里按
+   更高特异性把选项抬回去（coarse 档本就由 --control-h-md=44 覆盖）。 */
+.tp-filters.is-sheet :deep(.segmented .segmented-option) {
+  min-block-size: 44px;
+}
+
 /* ---------- 结果区与卡片网格 ---------- */
 .tp-results { min-block-size: 0; }
 .tp-results.is-dialog-results {
