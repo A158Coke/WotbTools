@@ -110,6 +110,7 @@ import { assetProvider } from './assetProvider.js'
 // 履带印 GPU Buffer 写入器（#820 Wave B4A 出仓）：槽位编排/fround 门控/needsUpdate
 // 判定在 ./playback/treadBufferWriter.ts；路径事实仍由 treadMarks 生成、本文件调度
 import { writeTreadBuffer, ageTreadBuffer } from './playback/treadBufferWriter.js'
+import { createTransientFeedback3d } from './playback/transientFeedback3d.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { createSceneCore } from './playback/renderer.js'
 // 内核拆分（2026-10-24）：常量/纯函数/画质表
@@ -2634,7 +2635,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       const friendlyTeam = DATA.meta.friendly_team;
       const friendly = [1, 2].includes(friendlyTeam) && [1, 2].includes(v.def.team)
         ? v.def.team === friendlyTeam : null;
-      const ghost = ghostByEid.get(v.def.eid);
+      const ghost = transients.ghostOf(v.def.eid);
       return {
         eid: v.def.eid, accountId: v.def.account_id, playerName: v.def.nickname || '', tankName: v.def.tank_name || '',
         tankClass: classByAccount.get(v.def.account_id) || '',
@@ -2644,7 +2645,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         consumables: destroyed || !visibleAt(v, T) ? []
           : consumableStateAt(v.def.eid, T, spanStartAt(VIS_BY_EID.get(v.def.eid) ?? v.def.coverage, T)),
         hpGhost: ghost ? { prevPct: ghost.toFrac * 100, nextPct: ghost.fromFrac * 100, bornMs: ghost.bornMs, durationMs: GHOST_MS * FX_SCALE } : null,
-        hpFlash: flashByEid.has(v.def.eid),
+        hpFlash: transients.hasFlash(v.def.eid),
       };
     });
     labelsReloadActive = rows.some((r) => Array.isArray(r.reload)
@@ -3826,35 +3827,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
   }
 
-  // ---------- 战斗反馈 transient（语义与 WotBTools 2D 对齐）----------
-  // 关键语义：**壁钟（真实 ms）寿命**，而非回放时钟——任意倍速下可读时长相近
-  // （2D battlePlayback.ts 同款常量与注释）。因用壁钟，暂停时 transient 自然走完，
-  // 无需特殊处理；seek 则清空并重置事件游标（不补播历史动画）。
-  // FLOAT_DMG_MS / GHOST_MS / FLASH_MS 来自 ../utils/battlePlayback.ts（2D SSOT）；
-  // 3D 侧统一在**使用点**乘 FX_SCALE（不改进 SSOT 常量 → 2D 时序不动）
-  const ghostByEid = new Map();  // eid -> { fromFrac（掉血后）, toFrac（掉血前）, bornMs, untilMs }
-  const flashByEid = new Map();  // eid -> untilMs
-  let dmgEvents = [];          // { t, eid, hpLoss, hpBefore, hpAfter }（回放时钟，升序）
-  let burstEvents = [];        // { t, eid }（回放时钟，升序）
-  let dmgPtr = 0, burstPtr = 0;
-
-  // 伤害来自血量链下降；击毁特效与模型共用生命事实，不要求 killer/kill 归属。
-  function buildTransientSources() {
-    dmgEvents = [];
-    for (const def of DATA.vehicles || []) {
-      const hp = def.hp || [];
-      for (let i = 1; i < hp.length; i++) {
-        const loss = hp[i - 1][1] - hp[i][1];
-        if (loss > 0) dmgEvents.push({ t: hp[i][0], eid: def.eid, hpLoss: loss, hpBefore: hp[i - 1][1], hpAfter: hp[i][1] });
-      }
-    }
-    dmgEvents.sort((a, b) => a.t - b.t);
-    // 击杀流和比分需要升序输入；爆炸独立按生命事实生成，不要求击杀归属。
-    if (DATA.kills) DATA.kills.sort((a, b) => a.t - b.t);
-    buildBurstSources();
-    dmgPtr = 0; burstPtr = 0;
-  }
-
+  // ---------- 战斗反馈 transient（状态/游标在 playback/transientFeedback3d.ts）----------
+  // 壁钟寿命、血量链事件源、幽灵段/受击闪的语义注释随实现迁往该模块；本处只保留
+  // 依赖场景的事实：canonical 生命链的 deathTimesOf、车模可见性/位置、battleFx 爆散。
   /** 车辆每次死亡的场景时刻（issue #622 复活模式：同一 eid 可多次死亡），未排序。 */
   function deathTimesOf(v) {
     const canonical = store.playbackSession?.canonical;
@@ -3883,73 +3858,31 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     return times;
   }
 
-  function buildBurstSources() {
-    burstEvents = [];
-    for (const v of V) {
-      // 每次死亡各一次爆焰；普通战斗每车至多一次死亡——单条行为与既往逐位一致。
-      for (const t of deathTimesOf(v)) burstEvents.push({ t, eid: v.def.eid });
-    }
-    burstEvents.sort((a, b) => a.t - b.t);
-  }
-
   function vehicleByEid(eid) { return V.find((x) => x.def.eid === eid); }
 
-  // 掉血反馈（一次掉血事件 = 伤害数字 + HP 条幽灵段 + 受击闪，与 2D 三件套同源）。
-  // 伤害数字的落点与动画完全在 HTML 覆盖层（PlaybackVehicleLabels3D）：canvas sprite 恒在
-  // DOM 名牌之下，renderOrder / 世界空间偏移都压不住它，而数字要精确贴住血条右缘，只有同层
-  // 读 DOM 几何才做得到（覆盖层内部按 px 定位，不做世界↔屏幕换算）。
-  function emitDamageFeedback({ eid, hpLoss, hpBefore, hpAfter }) {
-    const v = vehicleByEid(eid);
-    if (!v || !v.group.visible) return;
-    labelOverlay?.spawnDamage?.(eid, hpLoss, FLOAT_DMG_MS * FX_SCALE);
-    // HP 条幽灵段 + 受击闪（与伤害数字同一 loss 事件驱动，2D 三件套同源）
-    const nowMs = performance.now();
-    const maxHp = v.def.max_hp > 0 ? v.def.max_hp : 0;
-    if (maxHp > 0) {
-      const fromFrac = Math.max(0, Math.min(1, hpAfter / maxHp));
-      // 每车只有一段幽灵：存活期内连续受击 = 向下延伸同一段并重启寿命，不叠第二根 bar
-      const prev = ghostByEid.get(eid);
-      const carriedFrac = prev && nowMs < prev.untilMs ? prev.toFrac : 0;
-      const toFrac = Math.max(carriedFrac, Math.min(1, hpBefore / maxHp));
-      ghostByEid.set(eid, { fromFrac, toFrac, bornMs: nowMs, untilMs: nowMs + GHOST_MS * FX_SCALE });
-    }
-    flashByEid.set(eid, nowMs + FLASH_MS * FX_SCALE);
-    labelsTime = null;   // feedback expires independently of playback time
-  }
-
   // 击毁爆炸（外观见 battleFx.js：强闪光 + 地面光斑、湍流火球、黑烟柱、火星；高档加碎片与
-  // 地面尘浪）。权威死亡触发一次（buildBurstSources），壁钟寿命 BURST_SECS，seek 不补播。
+  // 地面尘浪）。权威死亡触发一次（transient 事件源），壁钟寿命 BURST_SECS，seek 不补播。
   function spawnBurst(eid) {
     const v = vehicleByEid(eid);
     if (!v || !v.group.visible) return;
     ensureBattleFx().spawnBurst(v.group.position, performance.now(), eid);
   }
 
-  function updateTransients() {
-    const now = performance.now();
-    // HP 条反馈过期清理（过期后再刷一次标签以擦除残影/闪光）
-    for (const [eid, g] of ghostByEid) {
-      if (now >= g.untilMs) {
-        ghostByEid.delete(eid);
-        labelsTime = null;
-        invalidate();   // 到期要重画标签（清幽灵段），否则脏帧会停在这一帧
-      }
-    }
-    for (const [eid, until] of flashByEid) {
-      if (now >= until) {
-        flashByEid.delete(eid);
-        labelsTime = null;
-        invalidate();
-      }
-    }
-  }
-
-  function clearTransients() {
-    labelOverlay?.clearDamages?.();   // 伤害数字：seek 后不补播（到期由覆盖层自己的定时器负责）
-    battleFx?.clearTransients();   // 爆炸 / 开火 / 命中：seek 后不补播
-    ghostByEid.clear(); flashByEid.clear();   // 2D seek 同语义：清空且不补播
-    dmgPtr = 0; burstPtr = 0;                 // 游标重置：seek 后不补播历史动画
-  }
+  const transients = createTransientFeedback3d({
+    getData: () => DATA,
+    getVehicles: () => V,
+    deathTimesOf: (v) => deathTimesOf(v),
+    getLabelOverlay: () => labelOverlay,
+    getBattleFx: () => battleFx,
+    // 壁钟寿命到期 / 伤害事件到达都要重画标签（HP 幽灵段与闪光在覆盖层）
+    invalidateLabels: () => { labelsTime = null; },
+    invalidate: () => invalidate(),
+    scale: FX_SCALE,
+    floatDmgMs: FLOAT_DMG_MS,
+    ghostMs: GHOST_MS,
+    flashMs: FLASH_MS,
+    onBurst: (eid) => spawnBurst(eid),
+  });
 
   // ---------- 击杀 feed / 计分 / 名册（实现在 playback/hudFeed.js；快照式工厂） ----------
   //（原节的语义注释——响应式代理登记、阵营视角映射、resolver 单源——随实现迁往该模块）
@@ -4213,7 +4146,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       || frameDirty
       || (destruct && destruct.animating)
       || tracers.length > 0 || (battleFx && battleFx.active())
-      || ghostByEid.size > 0 || flashByEid.size > 0;
+      || transients.hasActive();
     if (!busy) {
       // 空闲（场景确实停画，而不是渲染很慢）：显式重起统计窗，避免把空闲间隙
       // 算成一帧；超过 0.6s 把角标归零（显示 —），别让旧帧率冒充“当前”。
@@ -4253,7 +4186,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const perfT0 = PERF ? performance.now() : 0;
     updateLabels();
     updateBases();
-    updateTransients();
+    transients.updateNow();
     updateBattleFx();     // 战斗特效（壁钟特效暂停时也继续自然播完）
     const perfT1 = PERF ? performance.now() : 0;
     maybeRebuildTerrainLod();   // 地形 LOD 跟随相机姿态（视距滞回 + 绕转/FOV/aspect；120 ms 节流）
@@ -4387,13 +4320,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 所以弹道推进排在它之后
     flushMuzzles();
     updateTracers();
-    // 战斗反馈事件泵（回放时钟；壁钟寿命见 transient 段）
-    while (dmgPtr < dmgEvents.length && dmgEvents[dmgPtr].t <= T) {
-      emitDamageFeedback(dmgEvents[dmgPtr++]);
-    }
-    while (burstPtr < burstEvents.length && burstEvents[burstPtr].t <= T) {
-      spawnBurst(burstEvents[burstPtr++].eid);
-    }
+    // 战斗反馈事件泵（回放时钟；壁钟寿命/游标在 playback/transientFeedback3d.ts）
+    transients.advanceTo(T);
     updateDestructibles(T);
     updateTrails();     // 履带印游标泵（seek 后退 = 全量重算，前进 = 增量）
     updateScore();
@@ -4496,8 +4424,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     canonicalClock = clock && Number.isFinite(clock.startRaw) ? { startRaw: clock.startRaw, durationSec: clock.durationSec } : null;
     if (!DATA) return;
     [START, END] = battleRange();
-    buildBurstSources();
-    burstPtr = firstIndexAfter(burstEvents, T);   // late canonical never replays past explosions
+    transients.resyncBursts(T);   // late canonical never replays past explosions
     store.startTime = START;
     store.duration = END;
     const t = Math.max(START, Math.min(END, T));
@@ -4513,8 +4440,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 游标一律重定到「T 之后第一条」：clearEffects 已把 transient 游标归零，
     // 若不重定，紧随的 tick() 会把 t<=T 的历史飘字/爆散一次性补播（与 2D seek 语义不符）
     shotPtr = firstIndexAfter(DATA.shots, T, (x) => x.t_fire);
-    dmgPtr = firstIndexAfter(dmgEvents, T);
-    burstPtr = firstIndexAfter(burstEvents, T);
+    transients.rewind(T);
     rebuildFeed();
     resetScore();     // 比分为单调游标，seek 后必须从头推进（否则分数不回落）
     winnerShown = false; store.banner = null;
@@ -4922,7 +4848,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     for (const tl of trajLines) battleFx.giveRibbon(tl.mesh);
     trajLines.length = 0;
     pendingMuzzles.length = 0;
-    clearTransients();   // 战斗反馈（飘字/爆散/幽灵段/受击闪）：seek 后不补播
+    transients.clear();   // 战斗反馈（飘字/爆散/幽灵段/受击闪）：seek 后不补播
   }
 
   // ---- 逐图光照（客户端 DirectionalLightComponent → map/<key>/lighting.json）----
@@ -5318,13 +5244,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         }).catch(() => {});
       }
     }
-    buildTransientSources();   // 战斗反馈事件源（伤害/击毁）
+    transients.rebuildSources();   // 战斗反馈事件源（伤害/击毁）
     buildBases();   // 基地贴地标记（争霸 A–D / 单基地）
     // 会话从开战时刻开始：准备 / 倒计时阶段不在时间轴上（与 2D 一致）
     sceneClock = resolveReplayClock(DATA.periods || [], null, DATA.meta.duration);
     [START, END] = battleRange();
     T = START;
-    burstPtr = firstIndexAfter(burstEvents, T);
+    transients.rewindBursts(T);   // 伤害游标由 rebuildSources 归零（开战时刻的事件不跳过）
     shotPtr = 0; hudFeed.resetKillPtr();
     if (DEBUG) window.__pbV = V;   // 调试钩子：控制台可查每车 GLB/位姿状态（仅 ?debug）
     prewarmShaders();
