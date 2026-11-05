@@ -15,6 +15,9 @@ const src = readSrc(resolve(here, 'playbackScene.js'), 'utf8')
 // 常量/并发工具与边界带 2026-10-24 出仓 playback/（巨石拆分 Step A1，守卫随实现迁移）
 const pbUtilSrc = readSrc(resolve(here, 'playback/util.ts'), 'utf8')
 const bandSrc = readSrc(resolve(here, 'playback/boundary.ts'), 'utf8')
+// 3D 战斗反馈 transient（伤害/击毁事件源、壁钟幽灵段/受击闪）2026-11-05 出仓
+// playback/transientFeedback3d.ts（#820 Wave B6B；事件源/游标守卫随实现迁移）
+const transientSrc = readSrc(resolve(here, 'playback/transientFeedback3d.ts'), 'utf8')
 // 渲染器创建核心 2026-10-24 出仓 playback/renderer.js（Step A2；出屏口径/对数深度/兜底灯光
 // 的装配断言随实现迁移）
 const rendererSrc = readSrc(resolve(here, 'playback/renderer.ts'), 'utf8')
@@ -1126,7 +1129,8 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
     expect(feedSrc).toMatch(/let scorePtr = 0, score1 = 0, score2 = 0;/)
     expect(feedSrc).toMatch(/function resetScore\(\)/)
     expect(feedSrc).toMatch(/while \(scorePtr < getData\(\)\.kills\.length && getData\(\)\.kills\[scorePtr\]\.t <= getT\(\)\)/)
-    expect(src).toMatch(/if \(DATA\.kills\) DATA\.kills\.sort\(\(a, b\) => a\.t - b\.t\);/)
+    // 击杀数组原地升序随事件源迁移到 transient 模块
+    expect(transientSrc).toMatch(/if \(kills\) kills\.sort\(\(a, b\) => a\.t - b\.t\)/)
   })
 
   it('资产加载走有限并发（地表贴图 / 坦克 GLB 都受上限约束）', () => {
@@ -1155,7 +1159,8 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
     expect(animate).toMatch(/\|\| cameraMoved/)
     expect(animate).toMatch(/\|\| frameDirty/)
     expect(animate).toMatch(/tracers\.length > 0 \|\| \(battleFx && battleFx\.active\(\)\)/)
-    expect(animate).toMatch(/ghostByEid\.size > 0 \|\| flashByEid\.size > 0;/)
+    // 幽灵段/受击闪的活跃判定由 transient 模块持有，场景只问 hasActive()
+    expect(animate).toMatch(/transients\.hasActive\(\);/)
     // 跳帧分支：空闲时只做帧率角标归零，随后 return（不跑 tick / 标签 / render）
     expect(animate).toMatch(/if \(!busy\) \{(?:.|\n){0,600}?return;/)
     expect(animate.indexOf('frameDirty = false;')).toBeGreaterThan(animate.indexOf('if (!busy) {'))
