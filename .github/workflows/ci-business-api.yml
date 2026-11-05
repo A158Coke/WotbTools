@@ -8,6 +8,12 @@ on:
       head_sha:
         required: true
         type: string
+      # 保守默认 false：未显式证明 Frontend 已承担完整 HTTP 契约检查时，
+      # Business API 仍执行原有 http_contract。
+      frontend_affected:
+        required: false
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -87,6 +93,9 @@ jobs:
           mvn --batch-mode --no-transfer-progress -s settings-ci.xml -Dmaven.repo.local=.m2repo -pl wotb-web -am verify
   http_contract:
     name: HTTP contract
+    # Frontend 与 Business API 同时受影响时，完整 HTTP 契约检查由 Frontend owner
+    # 承担（见 ci-frontend.yml），此处跳过；其余情况本 job 仍是唯一执行位置。
+    if: ${{ !inputs.frontend_affected }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

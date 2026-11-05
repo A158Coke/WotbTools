@@ -18,6 +18,7 @@ import { createPlaybackStore } from '../scene/playbackStore.js'
 import { initPlayback, QUALITY_PRESETS } from '../scene/playbackScene.js'
 import { detectWebGL } from '../scene/webglSupport.js'
 import { useSceneFlyControls } from '../composables/useSceneFlyControls.js'
+import { useSceneActivity } from '../composables/useSceneActivity'
 import { usePlaybackFullscreen } from '../composables/usePlaybackFullscreen.js'
 import { usePlaybackPhoneForm } from '../composables/usePlaybackPhoneForm.js'
 import { usePlaybackPortraitViewport } from '../composables/usePlaybackPortraitViewport.js'
@@ -100,9 +101,10 @@ const { isFullscreen, fullscreenSupported, toggleFullscreen } = usePlaybackFulls
   isPhone,
   isActive: () => props.active,
 })
+const renderActive = useSceneActivity(() => props.active)
 const fly = useSceneFlyControls({
   setFlySpeed: (n) => sceneApi?.setFlySpeed(n),
-  isActive: () => props.active,
+  isActive: () => renderActive.value,
   canFly: () => !!sceneApi && store.mapReady,
   getSceneApi: () => sceneApi,
 })
@@ -281,14 +283,14 @@ function shouldHaveScene() {
   return online.value.available && !!webgl.supported
 }
 function ensureScene() {
-  if (sceneApi || !shouldHaveScene()) return false
+  if (sceneApi || !renderActive.value || !shouldHaveScene()) return false
   // stage 必须已挂在文档上：canvas append 到游离节点会静默丢失（模板切换的残留防护）
   if (!stage.value?.isConnected) return false
   sceneApi = initPlayback(stage.value, store, null, {
     onAnnotationCommit: commitAnnotationFromScene,
     onAnnotationErase: eraseFromScene,
   })
-  sceneApi?.setPaused?.(!props.active)
+  sceneApi?.setPaused?.(!renderActive.value)
   sceneApi?.setFlySpeed?.(fly.flySpeedIndex())
   sceneApi?.setMobileTouch?.(isPhone.value)   // 移动端触屏相机契约（单指分流 / 双指不控制）
   pushAnnotationProjection()
@@ -327,8 +329,11 @@ watch(() => props.mapId, () => {
   // 从未激活（无场景）：不抢建——首次激活的 reconcile watcher 会装载当前图。
   if (sceneApi && shouldHaveScene()) reloadMap()
 })
-watch(() => props.active, (active) => {
+watch(renderActive, (active) => {
   sceneApi?.setPaused?.(!active)
+  if (!active) fly.stopLoop()
+})
+watch(() => props.active, (active) => {
   if (!active && annotationOpen.value) closeAnnotation()
 })
 // annotation 投影 / 交互 / 可见性的唯一推送方向（pane → scene）——与 Replay3DPane
@@ -367,7 +372,7 @@ watch(() => store.mapReady, (ready) => {
  * 装载当前图，active 翻转只改暂停态，离线则拆场景。
  */
 watch(
-  () => [online.value.available, props.active],
+  () => [online.value.available, renderActive.value],
   ([available, active], [prevAvailable] = []) => {
     if (!shouldHaveScene()) {
       destroyScene()
@@ -378,9 +383,10 @@ watch(
     // + 装载；之后切走只暂停保留场景/标注（Replay3DPane 生命周期同一不变量）。
     if (!active) return
     nextTick(() => {
+      if (!renderActive.value || !shouldHaveScene()) return
       const created = ensureScene()
       if (!sceneApi) return
-      sceneApi.setPaused?.(false)
+      sceneApi.setPaused?.(!renderActive.value)
       // 首次创建（含激活翻转、pending→available 翻转）才装载；active 翻转不重复装图
       if (created || (available === true && prevAvailable === false)) reloadMap()
     })

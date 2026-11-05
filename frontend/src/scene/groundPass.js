@@ -53,16 +53,31 @@ export function setupGroundTextures(texs, anisotropy) {
  *   按 layout 1 平移一列、高度按 100 m 缩放）。bin 仍会请求，以便烘焙侧区分“双 404”和
  *   “json 缺但 bin 在”两种事实。
  */
-export async function loadTerrain({ binUrl, metaUrl, fetchFn, stale = () => false }) {
+export async function loadTerrain({ binUrl, metaUrl, fetchFn, stale = () => false, onDiagnostics = null }) {
   const meta = {};
   let metaStatus = null, binStatus = null;
-  const out = (field) => ({ field, meta, metaStatus, binStatus });
+  const stages = onDiagnostics ? new Set(['terrain.meta.fetch', 'terrain.meta.body-json-aggregate', 'terrain.bin.fetch', 'terrain.bin.body', 'terrain.pair-check-aggregate', 'terrain.decode']) : null;
+  const report = (stage, start, status = 'complete') => {
+    if (!onDiagnostics) return;
+    stages.delete(stage);
+    try { onDiagnostics({ stage, durationMs: performance.now() - start, status }); } catch { /* 诊断不得改变加载行为 */ }
+  };
+  const out = (field) => {
+    if (onDiagnostics) for (const stage of stages) {
+      try { onDiagnostics({ stage, status: 'skipped' }); } catch { /* best effort */ }
+    }
+    return { field, meta, metaStatus, binStatus };
+  };
   if (!binUrl || !metaUrl) return out(null);
+  let started = onDiagnostics ? performance.now() : 0;
   const m = await fetchFn(metaUrl);
+  report('terrain.meta.fetch', started, m.ok ? 'complete' : 'http-error');
   metaStatus = m.status;
   if (stale()) return out(null);
   if (m.ok) {
+    started = onDiagnostics ? performance.now() : 0;
     Object.assign(meta, await m.json());
+    report('terrain.meta.body-json-aggregate', started);
     if (stale()) return out(null);
     const wb = meta.worldBounds;
     if (Array.isArray(wb?.min) && Array.isArray(wb?.max)) {
@@ -71,11 +86,15 @@ export async function loadTerrain({ binUrl, metaUrl, fetchFn, stale = () => fals
       if (dx > 0 || dy > 0) meta.span = Math.max(dx, dy);
     }
   }
+  started = onDiagnostics ? performance.now() : 0;
   const b = await fetchFn(pairedTerrainBinUrl(binUrl, meta));
+  report('terrain.bin.fetch', started, b.ok ? 'complete' : 'http-error');
   binStatus = b.status;
   if (stale()) return out(null);
   if (b.ok) {
+    started = onDiagnostics ? performance.now() : 0;
     const tbuf = await b.arrayBuffer();
+    report('terrain.bin.body', started);
     if (stale()) return out(null);
     if (!terrainFieldMetaValid(meta)) {
       console.warn('地形元数据缺失/不完整（size/terrainLayout/zmin/zmax），拒绝按缺省值解码（回退 2D）');
@@ -89,7 +108,15 @@ export async function loadTerrain({ binUrl, metaUrl, fetchFn, stale = () => fals
       console.warn('地形 worldBounds 不是居中正方形（当前消费口径不支持），回退 2D:', meta.worldBounds);
       return out(null);
     }
-    if (await terrainBinMatchesMeta(tbuf, meta)) return out(decodeTerrainField(tbuf, meta));
+    started = onDiagnostics ? performance.now() : 0;
+    const matched = await terrainBinMatchesMeta(tbuf, meta);
+    report('terrain.pair-check-aggregate', started, matched ? 'complete' : 'mismatch');
+    if (matched) {
+      started = onDiagnostics ? performance.now() : 0;
+      const field = decodeTerrainField(tbuf, meta);
+      report('terrain.decode', started, field ? 'complete' : 'unavailable');
+      return out(field);
+    }
     console.warn('地形 bin 与 terrain.json 不是同一次发布（sha256 不符，回退）');
   }
   return out(null);
@@ -98,10 +125,14 @@ export async function loadTerrain({ binUrl, metaUrl, fetchFn, stale = () => fals
 /** 地形几何装配（客户端同构自适应细分；算法与 UV 契约在 terrainMesh.js）。几何直接建在场景系。 */
 export function buildGroundGeometry({
   field, n, span, cam, fovY, aspect = 16 / 9, hFovDeg = null, refineMask = null, cx = 0, cz = 0,
+  onDiagnostics = null,
 }) {
+  let start = onDiagnostics ? performance.now() : 0;
   const { positions, indices, sizeAt, originIAt, originJAt, vertexIndexAt, morphRaw, quads, overBudget } = buildAdaptiveTerrain({
     field, n, span, cam, fovY, aspect, hFovDeg, refineMask,
   });
+  const adaptiveMs = onDiagnostics ? performance.now() - start : 0;
+  if (onDiagnostics) start = performance.now();
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   // 底图 UV：回退档（无分层）把 `ground.webp` 直接摊在地形上——分层着色的 UV 在
@@ -109,8 +140,17 @@ export function buildGroundGeometry({
   g.setAttribute('uv', new THREE.BufferAttribute(groundMapUv(positions, span, cx, cz), 2));
   g.setIndex(new THREE.BufferAttribute(indices, 1));
   g.userData.terrainBuild = { positions, sizeAt, originIAt, originJAt, vertexIndexAt, morphRaw, quads, overBudget, n, span };
+  const assemblyMs = onDiagnostics ? performance.now() - start : 0;
+  if (onDiagnostics) start = performance.now();
   g.computeVertexNormals();
+  const normalsMs = onDiagnostics ? performance.now() - start : 0;
+  if (onDiagnostics) start = performance.now();
   g.computeBoundingSphere();
+  if (onDiagnostics) {
+    const boundsMs = performance.now() - start;
+    try { onDiagnostics({ adaptiveMs, assemblyMs, normalsMs, boundsMs, vertices: positions.length / 3, triangles: indices.length / 3, overBudget }); }
+    catch { /* 诊断消费者不得改变地形构建行为 */ }
+  }
   return g;
 }
 

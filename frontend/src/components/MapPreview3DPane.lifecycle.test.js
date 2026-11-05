@@ -20,7 +20,11 @@ const scene = vi.hoisted(() => {
     setQuality: vi.fn(),
     setCam: vi.fn(),
     setMapSpawns: vi.fn(),
+<<<<<<< HEAD
     setMobileTouch: vi.fn(),
+=======
+    refreshSpawnColors: vi.fn(),
+>>>>>>> origin/main
     reset: vi.fn(),
     invalidate: vi.fn(),
   }
@@ -64,6 +68,7 @@ vi.mock('./Scene3DStatus.vue', () => ({ default: { template: '<div class="s3d-st
 vi.mock('./AnnotationToolbar.vue', () => ({ default: { template: '<div class="at-stub" />' } }))
 
 import MapPreview3DPane from './MapPreview3DPane.vue'
+import { uiProfile } from '../composables/useUiProfile.js'
 import { afterEach } from 'vitest'
 
 let wrappers = []
@@ -123,6 +128,7 @@ describe('MapPreview3DPane 首次激活生命周期', () => {
     expect(scene.api.setMapSpawns).toHaveBeenCalledWith(next)
   })
 
+<<<<<<< HEAD
   it('移动端触屏相机契约：建场景即按 isPhone 推送；形态翻转即时同步', async () => {
     const { __phoneForm } = await import('../composables/usePlaybackPhoneForm.ts')
     const wrapper = mountPane(true)
@@ -160,6 +166,41 @@ describe('MapPreview3DPane 首次激活生命周期', () => {
     await flushPromises()
     expect(slider()).toBeNull()
     wrapper.unmount()
+=======
+  it('后台更新出生点和主题后保留场景，恢复时不重复装图', async () => {
+    let visibility = 'visible'
+    const getter = vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility)
+    const originalProfile = uiProfile.value
+    const points = [{ x: 10, y: -20, name: 'spawn1' }]
+    const wrapper = mountPane(true, { spawnPoints: points })
+    try {
+      await flushPromises()
+      visibility = 'hidden'
+      document.dispatchEvent(new Event('visibilitychange'))
+      await flushPromises()
+      expect(scene.api.setPaused).toHaveBeenLastCalledWith(true)
+      const next = [{ x: 1, y: 2, name: 'spawn2' }]
+      scene.api.setMapSpawns.mockClear()
+      scene.api.refreshSpawnColors.mockClear()
+      await wrapper.setProps({ spawnPoints: next })
+      uiProfile.value = originalProfile === 'classic' ? 'showcase' : 'classic'
+      await flushPromises()
+      expect(scene.api.setMapSpawns).toHaveBeenLastCalledWith(next)
+      expect(scene.api.refreshSpawnColors).toHaveBeenCalledTimes(1)
+      expect(scene.api.destroy).not.toHaveBeenCalled()
+      expect(scene.api.setPaused).toHaveBeenLastCalledWith(true)
+      visibility = 'visible'
+      document.dispatchEvent(new Event('visibilitychange'))
+      await flushPromises()
+      expect(scene.api.setPaused).toHaveBeenLastCalledWith(false)
+      expect(scene.initPlayback).toHaveBeenCalledTimes(1)
+      expect(scene.api.loadMapOnly).toHaveBeenCalledTimes(1)
+    } finally {
+      wrapper.unmount()
+      uiProfile.value = originalProfile
+      getter.mockRestore()
+    }
+>>>>>>> origin/main
   })
 
   it('激活后切走：场景保留暂停，不销毁、不重装；切回不重建不重装', async () => {
@@ -229,4 +270,34 @@ describe('MapPreview3DPane 首次激活生命周期', () => {
     await flushPromises()
     expect(scene.api.loadMapOnly).toHaveBeenCalledWith({ mapId: 17, mapName: 'Yukon' })
   })
+})
+
+it('does not wake a hidden map during deferred initialization and reuses the scene on visibility changes', async () => {
+  let visibility = 'visible'
+  const getter = vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility)
+  const wrapper = mountPane(true)
+  visibility = 'hidden'
+  document.dispatchEvent(new Event('visibilitychange'))
+  await flushPromises()
+  expect(scene.initPlayback).not.toHaveBeenCalled()
+  visibility = 'visible'
+  document.dispatchEvent(new Event('visibilitychange'))
+  await flushPromises()
+  expect(scene.initPlayback).toHaveBeenCalledTimes(1)
+  expect(scene.api.loadMapOnly).toHaveBeenCalledTimes(1)
+  visibility = 'hidden'
+  document.dispatchEvent(new Event('visibilitychange'))
+  await flushPromises()
+  expect(scene.api.setPaused).toHaveBeenLastCalledWith(true)
+  await wrapper.setProps({ active: false })
+  visibility = 'visible'
+  document.dispatchEvent(new Event('visibilitychange'))
+  await flushPromises()
+  expect(scene.api.setPaused).toHaveBeenLastCalledWith(true)
+  await wrapper.setProps({ active: true })
+  await flushPromises()
+  expect(scene.api.setPaused).toHaveBeenLastCalledWith(false)
+  expect(scene.initPlayback).toHaveBeenCalledTimes(1)
+  expect(scene.api.loadMapOnly).toHaveBeenCalledTimes(1)
+  getter.mockRestore()
 })

@@ -620,7 +620,7 @@ watch(() => props.initialCapability, (val) => {
           v-if="canUseDemoCapabilities && threeMounted && !threeLoadError"
           :playback-session="workspace.playbackSession"
           :file="targetFile"
-          :active="activeCapability === '3d' && threeAvailability.available"
+          :active="pageActive && activeCapability === '3d' && threeAvailability.available"
           :blocked-reason="threeBlocked"
         />
       </div>

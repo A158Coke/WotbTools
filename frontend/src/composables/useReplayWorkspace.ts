@@ -3,6 +3,11 @@ import type { AgentPlaybackFacet } from '../api/agent-replay-facets.js'
 import type { LocalPlayback } from '../replay-local/playback/parseLocalPlayback.js'
 import { useReplay } from './useReplay.js'
 import type { ReplayCapability } from '../types/workspace.js'
+import type { PlaybackDiagnosticEvent, PlaybackDiagnosticObserver } from '../scene/replaySource.js'
+
+function emitPlaybackDiagnostic(observer: PlaybackDiagnosticObserver, event: PlaybackDiagnosticEvent) {
+  try { observer(event) } catch { /* diagnostic consumers cannot affect loading */ }
+}
 
 type PlaybackReadiness = 'idle' | 'loading' | 'ready' | 'error'
 
@@ -30,6 +35,7 @@ export function useReplayWorkspace(initialCapability: ReplayCapability = 'data')
     canonicalPromise?: Promise<LocalPlayback | null>
     controller: AbortController | null
     canonicalGeneration: number
+    observers?: Set<PlaybackDiagnosticObserver>
   }>()
   type Entry = NonNullable<ReturnType<typeof entries.get>>
   const pending = new Set<Entry>()
@@ -61,6 +67,7 @@ export function useReplayWorkspace(initialCapability: ReplayCapability = 'data')
     for (const entry of pending) {
       entry.controller?.abort() // Real Worker cancellation; also withdraw scheduled enrichment.
       entry.controller = null
+      entry.observers = undefined
       if (entry.state.sceneState === 'loading') {
         entry.scenePromise = undefined
         entry.state.sceneState = 'idle'
@@ -82,20 +89,41 @@ export function useReplayWorkspace(initialCapability: ReplayCapability = 'data')
       const entry = entryFor(file)
       entry.controller?.abort()
       entry.controller = null
+      entry.observers = undefined
       entry.scenePromise = undefined
       entry.state.scenePlayback = null
       entry.state.sceneError = null
       entry.state.sceneState = 'idle'
       invalidateCanonical(file)
     },
-    loadScene(file: File): Promise<AgentPlaybackFacet> {
+    loadScene(file: File, observer?: PlaybackDiagnosticObserver): Promise<AgentPlaybackFacet> {
       const entry = entryFor(file)
       if (entry.scenePromise) {
+        if (observer) {
+          emitPlaybackDiagnostic(observer, { stage: 'workspace.cache', status: entry.state.sceneState === 'ready' ? 'hit' : 'shared-inflight' })
+          if (entry.state.sceneState === 'ready') {
+            // This call did not execute any parser work; don't reuse an earlier load's durations.
+            for (const stage of [
+              'file.arrayBuffer', 'replay.digest', 'json.cache',
+              'first.worker.roundtrip', 'first.wasm.ready', 'first.parse', 'first.json.parse', 'first.worker.unattributed',
+              'pitchLimits.wait', 'second.worker.roundtrip', 'second.wasm.ready',
+              'second.parse', 'second.worker.unattributed', 'json.parse', 'validation', 'enrichment',
+            ]) emitPlaybackDiagnostic(observer, { stage, status: 'skipped' })
+          }
+          if (entry.state.sceneState === 'loading') {
+            if (!entry.observers) emitPlaybackDiagnostic(observer, { stage: 'workspace.inflightTiming', status: 'unavailable' })
+            else entry.observers.add(observer)
+          }
+        }
         // Reselecting a cached scene resumes enrichment withdrawn with the old selection.
         if (entry.state.sceneState === 'ready' && entry.state.canonicalState === 'idle') {
           void playbackSession.loadCanonical(file).catch(() => {})
         }
         return entry.scenePromise
+      }
+      if (observer) {
+        emitPlaybackDiagnostic(observer, { stage: 'workspace.cache', status: 'miss' })
+        ;(entry.observers ??= new Set()).add(observer)
       }
       const controller = new AbortController()
       entry.controller = controller
@@ -103,7 +131,11 @@ export function useReplayWorkspace(initialCapability: ReplayCapability = 'data')
       pending.add(entry)
       const task = (async () => {
         const { loadFromLocalFile } = await import('../scene/replaySource.js')
-        const playback = await loadFromLocalFile(file, controller.signal)
+        const playback = await loadFromLocalFile(file, controller.signal, observer ? event => {
+          if (entry.controller === controller && !controller.signal.aborted) {
+            for (const current of entry.observers ?? []) emitPlaybackDiagnostic(current, event)
+          }
+        } : undefined)
         if (controller.signal.aborted) throw new DOMException('Playback scene cancelled', 'AbortError')
         entry.state.scenePlayback = playback
         entry.state.sceneError = null
@@ -115,7 +147,10 @@ export function useReplayWorkspace(initialCapability: ReplayCapability = 'data')
           entry.state.sceneState = 'error'
         }
         throw error
-      }).finally(() => { releasePending(entry) })
+      }).finally(() => {
+        if (entry.controller === controller) entry.observers = undefined
+        releasePending(entry)
+      })
       entry.scenePromise = task
       // Publish raw readiness first. Canonical runs in the background and never gates scene.
       task.then(() => {

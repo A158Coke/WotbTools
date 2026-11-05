@@ -207,6 +207,88 @@ for owner in jobs["changes"]["outputs"]:
         for step in job.get("steps", []):
             if step.get("uses", "").startswith("actions/checkout@") and len(step.get("uses", "").split("@", 1)[1].split(" ")[0]) == 40:
                 assert step.get("with", {}).get("ref") == "${{ inputs.head_sha }}", owner
+
+# HTTP 契约检查的唯一执行责任：Frontend affected 时由 ci-frontend.yml 承担完整检查，
+# Business API 的 http_contract 跳过；BA-only 或未提供输入（保守默认）时 BA 独立执行。
+# 全部从真实 YAML 断言 input 类型/default、with 连接与 job 条件，不维护第二份路由实现。
+ba_ci = load(workflow_dir / "ci-business-api.yml")
+fe_ci = load(workflow_dir / "ci-frontend.yml")
+ba_inputs = ba_ci["on"]["workflow_call"]["inputs"]
+assert ba_inputs["frontend_affected"]["type"] == "boolean", ba_inputs["frontend_affected"]
+assert ba_inputs["frontend_affected"]["required"] == "false", ba_inputs["frontend_affected"]
+assert ba_inputs["frontend_affected"]["default"] == "false", ba_inputs["frontend_affected"]
+# 条件只挂在 http_contract 上，不影响 BA 的 Maven/镜像 job。
+for job_name, job in ba_ci["jobs"].items():
+    if job_name == "http_contract":
+        assert job["if"] == "${{ !inputs.frontend_affected }}", job.get("if")
+    else:
+        assert "frontend_affected" not in str(job.get("if", "")), job_name
+# Both 路由：gate 显式把字符串输出比较为 boolean，base_sha/head_sha 来源不变。
+ba_caller = jobs["business_api"]
+assert ba_caller["with"]["frontend_affected"] == "${{ needs.changes.outputs.frontend == 'true' }}", \
+    ba_caller["with"]["frontend_affected"]
+assert ba_caller["with"]["base_sha"] == "${{ needs.pr_identity.outputs.base_sha }}"
+assert ba_caller["with"]["head_sha"] == "${{ needs.pr_identity.outputs.head_sha }}"
+assert ba_caller["if"] == "needs.changes.outputs.business_api == 'true'", "BA-only/Neither 路由不变"
+fe_caller = jobs["frontend"]
+assert fe_caller["if"] == "needs.changes.outputs.frontend == 'true'", "FE 路由不变"
+# FE-only 覆盖补齐：Frontend job 承担完整 HTTP 检查（lint/check/fixture 各一次，
+# check 不重复），runtime coverage 由既有 pnpm test 承担，不制造新重复。
+fe_steps = [step.get("run", "") for step in fe_ci["jobs"]["frontend"]["steps"]]
+assert sum("pnpm run api:lint" in run for run in fe_steps) == 1, fe_steps
+assert sum("pnpm run api:check" in run for run in fe_steps) == 1, fe_steps
+assert sum("pnpm run api:fixture" in run for run in fe_steps) == 1, fe_steps
+assert any(run.strip() == "pnpm test" for run in fe_steps), fe_steps
+assert fe_ci["jobs"]["frontend"]["steps"][0]["with"]["ref"] == "${{ inputs.head_sha }}", \
+    "FE 检查使用同一 head_sha"
+# FE 与 BA 两个执行位置都不允许 continue-on-error 式放宽。
+for dedupe_workflow in (ba_ci, fe_ci, ci):
+    assert "continue-on-error" not in json.dumps(dedupe_workflow), "HTTP contract dedupe must not weaken the gate"
+
+# R2：对真实 Required Gate 聚合逻辑（ci-gate.yml 内嵌 Python）做失败传播测试，
+# 断言具体失败原因，而不是只断言任意非零退出。
+import subprocess
+
+required_run = next(
+    step.get("run", "") for step in jobs["required"]["steps"]
+    if step.get("name") == "Aggregate affected owner results"
+)
+gate_py = required_run.split("python3 - <<'PY'\n", 1)[1].rsplit("\nPY", 1)[0]
+
+def run_gate(affected_owners, owner_results, identity_result="success"):
+    # 真实聚合逻辑会读取 changes.outputs 里的每个 owner 的 needs[owner]，
+    # 所以 payload 必须覆盖全部 owner（未显式给出的按 skipped 处理）。
+    payload = {"pr_identity": {"result": identity_result},
+               "changes": {"result": "success",
+                           "outputs": {owner: ("true" if owner in affected_owners else "false")
+                                       for owner in owner_names}}}
+    for owner in owner_names:
+        payload[owner] = {"result": owner_results.get(owner, "skipped")}
+    script = ("import json,os\nos.environ['NEEDS_JSON']=" + repr(json.dumps(payload)) + "\n"
+              + gate_py)
+    return subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=False)
+
+owner_names = sorted(jobs["changes"]["outputs"])
+r = run_gate({"frontend", "business_api"}, {"frontend": "failure", "business_api": "skipped"})
+assert r.returncode != 0 and "frontend: affected=true, result=failure" in r.stderr, r.stderr
+r = run_gate({"frontend", "business_api"}, {"frontend": "cancelled", "business_api": "skipped"})
+assert r.returncode != 0 and "result=cancelled" in r.stderr, r.stderr
+# FE 意外 skipped（此时 BA http_contract 也被跳过，整组 HTTP 检查没有执行位置）必须失败。
+r = run_gate({"frontend", "business_api"}, {"frontend": "skipped", "business_api": "skipped"})
+assert r.returncode != 0 and "result=skipped" in r.stderr, r.stderr
+r = run_gate({"frontend", "business_api"},
+             {owner: ("success" if owner in ("frontend", "business_api") else "skipped")
+              for owner in owner_names})
+assert r.returncode == 0, r.stderr
+r = run_gate({"business_api"}, {"business_api": "failure"})
+assert r.returncode != 0 and "business_api: affected=true, result=failure" in r.stderr, r.stderr
+r = run_gate({"frontend"}, {"frontend": "success"})
+assert r.returncode == 0, r.stderr
+r = run_gate(set(), {owner: "skipped" for owner in owner_names})
+assert r.returncode == 0, r.stderr
+# identity 失败保持失败。
+r = run_gate({"frontend"}, {"frontend": "success"}, identity_result="failure")
+assert r.returncode != 0 and "PR identity or changed-file detection failed" in r.stderr, r.stderr
 # Issue #738 review R2：CodeQL workflow 的 init 输入名与排除路径必须受 PR 契约保护
 #（CodeQL 不由 PR 触发——输入名写错时实际扫描不会发现，只能靠这里阻断回归）。
 codeql_wf = load(workflow_dir / "codeql.yml")

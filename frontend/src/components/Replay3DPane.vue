@@ -51,6 +51,7 @@ import {
 import { mapLabel } from '../utils/helpers.js'
 import { PLAYBACK_SPEEDS, PLAYBACK_STEP_SECONDS, isInteractiveTarget, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
 import { useSceneFlyControls } from '../composables/useSceneFlyControls.js'
+import { useSceneActivity } from '../composables/useSceneActivity'
 import { formatPlaybackClock } from '../utils/playbackClock'
 import { ChevronDown, ChevronUp, PencilRuler, ScanEye, TriangleAlert } from 'lucide-vue-next'
 
@@ -374,9 +375,10 @@ const transport = usePlaybackTransport({
 })
 // 键盘自由视角（WASD 平移 / Q 升 E 降 / 1–6 速率）：PC 键盘用户的分析飞行。
 // 键位与播放传输并行不冲突；速率写场景（store.flySpeed），位移在场景 flyTick 推进。
+const renderActive = useSceneActivity(() => props.active)
 const fly = useSceneFlyControls({
   setFlySpeed: (n) => sceneApi?.setFlySpeed(n),
-  isActive: () => props.active,
+  isActive: () => renderActive.value,
   canFly: () => !!sceneApi && store.hasData && !props.blockedReason,
   getSceneApi: () => sceneApi,
 })
@@ -655,14 +657,14 @@ function ensureScene() {
   // 两侧约束都要保留：
   //   · `!props.active` —— 未激活的能力不得建场景（不需要激活就初始化会在切走时白跑渲染）；
   //   · `labelOverlay.value` —— 3D 名牌改屏幕空间 DOM 锚点后，场景需要覆盖层句柄。
-  if (sceneApi || !props.active || !shouldHaveScene()) return false
+  if (sceneApi || !renderActive.value || !shouldHaveScene()) return false
   sceneApi = initPlayback(stage.value, store, labelOverlay.value, {
     onVehicleSelect: handleSceneSelect,
     onAnnotationCommit: commitAnnotationFromScene,
     onAnnotationErase: eraseFromScene,
     recorderReticle: recorderReticle.value,
   })
-  sceneApi?.setPaused?.(!props.active)
+  sceneApi?.setPaused?.(!renderActive.value)
   sceneApi?.setFlySpeed?.(fly.flySpeedIndex())   // 新场景补推当前飞行速率档（重建不丢档）
   sceneApi?.setMobileTouch?.(isPhone.value)      // 移动端触屏相机契约（单指分流 / 双指不控制）
   pushLabelPrefs();   // 新场景默认吃共享偏好（含"隐藏全部 UI"的当前状态）
@@ -817,21 +819,22 @@ onBeforeUnmount(() => {
  * 只有 `active` 是「暂停 / 恢复」，其余两个都会改变「场景该不该存在」。
  */
 watch(
-  [() => props.file, () => props.blockedReason, () => props.active, () => online.value.available],
+  [() => props.file, () => props.blockedReason, renderActive, () => online.value.available],
   ([, , active], previous = []) => {
     // 先按新的 file/blocked 收敛场景，再处理能力切换
     reconcileScene()
     const activeChanged = previous.length >= 3 && previous[2] !== active
     if (activeChanged) {
       sceneApi?.setPaused?.(!active)
-      if (!active) {
-        closeAnnotation()
-        unlockOrientation()
-      }
+      if (!active) fly.stopLoop()
     }
   },
   { flush: 'post' },
 )
+
+watch(() => props.active, (active) => {
+  if (!active) { closeAnnotation(); unlockOrientation() }
+})
 
 // 面板打开期间尺寸变化（旋转 / 全屏 / 工作台重排）重算可用高度；闭合时不测量
 // （此时 .controls 可能整块不存在），打开那一下由 watch(displayOpen) 负责。
