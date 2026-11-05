@@ -3,11 +3,18 @@ set -euo pipefail
 
 MAX_TRACKED_FILE_BYTES="${MAX_TRACKED_FILE_BYTES:-5242880}"
 ALLOWLIST_FILE="${LARGE_FILE_ALLOWLIST_FILE:-scripts/ci/large-file-allowlist.txt}"
+MAX_SOURCE_LINES="${MAX_SOURCE_LINES:-1500}"
+LOC_ALLOWLIST_FILE="${SOURCE_LOC_ALLOWLIST_FILE:-scripts/ci/source-loc-allowlist.txt}"
 BASE_SHA="${BASE_SHA:-}"
 HEAD_SHA="${HEAD_SHA:-HEAD}"
 
 if ! [[ "$MAX_TRACKED_FILE_BYTES" =~ ^[0-9]+$ ]]; then
   echo "MAX_TRACKED_FILE_BYTES must be an integer, got: $MAX_TRACKED_FILE_BYTES" >&2
+  exit 2
+fi
+
+if ! [[ "$MAX_SOURCE_LINES" =~ ^[0-9]+$ ]]; then
+  echo "MAX_SOURCE_LINES must be an integer, got: $MAX_SOURCE_LINES" >&2
   exit 2
 fi
 
@@ -71,6 +78,87 @@ is_current_plan_allowlisted() {
       return 1
       ;;
   esac
+}
+
+# Source LOC budget gate (#820): first-party production frontend sources are
+# capped at MAX_SOURCE_LINES. Tests, ambient declarations and contract-generated
+# artifacts are out of scope by path role. Legacy files that still exceed the
+# budget are pinned at their audited baseline in LOC_ALLOWLIST_FILE: exact path,
+# exact baseline, so any growth or a stale entry is itself a reviewable
+# violation and a compliant file cannot stay parked in the allowlist.
+is_loc_scoped_path() {
+  local path="$1"
+  case "$path" in
+    frontend/src/*.test.*|frontend/src/*.d.ts|frontend/src/api/generated/*)
+      return 1
+      ;;
+    frontend/src/*.js|frontend/src/*.ts|frontend/src/*.vue)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+declare -A loc_allowlist=()
+load_loc_allowlist() {
+  [[ -f "$LOC_ALLOWLIST_FILE" ]] || return 0
+  local line path baseline rest lineno=0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    lineno=$((lineno + 1))
+    line="${line%$'\r'}"
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    path=""
+    baseline=""
+    rest=""
+    read -r path baseline rest <<< "$line"
+    if [[ -z "$path" || -z "$baseline" || -n "$rest" || ! "$baseline" =~ ^[0-9]+$ ]]; then
+      echo "ERROR: invalid line $lineno in $LOC_ALLOWLIST_FILE (expected '<exact path> <baseline lines>'): $line" >&2
+      exit 2
+    fi
+    loc_allowlist["$path"]="$baseline"
+  done < "$LOC_ALLOWLIST_FILE"
+}
+
+report_loc_violation() {
+  local scope="$1"
+  local path="$2"
+  local lines="$3"
+  local limit="$4"
+  echo "ERROR: $scope exceeds the ${limit}-line source budget: $(printable_path "$path") ($lines lines)" >&2
+  echo "       Split the module; a legacy file above budget must stay pinned at its audited baseline in $LOC_ALLOWLIST_FILE." >&2
+}
+
+report_stale_loc_allowlist_entry() {
+  local path="$1"
+  echo "ERROR: allowlisted legacy file is now within the source budget; remove it from $LOC_ALLOWLIST_FILE: $(printable_path "$path")" >&2
+}
+
+# Returns non-zero when the caller must count one violation.
+check_loc_budget() {
+  local scope="$1"
+  local path="$2"
+  local lines="$3"
+
+  if [[ -n "${loc_allowlist[$path]+x}" ]]; then
+    local baseline="${loc_allowlist[$path]}"
+    if (( lines > baseline )); then
+      report_loc_violation "$scope (allowlisted legacy file grew past its pinned baseline)" "$path" "$lines" "$baseline"
+      return 1
+    fi
+    if (( lines <= MAX_SOURCE_LINES )); then
+      report_stale_loc_allowlist_entry "$path"
+      return 1
+    fi
+    return 0
+  fi
+
+  if (( lines > MAX_SOURCE_LINES )); then
+    report_loc_violation "$scope" "$path" "$lines" "$MAX_SOURCE_LINES"
+    return 1
+  fi
+  return 0
 }
 
 printable_path() {
@@ -166,6 +254,8 @@ checked=0
 ignore_work=$(mktemp -d)
 trap 'rm -rf "$ignore_work"' EXIT
 
+load_loc_allowlist
+
 # Ask Git itself which paths the repository ignore policy rejects. --no-index is
 # required because the whole point is to catch files that were force-added even
 # though .gitignore says they are local/generated. NUL input/output keeps valid
@@ -227,6 +317,13 @@ while IFS= read -r -d '' path; do
   if (( size > MAX_TRACKED_FILE_BYTES )) && ! is_allowlisted "$path"; then
     report_large_file "tracked file" "$path" "$size"
     violations=$((violations + 1))
+  fi
+
+  if is_loc_scoped_path "$path"; then
+    source_lines=$(wc -l < "$path")
+    if ! check_loc_budget "tracked file" "$path" "$source_lines"; then
+      violations=$((violations + 1))
+    fi
   fi
 done < <(git ls-files -z)
 
@@ -298,6 +395,13 @@ if [[ -n "$BASE_SHA" ]]; then
       if (( size > MAX_TRACKED_FILE_BYTES )) && ! is_allowlisted "$path"; then
         report_large_file "history blob" "$path" "$size"
         violations=$((violations + 1))
+      fi
+
+      if is_loc_scoped_path "$path"; then
+        source_lines=$(git cat-file blob "$oid" | wc -l)
+        if ! check_loc_budget "history blob" "$path" "$source_lines"; then
+          violations=$((violations + 1))
+        fi
       fi
     done < <(git ls-tree -r -z -l "$commit")
   done < <(git rev-list --reverse "${BASE_SHA}..${HEAD_SHA}")

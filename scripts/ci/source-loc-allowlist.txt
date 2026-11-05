@@ -1,0 +1,16 @@
+# Source LOC budget legacy allowlist (#820).
+#
+# Format: one exact path per line followed by its audited baseline line count.
+# Paths are matched as full strings; directories, globs and suffix sharing are
+# not honored. A pinned file may shrink freely, but any growth past its
+# baseline fails the gate, and an entry whose file has dropped to
+# MAX_SOURCE_LINES or below must be removed in the same PR.
+#
+# Baselines recorded at commit bc7da2753 (main, 2026-11-05). Entries are
+# removed as #820 finishes splitting each file below the 1500-line budget.
+frontend/src/scene/tankViewer.js 6065
+frontend/src/scene/playbackScene.js 5695
+frontend/src/components/BattlePlayback.vue 2591
+frontend/src/components/HoFPage.vue 2250
+frontend/src/components/HoFAdminPage.vue 2112
+frontend/src/api/agent-replay-facets.ts 1863
