@@ -34,9 +34,10 @@ describe('标签遮挡：只对候选格做 raycast（禁止整场景递归检�
     expect(src).not.toMatch(/intersectObject\(mapScenery, true\)/)
     expect(src).toMatch(/raycaster\.intersectObjects\(cands, false\)/)
     expect(src).toMatch(/OCCL_MAX_CANDIDATES/)
-    // 候选表在场景加载时构建、换场时失效
+    // 候选表在场景加载时构建、换场时失效（#820 Step 2：候选格 owner = mapWorld.ts）
     expect(mapAssetsSrc).toMatch(/occlGrid = occGrid;/)
-    expect(src).toMatch(/occlGrid = null;/)
+    const mapWorldSrc = readFileSync(resolve(__dirname, 'playback/mapWorld.ts'), 'utf8')
+    expect(mapWorldSrc).toMatch(/occlGrid = null;/)
   })
   it('折线点表必须镜像 x（游戏系 → 场景系）——镜像丢失 = 轨迹画到地图对侧', () => {
     expect(src).toMatch(/pathPointsOf\(s\)\.map\(\(\[x, y, z\]\) => \[-x, y, z\]\)/)
@@ -98,7 +99,9 @@ describe('场景源码护栏：评审 P0 修复的接线锁定', () => {
     expect(src).not.toMatch(/occlusionCells\(wx - r/)
   })
   it('时间轴回退必须显式清树终态 settled（否则重播不重写触地旋转）', () => {
-    expect(src).toMatch(/if \(T < destruct\.lastT\) \{[\s\S]{0,80}destruct\.ptr = 0;[\s\S]{0,400}st\.prop === 3\) st\.settled = false;[\s\S]{0,40}\}\s*destruct\.lastT = T;/)
+    // #820 Step 2：updateDestructibles owner = playback/mapWorld.ts
+    const mapWorldSrc = readFileSync(resolve(__dirname, 'playback/mapWorld.ts'), 'utf8')
+    expect(mapWorldSrc).toMatch(/if \(T < destruct\.lastT\) \{[\s\S]{0,80}destruct\.ptr = 0;[\s\S]{0,400}st\.prop === 3\) st\.settled = false;[\s\S]{0,40}\}\s*destruct\.lastT = T;/)
   })
   it('?perf 看门狗随 destroy 清理（心跳定时器 + 调试句柄）', () => {
     expect(src).toContain('if (perfBeatTimer) { clearInterval(perfBeatTimer); perfBeatTimer = 0; }')
@@ -195,7 +198,7 @@ describe('Sniper 穿深着色接线', () => {
     const start = source.indexOf('function occluderRoots')
     const body = source.slice(start, source.indexOf('function ', start + 20))
     // 地形/场景 GLB/占位地面 + 每车低模组、GLB、飞炮塔
-    expect(body).toMatch(/terrainMesh, mapScenery, mapPlane, groundMesh/)
+    expect(body).toMatch(/mapWorld\.terrainMesh\(\), mapWorld\.mapScenery\(\), mapWorld\.mapPlane\(\), mapWorld\.groundMesh\(\)/)
     expect(body).toContain('v.glb')
     expect(body).toContain('detachedTurrets')
     // v.glb 是 v.group 的场景级兄弟，两者都必须在根清单里

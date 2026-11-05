@@ -1698,11 +1698,13 @@ describe('playbackScene 资产发布顺序', () => {
 
   it('资产缺失/失败进入 assetIssues + assetDegraded（不再只写 console 后算完成）', async () => {
     const raw = (await import('./playbackScene.js?raw')).default
-    expect(raw).toMatch(/store\.assetIssues = assetIssues/)
-    expect(raw).toMatch(/store\.assetDegraded = true/)
-    expect(raw).toMatch(/noteAsset\('map', `http-\$\{resp\.status\}`/)
-    expect(raw).toMatch(/noteAsset\('terrain', 'unavailable'/)
-    expect(raw).toMatch(/noteAsset\('scenery', 'failed'/)
+    // #820 Step 2：地图资产装载（noteAsset/进度/降级）owner = playback/mapWorld.ts
+    const worldSrc = (await import('./playback/mapWorld.ts?raw')).default
+    expect(worldSrc).toMatch(/store\.assetIssues = assetIssues/)
+    expect(worldSrc).toMatch(/store\.assetDegraded = true/)
+    expect(worldSrc).toMatch(/noteAsset\('map', `http-\$\{resp\.status\}`/)
+    expect(worldSrc).toMatch(/noteAsset\('terrain', 'unavailable'/)
+    expect(worldSrc).toMatch(/noteAsset\('scenery', 'failed'/)
     // 3D 与 2D 共用同一 visibility 投影（短隐藏段在 3D 也不能回退到 coverage）
     expect(raw).toMatch(/VIS_BY_EID = visibilitySpansByEid\(data\.visibility\)/)
     expect(raw).toMatch(/VIS_BY_EID\.get\(v\.def\.eid\) \?\? v\.def\.coverage/)
@@ -3644,7 +3646,10 @@ describe('画质四档阶梯契约（2026-10-07 重分档）', () => {
     const src = (await import('./playbackScene.js?raw')).default
     expect(src).not.toMatch(/map-mini/)
     expect(src).not.toMatch(/miniMap/)
-    expect(src).toMatch(/const mapUrl = mapStaticUrl\('map', undefined, resolvedKey\);/)
+    // #820 Step 2：地面链路 owner = playback/mapWorld.ts（四档统一 ground.webp）
+    const worldSrc = (await import('./playback/mapWorld.ts?raw')).default
+    expect(worldSrc).not.toMatch(/map-mini/)
+    expect(worldSrc).toMatch(/const mapUrl = mapStaticUrl\('map', undefined, resolvedKey\);/)
     const replay = (await import('./replaySource.js?raw')).default
     expect(replay).not.toMatch(/map-mini/)
   })
