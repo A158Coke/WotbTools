@@ -21,20 +21,8 @@ description: >
 指出。Agent 的工作是：**验证真实代码 → 定位问题 → 修复问题 → 验证修复**，而不是重新理解
 已被 reviewer 理解过的整个项目。
 
-核心原则：
-
-```text
-读到足够，不做全量阅读。
-先看 DIFF，再做 discovery。
-先定位 SYMBOL，再遍历 DIRECTORY。
-先处理 BLOCKER，再讨论 ARCHITECTURE。
-先看 DIRECT DEPENDENCY，再扩大到 REPOSITORY。
-先修复，再做完整 REVIEW。
-只运行 CHANGED-FILE TESTS。
-已通过且未触碰 = LOCKED。
-只有证据支持时才扩大 DISCOVERY。
-REPAIR PROMPT 不是要求重新发现整个项目。
-```
+核心原则（正文唯一在「核心模式：DELTA DISCOVERY」与「规则」）：读到足够不做全量阅读、先 DIFF 后 discovery、
+先 SYMBOL 后 DIRECTORY、先 BLOCKER 后 ARCHITECTURE、只跑 CHANGED-FILE TESTS、已通过且未触碰 = LOCKED。
 
 ## 输入
 
@@ -256,24 +244,8 @@ suite。PR CI 是完整验证入口。changed-file tests 通过后进入 Phase 6
 
 ## Anti-pattern（防止 12 分钟 Step 1）
 
-```text
-错误：收到已详细列出 5 个 blocker 的 repair prompt，
-     然后花 10+ 分钟重读整个 service / 全部 DTO / 整个 frontend / 全部 docs。
-
-正确：
-Blocker: PlayerRatingRadar size prop
-→ rg PlayerRatingRadar
-→ 读取 component + test
-→ 确认 dead prop
-→ 修复
-→ targeted test
-
-Blocker: leagueMode contract
-→ rg leagueMode
-→ 读取 frontend/src/replay-local/compute/league-rating.ts / frontend/src/api/ai-review.ts /
-  frontend/src/replay-local/analyzeReplays.ts / ReplayPage.vue / useColumns.js / 直接相关 tests
-→ 停止 discovery，立即修复 → targeted test → final review
-```
+反例即 PHASE 2/3 的正面对照：收到已详细列出 blocker 的 repair prompt 后，按 blocker map 走
+`rg symbol → 读 target + test → 修复 → targeted test`，而不是重读整个 service / DTO / frontend / docs。
 
 禁止默认执行：`读取整个 repository` / 读所有 README / 从头读 current-plan.md /
 读完整 docs tree / 修前运行 review-with-docs / 修前运行 `.agents/playbooks/fallow.md` full scan。
@@ -325,21 +297,5 @@ COMPLETE
 ```
 
 仍有 blocker 时：`BLOCKERS: 1` + `REMAINING: ...`，禁止虚报 COMPLETE。
-
-### 效率日志
-
-```text
-DISCOVERY
-- 已检查文件数: N
-- 是否扩大 discovery: yes/no（yes 时附 reason）
-
-IMPLEMENTATION
-- 修改文件数: N
-
-VERIFY
-- changed-file tests: ...
-- repository full tests: 本地不运行；交由 PR CI
-```
-
-能可靠获取 phase duration 则加（Discovery/Implementation/Verification duration）；
+能可靠获取 phase duration（Discovery / Implementation / Verification）则附加在报告末尾；
 无法可靠获取时**不伪造时间**。
