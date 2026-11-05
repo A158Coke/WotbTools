@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 const src = readFileSync(fileURLToPath(new URL('./BattlePlayback.vue', import.meta.url)), 'utf8')
+// #820 Agent C：MapRenderRect / camera 变换的 owner 出仓到 usePlaybackCamera；守卫跟随 owner。
+const cameraSrc = readFileSync(fileURLToPath(new URL('../composables/usePlaybackCamera.ts', import.meta.url)), 'utf8')
 
 describe('Battle Playback 2.5D coordinate SSoT (source regression)', () => {
   it('uses the active terrain relief projection for marker/collision/transient anchors', () => {
@@ -22,7 +24,8 @@ describe('Battle Playback 2.5D coordinate SSoT (source regression)', () => {
   })
 
   it('keeps MapRenderRect as the screen-space owner around the projected terrain', () => {
-    expect(src).toContain('function mapRenderRect()')
+    // Owner = usePlaybackCamera（唯一 camera layer + MapRenderRect SSoT）。
+    expect(cameraSrc).toContain('function mapRenderRect()')
     expect(src).toContain('point.xNorm * rect.width * view.scale + view.tx')
     expect(src).toContain('point.yNorm * rect.height * view.scale + view.ty')
   })

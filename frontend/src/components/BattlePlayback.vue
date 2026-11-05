@@ -33,14 +33,12 @@ import enemyTurret from '../assets/tank-icons/tank-marker-enemy-turret.png'
 import friendlyHull from '../assets/tank-icons/tank-marker-friendly-hull.png'
 import friendlyTurret from '../assets/tank-icons/tank-marker-friendly-turret.png'
 import {
-  clampViewPan,
   formatClock,
   recentPositionTrails,
   recentPositionTrailsFromPose,
   teamPointsAt,
   tracerLines,
   transientsActive,
-  zoomViewAt
 } from '../utils/battlePlayback'
 import {
   cumulativeStatsAtV2,
@@ -49,6 +47,8 @@ import {
   positionCoveredAtV2,
 } from '../utils/battlePlaybackV2'
 import { usePlaybackTransients } from '../composables/usePlaybackTransients.js'
+import { usePlaybackCamera } from '../composables/usePlaybackCamera.js'
+import { usePlaybackMapGestures } from '../composables/usePlaybackMapGestures.js'
 import { projectVehicleState } from '../utils/playbackVehicleState'
 import { observedFreezeTimeAt } from '../utils/battlePlaybackV2'
 import { poseCoveredAt, selectActiveDef, sampleVehiclePoseGame } from '../replay-local/pose/vehiclePose.js'
@@ -451,30 +451,10 @@ let lastFrameTs = null
 let pauseRafId = null
 
 // ---- 地图视图缩放/平移：单一 camera layer 保证地图/网格/炮线/标记严格对齐 ----
+// 相机状态（view / MapRenderRect / fit）的唯一 owner = usePlaybackCamera（#820 Agent C）；
+// 手势状态机（pointer/pan/pinch/wheel）的唯一 owner = usePlaybackMapGestures。
 const mapComponent = ref(null)
-const mapEl = computed(() => mapComponent.value?.mapEl || null)
 const mapStageEl = ref(null)
-// ---- 地图容器真实渲染尺寸（reactive）：fullscreen enter/exit / 窗口缩放等任何尺寸变化
-// 由 ResizeObserver 更新 → 依赖容器尺寸的 screen-space 布局（markerScreen/labelLayout/
-// hitbox/textInput）在新尺寸下重新计算；无 RO 环境（测试/旧浏览器）回退 clientWidth 读取。
-const mapSize = ref({ w: 0, h: 0 })
-let mapResizeObserver = null
-function mapWidth() {
-  return mapSize.value.w || (mapEl.value ? mapEl.value.clientWidth : 0)
-}
-function mapHeight() {
-  return mapSize.value.h || (mapEl.value ? mapEl.value.clientHeight : 0)
-}
-
-// §1：MapRenderRect SSoT —— 当前地图实际绘制的矩形（相对 .pb-map origin）。
-// 所有 presentation geometry（marker/碰撞/hitbox/label/float/screenToSemantic）都经由它换算，
-// 保证 SVG map 与 HTML overlay 共享同一坐标系（fullscreen/contain 下 marker 不再跑进 gutter）。
-// 用读取即时值而非缓存 computed：依赖（mapSize/mapView）由调用方 computed/watch 追踪，实时重算。
-function mapRenderRect() {
-  const width = mapWidth()
-  const ratio = mapView.value.H / mapView.value.W
-  return { left: 0, top: 0, width, height: width * ratio }
-}
 
 // ---- Fullscreen：原生 Fullscreen API；document.fullscreenElement + fullscreenchange 为事实源
 //（不维护手工 isFullscreen = !isFullscreen，ESC/浏览器 UI 退出后状态自动同步）。
@@ -522,46 +502,66 @@ const { isFullscreen, fullscreenSupported, toggleFullscreen } = usePlaybackFulls
   target: () => pbRoot.value,
   isPhone: isMobileDevice,
   isActive: () => playbackLifecycleActive,
-  // fullscreenchange 只由 composable 监听；这里注入 2D 的布局反应（等 Vue 搬完 controls 再 force fit）
+  // fullscreenchange 只由 composable 监听；这里注入 2D 的布局反应（等 Vue 搬完 controls 再 force fit）。
+  // fitViewIfReady 由下方相机提供（函数声明提升，调用时相机已创建）。
   onChange: () => nextTick(() => fitViewIfReady(true)),
 })
 
-// 地图容器尺寸观察：fullscreen enter/exit / 窗口缩放 → ResizeObserver 更新 mapSize
-//（reactive）→ markerScreen/labelLayout/selectAt/textInput 以新尺寸重算；不依赖 magic delay。
-watch(() => mapEl.value, (el, prev) => {
-  if (prev) prev.removeEventListener('pointerleave', onMapPointerLeave)
-  if (el) el.addEventListener('pointerleave', onMapPointerLeave)
-  if (!el || mapResizeObserver) return
-  if (typeof ResizeObserver === 'function') {
-    mapResizeObserver = new ResizeObserver((entries) => {
-      for (const e of entries || []) {
-        if (e && e.target === el) {
-          mapSize.value = { w: e.contentRect.width, h: e.contentRect.height }
-        }
-      }
-      // §fullscreen-exit：地图或 stage 尺寸就绪（布局稳定）后，以新 mode 的几何重新应用默认 fit
-      //（contain 居中）。mode change 会 re-arm fitInitialized；非 mode 的 resize 保持已生效的 view。
-      fitViewIfReady()
-    })
-    mapResizeObserver.observe(el)
-    if (mapStageEl.value) mapResizeObserver.observe(mapStageEl.value)
-
-  }
+const {
+  mapEl,
+  mapWidth,
+  mapHeight,
+  mapRenderRect,
+  view,
+  applyView,
+  viewportStyle,
+  markerTransform,
+  overlayInverse,
+  overlayInverseScale,
+  screenPoint,
+  fitScale,
+  resetView,
+  fitViewIfReady,
+  disposeCamera,
+} = usePlaybackCamera(mapView, {
+  mapComponent,
+  mapStageEl,
+  isFullscreen: () => isFullscreen.value,
+  wideLayout: () => wideLayout.value,
+  isMobileDevice: () => isMobileDevice.value,
 })
 
-const view = reactive({ scale: 1, tx: 0, ty: 0 })
-// Default contain follows geometry; a user camera stays owned by their gestures until Reset View.
-let cameraUserModified = false
-const PAN_THRESHOLD_PX = 5
-const PINCH_THRESHOLD_PX = 5
-const ZOOM_STEP = 1.2
-const pointers = new Map()
-let panStart = null
-let pinchStart = null
-let suppressClick = false
-// 当前交互是否为真实手势（单指拖动超阈值 / 双指捏合距离或中点移动超阈值）：
-// 手势结束后的首个 click 必须被吞掉，纯点击车辆仍正常选中
-let gestureMoved = false
+const {
+  mapEngaged,
+  wheelHintVisible,
+  mapTouchPan,
+  onWheel,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onViewportClick,
+  resetGestureState,
+} = usePlaybackMapGestures(
+  { view, applyView, screenPoint, fitScale },
+  mapEl,
+  {
+    isFullscreen: () => isFullscreen.value,
+    drawing: {
+      activeTool: () => activeTool.value,
+      drawingPointerId: () => drawingPointerId,
+      drawingStartScreen: () => drawingStartScreen,
+      annotationOpen: () => annotationOpen.value,
+      selectedAnnotationIndex: () => selectedAnnotationIndex.value,
+      startDrawing,
+      moveDrawing,
+      endDrawing,
+      cancelDrawing,
+      clearDrawingPointer: () => { drawingPointerId = null },
+    },
+    selectAtPointer: (clientX, clientY) => selectAt(null, clientX, clientY),
+    onPlainClick: () => mobileOverlay.value?.reveal?.(),
+  },
+)
 
 let stageResizeObserver = null
 /**
@@ -625,270 +625,8 @@ watch(transportEl, (el, previous) => {
   nextTick(writeSquareAvailHeight)
 })
 
-// HUD and Transport live outside Stage; the raster uses the whole square viewport.
-function applyView(next, userGesture = false) {
-  // stage = 可见 map-stage；map = rendered map rect。pan bounds / reset fit 都以二者为据。
-  // HUD 与传输控件在 Stage 外，地图可使用整个正方形。
-  const stageW = mapWidth()
-  const fullH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
-  const safeH = Math.max(0, fullH)
-  const rect = mapRenderRect()
-  // §对称：地图在安全区内垂直居中，顶部/底部黑边完全对称（无向下偏移）。
-  const clamped = clampViewPan(next, stageW, safeH, rect.width, rect.height)
-  if (userGesture && (clamped.scale !== view.scale || clamped.tx !== view.tx || clamped.ty !== view.ty)) {
-    cameraUserModified = true
-  }
-  view.scale = clamped.scale
-  view.tx = clamped.tx
-  view.ty = clamped.ty
-}
-
-// Raster camera fallback: enlarge the layout box before the browser paints the HD image,
-// then translate that box for pan. Keeping view.scale as the SSOT preserves all anchor math
-// while avoiding a compositor-only scale of an already-painted raster layer.
-const viewportStyle = computed(() => [
-  `transform: translate(${view.tx}px, ${view.ty}px)`,
-  `width: ${view.scale * 100}%`,
-])
-
-// 车辆标记随地图缩放（用户确认「坦克随地图一起放大，相对地图比例不变」）：
-// 标记中心锚定在地图坐标（left/top % 经 viewport 变换），本体不再反缩放；
-// 坦克名/阵亡 ✕ 等 UI 叠加层单独反缩放（overlayInverseScale）保持屏幕恒定；
-// hull/turret 的方向旋转在子元素 img 上，不受缩放影响。
-const markerTransform = computed(() => `translate(-50%, -50%)`)
-// overlay 反缩放数值（=1/view.scale）：元素尺寸（transform scale）与 layout offset（bottom/top calc）
-// 都按它反缩放 → zoom 下 selected/recorder 与车辆的屏幕间距恒定，不随 1×/2×/4× 增长
-const overlayInverse = computed(() => 1 / view.scale)
-const overlayInverseScale = computed(() => `scale(${overlayInverse.value})`)
-
-/** 指针 client 坐标 → 相对地图容器的**屏幕坐标**（zoomViewAt 契约，不参与任何变换）。 */
-function screenPoint(clientX, clientY) {
-  const rect = mapEl.value ? mapEl.value.getBoundingClientRect() : { left: 0, top: 0 }
-  return { x: clientX - rect.left, y: clientY - rect.top }
-}
-
-/**
- * 滚轮缩放只在用户明确与地图交互时生效（审计 PB-04，同 Google Maps 的 cooperative gestures）：
- * 全屏、按住 Ctrl / ⌘、或刚在地图上按下过指针（直到指针离开地图）。否则让页面正常滚动，并短暂提示。
- */
-const mapEngaged = ref(false)
-const wheelHintVisible = ref(false)
-let wheelHintTimer = null
-function showWheelHint() {
-  wheelHintVisible.value = true
-  if (wheelHintTimer != null) clearTimeout(wheelHintTimer)
-  wheelHintTimer = setTimeout(() => { wheelHintVisible.value = false; wheelHintTimer = null }, 1500)
-}
-function onMapPointerLeave() { mapEngaged.value = false }
-
-/** 审计 PB-01：地图未放大、非全屏、未在标注时，单指纵向滑动交给页面滚动。 */
-const mapTouchPan = computed(() => !isFullscreen.value && !activeTool.value && view.scale <= fitScale() + 1e-3)
-
-function onWheel(e) {
-  if (!(isFullscreen.value || e.ctrlKey || e.metaKey || mapEngaged.value)) {
-    showWheelHint()
-    return
-  }
-  e.preventDefault()
-  wheelHintVisible.value = false
-  const p = screenPoint(e.clientX, e.clientY)
-  // 缩放下限 = 完整地图 fit scale：放大后再缩小能回到原始完整视图，不会卡在 1x。
-  applyView(zoomViewAt(view, p.x, p.y, e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP, fitScale()), true)
-}
-
-function pinchInfo() {
-  const [a, b] = [...pointers.values()]
-  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
-  return { mid, dist: Math.hypot(a.x - b.x, a.y - b.y) }
-}
-
-function onPointerDown(e) {
-  // 鼠标在地图上按下拖动（平移 / 画标注）不能变成浏览器的文本 / 图片选择——否则拖过的车辆标记与
-  // 名牌会被选中成一片蓝色色块。只拦鼠标主键：触屏的滚动 / 捏合由 touch-action 决定，click 照常触发。
-  if (e.button != null && e.button !== 0) return
-  if (e.pointerType === 'mouse' && e.button === 0) e.preventDefault()
-  // preventDefault keeps the last toolbar button focused. Move keyboard ownership to the
-  // map after a map gesture so Enter/Escape/Delete reach the editor, not that old button.
-  e.currentTarget?.focus?.({ preventScroll: true })
-  mapEngaged.value = true
-  suppressClick = false
-  gestureMoved = false
-  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
-  // 指针捕获（受支持时）：指针移出地图仍持续收到 move/up；不支持的环境走 window 级兜底
-  try {
-    if (typeof e.target.setPointerCapture === 'function') {
-      e.target.setPointerCapture(e.pointerId)
-    }
-  } catch {
-    // 某些测试环境不支持指针捕获，忽略
-  }
-  // 标注编辑：单指走选择/绘制，双指仍保留地图捏合。
-  if (activeTool.value && pointers.size === 1) {
-    startDrawing(e)
-    return
-  }
-  // 第二根手指转入捏合，取消当前手势，避免落下意外标记/路线点。
-  if (drawingPointerId != null && pointers.size === 2) {
-    cancelDrawing()
-    drawingPointerId = null
-  }
-  if (pointers.size === 1) {
-    panStart = { x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty, moved: false }
-  } else if (pointers.size === 2) {
-    const info = pinchInfo()
-    pinchStart = {
-      mid: info.mid,
-      dist: info.dist,
-      // 锚点 = 双指中点相对地图容器的屏幕坐标（zoomViewAt 契约）
-      anchorScreen: screenPoint(info.mid.x, info.mid.y),
-      scale: view.scale,
-      tx: view.tx,
-      ty: view.ty,
-      moved: false
-    }
-    panStart = null
-  }
-}
-
-function onPointerMove(e) {
-  if (!pointers.has(e.pointerId)) return
-  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
-  if (drawingPointerId === e.pointerId && activeTool.value) {
-    if (drawingStartScreen && Math.hypot(e.clientX - drawingStartScreen.x, e.clientY - drawingStartScreen.y) > PAN_THRESHOLD_PX) gestureMoved = true
-    moveDrawing(e)
-    return
-  }
-  if (pointers.size === 2 && pinchStart) {
-    const { mid, dist } = pinchInfo()
-    if (!pinchStart.moved
-        && (Math.abs(dist - pinchStart.dist) > PINCH_THRESHOLD_PX
-            || Math.hypot(mid.x - pinchStart.mid.x, mid.y - pinchStart.mid.y) > PINCH_THRESHOLD_PX)) {
-      pinchStart.moved = true
-      gestureMoved = true
-    }
-    if (pinchStart.dist > 0 && dist > 0) {
-      const next = zoomViewAt(
-        { scale: pinchStart.scale, tx: pinchStart.tx, ty: pinchStart.ty },
-        pinchStart.anchorScreen.x, pinchStart.anchorScreen.y, dist / pinchStart.dist,
-        fitScale()
-      )
-      // 两指中点整体移动 = 屏幕平移（translate 单位为屏幕像素，直接加 client 位移）
-      next.tx += mid.x - pinchStart.mid.x
-      next.ty += mid.y - pinchStart.mid.y
-      applyView(next, true)
-    }
-    return
-  }
-  if (pointers.size === 1 && panStart) {
-    const dx = e.clientX - panStart.x
-    const dy = e.clientY - panStart.y
-    if (!panStart.moved && Math.hypot(dx, dy) < PAN_THRESHOLD_PX) return
-    panStart.moved = true
-    gestureMoved = true
-    applyView({ scale: view.scale, tx: panStart.tx + dx, ty: panStart.ty + dy }, true)
-  }
-}
-
-function onPointerUp(e) {
-  if (!pointers.delete(e.pointerId)) return
-  try {
-    if (typeof e.target.releasePointerCapture === 'function') {
-      e.target.releasePointerCapture(e.pointerId)
-    }
-  } catch {
-    // 忽略（无捕获或已释放）
-  }
-  if (drawingPointerId === e.pointerId) {
-    const blockClick = gestureMoved || e.type === 'pointercancel'
-    if (e.type === 'pointercancel') cancelDrawing()
-    else endDrawing()
-    drawingPointerId = null
-    if (pointers.size === 0) {
-      panStart = null
-      pinchStart = null
-      gestureMoved = false
-      suppressClick = blockClick
-    }
-    return
-  }
-  if (gestureMoved) suppressClick = true
-  if (pointers.size < 2) pinchStart = null
-  if (pointers.size === 0) {
-    panStart = null
-    gestureMoved = false
-  } else if (pointers.size === 1 && pinchStart == null && panStart == null) {
-    // 捏合结束剩下一根手指：以该手指为新基线继续平移，状态不卡死
-    const [p] = [...pointers.values()]
-    panStart = { x: p.x, y: p.y, tx: view.tx, ty: view.ty, moved: false }
-  }
-}
-
-/** 拖动/捏合结束后吞掉随之而来的 click 避免误选车；未拖动的点击正常到达车辆按钮。 */
-function onViewportClick(e) {
-  if (annotationOpen.value || suppressClick) {
-    // Select mode owns annotation picking first; a stationary tap on unmarked
-    // vehicle space may inspect the replay vehicle. Drawing/dragging never does.
-    if (annotationOpen.value && activeTool.value === 'select' && selectedAnnotationIndex.value < 0 && !suppressClick) {
-      selectAt(null, e.clientX, e.clientY)
-    }
-    suppressClick = false
-    e.stopPropagation()
-    e.preventDefault()
-    return
-  }
-  mobileOverlay.value?.reveal?.()
-}
-
-/** 完整地图视图（contain/fit）的 scale：把整张 rendered map 放进安全区的最小缩放。
- *  缩放下限（minScale）应为它——zoomed 后回到的就是它，避免「放大后再缩不回原样」。 */
-// fit 后四周留一圈窄黑边：不顶到边缘，同时尽量少浪费宽屏空间。
-const FIT_MARGIN = 0.98
-
-function fitScale() {
-  const stageW = mapWidth()
-  const fullH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
-  const safeH = Math.max(0, fullH)
-  const rect = mapRenderRect()
-  if (stageW > 0 && safeH > 0 && rect.width > 0 && rect.height > 0) {
-    return Math.min(stageW / rect.width, safeH / rect.height) * FIT_MARGIN
-  }
-  return 1
-}
-
-function resetView() {
-  cameraUserModified = false
-  // Reset View：恢复整张地图在正方形 Stage 内 contain 居中。
-  const stageW = mapWidth()
-  const fullH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
-  const safeH = Math.max(0, fullH)
-  const rect = mapRenderRect()
-  if (stageW > 0 && safeH > 0 && rect.width > 0 && rect.height > 0) {
-    const scale = fitScale()
-    const tx = (stageW - rect.width * scale) / 2
-    const ty = (safeH - rect.height * scale) / 2
-    applyView({ scale, tx, ty })
-    return
-  }
-  applyView({ scale: 1, tx: 0, ty: 0 })
-}
-
-// §3：默认视图 = 完整地图 contain（fit 居中、完整可见，无需手动调整）。
-// HUD/Transport 在正方形 Stage 外，地图在整个 Stage 中 contain 居中。
-// §geometry-signature：以 mode + stage/map/safe 尺寸为 signature，变化即重新 fit，
-// 不锁住旧几何：mode 或 Stage 尺寸改变时更新默认 contain。
-let lastFitSignature = ''
-function fitViewIfReady(force = false) {
-  if (force) lastFitSignature = ''
-  const stageW = mapWidth()
-  const fullH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
-  const safeH = Math.max(0, fullH)
-  const rect = mapRenderRect()
-  if (stageW <= 0 || safeH <= 0 || rect.width <= 0 || rect.height <= 0) return
-  const signature = [isFullscreen.value, wideLayout.value, isMobileDevice.value, stageW, safeH, rect.width, rect.height].join('|')
-  if (!force && signature === lastFitSignature) return
-  lastFitSignature = signature
-  if (!cameraUserModified) resetView()
-}
+/** 完整地图视图（contain/fit）与手势逻辑已迁移至 usePlaybackCamera / usePlaybackMapGestures
+ *  （#820 Agent C Step 1）：MapRenderRect 仍是唯一屏幕坐标几何来源，wheel/pan/pinch 时序不变。 */
 
 // ---- 地图标注（临时纯前端：切视图/切文件即清空；几何一律存语义坐标） ----
 // 历史快照 / 草稿 / 选中项的唯一 owner 是 usePlaybackAnnotations（#820 Wave B5B）；
@@ -947,17 +685,13 @@ function resetAnnotations() {
   annotVisible.value = true
   routePoints.value = []
   moveOriginal = null
-  pointers.clear()
+  resetGestureState()
   if (textSession.value) cancelSession(textSession.value)
   drawStart = null
   drawPoints = []
   drawScreen = []
   drawingPointerId = null
   drawingStartScreen = null
-  suppressClick = false
-  gestureMoved = false
-  panStart = null
-  pinchStart = null
 }
 // 切换文件（overview 引用变化；MapOverview 未按文件 key 复用）→ 清空标注
 watch(() => props.overview, resetAnnotations)
@@ -1215,9 +949,7 @@ const renderedAnnotations = computed(() => {
 })
 
 onMounted(() => {
-  window.addEventListener('pointermove', onPointerMove)
-  window.addEventListener('pointerup', onPointerUp)
-  window.addEventListener('pointercancel', onPointerUp)
+  // window 级 pointermove/up/cancel 兜底监听由 usePlaybackMapGestures 挂载（#820 Agent C）
   // fullscreenchange 由 usePlaybackFullscreen 独占监听（onChange 注入布局反应），这里不再重复注册
   // §3：大桌面三列布局 —— 以 matchMedia 为事实源，监听宽度跨 1200px 边界。
   if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
@@ -1399,10 +1131,7 @@ onBeforeUnmount(() => {
   paletteRequestToken += 1
   if (rafId != null) cancelAnimationFrame(rafId)
   if (pauseRafId != null) cancelAnimationFrame(pauseRafId)
-  if (mapResizeObserver) {
-    mapResizeObserver.disconnect()
-    mapResizeObserver = null
-  }
+  disposeCamera()
   if (stageResizeObserver) {
     stageResizeObserver.disconnect()
     stageResizeObserver = null
@@ -1426,15 +1155,6 @@ onBeforeUnmount(() => {
   wideLayoutQuery = null
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('resize', writeSquareAvailHeight)
-  if (wheelHintTimer != null) clearTimeout(wheelHintTimer)
-  window.removeEventListener('pointermove', onPointerMove)
-  window.removeEventListener('pointerup', onPointerUp)
-  window.removeEventListener('pointercancel', onPointerUp)
-  pointers.clear()
-  panStart = null
-  pinchStart = null
-  gestureMoved = false
-  suppressClick = false
 })
 
 // ---- 数据 ----
