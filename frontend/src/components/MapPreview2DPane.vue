@@ -342,6 +342,10 @@ onMounted(() => {
     })
     if (mapEl.value) mapSizeObserver.observe(mapEl.value)
     if (stageEl.value) mapSizeObserver.observe(stageEl.value)
+    // 工具区高度变化（手机全屏内 Drawing 工具栏开合）也要重测方形：全屏用
+    // 「视口剩余高度 − 工具区实高」预算，工具栏高度变了预算就变；measureSquare
+    // 写入相同 squareSide 时不触发新布局，无 RO 反馈环。
+    if (controlsEl.value) mapSizeObserver.observe(controlsEl.value)
   }
 })
 onBeforeUnmount(() => {
@@ -998,6 +1002,7 @@ const stubFloatClass = () => ''
       <div v-if="annotationOpen" class="map2d-annotations" data-testid="map-2d-annotations">
         <AnnotationToolbar
           :open="annotationOpen"
+          :compact="isPhone && isFullscreen"
           :active-tool="annotationTool"
           :annot-colors="ANNOT_COLORS"
           :annot-color="annotationColor"

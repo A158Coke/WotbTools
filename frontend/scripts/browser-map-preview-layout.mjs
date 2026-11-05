@@ -97,6 +97,31 @@ function mapPreviewGeometryProbe() {
   }
 }
 
+/** 全屏内真实触摸打开 Drawing 工具栏：入口按钮必须在当前视口内直接可点
+ *  （不 scrollIntoView——全屏契约是所有控件位于视口中）。 */
+async function openDrawingInFullscreen(page) {
+  await delay(200)
+  const entry = await page.probe(() => {
+    const el = document.querySelector('[data-testid="map-2d-drawing-entry"]')
+    if (!el) return null
+    const r = el.getBoundingClientRect()
+    const inViewport = r.top >= -1 && r.bottom <= window.innerHeight + 1
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+    return { point: { x: r.left + r.width / 2, y: r.top + r.height / 2 }, inViewport, clickable: el.contains(hit) }
+  })
+  if (!entry || !entry.inViewport || !entry.clickable) {
+    throw new Error(`drawing entry not directly clickable in fullscreen: ${JSON.stringify(entry)}`)
+  }
+  await page.tap({ ...entry.point, touch: true })
+  await page.waitForValue(
+    `!!document.querySelector('[data-testid="map-2d-annotations"]')`,
+    (v) => v === true,
+    { label: 'fullscreen drawing toolbar open', timeout: 8000 },
+  )
+  await delay(400)   // ResizeObserver + 布局稳定
+  return entry
+}
+
 async function openMapPreview(page, origin) {
   await page.goto(`${origin}/?view=map-preview&map=faust&mode=2d&ws-auth=1&assets=${encodeURIComponent(`${origin}/fixture-assets`)}`)
   await page.waitForValue(
@@ -255,6 +280,47 @@ async function main() {
       } else {
         console.log(`[PASS] phone-landscape-fullscreen square=${gFs.square.width.toFixed(0)}x${gFs.square.height.toFixed(0)} controlsBottom=${gFs.controls.bottom.toFixed(0)}`)
       }
+      // 全屏内 Drawing 开合：地图按工具栏实际高度重算（ResizeObserver 观察 controlsEl）
+      const gOpen = await openDrawingInFullscreen(page)
+      const gDraw = await page.probe(mapPreviewGeometryProbe)
+      const problemsDraw = []
+      if (gDraw.controls.bottom > 390 + 1) problemsDraw.push(`drawing: controls bottom ${gDraw.controls.bottom.toFixed(1)} exceeds viewport`)
+      if (Math.abs(gDraw.square.width - gDraw.square.height) > 1) problemsDraw.push(`drawing: square not square ${gDraw.square.width}x${gDraw.square.height}`)
+      for (const b of gDraw.toolButtons) {
+        if (b.hit === false) problemsDraw.push(`drawing: ${b.id} not hit-testable`)
+      }
+      if (gFs.square.height > 0 && gDraw.square.height >= gFs.square.height && gDraw.controls.height > gFs.controls.height + 4) {
+        problemsDraw.push(`drawing: map did not shrink for taller toolbar (square ${gDraw.square.height.toFixed(0)} vs ${gFs.square.height.toFixed(0)}, controls ${gDraw.controls.height.toFixed(0)} vs ${gFs.controls.height.toFixed(0)})`)
+      }
+      if (problemsDraw.length) {
+        failed++
+        console.error('[FAIL] phone-landscape-fullscreen-drawing\n  ' + problemsDraw.join('\n  ') + '\n  geometry=' + JSON.stringify(gDraw))
+      } else {
+        console.log(`[PASS] phone-landscape-fullscreen-drawing square=${gDraw.square.width.toFixed(0)}x${gDraw.square.height.toFixed(0)} controlsBottom=${gDraw.controls.bottom.toFixed(0)}`)
+      }
+      // 关闭 Drawing：地图恢复原全屏尺寸
+      const closePoint = await page.probe(() => {
+        const el = document.querySelector('[data-testid="map-2d-annotations"] [data-test="pb-annot-close"]')
+        if (!el) return null
+        const r = el.getBoundingClientRect()
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+      })
+      if (!closePoint) { failed++; console.error('[FAIL] phone-landscape-fullscreen-drawing: close button missing') }
+      else {
+        await page.tap({ ...closePoint, touch: true })
+        await delay(500)
+        const gClosed = await page.probe(mapPreviewGeometryProbe)
+        if (gClosed.controls.bottom > 390 + 1 || Math.abs(gClosed.square.width - gClosed.square.height) > 1) {
+          failed++
+          console.error(`[FAIL] phone-landscape-fullscreen-drawing-close geometry=${JSON.stringify(gClosed)}`)
+        } else if (gFs.square.height > 0 && Math.abs(gClosed.square.height - gFs.square.height) > 4) {
+          failed++
+          console.error(`[FAIL] phone-landscape-fullscreen-drawing-close: square ${gClosed.square.height.toFixed(0)} did not restore to ${gFs.square.height.toFixed(0)}`)
+        } else {
+          console.log(`[PASS] phone-landscape-fullscreen-drawing-close square=${gClosed.square.height.toFixed(0)} (restored)`)
+        }
+      }
+
       // 退出全屏：回到满宽布局（全屏后按钮位置随布局变化，重新量）
       const btnExit = await page.probe(() => {
         const el = document.querySelector('[data-testid="map-2d-fullscreen"]')
