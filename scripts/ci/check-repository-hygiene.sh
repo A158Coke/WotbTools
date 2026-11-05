@@ -4,19 +4,29 @@ set -euo pipefail
 MAX_TRACKED_FILE_BYTES="${MAX_TRACKED_FILE_BYTES:-5242880}"
 ALLOWLIST_FILE="${LARGE_FILE_ALLOWLIST_FILE:-scripts/ci/large-file-allowlist.txt}"
 MAX_SOURCE_LINES="${MAX_SOURCE_LINES:-1500}"
-LOC_ALLOWLIST_FILE="${SOURCE_LOC_ALLOWLIST_FILE:-scripts/ci/source-loc-allowlist.txt}"
+SOURCE_LINE_ALLOWLIST_FILE="${SOURCE_LINE_ALLOWLIST_FILE:-scripts/ci/source-line-allowlist.txt}"
 BASE_SHA="${BASE_SHA:-}"
 HEAD_SHA="${HEAD_SHA:-HEAD}"
 
-if ! [[ "$MAX_TRACKED_FILE_BYTES" =~ ^[0-9]+$ ]]; then
-  echo "MAX_TRACKED_FILE_BYTES must be an integer, got: $MAX_TRACKED_FILE_BYTES" >&2
-  exit 2
-fi
+# Limits feed Bash integer arithmetic. Accept only canonical bounded decimals:
+# leading-zero forms such as 08 would be parsed as octal at the comparison
+# (where set -e does not abort from an if condition), and values beyond intmax_t
+# would wrap silently. Either case must abort the gate instead of disabling it.
+validate_decimal_limit() {
+  local name="$1"
+  local raw="$2"
+  if ! [[ "$raw" =~ ^(0|[1-9][0-9]*)$ ]]; then
+    echo "$name must be a non-negative decimal integer without leading zeros, got: $raw" >&2
+    exit 2
+  fi
+  if (( ${#raw} > 18 )); then
+    echo "$name is out of range (more than 18 digits), got: $raw" >&2
+    exit 2
+  fi
+}
 
-if ! [[ "$MAX_SOURCE_LINES" =~ ^[0-9]+$ ]]; then
-  echo "MAX_SOURCE_LINES must be an integer, got: $MAX_SOURCE_LINES" >&2
-  exit 2
-fi
+validate_decimal_limit MAX_TRACKED_FILE_BYTES "$MAX_TRACKED_FILE_BYTES"
+validate_decimal_limit MAX_SOURCE_LINES "$MAX_SOURCE_LINES"
 
 is_allowlisted() {
   local candidate="$1"
@@ -30,6 +40,47 @@ is_allowlisted() {
   done < "$ALLOWLIST_FILE"
 
   return 1
+}
+
+# Source-line budget (#820): first-party production frontend source stays below a
+# fixed physical-line ceiling. Tests, declaration files and generated transport
+# are not production source and remain out of scope. Existing over-budget files
+# are exact-path exceptions that may only leave the list as they get split.
+is_source_line_candidate() {
+  local path="$1"
+  [[ "$path" == frontend/src/* ]] || return 1
+  case "$path" in
+    *.test.*|*.spec.*|*.d.ts|frontend/src/api/generated/*) return 1 ;;
+  esac
+  case "$path" in
+    *.js|*.ts|*.vue|*.mjs|*.cjs) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+is_source_line_allowlisted() {
+  local candidate="$1"
+  [[ -f "$SOURCE_LINE_ALLOWLIST_FILE" ]] || return 1
+
+  local line
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    [[ "$candidate" == "$line" ]] && return 0
+  done < "$SOURCE_LINE_ALLOWLIST_FILE"
+
+  return 1
+}
+
+# Reads an allowlist from stdin and prints its non-comment entry count.
+count_allowlist_entries() {
+  local total=0 line
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    total=$((total + 1))
+  done
+  printf '%s\n' "$total"
 }
 
 # Defense-in-depth for paths that must never become source even if a future
@@ -80,123 +131,6 @@ is_current_plan_allowlisted() {
   esac
 }
 
-# Source LOC budget gate (#820): first-party production frontend sources are
-# capped at MAX_SOURCE_LINES. Tests, ambient declarations and contract-generated
-# artifacts are out of scope by path role. Legacy files that still exceed the
-# budget are pinned at their audited baseline in LOC_ALLOWLIST_FILE: exact path,
-# exact baseline, so any growth or a stale entry is itself a reviewable
-# violation and a compliant file cannot stay parked in the allowlist.
-is_loc_scoped_path() {
-  local path="$1"
-  case "$path" in
-    frontend/src/*.test.*|frontend/src/*.d.ts|frontend/src/api/generated/*)
-      return 1
-      ;;
-    frontend/src/*.js|frontend/src/*.ts|frontend/src/*.vue)
-      return 0
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-}
-
-declare -A loc_allowlist=()
-declare -A loc_history_allowlist=()
-declare -A loc_allowlist_seen=()
-
-# Parse '<exact path> <baseline lines>' lines from stdin into the named assoc
-# array. Duplicates are fail-closed: last-wins entries would silently widen a
-# pinned baseline. $1 = error label, $2 = destination assoc name.
-parse_loc_allowlist() {
-  local label="$1"
-  local destination_name="$2"
-  local -n entries="$destination_name"
-  local line path baseline rest lineno=0
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    lineno=$((lineno + 1))
-    line="${line%$'\r'}"
-    [[ -z "$line" || "$line" == \#* ]] && continue
-    path=""
-    baseline=""
-    rest=""
-    read -r path baseline rest <<< "$line"
-    if [[ -z "$path" || -z "$baseline" || -n "$rest" || ! "$baseline" =~ ^[0-9]+$ ]]; then
-      echo "ERROR: invalid line $lineno in $label (expected '<exact path> <baseline lines>'): $line" >&2
-      exit 2
-    fi
-    if [[ -n "${entries[$path]+x}" ]]; then
-      echo "ERROR: duplicate allowlist entry for $path in $label; keep exactly one line." >&2
-      exit 2
-    fi
-    entries["$path"]="$baseline"
-  done
-}
-
-load_loc_allowlist() {
-  [[ -f "$LOC_ALLOWLIST_FILE" ]] || return 0
-  parse_loc_allowlist "$LOC_ALLOWLIST_FILE" loc_allowlist < "$LOC_ALLOWLIST_FILE"
-}
-
-# History-gate allowlist: the union of entries at BASE_SHA and HEAD. An entry
-# that existed at the base covers the normal split flow (the file stays over
-# budget in early commits while later commits shrink it and drop the entry), and
-# an entry that survives to HEAD covers a newly pinned legacy file committed in
-# one piece. A temporary entry that is added and removed inside the range
-# legitimizes nothing: the intermediate oversized blob it tried to shield still
-# fails. Only the final-tree gate applies stale/growth semantics.
-load_history_loc_allowlist() {
-  if [[ -n "$BASE_SHA" ]] && git cat-file -e "${BASE_SHA}:${LOC_ALLOWLIST_FILE}" 2>/dev/null; then
-    git show "${BASE_SHA}:${LOC_ALLOWLIST_FILE}" \
-      | parse_loc_allowlist "${LOC_ALLOWLIST_FILE}@${BASE_SHA}" loc_history_allowlist
-  fi
-  local path baseline
-  for path in "${!loc_allowlist[@]}"; do
-    baseline="${loc_allowlist[$path]}"
-    [[ -n "${loc_history_allowlist[$path]+x}" ]] || loc_history_allowlist["$path"]="$baseline"
-  done
-}
-
-report_loc_violation() {
-  local scope="$1"
-  local path="$2"
-  local lines="$3"
-  local limit="$4"
-  echo "ERROR: $scope exceeds the ${limit}-line source budget: $(printable_path "$path") ($lines lines)" >&2
-  echo "       Split the module; a legacy file above budget must stay pinned at its audited baseline in $LOC_ALLOWLIST_FILE." >&2
-}
-
-report_stale_loc_allowlist_entry() {
-  local path="$1"
-  echo "ERROR: allowlisted legacy file is now within the source budget; remove it from $LOC_ALLOWLIST_FILE: $(printable_path "$path")" >&2
-}
-
-# Returns non-zero when the caller must count one violation.
-check_loc_budget() {
-  local scope="$1"
-  local path="$2"
-  local lines="$3"
-
-  if [[ -n "${loc_allowlist[$path]+x}" ]]; then
-    local baseline="${loc_allowlist[$path]}"
-    if (( lines > baseline )); then
-      report_loc_violation "$scope (allowlisted legacy file grew past its pinned baseline)" "$path" "$lines" "$baseline"
-      return 1
-    fi
-    if (( lines <= MAX_SOURCE_LINES )); then
-      report_stale_loc_allowlist_entry "$path"
-      return 1
-    fi
-    return 0
-  fi
-
-  if (( lines > MAX_SOURCE_LINES )); then
-    report_loc_violation "$scope" "$path" "$lines" "$MAX_SOURCE_LINES"
-    return 1
-  fi
-  return 0
-}
-
 printable_path() {
   printf '%q' "$1"
 }
@@ -237,6 +171,20 @@ report_large_file() {
   limit_mib=$(awk -v bytes="$MAX_TRACKED_FILE_BYTES" 'BEGIN { printf "%.2f", bytes / 1048576 }')
   echo "ERROR: $scope exceeds ${limit_mib} MiB limit: $(printable_path "$path") (${mib} MiB)" >&2
   echo "       If this is a deliberate source-of-truth asset, add the exact path to $ALLOWLIST_FILE with PR justification." >&2
+}
+
+report_source_line_budget() {
+  local path="$1"
+  local lines="$2"
+  echo "ERROR: first-party frontend source exceeds ${MAX_SOURCE_LINES} lines: $(printable_path "$path") (${lines} lines)" >&2
+  echo "       Split it by responsibility, or swap an existing entry for it in $SOURCE_LINE_ALLOWLIST_FILE (the allowlist may only shrink)." >&2
+}
+
+report_source_line_allowlist_growth() {
+  local base_count="$1"
+  local head_count="$2"
+  echo "ERROR: source-line allowlist must not grow (base=$base_count, head=$head_count entries)." >&2
+  echo "       Split an over-budget file instead of allowlisting a new one; a rename may swap one exact path for another." >&2
 }
 
 # Resolve the exact event range when CI did not pass one explicitly. PR runs
@@ -290,9 +238,6 @@ checked=0
 ignore_work=$(mktemp -d)
 trap 'rm -rf "$ignore_work"' EXIT
 
-load_loc_allowlist
-load_history_loc_allowlist
-
 # Ask Git itself which paths the repository ignore policy rejects. --no-index is
 # required because the whole point is to catch files that were force-added even
 # though .gitignore says they are local/generated. NUL input/output keeps valid
@@ -328,6 +273,9 @@ load_ignored_paths() {
 declare -A tracked_ignored=()
 load_ignored_paths index "" tracked_ignored
 
+source_line_checked=0
+source_line_over=0
+
 while IFS= read -r -d '' path; do
   [[ -f "$path" ]] || continue
   checked=$((checked + 1))
@@ -356,25 +304,69 @@ while IFS= read -r -d '' path; do
     violations=$((violations + 1))
   fi
 
-  if is_loc_scoped_path "$path"; then
-    loc_allowlist_seen["$path"]=1
-    source_lines=$(wc -l < "$path")
-    if ! check_loc_budget "tracked file" "$path" "$source_lines"; then
-      violations=$((violations + 1))
+  if is_source_line_candidate "$path"; then
+    source_line_checked=$((source_line_checked + 1))
+    lines=$(awk 'END { print NR }' "$path")
+    if ! [[ "$lines" =~ ^(0|[1-9][0-9]*)$ ]] || (( ${#lines} > 18 )); then
+      echo "Unable to count source lines for $(printable_path "$path") (awk returned: ${lines:-<empty>})." >&2
+      exit 2
+    fi
+    if (( lines > MAX_SOURCE_LINES )); then
+      source_line_over=$((source_line_over + 1))
+      if ! is_source_line_allowlisted "$path"; then
+        report_source_line_budget "$path" "$lines"
+        violations=$((violations + 1))
+      fi
     fi
   fi
 done < <(git ls-files -z)
 
-# Every allowlist entry must keep pointing at a tracked, in-scope source file
-# that is still above the budget. Deleting or renaming a legacy file without
-# removing its entry in the same range would let the stale baseline shield a
-# future re-created file at the same path.
-for allow_path in "${!loc_allowlist[@]}"; do
-  if [[ -z "${loc_allowlist_seen[$allow_path]+x}" ]]; then
-    echo "ERROR: allowlist entry no longer matches a tracked in-scope source file (deleted, renamed, or out of scope); remove it from $LOC_ALLOWLIST_FILE: $(printable_path "$allow_path")" >&2
-    violations=$((violations + 1))
+# The allowlist is a one-way ratchet: it may shrink as files get split, but a
+# new over-budget file cannot be admitted by merely appending its path. Renames
+# remain possible by swapping one exact path for another (equal entry count).
+#
+# A missing allowlist is only a free starting point while the gate itself is
+# being introduced. Once the gate exists in the base commit, a missing allowlist
+# means every prior exception was retired, so the base count is zero: deleting
+# and later recreating the file must not reset the ratchet.
+SOURCE_LINE_GATE_SCRIPT="scripts/ci/check-repository-hygiene.sh"
+
+source_line_gate_present_at_base() {
+  [[ -n "$BASE_SHA" ]] || return 1
+  local base_script
+  base_script=$(git show "${BASE_SHA}:${SOURCE_LINE_GATE_SCRIPT}" 2>/dev/null) || return 1
+  [[ "$base_script" == *"is_source_line_candidate()"* ]]
+}
+
+head_source_allowlist_entries=0
+if [[ -f "$SOURCE_LINE_ALLOWLIST_FILE" ]]; then
+  head_source_allowlist_entries=$(count_allowlist_entries < "$SOURCE_LINE_ALLOWLIST_FILE")
+fi
+
+growth_guard_checked=0
+if [[ -n "$BASE_SHA" ]]; then
+  if git cat-file -e "${BASE_SHA}:${SOURCE_LINE_ALLOWLIST_FILE}" 2>/dev/null; then
+    base_source_allowlist_entries=$(git show "${BASE_SHA}:${SOURCE_LINE_ALLOWLIST_FILE}" | count_allowlist_entries)
+    growth_guard_checked=1
+  elif source_line_gate_present_at_base; then
+    base_source_allowlist_entries=0
+    growth_guard_checked=1
   fi
-done
+
+  if (( growth_guard_checked )); then
+    if (( head_source_allowlist_entries > base_source_allowlist_entries )); then
+      report_source_line_allowlist_growth "$base_source_allowlist_entries" "$head_source_allowlist_entries"
+      violations=$((violations + 1))
+    fi
+    echo "Source-line allowlist growth guard checked ${base_source_allowlist_entries} -> ${head_source_allowlist_entries} entries."
+  else
+    echo "Source-line allowlist growth guard skipped: gate is introduced by this change (no base gate in ${BASE_SHA})."
+  fi
+else
+  echo "Source-line allowlist growth guard skipped: no BASE_SHA (workflow_dispatch or local full-history run)."
+fi
+
+echo "Source line budget checked $source_line_checked first-party frontend source file(s); limit=$MAX_SOURCE_LINES lines; over-limit allowlisted=$source_line_over."
 
 # Inspect every tree state introduced by commits in the event range. `git ls-tree
 # -z` is NUL-delimited, so valid Git paths containing newlines, tabs, quotes, or
@@ -444,20 +436,6 @@ if [[ -n "$BASE_SHA" ]]; then
       if (( size > MAX_TRACKED_FILE_BYTES )) && ! is_allowlisted "$path"; then
         report_large_file "history blob" "$path" "$size"
         violations=$((violations + 1))
-      fi
-
-      if is_loc_scoped_path "$path"; then
-        source_lines=$(git cat-file blob "$oid" | wc -l)
-        if [[ -n "${loc_history_allowlist[$path]+x}" ]]; then
-          pinned_baseline="${loc_history_allowlist[$path]}"
-          if (( source_lines > pinned_baseline )); then
-            report_loc_violation "history blob (allowlisted legacy file grew past its pinned baseline)" "$path" "$source_lines" "$pinned_baseline"
-            violations=$((violations + 1))
-          fi
-        elif (( source_lines > MAX_SOURCE_LINES )); then
-          report_loc_violation "history blob" "$path" "$source_lines" "$MAX_SOURCE_LINES"
-          violations=$((violations + 1))
-        fi
       fi
     done < <(git ls-tree -r -z -l "$commit")
   done < <(git rev-list --reverse "${BASE_SHA}..${HEAD_SHA}")

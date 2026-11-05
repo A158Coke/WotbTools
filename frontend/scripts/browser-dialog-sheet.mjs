@@ -21,17 +21,23 @@ export async function runDialogSheetScenario(env, scenario) {
   async function tap(selector, rightEdge = false) {
     await page.waitForValue(`!!document.querySelector(${JSON.stringify(selector)})`, Boolean)
     await page.animationsSettled()
-    await page.evaluate(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'nearest',inline:'nearest'})`)
+    await page.callWith((sel) => document.querySelector(sel).scrollIntoView({ block: 'nearest', inline: 'nearest' }), selector)
     const reach = await measureReachability(page, { options: [selector], touch: scenario.touch !== false })
     check(reach.sampled > 0, `可达性断言空跑：${selector}`)
     failures.push(...reach.failures)
     if (reach.failures.length) throw new Error(`控件不可达：${selector}`)
     if (scenario.safeAreaInsets) {
-      const safe = await page.evaluate(`(() => { const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(), inset=${JSON.stringify(scenario.safeAreaInsets)};
-        return r.left >= inset.left && r.right <= innerWidth-inset.right && r.top >= inset.top && r.bottom <= innerHeight-inset.bottom })()`)
+      const safe = await page.callWith((sel, inset) => {
+        const r = document.querySelector(sel).getBoundingClientRect()
+        return r.left >= inset.left && r.right <= innerWidth - inset.right
+          && r.top >= inset.top && r.bottom <= innerHeight - inset.bottom
+      }, selector, scenario.safeAreaInsets)
       check(safe, `控件侵入安全区：${selector}`)
     }
-    const point = await page.evaluate(`(() => { const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return {x:${rightEdge ? 'r.right-2' : 'r.left+r.width/2'},y:r.top+r.height/2} })()`)
+    const point = await page.callWith((sel, edge) => {
+      const r = document.querySelector(sel).getBoundingClientRect()
+      return { x: edge ? r.right - 2 : r.left + r.width / 2, y: r.top + r.height / 2 }
+    }, selector, rightEdge)
     await page.tap({ ...point, touch: scenario.touch })
   }
   async function escape() {

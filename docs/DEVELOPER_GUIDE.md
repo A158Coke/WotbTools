@@ -119,7 +119,7 @@ HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/s
 
 `.github/workflows/ci-gate.yml` 是唯一 PR 入口：校验 PR/base/head SHA 身份，用 `dorny/paths-filter` 将变更映射到 owner，调用相应 reusable CI workflow，最后由稳定的 `CI / Required Gate` 汇总。未受影响的 owner 跳过；五个 OpenTofu root 只在各自 owner 受影响时验证。PR trigger 不设置 paths，确保 required check 始终产生。PR CI 不接触 production credentials、host、state 或 authenticated plan。
 
-仓库 hygiene 是同一 PR gate 的无条件前置检查：`scripts/ci/check-repository-hygiene.sh` 默认拒绝超过 5 MiB 的 tracked file，并拒绝 `Python/`、`.deepseek/`、`common/assets/wasm/`、`frontend/dist/`、`frontend/dist-android/`、`dist/`、`dist-desktop/`、`target/`、`node_modules/` 等生成/运行时路径，同时拒绝 `archive/`、`old/`、`legacy-docs/`、`historical/` 历史堆放目录路径段，并拒绝 PR `base..head` 变更文件把 ephemeral 计划载体当作权威引用（规则正文见 `.agents/AGENTS.md`「current-plan 门禁」，结构性例外见脚本内 `is_current_plan_allowlisted()`，遗留引用在被触及的 PR 中迁移）；确属 source-of-truth 且应继续使用普通 Git 的超限文件，只能把 exact path 加到 `scripts/ci/large-file-allowlist.txt` 并在 PR 解释理由。检查同时覆盖最终 tree 和 PR `base..head` 中每个 commit tree，防止“先提交大 blob 再删除”把对象带入历史；路径遍历使用 NUL-safe Git 输出以支持合法特殊文件名。同一检查还强制 frontend `frontend/src` 一方 production 源（`.js`/`.ts`/`.vue`，排除 `*.test.*`、`*.d.ts` 与 `frontend/src/api/generated/`）单文件不超过 `MAX_SOURCE_LINES`（默认 1500）行（#820）：超限遗留文件在 `scripts/ci/source-loc-allowlist.txt` 以 exact path 钉在其已审计基线行数，任何增长、合规后或被删除/重命名文件的残留条目、重复条目或非法 allowlist 内容都按违规处理；历史 commit tree 检查按 base 与 HEAD allowlist 条目的联合判定，base 与 HEAD 均不存在的临时条目不能为中间超限提交提供豁免。开发者可在仓库根运行 `bash scripts/ci/check-repository-hygiene.sh`，回归 fixture 为 `bash scripts/ci/test-repository-hygiene.sh`。main 上另有 push-only `repository-hygiene-main.yml` 对 bypass/direct push 做事后审计。
+仓库 hygiene 是同一 PR gate 的无条件前置检查：`scripts/ci/check-repository-hygiene.sh` 默认拒绝超过 5 MiB 的 tracked file，并拒绝 `Python/`、`.deepseek/`、`common/assets/wasm/`、`frontend/dist/`、`frontend/dist-android/`、`dist/`、`dist-desktop/`、`target/`、`node_modules/` 等生成/运行时路径，同时拒绝 `archive/`、`old/`、`legacy-docs/`、`historical/` 历史堆放目录路径段，并拒绝 PR `base..head` 变更文件把 ephemeral 计划载体当作权威引用（规则正文见 `.agents/AGENTS.md`「current-plan 门禁」，结构性例外见脚本内 `is_current_plan_allowlisted()`，遗留引用在被触及的 PR 中迁移）；确属 source-of-truth 且应继续使用普通 Git 的超限文件，只能把 exact path 加到 `scripts/ci/large-file-allowlist.txt` 并在 PR 解释理由。检查同时覆盖最终 tree 和 PR `base..head` 中每个 commit tree，防止“先提交大 blob 再删除”把对象带入历史；路径遍历使用 NUL-safe Git 输出以支持合法特殊文件名。同一脚本还执行 first-party 前端源码行数预算：`frontend/src/**/*.{js,ts,vue,mjs,cjs}`（排除 `*.test.*`、`*.spec.*`、`*.d.ts` 与 `frontend/src/api/generated/**`）单文件上限 1500 物理行；遗留超限文件只能以 exact path 进入 `scripts/ci/source-line-allowlist.txt`，条目数 base→head 只减不增（重命名可等量替换），拆分完成后同步移除条目；门禁已存在于 base 时，删除名单不会重置基线（缺失名单按 0 条比较），重新创建仍受只减不增约束。开发者可在仓库根运行 `bash scripts/ci/check-repository-hygiene.sh`，回归 fixture 为 `bash scripts/ci/test-repository-hygiene.sh`。main 上另有 push-only `repository-hygiene-main.yml` 对 bypass/direct push 做事后审计。
 
 三个数据更新 workflow 在创建/更新 PR 时分别执行来源数据的真实同步与验证，再 dispatch CI 验证精确 open PR head。生产发布继续由 service owner workflow 的原生路径规则独立触发。
 
@@ -637,8 +637,10 @@ Frontend 的 TX1/TX2 发布在切换线上文件或容器前，校验实际 Busi
   失败仍按现有契约显示为 degraded，不改变应用服务结果。
 - SAST workflow `codeql.yml`（issue #738）：push main + 每周 + dispatch，observe 阶段不进 required gate；第三方 action 全部 pin 到 immutable SHA
 - 三个数据更新 workflow (`update-tankopedia.yml`、`update-equipment.yml`、`update-crew-skills.yml`)
-  保持独立，生成 PR 后核对 open PR 的 main base、自动化 head branch 和精确 head SHA，再 dispatch
-  `ci-gate.yml`；CI 通过只读 GitHub API 核对该 run 仍验证同一 PR head。它们不自动 merge。
+  保持独立，PR 发布协议收敛在受限 helper `scripts/ci/publish-data-update.sh`：无变化即退出、
+  拒绝非预期 staged 内容、只提交调用方白名单路径；生成 PR 后核对 open PR 的 main base、
+  自动化 head branch 和精确 head SHA，再 dispatch `ci-gate.yml`；CI 通过只读 GitHub API 核对
+  该 run 仍验证同一 PR head。它们不自动 merge。
 - main 是应用的唯一目标状态；生产镜像按各 owner 契约选取：business-api/frontend 使用 exact digest，
   Keycloak/ai-service 使用各自 latest/freshness。TX 服务定义按 owner 分离，
   各部署只渲染所属服务和通用探针。固定基础设施使用既有 volume、network 与 OpenTofu state，

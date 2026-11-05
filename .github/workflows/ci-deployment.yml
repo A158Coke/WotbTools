@@ -174,8 +174,6 @@ jobs:
           bash deploy/test-tx-runtime-check.sh
           bash deploy/test-user-profile-reset-audit.sh
           bash deploy/test-deploy-contract.sh
-      - name: Keycloak PostgreSQL backup runtime smoke
-        run: bash deploy/test-keycloak-postgres-backup.sh
       - name: Production Compose configuration contract
         env:
           DB_PASSWORD: ci

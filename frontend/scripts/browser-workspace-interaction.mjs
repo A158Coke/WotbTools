@@ -5,6 +5,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
+import { callPageFunction } from './browser-page.mjs'
 import { parseScenarioArgs, selectShard } from './browser-scenario-args.mjs'
 import { OCCLUSION_LIMITS, measureOcclusion, measurePaintOrder, measureReachability } from './browser-occlusion.mjs'
 import { SHELL_OVERLAY_SCENARIOS, runShellOverlayScenario } from './browser-shell-overlays.mjs'
@@ -323,6 +324,11 @@ class Page {
     return result.value
   }
 
+  /** 以 CDP 参数调用页面函数，参数不进入表达式源码。 */
+  callWith(fn, ...args) {
+    return callPageFunction(this.client, this.sessionId, fn, ...args)
+  }
+
   /** 序列化执行 `fn()`（探针不依赖闭包，因此可以安全地跨进程传递）。 */
   probe(fn) {
     return this.evaluate(`(${fn.toString()})()`)
@@ -456,9 +462,11 @@ class Page {
    * 判定标准是「可滚动触达 + 触达后真的可点」，而不是「永远在首屏」。
    */
   async revealControl(selector) {
-    await this.evaluate(
-      `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (el) el.scrollIntoView({ block: 'center', inline: 'nearest' }); return !!el })()`,
-    )
+    await this.callWith((sel) => {
+      const el = document.querySelector(sel)
+      if (el) el.scrollIntoView({ block: 'center', inline: 'nearest' })
+      return !!el
+    }, selector)
     await delay(200)
     return this.probe(playbackControlProbe)
   }
@@ -654,7 +662,7 @@ async function runAuthCapabilityScenario(env, scenario) {
       check(failures, await page.evaluate('window.__wsInput.click?.testId') === 'shot-row-1',
         'real selection click must land on the selected shot row')
       for (const selector of ['[data-testid=shot-next]', '[data-testid=shot-prev]', '[data-testid=shot-detail-close]']) {
-        await page.evaluate(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'center'})`)
+        await page.callWith((sel) => document.querySelector(sel).scrollIntoView({ block: 'center' }), selector)
         const reach = await measureReachability(page, { options: [selector], touch: scenario.touch })
         check(failures, reach.sampled > 0, `${selector}: no hit-test samples`)
         failures.push(...reach.failures)

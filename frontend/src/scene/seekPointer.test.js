@@ -48,17 +48,22 @@ describe('playbackScene.seekTo 的游标接线（防回归）', () => {
   // 只重定 shotPtr 是 PR #411 的 P0：transient 游标被 clearEffects 归零后会被
   // 紧随的 tick() 补播全部历史事件。
   const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
+  // 伤害/击毁游标 2026-11-05 随事件源出仓 playback/transientFeedback3d.ts（#820 Wave B6B），
+  // 守卫随实现迁移（与边界带同纪律）：场景侧只保留 rewind/clear 接线。
+  const transientSrc = readFileSync(resolve(here, 'playback/transientFeedback3d.ts'), 'utf8')
   const seekTo = src.slice(src.indexOf('function seekTo'), src.indexOf('function seekTo') + 900)
 
   it('三个游标（射击/伤害/击毁）都重定到 seek 时刻之后', () => {
     expect(seekTo).toMatch(/shotPtr\s*=\s*firstIndexAfter\(DATA\.shots, T,/)
-    expect(seekTo).toMatch(/dmgPtr\s*=\s*firstIndexAfter\(dmgEvents, T\)/)
-    expect(seekTo).toMatch(/burstPtr\s*=\s*firstIndexAfter\(burstEvents, T\)/)
+    expect(seekTo).toMatch(/transients\.rewind\(T\)/)
+    // rewind 内部把两个游标都放到 t 之后
+    expect(transientSrc).toMatch(/function rewind\(t: number\): void \{[\s\S]{0,200}?dmgPtr = firstIndexAfter\(dmgEvents, t\)[\s\S]{0,120}?burstPtr = firstIndexAfter\(burstEvents, t\)/)
   })
 
   it('clearEffects 会清空 transient 状态与游标（seek 不补播的另一半）', () => {
-    expect(src).toMatch(/function clearEffects\(\)[\s\S]{0,1200}?clearTransients\(\)/)
-    expect(src).toMatch(/function clearTransients\(\)[\s\S]{0,900}?dmgPtr = 0; burstPtr = 0;/)
+    expect(src).toMatch(/function clearEffects\(\)[\s\S]{0,1200}?transients\.clear\(\)/)
+    // 两张 Map + 两个游标归零的实现随状态出仓
+    expect(transientSrc).toMatch(/ghostByEid\.clear\(\)[\s\S]{0,200}?dmgPtr = 0[\s\S]{0,120}?burstPtr = 0/)
   })
 })
 
@@ -83,11 +88,19 @@ describe('边界 fail-closed（PR #411 P0-2）', () => {
 
 describe('相机距离钳制（PR #411 P1-3）', () => {
   const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
+  // 钳制实现 2026-11-05 出仓 playback/cameraTerrainClamp.ts（#820 Wave B6A），
+  // 守卫随实现迁移（与边界带同纪律）；场景侧只保留注入与调用。
+  const clampSrc = readFileSync(resolve(here, 'playback/cameraTerrainClamp.ts'), 'utf8')
 
   it('设置 controls.minDistance / maxDistance 且基于 ext', () => {
-    expect(src).toMatch(/baseMinDistance = Math\.max\(20, ext \* 0\.08\)/)
-    expect(src).toMatch(/controls\.minDistance = baseMinDistance/)
-    expect(src).toMatch(/controls\.maxDistance = ext \* 2\.2/)
+    expect(clampSrc).toMatch(/baseMinDistance = Math\.max\(20, ext \* 0\.08\)/)
+    expect(clampSrc).toMatch(/controls\.minDistance = baseMinDistance/)
+    expect(clampSrc).toMatch(/controls\.maxDistance = ext \* 2\.2/)
     expect(src).toMatch(/applyCameraClamp\(\);/)
+  })
+
+  it('基准距离只有模块一处分份状态，场景侧经 accessor 读取', () => {
+    expect(src).toMatch(/controls\.minDistance = cameraTerrainClamp\.baseMinDistance\(\)/)
+    expect(src).not.toMatch(/let baseMinDistance/)
   })
 })

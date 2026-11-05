@@ -763,12 +763,13 @@ describe('armor shell and readiness ownership', () => {
     expect(view).toMatch(/onShellSelection: index => syncNativeShell\(index\)/)
     expect(view).toMatch(/onEquipmentSelection: \(kind, value\) => syncNativeEquipment\(kind, value\)/)
   })
-  it('空 scfg 视同缺省，同车检视仍回落到受击方配置', () => {
+  it('空 scfg 视同缺省，射击方配置不再回落受击方 config', () => {
     expect(view).toMatch(/const scfg = route\.query\.scfg\s*\n\s*return scfg != null && scfg !== ''/)
   })
-  it('缺省 shooter 时同车检视按 target 判定，不把 NaN 当作独立射手', () => {
-    expect(view).toMatch(/const queryShooter = Number\(route\.query\.shooter\)/)
-    expect(view).toMatch(/Number\.isFinite\(queryShooter\) && queryShooter > 0 \? queryShooter : loadoutTankId\.value/)
+  it('射击方配置独立：不回落受击方 config，双方同车型也不共享主炮配置', () => {
+    expect(view).toMatch(/return scfg != null && scfg !== '' \? scfg : null/)
+    expect(view).not.toMatch(/sameTankInspection/)
+    expect(view).not.toMatch(/shooterConfigValue[^\n]*route\.query\.config/)
   })
   it('HUD readiness 双向跟随弹表，切到无弹表配置交还原生控件', () => {
     expect(read('./ArmorShotHud.vue')).toMatch(/const hasShells = computed\(\(\) => shells\.value\.length > 0\)/)
@@ -801,9 +802,9 @@ describe('armor shell and readiness ownership', () => {
     expect(view).not.toMatch(/requestSeq\+\+;\s*\n\s*shooterReady\.value = false;/)
     expect(view).not.toMatch(/requestSeq\+\+;\s*\n\s*hudReady\.value = false;/)
   })
-  it('只换射手发动机/履带不凭空建立 scfg', () => {
-    expect(view).toMatch(/const hadExplicitShooterConfig = query\.scfg != null && query\.scfg !== ''/)
-    expect(view).toMatch(/if \(configChanged \|\| hadExplicitShooterConfig\) put\('scfg', patch\.config\)/)
+  it('只换射手发动机/履带不凭空建立 scfg；换炮才写 scfg', () => {
+    expect(view).toMatch(/if \(configChanged\) put\('scfg', patch\.config\)/)
+    expect(view).not.toMatch(/hadExplicitShooterConfig/)
   })
   it('HUD 就绪即独占被替换的装备控件；配置变更按解析后的选择判断', () => {
     expect(view).toMatch(/'has-shot-hud': hudReady/)

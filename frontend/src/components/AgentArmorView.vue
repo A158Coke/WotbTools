@@ -130,15 +130,6 @@ watch([editorsReady, hudReady], ([editors, hud]) => {
 const loadoutTankId = computed(() => selectedTargetId.value ?? (Number(route.query.tank) || null))
 // ?clean=1 时场景脚本会隐藏全部常驻面板（截图 / 嵌入用）；顶栏卡片与参数开关一并让位
 const cleanQuery = computed(() => route.query.clean === '1')
-/** 普通装甲页：射击方与受击方默认同一辆（回放页由 shot 的 shooter/target 决定）。 */
-const sameTankInspection = computed(() => {
-  if (isShotPage.value) return false
-  const queryShooter = Number(route.query.shooter)
-  const shooter = selectedShooterId.value
-    ?? (Number.isFinite(queryShooter) && queryShooter > 0 ? queryShooter : loadoutTankId.value)
-  const target = selectedTargetId.value ?? loadoutTankId.value
-  return shooter != null && target != null && shooter === target
-})
 const shooterSetupId = computed(() => (selectedShooterId.value ?? Number(route.query.shooter)) || loadoutTankId.value)
 const targetSetupId = computed(() => selectedTargetId.value ?? loadoutTankId.value)
 /**
@@ -151,10 +142,11 @@ const recordedPitchDevice = computed(
 )
 /** 可用性：模块目录确认有槽位，或射击真值证明当前目标实际装过 122。未知时 false（fail-closed）。 */
 const pitchDeviceAvailable = computed(() => pitchFromModules.value || recordedPitchDevice.value)
-/** 射击方配置：&scfg= 优先；普通同车检视未单独选炮时跟随受击方配置。空 scfg 视同缺省。 */
+/** 射击方配置：只认显式 &scfg=；缺省时射击方用自身默认顶级配置（configs 末位），
+ *  不从受击方的 &config= 推导——双方即使是同一辆车也必须独立。空 scfg 视同缺省。 */
 const shooterConfigValue = computed(() => {
   const scfg = route.query.scfg
-  return scfg != null && scfg !== '' ? scfg : (sameTankInspection.value ? route.query.config : null)
+  return scfg != null && scfg !== '' ? scfg : null
 })
 
 /** 同一 tick 连点两下（弹种 + 开关）时，第二次写入必须基于上一次尚未落地的 query，
@@ -175,13 +167,8 @@ function syncNativeTargetConfig(index) {
   if (!Number.isInteger(n) || n < 0) return
   replaceArmorSetupQuery((query) => {
     query.config = String(n)
-    const explicitShooterConfig = query.scfg != null && query.scfg !== ''
-    if (shouldResetShellOnConfigChange({
-      side: 'target',
-      configChanged: true,
-      sameTank: sameTankInspection.value,
-      explicitShooterConfig,
-    })) delete query.shell
+    // 受击方换配置不改变射击方弹表，shell 始终保留
+    if (shouldResetShellOnConfigChange({ side: 'target', configChanged: true })) delete query.shell
   })
 }
 
@@ -235,11 +222,9 @@ function applySide(side, patch) {
   const shooter = side === 'shooter'
   const configChanged = patch.configChanged === true
   if (shooter) {
-    // 只有真正换炮或已有独立 scfg 时才写 scfg：同车检视未独立选炮时，只换发动机/
-    // 履带不能凭空建立独立射手配置（否则场景 QP.scfg 仍为空，主炮弹表会被目标配置
-    // 覆盖，而 URL/HUD 却按 scfg 保留旧弹种）。
-    const hadExplicitShooterConfig = query.scfg != null && query.scfg !== ''
-    if (configChanged || hadExplicitShooterConfig) put('scfg', patch.config)
+    // 只有真正换炮才写 scfg：只换发动机/履带不凭空建立独立射手配置，
+    // 保持 URL 最小改动。换炮时清除旧 shell 下标（弹表已换）。
+    if (configChanged) put('scfg', patch.config)
     put('sengine', patch.engine)
     put('strack', patch.track)
     put('sdev', patch.dev)
@@ -249,13 +234,7 @@ function applySide(side, patch) {
     put('track', patch.track)
     put('dev', patch.dev)
   }
-  const explicitShooterConfig = query.scfg != null && query.scfg !== ''
-  if (shouldResetShellOnConfigChange({
-    side,
-    configChanged,
-    sameTank: sameTankInspection.value,
-    explicitShooterConfig,
-  })) delete query.shell
+  if (shouldResetShellOnConfigChange({ side, configChanged })) delete query.shell
   pendingShotQuery = query
   router.replace({ query })
   if (!configChanged) return

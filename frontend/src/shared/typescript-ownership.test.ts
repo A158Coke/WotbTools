@@ -24,12 +24,12 @@ const files = sourceFiles(SRC).map(path => ({
 }))
 const isTest = (path: string) => /\.test\./.test(path) || path.startsWith('src/test/')
 const production = files.filter(file => !isTest(file.path))
-const typedProduction = production.filter(file => file.path.endsWith('.ts') || /<script\b[^>]*\blang="ts"/.test(file.source))
+const typedProduction = production.filter(file => file.path.endsWith('.ts') || /<script\b[^>]*\blang="ts"/i.test(file.source))
 
 // 按 AST 计数：覆盖全部 any 语法，一行多处都算，注释与字符串不算。SFC 只解析 <script>。
 function escapeHatches(path: string, source: string) {
   const code = path.endsWith('.vue')
-    ? [...source.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)].map(match => match[1]).join('\n')
+    ? [...source.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map(match => match[1]).join('\n')
     : source
   const counts = { any: 0, asUnknownAs: 0 }
   const visit = (node: ts.Node) => {

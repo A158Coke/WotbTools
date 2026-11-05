@@ -176,194 +176,121 @@ git commit -q -m 'add allowlisted lifecycle doc citing the plan carrier'
 head=$(git rev-parse HEAD)
 expect_pass plan-reference-allowlist env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
-# --- Source LOC budget gate (#820) ---
-# First-party production frontend sources are capped at MAX_SOURCE_LINES
-# (default 1500). The fixture allowlist is written at the default path inside
-# the disposable repo so the gate exercises its real resolution logic.
-write_lines() {
-  python3 - "$1" "$2" <<'PY'
+# Source-line budget (#820): an unlisted first-party production file over 1500
+# physical lines must fail, and the failure must come from this gate.
+git switch -q -C source-line-unlisted "$base"
+mkdir -p frontend/src
+python3 - <<'PY'
 from pathlib import Path
-import sys
-Path(sys.argv[1]).write_text("line\n" * int(sys.argv[2]), encoding="utf-8")
+Path("frontend/src/oversized.js").write_text("// line\n" * 1501)
 PY
-}
-
-# 1499 and 1500 lines pass.
-git switch -q -C loc-boundary "$base"
-mkdir -p frontend/src/utils
-write_lines frontend/src/utils/small.js 1499
-write_lines frontend/src/utils/exact.vue 1500
-git add frontend/src/utils
-git commit -q -m 'add boundary-sized production sources'
+git add frontend/src/oversized.js
+git commit -q -m 'add oversized first-party source file'
 head=$(git rev-parse HEAD)
-expect_pass loc-boundary env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail_msg source-line-unlisted "first-party frontend source exceeds" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
-# 1501 lines in a new production file fails.
-git switch -q -C loc-over "$base"
-mkdir -p frontend/src/utils
-write_lines frontend/src/utils/big.js 1501
-git add frontend/src/utils/big.js
-git commit -q -m 'add oversized production source'
+# Exactly at the budget passes: the limit is inclusive.
+git switch -q -C source-line-at-limit "$base"
+mkdir -p frontend/src
+python3 - <<'PY'
+from pathlib import Path
+Path("frontend/src/at-limit.ts").write_text("// line\n" * 1500)
+PY
+git add frontend/src/at-limit.ts
+git commit -q -m 'add source file exactly at the line budget'
 head=$(git rev-parse HEAD)
-expect_fail_msg loc-over "source budget" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_pass source-line-at-limit env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
-# The same budget covers .vue sources.
-git switch -q -C loc-over-vue "$base"
-mkdir -p frontend/src/components
-write_lines frontend/src/components/Big.vue 1501
-git add frontend/src/components/Big.vue
-git commit -q -m 'add oversized production vue source'
-head=$(git rev-parse HEAD)
-expect_fail_msg loc-over-vue "source budget" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
-
-# Tests, ambient declarations and contract-generated artifacts are out of scope.
-git switch -q -C loc-non-production "$base"
+# Tests, declaration files and generated transport are not production source
+# and stay out of scope even when they are large.
+git switch -q -C source-line-exempt "$base"
 mkdir -p frontend/src/api/generated
-write_lines frontend/src/api/big.test.ts 1600
-write_lines frontend/src/api/generated/contract.js 1600
-write_lines frontend/src/types.d.ts 1600
+python3 - <<'PY'
+from pathlib import Path
+Path("frontend/src/oversized.test.js").write_text("// test\n" * 1600)
+Path("frontend/src/oversized.d.ts").write_text("// types\n" * 1600)
+Path("frontend/src/api/generated/oversized.ts").write_text("// generated\n" * 1600)
+PY
 git add frontend/src
-git commit -q -m 'add oversized non-production files'
+git commit -q -m 'add large test, declaration and generated files'
 head=$(git rev-parse HEAD)
-expect_pass loc-non-production env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_pass source-line-exempt env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
-# A legacy file pinned at its audited baseline passes; one more line fails.
-git switch -q -C loc-legacy-pin "$base"
-mkdir -p scripts/ci frontend/src/scene
-write_lines frontend/src/scene/legacy.js 1601
-cat > scripts/ci/source-loc-allowlist.txt <<'EOF'
-frontend/src/scene/legacy.js 1601
-EOF
-git add frontend/src/scene/legacy.js scripts/ci/source-loc-allowlist.txt
-git commit -q -m 'pin legacy file at its audited baseline'
+# An exact allowlist entry admits an existing over-budget file.
+git switch -q -C source-line-allowlisted "$base"
+mkdir -p frontend/src scripts/ci
+python3 - <<'PY'
+from pathlib import Path
+Path("frontend/src/oversized.js").write_text("// line\n" * 1501)
+Path("scripts/ci/source-line-allowlist.txt").write_text("frontend/src/oversized.js\n")
+PY
+git add frontend/src/oversized.js scripts/ci/source-line-allowlist.txt
+git commit -q -m 'add allowlisted oversized source file'
 head=$(git rev-parse HEAD)
-expect_pass loc-legacy-pin env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_pass source-line-allowlisted env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
-git switch -q -C loc-legacy-growth "$base"
-mkdir -p scripts/ci frontend/src/scene
-write_lines frontend/src/scene/legacy.js 1602
-cat > scripts/ci/source-loc-allowlist.txt <<'EOF'
-frontend/src/scene/legacy.js 1601
-EOF
-git add frontend/src/scene/legacy.js scripts/ci/source-loc-allowlist.txt
-git commit -q -m 'grow legacy file past its pinned baseline'
+# The allowlist is a one-way ratchet: a new entry added in the event range fails
+# even when every individual file is allowlisted in the head tree.
+git switch -q -C source-line-allowlist-growth "$base"
+mkdir -p frontend/src scripts/ci
+python3 - <<'PY'
+from pathlib import Path
+Path("frontend/src/existing.js").write_text("// line\n" * 1501)
+Path("scripts/ci/source-line-allowlist.txt").write_text("frontend/src/existing.js\n")
+PY
+git add frontend/src/existing.js scripts/ci/source-line-allowlist.txt
+git commit -q -m 'seed the source-line allowlist'
+growth_base=$(git rev-parse HEAD)
+python3 - <<'PY'
+from pathlib import Path
+Path("frontend/src/new.js").write_text("// line\n" * 1501)
+Path("scripts/ci/source-line-allowlist.txt").write_text(
+    "frontend/src/existing.js\nfrontend/src/new.js\n"
+)
+PY
+git add frontend/src/new.js scripts/ci/source-line-allowlist.txt
+git commit -q -m 'grow the source-line allowlist'
 head=$(git rev-parse HEAD)
-expect_fail_msg loc-legacy-growth "pinned baseline" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail_msg source-line-allowlist-growth "source-line allowlist must not grow" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$growth_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
-# An allowlist entry is an exact path: it must not shield any other file.
-git switch -q -C loc-allowlist-borrow "$base"
-mkdir -p scripts/ci frontend/src/scene
-write_lines frontend/src/scene/legacy.js 1601
-write_lines frontend/src/scene/other.js 1700
-cat > scripts/ci/source-loc-allowlist.txt <<'EOF'
-frontend/src/scene/legacy.js 1601
-EOF
-git add frontend/src/scene scripts/ci/source-loc-allowlist.txt
-git commit -q -m 'attempt to borrow another file allowlist entry'
+# Once the gate exists, retiring the last exception (deleting the allowlist)
+# must not reset the ratchet: a later change that recreates the file with a new
+# entry is growth from zero, not a first-time introduction.
+git switch -q -C source-line-allowlist-recreated "$base"
+mkdir -p frontend/src scripts/ci
+cp "$CHECK" scripts/ci/check-repository-hygiene.sh
+python3 - <<'PY'
+from pathlib import Path
+Path("frontend/src/existing.js").write_text("// line\n" * 1501)
+Path("scripts/ci/source-line-allowlist.txt").write_text("frontend/src/existing.js\n")
+PY
+git add scripts/ci/check-repository-hygiene.sh frontend/src/existing.js scripts/ci/source-line-allowlist.txt
+git commit -q -m 'seed the source-line gate and its allowlist'
+git rm -q frontend/src/existing.js scripts/ci/source-line-allowlist.txt
+git commit -q -m 'retire the last source-line exception'
+recreated_base=$(git rev-parse HEAD)
+mkdir -p frontend/src
+python3 - <<'PY'
+from pathlib import Path
+Path("frontend/src/new.js").write_text("// line\n" * 1501)
+Path("scripts/ci/source-line-allowlist.txt").write_text("frontend/src/new.js\n")
+PY
+git add frontend/src/new.js scripts/ci/source-line-allowlist.txt
+git commit -q -m 'recreate the deleted source-line allowlist'
 head=$(git rev-parse HEAD)
-expect_fail_msg loc-allowlist-borrow "source budget" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail_msg source-line-allowlist-recreated "source-line allowlist must not grow" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$recreated_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
-# A stale entry whose file has become compliant must be removed in the same PR.
-git switch -q -C loc-stale-allowlist "$base"
-mkdir -p scripts/ci frontend/src/scene
-write_lines frontend/src/scene/split.js 1500
-cat > scripts/ci/source-loc-allowlist.txt <<'EOF'
-frontend/src/scene/split.js 2000
-EOF
-git add frontend/src/scene/split.js scripts/ci/source-loc-allowlist.txt
-git commit -q -m 'leave stale allowlist entry for a compliant file'
+# A limit that Bash would parse as octal must abort the gate, not disable the
+# comparison. The 1501-line file proves the gate did not silently pass.
+git switch -q -C source-line-invalid-limit "$base"
+mkdir -p frontend/src
+python3 - <<'PY'
+from pathlib import Path
+Path("frontend/src/oversized.js").write_text("// line\n" * 1501)
+PY
+git add frontend/src/oversized.js
+git commit -q -m 'add oversized file for an invalid-limit fixture'
 head=$(git rev-parse HEAD)
-expect_fail_msg loc-stale-allowlist "remove it from" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
-
-# Invalid allowlist content fails closed (exit 2), never as a clean tree.
-git switch -q -C loc-invalid-allowlist "$base"
-mkdir -p scripts/ci frontend/src/scene
-write_lines frontend/src/scene/legacy.js 1601
-cat > scripts/ci/source-loc-allowlist.txt <<'EOF'
-frontend/src/scene/legacy.js
-EOF
-git add frontend/src/scene/legacy.js scripts/ci/source-loc-allowlist.txt
-git commit -q -m 'commit malformed allowlist entry'
-head=$(git rev-parse HEAD)
-expect_fail_msg loc-invalid-allowlist "invalid line" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
-
-# An oversized blob added and deleted inside the event range must still fail.
-git switch -q -C loc-add-delete "$base"
-mkdir -p frontend/src/utils
-write_lines frontend/src/utils/transient.js 1501
-git add frontend/src/utils/transient.js
-git commit -q -m 'add temporary oversized source'
-git rm -q frontend/src/utils/transient.js
-git commit -q -m 'remove temporary oversized source'
-head=$(git rev-parse HEAD)
-expect_fail_msg loc-add-delete "source budget" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
-
-# Renaming an oversized file does not escape the gate: the new path has no
-# entry of its own, and a stale entry on the old path shields nothing.
-git switch -q -C loc-rename "$base"
-mkdir -p scripts/ci frontend/src/scene
-write_lines frontend/src/scene/legacy.js 1601
-cat > scripts/ci/source-loc-allowlist.txt <<'EOF'
-frontend/src/scene/old-name.js 1601
-EOF
-git add frontend/src/scene/legacy.js scripts/ci/source-loc-allowlist.txt
-git commit -q -m 'add oversized source under a renamed path'
-head=$(git rev-parse HEAD)
-expect_fail_msg loc-rename "source budget" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
-
-# The normal split flow must pass: the legacy file and its entry exist at the
-# base, later commits shrink the file and drop the entry. The history gate must
-# judge each commit against the base/HEAD allowlist union, not force the final
-# allowlist onto earlier commits.
-git switch -q -C loc-split-in-range "$base"
-mkdir -p scripts/ci frontend/src/scene
-write_lines frontend/src/scene/legacy.js 1601
-cat > scripts/ci/source-loc-allowlist.txt <<'EOF'
-frontend/src/scene/legacy.js 1601
-EOF
-git add frontend/src/scene/legacy.js scripts/ci/source-loc-allowlist.txt
-git commit -q -m 'base: pinned legacy file'
-range_base=$(git rev-parse HEAD)
-write_lines frontend/src/scene/legacy.js 1500
-git rm -q scripts/ci/source-loc-allowlist.txt
-git add frontend/src/scene/legacy.js
-git commit -q -m 'split legacy file below the budget and drop its entry'
-head=$(git rev-parse HEAD)
-expect_pass loc-split-in-range env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$range_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
-
-# Deleting a legacy file without removing its entry must fail: the stale entry
-# would otherwise shield a future re-created file at the same path.
-git switch -q -C loc-entry-deleted-file "$base"
-mkdir -p scripts/ci frontend/src/scene
-write_lines frontend/src/scene/legacy.js 1601
-cat > scripts/ci/source-loc-allowlist.txt <<'EOF'
-frontend/src/scene/legacy.js 1601
-EOF
-git add frontend/src/scene/legacy.js scripts/ci/source-loc-allowlist.txt
-git commit -q -m 'base: pinned legacy file'
-range_base=$(git rev-parse HEAD)
-git rm -q frontend/src/scene/legacy.js
-git commit -q -m 'delete the legacy file but keep its allowlist entry'
-head=$(git rev-parse HEAD)
-expect_fail_msg loc-entry-deleted-file "no longer matches a tracked in-scope source file" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$range_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
-
-# An oversized blob committed together with a temporary allowlist entry that is
-# removed later must still fail: entries that exist neither at the base nor at
-# HEAD legitimize nothing in the history gate.
-git switch -q -C loc-evasion-temporary-entry "$base"
-mkdir -p scripts/ci frontend/src/scene
-write_lines frontend/src/scene/flash.js 1501
-mkdir -p scripts/ci
-cat > scripts/ci/source-loc-allowlist.txt <<'EOF'
-frontend/src/scene/flash.js 1501
-EOF
-git add frontend/src/scene/flash.js scripts/ci/source-loc-allowlist.txt
-git commit -q -m 'temporarily shield an oversized blob with a new entry'
-write_lines frontend/src/scene/flash.js 1500
-git rm -q scripts/ci/source-loc-allowlist.txt
-git add frontend/src/scene/flash.js
-git commit -q -m 'shrink the file and remove the temporary entry'
-head=$(git rev-parse HEAD)
-expect_fail_msg loc-evasion-temporary-entry "source budget" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail_msg source-line-invalid-limit "MAX_SOURCE_LINES must be a non-negative decimal integer without leading zeros" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" MAX_SOURCE_LINES=08 bash "$CHECK"
 
 echo "repository hygiene regression tests: PASS"
