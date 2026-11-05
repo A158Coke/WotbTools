@@ -1306,9 +1306,10 @@ async function waitForStableLayout(page, { timeout = 10_000 } = {}) {
 }
 
 async function check3DDrawingSurface(page, failures, scenario, viewport) {
-  const probe = () => {
-    // 手机形态：全屏入口在右上角浮动（floatingFullscreen 契约），传输条 5 控件
-    const ids = scenario.touch
+  // 手机形态：全屏入口在右上角浮动（floatingFullscreen 契约），传输条 5 控件。
+  // touch 由调用方经 page.callWith 显式传入（probe 在页面内执行，无 Node 闭包）。
+  const probe = (touch) => {
+    const ids = touch
       ? ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-secondary-entry']
       : ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']
     const controls = document.querySelector('.pb-controls')
@@ -1342,7 +1343,7 @@ async function check3DDrawingSurface(page, failures, scenario, viewport) {
     }
   }
   const compactBar = await page.evaluate(`document.querySelector('.pb-root').classList.contains('compact-bar')`)
-  const before = await page.probe(probe)
+  const before = await page.callWith(probe, scenario.touch)
   const label = viewport.width + 'x' + viewport.height
   check(failures, !!before.entry && before.entry.reachable, label + ': Drawing entry must be hit-testable in the 3D tool-row')
   if (before.entry) {
@@ -1353,14 +1354,15 @@ async function check3DDrawingSurface(page, failures, scenario, viewport) {
   check(failures, compactBar ? !before.toolRow : before.toolRow, label + ': tool-row belongs to the controls only in wide forms')
   check(failures, !before.inTransport && !before.entryInTransport, label + ': Drawing entry must live outside the shared transport')
   check(failures, !before.entryInDisplay, label + ': Drawing is a creation tool, not a Display preference')
-  check(failures, before.transport.order.length === 6 && before.transport.oneRow,
-    label + ': six shared primary controls must stay in x-order on one row before Drawing')
+  const expectedPrimary = scenario.touch ? 5 : 6
+  check(failures, before.transport.order.length === expectedPrimary && before.transport.oneRow,
+    label + ': shared primary controls must stay in x-order on one row before Drawing')
   if (!before.entry) return
   const openedByClick = clicked(await clickElement(page, '[data-testid="replay3d-drawing-entry"]'))
   check(failures, openedByClick, label + ': Drawing entry click failed')
   if (!openedByClick) return
   await page.waitFor(() => !!document.querySelector('[data-test="pb-annot-toolbar"]'), { label: '3D drawing toolbar' })
-  const opened = await page.probe(probe)
+  const opened = await page.callWith(probe, scenario.touch)
   check(failures, opened.toolbar && !opened.toolRow, label + ': Drawing must replace the tool-row with AnnotationToolbar')
   check(failures, await page.evaluate(`!document.querySelector('[data-testid="display-panel"]')`), label + ': Drawing and Display are mutually exclusive')
   check(failures, await page.evaluate('window.__sceneMarker === window.__pbPane.sceneApi'), label + ': opening Drawing must not rebuild the scene')
@@ -1388,14 +1390,14 @@ async function check3DDrawingSurface(page, failures, scenario, viewport) {
     const drawingOcclusion = await measureOcclusion(page, { primary: '.pb-root .scene', overlayHud: true, edgeDocked: compactBar ? ['.team-lane', '.killfeed'] : [] })
     for (const failure of drawingOcclusion.failures) check(failures, false, `${label}: Drawing 打开时遮挡: ${failure}`)
   }
-  check(failures, opened.transport.order.length === 6 && opened.transport.oneRow
+  check(failures, opened.transport.order.length === expectedPrimary && opened.transport.oneRow
     && Math.abs(opened.transport.height - before.transport.height) <= 2,
   label + ': transport geometry must stay unchanged while Drawing is open')
   const closedByClick = clicked(await clickElement(page, '[data-test="pb-annot-close"]'))
   check(failures, closedByClick, label + ': Drawing close failed')
   if (!closedByClick) return
   await page.waitFor(() => !document.querySelector('[data-test="pb-annot-toolbar"]'), { label: '3D drawing toolbar closed' })
-  const restored = await page.probe(probe)
+  const restored = await page.callWith(probe, scenario.touch)
   check(failures, (compactBar ? !!restored.entry : restored.toolRow) && !restored.toolbar, label + ': original tool-row must return after Drawing closes')
   if (compactBar) {
     await page.evaluate(`document.querySelector('[data-testid="display-toggle"]').click()`)
@@ -1404,7 +1406,7 @@ async function check3DDrawingSurface(page, failures, scenario, viewport) {
     await page.evaluate(`document.querySelector('[data-testid="display-toggle"]').click()`)
     await page.waitFor(() => !document.querySelector('[data-testid="display-panel"]'), { label: 'compact Display closes' })
   }
-  check(failures, restored.transport.order.length === 6 && restored.transport.oneRow
+  check(failures, restored.transport.order.length === expectedPrimary && restored.transport.oneRow
     && Math.abs(restored.transport.height - before.transport.height) <= 2,
   label + ': transport geometry must stay unchanged after Drawing closes')
 }
@@ -3079,7 +3081,7 @@ const WORKSPACE_2D_SCENARIOS = [
 ]
 
 /** workspace 几何探针（只读）。 */
-function workspace2dProbe() {
+function workspace2dProbe(touch = false) {
   const box = (el) => {
     if (!el || !el.getClientRects().length) return null
     const r = el.getBoundingClientRect()
@@ -3116,8 +3118,9 @@ function workspace2dProbe() {
   }
   const buttons = [...document.querySelectorAll('.pb-controls > .pb-btn, .pb-controls > * > .pb-btn, .pb-controls .pb-btn')]
     .filter((b) => b.getClientRects().length && !b.closest('.pb-speed-menu'))
-  // 手机形态：全屏入口在右上角浮动（floatingFullscreen 契约），传输条 5 控件
-  const primaryIds = scenario.touch
+  // 手机形态：全屏入口在右上角浮动（floatingFullscreen 契约），传输条 5 控件。
+  // touch 由调用方经 page.callWith 显式传入（probe 在页面内执行，无 Node 闭包）。
+  const primaryIds = touch
     ? ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-secondary-entry']
     : ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']
   const primary = primaryIds
@@ -3153,7 +3156,7 @@ function workspace2dProbe() {
     primaryOrder: [...document.querySelectorAll('.pb-controls button[data-test]')].map((b) => b.dataset.test)
       .filter((id) => primaryIds.includes(id)),
     floatingFullscreenTopRight: (() => {
-      if (!scenario.touch) return null
+      if (!touch) return null
       const floating = document.querySelector('[data-test="pb-fullscreen"]')
       const rootBox = root?.getBoundingClientRect()
       if (!floating || !rootBox) return false
@@ -3475,7 +3478,7 @@ async function runWorkspace2DScenario(env, scenario) {
     check(failures, pixels.external === 0, `external-image negative control unexpectedly rendered: ${JSON.stringify(pixels)}`)
     console.log(`[gun-marks-png] ${JSON.stringify(pixels)}`)
   }
-  const g = await page.probe(workspace2dProbe)
+  const g = await page.callWith(workspace2dProbe, scenario.touch)
   const result = () => results.push({ name: scenario.name, failures, viewport })
   check(failures, g.width === scenario.width && g.height === scenario.height,
     `viewport collapsed: requested ${scenario.width}x${scenario.height}, measured ${g.width}x${g.height}`)
@@ -3550,12 +3553,12 @@ async function runWorkspace2DScenario(env, scenario) {
     // 选中 → inline 详情排在传输控件之后、名册之前；× 只关详情
     await clickElement(page, '[data-test="pb-roster-row"][data-account-id="2002"]')
     await delay(200)
-    const opened = await page.probe(workspace2dProbe)
+    const opened = await page.callWith(workspace2dProbe, scenario.touch)
     check(failures, opened.detailsPresentation === 'inline' && opened.inlineHasDetails,
       `portrait details must be the inline shared panel: ${opened.detailsPresentation}`)
     await clickElement(page, '[data-test="pb-sb-close"]')
     await delay(200)
-    const closed = await page.probe(workspace2dProbe)
+    const closed = await page.callWith(workspace2dProbe, scenario.touch)
     check(failures, closed.detailsCount === 0, 'details × must close the panel')
     check(failures, JSON.stringify(closed.selectedIds) === '[2002]', `details × must keep the selection: ${JSON.stringify(closed.selectedIds)}`)
     await checkDisplaySurface(page, failures, scenario.layout, scenario)
@@ -3595,7 +3598,7 @@ async function runWorkspace2DScenario(env, scenario) {
   const team1Click = await clickElement(page, `[data-test="pb-roster-row"][data-account-id="${leftPlayer}"]`)
   check(failures, clicked(team1Click), `Team 1 row not clickable: ${team1Click}`)
   await delay(250)
-  let s = await page.probe(workspace2dProbe)
+  let s = await page.callWith(workspace2dProbe, scenario.touch)
   check(failures, s.detailsCount === 1 && s.detailsPresentation === 'floating', 'selecting must open one floating details panel')
   check(failures, s.detailsParentIsMain, 'floating details must be a child of the battlefield workspace (.pb-main)')
   check(failures, !!s.left && !!s.right, 'details must not hide either lane')
@@ -3613,7 +3616,7 @@ async function runWorkspace2DScenario(env, scenario) {
   let lastPos = null
   for (const [label, x] of regions) {
     await dragDetailsTo(page, x, scenario.touch)
-    const d = await page.probe(workspace2dProbe)
+    const d = await page.callWith(workspace2dProbe, scenario.touch)
     const panel = d.details
     const centre = panel ? (panel.l + panel.r) / 2 : NaN
     const target = label === 'left' ? d.left.box : label === 'right' ? d.right.box : d.map
@@ -3631,7 +3634,7 @@ async function runWorkspace2DScenario(env, scenario) {
   const team2Click = await clickElement(page, `[data-test="pb-roster-row"][data-account-id="${rightPlayer}"]`)
   check(failures, clicked(team2Click), `Team 2 row not clickable: ${team2Click}`)
   await delay(250)
-  s = await page.probe(workspace2dProbe)
+  s = await page.callWith(workspace2dProbe, scenario.touch)
   check(failures, s.detailsCount === 1 && s.detailsPlayer === rightName, `details did not update to the Team 2 vehicle: ${s.detailsPlayer}`)
   check(failures, !!s.right, 'Team 2 lane disappeared after selecting a Team 2 vehicle')
   check(failures, lastPos && s.details && Math.abs(s.details.l - lastPos.l) < 1 && Math.abs(s.details.t - lastPos.t) < 1,
@@ -3640,27 +3643,27 @@ async function runWorkspace2DScenario(env, scenario) {
   // ---- × 只关详情 ----
   await clickElement(page, '[data-test="pb-sb-close"]')
   await delay(200)
-  s = await page.probe(workspace2dProbe)
+  s = await page.callWith(workspace2dProbe, scenario.touch)
   check(failures, s.detailsCount === 0, 'details × must close the panel')
   check(failures, JSON.stringify(s.selectedIds) === JSON.stringify([rightPlayer]), `details × must keep the selection: ${JSON.stringify(s.selectedIds)}`)
   check(failures, s.time === time0, `closing details changed playback time ${time0} -> ${s.time}`)
   await clickElement(page, `[data-test="pb-roster-row"][data-account-id="${rightPlayer}"]`)
   await delay(200)
-  s = await page.probe(workspace2dProbe)
+  s = await page.callWith(workspace2dProbe, scenario.touch)
   check(failures, s.detailsCount === 1, 'clicking the selected vehicle again must reopen details')
 
   // ---- 名册关闭：车道消失，Stage 仍是居中正方形，详情与选中保留 ----
   if (!scenario.fullscreen) {
     check(failures, (await setRosterVisible(page, false)) === 'ok', 'roster preference toggle missing')
     await delay(300)
-    s = await page.probe(workspace2dProbe)
+    s = await page.callWith(workspace2dProbe, scenario.touch)
     check(failures, !s.left && !s.right, 'roster OFF must remove both lanes')
     check(failures, squareish(s.map), `roster OFF Stage must stay square: ${JSON.stringify(s.map)} main=${JSON.stringify(s.main)}`)
     check(failures, s.map && s.main && Math.abs((s.map.l + s.map.r) / 2 - (s.main.l + s.main.r) / 2) <= 2, 'roster OFF Stage must stay centred')
     check(failures, s.detailsCount === 1, 'roster OFF must keep Details open')
     await setRosterVisible(page, true)
     await delay(300)
-    s = await page.probe(workspace2dProbe)
+    s = await page.callWith(workspace2dProbe, scenario.touch)
     check(failures, !!s.left && !!s.right && JSON.stringify(s.selectedIds) === JSON.stringify([rightPlayer]), 'roster ON must restore lanes with the existing selection')
   }
 
