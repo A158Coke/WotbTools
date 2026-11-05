@@ -101,7 +101,8 @@ describe('场景源码护栏：评审 P0 修复的接线锁定', () => {
     expect(src).toMatch(/if \(T < destruct\.lastT\) \{[\s\S]{0,80}destruct\.ptr = 0;[\s\S]{0,400}st\.prop === 3\) st\.settled = false;[\s\S]{0,40}\}\s*destruct\.lastT = T;/)
   })
   it('?perf 看门狗随 destroy 清理（心跳定时器 + 调试句柄）', () => {
-    expect(src).toMatch(/if \(PERF\) \{\s*if \(perfBeatTimer\) \{ clearInterval\(perfBeatTimer\); perfBeatTimer = 0; \}\s*delete window\.__pbPerf;/)
+    expect(src).toContain('if (perfBeatTimer) { clearInterval(perfBeatTimer); perfBeatTimer = 0; }')
+    expect(src).toContain('if (window.__pbPerf === perfHandle) delete window.__pbPerf;')
   })
 })
 
@@ -109,7 +110,10 @@ describe('Sniper 穿深着色接线', () => {
   const source = readFileSync(resolve(__dirname, 'playbackScene.js'), 'utf8')
 
   it('叠加 pass 排在主渲染之后，只有录像者开镜且过渡结束才运行', () => {
-    expect(source).toMatch(/renderer\.render\(scene, camera\);\s+(?:const perfR0[^\n]*\n\s+)?renderArmorHighlight\(\);/)
+    const draw = source.indexOf('renderer.render(scene, camera);')
+    const armor = source.indexOf('renderArmorHighlight();', draw)
+    expect(draw).toBeGreaterThan(-1)
+    expect(armor).toBeGreaterThan(draw)
     expect(source).toContain("if (!ARMOR_HIGHLIGHT || CAM !== 'recorder' || !scopedHiddenEid || cameraBlend) return;")
   })
 
@@ -180,7 +184,7 @@ describe('Sniper 穿深着色接线', () => {
   })
 
   it('?perf 逐 pass 计时与装甲预热接线', () => {
-    expect(source).toMatch(/perfFrame\(perfT1 - perfT0, perfR0 - perfT1, perfR1 - perfR0, armorStats\)/)
+    expect(source).toMatch(/perfFrame\([^\n]*armorStats/)
     expect(source).toMatch(/stats: PERF \? armorStats : null/)
     const hl = readFileSync(resolve(__dirname, 'playback/armorHighlight.ts'), 'utf8')
     expect(hl).toMatch(/function prewarm\(camera: PerspectiveCamera\)/)

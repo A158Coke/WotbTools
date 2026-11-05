@@ -19,12 +19,24 @@
 import { loadAgentWasmModule, validateAgentPlayback, validateAgentRecorderCamera } from '../api/agent-replay-facets.js'
 import { buildPitchLimits } from './pitchLimits.js'
 import type { AgentPlaybackFacet } from '../api/agent-replay-facets.js'
-import type { PlaybackParseKind } from './playbackParse.worker.js'
+import type { PlaybackParseKind, PlaybackParseDiagnostics } from './playbackParse.worker.js'
+
+export type PlaybackDiagnosticEvent = { stage: string; durationMs?: number; status?: string; digest?: string }
+export type PlaybackDiagnosticObserver = (event: PlaybackDiagnosticEvent) => void
+
+// Diagnostics must never change parsing, caching or cancellation semantics.
+function emitPlaybackDiagnostic(observer: PlaybackDiagnosticObserver | undefined, event: PlaybackDiagnosticEvent) {
+  try { observer?.(event) } catch { /* observer is best effort */ }
+}
+function measured(observer: PlaybackDiagnosticObserver | undefined, stage: string, start: number) {
+  if (observer) emitPlaybackDiagnostic(observer, { stage, durationMs: performance.now() - start })
+}
+
 
 type ReplayFile = Blob & { name?: string; lastModified?: number }
-type ParseReply = { id?: number; json?: string; error?: string }
+type ParseReply = { id?: number; json?: string; error?: string; diagnostics?: PlaybackParseDiagnostics }
 interface ParsePending {
-  resolve: (json: string) => void
+  resolve: (reply: ParseReply) => void
   reject: (error: unknown) => void
   signal?: AbortSignal
   watchdog: ReturnType<typeof setTimeout> | null
@@ -100,13 +112,13 @@ function wireParseWorker(worker: Worker) {
   // 真实 Worker 忽略返回值；这个契约存在的意义是让注入的假 Worker（unit / browser
   // 回归）能直接观察「迟到回包无人认领」，而不是只能间接推断。
   worker.onmessage = (event: MessageEvent<ParseReply | null>) => {
-    const { id, json, error }: ParseReply = event.data || {};
+    const { id, error }: ParseReply = event.data || {};
     const pending = parsePending.get(id as number);
     if (!pending) return false;   // 迟到回包（已被 abort / 看门狗结算）：无人认领，忽略
     parsePending.delete(id as number);
     if (pending.watchdog) clearTimeout(pending.watchdog);
     pending.signal?.removeEventListener('abort', pending.onAbort!);
-    if (error) pending.reject(new Error(error)); else pending.resolve(json as string);
+    if (error) pending.reject(new Error(error)); else pending.resolve(event.data || {});
     return true;
   };
   // 崩溃/初始化失败：在飞请求全部失败、worker 置空待下次重建（不回退主线程——
@@ -197,9 +209,11 @@ async function fileCacheKey(fileObject: ReplayFile, bytes: Uint8Array) {
 /** 仅测试用：清空解析结果缓存（跨用例替换 WASM 桩时，同一份字节会产出不同结果） */
 export function __resetPlaybackJsonCacheForTest() { playbackJsonCache.clear(); }
 
-export async function loadFromLocalFile(fileObject: ReplayFile, signal?: AbortSignal) {
+export async function loadFromLocalFile(fileObject: ReplayFile, signal?: AbortSignal, observer?: PlaybackDiagnosticObserver) {
+  let started = observer ? performance.now() : 0
   if (signal?.aborted) throw playbackParseAbortError()
   const arrayBuffer = await fileObject.arrayBuffer()
+  measured(observer, 'file.arrayBuffer', started)
   // 进入摘要 / Worker / 回退解析前统一 bytes 类型：三条路径都只认 Uint8Array
   //（此前把 ArrayBuffer 直接当字节数组用，缓存指纹恒为常量 → 同名同 mtime 的不同
   //  回放会命中彼此的结果）。
@@ -208,28 +222,47 @@ export async function loadFromLocalFile(fileObject: ReplayFile, signal?: AbortSi
   // 解析结果缓存：键 = metadata + 完整内容 SHA-256。重复打开同一场（换标签页/重进页面/
   // 重新加载同一文件）直接命中，省掉一次完整 WASM 解析；命中仍走主线程 JSON.parse
   // （约 15ms）与契约校验，形状门禁不绕过。
+  started = observer ? performance.now() : 0
   const cacheKey = await fileCacheKey(fileObject, bytes)
+  measured(observer, 'replay.digest', started)
+  if (observer) emitPlaybackDiagnostic(observer, { stage: 'replay.identity', digest: cacheKey?.split('|').at(-1) })
   if (signal?.aborted) throw playbackParseAbortError()
   const cachedJson = cacheKey === null ? undefined : playbackJsonCache.get(cacheKey)
+  if (observer) emitPlaybackDiagnostic(observer, { stage: 'json.cache', status: cachedJson !== undefined ? 'hit' : 'miss' })
   if (cachedJson !== undefined) {
     playbackJsonCache.delete(cacheKey!); playbackJsonCache.set(cacheKey!, cachedJson);   // LRU 触碰
-    return enrichPlayback(validateAgentPlayback(JSON.parse(cachedJson)))
+    if (observer) {
+      for (const stage of ['first.parse', 'pitchLimits.wait', 'second.parse']) {
+        emitPlaybackDiagnostic(observer, { stage, status: 'skipped' })
+      }
+    }
+    return decodePlayback(cachedJson, observer)
   }
-  let json = await parsePlaybackJsonOffThread(bytes, signal)
+  let json = await parsePlaybackJsonOffThread(bytes, signal, undefined, 'playback', observer, 'first')
   // 俯仰锚定两阶段：首遍拿到名册（nickname + tank_id）→ 从 tank/{id}.json 构建
   // GunPitchRange 表 → 带锚定重解析（第二遍 ~95ms）。缺省空表时 gun_pitch 走
   // hull_pitch 兜底——坡上炮管俯仰远超极限的根因。tank 数据全部缺失时跳过重解析。
+  let secondParseStarted = false
   try {
+    started = observer ? performance.now() : 0
     const first = JSON.parse(json)
+    measured(observer, 'first.json.parse', started)
+    started = observer ? performance.now() : 0
     const limits = await buildPitchLimits(first.vehicles)
+    measured(observer, 'pitchLimits.wait', started)
     if (Object.keys(limits).length) {
       const limitsJson = JSON.stringify(limits)
-      json = await parsePlaybackJsonOffThread(bytes, signal, limitsJson)
-    }
+      secondParseStarted = true
+      json = await parsePlaybackJsonOffThread(bytes, signal, limitsJson, 'playback', observer, 'second')
+    } else if (observer) emitPlaybackDiagnostic(observer, { stage: 'second.parse', status: 'skipped' })
   } catch (err) {
     // 会话取消必须原样上抛（调用方按 AbortError 判定归属）——不得吞成"保持首遍结果"。
     // 其余失败（锚定构建/重解析异常）：保持首遍结果（gun_pitch 兜底仍可用）。
     if ((err as Error | null)?.name === 'AbortError') throw err
+    if (observer) {
+      emitPlaybackDiagnostic(observer, { stage: secondParseStarted ? 'second.parse' : 'pitchLimits.wait', status: 'fallback' })
+      if (!secondParseStarted) emitPlaybackDiagnostic(observer, { stage: 'second.parse', status: 'skipped' })
+    }
   }
   if (cacheKey !== null) {
     playbackJsonCache.set(cacheKey, json)
@@ -239,19 +272,35 @@ export async function loadFromLocalFile(fileObject: ReplayFile, signal?: AbortSi
   }
   // 契约 v2 门禁：与 parseAgentPlaybackFromBytes 同一校验器（错版/陈旧 WASM
   // 在此抛出，而不是把缺字段的 v1 数据交给渲染层）
-  return enrichPlayback(validateAgentPlayback(JSON.parse(json)))
+  return decodePlayback(json, observer)
+}
+
+async function decodePlayback(json: string, observer?: PlaybackDiagnosticObserver) {
+  let start = observer ? performance.now() : 0
+  const parsed = JSON.parse(json)
+  measured(observer, 'json.parse', start)
+  start = observer ? performance.now() : 0
+  const validated = validateAgentPlayback(parsed)
+  measured(observer, 'validation', start)
+  start = observer ? performance.now() : 0
+  const result = await enrichPlayback(validated)
+  measured(observer, 'enrichment', start)
+  return result
 }
 async function parsePlaybackJsonOffThread(
   bytes: Uint8Array,
   signal?: AbortSignal,
   limitsJson?: string,
   kind: PlaybackParseKind = 'playback',
+  observer?: PlaybackDiagnosticObserver,
+  pass = 'first',
 ): Promise<string> {
   if (signal?.aborted) throw playbackParseAbortError()
   const worker = parseWorkerInstance();
   if (worker) {
     try {
-      return await new Promise<string>((resolve, reject) => {
+      const start = observer ? performance.now() : 0
+      const reply = await new Promise<ParseReply>((resolve, reject) => {
         const id = ++parseSeq;
         const pending: ParsePending = { resolve, reject, signal, watchdog: null, onAbort: null };
         parsePending.set(id, pending);
@@ -270,8 +319,22 @@ async function parsePlaybackJsonOffThread(
         };
         signal?.addEventListener('abort', pending.onAbort, { once: true });
         // 不转移所有权：失败回退时主线程仍需这份字节（结构化克隆 1–2MB 成本可忽略）
-        worker.postMessage({ id, kind, bytes: playbackParsePayload(bytes), limitsJson });
+        worker.postMessage({ id, kind, bytes: playbackParsePayload(bytes), limitsJson, ...(observer ? { diagnostics: true } : {}) });
       });
+      if (observer) {
+        const roundtrip = performance.now() - start
+        emitPlaybackDiagnostic(observer, { stage: `${pass}.worker.roundtrip`, durationMs: roundtrip })
+        const d = reply.diagnostics
+        if (d && Number.isFinite(d.wasmReadyMs) && d.wasmReadyMs >= 0 && Number.isFinite(d.parseMs) && d.parseMs >= 0) {
+          emitPlaybackDiagnostic(observer, { stage: `${pass}.wasm.ready`, durationMs: d.wasmReadyMs })
+          emitPlaybackDiagnostic(observer, { stage: `${pass}.parse`, durationMs: d.parseMs })
+          const unattributed = roundtrip - d.wasmReadyMs - d.parseMs
+          emitPlaybackDiagnostic(observer, unattributed >= 0
+            ? { stage: `${pass}.worker.unattributed`, durationMs: unattributed }
+            : { stage: `${pass}.worker.unattributed`, status: 'unavailable' })
+        } else emitPlaybackDiagnostic(observer, { stage: `${pass}.worker.timing`, status: 'unavailable' })
+      }
+      return reply.json as string
     } catch (err) {
       if (!parseWorker) {
         // Worker 已被看门狗 / abort / onerror 整体放弃：按原样上抛——主动撤下（AbortError）
@@ -282,7 +345,10 @@ async function parsePlaybackJsonOffThread(
       parseWorker = null;
     }
   }
+  if (observer) emitPlaybackDiagnostic(observer, { stage: `${pass}.worker`, status: 'fallback' })
+  let started = observer ? performance.now() : 0
   const mod = await loadAgentWasmModule();
+  measured(observer, `${pass}.wasm.ready`, started)
   if (signal?.aborted) throw playbackParseAbortError()
   if (kind === 'recorder-camera') {
     if (typeof mod.parseRecorderCamera !== 'function') {
@@ -293,7 +359,10 @@ async function parsePlaybackJsonOffThread(
   if (typeof mod.parsePlayback !== 'function') {
     throw new Error('agent wasm: parsePlayback 缺失（产物版本早于契约 v2）')
   }
-  return mod.parsePlayback(bytes, undefined, limitsJson || undefined);
+  started = observer ? performance.now() : 0
+  const json = mod.parsePlayback(bytes, undefined, limitsJson || undefined);
+  measured(observer, `${pass}.parse`, started)
+  return json;
 }
 
 /**
@@ -329,9 +398,9 @@ async function enrichPlayback(data: AgentPlaybackFacet) {
  * session 所有权：清空 / 换文件 / 销毁时由调用方 abort，被撤下的解析立即以
  * AbortError 结束并让出 Worker 队列，不再无限排队。
  */
-export async function loadPlaybackData(source: { kind?: string; file?: ReplayFile; signal?: AbortSignal } | null | undefined) {
+export async function loadPlaybackData(source: { kind?: string; file?: ReplayFile; signal?: AbortSignal; observer?: PlaybackDiagnosticObserver } | null | undefined) {
   if (source && source.kind === 'local' && source.file) {
-    return loadFromLocalFile(source.file, source.signal)
+    return loadFromLocalFile(source.file, source.signal, source.observer)
   }
   throw new Error('回放数据源仅支持本地文件（client-only 拓扑，无服务端通道）')
 }
