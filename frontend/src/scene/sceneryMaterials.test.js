@@ -25,6 +25,7 @@ const rendererSrc = readSrc(resolve(here, 'playback/renderer.ts'), 'utf8')
 const mapAssetsSrc = readSrc(resolve(here, 'playback/mapAssets.ts'), 'utf8')
 // 基地贴地标记 2026-10-24 出仓 playback/bases.js（Step A4；基地环/圆盘/画布 sRGB 断言随实现迁移）
 const basesSrc = readSrc(resolve(here, 'playback/bases.ts'), 'utf8')
+const glbPartsSrc = readSrc(resolve(here, 'playback/glbParts.ts'), 'utf8')
 // 材质实现（billboard/speedtree/缓存/常量/isWaterName）已平移至专用模块（SSOT，
 // bake-ground-overhead 烘焙页共用同一实现），守卫随迁读取新源
 const matSrc = readSrc(resolve(here, 'sceneryMaterials.ts'), 'utf8')
@@ -966,10 +967,11 @@ describe('__hullGroup 挂点（车体 = 记录位姿；逐轮悬挂见下方「�
   it('底盘（chassis_track_*/chassis_wheel_*）与车体子树分离，挂点恒归单位；命名不符则回落整台刚体', () => {
     // 2026-10-10 回退：「根吃地形局部平面 + 车体收限幅残差」的近似已撤——车体恢复客户端同构的
     // **记录位姿**摆放（poseGlb 直摆记录 yaw/pitch/roll）；__hullGroup 仅作后续悬挂实现的挂点。
-    expect(src).toMatch(/\^chassis_\(track\|wheel\)_\/i\.test\(child\.name \|\| ''\)/)
-    expect(src).toMatch(/hullGroup = new THREE\.Group\(\);/)
-    expect(src).toMatch(/hullGroup\.name = '__hullGroup';/)
-    expect(src).toMatch(/return \{ turretNode, gunNodes, tP, gP, hullGroup,/)
+    // 2026-11-05 Wave B4B：部件收集/装配出仓 playback/glbParts.ts（playbackScene 只调 collectGlbParts）
+    expect(glbPartsSrc).toMatch(/\^chassis_\(track\|wheel\)_\/i\.test\(child\.name \|\| ''\)/)
+    expect(glbPartsSrc).toMatch(/hullGroup = new THREE\.Group\(\);?/)  // TS 出仓后无分号
+    expect(glbPartsSrc).toMatch(/hullGroup\.name = '__hullGroup';?/)  // TS 出仓后无分号
+    expect(glbPartsSrc).toMatch(/return \{ turretNode, gunNodes, tP, gP, hullGroup,/)
     // 两条位姿路径（GLB / 低模）都对 hullGroup 归单位：拆分组不得改变摆放
     expect(src).toMatch(/p\.hullGroup\.quaternion\.identity\(\);/)
     expect(src).toMatch(/p\.hullGroup\.position\.set\(0, 0, 0\);/)
