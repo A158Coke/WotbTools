@@ -11,9 +11,10 @@
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Download, Image as ImageIcon, Maximize, Minimize, PencilRuler, Upload } from 'lucide-vue-next'
+import { Download, Image as ImageIcon, PencilRuler, Upload } from 'lucide-vue-next'
 import BattleMap from './BattleMap.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
+import SceneFullscreenButton from './SceneFullscreenButton.vue'
 import { mapBases } from '../data/mapBases.js'
 import { playableBounds } from '../data/playableBounds.js'
 import { WORLD_BOUNDS_300 } from '../data/mapImages.js'
@@ -198,6 +199,7 @@ const annotationEraserRadius = ref(ANNOT_ERASER_RADIUS_DEFAULT)
 const rootEl = ref(null)
 const stageEl = ref(null)
 const squareEl = ref(null)
+const controlsEl = ref(null)
 const mapComponent = ref(null)
 /** BattleMap expose 的**真实地图 DOM**（组件实例没有 getBoundingClientRect）；
  *  桌面/平板下 .pb-map 根宽为 66.7%，所有 screen-space 几何必须以它为原点/尺寸。 */
@@ -219,11 +221,23 @@ const PAN_THRESHOLD_PX = 5
 const PINCH_THRESHOLD_PX = 5
 const FIT_MARGIN = 0.98
 /** 居中方形舞台边长（min(舞台宽, 舞台高)，JS 实测——纯 CSS aspect-ratio 与
- *  max-width 冲突时会被拉成矩形，实测写入内联尺寸才稳定）。 */
+ *  max-width 冲突时会被拉成矩形，实测写入内联尺寸才稳定）。
+ *  手机形态：舞台高度改为内容驱动（stage 内联高度 = 方形边长），边长 =
+ *  min(舞台宽, 填充高度 − 工具区实高)——地图吃满可用宽度且工具栏紧随地图，
+ *  不再因「舞台吃剩余高度」在地图与工具栏之间留大块空白；装不下时交给页面滚动。 */
 const squareSide = ref(0)
 function measureSquare() {
   const w = stageEl.value?.clientWidth || 0
   const h = stageEl.value?.clientHeight || 0
+  if (isPhone.value) {
+    const fill = Number.parseFloat(stageHeight.value) || 0
+    const budget = fill - (controlsEl.value?.offsetHeight || 0)
+    // 预算可为负（标注工具在窄屏换行后高于剩余空间）：方形不塌 0，按下限渲染、
+    // 超出部分交给页面滚动（Plan：小高度设备允许合理滚动而不是遮挡内容）。
+    const MIN_SQUARE = 180
+    squareSide.value = w > 0 ? Math.floor(Math.min(w, Math.max(budget, MIN_SQUARE))) : 0
+    return
+  }
   squareSide.value = w > 0 && h > 0 ? Math.floor(Math.min(w, h)) : 0
 }
 
@@ -286,6 +300,7 @@ watch(mapEl, (el, prev) => {
   fitObserved = false
 }, { flush: 'post' })
 watch(stageHeight, measureSquare, { flush: 'post' })
+// 手机形态切换（旋转/跨断点）重测；标注工具开合的 watch 在 annotationOpen 声明之后注册
 onMounted(() => {
   measureSquare()
   if (typeof ResizeObserver === 'function') {
@@ -770,6 +785,8 @@ const renderedAnnotations = computed(() => {
 const mapTouchPan = computed(() => !annotationOpen.value && view.scale <= fitScale() + 1e-3)
 
 // ---------- 底图切换 = 换图：标注清空（语义随图）+ 重解析底图 + 重新 fit ----------
+// 标注工具开合改变工具区实高（手机形态地图预算随之变化），nextTick 后重测方形边长
+watch(annotationOpen, () => nextTick(measureSquare), { flush: 'post' })
 watch(() => props.basemap, (bm) => {
   fitObserved = false
   resetAnnotationState()
@@ -908,23 +925,20 @@ const stubFloatClass = () => ''
 <template>
   <!-- 观察层（rootEl）与固定高度层（.map2d-body）分离：usePaneFillHeight 的 RO 观察
        外层——高度写在外层自身会让 RO 失活（固定盒不再 resize，陈旧测量死锁）。 -->
-  <div ref="rootEl" class="map2d" data-testid="map-2d-pane">
-    <button
+  <div ref="rootEl" class="map2d" :class="{ 'map2d-phone': isPhone }" data-testid="map-2d-pane">
+    <SceneFullscreenButton
       v-if="fullscreenSupported"
-      type="button"
-      class="map2d-btn map2d-fullscreen"
+      floating
+      :is-fullscreen="isFullscreen"
       data-testid="map-2d-fullscreen"
-      :aria-label="t(isFullscreen ? 'recon.map.playback.exit_fullscreen' : 'recon.map.playback.enter_fullscreen')"
-      :title="t(isFullscreen ? 'recon.map.playback.exit_fullscreen' : 'recon.map.playback.enter_fullscreen')"
-      @click="toggleFullscreen()"
-    >
-      <component :is="isFullscreen ? Minimize : Maximize" :size="16" aria-hidden="true" />
-    </button>
-    <div class="map2d-body" :style="{ height: stageHeight }">
+      @toggle="toggleFullscreen()"
+    />
+    <div class="map2d-body" :style="isPhone ? null : { height: stageHeight }">
       <div
         ref="stageEl"
         class="map2d-stage"
         data-testid="map-2d-stage"
+        :style="isPhone && squareSide ? { height: squareSide + 'px' } : null"
         tabindex="0"
         @wheel="onWheel"
         @pointerdown="onPointerDown"
@@ -975,7 +989,7 @@ const stubFloatClass = () => ''
         />
       </div>
     </div>
-    <div class="map2d-controls">
+    <div ref="controlsEl" class="map2d-controls">
       <div v-if="annotationOpen" class="map2d-annotations" data-testid="map-2d-annotations">
         <AnnotationToolbar
           :open="annotationOpen"
@@ -1063,6 +1077,8 @@ const stubFloatClass = () => ''
         <p v-if="exportError" class="map2d-export-error" role="alert" data-testid="map-2d-export-error">{{ exportError }}</p>
       </div>
       <p v-if="importMessage" class="map2d-import-note" role="status" data-testid="map-2d-import-note">{{ importMessage }}</p>
+      <!-- 页面级操作帮助（Map Preview 无正式教程入口，本提示即最小帮助入口） -->
+      <p class="map2d-hint" data-testid="map-2d-controls-hint">{{ t('mapPreview.controlsHint2d') }}</p>
     </div>
     </div>
   </div>
@@ -1077,15 +1093,6 @@ const stubFloatClass = () => ''
 .map2d:fullscreen {
   padding: 0;
   background: var(--color-canvas);
-}
-
-.map2d-fullscreen {
-  position: absolute;
-  top: var(--space-2);
-  right: var(--space-2);
-  z-index: var(--z-sticky);
-  background: var(--color-surface-1);
-  border: 1px solid var(--color-border);
 }
 
 /* 固定高度层（usePaneFillHeight 写入）：舞台吃剩余、controls 固有高——
@@ -1108,6 +1115,13 @@ const stubFloatClass = () => ''
   overflow: hidden;
   background: var(--color-canvas);
   touch-action: none;
+}
+
+/* 手机形态：body 高度内容驱动（stage 内联高度 = 方形边长），工具栏紧随地图；
+   舞台不再 flex 吃剩余。min-height 保证底图错误态可见。 */
+.map2d-phone .map2d-stage {
+  flex: 0 0 auto;
+  min-height: 120px;
 }
 
 /* 舞台内居中方形（边长 = min(舞台宽, 舞台高)，JS 实测写入内联尺寸）：底图契约框
@@ -1200,6 +1214,12 @@ const stubFloatClass = () => ''
 .map2d-import-note {
   margin: 0;
   color: var(--color-text-secondary);
+  font: var(--type-caption);
+}
+
+.map2d-hint {
+  margin: 0;
+  color: var(--color-text-tertiary);
   font: var(--type-caption);
 }
 

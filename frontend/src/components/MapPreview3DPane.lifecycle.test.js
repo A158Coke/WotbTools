@@ -20,6 +20,7 @@ const scene = vi.hoisted(() => {
     setQuality: vi.fn(),
     setCam: vi.fn(),
     setMapSpawns: vi.fn(),
+    setMobileTouch: vi.fn(),
     reset: vi.fn(),
     invalidate: vi.fn(),
   }
@@ -48,9 +49,10 @@ vi.mock('../composables/useSceneFlyControls.ts', () => ({
 vi.mock('../composables/usePlaybackFullscreen.ts', () => ({
   usePlaybackFullscreen: () => ({ isFullscreen: ref(false), fullscreenSupported: false, toggleFullscreen: vi.fn() }),
 }))
-vi.mock('../composables/usePlaybackPhoneForm.ts', () => ({
-  usePlaybackPhoneForm: () => ({ isPhone: { value: false } }),
-}))
+vi.mock('../composables/usePlaybackPhoneForm.ts', () => {
+  const isPhone = ref(false)
+  return { usePlaybackPhoneForm: () => ({ isPhone }), __phoneForm: { isPhone } }
+})
 vi.mock('../composables/usePlaybackTransport.ts', () => ({
   isInteractiveTarget: () => false,
 }))
@@ -115,6 +117,21 @@ describe('MapPreview3DPane 首次激活生命周期', () => {
     await wrapper.setProps({ spawnPoints: next })
     await flushPromises()
     expect(scene.api.setMapSpawns).toHaveBeenCalledWith(next)
+  })
+
+  it('移动端触屏相机契约：建场景即按 isPhone 推送；形态翻转即时同步', async () => {
+    const { __phoneForm } = await import('../composables/usePlaybackPhoneForm.ts')
+    const wrapper = mountPane(true)
+    await flushPromises()
+    expect(scene.api.setMobileTouch).toHaveBeenCalledWith(false)
+    scene.api.setMobileTouch.mockClear()
+    __phoneForm.isPhone.value = true
+    await flushPromises()
+    expect(scene.api.setMobileTouch).toHaveBeenCalledWith(true)
+    __phoneForm.isPhone.value = false
+    await flushPromises()
+    expect(scene.api.setMobileTouch).toHaveBeenLastCalledWith(false)
+    wrapper.unmount()
   })
 
   it('激活后切走：场景保留暂停，不销毁、不重装；切回不重建不重装', async () => {

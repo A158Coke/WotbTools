@@ -28,6 +28,8 @@ import { usePlaybackPortraitViewport } from '../composables/usePlaybackPortraitV
 import { usePlaybackPreferences } from '../composables/usePlaybackPreferences.js'
 import Scene3DStatus from './Scene3DStatus.vue'
 import PlaybackTransport from './PlaybackTransport.vue'
+import SceneFullscreenButton from './SceneFullscreenButton.vue'
+import SceneDistanceSlider from './SceneDistanceSlider.vue'
 import PlaybackDisplaySurface from './PlaybackDisplaySurface.vue'
 import RecorderReticle from './RecorderReticle.vue'
 import ReplayCameraTools from './ReplayCameraTools.vue'
@@ -405,6 +407,8 @@ watch(
 )
 watch(annotationsVisible, pushAnnotationVisibility)
 watch(() => store.hasData, (has) => { if (!has && annotationOpen.value) closeAnnotation() })
+// 旋转 / 跨断点改变手机形态时同步触屏相机契约（场景已建时立即生效）
+watch(isPhone, (v) => sceneApi?.setMobileTouch?.(v))
 
 /** 最近一次加载的文件：失败后"重试"直接重新解析，不必再选一次 */
 let lastFile = null
@@ -660,6 +664,7 @@ function ensureScene() {
   })
   sceneApi?.setPaused?.(!props.active)
   sceneApi?.setFlySpeed?.(fly.flySpeedIndex())   // 新场景补推当前飞行速率档（重建不丢档）
+  sceneApi?.setMobileTouch?.(isPhone.value)      // 移动端触屏相机契约（单指分流 / 双指不控制）
   pushLabelPrefs();   // 新场景默认吃共享偏好（含"隐藏全部 UI"的当前状态）
   pushAnnotationProjection()
   pushAnnotationInteraction()
@@ -856,6 +861,21 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
     <div v-else class="pb-root playback-workspace" ref="rootEl" :class="{ 'phone-form': isPhone, 'portrait-flow': portraitFlow, 'roster-side': showRoster && !portraitFlow, 'compact-bar': compactBar }" data-testid="replay3d-root" data-tour="replay3d-workspace">
       <!-- 名牌覆盖层与 canvas 共用**同一个画布盒子**：场景内核按 canvas（.scene）尺寸算锚点，
            覆盖层必须与它同原点，否则三段式下名牌会整体偏一条车道宽。 -->
+      <!-- 移动端全屏入口统一右上角浮动（与 Map Preview 2D/3D、Replay 2D 同一组件同一位置）；
+           传输条里的内联按钮在手机形态由 floatingFullscreen 隐藏，桌面保持原位。 -->
+      <SceneFullscreenButton
+        v-if="isPhone && fullscreenSupported"
+        floating
+        :is-fullscreen="isFullscreen"
+        data-testid="playback-fullscreen"
+        @toggle="toggleFullscreen()"
+      />
+      <!-- 移动端竖向距离滑条：全屏按钮正下方；Follow/Recorder 相机所有权不动
+           （free/top 才可用），Hide All UI 时随控件一起隐藏。 -->
+      <SceneDistanceSlider
+        :get-scene-api="() => sceneApi"
+        :visible="isPhone && !uiHidden && (store.cam === 'free' || store.cam === 'top')"
+      />
       <div class="pb-stage" data-testid="replay3d-stage">
         <div class="stage-square">
           <div ref="stage" class="scene"></div>
@@ -989,6 +1009,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
           <PlaybackTransport
             :fullscreen-supported="fullscreenSupported"
             :is-fullscreen="isFullscreen"
+            :floating-fullscreen="isPhone"
             :display-open="displayOpen"
             display-enabled
             @toggle-fullscreen="toggleFullscreen()"

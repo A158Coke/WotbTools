@@ -203,6 +203,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // Derived identity index only; ReplaySession still owns every canonical life fact.
   let lifeTracks = null, lifeTracksByAccount = new Map();
   let CAM = 'free', FOLLOW_EID = 0;
+  // 移动端触屏相机契约（current-plan Mobile 3D Input Contract）：单指按模式分流
+  // （Free=贴地平移 / Fixed=OrbitControls 左键式旋转），**双指不承担任何相机控制**
+  // （取消 look/pinch 意图分类）。由宿主按 form-factor（usePlaybackPhoneForm）下发，
+  // 不在场景内做 UA/宽度嗅探。桌面鼠标路径完全不受影响。
+  let MOBILE_TOUCH = false;
   // 新会话默认以俯视机位开局；用户一旦操作过相机，同一实例内不再覆盖其视角。
   let topViewOnLoad = true;
   // 录像者视角：facet 随会话，相机由 driveRecorderCamera 逐帧写入。
@@ -706,8 +711,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     camera.lookAt(controls.target);
     invalidate();
   }
-  /** 从当前前两根手指开始一轮双指手势（绘制模式固定捏合，其余先判定）。 */
+  /** 从当前前两根手指开始一轮双指手势（绘制模式固定捏合，其余先判定）。
+   *  移动端触屏（MOBILE_TOUCH）：双指不承担相机控制——不进入 pending/pinch/look
+   *  分类，直接作废本手势（指针表仍跟踪，up 收尾语义不变）。 */
   function flyTwoFingerStart() {
+    if (MOBILE_TOUCH) { flyTwoFinger = null; return; }
     const [[a, pa], [b, pb]] = flyPointers;
     flyTwoFinger = { mode: 'pending', a, b, startA: pa, startB: pb };
     if (annotationToolActive()) flyTwoFingerEnter('pinch', pa, pb);
@@ -772,6 +780,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
   /** 手指数量变化：还有两指就重新判定，否则结束双指手势（剩下的手指不生效）。 */
   function flyTouchCountChanged() {
+    if (MOBILE_TOUCH) { flyTwoFinger = null; return; }
     if (flyPointers.size >= 2) flyTwoFingerStart();
     else flyTwoFinger = null;
   }
@@ -948,6 +957,15 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
 
   // ---------- 场景 ----------
+  /** 移动端触屏相机的 OrbitControls 侧分流：双指 DOLLY_PAN 关闭（捏合/双指拖不动
+   *  相机），单指保持默认 ROTATE（= Fixed 模式的「左键拖动」契约）。renderer/controls
+   *  每次重建（画质切换 / initScene）都会重置 touches，所以每次创建后都要重新应用。
+   *  桌面（MOBILE_TOUCH=false）恢复默认，行为零变化。 */
+  function applyMobileTouchControls() {
+    if (!controls) return;
+    controls.touches.TWO = MOBILE_TOUCH ? null : THREE.TOUCH.DOLLY_PAN;   // OrbitControls 默认双指手势
+  }
+
   function initScene() {
     // 创建核心（渲染器/相机/控件/灯光/resize+pointer 接线）在 playback/renderer.js
     //（2026-10-24 Step A2 出仓；状态所有权仍在本闭包——解构写回可变绑定）
@@ -959,6 +977,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     });
     scene = core.scene; camera = core.camera; renderer = core.renderer;
     controls = core.controls; clock = core.clock; raycaster = core.raycaster;
+    applyMobileTouchControls();
     annotationSurfaceRaycaster = new THREE.Raycaster();
     hemiLight = core.hemiLight; sunLight = core.sunLight;
     dynResCtl = core.dynResCtl; sizeObserver = core.sizeObserver; rendererCaps = core.rendererCaps;
@@ -2351,6 +2370,60 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     controls.target.y += deltaY;
     camera.lookAt(controls.target);
     return true;
+  }
+
+  // ---------- 移动端竖向距离滑条（相机真实状态反推，无第二套倍率 SSOT） ----------
+  // 值语义统一 v ∈ [0,1]：v=1（滑条顶部）= 近，v=0（底部）= 远。
+  //   · Free：净空距离 = camera.y − 相机 xz 处地形高。近端 = 贴地下限
+  //     （CAMERA_GROUND_CLEARANCE），远端 = 自由相机高度上限（topCameraDefaultHeight）。
+  //     设置 = 垂直平移 camera；constrainFreeCameraAltitude 贴限时同步平移 target
+  //     （朝向不变，相机在真实限制处停住）。
+  //   · Fixed（top 持续模式）：camera↔target 距离（OrbitControls 半径）。近端 =
+  //     minDistance（含地形净空锁定值），远端 = maxDistance。设置 = 沿 target→camera
+  //     缩放半径后交给既有地形钳制。
+  // Follow / Recorder 返回 unavailable——滑条在这些形态隐藏，绝不接管相机所有权。
+  function cameraDistanceState() {
+    if (!renderer || !controls) return { available: false };
+    if (CAM === 'free') {
+      const terrain = terrainHeightForCameraClamp(camera.position.x, camera.position.z) ?? 0;
+      const cMin = CAMERA_GROUND_CLEARANCE;
+      const cMax = Math.max(cMin + 0.001, topCameraDefaultHeight() - terrain);
+      const c = camera.position.y - terrain;
+      return { available: true, mode: 'free', v: Math.min(1, Math.max(0, 1 - (c - cMin) / (cMax - cMin))) };
+    }
+    if (CAM === 'top') {
+      const min = Number(controls.minDistance) || 0;
+      const max = Math.max(min + 0.001, Number(controls.maxDistance) || min);
+      const len = camera.position.distanceTo(controls.target);
+      return { available: true, mode: 'fixed', v: Math.min(1, Math.max(0, 1 - (len - min) / (max - min))) };
+    }
+    return { available: false };
+  }
+  function setCameraDistance(v) {
+    if (!renderer || !controls) return;
+    const t = Math.min(1, Math.max(0, Number(v) || 0));
+    if (CAM === 'free') {
+      const terrain = terrainHeightForCameraClamp(camera.position.x, camera.position.z) ?? 0;
+      const cMax = Math.max(CAMERA_GROUND_CLEARANCE + 0.001, topCameraDefaultHeight() - terrain);
+      const targetC = cMax - t * (cMax - CAMERA_GROUND_CLEARANCE);
+      camera.position.y += targetC - (camera.position.y - terrain);
+      constrainFreeCameraAltitude();
+      camera.lookAt(controls.target);
+      invalidate();
+      return;
+    }
+    if (CAM === 'top') {
+      const off = _zoomDir.subVectors(camera.position, controls.target);
+      const len = off.length();
+      if (len <= 1e-6) return;
+      const min = Number(controls.minDistance) || 0;
+      const max = Math.max(min + 0.001, Number(controls.maxDistance) || min);
+      const next = max - t * (max - min);
+      camera.position.copy(controls.target).addScaledVector(off.divideScalar(len), next);
+      clampOrbitCameraToTerrain();
+      camera.lookAt(controls.target);
+      invalidate();
+    }
   }
 
   /** 地形世界跨度（渲染高度场的世界↔UV 换算也用同一式，杜绝与网格两处漂移）。 */
@@ -5390,7 +5463,22 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     seekTime: (t) => { if (DATA) seekTo(t); },
     seekBy: (delta) => { if (DATA) seekTo(T + delta); },
     setBattleClock,
+    /** 移动端竖向距离滑条：读当前相机真实距离（v: 1=近 0=远）；follow/recorder 返回 unavailable */
+    cameraDistanceState,
+    setCameraDistance,
     setCam,
+    /**
+     * 移动端触屏相机契约开关（usePlaybackPhoneForm 判定，宿主 watch 下发；renderer
+     * 重建后仍生效——initScene 每次重建都会重新应用）。true：Free 单指=贴地平移、
+     * Fixed 单指=左键式旋转、双指不承担任何相机控制。false：桌面行为零变化。
+     */
+    setMobileTouch(enabled) {
+      const next = !!enabled;
+      if (MOBILE_TOUCH === next) { applyMobileTouchControls(); return; }
+      MOBILE_TOUCH = next;
+      flyTwoFinger = null;   // 契约切换瞬间作废在途双指手势
+      applyMobileTouchControls();
+    },
     setFollow,
     setGlb: (on) => { if (!Q.forceGlb && (Q.allowGlb || !on)) applyGlbToggle(on); invalidate(); },
     // 地面履带印开关（会话级，不持久化；关→开从 START 全量补铺，见 updateTrails）
