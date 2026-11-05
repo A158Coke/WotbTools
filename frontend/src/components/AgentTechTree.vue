@@ -305,12 +305,17 @@ onMounted(() => {
   padding: var(--space-6) var(--gutter) var(--space-12);
   color: var(--color-text-primary);
   min-inline-size: 0;
+  /* 占满外壳留给本页的视口高度：顶栏高度已由 .app-main 的 padding 让出，底部 Tab 栏是
+     fixed，必须在这里再减掉；树滚动区用 flex 吃掉页头/页签之后的剩余高度。
+     不再写视口减法魔法数——4.0 外壳的顶栏/底栏与页头行数一变就错位。 */
+  block-size: calc(100dvh - var(--header-h) - var(--tabbar-h) - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  min-block-size: 0;
 }
 
-.techtree :deep(.page-header) { margin-bottom: 0; }
+.techtree :deep(.page-header) { flex: none; margin-bottom: 0; }
 .tt-status { margin: 0; color: var(--color-text-secondary); font: var(--type-body); }
 
-.tt-tabs { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.tt-tabs { display: flex; flex: none; flex-wrap: wrap; gap: var(--space-1); }
 .tt-tab {
   padding: var(--space-1) var(--space-3);
   border: 1px solid var(--color-border-subtle);
@@ -325,7 +330,9 @@ onMounted(() => {
 .tt-tab:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 
 /* ---------- 树网格：客户端 216×96 单元格语义，横向滚动 ---------- */
-.tt-scroll { overflow: auto; max-block-size: calc(100dvh - 220px); }
+/* flex: 1 1 0 + min-block-size: 0：滚动区只吃剩余高度，内容高度不反过来把页面撑出视口；
+   吸底等级条因此始终停在滚动区底部、底栏上方。 */
+.tt-scroll { flex: 1 1 0; min-block-size: 0; overflow: auto; }
 .tt-canvas { display: grid; gap: 0; min-inline-size: 0; align-content: start; }
 .tt-body { position: relative; display: grid; }
 .tt-edges { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
@@ -448,8 +455,31 @@ onMounted(() => {
 .tt-pill.is-tier { background: color-mix(in oklab, var(--color-accent) 14%, var(--color-surface-1)); color: var(--color-accent-text); }
 
 /* ---------- 研发态 ---------- */
-/* 手机：头部纵向排列，网格横向滚动不变 */
+/* 手机：页头已由 PageHeader 收敛为一行；国别页签改单行横滑——9 个国别在 390px 下会换
+   两行，白白吃掉 36px 树高；横滑比换行更符合“页签条”的语义。 */
 @media (width < 768px) {
-  .techtree { gap: var(--space-3); padding-block-start: var(--space-4); }
+  .techtree {
+    gap: var(--space-3);
+    padding-block: var(--space-4);
+  }
+  .tt-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+  }
+  .tt-tabs::-webkit-scrollbar { display: none; }
+  .tt-tab { flex: 0 0 auto; }
+}
+
+/* 矮视口（手机横屏等）：页头描述让位给树；标题与「坦克百科」按钮保持一行，
+   去掉页头上下边距与分隔线。360px 高的横屏只剩约 1.5 行树时靠这条把窗口抬到 2.5 行。 */
+@media (height <= 520px) {
+  .techtree {
+    gap: var(--space-2);
+    padding-block: var(--space-3);
+  }
+  .techtree :deep(.page-header) { padding-block: 0; border-bottom: 0; }
+  .techtree :deep(.page-header-description) { display: none; }
 }
 </style>

@@ -355,12 +355,13 @@ const CORS_HEADERS = {
 /**
  * 起一个极小的资产源（127.0.0.1 随机端口，CORS 放行）。路由与真实资产包同形：
  * /data/tank_cache.json、/tank/{id}.json、/glb/{id}/{armor,visual}.glb。
- * @param {{tankCache?: typeof FIXTURE_TANK_CACHE, delays?: {tankCache?: number, armor?: number, visual?: number}, variant?: 'turreted' | 'turretless'}} [options]
+ * @param {{tankCache?: typeof FIXTURE_TANK_CACHE, delays?: {tankCache?: number, armor?: number, visual?: number}, variant?: 'turreted' | 'turretless', extraRoutes?: Record<string, {type: string, body: Buffer | string}>}} [options]
  *   tankCache 仅覆盖本实例名册（大列表布局回归）；delays 控制名册/两个 GLB 的完成顺序（加载竞态回归）；
- *   variant 选择夹具车型（turretless = GLB 无 turret_NN 的固定战斗室，用于无炮塔拖曳回归）。
+ *   variant 选择夹具车型（turretless = GLB 无 turret_NN 的固定战斗室，用于无炮塔拖曳回归）；
+ *   extraRoutes 追加/覆盖任意资产路径（科技树等只读页面复用同一资产源，不另起第二套服务）。
  * @returns {Promise<{server: import('node:http').Server, origin: string, close: () => Promise<void>, requests: string[]}>}
  */
-export async function startFixtureAssetPack({ tankCache = FIXTURE_TANK_CACHE, delays = {}, variant = 'turreted' } = {}) {
+export async function startFixtureAssetPack({ tankCache = FIXTURE_TANK_CACHE, delays = {}, variant = 'turreted', extraRoutes = {} } = {}) {
   const pack = FIXTURE_PACKS[variant]
   if (!pack) throw new Error(`unknown fixture variant: ${variant}`)
   const requests = []
@@ -379,6 +380,9 @@ export async function startFixtureAssetPack({ tankCache = FIXTURE_TANK_CACHE, de
     routes.set(`/tank/${tankId}.json`, { type: 'application/json', body: Buffer.from(JSON.stringify(data)) })
     routes.set(`/glb/${tankId}/armor.glb`, { type: 'model/gltf-binary', body: pack.armorGlb })
     routes.set(`/glb/${tankId}/visual.glb`, { type: 'model/gltf-binary', body: pack.visualGlb })
+  }
+  for (const [path, route] of Object.entries(extraRoutes)) {
+    routes.set(path, { type: route.type, body: Buffer.isBuffer(route.body) ? route.body : Buffer.from(route.body) })
   }
   const server = createServer((req, res) => {
     const path = (req.url || '').split('?')[0]
