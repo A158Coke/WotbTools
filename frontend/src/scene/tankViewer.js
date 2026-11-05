@@ -52,6 +52,8 @@ import {
     shellTypeOf, calibratedPenMul, ENHANCED_ARMOR_THICK_MUL, shellAngles, rolledPenetration,
     populateSpacedArmorScene, populateSpacedStateScene, populatePrimaryArmorScene,
 } from './viewer/armorPlateModel.js'
+// 动态装甲单次 Mesh 状态应用（#820 Wave B3C 出仓）：userData/可见性/分类/厚度/材质
+import { applyArmorStateToMesh, replaceArmorMaterial } from './viewer/armorMeshState.js'
 // 点击判定的触发面分类（Primary = 主装甲板）；与判定本体同源，勿在此复制一份板面清单
 import { isPrimary, hasPrimaryLayer, matchHitsByOccurrence } from './penetration.js'
 // Armor Inspector 概率模型：±range = ±3σ 的正态 CDF + 逐层 1× 等效厚度传播
@@ -1623,13 +1625,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             updateHeatMaskUniforms(penetrationMode);
         }
         // 本查看器替换过的装甲材质才可 dispose；GLTF 原始材质可能跨网格共享，不能动。
-        function replaceArmorMaterial(node, material) {
-            if (node.userData.armorMaterialOwned && node.material && typeof node.material.dispose === 'function') {
-                node.material.dispose();
-            }
-            node.material = material;
-            node.userData.armorMaterialOwned = true;
-        }
+        // （replaceArmorMaterial 已出仓 viewer/armorMeshState.js，语义原样）
         // —— 装甲分类过滤（主装甲 / 间隙 / 外部模块，2026-10-28 用户要求）——
         const hiddenCategories = { primary: false, spaced: false, external: false };
         /** 节点在“未被分类过滤”时应有的可见性（配置/动态装甲/炮塔变体等其它规则）。 */
@@ -2145,45 +2141,14 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (!m) return;
                 const key = m[1] + ':' + m[2];
                 if (!controllable.has(key)) return;
-                const inactive = !active.has(key);
-                // 两个分支都登记 armorStateKey/armorStateSection：热力图构建时
-                // 非激活板也要入场景（clone 隐藏）——切态只翻 clone 可见性，零重建
-                node.userData.armorStateKey = key;
-                const spacedLike = spacedBySection[m[1]].has(m[2]);
-                node.userData.armorStateSection = spacedLike ? 'spaced' : m[1];
-                if (inactive) {
-                    node.userData.armorStateHidden = true;
-                    node.userData.armorSection = 'deco';
-                    node.visible = false;
-                    // 非激活板同样落声明厚度/orig（review P1：预建 clone 的
-                    // _baseThickness 缓存来源于此，留 0 会让切态初帧按 0mm 着色）
-                    node.userData.armorSectionOrig = m[1];
-                    node.userData.armorPlateId = m[2];
-                    node.userData.armorThickness = getPlateThickness(m[1], m[2]);
-                } else {
-                    // 激活板升级为一等板：厚度按声明表重算（deco 分支留的是 0）、
-                    // 补 armorSectionOrig（alignArmorModules/retag 依赖它）、按 spaced 表归类
-                    node.userData.armorStateHidden = false;
-                    node.userData.armorSectionOrig = m[1];
-                    node.userData.armorPlateId = m[2];
-                    node.userData.armorThickness = getPlateThickness(m[1], m[2]);
-                    node.visible = !node.userData.configHidden;
-                    node.userData.armorSection =
-                        spacedLike ? 'spaced' : m[1];
-                    // 同步当前视图材质（review P2-2）：deco 分支没初始化材质，
-                    // 新激活板沿用原 GLTF 材质——普通模式不透明、碰撞模式不上厚度色。
-                    // 热力图模式下装甲本体走透明覆盖层（着色在 clone 场景），同普通模式。
-                    replaceArmorMaterial(node, collisionMode
-                        ? new THREE.MeshStandardMaterial({
-                            color: thicknessToColor(node.userData.armorThickness),
-                            metalness: 0.4, roughness: 0.6,
-                            transparent: true, opacity: 0.95, depthWrite: true,
-                        })
-                        : new THREE.MeshStandardMaterial({
-                            color: 0x444444, metalness: 0.3, roughness: 0.8,
-                            transparent: true, opacity: 0, depthWrite: false,
-                        }));
-                }
+                applyArmorStateToMesh(node, {
+                    key, plateId: m[2], section: m[1],
+                    active: active.has(key),
+                    spaced: spacedBySection[m[1]].has(m[2]),
+                    collisionMode,
+                    thicknessOf: getPlateThickness,
+                    colorOf: thicknessToColor,
+                });
             });
             // 新激活的板此前被 deco 跳过了枢轴安装（alignArmorModules 的正则原不含
             // state_XX 段）——厚度/orig 就位后统一重装。随后**必须重放当前姿态**：
