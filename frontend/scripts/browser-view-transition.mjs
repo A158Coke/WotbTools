@@ -69,7 +69,13 @@ async function navigateViaMore(page, target) {
 }
 
 async function tap(page, selector, touch) {
-  const point = await page.evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null; el.scrollIntoView({ block: 'center', inline: 'nearest' }); const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } })()`)
+  const point = await page.callWith((sel) => {
+    const el = document.querySelector(sel)
+    if (!el) return null
+    el.scrollIntoView({ block: 'center', inline: 'nearest' })
+    const r = el.getBoundingClientRect()
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+  }, selector)
   assert.ok(point, `missing ${selector}`)
   await page.animationsSettled()
   await page.tap({ ...point, touch })

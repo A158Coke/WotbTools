@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // typescript.legacy.json / stylelint.legacy.json 的 base→head 单调门禁：名单只减不增，
 // typescript 的 escape hatch 逐文件不增。
 // src/shared/typescript-ownership.test.ts 保证名单等于当前源码，这里保证名单不能跟着源码一起放宽。
