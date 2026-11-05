@@ -93,6 +93,7 @@ import { activeEntityAt, resolveReplayClock } from '../replay-local/canonical/fa
 import { isPlaybackSpeed } from '../composables/usePlaybackTransport.js'
 import { isFlySpeedIndex, FLY_SPEEDS, DEFAULT_FLY_SPEED_INDEX, TOUCH_PAN_MIN_HEIGHT, advanceFly as tickFlyImpl, classifyTwoFinger, groundPanOffset } from '../composables/useSceneFlyControls.js'
 import { poseFromYPR, yprScene, cloneDetachedTurret, neutralizeDefaultMetalness, dropDuplicateGunMasks } from './glbRig.js'
+import { collectGlbParts } from './playback/glbParts.js'
 import {
   clampTravel, rateLimitTravel, spinStep, treadScrollStep, groundDropLocal,
   attachChainToWheels, solveChain, vertexChainParams, applyChainToVertices, chainChanged, chainDrift, sideTravel,
@@ -3113,85 +3114,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 缓存 null 会毒化整个会话（transient 缺资产被永久记住）
     p.then((entry) => { if (!entry) cache.delete(tankId); }).catch(() => cache.delete(tankId));
     return p;
-  }
-
-  // 炮塔/炮管驱动部件收集 + 枢轴原点链（track+turret / +gun_origin，models.pb 数据）
-  function collectGlbParts(model, sd, sel) {
-    // 节点分组（装甲查看器 collectConfigNodes 同式）：gun_XX(+_mask 等) 按编号分组升序、
-    // turret_XX 升序——与 build_configs 的 dense 索引序一致
-    const byGroup = new Map(); const turrets = [];
-    model.traverse(n => {
-      const nm = n.name || '';
-      const gm = nm.match(/^gun_(\d+)/);
-      const tm = nm.match(/^turret_(\d+)$/);
-      if (gm) { const g = parseInt(gm[1], 10); if (!byGroup.has(g)) byGroup.set(g, []); byGroup.get(g).push(n); }
-      else if (tm) turrets.push(n);
-    });
-    const gunGroups = Array.from(byGroup.keys()).sort((a, b) => a - b)
-      .map(k => byGroup.get(k).sort((a, b) => ((a.name || '') < (b.name || '') ? -1 : 1)));
-    turrets.sort((a, b) => ((a.name.match(/\d+/)?.[0] | 0) - (b.name.match(/\d+/)?.[0] | 0)));
-    // 选中变体 = 回放证据推断的 dense 索引（缺省 = 顶级配置），其余隐藏
-    const cfgs = (sd && sd.configs && sd.configs.length) ? sd.configs : null;
-    const gi = (sel && sel.gun_index != null) ? sel.gun_index
-      : (cfgs ? cfgs[cfgs.length - 1].gun_index : 0);
-    const ti = (sel && sel.turret_index != null) ? sel.turret_index
-      : (cfgs ? cfgs[cfgs.length - 1].turret_index : 0);
-    gunGroups.forEach((grp, i) => grp.forEach(n => n.visible = (i === (gi % gunGroups.length))));
-    turrets.forEach((n, i) => n.visible = (i === (ti % turrets.length)));
-    const turretNode = turrets.length ? turrets[ti % turrets.length] : null;
-    // 摆位只取炮管本体+炮盾（精确命名）；组内其余节点（gun_XX_mask_nc 等）是炮盾子树，
-    // 直接摆位会与父节点继承叠加成双重旋转（装甲查看器 gunBarrelNodes 同款过滤）
-    const grp = gunGroups.length ? gunGroups[gi % gunGroups.length] : [];
-    const barrelNodes = grp.filter(n => /^gun_\d+(_mask)?$/.test(n.name || ''));
-    const gunNodes = barrelNodes.length ? barrelNodes : grp;
-    const mo = sd && sd.model_origins;
-    if (!mo || !mo.track || !mo.turret) {
-      console.warn('[playback] glb parts incomplete: turret=' + !!turretNode + ' origins=' + !!(mo && mo.track));
-      return null;
-    }
-    // 固定战斗室车辆（歼击车，实测资产包 44/735：T110E3/ISU-152/T28/SU-85/StuG…）
-    // 客户端源模型**没有 turret_N 实体**——炮管组直接装在车体上，导出器按源场景图
-    // 忠实导出（tools/export_tank_glb.py 不造节点）。摆位证据其实齐全：track/turret
-    // 枢轴在 tank.json model_origins、炮管组在 GLB——照常挂载，炮塔横转由 poseGlbRig
-    // 施加到炮管组（mG 本就 = mT·Rx(gr)，与客户端「TD 的炮塔 = 炮架横转」同构）。
-    // 连炮管组都没有的模型无任何受姿部件，仍退代理车（fail-visible）。
-    if (!turretNode && !gunNodes.length) {
-      console.warn('[playback] GLB 部位不全，保留代理车（无炮塔且无炮管组）');
-      return null;
-    }
-    const tP = [mo.track[0] + mo.turret[0], mo.track[1] + mo.turret[1], mo.track[2] + mo.turret[2]];
-    // 火炮枢轴用选中配置的 gun_origin（非默认顶级）
-    const cfg = cfgs ? (cfgs.find(c => c.turret_index === ti && c.gun_index === gi) || cfgs[cfgs.length - 1]) : null;
-    const gP = (cfg && cfg.gun_origin)
-      ? [tP[0] + cfg.gun_origin[0], tP[1] + cfg.gun_origin[1], tP[2] + cfg.gun_origin[2]]
-      : tP.slice();
-    // —— __hullGroup：后续「逐轮贴地 + 履带分段」的挂点，当前恒归单位（不参与摆放）——
-    // 底盘（`chassis_track_*` / `chassis_wheel_*`，实测 200/200 辆坦克 GLB 都有）按名字
-    // 分离出车体子树：车体进 hullGroup（identity ⇒ 与拆分前逐像素等价），底盘留根上。
-    // 客户端里车体 = 记录位姿、底盘由 `Suspension*System` 按模型几何解算（逆向证据见
-    // 上游 docs/tank-suspension-client-re.md），悬挂实现落地时在此挂点内摆残差。
-    // 命名不符（未知模型）→ hullGroup=null，消费端回落整台刚体（fail-safe）。
-    let hullGroup = null;
-    const chassisNode = (() => {
-      let hit = null;
-      model.traverse((n) => {
-        if (!hit && /^chassis_(track|wheel)_/i.test(n.name || '')) hit = n;
-      });
-      return hit;
-    })();
-    const modelRoot = chassisNode && chassisNode.parent ? chassisNode.parent : null;
-    if (modelRoot) {
-      hullGroup = new THREE.Group();
-      hullGroup.name = '__hullGroup';
-      for (const child of [...modelRoot.children]) {
-        if (/^chassis_(track|wheel)_/i.test(child.name || '')) continue;
-        hullGroup.add(child);
-      }
-      modelRoot.add(hullGroup);
-    }
-    return { turretNode, gunNodes, tP, gP, hullGroup,
-             poseT: new THREE.Matrix4(), poseG: new THREE.Matrix4(),   // 本帧部件姿态（模型系），armor 网格同步用
-             itr: (sd && sd.initial_turret_rotation) || null };
   }
 
   // ---------- 悬挂求解（轮/带逐帧解算，客户端同构） ----------
