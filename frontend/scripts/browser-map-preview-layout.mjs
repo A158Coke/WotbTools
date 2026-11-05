@@ -27,7 +27,7 @@ const scenarios = [
   { name: 'phone-360x800', width: 360, height: 800, touch: true, phone: true },
   { name: 'phone-390x844', width: 390, height: 844, touch: true, phone: true },
   { name: 'phone-430x932', width: 430, height: 932, touch: true, phone: true },
-  { name: 'phone-landscape-844x390', width: 844, height: 390, touch: true, phone: true },
+  { name: 'phone-landscape-844x390', width: 844, height: 390, touch: true, phone: true, fsTap: true },
   { name: 'desktop-1280x900', width: 1280, height: 900, touch: false, phone: false },
 ]
 
@@ -222,6 +222,56 @@ async function main() {
             await delay(150)
           }
         }
+      }
+    }
+
+    // 手机横屏全屏：真实触摸进入全屏后布局必须在视口内（工具区可点，不需要滚动），
+    // 退出后回到满宽 + 页面滚动布局，且地图状态不丢（方形边长回到满宽即证明重测生效）。
+    if (scenarios.find((x) => x.fsTap)) {
+      await page.emulate({ width: 844, height: 390, touch: true })
+      await openMapPreview(page, origin)
+      const btn = await page.probe(() => {
+        const el = document.querySelector('[data-testid="map-2d-fullscreen"]')
+        if (!el) return null
+        const r = el.getBoundingClientRect()
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+      })
+      if (!btn) throw new Error('fullscreen button missing for fs scenario')
+      await page.tap({ ...btn, touch: true })
+      await page.waitFor(() => !!document.fullscreenElement, { timeout: 8000, label: 'map preview fullscreen engage' })
+      await delay(300)
+      const gFs = await page.probe(mapPreviewGeometryProbe)
+      const viewportH = 390
+      const problemsFs = []
+      if (gFs.square.bottom > viewportH + 1) problemsFs.push(`square bottom ${gFs.square.bottom.toFixed(1)} exceeds fullscreen viewport ${viewportH}`)
+      if (gFs.controls.bottom > viewportH + 1 || gFs.controls.top < -1) problemsFs.push(`controls outside viewport: ${JSON.stringify(gFs.controls)}`)
+      for (const b of gFs.toolButtons) {
+        if (!b.hit) problemsFs.push(`fullscreen: button ${b.id} not hit-testable in viewport`)
+      }
+      if (gFs.horizontalOverflow) problemsFs.push('fullscreen: horizontal overflow')
+      if (problemsFs.length) {
+        failed++
+        console.error('[FAIL] phone-landscape-fullscreen\n  ' + problemsFs.join('\n  ') + '\n  geometry=' + JSON.stringify(gFs))
+      } else {
+        console.log(`[PASS] phone-landscape-fullscreen square=${gFs.square.width.toFixed(0)}x${gFs.square.height.toFixed(0)} controlsBottom=${gFs.controls.bottom.toFixed(0)}`)
+      }
+      // 退出全屏：回到满宽布局（全屏后按钮位置随布局变化，重新量）
+      const btnExit = await page.probe(() => {
+        const el = document.querySelector('[data-testid="map-2d-fullscreen"]')
+        if (!el) return null
+        const r = el.getBoundingClientRect()
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+      })
+      if (!btnExit) throw new Error('fullscreen button missing for exit tap')
+      await page.tap({ ...btnExit, touch: true })
+      await page.waitFor(() => !document.fullscreenElement, { timeout: 8000, label: 'map preview fullscreen exit' })
+      await delay(300)
+      const gExit = await page.probe(mapPreviewGeometryProbe)
+      if (gExit.widthError > 1) {
+        failed++
+        console.error(`[FAIL] phone-landscape-fullscreen-exit: square width ${gExit.square.width.toFixed(1)} != stage width ${gExit.stage.width.toFixed(1)}`)
+      } else {
+        console.log('[PASS] phone-landscape-fullscreen-exit (square back to full width)')
       }
     }
 

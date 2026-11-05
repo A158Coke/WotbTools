@@ -199,6 +199,7 @@ const annotationEraserRadius = ref(ANNOT_ERASER_RADIUS_DEFAULT)
 const rootEl = ref(null)
 const stageEl = ref(null)
 const squareEl = ref(null)
+const controlsEl = ref(null)
 const mapComponent = ref(null)
 /** BattleMap expose 的**真实地图 DOM**（组件实例没有 getBoundingClientRect）；
  *  桌面/平板下 .pb-map 根宽为 66.7%，所有 screen-space 几何必须以它为原点/尺寸。 */
@@ -221,14 +222,24 @@ const PINCH_THRESHOLD_PX = 5
 const FIT_MARGIN = 0.98
 /** 居中方形舞台边长（JS 实测——纯 CSS aspect-ratio 与 max-width 冲突时会被拉成
  *  矩形，实测写入内联尺寸才稳定）。
- *  手机形态：边长 = **可用宽度**（地图优先吃满宽度保持正方形；竖屏高度不够或
- *  标注工具换行变高时由页面滚动承接，不按剩余高度压缩地图边长）；舞台高度改为
- *  内容驱动（stage 内联高度 = 方形边长），工具栏紧随地图。
+ *  手机形态（非全屏）：边长 = **可用宽度**（地图优先吃满宽度保持正方形；竖屏高度
+ *  不够或标注工具换行变高时由页面滚动承接，不按剩余高度压缩地图边长）；舞台高度
+ *  改为内容驱动（stage 内联高度 = 方形边长），工具栏紧随地图。
+ *  手机形态（全屏）：全屏根是 viewport-fixed，页面滚动不可达——回到视口内布局
+ *  （min(宽, 视口剩余高度 − 工具区实高)），工具区始终在视口内可操作，stage 的
+ *  touch-action: none 不会挡住任何滚动路径。
  *  桌面：保持 min(舞台宽, 舞台高) 的固定填充高度契约。 */
 const squareSide = ref(0)
 function measureSquare() {
   const w = stageEl.value?.clientWidth || 0
   const h = stageEl.value?.clientHeight || 0
+  if (isPhone.value && isFullscreen.value) {
+    const fill = Number.parseFloat(stageHeight.value) || 0
+    // 全屏内工具区高度有界（工具行 + 导出行），预算下限兜底防塌 0
+    const budget = fill - (controlsEl.value?.offsetHeight || 0)
+    squareSide.value = w > 0 ? Math.floor(Math.min(w, Math.max(budget, 160))) : 0
+    return
+  }
   if (isPhone.value) {
     squareSide.value = w > 0 ? Math.floor(w) : 0
     return
@@ -295,7 +306,8 @@ watch(mapEl, (el, prev) => {
   fitObserved = false
 }, { flush: 'post' })
 watch(stageHeight, measureSquare, { flush: 'post' })
-// 手机形态切换（旋转/跨断点）重测方形边长
+// 手机形态切换（旋转/跨断点）与全屏进出都改变边长口径，重测方形边长
+watch(isFullscreen, () => nextTick(measureSquare), { flush: 'post' })
 onMounted(() => {
   measureSquare()
   if (typeof ResizeObserver === 'function') {
@@ -982,7 +994,7 @@ const stubFloatClass = () => ''
         />
       </div>
     </div>
-    <div class="map2d-controls">
+    <div ref="controlsEl" class="map2d-controls">
       <div v-if="annotationOpen" class="map2d-annotations" data-testid="map-2d-annotations">
         <AnnotationToolbar
           :open="annotationOpen"
