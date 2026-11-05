@@ -73,7 +73,7 @@ function buildMap2dEmbedded(files) {
     const file = imports.get(variable)
     if (!file) fail(`map2d-embedded: ${code} 引用了未 import 的变量 ${variable}`)
     const base = file.replace(/\.webp$/i, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const asset = files.find((path) => new RegExp(`(^|/)assets/${base}-[A-Za-z0-9_-]+\.webp$`).test(path))
+    const asset = files.find((path) => new RegExp(`(^|/)assets/${base}-[A-Za-z0-9_-]+\\.webp$`).test(path))
     if (!asset) fail(`map2d-embedded: 找不到 ${code}（${file}）的随包资源`)
     maps[code] = { file, asset, sha256: sha256(join(ASSETS_WEB, asset)) }
   }

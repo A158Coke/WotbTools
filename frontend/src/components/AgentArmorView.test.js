@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import AgentArmorView from './AgentArmorView.vue'
+import ArmorShotHud from './ArmorShotHud.vue'
+import ArmorSideConfig from './ArmorSideConfig.vue'
 import { PLAYBACK_PHONE_QUERY } from '../composables/usePlaybackPhoneForm.ts'
 import { PLAYBACK_PORTRAIT_QUERY } from '../composables/usePlaybackPortraitViewport.ts'
 import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
@@ -320,5 +322,59 @@ describe('122 回放真值的目标身份', () => {
     await flushPromises()
     const button = wrapper.get('[data-testid="hud-pitch-device"]')
     expect(button.attributes('aria-pressed')).toBe('false')
+  })
+})
+
+describe('Shooter/Target 主炮配置解耦（射击方决定炮弹，受击方决定装甲）', () => {
+  async function openTools(wrapper) {
+    await wrapper.get('[data-testid="armor-tools"]').trigger('click')
+    await flushPromises()
+  }
+
+  it('同车型普通检视：缺省 scfg 时射击方 HUD 不跟随受击方 config', async () => {
+    // shooter 未指定 → 默认与 target 同车（tank=1），受击方 config=0；
+    // 射击方配置必须解析为 null（自身默认顶级配置），不得回落到 &config=
+    const { wrapper } = await setup({ query: { view: 'agent-armor', tank: '1', config: '0' } })
+    expect(wrapper.getComponent(ArmorShotHud).props('scfg')).toBeNull()
+  })
+
+  it('显式 scfg 时射击方 HUD 使用 scfg，不受受击方 config 影响', async () => {
+    const { wrapper } = await setup({ query: { view: 'agent-armor', tank: '1', shooter: '1', config: '0', scfg: '2' } })
+    expect(wrapper.getComponent(ArmorShotHud).props('scfg')).toBe('2')
+  })
+
+  it('受击方换主炮（换发动机/履带也一样）保留射击方 shell 下标', async () => {
+    const { wrapper, router } = await setup({ query: { view: 'agent-armor', tank: '1', shell: '2' } })
+    await openTools(wrapper)
+    const targetEditor = wrapper.findAllComponents(ArmorSideConfig).at(1)
+    targetEditor.vm.$emit('apply', { configChanged: true, config: 1, engine: null, track: null, dev: null })
+    await flushPromises()
+    expect(router.currentRoute.value.query.config).toBe('1')
+    expect(router.currentRoute.value.query.shell).toBe('2')
+  })
+
+  it('受击方只换发动机/履带不写 scfg、不清 shell', async () => {
+    const { wrapper, router } = await setup({ query: { view: 'agent-armor', tank: '1', shell: '2' } })
+    await openTools(wrapper)
+    const targetEditor = wrapper.findAllComponents(ArmorSideConfig).at(1)
+    targetEditor.vm.$emit('apply', { configChanged: false, engine: 5, track: null, dev: null })
+    await flushPromises()
+    expect(router.currentRoute.value.query.engine).toBe('5')
+    expect(router.currentRoute.value.query.scfg).toBeUndefined()
+    expect(router.currentRoute.value.query.shell).toBe('2')
+  })
+
+  it('射击方换主炮写 scfg 并清除旧 shell 下标；换发动机不清 shell', async () => {
+    const { wrapper, router } = await setup({ query: { view: 'agent-armor', tank: '1', shell: '2' } })
+    await openTools(wrapper)
+    const shooterEditor = wrapper.findAllComponents(ArmorSideConfig).at(0)
+    shooterEditor.vm.$emit('apply', { configChanged: true, config: 1, engine: null, track: null, dev: null })
+    await flushPromises()
+    expect(router.currentRoute.value.query.scfg).toBe('1')
+    expect(router.currentRoute.value.query.shell).toBeUndefined()
+    shooterEditor.vm.$emit('apply', { configChanged: false, engine: 7, track: null, dev: null })
+    await flushPromises()
+    expect(router.currentRoute.value.query.sengine).toBe('7')
+    expect(router.currentRoute.value.query.scfg).toBe('1')
   })
 })

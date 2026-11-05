@@ -19,19 +19,26 @@ export async function runCatalogHofDocScenario(env, scenario) {
   const cdp = (method, args) => env.chrome.client.send(method, args, sessionId)
   async function tap(selector) {
     await page.waitForValue(`!!document.querySelector(${JSON.stringify(selector)})`, Boolean)
-    await page.evaluate(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'center',inline:'nearest'})`)
+    await page.callWith((sel) => document.querySelector(sel).scrollIntoView({ block: 'center', inline: 'nearest' }), selector)
     await page.animationsSettled()
     const reach = await measureReachability(page, { options: [selector], touch: scenario.touch !== false })
     assert.ok(reach.sampled > 0, `${selector}: 可达性检测不得空跑`)
     assert.deepEqual(reach.failures, [], `${selector}: ${reach.failures.join('; ')}`)
-    const point = await page.evaluate(`(() => { const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return {x:r.left+r.width/2,y:r.top+r.height/2} })()`)
+    const point = await page.callWith((sel) => {
+      const r = document.querySelector(sel).getBoundingClientRect()
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+    }, selector)
     await page.tap({ ...point, touch: scenario.touch !== false })
   }
   async function reachableControls(selector) {
-    const count = await page.evaluate(`document.querySelectorAll(${JSON.stringify(selector)}).length`)
+    const count = await page.callWith((sel) => document.querySelectorAll(sel).length, selector)
     assert.ok(count > 0, '筛选控件不得为空')
     for (let i = 0; i < count; i++) {
-      await page.evaluate(`(() => { const e=document.querySelectorAll(${JSON.stringify(selector)})[${i}]; e.dataset.occlusionControl='current'; e.scrollIntoView({block:'center',inline:'nearest'}) })()`)
+      await page.callWith((sel, index) => {
+        const e = document.querySelectorAll(sel)[index]
+        e.dataset.occlusionControl = 'current'
+        e.scrollIntoView({ block: 'center', inline: 'nearest' })
+      }, selector, i)
       const result = await measureReachability(page, { options: ['[data-occlusion-control=current]'], touch: scenario.touch !== false })
       assert.ok(result.sampled > 0)
       assert.deepEqual(result.failures, [], result.failures.join('; '))

@@ -12,6 +12,30 @@
 
 export const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
+/**
+ * 以 CDP 参数调用页面函数：参数作为 Runtime 调用参数传递，不拼进表达式源码。
+ * 门禁脚本的 selector / 场景数据只走这一条通道，页面侧永远不会把它当代码解析。
+ */
+export async function callPageFunction(client, sessionId, fn, ...args) {
+  const { result, exceptionDetails } = await client.send('Runtime.evaluate', {
+    expression: `(${fn.toString()})`,
+  }, sessionId)
+  if (exceptionDetails) {
+    throw new Error(`page exception: ${exceptionDetails.exception?.description || exceptionDetails.text}`)
+  }
+  const call = await client.send('Runtime.callFunctionOn', {
+    functionDeclaration: 'function(...args) { return this(...args) }',
+    objectId: result.objectId,
+    arguments: args.map(value => ({ value })),
+    awaitPromise: true,
+    returnByValue: true,
+  }, sessionId)
+  if (call.exceptionDetails) {
+    throw new Error(`page exception: ${call.exceptionDetails.exception?.description || call.exceptionDetails.text}`)
+  }
+  return call.result.value
+}
+
 /** 页面外壳：一个 CDP target/session 上的导航、求值、设备仿真与真实输入。 */
 export class Page {
   constructor(client, sessionId) {
@@ -177,14 +201,21 @@ export class Page {
     return this.evaluate('window.__inputTrace = { primary: null, click: null, clickCount: 0 }; window.__inputTrace')
   }
 
+  /** 以 CDP 参数调用页面函数，参数不进入表达式源码。 */
+  callWith(fn, ...args) {
+    return callPageFunction(this.client, this.sessionId, fn, ...args)
+  }
+
   /**
    * 把控件滚进视口后再探针。用于「非全屏横屏地图高于视口」这类形态：
    * 判定标准是「可滚动触达 + 触达后真的可点」，而不是「永远在首屏」。
    */
   async revealControl(selector, probeFn) {
-    await this.evaluate(
-      `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (el) el.scrollIntoView({ block: 'center', inline: 'nearest' }); return !!el })()`,
-    )
+    await this.callWith((sel) => {
+      const el = document.querySelector(sel)
+      if (el) el.scrollIntoView({ block: 'center', inline: 'nearest' })
+      return !!el
+    }, selector)
     await delay(200)
     return this.probe(probeFn)
   }

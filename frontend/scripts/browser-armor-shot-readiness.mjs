@@ -86,11 +86,20 @@ try {
       else operations.push(send('Fetch.continueRequest', { requestId: event.requestId }))
       return
     }
+    if (event.request.url.includes('/research/devices.json')) {
+      // 夹具资产包不含 research 目录；ArmorShotHud 的 load() 用 Promise.all 聚合
+      // devices，缺失会让整个 HUD details=null。空目录足以让 HUD 渲染弹种行。
+      operations.push(release(event.requestId, { meta: {}, devices: [], presets: {} }))
+      return
+    }
     shooterRequests++
     if (hold) held.push(event.requestId)
     else operations.push(release(event.requestId))
   })
-  await send('Fetch.enable', { patterns: [shooterId, FIXTURE_TANK_ID].map(id => ({ urlPattern: `*/tank/${id}.json*`, requestStage: 'Request' })) })
+  await send('Fetch.enable', { patterns: [
+    ...[shooterId, FIXTURE_TANK_ID].map(id => ({ urlPattern: `*/tank/${id}.json*`, requestStage: 'Request' })),
+    { urlPattern: '*/research/devices.json', requestStage: 'Request' },
+  ] })
   await page.goto(`${origin}/?view=home&ws-auth=1`)
   await page.evaluate(`(async () => {
     localStorage.setItem('wotb-lang', 'zh');
@@ -222,21 +231,73 @@ try {
     penetrations.forEach((pen, index) => assert.ok(state.options[index].includes(`${pen}mm`), `shell ${index} uses configuration penetration ${pen}`))
   }
   for (const scenario of [
-    { query: '&config=0&shell=1', value: 1, pens: [200, 300], manual: true },
+    // Shooter/target decoupling (2026-11-05): the shooter shell table belongs to
+    // the shooter (&scfg= or its own default top-level config = configs tail).
+    // Target &config= must not switch the shooter table; target gun switches
+    // keep the selected shell index.
+    { query: '&config=0&shell=1', value: 1, pens: [400, 500], retarget: true },
     { query: '&shell=1', value: 1, pens: [400, 500] },
-    { query: '&config=0&shell=99', value: 0, pens: [200, 300] },
+    { query: '&config=0&shell=99', value: 0, pens: [400, 500] },
     { query: '&config=1&shell=-1', value: 0, pens: [400, 500] },
-    { query: '&config=0&shell=invalid', value: 0, pens: [200, 300] },
+    { query: '&config=0&shell=invalid', value: 0, pens: [400, 500] },
+    // Explicit &scfg= stays authoritative for the shooter regardless of target config.
+    { query: '&config=0&scfg=0&shell=1', value: 1, pens: [200, 300] },
   ]) {
     await page.goto(plainUrl + scenario.query)
     await page.waitFor(() => !document.querySelector('[data-testid="scene3d-loading"]') && !document.querySelector('[data-testid="scene3d-error"]') && window.__armorRicochet?.info().meshCount > 0, { timeout: 30000, label: 'plain viewer ready' })
     await assertShellTable(scenario.value, scenario.pens)
-    if (scenario.manual) {
+    if (scenario.retarget) {
+      // Switching the target gun (via the native select) must not touch the
+      // shooter shell table or the selected shell index.
       await page.evaluate(`document.querySelector('#config-select').value = '1'; document.querySelector('#config-select').dispatchEvent(new Event('change'))`)
-      await assertShellTable(0, [400, 500])
+      await assertShellTable(scenario.value, scenario.pens)
+      await page.evaluate(`document.querySelector('#config-select').value = '0'; document.querySelector('#config-select').dispatchEvent(new Event('change'))`)
+      await assertShellTable(scenario.value, scenario.pens)
     }
   }
-  console.log('[shot-readiness] PASS: plain configuration ammo, deep-link selection, invalid indices and manual configuration switch')
+  console.log('[shot-readiness] PASS: plain configuration ammo, deep-link selection, invalid indices and shooter/target gun independence')
+
+  // P2 repair (review r4475085151): an explicit scfg pointing at a config with
+  // an EMPTY shell table must fall back to the tank top-level table (HUD
+  // contract), not the default last config — otherwise the HUD shows AP/200
+  // while the judgment uses the last config's HE/500 and its caliber. Caliber
+  // is sourced from the same selected table branch, so the table itself pins
+  // the caliber resolution; judgment inputs come from the asserted selection.
+  const emptyCfgAmmo = structuredClone(FIXTURE_TANK_DATA)
+  emptyCfgAmmo.shells = [{ ...emptyCfgAmmo.shells[0], penetration: 200, caliber: 100 }]
+  const emptyCfgBase = emptyCfgAmmo.configs[0]
+  emptyCfgAmmo.configs = [
+    { ...emptyCfgBase, label: 'Fixture empty', shells: [], caliber: 122 },
+    { ...emptyCfgBase, label: 'Fixture HE 500', shells: [{ ...emptyCfgBase.shells[0], penetration: 500, caliber: 152 }], caliber: 152 },
+  ]
+  targetResponse = emptyCfgAmmo
+  const assertHudMatchesNative = async () => {
+    const state = await page.evaluate(`(() => {
+      const pens = texts => texts.map(text => (text.match(/(\\d+)mm/) || [])[1])
+      return {
+        native: pens(Array.from(document.querySelectorAll('#shell-select option'), o => o.textContent)),
+        hud: pens(Array.from(document.querySelectorAll('[data-testid^="hud-shell-"]'), b => b.title)),
+        value: document.querySelector('#shell-select').value,
+      }
+    })()`)
+    assert.ok(state.native.length > 0, 'native shell table populated')
+    assert.deepEqual(state.hud, state.native, 'HUD shell pens match the native/judgment table')
+    return state
+  }
+  for (const scenario of [
+    { query: '&scfg=0&shell=0', pens: [200], label: 'explicit scfg with empty config shells falls back to the top-level table' },
+    { query: '&scfg=1&shell=0', pens: [500], label: 'explicit scfg with a populated config uses that table' },
+    { query: '&shell=0', pens: [500], label: 'missing scfg uses the shooter default last config' },
+    { query: '&scfg=9&shell=0', pens: [500], label: 'out-of-range scfg follows the HUD default rule' },
+    { query: '&scfg=invalid&shell=0', pens: [500], label: 'non-numeric scfg follows the HUD default rule' },
+  ]) {
+    await page.goto(plainUrl + scenario.query)
+    await page.waitFor(() => !document.querySelector('[data-testid="scene3d-loading"]') && !document.querySelector('[data-testid="scene3d-error"]') && window.__armorRicochet?.info().meshCount > 0, { timeout: 30000, label: `empty-config viewer ready (${scenario.label})` })
+    await assertShellTable(0, scenario.pens)
+    await assertHudMatchesNative()
+  }
+  console.log('[shot-readiness] PASS: explicit empty-config scfg, HUD/native/judgment share one table (top-level fallback, HUD default rule for invalid scfg)')
+  targetResponse = plainAmmo
 
   // Same tank type still does not make the victim's configuration authoritative
   // for replay ammunition. scfg=0 and replay shell_id=2 must win over config=1.

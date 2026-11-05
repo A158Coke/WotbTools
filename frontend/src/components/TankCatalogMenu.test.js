@@ -125,8 +125,14 @@ describe('TankCatalogMenu（坦克百科 / 装甲查看器选车共用）', () =
     const wrapper = mountMenu({ filters: { q: '', tier: '10', nation: '', type: '', sort: 'name' } })
     await wrapper.find('#tp-nation').setValue('germany')
     expect(wrapper.emitted('update:filters')?.at(-1)?.[0]).toMatchObject({ nation: 'germany', tier: '10', sort: 'name' })
-    await wrapper.find('#tp-sort').setValue('hp')
+    // sort / type 是 Choice Group（DC-SEL-01）：点选而非 <select>.setValue
+    await wrapper.find('#tp-sort [data-value="hp"]').trigger('click')
     expect(wrapper.emitted('update:filters')?.at(-1)?.[0].sort).toBe('hp')
+    await wrapper.find('#tp-type [data-value="heavyTank"]').trigger('click')
+    expect(wrapper.emitted('update:filters')?.at(-1)?.[0].type).toBe('heavyTank')
+    // 「全部」= 空值选项：仍可清除筛选（不计入候选数）
+    await wrapper.find('#tp-type [data-value=""]').trigger('click')
+    expect(wrapper.emitted('update:filters')?.at(-1)?.[0].type).toBe('')
     wrapper.unmount()
   })
 })

@@ -15,7 +15,7 @@ export async function runDrawerTableScenario(env, scenario) {
   const check = (value, message) => { if (!value) failures.push(message) }
   const q = selector => JSON.stringify(selector)
   async function reveal(selector) {
-    await page.evaluate(`document.querySelector(${q(selector)}).scrollIntoView({block:'center',inline:'nearest'})`)
+    await page.callWith((sel) => document.querySelector(sel).scrollIntoView({ block: 'center', inline: 'nearest' }), selector)
     await page.animationsSettled()
   }
   async function reach(selector, interactive = true) {
@@ -26,7 +26,10 @@ export async function runDrawerTableScenario(env, scenario) {
   }
   async function tap(selector) {
     await reveal(selector)
-    const point = await page.evaluate(`(() => { const r=document.querySelector(${q(selector)}).getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2} })()`)
+    const point = await page.callWith((sel) => {
+      const r = document.querySelector(sel).getBoundingClientRect()
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+    }, selector)
     await page.tap({ ...point, touch: scenario.touch })
   }
   try {
@@ -39,7 +42,10 @@ export async function runDrawerTableScenario(env, scenario) {
     for (const id of ['cw-fixture','battle-fixture','aggregate-fixture']) {
       const container = `[data-testid=${id}] .tablewrap`
       await page.waitForValue(`!!document.querySelector(${q(container)})`, Boolean)
-      await page.evaluate(`(()=>{const el=document.querySelector(${q(container)});el.scrollLeft=el.scrollWidth})()`)
+      await page.callWith((sel) => {
+        const el = document.querySelector(sel)
+        el.scrollLeft = el.scrollWidth
+      }, container)
       await reach(`[data-testid=${id}] tbody tr:first-child td:last-child`, false)
     }
     check(await page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'tables must not overflow the document horizontally')

@@ -3,13 +3,30 @@ set -euo pipefail
 
 MAX_TRACKED_FILE_BYTES="${MAX_TRACKED_FILE_BYTES:-5242880}"
 ALLOWLIST_FILE="${LARGE_FILE_ALLOWLIST_FILE:-scripts/ci/large-file-allowlist.txt}"
+MAX_SOURCE_LINES="${MAX_SOURCE_LINES:-1500}"
+SOURCE_LINE_ALLOWLIST_FILE="${SOURCE_LINE_ALLOWLIST_FILE:-scripts/ci/source-line-allowlist.txt}"
 BASE_SHA="${BASE_SHA:-}"
 HEAD_SHA="${HEAD_SHA:-HEAD}"
 
-if ! [[ "$MAX_TRACKED_FILE_BYTES" =~ ^[0-9]+$ ]]; then
-  echo "MAX_TRACKED_FILE_BYTES must be an integer, got: $MAX_TRACKED_FILE_BYTES" >&2
-  exit 2
-fi
+# Limits feed Bash integer arithmetic. Accept only canonical bounded decimals:
+# leading-zero forms such as 08 would be parsed as octal at the comparison
+# (where set -e does not abort from an if condition), and values beyond intmax_t
+# would wrap silently. Either case must abort the gate instead of disabling it.
+validate_decimal_limit() {
+  local name="$1"
+  local raw="$2"
+  if ! [[ "$raw" =~ ^(0|[1-9][0-9]*)$ ]]; then
+    echo "$name must be a non-negative decimal integer without leading zeros, got: $raw" >&2
+    exit 2
+  fi
+  if (( ${#raw} > 18 )); then
+    echo "$name is out of range (more than 18 digits), got: $raw" >&2
+    exit 2
+  fi
+}
+
+validate_decimal_limit MAX_TRACKED_FILE_BYTES "$MAX_TRACKED_FILE_BYTES"
+validate_decimal_limit MAX_SOURCE_LINES "$MAX_SOURCE_LINES"
 
 is_allowlisted() {
   local candidate="$1"
@@ -23,6 +40,47 @@ is_allowlisted() {
   done < "$ALLOWLIST_FILE"
 
   return 1
+}
+
+# Source-line budget (#820): first-party production frontend source stays below a
+# fixed physical-line ceiling. Tests, declaration files and generated transport
+# are not production source and remain out of scope. Existing over-budget files
+# are exact-path exceptions that may only leave the list as they get split.
+is_source_line_candidate() {
+  local path="$1"
+  [[ "$path" == frontend/src/* ]] || return 1
+  case "$path" in
+    *.test.*|*.spec.*|*.d.ts|frontend/src/api/generated/*) return 1 ;;
+  esac
+  case "$path" in
+    *.js|*.ts|*.vue|*.mjs|*.cjs) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+is_source_line_allowlisted() {
+  local candidate="$1"
+  [[ -f "$SOURCE_LINE_ALLOWLIST_FILE" ]] || return 1
+
+  local line
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    [[ "$candidate" == "$line" ]] && return 0
+  done < "$SOURCE_LINE_ALLOWLIST_FILE"
+
+  return 1
+}
+
+# Reads an allowlist from stdin and prints its non-comment entry count.
+count_allowlist_entries() {
+  local total=0 line
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    total=$((total + 1))
+  done
+  printf '%s\n' "$total"
 }
 
 # Defense-in-depth for paths that must never become source even if a future
@@ -115,6 +173,20 @@ report_large_file() {
   echo "       If this is a deliberate source-of-truth asset, add the exact path to $ALLOWLIST_FILE with PR justification." >&2
 }
 
+report_source_line_budget() {
+  local path="$1"
+  local lines="$2"
+  echo "ERROR: first-party frontend source exceeds ${MAX_SOURCE_LINES} lines: $(printable_path "$path") (${lines} lines)" >&2
+  echo "       Split it by responsibility, or swap an existing entry for it in $SOURCE_LINE_ALLOWLIST_FILE (the allowlist may only shrink)." >&2
+}
+
+report_source_line_allowlist_growth() {
+  local base_count="$1"
+  local head_count="$2"
+  echo "ERROR: source-line allowlist must not grow (base=$base_count, head=$head_count entries)." >&2
+  echo "       Split an over-budget file instead of allowlisting a new one; a rename may swap one exact path for another." >&2
+}
+
 # Resolve the exact event range when CI did not pass one explicitly. PR runs
 # use the real base/head rather than GitHub's synthetic merge ref; push runs use
 # before/after so bypass pushes to main are still audited after the fact.
@@ -201,6 +273,9 @@ load_ignored_paths() {
 declare -A tracked_ignored=()
 load_ignored_paths index "" tracked_ignored
 
+source_line_checked=0
+source_line_over=0
+
 while IFS= read -r -d '' path; do
   [[ -f "$path" ]] || continue
   checked=$((checked + 1))
@@ -228,7 +303,70 @@ while IFS= read -r -d '' path; do
     report_large_file "tracked file" "$path" "$size"
     violations=$((violations + 1))
   fi
+
+  if is_source_line_candidate "$path"; then
+    source_line_checked=$((source_line_checked + 1))
+    lines=$(awk 'END { print NR }' "$path")
+    if ! [[ "$lines" =~ ^(0|[1-9][0-9]*)$ ]] || (( ${#lines} > 18 )); then
+      echo "Unable to count source lines for $(printable_path "$path") (awk returned: ${lines:-<empty>})." >&2
+      exit 2
+    fi
+    if (( lines > MAX_SOURCE_LINES )); then
+      source_line_over=$((source_line_over + 1))
+      if ! is_source_line_allowlisted "$path"; then
+        report_source_line_budget "$path" "$lines"
+        violations=$((violations + 1))
+      fi
+    fi
+  fi
 done < <(git ls-files -z)
+
+# The allowlist is a one-way ratchet: it may shrink as files get split, but a
+# new over-budget file cannot be admitted by merely appending its path. Renames
+# remain possible by swapping one exact path for another (equal entry count).
+#
+# A missing allowlist is only a free starting point while the gate itself is
+# being introduced. Once the gate exists in the base commit, a missing allowlist
+# means every prior exception was retired, so the base count is zero: deleting
+# and later recreating the file must not reset the ratchet.
+SOURCE_LINE_GATE_SCRIPT="scripts/ci/check-repository-hygiene.sh"
+
+source_line_gate_present_at_base() {
+  [[ -n "$BASE_SHA" ]] || return 1
+  local base_script
+  base_script=$(git show "${BASE_SHA}:${SOURCE_LINE_GATE_SCRIPT}" 2>/dev/null) || return 1
+  [[ "$base_script" == *"is_source_line_candidate()"* ]]
+}
+
+head_source_allowlist_entries=0
+if [[ -f "$SOURCE_LINE_ALLOWLIST_FILE" ]]; then
+  head_source_allowlist_entries=$(count_allowlist_entries < "$SOURCE_LINE_ALLOWLIST_FILE")
+fi
+
+growth_guard_checked=0
+if [[ -n "$BASE_SHA" ]]; then
+  if git cat-file -e "${BASE_SHA}:${SOURCE_LINE_ALLOWLIST_FILE}" 2>/dev/null; then
+    base_source_allowlist_entries=$(git show "${BASE_SHA}:${SOURCE_LINE_ALLOWLIST_FILE}" | count_allowlist_entries)
+    growth_guard_checked=1
+  elif source_line_gate_present_at_base; then
+    base_source_allowlist_entries=0
+    growth_guard_checked=1
+  fi
+
+  if (( growth_guard_checked )); then
+    if (( head_source_allowlist_entries > base_source_allowlist_entries )); then
+      report_source_line_allowlist_growth "$base_source_allowlist_entries" "$head_source_allowlist_entries"
+      violations=$((violations + 1))
+    fi
+    echo "Source-line allowlist growth guard checked ${base_source_allowlist_entries} -> ${head_source_allowlist_entries} entries."
+  else
+    echo "Source-line allowlist growth guard skipped: gate is introduced by this change (no base gate in ${BASE_SHA})."
+  fi
+else
+  echo "Source-line allowlist growth guard skipped: no BASE_SHA (workflow_dispatch or local full-history run)."
+fi
+
+echo "Source line budget checked $source_line_checked first-party frontend source file(s); limit=$MAX_SOURCE_LINES lines; over-limit allowlisted=$source_line_over."
 
 # Inspect every tree state introduced by commits in the event range. `git ls-tree
 # -z` is NUL-delimited, so valid Git paths containing newlines, tabs, quotes, or

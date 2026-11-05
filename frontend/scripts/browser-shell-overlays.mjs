@@ -35,12 +35,15 @@ export async function runShellOverlayScenario(env, scenario) {
   ] }, sessionId)
 
   async function tap(selector) {
-    await page.evaluate(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'center',inline:'nearest'})`)
+    await page.callWith((sel) => document.querySelector(sel).scrollIntoView({ block: 'center', inline: 'nearest' }), selector)
     await page.animationsSettled()
     const reach = await measureReachability(page, { options: [selector], touch: scenario.touch })
     check(reach.sampled > 0, `${selector}: no hit-test samples`)
     failures.push(...reach.failures)
-    const point = await page.evaluate(`(() => { const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2} })()`)
+    const point = await page.callWith((sel) => {
+      const r = document.querySelector(sel).getBoundingClientRect()
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+    }, selector)
     await page.tap({ ...point, touch: scenario.touch })
   }
   const viewIs = (view) => page.waitForValue('new URL(location.href).searchParams.get("view")', value => value === view, { label: `view=${view}` })
@@ -119,7 +122,7 @@ export async function runShellOverlayScenario(env, scenario) {
       const options = await page.evaluate(`Array.from(document.querySelectorAll('[data-testid=more-panel] button,[data-testid=more-panel] a')).map((el,i)=>{el.dataset.overlayProbe=String(i);return '[data-overlay-probe="'+i+'"]'})`)
       check(options.length >= 6, 'more-panel options missing')
       for (const selector of options) {
-        await page.evaluate(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'nearest'})`)
+        await page.callWith((sel) => document.querySelector(sel).scrollIntoView({ block: 'nearest' }), selector)
         const reach = await measureReachability(page, { options: [selector], touch: scenario.touch })
         check(reach.sampled > 0, `${selector}: not sampled`)
         failures.push(...reach.failures)

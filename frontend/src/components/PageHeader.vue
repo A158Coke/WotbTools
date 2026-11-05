@@ -36,7 +36,10 @@ defineProps({
 .page-header-description { max-width: var(--reading-measure); margin: var(--space-2) 0 0; color: var(--color-text-secondary); font: var(--type-body); }
 .page-header-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; min-width: 0; }
 @media (width < 768px) {
-  .page-header { align-items: flex-start; gap: var(--space-3); padding-bottom: var(--space-4); margin-bottom: var(--space-4); }
+  /* DC-ARC-02：compact 页头 =「标题 + 右侧操作」一行（≤56px）；说明是辅助信息，
+     不得占掉首屏。需要保留说明的页面把内容放进页面主体，不要恢复这里。 */
+  .page-header { align-items: center; gap: var(--space-3); padding-block: var(--space-1); margin-bottom: var(--space-3); }
+  .page-header-description { display: none; }
   .page-header-actions { max-width: 100%; }
 }
 </style>

@@ -82,7 +82,7 @@
 
    **测试层级去重** — 优先使用原生校验器与真实集成测试，而不是源码文本断言；只有项目特有的架构或生产安全不变量才新增自定义 contract/policy test。
    **测试入口最小化** — 默认禁止新增 standalone `test-*.sh` / `*-contract.sh`。必须先按 `reuse > extend > merge > create` 复用现有 native validation、policy test 或 integration smoke；只有存在无法合理并入现有入口的独立职责时才允许新增，并说明原因。
-7. **Review With Docs 闭环** — 任何实现完成后都进入 `review-with-docs`；代码质量、code-smell、fallow、文档、架构与领域 playbook 检查均作为其内部阶段。先构造 task-related candidate files，显式记录 exclusions；task-related candidate files 非空且 calculated review scope = 0 时必须 BLOCKER；非零 scope 仍须证明每个 task-related file 已审查或有适用的覆盖证据，不能以聚合计数掩盖漏审。只有 `review-with-docs` 可以输出 final PASS / zero blocker；通过后 Executor 才 commit/push/open PR。
+7. **Review With Docs 闭环** — 任何实现完成后都进入 `review-with-docs`；代码质量（含品味检查，见 `.agents/playbooks/code-quality.md`）、fallow、文档、架构与领域 playbook 检查均作为其内部阶段。先构造 task-related candidate files，显式记录 exclusions；task-related candidate files 非空且 calculated review scope = 0 时必须 BLOCKER；非零 scope 仍须证明每个 task-related file 已审查或有适用的覆盖证据，不能以聚合计数掩盖漏审。只有 `review-with-docs` 可以输出 final PASS / zero blocker；通过后 Executor 才 commit/push/open PR。
 8. **Git** — 推送前先 `git remote -v` 确认实际 remote（本机 remote 名/SSH 别名以本机配置为准，不写死）；仓库账号 A158Coke。中文提交、尾带 `Co-Authored-By`；禁止 force push、禁止改写已公开历史、禁止动与当前任务无关的分支/PR。
 9. **子代理** — spawn 子代理后必须显式验证其完成状态与产物（不可假设自动完成），完成后以醒目格式通知用户。
 10. **大需求拆分** — 一次性大需求拆为多个小任务，每个小任务一个子代理，主代理最后执行 review-with-docs final gate。
