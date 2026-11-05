@@ -12,3 +12,5 @@
 
 # 提示词混合换行测试夹具按二进制保留，禁止文本转换与空白修正。
 /java/wotb-ai/src/test/resources/prompts/_test/line-endings.zh.md binary
+/scripts/ci/publish-data-update.sh text eol=lf
+/scripts/ci/test-workflow-contract.sh text eol=lf

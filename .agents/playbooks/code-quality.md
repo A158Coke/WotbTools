@@ -1,7 +1,7 @@
 # Code Quality Checklist（内部检查单）
 
 > 内部 checklist：**loaded by review-with-docs**；只服务 final review，不参与 lifecycle routing。不是顶层 Skill。
-> 本文件是代码质量与品味检查的唯一正文（已吸收原 code-smell.md，后者已删除）。
+> 本文件是代码质量与品味检查的唯一正文。
 
 ## 输入 / 输出 / 不负责
 

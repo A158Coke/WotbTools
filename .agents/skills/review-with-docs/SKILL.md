@@ -85,7 +85,7 @@ Task-related candidate tree contains changes but review scope is empty.
 
 ## 内部 playbooks
 
-按需加载 `.agents/playbooks/`：`code-quality.md`（含原 code-smell 品味检查）、`fallow.md`、`wotb-sync.md`、`column-sync.md`、`frontend-architecture.md`、`keycloak-upgrade/`、`komodo-server-lifecycle.md`。
+按需加载 `.agents/playbooks/`：`code-quality.md`（代码质量与品味检查）、`fallow.md`、`wotb-sync.md`、`column-sync.md`、`frontend-architecture.md`、`keycloak-upgrade/`、`komodo-server-lifecycle.md`。
 
 它们是 checklist/tool guidance，不拥有 lifecycle actions，也不是顶层 Skill。`product-qa/` 是独立的周期性 production product audit playbook，不属于本 Skill 的审查阶段。
 
