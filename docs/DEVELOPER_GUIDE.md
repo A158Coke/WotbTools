@@ -588,6 +588,10 @@ Frontend 的 TX1/TX2 发布在切换线上文件或容器前，校验实际 Busi
 - `.github/workflows/ci-gate.yml` 是唯一 PR 入口；按 changed paths 调用受影响的 `ci-<owner>.yml`，
   `CI / Required Gate` 汇总受影响结果。Backend 运行 Maven，frontend 运行类型检查、单测、两套真实浏览器回归和 build；
   OpenTofu 每个 owner 只验证自己的 root。PR 验证不 push 镜像。
+  完整 HTTP 契约检查（`api:lint`、`api:check`、`api:fixture` 与 `contract-runtime.test.ts`）由
+  Frontend owner 承担：Frontend 受影响的 PR（无论 Business API 是否同时受影响）都在 `ci-frontend.yml`
+  内执行这一整套；仅 Business API 受影响时仍由 `ci-business-api.yml` 的 `http_contract` job 执行。
+  Required Gate 保证受影响 owner 的检查不能被意外跳过。
 - Business API 镜像采用 Spring Boot 默认四层（dependencies / spring-boot-loader /
   snapshot-dependencies / application），tools 提取后运行精简 `wotb-web.jar`。
   `ci-business-api.yml` 在一次性 PostgreSQL 下验证默认启动命令、readiness、`/api/health`
