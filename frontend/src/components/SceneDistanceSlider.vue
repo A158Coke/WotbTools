@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 移动端竖向相机距离滑条（Map Preview 3D / Replay 3D 共用的呈现控件 owner）。
 //
-// 契约（current-plan §12.5）：
+// 契约（docs/frontend/replay-workspace.md「移动端触屏相机契约 / 竖向距离滑条」）：
 //   · 顶部 = 近（v=1），底部 = 远（v=0）；竖直拖动立即改变真实相机位置。
 //   · 松手停在当前位置，不自动回中；值由 sceneApi.cameraDistanceState() 从相机
 //     真实状态反推——本组件不维护任何与 camera 不同步的距离 SSOT。

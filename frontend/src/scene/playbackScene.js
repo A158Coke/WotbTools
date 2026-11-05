@@ -208,7 +208,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // Derived identity index only; ReplaySession still owns every canonical life fact.
   let lifeTracks = null, lifeTracksByAccount = new Map();
   let CAM = 'free', FOLLOW_EID = 0;
-  // 移动端触屏相机契约（current-plan Mobile 3D Input Contract）：单指按模式分流
+  // 移动端触屏相机契约（docs/frontend/replay-workspace.md）：单指按模式分流
   // （Free=贴地平移 / Fixed=OrbitControls 左键式旋转），**双指不承担任何相机控制**
   // （取消 look/pinch 意图分类）。由宿主按 form-factor（usePlaybackPhoneForm）下发，
   // 不在场景内做 UA/宽度嗅探。桌面鼠标路径完全不受影响。

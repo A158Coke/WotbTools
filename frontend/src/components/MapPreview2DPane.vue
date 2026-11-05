@@ -1086,6 +1086,9 @@ const stubFloatClass = () => ''
 .map2d:fullscreen {
   padding: 0;
   background: var(--color-canvas);
+  /* 全屏根是 viewport-fixed：手机满宽地图（横屏高度可超视口）时，工具区靠这里
+     的纵向滚动触达——非全屏的滚动来自页面，全屏必须自建滚动容器。 */
+  overflow-y: auto;
 }
 
 /* 固定高度层（usePaneFillHeight 写入）：舞台吃剩余、controls 固有高——

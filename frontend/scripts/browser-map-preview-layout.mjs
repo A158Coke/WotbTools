@@ -1,7 +1,7 @@
 /**
  * Map Preview 移动布局门禁（真实应用 + 真实 Chrome）。
  *
- * 覆盖 current-plan「Mobile 2D Map Preview」契约：
+ * 覆盖 docs/frontend/architecture.md「Map Preview」与 replay-workspace.md 的移动布局契约：
  *   - 手机形态（PLAYBACK_MOBILE_QUERY）：2D 正方形地图吃满可用宽度、水平居中（≤2px）、
  *     工具区紧随地图（间隙 ≤2px）、无横向溢出、右上角全屏按钮与工具行按钮真实可点；
  *     标注工具开合后几何仍然成立。
