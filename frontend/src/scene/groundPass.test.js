@@ -9,12 +9,12 @@
 // 背景：抽层前烘焙不渲染地面——底图是客户端自带地图图（ground.webp），与 3D 档的实时分层
 // 渲染（cm×lm×tile/mask）在夜图/带 lm 图上差异显著（faust 用户报障"webp 与 3D 俯视图差
 // 别大"的直接来源）。
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import * as THREE from 'three'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
-import { loadTerrain, makeGroundMaterial } from './groundPass.js'
+import { buildGroundGeometry, loadTerrain, makeGroundMaterial } from './groundPass.js'
 import { assembleSceneryMaterials } from './sceneryAssembly.ts'
 import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh } from './sceneryInstancing.ts'
 import { buildAnnotationSurfaceGrid, pickDrawableSurfaceHit } from './playback/annotationSurface.ts'
@@ -33,7 +33,7 @@ describe('地面 pass SSOT（groundPass.js）：两侧消费同一份，本地�
   it('模块导出五个共享入口（材质/几何/数据/海岸线/贴图契约）', () => {
     expect(gpSrc).toMatch(/export function groundLayerKeys\(L\) \{/)
     expect(gpSrc).toMatch(/export function setupGroundTextures\(texs, anisotropy\) \{/)
-    expect(gpSrc).toMatch(/export async function loadTerrain\(\{ binUrl, metaUrl, fetchFn, stale = \(\) => false \}\) \{/)
+    expect(gpSrc).toMatch(/export async function loadTerrain\(\{ binUrl, metaUrl, fetchFn, stale = \(\) => false, onDiagnostics = null \}\) \{/)
     expect(gpSrc).toMatch(/export function buildGroundGeometry\(\{/)
     expect(gpSrc).toMatch(/export function makeGroundMaterial\(\{ layers = null, texs = null, size, cx = 0, cz = 0, mapTexture = null \}\) \{/)
     expect(gpSrc).toMatch(/export function groundShaderMaterial\(L, texs, size, cx, cz\) \{/)
@@ -451,5 +451,80 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
     expect(bakeSrc).toMatch(/if \(groundMesh\) \{ scene\.remove\(groundMesh\); groundMesh\.geometry\.dispose\(\); groundMesh\.material\.dispose\(\); groundMesh = null \}/)
     expect(bakeSrc).toMatch(/if \(groundTexs\) \{ for \(const k in groundTexs\) groundTexs\[k\]\?\.dispose\?\.\(\); groundTexs = null \}/)
     expect(bakeSrc).toMatch(/if \(waterCoastTex\) \{ waterCoastTex\.dispose\(\); waterCoastTex = null \}/)
+  })
+})
+
+
+describe('ground geometry diagnostics', () => {
+  it('measures build stages without changing geometry or the optional bake path', () => {
+    const n = 32
+    const args = { field: Float32Array.from({ length: n * n }, (_, i) => Math.sin(i / 19)), n, span: 320, cam: { x: 0, y: 70, z: 30 }, fovY: Math.PI / 3 }
+    const plain = buildGroundGeometry(args)
+    const samples = []
+    const measured = buildGroundGeometry({ ...args, onDiagnostics: data => samples.push(data) })
+    for (const name of ['position', 'uv', 'normal']) {
+      expect(Array.from(measured.getAttribute(name).array)).toEqual(Array.from(plain.getAttribute(name).array))
+    }
+    expect(Array.from(measured.index.array)).toEqual(Array.from(plain.index.array))
+    expect(measured.boundingSphere).toEqual(plain.boundingSphere)
+    expect(samples).toHaveLength(1)
+    expect(samples[0]).toMatchObject({ vertices: measured.getAttribute('position').count, triangles: measured.index.count / 3, overBudget: measured.userData.terrainBuild.overBudget })
+    for (const key of ['adaptiveMs', 'assemblyMs', 'normalsMs', 'boundsMs']) expect(samples[0][key]).toBeGreaterThanOrEqual(0)
+    expect(() => buildGroundGeometry({ ...args, onDiagnostics: () => { throw Error('probe') } })).not.toThrow()
+    plain.dispose(); measured.dispose()
+  })
+})
+
+
+describe('terrain loading diagnostics', () => {
+  const meta = { size: 4, terrainLayout: 2, zmin: 0, zmax: 10, span: 600, worldBounds: { min: [-300, -300, 0], max: [300, 300, 10] } }
+  const bin = new Uint16Array(16).buffer
+  const makeFetch = () => vi.fn(async url => url === '/meta'
+    ? { status: 200, ok: true, json: async () => meta }
+    : { status: 200, ok: true, arrayBuffer: async () => bin })
+  it('按真实边界计时且不改变高度场、元数据或请求顺序', async () => {
+    const events = []
+    let time = 0
+    const clock = vi.spyOn(performance, 'now').mockImplementation(() => ++time)
+    try {
+      const plainFetch = makeFetch()
+      const plain = await loadTerrain({ binUrl: '/bin', metaUrl: '/meta', fetchFn: plainFetch })
+      expect(clock).not.toHaveBeenCalled()
+      const measuredFetch = makeFetch()
+      const result = await loadTerrain({ binUrl: '/bin', metaUrl: '/meta', fetchFn: measuredFetch, onDiagnostics: e => events.push(e) })
+      expect(Array.from(result.field)).toEqual(Array.from(plain.field))
+      expect(result.meta).toEqual(plain.meta)
+      expect([result.metaStatus, result.binStatus]).toEqual([plain.metaStatus, plain.binStatus])
+      expect(measuredFetch.mock.calls).toEqual(plainFetch.mock.calls)
+      expect(events.map(e => e.stage)).toEqual(['terrain.meta.fetch', 'terrain.meta.body-json-aggregate', 'terrain.bin.fetch', 'terrain.bin.body', 'terrain.pair-check-aggregate', 'terrain.decode'])
+      for (const event of events) expect(event).toMatchObject({ durationMs: 1, status: 'complete' })
+    } finally { clock.mockRestore() }
+  })
+  it('SHA 不匹配不解码，并区分已执行校验与跳过解码', async () => {
+    const events = []
+    const fetchFn = vi.fn(async url => url === '/meta'
+      ? { status: 200, ok: true, json: async () => ({ ...meta, terrainBinSha256: '0'.repeat(64) }) }
+      : { status: 200, ok: true, arrayBuffer: async () => bin })
+    const result = await loadTerrain({ binUrl: '/bin', metaUrl: '/meta', fetchFn, onDiagnostics: e => events.push(e) })
+    expect(result.field).toBeNull()
+    expect(events).toContainEqual(expect.objectContaining({ stage: 'terrain.pair-check-aggregate', status: 'mismatch' }))
+    expect(events).toContainEqual({ stage: 'terrain.decode', status: 'skipped' })
+    expect(fetchFn.mock.calls[1][0]).toContain('sha256=')
+  })
+  it('缺失或过期时跳过未执行阶段，回调异常不影响原结果', async () => {
+    const events = []
+    const fetchFn = vi.fn(async url => url === '/meta'
+      ? { status: 404, ok: false }
+      : { status: 200, ok: true, arrayBuffer: async () => bin })
+    const result = await loadTerrain({ binUrl: '/bin', metaUrl: '/meta', fetchFn, onDiagnostics: e => events.push(e) })
+    expect(result.field).toBeNull()
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+    expect(events).toContainEqual({ stage: 'terrain.meta.body-json-aggregate', status: 'skipped' })
+    expect(events).toContainEqual({ stage: 'terrain.pair-check-aggregate', status: 'skipped' })
+    expect(events).toContainEqual({ stage: 'terrain.decode', status: 'skipped' })
+    const staleFetch = makeFetch()
+    const stale = await loadTerrain({ binUrl: '/bin', metaUrl: '/meta', fetchFn: staleFetch, stale: () => true, onDiagnostics: () => { throw Error('probe') } })
+    expect(stale.field).toBeNull()
+    expect(staleFetch).toHaveBeenCalledTimes(1)
   })
 })

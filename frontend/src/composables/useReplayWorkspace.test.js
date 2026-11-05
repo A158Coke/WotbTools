@@ -398,3 +398,71 @@ describe('useReplayWorkspace', () => {
     expect(ws.currentBattleId.value).toBe('r0')
   })
 })
+
+
+it('诊断订阅共享相同 Promise，失效后忽略迟到事件', async () => {
+  const ws = useReplayWorkspace()
+  const file = makeFiles(1)[0]
+  let report, finish
+  parser.raw.mockImplementationOnce((_file, _signal, observer) => {
+    report = observer
+    return new Promise(resolve => { finish = resolve })
+  })
+  const first = [], second = []
+  const task = ws.playbackSession.loadScene(file, e => first.push(e))
+  expect(ws.playbackSession.loadScene(file, e => second.push(e))).toBe(task)
+  await vi.waitFor(() => expect(report).toBeTypeOf('function'))
+  report({ stage: 'test', durationMs: 2 })
+  expect(first).toContainEqual({ stage: 'test', durationMs: 2 })
+  expect(second).toContainEqual({ stage: 'workspace.cache', status: 'shared-inflight' })
+  expect(second).toContainEqual({ stage: 'test', durationMs: 2 })
+  ws.playbackSession.invalidate(file)
+  report({ stage: 'late', durationMs: 3 })
+  expect(first.some(e => e.stage === 'late')).toBe(false)
+  finish({ vehicles: [] })
+  await expect(task).rejects.toMatchObject({ name: 'AbortError' })
+})
+
+
+it('先前诊断订阅结束后，无诊断的新共享请求明确报告 timing 不可用', async () => {
+  holder.state = newReplay()
+  const ws = useReplayWorkspace()
+  const file = makeFiles(1)[0]
+  parser.raw.mockReset().mockResolvedValueOnce({ vehicles: [] })
+  await ws.playbackSession.loadScene(file, () => {})
+  ws.playbackSession.invalidate(file)
+  let finish
+  parser.raw.mockImplementationOnce((_file, _signal, observer) => {
+    expect(observer).toBeUndefined()
+    return new Promise(resolve => { finish = resolve })
+  })
+  const task = ws.playbackSession.loadScene(file)
+  const events = []
+  expect(ws.playbackSession.loadScene(file, event => events.push(event))).toBe(task)
+  expect(events).toContainEqual({ stage: 'workspace.cache', status: 'shared-inflight' })
+  expect(events).toContainEqual({ stage: 'workspace.inflightTiming', status: 'unavailable' })
+  await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
+  finish({ vehicles: [] })
+  await task
+})
+
+
+it('workspace ready 缓存显式标记未执行阶段，不重新读取或解析', async () => {
+  holder.state = newReplay()
+  const ws = useReplayWorkspace()
+  const file = makeFiles(1)[0]
+  parser.raw.mockReset().mockResolvedValueOnce({ vehicles: [] })
+  const task = ws.playbackSession.loadScene(file)
+  await task
+  await ws.playbackSession.loadCanonical(file)
+  const read = vi.spyOn(file, 'arrayBuffer')
+  const events = []
+  expect(ws.playbackSession.loadScene(file, e => events.push(e))).toBe(task)
+  expect(events).toContainEqual({ stage: 'workspace.cache', status: 'hit' })
+  for (const stage of ['file.arrayBuffer', 'replay.digest', 'json.cache', 'first.worker.roundtrip', 'first.wasm.ready', 'first.parse', 'pitchLimits.wait', 'second.worker.roundtrip', 'second.wasm.ready', 'second.parse', 'json.parse', 'validation', 'enrichment']) {
+    expect(events).toContainEqual({ stage, status: 'skipped' })
+  }
+  expect(read).not.toHaveBeenCalled()
+  expect(parser.raw).toHaveBeenCalledTimes(1)
+  read.mockRestore()
+})

@@ -566,6 +566,29 @@ describe('Replay3DPane', () => {
     expect(playback.api.destroy).toHaveBeenCalledTimes(1)
   })
 
+  it('foreground changes pause and resume without changing playback intent or reloading', async () => {
+    mockWebGL('webgl2')
+    let visibility = 'visible'
+    const getter = vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility)
+    const wrapper = mountPane()
+    await start(wrapper)
+    const api = playback.api
+    api.setPlaying.mockClear()
+    visibility = 'hidden'
+    document.dispatchEvent(new Event('visibilitychange'))
+    await nextTick()
+    expect(api.setPaused).toHaveBeenLastCalledWith(true)
+    expect(api.destroy).not.toHaveBeenCalled()
+    visibility = 'visible'
+    document.dispatchEvent(new Event('visibilitychange'))
+    await nextTick()
+    expect(api.setPaused).toHaveBeenLastCalledWith(false)
+    expect(api.loadData).toHaveBeenCalledTimes(1)
+    expect(api.setPlaying).not.toHaveBeenCalled()
+    wrapper.unmount()
+    getter.mockRestore()
+  })
+
   it('解析中为不确定进度，资产阶段显示资产进度；失败后可重试同一文件或关闭', async () => {
     mockWebGL('webgl2')
     const wrapper = mountPane()
