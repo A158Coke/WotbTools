@@ -102,8 +102,16 @@ is_loc_scoped_path() {
 }
 
 declare -A loc_allowlist=()
-load_loc_allowlist() {
-  [[ -f "$LOC_ALLOWLIST_FILE" ]] || return 0
+declare -A loc_history_allowlist=()
+declare -A loc_allowlist_seen=()
+
+# Parse '<exact path> <baseline lines>' lines from stdin into the named assoc
+# array. Duplicates are fail-closed: last-wins entries would silently widen a
+# pinned baseline. $1 = error label, $2 = destination assoc name.
+parse_loc_allowlist() {
+  local label="$1"
+  local destination_name="$2"
+  local -n entries="$destination_name"
   local line path baseline rest lineno=0
   while IFS= read -r line || [[ -n "$line" ]]; do
     lineno=$((lineno + 1))
@@ -114,11 +122,39 @@ load_loc_allowlist() {
     rest=""
     read -r path baseline rest <<< "$line"
     if [[ -z "$path" || -z "$baseline" || -n "$rest" || ! "$baseline" =~ ^[0-9]+$ ]]; then
-      echo "ERROR: invalid line $lineno in $LOC_ALLOWLIST_FILE (expected '<exact path> <baseline lines>'): $line" >&2
+      echo "ERROR: invalid line $lineno in $label (expected '<exact path> <baseline lines>'): $line" >&2
       exit 2
     fi
-    loc_allowlist["$path"]="$baseline"
-  done < "$LOC_ALLOWLIST_FILE"
+    if [[ -n "${entries[$path]+x}" ]]; then
+      echo "ERROR: duplicate allowlist entry for $path in $label; keep exactly one line." >&2
+      exit 2
+    fi
+    entries["$path"]="$baseline"
+  done
+}
+
+load_loc_allowlist() {
+  [[ -f "$LOC_ALLOWLIST_FILE" ]] || return 0
+  parse_loc_allowlist "$LOC_ALLOWLIST_FILE" loc_allowlist < "$LOC_ALLOWLIST_FILE"
+}
+
+# History-gate allowlist: the union of entries at BASE_SHA and HEAD. An entry
+# that existed at the base covers the normal split flow (the file stays over
+# budget in early commits while later commits shrink it and drop the entry), and
+# an entry that survives to HEAD covers a newly pinned legacy file committed in
+# one piece. A temporary entry that is added and removed inside the range
+# legitimizes nothing: the intermediate oversized blob it tried to shield still
+# fails. Only the final-tree gate applies stale/growth semantics.
+load_history_loc_allowlist() {
+  if [[ -n "$BASE_SHA" ]] && git cat-file -e "${BASE_SHA}:${LOC_ALLOWLIST_FILE}" 2>/dev/null; then
+    git show "${BASE_SHA}:${LOC_ALLOWLIST_FILE}" \
+      | parse_loc_allowlist "${LOC_ALLOWLIST_FILE}@${BASE_SHA}" loc_history_allowlist
+  fi
+  local path baseline
+  for path in "${!loc_allowlist[@]}"; do
+    baseline="${loc_allowlist[$path]}"
+    [[ -n "${loc_history_allowlist[$path]+x}" ]] || loc_history_allowlist["$path"]="$baseline"
+  done
 }
 
 report_loc_violation() {
@@ -255,6 +291,7 @@ ignore_work=$(mktemp -d)
 trap 'rm -rf "$ignore_work"' EXIT
 
 load_loc_allowlist
+load_history_loc_allowlist
 
 # Ask Git itself which paths the repository ignore policy rejects. --no-index is
 # required because the whole point is to catch files that were force-added even
@@ -320,12 +357,24 @@ while IFS= read -r -d '' path; do
   fi
 
   if is_loc_scoped_path "$path"; then
+    loc_allowlist_seen["$path"]=1
     source_lines=$(wc -l < "$path")
     if ! check_loc_budget "tracked file" "$path" "$source_lines"; then
       violations=$((violations + 1))
     fi
   fi
 done < <(git ls-files -z)
+
+# Every allowlist entry must keep pointing at a tracked, in-scope source file
+# that is still above the budget. Deleting or renaming a legacy file without
+# removing its entry in the same range would let the stale baseline shield a
+# future re-created file at the same path.
+for allow_path in "${!loc_allowlist[@]}"; do
+  if [[ -z "${loc_allowlist_seen[$allow_path]+x}" ]]; then
+    echo "ERROR: allowlist entry no longer matches a tracked in-scope source file (deleted, renamed, or out of scope); remove it from $LOC_ALLOWLIST_FILE: $(printable_path "$allow_path")" >&2
+    violations=$((violations + 1))
+  fi
+done
 
 # Inspect every tree state introduced by commits in the event range. `git ls-tree
 # -z` is NUL-delimited, so valid Git paths containing newlines, tabs, quotes, or
@@ -399,7 +448,14 @@ if [[ -n "$BASE_SHA" ]]; then
 
       if is_loc_scoped_path "$path"; then
         source_lines=$(git cat-file blob "$oid" | wc -l)
-        if ! check_loc_budget "history blob" "$path" "$source_lines"; then
+        if [[ -n "${loc_history_allowlist[$path]+x}" ]]; then
+          pinned_baseline="${loc_history_allowlist[$path]}"
+          if (( source_lines > pinned_baseline )); then
+            report_loc_violation "history blob (allowlisted legacy file grew past its pinned baseline)" "$path" "$source_lines" "$pinned_baseline"
+            violations=$((violations + 1))
+          fi
+        elif (( source_lines > MAX_SOURCE_LINES )); then
+          report_loc_violation "history blob" "$path" "$source_lines" "$MAX_SOURCE_LINES"
           violations=$((violations + 1))
         fi
       fi

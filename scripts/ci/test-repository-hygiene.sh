@@ -311,4 +311,59 @@ git commit -q -m 'add oversized source under a renamed path'
 head=$(git rev-parse HEAD)
 expect_fail_msg loc-rename "source budget" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
+# The normal split flow must pass: the legacy file and its entry exist at the
+# base, later commits shrink the file and drop the entry. The history gate must
+# judge each commit against the base/HEAD allowlist union, not force the final
+# allowlist onto earlier commits.
+git switch -q -C loc-split-in-range "$base"
+mkdir -p scripts/ci frontend/src/scene
+write_lines frontend/src/scene/legacy.js 1601
+cat > scripts/ci/source-loc-allowlist.txt <<'EOF'
+frontend/src/scene/legacy.js 1601
+EOF
+git add frontend/src/scene/legacy.js scripts/ci/source-loc-allowlist.txt
+git commit -q -m 'base: pinned legacy file'
+range_base=$(git rev-parse HEAD)
+write_lines frontend/src/scene/legacy.js 1500
+git rm -q scripts/ci/source-loc-allowlist.txt
+git add frontend/src/scene/legacy.js
+git commit -q -m 'split legacy file below the budget and drop its entry'
+head=$(git rev-parse HEAD)
+expect_pass loc-split-in-range env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$range_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+
+# Deleting a legacy file without removing its entry must fail: the stale entry
+# would otherwise shield a future re-created file at the same path.
+git switch -q -C loc-entry-deleted-file "$base"
+mkdir -p scripts/ci frontend/src/scene
+write_lines frontend/src/scene/legacy.js 1601
+cat > scripts/ci/source-loc-allowlist.txt <<'EOF'
+frontend/src/scene/legacy.js 1601
+EOF
+git add frontend/src/scene/legacy.js scripts/ci/source-loc-allowlist.txt
+git commit -q -m 'base: pinned legacy file'
+range_base=$(git rev-parse HEAD)
+git rm -q frontend/src/scene/legacy.js
+git commit -q -m 'delete the legacy file but keep its allowlist entry'
+head=$(git rev-parse HEAD)
+expect_fail_msg loc-entry-deleted-file "no longer matches a tracked in-scope source file" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$range_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+
+# An oversized blob committed together with a temporary allowlist entry that is
+# removed later must still fail: entries that exist neither at the base nor at
+# HEAD legitimize nothing in the history gate.
+git switch -q -C loc-evasion-temporary-entry "$base"
+mkdir -p scripts/ci frontend/src/scene
+write_lines frontend/src/scene/flash.js 1501
+mkdir -p scripts/ci
+cat > scripts/ci/source-loc-allowlist.txt <<'EOF'
+frontend/src/scene/flash.js 1501
+EOF
+git add frontend/src/scene/flash.js scripts/ci/source-loc-allowlist.txt
+git commit -q -m 'temporarily shield an oversized blob with a new entry'
+write_lines frontend/src/scene/flash.js 1500
+git rm -q scripts/ci/source-loc-allowlist.txt
+git add frontend/src/scene/flash.js
+git commit -q -m 'shrink the file and remove the temporary entry'
+head=$(git rev-parse HEAD)
+expect_fail_msg loc-evasion-temporary-entry "source budget" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+
 echo "repository hygiene regression tests: PASS"
