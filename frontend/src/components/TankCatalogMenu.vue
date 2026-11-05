@@ -22,6 +22,7 @@ import EmptyState from './EmptyState.vue'
 import AppButton from './AppButton.vue'
 import FilterChips from './FilterChips.vue'
 import AppSheet from './AppSheet.vue'
+import SegmentedControl from './SegmentedControl.vue'
 import { createReusableTemplate } from '@vueuse/core'
 
 const DEFAULT_FILTERS = Object.freeze({ q: '', tier: '', nation: '', type: '', sort: 'name' })
@@ -101,6 +102,20 @@ const tierLabel = tier => romanLevel(tier)
 const nationLabel = nation => tankNationLabel(t, te, nation)
 const typeLabel = type => tankTypeLabel(t, te, type)
 const countText = computed(() => t('agentTanks.count', { shown: filtered.value.length, total: props.tanks.length }))
+
+// 选择控件（design-language §7.1 DC-SEL-01）：type / sort 是固定短候选域（各 4 项，
+// 空值「全部」不计候选）→ Choice Group，由 SegmentedControl 承载；tier 是 I–X 有序域
+// （5–10 档）、nation 是可变域，按表保持 Select。
+const typeOptions = computed(() => [
+  { value: '', label: t('agentTanks.all') },
+  ...types.value.map(type => ({ value: type, label: typeLabel(type) })),
+])
+const sortOptions = computed(() => [
+  { value: 'name', label: t('agentTanks.sort_name') },
+  { value: 'tier', label: t('agentTanks.sort_tier') },
+  { value: 'hp', label: t('agentTanks.sort_hp') },
+  { value: 'pen', label: t('agentTanks.sort_pen') },
+])
 
 const hasFilters = computed(() => !!(local.q.trim() || local.tier || local.nation || local.type))
 const chips = computed(() => [
@@ -213,22 +228,30 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
           <option v-for="nation in nations" :key="nation" :value="nation">{{ nationLabel(nation) }}</option>
         </select>
       </label>
-      <label class="tp-field">
+      <div class="tp-field">
         <span class="tp-field-label">{{ t('agentTanks.type') }}</span>
-        <select id="tp-type" data-testid="filter-type" :value="local.type" @change="setFilter('type', $event.target.value)">
-          <option value="">{{ t('agentTanks.all') }}</option>
-          <option v-for="type in types" :key="type" :value="type">{{ typeLabel(type) }}</option>
-        </select>
-      </label>
-      <label class="tp-field">
+        <SegmentedControl
+          id="tp-type"
+          data-testid="filter-type"
+          :model-value="local.type || ''"
+          :options="typeOptions"
+          presentation="chips"
+          :aria-label="t('agentTanks.type')"
+          @update:model-value="value => setFilter('type', value)"
+        />
+      </div>
+      <div class="tp-field">
         <span class="tp-field-label">{{ t('agentTanks.sort') }}</span>
-        <select id="tp-sort" data-testid="filter-sort" :value="local.sort" @change="setFilter('sort', $event.target.value)">
-          <option value="name">{{ t('agentTanks.sort_name') }}</option>
-          <option value="tier">{{ t('agentTanks.sort_tier') }}</option>
-          <option value="hp">{{ t('agentTanks.sort_hp') }}</option>
-          <option value="pen">{{ t('agentTanks.sort_pen') }}</option>
-        </select>
-      </label>
+        <SegmentedControl
+          id="tp-sort"
+          data-testid="filter-sort"
+          :model-value="local.sort || 'name'"
+          :options="sortOptions"
+          presentation="chips"
+          :aria-label="t('agentTanks.sort')"
+          @update:model-value="value => setFilter('sort', value)"
+        />
+      </div>
     </div>
     </DefineFilters>
     <AppSheet v-if="isCompact" :open="sheetOpen" :title="t('filters.title')" @close="closeSheet"><ReuseFilters /></AppSheet>
