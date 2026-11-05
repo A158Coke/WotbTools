@@ -83,11 +83,19 @@ describe('边界 fail-closed（PR #411 P0-2）', () => {
 
 describe('相机距离钳制（PR #411 P1-3）', () => {
   const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
+  // 钳制实现 2026-11-05 出仓 playback/cameraTerrainClamp.ts（#820 Wave B6A），
+  // 守卫随实现迁移（与边界带同纪律）；场景侧只保留注入与调用。
+  const clampSrc = readFileSync(resolve(here, 'playback/cameraTerrainClamp.ts'), 'utf8')
 
   it('设置 controls.minDistance / maxDistance 且基于 ext', () => {
-    expect(src).toMatch(/baseMinDistance = Math\.max\(20, ext \* 0\.08\)/)
-    expect(src).toMatch(/controls\.minDistance = baseMinDistance/)
-    expect(src).toMatch(/controls\.maxDistance = ext \* 2\.2/)
+    expect(clampSrc).toMatch(/baseMinDistance = Math\.max\(20, ext \* 0\.08\)/)
+    expect(clampSrc).toMatch(/controls\.minDistance = baseMinDistance/)
+    expect(clampSrc).toMatch(/controls\.maxDistance = ext \* 2\.2/)
     expect(src).toMatch(/applyCameraClamp\(\);/)
+  })
+
+  it('基准距离只有模块一处分份状态，场景侧经 accessor 读取', () => {
+    expect(src).toMatch(/controls\.minDistance = cameraTerrainClamp\.baseMinDistance\(\)/)
+    expect(src).not.toMatch(/let baseMinDistance/)
   })
 })
