@@ -354,8 +354,8 @@ fi
 
 # Entry liveness: every exception must keep pointing at a tracked, in-scope
 # source file that is still over budget. A deleted, renamed, shrunk or
-# out-of-scope file leaves a dead entry whose baseline could otherwise shield a
-# future re-created file at the same path.
+# out-of-scope file leaves a dead entry whose exception could otherwise shield
+# a future re-created file at the same path.
 source_line_liveness_checked=0
 for allow_path in "${!source_line_head_entries[@]}"; do
   if [[ -z "${source_line_head_lines[$allow_path]+x}" ]] \
@@ -514,9 +514,9 @@ if [[ -n "$BASE_SHA" ]]; then
           exit 2
         fi
         if (( blob_lines > MAX_SOURCE_LINES )) && [[ -z "${source_line_history_allowlisted[$path]+x}" ]]; then
-          # Net growth of an allowlisted file is policed by the final-tree cap;
-          # here the union list only decides whether the over-budget blob was
-          # ever a sanctioned exception.
+          # The union list only decides whether the over-budget blob was ever a
+          # sanctioned exception; policing per-file net growth is left to the
+          # split workflow (the entry-count ratchet owns the allowlist).
           report_source_line_budget "$path" "$blob_lines"
           violations=$((violations + 1))
         fi
