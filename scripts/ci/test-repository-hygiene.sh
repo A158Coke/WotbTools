@@ -176,4 +176,81 @@ git commit -q -m 'add allowlisted lifecycle doc citing the plan carrier'
 head=$(git rev-parse HEAD)
 expect_pass plan-reference-allowlist env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
+# Source-line budget (#820): an unlisted first-party production file over 1500
+# physical lines must fail, and the failure must come from this gate.
+git switch -q -C source-line-unlisted "$base"
+mkdir -p frontend/src
+python3 - <<'PY'
+from pathlib import Path
+Path("frontend/src/oversized.js").write_text("// line\n" * 1501)
+PY
+git add frontend/src/oversized.js
+git commit -q -m 'add oversized first-party source file'
+head=$(git rev-parse HEAD)
+expect_fail_msg source-line-unlisted "first-party frontend source exceeds" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+
+# Exactly at the budget passes: the limit is inclusive.
+git switch -q -C source-line-at-limit "$base"
+mkdir -p frontend/src
+python3 - <<'PY'
+from pathlib import Path
+Path("frontend/src/at-limit.ts").write_text("// line\n" * 1500)
+PY
+git add frontend/src/at-limit.ts
+git commit -q -m 'add source file exactly at the line budget'
+head=$(git rev-parse HEAD)
+expect_pass source-line-at-limit env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+
+# Tests, declaration files and generated transport are not production source
+# and stay out of scope even when they are large.
+git switch -q -C source-line-exempt "$base"
+mkdir -p frontend/src/api/generated
+python3 - <<'PY'
+from pathlib import Path
+Path("frontend/src/oversized.test.js").write_text("// test\n" * 1600)
+Path("frontend/src/oversized.d.ts").write_text("// types\n" * 1600)
+Path("frontend/src/api/generated/oversized.ts").write_text("// generated\n" * 1600)
+PY
+git add frontend/src
+git commit -q -m 'add large test, declaration and generated files'
+head=$(git rev-parse HEAD)
+expect_pass source-line-exempt env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+
+# An exact allowlist entry admits an existing over-budget file.
+git switch -q -C source-line-allowlisted "$base"
+mkdir -p frontend/src scripts/ci
+python3 - <<'PY'
+from pathlib import Path
+Path("frontend/src/oversized.js").write_text("// line\n" * 1501)
+Path("scripts/ci/source-line-allowlist.txt").write_text("frontend/src/oversized.js\n")
+PY
+git add frontend/src/oversized.js scripts/ci/source-line-allowlist.txt
+git commit -q -m 'add allowlisted oversized source file'
+head=$(git rev-parse HEAD)
+expect_pass source-line-allowlisted env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+
+# The allowlist is a one-way ratchet: a new entry added in the event range fails
+# even when every individual file is allowlisted in the head tree.
+git switch -q -C source-line-allowlist-growth "$base"
+mkdir -p frontend/src scripts/ci
+python3 - <<'PY'
+from pathlib import Path
+Path("frontend/src/existing.js").write_text("// line\n" * 1501)
+Path("scripts/ci/source-line-allowlist.txt").write_text("frontend/src/existing.js\n")
+PY
+git add frontend/src/existing.js scripts/ci/source-line-allowlist.txt
+git commit -q -m 'seed the source-line allowlist'
+growth_base=$(git rev-parse HEAD)
+python3 - <<'PY'
+from pathlib import Path
+Path("frontend/src/new.js").write_text("// line\n" * 1501)
+Path("scripts/ci/source-line-allowlist.txt").write_text(
+    "frontend/src/existing.js\nfrontend/src/new.js\n"
+)
+PY
+git add frontend/src/new.js scripts/ci/source-line-allowlist.txt
+git commit -q -m 'grow the source-line allowlist'
+head=$(git rev-parse HEAD)
+expect_fail_msg source-line-allowlist-growth "source-line allowlist must not grow" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$growth_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+
 echo "repository hygiene regression tests: PASS"
