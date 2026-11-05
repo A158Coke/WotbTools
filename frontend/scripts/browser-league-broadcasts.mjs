@@ -43,11 +43,23 @@ const selectedScenarios = scenarios.filter(value => !nameFilter || value.name.in
 async function tap(page, selector, touch) {
   await page.waitForValue(`!!document.querySelector(${JSON.stringify(selector)})`, Boolean)
   await page.animationsSettled()
-  const point = await page.evaluate(`(() => { const element = document.querySelector(${JSON.stringify(selector)}); element.scrollIntoView({block:'center', inline:'nearest'}); const r = element.getBoundingClientRect(); return {x:r.left+r.width/2,y:r.top+r.height/2}; })()`)
+  const point = await page.callWith((sel) => {
+    const element = document.querySelector(sel)
+    element.scrollIntoView({ block: 'center', inline: 'nearest' })
+    const r = element.getBoundingClientRect()
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+  }, selector)
   await page.tap({ ...point, touch })
 }
 async function fill(page, values) {
-  await page.evaluate(`(() => { for (const [id,value] of Object.entries(${JSON.stringify(values)})) { const el=document.querySelector('[data-testid="'+id+'"]'); el.value=String(value); el.dispatchEvent(new Event('input',{bubbles:true})); el.dispatchEvent(new Event('change',{bubbles:true})); } })()`)
+  await page.callWith((entries) => {
+    for (const [id, value] of Object.entries(entries)) {
+      const el = document.querySelector('[data-testid="' + id + '"]')
+      el.value = String(value)
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+      el.dispatchEvent(new Event('change', { bubbles: true }))
+    }
+  }, values)
 }
 async function geometry(page) {
   const result = await page.evaluate(`(() => ({ overflow: document.documentElement.scrollWidth > innerWidth + 1,

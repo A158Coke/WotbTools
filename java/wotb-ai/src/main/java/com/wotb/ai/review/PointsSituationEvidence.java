@@ -159,8 +159,8 @@ final class PointsSituationEvidence {
         if (!killTimeline.isEmpty()) {
             sb.append("KILL_POINTS_TIMELINE（击杀夺分 ±").append(FriendlyEnemyResult.KILL_STEAL_POINTS)
                     .append("/击杀业务规则，按阵亡时刻对齐，叙述口径，非实时比分，不含占点基础产分）:\n");
-            int selfDelta = 0;
-            int otherDelta = 0;
+            long selfDelta = 0;
+            long otherDelta = 0;
             for (final PointsSituationSkill.KillPointsEvent event : killTimeline) {
                 final boolean selfVictim = event.victimTeam() == perspectiveTeam;
                 selfDelta += selfVictim
