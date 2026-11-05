@@ -20,11 +20,8 @@ const scene = vi.hoisted(() => {
     setQuality: vi.fn(),
     setCam: vi.fn(),
     setMapSpawns: vi.fn(),
-<<<<<<< HEAD
     setMobileTouch: vi.fn(),
-=======
     refreshSpawnColors: vi.fn(),
->>>>>>> origin/main
     reset: vi.fn(),
     invalidate: vi.fn(),
   }
@@ -166,7 +163,8 @@ describe('MapPreview3DPane 首次激活生命周期', () => {
     await flushPromises()
     expect(slider()).toBeNull()
     wrapper.unmount()
-=======
+  })
+
   it('后台更新出生点和主题后保留场景，恢复时不重复装图', async () => {
     let visibility = 'visible'
     const getter = vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility)
@@ -200,7 +198,7 @@ describe('MapPreview3DPane 首次激活生命周期', () => {
       uiProfile.value = originalProfile
       getter.mockRestore()
     }
->>>>>>> origin/main
+  })
   })
 
   it('激活后切走：场景保留暂停，不销毁、不重装；切回不重建不重装', async () => {

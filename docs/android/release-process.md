@@ -283,7 +283,7 @@ CI 还构建 debug APK，验证本地启动/Bridge/replay 合约及离线 bundle
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本由显式 `version` 输入决定：自动续跑传入 stage 解析出的同一版本，手动 recovery 由操作者显式给出（见下节）。
-当前源码版本：**4.3.0 / 4003000**（`android/gradle.properties`）。Native Bridge 保持 v3；最低支持版本保持 4.1.0 / 4001000，不因本版本抬升。
+当前源码版本：**4.4.0 / 4004000**（`android/gradle.properties`，移动端地图预览与回放 UX 统一（2D 小屏布局、右上角全屏、移动端单指相机契约、竖向距离滑条、教程同步）的开发中版本，发布说明见 [4.4.0](releases/4.4.0.md)；4.3.0 的三维回放性能诊断与生命周期已合并）。Native Bridge 保持 v3；最低支持版本保持 4.1.0 / 4001000，不因本版本抬升。
 `contracts/android-native-bridge.json` 是协议 SSOT；Gradle、Native 与前端声明必须一致。
 
 Native Bridge 为 **v3**（3.0.0 起）：可信本地 origin 是 LocalRuntimeServer 的固定 loopback
