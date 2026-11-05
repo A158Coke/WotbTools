@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url'
 
 const paneSrc = readFileSync(fileURLToPath(new URL('./MapPreview3DPane.vue', import.meta.url)), 'utf8')
 const kernelSrc = readFileSync(fileURLToPath(new URL('../scene/playbackScene.js', import.meta.url)), 'utf8')
+// #820 结构拆分：会话模式（SESSION_MODE）owner 在 sessionLifecycle.ts，kernel 经 handle 消费
+const sessionSrc = readFileSync(fileURLToPath(new URL('../scene/playback/sessionLifecycle.ts', import.meta.url)), 'utf8')
 
 describe('MapPreview3DPane 场景接线（source regression）', () => {
   it('面板只经 loadMapOnly 装载，不出现 loadData 回放路径', () => {
@@ -74,22 +76,23 @@ describe('MapPreview3DPane 场景接线（source regression）', () => {
     expect(paneSrc).toContain('refreshSpawnColors?.()')
     // 内核侧：map 会话门控 + 原位 refreshColors + invalidate（回放会话 no-op）
     expect(kernelSrc).toContain('function refreshSpawnColors()')
-    expect(kernelSrc).toMatch(/refreshSpawnColors\(\) \{[\s\S]*?SESSION_MODE !== 'map'[\s\S]*?spawnMarkers\.refreshColors\(\)[\s\S]*?invalidate\(\)/)
+    expect(kernelSrc).toMatch(/refreshSpawnColors\(\) \{[\s\S]*?session\.sessionMode\(\) !== 'map'[\s\S]*?spawnMarkers\.refreshColors\(\)[\s\S]*?invalidate\(\)/)
     expect(kernelSrc).toContain('refreshSpawnColors() {')
   })
 
   it('内核 map 会话：stub DATA + 就绪门控 mapReady（hasData 保持回放专用）', () => {
-    expect(kernelSrc).toContain('async function loadMapOnly(')
-    expect(kernelSrc).toContain("SESSION_MODE = 'map'")
-    expect(kernelSrc).toContain('if (SESSION_MODE === \'map\') {')
-    expect(kernelSrc).toContain('store.mapReady = true')
+    expect(kernelSrc).toContain('loadMapOnly: session.loadMapOnly,')
+    expect(sessionSrc).toContain('async function loadMapOnly(')
+    expect(sessionSrc).toContain("SESSION_MODE = 'map'")
+    expect(sessionSrc).toContain('if (SESSION_MODE === \'map\') {')
+    expect(sessionSrc).toContain('store.mapReady = true')
     // 地图会话提前收口必须发生在 buildVehicles 之前（回放尾部不得执行）
-    expect(kernelSrc.indexOf('if (SESSION_MODE === \'map\') {'))
-      .toBeLessThan(kernelSrc.indexOf('buildVehicles();'))
+    expect(sessionSrc.indexOf('if (SESSION_MODE === \'map\') {'))
+      .toBeLessThan(sessionSrc.indexOf('deps.buildVehicles();'))
     // 出生点（#835）：会话态 + map 会话建点 + teardown 复位清场景 + 回放不消费
     expect(kernelSrc).toContain('setMapSpawns(points)')
     expect(kernelSrc).toContain('function buildSpawns()')
-    expect(kernelSrc).toContain("spawnMarkers.build(SESSION_MODE === 'map' ? MAP_SPAWN_POINTS : null)")
+    expect(kernelSrc).toContain("spawnMarkers.build(session.sessionMode() === 'map' ? MAP_SPAWN_POINTS : null)")
     expect(kernelSrc).toContain('MAP_SPAWN_POINTS = null;')
     expect(kernelSrc).toContain('clearSpawns();   // 出生点贴地标记随会话释放')
     // 触屏手势接线同源（#835 项 3）：触屏 pan/look/pinch 全部在内核 capture 链（与回放同一实现），

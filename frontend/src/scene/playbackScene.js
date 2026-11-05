@@ -118,6 +118,7 @@ import { writeTreadBuffer, ageTreadBuffer } from './playback/treadBufferWriter.j
 import { createTransientFeedback3d } from './playback/transientFeedback3d.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { createSceneCore } from './playback/renderer.js'
+import { createSessionLifecycle } from './playback/sessionLifecycle.ts'
 // 内核拆分（2026-10-24）：常量/纯函数/画质表
 // 出仓到 ./playback/，点击拾取调试与边界带出仓为工厂；公开 API 经本文件 re-export，
 // 导入方（Replay3DPane / 测试）零改动。
@@ -295,22 +296,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let annotationSuppressUntilAllUp = false
   let annotationOriginalTouchesOne = null
   let destroyed = false;
-  // 会话代数：loadData/teardown 各自递增，全部异步续体持旧代数即失效
-  let sessionGen = 0;
-  /** 加载令牌：只有新的 loadData 递增，用于判定「谁是最新一次加载」（见 loadData 注释） */
-  let loadGeneration = 0;
-  /**
-   * 会话身份：当前「活着的会话」的标识。旧会话的资源续体用它判定自己是否已过期，
-   * 而本次加载的资产阶段用它判定自己是否仍是当前会话（见 startPlayback）。
-   * 与 sessionGen 分开的原因：teardown 是本次加载自己的提交流程，不能把自己判过期。
-   */
-  let sessionEpoch = 0;
-  /**
-   * 会话模式：'replay'（回放会话，startPlayback 走完整链）| 'map'（地图预览会话，
-   * loadMapOnly 提交 stub DATA，startPlayback 只走地图资产前缀——无车辆/传输/HUD）。
-   * 由 teardown 复位为 'replay'；startPlayback 在地图资产就绪后按它提前收口。
-   */
-  let SESSION_MODE = 'replay';
+  // 会话代数三计数与 SESSION_MODE 的唯一 owner = playback/sessionLifecycle.ts
+  //（#820 Step 1 出仓；本闭包经 session handle 读写，语义与拆分前逐字一致）
   /**
    * 地图预览会话的基地模式（'supremacy' | 'assault' | null）：宿主经 setMapBasesKind
    * 显式选择画哪组贴地基地环。回放会话不消费它（模式由 DATA 轨迹判，语义红线）；
@@ -1181,9 +1168,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 迟到的已加载纹理就地 dispose，不得写入新会话的共享状态或场景。
     // 用 sessionEpoch（不是 sessionGen）：新的 loadData / destroy 都会换掉身份，
     // 旧会话的资源续体因此无法再写共享 store。
-    const epoch = sessionEpoch;
+    const epoch = session.sessionEpoch();
     const diagnosticEpoch = perf?.epoch;
-    const stale = () => destroyed || epoch !== sessionEpoch;
+    const stale = () => destroyed || epoch !== session.sessionEpoch();
     // ASYNC SESSION RULE: await into locals → revalidate ownership → dispose obsolete
     // local resources → only then publish session state or mutate the scene.
     if (mapPlane) { scene.remove(mapPlane); mapPlane = null; }
@@ -2506,7 +2493,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 回放会话：模式由 DATA 轨迹判（buildBases 原语义）；地图预览会话：宿主经
   // setMapBasesKind 显式选组，几何仍是唯一事实（bases.buildStatic 内部 fail-closed）。
   function buildBases() {
-    if (SESSION_MODE === 'map') bases.buildStatic(MAP_BASES_KIND);
+    if (session.sessionMode() === 'map') bases.buildStatic(MAP_BASES_KIND);
     else bases.build();
   }
   function clearBases() { bases.clear(); }
@@ -2517,13 +2504,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   //（数据面 / 呈现口径 / fail-closed 判据见该模块头：宿主经 setMapSpawns 下发语义
   //  档案解析出的点列，回放会话不消费；几何 fail-closed 在 spawns.build 内部。）
   const spawnMarkers = createSpawnMarkers({ getScene: () => scene, groundY });
-  function buildSpawns() { spawnMarkers.build(SESSION_MODE === 'map' ? MAP_SPAWN_POINTS : null); }
+  function buildSpawns() { spawnMarkers.build(session.sessionMode() === 'map' ? MAP_SPAWN_POINTS : null); }
   function clearSpawns() { spawnMarkers.clear(); }
   function regroundSpawns() { spawnMarkers.reground(); }
   /** UI Profile 切换后 token 色板变化（showcase↔classic / auto 随系统）：已有出生点
    *  材质原位重着色——不重建场景、不动相机。仅 map 会话有意义（回放无出生点）。 */
   function refreshSpawnColors() {
-    if (SESSION_MODE !== 'map') return;
+    if (session.sessionMode() !== 'map') return;
     spawnMarkers.refreshColors();
     invalidate();
   }
@@ -3508,7 +3495,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     return true;
   }
   async function applyGlbToggle(on) {
-    const gen = sessionGen;
+    const gen = session.sessionGen();
     glbOn = on;
     store.glbOn = on;
     if (on) {
@@ -3518,7 +3505,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       await mapLimit(V.filter(v => v.def.tank_id > 0), ASSET_CONCURRENCY, async (v) => {
         if (!v.glb) {
           const loaded = await loadGlb(v.def.tank_id);
-          if (gen !== sessionGen) return;   // 迟到：模板留在旧缓存对象里随 GC 回收
+          if (gen !== session.sessionGen()) return;   // 迟到：模板留在旧缓存对象里随 GC 回收
           if (loaded && glbOn && !v.glb) {
             const inst = loaded.template.clone();
             inst.scale.setScalar(1);
@@ -3835,7 +3822,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   //（原节的语义注释——响应式代理登记、阵营视角映射、resolver 单源——随实现迁往该模块）
   const hudFeed = createHudFeed({
     store, getData: () => DATA, getT: () => T, getV: () => V,
-    getSessionGen: () => sessionGen, deathAt,
+    getSessionGen: () => session.sessionGen(), deathAt,
     // reloadStateAt 是闭包 let（startPlayback 里重赋值为真实 resolver）——按 getter
     // 注入，工厂不得按值捕获初始空箭头（名册 reload 列会永远为 null）
     getReloadStateAt: () => reloadStateAt,
@@ -4146,18 +4133,15 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const perfAutoReset = PERF ? renderer.info.autoReset : null;
     try {
       if (PERF) { renderer.info.autoReset = false; renderer.info.reset(); }
-      const gpuFrameId = perfReadySession === sessionEpoch ? gpu?.beginFrame() ?? null : null;
+      const gpuFrameId = session.isReadySession() ? gpu?.beginFrame() ?? null : null;
       const gpuMainStarted = gpu?.begin('main') ?? false;
       try { renderer.render(scene, camera); } finally { if (gpuMainStarted) gpu.end(); }
-      if (perf && !perfFirstSubmitted && (store.hasData || store.mapReady) && perfReadySession === sessionEpoch && perfLoadingEpoch === perf.epoch) {
-        perfFirstSubmitted = true;
-        perf.event({ stage: 'firstReadyFrameSubmittedMs', durationMs: performance.now() - perfLoadingStart }, perfLoadingEpoch);
-      }
+      session.tryMarkFirstReadyFrame();
       const perfR0 = PERF ? performance.now() : 0;
       renderArmorHighlight();
       gpu?.submitFrame();
       const perfR1 = PERF ? performance.now() : 0;
-      if (PERF && perfReadySession === sessionEpoch) perfFrame(perfT1 - perfT0, perfR0 - terrainFinished, perfR1 - perfR0, armorStats, { cpuFrameMs: perfR1 - cpuStarted, tickMs: tickFinished - cpuStarted, cameraMs: cameraFinished - tickFinished, terrainCheckInclusiveMs: terrainFinished - perfT1, gpuFrameId, gpu_total_ms: null });
+      if (PERF && session.isReadySession()) perfFrame(perfT1 - perfT0, perfR0 - terrainFinished, perfR1 - perfR0, armorStats, { cpuFrameMs: perfR1 - cpuStarted, tickMs: tickFinished - cpuStarted, cameraMs: cameraFinished - tickFinished, terrainCheckInclusiveMs: terrainFinished - perfT1, gpuFrameId, gpu_total_ms: null });
       gpu?.recorded(gpuFrameId);
     } finally {
       if (PERF) renderer.info.autoReset = perfAutoReset;
@@ -4175,7 +4159,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let dynResCtl = null;
   let rendererCaps = null;   // 当前渲染器实际装配的 { logdepth, dynres }（reset 保留渲染器时用于失配检测）
   const perf = PERF ? createPerf() : null;
-  let perfLoadingStart = 0, perfLoadingEpoch = 0, perfFirstSubmitted = false, perfReadySession = null;
+  // perf 装载段状态（perfLoadingStart/perfLoadingEpoch/perfFirstSubmitted/perfReadySession）
+  // 的唯一 owner = playback/sessionLifecycle.ts（#820 Step 1 出仓）。
   const gpu = PERF ? createGpuFrameTracker(perf) : null;
   if (perf) perf.setIdentity({ buildCommit: typeof __BUILD_COMMIT__ !== 'undefined' ? __BUILD_COMMIT__ : null,
     buildTime: typeof __BUILD_TIME__ !== 'undefined' ? __BUILD_TIME__ : null,
@@ -4472,7 +4457,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     store.recorderCameraStatus = source?.file ? 'loading' : 'unavailable';
     if (!source?.file) return;
     const settle = (facet) => {
-      if (destroyed || epoch !== sessionEpoch) return;
+      if (destroyed || epoch !== session.sessionEpoch()) return;
       const usable = !!facet && facet.author_eid === DATA?.meta?.author_eid;
       recorderCamera = usable ? facet : null;
       store.recorderCameraStatus = usable ? 'ready' : 'unavailable';
@@ -4815,8 +4800,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     envMultiplier = 1;
   }
   function teardownSession() {
-    sessionGen++;
-    SESSION_MODE = 'replay';
+    session.bumpSessionGen();
+    session.setSessionMode('replay');
     MAP_BASES_KIND = null;
     MAP_SPAWN_POINTS = null;   // 出生点列随会话复位（宿主就绪后经 setMapSpawns 补推）
     store.mapReady = false;
@@ -4938,138 +4923,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     hudFeed.resetRoster();   // eid → 名册行 索引清空（实现在 playback/hudFeed.js）
   }
 
-  async function loadData(source) {
-    if (perf) { perf.interrupt('file-change'); perf.beginSession(); perf.setIdentity({ replayDigest: null }); perfReadySession = null; perfLoadingStart = performance.now(); perfLoadingEpoch = perf.epoch; perfFirstSubmitted = false; }
-    // source 仅接受 { kind:'local', file }（client-only 拓扑，replaySource 对
-    // 其他形态显式拒绝）；字符串路径等 server 形态在本拓扑中不存在
-    //
-    // 三个计数各司其职（混用会漏掉真实竞态）：
-    // - `sessionGen`（加载代数）：只有新的 loadData / destroy 递增，判定「谁是最新一次加载」；
-    // - `loadGen`（实例内加载令牌）：同上但按实例隔离，配合 destroyed 判定归属；
-    // - `sessionEpoch`（会话身份）：每次新的 loadData 与 destroy 时递增，判定
-    //   「startPlayback 的资产续体是否还属于当前会话」。
-    //   与 sessionGen 分开的原因：sessionGen 表达「加载顺序」，而身份判定需要的是
-    //   「谁拥有当前会话」。teardown 只销毁旧会话资源、不改身份，否则本次加载自己的
-    //   资产续体会连同旧会话一起被判过期（正常加载被误伤）。
-    const gen = ++sessionGen;
-    // 会话身份：每次加载唯一。teardown 只销毁旧会话资源、不改身份——否则本次加载的
-    // 资产续体会连同旧会话一起被判过期（这正是「正常加载也被误伤」的成因）。
-    const epoch = ++sessionEpoch;
-    const loadGen = ++loadGeneration;
-    // 归属判定必须同时覆盖两件事：**本实例还活着**（destroyed）且**本代仍是最新一次加载**。
-    // 只看 loadGen 不够：`loadGeneration` 是实例内闭包，A 实例被 destroy 后自己的计数器不变，
-    // 它会继续把自己评为「最新代」，于是被销毁实例的迟到续体仍能写共享 store（B 用同一个 store）。
-    const ownsLoading = () => !destroyed && loadGen === loadGeneration;
-    // 新会话被接受的那一刻，当前场景就不再是「已就绪」：否则解析/资产阶段（可能数秒）
-    // 里 HUD、播放传输与 time/roster 仍然代表上一场回放（ready 泄漏 + 旧 UI 可交互）。
-    // 与下面的 hasData=true 一起构成不变量：hasData ⟺ 当前会话已完成加载且 DATA 可用。
-    store.hasData = false;
-    // 上一场的 canonical 时钟不属于这一场：新会话就绪后由面板重新交给引擎（setBattleClock）
-    canonicalClock = null;
-    store.err = '';
-    store.loading = true;
-    store.assetStage = false;
-    store.assetProgress = null;
-    const diagnosticEpoch = perf?.epoch;
-    try {
-      // 数据获取在 teardown 之前：新回放解析失败时当前回放保持完好（替换语义 =
-      // 新数据就位才拆旧会话）
-      const observer = perf ? (event) => {
-        if (ownsLoading() && gen === sessionGen && diagnosticEpoch === perf.epoch && event.stage === 'replay.identity' && event.digest) perf.setIdentity({ replayDigest: event.digest });
-        if (ownsLoading() && gen === sessionGen) perf.event({ stage: event.stage, durationMs: event.durationMs ?? null,
-          status: event.status ?? null, digest: event.digest ?? null }, diagnosticEpoch);
-      } : undefined;
-      const data = source?.session
-        ? await (observer ? source.session.loadScene(source.file, observer) : source.session.loadScene(source.file))
-        : await loadPlaybackData(observer ? { ...source, observer } : source);
-      const playbackSession = source?.session ? source.session.getState(source.file) : null;
-      if (gen !== sessionGen) return;   // 迟到：新数据随旧代数 GC（loading 由新所有者管理）
-      teardownSession();   // 拆旧会话资源；会话身份已在入口领取，本调用仍是当前会话
-      DATA = data;
-      VIS_BY_EID = visibilitySpansByEid(data.visibility);
-      POSE_GRID.tStart = data.meta.t_start;
-      POSE_GRID.samples = data.meta.samples;
-      store.playbackSession = playbackSession;
-      loadRecorderCamera(source, epoch);
-      // 资产阶段（地图/地形/地表/场景）内部有多个 await：被取代后必须立刻放弃，
-      // 否则旧会话会走完 buildVehicles / buildRoster / setPlaying / tick / writeHud 复活自己。
-      const ready = await startPlayback(epoch);
-      if (!ready || !ownsLoading()) return;
-      store.hasData = true;
-      if (perf) { perfReadySession = epoch; invalidate(); }
-    } catch (e) {
-      // 只写原因；标题与重试由宿主页（Scene3DStatus）按当前语言呈现。
-      // 只有最新一次加载可以写：旧加载的失败不得覆盖新加载的状态。
-      if (ownsLoading()) {
-        if (perf) perf.event({ stage: 'replay.load', status: 'error' }, diagnosticEpoch);
-        store.err = String(e?.message || e || 'unknown');
-      }
-    } finally {
-      // 只有最新一次加载可以落下 loading；被取代的加载不得提前结束新会话的加载态。
-      if (ownsLoading()) store.loading = false;
-    }
-  }
-
-  /**
-   * 地图预览会话（MapPreview3DPane）：不依赖回放文件，只按地图 id 装载地图面资产
-   * （ground/terrain/lighting/IBL/scenery/destructibles 完好预状态），无车辆、无传输。
-   *
-   * 会话纪律与 `loadData` 完全同构（gen/epoch/loadGen 三计数 + ownsLoading 归属判定），
-   * 差异只有两处：数据是 stub（`minimalData` 同款形状，空车队已被内核测试证明安全），
-   * 且 `startPlayback` 在地图资产就绪后按 `SESSION_MODE === 'map'` 提前收口——就绪标记落
-   * `store.mapReady`，`store.hasData` 保持 false（传输/阵容/HUD 门控天然禁用）。
-   *
-   * @param {{ mapId: number, mapName?: string }} opts 资产面数字地图 id（resolveMapKey 'id='）
-   * @returns {Promise<void>} 就绪/失败都写 store（err / mapReady / assetStage），不抛
-   */
-  async function loadMapOnly({ mapId, mapName = '' }) {
-    if (perf) { perf.interrupt('map-change'); perf.beginSession(); perfReadySession = null; perfLoadingStart = performance.now(); perfLoadingEpoch = perf.epoch; perfFirstSubmitted = false; }
-    const gen = ++sessionGen;
-    const epoch = ++sessionEpoch;
-    const loadGen = ++loadGeneration;
-    const ownsLoading = () => !destroyed && loadGen === loadGeneration;
-    store.hasData = false;
-    store.mapReady = false;
-    canonicalClock = null;
-    store.err = '';
-    store.loading = true;
-    store.assetStage = false;
-    store.assetProgress = null;
-    try {
-      if (gen !== sessionGen) return;
-      teardownSession();   // 拆旧会话资源（同时复位 SESSION_MODE，下行再声明本会话模式）
-      SESSION_MODE = 'map';
-      DATA = {
-        meta: { map_id: mapId || 0, map_name: mapName || '', t_start: 0, friendly_team: 1, duration: 0 },
-        vehicles: [],
-        shots: [],
-        periods: [],
-        destructible_events: [],
-      };
-      VIS_BY_EID = visibilitySpansByEid(undefined);
-      POSE_GRID.tStart = 0;
-      POSE_GRID.samples = 0;
-      store.playbackSession = null;
-      const ready = await startPlayback(epoch);
-      if (!ready || !ownsLoading()) return;
-      store.mapReady = true;
-      if (perf) { perfReadySession = epoch; invalidate(); }
-    } catch (e) {
-      if (ownsLoading()) store.err = String(e?.message || e || 'unknown');
-    } finally {
-      if (ownsLoading()) store.loading = false;
-    }
-  }
-  /**
-   * 进入场景：等待运行所需全部资产（地图/地形/地表/场景 GLB 按画质档）后落成会话。
-   *
-   * 本函数内部有多个 await；`epoch` 是本会话的身份令牌，**每个 await 之后与最终就绪态之前
-   * 都必须复核**。否则被取代的会话会在资产加载返回后继续走完
-   * buildVehicles / buildRoster / setPlaying / tick / writeHud，把旧会话复活到新会话身上。
-   *
-   * @param {number} epoch loadData 提交数据后领取的会话身份（见 loadData 注释）
-   * @returns {boolean} true = 本会话仍是当前会话，可以落成就绪态；false = 已过期，调用方必须放弃
-   */
   /** 重建渲染器上下文（偏好失配时）：卸旧 renderer/controls/画布与事件，
    *  initScene 重建——会话数据（DATA/资产/相机状态）不动，仅重挂画布。 */
   function rebuildRenderer() {
@@ -5099,10 +4952,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     camera.lookAt(controls.target);
   }
 
-  async function startPlayback(epoch) {
-    const current = () => epoch === sessionEpoch && !destroyed;
-    // 入口即复核：数据阶段可能耗时到被取代，此时连渲染器都不该为它创建;
-    if (!current()) return false;
+  /** 渲染器就绪（startPlayback 编排调用；原 startPlayback 内联段，偏好失配语义原样）。 */
+  function ensureRenderer() {
     if (!renderer) initScene();   // 渲染器惰性创建：此时画质档已定型（loader 选择/URL 参数）
     else if (rendererCaps && (rendererCaps.logdepth !== LOGDEPTH || rendererCaps.dynres !== DYNRES)) {
       // 复用渲染器（换文件 reset 保留）但待开播偏好已改：按失配项热修正——
@@ -5124,73 +4975,33 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         dynResCtl = (DYNRES && cap > 1) ? createDynRes({ ceilDpr: cap }) : null;
       }
     }
-    store.mapName = DATA.meta.map_name || ('map_' + DATA.meta.map_id);
-    // 提前解析资产面 mapKey：buildWorld 要用 playableBoundsFor（依赖 currentMapKey）；
-    // loadMapImage 里的 resolveMapKey 幂等（索引有缓存），不会重复请求。
-    {
-      const mid0 = DATA.meta.map_id || 0;
-      const mq0 = mid0 ? ('id=' + mid0) : ('name=' + encodeURIComponent(DATA.meta.map_name || ''));
-      // 场景自己的 currentMapKey（playableBoundsFor 读这个）必须在此赋值——只调不接曾让
-      // buildWorld 拿不到可玩矩形、中心回退到车辆云心。
-      const perfMapResolveAt = perf ? performance.now() : 0;
-      const resolvedKey = await resolveMapKey(mq0).catch(() => null);
-      if (perf && current()) perf.event({ stage: 'map-resolution', durationMs: performance.now() - perfMapResolveAt }, perfLoadingEpoch);
-      if (!current()) return false;   // 资产解析期间被取代：不得继续动场景
-      currentMapKey = resolvedKey;
-    }
-    // 跟随目标不跨回放：新回放回到俯视机位的自由视角，不留下无目标的 follow。
-    if (CAM !== 'free') topViewOnLoad = true;
-    buildWorld();
-    // 默认机位：俯视总览模式（旋转中心 = 地图中心）；仍处于俯视时新地图要重新对心，
-    // 保留的自由/跟随机位按新地图重新约束。
-    if (topViewOnLoad || CAM === 'top') setCam('top');
-    else if (flyMode()) { clampCameraTarget(); constrainFreeCameraAltitude(); }
-    // 进入场景前等待运行所需全部资产（评审要求：地图/地形/分层地表/场景 GLB 按
-    // 画质档全部就绪后才进场，不再先进场后异步补图）。各段内部已 try/catch——
-    // 资产缺失按档位语义降级（回退网格/2D/烘焙底图），等待不因单项缺失而悬挂。
-    store.assetStage = true;
-    store.assetProgress = null;
-    const perfMapAt = perf ? performance.now() : 0;
-    try {
-      await loadMapImage();
-    } catch (e) {
-      console.warn('地图资产加载失败（回退网格）:', e);
-    } finally {
-      if (current()) store.assetStage = false;
-    }
-    if (perf && current()) perf.event({ stage: 'map-assets-aggregate', durationMs: performance.now() - perfMapAt }, perfLoadingEpoch);
-    if (!current()) return false;   // 地图资产期间被取代：后面全是 DATA 派生的会话状态
-    if (SESSION_MODE === 'map') {
-      if (perf) { perf.event({ stage: 'vehicle-construction', status: 'skipped' }, perfLoadingEpoch); perf.event({ stage: 'glb-wait', status: 'skipped' }, perfLoadingEpoch); perf.event({ stage: 'shader-prewarm', status: 'skipped' }, perfLoadingEpoch); }
-      // 地图预览会话：地图资产就绪即完成——车辆/GLB/名册/传输/HUD 全部不建。
-      // 相机（top/free）与地形钳制只依赖 heightField/WORLD_CENTER，照常可用；
-      // 渲染由 animate() 常驻循环承担，就绪态由 loadMapOnly 落 store.mapReady。
-      // 基地贴地环按宿主选的模式建（currentMapBases 已随 loadMapImage 解析）；
-      // 地形异步就绪后由 regroundBases 把环带/圆盘重新贴回新地表（与回放同链）。
-      // map 会话没有 tick() 驱动（PLAYING 恒 false、按需渲染），首帧必须显式标脏——
-      // 否则 canvas 初始为黑，直到用户第一次拖动相机。
-      buildBases();
-      buildSpawns();   // 出生点贴地标记（#835；宿主下发的语义点列，缺档不画）
-      invalidate();
-      return true;
-    }
-    const perfVehiclesAt = perf ? performance.now() : 0;
-    buildVehicles();
-    if (perf && current()) perf.event({ stage: 'vehicle-construction', durationMs: performance.now() - perfVehiclesAt }, perfLoadingEpoch);
-    const perfGlbAt = perf ? performance.now() : 0;
-    if (glbOn) {
-      const attach = applyGlbToggle(true);   // 会话切换后按用户偏好恢复 GLB 车模
-      if (Q.forceGlb) {
-        // 高/极致（2026-10-11 用户裁示）：进地图前**全部**车辆模型就绪——此前 GLB 在
-        // 开始播放后才并发下载，开局数秒是盒子代理，且履带印轨距（suspension 模型
-        // halfW）随挂载跳变，起步印记出现侧向折线
-        store.assetStage = true;
-        try { await attach; } finally { if (current()) store.assetStage = false; }
-        if (!current()) return false;
-      }
-    }
-    if (perf && current()) perf.event({ stage: 'glb-wait', durationMs: glbOn && Q.forceGlb ? performance.now() - perfGlbAt : null, status: !glbOn ? 'skipped' : Q.forceGlb ? 'complete' : 'background-pending' }, perfLoadingEpoch);
-    buildRoster();
+  }
+  /** 会话开场相机重置：跟随目标不跨回放（startPlayback 编排调用）。 */
+  function prepareSessionCamera() { if (CAM !== 'free') topViewOnLoad = true; }
+  /** 回放数据发布（sessionLifecycle 编排调用；DATA/VIS_BY_EID/POSE_GRID 唯一 owner 仍在本闭包）。 */
+  function publishSessionData(data, playbackSession) {
+    DATA = data;
+    VIS_BY_EID = visibilitySpansByEid(data.visibility);
+    POSE_GRID.tStart = data.meta.t_start;
+    POSE_GRID.samples = data.meta.samples;
+    store.playbackSession = playbackSession;
+  }
+  /** 地图预览 stub 发布（空车队，minimalData 同款形状；startPlayback 只走地图资产前缀）。 */
+  function publishMapOnlyData(mapId, mapName) {
+    DATA = {
+      meta: { map_id: mapId || 0, map_name: mapName || '', t_start: 0, friendly_team: 1, duration: 0 },
+      vehicles: [],
+      shots: [],
+      periods: [],
+      destructible_events: [],
+    };
+    VIS_BY_EID = visibilitySpansByEid(undefined);
+    POSE_GRID.tStart = 0;
+    POSE_GRID.samples = 0;
+    store.playbackSession = null;
+  }
+  /** 会话级 resolver 装配 + mounted-configs 预取（startPlayback 编排调用）。 */
+  function prepareResolvers() {
     // 会话级 mounted-configs 缓存（tank_id → tank/{id}.json）：先建 Map 再建 resolver——
     // resolver 闭包持有同一引用，异步填充后自动生效
     tankDataByTankId = new Map();
@@ -5201,50 +5012,76 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 弹容不同，禁止跨配置取最大 / 剩余弹数+1 推断（上游 §六 裁决）。configs 就绪后写入
     // 共享 Map 即生效，这里只需触发一次重绘。
     {
-      const mySession = sessionGen;
+      const mySession = session.sessionGen();
       const tankIds = new Set(DATA.vehicles
         .filter((v) => v.team === DATA.meta.friendly_team && v.tank_id > 0)
         .map((v) => v.tank_id));
       for (const tid of tankIds) {
         assetProvider.json(`/tank/${tid}.json`).then((t) => {
-          if (mySession !== sessionGen || !t || tankDataByTankId.get(tid)) return;
+          if (mySession !== session.sessionGen() || !t || tankDataByTankId.get(tid)) return;
           tankDataByTankId.set(tid, t);
           labelsTime = null;
           invalidate();
         }).catch(() => {});
       }
     }
-    transients.rebuildSources();   // 战斗反馈事件源（伤害/击毁）
-    buildBases();   // 基地贴地标记（争霸 A–D / 单基地）
-    // 会话从开战时刻开始：准备 / 倒计时阶段不在时间轴上（与 2D 一致）
-    sceneClock = resolveReplayClock(DATA.periods || [], null, DATA.meta.duration);
-    [START, END] = battleRange();
-    T = START;
-    transients.rewindBursts(T);   // 伤害游标由 rebuildSources 归零（开战时刻的事件不跳过）
-    shotPtr = 0; hudFeed.resetKillPtr();
-    if (DEBUG) window.__pbV = V;   // 调试钩子：控制台可查每车 GLB/位姿状态（仅 ?debug）
-    const perfWarmAt = perf ? performance.now() : 0;
-    prewarmShaders();
-    if (perf && current()) perf.event({ stage: 'shader-prewarm', durationMs: performance.now() - perfWarmAt }, perfLoadingEpoch);
-    // 会话常量一次写清（此前每 tick 重写，值不变不会触发响应式，但语义上属会话级）
-    store.startTime = START;
-    store.duration = END;
-    // 最后一处会「启动播放」的写：过期会话绝不允许走到这里（否则旧会话会自己开始 tick）
-    if (!current()) return false;
-    setPlaying(true);
-    tick();
-    writeHud(true);   // 会话开始：立即对齐 HUD（不等降频窗口）
-    invalidate();
-    return true;
   }
+  /** 会话游标复位（开战时刻：弹道指针与击杀 feed 指针）。 */
+  function resetSessionCursors() { shotPtr = 0; hudFeed.resetKillPtr(); }
+
+  // 会话生命周期 owner（#820 Step 1 出仓）：loadData / loadMapOnly / startPlayback 与
+  // 会话代数三计数迁至 playback/sessionLifecycle.ts；本闭包是它的宿主（编排接线 +
+  // 事实 owner），依赖注入语义见该模块 deps 接口。
+  const session = createSessionLifecycle({
+    store,
+    destroyed: () => destroyed,
+    perf: () => perf,
+    teardownSession,
+    publishSessionData,
+    publishMapOnlyData,
+    ensureRenderer,
+    battleRange,
+    publishSceneClock: () => { sceneClock = resolveReplayClock(DATA.periods || [], null, DATA.meta.duration); },
+    clearCanonicalClock: () => { canonicalClock = null; },
+    prepareSessionCamera,
+    setMapKey: (key) => { currentMapKey = key; },
+    getGlbOn: () => glbOn,
+    buildWorld,
+    setCam,
+    clampCameraTarget,
+    constrainFreeCameraAltitude,
+    loadMapImage,
+    buildBases,
+    buildSpawns,
+    buildVehicles,
+    applyGlbToggle,
+    buildRoster,
+    prepareResolvers,
+    prewarmShaders,
+    setPlaying,
+    tick,
+    writeHud,
+    invalidate,
+    loadRecorderCamera,
+    transients,
+    setClockRange: (start, end) => { START = start; END = end; },
+    setTime: (t) => { T = t; },
+    debug: DEBUG,
+    exposeVehicles: () => { window.__pbV = V; },
+    data: () => DATA,
+    topViewOnLoad: () => topViewOnLoad,
+    cam: () => CAM,
+    forceGlb: () => !!Q.forceGlb,
+    resetSessionCursors,
+  });
 
   // 初始化：事件绑定 + 动画循环（渲染器惰性创建，画质选择先于首帧定型）
   animate();
   applyGlbGate();
 
   return {
-    loadData,
-    loadMapOnly,
+    loadData: session.loadData,
+    loadMapOnly: session.loadMapOnly,
     /**
      * 地图预览会话：选择贴地基地环画哪组（'supremacy' | 'assault' | null=隐藏）。
      * 非法值归一为 null（fail-closed）。会话未就绪时只记意图——startPlayback 的
@@ -5253,7 +5090,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
      */
     setMapBasesKind(kind) {
       MAP_BASES_KIND = (kind === 'supremacy' || kind === 'assault') ? kind : null;
-      if (SESSION_MODE === 'map' && store.mapReady) {
+      if (session.sessionMode() === 'map' && store.mapReady) {
         buildBases();
         invalidate();
       }
@@ -5267,7 +5104,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
      */
     setMapSpawns(points) {
       MAP_SPAWN_POINTS = Array.isArray(points) ? points : null;
-      if (SESSION_MODE === 'map' && store.mapReady) {
+      if (session.sessionMode() === 'map' && store.mapReady) {
         buildSpawns();
         invalidate();
       }
@@ -5293,9 +5130,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
      * `DATA` 后旧续体会在 `DATA.vehicles` 上抛错，把内部异常当「加载失败」写给用户）。
      */
     reset() {
-      if (perf) { perf.interrupt('session-reset'); perf.beginSession(); perfReadySession = null; perf.setIdentity({ replayDigest: null }); }
-      loadGeneration++;
-      sessionEpoch++;
+      if (perf) { perf.interrupt('session-reset'); perf.beginSession(); session.clearReadySession(); perf.setIdentity({ replayDigest: null }); }
+      session.invalidateLoadingTokens();
       teardownSession();               // 车辆/地图/地形/特效/GLB 模板全量释放 + roster/HP/点数归零
       setPlaying(false);
       store.hasData = false;
@@ -5435,8 +5271,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       destroyed = true;
       foliageClip.value = 0;
       flyLookApplyMode('follow');   // 恢复 controls 原生状态（实例随即销毁，防残 handedness）
-      loadGeneration++;
-      sessionEpoch++;
+      session.invalidateForDestroy();
       store.loading = false;
       store.assetStage = false;
       store.assetProgress = null;
