@@ -198,7 +198,6 @@ describe('MapPreview3DPane 首次激活生命周期', () => {
       getter.mockRestore()
     }
   })
-  })
 
   it('激活后切走：场景保留暂停，不销毁、不重装；切回不重建不重装', async () => {
     const wrapper = mountPane(true)
