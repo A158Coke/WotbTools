@@ -1529,8 +1529,18 @@ EOF
   export PATH="$FAKEBIN:$PATH"
 
   PASS=0; FAIL=0
+  HELPER_ERR="$TMP/helper.err"; : > "$HELPER_ERR"
   ok() { PASS=$((PASS+1)); echo "helper behavior PASS: $1"; }
-  bad() { FAIL=$((FAIL+1)); echo "helper behavior FAIL: $1"; }
+  bad() {
+    FAIL=$((FAIL+1)); echo "helper behavior FAIL: $1"
+    if [ -s "$HELPER_ERR" ]; then
+      sed 's/^/  helper stderr| /' "$HELPER_ERR" | tail -8
+    fi
+    if [ -d "$TMP/repo/.git" ]; then
+      git -C "$TMP/repo" log --oneline -1 2>&1 | sed 's/^/  repo head| /'
+      git -C "$TMP/repo" status --porcelain 2>&1 | sed 's/^/  repo status| /' | head -5
+    fi
+  }
 
   expect_fail() { # description, then command...
     local desc="$1"; shift
@@ -1559,7 +1569,7 @@ EOF
 
   BODY="$TMP/body.md"; printf 'body\n' > "$BODY"
 
-  run_in_repo() { (cd "$TMP/repo" && bash "$HELPER" "$@"); }
+  run_in_repo() { (cd "$TMP/repo" && bash "$HELPER" "$@") 2>"$HELPER_ERR"; }
 
   # 1. crew-skills normal path: new branch, force-with-lease, create PR, dispatch exact HEAD.
   setup_repo
