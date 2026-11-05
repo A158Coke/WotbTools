@@ -199,7 +199,6 @@ const annotationEraserRadius = ref(ANNOT_ERASER_RADIUS_DEFAULT)
 const rootEl = ref(null)
 const stageEl = ref(null)
 const squareEl = ref(null)
-const controlsEl = ref(null)
 const mapComponent = ref(null)
 /** BattleMap expose 的**真实地图 DOM**（组件实例没有 getBoundingClientRect）；
  *  桌面/平板下 .pb-map 根宽为 66.7%，所有 screen-space 几何必须以它为原点/尺寸。 */
@@ -220,22 +219,18 @@ const ZOOM_STEP = 1.2
 const PAN_THRESHOLD_PX = 5
 const PINCH_THRESHOLD_PX = 5
 const FIT_MARGIN = 0.98
-/** 居中方形舞台边长（min(舞台宽, 舞台高)，JS 实测——纯 CSS aspect-ratio 与
- *  max-width 冲突时会被拉成矩形，实测写入内联尺寸才稳定）。
- *  手机形态：舞台高度改为内容驱动（stage 内联高度 = 方形边长），边长 =
- *  min(舞台宽, 填充高度 − 工具区实高)——地图吃满可用宽度且工具栏紧随地图，
- *  不再因「舞台吃剩余高度」在地图与工具栏之间留大块空白；装不下时交给页面滚动。 */
+/** 居中方形舞台边长（JS 实测——纯 CSS aspect-ratio 与 max-width 冲突时会被拉成
+ *  矩形，实测写入内联尺寸才稳定）。
+ *  手机形态：边长 = **可用宽度**（地图优先吃满宽度保持正方形；竖屏高度不够或
+ *  标注工具换行变高时由页面滚动承接，不按剩余高度压缩地图边长）；舞台高度改为
+ *  内容驱动（stage 内联高度 = 方形边长），工具栏紧随地图。
+ *  桌面：保持 min(舞台宽, 舞台高) 的固定填充高度契约。 */
 const squareSide = ref(0)
 function measureSquare() {
   const w = stageEl.value?.clientWidth || 0
   const h = stageEl.value?.clientHeight || 0
   if (isPhone.value) {
-    const fill = Number.parseFloat(stageHeight.value) || 0
-    const budget = fill - (controlsEl.value?.offsetHeight || 0)
-    // 预算可为负（标注工具在窄屏换行后高于剩余空间）：方形不塌 0，按下限渲染、
-    // 超出部分交给页面滚动（Plan：小高度设备允许合理滚动而不是遮挡内容）。
-    const MIN_SQUARE = 180
-    squareSide.value = w > 0 ? Math.floor(Math.min(w, Math.max(budget, MIN_SQUARE))) : 0
+    squareSide.value = w > 0 ? Math.floor(w) : 0
     return
   }
   squareSide.value = w > 0 && h > 0 ? Math.floor(Math.min(w, h)) : 0
@@ -300,7 +295,7 @@ watch(mapEl, (el, prev) => {
   fitObserved = false
 }, { flush: 'post' })
 watch(stageHeight, measureSquare, { flush: 'post' })
-// 手机形态切换（旋转/跨断点）重测；标注工具开合的 watch 在 annotationOpen 声明之后注册
+// 手机形态切换（旋转/跨断点）重测方形边长
 onMounted(() => {
   measureSquare()
   if (typeof ResizeObserver === 'function') {
@@ -785,8 +780,6 @@ const renderedAnnotations = computed(() => {
 const mapTouchPan = computed(() => !annotationOpen.value && view.scale <= fitScale() + 1e-3)
 
 // ---------- 底图切换 = 换图：标注清空（语义随图）+ 重解析底图 + 重新 fit ----------
-// 标注工具开合改变工具区实高（手机形态地图预算随之变化），nextTick 后重测方形边长
-watch(annotationOpen, () => nextTick(measureSquare), { flush: 'post' })
 watch(() => props.basemap, (bm) => {
   fitObserved = false
   resetAnnotationState()
@@ -989,7 +982,7 @@ const stubFloatClass = () => ''
         />
       </div>
     </div>
-    <div ref="controlsEl" class="map2d-controls">
+    <div class="map2d-controls">
       <div v-if="annotationOpen" class="map2d-annotations" data-testid="map-2d-annotations">
         <AnnotationToolbar
           :open="annotationOpen"

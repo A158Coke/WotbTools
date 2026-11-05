@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 // 场景全屏按钮的单一呈现组件：Maximize/Minimize 图标、aria-pressed、既有
 // `recon.map.playback.enter_fullscreen/exit_fullscreen` 文案。四个场景宿主
 // （Map Preview 2D/3D、Replay 2D/3D）共用；全屏状态事实源仍归
@@ -9,12 +9,12 @@
 import { Maximize, Minimize } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 
-defineProps({
-  isFullscreen: Boolean,
-  floating: Boolean,
-})
+defineProps<{
+  isFullscreen: boolean
+  floating: boolean
+}>()
 
-defineEmits(['toggle'])
+defineEmits<{ toggle: [] }>()
 
 const { t } = useI18n()
 </script>

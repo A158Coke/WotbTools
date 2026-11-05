@@ -91,7 +91,7 @@ import { createFrameMeter } from './frameMeter.js'
 import { advancePlaybackTime } from '../utils/playbackClock'
 import { activeEntityAt, resolveReplayClock } from '../replay-local/canonical/facts'
 import { isPlaybackSpeed } from '../composables/usePlaybackTransport.js'
-import { isFlySpeedIndex, FLY_SPEEDS, DEFAULT_FLY_SPEED_INDEX, TOUCH_PAN_MIN_HEIGHT, advanceFly as tickFlyImpl, classifyTwoFinger, groundPanOffset } from '../composables/useSceneFlyControls.js'
+import { isFlySpeedIndex, FLY_SPEEDS, DEFAULT_FLY_SPEED_INDEX, TOUCH_PAN_MIN_HEIGHT, advanceFly as tickFlyImpl, classifyTwoFinger, groundPanOffset, freeVerticalDistancePose } from '../composables/useSceneFlyControls.js'
 import { poseFromYPR, yprScene, cloneDetachedTurret, neutralizeDefaultMetalness, dropDuplicateGunMasks } from './glbRig.js'
 import {
   clampTravel, rateLimitTravel, spinStep, treadScrollStep, groundDropLocal,
@@ -2403,10 +2403,20 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (!renderer || !controls) return;
     const t = Math.min(1, Math.max(0, Number(v) || 0));
     if (CAM === 'free') {
+      // 竖直平移位姿由纯函数给出（freeVerticalDistancePose）：camera 与 target 加
+      // 同一个高度差，yaw/pitch/FOV 保持不变；贴地/上限处相机停住、target 跟随
+      // 实际生效差值，真实净空由 cameraDistanceState() 从相机状态反推。
       const terrain = terrainHeightForCameraClamp(camera.position.x, camera.position.z) ?? 0;
-      const cMax = Math.max(CAMERA_GROUND_CLEARANCE + 0.001, topCameraDefaultHeight() - terrain);
-      const targetC = cMax - t * (cMax - CAMERA_GROUND_CLEARANCE);
-      camera.position.y += targetC - (camera.position.y - terrain);
+      const pose = freeVerticalDistancePose({
+        camY: camera.position.y,
+        targetY: controls.target.y,
+        terrainY: terrain,
+        clearanceMin: CAMERA_GROUND_CLEARANCE,
+        heightMax: topCameraDefaultHeight(),
+        v: t,
+      });
+      camera.position.y = pose.camY;
+      controls.target.y = pose.targetY;
       constrainFreeCameraAltitude();
       camera.lookAt(controls.target);
       invalidate();

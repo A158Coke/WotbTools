@@ -867,6 +867,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         v-if="isPhone && fullscreenSupported"
         floating
         :is-fullscreen="isFullscreen"
+        data-test="pb-fullscreen"
         data-testid="playback-fullscreen"
         @toggle="toggleFullscreen()"
       />

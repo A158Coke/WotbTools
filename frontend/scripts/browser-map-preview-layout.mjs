@@ -48,7 +48,13 @@ function mapPreviewGeometryProbe() {
   const c = rect(controls)
   const hitTest = (el) => {
     if (!el) return null
-    const r = el.getBoundingClientRect()
+    let r = el.getBoundingClientRect()
+    // 竖屏横屏都可能折叠线以下：按「可滚动触达」口径，滚进视口后再做命中测试
+    // （这是几何断言，不涉及真实触点输入；tap 用例只在控件本屏可见时执行）。
+    if (r.bottom > window.innerHeight || r.top < 0) {
+      el.scrollIntoView({ block: 'center' })
+      r = el.getBoundingClientRect()
+    }
     const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
     return hit === el || el.contains(hit)
   }
@@ -61,6 +67,8 @@ function mapPreviewGeometryProbe() {
     controls: c,
     // 水平居中（≤2px）
     centerXError: Math.abs((sq.left + sq.right) / 2 - (s.left + s.right) / 2),
+    // 手机契约：方形边长 = 舞台可用宽度（不被视口高度预算压缩；空间不足由页面滚动承接）
+    widthError: Math.abs(sq.width - s.width),
     // 正方形
     aspectError: Math.abs(sq.width - sq.height),
     // 工具区紧随地图（≤2px）
@@ -138,6 +146,7 @@ async function main() {
         if (g.isPhoneLayout !== scenario.phone) problems.push(`phone layout=${g.isPhoneLayout} expected=${scenario.phone}`)
         if (g.centerXError > 2) problems.push(`square centerX error ${g.centerXError.toFixed(1)}px`)
         if (g.aspectError > 1) problems.push(`square not square (${g.square.width}x${g.square.height})`)
+        if (scenario.phone && g.widthError > 1) problems.push(`square width ${g.square.width.toFixed(1)} != stage width ${g.stage.width.toFixed(1)}`)
         if (g.horizontalOverflow) problems.push('horizontal overflow')
         if (scenario.phone && g.mapToControlsGap > 2) problems.push(`map→controls gap ${g.mapToControlsGap.toFixed(1)}px`)
         if (!scenario.phone && Math.abs(g.bodyFillContractError) > 1) {
@@ -159,8 +168,10 @@ async function main() {
         console.log(`[PASS] ${scenario.name} square=${g.square.width.toFixed(0)}x${g.square.height.toFixed(0)} gap=${g.mapToControlsGap?.toFixed(1)}`)
       }
 
-      // 标注工具开合后几何仍成立（手机形态工具区高度变化触发重测）
-      if (scenario.phone) {
+      // 标注工具开合后几何仍成立（手机形态工具区高度变化触发重测）。
+      // 工具区不在首屏的形态（横屏地图满宽后滚动承接）跳过 tap：scrollIntoView 会
+      // 平移 visual viewport 使触点坐标错位（本门禁顶部注释），触屏交互交真机验收。
+      if (scenario.phone && g.controls.bottom <= scenario.height) {
         // 不 scrollIntoView：它会平移 visual viewport（offsetTop ≠ 0），让后续触点
         // 坐标与 client 坐标错位。地图 + 工具行在手机档本来就在首屏可见。
         let entryPoint = null

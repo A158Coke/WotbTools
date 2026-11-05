@@ -97,6 +97,27 @@ export function groundPanOffset(dir: { x: number; y: number; z: number }, height
 }
 
 /**
+ * 移动端竖向距离滑条的 Free 模式位姿（纯函数；场景内核消费）。
+ *
+ * 值语义 v ∈ [0,1]：1=近（贴地下限 clearanceMin），0=远（高度上限 heightMax）。
+ * 返回相机与 target 的新 Y：两者**加上同一个**高度差——竖直平移相机时 target
+ * 同步平移，yaw/pitch 保持不变（只动 camera.y 会把「降低相机」变成「抬头」）；
+ * 相机撞到 [terrain + clearanceMin, heightMax] 边界时，target 只跟随**实际生效**
+ * 的差值（钳制停住 = 朝向不变、相机停在真实限制处）。
+ */
+export function freeVerticalDistancePose(
+  { camY, targetY, terrainY, clearanceMin, heightMax, v }: {
+    camY: number; targetY: number; terrainY: number; clearanceMin: number; heightMax: number; v: number
+  },
+): { camY: number; targetY: number } {
+  const cMax = Math.max(clearanceMin + 1e-3, heightMax - terrainY)
+  const wanted = cMax - v * (cMax - clearanceMin)
+  const clampedY = Math.min(heightMax, Math.max(terrainY + clearanceMin, camY + (wanted - (camY - terrainY))))
+  const deltaY = clampedY - camY
+  return { camY: clampedY, targetY: targetY + deltaY }
+}
+
+/**
  * 双指手势判定：两指朝同一方向走 = 'look'（转视角），否则 = 'pinch'（缩放），
  * 走得还不够远 = null（继续等）。只看运动不看指距：捏合放大本来就从两指并拢开始。
  * a0/b0 是判定起点，a1/b1 是当前位置。
