@@ -6,6 +6,7 @@
  * 本测试证明该路径现在复用 validateAgentPlayback：v1 被拒、v2 通过。
  */
 import { assetProvider } from './assetProvider.js'
+import * as pitchLimits from './pitchLimits.js'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
 import {
@@ -455,4 +456,53 @@ describe('解析生命周期：abort / 看门狗 / 迟到回包', () => {
       __setParseWorkerForTest(null)
     }
   })
+})
+
+
+describe('可选加载诊断', () => {
+  it('区分冷解析与缓存命中，诊断异常不影响业务结果', async () => {
+    setWasm(v2Doc())
+    const file = blob()
+    const events = []
+    await loadFromLocalFile(file, undefined, event => events.push(event))
+    expect(events).toContainEqual({ stage: 'json.cache', status: 'miss' })
+    expect(events.some(event => event.stage === 'file.arrayBuffer' && event.durationMs >= 0)).toBe(true)
+    expect(events.some(event => event.stage === 'first.parse' && event.durationMs >= 0)).toBe(true)
+    const cached = []
+    await loadFromLocalFile(file, undefined, event => cached.push(event))
+    expect(cached).toContainEqual({ stage: 'json.cache', status: 'hit' })
+    expect(cached).toContainEqual({ stage: 'first.parse', status: 'skipped' })
+    await expect(loadFromLocalFile(file, undefined, () => { throw Error('observer') })).resolves.toMatchObject({ version: 2 })
+  })
+})
+
+
+it('俯仰锚定失败保留首遍结果并标记 fallback', async () => {
+  setWasm(v2Doc())
+  const failed = vi.spyOn(pitchLimits, 'buildPitchLimits').mockRejectedValueOnce(new Error('unavailable'))
+  try {
+    const events = []
+    const result = await loadFromLocalFile(blob(), undefined, event => events.push(event))
+    expect(result.version).toBe(2)
+    expect(events).toContainEqual({ stage: 'pitchLimits.wait', status: 'fallback' })
+    expect(events).toContainEqual({ stage: 'second.parse', status: 'skipped' })
+  } finally { failed.mockRestore() }
+})
+
+
+it('第二遍解析失败保留首遍结果并标记 fallback', async () => {
+  setWasm(v2Doc())
+  let calls = 0
+  __setAgentWasmResolverForTest(() => Promise.resolve({ parsePlayback: () => {
+    if (++calls === 2) throw new Error('second parse failed')
+    return JSON.stringify(v2Doc())
+  } }))
+  const limits = vi.spyOn(pitchLimits, 'buildPitchLimits').mockResolvedValueOnce({ player: { dep: -5, ele: 10 } })
+  try {
+    const events = []
+    const result = await loadFromLocalFile(blob(), undefined, event => events.push(event))
+    expect(result.version).toBe(2)
+    expect(events).toContainEqual({ stage: 'second.parse', status: 'fallback' })
+    expect(calls).toBe(2)
+  } finally { limits.mockRestore() }
 })

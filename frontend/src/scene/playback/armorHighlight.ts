@@ -401,8 +401,24 @@ export interface ArmorHighlightPerfStats {
   occluderMs: number
   colorMs: number
   calls: number
+  stateCalls: number
+  thicknessCalls: number
+  occluderCalls: number
+  colorCalls: number
+  rt?: ArmorRenderTargetStats
   /** passBegin 的工作字段（perfFrame 读取前由 renderArmorHighlight 每帧清零） */
   _t0: number
+}
+
+/** 计数按实际 render target 对象计；大小为每张 RT，估算仅含两张颜色纹理。 */
+export interface ArmorRenderTargetStats {
+  width: number | null
+  height: number | null
+  creates: number
+  resizes: number
+  disposes: number
+  colorEstimateBytes: number | null
+  estimateKind: 'color-only-estimate'
 }
 
 export interface ArmorHighlightFrame {
@@ -418,6 +434,8 @@ export interface ArmorHighlightFrame {
   onReady: () => void
   /** ?perf 逐 pass 计时（仅 PERF 传入；调用方已关闭 info.autoReset 并逐帧 reset） */
   stats?: ArmorHighlightPerfStats
+  /** 不重叠包围实际执行的 render；调用方以当前帧序号绑定 query。 */
+  gpu?: { begin(pass: 'state' | 'thickness' | 'occluder' | 'color'): boolean; end(): void }
   /** 语义化遮挡根（issue #850 F）：地形/场景 GLB/占位地面/每车低模组、GLB/飞炮塔 */
   occluderRoots?: Object3D[]
 }
@@ -440,6 +458,7 @@ export function createArmorHighlight({ renderer, assetProvider }: {
     externalDepth: standardDepthMaterial(),
   }
   let stateRT: THREE.WebGLRenderTarget | null = null, spacedRT: THREE.WebGLRenderTarget | null = null
+  let rtStats: ArmorRenderTargetStats | null = null
   const size = new THREE.Vector2()
   const clearColor = new THREE.Color()
   const world = new THREE.Vector3()
@@ -451,6 +470,7 @@ export function createArmorHighlight({ renderer, assetProvider }: {
   const armorSphere = new THREE.Sphere()
   const scissor = new THREE.Vector4()
   const savedScissor = new THREE.Vector4()
+  const savedViewport = new THREE.Vector4()
   const occluderView = {
     frustum: new THREE.Frustum(), origin: new THREE.Vector3(), forward: new THREE.Vector3(), maxDepth: 0,
   }
@@ -463,10 +483,16 @@ export function createArmorHighlight({ renderer, assetProvider }: {
     stats._t0 = performance.now()
     return renderer.info.render.calls
   }
-  function passEnd(stats: ArmorHighlightPerfStats | null, key: 'stateMs' | 'thicknessMs' | 'occluderMs' | 'colorMs', beginCalls: number): void {
+  function passEnd(stats: ArmorHighlightPerfStats | null, key: 'stateMs' | 'thicknessMs' | 'occluderMs' | 'colorMs', callKey: 'stateCalls' | 'thicknessCalls' | 'occluderCalls' | 'colorCalls', beginCalls: number): void {
     if (!stats) return
     stats[key] += performance.now() - stats._t0
-    stats.calls += renderer.info.render.calls - beginCalls
+    const calls = renderer.info.render.calls - beginCalls
+    stats[callKey] += calls
+    stats.calls += calls
+  }
+  function renderPass(frame: ArmorHighlightFrame, pass: 'state' | 'thickness' | 'occluder' | 'color', scene: Scene, camera: PerspectiveCamera): void {
+    const started = frame.gpu?.begin(pass) ?? false
+    try { renderer.render(scene, camera) } finally { if (started) frame.gpu?.end() }
   }
 
   function loadTemplate(tankId: number, url: string): Promise<Object3D | null> {
@@ -599,8 +625,9 @@ function buildTarget(template: Object3D, vehicle: AimedVehicleCandidate, tankDat
     }
   }
 
-  function ensureTargets(rtW: number, rtH: number): void {
+  function ensureTargets(rtW: number, rtH: number, shrinking = false): void {
     if (stateRT && stateRT.width >= rtW && stateRT.height >= rtH) return
+    const resizing = shrinking || stateRT !== null
     disposeTargets()
     const floatCapable = renderer.extensions.has('EXT_color_buffer_float')
       || renderer.extensions.has('EXT_color_buffer_half_float')
@@ -610,6 +637,14 @@ function buildTarget(template: Object3D, vehicle: AimedVehicleCandidate, tankDat
     })
     stateRT = new THREE.WebGLRenderTarget(rtW, rtH, options())
     spacedRT = new THREE.WebGLRenderTarget(rtW, rtH, options())
+    if (rtStats) {
+      rtStats.creates += 2
+      if (resizing) rtStats.resizes += 2
+      rtStats.width = rtW
+      rtStats.height = rtH
+      // 仅两张 RGBA 颜色纹理；不包含 depth texture、驱动填充或真实显存占用。
+      rtStats.colorEstimateBytes = rtW * rtH * 2 * (floatCapable ? 8 : 4)
+    }
   }
 
   function bindBuffers(target: BuiltTarget, camera: PerspectiveCamera, spacedRect: THREE.Vector4): void {
@@ -664,6 +699,9 @@ function buildTarget(template: Object3D, vehicle: AimedVehicleCandidate, tankDat
       root.traverseVisible((object) => {
         const meshNode = object as Mesh
         if (!meshNode.isMesh) return
+        let ancestor: Object3D | null = object
+        while (ancestor && ancestor !== vehicle.glb && ancestor !== vehicle.group) ancestor = ancestor.parent
+        if (ancestor) { object.layers.disable(OCCLUDER_LAYER); return }
         if (object.layers.test(camera.layers) && isSolidOccluder(object) && canOccludeTarget(object, view)) {
           object.layers.enable(OCCLUDER_LAYER)
           count++
@@ -675,19 +713,21 @@ function buildTarget(template: Object3D, vehicle: AimedVehicleCandidate, tankDat
     return count
   }
 
-  function drawOccluderDepth(scene: Scene, camera: PerspectiveCamera, vehicle: ArmorHighlightFrame['vehicle'], view: OccluderView, roots: Object3D[]): void {
+  function drawOccluderDepth(frame: ArmorHighlightFrame, view: OccluderView, roots: Object3D[]): void {
+    const { scene, camera, vehicle } = frame
     const count = markOccluders(camera, vehicle, view, roots)
     // 零遮挡快速路径：走廊内没有任何能挡住目标的实体（开阔地直射的常见形态），
     // clearDepth 已把目标矩形深度清空——装甲不被任何世界几何挡住，跳过整个世界重绘。
     if (count === 0) return
-    const mask = camera.layers.mask, background = scene.background
+    const mask = camera.layers.mask, background = scene.background, overrideMaterial = scene.overrideMaterial
     camera.layers.set(OCCLUDER_LAYER)
     scene.background = null
     scene.overrideMaterial = occluderMaterial
-    renderer.render(scene, camera)
-    scene.overrideMaterial = null
-    scene.background = background
-    camera.layers.mask = mask
+    try { renderPass(frame, 'occluder', scene, camera) } finally {
+      scene.overrideMaterial = overrideMaterial
+      scene.background = background
+      camera.layers.mask = mask
+    }
   }
 
   let disposed = false
@@ -699,7 +739,17 @@ function buildTarget(template: Object3D, vehicle: AimedVehicleCandidate, tankDat
   function render(frame: ArmorHighlightFrame): void {
     const { scene, camera, vehicle } = frame
     const stats = frame.stats ?? null
-    if (stats) { stats.stateMs = 0; stats.thicknessMs = 0; stats.occluderMs = 0; stats.colorMs = 0; stats.calls = 0 }
+    if (stats) {
+      rtStats = stats.rt ??= { width: null, height: null, creates: 0, resizes: 0, disposes: 0, colorEstimateBytes: null, estimateKind: 'color-only-estimate' }
+      if (stateRT && spacedRT && rtStats.width === null) {
+        rtStats.width = stateRT.width; rtStats.height = stateRT.height
+        rtStats.colorEstimateBytes = stateRT.width * stateRT.height * 2 * (stateRT.texture.type === THREE.HalfFloatType ? 8 : 4)
+      }
+    } else rtStats = null
+    if (stats) {
+      stats.stateMs = 0; stats.thicknessMs = 0; stats.occluderMs = 0; stats.colorMs = 0; stats.calls = 0
+      stats.stateCalls = 0; stats.thicknessCalls = 0; stats.occluderCalls = 0; stats.colorCalls = 0
+    }
     const target = targetArmor(vehicle, frame.tankData, frame.config as import('../viewer/armorPlateModel.js').TankArmorConfig | null, frame.onReady)
     if (!target) return
     renderer.getDrawingBufferSize(size)
@@ -723,10 +773,11 @@ function buildTarget(template: Object3D, vehicle: AimedVehicleCandidate, tankDat
     // color pass 仍画回默认帧缓冲的目标矩形，buffer 采样经 spacedRect 从全画面 UV 映射回 RT 局部。
     const rtW = bucketedRtSize(scissor.z, size.x)
     const rtH = bucketedRtSize(scissor.w, size.y)
+    let shrinking = false
     if (stateRT && rtW * rtH * 4 <= stateRT.width * stateRT.height) {
-      if (++rtShrinkStreak >= 90) { disposeTargets(); rtShrinkStreak = 0 }
+      if (++rtShrinkStreak >= 90) { disposeTargets(); rtShrinkStreak = 0; shrinking = true }
     } else rtShrinkStreak = 0
-    ensureTargets(rtW, rtH)
+    ensureTargets(rtW, rtH, shrinking)
     shaders.resUniform.value.copy(size)
     spacedRectOf(scissor.x, scissor.y, scissor.z, scissor.w, size.x, size.y, spacedRect)
     armorCamera.copy(camera)
@@ -742,38 +793,45 @@ function buildTarget(template: Object3D, vehicle: AimedVehicleCandidate, tankDat
     const autoClear = renderer.autoClear, clipping = renderer.localClippingEnabled
     const shadows = renderer.shadowMap.autoUpdate, clearAlpha = renderer.getClearAlpha()
     const scissorTest = renderer.getScissorTest()
+    const renderTarget = renderer.getRenderTarget()
+    renderer.getViewport(savedViewport)
     renderer.getScissor(savedScissor)
     renderer.getClearColor(clearColor)
-    renderer.localClippingEnabled = true
-    renderer.shadowMap.autoUpdate = false
-    renderer.setClearColor(0x000000, 0)
-    renderer.autoClear = true
-    let calls = passBegin(stats)
-    renderer.setRenderTarget(stateRT)
-    renderer.render(target.state, armorCamera)
-    passEnd(stats, 'stateMs', calls)
-    calls = passBegin(stats)
-    renderer.setRenderTarget(spacedRT)
-    renderer.render(target.thickness, armorCamera)
-    passEnd(stats, 'thicknessMs', calls)
-    renderer.setRenderTarget(null)
-    const pixelRatio = renderer.getPixelRatio()
-    renderer.setScissor(scissor.x / pixelRatio, scissor.y / pixelRatio, scissor.z / pixelRatio, scissor.w / pixelRatio)
-    renderer.setScissorTest(true)
-    renderer.autoClear = false
-    renderer.clearDepth()
-    calls = passBegin(stats)
-    drawOccluderDepth(scene, camera, vehicle, occluderView, frame.occluderRoots ?? [scene])
-    passEnd(stats, 'occluderMs', calls)
-    calls = passBegin(stats)
-    renderer.render(target.color, camera)
-    passEnd(stats, 'colorMs', calls)
-    renderer.setScissorTest(scissorTest)
-    renderer.setScissor(savedScissor)
-    renderer.autoClear = autoClear
-    renderer.localClippingEnabled = clipping
-    renderer.shadowMap.autoUpdate = shadows
-    renderer.setClearColor(clearColor, clearAlpha)
+    try {
+      renderer.localClippingEnabled = true
+      renderer.shadowMap.autoUpdate = false
+      renderer.setClearColor(0x000000, 0)
+      renderer.autoClear = true
+      let calls = passBegin(stats)
+      renderer.setRenderTarget(stateRT)
+      renderPass(frame, 'state', target.state, armorCamera)
+      passEnd(stats, 'stateMs', 'stateCalls', calls)
+      calls = passBegin(stats)
+      renderer.setRenderTarget(spacedRT)
+      renderPass(frame, 'thickness', target.thickness, armorCamera)
+      passEnd(stats, 'thicknessMs', 'thicknessCalls', calls)
+      renderer.setRenderTarget(null)
+      const pixelRatio = renderer.getPixelRatio()
+      renderer.setScissor(scissor.x / pixelRatio, scissor.y / pixelRatio, scissor.z / pixelRatio, scissor.w / pixelRatio)
+      renderer.setScissorTest(true)
+      renderer.autoClear = false
+      renderer.clearDepth()
+      calls = passBegin(stats)
+      drawOccluderDepth(frame, occluderView, frame.occluderRoots ?? [scene])
+      passEnd(stats, 'occluderMs', 'occluderCalls', calls)
+      calls = passBegin(stats)
+      renderPass(frame, 'color', target.color, camera)
+      passEnd(stats, 'colorMs', 'colorCalls', calls)
+    } finally {
+      renderer.setRenderTarget(renderTarget)
+      renderer.setViewport(savedViewport)
+      renderer.setScissorTest(scissorTest)
+      renderer.setScissor(savedScissor)
+      renderer.autoClear = autoClear
+      renderer.localClippingEnabled = clipping
+      renderer.shadowMap.autoUpdate = shadows
+      renderer.setClearColor(clearColor, clearAlpha)
+    }
   }
 
   function disposeTargets(): void {
@@ -781,8 +839,10 @@ function buildTarget(template: Object3D, vehicle: AimedVehicleCandidate, tankDat
       if (!rt) continue
       rt.depthTexture?.dispose()
       rt.dispose()
+      if (rtStats) rtStats.disposes++
     }
     stateRT = spacedRT = null
+    if (rtStats) { rtStats.width = null; rtStats.height = null; rtStats.colorEstimateBytes = null }
   }
 
   /** 离开开镜/关闭开关时释放装甲 RT；下次命中目标时 `ensureTargets` 按需重建。 */
@@ -812,6 +872,7 @@ function buildTarget(template: Object3D, vehicle: AimedVehicleCandidate, tankDat
   }
 
   function dispose(): void {
+    if (disposed) return
     disposed = true
     for (const target of targets.values()) disposeTarget(target.armor)
     targets.clear()
@@ -820,8 +881,7 @@ function buildTarget(template: Object3D, vehicle: AimedVehicleCandidate, tankDat
     }
     templates.clear()
     disposeTargets()
-    for (const material of [excludeMaterial, occluderMaterial, ...Object.values(depthMaterials)]) material.dispose()
-    for (const material of warmMaterials ?? []) material.dispose()
+    for (const material of new Set([excludeMaterial, occluderMaterial, ...Object.values(depthMaterials), ...(warmMaterials ?? [])])) material.dispose()
     warmMaterials = null
     shaders.dispose()
   }
