@@ -125,7 +125,6 @@ describe('MapPreview3DPane 首次激活生命周期', () => {
     expect(scene.api.setMapSpawns).toHaveBeenCalledWith(next)
   })
 
-<<<<<<< HEAD
   it('移动端触屏相机契约：建场景即按 isPhone 推送；形态翻转即时同步', async () => {
     const { __phoneForm } = await import('../composables/usePlaybackPhoneForm.ts')
     const wrapper = mountPane(true)
