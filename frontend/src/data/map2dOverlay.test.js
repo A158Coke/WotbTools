@@ -268,6 +268,22 @@ describe('ensureMap2dImage（取字节 + 校验 + 启用）', () => {
     expect(map2dState.indexSource).toBe('stored')
   })
 
+  it('dataset 选择同时隔离索引 URL 与 localStorage 缓存键', async () => {
+    localStorage.setItem('wotb_data_version', '11.21.0')
+    const fetchMock = fetchStub({
+      '/map2d-embedded.json': embeddedManifest,
+      '/map2d/index.json': indexAt(NEWER_INDEX_TIME),
+      '/map2d/canal.webp': IMAGE_BYTES,
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    expect(await ensureMap2dImage('canal')).toBe('blob:map2d')
+    const urls = fetchMock.mock.calls.map(([url]) => String(url))
+    expect(urls.some((url) => url.endsWith('/agent-assets/v/11.21.0/map2d/index.json'))).toBe(true)
+    expect(urls.some((url) => url.endsWith('/agent-assets/v/11.21.0/map2d/canal.webp'))).toBe(true)
+    expect(localStorage.getItem('wotb.map2d.index.v1:11.21.0')).not.toBeNull()
+    expect(localStorage.getItem('wotb.map2d.index.v1')).toBeNull()
+  })
+
   it('**远端索引比本地副本旧 ⇒ 用副本且不回写**（stale proxy 不得降级）', async () => {
     localStorage.setItem('wotb.map2d.index.v1', JSON.stringify(indexAt(NEWER_INDEX_TIME, IMAGE_HASH)))
     // 远端这份更旧，且其哈希等于包内（若被错误采用 ⇒ 不会发生升级，断言即可区分）

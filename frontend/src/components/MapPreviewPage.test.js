@@ -405,6 +405,20 @@ describe('MapPreviewPage', () => {
     expect(pane.props('basemap').image.coordinateBounds).toEqual({ xMin: -300, xMax: 300, yMin: -300, yMax: 300 })
   })
 
+  it('显式 dataset 选择：bundled 图也优先用 dataset map2d，并带 bundled 兜底', async () => {
+    auth.authenticated.value = true
+    source.loadMapIndex.mockResolvedValue(IDX)
+    localStorage.setItem('wotb_data_version', '11.21.0')
+    try {
+      const wrapper = await openAt({ map: 'erlenberg', mode: '2d' })
+      const pane = wrapper.findComponent({ name: 'MapPreview2DPane' })
+      expect(pane.props('basemap')).toMatchObject({ kind: 'map2d', mapKey: 'erlenberg' })
+      expect(pane.props('basemap').fallbackImage).toBeTruthy()
+    } finally {
+      localStorage.removeItem('wotb_data_version')
+    }
+  })
+
   // ---- 基地点位（?bases=）：争霸/遭遇切换，两个 pane 共用同一 kind ----
   it('遭遇选项只在 assault 恰好 1 candidate 时提供：erlenberg（3 条）不出现，canyon（1 条）可选', async () => {
     auth.authenticated.value = true

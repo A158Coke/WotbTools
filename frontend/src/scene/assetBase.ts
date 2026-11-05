@@ -6,24 +6,76 @@ import { ANDROID_ASSET_BASE, isAndroidRuntime } from '../platform/runtime.js'
 // 本模块只负责"origin 从哪里读"，不假设具体基础设施。生产构建默认由发布 workflow 配置，
 // 后续迁移静态服务器/CDN/其它对象存储时只需更换构建配置，消费方无需改动。
 // 解析优先级：URL 参数 > localStorage override > production build default。
+//
+// 数据版本（dataset）：
+//   ?data=<dataset_id> / localStorage `wotb_data_version` 选中一个游戏版本，
+//   资产基址变成 <origin>/v/<dataset_id>（Android 为 /agent-assets/v/<id>）。
+//   未选中（或选中"默认"）时保持 origin 根路径 = 服务端 current，旧客户端语义不变。
+//   `?assets=` 若已是一个带 /v/<id> 的完整基址，则原样使用，不再追加 data 段。
+
+export const DATA_VERSION_QUERY = 'data'
+export const DATA_VERSION_STORAGE = 'wotb_data_version'
+const DATASET_ID_RE = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/
 
 const productionDefault = (import.meta.env.VITE_ASSET_BASE_URL ?? '').replace(/\/+$/, '')
 
-let cached: string | null = null
+let cachedOrigin: string | null = null
 
-export function assetBase() {
+/** 显式选中的数据版本；非法/空值视为未选中。 */
+export function dataVersionId(): string | null {
+  const q = searchParams().get(DATA_VERSION_QUERY)
+  if (q !== null) return DATASET_ID_RE.test(q) ? q : null
+  const stored = browserStorage()?.getItem(DATA_VERSION_STORAGE) ?? null
+  return stored && DATASET_ID_RE.test(stored) ? stored : null
+}
+
+/** 测试/SSR 环境没有 location/localStorage：按未配置处理，而不是在模块加载期抛错。 */
+function searchParams(): URLSearchParams {
+  return new URLSearchParams(typeof location === 'undefined' ? '' : location.search)
+}
+
+function browserStorage(): Storage | null {
+  return typeof localStorage === 'undefined' ? null : localStorage
+}
+
+/** 去掉 `?assets=` 基址尾部的 `/v/<id>`，让选择器可以改回 origin + ?data=。 */
+export function stripDatasetSuffix(origin: string): string {
+  return origin.replace(/\/v\/[a-z0-9.-]+\/?$/, '')
+}
+
+function withDataset(origin: string): string {
+  if (!origin) return ''
+  // ?assets= 已经是完整版本基址：escape hatch 优先，不再叠加 ?data=。
+  if (/\/v\/[a-z0-9.-]+\/?$/.test(origin)) return origin.replace(/\/+$/, '')
+  const id = dataVersionId()
+  return id ? `${origin.replace(/\/+$/, '')}/v/${id}` : origin
+}
+
+/** 不含 dataset 段的资产 origin（版本目录 versions.json 也从这个 origin 读）。 */
+export function assetOrigin(): string {
   // APK CSP and readiness gate review one production gateway; Web keeps its overrides.
   if (isAndroidRuntime()) return ANDROID_ASSET_BASE
-  if (cached !== null) return cached
-  const q = new URLSearchParams(location.search).get('assets')
-  const override = q ?? localStorage.getItem('wotb_asset_base')
-  cached = (override || productionDefault).replace(/\/+$/, '')
-  if (q !== null) {
+  if (cachedOrigin !== null) return cachedOrigin
+  const q = searchParams().get('assets')
+  const store = browserStorage()
+  const override = q ?? store?.getItem('wotb_asset_base') ?? null
+  const origin = (override || productionDefault).replace(/\/+$/, '')
+  cachedOrigin = origin
+  if (q !== null && store) {
     // 只持久化真正的显式 override。`?assets=`（显式空）是"清除 override"的手段：
     // 若把回落到的生产默认写进 localStorage，后续更换生产 origin 时这些浏览器会被
     // 旧值钉住，永远取不到新的构建默认。
-    if (q) localStorage.setItem('wotb_asset_base', cached!)
-    else localStorage.removeItem('wotb_asset_base')
+    if (q) store.setItem('wotb_asset_base', origin)
+    else store.removeItem('wotb_asset_base')
   }
-  return cached
+  return origin
+}
+
+export function assetBase() {
+  return withDataset(assetOrigin())
+}
+
+/** Android 本机代理基址（同样带 dataset 段；AgentAssetProxy 会把 /v/<id>/... 透传到 origin）。 */
+export function androidAssetBase() {
+  return withDataset(ANDROID_ASSET_BASE)
 }

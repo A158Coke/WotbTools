@@ -125,6 +125,15 @@ async function resolveBasemap(bm) {
   })()
   if (gen !== basemapGen) return   // 过期（换图/卸载已介入）：未创建任何资源，直接退出
   if (resolved.error) {
+    // 显式选择 dataset 时 map2d 优先；该 dataset 缺图/契约失败仍回落 bundled，
+    // 不让 2D 预览因为版本切换而整块失败。
+    if (bm.fallbackImage) {
+      basemapImage.value = bm.fallbackImage
+      if (import.meta.env.DEV) {
+        console.warn(`[map-preview] map2d 底图拒绝（${key}），回落 bundled:`, resolved.error, resolved.detail || '')
+      }
+      return
+    }
     if (import.meta.env.DEV) {
       console.warn(`[map-preview] map2d 底图拒绝（${key}）:`, resolved.error, resolved.detail || '')
     }

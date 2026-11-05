@@ -61,21 +61,144 @@ release is complete:
 
 ```text
 /srv/wotb-assets/
+  bin/asset_release.py                 # copied from WoT-Blitz-Agent tools/
+  bin/asset_store.py                   # content-addressed store tool
+  objects/
+    <sha[:2]>/<sha256>                 # unique content, one inode per blob
   releases/
-    <pack-id>/
-      index.json
+    <release-id>/                      # immutable; files are hardlinks to objects
+      version.json
       manifest.json
+      index.json
       glb/
       map/
       tank/
       tank_images/
       data/
-  current -> releases/<pack-id>
+  datasets/
+    <dataset-id> -> ../releases/<release-id>
+  current -> datasets/<default-id>
+  versions.json                        # generated catalog (frontend selector source)
+  release-log.jsonl                    # append-only audit
+  .publish.lock
 ```
 
 Keep the current release plus at least one previous release while the migration is
 being proven. Do not overwrite the live tree in place. Initial payload upload remains
 manual; Git tracks configuration, not the multi-GB asset pack.
+
+## Dataset versions
+
+The origin serves one dataset per game-version channel. Current channels (2026-11-05):
+
+- `supertest` — the supertest/preview channel; re-pointed to each new preview
+  release (t11b → t11p2 → …) instead of accumulating per-preview datasets.
+- `11.21.0` — the live 11.21 release client.
+- `11.22` — reserved; added when the live 11.22 pack ships (three channels
+  total: supertest / 11.21 / 11.22).
+
+`datasets/<id>` is a symlink to an immutable release; `current` points at the
+default dataset so legacy clients keep working.
+
+**Deployment state (2026-11-05):** the host already contains the object store and
+datasets, but the live Caddy Stack still runs the pre-dataset Caddyfile;
+`/versions.json` and `/v/<id>/...` return `404` until this file is deployed through the
+normal `asset-origin` → Komodo Stack redeploy. `/` and `/version.json` keep serving the
+default dataset meanwhile.
+
+Public paths:
+
+| Path | Meaning |
+|---|---|
+| `/v/<dataset-id>/...` | a specific game-version dataset |
+| `/versions.json` | dataset catalog (`schema`, `default`, `datasets[]`) |
+| `/v/<dataset-id>/version.json` | immutable release identity |
+| `/...` | legacy root = `current` (default dataset) |
+
+Publish a new game version (release directory already staged under `releases/<id>`
+with `version.json`/`manifest.json`):
+
+```bash
+# on the Alibaba host
+bash deploy/assets/dataset.sh link --dataset 11.22.0 --release 20261118-3f9a2c1b
+bash deploy/assets/dataset.sh default --dataset 11.22.0        # optional: move legacy root
+bash deploy/assets/dataset.sh verify
+bash deploy/assets/verify.sh https://assets.wotbtools.com
+```
+
+Rebuild the same game version (new release, same dataset id):
+
+```bash
+bash deploy/assets/dataset.sh link --dataset 11.21.0 --release 20261105-aaaaaaaa
+```
+
+Rollback is the same atomic symlink switch; the catalog records the older release:
+
+```bash
+bash deploy/assets/dataset.sh rollback --dataset 11.21.0 --release 20261015-bbbbbbbb
+```
+
+Retire a dataset channel (symlink only; the release directory stays for rollback;
+fails closed if the dataset is the current default):
+
+```bash
+bash deploy/assets/dataset.sh unlink --dataset 11.21.0-t11-preview
+```
+
+`dataset.sh` holds `flock` for every mutation, appends `release-log.jsonl`, regenerates
+`versions.json` through `asset_release.py`, and runs its `verify` before returning.
+`asset_release.py` is the single source of truth; copy it from the Agent repo:
+
+```bash
+scp tools/asset_release.py admin@47.101.141.111:/srv/wotb-assets/bin/
+```
+
+`versions.json` uses `max-age=60`; versioned content stays at `max-age=300` until the
+pack moves to content-addressed paths.
+
+## Content-addressed store (space dedupe)
+
+`objects/<sha[:2]>/<sha256>` holds each unique content blob once; every release tree is
+a set of **hardlinks** to those objects. Caddy still serves `/srv/wotb-assets/current`
+and `/v/<id>/...` as ordinary static files, so URLs/ETag semantics are unchanged.
+
+Copy the tool from the Agent repo:
+
+```bash
+scp tools/asset_store.py admin@47.101.141.111:/srv/wotb-assets/bin/
+```
+
+Migration (one-off, content unchanged):
+
+```bash
+python3 bin/asset_store.py import --pack releases/<current> --objects objects
+python3 bin/asset_store.py adopt --releases releases --objects objects --dry-run
+python3 bin/asset_store.py adopt --releases releases --objects objects
+python3 bin/asset_store.py stats --objects objects --releases releases
+python3 bin/asset_store.py verify --objects objects --releases releases --links
+```
+
+New releases:
+
+- Keep the existing `cp -al` + overlay + `--refresh-manifest` flow, then
+  `asset_store.py adopt --releases releases/<new> --objects objects` before
+  `dataset.sh link`; or
+- Object-native: upload the new `manifest.json` + changed files to `incoming-<batch>/`,
+  then
+  ```bash
+  python3 bin/asset_store.py import --manifest incoming/manifest.json \
+      --files incoming --objects objects
+  python3 bin/asset_store.py materialize --manifest incoming/manifest.json \
+      --objects objects --out releases/<new> --metadata incoming
+  ```
+  then `dataset.sh link --dataset <id> --release <new>`.
+
+After pruning old releases and clearing `incoming-*`, run
+`asset_store.py gc --objects objects --releases releases` (`--dry-run` first). GC only
+removes objects with no retained-release manifest reference **and** `st_nlink == 1`.
+`objects` and `releases` must be on the same filesystem; backups must preserve links
+(`rsync -aH`), otherwise the store expands back to logical size. Full contract:
+Agent repo `docs/asset-store.md`.
 
 ## Caddy image preload contract
 
@@ -124,7 +247,9 @@ Images** on this host unless Docker Hub reachability has been deliberately resto
 4. Apply the ResourceSync diff by hand. This must not deploy the Stack
    (`deploy = false`).
 5. Stage the asset pack under `/srv/wotb-assets/releases/<pack-id>`, verify
-   `manifest.json`, then atomically point `current` at that release.
+   `manifest.json`, then `dataset.sh link --dataset <id> --release <pack-id>` and
+   `dataset.sh default --dataset <id>` (see “Dataset versions”). `current` must end up
+   at the default dataset, not a raw release directory.
 6. Preload and verify `caddy:2.10.2-alpine` using the image preload contract above.
 7. Ensure the Alibaba firewall allows public TCP 80/443. Do not expose Periphery
    `:8120`.
@@ -147,10 +272,12 @@ Caddy process remains in memory. The Caddy admin API stays disabled.
 ## Cache/CORS contract
 
 Current filenames are not content-addressed. Caddy therefore uses a short
-revalidation TTL, not `immutable`. Browser CORS reflects only
-`https://wotbtools.com` and `https://www.wotbtools.com`. `Vary: Origin` is emitted
-unconditionally on cacheable responses so a shared cache cannot reuse a no-Origin
-representation for an allowed browser request. Range and conditional requests are
-served by Caddy's static file server; CI exercises the real Caddy image at request
-level, and `verify.sh` checks the externally visible behavior with bounded network
-timeouts.
+revalidation TTL, not `immutable`. Versioned datasets (`/v/<id>/...`) are immutable
+per release, but their filenames are still not content-addressed, so they keep the
+same 300s TTL; `versions.json` uses 60s so a publish/rollback is visible quickly.
+Browser CORS reflects only `https://wotbtools.com` and `https://www.wotbtools.com`.
+`Vary: Origin` is emitted unconditionally on cacheable responses so a shared cache
+cannot reuse a no-Origin representation for an allowed browser request. Range and
+conditional requests are served by Caddy's static file server; CI exercises the real
+Caddy image at request level, and `verify.sh` checks the externally visible behavior
+with bounded network timeouts.
