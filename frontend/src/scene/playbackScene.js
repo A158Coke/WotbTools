@@ -121,6 +121,7 @@ import { tracerSpanSecs, occlusionCells, occlusionFootprintCells } from './playb
 import { createPickReporter } from './playback/pickReport.js'
 import { chainVisible } from './pickDebug.js'
 import { createBoundaryBand, BOUNDARY_THICK } from './playback/boundary.js'
+import { createCameraTerrainClamp } from './playback/cameraTerrainClamp.js'
 import { createBaseMarkers } from './playback/bases.js'
 import { createSpawnMarkers } from './playback/spawns.js'
 import { createHudFeed } from './playback/hudFeed.js'
@@ -1068,125 +1069,26 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   const boundaryBand = createBoundaryBand({ getScene: () => scene, disposeObject3D, groundY });
   function buildBoundary(bounds, thick) { boundaryBand.build(bounds, thick); }
 
-  // 相机距离钳制（禁止无限 zoom-out）：min/max 基于 world extent，初值实测后再调
-  let baseMinDistance = 20;
-  function applyCameraClamp() {
-    const { ext } = WORLD_CENTER;
-    baseMinDistance = Math.max(20, ext * 0.08);
-    controls.minDistance = baseMinDistance;
-    controls.maxDistance = ext * 2.2;
-  }
-
-  /**
-   * 非自由视角可采样的地形高度：优先渲染网格的真实三角面（含 LOD/morph/缝合），
-   * 网格未建或该点无三角面时回退高度场。超出高度场范围的 x/z 返回 null——
-   * 没有地形数据时不得拿 0 当代替，否则会在边界外制造假的净空。
-   */
-  function terrainHeightForCameraClamp(x, z) {
-    if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
-    const rendered = terrainMesh ? sampleRenderedTerrainHeight(x, z) : null;
-    if (Number.isFinite(rendered)) return rendered;
-    if (!heightField || !heightMeta) return null;
-    const n = Number(heightMeta.size), span = Number(heightMeta.span);
-    if (!Number.isInteger(n) || n < 2 || !Number.isFinite(span) || span <= 0) return null;
-    const half = span / 2;
-    if (x < -half || x >= half || z < -half || z >= half) return null;
-    const h = sampleHeight(x, z);
-    return Number.isFinite(h) ? h : null;
-  }
-
-  /**
-   * 非自由视角的地形放大阻挡：沿 target→camera 射线从当前距离向外找相机点，
-   * 直到该点的**新 x/z** 采样高度低于相机净空。只按旧 x/z 高度一次外推在坡面上
-   * 仍会穿地（外推会改变 x/z，坡面越高外推点越深）；这里每轮都用新坐标重采样，
-   * 最多 24 轮（0.5 斜率收敛比 0.5，12 轮仍差最后几厘米）。若射线没有安全交点
-   * （坡面比射线更陡、方向水平/向下、或出高度场），
-   * 在相机当前 x/z 垂直抬到净空之上——绝不把相机留在地下。
-   * 相机贴住限制时把 minDistance 锁在当前安全距离，滚轮继续放大不会钻地；
-   * 缩小后相机升高，minDistance 复位，**target 全程不动**（旋转/缩放中心不变）。
-   */
-  const _orbitTerrainDir = new THREE.Vector3();
-  function clampOrbitCameraToTerrain() {
-    if (cameraDriven() || !camera || !controls || !heightField || !heightMeta) return false;
-    const t = controls.target;
-    if (!Number.isFinite(t.y) || !Number.isFinite(camera.position.y)) return false;
-    const dir = _orbitTerrainDir.subVectors(camera.position, t);
-    const dist = dir.length();
-    if (!(dist > 1e-6)) { controls.minDistance = baseMinDistance; return false; }
-    dir.divideScalar(dist);
-    const clearance = CAMERA_GROUND_CLEARANCE;
-
-    let safeDist = dist;
-    let safeTerrain = null;
-    let found = false;
-    for (let i = 0; i < 24; i++) {
-      const px = t.x + dir.x * safeDist;
-      const pz = t.z + dir.z * safeDist;
-      const py = t.y + dir.y * safeDist;
-      const terrainY = terrainHeightForCameraClamp(px, pz);
-      if (!Number.isFinite(terrainY)) break;
-      safeTerrain = terrainY;
-      // 1 mm 容差：不动点迭代尾部只差浮点级距离，不应因此判成「无交点」。
-      if (py + 1e-3 >= terrainY + clearance) { found = true; break; }
-      // 水平/向下射线外推不会升高：不再找，交给下面的垂直回退。
-      if (!(dir.y > 1e-4)) break;
-      const next = (terrainY + clearance - t.y) / dir.y;
-      if (!Number.isFinite(next) || next <= safeDist + 1e-6) break;
-      safeDist = next;
-    }
-    // 安全点超出 OrbitControls 的最大缩放距离：下一帧 update 会把相机拉回来，
-    // 那个距离仍在地形里。改为在相机当前 x/z 垂直抬升，避免来回振荡。
-    if (found && safeDist > controls.maxDistance) found = false;
-
-    if (!found) {
-      const camTerrain = terrainHeightForCameraClamp(camera.position.x, camera.position.z);
-      if (!Number.isFinite(camTerrain)) { controls.minDistance = baseMinDistance; return false; }
-      const lift = camTerrain + clearance;
-      if (camera.position.y < lift) {
-        camera.position.y = lift;
-        camera.lookAt(t);
-        const locked = Math.max(baseMinDistance, camera.position.distanceTo(t));
-        controls.minDistance = locked;
-        controls.maxDistance = Math.max(controls.maxDistance, locked);
-        return true;
-      }
-      // 相机点本身安全、只是射线前方无交点：无需限制。
-      controls.minDistance = baseMinDistance;
-      return false;
-    }
-
-    const camDist = camera.position.distanceTo(t);
-    const limit = safeTerrain + clearance;
-    // 相机低于净空、或还没退到安全距离：沿原方向退到 safeDist（target 不动）。
-    if (camDist < safeDist - 1e-6 || camera.position.y < limit - 0.02) {
-      camera.position.copy(t).addScaledVector(dir, safeDist);
-      camera.lookAt(t);
-      controls.minDistance = Math.max(baseMinDistance, safeDist);
-      return true;
-    }
-    // 已贴净空：保持 minDistance 锁定，滚轮继续放大不会钻地；缩小后自然释放。
-    if (camera.position.y <= limit + 0.02) {
-      controls.minDistance = Math.max(baseMinDistance, safeDist);
-      return false;
-    }
-    controls.minDistance = baseMinDistance;
-    return false;
-  }
-
-  // 相机目标钳制在战场范围内（拖到天边会让地形/边界消失、只剩背景色）
-  function clampCameraTarget() {
-    if (FOLLOW_EID) return;   // 跟随中：target 钉在坦克上（坦克恒在图内），不钳制
-    const { cx, cz, ext } = WORLD_CENTER;
-    // 钳制框 = max(世界范围, ext*1.1)：视野保护（拖到天边只剩背景色）不得反过来吞掉
-    // 键盘飞行的位移（评审发现：ext 小的图上 lim≈±10，每帧把 target 拉回、WASD 挪不动
-    // ——飞行需要覆盖整个地形 ±300 + 余量；拖拽保护语义仍保留，只是框必须够大）
-    const lim = Math.max(ext * 1.1, 340);
-    const t = controls.target;
-    const nx = Math.min(cx + lim, Math.max(cx - lim, t.x));
-    const nz = Math.min(cz + lim, Math.max(cz - lim, t.z));
-    if (nx !== t.x) t.x = nx;
-    if (nz !== t.z) t.z = nz;
-  }
+  // 相机地形净空与 target 钳制（#820 Wave B6A：实现与语义注释在
+  // playback/cameraTerrainClamp.js）。本处只注入场景侧的事实来源。
+  const cameraTerrainClamp = createCameraTerrainClamp({
+    getCamera: () => camera,
+    getControls: () => controls,
+    // cameraDriven 是下方的 const：经箭头延迟求值，工厂创建期不触碰。
+    cameraDriven: () => cameraDriven(),
+    getTerrainMesh: () => terrainMesh,
+    getHeightField: () => heightField,
+    getHeightMeta: () => heightMeta,
+    sampleRenderedTerrainHeight,
+    sampleHeight,
+    clearance: CAMERA_GROUND_CLEARANCE,
+    getWorldCenter: () => WORLD_CENTER,
+    isFollowing: () => !!FOLLOW_EID,
+  });
+  function applyCameraClamp() { cameraTerrainClamp.applyCameraClamp(WORLD_CENTER.ext); }
+  function terrainHeightForCameraClamp(x, z) { return cameraTerrainClamp.terrainHeightForCameraClamp(x, z); }
+  function clampOrbitCameraToTerrain() { return cameraTerrainClamp.clampOrbitCameraToTerrain(); }
+  function clampCameraTarget() { cameraTerrainClamp.clampCameraTarget(); }
 
   function buildWorld() {
     // 数据范围（直接取自 DATA；去 2% 离群后取整百）。注意必须在 buildVehicles 之前也可用——
@@ -4660,7 +4562,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // 总览视角：可绕地图中心自由旋转（仍不沉到地平线以下），缩放上限放开到默认机位高度
       controls.minPolarAngle = 0;
       controls.maxPolarAngle = Math.PI * 0.49;
-      controls.minDistance = baseMinDistance;
+      controls.minDistance = cameraTerrainClamp.baseMinDistance();
       controls.maxDistance = Math.max(controls.maxDistance, topCameraDefaultHeight());
       clampOrbitCameraToTerrain();
       camera.lookAt(controls.target);
