@@ -211,6 +211,10 @@ keycloak_postgres:
   - 'deploy/tx/runtime-check-lib.sh'
   - 'infra/tofu/postgres-keycloak/**'
   - '.github/workflows/ci-keycloak-postgres.yml'
+  # Backup smoke single owner: the smoke script and its direct production
+  # dependency are routed here so touching them re-runs the smoke exactly once.
+  - 'deploy/test-keycloak-postgres-backup.sh'
+  - 'deploy/tx/keycloak-postgres-backup.sh'
 caddy:
   - '.github/workflows/caddy.yml'
   # The gateway's own fixture suite: a Caddyfile change must re-run the runtime

@@ -15,7 +15,7 @@ import { shellLabel } from '../scene/tankMeta.js'
 
 const props = defineProps({
   shooterId: { type: Number, default: null },
-  /** 射击方配置（&scfg=；普通同车检视回落到 &config=） */
+  /** 射击方配置（&scfg=；缺省用射手自身默认顶级配置 configs 末位，不从目标推导） */
   scfg: { type: [Number, String], default: null },
   config: { type: [Number, String], default: null },
   shell: { type: [Number, String], default: null },

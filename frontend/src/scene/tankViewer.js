@@ -2441,8 +2441,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         function applyUrlOptionsOnce() {
             if (urlApplied || !tankModel || !armorModel) return;
             urlApplied = true;
-            // 普通检视同车型时，applyConfig 已切到展示配置弹表。两个模型都完成后
-            // 再恢复 URL 下标，避免任一模型回调重建下拉框把选弹重置；手动切配置不重套 URL。
+            // 普通检视两个模型都完成后再恢复 URL 下标，避免任一模型回调重建下拉框
+            // 把选弹重置；手动切配置不重套 URL。
             // 射击复现的弹表/选弹由射手 scfg 与回放 shell_id 所有，不在此覆盖。
             if (!QP.get('shot')) {
                 populateShellSelector(shooterShells, requestedShellIndex());
@@ -4139,16 +4139,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             collectArmorNodes();
             updateTurretGun(currentTurretDeg, currentGunDeg);
 
-            // 射手弹表随目标配置切换仅限普通装甲检视且未独立选射击方配置；射击复现
-            // 会话或显式 &scfg= 已按射手实际搭载配置选定弹表，此处覆盖会把 scfg 域
-            // 的弹表错换成目标当前配置的弹表。
-            const hasExplicitShooterConfig = QP.get('scfg') != null && QP.get('scfg') !== '';
-            if (shooterData && tankData && shooterData.tank_id === tankData.tank_id
-                && !QP.get('shot') && !hasExplicitShooterConfig) {
-                shooterShells = cfg.shells || [];
-                shooterCaliber = (Number.isFinite(cfg.caliber) && cfg.caliber > 0) ? cfg.caliber : null;
-                populateShellSelector(shooterShells);
-            }
+            // 目标配置只决定受击方装甲几何/厚度；射击方弹表、口径与选中弹种是射击方的
+            // 独立状态（&scfg= 或其自身默认顶级配置），不因目标换炮而改变——同车型
+            // 检视也不例外。装甲刷新、穿透失效与热力图重建照常进行。
 
             // 动态装甲状态过滤必须在热力图重建**之前**：retagSpacedSections/
             // applyArmorConfigVisible 会把可控板还原/重显（覆盖 deco）——visual 回调与
@@ -4228,14 +4221,22 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 }
                 // 射手实际搭载配置弹表（&scfg= = shooter_config_idx，射击复现表注入）：
                 // 多炮坦克 stock 弹表与发射炮的穿深/弹种清单不同（KV-1 发射 85mm F-30 AP
-                // 120mm，stock ZiS-5 表只有 86/102/20），选择器必须用发射炮的表；
-                // 无 scfg 先取顶层 shells；普通同车型检视随后由 applyConfig 接管展示配置弹表。
-                const scfg = parseInt(QP.get('scfg'), 10);
+                // 120mm，stock ZiS-5 表只有 86/102/20），选择器必须用发射炮的表。
+                // 解析与 ArmorShotHud.cfgIndex 完全同口径：显式且有效的 scfg 选该配置，
+                // 缺失/无效用射手自身默认顶级变体（configs 末位）；被选配置弹表为空时
+                // 回退车辆顶层 shells（不跳到默认配置），再空走 fetchShells 兜底——
+                // 不从目标配置推导。scfg 用 Number 严格解析（parseInt('2x') 会偏离 HUD）。
+                const scfgRaw = QP.get('scfg');
+                const scfgWanted = (scfgRaw == null || scfgRaw === '') ? NaN : Number(scfgRaw);
                 const cfgArr = shooterData.configs || [];
+                const defaultCfg = cfgArr.length ? cfgArr[cfgArr.length - 1] : null;
+                const scfgCfg = (Number.isInteger(scfgWanted) && scfgWanted >= 0 && scfgWanted < cfgArr.length)
+                    ? cfgArr[scfgWanted] : defaultCfg;
                 let shells = null, caliber = null;
-                if (!isNaN(scfg) && scfg >= 0 && scfg < cfgArr.length && (cfgArr[scfg].shells || []).length) {
-                    shells = cfgArr[scfg].shells;
-                    caliber = cfgArr[scfg].caliber;
+                if (scfgCfg && (scfgCfg.shells || []).length) {
+                    shells = scfgCfg.shells;
+                    caliber = (Number.isFinite(scfgCfg.caliber) && scfgCfg.caliber > 0)
+                        ? scfgCfg.caliber : null;
                 }
                 if (!shells || shells.length === 0) {
                     shells = shooterData.shells || [];
@@ -4259,8 +4260,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 // 射击复现的 &shell= 属于射手配置；普通检视在配置完成后重新恢复该下标。
                 populateShellSelector(shooterShells, requestedShellIndex());
                 // 这里只校验“能不能构成一次判定”：弹种/穿深/伤害/口径。转正角属于判定输入，
-                // 由 doPenetrationCheck 在点击时校验——普通同车型检视会先用顶层展示弹表
-                // （可能不含 normalization），随后 applyConfig 换成当前配置的权威弹表。
+                // 由 doPenetrationCheck 在点击时校验——射手弹表是独立状态，不随目标配置变化。
                 const loadedShellType = selectedShell ? shellTypeOf(selectedShell) : null;
                 if (!selectedShell || !loadedShellType
                     || !Number.isFinite(selectedShell.penetration) || !(selectedShell.damage > 0)
