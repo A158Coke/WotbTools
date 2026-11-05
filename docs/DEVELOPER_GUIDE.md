@@ -637,8 +637,10 @@ Frontend 的 TX1/TX2 发布在切换线上文件或容器前，校验实际 Busi
   失败仍按现有契约显示为 degraded，不改变应用服务结果。
 - SAST workflow `codeql.yml`（issue #738）：push main + 每周 + dispatch，observe 阶段不进 required gate；第三方 action 全部 pin 到 immutable SHA
 - 三个数据更新 workflow (`update-tankopedia.yml`、`update-equipment.yml`、`update-crew-skills.yml`)
-  保持独立，生成 PR 后核对 open PR 的 main base、自动化 head branch 和精确 head SHA，再 dispatch
-  `ci-gate.yml`；CI 通过只读 GitHub API 核对该 run 仍验证同一 PR head。它们不自动 merge。
+  保持独立，PR 发布协议收敛在受限 helper `scripts/ci/publish-data-update.sh`：无变化即退出、
+  拒绝非预期 staged 内容、只提交调用方白名单路径；生成 PR 后核对 open PR 的 main base、
+  自动化 head branch 和精确 head SHA，再 dispatch `ci-gate.yml`；CI 通过只读 GitHub API 核对
+  该 run 仍验证同一 PR head。它们不自动 merge。
 - main 是应用的唯一目标状态；生产镜像按各 owner 契约选取：business-api/frontend 使用 exact digest，
   Keycloak/ai-service 使用各自 latest/freshness。TX 服务定义按 owner 分离，
   各部署只渲染所属服务和通用探针。固定基础设施使用既有 volume、network 与 OpenTofu state，

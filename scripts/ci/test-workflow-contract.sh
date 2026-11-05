@@ -30,6 +30,43 @@ for path in sorted((*workflow_dir.glob("*.yml"), *workflow_dir.glob("*.yaml"))):
         pr_owners.append(path.name)
 assert pr_owners == ["ci-gate.yml"], pr_owners
 
+# D3：三个数据更新 workflow 的 PR 发布协议必须收敛到受限 helper，不允许第二份 inline 实现。
+helper_path = root / "scripts/ci/publish-data-update.sh"
+assert helper_path.exists(), "the shared data-update publish helper must exist"
+helper_text = helper_path.read_text(encoding="utf-8")
+# 只检查可执行代码行：helper 的注释解释了为什么禁止 git add -A / add . / eval。
+helper_code = "\n".join(
+    line for line in helper_text.splitlines() if not line.lstrip().startswith("#")
+)
+for automation_branch in (
+    "automation/update-tankopedia",
+    "automation/update-equipment",
+    "automation/update-crew-skills",
+):
+    assert automation_branch in helper_text, automation_branch
+for forbidden_helper in ("git add -A", "git add .", "eval "):
+    assert forbidden_helper not in helper_code, forbidden_helper
+data_publishers = {
+    "update-tankopedia.yml": ["common/tankopedia-tier*.json", "common/tank_ids.json"],
+    "update-equipment.yml": ["common/wotb-item-catalog-json/equipment.json"],
+    "update-crew-skills.yml": ["common/crew-skills.json"],
+}
+for wf_name, expected_paths in data_publishers.items():
+    wf_yaml = load(workflow_dir / wf_name)
+    publish_runs = [
+        step.get("run", "")
+        for job in wf_yaml["jobs"].values()
+        for step in job.get("steps", [])
+        if "publish-data-update.sh" in step.get("run", "")
+    ]
+    assert len(publish_runs) == 1, f"{wf_name} must invoke the shared publish helper exactly once"
+    run_text = publish_runs[0]
+    for path in expected_paths:
+        assert path in run_text, (wf_name, path)
+    for forbidden_inline in ("gh pr create", "gh workflow run", "--force-with-lease",
+                             "github-actions[bot]", "git commit -m"):
+        assert forbidden_inline not in run_text, (wf_name, forbidden_inline)
+
 jobs = ci["jobs"]
 required = jobs["required"]
 assert required["name"] == "CI / Required Gate" and required["if"] == "always()"
@@ -80,6 +117,23 @@ assert not [
     for step in job.get("steps", [])
     if "bash deploy/test-caddy-route-inventory.sh" in step.get("run", "")
 ], "the gateway fixtures must run in exactly one owner"
+# D4：备份 smoke 单一 owner —— 只在 keycloak_postgres 运行，deployment 不再重复执行；
+# smoke 脚本与其直接生产依赖必须路由进该 owner。
+assert "bash deploy/test-keycloak-postgres-backup.sh" not in json.dumps(
+    load(workflow_dir / "ci-deployment.yml"), ensure_ascii=False
+), "the backup smoke must have a single owner"
+kc_pg_workflow = load(workflow_dir / "ci-keycloak-postgres.yml")
+assert any(
+    "bash deploy/test-keycloak-postgres-backup.sh" in step.get("run", "")
+    for job in kc_pg_workflow["jobs"].values()
+    for step in job.get("steps", [])
+), "keycloak_postgres owner must run the backup smoke"
+for backup_smoke_path in ("deploy/test-keycloak-postgres-backup.sh", "deploy/tx/keycloak-postgres-backup.sh"):
+    assert backup_smoke_path in filters["keycloak_postgres"], backup_smoke_path
+assert affected("deploy/tx/keycloak-postgres-backup.sh") == {"keycloak_postgres"}
+# smoke 测试脚本同时被 deployment 的 deploy/test-*.sh 语法门禁覆盖：允许两个 owner 的
+# 输入路由，但执行 smoke 的 owner 仍然只有 keycloak_postgres（上面的单执行断言）。
+assert affected("deploy/test-keycloak-postgres-backup.sh") == {"deployment", "keycloak_postgres"}
 # Owner-boundary guards for the Komodo control plane:
 # - the Caddy gateway publishes Komodo but must never depend on Komodo-owned
 #   inputs (a Core release bump may not re-run, or fail, the gateway on its own);
@@ -1422,3 +1476,250 @@ hub_transport="$(git -C "$asset_work/hub-bare" rev-parse --verify 'refs/heads/as
   exit 1
 }
 echo 'asset-origin transport pair remains asset-owned: PASS'
+
+# ---------------------------------------------------------------------------
+# D3 helper behavior suite: scripts/ci/publish-data-update.sh
+# Isolated fixtures only — a throwaway bare remote + work repo, and a fake `gh`
+# on PATH. No real GitHub access, no real publishing target is ever touched.
+# ---------------------------------------------------------------------------
+helper_behavior_main() {
+  HELPER="$ROOT/scripts/ci/publish-data-update.sh"
+  TMP="$(mktemp -d)"
+  trap 'rm -rf "$TMP"' EXIT
+  FAKEBIN="$TMP/bin"; mkdir -p "$FAKEBIN"
+  REAL_GIT="$(command -v git)"
+  GH_LOG="$TMP/gh.log"; GIT_LOG="$TMP/git.log"; : > "$GH_LOG"; : > "$GIT_LOG"
+
+  cat > "$FAKEBIN/git" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "git \$*" >> "$GIT_LOG"
+exec "$REAL_GIT" "\$@"
+EOF
+  FAKE_CREATED="$TMP/fake-created"; export FAKE_CREATED
+  cat > "$FAKEBIN/gh" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "gh \$*" >> "$GH_LOG"
+case "\$1 \$2" in
+  "pr list")
+    # FAKE_LIST_OUTPUT 覆盖模拟真实 gh --jq 的裸数字输出；默认路径模拟 JSON 形态。
+    if [[ -n "\${FAKE_LIST_OUTPUT+x}" ]]; then
+      printf '%s\n' "\$FAKE_LIST_OUTPUT"
+    elif [[ -f "$FAKE_CREATED" ]]; then
+      printf '[{"number":%s}]\n' "\${FAKE_NEW_PR_NUMBER-1}"
+    else
+      printf '%s\n' "\${FAKE_PR_LIST:-[]}"
+    fi
+    exit 0 ;;
+  "pr create")
+    if [[ -n "\${FAKE_CREATE_EXIT:-}" && "\$FAKE_CREATE_EXIT" != "0" ]]; then
+      echo "create failed (fixture)" >&2; exit "\$FAKE_CREATE_EXIT"
+    fi
+    : > "$FAKE_CREATED"
+    exit 0 ;;
+  "pr view")
+    head="\${FAKE_VIEW_HEAD_OVERRIDE:-\$(git -C "\$TEST_REPO" rev-parse HEAD)}"
+    printf '{"state":"%s","baseRefName":"%s","headRefName":"%s","headRefOid":"%s"}\n' \
+      "\${FAKE_VIEW_STATE:-OPEN}" "\${FAKE_VIEW_BASE:-main}" "\${FAKE_VIEW_BRANCH:-\${FAKE_EXPECT_BRANCH}}" "\$head"
+    exit 0 ;;
+  "workflow run") exit 0 ;;
+  *) echo "unexpected gh call: \$*" >&2; exit 99 ;;
+esac
+EOF
+  chmod +x "$FAKEBIN/git" "$FAKEBIN/gh"
+  export PATH="$FAKEBIN:$PATH"
+
+  PASS=0; FAIL=0
+  ok() { PASS=$((PASS+1)); echo "helper behavior PASS: $1"; }
+  bad() { FAIL=$((FAIL+1)); echo "helper behavior FAIL: $1"; }
+
+  expect_fail() { # description, then command...
+    local desc="$1"; shift
+    if "$@" >/dev/null 2>&1; then bad "$desc (expected failure, got success)"; else ok "$desc"; fi
+  }
+
+  setup_repo() {
+    rm -rf "$TMP/repo" "$TMP/remote.git"
+    rm -f "$FAKE_CREATED"
+    git init -q --bare -b main "$TMP/remote.git"
+    git init -q -b main "$TMP/repo"
+    (
+      cd "$TMP/repo"
+      git config user.name tester && git config user.email tester@example.com
+      git remote add origin "$TMP/remote.git"
+      mkdir -p common
+      printf 'v1\n' > common/crew-skills.json
+      printf 'v1\n' > common/tank_ids.json
+      printf 'v1\n' > common/tankopedia-tier1.json
+      git add common/crew-skills.json common/tank_ids.json common/tankopedia-tier1.json
+      git commit -qm init
+      git push -q origin main
+    )
+    TEST_REPO="$TMP/repo"; export TEST_REPO
+  }
+
+  BODY="$TMP/body.md"; printf 'body\n' > "$BODY"
+
+  run_in_repo() { (cd "$TMP/repo" && bash "$HELPER" "$@"); }
+
+  # 1. crew-skills normal path: new branch, force-with-lease, create PR, dispatch exact HEAD.
+  setup_repo
+  printf 'v2\n' > "$TMP/repo/common/crew-skills.json"
+  : > "$GIT_LOG"; : > "$GH_LOG"
+  FAKE_EXPECT_BRANCH=automation/update-crew-skills run_in_repo \
+    --branch automation/update-crew-skills \
+    --commit-message "chore(data): sync BlitzKit crew skills" \
+    --pr-title "chore(data): sync BlitzKit crew skills" \
+    --pr-body-file "$BODY" \
+    --path common/crew-skills.json >/dev/null 2>&1 \
+    && ok "normal path exits 0" || bad "normal path exits 0"
+  git -C "$TMP/repo" rev-parse -q --verify automation/update-crew-skills >/dev/null \
+    && ok "normal path created automation branch" || bad "normal path created automation branch"
+  grep -q -- "--force-with-lease" "$GIT_LOG" \
+    && ok "normal path pushes with --force-with-lease" || bad "normal path pushes with --force-with-lease"
+  grep -q "gh pr create" "$GH_LOG" && ok "normal path creates PR" || bad "normal path creates PR"
+  head_sha="$(git -C "$TMP/repo" rev-parse HEAD)"
+  grep -q "head_sha=$head_sha" "$GH_LOG" \
+    && ok "dispatch carries the generated commit HEAD" || bad "dispatch carries the generated commit HEAD"
+  grep -q "pr_number=" "$GH_LOG" && ok "dispatch carries pr_number" || bad "dispatch carries pr_number"
+  commit_files="$(git -C "$TMP/repo" show --name-only --format= HEAD)"
+  [ "$commit_files" = "common/crew-skills.json" ] \
+    && ok "commit contains only the whitelisted path" || bad "commit contains only the whitelisted path (got: $commit_files)"
+
+  # 2. no changes: no commit, no push, no PR, no dispatch.
+  setup_repo; : > "$GIT_LOG"; : > "$GH_LOG"
+  FAKE_EXPECT_BRANCH=automation/update-crew-skills run_in_repo \
+    --branch automation/update-crew-skills \
+    --commit-message m --pr-title t --pr-body-file "$BODY" --path common/crew-skills.json >/dev/null 2>&1 \
+    && ok "unchanged paths exit 0" || bad "unchanged paths exit 0"
+  if grep -q "git push" "$GIT_LOG" || grep -q "pr create" "$GH_LOG" || grep -q "workflow run" "$GH_LOG"; then
+    bad "unchanged paths must not push/create/dispatch"
+  else
+    ok "unchanged paths must not push/create/dispatch"
+  fi
+
+  # 3. existing PR（真实 gh --jq 的裸数字输出形态）: no create, dispatch with that number.
+  setup_repo
+  printf 'v2\n' > "$TMP/repo/common/crew-skills.json"
+  : > "$GH_LOG"
+  FAKE_EXPECT_BRANCH=automation/update-crew-skills FAKE_LIST_OUTPUT=7 run_in_repo \
+    --branch automation/update-crew-skills \
+    --commit-message m --pr-title t --pr-body-file "$BODY" --path common/crew-skills.json >/dev/null 2>&1 \
+    && ok "existing-PR path exits 0" || bad "existing-PR path exits 0"
+  grep -q "gh pr create" "$GH_LOG" && bad "existing-PR path must not create a PR" || ok "existing-PR path must not create a PR"
+  grep -q "pr_number=7" "$GH_LOG" && ok "existing-PR path dispatches pr_number=7" || bad "existing-PR path dispatches pr_number=7"
+
+  # 4. unresolvable PR number (create ok but list stays empty): fail, no dispatch.
+  setup_repo
+  printf 'v2\n' > "$TMP/repo/common/crew-skills.json"
+  : > "$GH_LOG"
+  export FAKE_NEW_PR_NUMBER=
+  FAKE_EXPECT_BRANCH=automation/update-crew-skills run_in_repo \
+    --branch automation/update-crew-skills \
+    --commit-message m --pr-title t --pr-body-file "$BODY" --path common/crew-skills.json >/dev/null 2>&1 \
+    && bad "unresolvable PR number must fail" || ok "unresolvable PR number must fail"
+  grep -q "workflow run" "$GH_LOG" && bad "unresolvable PR number must not dispatch" || ok "unresolvable PR number must not dispatch"
+  unset FAKE_NEW_PR_NUMBER
+
+  # 5. wrong state / base / branch / head OID: fail, no dispatch.
+  mismatch_names=(FAKE_VIEW_STATE FAKE_VIEW_BASE FAKE_VIEW_BRANCH FAKE_VIEW_HEAD_OVERRIDE)
+  mismatch_vals=(MERGED develop automation/update-equipment 0000000000000000000000000000000000000000)
+  for i in 0 1 2 3; do
+    export "${mismatch_names[$i]}=${mismatch_vals[$i]}"
+    setup_repo
+    printf 'v2\n' > "$TMP/repo/common/crew-skills.json"
+    : > "$GH_LOG"
+    FAKE_EXPECT_BRANCH=automation/update-crew-skills run_in_repo \
+      --branch automation/update-crew-skills \
+      --commit-message m --pr-title t --pr-body-file "$BODY" --path common/crew-skills.json >/dev/null 2>&1 \
+      && bad "PR identity mismatch (${mismatch_names[$i]}) must fail" || ok "PR identity mismatch (${mismatch_names[$i]}) must fail"
+    grep -q "workflow run" "$GH_LOG" \
+      && bad "PR identity mismatch (${mismatch_names[$i]}) must not dispatch" || ok "PR identity mismatch (${mismatch_names[$i]}) must not dispatch"
+    unset "${mismatch_names[$i]}"
+  done
+
+  # 6. gh pr create failure: fail, no dispatch.
+  setup_repo
+  printf 'v2\n' > "$TMP/repo/common/crew-skills.json"
+  : > "$GH_LOG"
+  FAKE_EXPECT_BRANCH=automation/update-crew-skills FAKE_CREATE_EXIT=1 run_in_repo \
+    --branch automation/update-crew-skills \
+    --commit-message m --pr-title t --pr-body-file "$BODY" --path common/crew-skills.json >/dev/null 2>&1 \
+    && bad "gh create failure must fail the helper" || ok "gh create failure must fail the helper"
+  grep -q "workflow run" "$GH_LOG" && bad "gh create failure must not dispatch" || ok "gh create failure must not dispatch"
+
+  # 6b. git push failure: fail.
+  setup_repo
+  printf 'v2\n' > "$TMP/repo/common/crew-skills.json"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$TMP/remote.git/hooks/pre-receive"
+  chmod +x "$TMP/remote.git/hooks/pre-receive"
+  FAKE_EXPECT_BRANCH=automation/update-crew-skills run_in_repo \
+    --branch automation/update-crew-skills \
+    --commit-message m --pr-title t --pr-body-file "$BODY" --path common/crew-skills.json >/dev/null 2>&1 \
+    && bad "git push failure must fail the helper" || ok "git push failure must fail the helper"
+  rm -f "$TMP/remote.git/hooks/pre-receive"
+
+  # 7. Tankopedia same-source path: no branch switch, plain push (no force flag).
+  setup_repo
+  git -C "$TMP/repo" switch -qC automation/update-tankopedia
+  printf 'v2\n' > "$TMP/repo/common/tank_ids.json"
+  : > "$GIT_LOG"
+  FAKE_EXPECT_BRANCH=automation/update-tankopedia run_in_repo \
+    --branch automation/update-tankopedia --source-ref automation/update-tankopedia \
+    --commit-message "chore(data): sync BlitzKit Tankopedia" --pr-title t --pr-body-file "$BODY" \
+    --path 'common/tankopedia-tier*.json' --path common/tank_ids.json >/dev/null 2>&1 \
+    && ok "same-source path exits 0" || bad "same-source path exits 0"
+  grep -q "git switch" "$GIT_LOG" && bad "same-source path must not switch branches" || ok "same-source path must not switch branches"
+  grep -q -- "--force-with-lease" "$GIT_LOG" \
+    && bad "same-source path keeps the plain push" || ok "same-source path keeps the plain push"
+
+  # 8. Tankopedia different-source path: switch -C + force-with-lease.
+  setup_repo
+  printf 'v2\n' > "$TMP/repo/common/tank_ids.json"
+  : > "$GIT_LOG"
+  FAKE_EXPECT_BRANCH=automation/update-tankopedia run_in_repo \
+    --branch automation/update-tankopedia --source-ref main \
+    --commit-message "chore(data): sync BlitzKit Tankopedia" --pr-title t --pr-body-file "$BODY" \
+    --path 'common/tankopedia-tier*.json' --path common/tank_ids.json >/dev/null 2>&1 \
+    && ok "different-source path exits 0" || bad "different-source path exits 0"
+  grep -q "git switch -C automation/update-tankopedia" "$GIT_LOG" \
+    && ok "different-source path switches to the automation branch" || bad "different-source path switches to the automation branch"
+  grep -q -- "--force-with-lease" "$GIT_LOG" \
+    && ok "different-source path pushes with --force-with-lease" || bad "different-source path pushes with --force-with-lease"
+
+  # 9. unexpected staged content: refuse, no commit, no push, no PR.
+  setup_repo
+  printf 'v2\n' > "$TMP/repo/common/crew-skills.json"
+  printf 'x\n' > "$TMP/repo/other.txt"
+  git -C "$TMP/repo" add other.txt
+  : > "$GIT_LOG"; : > "$GH_LOG"
+  FAKE_EXPECT_BRANCH=automation/update-crew-skills run_in_repo \
+    --branch automation/update-crew-skills \
+    --commit-message m --pr-title t --pr-body-file "$BODY" --path common/crew-skills.json >/dev/null 2>&1 \
+    && bad "unexpected staged content must be refused" || ok "unexpected staged content must be refused"
+  grep -q "git commit" "$GIT_LOG" && bad "unexpected staged content must not commit" || ok "unexpected staged content must not commit"
+  grep -q "git push" "$GIT_LOG" && bad "unexpected staged content must not push" || ok "unexpected staged content must not push"
+
+  # 10. shell metacharacters in arguments stay data, never execute.
+  setup_repo
+  printf 'v2\n' > "$TMP/repo/common/crew-skills.json"
+  rm -f "$TMP/pwned"
+  FAKE_EXPECT_BRANCH=automation/update-crew-skills run_in_repo \
+    --branch automation/update-crew-skills \
+    --commit-message "msg with 'quotes' and \$(touch $TMP/pwned) and \"dq\"" \
+    --pr-title "title with 'quotes'" --pr-body-file "$BODY" --path common/crew-skills.json >/dev/null 2>&1 \
+    && ok "metacharacter args path exits 0" || bad "metacharacter args path exits 0"
+  [ ! -e "$TMP/pwned" ] && ok "metacharacters were not executed" || bad "metacharacters were not executed"
+  commit_subject="$(git -C "$TMP/repo" log -1 --format=%s)"
+  [ "$commit_subject" = "msg with 'quotes' and \$(touch $TMP/pwned) and \"dq\"" ] \
+    && ok "commit message preserved literally" || bad "commit message preserved literally (got: $commit_subject)"
+
+  # 11. non-allowlist branch is rejected outright.
+  setup_repo
+  run_in_repo --branch main \
+    --commit-message m --pr-title t --pr-body-file "$BODY" --path common/crew-skills.json >/dev/null 2>&1 \
+    && bad "non-allowlist branch must be rejected" || ok "non-allowlist branch must be rejected"
+
+  echo "helper behavior suite: PASS=$PASS FAIL=$FAIL"
+  [ "$FAIL" -eq 0 ] || exit 1
+}
+helper_behavior_main

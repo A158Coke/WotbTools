@@ -85,7 +85,7 @@ Task-related candidate tree contains changes but review scope is empty.
 
 ## 内部 playbooks
 
-按需加载 `.agents/playbooks/`：`code-quality.md`、`code-smell.md`、`fallow.md`、`wotb-sync.md`、`column-sync.md`、`frontend-architecture.md`、`keycloak-upgrade/`、`komodo-server-lifecycle.md`。
+按需加载 `.agents/playbooks/`：`code-quality.md`（含原 code-smell 品味检查）、`fallow.md`、`wotb-sync.md`、`column-sync.md`、`frontend-architecture.md`、`keycloak-upgrade/`、`komodo-server-lifecycle.md`。
 
 它们是 checklist/tool guidance，不拥有 lifecycle actions，也不是顶层 Skill。`product-qa/` 是独立的周期性 production product audit playbook，不属于本 Skill 的审查阶段。
 
@@ -98,7 +98,7 @@ Task-related candidate tree contains changes but review scope is empty.
 3. **Layer B**：range/workspace preview → 过滤到 task-related scope → rules → 逐文件 audit。
 4. **Layer A**：发现真实 plan source，逐条验证 requirement / acceptance criteria。
 5. **Supplemental gates**：DI + docs + dead code + reuse/SSOT。
-6. **Internal checklists**：code-quality；代码变更加 code-smell；前端适用时加 fallow。
+6. **Internal checklists**：code-quality（含品味检查）；前端适用时加 fallow。
 7. **Layer C**：reconcile findings，计算 blocker。
 8. **Fix → re-review**：可修 BLOCKER/MAJOR 持续修复后只重跑受影响 scope；按 Designer「授权、计划输入与偏差边界」遇到 HARD STOP 才暂停依赖步骤。
 9. **Report**：Plan compliance + Findings + Validation + Final。
@@ -273,35 +273,7 @@ rg -n '@Autowired(?:\s*\([^)]*\))?\s+(?:(?:private|protected|public)\s+)?[^(){}\
 
 映射结果为「无需更新」时必须给出具体理由；遗漏对应 canonical owner → BLOCKER。
 
-分类只包含真实支持的 owner：
-
-- canonical current-state docs；
-- `HISTORY.md` — 产品/业务历史；
-- `docs/architecture/TECHNICAL_EVOLUTION.md` — 技术/架构/data-flow/authority/identity/production topology 历史；
-- `docs/research/**` — research/reverse-engineering/experiment evidence；
-- `docs/android/releases/**` — 当前临时 versioned release record；
-- `docs/current-plan.md` — ephemeral approved execution plan。
-
-不创建任何 persistent future-wishlist 文档。
-
-current-state 文档发现 future-only prose：
-
-1. 当前 approved task → `docs/current-plan.md`；
-2. 明确独立 follow-up → GitHub Issue；
-3. 其它 uncommitted/speculative wishlist → 删除，不持久化。
-
-同时检查：
-
-- current-state doc 只描述 candidate 合并后的系统，不保存 PR/review/migration diary；
-- HISTORY / TECHNICAL_EVOLUTION 只保存有长期价值的对应历史；
-- research evidence 不冒充 current production；
-- Android release record 例外保持；
-- 永久源码/配置/current-state docs 不把 current-plan 当 authority；
-- persistent maintainer/dev/ops prose 使用简体中文，技术 literal 可保留规范英文；
-- `docs/README.md` 只索引真实存在的 persistent owners；
-- 不建立 archive/old/historical 等过期 current-state 文档堆放。
-
-任一不满足 → BLOCKER。
+文档分层与权威归属（canonical current-state / HISTORY / TECHNICAL_EVOLUTION / research / Android releases / current-plan 的例外边界）、future-only 内容处理、语言规范、current-plan 门禁与 archive 禁令，唯一正文在 `.agents/AGENTS.md` 规则 3「文档生命周期与权威归属」；本 gate 按该规则逐项复核 candidate，任一不满足 → BLOCKER，不在此复制第二套例外列表。
 
 ### A4. AI dead/speculative code
 

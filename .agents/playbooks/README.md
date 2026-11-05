@@ -24,8 +24,7 @@ lifecycle 只有四个 orchestrating Skills（另有 operational 入口 `product
 | `keycloak-upgrade`（目录） | designer / executor / prompt-repair / review-with-docs | Keycloak / SPI / provider 版本升级 |
 | `komodo-server-lifecycle.md` | designer / executor / prompt-repair / review-with-docs | 新增/迁移/下线服务器、Komodo Stack、持久数据迁移 |
 | `product-qa/`（目录） | 独立（用户显式触发） | 周期性 / 显式 production product audit（默认 `https://wotbtools.com`）；不是 PR final gate |
-| `code-quality.md` | review-with-docs | 代码质量 6 项检查 |
-| `code-smell.md` | review-with-docs | 过度设计 / 无意义抽象 / 架构复杂化品味审查 |
+| `code-quality.md` | review-with-docs | 代码质量与品味 9 项检查（正确性/边界 + 可维护性，含原 code-smell 内容） |
 | `fallow.md` | review-with-docs | 前端 dead-code / circular-deps / duplication / complexity 诊断 |
 | `post-merge-cleanup.md` | executor | PR merge 后清理分支、worktree、current-plan 与任务状态 |
 
