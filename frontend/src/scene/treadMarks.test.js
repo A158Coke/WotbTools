@@ -11,6 +11,8 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url))
 const sceneSrc = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
+// #820 Wave B4A：Buffer 写入实现出仓到 playback/treadBufferWriter.ts，槽位/量化守卫随之改读新模块
+const writerSrc = readFileSync(resolve(here, 'playback', 'treadBufferWriter.ts'), 'utf8')
 
 describe('treadMarks 接线守卫（playbackScene 源码级，sceneryMaterials.test.js 同风格）', () => {
   it('tick() 必须驱动游标泵 updateTrails()（否则印记只在 seek 时出现）', () => {
@@ -30,11 +32,11 @@ describe('treadMarks 接线守卫（playbackScene 源码级，sceneryMaterials.t
     expect(sceneSrc).toMatch(/const TRAIL_CAP_PER_SIDE = TREAD_RING;/)
     expect(sceneSrc).not.toMatch(/TRAIL_OPEN_SLOT/)
     expect(sceneSrc).toMatch(/const TRAIL_SLOTS = TRAIL_CAP_PER_SIDE \* 2;/)
-    expect(sceneSrc).toMatch(/const openSlot = st\.total % TRAIL_CAP_PER_SIDE;/)
+    expect(writerSrc).toMatch(/const openSlot = st\.total % cap;/)
     // 绘制窗口 = 全部槽位（不再按 min/max(L,R) 取窗互相截断），无效槽显式隐藏
-    expect(sceneSrc).toMatch(/geo\.setDrawRange\(0, TRAIL_SLOTS \* 6\);/)
-    expect(sceneSrc).toMatch(/const open = openStampOf\(st\);/)
-    expect(sceneSrc).toMatch(/hideQuads\(/)
+    expect(writerSrc).toMatch(/geometry\.setDrawRange\(0, input\.slots \* 6\);/)
+    expect(writerSrc).toMatch(/const open = openStampOf\(st\);/)
+    expect(writerSrc).toMatch(/hideQuads\(/)
   })
   it('激活门 = 客户端 0x3632a54（0.3 m 净位移才开始拉伸活戳）', () => {
     expect(TREAD_ACTIVATE).toBeCloseTo(0.3, 6)
@@ -43,17 +45,17 @@ describe('treadMarks 接线守卫（playbackScene 源码级，sceneryMaterials.t
     // review P2 2026-10-12：回压重占改单槽 t + null 清空槽 ⇒ "按序号时间有序"的二分老化
     // 前提不成立（重占后的新戳会被当过期前缀清 0）——老化必须是逐槽按自身 t 独立计算。
     expect(sceneSrc).not.toMatch(/const cutoff = T - TREAD_FADE\.end;/)
-    expect(sceneSrc).toMatch(/逐槽独立老化，不做任何时间有序假设/)
-    expect(sceneSrc).toMatch(/const a = seg \? Math\.fround\(treadAlphaAt\(T - seg\.t\)/)
+    expect(writerSrc).toMatch(/逐槽独立老化，不做任何时间有序假设/)
+    expect(writerSrc).toMatch(/const a = seg \? Math\.fround\(treadAlphaAt\(input\.now - seg\.t\)/)
   })
   it('关断重开必须复位两侧路径态（不只回退 builtT；review P2 2026-10-11）', () => {
     expect(sceneSrc).toMatch(/if \(tr\.builtT !== -Infinity \|\| tr\.L\.total \|\| tr\.R\.total\) \{\s*resetTrailState\(tr\.L\); resetTrailState\(tr\.R\);/)
   })
   it('alpha 比较必须走 Math.fround 量化门控（review P3 2026-10-11：double 严格比较恒为脏）', () => {
     // 客户端口径：alpha = 淡出系数 × per-stem 归一化，**无全局压暗系数**（2026-10-12 裁示）
-    expect(sceneSrc).toMatch(/Math\.fround\(treadAlphaAt\(T - t\) \* \(v\.tread\.texScale \|\| 1\)\)/)
+    expect(writerSrc).toMatch(/Math\.fround\(treadAlphaAt\(input\.now - t\) \* \(input\.texScale \|\| 1\)\)/)
     expect(sceneSrc).not.toMatch(/TREAD_OPACITY/)
-    expect(sceneSrc).toMatch(/parr\[pos0 \+ i\] !== Math\.fround\(c12\[i\]\)/)
+    expect(writerSrc).toMatch(/parr\[pos0 \+ i\] !== Math\.fround\(c12\[i\]\)/)
   })
   it('teardown 必须释放逐车 treadMesh 几何/材质与会话级贴图缓存（显存生命周期同会话）', () => {
     expect(sceneSrc).toMatch(/v\.treadMesh\.geometry\.dispose\(\)/)

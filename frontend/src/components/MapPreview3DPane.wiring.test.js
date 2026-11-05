@@ -67,6 +67,17 @@ describe('MapPreview3DPane 场景接线（source regression）', () => {
     expect(readyBody).toContain('pushSpawnPoints()')
   })
 
+  it('UI Profile 切换：pane watch uiProfile → 内核 refreshSpawnColors 原位重着色（#877 review P3）', () => {
+    // useUiProfile 不 reload/remount：2D 随 CSS 换色，3D 材质快照必须显式同步
+    expect(paneSrc).toContain("import { uiProfile } from '../composables/useUiProfile.js'")
+    expect(paneSrc).toMatch(/watch\(uiProfile,/)
+    expect(paneSrc).toContain('refreshSpawnColors?.()')
+    // 内核侧：map 会话门控 + 原位 refreshColors + invalidate（回放会话 no-op）
+    expect(kernelSrc).toContain('function refreshSpawnColors()')
+    expect(kernelSrc).toMatch(/refreshSpawnColors\(\) \{[\s\S]*?SESSION_MODE !== 'map'[\s\S]*?spawnMarkers\.refreshColors\(\)[\s\S]*?invalidate\(\)/)
+    expect(kernelSrc).toContain('refreshSpawnColors() {')
+  })
+
   it('内核 map 会话：stub DATA + 就绪门控 mapReady（hasData 保持回放专用）', () => {
     expect(kernelSrc).toContain('async function loadMapOnly(')
     expect(kernelSrc).toContain("SESSION_MODE = 'map'")
