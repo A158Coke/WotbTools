@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import ArmorSideConfig from './ArmorSideConfig.vue'
+import TankConfigPanel from './TankConfigPanel.vue'
 import upgradeFixtures from '../replay-local/compute/__fixtures__/upgrades/tanks.json'
 
 const data = vi.hoisted(() => ({ fetchTankData: vi.fn() }))
@@ -41,6 +42,7 @@ describe('ArmorSideConfig（一侧的模块 + 配件完整选择）', () => {
     await flushPromises()
     expect(wrapper.emitted('ready').at(-1)).toEqual([true])
     expect(wrapper.find('[data-testid="tank-configurator"]').exists()).toBe(true)
+    expect(wrapper.getComponent(TankConfigPanel).props('embedded')).toBe(true)
     expect(wrapper.findAll('.tp-module-tile')).toHaveLength(6) // 炮塔1+火炮1+发动机2+履带2
     expect(wrapper.findAll('.tp-dev-btn')).toHaveLength(0)
     expect(wrapper.find('.tp-skills-block').exists()).toBe(false)

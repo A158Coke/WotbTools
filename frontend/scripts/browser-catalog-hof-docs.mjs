@@ -8,7 +8,12 @@ export const CATALOG_HOF_DOC_SCENARIOS = ['showcase', 'classic'].flatMap(profile
   ...size, profile, mode, touch: true, name: `overlay-${mode}-${profile}-${size.width}x${size.height}`,
 })))).concat(['showcase', 'classic'].map(profile => ({
   width: 1440, height: 900, touch: false, profile, mode: 'docs', name: `overlay-docs-${profile}-1440x900`,
-})))
+}))).concat(['showcase', 'classic'].flatMap(profile => [
+  { width: 360, height: 800, touch: true }, { width: 390, height: 844, touch: true },
+  { width: 1024, height: 768, touch: true }, { width: 1440, height: 900, touch: false },
+].flatMap(size => ['params', 'tank-config'].map(mode => ({
+  ...size, profile, mode, name: `tankopedia-${mode}-${profile}-${size.width}x${size.height}`,
+})))))
 
 /** 真实组件/DOM/CSS 与原始输入；仅外部 HTTP 榜单及静态图片使用确定性夹具。 */
 export async function runCatalogHofDocScenario(env, scenario) {
@@ -69,7 +74,32 @@ export async function runCatalogHofDocScenario(env, scenario) {
     await page.goto(`${env.origin}/scripts/browser-fixtures/catalog-hof-docs.html?mode=${scenario.mode}&profile=${scenario.profile}&assets=${encodeURIComponent(`${env.origin}/catalog-assets`)}`)
     await page.waitForValue('!!document.querySelector("[data-testid=catalog-hof-docs-fixture]")', Boolean)
 
-    if (scenario.mode === 'dialog') {
+    if (scenario.mode === 'params') {
+      await page.waitForValue('document.querySelectorAll(".tp-param-row").length', value => value > 20)
+      const geometry = await page.evaluate(`(() => {
+        const overlap = [...document.querySelectorAll('.tp-param-row')].filter(row => {
+          const label = row.querySelector('dt').getBoundingClientRect(), value = row.querySelector('dd').getBoundingClientRect();
+          return label.right > value.left + 1 || row.scrollWidth > row.clientWidth + 1;
+        }).map(row => row.dataset.testid);
+        const columns = [...document.querySelectorAll('.tp-param-column')].map(el => el.getBoundingClientRect());
+        return { overlap, columnCount: columns.length, stacked: columns[0].left === columns[1].left };
+      })()`)
+      assert.deepEqual(geometry.overlap, [], '参数名称、主值与变化量不得重叠或溢出')
+      assert.equal(geometry.columnCount, 2)
+      assert.equal(geometry.stacked, scenario.width < 768, '窄屏单列；宽屏独立列，机动不受火力高度拖累')
+      await tap('[data-testid=tank-shell-1]')
+      await page.waitForValue('document.querySelector("[data-testid=tank-shell-1]").getAttribute("aria-pressed")', value => value === 'true')
+      assert.ok(await page.evaluate('document.querySelector("[data-testid=tank-shell-1]").textContent.includes("HEAT")'), '弹种名称始终可见')
+    } else if (scenario.mode === 'tank-config') {
+      await page.waitForValue('document.querySelectorAll(".tp-skill-btn").length', value => value === 20)
+      await tap('[data-testid=tank-skills-max]')
+      await page.waitForValue('document.querySelectorAll(".tp-skill-btn.is-on").length', value => value === 20)
+      // 整个关联label是触控目标，原生复选框只负责绘制小型勾选符号。
+      await tap('[data-testid=tank-skill-trigger-control]')
+      await page.waitForValue('document.querySelector("[data-testid=tank-skill-triggers]").checked', Boolean)
+      const overflow = await page.evaluate('[...document.querySelectorAll(".tp-skill-group")].some(el => el.scrollWidth > el.clientWidth + 1)')
+      assert.equal(overflow, false, '实际配置列中的技能组不得横溢出')
+    } else if (scenario.mode === 'dialog') {
       // 选择器在 dialog 上下文内展开：列表不得被 dialog 的内容裁掉，选项要真实可点。
       await tap('#dialog-vehicle')
       await page.waitForValue('!!document.querySelector(".vp-option")', Boolean)

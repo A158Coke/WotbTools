@@ -528,6 +528,18 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
     })
   })
 
+  it('模块摘要不展示未解析的客户端语言 key，缺可靠名称时显示既有 stem', async () => {
+    const modules = moduleFixture()
+    modules.turrets[1].name_en = '#usa_vehicles:Turret_2'
+    modules.turrets[1]['name_zh-Hans'] = '#usa_vehicles:Turret_2'
+    modules.turrets[1].stem = 'Turret_2_Test'
+    research.loadTankModules.mockResolvedValue({ tanks: { 'IS-7': modules } })
+    const { wrapper } = await mountAt({ tank: '999' })
+    expect(wrapper.get('.tp-summary').text()).not.toContain('#usa_vehicles:')
+    expect(wrapper.get('.tp-summary').text()).toContain('Turret 2 Test')
+    wrapper.unmount()
+  })
+
   it('配置器选了 122（改进型垂直稳定器）→ 装甲查看器入口携带 eqpitch=1', async () => {
     // review P2：装甲查看器初始化 122 what-if 只读 eqpitch，不从 dev= 推导。
     // 预设 AlternatePitchGrouserPreset 槽位 2 左 = improvedPitchLimitsSystem（设备 122）；
@@ -567,7 +579,7 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
     expect(provisionTile.length).toBeGreaterThan(0)
     // 顶级炮塔 500 + 车体 2000 = 2500；初次加载无 delta（BK useDelta：只比较上一次值）
     const hpRow = wrapper.find('[data-testid="tank-param-maxHealth"]')
-    expect(hpRow.text()).toContain('2500')
+    expect(hpRow.text()).toContain('2,500')
     expect(hpRow.find('.tp-param-delta').exists()).toBe(false)
     // 换输弹机后装填变快：delta 显示绝对差值 + ▼，颜色绿色（biggerIsBetter=false）
     await wrapper.find('[data-testid="tank-device-0-attack-0"]').trigger('click')
@@ -614,7 +626,7 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
 
   it('概览条 / 火炮元信息 / 消耗品冷却 / 初始-顶级快捷', async () => {
     const { wrapper, router } = await mountAt({ tank: '999' })
-    expect(wrapper.find('[data-testid="tank-summary-hp"]').text()).toContain('2500')
+    expect(wrapper.find('[data-testid="tank-summary-hp"]').text()).toContain('2,500')
     expect(wrapper.find('[data-testid="tank-summary-pen"]').text()).toContain('250')
     expect(wrapper.find('[data-testid="tank-gun-meta"]').exists()).toBe(true)
     // 客户端 consumable script 的 cooldown（自动灭火器 70s）与 duration（超速传动器 12s）
@@ -654,7 +666,7 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
     expect(router.currentRoute.value.query).toMatchObject({ config: '0', engine: '0', track: '0' })
     expect(router.currentRoute.value.query.shell).toBeUndefined()
     expect(wrapper.find('[data-testid="tank-summary-damage"]').text()).toContain('490')
-    expect(wrapper.find('[data-testid="tank-summary-hp"]').text()).toContain('2400')
+    expect(wrapper.find('[data-testid="tank-summary-hp"]').text()).toContain('2,400')
     await wrapper.find('[data-testid="tank-preset-top"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query).toMatchObject({ config: '2', engine: '1', track: '1' })
@@ -790,7 +802,7 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
     expect(summary.text()).toContain('net_bonus')
     expect(summary.text()).toContain('"still":"4"') // 夹具是重坦：移动 2% / 静止 4%
     // improved assembly 111：HP ×1.05（2500 → 2625）
-    expect(wrapper.find('[data-testid="tank-param-maxHealth"]').text()).toContain('2625')
+    expect(wrapper.find('[data-testid="tank-param-maxHealth"]').text()).toContain('2,625')
     // 强化装甲 110：装甲表 +4%（炮塔正面 250 → 260，车体正面 150 → 156）
     await wrapper.find('[data-testid="tank-device-1-defence-0"]').trigger('click')
     await flushPromises()
@@ -803,7 +815,7 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
     await wrapper.find('[data-testid="tank-device-1-defence-0"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query.dev).toBeUndefined()
-    expect(wrapper.find('[data-testid="tank-param-maxHealth"]').text()).toContain('2500')
+    expect(wrapper.find('[data-testid="tank-param-maxHealth"]').text()).toContain('2,500')
   })
 
   it('装备 tooltip 占位符按当前车型/百分比格式化', async () => {
@@ -851,7 +863,7 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
     // 超负荷 107：弹速 ×1.35（900→1215）；远距衰减量 ×0.4（265−21.2×0.4=256.52）
     await wrapper.find('[data-testid="tank-device-1-attack-1"]').trigger('click')
     await flushPromises()
-    expect(detail()).toContain('1215')
+    expect(detail()).toContain('1,215')
     expect(detail()).toContain('256.5')
   })
 
@@ -860,11 +872,11 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
     await wrapper.find('[data-testid="tank-device-1-defence-1"]').trigger('click') // improved assembly 111
     await flushPromises()
     const hp = () => wrapper.find('[data-testid="tank-param-maxHealth"]')
-    expect(hp().text()).toContain('2625')
+    expect(hp().text()).toContain('2,625')
     expect(hp().find('.tp-param-delta').exists()).toBe(true)
     await wrapper.find('[data-testid="tank-config-reset"]').trigger('click')
     await flushPromises()
-    expect(hp().text()).toContain('2500')
+    expect(hp().text()).toContain('2,500')
     expect(hp().find('.tp-param-delta').exists()).toBe(false)
   })
 
@@ -897,7 +909,7 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
     await unavailable.trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query.config).toBe('0')
-    expect(wrapper.find('[data-testid="tank-param-maxHealth"]').text()).toContain('2400')
+    expect(wrapper.find('[data-testid="tank-param-maxHealth"]').text()).toContain('2,400')
     await wrapper.find('[data-testid="tank-gun-0"]').trigger('click')
     await flushPromises()
     const push = vi.spyOn(router, 'push')

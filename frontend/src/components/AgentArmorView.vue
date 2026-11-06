@@ -639,7 +639,7 @@ onBeforeUnmount(() => {
             <div id="tank-selectors" :class="{ 'has-shot-hud': hudReady }"><h2 class="armor-panel-title">{{ $t('armor.setup') }}</h2><p v-if="isShotPage" class="armor-setup-note">{{ $t('armor.recording_vs_preview') }}</p>
                 <div class="sel-row" id="config-row" style="display:none;"><label id="config-label" for="config-select">{{ $t('armor.config') }}</label><select id="config-select"></select></div>
                 <div class="sel-row">
-                    <label>{{ $t('armor.equip') }}</label>
+                    <label class="armor-equipment-caption">{{ $t('armor.equip') }}</label>
                     <label class="eq-opt"><input type="checkbox" id="eq-calibrated"> <span class="eq-opt-label">{{ $t('armor.calibrated') }}</span></label>
                     <label class="eq-opt"><input type="checkbox" id="eq-enhanced"> <span class="eq-opt-label">{{ $t('armor.enhanced') }}</span></label>
                     <label v-show="pitchDeviceAvailable" class="eq-opt" id="pitch-device-opt"><input type="checkbox" id="eq-pitch-device"> <span class="eq-opt-label">{{ $t('armor.pitch_device') }}</span></label>
@@ -841,8 +841,9 @@ onBeforeUnmount(() => {
 .armor-view #info-panel .value { font-weight: 600; }
 .armor-view .armor-setup-note { margin: 0 0 var(--space-3); color: var(--muted); font: var(--type-caption); }
 .armor-view .armor-panel-title { margin: 0 0 var(--space-2); color: var(--muted); font: var(--type-caption); }
-.armor-view .armor-side-cards { display: grid; gap: var(--space-2); min-inline-size: 0; }
-.armor-view .armor-side-card { display: grid; gap: var(--space-1); padding: var(--space-1) var(--space-2) var(--space-2); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); background: var(--color-surface-1); }
+.armor-view .armor-side-cards { display: grid; gap: var(--space-3); min-inline-size: 0; }
+.armor-view .armor-side-card { display: grid; gap: var(--space-2); min-inline-size: 0; }
+.armor-view .armor-side-card + .armor-side-card { border-block-start: 1px solid var(--color-border-subtle); padding-block-start: var(--space-3); }
 .armor-view .armor-side-head { display: flex; align-items: center; gap: var(--space-2); min-inline-size: 0; padding-block: var(--space-1); }
 .armor-view .armor-side-role { color: var(--color-accent-text); font: var(--type-caption); font-weight: 700; white-space: nowrap; }
 .armor-view .armor-side-tank { flex: 1 1 auto; inline-size: auto; min-inline-size: 0; }
@@ -857,6 +858,7 @@ onBeforeUnmount(() => {
 .armor-view #view-toggle > button { flex: 1; }
 /* 射击复现的图形面板就绪后，场景自带的校准弹/强化装甲勾选只作为资产缺失时的回退 */
 .armor-view #tank-selectors.has-shot-hud .eq-opt:not(#armor-state-opt) { display: none; }
+.armor-view #tank-selectors.has-shot-hud .armor-equipment-caption { display: none; }
 .armor-view #tank-selectors { padding: var(--space-3); inline-size: 23rem; max-block-size: 54dvh; overflow-y: auto; z-index: var(--pb-z-hud); }
 .armor-view #tank-selectors .sel-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-1) 0; }
 .armor-view #tank-selectors label { color: var(--muted); font: var(--type-caption); }
@@ -942,6 +944,7 @@ onBeforeUnmount(() => {
         border-radius: 0;
         box-shadow: none;
     }
+    .armor-view #info-panel .stat { display: inline-flex; align-items: center; gap: var(--space-1); margin-inline-end: var(--space-2); }
     .armor-view #corner-tl > .armor-tools {
         grid-column: 2;
         grid-row: 1;
@@ -970,6 +973,7 @@ onBeforeUnmount(() => {
         background: none;
         box-shadow: none;
     }
+    .armor-view #tank-selectors .armor-panel-title { margin-block-end: var(--space-3); }
     .armor-view .armor-stage.is-tools-open #tank-selectors { display: block; }
 }
 /* 横屏手机/平板：使用平板/桌面式布局（左上信息卡 + 四角浮层），并解除竖屏的 420px

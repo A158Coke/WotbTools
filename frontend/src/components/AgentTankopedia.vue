@@ -409,7 +409,9 @@ const shellRows = computed(() => shells.value.map((shell, index) => {
 const moduleLang = computed(() => (locale.value === 'zh' ? 'zh-Hans' : 'en'))
 function moduleName(item) {
   if (!item) return ''
-  return item[`name_${moduleLang.value}`] || item['name_zh-Hans'] || item.name_en || item.stem || ''
+  const name = [item[`name_${moduleLang.value}`], item.name_en, item['name_zh-Hans'], item.name]
+    .find(value => typeof value === 'string' && value.trim() && !value.trim().startsWith('#'))
+  return name || (typeof item.stem === 'string' ? item.stem.replaceAll('_', ' ').trim() : '') || '—'
 }
 const currentTurret = computed(() => modules.value?.turrets?.[setup.value.turret] || null)
 const currentGun = computed(() => currentTurret.value?.guns?.[setup.value.gun] || null)
@@ -661,7 +663,13 @@ onMounted(() => {
         <div class="tp-workbench">
           <div class="tp-workbench-left">
           <section class="tp-card-section tp-model-card" data-testid="tank-open3d-card" data-tour="tankopedia-detail">
-            <h2 class="tp-section-title">{{ t('agentTanks.open3d_title') }}</h2>
+            <div class="tp-model-card-heading">
+              <h2 class="tp-section-title">{{ t('agentTanks.open3d_title') }}</h2>
+              <AppButton variant="primary" data-testid="tank-open3d" data-tour="tankopedia-armor" @click="open3d">
+                <Box :size="16" aria-hidden="true" />
+                {{ t('agentTanks.open3d') }}
+              </AppButton>
+            </div>
             <dl v-if="setup.canConfigure" class="tp-summary">
               <div v-if="currentTurret"><dt>{{ t('agentTanks.configurator.turret') }}</dt><dd>{{ moduleName(currentTurret) }}</dd></div>
               <div v-if="currentGun"><dt>{{ t('agentTanks.configurator.gun') }}</dt><dd>{{ moduleName(currentGun) }}</dd></div>
@@ -674,12 +682,7 @@ onMounted(() => {
                 <option v-for="(c, i) in cfgs" :key="i" :value="i">{{ c.label }}<template v-if="c.turret_name && c.turret_name !== c.label"> ({{ c.turret_name }})</template></option>
               </select>
             </label>
-            <div>
-              <AppButton variant="primary" data-testid="tank-open3d" data-tour="tankopedia-armor" @click="open3d">
-                <Box :size="16" aria-hidden="true" />
-                {{ t('agentTanks.open3d') }}
-              </AppButton>
-            </div>
+
             <p class="tp-muted">{{ t('agentTanks.open3d_hint') }}</p>
             <p v-if="Number(detail.tier) === 11 && !upgradeSelection.available" class="tp-muted" role="status" data-testid="tank-upgrade-unavailable">
               {{ t('agentTanks.configurator.upgrade_unavailable') }}
@@ -901,19 +904,20 @@ onMounted(() => {
 .tp-detail-nav { display: flex; }
 
 .tp-detail-head {
-  display: flex;
+  display: grid;
+  grid-template-columns: clamp(var(--tank-header-image-min), 18%, var(--tank-header-image-max)) minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--space-6);
-  padding: var(--space-4);
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-lg);
   background: var(--color-surface-1);
   box-shadow: var(--elevation-1);
 }
 
-.tp-media-lg { flex: 0 0 240px; inline-size: 240px; }
+.tp-media-lg { inline-size: 100%; }
 .tp-detail-title { display: grid; gap: var(--space-2); min-inline-size: 0; }
-.tp-detail-actions { display: flex; align-items: center; gap: var(--space-2); margin-inline-start: auto; }
+.tp-detail-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); min-inline-size: 0; }
 .tp-detail-title h1 { margin: 0; font: var(--type-h1); overflow-wrap: anywhere; }
 
 .tp-card-section {
@@ -929,18 +933,19 @@ onMounted(() => {
 .tp-section-title { margin: 0; font: var(--type-h3); }
 
 /* 工作台：桌面左右两栏（模型/装甲入口 + 配置面板），窄屏纵向堆叠 */
-.tp-workbench { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: var(--space-4); align-items: start; }
+.tp-workbench { display: grid; grid-template-columns: minmax(var(--tank-config-min), min(36%, var(--tank-config-max))) minmax(0, 1fr); gap: var(--space-4); align-items: start; }
 .tp-workbench-left { display: grid; gap: var(--space-4); align-content: start; min-inline-size: 0; }
 .tp-workbench-right { min-inline-size: 0; }
 .tp-model-card { align-content: start; }
+.tp-model-card-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
 
 .tp-summary {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-2);
   margin: 0;
 }
-.tp-summary > div { padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); }
+.tp-summary > div { display: grid; align-content: start; gap: var(--space-1); min-inline-size: 0; padding-block: var(--space-1); }
 .tp-summary dt { color: var(--color-text-secondary); font: var(--type-caption); }
 .tp-summary dd { margin: 0; font: var(--type-body); font-weight: 600; overflow-wrap: anywhere; }
 
@@ -963,15 +968,17 @@ onMounted(() => {
 
 /* 平板：详情头部封面缩小；工作台改单列（配置面板在下） */
 @media (768px <= width < 1200px) {
-  .tp-media-lg { flex-basis: 200px; inline-size: 200px; }
   .tp-workbench { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* 手机：详情头部改为上下排列 */
 @media (width < 768px) {
   .tankopedia { gap: var(--space-3); padding-block-start: var(--space-4); }
-  .tp-detail-head { flex-direction: column; align-items: stretch; gap: var(--space-3); }
-  .tp-media-lg { flex-basis: auto; inline-size: 100%; }
+  .tp-detail-head { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: var(--space-3); padding: var(--space-3); }
+  .tp-detail-title h1 { font: var(--type-h2); }
+  .tp-detail-actions { grid-column: 1 / -1; justify-content: stretch; }
+  .tp-detail-actions > * { flex: 1; }
+  .tp-card-section { padding: var(--space-3); }
   .tp-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tp-workbench { grid-template-columns: minmax(0, 1fr); }
 }
