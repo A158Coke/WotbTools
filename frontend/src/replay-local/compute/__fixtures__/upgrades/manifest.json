@@ -1,0 +1,13 @@
+{
+  "source": "WoT-Blitz-Agent data/research/modules（客户端 t11p2 导出）",
+  "modules": "保留导出条目原值，stem 来自国家文件的映射键。upgradeProgression.provenance 包含解码后 XML 的 SHA256。",
+  "detail": "派生的字段映射测试场景，并非客户端导出的坦克详情或线上资产：装填、瞄准、精度、俯角和模块 ID 来自真实 modules；炮弹、装甲板厚、模型路径及类型形状属于受控测试输入，不代表实际炮弹与装甲数值。",
+  "sourceZip": "http://cdn.static.wotb.app/win7/WotBlitz_11.4.0.130_t11p2.zip",
+  "tankIds": [
+    15153,
+    27905,
+    28161,
+    30241,
+    30497
+  ]
+}

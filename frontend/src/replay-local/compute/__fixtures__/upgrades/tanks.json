@@ -1,0 +1,4780 @@
+[
+  {
+    "modules": {
+      "tankId": 15153,
+      "name": "BZ-79",
+      "tier": 11,
+      "tags": [
+        "heavyTank"
+      ],
+      "consumableSlots": 3,
+      "provisionSlots": 3,
+      "optDevicePreset": "defaultPreset",
+      "speedLimits": {
+        "forward": 39.0,
+        "backward": 12.0
+      },
+      "invisibility": {
+        "still": 0.05,
+        "moving": 0.012,
+        "firePenalty": 0.038
+      },
+      "hull": {
+        "hp": 2020,
+        "weight": 42360.0
+      },
+      "hasTurret": true,
+      "crewRoles": [
+        "commander",
+        "gunner",
+        "driver",
+        "loader"
+      ],
+      "chassis": [
+        {
+          "stem": "Chassis_1_Ch67_BZ_79",
+          "localId": 91,
+          "level": 11,
+          "price": 0.0,
+          "name_en": "BZ-79",
+          "name_zh-Hans": "BZ-79",
+          "unlocks": [],
+          "stats": {
+            "rotationSpeed": 25.0,
+            "terrainResistance": [
+              1.0,
+              1.3,
+              1.6
+            ],
+            "maxLoad": 75655.0,
+            "weight": 12620.0,
+            "maxHealth": 260.0,
+            "bulkHealthFactor": 3.0,
+            "hysteresisHealth": 40.0,
+            "healthRegenPerSec": 8.75,
+            "hullPosition": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "dispersionFactors": {
+              "vehicleMovement": 0.25,
+              "vehicleRotation": 0.25
+            }
+          }
+        }
+      ],
+      "turrets": [
+        {
+          "stem": "Turret_1_Ch67_BZ_79",
+          "localId": 82,
+          "level": 11,
+          "price": 0.0,
+          "name_en": "BZ-79",
+          "name_zh-Hans": "BZ-79",
+          "unlocks": [],
+          "stats": {
+            "rotationSpeed": 24.0,
+            "circularVisionRadius": 250.0,
+            "maxHealth": 600.0,
+            "weight": 16180.0,
+            "yawLimits": [
+              -180.0,
+              180.0
+            ],
+            "bbox": {
+              "min": [
+                -1.552287,
+                -1.714614,
+                -0.0
+              ],
+              "max": [
+                1.552287,
+                1.702835,
+                1.042534
+              ]
+            }
+          },
+          "primaryArmor": {
+            "front": "armor_2",
+            "sides": "armor_3",
+            "rear": "armor_4"
+          },
+          "guns": [
+            {
+              "stem": "_152mm_ZPL_75",
+              "localId": 89,
+              "level": 10,
+              "price": 0.0,
+              "name_en": "#china_vehicles:_152mm_ZPL_75",
+              "name_zh-Hans": "#china_vehicles:_152mm_ZPL_75",
+              "unlocks": [],
+              "stats": {
+                "reloadTime": 19.5,
+                "aimingTime": 2.2,
+                "shotDispersionRadius": 0.48,
+                "maxAmmo": 42.0,
+                "weight": 2725.0,
+                "invisibilityFactorAtShot": 0.225,
+                "rotationSpeed": 39.0,
+                "dispersionFactors": {
+                  "turretRotation": 0.16,
+                  "afterShot": 4.0,
+                  "whileGunDamaged": 2.0
+                },
+                "pitchLimits": {
+                  "min": -14.0,
+                  "max": 5.0
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "engines": [
+        {
+          "stem": "E5TD_2_chin",
+          "localId": 76,
+          "level": 10,
+          "price": 0.0,
+          "name_en": "#china_vehicles:E5TD_2_chin",
+          "name_zh-Hans": "#china_vehicles:E5TD_2_chin",
+          "unlocks": [],
+          "stats": {
+            "power": 830.0,
+            "fireStartingChance": 0.27,
+            "weight": 600.0,
+            "tags": []
+          }
+        }
+      ],
+      "radios": [
+        {
+          "stem": "A_220B_79_Chin",
+          "localId": 34,
+          "level": 10,
+          "price": 0.0,
+          "name_en": null,
+          "name_zh-Hans": null,
+          "unlocks": [],
+          "stats": {
+            "distance": 1.0,
+            "weight": 100.0
+          }
+        }
+      ],
+      "fuelTanks": [
+        {
+          "stem": "Large",
+          "localId": 205,
+          "level": null,
+          "price": 100.0,
+          "name_en": null,
+          "name_zh-Hans": null,
+          "unlocks": [],
+          "stats": {
+            "weight": 300.0
+          }
+        }
+      ],
+      "turretOrigin": [
+        0.0,
+        1.379319,
+        0.122813
+      ],
+      "initialTurretRotation": null,
+      "bbox": {
+        "hull": {
+          "min": [
+            -1.547026,
+            -3.341802,
+            0.393023
+          ],
+          "max": [
+            1.547026,
+            3.543317,
+            1.540001
+          ]
+        },
+        "chassis": {
+          "min": [
+            -1.555117,
+            -3.469926,
+            0.000237
+          ],
+          "max": [
+            1.555117,
+            3.474447,
+            1.068605
+          ]
+        }
+      },
+      "gameVersion": "11.4.0.130_7400742 11.22_supertest_tier11_5 WOTB_Win7",
+      "upgradeProgression": {
+        "nodes": [
+          {
+            "id": 1,
+            "techName": "tier11_shell_speed_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_1",
+                "value": 80
+              },
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_3",
+                "value": 80
+              },
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_2",
+                "value": 80
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "techName": "tier11_fire_start_chance_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_FIRE_START_CHANCE",
+                "value": -0.05
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "techName": "tier11_max_speed_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_FORWARD_MAX_SPEED",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "id": 4,
+            "techName": "tier11_shot_disp_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_ANGLE_FACTOR_BONUS",
+                "value": -0.05
+              }
+            ]
+          },
+          {
+            "id": 5,
+            "techName": "tier11_stabilisation_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_VEHICLE_MOVEMENT_FACTOR",
+                "value": 0.98
+              },
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_VEHICLE_ROTATION_FACTOR",
+                "value": 0.98
+              },
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_TURRET_ROTATION_FACTOR",
+                "value": 0.98
+              }
+            ]
+          },
+          {
+            "id": 6,
+            "techName": "tier11_hp_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_MAX_HEALTH",
+                "value": 80
+              }
+            ]
+          },
+          {
+            "id": 7,
+            "techName": "tier11_hull_rotation_speed_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_HULL_ROTATION_SPEED_FACTOR_BONUS",
+                "value": 0.04
+              }
+            ]
+          },
+          {
+            "id": 8,
+            "techName": "tier11_hp_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_MAX_HEALTH",
+                "value": 50
+              }
+            ]
+          },
+          {
+            "id": 9,
+            "techName": "tier11_dmg_main_gun_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_1",
+                "value": 30
+              },
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_2",
+                "value": 30
+              },
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_3",
+                "value": 30
+              }
+            ]
+          },
+          {
+            "id": 10,
+            "techName": "tier11_fire_start_chance_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_FIRE_START_CHANCE",
+                "value": -0.05
+              }
+            ]
+          },
+          {
+            "id": 11,
+            "techName": "tier11_rocket_boost_work_time_02",
+            "type": "NODETYPE_MECHANIC",
+            "attributes": [
+              {
+                "name": "RECHARGEABLE_NITRO_COOLING_DURATION",
+                "value": -2
+              }
+            ]
+          },
+          {
+            "id": 12,
+            "techName": "tier11_engine_power_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_ENGINE_POWER",
+                "value": 50
+              }
+            ]
+          },
+          {
+            "id": 13,
+            "techName": "tier11_module_hp_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_ENGINE_MAX_HEALTH",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_AMMOBAY_MAX_HEALTH_FACTOR",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_TRACK_MAX_HEALTH_FACTOR",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_SURVEYING_DEVICE_MAX_HEALTH_FACTOR",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_GUN_MAX_HEALTH_FACTOR",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_FUEL_TANK_HEALTH_FACTOR",
+                "value": 1.15
+              }
+            ]
+          },
+          {
+            "id": 14,
+            "techName": "tier11_shot_disp_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_ANGLE_FACTOR_BONUS",
+                "value": -0.02
+              }
+            ]
+          },
+          {
+            "id": 15,
+            "techName": "tier11_reload_time_03",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_GUN_RELOAD_TIME",
+                "value": -0.3
+              }
+            ]
+          },
+          {
+            "id": 16,
+            "techName": "tier11_rocket_boost_speed_03",
+            "type": "NODETYPE_MECHANIC",
+            "attributes": [
+              {
+                "name": "RECHARGEABLE_NITRO_FWD_SPEED_LIMIT_FACTOR",
+                "value": 0.135
+              }
+            ]
+          },
+          {
+            "id": 17,
+            "techName": "tier11_stabilisation_03",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_VEHICLE_MOVEMENT_FACTOR",
+                "value": 0.97
+              },
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_VEHICLE_ROTATION_FACTOR",
+                "value": 0.97
+              },
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_TURRET_ROTATION_FACTOR",
+                "value": 0.97
+              }
+            ]
+          },
+          {
+            "id": 18,
+            "techName": "tier11_module_hp_03",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_ENGINE_MAX_HEALTH",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_AMMOBAY_MAX_HEALTH_FACTOR",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_TRACK_MAX_HEALTH_FACTOR",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_SURVEYING_DEVICE_MAX_HEALTH_FACTOR",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_GUN_MAX_HEALTH_FACTOR",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_FUEL_TANK_HEALTH_FACTOR",
+                "value": 1.15
+              }
+            ]
+          },
+          {
+            "id": 19,
+            "techName": "tier11_hp_03",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_MAX_HEALTH",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "id": 20,
+            "techName": "tier11_hull_rotation_speed_03",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_HULL_ROTATION_SPEED_FACTOR_BONUS",
+                "value": 0.07
+              }
+            ]
+          },
+          {
+            "id": 21,
+            "techName": "tier11_pitch_limit_03",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_PITCH_LIMIT_UP",
+                "value": 3
+              },
+              {
+                "name": "ATTRIBUTE_NAME_PITCH_LIMIT_DOWN",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "id": 22,
+            "techName": "tier11_rocket_boost_count_04",
+            "type": "NODETYPE_ALTERNATIVE_MECHANIC",
+            "attributes": [
+              {
+                "name": "RECHARGEABLE_NITRO_HEATING_DURATION",
+                "value": 5
+              }
+            ],
+            "displayName": "Ch67_BZ_79/Upgrades/Alternative/HeatingDuration"
+          },
+          {
+            "id": 23,
+            "techName": "tier11_rocket_boost_speed_04",
+            "type": "NODETYPE_ALTERNATIVE_MECHANIC",
+            "attributes": [
+              {
+                "name": "RECHARGEABLE_NITRO_FWD_SPEED_LIMIT_FACTOR",
+                "value": 0.15
+              }
+            ],
+            "displayName": "Ch67_BZ_79/Upgrades/Alternative/ForwardSpeedLimit"
+          },
+          {
+            "id": 24,
+            "techName": "tier11_rocket_engine_work_time_04",
+            "type": "NODETYPE_ALTERNATIVE_MECHANIC",
+            "attributes": [
+              {
+                "name": "RECHARGEABLE_NITRO_ROTATION_SPEED_FACTOR",
+                "value": 0.2
+              }
+            ],
+            "displayName": "Ch67_BZ_79/Upgrades/Alternative/RotationSpeed"
+          }
+        ],
+        "attributeDefinitions": {
+          "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_1": {
+            "modifier": "MODIFIER_ADD",
+            "script": "ShellSpeedUpgrade",
+            "params": {
+              "slotIndex": "0"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_shell_speed",
+            "title": "TankUpgrade/Attribute/GunShellSpeed"
+          },
+          "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_3": {
+            "modifier": "MODIFIER_ADD",
+            "script": "ShellSpeedUpgrade",
+            "params": {
+              "slotIndex": "2"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_shell_speed",
+            "title": "TankUpgrade/Attribute/GunShellSpeed"
+          },
+          "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_2": {
+            "modifier": "MODIFIER_ADD",
+            "script": "ShellSpeedUpgrade",
+            "params": {
+              "slotIndex": "1"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_shell_speed",
+            "title": "TankUpgrade/Attribute/GunShellSpeed"
+          },
+          "ATTRIBUTE_NAME_FIRE_START_CHANCE": {
+            "modifier": "MODIFIER_ADD",
+            "script": "FireStartChangeUpgrade",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_fire_start_chance",
+            "title": "TankUpgrade/Attribute/FireStartChance"
+          },
+          "ATTRIBUTE_NAME_FORWARD_MAX_SPEED": {
+            "modifier": "MODIFIER_ADD",
+            "script": "SpeedLimitUpgrade",
+            "params": {
+              "type": "forward"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_max_speed",
+            "title": "TankUpgrade/Attribute/MaxSpeed"
+          },
+          "ATTRIBUTE_NAME_DISPERSION_ANGLE_FACTOR_BONUS": {
+            "modifier": "MODIFIER_ADD",
+            "script": "VehicleDataMiscAttrMultiplicativeBonus",
+            "params": {
+              "attrName": "shotDispersionAngleFactor"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_accuracy",
+            "title": "TankUpgrade/Attribute/GunAccuracy"
+          },
+          "ATTRIBUTE_NAME_DISPERSION_VEHICLE_MOVEMENT_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "TankFactorsUpgrade",
+            "params": {
+              "factorName": "chassis/shotDispersion/movement/multFactor"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_accuracy",
+            "title": "TankUpgrade/Attribute/GunAccuracy"
+          },
+          "ATTRIBUTE_NAME_DISPERSION_VEHICLE_ROTATION_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "TankFactorsUpgrade",
+            "params": {
+              "factorName": "chassis/shotDispersion/rotation/multFactor"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_accuracy",
+            "title": "TankUpgrade/Attribute/GunAccuracy"
+          },
+          "ATTRIBUTE_NAME_DISPERSION_TURRET_ROTATION_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "TankFactorsUpgrade",
+            "params": {
+              "factorName": "gun/shotDispersionFactors/turretRotation"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_accuracy",
+            "title": "TankUpgrade/Attribute/GunAccuracy"
+          },
+          "ATTRIBUTE_NAME_MAX_HEALTH": {
+            "modifier": "MODIFIER_ADD",
+            "script": "MaxHealthUpgrade",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_max_health",
+            "title": "TankUpgrade/Attribute/MaxHealth"
+          },
+          "ATTRIBUTE_NAME_HULL_ROTATION_SPEED_FACTOR_BONUS": {
+            "modifier": "MODIFIER_ADD",
+            "script": "VehicleDataPhysicsMultiplicativeBonus",
+            "params": {
+              "attrName": "rotationSpeedFactor"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_rotation_speed",
+            "title": "TankUpgrade/Attribute/RotationSpeed"
+          },
+          "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_1": {
+            "modifier": "MODIFIER_ADD",
+            "script": "ShellDamageUpgrade",
+            "params": {
+              "slotIndex": "0"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_shell_damage",
+            "title": "TankUpgrade/Attribute/GunShellDamage"
+          },
+          "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_2": {
+            "modifier": "MODIFIER_ADD",
+            "script": "ShellDamageUpgrade",
+            "params": {
+              "slotIndex": "1"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_shell_damage",
+            "title": "TankUpgrade/Attribute/GunShellDamage"
+          },
+          "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_3": {
+            "modifier": "MODIFIER_ADD",
+            "script": "ShellDamageUpgrade",
+            "params": {
+              "slotIndex": "2"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_shell_damage",
+            "title": "TankUpgrade/Attribute/GunShellDamage"
+          },
+          "RECHARGEABLE_NITRO_COOLING_DURATION": {
+            "modifier": "MODIFIER_ADD",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_rechargeable_nitro_cooling_duration",
+            "title": "TankUpgrade/Attribute/RechargeableNitro/CoolingDuration"
+          },
+          "ATTRIBUTE_NAME_ENGINE_POWER": {
+            "modifier": "MODIFIER_ADD",
+            "script": "EnginePowerUpgrade",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_engine_power",
+            "title": "TankUpgrade/Attribute/EnginePower"
+          },
+          "ATTRIBUTE_NAME_MODULES_ENGINE_MAX_HEALTH": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "engineHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MODULES_AMMOBAY_MAX_HEALTH_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "ammoBayHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MODULES_TRACK_MAX_HEALTH_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "leftTrackHealth rightTrackHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "turretRotatorHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MODULES_SURVEYING_DEVICE_MAX_HEALTH_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "surveyingDeviceHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MODULES_GUN_MAX_HEALTH_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "gunHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MODULES_FUEL_TANK_HEALTH_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "fuelTankHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_GUN_RELOAD_TIME": {
+            "modifier": "MODIFIER_ADD",
+            "script": "VehicleDataMiscAttrAdditiveBonus",
+            "params": {
+              "attrName": "gunReloadTimeAdditiveBonus"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_reload_time",
+            "title": "TankUpgrade/Attribute/GunReloadTime"
+          },
+          "RECHARGEABLE_NITRO_FWD_SPEED_LIMIT_FACTOR": {
+            "modifier": "MODIFIER_ADD",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_rechargeable_nitro_fwd_speed_limit",
+            "title": "TankUpgrade/Attribute/RechargeableNitro/ForwardSpeedLimit"
+          },
+          "ATTRIBUTE_NAME_PITCH_LIMIT_UP": {
+            "modifier": "MODIFIER_ADD",
+            "script": "UpperPitchLimitsUpgrade",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_pitch_limit",
+            "title": "TankUpgrade/Attribute/PitchLimit"
+          },
+          "ATTRIBUTE_NAME_PITCH_LIMIT_DOWN": {
+            "modifier": "MODIFIER_ADD",
+            "script": "LowerPitchLimitsUpgrade",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_pitch_limit",
+            "title": "TankUpgrade/Attribute/PitchLimit"
+          },
+          "RECHARGEABLE_NITRO_HEATING_DURATION": {
+            "modifier": "MODIFIER_ADD",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_rechargeable_nitro_heating_duration"
+          },
+          "RECHARGEABLE_NITRO_ROTATION_SPEED_FACTOR": {
+            "modifier": "MODIFIER_ADD",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_rechargeable_nitro_rotation_speed"
+          }
+        },
+        "alternativeGroups": [
+          {
+            "id": "tier11_rocket_boost_final_choice",
+            "choices": [
+              22,
+              23,
+              24
+            ],
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_rechargeable_nitro",
+            "displayName": "Ch67_BZ_79/Upgrades/Group/Name",
+            "description": "Ch67_BZ_79/Upgrades/Group/Description"
+          }
+        ],
+        "provenance": {
+          "gameVersion": "11.4.0.130_7400742 11.22_supertest_tier11_5 WOTB_Win7",
+          "source": "client:XML/item_defs/vehicles/china/Ch67_BZ_79.xml.dvpl",
+          "sha256": "a15d32cf2d806a98a16a5b05a52b8ae8ebe53bf10efa6604d5aa6687263e5a7d",
+          "attributesSource": "client:XML/item_defs/vehicles/common/tank_upgrade_attributes.xml.dvpl",
+          "attributesSha256": "57d054351d149827738c7f38a53f3153851e5c8ea6c52c041b24ae689124cdc4"
+        }
+      },
+      "stem": "Ch67_BZ_79"
+    },
+    "detail": {
+      "tank_id": 15153,
+      "name": "BZ-79",
+      "nation": "china",
+      "tier": 11,
+      "type": "heavyTank",
+      "tags": [
+        "heavyTank"
+      ],
+      "configs": [
+        {
+          "turret_local": 82,
+          "gun_local": 89,
+          "turret_index": 0,
+          "gun_index": 0,
+          "reload_time": 19.5,
+          "aim_time": 2.2,
+          "dispersion": 0.48,
+          "pitch_limits": {
+            "min": -14.0,
+            "max": 5.0
+          },
+          "is_drum": false,
+          "is_burst": false,
+          "burst_reloads": [],
+          "turret_plates": {
+            "1": 200,
+            "2": 150,
+            "3": 100,
+            "4": 80
+          },
+          "gun_plates": {
+            "1": 50
+          },
+          "gun_thickness": 25,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 400,
+              "penetration": 250,
+              "penetration_far": 230,
+              "velocity": 900,
+              "module_damage": 150
+            },
+            {
+              "type": "hc_premium",
+              "damage": 380,
+              "penetration": 300,
+              "penetration_far": 300,
+              "velocity": 850,
+              "module_damage": 150
+            },
+            {
+              "type": "he",
+              "damage": 600,
+              "penetration": 70,
+              "penetration_far": 70,
+              "velocity": 800,
+              "module_damage": 150
+            }
+          ]
+        }
+      ],
+      "hp": 2020,
+      "speed_forward": 39.0,
+      "speed_reverse": 12.0,
+      "armor": {
+        "hull": {
+          "front": 100,
+          "sides": 80,
+          "rear": 60
+        },
+        "turret": {
+          "front": 150,
+          "sides": 100,
+          "rear": 80
+        }
+      },
+      "armor_model": {
+        "hull": {
+          "plates": {
+            "1": 100,
+            "2": 80,
+            "3": 60
+          },
+          "spaced": [
+            "3"
+          ]
+        },
+        "chassis": {
+          "left_track": 20,
+          "right_track": 20
+        }
+      },
+      "model": "fixture.glb"
+    }
+  },
+  {
+    "modules": {
+      "tankId": 27905,
+      "name": "Object 432U",
+      "tier": 11,
+      "tags": [
+        "mediumTank"
+      ],
+      "consumableSlots": 3,
+      "provisionSlots": 3,
+      "optDevicePreset": "defaultPreset",
+      "speedLimits": {
+        "forward": 47.0,
+        "backward": 20.0
+      },
+      "invisibility": {
+        "still": 0.189,
+        "moving": 0.141,
+        "firePenalty": 0.297
+      },
+      "hull": {
+        "hp": 1760,
+        "weight": 31800.0
+      },
+      "hasTurret": true,
+      "crewRoles": [
+        "commander",
+        "gunner",
+        "driver",
+        "loader"
+      ],
+      "chassis": [
+        {
+          "stem": "Chassis_1_R230_Object_432U",
+          "localId": 1038,
+          "level": 10,
+          "price": 0.0,
+          "name_en": "Object 432U",
+          "name_zh-Hans": "Object 432U",
+          "unlocks": [],
+          "stats": {
+            "rotationSpeed": 41.0,
+            "terrainResistance": [
+              1.0,
+              1.2,
+              1.4
+            ],
+            "maxLoad": 52000.0,
+            "weight": 6000.0,
+            "maxHealth": 240.0,
+            "bulkHealthFactor": 3.0,
+            "hysteresisHealth": 80.0,
+            "healthRegenPerSec": 8.75,
+            "hullPosition": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "dispersionFactors": {
+              "vehicleMovement": 0.21,
+              "vehicleRotation": 0.21
+            }
+          }
+        }
+      ],
+      "turrets": [
+        {
+          "stem": "Turret_1_R230_Object_432U",
+          "localId": 1036,
+          "level": 11,
+          "price": 0.0,
+          "name_en": "Object 432U",
+          "name_zh-Hans": "Object 432U",
+          "unlocks": [],
+          "stats": {
+            "rotationSpeed": 40.0,
+            "circularVisionRadius": 260.0,
+            "maxHealth": 400.0,
+            "weight": 10000.0,
+            "yawLimits": [
+              -180.0,
+              180.0
+            ],
+            "bbox": {
+              "min": [
+                -1.223793,
+                -1.199392,
+                -0.362878
+              ],
+              "max": [
+                1.223793,
+                1.498024,
+                0.934996
+              ]
+            }
+          },
+          "primaryArmor": {
+            "front": "armor_1",
+            "sides": "armor_3",
+            "rear": "armor_4"
+          },
+          "guns": [
+            {
+              "stem": "_125mm_Gun_D_181",
+              "localId": 1055,
+              "level": 10,
+              "price": 0.0,
+              "name_en": "#ussr_vehicles:_125mm_Gun_D_181",
+              "name_zh-Hans": "#ussr_vehicles:_125mm_Gun_D_181",
+              "unlocks": [],
+              "stats": {
+                "reloadTime": 8.1,
+                "aimingTime": 1.8,
+                "shotDispersionRadius": 0.375,
+                "maxAmmo": 60.0,
+                "weight": 900.0,
+                "invisibilityFactorAtShot": 0.225,
+                "rotationSpeed": 39.0,
+                "dispersionFactors": {
+                  "turretRotation": 0.136,
+                  "afterShot": 4.0,
+                  "whileGunDamaged": 2.0
+                },
+                "pitchLimits": {
+                  "min": -15.0,
+                  "max": 7.0
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "engines": [
+        {
+          "stem": "Eng_5TD_2",
+          "localId": 298,
+          "level": 10,
+          "price": 0.0,
+          "name_en": "#ussr_vehicles:Eng_5TD_2",
+          "name_zh-Hans": "#ussr_vehicles:Eng_5TD_2",
+          "unlocks": [],
+          "stats": {
+            "power": 855.0,
+            "fireStartingChance": 0.33,
+            "weight": 900.0,
+            "tags": []
+          }
+        }
+      ],
+      "radios": [
+        {
+          "stem": "R_123C",
+          "localId": 215,
+          "level": 10,
+          "price": 0.0,
+          "name_en": null,
+          "name_zh-Hans": null,
+          "unlocks": [],
+          "stats": {
+            "distance": 1.0,
+            "weight": 100.0
+          }
+        }
+      ],
+      "fuelTanks": [
+        {
+          "stem": "Average",
+          "localId": 203,
+          "level": null,
+          "price": 100.0,
+          "name_en": null,
+          "name_zh-Hans": null,
+          "unlocks": [],
+          "stats": {
+            "weight": 250.0
+          }
+        }
+      ],
+      "turretOrigin": [
+        -0.0,
+        1.440004,
+        0.253696
+      ],
+      "initialTurretRotation": null,
+      "bbox": {
+        "hull": {
+          "min": [
+            -1.749371,
+            -2.990431,
+            0.490003
+          ],
+          "max": [
+            1.749371,
+            3.304991,
+            1.477001
+          ]
+        },
+        "chassis": {
+          "min": [
+            -1.721957,
+            -2.819788,
+            0.003374
+          ],
+          "max": [
+            1.721957,
+            3.269368,
+            1.147708
+          ]
+        }
+      },
+      "gameVersion": "11.4.0.130_7400742 11.22_supertest_tier11_5 WOTB_Win7",
+      "upgradeProgression": {
+        "nodes": [
+          {
+            "id": 1,
+            "techName": "tier11_shell_speed_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_1",
+                "value": 50
+              },
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_2",
+                "value": 50
+              },
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_3",
+                "value": 50
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "techName": "tier11_max_speed_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_FORWARD_MAX_SPEED",
+                "value": 6
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "techName": "tier11_shot_disp_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_ANGLE_FACTOR_BONUS",
+                "value": -0.03
+              }
+            ]
+          },
+          {
+            "id": 4,
+            "techName": "tier11_stabilisation_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_VEHICLE_MOVEMENT_FACTOR",
+                "value": 0.96
+              },
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_VEHICLE_ROTATION_FACTOR",
+                "value": 0.96
+              },
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_TURRET_ROTATION_FACTOR",
+                "value": 0.96
+              }
+            ]
+          },
+          {
+            "id": 5,
+            "techName": "tier11_armor_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_ARMOR_HOMOGENIZATION_FACTOR_BONUS",
+                "value": 0.03
+              }
+            ]
+          },
+          {
+            "id": 6,
+            "techName": "tier11_hull_rotation_speed_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_HULL_ROTATION_SPEED_FACTOR_BONUS",
+                "value": 0.05
+              }
+            ]
+          },
+          {
+            "id": 7,
+            "techName": "tier11_fire_start_chance_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_FIRE_START_CHANCE",
+                "value": -0.1
+              }
+            ]
+          },
+          {
+            "id": 8,
+            "techName": "tier11_hp_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_MAX_HEALTH",
+                "value": 40
+              }
+            ]
+          },
+          {
+            "id": 9,
+            "techName": "tier11_dmg_main_gun_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_1",
+                "value": 10
+              },
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_2",
+                "value": 10
+              },
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_3",
+                "value": 10
+              }
+            ]
+          },
+          {
+            "id": 10,
+            "techName": "tier11_fire_start_chance_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_FIRE_START_CHANCE",
+                "value": -0.05
+              }
+            ]
+          },
+          {
+            "id": 11,
+            "techName": "tier11_combat_frenzy_reload_02",
+            "type": "NODETYPE_MECHANIC",
+            "attributes": [
+              {
+                "name": "COMBAT_FRENZY_RELOAD_SPEED_BONUS_PER_STACK",
+                "value": 0.02
+              }
+            ]
+          },
+          {
+            "id": 12,
+            "techName": "tier11_engine_power_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_ENGINE_POWER",
+                "value": 75
+              }
+            ]
+          },
+          {
+            "id": 13,
+            "techName": "tier11_module_hp_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_ENGINE_MAX_HEALTH",
+                "value": 1.25
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_AMMOBAY_MAX_HEALTH_FACTOR",
+                "value": 1.25
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_TRACK_MAX_HEALTH_FACTOR",
+                "value": 1.25
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR",
+                "value": 1.25
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_SURVEYING_DEVICE_MAX_HEALTH_FACTOR",
+                "value": 1.25
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_GUN_MAX_HEALTH_FACTOR",
+                "value": 1.25
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_FUEL_TANK_HEALTH_FACTOR",
+                "value": 1.25
+              }
+            ]
+          },
+          {
+            "id": 14,
+            "techName": "tier11_shot_disp_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_ANGLE_FACTOR_BONUS",
+                "value": -0.03
+              }
+            ]
+          },
+          {
+            "id": 15,
+            "techName": "tier11_reload_time_03",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_GUN_RELOAD_TIME",
+                "value": -0.6
+              }
+            ]
+          },
+          {
+            "id": 16,
+            "techName": "tier11_combat_frenzy_reload_03",
+            "type": "NODETYPE_MECHANIC",
+            "attributes": [
+              {
+                "name": "COMBAT_FRENZY_RELOAD_SPEED_BONUS_PER_STACK",
+                "value": 0.02
+              }
+            ]
+          },
+          {
+            "id": 17,
+            "techName": "tier11_stabilisation_03",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_VEHICLE_MOVEMENT_FACTOR",
+                "value": 0.97
+              },
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_VEHICLE_ROTATION_FACTOR",
+                "value": 0.97
+              },
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_TURRET_ROTATION_FACTOR",
+                "value": 0.97
+              }
+            ]
+          },
+          {
+            "id": 18,
+            "techName": "tier11_module_hp_03",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_ENGINE_MAX_HEALTH",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_AMMOBAY_MAX_HEALTH_FACTOR",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_TRACK_MAX_HEALTH_FACTOR",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_SURVEYING_DEVICE_MAX_HEALTH_FACTOR",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_GUN_MAX_HEALTH_FACTOR",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_FUEL_TANK_HEALTH_FACTOR",
+                "value": 1.15
+              }
+            ]
+          },
+          {
+            "id": 19,
+            "techName": "tier11_armor_03",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_ARMOR_HOMOGENIZATION_FACTOR_BONUS",
+                "value": 0.05
+              }
+            ]
+          },
+          {
+            "id": 20,
+            "techName": "tier11_hull_rotation_speed_03",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_HULL_ROTATION_SPEED_FACTOR_BONUS",
+                "value": 0.05
+              }
+            ]
+          },
+          {
+            "id": 21,
+            "techName": "tier11_pitch_limits_03",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_PITCH_LIMIT_UP",
+                "value": 5
+              },
+              {
+                "name": "ATTRIBUTE_NAME_PITCH_LIMIT_DOWN",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "id": 22,
+            "techName": "tier11_combat_frenzy_allow_switch_alt",
+            "type": "NODETYPE_ALTERNATIVE_MECHANIC",
+            "attributes": [
+              {
+                "name": "COMBAT_FRENZY_ALLOW_SWITCH_AFTER_KILL",
+                "value": true
+              }
+            ],
+            "displayName": "R230_Object_432U/Upgrades/Alternative/AllowSwitchAfterKill"
+          },
+          {
+            "id": 23,
+            "techName": "tier11_combat_frenzy_reload_alt",
+            "type": "NODETYPE_ALTERNATIVE_MECHANIC",
+            "attributes": [
+              {
+                "name": "COMBAT_FRENZY_RELOAD_SPEED_BONUS_PER_STACK",
+                "value": 0.02
+              }
+            ],
+            "displayName": "R230_Object_432U/Upgrades/Alternative/ReloadSpeedBonus"
+          },
+          {
+            "id": 24,
+            "techName": "tier11_combat_frenzy_max_stacks_alt",
+            "type": "NODETYPE_ALTERNATIVE_MECHANIC",
+            "attributes": [
+              {
+                "name": "COMBAT_FRENZY_MAX_STACKS",
+                "value": 2
+              }
+            ],
+            "displayName": "R230_Object_432U/Upgrades/Alternative/MaxStacks"
+          }
+        ],
+        "attributeDefinitions": {
+          "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_1": {
+            "modifier": "MODIFIER_ADD",
+            "script": "ShellSpeedUpgrade",
+            "params": {
+              "slotIndex": "0"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_shell_speed",
+            "title": "TankUpgrade/Attribute/GunShellSpeed"
+          },
+          "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_2": {
+            "modifier": "MODIFIER_ADD",
+            "script": "ShellSpeedUpgrade",
+            "params": {
+              "slotIndex": "1"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_shell_speed",
+            "title": "TankUpgrade/Attribute/GunShellSpeed"
+          },
+          "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_3": {
+            "modifier": "MODIFIER_ADD",
+            "script": "ShellSpeedUpgrade",
+            "params": {
+              "slotIndex": "2"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_shell_speed",
+            "title": "TankUpgrade/Attribute/GunShellSpeed"
+          },
+          "ATTRIBUTE_NAME_FORWARD_MAX_SPEED": {
+            "modifier": "MODIFIER_ADD",
+            "script": "SpeedLimitUpgrade",
+            "params": {
+              "type": "forward"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_max_speed",
+            "title": "TankUpgrade/Attribute/MaxSpeed"
+          },
+          "ATTRIBUTE_NAME_DISPERSION_ANGLE_FACTOR_BONUS": {
+            "modifier": "MODIFIER_ADD",
+            "script": "VehicleDataMiscAttrMultiplicativeBonus",
+            "params": {
+              "attrName": "shotDispersionAngleFactor"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_accuracy",
+            "title": "TankUpgrade/Attribute/GunAccuracy"
+          },
+          "ATTRIBUTE_NAME_DISPERSION_VEHICLE_MOVEMENT_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "TankFactorsUpgrade",
+            "params": {
+              "factorName": "chassis/shotDispersion/movement/multFactor"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_accuracy",
+            "title": "TankUpgrade/Attribute/GunAccuracy"
+          },
+          "ATTRIBUTE_NAME_DISPERSION_VEHICLE_ROTATION_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "TankFactorsUpgrade",
+            "params": {
+              "factorName": "chassis/shotDispersion/rotation/multFactor"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_accuracy",
+            "title": "TankUpgrade/Attribute/GunAccuracy"
+          },
+          "ATTRIBUTE_NAME_DISPERSION_TURRET_ROTATION_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "TankFactorsUpgrade",
+            "params": {
+              "factorName": "gun/shotDispersionFactors/turretRotation"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_accuracy",
+            "title": "TankUpgrade/Attribute/GunAccuracy"
+          },
+          "ATTRIBUTE_NAME_ARMOR_HOMOGENIZATION_FACTOR_BONUS": {
+            "modifier": "MODIFIER_ADD",
+            "script": "VehicleDataMiscAttrMultiplicativeBonus",
+            "params": {
+              "attrName": "armorHomogenizationFactor"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_armor_homogenization",
+            "title": "TankUpgrade/Attribute/ArmorHomogenization"
+          },
+          "ATTRIBUTE_NAME_HULL_ROTATION_SPEED_FACTOR_BONUS": {
+            "modifier": "MODIFIER_ADD",
+            "script": "VehicleDataPhysicsMultiplicativeBonus",
+            "params": {
+              "attrName": "rotationSpeedFactor"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_rotation_speed",
+            "title": "TankUpgrade/Attribute/RotationSpeed"
+          },
+          "ATTRIBUTE_NAME_FIRE_START_CHANCE": {
+            "modifier": "MODIFIER_ADD",
+            "script": "FireStartChangeUpgrade",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_fire_start_chance",
+            "title": "TankUpgrade/Attribute/FireStartChance"
+          },
+          "ATTRIBUTE_NAME_MAX_HEALTH": {
+            "modifier": "MODIFIER_ADD",
+            "script": "MaxHealthUpgrade",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_max_health",
+            "title": "TankUpgrade/Attribute/MaxHealth"
+          },
+          "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_1": {
+            "modifier": "MODIFIER_ADD",
+            "script": "ShellDamageUpgrade",
+            "params": {
+              "slotIndex": "0"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_shell_damage",
+            "title": "TankUpgrade/Attribute/GunShellDamage"
+          },
+          "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_2": {
+            "modifier": "MODIFIER_ADD",
+            "script": "ShellDamageUpgrade",
+            "params": {
+              "slotIndex": "1"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_shell_damage",
+            "title": "TankUpgrade/Attribute/GunShellDamage"
+          },
+          "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_3": {
+            "modifier": "MODIFIER_ADD",
+            "script": "ShellDamageUpgrade",
+            "params": {
+              "slotIndex": "2"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_shell_damage",
+            "title": "TankUpgrade/Attribute/GunShellDamage"
+          },
+          "COMBAT_FRENZY_RELOAD_SPEED_BONUS_PER_STACK": {
+            "modifier": "MODIFIER_ADD",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_combat_frenzy_reload_speed_bonus_per_stack",
+            "title": "TankUpgrade/Attribute/CombatFrenzy/ReloadSpeedBonus"
+          },
+          "ATTRIBUTE_NAME_ENGINE_POWER": {
+            "modifier": "MODIFIER_ADD",
+            "script": "EnginePowerUpgrade",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_engine_power",
+            "title": "TankUpgrade/Attribute/EnginePower"
+          },
+          "ATTRIBUTE_NAME_MODULES_ENGINE_MAX_HEALTH": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "engineHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MODULES_AMMOBAY_MAX_HEALTH_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "ammoBayHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MODULES_TRACK_MAX_HEALTH_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "leftTrackHealth rightTrackHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "turretRotatorHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MODULES_SURVEYING_DEVICE_MAX_HEALTH_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "surveyingDeviceHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MODULES_GUN_MAX_HEALTH_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "gunHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MODULES_FUEL_TANK_HEALTH_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "fuelTankHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_GUN_RELOAD_TIME": {
+            "modifier": "MODIFIER_ADD",
+            "script": "VehicleDataMiscAttrAdditiveBonus",
+            "params": {
+              "attrName": "gunReloadTimeAdditiveBonus"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_reload_time",
+            "title": "TankUpgrade/Attribute/GunReloadTime"
+          },
+          "ATTRIBUTE_NAME_PITCH_LIMIT_UP": {
+            "modifier": "MODIFIER_ADD",
+            "script": "UpperPitchLimitsUpgrade",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_pitch_limit",
+            "title": "TankUpgrade/Attribute/PitchLimit"
+          },
+          "ATTRIBUTE_NAME_PITCH_LIMIT_DOWN": {
+            "modifier": "MODIFIER_ADD",
+            "script": "LowerPitchLimitsUpgrade",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_pitch_limit",
+            "title": "TankUpgrade/Attribute/PitchLimit"
+          },
+          "COMBAT_FRENZY_ALLOW_SWITCH_AFTER_KILL": {
+            "modifier": "MODIFIER_BOOLEAN",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_combat_frenzy_allow_switch_after_kill"
+          },
+          "COMBAT_FRENZY_MAX_STACKS": {
+            "modifier": "MODIFIER_ADD",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_combat_frenzy_max_stacks"
+          }
+        },
+        "alternativeGroups": [
+          {
+            "id": "tier11_combat_frenzy_final_choice",
+            "choices": [
+              22,
+              23,
+              24
+            ],
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_combat_frenzy",
+            "displayName": "R230_Object_432U/Upgrades/Group/Name",
+            "description": "R230_Object_432U/Upgrades/Group/Description"
+          }
+        ],
+        "provenance": {
+          "gameVersion": "11.4.0.130_7400742 11.22_supertest_tier11_5 WOTB_Win7",
+          "source": "client:XML/item_defs/vehicles/ussr/R230_Object_432U.xml.dvpl",
+          "sha256": "57946828658bc29cf0358b06e79f300c42b33a5e00a85ddffc2a0cb0398b1a81",
+          "attributesSource": "client:XML/item_defs/vehicles/common/tank_upgrade_attributes.xml.dvpl",
+          "attributesSha256": "57d054351d149827738c7f38a53f3153851e5c8ea6c52c041b24ae689124cdc4"
+        }
+      },
+      "stem": "R230_Object_432U"
+    },
+    "detail": {
+      "tank_id": 27905,
+      "name": "Object 432U",
+      "nation": "ussr",
+      "tier": 11,
+      "type": "mediumTank",
+      "tags": [
+        "mediumTank"
+      ],
+      "configs": [
+        {
+          "turret_local": 1036,
+          "gun_local": 1055,
+          "turret_index": 0,
+          "gun_index": 0,
+          "reload_time": 8.1,
+          "aim_time": 1.8,
+          "dispersion": 0.375,
+          "pitch_limits": {
+            "min": -15.0,
+            "max": 7.0
+          },
+          "is_drum": false,
+          "is_burst": false,
+          "burst_reloads": [],
+          "turret_plates": {
+            "1": 200,
+            "2": 150,
+            "3": 100,
+            "4": 80
+          },
+          "gun_plates": {
+            "1": 50
+          },
+          "gun_thickness": 25,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 400,
+              "penetration": 250,
+              "penetration_far": 230,
+              "velocity": 900,
+              "module_damage": 150
+            },
+            {
+              "type": "hc_premium",
+              "damage": 380,
+              "penetration": 300,
+              "penetration_far": 300,
+              "velocity": 850,
+              "module_damage": 150
+            },
+            {
+              "type": "he",
+              "damage": 600,
+              "penetration": 70,
+              "penetration_far": 70,
+              "velocity": 800,
+              "module_damage": 150
+            }
+          ]
+        }
+      ],
+      "hp": 1760,
+      "speed_forward": 47.0,
+      "speed_reverse": 20.0,
+      "armor": {
+        "hull": {
+          "front": 100,
+          "sides": 80,
+          "rear": 60
+        },
+        "turret": {
+          "front": 150,
+          "sides": 100,
+          "rear": 80
+        }
+      },
+      "armor_model": {
+        "hull": {
+          "plates": {
+            "1": 100,
+            "2": 80,
+            "3": 60
+          },
+          "spaced": [
+            "3"
+          ]
+        },
+        "chassis": {
+          "left_track": 20,
+          "right_track": 20
+        }
+      },
+      "model": "fixture.glb"
+    }
+  },
+  {
+    "modules": {
+      "tankId": 28161,
+      "name": "KR-1",
+      "tier": 11,
+      "tags": [
+        "heavyTank"
+      ],
+      "consumableSlots": 3,
+      "provisionSlots": 3,
+      "optDevicePreset": "defaultPreset",
+      "speedLimits": {
+        "forward": 40.0,
+        "backward": 15.0
+      },
+      "invisibility": {
+        "still": 0.1,
+        "moving": 0.055,
+        "firePenalty": 0.293
+      },
+      "hull": {
+        "hp": 2270,
+        "weight": 45000.0
+      },
+      "hasTurret": true,
+      "crewRoles": [
+        "commander",
+        "gunner",
+        "driver",
+        "loader"
+      ],
+      "chassis": [
+        {
+          "stem": "Chassis_1_R228_KR_1",
+          "localId": 1039,
+          "level": 11,
+          "price": 0.0,
+          "name_en": "KR-1",
+          "name_zh-Hans": "KR-1",
+          "unlocks": [],
+          "stats": {
+            "rotationSpeed": 25.0,
+            "terrainResistance": [
+              1.0,
+              1.4,
+              1.7
+            ],
+            "maxLoad": 78500.0,
+            "weight": 8525.0,
+            "maxHealth": 250.0,
+            "bulkHealthFactor": 3.0,
+            "hysteresisHealth": 66.0,
+            "healthRegenPerSec": 9.625,
+            "hullPosition": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "dispersionFactors": {
+              "vehicleMovement": 0.2361,
+              "vehicleRotation": 0.2361
+            }
+          }
+        }
+      ],
+      "turrets": [
+        {
+          "stem": "Turret_1_R228_KR_1",
+          "localId": 1037,
+          "level": 11,
+          "price": 0.0,
+          "name_en": "KR-1",
+          "name_zh-Hans": "KR-1",
+          "unlocks": [],
+          "stats": {
+            "rotationSpeed": 18.0,
+            "circularVisionRadius": 250.0,
+            "maxHealth": 600.0,
+            "weight": 20000.0,
+            "yawLimits": [
+              -180.0,
+              180.0
+            ],
+            "bbox": {
+              "min": [
+                -1.351967,
+                -2.324278,
+                -0.290347
+              ],
+              "max": [
+                1.351964,
+                1.706433,
+                1.176034
+              ]
+            }
+          },
+          "primaryArmor": {
+            "front": "armor_1",
+            "sides": "armor_3",
+            "rear": "armor_4"
+          },
+          "guns": [
+            {
+              "stem": "_136mm_D_79_KR_1",
+              "localId": 1056,
+              "level": 10,
+              "price": 0.0,
+              "name_en": "#ussr_vehicles:_136mm_D_79_KR_1",
+              "name_zh-Hans": "#ussr_vehicles:_136mm_D_79_KR_1",
+              "unlocks": [],
+              "stats": {
+                "reloadTime": 13.0,
+                "aimingTime": 2.5,
+                "shotDispersionRadius": 0.42,
+                "maxAmmo": 60.0,
+                "weight": 1400.0,
+                "invisibilityFactorAtShot": 0.225,
+                "rotationSpeed": 39.0,
+                "dispersionFactors": {
+                  "turretRotation": 0.1288,
+                  "afterShot": 4.0,
+                  "whileGunDamaged": 2.0
+                },
+                "pitchLimits": {
+                  "min": -15.0,
+                  "max": 5.0,
+                  "back": {
+                    "min": -15.0,
+                    "max": 2.7,
+                    "range": 19.0
+                  },
+                  "transition": 8.0
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "engines": [
+        {
+          "stem": "GTD_3T_KR",
+          "localId": 299,
+          "level": 10,
+          "price": 0.0,
+          "name_en": "#ussr_vehicles:GTD_3T_KR",
+          "name_zh-Hans": "#ussr_vehicles:GTD_3T_KR",
+          "unlocks": [],
+          "stats": {
+            "power": 1100.0,
+            "fireStartingChance": 0.245,
+            "weight": 1500.0,
+            "tags": []
+          }
+        }
+      ],
+      "radios": [
+        {
+          "stem": "R_123KR",
+          "localId": 216,
+          "level": 10,
+          "price": 0.0,
+          "name_en": null,
+          "name_zh-Hans": null,
+          "unlocks": [],
+          "stats": {
+            "distance": 1.0,
+            "weight": 100.0
+          }
+        }
+      ],
+      "fuelTanks": [
+        {
+          "stem": "Heavy",
+          "localId": 204,
+          "level": null,
+          "price": 100.0,
+          "name_en": "Heavy Tank",
+          "name_zh-Hans": "重型坦克",
+          "unlocks": [],
+          "stats": {
+            "weight": 275.0
+          }
+        }
+      ],
+      "turretOrigin": [
+        0.008,
+        1.619312,
+        0.670526
+      ],
+      "initialTurretRotation": null,
+      "bbox": {
+        "hull": {
+          "min": [
+            -1.795648,
+            -4.058033,
+            0.39806
+          ],
+          "max": [
+            1.795648,
+            3.950325,
+            1.68119
+          ]
+        },
+        "chassis": {
+          "min": [
+            -1.672354,
+            -3.821456,
+            0.003359
+          ],
+          "max": [
+            1.672354,
+            3.737608,
+            1.130344
+          ]
+        }
+      },
+      "gameVersion": "11.4.0.130_7400742 11.22_supertest_tier11_5 WOTB_Win7",
+      "upgradeProgression": {
+        "nodes": [
+          {
+            "id": 1,
+            "techName": "tier11_reload_time_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_GUN_RELOAD_TIME",
+                "value": -0.5
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "techName": "tier11_shot_disp_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_ANGLE_FACTOR_BONUS",
+                "value": -0.02
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "techName": "tier11_dmg_main_gun_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_1",
+                "value": 10
+              },
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_2",
+                "value": 5
+              },
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_3",
+                "value": 15
+              }
+            ]
+          },
+          {
+            "id": 4,
+            "techName": "tier11_shot_disp_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_ANGLE_FACTOR_BONUS",
+                "value": -0.02
+              }
+            ]
+          },
+          {
+            "id": 5,
+            "techName": "tier11_dmg_main_gun_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_1",
+                "value": 20
+              },
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_2",
+                "value": 10
+              },
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_3",
+                "value": 25
+              }
+            ]
+          },
+          {
+            "id": 6,
+            "techName": "tier11_dmg_main_gun_03",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_1",
+                "value": 20
+              },
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_2",
+                "value": 10
+              },
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_3",
+                "value": 25
+              }
+            ]
+          },
+          {
+            "id": 7,
+            "techName": "tier11_shell_speed_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_1",
+                "value": 80
+              },
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_2",
+                "value": 100
+              },
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_3",
+                "value": 60
+              }
+            ]
+          },
+          {
+            "id": 8,
+            "techName": "tier11_module_hp_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_ENGINE_MAX_HEALTH",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_AMMOBAY_MAX_HEALTH_FACTOR",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_TRACK_MAX_HEALTH_FACTOR",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_SURVEYING_DEVICE_MAX_HEALTH_FACTOR",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_GUN_MAX_HEALTH_FACTOR",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_FUEL_TANK_HEALTH_FACTOR",
+                "value": 1.15
+              }
+            ]
+          },
+          {
+            "id": 9,
+            "techName": "tier11_shot_disp_03",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_ANGLE_FACTOR_BONUS",
+                "value": -0.03
+              }
+            ]
+          },
+          {
+            "id": 11,
+            "techName": "tier11_hp_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_MAX_HEALTH",
+                "value": 80
+              }
+            ]
+          },
+          {
+            "id": 12,
+            "techName": "tier11_module_hp_03",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_ENGINE_MAX_HEALTH",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_AMMOBAY_MAX_HEALTH_FACTOR",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_TRACK_MAX_HEALTH_FACTOR",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_SURVEYING_DEVICE_MAX_HEALTH_FACTOR",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_GUN_MAX_HEALTH_FACTOR",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_FUEL_TANK_HEALTH_FACTOR",
+                "value": 1.15
+              }
+            ]
+          },
+          {
+            "id": 13,
+            "techName": "tier11_hp_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_MAX_HEALTH",
+                "value": 50
+              }
+            ]
+          },
+          {
+            "id": 14,
+            "techName": "tier11_fire_start_chance_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_FIRE_START_CHANCE",
+                "value": -0.05
+              }
+            ]
+          },
+          {
+            "id": 15,
+            "techName": "tier11_hp_03",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_MAX_HEALTH",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "id": 31,
+            "techName": "tier11_ramming_configuration_damage_bonus_02",
+            "type": "NODETYPE_MECHANIC",
+            "attributes": [
+              {
+                "name": "RAMMING_CONFIGURATION_RAMMING_TRACK_DAMAGE_BONUS",
+                "value": 0.3
+              }
+            ]
+          },
+          {
+            "id": 16,
+            "techName": "tier11_ramming_configuration_damage_bonus_01",
+            "type": "NODETYPE_MECHANIC",
+            "attributes": [
+              {
+                "name": "RAMMING_CONFIGURATION_RAMMING_DAMAGE_BONUS",
+                "value": 0.3
+              },
+              {
+                "name": "RAMMING_CONFIGURATION_RAMMING_DAMAGE_REDUCTION",
+                "value": -0.1
+              }
+            ],
+            "displayName": "R228_KR_1/Upgrades/Node/RammingConfigurationDamageBonus"
+          },
+          {
+            "id": 17,
+            "techName": "tier11_pitch_limits_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_PITCH_LIMIT_UP",
+                "value": -3
+              },
+              {
+                "name": "ATTRIBUTE_NAME_PITCH_LIMIT_DOWN",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "id": 18,
+            "techName": "tier11_stabilisation_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_VEHICLE_MOVEMENT_FACTOR",
+                "value": 0.98
+              },
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_VEHICLE_ROTATION_FACTOR",
+                "value": 0.98
+              },
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_TURRET_ROTATION_FACTOR",
+                "value": 0.98
+              }
+            ]
+          },
+          {
+            "id": 10,
+            "techName": "tier11_module_hp_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_ENGINE_MAX_HEALTH",
+                "value": 1.25
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_AMMOBAY_MAX_HEALTH_FACTOR",
+                "value": 1.25
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_TRACK_MAX_HEALTH_FACTOR",
+                "value": 1.25
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR",
+                "value": 1.25
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_SURVEYING_DEVICE_MAX_HEALTH_FACTOR",
+                "value": 1.25
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_GUN_MAX_HEALTH_FACTOR",
+                "value": 1.25
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_FUEL_TANK_HEALTH_FACTOR",
+                "value": 1.25
+              }
+            ]
+          },
+          {
+            "id": 20,
+            "techName": "tier11_max_speed_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_FORWARD_MAX_SPEED",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "id": 21,
+            "techName": "tier11_hull_rotation_speed_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_HULL_ROTATION_SPEED_FACTOR_BONUS",
+                "value": 0.03
+              }
+            ]
+          },
+          {
+            "id": 22,
+            "techName": "tier11_hull_rotation_speed_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_HULL_ROTATION_SPEED_FACTOR_BONUS",
+                "value": 0.06
+              }
+            ]
+          },
+          {
+            "id": 23,
+            "techName": "tier11_stabilisation_03",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_VEHICLE_MOVEMENT_FACTOR",
+                "value": 0.98
+              },
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_VEHICLE_ROTATION_FACTOR",
+                "value": 0.98
+              },
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_TURRET_ROTATION_FACTOR",
+                "value": 0.98
+              }
+            ]
+          },
+          {
+            "id": 24,
+            "techName": "tier11_hull_rotation_speed_03",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_HULL_ROTATION_SPEED_FACTOR_BONUS",
+                "value": 0.06
+              }
+            ]
+          },
+          {
+            "id": 19,
+            "techName": "tier11_stabilisation_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_VEHICLE_MOVEMENT_FACTOR",
+                "value": 0.97
+              },
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_VEHICLE_ROTATION_FACTOR",
+                "value": 0.97
+              },
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_TURRET_ROTATION_FACTOR",
+                "value": 0.97
+              }
+            ]
+          },
+          {
+            "id": 25,
+            "techName": "tier11_max_speed_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_FORWARD_MAX_SPEED",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "id": 26,
+            "techName": "tier11_ramming_configuration_damage_reduction_01",
+            "type": "NODETYPE_MECHANIC",
+            "attributes": [
+              {
+                "name": "RAMMING_CONFIGURATION_RAMMING_DAMAGE_REDUCTION",
+                "value": -0.1
+              }
+            ]
+          },
+          {
+            "id": 27,
+            "techName": "tier11_fire_start_chance_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_FIRE_START_CHANCE",
+                "value": -0.05
+              }
+            ]
+          },
+          {
+            "id": 28,
+            "techName": "tier_11_ramming_configuration_speed_bonus",
+            "type": "NODETYPE_ALTERNATIVE_MECHANIC",
+            "attributes": [
+              {
+                "name": "RAMMING_CONFIGURATION_RAMMING_DAMAGE_BONUS",
+                "value": 0.2
+              },
+              {
+                "name": "RAMMING_CONFIGURATION_RAMMING_TRACK_DAMAGE_BONUS",
+                "value": 0.9
+              }
+            ],
+            "displayName": "R228_KR_1/Upgrades/Alternative/ForwardMaxSpeed"
+          },
+          {
+            "id": 29,
+            "techName": "tier_11_ramming_configuration_engine_power",
+            "type": "NODETYPE_ALTERNATIVE_MECHANIC",
+            "attributes": [
+              {
+                "name": "RAMMING_CONFIGURATION_RAMMING_DAMAGE_REDUCTION",
+                "value": -0.35
+              }
+            ],
+            "displayName": "R228_KR_1/Upgrades/Alternative/EnginePower"
+          },
+          {
+            "id": 30,
+            "techName": "tier_11_ramming_configuration_damage_bonus",
+            "type": "NODETYPE_ALTERNATIVE_MECHANIC",
+            "attributes": [
+              {
+                "name": "RAMMING_CONFIGURATION_RAMMING_DAMAGE_BONUS",
+                "value": 0.5
+              }
+            ],
+            "displayName": "R228_KR_1/Upgrades/Alternative/RammingDamageBonus"
+          }
+        ],
+        "attributeDefinitions": {
+          "ATTRIBUTE_NAME_GUN_RELOAD_TIME": {
+            "modifier": "MODIFIER_ADD",
+            "script": "VehicleDataMiscAttrAdditiveBonus",
+            "params": {
+              "attrName": "gunReloadTimeAdditiveBonus"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_reload_time",
+            "title": "TankUpgrade/Attribute/GunReloadTime"
+          },
+          "ATTRIBUTE_NAME_DISPERSION_ANGLE_FACTOR_BONUS": {
+            "modifier": "MODIFIER_ADD",
+            "script": "VehicleDataMiscAttrMultiplicativeBonus",
+            "params": {
+              "attrName": "shotDispersionAngleFactor"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_accuracy",
+            "title": "TankUpgrade/Attribute/GunAccuracy"
+          },
+          "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_1": {
+            "modifier": "MODIFIER_ADD",
+            "script": "ShellDamageUpgrade",
+            "params": {
+              "slotIndex": "0"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_shell_damage",
+            "title": "TankUpgrade/Attribute/GunShellDamage"
+          },
+          "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_2": {
+            "modifier": "MODIFIER_ADD",
+            "script": "ShellDamageUpgrade",
+            "params": {
+              "slotIndex": "1"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_shell_damage",
+            "title": "TankUpgrade/Attribute/GunShellDamage"
+          },
+          "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_3": {
+            "modifier": "MODIFIER_ADD",
+            "script": "ShellDamageUpgrade",
+            "params": {
+              "slotIndex": "2"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_shell_damage",
+            "title": "TankUpgrade/Attribute/GunShellDamage"
+          },
+          "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_1": {
+            "modifier": "MODIFIER_ADD",
+            "script": "ShellSpeedUpgrade",
+            "params": {
+              "slotIndex": "0"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_shell_speed",
+            "title": "TankUpgrade/Attribute/GunShellSpeed"
+          },
+          "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_2": {
+            "modifier": "MODIFIER_ADD",
+            "script": "ShellSpeedUpgrade",
+            "params": {
+              "slotIndex": "1"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_shell_speed",
+            "title": "TankUpgrade/Attribute/GunShellSpeed"
+          },
+          "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_3": {
+            "modifier": "MODIFIER_ADD",
+            "script": "ShellSpeedUpgrade",
+            "params": {
+              "slotIndex": "2"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_shell_speed",
+            "title": "TankUpgrade/Attribute/GunShellSpeed"
+          },
+          "ATTRIBUTE_NAME_MODULES_ENGINE_MAX_HEALTH": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "engineHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MODULES_AMMOBAY_MAX_HEALTH_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "ammoBayHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MODULES_TRACK_MAX_HEALTH_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "leftTrackHealth rightTrackHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "turretRotatorHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MODULES_SURVEYING_DEVICE_MAX_HEALTH_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "surveyingDeviceHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MODULES_GUN_MAX_HEALTH_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "gunHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MODULES_FUEL_TANK_HEALTH_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "fuelTankHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MAX_HEALTH": {
+            "modifier": "MODIFIER_ADD",
+            "script": "MaxHealthUpgrade",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_max_health",
+            "title": "TankUpgrade/Attribute/MaxHealth"
+          },
+          "ATTRIBUTE_NAME_FIRE_START_CHANCE": {
+            "modifier": "MODIFIER_ADD",
+            "script": "FireStartChangeUpgrade",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_fire_start_chance",
+            "title": "TankUpgrade/Attribute/FireStartChance"
+          },
+          "RAMMING_CONFIGURATION_RAMMING_TRACK_DAMAGE_BONUS": {
+            "modifier": "MODIFIER_ADD",
+            "title": "TankUpgrade/Attribute/RammingConfiguration/TrackDamageBonus"
+          },
+          "RAMMING_CONFIGURATION_RAMMING_DAMAGE_BONUS": {
+            "modifier": "MODIFIER_ADD"
+          },
+          "RAMMING_CONFIGURATION_RAMMING_DAMAGE_REDUCTION": {
+            "modifier": "MODIFIER_ADD",
+            "title": "TankUpgrade/Attribute/RammingConfiguration/DamageReduction"
+          },
+          "ATTRIBUTE_NAME_PITCH_LIMIT_UP": {
+            "modifier": "MODIFIER_ADD",
+            "script": "UpperPitchLimitsUpgrade",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_pitch_limit",
+            "title": "TankUpgrade/Attribute/PitchLimit"
+          },
+          "ATTRIBUTE_NAME_PITCH_LIMIT_DOWN": {
+            "modifier": "MODIFIER_ADD",
+            "script": "LowerPitchLimitsUpgrade",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_pitch_limit",
+            "title": "TankUpgrade/Attribute/PitchLimit"
+          },
+          "ATTRIBUTE_NAME_DISPERSION_VEHICLE_MOVEMENT_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "TankFactorsUpgrade",
+            "params": {
+              "factorName": "chassis/shotDispersion/movement/multFactor"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_accuracy",
+            "title": "TankUpgrade/Attribute/GunAccuracy"
+          },
+          "ATTRIBUTE_NAME_DISPERSION_VEHICLE_ROTATION_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "TankFactorsUpgrade",
+            "params": {
+              "factorName": "chassis/shotDispersion/rotation/multFactor"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_accuracy",
+            "title": "TankUpgrade/Attribute/GunAccuracy"
+          },
+          "ATTRIBUTE_NAME_DISPERSION_TURRET_ROTATION_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "TankFactorsUpgrade",
+            "params": {
+              "factorName": "gun/shotDispersionFactors/turretRotation"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_accuracy",
+            "title": "TankUpgrade/Attribute/GunAccuracy"
+          },
+          "ATTRIBUTE_NAME_FORWARD_MAX_SPEED": {
+            "modifier": "MODIFIER_ADD",
+            "script": "SpeedLimitUpgrade",
+            "params": {
+              "type": "forward"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_max_speed",
+            "title": "TankUpgrade/Attribute/MaxSpeed"
+          },
+          "ATTRIBUTE_NAME_HULL_ROTATION_SPEED_FACTOR_BONUS": {
+            "modifier": "MODIFIER_ADD",
+            "script": "VehicleDataPhysicsMultiplicativeBonus",
+            "params": {
+              "attrName": "rotationSpeedFactor"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_rotation_speed",
+            "title": "TankUpgrade/Attribute/RotationSpeed"
+          }
+        },
+        "alternativeGroups": [
+          {
+            "id": "tier11_ramming_configuration_final_choice",
+            "choices": [
+              28,
+              29,
+              30
+            ],
+            "displayName": "R228_KR_1/Upgrades/Group/Name",
+            "description": "R228_KR_1/Upgrades/Group/Description"
+          }
+        ],
+        "provenance": {
+          "gameVersion": "11.4.0.130_7400742 11.22_supertest_tier11_5 WOTB_Win7",
+          "source": "client:XML/item_defs/vehicles/ussr/R228_KR_1.xml.dvpl",
+          "sha256": "80a7a4062f97ace43e4376b46743209b5027e8122359daabc2045e3a77196b29",
+          "attributesSource": "client:XML/item_defs/vehicles/common/tank_upgrade_attributes.xml.dvpl",
+          "attributesSha256": "57d054351d149827738c7f38a53f3153851e5c8ea6c52c041b24ae689124cdc4"
+        }
+      },
+      "stem": "R228_KR_1"
+    },
+    "detail": {
+      "tank_id": 28161,
+      "name": "KR-1",
+      "nation": "ussr",
+      "tier": 11,
+      "type": "heavyTank",
+      "tags": [
+        "heavyTank"
+      ],
+      "configs": [
+        {
+          "turret_local": 1037,
+          "gun_local": 1056,
+          "turret_index": 0,
+          "gun_index": 0,
+          "reload_time": 13.0,
+          "aim_time": 2.5,
+          "dispersion": 0.42,
+          "pitch_limits": {
+            "min": -15.0,
+            "max": 5.0,
+            "back": {
+              "min": -15.0,
+              "max": 2.7,
+              "range": 19.0
+            },
+            "transition": 8.0
+          },
+          "is_drum": false,
+          "is_burst": false,
+          "burst_reloads": [],
+          "turret_plates": {
+            "1": 200,
+            "2": 150,
+            "3": 100,
+            "4": 80
+          },
+          "gun_plates": {
+            "1": 50
+          },
+          "gun_thickness": 25,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 400,
+              "penetration": 250,
+              "penetration_far": 230,
+              "velocity": 900,
+              "module_damage": 150
+            },
+            {
+              "type": "hc_premium",
+              "damage": 380,
+              "penetration": 300,
+              "penetration_far": 300,
+              "velocity": 850,
+              "module_damage": 150
+            },
+            {
+              "type": "he",
+              "damage": 600,
+              "penetration": 70,
+              "penetration_far": 70,
+              "velocity": 800,
+              "module_damage": 150
+            }
+          ]
+        }
+      ],
+      "hp": 2270,
+      "speed_forward": 40.0,
+      "speed_reverse": 15.0,
+      "armor": {
+        "hull": {
+          "front": 100,
+          "sides": 80,
+          "rear": 60
+        },
+        "turret": {
+          "front": 150,
+          "sides": 100,
+          "rear": 80
+        }
+      },
+      "armor_model": {
+        "hull": {
+          "plates": {
+            "1": 100,
+            "2": 80,
+            "3": 60
+          },
+          "spaced": [
+            "3"
+          ]
+        },
+        "chassis": {
+          "left_track": 20,
+          "right_track": 20
+        }
+      },
+      "model": "fixture.glb"
+    }
+  },
+  {
+    "modules": {
+      "tankId": 30241,
+      "name": "Black Rock",
+      "tier": 11,
+      "tags": [
+        "heavyTank",
+        "collectible"
+      ],
+      "consumableSlots": 3,
+      "provisionSlots": 3,
+      "optDevicePreset": "defaultPreset",
+      "speedLimits": {
+        "forward": 36.0,
+        "backward": 13.0
+      },
+      "invisibility": {
+        "still": 0.086,
+        "moving": 0.043,
+        "firePenalty": 0.293
+      },
+      "hull": {
+        "hp": 2300,
+        "weight": 34000.0
+      },
+      "hasTurret": true,
+      "crewRoles": [
+        "commander",
+        "gunner",
+        "driver",
+        "loader"
+      ],
+      "chassis": [
+        {
+          "stem": "Chassis_1_A179_Black_Rock",
+          "localId": 1051,
+          "level": 10,
+          "price": 0.0,
+          "name_en": "Black Rock",
+          "name_zh-Hans": "Black Rock",
+          "unlocks": [],
+          "stats": {
+            "rotationSpeed": 28.0,
+            "terrainResistance": [
+              1.0,
+              1.4,
+              1.85
+            ],
+            "maxLoad": 64000.0,
+            "weight": 7600.0,
+            "maxHealth": 220.0,
+            "bulkHealthFactor": 3.0,
+            "hysteresisHealth": 54.0,
+            "healthRegenPerSec": 7.875,
+            "hullPosition": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "dispersionFactors": {
+              "vehicleMovement": 0.1807,
+              "vehicleRotation": 0.1807
+            }
+          }
+        }
+      ],
+      "turrets": [
+        {
+          "stem": "Turret_1_A179_Black_Rock",
+          "localId": 1051,
+          "level": 11,
+          "price": 0.0,
+          "name_en": "Black Rock",
+          "name_zh-Hans": "Black Rock",
+          "unlocks": [],
+          "stats": {
+            "rotationSpeed": 21.0,
+            "circularVisionRadius": 250.0,
+            "maxHealth": 500.0,
+            "weight": 17000.0,
+            "yawLimits": [
+              -180.0,
+              180.0
+            ],
+            "bbox": {
+              "min": [
+                -1.174293,
+                -2.915071,
+                -0.497518
+              ],
+              "max": [
+                1.174293,
+                1.63548,
+                1.258668
+              ]
+            }
+          },
+          "primaryArmor": {
+            "front": "armor_1",
+            "sides": "armor_3",
+            "rear": "armor_4"
+          },
+          "guns": [
+            {
+              "stem": "_114mm_Gun_M73_Black_Rock",
+              "localId": 1068,
+              "level": 10,
+              "price": 0.0,
+              "name_en": "#usa_vehicles:_114mm_Gun_M73_Black_Rock",
+              "name_zh-Hans": "#usa_vehicles:_114mm_Gun_M73_Black_Rock",
+              "unlocks": [],
+              "stats": {
+                "reloadTime": 11.4,
+                "aimingTime": 2.18,
+                "shotDispersionRadius": 0.4086,
+                "maxAmmo": 60.0,
+                "weight": 1500.0,
+                "invisibilityFactorAtShot": 0.225,
+                "rotationSpeed": 39.0,
+                "dispersionFactors": {
+                  "turretRotation": 0.1275,
+                  "afterShot": 4.0,
+                  "whileGunDamaged": 2.0
+                },
+                "pitchLimits": {
+                  "min": -14.0,
+                  "max": 7.0,
+                  "back": {
+                    "min": -14.0,
+                    "max": 4.0,
+                    "range": 22.0
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "engines": [
+        {
+          "stem": "Continental_AVDS_1790_8BR",
+          "localId": 133,
+          "level": 10,
+          "price": 0.0,
+          "name_en": "#usa_vehicles:Continental_AVDS_1790_8BR",
+          "name_zh-Hans": "#usa_vehicles:Continental_AVDS_1790_8BR",
+          "unlocks": [],
+          "stats": {
+            "power": 800.0,
+            "fireStartingChance": 0.27,
+            "weight": 1500.0,
+            "tags": []
+          }
+        }
+      ],
+      "radios": [
+        {
+          "stem": "AN_GRC_7BR",
+          "localId": 73,
+          "level": 10,
+          "price": 0.0,
+          "name_en": null,
+          "name_zh-Hans": null,
+          "unlocks": [],
+          "stats": {
+            "distance": 1.0,
+            "weight": 100.0
+          }
+        }
+      ],
+      "fuelTanks": [
+        {
+          "stem": "Large",
+          "localId": 205,
+          "level": null,
+          "price": 100.0,
+          "name_en": null,
+          "name_zh-Hans": null,
+          "unlocks": [],
+          "stats": {
+            "weight": 300.0
+          }
+        }
+      ],
+      "turretOrigin": [
+        -0.0,
+        1.520813,
+        0.137926
+      ],
+      "initialTurretRotation": null,
+      "bbox": {
+        "hull": {
+          "min": [
+            -1.709859,
+            -3.764371,
+            0.407359
+          ],
+          "max": [
+            1.709859,
+            3.689832,
+            1.665384
+          ]
+        },
+        "chassis": {
+          "min": [
+            -1.620517,
+            -3.633414,
+            0.009199
+          ],
+          "max": [
+            1.620517,
+            3.536802,
+            1.196576
+          ]
+        }
+      },
+      "gameVersion": "11.4.0.130_7400742 11.22_supertest_tier11_5 WOTB_Win7",
+      "upgradeProgression": {
+        "nodes": [
+          {
+            "id": 2,
+            "techName": "tier11_shell_speed_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_1",
+                "value": 80
+              },
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_2",
+                "value": 70
+              },
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_3",
+                "value": 60
+              }
+            ]
+          },
+          {
+            "id": 18,
+            "techName": "tier11_stabilisation_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_VEHICLE_MOVEMENT_FACTOR",
+                "value": 0.97
+              },
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_VEHICLE_ROTATION_FACTOR",
+                "value": 0.97
+              },
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_TURRET_ROTATION_FACTOR",
+                "value": 0.97
+              }
+            ]
+          },
+          {
+            "id": 12,
+            "techName": "tier11_hp_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_MAX_HEALTH",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "id": 19,
+            "techName": "tier11_engine_power_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_ENGINE_POWER",
+                "value": 62
+              }
+            ]
+          },
+          {
+            "id": 5,
+            "techName": "tier11_reload_time_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_GUN_RELOAD_TIME",
+                "value": -0.4
+              }
+            ]
+          },
+          {
+            "id": 10,
+            "techName": "tier11_hp_dummy_armor_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_ARMOR_HOMOGENIZATION_FACTOR_BONUS",
+                "value": 0.02
+              }
+            ]
+          },
+          {
+            "id": 4,
+            "techName": "tier11_dmg_main_gun_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_1",
+                "value": 40
+              },
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_2",
+                "value": 30
+              },
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_3",
+                "value": 50
+              }
+            ]
+          },
+          {
+            "id": 8,
+            "techName": "tier11_module_hp_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_ENGINE_MAX_HEALTH",
+                "value": 1.1
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_AMMOBAY_MAX_HEALTH_FACTOR",
+                "value": 1.1
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_TRACK_MAX_HEALTH_FACTOR",
+                "value": 1.1
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR",
+                "value": 1.1
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_SURVEYING_DEVICE_MAX_HEALTH_FACTOR",
+                "value": 1.1
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_GUN_MAX_HEALTH_FACTOR",
+                "value": 1.1
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_FUEL_TANK_HEALTH_FACTOR",
+                "value": 1.1
+              }
+            ]
+          },
+          {
+            "id": 14,
+            "techName": "tier11_hp_dummy_armor_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_ARMOR_HOMOGENIZATION_FACTOR_BONUS",
+                "value": 0.04
+              }
+            ]
+          },
+          {
+            "id": 16,
+            "techName": "tier11_max_speed_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_FORWARD_MAX_SPEED",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "techName": "tier11_shot_disp_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_ANGLE_FACTOR_BONUS",
+                "value": -0.04
+              }
+            ]
+          },
+          {
+            "id": 6,
+            "techName": "tier11_pump_gun_reload_time_01",
+            "type": "NODETYPE_MECHANIC",
+            "attributes": [
+              {
+                "name": "BURST_MODE_INTERVAL",
+                "value": -0.5
+              }
+            ]
+          },
+          {
+            "id": 7,
+            "techName": "tier11_pitch_limits_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_PITCH_LIMIT_UP",
+                "value": 4
+              },
+              {
+                "name": "ATTRIBUTE_NAME_PITCH_LIMIT_DOWN",
+                "value": 3
+              }
+            ]
+          },
+          {
+            "id": 17,
+            "techName": "tier11_hull_rotation_speed_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_HULL_ROTATION_SPEED_FACTOR_BONUS",
+                "value": 0.04
+              }
+            ]
+          },
+          {
+            "id": 11,
+            "techName": "tier11_fire_start_chance_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_FIRE_START_CHANCE",
+                "value": -0.222
+              }
+            ]
+          },
+          {
+            "id": 21,
+            "techName": "tier11_stabilisation_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_VEHICLE_MOVEMENT_FACTOR",
+                "value": 0.97
+              },
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_VEHICLE_ROTATION_FACTOR",
+                "value": 0.97
+              },
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_TURRET_ROTATION_FACTOR",
+                "value": 0.97
+              }
+            ]
+          },
+          {
+            "id": 20,
+            "techName": "tier11_hull_rotation_speed_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_HULL_ROTATION_SPEED_FACTOR_BONUS",
+                "value": 0.02
+              }
+            ]
+          },
+          {
+            "id": 1,
+            "techName": "tier11_shot_disp_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_ANGLE_FACTOR_BONUS",
+                "value": -0.03
+              }
+            ]
+          },
+          {
+            "id": 13,
+            "techName": "tier11_fire_start_chance_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_FIRE_START_CHANCE",
+                "value": -0.222
+              }
+            ]
+          },
+          {
+            "id": 9,
+            "techName": "tier11_pump_gun_reload_time_02",
+            "type": "NODETYPE_MECHANIC",
+            "attributes": [
+              {
+                "name": "BURST_MODE_INTERVAL",
+                "value": -0.4
+              }
+            ]
+          },
+          {
+            "id": 15,
+            "techName": "tier11_module_hp_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_ENGINE_MAX_HEALTH",
+                "value": 1.2
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_AMMOBAY_MAX_HEALTH_FACTOR",
+                "value": 1.2
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_TRACK_MAX_HEALTH_FACTOR",
+                "value": 1.2
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR",
+                "value": 1.2
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_SURVEYING_DEVICE_MAX_HEALTH_FACTOR",
+                "value": 1.2
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_GUN_MAX_HEALTH_FACTOR",
+                "value": 1.2
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_FUEL_TANK_HEALTH_FACTOR",
+                "value": 1.2
+              }
+            ]
+          },
+          {
+            "id": 25,
+            "techName": "tier_11_burst_mode_required_penetrations_alternative",
+            "type": "NODETYPE_ALTERNATIVE_MECHANIC",
+            "attributes": [
+              {
+                "name": "BURST_MODE_REQUIRED_PENETRATIONS",
+                "value": -1
+              }
+            ],
+            "displayName": "A179_Black_Rock/Upgrades/Alternative/RequiredPenetrations"
+          },
+          {
+            "id": 26,
+            "techName": "tier_11_burst_mode_interval_alternative",
+            "type": "NODETYPE_ALTERNATIVE_MECHANIC",
+            "attributes": [
+              {
+                "name": "BURST_MODE_INTERVAL",
+                "value": -0.9
+              }
+            ],
+            "displayName": "A179_Black_Rock/Upgrades/Alternative/Interval"
+          },
+          {
+            "id": 27,
+            "techName": "tier_11_burst_mode_target_order_alternative",
+            "type": "NODETYPE_ALTERNATIVE_MECHANIC",
+            "attributes": [
+              {
+                "name": "BURST_MODE_TARGET_ORDER",
+                "value": false
+              }
+            ],
+            "displayName": "A179_Black_Rock/Upgrades/Alternative/TargetOrder"
+          }
+        ],
+        "attributeDefinitions": {
+          "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_1": {
+            "modifier": "MODIFIER_ADD",
+            "script": "ShellSpeedUpgrade",
+            "params": {
+              "slotIndex": "0"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_shell_speed",
+            "title": "TankUpgrade/Attribute/GunShellSpeed"
+          },
+          "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_2": {
+            "modifier": "MODIFIER_ADD",
+            "script": "ShellSpeedUpgrade",
+            "params": {
+              "slotIndex": "1"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_shell_speed",
+            "title": "TankUpgrade/Attribute/GunShellSpeed"
+          },
+          "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_3": {
+            "modifier": "MODIFIER_ADD",
+            "script": "ShellSpeedUpgrade",
+            "params": {
+              "slotIndex": "2"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_shell_speed",
+            "title": "TankUpgrade/Attribute/GunShellSpeed"
+          },
+          "ATTRIBUTE_NAME_DISPERSION_VEHICLE_MOVEMENT_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "TankFactorsUpgrade",
+            "params": {
+              "factorName": "chassis/shotDispersion/movement/multFactor"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_accuracy",
+            "title": "TankUpgrade/Attribute/GunAccuracy"
+          },
+          "ATTRIBUTE_NAME_DISPERSION_VEHICLE_ROTATION_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "TankFactorsUpgrade",
+            "params": {
+              "factorName": "chassis/shotDispersion/rotation/multFactor"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_accuracy",
+            "title": "TankUpgrade/Attribute/GunAccuracy"
+          },
+          "ATTRIBUTE_NAME_DISPERSION_TURRET_ROTATION_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "TankFactorsUpgrade",
+            "params": {
+              "factorName": "gun/shotDispersionFactors/turretRotation"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_accuracy",
+            "title": "TankUpgrade/Attribute/GunAccuracy"
+          },
+          "ATTRIBUTE_NAME_MAX_HEALTH": {
+            "modifier": "MODIFIER_ADD",
+            "script": "MaxHealthUpgrade",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_max_health",
+            "title": "TankUpgrade/Attribute/MaxHealth"
+          },
+          "ATTRIBUTE_NAME_ENGINE_POWER": {
+            "modifier": "MODIFIER_ADD",
+            "script": "EnginePowerUpgrade",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_engine_power",
+            "title": "TankUpgrade/Attribute/EnginePower"
+          },
+          "ATTRIBUTE_NAME_GUN_RELOAD_TIME": {
+            "modifier": "MODIFIER_ADD",
+            "script": "VehicleDataMiscAttrAdditiveBonus",
+            "params": {
+              "attrName": "gunReloadTimeAdditiveBonus"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_reload_time",
+            "title": "TankUpgrade/Attribute/GunReloadTime"
+          },
+          "ATTRIBUTE_NAME_ARMOR_HOMOGENIZATION_FACTOR_BONUS": {
+            "modifier": "MODIFIER_ADD",
+            "script": "VehicleDataMiscAttrMultiplicativeBonus",
+            "params": {
+              "attrName": "armorHomogenizationFactor"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_armor_homogenization",
+            "title": "TankUpgrade/Attribute/ArmorHomogenization"
+          },
+          "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_1": {
+            "modifier": "MODIFIER_ADD",
+            "script": "ShellDamageUpgrade",
+            "params": {
+              "slotIndex": "0"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_shell_damage",
+            "title": "TankUpgrade/Attribute/GunShellDamage"
+          },
+          "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_2": {
+            "modifier": "MODIFIER_ADD",
+            "script": "ShellDamageUpgrade",
+            "params": {
+              "slotIndex": "1"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_shell_damage",
+            "title": "TankUpgrade/Attribute/GunShellDamage"
+          },
+          "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_3": {
+            "modifier": "MODIFIER_ADD",
+            "script": "ShellDamageUpgrade",
+            "params": {
+              "slotIndex": "2"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_shell_damage",
+            "title": "TankUpgrade/Attribute/GunShellDamage"
+          },
+          "ATTRIBUTE_NAME_MODULES_ENGINE_MAX_HEALTH": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "engineHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MODULES_AMMOBAY_MAX_HEALTH_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "ammoBayHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MODULES_TRACK_MAX_HEALTH_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "leftTrackHealth rightTrackHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "turretRotatorHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MODULES_SURVEYING_DEVICE_MAX_HEALTH_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "surveyingDeviceHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MODULES_GUN_MAX_HEALTH_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "gunHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MODULES_FUEL_TANK_HEALTH_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "fuelTankHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_FORWARD_MAX_SPEED": {
+            "modifier": "MODIFIER_ADD",
+            "script": "SpeedLimitUpgrade",
+            "params": {
+              "type": "forward"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_max_speed",
+            "title": "TankUpgrade/Attribute/MaxSpeed"
+          },
+          "ATTRIBUTE_NAME_DISPERSION_ANGLE_FACTOR_BONUS": {
+            "modifier": "MODIFIER_ADD",
+            "script": "VehicleDataMiscAttrMultiplicativeBonus",
+            "params": {
+              "attrName": "shotDispersionAngleFactor"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_accuracy",
+            "title": "TankUpgrade/Attribute/GunAccuracy"
+          },
+          "BURST_MODE_INTERVAL": {
+            "modifier": "MODIFIER_ADD",
+            "title": "TankUpgrade/Attribute/BurstMode/Interval"
+          },
+          "ATTRIBUTE_NAME_PITCH_LIMIT_UP": {
+            "modifier": "MODIFIER_ADD",
+            "script": "UpperPitchLimitsUpgrade",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_pitch_limit",
+            "title": "TankUpgrade/Attribute/PitchLimit"
+          },
+          "ATTRIBUTE_NAME_PITCH_LIMIT_DOWN": {
+            "modifier": "MODIFIER_ADD",
+            "script": "LowerPitchLimitsUpgrade",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_pitch_limit",
+            "title": "TankUpgrade/Attribute/PitchLimit"
+          },
+          "ATTRIBUTE_NAME_HULL_ROTATION_SPEED_FACTOR_BONUS": {
+            "modifier": "MODIFIER_ADD",
+            "script": "VehicleDataPhysicsMultiplicativeBonus",
+            "params": {
+              "attrName": "rotationSpeedFactor"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_rotation_speed",
+            "title": "TankUpgrade/Attribute/RotationSpeed"
+          },
+          "ATTRIBUTE_NAME_FIRE_START_CHANCE": {
+            "modifier": "MODIFIER_ADD",
+            "script": "FireStartChangeUpgrade",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_fire_start_chance",
+            "title": "TankUpgrade/Attribute/FireStartChance"
+          },
+          "BURST_MODE_REQUIRED_PENETRATIONS": {
+            "modifier": "MODIFIER_ADD"
+          },
+          "BURST_MODE_TARGET_ORDER": {
+            "modifier": "MODIFIER_BOOLEAN"
+          }
+        },
+        "alternativeGroups": [
+          {
+            "id": "tier11_burst_mode_final_choice",
+            "choices": [
+              25,
+              26,
+              27
+            ],
+            "displayName": "A179_Black_Rock/Upgrades/Group/Name",
+            "description": "A179_Black_Rock/Upgrades/Group/Description"
+          }
+        ],
+        "provenance": {
+          "gameVersion": "11.4.0.130_7400742 11.22_supertest_tier11_5 WOTB_Win7",
+          "source": "client:XML/item_defs/vehicles/usa/A179_Black_Rock.xml.dvpl",
+          "sha256": "9bc88daa81d9cbb23db5e9bf15f9d5f08238bf1d760a41c8ea3d050cda585934",
+          "attributesSource": "client:XML/item_defs/vehicles/common/tank_upgrade_attributes.xml.dvpl",
+          "attributesSha256": "57d054351d149827738c7f38a53f3153851e5c8ea6c52c041b24ae689124cdc4"
+        }
+      },
+      "stem": "A179_Black_Rock"
+    },
+    "detail": {
+      "tank_id": 30241,
+      "name": "Black Rock",
+      "nation": "usa",
+      "tier": 11,
+      "type": "heavyTank",
+      "tags": [
+        "heavyTank",
+        "collectible"
+      ],
+      "configs": [
+        {
+          "turret_local": 1051,
+          "gun_local": 1068,
+          "turret_index": 0,
+          "gun_index": 0,
+          "reload_time": 11.4,
+          "aim_time": 2.18,
+          "dispersion": 0.4086,
+          "pitch_limits": {
+            "min": -14.0,
+            "max": 7.0,
+            "back": {
+              "min": -14.0,
+              "max": 4.0,
+              "range": 22.0
+            }
+          },
+          "is_drum": false,
+          "is_burst": false,
+          "burst_reloads": [],
+          "turret_plates": {
+            "1": 200,
+            "2": 150,
+            "3": 100,
+            "4": 80
+          },
+          "gun_plates": {
+            "1": 50
+          },
+          "gun_thickness": 25,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 400,
+              "penetration": 250,
+              "penetration_far": 230,
+              "velocity": 900,
+              "module_damage": 150
+            },
+            {
+              "type": "hc_premium",
+              "damage": 380,
+              "penetration": 300,
+              "penetration_far": 300,
+              "velocity": 850,
+              "module_damage": 150
+            },
+            {
+              "type": "he",
+              "damage": 600,
+              "penetration": 70,
+              "penetration_far": 70,
+              "velocity": 800,
+              "module_damage": 150
+            }
+          ]
+        }
+      ],
+      "hp": 2300,
+      "speed_forward": 36.0,
+      "speed_reverse": 13.0,
+      "armor": {
+        "hull": {
+          "front": 100,
+          "sides": 80,
+          "rear": 60
+        },
+        "turret": {
+          "front": 150,
+          "sides": 100,
+          "rear": 80
+        }
+      },
+      "armor_model": {
+        "hull": {
+          "plates": {
+            "1": 100,
+            "2": 80,
+            "3": 60
+          },
+          "spaced": [
+            "3"
+          ]
+        },
+        "chassis": {
+          "left_track": 20,
+          "right_track": 20
+        }
+      },
+      "model": "fixture.glb"
+    }
+  },
+  {
+    "modules": {
+      "tankId": 30497,
+      "name": "XM69 Hacker",
+      "tier": 11,
+      "tags": [
+        "mediumTank"
+      ],
+      "consumableSlots": 3,
+      "provisionSlots": 3,
+      "optDevicePreset": "defaultPreset",
+      "speedLimits": {
+        "forward": 48.0,
+        "backward": 20.0
+      },
+      "invisibility": {
+        "still": 0.148,
+        "moving": 0.111,
+        "firePenalty": 0.218
+      },
+      "hull": {
+        "hp": 1600,
+        "weight": 29000.0
+      },
+      "hasTurret": true,
+      "crewRoles": [
+        "commander",
+        "gunner",
+        "driver",
+        "loader"
+      ],
+      "chassis": [
+        {
+          "stem": "Chassis_1_A183_XM69_Hacker",
+          "localId": 1052,
+          "level": 11,
+          "price": 0.0,
+          "name_en": "XM69 Hacker",
+          "name_zh-Hans": "XM69 Hacker",
+          "unlocks": [],
+          "stats": {
+            "rotationSpeed": 42.0,
+            "terrainResistance": [
+              1.0,
+              1.1,
+              1.5
+            ],
+            "maxLoad": 55000.0,
+            "weight": 7500.0,
+            "maxHealth": 270.0,
+            "bulkHealthFactor": 3.0,
+            "hysteresisHealth": 67.0,
+            "healthRegenPerSec": 9.75,
+            "hullPosition": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "dispersionFactors": {
+              "vehicleMovement": 0.15,
+              "vehicleRotation": 0.15
+            }
+          }
+        }
+      ],
+      "turrets": [
+        {
+          "stem": "Turret_1_A183_XM69_Hacker",
+          "localId": 1052,
+          "level": 11,
+          "price": 0.0,
+          "name_en": "XM69 Hacker",
+          "name_zh-Hans": "XM69 Hacker",
+          "unlocks": [],
+          "stats": {
+            "rotationSpeed": 40.0,
+            "circularVisionRadius": 265.0,
+            "maxHealth": 500.0,
+            "weight": 9000.0,
+            "yawLimits": [
+              -180.0,
+              180.0
+            ],
+            "bbox": {
+              "min": [
+                -1.432319,
+                -2.323518,
+                -0.267666
+              ],
+              "max": [
+                1.43144,
+                1.575883,
+                1.130559
+              ]
+            }
+          },
+          "primaryArmor": {
+            "front": "armor_1",
+            "sides": "armor_3",
+            "rear": "armor_4"
+          },
+          "guns": [
+            {
+              "stem": "_110mm_EXP_S",
+              "localId": 1069,
+              "level": 11,
+              "price": 0.0,
+              "name_en": "#usa_vehicles:_110mm_EXP_S",
+              "name_zh-Hans": "#usa_vehicles:_110mm_EXP_S",
+              "unlocks": [],
+              "stats": {
+                "reloadTime": 8.9,
+                "aimingTime": 2.2,
+                "shotDispersionRadius": 0.4,
+                "maxAmmo": 60.0,
+                "weight": 3000.0,
+                "invisibilityFactorAtShot": 0.209,
+                "rotationSpeed": 40.0,
+                "dispersionFactors": {
+                  "turretRotation": 0.1,
+                  "afterShot": 4.0,
+                  "whileGunDamaged": 2.0
+                },
+                "pitchLimits": {
+                  "min": -17.0,
+                  "max": 8.0,
+                  "back": {
+                    "min": -20.0,
+                    "max": 3.0,
+                    "range": 20.0
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "engines": [
+        {
+          "stem": "Continental_AVDS_1790_2_A183",
+          "localId": 134,
+          "level": 11,
+          "price": 0.0,
+          "name_en": "#usa_vehicles:Continental_AVDS_1790_2_A183",
+          "name_zh-Hans": "#usa_vehicles:Continental_AVDS_1790_2_A183",
+          "unlocks": [],
+          "stats": {
+            "power": 950.0,
+            "fireStartingChance": 0.12,
+            "weight": 1000.0,
+            "tags": []
+          }
+        }
+      ],
+      "radios": [
+        {
+          "stem": "AN_VRC_47_A183",
+          "localId": 74,
+          "level": 11,
+          "price": 0.0,
+          "name_en": null,
+          "name_zh-Hans": null,
+          "unlocks": [],
+          "stats": {
+            "distance": 1.0,
+            "weight": 100.0
+          }
+        }
+      ],
+      "fuelTanks": [
+        {
+          "stem": "Large",
+          "localId": 205,
+          "level": null,
+          "price": 100.0,
+          "name_en": null,
+          "name_zh-Hans": null,
+          "unlocks": [],
+          "stats": {
+            "weight": 300.0
+          }
+        }
+      ],
+      "turretOrigin": [
+        -0.0,
+        1.563443,
+        0.285956
+      ],
+      "initialTurretRotation": null,
+      "bbox": {
+        "hull": {
+          "min": [
+            -1.799994,
+            -3.756093,
+            0.399999
+          ],
+          "max": [
+            1.799995,
+            3.274819,
+            1.79998
+          ]
+        },
+        "chassis": {
+          "min": [
+            -1.763538,
+            -3.676183,
+            0.001557
+          ],
+          "max": [
+            1.763538,
+            3.094922,
+            1.153746
+          ]
+        }
+      },
+      "gameVersion": "11.4.0.130_7400742 11.22_supertest_tier11_5 WOTB_Win7",
+      "upgradeProgression": {
+        "nodes": [
+          {
+            "id": 1,
+            "techName": "tier11_shot_disp_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_ANGLE_FACTOR_BONUS",
+                "value": -0.02
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "techName": "tier11_engine_power_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_ENGINE_POWER",
+                "value": 50
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "techName": "tier11_armor_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_ARMOR_HOMOGENIZATION_FACTOR_BONUS",
+                "value": 0.02
+              }
+            ]
+          },
+          {
+            "id": 4,
+            "techName": "tier11_stabilisation_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_VEHICLE_MOVEMENT_FACTOR",
+                "value": 0.98
+              },
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_VEHICLE_ROTATION_FACTOR",
+                "value": 0.98
+              },
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_TURRET_ROTATION_FACTOR",
+                "value": 0.98
+              }
+            ]
+          },
+          {
+            "id": 5,
+            "techName": "tier11_shell_speed_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_1",
+                "value": 50
+              },
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_3",
+                "value": 50
+              },
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_2",
+                "value": 50
+              }
+            ]
+          },
+          {
+            "id": 6,
+            "techName": "tier11_hull_rotation_speed_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_HULL_ROTATION_SPEED_FACTOR_BONUS",
+                "value": 0.05
+              }
+            ]
+          },
+          {
+            "id": 7,
+            "techName": "tier11_armor_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_ARMOR_HOMOGENIZATION_FACTOR_BONUS",
+                "value": 0.04
+              }
+            ]
+          },
+          {
+            "id": 8,
+            "techName": "tier11_shot_disp_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_ANGLE_FACTOR_BONUS",
+                "value": -0.02
+              }
+            ]
+          },
+          {
+            "id": 9,
+            "techName": "tier11_fire_start_chance_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_FIRE_START_CHANCE",
+                "value": -0.05
+              }
+            ]
+          },
+          {
+            "id": 10,
+            "techName": "tier11_reload_time_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_GUN_RELOAD_TIME",
+                "value": -0.3
+              }
+            ]
+          },
+          {
+            "id": 11,
+            "techName": "tier11_dmg_main_gun_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_1",
+                "value": 20
+              },
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_2",
+                "value": 20
+              },
+              {
+                "name": "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_3",
+                "value": 25
+              }
+            ]
+          },
+          {
+            "id": 12,
+            "techName": "tier11_max_speed_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_FORWARD_MAX_SPEED",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "id": 13,
+            "techName": "tier11_fire_start_chance_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_FIRE_START_CHANCE",
+                "value": -0.1
+              }
+            ]
+          },
+          {
+            "id": 14,
+            "techName": "tier11_hp_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_MAX_HEALTH",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "id": 15,
+            "techName": "tier11_steady_aim_system_duration_01",
+            "type": "NODETYPE_MECHANIC",
+            "attributes": [
+              {
+                "name": "SAS_DURATION",
+                "value": 5
+              }
+            ],
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_elite2"
+          },
+          {
+            "id": 16,
+            "techName": "tier11_stabilisation_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_VEHICLE_MOVEMENT_FACTOR",
+                "value": 0.98
+              },
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_VEHICLE_ROTATION_FACTOR",
+                "value": 0.98
+              },
+              {
+                "name": "ATTRIBUTE_NAME_DISPERSION_TURRET_ROTATION_FACTOR",
+                "value": 0.98
+              }
+            ]
+          },
+          {
+            "id": 17,
+            "techName": "tier11_hull_rotation_speed_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_HULL_ROTATION_SPEED_FACTOR_BONUS",
+                "value": 0.1
+              }
+            ]
+          },
+          {
+            "id": 18,
+            "techName": "tier11_module_hp_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_ENGINE_MAX_HEALTH",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_AMMOBAY_MAX_HEALTH_FACTOR",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_TRACK_MAX_HEALTH_FACTOR",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_SURVEYING_DEVICE_MAX_HEALTH_FACTOR",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_GUN_MAX_HEALTH_FACTOR",
+                "value": 1.15
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_FUEL_TANK_HEALTH_FACTOR",
+                "value": 1.15
+              }
+            ]
+          },
+          {
+            "id": 19,
+            "techName": "tier11_steady_aim_system_aiming_time_01",
+            "type": "NODETYPE_MECHANIC",
+            "attributes": [
+              {
+                "name": "SAS_AIMING_SPEED",
+                "value": 0.1
+              }
+            ],
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_elite2"
+          },
+          {
+            "id": 20,
+            "techName": "tier11_pitch_limit_01",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_PITCH_LIMIT_UP",
+                "value": 3
+              },
+              {
+                "name": "ATTRIBUTE_NAME_PITCH_LIMIT_DOWN",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "id": 21,
+            "techName": "tier11_module_hp_02",
+            "type": "NODETYPE_COMMON",
+            "attributes": [
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_ENGINE_MAX_HEALTH",
+                "value": 1.25
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_AMMOBAY_MAX_HEALTH_FACTOR",
+                "value": 1.25
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_TRACK_MAX_HEALTH_FACTOR",
+                "value": 1.25
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR",
+                "value": 1.25
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_SURVEYING_DEVICE_MAX_HEALTH_FACTOR",
+                "value": 1.25
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_GUN_MAX_HEALTH_FACTOR",
+                "value": 1.25
+              },
+              {
+                "name": "ATTRIBUTE_NAME_MODULES_FUEL_TANK_HEALTH_FACTOR",
+                "value": 1.25
+              }
+            ]
+          },
+          {
+            "id": 22,
+            "techName": "tier11_steady_aim_system_aiming_time_02",
+            "type": "NODETYPE_ALTERNATIVE_MECHANIC",
+            "attributes": [
+              {
+                "name": "SAS_AIMING_SPEED",
+                "value": 0.35
+              }
+            ],
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_elite1",
+            "displayName": "A183_XM69_Hacker/Upgrades/Alternative/AimingSpeed"
+          },
+          {
+            "id": 23,
+            "techName": "tier11_steady_aim_system_allow_on_hit_01",
+            "type": "NODETYPE_ALTERNATIVE_MECHANIC",
+            "attributes": [
+              {
+                "name": "SAS_ALLOW_ACTIVATE_ON_HIT",
+                "value": true
+              }
+            ],
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_elite2",
+            "displayName": "A183_XM69_Hacker/Upgrades/Alternative/AllowOnHit"
+          },
+          {
+            "id": 24,
+            "techName": "tier11_steady_aim_system_gun_dispersion",
+            "type": "NODETYPE_ALTERNATIVE_MECHANIC",
+            "attributes": [
+              {
+                "name": "SAS_GUN_DISPERSION",
+                "value": 0.25
+              }
+            ],
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_elite3",
+            "displayName": "A183_XM69_Hacker/Upgrades/Alternative/GunDispersion"
+          }
+        ],
+        "attributeDefinitions": {
+          "ATTRIBUTE_NAME_DISPERSION_ANGLE_FACTOR_BONUS": {
+            "modifier": "MODIFIER_ADD",
+            "script": "VehicleDataMiscAttrMultiplicativeBonus",
+            "params": {
+              "attrName": "shotDispersionAngleFactor"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_accuracy",
+            "title": "TankUpgrade/Attribute/GunAccuracy"
+          },
+          "ATTRIBUTE_NAME_ENGINE_POWER": {
+            "modifier": "MODIFIER_ADD",
+            "script": "EnginePowerUpgrade",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_engine_power",
+            "title": "TankUpgrade/Attribute/EnginePower"
+          },
+          "ATTRIBUTE_NAME_ARMOR_HOMOGENIZATION_FACTOR_BONUS": {
+            "modifier": "MODIFIER_ADD",
+            "script": "VehicleDataMiscAttrMultiplicativeBonus",
+            "params": {
+              "attrName": "armorHomogenizationFactor"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_armor_homogenization",
+            "title": "TankUpgrade/Attribute/ArmorHomogenization"
+          },
+          "ATTRIBUTE_NAME_DISPERSION_VEHICLE_MOVEMENT_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "TankFactorsUpgrade",
+            "params": {
+              "factorName": "chassis/shotDispersion/movement/multFactor"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_accuracy",
+            "title": "TankUpgrade/Attribute/GunAccuracy"
+          },
+          "ATTRIBUTE_NAME_DISPERSION_VEHICLE_ROTATION_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "TankFactorsUpgrade",
+            "params": {
+              "factorName": "chassis/shotDispersion/rotation/multFactor"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_accuracy",
+            "title": "TankUpgrade/Attribute/GunAccuracy"
+          },
+          "ATTRIBUTE_NAME_DISPERSION_TURRET_ROTATION_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "TankFactorsUpgrade",
+            "params": {
+              "factorName": "gun/shotDispersionFactors/turretRotation"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_accuracy",
+            "title": "TankUpgrade/Attribute/GunAccuracy"
+          },
+          "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_1": {
+            "modifier": "MODIFIER_ADD",
+            "script": "ShellSpeedUpgrade",
+            "params": {
+              "slotIndex": "0"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_shell_speed",
+            "title": "TankUpgrade/Attribute/GunShellSpeed"
+          },
+          "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_3": {
+            "modifier": "MODIFIER_ADD",
+            "script": "ShellSpeedUpgrade",
+            "params": {
+              "slotIndex": "2"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_shell_speed",
+            "title": "TankUpgrade/Attribute/GunShellSpeed"
+          },
+          "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_2": {
+            "modifier": "MODIFIER_ADD",
+            "script": "ShellSpeedUpgrade",
+            "params": {
+              "slotIndex": "1"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_shell_speed",
+            "title": "TankUpgrade/Attribute/GunShellSpeed"
+          },
+          "ATTRIBUTE_NAME_HULL_ROTATION_SPEED_FACTOR_BONUS": {
+            "modifier": "MODIFIER_ADD",
+            "script": "VehicleDataPhysicsMultiplicativeBonus",
+            "params": {
+              "attrName": "rotationSpeedFactor"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_rotation_speed",
+            "title": "TankUpgrade/Attribute/RotationSpeed"
+          },
+          "ATTRIBUTE_NAME_FIRE_START_CHANCE": {
+            "modifier": "MODIFIER_ADD",
+            "script": "FireStartChangeUpgrade",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_fire_start_chance",
+            "title": "TankUpgrade/Attribute/FireStartChance"
+          },
+          "ATTRIBUTE_NAME_GUN_RELOAD_TIME": {
+            "modifier": "MODIFIER_ADD",
+            "script": "VehicleDataMiscAttrAdditiveBonus",
+            "params": {
+              "attrName": "gunReloadTimeAdditiveBonus"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_reload_time",
+            "title": "TankUpgrade/Attribute/GunReloadTime"
+          },
+          "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_1": {
+            "modifier": "MODIFIER_ADD",
+            "script": "ShellDamageUpgrade",
+            "params": {
+              "slotIndex": "0"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_shell_damage",
+            "title": "TankUpgrade/Attribute/GunShellDamage"
+          },
+          "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_2": {
+            "modifier": "MODIFIER_ADD",
+            "script": "ShellDamageUpgrade",
+            "params": {
+              "slotIndex": "1"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_shell_damage",
+            "title": "TankUpgrade/Attribute/GunShellDamage"
+          },
+          "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_3": {
+            "modifier": "MODIFIER_ADD",
+            "script": "ShellDamageUpgrade",
+            "params": {
+              "slotIndex": "2"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_gun_shell_damage",
+            "title": "TankUpgrade/Attribute/GunShellDamage"
+          },
+          "ATTRIBUTE_NAME_FORWARD_MAX_SPEED": {
+            "modifier": "MODIFIER_ADD",
+            "script": "SpeedLimitUpgrade",
+            "params": {
+              "type": "forward"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_max_speed",
+            "title": "TankUpgrade/Attribute/MaxSpeed"
+          },
+          "ATTRIBUTE_NAME_MAX_HEALTH": {
+            "modifier": "MODIFIER_ADD",
+            "script": "MaxHealthUpgrade",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_max_health",
+            "title": "TankUpgrade/Attribute/MaxHealth"
+          },
+          "SAS_DURATION": {
+            "modifier": "MODIFIER_ADD",
+            "title": "TankUpgrade/Attribute/SteadyAimSystem/Duration"
+          },
+          "ATTRIBUTE_NAME_MODULES_ENGINE_MAX_HEALTH": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "engineHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MODULES_AMMOBAY_MAX_HEALTH_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "ammoBayHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MODULES_TRACK_MAX_HEALTH_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "leftTrackHealth rightTrackHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "turretRotatorHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MODULES_SURVEYING_DEVICE_MAX_HEALTH_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "surveyingDeviceHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MODULES_GUN_MAX_HEALTH_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "gunHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "ATTRIBUTE_NAME_MODULES_FUEL_TANK_HEALTH_FACTOR": {
+            "modifier": "MODIFIER_MULTIPLY",
+            "script": "DeviceAttributeUpgrade",
+            "params": {
+              "devicesExtra": "fuelTankHealth",
+              "attrName": "modulesMaxHpFactors"
+            },
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_modules_upgrade",
+            "title": "TankUpgrade/Attribute/ModulesUpgrade"
+          },
+          "SAS_AIMING_SPEED": {
+            "modifier": "MODIFIER_ADD",
+            "title": "TankUpgrade/Attribute/SteadyAimSystem/AimingSpeed"
+          },
+          "ATTRIBUTE_NAME_PITCH_LIMIT_UP": {
+            "modifier": "MODIFIER_ADD",
+            "script": "UpperPitchLimitsUpgrade",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_pitch_limit",
+            "title": "TankUpgrade/Attribute/PitchLimit"
+          },
+          "ATTRIBUTE_NAME_PITCH_LIMIT_DOWN": {
+            "modifier": "MODIFIER_ADD",
+            "script": "LowerPitchLimitsUpgrade",
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_pitch_limit",
+            "title": "TankUpgrade/Attribute/PitchLimit"
+          },
+          "SAS_ALLOW_ACTIVATE_ON_HIT": {
+            "modifier": "MODIFIER_BOOLEAN"
+          },
+          "SAS_GUN_DISPERSION": {
+            "modifier": "MODIFIER_ADD"
+          }
+        },
+        "alternativeGroups": [
+          {
+            "id": "tier11_steady_aim_system_final_choice",
+            "choices": [
+              22,
+              23,
+              24
+            ],
+            "icon": "~res:/Gfx/Lobby/icons/upgrades/icon_elite",
+            "displayName": "A183_XM69_Hacker/Upgrades/Group/Name",
+            "description": "A183_XM69_Hacker/Upgrades/Group/Description"
+          }
+        ],
+        "provenance": {
+          "gameVersion": "11.4.0.130_7400742 11.22_supertest_tier11_5 WOTB_Win7",
+          "source": "client:XML/item_defs/vehicles/usa/A183_XM69_Hacker.xml.dvpl",
+          "sha256": "7ae541eee1e0efad9881f8d20b5e0239d3eb031e355462c22c1b62119f0d8ec4",
+          "attributesSource": "client:XML/item_defs/vehicles/common/tank_upgrade_attributes.xml.dvpl",
+          "attributesSha256": "57d054351d149827738c7f38a53f3153851e5c8ea6c52c041b24ae689124cdc4"
+        }
+      },
+      "stem": "A183_XM69_Hacker"
+    },
+    "detail": {
+      "tank_id": 30497,
+      "name": "XM69 Hacker",
+      "nation": "usa",
+      "tier": 11,
+      "type": "mediumTank",
+      "tags": [
+        "mediumTank"
+      ],
+      "configs": [
+        {
+          "turret_local": 1052,
+          "gun_local": 1069,
+          "turret_index": 0,
+          "gun_index": 0,
+          "reload_time": 8.9,
+          "aim_time": 2.2,
+          "dispersion": 0.4,
+          "pitch_limits": {
+            "min": -17.0,
+            "max": 8.0,
+            "back": {
+              "min": -20.0,
+              "max": 3.0,
+              "range": 20.0
+            }
+          },
+          "is_drum": false,
+          "is_burst": false,
+          "burst_reloads": [],
+          "turret_plates": {
+            "1": 200,
+            "2": 150,
+            "3": 100,
+            "4": 80
+          },
+          "gun_plates": {
+            "1": 50
+          },
+          "gun_thickness": 25,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 400,
+              "penetration": 250,
+              "penetration_far": 230,
+              "velocity": 900,
+              "module_damage": 150
+            },
+            {
+              "type": "hc_premium",
+              "damage": 380,
+              "penetration": 300,
+              "penetration_far": 300,
+              "velocity": 850,
+              "module_damage": 150
+            },
+            {
+              "type": "he",
+              "damage": 600,
+              "penetration": 70,
+              "penetration_far": 70,
+              "velocity": 800,
+              "module_damage": 150
+            }
+          ]
+        }
+      ],
+      "hp": 1600,
+      "speed_forward": 48.0,
+      "speed_reverse": 20.0,
+      "armor": {
+        "hull": {
+          "front": 100,
+          "sides": 80,
+          "rear": 60
+        },
+        "turret": {
+          "front": 150,
+          "sides": 100,
+          "rear": 80
+        }
+      },
+      "armor_model": {
+        "hull": {
+          "plates": {
+            "1": 100,
+            "2": 80,
+            "3": 60
+          },
+          "spaced": [
+            "3"
+          ]
+        },
+        "chassis": {
+          "left_track": 20,
+          "right_track": 20
+        }
+      },
+      "model": "fixture.glb"
+    }
+  }
+]

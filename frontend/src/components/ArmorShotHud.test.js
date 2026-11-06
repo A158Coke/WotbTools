@@ -117,4 +117,24 @@ describe('ArmorShotHud（右上角弹种 + 装备图标）', () => {
     expect(wrapper.emitted('calibrated').at(-1)).toEqual([true])
     expect(wrapper.emitted('enhanced').at(-1)).toEqual([false])
   })
+
+  it('reloads only the explicit shooter upgrade and ignores an older stock response', async () => {
+    let resolveStock
+    data.fetchTankData.mockReturnValueOnce(new Promise(resolve => { resolveStock = resolve }))
+    const wrapper = mount(ArmorShotHud, { props: { shooterId: 1 } })
+    const upgraded = structuredClone(TANK)
+    upgraded.configs[1].shells[0].penetration = 330
+    data.fetchTankData.mockResolvedValueOnce(upgraded)
+    await wrapper.setProps({ upgrade: 'top', abilities: '101,201' })
+    await flushPromises()
+    expect(data.fetchTankData).toHaveBeenLastCalledWith(1, { upgrade: 'top', abilities: '101,201' })
+    expect(wrapper.get('[data-testid="hud-shell-0"]').attributes('title')).toContain('330mm')
+    resolveStock(TANK)
+    await flushPromises()
+    expect(wrapper.get('[data-testid="hud-shell-0"]').attributes('title')).toContain('330mm')
+    await wrapper.setProps({ upgrade: null })
+    await flushPromises()
+    expect(data.fetchTankData).toHaveBeenLastCalledWith(1)
+    expect(wrapper.get('[data-testid="hud-shell-0"]').attributes('title')).toContain('220mm')
+  })
 })

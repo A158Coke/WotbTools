@@ -97,8 +97,8 @@ describe('armor destroyed scene async ownership', () => {
   it('guards every bootstrap continuation before the next asset or DOM step', () => {
     for (const step of [
       'const list = normalizeTankCache(await fetchTankEncyclopedia());',
-      'const data = await fetchTankData(tid);',
-      'const data = await fetchShells(tid);',
+      "const data = await fetchTankData(tid, upgradeOptions('shooter'));",
+      "const data = await fetchShells(tid, upgradeOptions('shooter'));",
       'await populateTankLists(initTargetId, initShooterId);',
       'await loadShooter(initShooterId);',
       'await loadTarget(initTargetId);',
