@@ -13,10 +13,12 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppButton from './AppButton.vue'
+import SegmentedControl from './SegmentedControl.vue'
 import { availableItems, itemIconUrl, moduleIconUrl, resolveDeviceIds, skillIconUrl } from '../utils/researchCatalog.js'
 import { configIndexFor, consumableTiming, pickGun, pickTurret, presetSlots, tankRef } from '../replay-local/compute/tankSetup'
 import { fmtNum } from '../scene/tankMeta.js'
 import { romanLevel } from '../utils/tierFormat.js'
+import { resolveUpgradeSelection } from '../replay-local/compute/tankUpgrades'
 
 const props = defineProps({
   /** tank/{id}.json */
@@ -27,6 +29,8 @@ const props = defineProps({
   selection: { type: Object, required: true },
   /** 资产包 research 全局目录（物品目录 + 预设 + 过滤器） */
   catalog: { type: Object, required: true },
+  /** 宿主可拒绝缺少投影源字段的满级状态。 */
+  upgradeSupported: { type: Boolean, default: true },
   /** 乘员技能 / 涂装块 */
   showCrew: { type: Boolean, default: true },
   showEquipment: { type: Boolean, default: true },
@@ -48,6 +52,46 @@ function itemName(item) {
 }
 
 const currentTurret = computed(() => props.modules?.turrets?.[props.selection.turret] || null)
+const upgrades = computed(() => {
+  if (Number(props.detail?.tier) !== 11) return { available: false }
+  const state = resolveUpgradeSelection(props.modules, props.selection.upgrade, props.selection.abilities)
+  return { ...state, supported: state.supported && props.upgradeSupported }
+})
+const upgradeOptions = computed(() => [
+  { value: 'stock', label: t('agentTanks.configurator.upgrade_stock'), testid: 'tank-upgrade-stock' },
+  { value: 'top', label: t('agentTanks.configurator.upgrade_top'), testid: 'tank-upgrade-top', disabled: !upgrades.value.supported },
+])
+/** 缺少客户端语言覆盖层时按已知属性语义描述，避免把内部翻译 key 当成技能名。 */
+function abilityLabel(node, index) {
+  if (node?.[`name_${lang.value}`] || node?.name_en) return itemName(node)
+  const parts = (node?.attributes || []).map(({ name, value }) => {
+    const label = t(`agentTanks.configurator.upgrade_attributes.${name}`)
+    const amount = typeof value === 'boolean'
+      ? t(`agentTanks.configurator.upgrade_${value ? 'enabled' : 'disabled'}`)
+      : `${Number(value) > 0 ? '+' : ''}${fmtNum(Number(value), 3)}`
+    return `${label} ${amount}`
+  })
+  return parts.join(' · ') || t('agentTanks.configurator.upgrade_skill_option', { index: index + 1 })
+}
+const abilityGroups = computed(() => (upgrades.value.groups || []).map((group, groupIndex) => ({
+  ...group,
+  label: itemName(group) || t('agentTanks.configurator.upgrade_skill_group', { index: groupIndex + 1 }),
+  description: group[`description_${lang.value}`] || group.description_en || '',
+  options: group.choices.map((id, index) => {
+    const node = upgrades.value.nodes.find(node => node.id === id)
+    return {
+      value: String(id),
+      label: abilityLabel(node, index),
+      title: node?.[`description_${lang.value}`] || node?.description_en || abilityLabel(node, index),
+      testid: `tank-ability-${id}`,
+    }
+  }),
+})))
+function selectAbility(group, value) {
+  const choices = { ...upgrades.value.choices, [group.id]: Number(value) }
+  const next = resolveUpgradeSelection(props.modules, props.selection.upgrade, choices)
+  emit('update', { abilities: next.abilities })
+}
 
 /** 四个模块槽的候选（图标 = 客户端 ModulesTechTree 类型图；名称/等级来自数据）。 */
 const moduleRows = computed(() => {
@@ -382,10 +426,10 @@ const camoBonusParts = computed(() => {
     <header class="tp-config-head">
       <h2 class="tp-section-title">{{ t('agentTanks.configurator.title') }}</h2>
       <div class="tp-config-actions">
-        <AppButton variant="ghost" size="sm" data-testid="tank-preset-stock" @click="emit('preset', 'stock')">
+        <AppButton v-if="!upgrades.available" variant="ghost" size="sm" data-testid="tank-preset-stock" @click="emit('preset', 'stock')">
           {{ t('agentTanks.configurator.stock') }}
         </AppButton>
-        <AppButton variant="ghost" size="sm" data-testid="tank-preset-top" @click="emit('preset', 'top')">
+        <AppButton v-if="!upgrades.available" variant="ghost" size="sm" data-testid="tank-preset-top" @click="emit('preset', 'top')">
           {{ t('agentTanks.configurator.top') }}
         </AppButton>
         <AppButton variant="ghost" size="sm" data-testid="tank-config-reset" @click="emit('reset')">
@@ -394,9 +438,35 @@ const camoBonusParts = computed(() => {
       </div>
     </header>
 
+    <section v-if="upgrades.available" class="tp-config-block" data-testid="tank-upgrades">
+      <h3>{{ t('agentTanks.configurator.upgrade_title') }}</h3>
+      <SegmentedControl
+        :model-value="upgrades.mode"
+        :options="upgradeOptions"
+        :aria-label="t('agentTanks.configurator.upgrade_title')"
+        @update:model-value="emit('update', { upgrade: $event })"
+      />
+      <p class="tp-muted">{{ t('agentTanks.configurator.upgrade_hint') }}</p>
+      <p v-if="!upgrades.supported" class="tp-muted" role="status">{{ t('agentTanks.configurator.upgrade_unsupported') }}</p>
+      <template v-if="showCrew">
+        <div v-for="group in abilityGroups" :key="group.id" class="tp-config-block" data-testid="tank-upgrade-skills">
+          <h3>{{ group.label }}</h3>
+          <SegmentedControl
+            :model-value="String(upgrades.choices[group.id])"
+            :options="group.options"
+            :aria-label="group.label"
+            presentation="tiles"
+            @update:model-value="selectAbility(group, $event)"
+          />
+          <p v-if="group.description" class="tp-muted">{{ group.description }}</p>
+        </div>
+        <p v-if="abilityGroups.length" class="tp-muted">{{ t('agentTanks.configurator.upgrade_skill_hint') }}</p>
+      </template>
+    </section>
+
     <!-- 模块矩阵：首行 = 4 个类型标签，之后按选项序号逐行展开（炮塔1|火炮1|发动机1|履带1，
          下一行炮塔2|火炮2…），4 列严格对齐，避免右侧空白。 -->
-    <div class="tp-module-matrix">
+    <div v-if="!upgrades.available" class="tp-module-matrix">
       <div v-for="row in moduleRows" :key="row.key" class="tp-module-head" :data-testid="`tank-module-${row.key}`">
         <span>{{ t(`agentTanks.configurator.${row.key}`) }}</span>
       </div>

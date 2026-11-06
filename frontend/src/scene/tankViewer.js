@@ -2435,6 +2435,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
 
         const QP = new URLSearchParams(location.search);
+        // XI 升级态与模块配置一样按双方独立读取；同车也不从目标推导射手状态。
+        const upgradeOptions = (side) => ({
+            upgrade: QP.get(side === 'shooter' ? 'supgrade' : 'upgrade'),
+            abilities: QP.get(side === 'shooter' ? 'sabilities' : 'abilities'),
+        });
         // 装甲页图形开关的手动覆盖（&eqcal=0/1、&eqenh=0/1）：场景初始化即生效
         if (QP.has('eqcal')) equipmentOverride.calibrated = QP.get('eqcal') === '1';
         if (QP.has('eqenh')) equipmentOverride.enhanced = QP.get('eqenh') === '1';
@@ -2728,7 +2733,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         const reuseShooterData = shooterData && selectedShell && !shooterLoading
                             && String(currentShooterId) === String(tid);
                         return Promise.all([
-                            reuseShooterData ? Promise.resolve(shooterData) : fetchTankData(tid).catch(() => null),
+                            reuseShooterData ? Promise.resolve(shooterData) : fetchTankData(tid, upgradeOptions('shooter')).catch(() => null),
                             new Promise(function(res) {
                                 new GLTFLoader().load(shooterGlbUrl,
                                     function(g) { res(g); }, undefined, function() { res(null); });
@@ -4067,7 +4072,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // 误跑判定（评审 P2）。
             lastClickNdc = null;
             reportLoad({ state: 'loading', progress: null });   // 车辆数据（JSON）阶段：不确定进度
-            const nextTankData = await fetchTankData(tid);
+            const nextTankData = await fetchTankData(tid, upgradeOptions('target'));
             if (destroyed || gen !== targetLoadGen) return false;
             tankData = nextTankData;
             resolveArmorStateDecl(tid);   // 动态装甲声明（非动态车 → null，全链 no-op）
@@ -4213,7 +4218,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 lastClickNdc = null;
             }
             try {
-                const data = await fetchTankData(tid);
+                const data = await fetchTankData(tid, upgradeOptions('shooter'));
                 if (destroyed) return;
                 if (gen !== shooterLoadGen) return;
                 shooterData = data;
@@ -4253,7 +4258,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         ? shooterData.caliber : null;
                 }
                 if (!shells || shells.length === 0) {
-                    const data = await fetchShells(tid);
+                    const data = await fetchShells(tid, upgradeOptions('shooter'));
                     if (destroyed) return;
                     if (gen !== shooterLoadGen) return;
                     if (Array.isArray(data)) {

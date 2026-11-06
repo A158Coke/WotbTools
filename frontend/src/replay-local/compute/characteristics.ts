@@ -66,6 +66,8 @@ export interface ComputeInput {
   gunIdx: number
   engineIdx: number
   trackIdx: number
+  /** XI 数值投影前的初始发动机功率，保持既有车体转速的装车/初始功率比。 */
+  stockEnginePower?: number
   /** 火炮循环（tank/{id}.json config 的 is_drum/is_burst/burst_*；缺省=regular） */
   gunCycle?: {
     type: 'regular' | 'autoloader' | 'autoreloader'
@@ -437,7 +439,7 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
     (stockGun?.stats?.weight ?? 0) +
     (radio?.stats?.weight ?? 0) +
     (fuelTank?.stats?.weight ?? 0)
-  const stockEnginePower = stockEngine?.stats?.power ?? baseEnginePower
+  const stockEnginePower = input.stockEnginePower ?? stockEngine?.stats?.power ?? baseEnginePower
   const stockWeightRatio = stockWeightKg > 0 && weightKg > 0 ? stockWeightKg / weightKg : 1
   // 只计模块发动机（装车/初始），消耗品增压不改变车体转向（BlitzInfo：引擎增压只 +5% rotation）
   const stockPowerRatio = stockEnginePower > 0 ? baseEnginePower / stockEnginePower : 1
