@@ -29,7 +29,7 @@ const typedProduction = production.filter(file => file.path.endsWith('.ts') || /
 // 按 AST 计数：覆盖全部 any 语法，一行多处都算，注释与字符串不算。SFC 只解析 <script>。
 function escapeHatches(path: string, source: string) {
   const code = path.endsWith('.vue')
-    ? [...source.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map(match => match[1]).join('\n')
+    ? [...source.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script(?:[ \t\n\r\f/][^>]*)?>/gi)].map(match => match[1]).join('\n')
     : source
   const counts = { any: 0, asUnknownAs: 0 }
   const visit = (node: ts.Node) => {
@@ -82,6 +82,11 @@ describe('TypeScript migration baseline', () => {
     `
     expect(escapeHatches('sample.ts', source)).toEqual({ any: 6, asUnknownAs: 2 })
     expect(escapeHatches('sample.vue', '<template><a :b="c as any" /></template><script setup lang="ts">let x: any</script>'))
+      .toEqual({ any: 1, asUnknownAs: 0 })
+  })
+
+  it('does not end a Vue script block at a non-end-tag script prefix', () => {
+    expect(escapeHatches('sample.vue', '<script>const marker="</script-x>"; let x: any</script>'))
       .toEqual({ any: 1, asUnknownAs: 0 })
   })
 })

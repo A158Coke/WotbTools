@@ -8,7 +8,11 @@ import { describe, expect, it } from 'vitest'
 
 const html = readFileSync(fileURLToPath(new URL('../index.html', import.meta.url)), 'utf8')
 
-const script = (html.match(/<script\b[^>]*>([\s\S]*?)<\/script>/i) || [])[1] || ''
+function firstInlineScript(source) {
+  return (source.match(/<script\b[^>]*>([\s\S]*?)<\/script(?:[ \t\n\r\f/][^>]*)?>/i) || [])[1] || ''
+}
+
+const script = firstInlineScript(html)
 
 describe('index.html 首屏 profile/theme 派生（Theme 计划：无 FOUC）', () => {
   it('默认 :root 为 dark,且提供 html[data-theme="light"] 浅色 loader token(Classic 首屏不成黑) ', () => {
@@ -32,5 +36,10 @@ describe('index.html 首屏 profile/theme 派生（Theme 计划：无 FOUC）', 
     expect(script).toContain("localStorage.getItem('wotb-ui-profile')")
     expect(script).not.toContain("'wotb-theme'")
     expect(html).not.toMatch(/data-theme="[^"]*"\s+data-theme/)
+  })
+
+  it('不把 script 内容里的非结束标签当成结束标签', () => {
+    expect(firstInlineScript('<script>const marker="</script-x>"; ok()</script>'))
+      .toBe('const marker="</script-x>"; ok()')
   })
 })
