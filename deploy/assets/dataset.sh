@@ -19,7 +19,7 @@
 # Usage:
 #   dataset.sh link --dataset 11.21.0 --release 20261105-3f9a2c1b [--default] [--dry-run]
 #   dataset.sh default --dataset 11.21.0 [--dry-run]
-#   dataset.sh catalog [--default 11.21.0] [--dry-run]
+#   dataset.sh catalog [--default <id>] [--dry-run]   # default 从 current 推导，仅作校验
 #   dataset.sh rollback --dataset 11.21.0 --release 20261015-aaaaaaaa [--dry-run]
 #   dataset.sh unlink --dataset 11.21.0 [--dry-run]
 #   dataset.sh list
@@ -102,8 +102,13 @@ cmd_link() {
   done
   require_dataset "$dataset"
   [[ -n "$release" ]] || die "缺 --release"
+  # 工具与候选 release 内容体检都必须在改动任何在线链接之前完成：
+  # 候选是坏包时直接失败，正在服务的 dataset 不受影响（review P1）。
+  require_tool
   with_lock
   verify_release "$dataset" "$release"
+  "$PYTHON" "$TOOL" verify --pack "$RELEASES/$release" \
+    || die "候选 release 内容校验失败：$RELEASES/$release（未切换在线 dataset）"
 
   local previous
   previous="$(readlink "$DATASETS/$dataset" 2>/dev/null || true)"
@@ -113,10 +118,8 @@ cmd_link() {
   fi
   if [[ "$dry_run" == "0" ]]; then
     audit "link" "$dataset" "$release" "$previous"
-    require_tool
-    local default_args=()
-    [[ "$make_default" == "1" ]] && default_args=(--default "$dataset")
-    "$PYTHON" "$TOOL" catalog --root "$DATASETS" --out "$CATALOG" "${default_args[@]}" \
+    # catalog 的 default 从 current 推导（--default 切换已先行），不再单独传参。
+    "$PYTHON" "$TOOL" catalog --root "$DATASETS" --out "$CATALOG" \
       || die "versions.json 生成失败（dataset 已切换；请修复后重跑 catalog）"
     "$PYTHON" "$TOOL" verify --root "$DATASETS" --catalog "$CATALOG" \
       || die "发布后 verify 失败（dataset 已切换；请回滚）"
@@ -134,32 +137,44 @@ cmd_default() {
     esac
   done
   require_dataset "$dataset"
-  [[ -e "$DATASETS/$dataset" ]] || die "dataset 不存在: $DATASETS/$dataset"
+  # 持锁后再做存在性检查，避免与其它持锁发布交错出反向竞态（review P1）。
   with_lock
+  [[ -e "$DATASETS/$dataset" ]] || die "dataset 不存在: $DATASETS/$dataset"
   local previous
   previous="$(readlink "$ROOT/current" 2>/dev/null || true)"
   switch_symlink "$ROOT/current" "datasets/$dataset" "$dry_run"
   if [[ "$dry_run" == "0" ]]; then
     audit "default" "$dataset" "$(readlink "$DATASETS/$dataset")" "$previous"
-    require_tool
-    "$PYTHON" "$TOOL" catalog --root "$DATASETS" --out "$CATALOG" --default "$dataset" \
+    "$PYTHON" "$TOOL" catalog --root "$DATASETS" --out "$CATALOG" \
       || die "versions.json 生成失败（current 已切换；请修复后重跑 catalog）"
   fi
   note "default dataset=$dataset"
 }
 
 cmd_catalog() {
-  local default="" dry_run=0
+  # catalog 的 default 一律从 current 推导：versions.json.default 与 current 是
+  # 同一个事实，不允许本命令单独改写公开默认（review P2）。--default 仅作一致性
+  # 校验；与持锁发布并发时同样持锁，避免旧快照覆盖发布方刚写的 catalog。
+  local default_arg="" dry_run=0
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --default) default="$2"; shift 2 ;;
+      --default) default_arg="$2"; shift 2 ;;
       --dry-run) dry_run=1; shift ;;
       *) die "未知参数: $1" ;;
     esac
   done
   require_tool
-  local args=(catalog --root "$DATASETS" --out "$CATALOG")
-  [[ -n "$default" ]] && args+=(--default "$default")
+  with_lock
+  local current_target derived=""
+  current_target="$(readlink "$ROOT/current" 2>/dev/null || true)"
+  if [[ -n "$current_target" && "$current_target" == datasets/* ]]; then
+    derived="${current_target#datasets/}"
+  fi
+  [[ -n "$derived" ]] || die "无法从 current 推导默认 dataset（current -> ${current_target:-missing}）"
+  if [[ -n "$default_arg" && "$default_arg" != "$derived" ]]; then
+    die "catalog --default $default_arg 与 current（$derived）不一致；默认切换请走 dataset.sh default --dataset <id>"
+  fi
+  local args=(catalog --root "$DATASETS" --out "$CATALOG" --default "$derived")
   [[ "$dry_run" == "1" ]] && args+=(--dry-run)
   "$PYTHON" "$TOOL" "${args[@]}"
 }
@@ -183,11 +198,14 @@ cmd_unlink() {
   done
   require_dataset "$dataset"
   local link="$DATASETS/$dataset"
+  # 持锁后再检查 symlink 与"是否当前默认"：与持锁的 default 切换交错时，
+  # 锁前检查会放过"刚被切成默认"的目标，锁后重查才不会 rm 掉正在服务的
+  # dataset、留下悬空 current（review P1）。
+  with_lock
   [[ -L "$link" ]] || die "dataset 不存在或不是符号链接: $link"
   if [[ "$(readlink "$ROOT/current")" == "datasets/$dataset" ]]; then
     die "dataset $dataset 是当前默认（current 指向它）；先 dataset.sh default --dataset <其他> 再 unlink"
   fi
-  with_lock
   if [[ "$dry_run" == "1" ]]; then
     note "would unlink $link (-> $(readlink "$link"))"
     return

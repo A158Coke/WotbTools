@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 /**
  * 数据版本选择器的契约：
  *   - ?data=<id> 写/删与 ?assets= 完整版本基址的剥离（dataVersionUrl 纯函数）
+ *   - select 同步剥离持久化 override 里的旧 dataset 段（选 A 仍取 B 的案例）
  *   - versions.json 的加载/校验/错误状态
  *   - 选项映射（label / tank_count / preview / status）
  */
@@ -130,5 +131,24 @@ describe('useDataVersion', () => {
     expect(options.value[1].tankCount).toBe(740)
     expect(options.value[1].preview).toBe(true)
     expect(currentDataset.value.id).toBe('11.21.0-t11-preview')
+  })
+
+  it('strips a persisted versioned ?assets= override when selecting a dataset', async () => {
+    // review 复现案例：曾访问 ?assets=https://origin/v/11.21.0 会把完整版本基址
+    // 存进 wotb_asset_base；只更新 wotb_data_version 时 withDataset 走 escape
+    // hatch，选择器显示新 dataset、资产仍从旧 /v/<id> 取。select 必须同步剥掉。
+    const assign = vi.fn()
+    vi.spyOn(window.location, 'assign').mockImplementation(assign)
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => CATALOG }))
+    const mod = await load({ url: '/?data=11.21.0', fetchImpl: fetchMock })
+    localStorage.setItem('wotb_asset_base', 'https://assets.example.com/v/11.21.0')
+    await mod.loadDataVersionCatalog()
+    const { select } = mod.useDataVersion()
+    select('11.21.0-t11-preview')
+    expect(localStorage.getItem('wotb_asset_base')).toBe('https://assets.example.com')
+    expect(localStorage.getItem('wotb_data_version')).toBe('11.21.0-t11-preview')
+    const target = new URL(assign.mock.calls[0][0])
+    expect(target.searchParams.get('data')).toBe('11.21.0-t11-preview')
+    vi.restoreAllMocks()
   })
 })

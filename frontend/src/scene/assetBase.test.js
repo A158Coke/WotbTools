@@ -111,6 +111,8 @@ describe('assetBase data version', () => {
       productionDefault: `${PROD}/`,
     })
     expect(assetBase()).toBe(`${PROD}/v/11.21.0`)
+    // 显式 ?data= 与运行手册一致地持久化：下次不带查询参数仍回到该 dataset。
+    expect(localStorage.getItem('wotb_data_version')).toBe('11.21.0')
   })
 
   it('reads the persisted dataset selection when the URL has no ?data=', async () => {
@@ -136,6 +138,8 @@ describe('assetBase data version', () => {
       productionDefault: PROD,
     })
     expect(assetBase()).toBe(PROD)
+    // 显式空 ?data= 同时清除持久化选择：下次不带查询参数也不会静默回到旧 dataset。
+    expect(localStorage.getItem('wotb_data_version')).toBeNull()
   })
 
   it('strips a dataset suffix so the selector can return to origin + ?data=', async () => {

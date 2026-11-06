@@ -15,6 +15,7 @@ import { ANDROID_ASSET_BASE, isAndroidRuntime } from '../platform/runtime.js'
 
 export const DATA_VERSION_QUERY = 'data'
 export const DATA_VERSION_STORAGE = 'wotb_data_version'
+export const ASSET_BASE_STORAGE = 'wotb_asset_base'
 const DATASET_ID_RE = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/
 
 const productionDefault = (import.meta.env.VITE_ASSET_BASE_URL ?? '').replace(/\/+$/, '')
@@ -24,7 +25,17 @@ let cachedOrigin: string | null = null
 /** 显式选中的数据版本；非法/空值视为未选中。 */
 export function dataVersionId(): string | null {
   const q = searchParams().get(DATA_VERSION_QUERY)
-  if (q !== null) return DATASET_ID_RE.test(q) ? q : null
+  if (q !== null) {
+    // 显式 ?data= 与运行手册一致地持久化：非空写、空/非法清除——否则下次不带
+    // 查询参数进入时会静默回到上一次的 dataset，而不是保留本次显式选择/重置。
+    const id = DATASET_ID_RE.test(q) ? q : null
+    const store = browserStorage()
+    if (store) {
+      if (id) store.setItem(DATA_VERSION_STORAGE, id)
+      else store.removeItem(DATA_VERSION_STORAGE)
+    }
+    return id
+  }
   const stored = browserStorage()?.getItem(DATA_VERSION_STORAGE) ?? null
   return stored && DATASET_ID_RE.test(stored) ? stored : null
 }
@@ -58,15 +69,15 @@ export function assetOrigin(): string {
   if (cachedOrigin !== null) return cachedOrigin
   const q = searchParams().get('assets')
   const store = browserStorage()
-  const override = q ?? store?.getItem('wotb_asset_base') ?? null
+  const override = q ?? store?.getItem(ASSET_BASE_STORAGE) ?? null
   const origin = (override || productionDefault).replace(/\/+$/, '')
   cachedOrigin = origin
   if (q !== null && store) {
     // 只持久化真正的显式 override。`?assets=`（显式空）是"清除 override"的手段：
     // 若把回落到的生产默认写进 localStorage，后续更换生产 origin 时这些浏览器会被
     // 旧值钉住，永远取不到新的构建默认。
-    if (q) store.setItem('wotb_asset_base', origin)
-    else store.removeItem('wotb_asset_base')
+    if (q) store.setItem(ASSET_BASE_STORAGE, origin)
+    else store.removeItem(ASSET_BASE_STORAGE)
   }
   return origin
 }

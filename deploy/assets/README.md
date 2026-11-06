@@ -89,22 +89,20 @@ manual; Git tracks configuration, not the multi-GB asset pack.
 
 ## Dataset versions
 
-The origin serves one dataset per game-version channel. Current channels (2026-11-05):
+资产 origin 按**游戏版本通道**维护 dataset。当前通道（2026-11-05 起）：
 
-- `supertest` — the supertest/preview channel; re-pointed to each new preview
-  release (t11b → t11p2 → …) instead of accumulating per-preview datasets.
-- `11.21.0` — the live 11.21 release client.
-- `11.22` — reserved; added when the live 11.22 pack ships (three channels
-  total: supertest / 11.21 / 11.22).
+- `supertest`（超测服）——超测预览通道，随预览轮次**整体重指**到最新预览
+  release（t11b → t11p2 → …），不按预览轮次堆 dataset。
+- `11.21.0`——11.21 现役客户端。
+- `11.22`——预留；11.22 正式服包发布时加入（终态三通道：超测服 / 11.21 / 11.22）。
 
-`datasets/<id>` is a symlink to an immutable release; `current` points at the
-default dataset so legacy clients keep working.
+`datasets/<id>` 是指向不可变 release 的符号链接；`current` 指向默认 dataset，
+旧客户端兼容入口不受影响。
 
-**Deployment state (2026-11-05):** the host already contains the object store and
-datasets, but the live Caddy Stack still runs the pre-dataset Caddyfile;
-`/versions.json` and `/v/<id>/...` return `404` until this file is deployed through the
-normal `asset-origin` → Komodo Stack redeploy. `/` and `/version.json` keep serving the
-default dataset meanwhile.
+**部署状态（2026-11-05）**：主机侧对象库与 dataset 已就位，但线上 Caddy Stack 仍在
+跑 dataset 化之前的 Caddyfile；在本文件经正常 `asset-origin` → Komodo Stack
+redeploy 之前，`/versions.json` 与 `/v/<id>/...` 返回 `404`。期间 `/` 与
+`/version.json` 持续服务默认 dataset。
 
 Public paths:
 
@@ -115,8 +113,8 @@ Public paths:
 | `/v/<dataset-id>/version.json` | immutable release identity |
 | `/...` | legacy root = `current` (default dataset) |
 
-Publish a new game version (release directory already staged under `releases/<id>`
-with `version.json`/`manifest.json`):
+发布新游戏版本（release 目录已按 `version.json`/`manifest.json` 备好在
+`releases/<id>` 下）：
 
 ```bash
 # on the Alibaba host
@@ -126,20 +124,20 @@ bash deploy/assets/dataset.sh verify
 bash deploy/assets/verify.sh https://assets.wotbtools.com
 ```
 
-Rebuild the same game version (new release, same dataset id):
+同一游戏版本重建（新 release、dataset id 不变）：
 
 ```bash
 bash deploy/assets/dataset.sh link --dataset 11.21.0 --release 20261105-aaaaaaaa
 ```
 
-Rollback is the same atomic symlink switch; the catalog records the older release:
+回滚 = 同样的原子符号链接切换；catalog 记录旧 release：
 
 ```bash
 bash deploy/assets/dataset.sh rollback --dataset 11.21.0 --release 20261015-bbbbbbbb
 ```
 
-Retire a dataset channel (symlink only; the release directory stays for rollback;
-fails closed if the dataset is the current default):
+下线一个 dataset 通道（只删符号链接；release 目录保留回滚；若该 dataset 是当前
+默认则 fail-closed，先 `default` 切走）：
 
 ```bash
 bash deploy/assets/dataset.sh unlink --dataset 11.21.0-t11-preview

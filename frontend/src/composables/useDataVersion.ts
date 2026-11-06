@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue'
 import {
+  ASSET_BASE_STORAGE,
   DATA_VERSION_QUERY,
   DATA_VERSION_STORAGE,
   assetOrigin,
@@ -162,6 +163,15 @@ export function useDataVersion() {
     const value = id && DATASET_ID_RE.test(id) ? id : ''
     if (value) localStorage.setItem(DATA_VERSION_STORAGE, value)
     else localStorage.removeItem(DATA_VERSION_STORAGE)
+    // 持久化的 ?assets= override 若还带着旧 dataset 段（如曾访问
+    // ?assets=https://origin/v/11.21.0），必须同步剥掉：否则重载后 withDataset
+    // 走 escape hatch 原样使用旧 /v/<id>，选择器显示新 dataset、资产却仍从旧
+    // dataset 取（review 复现案例）。URL 上的 assets 参数由 dataVersionUrl 剥。
+    const storedBase = localStorage.getItem(ASSET_BASE_STORAGE)
+    if (storedBase) {
+      const stripped = stripDatasetSuffix(storedBase)
+      if (stripped !== storedBase) localStorage.setItem(ASSET_BASE_STORAGE, stripped)
+    }
     location.assign(dataVersionUrl(location.href, value))
   }
 
