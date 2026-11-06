@@ -29,13 +29,25 @@ export const ArmorSection = Object.freeze({
   GUN_BARREL: 'gunBarrel',
 })
 
-/** 弹种解析（tanks.pb 原始串：hc 与 hc_premium=HEAT、ap_cr 系=APCR、ap_premium=AP、he_premium=HE） */
+/**
+ * 弹种 icon 词表（唯一事实源）：`type`/`shell_type` 显示令牌 → 判定弹种
+ * （tanks.pb 原始串：hc 与 hc_premium=HEAT、ap_cr 系=APCR、ap_premium=AP、he_premium=HE）。
+ * `parseShellType`（判定链，未知兜底 'he'）与 `viewer/armorPlateModel.shellTypeOf`
+ * （查看器，未知返回 null fail-closed）共用本表；新增 token 只改这里。
+ */
+export const SHELL_TOKEN_KIND = Object.freeze({
+  ap: 'ap', ap_premium: 'ap',
+  apcr: 'apcr', ap_cr: 'apcr', ap_cr_premium: 'apcr',
+  he: 'he', he_premium: 'he', hesh: 'he', hesh_premium: 'he',
+  heat: 'heat', hc: 'heat', hc_premium: 'heat', atgm_heat: 'heat',
+})
+
 /**
  * 弹种解析：**field9 枚举优先**（权威，0=AP/1=APCR/2=HEAT/3=HE），其次 icon 串词表。
  *
  * field9 来自上游 tank 数据的 `type_id`（客户端 `<kind>` 语义枚举的翻译，4 值闭集）；
- * `type`/`shell_type` 是 field7 的 icon 显示令牌，词表是手工归纳的、客户端可自由新增
- * 变体（`atgm_heat` 就是曾经漏掉的一个）。有 id 就绝不看词表。
+ * `type`/`shell_type` 是 field7 的 icon 显示令牌，词表（SHELL_TOKEN_KIND）是手工归纳的、
+ * 客户端可自由新增变体（`atgm_heat` 就是曾经漏掉的一个）。有 id 就绝不看词表。
  * 未知串仍兜底 `'he'`——这是最后手段，不是判定依据。
  */
 export function parseShellType(s, id) {
@@ -45,12 +57,7 @@ export function parseShellType(s, id) {
     if (id === 2) return 'heat'
     if (id === 3) return 'he'
   }
-  const t = String(s || '').toLowerCase()
-  if (t === 'ap' || t === 'ap_premium') return 'ap'
-  if (t === 'apcr' || t === 'ap_cr' || t === 'ap_cr_premium') return 'apcr'
-  if (t === 'he' || t === 'he_premium' || t === 'hesh' || t === 'hesh_premium') return 'he'
-  if (t === 'heat' || t === 'hc' || t === 'hc_premium' || t === 'atgm_heat') return 'heat'
-  return 'he'
+  return SHELL_TOKEN_KIND[String(s || '').toLowerCase()] || 'he'
 }
 
 const isKinetic = (shell) => shell === 'ap' || shell === 'apcr'
@@ -379,10 +386,9 @@ export function calculate(req) {
   const view = normalize(req.view_dir)
 
   // —— 收集阶段（对齐 blitzkit noDuplicateIntersections）：确定性判定与概率链
-  // 都停在首个 Primary（含）。概率链的差异只在判定循环：即使某层未穿透，
-  // 也继续评估后面直到首个 Primary 的层，而不是复用确定性截断结果。
+  // **共享同一份命中链**——收集结果与后续评估无关（都停在首个 Primary 含；差异只在
+  // 判定循环本身：概率链对未穿透层继续评估，见 buildProbabilityLayers）。
   const filteredHits = collectFilteredHits(req.hits)
-  const probabilityHits = collectFilteredHits(req.hits)
   // blitzkit：出射射线（allowRicochet=false）未命中任何 Primary → null；这里以空结果 "-" 表达。
   const allowRicochet = req.allow_ricochet !== false
   if (!allowRicochet && filteredHits.every((h) => !isPrimary(h.section))) {
@@ -512,8 +518,8 @@ export function calculate(req) {
   }
 
   // 概率链必须在确定性循环之外重建：上面的 layers 会在首个未穿透层提前 break，
-  // 而概率模型要看到到首个 Primary 的完整路径。
-  const probabilityLayers = buildProbabilityLayers(probabilityHits, {
+  // 而概率模型要看到到首个 Primary 的完整路径（命中链与确定性判定同一份）。
+  const probabilityLayers = buildProbabilityLayers(filteredHits, {
     view,
     caliber,
     thicknessCoeff,

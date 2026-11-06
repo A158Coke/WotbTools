@@ -1,7 +1,8 @@
 // 击穿判定移植测试：上游 src/wargaming/penetration.rs 单测逐例对齐。
 // 上游 Rust 判定语义变更时，本文件与 penetration.js 同版本跟随——两仓不变量保持同源。
 import { describe, it, expect } from 'vitest'
-import { calculate, isPrimary, ArmorSection, hasPrimaryLayer, matchHitsByOccurrence } from './penetration.js'
+import { calculate, isPrimary, ArmorSection, hasPrimaryLayer, matchHitsByOccurrence, parseShellType, SHELL_TOKEN_KIND } from './penetration.js'
+import { shellTypeOf } from './viewer/armorPlateModel.ts'
 import { penetrationChance, resolveCardChance, evaluateProbabilityChain } from './armorInspectorChance.ts'
 
 function hit(section, thickness, point, extra = {}) {
@@ -885,5 +886,37 @@ describe('HE「击穿」权威口径（白色遮罩与点击卡片同源）', ()
     expect(chance(100, 96)).toBeLessThan(1)
     expect(chance(100, 104)).toBeGreaterThan(0)
     expect(chance(100, 105)).toBe(0)
+  })
+})
+
+// —— 弹种词表 SSOT（2026-11-06）：parseShellType ↔ shellTypeOf 共用 SHELL_TOKEN_KIND ——
+// 两处解析器的已知 token 必须逐条一致；未知 token 的默认值差异是契约（判定链兜底
+// 'he' = 上游行为，查看器 fail-closed null），分别锁定。
+describe('弹种词表 SSOT（判定链 ↔ 查看器）', () => {
+  it('词表内每个 token 两个解析器口径一致', () => {
+    const tokens = Object.keys(SHELL_TOKEN_KIND)
+    expect(tokens.length).toBeGreaterThan(0)
+    for (const token of tokens) {
+      const kind = SHELL_TOKEN_KIND[token]
+      expect(parseShellType(token)).toBe(kind)
+      expect(shellTypeOf({ type: token })).toBe(kind)
+      // 大小写不敏感（两处都 lower-case 后查表）
+      expect(parseShellType(token.toUpperCase())).toBe(kind)
+      expect(shellTypeOf({ type: token.toUpperCase() })).toBe(kind)
+    }
+  })
+
+  it('type_id 枚举优先于词表（两处一致）', () => {
+    const byId = [[0, 'ap'], [1, 'apcr'], [2, 'heat'], [3, 'he']]
+    for (const [id, kind] of byId) {
+      expect(parseShellType('he', id)).toBe(kind)
+      expect(shellTypeOf({ type: 'he', type_id: id })).toBe(kind)
+    }
+  })
+
+  it('未知 token：判定链保持上游 he 兜底；查看器 fail-closed null', () => {
+    expect(parseShellType('unknown_kind')).toBe('he')
+    expect(shellTypeOf({ type: 'unknown_kind' })).toBe(null)
+    expect(shellTypeOf(null)).toBe(null)
   })
 })

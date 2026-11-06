@@ -567,9 +567,11 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(kernel).toMatch(/heFirstPrimary && hasProbabilityChain\s*\n\s*&& hasPrimaryLayer\(res\.probability_layers\)/)
     expect(kernel).toMatch(/heFirstPrimary && hePenChance > 0/)
     // 概率链与确定性链同一收集边界：停在首个 Primary（含），不把其后的车体/履带算进去。
-    expect(pen).toMatch(/const probabilityHits = collectFilteredHits\(req\.hits\)/)
+    // 两条链共用同一份 collectFilteredHits 结果（同一纯函数重复调用已合并）。
+    expect(pen).toMatch(/const filteredHits = collectFilteredHits\(req\.hits\)/)
+    expect((pen.match(/collectFilteredHits\(req\.hits\)/g) || []).length).toBe(1)
     expect(pen).not.toMatch(/collectFilteredHits\(req\.hits, false\)/)
-    expect(pen).toMatch(/buildProbabilityLayers\(probabilityHits, \{/)
+    expect(pen).toMatch(/buildProbabilityLayers\(filteredHits, \{/)
   })
   it('HE 零/缺失 explosion_radius 不进入 generic probability card', () => {
     // 计算层已 fail-closed（BLOCKED / 0 damage / res.he=null）；UI 的概率卡还必须

@@ -4,6 +4,7 @@
 import * as THREE from 'three'
 import type { Material, Mesh, Object3D, Plane, Side, Vector3 } from 'three'
 import { assignSpacedStencilBits, isClosedSurfaceGeometry, spacedDedupKey, SPACED_STENCIL_BIT_LIMIT } from '../armorMeshTopology.js'
+import { SHELL_TOKEN_KIND } from '../penetration.js'
 
 /** tank/{id}.json 顶级装甲摘要中本模块消费的字段（数据面由 assetProvider 提供）。 */
 export interface TankArmorData {
@@ -309,7 +310,9 @@ export function selectExternalMeshes(moduleMeshes: readonly Mesh[], activeGun: n
 }
 
 /** 弹种归类：type_id（field9 枚举，0=AP/1=APCR/2=HEAT/3=HE）优先，缺 id 才回退 icon 串词表。
- *  未知弹种 fail-closed 返回 null，不交给穿透判定的「未知 → HE」兜底。 */
+ *  未知弹种 fail-closed 返回 null，不交给穿透判定的「未知 → HE」兜底。
+ *  词表与判定链共用 `penetration.js` 的 `SHELL_TOKEN_KIND`（未知 token 的默认值差异是
+ *  两条链的契约：判定链兜底 'he'、查看器 fail-closed null）。 */
 export type ShellKind = 'ap' | 'apcr' | 'heat' | 'he'
 
 export function shellTypeOf(sh: { type_id?: unknown; type?: unknown } | null | undefined): ShellKind | null {
@@ -321,11 +324,7 @@ export function shellTypeOf(sh: { type_id?: unknown; type?: unknown } | null | u
     if (id === 3) return 'he'
   }
   const t = (((sh && sh.type) as string | null | undefined) || '').toLowerCase()
-  if (t === 'hc' || t === 'hc_premium' || t === 'heat' || t === 'atgm_heat') return 'heat'
-  if (t === 'ap_cr' || t === 'ap_cr_premium' || t === 'apcr') return 'apcr'
-  if (t === 'he' || t === 'he_premium' || t === 'hesh' || t === 'hesh_premium') return 'he'
-  if (t === 'ap' || t === 'ap_premium') return 'ap'
-  return null
+  return (SHELL_TOKEN_KIND as Record<string, ShellKind>)[t] || null
 }
 
 /** 校准弹穿深系数；未知弹种没有可用口径，不猜 1.07。 */
