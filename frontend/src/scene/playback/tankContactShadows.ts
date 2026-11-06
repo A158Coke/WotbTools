@@ -1,5 +1,5 @@
-// 坦克接地软阴影（blob / contact shadow）：每车一片贴地渐变网格，按场景现有 sunLight
-// 的传播方向做有界偏移与拉伸。不是实时 Shadow Map——地形/场景材质不接收阴影，
+// 坦克接地软阴影（blob / contact shadow）：每车一片贴地渐变网格，不透明内核恰好是车体，
+// 按场景现有 sunLight 的传播方向只加长背光一侧的渐隐尾（有界）。不是实时 Shadow Map——地形/场景材质不接收阴影，
 // 也不改光照：太阳方向只读 sunLight → target 的世界位置（mapLighting.ts 是唯一写入方）。
 // 生命周期由宿主（playbackScene）持有：仅在用户开启且画质门禁通过时创建，会话 teardown 时 dispose；
 // 关闭时本模块从不实例化（零资源、零绘制）。
@@ -12,17 +12,15 @@ export interface ShadowFootprint {
   halfL: number
 }
 
-/** 太阳对单车阴影的有界作用：沿传播方向的水平偏移与拉伸。 */
+/** 太阳对单车阴影的有界作用：沿传播方向加长背光侧渐隐尾。 */
 export interface SunShadow {
-  /** 太阳不可用（非有限 / 零向量 / 不朝向地面 / 正上方）→ 居中阴影 */
+  /** 太阳不可用（非有限 / 零向量 / 不朝向地面 / 正上方）→ 四周等宽的居中阴影 */
   centered: boolean
   /** 水平传播方向（单位向量；centered 时为 0） */
   dirX: number
   dirZ: number
-  /** 中心沿 dir 的偏移，单位 = halfL 的倍数 */
-  offsetFactor: number
-  /** 沿 dir 的拉伸倍数（≥1） */
-  stretch: number
+  /** 背光侧额外渐隐尾长，单位 = halfW 的倍数（与车体大小关联、有上限） */
+  tailFactor: number
 }
 
 interface Vec3Like { x: number, y: number, z: number }
@@ -30,15 +28,14 @@ interface Vec3Like { x: number, y: number, z: number }
 /** 代理车履带盒 3.6 × 6.5 m（playbackScene.buildVehicles）：GLB 尺寸不可得时的回落。 */
 export const PROXY_FOOTPRINT: Readonly<ShadowFootprint> = Object.freeze({ halfW: 1.8, halfL: 3.25 })
 
-// 视觉常量（用户真实 GPU 验收前的初值）：偏移/拉伸都与车长成比例且有硬上限，
-// 日落（太阳贴地平线）时不会无限延长。
-const K_OFFSET = 0.35
-const MAX_OFFSET = 0.6
-const K_STRETCH = 0.4
-const MAX_STRETCH = 0.6
+// 视觉常量：尾长 ∝ tan(天顶角)，硬上限 = 0.9 × halfW（约 1.4–1.6 m）。
+// 36 张图的太阳仰角 21°–66°（中位 ~35°）——曾把偏移/拉伸作用在不透明内核上，
+// 多数图直接打满上限，车后拖出一块 3–4 m 的实心暗板；内核现在恒等于车体。
+const K_TAIL = 0.4
+const MAX_TAIL = 0.9
 /** 传播方向 y 分量至少这么"朝下"才算照向地面（约 3° 仰角以上） */
 const MIN_DOWN = 0.05
-const CENTERED: Readonly<SunShadow> = Object.freeze({ centered: true, dirX: 0, dirZ: 0, offsetFactor: 0, stretch: 1 })
+const CENTERED: Readonly<SunShadow> = Object.freeze({ centered: true, dirX: 0, dirZ: 0, tailFactor: 0 })
 
 /**
  * 由光源与 target 的世界位置求阴影作用。传播方向 = target − light（太阳 → 地面），
@@ -58,8 +55,7 @@ export function sunShadowFrom(light: Vec3Like, target: Vec3Like): SunShadow {
     centered: false,
     dirX: ux / h,
     dirZ: uz / h,
-    offsetFactor: Math.min(K_OFFSET * ratio, MAX_OFFSET),
-    stretch: 1 + Math.min(K_STRETCH * ratio, MAX_STRETCH),
+    tailFactor: Math.min(K_TAIL * ratio, MAX_TAIL),
   }
 }
 
@@ -117,11 +113,12 @@ export function shadowMargin(fp: ShadowFootprint): number {
 
 /**
  * 九宫格轴映射：网格线 t ∈ {-1, -0.5, 0, 0.5, 1}（对应 uv 0/0.25/0.5/0.75/1），
- * |t| ≤ 0.5 线性铺满车体半宽 h，|t| > 0.5 铺车体外的渐隐带 m。
+ * |t| ≤ 0.5 线性铺满车体半宽 h，|t| > 0.5 铺车体外的渐隐带（负侧 mNeg、正侧 mPos）。
  * 内线恰好压在车体边缘 ⇒ 贴图的不透明内核覆盖车体、渐隐只发生在车外。
  */
-function axisOffset(t: number, h: number, m: number): number {
+function axisOffset(t: number, h: number, mNeg: number, mPos: number): number {
   const a = Math.abs(t)
+  const m = t < 0 ? mNeg : mPos
   const d = a <= 0.5 ? a * 2 * h : h + (a - 0.5) * 2 * m
   return t < 0 ? -d : d
 }
@@ -137,27 +134,26 @@ export function shadowAlpha(x: number, y: number): number {
 }
 
 /**
- * 网格顶点（世界 XZ）。纯函数：基础矩形按车体 yaw 旋转（three rotation.y 口径），
- * 太阳拉伸/偏移在世界系施加——车辆转向时阴影仍落在太阳另一侧。
+ * 网格顶点（世界 XZ）。纯函数：基础矩形按车体 yaw 旋转（three rotation.y 口径：
+ * 世界 = (lx·c + lz·s, −lx·s + lz·c)）。太阳传播方向先转进车体系，背光侧两条边的
+ * 渐隐带各加长 tail × 该轴分量——尾巴总长 = tail、恒指向传播方向，车辆转向时不跟着转。
  */
 export function shadowGridXZ(x: number, z: number, yaw: number, fp: ShadowFootprint, sun: SunShadow, out: Float32Array): Float32Array {
   const c = Math.cos(yaw), s = Math.sin(yaw)
   const m = shadowMargin(fp)
-  const off = sun.offsetFactor * fp.halfL
-  const k = sun.stretch - 1
+  const tail = sun.tailFactor * fp.halfW
+  const ldx = c * sun.dirX - s * sun.dirZ   // 传播方向的车体系分量（旋转矩阵转置）
+  const ldz = s * sun.dirX + c * sun.dirZ
+  const mxNeg = m + tail * Math.max(-ldx, 0), mxPos = m + tail * Math.max(ldx, 0)
+  const mzNeg = m + tail * Math.max(-ldz, 0), mzPos = m + tail * Math.max(ldz, 0)
   let i = 0
   for (let r = 0; r < GRID; r++) {
     const v = (r / (GRID - 1)) * 2 - 1
     for (let q = 0; q < GRID; q++) {
       const u = (q / (GRID - 1)) * 2 - 1
-      const lx = axisOffset(u, fp.halfW, m), lz = axisOffset(v, fp.halfL, m)
-      let px = lx * c + lz * s
-      let pz = -lx * s + lz * c
-      const along = px * sun.dirX + pz * sun.dirZ
-      px += sun.dirX * (along * k + off)
-      pz += sun.dirZ * (along * k + off)
-      out[i++] = x + px
-      out[i++] = z + pz
+      const lx = axisOffset(u, fp.halfW, mxNeg, mxPos), lz = axisOffset(v, fp.halfL, mzNeg, mzPos)
+      out[i++] = x + lx * c + lz * s
+      out[i++] = z - lx * s + lz * c
     }
   }
   return out

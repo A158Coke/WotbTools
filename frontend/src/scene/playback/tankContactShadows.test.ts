@@ -8,12 +8,17 @@ import {
 const O = { x: 0, y: 0, z: 0 }
 const at = (x: number, y: number, z: number) => ({ x, y, z })
 
-/** 阴影中心 = 网格中点（GRID 奇数） */
+/** 阴影外框中心（网格顶点包围盒中心）：背光侧尾巴把它推向传播方向 */
 function center(x: number, z: number, yaw: number, sun = sunShadowFrom(at(0, 100, 0), O), fp = PROXY_FOOTPRINT) {
   const out = shadowGridXZ(x, z, yaw, fp, sun, new Float32Array(GRID * GRID * 2))
-  const mid = ((GRID * GRID) - 1) / 2
-  return { cx: out[mid * 2], cz: out[mid * 2 + 1], out }
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity
+  for (let i = 0; i < out.length; i += 2) {
+    x0 = Math.min(x0, out[i]); x1 = Math.max(x1, out[i]); z0 = Math.min(z0, out[i + 1]); z1 = Math.max(z1, out[i + 1])
+  }
+  return { cx: (x0 + x1) / 2, cz: (z0 + z1) / 2, out }
 }
+/** 内核（车体）四角：网格线 1 与 3 的交点 */
+const CORE = [GRID + 1, GRID + 3, 3 * GRID + 1, 3 * GRID + 3]
 
 describe('sunShadowFrom：传播方向 = target − light', () => {
   it('正上方的太阳：居中', () => {
@@ -25,12 +30,12 @@ describe('sunShadowFrom：传播方向 = target − light', () => {
     ['光从 +X 射向 −X（右→左）', at(500, 1000, 0), [-1, 0]],
     ['光从 −Z 射向 +Z', at(0, 1000, -500), [0, 1]],
     ['光从 +Z 射向 −Z', at(0, 1000, 500), [0, -1]],
-  ])('%s：阴影落在传播方向一侧（不取反）', (_name, light, [ex, ez]) => {
+  ])('%s：尾巴落在传播方向一侧（不取反）', (_name, light, [ex, ez]) => {
     const s = sunShadowFrom(light, O)
     expect(s.centered).toBe(false)
     expect(s.dirX).toBeCloseTo(ex, 6)
     expect(s.dirZ).toBeCloseTo(ez, 6)
-    expect(s.offsetFactor).toBeGreaterThan(0)
+    expect(s.tailFactor).toBeGreaterThan(0)
     const { cx, cz } = center(0, 0, 0, s)
     expect(Math.sign(Math.round(cx * 1e6))).toBe(Math.sign(ex))
     expect(Math.sign(Math.round(cz * 1e6))).toBe(Math.sign(ez))
@@ -40,17 +45,15 @@ describe('sunShadowFrom：传播方向 = target − light', () => {
     const a = sunShadowFrom(at(-500, 1000, 0), O)
     const b = sunShadowFrom(at(-400, 1000, 300), at(100, 0, 300))
     expect(b.dirX).toBeCloseTo(a.dirX, 9)
-    expect(b.offsetFactor).toBeCloseTo(a.offsetFactor, 9)
+    expect(b.tailFactor).toBeCloseTo(a.tailFactor, 9)
   })
 
-  it('太阳越低偏移/拉伸越大，但有硬上限', () => {
+  it('太阳越低尾巴越长，但有硬上限', () => {
     const high = sunShadowFrom(at(-100, 1000, 0), O)
-    const low = sunShadowFrom(at(-1000, 200, 0), O)
+    const low = sunShadowFrom(at(-1000, 1000, 0), O)
     const grazing = sunShadowFrom(at(-1000, 60, 0), O)
-    expect(low.offsetFactor).toBeGreaterThan(high.offsetFactor)
-    expect(low.stretch).toBeGreaterThan(high.stretch)
-    expect(grazing.offsetFactor).toBeLessThanOrEqual(0.6)
-    expect(grazing.stretch).toBeLessThanOrEqual(1.6)
+    expect(low.tailFactor).toBeGreaterThan(high.tailFactor)
+    expect(grazing.tailFactor).toBe(0.9)
   })
 
   it.each([
@@ -61,7 +64,7 @@ describe('sunShadowFrom：传播方向 = target − light', () => {
     ['Infinity', at(Number.POSITIVE_INFINITY, 1000, 0)],
   ])('%s → 居中回退（无 NaN）', (_name, light) => {
     const s = sunShadowFrom(light, O)
-    expect(s).toEqual({ centered: true, dirX: 0, dirZ: 0, offsetFactor: 0, stretch: 1 })
+    expect(s).toEqual({ centered: true, dirX: 0, dirZ: 0, tailFactor: 0 })
     expect([...center(3, 4, 1, s).out].every(Number.isFinite)).toBe(true)
   })
 
@@ -73,13 +76,40 @@ describe('sunShadowFrom：传播方向 = target − light', () => {
   })
 })
 
-describe('shadowGridXZ：车体朝向与太阳偏移分离', () => {
-  it('转向不改变太阳偏移方向（偏移在世界系施加）', () => {
+describe('shadowGridXZ：不透明内核恒等于车体，太阳只加长背光侧渐隐尾', () => {
+  const grazing = sunShadowFrom(at(-1000, 60, -700), O)   // 低太阳、斜向：尾巴打满上限
+
+  it('任何太阳 / 朝向下，内核四角都恰好是车体四角（不再有被平移/拉伸的实心暗板）', () => {
+    const fp = { halfW: 1.6, halfL: 3.4 }
+    for (const yaw of [0, 0.7, Math.PI / 2, 2.5, -1.2]) {
+      const out = shadowGridXZ(10, 20, yaw, fp, grazing, new Float32Array(GRID * GRID * 2))
+      const c = Math.cos(yaw), s = Math.sin(yaw)
+      const want = [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sz]) => {
+        const lx = sx * fp.halfW, lz = sz * fp.halfL
+        return [10 + lx * c + lz * s, 20 - lx * s + lz * c]
+      })
+      CORE.forEach((k, n) => {
+        expect(out[k * 2]).toBeCloseTo(want[n][0], 4)        // Float32 输出
+        expect(out[k * 2 + 1]).toBeCloseTo(want[n][1], 4)
+      })
+    }
+  })
+
+  it('尾巴总长 = tailFactor × halfW，沿传播方向；背光对侧只剩基础 margin', () => {
+    const fp = { halfW: 1.6, halfL: 3.4 }
+    const sun = sunShadowFrom(at(-1000, 60, 0), O)   // 传播 +X
+    const out = shadowGridXZ(0, 0, 0, fp, sun, new Float32Array(GRID * GRID * 2))
+    const m = shadowMargin(fp)
+    expect(out[4 * 2]).toBeCloseTo(fp.halfW + m + sun.tailFactor * fp.halfW, 6)   // +X 外线
+    expect(out[0]).toBeCloseTo(-(fp.halfW + m), 6)                                 // −X 外线
+    expect(out[(4 * GRID) * 2 + 1]).toBeCloseTo(fp.halfL + m, 6)                   // ±Z 不受影响
+  })
+
+  it('转向不改变尾巴方向（方向在世界系，按车体系分解到两轴）', () => {
     const s = sunShadowFrom(at(-500, 1000, 0), O)
     for (const yaw of [0, 0.7, Math.PI / 2, 2.5, -1.2]) {
-      const { cx, cz } = center(10, 20, yaw, s)
+      const { cx } = center(10, 20, yaw, s)
       expect(cx).toBeGreaterThan(10)
-      expect(cz).toBeCloseTo(20, 5)
     }
   })
 
@@ -166,6 +196,14 @@ describe('measureShadowFootprint（GLB 模型系 Z-up：X = 车宽、Y = 车长�
   })
 })
 
+/** 阴影网格 X 范围的中点（太阳尾巴把它推向传播方向） */
+function meshCenterX(mesh: THREE.Mesh): number {
+  const a = mesh.geometry.getAttribute('position').array
+  let lo = Infinity, hi = -Infinity
+  for (let i = 0; i < a.length; i += 3) { lo = Math.min(lo, a[i]); hi = Math.max(hi, a[i]) }
+  return (lo + hi) / 2
+}
+
 function harness(heightAt: (x: number, z: number) => number | null = () => 5) {
   const scene = new THREE.Scene()
   const sunLight = new THREE.DirectionalLight()
@@ -224,11 +262,10 @@ describe('createTankContactShadows', () => {
     expect(h.sampler).toHaveBeenCalledTimes(GRID * GRID)
     h.shadows.update(v, 50, 60, 0, true)
     expect(h.sampler).toHaveBeenCalledTimes(2 * GRID * GRID)
-    const arr = h.meshes()[0].geometry.getAttribute('position').array
-    expect(arr[((GRID * GRID - 1) / 2) * 3]).toBeGreaterThan(50)   // 太阳自 −X：中心落在 +X 侧
+    expect(meshCenterX(h.meshes()[0])).toBeGreaterThan(50)   // 太阳自 −X：尾巴落在 +X 侧
   })
 
-  it('不可见 → 隐藏；太阳改变 → 偏移方向随之改变', () => {
+  it('不可见 → 隐藏；太阳改变 → 尾巴方向随之改变', () => {
     const h = harness()
     const v = {}
     h.shadows.update(v, 0, 0, 0, true)
@@ -237,8 +274,7 @@ describe('createTankContactShadows', () => {
     h.sunLight.position.set(500, 1000, 0)
     h.shadows.syncSun()
     h.shadows.update(v, 0, 0, 0, true)
-    const arr = h.meshes()[0].geometry.getAttribute('position').array
-    expect(arr[((GRID * GRID - 1) / 2) * 3]).toBeLessThan(0)
+    expect(meshCenterX(h.meshes()[0])).toBeLessThan(0)
   })
 
   it('实测尺寸影响阴影大小', () => {
