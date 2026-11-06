@@ -152,7 +152,7 @@ export function mirrorShotData(s) {
     
 }
 
-export function initTankViewer({ labels = {}, onLoadState = null, onTankList = null, onTankSelection = null, onConfigSelection = null, onShellSelection = null, onEquipmentSelection = null, initialTankId = null, initialShooterId = null, pitchDeviceBonus = null, pitchDeviceAvailable: initialPitchDeviceAvailable = false } = {}) {
+export function initTankViewer({ labels = {}, onLoadState = null, onTankList = null, onTankSelection = null, onConfigSelection = null, onShellSelection = null, onEquipmentSelection = null, onDistanceChange = null, initialTankId = null, initialShooterId = null, pitchDeviceBonus = null, pitchDeviceAvailable: initialPitchDeviceAvailable = false } = {}) {
         // 穿透材质族的**每实例**运行态（分辨率/跳弹 uniforms/占位纹理 + 绑定它们的材质工厂）。
         // 不能是模块单例：两个 viewer 生命周期重叠时，A 的更新/重建/清理会直接改到 B 的 uniforms
         //（评审 P1）。解构命名与拆分前一致，消费点零改动。
@@ -1390,6 +1390,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     view: {
                         fov: camera.fov,
                         near: camera.near,
+                        position: camera.position.toArray(),
+                        target: controls.target.toArray(),
                         worldOverview: worldOverviewMode,
                         cameraDistance: camera.position.distanceTo(controls.target),
                     },
@@ -2459,6 +2461,39 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         /** shell 的权威 owner 是 URL：换目标/重载后按当前 location 恢复，不能用初始化时的 QP 快照。 */
         function requestedShellIndex() {
             return parseInt(new URLSearchParams(location.search).get('shell'), 10);
+        }
+        // 场景独占距离；Vue 只接收按显示精度去重的快照。回放长度不能被相机缩放覆盖。
+        let lastReportedDistance = undefined;
+        function reportDistance() {
+            const recorded = QP.has('shot');
+            const shot = window.__shotCtx?.shot;
+            const raw = recorded
+                ? (shot ? shotBallisticLength(shot) * (worldMetersPerUnit || 1) : NaN)
+                : camera.position.distanceTo(controls.target) * (worldMetersPerUnit || 1);
+            const distance = tankModel && armorModel && !contextLost && Number.isFinite(raw) && raw > 0
+                ? Math.round(raw) : null;
+            if (distance === lastReportedDistance) return;
+            lastReportedDistance = distance;
+            onDistanceChange?.(distance == null ? null : {
+                distance, min: controls.minDistance, max: controls.maxDistance, readOnly: recorded,
+            });
+        }
+        function setDistance(value) {
+            if (destroyed || contextLost || !tankModel || !armorModel || QP.has('shot')
+                || typeof value !== 'number' || !Number.isFinite(value)) return false;
+            // 清掉已有滚轮/轨道惯性后，沿原观察方向设置距离，保持中心与角度。
+            const damping = controls.enableDamping;
+            controls.enableDamping = false;
+            controls.update();
+            const offset = camera.position.clone().sub(controls.target);
+            if (offset.lengthSq() === 0) { controls.enableDamping = damping; return false; }
+            const distance = THREE.MathUtils.clamp(value, controls.minDistance, controls.maxDistance);
+            camera.position.copy(controls.target).add(offset.setLength(distance / (worldMetersPerUnit || 1)));
+            controls.update();
+            controls.enableDamping = damping;
+            applyLongRangeCompensation(!worldOverviewMode);
+            reportDistance();
+            return true;
         }
         function setCameraPreset(kind) {
             if (destroyed || contextLost || !tankModel || !armorModel || QP.get('shot')) return false;
@@ -6022,6 +6057,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // shot replay：旧 30m/50° dolly-zoom；world 总览传 false → 原生 50°。
             applyLongRangeCompensation(!worldOverviewMode);
             trackCameraMotion();
+            reportDistance();
             // 击穿视图全管线；默认视图下 HE 渐变叠加层（机械已建且爆点在）复用同一管线。
             if ((penetrationMode || (!!primaryArmorScene && heGradientWanted())) && armorModel) {
                 if (SESS && heatFrames < 5) {
@@ -6137,7 +6173,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         return {
             destroy, retry, selectTank, canPick, isContextLost,
             setConfig: applyConfig, setConfigUiVisible, setShellUiVisible,
-            setCameraPreset,
+            setCameraPreset, setDistance,
             setShell, setShooterConfig, setEquipmentOverride, setPitchDeviceBonus, setPitchDeviceAvailable,
         };
     }
