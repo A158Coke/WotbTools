@@ -114,6 +114,7 @@ const editorsReady = computed(() => shooterReady.value && targetReady.value)
  *  改装配只就地更新（viewer.setConfig）与写 URL，不销毁 3D 场景。 */
 const SCENE_QUERY_KEYS = [
   'tank', 'shooter', 'shot', 'world', 'heatmap', 'az', 'h', 'd', 'quality', 'move', 'rel', 'clean', 'debug',
+  'upgrade', 'abilities', 'supgrade', 'sabilities',
 ]
 const sceneSignature = () => SCENE_QUERY_KEYS.map(key => `${key}=${route.query[key] ?? ''}`).join('&')
 let lastSceneSignature = null
@@ -221,6 +222,18 @@ function applySide(side, patch) {
   }
   const shooter = side === 'shooter'
   const configChanged = patch.configChanged === true
+  const upgradeKey = shooter ? 'supgrade' : 'upgrade'
+  const abilitiesKey = shooter ? 'sabilities' : 'abilities'
+  const previousUpgrade = query[upgradeKey]
+  const previousAbilities = query[abilitiesKey]
+  if ('upgrade' in patch) put(upgradeKey, patch.upgrade === 'top' ? 'top' : null)
+  if ('abilities' in patch) put(abilitiesKey, patch.abilities)
+  const upgradesChanged = previousUpgrade !== query[upgradeKey] || previousAbilities !== query[abilitiesKey]
+  if (upgradesChanged) {
+    // 旧选车器只更新场景内选择；升级重建前把实际双方车型落到 URL，避免回到先前深链。
+    put('tank', targetSetupId.value)
+    put('shooter', shooterSetupId.value)
+  }
   if (shooter) {
     // 只有真正换炮才写 scfg：只换发动机/履带不凭空建立独立射手配置，
     // 保持 URL 最小改动。换炮时清除旧 shell 下标（弹表已换）。
@@ -237,7 +250,8 @@ function applySide(side, patch) {
   if (shouldResetShellOnConfigChange({ side, configChanged })) delete query.shell
   pendingShotQuery = query
   router.replace({ query })
-  if (!configChanged) return
+  // 升级的装甲/俯仰/弹表共用原有场景重建；不要同时启动旧场景的换炮请求。
+  if (!configChanged || upgradesChanged) return
   if (shooter) viewer?.setShooterConfig?.(Number(patch.config))
   else viewer?.setConfig?.(Number(patch.config))
 }
@@ -648,6 +662,8 @@ onBeforeUnmount(() => {
                                 :engine="route.query.sengine"
                                 :track="route.query.strack"
                                 :dev="route.query.sdev"
+                                :upgrade="route.query.supgrade"
+                                :abilities="route.query.sabilities"
                                 @apply="patch => applySide('shooter', patch)"
                                 @ready="value => shooterReady = value"
                             />
@@ -676,6 +692,8 @@ onBeforeUnmount(() => {
                                 :engine="route.query.engine"
                                 :track="route.query.track"
                                 :dev="route.query.dev"
+                                :upgrade="route.query.upgrade"
+                                :abilities="route.query.abilities"
                                 @apply="patch => applySide('target', patch)"
                                 @ready="value => targetReady = value"
                             />
@@ -713,6 +731,8 @@ onBeforeUnmount(() => {
             <ArmorShotHud
                 :shooter-id="shooterSetupId"
                 :scfg="shooterConfigValue"
+                :upgrade="route.query.supgrade"
+                :abilities="route.query.sabilities"
                 :shell="route.query.shell"
                 :eqcal="route.query.eqcal"
                 :eqenh="route.query.eqenh"

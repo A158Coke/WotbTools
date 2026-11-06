@@ -15,6 +15,7 @@
  */
 import { computeCharacteristics, type ComputeInput } from './characteristics'
 import { availableItems, resolveDeviceIds, scriptMap } from '../../utils/researchCatalog'
+import { projectTankUpgrades, resolveUpgradeSelection } from './tankUpgrades'
 
 export const DEVICE_SLOT_COUNT = 9
 const EMPTY_DEVICE = '-'
@@ -33,6 +34,9 @@ export interface SetupSelection {
   /** 已训练技能 → 等级（1–7；缺省 = 未训练，效果全局） */
   skills: Record<string, number>
   camouflage: boolean
+  /** XI 客户端升级；缺省 stock 保持既有链接语义。普通车辆不产生这两个字段。 */
+  upgrade?: 'stock' | 'top'
+  abilities?: number[]
 }
 
 export interface SetupResolved extends SetupSelection {
@@ -346,6 +350,11 @@ export function resolveSetup({ detail, modules, url, catalog }: SetupSources): S
     skills: Object.fromEntries(Object.entries(url?.skills || {}).filter(([id, level]) => skillIds.has(id) && Number.isFinite(Number(level)) && Number(level) > 0).map(([id, level]) => [id, Math.min(7, Math.max(1, Math.round(Number(level))))])),
     camouflage: url?.camo === true,
   }
+  const upgrades = resolveUpgradeSelection(modules, url?.upgrade, url?.abilities)
+  if (Number(detail?.tier) === 11 && upgrades.available) {
+    selection.upgrade = upgrades.mode
+    selection.abilities = upgrades.abilities
+  }
   return { ...selection, ...normalizeSetup(selection, detail, modules, catalog) }
 }
 
@@ -486,6 +495,13 @@ export function buildComputeInput({ detail, modules, selection, catalog }: {
   selection: SetupSelection
   catalog: any
 }): ComputeInput {
+  const stockEnginePower = Number(modules?.engines?.[0]?.stats?.power)
+  const projected = projectTankUpgrades(detail, modules, selection.upgrade, selection.abilities)
+  if (projected.selection.available && !projected.selection.supported && selection.upgrade === 'top') {
+    throw new Error(`XI upgrade data unavailable: ${projected.selection.unsupported.join(', ')}`)
+  }
+  detail = projected.detail
+  modules = projected.modules
   const config = detail?.configs?.[selection.config] || null
   const slots = presetSlots(modules, catalog)
   const netScript = catalog?.devices?.find((device: { stem: string }) => device.stem === 'camouflageNet')?.script?.params || null
@@ -497,6 +513,8 @@ export function buildComputeInput({ detail, modules, selection, catalog }: {
     gunIdx: selection.gun,
     engineIdx: selection.engine,
     trackIdx: selection.track,
+    ...(projected.selection.available && projected.selection.mode === 'top' && projected.selection.supported
+      && Number.isFinite(stockEnginePower) ? { stockEnginePower } : {}),
     standardShell: standardShellOf(config, selection.shell),
     isBurstGun: !!config?.is_burst,
     gunCycle: gunCycleOf(config),

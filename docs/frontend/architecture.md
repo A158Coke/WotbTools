@@ -32,7 +32,7 @@ AI 复盘结果的反馈弹窗与复制按钮使用同一回复文本 formatter�
 
 `router.js` 拥有浏览器 history、deep-link 处理、重定向和 Back/Forward。产品 URL 有意保留兼容的 query 契约：`?view=replay`、`?view=ai-review`、`?view=battle-playback`、`?view=agent-replay` 和 `?view=agent-shots` 都解析为同一个 keep-alive 的 Replay Workspace，只是初始能力不同（data / ai / playback / 3d / shots，见 `viewRegistry.js` 的 `replayInitialCapability`）。legacy aliases（`leaderboard`、`extended`、`reconstruction`）各自一次性重定向到其规范的 query 值。Android 还会把过时的落地 `?view=home` URL 规范化为 Replay-root URL，同时保留无关的 query/hash 值；公开 Web 的 Home deep link 仍然有效。`/download/android` 和 `/download/android/` 解析到 Android 页面；`/sponsor` 是 AppShell 的一等路由，经 `ViewHost` 解析到 `SponsorPage`。
 
-**视图私有 query 键**（`navigation.js: locationForView`）：名人堂筛选（tab/page/nation/type/tier/bt/nick/limit）、坦克百科筛选与详情（q/tier/nation/type/sort/tank/config/engine/track/shell/dev/cons/prov/skills/camo/eq）、以及装甲查看器 / 射击复现场景参数（tank/shooter/config/scfg/sengine/strack/sdev/engine/track/dev/shell/shot/world/heatmap + 相机与显示档 az/h/d/eqcal/eqenh/eqpitch/quality/move/rel/clean/debug）只属于各自的视图：导航到别的视图时整组丢掉（`locationForView` 三条清理规则），否则从场景切走会在 URL 里留下上一发的 `tank/shot/shooter/…`。留在同一视图内的导航保留全部参数。
+**视图私有 query 键**（`navigation.js: locationForView`）：名人堂筛选（tab/page/nation/type/tier/bt/nick/limit）、坦克百科筛选与详情（q/tier/nation/type/sort/tank/config/engine/track/shell/dev/cons/prov/skills/camo/eq/upgrade/abilities）、以及装甲查看器 / 射击复现场景参数（tank/shooter/config/scfg/sengine/strack/sdev/engine/track/dev/shell/shot/world/heatmap/upgrade/abilities/supgrade/sabilities + 相机与显示档 az/h/d/eqcal/eqenh/eqpitch/quality/move/rel/clean/debug）只属于各自的视图：导航到别的视图时整组丢掉（`locationForView` 三条清理规则），否则从场景切走会在 URL 里留下上一发的 `tank/shot/shooter/…`。留在同一视图内的导航保留全部参数。
 
 3D 回放与射击分析是工作台能力：`agent-replay` / `agent-shots` 深链与工作台 tab 都解析为同一个 kept-alive Replay Workspace 的 `3d` / `shots` pane，与 2D / AI 共用同一条 session（`props.file` 消费工作台已选回放，自身没有上传入口），并保留工作台上层导航。五个能力永久对所有用户展示，导航不按 admin role 收敛 Agent 深链。3D / shots 在匿名使用个人回放时显示 `ReplayCapabilityAuthGate`；登录或选择已验证的官方示例后才加载 pane；AI 在现有投影边界前门控。`test:browser-interaction` 用真实输入验证普通用户与匿名路径以及 shots → armor 交接。
 
@@ -157,6 +157,16 @@ Playback 测试遵循这些所有权边界：map/marker/gesture 契约位于 `Ba
 源码级 CSS 守卫对所有权不变量仍然有用，但最终布局行为不能从 CSS 文本推断。`pnpm run test:browser-layout` 会启动 CI runner 上可用的 Chrome/Chromium，加载真实的 shared/PC/tablet/mobile Playback stylesheets，并检查 1600×900 PC、1024×768 tablet、390×844 mobile 的真实 computed styles / geometry，外加一个跨形态隔离用例。该检查在 frontend CI 中先于生产构建运行。CSS 文本也无法体现*交互*真相，因此 `pnpm run test:browser-interaction` 覆盖另一半：它加载真实应用（router / AppShell / ReplayWorkspace / 每个 stylesheet，仅 stub 掉 Keycloak 边界），模拟 device metrics 与粗指针，驱动**真实输入管线**（原始 touch / mouse 事件，绝不用合成的 `click()`），并通过页面内事件记录证明真实点击目标**就是**预期控件。它覆盖 375×812 / 390×844 竖屏粗指针、740×360 横屏粗指针、1024×768 tablet、1600×900 desktop、capability switching、未认证登录失败的可见性 + 可重试性、`duration <= 0` 的 transport 不可用，以及竖屏→横屏旋转。其 `roster-geometry-*` 场景还会驱动真实 3D pane：注入 roster/kill-feed fixtures、recorder 视角 lane geometry、行内 HP 数字或回退百分比位于 bar 内且不被截断、display popover 保持在可见 pane 内并避开场景中心、各 block 开关确实移除其 block，以及 hide-all-UI 可恢复。这些 panel 交互使用 `clickElement()`，它将 scroll-into-view、`elementFromPoint` 遮挡检查和 `el.click()` 融合为单次页面内求值——在 fixture 注入的布局仍在稳定时，先从 driver 测坐标再点击是不稳定的，而 hit test 仍针对真实浏览器布局运行（透明 overlay 和遮挡仍会使其失败）。
 
 UI profile 仍然只涉及呈现：`wotb-ui-profile` 是唯一的持久化 key，其派生的 `data-theme` 不会创建独立的 theme 状态。Showcase 与 Classic 必须使用相同的组件、API 与业务状态。
+
+### XI 车辆升级
+
+坦克百科仅在 XI 车辆的模块数据包含有效 `upgradeProgression` 时显示「初始值 / 升满级」两种选择。升级规则由上游客户端导出，包含节点、属性脚本与操作、互斥技能组及来源版本/哈希；不以炮塔/火炮 ID 区分升级态，也不插值补全升级路线。`tankUpgrades.ts` 聚合和投影原始数据，再交给既有 `tankSetup.ts` / `characteristics.ts` 计算，原资产对象保持不变。初始功率单独传入既有车体转速公式，避免投影后的发动机覆盖功率比基准。普通车辆与没有升级元数据的旧包保持原有计算；XI 缺升级数据时显示说明，未知静态脚本拒绝计算满级数值。
+
+升级状态由 URL 的 `upgrade=top` 表示，缺省保持原先初始值；`abilities` 为选中节点 ID 的逗号表，按客户端技能组归属校验。满级聚合全部普通/机制节点，并且每个备选组只应用一个技能；缺省选每组第一项。初始态保留技能选择但不应用升级，原有 20 个乘员技能独立保留。三选一使用现有 `SegmentedControl`，具单选组语义与键盘操作；无客户端翻译时按已证实属性语义显示本地化描述，不直接显示内部 key。动态战斗技能不假定已触发。
+
+XI 的基础模块、升级规则、车辆详情与 GLB 均来自当前选中的资产通道，经 `assetBase` / `assetProvider` 加载。`supertest` 使用统一的数据版本选择器，切换通过整页重载使模块缓存与资产基址保持同一页面快照。升级规则由资产导出器写入 `research/modules/{nation}.json`；`upgradeProgression.provenance.gameVersion` 必须与该车 `gameVersion` 一致，缺失或不匹配时拒绝投影。前端只解释资产中的规则，不随包携带规则副本；默认正式服及普通车辆保留原路径和计算。
+
+模型几何与模块装配沿用既有查看器，装甲厚度、弹表与俯仰限制复用同一升级投影。装甲查看器受击方使用 `upgrade/abilities`，射击方使用独立的 `supgrade/sabilities`；只有明确满级且为 XI 时额外加载该车模块规则。两侧互不继承升级态，升级变化走原场景销毁/重建生命周期，晚到数据不能覆盖当前选择。离开百科或装甲视图时清理其专属升级参数。
 
 ### 第三方 UI 依赖的边界
 

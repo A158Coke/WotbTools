@@ -18,6 +18,8 @@ const props = defineProps({
   engine: { type: [Number, String], default: null },
   track: { type: [Number, String], default: null },
   dev: { type: String, default: null },
+  upgrade: { type: String, default: null },
+  abilities: { type: [String, Array], default: null },
 })
 const emit = defineEmits(['apply', 'ready'])
 
@@ -75,6 +77,8 @@ const selection = computed(() => {
       engine: urlIndex(props.engine),
       track: urlIndex(props.track),
       dev: props.dev,
+      upgrade: props.upgrade,
+      abilities: props.abilities,
       cons: [],
       prov: [],
     },
@@ -98,6 +102,7 @@ function apply(patch) {
     engine: next.engine,
     track: next.track,
     dev: encodeDevices(next.devices || []),
+    ...(sel.upgrade != null ? { upgrade: next.upgrade, abilities: next.abilities } : {}),
   })
 }
 
@@ -109,6 +114,7 @@ function applyPreset(kind) {
     config: kind === 'stock' ? 0 : last(detail.value?.configs),
     engine: kind === 'stock' ? 0 : last(modules.value?.engines),
     track: kind === 'stock' ? 0 : last(modules.value?.chassis),
+    ...(sel.upgrade != null ? { upgrade: kind === 'stock' ? 'stock' : 'top' } : {}),
   })
 }
 
@@ -121,6 +127,7 @@ function resetAll() {
     engine: last(modules.value?.engines),
     track: last(modules.value?.chassis),
     devices: [],
+    ...(sel.upgrade != null ? { upgrade: 'stock', abilities: [] } : {}),
   })
 }
 </script>
