@@ -930,3 +930,36 @@ describe('弹种词表 SSOT（判定链 ↔ 查看器）', () => {
     }
   })
 })
+
+// 收集链语义：确定性判定与概率链共享同一层集合——保留首个 Primary 之前的全部
+// 间隔层（外部模块 + 间隙甲），停在首个 Primary（含）；其后的命中不进入任一链。
+// 差异只发生在判定循环：确定性链在某层未穿透时截断，概率链仍评估到首个 Primary。
+describe('收集链：deterministic 与 probability 在首个 Primary 处得到同一层集合', () => {
+  // chassis(外部模块) → spaced(间隙甲) → hull(首个 Primary) → chassis/spaced(其后的命中)
+  const chainHits = () => [
+    hit(ArmorSection.CHASSIS, 30.0, [0, 0, 0]),
+    hit(ArmorSection.SPACED, 200.0, [0, 0, 1]),
+    hit(ArmorSection.HULL, 40.0, [0, 0, 2]),
+    hit(ArmorSection.CHASSIS, 30.0, [0, 0, 3]),
+    hit(ArmorSection.SPACED, 10.0, [0, 0, 4]),
+  ]
+  const calc = (pen) => calculate(req('ap', pen, 100.0, chainHits()))
+  const names = (layers) => layers.map((layer) => layer.part_name)
+
+  it('pen=100：确定性链在未穿透的间隙层截断，概率链仍含到首个 Primary 的全部前置层', () => {
+    const r = calc(100.0)
+    // 200mm 间隙甲未穿透：确定性判定在此截断，其后的层不评估。
+    expect(names(r.layers)).toEqual(['chassis', 'spaced'])
+    // 概率链不因未穿透截断：同一收集链上的 hull（首个 Primary）仍在。
+    expect(names(r.probability_layers)).toEqual(['chassis', 'spaced', 'hull'])
+  })
+
+  it('pen=400：两链都含前置的模块/间隙层并停在首个 Primary，其后的命中不进入任一链', () => {
+    const r = calc(400.0)
+    expect(names(r.layers)).toEqual(['chassis', 'spaced', 'hull'])
+    expect(names(r.probability_layers)).toEqual(['chassis', 'spaced', 'hull'])
+    // 判别：收集若越过首个 Primary，其后的 spaced(10mm) 会作为第 4 层出现。
+    expect(r.layers).toHaveLength(3)
+    expect(r.probability_layers).toHaveLength(3)
+  })
+})
