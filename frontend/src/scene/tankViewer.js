@@ -54,6 +54,8 @@ import {
 } from './viewer/armorPlateModel.js'
 // 动态装甲单次 Mesh 状态应用（#820 Wave B3C 出仓）：userData/可见性/分类/厚度/材质
 import { applyArmorStateToMesh, replaceArmorMaterial } from './viewer/armorMeshState.js'
+// 间隙甲同板去重键与判据：与厚度通道 per-key stencil 共用一处语义（order-independent）
+import { resolveSpacedHitMask, spacedDedupKey } from './armorMeshTopology.js'
 // 点击判定的触发面分类（Primary = 主装甲板）；与判定本体同源，勿在此复制一份板面清单
 import { isPrimary, hasPrimaryLayer, matchHitsByOccurrence } from './penetration.js'
 // Armor Inspector 概率模型：±range = ±3σ 的正态 CDF + 逐层 1× 等效厚度传播
@@ -5002,11 +5004,12 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
          * 判定命中收集（点击主链 / 跳弹续飞共用）：
          *  - 间隙甲双面：背面命中的间隙屏参与判定（法线已由 classifyHit 翻向来向）；
          *    主装甲/外部模块仍只认迎面命中（闭合壳体正/背面各算一层会重复消耗厚度）。
-         *  - 闭合间隙甲的正/背面是同一块板：该板前面已计过时不再重复计背面。
+         *  - 闭合间隙甲的正/背面是同一块板：同键按**整条射线**判定——有入射面命中时
+         *    出射面全部抑制；没有入射面命中时才计出射面（与厚度通道 per-key stencil
+         *    同口径、与穿越顺序无关；近背远正的背→正次序不再多计一层）。
          */
         function collectJudgmentHits(intersects, rayDir) {
-            const hits = [];
-            const spacedSeen = new Set();
+            const candidates = [];
             for (const hit of intersects) {
                 if (isClippedModuleHit(hit.object.userData.armorSection, hit.point, gunClipPlane)) continue;
                 const entry = classifyHit(hit, rayDir);
@@ -5014,16 +5017,16 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 // plateId 只在所属装甲表内唯一：hull/turret/gun 可以出现相同数字。
                 // 正/背面去重必须带上原始 section，否则跨板的合法层会被误删。
                 const origSection = entry.object?.userData?.armorSectionOrig || entry.section || '';
-                const key = `${origSection}:${entry.plateId == null ? '' : entry.plateId}`;
-                if (entry.backface) {
-                    if (entry.section !== 'spaced' || spacedSeen.has(key)) continue;
-                    spacedSeen.add(key);
-                    hits.push(entry);
-                    continue;
-                }
-                if (entry.section === 'spaced') spacedSeen.add(key);
-                hits.push(entry);
+                candidates.push({
+                    entry,
+                    spaced: entry.section === 'spaced',
+                    backface: !!entry.backface,
+                    key: spacedDedupKey(origSection, entry.section, entry.plateId),
+                });
             }
+            const keep = resolveSpacedHitMask(candidates);
+            const hits = [];
+            for (let i = 0; i < candidates.length; i++) if (keep[i]) hits.push(candidates[i].entry);
             return hits;
         }
 

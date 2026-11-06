@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
-import { assignSpacedStencilBits, isClosedSurfaceGeometry, spacedDedupKey, SPACED_STENCIL_BIT_LIMIT } from './armorMeshTopology.ts'
+import { assignSpacedStencilBits, isClosedSurfaceGeometry, resolveSpacedHitMask, spacedDedupKey, SPACED_STENCIL_BIT_LIMIT } from './armorMeshTopology.ts'
 
 describe('isClosedSurfaceGeometry', () => {
   it('闭合盒体（含 non-indexed 副本）判定为闭合', () => {
@@ -40,6 +40,41 @@ describe('spacedDedupKey', () => {
 
   it('不同 section 的同号板是不同键（plateId 只在所属装甲表内唯一）', () => {
     expect(spacedDedupKey('hull', 'spaced', '6')).not.toBe(spacedDedupKey('turret', 'spaced', '6'))
+  })
+})
+
+describe('resolveSpacedHitMask（点击链同板去重，与 per-key stencil 同口径）', () => {
+  const hit = (key, backface, spaced = true) => ({ key, backface, spaced })
+
+  it('入射面 → 出射面：只留入射面（原行为）', () => {
+    expect(resolveSpacedHitMask([hit('gun:2', false), hit('gun:2', true)])).toEqual([true, false])
+  })
+
+  it('出射面 → 入射面（近背远正）：仍只留入射面——判据与穿越顺序无关', () => {
+    expect(resolveSpacedHitMask([hit('gun:2', true), hit('gun:2', false)])).toEqual([false, true])
+  })
+
+  it('同键没有入射面：出射面全部计入（GPU back clone 无位可测时逐片元累计）', () => {
+    expect(resolveSpacedHitMask([hit('gun:2', true), hit('gun:2', true)])).toEqual([true, true])
+  })
+
+  it('同键多个入射面：全部保留（GPU front clone 逐片元累计）', () => {
+    expect(resolveSpacedHitMask([hit('gun:5', false), hit('gun:5', false)])).toEqual([true, true])
+  })
+
+  it('非间隙甲的背面命中一律剔除，迎面命中保留', () => {
+    expect(resolveSpacedHitMask([hit('hull:1', true, false), hit('hull:1', false, false)])).toEqual([false, true])
+  })
+
+  it('键之间互不影响：无入射面的键不被另一键的入射面抑制', () => {
+    const mask = resolveSpacedHitMask([
+      hit('gun:2', true), hit('turret:3', false), hit('gun:2', false),
+    ])
+    expect(mask).toEqual([false, true, true])
+  })
+
+  it('空命中集合返回空掩码', () => {
+    expect(resolveSpacedHitMask([])).toEqual([])
   })
 })
 

@@ -1,7 +1,7 @@
 /**
- * 间隙甲厚度通道门禁（真实 GPU readback；review P1，2026-11-06）。
+ * 间隙甲厚度通道门禁（真实 GPU readback；review P1 + review P2，2026-11-06）。
  *
- * 三个不变量，全部是**真实装配 + 编译后 shader 的像素输出**，happy-dom / 正则 /
+ * 不变量全部是**真实装配 + 编译后 shader 的像素输出**，happy-dom / 正则 /
  * CPU 镜像都替代不了（frontend/AGENTS.md Testing rules：source guard 只锁
  * dependency/API ownership）：
  *
@@ -10,9 +10,13 @@
  *    相机正对入射面 → 入射面计 120mm、出射面被 stencil 位抑制，RT0.R = 120/200 = 0.6。
  *    门禁自带**负向对照**：把 back clone 的 stencilFunc 改成 Always（去重失效）重渲染，
  *    必须得到 ≈2× = 1.2 —— 证明 0.6 的断言不是空断言。
- * 2. 背面开放板法线（FLIP_SIDED）：BackSide clone 渲染的背面屏经真实 shader 编译，
+ * 2. 穿越顺序无关（review P2）：同键命中序为**近 Back / 远 Front**（反绕序开放壳体，
+ *    相机看的是绕序背面）时，front clone 仍先置位 → 只计一次 0.6；同键**只有背面**
+ *    （两片背面朝向相机、无入射面）时，back clone 无位可测 → 逐片元累计 2× = 1.2。
+ *    点击链 `resolveSpacedHitMask` 用同一判据（整条射线集合、不看先后），CPU/GPU 同层数。
+ * 3. 背面开放板法线（FLIP_SIDED）：BackSide clone 渲染的背面屏经真实 shader 编译，
  *    20mm 屏 R = 0.1（修复前 cos 落 1e-6 下界 → 100000）。
- * 3. 对照：闭合盒体（FrontSide 单 clone）R 同为 0.6；BackSide 正对相机被剔除 R=0。
+ * 4. 对照：闭合盒体（FrontSide 单 clone）R 同为 0.6；BackSide 正对相机被剔除 R=0。
  *
  * 确定性：沿用装甲查看器门禁的夹具资产包（进程内 Vite dev server + 构造资产），
  * 门禁自己在页面内注入 module script 加载**真实模块图**（armorShaders.ts +
@@ -133,7 +137,9 @@ try {
     // 开放壳体：缺一面的盒体（开放 → front/back 双 clone + stencil 位）；
     // 闭合盒体对照组（闭合 → FrontSide 单 clone）。相机沿 +Z 看向原点：
     // 射线依次穿过 pz 面（front，入射）与 nz 面（back，出射）。
-    const buildShell = (open) => {
+    // reversed：翻转绕序 + 法线（绕序朝内的壳）——相机看到的 pz 面变成背面命中、
+    // nz 面变成入射面，即 review P2 的「近 Back / 远 Front」同键穿越顺序。
+    const buildShell = (open, reversed = false) => {
       const box = new THREE.BoxGeometry(2, 2, 2);
       if (!open) return box;
       const trimmed = new THREE.BufferGeometry();
@@ -143,15 +149,23 @@ try {
       trimmed.setAttribute('normal', box.attributes.normal);
       trimmed.setIndex(Array.from(box.index.array.slice(6)));   // 去掉第一个面 → 开放
       box.dispose();
+      if (reversed) {
+        const idx = trimmed.index.array;
+        for (let i = 0; i + 2 < idx.length; i += 3) { const t = idx[i + 1]; idx[i + 1] = idx[i + 2]; idx[i + 2] = t }
+        const n = trimmed.attributes.normal;
+        for (let i = 0; i < n.count; i++) n.setXYZ(i, -n.getX(i), -n.getY(i), -n.getZ(i));
+        n.needsUpdate = true;
+        trimmed.index.needsUpdate = true;
+      }
       return trimmed;
     };
-    const runAssembly = (open) => {
+    const runAssembly = (open, reversed = false) => {
       const src = new THREE.Scene();
       const primary = new THREE.Mesh(new THREE.BoxGeometry(4, 4, 0.2), new THREE.MeshBasicMaterial());
       primary.position.z = -2;
       primary.userData.armorSection = 'hull';
       primary.userData.armorThickness = 40;
-      const shell = new THREE.Mesh(buildShell(open), new THREE.MeshBasicMaterial());
+      const shell = new THREE.Mesh(buildShell(open, reversed), new THREE.MeshBasicMaterial());
       shell.userData.armorSection = 'spaced';
       shell.userData.armorSectionOrig = 'gun';
       shell.userData.armorPlateId = '2';
@@ -192,7 +206,56 @@ try {
       primary.geometry.dispose(); shell.geometry.dispose();
       return { single, broken };
     };
+    // —— 2) 同键只有背面（两片背面朝向相机、无入射面）——
+    // back clone 无位可测 → 逐片元累计 2×；与 resolveSpacedHitMask 的
+    // 「无入射面 → 出射面全部计入」同口径。
+    const runTwoBackFaces = () => {
+      const quad = (z) => [
+        -1, -1, z,  1, 1, z,  1, -1, z,
+        -1, -1, z,  -1, 1, z,  1, 1, z,
+      ];
+      const positions = new Float32Array([...quad(1), ...quad(-1)]);
+      const normals = new Float32Array(positions.length);
+      for (let i = 2; i < normals.length; i += 3) normals[i] = -1;   // 法线 -Z：相机在 +Z 看是背面
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+      const primary = new THREE.Mesh(new THREE.BoxGeometry(4, 4, 0.2), new THREE.MeshBasicMaterial());
+      primary.position.z = -2;
+      primary.userData.armorSection = 'hull';
+      primary.userData.armorThickness = 40;
+      const shell = new THREE.Mesh(geo, new THREE.MeshBasicMaterial());
+      shell.userData.armorSection = 'spaced';
+      shell.userData.armorSectionOrig = 'gun';
+      shell.userData.armorPlateId = '9';
+      shell.userData.armorThickness = PROBE.thickness;
+      const src = new THREE.Scene();
+      src.add(primary, shell);
+      src.updateMatrixWorld(true);
+      const mats = {
+        omit: new THREE.MeshBasicMaterial({ colorWrite: false, depthTest: true, depthWrite: true }),
+        spacedOmit: new THREE.MeshBasicMaterial({ colorWrite: false, depthTest: true, depthWrite: true, side: THREE.DoubleSide }),
+        externalDepth: new THREE.MeshBasicMaterial({ colorWrite: false, depthTest: true, depthWrite: true }),
+        spacedMaterial: ctx.spacedMaterial,
+        externalMaterial: ctx.externalMaterial,
+      };
+      const spacedScene = new THREE.Scene();
+      plate.populateSpacedArmorScene(spacedScene, { primary: [primary], spaced: [shell], external: [] }, mats, PROBE.penetration, null);
+      spacedScene.traverse((node) => {
+        const u = node.isMesh && node.material && node.material.uniforms;
+        if (!u) return;
+        if (u.caliber) u.caliber.value = PROBE.caliber;
+        if (u.normalization) u.normalization.value = PROBE.normalizationDeg * Math.PI / 180;
+      });
+      renderSpaced(spacedScene);
+      const r = readR();
+      spacedScene.traverse((node) => { if (node.isMesh && node.material && node.material.dispose) node.material.dispose(); if (node.isMesh && node.geometry && node.geometry.dispose) node.geometry.dispose(); });
+      spacedScene.clear();
+      primary.geometry.dispose(); geo.dispose();
+      return r;
+    };
     const openAssembly = runAssembly(true);
+    const reversedAssembly = runAssembly(true, true);
     const closedAssembly = runAssembly(false);
     const out = {
       frontPlane: runPlane(THREE.FrontSide, 0),
@@ -200,7 +263,10 @@ try {
       backCulled: runPlane(THREE.BackSide, 0),
       openShellR: openAssembly.single,
       openShellBrokenR: openAssembly.broken,
+      reversedShellR: reversedAssembly.single,
+      reversedShellBrokenR: reversedAssembly.broken,
       closedShellR: closedAssembly.single,
+      twoBackFacesR: runTwoBackFaces(),
     };
     renderer.dispose();
     return out;
@@ -216,6 +282,16 @@ try {
   // 2b) 负向对照：关闭 stencil 抑制后出射面再计一次（≈2×），证明上一条断言有判别力。
   check(result.openShellBrokenR !== null && near(result.openShellBrokenR, PROBE.expectedShellSingle * 2),
     `负向对照（stencil Always）：RT0.R ≈ 2× = ${PROBE.expectedShellSingle * 2}（实际 ${result.openShellBrokenR}）`)
+  // 2c) review P2：同键近 Back / 远 Front（反绕序开放壳）——front clone 仍先置位，
+  //     只计一次；负向对照证明该场景确实存在「出射面若不抑制就再计一次」的片元。
+  check(near(result.reversedShellR, PROBE.expectedShellSingle),
+    `反绕序开放壳（近 Back / 远 Front）只计一次：RT0.R = ${PROBE.expectedShellSingle}（实际 ${result.reversedShellR}）`)
+  check(result.reversedShellBrokenR !== null && near(result.reversedShellBrokenR, PROBE.expectedShellSingle * 2),
+    `反绕序负向对照（stencil Always）：RT0.R ≈ 2× = ${PROBE.expectedShellSingle * 2}（实际 ${result.reversedShellBrokenR}）`)
+  // 2d) review P2：同键只有背面（无入射面）→ back clone 无位可测，逐片元累计 2×；
+  //     与点击链 resolveSpacedHitMask「无入射面则出射面全部计入」同口径。
+  check(near(result.twoBackFacesR, PROBE.expectedShellSingle * 2),
+    `同键仅背面（无入射面）逐片元累计：RT0.R = ${PROBE.expectedShellSingle * 2}（实际 ${result.twoBackFacesR}）`)
   // 3) 单 plane 材质：FLIP_SIDED 背面法线。
   check(near(result.frontPlane, PROBE.expectedPlane),
     `正面屏 R = ${PROBE.expectedPlane}（实际 ${result.frontPlane}）`)

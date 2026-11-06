@@ -104,7 +104,8 @@ HTTP 200 不证明每张地图的资产齐备，缺失的具体资产应如实�
 - 修改装甲查看器**瞄准 / 指针交互**（`tankViewer.js` 的 Pointer Events 接线：按炮管 = yaw+俯仰 / 按炮塔壳 = 只 yaw / 车体 = 相机、短按无拖动 = 装甲判定、pointer capture 清理、`aimFromDrag` 灵敏度与限位）时保持 `pnpm run test:browser-armor-aiming` 通过；该 gate 用 CDP 原始鼠标 / 触屏输入驱动真实应用。它**自带确定性夹具资产包**（`scripts/browser-fixtures/fixture-asset-pack.mjs`：进程内资产源 + 构造的 hull / turret_01 / gun_01 GLB + tank JSON，装配契约由 `fixture-asset-pack.test.mjs` 锁定），因此无真实资产也真实执行、**不存在 SKIP**（模型加载失败即失败）。本地要对真实车辆人工核对时用 `AIM_ASSETS=<资产源> AIM_TANK=<id>` 覆盖。
 - 修改间隙甲厚度通道（`armorShaders.ts` 的 `SPACED_FRAG` / `populateSpacedArmorScene` 的 front/back 拆分）时保持
   `pnpm run test:browser-armor-spaced-backside` 通过；该 gate 用真实 GPU readback 验证**背面开放板**的等效厚度
-  （20mm 屏 → RT0.R = 0.1；修复前 100000），不依赖源码正则。
+  （20mm 屏 → RT0.R = 0.1；修复前 100000）与**同板去重的穿越顺序**（近背远正只计一次、同键仅背面逐片元累计），
+  不依赖源码正则。
 - 修改装甲查看器**初始化 / 弹药 / 单发判定 / 重试 / 销毁生命周期**时保持 `pnpm run test:browser-armor-shot-readiness` 通过；该 gate 用真实应用和确定性夹具资产包控制异步响应，覆盖慢弹药、初始化期间选车反馈、自动选弹、错误阶段、重试及迟到响应隔离，无需真实资产或 WASM，不做 3D 画面验收。由 `ci-frontend.yml` 的 `browser-medium` job 执行。
 - 修改科技树或 compact `PageHeader` 布局时保持 `pnpm run test:browser-techtree-layout` 通过；该 gate 用真实应用 + 真实外壳（`startFixtureServer` + 确定性科技树夹具资产）在手机竖屏 / 横屏、平板、桌面档测量页头高度、页签行数、树滚动区与吸底等级条相对固定底栏的几何，并用旧 `max-block-size` 实现做负向对照。由 `ci-frontend.yml` 的 `browser-fast` job 执行。
 - 修改架构边界时覆盖受影响的深链、历史导航、认证目的地或共享状态；修改 build/dependency 时运行 `pnpm run build`。

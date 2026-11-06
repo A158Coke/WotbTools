@@ -384,10 +384,11 @@ export interface SpacedArmorSceneMats {
 }
 
 // 开放间隙板厚度通道的同板去重（stencil front 写 / back 测）。
-// 语义权威 = 点击链 collectJudgmentHits 的 spacedSeen：同键正面命中照常计入，
-// 同键背面命中只在其入射面未覆盖该像素时计入——开放壳体（炮盾等）的出射面属
+// 语义权威 = 点击链 collectJudgmentHits 调用的 resolveSpacedHitMask（armorMeshTopology）：
+// 按整条射线的命中集合判定——同键有入射面命中时只计入射面，没有入射面命中时才计入
+// 出射面；与穿越顺序（front→back / back→front）无关。开放壳体（炮盾等）的出射面属
 // 同一块板，不得当第二块板再计一次厚度。front clone 先于 back clone（renderOrder
-// 2 → 2.1），保证"先写位、后测位"的 pass 内顺序与穿越方向无关。
+// 2 → 2.1），stencil 位按像素汇总，因此片元的深度先后不影响结果。
 function applySpacedFrontStencil(m: Material, bit: number): void {
   m.stencilWrite = true
   m.stencilFunc = THREE.AlwaysStencilFunc
