@@ -622,8 +622,8 @@ export function createArmorShaderContext() {
             vertexShader: SPACED_VERT, fragmentShader: SPACED_FRAG,
             depthWrite: false, depthTest: true,
             blending: THREE.AdditiveBlending,
-            // 开放面片双面（背面命中可见），闭合网格单面（正/背两表面只累计一次）；
-            // 面由几何拓扑决定，调用方传入（armorMeshTopology.isClosedSurfaceGeometry）。
+            // 面与 stencil 去重状态由调用方按几何拓扑 + 去重键决定：闭合网格 FrontSide 单 clone；
+            // 开放网格拆 FrontSide（写本键 stencil 位）/ BackSide（测位）两 clone。
             side,
             uniforms: spacedCommonUniforms(thickness, penetration),
         });

@@ -636,7 +636,14 @@ function buildTarget(template: Object3D, vehicle: AimedVehicleCandidate, tankDat
       depthTexture: new THREE.DepthTexture(rtW, rtH),
     })
     stateRT = new THREE.WebGLRenderTarget(rtW, rtH, options())
-    spacedRT = new THREE.WebGLRenderTarget(rtW, rtH, options())
+    // stencilBuffer：厚度通道开放间隙板 front 写/back 测的同板去重位（与装甲查看器
+    // penetrationRT 同语义；stateRT 深度独占不需要）。深度纹理必须用 DepthStencilFormat：
+    // three 对自带 depthTexture 的 target 只按纹理格式挂 DEPTH(_STENCIL)_ATTACHMENT，
+    // DepthFormat + stencilBuffer:true 不会创建 stencil 附件，测试恒通过（= 修复失效）。
+    const spacedDepth = new THREE.DepthTexture(rtW, rtH)
+    spacedDepth.format = THREE.DepthStencilFormat
+    spacedDepth.type = THREE.UnsignedInt248Type
+    spacedRT = new THREE.WebGLRenderTarget(rtW, rtH, { ...options(), depthTexture: spacedDepth, stencilBuffer: true })
     if (rtStats) {
       rtStats.creates += 2
       if (resizing) rtStats.resizes += 2

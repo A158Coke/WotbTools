@@ -434,9 +434,18 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const rtType = spacedRTFloatCapable() ? THREE.HalfFloatType : THREE.UnsignedByteType;
             if (!penetrationRT) {
                 const c = renderer.domElement;
+                // stencilBuffer：开放间隙板 front 写/back 测的同板去重位（厚度通道按
+                // 去重键每射线只计一次；spacedStateRT 状态通道深度独占，不需要）。
+                // 深度纹理必须用 DepthStencilFormat：three 对自带 depthTexture 的 target
+                // 只按纹理格式挂 DEPTH(_STENCIL)_ATTACHMENT，DepthFormat + stencilBuffer:true
+                // 不会创建 stencil 附件，测试恒通过（= 修复失效）。
+                const depth = new THREE.DepthTexture(c.width, c.height);
+                depth.format = THREE.DepthStencilFormat;
+                depth.type = THREE.UnsignedInt248Type;
                 penetrationRT = new THREE.WebGLRenderTarget(c.width, c.height, {
                     type: rtType,
-                    depthTexture: new THREE.DepthTexture(c.width, c.height),
+                    depthTexture: depth,
+                    stencilBuffer: true,
                 });
             }
             if (!spacedStateRT) {
