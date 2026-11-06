@@ -13,14 +13,14 @@ import TANK_ALIASES from '../../../common/tank_aliases.json'
 describe('parseTankopediaQuery', () => {
   it('空 query 得到默认状态', () => {
     expect(parseTankopediaQuery({})).toEqual({
-      q: '', tier: '', nation: '', type: '', sort: 'name', tank: null, config: null,
+      q: '', tier: '', nation: '', type: '', sort: 'tier', tank: null, config: null,
       engine: null, track: null, shell: null, dev: '', eq: null, cons: null, prov: null, skills: {}, camo: false,
     })
   })
 
   it('校验并回落非法值', () => {
     expect(parseTankopediaQuery({ tier: '0', sort: 'dpm', tank: 'abc', config: '1' })).toMatchObject({
-      tier: '', sort: 'name', tank: null, config: null,
+      tier: '', sort: 'tier', tank: null, config: null,
     })
     expect(parseTankopediaQuery({ tier: '10', sort: 'pen', tank: '5', config: '-1' })).toMatchObject({
       tier: '10', sort: 'pen', tank: 5, config: null,
@@ -56,8 +56,10 @@ describe('parseTankopediaQuery', () => {
 })
 
 describe('serializeTankopediaQuery', () => {
-  it('默认值不写进 URL', () => {
+  it('默认值不写进 URL；显式非默认排序仍保留', () => {
     expect(serializeTankopediaQuery(parseTankopediaQuery({}))).toEqual({})
+    expect(serializeTankopediaQuery({ sort: 'tier' })).toEqual({})
+    expect(serializeTankopediaQuery({ sort: 'name' })).toEqual({ sort: 'name' })
   })
 
   it('往返保持一致', () => {
@@ -83,7 +85,8 @@ describe('serializeTankopediaQuery', () => {
 
 describe('sameTankopediaQuery / withTankopediaState', () => {
   it('忽略 view 等其他键与默认值', () => {
-    expect(sameTankopediaQuery({ view: 'agent-tankopedia', sort: 'name' }, { lang: 'en' })).toBe(true)
+    expect(sameTankopediaQuery({ view: 'agent-tankopedia', sort: 'tier' }, { lang: 'en' })).toBe(true)
+    expect(sameTankopediaQuery({ sort: 'name' }, {})).toBe(false)
     expect(sameTankopediaQuery({ tier: '5' }, { tier: '6' })).toBe(false)
   })
 
@@ -124,8 +127,9 @@ describe('selectTanks', () => {
   ]
   const names = list => list.map(tank => tank.name)
 
-  it('按名称排序并精确筛选', () => {
-    expect(names(selectTanks(tanks, {}))).toEqual(['E 100', 'Hellcat', 'IS-7', 'T-34'])
+  it('默认按等级降序，同级按名称；精确筛选与显式排序不变', () => {
+    expect(names(selectTanks(tanks, {}))).toEqual(['E 100', 'IS-7', 'Hellcat', 'T-34'])
+    expect(names(selectTanks(tanks, { sort: 'name' }))).toEqual(['E 100', 'Hellcat', 'IS-7', 'T-34'])
     expect(names(selectTanks(tanks, { tier: '10', nation: 'ussr' }))).toEqual(['IS-7'])
     expect(names(selectTanks(tanks, { type: 'heavyTank', sort: 'hp' }))).toEqual(['E 100', 'IS-7'])
   })

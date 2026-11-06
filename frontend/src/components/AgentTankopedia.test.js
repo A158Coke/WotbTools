@@ -174,6 +174,16 @@ describe('AgentTankopedia', () => {
     expect(wrapper.findAll('[data-testid="tank-card"]')).toHaveLength(96)
   })
 
+  it('默认按等级从高到低排序，排序控件高亮「等级 ↓」', async () => {
+    const { wrapper } = await mountAt()
+    const cache = makeCache()
+    const tiers = wrapper.findAll('[data-testid="tank-card"]')
+      .map(card => cache[card.attributes('data-tank-id')].tier)
+    expect(tiers).toHaveLength(48)
+    expect(tiers).toEqual([...tiers].sort((a, b) => b - a))
+    expect(wrapper.find('#tp-sort [data-value="tier"]').classes()).toContain('is-active')
+  })
+
   it('封面图按内容框数据做展示裁剪；数据缺失时回退原始 contain', async () => {
     // 有内容框：卡片与详情 hero 都带 transform（数据驱动展示裁剪，见 utils/tankIconCrop.js）
     data.loadTankIconCrops.mockResolvedValue({

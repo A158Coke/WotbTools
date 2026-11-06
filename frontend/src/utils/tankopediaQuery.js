@@ -17,7 +17,8 @@ import { TANKOPEDIA_QUERY_KEYS } from '../shared/tankopediaQueryKeys.js'
 
 export { TANKOPEDIA_QUERY_KEYS }
 export const TANKOPEDIA_SORTS = Object.freeze(['name', 'tier', 'hp', 'pen'])
-const DEFAULT_SORT = 'name'
+/** 坦克百科默认按等级降序（同级按名称升序）；显式 sort 仍按 URL 恢复。 */
+const DEFAULT_SORT = 'tier'
 /** 搜索词上限：防止超长 query 拖慢模糊匹配 */
 const MAX_QUERY_LENGTH = 64
 /** 装备槽位数（与客户端 3 组 × 3 级一致） */
@@ -216,7 +217,7 @@ export function selectTanks(tanks, state = {}) {
         || b.score - a.score || byName(a.tank, b.tank))
       .map(entry => entry.tank)
   }
-  return base.slice().sort(COMPARATORS[state.sort] || byName)
+  return base.slice().sort(COMPARATORS[state.sort] || COMPARATORS[DEFAULT_SORT] || byName)
 }
 
 /**
