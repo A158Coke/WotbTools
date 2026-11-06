@@ -95,6 +95,10 @@ export function resolveUpgradeSelection(modules: unknown, mode?: unknown, inputC
     || !Array.isArray(progression.alternativeGroups) || !record(progression.attributeDefinitions)) {
     fail('Invalid upgradeProgression'); return result
   }
+  if (typeof modules.gameVersion !== 'string' || !modules.gameVersion
+    || !record(progression.provenance) || progression.provenance.gameVersion !== modules.gameVersion) {
+    fail('Upgrade data version does not match vehicle modules'); return result
+  }
   for (const [name, raw] of Object.entries(progression.attributeDefinitions)) {
     if (!record(raw) || !['MODIFIER_ADD', 'MODIFIER_MULTIPLY', 'MODIFIER_BOOLEAN'].includes(String(raw.modifier))
       || (raw.script != null && typeof raw.script !== 'string')

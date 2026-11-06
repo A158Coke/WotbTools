@@ -22,6 +22,20 @@ const expected = [
 ]
 
 describe('真实客户端 XI 节点选择', () => {
+  it('升级规则必须与车辆模块的客户端版本一致；缺失或不匹配时拒绝投影', () => {
+    for (const modules of [
+      { ...bz.modules, gameVersion: undefined },
+      { ...bz.modules, gameVersion: 'release/11.22' },
+      { ...bz.modules, upgradeProgression: { ...bz.modules.upgradeProgression, provenance: undefined } },
+    ]) {
+      const selection = resolveUpgradeSelection(modules, 'top')
+      expect(selection.available).toBe(true)
+      expect(selection.supported).toBe(false)
+      expect(selection.unsupported).toContain('Upgrade data version does not match vehicle modules')
+      expect(projectTankUpgrades(bz.detail, modules, 'top').detail).toBe(bz.detail)
+    }
+  })
+
   it.each(TANKS)('$modules.name 旧链接缺省 stock，选项保留但不应用', ({ modules, detail }) => {
     const selection = resolveUpgradeSelection(modules)
     expect(selection.available).toBe(true)
