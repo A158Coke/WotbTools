@@ -63,16 +63,26 @@ const upgradeOptions = computed(() => [
   { value: 'stock', label: t('agentTanks.configurator.upgrade_stock'), testid: 'tank-upgrade-stock' },
   { value: 'top', label: t('agentTanks.configurator.upgrade_top'), testid: 'tank-upgrade-top', disabled: !upgrades.value.supported },
 ])
+// 同版 hangarAbilityParamsConfig 明确标注 PERCENT 的三项；其他机制系数不做统一百分化。
+const PERCENT_MECHANIC_ATTRIBUTES = new Set([
+  'COMBAT_FRENZY_RELOAD_SPEED_BONUS_PER_STACK', 'SAS_AIMING_SPEED', 'SAS_GUN_DISPERSION',
+])
 function upgradeAmount(value, modifier = 'MODIFIER_ADD', name) {
   if (value == null) return '—'
   if (typeof value === 'boolean') return upgradeValue(value, name)
-  return `${modifier === 'MODIFIER_MULTIPLY' ? '×' : value > 0 ? '+' : ''}${fmtNum(value, 3)}`
+  const points = modifier === 'MODIFIER_ADD' && PERCENT_MECHANIC_ATTRIBUTES.has(name)
+  const amount = `${modifier === 'MODIFIER_MULTIPLY' ? '×' : value > 0 ? '+' : ''}${fmtNum(points ? value * 100 : value, 3)}`
+  return points ? t('agentTanks.configurator.upgrade_percentage_points', { value: amount }) : amount
 }
 function upgradeValue(value, name) {
   if (value == null) return '—'
   if (name === 'SAS_ALLOW_ACTIVATE_ON_HIT' && typeof value === 'boolean') {
     return t(`agentTanks.configurator.upgrade_trigger_${value ? 'hit' : 'damage'}`)
   }
+  if (name === 'COMBAT_FRENZY_ALLOW_SWITCH_AFTER_KILL' && typeof value === 'boolean') {
+    return t(`agentTanks.configurator.upgrade_${value ? 'yes' : 'no'}`)
+  }
+  if (typeof value === 'number' && PERCENT_MECHANIC_ATTRIBUTES.has(name)) return `${fmtNum(value * 100, 3)}%`
   return typeof value === 'boolean' ? t(`agentTanks.configurator.upgrade_${value ? 'enabled' : 'disabled'}`) : fmtNum(value, 3)
 }
 const mechanicEffects = computed(() => upgradeMechanicEffects(upgrades.value, props.modules, props.catalog))

@@ -54,3 +54,27 @@ XML 原值及车辆绑定保存在
 前端只在车辆 `vehicleAbilities` 显式绑定该机制，且对应物品目录版本等于车辆版本时计算前后值。
 初始态保持基础值；切到其他互斥选项后取消该项加成；缺绑定、跨版或缺参数时保持未知值。
 这些字段不写入车辆静态属性，相关单测同时比较切换机制前后的静态投影保持不变。
+
+## 百分数单位与保留层数文案
+
+同版 `app/Data/hangarAbilityParamsConfig.yaml.dvpl` 解码后的 SHA-256 为
+`82fb42d98c7f862f422792a0480c06a7d5a35f1020f306d143069f8791cb0d57`。
+下列三个参数明确使用 `units: PERCENT`：
+
+| 配置参数 | 升级属性 | 配置行 |
+| --- | --- | --- |
+| `combatFrenzy_reloadSpeedBonusPerStack` | `COMBAT_FRENZY_RELOAD_SPEED_BONUS_PER_STACK` | 86–95 |
+| `steadyAimSystem_aimingSpeed` | `SAS_AIMING_SPEED` | 262–271 |
+| `steadyAimSystem_gunDispersionModifier` | `SAS_GUN_DISPERSION` | 272–281 |
+
+同版 PE32 的显示转换函数在 `0x13c963f` 读取单位转换矩阵的系数，
+`0x13c9642` 用 `fmul` 乘输入值；矩阵初始化 `0x13ccb2f` 写入
+`0x42c80000`（IEEE754 浮点 100），反向系数是 0.01。
+前端显示这三项时将比例乘 100 并带 `%`；加法改变量以百分点表达。
+例如 432U 的初始 0.04 与当前 0.1 显示 4%→10%，累计改变量 0.06 显示 +6 个百分点，
+单选项 0.02 显示 +2 个百分点。换算仅在格式化时执行，原始数据保持比例值。
+KR-1/BZ 的其他技术系数不属于这份百分数白名单，不做统一乘 100。
+
+同版 `Strings/en.yaml` 的 `tank_descr_param_combatFrenzy_allowSwitchAfterKill`
+在第 929 行明确为 `Keep stacks after destroying a target`，后两行是 Yes/No。
+它表示击毁目标后是否保留层数，不是是否允许切换目标；三语界面明确标注该收益并显示是/否。

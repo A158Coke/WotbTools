@@ -22,6 +22,63 @@ function panel(locale = 'zh', tank = black) {
 
 describe('XI 技能选择卡与效果反馈', () => {
   it.each([
+    ['zh', ' 个百分点', '累计变化', '击毁目标后保留层数', '是', '否'],
+    ['en', ' pp', 'Total change', 'Keep stacks after destroying a target', 'Yes', 'No'],
+    ['ru', ' п. п.', 'Общее изменение', 'Сохранение уровней после уничтожения цели', 'Да', 'Нет'],
+  ])('%s：百分数/百分点区分累计与选项变化，保留层数语义完整', async (locale, points, totalLabel, keepLabel, yes, no) => {
+    const source = tanks.find(tank => tank.modules.tankId === 27905)
+    const wrapper = panel(locale, { ...source, modules: { ...source.modules, vehicleAbilities: ['combatFrenzy'] } })
+    const choose = async id => {
+      await wrapper.get(`[data-testid="tank-ability-${id}"]`).trigger('click')
+      await wrapper.setProps({ selection: { ...wrapper.props('selection'), ...wrapper.emitted('update').at(-1)[0] } })
+    }
+    const keep = () => wrapper.get('[data-testid="tank-mechanic-COMBAT_FRENZY_ALLOW_SWITCH_AFTER_KILL"]')
+    expect(keep().get('th').text()).toBe(keepLabel)
+    expect(keep().findAll('td')[0].text()).toBe(no)
+    expect(keep().get('strong').text()).toBe(yes)
+    expect(wrapper.get('[data-testid="tank-ability-22"]').text()).toContain(keepLabel)
+    expect(wrapper.get('[data-testid="tank-ability-22"] .tp-ability-value').text()).toBe(yes)
+    await choose(23)
+    const reload = wrapper.get('[data-testid="tank-mechanic-COMBAT_FRENZY_RELOAD_SPEED_BONUS_PER_STACK"]')
+    expect(reload.findAll('td')[0].text()).toBe('4%')
+    expect(reload.get('strong').text()).toBe('10%')
+    expect(reload.get('.tp-effect-delta').text()).toBe(`${totalLabel} +6${points}`)
+    expect(wrapper.get('[data-testid="tank-ability-23"] .tp-ability-value').text()).toBe(`+2${points}`)
+    expect(keep().get('strong').text()).toBe(no)
+    await choose(22)
+    expect(keep().get('strong').text()).toBe(yes)
+    await choose(24)
+    expect(keep().get('strong').text()).toBe(no)
+    wrapper.unmount()
+    const hacker = tanks.find(tank => tank.modules.tankId === 30497)
+    const h = panel(locale, { ...hacker, modules: { ...hacker.modules, vehicleAbilities: ['steadyAimSystem'] } })
+    const aim = h.get('[data-testid="tank-mechanic-SAS_AIMING_SPEED"]')
+    expect(aim.findAll('td')[0].text()).toBe('25%')
+    expect(aim.get('strong').text()).toBe('70%')
+    expect(aim.get('.tp-effect-delta').text()).toBe(`${totalLabel} +45${points}`)
+    expect(h.get('[data-testid="tank-ability-22"] .tp-ability-value').text()).toBe(`+35${points}`)
+    await h.get('[data-testid="tank-ability-24"]').trigger('click')
+    await h.setProps({ selection: { ...h.props('selection'), ...h.emitted('update').at(-1)[0] } })
+    const dispersion = h.get('[data-testid="tank-mechanic-SAS_GUN_DISPERSION"]')
+    expect(dispersion.findAll('td')[0].text()).toBe('25%')
+    expect(dispersion.get('strong').text()).toBe('50%')
+    expect(dispersion.get('.tp-effect-delta').text()).toBe(`${totalLabel} +25${points}`)
+    expect(h.get('[data-testid="tank-ability-24"] .tp-ability-value').text()).toBe(`+25${points}`)
+    expect(aim.get('strong').text()).toBe('35%')
+    h.unmount()
+  })
+  it.each([
+    [28161, 'rammingConfiguration'], [15153, 'rechargeableNitro'],
+  ])('%s 的技术系数保持原值展示，不统一乘100', (id, ability) => {
+    const source = tanks.find(tank => tank.modules.tankId === id)
+    const wrapper = panel('en', { ...source, modules: { ...source.modules, vehicleAbilities: [ability] } })
+    expect(wrapper.get('[data-testid="tank-mechanic-effects"]').text()).not.toContain('%')
+    expect(wrapper.get('.tp-ability-options').text()).not.toContain(' pp')
+    expect(wrapper.props('modules')).toEqual({ ...source.modules, vehicleAbilities: [ability] })
+    wrapper.unmount()
+  })
+
+  it.each([
     ['zh', '造成伤害', '命中'], ['en', 'On damage', 'On hit'], ['ru', 'При нанесении урона', 'При попадании'],
   ])('%s Hacker 条件显示真实前后语义而非开关或未知值', async (locale, damage, hit) => {
     const source = tanks.find(tank => tank.modules.tankId === 30497)
@@ -43,7 +100,7 @@ describe('XI 技能选择卡与效果反馈', () => {
     const source = tanks.find(tank => tank.modules.tankId === 15153)
     const wrapper = panel('zh', { ...source, modules: { ...source.modules, vehicleAbilities: ['rechargeableNitro'] } })
     const row = () => wrapper.get('[data-testid="tank-mechanic-RECHARGEABLE_NITRO_HEATING_DURATION"]')
-    expect(row().findAll('td').map(cell => cell.text())).toEqual(['8', '13变化 +5'])
+    expect(row().findAll('td').map(cell => cell.text())).toEqual(['8', '13累计变化 +5'])
     await wrapper.get('[data-testid="tank-ability-23"]').trigger('click')
     await wrapper.setProps({ selection: { ...wrapper.props('selection'), ...wrapper.emitted('update').at(-1)[0] } })
     expect(row().findAll('td').map(cell => cell.text())).toEqual(['8', '8'])
@@ -86,7 +143,7 @@ describe('XI 技能选择卡与效果反馈', () => {
     const patch = wrapper.emitted('update').at(-1)[0]
     expect(patch).toEqual({ abilities: [interval.id] })
     await wrapper.setProps({ selection: { ...wrapper.props('selection'), ...patch } })
-    expect(row().findAll('td').map(cell => cell.text())).toEqual(['2.5', '0.7变化 -1.8'])
+    expect(row().findAll('td').map(cell => cell.text())).toEqual(['2.5', '0.7累计变化 -1.8'])
     expect(wrapper.findAll('.tp-ability-options [role="radio"][aria-checked="true"]')).toHaveLength(1)
     await wrapper.setProps({ selection: { ...wrapper.props('selection'), upgrade: 'stock' } })
     expect(row().findAll('td').map(cell => cell.text())).toEqual(['2.5', '2.5'])
