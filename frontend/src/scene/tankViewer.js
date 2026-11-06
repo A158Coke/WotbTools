@@ -54,8 +54,10 @@ import {
 } from './viewer/armorPlateModel.js'
 // 动态装甲单次 Mesh 状态应用（#820 Wave B3C 出仓）：userData/可见性/分类/厚度/材质
 import { applyArmorStateToMesh, replaceArmorMaterial } from './viewer/armorMeshState.js'
+// 间隙甲同板去重键与判据：与厚度通道 per-key stencil 共用一处语义（order-independent）
+import { resolveSpacedHitMask, spacedDedupKey, firstPhysicalHit } from './armorMeshTopology.js'
 // 点击判定的触发面分类（Primary = 主装甲板）；与判定本体同源，勿在此复制一份板面清单
-import { isPrimary, hasPrimaryLayer, matchHitsByOccurrence } from './penetration.js'
+import { isPrimary, hasPrimaryLayer, matchHitsByOccurrence, ricochetSurface, withContactRicochet, withGapOrigin } from './penetration.js'
 // Armor Inspector 概率模型：±range = ±3σ 的正态 CDF + 逐层 1× 等效厚度传播
 import { penetrationChance, evaluateProbabilityChain, resolveCardChance } from './armorInspectorChance.js'
 // HE 溅射：Armor Inspector func7695 的 800 条世界空间方向采样（best-sample 语义）
@@ -5007,29 +5009,47 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
          * 判定命中收集（点击主链 / 跳弹续飞共用）：
          *  - 间隙甲双面：背面命中的间隙屏参与判定（法线已由 classifyHit 翻向来向）；
          *    主装甲/外部模块仍只认迎面命中（闭合壳体正/背面各算一层会重复消耗厚度）。
-         *  - 闭合间隙甲的正/背面是同一块板：该板前面已计过时不再重复计背面。
+         *  - 闭合间隙甲的正/背面是同一块板：同键按**整条射线**判定——有入射面命中时
+         *    出射面全部抑制；没有入射面命中时才计出射面（与厚度通道 per-key stencil
+         *    同口径、与穿越顺序无关；近背远正的背→正次序不再多计一层）。
+         *    去重窗口止于首个 Primary（含）：其后的命中不进入 collectFilteredHits，
+         *    GPU 侧也被主装甲深度遮挡，因此远处同键 front 不得抑制面前的 back。
+         *  - 返回值：hits = 判定层链；firstContact = 去重前的首个物理接触面（HE 爆炸点，
+         *    厚度累计去重不改变首次接触语义）。
          */
-        function collectJudgmentHits(intersects, rayDir) {
-            const hits = [];
-            const spacedSeen = new Set();
+        function collectJudgmentHits(intersects, rayDir, minDistance = 0) {
+            const candidates = [];
             for (const hit of intersects) {
+                // 续飞链：先丢掉发射面自身的近零距离命中，再 classify/附加首触面——
+                // 否则该命中会被同板去重删掉、却作为 contact_* 盖到更远的保留命中上，
+                // 让续飞朝发射面再次跳弹。
+                if (minDistance > 0 && hit.distance <= minDistance) continue;
                 if (isClippedModuleHit(hit.object.userData.armorSection, hit.point, gunClipPlane)) continue;
                 const entry = classifyHit(hit, rayDir);
                 if (!entry) continue;
                 // plateId 只在所属装甲表内唯一：hull/turret/gun 可以出现相同数字。
                 // 正/背面去重必须带上原始 section，否则跨板的合法层会被误删。
                 const origSection = entry.object?.userData?.armorSectionOrig || entry.section || '';
-                const key = `${origSection}:${entry.plateId == null ? '' : entry.plateId}`;
-                if (entry.backface) {
-                    if (entry.section !== 'spaced' || spacedSeen.has(key)) continue;
-                    spacedSeen.add(key);
-                    hits.push(entry);
-                    continue;
-                }
-                if (entry.section === 'spaced') spacedSeen.add(key);
-                hits.push(entry);
+                candidates.push({
+                    entry,
+                    spaced: entry.section === 'spaced',
+                    backface: !!entry.backface,
+                    key: spacedDedupKey(origSection, entry.section, entry.plateId),
+                });
             }
-            return hits;
+            // 有效判定区间 = 首个 Primary（含）；判定层链在它后面不再参与。
+            let spanEnd = candidates.length;
+            for (let i = 0; i < candidates.length; i++) {
+                if (isPrimary(candidates[i].entry.section)) { spanEnd = i + 1; break }
+            }
+            const keep = resolveSpacedHitMask(candidates, spanEnd);
+            const hits = [];
+            for (let i = 0; i < candidates.length; i++) if (keep[i]) hits.push(candidates[i].entry);
+            const contact = firstPhysicalHit(candidates);
+            const contactEntry = contact < 0 ? null : candidates[contact].entry;
+            // 首层跳弹/续飞几何取物理首触面（contact_normal/contact_point，不改厚度链几何）；
+            // 与首层是否同键无关：中间夹别的板时物理跳弹仍发生在首触面上。
+            return { hits: withContactRicochet(hits, contactEntry), firstContact: contactEntry };
         }
 
         /**
@@ -5115,7 +5135,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // 间隙甲按双面参与判定：临时 DoubleSide 求交，背面命中在 collectJudgmentHits
             // 里按“同一块板只计一层”过滤（主装甲/外部模块仍只认迎面命中）。
             const intersects = intersectArmorDoubleSidedSpaced(objects, raycaster);
-            const armorHits = collectJudgmentHits(intersects, raycaster.ray.direction);
+            const { hits: armorHits, firstContact } = collectJudgmentHits(intersects, raycaster.ray.direction);
 
             // BlitzKit 语义（SpacedArmorScene 的触发面）：判定只由【触达主装甲板】的射线发起——
             // shoot() 只挂在 Primary 网格的 onClick 上，spaced / 外部模块网格挂的是空 handler
@@ -5168,12 +5188,21 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // ===== HE 弹命中层语义修正 =====
             // HE(与一切爆炸弹)命中【首个表面】即爆炸，不沿弹道穿透整车；弦判定沿弦收集
             // 全部连续命中会把两侧装甲都算进溅射衰减 → HE 溅射伤害被过度衰减而误判
-            // BLOCKED(服务器同发判有伤害)。修正：HE 只保留【第一个非 deco 命中】为爆炸点。
+            // BLOCKED(服务器同发判有伤害)。修正：HE 只保留【第一个非 deco 命中】为爆炸点——
+// 该首触面取自厚度累计去重之前（firstPhysicalHit），同板去重不得移动爆炸点。
             // AP/APCR/HEAT 的多层穿透语义不变。
-            const hitsForCheck = (shellTypeNow === 'he' && armorHits.length > 1)
-                ? [armorHits[0]] : armorHits;
+            // HE 的爆炸点 = 去重前的首个物理接触面（firstContact）：厚度累计的同板去重
+            // 只决定层链，不改变「HE 碰到第一层表面即爆炸」的契约（近背远正时若用层链
+            // 首层，会把爆点推到更远的入射面）。
+            const first = firstContact || armorHits[0];
+            // HEAT 的间隙衰减从首个物理接触面量起：同板去重删掉近侧接触面后，把请求
+            // 首层的间距原点前移到该接触点（GPU 以最近屏幕深度为原点），否则 gap 被
+            // 缩短、衰减被低估（近背远正的空心壳会少算整段内部行程）。仅影响 HEAT。
+            const checkHits = shellTypeNow === 'heat'
+                ? withGapOrigin(armorHits, firstContact)
+                : armorHits;
+            const hitsForCheck = shellTypeNow === 'he' ? [first] : checkHits;
 
-            const first = armorHits[0];
             const point = first.point;
             // ===== 片元交叉验证：raycast 装甲片 ↔ 游戏原生 segment armor_group =====
             // segment（type=32 命中通知，服务器权威）给出命中装甲组。一致 → 标记绿色（高置信），
@@ -5373,6 +5402,16 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         normal: [ah.normal.x, ah.normal.y, ah.normal.z],
                         point: [lp.x * mpu, lp.y * mpu, lp.z * mpu],
                         part_name: ah.partName,
+                        // 客户端扩展：首层的物理首触面（只用于跳弹判定，不参与厚度几何）
+                        ...(ah.contact_normal ? {
+                            contact_normal: [ah.contact_normal.x, ah.contact_normal.y, ah.contact_normal.z],
+                            contact_point: (() => {
+                                const cp = toLocalPt(ah.contact_point);
+                                return [cp.x * mpu, cp.y * mpu, cp.z * mpu];
+                            })(),
+                            contact_thickness: ah.contact_thickness,
+                            contact_part_name: ah.contact_part_name || null,
+                        } : {}),
                     };
                 }),
             };
@@ -5384,16 +5423,19 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 const deterministicMatches = matchHitsByOccurrence(res.layers, hitsForCheck);
                 let trajLayers = res.layers.map((l, i) => {
                     const ah = deterministicMatches[i];
+                    // 跳弹/续飞用物理首触面（contact_*），显示点也落在实际先碰到的面。
+                    const surface = ricochetSurface(ah);
                     return {
-                        point: ah?.point || point,
-                        name: l.part_name,
-                        thickness: l.thickness,
+                        point: surface?.point || point,
+                        // 跳弹层显示首触板（名字/厚度），普通层仍是厚度链那一层。
+                        name: l.contact_part_name || l.part_name,
+                        thickness: l.contact_thickness != null ? l.contact_thickness : l.thickness,
                         eff: l.effective,
                         remainBefore: l.remaining_before,
                         penetrated: l.penetrated,
                         ricochet: l.ricochet,
                         angle: l.angle_deg != null ? l.angle_deg : null,
-                        normal: ah?.normal,
+                        normal: surface?.normal,
                         seg: 0,
                     };
                 });
@@ -5461,7 +5503,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         }
                         return {
                             ...l,
-                            name: l.part_name,
+                            name: l.contact_part_name || l.part_name,
+                            thickness: l.contact_thickness != null ? l.contact_thickness : l.thickness,
                             eff: l.effective,
                             angle: l.angle_deg != null ? l.angle_deg : null,
                             point: ah?.point || (Array.isArray(l.point)
@@ -5540,8 +5583,12 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                             const rc = new THREE.Raycaster(currentPoint, reflect);
                             // 与点击主链同一收集口径：间隙甲双面 + 同一块板只计一层
                             const ricIntersects = intersectArmorDoubleSidedSpaced(objects, rc);
-                            const ricHits = collectJudgmentHits(ricIntersects, rc.ray.direction)
-                                .filter(h => h.distance > RC.MIN_CONTINUATION_T);
+                            const ricCollect = collectJudgmentHits(ricIntersects, rc.ray.direction, RC.MIN_CONTINUATION_T);
+                            // 续飞链同口径：HEAT 的间隙同样从首个物理接触面量起。
+                            // （近零距离命中已在收集前过滤，contact_* 不会来自发射面。）
+                            const ricHits = shellType === 'heat'
+                                ? withGapOrigin(ricCollect.hits, ricCollect.firstContact)
+                                : ricCollect.hits;
                             ricHits.sort((a, b) => a.distance - b.distance);
                             if (!ricHits.length || !ricHits.some(h => isPrimary(h.section))) break;
 
@@ -5557,7 +5604,18 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                 allow_ricochet: true,
                                 require_primary: requirePrimary,
                                 view_dir: [reflect.x, reflect.y, reflect.z],
-                                hits: ricHits.map(ah => ({ section: ah.section, plate_id: ah.plateId, thickness: ah.thickness, normal: [ah.normal.x, ah.normal.y, ah.normal.z], point: [ah.point.x * mpu, ah.point.y * mpu, ah.point.z * mpu], part_name: ah.partName })),
+                                hits: ricHits.map(ah => ({
+                                    section: ah.section, plate_id: ah.plateId, thickness: ah.thickness,
+                                    normal: [ah.normal.x, ah.normal.y, ah.normal.z],
+                                    point: [ah.point.x * mpu, ah.point.y * mpu, ah.point.z * mpu],
+                                    part_name: ah.partName,
+                                    ...(ah.contact_normal ? {
+                                        contact_normal: [ah.contact_normal.x, ah.contact_normal.y, ah.contact_normal.z],
+                                        contact_point: [ah.contact_point.x * mpu, ah.contact_point.y * mpu, ah.contact_point.z * mpu],
+                                        contact_thickness: ah.contact_thickness,
+                                        contact_part_name: ah.contact_part_name || null,
+                                    } : {}),
+                                })),
                             };
                             const ricRes = await judgePenetration(ricReq);
                             if (destroyed || penSeq !== __penCheckSeq) return;
@@ -5568,10 +5626,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                             const matched = matchHitsByOccurrence(ricRes.layers, ricHits);
                             const ricLayers = ricRes.layers.map((l, i) => {
                                 const hit = matched[i] || null;
+                                const surface = ricochetSurface(hit);
                                 return {
-                                    point: hit?.point || currentPoint,
-                                    name: l.part_name,
-                                    thickness: l.thickness,
+                                    point: surface?.point || currentPoint,
+                                    name: l.contact_part_name || l.part_name,
+                                    thickness: l.contact_thickness != null ? l.contact_thickness : l.thickness,
                                     eff: l.effective,
                                     remainBefore: l.remaining_before,
                                     penetrated: l.penetrated,
@@ -5608,8 +5667,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                 current = ricRes;
                                 break;
                             }
-                            currentPoint = lastMatch.point.clone();
-                            currentNormal = lastMatch.normal.clone();
+                            const nextSurface = ricochetSurface(lastMatch);
+                            currentPoint = nextSurface.point.clone();
+                            currentNormal = nextSurface.normal.clone();
                             currentDir = reflect;
                             current = ricRes;
                             bounced++;

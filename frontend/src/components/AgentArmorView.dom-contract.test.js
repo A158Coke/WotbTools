@@ -539,7 +539,7 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(pen).toMatch(/function resolveLayerGeometry\(ah, thickness, ctx\)/)
     expect(pen).toMatch(/const effNormalization = normalization/)
     expect(pen).not.toMatch(/armorLayerCount/)
-    expect(pen).toMatch(/const noRicochet = threeCalibersRule \|\| ctx\.layerIndex > 0 \|\| !ctx\.allowRicochet/)
+    expect(pen).toMatch(/const noRicochet = \(contact \? contact\.three_calibers : threeCalibersRule\)\s*\n\s*\|\| ctx\.layerIndex > 0 \|\| !ctx\.allowRicochet/)
     // overmatch 字段只报真实 3× 口径，不再用 layerIndex/allow_ricochet 冒充
     expect(pen).toMatch(/const threeCalibersRule = ctx\.caliber > thickness \* 3\.0\r?\n/)
   })
@@ -709,19 +709,20 @@ describe('spaced armor double-sided judgment', () => {
     expect(kernel).toMatch(/m\.side = THREE\.DoubleSide/)
     expect(kernel).toMatch(/finally \{\s*\n\s*for \(const \[m, side\] of saved\) m\.side = side;/)
   })
-  it('命中收集只放行未计过的间隙甲背面，主装甲/模块仍剔除背面', () => {
-    expect(kernel).toMatch(/function collectJudgmentHits\(intersects, rayDir\)/)
+  it('同板去重判据委托 armorMeshTopology.resolveSpacedHitMask（语义由纯函数单测锁定）', () => {
+    expect(kernel).toMatch(/function collectJudgmentHits\(intersects, rayDir, minDistance = 0\)/)
     expect(kernel).toMatch(/const origSection = entry\.object\?\.userData\?\.armorSectionOrig \|\| entry\.section \|\| '';/)
-    expect(kernel).toMatch(/const key = `\$\{origSection\}:\$\{entry\.plateId == null \? '' : entry\.plateId\}`;/)
-    expect(kernel).toMatch(/if \(entry\.section !== 'spaced' \|\| spacedSeen\.has\(key\)\) continue;/)
-    expect(kernel).toMatch(/if \(entry\.section === 'spaced'\) spacedSeen\.add\(key\);/)
-    expect(kernel).not.toMatch(/entry && !entry\.backface/)
+    expect(kernel).toMatch(/import \{ resolveSpacedHitMask, spacedDedupKey, firstPhysicalHit \} from '\.\/armorMeshTopology\.js'/)
+    // HEAT 间距原点必须来自 Node 可直接加载的 penetration.js（Node 不解析 .js → .ts）
+    expect(kernel).toMatch(/import \{ isPrimary, hasPrimaryLayer, matchHitsByOccurrence, ricochetSurface, withContactRicochet, withGapOrigin \} from '\.\/penetration\.js'/)
+    expect(kernel).toMatch(/key: spacedDedupKey\(origSection, entry\.section, entry\.plateId\)/)
+    expect(kernel).toMatch(/const keep = resolveSpacedHitMask\(candidates, spanEnd\);/)
   })
   it('点击主链与跳弹续飞共用同一双面求交/收集', () => {
     expect(kernel).toMatch(/const intersects = intersectArmorDoubleSidedSpaced\(objects, raycaster\);/)
-    expect(kernel).toMatch(/const armorHits = collectJudgmentHits\(intersects, raycaster\.ray\.direction\);/)
+    expect(kernel).toMatch(/const \{ hits: armorHits, firstContact \} = collectJudgmentHits\(intersects, raycaster\.ray\.direction\);/)
     expect(kernel).toMatch(/const ricIntersects = intersectArmorDoubleSidedSpaced\(objects, rc\);/)
-    expect(kernel).toMatch(/const ricHits = collectJudgmentHits\(ricIntersects, rc\.ray\.direction\)/)
+    expect(kernel).toMatch(/const ricCollect = collectJudgmentHits\(ricIntersects, rc\.ray\.direction, RC\.MIN_CONTINUATION_T\);/)
   })
 })
 
@@ -816,7 +817,8 @@ describe('armor shell and readiness ownership', () => {
 
 // 间隙甲渲染：additive 层按网格拓扑选面——闭合网格单面累计（正/背两表面只算一次）；
 // 开放面片拆 front/back 双 clone + stencil 去重（同键入射面计一次、出射面抑制，
-// 与点击链 spacedSeen 同口径）；背面片元把法线翻向相机（与 classifyHit 同口径）。
+// 与点击链 resolveSpacedHitMask 同口径：按整条射线判定，与穿越顺序无关）；背面片元
+// 把法线翻向相机（与 classifyHit 同口径）。
 // 本 describe 只保留**既有**的材质状态接线断言；同板去重的真实行为（stencil 抑制、
 // 背面屏等效厚度、resize 后仍带 stencil 附件）由 browser gate
 // `test:browser-armor-spaced-backside` 以真实 GPU readback 验证，不用源码正则冒充
