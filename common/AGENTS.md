@@ -22,9 +22,15 @@
 - `fixtures/replays/*.wotbreplay` 提交入库、CI 无条件执行；
   本地私人回放绝不提交；本地扩展样本放 gitignored `data/` 子目录，
   不假定存在自动递归发现入口。
-- 数据文件更新一律走 `.github/workflows/update-*.yml` 或
-  `common/python/update_*.py`，经 `scripts/ci/publish-data-update.sh` 发布 PR；
-  车辆库数据源只认 BlitzKit production definitions，写入前完整性门禁 fail closed。
+- **自动同步数据**（Tankopedia 车辆库 / Equipment / Crew skills）：
+  更新走 `.github/workflows/update-*.yml` 或 `common/python/update_*.py`，
+  经 `scripts/ci/publish-data-update.sh` 发布 PR；车辆库数据源只认
+  BlitzKit production definitions，写入前完整性门禁 fail closed。
+- **人工维护数据**（`tank_aliases.json`、已人工核验的
+  `map-semantics/*.semantic.json`）：允许走正常 Git 分支与 PR 手工修改，
+  但必须遵循各自验证要求——alias 不得出现空数组、重复 key 或覆盖既有人工
+  别名；已核验地图语义不得重跑会覆盖人工修订的生成器；改语义 JSON 时
+  同步相关 reference 文档与既有测试断言。
 
 ## 数据文件 → canonical 文档
 

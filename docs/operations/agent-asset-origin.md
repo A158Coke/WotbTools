@@ -139,35 +139,29 @@ Web 与新 Android 版本当前统一使用 Alibaba origin。Web 由 tracked wor
 
 3. Android 同步更新 `AgentAssetProxy.kt` 中实际使用的远端 origin 常量、`scripts/android-release/android_contract.py` 的 `REVIEWED_REMOTE_ASSET_ORIGINS`，以及对应的 origin 解析测试；增加 Android 版本号。release readiness 必须继续从已验证 staged tag 源码解析 origin，不要在 workflow 中写死当前生产 origin。`ASSET_BASE_URL` 只包含公开 origin，**不放任何密钥**。
 
-### 发布边界（frontend image → Tencent TCR）
+### 发布边界（frontend image，TX 本机构建 → Tencent TCR）
 
-Frontend 的镜像发布是四段分离、每段都有步级超时的边界，**不存在"一个 step 静默跑 60 分钟"**：
+Frontend 镜像的发布由 TX 本机构建脚本 `deploy/tx/build-frontend-from-gitee.sh`
+执行（详见下节），当前流程是：
 
-```
-Build immutable frontend image          本地成镜像（push:false + load），不写 registry
-Verify local frontend artifact          version.json/source SHA + 资产源 + WASM + 静态文件（推送前）
-Report frontend image and layer sizes   镜像/分层/目录体积诊断
-Reject stale main before publication    main 已前进则 fail-fast（不推一份注定不能 promote 的 tag）
-Publish immutable image to Tencent TCR  docker push：每次 600s、最多 3 次、仅瞬态失败重试
-Verify Tencent TCR digest               只证 registry 上该 immutable tag 的 digest == 本次推送的 digest
-```
-
-> 构建发生在 TX 本机（见下节）；frontend 不再发布或依赖 `latest`（旧的
-> `crane cp -> :latest` 步骤已随 digest-pinned 车道移除，见
-> `docs/operations/ci-supply-chain.md` §5）。
-
-- **校验前置**：内容校验（source SHA / 资产源 / WASM / 期望静态文件）在**任何 registry
-  写入之前**完成，校验对象是"即将被推送的那份字节"。WASM 一项不是"文件存在 + magic"而是
-  **commit-addressed 身份核对**：从该 source commit 的 `deploy/agent/source.json` 读 `ref` 与
-  `artifact.release`，再要求镜像内恰好只有 `/wasm/<ref>/`，其 `fingerprint.json` 的
-  `upstream_commit` / `tag` 与之一致，且 stable `/wasm/wotb_replay_wasm.js` 不存在。发布后不再把整镜像从 TCR 拉回复检，
-  只证 digest 对应关系（manifest digest 相等）；失败不留垃圾 tag。
-- **有界重试**：`docker push` 对 immutable tag 是幂等的（registry 内容寻址，重试只补传上次
-  未完成的 blob，不重建镜像、不重复构建）；超时或重试预算用尽即 fail closed。
-- **不使用 GHA 构建缓存**（`cache-from`/`cache-to` 已移除）：`mode=max` 需要把整个 build stage
-  上传到 GitHub cache，是与镜像同量级、且在 step 内无法单独设超时的边界；`mode=min` 不缓存
-  build stage、省不下 `pnpm install`，却被同一失败面支配。该决策**只适用于 frontend**，不外推到
-  business-api / keycloak / ai-service。
+1. **本机构建**：从 Gitee 取得 exact SHA 的源码后构建镜像（不写 registry）。
+2. **发布前验证本地 image identity**：对**任何 registry 写入之前**的本地产物验证
+   source SHA / `ASSET_BASE_URL` / WASM / 期望静态文件（`verify_frontend_image`）。
+   WASM 不是"文件存在 + magic"而是 **commit-addressed 身份核对**：从该 source commit 的
+   `deploy/agent/source.json` 读 `ref` 与 `artifact.release`，要求镜像内恰好只有
+   `/wasm/<ref>/`，其 `fingerprint.json` 的 `upstream_commit` / `tag` 与之一致，
+   且 stable `/wasm/wotb_replay_wasm.js` 不存在。
+3. **发布 immutable tag 到 TCR**：`docker push` 每次超时 600s、最多 3 次、
+   仅瞬态失败重试；对 immutable tag 幂等（registry 内容寻址，重试只补传未完成的
+   blob），超时或预算用尽即 fail closed。
+4. **查询远端 digest**（`lookup_remote_digest`）：immutable tag 已存在（reuse 路径）时
+   不重建，直接 `docker pull` 该 `image@digest` 并跑同一套 `verify_frontend_image`。
+5. **下载并复检**：新建发布路径在 push 后也按 `image@digest` 执行 `docker pull`，对
+   **下载后的产物**再次运行 `verify_frontend_image`；发布不可读或复检失败即 fail closed
+   （发布 run 终止，不产生可部署的 digest 输出）。
+6. **生产部署使用经过验证的 digest**：`TX_FRONTEND_IMAGE_REF=...@sha256:...`
+   （见 `docs/operations/ci-supply-chain.md` §5）；frontend 不再发布或依赖 `latest`
+   （旧 GitHub runner 构建与 `crane cp -> :latest` 流程已退役，不作为当前流程描述）。
 
 ### TX 本机构建车道（build-frontend-from-gitee.sh）
 
@@ -219,8 +213,9 @@ curl -sI "$B/data/tank_cache.json" -H "Origin: https://wotbtools.com" \
 - **数据源是本机客户端解析**：上游 WoT-Blitz-Agent 仓 `tools/export_research_loadout.py`
   重导出，版本锚 `meta.json.gameVersion`；不是 BlitzKit。
 - **BlitzKit（BK）可参考范围**（2026-10-27 用户第二次裁定）：除隐蔽系数外均可参考，
-  隐蔽/技能数值仍以客户端为准。**四项不照抄**：无角色 1.05 兜底、火药 +30%、
-  漏电台/油箱重量、124 号装备（详见上游计划 §7 #12）。
+  隐蔽/技能数值仍以客户端为准。**四项不照抄（BK 数值不得直接采用，
+  一律以客户端解析结果为准）**：无角色的 1.05 兜底、火药 +30%、
+  漏电台/油箱重量、124 号装备。
 - **物品可用性按客户端 `vehicleFilter`**：同一 include 块内所有条件 AND
   （如 ration = 6-10 级且苏联）；`<isAbility/>`（战斗内技能）不进装配池；
   `ids` 规则用模块条目键补出的 `nation:stem`。过滤结果只决定物品池，

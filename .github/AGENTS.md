@@ -34,7 +34,14 @@
   （`check-latest-main.sh` exit 10）。
 - `infra/komodo/resources/**` 只路由到 non-production `deployment` PR gate
   （`scripts/ci/test-komodo-resources.py`），**绝不能**加入 controller 的
-  paths/inputs；唯一例外 `asset-origin.toml`（见下表，只能改 transport pair）。
+  paths/inputs。唯一狭窄例外是 `infra/komodo/resources/asset-origin.toml`：
+  它同时是 `asset-origin.yml` 的 production source-transport gate input，
+  该 gate 只能修改 GitHub `asset-origin` pointer branch 与 Gitee `asset-origin`
+  transport branch；不得修改共享 Gitee `main`、执行 ResourceSync Apply、
+  修改 Komodo resources 或部署 Stack。
+- `ali-sh-asset-01` 不属于 `komodo-periphery.yml` 自动化链：其 Periphery agent
+  手动 bootstrap、手动管理 lifecycle；不得引入 Alibaba SSH secrets、
+  reusable workflow 或自动 reconcile。
 
 ## Workflow 职责地图（40 个，以 `.github/workflows/` 目录为准）
 
