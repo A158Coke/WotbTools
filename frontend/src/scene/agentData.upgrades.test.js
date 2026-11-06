@@ -63,6 +63,25 @@ describe('explicit XI armor data selection', () => {
     await expect(fetchTankData(15153, { upgrade: 'top' })).resolves.toBe(raw)
   })
 
+  it.each([
+    ['HTTP 500', new Error('asset /research/modules/china.json: HTTP 500')],
+    ['network failure', new Error('NETWORK_ERROR')],
+    ['JSON parse failure', new SyntaxError('Unexpected token < in JSON')],
+  ])('rethrows %s from the module catalog instead of returning stock', async (_label, error) => {
+    upgrades.modules.mockRejectedValueOnce(error)
+    await expect(fetchTankData(15153, { upgrade: 'top' })).rejects.toBe(error)
+    expect(upgrades.project).not.toHaveBeenCalled()
+  })
+
+  it('retries after a non-404 catalog failure and then projects top data', async () => {
+    upgrades.modules
+      .mockRejectedValueOnce(new Error('asset /research/modules/china.json: HTTP 500'))
+      .mockResolvedValueOnce({ tanks: { 15153: moduleData } })
+    await expect(fetchTankData(15153, { upgrade: 'top' })).rejects.toThrow('HTTP 500')
+    await expect(fetchTankData(15153, { upgrade: 'top' })).resolves.toBe(projected)
+    expect(upgrades.modules).toHaveBeenCalledTimes(2)
+  })
+
   it('keeps raw data when the asset pack has no upgradeProgression', async () => {
     upgrades.project.mockReturnValueOnce({
       detail: raw, modules: moduleData,
