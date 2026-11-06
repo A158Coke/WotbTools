@@ -15,6 +15,8 @@
  * Rust 单测 12 例逐例对齐），上游判定变更时同版本跟随移植。
  */
 
+import { pointsCoincide } from './armorMeshTopology.js'
+
 /** 装甲部件分类（对齐 BlitzKit ArmorType：Primary / Spaced / External；值 = 上游 serde wire 值） */
 export const ArmorSection = Object.freeze({
   HULL: 'hull',
@@ -127,13 +129,6 @@ function moduleVariant(section) {
 
 const plateIdOf = (hit) => hit.plate_id ?? hit.plateId
 const hitNameOf = (hit) => hit.partName ?? hit.part_name
-const pointsCoincide = (a, b) => {
-  if (Array.isArray(a) && Array.isArray(b)) return dist3(a, b) < 1e-6
-  if (a && b && [a.x, a.y, a.z, b.x, b.y, b.z].every(Number.isFinite)) {
-    return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) < 1e-6
-  }
-  return false
-}
 
 /**
  * 收集阶段：外部模块按 variant 去重；确定性判定与概率链都只收集到**首个 Primary
