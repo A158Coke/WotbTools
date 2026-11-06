@@ -6,7 +6,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 import { mount } from '@vue/test-utils'
-import { FLY_SPEEDS, isFlySpeedIndex, advanceFly, classifyTwoFinger, groundPanOffset, isTextEntryTarget, useSceneFlyControls } from './useSceneFlyControls.ts'
+import { FLY_SPEEDS, isFlySpeedIndex, advanceFly, classifyTwoFinger, groundPanOffset, freeVerticalDistancePose, isTextEntryTarget, useSceneFlyControls } from './useSceneFlyControls.ts'
 
 // 测试桩：构造 camera/controls 与 pressed 集合，直接调**生产实现** advanceFly
 //（此前复制生产实现到桩里，Q/E 翻转时桩漏改导致测试与实现脱钩——已改为单一实现）。
@@ -197,5 +197,34 @@ describe('飞行循环的生命周期（评审 P2）', () => {
     expect(calls.length).toBe(stopped)               // 按键已清空：不自恢复
     window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW' }))
     wrapper.unmount()
+  })
+})
+
+describe('freeVerticalDistancePose 竖向距离位姿（滑条 Free 模式）', () => {
+  const base = { terrainY: 0, clearanceMin: 0.5, heightMax: 100 }
+
+  it('斜视降低相机：camera 与 target 加同一高度差，yaw/pitch 不变', () => {
+    // 相机 (·,100,·) 看向 target (·,0,·)（−45° 俯视）；滑到 v=1 → 贴地下限 0.5
+    const pose = freeVerticalDistancePose({ ...base, camY: 100, targetY: 0, v: 1 })
+    expect(pose.camY).toBe(0.5)
+    expect(pose.targetY).toBe(0 - (100 - 0.5))   // 同一 delta，−45° 朝向保持
+  })
+
+  it('升高相机：target 同步上移，方向保持', () => {
+    const pose = freeVerticalDistancePose({ ...base, camY: 20, targetY: 5, v: 0 })
+    expect(pose.camY).toBe(100)                    // heightMax 上限
+    expect(pose.targetY).toBe(5 + 80)              // 同一 delta
+  })
+
+  it('撞到贴地下限：相机停在 terrain+clearance，target 只跟随实际生效差值', () => {
+    const pose = freeVerticalDistancePose({ ...base, camY: 30, targetY: 10, v: 1 })
+    expect(pose.camY).toBe(0.5)
+    expect(pose.targetY).toBe(10 - (30 - 0.5))
+  })
+
+  it('地形不为 0 时上下限整体随 terrainY 平移', () => {
+    const pose = freeVerticalDistancePose({ ...base, terrainY: 10, camY: 200, targetY: 20, v: 1 })
+    expect(pose.camY).toBe(10.5)                   // terrainY + clearanceMin
+    expect(pose.targetY).toBe(20 - (200 - 10.5))
   })
 })
