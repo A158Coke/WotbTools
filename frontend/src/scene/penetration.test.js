@@ -1042,6 +1042,7 @@ describe('HEAT 间隙衰减（首触面在前 vs 被去重）', () => {
 describe('withContactRicochet / ricochetSurface（首触面只服务跳弹，不改厚度几何）', () => {
   const h = (distance, normal, thickness = 30, section = 'spaced', plateId = '2') => ({
     distance, point: [0, 0, -distance], normal, thickness, section, plate_id: plateId,
+    part_name: `${section}-${plateId}`,
   })
 
   it('首触面在首层之前：只附加 contact_normal/contact_point，normal/thickness/point 不动', () => {
@@ -1051,6 +1052,7 @@ describe('withContactRicochet / ricochetSurface（首触面只服务跳弹，不
     expect(out[0].contact_normal).toEqual([0.98, 0.17, 0])
     expect(out[0].contact_point).toEqual([0, 0, -1])
     expect(out[0].contact_thickness).toBe(30)
+    expect(out[0].contact_part_name).toBe('spaced-2')
     expect(out[0].normal).toEqual([0, 1, 0])
     expect(out[0].thickness).toBe(30)
     expect(out[0].point).toEqual([0, 0, -1.05])
@@ -1122,7 +1124,15 @@ describe('动能弹首层跳弹按物理首触面判定（厚度几何不改）'
     ]
     expect(calculate(apReq([...chain])).result).toBe('PENETRATION')
     const withContact = withContactRicochet(chain, armor(ArmorSection.SPACED, '2', 30, 80, 1))
-    expect(calculate(apReq(withContact)).result).toBe('RICOCHET')
+    const r = calculate(apReq(withContact))
+    expect(r.result).toBe('RICOCHET')
+    // 结果卡按首触板呈现（炮管只是被穿过的保留层），角度取首触面 80°。
+    expect(r.layers[0].part_name).toBe('gunBarrel-1')
+    expect(r.layers[0].contact_part_name).toBe('spaced-2')
+    expect(r.layers[0].contact_thickness).toBe(30)
+    expect(r.layers[0].angle_deg).toBeCloseTo(80, 5)
+    expect(r.probability_layers[0].contact_part_name).toBe('spaced-2')
+    expect(r.probability_layers[0].contact_thickness).toBe(30)
   })
 
   it('首触板 3× 口径按强化装甲后的厚度判（25mm × 1.04 = 26mm → 78 > 76.2 不 overmatch）', () => {

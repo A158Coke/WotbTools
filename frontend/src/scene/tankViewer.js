@@ -5410,6 +5410,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                 return [cp.x * mpu, cp.y * mpu, cp.z * mpu];
                             })(),
                             contact_thickness: ah.contact_thickness,
+                            contact_part_name: ah.contact_part_name || null,
                         } : {}),
                     };
                 }),
@@ -5426,8 +5427,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     const surface = ricochetSurface(ah);
                     return {
                         point: surface?.point || point,
-                        name: l.part_name,
-                        thickness: l.thickness,
+                        // 跳弹层显示首触板（名字/厚度），普通层仍是厚度链那一层。
+                        name: l.contact_part_name || l.part_name,
+                        thickness: l.contact_thickness != null ? l.contact_thickness : l.thickness,
                         eff: l.effective,
                         remainBefore: l.remaining_before,
                         penetrated: l.penetrated,
@@ -5501,7 +5503,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         }
                         return {
                             ...l,
-                            name: l.part_name,
+                            name: l.contact_part_name || l.part_name,
+                            thickness: l.contact_thickness != null ? l.contact_thickness : l.thickness,
                             eff: l.effective,
                             angle: l.angle_deg != null ? l.angle_deg : null,
                             point: ah?.point || (Array.isArray(l.point)
@@ -5610,6 +5613,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                         contact_normal: [ah.contact_normal.x, ah.contact_normal.y, ah.contact_normal.z],
                                         contact_point: [ah.contact_point.x * mpu, ah.contact_point.y * mpu, ah.contact_point.z * mpu],
                                         contact_thickness: ah.contact_thickness,
+                                        contact_part_name: ah.contact_part_name || null,
                                     } : {}),
                                 })),
                             };
@@ -5625,8 +5629,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                 const surface = ricochetSurface(hit);
                                 return {
                                     point: surface?.point || currentPoint,
-                                    name: l.part_name,
-                                    thickness: l.thickness,
+                                    name: l.contact_part_name || l.part_name,
+                                    thickness: l.contact_thickness != null ? l.contact_thickness : l.thickness,
                                     eff: l.effective,
                                     remainBefore: l.remaining_before,
                                     penetrated: l.penetrated,

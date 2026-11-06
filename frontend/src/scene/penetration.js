@@ -165,6 +165,8 @@ export function withContactRicochet(hits, contact) {
     contact_point: contact.point,
     // 首触板自己的厚度：3× 口径规则（overmatch 抑制跳弹）必须按它判，而不是首层保留板。
     contact_thickness: contact.thickness,
+    // 首触板身份：跳弹层的结果卡要报「哪块板跳的」，而不是首层保留板（可能是前方模块）。
+    contact_part_name: contact.partName || contact.part_name || null,
   }, ...rest]
 }
 
@@ -341,6 +343,10 @@ function buildProbabilityLayers(filteredHits, ctx) {
       gap: false,
       point: ah.point,
       normal: ah.normal,
+      ...(geo.ricochet && ah.contact_normal ? {
+        contact_part_name: ah.contact_part_name || null,
+        contact_thickness: (ah.contact_thickness != null ? ah.contact_thickness : ah.thickness) * ctx.thicknessCoeff,
+      } : {}),
     })
     if (geo.ricochet) break
   }
@@ -551,6 +557,9 @@ export function calculate(req) {
     if (geo.ricochet) {
       ricochet = true
       ricochetRemainingPen = remainingPen * 0.75
+      const contactThickness = ah.contact_normal
+        ? (ah.contact_thickness != null ? ah.contact_thickness : ah.thickness) * thicknessCoeff
+        : null
       layers.push({
         part_name: ah.part_name,
         thickness,
@@ -560,6 +569,9 @@ export function calculate(req) {
         ricochet: true,
         overmatch: false,
         angle_deg: geo.ricochet_angle_deg != null ? geo.ricochet_angle_deg : geo.angle_deg,
+        // 跳弹发生在首触面时，结果卡按首触板的名字/厚度呈现（保留层仍是厚度链那一层）。
+        contact_part_name: ah.contact_normal ? (ah.contact_part_name || null) : null,
+        contact_thickness: contactThickness,
       })
       break
     }
