@@ -16,7 +16,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 root="$tmp/root"
-mkdir -p "$root/releases/r1" "$root/releases/r2" "$root/releases/r3" "$root/releases/r4" "$root/releases/r5" "$root/releases/r6" "$root/datasets" "$root/bin"
+mkdir -p "$root/releases/r1" "$root/releases/r2" "$root/releases/r3" "$root/releases/r4" "$root/releases/r5" "$root/releases/r6" "$root/bin"
 
 cat > "$root/bin/asset_release.py" <<'PY'
 import hashlib, json, os, pathlib, sys
@@ -114,6 +114,7 @@ fi
 [[ -e "$root/datasets/11.21.0" ]] && { echo "failed initial link must not create the dataset link" >&2; exit 1; }
 
 run link --dataset 11.21.0 --release r1 --default >/dev/null
+[[ -d "$root/datasets" ]] || { echo "first deploy must create the datasets directory" >&2; exit 1; }
 assert_link "$root/datasets/11.21.0" "../releases/r1"
 assert_link "$root/current" "datasets/11.21.0"
 [[ -f "$root/versions.json" ]] || { echo "versions.json missing" >&2; exit 1; }

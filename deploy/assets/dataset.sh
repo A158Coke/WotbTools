@@ -114,6 +114,8 @@ switch_symlink() {
     return 0
   fi
   [[ ! -e "$link" || -L "$link" ]] || return 1
+  # 首次发布/旧布局迁移时 datasets/ 可能尚不存在：先建父目录，再原子切换。
+  [[ -d "$(dirname "$link")" ]] || mkdir -p "$(dirname "$link")" || return 1
   ln -sfn "$target" "$link.new" && mv -T "$link.new" "$link"
 }
 

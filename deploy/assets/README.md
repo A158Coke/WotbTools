@@ -100,10 +100,15 @@ manual; Git tracks configuration, not the multi-GB asset pack.
 `datasets/<id>` 是指向不可变 release 的符号链接；`current` 指向默认 dataset
 （`11.21.0`），旧客户端兼容入口不受影响。
 
-**部署状态（2026-11-06）**：主机侧对象库与 dataset 已就位，`current` 指向
-`11.21.0`；线上 Caddy Stack 仍在跑 dataset 化之前的 Caddyfile，在经正常
-`asset-origin` → Komodo Stack redeploy 之前，`/versions.json` 与 `/v/<id>/...`
-返回 `404`。期间 `/` 与 `/version.json` 持续服务默认 dataset（11.21.0）。
+**部署前提**：`Caddyfile` 是 Stack 的 tracked 配置，dataset 路由随 `asset-origin`
+指针分支发布；合并后必须 redeploy Stack 才生效。验证：
+
+```bash
+bash deploy/assets/verify.sh https://assets.wotbtools.com
+```
+
+该脚本检查 `/versions.json`、默认 dataset 的 `/v/<id>/version.json` 与 manifest，
+以及根路径与默认 dataset 的一致性。
 
 公开路径：
 

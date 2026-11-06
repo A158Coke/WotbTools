@@ -32,7 +32,7 @@ assetBase()  ← 解析出的 asset origin
 | Web origin | `https://assets.wotbtools.com` |
 | 版本目录 | `https://assets.wotbtools.com/versions.json`（dataset 列表 + default）；每个游戏版本在 `/v/<dataset-id>/` 下 |
 | Dataset 通道（2026-11-06） | 默认 = `11.21.0`（正式服：`current` 指向它，根路径与未选择 dataset 的用户都读它）/ `supertest`（超测服，随预览轮次重指到最新预览 release：t11b → t11p2 → …，仅显式选择时使用）/ `11.22`（预留，正式服包发布时加入；最终三通道 = 11.21 / 超测服 / 11.22）。旧 `11.21.0-t11-preview` 通道由 `supertest` 取代（`dataset.sh unlink`） |
-| 路由部署状态（2026-11-06） | 主机已完成 objects/datasets 迁移并生成 `versions.json`（default `11.21.0`，`current` 指向 `datasets/11.21.0`）；生产 Caddy 仍是旧 Caddyfile，`/versions.json` 与 `/v/<id>/...` 当前返回 `404`。新 Caddyfile 已用临时容器对真实 `/srv/wotb-assets` 验证（index/version/versions/dataset 路径全 `200`），需经 `asset-origin` → Komodo Stack redeploy 后生效 |
+| Dataset 路由 | `deploy/assets/Caddyfile` 提供 `/versions.json`（`max-age=60`）与 `/v/<dataset-id>/...`（`max-age=300`），根路径继续服务 `current`。该配置是 Stack 的 tracked 依赖：合并后经 `asset-origin` 指针分支 → Komodo Stack redeploy 生效；验证用 `deploy/assets/verify.sh https://assets.wotbtools.com` |
 | Web 资产包位置 | Alibaba asset host 的 `/srv/wotb-assets/current`（默认 dataset 的兼容入口）与 `/srv/wotb-assets/datasets/<id>`，由 `deploy/assets/` 的 Komodo Stack 提供 |
 | Android 新版本 origin | Native `AgentAssetProxy` 直连 `https://assets.wotbtools.com`；`/agent-assets` 本机路径保持不变，`/agent-assets/v/<id>/...` 原样透传 |
 | COS legacy origin | `https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com`；旧 APK 与临时回滚使用，桶和对象暂不删除 |
