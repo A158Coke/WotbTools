@@ -22,6 +22,8 @@
 
    ```bash
    node scripts/serve_asset_pack.mjs 8123            # 默认伺服 release/asset_pack/，带 CORS
+   # 版本选择：node scripts/serve_asset_pack.mjs 8123 release/asset_pack release/datasets
+   # 然后可用 ?data=<dataset-id> 访问 /v/<id>/...
    ```
 
 2. 在 **本仓** `frontend/.env.local`（gitignored）写一次即可：
@@ -34,10 +36,11 @@
    真管理入口（`admin-users` / `hof-admin` 等）必须使用已经授予对应 realm role 的测试账号；
    dev URL 参数不会提升权限，见 [`local-testing.md`](./local-testing.md) §4。
 
-Web 优先级与坑：`?assets=<URL>` > `localStorage.wotb_asset_base` > `VITE_ASSET_BASE_URL`。
+Web 优先级与坑：`?assets=<URL>`（若已是 `/v/<id>` 完整基址则原样使用）> `?data=<dataset-id>` >
+`localStorage.wotb_asset_base` / `wotb_data_version` > `VITE_ASSET_BASE_URL`。
 在 URL 上带过一次非空 `?assets=` 会持久化到 localStorage 并**盖住** `.env.local`；要回到默认，
 带一次空的 `?assets=`（`scene/assetBase.ts` 的显式清除开关）。改 `.env.local` 后必须**重启 dev
-server**（`import.meta.env.*` 在 transform 时内联，不是运行时读取）。APK 不使用这些 Web override，固定使用 `platform/runtime.js` 的 `ANDROID_ASSET_BASE`。
+server**（`import.meta.env.*` 在 transform 时内联，不是运行时读取）。APK 不使用这些 Web override，固定使用 `platform/runtime.js` 的 `ANDROID_ASSET_BASE`，再由 `assetBase.ts` 追加 `/v/<dataset-id>` 段（`AgentAssetProxy` 原样透传）。
 
 ## 仅用 5173 连接真实资产
 

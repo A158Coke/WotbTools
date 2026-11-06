@@ -31,5 +31,24 @@ assets.wotbtools.com {
 	# a year-long TTL until the package is moved behind a versioned path.
 	header Cache-Control "public, max-age=300, must-revalidate"
 
+	# Versioned datasets: /v/<dataset_id>/... -> /srv/wotb-assets/datasets/<id>/...
+	# `handle_path` strips the /v prefix; the dataset tree is immutable per release
+	# (datasets/<id> is a symlink, flipped atomically by deploy/assets/dataset.sh).
+	handle_path /v/* {
+		root * /srv/wotb-assets/datasets
+		header Cache-Control "public, max-age=300, must-revalidate"
+		file_server
+	}
+
+	# Host-level version catalog (frontend selector source). Short TTL so a dataset
+	# publish/rollback is visible without waiting for the content TTL.
+	handle /versions.json {
+		root * /srv/wotb-assets
+		rewrite * /versions.json
+		header Cache-Control "public, max-age=60, must-revalidate"
+		file_server
+	}
+
+	# Legacy root = current -> the default dataset (old clients keep working).
 	file_server
 }

@@ -37,7 +37,8 @@
  */
 
 import { reactive, ref } from 'vue'
-import { ANDROID_ASSET_BASE, isAndroidRuntime } from '../platform/runtime.js'
+import { isAndroidRuntime } from '../platform/runtime.js'
+import { androidAssetBase, dataVersionId } from '../scene/assetBase.js'
 import { mapImages } from './mapImages.js'
 
 /** map2d 索引条目（Agent 仓 INDEX_SCHEMA v2；几何契约字段见文件头）。 */
@@ -94,8 +95,17 @@ export interface Map2dDecision {
 }
 
 const EMBEDDED_URL = '/map2d-embedded.json'
-const INDEX_URL = `${ANDROID_ASSET_BASE}/map2d/index.json`
-const STORE_KEY = 'wotb.map2d.index.v1'
+// 延迟到真正初始化时求值：本模块会在非 DOM 测试环境里被 import，
+// 模块加载期读 location 会直接 ReferenceError（assetBase 的 dataset 段依赖 URL）。
+const indexUrl = () => `${androidAssetBase()}/map2d/index.json`
+const LEGACY_STORE_KEY = 'wotb.map2d.index.v1'
+// 选择 dataset 时索引缓存必须按 dataset 隔离：否则 A 版本的 stored index 可能
+// 被当成 B 版本的候选（sha256/路径对不上，或更糟：同 generated 时误用 A 的图）。
+// 未选择 dataset 时仍用旧键，保持既有安装的缓存与测试契约不变。
+const storeKey = () => {
+  const datasetId = dataVersionId()
+  return datasetId ? `${LEGACY_STORE_KEY}:${datasetId}` : LEGACY_STORE_KEY
+}
 /** 远端索引 schema（Agent 仓 INDEX_SCHEMA）：2 起逐图带几何契约（worldBounds + orientation）。 */
 const SCHEMA_VERSION = 2
 /** 取向契约常量（契约不搜索：顶行 = +Z_scene、左列 = +X_scene）。 */
@@ -157,7 +167,7 @@ async function fetchJson<T = unknown>(url: string): Promise<T | null> {
 
 function readStoredIndex(): Map2dIndex | null {
   try {
-    const raw = localStorage.getItem(STORE_KEY)
+    const raw = localStorage.getItem(storeKey())
     if (!raw) return null
     const parsed = JSON.parse(raw)
     return parsed && typeof parsed === 'object' ? parsed : null
@@ -168,7 +178,7 @@ function readStoredIndex(): Map2dIndex | null {
 
 function writeStoredIndex(index: Map2dIndex): void {
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(index))
+    localStorage.setItem(storeKey(), JSON.stringify(index))
   } catch {
     /* 配额/隐私模式失败不影响功能：本轮仍用远端索引 */
   }
@@ -288,7 +298,7 @@ async function init(): Promise<Map2dDecision> {
   }
   map2dState.contentGeneratedAt = (embedded.contentGeneratedAt ?? null) as string | null
   const stored = readStoredIndex()
-  const remote = await fetchJson<Map2dIndex>(INDEX_URL)
+  const remote = await fetchJson<Map2dIndex>(indexUrl())
   // 只在远端**不旧于**已持久化副本时覆盖：proxy 的陈旧缓存不得把见过的新版打回去。
   if (remote && isValidIndex(remote)) {
     const remoteTime = Date.parse(String(remote.generated))
@@ -344,7 +354,7 @@ export async function ensureMap2dImage(code: string): Promise<string | null> {
   if (overrides[code]) return overrides[code].url
   const { signal, done } = timeoutSignal(IMAGE_TIMEOUT_MS)
   try {
-    const response = await fetch(`${ANDROID_ASSET_BASE}/${want.path}`, { signal })
+    const response = await fetch(`${androidAssetBase()}/${want.path}`, { signal })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     const buffer = await response.arrayBuffer()
     if (want.bytes != null && buffer.byteLength !== want.bytes) throw new Error('size mismatch')

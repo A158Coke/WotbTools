@@ -164,7 +164,7 @@ UI profile 仍然只涉及呈现：`wotb-ui-profile` 是唯一的持久化 key�
 
 升级状态由 URL 的 `upgrade=top` 表示，缺省保持原先初始值；`abilities` 为选中节点 ID 的逗号表，按客户端技能组归属校验。满级聚合全部普通/机制节点，并且每个备选组只应用一个技能；缺省选每组第一项。初始态保留技能选择但不应用升级，原有 20 个乘员技能独立保留。三选一使用现有 `SegmentedControl`，具单选组语义与键盘操作；无客户端翻译时按已证实属性语义显示本地化描述，不直接显示内部 key。动态战斗技能不假定已触发。
 
-XI 适配安排在数据版本通道改动 #892 之后发布，复用其 `assetBase` / `assetProvider`、`supertest` 选择和整页重载，不增加第二套通道、缓存或前端规则快照。基础模块、升级规则、车辆详情与 GLB 都来自同一选中资产通道；升级规则应由资产导出器补入 `research/modules/{nation}.json`，且 `upgradeProgression.provenance.gameVersion` 必须与该车 `gameVersion` 一致，缺失或不匹配时拒绝投影。#892 的路由上线与同版升级资产补齐是两个独立前置条件，仅合并消费端代码不能代替资产发布。默认正式服及普通车辆保留原路径和计算；本次无需变更 Agent WASM pin。
+XI 的基础模块、升级规则、车辆详情与 GLB 均来自当前选中的资产通道，经 `assetBase` / `assetProvider` 加载。`supertest` 使用统一的数据版本选择器，切换通过整页重载使模块缓存与资产基址保持同一页面快照。升级规则由资产导出器写入 `research/modules/{nation}.json`；`upgradeProgression.provenance.gameVersion` 必须与该车 `gameVersion` 一致，缺失或不匹配时拒绝投影。前端只解释资产中的规则，不随包携带规则副本；默认正式服及普通车辆保留原路径和计算。
 
 模型几何与模块装配沿用既有查看器，装甲厚度、弹表与俯仰限制复用同一升级投影。装甲查看器受击方使用 `upgrade/abilities`，射击方使用独立的 `supgrade/sabilities`；只有明确满级且为 XI 时额外加载该车模块规则。两侧互不继承升级态，升级变化走原场景销毁/重建生命周期，晚到数据不能覆盖当前选择。离开百科或装甲视图时清理其专属升级参数。
 
@@ -172,7 +172,7 @@ XI 适配安排在数据版本通道改动 #892 之后发布，复用其 `assetB
 
 交互机制由成熟库提供，WotbTools 组件保持自己的 API 与视觉 policy：
 
-- `reka-ui`（headless 交互 primitive）只出现在 `AppDialog`、`AppSheet`、`AppTooltip`、`MenuButton`、`BattlePicker`、`SegmentedControl` 内；`motion-v` 只出现在 `App.vue`（`MotionConfig`）与 `SegmentedControl`、`FilterChips`、`AgentTankopedia` 的过渡中。页面与 feature 不直接 import 它们，由 `src/shared/ui-dependency-ownership.test.ts` 强制。
+- `reka-ui`（headless 交互 primitive）只出现在 `AppDialog`、`AppSheet`、`AppTooltip`、`MenuButton`、`BattlePicker`、`DataVersionMenu`、`SegmentedControl` 内；`motion-v` 只出现在 `App.vue`（`MotionConfig`）与 `SegmentedControl`、`FilterChips`、`AgentTankopedia` 的过渡中。页面与 feature 不直接 import 它们，由 `src/shared/ui-dependency-ownership.test.ts` 强制。
 - `@vueuse/core` 承担浏览器 / Vue 管线（事件监听生命周期、`createReusableTemplate` 等）。breakpoint 只由 `useBreakpoint()` 拥有，带迁移与校验的持久化只由各自 owner 拥有，因此 `useStorage` / `useLocalStorage` / `useSessionStorage` / `useBreakpoints` 被 guard 禁用。
 - `motion-v` 的时长与缓动只来自 `src/shared/motion/motionPolicy.ts` 读取的 CSS token；不得在 Vue/JS 中散落 duration 字面量，也不得进入播放帧路径。
 - 手机端 overlay 统一使用 `AppSheet`；`DIALOG_INLINE_KEY` 为 true 时 `AppDialog`、`AppSheet`、`MenuButton`、`BattlePicker` 原地渲染（组件测试与 fullscreen 宿主）。

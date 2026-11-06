@@ -13,6 +13,7 @@ import { useCreatorAvailability } from '../composables/useCreatorAvailability.js
 import { ADMIN_NAV, defaultView, locationForView, NAV_GROUPS, primaryNavItems, primarySection, viewFromRoute } from './navigation.js'
 import { ACCOUNT_ICON, ADMIN_NAV_ICONS, PRIMARY_NAV_ICONS } from './navIcons.js'
 import MorePanel from './MorePanel.vue'
+import SidebarDataVersion from './SidebarDataVersion.vue'
 import BrandMark from '../components/BrandMark.vue'
 
 const route = useRoute()
@@ -59,6 +60,8 @@ function linkAttrs(id) {
       <BrandMark class="sidebar-logo" />
       <span v-if="!rail" class="sidebar-brand-name">WoTB<span class="sidebar-brand-accent">Tools</span></span>
     </RouterLink>
+
+    <SidebarDataVersion :rail="rail" />
 
     <span
       v-if="showDevEnvironmentNotice"

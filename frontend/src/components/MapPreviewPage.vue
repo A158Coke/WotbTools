@@ -17,6 +17,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Map as MapIcon } from 'lucide-vue-next'
 import { useAuth } from '../composables/useAuth.js'
 import { loadMapIndex, mapCoverUrl } from '../scene/replaySource.js'
+import { dataVersionId } from '../scene/assetBase.js'
 import { mapImages } from '../data/mapImages.js'
 import { mapBases } from '../data/mapBases.js'
 import { mapGridProfile } from '../data/mapSemantics.js'
@@ -75,6 +76,9 @@ async function loadMaps() {
     return
   }
   const byKey = new Map()
+  // 显式选中游戏版本时，该 dataset 的 map2d 优先；未选中时保留 bundled 优先
+  // （离线 + 逐图校准的既有契约）。dataset 缺图/校验失败仍回落 bundled。
+  const preferDatasetBasemap = Boolean(dataVersionId())
   for (const [id, m] of entries) {
     const key = String(m.key || '')
     if (!key || byKey.has(key)) continue   // 变体空间归并基础图（首个出现的 id = 基础 id）
@@ -83,11 +87,12 @@ async function loadMaps() {
       key,
       mapId: Number(id),
       packDisplay: m.display || '',
-      // 底图双源（2D 面板用）：bundled 打包注册表优先（离线 + 逐图校准），
-      // 未收录的图回退资产包 map2d 校准图（1254² 战术底图，±300 契约框）。
-      basemap: bundled
-        ? { kind: 'bundled', image: bundled }
-        : { kind: 'map2d', mapKey: key },
+      // 底图双源（2D 面板用）：默认 bundled 打包注册表优先（离线 + 逐图校准），
+      // 未收录的图回退资产包 map2d 校准图（1254² 战术底图，±300 契约框）；
+      // 显式选择 dataset 时反转为 dataset map2d 优先、bundled 兜底。
+      basemap: (preferDatasetBasemap || !bundled)
+        ? { kind: 'map2d', mapKey: key, ...(bundled ? { fallbackImage: bundled } : {}) }
+        : { kind: 'bundled', image: bundled },
       // 封面统一 cover.webp（512² 战术风格，43/43 同源同风格，~100KB/张）；
       // bundled.src 留作 cover 加载失败时的兜底（离线打包资产，必可用）。
       thumb: safeCoverUrl(key),

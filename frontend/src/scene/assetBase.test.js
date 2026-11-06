@@ -8,11 +8,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
  *   生产默认）。
  * assetBase 在模块作用域缓存结果，因此每个用例都要重置模块后动态 import。
  */
-async function loadAssetBase({ url = '/', storage = null, productionDefault = '' } = {}) {
+async function loadAssetBase({ url = '/', storage = null, dataStorage = null, productionDefault = '' } = {}) {
   vi.resetModules()
   vi.stubEnv('VITE_ASSET_BASE_URL', productionDefault)
   if (storage === null) localStorage.removeItem('wotb_asset_base')
   else localStorage.setItem('wotb_asset_base', storage)
+  if (dataStorage === null) localStorage.removeItem('wotb_data_version')
+  else localStorage.setItem('wotb_data_version', dataStorage)
   window.history.replaceState({}, '', url)
   return import('./assetBase.js')
 }
@@ -90,5 +92,78 @@ describe('assetBase origin precedence', () => {
     const unconfigured = (await import('./assetProvider.js')).assetProvider
     expect(unconfigured.configured()).toBe(false)
     expect(() => unconfigured.url('/glb/1/model.glb')).toThrow(/未配置/)
+  })
+})
+
+describe('assetBase data version', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    vi.unstubAllEnvs()
+  })
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    localStorage.clear()
+  })
+
+  it('appends an explicit ?data= dataset to the origin', async () => {
+    const { assetBase } = await loadAssetBase({
+      url: '/?data=11.21.0',
+      productionDefault: `${PROD}/`,
+    })
+    expect(assetBase()).toBe(`${PROD}/v/11.21.0`)
+    // 显式 ?data= 与运行手册一致地持久化：下次不带查询参数仍回到该 dataset。
+    expect(localStorage.getItem('wotb_data_version')).toBe('11.21.0')
+  })
+
+  it('reads the persisted dataset selection when the URL has no ?data=', async () => {
+    const { assetBase } = await loadAssetBase({
+      dataStorage: '11.21.0-t11-preview',
+      productionDefault: PROD,
+    })
+    expect(assetBase()).toBe(`${PROD}/v/11.21.0-t11-preview`)
+  })
+
+  it('lets a versioned ?assets= base win over ?data=', async () => {
+    const { assetBase } = await loadAssetBase({
+      url: '/?assets=https://query.example.com/pack/v/11.21.0&data=11.22.0',
+      productionDefault: PROD,
+    })
+    expect(assetBase()).toBe('https://query.example.com/pack/v/11.21.0')
+  })
+
+  it('treats an explicit empty ?data= as default and ignores the stored selection', async () => {
+    const { assetBase } = await loadAssetBase({
+      url: '/?data=',
+      dataStorage: '11.21.0',
+      productionDefault: PROD,
+    })
+    expect(assetBase()).toBe(PROD)
+    // 显式空 ?data= 同时清除持久化选择：下次不带查询参数也不会静默回到旧 dataset。
+    expect(localStorage.getItem('wotb_data_version')).toBeNull()
+  })
+
+  it('strips a dataset suffix so the selector can return to origin + ?data=', async () => {
+    const { stripDatasetSuffix } = await loadAssetBase()
+    expect(stripDatasetSuffix('https://assets.example.com/v/11.21.0')).toBe('https://assets.example.com')
+    expect(stripDatasetSuffix('https://assets.example.com/v/11.21.0/')).toBe('https://assets.example.com')
+    expect(stripDatasetSuffix('https://assets.example.com/pack')).toBe('https://assets.example.com/pack')
+  })
+
+  it('pins the effective dataset for the page lifetime (multi-tab isolation)', async () => {
+    const { dataVersionId } = await loadAssetBase({
+      dataStorage: '11.21.0',
+      productionDefault: PROD,
+    })
+    expect(dataVersionId()).toBe('11.21.0')
+
+    // 另一个标签页切换 dataset 只改共享 localStorage（并会自行 reload）；本页
+    // 未 reload 时必须继续使用启动时的 dataset，不能出现「资产基址已换、模块
+    // 缓存仍是旧 dataset」的混用。
+    localStorage.setItem('wotb_data_version', 'supertest')
+    expect(dataVersionId()).toBe('11.21.0')
+
+    // history 改变（无重载）同样不能改写本页的有效 dataset。
+    window.history.replaceState({}, '', '/?data=supertest')
+    expect(dataVersionId()).toBe('11.21.0')
   })
 })
