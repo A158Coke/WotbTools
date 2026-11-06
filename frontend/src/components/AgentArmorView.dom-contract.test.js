@@ -539,7 +539,7 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(pen).toMatch(/function resolveLayerGeometry\(ah, thickness, ctx\)/)
     expect(pen).toMatch(/const effNormalization = normalization/)
     expect(pen).not.toMatch(/armorLayerCount/)
-    expect(pen).toMatch(/const noRicochet = threeCalibersForRicochet \|\| ctx\.layerIndex > 0 \|\| !ctx\.allowRicochet/)
+    expect(pen).toMatch(/const noRicochet = \(contact \? contact\.three_calibers : threeCalibersRule\)\s*\n\s*\|\| ctx\.layerIndex > 0 \|\| !ctx\.allowRicochet/)
     // overmatch 字段只报真实 3× 口径，不再用 layerIndex/allow_ricochet 冒充
     expect(pen).toMatch(/const threeCalibersRule = ctx\.caliber > thickness \* 3\.0\r?\n/)
   })
@@ -710,7 +710,7 @@ describe('spaced armor double-sided judgment', () => {
     expect(kernel).toMatch(/finally \{\s*\n\s*for \(const \[m, side\] of saved\) m\.side = side;/)
   })
   it('同板去重判据委托 armorMeshTopology.resolveSpacedHitMask（语义由纯函数单测锁定）', () => {
-    expect(kernel).toMatch(/function collectJudgmentHits\(intersects, rayDir\)/)
+    expect(kernel).toMatch(/function collectJudgmentHits\(intersects, rayDir, minDistance = 0\)/)
     expect(kernel).toMatch(/const origSection = entry\.object\?\.userData\?\.armorSectionOrig \|\| entry\.section \|\| '';/)
     expect(kernel).toMatch(/import \{ resolveSpacedHitMask, spacedDedupKey, firstPhysicalHit \} from '\.\/armorMeshTopology\.js'/)
     // HEAT 间距原点必须来自 Node 可直接加载的 penetration.js（Node 不解析 .js → .ts）
@@ -722,7 +722,7 @@ describe('spaced armor double-sided judgment', () => {
     expect(kernel).toMatch(/const intersects = intersectArmorDoubleSidedSpaced\(objects, raycaster\);/)
     expect(kernel).toMatch(/const \{ hits: armorHits, firstContact \} = collectJudgmentHits\(intersects, raycaster\.ray\.direction\);/)
     expect(kernel).toMatch(/const ricIntersects = intersectArmorDoubleSidedSpaced\(objects, rc\);/)
-    expect(kernel).toMatch(/const ricCollect = collectJudgmentHits\(ricIntersects, rc\.ray\.direction\);/)
+    expect(kernel).toMatch(/const ricCollect = collectJudgmentHits\(ricIntersects, rc\.ray\.direction, RC\.MIN_CONTINUATION_T\);/)
   })
 })
 

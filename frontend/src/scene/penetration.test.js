@@ -1114,6 +1114,33 @@ describe('动能弹首层跳弹按物理首触面判定（厚度几何不改）'
     expect(r.result).toBe('PENETRATION')
   })
 
+  it('模块首层也要判首触跳弹：A 背 80° → 10mm 炮管 → A 正 0° → 主装', () => {
+    const chain = [
+      armor(ArmorSection.GUN_BARREL, '1', 10, 0, 1.5),
+      armor(ArmorSection.SPACED, '2', 30, 0, 2),
+      armor(ArmorSection.HULL, '1', 100, 0, 3),
+    ]
+    expect(calculate(apReq([...chain])).result).toBe('PENETRATION')
+    const withContact = withContactRicochet(chain, armor(ArmorSection.SPACED, '2', 30, 80, 1))
+    expect(calculate(apReq(withContact)).result).toBe('RICOCHET')
+  })
+
+  it('首触板 3× 口径按强化装甲后的厚度判（25mm × 1.04 = 26mm → 78 > 76.2 不 overmatch）', () => {
+    const chain = [armor(ArmorSection.SPACED, '2', 25, 0, 1.05), armor(ArmorSection.HULL, '1', 100, 0, 2)]
+    const withContact = withContactRicochet(chain, armor(ArmorSection.SPACED, '2', 25, 80, 1))
+    const req = (enhanced, penetration = 250, caliber = 76.2) => ({
+      shell_type: 'ap', penetration, caliber, view_dir: [0, 1, 0],
+      hits: withContact, damage: 400, explosion_radius: 0,
+      calibrated_shells: false, enhanced_armor: enhanced, allow_ricochet: true,
+    })
+    // 未强化：76.2 > 25×3 = 75 → overmatch 抑制跳弹。
+    expect(calculate(req(false)).result).toBe('PENETRATION')
+    // 强化：76.2 < 26×3 = 78 → 不抑制，按 80° 判跳弹；概率链同样带跳弹标记。
+    const r = calculate(req(true))
+    expect(r.result).toBe('RICOCHET')
+    expect(r.probability_layers[0].ricochet).toBe(true)
+  })
+
   it('HEAT 厚度链同样不受首触面影响：30mm 屏有效厚度 30mm（不是 80° 下的 172.76mm）', () => {
     const chain = [armor(ArmorSection.SPACED, '2', 30, 0, 1.05), armor(ArmorSection.HULL, '1', 100, 0, 1.1)]
     const withContact = withContactRicochet(chain, armor(ArmorSection.SPACED, '2', 30, 80, 1))

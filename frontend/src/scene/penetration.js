@@ -223,18 +223,41 @@ function collectFilteredHits(hits) {
 }
 
 /**
+ * 物理首触面的跳弹几何（contact_normal / contact_point / contact_thickness）：
+ * 同板去重删掉近侧命中后，跳弹仍按射线实际先碰到的面判。厚度先乘装备系数
+ * （enhanced_armor 1.04）再判 3× 口径，与普通厚度路径同源——否则同一块板会因
+ * 是否触发去重而得到不同的 overmatch/跳弹结果。无 contact_normal 时返回 null。
+ */
+function contactRicochetGeometry(ah, ctx) {
+  if (!ah.contact_normal) return null
+  const coeff = Number.isFinite(ctx.thicknessCoeff) ? ctx.thicknessCoeff : 1.0
+  const raw = ah.contact_thickness != null ? ah.contact_thickness : ah.thickness
+  const thickness = raw * coeff
+  const threeCalibers = ctx.caliber > thickness * 3.0
+  const n = normalize(ah.contact_normal)
+  const angleDeg = Math.acos(Math.min(Math.abs(dot(n, ctx.view)), 1.0)) / DEG
+  return { thickness, three_calibers: threeCalibers, angle_deg: angleDeg, ricochet: angleDeg >= ctx.ricochet_deg }
+}
+
+/**
  * 单层几何（确定性与概率链共用）：外部模块 flat；实际装甲算入射角、3×/2×
  * 口径规则、逐层转正与等效厚度。概率链只需要几何量，不读取剩余穿深。
  * 转正按 BlitzKit shoot() 对**每个非外部层**独立计算（不继承首层状态）。
+ * 外部模块层不跳弹，但**首触面**可能在其前方的间隙板上：此时模块层承载
+ * contact_* 并按首触面判跳弹（否则模块首层会吞掉物理跳弹）。
  */
 function resolveLayerGeometry(ah, thickness, ctx) {
   if (isModule(ah.section)) {
+    const contact = contactRicochetGeometry(ah, ctx)
+    const noRicochet = ctx.layerIndex > 0 || !ctx.allowRicochet || (contact ? contact.three_calibers : true)
+    const ricochet = !!contact && !noRicochet && contact.ricochet
     return {
       thickness,
       effective: thickness,
       external: true,
       angle_deg: null,
-      ricochet: false,
+      ricochet,
+      ricochet_angle_deg: contact ? contact.angle_deg : null,
       overmatch: false,
       normalization_deg: 0,
     }
@@ -245,15 +268,13 @@ function resolveLayerGeometry(ah, thickness, ctx) {
   const angleDeg = angleRad / DEG
   // 跳弹判定按物理首触面：同板去重删掉近侧命中后，`contact_normal` 记录射线实际先
   // 碰到的面；厚度/转正/角度显示仍用保留层的 normal（GPU 厚度通道口径）。
-  const ricochetNormal = ah.contact_normal ? normalize(ah.contact_normal) : n
-  const ricochetAngleDeg = ah.contact_normal
-    ? Math.acos(Math.min(Math.abs(dot(ricochetNormal, ctx.view)), 1.0)) / DEG
-    : angleDeg
+  const contact = contactRicochetGeometry(ah, ctx)
+  const ricochetAngleDeg = contact ? contact.angle_deg : angleDeg
   const threeCalibersRule = ctx.caliber > thickness * 3.0
-  // 跳弹的 3× 口径规则按**首触板**判：首层保留板的厚度可能与首触板不同（中间夹着别的板）。
-  const ricochetThickness = ah.contact_thickness != null ? ah.contact_thickness : thickness
-  const threeCalibersForRicochet = ctx.caliber > ricochetThickness * 3.0
-  const noRicochet = threeCalibersForRicochet || ctx.layerIndex > 0 || !ctx.allowRicochet
+  // 跳弹的 3× 口径规则按**首触板**判（厚度已乘装备系数）：首层保留板的厚度可能与
+  // 首触板不同（中间夹着别的板）。
+  const noRicochet = (contact ? contact.three_calibers : threeCalibersRule)
+    || ctx.layerIndex > 0 || !ctx.allowRicochet
   const twoCalibersRule = ctx.caliber > thickness * 2.0
   // 0mm 是合法的 fail-closed 板厚：2× 公式在 thickness=0 时会 0/0，只对正厚度应用。
   const normalization = twoCalibersRule && thickness > 0.0
@@ -271,6 +292,7 @@ function resolveLayerGeometry(ah, thickness, ctx) {
     external: false,
     angle_deg: angleDeg,
     ricochet,
+    ricochet_angle_deg: ricochetAngleDeg,
     overmatch: threeCalibersRule,
     normalization_deg: effNormalization,
   }
@@ -514,6 +536,33 @@ export function calculate(req) {
     let layerPenetrated
     let isOvermatch = false
     let layerAngleDeg = null   // 该层入射角（外部模块层无角度——flat 消耗）
+    // 几何规则与概率链共用 resolveLayerGeometry：外部模块 flat，不参与转正；0mm 板
+    // 不套 2× 公式。模块层也可能承载物理首触面（首触板在模块前方）→ 跳弹先在
+    // 分支之前判定，避免 isModule 提前返回吞掉 contact_*。
+    const geo = resolveLayerGeometry(ah, thickness, {
+      view,
+      caliber,
+      normalization_deg: normDeg,
+      ricochet_deg: ricochetDeg,
+      allowRicochet,
+      layerIndex,
+      thicknessCoeff,
+    })
+    if (geo.ricochet) {
+      ricochet = true
+      ricochetRemainingPen = remainingPen * 0.75
+      layers.push({
+        part_name: ah.part_name,
+        thickness,
+        effective: 0.0,
+        remaining_before: remainingPen,
+        penetrated: false,
+        ricochet: true,
+        overmatch: false,
+        angle_deg: geo.ricochet_angle_deg != null ? geo.ricochet_angle_deg : geo.angle_deg,
+      })
+      break
+    }
     if (isModule(ah.section)) {
       eff = thickness
       if (isHe) {
@@ -524,37 +573,9 @@ export function calculate(req) {
         layerPenetrated = remainingPen > eff
       }
     } else {
-      // 几何规则与概率链共用 resolveLayerGeometry：BlitzKit 对每个非外部层
-      // 都用自身厚度/角度重新计算 normalization 与 2× 口径增强；外部模块 flat，
-      // 不参与转正；0mm 板不套 2× 公式。
-      const geo = resolveLayerGeometry(ah, thickness, {
-        view,
-        caliber,
-        normalization_deg: normDeg,
-        ricochet_deg: ricochetDeg,
-        allowRicochet,
-        layerIndex,
-      })
       layerAngleDeg = geo.angle_deg
       if (firstArmorAngleDeg < 0.0) firstArmorAngleDeg = layerAngleDeg
       isOvermatch = geo.overmatch
-
-      // 跳弹：入射角 ≥ 跳弹角 且 未被抑制（HEAT/HE 跳弹角=90° 永不触发）
-      if (geo.ricochet) {
-        ricochet = true
-        ricochetRemainingPen = remainingPen * 0.75
-        layers.push({
-          part_name: ah.part_name,
-          thickness,
-          effective: 0.0,
-          remaining_before: remainingPen,
-          penetrated: false,
-          ricochet: true,
-          overmatch: false,
-          angle_deg: layerAngleDeg,
-        })
-        break
-      }
 
       eff = geo.effective
       if (firstArmorNormDeg < 0.0) firstArmorNormDeg = geo.normalization_deg

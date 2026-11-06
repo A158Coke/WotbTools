@@ -5017,9 +5017,13 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
          *  - 返回值：hits = 判定层链；firstContact = 去重前的首个物理接触面（HE 爆炸点，
          *    厚度累计去重不改变首次接触语义）。
          */
-        function collectJudgmentHits(intersects, rayDir) {
+        function collectJudgmentHits(intersects, rayDir, minDistance = 0) {
             const candidates = [];
             for (const hit of intersects) {
+                // 续飞链：先丢掉发射面自身的近零距离命中，再 classify/附加首触面——
+                // 否则该命中会被同板去重删掉、却作为 contact_* 盖到更远的保留命中上，
+                // 让续飞朝发射面再次跳弹。
+                if (minDistance > 0 && hit.distance <= minDistance) continue;
                 if (isClippedModuleHit(hit.object.userData.armorSection, hit.point, gunClipPlane)) continue;
                 const entry = classifyHit(hit, rayDir);
                 if (!entry) continue;
@@ -5576,12 +5580,12 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                             const rc = new THREE.Raycaster(currentPoint, reflect);
                             // 与点击主链同一收集口径：间隙甲双面 + 同一块板只计一层
                             const ricIntersects = intersectArmorDoubleSidedSpaced(objects, rc);
-                            const ricCollect = collectJudgmentHits(ricIntersects, rc.ray.direction);
+                            const ricCollect = collectJudgmentHits(ricIntersects, rc.ray.direction, RC.MIN_CONTINUATION_T);
                             // 续飞链同口径：HEAT 的间隙同样从首个物理接触面量起。
-                            const ricHits = (shellType === 'heat'
+                            // （近零距离命中已在收集前过滤，contact_* 不会来自发射面。）
+                            const ricHits = shellType === 'heat'
                                 ? withGapOrigin(ricCollect.hits, ricCollect.firstContact)
-                                : ricCollect.hits)
-                                .filter(h => h.distance > RC.MIN_CONTINUATION_T);
+                                : ricCollect.hits;
                             ricHits.sort((a, b) => a.distance - b.distance);
                             if (!ricHits.length || !ricHits.some(h => isPrimary(h.section))) break;
 
