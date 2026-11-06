@@ -58,11 +58,19 @@ describe('explicit XI armor data selection', () => {
     expect(result.shells[0]).toMatchObject({ penetration: 280, damage: 480 })
   })
 
-  it.each([
-    { available: false, supported: true, unsupported: [] },
-    { available: true, supported: false, unsupported: ['UnknownUpgradeScript'] },
-  ])('rejects unavailable or unsupported max data rather than labeling stock as max', async selection => {
-    upgrades.project.mockReturnValueOnce({ detail: raw, modules: moduleData, selection })
+  it('keeps raw data when the asset pack has no upgradeProgression', async () => {
+    upgrades.project.mockReturnValueOnce({
+      detail: raw, modules: moduleData,
+      selection: { available: false, supported: true, unsupported: [] },
+    })
+    await expect(fetchTankData(15153, { upgrade: 'top' })).resolves.toBe(raw)
+  })
+
+  it('rejects unsupported max data rather than labeling stock as max', async () => {
+    upgrades.project.mockReturnValueOnce({
+      detail: raw, modules: moduleData,
+      selection: { available: true, supported: false, unsupported: ['UnknownUpgradeScript'] },
+    })
     await expect(fetchTankData(15153, { upgrade: 'top' })).rejects.toThrow('XI upgrade data unavailable')
   })
 })

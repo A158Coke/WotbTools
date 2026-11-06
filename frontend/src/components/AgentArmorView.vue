@@ -226,7 +226,8 @@ function applySide(side, patch) {
   const abilitiesKey = shooter ? 'sabilities' : 'abilities'
   const previousUpgrade = query[upgradeKey]
   const previousAbilities = query[abilitiesKey]
-  if ('upgrade' in patch) put(upgradeKey, patch.upgrade === 'top' ? 'top' : null)
+  // PATCH 里带 upgrade 时写显式模式；缺省（无 key）= XI 顶级由场景侧决定。
+  if ('upgrade' in patch) put(upgradeKey, patch.upgrade === 'stock' ? 'stock' : 'top')
   if ('abilities' in patch) put(abilitiesKey, patch.abilities)
   const upgradesChanged = previousUpgrade !== query[upgradeKey] || previousAbilities !== query[abilitiesKey]
   if (upgradesChanged) {

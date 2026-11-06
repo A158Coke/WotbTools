@@ -36,14 +36,26 @@ describe('真实客户端 XI 节点选择', () => {
     }
   })
 
-  it.each(TANKS)('$modules.name 旧链接缺省 stock，选项保留但不应用', ({ modules, detail }) => {
+  it.each(TANKS)('$modules.name 缺省 top，选项保留并应用', ({ modules, detail }) => {
     const selection = resolveUpgradeSelection(modules)
+    expect(selection.available).toBe(true)
+    expect(selection.supported).toBe(true)
+    expect(selection.mode).toBe('top')
+    expect(selection.attributes).not.toEqual({})
+    expect(selection.abilities).toEqual(modules.upgradeProgression.alternativeGroups.map(g => g.choices[0]))
+    const projected = projectTankUpgrades(detail, modules)
+    expect(projected.detail).not.toBe(detail)
+    expect(projected.modules).not.toBe(modules)
+  })
+
+  it.each(TANKS)('$modules.name 显式 stock 仍保留但不应用', ({ modules, detail }) => {
+    const selection = resolveUpgradeSelection(modules, 'stock')
     expect(selection.available).toBe(true)
     expect(selection.supported).toBe(true)
     expect(selection.mode).toBe('stock')
     expect(selection.attributes).toEqual({})
     expect(selection.abilities).toEqual(modules.upgradeProgression.alternativeGroups.map(g => g.choices[0]))
-    const projected = projectTankUpgrades(detail, modules)
+    const projected = projectTankUpgrades(detail, modules, 'stock')
     expect(projected.detail).toBe(detail)
     expect(projected.modules).toBe(modules)
   })

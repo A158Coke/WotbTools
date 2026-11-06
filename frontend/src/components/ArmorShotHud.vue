@@ -45,9 +45,9 @@ async function load(shooterId) {
   if (!(shooterId > 0)) return
   try {
     // HUD 常驻且只读 devices：不要为三枚装备图标拉整份配置器目录（skills/camo/params…）。
-    const detailRequest = props.upgrade === 'top'
-      ? fetchTankData(shooterId, { upgrade: props.upgrade, abilities: props.abilities })
-      : fetchTankData(shooterId)
+    // 缺省 = XI 顶级；显式 stock 才回退基础值（非 XI 传 top 会由 fetchTankData 原样返回）。
+    const upgrade = props.upgrade === 'stock' ? 'stock' : 'top'
+    const detailRequest = fetchTankData(shooterId, { upgrade, abilities: props.abilities })
     const [detail, catalog] = await Promise.all([detailRequest, loadDevices()])
     if (seq !== request) return
     details.value = detail

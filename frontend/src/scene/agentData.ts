@@ -59,7 +59,9 @@ export function fetchTankData(id: TankId, options: TankUpgradeOptions = {}) {
     ])
     const modules = findTankModules(await loadTankModules(detail.nation), Number(id))
     const projected = projectTankUpgrades(detail, modules, 'top', options.abilities)
-    if (!projected.selection.available || !projected.selection.supported) {
+    // 旧资产包没有 upgradeProgression：保持原始数据（默认 top 不能把旧包打成不可用）。
+    if (!projected.selection.available) return detail
+    if (!projected.selection.supported) {
       throw new Error(`XI upgrade data unavailable: ${projected.selection.unsupported.join(', ') || id}`)
     }
     return projected.detail

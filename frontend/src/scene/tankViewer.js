@@ -2437,7 +2437,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         const QP = new URLSearchParams(location.search);
         // XI 升级态与模块配置一样按双方独立读取；同车也不从目标推导射手状态。
         const upgradeOptions = (side) => ({
-            upgrade: QP.get(side === 'shooter' ? 'supgrade' : 'upgrade'),
+            // 缺省 = XI 顶级；显式 &upgrade=stock / &supgrade=stock 才回退基础值。
+            upgrade: QP.get(side === 'shooter' ? 'supgrade' : 'upgrade') === 'stock' ? 'stock' : 'top',
             abilities: QP.get(side === 'shooter' ? 'sabilities' : 'abilities'),
         });
         // 装甲页图形开关的手动覆盖（&eqcal=0/1、&eqenh=0/1）：场景初始化即生效
