@@ -53,7 +53,7 @@ describe('sunShadowFrom：传播方向 = target − light', () => {
     const low = sunShadowFrom(at(-1000, 1000, 0), O)
     const grazing = sunShadowFrom(at(-1000, 60, 0), O)
     expect(low.tailFactor).toBeGreaterThan(high.tailFactor)
-    expect(grazing.tailFactor).toBe(0.9)
+    expect(grazing.tailFactor).toBe(1.2)
   })
 
   it.each([
@@ -155,9 +155,9 @@ describe('车体外可见性（俯视时车体盖住内核，只看得到车外�
   })
 
   it('margin 与车宽成比例且有上下限', () => {
-    expect(shadowMargin({ halfW: 1.8, halfL: 3.25 })).toBeCloseTo(0.81, 6)
-    expect(shadowMargin({ halfW: 0.5, halfL: 1 })).toBe(0.6)
-    expect(shadowMargin({ halfW: 6, halfL: 9 })).toBe(1.5)
+    expect(shadowMargin({ halfW: 1.8, halfL: 3.25 })).toBeCloseTo(1.08, 6)
+    expect(shadowMargin({ halfW: 0.5, halfL: 1 })).toBe(0.8)
+    expect(shadowMargin({ halfW: 6, halfL: 9 })).toBe(2)
   })
 })
 

@@ -28,11 +28,11 @@ interface Vec3Like { x: number, y: number, z: number }
 /** 代理车履带盒 3.6 × 6.5 m（playbackScene.buildVehicles）：GLB 尺寸不可得时的回落。 */
 export const PROXY_FOOTPRINT: Readonly<ShadowFootprint> = Object.freeze({ halfW: 1.8, halfL: 3.25 })
 
-// 视觉常量：尾长 ∝ tan(天顶角)，硬上限 = 0.9 × halfW（约 1.4–1.6 m）。
+// 视觉常量：尾长 ∝ tan(天顶角)，硬上限 = 1.2 × halfW（约 1.8–2.1 m）。
 // 36 张图的太阳仰角 21°–66°（中位 ~35°）——曾把偏移/拉伸作用在不透明内核上，
 // 多数图直接打满上限，车后拖出一块 3–4 m 的实心暗板；内核现在恒等于车体。
-const K_TAIL = 0.4
-const MAX_TAIL = 0.9
+const K_TAIL = 0.5
+const MAX_TAIL = 1.2
 /** 传播方向 y 分量至少这么"朝下"才算照向地面（约 3° 仰角以上） */
 const MIN_DOWN = 0.05
 const CENTERED: Readonly<SunShadow> = Object.freeze({ centered: true, dirX: 0, dirZ: 0, tailFactor: 0 })
@@ -100,7 +100,7 @@ export function measureShadowFootprint(object: Object3D): ShadowFootprint {
 /** 网格每边顶点数：25 个有界采样点贴合斜坡，成本不随地形规模变化 */
 export const GRID = 5
 const LIFT = 0.04         // 离地抬升（米），配合 polygonOffset 防 z-fighting
-const OPACITY = 0.55
+const OPACITY = 0.7   // 用户真实 GPU 验收：0.55 + 0.8 m 渐隐带在常见俯视距离下不够明显
 const SHADOW_COLOR = 0x0b0f14
 
 /**
@@ -108,7 +108,7 @@ const SHADOW_COLOR = 0x0b0f14
  * 能看见的只有这一圈——渐变必须落在车体**外**，否则阴影在画面上等于不存在。
  */
 export function shadowMargin(fp: ShadowFootprint): number {
-  return Math.min(1.5, Math.max(0.6, fp.halfW * 0.45))
+  return Math.min(2, Math.max(0.8, fp.halfW * 0.6))
 }
 
 /**
