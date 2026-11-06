@@ -14,7 +14,7 @@ describe('parseTankopediaQuery', () => {
   it('空 query 得到默认状态', () => {
     expect(parseTankopediaQuery({})).toEqual({
       q: '', tier: '', nation: '', type: '', sort: 'tier', tank: null, config: null,
-      engine: null, track: null, shell: null, dev: '', eq: null, cons: null, prov: null, skills: {}, camo: false,
+      engine: null, track: null, shell: null, dev: '', eq: null, cons: null, prov: null, skills: {}, conditionalSkills: false, camo: false,
       upgrade: 'stock', abilities: [],
     })
   })
@@ -26,6 +26,22 @@ describe('parseTankopediaQuery', () => {
     expect(parseTankopediaQuery({ tier: '10', sort: 'pen', tank: '5', config: '-1' })).toMatchObject({
       tier: '10', sort: 'pen', tank: 5, config: null,
     })
+  })
+
+  it('条件技能触发独立于训练等级，仅详情链接显式 1 生效', () => {
+    const query = { tank: '5', skills: 'battle_rage:7,smooth_driving:3' }
+    expect(parseTankopediaQuery(query).conditionalSkills).toBe(false)
+    const active = parseTankopediaQuery({ ...query, skillTriggers: '1' })
+    expect(active.conditionalSkills).toBe(true)
+    expect(serializeTankopediaQuery(active)).toEqual({ ...query, skillTriggers: '1' })
+    expect(serializeTankopediaQuery({ ...active, conditionalSkills: false })).toEqual(query)
+    expect(sameTankopediaQuery(query, { ...query, skillTriggers: '1' })).toBe(false)
+    for (const value of ['0', 'true', 'yes', '', true, 1]) {
+      expect(parseTankopediaQuery({ ...query, skillTriggers: value }).conditionalSkills).toBe(false)
+    }
+    expect(parseTankopediaQuery({ skillTriggers: '1' }).conditionalSkills).toBe(false)
+    expect(parseTankopediaQuery({ ...query, skillTriggers: ['1', '0'] }).conditionalSkills).toBe(true)
+    expect(withTankopediaState({ ...query, skillTriggers: '1', lang: 'zh' }, { tank: 5 })).toEqual({ tank: '5', lang: 'zh' })
   })
 
   it('XI 升级独立于模块配置：旧链接保持初始值，技能 ID 校验后往返', () => {
@@ -115,7 +131,7 @@ describe('sameTankopediaQuery / withTankopediaState', () => {
   it('导出的键清单覆盖序列化的全部键', () => {
     const all = serializeTankopediaQuery({
       q: 'x', tier: 1, nation: 'a', type: 'b', sort: 'hp', tank: 1, config: 0,
-      engine: 0, track: 0, shell: 0, dev: '0', cons: [], prov: [], skills: { smooth_turn: 7 }, camo: true,
+      engine: 0, track: 0, shell: 0, dev: '0', cons: [], prov: [], skills: { smooth_turn: 7 }, conditionalSkills: true, camo: true,
       eq: [103], upgrade: 'top', abilities: [23],
     })
     expect(Object.keys(all).sort()).toEqual([...TANKOPEDIA_QUERY_KEYS].sort())

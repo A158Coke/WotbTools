@@ -344,7 +344,7 @@ const effectiveShell = selection => (selection.shell == null
 const selectionKey = selection => JSON.stringify([
   selection.config, effectiveShell(selection), selection.engine, selection.track,
   selection.devices, selection.consumables, selection.provisions,
-  selection.skills, selection.camouflage,
+  selection.skills, selection.conditionalSkills, selection.camouflage,
   selection.upgrade, selection.abilities,
 ])
 /** 上一次计入对比基线的选择键：URL 提交（pending → route.query）会让特性重算一次，
@@ -464,6 +464,7 @@ function writeSetup(patch) {
     cons: next.consumables,
     prov: next.provisions,
     skills: next.skills,
+    conditionalSkills: next.conditionalSkills,
     camo: next.camouflage,
     upgrade: next.upgrade,
     abilities: next.abilities || [],
@@ -490,7 +491,7 @@ function maxSkills() {
 }
 
 function clearSkills() {
-  writeSetup({ skills: {} })
+  writeSetup({ skills: {}, conditionalSkills: false })
 }
 
 function resetSetup() {
@@ -505,6 +506,7 @@ function resetSetup() {
     consumables: [],
     provisions: [],
     skills: {},
+    conditionalSkills: false,
     camouflage: false,
   }
   resetTargetKey = selectionKey({ ...setup.value, ...target })

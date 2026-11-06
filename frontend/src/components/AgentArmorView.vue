@@ -118,6 +118,7 @@ const SCENE_QUERY_KEYS = [
 ]
 const sceneSignature = () => SCENE_QUERY_KEYS.map(key => `${key}=${route.query[key] ?? ''}`).join('&')
 let lastSceneSignature = null
+let preserveToolsOnRebuild = false
 // 「实际搭载」面板懒激活：首次展开「参数」才拉 research 数据（catalog/modules 是 MB 级
 // JSON，不该在 3D 场景加载路径上抢带宽）；一旦激活保持（收起再展开不重复拉）。
 const loadoutActive = ref(false)
@@ -133,6 +134,7 @@ const loadoutTankId = computed(() => selectedTargetId.value ?? (Number(route.que
 const cleanQuery = computed(() => route.query.clean === '1')
 const shooterSetupId = computed(() => (selectedShooterId.value ?? Number(route.query.shooter)) || loadoutTankId.value)
 const targetSetupId = computed(() => selectedTargetId.value ?? loadoutTankId.value)
+const isXiTank = id => Number(tankList.value.find(tank => Number(tank.id) === Number(id))?.tier) === 11
 /**
  * 射击装备真值只属于记录的那辆目标车：换目标后不得把原车的 122 / 强化装甲继承给新车。
  * 可用性因此拆成「当前车模块目录支持」+「记录目标与当前目标一致时的回放真值」。
@@ -230,6 +232,7 @@ function applySide(side, patch) {
   if ('abilities' in patch) put(abilitiesKey, patch.abilities)
   const upgradesChanged = previousUpgrade !== query[upgradeKey] || previousAbilities !== query[abilitiesKey]
   if (upgradesChanged) {
+    preserveToolsOnRebuild = true
     // 旧选车器只更新场景内选择；升级重建前把实际双方车型落到 URL，避免回到先前深链。
     put('tank', targetSetupId.value)
     put('shooter', shooterSetupId.value)
@@ -558,7 +561,8 @@ watch(() => route.fullPath, async () => {
     viewerReady.value = false
     viewer?.destroy?.()
     viewer = null
-    toolsOpen.value = false
+    if (!preserveToolsOnRebuild) toolsOpen.value = false
+    preserveToolsOnRebuild = false
     pickerOpen.value = false
     tankList.value = []
     tankListState.value = 'loading'
@@ -646,6 +650,7 @@ onBeforeUnmount(() => {
                             <button
                                 type="button"
                                 class="armor-side-toggle"
+                                v-if="!isXiTank(shooterSetupId)"
                                 :aria-expanded="shooterOpen ? 'true' : 'false'"
                                 aria-controls="shooter-modules"
                                 :aria-label="$t('armor.loadout_shooter')"
@@ -653,11 +658,12 @@ onBeforeUnmount(() => {
                                 @click="shooterOpen = !shooterOpen"
                             ><ChevronDown :size="18" aria-hidden="true" :class="{ 'is-open': shooterOpen }" /></button>
                         </header>
-                        <div v-show="shooterOpen" id="shooter-modules" class="armor-side-body">
+                        <div id="shooter-modules" class="armor-side-body">
                             <ArmorSideConfig
                                 v-if="loadoutActive"
                                 :key="`shooter-${shooterSetupId ?? 'none'}`"
                                 :tank-id="shooterSetupId"
+                                :expanded="shooterOpen"
                                 :config="shooterConfigValue"
                                 :engine="route.query.sengine"
                                 :track="route.query.strack"
@@ -676,6 +682,7 @@ onBeforeUnmount(() => {
                             <button
                                 type="button"
                                 class="armor-side-toggle"
+                                v-if="!isXiTank(targetSetupId)"
                                 :aria-expanded="targetOpen ? 'true' : 'false'"
                                 aria-controls="target-modules"
                                 :aria-label="$t('armor.loadout_target')"
@@ -683,11 +690,12 @@ onBeforeUnmount(() => {
                                 @click="targetOpen = !targetOpen"
                             ><ChevronDown :size="18" aria-hidden="true" :class="{ 'is-open': targetOpen }" /></button>
                         </header>
-                        <div v-show="targetOpen" id="target-modules" class="armor-side-body">
+                        <div id="target-modules" class="armor-side-body">
                             <ArmorSideConfig
                                 v-if="loadoutActive"
                                 :key="`target-${targetSetupId ?? 'none'}`"
                                 :tank-id="targetSetupId"
+                                :expanded="targetOpen"
                                 :config="route.query.config"
                                 :engine="route.query.engine"
                                 :track="route.query.track"
@@ -769,6 +777,10 @@ onBeforeUnmount(() => {
         <div id="traj-info" style="display:none;"></div>
         <div id="shot-replay-error" role="alert" aria-live="assertive" style="display:none;"></div>
         <div id="turret-controls">
+            <div v-if="!isShotPage && !cleanQuery" class="armor-camera-presets" role="group" :aria-label="$t('armor.camera_presets')">
+                <button type="button" class="armor-scene-button" data-testid="armor-camera-front" :disabled="load.state !== 'ready'" @click="viewer?.setCameraPreset?.('front')">{{ $t('armor.camera_front') }}</button>
+                <button type="button" class="armor-scene-button" data-testid="armor-camera-hull-down" :disabled="load.state !== 'ready'" @click="viewer?.setCameraPreset?.('hull_down')">{{ $t('armor.camera_hull_down') }}</button>
+            </div>
             <div class="ctrl-row"><label>{{ $t('armor.turret') }}</label><span id="turret-val">0°</span></div>
             <div class="ctrl-row"><label>{{ $t('armor.gun') }}</label><span id="gun-val">0°</span></div>
         </div>
@@ -827,13 +839,18 @@ onBeforeUnmount(() => {
 .armor-view .armor-panel-title { margin: 0 0 var(--space-2); color: var(--muted); font: var(--type-caption); }
 .armor-view .armor-side-cards { display: grid; gap: var(--space-2); min-inline-size: 0; }
 .armor-view .armor-side-card { display: grid; gap: var(--space-1); padding: var(--space-1) var(--space-2) var(--space-2); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); background: var(--color-surface-1); }
-.armor-view .armor-side-head { display: flex; align-items: center; gap: var(--space-1); min-inline-size: 0; }
-.armor-view .armor-side-role { color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; white-space: nowrap; }
+.armor-view .armor-side-head { display: flex; align-items: center; gap: var(--space-2); min-inline-size: 0; padding-block: var(--space-1); }
+.armor-view .armor-side-role { color: var(--color-accent-text); font: var(--type-caption); font-weight: 700; white-space: nowrap; }
 .armor-view .armor-side-tank { flex: 1 1 auto; inline-size: auto; min-inline-size: 0; }
 .armor-view .armor-side-toggle { display: grid; place-items: center; flex: none; inline-size: var(--hit-min); block-size: var(--hit-min); padding: 0; border: 0; background: transparent; color: var(--color-text-secondary); cursor: pointer; }
 .armor-view .armor-side-toggle svg { transition: transform var(--duration-fast) var(--ease-standard); }
 .armor-view .armor-side-toggle svg.is-open { transform: rotate(180deg); }
 .armor-view .armor-side-body { padding-block-start: var(--space-1); }
+.armor-view .armor-camera-presets { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-block-end: var(--space-2); }
+.armor-view .armor-camera-presets button { flex: 1; min-inline-size: var(--hit-min); white-space: nowrap; }
+.armor-view #turret-controls .ctrl-row { display: inline-flex; gap: var(--space-2); margin-inline-end: var(--space-3); }
+.armor-view #turret-controls .ctrl-row span { font-weight: 700; font-variant-numeric: tabular-nums; }
+.armor-view #view-toggle > button { flex: 1; }
 /* 射击复现的图形面板就绪后，场景自带的校准弹/强化装甲勾选只作为资产缺失时的回退 */
 .armor-view #tank-selectors.has-shot-hud .eq-opt:not(#armor-state-opt) { display: none; }
 .armor-view #tank-selectors { padding: var(--space-3); inline-size: 23rem; max-block-size: 54dvh; overflow-y: auto; z-index: var(--pb-z-hud); }
@@ -1059,8 +1076,10 @@ onBeforeUnmount(() => {
     .armor-view #view-toggle { flex: 1 1 11rem; min-inline-size: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1); padding: 0; }
     .armor-view #view-toggle button { padding: var(--space-1); white-space: normal; }
     .armor-view #armor-filters { grid-column: 1 / -1; padding-block-start: var(--space-1); gap: var(--space-1); }
-    .armor-view #turret-controls { inset-block-start: calc(var(--space-2) * 2 + 48px); inset-block-end: auto; inset-inline-start: var(--space-2); min-inline-size: 0; max-inline-size: calc(100% - var(--space-4)); padding: var(--space-1) var(--space-3); max-block-size: 28dvh; }
-    .armor-view #turret-controls .ctrl-row { display: inline-flex; margin: 0 var(--space-3) 0 0; }
+    .armor-view #turret-controls { inset-block-start: calc(var(--space-2) * 2 + 48px); inset-block-end: auto; inset-inline-start: var(--space-2); min-inline-size: 0; max-inline-size: calc(100% - var(--space-4)); padding: 0 var(--space-1); max-block-size: 28dvh; white-space: nowrap; }
+    .armor-view #turret-controls .ctrl-row { display: inline-flex; flex-wrap: nowrap; vertical-align: middle; gap: var(--space-1); margin: 0 var(--space-1); }
+    .armor-view #turret-controls .armor-camera-presets { display: inline-flex; flex-wrap: nowrap; vertical-align: middle; gap: var(--space-1); margin: 0 var(--space-1) 0 0; }
+    .armor-view #turret-controls .armor-camera-presets button { padding: var(--space-1) var(--space-2); }
     .armor-view #corner-br { display: none; }
     .armor-view.is-shot .armor-bottom-controls { position: absolute; inset-block-end: var(--space-2); inset-inline: var(--space-2); display: flex; flex-direction: column; gap: var(--space-2); pointer-events: none; z-index: var(--pb-z-hud); }
     .armor-view.is-shot .armor-bottom-controls :is(#corner-tr, #corner-br) { position: static; max-inline-size: none; pointer-events: auto; }

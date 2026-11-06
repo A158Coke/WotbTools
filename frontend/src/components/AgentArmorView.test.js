@@ -406,6 +406,7 @@ describe('XI armor upgrade handoff', () => {
     expect(scenes).toHaveLength(2)
     expect(scenes[0].destroy).toHaveBeenCalledOnce()
     expect(wrapper.getComponent(ArmorShotHud).props('abilities')).toBe('401')
+    expect(wrapper.get('[data-testid="armor-tools"]').attributes('aria-expanded')).toBe('true')
     // External navigation back to the stock URL rebuilds the numerical armor/pitch data too.
     await router.replace({ query: { view: 'agent-armor', tank: '15153', shooter: '30497' } })
     await flushPromises()
@@ -435,5 +436,26 @@ describe('XI armor upgrade handoff', () => {
     expect(target.props('abilities')).toBe('102')
     expect(shooter.props('abilities')).toBe('401')
     expect(wrapper.getComponent(ArmorShotHud).props('abilities')).toBe('401')
+  })
+})
+
+describe('armor camera actions', () => {
+  it('offers front and hull-down in static inspection without changing the URL or recreating the scene', async () => {
+    const { wrapper, router } = await setup({ query: { view: 'agent-armor', tank: '15153' } })
+    const scene = scenes[0]
+    scene.setCameraPreset = vi.fn()
+    await wrapper.get('[data-testid="armor-camera-front"]').trigger('click')
+    await wrapper.get('[data-testid="armor-camera-hull-down"]').trigger('click')
+    expect(scene.setCameraPreset.mock.calls).toEqual([['front'], ['hull_down']])
+    expect(router.currentRoute.value.query).toEqual({ view: 'agent-armor', tank: '15153' })
+    expect(scenes).toHaveLength(1)
+    scene.options.onLoadState({ state: 'loading' })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="armor-camera-front"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('does not offer static camera actions over recorded shots', async () => {
+    const { wrapper } = await setup()
+    expect(wrapper.find('[data-testid="armor-camera-front"]').exists()).toBe(false)
   })
 })

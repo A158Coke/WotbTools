@@ -938,6 +938,32 @@ try {
         check(Math.abs(parseFloat(aim1.t)) <= 10.5,
           `固定战斗室：yaw 受 yaw_limits ±10° 限制（${aim1.t}）`)
       }
+      // 用真实按钮输入验证预设穿过 Vue → viewer → 模型姿态，不只检查纯函数。
+      const presetPoint = async (name) => page.evaluate(`(() => {
+        const b = document.querySelector('[data-testid="armor-camera-${name}"]');
+        const r = b.getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      })()`)
+      await mouseTap(await presetPoint('hull-down'))
+      const low = await page.waitForValue('window.__armorRicochet.aimingState()',
+        s => s.turretDeg === 0 && s.gunDeg === -20,
+        { timeout: 5000, label: 'hull-down preset uses fixture depression' })
+      check(low.controlsEnabled && Math.abs(low.cameraDistance - 15) < 0.01,
+        '压坡卖头预设使用当前俯角，保留轨道控制和 15m 距离')
+      const depressed = await page.evaluate('window.__armorRicochet.rigState()')
+      await mouseTap(await presetPoint('front'))
+      await page.waitForValue('window.__armorRicochet.aimingState().gunDeg', g => g === 0,
+        { timeout: 5000, label: 'front preset levels gun' })
+      const level = await page.evaluate('window.__armorRicochet.rigState()')
+      check(JSON.stringify(depressed.guns[0].matrix) !== JSON.stringify(level.guns[0].matrix),
+        '正面/卖头预设真实改变炮管模型姿态')
+      const position = await page.evaluate('window.__DBG__.controls.object.position.toArray()')
+      const bounds = await canvasRect()
+      await mouseDrag({ x: bounds.right - 80, y: (bounds.top + bounds.bottom) / 2 }, -90, 30)
+      await page.waitForValue('window.__DBG__.controls.object.position.toArray()',
+        p => p.some((v, i) => Math.abs(v - position[i]) > 0.01),
+        { timeout: 5000, label: 'free orbit after preset' })
+      check(true, '预设后仍可自由旋转相机')
     } finally {
       if (turretlessPack) await turretlessPack.close()
     }

@@ -33,6 +33,8 @@ export interface SetupSelection {
   provisions: string[]
   /** 已训练技能 → 等级（1–7；缺省 = 未训练，效果全局） */
   skills: Record<string, number>
+  /** 显式模拟条件技能触发，缺省关闭；与训练等级分别保存。 */
+  conditionalSkills?: boolean
   camouflage: boolean
   /** XI 客户端升级；缺省 stock 保持既有链接语义。普通车辆不产生这两个字段。 */
   upgrade?: 'stock' | 'top'
@@ -321,6 +323,7 @@ export function resolveSetup({ detail, modules, url, catalog }: SetupSources): S
     consumables: [],
     provisions: [],
     skills: {},
+    conditionalSkills: false,
     camouflage: false,
   }
   if (!modules || configs.length === 0) return empty
@@ -348,6 +351,7 @@ export function resolveSetup({ detail, modules, url, catalog }: SetupSources): S
     consumables: url?.cons == null ? [] : url.cons,
     provisions: url?.prov == null ? [] : url.prov,
     skills: Object.fromEntries(Object.entries(url?.skills || {}).filter(([id, level]) => skillIds.has(id) && Number.isFinite(Number(level)) && Number(level) > 0).map(([id, level]) => [id, Math.min(7, Math.max(1, Math.round(Number(level))))])),
+    conditionalSkills: url?.conditionalSkills === true,
     camouflage: url?.camo === true,
   }
   const upgrades = resolveUpgradeSelection(modules, url?.upgrade, url?.abilities)
@@ -526,6 +530,7 @@ export function buildComputeInput({ detail, modules, selection, catalog }: {
     provisionScripts: catalog?.provisions ? scriptMap(catalog.provisions, selection.provisions) : {},
     consumableScripts: catalog?.consumables ? scriptMap(catalog.consumables, selection.consumables) : {},
     skillLevels: { ...(selection.skills || {}) },
+    conditionalSkills: selection.conditionalSkills === true,
     skillEffects: catalog?.skills || null,
     camouflage: selection.camouflage,
     camouflageNet: netScript,
@@ -557,6 +562,7 @@ export function baseSelection({ detail, modules }: { detail: any; modules: any }
     consumables: [],
     provisions: [],
     skills: {},
+    conditionalSkills: false,
     camouflage: false,
   }
 }

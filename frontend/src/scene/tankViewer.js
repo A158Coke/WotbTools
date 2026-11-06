@@ -32,6 +32,7 @@ import { shotResultClass } from '../utils/shotResultClass.js'
 import { isCompactShotResultCard, shotResultCardMaxWidth as resultCardMaxWidth, shotResultCardMetrics } from '../utils/shotResultCardMetrics.js'
 import { placeShotResultCard } from '../utils/shotResultCardPlacement.js'
 import { renderShotResultCardHtml } from './viewer/shotResultCard.js'
+import { armorCameraPreset } from './viewer/cameraPresets.js'
 import { createShotTrajectoryGroup, trajectoryChanceColor } from './viewer/shotTrajectoryGeometry.js'
 import {
     RC,
@@ -2452,6 +2453,30 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         function requestedShellIndex() {
             return parseInt(new URLSearchParams(location.search).get('shell'), 10);
         }
+        function setCameraPreset(kind) {
+            if (destroyed || contextLost || !tankModel || !armorModel || QP.get('shot')) return false;
+            if (kind !== 'front' && kind !== 'hull_down') return false;
+            const pitch = currentConfig()?.pitch_limits;
+            const limits = pitch ? pitchAtBearing(pitch, 0,
+                effectivePitchDevice() ? pitchDeviceBonusValue : null) : { down: 0, up: 0 };
+            if (!Number.isFinite(limits.down) || !Number.isFinite(limits.up)) return false;
+            const pose = armorCameraPreset(kind, armorPivotGun?.z ?? 2, ARMOR_REF_DIST, limits);
+            // 先清除轨道惯性，再设置预设；后续拖动仍由 OrbitControls 正常接管。
+            const damping = controls.enableDamping;
+            controls.enableDamping = false;
+            controls.update();
+            controls.target.set(...pose.target);
+            camera.position.set(...pose.position);
+            controls.update();
+            controls.enableDamping = damping;
+            currentTurretDeg = 0;
+            currentGunDeg = pose.pitch;
+            document.getElementById('turret-val').textContent = '0°';
+            document.getElementById('gun-val').textContent = pose.pitch.toFixed(0) + '°';
+            updateTurretGun(currentTurretDeg, currentGunDeg);
+            tidyTrajectory();
+            return true;
+        }
         function applyUrlOptionsOnce() {
             if (urlApplied || !tankModel || !armorModel) return;
             urlApplied = true;
@@ -2484,7 +2509,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // 炮线高度（米）：gun 枢轴的 glb z（场景原生米制，无缩放）。默认目标也用它，
             // 让车体垂直居中（地面原点会让坦克落在屏幕上半）。
             const gunLine = (armorPivotGun ? armorPivotGun.z : 2.0);
-            if (camView || azOv !== null || hOv !== null || distOv !== null) {
+            if ((camView === 'front' || camView === 'hull_down') && azOv === null && hOv === null && distOv === null && !QP.get('shot')) {
+                setCameraPreset(camView);
+            } else if (camView || azOv !== null || hOv !== null || distOv !== null) {
                 // 视角预设（对齐 BlitzKit 语义）：front/rear/left/right = 炮线高度水平视角；
                 // hull_down = 低机位仰视炮塔；top = 俯视。机位距离 = 模型最长边倍数
                 //（取景需要，与数据无关）：水平 0.80×、斜角 0.87×、顶视 1.17×；顶视高度 = 炮线 + 2×模型长
@@ -6097,6 +6124,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         return {
             destroy, retry, selectTank, canPick, isContextLost,
             setConfig: applyConfig, setConfigUiVisible, setShellUiVisible,
+            setCameraPreset,
             setShell, setShooterConfig, setEquipmentOverride, setPitchDeviceBonus, setPitchDeviceAvailable,
         };
     }

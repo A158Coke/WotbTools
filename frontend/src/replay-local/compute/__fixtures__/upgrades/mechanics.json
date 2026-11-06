@@ -1,0 +1,256 @@
+{
+  "gameVersion": "11.4.0.130_7400742 11.22_supertest_tier11_5 WOTB_Win7",
+  "source": {
+    "zip": "https://cdn.static.wotb.app/win7/WotBlitz_11.4.0.130_t11p2.zip",
+    "files": {
+      "app/Data/version.txt.dvpl": {
+        "bytes": 73,
+        "sha256": "fe4f24df2ec7f1beb11c1490da4b916b4adde8e24da07c7e62894a15713be2ee",
+        "decodedSha256": "633be72f242a196fea003237d619f60bcd58d1d4c96414ad2443a17cef09a4b4"
+      },
+      "app/Data/XML/item_defs/vehicles/common/consumables/common.xml.dvpl": {
+        "bytes": 3905,
+        "sha256": "feed61201bed1f2cba38385fccfef803551acf2cfaf9154a094adbb78a38a6f9",
+        "decodedSha256": "9ba3835c9dfb40c5e727df9e8e5478c012779331ad8e21dd85b6544a39751f2d"
+      },
+      "app/Data/XML/item_defs/vehicles/common/provisions/common.xml.dvpl": {
+        "bytes": 5191,
+        "sha256": "7e5b4d37647319f9a45f3c1bd2c7e55edaed67387c7f54fd962e3c9d2970a6e8",
+        "decodedSha256": "9b82440c0ed86b1b01265dc5e327148286da21c6e8b9badc7943ee0e40c833f3"
+      },
+      "app/Data/XML/item_defs/vehicles/common/tank_upgrade_attributes.xml.dvpl": {
+        "bytes": 3141,
+        "sha256": "ef0f7684bd6a0d90981f26662052fe17cebe7b5945b2887acd639a91ed67b5ce",
+        "decodedSha256": "57d054351d149827738c7f38a53f3153851e5c8ea6c52c041b24ae689124cdc4"
+      },
+      "app/Data/XML/item_defs/vehicles/china/Ch67_BZ_79.xml.dvpl": {
+        "bytes": 5291,
+        "sha256": "7d4287370b41cfde7b2319deb5def17ed2d63bf7d0baa83155f339d0e1d0c459",
+        "decodedSha256": "a15d32cf2d806a98a16a5b05a52b8ae8ebe53bf10efa6604d5aa6687263e5a7d"
+      },
+      "app/Data/XML/item_defs/vehicles/ussr/R230_Object_432U.xml.dvpl": {
+        "bytes": 5376,
+        "sha256": "f78a33f23f70ad83c7a638eedfcb076bb46b5dd558ef3039b40dce39be19e8a9",
+        "decodedSha256": "57946828658bc29cf0358b06e79f300c42b33a5e00a85ddffc2a0cb0398b1a81"
+      },
+      "app/Data/XML/item_defs/vehicles/ussr/R228_KR_1.xml.dvpl": {
+        "bytes": 5350,
+        "sha256": "8755e175fc2fedc407f6e494c4795975c4f0e075c848bdffc2b7d1f2d7f3120a",
+        "decodedSha256": "80a7a4062f97ace43e4376b46743209b5027e8122359daabc2045e3a77196b29"
+      },
+      "app/Data/XML/item_defs/vehicles/usa/A179_Black_Rock.xml.dvpl": {
+        "bytes": 5315,
+        "sha256": "6ee481c972fddea1de699d9dd2e17a223062115422691e717579513fa6d2f5ac",
+        "decodedSha256": "9bc88daa81d9cbb23db5e9bf15f9d5f08238bf1d760a41c8ea3d050cda585934"
+      },
+      "app/Data/XML/item_defs/vehicles/usa/A183_XM69_Hacker.xml.dvpl": {
+        "bytes": 5357,
+        "sha256": "49e7ba4c27f1c6f3739c6a76bd7d5294fcbed810b9ce8ede73cdd6fea86b3c8b",
+        "decodedSha256": "7ae541eee1e0efad9881f8d20b5e0239d3eb031e355462c22c1b62119f0d8ec4"
+      }
+    }
+  },
+  "vehicles": [
+    {
+      "tankId": 15153,
+      "nation": "china",
+      "stem": "Ch67_BZ_79",
+      "gameVersion": "11.4.0.130_7400742 11.22_supertest_tier11_5 WOTB_Win7",
+      "vehicleAbilities": [
+        "rechargeableNitro"
+      ]
+    },
+    {
+      "tankId": 27905,
+      "nation": "ussr",
+      "stem": "R230_Object_432U",
+      "gameVersion": "11.4.0.130_7400742 11.22_supertest_tier11_5 WOTB_Win7",
+      "vehicleAbilities": [
+        "combatFrenzy"
+      ]
+    },
+    {
+      "tankId": 28161,
+      "nation": "ussr",
+      "stem": "R228_KR_1",
+      "gameVersion": "11.4.0.130_7400742 11.22_supertest_tier11_5 WOTB_Win7",
+      "vehicleAbilities": [
+        "rammingConfiguration"
+      ]
+    },
+    {
+      "tankId": 30241,
+      "nation": "usa",
+      "stem": "A179_Black_Rock",
+      "gameVersion": "11.4.0.130_7400742 11.22_supertest_tier11_5 WOTB_Win7",
+      "vehicleAbilities": [
+        "burstMode"
+      ]
+    },
+    {
+      "tankId": 30497,
+      "nation": "usa",
+      "stem": "A183_XM69_Hacker",
+      "gameVersion": "11.4.0.130_7400742 11.22_supertest_tier11_5 WOTB_Win7",
+      "vehicleAbilities": [
+        "steadyAimSystem"
+      ]
+    }
+  ],
+  "consumables": [
+    {
+      "id": 81,
+      "stem": "rechargeableNitro",
+      "mode": "common",
+      "icon": "nitro",
+      "category": null,
+      "tags": [
+        "trigger"
+      ],
+      "extraEffectDuration": null,
+      "script": {
+        "type": "script",
+        "params": {
+          "enginePowerFactor": "2",
+          "rotationSpeedFactor": "0.2",
+          "fwdSpeedLimitFactor": "1.30",
+          "bkwdSpeedLimitFactor": "0.1",
+          "duration": "8",
+          "coolingDuration": "45",
+          "overheatThreshold": "0.7",
+          "initialImpulse": "20",
+          "initialImpulseDuration": "0.5",
+          "cooldown": "10"
+        }
+      },
+      "displayParams": null,
+      "filter": null,
+      "isAbility": true,
+      "isVehicleAbility": true,
+      "name_en": null,
+      "description_en": null,
+      "name_zh-Hans": null,
+      "description_zh-Hans": null
+    }
+  ],
+  "provisions": [
+    {
+      "id": 124,
+      "stem": "burstMode",
+      "mode": "common",
+      "icon": null,
+      "category": null,
+      "tags": [],
+      "extraEffectDuration": null,
+      "script": {
+        "type": "script",
+        "params": {
+          "requiredDamagingPenetrations": "3",
+          "targetOrder": "true",
+          "count": "2",
+          "burstInterval": "2.5"
+        }
+      },
+      "displayParams": null,
+      "filter": null,
+      "isAbility": true,
+      "isVehicleAbility": true,
+      "name_en": null,
+      "description_en": null,
+      "name_zh-Hans": null,
+      "description_zh-Hans": null
+    },
+    {
+      "id": 125,
+      "stem": "combatFrenzy",
+      "mode": "common",
+      "icon": null,
+      "category": null,
+      "tags": [],
+      "extraEffectDuration": null,
+      "script": {
+        "type": "script",
+        "params": {
+          "reloadSpeedBonusPerStack": "0.04",
+          "maxStacks": "3",
+          "allowSwitchAfterKill": "False"
+        }
+      },
+      "displayParams": null,
+      "filter": null,
+      "isAbility": true,
+      "isVehicleAbility": true,
+      "name_en": null,
+      "description_en": null,
+      "name_zh-Hans": null,
+      "description_zh-Hans": null
+    },
+    {
+      "id": 126,
+      "stem": "rammingConfiguration",
+      "mode": "common",
+      "icon": null,
+      "category": null,
+      "tags": [],
+      "extraEffectDuration": null,
+      "script": {
+        "type": "script",
+        "params": {
+          "rammingDamageBonus": "1.5",
+          "rammingTrackDamageBonus": "2.3",
+          "rammingDamageReduction": "0.8"
+        }
+      },
+      "displayParams": null,
+      "filter": {
+        "include": [
+          {
+            "ids": [
+              "ussr:R228_KR_1"
+            ]
+          }
+        ]
+      },
+      "isAbility": true,
+      "isVehicleAbility": true,
+      "name_en": null,
+      "description_en": null,
+      "name_zh-Hans": null,
+      "description_zh-Hans": null
+    },
+    {
+      "id": 127,
+      "stem": "steadyAimSystem",
+      "mode": "common",
+      "icon": null,
+      "category": null,
+      "tags": [],
+      "extraEffectDuration": null,
+      "script": {
+        "type": "script",
+        "params": {
+          "duration": "20",
+          "aimingSpeed": "0.25",
+          "gunDispersionModifier": "0.25",
+          "activateWithoutDamage": "false"
+        }
+      },
+      "displayParams": null,
+      "filter": {
+        "include": [
+          {
+            "ids": [
+              "usa:A183_XM69_Hacker"
+            ]
+          }
+        ]
+      },
+      "isAbility": true,
+      "isVehicleAbility": true,
+      "name_en": null,
+      "description_en": null,
+      "name_zh-Hans": null,
+      "description_zh-Hans": null
+    }
+  ]
+}

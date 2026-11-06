@@ -10,6 +10,7 @@ import PROVISIONS from '../replay-local/compute/__fixtures__/research/provisions
 import SKILLS from '../replay-local/compute/__fixtures__/research/skills.json'
 import CAMOUFLAGE from '../replay-local/compute/__fixtures__/research/camouflage.json'
 import FORMAT from '../replay-local/compute/__fixtures__/research/params/format.json'
+import XI_LOADOUT from '../replay-local/compute/__fixtures__/upgrades/loadout.json'
 import {
   availableItems,
   itemAvailableForTank,
@@ -89,6 +90,34 @@ describe('resolveDeviceIds', () => {
     expect(resolveDeviceIds(slots, [0, 1], DEVICES.devices)).toEqual([100])
     expect(resolveDeviceIds(slots, [1, null], DEVICES.devices)).toEqual([103])
     expect(resolveDeviceIds(slots, [null, 1], DEVICES.devices)).toEqual([])
+  })
+})
+
+describe('XI 同版客户端物品规则', () => {
+  const commonConsumables = ['autoExtinguisher', 'largeMedkit', 'largeRepairkit', 'afterburning', 'berserk', 'largeRecoverkit', 'freeAfterburning']
+  const commonProvisions = ['regular_fuel', 'improved_fuel', 'safety_set']
+  const vehicles = [
+    { tankId: 15153, nation: 'china', stem: 'Ch67_BZ_79', tags: ['heavyTank'], extraCons: [], extraProv: ['regular_ration', 'ration_china'] },
+    { tankId: 27905, nation: 'ussr', stem: 'R230_Object_432U', tags: ['mediumTank'], extraCons: ['improvedAfterburning'], extraProv: ['condensed_milk', 'ration'] },
+    { tankId: 28161, nation: 'ussr', stem: 'R228_KR_1', tags: ['heavyTank'], extraCons: ['improvedAfterburning'], extraProv: ['condensed_milk', 'ration'] },
+    { tankId: 30241, nation: 'usa', stem: 'A179_Black_Rock', tags: ['heavyTank', 'collectible'], extraCons: [], extraProv: ['cocacola_can', 'cocacola'] },
+    { tankId: 30497, nation: 'usa', stem: 'A183_XM69_Hacker', tags: ['mediumTank'], extraCons: [], extraProv: ['gearOil', 'improvedGearOil', 'cocacola_can', 'cocacola'] },
+  ]
+
+  it.each(vehicles)('$tankId 只提供客户端明确允许的物品，内建技能不占物品槽', vehicle => {
+    const ref = { ...vehicle, tier: 11 }
+    expect(availableItems(XI_LOADOUT.consumables, ref).map(item => item.stem).sort())
+      .toEqual([...commonConsumables, ...vehicle.extraCons].sort())
+    expect(availableItems(XI_LOADOUT.provisions, ref).map(item => item.stem).sort())
+      .toEqual([...commonProvisions, ...vehicle.extraProv].sort())
+  })
+
+  it('新目录保留显式等级上限和弹夹排除条件，不把 XI 降级成 X', () => {
+    const ref = { ...vehicles[0], tier: 11, tags: ['heavyTank', 'clip'] }
+    expect(availableItems(XI_LOADOUT.consumables, ref).some(item => item.stem === 'berserk')).toBe(false)
+    expect(availableItems(XI_LOADOUT.consumables, { ...ref, tier: 12 })
+      .some(item => item.stem === 'largeRepairkit')).toBe(false)
+    expect(availableItems(CONSUMABLES.items, ref)).toEqual([])
   })
 })
 

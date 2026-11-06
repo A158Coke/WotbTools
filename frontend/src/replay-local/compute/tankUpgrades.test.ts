@@ -1,16 +1,75 @@
 import { describe, expect, it } from 'vitest'
 import { reactive } from 'vue'
 import TANKS from './__fixtures__/upgrades/tanks.json'
+import MECHANICS from './__fixtures__/upgrades/mechanics.json'
 import ORDINARY from './__fixtures__/modules/ussr.json'
 import { computeCharacteristics } from './characteristics'
 import { baseSelection, buildComputeInput } from './tankSetup'
-import { projectTankUpgrades, resolveUpgradeSelection, type UpgradeDefinition, type UpgradeNode } from './tankUpgrades'
+import { projectTankUpgrades, resolveUpgradeSelection, upgradeMechanicEffects, type UpgradeDefinition, type UpgradeNode } from './tankUpgrades'
 
 const bz = TANKS.find(t => t.modules.tankId === 15153)!
 const object432 = TANKS.find(t => t.modules.tankId === 27905)!
 const kr = TANKS.find(t => t.modules.tankId === 28161)!
 const black = TANKS.find(t => t.modules.tankId === 30241)!
 const hacker = TANKS.find(t => t.modules.tankId === 30497)!
+
+describe('XI 技能升级变化展示', () => {
+  const catalog = { ...MECHANICS, consumablesGameVersion: MECHANICS.gameVersion, provisionsGameVersion: MECHANICS.gameVersion }
+  const boundModules = (modules: typeof black.modules) => ({ ...modules,
+    vehicleAbilities: MECHANICS.vehicles.find(vehicle => vehicle.tankId === modules.tankId)!.vehicleAbilities })
+  it('Black Rock 同版 XML：3 次变 2 次；连发间隔 2.5 → 1.6，另选间隔技能后 0.7 秒', () => {
+    const modules = boundModules(black.modules)
+    const rows = upgradeMechanicEffects(resolveUpgradeSelection(modules, 'top'), modules, catalog)
+    expect(rows.find(row => row.name === 'BURST_MODE_REQUIRED_PENETRATIONS')).toMatchObject({ initial: 3, value: 2 })
+    expect(rows.find(row => row.name === 'BURST_MODE_INTERVAL')).toMatchObject({ initial: 2.5, value: 1.6 })
+    const node = modules.upgradeProgression.nodes.find(node => node.type === 'NODETYPE_ALTERNATIVE_MECHANIC'
+      && node.attributes.some(a => a.name === 'BURST_MODE_INTERVAL'))!
+    const alternative = upgradeMechanicEffects(resolveUpgradeSelection(modules, 'top', [node.id]), modules, catalog)
+    expect(alternative.find(row => row.name === 'BURST_MODE_INTERVAL')?.value).toBeCloseTo(.7)
+  })
+  it('初始值需明确绑定与目录版本；缺失、跨版和无证实字段绝不补造', () => {
+    const modules = boundModules(black.modules)
+    for (const [inputModules, inputCatalog] of [[black.modules, catalog], [modules, { ...catalog, provisionsGameVersion: 'other' }]]) {
+      const rows = upgradeMechanicEffects(resolveUpgradeSelection(inputModules, 'top'), inputModules, inputCatalog)
+      expect(rows.every(row => row.initial === null && row.value === null)).toBe(true)
+    }
+    const nitro = boundModules(bz.modules)
+    const rows = upgradeMechanicEffects(resolveUpgradeSelection(nitro, 'top'), nitro, catalog)
+    expect(rows.find(row => row.name === 'RECHARGEABLE_NITRO_HEATING_DURATION')?.initial).toBe(null)
+    expect(rows.find(row => row.name === 'RECHARGEABLE_NITRO_COOLING_DURATION')).toMatchObject({ initial: 45, value: 43 })
+  })
+  it('布尔原始 true 与升级 false 正确覆盖，初始态保持 true', () => {
+    const modules = boundModules(black.modules)
+    const node = modules.upgradeProgression.nodes.find(node => node.attributes.some(a => a.name === 'BURST_MODE_TARGET_ORDER'))!
+    for (const mode of ['stock', 'top']) {
+      const row = upgradeMechanicEffects(resolveUpgradeSelection(modules, mode, [node.id]), modules, catalog)
+        .find(row => row.name === 'BURST_MODE_TARGET_ORDER')!
+      expect(row.initial).toBe(true)
+      expect(row.value).toBe(mode === 'stock')
+    }
+  })
+  it('Black Rock 连发间隔显示累计 -0.9 / -1.8 与所选 -0.9，绝不当作最终间隔', () => {
+    const defaultRows = upgradeMechanicEffects(resolveUpgradeSelection(black.modules, 'top'))
+    expect(defaultRows.find(row => row.name === 'BURST_MODE_INTERVAL')).toMatchObject({ current: -.9, initial: null, value: null })
+    const node = black.modules.upgradeProgression.nodes.find(node => node.type === 'NODETYPE_ALTERNATIVE_MECHANIC'
+      && node.attributes.some(a => a.name === 'BURST_MODE_INTERVAL'))!
+    const rows = upgradeMechanicEffects(resolveUpgradeSelection(black.modules, 'top', [node.id]))
+    expect(rows.find(row => row.name === 'BURST_MODE_INTERVAL')).toMatchObject({ current: -1.8 })
+    expect(rows.find(row => row.name === 'BURST_MODE_REQUIRED_PENETRATIONS')).toMatchObject({ current: null })
+  })
+  it('初始状态仍展示所选加成但不宣称生效；缺失基值和显式 false 必须区分', () => {
+    const node = black.modules.upgradeProgression.nodes.find(node => node.attributes.some(a => a.name === 'BURST_MODE_TARGET_ORDER'))!
+    const stock = upgradeMechanicEffects(resolveUpgradeSelection(black.modules, 'stock', [node.id]))
+    expect(stock.every(row => row.current === null)).toBe(true)
+    const top = upgradeMechanicEffects(resolveUpgradeSelection(black.modules, 'top', [node.id]))
+    expect(top.find(row => row.name === 'BURST_MODE_TARGET_ORDER')?.current).toBe(false)
+  })
+  it.each(TANKS)('$modules.name 仅展示真实机制属性，不混入生命值/模块耐久', ({ modules }) => {
+    const rows = upgradeMechanicEffects(resolveUpgradeSelection(modules, 'top'))
+    expect(rows.length).toBeGreaterThan(0)
+    expect(rows.every(row => !row.name.startsWith('ATTRIBUTE_NAME_'))).toBe(true)
+  })
+})
 
 // 来自同版客户端 XML 的手工核对总量。detail 的炮弹、装甲值是映射测试输入，见 fixture manifest。
 const expected = [
