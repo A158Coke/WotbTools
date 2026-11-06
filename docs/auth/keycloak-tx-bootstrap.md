@@ -268,7 +268,7 @@ WOTB_E2E_PUBLIC_IP           公网边缘必须由其应答的 TX 地址（默�
 ```
 
 检查用 `wotbtools-e2e`（client_credentials）驱动真实链路并逐项输出
-`hof-replay-storage`、`admin-authz`、`anonymous-rejected`（回放解析相关检查随服务端解析一起删除）。
+`hof-replay-storage`、`admin-authz`、`anonymous-rejected`、`retired-replay-switches`（确认服务端回放开关保持退役状态；回放解析相关检查随服务端解析一起删除）。
 任何一项 FAIL 都输出 `TX_RUNTIME_NOT_READY`：**这是「TX runtime
 不是业务可用状态」的机械含义**。
 
