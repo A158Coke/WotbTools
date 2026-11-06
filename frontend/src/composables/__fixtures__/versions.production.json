@@ -1,0 +1,35 @@
+{
+ "schema": 1,
+ "updated": "2026-11-06T01:21:34+00:00",
+ "default": "11.21.0",
+ "datasets": [
+  {
+   "id": "11.21.0",
+   "label": "11.21.0",
+   "game_version": "release/11.21.0",
+   "variant": null,
+   "release": "initial-20261019",
+   "tank_count": 738,
+   "generated": "2026-10-18T10:21:47+00:00",
+   "content_digest": "sha256:5b80884bd8003246abb7796c42af6420013a6a51dadde01883185f0f19869d84",
+   "manifest_sha256": "fa7450bf865c4f0b4d7f92205e78bd48201fae18121307acc8b71a0c6d99fa99",
+   "min_client": null,
+   "status": "active",
+   "notes": "initial 11.21 baseline (2026-10-19); lacks later map2d/cover/research increments"
+  },
+  {
+   "id": "supertest",
+   "label": "超测服",
+   "game_version": "release/11.21.0",
+   "variant": "t11p2",
+   "release": "t11p2-20261106",
+   "tank_count": 743,
+   "generated": "2026-11-05T16:48:34+00:00",
+   "content_digest": "sha256:ea489ff10f6f475506ac4fb302bb51537a00c58cbf76801ced537bf82ace9c86",
+   "manifest_sha256": "3450c39318b088e8e556a4c0338e85bd86798a9c0aae9a37088d27eca435e8e5",
+   "min_client": null,
+   "status": "active",
+   "notes": "supertest channel: t11p2 preview, 5 XI tanks on 11.21 base; shell ballistics from shells.xml (t11p2 moved piercingPower/speed out of gun shots)"
+  }
+ ]
+}

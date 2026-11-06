@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import PRODUCTION_CATALOG from './__fixtures__/versions.production.json'
 
 /**
  * 数据版本选择器的契约：
@@ -130,6 +131,20 @@ describe('useDataVersion', () => {
     expect(options.value[0].preview).toBe(false)
     expect(options.value[1].preview).toBe(true)
     expect(currentDataset.value.id).toBe('11.21.0-t11-preview')
+  })
+
+  it('真实生产 catalog（无 preview 字段）也用 variant 标记预览通道', async () => {
+    // 夹具来自 Assets Host 的实际 versions.json：Agent collect_datasets 不输出
+    // version.json.preview，因此消费契约只能依赖 catalog 已有的字段。
+    expect('preview' in PRODUCTION_CATALOG.datasets[1]).toBe(false)
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => PRODUCTION_CATALOG }))
+    const mod = await load({ fetchImpl: fetchMock })
+    await mod.loadDataVersionCatalog()
+    const { options } = mod.useDataVersion()
+    expect(options.value.map((option) => [option.value, option.preview])).toEqual([
+      ['11.21.0', false],
+      ['supertest', true],
+    ])
   })
 
   it('strips a persisted versioned ?assets= override when selecting a dataset', async () => {
