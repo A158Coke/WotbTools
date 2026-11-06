@@ -23,6 +23,8 @@ export interface SceneCoreOptions {
   logdepth: boolean
   /** 动态分辨率偏好（DYNRES） */
   dynres: boolean
+  /** 模板缓冲（仅坦克轮廓阴影需要；默认关 = three 默认上下文） */
+  stencil?: boolean
   /** 诊断钩子开关（仅显式 ?debug 才挂 window.__*） */
   debug: boolean
   /** 逐图 IBL（资产阶段早于场景创建时补挂） */
@@ -40,6 +42,7 @@ export interface SceneCoreOptions {
 export interface RendererCaps {
   logdepth: boolean
   dynres: boolean
+  stencil: boolean
 }
 
 export interface SceneCore {
@@ -72,7 +75,7 @@ export interface SceneCore {
  * @param {unknown} [opts.setFollow] 诊断钩子（宿主闭包内函数声明，提升后传入）
  */
 export function createSceneCore({
-  container, quality: Q, logdepth: LOGDEPTH, dynres: DYNRES, debug: DEBUG,
+  container, quality: Q, logdepth: LOGDEPTH, dynres: DYNRES, stencil: STENCIL = false, debug: DEBUG,
   envTexture = null, envMultiplier = 1,
   onResize, onPointerDown, onPointerUp, setFollow,
 }: SceneCoreOptions): SceneCore {
@@ -95,9 +98,10 @@ export function createSceneCore({
   const renderer = new THREE.WebGLRenderer({
     antialias: Q.antialias,
     logarithmicDepthBuffer: LOGDEPTH,
+    stencil: STENCIL,
     powerPreference: 'high-performance',
   });
-  const rendererCaps: RendererCaps = { logdepth: LOGDEPTH, dynres: DYNRES };   // 实际装配快照（复用渲染器时校验偏好是否仍一致）
+  const rendererCaps: RendererCaps = { logdepth: LOGDEPTH, dynres: DYNRES, stencil: STENCIL };   // 实际装配快照（复用渲染器时校验偏好是否仍一致）
   // 着色器预热（`renderer.compile`）：three 在**首次渲染某材质**时才编译程序，编译会阻塞
   // 数十~数百 ms，落在"战斗第一次开火/命中"的那一帧就是用户实测的"打起来就卡"。
   // 场景就绪后立即编译在用材质（含地面分层着色器/FX 池），成本挪到加载阶段（那时本来在等资产）。

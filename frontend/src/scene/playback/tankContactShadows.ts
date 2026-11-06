@@ -5,6 +5,7 @@
 // 关闭时本模块从不实例化（零资源、零绘制）。
 import * as THREE from 'three'
 import type { DirectionalLight, Object3D, Scene } from 'three'
+import { createSilhouetteShadow, makeSilhouetteMaterial, planarShadowMatrix, type SilhouetteShadow } from './tankSilhouetteShadow.js'
 
 /** 车体系半尺寸（米）：halfW = 横向，halfL = 纵向（车头 +Z）。 */
 export interface ShadowFootprint {
@@ -102,6 +103,7 @@ export function measureShadowFootprint(object: Object3D): ShadowFootprint {
 export const GRID = 5
 const LIFT = 0.04         // 离地抬升（米）；深度遮挡由 DEPTH_PULL 解决
 const OPACITY = 0.65
+const SILHOUETTE_OPACITY = 0.5
 const SHADOW_COLOR = 0x0b0f14
 
 /**
@@ -217,6 +219,8 @@ interface ShadowEntry {
   wanted: boolean
   /** 上次贴地成功（全部采样点有地表） */
   grounded: boolean
+  /** 车模轮廓投影（仅 silhouettes 开启且挂了车模时存在） */
+  silhouette: SilhouetteShadow | null
 }
 
 export interface TankContactShadowsOptions {
@@ -224,6 +228,8 @@ export interface TankContactShadowsOptions {
   sunLight: DirectionalLight
   /** 当前可见地表高度（无地表 / 越界返回 null，不得以 0 冒充） */
   heightAt: (x: number, z: number) => number | null
+  /** 车模轮廓投影：需要渲染器带 stencil（同像素只变暗一次），否则不创建 */
+  silhouettes?: boolean
 }
 
 export interface TankContactShadows {
@@ -231,16 +237,20 @@ export interface TankContactShadows {
   syncSun(): void
   /** 记录车辆实测尺寸（GLB 挂载时一次） */
   setFootprint(owner: object, footprint: ShadowFootprint): void
+  /** 挂载车模（GLB 挂载时一次）：silhouettes 开启时为其建轮廓投影，该车接地阴影不再加背光尾 */
+  attachModel(owner: object, model: Object3D): void
   /** 按车辆当前（已变换完成的）场景位姿更新阴影；visible=false 隐藏 */
   update(owner: object, x: number, z: number, yaw: number, visible: boolean): void
   /** 地表换代（地形就绪 / LOD）：按缓存位姿重新贴地 */
   reground(): void
   /** 当前可见阴影数（诊断/测试） */
   count(): number
+  /** 当前可见的轮廓影子网格数（诊断/测试） */
+  silhouetteCount(): number
   dispose(): void
 }
 
-export function createTankContactShadows({ scene, sunLight, heightAt }: TankContactShadowsOptions): TankContactShadows {
+export function createTankContactShadows({ scene, sunLight, heightAt, silhouettes = false }: TankContactShadowsOptions): TankContactShadows {
   const texture = makeGradientTexture()
   const material = new THREE.MeshBasicMaterial({
     color: SHADOW_COLOR, map: texture, transparent: true, opacity: OPACITY,
@@ -248,11 +258,20 @@ export function createTankContactShadows({ scene, sunLight, heightAt }: TankCont
   })
   material.onBeforeCompile = applyDepthPull
   material.customProgramCacheKey = () => 'tankContactShadow-depthPull'
+  const silhouetteMaterial = silhouettes ? makeSilhouetteMaterial(SHADOW_COLOR, SILHOUETTE_OPACITY) : null
+  if (silhouetteMaterial) {
+    silhouetteMaterial.onBeforeCompile = applyDepthPull
+    silhouetteMaterial.customProgramCacheKey = () => 'tankSilhouetteShadow-depthPull'
+  }
   const entries = new Map<object, ShadowEntry>()
   const footprints = new Map<object, ShadowFootprint>()
+  const models = new Map<object, Object3D>()
   const xz = new Float32Array(GRID * GRID * 2)
   const lightWorld = new THREE.Vector3(), targetWorld = new THREE.Vector3()
+  const lightDir = new THREE.Vector3(0, -1, 0)   // 完整传播方向（轮廓投影用；无效太阳 → 垂直向下）
+  const planeU = new THREE.Vector3(), planeV = new THREE.Vector3(), planeN = new THREE.Vector3(), planeP = new THREE.Vector3()
   let sun: SunShadow = CENTERED
+  let sunNoTail: SunShadow = CENTERED
   let version = 1
   let disposed = false
 
@@ -283,25 +302,46 @@ export function createTankContactShadows({ scene, sunLight, heightAt }: TankCont
     mesh.visible = false
     mesh.matrixAutoUpdate = false   // 顶点已是世界坐标
     scene.add(mesh)
-    e = { mesh, pos, footprint: footprints.get(owner) ?? PROXY_FOOTPRINT, x: NaN, z: NaN, yaw: NaN, stamp: 0, wanted: false, grounded: false }
+    e = { mesh, pos, footprint: footprints.get(owner) ?? PROXY_FOOTPRINT, x: NaN, z: NaN, yaw: NaN, stamp: 0, wanted: false, grounded: false, silhouette: null }
+    const model = models.get(owner)
+    if (model && silhouetteMaterial) e.silhouette = createSilhouetteShadow(scene, model, silhouetteMaterial)
     entries.set(owner, e)
     return e
   }
 
+  /** 网格中心十字（车体中心 + 车体四边中点）拟合车底局部地表平面，写入该车轮廓投影矩阵 */
+  function placeSilhouette(e: ShadowEntry, arr: Float32Array): void {
+    if (!e.silhouette) return
+    const c = (GRID * GRID - 1) / 2, h = (GRID - 1) / 4   // 中心与内网格线（车体边缘）
+    const at = (i: number, out: THREE.Vector3) => out.set(arr[i * 3], arr[i * 3 + 1], arr[i * 3 + 2])
+    at(c + h, planeU).sub(at(c - h, planeP))                 // 沿车宽
+    at(c + h * GRID, planeV).sub(at(c - h * GRID, planeP))   // 沿车长
+    planeN.crossVectors(planeV, planeU).normalize()
+    if (planeN.y < 0) planeN.negate()
+    at(c, planeP)
+    planarShadowMatrix(planeN, -planeN.dot(planeP), lightDir, e.silhouette.projection)
+  }
+
   function place(e: ShadowEntry): void {
-    shadowGridXZ(e.x, e.z, e.yaw, e.footprint, sun, xz)
+    // 有轮廓投影的车：投影本身就是背光侧阴影，接地阴影只留四周接触带（不叠一条尾巴）
+    shadowGridXZ(e.x, e.z, e.yaw, e.footprint, e.silhouette ? sunNoTail : sun, xz)
     const arr = e.pos.array as Float32Array
     for (let i = 0; i < GRID * GRID; i++) {
       const wx = xz[i * 2], wz = xz[i * 2 + 1]
       const y = heightAt(wx, wz)
       // 任一采样点无地表（图外 / 地表未就绪）→ 整片隐藏，不拿 0 冒充地面
-      if (y == null || !Number.isFinite(y)) { e.grounded = false; e.mesh.visible = false; return }
+      if (y == null || !Number.isFinite(y)) {
+        e.grounded = false; e.mesh.visible = false; e.silhouette?.setVisible(false)
+        return
+      }
       arr[i * 3] = wx; arr[i * 3 + 1] = y + LIFT; arr[i * 3 + 2] = wz
     }
     e.pos.needsUpdate = true
     e.mesh.geometry.computeBoundingSphere()
     e.grounded = true
     e.mesh.visible = true
+    placeSilhouette(e, arr)
+    e.silhouette?.setVisible(true)
   }
 
   const api: TankContactShadows = {
@@ -312,6 +352,10 @@ export function createTankContactShadows({ scene, sunLight, heightAt }: TankCont
       sunLight.getWorldPosition(lightWorld)
       sunLight.target.getWorldPosition(targetWorld)
       sun = sunShadowFrom(lightWorld, targetWorld)
+      sunNoTail = { ...sun, tailFactor: 0 }
+      lightDir.subVectors(targetWorld, lightWorld)
+      if (sun.centered || !(lightDir.lengthSq() > 1e-12)) lightDir.set(0, -1, 0)
+      else lightDir.normalize()
       version++
     },
     setFootprint(owner, footprint) {
@@ -320,19 +364,31 @@ export function createTankContactShadows({ scene, sunLight, heightAt }: TankCont
       const e = entries.get(owner)
       if (e) { e.footprint = footprint; e.stamp = 0 }
     },
+    attachModel(owner, model) {
+      if (disposed) return
+      models.set(owner, model)
+      const e = entries.get(owner)
+      if (e && silhouetteMaterial) {
+        e.silhouette?.dispose()
+        e.silhouette = createSilhouetteShadow(scene, model, silhouetteMaterial)
+        e.stamp = 0
+      }
+    },
     update(owner, x, z, yaw, visible) {
       if (disposed) return
       if (!visible) {
         const e = entries.get(owner)
-        if (e) { e.wanted = false; e.mesh.visible = false }
+        if (e) { e.wanted = false; e.mesh.visible = false; e.silhouette?.setVisible(false) }
         return
       }
       if (!Number.isFinite(x) || !Number.isFinite(z) || !Number.isFinite(yaw)) return
       const e = entryFor(owner)
       e.wanted = true
       if (e.stamp === version && e.x === x && e.z === z && e.yaw === yaw) {
-        // 位姿与太阳/地表未变：只恢复显隐（上次因无地表隐藏则仍隐藏）
+        // 位姿与太阳/地表未变：只恢复显隐（上次因无地表隐藏则仍隐藏）。
+        // 轮廓逐部件同步（炮塔变体等）；炮塔 / 炮管转动由 onBeforeRender 现算矩阵跟随
         e.mesh.visible = e.grounded
+        e.silhouette?.setVisible(e.grounded)
         return
       }
       e.x = x; e.z = z; e.yaw = yaw; e.stamp = version
@@ -352,16 +408,24 @@ export function createTankContactShadows({ scene, sunLight, heightAt }: TankCont
       for (const e of entries.values()) if (e.mesh.visible) n++
       return n
     },
+    silhouetteCount() {
+      let n = 0
+      for (const e of entries.values()) n += e.silhouette?.count() ?? 0
+      return n
+    },
     dispose() {
       if (disposed) return
       disposed = true
       for (const e of entries.values()) {
         scene.remove(e.mesh)
         e.mesh.geometry.dispose()
+        e.silhouette?.dispose()
       }
       entries.clear()
       footprints.clear()
+      models.clear()
       material.dispose()
+      silhouetteMaterial?.dispose()
       texture.dispose()
     },
   }

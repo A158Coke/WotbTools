@@ -71,7 +71,8 @@ vi.mock('../data/mapBases.js', async (importOriginal) => {
 vi.mock('three', async (importOriginal) => {
   const actual = await importOriginal()
   class StubWebGLRenderer {
-    constructor() {
+    constructor(params = {}) {
+      this.params = params   // 上下文级参数（logdepth / stencil）的装配证据
       this.domElement = document.createElement('canvas')
       this.toneMapping = 0
       this.toneMappingExposure = 1
@@ -5294,6 +5295,21 @@ describe('坦克接地阴影（High / Ultra opt-in）', () => {
     expect(store.hasData).toBe(true)
     expect(shadowMeshes()).toHaveLength(0)
     expect(window.__pbV).toHaveLength(1)
+    expect(window.__renderer.params.stencil).toBe(false)   // 关闭路径：渲染上下文与原来一致
+  })
+
+  it('开启时渲染器带模板缓冲（轮廓投影用）；下一场关闭后重建为不带模板的上下文', async () => {
+    window.history.replaceState(null, '', '/?debug&q=high')
+    const { api } = createScene()
+    api.setContactShadows(true)
+    await start(api, 'a.wotbreplay')
+    const first = window.__renderer
+    expect(first.params.stencil).toBe(true)
+    api.setContactShadows(false)
+    await start(api, 'b.wotbreplay')
+    expect(window.__renderer).not.toBe(first)
+    expect(window.__renderer.params.stencil).toBe(false)
+    expect(shadowMeshes()).toHaveLength(0)
   })
 
   it('ON：选择穿过 loadData 内的 teardown 生效；随位姿/seek 跟随，不可见即隐藏，reset 后释放', async () => {

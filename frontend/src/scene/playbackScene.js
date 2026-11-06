@@ -406,6 +406,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     CONTACT_SHADOWS = !!on && shadowQualityEligible(QKEY);
     store.contactShadows = CONTACT_SHADOWS;
   }
+  /** 轮廓投影阴影要模板缓冲；只在阴影有效时申请，关闭路径的渲染上下文与原来一致 */
+  function wantsShadowStencil() { return CONTACT_SHADOWS && shadowQualityEligible(QKEY); }
   function setQuality(k) {
     if (!QUALITY_PRESETS[k] || k === QKEY) return;
     const apply = () => {
@@ -990,7 +992,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 创建核心（渲染器/相机/控件/灯光/resize+pointer 接线）在 playback/renderer.js
     //（2026-10-24 Step A2 出仓；状态所有权仍在本闭包——解构写回可变绑定）
     const core = createSceneCore({
-      container, quality: Q, logdepth: LOGDEPTH, dynres: DYNRES, debug: DEBUG,
+      container, quality: Q, logdepth: LOGDEPTH, dynres: DYNRES, stencil: wantsShadowStencil(), debug: DEBUG,
       envTexture, envMultiplier,
       onResize, onPointerDown: onScenePointerDown, onPointerUp: onScenePointerUp,
       setFollow,
@@ -3638,6 +3640,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
             v.glb = inst;                       // 通过部位检查后才落库（否则会卡在半装载态）
             v.glbParts = parts;
             contactShadows?.setFootprint(v, measureShadowFootprint(inst));   // 受姿前一次性实测
+            contactShadows?.attachModel(v, inst);   // 轮廓投影（渲染器带 stencil 时）
             v.tankData = loaded.sd;             // Sniper 穿深着色的配置/弹表来源
             // 悬挂部件（轮/带）逐车收集：几何逐车 clone（模板共享），数据缺 → null 回落刚体
             v.suspParts = collectSuspensionParts(inst, loaded.susp, v.def.tank_id);
@@ -5216,13 +5219,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 入口即复核：数据阶段可能耗时到被取代，此时连渲染器都不该为它创建;
     if (!current()) return false;
     if (!renderer) initScene();   // 渲染器惰性创建：此时画质档已定型（loader 选择/URL 参数）
-    else if (rendererCaps && (rendererCaps.logdepth !== LOGDEPTH || rendererCaps.dynres !== DYNRES)) {
+    else if (rendererCaps && (rendererCaps.logdepth !== LOGDEPTH || rendererCaps.dynres !== DYNRES
+      || rendererCaps.stencil !== wantsShadowStencil())) {
       // 复用渲染器（换文件 reset 保留）但待开播偏好已改：按失配项热修正——
       // logdepth 是上下文级参数 → 重建渲染器（initScene 换新上下文，dynres 同步重装）；
       // 仅 dynres 变化 → 热装/卸控制器即可（无需动上下文）。
-      if (rendererCaps.logdepth !== LOGDEPTH) {
+      if (rendererCaps.logdepth !== LOGDEPTH || rendererCaps.stencil !== wantsShadowStencil()) {
+        // 上下文级参数（logdepth / stencil）→ 重建渲染器（initScene 按当前偏好装配并写回 rendererCaps）
         rebuildRenderer();
-        rendererCaps = { logdepth: LOGDEPTH, dynres: DYNRES };
       } else {
         // 仅 dynres 变化（评审 P2）：控制器可能已把 pixelRatio 降过档，热装/卸时
         // 必须先同步 renderer 回当前档位上限 + 重设画布——否则 B 场永久停在
@@ -5292,7 +5296,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     contactShadows?.dispose();
     contactShadows = null;
     if (CONTACT_SHADOWS && shadowQualityEligible(QKEY)) {
-      contactShadows = createTankContactShadows({ scene, sunLight, heightAt: annotationSurfaceHeightAt });
+      contactShadows = createTankContactShadows({
+        scene, sunLight, heightAt: annotationSurfaceHeightAt, silhouettes: !!rendererCaps?.stencil,
+      });
     }
     if (perf && current()) perf.event({ stage: 'vehicle-construction', durationMs: performance.now() - perfVehiclesAt }, perfLoadingEpoch);
     const perfGlbAt = perf ? performance.now() : 0;

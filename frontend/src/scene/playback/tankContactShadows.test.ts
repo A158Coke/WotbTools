@@ -204,6 +204,70 @@ describe('视线方向深度拉近（地表 / 贴地物件 / 深度量化不得�
   })
 })
 
+describe('车模轮廓投影（silhouettes）', () => {
+  function tank() {
+    const root = new THREE.Group()
+    root.add(new THREE.Mesh(new THREE.BoxGeometry(3, 1, 6)), new THREE.Mesh(new THREE.BoxGeometry(2, 1, 3)))
+    return root
+  }
+  function setup(silhouettes: boolean, heightAt: (x: number, z: number) => number | null = () => 0) {
+    const scene = new THREE.Scene()
+    const sunLight = new THREE.DirectionalLight()
+    sunLight.position.set(-1000, 600, 0)   // 低太阳：没有轮廓时接地阴影会加尾巴
+    scene.add(sunLight, sunLight.target)
+    const shadows = createTankContactShadows({ scene, sunLight, heightAt, silhouettes })
+    const named = (n: string) => scene.children.filter(o => o.name === n) as THREE.Mesh[]
+    return { scene, shadows, named }
+  }
+  const outerPlusX = (m: THREE.Mesh) => m.geometry.getAttribute('position').array[4 * 3]
+
+  it('开启时挂车模即建轮廓影子并随车显隐；该车接地阴影不再加背光尾', () => {
+    const { shadows, named } = setup(true)
+    const v = {}, fp = { halfW: 1.5, halfL: 3 }
+    shadows.setFootprint(v, fp)
+    shadows.attachModel(v, tank())
+    shadows.update(v, 0, 0, 0, true)
+    expect(shadows.silhouetteCount()).toBe(2)
+    expect(outerPlusX(named('tankContactShadow')[0])).toBeCloseTo(fp.halfW + shadowMargin(fp), 4)
+    shadows.update(v, 0, 0, 0, false)
+    expect(shadows.silhouetteCount()).toBe(0)
+  })
+
+  it('先有阴影条目、后挂车模（GLB 迟到）也建立轮廓影子', () => {
+    const { shadows } = setup(true)
+    const v = {}
+    shadows.update(v, 0, 0, 0, true)
+    expect(shadows.silhouetteCount()).toBe(0)
+    shadows.attachModel(v, tank())
+    shadows.update(v, 0, 0, 0, true)
+    expect(shadows.silhouetteCount()).toBe(2)
+  })
+
+  it('关闭（渲染器无 stencil）时不建任何轮廓影子，接地阴影保留背光尾', () => {
+    const { shadows, named } = setup(false)
+    const v = {}, fp = { halfW: 1.5, halfL: 3 }
+    shadows.setFootprint(v, fp)
+    shadows.attachModel(v, tank())
+    shadows.update(v, 0, 0, 0, true)
+    expect(named('tankSilhouetteShadow')).toHaveLength(0)
+    expect(outerPlusX(named('tankContactShadow')[0])).toBeGreaterThan(fp.halfW + shadowMargin(fp) + 0.5)
+  })
+
+  it('无地表时轮廓影子也隐藏；地表就绪后恢复；dispose 移除全部影子网格', () => {
+    let ground = false
+    const { scene, shadows } = setup(true, () => (ground ? 0 : null))
+    const v = {}
+    shadows.attachModel(v, tank())
+    shadows.update(v, 0, 0, 0, true)
+    expect(shadows.silhouetteCount()).toBe(0)
+    ground = true
+    shadows.reground()
+    expect(shadows.silhouetteCount()).toBe(2)
+    shadows.dispose()
+    expect(scene.children.filter(o => o.name === 'tankSilhouetteShadow' || o.name === 'tankContactShadow')).toHaveLength(0)
+  })
+})
+
 describe('measureShadowFootprint（GLB 模型系 Z-up：X = 车宽、Y = 车长、Z = 高）', () => {
   it('按模型轴取车宽 / 车长（不是按大小猜轴）；不可信时回落代理尺寸', () => {
     // 宽 3、长 7、高 2：旧实现量场景 x/z 会把「高」当成车长
