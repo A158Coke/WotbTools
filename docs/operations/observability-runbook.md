@@ -117,11 +117,13 @@ COMMIT;
   Yecao 观测失败只输出 `OBSERVABILITY DEGRADED`。
 - `deploy/verify-observability.sh` 必须 fail-closed；deploy orchestration 负责把失败记录为
   degraded，而不是用 `|| true` 改写 verifier 语义。
-- `deploy/grafana-api-request.sh`：Grafana 生产 API 校验必须复用这条生产 backend Alpine
-  运行时可用的 BusyBox `wget` 路径——调用方只传 `/api/...`，helper 在 backend 容器内唯一拼接
-  Grafana hostname 并生成 `Authorization: Basic` header（不得把密码放 URL、命令输出或日志）；
-  datasource health 的唯一成功值是 JSON `status=OK`。CI runtime smoke 在 Alpine 3.22 中验证
-  正确凭据通过、错误凭据失败，防回退到 GNU-only `wget` 参数或 double URL prefix。
+- `deploy/grafana-api-request.sh`：Grafana 生产 API 校验的执行位置是 Yecao 观测网络
+  （`wotb_internal`）中的**一次性 disposable Alpine 3.22 容器**（`docker run --rm`，
+  不依赖已退役的 Yecao `wotb-backend`，也不在 TX 业务后端容器内执行）——那里只有
+  BusyBox `wget` 可用。调用方只传 `/api/...`，helper 在该容器内唯一拼接 Grafana
+  hostname 并生成 `Authorization: Basic` header（不得把密码放 URL、命令输出或日志）；
+  datasource health 的唯一成功值是 JSON `status=OK`。CI runtime smoke 在 Alpine 3.22 中
+  验证正确凭据通过、错误凭据失败，防回退到 GNU-only `wget` 参数或 double URL prefix。
 - **Loki canary**：emitter 启动前固定 `start`，重试时只推进 `end`；响应必须是
   `status=success`、至少一个 result stream、至少一个 values 样本并包含 marker。Keycloak
   canary 是加入 `wotb_internal` 网络的独立 Alpine emitter，只验证 Alloy 的 ownership
