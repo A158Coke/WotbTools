@@ -1109,6 +1109,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
            不得做成不可逆状态（该状态也不写入持久化偏好）。 -->
       <button
         v-if="uiHidden" type="button" class="ui-restore tool-btn panel"
+        :class="{ 'ui-restore-shifted': isPhone && fullscreenSupported }"
         data-testid="show-all-ui" :title="t('agentReplay.show_all_ui_hint')"
         @click="setUiHidden(false)"
       >{{ t('agentReplay.show_all_ui') }}</button>
@@ -1425,6 +1426,9 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
   position: absolute; right: var(--space-2); top: var(--space-2);
   z-index: var(--pb-z-hud);
   box-shadow: var(--elevation-3);
+}
+.ui-restore.ui-restore-shifted {
+  top: calc(var(--space-2) + var(--control-h-sm) + var(--space-2));
 }
 
 .banner {

@@ -68,7 +68,7 @@ const stage = (anchor: string, copy: string, extra: Partial<GuideStage> = {}): G
 const step = (id: string, capability: ReplayCapability, stages: GuideStage[]): GuideStep => ({ id, capability, stages })
 const demo = step('demo', 'data', [stage('workspace-demo', 'demo')])
 const data = step('data', 'data', [stage('data-toolbar', 'data')])
-const playback = step('playback', 'playback', [stage('playback-transport', 'playback', { surface: 'playback', prepare: true })])
+const playback = step('playback', 'playback', [stage('playback-transport', 'playback', { surface: 'playback', prepare: true, interactionAnchor: 'playback-floating-fullscreen' })])
 const annotations = step('annotations', 'playback', [
   stage('playback-annotation-entry', 'annotationEntry', { surface: 'annotations', advanceOnReady: true }),
   stage('playback-annotation-tools', 'annotationTools', { surface: 'annotations', interactionAnchor: 'playback-map' }),

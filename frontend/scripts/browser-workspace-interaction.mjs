@@ -802,6 +802,7 @@ function rosterGeometryProbe() {
   const mobileRosterScroll = matchMedia('(width < 1200px) and (pointer: coarse)').matches
   out.portrait = root.classList.contains('portrait-flow')
   out.side = root.classList.contains('roster-side')
+  out.phone = root.classList.contains('phone-form')
   out.viewport = { width: innerWidth, height: innerHeight }
   const square = root.querySelector('.stage-square')?.getBoundingClientRect()
   out.square = square ? { w: square.width, h: square.height, l: square.left, r: square.right, t: square.top, b: square.bottom } : null
@@ -948,7 +949,6 @@ function rosterGeometryProbe() {
       && !!bar && (bar.getAttribute('aria-label') || '').trim().length > 0
   })
   out.hpBar = !!root.querySelector('.team-lane [data-test="roster-hp"]')
-  out.phone = root.classList.contains('phone-form')
   const overlap = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5
     && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5
   const panels = {}
@@ -1978,7 +1978,44 @@ async function runRosterGeometryScenario(env, scenario) {
     }, { label: 'H hides all UI and closes Display' })
     check(failures, await page.evaluate('window.__pbPane.store.banner?.text === "Fixture battle result"'),
       'hide all UI must preserve underlying result state')
-    const restoreAfterH = await clickElement(page, '[data-testid="show-all-ui"]')
+    if (scenario.touch && scenario.fullscreen) {
+      await page.evaluate(`document.querySelector('[data-test="pb-fullscreen"]').scrollIntoView({ block: 'center' })`)
+      await waitForStableLayout(page)
+      const points = await page.probe(() => {
+        const point = (selector) => {
+          const el = document.querySelector(selector)
+          if (!el) return null
+          const r = el.getBoundingClientRect()
+          const x = r.left + r.width / 2, y = r.top + r.height / 2
+          const hit = document.elementFromPoint(x, y)
+          return { x, y, hit: el === hit || el.contains(hit), rect: [r.left, r.top, r.right, r.bottom] }
+        }
+        return { fullscreen: point('[data-test="pb-fullscreen"]'), restore: point('[data-testid="show-all-ui"]') }
+      })
+      check(failures, points.fullscreen?.hit && points.restore?.hit,
+        `hidden UI buttons must both be independently hit-testable: ${JSON.stringify(points)}`)
+      if (points.fullscreen?.hit && points.restore?.hit) {
+        await page.installInputTrace()
+        await page.tap({ x: points.fullscreen.x, y: points.fullscreen.y, touch: true })
+        await page.waitFor(() => !!document.fullscreenElement, { label: 'hidden UI fullscreen enters' }).catch(async (error) => {
+          throw new Error(`${error.message}; points=${JSON.stringify(points)} trace=${JSON.stringify(await page.inputTrace())}`)
+        })
+        const restore = await page.probe(() => {
+          const r = document.querySelector('[data-testid="show-all-ui"]').getBoundingClientRect()
+          return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+        })
+        await page.tap({ ...restore, touch: true })
+        await page.waitFor(() => !document.querySelector('[data-testid="show-all-ui"]'), { label: 'touch restores UI' })
+        const fs = await page.probe(() => {
+          const r = document.querySelector('[data-test="pb-fullscreen"]').getBoundingClientRect()
+          return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+        })
+        await page.tap({ ...fs, touch: true })
+        await page.waitFor(() => !document.fullscreenElement, { label: 'fullscreen exits after restore' })
+      }
+    }
+    const restoreAfterH = await page.evaluate('!document.querySelector(\'[data-testid="show-all-ui"]\')')
+      ? 'clicked-by-touch' : await clickElement(page, '[data-testid="show-all-ui"]')
     check(failures, clicked(restoreAfterH), `restore button after H not clickable: ${restoreAfterH}`)
     await page.waitFor(() => !!document.querySelector('.controls') && !!document.querySelector('.banner')
       && !document.querySelector('[data-testid="display-panel"]:not([hidden])'), { label: 'restore returns result, keeps Display closed' })
@@ -2014,7 +2051,8 @@ async function runRosterGeometryScenario(env, scenario) {
   const chipCenter = await openCollectionRemove(page, scenario)
   check(failures, !!(chipCenter && chipCenter.x), `collection remove button not hit-testable: ${JSON.stringify(chipCenter || null)}`)
   if (chipCenter && Number.isFinite(chipCenter.x)) {
-    await page.installInputTrace()
+    if (scenario.touch && scenario.fullscreen) await page.resetInputTrace()
+    else await page.installInputTrace()
     await page.tap({ ...chipCenter, touch: scenario.touch })
     const chipInput = await page.inputTrace()
     check(failures, chipInput.clickCount === 1, `collection remove must receive exactly one real click: ${JSON.stringify(chipInput)}`)
@@ -3495,7 +3533,7 @@ async function runWorkspace2DScenario(env, scenario) {
   if (scenario.touch) check(failures, g.floatingFullscreenTopRight === true, 'phone: floating fullscreen button missing or not top-right')
   check(failures, g.primaryBoxes.every((box) => box)
     && g.primaryBoxes.every((box, index) => index === 0 || box.l >= g.primaryBoxes[index - 1].r - 1),
-    'six primary controls must preserve their x-order')
+    'primary controls must preserve their x-order')
   if (g.hud && g.map && g.transport) {
     for (const [name, gap] of [['HUD', g.map.t - g.hud.b], ['Transport', g.transport.t - g.map.b]]) {
       check(failures, gap >= -1 && gap <= 16, `${name} gap must remain compact (0–16px): ${gap.toFixed(1)} layout=${JSON.stringify(g.layout)}`)
@@ -3530,11 +3568,11 @@ async function runWorkspace2DScenario(env, scenario) {
     }
     console.log(`[browser-interaction] ${scenario.name} map=${Math.round(g.map?.w)}x${Math.round(g.map?.h)} hud=${Math.round(g.hud?.h)} transport=${Math.round(g.transport?.h)}`)
   }
-  // 主控件行：-5 ▶ +5 1× ⛶ ⚙ 同一行（触屏 44px）
+  // 手机五项、桌面六项均同一行；手机全屏入口独立浮动。
+  const tops = g.primaryTops.filter((t) => t != null)
+  check(failures, tops.length === (scenario.touch ? 5 : 6) && Math.max(...tops) - Math.min(...tops) <= 1,
+    `primary controls are not one row: ${JSON.stringify(g.primaryTops)}`)
   if (scenario.touch) {
-    const tops = g.primaryTops.filter((t) => t != null)
-    check(failures, tops.length === 6 && Math.max(...tops) - Math.min(...tops) <= 1,
-      `primary controls are not one row: ${JSON.stringify(g.primaryTops)}`)
     check(failures, g.primaryMinSide >= 43.5, `primary control below 44px: ${g.primaryMinSide}`)
   }
 

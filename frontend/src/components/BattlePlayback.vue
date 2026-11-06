@@ -2171,6 +2171,7 @@ const mapStyle = computed(() => ({
       :is-fullscreen="isFullscreen"
       data-test="pb-fullscreen"
       data-testid="playback-fullscreen"
+      data-tour="playback-floating-fullscreen"
       @toggle="toggleFullscreen"
     />
 
