@@ -76,7 +76,7 @@ JavaScript 与 TypeScript 共存；`.js` import specifier 经 Vite/TypeScript re
 **#741 Wave C（2026-11）已把 p1 全部迁入 TypeScript**（scene 核心、playback 子模块、Playback composables、map2dOverlay），并引入 `@types/three@0.185.x` 作为 Three.js 类型基础。Wave C 的负向类型证明分布在各批次的 `*TypeProofs.test.ts` 文件中（`scenePureTypeProofs` / `sceneGeometryTypeProofs` / `sceneAssetOwnershipTypeProofs` / `playbackStateTypeProofs` / `composableTypeProofs`）。剩余 p1 名单只剩两个巨型文件，均有 `p1BlockedBy` 注解。
 
 - `retained`：被 Node 脚本直接或传递加载的模块。Node 不会把 `.js` specifier 解析到 `.ts`，这些模块保持 JavaScript 并写明理由。
-- `p1`：复杂状态与算法模块。现在只剩 `src/scene/tankViewer.js`（6340 行）与 `src/scene/playbackScene.js`（5630 行），二者**blocked by #820**（巨型文件先按职责拆分，TypeScript migration before split 不可审查）；拆分后的稳定 boundary 随 Wave D 迁移。
+- `p1`：复杂状态与算法模块。`src/scene/playbackScene.js` 已按运行时职责拆为 `src/scene/playback/` 下的事实 owner 模块（sessionLifecycle / mapWorld / vehicleRuntime / treadRuntime / battleRuntime / annotationScene / labelsRuntime / cameraRuntime / perfProbe），宿主只保留 composition root 与公开 façade，随其 boundary 就绪后迁移。现在只剩 `src/scene/tankViewer.js`（6340 行），**blocked by #820**（巨型文件先按职责拆分，TypeScript migration before split 不可审查）。
 - `p2`：普通模块与 SFC，随改动迁移。
 - `escapeHatches`：production TS 逐文件的 `any` 与 `as unknown as` 数量，按 TypeScript AST 统计。`@ts-ignore`、`@ts-nocheck` 禁用，`@ts-expect-error` 只用于 `*.test.ts` 的负向类型证明。
 

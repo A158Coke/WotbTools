@@ -247,7 +247,7 @@ KILL / DAMAGE / DESTROYED 事件多重集（含 `observedHpLoss`）与掉血明�
 
 ### 战斗特效（3D）
 
-外观、档位预算与 GPU 资源唯一 owner 是 `scene/battleFx.js`；`playbackScene.js` 只负责时序（事件泵、seek 语义、生命判据）。所有 billboard 粒子每帧按「特效年龄 → 外观」纯函数写进两个实例化批次（加色一批、普通混合一批且按视深从远到近排序），火星拖尾一个 `LineSegments`，曳光与光迹是相机朝向条带；自定义 shader 手挂 logdepthbuf 代码块、`toneMapped=false`、保留深度测试、不写深度。图集为 4×2 程序化 alpha 贴图（火焰 / 烟 / 光晕 / 星芒 / 碎片），不引入外部资产。
+外观、档位预算与 GPU 资源唯一 owner 是 `scene/battleFx.js`；回放时序（事件泵、seek 语义、生命判据）在 `scene/playback/battleRuntime.ts`。所有 billboard 粒子每帧按「特效年龄 → 外观」纯函数写进两个实例化批次（加色一批、普通混合一批且按视深从远到近排序），火星拖尾一个 `LineSegments`，曳光与光迹是相机朝向条带；自定义 shader 手挂 logdepthbuf 代码块、`toneMapped=false`、保留深度测试、不写深度。图集为 4×2 程序化 alpha 贴图（火焰 / 烟 / 光晕 / 星芒 / 碎片），不引入外部资产。
 
 - **飞行中炮弹 = 阵营色曳光**：白热弹头 + 阵营色渐隐尾迹（14m，沿折线弧长回退）+ 弹头光晕；颜色沿用 `TRACER_FRIENDLY / TRACER_ENEMY`（未知阵营白色）。飞行段时长仍是真实 `flight_secs`（只做 1 帧下限，不加最小显示时长）。
 - **弹道光迹**：阵营色细线、柔边、整段等宽（不透明度 0.62），弹头飞过才显现（折线逐段显现），弹头走完全程后停留 2.5s、再 1.5s 淡出（回放时钟：暂停时一直留着，seek 清空）。曳光与光迹都有屏幕像素宽度下限（弹头 2.4px / 光迹 1.6px），拉远看全场不会细到消失。
@@ -323,7 +323,7 @@ KILL / DAMAGE / DESTROYED 事件多重集（含 `observedHpLoss`）与掉血明�
 
 ### 悬挂与履带
 
-- **数据与求解器**：数据 = 包内 `suspension/<tank_id>.json`（上游 `tools/export_tank_suspension.py`）；求解器 = 独立纯函数 `scene/suspension.js`（单测 `suspension.test.js`），`playbackScene.js` 只做容器与写入。① 负重轮按局部 +z 平移贴地（夹紧 `[−b, +a]`、`wheelsReactionSpeed·dt` 限速、seek 跳变吸附），`flag=0`（诱导 / 主动 / 托带轮）不参与贴地但照常自转；② 自转 `θ += −Δs_侧 / r`（Δs_侧 = 该侧接触线中心的世界位移投影到车体前向，转向差速自动成立）；③ 履带链路（逐轮偏移 → 悬空段 `(t−t²)` 垂弧（幅度 `upperFactor·span^lengthPower`）→ 包轮 → 铺地）后逐顶点形变既有履带网格（逐车 clone 几何，只动模型 +z；法线按 2cm 闸门重算）。导出器把轮几何烘进顶点、节点留在原点：轮自转必须按轮心做枢轴补偿（`applyWheelSpin`）。
+- **数据与求解器**：数据 = 包内 `suspension/<tank_id>.json`（上游 `tools/export_tank_suspension.py`）；求解器 = 独立纯函数 `scene/suspension.ts`（单测 `suspension.test.js`），容器与写入在 `scene/playback/vehicleRuntime.ts`。① 负重轮按局部 +z 平移贴地（夹紧 `[−b, +a]`、`wheelsReactionSpeed·dt` 限速、seek 跳变吸附），`flag=0`（诱导 / 主动 / 托带轮）不参与贴地但照常自转；② 自转 `θ += −Δs_侧 / r`（Δs_侧 = 该侧接触线中心的世界位移投影到车体前向，转向差速自动成立）；③ 履带链路（逐轮偏移 → 悬空段 `(t−t²)` 垂弧（幅度 `upperFactor·span^lengthPower`）→ 包轮 → 铺地）后逐顶点形变既有履带网格（逐车 clone 几何，只动模型 +z；法线按 2cm 闸门重算）。导出器把轮几何烘进顶点、节点留在原点：轮自转必须按轮心做枢轴补偿（`applyWheelSpin`）。
 - **花纹滚动**：每米 V 变化用该带网格的沿带斜率 `dV/ds`（`measureBeltUvSlope`）× 底段走向（`chainBottomRunDir`）定符号；斜率测量按弧长 0.01m 分桶、桶内 V 去重（去掉横向重复行）、逐顶点对配对并剔除图集换行跳变，取 **|斜率| 中位**为幅值——图集**双行反向**铺设的带（Grille 15 等：上下两行 V 随弧长方向相反）带符号中位会互相抵消归零，幅值中位不受污染；纹理写 V 只对偏移取模（`writeUvOffsetV`），不逐顶点取模。样本对不足（约 3%）→ 该带停滚（fail-closed）。
 - **缺失回落**：数据缺失 / 轮数不符 / 命名不符 → `null`，整车回落刚体（fail-closed）。已知近似：铺地用“地面 max 抬升”代替客户端的接触树权重，`upperMin / frontFactor / backFactor` 未逐项落位（统一用 `upperFactor`），车轮地面取样用高度场（客户端是物理射线，桥 / 残骸处有差异），`chunkOffset` 驱动量以“距离积分”替代。
 - **接线守卫**：`sceneryMaterials.test.js`（两条位姿路径都按记录位姿 + 横滚符号、`__hullGroup` 恒归单位）；`suspension.test.js` 覆盖行程夹紧、限速、自转、链路、UV 斜率与写入。
