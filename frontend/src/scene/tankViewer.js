@@ -41,7 +41,7 @@ import {
 // 穿透材质族（PBR 热力图/间隙甲双通道/外部模块层 + 跳弹续飞共享 uniforms）2026-10-24
 // 出仓 viewer/armorShaders.js（#741）；材质语义注释随实现迁往该模块
 import {
-    PBR_VERT, PBR_FRAG, createArmorShaderContext,
+    PBR_VERT, PBR_FRAG, createArmorShaderContext, createDepthStencilTexture,
 } from './viewer/armorShaders.js'
 import {
     plateThickness, retagSpacedSections as retagSpacedPlates,
@@ -434,9 +434,14 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const rtType = spacedRTFloatCapable() ? THREE.HalfFloatType : THREE.UnsignedByteType;
             if (!penetrationRT) {
                 const c = renderer.domElement;
+                // stencilBuffer：开放间隙板 front 写/back 测的同板去重位（厚度通道按
+                // 去重键每射线只计一次；spacedStateRT 状态通道深度独占，不需要）。
+                // 深度纹理由 createDepthStencilTexture 统一构造（DepthStencilFormat，
+                // 首建与 resize 重建同源）；spacedStateRT 不需要 stencil。
                 penetrationRT = new THREE.WebGLRenderTarget(c.width, c.height, {
                     type: rtType,
-                    depthTexture: new THREE.DepthTexture(c.width, c.height),
+                    depthTexture: createDepthStencilTexture(c.width, c.height),
+                    stencilBuffer: true,
                 });
             }
             if (!spacedStateRT) {
@@ -460,9 +465,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const rt = ensurePenetrationRT();
             const c = renderer.domElement;
             const w = c.width, h = c.height;
+            // resize 重建深度纹理必须走同一工厂（DepthStencilFormat + stencilBuffer），
+            // 否则首次 resize 后 stencil 附件消失、去重静默失效（review P1，2026-11-06）。
             if (!rt.depthTexture || rt.depthTexture.width !== w || rt.depthTexture.height !== h) {
                 if (rt.depthTexture) rt.depthTexture.dispose();
-                rt.depthTexture = new THREE.DepthTexture(w, h);
+                rt.depthTexture = createDepthStencilTexture(w, h);
             }
             rt.setSize(w, h);
             const srt = spacedStateRT;

@@ -566,10 +566,8 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(kernel).toMatch(/const heFirstPrimary = isHE && hitsForCheck\.length > 0/)
     expect(kernel).toMatch(/heFirstPrimary && hasProbabilityChain\s*\n\s*&& hasPrimaryLayer\(res\.probability_layers\)/)
     expect(kernel).toMatch(/heFirstPrimary && hePenChance > 0/)
-    // 概率链与确定性链同一收集边界：停在首个 Primary（含），不把其后的车体/履带算进去。
-    expect(pen).toMatch(/const probabilityHits = collectFilteredHits\(req\.hits\)/)
-    expect(pen).not.toMatch(/collectFilteredHits\(req\.hits, false\)/)
-    expect(pen).toMatch(/buildProbabilityLayers\(probabilityHits, \{/)
+    // 概率链与确定性链停在同一个收集边界（首个 Primary 含），该行为由
+    // penetration.test.js「收集链」用例驱动 calculate() 验证；本文件只锁依赖关系。
   })
   it('HE 零/缺失 explosion_radius 不进入 generic probability card', () => {
     // 计算层已 fail-closed（BLOCKED / 0 damage / res.he=null）；UI 的概率卡还必须
@@ -816,17 +814,20 @@ describe('armor shell and readiness ownership', () => {
   })
 })
 
-// 间隙甲渲染：additive 层按网格拓扑选面——闭合网格单面累计（正/背两表面只算一次），
-// 开放面片双面（背面命中仍可见）；背面片元把法线翻向相机（与 classifyHit 同口径）。
+// 间隙甲渲染：additive 层按网格拓扑选面——闭合网格单面累计（正/背两表面只算一次）；
+// 开放面片拆 front/back 双 clone + stencil 去重（同键入射面计一次、出射面抑制，
+// 与点击链 spacedSeen 同口径）；背面片元把法线翻向相机（与 classifyHit 同口径）。
+// 本 describe 只保留**既有**的材质状态接线断言；同板去重的真实行为（stencil 抑制、
+// 背面屏等效厚度、resize 后仍带 stencil 附件）由 browser gate
+// `test:browser-armor-spaced-backside` 以真实 GPU readback 验证，不用源码正则冒充
+//（frontend/AGENTS.md Testing rules：source guard 只锁 dependency/API ownership）。
 describe('spaced armor surface selection', () => {
   const shaders = read('../scene/viewer/armorShaders.ts')
   const kernel = read('../scene/tankViewer.js')
-  it('闭合网格单面、开放面片双面；深度占位保持双面且在着色之后', () => {
+  it('间隙甲材质/状态材质/深度占位的既有渲染状态', () => {
     expect(shaders).toMatch(/function spacedMaterial\(thickness: number, penetration: number \| null \| undefined, side: Side\): ShaderMaterial \{/)
     expect(shaders).toMatch(/side,\s*\n\s*uniforms:/)
     expect(shaders).toMatch(/depthWrite: true, depthTest: true, blending: THREE\.NoBlending,\s*\n\s*side: THREE\.DoubleSide,/)
-    expect(plateModel).toMatch(/isClosedSurfaceGeometry\(node\.geometry\) \? THREE\.FrontSide : THREE\.DoubleSide/)
-    expect(plateModel).toMatch(/spacedMaterial\(t, pen, side\)/)
     expect(kernel).toMatch(/colorWrite: false, depthTest: true, depthWrite: true, side: THREE\.DoubleSide,/)
     expect(plateModel).toMatch(/addClone\(scene, node, mats\.spacedOmit, 5\)/)
   })

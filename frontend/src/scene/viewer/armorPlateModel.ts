@@ -3,7 +3,8 @@
 // 本模块不持有状态：tankData/config/材质都由调用方传入，两个场景各有自己的实例。
 import * as THREE from 'three'
 import type { Material, Mesh, Object3D, Plane, Side, Vector3 } from 'three'
-import { isClosedSurfaceGeometry } from '../armorMeshTopology.js'
+import { assignSpacedStencilBits, isClosedSurfaceGeometry, spacedDedupKey, SPACED_STENCIL_BIT_LIMIT } from '../armorMeshTopology.js'
+import { SHELL_TOKEN_KIND } from '../penetration.js'
 
 /** tank/{id}.json 顶级装甲摘要中本模块消费的字段（数据面由 assetProvider 提供）。 */
 export interface TankArmorData {
@@ -309,7 +310,9 @@ export function selectExternalMeshes(moduleMeshes: readonly Mesh[], activeGun: n
 }
 
 /** 弹种归类：type_id（field9 枚举，0=AP/1=APCR/2=HEAT/3=HE）优先，缺 id 才回退 icon 串词表。
- *  未知弹种 fail-closed 返回 null，不交给穿透判定的「未知 → HE」兜底。 */
+ *  未知弹种 fail-closed 返回 null，不交给穿透判定的「未知 → HE」兜底。
+ *  词表与判定链共用 `penetration.js` 的 `SHELL_TOKEN_KIND`（未知 token 的默认值差异是
+ *  两条链的契约：判定链兜底 'he'、查看器 fail-closed null）。 */
 export type ShellKind = 'ap' | 'apcr' | 'heat' | 'he'
 
 export function shellTypeOf(sh: { type_id?: unknown; type?: unknown } | null | undefined): ShellKind | null {
@@ -321,11 +324,7 @@ export function shellTypeOf(sh: { type_id?: unknown; type?: unknown } | null | u
     if (id === 3) return 'he'
   }
   const t = (((sh && sh.type) as string | null | undefined) || '').toLowerCase()
-  if (t === 'hc' || t === 'hc_premium' || t === 'heat' || t === 'atgm_heat') return 'heat'
-  if (t === 'ap_cr' || t === 'ap_cr_premium' || t === 'apcr') return 'apcr'
-  if (t === 'he' || t === 'he_premium' || t === 'hesh' || t === 'hesh_premium') return 'he'
-  if (t === 'ap' || t === 'ap_premium') return 'ap'
-  return null
+  return (SHELL_TOKEN_KIND as Record<string, ShellKind>)[t] || null
 }
 
 /** 校准弹穿深系数；未知弹种没有可用口径，不猜 1.07。 */
@@ -384,21 +383,93 @@ export interface SpacedArmorSceneMats {
   externalMaterial(t: number, pen: number, clip: Plane | null): Material
 }
 
+// 开放间隙板厚度通道的同板去重（stencil front 写 / back 测）。
+// 语义权威 = 点击链 collectJudgmentHits 的 spacedSeen：同键正面命中照常计入，
+// 同键背面命中只在其入射面未覆盖该像素时计入——开放壳体（炮盾等）的出射面属
+// 同一块板，不得当第二块板再计一次厚度。front clone 先于 back clone（renderOrder
+// 2 → 2.1），保证"先写位、后测位"的 pass 内顺序与穿越方向无关。
+function applySpacedFrontStencil(m: Material, bit: number): void {
+  m.stencilWrite = true
+  m.stencilFunc = THREE.AlwaysStencilFunc
+  m.stencilRef = bit
+  m.stencilWriteMask = bit
+  m.stencilFail = THREE.KeepStencilOp
+  m.stencilZFail = THREE.KeepStencilOp
+  m.stencilZPass = THREE.ReplaceStencilOp
+}
+function applySpacedBackStencil(m: Material, bit: number): void {
+  // three.js 以 stencilWrite 使能 stencil test；writeMask=0 + 全 Keep = 只测不写。
+  m.stencilWrite = true
+  m.stencilWriteMask = 0
+  m.stencilFunc = THREE.NotEqualStencilFunc
+  m.stencilFuncMask = bit
+  m.stencilRef = bit
+  m.stencilFail = THREE.KeepStencilOp
+  m.stencilZFail = THREE.KeepStencilOp
+  m.stencilZPass = THREE.KeepStencilOp
+}
+/** 开放间隙板 mesh 的去重键（armorSectionOrig:plateId，与点击链同粒度）。 */
+function openSpacedKey(node: Mesh): string {
+  return spacedDedupKey(node.userData.armorSectionOrig, node.userData.armorSection, node.userData.armorPlateId)
+}
+
 export function populateSpacedArmorScene(scene: Object3D, meshes: { primary: readonly Mesh[]; spaced: readonly Mesh[]; external: readonly Mesh[] }, mats: SpacedArmorSceneMats, pen: number, gunClipPlane: Plane | null | undefined): void {
   meshes.primary.forEach(function(node) {
     const c = addClone(scene, node, mats.omit, 0)
     tagStateClone(c, node)
   })
-  meshes.spaced.forEach(function(node) {
-    const t = node.userData.armorThickness || 0
-    // 闭合网格只着色最近正面（每像素一块板一次）；开放面片双面着色，背面可见。
-    // additive 层之间不写深度，多块间隙板仍按层累加，不会被前板遮挡。
-    const side = isClosedSurfaceGeometry(node.geometry) ? THREE.FrontSide : THREE.DoubleSide
+  // 开放间隙板键位分配（8 位 stencil 容量）：超限时整车开放网格回退现行双面
+  // 累计并显式报告（fail-closed；不做逐网格半修——部分板精确、部分板双计会产出
+  // 无判别口径的画面）。目标 RT 必须带 stencilBuffer（tankViewer penetrationRT /
+  // 回放 armorHighlight spacedRT）；无 stencil 附件的 target 上 GL 使测试恒通过，
+  // 行为退化为修复前（可观测：横扫热力图复现双计红带）。
+  const openSpacedKeys = meshes.spaced
+    .filter(function(node) { return !isClosedSurfaceGeometry(node.geometry) })
+    .map(openSpacedKey)
+  const openBits = assignSpacedStencilBits(openSpacedKeys)
+  if (openBits.overflow) {
+    console.error('[armor-heatmap] spaced dedup keys exceed ' + SPACED_STENCIL_BIT_LIMIT +
+      ' stencil bits — falling back to double-sided accumulation (known double-count on open shells):' +
+      ' keys=' + JSON.stringify([...new Set(openSpacedKeys)]))
+  }
+  /** 单 clone 计厚路径（闭合网格 / 溢出或键缺失回退）+ 深度占位。 */
+  const addSingleSpacedClone = (node: Mesh, t: number, side: Side) => {
     const cm = addClone(scene, node, mats.spacedMaterial(t, pen, side), 2)
     cm.userData._baseThickness = t
     tagStateClone(cm, node)
     // 间隙甲深度占位（renderOrder 5，着色之后）：供 HEAT gap 衰减读取最近
     // 间隙板深度；状态通道另有自己的最近层深度测试。
+    const od = addClone(scene, node, mats.spacedOmit, 5)
+    tagStateClone(od, node)
+  }
+  meshes.spaced.forEach(function(node) {
+    const t = node.userData.armorThickness || 0
+    const closed = isClosedSurfaceGeometry(node.geometry)
+    // 闭合网格只着色最近正面（每像素一块板一次，背面被剔除）；additive 层之间
+    // 不写深度，多块间隙板仍按层累加，不会被前板遮挡。
+    if (closed || openBits.overflow) {
+      addSingleSpacedClone(node, t, closed ? THREE.FrontSide : THREE.DoubleSide)
+      return
+    }
+    const bit = openBits.bits.get(openSpacedKey(node))
+    if (bit == null) {
+      // 键位分配与筛选同源，不该发生；fail-closed 回退双面（宁可见已知双计，不静默丢板）。
+      addSingleSpacedClone(node, t, THREE.DoubleSide)
+      return
+    }
+    // 开放网格 front clone：入射面（含绕序朝内的单面屏的迎光面）照常计厚并置本键位。
+    const fm = mats.spacedMaterial(t, pen, THREE.FrontSide)
+    applySpacedFrontStencil(fm, bit)
+    const cf = addClone(scene, node, fm, 2)
+    cf.userData._baseThickness = t
+    tagStateClone(cf, node)
+    // 开放网格 back clone：出射面仅当本键位未置位时计厚（同键入射面已计 → 抑制）。
+    // 从背面看的单面屏入射面即背面：位未置 → 照常计入（与点击链一致）。
+    const bm = mats.spacedMaterial(t, pen, THREE.BackSide)
+    applySpacedBackStencil(bm, bit)
+    const cb = addClone(scene, node, bm, 2.1)
+    cb.userData._baseThickness = t
+    tagStateClone(cb, node)
     const od = addClone(scene, node, mats.spacedOmit, 5)
     tagStateClone(od, node)
   })
