@@ -341,6 +341,50 @@ async function main() {
       }
     }
 
+    // Map Preview 3D：无论设备形态，恢复与浮动全屏按钮都必须各自可命中。
+    // 仅将夹具场景标记为就绪，不依赖外部 3D 地图资产；布局和输入使用真实组件。
+    for (const scenario of [
+      { name: 'phone', width: 844, height: 390, touch: true },
+      { name: 'tablet', width: 1024, height: 768, touch: true },
+      { name: 'desktop', width: 1280, height: 900, touch: false },
+    ]) {
+      await page.emulate(scenario)
+      await page.goto(`${origin}/?view=map-preview&map=faust&mode=3d&ws-auth=1&debug&assets=${encodeURIComponent(`${origin}/fixture-assets`)}`)
+      await page.waitForValue(`!!window.__mapPreviewPane && !!document.querySelector('[data-testid="map-3d-root"]')`, Boolean,
+        { label: '3D map preview root', timeout: 30000 })
+      await page.evaluate(`window.__mapPreviewPane.store.mapReady = true`)
+      await page.client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'h', code: 'KeyH', windowsVirtualKeyCode: 72 }, page.sessionId)
+      await page.client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'h', code: 'KeyH', windowsVirtualKeyCode: 72 }, page.sessionId)
+      await page.waitForValue(`!!document.querySelector('[data-testid="map-3d-restore-ui"]')`, Boolean, { label: '3D UI hidden' })
+      await page.evaluate(`document.querySelector('[data-testid="map-3d-fullscreen"]').scrollIntoView({ block: 'center' })`)
+      const points = await page.probe(() => {
+        const point = (selector) => {
+          const el = document.querySelector(selector)
+          const r = el.getBoundingClientRect()
+          const x = r.left + r.width / 2, y = r.top + r.height / 2
+          const hit = document.elementFromPoint(x, y)
+          return { x, y, rect: { left: r.left, right: r.right, top: r.top, bottom: r.bottom }, hit: el === hit || el.contains(hit) }
+        }
+        return { fullscreen: point('[data-testid="map-3d-fullscreen"]'), restore: point('[data-testid="map-3d-restore-ui"]') }
+      })
+      const a = points.fullscreen.rect, b = points.restore.rect
+      if (!points.fullscreen.hit || !points.restore.hit || (a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom)) {
+        throw new Error(`${scenario.name} 3D buttons overlap or are not hit-testable: ${JSON.stringify(points)}`)
+      }
+      await page.tap({ x: points.fullscreen.x, y: points.fullscreen.y, touch: scenario.touch })
+      await page.waitFor(() => !!document.fullscreenElement, { label: `${scenario.name} 3D fullscreen enters` })
+      const restore = await page.probe(() => {
+        const el = document.querySelector('[data-testid="map-3d-restore-ui"]')
+        const r = el.getBoundingClientRect()
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+      })
+      await page.tap({ ...restore, touch: scenario.touch })
+      await page.waitForValue(`!document.querySelector('[data-testid="map-3d-restore-ui"]')`, Boolean, { label: `${scenario.name} 3D UI restored` })
+      await page.evaluate('document.exitFullscreen()')
+      await page.waitFor(() => !document.fullscreenElement, { label: `${scenario.name} 3D fullscreen exits` })
+      console.log(`[PASS] map-3d-${scenario.name} fullscreen and restore hit targets`)
+    }
+
     if (page.consoleErrors.length) {
       console.error('page console errors:', page.consoleErrors)
       failed++
