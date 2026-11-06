@@ -145,6 +145,21 @@ const pointsCoincide = (a, b) => {
  * 本模块由 Node 脚本直接加载（scripts/browser-armor-aiming.mjs 等），不得 import
  * `.ts` 模块——import specifier 必须指向真实存在的 `.js`。
  */
+/**
+ * 首层几何取物理首触面：同板去重删掉近侧命中后，首层的命中角/跳弹判定仍须按射线
+ * 实际先碰到的那个面（GPU 状态通道用最近面、深度独占写入）。仅当首触面与去重后首层
+ * **同键**（同板同厚度模型）时替换 normal/thickness；point 不动（HEAT 的间距原点由
+ * withGapOrigin 单独处理，且搬 point 需保持重合命中分组）。
+ * 首触面与首层不同键（中间夹了别的板）时不做替换：那种情况下无法在不动层链的前提下
+ * 表达首触几何，保持现行行为。
+ */
+export function withContactGeometry(hits, contact, sameKey) {
+  if (!contact || hits.length === 0 || !sameKey) return hits
+  if (!(contact.distance < hits[0].distance)) return hits
+  const [first, ...rest] = hits
+  return [{ ...first, normal: contact.normal, thickness: contact.thickness }, ...rest]
+}
+
 export function withGapOrigin(hits, contact) {
   if (!contact || hits.length === 0) return hits
   if (!(contact.distance < hits[0].distance)) return hits

@@ -57,7 +57,7 @@ import { applyArmorStateToMesh, replaceArmorMaterial } from './viewer/armorMeshS
 // 间隙甲同板去重键与判据：与厚度通道 per-key stencil 共用一处语义（order-independent）
 import { resolveSpacedHitMask, spacedDedupKey, firstPhysicalHit } from './armorMeshTopology.js'
 // 点击判定的触发面分类（Primary = 主装甲板）；与判定本体同源，勿在此复制一份板面清单
-import { isPrimary, hasPrimaryLayer, matchHitsByOccurrence, withGapOrigin } from './penetration.js'
+import { isPrimary, hasPrimaryLayer, matchHitsByOccurrence, withContactGeometry, withGapOrigin } from './penetration.js'
 // Armor Inspector 概率模型：±range = ±3σ 的正态 CDF + 逐层 1× 等效厚度传播
 import { penetrationChance, evaluateProbabilityChain, resolveCardChance } from './armorInspectorChance.js'
 // HE 溅射：Armor Inspector func7695 的 800 条世界空间方向采样（best-sample 语义）
@@ -5040,9 +5040,18 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             }
             const keep = resolveSpacedHitMask(candidates, spanEnd);
             const hits = [];
-            for (let i = 0; i < candidates.length; i++) if (keep[i]) hits.push(candidates[i].entry);
+            let firstKept = -1;
+            for (let i = 0; i < candidates.length; i++) {
+                if (!keep[i]) continue;
+                if (firstKept < 0) firstKept = i;
+                hits.push(candidates[i].entry);
+            }
             const contact = firstPhysicalHit(candidates);
-            return { hits, firstContact: contact < 0 ? null : candidates[contact].entry };
+            const contactEntry = contact < 0 ? null : candidates[contact].entry;
+            // 首层的命中角/跳弹按物理首触面判定（同键时才替换；厚度/角度取近侧那个面）。
+            const sameKey = contact >= 0 && firstKept >= 0
+                && candidates[contact].key === candidates[firstKept].key;
+            return { hits: withContactGeometry(hits, contactEntry, sameKey), firstContact: contactEntry };
         }
 
         /**

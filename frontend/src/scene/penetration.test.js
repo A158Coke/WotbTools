@@ -1,7 +1,7 @@
 // 击穿判定移植测试：上游 src/wargaming/penetration.rs 单测逐例对齐。
 // 上游 Rust 判定语义变更时，本文件与 penetration.js 同版本跟随——两仓不变量保持同源。
 import { describe, it, expect } from 'vitest'
-import { calculate, isPrimary, ArmorSection, hasPrimaryLayer, matchHitsByOccurrence, parseShellType, withGapOrigin, SHELL_TOKEN_KIND } from './penetration.js'
+import { calculate, isPrimary, ArmorSection, hasPrimaryLayer, matchHitsByOccurrence, parseShellType, withContactGeometry, withGapOrigin, SHELL_TOKEN_KIND } from './penetration.js'
 import { shellTypeOf } from './viewer/armorPlateModel.ts'
 import { penetrationChance, resolveCardChance, evaluateProbabilityChain } from './armorInspectorChance.ts'
 
@@ -1035,5 +1035,58 @@ describe('HEAT 间隙衰减（首触面在前 vs 被去重）', () => {
     // 负向对照：只搬首层（finding 复现）→ 重合关系被破坏、屏计两层 → 结论翻转。
     const onlyFirst = [{ ...dup[0], point: contact.point }, dup[1], dup[2]]
     expect(calculate(heatReq(onlyFirst, 400)).result).toBe('BLOCKED')
+  })
+})
+
+
+describe('withContactGeometry（首层几何取物理首触面）', () => {
+  const h = (distance, normal, thickness = 30) => ({ distance, point: [0, 0, -distance], normal, thickness, section: 'spaced', plate_id: '2' })
+
+  it('同键且首触面在前：首层替换 normal/thickness，point 不动、不改输入', () => {
+    const hits = [h(1.01, [0, 1, 0])]
+    const contact = h(1.0, [0.98, 0.17, 0])
+    const out = withContactGeometry(hits, contact, true)
+    expect(out[0].normal).toEqual([0.98, 0.17, 0])
+    expect(out[0].thickness).toBe(30)
+    expect(out[0].point).toEqual([0, 0, -1.01])
+    expect(hits[0].normal).toEqual([0, 1, 0])
+  })
+
+  it('不同键 / 首触面不在前 / 无首触面：原样返回', () => {
+    const hits = [h(1.01, [0, 1, 0])]
+    expect(withContactGeometry(hits, h(1.0, [0.98, 0.17, 0]), false)).toBe(hits)
+    expect(withContactGeometry(hits, h(1.2, [0.98, 0.17, 0]), true)).toBe(hits)
+    expect(withContactGeometry(hits, null, true)).toBe(hits)
+  })
+})
+
+describe('动能弹首层跳弹按物理首触面判定（同键近背 80° / 远正 0°）', () => {
+  const apReq = (hits) => ({
+    shell_type: 'ap', penetration: 250, caliber: 75, view_dir: [0, 1, 0],
+    hits, damage: 400, explosion_radius: 0,
+    calibrated_shells: false, enhanced_armor: false, allow_ricochet: true,
+  })
+  const normalAt = (deg) => {
+    const r = deg * Math.PI / 180
+    return [Math.sin(r), Math.cos(r), 0]
+  }
+  const screen = (deg, distance) => ({
+    section: ArmorSection.SPACED, plate_id: '2', thickness: 30,
+    normal: normalAt(deg), point: [0, 0, -distance], distance, part_name: 'spaced-2',
+  })
+  const hull = (distance) => ({
+    section: ArmorSection.HULL, plate_id: '1', thickness: 100,
+    normal: [0, 1, 0], point: [0, 0, -distance], distance, part_name: 'hull-1',
+  })
+
+  it('去重后只剩远处 0° 入射面时丢失物理跳弹（PENETRATION）', () => {
+    const r = calculate(apReq([screen(0, 1.01), hull(1.1)]))
+    expect(r.result).toBe('PENETRATION')
+  })
+
+  it('首层几何换成近背 80° 后按物理面判跳弹（RICOCHET）', () => {
+    const chain = withContactGeometry([screen(0, 1.01), hull(1.1)], screen(80, 1.0), true)
+    const r = calculate(apReq(chain))
+    expect(r.result).toBe('RICOCHET')
   })
 })
