@@ -152,16 +152,16 @@ const selectedShell = computed(() => props.shells.find(shell => shell.selected) 
             </button>
           </div>
           <dl v-if="selectedShell" class="tp-shell-stats" data-testid="tank-shell-detail">
-            <div><dt>{{ t('agentTanks.pen') }}</dt><dd>{{ fmtNum(selectedShell.tunedPenetration) }}<span class="tp-param-unit">{{ t('agentTanks.units.MILLIMETER') }}</span></dd></div>
-            <div><dt>{{ t('agentTanks.dmg') }}</dt><dd>{{ fmtNum(selectedShell.tunedDamage, 0) }}</dd></div>
-            <div><dt>{{ t('agentTanks.velocity') }}</dt><dd>{{ fmtNum(selectedShell.tunedVelocity) }}<span class="tp-param-unit">{{ t('agentTanks.units.METER_PER_SECOND') }}</span></dd></div>
-            <div><dt>{{ t('agentTanks.pen_far') }}</dt><dd>{{ fmtNum(selectedShell.tunedPenetrationFar) }}<span class="tp-param-unit">{{ t('agentTanks.units.MILLIMETER') }}</span></dd></div>
-            <div><dt>{{ t('agentTanks.module_dmg') }}</dt><dd>{{ fmtNum(selectedShell.tunedModuleDamage, 0) }}</dd></div>
-            <div><dt>{{ t('agentTanks.normalization') }}</dt><dd>{{ fmtNum(selectedShell.normalization, 0) }}<span class="tp-param-unit">{{ t('agentTanks.units.DEGREE') }}</span></dd></div>
-            <div><dt>{{ t('agentTanks.ricochet') }}</dt><dd>{{ fmtNum(selectedShell.ricochet, 0) }}<span class="tp-param-unit">{{ t('agentTanks.units.DEGREE') }}</span></dd></div>
-            <div v-if="selectedShell.range != null"><dt>{{ t('agentTanks.configurator.shell_range') }}</dt><dd>{{ fmtNum(selectedShell.range, 0) }}<span class="tp-param-unit">{{ t('agentTanks.units.METER') }}</span></dd></div>
-            <div v-if="selectedShell.maxAmmo != null"><dt>{{ t('agentTanks.configurator.shell_capacity') }}</dt><dd>{{ fmtNum(selectedShell.maxAmmo, 0) }}</dd></div>
-            <div v-if="selectedShell.explosionRadius > 0"><dt>{{ t('agentTanks.configurator.explosion_radius') }}</dt><dd>{{ fmtNum(selectedShell.explosionRadius, 2) }}<span class="tp-param-unit">{{ t('agentTanks.units.METER') }}</span></dd></div>
+            <div><dt>{{ t('agentTanks.pen') }}</dt><dd><span class="tp-param-value">{{ fmtNum(selectedShell.tunedPenetration) }}</span><span class="tp-param-unit">{{ t('agentTanks.units.MILLIMETER') }}</span></dd></div>
+            <div><dt>{{ t('agentTanks.dmg') }}</dt><dd><span class="tp-param-value">{{ fmtNum(selectedShell.tunedDamage, 0) }}</span></dd></div>
+            <div><dt>{{ t('agentTanks.velocity') }}</dt><dd><span class="tp-param-value">{{ fmtNum(selectedShell.tunedVelocity) }}</span><span class="tp-param-unit">{{ t('agentTanks.units.METER_PER_SECOND') }}</span></dd></div>
+            <div><dt>{{ t('agentTanks.pen_far') }}</dt><dd><span class="tp-param-value">{{ fmtNum(selectedShell.tunedPenetrationFar) }}</span><span class="tp-param-unit">{{ t('agentTanks.units.MILLIMETER') }}</span></dd></div>
+            <div><dt>{{ t('agentTanks.module_dmg') }}</dt><dd><span class="tp-param-value">{{ fmtNum(selectedShell.tunedModuleDamage, 0) }}</span></dd></div>
+            <div><dt>{{ t('agentTanks.normalization') }}</dt><dd><span class="tp-param-value">{{ fmtNum(selectedShell.normalization, 0) }}</span><span class="tp-param-unit">{{ t('agentTanks.units.DEGREE') }}</span></dd></div>
+            <div><dt>{{ t('agentTanks.ricochet') }}</dt><dd><span class="tp-param-value">{{ fmtNum(selectedShell.ricochet, 0) }}</span><span class="tp-param-unit">{{ t('agentTanks.units.DEGREE') }}</span></dd></div>
+            <div v-if="selectedShell.range != null"><dt>{{ t('agentTanks.configurator.shell_range') }}</dt><dd><span class="tp-param-value">{{ fmtNum(selectedShell.range, 0) }}</span><span class="tp-param-unit">{{ t('agentTanks.units.METER') }}</span></dd></div>
+            <div v-if="selectedShell.maxAmmo != null"><dt>{{ t('agentTanks.configurator.shell_capacity') }}</dt><dd><span class="tp-param-value">{{ fmtNum(selectedShell.maxAmmo, 0) }}</span></dd></div>
+            <div v-if="selectedShell.explosionRadius > 0"><dt>{{ t('agentTanks.configurator.explosion_radius') }}</dt><dd><span class="tp-param-value">{{ fmtNum(selectedShell.explosionRadius, 2) }}</span><span class="tp-param-unit">{{ t('agentTanks.units.METER') }}</span></dd></div>
           </dl>
         </div>
 
@@ -228,18 +228,18 @@ const selectedShell = computed(() => props.shells.find(shell => shell.selected) 
 .tp-shell-btn img { inline-size: var(--space-8); block-size: var(--space-8); object-fit: contain; }
 .tp-shell-kind { color: var(--color-text-primary); font: var(--type-caption); font-weight: 600; overflow-wrap: anywhere; }
 .tp-shell-kind.is-premium { color: var(--color-warning); }
-.tp-shell-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--form-field-min)), 1fr)); gap: 0 var(--space-3); margin: 0; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--color-surface-2); }
-.tp-shell-stats > div { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-1); padding-block: var(--space-1); }
+.tp-shell-stats { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; margin: 0; padding: var(--space-2) 0; border-radius: var(--radius-md); background: var(--color-surface-2); }
+.tp-shell-stats > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: var(--space-2); padding: var(--space-1) 0 var(--space-1) var(--space-3); }
 .tp-shell-stats dt { color: var(--color-text-secondary); font: var(--type-caption); overflow-wrap: anywhere; }
-.tp-shell-stats dd { display: inline-flex; align-items: baseline; gap: var(--space-1); margin: 0; color: var(--color-text-primary); font: var(--type-body); font-weight: 600; font-variant-numeric: tabular-nums; }
+.tp-shell-stats dd { display: grid; grid-template-columns: max-content var(--space-12) calc(var(--space-12) + var(--space-2)); align-items: baseline; gap: var(--space-1); margin: 0; color: var(--color-text-primary); font: var(--type-body); font-weight: 600; font-variant-numeric: tabular-nums; }
 .tp-param-list { display: grid; margin: 0; }
-.tp-param-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: baseline; gap: var(--space-2); padding-block: var(--space-2); }
+.tp-param-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: var(--space-2); padding-block: var(--space-2); }
 .tp-param-row + .tp-param-row { border-block-start: 1px solid var(--color-border-subtle); }
 .tp-param-row dt { color: var(--color-text-secondary); font: var(--type-body); overflow-wrap: anywhere; }
-.tp-param-row dd { display: grid; grid-template-columns: minmax(0, 1fr) calc(var(--space-12) + var(--space-2)); align-items: baseline; gap: var(--space-1); margin: 0; font-variant-numeric: tabular-nums; }
-.tp-param-reading { display: inline-flex; flex-wrap: wrap; align-items: baseline; justify-content: flex-end; gap: 0 var(--space-1); }
-.tp-param-value { color: var(--color-text-primary); font: var(--type-body); font-weight: 600; }
-.tp-param-unit { color: var(--color-text-secondary); font: var(--type-caption); }
+.tp-param-row dd { display: grid; grid-template-columns: max-content calc(var(--space-12) + var(--space-2)); align-items: baseline; gap: var(--space-1); margin: 0; font-variant-numeric: tabular-nums; }
+.tp-param-reading { display: grid; grid-template-columns: max-content var(--space-12); justify-content: end; align-items: baseline; gap: var(--space-1); }
+.tp-param-value { grid-column: 1; text-align: end; white-space: nowrap; color: var(--color-text-primary); font: var(--type-body); font-weight: 600; }
+.tp-param-unit { grid-column: 2; text-align: start; color: var(--color-text-secondary); font: var(--type-caption); }
 .tp-param-delta { display: inline-flex; align-items: baseline; justify-content: flex-end; gap: var(--space-1); font: var(--type-caption); font-weight: 600; white-space: nowrap; }
 .tp-param-delta.is-good { color: var(--color-success); }
 .tp-param-delta.is-bad { color: var(--color-danger); }

@@ -87,9 +87,22 @@ export async function runCatalogHofDocScenario(env, scenario) {
       assert.deepEqual(geometry.overlap, [], '参数名称、主值与变化量不得重叠或溢出')
       assert.equal(geometry.columnCount, 2)
       assert.equal(geometry.stacked, scenario.width < 768, '窄屏单列；宽屏独立列，机动不受火力高度拖累')
+      const alignment = () => page.evaluate(`(() => [...document.querySelectorAll('.tp-param-group')].map(group => {
+        const rows = [...group.querySelectorAll('.tp-param-row, .tp-shell-stats > div')];
+        const values = rows.map(row => row.querySelector('.tp-param-value').getBoundingClientRect().right);
+        const units = rows.map(row => row.querySelector('.tp-param-unit')).filter(Boolean).map(el => el.getBoundingClientRect().left);
+        return { key: group.dataset.testid, right: values[0], valueSpread: Math.max(...values) - Math.min(...values),
+          unitSpread: units.length ? Math.max(...units) - Math.min(...units) : 0 };
+      }))()`)
+      const beforeAlignment = await alignment()
+      assert.ok(beforeAlignment.every(group => group.valueSpread <= 1 && group.unitSpread <= 1),
+        `数值右边缘、单位左边缘必须对齐：${JSON.stringify(beforeAlignment)}`)
       await tap('[data-testid=tank-shell-1]')
       await page.waitForValue('document.querySelector("[data-testid=tank-shell-1]").getAttribute("aria-pressed")', value => value === 'true')
       assert.ok(await page.evaluate('document.querySelector("[data-testid=tank-shell-1]").textContent.includes("HEAT")'), '弹种名称始终可见')
+      const afterAlignment = await alignment()
+      assert.ok(afterAlignment.every((group, index) => group.valueSpread <= 1 && group.unitSpread <= 1
+        && Math.abs(group.right - beforeAlignment[index].right) <= 1), '切换弹种及变化量后数值列不得移动')
     } else if (scenario.mode === 'tank-config') {
       await page.waitForValue('document.querySelectorAll(".tp-skill-btn").length', value => value === 20)
       await tap('[data-testid=tank-skills-max]')
