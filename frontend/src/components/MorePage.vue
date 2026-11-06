@@ -2,6 +2,8 @@
 import { computed, inject } from 'vue'
 import { BookOpen, ChevronRight, Download, MessageSquare } from 'lucide-vue-next'
 import { LANGUAGES, useMoreMenu } from '../composables/useMoreMenu.js'
+import { useDataVersion } from '../composables/useDataVersion.js'
+import DataVersionSelect from './DataVersionSelect.vue'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { PRIMARY_NAV_ICONS } from '../app/navIcons.js'
 import PageHeader from './PageHeader.vue'
@@ -12,6 +14,7 @@ import SegmentedControl from './SegmentedControl.vue'
 // 回放能力统一从回放工作台进入，坦克百科是主导航栏目，都不在这里重复。账户由顶栏头像进入 profile。
 const navigate = inject(NAVIGATE_VIEW_KEY)
 const { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, shortcuts, adminLinks, aboutLinks, openGuide, openFeedback, openAndroidUpdate } = useMoreMenu()
+const { state: dataVersionState } = useDataVersion()
 
 const groups = computed(() => [
   { id: 'admin', titleKey: 'more.sections.admin', links: adminLinks.value },
@@ -65,6 +68,14 @@ const groups = computed(() => [
             data-testid="more-language"
             @update:model-value="setLocale"
           />
+        </div>
+        <div
+          v-if="dataVersionState.status !== 'unavailable'"
+          class="more-setting more-setting-stack"
+          data-testid="more-data-version"
+        >
+          <label class="more-setting-label" for="more-data-version-select">{{ $t('dataVersion.title') }}</label>
+          <DataVersionSelect id="more-data-version-select" variant="setting" />
         </div>
       </div>
     </section>
@@ -185,6 +196,8 @@ const groups = computed(() => [
 
 .more-setting + .more-setting { border-top: 1px solid var(--color-border-subtle); }
 .more-setting-label { color: var(--color-text-primary); font: var(--type-body); font-weight: 600; }
+
+.more-setting-stack { flex-direction: column; align-items: stretch; gap: var(--space-1); }
 
 @media (hover: hover) {
   .more-row:hover,

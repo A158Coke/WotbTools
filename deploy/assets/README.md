@@ -61,21 +61,144 @@ release is complete:
 
 ```text
 /srv/wotb-assets/
+  bin/asset_release.py                 # copied from WoT-Blitz-Agent tools/
+  bin/asset_store.py                   # content-addressed store tool
+  objects/
+    <sha[:2]>/<sha256>                 # unique content, one inode per blob
   releases/
-    <pack-id>/
-      index.json
+    <release-id>/                      # immutable; files are hardlinks to objects
+      version.json
       manifest.json
+      index.json
       glb/
       map/
       tank/
       tank_images/
       data/
-  current -> releases/<pack-id>
+  datasets/
+    <dataset-id> -> ../releases/<release-id>
+  current -> datasets/<default-id>
+  versions.json                        # generated catalog (frontend selector source)
+  release-log.jsonl                    # append-only audit
+  .publish.lock
 ```
 
 Keep the current release plus at least one previous release while the migration is
 being proven. Do not overwrite the live tree in place. Initial payload upload remains
 manual; Git tracks configuration, not the multi-GB asset pack.
+
+## Dataset versions
+
+资产 origin 按**游戏版本通道**维护 dataset。当前通道（2026-11-05 起）：
+
+- `11.21.0`——11.21 现役客户端（**默认通道**：`current` 指向它，未选择 dataset
+  的用户与旧客户端都读正式服数据）。
+- `supertest`（超测服）——超测预览通道，随预览轮次**整体重指**到最新预览
+  release（t11b → t11p2 → …），不按预览轮次堆 dataset；只有显式选择才使用。
+- `11.22`——预留；11.22 正式服包发布时加入（终态三通道：11.21 / 超测服 / 11.22）。
+
+`datasets/<id>` 是指向不可变 release 的符号链接；`current` 指向默认 dataset
+（`11.21.0`），旧客户端兼容入口不受影响。
+
+**部署前提**：`Caddyfile` 是 Stack 的 tracked 配置，dataset 路由随 `asset-origin`
+指针分支发布；合并后必须 redeploy Stack 才生效。验证：
+
+```bash
+bash deploy/assets/verify.sh https://assets.wotbtools.com
+```
+
+该脚本检查 `/versions.json`、默认 dataset 的 `/v/<id>/version.json` 与 manifest，
+以及根路径与默认 dataset 的一致性。
+
+公开路径：
+
+| 路径 | 含义 |
+|---|---|
+| `/v/<dataset-id>/...` | 指定游戏版本的 dataset |
+| `/versions.json` | dataset 目录（`schema`、`default`、`datasets[]`） |
+| `/v/<dataset-id>/version.json` | 不可变的 release 身份 |
+| `/...` | 旧客户端兼容入口 = `current`（默认 dataset） |
+
+发布新游戏版本（release 目录已按 `version.json`/`manifest.json` 备好在
+`releases/<id>` 下）：
+
+```bash
+# 在 Alibaba 主机执行
+bash deploy/assets/dataset.sh link --dataset 11.22.0 --release 20261118-3f9a2c1b
+bash deploy/assets/dataset.sh default --dataset 11.22.0        # optional: move legacy root
+bash deploy/assets/dataset.sh verify
+bash deploy/assets/verify.sh https://assets.wotbtools.com
+```
+
+同一游戏版本重建（新 release、dataset id 不变）：
+
+```bash
+bash deploy/assets/dataset.sh link --dataset 11.21.0 --release 20261105-aaaaaaaa
+```
+
+回滚 = 同样的原子符号链接切换；catalog 记录旧 release：
+
+```bash
+bash deploy/assets/dataset.sh rollback --dataset 11.21.0 --release 20261015-bbbbbbbb
+```
+
+下线一个 dataset 通道（只删符号链接；release 目录保留回滚；若该 dataset 是当前
+默认则 fail-closed，先 `default` 切走）：
+
+```bash
+bash deploy/assets/dataset.sh unlink --dataset 11.21.0-t11-preview
+```
+
+`dataset.sh` 的每次变更都持 `flock`，追加 `release-log.jsonl` 审计，经
+`asset_release.py` 重算 `versions.json` 并在返回前跑 `verify`。
+`asset_release.py` 是唯一事实源；从 Agent 仓复制：
+
+```bash
+scp tools/asset_release.py admin@47.101.141.111:/srv/wotb-assets/bin/
+```
+
+`versions.json` 用 `max-age=60`；版本化内容保持 `max-age=300`。
+
+## 内容寻址对象库（空间去重）
+
+`objects/<sha[:2]>/<sha256>` 保存每份唯一内容；每个 release 树都是这些对象的
+**硬链接**集合。Caddy 仍按普通静态文件伺服 `/srv/wotb-assets/current` 与
+`/v/<id>/...`，URL/ETag 语义不变。
+
+从 Agent 仓复制工具：
+
+```bash
+scp tools/asset_store.py admin@47.101.141.111:/srv/wotb-assets/bin/
+```
+
+存量迁移（一次性，内容不变）：
+
+```bash
+python3 bin/asset_store.py import --pack releases/<current> --objects objects
+python3 bin/asset_store.py adopt --releases releases --objects objects --dry-run
+python3 bin/asset_store.py adopt --releases releases --objects objects
+python3 bin/asset_store.py stats --objects objects --releases releases
+python3 bin/asset_store.py verify --objects objects --releases releases --links
+```
+
+新 release 两种入库存放方式：
+
+- 沿用 `cp -al` + 断链覆盖 + `--refresh-manifest` 流程，再在 `dataset.sh link`
+  之前跑 `asset_store.py adopt --releases releases/<new> --objects objects`；或
+- 对象原生：把新 `manifest.json` + 变更文件传到 `incoming-<batch>/`，然后
+  ```bash
+  python3 bin/asset_store.py import --manifest incoming/manifest.json \
+      --files incoming --objects objects
+  python3 bin/asset_store.py materialize --manifest incoming/manifest.json \
+      --objects objects --out releases/<new> --metadata incoming
+  ```
+  最后 `dataset.sh link --dataset <id> --release <new>`。
+
+清理旧 release 与 `incoming-*` 之后跑
+`asset_store.py gc --objects objects --releases releases`（先 `--dry-run`）。GC 只删
+「无保留 release manifest 引用 **且** `st_nlink == 1`」的对象。`objects` 与
+`releases` 必须同文件系统；备份必须保留硬链接（`rsync -aH`），否则对象库会膨胀回
+逻辑总量。完整契约见 Agent 仓 `docs/asset-store.md`。
 
 ## Caddy image preload contract
 
@@ -123,8 +246,11 @@ Images** on this host unless Docker Hub reachability has been deliberately resto
    name; `address` stays empty and no inbound Periphery `:8120` is introduced.
 4. Apply the ResourceSync diff by hand. This must not deploy the Stack
    (`deploy = false`).
-5. Stage the asset pack under `/srv/wotb-assets/releases/<pack-id>`, verify
-   `manifest.json`, then atomically point `current` at that release.
+5. 将资产包放到 `/srv/wotb-assets/releases/<pack-id>`，校验 `manifest.json`，然后
+   `dataset.sh link --dataset <id> --release <pack-id> --default`（首次发布还没有
+   `current`，必须用 `--default` 同时建立 dataset 链接与默认入口；从旧
+   `current -> releases/<pack-id>` 布局迁移时同理，见「Dataset versions」）。
+   `current` 最终必须指向默认 dataset，而不是原始 release 目录。
 6. Preload and verify `caddy:2.10.2-alpine` using the image preload contract above.
 7. Ensure the Alibaba firewall allows public TCP 80/443. Do not expose Periphery
    `:8120`.
@@ -146,11 +272,10 @@ Caddy process remains in memory. The Caddy admin API stays disabled.
 
 ## Cache/CORS contract
 
-Current filenames are not content-addressed. Caddy therefore uses a short
-revalidation TTL, not `immutable`. Browser CORS reflects only
-`https://wotbtools.com` and `https://www.wotbtools.com`. `Vary: Origin` is emitted
-unconditionally on cacheable responses so a shared cache cannot reuse a no-Origin
-representation for an allowed browser request. Range and conditional requests are
-served by Caddy's static file server; CI exercises the real Caddy image at request
-level, and `verify.sh` checks the externally visible behavior with bounded network
-timeouts.
+当前文件名未内容寻址，Caddy 因此用短复验 TTL 而非 `immutable`。版本化 dataset
+（`/v/<id>/...`）按 release 不可变，但文件名仍未内容寻址，故保持同一 300s TTL；
+`versions.json` 用 60s，让发布/回滚尽快可见。浏览器 CORS 只反映
+`https://wotbtools.com` 与 `https://www.wotbtools.com`。可缓存响应无条件带
+`Vary: Origin`，防止共享缓存把无 Origin 的表示复用给允许的浏览器请求。Range 与
+条件请求由 Caddy 静态文件服务器处理；CI 以请求级真实 Caddy 镜像演练，
+`verify.sh` 以有界网络超时检查对外可见行为。

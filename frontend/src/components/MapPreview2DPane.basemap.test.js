@@ -149,4 +149,14 @@ describe('MapPreview2DPane 底图解析代际（review P2 回归锁）', () => {
     expect(wrapper.find('[data-testid="map-2d-basemap-error"]').exists()).toBe(true)
     expect(revoked).toEqual(['blob:mock-1'])
   })
+
+  it('dataset map2d 失败且带 bundled 兜底 → 直接使用 bundled，不进入 error', async () => {
+    stubEnv()
+    resolver.current.mockImplementationOnce(async () => ({ error: 'offline' }))
+    const fallbackImage = { src: '/assets/maps/moon.webp', width: 100, height: 100, coordinateBounds: WORLD }
+    const wrapper = mountPane({ kind: 'map2d', mapKey: 'moon', fallbackImage })
+    await flushPromises()
+    expect(wrapper.find('.bm-stub').attributes('data-src')).toBe('/assets/maps/moon.webp')
+    expect(wrapper.find('[data-testid="map-2d-basemap-error"]').exists()).toBe(false)
+  })
 })

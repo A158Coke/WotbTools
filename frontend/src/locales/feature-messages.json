@@ -189,6 +189,20 @@
         "tournament": "联赛"
       }
     },
+    "dataVersion": {
+      "title": "数据版本",
+      "default": "默认（跟随服务器）",
+      "defaultShort": "默认",
+      "loading": "正在加载版本列表…",
+      "loadFailed": "版本列表加载失败",
+      "unavailable": "资产源未配置",
+      "hint": "切换后页面将重新加载",
+      "tanks": "{count} 辆",
+      "serverDefault": "服务器默认：{id}",
+      "preview": "预览",
+      "statusDeprecated": "已弃用",
+      "statusRevoked": "已撤销"
+    },
     "more": {
       "title": "更多",
       "sections": {
@@ -1171,6 +1185,20 @@
         "tournament": "League"
       }
     },
+    "dataVersion": {
+      "title": "Data version",
+      "default": "Default (follow server)",
+      "defaultShort": "Default",
+      "loading": "Loading versions…",
+      "loadFailed": "Failed to load versions",
+      "unavailable": "Asset origin not configured",
+      "hint": "The page reloads after switching",
+      "tanks": "{count} tanks",
+      "serverDefault": "Server default: {id}",
+      "preview": "Preview",
+      "statusDeprecated": "Deprecated",
+      "statusRevoked": "Revoked"
+    },
     "more": {
       "title": "More",
       "sections": {
@@ -2152,6 +2180,20 @@
         "tankopedia": "Танки",
         "tournament": "Лига"
       }
+    },
+    "dataVersion": {
+      "title": "Версия данных",
+      "default": "По умолчанию (с сервера)",
+      "defaultShort": "По умолчанию",
+      "loading": "Загрузка версий…",
+      "loadFailed": "Не удалось загрузить версии",
+      "unavailable": "Источник ресурсов не настроен",
+      "hint": "После переключения страница перезагрузится",
+      "tanks": "{count} танков",
+      "serverDefault": "Сервер по умолчанию: {id}",
+      "preview": "Предпросмотр",
+      "statusDeprecated": "Устарело",
+      "statusRevoked": "Отозвано"
     },
     "more": {
       "title": "Ещё",
