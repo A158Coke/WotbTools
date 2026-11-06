@@ -539,7 +539,7 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(pen).toMatch(/function resolveLayerGeometry\(ah, thickness, ctx\)/)
     expect(pen).toMatch(/const effNormalization = normalization/)
     expect(pen).not.toMatch(/armorLayerCount/)
-    expect(pen).toMatch(/const noRicochet = threeCalibersRule \|\| ctx\.layerIndex > 0 \|\| !ctx\.allowRicochet/)
+    expect(pen).toMatch(/const noRicochet = threeCalibersForRicochet \|\| ctx\.layerIndex > 0 \|\| !ctx\.allowRicochet/)
     // overmatch 字段只报真实 3× 口径，不再用 layerIndex/allow_ricochet 冒充
     expect(pen).toMatch(/const threeCalibersRule = ctx\.caliber > thickness \* 3\.0\r?\n/)
   })
@@ -714,7 +714,7 @@ describe('spaced armor double-sided judgment', () => {
     expect(kernel).toMatch(/const origSection = entry\.object\?\.userData\?\.armorSectionOrig \|\| entry\.section \|\| '';/)
     expect(kernel).toMatch(/import \{ resolveSpacedHitMask, spacedDedupKey, firstPhysicalHit \} from '\.\/armorMeshTopology\.js'/)
     // HEAT 间距原点必须来自 Node 可直接加载的 penetration.js（Node 不解析 .js → .ts）
-    expect(kernel).toMatch(/import \{ isPrimary, hasPrimaryLayer, matchHitsByOccurrence, withContactGeometry, withGapOrigin \} from '\.\/penetration\.js'/)
+    expect(kernel).toMatch(/import \{ isPrimary, hasPrimaryLayer, matchHitsByOccurrence, ricochetSurface, withContactRicochet, withGapOrigin \} from '\.\/penetration\.js'/)
     expect(kernel).toMatch(/key: spacedDedupKey\(origSection, entry\.section, entry\.plateId\)/)
     expect(kernel).toMatch(/const keep = resolveSpacedHitMask\(candidates, spanEnd\);/)
   })

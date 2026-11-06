@@ -57,7 +57,7 @@ import { applyArmorStateToMesh, replaceArmorMaterial } from './viewer/armorMeshS
 // 间隙甲同板去重键与判据：与厚度通道 per-key stencil 共用一处语义（order-independent）
 import { resolveSpacedHitMask, spacedDedupKey, firstPhysicalHit } from './armorMeshTopology.js'
 // 点击判定的触发面分类（Primary = 主装甲板）；与判定本体同源，勿在此复制一份板面清单
-import { isPrimary, hasPrimaryLayer, matchHitsByOccurrence, withContactGeometry, withGapOrigin } from './penetration.js'
+import { isPrimary, hasPrimaryLayer, matchHitsByOccurrence, ricochetSurface, withContactRicochet, withGapOrigin } from './penetration.js'
 // Armor Inspector 概率模型：±range = ±3σ 的正态 CDF + 逐层 1× 等效厚度传播
 import { penetrationChance, evaluateProbabilityChain, resolveCardChance } from './armorInspectorChance.js'
 // HE 溅射：Armor Inspector func7695 的 800 条世界空间方向采样（best-sample 语义）
@@ -5040,18 +5040,12 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             }
             const keep = resolveSpacedHitMask(candidates, spanEnd);
             const hits = [];
-            let firstKept = -1;
-            for (let i = 0; i < candidates.length; i++) {
-                if (!keep[i]) continue;
-                if (firstKept < 0) firstKept = i;
-                hits.push(candidates[i].entry);
-            }
+            for (let i = 0; i < candidates.length; i++) if (keep[i]) hits.push(candidates[i].entry);
             const contact = firstPhysicalHit(candidates);
             const contactEntry = contact < 0 ? null : candidates[contact].entry;
-            // 首层的命中角/跳弹按物理首触面判定（同键时才替换；厚度/角度取近侧那个面）。
-            const sameKey = contact >= 0 && firstKept >= 0
-                && candidates[contact].key === candidates[firstKept].key;
-            return { hits: withContactGeometry(hits, contactEntry, sameKey), firstContact: contactEntry };
+            // 首层跳弹/续飞几何取物理首触面（contact_normal/contact_point，不改厚度链几何）；
+            // 与首层是否同键无关：中间夹别的板时物理跳弹仍发生在首触面上。
+            return { hits: withContactRicochet(hits, contactEntry), firstContact: contactEntry };
         }
 
         /**
@@ -5404,6 +5398,15 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         normal: [ah.normal.x, ah.normal.y, ah.normal.z],
                         point: [lp.x * mpu, lp.y * mpu, lp.z * mpu],
                         part_name: ah.partName,
+                        // 客户端扩展：首层的物理首触面（只用于跳弹判定，不参与厚度几何）
+                        ...(ah.contact_normal ? {
+                            contact_normal: [ah.contact_normal.x, ah.contact_normal.y, ah.contact_normal.z],
+                            contact_point: (() => {
+                                const cp = toLocalPt(ah.contact_point);
+                                return [cp.x * mpu, cp.y * mpu, cp.z * mpu];
+                            })(),
+                            contact_thickness: ah.contact_thickness,
+                        } : {}),
                     };
                 }),
             };
@@ -5415,8 +5418,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 const deterministicMatches = matchHitsByOccurrence(res.layers, hitsForCheck);
                 let trajLayers = res.layers.map((l, i) => {
                     const ah = deterministicMatches[i];
+                    // 跳弹/续飞用物理首触面（contact_*），显示点也落在实际先碰到的面。
+                    const surface = ricochetSurface(ah);
                     return {
-                        point: ah?.point || point,
+                        point: surface?.point || point,
                         name: l.part_name,
                         thickness: l.thickness,
                         eff: l.effective,
@@ -5424,7 +5429,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         penetrated: l.penetrated,
                         ricochet: l.ricochet,
                         angle: l.angle_deg != null ? l.angle_deg : null,
-                        normal: ah?.normal,
+                        normal: surface?.normal,
                         seg: 0,
                     };
                 });
@@ -5592,7 +5597,17 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                 allow_ricochet: true,
                                 require_primary: requirePrimary,
                                 view_dir: [reflect.x, reflect.y, reflect.z],
-                                hits: ricHits.map(ah => ({ section: ah.section, plate_id: ah.plateId, thickness: ah.thickness, normal: [ah.normal.x, ah.normal.y, ah.normal.z], point: [ah.point.x * mpu, ah.point.y * mpu, ah.point.z * mpu], part_name: ah.partName })),
+                                hits: ricHits.map(ah => ({
+                                    section: ah.section, plate_id: ah.plateId, thickness: ah.thickness,
+                                    normal: [ah.normal.x, ah.normal.y, ah.normal.z],
+                                    point: [ah.point.x * mpu, ah.point.y * mpu, ah.point.z * mpu],
+                                    part_name: ah.partName,
+                                    ...(ah.contact_normal ? {
+                                        contact_normal: [ah.contact_normal.x, ah.contact_normal.y, ah.contact_normal.z],
+                                        contact_point: [ah.contact_point.x * mpu, ah.contact_point.y * mpu, ah.contact_point.z * mpu],
+                                        contact_thickness: ah.contact_thickness,
+                                    } : {}),
+                                })),
                             };
                             const ricRes = await judgePenetration(ricReq);
                             if (destroyed || penSeq !== __penCheckSeq) return;
@@ -5603,8 +5618,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                             const matched = matchHitsByOccurrence(ricRes.layers, ricHits);
                             const ricLayers = ricRes.layers.map((l, i) => {
                                 const hit = matched[i] || null;
+                                const surface = ricochetSurface(hit);
                                 return {
-                                    point: hit?.point || currentPoint,
+                                    point: surface?.point || currentPoint,
                                     name: l.part_name,
                                     thickness: l.thickness,
                                     eff: l.effective,
@@ -5643,8 +5659,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                 current = ricRes;
                                 break;
                             }
-                            currentPoint = lastMatch.point.clone();
-                            currentNormal = lastMatch.normal.clone();
+                            const nextSurface = ricochetSurface(lastMatch);
+                            currentPoint = nextSurface.point.clone();
+                            currentNormal = nextSurface.normal.clone();
                             currentDir = reflect;
                             current = ricRes;
                             bounced++;

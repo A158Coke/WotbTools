@@ -146,18 +146,38 @@ const pointsCoincide = (a, b) => {
  * `.ts` 模块——import specifier 必须指向真实存在的 `.js`。
  */
 /**
- * 首层几何取物理首触面：同板去重删掉近侧命中后，首层的命中角/跳弹判定仍须按射线
- * 实际先碰到的那个面（GPU 状态通道用最近面、深度独占写入）。仅当首触面与去重后首层
- * **同键**（同板同厚度模型）时替换 normal/thickness；point 不动（HEAT 的间距原点由
- * withGapOrigin 单独处理，且搬 point 需保持重合命中分组）。
- * 首触面与首层不同键（中间夹了别的板）时不做替换：那种情况下无法在不动层链的前提下
- * 表达首触几何，保持现行行为。
+ * 首层跳弹/续飞几何取物理首触面：同板去重删掉近侧命中后，首层的命中角/跳弹判定仍须
+ * 按射线实际先碰到的那个面（GPU：厚度通道累计保留的 front 片元、状态通道按最近面判
+ * 跳弹）。因此**不改**首层的 normal/thickness/point（厚度链几何保持 GPU 厚度通道口径），
+ * 只把首触面的法线与点位作为 `contact_normal` / `contact_point` 附在首层命中上：
+ * - `resolveLayerGeometry` 只把 `contact_normal` 用于跳弹判定（厚度/转正/角度显示仍用 normal）；
+ * - `ricochetSurface` 让续飞从该物理接触点/面发射；HEAT 的间隙原点另由 withGapOrigin 处理。
+ * 首触面在首层之前即可附加（不要求同键）：中间夹着别的板时，物理跳弹仍发生在首触面上。
+ * 这两个字段是客户端本地扩展（`judgePenetration` 直接调用本模块），不进上游 wire 请求。
  */
-export function withContactGeometry(hits, contact, sameKey) {
-  if (!contact || hits.length === 0 || !sameKey) return hits
+export function withContactRicochet(hits, contact) {
+  if (!contact || hits.length === 0) return hits
   if (!(contact.distance < hits[0].distance)) return hits
   const [first, ...rest] = hits
-  return [{ ...first, normal: contact.normal, thickness: contact.thickness }, ...rest]
+  return [{
+    ...first,
+    contact_normal: contact.normal,
+    contact_point: contact.point,
+    // 首触板自己的厚度：3× 口径规则（overmatch 抑制跳弹）必须按它判，而不是首层保留板。
+    contact_thickness: contact.thickness,
+  }, ...rest]
+}
+
+/**
+ * 跳弹/续飞的发射面：优先物理首触面（`contact_*`），否则用该层自己的点/法线。
+ * 返回的对象与命中同形（point/normal），供轨迹与反射射线使用。
+ */
+export function ricochetSurface(hit) {
+  if (!hit) return null
+  return {
+    point: hit.contact_point || hit.point,
+    normal: hit.contact_normal || hit.normal,
+  }
 }
 
 export function withGapOrigin(hits, contact) {
@@ -223,8 +243,17 @@ function resolveLayerGeometry(ah, thickness, ctx) {
   const cosA = Math.min(Math.abs(dot(n, ctx.view)), 1.0)
   const angleRad = Math.acos(cosA)
   const angleDeg = angleRad / DEG
+  // 跳弹判定按物理首触面：同板去重删掉近侧命中后，`contact_normal` 记录射线实际先
+  // 碰到的面；厚度/转正/角度显示仍用保留层的 normal（GPU 厚度通道口径）。
+  const ricochetNormal = ah.contact_normal ? normalize(ah.contact_normal) : n
+  const ricochetAngleDeg = ah.contact_normal
+    ? Math.acos(Math.min(Math.abs(dot(ricochetNormal, ctx.view)), 1.0)) / DEG
+    : angleDeg
   const threeCalibersRule = ctx.caliber > thickness * 3.0
-  const noRicochet = threeCalibersRule || ctx.layerIndex > 0 || !ctx.allowRicochet
+  // 跳弹的 3× 口径规则按**首触板**判：首层保留板的厚度可能与首触板不同（中间夹着别的板）。
+  const ricochetThickness = ah.contact_thickness != null ? ah.contact_thickness : thickness
+  const threeCalibersForRicochet = ctx.caliber > ricochetThickness * 3.0
+  const noRicochet = threeCalibersForRicochet || ctx.layerIndex > 0 || !ctx.allowRicochet
   const twoCalibersRule = ctx.caliber > thickness * 2.0
   // 0mm 是合法的 fail-closed 板厚：2× 公式在 thickness=0 时会 0/0，只对正厚度应用。
   const normalization = twoCalibersRule && thickness > 0.0
@@ -235,7 +264,7 @@ function resolveLayerGeometry(ah, thickness, ctx) {
   const effNormalization = normalization
   const finalAngle = Math.max(angleRad - effNormalization * DEG, 0.0)
   const effective = thickness / Math.max(Math.cos(finalAngle), 1e-6)
-  const ricochet = !noRicochet && angleDeg >= ctx.ricochet_deg
+  const ricochet = !noRicochet && ricochetAngleDeg >= ctx.ricochet_deg
   return {
     thickness,
     effective: ricochet ? 0.0 : effective,

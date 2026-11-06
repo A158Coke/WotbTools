@@ -1,7 +1,7 @@
 // 击穿判定移植测试：上游 src/wargaming/penetration.rs 单测逐例对齐。
 // 上游 Rust 判定语义变更时，本文件与 penetration.js 同版本跟随——两仓不变量保持同源。
 import { describe, it, expect } from 'vitest'
-import { calculate, isPrimary, ArmorSection, hasPrimaryLayer, matchHitsByOccurrence, parseShellType, withContactGeometry, withGapOrigin, SHELL_TOKEN_KIND } from './penetration.js'
+import { calculate, isPrimary, ArmorSection, hasPrimaryLayer, matchHitsByOccurrence, parseShellType, ricochetSurface, withContactRicochet, withGapOrigin, SHELL_TOKEN_KIND } from './penetration.js'
 import { shellTypeOf } from './viewer/armorPlateModel.ts'
 import { penetrationChance, resolveCardChance, evaluateProbabilityChain } from './armorInspectorChance.ts'
 
@@ -1039,30 +1039,42 @@ describe('HEAT 间隙衰减（首触面在前 vs 被去重）', () => {
 })
 
 
-describe('withContactGeometry（首层几何取物理首触面）', () => {
-  const h = (distance, normal, thickness = 30) => ({ distance, point: [0, 0, -distance], normal, thickness, section: 'spaced', plate_id: '2' })
-
-  it('同键且首触面在前：首层替换 normal/thickness，point 不动、不改输入', () => {
-    const hits = [h(1.01, [0, 1, 0])]
-    const contact = h(1.0, [0.98, 0.17, 0])
-    const out = withContactGeometry(hits, contact, true)
-    expect(out[0].normal).toEqual([0.98, 0.17, 0])
-    expect(out[0].thickness).toBe(30)
-    expect(out[0].point).toEqual([0, 0, -1.01])
-    expect(hits[0].normal).toEqual([0, 1, 0])
+describe('withContactRicochet / ricochetSurface（首触面只服务跳弹，不改厚度几何）', () => {
+  const h = (distance, normal, thickness = 30, section = 'spaced', plateId = '2') => ({
+    distance, point: [0, 0, -distance], normal, thickness, section, plate_id: plateId,
   })
 
-  it('不同键 / 首触面不在前 / 无首触面：原样返回', () => {
-    const hits = [h(1.01, [0, 1, 0])]
-    expect(withContactGeometry(hits, h(1.0, [0.98, 0.17, 0]), false)).toBe(hits)
-    expect(withContactGeometry(hits, h(1.2, [0.98, 0.17, 0]), true)).toBe(hits)
-    expect(withContactGeometry(hits, null, true)).toBe(hits)
+  it('首触面在首层之前：只附加 contact_normal/contact_point，normal/thickness/point 不动', () => {
+    const hits = [h(1.05, [0, 1, 0])]
+    const contact = h(1.0, [0.98, 0.17, 0])
+    const out = withContactRicochet(hits, contact)
+    expect(out[0].contact_normal).toEqual([0.98, 0.17, 0])
+    expect(out[0].contact_point).toEqual([0, 0, -1])
+    expect(out[0].contact_thickness).toBe(30)
+    expect(out[0].normal).toEqual([0, 1, 0])
+    expect(out[0].thickness).toBe(30)
+    expect(out[0].point).toEqual([0, 0, -1.05])
+    expect(hits[0].contact_normal).toBeUndefined()
+  })
+
+  it('首触面在首层之后 / 无首触面 / 空链：原样返回', () => {
+    const hits = [h(1.05, [0, 1, 0])]
+    expect(withContactRicochet(hits, h(1.2, [0.98, 0.17, 0]))).toBe(hits)
+    expect(withContactRicochet(hits, null)).toBe(hits)
+    expect(withContactRicochet([], h(1.0, [0.98, 0.17, 0]))).toEqual([])
+  })
+
+  it('ricochetSurface 优先首触面，否则用自身点/法线', () => {
+    const hit = { ...h(1.05, [0, 1, 0]), contact_normal: [0.98, 0.17, 0], contact_point: [0, 0, -1] }
+    expect(ricochetSurface(hit)).toEqual({ point: [0, 0, -1], normal: [0.98, 0.17, 0] })
+    expect(ricochetSurface(h(1.05, [0, 1, 0]))).toEqual({ point: [0, 0, -1.05], normal: [0, 1, 0] })
+    expect(ricochetSurface(null)).toBe(null)
   })
 })
 
-describe('动能弹首层跳弹按物理首触面判定（同键近背 80° / 远正 0°）', () => {
-  const apReq = (hits) => ({
-    shell_type: 'ap', penetration: 250, caliber: 75, view_dir: [0, 1, 0],
+describe('动能弹首层跳弹按物理首触面判定（厚度几何不改）', () => {
+  const apReq = (hits, penetration = 250) => ({
+    shell_type: 'ap', penetration, caliber: 75, view_dir: [0, 1, 0],
     hits, damage: 400, explosion_radius: 0,
     calibrated_shells: false, enhanced_armor: false, allow_ricochet: true,
   })
@@ -1070,23 +1082,47 @@ describe('动能弹首层跳弹按物理首触面判定（同键近背 80° / �
     const r = deg * Math.PI / 180
     return [Math.sin(r), Math.cos(r), 0]
   }
-  const screen = (deg, distance) => ({
-    section: ArmorSection.SPACED, plate_id: '2', thickness: 30,
-    normal: normalAt(deg), point: [0, 0, -distance], distance, part_name: 'spaced-2',
-  })
-  const hull = (distance) => ({
-    section: ArmorSection.HULL, plate_id: '1', thickness: 100,
-    normal: [0, 1, 0], point: [0, 0, -distance], distance, part_name: 'hull-1',
+  const armor = (section, plateId, thickness, deg, distance) => ({
+    section, plate_id: plateId, thickness,
+    normal: normalAt(deg), point: [0, 0, -distance], distance,
+    part_name: `${section}-${plateId}`,
   })
 
-  it('去重后只剩远处 0° 入射面时丢失物理跳弹（PENETRATION）', () => {
-    const r = calculate(apReq([screen(0, 1.01), hull(1.1)]))
+  it('同键近背 80° / 远正 0°：附加首触面后判 RICOCHET，无首触信息为 PENETRATION', () => {
+    const chain = [armor(ArmorSection.SPACED, '2', 30, 0, 2), armor(ArmorSection.HULL, '1', 100, 0, 3)]
+    expect(calculate(apReq(chain)).result).toBe('PENETRATION')
+    const withContact = withContactRicochet(chain, armor(ArmorSection.SPACED, '2', 30, 80, 1))
+    expect(calculate(apReq(withContact)).result).toBe('RICOCHET')
+  })
+
+  it('不同键（A 背 80° → B 正 0° → A 正 0°）：物理跳弹仍发生在 A 的首触面', () => {
+    const chain = [
+      armor(ArmorSection.SPACED, '9', 10, 0, 1.5),
+      armor(ArmorSection.SPACED, '2', 30, 0, 2),
+      armor(ArmorSection.HULL, '1', 100, 0, 3),
+    ]
+    const withContact = withContactRicochet(chain, armor(ArmorSection.SPACED, '2', 30, 80, 1))
+    expect(calculate(apReq(withContact)).result).toBe('RICOCHET')
+  })
+
+  it('非跳弹角（60°/0°）不改等效厚度：30mm 屏仍是 30mm，160mm 击穿 120mm 主装', () => {
+    const chain = [armor(ArmorSection.SPACED, '2', 30, 0, 1.05), armor(ArmorSection.HULL, '1', 120, 0, 2)]
+    const withContact = withContactRicochet(chain, armor(ArmorSection.SPACED, '2', 30, 60, 1))
+    const r = calculate(apReq(withContact, 160))
+    expect(r.layers[0].effective).toBe(30)
+    expect(r.layers[0].ricochet).toBe(false)
     expect(r.result).toBe('PENETRATION')
   })
 
-  it('首层几何换成近背 80° 后按物理面判跳弹（RICOCHET）', () => {
-    const chain = withContactGeometry([screen(0, 1.01), hull(1.1)], screen(80, 1.0), true)
-    const r = calculate(apReq(chain))
-    expect(r.result).toBe('RICOCHET')
+  it('HEAT 厚度链同样不受首触面影响：30mm 屏有效厚度 30mm（不是 80° 下的 172.76mm）', () => {
+    const chain = [armor(ArmorSection.SPACED, '2', 30, 0, 1.05), armor(ArmorSection.HULL, '1', 100, 0, 1.1)]
+    const withContact = withContactRicochet(chain, armor(ArmorSection.SPACED, '2', 30, 80, 1))
+    const r = calculate({
+      shell_type: 'heat', penetration: 250, caliber: 75, view_dir: [0, 1, 0],
+      hits: withContact, damage: 400, explosion_radius: 0,
+      calibrated_shells: false, enhanced_armor: false, allow_ricochet: true,
+    })
+    expect(r.layers[0].effective).toBe(30)
+    expect(r.result).toBe('PENETRATION')
   })
 })
