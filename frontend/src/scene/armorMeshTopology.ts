@@ -58,3 +58,47 @@ export function isClosedSurfaceGeometry(geometry: BufferGeometry | null | undefi
     _cache.set(geometry, closed)
     return closed
 }
+
+// ===== 厚度通道同板去重键位（开放壳体入/出双面重复计厚的修复，2026-11-06）=====
+// 语义权威 = 点击判定链 collectJudgmentHits 的 spacedSeen：同键（armorSectionOrig:plateId）
+// 的间隙板背面命中只计一次。开放壳体（如炮盾）的出射面绕序朝外、属同一块板——
+// thickness RT 对该板必须按"入射面计一次、同键更深的穿越面抑制"累计，而不是把
+// 出射面当成第二块板。GPU 侧用 per-key stencil 位实现：front 面写位、back 面测位。
+
+/** 去重键：与 collectJudgmentHits 的 `origSection:plateId` 同粒度（同 plate 拆多网格时共享一位）。 */
+export function spacedDedupKey(
+    armorSectionOrig: unknown,
+    armorSection: unknown,
+    armorPlateId: unknown,
+): string {
+    const orig = (typeof armorSectionOrig === 'string' && armorSectionOrig) || (typeof armorSection === 'string' && armorSection) || ''
+    return `${orig}:${armorPlateId == null ? '' : String(armorPlateId)}`
+}
+
+/** WebGL 保证的 stencil 位宽下界（WebGLRenderTarget stencilBuffer:true → ≥8 位）。 */
+export const SPACED_STENCIL_BIT_LIMIT = 8
+
+export interface SpacedStencilBits {
+    /** 键 → 位掩码（0x01..0x80），按首次出现顺序分配。 */
+    bits: Map<string, number>
+    /** 键数超位宽 → true；调用方必须整车回退现行双面累计并显式报告（fail-closed，不做逐网格半修）。 */
+    overflow: boolean
+}
+
+/**
+ * 给去重键分配 stencil 位。同键多网格共享同一位（与点击链键级去重一致）；
+ * 键数 > 8 时 overflow=true，返回已分配的前缀但消费方不得使用。
+ */
+export function assignSpacedStencilBits(dedupKeys: readonly string[]): SpacedStencilBits {
+    const bits = new Map<string, number>()
+    let next = 1
+    for (const key of dedupKeys) {
+        if (bits.has(key)) continue
+        if (bits.size >= SPACED_STENCIL_BIT_LIMIT) {
+            return { bits, overflow: true }
+        }
+        bits.set(key, next)
+        next <<= 1
+    }
+    return { bits, overflow: false }
+}

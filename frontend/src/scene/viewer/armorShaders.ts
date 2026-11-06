@@ -383,6 +383,19 @@ export function standardDepthMaterial(side: Side = THREE.FrontSide): ShaderMater
         colorWrite: false, depthTest: true, depthWrite: true, side, clipping: true,
     });
 }
+/**
+ * 厚度通道 RT 的深度纹理（带 stencil 附件）：DepthStencilFormat 是 stencil 去重的
+ * 硬前提——three 对自带 depthTexture 的 target 只按纹理格式挂 DEPTH(_STENCIL)_ATTACHMENT，
+ * DepthFormat + stencilBuffer:true 不会创建 stencil 附件（测试恒通过 = 去重失效）。
+ * 首建与 resize 重建（tankViewer.syncPenetrationRT / armorHighlight.ensureTargets）
+ * 必须共用本工厂，避免重建路径退回 DepthFormat。
+ */
+export function createDepthStencilTexture(width: number, height: number): THREE.DepthTexture {
+    const depth = new THREE.DepthTexture(width, height);
+    depth.format = THREE.DepthStencilFormat;
+    depth.type = THREE.UnsignedInt248Type;
+    return depth;
+}
 export function externalMaterial(thickness: number, penetration: number | null | undefined, clip: Plane | null | undefined): ShaderMaterial {
     return new THREE.ShaderMaterial({
         vertexShader: EXTERNAL_VERT, fragmentShader: EXTERNAL_FRAG,
@@ -430,6 +443,13 @@ const SPACED_FRAG = `
       // 同一 flat vNormal 面法线；不要用 dFdx/dFdy(vViewPos)（移动端 mediump 导数会错乱）。
       // 视线方向用 highp：500 m 处 mediump length() 会在平方时溢出。
       highp vec3 nFace = normalize(vNormal);
+      // BackSide clone（开放板出射面）：three 以翻转 gl.frontFace 实现 BackSide，
+      // 被保留的背面片元在 GL 里是 front-facing（gl_FrontFacing == true）。必须按
+      // FLIP_SIDED 显式翻回几何法线——否则入射角变成 π−θ、cos 落 1e-6 下界，
+      // 等效厚度爆炸（20mm 背面屏会被算成 2e7mm）。
+      #ifdef FLIP_SIDED
+        nFace = -nFace;
+      #endif
       // 双面材质（间隙甲）：背面命中把法线翻向相机来向，与点击链 classifyHit 同口径；
       // 正面命中不受影响。
       if (!gl_FrontFacing) nFace = -nFace;
@@ -622,8 +642,8 @@ export function createArmorShaderContext() {
             vertexShader: SPACED_VERT, fragmentShader: SPACED_FRAG,
             depthWrite: false, depthTest: true,
             blending: THREE.AdditiveBlending,
-            // 开放面片双面（背面命中可见），闭合网格单面（正/背两表面只累计一次）；
-            // 面由几何拓扑决定，调用方传入（armorMeshTopology.isClosedSurfaceGeometry）。
+            // 面与 stencil 去重状态由调用方按几何拓扑 + 去重键决定：闭合网格 FrontSide 单 clone；
+            // 开放网格拆 FrontSide（写本键 stencil 位）/ BackSide（测位）两 clone。
             side,
             uniforms: spacedCommonUniforms(thickness, penetration),
         });

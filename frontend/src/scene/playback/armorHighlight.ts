@@ -12,7 +12,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import type { Box3, BufferGeometry, Camera, Frustum, Group, Material, Mesh, Object3D, PerspectiveCamera, Scene, Sphere, WebGLRenderer } from 'three'
 import type { AgentAuthorShellEvent, AgentPlaybackShot, AgentVehicleTrack } from '../../api/agent-replay-facets.js'
 import { dynamicDeclarationByTankId } from '../../data/armorStates.js'
-import { createArmorShaderContext, standardDepthMaterial } from '../viewer/armorShaders.js'
+import { createArmorShaderContext, createDepthStencilTexture, standardDepthMaterial } from '../viewer/armorShaders.js'
 import {
   applyArmorConfigVisible, armorPivots, calibratedPenMul, collectArmorPrefixes,
   ENHANCED_ARMOR_THICK_MUL, gunMaskOriginModel, installArmorPivots, partitionArmorMeshes,
@@ -636,7 +636,11 @@ function buildTarget(template: Object3D, vehicle: AimedVehicleCandidate, tankDat
       depthTexture: new THREE.DepthTexture(rtW, rtH),
     })
     stateRT = new THREE.WebGLRenderTarget(rtW, rtH, options())
-    spacedRT = new THREE.WebGLRenderTarget(rtW, rtH, options())
+    // stencilBuffer：厚度通道开放间隙板 front 写/back 测的同板去重位（与装甲查看器
+    // penetrationRT 同语义；stateRT 深度独占不需要）。深度纹理由
+    // createDepthStencilTexture 统一构造（DepthStencilFormat）；本 RT 每次尺寸变化都
+    // 整体重建，不存在「原地替换深度纹理」路径。
+    spacedRT = new THREE.WebGLRenderTarget(rtW, rtH, { ...options(), depthTexture: createDepthStencilTexture(rtW, rtH), stencilBuffer: true })
     if (rtStats) {
       rtStats.creates += 2
       if (resizing) rtStats.resizes += 2
