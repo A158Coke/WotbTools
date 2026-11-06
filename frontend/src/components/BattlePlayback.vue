@@ -1,49 +1,34 @@
 <script setup>
 import { gunMarksByAccount } from '../utils/gunMarks.js'
-import { computed, inject, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
+import { computed, inject, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+import { mapLabel } from '../utils/helpers.js'
+import { PencilRuler, ScanEye } from 'lucide-vue-next'
+import { ANNOT_COLORS, ANNOT_FONT_SIZE, ANNOT_WIDTH_MAX, ANNOT_WIDTH_MIN, canRedo, canUndo } from '../utils/annotation.js'
 import { usePlaybackPhoneForm } from '../composables/usePlaybackPhoneForm.js'
 import { usePlaybackPortraitViewport } from '../composables/usePlaybackPortraitViewport.js'
 import { useI18n } from 'vue-i18n'
 import { usePlaybackPreferences } from '../composables/usePlaybackPreferences.js'
 import { usePlaybackFullscreen } from '../composables/usePlaybackFullscreen.js'
 import { mapBases } from '../data/mapBases'
-import { mapLabel } from '../utils/helpers.js'
 import { mapImages } from '../data/mapImages'
 import { map2dSrc } from '../data/map2dOverlay'
 import { teamCssVars } from '../data/mapTeamColors'
 import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
 import { createMapView } from '../utils/mapView'
-import { activeTerrainRelief, projectTerrainPoint, unprojectTerrainPoint } from '../utils/terrainReliefProjection.js'
 import BattleMap from './BattleMap.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
-import { PencilRuler, ScanEye } from 'lucide-vue-next'
 import BattlePlaybackHud from './BattlePlaybackHud.vue'
 import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 import PlaybackControls from './PlaybackControls.vue'
 import PlaybackDisplaySurface from './PlaybackDisplaySurface.vue'
 import SegmentedControl from './SegmentedControl.vue'
-import { isPlaybackSpeed, isInteractiveTarget, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
+import { isInteractiveTarget, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
 import PlaybackMobileOverlay from './PlaybackMobileOverlay.vue'
 import VehicleDetailsPanel from './VehicleDetailsPanel.vue'
 import PlaybackRoster from './PlaybackRoster.vue'
 import { rosterLanesFor } from '../scene/rosterState.js'
-import enemyHull from '../assets/tank-icons/tank-marker-enemy-hull.png'
-import enemyTurret from '../assets/tank-icons/tank-marker-enemy-turret.png'
-import friendlyHull from '../assets/tank-icons/tank-marker-friendly-hull.png'
-import friendlyTurret from '../assets/tank-icons/tank-marker-friendly-turret.png'
-import {
-  formatClock,
-  recentPositionTrails,
-  recentPositionTrailsFromPose,
-  teamPointsAt,
-  tracerLines,
-  transientsActive,
-} from '../utils/battlePlayback'
-import {
-  friendlyHealthAt,
-  healthDisplayAt,
-  positionCoveredAtV2,
-} from '../utils/battlePlaybackV2'
+import { formatClock, teamPointsAt, transientsActive } from '../utils/battlePlayback.js'
+import { friendlyHealthAt, healthDisplayAt } from '../utils/battlePlaybackV2.js'
 import { usePlaybackTransients } from '../composables/usePlaybackTransients.js'
 import { usePlaybackCamera } from '../composables/usePlaybackCamera.js'
 import { usePlaybackAnnotationEditor } from '../composables/usePlaybackAnnotationEditor.js'
@@ -52,20 +37,12 @@ import { usePlaybackReplayData } from '../composables/usePlaybackReplayData.js'
 import { usePlaybackClock } from '../composables/usePlaybackClock.js'
 import { usePlaybackVehicleProjection } from '../composables/usePlaybackVehicleProjection.js'
 import { usePlaybackMapGestures } from '../composables/usePlaybackMapGestures.js'
-import { projectVehicleState } from '../utils/playbackVehicleState'
-import { observedFreezeTimeAt } from '../utils/battlePlaybackV2'
-import { poseCoveredAt, selectActiveDef, sampleVehiclePoseGame } from '../replay-local/pose/vehiclePose.js'
-import { createReloadStateResolver, magazineSizeForVehicle } from '../scene/reloadBar.js'
-import { assetProvider } from '../scene/assetProvider.js'
-import { computeVehicleMarkerSize, healthRingDiameter } from '../utils/vehicleMarkerSizing'
-import { advancePlaybackTime, clampPlaybackTime } from '../utils/playbackClock'
+import { healthRingDiameter } from '../utils/vehicleMarkerSizing.js'
 import { baseView } from '../utils/baseStatus.js'
-import { consumableRuntimeAt } from '../utils/consumableRuntime.js'
 import {
   MARKER_CORE_PX,
   computeLabelLayout,
 } from '../utils/labelLayout'
-import { ANNOT_COLORS, ANNOT_FONT_SIZE, ANNOT_WIDTH_MAX, ANNOT_WIDTH_MIN, canRedo, canUndo } from '../utils/annotation'
 import { usePlaybackAnnotations } from '../composables/usePlaybackAnnotations.js'
 
 /**
