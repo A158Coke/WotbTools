@@ -6,19 +6,75 @@ import TankConfigPanel from './TankConfigPanel.vue'
 import { baseSelection } from '../replay-local/compute/tankSetup'
 import tanks from '../replay-local/compute/__fixtures__/upgrades/tanks.json'
 import mechanics from '../replay-local/compute/__fixtures__/upgrades/mechanics.json'
+import crew from '../replay-local/compute/__fixtures__/research/skills.json'
 import { messages } from '../locales/messages'
 
 const source = tanks.find(t => t.modules.tankId === 30241)
 const black = { ...source, modules: { ...source.modules, vehicleAbilities: ['burstMode'] } }
 const catalog = { devices: [], devicePresets: {}, ...mechanics, consumablesGameVersion: mechanics.gameVersion,
   provisionsGameVersion: mechanics.gameVersion, crewSkillClasses: {}, skills: {} }
-function panel(locale = 'zh', tank = black) {
+function panel(locale = 'zh', tank = black, props = {}) {
   return mount(TankConfigPanel, {
-    props: { ...tank, catalog, selection: { ...baseSelection(tank), upgrade: 'top' } },
+    props: { ...tank, catalog, selection: { ...baseSelection(tank), upgrade: 'top' }, ...props },
     attachTo: document.body,
     global: { plugins: [createI18n({ legacy: false, locale, messages })] },
   })
 }
+
+describe('配置器紧凑呈现保持交互', () => {
+  it.each(['zh', 'en', 'ru'])('%s 嵌入已有面板时只保留一组升级控件、重置与必要警告', async locale => {
+    const wrapper = panel(locale, black, {
+      embedded: true, showCrew: false, showEquipment: false, showConsumables: false, showProvisions: false,
+    })
+    expect(wrapper.get('[data-testid="tank-configurator"]').attributes('aria-label')).toBeTruthy()
+    expect(wrapper.find('h2').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="tank-upgrades"]').exists()).toBe(false)
+    expect(wrapper.findAll('[role="radiogroup"]')).toHaveLength(1)
+    await wrapper.get('[data-testid="tank-upgrade-stock"]').trigger('click')
+    expect(wrapper.emitted('update').at(-1)[0]).toEqual({ upgrade: 'stock' })
+    await wrapper.setProps({ selection: { ...wrapper.props('selection'), upgrade: 'stock' } })
+    await wrapper.get('[data-testid="tank-upgrade-top"]').trigger('click')
+    expect(wrapper.emitted('update').at(-1)[0]).toEqual({ upgrade: 'top' })
+    await wrapper.get('[data-testid="tank-config-reset"]').trigger('click')
+    expect(wrapper.emitted('reset')).toHaveLength(1)
+    await wrapper.setProps({ upgradeSupported: false })
+    expect(wrapper.get('[data-testid="tank-upgrade-top"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[role="status"]').text()).not.toContain('agentTanks.')
+    wrapper.unmount()
+  })
+
+  it('四类技能保持20个训练入口、Shift操作和条件触发状态', async () => {
+    const wrapper = panel('zh', black, {
+      catalog: { ...catalog, skills: crew.items, crewSkillClasses: crew.classes },
+      selection: { ...baseSelection(black), upgrade: 'top', skills: { battle_rage: 4 }, conditionalSkills: false },
+    })
+    const groups = wrapper.findAll('.tp-skill-group[role="group"]')
+    expect(groups).toHaveLength(4)
+    for (const group of groups) {
+      expect(group.attributes('aria-label')).toBeTruthy()
+      expect(group.findAll('button')).toHaveLength(5)
+    }
+    const rage = wrapper.get('[data-testid="tank-skill-battle_rage"]')
+    expect(rage.attributes('aria-pressed')).toBe('true')
+    expect(rage.get('.tp-skill-level').text()).toBe('4')
+    expect(rage.classes()).toContain('is-pending')
+    await rage.trigger('click', { shiftKey: true })
+    expect(wrapper.emitted('cycle-skill').at(-1)).toEqual(['battle_rage', true])
+    await wrapper.get('[data-testid="tank-skill-repair"]').trigger('click')
+    expect(wrapper.emitted('cycle-skill').at(-1)).toEqual(['repair', false])
+    await wrapper.get('[data-testid="tank-skill-triggers"]').setValue(true)
+    expect(wrapper.emitted('update').at(-1)[0]).toEqual({ conditionalSkills: true })
+    expect(wrapper.props('selection').conditionalSkills).toBe(false)
+    await wrapper.setProps({ selection: { ...wrapper.props('selection'), conditionalSkills: true } })
+    expect(rage.classes()).not.toContain('is-pending')
+    expect(rage.get('.tp-skill-level').text()).toBe('4')
+    await wrapper.get('[data-testid="tank-skills-max"]').trigger('click')
+    await wrapper.get('[data-testid="tank-skills-clear"]').trigger('click')
+    expect(wrapper.emitted('max-skills')).toHaveLength(1)
+    expect(wrapper.emitted('clear-skills')).toHaveLength(1)
+    wrapper.unmount()
+  })
+})
 
 describe('XI 技能选择卡与效果反馈', () => {
   it.each([

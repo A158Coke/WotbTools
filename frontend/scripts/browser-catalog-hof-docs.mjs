@@ -8,7 +8,12 @@ export const CATALOG_HOF_DOC_SCENARIOS = ['showcase', 'classic'].flatMap(profile
   ...size, profile, mode, touch: true, name: `overlay-${mode}-${profile}-${size.width}x${size.height}`,
 })))).concat(['showcase', 'classic'].map(profile => ({
   width: 1440, height: 900, touch: false, profile, mode: 'docs', name: `overlay-docs-${profile}-1440x900`,
-})))
+}))).concat(['showcase', 'classic'].flatMap(profile => [
+  { width: 360, height: 800, touch: true }, { width: 390, height: 844, touch: true },
+  { width: 1024, height: 768, touch: true }, { width: 1440, height: 900, touch: false },
+].flatMap(size => ['params', 'tank-config'].map(mode => ({
+  ...size, profile, mode, name: `tankopedia-${mode}-${profile}-${size.width}x${size.height}`,
+})))))
 
 /** 真实组件/DOM/CSS 与原始输入；仅外部 HTTP 榜单及静态图片使用确定性夹具。 */
 export async function runCatalogHofDocScenario(env, scenario) {
@@ -69,7 +74,58 @@ export async function runCatalogHofDocScenario(env, scenario) {
     await page.goto(`${env.origin}/scripts/browser-fixtures/catalog-hof-docs.html?mode=${scenario.mode}&profile=${scenario.profile}&assets=${encodeURIComponent(`${env.origin}/catalog-assets`)}`)
     await page.waitForValue('!!document.querySelector("[data-testid=catalog-hof-docs-fixture]")', Boolean)
 
-    if (scenario.mode === 'dialog') {
+    if (scenario.mode === 'params') {
+      await page.waitForValue('document.querySelectorAll(".tp-param-row").length', value => value > 20)
+      await page.waitForValue(`(() => {
+        const images = [...document.querySelectorAll('.tp-shell-btn img')];
+        return images.length === 3 && images.every(img => img.complete && img.naturalWidth > 0);
+      })()`, Boolean, { label: 'all shell icons decoded' })
+      const geometry = await page.evaluate(`(() => {
+        const overlap = [...document.querySelectorAll('.tp-param-row')].filter(row => {
+          const label = row.querySelector('dt').getBoundingClientRect(), value = row.querySelector('dd').getBoundingClientRect();
+          return label.right > value.left + 1 || row.scrollWidth > row.clientWidth + 1;
+        }).map(row => row.dataset.testid);
+        const columns = [...document.querySelectorAll('.tp-param-column')].map(el => el.getBoundingClientRect());
+        return { overlap, columnCount: columns.length, stacked: columns[0].left === columns[1].left };
+      })()`)
+      assert.deepEqual(geometry.overlap, [], '参数名称、主值与变化量不得重叠或溢出')
+      assert.equal(geometry.columnCount, 2)
+      assert.equal(geometry.stacked, scenario.width < 768, '窄屏单列；宽屏独立列，机动不受火力高度拖累')
+      const alignment = () => page.evaluate(`(() => [...document.querySelectorAll('.tp-param-group')].map(group => {
+        const rows = [...group.querySelectorAll('.tp-param-row, .tp-shell-stats > div')];
+        const values = rows.map(row => row.querySelector('.tp-param-value').getBoundingClientRect().right);
+        const units = rows.map(row => row.querySelector('.tp-param-unit')).filter(Boolean).map(el => el.getBoundingClientRect().left);
+        const groupRight = group.getBoundingClientRect().right;
+        const style = getComputedStyle(group), inset = parseFloat(style.getPropertyValue('--space-3'));
+        const unitsAtEnd = rows.map(row => row.querySelector('.tp-param-unit')).filter(Boolean)
+          .every(el => { const range = document.createRange(); range.selectNodeContents(el);
+            return Math.abs(range.getBoundingClientRect().right - groupRight + inset) <= 1; });
+        const deltaSlot = parseFloat(style.getPropertyValue('--space-12'));
+        const unitSlot = deltaSlot + parseFloat(style.getPropertyValue('--space-2'));
+        const gaps = 2 * parseFloat(style.getPropertyValue('--space-1'));
+        return { key: group.dataset.testid, right: values[0], valueSpread: Math.max(...values) - Math.min(...values),
+          unitSpread: units.length ? Math.max(...units) - Math.min(...units) : 0, unitsAtEnd,
+          valueAnchorPreserved: Math.abs(groupRight - values[0] - unitSlot - deltaSlot - gaps) <= 1 };
+      }))()`)
+      const beforeAlignment = await alignment()
+      assert.ok(beforeAlignment.every(group => group.valueSpread <= 1 && group.unitSpread <= 1 && group.unitsAtEnd && group.valueAnchorPreserved),
+        `数值右边缘、单位左边缘必须对齐：${JSON.stringify(beforeAlignment)}`)
+      await tap('[data-testid=tank-shell-1]')
+      await page.waitForValue('document.querySelector("[data-testid=tank-shell-1]").getAttribute("aria-pressed")', value => value === 'true')
+      assert.ok(await page.evaluate('document.querySelector("[data-testid=tank-shell-1]").textContent.includes("HEAT")'), '弹种名称始终可见')
+      const afterAlignment = await alignment()
+      assert.ok(afterAlignment.every((group, index) => group.valueSpread <= 1 && group.unitSpread <= 1
+        && Math.abs(group.right - beforeAlignment[index].right) <= 1), '切换弹种及变化量后数值列不得移动')
+    } else if (scenario.mode === 'tank-config') {
+      await page.waitForValue('document.querySelectorAll(".tp-skill-btn").length', value => value === 20)
+      await tap('[data-testid=tank-skills-max]')
+      await page.waitForValue('document.querySelectorAll(".tp-skill-btn.is-on").length', value => value === 20)
+      // 整个关联label是触控目标，原生复选框只负责绘制小型勾选符号。
+      await tap('[data-testid=tank-skill-trigger-control]')
+      await page.waitForValue('document.querySelector("[data-testid=tank-skill-triggers]").checked', Boolean)
+      const overflow = await page.evaluate('[...document.querySelectorAll(".tp-skill-group")].some(el => el.scrollWidth > el.clientWidth + 1)')
+      assert.equal(overflow, false, '实际配置列中的技能组不得横溢出')
+    } else if (scenario.mode === 'dialog') {
       // 选择器在 dialog 上下文内展开：列表不得被 dialog 的内容裁掉，选项要真实可点。
       await tap('#dialog-vehicle')
       await page.waitForValue('!!document.querySelector(".vp-option")', Boolean)

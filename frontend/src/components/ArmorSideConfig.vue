@@ -142,6 +142,7 @@ function resetAll() {
     <p v-else-if="state !== 'ready' || !selection" class="side-note">{{ t('armor.loadout_unavailable') }}</p>
     <TankConfigPanel
       v-else-if="selection.canConfigure"
+      embedded
       :detail="detail"
       :modules="modules"
       :selection="selection"
