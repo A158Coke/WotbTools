@@ -63,23 +63,78 @@ export function sunShadowFrom(light: Vec3Like, target: Vec3Like): SunShadow {
   }
 }
 
-/** GLB 实例（挂载时、受姿前）一次性测车体水平尺寸；不可信时回落代理尺寸。 */
+/** 底盘节点（履带 / 负重轮）= 实际接地范围；命名与 glbParts.collectGlbParts 的车体/底盘拆分同源 */
+const CHASSIS_NODE = /^chassis_(track|wheel)_/i
+
+/** object 自身坐标系下、满足 pick 的网格包围盒（与 object 当前位姿无关） */
+function localBox(object: Object3D, pick: (node: Object3D) => boolean): THREE.Box3 {
+  object.updateWorldMatrix(true, true)
+  const toLocal = new THREE.Matrix4().copy(object.matrixWorld).invert()
+  const box = new THREE.Box3(), part = new THREE.Box3(), m = new THREE.Matrix4()
+  object.traverse((node) => {
+    if (!pick(node)) return
+    node.traverse((child) => {
+      const geo = (child as THREE.Mesh).geometry
+      if (!(child as THREE.Mesh).isMesh || !geo) return
+      if (!geo.boundingBox) geo.computeBoundingBox()
+      box.union(part.copy(geo.boundingBox!).applyMatrix4(m.multiplyMatrices(toLocal, child.matrixWorld)))
+    })
+  })
+  return box
+}
+
+/**
+ * GLB 实例一次性测接地水平尺寸；不可信时回落代理尺寸。
+ * - 轴向：GLB 模型系是 Z-up（glbRig.ts 的 Q_FRAME = Ry(π)·Rx(−π/2) 转到场景 Y-up），
+ *   模型 X = 车宽、Y = 车长（→ 场景 Z）、Z = 高。按模型自身坐标量，与当前位姿无关。
+ * - 只量底盘：整车包围盒含炮管外伸，长炮管车的阴影会被拉长并向车尾对称外扩。
+ *   未知模型（无底盘命名）回落整车包围盒。
+ */
 export function measureShadowFootprint(object: Object3D): ShadowFootprint {
-  const size = new THREE.Box3().setFromObject(object).getSize(new THREE.Vector3())
-  const a = size.x / 2, b = size.z / 2
-  if (!Number.isFinite(a) || !Number.isFinite(b) || Math.min(a, b) < 0.3 || Math.max(a, b) > 12) {
+  let box = localBox(object, (node) => CHASSIS_NODE.test(node.name || ''))
+  if (box.isEmpty()) box = localBox(object, (node) => node === object)
+  const size = box.getSize(new THREE.Vector3())
+  const halfW = size.x / 2, halfL = size.y / 2
+  if (!Number.isFinite(halfW) || !Number.isFinite(halfL) || halfW < 0.3 || halfL < 0.3 || halfW > 6 || halfL > 12) {
     return { ...PROXY_FOOTPRINT }
   }
-  // 长 = 较大水平轴（模板静止朝向未被证明前不依赖 x/z 哪一轴是车长）
-  return { halfW: Math.min(a, b), halfL: Math.max(a, b) }
+  return { halfW, halfL }
 }
 
 /** 网格每边顶点数：25 个有界采样点贴合斜坡，成本不随地形规模变化 */
 export const GRID = 5
-const PAD = 1.15          // 阴影比车体略大，边缘渐隐
 const LIFT = 0.04         // 离地抬升（米），配合 polygonOffset 防 z-fighting
 const OPACITY = 0.55
 const SHADOW_COLOR = 0x0b0f14
+
+/**
+ * 车体外的渐隐带宽（米）：与车宽成比例并夹限。俯视时车体本身盖住内核，
+ * 能看见的只有这一圈——渐变必须落在车体**外**，否则阴影在画面上等于不存在。
+ */
+export function shadowMargin(fp: ShadowFootprint): number {
+  return Math.min(1.5, Math.max(0.6, fp.halfW * 0.45))
+}
+
+/**
+ * 九宫格轴映射：网格线 t ∈ {-1, -0.5, 0, 0.5, 1}（对应 uv 0/0.25/0.5/0.75/1），
+ * |t| ≤ 0.5 线性铺满车体半宽 h，|t| > 0.5 铺车体外的渐隐带 m。
+ * 内线恰好压在车体边缘 ⇒ 贴图的不透明内核覆盖车体、渐隐只发生在车外。
+ */
+function axisOffset(t: number, h: number, m: number): number {
+  const a = Math.abs(t)
+  const d = a <= 0.5 ? a * 2 * h : h + (a - 0.5) * 2 * m
+  return t < 0 ? -d : d
+}
+
+/**
+ * 贴图 alpha（x, y ∈ [-1, 1]，与 uv 同向）：|x|,|y| ≤ 0.5 的内核恒为 1，
+ * 外圈按到内核的圆角矩形距离平滑降到 0。
+ */
+export function shadowAlpha(x: number, y: number): number {
+  const qx = Math.max(Math.abs(x) - 0.5, 0) * 2
+  const qy = Math.max(Math.abs(y) - 0.5, 0) * 2
+  return 1 - THREE.MathUtils.smoothstep(Math.min(1, Math.hypot(qx, qy)), 0, 1)
+}
 
 /**
  * 网格顶点（世界 XZ）。纯函数：基础矩形按车体 yaw 旋转（three rotation.y 口径），
@@ -87,7 +142,7 @@ const SHADOW_COLOR = 0x0b0f14
  */
 export function shadowGridXZ(x: number, z: number, yaw: number, fp: ShadowFootprint, sun: SunShadow, out: Float32Array): Float32Array {
   const c = Math.cos(yaw), s = Math.sin(yaw)
-  const a = fp.halfW * PAD, b = fp.halfL * PAD
+  const m = shadowMargin(fp)
   const off = sun.offsetFactor * fp.halfL
   const k = sun.stretch - 1
   let i = 0
@@ -95,7 +150,7 @@ export function shadowGridXZ(x: number, z: number, yaw: number, fp: ShadowFootpr
     const v = (r / (GRID - 1)) * 2 - 1
     for (let q = 0; q < GRID; q++) {
       const u = (q / (GRID - 1)) * 2 - 1
-      const lx = u * a, lz = v * b
+      const lx = axisOffset(u, fp.halfW, m), lz = axisOffset(v, fp.halfL, m)
       let px = lx * c + lz * s
       let pz = -lx * s + lz * c
       const along = px * sun.dirX + pz * sun.dirZ
@@ -113,12 +168,9 @@ function makeGradientTexture(): THREE.DataTexture {
   const data = new Uint8Array(n * n * 4)
   for (let y = 0; y < n; y++) {
     for (let x = 0; x < n; x++) {
-      const dx = (x + 0.5) / n * 2 - 1, dy = (y + 0.5) / n * 2 - 1
-      const r = Math.min(1, Math.hypot(dx, dy))
-      const t = THREE.MathUtils.smoothstep(r, 0.25, 1)
       const o = (y * n + x) * 4
       data[o] = data[o + 1] = data[o + 2] = 255
-      data[o + 3] = Math.round(255 * (1 - t) * (1 - t))
+      data[o + 3] = Math.round(255 * shadowAlpha((x + 0.5) / n * 2 - 1, (y + 0.5) / n * 2 - 1))
     }
   }
   const tex = new THREE.DataTexture(data, n, n, THREE.RGBAFormat)

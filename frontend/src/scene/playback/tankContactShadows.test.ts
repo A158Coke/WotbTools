@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import {
-  GRID, PROXY_FOOTPRINT, createTankContactShadows, measureShadowFootprint, shadowGridXZ, sunShadowFrom,
+  GRID, PROXY_FOOTPRINT, createTankContactShadows, measureShadowFootprint, shadowAlpha, shadowGridXZ, shadowMargin,
+  sunShadowFrom,
 } from './tankContactShadows.ts'
 
 const O = { x: 0, y: 0, z: 0 }
@@ -96,13 +97,72 @@ describe('shadowGridXZ：车体朝向与太阳偏移分离', () => {
   })
 })
 
-describe('measureShadowFootprint', () => {
-  it('取水平包围盒，长 = 较大轴；不可信时回落代理尺寸', () => {
-    const tank = new THREE.Mesh(new THREE.BoxGeometry(3, 2, 7))
+describe('车体外可见性（俯视时车体盖住内核，只看得到车外一圈）', () => {
+  const overhead = sunShadowFrom(at(0, 1000, 0), O)
+  /** 网格线 q 对应的 uv → 贴图坐标（-1..1） */
+  const tex = (q: number) => (q / (GRID - 1)) * 2 - 1
+
+  it('内网格线恰好压在车体边缘，外网格线在车外 margin 处', () => {
+    const fp = { halfW: 1.6, halfL: 3.4 }
+    const out = shadowGridXZ(0, 0, 0, fp, overhead, new Float32Array(GRID * GRID * 2))
+    const xAt = (q: number) => out[q * 2]                       // 第 0 行，沿 X
+    const zAt = (r: number) => out[(r * GRID) * 2 + 1]          // 第 0 列，沿 Z
+    expect(xAt(1)).toBeCloseTo(-fp.halfW, 6)
+    expect(xAt(3)).toBeCloseTo(fp.halfW, 6)
+    expect(zAt(1)).toBeCloseTo(-fp.halfL, 6)
+    expect(xAt(4)).toBeCloseTo(fp.halfW + shadowMargin(fp), 6)
+    expect(zAt(4)).toBeCloseTo(fp.halfL + shadowMargin(fp), 6)
+  })
+
+  it('车体边缘不透明、外缘透明，车外一圈有可见的过渡（修复前车外 alpha ≈ 0.006）', () => {
+    expect(shadowAlpha(tex(1), 0)).toBe(1)
+    expect(shadowAlpha(tex(3), tex(3))).toBe(1)
+    expect(shadowAlpha(tex(4), 0)).toBe(0)
+    expect(shadowAlpha(0, tex(0))).toBe(0)
+    // 车外 margin 的前 1/4 处仍保留大部分遮蔽
+    expect(shadowAlpha(0.5 + 0.5 * 0.25, 0)).toBeGreaterThan(0.8)
+    expect(shadowAlpha(0.5 + 0.5 * 0.5, 0)).toBeGreaterThan(0.4)
+  })
+
+  it('margin 与车宽成比例且有上下限', () => {
+    expect(shadowMargin({ halfW: 1.8, halfL: 3.25 })).toBeCloseTo(0.81, 6)
+    expect(shadowMargin({ halfW: 0.5, halfL: 1 })).toBe(0.6)
+    expect(shadowMargin({ halfW: 6, halfL: 9 })).toBe(1.5)
+  })
+})
+
+describe('measureShadowFootprint（GLB 模型系 Z-up：X = 车宽、Y = 车长、Z = 高）', () => {
+  it('按模型轴取车宽 / 车长（不是按大小猜轴）；不可信时回落代理尺寸', () => {
+    // 宽 3、长 7、高 2：旧实现量场景 x/z 会把「高」当成车长
+    const tank = new THREE.Mesh(new THREE.BoxGeometry(3, 7, 2))
     expect(measureShadowFootprint(tank)).toEqual({ halfW: 1.5, halfL: 3.5 })
-    const sideways = new THREE.Mesh(new THREE.BoxGeometry(7, 2, 3))
-    expect(measureShadowFootprint(sideways)).toEqual({ halfW: 1.5, halfL: 3.5 })
     expect(measureShadowFootprint(new THREE.Group())).toEqual(PROXY_FOOTPRINT)
+  })
+
+  it('与实例当前位姿无关（已受姿 / 已入场景的实例量出同一尺寸）', () => {
+    const tank = new THREE.Mesh(new THREE.BoxGeometry(3, 7, 2))
+    tank.position.set(120, 30, -40)
+    tank.quaternion.setFromEuler(new THREE.Euler(-Math.PI / 2, 2.1, 0.1))
+    const parent = new THREE.Group(); parent.position.set(5, 0, 5); parent.add(tank)
+    const fp = measureShadowFootprint(tank)
+    expect(fp.halfW).toBeCloseTo(1.5, 5)
+    expect(fp.halfL).toBeCloseTo(3.5, 5)
+  })
+
+  it('有底盘节点时只量履带/负重轮：炮管外伸不计入车长', () => {
+    const root = new THREE.Group()
+    const track = (side: number) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(0.6, 6.4, 1))
+      m.name = side < 0 ? 'chassis_track_L' : 'chassis_track_R'
+      m.position.x = side * 1.5
+      return m
+    }
+    const hull = new THREE.Mesh(new THREE.BoxGeometry(3.2, 6.8, 1.5)); hull.name = 'hull'
+    const gun = new THREE.Mesh(new THREE.BoxGeometry(0.2, 6, 0.2)); gun.name = 'gun_01'; gun.position.y = 5
+    root.add(track(-1), track(1), hull, gun)
+    const fp = measureShadowFootprint(root)
+    expect(fp.halfW).toBeCloseTo(1.8, 5)
+    expect(fp.halfL).toBeCloseTo(3.2, 5)   // 整车包围盒会是 (5 + 3) = 8
   })
 })
 
