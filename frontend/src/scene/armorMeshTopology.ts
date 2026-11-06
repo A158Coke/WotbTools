@@ -94,18 +94,40 @@ export interface SpacedHitView {
  * - 该键没有入射面命中时，出射面命中全部计入（从背面看的单面屏照常计一次）。
  * 判据只看整条射线的命中集合，不依赖穿越顺序——GPU 的 stencil 位同样是按像素汇总，
  * 因此 back→front（近背远正）不会再让 CPU 多计一层。
+ *
+ * spanEnd：有效判定区间的长度（首个 Primary 的下标 + 1；无 Primary 时等于命中数）。
+ * 区间外的命中不参与判定——`collectFilteredHits` 在首个 Primary 截断，GPU 侧主装甲
+ * 深度先写、spaced 材质 depthTest 失败也不会计厚/写位。区间外的 front 因此不得抑制
+ * 区间内的同键 back（`spaced back → Primary → 同键 front` 只剩那层背面）。
  */
-export function resolveSpacedHitMask(hits: readonly SpacedHitView[]): boolean[] {
+export function resolveSpacedHitMask(hits: readonly SpacedHitView[], spanEnd: number = hits.length): boolean[] {
+    const end = Math.max(0, Math.min(hits.length, spanEnd))
     const frontKeys = new Set<string>()
-    for (const hit of hits) {
+    for (let i = 0; i < end; i++) {
+        const hit = hits[i]
         if (hit.spaced && !hit.backface) frontKeys.add(hit.key)
     }
     const keep = new Array<boolean>(hits.length)
     for (let i = 0; i < hits.length; i++) {
+        if (i >= end) { keep[i] = true; continue }
         const hit = hits[i]
         keep[i] = !hit.backface || (hit.spaced && !frontKeys.has(hit.key))
     }
     return keep
+}
+
+/**
+ * 首个物理接触面下标（厚度累计去重之前）——HE 的爆炸点契约。
+ * 第一个「非背面命中」或「间隙甲背面命中」就是射线实际碰到的第一层表面（从背面看的
+ * 单面屏本身即首触面）；主装甲/外部模块的背面命中是出射面，跳过。厚度累计的同板去重
+ * 只改变层数，不得改变首触面；没有可用命中时返回 -1。
+ */
+export function firstPhysicalHit(hits: readonly SpacedHitView[]): number {
+    for (let i = 0; i < hits.length; i++) {
+        const hit = hits[i]
+        if (!hit.backface || hit.spaced) return i
+    }
+    return -1
 }
 
 /** WebGL 保证的 stencil 位宽下界（WebGLRenderTarget stencilBuffer:true → ≥8 位）。 */

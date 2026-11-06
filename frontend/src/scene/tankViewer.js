@@ -55,7 +55,7 @@ import {
 // 动态装甲单次 Mesh 状态应用（#820 Wave B3C 出仓）：userData/可见性/分类/厚度/材质
 import { applyArmorStateToMesh, replaceArmorMaterial } from './viewer/armorMeshState.js'
 // 间隙甲同板去重键与判据：与厚度通道 per-key stencil 共用一处语义（order-independent）
-import { resolveSpacedHitMask, spacedDedupKey } from './armorMeshTopology.js'
+import { resolveSpacedHitMask, spacedDedupKey, firstPhysicalHit } from './armorMeshTopology.js'
 // 点击判定的触发面分类（Primary = 主装甲板）；与判定本体同源，勿在此复制一份板面清单
 import { isPrimary, hasPrimaryLayer, matchHitsByOccurrence } from './penetration.js'
 // Armor Inspector 概率模型：±range = ±3σ 的正态 CDF + 逐层 1× 等效厚度传播
@@ -5007,6 +5007,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
          *  - 闭合间隙甲的正/背面是同一块板：同键按**整条射线**判定——有入射面命中时
          *    出射面全部抑制；没有入射面命中时才计出射面（与厚度通道 per-key stencil
          *    同口径、与穿越顺序无关；近背远正的背→正次序不再多计一层）。
+         *    去重窗口止于首个 Primary（含）：其后的命中不进入 collectFilteredHits，
+         *    GPU 侧也被主装甲深度遮挡，因此远处同键 front 不得抑制面前的 back。
+         *  - 返回值：hits = 判定层链；firstContact = 去重前的首个物理接触面（HE 爆炸点，
+         *    厚度累计去重不改变首次接触语义）。
          */
         function collectJudgmentHits(intersects, rayDir) {
             const candidates = [];
@@ -5024,10 +5028,16 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     key: spacedDedupKey(origSection, entry.section, entry.plateId),
                 });
             }
-            const keep = resolveSpacedHitMask(candidates);
+            // 有效判定区间 = 首个 Primary（含）；判定层链在它后面不再参与。
+            let spanEnd = candidates.length;
+            for (let i = 0; i < candidates.length; i++) {
+                if (isPrimary(candidates[i].entry.section)) { spanEnd = i + 1; break }
+            }
+            const keep = resolveSpacedHitMask(candidates, spanEnd);
             const hits = [];
             for (let i = 0; i < candidates.length; i++) if (keep[i]) hits.push(candidates[i].entry);
-            return hits;
+            const contact = firstPhysicalHit(candidates);
+            return { hits, firstContact: contact < 0 ? null : candidates[contact].entry };
         }
 
         /**
@@ -5113,7 +5123,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // 间隙甲按双面参与判定：临时 DoubleSide 求交，背面命中在 collectJudgmentHits
             // 里按“同一块板只计一层”过滤（主装甲/外部模块仍只认迎面命中）。
             const intersects = intersectArmorDoubleSidedSpaced(objects, raycaster);
-            const armorHits = collectJudgmentHits(intersects, raycaster.ray.direction);
+            const { hits: armorHits, firstContact } = collectJudgmentHits(intersects, raycaster.ray.direction);
 
             // BlitzKit 语义（SpacedArmorScene 的触发面）：判定只由【触达主装甲板】的射线发起——
             // shoot() 只挂在 Primary 网格的 onClick 上，spaced / 外部模块网格挂的是空 handler
@@ -5166,12 +5176,15 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // ===== HE 弹命中层语义修正 =====
             // HE(与一切爆炸弹)命中【首个表面】即爆炸，不沿弹道穿透整车；弦判定沿弦收集
             // 全部连续命中会把两侧装甲都算进溅射衰减 → HE 溅射伤害被过度衰减而误判
-            // BLOCKED(服务器同发判有伤害)。修正：HE 只保留【第一个非 deco 命中】为爆炸点。
+            // BLOCKED(服务器同发判有伤害)。修正：HE 只保留【第一个非 deco 命中】为爆炸点——
+// 该首触面取自厚度累计去重之前（firstPhysicalHit），同板去重不得移动爆炸点。
             // AP/APCR/HEAT 的多层穿透语义不变。
-            const hitsForCheck = (shellTypeNow === 'he' && armorHits.length > 1)
-                ? [armorHits[0]] : armorHits;
+            // HE 的爆炸点 = 去重前的首个物理接触面（firstContact）：厚度累计的同板去重
+            // 只决定层链，不改变「HE 碰到第一层表面即爆炸」的契约（近背远正时若用层链
+            // 首层，会把爆点推到更远的入射面）。
+            const first = firstContact || armorHits[0];
+            const hitsForCheck = shellTypeNow === 'he' ? [first] : armorHits;
 
-            const first = armorHits[0];
             const point = first.point;
             // ===== 片元交叉验证：raycast 装甲片 ↔ 游戏原生 segment armor_group =====
             // segment（type=32 命中通知，服务器权威）给出命中装甲组。一致 → 标记绿色（高置信），
@@ -5538,7 +5551,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                             const rc = new THREE.Raycaster(currentPoint, reflect);
                             // 与点击主链同一收集口径：间隙甲双面 + 同一块板只计一层
                             const ricIntersects = intersectArmorDoubleSidedSpaced(objects, rc);
-                            const ricHits = collectJudgmentHits(ricIntersects, rc.ray.direction)
+                            const ricHits = collectJudgmentHits(ricIntersects, rc.ray.direction).hits
                                 .filter(h => h.distance > RC.MIN_CONTINUATION_T);
                             ricHits.sort((a, b) => a.distance - b.distance);
                             if (!ricHits.length || !ricHits.some(h => isPrimary(h.section))) break;

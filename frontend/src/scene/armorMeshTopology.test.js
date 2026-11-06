@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
-import { assignSpacedStencilBits, isClosedSurfaceGeometry, resolveSpacedHitMask, spacedDedupKey, SPACED_STENCIL_BIT_LIMIT } from './armorMeshTopology.ts'
+import { assignSpacedStencilBits, firstPhysicalHit, isClosedSurfaceGeometry, resolveSpacedHitMask, spacedDedupKey, SPACED_STENCIL_BIT_LIMIT } from './armorMeshTopology.ts'
+import { ArmorSection, calculate } from './penetration.js'
 
 describe('isClosedSurfaceGeometry', () => {
   it('闭合盒体（含 non-indexed 副本）判定为闭合', () => {
@@ -75,6 +76,78 @@ describe('resolveSpacedHitMask（点击链同板去重，与 per-key stencil 同
 
   it('空命中集合返回空掩码', () => {
     expect(resolveSpacedHitMask([])).toEqual([])
+  })
+
+  it('判定区间止于首个 Primary：区间外的同键 front 不得抑制面前的 back', () => {
+    // back(120mm) → hull Primary → 同键 front：collectFilteredHits 在 hull 截断，
+    // GPU 侧主装甲深度先写、远处 front 也写不了位 —— back 必须保留。
+    const hits = [
+      hit('gun:2', true), hit('hull:1', false, false), hit('gun:2', false),
+    ]
+    expect(resolveSpacedHitMask(hits, 2)).toEqual([true, true, true])
+  })
+
+  it('区间内的同键 front 正常抑制 back（窗口不改变顺序无关判定）', () => {
+    const hits = [hit('gun:2', true), hit('gun:2', false), hit('hull:1', false, false)]
+    expect(resolveSpacedHitMask(hits, 3)).toEqual([false, true, true])
+  })
+
+  it('spanEnd 缺省 = 整条射线；越界 spanEnd 夹到命中数', () => {
+    const hits = [hit('gun:2', true), hit('gun:2', false)]
+    expect(resolveSpacedHitMask(hits)).toEqual([false, true])
+    expect(resolveSpacedHitMask(hits, 99)).toEqual([false, true])
+    expect(resolveSpacedHitMask(hits, -1)).toEqual([true, true])
+  })
+})
+
+describe('firstPhysicalHit（HE 首触面，去重之前）', () => {
+  const hit = (key, backface, spaced = true) => ({ key, backface, spaced })
+
+  it('首个命中即首触面', () => {
+    expect(firstPhysicalHit([hit('gun:2', false), hit('gun:2', true)])).toBe(0)
+  })
+
+  it('近背远正：背面就是首触面（不得被同键 front 顶替）', () => {
+    expect(firstPhysicalHit([hit('gun:2', true), hit('hull:1', false, false)])).toBe(0)
+  })
+
+  it('主装甲/外部模块的背面命中是出射面，跳过', () => {
+    expect(firstPhysicalHit([hit('hull:1', true, false), hit('gun:2', false)])).toBe(1)
+  })
+
+  it('全是非间隙甲背面 / 空集合 → -1', () => {
+    expect(firstPhysicalHit([hit('hull:1', true, false), hit('turret:2', true, false)])).toBe(-1)
+    expect(firstPhysicalHit([])).toBe(-1)
+  })
+})
+
+describe('判定链与区间（back → Primary → 同键 front）', () => {
+  it('首个 Primary 之后的同键 front 不参与判定，面前的间隙甲层仍生效', () => {
+    const candidates = [
+      { key: 'gun:2', spaced: true, backface: true },
+      { key: 'hull:1', spaced: false, backface: false },
+      { key: 'gun:2', spaced: true, backface: false },
+    ]
+    // 判定区间 = 首个 Primary（index 1）→ spanEnd = 2。
+    const keep = resolveSpacedHitMask(candidates, 2)
+    const chain = candidates.filter((_, i) => keep[i])
+    const hits = chain.map((c, i) => ({
+      section: c.spaced ? ArmorSection.SPACED : ArmorSection.HULL,
+      plate_id: c.key.split(':')[1],
+      thickness: c.spaced ? 120 : 40,
+      normal: [0, 1, 0],
+      point: [0, 0, -i],
+      part_name: c.key,
+    }))
+    const req = {
+      shell_type: 'ap', penetration: 100, caliber: 75, view_dir: [0, 1, 0],
+      hits, damage: 400, explosion_radius: 0,
+      calibrated_shells: false, enhanced_armor: false, allow_ricochet: true,
+    }
+    const r = calculate(req)
+    // 未修（整条射线抑制）：面前的 120mm 间隙甲被删 → hull 40mm 被 100mm 穿深击穿。
+    expect(r.result).toBe('BLOCKED')
+    expect(r.layers[0].thickness).toBe(120)
   })
 })
 
