@@ -1644,6 +1644,8 @@
     "perf_load_note": "The log depth buffer and armor highlight add rendering cost when turned on.",
     "perf_armor_highlight": "Sniper armor highlight",
     "perf_armor_highlight_hint": "While the recorder is scoped, colors the aimed enemy's armor for the current shell. Hidden when configuration, shell or equipment is uncertain. Default OFF.",
+    "perf_contact_shadows": "Tank contact shadows",
+    "perf_contact_shadows_hint": "High / Ultra only; off by default and best on capable devices. Draws an approximate soft shadow under each tank following the map's sun direction. May add GPU load; not full real-time scene shadows (buildings and trees cast none).",
     "display_scene": "Scene",
     "hide_all_ui": "Hide all UI",
     "show_all_ui": "Show UI",

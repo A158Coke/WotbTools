@@ -21,3 +21,11 @@ export const QUALITY_PRESETS = {
   high:  { label: '高清', antialias: true,  maxDpr: 1.5,  scenery: true,  groundLayers: true,  anisotropy: 4, terrainSeg: 384, allowGlb: true,  treadMarks: true,  forceGlb: true, fx: FX_BUDGETS.high },
   ultra: { label: '极致', antialias: true,  maxDpr: 2,    scenery: true,  groundLayers: true,  anisotropy: 8, terrainSeg: 512, allowGlb: true,  treadMarks: true,  forceGlb: true, fx: FX_BUDGETS.ultra },
 }
+
+/**
+ * 坦克接地阴影的画质门禁（唯一实现）：仅高清 / 极致可由用户开启。
+ * 面板（开关 disabled）与场景（setter + 装配点复核）共用，不另建画质配置。
+ */
+export function shadowQualityEligible(key: string): boolean {
+  return key === 'high' || key === 'ultra'
+}

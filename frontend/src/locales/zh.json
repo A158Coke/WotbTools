@@ -1644,6 +1644,8 @@
     "perf_load_note": "对数深度缓冲和穿深着色开启后会增加性能开销。",
     "perf_armor_highlight": "狙击镜穿深着色",
     "perf_armor_highlight_hint": "录像者开镜时，按当前弹种给准星所指敌车的装甲着色。配置、弹种或装备不确定时不显示。默认关闭。",
+    "perf_contact_shadows": "坦克接地阴影",
+    "perf_contact_shadows_hint": "仅高清 / 极致可用，默认关闭，适合高性能设备。按地图太阳方向在坦克下方绘制近似软阴影，可能增加 GPU 负载；不是完整的实时场景阴影（建筑、树木不投影）。",
     "display_scene": "场景",
     "hide_all_ui": "隐藏全部 UI",
     "show_all_ui": "显示 UI",
