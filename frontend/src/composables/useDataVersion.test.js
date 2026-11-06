@@ -33,7 +33,6 @@ const CATALOG = {
       content_digest: 'sha256:aaa',
       manifest_sha256: 'bbb',
       status: 'active',
-      preview: null,
     },
     {
       id: '11.21.0-t11-preview',
@@ -46,7 +45,6 @@ const CATALOG = {
       content_digest: 'sha256:ccc',
       manifest_sha256: 'ddd',
       status: 'active',
-      preview: { client_version: '11.22_supertest_tier11_4' },
     },
   ],
 }
@@ -129,6 +127,7 @@ describe('useDataVersion', () => {
     expect(selected.value).toBe('11.21.0-t11-preview')
     expect(options.value.map((option) => option.value)).toEqual(['11.21.0', '11.21.0-t11-preview'])
     expect(options.value[1].tankCount).toBe(740)
+    expect(options.value[0].preview).toBe(false)
     expect(options.value[1].preview).toBe(true)
     expect(currentDataset.value.id).toBe('11.21.0-t11-preview')
   })

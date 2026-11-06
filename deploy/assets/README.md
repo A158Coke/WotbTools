@@ -105,20 +105,20 @@ manual; Git tracks configuration, not the multi-GB asset pack.
 `asset-origin` → Komodo Stack redeploy 之前，`/versions.json` 与 `/v/<id>/...`
 返回 `404`。期间 `/` 与 `/version.json` 持续服务默认 dataset（11.21.0）。
 
-Public paths:
+公开路径：
 
-| Path | Meaning |
+| 路径 | 含义 |
 |---|---|
-| `/v/<dataset-id>/...` | a specific game-version dataset |
-| `/versions.json` | dataset catalog (`schema`, `default`, `datasets[]`) |
-| `/v/<dataset-id>/version.json` | immutable release identity |
-| `/...` | legacy root = `current` (default dataset) |
+| `/v/<dataset-id>/...` | 指定游戏版本的 dataset |
+| `/versions.json` | dataset 目录（`schema`、`default`、`datasets[]`） |
+| `/v/<dataset-id>/version.json` | 不可变的 release 身份 |
+| `/...` | 旧客户端兼容入口 = `current`（默认 dataset） |
 
 发布新游戏版本（release 目录已按 `version.json`/`manifest.json` 备好在
 `releases/<id>` 下）：
 
 ```bash
-# on the Alibaba host
+# 在 Alibaba 主机执行
 bash deploy/assets/dataset.sh link --dataset 11.22.0 --release 20261118-3f9a2c1b
 bash deploy/assets/dataset.sh default --dataset 11.22.0        # optional: move legacy root
 bash deploy/assets/dataset.sh verify
@@ -241,10 +241,11 @@ Images** on this host unless Docker Hub reachability has been deliberately resto
    name; `address` stays empty and no inbound Periphery `:8120` is introduced.
 4. Apply the ResourceSync diff by hand. This must not deploy the Stack
    (`deploy = false`).
-5. Stage the asset pack under `/srv/wotb-assets/releases/<pack-id>`, verify
-   `manifest.json`, then `dataset.sh link --dataset <id> --release <pack-id>` and
-   `dataset.sh default --dataset <id>` (see “Dataset versions”). `current` must end up
-   at the default dataset, not a raw release directory.
+5. 将资产包放到 `/srv/wotb-assets/releases/<pack-id>`，校验 `manifest.json`，然后
+   `dataset.sh link --dataset <id> --release <pack-id> --default`（首次发布还没有
+   `current`，必须用 `--default` 同时建立 dataset 链接与默认入口；从旧
+   `current -> releases/<pack-id>` 布局迁移时同理，见「Dataset versions」）。
+   `current` 最终必须指向默认 dataset，而不是原始 release 目录。
 6. Preload and verify `caddy:2.10.2-alpine` using the image preload contract above.
 7. Ensure the Alibaba firewall allows public TCP 80/443. Do not expose Periphery
    `:8120`.

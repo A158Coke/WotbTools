@@ -107,6 +107,12 @@ assert doc["default"] == sys.argv[2], f"catalog.default={doc['default']} != curr
 PY
 }
 
+# 首次发布还没有 current：不带 --default 必须 fail-closed，文档因此要求 link --default 初始化。
+if run link --dataset 11.21.0 --release r1 >/dev/null 2>&1; then
+  echo "initial link without --default must fail when current is missing" >&2; exit 1
+fi
+[[ -e "$root/datasets/11.21.0" ]] && { echo "failed initial link must not create the dataset link" >&2; exit 1; }
+
 run link --dataset 11.21.0 --release r1 --default >/dev/null
 assert_link "$root/datasets/11.21.0" "../releases/r1"
 assert_link "$root/current" "datasets/11.21.0"

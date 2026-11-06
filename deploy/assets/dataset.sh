@@ -196,7 +196,7 @@ cmd_link() {
     catalog_default="$dataset"
   else
     catalog_default="$(current_default)"
-    [[ -n "$catalog_default" ]] || die "无法确定 catalog default（current 缺失）；先 dataset.sh default --dataset <id>"
+    [[ -n "$catalog_default" ]] || die "无法确定 catalog default（current 缺失或仍是旧式 releases/<id>）；首次发布/迁移请用 dataset.sh link --dataset <id> --release <release> --default"
   fi
 
   if [[ "$dry_run" == "1" ]]; then

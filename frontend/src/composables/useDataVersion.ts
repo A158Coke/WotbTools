@@ -36,7 +36,6 @@ export interface DatasetEntry {
   tank_count?: number | null
   generated?: string
   manifest_sha256?: string
-  preview?: unknown
   min_client?: string | null
   notes?: string
 }
@@ -148,7 +147,9 @@ export function useDataVersion() {
     value: entry.id,
     label: entry.label,
     tankCount: typeof entry.tank_count === 'number' ? entry.tank_count : null,
-    preview: Boolean(entry.preview),
+    // Agent 的 collect_datasets 不输出 version.json.preview；预览通道以 catalog 的
+    // variant 标记（stamp --variant），消费方只用真实存在的字段。
+    preview: Boolean(entry.variant),
     status: entry.status,
     title: [entry.game_version, entry.variant ? `+ ${entry.variant}` : null, entry.release]
       .filter((part): part is string => typeof part === 'string' && part.length > 0)
