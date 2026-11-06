@@ -1,9 +1,10 @@
 <script setup lang="ts">
 // 侧边栏顶部（logo 下方）的资产数据版本切换。
 // 与侧边栏导航同一套视觉：展开态是带标题/当前值的块，图标栏是图标 + 下方两行小字。
-// 原生 select 透明覆盖整个控件——点击/键盘都能打开系统选择器，但外观由本组件决定。
+// 下拉列表由 DataVersionMenu（Reka Select）提供，外观由本组件决定。
 import { computed } from 'vue'
 import { ChevronDown, Database } from 'lucide-vue-next'
+import DataVersionMenu from '../components/DataVersionMenu.vue'
 import { useDataVersion } from '../composables/useDataVersion.js'
 
 withDefaults(defineProps<{ rail?: boolean }>(), { rail: false })
@@ -21,68 +22,62 @@ const railLabel = computed(() => {
   return state.value.datasets.find((entry) => entry.id === selected.value)?.variant || selected.value
 })
 
-function onChange(event: Event): void {
-  const target = event.target as HTMLSelectElement | null
-  select(target?.value ?? '')
+function onSelect(id: string): void {
+  if (id !== selected.value) select(id)
 }
 </script>
 
 <template>
-  <label
-    class="sidebar-version"
-    :class="{ 'is-rail': rail }"
-    :title="$t('dataVersion.hint')"
+  <DataVersionMenu
+    :model-value="selected"
+    :options="options"
+    :default-id="state.defaultId"
+    :label="rail && railLabel ? `${$t('dataVersion.title')}: ${railLabel}` : $t('dataVersion.title')"
+    :disabled="state.status !== 'ready'"
+    @select="onSelect"
   >
-    <span class="sidebar-version-head">
-      <Database :size="rail ? 24 : 18" aria-hidden="true" />
-      <span class="sidebar-version-title">{{ $t('dataVersion.title') }}</span>
-    </span>
-    <span class="sidebar-version-value">
-      <span
-        class="sidebar-version-value-text"
-        :title="currentLabel || $t('dataVersion.default')"
+    <template #trigger>
+      <button
+        type="button"
+        class="sidebar-version"
+        :class="{ 'is-rail': rail }"
+        :title="$t('dataVersion.hint')"
       >
-        <template v-if="state.status === 'loading'">{{ $t('dataVersion.loading') }}</template>
-        <template v-else-if="state.status === 'error'">{{ $t('dataVersion.loadFailed') }}</template>
-        <template v-else-if="state.status === 'unavailable'">{{ $t('dataVersion.unavailable') }}</template>
-        <template v-else-if="rail">{{ railLabel || $t('dataVersion.defaultShort') }}</template>
-        <template v-else>{{ currentLabel || $t('dataVersion.default') }}</template>
-      </span>
-      <ChevronDown v-if="!rail" :size="16" aria-hidden="true" />
-    </span>
-    <select
-      class="sidebar-version-select"
-      :value="selected"
-      :disabled="state.status !== 'ready'"
-      :aria-label="$t('dataVersion.title')"
-      :title="$t('dataVersion.hint')"
-      @change="onChange"
-    >
-      <option value="">{{ $t('dataVersion.default') }}</option>
-      <option
-        v-for="option in options"
-        :key="option.value"
-        :value="option.value"
-        :disabled="option.status !== 'active'"
-        :title="option.title"
-      >
-        {{ option.label }}<template v-if="option.tankCount"> · {{ $t('dataVersion.tanks', { count: option.tankCount }) }}</template>
-      </option>
-    </select>
-  </label>
+        <span class="sidebar-version-head">
+          <Database :size="rail ? 24 : 18" aria-hidden="true" />
+          <span class="sidebar-version-title">{{ $t('dataVersion.title') }}</span>
+        </span>
+        <span class="sidebar-version-value">
+          <span
+            class="sidebar-version-value-text"
+            :title="currentLabel || $t('dataVersion.default')"
+          >
+            <template v-if="state.status === 'loading'">{{ $t('dataVersion.loading') }}</template>
+            <template v-else-if="state.status === 'error'">{{ $t('dataVersion.loadFailed') }}</template>
+            <template v-else-if="state.status === 'unavailable'">{{ $t('dataVersion.unavailable') }}</template>
+            <template v-else-if="rail">{{ railLabel || $t('dataVersion.defaultShort') }}</template>
+            <template v-else>{{ currentLabel || $t('dataVersion.default') }}</template>
+          </span>
+          <ChevronDown v-if="!rail" class="sidebar-version-chevron" :size="16" aria-hidden="true" />
+        </span>
+      </button>
+    </template>
+  </DataVersionMenu>
 </template>
 
 <style scoped>
 .sidebar-version {
-  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  width: 100%;
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-md);
   background: var(--color-surface-2);
   color: var(--color-text-primary);
+  font: inherit;
+  text-align: start;
   cursor: pointer;
   transition: background-color var(--duration-fast) var(--ease-standard);
 }
@@ -119,21 +114,17 @@ function onChange(event: Event): void {
 
 .sidebar-version-value > svg { flex: none; color: var(--color-text-secondary); }
 
-.sidebar-version-select {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  cursor: pointer;
-}
+.sidebar-version-chevron { transition: transform var(--duration-fast) var(--ease-standard); }
+.sidebar-version[data-state='open'] .sidebar-version-chevron { transform: rotate(180deg); }
 
-.sidebar-version-select:disabled { cursor: default; }
-
-.sidebar-version:focus-within {
+.sidebar-version:focus-visible {
   outline: var(--focus-outline);
   outline-offset: var(--focus-outline-offset);
 }
+
+.sidebar-version:disabled { cursor: default; }
+
+.sidebar-version[data-state='open'] { background: var(--color-surface-3); }
 
 /* 图标栏：图标 + 下方小字，与 .sidebar-link 的 rail 形态一致；不再显示标题/箭头/边框。 */
 .sidebar-version.is-rail {
@@ -174,7 +165,7 @@ function onChange(event: Event): void {
 .sidebar-version.is-rail .sidebar-version-value > svg { display: none; }
 
 @media (hover: hover) {
-  .sidebar-version:not(.is-rail):hover { background: var(--color-surface-3); }
-  .sidebar-version.is-rail:hover .sidebar-version-value { color: var(--color-text-primary); }
+  .sidebar-version:not(.is-rail):not(:disabled):hover { background: var(--color-surface-3); }
+  .sidebar-version.is-rail:not(:disabled):hover .sidebar-version-value { color: var(--color-text-primary); }
 }
 </style>

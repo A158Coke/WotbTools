@@ -56,9 +56,15 @@ describe('data version selector wiring', () => {
 
     const sidebarSelector = read('../src/app/SidebarDataVersion.vue')
     expect(sidebarSelector, 'sidebar selector calls select()').toContain('select(')
-    expect(sidebarSelector, 'sidebar selector change handler').toContain('onChange')
-    expect(sidebarSelector, 'sidebar selector default option').toContain("$t('dataVersion.default')")
+    expect(sidebarSelector, 'sidebar selector select handler').toContain('onSelect')
+    expect(sidebarSelector, 'sidebar selector default label').toContain("$t('dataVersion.default')")
     expect(sidebarSelector, 'sidebar rail variant').toContain('is-rail')
+    expect(sidebarSelector, 'sidebar uses the shared data-version menu').toContain('DataVersionMenu')
+
+    // 同一概念只有一种选择控件：设置页与页头也用共享菜单，不再各自维护原生 select。
+    const settingSelector = read('../src/components/DataVersionSelect.vue')
+    expect(settingSelector, 'setting selector uses the shared menu').toContain('DataVersionMenu')
+    expect(settingSelector, 'setting selector default label').toContain("$t('dataVersion.default')")
 
     const morePage = read('../src/components/MorePage.vue')
     expect(morePage, 'mobile More selector').toContain('DataVersionSelect')

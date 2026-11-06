@@ -2,8 +2,10 @@
 // 数据版本（game-version dataset）显式选择器。
 // 设置页（更多）用 setting 变体；回放工作台页头用 compact 变体，保证在回放现场也能
 // 直接看到并手动切换，而不是只能改 URL。切换会整页重载（见 useDataVersion）。
+// 下拉面板与侧边栏共用 DataVersionMenu，保证同一概念只有一种选择控件（DC-SEL-08）。
 import { computed } from 'vue'
-import { Database } from 'lucide-vue-next'
+import { ChevronDown, Database } from 'lucide-vue-next'
+import DataVersionMenu from './DataVersionMenu.vue'
 import { useDataVersion } from '../composables/useDataVersion.js'
 
 const props = withDefaults(defineProps<{
@@ -25,9 +27,18 @@ const visible = computed(() => {
   return true
 })
 
-function onChange(event: Event): void {
-  const target = event.target as HTMLSelectElement | null
-  select(target?.value ?? '')
+const currentLabel = computed(() => {
+  if (!selected.value) return null
+  return options.value.find((option) => option.value === selected.value)?.label ?? selected.value
+})
+
+const label = computed(() => {
+  if (state.value.status === 'loading') return null
+  return currentLabel.value
+})
+
+function onSelect(id: string): void {
+  if (id !== selected.value) select(id)
 }
 </script>
 
@@ -38,27 +49,32 @@ function onChange(event: Event): void {
     :class="`is-${variant}`"
     :title="$t('dataVersion.hint')"
   >
-    <Database v-if="variant === 'compact'" class="data-version-icon" :size="15" aria-hidden="true" />
-    <select
-      :id="id"
-      class="data-version-select"
-      :value="selected"
+    <DataVersionMenu
+      :model-value="selected"
+      :options="options"
+      :default-id="state.defaultId"
+      :label="`${$t('dataVersion.title')}: ${label || $t('dataVersion.default')}`"
       :disabled="state.status !== 'ready'"
-      :aria-label="$t('dataVersion.title')"
-      :aria-describedby="showHint ? `${id}-hint` : undefined"
-      @change="onChange"
+      @select="onSelect"
     >
-      <option value="">{{ $t('dataVersion.default') }}</option>
-      <option
-        v-for="option in options"
-        :key="option.value"
-        :value="option.value"
-        :disabled="option.status !== 'active'"
-        :title="option.title"
-      >
-        {{ option.label }}<template v-if="option.tankCount"> · {{ $t('dataVersion.tanks', { count: option.tankCount }) }}</template>
-      </option>
-    </select>
+      <template #trigger>
+        <button
+          :id="id"
+          type="button"
+          class="data-version-trigger"
+          :aria-describedby="showHint ? `${id}-hint` : undefined"
+        >
+          <Database v-if="variant === 'compact'" class="data-version-icon" :size="15" aria-hidden="true" />
+          <span class="data-version-value">
+            <template v-if="state.status === 'loading'">{{ $t('dataVersion.loading') }}</template>
+            <template v-else-if="state.status === 'error'">{{ $t('dataVersion.loadFailed') }}</template>
+            <template v-else-if="state.status === 'unavailable'">{{ $t('dataVersion.unavailable') }}</template>
+            <template v-else>{{ label || $t('dataVersion.default') }}</template>
+          </span>
+          <ChevronDown class="data-version-chevron" :size="16" aria-hidden="true" />
+        </button>
+      </template>
+    </DataVersionMenu>
     <p v-if="showHint" :id="`${id}-hint`" class="data-version-hint" role="status">
       <template v-if="state.status === 'loading'">{{ $t('dataVersion.loading') }}</template>
       <template v-else-if="state.status === 'error'">{{ $t('dataVersion.loadFailed') }}</template>
@@ -75,21 +91,45 @@ function onChange(event: Event): void {
   min-width: 0;
 }
 
-.data-version-select {
+.data-version-trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   width: 100%;
   min-height: var(--control-h-md);
-  padding: 0 var(--space-2);
+  padding: 0 var(--space-2) 0 var(--space-3);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-sm);
   background: var(--color-surface-2);
   color: var(--color-text-primary);
   font: var(--type-body);
+  text-align: start;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
 }
 
-.data-version-select:focus-visible {
+.data-version-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.data-version-chevron {
+  flex: none;
+  color: var(--color-text-secondary);
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.data-version-trigger[data-state='open'] .data-version-chevron { transform: rotate(180deg); }
+
+.data-version-trigger:focus-visible {
   outline: var(--focus-outline);
   outline-offset: var(--focus-outline-offset);
 }
+
+.data-version-trigger:disabled { cursor: default; opacity: .55; }
 
 .data-version-hint {
   margin: 0;
@@ -108,12 +148,7 @@ function onChange(event: Event): void {
   background: var(--color-surface-1);
 }
 
-.data-version.is-compact .data-version-icon {
-  flex: none;
-  color: var(--color-text-secondary);
-}
-
-.data-version.is-compact .data-version-select {
+.data-version.is-compact .data-version-trigger {
   width: auto;
   max-width: 190px;
   min-height: var(--control-h-sm);
@@ -121,5 +156,13 @@ function onChange(event: Event): void {
   border: 0;
   background: transparent;
   font: var(--type-caption);
+}
+
+.data-version-icon { flex: none; color: var(--color-text-secondary); }
+
+@media (hover: hover) {
+  .data-version-trigger:not(:disabled):hover { background: var(--color-surface-3); }
+  .data-version.is-compact .data-version-trigger:not(:disabled):hover { background: transparent; }
+  .data-version.is-compact .data-version-trigger:not(:disabled):hover .data-version-value { color: var(--color-text-primary); }
 }
 </style>
