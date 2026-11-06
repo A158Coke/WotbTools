@@ -108,23 +108,29 @@ jobs:
       fail-fast: false
       matrix:
         gate:
-          # 交互门禁 ≈ 全矩阵最慢一条（~5.5min）；`--shard i/n` 按**静态场景清单
-          # 下标取模**确定性切分，两片并行墙钟减半。清单变化不影响切分正确性（每片覆盖
+          # 交互门禁是最慢的两条浏览器门禁之一；`--shard i/n` 按**静态场景清单
+          # 下标取模**确定性切分，三片并行缩短关键路径。清单变化不影响切分正确性（每片覆盖
           # 的是同一次 checkout 的同一份清单）。
-          - label: Playback/Workspace interaction (1/2)
+          - label: Playback/Workspace interaction (1/3)
             script: test:browser-interaction
-            args: --shard 1/2
-          - label: Playback/Workspace interaction (2/2)
+            args: --shard 1/3
+          - label: Playback/Workspace interaction (2/3)
             script: test:browser-interaction
-            args: --shard 2/2
-          # 串行 28 场景是矩阵里最长的一条；切分方式与交互门禁相同，picker 场景约占总耗时七成，
-          # 取模后两片各含 5 个。
-          - label: Armor viewer mobile layout (1/2)
+            args: --shard 2/3
+          - label: Playback/Workspace interaction (3/3)
+            script: test:browser-interaction
+            args: --shard 3/3
+          # 串行 28 场景的装甲查看器门禁是最慢的两条之一；切分方式与交互门禁相同，
+          # picker 场景约占总耗时七成，按下标取模切成三片。
+          - label: Armor viewer mobile layout (1/3)
             script: test:browser-armor-mobile
-            args: --shard 1/2
-          - label: Armor viewer mobile layout (2/2)
+            args: --shard 1/3
+          - label: Armor viewer mobile layout (2/3)
             script: test:browser-armor-mobile
-            args: --shard 2/2
+            args: --shard 2/3
+          - label: Armor viewer mobile layout (3/3)
+            script: test:browser-armor-mobile
+            args: --shard 3/3
           # 装甲查看器瞄准交互（Pointer Events × OrbitControls）同样只有真浏览器 + 真实输入能验证。
           # 门禁自带确定性夹具资产包（frontend/scripts/browser-fixtures/fixture-asset-pack.mjs：
           # 进程内资产源 + 构造的 hull/turret_01/gun_01 GLB），不需要真实资产、不 SKIP。
