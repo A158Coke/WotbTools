@@ -1,25 +1,54 @@
 # common/ — 共享数据指令（单一来源数据目录）
 
-> 仓库级硬约定见 `.agents/AGENTS.md`。本目录是**数据的单一来源**：Java 构建时经 `wotb-core/pom.xml` 复制到 classpath，前端经 vite 或 Dockerfile 复制 import——**禁止在模块内放副本**。
+> 仓库级硬约定见 `.agents/AGENTS.md`。
+> **何时必读本文件**：改动 `common/` 下任何数据文件、JSON 结构、校验脚本，
+> 或新增消费这些数据的代码时。
 
-## 数据文件与更新方式（经真实文件核对）
+## 硬约束（不可协商）
 
-- **车辆库**：`tankopedia-tier{1..10}.json`（10 个文件，无 `tankopedia.json`）。数据源 BlitzKit production definitions（`api.blitzkit.app/definitions/*.pb`）；`.github/workflows/update-tankopedia.yml` 与本地 `cd common/python && python update_tankopedia.py` 共用同一 production API source of truth；写入前有完整性门禁（总量/tier 骤降、重复 id、缺 id/name/hp/gun 即失败）。车型基础资料覆盖 1–10；物资/装备 reviewed 建模仍限 7–10，低级资料不声明未建模的 allowed* 列表。
-- **研发/配置数据面**：`research/` **只保留全局图标集**（`icons/` 的 items/modules/skills/shells）。**所有配置器数据**——`devices.json` / `consumables.json` / `provisions.json` / `consumables_default.json` / `skills.json` / `params/{structure,format}.json` / `strings/{lang}/research.json` / `camouflage.json` / `meta.json` / 逐车 `modules/{nation}.json`——都由**资产包** `research/**` 发布，`researchCatalog` 经 assetProvider 加载。新坦克/模块/物品数值只需更新资产包，不需要 WotbTools 发版。数据源是**本机客户端解析**（上游 WoT-Blitz-Agent 仓 `tools/export_research_loadout.py`，版本锚 `meta.json.gameVersion`），不是 BlitzKit：BK 除隐蔽系数外均可参考（2026-10-27 用户第二次裁定），隐蔽/技能数值仍以客户端为准；不照抄的四项（无角色 1.05 兜底、火药 +30%、漏电台/油箱重量、124 号装备）见上游计划 §7 #12。消费方只有坦克百科配置器（`utils/researchCatalog.js` + `replay-local/compute/*`；`icons/items/**` 与
-`icons/modules/**`、`icons/skills/**`、`icons/shells/**` 经 `import.meta.glob` 构建期打成 URL 表，组件只做展示，`icons/manifest.json.missing`
-显式登记无图项）：物品的客户端 `<script>` 是数值权威（食物乘员加成等经 `scriptMap` 注入引擎），模块按 `tankId` 对号、`config.turret_local/gun_local` 决定炮塔/炮，`tank/{id}.json` 只提供装甲/弹种。物品可用性按客户端 `vehicleFilter`：**同一 include 块内所有条件 AND**（ration = 6-10 级且苏联），`<isAbility/>`（战斗内技能）不进装配池；
-`ids` 规则用模块条目键补出的 `nation:stem`；过滤结果只决定物品池，不参与数值公式。**乘员语义分域**：`crew-skills.json` 的「全部技能 7 级」是回放/AI 投影口径；百科配置器使用客户端 `avatar.xml` 导出的 `skills.json`（20 项技能的 class 归属 + per-level 效果参数），默认技能 0（中性基线），用户可按 1–7 级切换，效果全局生效（不按当前车型过滤已训练技能）。两套语义不得互相套用；技能数值只读 `skills.json.effects`，禁止在组件里写死百分比。**更新链**：上游重导出 → **非图标数据全部进资产包 `research/`**（`scripts/export_asset_pack.py`，图标继续留在本目录）→ 用包内 `research/meta.json` 的 gameVersion 与文件 sha256 核对；全局目录与逐车模块都经 assetProvider 加载（不进入 Vite 构建，禁止打进主包）。**本目录在 `frontend/` 之外，Vite 不监听**：重新导出后必须重启 `pnpm run dev`；资产包由 `serve_asset_pack.mjs` 直接读磁盘，替换后刷新即可。
-- **搜索别名**：`tank_aliases.json`。**WotBTools 自己的搜索 metadata，不是游戏事实数据**：由开发者审校维护，允许从有版本与哈希记录的客户端名称快照精确配对后批量导入；不随资产/车辆库自动生成，不使用 LLM 或社区 API 猜名。结构 `tank_id`（canonical 十进制字符串）→ 非空 alias 字符串数组，中英俄混排不按语言分桶（alias 用于 search recall，不是 localized display）。**稀疏存储**：没有 alias 的车辆直接不出现在文件里（缺 key == `aliases []`），禁止写 `[]` 占位；新车进 `tank_cache.json` **不需要**同步改这个文件。只扩坦克百科搜索召回，不进入车辆身份、显示名、排序名、导出或 API（Aliases affect discovery, never identity）。前端在构建期相对路径 `import`（`frontend/src/utils/tankopediaQuery.js`：`normalizeTankCache` 投影 `aliases`；`selectTanks` 精确正式车名优先，其后按 `max(车名分, alias 分)` 和正式车名排序），Web 与 Android 内置前端同一份，**无后端接口 / 数据库 / 第二资产源**。契约由 `common/python/validate_tank_aliases.py` 与 `common/python/tests/test_validate_tank_aliases.py` fail closed 守卫（非法 JSON、重复 tank_id key、顶层非对象、非法/未知 tank_id、值非数组、空数组、alias 非字符串、空白 alias、同车重复 alias（大小写不敏感）→ CI 失败；**跨车重复只是 warning**——两辆车共用一个社区简称是合法的，由搜索相关度决定排序）。**tank_id 校验源是完整车辆名册 `tank_ids.json`**（见下条，覆盖全部 tier、CI 不联网），任何坦克百科车辆都能配 alias。**已导入国服客户端的已核对名称；空对象 `{}` 仍是合法状态。** 来源、版本、哈希与批量更新规则见下述专题文档；更新必须保留已有手工别名，不能用新快照整份覆盖。 维护流程：查 tank_id → 编辑 JSON（id 已存在则追加 alias）→ `cd common/python && python validate_tank_aliases.py` → PR；**格式示例、查 tank_id 命令与被拒样例见 [`docs/architecture/tankopedia-reference-data.md`](../docs/architecture/tankopedia-reference-data.md) 的 “How to add an alias”**。
-- **完整车辆名册**：`tank_ids.json`。**生成产物，禁止手改**：`tank_id` → 权威英文名，**覆盖全部 tier**（738 辆 @ 11.21.0.1235，车型基础资料同样覆盖 738）。由 `update_tankopedia.py:roster_payload` 在与 tier 文件**同一次 BlitzKit 稳定快照**、物资/装备范围过滤**之前**产出（meta 记录 `source_game_version` 与 tanks.pb 哈希），随 `update-tankopedia.yml` 一并拷回并提交。只含 id ↔ 名字：**不是属性来源**，车辆事实仍在 `tankopedia-tier*.json`（tier 1–10）与资产包 `tank_cache.json`（全 tier）。用途是需要离线按任意 `tank_id` 校验/查询的消费方（`tank_aliases.json` 的 validator 与其维护流程）。门禁：`validate_roster`（空名册 / 数量骤降 fail closed）+ `test_update_tankopedia.py:RosterTest`（tier 文件里每辆车必须在名册中同名出现，名册至少覆盖这些车辆；反向不断言——名册可能来自更新的快照）。
-- **成员技能**：`crew-skills.json`。数据源 BlitzKit `assets.blitzkit.app/definitions/skills.pb`（`SkillDefinitions`：车型 class → canonical skill id）；更新走 `.github/workflows/update-crew-skills.yml`（手动触发，自动提交）或本地 `python common/python/update_crew_skills.py`。当前落档 BlitzKit 的车型归属、skill id 与可推导 icon URL，不猜测显示名/描述/效果数值；配置器的技能效果改用客户端 `avatar.xml` 导出的 `skills.json`（见上条），本文件仅保留回放/AI 口径；写入前校验四个车型、每类最小技能数、id 格式与重复项。**车型归属只表示训练资格：必须使用对应类型车辆训练该类技能；技能一旦训练，其加成对所有车辆生效，消费端禁止按当前车辆类型过滤已训练技能效果。回放/AI 投影的默认技能口径为全部 7 级（满级）；坦克百科配置器按用户选择的 0–7 级计算（默认 0，数值取 `skills.json.effects` 的 per-level 值），两者分域。** `crew-skills.json.semantics` 固定记录 `trainingEligibility=class_specific`、`effectScope=all_vehicles`、`defaultSkillLevel=7`、`maxSkillLevel=7` 与 `effectValuePolicy=use_max_level_bonus`，修改这些语义必须显式 review。
-- ~~**射击本地参数** `shot-tank-data.json`~~：**已退役（2026-10-15）**——射击检视的搭载输入与弹种表改为运行期直读资产包（`tank/{id}.json` 紧凑投影 + `/data/shellKinds.json`，经 assetProvider），数据随上游包更新，不再内嵌进前端构建、不再需要快照更新脚本。
-- **地图三语名** `map_names.json`：内部名(小写) → {zh,en,ru}；客户端导出层 `frontend/src/replay-local/export/format.ts` 的 `mapNameCn()`（固定中文）与前端 `frontend/src/utils/helpers.js` 的 `mapLabel()`（按 locale）**同源读这一份**。**这张表同时是地图页默认可见性的人工认可门槛**：picker 默认只显示有 `zh` 的 key（`hasChineseMapName()`，与 UI locale 无关），未登记的资产条目只在「显示全部地图」开关下出现；新增 `zh` 即视为认可默认展示，登记前先确认该 key 是真实地图而不是内部变体。
-- **地图语义** `map-semantics/*.semantic.json`：由 `map-semanticizer/` 生成（覆盖式）；**已人工核验的地图严禁整份重跑语义化器**（会覆盖手工修正），改语义 JSON 时同步 `docs/reference/maps.md` 与 `MapTacticalSemanticsRegistryTest` 断言。
-- **坦克战术画像** `tank_tactical_profiles.json`：AI 复盘注入用；十级车全覆盖有回归测试守卫。
-- `assets/`（logo/图标/silent-check-sso.html）：Vite 的 `publicDir` 直接指向 `common/assets`；`docker/Dockerfile.frontend` 构建时复制共享资源，最终 nginx 站点额外放置 logo / 图标，不维护 homepage 副本。
+- 本目录是**数据的单一来源**：Java 构建时经 `wotb-core/pom.xml` 复制到 classpath，
+  前端经 vite 或 Dockerfile 复制 import——**禁止在模块内放副本**。
+- 本目录在 `frontend/` 之外，**Vite 不监听**：重新导出后必须重启 `pnpm run dev`；
+  资产包由 `serve_asset_pack.mjs` 直接读磁盘，替换后刷新即可。
+- `tank_ids.json` 是**生成产物，禁止手改**（由 `update_tankopedia.py:roster_payload`
+  产出，随 `update-tankopedia.yml` 提交）。
+- `map-semantics/*.semantic.json` 由 `map-semanticizer/` 覆盖式生成：
+  **已人工核验的地图严禁整份重跑语义化器**（会覆盖手工修正）。
+- `tank_aliases.json`：**稀疏存储**——没有 alias 的车辆不出现（缺 key == `aliases []`），
+  禁止写 `[]` 占位；更新必须保留已有手工别名，不能用新快照整份覆盖。
+- 乘员语义分域不得互相套用：`crew-skills.json`（回放/AI，默认全部 7 级）与
+  资产包 `skills.json`（配置器 0–7，默认 0）是两套口径；
+  `crew-skills.json.semantics` 固定字段值的修改必须显式 review。
+- `fixtures/replays/*.wotbreplay` 提交入库、CI 无条件执行；
+  本地私人回放绝不提交；本地扩展样本放 gitignored `data/` 子目录，
+  不假定存在自动递归发现入口。
+- **自动同步数据**（Tankopedia 车辆库 / Equipment / Crew skills）：
+  更新走 `.github/workflows/update-*.yml` 或 `common/python/update_*.py`，
+  经 `scripts/ci/publish-data-update.sh` 发布 PR；车辆库数据源只认
+  BlitzKit production definitions，写入前完整性门禁 fail closed。
+- **人工维护数据**（`tank_aliases.json`、已人工核验的
+  `map-semantics/*.semantic.json`）：允许走正常 Git 分支与 PR 手工修改，
+  但必须遵循各自验证要求——alias 不得出现空数组、重复 key 或覆盖既有人工
+  别名；已核验地图语义不得重跑会覆盖人工修订的生成器；改语义 JSON 时
+  同步相关 reference 文档与既有测试断言。
 
-## 回放样本边界
+## 数据文件 → canonical 文档
 
-- `fixtures/replays/*.wotbreplay`：**提交入库**的夹具（CI 无条件执行）。
-- `data/`（gitignored）：本地扩展样本。重复场次/单练/特殊样本放 `data/` 子目录，避免与提交入库的 `fixtures/replays/*.wotbreplay` 夹具（CI 无条件执行）及客户端 golden 基线（`frontend/src/replay-local/__golden__/`）冲突；是否消费本地样本由具体测试 / probe 显式决定，不假定存在自动递归发现入口。
-- 本地私人回放绝不提交进仓库。
+| 文件 | 事实/细节 canonical 出处 |
+|---|---|
+| `tankopedia-tier{1..10}.json` / `tank_ids.json` / `tank_aliases.json` | [`docs/architecture/tankopedia-reference-data.md`](../docs/architecture/tankopedia-reference-data.md)（roster、alias 维护流程「How to add an alias」） |
+| 车辆库同步链 / 完整性门禁 | [`docs/reference/replay-data.md`](../docs/reference/replay-data.md)「全等级车型资料」 |
+| `research/` 资产包（配置器数据、数据源、BK 裁定、vehicleFilter、乘员分域） | [`docs/operations/agent-asset-origin.md`](../docs/operations/agent-asset-origin.md)「research 资产包数据语义」「发布：生成与上传资产包」 |
+| 配置器消费侧（researchCatalog、图标 URL 表） | [`docs/frontend/architecture.md`](../docs/frontend/architecture.md) 坦克百科配置器节 |
+| `map_names.json`（三语名、`mapNameCn()`/`mapLabel()` 同源、默认可见性门槛） | [`docs/reference/maps.md`](../docs/reference/maps.md)「命名与维护约定」 |
+| `map-semantics/` | [`docs/reference/maps.md`](../docs/reference/maps.md)「语义数据手工调整」 |
+| `tank_tactical_profiles.json` | [`docs/architecture/ai-review.md`](../docs/architecture/ai-review.md) |
+| `assets/`（Vite `publicDir`、Dockerfile 复制） | [`docs/DEVELOPER_GUIDE.md`](../docs/DEVELOPER_GUIDE.md) 与 [`docs/operations/sponsor-runtime-content.md`](../docs/operations/sponsor-runtime-content.md) |
+| `fixtures/` vs `data/` 边界 | [`docs/DEVELOPER_GUIDE.md`](../docs/DEVELOPER_GUIDE.md) 回放样本小节 |
+
+## 验证命令入口
+
+- 别名契约：`cd common/python && python validate_tank_aliases.py`
+  （非法 JSON / 重复 key / 空 alias / 同车重复 alias → CI 失败；跨车重复仅 warning）。
+- 车辆库/名册：`update_tankopedia.py` 内建 `validate_roster` 门禁
+  + `common/python/tests/test_update_tankopedia.py`。

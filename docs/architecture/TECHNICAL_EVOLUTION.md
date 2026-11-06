@@ -457,7 +457,7 @@ SPA 产物文件名带内容哈希，部署整目录替换时，仍打开的页�
 
 2026-10-04，Playback sizing 的 authority 从断点固定值改为可用空间：断点只决定结构，尺寸由 Playback workspace 的可用宽高决定，可用高度由视口容量减去实测 persistent HUD 与 Transport 得出，避免读取根元素内容高度形成自指。`playback-workspace.css` 成为共享宏几何的唯一 owner，原先按断点拆分的 `playback-pc.css`、`playback-tablet.css`、`playback-mobile-fullscreen.css`、`playback-fullscreen-form-contract.css` 删除。2D 与 3D 共用 primary composition；Display 是锚定在 ⚙ 上的配置面，Details 是可拖动的上下文浮窗。
 
-### Playback 尺寸权威从断点改为可用空间
+### APK 分发、资产代理与缓存身份
 
 2026-10-05～12 的交付调整先处理 APK 下载挤占 TX 公网带宽，再处理发布上传耗时。APK 公网分发进入副本链路，Android 的 3D 资产由 `AgentAssetProxy.kt` 截获固定路径、直连对象存储并使用磁盘缓存；WebView 消费的受控路径与 Native 实际获取字节的网络路径因此不同，不能仅根据页面 URL 判断资产是否经过 TX 网关。
 
@@ -635,6 +635,159 @@ guard 允许名单里的 drifted blob），在临时仓库里造出 base=drifted
 关闭，并沿用 `stylelint.legacy.json` 的做法，用 `frontend/typescript.legacy.json` 冻结存量。迁移按风险边界分批，
 不以 TypeScript 文件占比为目标。同一 commit 的 Vite 构建是确定性的，因此归一化 chunk 哈希与短标识符后比对 dist，
 可以作为纯类型迁移保持行为的证据。
+
+## 27. 2026-11-01～11-03 — TypeScript 后续迁移与类型 ownership
+
+§26 记录的是 `strict` 开关与只减不增基线；后续工作不是追求 TypeScript 文件占比，而是把高风险边界逐块迁到有明确
+owner 的 `.ts`。Wave A/B 先迁 Native Bridge、认证、连接状态与 Replay 数据边界；Wave C 再按纯函数、
+Three.js/几何、异步资产、回放状态/标注/相机、场景 composable 五批迁入 51 个 production 模块（约 10,000 行）。
+`typescript.legacy.json` 的 p1 名单从 56 降到 2，剩余 `tankViewer.js` 与 `playbackScene.js` 都是 #820 的拆分目标，
+不能据此宣称 #741 完成。
+
+类型权威被明确分层：HTTP wire 类型来自 `api/generated/`，Native Bridge 类型由 `contracts/android-native-bridge.json`
+生成并纳入 `api:check`，Replay/Worker 类型复用既有 `agent-replay-facets.ts`、`types/playback-v2.ts` 与 worker
+协议；运行时 validator 仍是不可信输入的权威，生成类型不能替代收窄。`callBridge` 的方法名和参数由契约约束，
+返回值保持 `unknown`，调用方必须显式收窄；`primitive-guards` 只做有限数值/计数判断，不改写标准库类型。
+
+迁移只允许极小的运行时变化，并且都发生在违反契约的输入上：不合契约的 pending replay 按「无 pending」处理，
+非字符串 capability 项被丢弃，非对象 claims 不被采用；Replay 数据迁移保持语义不变。`checkJs` 继续关闭，
+`.js` 存量不为迁移而批量改写；baseline、escape hatch 与 `@ts-ignore` 禁令由 ownership test 和 CI ratchet 守住。
+
+边界：#741 仍 OPEN；两个最大 `.js` 场景文件尚未迁完；Android publish gate 改为读取 `.ts` 路径后，首次真实验证
+只能等下一次发布。类型迁移的完成标准是边界 owner 与门禁，而不是「全仓 `.ts`」。
+
+## 28. 2026-11-04～11-05 — 巨型场景文件拆分与 1500 行预算
+
+#820 的目标不是一次性重写三个巨型文件，而是按真实 owner 逐块出仓，保持宿主仍是场景/回放 authority。
+`tankViewer.js` 先出仓射击结果卡 HTML、轨迹几何、动态装甲 Mesh 状态；`playbackScene.js` 出仓履带 Buffer
+writer、GLB 部件装配、相机地形净空与 target 钳制、3D 战斗反馈 transient；`BattlePlayback.vue` 出仓 2D transient
+feedback 与标注编辑状态。新模块分别是纯渲染函数、纯几何工厂、composable 或单状态 owner；宿主保留时钟、
+场景对象、资源释放、DOM 挂载和 canonical 数据，不复制第二份状态。
+
+这些拆分以行为保持为前提：出仓前后有真实状态机测试、源码级接线守卫与 negative control；例如轨迹截断、
+槽位回写、标注 undo/redo、暂停中 feed 自然完成等不变量都被单独锁定。拆分不是「把代码搬走就算完成」，
+每个 wave 都要证明 owner 边界、调用点和 dispose 语义没有变化。
+
+行数门禁把重构变成可持续约束：first-party 前端源码单文件上限 1500 物理行，超限文件只能出现在 exact allowlist；
+allowlist 条目数只减不增，重命名可等量替换但不能新增。#889 又把检查扩展到 `base..head` 的每个 commit tree，
+防止「中间提交超限、最终提交拆掉」的逃逸；allowlist 条目必须仍然指向 tracked、in-scope、仍超限的文件，
+重复条目直接 fail-closed。
+
+审计 SHA 上 allowlist 仍有 6 项：`tankViewer.js` 6102 行、`playbackScene.js` 5597 行、`BattlePlayback.vue` 2585 行，
+以及 #820 scope 之外的 `HoFPage.vue` 2250、`HoFAdminPage.vue` 2112、`agent-replay-facets.ts` 1863。前三个仍是
+#820 的未完成目标；后三个需要独立拆分 issue。Issue #820 保持 OPEN。
+
+## 29. 2026-11-04～11-05 — 3D 渲染性能与可观测性
+
+#870 把开镜性能优化从旧 `.js` 实现移植到 #869 之后的 TS 内核。优化点不是单一开关，而是一条从几何筛选到诊断的链：
+批次世界 AABB 与盒支撑深度用于遮挡判断；拾取 bounds 单趟遍历并复用候选池；装甲 shader 幂等预热；`?perf` 把装甲
+叠加拆成 pick/state/thickness/occluder/color 与 draw calls；render target 按目标屏幕矩形 64px 取整并带收缩滞回；
+语义化 occluder roots 在走廊内没有遮挡实体时走零遮挡快速路径，跳过整个世界重绘；开镜地形细分阈值跟随相机实际
+水平 fov（#838），不再用固定档位。
+
+#891 补齐诊断与生命周期：perf 采样改为有界环形窗口，修正「最大值/最新帧」口径，区分 CPU frame interval 与异步
+GPU timer query，记录慢帧分档、加载/资源事件与 capture；GPU timer 扩展不可用、disjoint、context lost 时分别标记
+unsupported/context-lost 或丢弃无效样本，不伪造 GPU 数字。页面 `visibilitychange`、`pagehide/pageshow` 与 KeepAlive
+复用既有暂停闸门，后台时停渲染但保留用户播放意图；`setPaused` 不改变时间轴状态。
+
+边界：自动化证明的是接线、几何、状态机和浏览器场景，不证明真实 GPU FPS、Android 生命周期或最终画面。真机
+`?perf` A/B 与视觉验收仍归用户；#728 不以这些合并宣称已解决。
+
+## 30. 2026-11-05～11-06 — 装甲判定与热力图的一致性边界
+
+装甲查看器有两条容易混淆的链：CPU 点击判定（`collectJudgmentHits` → `penetration.calculate`）与 GPU 热力图
+（厚度/概率 render target）。#879 先拆开射击方与受击方的配置 authority：同车型且没有显式 `scfg` 时，受击方换炮
+不再覆盖射手弹表/口径/选弹；射手的默认弹种解析统一为 `configs[scfg]` → 末位 → 顶层 `shells` → `fetchShells`，
+受击方换炮只刷新装甲几何/厚度与热力图，不清除射手 `shell`；穿透数学、转正角、跳弹、Overmatch 与距离衰减未改。
+
+#895（含并入的 #896）处理开放壳体在厚度通道被 `DoubleSide` 双面累计的问题：按
+`armorSectionOrig:plateId` 去重键把开放间隙板拆成 front/back 两个 clone，front 计厚并写 stencil 位，back 仅在该位
+未置位时计厚；闭合网格保持单 clone。键位上限为
+WebGL 保证的 8 位，超限整车回退双面累计并报错；厚度 RT 必须使用 `DepthStencilFormat`，否则 three 不会创建
+stencil 附件；`FLIP_SIDED` 下背面片元的法线要显式翻回几何法线，否则屏入射角会落到数值下界。同一轮把判定链的
+重复 `collectFilteredHits` 合并、`isPrimary` 主装甲集合与 `SHELL_TOKEN_KIND` 弹种词表收敛为单点；未知 token 在
+判定链兜底 `he`、在查看器 fail-closed 为 `null`，这是两个契约，不是遗漏。
+
+#901 把同板去重从「按射线命中顺序增量」改为顺序无关：`resolveSpacedHitMask` 按整条射线的命中集合判定，有入射面
+命中时抑制出射面，无入射面命中时全部计入；去重窗口止于首个 Primary（`spanEnd`），区间外的 back 必须保留；
+HE 首触面用去重前命中（`firstPhysicalHit`），HEAT 间距原点在首层前有被删接触面时前移（`withGapOrigin`），
+跳弹/续飞用首触面几何（`withContactRicochet`）。全库 91,936 条射线扫描发现 458 块板、933 条射线（1.01%）、
+274 辆车存在 CPU/GPU 层数分叉，证明此前「现实资产未观测」的假设不成立。
+
+边界：顺序无关去重让两条链在已测穿越序上一致，但真实相机同帧的「点击卡数值 vs 热力图像素」端到端对照、
+HE 爆点像素对照仍未做；3D 画面观感归用户验收。热力图与点击判定共享的是去重语义和输入，不是同一个 renderer。
+
+## 31. 2026-11-04 — Android 更新状态机与可验证增量包
+
+Android 更新从多个 UI 状态拼接改为 Native `UpdateCoordinator` 单一 owner。它读取 `version.json`，把当前版本、
+最低支持版本、最新版本分类为 optional/mandatory；optional 可以被用户暂时忽略，mandatory 在低于
+`minSupportedVersionCode` 时不可跳过。下载交给系统 `DownloadManager`，状态通过 query/reconcile 恢复，Activity
+重建或页面回到前台后仍能对上同一下载；安装前校验最终 APK 的 SHA-256。
+
+增量更新只在身份完全成立时使用：`patches` 中必须存在与已安装版本匹配的单条 patch，算法为 `xdelta3-vcdiff`，
+补丁体积不超过目标完整包的 1/10，且已安装 base 的 SHA-256 与 patch 的 `fromSha256` 一致；任一条件不满足就走
+完整包。delta 下载/校验/应用失败会显式回退完整包，而不是停在半包状态。安装交接返回的 Boolean 只表示请求已交给
+系统 installer/settings，不表示安装完成；应用保留 120s 安装确认窗口，Activity 暂停时先使旧回调失效。
+
+发布顺序也属于架构：APK stage/publish 先完成不可变 identity 与证据，`version.json` 最后写入，避免客户端看到尚未
+可下载的版本。审计时生产 `version.json` 为 4.5.1/4005001，`minSupportedVersionCode=4001000`，`patches=[]`；这证明
+完整包通道已发布，不证明增量通道已投产。
+
+边界：#865 的验证覆盖 25 个 suite/224 个测试、API26/API34 模拟器上的真实 DownloadManager HTTPS 下载、SHA、
+通知点击与 Gecko 更新面板；但正式大 APK 在 99% 遇到系统 DownloadManager TLS 错误，未进入安装阶段；没有 ARM 真机、
+没有真实生产增量升级。首次非空 `patches` 发布仍需真实设备与发布门禁。
+
+## 32. 2026-11-06 — 版本化资产数据集与显式数据版本
+
+数据版本从「部署时约定」变成 asset origin 的一等目录。`/versions.json` 是 catalog：`default` 指向正式服 dataset，
+`datasets[]` 列出可用 id、版本来源、车辆数与通道状态；`/v/<dataset-id>/...` 提供该 dataset 的资产，根路径 `current`
+仍指向默认正式服。默认 `11.21.0`，超测 `supertest` 只在用户显式选择时使用；旧 `11.21.0-t11-preview` 已 unlink，
+release 目录保留回滚。
+
+前端把选择收敛为共享 listbox：默认项标注服务器默认 dataset，通道行展示版本来源/车辆数/预览徽标，弃用通道置灰；
+选择写入 `?data=` 与 localStorage，并整页重载。`assetBase.dataVersionId()` 在页面生命周期内固定，多标签页改
+localStorage 不会让未重载页面混用旧模块缓存与新资产；切回默认删除选择并回到根路径。所有资产访问必须经
+`assetProvider`/`assetBase`，由 wiring test 守住。
+
+运维侧由 `deploy/assets/dataset.sh` 承担 link/default/rollback/unlink/list/verify：flock 串行化，符号链接用
+`ln -sfn` + `mv -T` 原子替换，catalog 在切换后重算并 verify；每次变更前 preflight 候选 release 的
+`verify --pack --full` 与目标链接，失败时在持锁状态下恢复原 symlink 与 `versions.json`。默认 dataset 不能被
+unlink；catalog 的 `default` 必须与 `current` 一致。`verify.sh` 还检查 `versions.json`/`version.json`/manifest
+哈希与根-vs-default 一致性。
+
+部署边界必须单独说：合并只改变 Git 与镜像输入，Caddyfile 的 `/versions.json` 与 `/v/<id>` 路由需要
+`asset-origin` 镜像发布后手动 redeploy 才生效；#892 合并当天生产仍是旧 Caddy，两个路径 404。审计时生产已能回读
+`versions.json`（default `11.21.0`，超测通道指向当时的 `t11p2` 预览轮次），但这是部署后的观察，不是 merge 自动生效。
+
+## 33. 2026-11-02～11-06 — CI、安全与工程门禁收敛
+
+#853 把 AGENTS.md 中可机械判定的规则接入既有 PR gate，最终 6 项：禁止 `archive/`/`old/`/`legacy-docs/`/
+`historical/` 目录；永久源码/配置/文档不得把临时计划文件当权威；禁止 Lombok；不得把新文件加入
+`stylelint.legacy.json`；禁止 `import *`；`@RequestParam` 必须显式非空 name/value（Map/MultiValueMap 聚合绑定
+例外）。每项都有 deliberate violating fixture 或 red path，不新增独立 `test-*.sh`。
+
+#864 建立 SAST 与供应链基线：CodeQL Java（`build-mode: none`）+ JavaScript/TypeScript 双矩阵，push main/每周/
+手动，observe 阶段不进 required gate；扫描排除 generated/dist/archfixture；`scripts/codeql-probe/js-probe.js`
+是刻意保留的 `js/code-injection` canary。#885 把 25 条 open alert 收敛为 21 修复 + 3 有据 dismissal + 1 canary；
+随后 #898 又修掉扫描新暴露的 4 条 `js/bad-tag-filter`（结束标签正则缺口）。20 个第三方 action、42 个 workflow、
+约 180 处 `uses:` pin 到 immutable SHA；43 个 workflow 显式 permissions；Android release APK 生成 build
+provenance，可用 `gh attestation verify` 反查 source commit 与 producing run。
+
+#880/#893 处理 CI ownership 与重复执行：AGENTS/Skills 等价规则消重，`code-smell` 并入 `code-quality`，数据更新
+发布收敛到受限 helper，备份 smoke 单一 owner；#855 补齐 ci-owner-paths 对 fixtures/settings/map-semanticizer/
+tools 的路由，避免路径变更漏跑真实消费方测试。HTTP 契约检查按 frontend/business-api owner 条件路由，四格矩阵
+保证 frontend affected 时只跑一次完整检查，Required Gate 仍对 failure/cancelled/skipped/success/identity 等分支
+传播失败。#902 把 playback/workspace interaction 与 armor mobile 两条浏览器门禁从 2 片改为 3 片，分片仍按静态
+场景清单下标取模，空片负例以退出码 1 失败。
+
+#858/#862 把验证与跟进写成工程契约：review receipt 区分 PROVEN/FAILED/UNVERIFIED/NOT_APPLICABLE 与
+MACHINE/EXTERNAL，`PROVEN` 必须覆盖完整 criterion 且无相关 FAIL；Outside Judge 是 advisory，不是 gate；PR 跟进
+要求每轮 push 后自查 mergeable 与 checks，CI/review 等待走后台监视器，禁止前台 watch/sleep 轮询。
+#883/#889 的 1500 行预算与历史 tree 检查已在 §28 说明。
+
+边界：CodeQL 仍是 observe，不是 required gate；canary 的 1 条 open alert 是设计信号，不是未修复漏洞；SHA pin、
+provenance 与 alert 收敛证明供应链控制面已建立，不证明每个第三方 action 的运行时行为。审计时 main 的 open
+code scanning alert 只有 canary 1 条。
 
 ## 已退役 / 过渡架构
 
