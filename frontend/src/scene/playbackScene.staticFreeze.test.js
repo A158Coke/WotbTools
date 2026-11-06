@@ -21,10 +21,16 @@ describe('playbackScene 静态子树矩阵冻结（场景 GLB）', () => {
   })
 
   it('poseGlb 不再逐车强制全树 updateMatrixWorld（renderer 场景遍历已从根强制传播）', () => {
-    const at = src.indexOf('function poseGlb(')
+    // #820 Step 2：poseGlb owner = playback/vehicleRuntime.ts
+    const vehicleSrc = readFileSync(resolve(__dirname, 'playback/vehicleRuntime.ts'), 'utf8')
+    const at = vehicleSrc.indexOf('function poseGlb(')
     expect(at).toBeGreaterThan(0)
-    const body = src.slice(at, src.indexOf('async function applyGlbToggle', at))
-    expect(body).not.toMatch(/updateMatrixWorld/)
+    // poseGlb 与 poseGlbRig 之间不得强制全树刷新（collectSuspensionParts 的
+    // root.updateMatrixWorld 是 clone 未入 scene 的一次性收集，不在帧路径）
+    const body = vehicleSrc.slice(at, vehicleSrc.indexOf('function glbTurretMatrix', at))
+    // 注释里的「scene.updateMatrixWorld()」是解释性文本；守卫的是**代码调用**
+    const bodyCode = body.replace(/\/\/[^\n]*/g, '')
+    expect(bodyCode).not.toMatch(/updateMatrixWorld/)
   })
 })
 

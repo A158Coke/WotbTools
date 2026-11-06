@@ -129,10 +129,12 @@ describe('Sniper 穿深着色接线', () => {
   })
 
   it('悬挂改写履带顶点后只打标记，不在主路径重算或置空 bounds', () => {
-    expect(source).toMatch(/gp\.posAttr\.needsUpdate = true;\s+markPickBoundsStale\(gp\.mesh\.geometry\);/)
-    const start = source.indexOf('function suspensionStep')
-    const body = source.slice(start, source.indexOf('function ', start + 'function suspensionStep'.length))
-    expect(body).not.toMatch(/computeBounding|bounding(Box|Sphere) = null/)
+    // #820 Step 2：suspensionStep owner = playback/vehicleRuntime.ts
+    const vehicleSrc = readFileSync(resolve(__dirname, 'playback/vehicleRuntime.ts'), 'utf8')
+    expect(vehicleSrc).toMatch(/gp\.posAttr\.needsUpdate = true;\s+markPickBoundsStale\(gp\.mesh\.geometry\);/)
+    const start = vehicleSrc.indexOf('function suspensionStep')
+    const body = vehicleSrc.slice(start, vehicleSrc.indexOf('function ', start + 'function suspensionStep'.length))
+    expect(body).not.toMatch(/computeBounding|bounding\(Box|Sphere\) = null/)
   })
 
   it('着色默认关闭，?armorhl=1 可打开', () => {
