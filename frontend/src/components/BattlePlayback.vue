@@ -1,6 +1,5 @@
 <script setup>
 import { gunMarksByAccount } from '../utils/gunMarks.js'
-import { detailsDamageLogAtV2 } from '../utils/playbackDetails.js'
 import { computed, inject, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import { usePlaybackPhoneForm } from '../composables/usePlaybackPhoneForm.js'
 import { usePlaybackPortraitViewport } from '../composables/usePlaybackPortraitViewport.js'
@@ -41,13 +40,14 @@ import {
   transientsActive,
 } from '../utils/battlePlayback'
 import {
-  cumulativeStatsAtV2,
   friendlyHealthAt,
   healthDisplayAt,
   positionCoveredAtV2,
 } from '../utils/battlePlaybackV2'
 import { usePlaybackTransients } from '../composables/usePlaybackTransients.js'
 import { usePlaybackCamera } from '../composables/usePlaybackCamera.js'
+import { usePlaybackAnnotationEditor } from '../composables/usePlaybackAnnotationEditor.js'
+import { usePlaybackVehicleSelection } from '../composables/usePlaybackVehicleSelection.js'
 import { usePlaybackMapGestures } from '../composables/usePlaybackMapGestures.js'
 import { projectVehicleState } from '../utils/playbackVehicleState'
 import { observedFreezeTimeAt } from '../utils/battlePlaybackV2'
@@ -62,25 +62,7 @@ import {
   MARKER_CORE_PX,
   computeLabelLayout,
 } from '../utils/labelLayout'
-import {
-  ANNOT_COLORS,
-  ANNOT_TANK_CLASSES,
-  ANNOT_FONT_SIZE,
-  ANNOT_WIDTH_DEFAULT,
-  ANNOT_WIDTH_MAX,
-  ANNOT_WIDTH_MIN,
-  annotationDraftFromTool,
-  applyEraser,
-  canRedo,
-  canUndo,
-  hitTestAnnotation,
-  isDegenerateAnnotation,
-  translateAnnotation,
-  projectAnnotationToSvg,
-  screenToSemantic,
-  semanticWidthFromSlider,
-  svgToScreen
-} from '../utils/annotation'
+import { ANNOT_COLORS, ANNOT_FONT_SIZE, ANNOT_WIDTH_MAX, ANNOT_WIDTH_MIN, canRedo, canUndo } from '../utils/annotation'
 import { usePlaybackAnnotations } from '../composables/usePlaybackAnnotations.js'
 
 /**
@@ -414,7 +396,6 @@ const visibleBursts = computed(() => {
   }).filter(Boolean)
 })
 // visibleFeed 由 usePlaybackTransients 提供（activeFeed 权威队列投影）。
-const selectedAccountId = ref(null)
 const uiHidden = ref(false)
 function setUiHidden(hidden) {
   uiHidden.value = hidden
@@ -430,7 +411,6 @@ function setUiHidden(hidden) {
  * 全部保留；恢复后立刻可用，不重建播放、不重解析。
  */
 const showRosterPresentation = computed(() => !uiHidden.value && uiPrefs.showRoster !== false)
-const annotationOpen = ref(false)
 const mobileOverlay = ref(null)
 /** §details-float：详情浮窗的受保护下界——传输控件。它在竖屏纵向流与横屏中心栈里都是
     同一处（`[data-test="pb-transport-slot"]`），这里始终指向当前真正在渲染的那一个，
@@ -548,15 +528,17 @@ const {
     isFullscreen: () => isFullscreen.value,
     drawing: {
       activeTool: () => activeTool.value,
-      drawingPointerId: () => drawingPointerId,
-      drawingStartScreen: () => drawingStartScreen,
+      // 编辑器在下方解构（声明顺序晚于本调用）——用惰性闭包避免 TDZ；事件期才求值。
+      drawingPointerId: () => getDrawingPointerId(),
+      drawingStartScreen: () => getDrawingStartScreen(),
       annotationOpen: () => annotationOpen.value,
       selectedAnnotationIndex: () => selectedAnnotationIndex.value,
-      startDrawing,
-      moveDrawing,
-      endDrawing,
-      cancelDrawing,
-      clearDrawingPointer: () => { drawingPointerId = null },
+      startDrawing: (e) => startDrawing(e),
+      moveDrawing: (e) => moveDrawing(e),
+      endDrawing: () => endDrawing(),
+      cancelDrawing: () => cancelDrawing(),
+      // 绘制会话的 pointerId 由编辑器 cancel/endDrawing 归零；此处无需再清。
+      clearDrawingPointer: () => {},
     },
     selectAtPointer: (clientX, clientY) => selectAt(null, clientX, clientY),
     onPlainClick: () => mobileOverlay.value?.reveal?.(),
@@ -628,325 +610,64 @@ watch(transportEl, (el, previous) => {
 /** 完整地图视图（contain/fit）与手势逻辑已迁移至 usePlaybackCamera / usePlaybackMapGestures
  *  （#820 Agent C Step 1）：MapRenderRect 仍是唯一屏幕坐标几何来源，wheel/pan/pinch 时序不变。 */
 
-// ---- 地图标注（临时纯前端：切视图/切文件即清空；几何一律存语义坐标） ----
-// 历史快照 / 草稿 / 选中项的唯一 owner 是 usePlaybackAnnotations（#820 Wave B5B）；
-// 工具、颜色/宽度、routePoints 等 gesture 临时状态仍在宿主。
-const activeTool = ref(null) // null outside marking mode; select, tank classes, route or legacy drawing tools
-const routePoints = ref([])
-let moveOriginal = null
-const annotColor = ref(ANNOT_COLORS[0])
-const annotVisible = ref(true)
-const annotWidthSlider = ref(ANNOT_WIDTH_DEFAULT) // 滑块值 = SVG 像素口径（1× 下所见即所得）
-// 语义单位/每 SVG 像素（x/y 轴因 preserveAspectRatio:none 比例可能不同；线宽/字号/半径按 x 轴换算）
-const semPerSvgX = computed(() => {
-  const b = mapView.value.renderBounds
-  return b && mapView.value.W > 0 ? (b.xMax - b.xMin) / mapView.value.W : 1
-})
-const semPerSvgY = computed(() => {
-  const b = mapView.value.renderBounds
-  return b && mapView.value.H > 0 ? (b.yMax - b.yMin) / mapView.value.H : 1
-})
-const annotWidth = computed(() => semanticWidthFromSlider(annotWidthSlider.value, {
-  semanticSpan: mapView.value.renderBounds ? mapView.value.renderBounds.xMax - mapView.value.renderBounds.xMin : 0,
-  logicalSpan: mapView.value.W
-}))
+// ---- 地图标注：工具/绘制手势/文字会话/route 的唯一 owner = usePlaybackAnnotationEditor
+// （#820 Agent C Step 2）；历史快照 / 草稿 / 选中项的事实源仍是 usePlaybackAnnotations。
 const {
+  annotationOpen,
+  activeTool,
+  routePoints,
+  annotColor,
+  annotVisible,
+  annotWidthSlider,
+  semPerSvgX,
+  semPerSvgY,
+  textSession,
+  textInputStyle,
+  renderedAnnotations,
   history,
   historyIndex,
   annotations,
   draft,
   selectedAnnotationIndex,
   selectedAnnotation,
-  reset: resetAnnotationState,
-  clearSelection,
-  replaceAnnotations,
-  commitDraft,
-  undo: undoHistory,
-  redo: redoHistory,
-  clearAll: clearAllAnnotations,
-  updateSelected,
+  drawingPointerId: getDrawingPointerId,
+  drawingStartScreen: getDrawingStartScreen,
+  resetAnnotations,
+  cancelDrawing,
+  cancelRoute,
+  toggleTool,
+  toggleAnnotation,
+  closeAnnotation,
+  undoAnnot,
+  redoAnnot,
+  clearAll,
+  setAnnotColor,
+  toggleAnnotations,
+  finishRoute,
+  startDrawing,
+  moveDrawing,
+  endDrawing,
+  commitSession,
+  cancelSession,
   deleteSelected,
   renameSelected,
-  finishRoute: finishRouteCommit,
-} = usePlaybackAnnotations({ getRouteDraft: () => routeDraft() })
-const textSession = ref(null) // reactive({ point, text })，文字输入会话
-const textInputRef = computed(() => mapComponent.value?.textInputRef || null)
-const ANNOT_THIN_PX = 2 // 笔迹抽稀阈值（屏幕 CSS px，与坐标体系无关）
-let drawStart = null // 绘制起点（语义坐标）
-let drawPoints = [] // pen/eraser 已采点（语义坐标）
-let drawScreen = [] // 与 drawPoints 一一对应的屏幕点（CSS px，用于抽稀）
-let drawingPointerId = null
-let drawingStartScreen = null
-
-function resetAnnotations() {
-  resetAnnotationState()
-  activeTool.value = null
-  annotationOpen.value = false
-  annotVisible.value = true
-  routePoints.value = []
-  moveOriginal = null
-  resetGestureState()
-  if (textSession.value) cancelSession(textSession.value)
-  drawStart = null
-  drawPoints = []
-  drawScreen = []
-  drawingPointerId = null
-  drawingStartScreen = null
-}
-// 切换文件（overview 引用变化；MapOverview 未按文件 key 复用）→ 清空标注
-watch(() => props.overview, resetAnnotations)
-
-function cancelDrawing() {
-  drawingStartScreen = null
-  draft.value = routePoints.value.length ? routeDraft() : null
-  drawStart = null
-  drawPoints = []
-  drawScreen = []
-  moveOriginal = null
-  drawingPointerId = null
-}
-function cancelRoute() {
-  routePoints.value = []
-  cancelDrawing()
-}
-function toggleTool(tool) {
-  if (textSession.value) commitSession(textSession.value)
-  cancelRoute()
-  selectedAnnotationIndex.value = -1
-  annotVisible.value = true
-  activeTool.value = tool
-}
-function toggleAnnotation() {
-  if (annotationOpen.value) return closeAnnotation()
-  pause()
-  displayOpen.value = false
-  annotationOpen.value = true
-  activeTool.value = 'select'
-}
-function closeAnnotation() {
-  if (textSession.value) commitSession(textSession.value)
-  cancelRoute()
-  annotationOpen.value = false
-  activeTool.value = null
-  selectedAnnotationIndex.value = -1
-}
-
-// The workspace's guide requests real actions; drawing and clock state stay here.
-defineExpose({
-  pause,
-  displayOpened: () => displayOpen.value,
-  // 教程要高亮的「一键防遮」在 Display 面里（#727 之后地图上不再放常驻控件），
-  // 所以它必须能被 onboarding 的 display surface 打开 / 收回。
-  openDisplay: () => {
-    if (displayOpen.value) return false
-    // 浮层形态要锚在 gear 上；gear 属于 PlaybackTransport，这里按 DOM 契约取它。
-    toggleDisplay(pbRoot.value?.querySelector('[data-test="pb-secondary-entry"]') || null)
-    return true
+} = usePlaybackAnnotationEditor(
+  { view, screenPoint, mapRenderRect, mapWidth, mapHeight },
+  mapView,
+  {
+    textInputRef: () => mapComponent.value?.textInputRef || null,
+    onOpen: () => { pause(); displayOpen.value = false },
+    resetGestures: resetGestureState,
+    reliefUnproject: (xNorm, yNorm) => {
+      const model = reliefModelForPlayback()
+      if (!model) return null
+      return unprojectTerrainPoint(model, xNorm, yNorm)
+    },
+    projectedSemanticNorm,
+    reliefHasModel: () => !!reliefModelForPlayback(),
+    overview: () => props.overview,
   },
-  closeDisplay: () => { displayOpen.value = false },
-  annotationsOpen: () => annotationOpen.value,
-  openAnnotations: () => {
-    if (annotationOpen.value) return false
-    toggleAnnotation()
-    return true
-  },
-  closeAnnotations: closeAnnotation,
-})
-function undoAnnot() {
-  cancelRoute()
-  undoHistory()
-}
-function redoAnnot() {
-  cancelRoute()
-  redoHistory()
-}
-function clearAll() {
-  cancelRoute()
-  clearAllAnnotations()
-}
-function setAnnotColor(color) {
-  annotColor.value = color
-  if (selectedAnnotation.value) updateSelected({ color })
-  if (routePoints.value.length) draft.value = routeDraft()
-}
-function toggleAnnotations() {
-  cancelRoute()
-  clearSelection()
-  annotVisible.value = !annotVisible.value
-}
-function routeDraft() {
-  return { type: 'route', color: annotColor.value, width: annotWidth.value, points: [...routePoints.value] }
-}
-function finishRoute() {
-  if (!finishRouteCommit()) return
-  cancelRoute()
-  activeTool.value = 'select'
-}
-
-function draftFromTool(tool, a, b) {
-  return annotationDraftFromTool(tool, a, b, { color: annotColor.value, width: annotWidth.value })
-}
-
-/** 指针 client 坐标 → 语义坐标（CSS px → 撤销 viewport 变换 → CSS↔SVG 比例 → fromX/fromY）。 */
-function semanticPoint(e) {
-  const sp = screenPoint(e.clientX, e.clientY)
-  const model = reliefModelForPlayback()
-  const rect = mapRenderRect()
-  if (model && rect.width > 0 && rect.height > 0 && view.scale > 0) {
-    const xNorm = ((sp.x - view.tx) / view.scale) / rect.width
-    const yNorm = ((sp.y - view.ty) / view.scale) / rect.height
-    const point = unprojectTerrainPoint(model, xNorm, yNorm)
-    if (point) return { x: point.x, y: point.y }
-  }
-  return screenToSemantic(view, mapView.value, sp.x, sp.y, mapWidth(), mapHeight())
-}
-
-function startDrawing(e) {
-  const p = semanticPoint(e)
-  if (!p) return
-  if (!annotVisible.value) return
-  drawingPointerId = e.pointerId
-  drawingStartScreen = { x: e.clientX, y: e.clientY }
-  if (activeTool.value === 'select') {
-    const rect = mapRenderRect()
-    const tolerance = 12 * semPerSvgX.value * mapView.value.W / (rect.width || mapView.value.W) / view.scale
-    selectedAnnotationIndex.value = hitTestAnnotation(annotations.value, p, tolerance)
-    moveOriginal = selectedAnnotation.value
-    drawStart = p
-    return
-  }
-  if (activeTool.value === 'route' || ANNOT_TANK_CLASSES.some(cls => cls.key === activeTool.value)) {
-    drawStart = p
-    return
-  }
-  if (activeTool.value === 'text') {
-    if (textSession.value) commitSession(textSession.value) // 先提交上一个未完成的文字
-    textSession.value = reactive({ point: p, text: '' })
-    nextTick(() => textInputRef.value && textInputRef.value.focus())
-    return
-  }
-  if (activeTool.value === 'pen' || activeTool.value === 'eraser') {
-    drawPoints = [p]
-    drawScreen = [{ x: e.clientX, y: e.clientY }]
-    draft.value = { type: activeTool.value, color: annotColor.value, width: annotWidth.value, points: [p] }
-  } else {
-    drawStart = p
-    draft.value = draftFromTool(activeTool.value, p, p)
-  }
-}
-
-function moveDrawing(e) {
-  const p = semanticPoint(e)
-  if (!p) return
-  const tool = activeTool.value
-  if (tool === 'select' && moveOriginal && drawStart) {
-    if (Math.hypot(p.x - drawStart.x, p.y - drawStart.y) > 1e-9) draft.value = translateAnnotation(moveOriginal, p.x - drawStart.x, p.y - drawStart.y)
-    return
-  }
-  if (tool === 'route' || ANNOT_TANK_CLASSES.some(cls => cls.key === tool)) return
-  if (tool === 'pen' || tool === 'eraser') {
-    // 屏幕空间抽稀：相邻采样点 ≥ ANNOT_THIN_PX CSS px（不依赖 scale/渲染比例，避免换算误差累积）
-    const last = drawScreen[drawScreen.length - 1]
-    if (last == null || Math.hypot(e.clientX - last.x, e.clientY - last.y) >= ANNOT_THIN_PX) {
-      drawScreen.push({ x: e.clientX, y: e.clientY })
-      drawPoints.push(p)
-      draft.value = { ...draft.value, points: [...drawPoints] }
-    }
-  } else if (drawStart) {
-    draft.value = draftFromTool(tool, drawStart, p)
-  }
-}
-
-function endDrawing() {
-  const tool = activeTool.value
-  if (!tool) return
-  if (tool === 'select') {
-    if (draft.value && moveOriginal && selectedAnnotationIndex.value >= 0) {
-      const index = selectedAnnotationIndex.value
-      replaceAnnotations(annotations.value.map((ann, i) => i === index ? draft.value : ann))
-    }
-  } else if (tool === 'route') {
-    if (drawStart) {
-      const last = routePoints.value.at(-1)
-      if (!last || Math.hypot(last.x - drawStart.x, last.y - drawStart.y) > 1e-9) routePoints.value.push(drawStart)
-    }
-    cancelDrawing()
-    return
-  } else if (ANNOT_TANK_CLASSES.some(cls => cls.key === tool) && drawStart) {
-    commitDraft({ type: 'unit', tankClass: tool, color: annotColor.value, x: drawStart.x, y: drawStart.y, radius: 16 * semPerSvgX.value, label: '' })
-    selectedAnnotationIndex.value = annotations.value.length - 1
-    activeTool.value = 'select'
-  } else if (tool === 'pen') {
-    if (drawPoints.length >= 2) commitDraft({ type: 'pen', color: annotColor.value, width: annotWidth.value, points: drawPoints })
-  } else if (tool === 'eraser') {
-    if (drawPoints.length) {
-      const next = applyEraser(annotations.value, drawPoints, annotWidth.value)
-      if (next !== annotations.value) replaceAnnotations(next)
-    }
-  } else if (draft.value && !isDegenerateAnnotation(draft.value)) {
-    commitDraft(draft.value)
-  }
-  cancelDrawing()
-}
-
-/** 文字提交（幂等：Enter/blur/移除输入框都会触发，committed 防重复）。 */
-function commitSession(session) {
-  if (textSession.value === session) textSession.value = null
-  if (!session || session.cancelled || session.committed) return
-  session.committed = true
-  const text = session.text.trim()
-  if (!text) return
-  commitDraft({ type: 'text', color: annotColor.value, x: session.point.x, y: session.point.y, text })
-}
-
-function cancelSession(session) {
-  if (textSession.value === session) {
-    textSession.value = null
-    session.cancelled = true
-  }
-}
-
-/** 文字输入框屏幕定位：语义 → SVG unit → CSS px（渲染尺寸比例）→ viewport 变换（与 screenToSvg 互逆）。 */
-const textInputStyle = computed(() => {
-  const session = textSession.value
-  if (!session) return null
-  const model = reliefModelForPlayback()
-  if (model) {
-    const rect = mapRenderRect()
-    const point = projectedSemanticNorm(session.point.x, session.point.y)
-    return {
-      left: `${point.xNorm * rect.width * view.scale + view.tx}px`,
-      top: `${point.yNorm * rect.height * view.scale + view.ty}px`,
-    }
-  }
-  const s = svgToScreen(
-    mapView.value,
-    view,
-    mapView.value.toX(session.point.x),
-    mapView.value.toY(session.point.y),
-    mapWidth(),
-    mapHeight()
-  )
-  if (!s) return null
-  return { left: `${s.x}px`, top: `${s.y}px` }
-})
-
-/** 渲染用标注列表：语义坐标 → SVG 像素（含进行中的 draft），尺寸按 x/y 轴比例换算。 */
-const renderedAnnotations = computed(() => {
-  const toX = mapView.value.toX
-  const toY = mapView.value.toY
-  const invX = 1 / Math.max(1e-9, semPerSvgX.value)
-  const invY = 1 / Math.max(1e-9, semPerSvgY.value)
-  const list = [...annotations.value]
-  if (draft.value) {
-    if (moveOriginal && selectedAnnotationIndex.value >= 0) list[selectedAnnotationIndex.value] = draft.value
-    else list.push(draft.value)
-  }
-  return list.map((ann, index) => ({
-    ...projectAnnotationToSvg(ann, { toX, toY, invX, invY, widthFallback: annotWidth.value }),
-    selected: annotationOpen.value && index === selectedAnnotationIndex.value,
-  }))
-})
+)
 
 onMounted(() => {
   // window 级 pointermove/up/cancel 兜底监听由 usePlaybackMapGestures 挂载（#820 Agent C）
@@ -1416,14 +1137,6 @@ function eventLabel(event) {
 }
 
 // ---- PR4 §36/§37：hull hitbox 点击选中（重叠时取指针最近车辆；tie 保持 selected / render order）----
-function onMarkerSelect(vehicle, event) {
-  // §36：label 块（含 PlayerName tooltip 悬停区）不是 hitbox——点标签不选中车辆；
-  // .pb-label-player 为触发原生 title 需要 pointer-events:auto，点击事件会冒泡到这里，须拦截。
-  const t = event && event.target
-  if (t && typeof t.closest === 'function' && t.closest('.pb-labels')) return
-  selectAt(vehicle.accountId, event ? event.clientX : undefined, event ? event.clientY : undefined)
-}
-
 /** 标记中心 → 相对地图容器的屏幕 px（viewport 变换后）。 */
 function canonicalMarkerScreen(st) {
   const rect = mapRenderRect()
@@ -1440,62 +1153,65 @@ function markerScreen(st) {
   return canonicalMarkerScreen(st)
 }
 
-function selectAt(accountId, clientX, clientY) {
-  const states = vehicleStates.value
-  const hasPoint = Number.isFinite(clientX) && mapEl.value && mapWidth() > 0
-  const rect = mapEl.value ? mapEl.value.getBoundingClientRect() : { left: 0, top: 0 }
-  const px = hasPoint ? clientX - rect.left : NaN
-  const py = hasPoint ? clientY - rect.top : NaN
-  // Hit-test uses the final vehicle-aware hit target at the marker's true position
-  // (markers are never displaced). Selection still returns the canonical vehicle.
-  const hitTest = (s) => {
-    const cx = (px - view.tx) / view.scale
-    const cy = (py - view.ty) / view.scale
-    const rect = mapRenderRect()
-    const projected = projectedSemanticNorm(s.pos.x, s.pos.y)
-    const x = projected.xNorm * rect.width
-    const y = projected.yNorm * rect.height
-    const hitTarget = s.hitTargetSize || s.markerSize?.hitTarget
-    const ringSize = !uiHidden.value && hpPrefs.showHp && hpPrefs.mode === 'ring' && !s.destroyed
-      ? healthRingDiameter(s, markerPrefs.classIcons) / view.scale : 0
-    const hw = Math.max(hitTarget?.width || 20, ringSize) / 2
-    const hh = Math.max(hitTarget?.height || 20, ringSize) / 2
-    return Math.abs(cx - x) <= hw && Math.abs(cy - y) <= hh
-  }
-  let candidates
-  if (hasPoint) {
-    candidates = states.filter(hitTest)
-    // 真实点击必然落在某 hitbox 内（label 点击已在 onMarkerSelect 拦截）；
-    // 此处兜底只为合成事件/坐标与布局瞬时不一致（既有 toggle 行为）
-    if (candidates.length === 0) {
-      const target = states.find((s) => s.vehicle.accountId === accountId)
-      candidates = target ? [target] : []
-    }
-  } else {
-    const target = states.find((s) => s.vehicle.accountId === accountId)
-    candidates = target ? [target] : []
-  }
-  if (candidates.length === 0) return
-  let best = candidates[0]
-  if (candidates.length > 1) {
-    const dist = (s) => {
-      const p = markerScreen(s)
-      return p ? Math.hypot(p.x - px, p.y - py) : Infinity
-    }
-    candidates.sort((a, b) => (dist(a) - dist(b)) || (states.indexOf(a) - states.indexOf(b)))
-    best = candidates[0]
-    // tie（与前二近者距离几乎一致）且已有 selected 在候选内 → 保持当前 selected，不切换
-    if (selectedAccountId.value != null && candidates.length > 1
-        && Math.abs(dist(best) - dist(candidates[1])) < 1) {
-      const sel = candidates.find((s) => s.vehicle.accountId === selectedAccountId.value)
-      if (sel) { openDetails(selectedAccountId.value, sideAwayFromClientX(clientX)); return }
-    }
-  }
-  // PR5 §8.1：点击 marker 恒选中/直接切换（不 toggle-off）；点击空白不关闭；必须 × 显式关闭
-  // §details-float：浮窗落在**不遮住**这台车的一侧（按它在战场 workspace 里的屏幕位置）。
-  openDetails(best.vehicle.accountId, sideAwayFromClientX(clientX))
-  mobileOverlay.value?.reveal?.()
-}
+// The workspace's guide requests real actions; drawing and clock state stay here.
+defineExpose({
+  pause,
+  displayOpened: () => displayOpen.value,
+  // 教程要高亮的「一键防遮」在 Display 面里（#727 之后地图上不再放常驻控件），
+  // 所以它必须能被 onboarding 的 display surface 打开 / 收回。
+  openDisplay: () => {
+    if (displayOpen.value) return false
+    // 浮层形态要锚在 gear 上；gear 属于 PlaybackTransport，这里按 DOM 契约取它。
+    toggleDisplay(pbRoot.value?.querySelector('[data-test="pb-secondary-entry"]') || null)
+    return true
+  },
+  closeDisplay: () => { displayOpen.value = false },
+  annotationsOpen: () => annotationOpen.value,
+  openAnnotations: () => {
+    if (annotationOpen.value) return false
+    toggleAnnotation()
+    return true
+  },
+  closeAnnotations: closeAnnotation,
+})
+
+// ---- 车辆选中 / 详情编排：selected / details 状态的唯一 owner = usePlaybackVehicleSelection
+// （#820 Agent C Step 2）；hit-test 与浮窗落位经由同一相机变换与 workspace 坐标系。
+const {
+  selectedAccountId,
+  detailsOpen,
+  detailsSide,
+  selectedState,
+  detailsState,
+  selectedTrack,
+  selectedHealth,
+  selectedPortraitUrl,
+  selLastKnownSec,
+  selCurStats,
+  selDamageLog,
+  openDetails,
+  closeSidebar,
+  onMarkerSelect,
+  selectAt,
+  selectFromRoster,
+} = usePlaybackVehicleSelection(
+  { view, mapEl, mapRenderRect, mapWidth },
+  {
+    vehicleStates,
+    playback,
+    currentTime,
+    authoritativeEvents,
+    hpVehicles,
+    uiHidden,
+    hpPrefs,
+    markerPrefs,
+    battlefieldWorkspaceEl,
+    markerScreen,
+    projectedSemanticNorm,
+    mobileOverlay,
+    t,
+  },
+)
 
 // §队伍阵容：从 result 全量名单（playbackV2.vehicles）取，不依赖回放事件流/vehicleStates。
 // 按权威 vehicle.team 保留物理身份；rosterTeams 按 Recorder 视角决定左右。
@@ -1540,25 +1256,6 @@ const detailsFloating = computed(() => !isPhonePortrait.value)
  *   详情 × → 只有 detailsOpen = false；选中、跟随、时间轴、倍速、名册与地图视图都不动
  *   再点同一台 / 另一台车 → 同一个详情窗重新打开（或换内容），永远只有一个窗
  */
-const detailsOpen = ref(false)
-/** 浮窗初始落位偏好：由**这次选择的来源**决定（点左车道 → 落右侧，点右车道 → 落左侧，
- *  点地图上的车 → 与它在 workspace 里相对的一侧）。用户拖过之后不再生效。 */
-const detailsSide = ref('right')
-
-function openDetails(accountId, side = null) {
-  selectedAccountId.value = accountId
-  if (side) detailsSide.value = side
-  detailsOpen.value = true
-  // §右侧 only 车辆详情：不再开左侧 vehicle 二级，详情由 detailsOpen + selectedState 驱动。
-}
-/** 屏幕横坐标在战场 workspace 的哪一半 → 浮窗落到另一半。 */
-function sideAwayFromClientX(clientX) {
-  const host = battlefieldWorkspaceEl.value
-  if (!host || !Number.isFinite(clientX)) return null
-  const rect = host.getBoundingClientRect()
-  return clientX > rect.left + rect.width / 2 ? 'left' : 'right'
-}
-
 /**
  * 名册每行显示的当前 HP（与地图标记同一个权威投影：healthDisplayAt）。
  *
@@ -1600,82 +1297,7 @@ const rosterReload = computed(() => {
   }
   return out
 })
-function selectFromRoster(accountId, event) {
-  // §details-float：左边的己方名册 → 浮窗落右侧，右边的敌方名册 → 浮窗落左侧，
-  // 都不会盖住刚点的那一行（竖屏纵向流里详情是流内内容块，落位偏好不起作用）。
-  const row = event?.target?.closest?.('[data-test="pb-roster-row"]')
-  let side = null
-  if (row?.closest?.('.pb-team-lane-left')) side = 'right'
-  else if (row?.closest?.('.pb-team-lane-right')) side = 'left'
-  else if (row) side = sideAwayFromClientX(row.getBoundingClientRect().left)
-  openDetails(accountId, side)
-}
 
-const selectedState = computed(() => {
-  if (selectedAccountId.value == null) return null
-  return vehicleStates.value.find(st => st.vehicle.accountId === selectedAccountId.value) || null
-})
-/** 详情真正呈现的对象：选中了**且**详情开着。关掉详情不清选中。 */
-const detailsState = computed(() => (detailsOpen.value ? selectedState.value : null))
-
-// Selected vehicle details consume the canonical track directly by accountId.
-const selectedTrack = computed(() => {
-  if (!props.playbackV2 || !selectedState.value) return null
-  const accountId = selectedState.value.vehicle.accountId
-  const tracks = props.playbackV2.vehicles || []
-  return tracks.find(t => t.accountId === accountId) || null
-})
-
-// The summary and full inspector consume the same canonical state at replay time.
-const selectedHealth = computed(() => {
-  const health = healthDisplayAt(selectedTrack.value, currentTime.value)
-  return health ? { currentHp: health.currentHp, maxHp: health.displayCapacityHp, state: health.state } : null
-})
-
-// Details Panel 车型图：仅在选中车辆后按 tankId 懒加载；图片随站点发布，production 不访问 BlitzKit。
-// token 防止快速切换车辆时旧请求覆盖新选择；非 Tier X / 缺图 / chunk 失败均静默降级为无图。
-const selectedPortraitUrl = ref(null)
-let portraitLoadToken = 0
-watch(
-  () => selectedState.value?.vehicle?.tankId,
-  async (tankId) => {
-    const token = ++portraitLoadToken
-    selectedPortraitUrl.value = null
-    if (tankId == null) return
-    try {
-      const { loadVehiclePortrait } = await import('../vehicle-portraits/runtime.js')
-      const url = await loadVehiclePortrait(tankId)
-      if (token === portraitLoadToken) selectedPortraitUrl.value = url
-    } catch {
-      if (token === portraitLoadToken) selectedPortraitUrl.value = null
-    }
-  },
-)
-
-/** 详情 ×：只关详情。选中（名册高亮 / 地图标记选中态）、跟随、时间轴、倍速、名册与视图都保留。 */
-function closeSidebar() {
-  detailsOpen.value = false
-}
-
-const selLastKnownSec = computed(() => {
-  const st = selectedState.value
-  return st && st.lastKnown && Number.isFinite(st.pos.timeSec) ? st.pos.timeSec : null
-})
-// §16/§17：当前统计 = 权威 HP loss 重建（dealt 仅计可 attribution 的掉血——
-// incomplete observation 不冒充完整统计，文案用「已记录伤害」；received 含全部掉血）
-const selCurStats = computed(() => {
-  const st = selectedState.value
-  if (!st) return { dealt: 0, received: 0, kills: 0 }
-  return cumulativeStatsAtV2(authoritativeEvents.value, st.vehicle, currentTime.value, hpVehicles.value)
-})
-/** 最近伤害记录：incoming 使用 canonical HP decrease，outgoing 使用 observedHpLoss；attacker 不可证明时
- *  显示「来源未知」；raw Type-8 协议值不参与。Blocker 2：只消费 toSec <= currentTime 的记录
- *  （forward/backward seek 与任意 timestamp 重建天然正确，未来事件绝不泄漏）；取最近 8 条。 */
-const selDamageLog = computed(() => {
-  const st = selectedState.value
-  if (!st) return []
-  return detailsDamageLogAtV2(playback.value, st.vehicle, currentTime.value, t('recon.map.playback.source_unknown'))
-})
 function floatTeamClass(friendly) {
   if (friendly === true) return 'pb-float-friendly'
   if (friendly === false) return 'pb-float-enemy'
