@@ -69,7 +69,7 @@
 - 装甲页的射击模式包含独立车型对照、记录结果与逐发导航栏；参数分组与技术证据渐进展开，手机保持场景空间和 44px 触控。场景监听自身容器尺寸，因此标题换行也会更新画布比例。`AgentArmorView.vue` 使用语义 token 与三档响应式规则。
 - 装甲查看器 / 射击复现的 3D 画布使用透明背景，直接继承页面 `--color-canvas`；场景不绘制地面网格，半球光底面跟随 `--color-surface-2`，Showcase / Classic 两套 profile 下都与网页外壳一致。相机按 Armor Inspector 实测的 product 参考曲线缩放，远距车体更小：显示 profile 为 +0.028/m、封顶 3.8，再整体乘 1.1（30 m 比 15 m 小约 14%，100/500 m 小约 35%；15 m 实际 FOV ≈20.59°，车体比 18.75° 参考小约 9%）。热力图概率色带固定红→橙→黄→绿，与判定卡的红/黄/绿语义一致，不改为主题顺序色板。判定结果卡按画布的实际 `getBoundingClientRect()` 投影并在可见画布内钳制，页面/容器滚动或窗口缩放时随场景一起移动（`#traj-info` 是视口 fixed，不能按 `window.innerWidth/innerHeight` 定位）；`browser-armor-aiming` 用真实滚动夹具锁定了这条行为。
 - 选车菜单与坦克百科列表共用 `components/TankCatalogMenu.vue` 的同一实现：模糊搜索 + 搜索别名、tier/nation/type 筛选、name/tier/hp/pen 排序、手机 chips + 筛选 sheet、增量卡片网格与空/加载/错误态一致。坦克百科列表在 URL 未指定 `?sort=` 时默认按等级降序（同级按名称升序），`?sort=name|tier|hp|pen` 显式指定时按该值排序，装甲查看器选车弹窗保持名称默认。筛选控件按 `DC-SEL-01` 映射：type 与 sort 使用 `SegmentedControl` 的 Choice Group（`presentation="chips"`，radiogroup 语义与方向键 / Home / End 键盘循环），tier 与 nation 保留原生 selects；桌面与手机筛选 sheet 共用同一组控件。装甲页弹窗只保留外壳与 `tankViewer` 的 `onTankList` / `onTankSelection` / `selectTank` 接线。选车网格按卡片内容确定行高，图片、车型名、等级/类型/国家信息不能被视口高度压缩裁切；大名册在弹窗内部纵向滚动，滚到边界不带动外层页面，分批加载（首屏 48，哨兵/滚轮续页）。`pnpm run test:browser-armor-mobile` 以真实名册响应覆盖共 121 张卡片，在 Showcase / Classic 和手机 / 平板 / 桌面三档（含 4K、筛选、筛选 sheet 与视口扩大）检查内容边界、首末车型名命中区域与无横向溢出。
-- 坦克百科目录用统一工具区与对齐的车型卡，详情头部压缩图像与重复模块信息；参数用稳定独立列、清楚标题、右对齐等宽主值、独立左对齐单位及固定变化量列。装甲查看器左栏用单外卡分区，右上弹种同时显示整数穿深并随校准弹更新，tooltip明确100米内口径。
+- 坦克百科目录用统一工具区与对齐的车型卡，详情头部压缩图像与重复模块信息；参数用稳定独立列、清楚标题、位置固定的等宽主值、中间变化量槽及最右单位列。装甲查看器左栏用单外卡分区，右上弹种同时显示整数穿深并随校准弹更新，tooltip明确100米内口径。
 - 视觉回归至少检查对比度、overflow、sticky、hover/focus、loading/empty/error；页面级验收细节见 [`docs/DEVELOPER_GUIDE.md`](../DEVELOPER_GUIDE.md)。
 
 ## Canonical 文档索引

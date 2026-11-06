@@ -122,7 +122,7 @@ const shellOptions = computed(() => shells.value.map(shell => {
         :data-testid="`hud-shell-${index}`"
         @click="index === shellIndex ? null : emit('shell', index)"
       >
-        <img :src="shellIconUrl(option.shell.type)" alt="" width="28" height="28" loading="lazy">
+        <img :src="shellIconUrl(option.shell.type)" alt="" width="28" height="28" loading="eager">
         <span class="hud-penetration" data-testid="hud-penetration" aria-hidden="true">{{ option.penetration ?? '—' }}<span class="hud-unit"> mm</span></span>
       </button>
     </div>

@@ -76,6 +76,10 @@ export async function runCatalogHofDocScenario(env, scenario) {
 
     if (scenario.mode === 'params') {
       await page.waitForValue('document.querySelectorAll(".tp-param-row").length', value => value > 20)
+      await page.waitForValue(`(() => {
+        const images = [...document.querySelectorAll('.tp-shell-btn img')];
+        return images.length === 3 && images.every(img => img.complete && img.naturalWidth > 0);
+      })()`, Boolean, { label: 'all shell icons decoded' })
       const geometry = await page.evaluate(`(() => {
         const overlap = [...document.querySelectorAll('.tp-param-row')].filter(row => {
           const label = row.querySelector('dt').getBoundingClientRect(), value = row.querySelector('dd').getBoundingClientRect();
@@ -91,11 +95,20 @@ export async function runCatalogHofDocScenario(env, scenario) {
         const rows = [...group.querySelectorAll('.tp-param-row, .tp-shell-stats > div')];
         const values = rows.map(row => row.querySelector('.tp-param-value').getBoundingClientRect().right);
         const units = rows.map(row => row.querySelector('.tp-param-unit')).filter(Boolean).map(el => el.getBoundingClientRect().left);
+        const groupRight = group.getBoundingClientRect().right;
+        const style = getComputedStyle(group), inset = parseFloat(style.getPropertyValue('--space-3'));
+        const unitsAtEnd = rows.map(row => row.querySelector('.tp-param-unit')).filter(Boolean)
+          .every(el => { const range = document.createRange(); range.selectNodeContents(el);
+            return Math.abs(range.getBoundingClientRect().right - groupRight + inset) <= 1; });
+        const deltaSlot = parseFloat(style.getPropertyValue('--space-12'));
+        const unitSlot = deltaSlot + parseFloat(style.getPropertyValue('--space-2'));
+        const gaps = 2 * parseFloat(style.getPropertyValue('--space-1'));
         return { key: group.dataset.testid, right: values[0], valueSpread: Math.max(...values) - Math.min(...values),
-          unitSpread: units.length ? Math.max(...units) - Math.min(...units) : 0 };
+          unitSpread: units.length ? Math.max(...units) - Math.min(...units) : 0, unitsAtEnd,
+          valueAnchorPreserved: Math.abs(groupRight - values[0] - unitSlot - deltaSlot - gaps) <= 1 };
       }))()`)
       const beforeAlignment = await alignment()
-      assert.ok(beforeAlignment.every(group => group.valueSpread <= 1 && group.unitSpread <= 1),
+      assert.ok(beforeAlignment.every(group => group.valueSpread <= 1 && group.unitSpread <= 1 && group.unitsAtEnd && group.valueAnchorPreserved),
         `数值右边缘、单位左边缘必须对齐：${JSON.stringify(beforeAlignment)}`)
       await tap('[data-testid=tank-shell-1]')
       await page.waitForValue('document.querySelector("[data-testid=tank-shell-1]").getAttribute("aria-pressed")', value => value === 'true')

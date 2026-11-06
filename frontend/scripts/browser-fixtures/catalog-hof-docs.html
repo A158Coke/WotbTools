@@ -24,6 +24,7 @@
   import '../../src/styles/classic-profile.css'
   import { messages } from '../../src/locales/messages.js'
   import { useConnectivity } from '../../src/composables/useConnectivity.js'
+  import { shellIconUrl } from '../../src/utils/researchCatalog.js'
   import TankParamPanel from '../../src/components/TankParamPanel.vue'
   import TankConfigPanel from '../../src/components/TankConfigPanel.vue'
   import { resolveSetup, computeSetupPair, paramGroups } from '../../src/replay-local/compute/tankSetup'
@@ -69,7 +70,7 @@
     const groups = computed(() => paramGroups(pair.value.current, pair.value.base, FORMAT.params))
     const apply = patch => { selection.value = { ...selection.value, ...patch } }
     const shells = computed(() => fixture.detail.configs[selection.value.config].shells.map((shell, index) => ({
-      ...shell, index, selected: index === selection.value.shell, label: ['AP', 'HEAT', 'HE'][index],
+      ...shell, iconUrl: shellIconUrl(shell.type), index, selected: index === selection.value.shell, label: ['AP', 'HEAT', 'HE'][index],
       tunedPenetration: shell.penetration, tunedDamage: shell.damage, tunedVelocity: shell.velocity,
       tunedPenetrationFar: shell.penetration_far, tunedModuleDamage: shell.module_damage,
     })))

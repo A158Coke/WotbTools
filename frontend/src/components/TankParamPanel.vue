@@ -147,7 +147,7 @@ const selectedShell = computed(() => props.shells.find(shell => shell.selected) 
               :data-testid="`tank-shell-${shell.index}`"
               @click="emit('select-shell', shell.index)"
             >
-              <img v-if="shell.iconUrl" :src="shell.iconUrl" alt="" width="40" height="40" loading="lazy">
+              <img v-if="shell.iconUrl" :src="shell.iconUrl" alt="" width="40" height="40" loading="eager">
               <span class="tp-shell-kind" :class="{ 'is-premium': shell.premium }">{{ shell.label }}</span>
             </button>
           </div>
@@ -231,12 +231,15 @@ const selectedShell = computed(() => props.shells.find(shell => shell.selected) 
 .tp-shell-stats { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; margin: 0; padding: var(--space-2) 0; border-radius: var(--radius-md); background: var(--color-surface-2); }
 .tp-shell-stats > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: var(--space-2); padding: var(--space-1) 0 var(--space-1) var(--space-3); }
 .tp-shell-stats dt { color: var(--color-text-secondary); font: var(--type-caption); overflow-wrap: anywhere; }
-.tp-shell-stats dd { display: grid; grid-template-columns: max-content var(--space-12) calc(var(--space-12) + var(--space-2)); align-items: baseline; gap: var(--space-1); margin: 0; color: var(--color-text-primary); font: var(--type-body); font-weight: 600; font-variant-numeric: tabular-nums; }
+.tp-shell-stats dd { color: var(--color-text-primary); font: var(--type-body); font-weight: 600; }
 .tp-param-list { display: grid; margin: 0; }
 .tp-param-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: var(--space-2); padding-block: var(--space-2); }
 .tp-param-row + .tp-param-row { border-block-start: 1px solid var(--color-border-subtle); }
 .tp-param-row dt { color: var(--color-text-secondary); font: var(--type-body); overflow-wrap: anywhere; }
-.tp-param-row dd { display: grid; grid-template-columns: max-content calc(var(--space-12) + var(--space-2)); align-items: baseline; gap: var(--space-1); margin: 0; font-variant-numeric: tabular-nums; }
+.tp-param-row dd, .tp-shell-stats dd { display: grid; grid-template-columns: max-content var(--space-12) calc(var(--space-12) + var(--space-2)); align-items: baseline; gap: var(--space-1); margin: 0; font-variant-numeric: tabular-nums; }
+.tp-param-row .tp-param-reading { display: contents; }
+.tp-param-row .tp-param-unit, .tp-shell-stats .tp-param-unit { grid-column: 3; grid-row: 1; padding-inline-end: var(--space-3); text-align: end; }
+.tp-param-row .tp-param-delta { grid-column: 2; grid-row: 1; }
 .tp-param-reading { display: grid; grid-template-columns: max-content var(--space-12); justify-content: end; align-items: baseline; gap: var(--space-1); }
 .tp-param-value { grid-column: 1; text-align: end; white-space: nowrap; color: var(--color-text-primary); font: var(--type-body); font-weight: 600; }
 .tp-param-unit { grid-column: 2; text-align: start; color: var(--color-text-secondary); font: var(--type-caption); }
