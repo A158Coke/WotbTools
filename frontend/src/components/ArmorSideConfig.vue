@@ -20,6 +20,7 @@ const props = defineProps({
   dev: { type: String, default: null },
   upgrade: { type: String, default: null },
   abilities: { type: [String, Array], default: null },
+  expanded: { type: Boolean, default: true },
 })
 const emit = defineEmits(['apply', 'ready'])
 
@@ -87,6 +88,8 @@ const selection = computed(() => {
 })
 /** 只有替换编辑器实际可配置（炮塔/炮对号成立）时才允许宿主隐藏原生配置回退。 */
 const canConfigure = computed(() => selection.value?.canConfigure === true)
+// XI 没有普通模块矩阵，升级选择直接露出，不再藏在第二层折叠里。
+const showConfiguration = computed(() => props.expanded || Number(detail.value?.tier) === 11)
 watch(canConfigure, value => { emit('ready', value) }, { immediate: true })
 
 /** 输出这一侧的 URL 载荷（模块/装备四项；设备串按 tankSetup 的编码）。 */
@@ -134,7 +137,7 @@ function resetAll() {
 </script>
 
 <template>
-  <div class="side-config" data-testid="armor-side-config">
+  <div v-show="showConfiguration" class="side-config" data-testid="armor-side-config">
     <p v-if="state === 'loading'" class="side-note" role="status">{{ t('agentTanks.loading') }}</p>
     <p v-else-if="state !== 'ready' || !selection" class="side-note">{{ t('armor.loadout_unavailable') }}</p>
     <TankConfigPanel

@@ -18,10 +18,11 @@
  * 悬空间隙甲屏幕板，真实资产覆盖下车辆不保证有间隙甲板，扫不到即跳过——跳过是模式条件，
  * 不是"资产不可达即绿"；夹具模式（CI 默认）找不到屏幕仍然硬失败。
  */
+import { readFileSync } from 'node:fs'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page, delay } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
-import { FIXTURE_TANK_ID, FIXTURE_TURRETLESS_TANK_ID, startFixtureAssetPack } from './browser-fixtures/fixture-asset-pack.mjs'
+import { FIXTURE_TANK_DATA, FIXTURE_TANK_ID, FIXTURE_TURRETLESS_TANK_ID, startFixtureAssetPack } from './browser-fixtures/fixture-asset-pack.mjs'
 // 判定触发面（Primary = 主装甲板）与产品同源：射线未触达 Primary 的点击不构成判定
 //（BlitzKit 的 shoot() 只挂在 Primary 网格上）。门禁断言依赖这份分类，勿在脚本里另抄一份。
 import { ArmorSection, isPrimary } from '../src/scene/penetration.js'
@@ -896,6 +897,50 @@ try {
     }
   }
 
+  // 相机预设不能覆盖显式 URL 炮塔/炮管姿态。
+  if (!useRealAssets) {
+    for (const [camview, pose, yaw, pitch] of [
+      ['front', 'yaw=45&pitch=-5', 45, -5],
+      ['hull_down', 'yaw=45&pitch=-5', 45, -5],
+      ['front', 'yaw=25', 25, 0],
+      ['hull_down', 'pitch=-5', 0, -5],
+    ]) {
+      await page.goto(`${origin}/?view=agent-armor&ws-auth=1&tank=${TANK}&camview=${camview}&${pose}&assets=${assets}`)
+      await page.waitForValue('window.__armorRicochet?.aimingState?.()',
+        state => state?.turretDeg === yaw && state?.gunDeg === pitch,
+        { timeout: 30000, label: `${camview}: explicit URL pose wins` })
+      check(true, `${camview}: URL ${pose} 保持 ${yaw}°/${pitch}°`)
+    }
+    const modules = JSON.parse(readFileSync(new URL('../src/replay-local/compute/__fixtures__/modules/european.json', import.meta.url), 'utf8'))
+      .tanks.It21_Controcarro3_Minotauro
+    const tiltedData = { ...FIXTURE_TANK_DATA, initial_turret_rotation: modules.initialTurretRotation,
+      configs: FIXTURE_TANK_DATA.configs.map(config => ({ ...config, pitch_limits: modules.turrets[0].guns[0].stats.pitchLimits })) }
+    const tiltedPack = await startFixtureAssetPack({ extraRoutes: {
+      [`/tank/${FIXTURE_TANK_ID}.json`]: { type: 'application/json', body: JSON.stringify(tiltedData) },
+    } })
+    try {
+      await page.goto(`${origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&assets=${tiltedPack.origin}`)
+      await page.waitFor(() => !document.querySelector('[data-testid="armor-camera-front"]')?.disabled
+        && !!window.__armorRicochet?.rigState?.().guns.length,
+        { timeout: 30000, label: 'tilted Minotauro pose fixture ready' })
+      for (const [name, local, expectedWorld] of [['hull-down', -7, -10], ['front', 0, -3]]) {
+        const point = await page.evaluate(`(() => {
+          const r = document.querySelector('[data-testid="armor-camera-${name}"]').getBoundingClientRect();
+          return {x:r.x+r.width/2,y:r.y+r.height/2};
+        })()`)
+        await mouseTap(point)
+        await page.waitForValue('window.__armorRicochet.aimingState().gunDeg', value => value === local,
+          { timeout: 5000, label: 'preset local gun angle' })
+        const world = await page.evaluate(`(() => {
+          const c=window.__DBG__.controls, d=c.object.position.clone().sub(c.target);
+          return Math.atan2(d.y, Math.hypot(d.x,d.z))*180/Math.PI;
+        })()`)
+        check(Math.abs(world - expectedWorld) < .01,
+          `Minotauro ${name}: 局部 ${local}°、世界炮线 ${expectedWorld}°（实际 ${world}°）`)
+      }
+    } finally { await tiltedPack.close() }
+  }
+
   // —— 固定战斗室（GLB 无 turret_NN）：拖炮管必须真的驱动视觉/装甲矩阵 ——
   // 此前的盲区：aimFromDrag 先写 #turret-val/#gun-val，即使 updateTurretGun 因
   // collectTurretGunNodes 早退而完全没摆位，UI 数字仍会变——只读角度抓不到这个 bug。
@@ -938,6 +983,32 @@ try {
         check(Math.abs(parseFloat(aim1.t)) <= 10.5,
           `固定战斗室：yaw 受 yaw_limits ±10° 限制（${aim1.t}）`)
       }
+      // 用真实按钮输入验证预设穿过 Vue → viewer → 模型姿态，不只检查纯函数。
+      const presetPoint = async (name) => page.evaluate(`(() => {
+        const b = document.querySelector('[data-testid="armor-camera-${name}"]');
+        const r = b.getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      })()`)
+      await mouseTap(await presetPoint('hull-down'))
+      const low = await page.waitForValue('window.__armorRicochet.aimingState()',
+        s => s.turretDeg === 0 && s.gunDeg === -20,
+        { timeout: 5000, label: 'hull-down preset uses fixture depression' })
+      check(low.controlsEnabled && Math.abs(low.cameraDistance - 15) < 0.01,
+        '压坡卖头预设使用当前俯角，保留轨道控制和 15m 距离')
+      const depressed = await page.evaluate('window.__armorRicochet.rigState()')
+      await mouseTap(await presetPoint('front'))
+      await page.waitForValue('window.__armorRicochet.aimingState().gunDeg', g => g === 0,
+        { timeout: 5000, label: 'front preset levels gun' })
+      const level = await page.evaluate('window.__armorRicochet.rigState()')
+      check(JSON.stringify(depressed.guns[0].matrix) !== JSON.stringify(level.guns[0].matrix),
+        '正面/卖头预设真实改变炮管模型姿态')
+      const position = await page.evaluate('window.__DBG__.controls.object.position.toArray()')
+      const bounds = await canvasRect()
+      await mouseDrag({ x: bounds.right - 80, y: (bounds.top + bounds.bottom) / 2 }, -90, 30)
+      await page.waitForValue('window.__DBG__.controls.object.position.toArray()',
+        p => p.some((v, i) => Math.abs(v - position[i]) > 0.01),
+        { timeout: 5000, label: 'free orbit after preset' })
+      check(true, '预设后仍可自由旋转相机')
     } finally {
       if (turretlessPack) await turretlessPack.close()
     }

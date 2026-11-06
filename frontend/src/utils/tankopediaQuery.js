@@ -5,7 +5,7 @@
  *
  * 键：q（搜索词）· tier · nation · type · sort（name|tier|hp|pen）· tank（详情车辆 id）· config（配置下标）
  * · engine / track（发动机/履带下标）· shell（弹种下标）· dev（装备 9 槽 0/1/-）· cons / prov（物品 stem 逗号表）
- * · skills（已训练技能 id:等级 逗号表，兼容裸 id=7）· camo（涂装 0/1）
+ * · skills（已训练技能 id:等级 逗号表，兼容裸 id=7）· skillTriggers（模拟条件技能触发 0/1）· camo（涂装 0/1）
  * · upgrade（XI，缺省 stock / top）· abilities（XI 互斥技能节点 ID 逗号表）
  */
 import { tankFuzzyScore } from '../scene/tankMeta.js'
@@ -126,6 +126,7 @@ export function parseTankopediaQuery(query = {}) {
     cons: tank ? stemList(query.cons) : null,
     prov: tank ? stemList(query.prov) : null,
     skills: tank ? skillLevels(query.skills) : {},
+    conditionalSkills: !!tank && first(query.skillTriggers) === '1',
     camo: tank ? first(query.camo) === '1' : false,
     upgrade: upgrade === 'top' || upgrade === 'stock' ? upgrade : null,
     abilities: tank ? abilityIds(query.abilities) : [],
@@ -157,6 +158,7 @@ export function serializeTankopediaQuery(state = {}) {
         .map(([id, level]) => `${id}:${level}`)
       if (pairs.length) query.skills = pairs.join(',')
     }
+    if (state.conditionalSkills === true) query.skillTriggers = '1'
     if (state.camo === true) query.camo = '1'
     if (state.upgrade === 'top' || state.upgrade === 'stock') query.upgrade = state.upgrade
     if (Array.isArray(state.abilities)) {

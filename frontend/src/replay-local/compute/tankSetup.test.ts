@@ -113,6 +113,18 @@ describe('resolveSetup（URL + 数据 → 选择态）', () => {
     expect(setup.consumables).toEqual([])
   })
 
+  it('条件技能开关独立解析并传入引擎；基准态保持关闭', () => {
+    const url = { ...EMPTY_URL, skills: { battle_rage: 7, smooth_driving: 3 } }
+    const setup = resolveSetup({ detail: DETAIL, modules: MODULES, url, catalog })
+    expect(setup.conditionalSkills).toBe(false)
+    expect(buildComputeInput({ detail: DETAIL, modules: MODULES, selection: setup, catalog })?.conditionalSkills).toBe(false)
+    const triggered = resolveSetup({ detail: DETAIL, modules: MODULES, url: { ...url, conditionalSkills: true }, catalog })
+    expect(triggered.skills).toEqual(setup.skills)
+    expect(triggered.conditionalSkills).toBe(true)
+    expect(buildComputeInput({ detail: DETAIL, modules: MODULES, selection: triggered, catalog })?.conditionalSkills).toBe(true)
+    expect(baseSelection({ detail: DETAIL, modules: MODULES })?.conditionalSkills).toBe(false)
+  })
+
   it('URL 状态生效：config / engine / track / dev / cons / prov / camo', () => {
     const setup = resolveSetup({
       detail: DETAIL,
