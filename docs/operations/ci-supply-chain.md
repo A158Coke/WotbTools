@@ -53,3 +53,19 @@ push main + 每周计划 + 手动 dispatch。**observe 阶段**：finding 只进
 「扫描真实工作」的持续证据；alert 消失 = 扫描链路断裂，先查 workflow 再查 query 套件。
 扫描排除面：`frontend/dist/**`、`contracts/http/generated/**`、`frontend/src/api/generated/**`、
 archfixture 测试资源。
+
+## 5. TX digest-pinned 发布车道
+
+- business-api 与 frontend 是 digest-pinned 车道：GitHub 只确定 release source/输入，
+  Gitee 是唯一生产 Git 来源；TX 从 exact SHA 本机构建，生产 Compose 必须消费
+  `repo@sha256:<digest>`（由 `TX_BUSINESS_API_IMAGE_REF` / `TX_FRONTEND_IMAGE_REF`
+  提供），**禁止回退 `latest`**。尚未迁移到 digest pin 的 owner（Keycloak / AI service）
+  仍沿用 `latest` freshness 契约。
+- TX registry prefix 必须从 `vars.TCR_REGISTRY/TCR_NAMESPACE` 显式传给 host 脚本，
+  不依赖默认 namespace；TX 镜像只用 TCR，Yecao 镜像只用 GHCR。
+- **Immutable reuse 判定按 release lane 归属**：仍在 GitHub runner 发布镜像的 owner
+  枚举 tag 必须走 `deploy/list-image-tags.sh`，只有 registry 明确返回 `NAME_UNKNOWN`
+  才按首次发布继续；TX 本地构建的 business-api/frontend 由 `build-*-from-gitee.sh`
+  的 `lookup_remote_digest` 解析 immutable tag → digest。两条路径都必须把
+  401/403/5xx/网络/DNS 视为 fatal，禁止用 `... || true` 把 registry 故障伪装成
+  「镜像不存在」。

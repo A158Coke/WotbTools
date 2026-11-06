@@ -108,3 +108,34 @@ COMMIT;
 ```
 
 子表由 FK ON DELETE CASCADE 同事务删除；应用回滚只关闭/revert Collector，不降级 Flyway、不删除表或 dataset。
+
+## 校验脚本契约与 gate 分层（canonical 摘要）
+
+- **Gate 分层**：blocking production health 只有 Yecao `ai-service` readiness
+  （`http://10.20.0.2:8089/actuator/health/readiness`）；观测栈（Prometheus、Loki、Alloy、
+  Grafana、datasources、dashboards、metrics 与 log ingestion）是 non-blocking——
+  Yecao 观测失败只输出 `OBSERVABILITY DEGRADED`。
+- `deploy/verify-observability.sh` 必须 fail-closed；deploy orchestration 负责把失败记录为
+  degraded，而不是用 `|| true` 改写 verifier 语义。
+- `deploy/grafana-api-request.sh`：Grafana 生产 API 校验必须复用这条生产 backend Alpine
+  运行时可用的 BusyBox `wget` 路径——调用方只传 `/api/...`，helper 在 backend 容器内唯一拼接
+  Grafana hostname 并生成 `Authorization: Basic` header（不得把密码放 URL、命令输出或日志）；
+  datasource health 的唯一成功值是 JSON `status=OK`。CI runtime smoke 在 Alpine 3.22 中验证
+  正确凭据通过、错误凭据失败，防回退到 GNU-only `wget` 参数或 double URL prefix。
+- **Loki canary**：emitter 启动前固定 `start`，重试时只推进 `end`；响应必须是
+  `status=success`、至少一个 result stream、至少一个 values 样本并包含 marker。Keycloak
+  canary 是加入 `wotb_internal` 网络的独立 Alpine emitter，只验证 Alloy 的 ownership
+  采集路径，不得把 Keycloak 镜像当 shell 执行。
+- **Keycloak runtime smoke**：`deploy/test-keycloak-runtime.sh` 独立验证运行时契约——自定义
+  镜像必须以 `start --optimized` 启动，保留 PostgreSQL 与应用 OIDC discovery；不启用/暴露
+  management health/metrics 端口，且不得出现启动时 Quarkus augmentation。启动日志必须报告
+  **运行镜像自身注入的** build commit（`runtime-contract`＝脚本自建一次性镜像，或 40 位源码
+  SHA＝已发布生产镜像），期望值从容器 env 推导。main push 上 `.github/workflows/keycloak.yml`
+  的 `smoke` 验证 published digest；PR 上 `ci-keycloak.yml` 的 `keycloak_runtime` 跑真实 Docker
+  smoke。
+- **Alloy `stage.match` 转义**：Alloy Android 下载 `stage.match` selector 使用 LogQL 安全的
+  `[.]`，禁止回退到会触发 `invalid char escape` 的 `\.` 写法。
+- **排障入口**：Yecao 宿主 `ssh -i "$env:USERPROFILE\.ssh\wotb_vps_deploy"
+  -o IdentitiesOnly=yes root@45.136.14.101 -p 58361`，`docker logs ai-service --tail 100`；
+  业务后端日志在 TX。也可运行仅 `workflow_dispatch` 的
+  `.github/workflows/prod-diagnostics.yml` 只读采集同一批日志。

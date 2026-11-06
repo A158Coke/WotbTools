@@ -42,6 +42,8 @@
 
 - **内部 code**（meta.json 的 `mapName`，如 `neptune`/`erlenberg`/`rock`）是**不可变键**：由游戏客户端回放元数据发出，语义文件 `mapCodes`、`mapImages.js` 的 key 都以它为准。**不要改名**，否则真实回放解析会失配。
 - **展示名**（zh/en/ru）来自 `common/map_names.json`（游戏客户端名称）。注意内部 code 与英文名常不一致（如 `neptune`=Normandy、`erlenberg`=Middleburg、`rock`=Mayan Ruins），这是正常的，两套分别对应"解析键"与"用户可见名"。
+  前端全部同源读这一份：`frontend/src/replay-local/export/format.ts` 的 `mapNameCn()`
+  （导出侧固定中文）与 `frontend/src/utils/helpers.js` 的 `mapLabel()`（按 locale）。
 - **默认可见性门槛**：地图页 picker 默认只显示 `common/map_names.json` 有 `zh` 的 key（`hasChineseMapName()`，与渲染语言无关——切 en/ru 可见集合不变）；未登记中文名的资产条目（如 `rudniki_01`、`canal_01`、`neptune_02`）只在「显示全部地图」开关下出现。给一张资产地图登记 `zh` 即视为人工认可默认展示。注意这会同时扩充语义化器的 key 白名单：若存在同名客户端 mapId（如 `grossberg`/`moon`/`iceworld`），重跑会为它派生 `mapCodes`；没有客户端 mapId 的历史变体（`erlenberg_old`/`savanna_old`）在 `map-semanticizer/tests` 的资产专用名单里显式登记。已核验的语义文件不重跑。
 - **素材文件名**：统一为**英文展示名小写中划线**（如 Normandy → `normandy.webp`，Middleburg → `middleburg.webp`，Winter Malinovka → `winter-malinovka.webp`）。文件位于 `frontend/src/assets/maps/`。
 - **唯一权威**：素材引用、逻辑尺寸与坐标边界只在 `frontend/src/data/mapImages.js` 维护（后端 `MapOverview.image` 恒 null）。新增/修改素材只需改这一处 + 本表。
@@ -49,7 +51,8 @@
   `coordinateSystem.worldBounds`；当前 29 张均为 -300..300）。渲染统一用它换算像素，
   分析网格仍用 `playableBounds`——两者分离，逐图可独立校准。
 - **地图预览 2D 的可玩边界**是另一层：消费 `frontend/src/data/playableBounds.js`（由语义 `playableBoundsMeters` 生成，与 3D 边界 fallback 同源），不改变底图 `coordinateBounds` 映射；缺少语义/边界的图不画。
-- **语义数据手工调整**：`common/map-semantics/*.semantic.json` 的区域 label/特征/风险等人类可读字段为中文，可直接手工修改；**改后不要重跑 map-semanticizer**（重新生成会整份覆盖），直到语义化器引入人工覆写合并。
+- **语义数据手工调整**：`common/map-semantics/*.semantic.json` 的区域 label/特征/风险等人类可读字段为中文，可直接手工修改；**改后不要重跑 map-semanticizer**（重新生成会整份覆盖），直到语义化器引入人工覆写合并；
+改语义 JSON 时必须同步本文件相应条目与 `MapTacticalSemanticsRegistryTest` 断言。
 
 ## Collector 物理出生侧
 

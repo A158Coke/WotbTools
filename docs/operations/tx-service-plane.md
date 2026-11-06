@@ -92,7 +92,7 @@ K7C Frontend pool 的 active 语义：
 
 Frontend peer 的临时退出可以先依赖 Caddy 的 active health check 自动移出失败 peer；彻底移除 TX2 peer 时按 Caddy owner contract 修改 `CADDY_FRONTEND_PEER` 与 gate 期望并重新部署。
 
-遵守现有宿主部署锁，手工 mutation 必须通过 `bash /opt/wotb-tx/deploy/with-deploy-lock.sh <command...>`。不要顺带改 DNS、WG 配置、Caddy 路由、Komodo/Periphery 或生产 dependency。
+遵守现有宿主部署锁，手工 mutation 必须通过 `bash /opt/wotb-tx/deploy/with-deploy-lock.sh <command...>`。GitHub/脚本内部可以继承 `WOTB_DEPLOY_LOCK_FD=9`，但任何 operator / Agent 给人的手工命令都必须走 wrapper——禁止在交互式 SSH shell 直接执行 `exec 9>/opt/wotb-tx/.deploy.lock` + `flock`，否则 FD 会跟随 shell 长期存活并阻断后续部署；锁冲突由 wrapper 输出 holder 诊断。不要顺带改 DNS、WG 配置、Caddy 路由、Komodo/Periphery 或生产 dependency。
 
 ## Runtime gate 是永久基础设施
 

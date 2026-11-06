@@ -150,8 +150,11 @@ Report frontend image and layer sizes   镜像/分层/目录体积诊断
 Reject stale main before publication    main 已前进则 fail-fast（不推一份注定不能 promote 的 tag）
 Publish immutable image to Tencent TCR  docker push：每次 600s、最多 3 次、仅瞬态失败重试
 Verify Tencent TCR digest               只证 registry 上该 immutable tag 的 digest == 本次推送的 digest
-Publish latest only from current main   确认 source SHA 仍是远端 main 后 crane cp -> :latest
 ```
+
+> 构建发生在 TX 本机（见下节）；frontend 不再发布或依赖 `latest`（旧的
+> `crane cp -> :latest` 步骤已随 digest-pinned 车道移除，见
+> `docs/operations/ci-supply-chain.md` §5）。
 
 - **校验前置**：内容校验（source SHA / 资产源 / WASM / 期望静态文件）在**任何 registry
   写入之前**完成，校验对象是"即将被推送的那份字节"。WASM 一项不是"文件存在 + magic"而是
@@ -166,6 +169,39 @@ Publish latest only from current main   确认 source SHA 仍是远端 main 后 
   build stage、省不下 `pnpm install`，却被同一失败面支配。该决策**只适用于 frontend**，不外推到
   business-api / keycloak / ai-service。
 
+### TX 本机构建车道（build-frontend-from-gitee.sh）
+
+- GitHub 是 release authority，不再承担 Frontend Docker build / TCR 大镜像上传；
+  独立同步 owner（`gitee-mirror.yml`，不参与发布 run）把 exact GitHub SHA 同步到 Gitee，
+  GitHub 侧只把 TX builder 脚本、轻量 Agent WASM archive（`deploy/agent/source.json` 锁定）
+  与可选 pinned Sponsor bundle 暂存到 TX。
+- `deploy/tx/build-frontend-from-gitee.sh` 复用 production Gitee clone 上的 host build lock
+  （与 TX1 Business API 缓存及锁分离）；`materialize_source` 只从 Gitee main 历史取得
+  requested exact SHA：保留 12 次 × 15 秒等待模型，等待耗尽即 fail closed，
+  不使用源码 bundle 或 TX→GitHub 后备。
+- 随后创建 exact-SHA worktree、用 SHA256 验证 WASM、构建镜像，并在任何 registry 写入前
+  校验 source SHA / `ASSET_BASE_URL` / WASM / 静态文件；生产必须通过
+  `TX_FRONTEND_IMAGE_REF=...@sha256:...` 部署该 digest。
+
+### 前端边缘 nginx 与 SPA 缓存契约
+
+- 线上边缘配置是 `deploy/tx/nginx/frontend.conf.template`（Caddy 终 TLS 后整站转
+  `wotb-frontend:80`，由 frontend 镜像的 nginx template entrypoint 渲染）；镜像内的
+  `deploy/nginx/nginx.conf` 只是烘焙副本，运行时被同路径覆盖，**不得据它判断线上路由**。
+- **SPA 缓存策略（frontend 部署即生效）**：`location = /index.html` 固定
+  `Cache-Control: no-cache, no-store, must-revalidate`（新 bundle hash 部署后立即生效）；
+  `location /assets/`（Vite 内容 hash 产物）固定
+  `Cache-Control: public, max-age=31536000, immutable`，且 404 不 fallback 到 index.html；
+  `location ~ ^/wasm/[0-9a-f]{40}/`（commit-addressed Agent WASM）同样 immutable——URL 即
+  内容身份；只锁 40 位 commit 目录，不给 `/wasm/` 根目录统一 immutable（stable 路径已废除）。
+  改缓存头会影响用户能否看到新前端版本/新引擎，改动需在 `?view=hof-admin` 等页验证。
+- 反向代理路由：`location ^~ /api/ai/` 反代到 `${AI_UPSTREAM}`（Yecao ai-service
+  `10.20.0.2:8089`，仅 WireGuard，不重写 path），固定 `proxy_read/send_timeout 1120s` +
+  `proxy_buffering off`（SSE）；其余 `/api/` 120s，没有按 IP 限流的回放专用 location
+  （preview/export/performance/processing/export jobs 均已删除；真实 IP 信任由
+  `deploy/test-nginx-real-ip.sh` 守护）。`TX_AI_UPSTREAM` 与 `TX_BACKEND_UPSTREAM` 一样在
+  `deploy/tx/deploy.sh` fail-closed。
+
 ### 验证（不需要凭据——公开读）
 
 ```bash
@@ -177,6 +213,24 @@ curl -sI "$B/data/tank_cache.json" -H "Origin: https://wotbtools.com" \
 
 线上：打开站点 → 坦克百科 / 全场回放出图出模型；DevTools Network 中 GLB / JSON 请求
 指向该 origin 且为 200、无 CORS 报错；"未配置资产源"提示消失。
+
+## research 资产包数据语义（canonical 摘要）
+
+- **数据源是本机客户端解析**：上游 WoT-Blitz-Agent 仓 `tools/export_research_loadout.py`
+  重导出，版本锚 `meta.json.gameVersion`；不是 BlitzKit。
+- **BlitzKit（BK）可参考范围**（2026-10-27 用户第二次裁定）：除隐蔽系数外均可参考，
+  隐蔽/技能数值仍以客户端为准。**四项不照抄**：无角色 1.05 兜底、火药 +30%、
+  漏电台/油箱重量、124 号装备（详见上游计划 §7 #12）。
+- **物品可用性按客户端 `vehicleFilter`**：同一 include 块内所有条件 AND
+  （如 ration = 6-10 级且苏联）；`<isAbility/>`（战斗内技能）不进装配池；
+  `ids` 规则用模块条目键补出的 `nation:stem`。过滤结果只决定物品池，
+  不参与数值公式。
+- **乘员语义分域**：`crew-skills.json` 的「全部技能 7 级」是回放/AI 投影口径；
+  百科配置器使用客户端 `avatar.xml` 导出的 `skills.json`（20 项技能 class 归属 +
+  per-level 效果参数，默认 0 中性基线，1–7 级切换，效果全局生效）。两套语义
+  不得互相套用；技能数值只读 `skills.json.effects`，禁止在组件里写死百分比。
+- **Vite 不监听 `common/`**（在 `frontend/` 之外）：重新导出图标数据后必须重启
+  `pnpm run dev`；资产包由 `serve_asset_pack.mjs` 直接读磁盘，替换后刷新即可。
 
 ## 发布：生成与上传资产包
 
