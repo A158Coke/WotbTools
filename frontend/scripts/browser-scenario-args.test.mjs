@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { parseScenarioArgs, selectShard } from './browser-scenario-args.mjs'
 
+function shardsOf(scenarios, total) {
+  return Array.from({ length: total }, (_, index) =>
+    selectShard(scenarios, parseScenarioArgs(['--shard', `${index + 1}/${total}`])),
+  )
+}
+
 describe('parseScenarioArgs', () => {
   it('defaults to the full list without a filter', () => {
     expect(parseScenarioArgs([])).toEqual({ nameFilter: undefined, shard: null })
@@ -56,5 +62,31 @@ describe('selectShard', () => {
   it('fails when an explicit selection is empty', () => {
     expect(() => selectShard(['only'], parseScenarioArgs(['--shard', '2/2']))).toThrow('no scenario matches')
     expect(() => selectShard([], parseScenarioArgs(['missing']))).toThrow('no scenario matches')
+  })
+
+  // 分片不变量对任意 n 成立：用与真实门禁同规模的两组输入覆盖 n = 1..4。
+  it.each([
+    ['28', Array.from({ length: 28 }, (_, index) => `scenario-${index}`)],
+    ['166', Array.from({ length: 166 }, (_, index) => `scenario-${index}`)],
+  ])('partitions %s scenarios for n = 1, 2, 3 and 4', (_label, list) => {
+    for (const total of [1, 2, 3, 4]) {
+      const shards = shardsOf(list, total)
+      expect(shards.flat()).toHaveLength(list.length)
+      expect(new Set(shards.flat())).toEqual(new Set(list))
+      const sizes = shards.map((shard) => shard.length)
+      expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(1)
+      for (const [index, shard] of shards.entries()) {
+        // 片内顺序必须与全集一致；并集完整与互斥由上面的 length + Set 证明。
+        expect(shard).toEqual(list.filter((name) => shard.includes(name)))
+        for (const other of shards.slice(index + 1)) {
+          expect(shard.filter((name) => other.includes(name))).toEqual([])
+        }
+      }
+    }
+  })
+
+  it('fails when a shard is empty for a larger n', () => {
+    expect(() => selectShard(['only'], parseScenarioArgs(['--shard', '3/3']))).toThrow('no scenario matches')
+    expect(() => selectShard(['a', 'b'], parseScenarioArgs(['--shard', '3/4']))).toThrow('no scenario matches')
   })
 })

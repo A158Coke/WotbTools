@@ -245,6 +245,43 @@ assert fe_ci["jobs"]["frontend"]["steps"][0]["with"]["ref"] == "${{ inputs.head_
 for dedupe_workflow in (ba_ci, fe_ci, ci):
     assert "continue-on-error" not in json.dumps(dedupe_workflow), "HTTP contract dedupe must not weaken the gate"
 
+# 浏览器门禁分片矩阵：两条最慢的真浏览器门禁各三片，标签、script 与 args 必须一致；
+# 其它门禁保持独立且顺序不变。分片选择逻辑本身由
+# frontend/scripts/browser-scenario-args.test.mjs 对 n=1..4 验证；这里只锁定真实 workflow。
+browser_gates = fe_ci["jobs"]["browser-gates"]
+assert browser_gates["runs-on"] == "ubuntu-latest"
+assert browser_gates["timeout-minutes"] == "30"
+assert browser_gates["strategy"]["fail-fast"] == "false"
+browser_matrix = browser_gates["strategy"]["matrix"]["gate"]
+sharded_gates = {
+    "test:browser-interaction": "Playback/Workspace interaction",
+    "test:browser-armor-mobile": "Armor viewer mobile layout",
+}
+for script, label_prefix in sharded_gates.items():
+    entries = [gate for gate in browser_matrix if gate["script"] == script]
+    assert len(entries) == 3, (script, entries)
+    assert [gate["label"] for gate in entries] == [
+        f"{label_prefix} ({index}/3)" for index in (1, 2, 3)
+    ], entries
+    assert [gate["args"] for gate in entries] == [
+        f"--shard {index}/3" for index in (1, 2, 3)
+    ], entries
+unsharded_gates = [gate for gate in browser_matrix if gate["script"] not in sharded_gates]
+assert [gate["label"] for gate in unsharded_gates] == [
+    "Armor viewer aiming interaction",
+    "Armor viewer spaced backside thickness",
+    "Creator recommendations",
+    "Map preview mobile layout",
+], unsharded_gates
+assert [gate["script"] for gate in unsharded_gates] == [
+    "test:browser-armor-aiming",
+    "test:browser-armor-spaced-backside",
+    "test:browser-creators",
+    "test:browser-map-preview",
+], unsharded_gates
+assert all("args" not in gate for gate in unsharded_gates), unsharded_gates
+assert len(browser_matrix) == 10, browser_matrix
+
 # R2：对真实 Required Gate 聚合逻辑（ci-gate.yml 内嵌 Python）做失败传播测试，
 # 断言具体失败原因，而不是只断言任意非零退出。
 import subprocess
