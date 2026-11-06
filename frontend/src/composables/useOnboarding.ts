@@ -10,7 +10,7 @@ import type { OnboardingContext, OnboardingSurface, OnboardingSurfaceId, Onboard
 import type { ReplayCapability } from '../types/workspace.js'
 
 /** Increment epoch only when existing users need the core guide again. Copy/anchor changes use revision. */
-const ONBOARDING_RELEASE = Object.freeze({ enabled: true, coreEpoch: 1, contentRevision: 6 })
+const ONBOARDING_RELEASE = Object.freeze({ enabled: true, coreEpoch: 1, contentRevision: 7 })
 export const ONBOARDING_STORAGE_KEY = 'wotbtools-onboarding'
 export const ONBOARDING_PENDING_LOGIN_KEY = 'wotbtools-onboarding-pending-login'
 const PENDING_LOGIN_MAX_AGE_MS = 30 * 60 * 1000
@@ -68,7 +68,7 @@ const stage = (anchor: string, copy: string, extra: Partial<GuideStage> = {}): G
 const step = (id: string, capability: ReplayCapability, stages: GuideStage[]): GuideStep => ({ id, capability, stages })
 const demo = step('demo', 'data', [stage('workspace-demo', 'demo')])
 const data = step('data', 'data', [stage('data-toolbar', 'data')])
-const playback = step('playback', 'playback', [stage('playback-transport', 'playback', { surface: 'playback', prepare: true })])
+const playback = step('playback', 'playback', [stage('playback-transport', 'playback', { surface: 'playback', prepare: true, interactionAnchor: 'playback-floating-fullscreen' })])
 const annotations = step('annotations', 'playback', [
   stage('playback-annotation-entry', 'annotationEntry', { surface: 'annotations', advanceOnReady: true }),
   stage('playback-annotation-tools', 'annotationTools', { surface: 'annotations', interactionAnchor: 'playback-map' }),

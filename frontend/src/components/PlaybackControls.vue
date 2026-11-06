@@ -17,6 +17,8 @@ const props = defineProps({
   duration: { type: Number, default: 0 },
   fullscreenSupported: Boolean,
   isFullscreen: Boolean,
+  /** 全屏入口由宿主右上角浮动按钮呈现：不在传输条里重复渲染（见 PlaybackTransport）。 */
+  floatingFullscreen: Boolean,
   formatClock: { type: Function, required: true },
 })
 
@@ -30,6 +32,7 @@ const emit = defineEmits([
   <PlaybackTransport
     :fullscreen-supported="props.fullscreenSupported"
     :is-fullscreen="props.isFullscreen"
+    :floating-fullscreen="props.floatingFullscreen"
     :display-open="props.displayOpen"
     display-enabled
     :annotation-enabled="props.annotationEnabled"

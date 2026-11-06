@@ -33,7 +33,8 @@
     "api:fixture": "node scripts/validate-playback-fixture.mjs",
     "lint:css": "stylelint \"src/**/*.{css,vue}\" --allow-empty-input",
     "build:android": "node scripts/build-android-bundle.mjs",
-    "test:shader-check": "node scripts/check-scenery-shaders.mjs"
+    "test:shader-check": "node scripts/check-scenery-shaders.mjs",
+    "test:browser-map-preview": "node scripts/browser-map-preview-layout.mjs"
   },
   "dependencies": {
     "@vueuse/core": "^14.4.0",
