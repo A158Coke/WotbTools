@@ -22,6 +22,7 @@ import {
   __resetMap2dForTests, ensureMap2dImage, isValidIndex, map2dSrc, map2dState,
   pickNewestIndex, selectMap2dSources,
 } from './map2dOverlay.js'
+import { __resetAssetBaseForTests } from '../scene/assetBase.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -93,6 +94,7 @@ beforeEach(() => {
   }))
   vi.stubGlobal('Image', imageStub())
   __resetMap2dForTests()
+  __resetAssetBaseForTests()
 })
 
 afterEach(() => {

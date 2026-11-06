@@ -3,7 +3,9 @@
 # 覆盖：link/default/rollback 的原子符号链接、audit 追加、versions.json 调用、verify；
 # link 的候选 release 内容体检（--full 哈希：缺文件与同长度篡改都在切换在线
 # symlink 之前失败）；catalog 的 default 从 current 推导（所有 catalog 调用必须
-# 显式携带 --default，且与 current 一致）；unlink 的 default 保护与删除语义。
+# 显式携带 --default，且与 current 一致）；unlink 的 default 保护与删除语义；
+# 故障注入（工具缺失 / catalog 或 verify 失败）必须在持锁状态下回滚在线链接与
+# versions.json，不能留下线上状态与目录不一致。
 set -Eeuo pipefail
 
 command -v flock >/dev/null || { echo "skip: flock missing (host contract requires util-linux)"; exit 0; }
@@ -14,15 +16,17 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 root="$tmp/root"
-mkdir -p "$root/releases/r1" "$root/releases/r2" "$root/releases/r3" "$root/releases/r4" "$root/releases/r5" "$root/datasets" "$root/bin"
+mkdir -p "$root/releases/r1" "$root/releases/r2" "$root/releases/r3" "$root/releases/r4" "$root/releases/r5" "$root/releases/r6" "$root/datasets" "$root/bin"
 
 cat > "$root/bin/asset_release.py" <<'PY'
-import hashlib, json, pathlib, sys
+import hashlib, json, os, pathlib, sys
 cmd = sys.argv[1] if len(sys.argv) > 1 else ""
 args = sys.argv[2:]
 def opt(name, default=None):
     return args[args.index(name) + 1] if name in args else default
 if cmd == "catalog":
+    if os.environ.get("FAIL_CATALOG") == "1":
+        raise SystemExit("injected catalog failure")
     if "--default" not in args:
         # host 契约：dataset.sh 的所有 catalog 调用必须显式携带 current 推导的
         # default——工具本身不读 current，靠调用方传参保持 versions.json 与
@@ -53,7 +57,10 @@ elif cmd == "verify":
                 digest = hashlib.sha256(f.read_bytes()).hexdigest()
                 if digest != entry["sha256"]:
                     raise SystemExit(f"sha256 不符: {entry['path']}")
-    # --root 模式（dataset 目录批量校验）：stub 一律 pass
+    # --root 模式（dataset 目录批量校验）：stub 一律 pass，除非注入失败
+    else:
+        if os.environ.get("FAIL_VERIFY_ROOT") == "1":
+            raise SystemExit("injected root verify failure")
 else:
     raise SystemExit(f"unexpected command: {cmd}")
 PY
@@ -78,6 +85,7 @@ printf '%s\n' '{"version":1,"files":[{"path":"ghost/missing.json","sha256":"x","
 # r5：同长度内容篡改——文件存在（存在性体检放行），仅 --full 哈希能拦截
 make_release "$root/releases/r5" "evil" "payload-good-good"
 printf 'payload-evil-evil' > "$root/releases/r5/payload.txt"
+make_release "$root/releases/r6" "supertest" "payload-r6"
 
 run() {
   WOTB_ASSET_ROOT="$root" ASSET_RELEASE_TOOL="$root/bin/asset_release.py" PYTHON=python3 \
@@ -156,6 +164,54 @@ run unlink --dataset supertest >/dev/null
 [[ ! -e "$root/datasets/supertest" ]] || { echo "unlink must remove the dataset symlink" >&2; exit 1; }
 grep -q '"action":"unlink"' "$root/release-log.jsonl" || { echo "unlink audit line missing" >&2; exit 1; }
 [[ -d "$root/releases/r3" ]] || { echo "unlink must keep the release directory" >&2; exit 1; }
+assert_catalog_default "11.21.0"
+
+# --- 故障注入：模拟缺失依赖与 catalog/verify 失败，在线状态必须原样恢复 ---
+run link --dataset supertest --release r3 >/dev/null
+cat_before="$(sha256sum "$root/versions.json" | awk '{print $1}')"
+
+# 缺工具：unlink 必须在 rm 之前 fail-closed（旧实现是 rm 后才 require_tool）
+mv "$root/bin/asset_release.py" "$root/bin/asset_release.py.off"
+if run unlink --dataset supertest >/dev/null 2>&1; then
+  echo "unlink without the tool must fail before removing the link" >&2; exit 1
+fi
+[[ -L "$root/datasets/supertest" ]] || { echo "missing tool must not remove the dataset link" >&2; exit 1; }
+mv "$root/bin/asset_release.py.off" "$root/bin/asset_release.py"
+
+# catalog 失败：default 不改变 current，catalog 原样恢复
+if FAIL_CATALOG=1 run default --dataset supertest >/dev/null 2>&1; then
+  echo "default with a failing catalog must fail" >&2; exit 1
+fi
+assert_link "$root/current" "datasets/11.21.0"
+[[ "$(sha256sum "$root/versions.json" | awk '{print $1}')" == "$cat_before" ]]   || { echo "failed default must restore versions.json" >&2; exit 1; }
+
+# catalog 失败：unlink 恢复被删的 dataset 链接
+if FAIL_CATALOG=1 run unlink --dataset supertest >/dev/null 2>&1; then
+  echo "unlink with a failing catalog must fail" >&2; exit 1
+fi
+assert_link "$root/datasets/supertest" "../releases/r3"
+[[ "$(sha256sum "$root/versions.json" | awk '{print $1}')" == "$cat_before" ]]   || { echo "failed unlink must restore versions.json" >&2; exit 1; }
+
+# catalog 失败（link --default）：dataset 与 current 都必须回到原目标
+if FAIL_CATALOG=1 run link --dataset supertest --release r6 --default >/dev/null 2>&1; then
+  echo "link --default with a failing catalog must fail" >&2; exit 1
+fi
+assert_link "$root/datasets/supertest" "../releases/r3"
+assert_link "$root/current" "datasets/11.21.0"
+[[ "$(sha256sum "$root/versions.json" | awk '{print $1}')" == "$cat_before" ]]   || { echo "failed link --default must restore versions.json" >&2; exit 1; }
+
+# verify 失败（link，catalog 已写入）：release 链接与 catalog 都要恢复
+if FAIL_VERIFY_ROOT=1 run link --dataset 11.21.0 --release r2 >/dev/null 2>&1; then
+  echo "link with a failing post-verify must fail" >&2; exit 1
+fi
+assert_link "$root/datasets/11.21.0" "../releases/r1"
+[[ "$(sha256sum "$root/versions.json" | awk '{print $1}')" == "$cat_before" ]]   || { echo "failed post-verify must restore versions.json" >&2; exit 1; }
+if compgen -G "$root/.versions.json.*.rollback" >/dev/null; then
+  echo "rollback snapshot must not be left behind" >&2; exit 1
+fi
+
+# 故障注入之后正常路径仍然工作
+run unlink --dataset supertest >/dev/null
 assert_catalog_default "11.21.0"
 
 echo "asset dataset host contract: PASS"

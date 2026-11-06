@@ -21,9 +21,25 @@ const DATASET_ID_RE = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/
 const productionDefault = (import.meta.env.VITE_ASSET_BASE_URL ?? '').replace(/\/+$/, '')
 
 let cachedOrigin: string | null = null
+// 每个页面只解析一次 dataset：切换走整页重载（useDataVersion.select）。若每次调用都
+// 重读共享 localStorage，另一个标签页切换 dataset 后本页会在未重载时突然改用新基址，
+// 而模块级缓存（场景/map2d/资源）仍是旧 dataset 的内容（review P2）。
+let cachedDataset: string | null | undefined
 
-/** 显式选中的数据版本；非法/空值视为未选中。 */
+/** 显式选中的数据版本（页面级固定）；非法/空值视为未选中。 */
 export function dataVersionId(): string | null {
+  if (cachedDataset !== undefined) return cachedDataset
+  cachedDataset = resolveDataVersion()
+  return cachedDataset
+}
+
+/** 测试专用：清空页面级快照，等价于一次新的页面加载（生产代码不调用）。 */
+export function __resetAssetBaseForTests(): void {
+  cachedOrigin = null
+  cachedDataset = undefined
+}
+
+function resolveDataVersion(): string | null {
   const q = searchParams().get(DATA_VERSION_QUERY)
   if (q !== null) {
     // 显式 ?data= 与运行手册一致地持久化：非空写、空/非法清除——否则下次不带

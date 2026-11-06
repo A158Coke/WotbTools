@@ -3,6 +3,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import { __resetAssetBaseForTests } from '../scene/assetBase.js'
 
 const i18n = vi.hoisted(() => ({ locale: null }))
 vi.mock('vue-i18n', async () => {
@@ -113,6 +114,8 @@ async function openAt(query = {}) {
 }
 
 beforeEach(() => {
+  // 每个用例模拟一次新的页面加载：dataset 在页面内固定，切换只经整页重载。
+  __resetAssetBaseForTests()
   auth.authenticated.value = false
   if (i18n.locale) i18n.locale.value = 'zh'
   source.loadMapIndex.mockReset()

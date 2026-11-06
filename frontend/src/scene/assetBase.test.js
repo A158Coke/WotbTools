@@ -148,4 +148,22 @@ describe('assetBase data version', () => {
     expect(stripDatasetSuffix('https://assets.example.com/v/11.21.0/')).toBe('https://assets.example.com')
     expect(stripDatasetSuffix('https://assets.example.com/pack')).toBe('https://assets.example.com/pack')
   })
+
+  it('pins the effective dataset for the page lifetime (multi-tab isolation)', async () => {
+    const { dataVersionId } = await loadAssetBase({
+      dataStorage: '11.21.0',
+      productionDefault: PROD,
+    })
+    expect(dataVersionId()).toBe('11.21.0')
+
+    // 另一个标签页切换 dataset 只改共享 localStorage（并会自行 reload）；本页
+    // 未 reload 时必须继续使用启动时的 dataset，不能出现「资产基址已换、模块
+    // 缓存仍是旧 dataset」的混用。
+    localStorage.setItem('wotb_data_version', 'supertest')
+    expect(dataVersionId()).toBe('11.21.0')
+
+    // history 改变（无重载）同样不能改写本页的有效 dataset。
+    window.history.replaceState({}, '', '/?data=supertest')
+    expect(dataVersionId()).toBe('11.21.0')
+  })
 })

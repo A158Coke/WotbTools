@@ -91,18 +91,19 @@ manual; Git tracks configuration, not the multi-GB asset pack.
 
 资产 origin 按**游戏版本通道**维护 dataset。当前通道（2026-11-05 起）：
 
+- `11.21.0`——11.21 现役客户端（**默认通道**：`current` 指向它，未选择 dataset
+  的用户与旧客户端都读正式服数据）。
 - `supertest`（超测服）——超测预览通道，随预览轮次**整体重指**到最新预览
-  release（t11b → t11p2 → …），不按预览轮次堆 dataset。
-- `11.21.0`——11.21 现役客户端。
-- `11.22`——预留；11.22 正式服包发布时加入（终态三通道：超测服 / 11.21 / 11.22）。
+  release（t11b → t11p2 → …），不按预览轮次堆 dataset；只有显式选择才使用。
+- `11.22`——预留；11.22 正式服包发布时加入（终态三通道：11.21 / 超测服 / 11.22）。
 
-`datasets/<id>` 是指向不可变 release 的符号链接；`current` 指向默认 dataset，
-旧客户端兼容入口不受影响。
+`datasets/<id>` 是指向不可变 release 的符号链接；`current` 指向默认 dataset
+（`11.21.0`），旧客户端兼容入口不受影响。
 
-**部署状态（2026-11-05）**：主机侧对象库与 dataset 已就位，但线上 Caddy Stack 仍在
-跑 dataset 化之前的 Caddyfile；在本文件经正常 `asset-origin` → Komodo Stack
-redeploy 之前，`/versions.json` 与 `/v/<id>/...` 返回 `404`。期间 `/` 与
-`/version.json` 持续服务默认 dataset。
+**部署状态（2026-11-06）**：主机侧对象库与 dataset 已就位，`current` 指向
+`11.21.0`；线上 Caddy Stack 仍在跑 dataset 化之前的 Caddyfile，在经正常
+`asset-origin` → Komodo Stack redeploy 之前，`/versions.json` 与 `/v/<id>/...`
+返回 `404`。期间 `/` 与 `/version.json` 持续服务默认 dataset（11.21.0）。
 
 Public paths:
 

@@ -16,6 +16,12 @@
 # Requires: bash, coreutils (ln/mv -T/readlink), flock, python3, and
 # /srv/wotb-assets/bin/asset_release.py (copied from WoT-Blitz-Agent tools/).
 #
+# Failure semantics: every mutating command preflights its dependencies (tool,
+# candidate release, target symlinks) *before* touching the live tree, snapshots
+# versions.json, and restores the previous symlinks + catalog while still holding
+# the lock if switch/catalog/verify fails. A failed command therefore leaves the
+# served state exactly as it was.
+#
 # Usage:
 #   dataset.sh link --dataset 11.21.0 --release 20261105-3f9a2c1b [--default] [--dry-run]
 #   dataset.sh default --dataset 11.21.0 [--dry-run]
@@ -35,8 +41,16 @@ TOOL="${ASSET_RELEASE_TOOL:-$ROOT/bin/asset_release.py}"
 PYTHON="${PYTHON:-python3}"
 DATASET_ID_RE='^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$'
 
+CATALOG_SNAPSHOT=""
+
 die() { echo "ERROR: $*" >&2; exit 1; }
 note() { echo "[dataset] $*"; }
+
+cleanup_snapshot() {
+  [[ -n "$CATALOG_SNAPSHOT" && -f "$CATALOG_SNAPSHOT" ]] && rm -f "$CATALOG_SNAPSHOT"
+  return 0
+}
+trap cleanup_snapshot EXIT
 
 # 从 current 符号链接推导默认 dataset（工具本身不读 current，需调用方显式传参）。
 # 必须在持锁状态下调用。
@@ -49,7 +63,7 @@ current_default() {
 }
 
 usage() {
-  sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '/^# Usage:/,/^set -Eeuo pipefail/p' "$0" | sed 's/^# \{0,1\}//' | sed '$d'
   exit "${1:-0}"
 }
 
@@ -86,17 +100,60 @@ verify_release() {
   [[ "$declared" == "$dataset" ]] || die "release 的 dataset_id ($declared) 与目标 ($dataset) 不一致"
 }
 
+# 目标必须是"不存在"或"符号链接"：真实目录/文件不能静默覆盖。
+require_link_target() {
+  local link="$1"
+  [[ ! -e "$link" || -L "$link" ]] \
+    || die "$link 已存在且不是符号链接（拒绝覆盖真实目录；先人工确认再清理）"
+}
+
 switch_symlink() {
   local link="$1" target="$2" dry_run="$3"
   if [[ "$dry_run" == "1" ]]; then
     note "would link $link -> $target"
-    return
+    return 0
   fi
-  if [[ -e "$link" && ! -L "$link" ]]; then
-    die "$link 已存在且不是符号链接（拒绝覆盖真实目录；先人工确认再清理）"
+  [[ ! -e "$link" || -L "$link" ]] || return 1
+  ln -sfn "$target" "$link.new" && mv -T "$link.new" "$link"
+}
+
+# 把链接恢复为原目标；空目标 = 原先不存在，删除它。
+restore_symlink() {
+  local link="$1" previous="$2"
+  if [[ -z "$previous" ]]; then
+    rm -f "$link"
+    return 0
   fi
-  ln -sfn "$target" "$link.new"
-  mv -T "$link.new" "$link"
+  ln -sfn "$previous" "$link.new" && mv -T "$link.new" "$link"
+}
+
+# 在改动在线状态之前备份 versions.json：catalog 写失败时用它恢复目录。
+snapshot_catalog() {
+  if [[ -f "$CATALOG" ]]; then
+    CATALOG_SNAPSHOT="$ROOT/.versions.json.$$.rollback"
+    cp -p "$CATALOG" "$CATALOG_SNAPSHOT" || die "无法备份 $CATALOG（未改动在线状态）"
+  fi
+}
+
+restore_catalog() {
+  if [[ -n "$CATALOG_SNAPSHOT" ]]; then
+    mv -f "$CATALOG_SNAPSHOT" "$CATALOG" || return 1
+    CATALOG_SNAPSHOT=""
+    return 0
+  fi
+  rm -f "$CATALOG"
+}
+
+# 回滚一组在线改动（成对的 link previous）；回滚本身失败必须显式报告。
+rollback_online() {
+  local ok=0
+  local link previous
+  while [[ $# -gt 0 ]]; do
+    link="$1"; previous="$2"; shift 2
+    restore_symlink "$link" "$previous" || { note "WARNING: 无法恢复 $link"; ok=1; }
+  done
+  restore_catalog || { note "WARNING: 无法恢复 $CATALOG"; ok=1; }
+  [[ "$ok" == "0" ]] || note "WARNING: 回滚未完全成功，请人工核对 $ROOT"
 }
 
 cmd_link() {
@@ -123,28 +180,60 @@ cmd_link() {
   "$PYTHON" "$TOOL" verify --pack "$RELEASES/$release" --full \
     || die "候选 release 内容校验失败：$RELEASES/$release（未切换在线 dataset）"
 
+  local link="$DATASETS/$dataset"
+  require_link_target "$link"
   local previous
-  previous="$(readlink "$DATASETS/$dataset" 2>/dev/null || true)"
-  switch_symlink "$DATASETS/$dataset" "../releases/$release" "$dry_run"
+  previous="$(readlink "$link" 2>/dev/null || true)"
+  local previous_current=""
   if [[ "$make_default" == "1" ]]; then
-    switch_symlink "$ROOT/current" "datasets/$dataset" "$dry_run"
+    require_link_target "$ROOT/current"
+    previous_current="$(readlink "$ROOT/current" 2>/dev/null || true)"
   fi
-  if [[ "$dry_run" == "0" ]]; then
-    audit "link" "$dataset" "$release" "$previous"
-    # 工具不读 current：catalog 的 default 必须显式传——--default 切换后即
-    # 新 dataset，否则仍是 current 指向的原默认。
-    local catalog_default
+  # catalog 的 default 必须显式传（工具不读 current）；在改动前就确定，缺失即
+  # fail-closed，不能等链接切完才发现无法生成目录。
+  local catalog_default
+  if [[ "$make_default" == "1" ]]; then
+    catalog_default="$dataset"
+  else
+    catalog_default="$(current_default)"
+    [[ -n "$catalog_default" ]] || die "无法确定 catalog default（current 缺失）；先 dataset.sh default --dataset <id>"
+  fi
+
+  if [[ "$dry_run" == "1" ]]; then
+    switch_symlink "$link" "../releases/$release" 1
+    [[ "$make_default" == "1" ]] && switch_symlink "$ROOT/current" "datasets/$dataset" 1
+    note "dataset=$dataset release=$release default=$make_default"
+    return 0
+  fi
+
+  # 从这里开始改动在线状态：依赖已 preflight、catalog 已备份。
+  snapshot_catalog
+  if ! switch_symlink "$link" "../releases/$release" 0; then
+    rollback_online "$link" "$previous"
+    die "切换 $link 失败（在线状态已回滚）"
+  fi
+  if [[ "$make_default" == "1" ]] && ! switch_symlink "$ROOT/current" "datasets/$dataset" 0; then
+    rollback_online "$link" "$previous"
+    die "切换 current 失败（在线状态已回滚）"
+  fi
+
+  if ! "$PYTHON" "$TOOL" catalog --root "$DATASETS" --out "$CATALOG" --default "$catalog_default"; then
     if [[ "$make_default" == "1" ]]; then
-      catalog_default="$dataset"
+      rollback_online "$link" "$previous" "$ROOT/current" "$previous_current"
     else
-      catalog_default="$(current_default)"
+      rollback_online "$link" "$previous"
     fi
-    [[ -n "$catalog_default" ]] || die "无法确定 catalog default（current 缺失）"
-    "$PYTHON" "$TOOL" catalog --root "$DATASETS" --out "$CATALOG" --default "$catalog_default" \
-      || die "versions.json 生成失败（dataset 已切换；请修复后重跑 catalog）"
-    "$PYTHON" "$TOOL" verify --root "$DATASETS" --catalog "$CATALOG" \
-      || die "发布后 verify 失败（dataset 已切换；请回滚）"
+    die "versions.json 生成失败（在线状态已回滚）"
   fi
+  if ! "$PYTHON" "$TOOL" verify --root "$DATASETS" --catalog "$CATALOG"; then
+    if [[ "$make_default" == "1" ]]; then
+      rollback_online "$link" "$previous" "$ROOT/current" "$previous_current"
+    else
+      rollback_online "$link" "$previous"
+    fi
+    die "发布后 verify 失败（在线状态已回滚）"
+  fi
+  audit "link" "$dataset" "$release" "$previous"
   note "dataset=$dataset release=$release default=$make_default"
 }
 
@@ -158,17 +247,34 @@ cmd_default() {
     esac
   done
   require_dataset "$dataset"
-  # 持锁后再做存在性检查，避免与其它持锁发布交错出反向竞态（review P1）。
+  # 依赖与目标全部在持锁后、改动前验证：工具缺失时不能先把 current 切走。
+  require_tool
   with_lock
   [[ -e "$DATASETS/$dataset" ]] || die "dataset 不存在: $DATASETS/$dataset"
+  require_link_target "$ROOT/current"
+
   local previous
   previous="$(readlink "$ROOT/current" 2>/dev/null || true)"
-  switch_symlink "$ROOT/current" "datasets/$dataset" "$dry_run"
-  if [[ "$dry_run" == "0" ]]; then
-    audit "default" "$dataset" "$(readlink "$DATASETS/$dataset")" "$previous"
-    "$PYTHON" "$TOOL" catalog --root "$DATASETS" --out "$CATALOG" --default "$dataset" \
-      || die "versions.json 生成失败（current 已切换；请修复后重跑 catalog）"
+  if [[ "$dry_run" == "1" ]]; then
+    switch_symlink "$ROOT/current" "datasets/$dataset" 1
+    note "default dataset=$dataset"
+    return 0
   fi
+
+  snapshot_catalog
+  if ! switch_symlink "$ROOT/current" "datasets/$dataset" 0; then
+    rollback_online "$ROOT/current" "$previous"
+    die "切换 current 失败（在线状态已回滚）"
+  fi
+  if ! "$PYTHON" "$TOOL" catalog --root "$DATASETS" --out "$CATALOG" --default "$dataset"; then
+    rollback_online "$ROOT/current" "$previous"
+    die "versions.json 生成失败（current 已回滚）"
+  fi
+  if ! "$PYTHON" "$TOOL" verify --root "$DATASETS" --catalog "$CATALOG"; then
+    rollback_online "$ROOT/current" "$previous"
+    die "发布后 verify 失败（current 已回滚）"
+  fi
+  audit "default" "$dataset" "$(readlink "$DATASETS/$dataset")" "$previous"
   note "default dataset=$dataset"
 }
 
@@ -197,7 +303,11 @@ cmd_catalog() {
   fi
   local args=(catalog --root "$DATASETS" --out "$CATALOG" --default "$derived")
   [[ "$dry_run" == "1" ]] && args+=(--dry-run)
-  "$PYTHON" "$TOOL" "${args[@]}"
+  snapshot_catalog
+  if ! "$PYTHON" "$TOOL" "${args[@]}"; then
+    restore_catalog || note "WARNING: 无法恢复 $CATALOG，请人工核对"
+    die "versions.json 生成失败（catalog 已回滚）"
+  fi
 }
 
 cmd_rollback() {
@@ -219,6 +329,9 @@ cmd_unlink() {
   done
   require_dataset "$dataset"
   local link="$DATASETS/$dataset"
+  # 工具必须在删除链接之前就位：否则 rm 之后 catalog 无法重算，线上目录与
+  # versions.json 会不一致（review P1）。
+  require_tool
   # 持锁后再检查 symlink 与"是否当前默认"：与持锁的 default 切换交错时，
   # 锁前检查会放过"刚被切成默认"的目标，锁后重查才不会 rm 掉正在服务的
   # dataset、留下悬空 current（review P1）。
@@ -227,20 +340,26 @@ cmd_unlink() {
   if [[ "$(readlink "$ROOT/current")" == "datasets/$dataset" ]]; then
     die "dataset $dataset 是当前默认（current 指向它）；先 dataset.sh default --dataset <其他> 再 unlink"
   fi
-  if [[ "$dry_run" == "1" ]]; then
-    note "would unlink $link (-> $(readlink "$link"))"
-    return
-  fi
-  local previous
-  previous="$(readlink "$link")"
-  rm "$link"
-  audit "unlink" "$dataset" "" "$previous"
-  require_tool
   local catalog_default
   catalog_default="$(current_default)"
   [[ -n "$catalog_default" ]] || die "无法确定 catalog default（current 缺失）"
-  "$PYTHON" "$TOOL" catalog --root "$DATASETS" --out "$CATALOG" --default "$catalog_default" \
-    || die "versions.json 生成失败（dataset 已删除；请修复后重跑 catalog）"
+  if [[ "$dry_run" == "1" ]]; then
+    note "would unlink $link (-> $(readlink "$link"))"
+    return 0
+  fi
+  local previous
+  previous="$(readlink "$link")"
+  snapshot_catalog
+  rm "$link"
+  if ! "$PYTHON" "$TOOL" catalog --root "$DATASETS" --out "$CATALOG" --default "$catalog_default"; then
+    rollback_online "$link" "$previous"
+    die "versions.json 生成失败（dataset 已恢复）"
+  fi
+  if ! "$PYTHON" "$TOOL" verify --root "$DATASETS" --catalog "$CATALOG"; then
+    rollback_online "$link" "$previous"
+    die "发布后 verify 失败（dataset 已恢复）"
+  fi
+  audit "unlink" "$dataset" "" "$previous"
   note "unlinked dataset=$dataset (was $previous)"
 }
 
