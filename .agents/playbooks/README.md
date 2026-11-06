@@ -27,6 +27,7 @@ lifecycle 只有四个 orchestrating Skills（另有 operational 入口 `product
 | `code-quality.md` | review-with-docs | 代码质量与品味 9 项检查（正确性/边界 + 可维护性） |
 | `fallow.md` | review-with-docs | 前端 dead-code / circular-deps / duplication / complexity 诊断 |
 | `post-merge-cleanup.md` | executor | PR merge 后清理分支、worktree、current-plan 与任务状态 |
+| `pr-follow-up.md` | executor（PR 跟进时） | 用户授权当前会话跟进指定 PR 的 CI / Review；会话内低频监控与事件处理 |
 
 ## 边界
 
