@@ -130,47 +130,6 @@ export function firstPhysicalHit(hits: readonly SpacedHitView[]): number {
     return -1
 }
 
-/**
- * 命中点是否重合（间距 < 1e-6）：同一网格在共享边/对角线处会产生两个重合三角形命中，
- * 判定链把它们当同一层（collectFilteredHits）。`withGapOrigin` 搬动间距原点时必须
- * 让重合命中一起搬，否则重合关系被破坏、同一块板会被计两层。
- */
-export function pointsCoincide(a: unknown, b: unknown): boolean {
-    const dist = (p: { x: number; y: number; z: number }) => Math.hypot(p.x, p.y, p.z)
-    if (Array.isArray(a) && Array.isArray(b)) {
-        const [ax, ay, az] = a as number[]
-        const [bx, by, bz] = b as number[]
-        if (![ax, ay, az, bx, by, bz].every(Number.isFinite)) return false
-        return Math.hypot(ax - bx, ay - by, az - bz) < 1e-6
-    }
-    const pa = a as { x?: number; y?: number; z?: number } | null
-    const pb = b as { x?: number; y?: number; z?: number } | null
-    if (pa && pb && [pa.x, pa.y, pa.z, pb.x, pb.y, pb.z].every(Number.isFinite)) {
-        return dist({ x: pa.x! - pb.x!, y: pa.y! - pb.y!, z: pa.z! - pb.z! }) < 1e-6
-    }
-    return false
-}
-
-/**
- * HEAT 间隙衰减的间距原点：同板去重会删掉近侧的出射面/入射面，但**间距必须从首个
- * 物理接触面量起**（GPU 以最近屏幕深度为原点），否则层的 point 前移后 gap 变短、
- * 衰减被低估。首层之前存在被删掉的物理接触面时，返回「首层点位换成接触面点位」的
- * 新数组（其余命中与顺序不变、不改输入）；否则原样返回输入。
- * 与首层重合的命中（共享边/对角线）必须一起搬——保持 collectFilteredHits 的
- * 重合三角形合并语义，避免同一块板被当成两层。
- */
-export function withGapOrigin<T extends { distance: number; point: unknown }>(
-    hits: readonly T[],
-    contact: { distance: number; point: unknown } | null | undefined,
-): readonly T[] {
-    if (!contact || hits.length === 0) return hits
-    if (!(contact.distance < hits[0].distance)) return hits
-    const origin = hits[0].point
-    return hits.map((hit) => (
-        pointsCoincide(hit.point, origin) ? { ...hit, point: contact.point } : hit
-    ))
-}
-
 /** WebGL 保证的 stencil 位宽下界（WebGLRenderTarget stencilBuffer:true → ≥8 位）。 */
 export const SPACED_STENCIL_BIT_LIMIT = 8
 

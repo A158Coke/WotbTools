@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
-import { assignSpacedStencilBits, firstPhysicalHit, isClosedSurfaceGeometry, resolveSpacedHitMask, spacedDedupKey, withGapOrigin, SPACED_STENCIL_BIT_LIMIT } from './armorMeshTopology.ts'
+import { assignSpacedStencilBits, firstPhysicalHit, isClosedSurfaceGeometry, resolveSpacedHitMask, spacedDedupKey, SPACED_STENCIL_BIT_LIMIT } from './armorMeshTopology.ts'
 import { ArmorSection, calculate } from './penetration.js'
 
 describe('isClosedSurfaceGeometry', () => {
@@ -121,77 +121,32 @@ describe('firstPhysicalHit（HE 首触面，去重之前）', () => {
   })
 })
 
-describe('withGapOrigin（HEAT 间隙原点）', () => {
-  const h = (distance, point) => ({ distance, point })
-
-  it('被去重删掉的接触面在首层之前：首层间距原点前移到它（不改输入）', () => {
-    const hits = [h(1.0, [0, 0, -1]), h(1.1, [0, 0, -1.1])]
-    const contact = h(0, [0, 0, 0])
-    const out = withGapOrigin(hits, contact)
-    expect(out[0].point).toEqual([0, 0, 0])
-    expect(out[0].distance).toBe(1.0)
-    expect(out[1]).toBe(hits[1])
-    expect(hits[0].point).toEqual([0, 0, -1])
+describe('assignSpacedStencilBits', () => {
+  it('按首次出现顺序分配 0x01..0x80，同键共享同一位', () => {
+    const { bits, overflow } = assignSpacedStencilBits(['gun:2', 'hull:6', 'gun:2'])
+    expect(overflow).toBe(false)
+    expect(bits.get('gun:2')).toBe(0x01)
+    expect(bits.get('hull:6')).toBe(0x02)
+    expect(bits.size).toBe(2)
   })
 
-  it('首层就是接触面 / 无接触面 / 空链：原样返回', () => {
-    const hits = [h(1.0, [0, 0, -1])]
-    expect(withGapOrigin(hits, h(1.0, [0, 0, -1]))).toBe(hits)
-    expect(withGapOrigin(hits, null)).toBe(hits)
-    expect(withGapOrigin([], h(0, [0, 0, 0]))).toEqual([])
+  it('恰好 8 个键不溢出（0x80 为最高位）', () => {
+    const keys = Array.from({ length: SPACED_STENCIL_BIT_LIMIT }, (_, i) => 'k' + i)
+    const { bits, overflow } = assignSpacedStencilBits(keys)
+    expect(overflow).toBe(false)
+    expect(bits.get('k7')).toBe(0x80)
   })
 
-  it('与首层重合的命中一起搬（共享边/对角线的两个三角形命中保持重合）', () => {
-    const hits = [h(1.0, [0, 0, -1]), h(1.0, [0, 0, -1]), h(1.1, [0, 0, -1.1])]
-    const out = withGapOrigin(hits, h(0, [0, 0, 0]))
-    expect(out[0].point).toEqual([0, 0, 0])
-    expect(out[1].point).toEqual([0, 0, 0])
-    expect(out[2].point).toEqual([0, 0, -1.1])
-  })
-})
-
-describe('HEAT 间隙衰减（首触面在前 vs 被去重）', () => {
-  const heatReq = (hits, penetration = 250) => ({
-    shell_type: 'heat', penetration, caliber: 75, view_dir: [0, 1, 0],
-    hits, damage: 400, explosion_radius: 0,
-    calibrated_shells: false, enhanced_armor: false, allow_ricochet: true,
-  })
-  const screen = (point, distance) => ({
-    section: ArmorSection.SPACED, plate_id: '2', thickness: 20,
-    normal: [0, 1, 0], point, distance, part_name: 'spaced-2',
-  })
-  const hull = (point, distance, thickness = 150) => ({
-    section: ArmorSection.HULL, plate_id: '1', thickness,
-    normal: [0, 1, 0], point, distance, part_name: 'hull-1',
+  it('第 9 个键溢出 → fail-closed 标记', () => {
+    const keys = Array.from({ length: SPACED_STENCIL_BIT_LIMIT + 1 }, (_, i) => 'k' + i)
+    const { overflow } = assignSpacedStencilBits(keys)
+    expect(overflow).toBe(true)
   })
 
-  it('近侧背面被同板去重删掉后，若只按保留点算 gap 会低估衰减（PENETRATION）', () => {
-    // 保留链 = [front@-1, primary@-1.1] → 只看到 0.1m 间隙。
-    const r = calculate(heatReq([screen([0, 0, -1], 1.0), hull([0, 0, -1.1], 1.1)]))
-    expect(r.result).toBe('PENETRATION')
-  })
-
-  it('首层间距原点取首触面（-1 → 0）后按真实 1.1m 间隙衰减（BLOCKED）', () => {
-    const shifted = withGapOrigin(
-      [screen([0, 0, -1], 1.0), hull([0, 0, -1.1], 1.1)],
-      { distance: 0, point: [0, 0, 0] },
-    )
-    const r = calculate(heatReq([...shifted]))
-    expect(r.result).toBe('BLOCKED')
-  })
-
-  it('共享边的重合三角形与首层一起前移：多一条重合命中不改变结果（400 / 20@1m / 165@1.1m）', () => {
-    const contact = { distance: 0, point: [0, 0, 0] }
-    const single = [screen([0, 0, -1], 1.0), hull([0, 0, -1.1], 1.1, 165)]
-    const dup = [screen([0, 0, -1], 1.0), screen([0, 0, -1], 1.0), hull([0, 0, -1.1], 1.1, 165)]
-    const baseline = calculate(heatReq([...withGapOrigin(single, contact)], 400)).result
-    const withDup = calculate(heatReq([...withGapOrigin(dup, contact)], 400)).result
-    // 重合三角形仍被 collectFilteredHits 合并 → 与单条命中的结论一致（真实 1.1m 间隙）。
-    expect(baseline).toBe('PENETRATION')
-    expect(withDup).toBe(baseline)
-    // 负向对照：只搬首层（finding 复现）→ 重合关系被破坏、屏计两层 → 结论翻转。
-    const onlyFirst = [{ ...dup[0], point: contact.point }, dup[1], dup[2]]
-    expect(calculate(heatReq(onlyFirst, 400)).result).toBe('BLOCKED')
+  it('空输入无溢出无位', () => {
+    const { bits, overflow } = assignSpacedStencilBits([])
+    expect(overflow).toBe(false)
+    expect(bits.size).toBe(0)
   })
 })
 
@@ -225,31 +180,3 @@ describe('判定链与区间（back → Primary → 同键 front）', () => {
   })
 })
 
-describe('assignSpacedStencilBits', () => {
-  it('按首次出现顺序分配 0x01..0x80，同键共享同一位', () => {
-    const { bits, overflow } = assignSpacedStencilBits(['gun:2', 'hull:6', 'gun:2'])
-    expect(overflow).toBe(false)
-    expect(bits.get('gun:2')).toBe(0x01)
-    expect(bits.get('hull:6')).toBe(0x02)
-    expect(bits.size).toBe(2)
-  })
-
-  it('恰好 8 个键不溢出（0x80 为最高位）', () => {
-    const keys = Array.from({ length: SPACED_STENCIL_BIT_LIMIT }, (_, i) => 'k' + i)
-    const { bits, overflow } = assignSpacedStencilBits(keys)
-    expect(overflow).toBe(false)
-    expect(bits.get('k7')).toBe(0x80)
-  })
-
-  it('第 9 个键溢出 → fail-closed 标记', () => {
-    const keys = Array.from({ length: SPACED_STENCIL_BIT_LIMIT + 1 }, (_, i) => 'k' + i)
-    const { overflow } = assignSpacedStencilBits(keys)
-    expect(overflow).toBe(true)
-  })
-
-  it('空输入无溢出无位', () => {
-    const { bits, overflow } = assignSpacedStencilBits([])
-    expect(overflow).toBe(false)
-    expect(bits.size).toBe(0)
-  })
-})

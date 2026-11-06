@@ -1,7 +1,7 @@
 // 击穿判定移植测试：上游 src/wargaming/penetration.rs 单测逐例对齐。
 // 上游 Rust 判定语义变更时，本文件与 penetration.js 同版本跟随——两仓不变量保持同源。
 import { describe, it, expect } from 'vitest'
-import { calculate, isPrimary, ArmorSection, hasPrimaryLayer, matchHitsByOccurrence, parseShellType, SHELL_TOKEN_KIND } from './penetration.js'
+import { calculate, isPrimary, ArmorSection, hasPrimaryLayer, matchHitsByOccurrence, parseShellType, withGapOrigin, SHELL_TOKEN_KIND } from './penetration.js'
 import { shellTypeOf } from './viewer/armorPlateModel.ts'
 import { penetrationChance, resolveCardChance, evaluateProbabilityChain } from './armorInspectorChance.ts'
 
@@ -961,5 +961,79 @@ describe('收集链：deterministic 与 probability 在首个 Primary 处得到�
     // 判别：收集若越过首个 Primary，其后的 spaced(10mm) 会作为第 4 层出现。
     expect(r.layers).toHaveLength(3)
     expect(r.probability_layers).toHaveLength(3)
+  })
+})
+
+describe('withGapOrigin（HEAT 间隙原点）', () => {
+  const h = (distance, point) => ({ distance, point })
+
+  it('被去重删掉的接触面在首层之前：首层间距原点前移到它（不改输入）', () => {
+    const hits = [h(1.0, [0, 0, -1]), h(1.1, [0, 0, -1.1])]
+    const contact = h(0, [0, 0, 0])
+    const out = withGapOrigin(hits, contact)
+    expect(out[0].point).toEqual([0, 0, 0])
+    expect(out[0].distance).toBe(1.0)
+    expect(out[1]).toBe(hits[1])
+    expect(hits[0].point).toEqual([0, 0, -1])
+  })
+
+  it('首层就是接触面 / 无接触面 / 空链：原样返回', () => {
+    const hits = [h(1.0, [0, 0, -1])]
+    expect(withGapOrigin(hits, h(1.0, [0, 0, -1]))).toBe(hits)
+    expect(withGapOrigin(hits, null)).toBe(hits)
+    expect(withGapOrigin([], h(0, [0, 0, 0]))).toEqual([])
+  })
+
+  it('与首层重合的命中一起搬（共享边/对角线的两个三角形命中保持重合）', () => {
+    const hits = [h(1.0, [0, 0, -1]), h(1.0, [0, 0, -1]), h(1.1, [0, 0, -1.1])]
+    const out = withGapOrigin(hits, h(0, [0, 0, 0]))
+    expect(out[0].point).toEqual([0, 0, 0])
+    expect(out[1].point).toEqual([0, 0, 0])
+    expect(out[2].point).toEqual([0, 0, -1.1])
+  })
+})
+
+describe('HEAT 间隙衰减（首触面在前 vs 被去重）', () => {
+  const heatReq = (hits, penetration = 250) => ({
+    shell_type: 'heat', penetration, caliber: 75, view_dir: [0, 1, 0],
+    hits, damage: 400, explosion_radius: 0,
+    calibrated_shells: false, enhanced_armor: false, allow_ricochet: true,
+  })
+  const screen = (point, distance) => ({
+    section: ArmorSection.SPACED, plate_id: '2', thickness: 20,
+    normal: [0, 1, 0], point, distance, part_name: 'spaced-2',
+  })
+  const hull = (point, distance, thickness = 150) => ({
+    section: ArmorSection.HULL, plate_id: '1', thickness,
+    normal: [0, 1, 0], point, distance, part_name: 'hull-1',
+  })
+
+  it('近侧背面被同板去重删掉后，若只按保留点算 gap 会低估衰减（PENETRATION）', () => {
+    // 保留链 = [front@-1, primary@-1.1] → 只看到 0.1m 间隙。
+    const r = calculate(heatReq([screen([0, 0, -1], 1.0), hull([0, 0, -1.1], 1.1)]))
+    expect(r.result).toBe('PENETRATION')
+  })
+
+  it('首层间距原点取首触面（-1 → 0）后按真实 1.1m 间隙衰减（BLOCKED）', () => {
+    const shifted = withGapOrigin(
+      [screen([0, 0, -1], 1.0), hull([0, 0, -1.1], 1.1)],
+      { distance: 0, point: [0, 0, 0] },
+    )
+    const r = calculate(heatReq([...shifted]))
+    expect(r.result).toBe('BLOCKED')
+  })
+
+  it('共享边的重合三角形与首层一起前移：多一条重合命中不改变结果（400 / 20@1m / 165@1.1m）', () => {
+    const contact = { distance: 0, point: [0, 0, 0] }
+    const single = [screen([0, 0, -1], 1.0), hull([0, 0, -1.1], 1.1, 165)]
+    const dup = [screen([0, 0, -1], 1.0), screen([0, 0, -1], 1.0), hull([0, 0, -1.1], 1.1, 165)]
+    const baseline = calculate(heatReq([...withGapOrigin(single, contact)], 400)).result
+    const withDup = calculate(heatReq([...withGapOrigin(dup, contact)], 400)).result
+    // 重合三角形仍被 collectFilteredHits 合并 → 与单条命中的结论一致（真实 1.1m 间隙）。
+    expect(baseline).toBe('PENETRATION')
+    expect(withDup).toBe(baseline)
+    // 负向对照：只搬首层（finding 复现）→ 重合关系被破坏、屏计两层 → 结论翻转。
+    const onlyFirst = [{ ...dup[0], point: contact.point }, dup[1], dup[2]]
+    expect(calculate(heatReq(onlyFirst, 400)).result).toBe('BLOCKED')
   })
 })

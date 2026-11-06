@@ -712,7 +712,9 @@ describe('spaced armor double-sided judgment', () => {
   it('同板去重判据委托 armorMeshTopology.resolveSpacedHitMask（语义由纯函数单测锁定）', () => {
     expect(kernel).toMatch(/function collectJudgmentHits\(intersects, rayDir\)/)
     expect(kernel).toMatch(/const origSection = entry\.object\?\.userData\?\.armorSectionOrig \|\| entry\.section \|\| '';/)
-    expect(kernel).toMatch(/import \{ resolveSpacedHitMask, spacedDedupKey, firstPhysicalHit, withGapOrigin \} from '\.\/armorMeshTopology\.js'/)
+    expect(kernel).toMatch(/import \{ resolveSpacedHitMask, spacedDedupKey, firstPhysicalHit \} from '\.\/armorMeshTopology\.js'/)
+    // HEAT 间距原点必须来自 Node 可直接加载的 penetration.js（Node 不解析 .js → .ts）
+    expect(kernel).toMatch(/import \{ isPrimary, hasPrimaryLayer, matchHitsByOccurrence, withGapOrigin \} from '\.\/penetration\.js'/)
     expect(kernel).toMatch(/key: spacedDedupKey\(origSection, entry\.section, entry\.plateId\)/)
     expect(kernel).toMatch(/const keep = resolveSpacedHitMask\(candidates, spanEnd\);/)
   })

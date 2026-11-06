@@ -15,8 +15,6 @@
  * Rust 单测 12 例逐例对齐），上游判定变更时同版本跟随移植。
  */
 
-import { pointsCoincide } from './armorMeshTopology.js'
-
 /** 装甲部件分类（对齐 BlitzKit ArmorType：Primary / Spaced / External；值 = 上游 serde wire 值） */
 export const ArmorSection = Object.freeze({
   HULL: 'hull',
@@ -129,6 +127,32 @@ function moduleVariant(section) {
 
 const plateIdOf = (hit) => hit.plate_id ?? hit.plateId
 const hitNameOf = (hit) => hit.partName ?? hit.part_name
+const pointsCoincide = (a, b) => {
+  if (Array.isArray(a) && Array.isArray(b)) return dist3(a, b) < 1e-6
+  if (a && b && [a.x, a.y, a.z, b.x, b.y, b.z].every(Number.isFinite)) {
+    return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) < 1e-6
+  }
+  return false
+}
+
+/**
+ * HEAT 间隙衰减的间距原点：同板去重会删掉近侧的出射面/入射面，但间距必须从首个
+ * 物理接触面量起（GPU 以最近屏幕深度为原点），否则层的 point 前移后 gap 变短、
+ * 衰减被低估。首层之前存在被删掉的物理接触面时，返回「首层点位换成接触面点位」的
+ * 新数组（其余命中与顺序不变、不改输入）；否则原样返回输入。
+ * 与首层重合的命中（共享边/对角线）一起搬：保持 collectFilteredHits 的
+ * 重合三角形合并语义，避免同一块板被当成两层。
+ * 本模块由 Node 脚本直接加载（scripts/browser-armor-aiming.mjs 等），不得 import
+ * `.ts` 模块——import specifier 必须指向真实存在的 `.js`。
+ */
+export function withGapOrigin(hits, contact) {
+  if (!contact || hits.length === 0) return hits
+  if (!(contact.distance < hits[0].distance)) return hits
+  const origin = hits[0].point
+  return hits.map((hit) => (
+    pointsCoincide(hit.point, origin) ? { ...hit, point: contact.point } : hit
+  ))
+}
 
 /**
  * 收集阶段：外部模块按 variant 去重；确定性判定与概率链都只收集到**首个 Primary

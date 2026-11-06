@@ -55,9 +55,9 @@ import {
 // 动态装甲单次 Mesh 状态应用（#820 Wave B3C 出仓）：userData/可见性/分类/厚度/材质
 import { applyArmorStateToMesh, replaceArmorMaterial } from './viewer/armorMeshState.js'
 // 间隙甲同板去重键与判据：与厚度通道 per-key stencil 共用一处语义（order-independent）
-import { resolveSpacedHitMask, spacedDedupKey, firstPhysicalHit, withGapOrigin } from './armorMeshTopology.js'
+import { resolveSpacedHitMask, spacedDedupKey, firstPhysicalHit } from './armorMeshTopology.js'
 // 点击判定的触发面分类（Primary = 主装甲板）；与判定本体同源，勿在此复制一份板面清单
-import { isPrimary, hasPrimaryLayer, matchHitsByOccurrence } from './penetration.js'
+import { isPrimary, hasPrimaryLayer, matchHitsByOccurrence, withGapOrigin } from './penetration.js'
 // Armor Inspector 概率模型：±range = ±3σ 的正态 CDF + 逐层 1× 等效厚度传播
 import { penetrationChance, evaluateProbabilityChain, resolveCardChance } from './armorInspectorChance.js'
 // HE 溅射：Armor Inspector func7695 的 800 条世界空间方向采样（best-sample 语义）
