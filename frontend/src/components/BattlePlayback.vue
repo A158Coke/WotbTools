@@ -21,6 +21,7 @@ import { PencilRuler, ScanEye } from 'lucide-vue-next'
 import BattlePlaybackHud from './BattlePlaybackHud.vue'
 import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 import PlaybackControls from './PlaybackControls.vue'
+import SceneFullscreenButton from './SceneFullscreenButton.vue'
 import PlaybackDisplaySurface from './PlaybackDisplaySurface.vue'
 import SegmentedControl from './SegmentedControl.vue'
 import { isPlaybackSpeed, isInteractiveTarget, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
@@ -2162,6 +2163,17 @@ const mapStyle = computed(() => ({
 
 <template>
   <div v-if="image && playback" ref="pbRoot" class="battle-playback playback-workspace" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-phone-landscape': phoneLandscape, 'pb-controls-bottom': true, 'pb-roster-lanes': rosterLanes, ['pb-form-' + formFactor]: true }" :style="mapStyle" data-test="battle-playback">
+    <!-- 移动端全屏入口统一右上角浮动（与 Map Preview 3D / Replay 3D 同一组件同一位置）；
+         传输条里的内联按钮在手机形态由 floatingFullscreen 隐藏，桌面保持原位。 -->
+    <SceneFullscreenButton
+      v-if="isMobileDevice && fullscreenSupported"
+      floating
+      :is-fullscreen="isFullscreen"
+      data-test="pb-fullscreen"
+      data-testid="playback-fullscreen"
+      data-tour="playback-floating-fullscreen"
+      @toggle="toggleFullscreen"
+    />
 
 
     <div ref="battlefieldWorkspaceEl" class="pb-main" :class="{ 'pb-roster-lanes': rosterLanes }" data-test="pb-main">
@@ -2281,6 +2293,7 @@ const mapStyle = computed(() => ({
           :duration="duration"
           :fullscreen-supported="fullscreenSupported"
           :is-fullscreen="isFullscreen"
+          :floating-fullscreen="isMobileDevice"
           :display-open="displayOpen"
           :annotation-enabled="phoneLandscape && !annotationOpen"
           @toggle-annotation="toggleAnnotation"
@@ -2388,7 +2401,7 @@ const mapStyle = computed(() => ({
         </template>
       </PlaybackDisplaySurface>
 
-      <button v-if="uiHidden" type="button" class="pb-ui-restore" data-test="pb-show-all-ui" :title="$t('agentReplay.show_all_ui_hint')" @click="setUiHidden(false)">{{ $t('agentReplay.show_all_ui') }}</button>
+      <button v-if="uiHidden" type="button" class="pb-ui-restore" :class="{ 'pb-ui-restore-shifted': isMobileDevice && fullscreenSupported }" data-test="pb-show-all-ui" :title="$t('agentReplay.show_all_ui_hint')" @click="setUiHidden(false)">{{ $t('agentReplay.show_all_ui') }}</button>
 
       <!-- §square-stage 手机竖屏纵向流：传输控件之后是详情（inline）与 Team 1 / Team 2。
            竖屏利用的是**纵向**空间，所以这一段就是普通流内容，跟着页面滚，不设高度上限。
@@ -2456,6 +2469,9 @@ const mapStyle = computed(() => ({
 .pb-display-close { inline-size: auto; min-inline-size: var(--hit-min); min-block-size: var(--hit-min); align-self: flex-end; color: var(--color-text-secondary); }
 .pb-panel-tools { display: grid; gap: var(--space-1); }
 .pb-ui-restore { position: absolute; inset-block-start: var(--space-2); inset-inline-end: var(--space-2); z-index: var(--pb-z-modal); min-block-size: var(--hit-min); padding: var(--space-2); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-sm); background: var(--color-surface-2); color: var(--color-text-primary); font: var(--type-caption); }
+
+/* 手机形态右上角有浮动全屏按钮：restore 按钮下移一行，两者不互抢命中区 */
+.pb-ui-restore.pb-ui-restore-shifted { inset-block-start: calc(var(--space-2) + var(--hit-min) + var(--space-2)); }
 
 .pb-wheel-hint {
   position: absolute;

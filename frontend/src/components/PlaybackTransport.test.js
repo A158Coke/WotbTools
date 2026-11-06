@@ -28,6 +28,16 @@ describe('PlaybackTransport', () => {
     expect(wrapper.get('[data-test="pb-fwd5"]').text()).toBe('+5')
   })
 
+  it('floatingFullscreen：移动端全屏入口改由宿主右上角浮动按钮呈现，传输条不出现第二个重复按钮', () => {
+    const wrapper = mountTransport({ duration: 60, fullscreenSupported: true, floatingFullscreen: true })
+    expect(wrapper.find('[data-testid="playback-fullscreen"]').exists()).toBe(false)
+    wrapper.unmount()
+    // 桌面（floatingFullscreen=false）保持传输条内联按钮
+    const desktop = mountTransport({ duration: 60, fullscreenSupported: true })
+    expect(desktop.get('[data-testid="playback-fullscreen"]').exists()).toBe(true)
+    desktop.unmount()
+  })
+
   it('时间轴不可用时禁用播放、跳秒与进度条，速度档位仍可用', async () => {
     const wrapper = mountTransport({ currentTime: 0, startTime: 10, duration: 10 })
     expect(wrapper.get('[data-test="pb-play"]').attributes('disabled')).toBeDefined()

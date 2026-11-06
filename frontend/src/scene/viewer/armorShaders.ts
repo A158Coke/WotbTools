@@ -430,6 +430,13 @@ const SPACED_FRAG = `
       // 同一 flat vNormal 面法线；不要用 dFdx/dFdy(vViewPos)（移动端 mediump 导数会错乱）。
       // 视线方向用 highp：500 m 处 mediump length() 会在平方时溢出。
       highp vec3 nFace = normalize(vNormal);
+      // BackSide clone（开放板出射面）：three 以翻转 gl.frontFace 实现 BackSide，
+      // 被保留的背面片元在 GL 里是 front-facing（gl_FrontFacing == true）。必须按
+      // FLIP_SIDED 显式翻回几何法线——否则入射角变成 π−θ、cos 落 1e-6 下界，
+      // 等效厚度爆炸（20mm 背面屏会被算成 2e7mm）。
+      #ifdef FLIP_SIDED
+        nFace = -nFace;
+      #endif
       // 双面材质（间隙甲）：背面命中把法线翻向相机来向，与点击链 classifyHit 同口径；
       // 正面命中不受影响。
       if (!gl_FrontFacing) nFace = -nFace;

@@ -28,6 +28,8 @@ const props = defineProps({
   stepSeconds: { type: Number, default: 5 },
   /** Phone-form styling, including fullscreen landscape. */
   compact: Boolean,
+  /** 全屏入口由宿主以右上角浮动按钮呈现（移动端统一契约）：本条不再渲染第二个重复按钮。 */
+  floatingFullscreen: Boolean,
   formatClock: { type: Function, default: formatPlaybackClock },
 })
 
@@ -104,7 +106,7 @@ const total = computed(() => Number(props.duration) - Number(props.startTime))
         >{{ option }}×</button>
       </div>
     </div>
-    <button v-if="props.fullscreenSupported" type="button" class="pb-btn pb-fullscreen-btn" data-test="pb-fullscreen" data-testid="playback-fullscreen" :aria-pressed="props.isFullscreen" :aria-label="$t(props.isFullscreen ? 'recon.map.playback.exit_fullscreen' : 'recon.map.playback.enter_fullscreen')" @click="emit('toggle-fullscreen')">
+    <button v-if="props.fullscreenSupported && !props.floatingFullscreen" type="button" class="pb-btn pb-fullscreen-btn" data-test="pb-fullscreen" data-testid="playback-fullscreen" :aria-pressed="props.isFullscreen" :aria-label="$t(props.isFullscreen ? 'recon.map.playback.exit_fullscreen' : 'recon.map.playback.enter_fullscreen')" @click="emit('toggle-fullscreen')">
       <component :is="props.isFullscreen ? Minimize2 : Maximize2" :size="16" aria-hidden="true" />
     </button>
     <button v-if="props.annotationEnabled" type="button" class="pb-btn" data-test="pb-annotation-entry" data-tour="playback-annotation-entry" :aria-label="$t('recon.map.playback.annot.mode')" :title="$t('recon.map.playback.annot.mode')" @click="emit('toggle-annotation')">

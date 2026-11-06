@@ -132,6 +132,9 @@ jobs:
             script: test:browser-armor-aiming
           - label: Creator recommendations
             script: test:browser-creators
+          # Map Preview 移动布局（2D 正方形地图 / 工具区贴地图 / 全屏按钮可达）
+          - label: Map preview mobile layout
+            script: test:browser-map-preview
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:

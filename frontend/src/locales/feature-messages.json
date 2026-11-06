@@ -693,7 +693,7 @@
         },
         "replay3dCamera": {
           "title": "换个视角看这场战斗",
-          "description": "拖动场景调整自由视角，点「俯视」可一键回到俯视机位。点击车辆或名单会跟随该车，点「自由」退出。再用播放控件回到同一个关键时刻。"
+          "description": "拖动场景调整自由视角（触屏单指平移相机），点「固定」绕中心旋转，点「俯视」一键回到俯视机位。右上角可全屏，手机横屏可用右侧竖条调整远近。点击车辆或名单会跟随该车，点「自由」退出。"
         },
         "shots": {
           "title": "从真实的一发开始",
@@ -1675,7 +1675,7 @@
         },
         "replay3dCamera": {
           "title": "See the battle from another angle",
-          "description": "Drag the scene to adjust the free camera, or press Top to jump back to the overhead view. Click a tank or roster row to follow it, and press Free to stop. Then use playback controls to revisit a moment."
+          "description": "Drag the scene to adjust the free camera (one finger pans on touch), press Fixed to orbit the center, or Top to jump back to the overhead view. Fullscreen sits top-right; on phones in landscape the side slider changes camera distance. Click a tank or roster row to follow it, and press Free to stop."
         },
         "shots": {
           "title": "Start with a recorded shot",
@@ -2657,7 +2657,7 @@
         },
         "replay3dCamera": {
           "title": "Посмотрите с другого ракурса",
-          "description": "Перетаскивайте сцену, чтобы настроить свободную камеру, а кнопка «Сверху» сразу вернёт вид сверху. Нажмите на танк или строку списка, чтобы следить за ним, а «Свободная» отключит слежение. Кнопками воспроизведения возвращайтесь к нужному моменту."
+          "description": "Перетаскивайте сцену, чтобы настроить свободную камеру (на сенсоре один палец перемещает камеру), «Фикс» вращает вокруг центра, а «Сверху» сразу вернёт вид сверху. Полный экран — справа сверху; на телефоне в горизонтали дистанцию меняет боковой ползунок. Нажмите на танк или строку списка, чтобы следить за ним, а «Свободная» отключит слежение."
         },
         "shots": {
           "title": "Начните с записанного выстрела",

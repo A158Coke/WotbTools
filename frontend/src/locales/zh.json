@@ -107,7 +107,8 @@
       "exportFailed": "导出 PNG 失败"
     },
     "basemapFailed": "底图加载失败",
-    "controlsHint": "滚轮缩放 · 拖拽转视角 · WASD/QE 平移升降 · 数字键 1–6 调节飞行速度"
+    "controlsHint": "拖拽转视角 · WASD/QE 平移升降 · 滚轮调远近（手机横屏可用右侧竖条） · 「固定」模式拖拽绕中心旋转 · 右上角全屏 · 1–6 调速",
+    "controlsHint2d": "拖动平移 · 滚轮或双指缩放 · 右上角全屏"
   },
   "app": {
     "title": "WoTBTools",
@@ -1612,7 +1613,11 @@
     "assets_hint": "未配置资产源：追加 ?assets=<remote-asset-base-url> 以加载地图地形/车模 GLB/坦克数据（回放解析本身不依赖）。",
     "cam_free": "自由",
     "cam_top": "俯视",
-    "cam_sandbox": "沙盘",
+    "cam_sandbox": "固定",
+    "distance": "相机距离",
+    "distance_far": "远",
+    "distance_near": "近",
+    "distance_value": "相机距离 {percent}%",
     "cam_recorder": "录像者",
     "cam_recorder_unsupported": "此回放不支持录像者视角",
     "cam_recorder_loading": "录像者相机数据解析中",

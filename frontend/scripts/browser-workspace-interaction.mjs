@@ -802,6 +802,7 @@ function rosterGeometryProbe() {
   const mobileRosterScroll = matchMedia('(width < 1200px) and (pointer: coarse)').matches
   out.portrait = root.classList.contains('portrait-flow')
   out.side = root.classList.contains('roster-side')
+  out.phone = root.classList.contains('phone-form')
   out.viewport = { width: innerWidth, height: innerHeight }
   const square = root.querySelector('.stage-square')?.getBoundingClientRect()
   out.square = square ? { w: square.width, h: square.height, l: square.left, r: square.right, t: square.top, b: square.bottom } : null
@@ -907,17 +908,33 @@ function rosterGeometryProbe() {
       out.floatingChecked = true
     }
   }
-  const primaryIds = ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']
-  const primary = primaryIds.map((id) => root.querySelector(`[data-test="${id}"]`))
-  if (primary.some((element) => !element)) out.errors.push('six shared primary controls must be present')
+  // 手机形态：全屏入口是右上角浮动按钮（SceneFullscreenButton），传输条不再重复渲染
+  // （floatingFullscreen 契约）——传输条主控件为 5 个 + 浮动全屏按钮单独断言位置。
+  const primaryIds = out.phone
+    ? ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-secondary-entry']
+    : ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']
+  const transportControls = root.querySelector('.pb-controls')
+  const primary = primaryIds.map((id) => transportControls && transportControls.querySelector(`[data-test="${id}"]`))
+  if (primary.some((element) => !element)) out.errors.push('shared primary controls must be present in transport')
   else {
     const boxes = primary.map((element) => element.getBoundingClientRect())
-    const domOrder = [...root.querySelectorAll('.pb-controls button[data-test]')]
+    const domOrder = [...transportControls.querySelectorAll('button[data-test]')]
       .map((element) => element.dataset.test).filter((id) => primaryIds.includes(id))
     if (JSON.stringify(domOrder) !== JSON.stringify(primaryIds)) out.errors.push(`primary control DOM order: ${domOrder.join(',')}`)
     if (boxes.some((box, index) => index > 0 && box.left < boxes[index - 1].right - 1)
-      || boxes.some((box) => Math.abs(box.top - boxes[0].top) > 1)) out.errors.push('six primary controls must stay in x-order on one row')
+      || boxes.some((box) => Math.abs(box.top - boxes[0].top) > 1)) out.errors.push('primary controls must stay in x-order on one row')
     if (out.phone && boxes.some((box) => Math.min(box.width, box.height) < 43.5)) out.errors.push('primary touch targets must be at least 44px')
+  }
+  if (out.phone) {
+    const floating = root.querySelector('[data-test="pb-fullscreen"]')
+    if (!floating) out.errors.push('phone: floating fullscreen button missing')
+    else {
+      const fr = floating.getBoundingClientRect()
+      const rr = root.getBoundingClientRect()
+      if (Math.abs(fr.right - rr.right) > 12 || Math.abs(fr.top - rr.top) > 12) {
+        out.errors.push(`phone: fullscreen button not top-right floating: ${JSON.stringify([Math.round(fr.top - rr.top), Math.round(rr.right - fr.right)])}`)
+      }
+    }
   }
   out.laneWidths = ['.side-left', '.side-right'].map((selector) => root.querySelector(selector)?.getBoundingClientRect().width ?? 0)
   // center 列宽：HUD 占满整列，直接量它的盒。
@@ -932,7 +949,6 @@ function rosterGeometryProbe() {
       && !!bar && (bar.getAttribute('aria-label') || '').trim().length > 0
   })
   out.hpBar = !!root.querySelector('.team-lane [data-test="roster-hp"]')
-  out.phone = root.classList.contains('phone-form')
   const overlap = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5
     && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5
   const panels = {}
@@ -1290,8 +1306,12 @@ async function waitForStableLayout(page, { timeout = 10_000 } = {}) {
 }
 
 async function check3DDrawingSurface(page, failures, scenario, viewport) {
-  const probe = () => {
-    const ids = ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']
+  // 手机形态：全屏入口在右上角浮动（floatingFullscreen 契约），传输条 5 控件。
+  // touch 由调用方经 page.callWith 显式传入（probe 在页面内执行，无 Node 闭包）。
+  const probe = (touch) => {
+    const ids = touch
+      ? ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-secondary-entry']
+      : ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']
     const controls = document.querySelector('.pb-controls')
     const els = ids.map((id) => controls && controls.querySelector('[data-test="' + id + '"]'))
     const boxes = els.map((el) => el && el.getBoundingClientRect()).filter(Boolean)
@@ -1323,7 +1343,7 @@ async function check3DDrawingSurface(page, failures, scenario, viewport) {
     }
   }
   const compactBar = await page.evaluate(`document.querySelector('.pb-root').classList.contains('compact-bar')`)
-  const before = await page.probe(probe)
+  const before = await page.callWith(probe, scenario.touch)
   const label = viewport.width + 'x' + viewport.height
   check(failures, !!before.entry && before.entry.reachable, label + ': Drawing entry must be hit-testable in the 3D tool-row')
   if (before.entry) {
@@ -1334,14 +1354,15 @@ async function check3DDrawingSurface(page, failures, scenario, viewport) {
   check(failures, compactBar ? !before.toolRow : before.toolRow, label + ': tool-row belongs to the controls only in wide forms')
   check(failures, !before.inTransport && !before.entryInTransport, label + ': Drawing entry must live outside the shared transport')
   check(failures, !before.entryInDisplay, label + ': Drawing is a creation tool, not a Display preference')
-  check(failures, before.transport.order.length === 6 && before.transport.oneRow,
-    label + ': six shared primary controls must stay in x-order on one row before Drawing')
+  const expectedPrimary = scenario.touch ? 5 : 6
+  check(failures, before.transport.order.length === expectedPrimary && before.transport.oneRow,
+    label + ': shared primary controls must stay in x-order on one row before Drawing')
   if (!before.entry) return
   const openedByClick = clicked(await clickElement(page, '[data-testid="replay3d-drawing-entry"]'))
   check(failures, openedByClick, label + ': Drawing entry click failed')
   if (!openedByClick) return
   await page.waitFor(() => !!document.querySelector('[data-test="pb-annot-toolbar"]'), { label: '3D drawing toolbar' })
-  const opened = await page.probe(probe)
+  const opened = await page.callWith(probe, scenario.touch)
   check(failures, opened.toolbar && !opened.toolRow, label + ': Drawing must replace the tool-row with AnnotationToolbar')
   check(failures, await page.evaluate(`!document.querySelector('[data-testid="display-panel"]')`), label + ': Drawing and Display are mutually exclusive')
   check(failures, await page.evaluate('window.__sceneMarker === window.__pbPane.sceneApi'), label + ': opening Drawing must not rebuild the scene')
@@ -1369,14 +1390,14 @@ async function check3DDrawingSurface(page, failures, scenario, viewport) {
     const drawingOcclusion = await measureOcclusion(page, { primary: '.pb-root .scene', overlayHud: true, edgeDocked: compactBar ? ['.team-lane', '.killfeed'] : [] })
     for (const failure of drawingOcclusion.failures) check(failures, false, `${label}: Drawing 打开时遮挡: ${failure}`)
   }
-  check(failures, opened.transport.order.length === 6 && opened.transport.oneRow
+  check(failures, opened.transport.order.length === expectedPrimary && opened.transport.oneRow
     && Math.abs(opened.transport.height - before.transport.height) <= 2,
   label + ': transport geometry must stay unchanged while Drawing is open')
   const closedByClick = clicked(await clickElement(page, '[data-test="pb-annot-close"]'))
   check(failures, closedByClick, label + ': Drawing close failed')
   if (!closedByClick) return
   await page.waitFor(() => !document.querySelector('[data-test="pb-annot-toolbar"]'), { label: '3D drawing toolbar closed' })
-  const restored = await page.probe(probe)
+  const restored = await page.callWith(probe, scenario.touch)
   check(failures, (compactBar ? !!restored.entry : restored.toolRow) && !restored.toolbar, label + ': original tool-row must return after Drawing closes')
   if (compactBar) {
     await page.evaluate(`document.querySelector('[data-testid="display-toggle"]').click()`)
@@ -1385,7 +1406,7 @@ async function check3DDrawingSurface(page, failures, scenario, viewport) {
     await page.evaluate(`document.querySelector('[data-testid="display-toggle"]').click()`)
     await page.waitFor(() => !document.querySelector('[data-testid="display-panel"]'), { label: 'compact Display closes' })
   }
-  check(failures, restored.transport.order.length === 6 && restored.transport.oneRow
+  check(failures, restored.transport.order.length === expectedPrimary && restored.transport.oneRow
     && Math.abs(restored.transport.height - before.transport.height) <= 2,
   label + ': transport geometry must stay unchanged after Drawing closes')
 }
@@ -1558,6 +1579,20 @@ async function runRosterGeometryScenario(env, scenario) {
   await page.evaluate('window.scrollTo(0, 0)')
   await waitForStableLayout(page)
   const geometry = await page.probe(rosterGeometryProbe)
+  if (scenario.name === 'roster-geometry-844x390-fullscreen-coarse') {
+    const slider = await page.probe(() => {
+      const el = document.querySelector('[data-testid="scene-distance-slider"]')
+      const fs = document.querySelector('[data-test="pb-fullscreen"]')
+      if (!el || !fs) return null
+      const r = el.getBoundingClientRect(), track = el.querySelector('.scene-dist-track').getBoundingClientRect(), f = fs.getBoundingClientRect()
+      const hit = (x) => { const target = document.elementFromPoint(x, track.top + track.height / 2); return target === el || el.contains(target) }
+      return { width: r.width, centerError: Math.abs((r.left + r.right - track.left - track.right) / 2),
+        overlap: r.left < f.right && f.left < r.right && r.top < f.bottom && f.top < r.bottom,
+        leftHit: hit(r.left + 2), rightHit: hit(r.right - 2) }
+    })
+    check(failures, slider && slider.width >= 44 && slider.centerError <= 1 && !slider.overlap && slider.leftHit && slider.rightHit,
+      `3D replay distance slider hit geometry: ${JSON.stringify(slider)}`)
+  }
 
   // —— #727 3D 主内容遮挡（design-language §5 例外段）：HUD 可以浮在场景上，但控制条不得压入中心 ——
   await page.evaluate(`document.querySelector('.pb-root .scene').scrollIntoView({ block: 'center' })`)
@@ -1957,7 +1992,44 @@ async function runRosterGeometryScenario(env, scenario) {
     }, { label: 'H hides all UI and closes Display' })
     check(failures, await page.evaluate('window.__pbPane.store.banner?.text === "Fixture battle result"'),
       'hide all UI must preserve underlying result state')
-    const restoreAfterH = await clickElement(page, '[data-testid="show-all-ui"]')
+    if (scenario.touch && scenario.fullscreen) {
+      await page.evaluate(`document.querySelector('[data-test="pb-fullscreen"]').scrollIntoView({ block: 'center' })`)
+      await waitForStableLayout(page)
+      const points = await page.probe(() => {
+        const point = (selector) => {
+          const el = document.querySelector(selector)
+          if (!el) return null
+          const r = el.getBoundingClientRect()
+          const x = r.left + r.width / 2, y = r.top + r.height / 2
+          const hit = document.elementFromPoint(x, y)
+          return { x, y, hit: el === hit || el.contains(hit), rect: [r.left, r.top, r.right, r.bottom] }
+        }
+        return { fullscreen: point('[data-test="pb-fullscreen"]'), restore: point('[data-testid="show-all-ui"]') }
+      })
+      check(failures, points.fullscreen?.hit && points.restore?.hit,
+        `hidden UI buttons must both be independently hit-testable: ${JSON.stringify(points)}`)
+      if (points.fullscreen?.hit && points.restore?.hit) {
+        await page.installInputTrace()
+        await page.tap({ x: points.fullscreen.x, y: points.fullscreen.y, touch: true })
+        await page.waitFor(() => !!document.fullscreenElement, { label: 'hidden UI fullscreen enters' }).catch(async (error) => {
+          throw new Error(`${error.message}; points=${JSON.stringify(points)} trace=${JSON.stringify(await page.inputTrace())}`)
+        })
+        const restore = await page.probe(() => {
+          const r = document.querySelector('[data-testid="show-all-ui"]').getBoundingClientRect()
+          return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+        })
+        await page.tap({ ...restore, touch: true })
+        await page.waitFor(() => !document.querySelector('[data-testid="show-all-ui"]'), { label: 'touch restores UI' })
+        const fs = await page.probe(() => {
+          const r = document.querySelector('[data-test="pb-fullscreen"]').getBoundingClientRect()
+          return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+        })
+        await page.tap({ ...fs, touch: true })
+        await page.waitFor(() => !document.fullscreenElement, { label: 'fullscreen exits after restore' })
+      }
+    }
+    const restoreAfterH = await page.evaluate('!document.querySelector(\'[data-testid="show-all-ui"]\')')
+      ? 'clicked-by-touch' : await clickElement(page, '[data-testid="show-all-ui"]')
     check(failures, clicked(restoreAfterH), `restore button after H not clickable: ${restoreAfterH}`)
     await page.waitFor(() => !!document.querySelector('.controls') && !!document.querySelector('.banner')
       && !document.querySelector('[data-testid="display-panel"]:not([hidden])'), { label: 'restore returns result, keeps Display closed' })
@@ -1993,7 +2065,8 @@ async function runRosterGeometryScenario(env, scenario) {
   const chipCenter = await openCollectionRemove(page, scenario)
   check(failures, !!(chipCenter && chipCenter.x), `collection remove button not hit-testable: ${JSON.stringify(chipCenter || null)}`)
   if (chipCenter && Number.isFinite(chipCenter.x)) {
-    await page.installInputTrace()
+    if (scenario.touch && scenario.fullscreen) await page.resetInputTrace()
+    else await page.installInputTrace()
     await page.tap({ ...chipCenter, touch: scenario.touch })
     const chipInput = await page.inputTrace()
     check(failures, chipInput.clickCount === 1, `collection remove must receive exactly one real click: ${JSON.stringify(chipInput)}`)
@@ -3060,7 +3133,7 @@ const WORKSPACE_2D_SCENARIOS = [
 ]
 
 /** workspace 几何探针（只读）。 */
-function workspace2dProbe() {
+function workspace2dProbe(touch = false) {
   const box = (el) => {
     if (!el || !el.getClientRects().length) return null
     const r = el.getBoundingClientRect()
@@ -3097,8 +3170,13 @@ function workspace2dProbe() {
   }
   const buttons = [...document.querySelectorAll('.pb-controls > .pb-btn, .pb-controls > * > .pb-btn, .pb-controls .pb-btn')]
     .filter((b) => b.getClientRects().length && !b.closest('.pb-speed-menu'))
-  const primary = ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']
-    .map((test) => box(document.querySelector(`[data-test="${test}"]`)))
+  // 手机形态：全屏入口在右上角浮动（floatingFullscreen 契约），传输条 5 控件。
+  // touch 由调用方经 page.callWith 显式传入（probe 在页面内执行，无 Node 闭包）。
+  const primaryIds = touch
+    ? ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-secondary-entry']
+    : ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']
+  const primary = primaryIds
+    .map((test) => box(document.querySelector(`.pb-controls [data-test="${test}"]`)))
   const details = document.querySelector('[data-test="pb-info"]')
   const transport = document.querySelector('[data-test="pb-transport-slot"]')
   const inline = document.querySelector('[data-test="pb-inline-area"]')
@@ -3128,7 +3206,15 @@ function workspace2dProbe() {
     primaryTops: primary.map((b) => (b ? Math.round(b.t) : null)),
     primaryBoxes: primary,
     primaryOrder: [...document.querySelectorAll('.pb-controls button[data-test]')].map((b) => b.dataset.test)
-      .filter((id) => ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry'].includes(id)),
+      .filter((id) => primaryIds.includes(id)),
+    floatingFullscreenTopRight: (() => {
+      if (!touch) return null
+      const floating = document.querySelector('[data-test="pb-fullscreen"]')
+      const rootBox = root?.getBoundingClientRect()
+      if (!floating || !rootBox) return false
+      const r = floating.getBoundingClientRect()
+      return Math.abs(r.right - rootBox.right) <= 12 && Math.abs(r.top - rootBox.top) <= 12
+    })(),
     primaryMinSide: Math.min(...primary.filter(Boolean).map((b) => Math.min(b.w, b.h))),
     buttonCount: buttons.length,
     layout: ['.battle-playback', '.pb-hud', '.pb-main', '.pb-map-stage', '.pb-map', '.pb-transport-slot', '.pb-mobile-overlay', '.pb-mobile-overlay-content', '.pb-team-lane-left', '[data-test="pb-roster-row"]'].map((selector) => {
@@ -3444,7 +3530,7 @@ async function runWorkspace2DScenario(env, scenario) {
     check(failures, pixels.external === 0, `external-image negative control unexpectedly rendered: ${JSON.stringify(pixels)}`)
     console.log(`[gun-marks-png] ${JSON.stringify(pixels)}`)
   }
-  const g = await page.probe(workspace2dProbe)
+  const g = await page.callWith(workspace2dProbe, scenario.touch)
   const result = () => results.push({ name: scenario.name, failures, viewport })
   check(failures, g.width === scenario.width && g.height === scenario.height,
     `viewport collapsed: requested ${scenario.width}x${scenario.height}, measured ${g.width}x${g.height}`)
@@ -3454,11 +3540,14 @@ async function runWorkspace2DScenario(env, scenario) {
   // 标记共用这一个画框），与 1:1 的差 < 1%——拉成严格 1:1 反而会把地图拉伸变形。
   const squareish = (b) => b && b.w > 0 && Math.abs(b.w - b.h) <= Math.max(1.5, b.w * 0.01)
   check(failures, squareish(g.map), `Stage is not square: ${JSON.stringify(g.map)}`)
-  check(failures, JSON.stringify(g.primaryOrder) === JSON.stringify(['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']),
+  check(failures, JSON.stringify(g.primaryOrder) === JSON.stringify(scenario.touch
+    ? ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-secondary-entry']
+    : ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']),
     `primary controls DOM order: ${JSON.stringify(g.primaryOrder)}`)
+  if (scenario.touch) check(failures, g.floatingFullscreenTopRight === true, 'phone: floating fullscreen button missing or not top-right')
   check(failures, g.primaryBoxes.every((box) => box)
     && g.primaryBoxes.every((box, index) => index === 0 || box.l >= g.primaryBoxes[index - 1].r - 1),
-    'six primary controls must preserve their x-order')
+    'primary controls must preserve their x-order')
   if (g.hud && g.map && g.transport) {
     for (const [name, gap] of [['HUD', g.map.t - g.hud.b], ['Transport', g.transport.t - g.map.b]]) {
       check(failures, gap >= -1 && gap <= 16, `${name} gap must remain compact (0–16px): ${gap.toFixed(1)} layout=${JSON.stringify(g.layout)}`)
@@ -3493,11 +3582,11 @@ async function runWorkspace2DScenario(env, scenario) {
     }
     console.log(`[browser-interaction] ${scenario.name} map=${Math.round(g.map?.w)}x${Math.round(g.map?.h)} hud=${Math.round(g.hud?.h)} transport=${Math.round(g.transport?.h)}`)
   }
-  // 主控件行：-5 ▶ +5 1× ⛶ ⚙ 同一行（触屏 44px）
+  // 手机五项、桌面六项均同一行；手机全屏入口独立浮动。
+  const tops = g.primaryTops.filter((t) => t != null)
+  check(failures, tops.length === (scenario.touch ? 5 : 6) && Math.max(...tops) - Math.min(...tops) <= 1,
+    `primary controls are not one row: ${JSON.stringify(g.primaryTops)}`)
   if (scenario.touch) {
-    const tops = g.primaryTops.filter((t) => t != null)
-    check(failures, tops.length === 6 && Math.max(...tops) - Math.min(...tops) <= 1,
-      `primary controls are not one row: ${JSON.stringify(g.primaryTops)}`)
     check(failures, g.primaryMinSide >= 43.5, `primary control below 44px: ${g.primaryMinSide}`)
   }
 
@@ -3516,12 +3605,12 @@ async function runWorkspace2DScenario(env, scenario) {
     // 选中 → inline 详情排在传输控件之后、名册之前；× 只关详情
     await clickElement(page, '[data-test="pb-roster-row"][data-account-id="2002"]')
     await delay(200)
-    const opened = await page.probe(workspace2dProbe)
+    const opened = await page.callWith(workspace2dProbe, scenario.touch)
     check(failures, opened.detailsPresentation === 'inline' && opened.inlineHasDetails,
       `portrait details must be the inline shared panel: ${opened.detailsPresentation}`)
     await clickElement(page, '[data-test="pb-sb-close"]')
     await delay(200)
-    const closed = await page.probe(workspace2dProbe)
+    const closed = await page.callWith(workspace2dProbe, scenario.touch)
     check(failures, closed.detailsCount === 0, 'details × must close the panel')
     check(failures, JSON.stringify(closed.selectedIds) === '[2002]', `details × must keep the selection: ${JSON.stringify(closed.selectedIds)}`)
     await checkDisplaySurface(page, failures, scenario.layout, scenario)
@@ -3561,7 +3650,7 @@ async function runWorkspace2DScenario(env, scenario) {
   const team1Click = await clickElement(page, `[data-test="pb-roster-row"][data-account-id="${leftPlayer}"]`)
   check(failures, clicked(team1Click), `Team 1 row not clickable: ${team1Click}`)
   await delay(250)
-  let s = await page.probe(workspace2dProbe)
+  let s = await page.callWith(workspace2dProbe, scenario.touch)
   check(failures, s.detailsCount === 1 && s.detailsPresentation === 'floating', 'selecting must open one floating details panel')
   check(failures, s.detailsParentIsMain, 'floating details must be a child of the battlefield workspace (.pb-main)')
   check(failures, !!s.left && !!s.right, 'details must not hide either lane')
@@ -3579,7 +3668,7 @@ async function runWorkspace2DScenario(env, scenario) {
   let lastPos = null
   for (const [label, x] of regions) {
     await dragDetailsTo(page, x, scenario.touch)
-    const d = await page.probe(workspace2dProbe)
+    const d = await page.callWith(workspace2dProbe, scenario.touch)
     const panel = d.details
     const centre = panel ? (panel.l + panel.r) / 2 : NaN
     const target = label === 'left' ? d.left.box : label === 'right' ? d.right.box : d.map
@@ -3597,7 +3686,7 @@ async function runWorkspace2DScenario(env, scenario) {
   const team2Click = await clickElement(page, `[data-test="pb-roster-row"][data-account-id="${rightPlayer}"]`)
   check(failures, clicked(team2Click), `Team 2 row not clickable: ${team2Click}`)
   await delay(250)
-  s = await page.probe(workspace2dProbe)
+  s = await page.callWith(workspace2dProbe, scenario.touch)
   check(failures, s.detailsCount === 1 && s.detailsPlayer === rightName, `details did not update to the Team 2 vehicle: ${s.detailsPlayer}`)
   check(failures, !!s.right, 'Team 2 lane disappeared after selecting a Team 2 vehicle')
   check(failures, lastPos && s.details && Math.abs(s.details.l - lastPos.l) < 1 && Math.abs(s.details.t - lastPos.t) < 1,
@@ -3606,27 +3695,27 @@ async function runWorkspace2DScenario(env, scenario) {
   // ---- × 只关详情 ----
   await clickElement(page, '[data-test="pb-sb-close"]')
   await delay(200)
-  s = await page.probe(workspace2dProbe)
+  s = await page.callWith(workspace2dProbe, scenario.touch)
   check(failures, s.detailsCount === 0, 'details × must close the panel')
   check(failures, JSON.stringify(s.selectedIds) === JSON.stringify([rightPlayer]), `details × must keep the selection: ${JSON.stringify(s.selectedIds)}`)
   check(failures, s.time === time0, `closing details changed playback time ${time0} -> ${s.time}`)
   await clickElement(page, `[data-test="pb-roster-row"][data-account-id="${rightPlayer}"]`)
   await delay(200)
-  s = await page.probe(workspace2dProbe)
+  s = await page.callWith(workspace2dProbe, scenario.touch)
   check(failures, s.detailsCount === 1, 'clicking the selected vehicle again must reopen details')
 
   // ---- 名册关闭：车道消失，Stage 仍是居中正方形，详情与选中保留 ----
   if (!scenario.fullscreen) {
     check(failures, (await setRosterVisible(page, false)) === 'ok', 'roster preference toggle missing')
     await delay(300)
-    s = await page.probe(workspace2dProbe)
+    s = await page.callWith(workspace2dProbe, scenario.touch)
     check(failures, !s.left && !s.right, 'roster OFF must remove both lanes')
     check(failures, squareish(s.map), `roster OFF Stage must stay square: ${JSON.stringify(s.map)} main=${JSON.stringify(s.main)}`)
     check(failures, s.map && s.main && Math.abs((s.map.l + s.map.r) / 2 - (s.main.l + s.main.r) / 2) <= 2, 'roster OFF Stage must stay centred')
     check(failures, s.detailsCount === 1, 'roster OFF must keep Details open')
     await setRosterVisible(page, true)
     await delay(300)
-    s = await page.probe(workspace2dProbe)
+    s = await page.callWith(workspace2dProbe, scenario.touch)
     check(failures, !!s.left && !!s.right && JSON.stringify(s.selectedIds) === JSON.stringify([rightPlayer]), 'roster ON must restore lanes with the existing selection')
   }
 
@@ -3892,6 +3981,8 @@ async function runOnboardingScenario(env, scenario) {
         `node ${node + 1} target/card geometry: ${JSON.stringify(geometry)}`)
       if (node === 2) {
         if (scenario.fullscreen) {
+          check(failures, await page.evaluate('!!document.fullscreenEnabled'),
+            'document.fullscreenEnabled must be true before the fullscreen tap')
           await hit('[data-test="pb-fullscreen"]')
           await page.waitFor(() => !!document.fullscreenElement, { label: 'actual 2D fullscreen' })
           const fullscreenGeometry = await page.evaluate(`(() => {
