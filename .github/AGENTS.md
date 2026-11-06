@@ -43,12 +43,14 @@
   手动 bootstrap、手动管理 lifecycle；不得引入 Alibaba SSH secrets、
   reusable workflow 或自动 reconcile。
 
-## Workflow 职责地图（40 个，以 `.github/workflows/` 目录为准）
+## Workflow 职责地图（43 个，以 `.github/workflows/` 目录为准）
 
 | Workflow | 职责 | 细节 canonical |
 |---|---|---|
 | `ci-gate.yml` + 15 个 `ci-<owner>.yml` | 唯一 PR 入口：identity 验证、按 changed paths 路由、聚合结果；OpenTofu root 只在 owner 受影响时验证 | — |
+| `repository-hygiene-main.yml` | main push-only 事后审计：对 tracked tree 与 pushed history 运行 `check-repository-hygiene.sh`，覆盖 bypass / direct push 的历史违规 | `../docs/DEVELOPER_GUIDE.md` §PR CI 与 owner 路由 |
 | `business-api.yml` / `frontend.yml` | digest-pinned 车道：exact SHA → immutable TCR → 生产消费 `repo@sha256:<digest>`；Business API mutation 前跑只读 dependency probe | `../docs/operations/ci-supply-chain.md` §5 |
+| `frontend-replica.yml` | TX2 Frontend 副本 owner：Frontend 成功（或 manual exact SHA）后解析同一 immutable TCR artifact、部署 `/opt/wotb-tx2/frontend-replica`、验证 peer `/version.json` 与 API health；不构建镜像、不操作 TX1 | `../docs/operations/tx2-production-worker.md` |
 | `keycloak.yml` / `ai-service.yml` | `latest` freshness owner；Keycloak 保留 runtime/OpenTofu/verification 链 | `../docs/auth/keycloak-tx-bootstrap.md` |
 | `caddy.yml` | 独立 TX gateway owner：stage/验证配置、reconcile gateway、验证 TLS/redirect/route；不构建镜像、不依赖 database/admin credential | `../docs/operations/komodo-public-ingress.md` |
 | `business-postgres.yml` / `keycloak-postgres.yml` / `observability.yml` / `alloy-tx.yml` | 各自 TX/Yecao runtime 与 OpenTofu root；provider/state/secret/plan guard/readiness 限定在 owner 内 | `../docs/operations/tx-service-plane.md`、`../docs/operations/observability.md`、`../docs/architecture/grafana-opentofu.md` |
