@@ -712,7 +712,7 @@ describe('spaced armor double-sided judgment', () => {
   it('同板去重判据委托 armorMeshTopology.resolveSpacedHitMask（语义由纯函数单测锁定）', () => {
     expect(kernel).toMatch(/function collectJudgmentHits\(intersects, rayDir\)/)
     expect(kernel).toMatch(/const origSection = entry\.object\?\.userData\?\.armorSectionOrig \|\| entry\.section \|\| '';/)
-    expect(kernel).toMatch(/import \{ resolveSpacedHitMask, spacedDedupKey, firstPhysicalHit \} from '\.\/armorMeshTopology\.js'/)
+    expect(kernel).toMatch(/import \{ resolveSpacedHitMask, spacedDedupKey, firstPhysicalHit, withGapOrigin \} from '\.\/armorMeshTopology\.js'/)
     expect(kernel).toMatch(/key: spacedDedupKey\(origSection, entry\.section, entry\.plateId\)/)
     expect(kernel).toMatch(/const keep = resolveSpacedHitMask\(candidates, spanEnd\);/)
   })
@@ -720,7 +720,7 @@ describe('spaced armor double-sided judgment', () => {
     expect(kernel).toMatch(/const intersects = intersectArmorDoubleSidedSpaced\(objects, raycaster\);/)
     expect(kernel).toMatch(/const \{ hits: armorHits, firstContact \} = collectJudgmentHits\(intersects, raycaster\.ray\.direction\);/)
     expect(kernel).toMatch(/const ricIntersects = intersectArmorDoubleSidedSpaced\(objects, rc\);/)
-    expect(kernel).toMatch(/const ricHits = collectJudgmentHits\(ricIntersects, rc\.ray\.direction\)\.hits/)
+    expect(kernel).toMatch(/const ricCollect = collectJudgmentHits\(ricIntersects, rc\.ray\.direction\);/)
   })
 })
 

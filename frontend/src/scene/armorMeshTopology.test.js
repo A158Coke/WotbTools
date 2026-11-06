@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
-import { assignSpacedStencilBits, firstPhysicalHit, isClosedSurfaceGeometry, resolveSpacedHitMask, spacedDedupKey, SPACED_STENCIL_BIT_LIMIT } from './armorMeshTopology.ts'
+import { assignSpacedStencilBits, firstPhysicalHit, isClosedSurfaceGeometry, resolveSpacedHitMask, spacedDedupKey, withGapOrigin, SPACED_STENCIL_BIT_LIMIT } from './armorMeshTopology.ts'
 import { ArmorSection, calculate } from './penetration.js'
 
 describe('isClosedSurfaceGeometry', () => {
@@ -118,6 +118,58 @@ describe('firstPhysicalHit（HE 首触面，去重之前）', () => {
   it('全是非间隙甲背面 / 空集合 → -1', () => {
     expect(firstPhysicalHit([hit('hull:1', true, false), hit('turret:2', true, false)])).toBe(-1)
     expect(firstPhysicalHit([])).toBe(-1)
+  })
+})
+
+describe('withGapOrigin（HEAT 间隙原点）', () => {
+  const h = (distance, point) => ({ distance, point })
+
+  it('被去重删掉的接触面在首层之前：首层间距原点前移到它（不改输入）', () => {
+    const hits = [h(1.0, [0, 0, -1]), h(1.1, [0, 0, -1.1])]
+    const contact = h(0, [0, 0, 0])
+    const out = withGapOrigin(hits, contact)
+    expect(out[0].point).toEqual([0, 0, 0])
+    expect(out[0].distance).toBe(1.0)
+    expect(out[1]).toBe(hits[1])
+    expect(hits[0].point).toEqual([0, 0, -1])
+  })
+
+  it('首层就是接触面 / 无接触面 / 空链：原样返回', () => {
+    const hits = [h(1.0, [0, 0, -1])]
+    expect(withGapOrigin(hits, h(1.0, [0, 0, -1]))).toBe(hits)
+    expect(withGapOrigin(hits, null)).toBe(hits)
+    expect(withGapOrigin([], h(0, [0, 0, 0]))).toEqual([])
+  })
+})
+
+describe('HEAT 间隙衰减（首触面在前 vs 被去重）', () => {
+  const heatReq = (hits) => ({
+    shell_type: 'heat', penetration: 250, caliber: 75, view_dir: [0, 1, 0],
+    hits, damage: 400, explosion_radius: 0,
+    calibrated_shells: false, enhanced_armor: false, allow_ricochet: true,
+  })
+  const screen = (point, distance) => ({
+    section: ArmorSection.SPACED, plate_id: '2', thickness: 20,
+    normal: [0, 1, 0], point, distance, part_name: 'spaced-2',
+  })
+  const hull = (point, distance) => ({
+    section: ArmorSection.HULL, plate_id: '1', thickness: 150,
+    normal: [0, 1, 0], point, distance, part_name: 'hull-1',
+  })
+
+  it('近侧背面被同板去重删掉后，若只按保留点算 gap 会低估衰减（PENETRATION）', () => {
+    // 保留链 = [front@-1, primary@-1.1] → 只看到 0.1m 间隙。
+    const r = calculate(heatReq([screen([0, 0, -1], 1.0), hull([0, 0, -1.1], 1.1)]))
+    expect(r.result).toBe('PENETRATION')
+  })
+
+  it('首层间距原点取首触面（-1 → 0）后按真实 1.1m 间隙衰减（BLOCKED）', () => {
+    const shifted = withGapOrigin(
+      [screen([0, 0, -1], 1.0), hull([0, 0, -1.1], 1.1)],
+      { distance: 0, point: [0, 0, 0] },
+    )
+    const r = calculate(heatReq([...shifted]))
+    expect(r.result).toBe('BLOCKED')
   })
 })
 

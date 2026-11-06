@@ -130,6 +130,21 @@ export function firstPhysicalHit(hits: readonly SpacedHitView[]): number {
     return -1
 }
 
+/**
+ * HEAT 间隙衰减的间距原点：同板去重会删掉近侧的出射面/入射面，但**间距必须从首个
+ * 物理接触面量起**（GPU 以最近屏幕深度为原点），否则层的 point 前移后 gap 变短、
+ * 衰减被低估。首层之前存在被删掉的物理接触面时，返回「首层点位换成接触面点位」的
+ * 新数组（其余命中与顺序不变、不改输入）；否则原样返回输入。
+ */
+export function withGapOrigin<T extends { distance: number; point: unknown }>(
+    hits: readonly T[],
+    contact: { distance: number; point: unknown } | null | undefined,
+): readonly T[] {
+    if (!contact || hits.length === 0) return hits
+    if (!(contact.distance < hits[0].distance)) return hits
+    return [{ ...hits[0], point: contact.point } as T, ...hits.slice(1)]
+}
+
 /** WebGL 保证的 stencil 位宽下界（WebGLRenderTarget stencilBuffer:true → ≥8 位）。 */
 export const SPACED_STENCIL_BIT_LIMIT = 8
 

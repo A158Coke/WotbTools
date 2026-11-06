@@ -55,7 +55,7 @@ import {
 // 动态装甲单次 Mesh 状态应用（#820 Wave B3C 出仓）：userData/可见性/分类/厚度/材质
 import { applyArmorStateToMesh, replaceArmorMaterial } from './viewer/armorMeshState.js'
 // 间隙甲同板去重键与判据：与厚度通道 per-key stencil 共用一处语义（order-independent）
-import { resolveSpacedHitMask, spacedDedupKey, firstPhysicalHit } from './armorMeshTopology.js'
+import { resolveSpacedHitMask, spacedDedupKey, firstPhysicalHit, withGapOrigin } from './armorMeshTopology.js'
 // 点击判定的触发面分类（Primary = 主装甲板）；与判定本体同源，勿在此复制一份板面清单
 import { isPrimary, hasPrimaryLayer, matchHitsByOccurrence } from './penetration.js'
 // Armor Inspector 概率模型：±range = ±3σ 的正态 CDF + 逐层 1× 等效厚度传播
@@ -5183,7 +5183,13 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // 只决定层链，不改变「HE 碰到第一层表面即爆炸」的契约（近背远正时若用层链
             // 首层，会把爆点推到更远的入射面）。
             const first = firstContact || armorHits[0];
-            const hitsForCheck = shellTypeNow === 'he' ? [first] : armorHits;
+            // HEAT 的间隙衰减从首个物理接触面量起：同板去重删掉近侧接触面后，把请求
+            // 首层的间距原点前移到该接触点（GPU 以最近屏幕深度为原点），否则 gap 被
+            // 缩短、衰减被低估（近背远正的空心壳会少算整段内部行程）。仅影响 HEAT。
+            const checkHits = shellTypeNow === 'heat'
+                ? withGapOrigin(armorHits, firstContact)
+                : armorHits;
+            const hitsForCheck = shellTypeNow === 'he' ? [first] : checkHits;
 
             const point = first.point;
             // ===== 片元交叉验证：raycast 装甲片 ↔ 游戏原生 segment armor_group =====
@@ -5551,7 +5557,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                             const rc = new THREE.Raycaster(currentPoint, reflect);
                             // 与点击主链同一收集口径：间隙甲双面 + 同一块板只计一层
                             const ricIntersects = intersectArmorDoubleSidedSpaced(objects, rc);
-                            const ricHits = collectJudgmentHits(ricIntersects, rc.ray.direction).hits
+                            const ricCollect = collectJudgmentHits(ricIntersects, rc.ray.direction);
+                            // 续飞链同口径：HEAT 的间隙同样从首个物理接触面量起。
+                            const ricHits = (shellType === 'heat'
+                                ? withGapOrigin(ricCollect.hits, ricCollect.firstContact)
+                                : ricCollect.hits)
                                 .filter(h => h.distance > RC.MIN_CONTINUATION_T);
                             ricHits.sort((a, b) => a.distance - b.distance);
                             if (!ricHits.length || !ricHits.some(h => isPrimary(h.section))) break;
