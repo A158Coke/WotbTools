@@ -143,30 +143,29 @@ bash deploy/assets/dataset.sh rollback --dataset 11.21.0 --release 20261015-bbbb
 bash deploy/assets/dataset.sh unlink --dataset 11.21.0-t11-preview
 ```
 
-`dataset.sh` holds `flock` for every mutation, appends `release-log.jsonl`, regenerates
-`versions.json` through `asset_release.py`, and runs its `verify` before returning.
-`asset_release.py` is the single source of truth; copy it from the Agent repo:
+`dataset.sh` 的每次变更都持 `flock`，追加 `release-log.jsonl` 审计，经
+`asset_release.py` 重算 `versions.json` 并在返回前跑 `verify`。
+`asset_release.py` 是唯一事实源；从 Agent 仓复制：
 
 ```bash
 scp tools/asset_release.py admin@47.101.141.111:/srv/wotb-assets/bin/
 ```
 
-`versions.json` uses `max-age=60`; versioned content stays at `max-age=300` until the
-pack moves to content-addressed paths.
+`versions.json` 用 `max-age=60`；版本化内容保持 `max-age=300`。
 
-## Content-addressed store (space dedupe)
+## 内容寻址对象库（空间去重）
 
-`objects/<sha[:2]>/<sha256>` holds each unique content blob once; every release tree is
-a set of **hardlinks** to those objects. Caddy still serves `/srv/wotb-assets/current`
-and `/v/<id>/...` as ordinary static files, so URLs/ETag semantics are unchanged.
+`objects/<sha[:2]>/<sha256>` 保存每份唯一内容；每个 release 树都是这些对象的
+**硬链接**集合。Caddy 仍按普通静态文件伺服 `/srv/wotb-assets/current` 与
+`/v/<id>/...`，URL/ETag 语义不变。
 
-Copy the tool from the Agent repo:
+从 Agent 仓复制工具：
 
 ```bash
 scp tools/asset_store.py admin@47.101.141.111:/srv/wotb-assets/bin/
 ```
 
-Migration (one-off, content unchanged):
+存量迁移（一次性，内容不变）：
 
 ```bash
 python3 bin/asset_store.py import --pack releases/<current> --objects objects
@@ -176,27 +175,24 @@ python3 bin/asset_store.py stats --objects objects --releases releases
 python3 bin/asset_store.py verify --objects objects --releases releases --links
 ```
 
-New releases:
+新 release 两种入库存放方式：
 
-- Keep the existing `cp -al` + overlay + `--refresh-manifest` flow, then
-  `asset_store.py adopt --releases releases/<new> --objects objects` before
-  `dataset.sh link`; or
-- Object-native: upload the new `manifest.json` + changed files to `incoming-<batch>/`,
-  then
+- 沿用 `cp -al` + 断链覆盖 + `--refresh-manifest` 流程，再在 `dataset.sh link`
+  之前跑 `asset_store.py adopt --releases releases/<new> --objects objects`；或
+- 对象原生：把新 `manifest.json` + 变更文件传到 `incoming-<batch>/`，然后
   ```bash
   python3 bin/asset_store.py import --manifest incoming/manifest.json \
       --files incoming --objects objects
   python3 bin/asset_store.py materialize --manifest incoming/manifest.json \
       --objects objects --out releases/<new> --metadata incoming
   ```
-  then `dataset.sh link --dataset <id> --release <new>`.
+  最后 `dataset.sh link --dataset <id> --release <new>`。
 
-After pruning old releases and clearing `incoming-*`, run
-`asset_store.py gc --objects objects --releases releases` (`--dry-run` first). GC only
-removes objects with no retained-release manifest reference **and** `st_nlink == 1`.
-`objects` and `releases` must be on the same filesystem; backups must preserve links
-(`rsync -aH`), otherwise the store expands back to logical size. Full contract:
-Agent repo `docs/asset-store.md`.
+清理旧 release 与 `incoming-*` 之后跑
+`asset_store.py gc --objects objects --releases releases`（先 `--dry-run`）。GC 只删
+「无保留 release manifest 引用 **且** `st_nlink == 1`」的对象。`objects` 与
+`releases` 必须同文件系统；备份必须保留硬链接（`rsync -aH`），否则对象库会膨胀回
+逻辑总量。完整契约见 Agent 仓 `docs/asset-store.md`。
 
 ## Caddy image preload contract
 
@@ -269,13 +265,10 @@ Caddy process remains in memory. The Caddy admin API stays disabled.
 
 ## Cache/CORS contract
 
-Current filenames are not content-addressed. Caddy therefore uses a short
-revalidation TTL, not `immutable`. Versioned datasets (`/v/<id>/...`) are immutable
-per release, but their filenames are still not content-addressed, so they keep the
-same 300s TTL; `versions.json` uses 60s so a publish/rollback is visible quickly.
-Browser CORS reflects only `https://wotbtools.com` and `https://www.wotbtools.com`.
-`Vary: Origin` is emitted unconditionally on cacheable responses so a shared cache
-cannot reuse a no-Origin representation for an allowed browser request. Range and
-conditional requests are served by Caddy's static file server; CI exercises the real
-Caddy image at request level, and `verify.sh` checks the externally visible behavior
-with bounded network timeouts.
+当前文件名未内容寻址，Caddy 因此用短复验 TTL 而非 `immutable`。版本化 dataset
+（`/v/<id>/...`）按 release 不可变，但文件名仍未内容寻址，故保持同一 300s TTL；
+`versions.json` 用 60s，让发布/回滚尽快可见。浏览器 CORS 只反映
+`https://wotbtools.com` 与 `https://www.wotbtools.com`。可缓存响应无条件带
+`Vary: Origin`，防止共享缓存把无 Origin 的表示复用给允许的浏览器请求。Range 与
+条件请求由 Caddy 静态文件服务器处理；CI 以请求级真实 Caddy 镜像演练，
+`verify.sh` 以有界网络超时检查对外可见行为。

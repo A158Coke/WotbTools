@@ -38,6 +38,16 @@ DATASET_ID_RE='^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$'
 die() { echo "ERROR: $*" >&2; exit 1; }
 note() { echo "[dataset] $*"; }
 
+# 从 current 符号链接推导默认 dataset（工具本身不读 current，需调用方显式传参）。
+# 必须在持锁状态下调用。
+current_default() {
+  local t
+  t="$(readlink "$ROOT/current" 2>/dev/null || true)"
+  if [[ -n "$t" && "$t" == datasets/* ]]; then
+    printf "%s" "${t#datasets/}"
+  fi
+}
+
 usage() {
   sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'
   exit "${1:-0}"
@@ -107,7 +117,10 @@ cmd_link() {
   require_tool
   with_lock
   verify_release "$dataset" "$release"
-  "$PYTHON" "$TOOL" verify --pack "$RELEASES/$release" \
+  # --full：逐文件 sha256。存在性检查挡不住同长度内容篡改（review 复现：
+  # good→evil 同长度替换后 verify --pack 返回 0、current 立即读到坏内容），
+  # 切换在线 symlink 之前必须做完整哈希。
+  "$PYTHON" "$TOOL" verify --pack "$RELEASES/$release" --full \
     || die "候选 release 内容校验失败：$RELEASES/$release（未切换在线 dataset）"
 
   local previous
@@ -118,8 +131,16 @@ cmd_link() {
   fi
   if [[ "$dry_run" == "0" ]]; then
     audit "link" "$dataset" "$release" "$previous"
-    # catalog 的 default 从 current 推导（--default 切换已先行），不再单独传参。
-    "$PYTHON" "$TOOL" catalog --root "$DATASETS" --out "$CATALOG" \
+    # 工具不读 current：catalog 的 default 必须显式传——--default 切换后即
+    # 新 dataset，否则仍是 current 指向的原默认。
+    local catalog_default
+    if [[ "$make_default" == "1" ]]; then
+      catalog_default="$dataset"
+    else
+      catalog_default="$(current_default)"
+    fi
+    [[ -n "$catalog_default" ]] || die "无法确定 catalog default（current 缺失）"
+    "$PYTHON" "$TOOL" catalog --root "$DATASETS" --out "$CATALOG" --default "$catalog_default" \
       || die "versions.json 生成失败（dataset 已切换；请修复后重跑 catalog）"
     "$PYTHON" "$TOOL" verify --root "$DATASETS" --catalog "$CATALOG" \
       || die "发布后 verify 失败（dataset 已切换；请回滚）"
@@ -145,7 +166,7 @@ cmd_default() {
   switch_symlink "$ROOT/current" "datasets/$dataset" "$dry_run"
   if [[ "$dry_run" == "0" ]]; then
     audit "default" "$dataset" "$(readlink "$DATASETS/$dataset")" "$previous"
-    "$PYTHON" "$TOOL" catalog --root "$DATASETS" --out "$CATALOG" \
+    "$PYTHON" "$TOOL" catalog --root "$DATASETS" --out "$CATALOG" --default "$dataset" \
       || die "versions.json 生成失败（current 已切换；请修复后重跑 catalog）"
   fi
   note "default dataset=$dataset"
@@ -215,7 +236,10 @@ cmd_unlink() {
   rm "$link"
   audit "unlink" "$dataset" "" "$previous"
   require_tool
-  "$PYTHON" "$TOOL" catalog --root "$DATASETS" --out "$CATALOG" \
+  local catalog_default
+  catalog_default="$(current_default)"
+  [[ -n "$catalog_default" ]] || die "无法确定 catalog default（current 缺失）"
+  "$PYTHON" "$TOOL" catalog --root "$DATASETS" --out "$CATALOG" --default "$catalog_default" \
     || die "versions.json 生成失败（dataset 已删除；请修复后重跑 catalog）"
   note "unlinked dataset=$dataset (was $previous)"
 }
