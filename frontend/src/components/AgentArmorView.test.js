@@ -386,6 +386,14 @@ describe('XI armor upgrade handoff', () => {
     return wrapper.findAllComponents(ArmorSideConfig)
   }
 
+  it('shot replay defaults both sides to stock and only explicit what-if upgrades', async () => {
+    const { wrapper } = await setup({ query: { view: 'agent-armor', shot: '6', tank: '15153', shooter: '30497' } })
+    const [shooter, target] = await editors(wrapper)
+    expect(target.props('upgrade')).toBe('stock')
+    expect(shooter.props('upgrade')).toBe('stock')
+    expect(wrapper.getComponent(ArmorShotHud).props('upgrade')).toBe('stock')
+  })
+
   it('keeps shooter stock when only the same target has an explicit upgrade', async () => {
     const { wrapper } = await setup({ query: { view: 'agent-armor', tank: '15153', upgrade: 'top', abilities: '101,201' } })
     const [shooter, target] = await editors(wrapper)

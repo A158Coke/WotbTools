@@ -58,6 +58,11 @@ describe('explicit XI armor data selection', () => {
     expect(result.shells[0]).toMatchObject({ penetration: 280, damage: 480 })
   })
 
+  it('keeps raw data when the legacy pack has no module catalog at all', async () => {
+    upgrades.modules.mockRejectedValueOnce(new Error('HTTP 404 /research/modules/china.json'))
+    await expect(fetchTankData(15153, { upgrade: 'top' })).resolves.toBe(raw)
+  })
+
   it('keeps raw data when the asset pack has no upgradeProgression', async () => {
     upgrades.project.mockReturnValueOnce({
       detail: raw, modules: moduleData,

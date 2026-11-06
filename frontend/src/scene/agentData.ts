@@ -57,9 +57,15 @@ export function fetchTankData(id: TankId, options: TankUpgradeOptions = {}) {
       import('../replay-local/compute/tankSetup'),
       import('../replay-local/compute/tankUpgrades'),
     ])
-    const modules = findTankModules(await loadTankModules(detail.nation), Number(id))
+    let modules: unknown = null
+    try {
+      modules = findTankModules(await loadTankModules(detail.nation), Number(id))
+    } catch {
+      // 旧资产包连 /research/modules/{nation}.json 目录都没有：保持原始数据。
+      return detail
+    }
     const projected = projectTankUpgrades(detail, modules, 'top', options.abilities)
-    // 旧资产包没有 upgradeProgression：保持原始数据（默认 top 不能把旧包打成不可用）。
+    // 目录存在但该车没有 upgradeProgression：同样保持原始数据。
     if (!projected.selection.available) return detail
     if (!projected.selection.supported) {
       throw new Error(`XI upgrade data unavailable: ${projected.selection.unsupported.join(', ') || id}`)
