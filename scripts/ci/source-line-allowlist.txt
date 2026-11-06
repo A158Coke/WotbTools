@@ -9,7 +9,6 @@
 #
 # #820 split targets
 frontend/src/scene/tankViewer.js
-frontend/src/scene/playbackScene.js
 frontend/src/components/BattlePlayback.vue
 #
 # Legacy over-budget files outside #820's three-file scope. Each needs its own

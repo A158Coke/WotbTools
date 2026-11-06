@@ -16,35 +16,13 @@
 import { confirm as appConfirm } from '../composables/useConfirm.js'
 import * as THREE from 'three'
 
-import { loadPlaybackData, loadRecorderCameraFromFile, mapStaticUrl, resolveMapKey } from './replaySource.js'
-import {
-  ANCHOR_HEIGHT_M,
-  ARCADE_BOOM_M,
-  BASE_FOV_DEG,
-  CAMERA_MODE,
-  FOLIAGE_CLIP_ARCADE_M,
-  FOLIAGE_CLIP_SCOPED_M,
-  recorderModeAt,
-  REVERSE_SAMPLE_OFFSET_SEC,
-  aimDirectionScene,
-  arcadeCameraPosition,
-  backwardZoomScale,
-  blendProgress,
-  fovFromZoomRaw,
-  isReversing,
-  reticleRadiusPx,
-  sampleRecorderCamera,
-} from './playback/cameraRig.js'
+import { loadPlaybackData, mapStaticUrl, resolveMapKey } from './replaySource.js'
 import { battleEndTime } from './battleEnd.js'
 import { orientDiscUv } from './baseDecal.js'
 import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, foldSupremacyTransitions } from '../utils/baseStatus.js'
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
 import { createDynRes } from './dynRes.js'
-import { isAndroidRuntime } from '../platform/runtime.js'
-import { createPerf } from './playback/perf.ts'
-import { createGpuFrameTracker } from './playback/gpuTimer.ts'
-import { AGENT_WASM_COMMIT, AGENT_WASM_RELEASE } from '../api/agent-replay-facets.js'
 import { foliageClip } from './sceneryMaterials.js'
 // 地面 pass SSOT（2026-10-14 抽层，用户裁示"直接完全照搬 3D 回放的代码"）：地形数据/几何、
 // 分层地表材质与俯视烘焙共用同一份——此前烘焙不渲染地面，底图用客户端自带
@@ -67,10 +45,6 @@ import { visibilitySpansByEid } from '../replay-local/pose/vehiclePose.js'
 // playback/hudFeed.js；hpPercentText 仍为本文件 HUD 消费）
 import { hpPercentText } from './rosterState.js'
 import { resolveExactMountedConfig, resolveMountedConfig } from './reloadBar.js'
-import {
-  aimedVehicle, armorEquipmentCoeffs, armorHighlightBlock, authorShellAt, createArmorHighlight, markPickBoundsStale,
-  mountedShell, reticleAimDirection,
-} from './playback/armorHighlight.js'
 import { pointsAt } from './supremacyPoints.js'
 import { teamHpTotals } from './teamHpTotals.js'   //（perspectiveScore 随计分桥接出仓 playback/hudFeed.js）
 // 战斗反馈时长：与 2D 共用同一组 canonical 常量（SSOT，避免两处各自漂移）
@@ -81,7 +55,6 @@ import { createFrameMeter } from './frameMeter.js'
 import { advancePlaybackTime } from '../utils/playbackClock'
 import { activeEntityAt, resolveReplayClock } from '../replay-local/canonical/facts'
 import { isPlaybackSpeed } from '../composables/usePlaybackTransport.js'
-import { isFlySpeedIndex, FLY_SPEEDS, DEFAULT_FLY_SPEED_INDEX, TOUCH_PAN_MIN_HEIGHT, advanceFly as tickFlyImpl, classifyTwoFinger, groundPanOffset } from '../composables/useSceneFlyControls.js'
 //（GLB 装载/悬挂求解/履带印 Buffer 写入随车辆与履带运行时出仓 playback/vehicleRuntime.ts、
 //  playback/treadRuntime.ts，#820 Step 4；本文件只经 vehicles/tread 句柄调度）
 import { assetProvider } from './assetProvider.js'
@@ -95,6 +68,10 @@ import { createTreadRuntime } from './playback/treadRuntime.ts'
 import { createBattleRuntime } from './playback/battleRuntime.ts'
 import { createAnnotationScene } from './playback/annotationScene.ts'
 import { createLabelsRuntime } from './playback/labelsRuntime.ts'
+import { createPerfProbe } from './playback/perfProbe.ts'
+//（相机运行时/录像者视角/穿深着色随 #820 Step 4 出仓 playback/cameraRuntime.ts；
+//  fly 接管/top·follow 相机/选中语义经 cameraRuntime 句柄调度）
+import { createCameraRuntime, CAMERA_GROUND_CLEARANCE } from './playback/cameraRuntime.ts'
 // 内核拆分（2026-10-24）：常量/纯函数/画质表
 // 出仓到 ./playback/，点击拾取调试与边界带出仓为工厂；公开 API 经本文件 re-export，
 // 导入方（Replay3DPane / 测试）零改动。
@@ -107,7 +84,6 @@ import { createBoundaryBand, BOUNDARY_THICK } from './playback/boundary.js'
 import { createCameraTerrainClamp } from './playback/cameraTerrainClamp.js'
 import { createBaseMarkers } from './playback/bases.js'
 import { createSpawnMarkers } from './playback/spawns.js'
-import { createFlyZoomSmoother, createZoomSmoother, flyWheelFactor, orbitWheelFactor } from './playback/zoomSmoothing.js'
 
 export { QUALITY_PRESETS, tracerSpanSecs, occlusionCells, occlusionFootprintCells }
 
@@ -172,21 +148,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let sceneClock = null, canonicalClock = null;
   // Derived identity index only; ReplaySession still owns every canonical life fact.
   let lifeTracks = null, lifeTracksByAccount = new Map();
-  let CAM = 'free', FOLLOW_EID = 0;
-  // 新会话默认以俯视机位开局；用户一旦操作过相机，同一实例内不再覆盖其视角。
-  let topViewOnLoad = true;
-  // 录像者视角：facet 随会话，相机由 driveRecorderCamera 逐帧写入。
-  let recorderCamera = null;
-  const recorderSample = {};
-  let recorderBoomScale = 1;
-  // 开镜时相机在炮位，本车只从渲染里摘掉：group.visible 仍表示「车辆在场」，
-  // 炮口定位与击毁特效都依赖它。
-  let scopedHiddenEid = 0;
-  let cameraBlend = null;              // 进入录像者视角的呈现过渡
-  let fovRestore = null;               // 离开录像者视角时 FOV 的呈现过渡
-  // 弹道/战斗特效/战斗反馈 transient（tracers/pendingMuzzles/trajLines/battleFx/wreckClock/
-  // shotPtr/FX_SCALE）的唯一 owner = playback/battleRuntime.ts（#820 Step 5 出仓；
-  // 本闭包经 battle 句柄读写，语义与拆分前逐字一致）
+  // 相机状态（CAM/FOLLOW_EID/topViewOnLoad/录像者 facet/开镜隐藏层/呈现过渡）与
+  // fly 接管、穿深着色、场景选中语义的唯一 owner = playback/cameraRuntime.ts
+  //（#820 Step 4 出仓；本闭包经 cameraRuntime 句柄读写，语义与拆分前逐字一致）
   let renderer = null, scene, camera, controls, clock, raycaster;
   let hemiLight = null, sunLight = null;   // 逐图光照（applyMapLighting 覆盖，见 load 流程）
   // 世界/地形/地图资产状态（mapPlane/heightField/mapScenery/destruct/envTexture…）与
@@ -194,9 +158,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let sizeObserver = null;
   // 名牌偏好（classIcons/showMarkerStatus）与 HTML 标签游标的唯一 owner = playback/labelsRuntime.ts
   //（#820 Step 5 出仓；本闭包经 labels 句柄读写）
-  const RETICLE_MIN_GUN_DISTANCE_M = 30;  // 瞄准点贴脸时扩散圆的最小投影距离
-  const SCOPED_HIDDEN_LAYER = 1;       // 相机不启用的 layer：开镜时本车留在场景里但不绘制
-  const CAMERA_GROUND_CLEARANCE = 0.5;  // 初值：小于地形起伏尺度，真实地图视觉校准由人工验收
   // 高度场只有一份（客户端同构：渲染/查询/放置全用真值场）。让位掩码（v0.4.2 的"渲染场"副本
   // 概念）与"贴地结构脚印"细分判据均已撤销（2026-10-11 用户裁示：只对齐客户端，不自创补偿）。
   // ---------- 3D annotation（selected-surface drawing；无 surfaceY 时 terrain fallback）----------
@@ -387,438 +348,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 的 `|| dead` 保留。
     return spansContainAt(VIS_BY_EID.get(v.def.eid) ?? v.def.coverage, t);
   }
-  // ---------- 自由飞行的 FPS 视角接管（用户裁定：旋转中心 = 镜头自身） ----------
-  // **接管态 = CAM === 'free'（派生，非独立状态）**——独立布尔会被任何路径漏设/
-  // 误清（表现 = FPS 转头与 OrbitControls 环绕/pan 漂移交替，用户实测两轮）。
-  // 自由模式下：
-  //   · 左键拖拽 = 转视角（yaw/pitch 直接作用在相机朝向上）；
-  //   · 滚轮 = 沿视线推拉相机（OrbitControls 的 dolly 语义——推近/拉远，视角与视距不变）；
-  //   · WASD/QE = 平移相机（flyTick → advanceFly，target 重钉 cam+dir×flyDist）。
-  // 触屏对应键鼠：单指 = WASD（贴地平移）；两指一起拖 = 左键拖拽；指距变化 = 滚轮。
-  // 事件在 **container capture 阶段**拦截：祖先 capture 先于 canvas 的 target 阶段，
-  // OrbitControls（挂 canvas）物理上收不到左键拖拽/滚轮。选中/拾取语义不变
-  // （位移 ≤ SLOP 仍算单击，在 capture 处理器内联）。切回跟随/top 或销毁时恢复 controls。
-  const flyLook = { active: false, lastX: 0, lastY: 0, yaw: 0, pitch: 0, dist: 30 };
-  // 滚轮缩放平滑（#835）：两条滚轮路径（fly 拦截 / top·follow 的 OrbitControls 拦截）
-  // 都只把事件比例 push 进预算，zoomTick 每帧向目标收敛——事件当帧立即生效一小步，
-  // 约 0.4s 收敛到终点（公式/界限与原即时实现逐值一致，只改节奏不改步长）。
-  const zoomSmoother = createZoomSmoother();
-  // fly 路径用独立的**可加世界位移**预算（旧 flyDolly 语义）：比例预算对视距不变的
-  // fly 不等价（各帧比例份额相加 ≠ 事件时刻的一次性位移，且随帧率漂移）——见
-  // zoomSmoothing.createFlyZoomSmoother 注释。orbit 路径（top/follow）仍用比例预算。
-  const flyZoomSmoother = createFlyZoomSmoother();
-  // 接管态 = 自由模式（派生）。**不按输入设备开关**：`(pointer: fine)` 之类的能力
-  // 探测在触屏笔记本 / 平板模式下会报 coarse，把整条接管链关掉（用户实测：WASD 全灭、
-  // 拖拽退回 OrbitControls）。
-  const flyMode = () => CAM === 'free';
-  // 触屏多点手势状态：pointerId → 最新坐标
-  const flyPointers = new Map();
-  // 单指：armed 前是单击候选，armed 后是贴地平移（x0/y0/z0 手势起点相机 / height 平移平面 / offset0 抓取偏移）
-  let flyPan = null;
-  // 双指：mode = pending（判定中）| pinch（d0 指距 / dist0 视距）| look（cx/cy 两指中点）
-  let flyTwoFinger = null;
-  const FLY_LOOK_RAD_PER_PX = 0.0032;   // rad/px（与常见 FPS 灵敏度同量级）
-  // [fly] 埋点：?debug 下走 console.info（默认级别可见，排障不用勾 Verbose）；
-  // 非 debug 走 console.debug（默认隐藏）。每次交互只输出个位数行。
-  const flyDbg = (tag, extra) => {
-    const line = `[fly] ${tag} ${extra !== undefined ? extra : ''} cam=${CAM} enabled=${controls ? controls.enabled : '?'} yaw=${flyLook.yaw.toFixed(2)} pitch=${flyLook.pitch.toFixed(2)} dist=${flyLook.dist.toFixed(0)}`;
-    if (DEBUG) console.info(line); else console.debug(line);
-  };
-  let flyMoveLastLog = 0;
-
-  /** 从当前相机→target 向量反解 yaw/pitch（进入自由模式的朝向基准）。
-   *  顶视（top→free）反解出 pitch≈±π/2 会让 WASD 的水平投影 fwdLen≈0（无法移动）——
-   *  |pitch| 接近天顶/天底时回落到斜俯视（保留 yaw）：从正俯视过渡到斜俯视是自然的
-   *  模式切换，换来飞行立即可用。 */
-  function flyLookSyncFromCamera(tag = null, preserveVertical = false) {
-    const dx = controls.target.x - camera.position.x;
-    const dy = controls.target.y - camera.position.y;
-    const dz = controls.target.z - camera.position.z;
-    const dist = Math.hypot(dx, dy, dz) || 1;
-    flyLook.dist = dist;
-    flyLook.yaw = Math.atan2(-dx, -dz);              // yaw：绕 y（0 = 看 -z）
-    const rawPitch = Math.asin(Math.max(-1, Math.min(1, dy / dist)));
-    // 天顶/天底附近回落到斜俯视：**保持原朝向的上下符号**（俯视=向下看，pitch 仍为负）。
-    // 旧实现 `-0.6*sign(rawPitch)` 把俯视翻成仰视（target 跑到地图上空、WASD 水平分量为 0）。
-    flyLook.pitch = !preserveVertical && Math.abs(rawPitch) > Math.PI / 2 - 0.25
-      ? 0.6 * Math.sign(rawPitch || 1)
-      : rawPitch;
-    if (tag) flyDbg(`sync(${tag})`);   // 逐帧对齐（tick）不埋点，防按住键时刷屏
-  }
-  /** 相机被**外部路径**改过（初始视野 fit / 名册跟随退出 / 钳制）后，flyLook 会与
-   *  实际 cam→target 不一致——交互起点先对齐，否则首帧拖拽/飞行会把 target 跳到
-   *  旧朝向×旧视距上（用户实测：进入自由后第一次拖拽视距从 570 变 284）。 */
-  function flyLookSyncIfStale(tag) {
-    if (!controls || flyLook.active) return;
-    const cp = Math.cos(flyLook.pitch);
-    const ex = camera.position.x - Math.sin(flyLook.yaw) * cp * flyLook.dist;
-    const ey = camera.position.y + Math.sin(flyLook.pitch) * flyLook.dist;
-    const ez = camera.position.z - Math.cos(flyLook.yaw) * cp * flyLook.dist;
-    const d = Math.hypot(ex - controls.target.x, ey - controls.target.y, ez - controls.target.z);
-    if (d > 0.05) flyLookSyncFromCamera(tag);
-  }
-  /** free↔其他模式切换的 OrbitControls 侧状态迁移（enabled/damping/惯性清理）。 */
-  function flyLookApplyMode(mode) {
-    flyPan = null;   // 平移从手势起点重算：相机被模式切换挪动后，旧起点不能再用
-    zoomSmoother.reset();   // 滚轮预算一并清空：旧目标在新机位上继续生效会突然一跳
-    flyZoomSmoother.reset();
-    if (mode === 'free') {
-      if (controls) {
-        controls.enabled = false;
-        controls.enableDamping = false;
-        flyLookSyncFromCamera('enter free');   // 进入自由：以当前视野为基准（top 的天顶朝向在此回落）
-      }
-    } else {
-      // 离开自由：手势状态一并清空（触屏指针表 / 平移 / 双指 / 转头态）
-      flyPointers.clear();
-      flyTwoFinger = null;
-      flyLook.active = false;
-      emptyDownAt = null;
-      if (controls) {
-        controls.enabled = true;
-        controls.enableDamping = true;
-        controls.__flyDist = null;
-      }
-    }
-  }
-  function flyLookApply() {
-    const cp = Math.cos(flyLook.pitch);
-    const dir = { x: -Math.sin(flyLook.yaw) * cp, y: Math.sin(flyLook.pitch), z: -Math.cos(flyLook.yaw) * cp };
-    controls.target.set(
-      camera.position.x + dir.x * flyLook.dist,
-      camera.position.y + dir.y * flyLook.dist,
-      camera.position.z + dir.z * flyLook.dist,
-    );
-    // 相机朝向必须显式重算：free 模式跳过 controls.update()（它的球面状态会与
-    // target 重钉互相污染），而 update() 正是平时调用 camera.lookAt(target) 的地方——
-    // 只改 target 不 lookAt，拖拽时 target 在动、画面却完全不转（用户实测）。
-    camera.lookAt(controls.target);
-  }
-  /** 沿当前视线推拉相机（OrbitControls 的 dolly 语义 = 滚轮/捏合缩放）：相机与 target
-   *  同步平移，视角与视距保持不变。step > 0 前进（推近），step < 0 后退（拉远）。
-   *  只改 flyLook.dist 而相机不动是没有画面变化的（用户实测「滚轮没有缩放」）。 */
-  function flyDolly(step) {
-    if (!step) return;
-    topViewOnLoad = false;
-    const cp = Math.cos(flyLook.pitch);
-    const dx = -Math.sin(flyLook.yaw) * cp;
-    const dy = Math.sin(flyLook.pitch);
-    const dz = -Math.cos(flyLook.yaw) * cp;
-    camera.position.x += dx * step;
-    camera.position.y += dy * step;
-    camera.position.z += dz * step;
-    controls.target.x += dx * step;
-    controls.target.y += dy * step;
-    controls.target.z += dz * step;
-    constrainFreeCameraAltitude();
-    camera.lookAt(controls.target);
-    invalidate();
-  }
-  // 滚轮缩放的逐帧推进（animate 每帧调用；预算见 zoomSmoothing.js）：
-  //   · fly：可加世界位移预算，advance 返回本帧位移直接交给 flyDolly——各帧位移之和
-  //     恒等于事件时刻按旧公式算出的总位移，终点与旧即时实现逐值一致且帧率无关；
-  //   · top/follow：f = 本帧视距比例，沿 target→camera 缩放视距（OrbitControls dolly
-  //     的同一几何）。min/maxDistance 已含地形净空锁定值，随后的
-  //     clampOrbitCameraToTerrain 逐帧再校验——被钳掉的部分自然吸收（与即时缩放同一
-  //     钳制语义，只改节奏）。
-  const _zoomDir = new THREE.Vector3();
-  function zoomTick(dt) {
-    if (!renderer) return;
-    if (flyMode()) {
-      if (!flyZoomSmoother.active()) return;
-      flyDolly(flyZoomSmoother.advance(dt));
-    } else {
-      if (!zoomSmoother.active()) return;
-      const f = zoomSmoother.advance(dt);
-      if (f === 1) return;
-      if (controls && controls.enabled) {
-        const off = _zoomDir.subVectors(camera.position, controls.target);
-        const len = off.length();
-        if (len > 1e-6) {
-          const next = Math.min(controls.maxDistance, Math.max(controls.minDistance, len * f));
-          camera.position.copy(controls.target).addScaledVector(off.divideScalar(len), next);
-          camera.lookAt(controls.target);
-        }
-      }
-    }
-    invalidate();
-  }
-  /** 手指当前射线的方向（单指平移用）；rect 不可用时返回 null。 */
-  function flyPanRay(clientX, clientY) {
-    const rect = container.getBoundingClientRect();
-    if (!(rect.width > 0) || !(rect.height > 0)) return null;
-    annotationScene.setRaycasterFromClient(clientX, clientY, rect);
-    return raycaster.ray.direction;
-  }
-  /** 单指越过单击阈值：抓住手指下的地面点。高度只决定平移比例，不用作净空。 */
-  function flyPanArm(clientX, clientY) {
-    if (!flyPanRay(clientX, clientY)) return;
-    const { x: x0, y: y0, z: z0 } = camera.position;
-    const refY = annotationScene.raycastAnnotationGround(clientX, clientY, container.getBoundingClientRect())?.point.y
-      ?? terrainHeightForCameraClamp(camera.position.x, camera.position.z)
-      ?? 0;
-    const height = Math.max(y0 - refY, TOUCH_PAN_MIN_HEIGHT);
-    const offset0 = groundPanOffset(flyPanRay(clientX, clientY), height);
-    Object.assign(flyPan, { armed: true, x0, y0, z0, height, offset0 });
-    emptyDownAt = null;
-  }
-  /** 单指平移一步：每次从手势起点重算，撞边修正不累积，手指回到起点相机就回到起点。 */
-  function flyPanStep(clientX, clientY) {
-    const dir = flyPanRay(clientX, clientY);
-    if (!dir) return;
-    const o = groundPanOffset(dir, flyPan.height);
-    camera.position.set(flyPan.x0 + flyPan.offset0.x - o.x, flyPan.y0, flyPan.z0 + flyPan.offset0.z - o.z);
-    topViewOnLoad = false;
-    flyLookApply();
-    // target 被钳制时相机同步修正：到地图边缘停下，而不是转头
-    const { x: bx, z: bz } = controls.target;
-    clampCameraTarget();
-    camera.position.x += controls.target.x - bx;
-    camera.position.z += controls.target.z - bz;
-    constrainFreeCameraAltitude();
-    camera.lookAt(controls.target);
-    invalidate();
-  }
-  /** 从当前前两根手指开始一轮双指手势（绘制模式固定捏合，其余先判定）。 */
-  function flyTwoFingerStart() {
-    const [[a, pa], [b, pb]] = flyPointers;
-    flyTwoFinger = { mode: 'pending', a, b, startA: pa, startB: pb };
-    if (annotationScene.annotationToolActive()) flyTwoFingerEnter('pinch', pa, pb);
-  }
-  /** 进入双指通道：以当前时刻为基准，判定瞬间相机不跳。 */
-  function flyTwoFingerEnter(mode, pa, pb) {
-    flyTwoFinger.mode = mode;
-    if (mode === 'pinch') {
-      flyTwoFinger.d0 = Math.hypot(pa.x - pb.x, pa.y - pb.y) || 1;
-      flyTwoFinger.dist0 = flyLook.dist;
-      flyTwoFinger.applied = 0;
-    } else {
-      flyTwoFinger.cx = (pa.x + pb.x) / 2;
-      flyTwoFinger.cy = (pa.y + pb.y) / 2;
-    }
-    flyDbg('two-finger', mode);
-  }
-  function flyTwoFingerStep() {
-    const g = flyTwoFinger;
-    const pa = flyPointers.get(g.a), pb = flyPointers.get(g.b);
-    if (!pa || !pb) return;
-    if (g.mode === 'pending') {
-      // pointermove 逐指派发，单个事件时另一指可能还是旧位置：一帧判定一次，
-      // 这一帧里两指的最新位置都到齐后再分类，结果不依赖派发顺序。
-      if (!g.sampling) {
-        g.sampling = true;
-        requestAnimationFrame(() => flyTwoFingerSample(g));
-      }
-      return;
-    }
-    if (g.mode === 'pinch') {
-      const d = Math.hypot(pa.x - pb.x, pa.y - pb.y) || 1;
-      // 双指捏合 = 沿视线推拉相机：以**手势基准**算**累计目标**，再应用目标与已应用量之差。
-      // 累计位移 = clamp((d−d0)/d0, ±0.5)·dist0：
-      //  · 回到 d0 ⇒ 目标 0 ⇒ 精确回位（不随事件分批漂移）；
-      //  · 单次触限只截断**累计目标**，不会丢掉后续回程位移（评审 P2：分别截断
-      //    每次增量 + 无条件推进基准，会让 200→350→275→200 净退 0.25×视距）。
-      const target = Math.max(-0.5, Math.min(0.5, (d - g.d0) / g.d0)) * g.dist0;
-      const delta = target - g.applied;
-      g.applied = target;
-      flyDolly(delta);
-      return;
-    }
-    const cx = (pa.x + pb.x) / 2, cy = (pa.y + pb.y) / 2;
-    flyLookBy(cx - g.cx, cy - g.cy);
-    g.cx = cx; g.cy = cy;
-    topViewOnLoad = false;
-    flyLookApply();
-    invalidate();
-  }
-  function flyTwoFingerSample(g) {
-    g.sampling = false;
-    if (flyTwoFinger !== g || g.mode !== 'pending') return;   // 这一帧里手势已结束或换了手指
-    const pa = flyPointers.get(g.a), pb = flyPointers.get(g.b);
-    if (!pa || !pb) return;
-    const mode = classifyTwoFinger(g.startA, g.startB, pa, pb);
-    if (mode) flyTwoFingerEnter(mode, pa, pb);
-  }
-  function flyLookBy(dx, dy) {
-    flyLook.yaw -= dx * FLY_LOOK_RAD_PER_PX;
-    flyLook.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, flyLook.pitch - dy * FLY_LOOK_RAD_PER_PX));
-  }
-  /** 手指数量变化：还有两指就重新判定，否则结束双指手势（剩下的手指不生效）。 */
-  function flyTouchCountChanged() {
-    if (flyPointers.size >= 2) flyTwoFingerStart();
-    else flyTwoFinger = null;
-  }
-
-  // ---- container capture 拦截（祖先 capture 先于 canvas target 阶段）----
-  //（SCENE_CLICK_SLOP_PX / emptyDownAt 沿用原选中语义的声明——同一闭包作用域）
-  function onFlyCaptureDown(e) {
-    if (!controls) return;
-    if (flyMode()) {
-      // 进入自由模式：OrbitControls 让位（enabled=false 后其处理器自忽略，
-      // capture 先行是双保险）；本处理器接管拖拽 + 单击选中
-      if (controls.enabled) controls.enabled = false;
-      flyLookSyncIfStale('drag');
-      flyDbg('down', `button=${e.button} type=${e.pointerType || 'mouse'}`);
-      if (e.pointerType === 'touch') {
-        flyPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-        flyLook.active = false;
-        emptyDownAt = null;
-        if (flyPointers.size >= 2) {
-          // 第二指加入：平移立即停止，本次手势也算不上单击
-          flyPan = null;
-          flyTwoFingerStart();
-        } else if (annotationScene.annotationToolActive()) {
-          // drawing mode：单指 owner 是 annotation；free camera 也不得移动。
-          flyPan = null;
-        } else {
-          flyPan = { armed: false, startX: e.clientX, startY: e.clientY };
-          emptyDownAt = { x: e.clientX, y: e.clientY };
-        }
-      } else if (e.button === 0) {
-        flyLook.active = true;
-        flyLook.lastX = e.clientX; flyLook.lastY = e.clientY;
-        emptyDownAt = { x: e.clientX, y: e.clientY };
-      }
-      // 指针捕获：拖出画布仍能收到 move/up。否则画布外松键会留下「幽灵拖拽」
-      // （回到画布不按键也在转头）。
-      try { container.setPointerCapture(e.pointerId); } catch (_) {}
-      // 画布交互夺回键盘焦点：preventDefault 挡住了浏览器的焦点迁移，若不主动 blur，
-      // 点过「自由」按钮后焦点仍留在该按钮上——空格 / ←→（播放传输）会落给按钮。
-      const ae = document.activeElement;
-      if (ae && ae !== document.body && typeof ae.blur === 'function') ae.blur();
-      e.preventDefault();
-      e.stopPropagation();
-      return;
-    }
-    // 录像者视角不接受相机输入：OrbitControls 保持关闭，选中语义仍由 renderer 接线。
-    if (CAM === 'recorder') return;
-    // 非 free：恢复 OrbitControls 并走原选中语义（onScenePointerDown 由 renderer 接线）
-    if (!controls.enabled) controls.enabled = true;
-  }
-  function onFlyCaptureMove(e) {
-    if (!flyMode()) return;
-    if (e.pointerType === 'touch') {
-      if (!flyPointers.has(e.pointerId)) return;
-      flyPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (flyTwoFinger) {
-        flyTwoFingerStep();
-      } else if (flyPan?.armed) {
-        flyPanStep(e.clientX, e.clientY);
-      } else if (flyPan && Math.hypot(e.clientX - flyPan.startX, e.clientY - flyPan.startY) > SCENE_CLICK_SLOP_PX) {
-        flyPanArm(e.clientX, e.clientY);
-      } else {
-        return;
-      }
-      e.stopPropagation();
-      return;
-    }
-    if (!flyLook.active) return;
-    // 已无按键 = 在画布外松了键（捕获没拿到 up）：结束拖拽，且不当作单击
-    if (!e.buttons) { flyLook.active = false; emptyDownAt = null; return; }
-    const now = performance.now();
-    const logThis = now - flyMoveLastLog > 400;
-    if (logThis) flyMoveLastLog = now;
-    const events = e.getCoalescedEvents?.().length ? e.getCoalescedEvents() : [e];
-    for (const ev of events) {
-      const dx = ev.clientX - flyLook.lastX, dy = ev.clientY - flyLook.lastY;
-      flyLook.lastX = ev.clientX; flyLook.lastY = ev.clientY;
-      flyLookBy(dx, dy);
-    }
-    topViewOnLoad = false;
-    flyLookApply();
-    if (logThis) flyDbg('move(applied)');
-    invalidate();
-    e.stopPropagation();   // flyMode 下 OrbitControls 与场景单击语义都不再需要
-  }
-  function onFlyCaptureUp(e) {
-    if (!flyMode()) return;
-    try { container.releasePointerCapture(e.pointerId); } catch (_) {}
-    let wasActive = flyLook.active;
-    if (e.pointerType === 'touch') {
-      flyPointers.delete(e.pointerId);
-      flyTouchCountChanged();
-      // 双指手势收尾（还剩一指）：不把它当单击，剩下的手指也不生效
-      if (flyPointers.size > 0) {
-        e.stopPropagation();
-        return;
-      }
-      // 只有没越过阈值的单指才是单击：平移过的手指回到起点也不算
-      wasActive = !!flyPan && !flyPan.armed;
-      flyPan = null;
-    }
-    // 单击判定（≤SLOP）与拖拽共存：按下记录起点、抬起位移 ≤SLOP 才算单击
-    flyLook.active = false;
-    if (!wasActive || e.button !== 0) return;
-    const moved = Math.hypot(e.clientX - (emptyDownAt?.x ?? e.clientX), e.clientY - (emptyDownAt?.y ?? e.clientY));
-    emptyDownAt = null;
-    if (moved <= SCENE_CLICK_SLOP_PX) {
-      // 单击：up 位置统一 raycast（命中车辆 → eid；空处 → null）
-      const r = container.getBoundingClientRect();
-      const nd = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
-      raycaster.setFromCamera(nd, camera);
-      const hits = raycaster.intersectObjects(vehicles.getVehicles().map(v => v.group), true);
-      let eid = null;
-      if (hits.length) {
-        let o = hits[0].object;
-        while (o && !o.userData.eid) o = o.parent;
-        if (o) eid = o.userData.eid;
-      }
-      flyDbg('click', `eid=${eid}`);
-      if (!annotationScene.annotationToolActive()) onVehicleSelect?.(eid, e);
-    }
-    e.stopPropagation();
-  }
-  function onFlyCaptureWheel(e) {
-    if (CAM === 'recorder') { e.preventDefault(); e.stopPropagation(); return; }
-    if (!flyMode()) return;
-    // 滚轮 = 沿视线推拉相机（OrbitControls 的 dolly 语义）：相机与 target 一起前进/后退，
-    // 视角与视距保持不变。旧实现只改 flyLook.dist 而相机不动——target 只沿视线挪，
-    // 画面毫无变化（用户实测「滚轮没有缩放」）。
-    flyLookSyncIfStale('wheel');
-    // 事件只累积**可加世界位移**（旧即时公式：step = clamp(−deltaY×0.0012, ±0.3)，
-    // 位移 = 当前视距 × step——flyDolly 平移 camera+target，视距不变，故为可加量），
-    // 实际推拉由 zoomTick 逐帧收敛——平滑只改变时间分布，最终位移与旧即时实现逐值
-    // 一致（#835「缩放生硬」）。
-    flyZoomSmoother.pushDisplacement(flyLook.dist * (1 - flyWheelFactor(e.deltaY)));
-    invalidate();
-    e.preventDefault();
-    e.stopPropagation();
-    flyDbg('wheel', `pushed=${(flyLook.dist * (1 - flyWheelFactor(e.deltaY))).toFixed(3)}`);
-  }
-  /** three 0.185.1 OrbitControls._customWheelEvent 的归一化等价（对照 node_modules
-   *  安装源码）：deltaMode 1（行）×16、2（页）×100；`ctrlKey && !_controlActive` =
-   *  触控板模拟 pinch（实体 Control 按键按下时 OrbitControls 经 keydown 维护
-   *  _controlActive=true），再 ×10。我们的 capture 拦截发生在 OrbitControls 收到事件
-   *  之前，必须先复刻该归一化再换算比例，否则行/页单位设备与触控板捏合的实际缩放
-   *  幅度都会变小。 */
-  function orbitWheelNormalizedDelta(e) {
-    let deltaY = e.deltaY;
-    if (e.deltaMode === 1) deltaY *= 16;
-    else if (e.deltaMode === 2) deltaY *= 100;
-    if (e.ctrlKey && controls?._controlActive !== true) deltaY *= 10;
-    return deltaY;
-  }
-  /** top/follow（OrbitControls 路径）的滚轮拦截：只累积缩放预算，几何推进归 zoomTick。
-   *  事件幅度与 OrbitControls 直收滚轮逐值一致（先过 _customWheelEvent 等价归一化，
-   *  再走 orbitWheelFactor 公式），拦截只是把「当帧一步到位」换成短窗收敛；单事件不改
-   *  min/max/地形钳制语义。 */
-  function onOrbitZoomWheel(e) {
-    if (flyMode()) return;   // fly/recorder 已由 onFlyCaptureWheel（先注册）处理或拦截
-    if (!controls || !controls.enabled || controls.enableZoom === false) return;   // 输入关闭态不劫持
-    const deltaY = orbitWheelNormalizedDelta(e);
-    zoomSmoother.push(orbitWheelFactor(deltaY, controls.zoomSpeed));
-    invalidate();
-    e.preventDefault();
-    e.stopPropagation();
-    flyDbg('wheel', `orbit pushed=${orbitWheelFactor(deltaY, controls.zoomSpeed).toFixed(3)}`);
-  }
-  function onFlyCaptureCancel(e) {
-    flyLook.active = false;
-    emptyDownAt = null;
-    flyPan = null;
-    if (e) flyPointers.delete(e.pointerId);
-    flyTouchCountChanged();
-  }
 
   // ---------- 场景 ----------
   function initScene() {
@@ -827,8 +356,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const core = createSceneCore({
       container, quality: Q, logdepth: LOGDEPTH, dynres: DYNRES, debug: DEBUG,
       envTexture: mapWorld.envTexture(), envMultiplier: mapWorld.envMultiplier(),
-      onResize, onPointerDown: onScenePointerDown, onPointerUp: onScenePointerUp,
-      setFollow,
+      onResize, onPointerDown: cameraRuntime.onScenePointerDown, onPointerUp: cameraRuntime.onScenePointerUp,
+      setFollow: (eid) => cameraRuntime.setFollow(eid),
     });
     scene = core.scene; camera = core.camera; renderer = core.renderer;
     controls = core.controls; clock = core.clock; raycaster = core.raycaster;
@@ -838,21 +367,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // annotation 段收口（#820 Step 5）：独立 raycaster 重建 + 5 个 capture 监听 + layer
     // 就绪 + 触摸模式（原逐行实现的等价入口，见 playback/annotationScene.ts）。
     annotationScene.attachListeners();
-    // FPS 飞行接管（capture 阶段挂 container——先于 canvas 的 target 阶段，
-    // OrbitControls 物理收不到 flyMode 下的事件；down/up 的 renderer 接线仍服务
-    // 非 free 模式的选中语义）
-    container.addEventListener('pointerdown', onFlyCaptureDown, true);
-    container.addEventListener('pointermove', onFlyCaptureMove, true);
-    container.addEventListener('pointerup', onFlyCaptureUp, true);
-    container.addEventListener('pointercancel', onFlyCaptureCancel, true);
-    container.addEventListener('wheel', onFlyCaptureWheel, { capture: true, passive: false });
-    // top/follow 的滚轮拦截（#835）：OrbitControls 的 wheel dolly 当帧生效、无过渡。
-    // 在 container capture 拦下（先于 canvas 的 target 阶段，OrbitControls 收不到），
-    // 比例公式与其 _getZoomScale 逐值同构（orbitWheelFactor）——单事件幅度不变，
-    // 只把「一步到位」换成 zoomTick 的短窗收敛。fly/recorder 模式在 onFlyCaptureWheel
-    // 内已处理/拦截，此处理器只服务 OrbitControls 路径。
-    container.addEventListener('wheel', onOrbitZoomWheel, { capture: true, passive: false });
-    if (CAM === 'free') flyLookApplyMode('free');   // 初始 CAM 可能已是 'free'（默认值）
+    // FPS 飞行接管 + top/follow 滚轮拦截（#835）的 container capture 监听收口
+    //（原 6 行 addEventListener 段等价入口，见 playback/cameraRuntime.ts）。
+    cameraRuntime.attachListeners();
+    if (cameraRuntime.cam() === 'free') cameraRuntime.flyLookApplyMode('free');   // 初始 CAM 可能已是 'free'（默认值）
   }
   function onResize() {
     if (!renderer) return;
@@ -864,49 +382,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     renderer.setSize(w, h);
     invalidate();            // 视口变化：下一帧必须重绘
   }
-  // 空处按下起点：pointerup 位移 ≤ 阈值才算「单击空处」（轨道旋转/平移的拖拽起点也在空处，
-  // 拖拽不属于「点击其它地方」，不得把详情窗关掉）。
-  const SCENE_CLICK_SLOP_PX = 4;
-  let emptyDownAt = null;
-  function onScenePointerDown(e) {
-    // （free 模式的事件在 container capture 已拦截——此处只服务 OrbitControls 路径）
-    if (e.button !== 0) return;
-    if (annotationScene.annotationToolActive()) { emptyDownAt = null; return; }
-    if (PICK_DEBUG) pickDownAt = { x: e.clientX, y: e.clientY };   // 调试拾取独立记录（车辆命中路径也出报告）
-    const r = container.getBoundingClientRect();
-    const nd = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
-    raycaster.setFromCamera(nd, camera);
-    const hits = raycaster.intersectObjects(vehicles.getVehicles().map(v => v.group), true);
-    if (hits.length) {
-      let o = hits[0].object;
-      while (o && !o.userData.eid) o = o.parent;
-      emptyDownAt = null;
-      // 车辆命中：选中延迟到 pointerup 判定（拖拽转头 ≠ 点击选中——飞行动作下
-      // 按下即选会把"路过"的车辆选上；≤SLOP 才算单击，与空处单击同口径）
-      if (o) { emptyDownAt = { x: e.clientX, y: e.clientY, eid: o.userData.eid, event: e }; }
-    } else {
-      emptyDownAt = { x: e.clientX, y: e.clientY, eid: null };
-    }
-  }
-  function onScenePointerUp(e) {
-    if (e.button !== 0) return;
-    if (annotationScene.annotationToolActive()) { emptyDownAt = null; return; }
-    // 调试拾取：按下/抬起与拖拽判定独立于选中语义——车辆命中路径（emptyDownAt=null）
-    // 同样出报告，且不会被前方车辆挡掉场景物体的调试报告
-    if (pickDownAt) {
-      const movedPick = Math.hypot(e.clientX - pickDownAt.x, e.clientY - pickDownAt.y);
-      pickDownAt = null;
-      if (movedPick <= SCENE_CLICK_SLOP_PX) reportPick(e);
-    }
-    if (!emptyDownAt) return;
-    const moved = Math.hypot(e.clientX - emptyDownAt.x, e.clientY - emptyDownAt.y);
-    const down = emptyDownAt;
-    emptyDownAt = null;
-    // 单击判定（≤SLOP）对自由飞行与 OrbitControls 路径同一口径：
-    // 车辆命中 → 选中该 eid；空处 → 上报 null（宿主隐藏详情窗）。拖拽（>SLOP）不触发。
-    if (moved <= SCENE_CLICK_SLOP_PX) onVehicleSelect?.(down.eid ?? null, e);
-  }
-
   // ---------- 点击拾取调试（PICK_DEBUG；报告器在 playback/pickReport.js，纯函数在 pickDebug.js） ----------
   let pickDownAt = null;
   const pickReporter = createPickReporter();
@@ -940,18 +415,18 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     getControls: () => controls,
     invalidate,
     disposeObject3D,
-    constrainFreeCameraAltitude,
+    constrainFreeCameraAltitude: () => cameraRuntime.constrainFreeCameraAltitude(),
     regroundBases,
     regroundSpawns,
     // annotation 派生缓存重建（owner = annotationScene；晚绑定箭头——工厂创建期不触碰）
     rebuildAnnotationProjection: () => annotationScene.rebuildAnnotationProjection(),
     reprojectAnnotationHeights: () => annotationScene.reprojectAnnotationHeights(),
-    scopedHiddenEid: () => scopedHiddenEid,
+    scopedHiddenEid: () => cameraRuntime.scopedHiddenEid(),
     lightingTargets: () => ({ renderer, scene, sunLight, hemiLight, debug: DEBUG }),
     buildWorldCameraPlacement: (center) => {
       const { cx, cz, ext } = center;
       // 用户操作过的自由视角跨回放保留；跟随目标不跨回放，仍回到默认机位。
-      if (topViewOnLoad || CAM !== 'free') {
+      if (cameraRuntime.topViewOnLoad() || cameraRuntime.cam() !== 'free') {
         camera.position.set(cx, ext * 1.1, cz + ext * 1.2);
         controls.target.set(cx, 0, cz);
       }
@@ -1056,12 +531,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     getT: () => T,
     getVehicles: () => vehicles.getVehicles(),
     getSessionGen: () => session.sessionGen(),
-    getFollowEid: () => FOLLOW_EID,
+    getFollowEid: () => cameraRuntime.followEid(),
     deathAt,
     hpAt,
     visibleAt,
     visByEid: () => VIS_BY_EID,
-    scopedHiddenEid: () => scopedHiddenEid,
+    scopedHiddenEid: () => cameraRuntime.scopedHiddenEid(),
     sampleHeight: (x, z) => mapWorld.sampleHeight(x, z),
     heightField: () => mapWorld.heightField(),
     heightMeta: () => mapWorld.heightMeta(),
@@ -1121,8 +596,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   const cameraTerrainClamp = createCameraTerrainClamp({
     getCamera: () => camera,
     getControls: () => controls,
-    // cameraDriven 是下方的 const：经箭头延迟求值，工厂创建期不触碰。
-    cameraDriven: () => cameraDriven(),
+    // cameraDriven 归相机运行时：经箭头延迟求值，工厂创建期不触碰。
+    cameraDriven: () => cameraRuntime.cameraDriven(),
     getTerrainMesh: () => mapWorld.terrainMesh(),
     getHeightField: () => mapWorld.heightField(),
     getHeightMeta: () => mapWorld.heightMeta(),
@@ -1130,47 +605,52 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     sampleHeight: (x, z) => mapWorld.sampleHeight(x, z),
     clearance: CAMERA_GROUND_CLEARANCE,
     getWorldCenter: () => mapWorld.worldCenter(),
-    isFollowing: () => !!FOLLOW_EID,
+    isFollowing: () => !!cameraRuntime.followEid(),
   });
   function applyCameraClamp() { cameraTerrainClamp.applyCameraClamp(mapWorld.worldCenter().ext); }
   function terrainHeightForCameraClamp(x, z) { return cameraTerrainClamp.terrainHeightForCameraClamp(x, z); }
   function clampOrbitCameraToTerrain() { return cameraTerrainClamp.clampOrbitCameraToTerrain(); }
   function clampCameraTarget() { cameraTerrainClamp.clampCameraTarget(); }
 
-  /** Free Camera 的上限与俯视默认高度同源；地面下限只在有效高度场覆盖内生效。 */
-  function constrainFreeCameraAltitude() {
-    if (!flyMode() || !camera || !controls) return false;
-    const { x, y, z } = camera.position;
-    if (!Number.isFinite(y) || !Number.isFinite(controls.target.y)) return false;
-    let minY = -Infinity;
-    const heightField = mapWorld.heightField(), heightMeta = mapWorld.heightMeta();
-    if (heightField && heightMeta) {
-      const n = Number(heightMeta.size), span = Number(heightMeta.span);
-      if (Number.isInteger(n) && n >= 2 && heightField.length === n * n
-        && Number.isFinite(span) && span > 0
-        && Number.isFinite(x) && Number.isFinite(z)) {
-        // sampleHeight 的 corner 坐标域是 [-span/2, span/2)；外侧会被采样器夹到 edge texel。
-        const half = span / 2;
-        if (x >= -half && x < half && z >= -half && z < half) {
-          // 地形高度异步发布早于网格装配；网格可用时按其局部 LOD 三角面 O(1) 采样，
-          // 避免双线性高度低估非共面格子；装配前沿用高度场。
-          const terrainY = mapWorld.terrainMesh()
-            ? mapWorld.sampleRenderedTerrainHeight(x, z)
-            : mapWorld.sampleHeight(x, z);
-          if (Number.isFinite(terrainY)) minY = terrainY + CAMERA_GROUND_CLEARANCE;
-        }
-      }
-    }
-    const maxY = topCameraDefaultHeight();
-    if (!Number.isFinite(maxY)) return false;
-    const constrainedY = Math.max(minY, Math.min(maxY, y));
-    if (constrainedY === y) return false;
-    const deltaY = constrainedY - y;
-    camera.position.y += deltaY;
-    controls.target.y += deltaY;
-    camera.lookAt(controls.target);
-    return true;
-  }
+  // 相机运行时 owner（#820 Step 4 出仓）：fly 接管 / 滚轮缩放平滑 / setCam·setFollow /
+  // topViewOnLoad / 俯视机位 / 录像者视角域 / 穿深着色 / 场景选中语义的唯一归属。
+  // 相机地形净空（cameraTerrainClamp）仍在本闭包，经 deps 回调注入；canonical 生命
+  // 事实（deathAt/deathTimesOf）、?perf 域与 ARMOR_HIGHLIGHT 偏好仍在本闭包。
+  const cameraRuntime = createCameraRuntime({
+    store,
+    container,
+    debug: DEBUG,
+    getCamera: () => camera,
+    getRenderer: () => renderer,
+    getControls: () => controls,
+    getRaycaster: () => raycaster,
+    getScene: () => scene,
+    invalidate,
+    getT: () => T,
+    getData: () => DATA,
+    sessionEpoch: () => session.sessionEpoch(),
+    destroyed: () => destroyed,
+    writeHud,
+    updateRoster: () => labels.updateRoster(),
+    vehicles,
+    mapWorld,
+    annotationScene,
+    deathAt: (v, t) => deathAt(v, t),
+    deathTimesOf: (v) => deathTimesOf(v),
+    gpu: () => gpu,
+    perfEnabled: () => !!PERF,
+    armorHighlightPref: () => ARMOR_HIGHLIGHT,
+    recorderReticle: recorderReticle ?? null,
+    clampCameraTarget,
+    clampOrbitCameraToTerrain,
+    baseMinDistance: () => cameraTerrainClamp.baseMinDistance(),
+    terrainHeightForCameraClamp,
+    onVehicleSelect: onVehicleSelect ?? null,
+    pickDebug: () => PICK_DEBUG,
+    getPickDownAt: () => pickDownAt,
+    setPickDownAt: (p) => { pickDownAt = p; },
+    reportPick,
+  });
 
   // ---------- 车辆运行时（buildVehicles / GLB 装载 / 悬挂 / 履带印 / applyPose）----------
   // 上述车辆域实现自 2026-11-05 起（#820 Step 4）整体出仓：
@@ -1255,8 +735,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 相机
     // 跟随模式：相机位置与视点目标按坦克逐帧位移整体平移——用户选好的方位/
     // 距离/俯仰刚性保持，不会被拉回固定机位；旋转/缩放/平移始终自由
-    if (DATA && CAM === 'follow' && FOLLOW_EID) {
-      const v = vehicles.getVehicles().find((x) => x.def.eid === FOLLOW_EID);
+    if (DATA && cameraRuntime.cam() === 'follow' && cameraRuntime.followEid()) {
+      const v = vehicles.getVehicles().find((x) => x.def.eid === cameraRuntime.followEid());
       if (v && v.group.visible) {
         vehicles.posAt(v, T, tmpV);
         if (!followAnchor) {
@@ -1281,22 +761,22 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         followAnchor = (followAnchor || new THREE.Vector3()).copy(tmpV);
       } else followAnchor = null;
     } else followAnchor = null;
-    if (CAM === 'recorder') driveRecorderCamera(dt);
+    if (cameraRuntime.cam() === 'recorder') cameraRuntime.driveRecorderCamera(dt);
     else clampCameraTarget();
-    zoomTick(dt);   // 滚轮缩放预算逐帧收敛（先于 controls.update()：本帧位移当帧可见）
-    if (fovRestore) stepFovRestore(dt);
+    cameraRuntime.zoomTick(dt);   // 滚轮缩放预算逐帧收敛（先于 controls.update()：本帧位移当帧可见）
+    if (cameraRuntime.fovRestore()) cameraRuntime.stepFovRestore(dt);
     // flyMode 接管期间 OrbitControls.update() 必须完全停跑：enabled=false 只挡输入
     // 事件、update 照常执行——其内部球面状态会按 target/相机重算，与 flyLook 的
     // target 重钉互相污染（表现 = 拖拽行为在 FPS 转头与 OrbitControls 环绕之间漂移、
     // WASD 位移被球面拉回吞掉）。相机推进由 flyTick 全权负责。
     // flyMode 接管不变量（每帧断言）：enabled 意外被拉回 true 的同一帧压回 false，
     // 杜绝"FPS 转头与环绕/pan 漂移交替"的整类状态漂移。
-    if (flyMode() && controls.enabled) controls.enabled = false;
+    if (cameraRuntime.flyMode() && controls.enabled) controls.enabled = false;
     // free 接管期间 update() 不跑，它的 lookAt(target) 也随之缺席——相机朝向由本行
     // 维持（target 是权威：拖拽 / 平移 / 缩放都会先重钉 target）。不补这一步，
     // 拖拽只改 target 不改朝向，画面不转（用户实测）。
-    if (flyMode()) camera.lookAt(controls.target);
-    const cameraMoved = cameraDriven() ? false : controls.update();   // three 的 update() 返回相机是否变化（阻尼/交互）
+    if (cameraRuntime.flyMode()) camera.lookAt(controls.target);
+    const cameraMoved = cameraRuntime.cameraDriven() ? false : controls.update();   // three 的 update() 返回相机是否变化（阻尼/交互）
     clampOrbitCameraToTerrain();
     const cameraFinished = PERF ? performance.now() : 0;
     // ---------- 按需渲染（脏帧）----------
@@ -1305,7 +785,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 伤害数字不参与这个判定：它是覆盖层 DOM + CSS 动画，暂停时自己走完，不需要出帧。
     const busy = PLAYING
       || cameraMoved
-      || cameraBlend || fovRestore
+      || cameraRuntime.cameraBlend() || cameraRuntime.fovRestore()
       || frameDirty
       || mapWorld.destruct()?.animating
       || battle.isActive();   // 弹道在飞 / 战斗特效 / 战斗反馈 transient（owner = battleRuntime）
@@ -1363,10 +843,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       try { renderer.render(scene, camera); } finally { if (gpuMainStarted) gpu.end(); }
       session.tryMarkFirstReadyFrame();
       const perfR0 = PERF ? performance.now() : 0;
-      renderArmorHighlight();
+      cameraRuntime.renderArmorHighlight();
       gpu?.submitFrame();
       const perfR1 = PERF ? performance.now() : 0;
-      if (PERF && session.isReadySession()) perfFrame(perfT1 - perfT0, perfR0 - terrainFinished, perfR1 - perfR0, armorStats, { cpuFrameMs: perfR1 - cpuStarted, tickMs: tickFinished - cpuStarted, cameraMs: cameraFinished - tickFinished, terrainCheckInclusiveMs: terrainFinished - perfT1, gpuFrameId, gpu_total_ms: null });
+      if (PERF && session.isReadySession()) perfProbe.perfFrame(perfT1 - perfT0, perfR0 - terrainFinished, perfR1 - perfR0, cameraRuntime.armorStats(), { cpuFrameMs: perfR1 - cpuStarted, tickMs: tickFinished - cpuStarted, cameraMs: cameraFinished - tickFinished, terrainCheckInclusiveMs: terrainFinished - perfT1, gpuFrameId, gpu_total_ms: null });
       gpu?.recorded(gpuFrameId);
     } finally {
       if (PERF) renderer.info.autoReset = perfAutoReset;
@@ -1375,71 +855,29 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
 
   // ---------- 性能探针（`?perf`；只读测量，不改变任何渲染行为） ----------
-  // 3D 卡顿类问题靠"读代码"定不了位：这里逐帧记录**分阶段耗时**（场景状态更新 /
-  // 提交渲染）与当时的**在场对象数**，并保留最慢的若干帧（含回放时刻 T）——复现后
-  // 在控制台执行 `__pbPerf.report()` 即可拿到证据（谁慢、慢在哪个阶段、当时有多少
-  // 炮线/轨迹盒/命中特效/爆散/可见车辆）。
-  const PERF = typeof window !== 'undefined'
-    && new URLSearchParams(window.location.search).has('perf');
+  // 分阶段逐帧耗时 / 主线程停顿看门狗 / window.__pbPerf 调试句柄的唯一 owner =
+  // playback/perfProbe.ts（#820 Step 4 出仓）；PERF/perf/gpu 句柄仍由本闭包解构持有
+  //（渲染循环与会话编排直接消费）。
+  const perfProbe = createPerfProbe({
+    container,
+    getT: () => T,
+    getRenderer: () => renderer,
+    getQualityKey: () => QKEY,
+    getArmorHighlightPref: () => ARMOR_HIGHLIGHT,
+    getCameraMode: () => cameraRuntime.cam(),
+    paused: () => paused,
+    terrainCounters: () => mapWorld.terrainCounters(),
+    resetTerrainCounters: () => mapWorld.resetTerrainCounters(),
+    battle,
+    getVehicles: () => vehicles.getVehicles(),
+    annotationStats: () => annotationScene.stats(),
+    armorStats: () => cameraRuntime.armorStats(),
+  });
+  const PERF = perfProbe.PERF;
+  const perf = perfProbe.perf;
+  const gpu = perfProbe.gpu;
   let dynResCtl = null;
   let rendererCaps = null;   // 当前渲染器实际装配的 { logdepth, dynres }（reset 保留渲染器时用于失配检测）
-  const perf = PERF ? createPerf() : null;
-  // perf 装载段状态（perfLoadingStart/perfLoadingEpoch/perfFirstSubmitted/perfReadySession）
-  // 的唯一 owner = playback/sessionLifecycle.ts（#820 Step 1 出仓）。
-  const gpu = PERF ? createGpuFrameTracker(perf) : null;
-  if (perf) perf.setIdentity({ buildCommit: typeof __BUILD_COMMIT__ !== 'undefined' ? __BUILD_COMMIT__ : null,
-    buildTime: typeof __BUILD_TIME__ !== 'undefined' ? __BUILD_TIME__ : null,
-    wasmCommit: AGENT_WASM_COMMIT, wasmRelease: AGENT_WASM_RELEASE, replayDigest: null, runtime: isAndroidRuntime() ? 'android' : 'browser',
-    userAgent: navigator.userAgent, viewport: [window.innerWidth, window.innerHeight],
-    dpr: window.devicePixelRatio, quality: QKEY, assetIdentity: null, identityComplete: false });
-  function perfFrame(updateMs, renderMs, armorMs, armorStats, stages) {
-    const a = armorStats || {};
-    perf.record({ ...stages, updateMs, renderMs, armorMs, t: T,
-      calls: renderer ? renderer.info.render.calls : 0, ...(mapWorld.terrainCounters()),
-      armorPick: a.pickMs ?? 0, armorState: a.stateMs ?? 0,
-      armorThick: a.thicknessMs ?? 0, armorOcc: a.occluderMs ?? 0,
-      armorColor: a.colorMs ?? 0, armorCalls: a.calls ?? 0,
-      armorStateCalls: a.stateCalls ?? 0, armorThicknessCalls: a.thicknessCalls ?? 0, armorOccluderCalls: a.occluderCalls ?? 0, armorColorCalls: a.colorCalls ?? 0,
-      armorRtWidth: a.rt?.width ?? null, armorRtHeight: a.rt?.height ?? null, armorRtCreates: a.rt?.creates ?? null,
-      armorRtResizes: a.rt?.resizes ?? null, armorRtDisposes: a.rt?.disposes ?? null, armorRtColorEstimateBytes: a.rt?.colorEstimateBytes ?? null,
-      dpr: renderer ? renderer.getPixelRatio() : 0,
-      tracers: battle.tracerCount(), traj: battle.trajLineCount(),
-      impacts: battle.fxStats()?.impacts ?? 0,
-      burst: battle.fxStats()?.bursts ?? 0,
-      veh: vehicles.getVehicles().filter((v) => v.group.visible).length });
-  }
-  // 主线程停顿看门狗（`?perf`）：帧循环之外的**长任务**（例如解析/投影跑在主线程）不会出现在
-  // 帧间隔里——它们表现为"下一帧的 dt 巨大、但 update/render 都很小"。看门狗用 50ms 心跳量真实
-  // 间隔，直接抓出这类停顿（含当时的回放时刻 T），与帧统计互相印证。
-  const PERF_HEARTBEAT_MS = 50;
-  let perfStalls = [], perfBeat = 0, perfBeatTimer = 0;
-  function perfStartWatchdog() {
-    if (!PERF || perfBeatTimer) return;
-    perfBeat = performance.now();
-    perfBeatTimer = setInterval(() => {
-      const now = performance.now();
-      const gap = now - perfBeat;
-      perfBeat = now;
-      if (gap > PERF_HEARTBEAT_MS * 2) {
-        perfStalls.push({ gap, t: T });
-        perf.event({ stage: 'main-thread-stall', durationMs: gap, replayTime: T });
-        perfStalls.sort((a, b) => b.gap - a.gap);
-        if (perfStalls.length > 8) perfStalls.length = 8;
-      }
-    }, PERF_HEARTBEAT_MS);
-  }
-  function updatePerfIdentity() {
-    perf.setIdentity({ quality: QKEY, cameraMode: CAM, armorhl: ARMOR_HIGHLIGHT,
-      viewport: [container.clientWidth, container.clientHeight], dpr: renderer ? renderer.getPixelRatio() : window.devicePixelRatio });
-  }
-  const perfHandle = PERF ? {
-    report: () => { gpu.poll(); updatePerfIdentity(); const s = perf.report() + `\ngpu_total_ms: sum of successfully measured render-pass GPU timings (not a full GPU frame; null unless all required queries succeed)` + `\nannotation: ${JSON.stringify(annotationScene.stats())}` + `\ngpu: ${JSON.stringify(gpu.snapshot())}` + `\nmain-thread stalls >${PERF_HEARTBEAT_MS * 2}ms: ${perfStalls.length}\n` + perfStalls.map(r => `  ${r.gap.toFixed(1)} ms @T=${r.t.toFixed(1)}`).join('\n'); console.log(s); return s; },
-    snapshot: () => (gpu.poll(), updatePerfIdentity(), { ...perf.snapshot(), annotation: { ...annotationScene.stats() }, resources: { geometries: renderer?.info?.memory?.geometries ?? null, textures: renderer?.info?.memory?.textures ?? null }, armorRt: armorStats.rt ? { ...armorStats.rt } : null, gpu: gpu.snapshot() }),
-    startCapture: (options) => { if (paused) throw new Error('scene is inactive'); updatePerfIdentity(); perf.startCapture(options); },
-    stopCapture: () => { gpu.poll(); return perf.stopCapture(); },
-    reset: () => { gpu.reset(); perf.reset(); mapWorld.resetTerrainCounters(); perfStalls = []; perfBeat = performance.now(); },
-  } : null;
-  if (PERF) { perfStartWatchdog(); window.__pbPerf = perfHandle; }
 
 
   /** 预热在用材质（见 renderer 初始化处注释）：把首次编译的数十~数百 ms 从"战斗第一次
@@ -1452,7 +890,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         renderer.compile(scene, camera);
       });
       if (ARMOR_HIGHLIGHT && typeof renderer.compile === 'function') {
-        ensureArmorHighlight().prewarm(camera);
+        cameraRuntime.ensureArmorHighlight().prewarm(camera);
       }
     } catch (e) { console.warn('着色器预热失败（忽略）:', e); }
   }
@@ -1521,8 +959,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 名册与上面的总血量同帧写入：两侧名册与顶栏永远是同一个 T 的投影
     labels.updateRoster();
     store.time = T;
-    store.recorderModeUnknown = !!recorderCamera && recorderModeAt(recorderCamera, T) === CAMERA_MODE.UNKNOWN;
-    store.recorderViewAvailable = recorderViewAvailable();
+    store.recorderModeUnknown = cameraRuntime.recorderModeUnknown();
+    store.recorderViewAvailable = cameraRuntime.recorderViewAvailable();
     const f = (T - START) / Math.max(0.001, END - START);
     if (!store.seeking) store.seekFrac = Math.round(f * 1000);
   }
@@ -1544,13 +982,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     paused = value;
     if (paused) {
       if (perf) { perf.idle(); perf.interrupt('background'); }
-      if (perfBeatTimer) { clearInterval(perfBeatTimer); perfBeatTimer = 0; }
+      perfProbe.stopWatchdog();
       if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
     } else if (!destroyed) {
       // pre-init 也必须把被 pause 取消的唯一 rAF 重新挂回去：animate() 本身在 renderer
       // 尚未创建时只排下一帧并安全返回。否则「待开播切走 → 切回 → Start」会进入
       // paused=false / renderer!=null / rafId=0 的死态，场景 ready 但时间与画面都不再推进。
-      perfStartWatchdog();
+      perfProbe.perfStartWatchdog();
       if (clock) clock.getDelta();   // 已初始化时丢弃暂停期间累积的 dt
       frameMeter.reset();            // 恢复后重新起窗：暂停间隙不得计入帧间隔
       if (!rafId) animate();
@@ -1604,365 +1042,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     writeHud(true);
     invalidate();
   }
-  function setFollow(eid) {
-    FOLLOW_EID = eid;
-    if (FOLLOW_EID) { setCam('follow'); } else { setCam('free'); }
-    // 跟随变更立即应用到名册行（followed 高亮）：updateRoster 平时在 tick 里跑，
-    // **暂停时不跑**——不补这次，暂停中点跟随的行高亮永远不亮（实测门禁抓到）。
-    if (DATA) labels.updateRoster();
-    invalidate();
-  }
-  function setCam(mode) {
-    if (annotationScene.hasGesture()) annotationScene.cancelAnnotationGesture()   // 相机模式跳变不得继续旧 draft
-    // 沙盘（top）是持续的战术总览模式：OrbitControls 以**地图中心**为 target，拖拽/滚轮围绕
-    // 地图中心旋转与缩放。top-view 不是模式，只是快速回到俯视机位的动作（reset view）：
-    // 完成后就是自由视角，键盘、鼠标与触屏从同一帧起可用。跟随以选中坦克为 target；
-    // 自由视角是 FPS 飞行（旋转中心 = 相机，由 flyLook 接管）。
-    const topViewAction = mode === 'top-view';
-    const nextMode = topViewAction ? 'free' : mode;
-    if (nextMode === 'recorder' && !recorderViewAvailable()) return;
-    if (nextMode !== 'top') topViewOnLoad = false;
-    if (CAM === 'recorder' && nextMode !== 'recorder') leaveRecorderView();
-    if (nextMode === 'recorder' && CAM !== 'recorder') enterRecorderView();
-    CAM = nextMode;
-    store.cam = nextMode;
-    flyLookApplyMode(nextMode === 'free' ? 'free' : 'follow');
-    if (nextMode !== 'follow') FOLLOW_EID = 0;
-    if (!controls) { invalidate(); return; }
-    controls.enabled = nextMode === 'follow';
-    // 旋转/缩放中心语义要求 target 不被平移带走：Top 锁地图中心、Follow 锁坦克；
-    // Free 由 flyLook 接管，OrbitControls 的 pan 不参与（恢复默认值供下次非 Free 入口设置）。
-    controls.enablePan = nextMode === 'free';
-    invalidate();
-    if (nextMode === 'top') {
-      applyTopView();
-      // 总览视角：可绕地图中心自由旋转（仍不沉到地平线以下），缩放上限放开到默认机位高度
-      controls.minPolarAngle = 0;
-      controls.maxPolarAngle = Math.PI * 0.49;
-      controls.minDistance = cameraTerrainClamp.baseMinDistance();
-      controls.maxDistance = Math.max(controls.maxDistance, topCameraDefaultHeight());
-      clampOrbitCameraToTerrain();
-      camera.lookAt(controls.target);
-      controls.enabled = true;
-    } else if (nextMode === 'free') {
-      controls.minPolarAngle = 0;
-      controls.maxPolarAngle = Math.PI;
-      if (topViewAction) applyTopView();
-      constrainFreeCameraAltitude();
-      if (topViewAction) camera.lookAt(controls.target);
-    } else if (nextMode === 'follow') {
-      // 跟随绕转不得沉到 target 水平线以下：OrbitControls 的极角上限直接挡住
-      // 「向下绕到地下」的输入；相机点仍由 clampOrbitCameraToTerrain 按地形净空校验。
-      controls.minPolarAngle = 0;
-      controls.maxPolarAngle = Math.PI * 0.49;
-      clampOrbitCameraToTerrain();
-    }
-    // 跟随目标是名册的运行时状态（followed）。setFollow 也经由这里：暂停时没有帧在跑，
-    // 换相机必须自己补写，否则跟随描边要等到下次播放 / seek 才出现。走 writeHud 而不是
-    // 直接投影名册：播放中名册也不得跑到顶栏前面（两者始终同一个 T）。
-    writeHud(true);
-  }
-  // ---------- 录像者视角 ----------
-  const cameraDriven = () => flyMode() || CAM === 'recorder';
-  const recorderVehicle = () => vehicles.vehicleByEid(DATA?.meta?.author_eid);
-  /** Type39/23/31 的归属止于第一次死亡：之后可能属于观战视点，复活不能证明相机回到录像者。 */
-  function recorderOwnsCamera(v) {
-    return !deathAt(v, T) && deathTimesOf(v).every((death) => T < death);
-  }
-  /** Type23 未知时不伪装成 Arcade：保留 raw，消费层退出。 */
-  function recorderViewAvailable() {
-    const v = recorderVehicle();
-    return !!recorderCamera && !!v && recorderOwnsCamera(v)
-      && recorderModeAt(recorderCamera, T) !== CAMERA_MODE.UNKNOWN;
-  }
-  function loadRecorderCamera(source, epoch) {
-    recorderCamera = null;
-    store.recorderCameraStatus = source?.file ? 'loading' : 'unavailable';
-    if (!source?.file) return;
-    const settle = (facet) => {
-      if (destroyed || epoch !== session.sessionEpoch()) return;
-      const usable = !!facet && facet.author_eid === DATA?.meta?.author_eid;
-      recorderCamera = usable ? facet : null;
-      store.recorderCameraStatus = usable ? 'ready' : 'unavailable';
-      writeHud(true);
-    };
-    loadRecorderCameraFromFile(source.file, source.signal).then(settle).catch((err) => {
-      if (err?.name !== 'AbortError') console.warn('[playback] 录像者相机解析失败:', err);
-      settle(null);
-    });
-  }
-  function enterRecorderView() {
-    cameraBlend = {
-      position: camera.position.clone(),
-      quaternion: camera.quaternion.clone(),
-      fov: camera.fov,
-      elapsed: 0,
-    };
-    fovRestore = null;
-    recorderBoomScale = 1;
-    // 开镜前预取敌方车型 armor 模板，减少首次瞄准新车型的 GLB 下载/解析卡顿。
-    if (ARMOR_HIGHLIGHT && renderer) {
-      const highlight = ensureArmorHighlight();
-      highlight.prewarm(camera);
-      highlight.prefetch(highlightEnemies());
-    }
-  }
-  function leaveRecorderView() {
-    cameraBlend = null;
-    fovRestore = camera.fov === BASE_FOV_DEG ? null : { fov: camera.fov, elapsed: 0 };
-    const hidden = scopedHiddenEid ? vehicles.vehicleByEid(scopedHiddenEid) : null;
-    scopedHiddenEid = 0;
-    if (hidden) setScopedLayer(hidden, false);
-    foliageClip.value = 0;
-    recorderReticle?.hide();
-    // 开镜结束即释放全尺寸 RT（下次开镜命中目标时按需重建），不把 2×W×H 显存挂到会话结束。
-    armorHighlight?.releaseRenderTargets?.();
-  }
-  function setScopedLayer(v, hidden) {
-    const layer = hidden ? SCOPED_HIDDEN_LAYER : 0;
-    v.group.traverse((node) => node.layers.set(layer));
-    v.glb?.traverse((node) => node.layers.set(layer));
-  }
-  function applyCameraFov(fov) {
-    if (Math.abs(camera.fov - fov) < 1e-3) return;
-    camera.fov = fov;
-    camera.updateProjectionMatrix();
-    invalidate();
-  }
-  function stepFovRestore(dt) {
-    fovRestore.elapsed += dt;
-    const progress = blendProgress(fovRestore.elapsed);
-    applyCameraFov(fovRestore.fov + (BASE_FOV_DEG - fovRestore.fov) * progress);
-    if (progress >= 1) fovRestore = null;
-  }
-  const _recorderDir = {};
-  const _recorderPos = new THREE.Vector3();
-  const _recorderAnchor = new THREE.Vector3();
-  const _recorderPrev = new THREE.Vector3();
-  const _recorderLook = new THREE.Vector3();
-  const _recorderRay = new THREE.Vector3();
-  const _recorderGun = new THREE.Vector3();
-  const _recorderGunDir = new THREE.Vector3();
-  const _reticleAim = { x: 0, y: 0 };
-  const _reticleGun = { x: 0, y: 0 };
-  const _recorderQuat = new THREE.Quaternion();
-  const _recorderLastPos = new THREE.Vector3();
-  const _recorderLastQuat = new THREE.Quaternion();
-  /** 回放数据驱动相机：开镜相机在炮位、朝向与 FOV 全部来自回放，不做平滑。 */
-  function driveRecorderCamera(dt) {
-    const v = recorderVehicle();
-    if (!DATA || !recorderCamera || !v || !recorderOwnsCamera(v)) { setCam('free'); return; }
-    const sample = sampleRecorderCamera(recorderCamera, T, recorderSample);
-    if (sample.mode === CAMERA_MODE.UNKNOWN) { setCam('free'); return; }
-    aimDirectionScene(sample.yaw, sample.pitch, _recorderDir);
-    const scoped = sample.mode === CAMERA_MODE.SNIPER;
-    const hiddenEid = scoped ? v.def.eid : 0;
-    const wasScoped = scopedHiddenEid !== 0;
-    if (hiddenEid !== scopedHiddenEid) {
-      scopedHiddenEid = hiddenEid;
-      setScopedLayer(v, scoped);
-      // SNIPER→ARCADE（含 seek 回 Arcade）：叠加渲染停止，释放全尺寸 RT；
-      // 下次命中目标再按需重建。进入开镜/待在开镜不释放。
-      if (wasScoped && !scoped) armorHighlight?.releaseRenderTargets?.();
-      if (scoped && !wasScoped && ARMOR_HIGHLIGHT) ensureArmorHighlight().prefetch(highlightEnemies());
-    } else if (scoped && v.glb && !v.glb.layers.isEnabled(SCOPED_HIDDEN_LAYER)) {
-      setScopedLayer(v, true);   // 开镜期间 GLB 才装配完成
-    }
-    foliageClip.value = scoped ? FOLIAGE_CLIP_SCOPED_M : FOLIAGE_CLIP_ARCADE_M;
-    let fov = BASE_FOV_DEG;
-    if (scoped) {
-      if (!vehicles.glbGunWorld(v, _recorderPos, _recorderGunDir)) {
-        v.gunPivot.updateWorldMatrix(true, false);
-        v.gunPivot.getWorldPosition(_recorderPos);
-      }
-      fov = fovFromZoomRaw(sample.zoomRaw);
-      recorderBoomScale = 1;
-    } else {
-      vehicles.posAt(v, T, _recorderAnchor);
-      _recorderAnchor.y += ANCHOR_HEIGHT_M;
-      if (recorderCamera.client_options.backward_zoom === true) {
-        vehicles.posAt(v, T - REVERSE_SAMPLE_OFFSET_SEC, _recorderPrev);
-        const reversing = isReversing(
-          { x: -_recorderPrev.x, z: _recorderPrev.z },
-          { x: -_recorderAnchor.x, z: _recorderAnchor.z },
-          vehicles.yawAt(v, T),
-        );
-        recorderBoomScale = backwardZoomScale(recorderBoomScale, reversing, dt);
-      }
-      arcadeCameraPosition(_recorderAnchor, _recorderDir, ARCADE_BOOM_M * recorderBoomScale, _recorderPos);
-      const terrainY = terrainHeightForCameraClamp(_recorderPos.x, _recorderPos.z);
-      if (Number.isFinite(terrainY)) _recorderPos.y = Math.max(_recorderPos.y, terrainY + CAMERA_GROUND_CLEARANCE);
-    }
-    _recorderLastPos.copy(camera.position);
-    _recorderLastQuat.copy(camera.quaternion);
-    const lastFov = camera.fov;
-    camera.position.copy(_recorderPos);
-    _recorderLook.set(_recorderDir.x, _recorderDir.y, _recorderDir.z);
-    camera.lookAt(_recorderPos.x + _recorderLook.x, _recorderPos.y + _recorderLook.y, _recorderPos.z + _recorderLook.z);
-    if (cameraBlend) {
-      cameraBlend.elapsed += dt;
-      const progress = blendProgress(cameraBlend.elapsed);
-      _recorderQuat.copy(camera.quaternion);
-      camera.position.lerpVectors(cameraBlend.position, _recorderPos, progress);
-      camera.quaternion.slerpQuaternions(cameraBlend.quaternion, _recorderQuat, progress);
-      fov = cameraBlend.fov + (fov - cameraBlend.fov) * progress;
-      if (progress >= 1) cameraBlend = null;
-    }
-    applyCameraFov(fov);
-    controls.target.copy(camera.position).addScaledVector(_recorderLook, 30);
-    if (!camera.position.equals(_recorderLastPos) || !camera.quaternion.equals(_recorderLastQuat) || camera.fov !== lastFov) {
-      invalidate();
-    }
-    updateRecorderReticle(sample, v);
-  }
-  /** Type39 瞄准点（场景坐标）：准星与穿深着色的选目标共用这一点。 */
-  function recorderAimPoint(sample, out) {
-    return out.set(-sample.rayX, sample.rayY, sample.rayZ);
-  }
-  /** 世界点 → 舞台像素；投影不到返回 null，不伪造屏幕位置。 */
-  function projectToStage(point, out) {
-    point.project(camera);
-    if (![point.x, point.y, point.z].every((n) => Number.isFinite(n) && Math.abs(n) <= 1)) return null;
-    out.x = (point.x + 1) * container.clientWidth / 2;
-    out.y = (1 - point.y) * container.clientHeight / 2;
-    return out;
-  }
-  /**
-   * Arcade 相机沿 Type39 看，所以中心点按定义在屏幕中间；扩散圆画在炮管实际指向上，
-   * 炮塔转动滞后时才会偏离中心再追上来，开镜时两者接近重合。
-   */
-  function updateRecorderReticle(sample, v) {
-    if (!recorderReticle) return;
-    camera.updateMatrixWorld();
-    if (!vehicles.glbGunWorld(v, _recorderGun, _recorderGunDir)) {
-      v.gunPivot.updateWorldMatrix(true, false);
-      v.gunPivot.getWorldPosition(_recorderGun);
-      _recorderGunDir.set(0, 0, 1).transformDirection(v.gunPivot.matrixWorld);
-    }
-    recorderAimPoint(sample, _recorderRay);
-    const distance =Math.max(RETICLE_MIN_GUN_DISTANCE_M, _recorderGun.distanceTo(_recorderRay));
-    _recorderGun.addScaledVector(_recorderGunDir, distance);
-    const aim = projectToStage(_recorderRay, _reticleAim);
-    const gun = projectToStage(_recorderGun, _reticleGun);
-    if (!aim && !gun) { recorderReticle.hide(); return; }
-    recorderReticle.update(aim, gun, reticleRadiusPx({
-      bloomRaw: sample.bloomRaw, fovDeg: camera.fov, viewportH: container.clientHeight,
-    }));
-  }
-  // ---------- Sniper 穿深着色 ----------
-  let armorHighlight = null;
-  const _armorAimPoint = new THREE.Vector3();
-  const _armorAimDir = new THREE.Vector3();
-  /** 当前时刻可被准星选中的敌车（可见、复活/存活、真实车模）。 */
-  function highlightEnemies() {
-    if (!DATA?.meta) return [];
-    const friendlyTeam = DATA.meta.friendly_team;
-    return vehicles.getVehicles().filter((v) => v.glb?.visible && v.group.visible && v.tankData
-      && (v.def.team === 1 || v.def.team === 2) && v.def.team !== friendlyTeam && !deathAt(v, T));
-  }
-  function ensureArmorHighlight() {
-    armorHighlight ??= createArmorHighlight({ renderer, assetProvider });
-    return armorHighlight;
-  }
-  const armorStats = { pickMs: 0, stateMs: 0, thicknessMs: 0, occluderMs: 0, colorMs: 0, calls: 0, _t0: 0 };
-  const _occluderRoots = [];
-  function occluderRoots(targetEid) {
-    _occluderRoots.length = 0;
-    for (const root of [mapWorld.terrainMesh(), mapWorld.mapScenery(), mapWorld.mapPlane(), mapWorld.groundMesh()]) {
-      if (root) _occluderRoots.push(root);
-    }
-    for (const v of vehicles.getVehicles()) {
-      if (v.def.eid === targetEid) continue;
-      if (v.group) _occluderRoots.push(v.group);
-      if (v.glb) _occluderRoots.push(v.glb);
-      for (const head of v.detachedTurrets || []) _occluderRoots.push(head.root);
-    }
-    return _occluderRoots;
-  }
-  /**
-   * 主渲染之后的叠加 pass：只有录像者开镜才可能运行，其余路径没有任何额外 render。
-   * 进入录像者的过渡期相机还没到炮位，距离衰减和入射角都不对，不着色。
-   */
-  function renderArmorHighlight() {
-    if (PERF) {
-      armorStats.pickMs = 0; armorStats.stateMs = 0; armorStats.thicknessMs = 0;
-      armorStats.occluderMs = 0; armorStats.colorMs = 0; armorStats.calls = 0;
-      armorStats.stateCalls = 0; armorStats.thicknessCalls = 0; armorStats.occluderCalls = 0; armorStats.colorCalls = 0;
-    }
-    if (!ARMOR_HIGHLIGHT || CAM !== 'recorder' || !scopedHiddenEid || cameraBlend) return;
-    const author = recorderVehicle();
-    if (!author?.tankData) return;
-    const tPick0 = PERF ? performance.now() : 0;
-    const enemies = highlightEnemies();
-    const aimDir = reticleAimDirection(camera, recorderAimPoint(recorderSample, _armorAimPoint), _armorAimDir);
-    let target = null;
-    if (aimDir) target = aimedVehicle(camera.position, aimDir, enemies, camera);
-    const shellId = target == null ? null : authorShellAt(DATA.author_shell_timeline, T);
-    const config = target == null ? null : resolveExactMountedConfig(target.def, target.tankData);
-    const authorConfig = target == null ? null : resolveExactMountedConfig(author.def, author.tankData);
-    const blocked = target == null ? 'no_target' : armorHighlightBlock({
-      targetTankId: target.def.tank_id, targetConfig: config, authorConfig, shellId,
-      targetEquipment: target.def.equipment, authorEquipment: author.def.equipment,
-    });
-    if (PERF) {
-      armorStats.pickMs = performance.now() - tPick0;
-      if (blocked) return;
-    } else if (blocked) return;
-    const { shell, caliber } = mountedShell(authorConfig, shellId);
-    ensureArmorHighlight().render({
-      scene, camera, vehicle: target, tankData: target.tankData, config, shell, caliber,
-      ...armorEquipmentCoeffs(shell, author.def.equipment, target.def.equipment),
-      onReady: invalidate,
-      occluderRoots: occluderRoots(target.def.eid),
-      stats: PERF ? armorStats : null,
-      gpu: gpu ?? undefined,
-    });
-  }
-  /** 回到俯视机位：相机置地图中心正上方，target 锁地图中心。 */
-  function applyTopView() {
-    const { cx, cz } = mapWorld.worldCenter();
-    camera.position.set(cx, topCameraDefaultHeight(), cz + 0.01);
-    controls.target.set(cx, 0, cz);
-    // 保留直下朝向：默认的天顶回落会让第一次拖拽突然跳到斜俯视。
-    flyLookSyncFromCamera('top view', true);
-  }
   // 只接受档位表内的值：面板按钮与 URL 参数都不该把场景带进"1.37×"这种未定义速度
   function setSpeed(s) { if (!isPlaybackSpeed(s)) return; SPEED = s; store.speed = s; }
 
-  // ---------- 键盘自由视角（WASD/QE 飞行）----------
-  // 速率档 1–6（与播放速度档独立）：场景只存展示值并失效一帧（暂停时改档也出帧）；
-  // 位移推进本体在 composables/useSceneFlyControls.tickFly（Replay3DPane 逐帧调用，
-  // 相机数学不进内核——OrbitControls 的 target 随位移平移，其余控制语义不变）。
-  function topCameraDefaultHeight() { return mapWorld.worldCenter().ext * 1.7; }
-  function setFlySpeed(n) {
-    if (!isFlySpeedIndex(n)) return;
-    store.flySpeed = FLY_SPEEDS[n - 1];
-    store.flySpeedIndex = n;
-    invalidate();
-  }
-  // 键盘飞行一帧（Replay3DPane 的 useSceneFlyControls 循环逐帧调用）：follow 不接管
-  //（跟随语义 = 车体锚定）；位移并入按需渲染判定（暂停时按键也出帧）。dt ≤ 0 零位移。
-  // pressed = 调用方（composable 实例）维护的按下键集合——按键态不进内核（pane 持有）。
-  let flyWasMoving = false;
-  function flyTick(dt, pressed) {
-    if (!controls || !DATA || !flyMode() || !(dt > 0) || !pressed?.size) return false;
-    // 相机可能被非飞行路径改过（初始 fit / 跟随退出）：首帧对齐朝向基准，防 target 跳变
-    flyLookSyncIfStale('tick');
-    // 接管（enabled/damping/朝向反解）由 flyLookApplyMode 在模式切换时完成；
-    // 这里只做平移推进 + target 重钉。
-    const speed = store.flySpeed || FLY_SPEEDS[DEFAULT_FLY_SPEED_INDEX];
-    const moved = tickFlyImpl(pressed, dt, camera, controls, speed, flyLook.yaw);
-    if (moved) {
-      topViewOnLoad = false;
-      flyLookApply();                                // 平移后重钉 target = cam + dir×dist
-      clampCameraTarget();
-      constrainFreeCameraAltitude();
-      if (!flyWasMoving) { flyDbg('fly', `keys=${[...pressed].join('+')} speed=${speed}`); flyWasMoving = true; }
-    } else {
-      flyWasMoving = false;
-    }
-    return moved;
-  }
 
   // 键盘（空格 / ←→）由页面经 usePlaybackTransport 统一处理（与 2D 同一套键位与输入框防误触），
   // 场景内核不再自挂全局 keydown：原实现不区分输入框，会吞掉文本框里的空格。
@@ -2003,13 +1085,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     MAP_SPAWN_POINTS = null;   // 出生点列随会话复位（宿主就绪后经 setMapSpawns 补推）
     store.mapReady = false;
     // 录像者不跨回放：同步退出，旧机位不能被下一场当成用户的自由相机保留。
-    if (CAM === 'recorder') {
-      setCam('free');
-      topViewOnLoad = true;
-    }
-    recorderCamera = null;
-    armorHighlight?.dispose();
-    armorHighlight = null;
+    //（相机段 teardown owner = cameraRuntime.resetSessionState：setCam('free') +
+    //  topViewOnLoad 复位 + recorderCamera / armorHighlight 释放，语义逐字保留）
+    cameraRuntime.resetSessionState();
     foliageClip.value = 0;
     store.recorderCameraStatus = 'idle';
     store.recorderViewAvailable = false;
@@ -2050,7 +1128,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     store.hasData = false;
     T = 0; battle.resetShotPtr(); labels.resetCursors();
     winnerShown = false;
-    FOLLOW_EID = 0; followAnchor = null;
+    cameraRuntime.resetFollow(); followAnchor = null;
     store.killfeed = [];
     store.banner = null;
     // HUD 派生字段显式归零（与 tick 的确定性重算互为双保险：会话切换不留上一场残值）
@@ -2078,8 +1156,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     removeEventListener('resize', onResize);
     if (controls) { try { controls.dispose(); } catch (_) {} controls = null; }
     if (renderer) {
-      try { renderer.domElement.removeEventListener('pointerdown', onScenePointerDown); } catch (_) {}
-      try { renderer.domElement.removeEventListener('pointerup', onScenePointerUp); } catch (_) {}
+      try { renderer.domElement.removeEventListener('pointerdown', cameraRuntime.onScenePointerDown); } catch (_) {}
+      try { renderer.domElement.removeEventListener('pointerup', cameraRuntime.onScenePointerUp); } catch (_) {}
       gpu?.detach();
       renderer.dispose();
       try { renderer.forceContextLoss(); } catch (_) {}
@@ -2090,7 +1168,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     initScene();
     camera.position.copy(position);
     controls.target.copy(target);
-    if (flyMode()) flyLookSyncFromCamera('renderer rebuild', true);
+    if (cameraRuntime.flyMode()) cameraRuntime.flyLookSyncFromCamera('renderer rebuild', true);
     camera.lookAt(controls.target);
   }
 
@@ -2119,7 +1197,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
   }
   /** 会话开场相机重置：跟随目标不跨回放（startPlayback 编排调用）。 */
-  function prepareSessionCamera() { if (CAM !== 'free') topViewOnLoad = true; }
+  function prepareSessionCamera() { cameraRuntime.prepareSessionCamera(); }
   /** 回放数据发布（sessionLifecycle 编排调用；DATA/VIS_BY_EID/POSE_GRID 唯一 owner 仍在本闭包）。 */
   function publishSessionData(data, playbackSession) {
     DATA = data;
@@ -2165,9 +1243,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     setMapKey: (key) => mapWorld.setMapKey(key),
     getGlbOn: () => vehicles.glbOn(),
     buildWorld: () => mapWorld.buildWorld(),
-    setCam,
+    setCam: (mode) => cameraRuntime.setCam(mode),
     clampCameraTarget,
-    constrainFreeCameraAltitude,
+    constrainFreeCameraAltitude: () => cameraRuntime.constrainFreeCameraAltitude(),
     loadMapImage: () => mapWorld.loadMapImage(),
     buildBases,
     buildSpawns,
@@ -2180,15 +1258,15 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     tick,
     writeHud,
     invalidate,
-    loadRecorderCamera,
+    loadRecorderCamera: (source, epoch) => cameraRuntime.loadRecorderCamera(source, epoch),
     transients: battle.transients,
     setClockRange: (start, end) => { START = start; END = end; },
     setTime: (t) => { T = t; },
     debug: DEBUG,
     exposeVehicles: () => { window.__pbV = vehicles.getVehicles(); },
     data: () => DATA,
-    topViewOnLoad: () => topViewOnLoad,
-    cam: () => CAM,
+    topViewOnLoad: () => cameraRuntime.topViewOnLoad(),
+    cam: () => cameraRuntime.cam(),
     forceGlb: () => !!Q.forceGlb,
     resetSessionCursors,
   });
@@ -2285,16 +1363,16 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     /** 只切 renderer 可见性；不删 state、不写 history、不重建 geometry。 */
     setAnnotationsVisible: (visible) => annotationScene.setAnnotationsVisible(visible),
     setSpeed,
-    setFlySpeed,
-    flyTick,
+    setFlySpeed: (n) => cameraRuntime.setFlySpeed(n),
+    flyTick: (dt, pressed) => cameraRuntime.flyTick(dt, pressed),
     invalidate,
     seekFraction: (frac) => { if (DATA) seekTo(START + frac * (END - START)); },
     // 共用播放控件（PlaybackTransport）按绝对秒 seek / 跳秒；seekTo 自带 [START, END] 夹取（准备 / 倒计时阶段回不去）
     seekTime: (t) => { if (DATA) seekTo(t); },
     seekBy: (delta) => { if (DATA) seekTo(T + delta); },
     setBattleClock,
-    setCam,
-    setFollow,
+    setCam: (mode) => cameraRuntime.setCam(mode),
+    setFollow: (eid) => cameraRuntime.setFollow(eid),
     setGlb: (on) => { if (!Q.forceGlb && (Q.allowGlb || !on)) vehicles.applyGlbToggle(on); invalidate(); },
     // 地面履带印开关（会话级，不持久化；关→开从 START 全量补铺，见 updateTrails）
     setTreadMarks: (on) => {
@@ -2350,11 +1428,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       store.armorHighlight = !!on;
       if (!ARMOR_HIGHLIGHT) {
         // 关闭即释放 RT；模板与目标保留，重新打开时不再重新下载/构建。
-        armorHighlight?.releaseRenderTargets?.();
-      } else if (CAM === 'recorder' && renderer) {
-        const highlight = ensureArmorHighlight();
-        highlight.prewarm(camera);
-        highlight.prefetch(highlightEnemies());
+        cameraRuntime.releaseArmorHighlightRenderTargets();
+      } else if (cameraRuntime.cam() === 'recorder' && renderer) {
+        cameraRuntime.prewarmArmorHighlight(camera);
       }
       invalidate();
     },
@@ -2364,7 +1440,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     destroy() {
       destroyed = true;
       foliageClip.value = 0;
-      flyLookApplyMode('follow');   // 恢复 controls 原生状态（实例随即销毁，防残 handedness）
+      cameraRuntime.flyLookApplyMode('follow');   // 恢复 controls 原生状态（实例随即销毁，防残 handedness）
       session.invalidateForDestroy();
       store.loading = false;
       store.assetStage = false;
@@ -2381,12 +1457,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // container 由宿主复用（场景销毁 ≠ 舞台销毁）：capture 拦截必须摘除，
       // 否则重建场景后同一事件被多份闭包重复消费（拖拽增量翻倍）。
       annotationScene.detach();   // annotation capture 监听（原 5 行 removeEventListener 收口）
-      try { container.removeEventListener('pointerdown', onFlyCaptureDown, true); } catch (_) {}
-      try { container.removeEventListener('pointermove', onFlyCaptureMove, true); } catch (_) {}
-      try { container.removeEventListener('pointerup', onFlyCaptureUp, true); } catch (_) {}
-      try { container.removeEventListener('pointercancel', onFlyCaptureCancel, true); } catch (_) {}
-      try { container.removeEventListener('wheel', onFlyCaptureWheel, true); } catch (_) {}
-      try { container.removeEventListener('wheel', onOrbitZoomWheel, true); } catch (_) {}
+      cameraRuntime.detachListeners();   // fly capture 监听（原 6 行 removeEventListener 收口）
       sizeObserver?.disconnect();
       sizeObserver = null;
       if (DEBUG) {
@@ -2398,13 +1469,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // ?perf 看门狗随实例销毁停表并摘除调试句柄：实例没了帧循环自然停，但心跳
       // setInterval 不清会永久空转，window.__pbPerf 会指向已销毁实例的旧数据。
       if (PERF) {
-        if (perfBeatTimer) { clearInterval(perfBeatTimer); perfBeatTimer = 0; }
+        perfProbe.stopWatchdog();
         perf.reset();
-        if (window.__pbPerf === perfHandle) delete window.__pbPerf;
+        if (window.__pbPerf === perfProbe.perfHandle) delete window.__pbPerf;
       }
       if (renderer) {
-        try { renderer.domElement.removeEventListener('pointerdown', onScenePointerDown); } catch (_) {}
-        try { renderer.domElement.removeEventListener('pointerup', onScenePointerUp); } catch (_) {}
+        try { renderer.domElement.removeEventListener('pointerdown', cameraRuntime.onScenePointerDown); } catch (_) {}
+        try { renderer.domElement.removeEventListener('pointerup', cameraRuntime.onScenePointerUp); } catch (_) {}
       }
       if (controls) {
         annotationScene.restoreTouches();   // touches.ONE 交还（原 annotation touches 恢复段）

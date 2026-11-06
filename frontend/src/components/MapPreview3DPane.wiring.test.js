@@ -8,6 +8,8 @@ const paneSrc = readFileSync(fileURLToPath(new URL('./MapPreview3DPane.vue', imp
 const kernelSrc = readFileSync(fileURLToPath(new URL('../scene/playbackScene.js', import.meta.url)), 'utf8')
 // #820 结构拆分：会话模式（SESSION_MODE）owner 在 sessionLifecycle.ts，kernel 经 handle 消费
 const sessionSrc = readFileSync(fileURLToPath(new URL('../scene/playback/sessionLifecycle.ts', import.meta.url)), 'utf8')
+// #820 Step 4：fly capture 监听注册 owner = playback/cameraRuntime.ts（守卫随实现迁移）
+const cameraSrc = readFileSync(fileURLToPath(new URL('../scene/playback/cameraRuntime.ts', import.meta.url)), 'utf8')
 
 describe('MapPreview3DPane 场景接线（source regression）', () => {
   it('面板只经 loadMapOnly 装载，不出现 loadData 回放路径', () => {
@@ -97,8 +99,9 @@ describe('MapPreview3DPane 场景接线（source regression）', () => {
     expect(kernelSrc).toContain('clearSpawns();   // 出生点贴地标记随会话释放')
     // 触屏手势接线同源（#835 项 3）：触屏 pan/look/pinch 全部在内核 capture 链（与回放同一实现），
     // 面板只经 initPlayback 继承——不存在 Map-only 缺失的第二套 touch 实现；真机可用性验收归用户。
-    expect(kernelSrc).toContain("container.addEventListener('pointerdown', onFlyCaptureDown, true)")
-    expect(kernelSrc).toContain("container.addEventListener('pointermove', onFlyCaptureMove, true)")
-    expect(kernelSrc).toContain("container.addEventListener('pointerup', onFlyCaptureUp, true)")
+    expect(kernelSrc).toContain('cameraRuntime.attachListeners();')
+    expect(cameraSrc).toContain("container.addEventListener('pointerdown', onFlyCaptureDown, true)")
+    expect(cameraSrc).toContain("container.addEventListener('pointermove', onFlyCaptureMove, true)")
+    expect(cameraSrc).toContain("container.addEventListener('pointerup', onFlyCaptureUp, true)")
   })
 })
