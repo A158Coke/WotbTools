@@ -70,7 +70,7 @@ function onKeydown(event) {
     @keydown="onKeydown"
   >
     <RadioGroupItem
-      v-for="option in options"
+      v-for="(option, index) in options"
       :key="option.value"
       as="button"
       :value="option.value"
@@ -92,7 +92,7 @@ function onKeydown(event) {
         :transition="motionTransition('base')"
         aria-hidden="true"
       />
-      <span class="segmented-label">{{ option.label }}</span>
+      <span class="segmented-label"><slot name="option" :option="option" :index="index" :selected="option.value === modelValue">{{ option.label }}</slot></span>
     </RadioGroupItem>
   </RadioGroupRoot>
 </template>

@@ -87,6 +87,7 @@ const abilityGroups = computed(() => (upgrades.value.groups || []).map((group, g
       value: String(id),
       label: itemName(node) || effects.map(effect => effect.label).join(' · ') || t('agentTanks.configurator.upgrade_skill_option', { index: index + 1 }),
       description: node?.[`description_${lang.value}`] || node?.description_en || '',
+      disabled: !upgrades.value.supported,
       effects,
       testid: `tank-ability-${id}`,
     }
@@ -457,19 +458,20 @@ const camoBonusParts = computed(() => {
       <template v-if="showCrew">
         <div v-for="group in abilityGroups" :key="group.id" class="tp-config-block" data-testid="tank-upgrade-skills">
           <h3>{{ group.label }}</h3>
-          <div class="tp-ability-options" role="group" :aria-label="group.label">
-            <button v-for="(option, index) in group.options" :key="option.value" type="button"
-              class="tp-ability-option" :class="{ 'is-on': String(upgrades.choices[group.id]) === option.value }"
-              :aria-pressed="String(upgrades.choices[group.id]) === option.value" :disabled="!upgrades.supported"
-              :data-testid="option.testid" @click="selectAbility(group, option.value)">
+          <SegmentedControl class="tp-ability-options" presentation="tiles" :aria-label="group.label"
+            :options="group.options" :model-value="String(upgrades.choices[group.id])"
+            @update:model-value="selectAbility(group, $event)">
+            <template #option="{ option, index, selected }">
+            <span class="tp-ability-content">
               <span class="tp-ability-top"><span class="tp-ability-number">{{ String(index + 1).padStart(2, '0') }}</span>
-                <Check v-if="String(upgrades.choices[group.id]) === option.value" :size="16" aria-hidden="true" />
+                <Check v-if="selected" :size="16" aria-hidden="true" />
               </span>
               <span class="tp-ability-name">{{ option.label }}</span>
               <strong class="tp-ability-value">{{ option.effects.map(effect => effect.amount).join(' / ') }}</strong>
               <span v-if="option.description" class="tp-muted">{{ option.description }}</span>
-            </button>
-          </div>
+            </span>
+            </template>
+          </SegmentedControl>
           <p v-if="group.description" class="tp-muted">{{ group.description }}</p>
         </div>
         <p v-if="abilityGroups.length" class="tp-muted">{{ t('agentTanks.configurator.upgrade_skill_hint') }}</p>
@@ -707,7 +709,7 @@ const camoBonusParts = computed(() => {
 .tp-muted { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); }
 
 .tp-ability-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }
-.tp-ability-option {
+.tp-ability-options :deep(.segmented-option) {
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -722,10 +724,10 @@ const camoBonusParts = computed(() => {
   text-align: start;
   cursor: pointer;
 }
-.tp-ability-option:hover { border-color: var(--color-border-strong); }
-.tp-ability-option:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-.tp-ability-option.is-on { border-color: var(--color-accent); background: var(--color-surface-3); }
-.tp-ability-option:disabled { cursor: not-allowed; color: var(--color-text-secondary); }
+.tp-ability-options :deep(.segmented-option:hover) { border-color: var(--color-border-strong); }
+.tp-ability-options :deep(.segmented-option.is-active) { border-color: var(--color-accent); }
+.tp-ability-content { display: flex; flex-direction: column; gap: var(--space-2); block-size: 100%; }
+.tp-ability-options :deep(.segmented-label) { flex: 1; }
 .tp-ability-top { display: flex; align-items: center; justify-content: space-between; color: var(--color-accent-text); }
 .tp-ability-number { font: var(--type-caption); font-variant-numeric: tabular-nums; }
 .tp-ability-name { flex: 1; font: var(--type-caption); overflow-wrap: anywhere; }

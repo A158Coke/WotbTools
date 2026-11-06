@@ -450,7 +450,7 @@ describe('AgentTankopedia — XI 两端升级（真实客户端模块，受控�
     else expect(armorValues()).toEqual(initialArmor) // BZ-79/KR-1 没有装甲升级节点。
     const topPitch = wrapper.findComponent(GunArcDiagram).props('pitchLimits')
     expect(topPitch.max).toBeGreaterThan(initialPitch.max)
-    expect(wrapper.findAll('[data-testid^="tank-ability-"][aria-pressed="true"]')).toHaveLength(1)
+    expect(wrapper.findAll('[data-testid^="tank-ability-"][aria-checked="true"]')).toHaveLength(1)
     await wrapper.find('[data-testid="tank-upgrade-stock"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query.upgrade).toBeUndefined()
