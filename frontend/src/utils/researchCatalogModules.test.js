@@ -6,7 +6,7 @@ vi.mock('../scene/assetProvider.js', () => ({
   assetProvider: { json },
 }))
 
-import { loadTankModules } from './researchCatalog.js'
+import { loadResearchCatalog, loadTankModules } from './researchCatalog.js'
 
 describe('loadTankModules：逐车模块来自资产包', () => {
   beforeEach(() => {
@@ -31,4 +31,19 @@ describe('loadTankModules：逐车模块来自资产包', () => {
     await expect(loadTankModules('germany')).resolves.toEqual({ tanks: {} })
     expect(json).toHaveBeenCalledTimes(2)
   })
+})
+
+it('分别保留物品目录版本，不能把旧设备目录版本当成 XI 机制的来源', async () => {
+  json.mockImplementation(async path => {
+    if (path.endsWith('devices.json')) return { meta: { gameVersion: 'live' }, devices: [], presets: {} }
+    if (path.endsWith('consumables.json')) return { meta: { gameVersion: 'preview-consumables' }, items: [] }
+    if (path.endsWith('provisions.json')) return { meta: { gameVersion: 'preview-provisions' }, items: [] }
+    if (path.endsWith('camouflage.json')) return { categories: {} }
+    if (path.endsWith('skills.json')) return { items: {}, classes: {} }
+    return {}
+  })
+  const catalog = await loadResearchCatalog()
+  expect(catalog.gameVersion).toBe('live')
+  expect(catalog.consumablesGameVersion).toBe('preview-consumables')
+  expect(catalog.provisionsGameVersion).toBe('preview-provisions')
 })

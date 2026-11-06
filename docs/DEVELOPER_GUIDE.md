@@ -285,6 +285,8 @@ League Rating 的适用范围、完整性门槛、公式、批次汇总与导出
 
 ## 前端架构
 
+坦克配置器的升级、技能与资产版本边界见 [`frontend/architecture.md`](frontend/architecture.md#xi-车辆升级)：条件技能默认不模拟触发，XI 机制基础值只消费同版客户端物品与 `vehicleAbilities` 绑定。超测物品修复属于资产通道更新，前端不维护等级规则副本。
+
 新手引导与匿名官方示例见 [`features/onboarding.md`](features/onboarding.md)。AppShell 持有唯一 `useOnboarding`，Replay session 持有可信示例选择；真实页面通过 typed `ONBOARDING_KEY` 和稳定锚点参与。完成/跳过由当前用户 `GET/PUT /api/users/onboarding` 同步。
 
 Replay Workspace 的 Data 批次分析与 2D/3D/Shots/AI 单场目标共享同一 selection；多文件先选首个有效 battle，`sourceId` 保留原始文件索引。布局所有权与浏览器验收矩阵见 [`frontend/replay-workspace.md`](frontend/replay-workspace.md)。

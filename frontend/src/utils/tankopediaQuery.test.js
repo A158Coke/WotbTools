@@ -14,8 +14,8 @@ describe('parseTankopediaQuery', () => {
   it('空 query 得到默认状态', () => {
     expect(parseTankopediaQuery({})).toEqual({
       q: '', tier: '', nation: '', type: '', sort: 'tier', tank: null, config: null,
-      engine: null, track: null, shell: null, dev: '', eq: null, cons: null, prov: null, skills: {}, camo: false,
-      upgrade: 'stock', abilities: [],
+      engine: null, track: null, shell: null, dev: '', eq: null, cons: null, prov: null, skills: {}, conditionalSkills: false, camo: false,
+      upgrade: null, abilities: [],
     })
   })
 
@@ -28,15 +28,35 @@ describe('parseTankopediaQuery', () => {
     })
   })
 
-  it('XI 升级独立于模块配置：旧链接保持初始值，技能 ID 校验后往返', () => {
+  it('条件技能触发独立于训练等级，仅详情链接显式 1 生效', () => {
+    const query = { tank: '5', skills: 'battle_rage:7,smooth_driving:3' }
+    expect(parseTankopediaQuery(query).conditionalSkills).toBe(false)
+    const active = parseTankopediaQuery({ ...query, skillTriggers: '1' })
+    expect(active.conditionalSkills).toBe(true)
+    expect(serializeTankopediaQuery(active)).toEqual({ ...query, skillTriggers: '1' })
+    expect(serializeTankopediaQuery({ ...active, conditionalSkills: false })).toEqual(query)
+    expect(sameTankopediaQuery(query, { ...query, skillTriggers: '1' })).toBe(false)
+    for (const value of ['0', 'true', 'yes', '', true, 1]) {
+      expect(parseTankopediaQuery({ ...query, skillTriggers: value }).conditionalSkills).toBe(false)
+    }
+    expect(parseTankopediaQuery({ skillTriggers: '1' }).conditionalSkills).toBe(false)
+    expect(parseTankopediaQuery({ ...query, skillTriggers: ['1', '0'] }).conditionalSkills).toBe(true)
+    expect(withTankopediaState({ ...query, skillTriggers: '1', lang: 'zh' }, { tank: 5 })).toEqual({ tank: '5', lang: 'zh' })
+  })
+
+  it('XI 升级独立于模块配置：缺省留给 tier 默认，技能 ID 校验后往返', () => {
     const old = parseTankopediaQuery({ tank: '15153', config: '0' })
-    expect(old).toMatchObject({ upgrade: 'stock', abilities: [], config: 0 })
+    expect(old).toMatchObject({ upgrade: null, abilities: [], config: 0 })
     expect(serializeTankopediaQuery(old)).toEqual({ tank: '15153', config: '0' })
     const current = parseTankopediaQuery({ tank: '15153', config: '0', upgrade: 'top', abilities: '23,23,-1,x,0,1.2,24' })
     expect(current).toMatchObject({ upgrade: 'top', abilities: [23, 24], config: 0 })
     expect(serializeTankopediaQuery(current)).toEqual({ tank: '15153', config: '0', upgrade: 'top', abilities: '23,24' })
-    expect(parseTankopediaQuery({ tank: '15153', upgrade: 'bogus' }).upgrade).toBe('stock')
-    expect(parseTankopediaQuery({ upgrade: 'top', abilities: '23' })).toMatchObject({ upgrade: 'stock', abilities: [] })
+    // 显式 stock 必须能写回 URL（缺省已不再等价于 stock）
+    const stock = parseTankopediaQuery({ tank: '15153', upgrade: 'stock' })
+    expect(stock.upgrade).toBe('stock')
+    expect(serializeTankopediaQuery(stock)).toEqual({ tank: '15153', upgrade: 'stock' })
+    expect(parseTankopediaQuery({ tank: '15153', upgrade: 'bogus' }).upgrade).toBe(null)
+    expect(parseTankopediaQuery({ upgrade: 'top', abilities: '23' })).toMatchObject({ upgrade: null, abilities: [] })
     expect(withTankopediaState({ view: 'agent-tankopedia', tank: '15153', upgrade: 'top', abilities: '23', assets: 'https://assets.test' }, { tank: 1 }))
       .toEqual({ view: 'agent-tankopedia', tank: '1', assets: 'https://assets.test' })
   })
@@ -115,7 +135,7 @@ describe('sameTankopediaQuery / withTankopediaState', () => {
   it('导出的键清单覆盖序列化的全部键', () => {
     const all = serializeTankopediaQuery({
       q: 'x', tier: 1, nation: 'a', type: 'b', sort: 'hp', tank: 1, config: 0,
-      engine: 0, track: 0, shell: 0, dev: '0', cons: [], prov: [], skills: { smooth_turn: 7 }, camo: true,
+      engine: 0, track: 0, shell: 0, dev: '0', cons: [], prov: [], skills: { smooth_turn: 7 }, conditionalSkills: true, camo: true,
       eq: [103], upgrade: 'top', abilities: [23],
     })
     expect(Object.keys(all).sort()).toEqual([...TANKOPEDIA_QUERY_KEYS].sort())
@@ -221,6 +241,17 @@ describe('normalizeTankCache — alias 投影', () => {
     expect(rows[0].aliases).toEqual([])
     expect(selectTanks(rows, { q: 'fv215b' }).map(tank => tank.name)).toEqual(['FV215b 183'])
     expect(selectTanks(rows, { q: '大白兔' })).toEqual([])
+  })
+
+  it('卡片血量优先 hp_top（XI 顶级），普通车继续用 hp', () => {
+    const rows = normalizeTankCache({
+      30497: { name: 'XM69 Hacker', tier: 11, hp: 2100, hp_top: 2200 },
+      15153: { name: 'BZ-79', tier: 11, hp: 2620, hp_top: 2850 },
+      1: { name: 'T-34', tier: 5, hp: 680 },
+    })
+    expect(rows.find(row => row.id === 30497).hp).toBe(2200)
+    expect(rows.find(row => row.id === 15153).hp).toBe(2850)
+    expect(rows.find(row => row.id === 1).hp).toBe(680)
   })
 
   it('稀疏数据集：只有配置过的车辆拿到 alias，其余一律 []', () => {

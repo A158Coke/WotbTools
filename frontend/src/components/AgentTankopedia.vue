@@ -112,7 +112,8 @@ async function loadList() {
 }
 
 function openDetail(id) {
-  writeState({ tank: id, config: null, upgrade: 'stock', abilities: [] }, { push: true })
+  // upgrade:null = 交给 resolveUpgradeSelection 按 tier 取默认（XI→top，其他→stock）。
+  writeState({ tank: id, config: null, upgrade: null, abilities: [] }, { push: true })
 }
 function backToList() {
   // In-app back must collapse the detail history entry instead of adding another one.
@@ -324,11 +325,13 @@ function installFromGraph(node) {
 /** 研发图点「下一级坦克」= 切到那辆车（清掉上一辆车的配置下标）。 */
 function openVehicleFromGraph(tankId) {
   if (!tankId) return
-  writeState({ tank: Number(tankId), config: null, engine: null, track: null, upgrade: 'stock', abilities: [] })
+  writeState({ tank: Number(tankId), config: null, engine: null, track: null, upgrade: null, abilities: [] })
 }
 
 const computeInput = computed(() => (setup.value.canConfigure && detail.value && modules.value && catalog.value
-  && !(upgradeSelection.value.available && urlState.value.upgrade === 'top' && !upgradeSelection.value.supported)
+  && !(upgradeSelection.value.available
+    && upgradeSelection.value.mode === 'top'
+    && !upgradeSelection.value.supported)
   ? buildComputeInput({
     detail: detail.value, modules: modules.value, selection: setup.value, catalog: catalog.value,
   })
@@ -344,7 +347,7 @@ const effectiveShell = selection => (selection.shell == null
 const selectionKey = selection => JSON.stringify([
   selection.config, effectiveShell(selection), selection.engine, selection.track,
   selection.devices, selection.consumables, selection.provisions,
-  selection.skills, selection.camouflage,
+  selection.skills, selection.conditionalSkills, selection.camouflage,
   selection.upgrade, selection.abilities,
 ])
 /** 上一次计入对比基线的选择键：URL 提交（pending → route.query）会让特性重算一次，
@@ -406,7 +409,9 @@ const shellRows = computed(() => shells.value.map((shell, index) => {
 const moduleLang = computed(() => (locale.value === 'zh' ? 'zh-Hans' : 'en'))
 function moduleName(item) {
   if (!item) return ''
-  return item[`name_${moduleLang.value}`] || item['name_zh-Hans'] || item.name_en || item.stem || ''
+  const name = [item[`name_${moduleLang.value}`], item.name_en, item['name_zh-Hans'], item.name]
+    .find(value => typeof value === 'string' && value.trim() && !value.trim().startsWith('#'))
+  return name || (typeof item.stem === 'string' ? item.stem.replaceAll('_', ' ').trim() : '') || '—'
 }
 const currentTurret = computed(() => modules.value?.turrets?.[setup.value.turret] || null)
 const currentGun = computed(() => currentTurret.value?.guns?.[setup.value.gun] || null)
@@ -464,6 +469,7 @@ function writeSetup(patch) {
     cons: next.consumables,
     prov: next.provisions,
     skills: next.skills,
+    conditionalSkills: next.conditionalSkills,
     camo: next.camouflage,
     upgrade: next.upgrade,
     abilities: next.abilities || [],
@@ -490,12 +496,13 @@ function maxSkills() {
 }
 
 function clearSkills() {
-  writeSetup({ skills: {} })
+  writeSetup({ skills: {}, conditionalSkills: false })
 }
 
 function resetSetup() {
   const target = {
-    ...(upgradeSelection.value.available ? { upgrade: 'stock', abilities: [] } : {}),
+    // 重置 = 默认配置（XI 缺省 top）；只有显式「初始」preset 才写 stock。
+    ...(upgradeSelection.value.available ? { upgrade: null, abilities: [] } : {}),
     config: Math.max(0, cfgs.value.length - 1),
     engine: Math.max(0, (modules.value?.engines?.length || 1) - 1),
     track: Math.max(0, (modules.value?.chassis?.length || 1) - 1),
@@ -505,6 +512,7 @@ function resetSetup() {
     consumables: [],
     provisions: [],
     skills: {},
+    conditionalSkills: false,
     camouflage: false,
   }
   resetTargetKey = selectionKey({ ...setup.value, ...target })
@@ -542,7 +550,8 @@ function open3d() {  // 审计 3D-09：在当前标签页打开装甲查看器�
   const handoff = setup.value.canConfigure
     ? {
         ...(upgradeSelection.value.available ? {
-          ...(setup.value.upgrade === 'top' ? { upgrade: 'top' } : {}),
+          // 显式传递两种模式：装甲页缺省已是 top，stock 必须写成 upgrade=stock 才能保留。
+          upgrade: setup.value.upgrade === 'stock' ? 'stock' : 'top',
           ...(setup.value.abilities?.length ? { abilities: setup.value.abilities.join(',') } : {}),
         } : {}),
         dev: encodeDevices(setup.value.devices),
@@ -654,7 +663,13 @@ onMounted(() => {
         <div class="tp-workbench">
           <div class="tp-workbench-left">
           <section class="tp-card-section tp-model-card" data-testid="tank-open3d-card" data-tour="tankopedia-detail">
-            <h2 class="tp-section-title">{{ t('agentTanks.open3d_title') }}</h2>
+            <div class="tp-model-card-heading">
+              <h2 class="tp-section-title">{{ t('agentTanks.open3d_title') }}</h2>
+              <AppButton variant="primary" data-testid="tank-open3d" data-tour="tankopedia-armor" @click="open3d">
+                <Box :size="16" aria-hidden="true" />
+                {{ t('agentTanks.open3d') }}
+              </AppButton>
+            </div>
             <dl v-if="setup.canConfigure" class="tp-summary">
               <div v-if="currentTurret"><dt>{{ t('agentTanks.configurator.turret') }}</dt><dd>{{ moduleName(currentTurret) }}</dd></div>
               <div v-if="currentGun"><dt>{{ t('agentTanks.configurator.gun') }}</dt><dd>{{ moduleName(currentGun) }}</dd></div>
@@ -667,12 +682,7 @@ onMounted(() => {
                 <option v-for="(c, i) in cfgs" :key="i" :value="i">{{ c.label }}<template v-if="c.turret_name && c.turret_name !== c.label"> ({{ c.turret_name }})</template></option>
               </select>
             </label>
-            <div>
-              <AppButton variant="primary" data-testid="tank-open3d" data-tour="tankopedia-armor" @click="open3d">
-                <Box :size="16" aria-hidden="true" />
-                {{ t('agentTanks.open3d') }}
-              </AppButton>
-            </div>
+
             <p class="tp-muted">{{ t('agentTanks.open3d_hint') }}</p>
             <p v-if="Number(detail.tier) === 11 && !upgradeSelection.available" class="tp-muted" role="status" data-testid="tank-upgrade-unavailable">
               {{ t('agentTanks.configurator.upgrade_unavailable') }}
@@ -733,7 +743,7 @@ onMounted(() => {
         <section v-else class="tp-card-section tp-workbench-right">
           <h2 class="tp-section-title">{{ t('agentTanks.mobility') }}</h2>
           <dl class="tp-stats">
-            <div><dt>{{ t('agentTanks.hp') }}</dt><dd>{{ fmtNum(detail.hp, 0) }}</dd></div>
+            <div><dt>{{ t('agentTanks.hp') }}</dt><dd>{{ fmtNum(upgradeProjection.detail?.hp ?? detail.hp, 0) }}</dd></div>
             <div><dt>{{ t('agentTanks.speed_fwd') }}</dt><dd>{{ fmtNum(detail.speed_forward ?? summary?.speed_forward ?? detail.speed) }} km/h</dd></div>
             <div><dt>{{ t('agentTanks.speed_rev') }}</dt><dd>{{ fmtNum(detail.speed_reverse ?? summary?.speed_reverse) }} km/h</dd></div>
             <div><dt>{{ t('agentTanks.view_range') }}</dt><dd>{{ fmtNum(curCfg?.view_range ?? summary?.view_range, 0) }} m</dd></div>
@@ -894,19 +904,20 @@ onMounted(() => {
 .tp-detail-nav { display: flex; }
 
 .tp-detail-head {
-  display: flex;
+  display: grid;
+  grid-template-columns: clamp(var(--tank-header-image-min), 18%, var(--tank-header-image-max)) minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--space-6);
-  padding: var(--space-4);
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-lg);
   background: var(--color-surface-1);
   box-shadow: var(--elevation-1);
 }
 
-.tp-media-lg { flex: 0 0 240px; inline-size: 240px; }
+.tp-media-lg { inline-size: 100%; }
 .tp-detail-title { display: grid; gap: var(--space-2); min-inline-size: 0; }
-.tp-detail-actions { display: flex; align-items: center; gap: var(--space-2); margin-inline-start: auto; }
+.tp-detail-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); min-inline-size: 0; }
 .tp-detail-title h1 { margin: 0; font: var(--type-h1); overflow-wrap: anywhere; }
 
 .tp-card-section {
@@ -922,18 +933,19 @@ onMounted(() => {
 .tp-section-title { margin: 0; font: var(--type-h3); }
 
 /* 工作台：桌面左右两栏（模型/装甲入口 + 配置面板），窄屏纵向堆叠 */
-.tp-workbench { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: var(--space-4); align-items: start; }
+.tp-workbench { display: grid; grid-template-columns: minmax(var(--tank-config-min), min(36%, var(--tank-config-max))) minmax(0, 1fr); gap: var(--space-4); align-items: start; }
 .tp-workbench-left { display: grid; gap: var(--space-4); align-content: start; min-inline-size: 0; }
 .tp-workbench-right { min-inline-size: 0; }
 .tp-model-card { align-content: start; }
+.tp-model-card-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
 
 .tp-summary {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-2);
   margin: 0;
 }
-.tp-summary > div { padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); }
+.tp-summary > div { display: grid; align-content: start; gap: var(--space-1); min-inline-size: 0; padding-block: var(--space-1); }
 .tp-summary dt { color: var(--color-text-secondary); font: var(--type-caption); }
 .tp-summary dd { margin: 0; font: var(--type-body); font-weight: 600; overflow-wrap: anywhere; }
 
@@ -956,15 +968,17 @@ onMounted(() => {
 
 /* 平板：详情头部封面缩小；工作台改单列（配置面板在下） */
 @media (768px <= width < 1200px) {
-  .tp-media-lg { flex-basis: 200px; inline-size: 200px; }
   .tp-workbench { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* 手机：详情头部改为上下排列 */
 @media (width < 768px) {
   .tankopedia { gap: var(--space-3); padding-block-start: var(--space-4); }
-  .tp-detail-head { flex-direction: column; align-items: stretch; gap: var(--space-3); }
-  .tp-media-lg { flex-basis: auto; inline-size: 100%; }
+  .tp-detail-head { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: var(--space-3); padding: var(--space-3); }
+  .tp-detail-title h1 { font: var(--type-h2); }
+  .tp-detail-actions { grid-column: 1 / -1; justify-content: stretch; }
+  .tp-detail-actions > * { flex: 1; }
+  .tp-card-section { padding: var(--space-3); }
   .tp-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tp-workbench { grid-template-columns: minmax(0, 1fr); }
 }

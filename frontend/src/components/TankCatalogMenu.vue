@@ -47,7 +47,9 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:filters', 'select', 'retry', 'close'])
 
-const { t, te } = useI18n()
+const { t, te, locale } = useI18n()
+const statFormat = computed(() => new Intl.NumberFormat(locale.value, { maximumFractionDigits: 1 }))
+const formatStat = value => value == null || !Number.isFinite(Number(value)) ? '—' : statFormat.value.format(Number(value))
 const { isCompact } = useBreakpoint()
 
 const local = reactive({ ...DEFAULT_FILTERS, ...props.filters })
@@ -185,6 +187,7 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
       </button>
     </div>
 
+    <div class="tp-toolbar">
     <div class="tp-search-row">
       <label class="tp-search">
         <Search :size="16" class="tp-search-icon" aria-hidden="true" />
@@ -256,6 +259,7 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
     </DefineFilters>
     <AppSheet v-if="isCompact" :open="sheetOpen" :title="t('filters.title')" @close="closeSheet"><ReuseFilters /></AppSheet>
     <ReuseFilters v-else />
+    </div>
 
     <div id="tp-grid" class="tp-results" :class="{ 'is-dialog-results': layout === 'dialog' }">
       <EmptyState
@@ -325,8 +329,8 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
                 <span class="tp-pill" :class="TYPE_CLS[tank.type] || 't-unknown'">{{ typeLabel(tank.type) }}</span>
               </span>
               <span class="tp-card-stats">
-                <span><span class="tp-stat-label">{{ t('agentTanks.hp') }}</span>{{ tank.hp ?? '-' }}</span>
-                <span><span class="tp-stat-label">{{ t('agentTanks.pen') }}</span>{{ tank.pen_max ?? '-' }}</span>
+                <span><span class="tp-stat-label">{{ t('agentTanks.hp') }}</span>{{ formatStat(tank.hp) }}</span>
+                <span><span class="tp-stat-label">{{ t('agentTanks.pen') }}</span>{{ formatStat(tank.pen_max) }}</span>
               </span>
             </button>
           </li>
@@ -404,9 +408,11 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
 }
 
 /* ---------- 搜索与筛选 ---------- */
+.tp-toolbar { display: grid; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-surface-1); }
+.is-dialog .tp-toolbar { padding: 0; border: 0; border-radius: 0; background: transparent; }
 .tp-search-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); flex: none; }
 
-.tp-search { position: relative; flex: 1 1 280px; max-inline-size: 420px; }
+.tp-search { position: relative; flex: 1 1 var(--form-field-min); min-inline-size: 0; }
 .tp-search-icon { position: absolute; inset-block-start: 50%; inset-inline-start: var(--space-3); color: var(--color-text-tertiary); transform: translateY(-50%); pointer-events: none; }
 
 .tp-search input,
@@ -428,9 +434,9 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
 
 .tp-search input::placeholder { color: var(--color-text-tertiary); }
 
-.tp-filters { display: flex; flex-wrap: wrap; gap: var(--space-3); flex: none; }
+.tp-filters { display: flex; flex-wrap: wrap; align-items: start; gap: var(--space-3); flex: none; padding-block-start: var(--space-3); border-block-start: 1px solid var(--color-border-subtle); }
 
-.tp-field { display: grid; gap: var(--space-1); min-inline-size: 140px; }
+.tp-field { display: grid; gap: var(--space-1); min-inline-size: min(100%, var(--form-field-min)); flex: 1; }
 .tp-field-inline { max-inline-size: 360px; }
 .tp-field-label { color: var(--color-text-secondary); font: var(--type-caption); }
 
@@ -479,7 +485,7 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
 
 .tp-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--tank-card-min)), 1fr));
   gap: var(--space-3);
   margin: 0;
   padding: 0;
@@ -492,11 +498,10 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
   gap: var(--space-2);
   inline-size: 100%;
   block-size: 100%;
-  padding: var(--space-2) var(--space-2) var(--space-3);
+  padding: var(--space-3);
   border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--color-surface-1);
-  box-shadow: var(--elevation-1);
   color: var(--color-text-primary);
   font: var(--type-body);
   text-align: start;
@@ -551,7 +556,7 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
   color: var(--color-text-secondary);
   font: var(--type-caption);
   font-weight: 600;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .tp-pill.is-tier,
@@ -572,7 +577,7 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
   border-block-start: 1px solid var(--color-border-subtle);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  text-align: center;
+  text-align: start;
 }
 
 .tp-stat-label { display: block; color: var(--color-text-tertiary); font: var(--type-caption); }
@@ -583,14 +588,10 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
 
 .tp-more { display: flex; justify-content: center; padding-block: var(--space-4); }
 
-/* 平板：卡片稍窄 */
-@media (768px <= width < 1200px) {
-  .tp-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
-}
-
 /* 手机：两列卡片；筛选进 sheet */
 @media (width < 768px) {
-  .tp-search { flex-basis: 100%; max-inline-size: none; }
+  .tp-search { flex-basis: 100%; }
+  .tp-card { padding: var(--space-2); }
   .tp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
 }
 </style>

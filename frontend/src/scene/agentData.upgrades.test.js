@@ -58,11 +58,43 @@ describe('explicit XI armor data selection', () => {
     expect(result.shells[0]).toMatchObject({ penetration: 280, damage: 480 })
   })
 
+  it('keeps raw data when the legacy pack has no module catalog at all', async () => {
+    upgrades.modules.mockRejectedValueOnce(new Error('HTTP 404 /research/modules/china.json'))
+    await expect(fetchTankData(15153, { upgrade: 'top' })).resolves.toBe(raw)
+  })
+
   it.each([
-    { available: false, supported: true, unsupported: [] },
-    { available: true, supported: false, unsupported: ['UnknownUpgradeScript'] },
-  ])('rejects unavailable or unsupported max data rather than labeling stock as max', async selection => {
-    upgrades.project.mockReturnValueOnce({ detail: raw, modules: moduleData, selection })
+    ['HTTP 500', new Error('asset /research/modules/china.json: HTTP 500')],
+    ['network failure', new Error('NETWORK_ERROR')],
+    ['JSON parse failure', new SyntaxError('Unexpected token < in JSON')],
+  ])('rethrows %s from the module catalog instead of returning stock', async (_label, error) => {
+    upgrades.modules.mockRejectedValueOnce(error)
+    await expect(fetchTankData(15153, { upgrade: 'top' })).rejects.toBe(error)
+    expect(upgrades.project).not.toHaveBeenCalled()
+  })
+
+  it('retries after a non-404 catalog failure and then projects top data', async () => {
+    upgrades.modules
+      .mockRejectedValueOnce(new Error('asset /research/modules/china.json: HTTP 500'))
+      .mockResolvedValueOnce({ tanks: { 15153: moduleData } })
+    await expect(fetchTankData(15153, { upgrade: 'top' })).rejects.toThrow('HTTP 500')
+    await expect(fetchTankData(15153, { upgrade: 'top' })).resolves.toBe(projected)
+    expect(upgrades.modules).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps raw data when the asset pack has no upgradeProgression', async () => {
+    upgrades.project.mockReturnValueOnce({
+      detail: raw, modules: moduleData,
+      selection: { available: false, supported: true, unsupported: [] },
+    })
+    await expect(fetchTankData(15153, { upgrade: 'top' })).resolves.toBe(raw)
+  })
+
+  it('rejects unsupported max data rather than labeling stock as max', async () => {
+    upgrades.project.mockReturnValueOnce({
+      detail: raw, modules: moduleData,
+      selection: { available: true, supported: false, unsupported: ['UnknownUpgradeScript'] },
+    })
     await expect(fetchTankData(15153, { upgrade: 'top' })).rejects.toThrow('XI upgrade data unavailable')
   })
 })

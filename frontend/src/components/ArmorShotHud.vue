@@ -4,14 +4,15 @@
  *   - 弹种：射击方当前主炮的弹种图标（点击切换，穿深/伤害判定重跑）
  *   - 右侧三枚装备图标：射击方「校准弹」/ 受击方「强化装甲」/ 受击方「改进型垂直稳定器」
  *     （122，俯仰 +4°/+3°），高亮 = 已装配
- * 只做图标交互，不出现文字按钮；图标来自资产包 devices 目录（103/110/122）。
+ * 弹种直接显示100米内穿深（含校准弹）；图标来自资产包 devices 目录（103/110/122）。
  */
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Crosshair, MoveVertical, Shield } from 'lucide-vue-next'
 import { fetchTankData } from '../scene/agentData.js'
 import { loadDevices, shellIconUrl, itemIconUrl } from '../utils/researchCatalog.js'
 import { shellLabel } from '../scene/tankMeta.js'
+import { calibratedPenMul, shellTypeOf } from '../scene/viewer/armorPlateModel.js'
 
 const props = defineProps({
   shooterId: { type: Number, default: null },
@@ -37,6 +38,7 @@ const { t } = useI18n()
 const details = ref(null)
 const devices = ref({ calibrated: null, enhanced: null, pitch: null })
 let request = 0
+onBeforeUnmount(() => { request++ })
 
 async function load(shooterId) {
   const seq = ++request
@@ -45,9 +47,9 @@ async function load(shooterId) {
   if (!(shooterId > 0)) return
   try {
     // HUD 常驻且只读 devices：不要为三枚装备图标拉整份配置器目录（skills/camo/params…）。
-    const detailRequest = props.upgrade === 'top'
-      ? fetchTankData(shooterId, { upgrade: props.upgrade, abilities: props.abilities })
-      : fetchTankData(shooterId)
+    // 缺省 = XI 顶级；显式 stock 才回退基础值（非 XI 传 top 会由 fetchTankData 原样返回）。
+    const upgrade = props.upgrade === 'stock' ? 'stock' : 'top'
+    const detailRequest = fetchTankData(shooterId, { upgrade, abilities: props.abilities })
     const [detail, catalog] = await Promise.all([detailRequest, loadDevices()])
     if (seq !== request) return
     details.value = detail
@@ -90,24 +92,38 @@ const shellIndex = computed(() => {
 const calibrated = computed(() => (props.eqcal == null ? props.calibratedDefault : String(props.eqcal) === '1'))
 const enhanced = computed(() => (props.eqenh == null ? props.enhancedDefault : String(props.eqenh) === '1'))
 const pitchDevice = computed(() => (props.eqpitch == null ? props.pitchDefault : String(props.eqpitch) === '1'))
+// 与场景判定共用弹种分类和校准系数；仅在展示的最后一步取整，不把显示值写回炮弹。
+const shellOptions = computed(() => shells.value.map(shell => {
+  const penetration = typeof shell.penetration === 'number' && Number.isFinite(shell.penetration) && shell.penetration >= 0
+    ? Math.round(shell.penetration * (calibrated.value ? calibratedPenMul(shellTypeOf(shell)) : 1))
+    : null
+  const name = shellLabel(shell) || shell.type || ''
+  const damage = typeof shell.damage === 'number' && Number.isFinite(shell.damage) ? Math.round(shell.damage) : null
+  return {
+    shell,
+    penetration,
+    label: `${name} · ${penetration ?? '—'}mm · ${t('armor.shell_penetration_basis')}${damage == null ? '' : ` · ${damage}`}`,
+  }
+}))
 </script>
 
 <template>
   <div v-if="shells.length" class="shot-hud" data-testid="armor-shot-hud">
     <div class="hud-row hud-shells" role="group" :aria-label="t('armor.shell')">
       <button
-        v-for="(shell, index) in shells"
+        v-for="(option, index) in shellOptions"
         :key="`hud-shell-${index}`"
         type="button"
         class="hud-shell"
         :class="{ 'is-on': index === shellIndex }"
         :aria-pressed="index === shellIndex"
-        :aria-label="shellLabel(shell) || shell.type"
-        :title="`${shellLabel(shell) || shell.type}${shell.penetration != null ? ` · ${Math.round(shell.penetration)}mm` : ''}${shell.damage != null ? ` · ${Math.round(shell.damage)}` : ''}`"
+        :aria-label="option.label"
+        :title="option.label"
         :data-testid="`hud-shell-${index}`"
         @click="index === shellIndex ? null : emit('shell', index)"
       >
-        <img :src="shellIconUrl(shell.type)" alt="" width="28" height="28" loading="lazy">
+        <img :src="shellIconUrl(option.shell.type)" alt="" width="28" height="28" loading="eager">
+        <span class="hud-penetration" data-testid="hud-penetration" aria-hidden="true">{{ option.penetration ?? '—' }}<span class="hud-unit"> mm</span></span>
       </button>
     </div>
     <div class="hud-row hud-equipment">
@@ -159,17 +175,19 @@ const pitchDevice = computed(() => (props.eqpitch == null ? props.pitchDefault :
 /* 卡片外观由宿主（#corner-tr 整体面板）提供；这里只排布弹种/装备图标。 */
 .shot-hud {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-2);
+  gap: var(--space-1);
+  min-inline-size: 0;
 }
 .hud-row { display: flex; align-items: center; gap: var(--space-1); }
 .hud-shell,
 .hud-eq {
   display: grid;
   place-items: center;
-  inline-size: 40px;
-  block-size: 36px;
+  inline-size: var(--hit-min-comfortable);
+  block-size: var(--hit-min-comfortable);
   padding: 0;
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-sm);
@@ -177,6 +195,10 @@ const pitchDevice = computed(() => (props.eqpitch == null ? props.pitchDefault :
   color: var(--color-text-secondary);
   cursor: pointer;
 }
+.hud-shell { inline-size: auto; min-inline-size: var(--hit-min-comfortable); block-size: auto; min-block-size: var(--hit-min-comfortable); padding: var(--space-1); }
+.hud-penetration { color: var(--color-text-primary); font: var(--type-caption); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.hud-unit { color: var(--color-text-secondary); font-weight: 400; }
+.hud-shell.is-on .hud-penetration { color: var(--color-accent-text); }
 .hud-shell img,
 .hud-eq img { inline-size: 28px; block-size: 28px; object-fit: contain; }
 .hud-shell.is-on,
@@ -187,5 +209,5 @@ const pitchDevice = computed(() => (props.eqpitch == null ? props.pitchDefault :
 }
 .hud-shell:focus-visible,
 .hud-eq:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-.hud-equipment { padding-inline-start: var(--space-2); border-inline-start: 1px solid var(--color-border-subtle); }
+.hud-equipment { padding-inline-start: var(--space-1); border-inline-start: 1px solid var(--color-border-subtle); }
 </style>

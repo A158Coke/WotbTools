@@ -32,6 +32,7 @@ import { shotResultClass } from '../utils/shotResultClass.js'
 import { isCompactShotResultCard, shotResultCardMaxWidth as resultCardMaxWidth, shotResultCardMetrics } from '../utils/shotResultCardMetrics.js'
 import { placeShotResultCard } from '../utils/shotResultCardPlacement.js'
 import { renderShotResultCardHtml } from './viewer/shotResultCard.js'
+import { armorCameraPreset, armorPresetGunPitch } from './viewer/cameraPresets.js'
 import { createShotTrajectoryGroup, trajectoryChanceColor } from './viewer/shotTrajectoryGeometry.js'
 import {
     RC,
@@ -2435,11 +2436,18 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
 
         const QP = new URLSearchParams(location.search);
+        const shotMode = QP.has('shot');
         // XI 升级态与模块配置一样按双方独立读取；同车也不从目标推导射手状态。
-        const upgradeOptions = (side) => ({
-            upgrade: QP.get(side === 'shooter' ? 'supgrade' : 'upgrade'),
-            abilities: QP.get(side === 'shooter' ? 'sabilities' : 'abilities'),
-        });
+        const upgradeOptions = (side) => {
+            const rawUpgrade = QP.get(side === 'shooter' ? 'supgrade' : 'upgrade');
+            const explicit = rawUpgrade === 'top' ? 'top' : rawUpgrade === 'stock' ? 'stock' : undefined;
+            return {
+                // 普通装甲检视缺省 XI 顶级；射击复现没有升级态证据时不得补成满级，
+                // 只有显式 &upgrade=top / &supgrade=top 才是 what-if。
+                upgrade: explicit ?? (shotMode ? undefined : 'top'),
+                abilities: QP.get(side === 'shooter' ? 'sabilities' : 'abilities'),
+            };
+        };
         // 装甲页图形开关的手动覆盖（&eqcal=0/1、&eqenh=0/1）：场景初始化即生效
         if (QP.has('eqcal')) equipmentOverride.calibrated = QP.get('eqcal') === '1';
         if (QP.has('eqenh')) equipmentOverride.enhanced = QP.get('eqenh') === '1';
@@ -2451,6 +2459,31 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         /** shell 的权威 owner 是 URL：换目标/重载后按当前 location 恢复，不能用初始化时的 QP 快照。 */
         function requestedShellIndex() {
             return parseInt(new URLSearchParams(location.search).get('shell'), 10);
+        }
+        function setCameraPreset(kind) {
+            if (destroyed || contextLost || !tankModel || !armorModel || QP.get('shot')) return false;
+            if (kind !== 'front' && kind !== 'hull_down') return false;
+            const pitch = currentConfig()?.pitch_limits;
+            const limits = pitch ? pitchAtBearing(pitch, 0,
+                effectivePitchDevice() ? pitchDeviceBonusValue : null) : { down: 0, up: 0 };
+            if (!Number.isFinite(limits.down) || !Number.isFinite(limits.up)) return false;
+            currentTurretDeg = 0;
+            currentGunDeg = armorPresetGunPitch(kind, limits);
+            updateTurretGun(currentTurretDeg, currentGunDeg);
+            const pose = armorCameraPreset(armorPivotGun || new THREE.Vector3(0, 0, 2),
+                new THREE.Matrix4().copy(tankModel.matrixWorld).multiply(gunPoseMatrix), ARMOR_REF_DIST);
+            // 先清除轨道惯性，再设置预设；后续拖动仍由 OrbitControls 正常接管。
+            const damping = controls.enableDamping;
+            controls.enableDamping = false;
+            controls.update();
+            controls.target.copy(pose.target);
+            camera.position.copy(pose.position);
+            controls.update();
+            controls.enableDamping = damping;
+            document.getElementById('turret-val').textContent = '0°';
+            document.getElementById('gun-val').textContent = currentGunDeg.toFixed(0) + '°';
+            tidyTrajectory();
+            return true;
         }
         function applyUrlOptionsOnce() {
             if (urlApplied || !tankModel || !armorModel) return;
@@ -2467,13 +2500,16 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             }
             const num = (k) => { const v = parseFloat(QP.get(k)); return isNaN(v) ? null : v; };
             const yaw = num('yaw'), pitch = num('pitch');
-            if (yaw !== null || pitch !== null) {
-                if (yaw !== null) currentTurretDeg = Math.max(-179, Math.min(179, yaw));
-                if (pitch !== null) currentGunDeg = pitch;
-                document.getElementById('turret-val').textContent = currentTurretDeg.toFixed(0) + '°';
-                document.getElementById('gun-val').textContent = currentGunDeg.toFixed(0) + '°';
-                updateTurretGun(currentTurretDeg, currentGunDeg);
+            function restoreUrlPose() {
+                if (yaw !== null || pitch !== null) {
+                    if (yaw !== null) currentTurretDeg = Math.max(-179, Math.min(179, yaw));
+                    if (pitch !== null) currentGunDeg = pitch;
+                    document.getElementById('turret-val').textContent = currentTurretDeg.toFixed(0) + '°';
+                    document.getElementById('gun-val').textContent = currentGunDeg.toFixed(0) + '°';
+                    updateTurretGun(currentTurretDeg, currentGunDeg);
+                }
             }
+            restoreUrlPose();
             const view = QP.get('view');
             // `view` 同时是 SPA 路由 id（agent-armor）。只有已知相机预设才按预设处理；
             // 否则 ?view=agent-armor 会命中 fallback（0.8×模型尺寸）覆盖默认 15m 相机距离。
@@ -2484,7 +2520,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // 炮线高度（米）：gun 枢轴的 glb z（场景原生米制，无缩放）。默认目标也用它，
             // 让车体垂直居中（地面原点会让坦克落在屏幕上半）。
             const gunLine = (armorPivotGun ? armorPivotGun.z : 2.0);
-            if (camView || azOv !== null || hOv !== null || distOv !== null) {
+            if ((camView === 'front' || camView === 'hull_down') && azOv === null && hOv === null && distOv === null && !QP.get('shot')) {
+                setCameraPreset(camView);
+                // 预设只给默认姿态，显式 URL 角度仍然优先。
+                restoreUrlPose();
+            } else if (camView || azOv !== null || hOv !== null || distOv !== null) {
                 // 视角预设（对齐 BlitzKit 语义）：front/rear/left/right = 炮线高度水平视角；
                 // hull_down = 低机位仰视炮塔；top = 俯视。机位距离 = 模型最长边倍数
                 //（取景需要，与数据无关）：水平 0.80×、斜角 0.87×、顶视 1.17×；顶视高度 = 炮线 + 2×模型长
@@ -6097,6 +6137,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         return {
             destroy, retry, selectTank, canPick, isContextLost,
             setConfig: applyConfig, setConfigUiVisible, setShellUiVisible,
+            setCameraPreset,
             setShell, setShooterConfig, setEquipmentOverride, setPitchDeviceBonus, setPitchDeviceAvailable,
         };
     }

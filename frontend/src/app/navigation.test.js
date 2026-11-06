@@ -166,7 +166,7 @@ describe('locationForView：名人堂筛选只属于名人堂', () => {
       query: {
         view: 'agent-tankopedia', q: 'is7', tier: '10', nation: 'ussr', type: 'heavyTank', sort: 'hp',
         tank: '5', config: '1', engine: '2', track: '1', shell: '1', dev: '01-1', cons: 'afterburning',
-        prov: 'ration', skills: 'smooth_driving:7', camo: '1', lang: 'x',
+        prov: 'ration', skills: 'smooth_driving:7', skillTriggers: '1', camo: '1', lang: 'x',
       },
     }
     expect(locationForView('replay', tankRoute).query).toEqual({ view: 'replay', lang: 'x' })

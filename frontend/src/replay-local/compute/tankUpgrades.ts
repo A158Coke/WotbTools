@@ -84,9 +84,15 @@ function supports(def: UpgradeDefinition): boolean {
   }
 }
 
-/** 缺省 stock 兼容旧链接；满级只选择每个备选组的一项，绝不叠加互斥技能。 */
+/**
+ * XI 缺省 top（产品口径：坦克卡片/详情/装甲查看器默认顶级）；显式 stock 仍可回退，
+ * 非法值按 stock 处理（旧链接兼容）。满级只选择每个备选组的一项，绝不叠加互斥技能。
+ */
 export function resolveUpgradeSelection(modules: unknown, mode?: unknown, inputChoices?: unknown): UpgradeSelection {
-  const result = emptySelection(mode === 'top' ? 'top' : 'stock')
+  const absent = mode == null || mode === ''
+  const explicit = mode === 'top' ? 'top' : mode === 'stock' ? 'stock' : null
+  const defaultMode = absent && record(modules) && modules.tier === 11 ? 'top' : 'stock'
+  const result = emptySelection(explicit ?? defaultMode)
   if (!record(modules) || modules.tier !== 11 || !('upgradeProgression' in modules)) return result
   result.available = true
   const progression = modules.upgradeProgression
@@ -174,6 +180,64 @@ export function resolveUpgradeSelection(modules: unknown, mode?: unknown, inputC
     fail('Non-finite upgrade aggregate')
   }
   return result
+}
+
+/** 客户端属性与内建机制 script 参数的已核对映射；不按车辆名称或等级猜绑定。 */
+const MECHANIC_PARAMETERS: Record<string, [string, string, string]> = {
+  BURST_MODE_REQUIRED_PENETRATIONS: ['provisions', 'burstMode', 'requiredDamagingPenetrations'],
+  BURST_MODE_INTERVAL: ['provisions', 'burstMode', 'burstInterval'],
+  BURST_MODE_TARGET_ORDER: ['provisions', 'burstMode', 'targetOrder'],
+  COMBAT_FRENZY_RELOAD_SPEED_BONUS_PER_STACK: ['provisions', 'combatFrenzy', 'reloadSpeedBonusPerStack'],
+  COMBAT_FRENZY_MAX_STACKS: ['provisions', 'combatFrenzy', 'maxStacks'],
+  COMBAT_FRENZY_ALLOW_SWITCH_AFTER_KILL: ['provisions', 'combatFrenzy', 'allowSwitchAfterKill'],
+  RAMMING_CONFIGURATION_RAMMING_DAMAGE_BONUS: ['provisions', 'rammingConfiguration', 'rammingDamageBonus'],
+  RAMMING_CONFIGURATION_RAMMING_TRACK_DAMAGE_BONUS: ['provisions', 'rammingConfiguration', 'rammingTrackDamageBonus'],
+  RAMMING_CONFIGURATION_RAMMING_DAMAGE_REDUCTION: ['provisions', 'rammingConfiguration', 'rammingDamageReduction'],
+  SAS_DURATION: ['provisions', 'steadyAimSystem', 'duration'],
+  SAS_AIMING_SPEED: ['provisions', 'steadyAimSystem', 'aimingSpeed'],
+  SAS_GUN_DISPERSION: ['provisions', 'steadyAimSystem', 'gunDispersionModifier'],
+  SAS_ALLOW_ACTIVATE_ON_HIT: ['provisions', 'steadyAimSystem', 'activateWithoutDamage'],
+  RECHARGEABLE_NITRO_COOLING_DURATION: ['consumables', 'rechargeableNitro', 'coolingDuration'],
+  RECHARGEABLE_NITRO_HEATING_DURATION: ['consumables', 'rechargeableNitro', 'duration'],
+  RECHARGEABLE_NITRO_FWD_SPEED_LIMIT_FACTOR: ['consumables', 'rechargeableNitro', 'fwdSpeedLimitFactor'],
+  RECHARGEABLE_NITRO_ROTATION_SPEED_FACTOR: ['consumables', 'rechargeableNitro', 'rotationSpeedFactor'],
+}
+
+function mechanicInitial(name: string, modifier: UpgradeDefinition['modifier'], modules: unknown, catalog: unknown): UpgradeValue | null {
+  const mapping = MECHANIC_PARAMETERS[name]
+  if (!mapping || !record(modules) || !record(catalog)) return null
+  const [kind, ability, parameter] = mapping
+  if (typeof modules.gameVersion !== 'string' || !modules.gameVersion
+    || catalog[`${kind}GameVersion`] !== modules.gameVersion
+    || !Array.isArray(modules.vehicleAbilities) || !modules.vehicleAbilities.includes(ability)) return null
+  const item = records(catalog[kind]).find(item => item.stem === ability && item.isAbility === true)
+  const raw = child(child(item, 'script'), 'params')?.[parameter]
+  if (modifier === 'MODIFIER_BOOLEAN') {
+    if (typeof raw === 'boolean') return raw
+    if (typeof raw === 'string' && /^(true|false)$/i.test(raw.trim())) return raw.trim().toLowerCase() === 'true'
+    return null
+  }
+  if (finite(raw)) return raw
+  return typeof raw === 'string' && raw.trim() !== '' && Number.isFinite(Number(raw)) ? Number(raw) : null
+}
+
+/** 同版机制基础值 + 升级变化；无来源的基值返回 null，仍可展示已知改变量。 */
+export function upgradeMechanicEffects(selection: UpgradeSelection, modules?: unknown, catalog?: unknown): Array<{
+  name: string; modifier: UpgradeDefinition['modifier']; current: UpgradeValue | null
+  initial: UpgradeValue | null; value: UpgradeValue | null
+}> {
+  if (!selection.available || !selection.supported) return []
+  const names = new Set(selection.nodes.flatMap(node => node.attributes
+    .filter(attr => !selection.attributeDefinitions[attr.name]?.script).map(attr => attr.name)))
+  return [...names].map(name => {
+    const modifier = selection.attributeDefinitions[name]!.modifier
+    const current = selection.mechanicsAttributes[name] ?? null
+    const initial = mechanicInitial(name, modifier, modules, catalog)
+    const value = initial == null ? null : current == null ? initial
+      : modifier === 'MODIFIER_BOOLEAN' ? current
+        : modifier === 'MODIFIER_MULTIPLY' ? Number(initial) * Number(current) : Number(initial) + Number(current)
+    return { name, modifier, current, initial, value }
+  })
 }
 
 function change(target: Data | undefined, key: string, transform: (value: number) => number): void {

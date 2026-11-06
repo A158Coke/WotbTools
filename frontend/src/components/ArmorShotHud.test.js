@@ -27,6 +27,52 @@ beforeEach(() => {
 })
 
 describe('ArmorShotHud（右上角弹种 + 装备图标）', () => {
+  it('显示全部弹种的整数穿深，按场景系数联动校准弹并仅在最后取整', async () => {
+    const shells = [
+      { type: 'ap', penetration: 200.49 },
+      { type: 'ap_cr_premium', penetration: 300.49 },
+      { type: 'heat', penetration: 310.5 },
+      { type: 'he', penetration: 60.5 },
+      { type: 'he', type_id: 0, penetration: 200.49 },
+      { type: 'unknown', penetration: 201.49 },
+    ]
+    data.fetchTankData.mockResolvedValueOnce({ configs: [{ shells }] })
+    const wrapper = mount(ArmorShotHud, { props: { shooterId: 1, eqcal: '0' } })
+    await flushPromises()
+    const values = () => wrapper.findAll('[data-testid="hud-penetration"]').map(node => node.text())
+    expect(values()).toEqual(['200 mm', '300 mm', '311 mm', '61 mm', '200 mm', '201 mm'])
+    await wrapper.setProps({ eqcal: '1' })
+    expect(values()).toEqual(['213 mm', '319 mm', '332 mm', '65 mm', '213 mm', '201 mm'])
+    wrapper.findAll('[data-testid^="hud-shell-"]').forEach((button, index) => {
+      expect(button.attributes('title')).toContain(values()[index].replace(' ', ''))
+      expect(button.attributes('title')).toContain('armor.shell_penetration_basis')
+      expect(button.attributes('aria-label')).toBe(button.attributes('title'))
+    })
+    await wrapper.setProps({ eqenh: '1', eqpitch: '1', pitchAvailable: true })
+    expect(values()).toEqual(['213 mm', '319 mm', '332 mm', '65 mm', '213 mm', '201 mm'])
+    await wrapper.setProps({ eqcal: '0' })
+    expect(values()[0]).toBe('200 mm')
+    expect(data.fetchTankData).toHaveBeenCalledOnce()
+    expect(shells[0].penetration).toBe(200.49)
+  })
+
+  it('回放校准默认值参与穿深，显式关闭优先', async () => {
+    const wrapper = mount(ArmorShotHud, { props: { shooterId: 1, calibratedDefault: true } })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="hud-shell-0"]').text()).toBe('233 mm')
+    await wrapper.setProps({ eqcal: '0' })
+    expect(wrapper.get('[data-testid="hud-shell-0"]').text()).toBe('220 mm')
+    await wrapper.setProps({ eqcal: null })
+    expect(wrapper.get('[data-testid="hud-shell-0"]').text()).toBe('233 mm')
+  })
+
+  it('缺失和非法穿深显示破折号，不伪造成零', async () => {
+    data.fetchTankData.mockResolvedValueOnce({ configs: [{ shells: [undefined, null, NaN, Infinity, -1, 0].map(penetration => ({ type: 'ap', penetration })) }] })
+    const wrapper = mount(ArmorShotHud, { props: { shooterId: 1, eqcal: '1' } })
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid="hud-penetration"]').map(node => node.text())).toEqual(['— mm', '— mm', '— mm', '— mm', '— mm', '0 mm'])
+  })
+
   it('按射击方配置渲染弹种图标与装备图标', async () => {
     const wrapper = mount(ArmorShotHud, { props: { shooterId: 1, scfg: 1 } })
     await flushPromises()
@@ -118,10 +164,12 @@ describe('ArmorShotHud（右上角弹种 + 装备图标）', () => {
     expect(wrapper.emitted('enhanced').at(-1)).toEqual([false])
   })
 
-  it('reloads only the explicit shooter upgrade and ignores an older stock response', async () => {
+  it('defaults XI shooter to top and only reloads when an explicit stock is selected', async () => {
     let resolveStock
     data.fetchTankData.mockReturnValueOnce(new Promise(resolve => { resolveStock = resolve }))
     const wrapper = mount(ArmorShotHud, { props: { shooterId: 1 } })
+    // 缺省（无 upgrade prop）= XI top；首个在途响应仍是 top 请求。
+    expect(data.fetchTankData).toHaveBeenLastCalledWith(1, { upgrade: 'top', abilities: null })
     const upgraded = structuredClone(TANK)
     upgraded.configs[1].shells[0].penetration = 330
     data.fetchTankData.mockResolvedValueOnce(upgraded)
@@ -129,12 +177,27 @@ describe('ArmorShotHud（右上角弹种 + 装备图标）', () => {
     await flushPromises()
     expect(data.fetchTankData).toHaveBeenLastCalledWith(1, { upgrade: 'top', abilities: '101,201' })
     expect(wrapper.get('[data-testid="hud-shell-0"]').attributes('title')).toContain('330mm')
+    expect(wrapper.get('[data-testid="hud-shell-0"]').text()).toBe('330 mm')
     resolveStock(TANK)
     await flushPromises()
     expect(wrapper.get('[data-testid="hud-shell-0"]').attributes('title')).toContain('330mm')
-    await wrapper.setProps({ upgrade: null })
+    data.fetchTankData.mockResolvedValueOnce(TANK)
+    await wrapper.setProps({ upgrade: 'stock' })
     await flushPromises()
-    expect(data.fetchTankData).toHaveBeenLastCalledWith(1)
+    expect(data.fetchTankData).toHaveBeenLastCalledWith(1, { upgrade: 'stock', abilities: '101,201' })
     expect(wrapper.get('[data-testid="hud-shell-0"]').attributes('title')).toContain('220mm')
+    expect(wrapper.get('[data-testid="hud-shell-0"]').text()).toBe('220 mm')
+  })
+
+  it('卸载后迟到资产不会重新发出ready', async () => {
+    let resolve
+    data.fetchTankData.mockReturnValueOnce(new Promise(done => { resolve = done }))
+    const onReady = vi.fn()
+    const wrapper = mount(ArmorShotHud, { props: { shooterId: 1, onReady } })
+    expect(onReady).toHaveBeenLastCalledWith(false)
+    wrapper.unmount()
+    resolve(TANK)
+    await flushPromises()
+    expect(onReady).toHaveBeenCalledOnce()
   })
 })

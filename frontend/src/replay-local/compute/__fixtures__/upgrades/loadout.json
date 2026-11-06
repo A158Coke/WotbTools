@@ -1,0 +1,1488 @@
+{
+  "gameVersion": "11.4.0.130_7400742 11.22_supertest_tier11_5 WOTB_Win7",
+  "source": {
+    "zip": "https://cdn.static.wotb.app/win7/WotBlitz_11.4.0.130_t11p2.zip",
+    "projection": "common 模式物品仅保留适用规则字段；五车模块引用来自同版 XML 与线上同版模块。",
+    "files": {
+      "app/Data/XML/item_defs/vehicles/common/consumables/common.xml.dvpl": {
+        "bytes": 3905,
+        "sha256": "feed61201bed1f2cba38385fccfef803551acf2cfaf9154a094adbb78a38a6f9",
+        "decodedSha256": "9ba3835c9dfb40c5e727df9e8e5478c012779331ad8e21dd85b6544a39751f2d"
+      },
+      "app/Data/XML/item_defs/vehicles/common/provisions/common.xml.dvpl": {
+        "bytes": 5191,
+        "sha256": "7e5b4d37647319f9a45f3c1bd2c7e55edaed67387c7f54fd962e3c9d2970a6e8",
+        "decodedSha256": "9b82440c0ed86b1b01265dc5e327148286da21c6e8b9badc7943ee0e40c833f3"
+      }
+    }
+  },
+  "consumables": [
+    {
+      "stem": "autoExtinguisher",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "tiers": {
+              "min": 4,
+              "max": 11
+            }
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "largeMedkit",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "tiers": {
+              "min": 4,
+              "max": 11
+            }
+          }
+        ],
+        "exclude": [
+          {
+            "ids": [
+              "germany:S01_Frankentank"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "largeRepairkit",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "tiers": {
+              "min": 4,
+              "max": 11
+            }
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "afterburning",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "tiers": {
+              "min": 3,
+              "max": 11
+            }
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "berserk",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "tiers": {
+              "min": 4,
+              "max": 11
+            }
+          }
+        ],
+        "exclude": [
+          {
+            "extendedTags": [
+              "clip"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "largeRecoverkit",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "tiers": {
+              "min": 1,
+              "max": 11
+            }
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "improvedAfterburning",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "ids": [
+              "uk:GB83_4005",
+              "uk:GB81_FV4004",
+              "uk:GB80_Charioteer",
+              "uk:GB41_Challenger",
+              "uk:GB10_Black_Prince",
+              "uk:GB11_Caernarvon",
+              "uk:GB12_Conqueror",
+              "uk:GB13_FV215b",
+              "usa:A121_T26E3",
+              "usa:T25_AT",
+              "usa:T28",
+              "usa:T95",
+              "usa:T110E3",
+              "usa:A146_TL_7_120",
+              "usa:M4A3E8TUR",
+              "european:S18_EMIL_1951E1",
+              "european:S17_EMIL_1952E2",
+              "european:S16_Kranvagn",
+              "china:Ch25_121_mod_1971B",
+              "china:Ch59_BZ58_2",
+              "china:Type_58TUR",
+              "ussr:KV-3",
+              "ussr:KV4",
+              "ussr:ST_I",
+              "ussr:IS-4",
+              "ussr:T34_85TUR",
+              "france:AMX_AC_Mle1946",
+              "france:AMX_AC_Mle1948",
+              "france:AMX50_Foch",
+              "france:AMX_50Fosh_155",
+              "ussr:R127_T44_100_P",
+              "ussr:R111_ISU130",
+              "china:Ch03_WZ-111",
+              "ussr:IS-2Sh",
+              "usa:A111_T25_Pilot",
+              "germany:G106_PzKpfwPanther_AusfF",
+              "germany:E-25",
+              "germany:PzVI_AusfTUR",
+              "uk:GB52_FV201_A45",
+              "germany:Panther_M10",
+              "uk:GB109_GSOR_1008_Fearless",
+              "usa:M60",
+              "france:FCM_50t",
+              "ussr:T62A",
+              "germany:G126_HWK_12",
+              "germany:G125_Spz_57_Rh",
+              "other:Oth75_Braniaq_DM5",
+              "other:Oth77_Prowler",
+              "other:Oth84_FVE_Defender",
+              "uk:GB128_Nemesis",
+              "germany:G14_KpfPz_70R",
+              "germany:G112_JagdPanzer_105",
+              "ussr:R113_Object_730",
+              "france:F131_Brennos",
+              "usa:T26_E4_SuperPershing",
+              "european:Cz44_Zmije",
+              "other:Oth96_Morbid",
+              "european:Cz30_TBT",
+              "ussr:R230_Object_432U",
+              "ussr:R228_KR_1"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "fireControlSystem",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "ids": [
+              "china:Ch37_WZ-111G_FT",
+              "uk:GB83_4005",
+              "china:Ch36_WZ-111-1G_FT",
+              "china:Ch35_T-34-2G_FT",
+              "european:S18_EMIL_1951E1",
+              "european:S17_EMIL_1952E2",
+              "european:S16_Kranvagn",
+              "germany:G121_Grille_15_L63",
+              "germany:Waffentrager_IV",
+              "germany:RhB_Waffentrager",
+              "germany:Sturer_Emil",
+              "japan:J24_Type_57",
+              "usa:M-6-Y",
+              "usa:M-5-Y",
+              "usa:M-3-Y",
+              "usa:M-7-Y",
+              "ussr:Object_907",
+              "germany:Leopard1",
+              "germany:Pro_Ag_A",
+              "germany:Indien_Panzer",
+              "germany:VK3002DB",
+              "european:Pl21_CS_63",
+              "germany:G119_Panzer58_SH",
+              "japan:J31_Type_5_Ka_Ri",
+              "japan:J38_Type_95_Ji_Ro",
+              "uk:GB_FV301",
+              "uk:GB_Vickers_Cruiser",
+              "uk:GB_Vickers_Light_105",
+              "ussr:R127_T44_100_P",
+              "ussr:R111_ISU130",
+              "usa:A111_T25_Pilot",
+              "germany:E-25",
+              "germany:Panther_M10",
+              "other:Oth52_Toxique",
+              "france:F72_AMX_30",
+              "germany:G126_HWK_12",
+              "germany:G125_Spz_57_Rh",
+              "germany:G98_Waffentrager_E100",
+              "other:Oth75_Braniaq_DM5",
+              "other:Oth77_Prowler",
+              "other:Oth97_CNO_Consul",
+              "usa:A175_ATAC",
+              "germany:G112_JagdPanzer_105",
+              "germany:G189_Hirschkafer"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "newAutoloader",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "ids": [
+              "usa:T57_58",
+              "usa:T54E1",
+              "usa:T71",
+              "usa:T69",
+              "usa:M-6-Y",
+              "usa:M-5-Y",
+              "france:Bat_Chatillon25t",
+              "france:AMX_13_90",
+              "france:AMX_13_75",
+              "france:F75_Char_de_25t",
+              "france:F84_Somua_SM",
+              "germany:G98_Waffentrager_E100",
+              "france:F135_AS_XX_40_t"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "shieldKit",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "ids": [
+              "china:Ch37_WZ-111G_FT",
+              "china:Ch36_WZ-111-1G_FT",
+              "china:Ch35_T-34-2G_FT",
+              "china:Ch19_121",
+              "ussr:R149_Object_268_4",
+              "china:Ch45_WZ_114",
+              "japan:J23_Chi_To_SPG",
+              "japan:J22_Ho_Ri_type96",
+              "japan:J21_Ho_Ri",
+              "japan:J20_Ho_Ri_type3",
+              "france:AMX_M4_1945",
+              "france:AMX_50_100",
+              "france:AMX_50_120",
+              "ussr:R127_T44_100_P",
+              "china:Ch03_WZ-111",
+              "ussr:IS-2Sh",
+              "usa:A111_T25_Pilot",
+              "germany:G106_PzKpfwPanther_AusfF",
+              "uk:GB52_FV201_A45",
+              "germany:Panther_M10",
+              "germany:G126_HWK_12",
+              "germany:G125_Spz_57_Rh",
+              "other:Oth75_Braniaq_DM5",
+              "other:Oth77_Prowler",
+              "other:Oth76_Destiny",
+              "other:Oth96_Morbid"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "tungstenTip",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "ids": [
+              "european:Pl15_60TP",
+              "european:Pl08_50TP_prot",
+              "european:Pl13_53TP_Markowskiego",
+              "european:Pl11_45TP_Habicha",
+              "european:Pl05_50TP_Tyszkiewicza",
+              "germany:VK7201",
+              "germany:VK4502P",
+              "germany:VK4502A",
+              "germany:PzVI_Tiger_P",
+              "china:Ch19_121",
+              "china:Ch18_WZ-120",
+              "china:Ch05_T34_2",
+              "china:Ch04_T34_1",
+              "germany:G144_Kpz_50t",
+              "ussr:IS-7",
+              "ussr:IS8",
+              "ussr:IS-3",
+              "germany:JagdTiger",
+              "germany:Ferdinand",
+              "germany:JagdPanther",
+              "germany:JagdPantherII",
+              "european:Pl21_CS_63",
+              "european:Pl23_CS_53",
+              "european:Pl22_CS_59",
+              "france:F115_Lorraine_50t",
+              "france:AMX_AC_Mle1946",
+              "france:AMX_AC_Mle1948",
+              "france:AMX50_Foch",
+              "france:AMX_50Fosh_155",
+              "ussr:R127_T44_100_P",
+              "ussr:R111_ISU130",
+              "china:Ch03_WZ-111",
+              "ussr:IS-2Sh",
+              "usa:A111_T25_Pilot",
+              "germany:G106_PzKpfwPanther_AusfF",
+              "germany:E-25",
+              "uk:GB52_FV201_A45",
+              "uk:GB84_Chieftain_Mk6",
+              "germany:Panther_M10",
+              "ussr:R120_T22SR",
+              "germany:G126_HWK_12",
+              "germany:G125_Spz_57_Rh",
+              "european:It21_Lion",
+              "other:Oth75_Braniaq_DM5",
+              "other:Oth77_Prowler",
+              "france:F140_Sentinelle",
+              "other:Oth76_Destiny",
+              "other:Oth86_Survivalist",
+              "germany:G_KpfPz_70",
+              "european:Pl24_56TP",
+              "germany:G112_JagdPanzer_105",
+              "ussr:R113_Object_730",
+              "france:F131_Brennos",
+              "european:S37_Ambassador",
+              "other:Oth96_Morbid",
+              "european:Cz30_TBT"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "armorMover",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "ids": [
+              "other:Oth30_T54MS",
+              "other:Oth44_Charioteer_T",
+              "other:Oth71_Titan_Strife",
+              "other:Oth92_JagdPantherII_Titan",
+              "other:Oth98_AMX_50_100_Titan"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "freeAfterburning",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "tiers": {
+              "min": 4,
+              "max": 11
+            }
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "rechargeableNitro",
+      "mode": "common",
+      "filter": null,
+      "isAbility": true,
+      "isVehicleAbility": true
+    }
+  ],
+  "provisions": [
+    {
+      "stem": "ration_other",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "tiers": {
+              "min": 6,
+              "max": 11
+            },
+            "nations": [
+              "other"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "regular_ration_other",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "tiers": {
+              "min": 4,
+              "max": 11
+            },
+            "nations": [
+              "other"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "chocolate_bar",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "tiers": {
+              "min": 4,
+              "max": 11
+            },
+            "nations": [
+              "germany"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "chocolate",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "tiers": {
+              "min": 6,
+              "max": 11
+            },
+            "nations": [
+              "germany"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "condensed_milk",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "tiers": {
+              "min": 4,
+              "max": 11
+            },
+            "nations": [
+              "ussr"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "ration",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "tiers": {
+              "min": 6,
+              "max": 11
+            },
+            "nations": [
+              "ussr"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "pasty",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "tiers": {
+              "min": 4,
+              "max": 11
+            },
+            "nations": [
+              "france"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "hot_coffee",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "tiers": {
+              "min": 6,
+              "max": 11
+            },
+            "nations": [
+              "france"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "regular_ration",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "tiers": {
+              "min": 4,
+              "max": 11
+            },
+            "nations": [
+              "china"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "ration_china",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "tiers": {
+              "min": 6,
+              "max": 11
+            },
+            "nations": [
+              "china"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "black_tea",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "tiers": {
+              "min": 4,
+              "max": 11
+            },
+            "nations": [
+              "uk"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "ration_uk",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "tiers": {
+              "min": 6,
+              "max": 11
+            },
+            "nations": [
+              "uk"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "regular_fuel",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "tiers": {
+              "min": 4,
+              "max": 11
+            }
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "improved_fuel",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "tiers": {
+              "min": 6,
+              "max": 11
+            }
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "white_rice",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "tiers": {
+              "min": 4,
+              "max": 11
+            },
+            "nations": [
+              "japan"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "ration_japan",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "tiers": {
+              "min": 6,
+              "max": 11
+            },
+            "nations": [
+              "japan"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "safety_set",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "tiers": {
+              "min": 5,
+              "max": 11
+            }
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "smallHPStock",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "ids": [
+              "uk:GB10_Black_Prince",
+              "uk:GB11_Caernarvon",
+              "uk:GB12_Conqueror",
+              "uk:GB13_FV215b",
+              "usa:T110",
+              "usa:M103",
+              "usa:T110E4",
+              "usa:T32",
+              "usa:T29",
+              "china:CH38_WZ113G-FT",
+              "china:Ch37_WZ-111G_FT",
+              "china:Ch36_WZ-111-1G_FT",
+              "china:Ch35_T-34-2G_FT",
+              "uk:GB97_Chimera",
+              "european:S18_EMIL_1951E1",
+              "european:S17_EMIL_1952E2",
+              "european:S16_Kranvagn",
+              "european:Pl03_PzV_Pudel",
+              "european:Cz14_Skoda_T-56",
+              "germany:VK7201",
+              "germany:VK4502P",
+              "germany:VK4502A",
+              "germany:PzVI_Tiger_P",
+              "japan:J24_Type_57",
+              "france:F82_AMX_M4_Mle1949_Ter",
+              "european:S31_Strv_K",
+              "china:Ch45_WZ_114",
+              "germany:Maus",
+              "uk:GB92_FV217",
+              "germany:G110_Mauschen",
+              "germany:G115_VK10001P",
+              "germany:G119_Panzer58_SH",
+              "japan:J23_Chi_To_SPG",
+              "japan:J22_Ho_Ri_type96",
+              "japan:J21_Ho_Ri",
+              "usa:M60",
+              "france:FCM_50t",
+              "germany:G126_HWK_12",
+              "germany:G125_Spz_57_Rh",
+              "other:Oth77_Prowler",
+              "germany:G167_Tiger_Maus",
+              "ussr:R119_Object_777",
+              "germany:G14_KpfPz_70R",
+              "ussr:R113_Object_730",
+              "european:Cz30_TBT"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "largeHPStock",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "ids": [
+              "uk:GB10_Black_Prince",
+              "uk:GB11_Caernarvon",
+              "uk:GB12_Conqueror",
+              "uk:GB13_FV215b",
+              "usa:T110",
+              "usa:M103",
+              "usa:T32",
+              "usa:T29",
+              "usa:T110E4",
+              "china:CH38_WZ113G-FT",
+              "china:Ch37_WZ-111G_FT",
+              "china:Ch36_WZ-111-1G_FT",
+              "china:Ch35_T-34-2G_FT",
+              "uk:GB97_Chimera",
+              "european:S18_EMIL_1951E1",
+              "european:S17_EMIL_1952E2",
+              "european:S16_Kranvagn",
+              "european:Pl03_PzV_Pudel",
+              "european:Cz14_Skoda_T-56",
+              "germany:VK7201",
+              "germany:VK4502P",
+              "germany:VK4502A",
+              "germany:PzVI_Tiger_P",
+              "japan:J24_Type_57",
+              "france:F82_AMX_M4_Mle1949_Ter",
+              "european:S31_Strv_K",
+              "china:Ch45_WZ_114",
+              "germany:Maus",
+              "uk:GB92_FV217",
+              "germany:G110_Mauschen",
+              "germany:G115_VK10001P",
+              "germany:G119_Panzer58_SH",
+              "japan:J23_Chi_To_SPG",
+              "japan:J22_Ho_Ri_type96",
+              "japan:J21_Ho_Ri",
+              "usa:M60",
+              "france:FCM_50t",
+              "germany:G126_HWK_12",
+              "germany:G125_Spz_57_Rh",
+              "other:Oth77_Prowler",
+              "germany:G167_Tiger_Maus",
+              "ussr:R119_Object_777",
+              "germany:G14_KpfPz_70R",
+              "ussr:R113_Object_730",
+              "european:Cz30_TBT"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "gearOil",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "ids": [
+              "european:Pl15_60TP",
+              "european:Pl08_50TP_prot",
+              "european:Pl13_53TP_Markowskiego",
+              "european:Pl11_45TP_Habicha",
+              "european:Pl05_50TP_Tyszkiewicza",
+              "european:Cz14_Skoda_T-56",
+              "european:Pl21_CS_63",
+              "european:Pl22_CS_59",
+              "european:Cz17_Vz_55",
+              "france:AMX_AC_Mle1946",
+              "france:AMX_AC_Mle1948",
+              "france:AMX50_Foch",
+              "france:AMX_50Fosh_155",
+              "china:Ch29_Type_62C_prot",
+              "germany:Leopard1",
+              "uk:GB84_Chieftain_Mk6",
+              "usa:M48A1",
+              "european:It20_Car_Comb_45t",
+              "germany:Sturer_Emil",
+              "germany:RhB_Waffentrager",
+              "germany:Waffentrager_IV",
+              "germany:G121_Grille_15_L63",
+              "other:Oth77_Prowler",
+              "european:Pl24_56TP",
+              "ussr:R113_Object_730",
+              "european:Cz30_TBT",
+              "usa:A183_XM69_Hacker"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "improvedGearOil",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "ids": [
+              "european:Pl15_60TP",
+              "european:Pl08_50TP_prot",
+              "european:Pl13_53TP_Markowskiego",
+              "european:Pl11_45TP_Habicha",
+              "european:Pl05_50TP_Tyszkiewicza",
+              "european:Cz14_Skoda_T-56",
+              "european:Pl21_CS_63",
+              "european:Pl22_CS_59",
+              "european:Cz17_Vz_55",
+              "france:AMX_AC_Mle1946",
+              "france:AMX_AC_Mle1948",
+              "france:AMX50_Foch",
+              "france:AMX_50Fosh_155",
+              "china:Ch29_Type_62C_prot",
+              "germany:Leopard1",
+              "uk:GB84_Chieftain_Mk6",
+              "usa:M48A1",
+              "european:It20_Car_Comb_45t",
+              "germany:Sturer_Emil",
+              "germany:RhB_Waffentrager",
+              "germany:Waffentrager_IV",
+              "germany:G121_Grille_15_L63",
+              "other:Oth77_Prowler",
+              "european:Pl24_56TP",
+              "ussr:R113_Object_730",
+              "european:Cz30_TBT",
+              "usa:A183_XM69_Hacker"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "gunPowder",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "ids": [
+              "european:Pl15_60TP",
+              "european:Pl08_50TP_prot",
+              "european:Pl13_53TP_Markowskiego",
+              "european:Pl11_45TP_Habicha",
+              "european:Pl05_50TP_Tyszkiewicza",
+              "germany:VK7201",
+              "germany:VK4502P",
+              "germany:VK4502A",
+              "germany:PzVI_Tiger_P",
+              "usa:T57_58",
+              "usa:T54E1",
+              "usa:T71",
+              "usa:T69",
+              "usa:M-6-Y",
+              "usa:M-5-Y",
+              "usa:M-3-Y",
+              "usa:M-7-Y",
+              "usa:M46_CL",
+              "ussr:Object_907",
+              "germany:Leopard1",
+              "germany:Pro_Ag_A",
+              "germany:Indien_Panzer",
+              "germany:VK3002DB",
+              "china:Ch25_121_mod_1971B",
+              "china:Ch19_121",
+              "china:Ch18_WZ-120",
+              "china:Ch05_T34_2",
+              "china:Ch04_T34_1",
+              "germany:G144_Kpz_50t",
+              "european:Pl21_CS_63",
+              "european:Pl22_CS_59",
+              "european:Pl23_CS_53",
+              "china:Ch59_BZ58_2",
+              "japan:J31_Type_5_Ka_Ri",
+              "china:Ch47_BZ_176",
+              "european:It20_Car_Comb_45t",
+              "other:Oth77_Prowler",
+              "european:It38_Donnola",
+              "european:Cz44_Zmije",
+              "other:Oth95_MTU_defender"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "cocacola_can",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "tiers": {
+              "min": 4,
+              "max": 11
+            },
+            "nations": [
+              "usa"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "cocacola",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "tiers": {
+              "min": 6,
+              "max": 11
+            },
+            "nations": [
+              "usa"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "antiHighExplosive",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "ids": [
+              "uk:GB83_4005",
+              "uk:GB81_FV4004",
+              "uk:GB80_Charioteer",
+              "uk:GB41_Challenger",
+              "germany:G121_Grille_15_L63",
+              "germany:Waffentrager_IV",
+              "germany:RhB_Waffentrager",
+              "germany:Sturer_Emil",
+              "france:Bat_Chatillon25t",
+              "france:AMX_13_90",
+              "france:AMX_13_75",
+              "france:F75_Char_de_25t",
+              "germany:Waffentrager_IV_CL",
+              "european:Cz20_ShPTK_TVP_100",
+              "france:F72_AMX_30"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "ration_european_hq",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "tiers": {
+              "min": 6,
+              "max": 11
+            },
+            "nations": [
+              "european"
+            ]
+          }
+        ],
+        "exclude": [
+          {
+            "ids": [
+              "european:S23_Strv_81",
+              "european:S26_Lancen_C",
+              "european:S07_Strv_74",
+              "european:S13_Leo",
+              "european:S13_Leo_NY",
+              "european:S18_EMIL_1951E1",
+              "european:S17_EMIL_1952E2",
+              "european:S16_Kranvagn",
+              "european:S25_EMIL_51",
+              "european:Cz08_T-25",
+              "european:Cz05_T34-100",
+              "european:Cz07_TVP_46",
+              "european:Cz02_T50",
+              "european:Cz04_T50_51",
+              "european:Cz13_T-27",
+              "european:Pl15_60TP",
+              "european:Pl08_50TP_prot",
+              "european:Pl13_53TP_Markowskiego",
+              "european:Pl11_45TP_Habicha",
+              "european:Pl10_40TP_Habicha",
+              "european:Pl05_50TP_Tyszkiewicza",
+              "european:Pl03_PzV_Pudel",
+              "european:S07_Strv74BP",
+              "european:Cz08_T-25BP",
+              "european:Cz14_Skoda_T-56",
+              "european:Pl119_CS_52_LIS",
+              "european:Cz15_Skoda_T-45",
+              "european:S31_Strv_K",
+              "european:S32_Bofors_Tornvagn",
+              "european:Cz17_Vz_55",
+              "european:Cz08_T-25BPS",
+              "european:Cz29_Skoda_P-JS",
+              "european:Cz19_Vz_44_1",
+              "european:Cz18_TNH_105_1000",
+              "european:Cz16_TNH_T_vz51",
+              "european:Pl21_CS_63",
+              "european:Cz29_Skoda_P-JS_BP",
+              "european:Pl23_CS_53",
+              "european:Pl20_CS_44",
+              "european:Pl18_BUGI",
+              "european:Pl22_CS_59",
+              "european:Cz20_ShPTK_TVP_100",
+              "european:Pl27_SDP_Wz_66T",
+              "european:Pl32_SDP_Wz_44",
+              "european:Pl31_SDP_Wz_57D",
+              "european:Pl30_SDP_Wz58T",
+              "european:Pl28_SDP_Wz_60",
+              "european:Pl29_NC_Wz_70T",
+              "european:Pl24_56TP",
+              "european:S37_Ambassador",
+              "european:S38_Bofors_Triton",
+              "european:Pl120_Wz61_Ussar",
+              "european:Cz44_Zmije",
+              "european:Cz30_TBT"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "ration_european_regular",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "tiers": {
+              "min": 4,
+              "max": 11
+            },
+            "nations": [
+              "european"
+            ]
+          }
+        ],
+        "exclude": [
+          {
+            "ids": [
+              "european:S23_Strv_81",
+              "european:S26_Lancen_C",
+              "european:S04_Lago-I",
+              "european:S02_StrvM42",
+              "european:S07_Strv_74",
+              "european:S13_Leo",
+              "european:S13_Leo_NY",
+              "european:S18_EMIL_1951E1",
+              "european:S17_EMIL_1952E2",
+              "european:S16_Kranvagn",
+              "european:S25_EMIL_51",
+              "european:Cz08_T-25",
+              "european:Cz05_T34-100",
+              "european:Cz07_TVP_46",
+              "european:Cz02_T50",
+              "european:Cz04_T50_51",
+              "european:Cz13_T-27",
+              "european:Pl15_60TP",
+              "european:Pl08_50TP_prot",
+              "european:Pl13_53TP_Markowskiego",
+              "european:Pl11_45TP_Habicha",
+              "european:Pl10_40TP_Habicha",
+              "european:Pl05_50TP_Tyszkiewicza",
+              "european:Pl03_PzV_Pudel",
+              "european:S07_Strv74BP",
+              "european:Cz08_T-25BP",
+              "european:Cz14_Skoda_T-56",
+              "european:Pl119_CS_52_LIS",
+              "european:Cz15_Skoda_T-45",
+              "european:S31_Strv_K",
+              "european:S32_Bofors_Tornvagn",
+              "european:Cz17_Vz_55",
+              "european:Cz08_T-25BPS",
+              "european:Cz29_Skoda_P-JS",
+              "european:Cz19_Vz_44_1",
+              "european:Cz18_TNH_105_1000",
+              "european:Cz16_TNH_T_vz51",
+              "european:Pl21_CS_63",
+              "european:Cz29_Skoda_P-JS_BP",
+              "european:Pl23_CS_53",
+              "european:Pl20_CS_44",
+              "european:Pl18_BUGI",
+              "european:Pl22_CS_59",
+              "european:Pl17_DS_PZlnz",
+              "european:Cz20_ShPTK_TVP_100",
+              "european:Pl27_SDP_Wz_66T",
+              "european:Pl33_SDP_Wz_40",
+              "european:Pl32_SDP_Wz_44",
+              "european:Pl31_SDP_Wz_57D",
+              "european:Pl30_SDP_Wz58T",
+              "european:Pl28_SDP_Wz_60",
+              "european:Pl29_NC_Wz_70T",
+              "european:Pl24_56TP",
+              "european:S37_Ambassador",
+              "european:S38_Bofors_Triton",
+              "european:Pl120_Wz61_Ussar",
+              "european:Cz44_Zmije",
+              "european:Cz30_TBT"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "ration_swedish_hq",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "ids": [
+              "european:S23_Strv_81",
+              "european:S07_Strv_74",
+              "european:S13_Leo",
+              "european:S13_Leo_NY",
+              "european:S16_Kranvagn",
+              "european:S17_EMIL_1952E2",
+              "european:S18_EMIL_1951E1",
+              "european:S25_EMIL_51",
+              "european:S26_Lancen_C",
+              "european:S07_Strv74BP",
+              "european:S31_Strv_K",
+              "european:S32_Bofors_Tornvagn",
+              "european:S37_Ambassador",
+              "european:S38_Bofors_Triton"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "ration_swedish_regular",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "ids": [
+              "european:S23_Strv_81",
+              "european:S02_StrvM42",
+              "european:S04_Lago-I",
+              "european:S07_Strv_74",
+              "european:S13_Leo",
+              "european:S13_Leo_NY",
+              "european:S16_Kranvagn",
+              "european:S17_EMIL_1952E2",
+              "european:S18_EMIL_1951E1",
+              "european:S25_EMIL_51",
+              "european:S26_Lancen_C",
+              "european:S07_Strv74BP",
+              "european:S31_Strv_K",
+              "european:S32_Bofors_Tornvagn",
+              "european:S37_Ambassador",
+              "european:S38_Bofors_Triton"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "ration_czech_hq",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "ids": [
+              "european:Cz29_Skoda_P-JS",
+              "european:Cz19_Vz_44_1",
+              "european:Cz18_TNH_105_1000",
+              "european:Cz16_TNH_T_vz51",
+              "european:Cz08_T-25",
+              "european:Cz05_T34-100",
+              "european:Cz07_TVP_46",
+              "european:Cz02_T50",
+              "european:Cz04_T50_51",
+              "european:Cz13_T-27",
+              "european:Cz08_T-25BP",
+              "european:Cz14_Skoda_T-56",
+              "european:Cz15_Skoda_T-45",
+              "european:Cz17_Vz_55",
+              "european:Cz08_T-25BPS",
+              "european:Cz29_Skoda_P-JS_BP",
+              "european:Cz20_ShPTK_TVP_100",
+              "european:Cz44_Zmije",
+              "european:Cz30_TBT"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "ration_czech_regular",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "ids": [
+              "european:Cz29_Skoda_P-JS",
+              "european:Cz19_Vz_44_1",
+              "european:Cz18_TNH_105_1000",
+              "european:Cz16_TNH_T_vz51",
+              "european:Cz08_T-25",
+              "european:Cz05_T34-100",
+              "european:Cz07_TVP_46",
+              "european:Cz02_T50",
+              "european:Cz04_T50_51",
+              "european:Cz13_T-27",
+              "european:Cz08_T-25BP",
+              "european:Cz14_Skoda_T-56",
+              "european:Cz15_Skoda_T-45",
+              "european:Cz17_Vz_55",
+              "european:Cz08_T-25BPS",
+              "european:Cz29_Skoda_P-JS_BP",
+              "european:Cz20_ShPTK_TVP_100",
+              "european:Cz44_Zmije",
+              "european:Cz30_TBT"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "ration_polish_hq",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "ids": [
+              "european:Pl15_60TP",
+              "european:Pl08_50TP_prot",
+              "european:Pl13_53TP_Markowskiego",
+              "european:Pl11_45TP_Habicha",
+              "european:Pl10_40TP_Habicha",
+              "european:Pl05_50TP_Tyszkiewicza",
+              "european:Pl03_PzV_Pudel",
+              "european:Pl119_CS_52_LIS",
+              "european:Pl21_CS_63",
+              "european:Pl23_CS_53",
+              "european:Pl20_CS_44",
+              "european:Pl18_BUGI",
+              "european:Pl22_CS_59",
+              "european:Pl27_SDP_Wz_66T",
+              "european:Pl32_SDP_Wz_44",
+              "european:Pl31_SDP_Wz_57D",
+              "european:Pl30_SDP_Wz58T",
+              "european:Pl28_SDP_Wz_60",
+              "european:Pl29_NC_Wz_70T",
+              "european:Pl24_56TP",
+              "european:Pl120_Wz61_Ussar"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "ration_polish_regular",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "ids": [
+              "european:Pl15_60TP",
+              "european:Pl08_50TP_prot",
+              "european:Pl13_53TP_Markowskiego",
+              "european:Pl11_45TP_Habicha",
+              "european:Pl10_40TP_Habicha",
+              "european:Pl05_50TP_Tyszkiewicza",
+              "european:Pl03_PzV_Pudel",
+              "european:Pl119_CS_52_LIS",
+              "european:Pl21_CS_63",
+              "european:Pl23_CS_53",
+              "european:Pl20_CS_44",
+              "european:Pl18_BUGI",
+              "european:Pl22_CS_59",
+              "european:Pl17_DS_PZlnz",
+              "european:Pl27_SDP_Wz_66T",
+              "european:Pl33_SDP_Wz_40",
+              "european:Pl32_SDP_Wz_44",
+              "european:Pl31_SDP_Wz_57D",
+              "european:Pl30_SDP_Wz58T",
+              "european:Pl28_SDP_Wz_60",
+              "european:Pl29_NC_Wz_70T",
+              "european:Pl24_56TP",
+              "european:Pl120_Wz61_Ussar"
+            ]
+          }
+        ]
+      },
+      "isAbility": false,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "desertPower",
+      "mode": "common",
+      "filter": null,
+      "isAbility": true,
+      "isVehicleAbility": false
+    },
+    {
+      "stem": "burstMode",
+      "mode": "common",
+      "filter": null,
+      "isAbility": true,
+      "isVehicleAbility": true
+    },
+    {
+      "stem": "combatFrenzy",
+      "mode": "common",
+      "filter": null,
+      "isAbility": true,
+      "isVehicleAbility": true
+    },
+    {
+      "stem": "rammingConfiguration",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "ids": [
+              "ussr:R228_KR_1"
+            ]
+          }
+        ]
+      },
+      "isAbility": true,
+      "isVehicleAbility": true
+    },
+    {
+      "stem": "steadyAimSystem",
+      "mode": "common",
+      "filter": {
+        "include": [
+          {
+            "ids": [
+              "usa:A183_XM69_Hacker"
+            ]
+          }
+        ]
+      },
+      "isAbility": true,
+      "isVehicleAbility": true
+    }
+  ]
+}

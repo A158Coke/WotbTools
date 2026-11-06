@@ -4,7 +4,7 @@
 <body>
 <div id="app"></div>
 <script type="module">
-  import { createApp, h, ref } from 'vue'
+  import { computed, createApp, h, ref } from 'vue'
   import { createI18n } from 'vue-i18n'
   import { createMemoryHistory, createRouter } from 'vue-router'
   import '../../src/styles/tokens/scale.css'
@@ -24,6 +24,17 @@
   import '../../src/styles/classic-profile.css'
   import { messages } from '../../src/locales/messages.js'
   import { useConnectivity } from '../../src/composables/useConnectivity.js'
+  import { shellIconUrl } from '../../src/utils/researchCatalog.js'
+  import TankParamPanel from '../../src/components/TankParamPanel.vue'
+  import TankConfigPanel from '../../src/components/TankConfigPanel.vue'
+  import { resolveSetup, computeSetupPair, paramGroups } from '../../src/replay-local/compute/tankSetup'
+  import UPGRADE_TANKS from '../../src/replay-local/compute/__fixtures__/upgrades/tanks.json'
+  import DEVICES from '../../src/replay-local/compute/__fixtures__/research/devices.json'
+  import CONSUMABLES from '../../src/replay-local/compute/__fixtures__/research/consumables.json'
+  import PROVISIONS from '../../src/replay-local/compute/__fixtures__/research/provisions.json'
+  import SKILLS from '../../src/replay-local/compute/__fixtures__/research/skills.json'
+  import CAMOUFLAGE from '../../src/replay-local/compute/__fixtures__/research/camouflage.json'
+  import FORMAT from '../../src/replay-local/compute/__fixtures__/research/params/format.json'
   import TankCatalogMenu from '../../src/components/TankCatalogMenu.vue'
   import HoFPage from '../../src/components/HoFPage.vue'
   import MarkdownDocPage from '../../src/components/MarkdownDocPage.vue'
@@ -39,6 +50,13 @@
     { id: 9001, name: '测试重坦', tier: 10, nation: 'germany', type: 'heavyTank', aliases: [], hp: 2000, pen_max: 250 },
     { id: 9002, name: '测试中坦', tier: 9, nation: 'usa', type: 'mediumTank', aliases: [], hp: 1500, pen_max: 220 },
   ]
+  const fixture = UPGRADE_TANKS.find(tank => tank.modules.tankId === 30241)
+  const catalog = {
+    devices: DEVICES.devices, devicePresets: DEVICES.presets,
+    consumables: CONSUMABLES.items, provisions: PROVISIONS.items,
+    skills: SKILLS.items, crewSkillClasses: SKILLS.classes,
+    camouflage: { defaultCategory: CAMOUFLAGE.defaultCategory, categories: CAMOUFLAGE.categories },
+  }
   const source = '# 文档测试\n\n' + Array.from({ length: 18 }, (_, index) => `## 章节 ${index + 1}\n\n${'用于验证长文档滚动、目录及固定返回按钮。'.repeat(12)}\n\n`).join('')
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: HoFPage }] })
   await router.push('/?view=hof')
@@ -47,14 +65,37 @@
   const app = createApp({ setup() {
     const filters = ref({})
     const selected = ref('')
+    const selection = ref(resolveSetup({ ...fixture, catalog, url: { upgrade: 'top' } }))
+    const pair = computed(() => computeSetupPair({ ...fixture, catalog, selection: selection.value }))
+    const groups = computed(() => paramGroups(pair.value.current, pair.value.base, FORMAT.params))
+    const apply = patch => { selection.value = { ...selection.value, ...patch } }
+    const shells = computed(() => fixture.detail.configs[selection.value.config].shells.map((shell, index) => ({
+      ...shell, iconUrl: shellIconUrl(shell.type), index, selected: index === selection.value.shell, label: ['AP', 'HEAT', 'HE'][index],
+      tunedPenetration: shell.penetration, tunedDamage: shell.damage, tunedVelocity: shell.velocity,
+      tunedPenetrationFar: shell.penetration_far, tunedModuleDamage: shell.module_damage,
+    })))
     return () => h('main', { style: { padding: '16px' }, 'data-testid': 'catalog-hof-docs-fixture' }, [
-      mode === 'hof' ? h(HoFPage) : mode === 'dialog' ? h(AppDialog, { open: true, title: 'Fixture' }, () => h(VehiclePicker, { modelValue: null, inputId: 'dialog-vehicle', options: tanks.map(tank => ({ id: tank.id, label: tank.name })) }))
+      mode === 'params' ? h(TankParamPanel, {
+        groups: groups.value, current: pair.value.current, base: pair.value.base,
+        gunMeta: { caliber: 114, type: 'regular' }, pitchLimits: { min: -18, max: 10 },
+        shells: shells.value, onSelectShell: shell => apply({ shell }),
+      }) : mode === 'tank-config' ? h('section', { style: { maxWidth: 'var(--tank-config-max)' } }, [h(TankConfigPanel, {
+        ...fixture, catalog, selection: selection.value, onUpdate: apply,
+        onCycleSkill: (id, max) => {
+          const skills = { ...selection.value.skills }
+          const next = max ? 7 : ((skills[id] || 0) + 1) % 8
+          if (next) skills[id] = next; else delete skills[id]
+          apply({ skills })
+        },
+        onMaxSkills: () => apply({ skills: Object.fromEntries(Object.keys(SKILLS.items).map(id => [id, 7])) }),
+        onClearSkills: () => apply({ skills: {}, conditionalSkills: false }),
+      })]) : mode === 'hof' ? h(HoFPage) : mode === 'dialog' ? h(AppDialog, { open: true, title: 'Fixture' }, () => h(VehiclePicker, { modelValue: null, inputId: 'dialog-vehicle', options: tanks.map(tank => ({ id: tank.id, label: tank.name })) }))
         : mode === 'docs' ? h(MarkdownDocPage, { source })
         : h(TankCatalogMenu, { tanks, filters: filters.value, 'onUpdate:filters': value => { filters.value = value }, onSelect: value => { selected.value = String(value.id) } }),
       h('output', { 'data-testid': 'catalog-selected' }, selected.value),
     ])
   } })
-  app.use(createI18n({ legacy: false, locale: 'zh', fallbackLocale: 'en', messages })).use(router).mount('#app')
+  app.use(createI18n({ legacy: false, locale: query.get('lang') || 'zh', fallbackLocale: 'en', messages })).use(router).mount('#app')
 </script>
 </body>
 </html>

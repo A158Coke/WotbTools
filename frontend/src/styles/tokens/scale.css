@@ -61,6 +61,14 @@
     --column-panel-width: 440px;
     --column-panel-max-height: 680px;
     --shot-detail-width: 360px;
+    /* 坦克百科：配置与参数的可读宽度、紧凑车型图及目录卡。 */
+    --tank-config-min: 320px;
+    --tank-config-max: 480px;
+    --tank-param-column-min: 300px;
+    --tank-header-image-min: 112px;
+    --tank-header-image-max: 200px;
+    --tank-card-min: 176px;
+    --tank-skill-group-min: 208px;
     --onboarding-card-width: 360px;
     --onboarding-outline: 2px solid var(--color-accent);
     /* A table scroll container establishes its own isolated stacking context. */

@@ -295,11 +295,19 @@ try {
       return {
         native: pens(Array.from(document.querySelectorAll('#shell-select option'), o => o.textContent)),
         hud: pens(Array.from(document.querySelectorAll('[data-testid^="hud-shell-"]'), b => b.title)),
+        visible: pens(Array.from(document.querySelectorAll('[data-testid="hud-penetration"]'), b => b.textContent.replace(/\\s/g, ''))),
+        buttons: Array.from(document.querySelectorAll('[data-testid^="hud-shell-"]'), b => {
+          const box = b.getBoundingClientRect();
+          const number = b.querySelector('[data-testid="hud-penetration"]').getBoundingClientRect();
+          return { width: box.width, height: box.height, fits: number.left >= box.left && number.right <= box.right };
+        }),
         value: document.querySelector('#shell-select').value,
       }
     })()`)
     assert.ok(state.native.length > 0, 'native shell table populated')
     assert.deepEqual(state.hud, state.native, 'HUD shell pens match the native/judgment table')
+    assert.deepEqual(state.visible, state.hud, 'visible rounded penetration matches tooltip and native table')
+    assert.ok(state.buttons.every(b => b.width >= 43.5 && b.height >= 43.5 && b.fits), `shell values fit inside 44px touch targets: ${JSON.stringify(state.buttons)}`)
     return state
   }
   for (const scenario of [
@@ -315,6 +323,16 @@ try {
     await assertHudMatchesNative()
   }
   console.log('[shot-readiness] PASS: explicit empty-config scfg, HUD/native/judgment share one table (top-level fallback, HUD default rule for invalid scfg)')
+  for (const expected of ['530 mm', '500 mm']) {
+    const point = await page.evaluate(`(() => {
+      const r = document.querySelector('[data-testid="hud-calibrated"]').getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    })()`)
+    await page.tap({ ...point, touch: false })
+    await page.waitForValue('document.querySelector("[data-testid=hud-shell-0]").textContent.trim()',
+      text => text === expected, { timeout: 5000, label: 'visible penetration follows calibration' })
+    await assertHudMatchesNative()
+  }
   targetResponse = plainAmmo
 
   // Same tank type still does not make the victim's configuration authoritative
@@ -479,25 +497,27 @@ try {
     }
     await page.goto(plainUrl)
     await waitXiReady()
-    assert.equal(await hullThickness(), 100, 'XI old link retains initial armor')
-    assert.equal(await clampPitch(), 15, 'XI initial upper pitch clamp')
-    assert.equal(await clampPitch(true), -7, 'XI initial gun depression clamp')
-    await chooseXiUpgrade('target', 'top')
-    assert.ok(Math.abs(await hullThickness() - 108) < 0.001, 'XI target max armor includes both official armor bonuses')
-    assert.equal(await clampPitch(), 20, 'XI target max pitch clamp includes the official +5 degrees')
-    assert.equal(await clampPitch(true), -8, 'XI target max depression clamp includes the official +1 degree')
-    assert.ok((await page.evaluate('document.querySelector("[data-testid=hud-shell-0]").title')).endsWith('400'), 'target upgrade leaves same-tank shooter ammunition initial')
-    await chooseXiUpgrade('shooter', 'top')
-    assert.ok(Math.abs(await hullThickness() - 108) < 0.001, 'shooter max preserves target max armor')
-    assert.ok((await page.evaluate('document.querySelector("[data-testid=hud-shell-0]").title')).endsWith('410'), 'shooter max updates the HUD ammunition damage')
+    assert.ok(Math.abs(await hullThickness() - 108) < 0.001, 'XI old link defaults to top armor')
+    assert.equal(await clampPitch(), 20, 'XI default top upper pitch clamp')
+    assert.equal(await clampPitch(true), -8, 'XI default top gun depression clamp')
+    assert.ok((await page.evaluate('document.querySelector("[data-testid=hud-shell-0]").title')).endsWith('410'), 'XI default top uses max shooter ammunition')
     await chooseXiUpgrade('target', 'stock')
-    assert.equal(await hullThickness(), 100, 'target initial restores initial armor')
-    assert.equal(await clampPitch(), 15, 'target initial restores the initial pitch clamp')
-    assert.equal(await clampPitch(true), -7, 'target initial restores the initial depression clamp')
-    assert.ok((await page.evaluate('document.querySelector("[data-testid=hud-shell-0]").title')).endsWith('410'), 'target initial preserves shooter max ammunition')
+    assert.equal(await hullThickness(), 100, 'XI target stock restores initial armor')
+    assert.equal(await clampPitch(), 15, 'XI target stock restores the initial pitch clamp')
+    assert.equal(await clampPitch(true), -7, 'XI target stock restores the initial depression clamp')
+    assert.ok((await page.evaluate('document.querySelector("[data-testid=hud-shell-0]").title')).endsWith('410'), 'target stock leaves same-tank shooter top ammunition')
+    await chooseXiUpgrade('target', 'top')
+    assert.ok(Math.abs(await hullThickness() - 108) < 0.001, 'XI target top armor includes both official armor bonuses')
+    assert.equal(await clampPitch(), 20, 'XI target top pitch clamp includes the official +5 degrees')
+    assert.equal(await clampPitch(true), -8, 'XI target top depression clamp includes the official +1 degree')
+    await chooseXiUpgrade('target', 'stock')
+    assert.equal(await hullThickness(), 100, 'target stock restores initial armor again')
+    assert.equal(await clampPitch(), 15, 'target stock restores the initial pitch clamp again')
+    assert.equal(await clampPitch(true), -7, 'target stock restores the initial depression clamp again')
+    assert.ok((await page.evaluate('document.querySelector("[data-testid=hud-shell-0]").title')).endsWith('410'), 'target stock preserves shooter default-top ammunition')
     const xiQuery = await page.evaluate('Object.fromEntries(new URLSearchParams(location.search))')
-    assert.equal(xiQuery.upgrade, undefined)
-    assert.equal(xiQuery.supgrade, 'top')
+    assert.equal(xiQuery.upgrade, 'stock')
+    assert.equal(xiQuery.supgrade, undefined)
     targetResponse = null
     console.log('[shot-readiness] PASS: XI initial/max controls drive scene armor, real drag pitch limits and independent shooter ammunition (official progression, controlled model)')
   }
