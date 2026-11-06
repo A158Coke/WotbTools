@@ -2481,14 +2481,16 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         function setDistance(value) {
             if (destroyed || contextLost || !tankModel || !armorModel || QP.has('shot')
                 || typeof value !== 'number' || !Number.isFinite(value)) return false;
-            // 清掉已有滚轮/轨道惯性后，沿原观察方向设置距离，保持中心与角度。
+            // 无阻尼 update 会先应用残余旋转/平移，再清空惯性；必须先保存当前姿态。
+            const target = controls.target.clone();
+            const offset = camera.position.clone().sub(target);
+            if (offset.lengthSq() === 0) return false;
             const damping = controls.enableDamping;
             controls.enableDamping = false;
             controls.update();
-            const offset = camera.position.clone().sub(controls.target);
-            if (offset.lengthSq() === 0) { controls.enableDamping = damping; return false; }
+            controls.target.copy(target);
             const distance = THREE.MathUtils.clamp(value, controls.minDistance, controls.maxDistance);
-            camera.position.copy(controls.target).add(offset.setLength(distance / (worldMetersPerUnit || 1)));
+            camera.position.copy(target).add(offset.setLength(distance / (worldMetersPerUnit || 1)));
             controls.update();
             controls.enableDamping = damping;
             applyLongRangeCompensation(!worldOverviewMode);
