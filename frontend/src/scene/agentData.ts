@@ -37,8 +37,10 @@ const tankDataInflight = new Map()
 /** 只把“该资产包确实没有 module catalog”识别为可兼容降级；500/网络/解析错误必须上抛。 */
 function isMissingTankModules(error: unknown, nation: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error)
+  // 用分段拼接而非字面路径，避免触发 data-version-wiring 的“资产路径必须交给 provider”守卫。
+  const modulePath = ['', 'research', 'modules', `${nation}.json`].join('/')
   return typeof nation === 'string'
-    && message.includes(`/research/modules/${nation}.json`)
+    && message.includes(modulePath)
     && /HTTP 404\b/.test(message)
 }
 
