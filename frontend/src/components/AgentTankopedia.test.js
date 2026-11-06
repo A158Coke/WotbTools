@@ -11,6 +11,8 @@ import PROVISIONS from '../replay-local/compute/__fixtures__/research/provisions
 import SKILLS from '../replay-local/compute/__fixtures__/research/skills.json'
 import CAMOUFLAGE from '../replay-local/compute/__fixtures__/research/camouflage.json'
 import FORMAT from '../replay-local/compute/__fixtures__/research/params/format.json'
+import UPGRADE_TANKS from '../replay-local/compute/__fixtures__/upgrades/tanks.json'
+import GunArcDiagram from './GunArcDiagram.vue'
 
 const data = vi.hoisted(() => ({
   fetchTankEncyclopedia: vi.fn(),
@@ -399,6 +401,107 @@ describe('AgentTankopedia', () => {
     })
     const { wrapper } = await mountAt({ tank: '999' })
     expect(wrapper.text()).toContain('-° / -°')
+  })
+})
+
+describe('AgentTankopedia — XI 两端升级（真实客户端模块，受控弹表/装甲映射场景）', () => {
+  beforeEach(() => {
+    data.fetchTankEncyclopedia.mockReset().mockResolvedValue(makeCache())
+    research.loadResearchCatalog.mockReset().mockResolvedValue(CATALOG)
+  })
+
+  function useTank(fixture) {
+    const { detail, modules } = structuredClone(fixture)
+    data.fetchTankData.mockReset().mockResolvedValue(detail)
+    research.loadTankModules.mockReset().mockResolvedValue({ tanks: { [modules.stem]: modules } })
+  }
+
+  it.each(UPGRADE_TANKS)('$modules.name：同模块 ID 的初始/满级参数、装甲与俯角联动，技能三选一', async (fixture) => {
+    useTank(fixture)
+    const { wrapper, router } = await mountAt({ tank: String(fixture.modules.tankId), config: '0' })
+    const hp = () => wrapper.find('[data-testid="tank-param-maxHealth"] .tp-param-value').text()
+    const initialHp = hp()
+    const armorValues = () => wrapper.findAll('.tp-armor-table .tp-param-value').map(value => value.text())
+    const initialArmor = armorValues()
+    const initialPitch = JSON.parse(JSON.stringify(wrapper.findComponent(GunArcDiagram).props('pitchLimits')))
+    expect(wrapper.find('[data-testid="tank-upgrade-stock"]').attributes('aria-checked')).toBe('true')
+    expect(wrapper.findAll('[data-testid^="tank-ability-"]')).toHaveLength(3)
+    expect(wrapper.findAll('.tp-skill-btn')).toHaveLength(20)
+    const choices = fixture.modules.upgradeProgression.alternativeGroups[0].choices
+    await wrapper.find(`[data-testid="tank-ability-${choices[2]}"]`).trigger('click')
+    await flushPromises()
+    expect(hp()).toBe(initialHp) // 初始态只保留选择，不应用技能。
+    expect(router.currentRoute.value.query.abilities).toBe(String(choices[2]))
+    await wrapper.find('[data-testid="tank-upgrade-top"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toMatchObject({ upgrade: 'top', config: '0', abilities: String(choices[2]) })
+    expect(hp()).not.toBe(initialHp)
+    if ([27905, 30241, 30497].includes(fixture.modules.tankId)) expect(armorValues()).not.toEqual(initialArmor)
+    else expect(armorValues()).toEqual(initialArmor) // BZ-79/KR-1 没有装甲升级节点。
+    const topPitch = wrapper.findComponent(GunArcDiagram).props('pitchLimits')
+    expect(topPitch.max).toBeGreaterThan(initialPitch.max)
+    expect(wrapper.findAll('[data-testid^="tank-ability-"][aria-checked="true"]')).toHaveLength(1)
+    await wrapper.find('[data-testid="tank-upgrade-stock"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.upgrade).toBeUndefined()
+    expect(hp()).toBe(initialHp)
+    expect(armorValues()).toEqual(initialArmor)
+    expect(wrapper.findComponent(GunArcDiagram).props('pitchLimits')).toEqual(initialPitch)
+    wrapper.unmount()
+  })
+
+  it('深链、浏览器前后导航及装甲跳转保留升级和所选技能', async () => {
+    const fixture = UPGRADE_TANKS[0]
+    useTank(fixture)
+    const { wrapper, router } = await mountAt({ tank: String(fixture.modules.tankId), assets: 'https://assets.test' })
+    const initial = wrapper.find('[data-testid="tank-param-maxHealth"] .tp-param-value').text()
+    await router.push({ query: { ...router.currentRoute.value.query, upgrade: 'top', abilities: '24' } })
+    await flushPromises()
+    const top = wrapper.find('[data-testid="tank-param-maxHealth"] .tp-param-value').text()
+    expect(top).not.toBe(initial)
+    router.back()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="tank-param-maxHealth"] .tp-param-value').text()).toBe(initial)
+    router.forward()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="tank-param-maxHealth"] .tp-param-value').text()).toBe(top)
+    await wrapper.find('[data-testid="tank-open3d"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toMatchObject({ view: 'agent-armor', upgrade: 'top', abilities: '24', assets: 'https://assets.test' })
+    wrapper.unmount()
+  })
+
+  it('升级数据缺失时明确说明；不将普通车辆切到升级模式', async () => {
+    const fixture = structuredClone(UPGRADE_TANKS[0])
+    delete fixture.modules.upgradeProgression
+    useTank(fixture)
+    const { wrapper } = await mountAt({ tank: String(fixture.modules.tankId) })
+    expect(wrapper.find('[data-testid="tank-upgrade-unavailable"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="tank-upgrades"]').exists()).toBe(false)
+    wrapper.unmount()
+    const normal = { detail: { ...fixture.detail, tier: 10 }, modules: { ...fixture.modules, tier: 10 } }
+    useTank(normal)
+    const { wrapper: old } = await mountAt({ tank: String(fixture.modules.tankId), upgrade: 'top', abilities: '24' })
+    expect(old.find('[data-testid="tank-upgrade-unavailable"]').exists()).toBe(false)
+    expect(old.find('[data-testid="tank-upgrades"]').exists()).toBe(false)
+    expect(old.find('.tp-module-matrix').exists()).toBe(true)
+    old.unmount()
+  })
+})
+
+describe('AgentTankopedia — XI 数据完整性', () => {
+  it('客户端规则存在但投影源缺字段时，不把初始数值标为已满级', async () => {
+    const { detail, modules } = structuredClone(UPGRADE_TANKS[0])
+    delete detail.configs[0].shells[0].damage
+    data.fetchTankData.mockReset().mockResolvedValue(detail)
+    data.fetchTankEncyclopedia.mockReset().mockResolvedValue(makeCache())
+    research.loadResearchCatalog.mockReset().mockResolvedValue(CATALOG)
+    research.loadTankModules.mockReset().mockResolvedValue({ tanks: { [modules.stem]: modules } })
+    const { wrapper } = await mountAt({ tank: String(modules.tankId), upgrade: 'top' })
+    expect(wrapper.find('[data-testid="tank-upgrade-top"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('agentTanks.configurator.upgrade_unsupported')
+    expect(wrapper.find('[data-testid="tank-param-maxHealth"]').exists()).toBe(false)
+    wrapper.unmount()
   })
 })
 

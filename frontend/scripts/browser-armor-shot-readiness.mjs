@@ -9,6 +9,9 @@ import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page, delay } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 import { FIXTURE_TANK_ID, FIXTURE_TANK_DATA, startFixtureAssetPack } from './browser-fixtures/fixture-asset-pack.mjs'
+import { ArmorSection } from '../src/scene/penetration.js'
+import { buildFindSpotsExpr } from './armor-spot-scan.mjs'
+import upgradeFixtures from '../src/replay-local/compute/__fixtures__/upgrades/tanks.json' with { type: 'json' }
 
 const shooterId = FIXTURE_TANK_ID + 1
 /**
@@ -41,7 +44,22 @@ const shot = {
   shooter_tick_samples: [{ dt: 0, pos: [0, 0, 60], yaw: 0, pitch: 0, roll: 0 }],
 }
 const { server, origin } = await startFixtureServer()
-const assets = await startFixtureAssetPack()
+// Exact official Object 432U progression on the existing controlled model. This
+// verifies wiring, not the real vehicle's armor geometry or baseline shell data.
+const xiSource = upgradeFixtures.find(item => item.modules.tankId === 27905)
+const xiModules = { ...xiSource.modules, tankId: FIXTURE_TANK_ID }
+const researchRoutes = {
+  '/research/modules/ussr.json': { tanks: { [xiModules.stem]: xiModules } },
+  '/research/consumables.json': { items: [] },
+  '/research/provisions.json': { items: [] },
+  '/research/params/format.json': { params: {} },
+  '/research/params/structure.json': {},
+  '/research/camouflage.json': { categories: {} },
+  '/research/skills.json': { items: [], classes: {} },
+}
+const assets = await startFixtureAssetPack({ extraRoutes: Object.fromEntries(
+  Object.entries(researchRoutes).map(([path, value]) => [path, { type: 'application/json', body: JSON.stringify(value) }]),
+) })
 let browser
 let page
 try {
@@ -408,6 +426,80 @@ try {
     assert.equal(await page.evaluate('document.querySelector("#traj-info")?.textContent || ""'), '', 'missing box leaves no result card')
     targetResponse = null
     console.log('[shot-readiness] PASS: missing client box blocks world judgment instead of muzzle-chord fallback')
+  }
+  {
+    const xi = structuredClone(FIXTURE_TANK_DATA)
+    xi.tier = 11
+    xi.configs = [{ ...xi.configs[0], ...xiSource.detail.configs[0],
+      // All official upgrade destinations must exist. Keep complete controlled
+      // shell records, including the fixture's judgment-only metadata.
+      shells: xiSource.detail.configs[0].shells.map(shell => ({ ...xi.configs[0].shells[0], ...shell })),
+    }]
+    targetResponse = xi
+    const waitXiReady = async () => page.waitFor(() => !document.querySelector('[data-testid="scene3d-loading"]')
+      && !document.querySelector('[data-testid="scene3d-error"]') && !!window.__armorRicochet?.info().grid,
+    { timeout: 30000, label: 'XI fixture scene ready' })
+    const findXiSpots = async () => {
+      await page.waitFor(() => window.__armorRicochet.aimingState().cameraSettledMs > 400,
+        { timeout: 20000, label: 'XI camera settled' })
+      return page.evaluate(buildFindSpotsExpr({ need: ['gun', 'hull'], primarySections: [ArmorSection.HULL, ArmorSection.TURRET, ArmorSection.GUN] }))
+    }
+    const hullThickness = async () => {
+      const spots = await findXiSpots()
+      assert.ok(spots.hull && spots.gun, 'XI controlled model has hittable hull and gun')
+      return page.evaluate(`window.__armorRicochet.__raytrace(${spots.hull.x}, ${spots.hull.y}).find(hit => hit.sec === 'hull').th`)
+    }
+    const clampPitch = async (down = false) => {
+      const { gun } = await findXiSpots()
+      assert.ok(gun, 'XI gun has a draggable pixel')
+      const dy = down ? 260 : -260
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: gun.x, y: gun.y })
+      await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: gun.x, y: gun.y, button: 'left', clickCount: 1 })
+      for (let i = 1; i <= 3; i++) {
+        await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: gun.x, y: gun.y + dy * i / 3, button: 'left' })
+        await delay(30)
+      }
+      await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: gun.x, y: gun.y + dy, button: 'left', clickCount: 1 })
+      return page.evaluate('window.__armorRicochet.aimingState().gunDeg')
+    }
+    const chooseXiUpgrade = async (side, mode) => {
+      await page.evaluate(`document.querySelector('[data-testid="armor-tools"]').click()`)
+      await page.waitFor(() => document.querySelectorAll('[data-testid="tank-upgrade-top"]').length === 2,
+        { timeout: 20000, label: 'independent XI side controls ready' })
+      await page.evaluate(`(() => {
+        window.__xiPreviousCanvas = document.querySelector('#canvas-container canvas');
+        const index = ${side === 'shooter' ? 0 : 1};
+        const toggle = document.querySelector('[data-testid="armor-side-toggle-${side}"]');
+        if (toggle.getAttribute('aria-expanded') !== 'true') toggle.click();
+        document.querySelectorAll('[data-testid="armor-side-config"]')[index].querySelector('[data-testid="tank-upgrade-${mode}"]').click();
+      })()`)
+      await page.waitFor(() => document.querySelector('#canvas-container canvas') !== window.__xiPreviousCanvas,
+        { timeout: 20000, label: 'upgrade replaces the previous scene' })
+      await waitXiReady()
+    }
+    await page.goto(plainUrl)
+    await waitXiReady()
+    assert.equal(await hullThickness(), 100, 'XI old link retains initial armor')
+    assert.equal(await clampPitch(), 15, 'XI initial upper pitch clamp')
+    assert.equal(await clampPitch(true), -7, 'XI initial gun depression clamp')
+    await chooseXiUpgrade('target', 'top')
+    assert.ok(Math.abs(await hullThickness() - 108) < 0.001, 'XI target max armor includes both official armor bonuses')
+    assert.equal(await clampPitch(), 20, 'XI target max pitch clamp includes the official +5 degrees')
+    assert.equal(await clampPitch(true), -8, 'XI target max depression clamp includes the official +1 degree')
+    assert.ok((await page.evaluate('document.querySelector("[data-testid=hud-shell-0]").title')).endsWith('400'), 'target upgrade leaves same-tank shooter ammunition initial')
+    await chooseXiUpgrade('shooter', 'top')
+    assert.ok(Math.abs(await hullThickness() - 108) < 0.001, 'shooter max preserves target max armor')
+    assert.ok((await page.evaluate('document.querySelector("[data-testid=hud-shell-0]").title')).endsWith('410'), 'shooter max updates the HUD ammunition damage')
+    await chooseXiUpgrade('target', 'stock')
+    assert.equal(await hullThickness(), 100, 'target initial restores initial armor')
+    assert.equal(await clampPitch(), 15, 'target initial restores the initial pitch clamp')
+    assert.equal(await clampPitch(true), -7, 'target initial restores the initial depression clamp')
+    assert.ok((await page.evaluate('document.querySelector("[data-testid=hud-shell-0]").title')).endsWith('410'), 'target initial preserves shooter max ammunition')
+    const xiQuery = await page.evaluate('Object.fromEntries(new URLSearchParams(location.search))')
+    assert.equal(xiQuery.upgrade, undefined)
+    assert.equal(xiQuery.supgrade, 'top')
+    targetResponse = null
+    console.log('[shot-readiness] PASS: XI initial/max controls drive scene armor, real drag pitch limits and independent shooter ammunition (official progression, controlled model)')
   }
   assert.deepEqual(page.consoleErrors.filter(message => message.startsWith('uncaught:')), [])
   await Promise.all(operations)

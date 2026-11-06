@@ -18,6 +18,8 @@ const props = defineProps({
   /** 射击方配置（&scfg=；缺省用射手自身默认顶级配置 configs 末位，不从目标推导） */
   scfg: { type: [Number, String], default: null },
   config: { type: [Number, String], default: null },
+  upgrade: { type: String, default: null },
+  abilities: { type: [String, Array], default: null },
   shell: { type: [Number, String], default: null },
   eqcal: { type: [Number, String], default: null },
   eqenh: { type: [Number, String], default: null },
@@ -43,7 +45,10 @@ async function load(shooterId) {
   if (!(shooterId > 0)) return
   try {
     // HUD 常驻且只读 devices：不要为三枚装备图标拉整份配置器目录（skills/camo/params…）。
-    const [detail, catalog] = await Promise.all([fetchTankData(shooterId), loadDevices()])
+    const detailRequest = props.upgrade === 'top'
+      ? fetchTankData(shooterId, { upgrade: props.upgrade, abilities: props.abilities })
+      : fetchTankData(shooterId)
+    const [detail, catalog] = await Promise.all([detailRequest, loadDevices()])
     if (seq !== request) return
     details.value = detail
     const list = catalog?.devices || []
@@ -56,7 +61,7 @@ async function load(shooterId) {
     if (seq === request) details.value = null
   }
 }
-watch(() => props.shooterId, id => load(id), { immediate: true })
+watch(() => [props.shooterId, props.upgrade, props.abilities], ([id]) => load(id), { immediate: true })
 
 const configs = computed(() => details.value?.configs || [])
 const cfgIndex = computed(() => {

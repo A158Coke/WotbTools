@@ -25,6 +25,7 @@ import {
 import { loadResearchCatalog, loadTankModules, loadTechTree, shellIconUrl } from '../utils/researchCatalog.js'
 import { moduleTreeLayout } from '../utils/techTreeLayout.js'
 import { computeCharacteristics, penetrationCoefficient } from '../replay-local/compute/characteristics'
+import { projectTankUpgrades } from '../replay-local/compute/tankUpgrades'
 import {
   buildComputeInput, decodeDevices, devicesFromEquipmentIds, encodeDevices,
   defaultShellIndex, findTankModules, paramGroups, pickGun, pickTurret, pitchDeviceBonus, resolveSetup,
@@ -111,7 +112,7 @@ async function loadList() {
 }
 
 function openDetail(id) {
-  writeState({ tank: id, config: null }, { push: true })
+  writeState({ tank: id, config: null, upgrade: 'stock', abilities: [] }, { push: true })
 }
 function backToList() {
   // In-app back must collapse the detail history entry instead of adding another one.
@@ -127,7 +128,7 @@ const detailError = ref('')
 let detailRequest = 0
 
 const summary = computed(() => (detailId.value != null ? cache.value?.[String(detailId.value)] || null : null))
-const cfgs = computed(() => detail.value?.configs || [])
+const cfgs = computed(() => upgradeProjection.value.detail?.configs || [])
 /** 默认顶级变体（末位），与查看器 defaultCfg 语义一致；URL ?config= 优先 */
 const cfgIdx = computed({
   get: () => {
@@ -160,6 +161,13 @@ const gunElevation = computed(() => {
 const modules = ref(null)
 /** 资产包全局目录/物品/技能/参数格式（research/*.json）。 */
 const catalog = ref(null)
+/** 升级态不参与模块 ID 对号；投影不改共享原始资产。普通车保持原引用。 */
+const upgradeSelection = computed(() => Number(detail.value?.tier) === 11
+  ? upgradeProjection.value.selection
+  : { available: false })
+const upgradeProjection = computed(() => projectTankUpgrades(
+  detail.value, modules.value, urlState.value.upgrade, urlState.value.abilities,
+))
 /** 该车所属科技树（只为研发弹窗的「下一级坦克」补名称/tier；缺失时节点不显示）。 */
 const techTree = ref(null)
 let modulesRequest = 0
@@ -316,10 +324,11 @@ function installFromGraph(node) {
 /** 研发图点「下一级坦克」= 切到那辆车（清掉上一辆车的配置下标）。 */
 function openVehicleFromGraph(tankId) {
   if (!tankId) return
-  writeState({ tank: Number(tankId), config: null, engine: null, track: null })
+  writeState({ tank: Number(tankId), config: null, engine: null, track: null, upgrade: 'stock', abilities: [] })
 }
 
 const computeInput = computed(() => (setup.value.canConfigure && detail.value && modules.value && catalog.value
+  && !(upgradeSelection.value.available && urlState.value.upgrade === 'top' && !upgradeSelection.value.supported)
   ? buildComputeInput({
     detail: detail.value, modules: modules.value, selection: setup.value, catalog: catalog.value,
   })
@@ -336,6 +345,7 @@ const selectionKey = selection => JSON.stringify([
   selection.config, effectiveShell(selection), selection.engine, selection.track,
   selection.devices, selection.consumables, selection.provisions,
   selection.skills, selection.camouflage,
+  selection.upgrade, selection.abilities,
 ])
 /** 上一次计入对比基线的选择键：URL 提交（pending → route.query）会让特性重算一次，
  *  内容相同但对象是新引用；若照单收下，previous 就被抹成新值，delta 立刻消失。 */
@@ -433,6 +443,7 @@ const pitchBonus = computed(() => {
 /** 初始/顶级快捷：只切换模块（config/发动机/履带），保留装备与物品选择。 */
 function applyModulePreset(kind) {
   writeSetup({
+    ...(upgradeSelection.value.available ? { upgrade: kind === 'stock' ? 'stock' : 'top' } : {}),
     config: kind === 'stock' ? 0 : Math.max(0, cfgs.value.length - 1),
     engine: kind === 'stock' ? 0 : Math.max(0, (modules.value?.engines?.length || 1) - 1),
     track: kind === 'stock' ? 0 : Math.max(0, (modules.value?.chassis?.length || 1) - 1),
@@ -454,6 +465,8 @@ function writeSetup(patch) {
     prov: next.provisions,
     skills: next.skills,
     camo: next.camouflage,
+    upgrade: next.upgrade,
+    abilities: next.abilities || [],
   })
 }
 
@@ -482,6 +495,7 @@ function clearSkills() {
 
 function resetSetup() {
   const target = {
+    ...(upgradeSelection.value.available ? { upgrade: 'stock', abilities: [] } : {}),
     config: Math.max(0, cfgs.value.length - 1),
     engine: Math.max(0, (modules.value?.engines?.length || 1) - 1),
     track: Math.max(0, (modules.value?.chassis?.length || 1) - 1),
@@ -527,6 +541,10 @@ function open3d() {  // 审计 3D-09：在当前标签页打开装甲查看器�
   const dest = locationForView('agent-armor', route)
   const handoff = setup.value.canConfigure
     ? {
+        ...(upgradeSelection.value.available ? {
+          ...(setup.value.upgrade === 'top' ? { upgrade: 'top' } : {}),
+          ...(setup.value.abilities?.length ? { abilities: setup.value.abilities.join(',') } : {}),
+        } : {}),
         dev: encodeDevices(setup.value.devices),
         cons: setup.value.consumables.join(','),
         prov: setup.value.provisions.join(','),
@@ -656,6 +674,9 @@ onMounted(() => {
               </AppButton>
             </div>
             <p class="tp-muted">{{ t('agentTanks.open3d_hint') }}</p>
+            <p v-if="Number(detail.tier) === 11 && !upgradeSelection.available" class="tp-muted" role="status" data-testid="tank-upgrade-unavailable">
+              {{ t('agentTanks.configurator.upgrade_unavailable') }}
+            </p>
           </section>
 
           <TankConfigPanel
@@ -664,6 +685,7 @@ onMounted(() => {
             :modules="modules"
             :selection="setup"
             :catalog="catalog"
+            :upgrade-supported="upgradeSelection.supported"
             @update="writeSetup"
             @reset="resetSetup"
             @preset="applyModulePreset"

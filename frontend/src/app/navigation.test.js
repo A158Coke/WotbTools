@@ -184,6 +184,7 @@ describe('locationForView：名人堂筛选只属于名人堂', () => {
       query: {
         view: 'agent-armor', tank: '13825', shot: '2', shooter: '19969', shell: '0', scfg: '0',
         world: '1', heatmap: '1', az: '45', d: '12', clean: '1', lang: 'x',
+        upgrade: 'top', abilities: '23', supgrade: 'top', sabilities: '24',
       },
     }
     // 侧边栏切走：不留任何场景参数（用户实测：此前会带上 tank/shot/shooter/…）

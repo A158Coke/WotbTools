@@ -15,6 +15,7 @@ describe('parseTankopediaQuery', () => {
     expect(parseTankopediaQuery({})).toEqual({
       q: '', tier: '', nation: '', type: '', sort: 'name', tank: null, config: null,
       engine: null, track: null, shell: null, dev: '', eq: null, cons: null, prov: null, skills: {}, camo: false,
+      upgrade: 'stock', abilities: [],
     })
   })
 
@@ -25,6 +26,19 @@ describe('parseTankopediaQuery', () => {
     expect(parseTankopediaQuery({ tier: '10', sort: 'pen', tank: '5', config: '-1' })).toMatchObject({
       tier: '10', sort: 'pen', tank: 5, config: null,
     })
+  })
+
+  it('XI 升级独立于模块配置：旧链接保持初始值，技能 ID 校验后往返', () => {
+    const old = parseTankopediaQuery({ tank: '15153', config: '0' })
+    expect(old).toMatchObject({ upgrade: 'stock', abilities: [], config: 0 })
+    expect(serializeTankopediaQuery(old)).toEqual({ tank: '15153', config: '0' })
+    const current = parseTankopediaQuery({ tank: '15153', config: '0', upgrade: 'top', abilities: '23,23,-1,x,0,1.2,24' })
+    expect(current).toMatchObject({ upgrade: 'top', abilities: [23, 24], config: 0 })
+    expect(serializeTankopediaQuery(current)).toEqual({ tank: '15153', config: '0', upgrade: 'top', abilities: '23,24' })
+    expect(parseTankopediaQuery({ tank: '15153', upgrade: 'bogus' }).upgrade).toBe('stock')
+    expect(parseTankopediaQuery({ upgrade: 'top', abilities: '23' })).toMatchObject({ upgrade: 'stock', abilities: [] })
+    expect(withTankopediaState({ view: 'agent-tankopedia', tank: '15153', upgrade: 'top', abilities: '23', assets: 'https://assets.test' }, { tank: 1 }))
+      .toEqual({ view: 'agent-tankopedia', tank: '1', assets: 'https://assets.test' })
   })
 
   it('数组取第一个值，搜索词裁掉首尾空白并限长', () => {
@@ -99,7 +113,7 @@ describe('sameTankopediaQuery / withTankopediaState', () => {
     const all = serializeTankopediaQuery({
       q: 'x', tier: 1, nation: 'a', type: 'b', sort: 'hp', tank: 1, config: 0,
       engine: 0, track: 0, shell: 0, dev: '0', cons: [], prov: [], skills: { smooth_turn: 7 }, camo: true,
-      eq: [103],
+      eq: [103], upgrade: 'top', abilities: [23],
     })
     expect(Object.keys(all).sort()).toEqual([...TANKOPEDIA_QUERY_KEYS].sort())
   })

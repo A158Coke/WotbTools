@@ -6,6 +6,7 @@
  * 键：q（搜索词）· tier · nation · type · sort（name|tier|hp|pen）· tank（详情车辆 id）· config（配置下标）
  * · engine / track（发动机/履带下标）· shell（弹种下标）· dev（装备 9 槽 0/1/-）· cons / prov（物品 stem 逗号表）
  * · skills（已训练技能 id:等级 逗号表，兼容裸 id=7）· camo（涂装 0/1）
+ * · upgrade（XI，缺省 stock / top）· abilities（XI 互斥技能节点 ID 逗号表）
  */
 import { tankFuzzyScore } from '../scene/tankMeta.js'
 // 搜索别名（开发者审校维护的 WotBTools 搜索 metadata，**不是**游戏事实数据）：稀疏存储，
@@ -84,6 +85,14 @@ function equipmentIds(value) {
   return out.length ? [...new Set(out)].slice(0, DEVICE_SLOTS) : null
 }
 
+/** XI 技能 node ID；组归属与互斥校验由客户端 upgradeProgression 决定。 */
+function abilityIds(value) {
+  const raw = first(value)
+  if (typeof raw !== 'string') return []
+  return [...new Set(raw.split(',').map(s => Number(s.trim()))
+    .filter(n => Number.isSafeInteger(n) && n > 0))].slice(0, 8)
+}
+
 function deviceSlots(value) {
   const raw = first(value)
   if (typeof raw !== 'string') return ''
@@ -114,6 +123,8 @@ export function parseTankopediaQuery(query = {}) {
     prov: tank ? stemList(query.prov) : null,
     skills: tank ? skillLevels(query.skills) : {},
     camo: tank ? first(query.camo) === '1' : false,
+    upgrade: tank && first(query.upgrade) === 'top' ? 'top' : 'stock',
+    abilities: tank ? abilityIds(query.abilities) : [],
   }
 }
 
@@ -143,6 +154,11 @@ export function serializeTankopediaQuery(state = {}) {
       if (pairs.length) query.skills = pairs.join(',')
     }
     if (state.camo === true) query.camo = '1'
+    if (state.upgrade === 'top') query.upgrade = 'top'
+    if (Array.isArray(state.abilities)) {
+      const ids = [...new Set(state.abilities.filter(n => Number.isSafeInteger(n) && n > 0))].slice(0, 8)
+      if (ids.length) query.abilities = ids.join(',')
+    }
   }
   return query
 }
