@@ -34,13 +34,17 @@ export const ArmorSection = Object.freeze({
  * （tanks.pb 原始串：hc 与 hc_premium=HEAT、ap_cr 系=APCR、ap_premium=AP、he_premium=HE）。
  * `parseShellType`（判定链，未知兜底 'he'）与 `viewer/armorPlateModel.shellTypeOf`
  * （查看器，未知返回 null fail-closed）共用本表；新增 token 只改这里。
+ *
+ * 必须是**无原型对象**（Object.create(null)）：普通对象查表会把 `constructor` /
+ * `__proto__` / `toString` 等原型属性当成命中（真值），绕过两条链的未知值兜底
+ * （review P2，2026-11-06）。Object.freeze 不会移除原型链。
  */
-export const SHELL_TOKEN_KIND = Object.freeze({
+export const SHELL_TOKEN_KIND = Object.freeze(Object.assign(Object.create(null), {
   ap: 'ap', ap_premium: 'ap',
   apcr: 'apcr', ap_cr: 'apcr', ap_cr_premium: 'apcr',
   he: 'he', he_premium: 'he', hesh: 'he', hesh_premium: 'he',
   heat: 'heat', hc: 'heat', hc_premium: 'heat', atgm_heat: 'heat',
-})
+}))
 
 /**
  * 弹种解析：**field9 枚举优先**（权威，0=AP/1=APCR/2=HEAT/3=HE），其次 icon 串词表。

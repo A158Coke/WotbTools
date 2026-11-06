@@ -383,6 +383,19 @@ export function standardDepthMaterial(side: Side = THREE.FrontSide): ShaderMater
         colorWrite: false, depthTest: true, depthWrite: true, side, clipping: true,
     });
 }
+/**
+ * 厚度通道 RT 的深度纹理（带 stencil 附件）：DepthStencilFormat 是 stencil 去重的
+ * 硬前提——three 对自带 depthTexture 的 target 只按纹理格式挂 DEPTH(_STENCIL)_ATTACHMENT，
+ * DepthFormat + stencilBuffer:true 不会创建 stencil 附件（测试恒通过 = 去重失效）。
+ * 首建与 resize 重建（tankViewer.syncPenetrationRT / armorHighlight.ensureTargets）
+ * 必须共用本工厂，避免重建路径退回 DepthFormat。
+ */
+export function createDepthStencilTexture(width: number, height: number): THREE.DepthTexture {
+    const depth = new THREE.DepthTexture(width, height);
+    depth.format = THREE.DepthStencilFormat;
+    depth.type = THREE.UnsignedInt248Type;
+    return depth;
+}
 export function externalMaterial(thickness: number, penetration: number | null | undefined, clip: Plane | null | undefined): ShaderMaterial {
     return new THREE.ShaderMaterial({
         vertexShader: EXTERNAL_VERT, fragmentShader: EXTERNAL_FRAG,

@@ -843,23 +843,14 @@ describe('spaced armor surface selection', () => {
     expect(plateModel).toMatch(/falling back to double-sided accumulation/)
     expect(kernel).toMatch(/colorWrite: false, depthTest: true, depthWrite: true, side: THREE\.DoubleSide,/)
     expect(plateModel).toMatch(/addClone\(scene, node, mats\.spacedOmit, 5\)/)
-    // RT0 厚度通道与回放 spacedRT 必须带 stencil buffer，且深度纹理用 DepthStencilFormat
-    // （three 对自带 depthTexture 的 target 只按纹理格式挂 DEPTH(_STENCIL)_ATTACHMENT，
-    // DepthFormat 下无 stencil 附件 → 测试恒通过 = 去重失效）。
+    // RT0 厚度通道与回放 spacedRT 必须带 stencil buffer，且深度纹理由共享工厂构造
+    // （DepthStencilFormat；DepthFormat 下无 stencil 附件 → 去重失效）。首建与 resize
+    // 重建同源；背面屏法线/厚度等渲染行为由 browser gate
+    // `test:browser-armor-spaced-backside` 以真实 GPU readback 验证，不用正则冒充。
     expect(kernel).toMatch(/stencilBuffer: true/)
-    expect(kernel).toMatch(/depth\.format = THREE\.DepthStencilFormat/)
-  })
-  it('间隙甲 BackSide clone 按 FLIP_SIDED 翻回几何法线（three 翻转 gl.frontFace）', () => {
-    // three r185：side === BackSide 时 setFlipSided(true) → gl.frontFace(CW)，保留的
-    // 背面片元 gl_FrontFacing == true；SPACED_FRAG 必须在 !gl_FrontFacing 翻转之前
-    // 按 FLIP_SIDED 显式翻面，否则背面屏入射角 π−θ → 厚度落 1e-6 下界（2026-11-06 review P1）。
-    const spacedFrag = shaders.slice(shaders.indexOf('const SPACED_FRAG'), shaders.indexOf('const SPACED_STATE_FRAG'))
-    expect(spacedFrag).toMatch(/#ifdef FLIP_SIDED\s*\n\s*nFace = -nFace;/)
-    expect(spacedFrag.indexOf('#ifdef FLIP_SIDED')).toBeGreaterThan(-1)
-    expect(spacedFrag.indexOf('#ifdef FLIP_SIDED'))
-      .toBeLessThan(spacedFrag.indexOf('if (!gl_FrontFacing) nFace = -nFace;'))
+    expect(kernel).toMatch(/createDepthStencilTexture/)
     expect(read('../scene/playback/armorHighlight.ts')).toMatch(/stencilBuffer: true/)
-    expect(read('../scene/playback/armorHighlight.ts')).toMatch(/DepthStencilFormat/)
+    expect(read('../scene/playback/armorHighlight.ts')).toMatch(/createDepthStencilTexture/)
   })
   it('间隙甲片元着色器按 gl_FrontFacing 翻转法线（PBR/间隙/状态三处）', () => {
     const flips = [...shaders.matchAll(/if \(!gl_FrontFacing\) nFace = -nFace;/g)]

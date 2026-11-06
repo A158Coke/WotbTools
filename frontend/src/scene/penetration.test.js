@@ -919,4 +919,14 @@ describe('弹种词表 SSOT（判定链 ↔ 查看器）', () => {
     expect(shellTypeOf({ type: 'unknown_kind' })).toBe(null)
     expect(shellTypeOf(null)).toBe(null)
   })
+
+  it('原型属性 token 不命中（无原型对象）：constructor/__proto__/toString/hasOwnProperty', () => {
+    // review P2（2026-11-06）：普通对象查表会把原型属性当命中，绕过未知值兜底
+    //（constructor → Object 函数、__proto__ → 原型对象，均为真值）。
+    expect(Object.getPrototypeOf(SHELL_TOKEN_KIND)).toBe(null)
+    for (const token of ['constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf']) {
+      expect(parseShellType(token)).toBe('he')
+      expect(shellTypeOf({ type: token })).toBe(null)
+    }
+  })
 })
