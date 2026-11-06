@@ -53,7 +53,7 @@ describe('sunShadowFrom：传播方向 = target − light', () => {
     const low = sunShadowFrom(at(-1000, 1000, 0), O)
     const grazing = sunShadowFrom(at(-1000, 60, 0), O)
     expect(low.tailFactor).toBeGreaterThan(high.tailFactor)
-    expect(grazing.tailFactor).toBe(1.2)
+    expect(grazing.tailFactor).toBe(0.9)
   })
 
   it.each([
@@ -95,12 +95,12 @@ describe('shadowGridXZ：不透明内核恒等于车体，太阳只加长背光�
     }
   })
 
-  it('尾巴总长 = tailFactor × halfW，沿传播方向；背光对侧只剩基础 margin', () => {
+  it('尾巴总长 = tailFactor × halfL，沿传播方向；背光对侧只剩基础 margin', () => {
     const fp = { halfW: 1.6, halfL: 3.4 }
     const sun = sunShadowFrom(at(-1000, 60, 0), O)   // 传播 +X
     const out = shadowGridXZ(0, 0, 0, fp, sun, new Float32Array(GRID * GRID * 2))
     const m = shadowMargin(fp)
-    expect(out[4 * 2]).toBeCloseTo(fp.halfW + m + sun.tailFactor * fp.halfW, 6)   // +X 外线
+    expect(out[4 * 2]).toBeCloseTo(fp.halfW + m + sun.tailFactor * fp.halfL, 6)   // +X 外线
     expect(out[0]).toBeCloseTo(-(fp.halfW + m), 6)                                 // −X 外线
     expect(out[(4 * GRID) * 2 + 1]).toBeCloseTo(fp.halfL + m, 6)                   // ±Z 不受影响
   })
@@ -150,8 +150,10 @@ describe('车体外可见性（俯视时车体盖住内核，只看得到车外�
     expect(shadowAlpha(tex(4), 0)).toBe(0)
     expect(shadowAlpha(0, tex(0))).toBe(0)
     // 车外 margin 的前 1/4 处仍保留大部分遮蔽
-    expect(shadowAlpha(0.5 + 0.5 * 0.25, 0)).toBeGreaterThan(0.8)
-    expect(shadowAlpha(0.5 + 0.5 * 0.5, 0)).toBeGreaterThan(0.4)
+    // 车外渐隐带前 30% 保持全深（给阴影实在的面积），之后平滑淡出
+    expect(shadowAlpha(0.5 + 0.5 * 0.25, 0)).toBe(1)
+    expect(shadowAlpha(0.5 + 0.5 * 0.5, 0)).toBeGreaterThan(0.75)
+    expect(shadowAlpha(0.5 + 0.5 * 0.9, 0)).toBeLessThan(0.1)
   })
 
   it('margin 与车宽成比例且有上下限', () => {
@@ -168,6 +170,7 @@ describe('车体外可见性（俯视时车体盖住内核，只看得到车外�
     const shade = out[4 * 2] - fp.halfW       // +X 外线到车体边
     expect(lit).toBeLessThanOrEqual(0.6)
     expect(shade).toBeGreaterThan(3 * lit)
+    expect(shade).toBeGreaterThan(2)          // 面积要够：按车宽算尾巴时只有约 1.5 m，验收判为不明显
   })
 })
 

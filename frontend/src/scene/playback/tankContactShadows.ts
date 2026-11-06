@@ -19,7 +19,7 @@ export interface SunShadow {
   /** 水平传播方向（单位向量；centered 时为 0） */
   dirX: number
   dirZ: number
-  /** 背光侧额外渐隐尾长，单位 = halfW 的倍数（与车体大小关联、有上限） */
+  /** 背光侧额外阴影尾长，单位 = halfL 的倍数（与车体大小关联、有上限） */
   tailFactor: number
 }
 
@@ -28,11 +28,12 @@ interface Vec3Like { x: number, y: number, z: number }
 /** 代理车履带盒 3.6 × 6.5 m（playbackScene.buildVehicles）：GLB 尺寸不可得时的回落。 */
 export const PROXY_FOOTPRINT: Readonly<ShadowFootprint> = Object.freeze({ halfW: 1.8, halfL: 3.25 })
 
-// 视觉常量：背光尾长 ∝ tan(天顶角)，硬上限 = 1.2 × halfW（约 1.8–2.1 m）；迎光侧只有窄接触带。
+// 视觉常量：背光尾长 ∝ tan(天顶角) × 半车长，硬上限 = 0.9 × halfL（约 2.7–3.3 m）；迎光侧只有窄接触带。
+// 尾长按车长而非车宽：坦克是长条形，按车宽算的尾巴在真实 GPU 验收中「面积太小、不够明显」。
 // 36 张图的太阳仰角 21°–66°（中位 ~35°）——曾把偏移/拉伸作用在不透明内核上，
 // 多数图直接打满上限，车后拖出一块 3–4 m 的实心暗板；内核现在恒等于车体。
-const K_TAIL = 0.6
-const MAX_TAIL = 1.2
+const K_TAIL = 0.45
+const MAX_TAIL = 0.9
 /** 传播方向 y 分量至少这么"朝下"才算照向地面（约 3° 仰角以上） */
 const MIN_DOWN = 0.05
 const CENTERED: Readonly<SunShadow> = Object.freeze({ centered: true, dirX: 0, dirZ: 0, tailFactor: 0 })
@@ -125,14 +126,17 @@ function axisOffset(t: number, h: number, mNeg: number, mPos: number): number {
   return t < 0 ? -d : d
 }
 
+/** 车外渐隐带内保持全深的比例：给阴影一段实在的深色面积，再平滑淡出 */
+const SOLID = 0.3
+
 /**
- * 贴图 alpha（x, y ∈ [-1, 1]，与 uv 同向）：|x|,|y| ≤ 0.5 的内核恒为 1，
- * 外圈按到内核的圆角矩形距离平滑降到 0。
+ * 贴图 alpha（x, y ∈ [-1, 1]，与 uv 同向）：|x|,|y| ≤ 0.5 的内核恒为 1；
+ * 外圈按到内核的圆角矩形距离归一化为 d ∈ [0, 1]，前 SOLID 段保持全深，之后平滑降到 0。
  */
 export function shadowAlpha(x: number, y: number): number {
   const qx = Math.max(Math.abs(x) - 0.5, 0) * 2
   const qy = Math.max(Math.abs(y) - 0.5, 0) * 2
-  return 1 - THREE.MathUtils.smoothstep(Math.min(1, Math.hypot(qx, qy)), 0, 1)
+  return 1 - THREE.MathUtils.smoothstep(Math.min(1, Math.hypot(qx, qy)), SOLID, 1)
 }
 
 /**
@@ -143,7 +147,7 @@ export function shadowAlpha(x: number, y: number): number {
 export function shadowGridXZ(x: number, z: number, yaw: number, fp: ShadowFootprint, sun: SunShadow, out: Float32Array): Float32Array {
   const c = Math.cos(yaw), s = Math.sin(yaw)
   const m = shadowMargin(fp)
-  const tail = sun.tailFactor * fp.halfW
+  const tail = sun.tailFactor * fp.halfL
   const ldx = c * sun.dirX - s * sun.dirZ   // 传播方向的车体系分量（旋转矩阵转置）
   const ldz = s * sun.dirX + c * sun.dirZ
   const mxNeg = m + tail * Math.max(-ldx, 0), mxPos = m + tail * Math.max(ldx, 0)
