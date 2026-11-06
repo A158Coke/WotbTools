@@ -66,7 +66,8 @@ pnpm run dev
 
    ```bash
    node scripts/serve_asset_pack.mjs 8123
-   # 用法：node scripts/serve_asset_pack.mjs [port] [packDir]
+   # 用法：node scripts/serve_asset_pack.mjs [port] [packDir] [datasetsDir]
+   #   默认 datasetsDir=release/datasets；同时提供 /v/<dataset-id>/... 与 release/versions.json
    ```
 
    脚本把 `release/asset_pack` 按 **cwd** 解析：在别的目录启动会静默 404（资产全丢但服务"正常"）。
@@ -84,6 +85,7 @@ pnpm run dev
    | `?localuser=1` | **本机自备**测试参数（**不入库**）：按 §4.1 在本机 checkout 自备 dev-gated 登录桩后生效（"已登录的普通用户"）；不提供真实凭据。**约定写法**——触发条件是 dev 构建下 URL 存在 `localuser` 参数 |
    | `?view=<name>` | 直达视图（如 `agent-armor`、`agent-replay`） |
    | `?assets=<URL>` | 覆盖资产面；**非空值会持久化到 localStorage 并盖住 `.env.local`**；回默认要带一次空 `?assets=` |
+   | `?data=<dataset-id>` | 选择游戏版本数据（如 `11.21.0`）；持久化到 `wotb_data_version`，资产基址变成 `<origin>/v/<id>`。侧边栏 logo 下方（移动端「更多 → 显示设置」）也有同名下拉。清空该参数 = 回默认 dataset |
    | `?debug` | 场景调试探针（见 §6） |
 
 4. Keycloak：`http://localhost:5173/*` 必须在生产 client `wotbtools-web` 的 Redirect URIs 里，
@@ -236,7 +238,7 @@ Keycloak 配置是硬编码的生产（`auth.wotbtools.com` / realm `wotbtools` 
   §Testing rules 为权威**，新增 gate 随其特性一起落地；改对应代码时保持通过）：
   - `pnpm run test:browser-layout` —— Playback 布局（PC / tablet / mobile 实际 CSS geometry 与 form isolation）；
   - `pnpm run test:browser-interaction` —— 交互（hit target、pointer-events、capability 切换、认证门禁、播放控件）。
-  - `pnpm run test:browser-armor-mobile` —— 装甲页三档布局与触控；选车弹窗与坦克百科共用 `TankCatalogMenu`，门禁通过真实名册响应覆盖共 121 张卡片（共享增量列表首屏 48，滚轮/哨兵/加载更多续页），在 Showcase / Classic 检查图片框、车型名和元数据不裁切、首末车型名实际可命中、内部滚动不带动外层页面、真实关闭按钮点击与弹窗关闭状态；手机上检查搜索框与筛选入口 44px、筛选 chips 打开 sheet 后四个筛选控件可用，并覆盖 4K、筛选和视口扩大时的名册补齐。夹具只验证图片框几何，不证明真实缩略图加载或 3D 视觉效果。不带参数时跑完整 28 个场景；CI 用 `--shard 1/2`、`--shard 2/2` 分两片并行，本地可写 `pnpm run test:browser-armor-mobile -- --shard 1/2 [场景名]`，先按名过滤再分片，分片参数非法时直接失败。
+  - `pnpm run test:browser-armor-mobile` —— 装甲页三档布局与触控；选车弹窗与坦克百科共用 `TankCatalogMenu`，门禁通过真实名册响应覆盖共 121 张卡片（共享增量列表首屏 48，滚轮/哨兵/加载更多续页），在 Showcase / Classic 检查图片框、车型名和元数据不裁切、首末车型名实际可命中、内部滚动不带动外层页面、真实关闭按钮点击与弹窗关闭状态；手机上检查搜索框与筛选入口 44px、筛选 chips 打开 sheet 后四个筛选控件可用，并覆盖 4K、筛选和视口扩大时的名册补齐。夹具只验证图片框几何，不证明真实缩略图加载或 3D 视觉效果。不带参数时跑完整 28 个场景；CI 用 `--shard 1/3`、`--shard 2/3`、`--shard 3/3` 分三片并行，本地可写 `pnpm run test:browser-armor-mobile -- --shard 1/3 [场景名]`，先按名过滤再分片，分片参数非法时直接失败。
   - `pnpm run test:browser-armor-aiming` —— 瞄准 / 指针交互；部位取样同时检查几何分类与
     `elementFromPoint` 实际命中 canvas，避免选车按钮等面板遮挡导致手势误入弹窗。
     既有像素扫描单测覆盖按钮 / 弹窗遮挡及空命中，浏览器门禁用临时覆盖控件验证重新取样。

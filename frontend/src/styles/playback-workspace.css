@@ -4,6 +4,7 @@
 /* Shared sizing authority. Short layouts retain 2/6/2 control capacity; desktop uses
    approximately 25 / 50 / 25 columns while the Stage maximizes its available square. */
 .playback-workspace {
+  position: relative;
   container-type: inline-size;
   /* 工作台是自己的局部层叠上下文（§5）：内部 `--pb-z-*` 的 1–9 只在这里比较，不与根层的
      AppTopBar / AppTabBar / 侧栏竞争；需要越出工作台的浮层必须 Teleport 到 body。

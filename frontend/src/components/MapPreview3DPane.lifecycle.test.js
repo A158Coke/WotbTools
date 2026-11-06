@@ -20,6 +20,7 @@ const scene = vi.hoisted(() => {
     setQuality: vi.fn(),
     setCam: vi.fn(),
     setMapSpawns: vi.fn(),
+    setMobileTouch: vi.fn(),
     refreshSpawnColors: vi.fn(),
     reset: vi.fn(),
     invalidate: vi.fn(),
@@ -49,9 +50,14 @@ vi.mock('../composables/useSceneFlyControls.ts', () => ({
 vi.mock('../composables/usePlaybackFullscreen.ts', () => ({
   usePlaybackFullscreen: () => ({ isFullscreen: ref(false), fullscreenSupported: false, toggleFullscreen: vi.fn() }),
 }))
-vi.mock('../composables/usePlaybackPhoneForm.ts', () => ({
-  usePlaybackPhoneForm: () => ({ isPhone: { value: false } }),
-}))
+vi.mock('../composables/usePlaybackPhoneForm.ts', () => {
+  const isPhone = ref(false)
+  return { usePlaybackPhoneForm: () => ({ isPhone }), __phoneForm: { isPhone } }
+})
+vi.mock('../composables/usePlaybackPortraitViewport.ts', () => {
+  const isPortrait = ref(false)
+  return { usePlaybackPortraitViewport: () => ({ isPortrait }), __portrait: { isPortrait } }
+})
 vi.mock('../composables/usePlaybackTransport.ts', () => ({
   isInteractiveTarget: () => false,
 }))
@@ -117,6 +123,45 @@ describe('MapPreview3DPane 首次激活生命周期', () => {
     await wrapper.setProps({ spawnPoints: next })
     await flushPromises()
     expect(scene.api.setMapSpawns).toHaveBeenCalledWith(next)
+  })
+
+  it('移动端触屏相机契约：建场景即按 isPhone 推送；形态翻转即时同步', async () => {
+    const { __phoneForm } = await import('../composables/usePlaybackPhoneForm.ts')
+    const wrapper = mountPane(true)
+    await flushPromises()
+    expect(scene.api.setMobileTouch).toHaveBeenCalledWith(false)
+    scene.api.setMobileTouch.mockClear()
+    __phoneForm.isPhone.value = true
+    await flushPromises()
+    expect(scene.api.setMobileTouch).toHaveBeenCalledWith(true)
+    __phoneForm.isPhone.value = false
+    await flushPromises()
+    expect(scene.api.setMobileTouch).toHaveBeenLastCalledWith(false)
+    wrapper.unmount()
+  })
+
+  it('竖向距离滑条：仅手机横屏渲染；竖屏/桌面不留在可交互 DOM', async () => {
+    const { __phoneForm } = await import('../composables/usePlaybackPhoneForm.ts')
+    const { __portrait } = await import('../composables/usePlaybackPortraitViewport.ts')
+    const slider = () => document.querySelector('[data-testid="scene-distance-slider"]')
+    const wrapper = mountPane(true)
+    await flushPromises()
+    // 桌面横屏：不渲染
+    expect(slider()).toBeNull()
+    // 手机竖屏（390×844）：不渲染
+    __phoneForm.isPhone.value = true
+    __portrait.isPortrait.value = true
+    await flushPromises()
+    expect(slider()).toBeNull()
+    // 手机横屏（844×390）：渲染
+    __portrait.isPortrait.value = false
+    await flushPromises()
+    expect(slider()).not.toBeNull()
+    // 竖屏隐藏后不留捕获触摸的不可见区域（v-if 卸载，不是 visibility/opacity）
+    __portrait.isPortrait.value = true
+    await flushPromises()
+    expect(slider()).toBeNull()
+    wrapper.unmount()
   })
 
   it('后台更新出生点和主题后保留场景，恢复时不重复装图', async () => {

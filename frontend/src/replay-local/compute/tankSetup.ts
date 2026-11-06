@@ -15,6 +15,7 @@
  */
 import { computeCharacteristics, type ComputeInput } from './characteristics'
 import { availableItems, resolveDeviceIds, scriptMap } from '../../utils/researchCatalog'
+import { projectTankUpgrades, resolveUpgradeSelection } from './tankUpgrades'
 
 export const DEVICE_SLOT_COUNT = 9
 const EMPTY_DEVICE = '-'
@@ -32,7 +33,12 @@ export interface SetupSelection {
   provisions: string[]
   /** 已训练技能 → 等级（1–7；缺省 = 未训练，效果全局） */
   skills: Record<string, number>
+  /** 显式模拟条件技能触发，缺省关闭；与训练等级分别保存。 */
+  conditionalSkills?: boolean
   camouflage: boolean
+  /** XI 客户端升级；缺省 stock 保持既有链接语义。普通车辆不产生这两个字段。 */
+  upgrade?: 'stock' | 'top'
+  abilities?: number[]
 }
 
 export interface SetupResolved extends SetupSelection {
@@ -317,6 +323,7 @@ export function resolveSetup({ detail, modules, url, catalog }: SetupSources): S
     consumables: [],
     provisions: [],
     skills: {},
+    conditionalSkills: false,
     camouflage: false,
   }
   if (!modules || configs.length === 0) return empty
@@ -344,7 +351,13 @@ export function resolveSetup({ detail, modules, url, catalog }: SetupSources): S
     consumables: url?.cons == null ? [] : url.cons,
     provisions: url?.prov == null ? [] : url.prov,
     skills: Object.fromEntries(Object.entries(url?.skills || {}).filter(([id, level]) => skillIds.has(id) && Number.isFinite(Number(level)) && Number(level) > 0).map(([id, level]) => [id, Math.min(7, Math.max(1, Math.round(Number(level))))])),
+    conditionalSkills: url?.conditionalSkills === true,
     camouflage: url?.camo === true,
+  }
+  const upgrades = resolveUpgradeSelection(modules, url?.upgrade, url?.abilities)
+  if (Number(detail?.tier) === 11 && upgrades.available) {
+    selection.upgrade = upgrades.mode
+    selection.abilities = upgrades.abilities
   }
   return { ...selection, ...normalizeSetup(selection, detail, modules, catalog) }
 }
@@ -486,6 +499,13 @@ export function buildComputeInput({ detail, modules, selection, catalog }: {
   selection: SetupSelection
   catalog: any
 }): ComputeInput {
+  const stockEnginePower = Number(modules?.engines?.[0]?.stats?.power)
+  const projected = projectTankUpgrades(detail, modules, selection.upgrade, selection.abilities)
+  if (projected.selection.available && !projected.selection.supported && selection.upgrade === 'top') {
+    throw new Error(`XI upgrade data unavailable: ${projected.selection.unsupported.join(', ')}`)
+  }
+  detail = projected.detail
+  modules = projected.modules
   const config = detail?.configs?.[selection.config] || null
   const slots = presetSlots(modules, catalog)
   const netScript = catalog?.devices?.find((device: { stem: string }) => device.stem === 'camouflageNet')?.script?.params || null
@@ -497,6 +517,8 @@ export function buildComputeInput({ detail, modules, selection, catalog }: {
     gunIdx: selection.gun,
     engineIdx: selection.engine,
     trackIdx: selection.track,
+    ...(projected.selection.available && projected.selection.mode === 'top' && projected.selection.supported
+      && Number.isFinite(stockEnginePower) ? { stockEnginePower } : {}),
     standardShell: standardShellOf(config, selection.shell),
     isBurstGun: !!config?.is_burst,
     gunCycle: gunCycleOf(config),
@@ -508,6 +530,7 @@ export function buildComputeInput({ detail, modules, selection, catalog }: {
     provisionScripts: catalog?.provisions ? scriptMap(catalog.provisions, selection.provisions) : {},
     consumableScripts: catalog?.consumables ? scriptMap(catalog.consumables, selection.consumables) : {},
     skillLevels: { ...(selection.skills || {}) },
+    conditionalSkills: selection.conditionalSkills === true,
     skillEffects: catalog?.skills || null,
     camouflage: selection.camouflage,
     camouflageNet: netScript,
@@ -529,6 +552,9 @@ export function baseSelection({ detail, modules }: { detail: any; modules: any }
   const gun = findGunIndex(modules.turrets?.[turret], cur?.gun_local)
   if (turret < 0 || gun < 0) return null
   return {
+    // delta 基准始终是 stock：XI 的缺省模式已改为 top，这里必须显式钉住
+    // （否则 baseSelection 会被 resolveUpgradeSelection 的缺省值带成 top）。
+    ...(modules.tier === 11 ? { upgrade: 'stock' as const } : {}),
     config: 0,
     turret,
     gun,
@@ -539,6 +565,7 @@ export function baseSelection({ detail, modules }: { detail: any; modules: any }
     consumables: [],
     provisions: [],
     skills: {},
+    conditionalSkills: false,
     camouflage: false,
   }
 }

@@ -11,7 +11,7 @@
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Download, Maximize, Minimize, PencilRuler, TriangleAlert, Upload } from 'lucide-vue-next'
+import { Download, PencilRuler, TriangleAlert, Upload } from 'lucide-vue-next'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { createPlaybackStore } from '../scene/playbackStore.js'
@@ -21,12 +21,15 @@ import { useSceneFlyControls } from '../composables/useSceneFlyControls.js'
 import { useSceneActivity } from '../composables/useSceneActivity'
 import { usePlaybackFullscreen } from '../composables/usePlaybackFullscreen.js'
 import { usePlaybackPhoneForm } from '../composables/usePlaybackPhoneForm.js'
+import { usePlaybackPortraitViewport } from '../composables/usePlaybackPortraitViewport.js'
 import { isInteractiveTarget } from '../composables/usePlaybackTransport.js'
 import { usePaneFillHeight } from '../composables/usePaneFillHeight.js'
 import { uiProfile } from '../composables/useUiProfile.js'
 import SegmentedControl from './SegmentedControl.vue'
 import Scene3DStatus from './Scene3DStatus.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
+import SceneFullscreenButton from './SceneFullscreenButton.vue'
+import SceneDistanceSlider from './SceneDistanceSlider.vue'
 import {
   ANNOT_COLORS, ANNOT_ERASER_RADIUS_DEFAULT, ANNOT_ERASER_RADIUS_MAX, ANNOT_ERASER_RADIUS_MIN,
   ANNOT_WIDTH_DEFAULT, ANNOT_WIDTH_MAX, ANNOT_WIDTH_MIN,
@@ -92,6 +95,7 @@ function changeQuality(k) {
   reloadMap()
 }
 const { isPhone } = usePlaybackPhoneForm()
+const { isPortrait } = usePlaybackPortraitViewport()
 const { isFullscreen, fullscreenSupported, toggleFullscreen } = usePlaybackFullscreen({
   target: () => rootEl.value,
   isPhone,
@@ -288,6 +292,7 @@ function ensureScene() {
   })
   sceneApi?.setPaused?.(!renderActive.value)
   sceneApi?.setFlySpeed?.(fly.flySpeedIndex())
+  sceneApi?.setMobileTouch?.(isPhone.value)   // 移动端触屏相机契约（单指分流 / 双指不控制）
   pushAnnotationProjection()
   pushAnnotationInteraction()
   pushAnnotationVisibility()
@@ -299,6 +304,8 @@ function reloadMap() {
   if (!sceneApi || !props.mapId || !requireFeature(Feature.PLAYBACK_3D)) return
   sceneApi.loadMapOnly({ mapId: props.mapId, mapName: props.mapName })
 }
+// 旋转 / 跨断点改变手机形态时同步触屏相机契约（场景已建时立即生效）
+watch(isPhone, (v) => sceneApi?.setMobileTouch?.(v))
 /**
  * 基地点位组的唯一推送方向（pane → scene，与标注投影同一纪律）：会话未就绪时
  * 内核只记意图（startPlayback 的 map 分支按它 build），就绪则立即重建。三个触发
@@ -571,16 +578,6 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
             data-testid="map-3d-camera"
             @update:model-value="chooseCamera"
           />
-          <button
-            v-if="fullscreenSupported"
-            type="button"
-            class="map3d-btn map3d-btn-icon"
-            data-testid="map-3d-fullscreen"
-            :aria-label="t(isFullscreen ? 'recon.map.playback.exit_fullscreen' : 'recon.map.playback.enter_fullscreen')"
-            @click="toggleFullscreen()"
-          >
-            <component :is="isFullscreen ? Minimize : Maximize" :size="16" aria-hidden="true" />
-          </button>
         </div>
         <p v-if="importMessage" class="map3d-import-note" role="status" data-testid="map-3d-import-note">{{ importMessage }}</p>
         <!-- #835：飞行/缩放操作提示（速度档 1–6 此前完全不可发现；桌面手感验收见 PR 清单） -->
@@ -590,16 +587,34 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
         v-if="uiHidden"
         type="button"
         class="map3d-restore map3d-btn"
+        :class="{ 'map3d-restore-shifted': fullscreenSupported }"
         data-testid="map-3d-restore-ui"
         :title="t('agentReplay.show_all_ui_hint')"
         @click="toggleUiHidden"
       >{{ t('agentReplay.show_all_ui') }}</button>
     </div>
+    <!-- 全屏入口统一右上角浮动（四个场景宿主同一契约；位置在 uiHidden 之外，
+         Hide All UI 不得造成无法退出全屏） -->
+    <SceneFullscreenButton
+      v-if="fullscreenSupported"
+      floating
+      :is-fullscreen="isFullscreen"
+      data-testid="map-3d-fullscreen"
+      @toggle="toggleFullscreen()"
+    />
+    <!-- 移动端竖向距离滑条：仅手机横屏显示（竖屏隐藏，判据与回放同一
+         usePlaybackPortraitViewport）；全屏按钮正下方，free/top 可用，follow/recorder
+         场景返回 unavailable（这里以 cam 判定隐藏）；Hide All UI 时随控件一起隐藏。 -->
+    <SceneDistanceSlider
+      :get-scene-api="() => sceneApi"
+      :visible="isPhone && !isPortrait && !uiHidden && (store.cam === 'free' || store.cam === 'top')"
+    />
   </div>
 </template>
 
 <style scoped>
 .map3d {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 100%;
@@ -763,6 +778,11 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
   position: absolute;
   inset-block-start: var(--space-2);
   inset-inline-end: var(--space-2);
+}
+
+/* 右上角有浮动全屏按钮时，restore 下移一行，避免命中区重叠。 */
+.map3d-restore.map3d-restore-shifted {
+  inset-block-start: calc(var(--space-2) + var(--control-h-sm) + var(--space-2));
   z-index: var(--z-sticky);
 }
 </style>

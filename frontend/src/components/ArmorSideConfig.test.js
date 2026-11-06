@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import ArmorSideConfig from './ArmorSideConfig.vue'
+import TankConfigPanel from './TankConfigPanel.vue'
+import upgradeFixtures from '../replay-local/compute/__fixtures__/upgrades/tanks.json'
 
 const data = vi.hoisted(() => ({ fetchTankData: vi.fn() }))
 vi.mock('../scene/agentData.js', () => data)
@@ -40,6 +42,7 @@ describe('ArmorSideConfig（一侧的模块 + 配件完整选择）', () => {
     await flushPromises()
     expect(wrapper.emitted('ready').at(-1)).toEqual([true])
     expect(wrapper.find('[data-testid="tank-configurator"]').exists()).toBe(true)
+    expect(wrapper.getComponent(TankConfigPanel).props('embedded')).toBe(true)
     expect(wrapper.findAll('.tp-module-tile')).toHaveLength(6) // 炮塔1+火炮1+发动机2+履带2
     expect(wrapper.findAll('.tp-dev-btn')).toHaveLength(0)
     expect(wrapper.find('.tp-skills-block').exists()).toBe(false)
@@ -65,5 +68,36 @@ describe('ArmorSideConfig（一侧的模块 + 配件完整选择）', () => {
     expect(payload.engine).toBe(1)
     expect(payload.configChanged).toBe(false)
     expect(typeof payload.dev).toBe('string')
+    expect(payload).not.toHaveProperty('upgrade')
+    expect(payload).not.toHaveProperty('abilities')
+  })
+
+  it('provides XI initial/max controls with unchanged module IDs and resets to the top default', async () => {
+    const { detail, modules } = upgradeFixtures[0]
+    data.fetchTankData.mockResolvedValueOnce(detail)
+    research.loadTankModules.mockResolvedValueOnce({ tanks: { [modules.stem]: modules } })
+    const wrapper = mount(ArmorSideConfig, {
+      props: { tankId: detail.tank_id, upgrade: 'top', expanded: false }, global: { mocks: { $t: key => key } },
+    })
+    await flushPromises()
+    expect(wrapper.emitted('ready').at(-1)).toEqual([true])
+    expect(wrapper.get('[data-testid="armor-side-config"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="tank-upgrade-top"]').attributes('aria-checked')).toBe('true')
+    expect(wrapper.findAll('.tp-module-tile')).toHaveLength(0)
+    expect(wrapper.find('[data-testid="tank-upgrade-skills"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="tank-upgrade-stock"]').trigger('click')
+    const stock = wrapper.emitted('apply').at(-1)[0]
+    expect(stock).toMatchObject({ config: 0, configChanged: false, upgrade: 'stock' })
+    expect(stock.abilities.every(Number.isInteger)).toBe(true)
+    await wrapper.get('[data-testid="tank-config-reset"]').trigger('click')
+    expect(wrapper.emitted('apply').at(-1)[0]).toMatchObject({ upgrade: 'top', abilities: [] })
+  })
+
+  it('keeps ordinary modules collapsed until expanded', async () => {
+    const wrapper = mount(ArmorSideConfig, { props: { tankId: 999, expanded: false }, global: { mocks: { $t: key => key } } })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="armor-side-config"]').element.style.display).toBe('none')
+    await wrapper.setProps({ expanded: true })
+    expect(wrapper.get('[data-testid="armor-side-config"]').element.style.display).not.toBe('none')
   })
 })

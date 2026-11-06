@@ -14,7 +14,7 @@
  * 物品 script（provisions/consumables）必须由调用方经 researchCatalog.scriptMap 注入：
  * 食物类乘员加成的唯一权威是客户端 script，引擎不按 stem 猜数值。
  */
-import { degressiveStat, progressiveStat } from './crewStats'
+import { degressiveStat, isConditionalCrewSkill, progressiveStat } from './crewStats'
 
 /** 乘员熟练度曲线（BK degressiveStat/progressiveStat，100% 时均为 0）。 */
 export { degressiveStat, progressiveStat }
@@ -66,6 +66,8 @@ export interface ComputeInput {
   gunIdx: number
   engineIdx: number
   trackIdx: number
+  /** XI 数值投影前的初始发动机功率，保持既有车体转速的装车/初始功率比。 */
+  stockEnginePower?: number
   /** 火炮循环（tank/{id}.json config 的 is_drum/is_burst/burst_*；缺省=regular） */
   gunCycle?: {
     type: 'regular' | 'autoloader' | 'autoreloader'
@@ -95,6 +97,8 @@ export interface ComputeInput {
   deviceIds: number[]
   /** 乘员技能等级（0–7；未选技能 = 缺省 0，效果按满级百分比缩放） */
   skillLevels?: Record<string, number>
+  /** 显式模拟条件技能触发；缺省 false，训练等级不会自动激活条件加成。 */
+  conditionalSkills?: boolean
   /** 客户端 skills.json 的逐技能效果参数（per-level；不在此写死百分比） */
   skillEffects?: Record<string, { effects?: Record<string, number> }>
   provisionStems: string[]
@@ -207,6 +211,7 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
   const hasProvision = (stem: string) => input.provisionStems.includes(stem)
   const hasConsumable = (stem: string) => input.consumableStems.includes(stem)
   const skill = (id: string) => {
+    if (isConditionalCrewSkill(id) && input.conditionalSkills !== true) return 0
     const level = Number(input.skillLevels?.[id]) || 0
     return Math.min(7, Math.max(0, level))
   }
@@ -277,7 +282,7 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
   const enginePower = baseEnginePower * enginePowerCoeff *
     (1 + skill('surrounded_by_enemy') * skillRate('surrounded_by_enemy', 'enginePowerFactorPerLevel'))
 
-  // ---- 装填（BK：rammer × 乘员 ÷ 肾上腺素；条件技能按触发效果计入）----
+  // ---- 装填（BK：rammer × 乘员 ÷ 肾上腺素；条件技能仅在显式模拟触发时计入）----
   const reloadBase = gun.stats?.reloadTime ?? 0
   const cycle = input.gunCycle || {
     type: 'regular', reload: reloadBase, intraClip: 0, shellCount: 0, shellReloads: [],
@@ -437,7 +442,7 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
     (stockGun?.stats?.weight ?? 0) +
     (radio?.stats?.weight ?? 0) +
     (fuelTank?.stats?.weight ?? 0)
-  const stockEnginePower = stockEngine?.stats?.power ?? baseEnginePower
+  const stockEnginePower = input.stockEnginePower ?? stockEngine?.stats?.power ?? baseEnginePower
   const stockWeightRatio = stockWeightKg > 0 && weightKg > 0 ? stockWeightKg / weightKg : 1
   // 只计模块发动机（装车/初始），消耗品增压不改变车体转向（BlitzInfo：引擎增压只 +5% rotation）
   const stockPowerRatio = stockEnginePower > 0 ? baseEnginePower / stockEnginePower : 1

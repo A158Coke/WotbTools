@@ -11,9 +11,10 @@
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Download, Image as ImageIcon, Maximize, Minimize, PencilRuler, Upload } from 'lucide-vue-next'
+import { Download, Image as ImageIcon, PencilRuler, Upload } from 'lucide-vue-next'
 import BattleMap from './BattleMap.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
+import SceneFullscreenButton from './SceneFullscreenButton.vue'
 import { mapBases } from '../data/mapBases.js'
 import { playableBounds } from '../data/playableBounds.js'
 import { WORLD_BOUNDS_300 } from '../data/mapImages.js'
@@ -125,6 +126,15 @@ async function resolveBasemap(bm) {
   })()
   if (gen !== basemapGen) return   // 过期（换图/卸载已介入）：未创建任何资源，直接退出
   if (resolved.error) {
+    // 显式选择 dataset 时 map2d 优先；该 dataset 缺图/契约失败仍回落 bundled，
+    // 不让 2D 预览因为版本切换而整块失败。
+    if (bm.fallbackImage) {
+      basemapImage.value = bm.fallbackImage
+      if (import.meta.env.DEV) {
+        console.warn(`[map-preview] map2d 底图拒绝（${key}），回落 bundled:`, resolved.error, resolved.detail || '')
+      }
+      return
+    }
     if (import.meta.env.DEV) {
       console.warn(`[map-preview] map2d 底图拒绝（${key}）:`, resolved.error, resolved.detail || '')
     }
@@ -198,6 +208,7 @@ const annotationEraserRadius = ref(ANNOT_ERASER_RADIUS_DEFAULT)
 const rootEl = ref(null)
 const stageEl = ref(null)
 const squareEl = ref(null)
+const controlsEl = ref(null)
 const mapComponent = ref(null)
 /** BattleMap expose 的**真实地图 DOM**（组件实例没有 getBoundingClientRect）；
  *  桌面/平板下 .pb-map 根宽为 66.7%，所有 screen-space 几何必须以它为原点/尺寸。 */
@@ -218,12 +229,30 @@ const ZOOM_STEP = 1.2
 const PAN_THRESHOLD_PX = 5
 const PINCH_THRESHOLD_PX = 5
 const FIT_MARGIN = 0.98
-/** 居中方形舞台边长（min(舞台宽, 舞台高)，JS 实测——纯 CSS aspect-ratio 与
- *  max-width 冲突时会被拉成矩形，实测写入内联尺寸才稳定）。 */
+/** 居中方形舞台边长（JS 实测——纯 CSS aspect-ratio 与 max-width 冲突时会被拉成
+ *  矩形，实测写入内联尺寸才稳定）。
+ *  手机形态（非全屏）：边长 = **可用宽度**（地图优先吃满宽度保持正方形；竖屏高度
+ *  不够或标注工具换行变高时由页面滚动承接，不按剩余高度压缩地图边长）；舞台高度
+ *  改为内容驱动（stage 内联高度 = 方形边长），工具栏紧随地图。
+ *  手机形态（全屏）：全屏根是 viewport-fixed，页面滚动不可达——回到视口内布局
+ *  （min(宽, 视口剩余高度 − 工具区实高)），工具区始终在视口内可操作，stage 的
+ *  touch-action: none 不会挡住任何滚动路径。
+ *  桌面：保持 min(舞台宽, 舞台高) 的固定填充高度契约。 */
 const squareSide = ref(0)
 function measureSquare() {
   const w = stageEl.value?.clientWidth || 0
   const h = stageEl.value?.clientHeight || 0
+  if (isPhone.value && isFullscreen.value) {
+    const fill = Number.parseFloat(stageHeight.value) || 0
+    // 全屏内工具区高度有界（工具行 + 导出行），预算下限兜底防塌 0
+    const budget = fill - (controlsEl.value?.offsetHeight || 0)
+    squareSide.value = w > 0 ? Math.floor(Math.min(w, Math.max(budget, 160))) : 0
+    return
+  }
+  if (isPhone.value) {
+    squareSide.value = w > 0 ? Math.floor(w) : 0
+    return
+  }
   squareSide.value = w > 0 && h > 0 ? Math.floor(Math.min(w, h)) : 0
 }
 
@@ -286,6 +315,8 @@ watch(mapEl, (el, prev) => {
   fitObserved = false
 }, { flush: 'post' })
 watch(stageHeight, measureSquare, { flush: 'post' })
+// 手机形态切换（旋转/跨断点）与全屏进出都改变边长口径，重测方形边长
+watch(isFullscreen, () => nextTick(measureSquare), { flush: 'post' })
 onMounted(() => {
   measureSquare()
   if (typeof ResizeObserver === 'function') {
@@ -320,6 +351,10 @@ onMounted(() => {
     })
     if (mapEl.value) mapSizeObserver.observe(mapEl.value)
     if (stageEl.value) mapSizeObserver.observe(stageEl.value)
+    // 工具区高度变化（手机全屏内 Drawing 工具栏开合）也要重测方形：全屏用
+    // 「视口剩余高度 − 工具区实高」预算，工具栏高度变了预算就变；measureSquare
+    // 写入相同 squareSide 时不触发新布局，无 RO 反馈环。
+    if (controlsEl.value) mapSizeObserver.observe(controlsEl.value)
   }
 })
 onBeforeUnmount(() => {
@@ -908,23 +943,20 @@ const stubFloatClass = () => ''
 <template>
   <!-- 观察层（rootEl）与固定高度层（.map2d-body）分离：usePaneFillHeight 的 RO 观察
        外层——高度写在外层自身会让 RO 失活（固定盒不再 resize，陈旧测量死锁）。 -->
-  <div ref="rootEl" class="map2d" data-testid="map-2d-pane">
-    <button
+  <div ref="rootEl" class="map2d" :class="{ 'map2d-phone': isPhone }" data-testid="map-2d-pane">
+    <SceneFullscreenButton
       v-if="fullscreenSupported"
-      type="button"
-      class="map2d-btn map2d-fullscreen"
+      floating
+      :is-fullscreen="isFullscreen"
       data-testid="map-2d-fullscreen"
-      :aria-label="t(isFullscreen ? 'recon.map.playback.exit_fullscreen' : 'recon.map.playback.enter_fullscreen')"
-      :title="t(isFullscreen ? 'recon.map.playback.exit_fullscreen' : 'recon.map.playback.enter_fullscreen')"
-      @click="toggleFullscreen()"
-    >
-      <component :is="isFullscreen ? Minimize : Maximize" :size="16" aria-hidden="true" />
-    </button>
-    <div class="map2d-body" :style="{ height: stageHeight }">
+      @toggle="toggleFullscreen()"
+    />
+    <div class="map2d-body" :style="isPhone ? null : { height: stageHeight }">
       <div
         ref="stageEl"
         class="map2d-stage"
         data-testid="map-2d-stage"
+        :style="isPhone && squareSide ? { height: squareSide + 'px' } : null"
         tabindex="0"
         @wheel="onWheel"
         @pointerdown="onPointerDown"
@@ -975,10 +1007,11 @@ const stubFloatClass = () => ''
         />
       </div>
     </div>
-    <div class="map2d-controls">
+    <div ref="controlsEl" class="map2d-controls">
       <div v-if="annotationOpen" class="map2d-annotations" data-testid="map-2d-annotations">
         <AnnotationToolbar
           :open="annotationOpen"
+          :compact="isPhone && isFullscreen"
           :active-tool="annotationTool"
           :annot-colors="ANNOT_COLORS"
           :annot-color="annotationColor"
@@ -1063,6 +1096,8 @@ const stubFloatClass = () => ''
         <p v-if="exportError" class="map2d-export-error" role="alert" data-testid="map-2d-export-error">{{ exportError }}</p>
       </div>
       <p v-if="importMessage" class="map2d-import-note" role="status" data-testid="map-2d-import-note">{{ importMessage }}</p>
+      <!-- 页面级操作帮助（Map Preview 无正式教程入口，本提示即最小帮助入口） -->
+      <p class="map2d-hint" data-testid="map-2d-controls-hint">{{ t('mapPreview.controlsHint2d') }}</p>
     </div>
     </div>
   </div>
@@ -1077,15 +1112,9 @@ const stubFloatClass = () => ''
 .map2d:fullscreen {
   padding: 0;
   background: var(--color-canvas);
-}
-
-.map2d-fullscreen {
-  position: absolute;
-  top: var(--space-2);
-  right: var(--space-2);
-  z-index: var(--z-sticky);
-  background: var(--color-surface-1);
-  border: 1px solid var(--color-border);
+  /* 全屏根是 viewport-fixed：手机满宽地图（横屏高度可超视口）时，工具区靠这里
+     的纵向滚动触达——非全屏的滚动来自页面，全屏必须自建滚动容器。 */
+  overflow-y: auto;
 }
 
 /* 固定高度层（usePaneFillHeight 写入）：舞台吃剩余、controls 固有高——
@@ -1108,6 +1137,13 @@ const stubFloatClass = () => ''
   overflow: hidden;
   background: var(--color-canvas);
   touch-action: none;
+}
+
+/* 手机形态：body 高度内容驱动（stage 内联高度 = 方形边长），工具栏紧随地图；
+   舞台不再 flex 吃剩余。min-height 保证底图错误态可见。 */
+.map2d-phone .map2d-stage {
+  flex: 0 0 auto;
+  min-height: 120px;
 }
 
 /* 舞台内居中方形（边长 = min(舞台宽, 舞台高)，JS 实测写入内联尺寸）：底图契约框
@@ -1200,6 +1236,12 @@ const stubFloatClass = () => ''
 .map2d-import-note {
   margin: 0;
   color: var(--color-text-secondary);
+  font: var(--type-caption);
+}
+
+.map2d-hint {
+  margin: 0;
+  color: var(--color-text-tertiary);
   font: var(--type-caption);
 }
 

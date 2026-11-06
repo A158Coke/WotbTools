@@ -19,7 +19,7 @@ import {
   penetrationCoefficient,
   type ComputeInput,
 } from './characteristics'
-import { degressiveStat, progressiveStat } from './crewStats'
+import { degressiveStat, isConditionalCrewSkill, progressiveStat } from './crewStats'
 
 const T34 = (USSRS as any).tanks['T-34']
 const IS4 = (USSRS as any).tanks['IS-4']
@@ -418,19 +418,59 @@ describe('弹种分类 / 装甲系数 / 弹速（客户端词表）', () => {
     expect(levelOne.dispersionMoving).toBeCloseTo(base.dispersionMoving! * 0.99, 3)
   })
 
-  it('条件技能按触发效果计入静态表（BI 同口径）：近战/突围/狂暴/亡命/致命精准', () => {
+  it.each(['surrounded_by_enemy', 'battle_rage', 'desperado', 'deadly_accuracy', 'close_combat_master'])(
+    '%s：已训练但未触发时与无技能参数一致', id => {
+      const input = setup({ skillLevels: { [id]: 7 } })
+      const baseline = computeCharacteristics(setup({}))
+      expect(computeCharacteristics(input)).toEqual(baseline)
+      expect(computeCharacteristics({ ...input, conditionalSkills: false })).toEqual(baseline)
+    },
+  )
+
+  it('显式模拟触发后才计入：近战/突围/狂暴/破釜沉舟/绝命反击', () => {
     const base = computeCharacteristics(setup({}))
-    const close = computeCharacteristics(setup({ skillLevels: { close_combat_master: 7 } }))
+    const close = computeCharacteristics(setup({ conditionalSkills: true, skillLevels: { close_combat_master: 7 } }))
     expect(close.turretRotationSpeed).toBeCloseTo(base.turretRotationSpeed! * 1.07, 2)
-    const surround = computeCharacteristics(setup({ skillLevels: { surrounded_by_enemy: 7 } }))
+    const surround = computeCharacteristics(setup({ conditionalSkills: true, skillLevels: { surrounded_by_enemy: 7 } }))
     expect(surround.enginePower).toBeCloseTo(base.enginePower! * 1.07, 2)
-    const rage = computeCharacteristics(setup({ skillLevels: { battle_rage: 7 } }))
+    const rage = computeCharacteristics(setup({ conditionalSkills: true, skillLevels: { battle_rage: 7 } }))
     expect(rage.gunShellReloadTime).toBeCloseTo(base.gunShellReloadTime! / 1.07, 2)
-    const desperado = computeCharacteristics(setup({ skillLevels: { desperado: 7 } }))
+    const desperado = computeCharacteristics(setup({ conditionalSkills: true, skillLevels: { desperado: 7 } }))
     expect(desperado.gunShellReloadTime).toBeCloseTo(base.gunShellReloadTime! / 1.07, 2)
-    const deadly = computeCharacteristics(setup({ skillLevels: { deadly_accuracy: 7 } }))
+    const deadly = computeCharacteristics(setup({ conditionalSkills: true, skillLevels: { deadly_accuracy: 7 } }))
     expect(deadly.circularVisionRadius).toBeCloseTo(base.circularVisionRadius! * 1.07, 2)
     expect(deadly.gunAimingTime).toBeCloseTo(base.gunAimingTime! / 1.07, 2)
+  })
+
+  it('所有训练技能默认仅应用常驻修正，触发开关可逆且不修改等级', () => {
+    const skillLevels = Object.fromEntries(Object.keys(SKILLS.items).map(id => [id, 7]))
+    const passiveLevels = Object.fromEntries(Object.entries(skillLevels).filter(([id]) => !isConditionalCrewSkill(id)))
+    const passive = computeCharacteristics(setup({ skillLevels: passiveLevels }))
+    const input = setup({ skillLevels })
+    expect(computeCharacteristics(input)).toEqual(passive)
+    expect(computeCharacteristics({ ...input, conditionalSkills: false })).toEqual(passive)
+    const triggered = computeCharacteristics({ ...input, conditionalSkills: true })
+    expect(triggered.enginePower).toBeGreaterThan(passive.enginePower)
+    expect(triggered.gunShellReloadTime).toBeLessThan(passive.gunShellReloadTime)
+    expect(triggered.circularVisionRadius).toBeGreaterThan(passive.circularVisionRadius)
+    expect(triggered.gunAimingTime).toBeLessThan(passive.gunAimingTime)
+    expect(triggered.turretRotationSpeed).toBeGreaterThan(passive.turretRotationSpeed)
+    // 概率/连续命中技能没有战斗输入，不把最高伤害/穿深强行加进常态面板。
+    expect(triggered.baseShellAvgDamage).toBe(passive.baseShellAvgDamage)
+    expect(triggered.baseShellAvgPiercingPower).toBe(passive.baseShellAvgPiercingPower)
+    expect(triggered.dispersionMoving).toBe(passive.dispersionMoving)
+    expect(triggered.stillInvisibility).toBe(passive.stillInvisibility)
+    expect(computeCharacteristics(input)).toEqual(passive)
+    expect(Object.values(skillLevels).every(level => level === 7)).toBe(true)
+  })
+
+  it('条件装填技能开启仍不影响弹夹与自动装填炮', () => {
+    const skillLevels = { battle_rage: 7, desperado: 7 }
+    for (const type of ['autoloader', 'autoreloader'] as const) {
+      const gunCycle = { type, reload: 15, intraClip: 2.5, shellCount: 3, shellReloads: [5, 7, 9] }
+      const input = setup({ skillLevels, gunCycle })
+      expect(computeCharacteristics({ ...input, conditionalSkills: true })).toEqual(computeCharacteristics(input))
+    }
   })
 
   it('垂直稳定器 105：动态扩圈统一 −17%（基础/移动/转向/射击后/炮损）', () => {

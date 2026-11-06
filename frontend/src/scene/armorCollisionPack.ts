@@ -28,6 +28,8 @@
 import * as THREE from 'three';
 import type { DataTexture, Mesh, Plane, Texture, Vector3 } from 'three';
 import { AI_NORMAL_CDF_GLSL, penetrationChanceForInterval } from './armorInspectorChance.js';
+// 主装甲 section 判定的唯一事实源（与点击链/续飞/点击触发面同口径）。
+import { isPrimary } from './penetration.js';
 
 /** 碰撞 section 码名（buildPack entries 的 section；texel0.w 编码见 RC.SECTION）。 */
 export type ArmorSection = 'hull' | 'turret' | 'gun' | 'spaced' | 'chassis' | 'gunBarrel'
@@ -486,7 +488,6 @@ int rcContinue(vec3 bouncePos, vec3 reflDir, float remIn, out float penOut, out 
 }
 `;
 
-const PRIMARY_SECTIONS = new Set(['hull', 'turret', 'gun']);
 const MODULE_SECTIONS = new Set(['chassis', 'gunBarrel']);
 const VARIANTS: Partial<Record<ArmorSection, number>> = { chassis: RC.VARIANT_BIT.track, gunBarrel: RC.VARIANT_BIT.gun };
 
@@ -508,7 +509,7 @@ export function buildPack(entries: readonly PackEntry[]): BuildPackResult {
     const _quat = new THREE.Quaternion();
     const _scale = new THREE.Vector3();
     for (const e of entries) {
-        if (!PRIMARY_SECTIONS.has(e.section) && e.section !== 'spaced' && !MODULE_SECTIONS.has(e.section)) {
+        if (!isPrimary(e.section) && e.section !== 'spaced' && !MODULE_SECTIONS.has(e.section)) {
             return { ok: false, reason: 'bad-section:' + e.section };
         }
         // 板厚是判定输入：NaN/负数不是“0mm 板”，是数据坏了 → 整包 fail-closed。
@@ -1097,8 +1098,6 @@ export function raycastGridAll(
     return hits;
 }
 
-const _PRIM = new Set(['hull', 'turret', 'gun']);
-
 /**
  * JS 参考实现：跳弹续飞层链（与 GLSL rcContinue 同常量同语义，在线推进 tCur）。
  * params: { remIn(=pen×0.75), caliber, normalizationRad, thickMul, ricochetRad?, clipPlane? }。
@@ -1132,7 +1131,7 @@ export function simulateContinuation(
         const ro = origin.clone().addScaledVector(dir, RC.ORIGIN_OFFSET);
         const hits = raycastPackAll(pack, ro, dir, RC.MIN_CONTINUATION_T, RC.FAR, false, clipPlane);
         // 前端门：原始命中无主装甲 → 不做二次判定（维持紫）
-        if (!hits.some(h => _PRIM.has(h.section))) break;
+        if (!hits.some(h => isPrimary(h.section))) break;
         // 收集：variant 去重；确定性判定与概率链都停在首个 primary（含）
         const seen = new Set<number>();
         const collected: CollisionHit[] = [];
@@ -1145,7 +1144,7 @@ export function simulateContinuation(
                 collected.push(h);
             } else {
                 collected.push(h);
-                if (_PRIM.has(h.section)) break;
+                if (isPrimary(h.section)) break;
             }
         }
         if (collected.length > RC.MAX_LAYER) return { cls: 0, penChance: 0, layers: allLayers };
@@ -1157,7 +1156,7 @@ export function simulateContinuation(
         for (const h of collected) {
             const th = h.thickness * thickMul;
             let eff: number, layPen: boolean;
-            const isPrimary = _PRIM.has(h.section);
+            const primaryLayer = isPrimary(h.section);
             if (h.variant) {
                 eff = th;
                 layPen = rem > eff;
@@ -1175,7 +1174,7 @@ export function simulateContinuation(
             const threeCal = caliber > th * 3;
             // 与 penetration.js 相同：只有本段首个非外部层可以新跳弹（首个命中可以是
             // 间隙甲；外部模块已在 variant 分支 flat 消费并递增 hitIndex）。
-            const ricocheted = (isPrimary || h.section === 'spaced') && hitIndex === 0 && !threeCal && angle >= ricochetRad;
+            const ricocheted = (primaryLayer || h.section === 'spaced') && hitIndex === 0 && !threeCal && angle >= ricochetRad;
             if (ricocheted) {
                 allLayers.push({ meshName: pack.meshes[h.meshIdx].name, plateId: pack.meshes[h.meshIdx].userData.armorPlateId, triangleId: h.triangleId, slot: h.slot, point: h.point.toArray(), normal: h.normal.toArray(), section: h.section, t: h.t, thickness: th, eff: 0, remBefore: rem, penetrated: false, ricochet: true, angle, seg });
                 // 第二次跳弹：炮弹消失，不再做后续判定。
@@ -1193,7 +1192,7 @@ export function simulateContinuation(
             probMin -= eff;
             probMax -= eff;
             allLayers.push({ meshName: pack.meshes[h.meshIdx].name, plateId: pack.meshes[h.meshIdx].userData.armorPlateId, triangleId: h.triangleId, slot: h.slot, point: h.point.toArray(), normal: h.normal.toArray(), section: h.section, t: h.t, thickness: th, eff, remBefore: rem, penetrated: layPen, ricochet: false, seg });
-            if (isPrimary) {
+            if (primaryLayer) {
                 if (!blocked && layPen) {
                     return { cls: 1, penChance: probChance > 0 ? Math.max(0, Math.min(1, probChance)) : 1, layers: allLayers };
                 }

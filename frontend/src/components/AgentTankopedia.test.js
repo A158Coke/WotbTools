@@ -11,6 +11,8 @@ import PROVISIONS from '../replay-local/compute/__fixtures__/research/provisions
 import SKILLS from '../replay-local/compute/__fixtures__/research/skills.json'
 import CAMOUFLAGE from '../replay-local/compute/__fixtures__/research/camouflage.json'
 import FORMAT from '../replay-local/compute/__fixtures__/research/params/format.json'
+import UPGRADE_TANKS from '../replay-local/compute/__fixtures__/upgrades/tanks.json'
+import GunArcDiagram from './GunArcDiagram.vue'
 
 const data = vi.hoisted(() => ({
   fetchTankEncyclopedia: vi.fn(),
@@ -172,6 +174,16 @@ describe('AgentTankopedia', () => {
     expect(cards[0].element.tagName).toBe('BUTTON')
     await wrapper.find('[data-testid="tank-load-more"]').trigger('click')
     expect(wrapper.findAll('[data-testid="tank-card"]')).toHaveLength(96)
+  })
+
+  it('默认按等级从高到低排序，排序控件高亮「等级 ↓」', async () => {
+    const { wrapper } = await mountAt()
+    const cache = makeCache()
+    const tiers = wrapper.findAll('[data-testid="tank-card"]')
+      .map(card => cache[card.attributes('data-tank-id')].tier)
+    expect(tiers).toHaveLength(48)
+    expect(tiers).toEqual([...tiers].sort((a, b) => b - a))
+    expect(wrapper.find('#tp-sort [data-value="tier"]').classes()).toContain('is-active')
   })
 
   it('封面图按内容框数据做展示裁剪；数据缺失时回退原始 contain', async () => {
@@ -402,6 +414,109 @@ describe('AgentTankopedia', () => {
   })
 })
 
+describe('AgentTankopedia — XI 两端升级（真实客户端模块，受控弹表/装甲映射场景）', () => {
+  beforeEach(() => {
+    data.fetchTankEncyclopedia.mockReset().mockResolvedValue(makeCache())
+    research.loadResearchCatalog.mockReset().mockResolvedValue(CATALOG)
+  })
+
+  function useTank(fixture) {
+    const { detail, modules } = structuredClone(fixture)
+    data.fetchTankData.mockReset().mockResolvedValue(detail)
+    research.loadTankModules.mockReset().mockResolvedValue({ tanks: { [modules.stem]: modules } })
+  }
+
+  it.each(UPGRADE_TANKS)('$modules.name：缺省顶级，切 stock 再切回 top 的参数/装甲/俯角联动，技能三选一', async (fixture) => {
+    useTank(fixture)
+    const { wrapper, router } = await mountAt({ tank: String(fixture.modules.tankId), config: '0' })
+    const hp = () => wrapper.find('[data-testid="tank-param-maxHealth"] .tp-param-value').text()
+    const topHp = hp()
+    const armorValues = () => wrapper.findAll('.tp-armor-table .tp-param-value').map(value => value.text())
+    const topArmor = armorValues()
+    const topPitch = JSON.parse(JSON.stringify(wrapper.findComponent(GunArcDiagram).props('pitchLimits')))
+    // 缺省 = 顶级：top 单选选中，stock 未选中。
+    expect(wrapper.find('[data-testid="tank-upgrade-top"]').attributes('aria-checked')).toBe('true')
+    expect(wrapper.find('[data-testid="tank-upgrade-stock"]').attributes('aria-checked')).toBe('false')
+    expect(wrapper.findAll('[data-testid^="tank-ability-"]')).toHaveLength(3)
+    expect(wrapper.findAll('.tp-skill-btn')).toHaveLength(20)
+    const choices = fixture.modules.upgradeProgression.alternativeGroups[0].choices
+    await wrapper.find(`[data-testid="tank-ability-${choices[2]}"]`).trigger('click')
+    await flushPromises()
+    expect(hp()).toBe(topHp) // 技能选择不改变静态满级数值。
+    expect(router.currentRoute.value.query.abilities).toBe(String(choices[2]))
+    await wrapper.find('[data-testid="tank-upgrade-stock"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toMatchObject({ upgrade: 'stock', config: '0', abilities: String(choices[2]) })
+    expect(hp()).not.toBe(topHp)
+    if ([27905, 30241, 30497].includes(fixture.modules.tankId)) expect(armorValues()).not.toEqual(topArmor)
+    else expect(armorValues()).toEqual(topArmor) // BZ-79/KR-1 没有装甲升级节点。
+    const stockPitch = wrapper.findComponent(GunArcDiagram).props('pitchLimits')
+    expect(stockPitch.max).toBeLessThan(topPitch.max)
+    await wrapper.find('[data-testid="tank-upgrade-top"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toMatchObject({ upgrade: 'top', config: '0', abilities: String(choices[2]) })
+    expect(hp()).toBe(topHp)
+    expect(armorValues()).toEqual(topArmor)
+    expect(wrapper.findComponent(GunArcDiagram).props('pitchLimits')).toEqual(topPitch)
+    expect(wrapper.findAll('[data-testid^="tank-ability-"][aria-checked="true"]')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('深链、浏览器前后导航及装甲跳转保留升级和所选技能', async () => {
+    const fixture = UPGRADE_TANKS[0]
+    useTank(fixture)
+    const { wrapper, router } = await mountAt({ tank: String(fixture.modules.tankId), upgrade: 'stock', assets: 'https://assets.test' })
+    const initial = wrapper.find('[data-testid="tank-param-maxHealth"] .tp-param-value').text()
+    await router.push({ query: { ...router.currentRoute.value.query, upgrade: 'top', abilities: '24' } })
+    await flushPromises()
+    const top = wrapper.find('[data-testid="tank-param-maxHealth"] .tp-param-value').text()
+    expect(top).not.toBe(initial)
+    router.back()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="tank-param-maxHealth"] .tp-param-value').text()).toBe(initial)
+    router.forward()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="tank-param-maxHealth"] .tp-param-value').text()).toBe(top)
+    await wrapper.find('[data-testid="tank-open3d"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toMatchObject({ view: 'agent-armor', upgrade: 'top', abilities: '24', assets: 'https://assets.test' })
+    wrapper.unmount()
+  })
+
+  it('升级数据缺失时明确说明；不将普通车辆切到升级模式', async () => {
+    const fixture = structuredClone(UPGRADE_TANKS[0])
+    delete fixture.modules.upgradeProgression
+    useTank(fixture)
+    const { wrapper } = await mountAt({ tank: String(fixture.modules.tankId) })
+    expect(wrapper.find('[data-testid="tank-upgrade-unavailable"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="tank-upgrades"]').exists()).toBe(false)
+    wrapper.unmount()
+    const normal = { detail: { ...fixture.detail, tier: 10 }, modules: { ...fixture.modules, tier: 10 } }
+    useTank(normal)
+    const { wrapper: old } = await mountAt({ tank: String(fixture.modules.tankId), upgrade: 'top', abilities: '24' })
+    expect(old.find('[data-testid="tank-upgrade-unavailable"]').exists()).toBe(false)
+    expect(old.find('[data-testid="tank-upgrades"]').exists()).toBe(false)
+    expect(old.find('.tp-module-matrix').exists()).toBe(true)
+    old.unmount()
+  })
+})
+
+describe('AgentTankopedia — XI 数据完整性', () => {
+  it('客户端规则存在但投影源缺字段时，不把初始数值标为已满级', async () => {
+    const { detail, modules } = structuredClone(UPGRADE_TANKS[0])
+    delete detail.configs[0].shells[0].damage
+    data.fetchTankData.mockReset().mockResolvedValue(detail)
+    data.fetchTankEncyclopedia.mockReset().mockResolvedValue(makeCache())
+    research.loadResearchCatalog.mockReset().mockResolvedValue(CATALOG)
+    research.loadTankModules.mockReset().mockResolvedValue({ tanks: { [modules.stem]: modules } })
+    const { wrapper } = await mountAt({ tank: String(modules.tankId), upgrade: 'top' })
+    expect(wrapper.find('[data-testid="tank-upgrade-top"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('agentTanks.configurator.upgrade_unsupported')
+    expect(wrapper.find('[data-testid="tank-param-maxHealth"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+})
+
 describe('AgentTankopedia — 整合配置器（客户端模块数据）', () => {
   beforeEach(() => {
     research.loadTankModules.mockReset().mockResolvedValue({ tanks: { 'IS-7': moduleFixture() } })
@@ -411,6 +526,18 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
       armor: { hull: { front: 150, sides: 100, rear: 60 }, turret: { front: 250, sides: 150, rear: 80 } },
       configs: configFixture(),
     })
+  })
+
+  it('模块摘要不展示未解析的客户端语言 key，缺可靠名称时显示既有 stem', async () => {
+    const modules = moduleFixture()
+    modules.turrets[1].name_en = '#usa_vehicles:Turret_2'
+    modules.turrets[1]['name_zh-Hans'] = '#usa_vehicles:Turret_2'
+    modules.turrets[1].stem = 'Turret_2_Test'
+    research.loadTankModules.mockResolvedValue({ tanks: { 'IS-7': modules } })
+    const { wrapper } = await mountAt({ tank: '999' })
+    expect(wrapper.get('.tp-summary').text()).not.toContain('#usa_vehicles:')
+    expect(wrapper.get('.tp-summary').text()).toContain('Turret 2 Test')
+    wrapper.unmount()
   })
 
   it('配置器选了 122（改进型垂直稳定器）→ 装甲查看器入口携带 eqpitch=1', async () => {
@@ -452,7 +579,7 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
     expect(provisionTile.length).toBeGreaterThan(0)
     // 顶级炮塔 500 + 车体 2000 = 2500；初次加载无 delta（BK useDelta：只比较上一次值）
     const hpRow = wrapper.find('[data-testid="tank-param-maxHealth"]')
-    expect(hpRow.text()).toContain('2500')
+    expect(hpRow.text()).toContain('2,500')
     expect(hpRow.find('.tp-param-delta').exists()).toBe(false)
     // 换输弹机后装填变快：delta 显示绝对差值 + ▼，颜色绿色（biggerIsBetter=false）
     await wrapper.find('[data-testid="tank-device-0-attack-0"]').trigger('click')
@@ -499,7 +626,7 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
 
   it('概览条 / 火炮元信息 / 消耗品冷却 / 初始-顶级快捷', async () => {
     const { wrapper, router } = await mountAt({ tank: '999' })
-    expect(wrapper.find('[data-testid="tank-summary-hp"]').text()).toContain('2500')
+    expect(wrapper.find('[data-testid="tank-summary-hp"]').text()).toContain('2,500')
     expect(wrapper.find('[data-testid="tank-summary-pen"]').text()).toContain('250')
     expect(wrapper.find('[data-testid="tank-gun-meta"]').exists()).toBe(true)
     // 客户端 consumable script 的 cooldown（自动灭火器 70s）与 duration（超速传动器 12s）
@@ -539,7 +666,7 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
     expect(router.currentRoute.value.query).toMatchObject({ config: '0', engine: '0', track: '0' })
     expect(router.currentRoute.value.query.shell).toBeUndefined()
     expect(wrapper.find('[data-testid="tank-summary-damage"]').text()).toContain('490')
-    expect(wrapper.find('[data-testid="tank-summary-hp"]').text()).toContain('2400')
+    expect(wrapper.find('[data-testid="tank-summary-hp"]').text()).toContain('2,400')
     await wrapper.find('[data-testid="tank-preset-top"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query).toMatchObject({ config: '2', engine: '1', track: '1' })
@@ -605,14 +732,61 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
     expect(moving()).toBe(before)
   })
 
-  it('条件技能也联动：近战大师提高炮塔转速，写 ?skills=', async () => {
+  it('条件技能训练与触发分离，开关可逆、分享保留等级、重置关闭', async () => {
     const { wrapper, router } = await mountAt({ tank: '999' })
     const turret = () => wrapper.find('[data-testid="tank-param-turretRotationSpeed"] .tp-param-value').text()
     const before = turret()
+    const toggle = () => wrapper.find('[data-testid="tank-skill-triggers"]')
+    expect(toggle().element.checked).toBe(false)
     await wrapper.find('[data-testid="tank-skill-close_combat_master"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query.skills).toBe('close_combat_master:1')
+    expect(turret()).toBe(before)
+    await toggle().setValue(true)
+    await flushPromises()
+    expect(router.currentRoute.value.query.skillTriggers).toBe('1')
+    expect(router.currentRoute.value.query.skills).toBe('close_combat_master:1')
     expect(turret()).not.toBe(before)
+    expect(wrapper.find('[data-testid="tank-param-turretRotationSpeed"] .tp-param-delta').exists()).toBe(true)
+    await toggle().setValue(false)
+    await flushPromises()
+    expect(router.currentRoute.value.query.skillTriggers).toBeUndefined()
+    expect(router.currentRoute.value.query.skills).toBe('close_combat_master:1')
+    expect(turret()).toBe(before)
+    await toggle().setValue(true)
+    await flushPromises()
+    await wrapper.find('[data-testid="tank-config-reset"]').trigger('click')
+    await flushPromises()
+    expect(toggle().element.checked).toBe(false)
+    expect(router.currentRoute.value.query.skillTriggers).toBeUndefined()
+    expect(router.currentRoute.value.query.skills).toBeUndefined()
+    expect(turret()).toBe(before)
+    wrapper.unmount()
+  })
+
+  it('条件技能深链与前进后退恢复同一开关和参数，清空技能关闭触发', async () => {
+    const { wrapper, router } = await mountAt({ tank: '999', skills: 'close_combat_master:7', skillTriggers: '1' })
+    const turret = () => wrapper.find('[data-testid="tank-param-turretRotationSpeed"] .tp-param-value').text()
+    const active = turret()
+    expect(wrapper.find('[data-testid="tank-skill-triggers"]').element.checked).toBe(true)
+    await router.push({ path: '/', query: { ...router.currentRoute.value.query, skillTriggers: undefined } })
+    await flushPromises()
+    expect(turret()).not.toBe(active)
+    expect(wrapper.find('[data-testid="tank-skill-triggers"]').element.checked).toBe(false)
+    router.back()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="tank-skill-triggers"]').element.checked).toBe(true)
+    expect(turret()).toBe(active)
+    router.forward()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="tank-skill-triggers"]').element.checked).toBe(false)
+    await wrapper.find('[data-testid="tank-skill-triggers"]').setValue(true)
+    await flushPromises()
+    await wrapper.find('[data-testid="tank-skills-clear"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.skillTriggers).toBeUndefined()
+    expect(router.currentRoute.value.query.skills).toBeUndefined()
+    wrapper.unmount()
   })
 
   it('装备点击写 ?dev= 并实时改参数；再点卸下', async () => {
@@ -628,7 +802,7 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
     expect(summary.text()).toContain('net_bonus')
     expect(summary.text()).toContain('"still":"4"') // 夹具是重坦：移动 2% / 静止 4%
     // improved assembly 111：HP ×1.05（2500 → 2625）
-    expect(wrapper.find('[data-testid="tank-param-maxHealth"]').text()).toContain('2625')
+    expect(wrapper.find('[data-testid="tank-param-maxHealth"]').text()).toContain('2,625')
     // 强化装甲 110：装甲表 +4%（炮塔正面 250 → 260，车体正面 150 → 156）
     await wrapper.find('[data-testid="tank-device-1-defence-0"]').trigger('click')
     await flushPromises()
@@ -641,7 +815,7 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
     await wrapper.find('[data-testid="tank-device-1-defence-0"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query.dev).toBeUndefined()
-    expect(wrapper.find('[data-testid="tank-param-maxHealth"]').text()).toContain('2500')
+    expect(wrapper.find('[data-testid="tank-param-maxHealth"]').text()).toContain('2,500')
   })
 
   it('装备 tooltip 占位符按当前车型/百分比格式化', async () => {
@@ -689,7 +863,7 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
     // 超负荷 107：弹速 ×1.35（900→1215）；远距衰减量 ×0.4（265−21.2×0.4=256.52）
     await wrapper.find('[data-testid="tank-device-1-attack-1"]').trigger('click')
     await flushPromises()
-    expect(detail()).toContain('1215')
+    expect(detail()).toContain('1,215')
     expect(detail()).toContain('256.5')
   })
 
@@ -698,11 +872,11 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
     await wrapper.find('[data-testid="tank-device-1-defence-1"]').trigger('click') // improved assembly 111
     await flushPromises()
     const hp = () => wrapper.find('[data-testid="tank-param-maxHealth"]')
-    expect(hp().text()).toContain('2625')
+    expect(hp().text()).toContain('2,625')
     expect(hp().find('.tp-param-delta').exists()).toBe(true)
     await wrapper.find('[data-testid="tank-config-reset"]').trigger('click')
     await flushPromises()
-    expect(hp().text()).toContain('2500')
+    expect(hp().text()).toContain('2,500')
     expect(hp().find('.tp-param-delta').exists()).toBe(false)
   })
 
@@ -735,7 +909,7 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
     await unavailable.trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query.config).toBe('0')
-    expect(wrapper.find('[data-testid="tank-param-maxHealth"]').text()).toContain('2400')
+    expect(wrapper.find('[data-testid="tank-param-maxHealth"]').text()).toContain('2,400')
     await wrapper.find('[data-testid="tank-gun-0"]').trigger('click')
     await flushPromises()
     const push = vi.spyOn(router, 'push')
