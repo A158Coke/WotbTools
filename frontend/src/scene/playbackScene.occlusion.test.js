@@ -28,40 +28,44 @@ describe('occlusionCells（标签遮挡候选格：线段经过的 16m 格）', 
 
 describe('标签遮挡：只对候选格做 raycast（禁止整场景递归检测）', () => {
   const src = readFileSync(resolve(__dirname, 'playbackScene.js'), 'utf8')
+  // #820 Step 5：软遮挡 owner = playback/labelsRuntime.ts（守卫随实现迁移）
+  const labelsSrc = readFileSync(resolve(__dirname, 'playback/labelsRuntime.ts'), 'utf8').replace(/\/\/[^\n]*/g, '')
   // 候选表登记随场景装配块 2026-10-24 出仓 playback/mapAssets.js（Step A3），守卫随实现迁移
   const mapAssetsSrc = readFileSync(resolve(__dirname, 'playback/mapAssets.ts'), 'utf8')
   it('源码护栏：不再对 mapScenery 全量 intersectObject，改用候选列表 intersectObjects', () => {
     expect(src).not.toMatch(/intersectObject\(mapScenery, true\)/)
-    expect(src).toMatch(/raycaster\.intersectObjects\(cands, false\)/)
-    expect(src).toMatch(/OCCL_MAX_CANDIDATES/)
+    expect(labelsSrc).toMatch(/raycaster\.intersectObjects\(cands as THREE\.Object3D\[], false\)/)
+    expect(labelsSrc).toMatch(/OCCL_MAX_CANDIDATES/)
     // 候选表在场景加载时构建、换场时失效（#820 Step 2：候选格 owner = mapWorld.ts）
     expect(mapAssetsSrc).toMatch(/occlGrid = occGrid;/)
     const mapWorldSrc = readFileSync(resolve(__dirname, 'playback/mapWorld.ts'), 'utf8')
     expect(mapWorldSrc).toMatch(/occlGrid = null;/)
   })
+  // #820 Step 5：弹道 owner = playback/battleRuntime.ts（守卫随实现迁移）
+  const battleSrc = readFileSync(resolve(__dirname, 'playback/battleRuntime.ts'), 'utf8').replace(/\/\/[^\n]*/g, '')
   it('折线点表必须镜像 x（游戏系 → 场景系）——镜像丢失 = 轨迹画到地图对侧', () => {
-    expect(src).toMatch(/pathPointsOf\(s\)\.map\(\(\[x, y, z\]\) => \[-x, y, z\]\)/)
+    expect(battleSrc).toMatch(/pathPointsOf\(s\)\.map\(\(\[x, y, z\]\) => \[-x, y, z\]\)/)
     // 弹着点从镜像后的点表取（pts3[1] = via[0] 或终点），不得再读原始坐标
-    expect(src).toMatch(/fromArray\(pts3\[1\]\)/)
-    expect(src).not.toMatch(/fromArray\(\(s\.via && s\.via\.length\) \? s\.via\[0\] : s\.to\)/)
+    expect(battleSrc).toMatch(/fromArray\(pts3\[1\]\)/)
+    expect(battleSrc).not.toMatch(/fromArray\(\(s\.via && s\.via\.length\) \? s\.via\[0\] : s\.to\)/)
   })
 
   it('updateTracers 完成判定用 T >= tr.t1（禁止再引用已删除的旧变量 f）', () => {
     // 回归：折线改造曾把推进公式换成折线求值，却留下 `if (f >= 1)` —— f 未定义，
     // 每帧 ReferenceError 中断整个 tick（不渲染、炮线永不回收），即"播放中卡死、暂停即止"。
-    expect(src).toMatch(/if \(T >= tr\.t1\) \{/)
-    expect(src).not.toMatch(/f >= 1/)
+    expect(battleSrc).toMatch(/if \(T >= tr\.t1\) \{/)
+    expect(battleSrc).not.toMatch(/f >= 1/)
     // 完成块必须仍然归还曳光条带；命中特效在抵达点时刻（legEnds[0]）生成，只生成一次
-    expect(src).toMatch(/if \(T >= tr\.t1\) \{[\s\S]{0,220}battleFx\.giveRibbon\(tr\.mesh\);/)
-    expect(src).toMatch(/if \(!tr\.hit && T >= tr\.legEnds\[0\]\) \{ tr\.hit = true; spawnImpact\(tr\); \}/)
+    expect(battleSrc).toMatch(/if \(T >= tr\.t1\) \{[\s\S]{0,220}battleFx!?\.giveRibbon\(tr\.mesh\);/)
+    expect(battleSrc).toMatch(/if \(!tr\.hit && T >= tr\.legEnds\[0\]\) \{ tr\.hit = true; spawnImpact\(tr\); \}/)
   })
 
   it('开火 / 命中特效的炮口、来弹与跳弹出射方向都取自镜像后的点表（折线改造曾漏字段 → 整帧抛异常）', () => {
     // 炮口 = pts3[0]、抵达点 = pts3[1]、跳弹出射段 = pts3[2]（镜像后的场景系，不得再读原始坐标）
-    expect(src).toMatch(/const from = new THREE\.Vector3\(\)\.fromArray\(pts3\[0\]\);/)
-    expect(src).toMatch(/const dir = impactPos\.clone\(\)\.sub\(from\);/)
-    expect(src).toMatch(/const out = pts3\.length > 2 \? new THREE\.Vector3\(\)\.fromArray\(pts3\[2\]\)\.sub\(impactPos\) : null;/)
-    expect(src).toMatch(/battleFx\.spawnImpact\(kind, tr\.impactPos, tr\.dir, tr\.out,/)
+    expect(battleSrc).toMatch(/const from = new THREE\.Vector3\(\)\.fromArray\(pts3\[0\]\);/)
+    expect(battleSrc).toMatch(/const dir = impactPos\.clone\(\)\.sub\(from\);/)
+    expect(battleSrc).toMatch(/const out = pts3\.length > 2 \? new THREE\.Vector3\(\)\.fromArray\(pts3\[2\]\)\.sub\(impactPos\) : null;/)
+    expect(battleSrc).toMatch(/battleFx!\.spawnImpact\(kind, tr\.impactPos, tr\.dir, tr\.out,/)
   })
 })
 
