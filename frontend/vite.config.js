@@ -195,7 +195,7 @@ export function nativeRuntimeIdentity() {
 
 /** Hash existing bootstrap scripts; Android has one reviewed network origin. */
 export function androidCsp(html) {
-  const hashes = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)]
+  const hashes = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script\b[^>]*>/gi)]
     .filter(match => match[1].trim())
     .map(match => `'sha256-${createHash('sha256').update(match[1]).digest('base64')}'`)
   return [

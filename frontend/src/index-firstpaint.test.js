@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest'
 
 const html = readFileSync(fileURLToPath(new URL('../index.html', import.meta.url)), 'utf8')
 
-const script = (html.match(/<script\b[^>]*>([\s\S]*?)<\/script>/i) || [])[1] || ''
+const script = (html.match(/<script\b[^>]*>([\s\S]*?)<\/script\b[^>]*>/i) || [])[1] || ''
 
 describe('index.html 首屏 profile/theme 派生（Theme 计划：无 FOUC）', () => {
   it('默认 :root 为 dark,且提供 html[data-theme="light"] 浅色 loader token(Classic 首屏不成黑) ', () => {

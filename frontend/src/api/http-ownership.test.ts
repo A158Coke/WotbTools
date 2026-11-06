@@ -18,7 +18,7 @@ function violations(path: string, source: string): string[] {
   if (path.startsWith('api/') || path === 'utils/http.ts') return []
   // Vue 只检查脚本；模板属性/文档不作为 JavaScript token 解释。
   const code = path.endsWith('.vue')
-    ? [...source.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map(match => match[1]).join('\n')
+    ? [...source.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script\b[^>]*>/gi)].map(match => match[1]).join('\n')
     : source
   // 有限 token 扫描：先消费完整注释/字符串，避免把字符串内 https:// 当作注释。
   const tokens = /\/\/[^\r\n]*|\/\*[\s\S]*?\*\/|"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`/g
