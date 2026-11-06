@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import {
-  GRID, PROXY_FOOTPRINT, createTankContactShadows, measureShadowFootprint, shadowAlpha, shadowGridXZ, shadowMargin,
+  DEPTH_PULL, GRID, PROXY_FOOTPRINT, applyDepthPull, createTankContactShadows, measureShadowFootprint, shadowAlpha, shadowGridXZ, shadowMargin,
   sunShadowFrom,
 } from './tankContactShadows.ts'
 
@@ -171,6 +171,36 @@ describe('车体外可见性（俯视时车体盖住内核，只看得到车外�
     expect(lit).toBeLessThanOrEqual(0.6)
     expect(shade).toBeGreaterThan(3 * lit)
     expect(shade).toBeGreaterThan(2)          // 面积要够：按车宽算尾巴时只有约 1.5 m，验收判为不明显
+  })
+})
+
+describe('视线方向深度拉近（地表 / 贴地物件 / 深度量化不得盖住阴影）', () => {
+  it('注入 three 真实 MeshBasic 顶点着色器：在 project_vertex 之后、logdepthbuf_vertex 之前', () => {
+    const shader = { vertexShader: THREE.ShaderLib.basic.vertexShader }
+    applyDepthPull(shader)
+    const v = shader.vertexShader
+    const project = v.indexOf('#include <project_vertex>')
+    const pull = v.indexOf('float pull = min(')
+    const logdepth = v.indexOf('#include <logdepthbuf_vertex>')
+    expect(project).toBeGreaterThan(-1)
+    expect(pull).toBeGreaterThan(project)
+    expect(logdepth).toBeGreaterThan(pull)   // 对数深度从被拉近后的 gl_Position 计算
+    expect(v).toContain(`float pull = min(${DEPTH_PULL.height.toFixed(4)} / viewSin, ${DEPTH_PULL.max.toFixed(4)})`)
+    expect(v).toContain(`, ${DEPTH_PULL.minSin.toFixed(4)});`)
+  })
+
+  it('three 升级改掉 chunk 名时显式失败，而不是静默失去拉近', () => {
+    expect(() => applyDepthPull({ vertexShader: 'void main() {}' })).toThrow(/project_vertex/)
+  })
+
+  it('材质挂上拉近且保留深度测试（建筑 / 车体在前时仍遮挡阴影）', () => {
+    const h = harness()
+    h.shadows.update({}, 0, 0, 0, true)
+    const m = h.meshes()[0].material as THREE.MeshBasicMaterial
+    expect(m.onBeforeCompile).toBe(applyDepthPull)
+    expect(m.depthTest).toBe(true)
+    expect(m.depthWrite).toBe(false)
+    expect(m.customProgramCacheKey()).toBe('tankContactShadow-depthPull')
   })
 })
 

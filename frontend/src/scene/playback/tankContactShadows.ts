@@ -100,7 +100,7 @@ export function measureShadowFootprint(object: Object3D): ShadowFootprint {
 
 /** 网格每边顶点数：25 个有界采样点贴合斜坡，成本不随地形规模变化 */
 export const GRID = 5
-const LIFT = 0.04         // 离地抬升（米），配合 polygonOffset 防 z-fighting
+const LIFT = 0.04         // 离地抬升（米）；深度遮挡由 DEPTH_PULL 解决
 const OPACITY = 0.65
 const SHADOW_COLOR = 0x0b0f14
 
@@ -182,6 +182,30 @@ function makeGradientTexture(): THREE.DataTexture {
   return tex
 }
 
+// 视线方向深度拉近：顶点沿「相机 → 顶点」射线朝相机移动，屏幕位置不变、只改深度。
+// 拉近量 = H / sin(该点的视线仰角)，等价于「深度上把阴影抬高 H 米」：低于 H 的地表起伏、
+// 路面 / 贴花等贴地物件、远距离深度量化、对数深度（写 gl_FragDepth，polygonOffset 失效）
+// 都不再盖住阴影（用户验收：「阴影有时被地形覆盖」）；高于 H 的建筑 / 车体在前时仍遮挡
+// （深度测试保留）。低视角下所需拉近量按 1/sinθ 增长（仰角 20° 时 6 cm 高的表面已需 0.18 m），
+// 故按视角计算而非固定米数；minSin 与 max 限住贴地平视时的拉近量。
+export const DEPTH_PULL = Object.freeze({ height: 0.25, minSin: 0.1, max: 2.5 })
+
+/** 注入到 MeshBasicMaterial 顶点着色器（project_vertex 之后、logdepthbuf_vertex 之前） */
+export function applyDepthPull(shader: { vertexShader: string }): void {
+  const anchor = '#include <project_vertex>'
+  if (!shader.vertexShader.includes(anchor)) throw new Error('tankContactShadows: project_vertex chunk missing')
+  const f = (n: number) => n.toFixed(4)
+  shader.vertexShader = shader.vertexShader.replace(anchor, `${anchor}
+  {
+    float pullDist = length(mvPosition.xyz);
+    vec3 upView = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
+    float viewSin = max(dot(-mvPosition.xyz / max(pullDist, 1e-4), upView), ${f(DEPTH_PULL.minSin)});
+    float pull = min(${f(DEPTH_PULL.height)} / viewSin, ${f(DEPTH_PULL.max)});
+    mvPosition.xyz *= max(pullDist - pull, 0.0) / max(pullDist, 1e-4);
+    gl_Position = projectionMatrix * mvPosition;
+  }`)
+}
+
 interface ShadowEntry {
   mesh: THREE.Mesh
   pos: THREE.BufferAttribute
@@ -221,9 +245,9 @@ export function createTankContactShadows({ scene, sunLight, heightAt }: TankCont
   const material = new THREE.MeshBasicMaterial({
     color: SHADOW_COLOR, map: texture, transparent: true, opacity: OPACITY,
     depthTest: true, depthWrite: false, toneMapped: false,
-    // 比基地/出生点贴地标记（-2/-3）更靠后：标记压在阴影上
-    polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
   })
+  material.onBeforeCompile = applyDepthPull
+  material.customProgramCacheKey = () => 'tankContactShadow-depthPull'
   const entries = new Map<object, ShadowEntry>()
   const footprints = new Map<object, ShadowFootprint>()
   const xz = new Float32Array(GRID * GRID * 2)
