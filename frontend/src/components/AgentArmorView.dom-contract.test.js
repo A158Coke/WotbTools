@@ -819,38 +819,21 @@ describe('armor shell and readiness ownership', () => {
 })
 
 // 间隙甲渲染：additive 层按网格拓扑选面——闭合网格单面累计（正/背两表面只算一次）；
-// 开放面片按去重键拆 front/back 双 clone + stencil 去重（同键入射面计一次、出射面抑制，
+// 开放面片拆 front/back 双 clone + stencil 去重（同键入射面计一次、出射面抑制，
 // 与点击链 spacedSeen 同口径）；背面片元把法线翻向相机（与 classifyHit 同口径）。
+// 本 describe 只保留**既有**的材质状态接线断言；同板去重的真实行为（stencil 抑制、
+// 背面屏等效厚度、resize 后仍带 stencil 附件）由 browser gate
+// `test:browser-armor-spaced-backside` 以真实 GPU readback 验证，不用源码正则冒充
+//（frontend/AGENTS.md Testing rules：source guard 只锁 dependency/API ownership）。
 describe('spaced armor surface selection', () => {
   const shaders = read('../scene/viewer/armorShaders.ts')
   const kernel = read('../scene/tankViewer.js')
-  it('闭合网格单面；开放网格 front 写位/back 测位；溢出整车回退双面并报告', () => {
+  it('间隙甲材质/状态材质/深度占位的既有渲染状态', () => {
     expect(shaders).toMatch(/function spacedMaterial\(thickness: number, penetration: number \| null \| undefined, side: Side\): ShaderMaterial \{/)
     expect(shaders).toMatch(/side,\s*\n\s*uniforms:/)
     expect(shaders).toMatch(/depthWrite: true, depthTest: true, blending: THREE\.NoBlending,\s*\n\s*side: THREE\.DoubleSide,/)
-    // 闭合网格（及溢出回退）沿用拓扑二分选面。
-    expect(plateModel).toMatch(/closed \? THREE\.FrontSide : THREE\.DoubleSide/)
-    expect(plateModel).toMatch(/const addSingleSpacedClone = \(node: Mesh, t: number, side: Side\) => \{/)
-    // 开放网格 front 写位 / back 测位（同键去重，先写后测）。
-    expect(plateModel).toMatch(/function applySpacedFrontStencil\(m: Material, bit: number\): void \{/)
-    expect(plateModel).toMatch(/function applySpacedBackStencil\(m: Material, bit: number\): void \{/)
-    expect(plateModel).toMatch(/mats\.spacedMaterial\(t, pen, THREE\.FrontSide\)/)
-    expect(plateModel).toMatch(/mats\.spacedMaterial\(t, pen, THREE\.BackSide\)/)
-    expect(plateModel).toMatch(/const cf = addClone\(scene, node, fm, 2\)/)
-    expect(plateModel).toMatch(/const cb = addClone\(scene, node, bm, 2\.1\)/)
-    // 键位分配与点击链同粒度；超 8 位 fail-closed 显式报告。
-    expect(plateModel).toMatch(/assignSpacedStencilBits\(/)
-    expect(plateModel).toMatch(/falling back to double-sided accumulation/)
     expect(kernel).toMatch(/colorWrite: false, depthTest: true, depthWrite: true, side: THREE\.DoubleSide,/)
     expect(plateModel).toMatch(/addClone\(scene, node, mats\.spacedOmit, 5\)/)
-    // RT0 厚度通道与回放 spacedRT 必须带 stencil buffer，且深度纹理由共享工厂构造
-    // （DepthStencilFormat；DepthFormat 下无 stencil 附件 → 去重失效）。首建与 resize
-    // 重建同源；背面屏法线/厚度等渲染行为由 browser gate
-    // `test:browser-armor-spaced-backside` 以真实 GPU readback 验证，不用正则冒充。
-    expect(kernel).toMatch(/stencilBuffer: true/)
-    expect(kernel).toMatch(/createDepthStencilTexture/)
-    expect(read('../scene/playback/armorHighlight.ts')).toMatch(/stencilBuffer: true/)
-    expect(read('../scene/playback/armorHighlight.ts')).toMatch(/createDepthStencilTexture/)
   })
   it('间隙甲片元着色器按 gl_FrontFacing 翻转法线（PBR/间隙/状态三处）', () => {
     const flips = [...shaders.matchAll(/if \(!gl_FrontFacing\) nFace = -nFace;/g)]
