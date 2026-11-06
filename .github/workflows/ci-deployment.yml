@@ -125,8 +125,33 @@ jobs:
           assert "/data" in by_target and "/config" in by_target, by_target
           PY
 
-          mkdir -p "$work/assets/current"
+          mkdir -p "$work/assets/current" "$work/assets/datasets/11.21.0"
           printf '%s\n' '{"asset-origin":"fixture"}' > "$work/assets/current/index.json"
+          cp "$work/assets/current/index.json" "$work/assets/datasets/11.21.0/index.json"
+          printf '%s\n' '{"version":1,"generated":"2026-01-01T00:00:00+00:00","data_version":{"game_version":"release/11.21.0","tank_count":0,"game_data_files":0},"files":[]}' \
+            > "$work/assets/datasets/11.21.0/manifest.json"
+          cp "$work/assets/datasets/11.21.0/manifest.json" "$work/assets/current/manifest.json"
+          manifest_sha="$(sha256sum "$work/assets/datasets/11.21.0/manifest.json" | awk '{print $1}')"
+          python3 - "$work/assets" "$manifest_sha" <<'PY'
+          import json, pathlib, sys
+          root = pathlib.Path(sys.argv[1])
+          manifest_sha = sys.argv[2]
+          version = {
+              "schema": 1, "dataset_id": "11.21.0", "game_version": "release/11.21.0",
+              "variant": None, "label": "11.21.0", "release": "fixture",
+              "generated": "2026-01-01T00:00:00+00:00", "content_digest": "sha256:fixture",
+              "manifest_sha256": manifest_sha, "tank_count": 0, "status": "active",
+          }
+          for directory in (root / "datasets/11.21.0", root / "current"):
+              (directory / "version.json").write_text(json.dumps(version, indent=1) + "\n", encoding="utf-8")
+          catalog = {
+              "schema": 1, "updated": "2026-01-01T00:00:00+00:00", "default": "11.21.0",
+              "datasets": [{**version, "id": "11.21.0", "min_client": None, "notes": ""}],
+          }
+          catalog["datasets"][0].pop("schema")
+          catalog["datasets"][0].pop("dataset_id")
+          (root / "versions.json").write_text(json.dumps(catalog, indent=1) + "\n", encoding="utf-8")
+          PY
           sed 's/^assets\.wotbtools\.com {/http:\/\/:8080 {/' deploy/assets/Caddyfile > "$work/Caddyfile"
 
           docker run --rm --entrypoint caddy \
@@ -157,6 +182,7 @@ jobs:
           set -euo pipefail
           bash scripts/ci/test-workflow-contract.sh
           bash scripts/ci/test-tofu-workflow-contract.sh
+          bash deploy/test-asset-dataset.sh
           bash scripts/ci/test-postgres-keycloak-tofu-contract.sh
           bash scripts/ci/test-postgres-business-tofu-contract.sh
       - name: Declarative Komodo resource contract

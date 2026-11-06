@@ -25,13 +25,16 @@ assetBase()  ← 解析出的 asset origin
 
 基础设施选择只出现在本文件与部署配置里，不出现在应用契约中。
 
-## 当前状态（2026-10-20 更新）
+## 当前状态（2026-11-05 更新）
 
 | 项 | 值 |
 |---|---|
 | Web origin | `https://assets.wotbtools.com` |
-| Web 资产包位置 | Alibaba asset host 的 `/srv/wotb-assets/current`，由 `deploy/assets/` 的 Komodo Stack 提供 |
-| Android 新版本 origin | Native `AgentAssetProxy` 直连 `https://assets.wotbtools.com`；`/agent-assets` 本机路径保持不变 |
+| 版本目录 | `https://assets.wotbtools.com/versions.json`（dataset 列表 + default）；每个游戏版本在 `/v/<dataset-id>/` 下 |
+| Dataset 通道（2026-11-06） | 默认 = `11.21.0`（正式服：`current` 指向它，根路径与未选择 dataset 的用户都读它）/ `supertest`（超测服，随预览轮次重指到最新预览 release：t11b → t11p2 → …，仅显式选择时使用）/ `11.22`（预留，正式服包发布时加入；最终三通道 = 11.21 / 超测服 / 11.22）。旧 `11.21.0-t11-preview` 通道由 `supertest` 取代（`dataset.sh unlink`） |
+| Dataset 路由 | `deploy/assets/Caddyfile` 提供 `/versions.json`（`max-age=60`）与 `/v/<dataset-id>/...`（`max-age=300`），根路径继续服务 `current`。该配置是 Stack 的 tracked 依赖：合并后经 `asset-origin` 指针分支 → Komodo Stack redeploy 生效；验证用 `deploy/assets/verify.sh https://assets.wotbtools.com` |
+| Web 资产包位置 | Alibaba asset host 的 `/srv/wotb-assets/current`（默认 dataset 的兼容入口）与 `/srv/wotb-assets/datasets/<id>`，由 `deploy/assets/` 的 Komodo Stack 提供 |
+| Android 新版本 origin | Native `AgentAssetProxy` 直连 `https://assets.wotbtools.com`；`/agent-assets` 本机路径保持不变，`/agent-assets/v/<id>/...` 原样透传 |
 | COS legacy origin | `https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com`；旧 APK 与临时回滚使用，桶和对象暂不删除 |
 | 包完整性 | 抽查 14 条关键路径全部 `200`（GLB / 碰撞 / tank JSON / 封面 / tanks.pb / models.pb / 底图 / 小地图 / 地形 bin / terrain.json / 场景 GLB / 地表分层 / 卷积贴图） |
 | CORS | Alibaba Web origin 已验证允许 `https://wotbtools.com` 与 `https://www.wotbtools.com`，并支持浏览器 `GET,HEAD` |
@@ -45,12 +48,75 @@ assetBase()  ← 解析出的 asset origin
 
 `frontend/src/scene/assetBase.ts`：
 
-1. `?assets=<url>` URL 参数（开发/运维 override，非空时持久化到 localStorage）
-2. `localStorage.wotb_asset_base`（单浏览器 override）
-3. **生产构建默认 `VITE_ASSET_BASE_URL`**（由主 Frontend 与 TX2 replica workflow 的 `ASSET_BASE_URL` 输入注入，普通用户走这条）
-4. 均未设置 → 未配置：`assetProvider` 抛错，3D 视图显示"未配置资产源"提示
+1. `?assets=<url>` URL 参数（开发/运维 override，非空时持久化到 localStorage）。若它已经是
+   `/v/<dataset-id>` 的完整基址，则原样使用，不再叠加 `?data=`
+2. `?data=<dataset-id>` URL 参数（选择某个游戏版本 dataset，持久化到 `wotb_data_version`）
+3. `localStorage.wotb_data_version`（单浏览器 dataset 选择）
+4. **生产构建默认 `VITE_ASSET_BASE_URL`**（由主 Frontend 与 TX2 replica workflow 的 `ASSET_BASE_URL` 输入注入，普通用户走这条）；未选 dataset 时读 origin 根 = 服务端 `current`
+5. 均未设置 → 未配置：`assetProvider` 抛错，3D 视图显示"未配置资产源"提示
 
-`?assets=`（显式空）用于**清除 override**，回落到生产构建默认。
+`?assets=`（显式空）用于**清除 override**，回落到生产构建默认。`?data=` 为空 = 默认
+dataset（删除持久化选择）。
+
+### 数据版本（dataset）
+
+资产面按游戏版本维护，而不是只保留一份 `current`：
+
+```
+/srv/wotb-assets/
+  releases/<release-id>/          # 不可变
+  datasets/<dataset-id> -> ../releases/<release-id>
+  current -> datasets/<default-id>
+  versions.json
+```
+
+- 前端在侧边栏顶部 logo 下方提供显式下拉选择（移动端在「更多 → 显示设置」）；切换写入 `?data=` 并整页重载
+- `versions.json` 是选择器唯一数据源；`default` 对应 `current`，旧客户端继续读根路径
+- 发布/回滚/目录重建由 `deploy/assets/dataset.sh` 完成（`flock` + 原子符号链接 +
+  `tools/asset_release.py` 校验），详见 `deploy/assets/README.md`
+- 存储去重：`objects/<sha[:2]>/<sha256>` 保存唯一内容，release 树为对象硬链接（Caddy
+  静态伺服不变）；迁移/发布/gc 用 Agent 仓 `tools/asset_store.py`，见
+  `docs/asset-store.md` 与 `deploy/assets/README.md`
+
+### 数据版本覆盖范围（审计，2026-11-05）
+
+**资产包内的运行时数据一律经 `assetProvider`（Web / Android）或 `androidAssetBase()`（Android map2d
+OTA）解析**；禁止直接读 `ANDROID_ASSET_BASE` / `VITE_ASSET_BASE_URL`，也禁止手拼
+`/glb|/tank|/map|/cover|/research|/tank_images|/data|/tread|/suspension` 路径。
+守卫：`frontend/src/data-version-wiring.test.js` 扫描全部 `src`（含 `.vue`），
+任何绕过 `assetProvider` 的字面资产路径、直接常量引用都会失败。
+
+跟随 dataset 切换：
+
+- `tank/{id}.json`、`data/tank_cache.json`、`data/shellKinds.json`
+- `glb/{id}/*.glb`（3D 回放 / 坦克查看器 / 装甲查看器）与 `suspension/`、`tread/`
+- `map/{key}/**`（scenery / terrain / ground / lighting / IBL）
+- `cover/`、`tank_images/`（含 `crops.json`）
+- `research/**`（配置器 / 科技树 / 模块）
+- `map2d/`：Web 地图预览在显式选择 dataset 时 dataset 优先、bundled 兜底；Android OTA
+  overlay 走 `/agent-assets/v/<id>/map2d/`
+
+静态 / 随前端打包（**不属于 dataset**，切换不会改变）：
+
+- `frontend/src/data/mapImages.js`：Web 2D 战术底图 canonical（离线 + 逐图校准）；
+  BattlePlayback / MapOverview 仍用 bundled；MapPreview 在显式选 dataset 时优先 pack `map2d`
+- `frontend/src/vehicle-models/assets`：Tier X dedicated hull/turret webp（演示层资产）
+- `frontend/src/assets/tank-portraits`：Tier X 车型图
+- `common/research/icons/**`：配置器物品/技能/弹种图标（非图标 data 随 dataset 的 `research/**`；
+  图标本身随前端打包）
+- `common/tankopedia-tier*.json`：回放本地计算 / HoF / 车型映射的静态参考（不是版本化坦克
+  数值；运行时数值来自 `tank_cache` / `tank/{id}.json`）
+- `/map-3d-local/**`：本机 2.5D 地图诊断夹具
+- WASM parser pin：按 WotbTools 构建固定，与 dataset 正交
+
+缓存与切换语义：
+
+- 切换 = `location.assign` 整页重载；`assetProvider` / `agentData` / `replaySource` /
+  `researchCatalog` 的模块级 Promise 缓存随页面重置
+- Android `AgentAssetProxy` 磁盘缓存 key = 完整请求路径（含 `/v/<id>/`），不同 dataset 不串
+- Android map2d localStorage 索引按 dataset 隔离（`wotb.map2d.index.v1:<id>`；未选择时保留旧键）
+- map2d OTA 仍是“不降级”通道：dataset 的 map2d 旧于包内内容时不会覆盖 bundled
+  （防 APK 升级后回退）；这是刻意策略
 
 ## 部署：接线
 

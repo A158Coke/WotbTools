@@ -66,7 +66,8 @@ pnpm run dev
 
    ```bash
    node scripts/serve_asset_pack.mjs 8123
-   # 用法：node scripts/serve_asset_pack.mjs [port] [packDir]
+   # 用法：node scripts/serve_asset_pack.mjs [port] [packDir] [datasetsDir]
+   #   默认 datasetsDir=release/datasets；同时提供 /v/<dataset-id>/... 与 release/versions.json
    ```
 
    脚本把 `release/asset_pack` 按 **cwd** 解析：在别的目录启动会静默 404（资产全丢但服务"正常"）。
@@ -84,6 +85,7 @@ pnpm run dev
    | `?localuser=1` | **本机自备**测试参数（**不入库**）：按 §4.1 在本机 checkout 自备 dev-gated 登录桩后生效（"已登录的普通用户"）；不提供真实凭据。**约定写法**——触发条件是 dev 构建下 URL 存在 `localuser` 参数 |
    | `?view=<name>` | 直达视图（如 `agent-armor`、`agent-replay`） |
    | `?assets=<URL>` | 覆盖资产面；**非空值会持久化到 localStorage 并盖住 `.env.local`**；回默认要带一次空 `?assets=` |
+   | `?data=<dataset-id>` | 选择游戏版本数据（如 `11.21.0`）；持久化到 `wotb_data_version`，资产基址变成 `<origin>/v/<id>`。侧边栏 logo 下方（移动端「更多 → 显示设置」）也有同名下拉。清空该参数 = 回默认 dataset |
    | `?debug` | 场景调试探针（见 §6） |
 
 4. Keycloak：`http://localhost:5173/*` 必须在生产 client `wotbtools-web` 的 Redirect URIs 里，

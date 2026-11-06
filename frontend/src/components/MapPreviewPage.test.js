@@ -3,6 +3,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import { __resetAssetBaseForTests } from '../scene/assetBase.js'
 
 const i18n = vi.hoisted(() => ({ locale: null }))
 vi.mock('vue-i18n', async () => {
@@ -113,6 +114,8 @@ async function openAt(query = {}) {
 }
 
 beforeEach(() => {
+  // 每个用例模拟一次新的页面加载：dataset 在页面内固定，切换只经整页重载。
+  __resetAssetBaseForTests()
   auth.authenticated.value = false
   if (i18n.locale) i18n.locale.value = 'zh'
   source.loadMapIndex.mockReset()
@@ -403,6 +406,20 @@ describe('MapPreviewPage', () => {
     expect(pane.props('basemap')).toMatchObject({ kind: 'bundled' })
     expect(pane.props('basemap').image.src).toBeTruthy()
     expect(pane.props('basemap').image.coordinateBounds).toEqual({ xMin: -300, xMax: 300, yMin: -300, yMax: 300 })
+  })
+
+  it('显式 dataset 选择：bundled 图也优先用 dataset map2d，并带 bundled 兜底', async () => {
+    auth.authenticated.value = true
+    source.loadMapIndex.mockResolvedValue(IDX)
+    localStorage.setItem('wotb_data_version', '11.21.0')
+    try {
+      const wrapper = await openAt({ map: 'erlenberg', mode: '2d' })
+      const pane = wrapper.findComponent({ name: 'MapPreview2DPane' })
+      expect(pane.props('basemap')).toMatchObject({ kind: 'map2d', mapKey: 'erlenberg' })
+      expect(pane.props('basemap').fallbackImage).toBeTruthy()
+    } finally {
+      localStorage.removeItem('wotb_data_version')
+    }
   })
 
   // ---- 基地点位（?bases=）：争霸/遭遇切换，两个 pane 共用同一 kind ----
