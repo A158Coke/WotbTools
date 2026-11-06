@@ -12,6 +12,7 @@ const OWNERS: Record<string, string[]> = {
     'components/AppSheet.vue',
     'components/AppTooltip.vue',
     'components/BattlePicker.vue',
+    'components/DataVersionMenu.vue',
     'components/MenuButton.vue',
     'components/SegmentedControl.vue',
   ],
