@@ -146,6 +146,8 @@ const percentNow = computed(() => Math.round(v.value * 100))
  （top 从全屏按钮下缘起算，由宿主以 CSS 变量 --scene-fs-bottom 下发）。 */
 .scene-dist {
   position: absolute;
+  min-inline-size: var(--hit-min);
+  box-sizing: border-box;
   top: var(--scene-fs-bottom, calc(var(--space-2) + var(--control-h-sm) + var(--space-2)));
   right: var(--space-2);
   z-index: var(--z-sticky);

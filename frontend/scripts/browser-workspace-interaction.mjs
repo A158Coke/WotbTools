@@ -1579,6 +1579,20 @@ async function runRosterGeometryScenario(env, scenario) {
   await page.evaluate('window.scrollTo(0, 0)')
   await waitForStableLayout(page)
   const geometry = await page.probe(rosterGeometryProbe)
+  if (scenario.name === 'roster-geometry-844x390-fullscreen-coarse') {
+    const slider = await page.probe(() => {
+      const el = document.querySelector('[data-testid="scene-distance-slider"]')
+      const fs = document.querySelector('[data-test="pb-fullscreen"]')
+      if (!el || !fs) return null
+      const r = el.getBoundingClientRect(), track = el.querySelector('.scene-dist-track').getBoundingClientRect(), f = fs.getBoundingClientRect()
+      const hit = (x) => { const target = document.elementFromPoint(x, track.top + track.height / 2); return target === el || el.contains(target) }
+      return { width: r.width, centerError: Math.abs((r.left + r.right - track.left - track.right) / 2),
+        overlap: r.left < f.right && f.left < r.right && r.top < f.bottom && f.top < r.bottom,
+        leftHit: hit(r.left + 2), rightHit: hit(r.right - 2) }
+    })
+    check(failures, slider && slider.width >= 44 && slider.centerError <= 1 && !slider.overlap && slider.leftHit && slider.rightHit,
+      `3D replay distance slider hit geometry: ${JSON.stringify(slider)}`)
+  }
 
   // —— #727 3D 主内容遮挡（design-language §5 例外段）：HUD 可以浮在场景上，但控制条不得压入中心 ——
   await page.evaluate(`document.querySelector('.pb-root .scene').scrollIntoView({ block: 'center' })`)

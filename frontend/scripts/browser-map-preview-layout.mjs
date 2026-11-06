@@ -353,6 +353,30 @@ async function main() {
       await page.waitForValue(`!!window.__mapPreviewPane && !!document.querySelector('[data-testid="map-3d-root"]')`, Boolean,
         { label: '3D map preview root', timeout: 30000 })
       await page.evaluate(`window.__mapPreviewPane.store.mapReady = true`)
+      if (scenario.name === 'phone') {
+        await page.waitForValue(`!!document.querySelector('[data-testid="scene-distance-slider"]')`, Boolean, { label: 'distance slider visible' })
+        const slider = await page.probe(() => {
+          const el = document.querySelector('[data-testid="scene-distance-slider"]')
+          const track = el.querySelector('.scene-dist-track').getBoundingClientRect()
+          const r = el.getBoundingClientRect()
+          const fs = document.querySelector('[data-testid="map-3d-fullscreen"]').getBoundingClientRect()
+          const hit = (x) => { const target = document.elementFromPoint(x, track.top + track.height / 2); return target === el || el.contains(target) }
+          return { width: r.width, centerError: Math.abs((r.left + r.right - track.left - track.right) / 2),
+            overlap: r.left < fs.right && fs.left < r.right && r.top < fs.bottom && fs.top < r.bottom,
+            leftHit: hit(r.left + 2), rightHit: hit(r.right - 2),
+            left: { x: r.left + 2, y: track.top + track.height * 0.25 },
+            right: { x: r.right - 2, y: track.top + track.height * 0.75 } }
+        })
+        if (slider.width < 44 || slider.centerError > 1 || slider.overlap || !slider.leftHit || !slider.rightHit) {
+          throw new Error(`phone distance slider geometry/hit targets: ${JSON.stringify(slider)}`)
+        }
+        await page.tap({ ...slider.left, touch: true })
+        const near = await page.evaluate(`Number(document.querySelector('[data-testid="scene-distance-slider"]').getAttribute('aria-valuenow'))`)
+        await page.tap({ ...slider.right, touch: true })
+        const far = await page.evaluate(`Number(document.querySelector('[data-testid="scene-distance-slider"]').getAttribute('aria-valuenow'))`)
+        if (near <= far) throw new Error(`distance slider edge touches did not adjust value: near=${near} far=${far}`)
+        console.log(`[PASS] phone distance slider width=${slider.width.toFixed(1)}px centered and unobstructed`)
+      }
       await page.client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'h', code: 'KeyH', windowsVirtualKeyCode: 72 }, page.sessionId)
       await page.client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'h', code: 'KeyH', windowsVirtualKeyCode: 72 }, page.sessionId)
       await page.waitForValue(`!!document.querySelector('[data-testid="map-3d-restore-ui"]')`, Boolean, { label: '3D UI hidden' })
