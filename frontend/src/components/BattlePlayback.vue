@@ -48,6 +48,9 @@ import { usePlaybackTransients } from '../composables/usePlaybackTransients.js'
 import { usePlaybackCamera } from '../composables/usePlaybackCamera.js'
 import { usePlaybackAnnotationEditor } from '../composables/usePlaybackAnnotationEditor.js'
 import { usePlaybackVehicleSelection } from '../composables/usePlaybackVehicleSelection.js'
+import { usePlaybackReplayData } from '../composables/usePlaybackReplayData.js'
+import { usePlaybackClock } from '../composables/usePlaybackClock.js'
+import { usePlaybackVehicleProjection } from '../composables/usePlaybackVehicleProjection.js'
 import { usePlaybackMapGestures } from '../composables/usePlaybackMapGestures.js'
 import { projectVehicleState } from '../utils/playbackVehicleState'
 import { observedFreezeTimeAt } from '../utils/battlePlaybackV2'
@@ -149,87 +152,8 @@ watch(imageSrc, async (src) => {
 
 // V2 canonical dataset 是唯一 playback 事实源（cleanup：移除 legacy overview.playback）。
 const playback = computed(() => props.playbackV2 || null)
-const reloadStateAt = computed(() => createReloadStateResolver(props.reloadTelemetry))
-const reloadVehiclesByAccount = computed(() => {
-  const byAccount = new Map()
-  for (const vehicle of props.reloadTelemetry?.vehicles || []) {
-    // Ambiguous entity identity is unknown; do not combine two independent gun timelines.
-    if (byAccount.has(vehicle.account_id)) byAccount.set(vehicle.account_id, null)
-    else byAccount.set(vehicle.account_id, vehicle)
-  }
-  return byAccount
-})
-
-// 弹容 N 的配置联表源（tank_id → tank/{id}.json）：实际搭载配置三级证据链
-// （comp locals → 发射弹种 → 初始血量，见 reloadBar.resolveMountedConfig）消费；
-// 异步就绪后整体替换触发响应式重算。竞态令牌：快速切换战局时过期完成不得覆盖。
-const tankConfigs = ref(new Map())
-let tankConfigsToken = 0
-watch(() => props.reloadTelemetry, async (telemetry) => {
-  const token = ++tankConfigsToken
-  tankConfigs.value = new Map()
-  if (!telemetry || !assetProvider.configured()) return
-  const ids = new Set(telemetry.vehicles
-    .filter((v) => v.team === telemetry.friendlyTeam && v.tank_id > 0)
-    .map((v) => v.tank_id))
-  const entries = await Promise.all([...ids].map(async (tid) => {
-    try { return [tid, await assetProvider.json(`/tank/${tid}.json`)] }
-    catch { return [tid, null] }
-  }))
-  if (token !== tankConfigsToken) return
-  tankConfigs.value = new Map(entries)
-}, { immediate: true })
-
-function vehicleReloadAt(accountId, time) {
-  const telemetry = props.reloadTelemetry
-  const vehicle = reloadVehiclesByAccount.value.get(accountId)
-  if (!telemetry || !vehicle) return null
-  // 弹容 N 随实际搭载主炮走——多炮坦克各炮弹容不同，禁止跨配置取最大 /
-  // 剩余弹数+1 推断（上游 docs/wotbtools-cross-reference.md §六 裁决）；
-  // configs 未就绪时回退 facet burst_size → 单发，就绪后本组件响应式重算。
-  const size = magazineSizeForVehicle(vehicle, tankConfigs.value.get(vehicle.tank_id))
-  return reloadStateAt.value(vehicle.eid, time + telemetry.timeOrigin, size)
-}
-
-/** 2D 名牌：当前定时消耗品（canonical transitions 的 timeSec 已是回放相对秒）。 */
-function vehicleConsumablesAt(track, time) {
-  return consumableRuntimeAt(track?.consumableTransitions, time)
-}
 const duration = computed(() => (playback.value ? Math.max(0, playback.value.durationSec) : 0))
 const friendlyTeam = computed(() => pbOverview.value.friendlyTeam)
-
-// ---- PR2：Tier X dedicated model preload----
-// runtime.js 含全部车型资产引用（import.meta.glob），必须动态 import 保持主 bundle 分离
-// （scripts/check-bundle-separation.mjs 门禁：主入口不得含 'vehicle-models/assets'）。
-// preload 完成前不渲染车辆（asset decision 先于渲染，禁止 generic 闪现后替换）。
-const preload = ref({ phase: 'idle', resolved: new Map(), failed: new Set(), failureReasons: new Map(), byTank: new Map() })
-// 竞态令牌：快速切换战局时，过期 preload 完成不得覆盖新战局结果
-let preloadToken = 0
-watch(
-  () => [props.overview, props.playbackV2],
-  async () => {
-    const token = ++preloadToken
-    preload.value = { phase: 'loading', resolved: new Map(), failed: new Set(), failureReasons: new Map(), byTank: new Map() }
-    const vehicles = props.playbackV2?.vehicles || []
-    if (vehicles.length === 0) {
-      preload.value = { phase: 'ready', resolved: new Map(), failed: new Set(), failureReasons: new Map(), byTank: new Map() }
-      return
-    }
-    try {
-      const { preloadBattleModels } = await import('../vehicle-models/runtime.js')
-      const result = await preloadBattleModels(vehicles.map((v) => v.tankId))
-      if (token !== preloadToken) return // 过期结果丢弃
-      preload.value = { phase: 'ready', ...result }
-    } catch {
-      // 模块加载异常 → 保持单场 generic fallback，但保留稳定诊断原因。
-      console.error('[vehicle-models] fallback reason=MODULE_IMPORT_FAILURE')
-      if (token !== preloadToken) return
-      const failureReasons = new Map((vehicles || []).map((v) => [String(v.tankId), 'MODULE_IMPORT_FAILURE']))
-      preload.value = { phase: 'ready', resolved: new Map(), failed: new Set(), failureReasons, byTank: new Map() }
-    }
-  },
-  { immediate: true },
-)
 
 // 双方总血量（实时剩余，随播放时间/进度条变化；争霸赛附终局点数）。
 // relativeFull 是后端投影的 presentation-safe fact；前端只按 t 查询 transition、做聚合与绘制，
@@ -264,46 +188,15 @@ const baseStatesAt = computed(() => {
   return [...latest.values()].sort((a, b) => a.baseId.localeCompare(b.baseId))
 })
 
-// ---- 播放状态 ----
-// 播放钟双轨：playbackClock = rAF 内部非响应式时钟（逐帧精确推进，事件消费 exactly-once
-// 的事实源）；currentTime = 响应式发布值，按 CLOCK_PUBLISH_SEC 节流写入——60fps 直写
-// ref 会让整条 computed 链（轨迹/炮线/标记/HP/布局）以 60fps 全量重算 + 整页 VDOM patch
-// （与 3D 面板 store.time 的 HUD_INTERVAL_MS 节流同一模式）。两者由全部写入口保持同步
-// （frame/play/seek/step/回绕），对外语义不变，仅派生视觉状态以 30Hz 刷新。
-const CLOCK_PUBLISH_SEC = 1 / 30
-let playbackClock = 0
-const currentTime = ref(0)
-const playing = ref(false)
-const speed = ref(1)
-
-/** 统一写入口：内部钟与响应式发布值同步置位（seek/step/回绕/到末尾）。
- * frame() 的逐帧推进不走这里（内部钟先行、发布值节流），见 frame()。 */
-function publishClock(t) {
-  playbackClock = t
-  currentTime.value = t
-}
-// transient/animation 时间基准 = UI wall clock（performance.now）。
-// 播放时由 frame() 每帧刷新；暂停时由 ensurePauseClock 的轻量 RAF 继续推进
-//（仅当存在未决 transient），不依赖 replay 播放状态。
+// ---- 播放状态：playback clock 的唯一 owner = usePlaybackClock（#820 Agent C Step 3）；
+// transient/animation 时间基准 = UI wall clock（performance.now）——播放时由 playback frame()
+// 每帧刷新；暂停时由时钟 owner 的轻量 RAF 继续推进（仅当存在未决 transient）。
 const nowMs = ref(typeof performance !== 'undefined' ? performance.now() : 0)
-
 // Playback presentation preferences have one persistence owner. BattlePlayback only consumes refs.
 const { labelPrefs, hpPrefs, trailPrefs, markerPrefs, uiPrefs, declutterActive, toggleDeclutter } = usePlaybackPreferences()
 const hpModeOptions = computed(() => ['bar', 'ring'].map(mode => ({
   value: mode, label: t(`recon.map.playback.hp_mode_${mode}`), testid: `pb-hp-mode-${mode}`,
 })))
-
-// 最近 2 秒位置轨迹只消费 canonical observed positionSegments；显示偏好由 usePlaybackPreferences 持久化。
-const visibleTrails = computed(() => trailPrefs.showTrail
-  ? (poseSource.value
-      // 位姿通道：与 3D 同源的位置序列；可信度门控仍取 canonical 观测区间
-      ? recentPositionTrailsFromPose(
-          hpVehicles.value,
-          (vehicle, t) => poseAtTime(vehicle, t),
-          (vehicle, t) => positionCoveredAtV2(vehicle.positionSegments, t),
-          currentTime.value, 2)
-      : recentPositionTrails(hpVehicles.value, currentTime.value, 2))
-  : [])
 
 // ---- PR5（§1.3/§10/§16/§20）：deterministic state 与 transient feedback 分层。
 // transient 全部 wall-clock（performance.now）驱动，播放帧推进时消费新跨过的事件，
@@ -313,8 +206,6 @@ const visibleTrails = computed(() => trailPrefs.showTrail
 // 本组件只保留 playback clock（frame/pause RAF）与地图投影（markerScreen → visibleFloats/Bursts）。
 // Blocker 1：consumption 源 = authoritativeEvents（原始 playback events），
 // 不受 Event Panel 折叠状态影响。
-// seek/状态恢复帧：禁用 HP bar 过渡动画（§20.1 seek 只恢复状态不补动画）
-const hpNoTransition = ref(false)
 
 function realNowMs() {
   return typeof performance !== 'undefined' ? performance.now() : Date.now()
@@ -341,24 +232,6 @@ const {
   feedVisible: () => !uiHidden.value && !!uiPrefs.showKillfeed,
 })
 
-// ---- 单车 HP HUD 数据（§4/§5/§6/§7）----
-function hpFor(vehicle) {
-  const display = healthDisplayAt(vehicle, currentTime.value)
-  if (!display) return null
-  return {
-    current: display.currentHp,
-    maxHp: display.displayCapacityHp,
-    pct: display.pct,
-    knowledge: display.knowledge,
-    destroyed: display.destroyed,
-    state: display.state,
-  }
-}
-/** marker HP HUD 数字区实际渲染文本（VehicleMarker .pb-hp-num 同款：current 有值→数字，否则 —）。
- *  labelLayout 碰撞用：数字文本可能影响 HUD 盒宽（不同状态不同文本），必须按实际文本估算。 */
-function hpDisplayNumText(hp) {
-  return hp.current != null ? String(hp.current) : '—'
-}
 // ---- transient 渲染视图（wall-clock 过滤 + 屏幕定位；状态 owner = usePlaybackTransients）----
 const visibleFloats = computed(() => {
   const now = nowMs.value
@@ -424,12 +297,6 @@ function toggleDisplay(anchor) { displayAnchor.value = anchor; displaySection.va
     拖动宿主。浮窗是它的直接子元素，`left/top`、夹紧与拖动在同一个坐标系里算；
     它不是 `.pb-map-stage`（那只是中间一栏，按它算会把浮窗关在 Stage 里）。 */
 const battlefieldWorkspaceEl = ref(null)
-let rafId = null
-let lastFrameTs = null
-
-// 暂停期 transient 时钟的 RAF id（仅当存在未决 transient 时运行，不永久轮询）。
-let pauseRafId = null
-
 // ---- 地图视图缩放/平移：单一 camera layer 保证地图/网格/炮线/标记严格对齐 ----
 // 相机状态（view / MapRenderRect / fit）的唯一 owner = usePlaybackCamera（#820 Agent C）；
 // 手势状态机（pointer/pan/pinch/wheel）的唯一 owner = usePlaybackMapGestures。
@@ -610,6 +477,27 @@ watch(transportEl, (el, previous) => {
 /** 完整地图视图（contain/fit）与手势逻辑已迁移至 usePlaybackCamera / usePlaybackMapGestures
  *  （#820 Agent C Step 1）：MapRenderRect 仍是唯一屏幕坐标几何来源，wheel/pan/pinch 时序不变。 */
 
+// ---- 回放数据源/位姿/弹药 resolver：唯一 owner = usePlaybackReplayData（#820 Agent C Step 3）；
+// 位姿通道与 3D 场景同源同插值，reload 与名牌共享同一 resolver。
+const {
+  vehicleReloadAt,
+  vehicleConsumablesAt,
+  routesByAccount,
+  vehiclesByAccount,
+  poseSource,
+  poseAtTime,
+  reliefModelForPlayback,
+  projectedSemanticNorm,
+  reliefUnproject,
+} = usePlaybackReplayData(mapView, {
+  playback,
+  playbackV2: () => props.playbackV2,
+  reloadTelemetry: () => props.reloadTelemetry,
+  poseFacet: () => props.poseFacet,
+  clockOffset: () => props.clockOffset,
+  mapCode: () => pbOverview.value.mapCode,
+})
+
 // ---- 地图标注：工具/绘制手势/文字会话/route 的唯一 owner = usePlaybackAnnotationEditor
 // （#820 Agent C Step 2）；历史快照 / 草稿 / 选中项的事实源仍是 usePlaybackAnnotations。
 const {
@@ -658,11 +546,7 @@ const {
     textInputRef: () => mapComponent.value?.textInputRef || null,
     onOpen: () => { pause(); displayOpen.value = false },
     resetGestures: resetGestureState,
-    reliefUnproject: (xNorm, yNorm) => {
-      const model = reliefModelForPlayback()
-      if (!model) return null
-      return unprojectTerrainPoint(model, xNorm, yNorm)
-    },
+    reliefUnproject,
     projectedSemanticNorm,
     reliefHasModel: () => !!reliefModelForPlayback(),
     overview: () => props.overview,
@@ -684,101 +568,6 @@ onMounted(() => {
   window.addEventListener('resize', writeSquareAvailHeight)
 })
 
-function frame(ts) {
-  if (!playing.value) {
-    rafId = null
-    return
-  }
-  const delta = lastFrameTs == null ? 0 : (ts - lastFrameTs)
-  lastFrameTs = ts
-  const prev = playbackClock
-  const next = advancePlaybackTime(prev, duration.value, delta, speed.value)
-  playbackClock = next
-  nowMs.value = realNowMs()
-  // §1.3/§20.3/Blocker 2：先消费 (prev, next]（next 可 == duration——到达末尾前最后一段事件
-  // 必须在停止/回绕前消费，exactly-once，不因到达 duration 丢失）；cursor 严格左开不重复。
-  consumeEvents(prev, next)
-  if (next >= duration.value) {
-    if (props.loop) {
-      publishClock(0)
-      // 循环回绕：只重置播放时间与严格左开 cursor。上一轮末尾刚消费的 transient 继续按
-      // wall-clock 自然完成（「末尾消费一次」可见且不重复）；不重置 eventCursor 会把下一轮
-      // (0, t] 的事件误判为已消费而静默跳过。
-      eventCursor.value = 0
-      rafId = requestAnimationFrame(frame)
-      return
-    }
-    publishClock(next)
-    playing.value = false
-    rafId = null
-    // 播放到末尾自然停止 → 若有未决 transient，轻量 clock 接管
-    ensurePauseClock(realNowMs())
-    return
-  }
-  // 响应式发布节流：距上次发布 ≥ 1/30s 才写 currentTime；currentTime 意外落后内部钟
-  // （外部写入口未同步的兜底）时立即追平。
-  if (next - currentTime.value >= CLOCK_PUBLISH_SEC || next < currentTime.value) {
-    currentTime.value = next
-  }
-  rafId = requestAnimationFrame(frame)
-}
-
-/** 幂等启动：任意时刻最多一个 RAF 循环（重复调用/重复事件不会创建第二个循环）。 */
-function play() {
-  if (playing.value || duration.value <= 0) return
-  if (annotationOpen.value) closeAnnotation()
-  playing.value = true
-  lastFrameTs = null
-  playbackClock = currentTime.value
-  // 播放开始：transient 时钟由 playback frame() 驱动——作废可能残留的轻量 pause RAF
-  //（stub 环境只保留最近回调，若不清理，pause() 的 ensurePauseClock 会误判"已有 RAF"
-  //  而无法注册接管时钟；真实浏览器中残留回调至多无害地刷新一次 nowMs）
-  pauseRafId = null
-  rafId = requestAnimationFrame(frame)
-}
-
-/** 幂等暂停：取消未完成的 RAF，绝不残留回调推进时间。 */
-function pause() {
-  playing.value = false
-  if (rafId != null) {
-    cancelAnimationFrame(rafId)
-    rafId = null
-  }
-  // 发布值补齐到内部钟：节流发布下 currentTime 可能落后最后帧 ≤1/30s，暂停必须停在精确时刻
-  if (currentTime.value !== playbackClock) currentTime.value = playbackClock
-  // 播放中可能有未决 transient——暂停后立即让轻量 pause clock（UI wall clock）接管；
-  // 无 pending 时不启动 RAF（不永久轮询）。
-  ensurePauseClock(typeof performance !== 'undefined' ? performance.now() : Date.now())
-}
-
-watch(() => props.seekTo, (sec) => {
-  if (Number.isFinite(sec)) {
-    pause() // 点击 AI 时间 → seek + 自动暂停（含取消 RAF）
-    publishClock(clampPlaybackTime(sec, duration.value))
-    resetTransients(currentTime.value)
-    suppressHpTransition()
-  }
-}, { immediate: true })
-
-function seek(sec) {
-  publishClock(clampPlaybackTime(sec, duration.value))
-  nowMs.value = realNowMs()
-  resetTransients(currentTime.value)
-  suppressHpTransition()
-}
-
-/** seek 后单帧禁用 HP bar transition（§20.1：只恢复状态，不补 150–300ms 缩短动画）。
- * 用 setTimeout 而非 requestAnimationFrame 清旗标：不占用共享 RAF 槽位（播放/
- * 暂停时钟仍由 rafCb 驱动，测试中 seek 后 rafCb 必须仍指向时钟回调）。 */
-function suppressHpTransition() {
-  hpNoTransition.value = true
-  if (typeof setTimeout === 'function') {
-    setTimeout(() => { hpNoTransition.value = false }, 0)
-  } else {
-    hpNoTransition.value = false
-  }
-}
-
 /** 拖动进度条：按下即暂停，拖动中实时 seek，松开时若原先在播放则自动继续（与 3D 共用 usePlaybackTransport）。 */
 function dragStart() {
   transport.scrubStart()
@@ -786,22 +575,6 @@ function dragStart() {
 
 function dragEnd() {
   transport.scrubEnd()
-}
-
-/** Event Panel 行点击：跳转并保持暂停。 */
-function seekToEvent(sec) {
-  pause()
-  seek(sec)
-}
-
-function step(delta) {
-  publishClock(clampPlaybackTime(currentTime.value + delta, duration.value))
-  resetTransients(currentTime.value)
-  suppressHpTransition()
-}
-
-function setSpeed(next) {
-  if (isPlaybackSpeed(next)) speed.value = next
 }
 
 // KeepAlive 停用（切到别的页面）时同样视为不可见
@@ -817,9 +590,10 @@ watch(() => props.active, (value) => { if (!value) pause() })
  */
 const transport = usePlaybackTransport({
   isPlaying: () => playing.value,
-  play,
-  pause,
-  step,
+  // 播放时钟在下方解构（声明顺序晚于本调用）——惰性闭包避免 TDZ；事件期才求值。
+  play: () => play(),
+  pause: () => pause(),
+  step: (delta) => step(delta),
   isAtEnd: () => duration.value > 0 && currentTime.value >= duration.value,
   restart: () => seek(0),
   isActive: () => props.active && lifecycleVisible.value,
@@ -850,8 +624,7 @@ function onKeydown(e) {
 onBeforeUnmount(() => {
   playbackLifecycleActive = false
   paletteRequestToken += 1
-  if (rafId != null) cancelAnimationFrame(rafId)
-  if (pauseRafId != null) cancelAnimationFrame(pauseRafId)
+  disposeClock()
   disposeCamera()
   if (stageResizeObserver) {
     stageResizeObserver.disconnect()
@@ -877,75 +650,6 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('resize', writeSquareAvailHeight)
 })
-
-// ---- 数据 ----
-const routesByAccount = computed(() => {
-  const map = new Map()
-  for (const track of playback.value?.vehicles || []) map.set(track.accountId, track)
-  return map
-})
-
-const vehiclesByAccount = computed(() => {
-  const map = new Map()
-  for (const vehicle of (playback.value ? playback.value.vehicles : [])) {
-    map.set(vehicle.accountId, vehicle)
-  }
-  return map
-})
-
-/**
- * 位姿通道（与 3D 场景同源同插值）：`poseFacet` = playback facet 的位姿列投影，
- * `clockOffset` = canonical `clock.startRaw`（battle-relative → 回放时钟域）。
- * 两者缺一即 null → 全链路回退 canonical 原始观测（与既往行为逐值一致）。
- */
-const poseSource = computed(() => {
-  const facet = props.poseFacet
-  const offset = props.clockOffset
-  if (!facet || !Number.isFinite(offset)) return null
-  const byAccount = new Map()
-  for (const def of facet.vehicles || []) {
-    const list = byAccount.get(def.account_id)
-    if (list) list.push(def)
-    else byAccount.set(def.account_id, [def])
-  }
-  return {
-    grid: { tStart: Number(facet.tStart) || 0, samples: Number(facet.samples) || 0 },
-    offset,
-    /**
-     * 活跃实体选择（`t` = 采样时刻，战斗相对秒）。多实体账号（AoI 重入 / 复活换实体）按
-     * canonical 身份证据判定——不能"后写覆盖"：那会在重入之前就采样到后一个实体，
-     * 而轨迹端点外钳位会把该实体的首帧位姿泄漏到过去。证据缺失/歧义 → null（回退 canonical）。
-     */
-    defFor: (accountId, t) => selectActiveDef(
-      byAccount.get(accountId) || [], facet.entityStartsByAccount?.get(accountId), t,
-    ),
-  }
-})
-/** 位姿采样复用对象（每帧多车 + 尾迹回溯采样，零分配热路径） */
-const _poseScratch = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, turretAbs: 0, turretRel: 0, gunPitch: 0 }
-/**
- * 该车在战斗相对时刻 t 的 game 系位姿（`y` = 游戏 z；2D 地图纵向翻转由 mapView 负责）。
- * 无 facet / 该账号不在位姿切面 → null（调用方回退 canonical）。
- */
-function poseAtTime(track, t) {
-  const source = poseSource.value
-  if (!source) return null
-  // **失察即冻结**（2026-10-16 用户裁定）：车离开我方视野后图标停在最后观测点，不再跟随客户端
-  // 滤波器的预测延续（3D 里该车模型直接不显示，两侧语义一致：2D 变灰停住 / 3D 消失）。
-  const freezeAt = observedFreezeTimeAt(track.positionSegments, t)
-  if (freezeAt == null) return null
-  // 活跃实体按**采样时刻**（冻结后的 freezeAt）选择：与"这个位姿属于谁"的时间域一致。
-  const rawAt = freezeAt + source.offset
-  const def = source.defFor(track.accountId, freezeAt)
-  // 采样时刻还必须落在该实体的 **coverage 证据**内：覆盖外的端点钳位会把该实体未来的首帧位姿
-  // 泄漏到过去（新实体的身份证据可能早于其首个位姿样本）→ 不覆盖即回落 canonical（fail-closed）。
-  if (!def || !poseCoveredAt(def, rawAt)) return null
-  const pose = sampleVehiclePoseGame(def, source.grid, rawAt, _poseScratch, def.visibility ?? def.coverage)
-  return { x: pose.x, y: pose.z, yawRad: pose.yaw, turretRelRad: pose.turretRel }
-}
-
-const friendlyColors = computed(() => palette.value.friendlyColors)
-const enemyColors = computed(() => palette.value.enemyColors)
 
 // BattleMap 的偏好 props 提升为 computed：内联对象字面量在父组件每次重渲染时都生成
 // 新身份，会击穿 Vue 的 props 等值短路，迫使整个地图子树跟着重渲染。
@@ -987,133 +691,6 @@ function vehicleColor(vehicle) {
  * PR2：该车辆的 dedicated model 决策（preload 结果）——
  * 非 Tier X / preload 失败 / 模块加载失败 → null（generic marker 单车 fallback）。
  */
-function vehicleModel(vehicle) {
-  const p = preload.value
-  if (p.phase !== 'ready') return null
-  const modelKey = p.byTank.get(String(vehicle.tankId))
-  if (!modelKey || p.failed.has(modelKey)) return null
-  return p.resolved.get(modelKey) || null
-}
-
-function reliefModelForPlayback() {
-  const model = activeTerrainRelief.value
-  return model && model.mapCode === String(pbOverview.value.mapCode || '') ? model : null
-}
-
-function projectedSemanticNorm(x, y) {
-  const model = reliefModelForPlayback()
-  if (model) {
-    const point = projectTerrainPoint(model, Number(x), Number(y))
-    if (point) return { xNorm: point.xNorm, yNorm: point.yNorm }
-  }
-  return {
-    xNorm: mapView.value.toX(x) / mapView.value.W,
-    yNorm: mapView.value.toY(y) / mapView.value.H,
-  }
-}
-
-/** 标记水平位置（%）：地图用户坐标 → 容器百分比。 */
-function markerLeft(x) {
-  return `${((mapView.value.toX(x)) / mapView.value.W) * 100}%`
-}
-
-/** 标记垂直位置（%）。 */
-function markerTop(y) {
-  return `${((mapView.value.toY(y)) / mapView.value.H) * 100}%`
-}
-
-const baseVehicleStates = computed(() => {
-  // preload 未完成（asset decision 未定）时不渲染车辆——禁止 generic 闪现后替换
-  if (preload.value.phase !== 'ready') return []
-  // V2-only：V2 track 为唯一事实源；无 V2 车辆 → 空（不再有 legacy overview.playback 兜底）。
-  const tracks = props.playbackV2?.vehicles || []
-  if (tracks.length === 0) return []
-  return tracks
-    .map(track => {
-      const vehicle = track
-      const model = vehicleModel(track)
-      const mobile = isMobileDevice.value
-      const markerSize = computeVehicleMarkerSize(vehicle, {
-        model,
-        mapView: mapView.value,
-        mapWidthPx: mapWidth(),
-        mapHeightPx: mapHeight(),
-        mobile,
-      })
-      const state = projectVehicleState({
-        vehicle,
-        track,
-        time: currentTime.value,
-        // 位姿通道（与 3D 同源同插值）；缺失时 projectVehicleState 回退 canonical 观测
-        pose: poseAtTime(track, currentTime.value),
-        recorderAccountId: pbOverview.value.recorderAccountId,
-        model,
-        markerSize,
-        // Unknown perspective keeps neutral CSS state; enemy assets are only a
-        // visual fallback because the asset pack has no neutral hull/turret.
-        hullImage: track.friendly === true ? friendlyHull : enemyHull,
-        turretImage: track.friendly === true ? friendlyTurret : enemyTurret,
-        markerLeft: markerLeft,
-        markerTop: markerTop,
-        markerTransform: markerTransform.value,
-        overlayInverseScale: overlayInverseScale.value,
-        overlayInverse: overlayInverse.value,
-        translate: t,
-      })
-      if (!state) return null
-      // 2D 是严格俯视投影（2026-10-16）：不再呈现"多出的维度"（俯仰/侧倾），
-      // 故不产出 terrainAttitude（原地形高度场合成倾斜已删）。
-      return { ...state, gunMarks: gunMarks.value.get(track.accountId) ?? null, reloadShells: vehicleReloadAt(track.accountId, currentTime.value), consumables: vehicleConsumablesAt(track, currentTime.value) }
-    })
-    .filter(Boolean)
-})
-
-// 标记**不做**防重叠位移（2026-10-16 用户裁定）：车体严格落在真实位置，密集处允许图标互相压盖；
-// 早前的"整盒推开 + 虚线指回真实位置"在 2D 里读起来就是"坦克模型与真实位置有偏移"，且 3D 从不
-// 移动车体模型 ⇒ 两侧不一致。名牌 / HP 的防重叠仍由 labelLayout 的车道机制承担（与 3D 同构）。
-const vehicleStates = computed(() => baseVehicleStates.value.map((state) => {
-  const scale = view.scale || 1
-  return {
-    ...state,
-    markerStyle: {
-      ...state.markerStyle,
-      width: `${state.markerSize.renderBox.width}px`,
-      height: `${state.markerSize.renderBox.height}px`,
-      // The camera content is layout-scaled rather than transform-scaled. Keep the marker's
-      // existing scale so vehicle artwork and screen-space inverse overlays retain their contract.
-      transform: `translate(-50%, -50%) scale(${scale})`,
-      left: markerLeft(state.pos.x),
-      top: markerTop(state.pos.y),
-    },
-  }
-}))
-
-/**
- * authoritative playback events：全部回放事件。
- * deterministic state（当前累计伤害/击杀）与 combat feedback（floating damage / hit flash / ghost /
- * destruction burst / kill feed / damage log）必须消费本源——「战斗事实有没有发生」不取决于事件列表
- * UI 是否折叠。Event Panel 只消费 presentation-only 的 userVisibleEvents；炮线仍消费
- * 同一份完整真实事件。
- */
-const authoritativeEvents = computed(() => (playback.value ? playback.value.events : []))
-const userVisibleEvents = computed(() => authoritativeEvents.value.filter((event) => (
-  event.type === 'DAMAGE' || event.type === 'KILL' || event.type === 'DESTROYED'
-)))
-
-// 炮线：仅来自真实事件流中的已知射击（DAMAGE/KILL），两端可信位置，随播放时间与倍速确定性呈现
-const visibleTracers = computed(() => tracerLines(
-  authoritativeEvents.value,
-  routesByAccount.value,
-  currentTime.value,
-  speed.value,
-  poseSource.value ? (route, t) => poseAtTime(route, t) : null,
-))
-
-function tracerColor(accountId) {
-  const vehicle = vehiclesByAccount.value.get(accountId)
-  return vehicle ? vehicleColor(vehicle) : palette.value.routeOutline
-}
-
 function playerName(accountId) {
   const vehicle = vehiclesByAccount.value.get(accountId)
   return vehicle ? (vehicle.playerName || `#${accountId}`) : (accountId == null ? t('recon.map.playback.unknown') : `#${accountId}`)
@@ -1137,21 +714,62 @@ function eventLabel(event) {
 }
 
 // ---- PR4 §36/§37：hull hitbox 点击选中（重叠时取指针最近车辆；tie 保持 selected / render order）----
-/** 标记中心 → 相对地图容器的屏幕 px（viewport 变换后）。 */
-function canonicalMarkerScreen(st) {
-  const rect = mapRenderRect()
-  if (!rect || rect.width <= 0 || rect.height <= 0) return null
-  const point = projectedSemanticNorm(st.pos.x, st.pos.y)
-  return {
-    x: point.xNorm * rect.width * view.scale + view.tx,
-    y: point.yNorm * rect.height * view.scale + view.ty,
-  }
-}
+const {
+  currentTime,
+  playing,
+  speed,
+  hpNoTransition,
+  play,
+  pause,
+  seek,
+  step,
+  setSpeed,
+  seekToEvent,
+  disposeClock,
+} = usePlaybackClock({
+  duration: () => duration.value,
+  loop: () => props.loop,
+  nowMs,
+  realNowMs,
+  consumeEvents: (fromSec, toSec) => consumeEvents(fromSec, toSec),
+  resetTransients: (sec) => resetTransients(sec),
+  hasPendingTransients: (now) => hasPendingTransients(now),
+  pruneTransients: (now) => pruneTransients(now),
+  rewindTransientCursor: () => { eventCursor.value = 0 },
+  feedVisible: () => !uiHidden.value && !!uiPrefs.showKillfeed,
+  onPlayStart: () => { if (annotationOpen.value) closeAnnotation() },
+  seekTo: () => props.seekTo,
+})
 
-function markerScreen(st) {
-  // 标记严格落在真实位置（无防重叠位移），屏幕位置 = 语义位置。
-  return canonicalMarkerScreen(st)
-}
+// ---- 车辆呈现投影：preload/vehicleStates/着色/轨迹/炮线/marker 屏幕定位的唯一 owner
+// = usePlaybackVehicleProjection（#820 Agent C Step 3，时间来自 playback clock）。
+const {
+  vehicleStates,
+  visibleTracers,
+  tracerColor,
+  visibleTrails,
+  canonicalMarkerScreen,
+  markerScreen,
+  hpFor,
+  hpDisplayNumText,
+} = usePlaybackVehicleProjection(
+  mapView,
+  { view, mapWidth, mapHeight, mapRenderRect, markerTransform, overlayInverse, overlayInverseScale },
+  { poseAtTime, poseSource, vehicleReloadAt, vehicleConsumablesAt, routesByAccount, vehiclesByAccount, projectedSemanticNorm },
+  {
+    playbackV2: () => props.playbackV2,
+    recorderAccountId: () => pbOverview.value.recorderAccountId,
+    currentTime,
+    speed,
+    authoritativeEvents: () => authoritativeEvents.value,
+    hpVehicles: () => hpVehicles.value,
+    gunMarks: () => gunMarks.value,
+    isMobileDevice,
+    trailPrefs,
+    palette,
+    t,
+  },
+)
 
 // The workspace's guide requests real actions; drawing and clock state stay here.
 defineExpose({
@@ -1174,6 +792,18 @@ defineExpose({
   },
   closeAnnotations: closeAnnotation,
 })
+
+/**
+ * authoritative playback events：全部回放事件。
+ * deterministic state（当前累计伤害/击杀）与 combat feedback（floating damage / hit flash / ghost /
+ * destruction burst / kill feed / damage log）必须消费本源——「战斗事实有没有发生」不取决于事件列表
+ * UI 是否折叠。Event Panel 只消费 presentation-only 的 userVisibleEvents；炮线仍消费
+ * 同一份完整真实事件。
+ */
+const authoritativeEvents = computed(() => (playback.value ? playback.value.events : []))
+const userVisibleEvents = computed(() => authoritativeEvents.value.filter((event) => (
+  event.type === 'DAMAGE' || event.type === 'KILL' || event.type === 'DESTROYED'
+)))
 
 // ---- 车辆选中 / 详情编排：selected / details 状态的唯一 owner = usePlaybackVehicleSelection
 // （#820 Agent C Step 2）；hit-test 与浮窗落位经由同一相机变换与 workspace 坐标系。
@@ -1365,47 +995,6 @@ const labelLayout = computed(() => {
     viewportH: W * (mapView.value.H / mapView.value.W),
     coreSize,
   })
-})
-
-/** 是否存在未决的 transient（暂停时需轻量时钟自然完成，§20.2）。 */
-function hasPendingPauseClock(now) {
-  return hasPendingTransients(now)
-}
-
-/** 轻量时钟：仅当存在未决 transient 且未在播放时维持 RAF；播放时由 frame() 驱动，
- *  无 pending 即停（不做永久轮询）。注意：只更新 nowMs，不在 watcher 内回写 nowMs
- *  （nowMs 是 watch source，回写会自触发无限循环）。
- * @param now 当前新鲜 wall clock（用于 pending 判定）
- */
-function ensurePauseClock(now) {
-  if (pauseRafId != null || playing.value) return
-  if (hasPendingPauseClock(now)) {
-    pauseRafId = requestAnimationFrame(() => {
-      pauseRafId = null
-      nowMs.value = typeof performance !== 'undefined' ? performance.now() : Date.now()
-      // nowMs 变化 → transient watch → pruneTransients + ensurePauseClock(新鲜 now) 决定续/停
-    })
-  }
-}
-
-// transient 过期清理（nowMs/currentTime 变化驱动；reactive Map 不无限增长）。
-// prune 后按新鲜 now 重估 pending：暂停期间仍有未决动画（如 kill feed 4s 展示）时
-// 续约轻量 RAF 让其自然完成（§20.2）；播放中调用会被 ensurePauseClock 的 playing
-// 守卫挡下，不会产生第二个循环。
-watch([nowMs, currentTime], () => {
-  pruneTransients(nowMs.value)
-  ensurePauseClock(nowMs.value)
-})
-
-// kill feed 恢复显示（showKillfeed / 沉浸态切换）：隐藏期间排队条目不驱动暂停时钟，
-// 恢复后重启轻量时钟让待展示条目自然完成（§20.2）。必须先把 nowMs 同步到新鲜墙钟
-// 再调度：visibleFeed 首次渲染提升排队条目时以 nowMs 记 shownAt——暂停超过 4s 后
-// nowMs 仍是旧值，不同步会把刚展示的条目下一帧判成早已过期（只闪现一帧）。
-watch(() => !uiHidden.value && !!uiPrefs.showKillfeed, (visible) => {
-  if (!visible) return
-  const now = realNowMs()
-  nowMs.value = now
-  ensurePauseClock(now)
 })
 
 /** VehicleMarker label prop（每 marker 一个：显示开关 + 碰撞位移 +
