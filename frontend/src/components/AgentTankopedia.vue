@@ -112,7 +112,8 @@ async function loadList() {
 }
 
 function openDetail(id) {
-  writeState({ tank: id, config: null, upgrade: 'stock', abilities: [] }, { push: true })
+  // upgrade:null = 交给 resolveUpgradeSelection 按 tier 取默认（XI→top，其他→stock）。
+  writeState({ tank: id, config: null, upgrade: null, abilities: [] }, { push: true })
 }
 function backToList() {
   // In-app back must collapse the detail history entry instead of adding another one.
@@ -324,11 +325,13 @@ function installFromGraph(node) {
 /** 研发图点「下一级坦克」= 切到那辆车（清掉上一辆车的配置下标）。 */
 function openVehicleFromGraph(tankId) {
   if (!tankId) return
-  writeState({ tank: Number(tankId), config: null, engine: null, track: null, upgrade: 'stock', abilities: [] })
+  writeState({ tank: Number(tankId), config: null, engine: null, track: null, upgrade: null, abilities: [] })
 }
 
 const computeInput = computed(() => (setup.value.canConfigure && detail.value && modules.value && catalog.value
-  && !(upgradeSelection.value.available && urlState.value.upgrade === 'top' && !upgradeSelection.value.supported)
+  && !(upgradeSelection.value.available
+    && upgradeSelection.value.mode === 'top'
+    && !upgradeSelection.value.supported)
   ? buildComputeInput({
     detail: detail.value, modules: modules.value, selection: setup.value, catalog: catalog.value,
   })
@@ -496,7 +499,8 @@ function clearSkills() {
 
 function resetSetup() {
   const target = {
-    ...(upgradeSelection.value.available ? { upgrade: 'stock', abilities: [] } : {}),
+    // 重置 = 默认配置（XI 缺省 top）；只有显式「初始」preset 才写 stock。
+    ...(upgradeSelection.value.available ? { upgrade: null, abilities: [] } : {}),
     config: Math.max(0, cfgs.value.length - 1),
     engine: Math.max(0, (modules.value?.engines?.length || 1) - 1),
     track: Math.max(0, (modules.value?.chassis?.length || 1) - 1),
@@ -544,7 +548,8 @@ function open3d() {  // 审计 3D-09：在当前标签页打开装甲查看器�
   const handoff = setup.value.canConfigure
     ? {
         ...(upgradeSelection.value.available ? {
-          ...(setup.value.upgrade === 'top' ? { upgrade: 'top' } : {}),
+          // 显式传递两种模式：装甲页缺省已是 top，stock 必须写成 upgrade=stock 才能保留。
+          upgrade: setup.value.upgrade === 'stock' ? 'stock' : 'top',
           ...(setup.value.abilities?.length ? { abilities: setup.value.abilities.join(',') } : {}),
         } : {}),
         dev: encodeDevices(setup.value.devices),
@@ -735,7 +740,7 @@ onMounted(() => {
         <section v-else class="tp-card-section tp-workbench-right">
           <h2 class="tp-section-title">{{ t('agentTanks.mobility') }}</h2>
           <dl class="tp-stats">
-            <div><dt>{{ t('agentTanks.hp') }}</dt><dd>{{ fmtNum(detail.hp, 0) }}</dd></div>
+            <div><dt>{{ t('agentTanks.hp') }}</dt><dd>{{ fmtNum(upgradeProjection.detail?.hp ?? detail.hp, 0) }}</dd></div>
             <div><dt>{{ t('agentTanks.speed_fwd') }}</dt><dd>{{ fmtNum(detail.speed_forward ?? summary?.speed_forward ?? detail.speed) }} km/h</dd></div>
             <div><dt>{{ t('agentTanks.speed_rev') }}</dt><dd>{{ fmtNum(detail.speed_reverse ?? summary?.speed_reverse) }} km/h</dd></div>
             <div><dt>{{ t('agentTanks.view_range') }}</dt><dd>{{ fmtNum(curCfg?.view_range ?? summary?.view_range, 0) }} m</dd></div>

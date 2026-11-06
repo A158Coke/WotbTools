@@ -426,44 +426,46 @@ describe('AgentTankopedia — XI 两端升级（真实客户端模块，受控�
     research.loadTankModules.mockReset().mockResolvedValue({ tanks: { [modules.stem]: modules } })
   }
 
-  it.each(UPGRADE_TANKS)('$modules.name：同模块 ID 的初始/满级参数、装甲与俯角联动，技能三选一', async (fixture) => {
+  it.each(UPGRADE_TANKS)('$modules.name：缺省顶级，切 stock 再切回 top 的参数/装甲/俯角联动，技能三选一', async (fixture) => {
     useTank(fixture)
     const { wrapper, router } = await mountAt({ tank: String(fixture.modules.tankId), config: '0' })
     const hp = () => wrapper.find('[data-testid="tank-param-maxHealth"] .tp-param-value').text()
-    const initialHp = hp()
+    const topHp = hp()
     const armorValues = () => wrapper.findAll('.tp-armor-table .tp-param-value').map(value => value.text())
-    const initialArmor = armorValues()
-    const initialPitch = JSON.parse(JSON.stringify(wrapper.findComponent(GunArcDiagram).props('pitchLimits')))
-    expect(wrapper.find('[data-testid="tank-upgrade-stock"]').attributes('aria-checked')).toBe('true')
+    const topArmor = armorValues()
+    const topPitch = JSON.parse(JSON.stringify(wrapper.findComponent(GunArcDiagram).props('pitchLimits')))
+    // 缺省 = 顶级：top 单选选中，stock 未选中。
+    expect(wrapper.find('[data-testid="tank-upgrade-top"]').attributes('aria-checked')).toBe('true')
+    expect(wrapper.find('[data-testid="tank-upgrade-stock"]').attributes('aria-checked')).toBe('false')
     expect(wrapper.findAll('[data-testid^="tank-ability-"]')).toHaveLength(3)
     expect(wrapper.findAll('.tp-skill-btn')).toHaveLength(20)
     const choices = fixture.modules.upgradeProgression.alternativeGroups[0].choices
     await wrapper.find(`[data-testid="tank-ability-${choices[2]}"]`).trigger('click')
     await flushPromises()
-    expect(hp()).toBe(initialHp) // 初始态只保留选择，不应用技能。
+    expect(hp()).toBe(topHp) // 技能选择不改变静态满级数值。
     expect(router.currentRoute.value.query.abilities).toBe(String(choices[2]))
+    await wrapper.find('[data-testid="tank-upgrade-stock"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toMatchObject({ upgrade: 'stock', config: '0', abilities: String(choices[2]) })
+    expect(hp()).not.toBe(topHp)
+    if ([27905, 30241, 30497].includes(fixture.modules.tankId)) expect(armorValues()).not.toEqual(topArmor)
+    else expect(armorValues()).toEqual(topArmor) // BZ-79/KR-1 没有装甲升级节点。
+    const stockPitch = wrapper.findComponent(GunArcDiagram).props('pitchLimits')
+    expect(stockPitch.max).toBeLessThan(topPitch.max)
     await wrapper.find('[data-testid="tank-upgrade-top"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query).toMatchObject({ upgrade: 'top', config: '0', abilities: String(choices[2]) })
-    expect(hp()).not.toBe(initialHp)
-    if ([27905, 30241, 30497].includes(fixture.modules.tankId)) expect(armorValues()).not.toEqual(initialArmor)
-    else expect(armorValues()).toEqual(initialArmor) // BZ-79/KR-1 没有装甲升级节点。
-    const topPitch = wrapper.findComponent(GunArcDiagram).props('pitchLimits')
-    expect(topPitch.max).toBeGreaterThan(initialPitch.max)
+    expect(hp()).toBe(topHp)
+    expect(armorValues()).toEqual(topArmor)
+    expect(wrapper.findComponent(GunArcDiagram).props('pitchLimits')).toEqual(topPitch)
     expect(wrapper.findAll('[data-testid^="tank-ability-"][aria-checked="true"]')).toHaveLength(1)
-    await wrapper.find('[data-testid="tank-upgrade-stock"]').trigger('click')
-    await flushPromises()
-    expect(router.currentRoute.value.query.upgrade).toBeUndefined()
-    expect(hp()).toBe(initialHp)
-    expect(armorValues()).toEqual(initialArmor)
-    expect(wrapper.findComponent(GunArcDiagram).props('pitchLimits')).toEqual(initialPitch)
     wrapper.unmount()
   })
 
   it('深链、浏览器前后导航及装甲跳转保留升级和所选技能', async () => {
     const fixture = UPGRADE_TANKS[0]
     useTank(fixture)
-    const { wrapper, router } = await mountAt({ tank: String(fixture.modules.tankId), assets: 'https://assets.test' })
+    const { wrapper, router } = await mountAt({ tank: String(fixture.modules.tankId), upgrade: 'stock', assets: 'https://assets.test' })
     const initial = wrapper.find('[data-testid="tank-param-maxHealth"] .tp-param-value').text()
     await router.push({ query: { ...router.currentRoute.value.query, upgrade: 'top', abilities: '24' } })
     await flushPromises()

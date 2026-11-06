@@ -2436,11 +2436,18 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
 
         const QP = new URLSearchParams(location.search);
+        const shotMode = QP.has('shot');
         // XI 升级态与模块配置一样按双方独立读取；同车也不从目标推导射手状态。
-        const upgradeOptions = (side) => ({
-            upgrade: QP.get(side === 'shooter' ? 'supgrade' : 'upgrade'),
-            abilities: QP.get(side === 'shooter' ? 'sabilities' : 'abilities'),
-        });
+        const upgradeOptions = (side) => {
+            const rawUpgrade = QP.get(side === 'shooter' ? 'supgrade' : 'upgrade');
+            const explicit = rawUpgrade === 'top' ? 'top' : rawUpgrade === 'stock' ? 'stock' : undefined;
+            return {
+                // 普通装甲检视缺省 XI 顶级；射击复现没有升级态证据时不得补成满级，
+                // 只有显式 &upgrade=top / &supgrade=top 才是 what-if。
+                upgrade: explicit ?? (shotMode ? undefined : 'top'),
+                abilities: QP.get(side === 'shooter' ? 'sabilities' : 'abilities'),
+            };
+        };
         // 装甲页图形开关的手动覆盖（&eqcal=0/1、&eqenh=0/1）：场景初始化即生效
         if (QP.has('eqcal')) equipmentOverride.calibrated = QP.get('eqcal') === '1';
         if (QP.has('eqenh')) equipmentOverride.enhanced = QP.get('eqenh') === '1';

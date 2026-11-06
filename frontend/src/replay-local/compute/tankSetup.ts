@@ -552,6 +552,9 @@ export function baseSelection({ detail, modules }: { detail: any; modules: any }
   const gun = findGunIndex(modules.turrets?.[turret], cur?.gun_local)
   if (turret < 0 || gun < 0) return null
   return {
+    // delta 基准始终是 stock：XI 的缺省模式已改为 top，这里必须显式钉住
+    // （否则 baseSelection 会被 resolveUpgradeSelection 的缺省值带成 top）。
+    ...(modules.tier === 11 ? { upgrade: 'stock' as const } : {}),
     config: 0,
     turret,
     gun,
