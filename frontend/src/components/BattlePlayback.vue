@@ -637,38 +637,6 @@ const markerPrefsForMap = computed(() => ({
   showStatus: !uiHidden.value && markerPrefs.showStatus,
 }))
 
-// 车辆在队伍内的着色序号缓存：从**完整花名册**（hpVehicles，时间无关且对象稳定）派生
-// 队伍内序号——vehicleStates 是时间相关的渲染子集（车辆首观测前缺席），从中缓存会把
-// 部分序号永久固化（Codex review 2026-10-31：seek 历史不同 → 颜色不同，且多车共享
-// 同色）。颜色列表仍逐调用读取（调色板可变）。
-const vehicleColorIndexCache = new WeakMap()
-
-function vehicleColor(vehicle) {
-  let index = vehicleColorIndexCache.get(vehicle)
-  if (index === undefined) {
-    const teamVehicles = hpVehicles.value.filter(v => v.team === vehicle.team)
-    if (teamVehicles.length > 0) {
-      index = Math.max(0, teamVehicles.indexOf(vehicle))
-      vehicleColorIndexCache.set(vehicle, index)
-    } else {
-      index = 0 // 花名册尚未构建：退回首色且不缓存，避免毒化序号
-    }
-  }
-  const list = vehicle.friendly === true ? friendlyColors.value : enemyColors.value
-  return list[index % list.length]
-}
-
-/**
- * 车辆显示状态：把「当前可信插值位置」与「最后可信位置」分开——
- * gap 内禁止穿线插值，但车辆停在淡化最后已知位置，不整辆消失；
- * 阵亡后冻结在阵亡时刻的最后可信位置（优先于位置中断）。
- * covered 只表示服务器位置流覆盖（type-10），不是点亮。
- * direction = {hullYawDeg, turretRelativeYawDeg} | null：无可靠方向样本时不旋转（不伪造朝向）。
- */
-/**
- * PR2：该车辆的 dedicated model 决策（preload 结果）——
- * 非 Tier X / preload 失败 / 模块加载失败 → null（generic marker 单车 fallback）。
- */
 function playerName(accountId) {
   const vehicle = vehiclesByAccount.value.get(accountId)
   return vehicle ? (vehicle.playerName || `#${accountId}`) : (accountId == null ? t('recon.map.playback.unknown') : `#${accountId}`)
