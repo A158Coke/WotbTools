@@ -118,10 +118,12 @@ describe('ArmorShotHud（右上角弹种 + 装备图标）', () => {
     expect(wrapper.emitted('enhanced').at(-1)).toEqual([false])
   })
 
-  it('reloads only the explicit shooter upgrade and ignores an older stock response', async () => {
+  it('defaults XI shooter to top and only reloads when an explicit stock is selected', async () => {
     let resolveStock
     data.fetchTankData.mockReturnValueOnce(new Promise(resolve => { resolveStock = resolve }))
     const wrapper = mount(ArmorShotHud, { props: { shooterId: 1 } })
+    // 缺省（无 upgrade prop）= XI top；首个在途响应仍是 top 请求。
+    expect(data.fetchTankData).toHaveBeenLastCalledWith(1, { upgrade: 'top', abilities: null })
     const upgraded = structuredClone(TANK)
     upgraded.configs[1].shells[0].penetration = 330
     data.fetchTankData.mockResolvedValueOnce(upgraded)
@@ -132,9 +134,10 @@ describe('ArmorShotHud（右上角弹种 + 装备图标）', () => {
     resolveStock(TANK)
     await flushPromises()
     expect(wrapper.get('[data-testid="hud-shell-0"]').attributes('title')).toContain('330mm')
-    await wrapper.setProps({ upgrade: null })
+    data.fetchTankData.mockResolvedValueOnce(TANK)
+    await wrapper.setProps({ upgrade: 'stock' })
     await flushPromises()
-    expect(data.fetchTankData).toHaveBeenLastCalledWith(1)
+    expect(data.fetchTankData).toHaveBeenLastCalledWith(1, { upgrade: 'stock', abilities: '101,201' })
     expect(wrapper.get('[data-testid="hud-shell-0"]').attributes('title')).toContain('220mm')
   })
 })

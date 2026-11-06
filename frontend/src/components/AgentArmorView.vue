@@ -36,6 +36,9 @@ const { t, te } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const isShotPage = computed(() => route.query.shot != null)
+// 射击复现没有升级态证据：缺省显式 stock（raw），不把回放未证明的配置补成 XI 满级；
+// 普通装甲检视缺省交给 resolveUpgradeSelection（XI→top）。
+const armorUpgrade = value => (isShotPage.value ? (value ?? 'stock') : value)
 const shotSnapshot = ref([])
 const activeShot = computed(() => shotSnapshot.value.find(shot => String(shot.index) === String(route.query.shot)))
 const shotPosition = computed(() => shotSnapshot.value.indexOf(activeShot.value))
@@ -226,7 +229,8 @@ function applySide(side, patch) {
   const abilitiesKey = shooter ? 'sabilities' : 'abilities'
   const previousUpgrade = query[upgradeKey]
   const previousAbilities = query[abilitiesKey]
-  if ('upgrade' in patch) put(upgradeKey, patch.upgrade === 'top' ? 'top' : null)
+  // PATCH 里带 upgrade 时写显式模式；缺省（无 key）= XI 顶级由场景侧决定。
+  if ('upgrade' in patch) put(upgradeKey, patch.upgrade === 'stock' ? 'stock' : 'top')
   if ('abilities' in patch) put(abilitiesKey, patch.abilities)
   const upgradesChanged = previousUpgrade !== query[upgradeKey] || previousAbilities !== query[abilitiesKey]
   if (upgradesChanged) {
@@ -662,7 +666,7 @@ onBeforeUnmount(() => {
                                 :engine="route.query.sengine"
                                 :track="route.query.strack"
                                 :dev="route.query.sdev"
-                                :upgrade="route.query.supgrade"
+                                :upgrade="armorUpgrade(route.query.supgrade)"
                                 :abilities="route.query.sabilities"
                                 @apply="patch => applySide('shooter', patch)"
                                 @ready="value => shooterReady = value"
@@ -692,7 +696,7 @@ onBeforeUnmount(() => {
                                 :engine="route.query.engine"
                                 :track="route.query.track"
                                 :dev="route.query.dev"
-                                :upgrade="route.query.upgrade"
+                                :upgrade="armorUpgrade(route.query.upgrade)"
                                 :abilities="route.query.abilities"
                                 @apply="patch => applySide('target', patch)"
                                 @ready="value => targetReady = value"
@@ -731,7 +735,7 @@ onBeforeUnmount(() => {
             <ArmorShotHud
                 :shooter-id="shooterSetupId"
                 :scfg="shooterConfigValue"
-                :upgrade="route.query.supgrade"
+                :upgrade="armorUpgrade(route.query.supgrade)"
                 :abilities="route.query.sabilities"
                 :shell="route.query.shell"
                 :eqcal="route.query.eqcal"

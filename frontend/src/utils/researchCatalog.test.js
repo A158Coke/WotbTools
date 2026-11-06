@@ -127,6 +127,17 @@ describe('vehicleFilter 语义（一个 include 块内是 AND，不是 OR）', (
     expect(pool.every(item => !item.isAbility)).toBe(true)
   })
 
+  it('tier 11 通过 max=11 过滤器；isVehicleAbility 不进入装配池', () => {
+    const item = (stem, filter, isAbility = false) => ({ stem, mode: 'common', filter, isAbility })
+    const catalog = [
+      item('autoExtinguisher', { include: [{ tiers: { min: 4, max: 11 } }] }),
+      item('steadyAimSystem', null, true),
+    ]
+    const ref11 = ref('usa', 11, { stem: 'A183_XM69_Hacker', tankId: 30497 })
+    expect(itemAvailableForTank(catalog[0], ref11)).toBe(true)
+    expect(availableItems(catalog, ref11).map(entry => entry.stem)).toEqual(['autoExtinguisher'])
+  })
+
   it('T-34（苏联 5 级）看不到他国食物，看得到通用油料', () => {
     const pool = availableItems(RESEARCH_META.provisions, ref('ussr', 5, { stem: 'T-34' })).map(item => item.stem)
     expect(pool).not.toContain('ration')

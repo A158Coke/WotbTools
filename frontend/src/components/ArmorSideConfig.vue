@@ -127,7 +127,8 @@ function resetAll() {
     engine: last(modules.value?.engines),
     track: last(modules.value?.chassis),
     devices: [],
-    ...(sel.upgrade != null ? { upgrade: 'stock', abilities: [] } : {}),
+    // 重置 = 默认配置（XI 顶级）；显式「初始」preset 才写 stock。
+    ...(sel.upgrade != null ? { upgrade: 'top', abilities: [] } : {}),
   })
 }
 </script>

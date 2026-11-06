@@ -84,9 +84,15 @@ function supports(def: UpgradeDefinition): boolean {
   }
 }
 
-/** 缺省 stock 兼容旧链接；满级只选择每个备选组的一项，绝不叠加互斥技能。 */
+/**
+ * XI 缺省 top（产品口径：坦克卡片/详情/装甲查看器默认顶级）；显式 stock 仍可回退，
+ * 非法值按 stock 处理（旧链接兼容）。满级只选择每个备选组的一项，绝不叠加互斥技能。
+ */
 export function resolveUpgradeSelection(modules: unknown, mode?: unknown, inputChoices?: unknown): UpgradeSelection {
-  const result = emptySelection(mode === 'top' ? 'top' : 'stock')
+  const absent = mode == null || mode === ''
+  const explicit = mode === 'top' ? 'top' : mode === 'stock' ? 'stock' : null
+  const defaultMode = absent && record(modules) && modules.tier === 11 ? 'top' : 'stock'
+  const result = emptySelection(explicit ?? defaultMode)
   if (!record(modules) || modules.tier !== 11 || !('upgradeProgression' in modules)) return result
   result.available = true
   const progression = modules.upgradeProgression

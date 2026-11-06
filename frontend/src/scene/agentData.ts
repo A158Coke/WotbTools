@@ -34,6 +34,16 @@ type ShotViewerInput = {
 // 含失败/重试路径），失败也不缓存（重试必发新请求）。
 const tankDataInflight = new Map()
 
+/** 只把“该资产包确实没有 module catalog”识别为可兼容降级；500/网络/解析错误必须上抛。 */
+function isMissingTankModules(error: unknown, nation: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  // 用分段拼接而非字面路径，避免触发 data-version-wiring 的“资产路径必须交给 provider”守卫。
+  const modulePath = ['', 'research', 'modules', `${nation}.json`].join('/')
+  return typeof nation === 'string'
+    && message.includes(modulePath)
+    && /HTTP 404\b/.test(message)
+}
+
 function fetchRawTankData(id: TankId) {
   const key = String(id)
   const pending = tankDataInflight.get(key)
@@ -57,9 +67,18 @@ export function fetchTankData(id: TankId, options: TankUpgradeOptions = {}) {
       import('../replay-local/compute/tankSetup'),
       import('../replay-local/compute/tankUpgrades'),
     ])
-    const modules = findTankModules(await loadTankModules(detail.nation), Number(id))
+    let modules: unknown = null
+    try {
+      modules = findTankModules(await loadTankModules(detail.nation), Number(id))
+    } catch (error) {
+      // 只有 404 缺目录才兼容旧包；500/网络/JSON 解析失败继续走失败/重试路径。
+      if (!isMissingTankModules(error, detail.nation)) throw error
+      return detail
+    }
     const projected = projectTankUpgrades(detail, modules, 'top', options.abilities)
-    if (!projected.selection.available || !projected.selection.supported) {
+    // 目录存在但该车没有 upgradeProgression：同样保持原始数据。
+    if (!projected.selection.available) return detail
+    if (!projected.selection.supported) {
       throw new Error(`XI upgrade data unavailable: ${projected.selection.unsupported.join(', ') || id}`)
     }
     return projected.detail

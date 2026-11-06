@@ -5,7 +5,7 @@
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本由显式 `version` 输入决定：自动续跑传入 stage 解析出的同一版本，手动 recovery 由操作者显式给出（见下节）。
-当前源码版本：**4.5.1 / 4005001**（`android/gradle.properties`，版本变更内容见 [4.5.1](releases/4.5.1.md)）。Native Bridge 保持 v3；最低支持版本保持 4.1.0 / 4001000，不因本版本抬升。
+当前源码版本：**4.5.2 / 4005002**（`android/gradle.properties`，版本变更内容见 [4.5.2](releases/4.5.2.md)）。Native Bridge 保持 v3；最低支持版本保持 4.1.0 / 4001000，不因本版本抬升。
 `contracts/android-native-bridge.json` 是协议 SSOT；Gradle、Native 与前端声明必须一致。
 
 Native Bridge 为 **v3**（3.0.0 起）：可信本地 origin 是 LocalRuntimeServer 的固定 loopback

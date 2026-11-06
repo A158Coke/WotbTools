@@ -106,6 +106,9 @@ export function parseTankopediaQuery(query = {}) {
   const sort = text(query.sort)
   const tier = positiveInt(query.tier)
   const tank = positiveInt(query.tank)
+  // XI 缺省 = top（由 resolveUpgradeSelection 的 tier 默认决定）；这里保留 tri-state：
+  // null/缺省 = 默认，'stock'/'top' = 用户显式选择。
+  const upgrade = tank ? first(query.upgrade) : undefined
   return {
     q: text(query.q).slice(0, MAX_QUERY_LENGTH),
     tier: tier ? String(tier) : '',
@@ -124,7 +127,7 @@ export function parseTankopediaQuery(query = {}) {
     prov: tank ? stemList(query.prov) : null,
     skills: tank ? skillLevels(query.skills) : {},
     camo: tank ? first(query.camo) === '1' : false,
-    upgrade: tank && first(query.upgrade) === 'top' ? 'top' : 'stock',
+    upgrade: upgrade === 'top' || upgrade === 'stock' ? upgrade : null,
     abilities: tank ? abilityIds(query.abilities) : [],
   }
 }
@@ -155,7 +158,7 @@ export function serializeTankopediaQuery(state = {}) {
       if (pairs.length) query.skills = pairs.join(',')
     }
     if (state.camo === true) query.camo = '1'
-    if (state.upgrade === 'top') query.upgrade = 'top'
+    if (state.upgrade === 'top' || state.upgrade === 'stock') query.upgrade = state.upgrade
     if (Array.isArray(state.abilities)) {
       const ids = [...new Set(state.abilities.filter(n => Number.isSafeInteger(n) && n > 0))].slice(0, 8)
       if (ids.length) query.abilities = ids.join(',')
@@ -262,7 +265,9 @@ export function normalizeTankCache(cache, aliasMap = TANK_ALIASES) {
         // projection 只做布尔归一化，**不**替上游强制互斥；异常双 true 原样透传，
         // 视觉 precedence 由样式层确定（AgentTankopedia：premium > collector）。
         is_collector: !!value.is_collector,
-        hp: value.hp ?? null,
+        // XI 卡片默认顶级血量：hp_top 由上游按升级树 MAX_HEALTH 节点算好；
+        // 普通车没有该字段，继续用 hp（车体 + 顶炮塔）。
+        hp: value.hp_top ?? value.hp ?? null,
         pen_max: penMax || null,
       }
     })

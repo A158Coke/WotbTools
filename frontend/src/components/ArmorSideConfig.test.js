@@ -70,7 +70,7 @@ describe('ArmorSideConfig（一侧的模块 + 配件完整选择）', () => {
     expect(payload).not.toHaveProperty('abilities')
   })
 
-  it('provides XI initial/max controls with unchanged module IDs and resets to the old stock default', async () => {
+  it('provides XI initial/max controls with unchanged module IDs and resets to the top default', async () => {
     const { detail, modules } = upgradeFixtures[0]
     data.fetchTankData.mockResolvedValueOnce(detail)
     research.loadTankModules.mockResolvedValueOnce({ tanks: { [modules.stem]: modules } })
@@ -87,6 +87,6 @@ describe('ArmorSideConfig（一侧的模块 + 配件完整选择）', () => {
     expect(stock).toMatchObject({ config: 0, configChanged: false, upgrade: 'stock' })
     expect(stock.abilities.every(Number.isInteger)).toBe(true)
     await wrapper.get('[data-testid="tank-config-reset"]').trigger('click')
-    expect(wrapper.emitted('apply').at(-1)[0]).toMatchObject({ upgrade: 'stock', abilities: [] })
+    expect(wrapper.emitted('apply').at(-1)[0]).toMatchObject({ upgrade: 'top', abilities: [] })
   })
 })
