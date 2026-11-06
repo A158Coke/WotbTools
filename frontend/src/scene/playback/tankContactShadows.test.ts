@@ -155,9 +155,19 @@ describe('车体外可见性（俯视时车体盖住内核，只看得到车外�
   })
 
   it('margin 与车宽成比例且有上下限', () => {
-    expect(shadowMargin({ halfW: 1.8, halfL: 3.25 })).toBeCloseTo(1.08, 6)
-    expect(shadowMargin({ halfW: 0.5, halfL: 1 })).toBe(0.8)
-    expect(shadowMargin({ halfW: 6, halfL: 9 })).toBe(2)
+    expect(shadowMargin({ halfW: 1.8, halfL: 3.25 })).toBeCloseTo(0.45, 6)
+    expect(shadowMargin({ halfW: 0.5, halfL: 1 })).toBe(0.35)
+    expect(shadowMargin({ halfW: 6, halfL: 9 })).toBe(0.6)
+  })
+
+  it('迎光侧只有窄接触带，明显的渐隐只在背光侧（典型 35° 太阳下背光侧至少是迎光侧的 3 倍）', () => {
+    const fp = { halfW: 1.75, halfL: 3.6 }
+    const sun = sunShadowFrom(at(-Math.cos(0.61) * 1000, Math.sin(0.61) * 1000, 0), O)   // 仰角 35°，传播 +X
+    const out = shadowGridXZ(0, 0, 0, fp, sun, new Float32Array(GRID * GRID * 2))
+    const lit = -out[0] - fp.halfW            // −X 外线到车体边
+    const shade = out[4 * 2] - fp.halfW       // +X 外线到车体边
+    expect(lit).toBeLessThanOrEqual(0.6)
+    expect(shade).toBeGreaterThan(3 * lit)
   })
 })
 
