@@ -63,13 +63,16 @@ const upgradeOptions = computed(() => [
   { value: 'stock', label: t('agentTanks.configurator.upgrade_stock'), testid: 'tank-upgrade-stock' },
   { value: 'top', label: t('agentTanks.configurator.upgrade_top'), testid: 'tank-upgrade-top', disabled: !upgrades.value.supported },
 ])
-function upgradeAmount(value, modifier = 'MODIFIER_ADD') {
+function upgradeAmount(value, modifier = 'MODIFIER_ADD', name) {
   if (value == null) return '—'
-  if (typeof value === 'boolean') return t(`agentTanks.configurator.upgrade_${value ? 'enabled' : 'disabled'}`)
+  if (typeof value === 'boolean') return upgradeValue(value, name)
   return `${modifier === 'MODIFIER_MULTIPLY' ? '×' : value > 0 ? '+' : ''}${fmtNum(value, 3)}`
 }
-function upgradeValue(value) {
+function upgradeValue(value, name) {
   if (value == null) return '—'
+  if (name === 'SAS_ALLOW_ACTIVATE_ON_HIT' && typeof value === 'boolean') {
+    return t(`agentTanks.configurator.upgrade_trigger_${value ? 'hit' : 'damage'}`)
+  }
   return typeof value === 'boolean' ? t(`agentTanks.configurator.upgrade_${value ? 'enabled' : 'disabled'}`) : fmtNum(value, 3)
 }
 const mechanicEffects = computed(() => upgradeMechanicEffects(upgrades.value, props.modules, props.catalog))
@@ -81,7 +84,7 @@ const abilityGroups = computed(() => (upgrades.value.groups || []).map((group, g
     const node = upgrades.value.nodes.find(node => node.id === id)
     const effects = (node?.attributes || []).map(({ name, value }) => ({
       name, label: t(`agentTanks.configurator.upgrade_attributes.${name}`),
-      amount: upgradeAmount(value, upgrades.value.attributeDefinitions[name]?.modifier),
+      amount: upgradeAmount(value, upgrades.value.attributeDefinitions[name]?.modifier, name),
     }))
     return {
       value: String(id),
@@ -485,9 +488,9 @@ const camoBonusParts = computed(() => {
               <th scope="col">{{ t('agentTanks.configurator.upgrade_effect_current') }}</th></tr></thead>
             <tbody><tr v-for="effect in mechanicEffects" :key="effect.name" :data-testid="`tank-mechanic-${effect.name}`">
               <th scope="row">{{ t(`agentTanks.configurator.upgrade_attributes.${effect.name}`) }}</th>
-              <td>{{ upgradeValue(effect.initial) }}</td>
-              <td class="tp-effect-current"><strong>{{ upgradeValue(effect.value) }}</strong>
-                <span v-if="effect.current != null" class="tp-effect-delta">{{ t('agentTanks.configurator.upgrade_effect_change', { value: upgradeAmount(effect.current, effect.modifier) }) }}</span>
+              <td>{{ upgradeValue(effect.initial, effect.name) }}</td>
+              <td class="tp-effect-current"><strong>{{ upgradeValue(effect.value, effect.name) }}</strong>
+                <span v-if="effect.current != null" class="tp-effect-delta">{{ t('agentTanks.configurator.upgrade_effect_change', { value: upgradeAmount(effect.current, effect.modifier, effect.name) }) }}</span>
               </td>
             </tr></tbody>
           </table>

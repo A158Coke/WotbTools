@@ -35,8 +35,31 @@ describe('XI 技能升级变化展示', () => {
     }
     const nitro = boundModules(bz.modules)
     const rows = upgradeMechanicEffects(resolveUpgradeSelection(nitro, 'top'), nitro, catalog)
-    expect(rows.find(row => row.name === 'RECHARGEABLE_NITRO_HEATING_DURATION')?.initial).toBe(null)
+    expect(rows.find(row => row.name === 'RECHARGEABLE_NITRO_HEATING_DURATION')).toMatchObject({ initial: 8, value: 13 })
     expect(rows.find(row => row.name === 'RECHARGEABLE_NITRO_COOLING_DURATION')).toMatchObject({ initial: 45, value: 43 })
+  })
+  it.each([
+    { tank: hacker, name: 'SAS_ALLOW_ACTIVATE_ON_HIT', choice: 23, initial: false, upgraded: true, other: [22, 24], kind: 'provisions' },
+    { tank: bz, name: 'RECHARGEABLE_NITRO_HEATING_DURATION', choice: 22, initial: 8, upgraded: 13, other: [23, 24], kind: 'consumables' },
+  ])('$name：同版执行代码核对的基础值、互斥切换及失败保护', ({ tank, name, choice, initial, upgraded, other, kind }) => {
+    const modules = boundModules(tank.modules)
+    const row = (mode: string, ability: number, source = catalog, vehicle = modules) =>
+      upgradeMechanicEffects(resolveUpgradeSelection(vehicle, mode, [ability]), vehicle, source).find(row => row.name === name)!
+    expect(row('stock', choice)).toMatchObject({ initial, value: initial, current: null })
+    expect(row('top', choice)).toMatchObject({ initial, value: upgraded, current: initial === false ? true : 5 })
+    for (const id of other) {
+      expect(row('top', id)).toMatchObject({ initial, value: initial, current: null })
+      expect(row('top', choice).value).toBe(upgraded)
+    }
+    expect(row('stock', choice).value).toBe(initial)
+    const wrongVersion = { ...catalog, [`${kind}GameVersion`]: 'other' }
+    expect(row('top', choice, wrongVersion)).toMatchObject({ initial: null, value: null })
+    expect(row('top', choice, catalog, { ...modules, vehicleAbilities: [] })).toMatchObject({ initial: null, value: null })
+    // 只有机制展示变化；互斥机制不能更改静态车辆投影。
+    const selected = projectTankUpgrades(tank.detail, modules, 'top', [choice])
+    const alternative = projectTankUpgrades(tank.detail, modules, 'top', [other[0]])
+    expect(selected.detail).toEqual(alternative.detail)
+    expect(selected.modules).toEqual(alternative.modules)
   })
   it('布尔原始 true 与升级 false 正确覆盖，初始态保持 true', () => {
     const modules = boundModules(black.modules)

@@ -12,15 +12,44 @@ const source = tanks.find(t => t.modules.tankId === 30241)
 const black = { ...source, modules: { ...source.modules, vehicleAbilities: ['burstMode'] } }
 const catalog = { devices: [], devicePresets: {}, ...mechanics, consumablesGameVersion: mechanics.gameVersion,
   provisionsGameVersion: mechanics.gameVersion, crewSkillClasses: {}, skills: {} }
-function panel(locale = 'zh') {
+function panel(locale = 'zh', tank = black) {
   return mount(TankConfigPanel, {
-    props: { ...black, catalog, selection: { ...baseSelection(black), upgrade: 'top' } },
+    props: { ...tank, catalog, selection: { ...baseSelection(tank), upgrade: 'top' } },
     attachTo: document.body,
     global: { plugins: [createI18n({ legacy: false, locale, messages })] },
   })
 }
 
 describe('XI 技能选择卡与效果反馈', () => {
+  it.each([
+    ['zh', '造成伤害', '命中'], ['en', 'On damage', 'On hit'], ['ru', 'При нанесении урона', 'При попадании'],
+  ])('%s Hacker 条件显示真实前后语义而非开关或未知值', async (locale, damage, hit) => {
+    const source = tanks.find(tank => tank.modules.tankId === 30497)
+    const wrapper = panel(locale, { ...source, modules: { ...source.modules, vehicleAbilities: ['steadyAimSystem'] } })
+    const row = () => wrapper.get('[data-testid="tank-mechanic-SAS_ALLOW_ACTIVATE_ON_HIT"]')
+    expect(row().findAll('td').map(cell => cell.text())).toEqual([damage, damage])
+    await wrapper.get('[data-testid="tank-ability-23"]').trigger('click')
+    await wrapper.setProps({ selection: { ...wrapper.props('selection'), ...wrapper.emitted('update').at(-1)[0] } })
+    expect(row().findAll('td')[0].text()).toBe(damage)
+    expect(row().get('strong').text()).toBe(hit)
+    await wrapper.get('[data-testid="tank-ability-24"]').trigger('click')
+    await wrapper.setProps({ selection: { ...wrapper.props('selection'), ...wrapper.emitted('update').at(-1)[0] } })
+    expect(row().get('strong').text()).toBe(damage)
+    await wrapper.setProps({ catalog: { ...catalog, provisionsGameVersion: 'mismatch' } })
+    expect(row().findAll('td').map(cell => cell.text())).toEqual(['—', '—'])
+    wrapper.unmount()
+  })
+  it('BZ-79 加热时长展示8→13，切换选项恢复8', async () => {
+    const source = tanks.find(tank => tank.modules.tankId === 15153)
+    const wrapper = panel('zh', { ...source, modules: { ...source.modules, vehicleAbilities: ['rechargeableNitro'] } })
+    const row = () => wrapper.get('[data-testid="tank-mechanic-RECHARGEABLE_NITRO_HEATING_DURATION"]')
+    expect(row().findAll('td').map(cell => cell.text())).toEqual(['8', '13变化 +5'])
+    await wrapper.get('[data-testid="tank-ability-23"]').trigger('click')
+    await wrapper.setProps({ selection: { ...wrapper.props('selection'), ...wrapper.emitted('update').at(-1)[0] } })
+    expect(row().findAll('td').map(cell => cell.text())).toEqual(['8', '8'])
+    wrapper.unmount()
+  })
+
   it('卡片保留单选语义、单个 Tab 入口及方向键/Home/End，禁用时不可选择', async () => {
     const wrapper = panel()
     await flushPromises()

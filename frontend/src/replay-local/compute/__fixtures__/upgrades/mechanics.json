@@ -48,6 +48,14 @@
         "sha256": "49e7ba4c27f1c6f3739c6a76bd7d5294fcbed810b9ce8ede73cdd6fea86b3c8b",
         "decodedSha256": "7ae541eee1e0efad9881f8d20b5e0239d3eb031e355462c22c1b62119f0d8ec4"
       }
+    },
+    "nativeVerification": {
+      "member": "app/wotblitz.exe",
+      "bytes": 75305984,
+      "sha256": "eeff84123d6084c72a582ef770a92d87ec208146ecaecf48d5289c26e15fcc3e",
+      "imageBase": "0x400000",
+      "machine": "PE32 x86",
+      "evidence": "docs/research/tier-xi-mechanics.md"
     }
   },
   "vehicles": [

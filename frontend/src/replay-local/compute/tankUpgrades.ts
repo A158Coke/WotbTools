@@ -190,7 +190,9 @@ const MECHANIC_PARAMETERS: Record<string, [string, string, string]> = {
   SAS_DURATION: ['provisions', 'steadyAimSystem', 'duration'],
   SAS_AIMING_SPEED: ['provisions', 'steadyAimSystem', 'aimingSpeed'],
   SAS_GUN_DISPERSION: ['provisions', 'steadyAimSystem', 'gunDispersionModifier'],
+  SAS_ALLOW_ACTIVATE_ON_HIT: ['provisions', 'steadyAimSystem', 'activateWithoutDamage'],
   RECHARGEABLE_NITRO_COOLING_DURATION: ['consumables', 'rechargeableNitro', 'coolingDuration'],
+  RECHARGEABLE_NITRO_HEATING_DURATION: ['consumables', 'rechargeableNitro', 'duration'],
   RECHARGEABLE_NITRO_FWD_SPEED_LIMIT_FACTOR: ['consumables', 'rechargeableNitro', 'fwdSpeedLimitFactor'],
   RECHARGEABLE_NITRO_ROTATION_SPEED_FACTOR: ['consumables', 'rechargeableNitro', 'rotationSpeedFactor'],
 }
