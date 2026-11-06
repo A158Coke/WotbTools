@@ -106,6 +106,13 @@ file as root would leave a root-only lock that the host's own non-root deploy us
 could no longer take. Each target's lock root is distinct, and the contract tests
 assert that no two targets share one.
 
+## Staging root（Yecao 暂存根）
+
+Yecao 暂存根 `/opt/komodo/incoming/<SHA>` 及其两级父目录必须先经
+`deploy/komodo/staging-root.sh prepare` 证明是真实目录（mode 700、非 symlink）
+才允许 SCP 写入；移除同样只经该脚本的 `cleanup`。workflow 内禁止内联
+`mkdir -p /opt/...` 或未加保护的 `rm -rf`。
+
 ## Privilege model
 
 - **Yecao** runs the reconcile directly as its (root) SSH account; the script

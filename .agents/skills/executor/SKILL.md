@@ -32,8 +32,8 @@ description: >
    的 `merged=true` 或等价 merge commit 事实；确认后直接加载 `.agents/playbooks/post-merge-cleanup.md`
    执行其 cleanup contract。若无法确认已合并，停止并汇报，不把未合并任务当 cleanup。此路径不进入
    下方 implementation phases，也不要求重新创建/读取 approved plan。
-1. **读取并规范化计划**：按用户当前明确选择读取文件计划或直接提供的完整 plan；当前选择优先于旧文件。按 `.agents/skills/designer/SKILL.md`「授权、计划输入与偏差边界」校验，允许有证据的无损规范化，不因标题/字段格式返回 Designer。规范化后必须符合其 canonical schema：全部必需 section，以及每步 `Status`、`Goal`、`Scope / Files`、`Change`、`Validation` 与合法状态；`Commit boundary` 可选。不得编造实质决定、验收或批准事实，也不得维护第二套 schema。
-2. **授权与阻塞校验**：复用 Designer 同一节的授权规则；用户明确要求执行所附计划即授权该计划范围，不重复确认。核对 `# Constraints` 中的授权来源、范围与限制；Evidence Gaps / Unverified Assumptions 先按可得事实验证，只有真正需要用户决定或无安全恢复路径时才阻塞。高风险具体方案的批准和适用动作授权仍不可省略。
+1. **读取并规范化计划**：按用户当前明确选择读取文件计划或直接提供的完整 plan；当前选择优先于旧文件。按 `.agents/skills/designer/SKILL.md`「授权、计划输入与偏差边界」校验，允许有证据的无损规范化，不因标题/字段格式返回 Designer。规范化后必须符合其 canonical schema：核心章节必须存在，条件章节按 Designer 条件表判定；每步含 `Status`、`Goal`、`Scope / Files`、`Change`、`Validation` 与合法状态，`Commit boundary` 可选。不得编造实质决定、验收或批准事实，也不得维护第二套 schema。
+2. **授权与阻塞校验**：复用 Designer 同一节的授权规则；用户明确要求执行所附计划即授权该计划范围，不重复确认。核对 `# Constraints` 中的授权来源、范围与限制；存在 `# Evidence Gaps` / `# Unverified Assumptions` 时先按可得事实验证，只有真正需要用户决定或无安全恢复路径时才阻塞。高风险具体方案的批准和适用动作授权仍不可省略。
 3. **从已验证的最新 main remote 创建任务 worktree 与分支（分支名符合任务主题）**：
    - 从计划内容提取主题：优先 `# Goal` / `# Actual Outcome`；无明确标题时用 `# Impact Surface` 中最核心的动词短语。
    - 分支名 grammar：`<branch> = feat/<kebab-case-suffix> | fix/<kebab-case-suffix> | refactor/<kebab-case-suffix> | chore/<kebab-case-suffix>`。
@@ -67,7 +67,7 @@ description: >
    - 该步 `Status` 置为 `DONE`，在 commentary 简短汇报后自动继续下一步；阶段汇报不代表任务完成。
 6. **偏差处理**：按 Designer「授权、计划输入与偏差边界」分类。路径、必要直接依赖、测试/文档/生成产物等可恢复纠正自行完成，更新同一计划的实际 impact 与证据后继续。HARD STOP 只暂停依赖该决定的步骤并置 `BLOCKED`，给出证据与所需输入；设计实质失效才返回 Designer / 用户，不静默改变目标。
 7. **全部完成后**：
-   - 按 `# Validation / Outside Judge` 与 `# Final Verification` 逐条验证（映射到具体测试/检查，禁止口头宣称通过）；
+   - 按 `# Validation / Outside Judge` 逐条验证；存在 `# Final Verification` 时一并按之验证（映射到具体测试/检查，禁止口头宣称通过）；
    - 运行本任务 affected regression tests（targeted / module / feature）；
      repository-level full validation 交由 PR CI 统一执行，**不在任务结束重复跑全量**（仅在 `.agents/AGENTS.md`
      的 Full-test 例外情形下才跑全量，并须先声明 Affected scope / Selected validation / Why）；
@@ -98,7 +98,7 @@ description: >
 - 已验证 `<main-ref>` 是 Executor → Review With Docs 的 lifecycle handoff 信息；final gate 必须复用它，不得重新硬编码或猜测 remote。
 - 只执行计划内任务：`# Non-Goals` 内的改动一律不做。
 - 每步必须有验证，禁止"改完就继续"；每步 `Status` 按 `PENDING → IN_PROGRESS → DONE`，真实阻塞置 `BLOCKED`。
-- Evidence Gaps / Unverified Assumptions 按 Designer 定义先补证据并分类，不把未知直接等同于需用户答复。
+- 存在 Evidence Gaps / Unverified Assumptions 时，按 Designer 定义先补证据并分类，不把未知直接等同于需用户答复。
 - 事实冲突引用 `文件:行` 并按 Designer 偏差边界处理；不能因实现预测不准擅自推翻目标或停下。
 - 执行完成后必须调用 review-with-docs 审查并闭环（修复 → 复查 → 无未解决 BLOCKER/MAJOR），
   审查结果写入最终汇报；本技能不替代审查。review-with-docs 零 blocker 后允许
@@ -110,4 +110,4 @@ PR merge 后，加载 `.agents/playbooks/post-merge-cleanup.md`：切回 main �
 
 ## 内部 playbooks
 
-按需加载 `.agents/playbooks/`：`wotb-sync.md`、`column-sync.md`、`frontend-architecture.md`、`keycloak-upgrade/`、`komodo-server-lifecycle.md`、`post-merge-cleanup.md`。它们不是顶层 Skill，不参与生命周期选择。
+按需加载 `.agents/playbooks/`：`wotb-sync.md`、`column-sync.md`、`frontend-architecture.md`、`keycloak-upgrade/`、`komodo-server-lifecycle.md`、`post-merge-cleanup.md`、`pr-follow-up.md`。它们不是顶层 Skill，不参与生命周期选择。

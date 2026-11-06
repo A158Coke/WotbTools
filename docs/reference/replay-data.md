@@ -639,5 +639,5 @@ EntityLeave / damage threshold 自行计算。
 1–10 级，与评分规则和十级专属功能的资格范围分离；未知车型仍显示 `#<id>`，不猜车名。
 同一份 tier 文件由前端异步加载并由 Maven 打包给 Java Tankopedia。自动同步由 `update-tankopedia.yml` 调用
 `common/python/sync_tankopedia_snapshot.py`，复用 `update_tankopedia.py` 生成十份文件后提交，
-保留 extraInfo、装备 preset 与完整性校验。1–6 级新增基础资料（名称、等级、车种、国家、HP、炮与机动参数）；物资/装备的 reviewed 建模与覆盖门禁仍限定原有 7–10 级，低级资料不输出未建模的 allowedEquipment/allowedConsumables/allowedProvision。
+保留 extraInfo、装备 preset 与完整性校验（写入前门禁：总量骤降、任一 tier 骤降、重复 id、缺 id/name/hp/gun 任一即失败）。1–6 级新增基础资料（名称、等级、车种、国家、HP、炮与机动参数）；物资/装备的 reviewed 建模与覆盖门禁仍限定原有 7–10 级，低级资料不输出未建模的 allowedEquipment/allowedConsumables/allowedProvision。
 快照同步入口复用 `blitzkit_snapshot` 的连续两轮稳定读取，并记录游戏版本及五份来源定义的 SHA-256，保留每份 tier 数据的来源可追溯性。

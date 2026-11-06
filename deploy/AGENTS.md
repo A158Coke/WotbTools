@@ -1,52 +1,162 @@
 # deploy/ — 部署与生产指令
 
-> 仓库级硬约定见 `.agents/AGENTS.md`；运维细节见 `docs/operations/observability.md` 与 `docs/auth/wargaming-asia-deployment.md`。
+> 仓库级硬约定见 `.agents/AGENTS.md`。
+> **何时必读本文件**：改动 `deploy/` 下任何 compose / 部署脚本 / nginx / tx 编排 /
+> 校验脚本，或改动 `.github/workflows/` 中 production owner 时。
+> 运维细节 canonical：`docs/operations/*`（逐节链接见下）、`docs/auth/wargaming-asia-deployment.md`。
 
-## 镜像与产物（服务 workflow + Dockerfile）
+## 镜像与产物（硬约束）
 
-- **镜像身份**：应用发布都必须先冻结完整 source SHA，并保留不可变 SHA/tag + registry digest 供 provenance 与诊断。TX 的 `business-api` 与 `frontend` 是 digest-pinned 车道：GitHub 只确定 release source/输入，Gitee 作为国内源码传输，TX 从 exact SHA 构建并验证后发布到 TCR，生产 Compose 必须消费 `repo@sha256:<digest>`（分别由 `TX_BUSINESS_API_IMAGE_REF` / `TX_FRONTEND_IMAGE_REF` 提供），禁止回退 `latest`。其他尚未迁移的应用 owner 仍沿用各自现有 `latest`/freshness 契约。TX 镜像只用 TCR，Yecao 镜像只用 GHCR；TX registry prefix 必须从 `vars.TCR_REGISTRY/TCR_NAMESPACE` 传给 host，不可依赖默认 namespace。
-- TX 业务运行时定义在 `deploy/tx/business-api.compose.yml`，由 `deploy/tx/docker-compose.yml` 汇总：镜像为 `wotbtools-business-api`，只承载业务 API（服务器没有回放解析器：没有 processing/export job、broker 或本地对象存储服务；名人堂回放原件仍落本地 `replay_data:/data/replays`，联赛直播封面可选接入独立腾讯 COS，见 `docs/operations/league-broadcast-covers.md`），app :8087 与 management :8088 分别绑定到 WireGuard `10.20.0.1`（8088 继续供 Yecao Prometheus 抓取）；六个生产 consumer 现在都经 TX1 WireGuard logical placement 访问；Docker-local 值仅作为紧急 rollback。
-- **独立发布闭环**：PR 的 `CI / Required Gate` 是唯一代码验证门禁；四个应用 owner（business-api / frontend / keycloak / ai-service）在每次 main push 运行，固定基础设施按各自路径触发，手动入口只作用于所属服务。不要新增跨服务 planner、reusable Build/Deploy/Tofu DAG、`workflow_run` 链、deployment manifest 或 all selector。应用按当前 main 部署，持久状态校验必须 fail-closed，失败不自动回滚。
-- **PR 快速上线**：计划已明确且用户要求直接上线时，完成实现后先做 targeted/static validation 与 `review-with-docs` PASS（覆盖完整 candidate tree），再提交、推送并开 PR；Fast path 只跳过本地全量测试重复，不跳过 final gate。部署脚本仍必须保留静态配置校验、`verify-observability.sh` 数据链路 gate、失败诊断与无自动恢复路径。
-- **TX host lock**：GitHub/脚本内部可以继承 `WOTB_DEPLOY_LOCK_FD=9`，但任何 operator / Agent 给人的手工命令必须通过 `bash /opt/wotb-tx/deploy/with-deploy-lock.sh <command...>`（仓库源为 `deploy/tx/with-deploy-lock.sh`）获取锁；禁止在交互式 SSH shell 直接执行 `exec 9>/opt/wotb-tx/.deploy.lock` + `flock`，否则 FD 会跟随 shell 长期存活并阻断后续部署。锁冲突由 wrapper 输出 holder 诊断。
-- 生产编排 `deploy/docker-compose.prod.yml` + `deploy/deploy.sh`（fail-fast 校验）：Yecao 侧声明生产 `ai-service` 与观测栈（node-exporter/prometheus/loki/alloy/grafana），ai-service `10.20.0.2:8089`、Grafana `10.20.0.2:3000` 与 Loki `10.20.0.2:3100` 绑定 WireGuard；退役的业务应用（backend/frontend/Keycloak/business PostgreSQL）以及 parser-worker / MinIO / RabbitMQ 已删除，服务白名单里也没有它们（`deploy/test-deploy-contract.sh`、`deploy/test-yecao-wireguard-boundary.sh` 断言其缺席）；`health-probe` 客户端在 **Yecao 侧已删除**（不在 `deploy/deploy.sh` 的服务白名单），但 **TX 侧保留为部署探针**（`deploy/tx/common.compose.yml` 声明，`deploy/tx/deploy.sh` 与 `deploy/tx/runtime-check-lib.sh` 用它跑 HTTP 探测）。业务后端的超时链契约（`AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC=1100` 等）已随 AI 配置一并归属 Yecao `ai-service`（`deploy/docker-compose.prod.yml`）与 `AiTimeoutChainContractTest`；TX 业务编排不再携带任何 AI provider 变量或 secret，只保留 `deploy/test-tx-runtime-config.sh` 校验的 `/api/ai/**` → `10.20.0.2:8089` ingress 路由。
-- **全业务运行时 E2E 检查**：`deploy/tx/runtime-check.sh` 用 `wotbtools-e2e` 机器身份（client_credentials，唯一 realm role `wotbtools-user`，secret = `KEYCLOAK_E2E_CLIENT_SECRET`）驱动真实链路并逐项输出 PASS/FAIL token（`auth-token` / `anonymous-rejected` / `admin-authz` / `business-profile` / `business-hof` / `hof-replay-storage` / `retired-replay-switches` 等；公网边缘只接受受信任 TLS：`public-tls-web` / `public-tls-auth` 必须由 `WOTB_E2E_PUBLIC_IP`（TX 地址）应答、出示受信任证书且 HTTP 2xx，`curl` 60（链尚未受信）一律 FAIL，全程不使用 `-k`。任一 FAIL 即 `TX_RUNTIME_NOT_READY`。检查不做付费 AI 调用，对基础设施与用户数据只读、不做任何写入；回放解析在浏览器端，因此没有服务端 processing/export/playback token，也不再 staged 回放 fixture。Caddy 没有固定容器地址，readiness 走 `http://caddy/_wotb/...`，frontend 信任 `wotb_tx_internal` 子网。改这些 token、身份或输入必须同步 `docs/auth/keycloak-tx-bootstrap.md`、`.env.example`、`deploy/test-tx-runtime-check.sh` 与 `deploy/test-tx-runtime-config.sh`。
-- 反向代理：TX 线上边缘配置是 `deploy/tx/nginx/frontend.conf.template`（Caddy 终 TLS 后整站转 `wotb-frontend:80`，由 frontend 镜像的 nginx template entrypoint 渲染到 `/etc/nginx/conf.d/default.conf`）；`deploy/nginx/nginx.conf` 只是镜像内的烘焙副本，运行时被同路径覆盖，不得据它判断线上路由。`location ^~ /api/ai/` 反代到 `${AI_UPSTREAM}`（Yecao ai-service `10.20.0.2:8089`，仅 WireGuard，不重写 path：公开与 controller 路径都是 `/api/ai/...`），固定 `proxy_read/send_timeout 1120s` + `proxy_buffering off`（SSE）；旧 `/api/replay/analyze` 的专用 location 已随该端点退役一并移除（此类请求落回通用 `/api/`）；其余 `/api/` 120s，不再有按 IP 限流的回放专用 location（`/api/preview`/`/api/export`/`/api/performance`/processing/export jobs 均已删除；真实 IP 信任由 `deploy/test-nginx-real-ip.sh` 守护）。`TX_AI_UPSTREAM` 与 `TX_BACKEND_UPSTREAM` 一样在 `deploy/tx/deploy.sh` fail-closed。
-- **SPA 缓存策略（frontend 部署即生效的关键）**：`location = /index.html` 固定 `Cache-Control: no-cache, no-store, must-revalidate`（禁止浏览器缓存入口页，新 bundle hash 部署后立即生效）；`location /assets/`（Vite 内容 hash 产物）固定 `Cache-Control: public, max-age=31536000, immutable`，且 404 不 fallback 到 index.html；`location ~ ^/wasm/[0-9a-f]{40}/`（commit-addressed Agent WASM 产物）同样固定 `immutable`——URL 即内容身份，新 Agent 换新 URL，普通刷新即可生效；只锁 40 位 commit 目录，不给 `/wasm/` 根目录统一 immutable（stable `/wasm/wotb_replay_wasm.js` 已废除）。改缓存头会影响用户能否看到新前端版本/新引擎，改动需在 `?view=hof-admin` 等页验证。
-- **Build identity**：Build checkout 必须核对完整 source SHA，immutable tag 与 digest 供验证和诊断。TX 的 business-api/frontend 从 Gitee exact SHA 在 TX 本机构建并直接推 TCR，production 只部署 build 输出的 exact digest；Frontend 额外把 `ASSET_BASE_URL` 与 Sponsor bundle SHA256 纳入 image identity（`deploy/tx/sponsor-fingerprint.sh`；无 pin 时指纹为空串），并按 source commit 的 `deploy/agent/source.json` 校验 Agent WASM 的 commit-addressed 身份（`/wasm/<ref>/` 恰好一个目录 + `fingerprint.json` 的 `upstream_commit`/`tag` 一致 + stable 路径不存在）。尚未迁移到 digest pin 的 owner 不受此条扩展。Yecao ai-service 只用 GHCR。business-api 镜像产物名为 `wotbtools-business-api`，内部 Maven module 仍叫 `wotb-web`。
-- **Frontend 发布边界（`frontend.yml`）**：GitHub 是 release authority，不再承担 Frontend Docker build/TCR 大镜像上传。独立同步 owner 会把 exact GitHub SHA 同步到 Gitee（国内镜像由独立 `gitee-mirror.yml` 拥有，**不参与发布 run**），并下载/校验 `deploy/agent/source.json` 锁定的轻量 Agent WASM archive；把 TX builder 脚本、该小 artifact 与可选的 pinned Sponsor bundle 暂存到 TX。TX 的 `deploy/tx/build-frontend-from-gitee.sh` 复用 production Gitee clone 上的 host build lock（与 TX1 Business API 缓存及锁分离），由 `materialize_source` 只从 Gitee main 历史取得 requested exact SHA；保留12次/15秒等待模型，等待耗尽即 fail closed，不使用源码 bundle 或 TX→GitHub 后备；随后创建 exact-SHA worktree、用 SHA256 验证 WASM、构建镜像并在任何 registry 写入前校验 source SHA / `ASSET_BASE_URL` / WASM / 静态文件，再在国内链路发布 immutable TCR image 并回读 digest。生产必须通过 `TX_FRONTEND_IMAGE_REF=...@sha256:...` 部署该 digest；Frontend 不再发布或依赖 `latest`，也不再使用 GitHub runner 的 `deploy/list-image-tags.sh` / `run-with-network-retry.sh` 发布路径。
-- 本地完整 Docker Compose 开发环境已退役；Keycloak realm 集成验证仅使用 `deploy/test-keycloak-tofu.sh` 的 disposable PostgreSQL、Keycloak 与 local OpenTofu state。
-- **Komodo 控制平面（`deploy/komodo/`）**：Komodo Core/Mongo 的 bootstrap、升级与 break-glass recovery 由 `.github/workflows/komodo-controller.yml` 独立拥有；runtime 定义在 `deploy/komodo/compose.yml`，全部变更逻辑在 `deploy/komodo/reconcile.sh`（workflow 只做安全 staging 后转发 exact SHA 与 secrets）。Yecao 暂存根（`/opt/komodo/incoming/<SHA>` 及其两级父目录）必须先经 `deploy/komodo/staging-root.sh prepare` 证明是真实目录（mode 700、非 symlink）才允许 SCP 写入，移除同样只经该脚本的 `cleanup`；workflow 内禁止内联 `mkdir -p /opt/...` 或未加保护的 `rm -rf`。DNSPod A 记录由 `infra/tofu/komodo` 管理，plan guard 锁定全部 8 个记录字段，state 固定 `/opt/komodo/tofu-state/terraform.tfstate` + `bootstrap-complete`，并在 `deploy/tofu-local-state-backup.sh komodo` 里纳入既有备份车道。硬约束：Komodo 不得管理自己的 Core 生命周期（两个容器都带 `komodo.skip`）；Core 只绑定 Yecao WireGuard `10.20.0.2:9120`，Mongo 不暴露宿主端口，不得有 `0.0.0.0:9120`；不迁移任何 workload；Periphery agent 由独立 owner `.github/workflows/komodo-periphery.yml`（`deploy/periphery/**`）拥有，**一套 lifecycle + 每个宿主一份已评审 profile**（`deploy/periphery/targets/<target>/target.env` 声明 `connect_as`、该宿主既有的 mutation lock、staging root 与权限模型；脚本内不得硬编码宿主身份，也不得新增 `*yecao*` / `*tx1*` / `*tx2*` 生命周期脚本）：Yecao 用 `/opt/wotb/.deploy.lock` + `/opt/periphery` + root，TX1 用 `/opt/wotb-tx/.deploy.lock` + `/opt/wotb-tx/periphery` + 非交互 `sudo -n`，TX2 用 `/opt/wotb-tx2/.deploy.lock` + `/opt/wotb-tx2/periphery` + 同一条通用 `sudo -n` 路径（禁止假设 TX SSH 账号是 root；凭据只经 `--preserve-env=KOMODO_PERIPHERY_ONBOARDING_KEY` 走环境，不进 argv/磁盘/日志），**绝不新建独立 Periphery 锁**，且 lock root/lock 文件属宿主 deploy owner（缺失即 fail closed，不由 Periphery 创建）；**Alibaba asset origin（`ali-sh-asset-01`）不在该自动化链内**：其 Periphery 由人工 bootstrap 与人工生命周期维护，当前已 onboarding 且健康，本仓库不拥有其 systemd/binary/config 生命周期，也没有 Alibaba SSH secret 或 reusable Periphery workflow；`infra/komodo/resources/servers.toml` 只声明既有 Server 供 ResourceSync 按名 adopt，自动化推迟（触发条件见 `deploy/assets/README.md`）；GitHub Actions 管 systemd 生命周期，Komodo Core 只管 Server 关系、绝不安装/重启/管理连向自己的 agent；runner 校验 pinned release 的 SHA256 后只 stage 已验证的二进制与该宿主自己的 profile（不跨宿主），宿主永不下载二进制；每个 agent 只走 outbound（`core_addresses = ["http://10.20.0.2:9120"]`、`server_enabled = false`），因此 `:8120` 不存在监听，且有效配置必须与该 target 的已评审配置逐字节一致；运行时凭据变量统一为 `KOMODO_PERIPHERY_ONBOARDING_KEY`（workflow 把各宿主自己的 secret 映射进来，脚本不认宿主专属 secret 名），仅经临时 `/run/komodo/periphery-bootstrap.env` 生效且从不持久化；**onboarding 是否完成只由 `/etc/komodo/keys/onboarding-complete` 这一持久 marker 判定，绝不能由 `periphery.key` 推断**（v2.3.3 在启动时就生成该 key，首次失败也会留下身份），marker 缺失时每次都需要凭据并复用已有身份重试，缺失身份又无凭据时 fail closed（不自动重新 onboarding）；bootstrap 失败必须删除临时凭据并**停止**服务（systemd 已把凭据写进进程环境，删 EnvironmentFile 不足以移除 `/proc/<pid>/environ` 里的值），stop 无效时升级为 `kill --kill-who=all --signal=KILL`，仍无法终止则报 CRITICAL；Yecao 的 onboarding secret 已删除，其 job 不得再引用任何 onboarding secret。细节见 `docs/operations/komodo-periphery.md`。公网入口由 TX `caddy.yml` 独立拥有：`deploy/tx/Caddyfile` 只声明 `komodo.wotbtools.com { reverse_proxy 10.20.0.2:9120 }`，`caddy.yml` 先验私有上游 `/version`（要求语义版本），再验公网 HTTPS `/version` 且要求**与私有值一致**——Caddy 不读任何 Komodo 版本 pin，`deploy/komodo/**` 也不是 caddy owner 的 production input，因此 Komodo 版本升级不会单独重跑或失败网关；`deploy/tx/validate-caddy-config.sh` 在每次 staged 校验前断言公网站点清单（含 komodo 站点与其精确上游、禁止 Yecao 公网地址）。细节见 `docs/operations/komodo-public-ingress.md`。Core 用 digest 固定、Mongo 用 exact patch tag + digest、Tencent provider 由 `.terraform.lock.hcl` 锁定，禁止浮动 tag。资产 origin：`infra/komodo/resources/asset-origin.toml` 在既有 `ali-sh-asset-01` 上声明 `wotbtools-asset-origin` Stack（`deploy = false`、webhook/auto_update 关闭、ResourceSync 人工 apply、部署由人工 Komodo Deploy 触发），源固定 `branch = "asset-origin"`（asset-owned Gitee transport ref，shared `main` 由独立 `gitee-mirror.yml` 移动、与本 Stack 无关），Caddyfile 是 tracked config 依赖（`--force-recreate` 保证仅改 Caddyfile 也能生效）；GitHub `asset-origin.yml` 只做 source transport：先把同一 frozen SHA 发布到 GitHub `asset-origin` 指针分支，再推 Gitee `asset-origin`（保留现有 asset-owned transport pair；main-only 同步不写或删除该 ref）；详情见 `deploy/assets/README.md`。
+- 应用发布必须先冻结完整 source SHA，保留不可变 SHA/tag + registry digest 供
+  provenance 与诊断；**Build checkout 必须核对完整 source SHA**。
+- business-api 与 frontend 是 digest-pinned 车道：GitHub 只确定 release source/输入，
+  Gitee 是国内源码传输，TX 从 exact SHA 本机构建并验证后发布 TCR；
+  生产 Compose 必须消费 `repo@sha256:<digest>`
+  （`TX_BUSINESS_API_IMAGE_REF` / `TX_FRONTEND_IMAGE_REF`），**禁止回退 `latest`**。
+  细节见 [`docs/operations/ci-supply-chain.md`](../docs/operations/ci-supply-chain.md) §5
+  与 [`docs/operations/agent-asset-origin.md`](../docs/operations/agent-asset-origin.md)。
+- TX 镜像只用 TCR，Yecao 镜像只用 GHCR；TCR registry prefix 必须从
+  `vars.TCR_REGISTRY/TCR_NAMESPACE` 传给 host，不可依赖默认 namespace。
+- 尚未迁移到 digest pin 的 owner（Keycloak / AI service）沿用各自现有
+  `latest`/freshness 契约，不受上述扩展。
+- **独立发布闭环**：PR 的 `CI / Required Gate` 是唯一代码验证门禁；
+  四个应用 owner（business-api / frontend / keycloak / ai-service）在每次 main push 运行，
+  固定基础设施按各自路径触发，手动入口只作用于所属服务。
+  **禁止**新增跨服务 planner、reusable Build/Deploy/Tofu DAG、`workflow_run` 链、
+  deployment manifest 或 all selector。应用按当前 main 部署，持久状态校验 fail-closed，
+  失败不自动回滚。
+- **PR 快速上线**：计划已明确且用户要求直接上线时，完成实现后先做
+  targeted/static validation 与 `review-with-docs` PASS（覆盖完整 candidate tree），
+  再提交、推送并开 PR；Fast path 只跳过本地全量测试重复，不跳过 final gate。
+- **TX host lock**：GitHub/脚本内部可继承 `WOTB_DEPLOY_LOCK_FD=9`，
+  但 operator / Agent 给人的手工命令必须通过
+  `bash /opt/wotb-tx/deploy/with-deploy-lock.sh <command...>` 获取锁；
+  **禁止**交互式 SSH 直接 `exec 9>` + `flock`（FD 随 shell 存活，阻断后续部署）。
+- Yecao 生产编排 `deploy/docker-compose.prod.yml` + `deploy/deploy.sh`（fail-fast 校验）：
+  退役的业务应用（backend/frontend/Keycloak/business PostgreSQL）及
+  parser-worker / MinIO / RabbitMQ 必须保持缺席
+  （`deploy/test-deploy-contract.sh`、`deploy/test-yecao-wireguard-boundary.sh` 断言）；
+  `health-probe` 客户端 Yecao 侧已删除、TX 侧保留为部署探针。
+  TX 业务运行时定义在 `deploy/tx/business-api.compose.yml`（由 `deploy/tx/docker-compose.yml`
+  汇总）：只承载业务 API，**服务器没有回放解析器**——没有 processing/export job、
+  broker 或本地对象存储；app :8087 与 management :8088 绑定 WireGuard `10.20.0.1`。
+- 本地完整 Docker Compose 开发环境已退役；Keycloak realm 集成验证仅使用
+  `deploy/test-keycloak-tofu.sh` 的 disposable PostgreSQL、Keycloak 与 local OpenTofu state。
+- **全业务运行时 E2E**：`deploy/tx/runtime-check.sh` 驱动真实链路并逐项输出
+  PASS/FAIL token；任一 FAIL 即 `TX_RUNTIME_NOT_READY`。
+  公网边缘只接受受信任 TLS（全程不使用 `-k`）；检查对基础设施与用户数据只读、
+  不做付费 AI 调用。改 token、身份或输入必须同步
+  `docs/auth/keycloak-tx-bootstrap.md`、`.env.example`、
+  `deploy/test-tx-runtime-check.sh` 与 `deploy/test-tx-runtime-config.sh`。
+
+## 边缘与缓存（硬约束）
+
+- 线上边缘配置是 `deploy/tx/nginx/frontend.conf.template`（Caddy 终 TLS 后转
+  `wotb-frontend:80`）；镜像内的 `deploy/nginx/nginx.conf` 只是烘焙副本，
+  运行时被覆盖，**不得据它判断线上路由**。
+- **SPA 缓存策略**：`/index.html` 固定 no-cache/no-store/must-revalidate；
+  `/assets/` 与 `/wasm/<40位commit>/` 固定 immutable，且 assets 404 不 fallback 到
+  index.html；只锁 40 位 commit 目录。改缓存头影响用户能否看到新前端版本/新引擎，
+  改动需在 `?view=hof-admin` 等页验证。
+  完整契约见 [`docs/operations/agent-asset-origin.md`](../docs/operations/agent-asset-origin.md)
+  「前端边缘 nginx 与 SPA 缓存契约」。
+
+## Komodo / Periphery（硬约束）
+
+- Komodo Core/Mongo 的 bootstrap、升级与 break-glass recovery 归
+  `.github/workflows/komodo-controller.yml`；Periphery agent 归 `komodo-periphery.yml`
+  （`deploy/periphery/**`）；公网入口归 TX `caddy.yml`。
+  细节见 [`docs/operations/komodo-periphery.md`](../docs/operations/komodo-periphery.md)、
+  [`docs/operations/komodo-public-ingress.md`](../docs/operations/komodo-public-ingress.md)、
+  [`docs/operations/komodo-resource-sync.md`](../docs/operations/komodo-resource-sync.md)。
+- **Komodo 不得管理自己的 Core 生命周期**（两容器带 `komodo.skip`）；
+  Core 只绑定 Yecao WireGuard `10.20.0.2:9120`，Mongo 不暴露宿主端口；
+  **不迁移任何 workload**；**绝不新建独立 Periphery 锁**——lock root/lock 文件属宿主
+  deploy owner，缺失即 fail closed。
+- 一套 lifecycle + 每宿主一份已评审 profile（`deploy/periphery/targets/<target>/target.env`）；
+  脚本内禁止硬编码宿主身份，禁止新增 `*yecao*`/`*tx1*`/`*tx2*` 生命周期脚本。
+- Yecao 暂存根只经 `deploy/komodo/staging-root.sh prepare/cleanup` 写入与移除；
+  workflow 内禁止内联 `mkdir -p /opt/...` 或未加保护的 `rm -rf`。
+- onboarding 完成与否只由 `/etc/komodo/keys/onboarding-complete` 持久 marker 判定，
+  **绝不能由 `periphery.key` 推断**；凭据只走
+  `KOMODO_PERIPHERY_ONBOARDING_KEY`（临时 env，从不持久化）；
+  bootstrap 失败必须删除临时凭据并停止服务。
+- **Alibaba asset origin（`ali-sh-asset-01`）不在该自动化链内**：人工 bootstrap 与
+  人工生命周期，本仓库不拥有其 systemd/binary/config 生命周期，
+  没有 Alibaba SSH secret 或 reusable Periphery workflow；
+  触发条件见 `deploy/assets/README.md`。
+- asset origin 源固定 `branch = "asset-origin"`；GitHub `asset-origin.yml` 只做
+  source transport（GitHub pointer branch → Gitee `asset-origin`），
+  绝不触碰共享 Gitee `main`（由 `gitee-mirror.yml` 拥有）。
+  见 [`docs/operations/agent-asset-origin.md`](../docs/operations/agent-asset-origin.md)。
 
 ## 运维（安全）
 
-- **TX2 production worker（`deploy/production-worker/`）**：TX2 的**通用 Docker 主机前置条件**由独立 owner `.github/workflows/production-worker.yml` 拥有，与 Periphery 生命周期完全分离（Periphery 只管二进制/配置/systemd/身份/Core 信任，不管主机 provisioning）。它只做三件事并各自验证：发行版包 `docker-compose-v2`（capability-based，不 pin 版本；`docker compose version` + `docker compose ls --all --format json` 都必须可用）、`/etc/docker/daemon.json` **恰好**含 `registry-mirrors: ["https://mirror.ccs.tencentyun.com"]`（root:root 0644、原子写入；未知 key 或损坏 JSON ⇒ fail closed，值漂移 ⇒ 纠正；Docker 只在文件真的变化时重启）、以及 **root / Periphery 执行上下文的私有 TCR pull 凭据**（`/root/.docker/config.json`，root:root 0600、目录 0700，只允许 `vars.TCR_REGISTRY` 一个 registry）。凭据只来自repository-level Actions `secrets.TCR_USERNAME` / `secrets.TCR_PASSWORD`，只经 stdin（`--password-stdin`）与跨 sudo 的 `--preserve-env` 传递，**绝不**进入 `infra/komodo/resources/**`、`deploy/periphery/**`、Compose、tracked 文件、argv、日志或 staging 目录（契约测试会扫描提交内容）。复用 TX2 既有的 `/opt/wotb-tx2/.deploy.lock`，**禁止**新建 worker 专用锁；reconcile 幂等（已正确时不重装/不重写/不重启），并在前后断言运行中容器集合不变（**绝不创建 workload**：不建 Stack、不改 K6B placement/Caddy/DNS/公网流量、不 prune、不删任何 Docker 对象），同时回归证明 Periphery（active/enabled/outbound/无 `:8120` 监听、身份与配置仍在）与 WireGuard（地址仍在、`10.20.0.1:8087`/`:8080`/`10.20.0.2:8089` 可达）。全部通过才输出 `TX2_PRODUCTION_WORKER_READY`（与 TX1 的 `TX_RUNTIME_READY` 不可互换）。TX2 的 Frontend replica 由独立 `frontend-replica.yml` owner 部署，不属于 production-worker owner。文档：`docs/operations/tx2-production-worker.md`。
-
-- 备份：`.github/workflows/database-backup.yml` 运行 TX owner 的 `business-postgres-backup.sh` 与 `keycloak-postgres-backup.sh`，随后备份 TX/Yecao/Komodo 三个 owner root 的 local Tofu state（`deploy/tofu-local-state-backup.sh tx|yecao|komodo`）；normal Deploy 不调用 backup，也不把本地备份描述为 COS。Business restore 只允许校验或恢复到 disposable 数据库，禁止覆盖 authoritative `wotb`；Keycloak 归档不得交给 Business restore 工具。
-- 观测：`deploy/observability/`（Alloy config + Grafana dashboards/provisioning）；指标名被 dashboards 引用，改名需同步 JSON。Grafana dashboard API ownership 由 `infra/tofu/grafana` 管理，`.github/workflows/observability.yml` 自己执行 runtime reconcile 与 Grafana Tofu apply；PR 只做本地 validation，不运行 authenticated plan。Prometheus/Loki datasource 仍由 file provisioning 管理。Prometheus 必须验证 backend、ai-service、node-exporter、Prometheus、Loki、Grafana 六类 target 为 `up == 1`；Grafana 必须验证 health、Prometheus/Loki datasource health、全部 dashboard UID API 与 Active users 默认首页。Keycloak 不再进入 Prometheus metrics contract，登录/IdP/callback 通过 Alloy → Loki 日志验证。TX 侧 `alloy-tx` 独立固定基础设施车道采集业务日志，经 WireGuard 写入 Yecao Loki；Yecao Prometheus 通过 WireGuard 抓取 TX business-api 的 management 指标，并通过 `wotb_internal` Docker service discovery 抓取本机 `ai-service:8080/actuator/prometheus`。生产上线后的 metrics endpoint、Prometheus target/query、Loki backend/Keycloak/frontend canary stream 由 `deploy/verify-observability.sh` 验证；CI 用 `deploy/test-observability-e2e.sh` 验证真实 Docker emitter → 生产 Alloy → Loki 的三条 ownership path，并用 `deploy/test-grafana-runtime.sh` 验证 datasource provisioning 与 dashboard API adoption。
-- 服务 owner workflow 逐个 staging 并执行 readiness；镜像选择遵循各 owner 的当前 release contract：TX business-api/frontend 使用 exact TCR digest，尚未迁移的 owner 才可继续使用其现有 `latest` 约定。生产实际镜像必须通过容器 inspect / artifact metadata 与冻结 source identity 核对。固定上游服务不读取应用发布记录；Yecao 观测失败只输出 `OBSERVABILITY DEGRADED`。
-- 生产发布在 staged compose pull 后、live promote 前必须运行 `validate-alloy-config.sh`（Alloy）与 `deploy/tx/validate-caddy-config.sh`（Caddy，由 `deploy/tx/deploy.sh` 的 staged validation 调用）；两者都是 fail-closed：校验失败必须在 live mutation 之前退出，禁止用 `|| true` 或删除校验绕过。Caddy 校验必须显式 `--entrypoint caddy`：官方镜像只声明 `CMD ["caddy","run",…]` 而没有 ENTRYPOINT，直接传 `validate …` 会被 runc 当成可执行文件名（`exec: "validate": executable file not found in $PATH`）。Alloy Android 下载 `stage.match` selector 使用 LogQL 安全的 `[.]`，禁止回退到会触发 `invalid char escape` 的 `\\.` 写法。
-- **安全日志 190 天留存是 fail-closed 的跨层契约**（公安自评估「日志信息留存措施」，细节见 [`docs/operations/security-log-retention.md`](../docs/operations/security-log-retention.md)）：普通 Loki 日志保持 `168h`，**只有** `{compliance="security"}` 走 `retention_stream` 的 `4560h`；标签只由 TX Alloy 的 `loki.process "compliance"` 产生，普通 telemetry（backend debug、AI 用量、feature usage、APK 下载）一律不得携带它。Keycloak 侧事件清单的事实源是 `infra/tofu/keycloak/events.tf`，而 `jboss-logging` listener **不**受 `enabled_event_types` 约束（那只过滤数据库 event store），所以留存收窄必须留在 Alloy selector 里，两边清单由 `deploy/validate-alloy-config.sh` 断言一致；成功事件默认只记 DEBUG，`deploy/tx/keycloak.compose.yml` 的 `KC_LOG_LEVEL` 少了 `org.keycloak.events:debug` 就只剩登录失败记录。Caddy 的 `/api/*` 安全访问日志必须保持「站点级 `log_skip` 收窄 + 删除 `request>uri`/`request>headers`/`resp_headers` + `log_append` 写回 path 与 User-Agent」这一组，禁止把 query string 以任何形式 append 回去。
-- **Immutable reuse 判定按 release lane 归属**：仍在 GitHub runner 发布镜像的 owner 如需枚举 tag，必须走 `deploy/list-image-tags.sh`，只有 registry 明确返回 `NAME_UNKNOWN` 才按首次发布继续；TX 本地构建的 business-api/frontend 则由各自 `build-*-from-gitee.sh` 的 `lookup_remote_digest` 直接解析 immutable tag → digest。两条路径都必须把 401/403/5xx/网络/DNS 视为 fatal，禁止用 `... || true` 把 registry 故障伪装成“镜像不存在”。
-- Grafana 生产 API 校验必须复用 `deploy/grafana-api-request.sh` 这条生产 backend Alpine 运行时可用的 BusyBox `wget` 路径：调用方只传 `/api/...`，helper 在 backend 容器内唯一拼接 Grafana hostname 并生成 `Authorization: Basic` header（不得把密码放 URL、命令输出或日志），datasource health 的唯一成功值是 JSON `status=OK`。CI runtime smoke 还必须在 Alpine 3.22 中验证正确凭据通过、错误凭据失败，以防回退到 GNU-only `wget` 参数或 double URL prefix。
-- Loki canary 校验在 emitter 启动前固定 `start`，重试时只推进 `end`；响应必须是 `status=success`、至少一个 result stream、至少一个 values 样本并包含 marker。Keycloak canary 是加入 `wotb_internal` 网络的独立 Alpine emitter，只用于验证 Alloy 的 ownership 采集路径，不得把 Keycloak 镜像当 shell 执行。
-- Keycloak 运行时契约由 `deploy/test-keycloak-runtime.sh` 独立验证：自定义镜像必须以 `start --optimized` 启动，保留 PostgreSQL 与应用 OIDC discovery；不再启用或暴露 management health/metrics 端口，且不得出现启动时 Quarkus augmentation。启动日志必须报告**运行镜像自身注入的** build commit（`runtime-contract`＝本脚本自建的一次性镜像，或 40 位源码 SHA＝已发布生产镜像），期望值从容器 env 推导。main push 上 `.github/workflows/keycloak.yml` 的 `smoke` 验证 published digest；PR 上 `.github/workflows/ci-keycloak.yml` 的 `keycloak_runtime` 运行真实 Docker smoke。
+- **TX2 production worker（`deploy/production-worker/`）**：归
+  `.github/workflows/production-worker.yml`，与 Periphery 生命周期完全分离。
+  硬约束：reconcile 幂等，前后断言运行中容器集合不变，**绝不创建 workload**
+  （不建 Stack、不改 K6B placement/Caddy/DNS/公网流量、不 prune、不删任何 Docker 对象）；
+  复用 TX2 既有 `/opt/wotb-tx2/.deploy.lock`，禁止新建 worker 专用锁；
+  产出 `TX2_PRODUCTION_WORKER_READY`（与 TX1 的 `TX_RUNTIME_READY` 不可互换）。
+  TX2 Frontend replica 归独立 `frontend-replica.yml` owner。
+  细节见 [`docs/operations/tx2-production-worker.md`](../docs/operations/tx2-production-worker.md)。
+- **备份**：`.github/workflows/database-backup.yml` 运行 TX owner 的
+  `business-postgres-backup.sh` / `keycloak-postgres-backup.sh`，随后备份 TX/Yecao/Komodo
+  三个 root 的 local Tofu state（`deploy/tofu-local-state-backup.sh tx|yecao|komodo`）。
+  硬约束：normal Deploy 不调用 backup，也不把本地备份描述为 COS；
+  Business restore 只允许校验或恢复到 disposable 数据库，**禁止覆盖 authoritative `wotb`**；
+  Keycloak 归档不得交给 Business restore 工具。
+- **Gate 分层**：blocking production health 只有 Yecao `ai-service` readiness
+  （`http://10.20.0.2:8089/actuator/health/readiness`）；业务 API、frontend 与 Keycloak 的
+  HTTP/OIDC 探测属 TX deploy。观测栈（Prometheus/Loki/Alloy/Grafana/datasources/
+  dashboards/metrics/log ingestion）是 **non-blocking**：Yecao 观测失败只输出
+  `OBSERVABILITY DEGRADED`；`deploy/verify-observability.sh` 必须 fail-closed，
+  禁止用 `|| true` 改写 verifier 语义。
+  校验脚本契约与排障入口见
+  [`docs/operations/observability-runbook.md`](../docs/operations/observability-runbook.md)。
+- **安全日志 190 天留存是 fail-closed 的跨层契约**：普通 Loki `168h`，
+  只有 `{compliance="security"}` 走 `4560h`；标签只由 TX Alloy 的
+  `loki.process "compliance"` 产生。
+  细节见 [`docs/operations/security-log-retention.md`](../docs/operations/security-log-retention.md)。
+- **生产发布在 staged compose pull 后、live promote 前必须运行**
+  `validate-alloy-config.sh` 与 `deploy/tx/validate-caddy-config.sh`（fail-closed）；
+  校验失败必须在 live mutation 之前退出，禁止 `|| true` 或删除校验绕过。
+- **服务 owner workflow 逐个 staging 并执行 readiness**；生产实际镜像必须通过容器
+  inspect / artifact metadata 与冻结 source identity 核对。
+- secret 一律 GitHub Secrets / Variables → SSH 运行时 env（根 `.env.example` 只列变量名）；
+  TX 不维护本地 secret env 文件，禁止落库或写死。
+  赞助/收款信息不硬编码进页面或仓库（pin 住的 Release 资产，见
+  [`docs/operations/sponsor-runtime-content.md`](../docs/operations/sponsor-runtime-content.md)）。
 
 ## TX service-plane boundary（K6A / K6B）
 
-- 公网 HTTP/HTTPS ingress 仅 Caddy（80/443）；UFW inactive 不允许发布 service-plane 通配端口。
-- WG-only TCP：`10.20.0.1:8081 → frontend:80`、`:8087 → business-api:8087`、`:8088 → business-api:8088`、`:8080 → keycloak:8080`、`:15432 → keycloak-postgres:5432`、`:25432 → business-postgres:5432`。
-- 保留 host-local administration / OpenTofu：`127.0.0.1:18080 → keycloak:8080`、`:15432 → keycloak-postgres:5432`、`:25432 → business-postgres:5432`；OpenTofu provider 仍仅使用 loopback。
-- `runtime-check-lib.sh:assert_tx_service_ports` 是 rendered Compose 精确绑定校验，staged owner deploy 与 read-only readiness 共用；拒绝缺失/额外绑定、通配/public IP、非 TCP 与 app/management 端口混用。`wireguard-service-plane` token 取代旧的三条 loopback-only token；原有 Docker-local HTTP/DB/E2E 探针保留。
-- K6B logical endpoint 只有一套 canonical validator（`deploy/tx/deploy.sh` 的 `validate_http_endpoint` / `validate_database_endpoint` / `validate_caddy_upstream`）：staged deploy、`deploy/dependency-readiness.sh` 与 runtime gate 共用，禁止各自复制 allowlist 或放宽 rendered 断言。`dependency-readiness.sh` 必须在任何携带 secret 的网络请求之前完成校验（psql 的 `TX_BUSINESS_DB_PASSWORD`、Keycloak Admin 的 `KEYCLOAK_ADMIN_CLIENT_SECRET`），probe 也不得为 `TX_KEYCLOAK_ADMIN_SERVER_URL` 取默认值。runtime gate 分 `tx-logical-endpoints-declared`（render 出的 Compose）与 `tx-logical-endpoints-active`（`docker inspect` 读到的运行容器 `Config.Env`）两条 token，两者都必须 ∈ 上述 allowlist 且等于 deploy helper 当前选择的 placement；只断言 rendered Compose 会在 K6B-2 产生假绿。
-- 六个 TX consumer 使用 reviewed WireGuard logical placement，Frontend 形成 TX1+TX2 双实例池：Frontend → Business API（`http://10.20.0.1:8087`）、Business API → Business PostgreSQL（`10.20.0.1:25432`）、Business API → Keycloak Admin（`http://10.20.0.1:8080`）、Keycloak → Keycloak PostgreSQL（`10.20.0.1:15432`）、Caddy → Frontend pool（`10.20.0.1:8081` + `10.20.0.3:8081`，weighted 2:8）与 Caddy → Keycloak（`10.20.0.1:8080`）。`K6B_FINAL_PLACEMENT_MATRIX` 是**冻结的 placement baseline**：不要删除、不要弱化为 contains / "不是 Docker-local" 检查，也不要用 repository variable 取代 reviewed value。Docker-local 值（`http://business-api:8087`、`business-postgres:5432`、`http://keycloak:8080`、`keycloak-postgres:5432`、`wotb-frontend:80`、`keycloak:8080`）仍是 canonical allowlist 内的**紧急 rollback** 值；TX2 等价地址用于已批准迁移，Frontend 已以 `10.20.0.3:8081` peer 进入生产池；三者语义见 `docs/operations/tx-service-plane.md` 的「三类合法值」。回退手册（每步只回退一个 consumer，并同步 `CURRENT_K6B_CUTOVERS` / `K6B_FINAL_PLACEMENT_MATRIX` 与 gate 期望，只改一侧必然 FAIL）：2A 改 `frontend.yml` + `tx-runtime-check.yml` 的 `TX_BACKEND_UPSTREAM`；2B 改 `business-api.yml` + `tx-runtime-check.yml` 的 `TX_BUSINESS_DB_HOST/PORT`；2C 改 `TX_KEYCLOAK_ADMIN_SERVER_URL`；2D 改 `keycloak.yml` + `tx-runtime-check.yml` 的 `TX_KEYCLOAK_DB_HOST/PORT`，并同步 `test-keycloak-tofu-contract.sh` 的 owner pin；2E 改 `CADDY_FRONTEND_UPSTREAM`；2F 改 `CADDY_KEYCLOAK_UPSTREAM`。六者都不得互相牵连。service-plane 端口不可互换：8081 是 Frontend、8080 是 Keycloak、8087 是 Business API、25432 是 Business PostgreSQL、15432 是 Keycloak PostgreSQL。Caddy 的 upstream 由**容器 env + 只读 bind-mounted Caddyfile 的 `{$VAR}` 替换**决定，没有渲染中间层，因此 runtime gate 读运行容器 env 就是读实际生效的 upstream（stale-active fixture 守护这点，Caddy 契约禁止把 upstream 写死进 Caddyfile）。runtime gate（`tx-logical-endpoints-declared` / `-active` / `wireguard-service-plane`）是**永久基础设施**，不是 migration-only code：placement 变更后由它继续证明 Git desired = rendered declared = running active；不要因为迁移完成就删除或弱化它。`KEYCLOAK_ISSUER_URI`、公开 auth hostname、realm issuer 与 Keycloak `--hostname` 不随 placement 切换移动（公开 auth 路径由 `public-tls-auth` 与 `caddy-keycloak` 探针守护）；2C 的凭据安全由 `dependency-readiness.sh` 的 resolve → validate → 才发 `KEYCLOAK_ADMIN_CLIENT_SECRET` 顺序保证，2D 的数据库凭据同理（validate 先于任何携带 `KC_DB_PASSWORD` 的容器），并禁止把 secret 或 token 打进日志。`scripts/ci/test-workflow-contract.sh` 的 `CURRENT_K6B_CUTOVERS` / `K6B_FINAL_PLACEMENT_MATRIX` 是已切换 consumer 的权威清单（Keycloak owner 自己的 pin 断言仍在 `test-keycloak-tofu-contract.sh`，保持 ownership boundary）。操作见 `docs/operations/tx-service-plane.md`。
+- 公网 HTTP/HTTPS ingress **仅 Caddy**（80/443）；UFW inactive 不允许发布
+  service-plane 通配端口。
+- WG-only TCP（冻结 baseline）：`10.20.0.1:8081 → frontend:80`、
+  `:8087 → business-api:8087`、`:8088 → business-api:8088`、`:8080 → keycloak:8080`、
+  `:15432 → keycloak-postgres:5432`、`:25432 → business-postgres:5432`。
+  host-local administration / OpenTofu 保留 `127.0.0.1:18080/15432/25432`；
+  OpenTofu provider 仍仅使用 loopback。
+- 端口不可互换：8081 Frontend、8080 Keycloak、8087 Business API、
+  25432 Business PostgreSQL、15432 Keycloak PostgreSQL。
+- `runtime-check-lib.sh:assert_tx_service_ports` 是 rendered Compose 精确绑定校验；
+  K6B logical endpoint 只有一套 canonical validator（`deploy/tx/deploy.sh` 的
+  `validate_http_endpoint` / `validate_database_endpoint` / `validate_caddy_upstream`），
+  staged deploy、`deploy/dependency-readiness.sh` 与 runtime gate 共用，
+  **禁止各自复制 allowlist 或放宽 rendered 断言**；
+  `dependency-readiness.sh` 必须在任何携带 secret 的网络请求之前完成校验。
+- runtime gate（`tx-logical-endpoints-declared` / `-active` / `wireguard-service-plane`）
+  是**永久基础设施**，不是 migration-only code；只断言 rendered Compose 会产生假绿。
+- `K6B_FINAL_PLACEMENT_MATRIX` 是**冻结的 placement baseline**：不要删除、不要弱化为
+  contains 检查、不要用 repository variable 取代 reviewed value。
+  Docker-local 值是 canonical allowlist 内的紧急 rollback；六条 consumer 回退手册
+  （每步只回退一个 consumer，同步 `CURRENT_K6B_CUTOVERS` / `K6B_FINAL_PLACEMENT_MATRIX`
+  与 gate 期望，只改一侧必然 FAIL）见
+  [`docs/operations/tx-service-plane.md`](../docs/operations/tx-service-plane.md)。
 
-## Gate boundary
+## 排障入口
 
-- Blocking production health（Yecao）：`ai-service` readiness（`http://10.20.0.2:8089/actuator/health/readiness`）。业务 API、frontend 与 Keycloak 的 HTTP/OIDC 探测属于 TX deploy（`deploy/tx/deploy.sh`）。
-- Non-blocking observability：Prometheus、Loki、Alloy、Grafana、datasources、dashboards、metrics 与 log ingestion。
-- `verify-observability.sh` 必须保持 fail-closed；deploy orchestration 负责把失败记录为 degraded，而不是用 `|| true` 改写 verifier 语义。
-- 排障：SSH VPS `ssh -i "$env:USERPROFILE\.ssh\wotb_vps_deploy" -o IdentitiesOnly=yes root@45.136.14.101 -p 58361`，`docker logs ai-service --tail 100`——Yecao 宿主运行生产 ai-service 与观测服务，业务后端日志在 TX；也可运行仅 `workflow_dispatch` 的 `.github/workflows/prod-diagnostics.yml` 只读采集同一批日志。
-- secret 一律 GitHub Secrets / Variables → SSH 运行时 env（仓库根 `.env.example` 只列变量名）；TX 不维护本地 secret env 文件，禁止落库或写死。赞助/收款信息不硬编码进页面或仓库：QR 与配置作为 pin 住的 Release 资产（`deploy/sponsor/content.json`），构建期下载注入并随 Frontend 镜像 / APK bundle 发布（见 `docs/operations/sponsor-runtime-content.md`），TX 不挂载也不下发。
-
-- 产品观测重建：五个 dashboard 全部由 Grafana OpenTofu root 管理；允许任意 dashboard 删除/替换，不维护白名单。默认首页 Active users；Backend error logs 内按功能分区。ai-service 的生产日志也由 Yecao Alloy 按 Compose service label 采集。统计语义与七天可查询/异步清理限制见 canonical observability 文档。
+- Yecao 宿主：`ssh -i "$env:USERPROFILE\.ssh\wotb_vps_deploy" -o IdentitiesOnly=yes
+  root@45.136.14.101 -p 58361`，`docker logs ai-service --tail 100`；
+  业务后端日志在 TX。只读采集也可运行仅 `workflow_dispatch` 的
+  `.github/workflows/prod-diagnostics.yml`。
