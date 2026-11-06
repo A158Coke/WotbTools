@@ -102,65 +102,98 @@ class CdpClient {
  */
 export async function launchChromeForCdp(chrome, { extraArgs = [], gpu = false } = {}) {
   const userDataDir = mkdtempSync(join(tmpdir(), 'wotb-cdp-'))
-  const child = spawn(chrome, [
-    '--headless=new',
-    '--no-sandbox',
-    // Isolated trusted fixture pages need WebGL even on machines without a GPU.
-    // Chrome no longer enables SwiftShader implicitly after --disable-gpu.
-    ...(gpu ? ['--ignore-gpu-blocklist'] : ['--disable-gpu', '--enable-unsafe-swiftshader']),
-    '--no-first-run',
-    '--no-default-browser-check',
-    '--disable-extensions',
-    '--disable-background-networking',
-    '--disable-component-update',
-    '--disable-sync',
-    '--mute-audio',
-    '--remote-debugging-port=0',
-    `--user-data-dir=${userDataDir}`,
-    ...extraArgs,
-    'about:blank',
-  ], { stdio: 'ignore' })
-
+  let child
+  let stderr = ''
+  let spawnError = null
+  let client = null
+  const stderrLimit = 16 * 1024
   const portFile = join(userDataDir, 'DevToolsActivePort')
-  const deadline = Date.now() + 30_000
-  let port = 0
-  while (!port) {
-    // 进程退出 ≠ 启动失败：Windows 上 Chromium（Edge / Chrome）可能走「启动器」模型 —— 启动器
-    // 进程立即以 0 退出，真正的浏览器进程继续运行并写出 DevToolsActivePort（本机 Edge 154 +
-    // 已开的用户会话实测如此）。只有拿不到端口文件才是失败，所以这里只把「非 0 退出」当错误。
-    if (child.exitCode != null && child.exitCode !== 0) {
-      throw new Error(`Chrome exited before publishing DevToolsActivePort (code=${child.exitCode})`)
-    }
-    if (Date.now() > deadline) throw new Error('Chrome did not publish DevToolsActivePort within 30s')
-    // 文件出现 ≠ 写完：读到空/半行时继续等，避免把 NaN 递给 fetch。
-    // Windows 上 Chrome 可能仍持有写锁（EBUSY）读完即释放，因此瞬时读取失败按“还没就绪”处理。
-    if (existsSync(portFile)) {
+  let portState = 'missing'
+  const cleanup = async (failed = false) => {
+    if (child?.pid && (failed || (child.exitCode == null && child.signalCode == null))) {
       try {
-        port = Number(readFileSync(portFile, 'utf8').split('\n')[0].trim()) || 0
-      } catch (error) {
-        if (error.code !== 'EBUSY' && error.code !== 'EPERM' && error.code !== 'ENOENT') throw error
-        port = 0
-      }
+        if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
+        else process.kill(-child.pid, 'SIGTERM')
+      } catch { try { child.kill('SIGTERM') } catch { /* already gone */ } }
+      for (let i = 0; i < 40 && child.exitCode == null && child.signalCode == null; i++) await delay(50)
+      try {
+        if (process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL')
+        else if (child.exitCode == null && child.signalCode == null) child.kill('SIGKILL')
+      } catch { /* already gone */ }
     }
-    if (!port) await delay(50)
+    try { rmSync(userDataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }) } catch { /* best effort */ }
   }
+  try {
+    child = spawn(chrome, [
+      '--headless=new',
+      '--no-sandbox',
+      // Isolated trusted fixture pages need WebGL even on machines without a GPU.
+      // Chrome no longer enables SwiftShader implicitly after --disable-gpu.
+      ...(gpu ? ['--ignore-gpu-blocklist'] : ['--disable-gpu', '--enable-unsafe-swiftshader']),
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--disable-extensions',
+      '--disable-background-networking',
+      '--disable-component-update',
+      '--disable-sync',
+      '--mute-audio',
+      '--remote-debugging-port=0',
+      `--user-data-dir=${userDataDir}`,
+      ...extraArgs,
+      'about:blank',
+    ], { stdio: ['ignore', 'ignore', 'pipe'], detached: process.platform !== 'win32' })
+    child.on('error', error => { spawnError = error })
+    child.stderr.on('data', chunk => { stderr = (stderr + chunk.toString()).slice(-stderrLimit) })
+    const deadline = Date.now() + 30_000
+    let port = 0
+    while (!port) {
+      // 进程退出 ≠ 启动失败：Windows 上 Chromium（Edge / Chrome）可能走「启动器」模型 —— 启动器
+      // 进程立即以 0 退出，真正的浏览器进程继续运行并写出 DevToolsActivePort（本机 Edge 154 +
+      // 已开的用户会话实测如此）。只有拿不到端口文件才是失败，所以这里只把「非 0 退出」当错误。
+      if (spawnError) throw new Error(`Chrome spawn failed: ${spawnError.code || spawnError.name}`)
+      if (child.signalCode || (child.exitCode != null && child.exitCode !== 0)) {
+        throw new Error(`Chrome exited before publishing DevToolsActivePort (code=${child.exitCode})`)
+      }
+      if (Date.now() > deadline) throw new Error('Chrome did not publish DevToolsActivePort within 30s')
+      // 文件出现 ≠ 写完：读到空/半行时继续等，避免把 NaN 递给 fetch。
+      // Windows 上 Chrome 可能仍持有写锁（EBUSY）读完即释放，因此瞬时读取失败按“还没就绪”处理。
+      if (existsSync(portFile)) {
+        try {
+          portState = 'present-invalid'
+          port = Number(readFileSync(portFile, 'utf8').split('\n')[0].trim()) || 0
+          if (port) portState = 'present-valid'
+        } catch (error) {
+          if (error.code !== 'EBUSY' && error.code !== 'EPERM' && error.code !== 'ENOENT') throw error
+          portState = `unreadable:${error.code}`
+          port = 0
+        }
+      }
+      if (!port) await delay(50)
+    }
 
-  const version = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json()
-  const client = await CdpClient.connect(version.webSocketDebuggerUrl)
+    const version = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json()
+    client = await CdpClient.connect(version.webSocketDebuggerUrl)
 
-  return {
-    client,
-    async openPage() {
-      const { targetId } = await client.send('Target.createTarget', { url: 'about:blank' })
-      const { sessionId } = await client.send('Target.attachToTarget', { targetId, flatten: true })
-      return { targetId, sessionId }
-    },
-    async close() {
-      try { await client.send('Browser.close') } catch { /* best effort */ }
-      client.dispose()
-      for (let i = 0; i < 60 && child.exitCode == null; i++) await delay(50)
-      try { child.kill() } catch { /* already gone */ }
-      try { rmSync(userDataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }) } catch { /* profile cleanup is best effort */ }
-    },
+    return {
+      client,
+      async openPage() {
+        const { targetId } = await client.send('Target.createTarget', { url: 'about:blank' })
+        const { sessionId } = await client.send('Target.attachToTarget', { targetId, flatten: true })
+        return { targetId, sessionId }
+      },
+      async close() {
+        try { await client.send('Browser.close') } catch { /* best effort */ }
+        client.dispose()
+        for (let i = 0; i < 60 && child.exitCode == null && child.signalCode == null; i++) await delay(50)
+        await cleanup()
+      },
+    }
+  } catch (error) {
+    client?.dispose()
+    const safeStderr = stderr.replaceAll(userDataDir, '<profile>').replace(/https?:\/\/[^\s]+/gi, '<url>')
+      .replace(/((?:token|password|secret|authorization|api[_-]?key)\s*[=:]\s*)[^\s]+/gi, '$1<redacted>')
+    const details = `exitCode=${child?.exitCode ?? 'null'} signal=${child?.signalCode ?? 'null'} profile=${existsSync(userDataDir) ? 'present' : 'missing'} portFile=${portState}`
+    await cleanup(true)
+    throw new Error(`${error.message}; ${details}; stderr (last ${stderrLimit} chars): ${safeStderr || '<empty>'}`)
   }
 }

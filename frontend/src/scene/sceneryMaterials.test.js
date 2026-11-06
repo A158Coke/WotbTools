@@ -25,6 +25,7 @@ const rendererSrc = readSrc(resolve(here, 'playback/renderer.ts'), 'utf8')
 const mapAssetsSrc = readSrc(resolve(here, 'playback/mapAssets.ts'), 'utf8')
 // 基地贴地标记 2026-10-24 出仓 playback/bases.js（Step A4；基地环/圆盘/画布 sRGB 断言随实现迁移）
 const basesSrc = readSrc(resolve(here, 'playback/bases.ts'), 'utf8')
+const glbPartsSrc = readSrc(resolve(here, 'playback/glbParts.ts'), 'utf8')
 // 材质实现（billboard/speedtree/缓存/常量/isWaterName）已平移至专用模块（SSOT，
 // bake-ground-overhead 烘焙页共用同一实现），守卫随迁读取新源
 const matSrc = readSrc(resolve(here, 'sceneryMaterials.ts'), 'utf8')
@@ -694,11 +695,11 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(wSrc).toMatch(/uHmTexel: \{ value: \(\(\) => \{[\s\S]*?img\.width > 0 \? 1 \/ img\.width : 0\s*\}\)\(\) \},/)
     // 高度场唯一解码口径（场景系引擎顶点；旧包列翻转偏一格在读取边界补正）——网格/采样/岸线共用这一份；
     // 读取在 groundPass.loadTerrain（俯视烘焙同一份）
-    expect(gpSrc).toMatch(/if \(await terrainBinMatchesMeta\(tbuf, meta\)\) return out\(decodeTerrainField\(tbuf, meta\)\);/)
+    expect(gpSrc).toMatch(/const matched = await terrainBinMatchesMeta\(tbuf, meta\);[\s\S]*?if \(matched\) \{[\s\S]*?decodeTerrainField\(tbuf, meta\)/)
     // json/bin 配对（PR #615 review P2）：bin 以 terrainBinSha256 作缓存键、解码前核对字节
     expect(src).toMatch(/fetchFn: \(u\) => assetProvider\.fetch\(u\),/)
     expect(gpSrc).toMatch(/fetchFn\(pairedTerrainBinUrl\(binUrl, meta\)\)/)
-    expect(gpSrc).toMatch(/if \(await terrainBinMatchesMeta\(tbuf, meta\)\)/)
+    expect(gpSrc).toMatch(/const matched = await terrainBinMatchesMeta\(tbuf, meta\)/)
     expect(src).not.toMatch(/heightField\[i\] = u16\[i\]/)
     expect(wSrc).toMatch(/gl_FragColor = vec4\(refl, clamp\(fresnel, 0\.0, 1\.0\) \* coastLine\);/)
     expect(wSrc).not.toMatch(/uCoastCellPerDist|cellPerDist/)
@@ -966,10 +967,11 @@ describe('__hullGroup 挂点（车体 = 记录位姿；逐轮悬挂见下方「�
   it('底盘（chassis_track_*/chassis_wheel_*）与车体子树分离，挂点恒归单位；命名不符则回落整台刚体', () => {
     // 2026-10-10 回退：「根吃地形局部平面 + 车体收限幅残差」的近似已撤——车体恢复客户端同构的
     // **记录位姿**摆放（poseGlb 直摆记录 yaw/pitch/roll）；__hullGroup 仅作后续悬挂实现的挂点。
-    expect(src).toMatch(/\^chassis_\(track\|wheel\)_\/i\.test\(child\.name \|\| ''\)/)
-    expect(src).toMatch(/hullGroup = new THREE\.Group\(\);/)
-    expect(src).toMatch(/hullGroup\.name = '__hullGroup';/)
-    expect(src).toMatch(/return \{ turretNode, gunNodes, tP, gP, hullGroup,/)
+    // 2026-11-05 Wave B4B：部件收集/装配出仓 playback/glbParts.ts（playbackScene 只调 collectGlbParts）
+    expect(glbPartsSrc).toMatch(/\^chassis_\(track\|wheel\)_\/i\.test\(child\.name \|\| ''\)/)
+    expect(glbPartsSrc).toMatch(/hullGroup = new THREE\.Group\(\);?/)  // TS 出仓后无分号
+    expect(glbPartsSrc).toMatch(/hullGroup\.name = '__hullGroup';?/)  // TS 出仓后无分号
+    expect(glbPartsSrc).toMatch(/return \{ turretNode, gunNodes, tP, gP, hullGroup,/)
     // 两条位姿路径（GLB / 低模）都对 hullGroup 归单位：拆分组不得改变摆放
     expect(src).toMatch(/p\.hullGroup\.quaternion\.identity\(\);/)
     expect(src).toMatch(/p\.hullGroup\.position\.set\(0, 0, 0\);/)
@@ -1272,15 +1274,6 @@ describe('炮线渲染守卫（阵营语义色直出）', () => {
     expect(src).toMatch(/PERF_HEARTBEAT_MS = 50/)
     expect(src).toMatch(/main-thread stalls/)
   })
-
-  it('性能探针：`?perf` 才挂载、只读记录（不改渲染行为）', () => {
-    expect(src).toMatch(/new URLSearchParams\(window\.location\.search\)\.has\('perf'\)/)
-    expect(src).toMatch(/window\.__pbPerf = \{/)
-    // 分阶段计时包住「状态更新」「主渲染」与「装甲叠加」三段
-    expect(src).toMatch(/const perfT1 = PERF \? performance\.now\(\) : 0;/)
-    expect(src).toMatch(/if \(PERF\) perfFrame\(perfT1 - perfT0, perfR0 - perfT1, perfR1 - perfR0, armorStats\);/)
-  })
-
 })
 
 describe('disposeSceneGroup —— 双图资源生命周期（评审 P2）', () => {

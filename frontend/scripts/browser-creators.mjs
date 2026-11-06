@@ -102,7 +102,16 @@ async function tap(page, selector, touch) {
   })()`, value => value !== null, { label: `stable enabled hit target ${selector}` })
   await page.tap({ ...point, touch })
 }
-async function fill(page, values) { await page.evaluate(`(() => {for(const[id,value]of Object.entries(${JSON.stringify(values)})){const e=document.querySelector('[data-testid="'+id+'"]');e.value=value;e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}))}})()`) }
+async function fill(page, values) {
+  await page.callWith((entries) => {
+    for (const [id, value] of Object.entries(entries)) {
+      const e = document.querySelector('[data-testid="' + id + '"]')
+      e.value = value
+      e.dispatchEvent(new Event('input', { bubbles: true }))
+      e.dispatchEvent(new Event('change', { bubbles: true }))
+    }
+  }, values)
+}
 async function chooseAvatar(page) { await page.evaluate(`(async()=>{const canvas=document.createElement('canvas');canvas.width=32;canvas.height=32;canvas.getContext('2d').fillRect(0,0,32,32);const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));const transfer=new DataTransfer();transfer.items.add(new File([blob],'avatar.png',{type:'image/png'}));const input=document.querySelector('[data-testid=tournament-image-input]');input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}))})()`) }
 async function geometry(page, profile, configuration = false) {
   const value = await page.evaluate(`(()=>{const p=[...document.querySelectorAll('.creator-config-grid > *')].map(e=>e.getBoundingClientRect());return{overflow:document.documentElement.scrollWidth>innerWidth+1,profile:document.documentElement.dataset.uiProfile,stacked:p.length===2?p[1].top>=p[0].bottom:false,tiny:matchMedia('(pointer:coarse)').matches?[...document.querySelectorAll('.creators-page button')].filter(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&r.height<43}).map(e=>e.dataset.testid||e.textContent):[]}})()`)

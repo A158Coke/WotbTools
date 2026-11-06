@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { computed, toRaw } from 'vue'
+import { computed, h, KeepAlive, ref, toRaw } from 'vue'
 import { readFileSync } from 'node:fs'
 import { URL as NodeURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -755,6 +755,27 @@ describe('ReplayWorkspace', () => {
     await switchTo(wrapper, '3d')
     expect(wrapper.get('[data-test="ws-3d-pane"]').text()).toContain('|true')
     wrapper.unmount()
+  })
+
+  it('deactivating a kept-alive workspace suspends its retained 3D pane', async () => {
+    withBattles(1)
+    const shown = ref(true)
+    const host = mount({
+      setup: () => () => h(KeepAlive, null, () => shown.value
+        ? h(ReplayWorkspace, { initialCapability: '3d' }) : null),
+    }, { global: { provide: { [NAVIGATE_VIEW_KEY]: vi.fn(), [ONBOARDING_KEY]: null, [DIALOG_INLINE_KEY]: true }, mocks: { $t: (k) => k } } })
+    await flushPromises()
+    const pane = host.findComponent({ name: 'Replay3DPaneMock' })
+    expect(pane.props('active')).toBe(true)
+    const instance = pane.vm
+    shown.value = false
+    await flushPromises()
+    expect(pane.props('active')).toBe(false)
+    shown.value = true
+    await flushPromises()
+    expect(host.findComponent({ name: 'Replay3DPaneMock' }).vm).toBe(instance)
+    expect(pane.props('active')).toBe(true)
+    host.unmount()
   })
 
   it('能力切换写 URL（router owner）：五个能力各自的 view', async () => {

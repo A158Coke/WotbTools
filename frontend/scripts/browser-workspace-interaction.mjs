@@ -5,6 +5,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
+import { callPageFunction } from './browser-page.mjs'
 import { parseScenarioArgs, selectShard } from './browser-scenario-args.mjs'
 import { OCCLUSION_LIMITS, measureOcclusion, measurePaintOrder, measureReachability } from './browser-occlusion.mjs'
 import { SHELL_OVERLAY_SCENARIOS, runShellOverlayScenario } from './browser-shell-overlays.mjs'
@@ -323,6 +324,11 @@ class Page {
     return result.value
   }
 
+  /** 以 CDP 参数调用页面函数，参数不进入表达式源码。 */
+  callWith(fn, ...args) {
+    return callPageFunction(this.client, this.sessionId, fn, ...args)
+  }
+
   /** 序列化执行 `fn()`（探针不依赖闭包，因此可以安全地跨进程传递）。 */
   probe(fn) {
     return this.evaluate(`(${fn.toString()})()`)
@@ -456,9 +462,11 @@ class Page {
    * 判定标准是「可滚动触达 + 触达后真的可点」，而不是「永远在首屏」。
    */
   async revealControl(selector) {
-    await this.evaluate(
-      `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (el) el.scrollIntoView({ block: 'center', inline: 'nearest' }); return !!el })()`,
-    )
+    await this.callWith((sel) => {
+      const el = document.querySelector(sel)
+      if (el) el.scrollIntoView({ block: 'center', inline: 'nearest' })
+      return !!el
+    }, selector)
     await delay(200)
     return this.probe(playbackControlProbe)
   }
@@ -654,7 +662,7 @@ async function runAuthCapabilityScenario(env, scenario) {
       check(failures, await page.evaluate('window.__wsInput.click?.testId') === 'shot-row-1',
         'real selection click must land on the selected shot row')
       for (const selector of ['[data-testid=shot-next]', '[data-testid=shot-prev]', '[data-testid=shot-detail-close]']) {
-        await page.evaluate(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'center'})`)
+        await page.callWith((sel) => document.querySelector(sel).scrollIntoView({ block: 'center' }), selector)
         const reach = await measureReachability(page, { options: [selector], touch: scenario.touch })
         check(failures, reach.sampled > 0, `${selector}: no hit-test samples`)
         failures.push(...reach.failures)
@@ -2354,6 +2362,60 @@ async function runMobileFullscreenScenario(env, scenario) {
  *  3. B 重新发起解析并**自己**收敛（hasData，无 err）——旧解析不占队列；
  *  4. 放行 A 的迟到回包 → 无人认领（不被 B 或任何会话消费）。
  */
+/** Foreground event wiring through the real workspace and 3D pane; events are
+ * simulated in Chrome and do not claim OS/WebView background behavior. */
+async function runSceneActivityScenario(env, scenario) {
+  const failures = []
+  const { targetId, sessionId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  lastPage = page
+  await page.enable()
+  await page.emulate(scenario)
+  try {
+    await page.goto(`${await fakeAnalysisOrigin()}/?view=replay&ws-auth=1&ws-login=resolve&debug`)
+    await page.waitFor(() => !!document.querySelector('[data-testid="ws-tab"][data-cap="3d"]'), { label: 'capability tabs' })
+    await page.evaluate(`(() => {
+      const input = document.querySelector('[data-testid="select-files-input"]')
+      const dt = new DataTransfer()
+      dt.items.add(new File([new Uint8Array([1, 2, 3, 4])], 'activity.wotbreplay'))
+      input.files = dt.files
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    })()`)
+    const tab = await page.waitForValue(clickCenterExpression('[data-testid="ws-tab"][data-cap="3d"]'), Boolean, { label: '3D capability tab' })
+    await page.tap({ ...tab, touch: scenario.touch })
+    await page.waitFor(() => !!window.__pbPane?.sceneApi, { label: '3D scene' })
+    await page.evaluate(`(() => {
+      const scene = window.__pbPane.sceneApi
+      const setPaused = scene.setPaused.bind(scene)
+      const setPlaying = scene.setPlaying.bind(scene)
+      window.__activityProbe = { scene, pauses: [], plays: [], visibility: 'visible' }
+      scene.setPaused = value => { window.__activityProbe.pauses.push(value); return setPaused(value) }
+      scene.setPlaying = value => { window.__activityProbe.plays.push(value); return setPlaying(value) }
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => window.__activityProbe.visibility })
+    })()`)
+    await page.evaluate(`window.__activityProbe.visibility = 'hidden'; document.dispatchEvent(new Event('visibilitychange'))`)
+    await page.waitForValue('window.__activityProbe.pauses.at(-1)', value => value === true, { label: 'hidden scene pauses' })
+    await page.evaluate(`window.dispatchEvent(new PageTransitionEvent('pagehide')); window.__activityProbe.visibility = 'visible'; document.dispatchEvent(new Event('visibilitychange'))`)
+    // A settled task boundary lets Vue flush both events before checking no resume.
+    await page.evaluate('new Promise(resolve => setTimeout(resolve, 0))')
+    check(failures, await page.evaluate('window.__activityProbe.pauses.at(-1)') === true, 'visibility alone must not resume a pagehidden scene')
+    await page.evaluate(`window.dispatchEvent(new PageTransitionEvent('pageshow'))`)
+    await page.waitForValue('window.__activityProbe.pauses.at(-1)', value => value === false, { label: 'shown scene resumes' })
+    check(failures, await page.evaluate('window.__activityProbe.scene === window.__pbPane.sceneApi'), 'foreground transition must reuse scene')
+    check(failures, await page.evaluate('window.__activityProbe.plays.length') === 0, 'foreground transition must preserve playback intent')
+    const data = await page.waitForValue(clickCenterExpression('[data-testid="ws-tab"][data-cap="data"]'), Boolean, { label: 'data capability tab' })
+    await page.tap({ ...data, touch: scenario.touch })
+    await page.waitForValue('window.__activityProbe.pauses.at(-1)', value => value === true, { label: 'inactive 3D scene pauses' })
+    await page.evaluate(`window.dispatchEvent(new PageTransitionEvent('pagehide')); window.dispatchEvent(new PageTransitionEvent('pageshow'))`)
+    await page.evaluate('new Promise(resolve => setTimeout(resolve, 0))')
+    check(failures, await page.evaluate('window.__activityProbe.pauses.at(-1)') === true, 'foreground transition must not resume inactive 3D scene')
+    check(failures, await page.evaluate('window.__activityProbe.plays.length') === 0, 'capability switch must preserve playback intent')
+    results.push({ name: scenario.name, failures: [...failures, ...page.consoleErrors], viewport: `${scenario.width}x${scenario.height}` })
+  } finally {
+    await env.chrome.client.send('Target.closeTarget', { targetId })
+  }
+}
+
 const LIFECYCLE_SCENARIOS = [
   { name: 'parse-lifecycle-a-clear-b-390x844-coarse', width: 390, height: 844, touch: true },
   { name: 'parse-lifecycle-a-clear-b-740x360-coarse', width: 740, height: 360, touch: true },
@@ -4073,6 +4135,7 @@ try {
     ...ONBOARDING_SCENARIOS.map((scenario) => ({ scenario, run: () => runOnboardingScenario(env, scenario) })),
     { scenario: { ...ROSTER_GEOMETRY_SCENARIOS[0], name: 'roster-geometry-recorder-team2-desktop', recorder: 2 }, run: () => runRosterGeometryScenario(env, { ...ROSTER_GEOMETRY_SCENARIOS[0], name: 'roster-geometry-recorder-team2-desktop', recorder: 2 }) },
     ...ROSTER_GEOMETRY_SCENARIOS.map((scenario) => ({ scenario, run: () => runRosterGeometryScenario(env, scenario) })),
+    { scenario: { name: 'scene-activity-lifecycle-desktop', width: 1600, height: 900, touch: false }, run: () => runSceneActivityScenario(env, { name: 'scene-activity-lifecycle-desktop', width: 1600, height: 900, touch: false }) },
     ...LIFECYCLE_SCENARIOS.map((scenario) => ({ scenario, run: () => runParseLifecycleScenario(env, scenario) })),
     ...PLAYBACK_SCENARIOS.map((scenario) => ({ scenario, run: () => runPlaybackControlScenario(env, scenario) })),
     { scenario: ROTATION_SCENARIO, run: () => runRotationScenario(env, ROTATION_SCENARIO) },

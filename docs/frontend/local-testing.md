@@ -293,3 +293,21 @@ macOS 可指定 `CHROME_BIN='/Applications/Google Chrome.app/Contents/MacOS/Goog
 ## Engagement distance in shot replay
 
 Shot-replay engagement distance = server-decoded ballistic path length (`ball_a → via… → ball_b` polyline; ricochet legs counted), not camera distance. Static armor inspection keeps camera → hit-point. Injecting a fixture shot via `storeShotsForViewer()` is the quickest way to test it (see `scripts/browser-armor-shot-readiness.mjs`).
+
+
+## 3D 性能诊断
+
+在回放或地图预览页面的 URL 加 `?perf`，打开开发者工具控制台。场景建立后可执行：
+
+```js
+__pbPerf.reset()
+__pbPerf.startCapture({ scenarioId: 'recorder-armor-on', durationMs: 60000 })
+// 固定片段与镜头路径播放后
+const capture = __pbPerf.stopCapture()
+const snapshot = __pbPerf.snapshot()
+__pbPerf.report()
+```
+
+`scenarioId` 使用不含玩家、路径、令牌或资产 URL 的标签。结果只留在本机；将数据交给他人前仍需检查内容。采集到时或达到容量停止；场景失活时不能启动采集，采集中发生失活、清空或切换文件、画质或装甲设置变化时会标记中断，不能当作完整基准。`snapshot()` 的短窗口最多 240 帧；capture 的分位数使用实际 capture 样本。各指标分开阅读：帧间隔、CPU 提交、GPU 异步查询与加载等待不是同一种耗时；GPU 查询器状态包含 `not-initialized`（渲染器尚未创建）；每帧 `gpuStatus` 区分 `pending`、`complete`、`unsupported`、`context-lost`、`disjoint`、`invalid`、`dropped` 与 `error`；无可信结果时耗时为 null。`gpu_total_ms` 仅为成功测得的 render pass GPU 耗时之和，并非完整 GPU 帧耗时；部分结果或任一必需查询失败时总量为 null，不能把缺失 pass 当作 0。`snapshot().annotation` 和报告读取现有标注统计，不将其转换为帧分位数。RT 的 `colorEstimateBytes` 仅估算颜色纹理，不代表实际显存。
+
+严格比较前记录构建 SHA、WASM 身份、回放内容摘要与时间区间、相机路径、画质、viewport/DPR、设备及 GPU、资产版本。资产版本未自动取得时人工核验并记录来源；身份不完整时不能声称条件一致。首次使用与预热稳态分别采集；稳态预热后每组测 60 秒、至少重复三次，`armorhl=0/1` 同片段交替运行，同时记录温度和电源状态；另做 `?perf` 开关对照评估探针开销。Browser 和 Android 真机的画面、后台恢复与资源变化需人工验收，mock 或自动化测试不能替代。

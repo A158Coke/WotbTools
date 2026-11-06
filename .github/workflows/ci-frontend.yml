@@ -38,9 +38,17 @@ jobs:
       # v0.1.6 附件并 sha256 校验——pin 漂移/上游重发布在这里 fail，而不是发布日。
       - name: Fetch upstream agent WASM artifact (release pin, sha256 verified)
         run: bash scripts/fetch-agent-wasm.sh
+      # 完整 HTTP 契约检查归属 Frontend owner（FE 与 BA 同时受影响时唯一执行位置；
+      # BA-only 时仍由 ci-business-api.yml 的 http_contract 承担）。
+      - name: Validate OpenAPI and local refs
+        working-directory: frontend
+        run: pnpm run api:lint
       - name: Verify generated HTTP client contract
         working-directory: frontend
         run: pnpm run api:check
+      - name: Validate shared Playback fixture
+        working-directory: frontend
+        run: pnpm run api:fixture
       - name: Type check
         working-directory: frontend
         run: pnpm run typecheck
