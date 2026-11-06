@@ -35,7 +35,7 @@ description: >
 ### 用户提供的计划
 
 - Executor 接受文件计划和用户直接提供的 plan；`docs/current-plan.md` 是唯一执行载体，不是唯一输入入口。用户明确要求执行所附计划即提供该计划范围的执行授权，不再询问同一批准。
-- 用户提供的可执行方案无需仅为格式重新走完整设计 pipeline。Executor 可将标题、字段别名和排列无损映射到下方 canonical schema，保留用户的目标、约束、非目标、步骤及验收；有事实支持的不适用项可写 N/A + 理由，尚未执行的步骤可标 PENDING，不能把未知写成无风险或已验证。
+- 用户提供的可执行方案无需仅为格式重新走完整设计 pipeline。Executor 可将标题、字段别名和排列无损映射到下方 canonical schema，保留用户的目标、约束、非目标、步骤及验收；核心章节必须保留，未触发的条件章节直接省略，尚未执行的步骤可标 PENDING，不能把未知写成无风险或已验证。
 - 缺少路径、直接相关测试或文档可从仓库定位；实质缺失可由已授权目标和事实确定时先补证据。不得猜测业务选择、代定安全/迁移策略、弱化验收或伪造设计证据。只有缺失信息需要用户决策，或方案实质失效时才返回 Designer / 用户。
 - 规范化摘要与授权来源保留在同一计划的 Evidence / Constraints；执行前物化到任务 worktree 的唯一 `docs/current-plan.md`。现有相关但不同的计划按用户当前明确选择处理，保护其他任务的载体。
 
@@ -81,7 +81,7 @@ Executor
 
 ## PHASE 1 — UNDERSTAND
 
-必须明确记录：
+按相关性明确记录；`Literal Request` 仅在触发条件成立时单列，否则其信息并入 `Actual Outcome`：
 
 ### Literal Request
 用户明确要求什么。
@@ -94,7 +94,7 @@ Executor
 
 当目标、范围、非目标、验收标准或关键约束仍不清晰时，加载 `.agents/playbooks/requirement-clarification.md` 做 interactive clarification。每轮只问真正阻塞的问题；能从仓库事实确认的不要问用户。
 
-需求已经清晰时，可跳过多轮 requirement clarification，但仍必须记录 Literal Request / Actual Outcome / Constraints，然后继续 Phase 2。
+需求已经清晰时，可跳过多轮 requirement clarification，但仍必须记录 Actual Outcome / Constraints；Literal Request 按条件章节规则判定是否单列，然后继续 Phase 2。
 
 ## PHASE 2 — AMBITION
 
@@ -124,7 +124,7 @@ SYSTEMATIZE 的有效证据包括 repeated incident、repeated reviewer finding�
 计划必须包含：
 
 ```text
-## Ambition Decision
+# Ambition Decision
 Decision: KEEP | EXPAND | SYSTEMATIZE
 Reason: ...
 Scope delta: ...
@@ -177,7 +177,7 @@ Step 0 — Evidence Collection / Baseline
 
 ## PHASE 5 — DESIGN
 
-本阶段内容分别落入 canonical plan 的 `# Current State`、`# Target State`、`# Design`、`# Alternatives / Trade-offs`、`# Impact Surface`、`# Rollback`、`# Known Risks`。
+本阶段内容落入 canonical plan 的 `# Design`、`# Impact Surface`、`# Rollback`、`# Known Risks`；`# Current State` / `# Target State`、`# Alternatives / Trade-offs` 仅在条件章节触发时出现。
 
 所有 non-trivial plan 至少考虑：
 
@@ -248,7 +248,7 @@ WotBTools 最小检查提示——只描述去哪看，不声明架构真相，�
 明确主要失败路径以及如何发现。
 
 ### Observability
-明确需要的 logs / metrics / traces / runtime evidence；纯静态/docs 任务可写 N/A 并说明原因。
+明确需要的 logs / metrics / traces / runtime evidence；纯静态/docs 任务说明为何无需额外 observability。
 
 ### Testing
 定义 targeted / integration / contract / browser / device / benchmark 等验证。
@@ -264,7 +264,7 @@ WotBTools 最小检查提示——只描述去哪看，不声明架构真相，�
 所有 non-trivial plan 必须有：
 
 ```text
-## Validation / Outside Judge
+# Validation / Outside Judge
 ```
 
 核心问题：**如何独立于实现本身证明它确实有效？**
@@ -288,10 +288,10 @@ Target: derive threshold from baseline + product requirement
 
 ### Canonical plan schema
 
+核心章节（永远必须存在，固定顺序，不得改名）：
+
 ```text
 # Goal
-
-# Literal Request
 
 # Actual Outcome
 
@@ -303,23 +303,13 @@ Target: derive threshold from baseline + product requirement
 
 # Evidence
 
-# Evidence Gaps
-
-# Unverified Assumptions
-
-# Borrowed Methods
-
-# Current State
-
-# Target State
-
 # Design
 
-# Alternatives / Trade-offs
+Current → Target: ...
+
+SSOT: <新增 owner | 沿用现有 owner>
 
 # Impact Surface
-
-# Validation / Outside Judge
 
 # Execution Steps
 
@@ -344,14 +334,28 @@ Commit boundary: <optional>
 ## Step N
 ...
 
-# Final Verification
+# Validation / Outside Judge
 
 # Rollback
 
 # Known Risks
 ```
 
-所有 canonical section 必须存在。内容可以极简：不适用时写 `N/A` 并给出具体理由，不得删除 section 或用自由格式替代 schema。
+条件章节（触发条件成立才必须出现；不成立直接省略，不写 `N/A`）：
+
+| 章节 | 必须出现的条件 |
+|---|---|
+| `# Literal Request` | 用户原文与 Actual Outcome 的措辞存在落差 / 多义，或计划来自手贴文本规范化 |
+| `# Evidence Gaps` | 存在影响设计选择的未确认事实 |
+| `# Unverified Assumptions` | 设计依赖任何未验证假设 |
+| `# Borrowed Methods` | 复用了既有方法 / 模式 / 外部方案 |
+| `# Current State` / `# Target State` | 状态跨越 >1 owner，或需要与 Design 分开描述 |
+| `# Alternatives / Trade-offs` | 存在 ≥2 个可行方案，或选择非显然 |
+| `# Final Verification` | 计划含 ≥2 个 execution step，或存在跨阶段交接 |
+
+条件章节按语义插入，不改变核心章节的相对顺序。`# Execution Steps`、`# Validation / Outside Judge`、`# Rollback` 标题必须逐字保留，Executor 按标题解析。
+
+核心章节必须存在，标题与相对顺序不得改动。条件章节按上表判定：条件成立却缺失 = plan defect；条件不成立便省略，不写 `N/A`。`# Evidence` 必须记录证据；未验证事实用 `[GAP]` / `[UNVERIFIED]` 行内标记，影响设计选择的缺口再按上表补条件章节。`# Design` 必须写 `Current → Target` 与 SSOT 归属（新增还是沿用现有 owner），不单列 `# Current State` / `# Target State`，除非触发条件成立。`# Constraints` 必须写明授权来源。不得用自由格式替代 schema。
 
 ### Step 状态契约
 
@@ -373,17 +377,55 @@ BLOCKED
 
 ### KEEP 任务的轻量 plan
 
-未提供可执行计划的新 development task 都进入本 Skill，包括明确 bug、单点 CSS、i18n 缺漏等小修；用户提供的计划按本节输入规则消费。规模由 `Ambition = KEEP` 控制：KEEP 任务仍输出同一 canonical schema，但每节可以一行，Execution Steps 通常只有 1 步。
+未提供可执行计划的新 development task 都进入本 Skill，包括明确 bug、单点 CSS、i18n 缺漏等小修；用户提供的计划按本节输入规则消费。规模由 `Ambition = KEEP` 控制：KEEP 任务仍输出同一 canonical schema 的核心章节，每个核心章节内容可以一行；条件章节按上表判定，通常全部省略；Execution Steps 通常只有 1 步。
 
 例如修复一个明确 CSS overflow：
 
 ```text
-Ambition Decision: KEEP
-Evidence: 明确的 DOM/CSS behavior
-Design: 单点修复
-Validation / Outside Judge: specified viewport regression
-Execution Steps: 1 step
+# Goal
+修复窄屏下回放工具栏横向溢出。
+
+# Actual Outcome
+320–480px 视口下工具栏在容器内换行，不出现横向滚动条。
+
+# Constraints
+只改该组件样式；授权来源：用户明确要求执行本修复。
+
+# Non-Goals
+不改工具栏信息架构与断点策略。
+
+# Ambition Decision
+Decision: KEEP; Reason: 已定位单点样式溢出; Scope delta: none; Evidence: devtools 显示目标元素超出容器宽度。
+
+# Evidence
+`[UNVERIFIED]` 420px 视口复现截图待补。
+
+# Design
+Current → Target: `overflow: visible` → 允许换行并收缩最小宽度。
+SSOT: 沿用该组件现有样式 owner，不新增样式文件。
+
+# Impact Surface
+DIRECT: 该组件样式 → 工具栏布局（方法：直接阅读 + devtools）。
+
+# Execution Steps
+## Step 1
+Status: PENDING
+Goal: 调整该组件换行与最小宽度。
+Scope / Files: <该组件样式文件>
+Change: 允许换行并设置 `min-width: 0`。
+Validation: 320 / 375 / 480px 视口无横向溢出，既有组件测试通过。
+
+# Validation / Outside Judge
+320 / 375 / 480px 视口无横向滚动条；指定 viewport regression 通过。
+
+# Rollback
+还原该组件样式改动。
+
+# Known Risks
+超窄视口下换行导致工具栏高度增加。
 ```
+
+条件章节均未触发，因此不出现，也不写 `N/A`。
 
 不要把 KEEP 任务扩大成系统重构；按本节授权条件决定自动交接或请求具体方案批准。
 
