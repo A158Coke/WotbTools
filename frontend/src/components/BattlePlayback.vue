@@ -1,87 +1,49 @@
 <script setup>
 import { gunMarksByAccount } from '../utils/gunMarks.js'
-import { detailsDamageLogAtV2 } from '../utils/playbackDetails.js'
-import { computed, inject, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
+import { computed, inject, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+import { mapLabel } from '../utils/helpers.js'
+import { PencilRuler, ScanEye } from 'lucide-vue-next'
+import { ANNOT_COLORS, ANNOT_FONT_SIZE, ANNOT_WIDTH_MAX, ANNOT_WIDTH_MIN, canRedo, canUndo } from '../utils/annotation.js'
 import { usePlaybackPhoneForm } from '../composables/usePlaybackPhoneForm.js'
 import { usePlaybackPortraitViewport } from '../composables/usePlaybackPortraitViewport.js'
 import { useI18n } from 'vue-i18n'
 import { usePlaybackPreferences } from '../composables/usePlaybackPreferences.js'
 import { usePlaybackFullscreen } from '../composables/usePlaybackFullscreen.js'
 import { mapBases } from '../data/mapBases'
-import { mapLabel } from '../utils/helpers.js'
 import { mapImages } from '../data/mapImages'
 import { map2dSrc } from '../data/map2dOverlay'
 import { teamCssVars } from '../data/mapTeamColors'
 import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
 import { createMapView } from '../utils/mapView'
-import { activeTerrainRelief, projectTerrainPoint, unprojectTerrainPoint } from '../utils/terrainReliefProjection.js'
 import BattleMap from './BattleMap.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
-import { PencilRuler, ScanEye } from 'lucide-vue-next'
 import BattlePlaybackHud from './BattlePlaybackHud.vue'
 import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 import PlaybackControls from './PlaybackControls.vue'
 import SceneFullscreenButton from './SceneFullscreenButton.vue'
 import PlaybackDisplaySurface from './PlaybackDisplaySurface.vue'
 import SegmentedControl from './SegmentedControl.vue'
-import { isPlaybackSpeed, isInteractiveTarget, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
+import { isInteractiveTarget, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
 import PlaybackMobileOverlay from './PlaybackMobileOverlay.vue'
 import VehicleDetailsPanel from './VehicleDetailsPanel.vue'
 import PlaybackRoster from './PlaybackRoster.vue'
 import { rosterLanesFor } from '../scene/rosterState.js'
-import enemyHull from '../assets/tank-icons/tank-marker-enemy-hull.png'
-import enemyTurret from '../assets/tank-icons/tank-marker-enemy-turret.png'
-import friendlyHull from '../assets/tank-icons/tank-marker-friendly-hull.png'
-import friendlyTurret from '../assets/tank-icons/tank-marker-friendly-turret.png'
-import {
-  clampViewPan,
-  formatClock,
-  recentPositionTrails,
-  recentPositionTrailsFromPose,
-  teamPointsAt,
-  tracerLines,
-  transientsActive,
-  zoomViewAt
-} from '../utils/battlePlayback'
-import {
-  cumulativeStatsAtV2,
-  friendlyHealthAt,
-  healthDisplayAt,
-  positionCoveredAtV2,
-} from '../utils/battlePlaybackV2'
+import { formatClock, teamPointsAt, transientsActive } from '../utils/battlePlayback.js'
+import { friendlyHealthAt, healthDisplayAt } from '../utils/battlePlaybackV2.js'
 import { usePlaybackTransients } from '../composables/usePlaybackTransients.js'
-import { projectVehicleState } from '../utils/playbackVehicleState'
-import { observedFreezeTimeAt } from '../utils/battlePlaybackV2'
-import { poseCoveredAt, selectActiveDef, sampleVehiclePoseGame } from '../replay-local/pose/vehiclePose.js'
-import { createReloadStateResolver, magazineSizeForVehicle } from '../scene/reloadBar.js'
-import { assetProvider } from '../scene/assetProvider.js'
-import { computeVehicleMarkerSize, healthRingDiameter } from '../utils/vehicleMarkerSizing'
-import { advancePlaybackTime, clampPlaybackTime } from '../utils/playbackClock'
+import { usePlaybackCamera } from '../composables/usePlaybackCamera.js'
+import { usePlaybackAnnotationEditor } from '../composables/usePlaybackAnnotationEditor.js'
+import { usePlaybackVehicleSelection } from '../composables/usePlaybackVehicleSelection.js'
+import { usePlaybackReplayData } from '../composables/usePlaybackReplayData.js'
+import { usePlaybackClock } from '../composables/usePlaybackClock.js'
+import { usePlaybackVehicleProjection } from '../composables/usePlaybackVehicleProjection.js'
+import { usePlaybackMapGestures } from '../composables/usePlaybackMapGestures.js'
+import { healthRingDiameter } from '../utils/vehicleMarkerSizing.js'
 import { baseView } from '../utils/baseStatus.js'
-import { consumableRuntimeAt } from '../utils/consumableRuntime.js'
 import {
   MARKER_CORE_PX,
   computeLabelLayout,
 } from '../utils/labelLayout'
-import {
-  ANNOT_COLORS,
-  ANNOT_TANK_CLASSES,
-  ANNOT_FONT_SIZE,
-  ANNOT_WIDTH_DEFAULT,
-  ANNOT_WIDTH_MAX,
-  ANNOT_WIDTH_MIN,
-  annotationDraftFromTool,
-  applyEraser,
-  canRedo,
-  canUndo,
-  hitTestAnnotation,
-  isDegenerateAnnotation,
-  translateAnnotation,
-  projectAnnotationToSvg,
-  screenToSemantic,
-  semanticWidthFromSlider,
-  svgToScreen
-} from '../utils/annotation'
 import { usePlaybackAnnotations } from '../composables/usePlaybackAnnotations.js'
 
 /**
@@ -168,87 +130,8 @@ watch(imageSrc, async (src) => {
 
 // V2 canonical dataset 是唯一 playback 事实源（cleanup：移除 legacy overview.playback）。
 const playback = computed(() => props.playbackV2 || null)
-const reloadStateAt = computed(() => createReloadStateResolver(props.reloadTelemetry))
-const reloadVehiclesByAccount = computed(() => {
-  const byAccount = new Map()
-  for (const vehicle of props.reloadTelemetry?.vehicles || []) {
-    // Ambiguous entity identity is unknown; do not combine two independent gun timelines.
-    if (byAccount.has(vehicle.account_id)) byAccount.set(vehicle.account_id, null)
-    else byAccount.set(vehicle.account_id, vehicle)
-  }
-  return byAccount
-})
-
-// 弹容 N 的配置联表源（tank_id → tank/{id}.json）：实际搭载配置三级证据链
-// （comp locals → 发射弹种 → 初始血量，见 reloadBar.resolveMountedConfig）消费；
-// 异步就绪后整体替换触发响应式重算。竞态令牌：快速切换战局时过期完成不得覆盖。
-const tankConfigs = ref(new Map())
-let tankConfigsToken = 0
-watch(() => props.reloadTelemetry, async (telemetry) => {
-  const token = ++tankConfigsToken
-  tankConfigs.value = new Map()
-  if (!telemetry || !assetProvider.configured()) return
-  const ids = new Set(telemetry.vehicles
-    .filter((v) => v.team === telemetry.friendlyTeam && v.tank_id > 0)
-    .map((v) => v.tank_id))
-  const entries = await Promise.all([...ids].map(async (tid) => {
-    try { return [tid, await assetProvider.json(`/tank/${tid}.json`)] }
-    catch { return [tid, null] }
-  }))
-  if (token !== tankConfigsToken) return
-  tankConfigs.value = new Map(entries)
-}, { immediate: true })
-
-function vehicleReloadAt(accountId, time) {
-  const telemetry = props.reloadTelemetry
-  const vehicle = reloadVehiclesByAccount.value.get(accountId)
-  if (!telemetry || !vehicle) return null
-  // 弹容 N 随实际搭载主炮走——多炮坦克各炮弹容不同，禁止跨配置取最大 /
-  // 剩余弹数+1 推断（上游 docs/wotbtools-cross-reference.md §六 裁决）；
-  // configs 未就绪时回退 facet burst_size → 单发，就绪后本组件响应式重算。
-  const size = magazineSizeForVehicle(vehicle, tankConfigs.value.get(vehicle.tank_id))
-  return reloadStateAt.value(vehicle.eid, time + telemetry.timeOrigin, size)
-}
-
-/** 2D 名牌：当前定时消耗品（canonical transitions 的 timeSec 已是回放相对秒）。 */
-function vehicleConsumablesAt(track, time) {
-  return consumableRuntimeAt(track?.consumableTransitions, time)
-}
 const duration = computed(() => (playback.value ? Math.max(0, playback.value.durationSec) : 0))
 const friendlyTeam = computed(() => pbOverview.value.friendlyTeam)
-
-// ---- PR2：Tier X dedicated model preload----
-// runtime.js 含全部车型资产引用（import.meta.glob），必须动态 import 保持主 bundle 分离
-// （scripts/check-bundle-separation.mjs 门禁：主入口不得含 'vehicle-models/assets'）。
-// preload 完成前不渲染车辆（asset decision 先于渲染，禁止 generic 闪现后替换）。
-const preload = ref({ phase: 'idle', resolved: new Map(), failed: new Set(), failureReasons: new Map(), byTank: new Map() })
-// 竞态令牌：快速切换战局时，过期 preload 完成不得覆盖新战局结果
-let preloadToken = 0
-watch(
-  () => [props.overview, props.playbackV2],
-  async () => {
-    const token = ++preloadToken
-    preload.value = { phase: 'loading', resolved: new Map(), failed: new Set(), failureReasons: new Map(), byTank: new Map() }
-    const vehicles = props.playbackV2?.vehicles || []
-    if (vehicles.length === 0) {
-      preload.value = { phase: 'ready', resolved: new Map(), failed: new Set(), failureReasons: new Map(), byTank: new Map() }
-      return
-    }
-    try {
-      const { preloadBattleModels } = await import('../vehicle-models/runtime.js')
-      const result = await preloadBattleModels(vehicles.map((v) => v.tankId))
-      if (token !== preloadToken) return // 过期结果丢弃
-      preload.value = { phase: 'ready', ...result }
-    } catch {
-      // 模块加载异常 → 保持单场 generic fallback，但保留稳定诊断原因。
-      console.error('[vehicle-models] fallback reason=MODULE_IMPORT_FAILURE')
-      if (token !== preloadToken) return
-      const failureReasons = new Map((vehicles || []).map((v) => [String(v.tankId), 'MODULE_IMPORT_FAILURE']))
-      preload.value = { phase: 'ready', resolved: new Map(), failed: new Set(), failureReasons, byTank: new Map() }
-    }
-  },
-  { immediate: true },
-)
 
 // 双方总血量（实时剩余，随播放时间/进度条变化；争霸赛附终局点数）。
 // relativeFull 是后端投影的 presentation-safe fact；前端只按 t 查询 transition、做聚合与绘制，
@@ -283,46 +166,15 @@ const baseStatesAt = computed(() => {
   return [...latest.values()].sort((a, b) => a.baseId.localeCompare(b.baseId))
 })
 
-// ---- 播放状态 ----
-// 播放钟双轨：playbackClock = rAF 内部非响应式时钟（逐帧精确推进，事件消费 exactly-once
-// 的事实源）；currentTime = 响应式发布值，按 CLOCK_PUBLISH_SEC 节流写入——60fps 直写
-// ref 会让整条 computed 链（轨迹/炮线/标记/HP/布局）以 60fps 全量重算 + 整页 VDOM patch
-// （与 3D 面板 store.time 的 HUD_INTERVAL_MS 节流同一模式）。两者由全部写入口保持同步
-// （frame/play/seek/step/回绕），对外语义不变，仅派生视觉状态以 30Hz 刷新。
-const CLOCK_PUBLISH_SEC = 1 / 30
-let playbackClock = 0
-const currentTime = ref(0)
-const playing = ref(false)
-const speed = ref(1)
-
-/** 统一写入口：内部钟与响应式发布值同步置位（seek/step/回绕/到末尾）。
- * frame() 的逐帧推进不走这里（内部钟先行、发布值节流），见 frame()。 */
-function publishClock(t) {
-  playbackClock = t
-  currentTime.value = t
-}
-// transient/animation 时间基准 = UI wall clock（performance.now）。
-// 播放时由 frame() 每帧刷新；暂停时由 ensurePauseClock 的轻量 RAF 继续推进
-//（仅当存在未决 transient），不依赖 replay 播放状态。
+// ---- 播放状态：playback clock 的唯一 owner = usePlaybackClock（#820 Agent C Step 3）；
+// transient/animation 时间基准 = UI wall clock（performance.now）——播放时由 playback frame()
+// 每帧刷新；暂停时由时钟 owner 的轻量 RAF 继续推进（仅当存在未决 transient）。
 const nowMs = ref(typeof performance !== 'undefined' ? performance.now() : 0)
-
 // Playback presentation preferences have one persistence owner. BattlePlayback only consumes refs.
 const { labelPrefs, hpPrefs, trailPrefs, markerPrefs, uiPrefs, declutterActive, toggleDeclutter } = usePlaybackPreferences()
 const hpModeOptions = computed(() => ['bar', 'ring'].map(mode => ({
   value: mode, label: t(`recon.map.playback.hp_mode_${mode}`), testid: `pb-hp-mode-${mode}`,
 })))
-
-// 最近 2 秒位置轨迹只消费 canonical observed positionSegments；显示偏好由 usePlaybackPreferences 持久化。
-const visibleTrails = computed(() => trailPrefs.showTrail
-  ? (poseSource.value
-      // 位姿通道：与 3D 同源的位置序列；可信度门控仍取 canonical 观测区间
-      ? recentPositionTrailsFromPose(
-          hpVehicles.value,
-          (vehicle, t) => poseAtTime(vehicle, t),
-          (vehicle, t) => positionCoveredAtV2(vehicle.positionSegments, t),
-          currentTime.value, 2)
-      : recentPositionTrails(hpVehicles.value, currentTime.value, 2))
-  : [])
 
 // ---- PR5（§1.3/§10/§16/§20）：deterministic state 与 transient feedback 分层。
 // transient 全部 wall-clock（performance.now）驱动，播放帧推进时消费新跨过的事件，
@@ -332,8 +184,6 @@ const visibleTrails = computed(() => trailPrefs.showTrail
 // 本组件只保留 playback clock（frame/pause RAF）与地图投影（markerScreen → visibleFloats/Bursts）。
 // Blocker 1：consumption 源 = authoritativeEvents（原始 playback events），
 // 不受 Event Panel 折叠状态影响。
-// seek/状态恢复帧：禁用 HP bar 过渡动画（§20.1 seek 只恢复状态不补动画）
-const hpNoTransition = ref(false)
 
 function realNowMs() {
   return typeof performance !== 'undefined' ? performance.now() : Date.now()
@@ -360,24 +210,6 @@ const {
   feedVisible: () => !uiHidden.value && !!uiPrefs.showKillfeed,
 })
 
-// ---- 单车 HP HUD 数据（§4/§5/§6/§7）----
-function hpFor(vehicle) {
-  const display = healthDisplayAt(vehicle, currentTime.value)
-  if (!display) return null
-  return {
-    current: display.currentHp,
-    maxHp: display.displayCapacityHp,
-    pct: display.pct,
-    knowledge: display.knowledge,
-    destroyed: display.destroyed,
-    state: display.state,
-  }
-}
-/** marker HP HUD 数字区实际渲染文本（VehicleMarker .pb-hp-num 同款：current 有值→数字，否则 —）。
- *  labelLayout 碰撞用：数字文本可能影响 HUD 盒宽（不同状态不同文本），必须按实际文本估算。 */
-function hpDisplayNumText(hp) {
-  return hp.current != null ? String(hp.current) : '—'
-}
 // ---- transient 渲染视图（wall-clock 过滤 + 屏幕定位；状态 owner = usePlaybackTransients）----
 const visibleFloats = computed(() => {
   const now = nowMs.value
@@ -415,7 +247,6 @@ const visibleBursts = computed(() => {
   }).filter(Boolean)
 })
 // visibleFeed 由 usePlaybackTransients 提供（activeFeed 权威队列投影）。
-const selectedAccountId = ref(null)
 const uiHidden = ref(false)
 function setUiHidden(hidden) {
   uiHidden.value = hidden
@@ -431,7 +262,6 @@ function setUiHidden(hidden) {
  * 全部保留；恢复后立刻可用，不重建播放、不重解析。
  */
 const showRosterPresentation = computed(() => !uiHidden.value && uiPrefs.showRoster !== false)
-const annotationOpen = ref(false)
 const mobileOverlay = ref(null)
 /** §details-float：详情浮窗的受保护下界——传输控件。它在竖屏纵向流与横屏中心栈里都是
     同一处（`[data-test="pb-transport-slot"]`），这里始终指向当前真正在渲染的那一个，
@@ -445,37 +275,11 @@ function toggleDisplay(anchor) { displayAnchor.value = anchor; displaySection.va
     拖动宿主。浮窗是它的直接子元素，`left/top`、夹紧与拖动在同一个坐标系里算；
     它不是 `.pb-map-stage`（那只是中间一栏，按它算会把浮窗关在 Stage 里）。 */
 const battlefieldWorkspaceEl = ref(null)
-let rafId = null
-let lastFrameTs = null
-
-// 暂停期 transient 时钟的 RAF id（仅当存在未决 transient 时运行，不永久轮询）。
-let pauseRafId = null
-
 // ---- 地图视图缩放/平移：单一 camera layer 保证地图/网格/炮线/标记严格对齐 ----
+// 相机状态（view / MapRenderRect / fit）的唯一 owner = usePlaybackCamera（#820 Agent C）；
+// 手势状态机（pointer/pan/pinch/wheel）的唯一 owner = usePlaybackMapGestures。
 const mapComponent = ref(null)
-const mapEl = computed(() => mapComponent.value?.mapEl || null)
 const mapStageEl = ref(null)
-// ---- 地图容器真实渲染尺寸（reactive）：fullscreen enter/exit / 窗口缩放等任何尺寸变化
-// 由 ResizeObserver 更新 → 依赖容器尺寸的 screen-space 布局（markerScreen/labelLayout/
-// hitbox/textInput）在新尺寸下重新计算；无 RO 环境（测试/旧浏览器）回退 clientWidth 读取。
-const mapSize = ref({ w: 0, h: 0 })
-let mapResizeObserver = null
-function mapWidth() {
-  return mapSize.value.w || (mapEl.value ? mapEl.value.clientWidth : 0)
-}
-function mapHeight() {
-  return mapSize.value.h || (mapEl.value ? mapEl.value.clientHeight : 0)
-}
-
-// §1：MapRenderRect SSoT —— 当前地图实际绘制的矩形（相对 .pb-map origin）。
-// 所有 presentation geometry（marker/碰撞/hitbox/label/float/screenToSemantic）都经由它换算，
-// 保证 SVG map 与 HTML overlay 共享同一坐标系（fullscreen/contain 下 marker 不再跑进 gutter）。
-// 用读取即时值而非缓存 computed：依赖（mapSize/mapView）由调用方 computed/watch 追踪，实时重算。
-function mapRenderRect() {
-  const width = mapWidth()
-  const ratio = mapView.value.H / mapView.value.W
-  return { left: 0, top: 0, width, height: width * ratio }
-}
 
 // ---- Fullscreen：原生 Fullscreen API；document.fullscreenElement + fullscreenchange 为事实源
 //（不维护手工 isFullscreen = !isFullscreen，ESC/浏览器 UI 退出后状态自动同步）。
@@ -523,46 +327,68 @@ const { isFullscreen, fullscreenSupported, toggleFullscreen } = usePlaybackFulls
   target: () => pbRoot.value,
   isPhone: isMobileDevice,
   isActive: () => playbackLifecycleActive,
-  // fullscreenchange 只由 composable 监听；这里注入 2D 的布局反应（等 Vue 搬完 controls 再 force fit）
+  // fullscreenchange 只由 composable 监听；这里注入 2D 的布局反应（等 Vue 搬完 controls 再 force fit）。
+  // fitViewIfReady 由下方相机提供（函数声明提升，调用时相机已创建）。
   onChange: () => nextTick(() => fitViewIfReady(true)),
 })
 
-// 地图容器尺寸观察：fullscreen enter/exit / 窗口缩放 → ResizeObserver 更新 mapSize
-//（reactive）→ markerScreen/labelLayout/selectAt/textInput 以新尺寸重算；不依赖 magic delay。
-watch(() => mapEl.value, (el, prev) => {
-  if (prev) prev.removeEventListener('pointerleave', onMapPointerLeave)
-  if (el) el.addEventListener('pointerleave', onMapPointerLeave)
-  if (!el || mapResizeObserver) return
-  if (typeof ResizeObserver === 'function') {
-    mapResizeObserver = new ResizeObserver((entries) => {
-      for (const e of entries || []) {
-        if (e && e.target === el) {
-          mapSize.value = { w: e.contentRect.width, h: e.contentRect.height }
-        }
-      }
-      // §fullscreen-exit：地图或 stage 尺寸就绪（布局稳定）后，以新 mode 的几何重新应用默认 fit
-      //（contain 居中）。mode change 会 re-arm fitInitialized；非 mode 的 resize 保持已生效的 view。
-      fitViewIfReady()
-    })
-    mapResizeObserver.observe(el)
-    if (mapStageEl.value) mapResizeObserver.observe(mapStageEl.value)
-
-  }
+const {
+  mapEl,
+  mapWidth,
+  mapHeight,
+  mapRenderRect,
+  view,
+  applyView,
+  viewportStyle,
+  markerTransform,
+  overlayInverse,
+  overlayInverseScale,
+  screenPoint,
+  fitScale,
+  resetView,
+  fitViewIfReady,
+  disposeCamera,
+} = usePlaybackCamera(mapView, {
+  mapComponent,
+  mapStageEl,
+  isFullscreen: () => isFullscreen.value,
+  wideLayout: () => wideLayout.value,
+  isMobileDevice: () => isMobileDevice.value,
 })
 
-const view = reactive({ scale: 1, tx: 0, ty: 0 })
-// Default contain follows geometry; a user camera stays owned by their gestures until Reset View.
-let cameraUserModified = false
-const PAN_THRESHOLD_PX = 5
-const PINCH_THRESHOLD_PX = 5
-const ZOOM_STEP = 1.2
-const pointers = new Map()
-let panStart = null
-let pinchStart = null
-let suppressClick = false
-// 当前交互是否为真实手势（单指拖动超阈值 / 双指捏合距离或中点移动超阈值）：
-// 手势结束后的首个 click 必须被吞掉，纯点击车辆仍正常选中
-let gestureMoved = false
+const {
+  mapEngaged,
+  wheelHintVisible,
+  mapTouchPan,
+  onWheel,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onViewportClick,
+  resetGestureState,
+} = usePlaybackMapGestures(
+  { view, applyView, screenPoint, fitScale },
+  mapEl,
+  {
+    isFullscreen: () => isFullscreen.value,
+    drawing: {
+      activeTool: () => activeTool.value,
+      // 编辑器在下方解构（声明顺序晚于本调用）——用惰性闭包避免 TDZ；事件期才求值。
+      drawingPointerId: () => getDrawingPointerId(),
+      drawingStartScreen: () => getDrawingStartScreen(),
+      annotationOpen: () => annotationOpen.value,
+      selectedAnnotationIndex: () => selectedAnnotationIndex.value,
+      startDrawing: (e) => startDrawing(e),
+      moveDrawing: (e) => moveDrawing(e),
+      endDrawing: () => endDrawing(),
+      cancelDrawing: () => cancelDrawing(),
+      // 绘制会话的 pointerId 由编辑器 cancel/endDrawing 归零；此处无需再清。
+      clearDrawingPointer: () => {},
+    },
+    selectAtPointer: (clientX, clientY) => selectAt(null, clientX, clientY),
+    onPlainClick: () => mobileOverlay.value?.reveal?.(),
+  },
+)
 
 let stageResizeObserver = null
 /**
@@ -626,599 +452,87 @@ watch(transportEl, (el, previous) => {
   nextTick(writeSquareAvailHeight)
 })
 
-// HUD and Transport live outside Stage; the raster uses the whole square viewport.
-function applyView(next, userGesture = false) {
-  // stage = 可见 map-stage；map = rendered map rect。pan bounds / reset fit 都以二者为据。
-  // HUD 与传输控件在 Stage 外，地图可使用整个正方形。
-  const stageW = mapWidth()
-  const fullH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
-  const safeH = Math.max(0, fullH)
-  const rect = mapRenderRect()
-  // §对称：地图在安全区内垂直居中，顶部/底部黑边完全对称（无向下偏移）。
-  const clamped = clampViewPan(next, stageW, safeH, rect.width, rect.height)
-  if (userGesture && (clamped.scale !== view.scale || clamped.tx !== view.tx || clamped.ty !== view.ty)) {
-    cameraUserModified = true
-  }
-  view.scale = clamped.scale
-  view.tx = clamped.tx
-  view.ty = clamped.ty
-}
+/** 完整地图视图（contain/fit）与手势逻辑已迁移至 usePlaybackCamera / usePlaybackMapGestures
+ *  （#820 Agent C Step 1）：MapRenderRect 仍是唯一屏幕坐标几何来源，wheel/pan/pinch 时序不变。 */
 
-// Raster camera fallback: enlarge the layout box before the browser paints the HD image,
-// then translate that box for pan. Keeping view.scale as the SSOT preserves all anchor math
-// while avoiding a compositor-only scale of an already-painted raster layer.
-const viewportStyle = computed(() => [
-  `transform: translate(${view.tx}px, ${view.ty}px)`,
-  `width: ${view.scale * 100}%`,
-])
-
-// 车辆标记随地图缩放（用户确认「坦克随地图一起放大，相对地图比例不变」）：
-// 标记中心锚定在地图坐标（left/top % 经 viewport 变换），本体不再反缩放；
-// 坦克名/阵亡 ✕ 等 UI 叠加层单独反缩放（overlayInverseScale）保持屏幕恒定；
-// hull/turret 的方向旋转在子元素 img 上，不受缩放影响。
-const markerTransform = computed(() => `translate(-50%, -50%)`)
-// overlay 反缩放数值（=1/view.scale）：元素尺寸（transform scale）与 layout offset（bottom/top calc）
-// 都按它反缩放 → zoom 下 selected/recorder 与车辆的屏幕间距恒定，不随 1×/2×/4× 增长
-const overlayInverse = computed(() => 1 / view.scale)
-const overlayInverseScale = computed(() => `scale(${overlayInverse.value})`)
-
-/** 指针 client 坐标 → 相对地图容器的**屏幕坐标**（zoomViewAt 契约，不参与任何变换）。 */
-function screenPoint(clientX, clientY) {
-  const rect = mapEl.value ? mapEl.value.getBoundingClientRect() : { left: 0, top: 0 }
-  return { x: clientX - rect.left, y: clientY - rect.top }
-}
-
-/**
- * 滚轮缩放只在用户明确与地图交互时生效（审计 PB-04，同 Google Maps 的 cooperative gestures）：
- * 全屏、按住 Ctrl / ⌘、或刚在地图上按下过指针（直到指针离开地图）。否则让页面正常滚动，并短暂提示。
- */
-const mapEngaged = ref(false)
-const wheelHintVisible = ref(false)
-let wheelHintTimer = null
-function showWheelHint() {
-  wheelHintVisible.value = true
-  if (wheelHintTimer != null) clearTimeout(wheelHintTimer)
-  wheelHintTimer = setTimeout(() => { wheelHintVisible.value = false; wheelHintTimer = null }, 1500)
-}
-function onMapPointerLeave() { mapEngaged.value = false }
-
-/** 审计 PB-01：地图未放大、非全屏、未在标注时，单指纵向滑动交给页面滚动。 */
-const mapTouchPan = computed(() => !isFullscreen.value && !activeTool.value && view.scale <= fitScale() + 1e-3)
-
-function onWheel(e) {
-  if (!(isFullscreen.value || e.ctrlKey || e.metaKey || mapEngaged.value)) {
-    showWheelHint()
-    return
-  }
-  e.preventDefault()
-  wheelHintVisible.value = false
-  const p = screenPoint(e.clientX, e.clientY)
-  // 缩放下限 = 完整地图 fit scale：放大后再缩小能回到原始完整视图，不会卡在 1x。
-  applyView(zoomViewAt(view, p.x, p.y, e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP, fitScale()), true)
-}
-
-function pinchInfo() {
-  const [a, b] = [...pointers.values()]
-  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
-  return { mid, dist: Math.hypot(a.x - b.x, a.y - b.y) }
-}
-
-function onPointerDown(e) {
-  // 鼠标在地图上按下拖动（平移 / 画标注）不能变成浏览器的文本 / 图片选择——否则拖过的车辆标记与
-  // 名牌会被选中成一片蓝色色块。只拦鼠标主键：触屏的滚动 / 捏合由 touch-action 决定，click 照常触发。
-  if (e.button != null && e.button !== 0) return
-  if (e.pointerType === 'mouse' && e.button === 0) e.preventDefault()
-  // preventDefault keeps the last toolbar button focused. Move keyboard ownership to the
-  // map after a map gesture so Enter/Escape/Delete reach the editor, not that old button.
-  e.currentTarget?.focus?.({ preventScroll: true })
-  mapEngaged.value = true
-  suppressClick = false
-  gestureMoved = false
-  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
-  // 指针捕获（受支持时）：指针移出地图仍持续收到 move/up；不支持的环境走 window 级兜底
-  try {
-    if (typeof e.target.setPointerCapture === 'function') {
-      e.target.setPointerCapture(e.pointerId)
-    }
-  } catch {
-    // 某些测试环境不支持指针捕获，忽略
-  }
-  // 标注编辑：单指走选择/绘制，双指仍保留地图捏合。
-  if (activeTool.value && pointers.size === 1) {
-    startDrawing(e)
-    return
-  }
-  // 第二根手指转入捏合，取消当前手势，避免落下意外标记/路线点。
-  if (drawingPointerId != null && pointers.size === 2) {
-    cancelDrawing()
-    drawingPointerId = null
-  }
-  if (pointers.size === 1) {
-    panStart = { x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty, moved: false }
-  } else if (pointers.size === 2) {
-    const info = pinchInfo()
-    pinchStart = {
-      mid: info.mid,
-      dist: info.dist,
-      // 锚点 = 双指中点相对地图容器的屏幕坐标（zoomViewAt 契约）
-      anchorScreen: screenPoint(info.mid.x, info.mid.y),
-      scale: view.scale,
-      tx: view.tx,
-      ty: view.ty,
-      moved: false
-    }
-    panStart = null
-  }
-}
-
-function onPointerMove(e) {
-  if (!pointers.has(e.pointerId)) return
-  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
-  if (drawingPointerId === e.pointerId && activeTool.value) {
-    if (drawingStartScreen && Math.hypot(e.clientX - drawingStartScreen.x, e.clientY - drawingStartScreen.y) > PAN_THRESHOLD_PX) gestureMoved = true
-    moveDrawing(e)
-    return
-  }
-  if (pointers.size === 2 && pinchStart) {
-    const { mid, dist } = pinchInfo()
-    if (!pinchStart.moved
-        && (Math.abs(dist - pinchStart.dist) > PINCH_THRESHOLD_PX
-            || Math.hypot(mid.x - pinchStart.mid.x, mid.y - pinchStart.mid.y) > PINCH_THRESHOLD_PX)) {
-      pinchStart.moved = true
-      gestureMoved = true
-    }
-    if (pinchStart.dist > 0 && dist > 0) {
-      const next = zoomViewAt(
-        { scale: pinchStart.scale, tx: pinchStart.tx, ty: pinchStart.ty },
-        pinchStart.anchorScreen.x, pinchStart.anchorScreen.y, dist / pinchStart.dist,
-        fitScale()
-      )
-      // 两指中点整体移动 = 屏幕平移（translate 单位为屏幕像素，直接加 client 位移）
-      next.tx += mid.x - pinchStart.mid.x
-      next.ty += mid.y - pinchStart.mid.y
-      applyView(next, true)
-    }
-    return
-  }
-  if (pointers.size === 1 && panStart) {
-    const dx = e.clientX - panStart.x
-    const dy = e.clientY - panStart.y
-    if (!panStart.moved && Math.hypot(dx, dy) < PAN_THRESHOLD_PX) return
-    panStart.moved = true
-    gestureMoved = true
-    applyView({ scale: view.scale, tx: panStart.tx + dx, ty: panStart.ty + dy }, true)
-  }
-}
-
-function onPointerUp(e) {
-  if (!pointers.delete(e.pointerId)) return
-  try {
-    if (typeof e.target.releasePointerCapture === 'function') {
-      e.target.releasePointerCapture(e.pointerId)
-    }
-  } catch {
-    // 忽略（无捕获或已释放）
-  }
-  if (drawingPointerId === e.pointerId) {
-    const blockClick = gestureMoved || e.type === 'pointercancel'
-    if (e.type === 'pointercancel') cancelDrawing()
-    else endDrawing()
-    drawingPointerId = null
-    if (pointers.size === 0) {
-      panStart = null
-      pinchStart = null
-      gestureMoved = false
-      suppressClick = blockClick
-    }
-    return
-  }
-  if (gestureMoved) suppressClick = true
-  if (pointers.size < 2) pinchStart = null
-  if (pointers.size === 0) {
-    panStart = null
-    gestureMoved = false
-  } else if (pointers.size === 1 && pinchStart == null && panStart == null) {
-    // 捏合结束剩下一根手指：以该手指为新基线继续平移，状态不卡死
-    const [p] = [...pointers.values()]
-    panStart = { x: p.x, y: p.y, tx: view.tx, ty: view.ty, moved: false }
-  }
-}
-
-/** 拖动/捏合结束后吞掉随之而来的 click 避免误选车；未拖动的点击正常到达车辆按钮。 */
-function onViewportClick(e) {
-  if (annotationOpen.value || suppressClick) {
-    // Select mode owns annotation picking first; a stationary tap on unmarked
-    // vehicle space may inspect the replay vehicle. Drawing/dragging never does.
-    if (annotationOpen.value && activeTool.value === 'select' && selectedAnnotationIndex.value < 0 && !suppressClick) {
-      selectAt(null, e.clientX, e.clientY)
-    }
-    suppressClick = false
-    e.stopPropagation()
-    e.preventDefault()
-    return
-  }
-  mobileOverlay.value?.reveal?.()
-}
-
-/** 完整地图视图（contain/fit）的 scale：把整张 rendered map 放进安全区的最小缩放。
- *  缩放下限（minScale）应为它——zoomed 后回到的就是它，避免「放大后再缩不回原样」。 */
-// fit 后四周留一圈窄黑边：不顶到边缘，同时尽量少浪费宽屏空间。
-const FIT_MARGIN = 0.98
-
-function fitScale() {
-  const stageW = mapWidth()
-  const fullH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
-  const safeH = Math.max(0, fullH)
-  const rect = mapRenderRect()
-  if (stageW > 0 && safeH > 0 && rect.width > 0 && rect.height > 0) {
-    return Math.min(stageW / rect.width, safeH / rect.height) * FIT_MARGIN
-  }
-  return 1
-}
-
-function resetView() {
-  cameraUserModified = false
-  // Reset View：恢复整张地图在正方形 Stage 内 contain 居中。
-  const stageW = mapWidth()
-  const fullH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
-  const safeH = Math.max(0, fullH)
-  const rect = mapRenderRect()
-  if (stageW > 0 && safeH > 0 && rect.width > 0 && rect.height > 0) {
-    const scale = fitScale()
-    const tx = (stageW - rect.width * scale) / 2
-    const ty = (safeH - rect.height * scale) / 2
-    applyView({ scale, tx, ty })
-    return
-  }
-  applyView({ scale: 1, tx: 0, ty: 0 })
-}
-
-// §3：默认视图 = 完整地图 contain（fit 居中、完整可见，无需手动调整）。
-// HUD/Transport 在正方形 Stage 外，地图在整个 Stage 中 contain 居中。
-// §geometry-signature：以 mode + stage/map/safe 尺寸为 signature，变化即重新 fit，
-// 不锁住旧几何：mode 或 Stage 尺寸改变时更新默认 contain。
-let lastFitSignature = ''
-function fitViewIfReady(force = false) {
-  if (force) lastFitSignature = ''
-  const stageW = mapWidth()
-  const fullH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
-  const safeH = Math.max(0, fullH)
-  const rect = mapRenderRect()
-  if (stageW <= 0 || safeH <= 0 || rect.width <= 0 || rect.height <= 0) return
-  const signature = [isFullscreen.value, wideLayout.value, isMobileDevice.value, stageW, safeH, rect.width, rect.height].join('|')
-  if (!force && signature === lastFitSignature) return
-  lastFitSignature = signature
-  if (!cameraUserModified) resetView()
-}
-
-// ---- 地图标注（临时纯前端：切视图/切文件即清空；几何一律存语义坐标） ----
-// 历史快照 / 草稿 / 选中项的唯一 owner 是 usePlaybackAnnotations（#820 Wave B5B）；
-// 工具、颜色/宽度、routePoints 等 gesture 临时状态仍在宿主。
-const activeTool = ref(null) // null outside marking mode; select, tank classes, route or legacy drawing tools
-const routePoints = ref([])
-let moveOriginal = null
-const annotColor = ref(ANNOT_COLORS[0])
-const annotVisible = ref(true)
-const annotWidthSlider = ref(ANNOT_WIDTH_DEFAULT) // 滑块值 = SVG 像素口径（1× 下所见即所得）
-// 语义单位/每 SVG 像素（x/y 轴因 preserveAspectRatio:none 比例可能不同；线宽/字号/半径按 x 轴换算）
-const semPerSvgX = computed(() => {
-  const b = mapView.value.renderBounds
-  return b && mapView.value.W > 0 ? (b.xMax - b.xMin) / mapView.value.W : 1
-})
-const semPerSvgY = computed(() => {
-  const b = mapView.value.renderBounds
-  return b && mapView.value.H > 0 ? (b.yMax - b.yMin) / mapView.value.H : 1
-})
-const annotWidth = computed(() => semanticWidthFromSlider(annotWidthSlider.value, {
-  semanticSpan: mapView.value.renderBounds ? mapView.value.renderBounds.xMax - mapView.value.renderBounds.xMin : 0,
-  logicalSpan: mapView.value.W
-}))
+// ---- 回放数据源/位姿/弹药 resolver：唯一 owner = usePlaybackReplayData（#820 Agent C Step 3）；
+// 位姿通道与 3D 场景同源同插值，reload 与名牌共享同一 resolver。
 const {
+  vehicleReloadAt,
+  vehicleConsumablesAt,
+  routesByAccount,
+  vehiclesByAccount,
+  poseSource,
+  poseAtTime,
+  reliefModelForPlayback,
+  projectedSemanticNorm,
+  reliefUnproject,
+} = usePlaybackReplayData(mapView, {
+  playback,
+  playbackV2: () => props.playbackV2,
+  reloadTelemetry: () => props.reloadTelemetry,
+  poseFacet: () => props.poseFacet,
+  clockOffset: () => props.clockOffset,
+  mapCode: () => pbOverview.value.mapCode,
+})
+
+// ---- 地图标注：工具/绘制手势/文字会话/route 的唯一 owner = usePlaybackAnnotationEditor
+// （#820 Agent C Step 2）；历史快照 / 草稿 / 选中项的事实源仍是 usePlaybackAnnotations。
+const {
+  annotationOpen,
+  activeTool,
+  routePoints,
+  annotColor,
+  annotVisible,
+  annotWidthSlider,
+  semPerSvgX,
+  semPerSvgY,
+  textSession,
+  textInputStyle,
+  renderedAnnotations,
   history,
   historyIndex,
   annotations,
   draft,
   selectedAnnotationIndex,
   selectedAnnotation,
-  reset: resetAnnotationState,
-  clearSelection,
-  replaceAnnotations,
-  commitDraft,
-  undo: undoHistory,
-  redo: redoHistory,
-  clearAll: clearAllAnnotations,
-  updateSelected,
+  drawingPointerId: getDrawingPointerId,
+  drawingStartScreen: getDrawingStartScreen,
+  resetAnnotations,
+  cancelDrawing,
+  cancelRoute,
+  toggleTool,
+  toggleAnnotation,
+  closeAnnotation,
+  undoAnnot,
+  redoAnnot,
+  clearAll,
+  setAnnotColor,
+  toggleAnnotations,
+  finishRoute,
+  startDrawing,
+  moveDrawing,
+  endDrawing,
+  commitSession,
+  cancelSession,
   deleteSelected,
   renameSelected,
-  finishRoute: finishRouteCommit,
-} = usePlaybackAnnotations({ getRouteDraft: () => routeDraft() })
-const textSession = ref(null) // reactive({ point, text })，文字输入会话
-const textInputRef = computed(() => mapComponent.value?.textInputRef || null)
-const ANNOT_THIN_PX = 2 // 笔迹抽稀阈值（屏幕 CSS px，与坐标体系无关）
-let drawStart = null // 绘制起点（语义坐标）
-let drawPoints = [] // pen/eraser 已采点（语义坐标）
-let drawScreen = [] // 与 drawPoints 一一对应的屏幕点（CSS px，用于抽稀）
-let drawingPointerId = null
-let drawingStartScreen = null
-
-function resetAnnotations() {
-  resetAnnotationState()
-  activeTool.value = null
-  annotationOpen.value = false
-  annotVisible.value = true
-  routePoints.value = []
-  moveOriginal = null
-  pointers.clear()
-  if (textSession.value) cancelSession(textSession.value)
-  drawStart = null
-  drawPoints = []
-  drawScreen = []
-  drawingPointerId = null
-  drawingStartScreen = null
-  suppressClick = false
-  gestureMoved = false
-  panStart = null
-  pinchStart = null
-}
-// 切换文件（overview 引用变化；MapOverview 未按文件 key 复用）→ 清空标注
-watch(() => props.overview, resetAnnotations)
-
-function cancelDrawing() {
-  drawingStartScreen = null
-  draft.value = routePoints.value.length ? routeDraft() : null
-  drawStart = null
-  drawPoints = []
-  drawScreen = []
-  moveOriginal = null
-  drawingPointerId = null
-}
-function cancelRoute() {
-  routePoints.value = []
-  cancelDrawing()
-}
-function toggleTool(tool) {
-  if (textSession.value) commitSession(textSession.value)
-  cancelRoute()
-  selectedAnnotationIndex.value = -1
-  annotVisible.value = true
-  activeTool.value = tool
-}
-function toggleAnnotation() {
-  if (annotationOpen.value) return closeAnnotation()
-  pause()
-  displayOpen.value = false
-  annotationOpen.value = true
-  activeTool.value = 'select'
-}
-function closeAnnotation() {
-  if (textSession.value) commitSession(textSession.value)
-  cancelRoute()
-  annotationOpen.value = false
-  activeTool.value = null
-  selectedAnnotationIndex.value = -1
-}
-
-// The workspace's guide requests real actions; drawing and clock state stay here.
-defineExpose({
-  pause,
-  displayOpened: () => displayOpen.value,
-  // 教程要高亮的「一键防遮」在 Display 面里（#727 之后地图上不再放常驻控件），
-  // 所以它必须能被 onboarding 的 display surface 打开 / 收回。
-  openDisplay: () => {
-    if (displayOpen.value) return false
-    // 浮层形态要锚在 gear 上；gear 属于 PlaybackTransport，这里按 DOM 契约取它。
-    toggleDisplay(pbRoot.value?.querySelector('[data-test="pb-secondary-entry"]') || null)
-    return true
+} = usePlaybackAnnotationEditor(
+  { view, screenPoint, mapRenderRect, mapWidth, mapHeight },
+  mapView,
+  {
+    textInputRef: () => mapComponent.value?.textInputRef || null,
+    onOpen: () => { pause(); displayOpen.value = false },
+    resetGestures: resetGestureState,
+    reliefUnproject,
+    projectedSemanticNorm,
+    reliefHasModel: () => !!reliefModelForPlayback(),
+    overview: () => props.overview,
   },
-  closeDisplay: () => { displayOpen.value = false },
-  annotationsOpen: () => annotationOpen.value,
-  openAnnotations: () => {
-    if (annotationOpen.value) return false
-    toggleAnnotation()
-    return true
-  },
-  closeAnnotations: closeAnnotation,
-})
-function undoAnnot() {
-  cancelRoute()
-  undoHistory()
-}
-function redoAnnot() {
-  cancelRoute()
-  redoHistory()
-}
-function clearAll() {
-  cancelRoute()
-  clearAllAnnotations()
-}
-function setAnnotColor(color) {
-  annotColor.value = color
-  if (selectedAnnotation.value) updateSelected({ color })
-  if (routePoints.value.length) draft.value = routeDraft()
-}
-function toggleAnnotations() {
-  cancelRoute()
-  clearSelection()
-  annotVisible.value = !annotVisible.value
-}
-function routeDraft() {
-  return { type: 'route', color: annotColor.value, width: annotWidth.value, points: [...routePoints.value] }
-}
-function finishRoute() {
-  if (!finishRouteCommit()) return
-  cancelRoute()
-  activeTool.value = 'select'
-}
-
-function draftFromTool(tool, a, b) {
-  return annotationDraftFromTool(tool, a, b, { color: annotColor.value, width: annotWidth.value })
-}
-
-/** 指针 client 坐标 → 语义坐标（CSS px → 撤销 viewport 变换 → CSS↔SVG 比例 → fromX/fromY）。 */
-function semanticPoint(e) {
-  const sp = screenPoint(e.clientX, e.clientY)
-  const model = reliefModelForPlayback()
-  const rect = mapRenderRect()
-  if (model && rect.width > 0 && rect.height > 0 && view.scale > 0) {
-    const xNorm = ((sp.x - view.tx) / view.scale) / rect.width
-    const yNorm = ((sp.y - view.ty) / view.scale) / rect.height
-    const point = unprojectTerrainPoint(model, xNorm, yNorm)
-    if (point) return { x: point.x, y: point.y }
-  }
-  return screenToSemantic(view, mapView.value, sp.x, sp.y, mapWidth(), mapHeight())
-}
-
-function startDrawing(e) {
-  const p = semanticPoint(e)
-  if (!p) return
-  if (!annotVisible.value) return
-  drawingPointerId = e.pointerId
-  drawingStartScreen = { x: e.clientX, y: e.clientY }
-  if (activeTool.value === 'select') {
-    const rect = mapRenderRect()
-    const tolerance = 12 * semPerSvgX.value * mapView.value.W / (rect.width || mapView.value.W) / view.scale
-    selectedAnnotationIndex.value = hitTestAnnotation(annotations.value, p, tolerance)
-    moveOriginal = selectedAnnotation.value
-    drawStart = p
-    return
-  }
-  if (activeTool.value === 'route' || ANNOT_TANK_CLASSES.some(cls => cls.key === activeTool.value)) {
-    drawStart = p
-    return
-  }
-  if (activeTool.value === 'text') {
-    if (textSession.value) commitSession(textSession.value) // 先提交上一个未完成的文字
-    textSession.value = reactive({ point: p, text: '' })
-    nextTick(() => textInputRef.value && textInputRef.value.focus())
-    return
-  }
-  if (activeTool.value === 'pen' || activeTool.value === 'eraser') {
-    drawPoints = [p]
-    drawScreen = [{ x: e.clientX, y: e.clientY }]
-    draft.value = { type: activeTool.value, color: annotColor.value, width: annotWidth.value, points: [p] }
-  } else {
-    drawStart = p
-    draft.value = draftFromTool(activeTool.value, p, p)
-  }
-}
-
-function moveDrawing(e) {
-  const p = semanticPoint(e)
-  if (!p) return
-  const tool = activeTool.value
-  if (tool === 'select' && moveOriginal && drawStart) {
-    if (Math.hypot(p.x - drawStart.x, p.y - drawStart.y) > 1e-9) draft.value = translateAnnotation(moveOriginal, p.x - drawStart.x, p.y - drawStart.y)
-    return
-  }
-  if (tool === 'route' || ANNOT_TANK_CLASSES.some(cls => cls.key === tool)) return
-  if (tool === 'pen' || tool === 'eraser') {
-    // 屏幕空间抽稀：相邻采样点 ≥ ANNOT_THIN_PX CSS px（不依赖 scale/渲染比例，避免换算误差累积）
-    const last = drawScreen[drawScreen.length - 1]
-    if (last == null || Math.hypot(e.clientX - last.x, e.clientY - last.y) >= ANNOT_THIN_PX) {
-      drawScreen.push({ x: e.clientX, y: e.clientY })
-      drawPoints.push(p)
-      draft.value = { ...draft.value, points: [...drawPoints] }
-    }
-  } else if (drawStart) {
-    draft.value = draftFromTool(tool, drawStart, p)
-  }
-}
-
-function endDrawing() {
-  const tool = activeTool.value
-  if (!tool) return
-  if (tool === 'select') {
-    if (draft.value && moveOriginal && selectedAnnotationIndex.value >= 0) {
-      const index = selectedAnnotationIndex.value
-      replaceAnnotations(annotations.value.map((ann, i) => i === index ? draft.value : ann))
-    }
-  } else if (tool === 'route') {
-    if (drawStart) {
-      const last = routePoints.value.at(-1)
-      if (!last || Math.hypot(last.x - drawStart.x, last.y - drawStart.y) > 1e-9) routePoints.value.push(drawStart)
-    }
-    cancelDrawing()
-    return
-  } else if (ANNOT_TANK_CLASSES.some(cls => cls.key === tool) && drawStart) {
-    commitDraft({ type: 'unit', tankClass: tool, color: annotColor.value, x: drawStart.x, y: drawStart.y, radius: 16 * semPerSvgX.value, label: '' })
-    selectedAnnotationIndex.value = annotations.value.length - 1
-    activeTool.value = 'select'
-  } else if (tool === 'pen') {
-    if (drawPoints.length >= 2) commitDraft({ type: 'pen', color: annotColor.value, width: annotWidth.value, points: drawPoints })
-  } else if (tool === 'eraser') {
-    if (drawPoints.length) {
-      const next = applyEraser(annotations.value, drawPoints, annotWidth.value)
-      if (next !== annotations.value) replaceAnnotations(next)
-    }
-  } else if (draft.value && !isDegenerateAnnotation(draft.value)) {
-    commitDraft(draft.value)
-  }
-  cancelDrawing()
-}
-
-/** 文字提交（幂等：Enter/blur/移除输入框都会触发，committed 防重复）。 */
-function commitSession(session) {
-  if (textSession.value === session) textSession.value = null
-  if (!session || session.cancelled || session.committed) return
-  session.committed = true
-  const text = session.text.trim()
-  if (!text) return
-  commitDraft({ type: 'text', color: annotColor.value, x: session.point.x, y: session.point.y, text })
-}
-
-function cancelSession(session) {
-  if (textSession.value === session) {
-    textSession.value = null
-    session.cancelled = true
-  }
-}
-
-/** 文字输入框屏幕定位：语义 → SVG unit → CSS px（渲染尺寸比例）→ viewport 变换（与 screenToSvg 互逆）。 */
-const textInputStyle = computed(() => {
-  const session = textSession.value
-  if (!session) return null
-  const model = reliefModelForPlayback()
-  if (model) {
-    const rect = mapRenderRect()
-    const point = projectedSemanticNorm(session.point.x, session.point.y)
-    return {
-      left: `${point.xNorm * rect.width * view.scale + view.tx}px`,
-      top: `${point.yNorm * rect.height * view.scale + view.ty}px`,
-    }
-  }
-  const s = svgToScreen(
-    mapView.value,
-    view,
-    mapView.value.toX(session.point.x),
-    mapView.value.toY(session.point.y),
-    mapWidth(),
-    mapHeight()
-  )
-  if (!s) return null
-  return { left: `${s.x}px`, top: `${s.y}px` }
-})
-
-/** 渲染用标注列表：语义坐标 → SVG 像素（含进行中的 draft），尺寸按 x/y 轴比例换算。 */
-const renderedAnnotations = computed(() => {
-  const toX = mapView.value.toX
-  const toY = mapView.value.toY
-  const invX = 1 / Math.max(1e-9, semPerSvgX.value)
-  const invY = 1 / Math.max(1e-9, semPerSvgY.value)
-  const list = [...annotations.value]
-  if (draft.value) {
-    if (moveOriginal && selectedAnnotationIndex.value >= 0) list[selectedAnnotationIndex.value] = draft.value
-    else list.push(draft.value)
-  }
-  return list.map((ann, index) => ({
-    ...projectAnnotationToSvg(ann, { toX, toY, invX, invY, widthFallback: annotWidth.value }),
-    selected: annotationOpen.value && index === selectedAnnotationIndex.value,
-  }))
-})
+)
 
 onMounted(() => {
-  window.addEventListener('pointermove', onPointerMove)
-  window.addEventListener('pointerup', onPointerUp)
-  window.addEventListener('pointercancel', onPointerUp)
+  // window 级 pointermove/up/cancel 兜底监听由 usePlaybackMapGestures 挂载（#820 Agent C）
   // fullscreenchange 由 usePlaybackFullscreen 独占监听（onChange 注入布局反应），这里不再重复注册
   // §3：大桌面三列布局 —— 以 matchMedia 为事实源，监听宽度跨 1200px 边界。
   if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
@@ -1232,101 +546,6 @@ onMounted(() => {
   window.addEventListener('resize', writeSquareAvailHeight)
 })
 
-function frame(ts) {
-  if (!playing.value) {
-    rafId = null
-    return
-  }
-  const delta = lastFrameTs == null ? 0 : (ts - lastFrameTs)
-  lastFrameTs = ts
-  const prev = playbackClock
-  const next = advancePlaybackTime(prev, duration.value, delta, speed.value)
-  playbackClock = next
-  nowMs.value = realNowMs()
-  // §1.3/§20.3/Blocker 2：先消费 (prev, next]（next 可 == duration——到达末尾前最后一段事件
-  // 必须在停止/回绕前消费，exactly-once，不因到达 duration 丢失）；cursor 严格左开不重复。
-  consumeEvents(prev, next)
-  if (next >= duration.value) {
-    if (props.loop) {
-      publishClock(0)
-      // 循环回绕：只重置播放时间与严格左开 cursor。上一轮末尾刚消费的 transient 继续按
-      // wall-clock 自然完成（「末尾消费一次」可见且不重复）；不重置 eventCursor 会把下一轮
-      // (0, t] 的事件误判为已消费而静默跳过。
-      eventCursor.value = 0
-      rafId = requestAnimationFrame(frame)
-      return
-    }
-    publishClock(next)
-    playing.value = false
-    rafId = null
-    // 播放到末尾自然停止 → 若有未决 transient，轻量 clock 接管
-    ensurePauseClock(realNowMs())
-    return
-  }
-  // 响应式发布节流：距上次发布 ≥ 1/30s 才写 currentTime；currentTime 意外落后内部钟
-  // （外部写入口未同步的兜底）时立即追平。
-  if (next - currentTime.value >= CLOCK_PUBLISH_SEC || next < currentTime.value) {
-    currentTime.value = next
-  }
-  rafId = requestAnimationFrame(frame)
-}
-
-/** 幂等启动：任意时刻最多一个 RAF 循环（重复调用/重复事件不会创建第二个循环）。 */
-function play() {
-  if (playing.value || duration.value <= 0) return
-  if (annotationOpen.value) closeAnnotation()
-  playing.value = true
-  lastFrameTs = null
-  playbackClock = currentTime.value
-  // 播放开始：transient 时钟由 playback frame() 驱动——作废可能残留的轻量 pause RAF
-  //（stub 环境只保留最近回调，若不清理，pause() 的 ensurePauseClock 会误判"已有 RAF"
-  //  而无法注册接管时钟；真实浏览器中残留回调至多无害地刷新一次 nowMs）
-  pauseRafId = null
-  rafId = requestAnimationFrame(frame)
-}
-
-/** 幂等暂停：取消未完成的 RAF，绝不残留回调推进时间。 */
-function pause() {
-  playing.value = false
-  if (rafId != null) {
-    cancelAnimationFrame(rafId)
-    rafId = null
-  }
-  // 发布值补齐到内部钟：节流发布下 currentTime 可能落后最后帧 ≤1/30s，暂停必须停在精确时刻
-  if (currentTime.value !== playbackClock) currentTime.value = playbackClock
-  // 播放中可能有未决 transient——暂停后立即让轻量 pause clock（UI wall clock）接管；
-  // 无 pending 时不启动 RAF（不永久轮询）。
-  ensurePauseClock(typeof performance !== 'undefined' ? performance.now() : Date.now())
-}
-
-watch(() => props.seekTo, (sec) => {
-  if (Number.isFinite(sec)) {
-    pause() // 点击 AI 时间 → seek + 自动暂停（含取消 RAF）
-    publishClock(clampPlaybackTime(sec, duration.value))
-    resetTransients(currentTime.value)
-    suppressHpTransition()
-  }
-}, { immediate: true })
-
-function seek(sec) {
-  publishClock(clampPlaybackTime(sec, duration.value))
-  nowMs.value = realNowMs()
-  resetTransients(currentTime.value)
-  suppressHpTransition()
-}
-
-/** seek 后单帧禁用 HP bar transition（§20.1：只恢复状态，不补 150–300ms 缩短动画）。
- * 用 setTimeout 而非 requestAnimationFrame 清旗标：不占用共享 RAF 槽位（播放/
- * 暂停时钟仍由 rafCb 驱动，测试中 seek 后 rafCb 必须仍指向时钟回调）。 */
-function suppressHpTransition() {
-  hpNoTransition.value = true
-  if (typeof setTimeout === 'function') {
-    setTimeout(() => { hpNoTransition.value = false }, 0)
-  } else {
-    hpNoTransition.value = false
-  }
-}
-
 /** 拖动进度条：按下即暂停，拖动中实时 seek，松开时若原先在播放则自动继续（与 3D 共用 usePlaybackTransport）。 */
 function dragStart() {
   transport.scrubStart()
@@ -1334,22 +553,6 @@ function dragStart() {
 
 function dragEnd() {
   transport.scrubEnd()
-}
-
-/** Event Panel 行点击：跳转并保持暂停。 */
-function seekToEvent(sec) {
-  pause()
-  seek(sec)
-}
-
-function step(delta) {
-  publishClock(clampPlaybackTime(currentTime.value + delta, duration.value))
-  resetTransients(currentTime.value)
-  suppressHpTransition()
-}
-
-function setSpeed(next) {
-  if (isPlaybackSpeed(next)) speed.value = next
 }
 
 // KeepAlive 停用（切到别的页面）时同样视为不可见
@@ -1365,9 +568,10 @@ watch(() => props.active, (value) => { if (!value) pause() })
  */
 const transport = usePlaybackTransport({
   isPlaying: () => playing.value,
-  play,
-  pause,
-  step,
+  // 播放时钟在下方解构（声明顺序晚于本调用）——惰性闭包避免 TDZ；事件期才求值。
+  play: () => play(),
+  pause: () => pause(),
+  step: (delta) => step(delta),
   isAtEnd: () => duration.value > 0 && currentTime.value >= duration.value,
   restart: () => seek(0),
   isActive: () => props.active && lifecycleVisible.value,
@@ -1398,12 +602,8 @@ function onKeydown(e) {
 onBeforeUnmount(() => {
   playbackLifecycleActive = false
   paletteRequestToken += 1
-  if (rafId != null) cancelAnimationFrame(rafId)
-  if (pauseRafId != null) cancelAnimationFrame(pauseRafId)
-  if (mapResizeObserver) {
-    mapResizeObserver.disconnect()
-    mapResizeObserver = null
-  }
+  disposeClock()
+  disposeCamera()
   if (stageResizeObserver) {
     stageResizeObserver.disconnect()
     stageResizeObserver = null
@@ -1427,85 +627,7 @@ onBeforeUnmount(() => {
   wideLayoutQuery = null
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('resize', writeSquareAvailHeight)
-  if (wheelHintTimer != null) clearTimeout(wheelHintTimer)
-  window.removeEventListener('pointermove', onPointerMove)
-  window.removeEventListener('pointerup', onPointerUp)
-  window.removeEventListener('pointercancel', onPointerUp)
-  pointers.clear()
-  panStart = null
-  pinchStart = null
-  gestureMoved = false
-  suppressClick = false
 })
-
-// ---- 数据 ----
-const routesByAccount = computed(() => {
-  const map = new Map()
-  for (const track of playback.value?.vehicles || []) map.set(track.accountId, track)
-  return map
-})
-
-const vehiclesByAccount = computed(() => {
-  const map = new Map()
-  for (const vehicle of (playback.value ? playback.value.vehicles : [])) {
-    map.set(vehicle.accountId, vehicle)
-  }
-  return map
-})
-
-/**
- * 位姿通道（与 3D 场景同源同插值）：`poseFacet` = playback facet 的位姿列投影，
- * `clockOffset` = canonical `clock.startRaw`（battle-relative → 回放时钟域）。
- * 两者缺一即 null → 全链路回退 canonical 原始观测（与既往行为逐值一致）。
- */
-const poseSource = computed(() => {
-  const facet = props.poseFacet
-  const offset = props.clockOffset
-  if (!facet || !Number.isFinite(offset)) return null
-  const byAccount = new Map()
-  for (const def of facet.vehicles || []) {
-    const list = byAccount.get(def.account_id)
-    if (list) list.push(def)
-    else byAccount.set(def.account_id, [def])
-  }
-  return {
-    grid: { tStart: Number(facet.tStart) || 0, samples: Number(facet.samples) || 0 },
-    offset,
-    /**
-     * 活跃实体选择（`t` = 采样时刻，战斗相对秒）。多实体账号（AoI 重入 / 复活换实体）按
-     * canonical 身份证据判定——不能"后写覆盖"：那会在重入之前就采样到后一个实体，
-     * 而轨迹端点外钳位会把该实体的首帧位姿泄漏到过去。证据缺失/歧义 → null（回退 canonical）。
-     */
-    defFor: (accountId, t) => selectActiveDef(
-      byAccount.get(accountId) || [], facet.entityStartsByAccount?.get(accountId), t,
-    ),
-  }
-})
-/** 位姿采样复用对象（每帧多车 + 尾迹回溯采样，零分配热路径） */
-const _poseScratch = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, turretAbs: 0, turretRel: 0, gunPitch: 0 }
-/**
- * 该车在战斗相对时刻 t 的 game 系位姿（`y` = 游戏 z；2D 地图纵向翻转由 mapView 负责）。
- * 无 facet / 该账号不在位姿切面 → null（调用方回退 canonical）。
- */
-function poseAtTime(track, t) {
-  const source = poseSource.value
-  if (!source) return null
-  // **失察即冻结**（2026-10-16 用户裁定）：车离开我方视野后图标停在最后观测点，不再跟随客户端
-  // 滤波器的预测延续（3D 里该车模型直接不显示，两侧语义一致：2D 变灰停住 / 3D 消失）。
-  const freezeAt = observedFreezeTimeAt(track.positionSegments, t)
-  if (freezeAt == null) return null
-  // 活跃实体按**采样时刻**（冻结后的 freezeAt）选择：与"这个位姿属于谁"的时间域一致。
-  const rawAt = freezeAt + source.offset
-  const def = source.defFor(track.accountId, freezeAt)
-  // 采样时刻还必须落在该实体的 **coverage 证据**内：覆盖外的端点钳位会把该实体未来的首帧位姿
-  // 泄漏到过去（新实体的身份证据可能早于其首个位姿样本）→ 不覆盖即回落 canonical（fail-closed）。
-  if (!def || !poseCoveredAt(def, rawAt)) return null
-  const pose = sampleVehiclePoseGame(def, source.grid, rawAt, _poseScratch, def.visibility ?? def.coverage)
-  return { x: pose.x, y: pose.z, yawRad: pose.yaw, turretRelRad: pose.turretRel }
-}
-
-const friendlyColors = computed(() => palette.value.friendlyColors)
-const enemyColors = computed(() => palette.value.enemyColors)
 
 // BattleMap 的偏好 props 提升为 computed：内联对象字面量在父组件每次重渲染时都生成
 // 新身份，会击穿 Vue 的 props 等值短路，迫使整个地图子树跟着重渲染。
@@ -1514,165 +636,6 @@ const markerPrefsForMap = computed(() => ({
   classIcons: !uiHidden.value && markerPrefs.classIcons,
   showStatus: !uiHidden.value && markerPrefs.showStatus,
 }))
-
-// 车辆在队伍内的着色序号缓存：从**完整花名册**（hpVehicles，时间无关且对象稳定）派生
-// 队伍内序号——vehicleStates 是时间相关的渲染子集（车辆首观测前缺席），从中缓存会把
-// 部分序号永久固化（Codex review 2026-10-31：seek 历史不同 → 颜色不同，且多车共享
-// 同色）。颜色列表仍逐调用读取（调色板可变）。
-const vehicleColorIndexCache = new WeakMap()
-
-function vehicleColor(vehicle) {
-  let index = vehicleColorIndexCache.get(vehicle)
-  if (index === undefined) {
-    const teamVehicles = hpVehicles.value.filter(v => v.team === vehicle.team)
-    if (teamVehicles.length > 0) {
-      index = Math.max(0, teamVehicles.indexOf(vehicle))
-      vehicleColorIndexCache.set(vehicle, index)
-    } else {
-      index = 0 // 花名册尚未构建：退回首色且不缓存，避免毒化序号
-    }
-  }
-  const list = vehicle.friendly === true ? friendlyColors.value : enemyColors.value
-  return list[index % list.length]
-}
-
-/**
- * 车辆显示状态：把「当前可信插值位置」与「最后可信位置」分开——
- * gap 内禁止穿线插值，但车辆停在淡化最后已知位置，不整辆消失；
- * 阵亡后冻结在阵亡时刻的最后可信位置（优先于位置中断）。
- * covered 只表示服务器位置流覆盖（type-10），不是点亮。
- * direction = {hullYawDeg, turretRelativeYawDeg} | null：无可靠方向样本时不旋转（不伪造朝向）。
- */
-/**
- * PR2：该车辆的 dedicated model 决策（preload 结果）——
- * 非 Tier X / preload 失败 / 模块加载失败 → null（generic marker 单车 fallback）。
- */
-function vehicleModel(vehicle) {
-  const p = preload.value
-  if (p.phase !== 'ready') return null
-  const modelKey = p.byTank.get(String(vehicle.tankId))
-  if (!modelKey || p.failed.has(modelKey)) return null
-  return p.resolved.get(modelKey) || null
-}
-
-function reliefModelForPlayback() {
-  const model = activeTerrainRelief.value
-  return model && model.mapCode === String(pbOverview.value.mapCode || '') ? model : null
-}
-
-function projectedSemanticNorm(x, y) {
-  const model = reliefModelForPlayback()
-  if (model) {
-    const point = projectTerrainPoint(model, Number(x), Number(y))
-    if (point) return { xNorm: point.xNorm, yNorm: point.yNorm }
-  }
-  return {
-    xNorm: mapView.value.toX(x) / mapView.value.W,
-    yNorm: mapView.value.toY(y) / mapView.value.H,
-  }
-}
-
-/** 标记水平位置（%）：地图用户坐标 → 容器百分比。 */
-function markerLeft(x) {
-  return `${((mapView.value.toX(x)) / mapView.value.W) * 100}%`
-}
-
-/** 标记垂直位置（%）。 */
-function markerTop(y) {
-  return `${((mapView.value.toY(y)) / mapView.value.H) * 100}%`
-}
-
-const baseVehicleStates = computed(() => {
-  // preload 未完成（asset decision 未定）时不渲染车辆——禁止 generic 闪现后替换
-  if (preload.value.phase !== 'ready') return []
-  // V2-only：V2 track 为唯一事实源；无 V2 车辆 → 空（不再有 legacy overview.playback 兜底）。
-  const tracks = props.playbackV2?.vehicles || []
-  if (tracks.length === 0) return []
-  return tracks
-    .map(track => {
-      const vehicle = track
-      const model = vehicleModel(track)
-      const mobile = isMobileDevice.value
-      const markerSize = computeVehicleMarkerSize(vehicle, {
-        model,
-        mapView: mapView.value,
-        mapWidthPx: mapWidth(),
-        mapHeightPx: mapHeight(),
-        mobile,
-      })
-      const state = projectVehicleState({
-        vehicle,
-        track,
-        time: currentTime.value,
-        // 位姿通道（与 3D 同源同插值）；缺失时 projectVehicleState 回退 canonical 观测
-        pose: poseAtTime(track, currentTime.value),
-        recorderAccountId: pbOverview.value.recorderAccountId,
-        model,
-        markerSize,
-        // Unknown perspective keeps neutral CSS state; enemy assets are only a
-        // visual fallback because the asset pack has no neutral hull/turret.
-        hullImage: track.friendly === true ? friendlyHull : enemyHull,
-        turretImage: track.friendly === true ? friendlyTurret : enemyTurret,
-        markerLeft: markerLeft,
-        markerTop: markerTop,
-        markerTransform: markerTransform.value,
-        overlayInverseScale: overlayInverseScale.value,
-        overlayInverse: overlayInverse.value,
-        translate: t,
-      })
-      if (!state) return null
-      // 2D 是严格俯视投影（2026-10-16）：不再呈现"多出的维度"（俯仰/侧倾），
-      // 故不产出 terrainAttitude（原地形高度场合成倾斜已删）。
-      return { ...state, gunMarks: gunMarks.value.get(track.accountId) ?? null, reloadShells: vehicleReloadAt(track.accountId, currentTime.value), consumables: vehicleConsumablesAt(track, currentTime.value) }
-    })
-    .filter(Boolean)
-})
-
-// 标记**不做**防重叠位移（2026-10-16 用户裁定）：车体严格落在真实位置，密集处允许图标互相压盖；
-// 早前的"整盒推开 + 虚线指回真实位置"在 2D 里读起来就是"坦克模型与真实位置有偏移"，且 3D 从不
-// 移动车体模型 ⇒ 两侧不一致。名牌 / HP 的防重叠仍由 labelLayout 的车道机制承担（与 3D 同构）。
-const vehicleStates = computed(() => baseVehicleStates.value.map((state) => {
-  const scale = view.scale || 1
-  return {
-    ...state,
-    markerStyle: {
-      ...state.markerStyle,
-      width: `${state.markerSize.renderBox.width}px`,
-      height: `${state.markerSize.renderBox.height}px`,
-      // The camera content is layout-scaled rather than transform-scaled. Keep the marker's
-      // existing scale so vehicle artwork and screen-space inverse overlays retain their contract.
-      transform: `translate(-50%, -50%) scale(${scale})`,
-      left: markerLeft(state.pos.x),
-      top: markerTop(state.pos.y),
-    },
-  }
-}))
-
-/**
- * authoritative playback events：全部回放事件。
- * deterministic state（当前累计伤害/击杀）与 combat feedback（floating damage / hit flash / ghost /
- * destruction burst / kill feed / damage log）必须消费本源——「战斗事实有没有发生」不取决于事件列表
- * UI 是否折叠。Event Panel 只消费 presentation-only 的 userVisibleEvents；炮线仍消费
- * 同一份完整真实事件。
- */
-const authoritativeEvents = computed(() => (playback.value ? playback.value.events : []))
-const userVisibleEvents = computed(() => authoritativeEvents.value.filter((event) => (
-  event.type === 'DAMAGE' || event.type === 'KILL' || event.type === 'DESTROYED'
-)))
-
-// 炮线：仅来自真实事件流中的已知射击（DAMAGE/KILL），两端可信位置，随播放时间与倍速确定性呈现
-const visibleTracers = computed(() => tracerLines(
-  authoritativeEvents.value,
-  routesByAccount.value,
-  currentTime.value,
-  speed.value,
-  poseSource.value ? (route, t) => poseAtTime(route, t) : null,
-))
-
-function tracerColor(accountId) {
-  const vehicle = vehiclesByAccount.value.get(accountId)
-  return vehicle ? vehicleColor(vehicle) : palette.value.routeOutline
-}
 
 function playerName(accountId) {
   const vehicle = vehiclesByAccount.value.get(accountId)
@@ -1697,86 +660,134 @@ function eventLabel(event) {
 }
 
 // ---- PR4 §36/§37：hull hitbox 点击选中（重叠时取指针最近车辆；tie 保持 selected / render order）----
-function onMarkerSelect(vehicle, event) {
-  // §36：label 块（含 PlayerName tooltip 悬停区）不是 hitbox——点标签不选中车辆；
-  // .pb-label-player 为触发原生 title 需要 pointer-events:auto，点击事件会冒泡到这里，须拦截。
-  const t = event && event.target
-  if (t && typeof t.closest === 'function' && t.closest('.pb-labels')) return
-  selectAt(vehicle.accountId, event ? event.clientX : undefined, event ? event.clientY : undefined)
-}
+const {
+  currentTime,
+  playing,
+  speed,
+  hpNoTransition,
+  play,
+  pause,
+  seek,
+  step,
+  setSpeed,
+  seekToEvent,
+  disposeClock,
+} = usePlaybackClock({
+  duration: () => duration.value,
+  loop: () => props.loop,
+  nowMs,
+  realNowMs,
+  consumeEvents: (fromSec, toSec) => consumeEvents(fromSec, toSec),
+  resetTransients: (sec) => resetTransients(sec),
+  hasPendingTransients: (now) => hasPendingTransients(now),
+  pruneTransients: (now) => pruneTransients(now),
+  rewindTransientCursor: () => { eventCursor.value = 0 },
+  feedVisible: () => !uiHidden.value && !!uiPrefs.showKillfeed,
+  onPlayStart: () => { if (annotationOpen.value) closeAnnotation() },
+  seekTo: () => props.seekTo,
+})
 
-/** 标记中心 → 相对地图容器的屏幕 px（viewport 变换后）。 */
-function canonicalMarkerScreen(st) {
-  const rect = mapRenderRect()
-  if (!rect || rect.width <= 0 || rect.height <= 0) return null
-  const point = projectedSemanticNorm(st.pos.x, st.pos.y)
-  return {
-    x: point.xNorm * rect.width * view.scale + view.tx,
-    y: point.yNorm * rect.height * view.scale + view.ty,
-  }
-}
+// ---- 车辆呈现投影：preload/vehicleStates/着色/轨迹/炮线/marker 屏幕定位的唯一 owner
+// = usePlaybackVehicleProjection（#820 Agent C Step 3，时间来自 playback clock）。
+const {
+  vehicleStates,
+  visibleTracers,
+  tracerColor,
+  visibleTrails,
+  canonicalMarkerScreen,
+  markerScreen,
+  hpFor,
+  hpDisplayNumText,
+} = usePlaybackVehicleProjection(
+  mapView,
+  { view, mapWidth, mapHeight, mapRenderRect, markerTransform, overlayInverse, overlayInverseScale },
+  { poseAtTime, poseSource, vehicleReloadAt, vehicleConsumablesAt, routesByAccount, vehiclesByAccount, projectedSemanticNorm },
+  {
+    playbackV2: () => props.playbackV2,
+    recorderAccountId: () => pbOverview.value.recorderAccountId,
+    currentTime,
+    speed,
+    authoritativeEvents: () => authoritativeEvents.value,
+    hpVehicles: () => hpVehicles.value,
+    gunMarks: () => gunMarks.value,
+    isMobileDevice,
+    trailPrefs,
+    palette,
+    t,
+  },
+)
 
-function markerScreen(st) {
-  // 标记严格落在真实位置（无防重叠位移），屏幕位置 = 语义位置。
-  return canonicalMarkerScreen(st)
-}
+// The workspace's guide requests real actions; drawing and clock state stay here.
+defineExpose({
+  pause,
+  displayOpened: () => displayOpen.value,
+  // 教程要高亮的「一键防遮」在 Display 面里（#727 之后地图上不再放常驻控件），
+  // 所以它必须能被 onboarding 的 display surface 打开 / 收回。
+  openDisplay: () => {
+    if (displayOpen.value) return false
+    // 浮层形态要锚在 gear 上；gear 属于 PlaybackTransport，这里按 DOM 契约取它。
+    toggleDisplay(pbRoot.value?.querySelector('[data-test="pb-secondary-entry"]') || null)
+    return true
+  },
+  closeDisplay: () => { displayOpen.value = false },
+  annotationsOpen: () => annotationOpen.value,
+  openAnnotations: () => {
+    if (annotationOpen.value) return false
+    toggleAnnotation()
+    return true
+  },
+  closeAnnotations: closeAnnotation,
+})
 
-function selectAt(accountId, clientX, clientY) {
-  const states = vehicleStates.value
-  const hasPoint = Number.isFinite(clientX) && mapEl.value && mapWidth() > 0
-  const rect = mapEl.value ? mapEl.value.getBoundingClientRect() : { left: 0, top: 0 }
-  const px = hasPoint ? clientX - rect.left : NaN
-  const py = hasPoint ? clientY - rect.top : NaN
-  // Hit-test uses the final vehicle-aware hit target at the marker's true position
-  // (markers are never displaced). Selection still returns the canonical vehicle.
-  const hitTest = (s) => {
-    const cx = (px - view.tx) / view.scale
-    const cy = (py - view.ty) / view.scale
-    const rect = mapRenderRect()
-    const projected = projectedSemanticNorm(s.pos.x, s.pos.y)
-    const x = projected.xNorm * rect.width
-    const y = projected.yNorm * rect.height
-    const hitTarget = s.hitTargetSize || s.markerSize?.hitTarget
-    const ringSize = !uiHidden.value && hpPrefs.showHp && hpPrefs.mode === 'ring' && !s.destroyed
-      ? healthRingDiameter(s, markerPrefs.classIcons) / view.scale : 0
-    const hw = Math.max(hitTarget?.width || 20, ringSize) / 2
-    const hh = Math.max(hitTarget?.height || 20, ringSize) / 2
-    return Math.abs(cx - x) <= hw && Math.abs(cy - y) <= hh
-  }
-  let candidates
-  if (hasPoint) {
-    candidates = states.filter(hitTest)
-    // 真实点击必然落在某 hitbox 内（label 点击已在 onMarkerSelect 拦截）；
-    // 此处兜底只为合成事件/坐标与布局瞬时不一致（既有 toggle 行为）
-    if (candidates.length === 0) {
-      const target = states.find((s) => s.vehicle.accountId === accountId)
-      candidates = target ? [target] : []
-    }
-  } else {
-    const target = states.find((s) => s.vehicle.accountId === accountId)
-    candidates = target ? [target] : []
-  }
-  if (candidates.length === 0) return
-  let best = candidates[0]
-  if (candidates.length > 1) {
-    const dist = (s) => {
-      const p = markerScreen(s)
-      return p ? Math.hypot(p.x - px, p.y - py) : Infinity
-    }
-    candidates.sort((a, b) => (dist(a) - dist(b)) || (states.indexOf(a) - states.indexOf(b)))
-    best = candidates[0]
-    // tie（与前二近者距离几乎一致）且已有 selected 在候选内 → 保持当前 selected，不切换
-    if (selectedAccountId.value != null && candidates.length > 1
-        && Math.abs(dist(best) - dist(candidates[1])) < 1) {
-      const sel = candidates.find((s) => s.vehicle.accountId === selectedAccountId.value)
-      if (sel) { openDetails(selectedAccountId.value, sideAwayFromClientX(clientX)); return }
-    }
-  }
-  // PR5 §8.1：点击 marker 恒选中/直接切换（不 toggle-off）；点击空白不关闭；必须 × 显式关闭
-  // §details-float：浮窗落在**不遮住**这台车的一侧（按它在战场 workspace 里的屏幕位置）。
-  openDetails(best.vehicle.accountId, sideAwayFromClientX(clientX))
-  mobileOverlay.value?.reveal?.()
-}
+/**
+ * authoritative playback events：全部回放事件。
+ * deterministic state（当前累计伤害/击杀）与 combat feedback（floating damage / hit flash / ghost /
+ * destruction burst / kill feed / damage log）必须消费本源——「战斗事实有没有发生」不取决于事件列表
+ * UI 是否折叠。Event Panel 只消费 presentation-only 的 userVisibleEvents；炮线仍消费
+ * 同一份完整真实事件。
+ */
+const authoritativeEvents = computed(() => (playback.value ? playback.value.events : []))
+const userVisibleEvents = computed(() => authoritativeEvents.value.filter((event) => (
+  event.type === 'DAMAGE' || event.type === 'KILL' || event.type === 'DESTROYED'
+)))
+
+// ---- 车辆选中 / 详情编排：selected / details 状态的唯一 owner = usePlaybackVehicleSelection
+// （#820 Agent C Step 2）；hit-test 与浮窗落位经由同一相机变换与 workspace 坐标系。
+const {
+  selectedAccountId,
+  detailsOpen,
+  detailsSide,
+  selectedState,
+  detailsState,
+  selectedTrack,
+  selectedHealth,
+  selectedPortraitUrl,
+  selLastKnownSec,
+  selCurStats,
+  selDamageLog,
+  openDetails,
+  closeSidebar,
+  onMarkerSelect,
+  selectAt,
+  selectFromRoster,
+} = usePlaybackVehicleSelection(
+  { view, mapEl, mapRenderRect, mapWidth },
+  {
+    vehicleStates,
+    playback,
+    currentTime,
+    authoritativeEvents,
+    hpVehicles,
+    uiHidden,
+    hpPrefs,
+    markerPrefs,
+    battlefieldWorkspaceEl,
+    markerScreen,
+    projectedSemanticNorm,
+    mobileOverlay,
+    t,
+  },
+)
 
 // §队伍阵容：从 result 全量名单（playbackV2.vehicles）取，不依赖回放事件流/vehicleStates。
 // 按权威 vehicle.team 保留物理身份；rosterTeams 按 Recorder 视角决定左右。
@@ -1821,25 +832,6 @@ const detailsFloating = computed(() => !isPhonePortrait.value)
  *   详情 × → 只有 detailsOpen = false；选中、跟随、时间轴、倍速、名册与地图视图都不动
  *   再点同一台 / 另一台车 → 同一个详情窗重新打开（或换内容），永远只有一个窗
  */
-const detailsOpen = ref(false)
-/** 浮窗初始落位偏好：由**这次选择的来源**决定（点左车道 → 落右侧，点右车道 → 落左侧，
- *  点地图上的车 → 与它在 workspace 里相对的一侧）。用户拖过之后不再生效。 */
-const detailsSide = ref('right')
-
-function openDetails(accountId, side = null) {
-  selectedAccountId.value = accountId
-  if (side) detailsSide.value = side
-  detailsOpen.value = true
-  // §右侧 only 车辆详情：不再开左侧 vehicle 二级，详情由 detailsOpen + selectedState 驱动。
-}
-/** 屏幕横坐标在战场 workspace 的哪一半 → 浮窗落到另一半。 */
-function sideAwayFromClientX(clientX) {
-  const host = battlefieldWorkspaceEl.value
-  if (!host || !Number.isFinite(clientX)) return null
-  const rect = host.getBoundingClientRect()
-  return clientX > rect.left + rect.width / 2 ? 'left' : 'right'
-}
-
 /**
  * 名册每行显示的当前 HP（与地图标记同一个权威投影：healthDisplayAt）。
  *
@@ -1881,82 +873,7 @@ const rosterReload = computed(() => {
   }
   return out
 })
-function selectFromRoster(accountId, event) {
-  // §details-float：左边的己方名册 → 浮窗落右侧，右边的敌方名册 → 浮窗落左侧，
-  // 都不会盖住刚点的那一行（竖屏纵向流里详情是流内内容块，落位偏好不起作用）。
-  const row = event?.target?.closest?.('[data-test="pb-roster-row"]')
-  let side = null
-  if (row?.closest?.('.pb-team-lane-left')) side = 'right'
-  else if (row?.closest?.('.pb-team-lane-right')) side = 'left'
-  else if (row) side = sideAwayFromClientX(row.getBoundingClientRect().left)
-  openDetails(accountId, side)
-}
 
-const selectedState = computed(() => {
-  if (selectedAccountId.value == null) return null
-  return vehicleStates.value.find(st => st.vehicle.accountId === selectedAccountId.value) || null
-})
-/** 详情真正呈现的对象：选中了**且**详情开着。关掉详情不清选中。 */
-const detailsState = computed(() => (detailsOpen.value ? selectedState.value : null))
-
-// Selected vehicle details consume the canonical track directly by accountId.
-const selectedTrack = computed(() => {
-  if (!props.playbackV2 || !selectedState.value) return null
-  const accountId = selectedState.value.vehicle.accountId
-  const tracks = props.playbackV2.vehicles || []
-  return tracks.find(t => t.accountId === accountId) || null
-})
-
-// The summary and full inspector consume the same canonical state at replay time.
-const selectedHealth = computed(() => {
-  const health = healthDisplayAt(selectedTrack.value, currentTime.value)
-  return health ? { currentHp: health.currentHp, maxHp: health.displayCapacityHp, state: health.state } : null
-})
-
-// Details Panel 车型图：仅在选中车辆后按 tankId 懒加载；图片随站点发布，production 不访问 BlitzKit。
-// token 防止快速切换车辆时旧请求覆盖新选择；非 Tier X / 缺图 / chunk 失败均静默降级为无图。
-const selectedPortraitUrl = ref(null)
-let portraitLoadToken = 0
-watch(
-  () => selectedState.value?.vehicle?.tankId,
-  async (tankId) => {
-    const token = ++portraitLoadToken
-    selectedPortraitUrl.value = null
-    if (tankId == null) return
-    try {
-      const { loadVehiclePortrait } = await import('../vehicle-portraits/runtime.js')
-      const url = await loadVehiclePortrait(tankId)
-      if (token === portraitLoadToken) selectedPortraitUrl.value = url
-    } catch {
-      if (token === portraitLoadToken) selectedPortraitUrl.value = null
-    }
-  },
-)
-
-/** 详情 ×：只关详情。选中（名册高亮 / 地图标记选中态）、跟随、时间轴、倍速、名册与视图都保留。 */
-function closeSidebar() {
-  detailsOpen.value = false
-}
-
-const selLastKnownSec = computed(() => {
-  const st = selectedState.value
-  return st && st.lastKnown && Number.isFinite(st.pos.timeSec) ? st.pos.timeSec : null
-})
-// §16/§17：当前统计 = 权威 HP loss 重建（dealt 仅计可 attribution 的掉血——
-// incomplete observation 不冒充完整统计，文案用「已记录伤害」；received 含全部掉血）
-const selCurStats = computed(() => {
-  const st = selectedState.value
-  if (!st) return { dealt: 0, received: 0, kills: 0 }
-  return cumulativeStatsAtV2(authoritativeEvents.value, st.vehicle, currentTime.value, hpVehicles.value)
-})
-/** 最近伤害记录：incoming 使用 canonical HP decrease，outgoing 使用 observedHpLoss；attacker 不可证明时
- *  显示「来源未知」；raw Type-8 协议值不参与。Blocker 2：只消费 toSec <= currentTime 的记录
- *  （forward/backward seek 与任意 timestamp 重建天然正确，未来事件绝不泄漏）；取最近 8 条。 */
-const selDamageLog = computed(() => {
-  const st = selectedState.value
-  if (!st) return []
-  return detailsDamageLogAtV2(playback.value, st.vehicle, currentTime.value, t('recon.map.playback.source_unknown'))
-})
 function floatTeamClass(friendly) {
   if (friendly === true) return 'pb-float-friendly'
   if (friendly === false) return 'pb-float-enemy'
@@ -2024,47 +941,6 @@ const labelLayout = computed(() => {
     viewportH: W * (mapView.value.H / mapView.value.W),
     coreSize,
   })
-})
-
-/** 是否存在未决的 transient（暂停时需轻量时钟自然完成，§20.2）。 */
-function hasPendingPauseClock(now) {
-  return hasPendingTransients(now)
-}
-
-/** 轻量时钟：仅当存在未决 transient 且未在播放时维持 RAF；播放时由 frame() 驱动，
- *  无 pending 即停（不做永久轮询）。注意：只更新 nowMs，不在 watcher 内回写 nowMs
- *  （nowMs 是 watch source，回写会自触发无限循环）。
- * @param now 当前新鲜 wall clock（用于 pending 判定）
- */
-function ensurePauseClock(now) {
-  if (pauseRafId != null || playing.value) return
-  if (hasPendingPauseClock(now)) {
-    pauseRafId = requestAnimationFrame(() => {
-      pauseRafId = null
-      nowMs.value = typeof performance !== 'undefined' ? performance.now() : Date.now()
-      // nowMs 变化 → transient watch → pruneTransients + ensurePauseClock(新鲜 now) 决定续/停
-    })
-  }
-}
-
-// transient 过期清理（nowMs/currentTime 变化驱动；reactive Map 不无限增长）。
-// prune 后按新鲜 now 重估 pending：暂停期间仍有未决动画（如 kill feed 4s 展示）时
-// 续约轻量 RAF 让其自然完成（§20.2）；播放中调用会被 ensurePauseClock 的 playing
-// 守卫挡下，不会产生第二个循环。
-watch([nowMs, currentTime], () => {
-  pruneTransients(nowMs.value)
-  ensurePauseClock(nowMs.value)
-})
-
-// kill feed 恢复显示（showKillfeed / 沉浸态切换）：隐藏期间排队条目不驱动暂停时钟，
-// 恢复后重启轻量时钟让待展示条目自然完成（§20.2）。必须先把 nowMs 同步到新鲜墙钟
-// 再调度：visibleFeed 首次渲染提升排队条目时以 nowMs 记 shownAt——暂停超过 4s 后
-// nowMs 仍是旧值，不同步会把刚展示的条目下一帧判成早已过期（只闪现一帧）。
-watch(() => !uiHidden.value && !!uiPrefs.showKillfeed, (visible) => {
-  if (!visible) return
-  const now = realNowMs()
-  nowMs.value = now
-  ensurePauseClock(now)
 })
 
 /** VehicleMarker label prop（每 marker 一个：显示开关 + 碰撞位移 +

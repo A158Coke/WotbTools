@@ -4,7 +4,7 @@ import { positionAtV2, positionCoveredAtV2 } from './battlePlaybackV2.js'
 import type { BattleEvent, PositionSegment, VehiclePlaybackTrack } from '../types/playback-v2.js'
 
 type TimedPoint = { x: number; y: number; timeSec: number }
-type RouteLike = { positionSegments?: PositionSegment[] | null; points?: TimedPoint[] | null }
+export type RouteLike = { positionSegments?: PositionSegment[] | null; points?: TimedPoint[] | null }
 type PoseAt = (route: RouteLike, t: number) => { x: number; y: number } | null | undefined
 type TrailVehicle = RouteLike & Pick<VehiclePlaybackTrack, 'accountId' | 'friendly'>
 type PositionTrail = Pick<VehiclePlaybackTrack, 'accountId' | 'friendly'> & {

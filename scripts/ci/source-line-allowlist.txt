@@ -9,7 +9,6 @@
 #
 # #820 split targets（tankViewer.js 已于 #820 Agent A 完整拆分并移出本名单）
 frontend/src/scene/playbackScene.js
-frontend/src/components/BattlePlayback.vue
 #
 # Legacy over-budget files outside #820's three-file scope. Each needs its own
 # split issue before it can leave this list.

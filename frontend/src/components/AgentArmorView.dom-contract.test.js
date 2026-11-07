@@ -65,7 +65,7 @@ describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
     expect(cornerTrRule).toContain('background: var(--panel)')
     expect(cornerTrRule).toContain('border: 1px solid var(--border)')
     // 面板固定宽度：进入厚度视图出现过滤行时不撑宽（手机竖屏整条底栏不固定）
-    expect(cornerTrRule).toContain('inline-size: 17rem')
+    expect(cornerTrRule).toContain('inline-size: var(--armor-shot-card-width)')
     expect(template).toMatch(/\.armor-view #corner-tr \{[^}]*inline-size: auto;/)
     const shotHud = read('./ArmorShotHud.vue')
     const shotHudRule = shotHud.slice(shotHud.indexOf('.shot-hud {'), shotHud.indexOf('.hud-row'))
