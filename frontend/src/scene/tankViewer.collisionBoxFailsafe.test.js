@@ -6,10 +6,14 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const src = readFileSync(fileURLToPath(new URL('./tankViewer.js', import.meta.url)), 'utf8')
+    + readFileSync(fileURLToPath(new URL('./viewer/judgment.js', import.meta.url)), 'utf8')
+    + readFileSync(fileURLToPath(new URL('./viewer/trajectoryCard.js', import.meta.url)), 'utf8')
+    + readFileSync(fileURLToPath(new URL('./viewer/shotReplay.js', import.meta.url)), 'utf8')
+    + readFileSync(fileURLToPath(new URL('./viewer/shotReplayMiss.js', import.meta.url)), 'utf8')
 
 describe('shot segment collision box source', () => {
   it('uses the client collision_boxes and a fail-closed missing-box branch', () => {
-    expect(src).toContain('tankData.collision_boxes')
+    expect(src).toContain('getTankData().collision_boxes')
     expect(src).toContain('缺少客户端部件盒')
     expect(src).toContain('射击复现已阻断')
   })

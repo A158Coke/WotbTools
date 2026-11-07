@@ -7,8 +7,7 @@
 # removal is the proof of a completed split. A rename may swap one path for
 # another without changing the entry count.
 #
-# #820 split targets
-frontend/src/scene/tankViewer.js
+# #820 split targets（tankViewer.js 已于 #820 Agent A 完整拆分并移出本名单）
 frontend/src/scene/playbackScene.js
 frontend/src/components/BattlePlayback.vue
 #
