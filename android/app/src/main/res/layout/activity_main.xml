@@ -9,6 +9,36 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- 冷启动 / 引擎恢复期间的首帧占位；由 StartupSurfaceState 在首个内容绘制后移除。 -->
+    <LinearLayout
+        android:id="@+id/startupSurface"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/bg"
+        android:clickable="true"
+        android:contentDescription="@string/startup_loading"
+        android:focusable="true"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <ProgressBar
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:indeterminate="true"
+            android:indeterminateTint="@color/startup_accent" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:letterSpacing="0.1"
+            android:text="@string/app_name"
+            android:textColor="#8B949E"
+            android:textSize="19sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
     <ScrollView
         android:id="@+id/versionGateView"
         android:layout_width="match_parent"

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">WotBTools</string>
+    <string name="startup_loading">正在启动 WotBTools</string>
     <string name="update_notification_channel">应用更新</string>
     <string name="update_notification_title">更新已准备好安装</string>
     <string name="update_notification_text">点击查看 WotBTools %1$s 更新</string>

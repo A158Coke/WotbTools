@@ -232,7 +232,7 @@ provide(FEEDBACK_KEY, siteFeedback.request)
   align-items: center;
   flex-wrap: wrap;
   gap: var(--space-2);
-  margin: var(--space-3) var(--gutter);
+  margin: calc(var(--header-block) + env(safe-area-inset-top) + var(--space-3)) var(--gutter) var(--space-3);
   padding: var(--space-3);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-md);
@@ -240,6 +240,11 @@ provide(FEEDBACK_KEY, siteFeedback.request)
   color: var(--color-text-primary);
 }
 .android-update-notice button { min-height: var(--hit-min-comfortable); }
+
+/* 提示条已在文档流中让出固定顶栏与安全区：内容区不再重复让出同一高度。 */
+:global(#app:has(> .android-update-notice) > .app-main) {
+  padding-top: 0;
+}
 
 .app-footer a {
   color: var(--color-text-tertiary);

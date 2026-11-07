@@ -4,13 +4,13 @@ import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 
 // Real application/shell/sheet/CSS, with only the Android transport boundary replaced.
 // This verifies browser layout and interaction; it does not emulate DownloadManager or Gecko.
-function nativeBoundary() {
+function nativeBoundary({ promptSuppressed = false } = {}) {
   const listeners = new Set()
   const status = {
     revision: 1, state: 'optional', checkState: 'succeeded', checkFailureReason: null,
     currentVersionName: '3.27.2', currentVersionCode: 3027002,
     latestVersionName: '3.29.0', latestVersionCode: 3029000, minSupportedVersionCode: 3017007,
-    publishedAt: '2026-11-01T12:00:00Z', releaseNotes: 'Fixture release notes', optionalPromptSuppressed: false,
+    publishedAt: '2026-11-01T12:00:00Z', releaseNotes: 'Fixture release notes', optionalPromptSuppressed: promptSuppressed,
     download: { taskToken: null, versionName: null, versionCode: null, state: 'idle',
       downloadedBytes: null, totalBytes: null, progressPercent: null, failureReason: null },
   }
@@ -74,24 +74,109 @@ function geometry() {
     panel: rect ? { left: rect.left, right: rect.right } : null, controls }
 }
 
+/** 可选更新提示与固定外壳的真实几何 / hit-test 探针（在页面内执行）。 */
+function noticeGeometry() {
+  const measure = (element) => {
+    if (!element) return null
+    const rect = element.getBoundingClientRect()
+    return { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right, width: rect.width, height: rect.height }
+  }
+  const topbar = document.querySelector('[data-testid="app-top-bar"]')
+  const notice = document.querySelector('[data-testid="android-update-notice"]')
+  const main = document.querySelector('.app-main')
+  const buttons = notice ? [...notice.querySelectorAll('button')].map((button) => {
+    const rect = button.getBoundingClientRect()
+    const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+    return { text: button.textContent, rect: measure(button), hit: hit === button || button.contains(hit) }
+  }) : []
+  return {
+    width: innerWidth,
+    height: innerHeight,
+    topbar: measure(topbar),
+    notice: measure(notice),
+    main: measure(main),
+    buttons,
+    headerH: getComputedStyle(document.documentElement).getPropertyValue('--header-h').trim(),
+    mainPaddingTop: main ? getComputedStyle(main).paddingTop : null,
+    overflow: document.documentElement.scrollWidth > innerWidth,
+    shellChrome: document.documentElement.dataset.shellChrome ?? null,
+  }
+}
+
+function assertNoticeLayout(layout, { safeTop = 0, hasTopBar }) {
+  if (!layout.notice) throw Error(`Missing optional update notice: ${JSON.stringify(layout)}`)
+  if (hasTopBar) {
+    if (!layout.topbar) throw Error(`Missing compact top bar at ${layout.width}px: ${JSON.stringify(layout)}`)
+    if (layout.notice.top < layout.topbar.bottom - 0.5) {
+      throw Error(`Optional update notice overlaps fixed top bar: notice.top=${layout.notice.top} topbar.bottom=${layout.topbar.bottom}`)
+    }
+  } else if (layout.topbar) {
+    throw Error(`Unexpected compact top bar at ${layout.width}px: ${JSON.stringify(layout.topbar)}`)
+  }
+  if (layout.notice.top < safeTop - 0.5) throw Error(`Optional update notice enters top safe area: ${JSON.stringify(layout)}`)
+  if (layout.notice.left < -0.5 || layout.notice.right > layout.width + 1) {
+    throw Error(`Optional update notice overflows horizontally: ${JSON.stringify(layout)}`)
+  }
+  if (layout.main && layout.main.top - layout.notice.bottom > 20) {
+    throw Error(`Content repeats the fixed header offset: notice.bottom=${layout.notice.bottom} main.top=${layout.main.top}`)
+  }
+  if (layout.main && Math.abs(parseFloat(layout.mainPaddingTop)) > 0.5) {
+    throw Error(`Content repeats the fixed header offset: main padding-top=${layout.mainPaddingTop}`)
+  }
+  if (layout.buttons.length < 2) throw Error(`Optional update notice lost actions: ${JSON.stringify(layout.buttons)}`)
+  for (const button of layout.buttons) {
+    if (!button.hit) throw Error(`Optional update notice action is covered: ${JSON.stringify(button)}`)
+    if (button.rect.height < 44) throw Error(`Optional update notice action is undersized: ${JSON.stringify(button)}`)
+  }
+  if (layout.overflow) throw Error(`Optional update notice causes horizontal overflow: ${JSON.stringify(layout)}`)
+}
+
 const { server, origin } = await startFixtureServer()
 let chrome
 try {
   chrome = await launchChromeForCdp(findChrome())
+
+  async function openAppPage({ width, height = 900, profile = 'summer', safeTop = 0, promptSuppressed = false,
+    expectNotice = true, waitForMoreLink = true, url = `${origin}/?view=more&ws-auth=0` }) {
+    const { targetId, sessionId } = await chrome.openPage()
+    const page = new Page(chrome.client, sessionId)
+    try {
+      await page.enable()
+      await page.emulate({ width, height, touch: width < 1200 })
+      if (safeTop > 0) {
+        await chrome.client.send('Emulation.setSafeAreaInsetsOverride', {
+          insets: { top: safeTop, left: 0, bottom: 0, right: 0 },
+        }, sessionId)
+      }
+      await chrome.client.send('Page.addScriptToEvaluateOnNewDocument', {
+        source: `(${nativeBoundary.toString()})(${JSON.stringify({ promptSuppressed })}); localStorage.setItem('wotb-ui-profile', ${JSON.stringify(profile)}); localStorage.setItem('wotb-lang', 'en');`,
+      }, sessionId)
+      await chrome.client.send('Page.navigate', { url }, sessionId)
+      // Cold Vite dependency transforms can exceed the shared navigation budget on CI.
+      await page.waitForValue('document.readyState', value => value === 'complete', { timeout: 90_000, label: 'application modules loaded' })
+      if (expectNotice) {
+        const ready = waitForMoreLink
+          ? '!!document.querySelector(\'[data-testid="android-update-notice"]\') && !!document.querySelector(\'[data-testid="more-link-app-update"]\')'
+          : '!!document.querySelector(\'[data-testid="android-update-notice"]\')'
+        await page.waitForValue(ready, value => value === true, { timeout: 90_000, label: 'optional update notice' })
+      } else {
+        await page.waitForValue(`({ read: window.updateFixture.calls.some(call => call.method === 'getUpdateStatus'),
+          notice: !!document.querySelector('[data-testid="android-update-notice"]') })`,
+        value => value.read && !value.notice, { label: 'update status read without prompt' })
+      }
+      return { targetId, sessionId, page }
+    } catch (error) {
+      await chrome.client.send('Target.closeTarget', { targetId }).catch(() => {})
+      throw error
+    }
+  }
+
   for (const profile of ['winter', 'summer']) {
     for (const width of [390, 900, 1440]) {
-      const { targetId, sessionId } = await chrome.openPage()
-      const page = new Page(chrome.client, sessionId)
+      const { targetId, page } = await openAppPage({ width, profile })
       try {
-        await page.enable()
-        await page.emulate({ width, height: 900, touch: width < 1200 })
-        await chrome.client.send('Page.addScriptToEvaluateOnNewDocument', {
-          source: `(${nativeBoundary.toString()})(); localStorage.setItem('wotb-ui-profile', ${JSON.stringify(profile)}); localStorage.setItem('wotb-lang', 'en');`,
-        }, sessionId)
-        await chrome.client.send('Page.navigate', { url: `${origin}/?view=more&ws-auth=0` }, sessionId)
-        // Cold Vite dependency transforms can exceed the shared navigation budget on CI.
-        await page.waitForValue('document.readyState', value => value === 'complete', { timeout: 90_000, label: 'application modules loaded' })
-        await page.waitForValue(`!!document.querySelector('[data-testid="android-update-notice"]') && !!document.querySelector('[data-testid="more-link-app-update"]')`, value => value === true)
+        await page.evaluate('window.scrollTo(0, 0)')
+        assertNoticeLayout(await page.probe(noticeGeometry), { hasTopBar: width < 768 })
         const initial = await page.evaluate(`({ dialogs: document.querySelectorAll('[role="dialog"][data-state="open"]').length,
           focused: document.activeElement.tagName, refreshes: window.updateFixture.calls.filter(call => call.method === 'refreshUpdateStatus').length })`)
         if (initial.dialogs || initial.focused !== 'BODY' || initial.refreshes) throw Error(`Optional startup interrupted: ${JSON.stringify(initial)}`)
@@ -119,11 +204,11 @@ try {
           installs: window.updateFixture.calls.filter(call => call.method === 'installUpdate').length })`)
         if (final.download !== 'downloading' || final.enqueues !== 1 || final.installs !== 0) throw Error(`Closing panel changed download: ${JSON.stringify(final)}`)
         await openUpdate()
-        await chrome.client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, sessionId)
-        await chrome.client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, sessionId)
+        await chrome.client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, page.sessionId)
+        await chrome.client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, page.sessionId)
         await page.waitForValue(`!document.querySelector('[data-testid="update-close"]')`, value => value === true)
         await page.waitForValue(`document.activeElement?.dataset.testid`, value => value === (width >= 768 ? 'nav-more' : 'more-link-app-update'), { label: 'sheet Escape restores More trigger focus' })
-        console.log(`[browser-android-update] ${profile}/${width}: optional nonblocking, More entry, bounds/44px, explicit failure, progress, close passed`)
+        console.log(`[browser-android-update] ${profile}/${width}: notice geometry, optional nonblocking, More entry, bounds/44px, explicit failure, progress, close passed`)
       } catch (error) {
         console.error(error)
         console.error(await page.diagnose(geometry))
@@ -131,6 +216,54 @@ try {
       } finally { await chrome.client.send('Target.closeTarget', { targetId }) }
     }
   }
+
+  for (const scenario of [
+    { name: '320px', width: 320, safeTop: 0 },
+    { name: '390px safe-area=24', width: 390, safeTop: 24 },
+  ]) {
+    const { targetId, page } = await openAppPage({ width: scenario.width, safeTop: scenario.safeTop })
+    try {
+      await page.evaluate('window.scrollTo(0, 0)')
+      const layout = await page.probe(noticeGeometry)
+      assertNoticeLayout(layout, { hasTopBar: true, safeTop: scenario.safeTop })
+      console.log(`[browser-android-update] layout ${scenario.name}: notice.top=${layout.notice.top} topbar.bottom=${layout.topbar.bottom} buttons=${layout.buttons.map(button => button.rect.height).join('/')} passed`)
+    } catch (error) {
+      console.error(error)
+      console.error(await page.diagnose(noticeGeometry))
+      throw error
+    } finally { await chrome.client.send('Target.closeTarget', { targetId }) }
+  }
+
+  {
+    const { targetId, page } = await openAppPage({ width: 390, promptSuppressed: true, expectNotice: false })
+    try {
+      const layout = await page.probe(noticeGeometry)
+      if (layout.notice) throw Error(`Suppressed optional update still rendered a notice: ${JSON.stringify(layout.notice)}`)
+      if (!layout.topbar) throw Error(`Missing compact top bar without update notice: ${JSON.stringify(layout)}`)
+      if (Math.abs(parseFloat(layout.mainPaddingTop) - parseFloat(layout.headerH)) > 0.5) {
+        throw Error(`Content lost its header offset without the notice: padding-top=${layout.mainPaddingTop} header-h=${layout.headerH}`)
+      }
+      console.log(`[browser-android-update] no-update: notice absent, app-main keeps ${layout.mainPaddingTop} header offset passed`)
+    } finally { await chrome.client.send('Target.closeTarget', { targetId }) }
+  }
+
+  {
+    const { targetId, page } = await openAppPage({ width: 740, height: 360, waitForMoreLink: false, url: `${origin}/?view=agent-armor&ws-auth=0` })
+    try {
+      await page.waitForValue('document.documentElement.dataset.shellChrome', value => value === 'immersive', { timeout: 20_000, label: 'phone landscape immersive shell' })
+      const immersive = await page.evaluate(`({ shellChrome: document.documentElement.dataset.shellChrome,
+        notice: !!document.querySelector('[data-testid="android-update-notice"]'),
+        topbar: !!document.querySelector('[data-testid="app-top-bar"]'),
+        tabbar: !!document.querySelector('[data-testid="app-tab-bar"]'),
+        mainPaddingTop: getComputedStyle(document.querySelector('.app-main')).paddingTop })`)
+      if (immersive.shellChrome !== 'immersive' || immersive.notice || immersive.topbar || immersive.tabbar) {
+        throw Error(`Immersive shell still renders update chrome: ${JSON.stringify(immersive)}`)
+      }
+      if (parseFloat(immersive.mainPaddingTop) !== 0) throw Error(`Immersive shell keeps header padding: ${immersive.mainPaddingTop}`)
+      console.log('[browser-android-update] immersive: notice/topbar/tabbar hidden and header offset collapsed passed')
+    } finally { await chrome.client.send('Target.closeTarget', { targetId }) }
+  }
+
   const { targetId, sessionId } = await chrome.openPage()
   const page = new Page(chrome.client, sessionId)
   try {
