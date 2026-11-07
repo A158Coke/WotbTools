@@ -53,6 +53,7 @@
 - frontend：`keycloak-js` 26.2+ 独立发版、向后兼容；major 升级时同步 `package.json` + `pnpm-lock.yaml`（`pnpm install`）。
 - 后端：`KeycloakAdminUserService` 等调用 Admin REST API 的位置，核对目标版本响应结构与弃用端点。
 - realm：`infra/tofu/keycloak/` resource schema 兼容性；realm 通过 OpenTofu reconciliation 验证，不恢复 JSON import 路径。
+- 登录主题中文：`docker/keycloak/themes/wotbtools/login/messages/messages_zh.properties` 是内置 `theme/base/login/messages/messages_zh_Hans.properties` 的完整副本（realm locale 为 `zh`，与内置 bundle 名不匹配）；用目标版本 `keycloak-themes-<version>.jar` 中的同名文件按文件头规则重新生成，保留末尾主题文案段，冒烟时核对 `kc_locale=zh` 登录页为中文。
 - 环境变量不丢：`WG_APPLICATION_ID`、`KC_*`、`KEYCLOAK_*`（生产走 GitHub Secrets → `.github/workflows/keycloak.yml`）。
 
 ### Phase 4 — 本地构建与冒烟
