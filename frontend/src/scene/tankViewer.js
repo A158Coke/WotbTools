@@ -4498,7 +4498,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             };
             const hemi = new THREE.HemisphereLight(0xffffff, readThemeColor('--color-surface-2', '#172024'), 2.2);
             scene.add(hemi);
-            // 网页主题（showcase/classic）切换时，半球光底面跟随 UI 表面色；画布背景由透明 CSS 继承。
+            // 网页主题（四季）切换时，半球光底面跟随 UI 表面色；画布背景由透明 CSS 继承。
             const themeObserver = new MutationObserver(() => {
                 hemi.groundColor.copy(readThemeColor('--color-surface-2', '#172024'));
             });

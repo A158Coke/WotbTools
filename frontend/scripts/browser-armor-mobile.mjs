@@ -863,7 +863,7 @@ const PICKER_TANK_CACHE = {
   })),
 }
 const PICKER_PAGE_SIZE = 48   // 共享 TankCatalogMenu 的首屏页大小（useIncrementalList 默认）
-const PICKER_SCENARIOS = ['showcase', 'classic'].flatMap(profile => [
+const PICKER_SCENARIOS = ['summer', 'winter'].flatMap(profile => [
   { name: `armor-picker-390x844-${profile}`, width: 390, height: 844, touch: true, profile },
   { name: `armor-picker-1024x768-${profile}`, width: 1024, height: 768, touch: false, profile },
   { name: `armor-picker-1440x900-${profile}`, width: 1440, height: 900, touch: false, profile },

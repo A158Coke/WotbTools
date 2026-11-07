@@ -34,7 +34,6 @@
     "src/components/TechnicalEvolutionPage.vue",
     "src/components/V2VehicleInspector.vue",
     "src/components/VehicleMarker.vue",
-    "src/styles/classic-profile.css",
     "src/styles/playback-mobile.css",
     "src/styles/playback-overlap-ux.css",
     "src/styles/playback-shared.css",

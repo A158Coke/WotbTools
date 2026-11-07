@@ -2620,7 +2620,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function buildSpawns() { spawnMarkers.build(SESSION_MODE === 'map' ? MAP_SPAWN_POINTS : null); }
   function clearSpawns() { spawnMarkers.clear(); }
   function regroundSpawns() { spawnMarkers.reground(); }
-  /** UI Profile 切换后 token 色板变化（showcase↔classic / auto 随系统）：已有出生点
+  /** UI Profile 切换后 token 色板变化（四季主题切换）：已有出生点
    *  材质原位重着色——不重建场景、不动相机。仅 map 会话有意义（回放无出生点）。 */
   function refreshSpawnColors() {
     if (SESSION_MODE !== 'map') return;

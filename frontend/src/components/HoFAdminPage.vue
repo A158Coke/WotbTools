@@ -1810,7 +1810,7 @@ function battleTypeLabel(tp) {
 
 <style scoped>
 /* 设计语言 token（docs/frontend/design-language.md）：本组件是名人堂管理页样式的唯一 owner，
- * showcase / classic 不再覆盖内部元素；两套主题只通过语义 token 换色。 */
+ * 各主题不再覆盖内部元素，只通过语义 token 换色。 */
 .hof-admin { padding-block: var(--space-6) var(--space-12); color: var(--color-text-primary); font: var(--type-body); }
 
 /* Tabs：吸顶于顶栏下方；窄屏横向滚动而不是被裁掉（审计 PG-10） */

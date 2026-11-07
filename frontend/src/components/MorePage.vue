@@ -7,11 +7,12 @@ import DataVersionSelect from './DataVersionSelect.vue'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import PageHeader from './PageHeader.vue'
 import SegmentedControl from './SegmentedControl.vue'
+import ThemePicker from './ThemePicker.vue'
 
 // "更多"页：手机 / App 的低频入口（显示设置、管理、关于与支持）。全部栏目都在左侧抽屉里，这里不重复导航。
 // 平板 / 桌面的同一份内容在侧边栏底部的"更多"弹出面板里（useMoreMenu 是唯一内容源）。账户由顶栏头像进入 profile。
 const navigate = inject(NAVIGATE_VIEW_KEY)
-const { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, adminLinks, aboutLinks, openGuide, openFeedback, openAndroidUpdate } = useMoreMenu()
+const { setLocale, adminLinks, aboutLinks, openGuide, openFeedback, openAndroidUpdate } = useMoreMenu()
 const { state: dataVersionState } = useDataVersion()
 
 const groups = computed(() => [
@@ -30,16 +31,9 @@ const groups = computed(() => [
     <section class="more-section" aria-labelledby="more-display">
       <h2 id="more-display" class="more-section-title">{{ $t('more.sections.display') }}</h2>
       <div class="more-card">
-        <div class="more-setting" data-tour="settings-theme">
+        <div class="more-setting more-setting-stack" data-tour="settings-theme">
           <span class="more-setting-label">{{ $t('uiProfile.title') }}</span>
-          <SegmentedControl
-            scrollable
-            :model-value="uiProfilePreference"
-            :options="uiProfileOptions($t)"
-            :aria-label="$t('uiProfile.title')"
-            data-testid="more-ui-profile"
-            @update:model-value="setUiProfile"
-          />
+          <ThemePicker :aria-label="$t('uiProfile.title')" data-testid="more-ui-profile" />
         </div>
         <div class="more-setting" data-tour="settings-language">
           <span class="more-setting-label">{{ $t('more.language') }}</span>

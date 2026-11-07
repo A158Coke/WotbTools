@@ -32,12 +32,11 @@
       "points_enemy": "敌方积分 {points}"
     },
     "uiProfile": {
-      "auto": "跟随系统",
-      "title": "界面风格",
-      "classic": "简约",
-      "showcase": "沉浸",
-      "classicDescription": "简约浅色主题，去除 AI/装饰背景，视觉更克制",
-      "showcaseDescription": "丰富的视觉层级与展示效果"
+      "title": "主题",
+      "spring": "春 · 青山",
+      "summer": "夏 · 盛夏",
+      "autumn": "秋 · 金秋",
+      "winter": "冬 · 寒冬"
     },
     "environment": {
       "label": "开发模式",
@@ -797,7 +796,7 @@
         },
         "settingsTheme": {
           "title": "选择舒服的界面",
-          "description": "在沉浸、简约和跟随系统之间切换。所有主题使用同一套功能和数据。"
+          "description": "春、夏、秋、冬四套主题只换配色和氛围主视觉，功能和数据完全一样。"
         },
         "settingsLanguage": {
           "title": "随时切换语言",
@@ -1030,12 +1029,11 @@
       "points_enemy": "Enemy points {points}"
     },
     "uiProfile": {
-      "auto": "Follow system",
-      "title": "Interface Style",
-      "classic": "Classic",
-      "showcase": "Showcase",
-      "classicDescription": "Simplified light theme; drops AI/decorative backgrounds for a calmer look",
-      "showcaseDescription": "Rich visual hierarchy and showcase effect"
+      "title": "Theme",
+      "spring": "Spring · Highlands",
+      "summer": "Summer · Midsummer",
+      "autumn": "Autumn · Harvest",
+      "winter": "Winter · Frost"
     },
     "environment": {
       "label": "Development",
@@ -1795,7 +1793,7 @@
         },
         "settingsTheme": {
           "title": "Choose your interface",
-          "description": "Switch between Showcase, Classic and System. Every theme uses the same tools and data."
+          "description": "Spring, Summer, Autumn and Winter change only colours and artwork; every tool and all data stay the same."
         },
         "settingsLanguage": {
           "title": "Switch language at any time",
@@ -2028,12 +2026,11 @@
       "points_enemy": "Очки врага {points}"
     },
     "uiProfile": {
-      "auto": "Как в системе",
-      "title": "Стиль интерфейса",
-      "classic": "Классический",
-      "showcase": "Showcase",
-      "classicDescription": "Упрощённая светлая тема, без AI/декоративных фонов, сдержаннее",
-      "showcaseDescription": "Богатая визуальная иерархия и эффект показа"
+      "title": "Тема",
+      "spring": "Весна · Высокогорье",
+      "summer": "Лето · Зной",
+      "autumn": "Осень · Золото",
+      "winter": "Зима · Стужа"
     },
     "environment": {
       "label": "Режим разработки",
@@ -2793,7 +2790,7 @@
         },
         "settingsTheme": {
           "title": "Выберите оформление",
-          "description": "Переключайте насыщенную, простую и системную тему. Функции и данные во всех темах одинаковы."
+          "description": "Весна, лето, осень и зима меняют только цвета и иллюстрации; функции и данные одинаковы."
         },
         "settingsLanguage": {
           "title": "Меняйте язык в любой момент",

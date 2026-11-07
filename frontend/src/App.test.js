@@ -361,11 +361,11 @@ describe('App routing', () => {
 
   it('changes UI profile without navigating or remounting the active route', async () => {
     const { wrapper, router } = await mountApp('/?view=replay')
-    setUiProfile('classic')
+    setUiProfile('winter')
     await nextTick()
     expect(router.currentRoute.value.query.view).toBe('replay')
     expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(true)
-    setUiProfile('showcase')
+    setUiProfile('summer')
     document.documentElement.removeAttribute('data-ui-profile')
     document.documentElement.removeAttribute('data-theme')
     window.localStorage.removeItem('wotb-ui-profile')

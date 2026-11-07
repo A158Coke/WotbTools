@@ -5,12 +5,12 @@
 ## 设计语言
 
 - 设计规则（颜色、字号、间距、圆角、层级、组件、选择控件、状态、文案）的 canonical 是 Design Contract [`design-language.md`](design-language.md)，规则用稳定 ID（`DC-*`）引用；本文件只记录实现位置与不变量。
-- 设计语言 token：`frontend/src/styles/tokens/scale.css`（刻度，并声明 `@layer` 顺序）与 `frontend/src/styles/tokens/color.css`（两套主题的语义色）。`data-theme` 由 profile 派生：`showcase → dark`、`classic → light`。
-- `frontend/src/styles/tokens.css` 是 deprecated 的旧 token 与 layout class 层，仅为保持现有视觉；新代码不得引用其中的旧 token。`classic-profile.css` 是 Classic profile 的语义覆盖层。
+- 设计语言 token：`frontend/src/styles/tokens/scale.css`（刻度，并声明 `@layer` 顺序）与 `frontend/src/styles/tokens/color.css`（四季主题的语义色与氛围插槽）。`data-theme` 由 profile 派生：春 / 夏 / 秋 → `dark`、冬 → `light`。
+- `frontend/src/styles/tokens.css` 是 deprecated 的旧 token 与 layout class 层，仅为保持现有视觉；新代码不得引用其中的旧 token；颜色类旧变量全部投影到当前主题的语义 token。
 - `pnpm run lint:css`（stylelint，CI 必过）强制执行设计语言；`frontend/stylelint.legacy.json` 是旧文件的忽略名单，只减不增。
 - 设计语言组件（`frontend/src/components/`，均只用语义 token）：`AppButton`（Button）· `SegmentedControl` · `PageHeader` · `EmptyState` · `Banner` · `MenuButton`（Menu：方向键 / Esc / 外部点击关闭）· `BattlePicker`（SearchSelect 单选：超过 6 项显示搜索，属于 DC-SEL-05 的提前搜索；手机为底部 sheet）· `StatStrip`（Stat）· `PlayerCardList`（DataTable 的手机卡片形态） · `FilterChips`（手机筛选入口：「筛选」按钮 + 已生效条件 chip，配合底部 sheet） · `AppDialog`（Dialog：焦点陷阱、Esc、关闭后焦点回到触发元素、手机底部 sheet；`keepMounted` 保留表单草稿）· `confirm()` + `ConfirmDialogHost`（应用内确认，禁止 `window.confirm`）· `MarkdownDocPage`（长文档：二级标题目录、吸顶 / 折叠目录、回到顶部）· `ReplayCapabilityTabs`（Tabs）。新界面优先复用它们，不新增一次性按钮 / 下拉样式。
 
-共享 `MenuButton` 使用 Reka 碰撞定位给出的可用高度限制菜单面板，空间不足时在菜单内部纵向滚动，滚动不传递到背景页面。选项保留原有触控尺寸；键盘 Home / End 导航及指针选择均可触达全部选项。`test:browser-interaction menu-viewport` 以当前回放导出三项文案验证 Showcase / Classic、手机短视口、平板、桌面及打开期间的视口高度变化。
+共享 `MenuButton` 使用 Reka 碰撞定位给出的可用高度限制菜单面板，空间不足时在菜单内部纵向滚动，滚动不传递到背景页面。选项保留原有触控尺寸；键盘 Home / End 导航及指针选择均可触达全部选项。`test:browser-interaction menu-viewport` 以当前回放导出三项文案验证 盛夏 / 寒冬、手机短视口、平板、桌面及打开期间的视口高度变化。
 
 ## 浮层与可达性验证
 
@@ -34,24 +34,24 @@
 
 `FilterChips`、名人堂 sheet 控件、玩家抽屉、AI 报告与射击详情的操作在触控档保持最小命中区。`AppSheet` 的内部滚动区在末端保留空隙，避免覆盖式滚动条吞掉右对齐按钮边缘的触摸；滚动条保持可见。桌面玩家抽屉的拖拽柄使用与面板一致的 CSS 布局视口定位，不用包含页面滚动条宽度的 `innerWidth` 推算横坐标。
 
-矩阵覆盖 Showcase / Classic、窄屏竖屏/横屏，并为通用弹层、抽屉与文档目录补充平板/桌面。外壳与射击交接使用真实应用，其他域使用生产组件、生产样式和确定性外部数据夹具；空榜单夹具只证明筛选交互。复制/导出按钮的可达检查不等于真实剪贴板或下载验收。Chromium 设备仿真不替代真实 Android GeckoView、iPhone Safari、软键盘或 3D 画面验收。
+矩阵覆盖盛夏 / 寒冬（深 / 浅）、窄屏竖屏/横屏，并为通用弹层、抽屉与文档目录补充平板/桌面。外壳与射击交接使用真实应用，其他域使用生产组件、生产样式和确定性外部数据夹具；空榜单夹具只证明筛选交互。复制/导出按钮的可达检查不等于真实剪贴板或下载验收。Chromium 设备仿真不替代真实 Android GeckoView、iPhone Safari、软键盘或 3D 画面验收。
 
 ## 界面档位（UI Profile）
 
 - `frontend/src/composables/useUiProfile.js` 是 profile 的唯一 reactive owner，持久化 key 为 `wotb-ui-profile`。
-- `showcase` 与 `classic` 只改变 Presentation 层；`data-theme` 从 profile 派生。两种 profile 共用组件、业务状态、API、spacing 和 layout。
-- 用户偏好可以是 `showcase` / `classic` / `auto`（跟随系统 `prefers-color-scheme`，系统切换时实时跟随）。`uiProfile` 是实际生效的 profile，`uiProfilePreference` 是用户的选择；持久化存的是偏好。`<meta name="theme-color">` 随生效主题取两套 `--color-canvas`（`THEME_COLOR`），首屏脚本与运行时一致。
-- 首屏投影在 `frontend/index.html`，运行时 token 与 profile 覆盖分别位于 `frontend/src/styles/tokens.css` 和 `frontend/src/styles/classic-profile.css`。
+- 四季主题 `spring` / `summer`（默认）/ `autumn` / `winter` 只改变 Presentation 层；`data-theme` 从 profile 派生。四套主题共用组件、业务状态、API、spacing 和 layout。
+- `useUiProfile` 是唯一 owner：`uiProfile` 即当前主题，持久化 `wotb-ui-profile`；读取边界把旧值 `showcase` / `classic` / `auto` 映射为 `summer` 并写回。`<meta name="theme-color">` 取当前主题的 `--color-canvas`（`THEME_COLOR`），首屏脚本与运行时一致。选择入口是 `components/ThemePicker.vue`（「更多」页与侧边栏「更多」面板共用）。
+- 首屏投影在 `frontend/index.html`；主题 token 在 `frontend/src/styles/tokens/color.css`，旧变量投影在 `frontend/src/styles/tokens.css`。场景外壳（2D / 3D 回放、装甲查看器、地图 3D）的根元素带 `data-scene-surface`，寒冬下仍用深色玻璃。
 
 ## 布局与响应式契约
 
 - 应用壳：`app/AppSidebar.vue`（平板图标栏 / 桌面可折叠侧栏）、`AppTopBar.vue` + `AppNavDrawer.vue`（手机竖屏 / 横屏的顶栏菜单与左侧抽屉，内容与侧边栏同一份分组，没有底部常驻导航，见 design-language §9 L1–L6）。导航、账户及 Profile owner 不变；导航表面使用不透明语义色，当前栏目同时用背景、强调色和位置标识区分。
 - 通用元素：`frontend/src/styles/app-shell.css` 负责页面底色、基础按钮、表格、提示、footer 与列选择器；`PageHeader.vue` 负责标题 / 说明 / 操作的对齐与分隔（compact 隐藏说明，保持「标题 + 操作」一行，DC-ARC-02）；两者只使用设计语言 token，并受 CSS lint 严格检查。列选择器手机布局把分类说明放到下一行，重排按钮保持 `--hit-min`，不与字段名称争抢横向空间。
 - `tokens.css` 保留现有 layout class；它们从 `tokens/scale.css` 读取 `--layout-content-max` / `--layout-wide-max` / `--layout-workspace-max` 与 `--gutter`。当前最大宽度分别为 1420 / 1720 / 1760px；文本阅读区另用 `--reading-measure`，不限制表格宽度。
-- Showcase 页面层位于 `showcase.css`、`showcase-pages.css`、`showcase-rankings.css`、`showcase-cohesion.css` 和 `showcase-regressions.css`；Profile / HoF 的局部装饰与 Classic 桥接也在这层。
-- 页面底色由语义 token 提供，首页插图由首页组件的独立图片区域拥有；Home / Contact / 回放的通用按钮与表格由语义 token 提供，Classic 不另写一套覆盖。
+- Showcase 页面层位于 `showcase.css`、`showcase-pages.css`、`showcase-rankings.css`、`showcase-cohesion.css` 和 `showcase-regressions.css`；Profile / HoF 的局部装饰也在这层，颜色全部取语义 token。
+- 页面底色由语义 token 提供，首页插图由首页组件的独立图片区域拥有；Home / Contact / 回放的通用按钮与表格由语义 token 提供，不按主题另写覆盖。
 - 首页（`HomePage.vue`，**纯展示页**）**不承担导航**：`AppSidebar.vue` 与 `AppTabBar.vue` + `MorePage` 已覆盖 `PRIMARY_NAV` 的全部入口，三档都在，首页再摆功能卡就是抄侧边栏。功能导航只有 Replay Workspace 一个。此外 Web 首页保留 Android 下载、Sponsor、站内反馈等非功能 / 转化入口；Android App 内不展示 Android 下载入口（整张 promo 卡不渲染，Sponsor 卡保持）。由 `HomePage.test.js` 按语义锁定，不写死「恰好 N 个链接」。分段为 ① 全出血 Hero ② 实时数据带 ③ 能力展示（**整节无任何链接**）④ 带走它 / 赞助 ⑤ 极简页脚。
-  - 它是唯一启用 design-language §2 装饰插槽的页面：Hero 的 `--home-hero-decor` 背景（`assets/showcase/home/hero-v4.webp`，组件 import 后经内联 `--home-hero-image` 传入），在 Classic Profile 与 `width < 768px` 置 `none`，同时隐藏承载元素。插槽由首页自己按 `html[data-ui-profile="classic"]` 派生，`classic-profile.css` 不含任何首页类名（`classic-profile-css.test.js` 守卫）。文字落在 scrim 压出的纯色上，对比度不随图片内容变化。
+  - 它是唯一启用 design-language §2 装饰插槽的页面：Hero 的 `--home-hero-decor` 背景（`assets/showcase/home/hero-v4.webp`，组件 import 后经内联 `--home-hero-image` 传入），在 `width < 768px` 置 `none`，同时隐藏承载元素。文字落在 scrim 压出的纯色上，对比度不随图片内容变化。
   - **回放的五个 capability tab 不是独立目的地**：`viewRegistry.js` 的 `replay` / `battle-playback` / `ai-review` / `agent-replay` / `agent-shots` 全部落在同一个 `ReplayWorkspace`，只是初始 tab 不同。去重断言因此按 `VIEW_COMPONENTS` 的**组件对象引用**判定，不是 href 字符串（五个 href 指向同一个 workspace），也不是组件名（view 懒加载，全叫 `AsyncComponentWrapper`）。
   - ③ 的四张与 ④ 的 Android 手机图都是真实产品截图，来源与隐私边界见 [`frontend/src/assets/showcase/README.md`](../../frontend/src/assets/showcase/README.md)；只有第一张 `eager`，其余 `lazy` 且都带固有尺寸防抖版。动效默认关闭，只在 `prefers-reduced-motion: no-preference` 下启用；hover 位移 / 缩放同样如此。
   - 项目历史 / 技术演进 / 联系我只在 `useMoreMenu.js` 的「更多」组；Web 首页有自己的 Android 下载转化卡，Android App 内隐藏。`PageHeader.vue` 不提供 hero 变体。
@@ -67,8 +67,8 @@
 - 装甲查看器 Desktop / Tablet（`>=768px`）：车名、等级/类型/国籍与设置字段合并为左上角**同一张卡**；「参数」开关位于该卡首行，装备 / 射击方 / 目标 / 配置默认收起，点击后在卡内展开（`.armor-stage.is-tools-open`），不得恢复成常驻的独立设置卡；炮塔 / 炮管角度条固定在左下角。桌面 / 平板的收起、真实点击展开/收起、设置面板必须位于信息卡内部，由 `pnpm run test:browser-armor-mobile` 的桌面 / 平板场景锁定。
 - XI 配置器用三张互斥技能卡展示选项及加成，当前累计变化在卡片下的效果表同步更新；乘员技能按车型组成自适应网格，组内常驻/触发标签与图标横排；训练统计与全满/清空集中在标题行，条件触发开关默认关闭，已训练但未模拟触发的技能使用虚线框。查看器参数面板中的 XI 升级无需二次折叠；静态查看器角度卡同时提供「正面 / 压坡卖头」按钮。所有状态共用同一 URL 配置。
 - 装甲页的射击模式包含独立车型对照、记录结果与逐发导航栏；参数分组与技术证据渐进展开，手机保持场景空间和 44px 触控。场景监听自身容器尺寸，因此标题换行也会更新画布比例。`AgentArmorView.vue` 使用语义 token 与三档响应式规则。
-- 装甲查看器 / 射击复现的 3D 画布使用透明背景，直接继承页面 `--color-canvas`；场景不绘制地面网格，半球光底面跟随 `--color-surface-2`，Showcase / Classic 两套 profile 下都与网页外壳一致。相机按 Armor Inspector 实测的 product 参考曲线缩放，远距车体更小：显示 profile 为 +0.028/m、封顶 3.8，再整体乘 1.1（30 m 比 15 m 小约 14%，100/500 m 小约 35%；15 m 实际 FOV ≈20.59°，车体比 18.75° 参考小约 9%）。热力图概率色带固定红→橙→黄→绿，与判定卡的红/黄/绿语义一致，不改为主题顺序色板。判定结果卡按画布的实际 `getBoundingClientRect()` 投影并在可见画布内钳制，页面/容器滚动或窗口缩放时随场景一起移动（`#traj-info` 是视口 fixed，不能按 `window.innerWidth/innerHeight` 定位）；`browser-armor-aiming` 用真实滚动夹具锁定了这条行为。
-- 选车菜单与坦克百科列表共用 `components/TankCatalogMenu.vue` 的同一实现：模糊搜索 + 搜索别名、tier/nation/type 筛选、name/tier/hp/pen 排序、手机 chips + 筛选 sheet、增量卡片网格与空/加载/错误态一致。坦克百科列表在 URL 未指定 `?sort=` 时默认按等级降序（同级按名称升序），`?sort=name|tier|hp|pen` 显式指定时按该值排序，装甲查看器选车弹窗保持名称默认。筛选控件按 `DC-SEL-01` 映射：type 与 sort 使用 `SegmentedControl` 的 Choice Group（`presentation="chips"`，radiogroup 语义与方向键 / Home / End 键盘循环），tier 与 nation 保留原生 selects；桌面与手机筛选 sheet 共用同一组控件。装甲页弹窗只保留外壳与 `tankViewer` 的 `onTankList` / `onTankSelection` / `selectTank` 接线。选车网格按卡片内容确定行高，图片、车型名、等级/类型/国家信息不能被视口高度压缩裁切；大名册在弹窗内部纵向滚动，滚到边界不带动外层页面，分批加载（首屏 48，哨兵/滚轮续页）。`pnpm run test:browser-armor-mobile` 以真实名册响应覆盖共 121 张卡片，在 Showcase / Classic 和手机 / 平板 / 桌面三档（含 4K、筛选、筛选 sheet 与视口扩大）检查内容边界、首末车型名命中区域与无横向溢出。
+- 装甲查看器 / 射击复现的 3D 画布使用透明背景，直接继承页面 `--color-canvas`；场景不绘制地面网格，半球光底面跟随 `--color-surface-2`，四季主题下都与网页外壳一致。相机按 Armor Inspector 实测的 product 参考曲线缩放，远距车体更小：显示 profile 为 +0.028/m、封顶 3.8，再整体乘 1.1（30 m 比 15 m 小约 14%，100/500 m 小约 35%；15 m 实际 FOV ≈20.59°，车体比 18.75° 参考小约 9%）。热力图概率色带固定红→橙→黄→绿，与判定卡的红/黄/绿语义一致，不改为主题顺序色板。判定结果卡按画布的实际 `getBoundingClientRect()` 投影并在可见画布内钳制，页面/容器滚动或窗口缩放时随场景一起移动（`#traj-info` 是视口 fixed，不能按 `window.innerWidth/innerHeight` 定位）；`browser-armor-aiming` 用真实滚动夹具锁定了这条行为。
+- 选车菜单与坦克百科列表共用 `components/TankCatalogMenu.vue` 的同一实现：模糊搜索 + 搜索别名、tier/nation/type 筛选、name/tier/hp/pen 排序、手机 chips + 筛选 sheet、增量卡片网格与空/加载/错误态一致。坦克百科列表在 URL 未指定 `?sort=` 时默认按等级降序（同级按名称升序），`?sort=name|tier|hp|pen` 显式指定时按该值排序，装甲查看器选车弹窗保持名称默认。筛选控件按 `DC-SEL-01` 映射：type 与 sort 使用 `SegmentedControl` 的 Choice Group（`presentation="chips"`，radiogroup 语义与方向键 / Home / End 键盘循环），tier 与 nation 保留原生 selects；桌面与手机筛选 sheet 共用同一组控件。装甲页弹窗只保留外壳与 `tankViewer` 的 `onTankList` / `onTankSelection` / `selectTank` 接线。选车网格按卡片内容确定行高，图片、车型名、等级/类型/国家信息不能被视口高度压缩裁切；大名册在弹窗内部纵向滚动，滚到边界不带动外层页面，分批加载（首屏 48，哨兵/滚轮续页）。`pnpm run test:browser-armor-mobile` 以真实名册响应覆盖共 121 张卡片，在盛夏 / 寒冬和手机 / 平板 / 桌面三档（含 4K、筛选、筛选 sheet 与视口扩大）检查内容边界、首末车型名命中区域与无横向溢出。
 - 坦克百科目录用统一工具区与对齐的车型卡，详情头部压缩图像与重复模块信息；参数用稳定独立列、清楚标题、位置固定的等宽主值、中间变化量槽及最右单位列。装甲查看器左栏用单外卡分区，右上卡片使用弹种图标胶囊与装备同排、距离滑杆、当前弹种穿深、模式切换四层；穿深随距离、炮弹数据与校准弹更新，仅保留一个结果读数。距离/穿深使用固定尾列与等宽数字；静态距离为观察中心距离，回放弹道距离只读。
 - 视觉回归至少检查对比度、overflow、sticky、hover/focus、loading/empty/error；页面级验收细节见 [`docs/DEVELOPER_GUIDE.md`](../DEVELOPER_GUIDE.md)。
 

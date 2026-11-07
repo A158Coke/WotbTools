@@ -2,13 +2,13 @@
 //
 // 背景：这些组件自上游独立 SPA 平移，用的是那套**深色单主题**的颜色名
 // （--fg/--panel/--line/--muted/--danger/--dim…）。这些名字在本仓 token 体系里从未定义，
-// 于是 `var(--x, 深色 fallback)` 的 fallback 恒生效 = 等于写死深色：浅色档（classic profile）
+// 于是 `var(--x, 深色 fallback)` 的 fallback 恒生效 = 等于写死深色：浅色档（寒冬 winter）
 // 下灰字落在白底上对比度仅 ~2.6:1（"文字发淡"），面板/按钮/边框则是突兀深色块。
 //
 // 3D / 射击回放面板和装甲查看器已迁到设计语言语义 token，两档主题共用同一份规则。
 // 装甲查看器保留的短名仅为全局 token 的别名，供场景脚本的内联样式继承。本文件固化四类契约：
 //   A) 组件不得引用"本仓任何地方都没定义"的 token（含 JS 内联样式）；
-//   B) 装甲查看器的本地别名必须引用全局 token，不再自建独立 Classic 调色板；
+//   B) 装甲查看器的本地别名必须引用全局 token，不再自建独立浅色调色板；
 //   C) 组件样式块里不得出现裸色（#hex/rgb/rgba/hsl），白名单只放"非主题色"——
 //      即 three.js 视口底这类场景色；
 //   D) tankViewer 的 JS 内联色只允许白名单里的标记/图例色。
@@ -36,7 +36,7 @@ const AGENT_FILES = {
  */
 const BARE_COLOR_SELECTOR_ALLOWLIST = {
   'AgentArmorView.vue': [
-    '#canvas-container', // three.js 视口底色（游戏视觉，见 classic-profile 的同类约定）
+    '#canvas-container', // three.js 视口底色（游戏视觉，场景色，不随主题）
   ],
   'Replay3DPane.vue': [], // 3D 场景由 three.js 画进 canvas，CSS 层不应有裸色
 }
@@ -60,7 +60,7 @@ const MARKER_COLOR_ALLOWLIST = [
   '#fff',    // 偏差线
 ]
 
-const CLASSIC_PREFIX = 'html[data-ui-profile="classic"]'
+const LIGHT_PREFIX = ':root[data-ui-profile="winter"]'
 const REFERENCED = /var\(\s*(--[a-z0-9-]+)/gi
 const DECLARATION = /(--[a-z0-9-]+)\s*:\s*([^;]+);/gi
 const BARE_COLOR = /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/
@@ -128,10 +128,10 @@ describe('Agent 视觉面配色契约', () => {
     for (const [label, rel] of Object.entries(AGENT_FILES)) {
       it(`${label} 不引用未定义 token`, () => {
         const src = read(rel)
-        // 只统计 classic 覆盖块**之前**的声明：仅在浅色档定义的 token 不算"有定义"
-        // （否则 A 会把"默认档缺失、只有 classic 有"的 token 误判为合法）
-        const classicAt = src.indexOf(CLASSIC_PREFIX)
-        const defaultPart = classicAt > 0 ? src.slice(0, classicAt) : src
+        // 只统计浅色档覆盖块**之前**的声明：仅在浅色档定义的 token 不算"有定义"
+        // （否则 A 会把"默认档缺失、只有浅色档有"的 token 误判为合法）
+        const lightAt = src.indexOf(LIGHT_PREFIX)
+        const defaultPart = lightAt > 0 ? src.slice(0, lightAt) : src
         const selfDefined = new Set([...defaultPart.matchAll(DECLARATION)].map((m) => m[1]))
         const permitted = label === 'tankViewer.js'
           ? new Set([...repoDefined, ...selfDefined, ...armorPalette])
@@ -147,7 +147,7 @@ describe('Agent 视觉面配色契约', () => {
   })
 
   describe('B) 装甲查看器继承全局语义 token', () => {
-    it('每个本地别名引用已定义的全局 token，且不含裸色或独立 Classic 覆盖', () => {
+    it('每个本地别名引用已定义的全局 token，且不含裸色或独立浅色覆盖', () => {
       const src = read(AGENT_FILES['AgentArmorView.vue'])
       const aliases = declarationsIn(src, '.armor-view')
       expect(aliases, '未解析到装甲查看器别名块').not.toBeNull()
@@ -158,7 +158,7 @@ describe('Agent 视觉面配色契约', () => {
         expect(refs.length, `${name} 必须引用全局 token`).toBeGreaterThan(0)
         expect(refs.filter((token) => !repoDefined.has(token)), `${name} 引用了非全局 token`).toEqual([])
       }
-      expect(declarationsIn(src, `${CLASSIC_PREFIX} .armor-view`), '主题映射由全局 Profile token 所有').toBeNull()
+      expect(declarationsIn(src, `${LIGHT_PREFIX} .armor-view`), '主题映射由全局 Profile token 所有').toBeNull()
     })
   })
 

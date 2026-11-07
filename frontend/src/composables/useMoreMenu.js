@@ -3,7 +3,6 @@ import {
   Cpu, Database, Download, FileText, Heart, History, Mail, MessageSquare, ShieldCheck, Users, ListOrdered, Settings,
 } from 'lucide-vue-next'
 import { useAuth } from './useAuth.js'
-import { useUiProfile } from './useUiProfile.js'
 import { isAndroidApp } from './usePlatformBridge.js'
 import { FEEDBACK_KEY } from '../shared/feedback.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
@@ -27,7 +26,6 @@ export function useMoreMenu() {
   const openFeedback = inject(FEEDBACK_KEY, null)
   const androidUpdate = inject(ANDROID_UPDATE_KEY, null)
   const { isAdmin, isHofAdmin, isTournamentAdmin, isContentAdmin } = useAuth()
-  const { uiProfilePreference, setUiProfile } = useUiProfile()
   const { available: creatorsAvailable } = useCreatorAvailability()
   // vue-i18n legacy 模式下 $i18n 由 mixin 在 setup 之后才挂上：setup 时只捕获实例，用户操作时再读
   const instance = getCurrentInstance()
@@ -36,12 +34,6 @@ export function useMoreMenu() {
     const locale = persistLocale(value)
     instance.proxy.$i18n.locale = locale
   }
-
-  const uiProfileOptions = (t) => [
-    { value: 'showcase', label: t('uiProfile.showcase') },
-    { value: 'classic', label: t('uiProfile.classic') },
-    { value: 'auto', label: t('uiProfile.auto') },
-  ]
 
   /** 管理入口（手机"更多"页的同组；侧边栏与抽屉的管理组由 navigation.js ADMIN_NAV 渲染）。 */
   const adminLinks = computed(() => [
@@ -68,5 +60,5 @@ export function useMoreMenu() {
   // 功能指南对所有人开放：Android App 没有首页，抽屉外壳里「更多」是重开教程的唯一稳定入口
   const openGuide = computed(() => onboarding ? () => onboarding.openDirectory() : null)
   const openAndroidUpdate = computed(() => androidUpdate?.supported.value ? opener => androidUpdate.open(opener) : null)
-  return { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, adminLinks, aboutLinks, openGuide, openFeedback, openAndroidUpdate }
+  return { setLocale, adminLinks, aboutLinks, openGuide, openFeedback, openAndroidUpdate }
 }

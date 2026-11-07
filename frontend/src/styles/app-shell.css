@@ -1,7 +1,8 @@
 /* Shared application primitives. Feature components own their layout and state. */
 * { box-sizing: border-box; }
 html, body, #app { min-height: 100%; }
-body { margin: 0; background: var(--color-canvas); color: var(--color-text-primary); font: var(--type-body); }
+/* 页面底色叠当前主题的底纹（design-language §2 装饰插槽 5）；卡片与数据区是纯色表面 */
+body { margin: 0; background: var(--theme-pattern), var(--color-canvas); background-attachment: fixed; color: var(--color-text-primary); font: var(--type-body); }
 a { color: var(--color-accent-text); text-decoration: none; }
 button, input, select, textarea { font-family: inherit; }
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {

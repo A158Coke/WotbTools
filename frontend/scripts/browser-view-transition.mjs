@@ -30,7 +30,7 @@ async function scenario(name, width, height, touch, run) {
   try {
     await page.enable()
     await page.emulate({ width, height, touch })
-    await chrome.client.send('Page.addScriptToEvaluateOnNewDocument', { source: "localStorage.setItem('wotb-lang','zh');localStorage.setItem('wotb-ui-profile','showcase')" }, sessionId)
+    await chrome.client.send('Page.addScriptToEvaluateOnNewDocument', { source: "localStorage.setItem('wotb-lang','zh');localStorage.setItem('wotb-ui-profile','summer')" }, sessionId)
     await chrome.client.send('Fetch.enable', { patterns: [
       { urlPattern: `*${HISTORY_MODULE}` }, { urlPattern: `*${CONTACT_MODULE}` },
     ] }, sessionId)

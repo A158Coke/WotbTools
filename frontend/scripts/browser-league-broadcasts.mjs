@@ -27,7 +27,7 @@ const { server, origin } = await startFixtureServer({ middleware, allowedHosts: 
 
 const chrome = await launchChromeForCdp(findChrome(), { extraArgs: ['--host-resolver-rules=MAP wotbtools.com 127.0.0.1', '--no-proxy-server'] })
 const screenshots = process.env.BROADCAST_SCREENSHOTS
-const scenarios = ['showcase', 'classic'].flatMap(profile => [
+const scenarios = ['summer', 'winter'].flatMap(profile => [
   { name: `${profile}-desktop`, profile, width: 1440, height: 900, touch: false, locale: 'en', productionHome: true },
   { name: `${profile}-tablet`, profile, width: 1024, height: 768, touch: true, locale: 'zh' },
   { name: `${profile}-mobile`, profile, width: 390, height: 844, touch: true, locale: 'ru' },
@@ -136,7 +136,7 @@ try {
       assert.ok(navLabel.accessible.includes(navLabel.visible), 'accessible name includes the visible navigation label')
       if (drawerShell) await page.closeNavDrawer()
       await serverGeometry(page, scenario, 5)
-      if (screenshots && ['showcase-desktop', 'classic-mobile'].includes(scenario.name)) {
+      if (screenshots && ['summer-desktop', 'winter-mobile'].includes(scenario.name)) {
         await mkdir(screenshots, { recursive: true })
         const image = await chrome.client.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, sessionId)
         await writeFile(join(screenshots, `${scenario.name}-servers.png`), Buffer.from(image.data, 'base64'))
@@ -166,7 +166,7 @@ try {
       assert.ok(await page.evaluate(`document.querySelector('[data-testid=broadcast-replay-40]').textContent.includes(${JSON.stringify(groupLabel)})`), 'group number follows the UI language')
       assert.equal(await page.evaluate('document.querySelector("[data-testid=broadcast-display-time-zone]").value'), 'server')
       await page.waitForValue('document.querySelector("[data-testid=broadcast-replay-40]").textContent', value => value.includes('19:00') && value.includes('UTC+8'))
-      if (screenshots && ['showcase-desktop', 'classic-mobile'].includes(scenario.name)) {
+      if (screenshots && ['summer-desktop', 'winter-mobile'].includes(scenario.name)) {
         await mkdir(screenshots, { recursive: true })
         const image = await chrome.client.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, sessionId)
         await writeFile(join(screenshots, `${scenario.name}.png`), Buffer.from(image.data, 'base64'))
@@ -189,7 +189,7 @@ try {
         await tap(page, '[data-testid=broadcast-enter-season-10]', scenario.touch)
         await page.waitForValue('!!document.querySelector("[data-testid=broadcast-node-menu-30]")', Boolean)
         await geometry(page)
-        if (screenshots && ['showcase-desktop', 'classic-mobile'].includes(scenario.name)) {
+        if (screenshots && ['summer-desktop', 'winter-mobile'].includes(scenario.name)) {
           await page.evaluate('window.scrollTo(0, 0)')
           const image = await chrome.client.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, sessionId)
           await writeFile(join(screenshots, `${scenario.name}-admin.png`), Buffer.from(image.data, 'base64'))

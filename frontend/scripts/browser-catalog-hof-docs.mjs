@@ -2,13 +2,13 @@ import assert from 'node:assert/strict'
 import { Page } from './browser-page.mjs'
 import { measureReachability, measureTouchTargets } from './browser-occlusion.mjs'
 
-export const CATALOG_HOF_DOC_SCENARIOS = ['showcase', 'classic'].flatMap(profile => [
+export const CATALOG_HOF_DOC_SCENARIOS = ['summer', 'winter'].flatMap(profile => [
   { width: 390, height: 844 }, { width: 740, height: 360 },
 ].flatMap(size => ['catalog', 'hof', 'docs', 'dialog'].map(mode => ({
   ...size, profile, mode, touch: true, name: `overlay-${mode}-${profile}-${size.width}x${size.height}`,
-})))).concat(['showcase', 'classic'].map(profile => ({
+})))).concat(['summer', 'winter'].map(profile => ({
   width: 1440, height: 900, touch: false, profile, mode: 'docs', name: `overlay-docs-${profile}-1440x900`,
-}))).concat(['showcase', 'classic'].flatMap(profile => [
+}))).concat(['summer', 'winter'].flatMap(profile => [
   { width: 360, height: 800, touch: true }, { width: 390, height: 844, touch: true },
   { width: 1024, height: 768, touch: true }, { width: 1440, height: 900, touch: false },
 ].flatMap(size => ['params', 'tank-config'].map(mode => ({

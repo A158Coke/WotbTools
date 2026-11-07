@@ -78,7 +78,7 @@ const { server, origin } = await startFixtureServer()
 let chrome
 try {
   chrome = await launchChromeForCdp(findChrome())
-  for (const profile of ['classic', 'showcase']) {
+  for (const profile of ['winter', 'summer']) {
     for (const width of [390, 900, 1440]) {
       const { targetId, sessionId } = await chrome.openPage()
       const page = new Page(chrome.client, sessionId)

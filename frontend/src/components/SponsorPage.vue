@@ -72,10 +72,6 @@ function hideUnavailableImage(type) {
   max-width: 980px !important;
 }
 
-:global(html[data-ui-profile="classic"] .sponsor-page) {
-  background-image: none;
-}
-
 .sponsor-hero {
   margin: 0 auto 24px;
   text-align: center;

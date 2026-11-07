@@ -8,7 +8,7 @@
 
 | 资产 | 当前用途 |
 |---|---|
-| `home/hero-v4.webp`（1920×768，108 KB） | 首页 Hero 装饰插槽（`design-language.md` §2）。`HomePage.vue` import 后经内联 `--home-hero-image` 传给 CSS；插槽开关是 `--home-hero-decor`，Classic Profile 与 `width < 768px` 两种情况下置 `none` |
+| `home/hero-v4.webp`（1920×768，108 KB） | 首页 Hero 装饰插槽（`design-language.md` §2）。`HomePage.vue` import 后经内联 `--home-hero-image` 传给 CSS；插槽开关是 `--home-hero-decor`，`width < 768px` 时置 `none` |
 | `home/showcase-playback-3d-v1.webp`（1600×798，177 KB） | 首页能力展示①：3D 战局回放 |
 | `home/showcase-armor-v1.webp`（1600×1043，192 KB） | 首页能力展示②：装甲查看器（112 Glacial 实体渲染） |
 | `home/showcase-rating-v1.webp`（1600×696，50 KB） | 首页能力展示③：回放解析结果与 League Rating |

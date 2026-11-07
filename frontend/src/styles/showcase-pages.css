@@ -8,7 +8,7 @@
   max-width: none !important;
   margin: 0 auto !important;
   padding: 28px 0 64px !important;
-  color: #c9c5bb !important;
+  color: var(--color-text-secondary) !important;
 }
 
 /* HoF admin and other admin-like pages */

@@ -1,11 +1,11 @@
-// Classic 主题残余深色回归（theme-source 契约）。
+// 浅色主题（寒冬）残余深色回归（theme-source 契约）。
 //
-// Classic(浅色) 与 Showcase(深色) 共用同一批组件 scoped 样式。修复原则：把「外圈 UI chrome」
+// 寒冬（浅色）与春 / 夏 / 秋（深色）共用同一批组件 scoped 样式。修复原则：把「外圈 UI chrome」
 // 组件的硬编码深色（#0…/#1…/rgba(0,…)）改为语义 token（var(--bg-card)/var(--text)/…），
-// 让 Classic 继承浅色 token，而非继续在 classic-profile.css 堆 !important override。
+// 让各主题继承语义 token，而不是按主题堆 !important override。
 //
 // 本文件是 source-level scan：对已改动的 chrome 组件，断言旧的硬编码深色值已移除、以及
-// 关键表面 class 必须消费语义 token，防止新增/回退把深色漏回 Classic。
+// 关键表面 class 必须消费语义 token，防止新增/回退把深色漏回浅色主题。
 
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -32,7 +32,7 @@ function ruleBody(src, selector) {
   return m[1]
 }
 
-describe('Classic 主题 residual-dark 回归（语义 token 契约）', () => {
+describe('浅色主题 residual-dark 回归（语义 token 契约）', () => {
   it('应用壳列面板/列面板头/列列表 不得再写死深色面', () => {
     expect(ruleBody(app, '\\.colpanel ')).toContain('background: var(--color-surface-1)')
     expect(ruleBody(app, '\\.colpanel-head')).toContain('background: var(--color-surface-2)')

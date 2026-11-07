@@ -86,7 +86,7 @@ Wargaming ASIA/EU/NA 登录使用 Keycloak 的 `WG_APPLICATION_ID`；backend 不
 - **单一数据源**：车辆库为 `common/tankopedia-tier{1..10}.json`，地图名为 `common/map_names.json`；禁止模块内复制一份。坦克百科搜索别名 `common/tank_aliases.json` 是独立的**搜索 metadata**（开发者审校维护，允许有来源记录的客户端名称批量导入；稀疏存储、只扩搜索召回，不参与车辆身份与显示名）；按任意 `tank_id` 离线校验/查询用生成的完整名册 `common/tank_ids.json`（全 tier，只有 id ↔ 名字，不是属性来源）。两者契约见 [`architecture/tankopedia-reference-data.md`](architecture/tankopedia-reference-data.md)。
 - 不引入 Lombok；record 用于不可变模型；Controller 只处理 HTTP，业务逻辑进入 service/core。
 - 跨层联动必须执行 `.agents/playbooks/wotb-sync.md`。
-- **UI Profile（展示风格）**：`showcase`（深色，默认）/ `classic`（浅色）共用同一套业务组件、布局、状态与 API；`auto` 偏好按系统深浅色解析到其中一种。共享外壳和已迁移页面使用语义 token，Classic 在 `frontend/src/styles/classic-profile.css` 中提供浅色映射。业务组件不得按 Profile fork，禁止 `:key="uiProfile"` 触发组件重建。详见 [`docs/frontend/ui-system.md`](frontend/ui-system.md)。
+- **UI Profile（四季主题）**：春 `spring` / 夏 `summer`（默认）/ 秋 `autumn`（深色）与冬 `winter`（浅色）共用同一套业务组件、布局、状态与 API，只换语义 token 与氛围插槽（`frontend/src/styles/tokens/color.css`）。业务组件不得按 Profile fork，禁止 `:key="uiProfile"` 触发组件重建。详见 [`docs/frontend/ui-system.md`](frontend/ui-system.md)。
 
 ---
 
@@ -291,15 +291,14 @@ League Rating 的适用范围、完整性门槛、公式、批次汇总与导出
 
 Replay Workspace 的 Data 批次分析与 2D/3D/Shots/AI 单场目标共享同一 selection；多文件先选首个有效 battle，`sourceId` 保留原始文件索引。布局所有权与浏览器验收矩阵见 [`frontend/replay-workspace.md`](frontend/replay-workspace.md)。
 
-### UI Profile 与主题（showcase=dark, classic=light）
+### UI Profile 与主题（四季，冬为浅色）
 
 **`data-theme` 不是独立主题偏好，而是 UI Profile 唯一派生。**
 
-- `showcase` → `data-ui-profile="showcase"` + `data-theme="dark"` + `color-scheme:dark`（默认）。
-- `classic` → `data-ui-profile="classic"` + `data-theme="light"` + `color-scheme:light`；只改 Presentation 层，不改 layout/density/spacing/结构/业务组件。
-- `frontend/index.html` 首屏内联脚本按 `wotb-ui-profile` 同时设置 `data-ui-profile` 与派生的 `data-theme`（无 FOUC）；`src/styles/tokens.css :root` 是 dark 基础视觉 token 单一事实源，Classic 由 `styles/classic-profile.css` 的 `html[data-ui-profile="classic"]` 覆盖浅色语义 token + namespace 覆盖（该文件必须最后导入）。
-- 唯一持久化偏好 `wotb-ui-profile` 支持 `showcase` / `classic` / `auto`；`auto` 读取并监听 `prefers-color-scheme`。不保存独立主题状态，实际 Profile 与 `data-theme` 由 `useUiProfile` 派生。
-- 手机顶栏高度使用 `--header-h`（48px，另加安全区）；平板/桌面使用左侧导航。旧 `--topbar-h` 只是兼容别名，不能作为独立布局 authority。
+- `spring` / `summer`（默认）/ `autumn` → `data-theme="dark"`；`winter` → `data-theme="light"`。只改 Presentation 层，不改 layout/density/spacing/结构/业务组件。
+- `frontend/index.html` 首屏内联脚本按 `wotb-ui-profile` 同时设置 `data-ui-profile`、派生的 `data-theme` 与 `theme-color`（无 FOUC）；四套主题的语义 token 与氛围插槽在 `src/styles/tokens/color.css`，`src/styles/tokens.css` 的旧变量投影到语义 token。
+- 唯一持久化偏好 `wotb-ui-profile`；读取边界把旧值 `showcase` / `classic` / `auto` 映射为 `summer` 并写回。不保存独立主题状态。
+- 手机顶栏为内容让出 `--header-block`（48px，另加安全区），吸顶偏移读 `--header-h`（普通页面滚动收起顶栏时归零）；平板/桌面使用左侧导航。旧 `--topbar-h` 只是兼容别名，不能作为独立布局 authority。
 - Sponsor 页面使用 `/sponsor` Vue Router path，在共享 AppShell 中消费主题和三语 locale。
 
 约定：`data-theme` 由 `useUiProfile.themeForProfile` 派生；禁止手工 set `data-theme` 或另立 theme 状态；禁止 `filter:invert` / 全局 opacity / `html *` / 双套业务组件 / `:key="uiProfile"` 触发重建。
@@ -325,7 +324,7 @@ frontend/src/locales/ru.json
 
 Replay/管理宽表必须保持高 information density；允许横向滚动，但不能因为页面容器过窄而制造无意义滚动。
 
-全站使用统一页面标题、按钮、提示与表格样式；首页内容按正常文档流排列，更多页复用可滚动分段导航，文档页限制阅读宽度并允许代码/表格局部横滚。`showcase-regressions.css` 只保留既有布局 guard；共享外壳与回放样式在其后导入，`classic-profile.css` 最后提供 Profile 映射。新增规则应写入实际组件或样式 owner，避免继续叠加全局覆盖。
+全站使用统一页面标题、按钮、提示与表格样式；首页内容按正常文档流排列，更多页复用可滚动分段导航，文档页限制阅读宽度并允许代码/表格局部横滚。`showcase-regressions.css` 只保留既有布局 guard；共享外壳与回放样式在其后导入；颜色全部取当前主题的语义 token。新增规则应写入实际组件或样式 owner，避免继续叠加全局覆盖。
 
 ### 回放能力
 

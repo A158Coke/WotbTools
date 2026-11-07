@@ -208,8 +208,6 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
   background-position: center, center, right center;
   background-size: cover, cover, cover;
 }
-html[data-ui-profile="classic"] .home-hero { --home-hero-decor: none; }
-html[data-ui-profile="classic"] .home-hero-decor { display: none; }
 
 .home-hero h1 { max-width: var(--home-hero-title-measure); margin: 0; color: var(--color-text-primary); font: var(--type-display-hero); letter-spacing: -0.02em; }
 /* 两行对句：第二行是强调行，承载渐变与扫光。 */

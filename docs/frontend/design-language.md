@@ -8,7 +8,7 @@
 ## 0. 五条总原则
 
 1. **数据优先。** 这是一个分析工具：先让数字清楚、可比较，然后才考虑氛围。装饰永远不能降低数据的可读性。
-2. **主题只换"皮"，不换"骨"。** 两套主题的布局、间距、字号、组件结构、交互完全一致，只替换语义 token 的值和装饰插槽。
+2. **主题只换"皮"，不换"骨"。** 四季主题的布局、间距、字号、组件结构、交互完全一致，只替换语义 token 的值和装饰插槽。
 3. **组件只认语义 token。** 组件里不出现色值、像素魔法数、`!important`、裸 z-index。
 4. **可访问性是底线，不是加分项。** WCAG 2.2 AA：对比度、触控尺寸、键盘可达、减少动画。
 5. **一个概念一个名字。** 术语、图标、组件都遵守这条：同一件事在所有页面上叫法一致、长相一致。
@@ -41,8 +41,8 @@ Semantic（语义）        --color-accent: var(--orange-500)     组件只能�
 Component（可选）       --button-primary-bg: var(--color-accent)     仅复杂组件需要
 ```
 
-- **文件：** `src/styles/tokens/scale.css`（间距、字号、圆角、层级、控件尺寸、动效等与主题无关的量，并在文件顶部声明 `@layer` 顺序）· `src/styles/tokens/color.css`（原始色层与两套主题的语义映射、层级阴影）。**原始层只收录被两个及以上语义 token 共用的颜色**（目前是 `--green-400/700`、`--red-400/700`，被 success / danger 与阵营色共用）；只被一个语义 token 使用的颜色直接写在语义映射里，等出现第二个引用方时再抽出。
-- **主题切换：** `<html data-theme="dark|light">`。主题文件只重新映射**语义层**；原始层和 scale 层两套主题共用。
+- **文件：** `src/styles/tokens/scale.css`（间距、字号、圆角、层级、控件尺寸、动效等与主题无关的量，并在文件顶部声明 `@layer` 顺序）· `src/styles/tokens/color.css`（原始色层、四季主题的语义映射与氛围插槽、层级阴影）。**原始层只收录被两个及以上语义 token 共用的颜色**（目前是 `--green-400/700`、`--red-400/700`，被 success / danger 与阵营色共用）；只被一个语义 token 使用的颜色直接写在语义映射里，等出现第二个引用方时再抽出。
+- **主题切换：** `<html data-ui-profile="spring|summer|autumn|winter">`，`data-theme`（dark / light）由 profile 派生。主题文件只重新映射**语义层**与氛围插槽；原始层和 scale 层四套主题共用。
 - **CSS 分层：** 目前 `scale.css` 顶部只有 `@layer tokens;`（全站只有这一处声明），只声明已经在用的层。
 - **命名：** `--{类别}-{角色}-{变体}-{状态}`，例如 `--color-text-secondary`、`--color-surface-2`、`--color-border-focus`。
 - **旧 token 迁移：** 与新刻度同名、同值的旧变量（`--space-1…4`、`--radius-sm/md/lg`）已迁入 `scale.css`，保持单一事实源；`--space-5/6` 的旧用法已改指取值相同的 `--space-6/8`。其余旧变量（颜色、`--z-*`、`--font-*`、`--friendly/--enemy` 等）保持原值、标注 deprecated，与新 token 并存。组件迁移时直接改用新 token；某个旧变量不再被任何地方引用时就删除。**不把旧变量整体改成指向新值的 alias**：新旧色值不同，整体 alias 会一次性改变全站视觉。
@@ -53,20 +53,25 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 
 | ID | 强度 | 范围 | 规则 | 例外 | 验证 |
 |---|---|---|---|---|---|
-| DC-THM-01 | MUST | 两档 Profile | 布局、组件结构、交互完全一致，只替换语义 token 和装饰插槽；不按 Profile fork 业务实现 | 无 | `src/styles/classic-profile-css.test.js`；`frontend/AGENTS.md` UI Profile 不变量 |
+| DC-THM-01 | MUST | 四季主题 | 布局、组件结构、字号、交互完全一致，只替换语义 token 与氛围插槽；不按主题 fork 业务实现，组件不出现主题判断 | 无 | `src/ui-profile-fork-guard.test.js`；`frontend/AGENTS.md` UI Profile 不变量 |
 | DC-THM-02 | MUST | 全站 | 背景图、渐变、毛玻璃只出现在本节列出的装饰插槽 | 无 | 人工 |
 | DC-THM-03 | MAY | 工作区页面 | 在数据区之上放一个 Showcase Hero | 无 | 人工 |
 | DC-THM-04 | MUST | Showcase Hero | 只放在数据区之上，不进入表格、筛选、表单、抽屉；expanded 档首屏必须能看到数据区 | 无 | 每页 PR 大屏截图，人工 |
-| DC-THM-05 | MUST | Showcase Hero | 文字落在纯色遮罩上，遮罩上最差取样点满足 §3 对比度，两档 Profile 都测 | 无 | 人工取样 |
-| DC-THM-06 | MUST | Showcase Hero | Classic 下降级为纯色；`prefers-reduced-motion: reduce` 下无动效 | 无 | 人工；首页由 `pnpm run test:browser-home` 覆盖动效 |
+| DC-THM-05 | MUST | Showcase Hero | 文字落在主题遮罩（`--theme-hero-scrim*`）压出的纯色区上，最差取样点满足 §3 对比度，四套主题都测 | 无 | 人工取样 |
+| DC-THM-06 | MUST | Showcase Hero | `prefers-reduced-motion: reduce` 下无动效 | 无 | 人工；首页由 `pnpm run test:browser-home` 覆盖动效 |
+| DC-THM-07 | MUST | 主题 token | 四套主题的文字 / UI 色在各自四层表面上的最差对比度达到 AA（正文 ≥ 4.5，UI ≥ 3，强调色上的文字 ≥ 4.5） | 无 | `src/styles/tokens/color-contrast.test.ts` |
+| DC-THM-08 | MUST | 场景外壳 | 2D / 3D 回放、装甲查看器、地图 3D 的根元素带 `data-scene-surface`，寒冬下仍是深色玻璃，不跟随浅色表面 | 无 | `color-contrast.test.ts` 的场景块断言 + 人工 |
 
-| | **沉浸**（`dark`） | **简约**（`light`） |
-|---|---|---|
-| 定位 | 游戏氛围、夜间使用 | 白天、办公、截图分享、打印 |
-| 布局 / 组件 / 字号 / 密度 | **完全相同** | **完全相同** |
-| 语义色 | §3 暗色列 | §3 亮色列 |
-| 装饰图像 | 允许，只能出现在**装饰插槽**里 | 关闭（插槽为 `none`），Hero 降级为纯色 |
-| 系统界面 | `color-scheme: dark`，`<meta name="theme-color" content="#0b0f11">` | `color-scheme: light`，`theme-color` 为 `#f6f5f2` |
+| | **春 · 青山** `spring` | **夏 · 盛夏** `summer`（默认） | **秋 · 金秋** `autumn` | **冬 · 寒冬** `winter` |
+|---|---|---|---|---|
+| 深浅色 | 深色 | 深色 | 深色 | 浅色（白 7 蓝 3） |
+| 底色 / 强调色 | `#08140f` / `#f2b450` | `#0b0f11` / `#e0a02e` | `#160f08` / `#ef8434` | `#eef3f8` / `#1f6fd1` |
+| 底纹 `--theme-pattern` | 等高线 | 战术网格 | 斜纹 | 雷达环 |
+| 布局 / 组件 / 字号 / 密度 | **完全相同** | **完全相同** | **完全相同** | **完全相同** |
+
+完整取值只在 `frontend/src/styles/tokens/color.css`（每套主题一个语义映射块）；`<meta name="theme-color">` 取当前主题底色（`useUiProfile.THEME_COLOR`），`color-scheme` 随深浅色。
+
+**氛围插槽**（主题 token，只能用在装饰插槽里）：`--theme-hero-image`（横版约 2.5:1）、`--theme-hero-image-portrait`（竖版约 4:5）、`--theme-hero-scrim`（横版遮罩，左侧压出文字区）、`--theme-hero-scrim-portrait`（竖版遮罩，自下而上）、`--theme-glass`（叠在主视觉上的按钮底）、`--theme-pattern`（页面底纹）。主视觉素材在 `frontend/src/assets/theme/theme-<季节>-{wide,portrait}.webp`。主题选择器的缩略图与色点读 `--theme-preview-<季节>-*`。
 
 **装饰插槽**（这是唯一允许放背景图、渐变、毛玻璃的地方）：
 
@@ -74,16 +79,16 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 2. 工作区 Showcase Hero（规则见 DC-THM-03 至 DC-THM-06）
 3. 空状态插图
 4. 登录页
+5. 页面底色上的主题底纹（`--theme-pattern`，叠在 `--color-canvas` 上，卡片与数据区是纯色表面）
 
-**数据区**，也就是表格、回放、筛选、表单、抽屉，**两套主题都用纯色**。依据：WCAG 1.4.3 要求文字对比度稳定，而文字压在图片上时，对比度会随图片内容变化，没法保证。
+**数据区**，也就是表格、回放、筛选、表单、抽屉，**四套主题都用纯色**。依据：WCAG 1.4.3 要求文字对比度稳定，而文字压在图片上时，对比度会随图片内容变化，没法保证。
 
 **选择逻辑：**
-- 首次访问跟随 `prefers-color-scheme`。
-- 用户手动选择后记住，以用户选择为准。
-- 在首次绘制之前，由 `index.html` 里的内联脚本设置 `data-theme`，避免闪烁。
-- 用户菜单里提供"跟随系统 / 沉浸 / 简约"三个选项。`wotb-ui-profile` 的 `auto` 值由 `useUiProfile` 按 `prefers-color-scheme` 解析为 showcase / classic；没有独立的 theme 状态或存储 key（遵守 `frontend/AGENTS.md` 的 UI Profile 不变量）。
+- 默认盛夏；用户在「更多」→ 主题里选择（`ThemePicker`：`SegmentedControl` tiles，每项是主视觉缩略图 + 强调色点 + 名称），选择后记住。
+- 持久化 key 只有 `wotb-ui-profile`，值为 `spring` / `summer` / `autumn` / `winter`；读取边界把旧值 `showcase` / `classic` / `auto` 映射为 `summer` 并写回。没有独立的 theme 状态或存储 key（遵守 `frontend/AGENTS.md` 的 UI Profile 不变量）。
+- 在首次绘制之前，由 `index.html` 里的内联脚本投影 `data-ui-profile` / `data-theme` / `theme-color`，避免闪烁（`src/index-firstpaint.test.js` 真实执行该脚本）。
 
-**验收标准：** 任何组件在两套主题下都必须通过 §3 的对比度要求。
+**验收标准：** 任何组件在四套主题下都必须通过 §3 的对比度要求。
 
 ---
 
@@ -91,8 +96,8 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 
 | ID | 强度 | 范围 | 规则 | 例外 | 验证 |
 |---|---|---|---|---|---|
-| DC-CLR-01 | MUST | 全站 | 正文 ≥ 4.5:1，大字与 UI 图形 ≥ 3:1，两档 Profile 都成立 | 无 | 人工 |
-| DC-CLR-02 | MUST | 单个视图 | 只保留一个橙色填充主操作 | 无 | 人工 |
+| DC-CLR-01 | MUST | 全站 | 正文 ≥ 4.5:1，大字与 UI 图形 ≥ 3:1，四套主题都成立 | 无 | token 由 `src/styles/tokens/color-contrast.test.ts` 断言；组件组合人工 |
+| DC-CLR-02 | MUST | 单个视图 | 只保留一个强调色填充主操作 | 无 | 人工 |
 | DC-CLR-03 | MUST | 阵营表达 | 不能只靠红绿区分，必须再用位置、文字或形状表达一次 | 无 | 人工 |
 | DC-CLR-04 | MUST | 物理队伍色 | Team 1 / Team 2 颜色不随录像者交换 | 无 | 人工 |
 
@@ -101,35 +106,35 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 
 ### 3.1 表面与文字
 
-| 语义 token | 沉浸 dark | 简约 light | 用途 |
-|---|---|---|---|
-| `--color-canvas` | `#0b0f11` | `#f6f5f2` | 页面底色 |
-| `--color-surface-1` | `#11171a` | `#ffffff` | 卡片、面板 |
-| `--color-surface-2` | `#172024` | `#f1efea` | 表头、嵌套区域、hover |
-| `--color-surface-3` | `#1e292e` | `#e8e5de` | 选中行、按下、输入框底 |
-| `--color-text-primary` | `#eceae4`（≥12.4） | `#1b1e1c`（≥13.4） | 正文、数字 |
-| `--color-text-secondary` | `#aab1ac`（≥6.8） | `#4c534f`（≥6.3） | 标签、说明 |
-| `--color-text-tertiary` | `#8a938e`（≥4.7） | `#5a615d`（≥5.1） | 辅助信息、占位符。**这是最浅的一级文字色** |
-| `--color-border-subtle` | `#25313a` | `#e3dfd6` | 分隔线（装饰性，不承担信息） |
-| `--color-border-strong` | `#6c7a82`（≥3.4） | `#7f7c74`（≥3.3） | 输入框、复选框等控件边框（需 ≥3:1） |
+| 语义 token | 春 spring | 夏 summer | 秋 autumn | 冬 winter | 用途 |
+|---|---|---|---|---|---|
+| `--color-canvas` | `#08140f` | `#0b0f11` | `#160f08` | `#eef3f8` | 页面底色 |
+| `--color-surface-1` | `#0e1d17` | `#11171a` | `#20160c` | `#ffffff` | 卡片、面板 |
+| `--color-surface-2` | `#14271f` | `#172024` | `#2a1d10` | `#f5f8fc` | 表头、嵌套区域、hover |
+| `--color-surface-3` | `#1b3228` | `#1e292e` | `#362516` | `#e2ebf5` | 选中行、按下、输入框底 |
+| `--color-text-primary` | `#e7f1ea` | `#eceae4` | `#f6ead6` | `#0f2236` | 正文、数字 |
+| `--color-text-secondary` | `#a6bdb0` | `#aab1ac` | `#d0bb9a` | `#3b5470` | 标签、说明 |
+| `--color-text-tertiary` | `#869d90` | `#8a938e` | `#ad9576` | `#4a6380` | 辅助信息、占位符。**这是最浅的一级文字色** |
+| `--color-border-subtle` | `#1f3a2e` | `#25313a` | `#3d2c19` | `#cbd8e6` | 分隔线（装饰性，不承担信息） |
+| `--color-border-strong` | `#5f8072` | `#6c7a82` | `#937a55` | `#6f849b` | 输入框、复选框等控件边框（需 ≥3:1） |
 
-**深色主题的层级靠亮度区分，不靠阴影。** 表面越亮，离用户越近。依据：Material Design 的暗色主题指南。浅色主题则用阴影。
+**深色主题的层级靠亮度区分，不靠阴影。** 表面越亮，离用户越近。依据：Material Design 的暗色主题指南。浅色主题（寒冬）则用阴影。
 
 ### 3.2 强调色与状态色
 
-| 语义 token | 沉浸 dark | 简约 light | 规则 |
-|---|---|---|---|
-| `--color-accent` | `#e0a02e` | `#a0620c` | 主按钮底色、选中态、焦点环、进度条 |
-| `--color-on-accent` | `#17130b`（8.1） | `#ffffff`（4.9） | 橙色底上的文字 |
-| `--color-accent-text` | `#f0b33e`（≥8.0） | `#955708`（≥4.6） | **橙色文字只能用这个 token**，如链接、强调数字 |
-| `--color-success` | `#5cc280` | `#16703c` | 成功、胜利 |
-| `--color-danger` | `#f2786d` | `#b8352a` | 错误、删除、失败 |
-| `--color-warning` | `#f5ca76` | `#855600` | 警告 |
-| `--color-info` | `#6db3ec` | `#1a64a8` | 提示、链接（非品牌链接） |
+| 语义 token | 春 | 夏 | 秋 | 冬 | 规则 |
+|---|---|---|---|---|---|
+| `--color-accent` | `#f2b450` | `#e0a02e` | `#ef8434` | `#1f6fd1` | 主按钮底色、选中态、焦点环、进度条 |
+| `--color-on-accent` | `#1a1206` | `#17130b` | `#1a0d04` | `#ffffff` | 强调色底上的文字 |
+| `--color-accent-text` | `#f8c56e` | `#f0b33e` | `#ffa15c` | `#1d63b8` | **强调色文字只能用这个 token**，如链接、强调数字 |
+| `--color-success` | `#66d48f` | `#5cc280` | `#6cc08a` | `#11703f` | 成功、胜利 |
+| `--color-danger` | `#f2786d` | `#f2786d` | `#ff8070` | `#b8322a` | 错误、删除、失败 |
+| `--color-warning` | `#f5ca76` | `#f5ca76` | `#f5ca76` | `#855600` | 警告 |
+| `--color-info` | `#6db3ec` | `#6db3ec` | `#6db3ec` | `#1a64a8` | 提示、链接（非品牌链接） |
 
-- 遮罩：`--color-scrim` 暗色为 `rgb(0 0 0 / .6)`、亮色为 `rgb(0 0 0 / .35)`，所有弹窗、sheet 共用；组件不各自定义遮罩色。
+- 遮罩：`--color-scrim` 深色主题为 `rgb(0 0 0 / .6)`、寒冬为 `rgb(15 34 54 / .35)`，所有弹窗、sheet 共用；组件不各自定义遮罩色。
 - 状态色的背景版本（`--color-danger-bg` 等）统一用 `color-mix(in oklab, var(--color-danger) 14%, var(--color-surface-1))`，不单独定义色值。
-- **强调色要克制**：每个视图只保留一个主操作用橙色填充。其余按钮用 secondary 或 ghost（§7）。
+- **强调色要克制**：每个视图只保留一个主操作用强调色填充。其余按钮用 secondary 或 ghost（§7）。
 
 ### 3.3 领域色：阵营
 
@@ -141,10 +146,10 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | **记录者视角**（我方 / 敌方） | `--color-team-ally` / `--color-team-enemy` | 2D / 3D 名册、顶栏双方总血量与比分、基地归属、胜负横幅 |
 | 未知 / 中立 | `--color-team-neutral` | 未识别阵营、无主基地 |
 
-| token | 沉浸 | 简约 | 色盲替代色 |
+| token | 春 / 夏 / 秋 | 冬 | 色盲替代色 |
 |---|---|---|---|
-| `--color-team-1` | `#5cc280` | `#16703c` | 不变 |
-| `--color-team-2` | `#f2786d` | `#b8352a` | 改用 `--color-team-enemy-cb`（`#c38bf0` / `#7b3fb3`，紫色） |
+| `--color-team-1` | `#66d48f` / `#5cc280` / `#6cc08a` | `#11703f` | 不变 |
+| `--color-team-2` | `#f2786d` / `#f2786d` / `#ff8070` | `#b8322a` | 改用 `--color-team-enemy-cb`（深色 `#c38bf0` / 寒冬 `#7b3fb3`，紫色） |
 | `--color-team-ally` | = `--color-team-1`（别名） | = `--color-team-1` | 不变 |
 | `--color-team-enemy` | = `--color-team-2`（别名） | = `--color-team-2` | 改用 `--color-team-enemy-cb` |
 
@@ -164,7 +169,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 ### 3.4 数据可视化
 
-- 分类色板：8 色，对色盲友好（参考 Okabe–Ito），两套主题各一份，都要在 `surface-1` 上 ≥ 3:1。
+- 分类色板：8 色，对色盲友好（参考 Okabe–Ito），深色三季共用一份、寒冬一份，都要在 `surface-1` 上 ≥ 3:1。
 - 顺序色板（热力图、穿透率等）：单色相，从浅到深；在亮色主题里方向反转。
 - 图表**一律带图例**，关键数值直接标在图上，不能只靠颜色读值。
 
@@ -563,7 +568,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | ID | 强度 | 范围 | 规则 | 例外 | 验证 |
 |---|---|---|---|---|---|
 | DC-ACC-01 | MUST | 界面 PR | 说明涉及的规则 ID、影响的 Profile 与断点，以及哪些只能人工验证 | 无 | PR 审查 |
-| DC-ACC-02 | MUST | 页面视觉 PR | 附大屏、小屏前后截图，两档 Profile 都看 | 3D 与回放画面由用户验收，截图不作验收证据 | PR 审查，用户验收 |
+| DC-ACC-02 | MUST | 页面视觉 PR | 附大屏、小屏前后截图，盛夏与寒冬（深 / 浅各一）都看 | 3D 与回放画面由用户验收，截图不作验收证据 | PR 审查，用户验收 |
 | DC-ACC-03 | MUST | 界面 PR | 受影响的 browser gate 通过，退步不靠放宽门禁解决 | 无 | PR CI |
 | DC-ACC-04 | MUST | Android / WebView | 只有行为确实与浏览器不同的规则才要求真机验证；Chromium 设备仿真不替代真机 | 无 | 真机人工 |
 
@@ -577,7 +582,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 2. **frontend/AGENTS.md** 引用本文件："改动 UI 前必须阅读 design-language.md；新增视觉值必须先加 token。"
 3. **PR 自查清单：**
    - [ ] 只用了语义 token
-   - [ ] 两套主题都截了图
+   - [ ] 盛夏与寒冬都截了图
    - [ ] 三档宽度都截了图
    - [ ] 键盘能走完整个流程
    - [ ] 新文案进了 i18n 和术语表

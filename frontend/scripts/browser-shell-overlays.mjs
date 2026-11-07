@@ -2,7 +2,7 @@ import { Page } from './browser-page.mjs'
 import { measureOcclusion, measureReachability, measureTouchTargets, measureViewportSafety } from './browser-occlusion.mjs'
 import { primaryNavItems } from '../src/app/navigation.js'
 
-export const SHELL_OVERLAY_SCENARIOS = ['showcase', 'classic'].flatMap(profile => [
+export const SHELL_OVERLAY_SCENARIOS = ['summer', 'winter'].flatMap(profile => [
   { width: 390, height: 844, touch: true },
   { width: 740, height: 360, touch: true },
   { width: 844, height: 340, touch: true },

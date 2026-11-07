@@ -305,7 +305,7 @@ class Page {
     })
   }
 
-  async enable({ locale = 'zh', profile = 'showcase' } = {}) {
+  async enable({ locale = 'zh', profile = 'summer' } = {}) {
     await this.client.send('Runtime.enable', {}, this.sessionId)
     await this.client.send('Page.enable', {}, this.sessionId)
     // 页面共享 origin 的 localStorage；每个场景都在首屏前设置自己的偏好，避免矩阵污染后续场景。
@@ -562,7 +562,7 @@ const APP_SCENARIOS = [
   // Admin 与普通登录用户能力集合相同。
   { name: 'admin-1600x900-desktop', width: 1600, height: 900, touch: false, authenticated: true, login: 'resolve', roles: ['wotbtools-admin'] },
   { name: 'admin-390x844-portrait-coarse', width: 390, height: 844, touch: true, authenticated: true, login: 'resolve', roles: ['wotbtools-admin'] },
-  ...['zh', 'en', 'ru'].flatMap(locale => ['showcase', 'classic'].flatMap(profile => [
+  ...['zh', 'en', 'ru'].flatMap(locale => ['summer', 'winter'].flatMap(profile => [
     { width: 320, height: 812, touch: true },
     { width: 390, height: 844, touch: true },
     { width: 767, height: 900, touch: true },
@@ -582,7 +582,7 @@ const AUTH_CAPABILITY_SCENARIOS = [
   { name: 'capability-normal-shots-armor-handoff', cap: 'shots', view: 'agent-shots', authenticated: true, width: 1600, height: 900, touch: false, reconstruct: true },
   { name: 'capability-normal-shots-armor-handoff-mobile', cap: 'shots', view: 'agent-shots', authenticated: true, width: 390, height: 844, touch: true, reconstruct: true },
   { name: 'capability-normal-shots-armor-handoff-tablet', cap: 'shots', view: 'agent-shots', authenticated: true, width: 1024, height: 768, touch: false, reconstruct: true },
-  ...['showcase', 'classic'].map(profile => ({ name: `capability-normal-shots-armor-handoff-landscape-${profile}`, profile, cap: 'shots', view: 'agent-shots', authenticated: true, width: 740, height: 360, touch: true, reconstruct: true })),
+  ...['summer', 'winter'].map(profile => ({ name: `capability-normal-shots-armor-handoff-landscape-${profile}`, profile, cap: 'shots', view: 'agent-shots', authenticated: true, width: 740, height: 360, touch: true, reconstruct: true })),
 ]
 
 async function runAuthCapabilityScenario(env, scenario) {
@@ -590,7 +590,7 @@ async function runAuthCapabilityScenario(env, scenario) {
   const { targetId, sessionId } = await env.chrome.openPage()
   const page = new Page(env.chrome.client, sessionId)
   lastPage = page
-  await page.enable({ profile: scenario.profile ?? 'showcase' })
+  await page.enable({ profile: scenario.profile ?? 'summer' })
   await page.emulate(scenario)
   const origin = await fakeAnalysisOrigin()
   await page.goto(`${origin}/?view=replay&ws-auth=${scenario.authenticated ? 1 : 0}&ws-shot-fixture=1&assets=${encodeURIComponent(`${origin}/fixture-assets`)}`)
@@ -3919,12 +3919,12 @@ async function captureMobileReview(page, scenario, state = 'battlefield') {
 
 /* ------------------------------------------------------------------ main */
 
-const ONBOARDING_SCENARIOS = [...['zh', 'en', 'ru'].flatMap(language => ['showcase', 'classic'].flatMap(profile =>
+const ONBOARDING_SCENARIOS = [...['zh', 'en', 'ru'].flatMap(language => ['summer', 'winter'].flatMap(profile =>
   [{ width: 1600, height: 1000, touch: false }, { width: 1024, height: 900, touch: false }, { width: 390, height: 844, touch: true }]
     .map(viewport => ({ ...viewport, language, profile, name: `onboarding-${language}-${profile}-${viewport.width}` })))),
-  { name: 'onboarding-fullscreen-844', width: 844, height: 390, touch: true, language: 'zh', profile: 'showcase', fullscreen: true },
-  { name: 'onboarding-narrow-desktop-840', width: 840, height: 900, touch: false, language: 'zh', profile: 'showcase' },
-  { name: 'onboarding-fullscreen-transition-844', width: 844, height: 390, touch: true, language: 'zh', profile: 'showcase', fullscreen: true, fullscreenTransition: true }]
+  { name: 'onboarding-fullscreen-844', width: 844, height: 390, touch: true, language: 'zh', profile: 'summer', fullscreen: true },
+  { name: 'onboarding-narrow-desktop-840', width: 840, height: 900, touch: false, language: 'zh', profile: 'summer' },
+  { name: 'onboarding-fullscreen-transition-844', width: 844, height: 390, touch: true, language: 'zh', profile: 'summer', fullscreen: true, fullscreenTransition: true }]
 let onboardingServer = null
 async function runOnboardingScenario(env, scenario) {
   // Actual pinned WASM and the actual sample: only the external auth/profile boundary is stubbed.
@@ -4106,7 +4106,7 @@ async function runOnboardingScenario(env, scenario) {
 }
 
 // #727：真实 MenuButton + 当前三项导出文案；短视口在上下两侧都放不下整个菜单。
-const MENU_VIEWPORT_SCENARIOS = ['showcase', 'classic'].flatMap(profile => [
+const MENU_VIEWPORT_SCENARIOS = ['summer', 'winter'].flatMap(profile => [
   { width: 360, height: 640, touch: true },
   { width: 740, height: 360, touch: true },
   { width: 740, height: 240, touch: true },

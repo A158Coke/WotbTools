@@ -315,7 +315,7 @@ async function videoLifecycle(page, origin, scenario) {
   if (scenario.width >= 768) assert.equal(await page.evaluate('!!document.querySelector("[data-testid=nav-creators]")'), true)
 }
 const { server, origin } = await startFixtureServer({ middleware, allowedHosts: ['wotbtools.com'] }), chrome = await launchChromeForCdp(findChrome(), { extraArgs: ['--host-resolver-rules=MAP wotbtools.com 127.0.0.1', '--no-proxy-server'] })
-const scenarios = ['showcase', 'classic'].flatMap(profile => [
+const scenarios = ['summer', 'winter'].flatMap(profile => [
   ...['UP', 'VIDEO'].flatMap(cardType => [1920, 1600, 1024, 390, 320].map(width => ({ name: `${profile}-cards-${cardType}-${width}`, profile, cardType, width, height: 1000, touch: width < 1200, locale: 'zh' }))),
   ...['en', 'ru'].map(locale => ({ name: `${profile}-cards-VIDEO-${locale}-1280`, profile, cardType: 'VIDEO', width: 1280, height: 1000, touch: false, locale })),
   ...[1440, 1024, 390, 360, 767, 768, 1199, 1200].map(width => ({ name: `${profile}-${width}`, profile, width, height: 1000, touch: width < 1200, full: [1440, 1024, 390].includes(width), locale: width === 1024 ? 'zh' : width === 390 ? 'ru' : 'en' })),
@@ -465,7 +465,7 @@ try {
         assert.equal(await page.evaluate('document.querySelector("[data-testid=creator-categories-toggle]").getAttribute("aria-expanded")'), 'false')
         assert.equal(await page.evaluate('new URL(location.href).searchParams.get("creatorCategory")'), '2')
         const profileBeforeReads = db.creatorReads
-        await page.evaluate(`import('/src/composables/useUiProfile.js').then(m => m.setUiProfile(${JSON.stringify(scenario.profile === 'classic' ? 'showcase' : 'classic')}))`)
+        await page.evaluate(`import('/src/composables/useUiProfile.js').then(m => m.setUiProfile(${JSON.stringify(scenario.profile === 'winter' ? 'summer' : 'winter')}))`)
         assert.equal(await page.evaluate('document.querySelector("[data-testid=creator-categories-toggle]").getAttribute("aria-expanded")'), 'false')
         await page.evaluate(`import('/src/composables/useUiProfile.js').then(m => m.setUiProfile(${JSON.stringify(scenario.profile)}))`)
         assert.equal(db.creatorReads, profileBeforeReads)

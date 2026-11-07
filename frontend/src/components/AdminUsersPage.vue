@@ -620,7 +620,7 @@ function fmtTime(s) {
 
 <style scoped>
 /* 设计语言 token（docs/frontend/design-language.md）：本组件是用户管理页样式的唯一 owner，
- * showcase / classic 不再覆盖内部元素；两套主题只通过语义 token 换色。 */
+ * 各主题不再覆盖内部元素，只通过语义 token 换色。 */
 .admin-page { padding-block: var(--space-6) var(--space-12); color: var(--color-text-primary); font: var(--type-body); }
 .admin-title { margin: 0 0 var(--space-1); color: var(--color-text-primary); font: var(--type-h1); }
 .admin-hint { margin: 0 0 var(--space-4); color: var(--color-text-secondary); }

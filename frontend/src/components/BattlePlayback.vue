@@ -1037,7 +1037,7 @@ const mapStyle = computed(() => ({
 </script>
 
 <template>
-  <div v-if="image && playback" ref="pbRoot" class="battle-playback playback-workspace" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-phone-landscape': phoneLandscape, 'pb-controls-bottom': true, 'pb-roster-lanes': rosterLanes, ['pb-form-' + formFactor]: true }" :style="mapStyle" data-test="battle-playback">
+  <div v-if="image && playback" ref="pbRoot" class="battle-playback playback-workspace" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-phone-landscape': phoneLandscape, 'pb-controls-bottom': true, 'pb-roster-lanes': rosterLanes, ['pb-form-' + formFactor]: true }" :style="mapStyle" data-scene-surface data-test="battle-playback">
     <!-- 移动端全屏入口统一右上角浮动（与 Map Preview 3D / Replay 3D 同一组件同一位置）；
          传输条里的内联按钮在手机形态由 floatingFullscreen 隐藏，桌面保持原位。 -->
     <SceneFullscreenButton

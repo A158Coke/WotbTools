@@ -82,16 +82,16 @@ HTTP 200 不证明每张地图的资产齐备，缺失的具体资产应如实�
 
 ## UI Profile invariant
 
-- `showcase` / `classic` 是 Presentation Profile，共用同一套业务组件、状态、API 和结构。
+- 四季主题 `spring` / `summer` / `autumn` / `winter` 是 Presentation Profile，共用同一套业务组件、状态、API 和结构。
 - `wotb-ui-profile` 是唯一持久化 profile；`data-theme` 只能由 profile 派生，不得恢复独立 theme state、存储 key 或 `useTheme`。
-- 切换 profile 不得通过 `:key` 重建组件，也不得创建 `classic/` 与 `showcase/` 两套业务实现（`ui-profile-fork-guard.test.js` 强制）。
+- 切换 profile 不得通过 `:key` 重建组件，也不得按主题创建多套业务实现（`ui-profile-fork-guard.test.js` 强制）。
 - 主题 token、Profile 投影和例外覆盖见 [`docs/frontend/ui-system.md`](../docs/frontend/ui-system.md)。
 
 ## Responsive hard constraints
 
 - 保留既有 layout primitives；不得用任意新的 `max-width` 或整体 `transform: scale()` 掩盖布局问题。
 - 同时验证三档：Desktop `>=1200px`、Tablet `768–1199px`、Mobile `<768px`。Tablet 不是缩小版 phone；复杂表格可用关键列 + 横向滚动，Inspector 在窄屏使用单列/面板布局。
-- 页面变更检查 overflow、sticky、hover/focus、loading/empty/error，以及 Classic/Showcase 下的对比度。
+- 页面变更检查 overflow、sticky、hover/focus、loading/empty/error，以及盛夏 / 寒冬（深 / 浅）下的对比度。
 
 ## Testing rules
 

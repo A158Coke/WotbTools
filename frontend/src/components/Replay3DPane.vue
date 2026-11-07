@@ -862,7 +862,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
                             宽档、平板、手机横屏、手机全屏横屏都是这一条；
            `portrait-flow` = 手机竖屏纵向流：HUD / Stage / 传输控件 / 详情 / Team 1 / Team 2。
          名册关闭时两者都没有车道，横屏场景铺满整个根，竖屏仍为正方形。 -->
-    <div v-else class="pb-root playback-workspace" ref="rootEl" :class="{ 'phone-form': isPhone, 'portrait-flow': portraitFlow, 'roster-side': showRoster && !portraitFlow, 'compact-bar': compactBar }" data-testid="replay3d-root" data-tour="replay3d-workspace">
+    <div v-else class="pb-root playback-workspace" ref="rootEl" :class="{ 'phone-form': isPhone, 'portrait-flow': portraitFlow, 'roster-side': showRoster && !portraitFlow, 'compact-bar': compactBar }" data-testid="replay3d-root" data-scene-surface data-tour="replay3d-workspace">
       <!-- 名牌覆盖层与 canvas 共用**同一个画布盒子**：场景内核按 canvas（.scene）尺寸算锚点，
            覆盖层必须与它同原点，否则三段式下名牌会整体偏一条车道宽。 -->
       <!-- 移动端全屏入口统一右上角浮动（与 Map Preview 2D/3D、Replay 2D 同一组件同一位置）；

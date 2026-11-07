@@ -1,8 +1,11 @@
 /* 设计语言 · 颜色与层级 token（规则见 docs/frontend/design-language.md §2–§3、§5）
  *
  * 组件只使用语义 token（--color-*、--elevation-*），不引用原始色。
- * data-theme 由 useUiProfile 从 wotb-ui-profile 派生：showcase → dark（沉浸），classic → light（简约）。
- * 所有文字 / UI 色均已按 WCAG 2.2 AA 在本主题四层表面上的最差值验证（正文 ≥ 4.5，UI ≥ 3）。
+ * 四季主题（data-ui-profile，由 useUiProfile 从 wotb-ui-profile 投影）：春 spring、夏 summer（默认）、
+ * 秋 autumn 是深色，冬 winter 是浅色（白 7 蓝 3）；data-theme（dark / light）只由 profile 派生。
+ * 主题只换语义色与氛围插槽（主视觉、遮罩、底纹），布局 / 组件 / 字号一律不变。
+ * 所有文字 / UI 色均已按 WCAG 2.2 AA 在本主题四层表面上的最差值验证（正文 ≥ 4.5，UI ≥ 3），
+ * 由 tokens/color-contrast.test.ts 读取本文件断言。
  *
  * 原始色（--{色相}-{级}）只在被两个及以上语义 token 共用时才抽出（§1），组件不得直接引用。
  */
@@ -24,6 +27,19 @@
     --pb-label-reload-outline: 0 0 0 1.5px rgb(0 0 0 / .7);
     --pb-reticle-ink: #33ff33;
     --pb-reticle-outline: rgb(0 0 0 / .7);
+    /* 主题选择器的预览色板（每套主题自己的底色 / 强调色 / 主视觉），与当前主题无关 */
+    --theme-preview-spring-canvas: #08140f;
+    --theme-preview-spring-accent: #f2b450;
+    --theme-preview-spring-image: url("../../assets/theme/theme-spring-wide.webp");
+    --theme-preview-summer-canvas: #0b0f11;
+    --theme-preview-summer-accent: #e0a02e;
+    --theme-preview-summer-image: url("../../assets/theme/theme-summer-wide.webp");
+    --theme-preview-autumn-canvas: #160f08;
+    --theme-preview-autumn-accent: #ef8434;
+    --theme-preview-autumn-image: url("../../assets/theme/theme-autumn-wide.webp");
+    --theme-preview-winter-canvas: #eef3f8;
+    --theme-preview-winter-accent: #1f6fd1;
+    --theme-preview-winter-image: url("../../assets/theme/theme-winter-wide.webp");
     --green-400: #5cc280;
     --green-700: #16703c;
     --red-400: #f2786d;
@@ -31,7 +47,7 @@
   }
 
   :root,
-  :root[data-theme="dark"] {
+  :root[data-ui-profile="summer"] {
     color-scheme: dark;
 
     --color-canvas: #0b0f11;
@@ -50,72 +66,221 @@
     --color-on-accent: #17130b;
     --color-accent-text: #f0b33e;
 
-    --color-success: var(--green-400);
-    --color-danger: var(--red-400);
+    --color-success: #5cc280;
+    --color-danger: #f2786d;
     --color-warning: #f5ca76;
     --color-info: #6db3ec;
 
     /* 物理阵营（回放 Team 1 / Team 2）：**固定身份色**，绝不随录像者属于哪一队交换。
-       呈现层需要「我方 / 敌方」时用下面的 ally/enemy 用途别名，两者是不同的概念：
-       physical team → 稳定身份；relation → 记录者视角业务语义。 */
-    --color-team-1: var(--green-400);
-    --color-team-2: var(--red-400);
+       呈现层需要「我方 / 敌方」时用 ally/enemy 用途别名：physical team → 稳定身份；relation → 记录者视角。 */
+    --color-team-1: #5cc280;
+    --color-team-2: #f2786d;
     --color-team-ally: var(--color-team-1);
     --color-team-enemy: var(--color-team-2);
     --color-team-enemy-cb: #c38bf0;
-    /* 中立（无主基地等）：3D 场景与 2D 地图上都画在深色地面之上，两套主题同值 */
+    /* 中立（无主基地等）与单基地占领进度：画在地面之上，所有主题同值 */
     --color-team-neutral: #f5f5f5;
     --color-on-team-neutral: #1c1f1d;
-    /* 单基地（攻防 / 遭遇战）占领进度：协议不给占领方，只表示"有进度"，不承载阵营语义 */
     --color-objective: #ffc24b;
 
     --color-scrim: rgb(0 0 0 / .6);
     --color-onboarding-scrim: rgb(0 0 0 / .18);
 
-    /* 暗色：层级靠表面亮度，阴影只作辅助 */
     --elevation-1: none;
     --elevation-2: 0 4px 12px rgb(0 0 0 / .4);
     --elevation-3: 0 12px 32px rgb(0 0 0 / .5);
+
+    /* 氛围插槽（§2 D10）：只用于装饰位与页面主视觉，数据区保持纯色 */
+    --theme-hero-image: url("../../assets/theme/theme-summer-wide.webp");
+    --theme-hero-image-portrait: url("../../assets/theme/theme-summer-portrait.webp");
+    --theme-hero-scrim: linear-gradient(90deg, rgb(11 15 17 / .95) 0%, rgb(11 15 17 / .82) 45%, rgb(11 15 17 / .15) 100%);
+    --theme-hero-scrim-portrait: linear-gradient(0deg, rgb(11 15 17 / .95) 15%, rgb(11 15 17 / .35) 100%);
+    --theme-glass: rgb(11 15 17 / .55);
+    --theme-pattern: repeating-linear-gradient(0deg, rgb(240 179 62 / .04) 0 1px, transparent 1px 48px), repeating-linear-gradient(90deg, rgb(240 179 62 / .04) 0 1px, transparent 1px 48px);
   }
 
-  :root[data-theme="light"] {
-    color-scheme: light;
+  :root[data-ui-profile="spring"] {
+    color-scheme: dark;
 
-    --color-canvas: #f6f5f2;
-    --color-surface-1: #ffffff;
-    --color-surface-2: #f1efea;
-    --color-surface-3: #e8e5de;
+    --color-canvas: #08140f;
+    --color-surface-1: #0e1d17;
+    --color-surface-2: #14271f;
+    --color-surface-3: #1b3228;
 
-    --color-text-primary: #1b1e1c;
-    --color-text-secondary: #4c534f;
-    --color-text-tertiary: #5a615d;
+    --color-text-primary: #e7f1ea;
+    --color-text-secondary: #a6bdb0;
+    --color-text-tertiary: #869d90;
 
-    --color-border-subtle: #e3dfd6;
-    --color-border-strong: #7f7c74;
+    --color-border-subtle: #1f3a2e;
+    --color-border-strong: #5f8072;
 
-    --color-accent: #a0620c;
-    --color-on-accent: #ffffff;
-    --color-accent-text: #955708;
+    --color-accent: #f2b450;
+    --color-on-accent: #1a1206;
+    --color-accent-text: #f8c56e;
 
-    --color-success: var(--green-700);
-    --color-danger: var(--red-700);
-    --color-warning: #855600;
-    --color-info: #1a64a8;
+    --color-success: #66d48f;
+    --color-danger: #f2786d;
+    --color-warning: #f5ca76;
+    --color-info: #6db3ec;
 
-    --color-team-1: var(--green-700);
-    --color-team-2: var(--red-700);
+    /* 物理阵营（回放 Team 1 / Team 2）：**固定身份色**，绝不随录像者属于哪一队交换。
+       呈现层需要「我方 / 敌方」时用 ally/enemy 用途别名：physical team → 稳定身份；relation → 记录者视角。 */
+    --color-team-1: #66d48f;
+    --color-team-2: #f2786d;
     --color-team-ally: var(--color-team-1);
     --color-team-enemy: var(--color-team-2);
-    --color-team-enemy-cb: #7b3fb3;
+    --color-team-enemy-cb: #c38bf0;
+    /* 中立（无主基地等）与单基地占领进度：画在地面之上，所有主题同值 */
     --color-team-neutral: #f5f5f5;
     --color-on-team-neutral: #1c1f1d;
     --color-objective: #ffc24b;
 
-    --color-scrim: rgb(0 0 0 / .35);
-    --color-onboarding-scrim: rgb(0 0 0 / .12);
+    --color-scrim: rgb(0 0 0 / .6);
+    --color-onboarding-scrim: rgb(0 0 0 / .18);
 
-    --elevation-1: 0 1px 2px rgb(0 0 0 / .06);
-    --elevation-2: 0 4px 12px rgb(0 0 0 / .10);
-    --elevation-3: 0 12px 32px rgb(0 0 0 / .16);
+    --elevation-1: none;
+    --elevation-2: 0 4px 12px rgb(0 0 0 / .4);
+    --elevation-3: 0 12px 32px rgb(0 0 0 / .5);
+
+    /* 氛围插槽（§2 D10）：只用于装饰位与页面主视觉，数据区保持纯色 */
+    --theme-hero-image: url("../../assets/theme/theme-spring-wide.webp");
+    --theme-hero-image-portrait: url("../../assets/theme/theme-spring-portrait.webp");
+    --theme-hero-scrim: linear-gradient(90deg, rgb(8 20 15 / .95) 0%, rgb(8 20 15 / .82) 45%, rgb(8 20 15 / .15) 100%);
+    --theme-hero-scrim-portrait: linear-gradient(0deg, rgb(8 20 15 / .95) 15%, rgb(8 20 15 / .35) 100%);
+    --theme-glass: rgb(8 20 15 / .55);
+    --theme-pattern: repeating-radial-gradient(ellipse at 15% 85%, rgb(102 212 143 / .07) 0 1px, transparent 1px 26px);
+  }
+
+  :root[data-ui-profile="autumn"] {
+    color-scheme: dark;
+
+    --color-canvas: #160f08;
+    --color-surface-1: #20160c;
+    --color-surface-2: #2a1d10;
+    --color-surface-3: #362516;
+
+    --color-text-primary: #f6ead6;
+    --color-text-secondary: #d0bb9a;
+    --color-text-tertiary: #ad9576;
+
+    --color-border-subtle: #3d2c19;
+    --color-border-strong: #937a55;
+
+    --color-accent: #ef8434;
+    --color-on-accent: #1a0d04;
+    --color-accent-text: #ffa15c;
+
+    --color-success: #6cc08a;
+    --color-danger: #ff8070;
+    --color-warning: #f5ca76;
+    --color-info: #6db3ec;
+
+    /* 物理阵营（回放 Team 1 / Team 2）：**固定身份色**，绝不随录像者属于哪一队交换。
+       呈现层需要「我方 / 敌方」时用 ally/enemy 用途别名：physical team → 稳定身份；relation → 记录者视角。 */
+    --color-team-1: #6cc08a;
+    --color-team-2: #ff8070;
+    --color-team-ally: var(--color-team-1);
+    --color-team-enemy: var(--color-team-2);
+    --color-team-enemy-cb: #c38bf0;
+    /* 中立（无主基地等）与单基地占领进度：画在地面之上，所有主题同值 */
+    --color-team-neutral: #f5f5f5;
+    --color-on-team-neutral: #1c1f1d;
+    --color-objective: #ffc24b;
+
+    --color-scrim: rgb(0 0 0 / .6);
+    --color-onboarding-scrim: rgb(0 0 0 / .18);
+
+    --elevation-1: none;
+    --elevation-2: 0 4px 12px rgb(0 0 0 / .4);
+    --elevation-3: 0 12px 32px rgb(0 0 0 / .5);
+
+    /* 氛围插槽（§2 D10）：只用于装饰位与页面主视觉，数据区保持纯色 */
+    --theme-hero-image: url("../../assets/theme/theme-autumn-wide.webp");
+    --theme-hero-image-portrait: url("../../assets/theme/theme-autumn-portrait.webp");
+    --theme-hero-scrim: linear-gradient(90deg, rgb(22 15 8 / .95) 0%, rgb(22 15 8 / .82) 45%, rgb(22 15 8 / .15) 100%);
+    --theme-hero-scrim-portrait: linear-gradient(0deg, rgb(22 15 8 / .95) 15%, rgb(22 15 8 / .35) 100%);
+    --theme-glass: rgb(22 15 8 / .55);
+    --theme-pattern: repeating-linear-gradient(-24deg, rgb(239 132 52 / .06) 0 2px, transparent 2px 22px);
+  }
+
+  :root[data-ui-profile="winter"] {
+    color-scheme: light;
+
+    --color-canvas: #eef3f8;
+    --color-surface-1: #ffffff;
+    --color-surface-2: #f5f8fc;
+    --color-surface-3: #e2ebf5;
+
+    --color-text-primary: #0f2236;
+    --color-text-secondary: #3b5470;
+    --color-text-tertiary: #4a6380;
+
+    --color-border-subtle: #cbd8e6;
+    --color-border-strong: #6f849b;
+
+    --color-accent: #1f6fd1;
+    --color-on-accent: #ffffff;
+    --color-accent-text: #1d63b8;
+
+    --color-success: #11703f;
+    --color-danger: #b8322a;
+    --color-warning: #855600;
+    --color-info: #1a64a8;
+
+    /* 物理阵营（回放 Team 1 / Team 2）：**固定身份色**，绝不随录像者属于哪一队交换。
+       呈现层需要「我方 / 敌方」时用 ally/enemy 用途别名：physical team → 稳定身份；relation → 记录者视角。 */
+    --color-team-1: #11703f;
+    --color-team-2: #b8322a;
+    --color-team-ally: var(--color-team-1);
+    --color-team-enemy: var(--color-team-2);
+    --color-team-enemy-cb: #7b3fb3;
+    /* 中立（无主基地等）与单基地占领进度：画在地面之上，所有主题同值 */
+    --color-team-neutral: #f5f5f5;
+    --color-on-team-neutral: #1c1f1d;
+    --color-objective: #ffc24b;
+
+    --color-scrim: rgb(15 34 54 / .35);
+    --color-onboarding-scrim: rgb(15 34 54 / .12);
+
+    --elevation-1: 0 1px 2px rgb(15 34 54 / .06);
+    --elevation-2: 0 4px 12px rgb(15 34 54 / .10);
+    --elevation-3: 0 12px 32px rgb(15 34 54 / .16);
+
+    /* 氛围插槽（§2 D10）：只用于装饰位与页面主视觉，数据区保持纯色 */
+    --theme-hero-image: url("../../assets/theme/theme-winter-wide.webp");
+    --theme-hero-image-portrait: url("../../assets/theme/theme-winter-portrait.webp");
+    --theme-hero-scrim: linear-gradient(90deg, rgb(238 243 248 / .96) 0%, rgb(238 243 248 / .86) 45%, rgb(238 243 248 / .1) 100%);
+    --theme-hero-scrim-portrait: linear-gradient(0deg, rgb(238 243 248 / .97) 18%, rgb(238 243 248 / .4) 100%);
+    --theme-glass: rgb(255 255 255 / .72);
+    --theme-pattern: repeating-radial-gradient(circle at 88% 18%, rgb(31 111 209 / .06) 0 1px, transparent 1px 34px);
+  }
+
+  /* 场景外壳（2D / 3D 回放、装甲查看器 HUD、地图 3D）画在游戏画面之上：寒冬下仍是深色玻璃，
+     不跟随浅色表面。场景根元素带 data-scene-surface，在其子树里把表面与文字色换回深色。 */
+  :root[data-ui-profile="winter"] [data-scene-surface] {
+    color-scheme: dark;
+
+    --color-canvas: #0b0f11;
+    --color-surface-1: #11171a;
+    --color-surface-2: #172024;
+    --color-surface-3: #1e292e;
+    --color-text-primary: #eceae4;
+    --color-text-secondary: #aab1ac;
+    --color-text-tertiary: #8a938e;
+    --color-border-subtle: #25313a;
+    --color-border-strong: #6c7a82;
+    --color-accent-text: #6fb0ff;
+    --color-success: #5cc280;
+    --color-danger: #f2786d;
+    --color-warning: #f5ca76;
+    --color-info: #6db3ec;
+    --color-team-1: #5cc280;
+    --color-team-2: #f2786d;
+    --color-team-enemy-cb: #c38bf0;
+    --color-scrim: rgb(0 0 0 / .6);
+    --elevation-1: none;
+    --elevation-2: 0 4px 12px rgb(0 0 0 / .4);
+    --elevation-3: 0 12px 32px rgb(0 0 0 / .5);
+    --theme-glass: rgb(11 15 17 / .72);
   }
 }

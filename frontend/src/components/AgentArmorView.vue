@@ -595,7 +595,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-<div class="armor-view" data-tour="armor-workspace" :class="{ 'is-unsupported': !webgl.supported, 'has-back': !isShotPage, 'is-shot': isShotPage, 'is-clean': cleanQuery }">
+<div class="armor-view" data-scene-surface data-tour="armor-workspace" :class="{ 'is-unsupported': !webgl.supported, 'has-back': !isShotPage, 'is-shot': isShotPage, 'is-clean': cleanQuery }">
     <button v-if="!isShotPage" type="button" class="armor-back" data-testid="armor-back" :aria-label="$t('armor.back')" @click="backOrTankopedia"><ArrowLeft :size="16" aria-hidden="true" /><span class="armor-back-label">{{ $t('armor.back') }}</span></button>
     <header v-if="isShotPage && !cleanQuery" class="armor-shot-header" data-testid="armor-shot-header">
         <button type="button" class="armor-shot-back" :aria-label="$t('armor.back_to_shots')" @click="backToShots"><ArrowLeft :size="18" aria-hidden="true" /><span>{{ $t('armor.back_to_shots') }}</span></button>
