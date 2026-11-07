@@ -585,8 +585,10 @@ function open3d() {  // 审计 3D-09：在当前标签页打开装甲查看器�
   const handoff = setup.value.canConfigure
     ? {
         ...(upgradeSelection.value.available ? {
-          // 显式传递两种模式：装甲页缺省已是 top，stock 必须写成 upgrade=stock 才能保留。
-          upgrade: setup.value.upgrade === 'stock' ? 'stock' : 'top',
+          // 显式传递模式（装甲页按同一 resolveSetup 口径解析 custom+abilities）：
+          // stock 必须写成 upgrade=stock 才能保留；custom 必须连 abilities 一起带，
+          // 否则部分研发语义丢失、装甲/火炮数值会按整套 top 静默展示。
+          upgrade: setup.value.upgrade ?? 'top',
           ...(setup.value.abilities?.length ? { abilities: setup.value.abilities.join(',') } : {}),
         } : {}),
         dev: encodeDevices(setup.value.devices),

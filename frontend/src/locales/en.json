@@ -1841,25 +1841,25 @@
       "augment_or": "or",
       "augment_options_hint": "Pick one of three: mutually exclusive after the group is researched",
       "augment_mechanics": {
-        "RechargeableNitro": {
+        "rechargeableNitro": {
           "name": "Liquid Fuel Boosters",
-          "description": ""
+          "description": "When activated, temporarily raises the forward speed limit and hull rotation speed; afterwards the system cools down and reheats before it can trigger again."
         },
-        "CombatFrenzy": {
+        "combatFrenzy": {
           "name": "Combat Frenzy",
-          "description": ""
+          "description": "Each enemy vehicle destroyed increases reload speed, stacking up to a limit; a new shell can be switched in after a kill."
         },
-        "RammingConfiguration": {
+        "rammingConfiguration": {
           "name": "Ramming Configuration",
-          "description": ""
+          "description": "Reinforces the vehicle for ramming: collision damage and track damage dealt are increased, while collision damage taken is reduced."
         },
-        "BurstMode": {
+        "burstMode": {
           "name": "Burst Mode",
-          "description": ""
+          "description": "After the required number of damaging penetrations, the gun switches to a rapid-fire burst."
         },
-        "SteadyAimSystem": {
+        "steadyAimSystem": {
           "name": "Steady Aim System",
-          "description": ""
+          "description": "Temporarily tightens shell dispersion and speeds up aiming when activated."
         }
       }
     },

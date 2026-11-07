@@ -1,5 +1,5 @@
 /** XI 客户端升级节点的选择与静态投影；普通车计算公式仍由 characteristics 负责。 */
-export type UpgradeMode = 'stock' | 'top'
+export type UpgradeMode = 'stock' | 'top' | 'custom'
 export type UpgradeValue = number | boolean
 export interface UpgradeAttribute { name: string; value: UpgradeValue }
 export interface UpgradeNode {
@@ -157,35 +157,38 @@ export function resolveUpgradeSelection(modules: unknown, mode?: unknown, inputC
     requested = /^\d+(?:,\d+){0,63}$/.test(requested) ? requested.split(',').map(Number) : []
   }
   const custom = result.mode === 'custom'
-  const researched = Array.isArray(requested) ? new Set(requested.filter(id => ids.has(id))) : null
-  for (const group of result.groups) {
-    let candidate: number | undefined
-    if (custom) {
-      // custom：abilities = 已研发节点 id 表；组内已研发的备选即选中（可未选）
-      candidate = group.choices.find(id => researched!.has(id))
-    } else {
-      candidate = Array.isArray(requested)
-        ? requested.slice(0, 8).find(id => group.choices.includes(id))
-        : record(requested) ? requested[group.id] : undefined
+  // custom：abilities = 已研发节点 id 表。先按组互斥归一化——每组只保留一个已研发
+  // 备选（组定义顺序首个），其余同组备选不写入结果、不参与聚合；手工构造的 URL
+  // （如 abilities=22,23,24）不能叠出客户端不可能的互斥效果。
+  let researched: Set<number> | null = null
+  if (custom) {
+    const set = new Set(Array.isArray(requested) ? requested.filter(id => ids.has(id)) : [])
+    for (const group of result.groups) {
+      group.choices.filter(id => set.has(id)).slice(1).forEach(id => set.delete(id))
     }
+    researched = set
+  }
+  for (const group of result.groups) {
     if (custom) {
+      // 组内已研发的备选即选中（可未选）：未研发/未选时不写 choices/abilities
+      // （机制不生效，面板显示基础值）
+      const candidate = group.choices.find(id => researched!.has(id))
       if (candidate != null) { result.choices[group.id] = candidate; result.abilities.push(candidate) }
-      // 组未研发或未选：不写 choices/abilities（机制不生效，面板显示基础值）
       continue
     }
-    void group
+    const candidate = Array.isArray(requested)
+      ? requested.slice(0, 8).find(id => group.choices.includes(id))
+      : record(requested) ? requested[group.id] : undefined
     const chosen = typeof candidate === 'number' && group.choices.includes(candidate) ? candidate : group.choices[0]!
     result.choices[group.id] = chosen; result.abilities.push(chosen)
   }
   if (custom) {
-    // custom（部分研发）：abilities 携带完整已研发表——resolveSetup 往返与
-    // 配置栏/研发树联动都依赖它不被裁剪成仅备选 id
-    result.abilities = [...researched]
+    // custom（部分研发）：abilities 携带归一化后的完整已研发表——resolveSetup 往返、
+    // 配置栏/研发树联动都依赖它（互斥归一化在上面完成，写回的 URL 不含同组多选）
+    result.abilities = researched ? [...researched] : []
   }
   if (!result.supported || result.mode === 'stock') return result
-  const active = custom
-    ? new Set(result.nodes.filter(node => researched!.has(node.id)).map(node => node.id))
-    : new Set(result.abilities)
+  const active = custom && researched ? researched : new Set(result.abilities)
   for (const node of result.nodes) {
     // custom（部分研发）：只聚合已研发节点；top：全部普通/机制节点 + 已选备选
     if (custom ? !active.has(node.id)

@@ -36,8 +36,9 @@ export interface SetupSelection {
   /** 显式模拟条件技能触发，缺省关闭；与训练等级分别保存。 */
   conditionalSkills?: boolean
   camouflage: boolean
-  /** XI 客户端升级；缺省 stock 保持既有链接语义。普通车辆不产生这两个字段。 */
-  upgrade?: 'stock' | 'top'
+  /** XI 客户端升级；缺省 stock 保持既有链接语义。custom = 部分研发（abilities 原表）。
+   *  普通车辆不产生这两个字段。 */
+  upgrade?: 'stock' | 'top' | 'custom'
   abilities?: number[]
 }
 

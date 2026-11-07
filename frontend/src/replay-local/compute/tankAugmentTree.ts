@@ -161,9 +161,9 @@ export function isNodeAvailable(
   })
 }
 
-/** 组已安装则三选一可选。 */
+/** 组已研发 ⟺ 任一备选在 installed（真实 UI 用数字 choice ID 表示组状态，不写组字符串 id）。 */
 export function isGroupChosable(group: AugmentGroup, installed: ReadonlySet<number>): boolean {
-  return installed.has(group.id)
+  return group.choices.some(id => installed.has(id))
 }
 
 /** 点击研发：该节点 + 全部未解锁前置（链式），返回新 installed。 */
@@ -196,6 +196,7 @@ export function rollbackSubtree(
   const next = new Set(installed)
   next.delete(nodeId) // 起始节点自身一并卸载（下游由级联处理）
   const nextChosen: Record<string, number> = { ...chosen }
+  const cascadedGroups = new Set<string>()
   let changed = true
   while (changed) {
     changed = false
@@ -208,8 +209,14 @@ export function rollbackSubtree(
       }
     }
     for (const g of progression.alternativeGroups) {
-      if (next.has(g.id) && (g.requiredNodes ?? []).some(req => rolled.has(req))) {
-        next.delete(g.id)
+      // 组级联卸载：备选节点没有自身 requiredNodes，只删前置会残留 choice 并继续
+      // 聚合机制效果；组状态由数字 choice ID 携带（installed 不含组字符串 id），
+      // 任一前置被回退即删除该组全部 choice 并清除三选一标记。
+      // 每组只处理一次：组前置会一直留在 rolled 里，无此守卫 while 永不收敛。
+      if (cascadedGroups.has(g.id)) continue
+      if ((g.requiredNodes ?? []).some(req => rolled.has(req))) {
+        cascadedGroups.add(g.id)
+        for (const c of g.choices) next.delete(c)
         delete nextChosen[g.id]
         changed = true
       }
@@ -226,7 +233,6 @@ export function buildAugmentSectors(
 ): AugmentSector[] {
   const group = progression.alternativeGroups[0]
   if (!group) return []
-  const byTech = new Map(progression.nodes.map(n => [n.techName, n]))
   const sectors: AugmentSector[] = []
   group.choices.forEach((nodeId, i) => {
     const centerDeg = AUGMENT_SECTOR_OFFSETS[i]
@@ -246,7 +252,6 @@ export function buildAugmentSectors(
     const rm = AUGMENT_SECTOR_ICON_R
     const [cx, cy] = pt(rm, (centerDeg * Math.PI) / 180)
     sectors.push({ nodeId, path, cx, cy })
-    void byTech
   })
   return sectors
 }
@@ -255,7 +260,6 @@ export function buildAugmentSectors(
 export function buildAugmentLayout(progression: AugmentProgression): AugmentLayout {
   const cell = AUGMENT_CELL
   const group = progression.alternativeGroups[0] ?? null
-  const groupCol = group?.gridPosition?.[1] ?? 0
   const groupRow = group?.gridPosition?.[0] ?? 0
   // 组圆在网格右缘之外（客户端把 UpgradeAlternativeGroup 渲染为独立控件；
   // gridPosition 只决定前置边的汇入行），与独立复刻版一致。
@@ -275,7 +279,6 @@ export function buildAugmentLayout(progression: AugmentProgression): AugmentLayo
   function route(from: [number, number], to: [number, number]): Array<[number, number]> {
     const [fc, fr] = from
     const [tc, tr] = to
-    const pts: Array<[number, number]> = [[fc, fr]]
     const straight = (): { pts: Array<[number, number]>; blocked: boolean } => {
       const out: Array<[number, number]> = [[fc, fr]]
       let blocked = false

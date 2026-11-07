@@ -1841,25 +1841,25 @@
       "augment_or": "或",
       "augment_options_hint": "三选一：研发组后选择其一，效果互斥",
       "augment_mechanics": {
-        "RechargeableNitro": {
-          "name": "Liquid Fuel Boosters",
-          "description": ""
+        "rechargeableNitro": {
+          "name": "液态燃料助推器",
+          "description": "激活后短时间内提升前进极速与车体转向速度；使用后需散热并重新预热，才能再次触发。"
         },
-        "CombatFrenzy": {
-          "name": "Combat Frenzy",
-          "description": ""
+        "combatFrenzy": {
+          "name": "战斗狂热",
+          "description": "每击毁一辆敌方车辆都会提升装填速度，可叠加至上限；击杀后允许更换弹种。"
         },
-        "RammingConfiguration": {
-          "name": "Ramming Configuration",
-          "description": ""
+        "rammingConfiguration": {
+          "name": "撞击配置",
+          "description": "强化撞击：撞击造成的伤害与对履带的伤害提升，自身受到的撞击伤害降低。"
         },
-        "BurstMode": {
-          "name": "Burst Mode",
-          "description": ""
+        "burstMode": {
+          "name": "连发模式",
+          "description": "累计造成足够次数的有效击穿后，火炮进入快速连发。"
         },
-        "SteadyAimSystem": {
-          "name": "Steady Aim System",
-          "description": ""
+        "steadyAimSystem": {
+          "name": "精准瞄准系统",
+          "description": "激活后短时间收紧炮弹散布并加快瞄准速度。"
         }
       }
     },

@@ -16,7 +16,7 @@ import {
   AUGMENT_CELL, buildAugmentLayout, isPercentAttribute,
   parseAugmentProgression, researchWithPrerequisites, rollbackSubtree,
 } from '../replay-local/compute/tankAugmentTree'
-import type { AugmentProgression } from '../replay-local/compute/tankAugmentTree'
+import type { AugmentGroup } from '../replay-local/compute/tankAugmentTree'
 
 interface UpgradeAttribute { name: string; value: number | boolean }
 interface AugmentNodeView { id: number; techName: string; type?: string; attributes?: UpgradeAttribute[]; gridPosition?: [number, number]; xpCost?: number; requiredNodes?: string[]; displayName?: string; description?: string }
@@ -29,27 +29,29 @@ const props = defineProps<{
   chosen: Record<string, number>
 }>()
 
-interface MechanicInfo { name: string; description: string }
-const { t, locale } = useI18n()
+const { t, te } = useI18n()
 
 const progression = computed(() => parseAugmentProgression(props.modules))
-const mechanicKey = computed(() => (props.modules.vehicleAbilities || [])[0] || '')
+/** 该车绑定的机制 stem（vehicleAbilities；键与 augment_mechanics 三语表对齐） */
+const abilityStems = computed<string[]>(() => Array.isArray(props.modules.vehicleAbilities)
+  ? props.modules.vehicleAbilities.filter((v): v is string => typeof v === 'string')
+  : [])
+const mechanicKey = computed(() => abilityStems.value[0] ?? '')
+const mechanicPath = computed(() => (mechanicKey.value
+  ? `agentTanks.configurator.augment_mechanics.${mechanicKey.value}` : ''))
 const mechanicName = computed(() => {
-  const key = mechanicKey.value
-  if (!key) return ''
-  const msg = t(`agentTanks.configurator.augment_mechanics.${key}`)
-  return msg.startsWith('agentTanks.') ? key : String(msg).split('\n')[0]
+  const p = mechanicPath.value
+  return p && te(`${p}.name`) ? t(`${p}.name`) : mechanicKey.value
 })
 const mechanicDescription = computed(() => {
-  const key = mechanicKey.value
-  if (!key) return ''
-  const msg = t(`agentTanks.configurator.augment_mechanics.${key}`)
-  return msg.startsWith('agentTanks.') ? '' : String(msg).split('\n').slice(1).join('\n')
+  const p = mechanicPath.value
+  return p && te(`${p}.description`) ? t(`${p}.description`) : ''
 })
 
 const installedSet = computed(() => new Set(props.installed))
 const chosen = computed(() => props.chosen)
-const selectedId = ref<number | null>(null)
+/** 选中项 id：节点/备选为数字 id，组为字符串组 id */
+const selectedId = ref<number | string | null>(null)
 
 const emit = defineEmits<{
   /** 研发/回退 → 父层写回 URL（upgrade=custom + abilities=已研发 id 表） */
@@ -67,29 +69,35 @@ const gcx = computed(() => (layout.value?.group ? layout.value.group.x : 0))
 const gcy = computed(() => (layout.value?.group ? layout.value.group.y : 0))
 const groupInstalled = computed(() => !!group.value
   && group.value.choices.some(id => installedSet.value.has(id)))
-interface SelectedView { kind: 'node' | 'alt' | 'group'; node?: AugmentNodeView; group?: AugmentGroup & Record<string, unknown> }
+type SelectedView =
+  | { kind: 'node'; node: AugmentNodeView }
+  | { kind: 'alt'; node: AugmentNodeView; group: AugmentGroup }
+  | { kind: 'group'; group: AugmentGroup }
 const selected = computed<SelectedView | null>(() => {
   const id = selectedId.value
   if (id == null) return null
-  const node = nodesById.value.get(id)
+  const node = typeof id === 'number' ? nodesById.value.get(id) : undefined
   if (node && node.gridPosition) return { kind: 'node', node }
   const g = group.value
   if (!g) return null
   if (g.id === id) return { kind: 'group', group: g }
-  if (g.choices.includes(id)) return { kind: 'alt', node: nodesById.value.get(id), group: g }
+  if (typeof id === 'number') {
+    const alt = nodesById.value.get(id)
+    if (alt && g.choices.includes(id)) return { kind: 'alt', node: alt, group: g }
+  }
   return null
 })
 const groupSelected = computed(() => selected.value?.kind === 'group' || selected.value?.kind === 'alt')
 
-const ICON_URLS = import.meta.glob('../../../common/research/icons/upgrades/*.webp', {
+const ICON_URLS = import.meta.glob<string>('../../../common/research/icons/upgrades/*.webp', {
   import: 'default', eager: true,
 })
 function iconUrl(resPath: unknown, fallback: string): string {
   const base = String(resPath || fallback || '').split('/').pop()
   return (base && ICON_URLS[`../../../common/research/icons/upgrades/${base}.webp`]) || ''
 }
-function nodeIcon(node: AugmentNodeView | undefined): string {
-  const first = node.attributes?.[0]?.name
+function nodeIcon(node: AugmentNodeView | null | undefined): string {
+  const first = node?.attributes?.[0]?.name
   const def = first ? progression.value?.attributeDefinitions[first] : null
   return iconUrl(def?.icon, `mech_${mechanicKey.value}`)
 }
@@ -107,11 +115,8 @@ function effectText(attr: UpgradeAttribute): string {
   const text = isPercentAttribute(name) ? `${sign}${Math.round(value * 100)} %` : `${sign}${value}`
   return `${label} ${text}`
 }
-function nodeEffectLines(node: AugmentNodeView | undefined): string[] {
-  return (node.attributes ?? []).map(effectText)
-}
-function nodeLabel(node: AugmentNodeView): string {
-  return node.displayName || node.techName
+function nodeEffectLines(node: AugmentNodeView | null | undefined): string[] {
+  return (node?.attributes ?? []).map(effectText)
 }
 
 function emitState(next: Set<number>): void {
@@ -148,7 +153,7 @@ function onGroupClick(): void {
   for (const choice of g.choices) next.delete(choice)
   emitState(next)
 }
-function groupIsInstalled(g: AugmentGroup & Record<string, unknown>): boolean {
+function groupIsInstalled(g: AugmentGroup): boolean {
   return g.choices.some(id => installedSet.value.has(id))
 }
 function onSectorClick(nodeId: number): void {
@@ -177,28 +182,29 @@ const fmtCost = (v: number): string => String(Math.trunc(v)).replace(/\B(?=(\d{3
 const fmtCompact = (v: number): string => (v >= 1000 ? `${Math.round(v / 100) / 10}k` : String(v))
 
 interface SelectedEffectRow { id: number; label?: string; lines: string[]; chosen?: boolean }
-const selectedEffects = computed<SelectedEffectRow[]>(() => {
+/** 节点/备选选中：增量行（字符串表） */
+const selectedNodeLines = computed<string[]>(() => {
   const sel = selected.value
-  if (!sel) return []
-  if (sel.kind === 'group') {
-    const g = sel.group
-    return (g.choices ?? []).map(choiceId => {
-      const alt = nodesById.value.get(choiceId)
-      return { id: choiceId, label: alt?.displayName || alt?.techName, lines: nodeEffectLines(alt), chosen: chosen.value[g.id] === choiceId }
-    })
-  }
-  if (sel.kind === 'alt') return nodeEffectLines(sel.node)
-  return nodeEffectLines(sel.node)
+  return sel && sel.kind !== 'group' ? nodeEffectLines(sel.node) : []
+})
+/** 组选中：三选一行（含选中标记） */
+const selectedGroupRows = computed<SelectedEffectRow[]>(() => {
+  const sel = selected.value
+  if (!sel || sel.kind !== 'group') return []
+  return sel.group.choices.map(choiceId => {
+    const alt = nodesById.value.get(choiceId)
+    return { id: choiceId, label: alt?.displayName || alt?.techName, lines: nodeEffectLines(alt), chosen: chosen.value[sel.group.id] === choiceId }
+  })
 })
 const selectedIsNode = computed(() => selected.value?.kind === 'node' || selected.value?.kind === 'alt')
 const selectedInstalled = computed(() => {
-  if (!selected.value) return false
-  if (selected.value.kind === 'node') return installedSet.value.has(selected.value.node.id)
-  const g = selected.value.group
-  return !!g && g.choices.some(id => installedSet.value.has(id))
+  const sel = selected.value
+  if (!sel) return false
+  if (sel.kind === 'node') return installedSet.value.has(sel.node.id)
+  return sel.group.choices.some(id => installedSet.value.has(id))
 })
-const selectedNode = computed(() => (selected.value?.kind === 'node' ? selected.value.node : selected.value?.kind === 'alt' ? selected.value.node : null))
-const selectedGroup = computed(() => (selected.value ? (selected.value.group ?? null) : null))
+const selectedNode = computed(() => (selected.value && selected.value.kind !== 'group' ? selected.value.node : null))
+const selectedGroup = computed(() => (selected.value && selected.value.kind !== 'node' ? selected.value.group : null))
 </script>
 
 <template>
@@ -237,7 +243,7 @@ const selectedGroup = computed(() => (selected.value ? (selected.value.group ?? 
               v-for="sector in layout.sectors" :key="'s' + sector.nodeId"
               :d="sector.path" class="at-sector" :class="{
                 'at-sector-installed': groupInstalled,
-                'at-sector-chosen': chosen[group.id] === sector.nodeId,
+                'at-sector-chosen': group != null && chosen[group.id] === sector.nodeId,
                 'at-sector-selected': selectedId === sector.nodeId,
               }"
               role="button" tabindex="0"
@@ -266,7 +272,7 @@ const selectedGroup = computed(() => (selected.value ? (selected.value.group ?? 
             <div v-if="!installedSet.has(node.id)" class="at-price">{{ fmtCompact(nodesById.get(node.id)?.xpCost ?? 0) }}<svg class="at-star" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0 L9.8 6.2 L16 8 L9.8 9.8 L8 16 L6.2 9.8 L0 8 L6.2 6.2 Z" fill="#8fb6d9"/></svg></div>
           </div>
 
-          <template v-if="layout.group">
+          <template v-if="group">
             <div
               class="at-cell at-cursor" :style="{ left: gcx - 48 + 'px', top: gcy - 48 + 'px' }"
               data-testid="tank-augment-group"
@@ -310,7 +316,7 @@ const selectedGroup = computed(() => (selected.value ? (selected.value.group ?? 
                 {{ selectedInstalled ? t('agentTanks.configurator.augment_installed') : t('agentTanks.configurator.augment_can_research') }}
               </div>
               <div v-if="selectedIsNode" class="at-beff">
-                <span v-for="(line, i) in selectedEffects" :key="i" class="at-effline">{{ line }}</span>
+                <span v-for="(line, i) in selectedNodeLines" :key="i" class="at-effline">{{ line }}</span>
               </div>
               <div class="at-braw">{{ selectedNode?.techName }} · {{ (selectedNode?.type || '').replace('NODETYPE_', '') }}</div>
             </div>
@@ -320,7 +326,7 @@ const selectedGroup = computed(() => (selected.value ? (selected.value.group ?? 
           </div>
           <div v-if="!selectedIsNode && selectedGroup" class="at-groupdesc">
             <p class="at-braw">{{ selectedGroup.description }}</p>
-            <template v-for="(opt, i) in selectedEffects" :key="opt.id">
+            <template v-for="(opt, i) in selectedGroupRows" :key="opt.id">
               <div v-if="i > 0" class="at-or">{{ t('agentTanks.configurator.augment_or') }}</div>
               <div class="at-optrow">
                 <span class="at-braw">{{ opt.label }}</span>

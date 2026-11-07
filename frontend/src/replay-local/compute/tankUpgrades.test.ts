@@ -5,6 +5,7 @@ import MECHANICS from './__fixtures__/upgrades/mechanics.json'
 import ORDINARY from './__fixtures__/modules/ussr.json'
 import { computeCharacteristics } from './characteristics'
 import { baseSelection, buildComputeInput } from './tankSetup'
+import { parseTankopediaQuery } from '../../utils/tankopediaQuery.js'
 import { projectTankUpgrades, resolveUpgradeSelection, upgradeMechanicEffects, type UpgradeDefinition, type UpgradeNode } from './tankUpgrades'
 
 const bz = TANKS.find(t => t.modules.tankId === 15153)!
@@ -47,6 +48,29 @@ describe('XI 研发树 custom 模式（部分研发 ↔ 面板/配置栏联动�
     const sel = resolveUpgradeSelection(bz.modules, 'custom', [999999, techToId.get(root.techName)!])
     expect(sel.supported).toBe(true)
     expect(sel.abilities).toEqual([techToId.get(root.techName)!])
+  })
+
+  it('custom：手工多选同组备选被归一化为每组一项，互斥效果不叠加', () => {
+    const group = progression.alternativeGroups[0]!
+    // URL 解析器接受 abilities=22,23,24（分享/手改链接）——三选一只保留一项
+    const sel = resolveUpgradeSelection(bz.modules, 'custom', [22, 23, 24])
+    expect(sel.supported).toBe(true)
+    expect(sel.choices[group.id]).toBe(group.choices[0])
+    expect(sel.abilities).toEqual([group.choices[0]])
+    // 只聚合选中项：同组其余备选的机制属性不出现
+    expect(sel.attributes.RECHARGEABLE_NITRO_HEATING_DURATION).toBe(5)
+    expect(sel.attributes.RECHARGEABLE_NITRO_FWD_SPEED_LIMIT_FACTOR).toBeUndefined()
+    expect(sel.attributes.RECHARGEABLE_NITRO_ROTATION_SPEED_FACTOR).toBeUndefined()
+  })
+
+  it('custom：真实 URL（parseTankopediaQuery）到投影全程保持互斥', () => {
+    const parsed = parseTankopediaQuery({ tank: '15153', upgrade: 'custom', abilities: '22,23,24' })
+    expect(parsed.abilities).toEqual([22, 23, 24])
+    const sel = resolveUpgradeSelection(bz.modules, parsed.upgrade, parsed.abilities)
+    expect(sel.abilities).toEqual([22])
+    const projected = projectTankUpgrades(bz.detail, bz.modules, sel.mode, sel.abilities)
+    expect(projected.selection.choices[progression.alternativeGroups[0]!.id]).toBe(22)
+    expect(projected.selection.attributes.RECHARGEABLE_NITRO_FWD_SPEED_LIMIT_FACTOR).toBeUndefined()
   })
 })
 
