@@ -103,7 +103,7 @@
 
 @media(max-width:1199px) {
   .lb-wrap,
-  .hof-admin { width: calc(100% - 24px) !important; padding-top: 16px !important; }
+  .hof-admin { width: calc(100% - var(--gutter) * 2) !important; padding-top: 16px !important; }
   .lb-wrap > .tabs,
   .lb-wrap .lb-toolbar { position: static; }
   /* 平板 Tab 不吸顶：表格吸顶区只需让出顶栏 */
@@ -112,7 +112,7 @@
 
 @media (width < 768px) {
   .lb-wrap,
-  .hof-admin { width: calc(100% - 16px) !important; padding: 10px 0 42px !important; }
+  .hof-admin { width: calc(100% - var(--gutter) * 2) !important; padding: 10px 0 42px !important; }
   .lb-wrap > .tabs { position: static; }
   .lb-wrap .lb-head { padding: 18px !important; }
   /* Mobile: the filter form must never become a horizontal-scrolling strip (data

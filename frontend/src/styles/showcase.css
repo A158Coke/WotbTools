@@ -7,7 +7,7 @@
   --showcase-page-max: 1760px;
   --showcase-wide-max: 1720px;
   --showcase-content-max: 1420px;
-  --showcase-gutter: clamp(12px, 1.6vw, 30px);
+  --showcase-gutter: max(clamp(12px, 1.6vw, 30px), env(safe-area-inset-left), env(safe-area-inset-right));
   --showcase-surface: var(--color-surface-1);
   --showcase-surface-2: var(--color-surface-2);
   --showcase-line: color-mix(in srgb, var(--border) 76%, var(--accent) 24%);

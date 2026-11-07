@@ -483,6 +483,8 @@ export async function measureViewportSafety(page, { insets, chrome = [] }) {
       const el = node.matches('input[type=checkbox],input[type=radio]') ? node.closest('label') || node : node
       const s = getComputedStyle(el)
       if (s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity) === 0) continue
+      // 折叠的 <details> 内容等 content-visibility 隐藏的元素保留布局盒，但不可见、不可点
+      if (el.checkVisibility && !el.checkVisibility({ contentVisibilityAuto: true, opacityProperty: true, visibilityProperty: true })) continue
       const r = el.getBoundingClientRect()
       if (r.width < 2 || r.height < 2) continue
       const owner = pinnedOwner(el)
@@ -500,10 +502,13 @@ export async function measureViewportSafety(page, { insets, chrome = [] }) {
         failures.push(`${name(el)} 停在顶栏下面（top=${Math.round(r.top)} < ${Math.round(chromeBottom)}）`)
         continue
       }
+      // 正文里折行的行内链接（WCAG 2.5.8 inline 例外）：外接矩形的角落落在行间，只采每个行片段的中心
+      const fragments = s.display === 'inline' ? [...el.getClientRects()] : []
+      const samples = fragments.length > 1
+        ? fragments.map(f => [f.left + f.width / 2, f.top + f.height / 2])
+        : [[0.5, 0.5], [0.2, 0.25], [0.8, 0.25], [0.2, 0.75], [0.8, 0.75]].map(([fx, fy]) => [r.left + r.width * fx, r.top + r.height * fy])
       let blocker = null
-      for (const [fx, fy] of [[0.5, 0.5], [0.2, 0.25], [0.8, 0.25], [0.2, 0.75], [0.8, 0.75]]) {
-        const x = r.left + r.width * fx
-        const y = r.top + r.height * fy
+      for (const [x, y] of samples) {
         const hit = document.elementFromPoint(x, y)
         if (!hit || !(hit === el || el.contains(hit) || hit.contains(el))) { blocker = hit; break }
       }

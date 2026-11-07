@@ -19,7 +19,8 @@
     --space-8: 32px;
     --space-10: 40px;
     --space-12: 48px;
-    --gutter: 16px;
+    /* 内容左右边距：不小于设备侧边安全区（§9 L4，横屏刘海） */
+    --gutter: max(16px, env(safe-area-inset-left), env(safe-area-inset-right));
     /* Minimum readable form field before wrapping a fluid toolbar. */
     --form-field-min: 160px;
     /* Admin dataset summary: minimum readable metric card width. */
@@ -194,7 +195,7 @@
   }
 
   @media (width >= 768px) {
-    :root { --gutter: 24px; }
+    :root { --gutter: max(24px, env(safe-area-inset-left), env(safe-area-inset-right)); }
   }
 
   /* 平板 / 桌面没有顶栏：导航在左侧边栏，吸顶偏移从视口顶部算起。
@@ -212,7 +213,7 @@
   }
 
   @media (width >= 1200px) {
-    :root { --gutter: 32px; }
+    :root { --gutter: max(32px, env(safe-area-inset-left), env(safe-area-inset-right)); }
   }
 
   /* 普通页面向下滚动时顶栏收起（L5，AppTopBar 写入 data-topbar）：吸顶元素贴到视口顶部 */
