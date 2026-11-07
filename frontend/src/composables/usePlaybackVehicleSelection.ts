@@ -4,6 +4,18 @@ import { cumulativeStatsAtV2, healthDisplayAt } from '../utils/battlePlaybackV2.
 import { detailsDamageLogAtV2 } from '../utils/playbackDetails.js'
 import { healthRingDiameter } from '../utils/vehicleMarkerSizing.js'
 import type { PlaybackCamera } from './usePlaybackCamera.js'
+import type { BattleEvent, BattlePlaybackDataset, VehiclePlaybackTrack } from '../types/playback-v2.js'
+
+/** 选中/hit-test 消费的车辆渲染状态最小结构（owner 在 usePlaybackVehicleProjection）。 */
+interface VehicleRenderStateLike {
+  // projectVehicleState 的 vehicle 入参与 canonical track 是同一对象。
+  vehicle: VehiclePlaybackTrack
+  pos: { x: number; y: number; timeSec: number }
+  destroyed?: boolean
+  hitTargetSize?: { width: number; height: number } | null
+  markerSize?: { hitTarget?: { width: number; height: number } | null; renderBox?: { width: number; height: number } } | null
+  lastKnown?: boolean
+}
 
 /**
  * 2D 回放车辆选中 / 详情编排（#820 Agent C 拆分）：selected / details 状态的**唯一 owner**。
@@ -20,20 +32,20 @@ export function usePlaybackVehicleSelection(
   camera: Pick<PlaybackCamera, 'view' | 'mapEl' | 'mapRenderRect' | 'mapWidth'>,
   deps: {
     /** 时间相关渲染状态（hit-test 与 selectedState 的来源）。 */
-    vehicleStates: Ref<any[]>
+    vehicleStates: Ref<VehicleRenderStateLike[]>
     /** canonical tracks（selectedTrack / roster 投影源）。 */
-    playback: Ref<any>
+    playback: Ref<BattlePlaybackDataset | null>
     currentTime: Ref<number>
     /** authoritative playback events（详情统计/伤害日志消费源）。 */
-    authoritativeEvents: Ref<any[]>
-    hpVehicles: Ref<any[]>
+    authoritativeEvents: Ref<BattleEvent[]>
+    hpVehicles: Ref<VehiclePlaybackTrack[]>
     uiHidden: Ref<boolean>
     hpPrefs: { showHp: boolean; mode: string }
     markerPrefs: { classIcons: boolean }
     /** 详情浮窗的定位祖先 / 拖动宿主（.pb-main）。 */
     battlefieldWorkspaceEl: Ref<HTMLElement | null>
     /** 标记中心 → 屏幕坐标（车辆投影层提供，与地图/标注同一变换）。 */
-    markerScreen: (st: any) => { x: number; y: number } | null
+    markerScreen: (st: VehicleRenderStateLike) => { x: number; y: number } | null
     /** 语义坐标 → normalized viewport 坐标（含地形起伏回退）。 */
     projectedSemanticNorm: (x: number, y: number) => { xNorm: number; yNorm: number }
     /** mobile overlay reveal（选中后保持 overlay 可见性计时）。 */
@@ -75,7 +87,7 @@ export function usePlaybackVehicleSelection(
     if (!deps.playback.value || !selectedState.value) return null
     const accountId = selectedState.value.vehicle.accountId
     const tracks = deps.playback.value.vehicles || []
-    return tracks.find((t: any) => t.accountId === accountId) || null
+    return tracks.find(t => t.accountId === accountId) || null
   })
 
   // The summary and full inspector consume the same canonical state at replay time.
@@ -129,7 +141,7 @@ export function usePlaybackVehicleSelection(
     return detailsDamageLogAtV2(deps.playback.value, st.vehicle, deps.currentTime.value, deps.t('recon.map.playback.source_unknown'))
   })
 
-  function onMarkerSelect(vehicle: any, event?: { target?: EventTarget | null; clientX?: number; clientY?: number }) {
+  function onMarkerSelect(vehicle: { accountId: number | null }, event?: { target?: EventTarget | null; clientX?: number; clientY?: number }) {
     // §36：label 块（含 PlayerName tooltip 悬停区）不是 hitbox——点标签不选中车辆；
     // .pb-label-player 为触发原生 title 需要 pointer-events:auto，点击事件会冒泡到这里，须拦截。
     const target = event && event.target
@@ -145,7 +157,7 @@ export function usePlaybackVehicleSelection(
     const py = hasPoint ? clientY! - rect.top : NaN
     // Hit-test uses the final vehicle-aware hit target at the marker's true position
     // (markers are never displaced). Selection still returns the canonical vehicle.
-    const hitTest = (s: any) => {
+    const hitTest = (s: VehicleRenderStateLike) => {
       const cx = (px - view.tx) / view.scale
       const cy = (py - view.ty) / view.scale
       const mapRect = camera.mapRenderRect()
@@ -165,26 +177,26 @@ export function usePlaybackVehicleSelection(
       // 真实点击必然落在某 hitbox 内（label 点击已在 onMarkerSelect 拦截）；
       // 此处兜底只为合成事件/坐标与布局瞬时不一致（既有 toggle 行为）
       if (candidates.length === 0) {
-        const target = states.find((s: any) => s.vehicle.accountId === accountId)
+        const target = states.find(s => s.vehicle.accountId === accountId)
         candidates = target ? [target] : []
       }
     } else {
-      const target = states.find((s: any) => s.vehicle.accountId === accountId)
+      const target = states.find(s => s.vehicle.accountId === accountId)
       candidates = target ? [target] : []
     }
     if (candidates.length === 0) return
     let best = candidates[0]
     if (candidates.length > 1) {
-      const dist = (s: any) => {
+      const dist = (s: VehicleRenderStateLike) => {
         const p = deps.markerScreen(s)
         return p ? Math.hypot(p.x - px, p.y - py) : Infinity
       }
-      candidates.sort((a: any, b: any) => (dist(a) - dist(b)) || (states.indexOf(a) - states.indexOf(b)))
+      candidates.sort((a, b) => (dist(a) - dist(b)) || (states.indexOf(a) - states.indexOf(b)))
       best = candidates[0]
       // tie（与前二近者距离几乎一致）且已有 selected 在候选内 → 保持当前 selected，不切换
       if (selectedAccountId.value != null && candidates.length > 1
           && Math.abs(dist(best) - dist(candidates[1])) < 1) {
-        const sel = candidates.find((s: any) => s.vehicle.accountId === selectedAccountId.value)
+        const sel = candidates.find(s => s.vehicle.accountId === selectedAccountId.value)
         if (sel) { openDetails(selectedAccountId.value, sideAwayFromClientX(clientX)); return }
       }
     }

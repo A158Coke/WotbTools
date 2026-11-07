@@ -15,12 +15,21 @@ import {
   semanticWidthFromSlider,
 } from '../utils/annotation.js'
 import { usePlaybackAnnotations } from './usePlaybackAnnotations.js'
-import type { PlaybackCamera } from './usePlaybackCamera.js'
+import type { PlaybackAnnotation } from './usePlaybackAnnotations.js'
+import type { PlaybackCamera, PlaybackMapViewLike } from './usePlaybackCamera.js'
 
 /** 语义坐标点（回放地图用户坐标系）。 */
 export interface SemanticPoint {
   x: number
   y: number
+}
+
+/** 文字输入会话（BattleMap 的 text input 绑定对象）。 */
+export interface TextSession {
+  point: SemanticPoint
+  text: string
+  committed?: boolean
+  cancelled?: boolean
 }
 
 /**
@@ -36,7 +45,7 @@ export interface SemanticPoint {
  */
 export function usePlaybackAnnotationEditor(
   camera: Pick<PlaybackCamera, 'view' | 'screenPoint' | 'mapRenderRect' | 'mapWidth' | 'mapHeight'>,
-  mapView: Ref<any>,
+  mapView: Ref<PlaybackMapViewLike>,
   hooks: {
     /** 文字输入框（BattleMap 内的 input 桥）。 */
     textInputRef: () => { focus: (opts?: { preventScroll?: boolean }) => void } | null
@@ -64,7 +73,7 @@ const TANK_CLASSES = ANNOT_TANK_CLASSES as ReadonlyArray<{ key: string }>
   const annotationOpen = ref(false)
   const activeTool = ref<string | null>(null) // null outside marking mode; select, tank classes, route or legacy drawing tools
   const routePoints = ref<SemanticPoint[]>([])
-  let moveOriginal: any = null
+  let moveOriginal: PlaybackAnnotation | null = null
   const annotColor = ref(ANNOT_COLORS[0])
   const annotVisible = ref(true)
   const annotWidthSlider = ref(ANNOT_WIDTH_DEFAULT) // 滑块值 = SVG 像素口径（1× 下所见即所得）
@@ -100,7 +109,7 @@ const TANK_CLASSES = ANNOT_TANK_CLASSES as ReadonlyArray<{ key: string }>
     renameSelected,
     finishRoute: finishRouteCommit,
   } = usePlaybackAnnotations({ getRouteDraft: () => routeDraft() })
-  const textSession = ref<any>(null) // reactive({ point, text })，文字输入会话
+  const textSession = ref<TextSession | null>(null) // reactive({ point, text })，文字输入会话
   const ANNOT_THIN_PX = 2 // 笔迹抽稀阈值（屏幕 CSS px，与坐标体系无关）
   let drawStart: SemanticPoint | null = null // 绘制起点（语义坐标）
   let drawPoints: SemanticPoint[] = [] // pen/eraser 已采点（语义坐标）
@@ -257,7 +266,8 @@ const TANK_CLASSES = ANNOT_TANK_CLASSES as ReadonlyArray<{ key: string }>
       if (last == null || Math.hypot(e.clientX - last.x, e.clientY - last.y) >= ANNOT_THIN_PX) {
         drawScreen.push({ x: e.clientX, y: e.clientY })
         drawPoints.push(p)
-        draft.value = { ...(draft.value as any), points: [...drawPoints] }
+        // route 草稿在采点过程中始终携带 points 列（原实现同形状）。
+        draft.value = { ...(draft.value as PlaybackAnnotation), points: [...drawPoints] }
       }
     } else if (drawStart) {
       draft.value = draftFromTool(tool as string, drawStart, p)
@@ -270,7 +280,7 @@ const TANK_CLASSES = ANNOT_TANK_CLASSES as ReadonlyArray<{ key: string }>
     if (tool === 'select') {
       if (draft.value && moveOriginal && selectedAnnotationIndex.value >= 0) {
         const index = selectedAnnotationIndex.value
-        replaceAnnotations(annotations.value.map((ann: any, i: number) => i === index ? draft.value : ann))
+        replaceAnnotations(annotations.value.map((ann, i) => i === index && draft.value ? draft.value : ann))
       }
     } else if (tool === 'route') {
       if (drawStart) {
@@ -297,7 +307,7 @@ const TANK_CLASSES = ANNOT_TANK_CLASSES as ReadonlyArray<{ key: string }>
   }
 
   /** 文字提交（幂等：Enter/blur/移除输入框都会触发，committed 防重复）。 */
-  function commitSession(session: any) {
+  function commitSession(session: TextSession) {
     if (textSession.value === session) textSession.value = null
     if (!session || session.cancelled || session.committed) return
     session.committed = true
@@ -306,7 +316,7 @@ const TANK_CLASSES = ANNOT_TANK_CLASSES as ReadonlyArray<{ key: string }>
     commitDraft({ type: 'text', color: annotColor.value, x: session.point.x, y: session.point.y, text })
   }
 
-  function cancelSession(session: any) {
+  function cancelSession(session: TextSession) {
     if (textSession.value === session) {
       textSession.value = null
       session.cancelled = true
@@ -348,9 +358,9 @@ const TANK_CLASSES = ANNOT_TANK_CLASSES as ReadonlyArray<{ key: string }>
       if (moveOriginal && selectedAnnotationIndex.value >= 0) list[selectedAnnotationIndex.value] = draft.value
       else list.push(draft.value)
     }
-    return list.map((ann: any, index: number) => ({
-      // projectAnnotationToSvg 的 JS options 形状按运行时传参消费（toX/toY 为必传投影函数）。
-      ...projectAnnotationToSvg(ann, { toX, toY, invX, invY, widthFallback: annotWidth.value } as any),
+    const toSvgOptions = { toX, toY, invX, invY, widthFallback: annotWidth.value } as Parameters<typeof projectAnnotationToSvg>[1] & { toX: typeof toX; toY: typeof toY }
+    return list.map((ann: PlaybackAnnotation, index: number) => ({
+      ...projectAnnotationToSvg(ann, toSvgOptions),
       selected: annotationOpen.value && index === selectedAnnotationIndex.value,
     }))
   })

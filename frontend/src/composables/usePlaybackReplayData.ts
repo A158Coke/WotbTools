@@ -6,6 +6,16 @@ import { consumableRuntimeAt } from '../utils/consumableRuntime.js'
 import { observedFreezeTimeAt } from '../utils/battlePlaybackV2.js'
 import { poseCoveredAt, selectActiveDef, sampleVehiclePoseGame } from '../replay-local/pose/vehiclePose.js'
 import { activeTerrainRelief, projectTerrainPoint, unprojectTerrainPoint } from '../utils/terrainReliefProjection.js'
+import type { BattlePlaybackDataset, PlaybackReloadTelemetry, VehiclePlaybackTrack } from '../types/playback-v2.js'
+import type { PlaybackMapViewLike } from './usePlaybackCamera.js'
+import type { PoseFacet, PoseFacetVehicle } from '../replay-local/pose/vehiclePose.js'
+
+/** 位姿通道查询面：canonical `poseFacet` + 回放时钟偏移的宿主消费形状。 */
+interface PoseSource {
+  grid: { tStart: number; samples: number }
+  offset: number
+  defFor: (accountId: number, t: number) => PoseFacet['vehicles'][number] | null
+}
 
 /**
  * 2D 回放数据源与位姿/弹药投影（#820 Agent C 拆分）：
@@ -13,13 +23,13 @@ import { activeTerrainRelief, projectTerrainPoint, unprojectTerrainPoint } from 
  * 地形起伏语义投影的唯一 owner。不持有播放时间（currentTime 由调用方注入查询）。
  */
 export function usePlaybackReplayData(
-  mapView: Ref<any>,
+  mapView: Ref<PlaybackMapViewLike>,
   deps: {
-    playback: ComputedRef<any>
+    playback: ComputedRef<BattlePlaybackDataset | null>
     /** V2 canonical dataset（reload/pose 消费源）。 */
-    playbackV2: () => any
-    reloadTelemetry: () => any
-    poseFacet: () => any
+    playbackV2: () => BattlePlaybackDataset | null
+    reloadTelemetry: () => PlaybackReloadTelemetry | null
+    poseFacet: () => PoseFacet | null
     clockOffset: () => number | null
     /** 当前地图元数据（mapCode 用于地形模型匹配）。 */
     mapCode: () => unknown
@@ -27,7 +37,7 @@ export function usePlaybackReplayData(
 ) {
   const reloadStateAt = computed(() => createReloadStateResolver(deps.reloadTelemetry()))
   const reloadVehiclesByAccount = computed(() => {
-    const byAccount = new Map()
+    const byAccount = new Map<number, PlaybackReloadTelemetry['vehicles'][number] | null>()
     for (const vehicle of deps.reloadTelemetry()?.vehicles || []) {
       // Ambiguous entity identity is unknown; do not combine two independent gun timelines.
       if (byAccount.has(vehicle.account_id)) byAccount.set(vehicle.account_id, null)
@@ -46,9 +56,9 @@ export function usePlaybackReplayData(
     tankConfigs.value = new Map()
     if (!telemetry || !assetProvider.configured()) return
     const ids = new Set<number>(telemetry.vehicles
-      .filter((v: any) => v.team === telemetry.friendlyTeam && v.tank_id > 0)
-      .map((v: any) => v.tank_id))
-    const entries = await Promise.all([...ids].map(async (tid): Promise<[number, any]> => {
+      .filter(v => v.team === telemetry.friendlyTeam && v.tank_id > 0)
+      .map(v => v.tank_id))
+    const entries = await Promise.all([...ids].map(async (tid): Promise<[number, unknown]> => {
       try { return [tid, await assetProvider.json(`/tank/${tid}.json`)] }
       catch { return [tid, null] }
     }))
@@ -68,7 +78,7 @@ export function usePlaybackReplayData(
   }
 
   /** 2D 名牌：当前定时消耗品（canonical transitions 的 timeSec 已是回放相对秒）。 */
-  function vehicleConsumablesAt(track: any, time: number) {
+  function vehicleConsumablesAt(track: VehiclePlaybackTrack, time: number) {
     return consumableRuntimeAt(track?.consumableTransitions, time)
   }
 
@@ -92,11 +102,11 @@ export function usePlaybackReplayData(
    * `clockOffset` = canonical `clock.startRaw`（battle-relative → 回放时钟域）。
    * 两者缺一即 null → 全链路回退 canonical 原始观测（与既往行为逐值一致）。
    */
-  const poseSource = computed(() => {
+  const poseSource = computed<PoseSource | null>(() => {
     const facet = deps.poseFacet()
     const offset = deps.clockOffset()
-    if (!facet || !Number.isFinite(offset)) return null
-    const byAccount = new Map()
+    if (!facet || offset == null || !Number.isFinite(offset)) return null
+    const byAccount = new Map<number, PoseFacetVehicle[]>()
     for (const def of facet.vehicles || []) {
       const list = byAccount.get(def.account_id)
       if (list) list.push(def)
@@ -121,7 +131,7 @@ export function usePlaybackReplayData(
    * 该车在战斗相对时刻 t 的 game 系位姿（`y` = 游戏 z；2D 地图纵向翻转由 mapView 负责）。
    * 无 facet / 该账号不在位姿切面 → null（调用方回退 canonical）。
    */
-  function poseAtTime(track: any, t: number) {
+  function poseAtTime(track: VehiclePlaybackTrack, t: number) {
     const source = poseSource.value
     if (!source) return null
     // **失察即冻结**（2026-10-16 用户裁定）：车离开我方视野后图标停在最后观测点，不再跟随客户端
@@ -129,7 +139,7 @@ export function usePlaybackReplayData(
     const freezeAt = observedFreezeTimeAt(track.positionSegments, t)
     if (freezeAt == null) return null
     // 活跃实体按**采样时刻**（冻结后的 freezeAt）选择：与"这个位姿属于谁"的时间域一致。
-    const rawAt = freezeAt + (source.offset as number)
+    const rawAt = freezeAt + source.offset
     const def = source.defFor(track.accountId, freezeAt)
     // 采样时刻还必须落在该实体的 **coverage 证据**内：覆盖外的端点钳位会把该实体未来的首帧位姿
     // 泄漏到过去（新实体的身份证据可能早于其首个位姿样本）→ 不覆盖即回落 canonical（fail-closed）。
@@ -139,7 +149,8 @@ export function usePlaybackReplayData(
   }
 
   function reliefModelForPlayback() {
-    const model = activeTerrainRelief.value as any
+    // activeTerrainRelief 是 JS 模块的 reactive 值：窄化到消费的唯一字段。
+    const model = activeTerrainRelief.value as { mapCode: string } | null
     return model && model.mapCode === String(deps.mapCode() || '') ? model : null
   }
 

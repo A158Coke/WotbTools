@@ -6,18 +6,29 @@ import { clampViewPan } from '../utils/battlePlayback.js'
 export interface PlaybackMapViewLike {
   W: number
   H: number
+  toX(x: number): number
+  toY(y: number): number
+  fromX?(x: number): number | null
+  fromY?(y: number): number | null
+  renderBounds?: { xMin: number; xMax: number; yMin: number; yMax: number } | null
 }
 
 /** 相机操作的宿主形态（camera state 的唯一写入方仍是本 composable）。 */
 export interface PlaybackCameraHost {
   /** 地图组件实例（提供 mapEl / textInputRef 等模板桥）。 */
-  mapComponent: Ref<any>
+  mapComponent: Ref<PlaybackMapBridge | null>
   /** 正方形 Stage 元素（fit/reset 的垂直安全区依据）。 */
   mapStageEl: Ref<HTMLElement | null>
   /** 布局模式参与 fit signature：mode 变化时重新应用默认 contain。 */
   isFullscreen: () => boolean
   wideLayout: () => boolean
   isMobileDevice: () => boolean
+}
+
+/** 宿主地图组件实例桥（BattleMap 的模板 ref 暴露面）。 */
+export interface PlaybackMapBridge {
+  mapEl?: HTMLElement | null
+  textInputRef?: { focus(opts?: { preventScroll?: boolean }): void } | null
 }
 
 /**

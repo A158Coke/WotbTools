@@ -10,6 +10,32 @@ import friendlyHull from '../assets/tank-icons/tank-marker-friendly-hull.png'
 import friendlyTurret from '../assets/tank-icons/tank-marker-friendly-turret.png'
 import { positionCoveredAtV2 } from '../utils/battlePlaybackV2.js'
 import type { PlaybackReplayData } from './usePlaybackReplayData.js'
+import type { PlaybackMapViewLike } from './usePlaybackCamera.js'
+import type { BattlePlaybackDataset, BattleEvent, VehiclePlaybackTrack } from '../types/playback-v2.js'
+import type { RouteLike } from '../utils/battlePlayback.js'
+
+// vehicleMarkerSizing 是 JS 工具：在此声明窄边界类型（返回形状与 playbackVehicleState
+// 的 MarkerSize 契约一致，外加 source/footprint 诊断字段），消费处不再需要 any 断言。
+type ComputedMarkerSize = {
+  renderBox: { width: number; height: number }
+  collisionFootprint: { width: number; height: number }
+  hitTarget: { width: number; height: number }
+  source: string
+  footprint: { width: number; length: number }
+}
+type ComputeVehicleMarkerSize = (
+  vehicle: VehiclePlaybackTrack,
+  options: { model?: unknown; mapView?: unknown; mapWidthPx?: number | null; mapHeightPx?: number | null; mobile?: boolean },
+) => ComputedMarkerSize
+const computeVehicleMarkerSizeTyped = computeVehicleMarkerSize as ComputeVehicleMarkerSize
+
+/** projectVehicleState 的单个渲染项（+ 每车 gunMarks/reload/consumables 附加字段）。 */
+type ProjectedVehicleState = NonNullable<ReturnType<typeof projectVehicleState>> & {
+  gunMarks: unknown
+  reloadShells: unknown
+  consumables: unknown
+}
+
 
 /**
  * 2D 回放车辆呈现投影（#820 Agent C 拆分）：dedicated model preload、车辆渲染状态
@@ -20,7 +46,7 @@ import type { PlaybackReplayData } from './usePlaybackReplayData.js'
  * 变换（与标注/选中同一相机），标记不做防重叠位移（车体严格落在真实位置）。
  */
 export function usePlaybackVehicleProjection(
-  mapView: Ref<any>,
+  mapView: Ref<PlaybackMapViewLike>,
   camera: {
     view: { scale: number; tx: number; ty: number }
     mapWidth: () => number
@@ -32,17 +58,17 @@ export function usePlaybackVehicleProjection(
   },
   replayData: Pick<PlaybackReplayData, 'poseAtTime' | 'poseSource' | 'vehicleReloadAt' | 'vehicleConsumablesAt' | 'routesByAccount' | 'vehiclesByAccount' | 'projectedSemanticNorm'>,
   deps: {
-    playbackV2: () => any
-    recorderAccountId: () => unknown
+    playbackV2: () => BattlePlaybackDataset | null
+    recorderAccountId: () => number | null
     currentTime: Ref<number>
     speed: Ref<number>
-    authoritativeEvents: () => any[]
-    hpVehicles: () => any[]
-    gunMarks: () => Map<number, any> | null
+    authoritativeEvents: () => BattleEvent[]
+    hpVehicles: () => VehiclePlaybackTrack[]
+    gunMarks: () => Map<number, unknown> | null
     isMobileDevice: Ref<boolean>
     trailPrefs: { showTrail: boolean }
     palette: Ref<{ friendlyColors: string[]; enemyColors: string[]; routeOutline: string }>
-    t: (key: string, ...args: any[]) => string
+    t: (key: string) => string
   },
 ) {
   // ---- PR2：Tier X dedicated model preload----
@@ -64,14 +90,14 @@ export function usePlaybackVehicleProjection(
       }
       try {
         const { preloadBattleModels } = await import('../vehicle-models/runtime.js')
-        const result = await preloadBattleModels(vehicles.map((v: any) => v.tankId))
+        const result = await preloadBattleModels(vehicles.map(v => v.tankId))
         if (token !== preloadToken) return // 过期结果丢弃
         preload.value = { phase: 'ready', ...result }
       } catch {
         // 模块加载异常 → 保持单场 generic fallback，但保留稳定诊断原因。
         console.error('[vehicle-models] fallback reason=MODULE_IMPORT_FAILURE')
         if (token !== preloadToken) return
-        const failureReasons = new Map((vehicles || []).map((v: any) => [String(v.tankId), 'MODULE_IMPORT_FAILURE']))
+        const failureReasons = new Map((vehicles || []).map(v => [String(v.tankId), 'MODULE_IMPORT_FAILURE']))
         preload.value = { phase: 'ready', resolved: new Map(), failed: new Set(), failureReasons, byTank: new Map() }
       }
     },
@@ -80,7 +106,7 @@ export function usePlaybackVehicleProjection(
 
   /** PR2：该车辆的 dedicated model 决策（preload 结果）——
    * 非 Tier X / preload 失败 / 模块加载失败 → null（generic marker 单车 fallback）。 */
-  function vehicleModel(vehicle: any) {
+  function vehicleModel(vehicle: VehiclePlaybackTrack) {
     const p = preload.value
     if (p.phase !== 'ready') return null
     const modelKey = p.byTank.get(String(vehicle.tankId))
@@ -107,10 +133,10 @@ export function usePlaybackVehicleProjection(
   // 同色）。颜色列表仍逐调用读取（调色板可变）。
   const vehicleColorIndexCache = new WeakMap()
 
-  function vehicleColor(vehicle: any) {
+  function vehicleColor(vehicle: VehiclePlaybackTrack) {
     let index = vehicleColorIndexCache.get(vehicle)
     if (index === undefined) {
-      const teamVehicles = deps.hpVehicles().filter((v: any) => v.team === vehicle.team)
+      const teamVehicles = deps.hpVehicles().filter(v => v.team === vehicle.team)
       if (teamVehicles.length > 0) {
         index = Math.max(0, teamVehicles.indexOf(vehicle))
         vehicleColorIndexCache.set(vehicle, index)
@@ -129,20 +155,18 @@ export function usePlaybackVehicleProjection(
     const tracks = deps.playbackV2()?.vehicles || []
     if (tracks.length === 0) return []
     return tracks
-      .map((track: any) => {
+      .map((track: VehiclePlaybackTrack): ProjectedVehicleState | null => {
         const vehicle = track
         const model = vehicleModel(track)
         const mobile = deps.isMobileDevice.value
-        // computeVehicleMarkerSize 为 JS 工具，options 按运行时形状消费。
-        const markerSize = (computeVehicleMarkerSize as any)(vehicle, {
+            const markerSize = computeVehicleMarkerSizeTyped(vehicle, {
           model,
           mapView: mapView.value,
           mapWidthPx: camera.mapWidth(),
           mapHeightPx: camera.mapHeight(),
           mobile,
         })
-        // projectVehicleState 为 JS 工具（PNG 资产/翻译注入按运行时形状消费）。
-        const state = (projectVehicleState as any)({
+            const state = projectVehicleState({
           vehicle,
           track,
           time: deps.currentTime.value,
@@ -167,14 +191,16 @@ export function usePlaybackVehicleProjection(
         // 故不产出 terrainAttitude（原地形高度场合成倾斜已删）。
         return { ...state, gunMarks: deps.gunMarks()?.get(track.accountId) ?? null, reloadShells: replayData.vehicleReloadAt(track.accountId, deps.currentTime.value), consumables: replayData.vehicleConsumablesAt(track, deps.currentTime.value) }
       })
-      .filter(Boolean)
+      .filter((item): item is ProjectedVehicleState => item != null)
   })
 
   // 标记**不做**防重叠位移（2026-10-16 用户裁定）：车体严格落在真实位置，密集处允许图标互相压盖；
   // 早前的"整盒推开 + 虚线指回真实位置"在 2D 里读起来就是"坦克模型与真实位置有偏移"，且 3D 从不
   // 移动车体模型 ⇒ 两侧不一致。名牌 / HP 的防重叠仍由 labelLayout 的车道机制承担（与 3D 同构）。
-  const vehicleStates = computed(() => baseVehicleStates.value.map((state: any) => {
+  const vehicleStates = computed(() => baseVehicleStates.value.map((state: ProjectedVehicleState) => {
     const scale = camera.view.scale || 1
+    // renderBox 由投影层恒定提供（computeVehicleMarkerSize 每车返回完整盒）。
+    if (!state.markerSize) return state
     return {
       ...state,
       markerStyle: {
@@ -196,7 +222,8 @@ export function usePlaybackVehicleProjection(
     replayData.routesByAccount.value,
     deps.currentTime.value,
     deps.speed.value,
-    replayData.poseSource.value ? (route: any, t: number) => replayData.poseAtTime(route, t) : null,
+    // 运行时输入恒为 canonical tracks（routesByAccount 的值）；工具层只承诺 RouteLike 结构，在适配点窄化。
+    replayData.poseSource.value ? (route: RouteLike, t: number) => replayData.poseAtTime(route as VehiclePlaybackTrack, t) : null,
   ))
 
   function tracerColor(accountId: number) {
@@ -210,8 +237,8 @@ export function usePlaybackVehicleProjection(
         // 位姿通道：与 3D 同源的位置序列；可信度门控仍取 canonical 观测区间
         ? recentPositionTrailsFromPose(
             deps.hpVehicles(),
-            (vehicle: any, t: number) => replayData.poseAtTime(vehicle, t),
-            (vehicle: any, t: number) => positionCoveredAtV2(vehicle.positionSegments, t),
+            (vehicle: RouteLike, t: number) => replayData.poseAtTime(vehicle as VehiclePlaybackTrack, t),
+            (vehicle: RouteLike, t: number) => positionCoveredAtV2(vehicle.positionSegments, t),
             deps.currentTime.value, 2)
         : recentPositionTrails(deps.hpVehicles(), deps.currentTime.value, 2))
     : [])
@@ -220,7 +247,7 @@ export function usePlaybackVehicleProjection(
   const { projectedSemanticNorm: replayDataProjected } = replayData
 
   /** 标记中心 → 相对地图容器的屏幕 px（viewport 变换后）。 */
-  function canonicalMarkerScreen(st: any) {
+  function canonicalMarkerScreen(st: ProjectedVehicleState) {
     const rect = camera.mapRenderRect()
     if (!rect || rect.width <= 0 || rect.height <= 0) return null
     const point = replayDataProjected(st.pos.x, st.pos.y)
@@ -230,13 +257,13 @@ export function usePlaybackVehicleProjection(
     }
   }
 
-  function markerScreen(st: any) {
+  function markerScreen(st: ProjectedVehicleState) {
     // 标记严格落在真实位置（无防重叠位移），屏幕位置 = 语义位置。
     return canonicalMarkerScreen(st)
   }
 
   // ---- 单车 HP HUD 数据（§4/§5/§6/§7）----
-  function hpFor(vehicle: any) {
+  function hpFor(vehicle: VehiclePlaybackTrack) {
     const display = healthDisplayAt(vehicle, deps.currentTime.value)
     if (!display) return null
     return {
