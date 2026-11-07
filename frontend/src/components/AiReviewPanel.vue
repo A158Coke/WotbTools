@@ -46,10 +46,12 @@ const props = defineProps({
   /** 客户端 AI 输入（battle + canonical projection）：由本地解析层产出；null = 尚未就绪。 */
   projection: { type: Object as () => AiReviewProjection | null, default: null },
   /** 投影准备失败时的已本地化错误；空 = 无。 */
-  projectionError: { type: String, default: '' }
+  projectionError: { type: String, default: '' },
+  /** 宿主能跳到 2D 回放（工作台）时为 true：关键回合显示「在 2D 中查看」。 */
+  canViewIn2d: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['rebuild-projection'])
+const emit = defineEmits(['rebuild-projection', 'view-2d'])
 
 const { t, te, locale } = useI18n()
 const auth = useAuth() as AiPanelAuth
@@ -424,7 +426,7 @@ defineExpose({ __classify: classify })
         {{ partialAnalysis }}
       </div>
 
-      <AnalysisResultPanel v-if="analysisResult" data-tour="ai-review-report" :result="analysisResult" />
+      <AnalysisResultPanel v-if="analysisResult" data-tour="ai-review-report" :result="analysisResult" :can-view-in2d="canViewIn2d" @view-2d="sec => emit('view-2d', sec)" />
       <Banner v-if="limitedTimelineNote" tone="warning" data-test="ai-capability-limited">
         <p>{{ limitedTimelineNote }}</p>
       </Banner>

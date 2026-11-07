@@ -24,6 +24,8 @@ const props = defineProps({
   /** 多文件未选场次等阻断原因（已本地化） */
   blockedReason: { type: String, default: '' },
 })
+/** 关键回合「在 2D 中查看」：只向工作台转发战斗时钟秒数，切能力页与 seek 由 ReplayWorkspace 负责。 */
+const emit = defineEmits<{ 'view-2d': [sec: number] }>()
 
 
 const { t } = useI18n()
@@ -116,7 +118,9 @@ watch(() => [props.file, props.active, props.blockedReason, authenticated.value,
       :file="file ?? undefined"
       :projection="input"
       :projection-error="projectionError"
+      can-view-in2d
       @rebuild-projection="rebuildProjection"
+      @view-2d="sec => emit('view-2d', sec)"
     />
   </div>
 </template>

@@ -11,13 +11,18 @@ import { buildAiReviewReplyText, teamIdentityLabel as identityLabel } from '../u
 // 后端 SSE `done` 载荷返回个人 { analysis, preBattleSection? } 或团队 { teamReview, preBattleSection? }；
 // preBattleSection 为 null/空（Call #1 失败/降级）时整个区块不渲染。
 // 地图鸟瞰（热力/路线/战局回放）已拆为页面级独立区块（ReplayPage Workspace / BattlePlaybackPanel 加载），
-// 不随 AI 复盘结果渲染；AI 报告中的时间只作为证据定位文本，不在结果面板承担 Playback seek。
+// 不随 AI 复盘结果渲染。4.0：团队复盘的关键回合可以「在 2D 中查看」——本面板只发出 `view-2d(startSec)`，
+// 跳转与 seek 由工作台（ReplayWorkspace → BattlePlaybackPanel.seekTo）负责；AI episode 的 startSec 与
+// 2D 回放共用开战为 0 的战斗时钟（docs/features/battle-playback.md「同一战斗时钟」）。
 const props = defineProps({
   result: {
     type: Object,
     required: true
-  }
+  },
+  /** 宿主能把用户带到 2D 回放时为 true（工作台内）；独立渲染时不显示「在 2D 中查看」。 */
+  canViewIn2d: { type: Boolean, default: false },
 })
+const emit = defineEmits(['view-2d'])
 
 // 默认展开，用户可折叠收起
 const preBattleOpen = ref(true)
@@ -29,6 +34,11 @@ const feedbackSnapshot = ref('')
 const feedbackSent = ref(false)
 let copyTimer
 const { t, locale } = useI18n()
+/** 战斗时钟 mm:ss（与 2D 回放顶栏同一格式：开战为 0 的已过时间）。 */
+function formatClock(sec) {
+  const total = Math.max(0, Math.round(sec))
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
+}
 
 watch([() => props.result, () => locale?.value], () => {
   feedbackOpen.value = false
@@ -129,22 +139,40 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
       :content="result.analysis"
     />
     <div v-if="analysisOpen && result.teamReview" class="team-review-content">
-      <section class="team-summary">
-        <h3>{{ $t('recon.team.verdict') }}</h3>
-        <MarkdownContent class="analysis-text" :content="result.teamReview.summary.verdict" />
-        <h3>{{ $t('recon.team.diagnosis') }}</h3>
-        <MarkdownContent class="analysis-text" :content="result.teamReview.summary.primaryDiagnosis" />
+      <section class="team-verdict" data-testid="team-verdict">
+        <p class="team-verdict-kicker">{{ $t('recon.team.verdict') }}</p>
+        <MarkdownContent class="analysis-text team-verdict-text" :content="result.teamReview.summary.verdict" />
+        <ul class="team-verdict-tags">
+          <li>{{ $t('recon.team.episodesCount', { count: result.teamReview.episodes.length }) }}</li>
+          <li>{{ $t('recon.team.trainingCount', { count: result.teamReview.trainingSuggestions.length }) }}</li>
+        </ul>
+        <div class="team-diagnosis">
+          <h3>{{ $t('recon.team.diagnosis') }}</h3>
+          <MarkdownContent class="analysis-text" :content="result.teamReview.summary.primaryDiagnosis" />
+        </div>
       </section>
 
       <section v-if="result.teamReview.episodes.length" class="team-section">
         <h3>{{ $t('recon.team.episodes') }}</h3>
-        <article v-for="episode in result.teamReview.episodes" :key="episode.id" class="team-card">
-          <h4>{{ episode.title }}</h4>
-          <span v-if="episode.startSec !== null && episode.endSec !== null" class="team-time">
-            {{ episode.startSec }}s–{{ episode.endSec }}s
-          </span>
-          <MarkdownContent class="analysis-text" :content="episode.analysis" />
-        </article>
+        <ol class="team-timeline" data-testid="team-timeline">
+          <li v-for="episode in result.teamReview.episodes" :key="episode.id" class="team-timeline-item">
+            <span class="team-time" :class="{ 'is-unknown': episode.startSec === null }">
+              <template v-if="episode.startSec !== null && episode.endSec !== null">{{ formatClock(episode.startSec) }}–{{ formatClock(episode.endSec) }}</template>
+              <template v-else>—</template>
+            </span>
+            <div class="team-timeline-body">
+              <h4>{{ episode.title }}</h4>
+              <MarkdownContent class="analysis-text" :content="episode.analysis" />
+              <button
+                v-if="canViewIn2d && episode.startSec !== null"
+                type="button"
+                class="team-view-2d"
+                data-testid="team-view-2d"
+                @click="emit('view-2d', episode.startSec)"
+              >{{ $t('recon.team.viewIn2d') }}</button>
+            </div>
+          </li>
+        </ol>
       </section>
 
       <section v-if="result.teamReview.trainingSuggestions.length" class="team-section">
@@ -268,11 +296,35 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
   }
 }
 .team-review-content { padding: 0 14px 14px; }
-.team-summary, .team-section { border-bottom: 1px solid var(--border); padding: 12px 0; }
+.team-section { border-bottom: 1px solid var(--border); padding: 12px 0; }
 .team-section:last-child { border-bottom: 0; }
 .team-review-content h3 { margin: 0 0 8px; color: var(--text-heading); }
 .team-card { margin-top: 10px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); }
 .team-card h4 { display: inline; margin: 0; color: var(--text-heading); }
-.team-time { margin-left: 8px; color: var(--text-muted); font-size: .8rem; }
-.team-card .analysis-text, .team-summary .analysis-text { padding: 0; }
+.team-card .analysis-text, .team-verdict .analysis-text, .team-timeline .analysis-text { padding: 0; }
+
+/* 4.0：团队结论置顶卡 + 关键回合时间线 */
+.team-verdict {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, color-mix(in oklab, var(--color-accent) 18%, var(--color-surface-1)), var(--color-surface-1));
+}
+.team-verdict-kicker { margin: 0; color: var(--color-accent-text); font: var(--type-caption); font-weight: 700; letter-spacing: .12em; }
+.team-verdict-text { color: var(--color-text-primary); font: var(--type-h3); }
+.team-verdict-tags { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.team-diagnosis { padding-top: var(--space-2); border-top: 1px solid var(--color-border-subtle); }
+.team-diagnosis h3 { margin: 0 0 var(--space-1); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 700; }
+.team-verdict-tags li { padding: var(--space-1) var(--space-2); border-radius: var(--radius-full); background: var(--color-surface-2); color: var(--color-text-secondary); font: var(--type-caption); }
+.team-timeline { display: grid; gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
+.team-timeline-item { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-3); padding-inline-start: var(--space-3); border-inline-start: 2px solid var(--color-border-subtle); }
+.team-timeline .team-time { align-self: start; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); background: var(--color-surface-2); color: var(--color-accent-text); font: var(--type-caption); font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
+.team-timeline .team-time.is-unknown { color: var(--color-text-secondary); }
+.team-timeline-body { min-width: 0; }
+.team-timeline-body h4 { margin: 0 0 var(--space-1); color: var(--color-text-primary); font: var(--type-h3); }
+.team-view-2d { min-height: var(--control-h-sm); margin-top: var(--space-1); padding: 0; border: 0; background: none; color: var(--color-accent-text); font: var(--type-caption); font-weight: 600; cursor: pointer; }
+.team-view-2d:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 </style>

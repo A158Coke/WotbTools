@@ -295,6 +295,15 @@ function viewFor(cap) {
   return VIEW_BY_CAPABILITY[cap] || 'replay'
 }
 
+/** AI 复盘关键回合 →「在 2D 中查看」：切到 2D 能力页并按战斗时钟定位（BattlePlaybackPanel.seekTo 监听变化）。 */
+const playbackSeek = ref(null)
+async function viewIn2d(sec) {
+  await setCapability('playback')
+  playbackSeek.value = null
+  await nextTick()
+  playbackSeek.value = sec
+}
+
 async function setCapability(key) {
   if (key === activeCapability.value) return
   workspace.setWorkspaceTab(key)
@@ -615,6 +624,7 @@ watch(() => props.initialCapability, (val) => {
           :playback-session="workspace.playbackSession"
           :file="targetFile"
           :active="activeCapability === 'playback'"
+          :seek-to="playbackSeek"
         />
       </div>
       <div v-show="activeCapability === '3d'" class="capability-pane" data-testid="ws-3d">
@@ -686,6 +696,7 @@ watch(() => props.initialCapability, (val) => {
           :file="targetFile"
           :active="activeCapability === 'ai' && aiAvailability.available"
           :blocked-reason="aiBlocked"
+          @view-2d="viewIn2d"
         />
       </div>
     </div>

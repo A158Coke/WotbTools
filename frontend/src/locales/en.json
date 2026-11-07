@@ -1233,7 +1233,10 @@
       "reviewFocus": "Review Focus",
       "highContributors": "High Contributors",
       "unknownPlayer": "Unknown player",
-      "unknownTank": "Unknown tank"
+      "unknownTank": "Unknown tank",
+      "viewIn2d": "View in 2D →",
+      "episodesCount": "Key moments: {count}",
+      "trainingCount": "Training tips: {count}"
     },
     "capability_limited": "AI review is based on a limited timeline (some time info missing); it is degraded to a coarser evidence level and does not guess unobserved facts",
     "playback": {
