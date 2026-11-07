@@ -2070,5 +2070,9 @@
   },
   "doc": {
     "copy": "复制"
+  },
+  "leagueBroadcasts": {
+    "server": "区服",
+    "season": "赛季"
   }
 }

@@ -69,39 +69,17 @@ async function geometry(page) {
   assert.deepEqual(result.tiny, [], 'minimum 44px hit targets')
   assert.equal(result.tabBar, false, 'no bottom tab bar (L1)')
 }
-async function serverGeometry(page, scenario, count) {
-  await page.waitForValue('document.querySelectorAll("[data-testid=broadcast-servers] .broadcast-server-card").length', value => value === count)
-  await page.waitForValue(`(() => { const icons = [...document.querySelectorAll('.broadcast-server-emblem use')]; return icons.length === ${count} && icons.every(icon => icon.getBBox().width > 0); })()`, Boolean)
-  await page.waitForValue('document.querySelector("[data-testid=broadcast-servers]")?.style.getPropertyValue("--broadcast-grid-top")', Boolean)
+async function toolbarGeometry(page, scenario) {
+  await page.waitForValue('document.querySelectorAll("[data-testid=broadcast-toolbar] [data-testid^=broadcast-server-]").length', value => value === 5)
   const layout = await page.evaluate(`(() => {
-    const grid = document.querySelector('[data-testid=broadcast-servers]'), style = getComputedStyle(grid)
-    return { cards: [...grid.querySelectorAll('.broadcast-server-card')].map(el => { const r=el.getBoundingClientRect(), stage=el.querySelector('.broadcast-server-emblem').getBoundingClientRect(), frame=el.querySelector('.broadcast-server-icon-frame').getBoundingClientRect(), icon=el.querySelector('.broadcast-server-emblem svg').getBoundingClientRect(); return { x:r.x, y:r.y+scrollY, width:r.width, height:r.height, bottom:r.bottom+scrollY, iconWidth:icon.width, iconHeight:icon.height, frameWidth:frame.width, frameHeight:frame.height, frameLeft:frame.left, frameTop:frame.top, stageWidth:stage.width, stageHeight:stage.height, stageLeft:stage.left, stageTop:stage.top, name:el.querySelector('.broadcast-server-name').textContent, code:el.querySelector('.broadcast-server-code').textContent }; }),
-      gap:parseFloat(style.rowGap), top:parseFloat(style.getPropertyValue('--broadcast-grid-top')), tail:parseFloat(style.getPropertyValue('--broadcast-grid-tail')),
-      viewport:innerHeight }
+    const bar = document.querySelector('[data-testid=broadcast-toolbar]').getBoundingClientRect()
+    const servers = [...document.querySelectorAll('[data-testid^=broadcast-server-]')].map(el => el.textContent.trim())
+    const season = document.querySelector('[data-testid=broadcast-season-select]')?.getBoundingClientRect()
+    return { barRight: bar.right, viewport: innerWidth, servers, seasonWidth: season?.width ?? 0 }
   })()`)
-  const [first, second, third, fourth, fifth] = layout.cards
-  assert.deepEqual(layout.cards.map(card => card.code), ['CN', 'APAC', 'NA', 'EU', 'LESTA'])
-  if (scenario.locale === 'en') assert.deepEqual(layout.cards.map(card => card.name), ['CN Server', 'APAC Server', 'NA Server', 'EU Server', 'Lesta'])
-  for (const card of layout.cards) {
-    assert.ok(card.height >= 200 && card.iconWidth > 0, 'large cards include rendered globe SVG')
-    assert.ok(Math.abs(card.frameWidth - Math.min(card.stageWidth, card.stageHeight)) < 2 && Math.abs(card.frameWidth - card.frameHeight) < 1, 'background frame fills the available square')
-    assert.ok(Math.abs(card.frameLeft - card.stageLeft) < 1 && Math.abs(card.frameTop - card.stageTop) < 1, 'square stays at the original upper-left anchor')
-    assert.ok(Math.abs(card.iconWidth - card.frameWidth * .75) < 2 && Math.abs(card.iconWidth - card.iconHeight) < 1, 'globe scales inside the square with its original inset')
-  }
-  if (scenario.width >= 768) {
-    assert.ok(Math.abs(first.y - second.y) < 1 && second.x > first.x, 'desktop and tablet use two columns')
-    assert.ok(third.y > first.y && Math.abs(third.y - fourth.y) < 1, 'four cards form two rows')
-    if (fifth) assert.ok(fifth.y > fourth.y, 'fifth server follows on the next row')
-  } else {
-    assert.ok(layout.cards.every(card => Math.abs(card.x - first.x) < 1), 'phone is one column')
-    assert.ok(second.y > first.y, 'phone cards stack vertically')
-  }
-  const expected = Math.max(200, (layout.viewport - layout.top - layout.tail - layout.gap) / 2)
-  assert.ok(Math.abs(first.height - expected) < 2, `cards fill two available rows: ${JSON.stringify(layout)}`)
-  if (expected > 200 && count === 5) {
-    const secondRowEnd = scenario.width < 768 ? second.bottom : fourth.bottom
-    assert.ok(Math.abs(secondRowEnd - layout.viewport) < 2, 'first two rows fill the viewport without reserving offscreen footer space')
-  }
+  if (scenario.locale === 'en') assert.deepEqual(layout.servers, ['CN Server', 'APAC Server', 'NA Server', 'EU Server', 'Lesta'])
+  assert.ok(layout.barRight <= layout.viewport + 1, `toolbar stays inside the viewport: ${JSON.stringify(layout)}`)
+  assert.ok(layout.seasonWidth > 0, 'season selector is part of the toolbar')
   await geometry(page)
 }
 
@@ -135,7 +113,8 @@ try {
       const navLabel = await page.evaluate(`(() => { const link = document.querySelector(${JSON.stringify(activeEntry)}); return { visible: link.textContent.trim(), accessible: link.getAttribute('aria-label') }; })()`)
       assert.ok(navLabel.accessible.includes(navLabel.visible), 'accessible name includes the visible navigation label')
       if (drawerShell) await page.closeNavDrawer()
-      await serverGeometry(page, scenario, 5)
+      await page.waitForValue('!!document.querySelector("[data-testid=broadcast-round-30]")', Boolean, { label: 'first server and latest season open by default' })
+      await toolbarGeometry(page, scenario)
       if (screenshots && ['summer-desktop', 'winter-mobile'].includes(scenario.name)) {
         await mkdir(screenshots, { recursive: true })
         const image = await chrome.client.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, sessionId)
@@ -143,22 +122,20 @@ try {
       }
       if (scenario.name.endsWith('-desktop')) {
         await page.emulate({ ...scenario, width: 1280, height: 720 })
-        await serverGeometry(page, { ...scenario, width: 1280, height: 720 }, 5)
+        await toolbarGeometry(page, { ...scenario, width: 1280, height: 720 })
         await page.emulate(scenario)
-        await serverGeometry(page, scenario, 5)
+        await toolbarGeometry(page, scenario)
       }
       await tap(page, '[data-testid=broadcast-server-LESTA]', scenario.touch)
-      await page.waitForValue('!!document.querySelector("[data-testid=broadcast-seasons]")', Boolean)
-      assert.equal(await page.evaluate('new URLSearchParams(location.search).get("lbServer")'), 'LESTA', 'fifth server remains reachable by scrolling')
-      await tap(page, '[data-testid=broadcast-back]', scenario.touch)
+      await page.waitForValue('!!document.querySelector("[data-testid=broadcast-no-seasons]")', Boolean)
+      assert.equal(await page.evaluate('new URLSearchParams(location.search).get("lbServer")'), 'LESTA', 'fifth server remains reachable in the segmented bar')
       await tap(page, '[data-testid=broadcast-server-CN]', scenario.touch)
       const seasonName = scenario.locale === 'zh' ? db.seasons[0].nameZh : db.seasons[0].nameEn
-      await page.waitForValue('document.querySelector("[data-testid=broadcast-season-10] h2")?.textContent', value => value?.includes(seasonName))
-      await tap(page, '[data-testid=broadcast-enter-season-10]', scenario.touch)
-      await page.waitForValue('document.querySelector("[data-testid=broadcast-node-toggle-30]")?.getAttribute("aria-expanded")', value => value === 'false')
-      assert.equal(await page.evaluate('document.querySelectorAll("[data-testid^=broadcast-node-toggle-]").length'), 5, 'all categories and rounds are inline')
+      await page.waitForValue('document.querySelector("[data-testid=broadcast-season-select]")?.selectedOptions[0]?.textContent', value => value?.includes(seasonName))
+      await page.waitForValue('document.querySelector("[data-testid=broadcast-round-30]")?.getAttribute("aria-pressed")', value => value === 'true')
+      assert.equal(await page.evaluate('document.querySelectorAll("[data-testid^=broadcast-stage-]").length'), 3, 'stages are tabs')
+      assert.equal(await page.evaluate('document.querySelectorAll("button[data-testid^=broadcast-round-]").length'), 3, 'points rounds are listed beside the video grid')
       assert.equal(await page.evaluate('!!document.querySelector("[data-testid^=broadcast-new-node-]")'), false, 'anonymous mutation hidden')
-      await tap(page, '[data-testid=broadcast-node-toggle-30]', scenario.touch)
       await page.waitForValue('!!document.querySelector("[data-testid=broadcast-replay-40]")', Boolean)
       await geometry(page)
       assert.equal(await page.evaluate('document.querySelector("[data-testid=broadcast-replay-40] a")?.getAttribute("rel")'), 'noopener noreferrer')
@@ -186,7 +163,6 @@ try {
         assert.equal(db.seasons[0].nameZh, '更新赛事')
         assert.equal(db.seasons[0].nameEn, 'Updated tournament')
         assert.equal(db.seasons[0].nameRu, null)
-        await tap(page, '[data-testid=broadcast-enter-season-10]', scenario.touch)
         await page.waitForValue('!!document.querySelector("[data-testid=broadcast-node-menu-30]")', Boolean)
         await geometry(page)
         if (screenshots && ['summer-desktop', 'winter-mobile'].includes(scenario.name)) {
@@ -207,7 +183,7 @@ try {
         await tap(page, '[data-testid=broadcast-replay-save]', scenario.touch)
         await page.waitForValue('document.querySelectorAll("[data-testid=broadcast-replay-dialog] [role=alert]").length', value => value > 0)
         assert.equal(await page.evaluate('document.querySelector("[data-testid=broadcast-title]").value'), 'Created in browser', 'failed save retains draft')
-        assert.equal(await page.evaluate('!!document.querySelector("[data-testid=broadcast-node-toggle-30]")'), true, 'failed mutation retains public tree')
+        assert.equal(await page.evaluate('!!document.querySelector("[data-testid=broadcast-round-30]")'), true, 'failed mutation retains public tree')
         await fill(page, { 'broadcast-title': 'Corrected in browser' })
         await tap(page, '[data-testid=broadcast-replay-save]', scenario.touch)
         await page.waitForValue('!document.querySelector("[data-testid=broadcast-replay-dialog]")', Boolean)
@@ -251,6 +227,7 @@ try {
         await page.waitForValue('!document.querySelector("[data-testid=broadcast-category-20]")', Boolean)
         assert.equal(db.nodes.some(node => node.categoryId === 20), false, 'whole-category deletion removes every round')
         assert.equal(db.nodes.some(node => node.categoryId === 21), true, 'other categories remain')
+        await tap(page, '[data-testid=broadcast-stage-22]', scenario.touch)
         await tap(page, '[data-testid=broadcast-node-menu-34]', scenario.touch)
         await tap(page, '[data-testid=broadcast-delete-node-34]', scenario.touch)
         await tap(page, '[data-testid=confirm-ok]', scenario.touch)
@@ -262,7 +239,7 @@ try {
         await tap(page, '[data-testid=broadcast-new-replay-33]', scenario.touch)
         await page.evaluate('window.__wsAuth.tokenParsed.value={realm_access:{roles:[]}}')
         await page.waitForValue('!document.querySelector("[data-testid=broadcast-replay-dialog]") && !document.querySelector("[data-testid^=broadcast-new-node-]")', Boolean)
-        await page.waitForValue('!!document.querySelector("[data-testid=broadcast-node-toggle-33]")', Boolean)
+        await page.waitForValue('!!document.querySelector("[data-testid=broadcast-round-panel-33]")', Boolean)
         await geometry(page)
       }
       assert.deepEqual(page.consoleErrors, [], 'no uncaught browser errors')

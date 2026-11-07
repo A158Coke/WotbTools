@@ -14,11 +14,14 @@ const route = useRoute(), router = useRouter()
 const { authenticated, isAdmin, isTournamentAdmin, isContentAdmin } = useAuth()
 const activeView = computed(() => viewFromRoute(route))
 const { typeAvailable, typeVisible, available: creatorsAvailable, directoryVisible, contentKnown, error: creatorsError, loading: creatorsChecking, refresh: retryCreators } = useCreatorAvailability()
-const recommendationType = computed(() => activeView.value === 'recommended-videos' ? 'VIDEO' : 'UP')
-const recommendationList = computed(() => ['creators', 'recommended-videos'].includes(activeView.value))
-const creatorUnavailable = computed(() => recommendationList.value ? !typeVisible(recommendationType.value)
-  : activeView.value === 'recommendations' ? !directoryVisible.value : activeView.value === 'creators-config' && !creatorsAvailable.value)
-const creatorsNotPublished = computed(() => contentKnown.value && (recommendationList.value
+// 4.0：bilibili 推荐合成一页（「推荐 UP | 优秀作品」页签）。`recommendations` 入口缺省第一个可见类型；
+// `creators` / `recommended-videos` 深链直接对应页签。
+const recommendationType = computed(() => activeView.value === 'recommended-videos' ? 'VIDEO'
+  : activeView.value === 'creators' ? 'UP' : typeVisible('UP') ? 'UP' : 'VIDEO')
+const recommendationList = computed(() => ['creators', 'recommended-videos', 'recommendations'].includes(activeView.value))
+const creatorUnavailable = computed(() => activeView.value === 'recommendations' ? !directoryVisible.value
+  : recommendationList.value ? !typeVisible(recommendationType.value) : activeView.value === 'creators-config' && !creatorsAvailable.value)
+const creatorsNotPublished = computed(() => contentKnown.value && (recommendationList.value && activeView.value !== 'recommendations'
   ? typeAvailable(recommendationType.value) && !typeVisible(recommendationType.value) : creatorsAvailable.value && !directoryVisible.value))
 // 装甲查看器匿名可用，ViewHost 只保留管理页的登录/角色门：内容配置归 content-admin，积分赛归 tournament-admin。
 const adminView = computed(() => ['tournament-points-config', 'tournament-points-admin', 'creators-config', 'admin-battle-data', 'admin-ai-review-feedback', 'admin-site-feedback'].includes(activeView.value))
@@ -62,7 +65,7 @@ const initialCapability = computed(() => replayInitialCapability(activeView.valu
     <Banner v-if="creatorUnavailable && !adminNeedsLogin && !adminDenied" :data-testid="creatorsNotPublished ? 'creators-not-published' : 'creators-unavailable'">
       {{ $t(creatorsChecking ? 'creators.checkingAvailability' : creatorsError ? 'creators.availabilityFailed' : creatorsNotPublished ? 'creators.notPublished' : 'creators.notAvailable') }}
       <AppButton :disabled="creatorsChecking" data-testid="creators-availability-retry" @click="retryCreators">{{ $t('creators.retry') }}</AppButton>
-      <AppButton v-if="recommendationList" data-testid="recommendations-back" @click="router.push(locationForView('recommendations', route))">{{ $t('creators.backToTypes') }}</AppButton>
+      <AppButton v-if="recommendationList && activeView !== 'recommendations'" data-testid="recommendations-back" @click="router.push(locationForView('recommendations', route))">{{ $t('creators.backToTypes') }}</AppButton>
     </Banner>
     <!-- 回放工作台是唯一 capability host：五种能力切换、从装甲查看器返回都保留同一个工作台实例 -->
     <KeepAlive :include="['ReplayWorkspace']">

@@ -2070,5 +2070,9 @@
   },
   "doc": {
     "copy": "Copy"
+  },
+  "leagueBroadcasts": {
+    "server": "Server",
+    "season": "Season"
   }
 }

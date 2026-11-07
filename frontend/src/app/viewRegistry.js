@@ -48,7 +48,6 @@ const TournamentPointsPage = defineLazyView(() => import('../components/Tourname
 const TournamentPointsConfigPage = defineLazyView(() => import('../components/TournamentPointsConfigPage.vue'))
 const TournamentPointsAdminPage = defineLazyView(() => import('../components/TournamentPointsAdminPage.vue'))
 const LeagueBroadcastsPage = defineLazyView(() => import('../components/LeagueBroadcastsPage.vue'))
-const RecommendationsPage = defineLazyView(() => import('../components/RecommendationsPage.vue'))
 const CreatorsPage = defineLazyView(() => import('../components/CreatorsPage.vue'))
 const CreatorsConfigPage = defineLazyView(() => import('../components/CreatorsConfigPage.vue'))
 
@@ -91,7 +90,7 @@ export const VIEW_COMPONENTS = Object.freeze({
   'tournament-points-config': TournamentPointsConfigPage,
   'tournament-points-admin': TournamentPointsAdminPage,
   'league-broadcasts': LeagueBroadcastsPage,
-  recommendations: RecommendationsPage,
+  recommendations: CreatorsPage,
   'recommended-videos': CreatorsPage,
   creators: CreatorsPage,
   'creators-config': CreatorsConfigPage,

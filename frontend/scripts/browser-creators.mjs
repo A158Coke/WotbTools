@@ -121,6 +121,11 @@ async function geometry(page, profile, configuration = false) {
 async function openCreators(page, scenario) {
   await page.navigateViaShell('creators', scenario.touch)
 }
+/** 4.0：bilibili 推荐是一页两个页签；只有一种类型已发布时没有页签，直接就是该列表。 */
+async function openType(page, type, touch) {
+  await page.waitForValue('!!document.querySelector("[data-testid=creators-page]")', Boolean, { label: 'recommendations page' })
+  if (await page.evaluate(`!!document.querySelector('[data-testid=recommendation-tab-${type}]')`)) await tap(page, `[data-testid=recommendation-tab-${type}]`, touch)
+}
 /** 抽屉外壳的导航几何：每一项 44px 命中区、项与项不重叠、抽屉不越出视口、没有底部 Tab 栏。 */
 async function drawerGeometry(page, scenario) {
   await page.openNavDrawer(scenario.touch)
@@ -222,13 +227,11 @@ async function videoLifecycle(page, origin, scenario) {
     { ...db.creators[1], id: 102, type: 'VIDEO', bilibiliUid: 'BV1XX411C7MD', name: 'Highlight video', categoryIds: [52], levelId: null },
   ]
   await page.goto(`${origin}/?view=recommendations&ws-auth=0&keep=1#catalog`)
-  await page.waitForValue('!!document.querySelector("[data-testid=recommendation-card-VIDEO]")', Boolean)
-  assert.equal(await page.evaluate('!!document.querySelector("[data-testid=recommendation-card-UP]")'), false, 'only VIDEO content still publishes the main entry')
+  await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 2, { label: 'only VIDEO published: the page opens straight on the video list' })
+  assert.equal(await page.evaluate('!!document.querySelector("[data-testid=recommendation-tabs]")'), false, 'a single published type has no tabs')
   if (scenario.width >= 768) assert.equal(await page.evaluate('!!document.querySelector("[data-testid=nav-creators]")'), true)
   await geometry(page, scenario.profile)
-  await tap(page, '[data-testid=recommendation-card-VIDEO]', touch)
-  await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 2)
-  assert.equal(await page.evaluate('new URL(location.href).searchParams.get("view")'), 'recommended-videos')
+  assert.equal(await page.evaluate('new URL(location.href).searchParams.get("view")'), 'recommendations')
   assert.equal(await page.evaluate('document.querySelector("[data-testid=creator-card-101] a").href'), 'https://www.bilibili.com/video/BV1xx411c7mD')
   await tap(page, '[data-testid=creator-categories-toggle]', touch)
   assert.equal(await page.evaluate('!!document.querySelector("[data-testid=creator-filter-1],[data-testid=creator-filter-53]")'), false, 'public VIDEO filters exclude UP and empty VIDEO categories')
@@ -238,9 +241,7 @@ async function videoLifecycle(page, origin, scenario) {
   await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 2)
   await page.evaluate('history.forward()')
   await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 1)
-  await tap(page, '[data-testid=recommendations-back]', touch)
-  await page.waitForValue('!!document.querySelector("[data-testid=recommendations-page]")', Boolean)
-  assert.deepEqual(await page.evaluate('({view:new URL(location.href).searchParams.get("view"),category:new URL(location.href).searchParams.get("creatorCategory"),keep:new URL(location.href).searchParams.get("keep"),hash:location.hash})'), { view: 'recommendations', category: null, keep: '1', hash: '#catalog' })
+  assert.deepEqual(await page.evaluate('({view:new URL(location.href).searchParams.get("view"),keep:new URL(location.href).searchParams.get("keep"),hash:location.hash})'), { view: 'recommendations', keep: '1', hash: '#catalog' }, 'category filtering keeps unrelated query and hash')
 
   reset(); db.recommendationsAvailable = false
   for (const view of ['recommendations', 'creators', 'recommended-videos', 'creators-config']) {
@@ -293,7 +294,7 @@ async function videoLifecycle(page, origin, scenario) {
   const created = db.creators.find(value => value.type === 'VIDEO')
   assert.ok(created?.avatarId); assert.equal(created.bilibiliUid, 'BV1xX411c7mD'); assert.equal(created.levelId, null); assert.equal(created.stars, 3)
   await openCreators(page, scenario)
-  await tap(page, '[data-testid=recommendation-card-VIDEO]', touch)
+  await openType(page, 'VIDEO', touch)
   await page.waitForValue(`document.querySelector('[data-testid=creator-edit-${created.id}]')?.disabled`, value => value === false)
   await geometry(page, scenario.profile)
   await tap(page, `[data-testid=creator-edit-${created.id}]`, touch)
@@ -307,11 +308,11 @@ async function videoLifecycle(page, origin, scenario) {
   await tap(page, `[data-testid=creator-remove-${created.id}]`, touch)
   await tap(page, '[data-testid=confirm-ok]', touch)
   await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 0)
-  await tap(page, '[data-testid=recommendations-back]', touch)
-  await page.waitForValue('!!document.querySelector("[data-testid=recommendation-card-VIDEO]")', Boolean)
   await page.evaluate('window.__wsAuth.tokenParsed.value={realm_access:{roles:[]}}')
-  await page.waitForValue('!document.querySelector("[data-testid=recommendation-card-VIDEO]")', Boolean)
-  assert.equal(await page.evaluate('!!document.querySelector("[data-testid=recommendation-card-UP]")'), true, 'deleting final VIDEO hides its public card while UP stays published')
+  await page.waitForValue('!!document.querySelector("[data-testid=creators-not-published]")', Boolean, { label: 'final VIDEO removed: the VIDEO tab is no longer public' })
+  await tap(page, '[data-testid=recommendations-back]', touch)
+  await page.waitForValue('!!document.querySelector("[data-testid=creators-page]")', Boolean)
+  assert.equal(await page.evaluate('!!document.querySelector("[data-testid=recommendation-tab-VIDEO]")'), false, 'deleting final VIDEO hides its public tab while UP stays published')
   if (scenario.width >= 768) assert.equal(await page.evaluate('!!document.querySelector("[data-testid=nav-creators]")'), true)
 }
 const { server, origin } = await startFixtureServer({ middleware, allowedHosts: ['wotbtools.com'] }), chrome = await launchChromeForCdp(findChrome(), { extraArgs: ['--host-resolver-rules=MAP wotbtools.com 127.0.0.1', '--no-proxy-server'] })
@@ -367,7 +368,7 @@ try {
         const created = db.creators[0]
         assert.ok(created, 'administrator can publish the first UP')
         await tap(page, '[data-testid=nav-creators]', scenario.touch)
-        await tap(page, '[data-testid=recommendation-card-UP]', scenario.touch)
+        await openType(page, 'UP', scenario.touch)
         await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 1)
         await tap(page, '[data-testid=creator-categories-toggle]', scenario.touch)
         await tap(page, '[data-testid=creator-filter-3]', scenario.touch)
@@ -423,7 +424,7 @@ try {
         }
       }
       await openCreators(page, scenario)
-      await tap(page, '[data-testid=recommendation-card-UP]', scenario.touch)
+      await openType(page, 'UP', scenario.touch)
       await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 2)
       const drawerShell = await page.evaluate('!!document.querySelector("[data-testid=nav-menu]")')
       if (drawerShell) await page.openNavDrawer(scenario.touch)

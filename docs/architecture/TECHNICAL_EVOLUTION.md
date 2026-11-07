@@ -789,7 +789,7 @@ MACHINE/EXTERNAL，`PROVEN` 必须覆盖完整 criterion 且无相关 FAIL；Out
 provenance 与 alert 收敛证明供应链控制面已建立，不证明每个第三方 action 的运行时行为。审计时 main 的 open
 code scanning alert 只有 canary 1 条。
 
-## 34. 2026-11-07 — 4.0 界面外壳：抽屉导航、主题 token 与原生能力扩展
+## 34. 2026-11-07 — 5.0 界面外壳：抽屉导航、主题 token 与原生能力扩展
 
 外壳：手机竖屏与触屏横屏（`SHELL_DRAWER_QUERY`）共用左侧抽屉，`AppTabBar` 删除；`--header-block`（内容区为顶栏
 让出的固定空间）与 `--header-h`（吸顶偏移，顶栏收起时归零）拆成两个 token，滚动收起顶栏不再引起内容跳动。
