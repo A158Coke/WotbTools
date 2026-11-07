@@ -90,7 +90,7 @@ function supports(def: UpgradeDefinition): boolean {
  */
 export function resolveUpgradeSelection(modules: unknown, mode?: unknown, inputChoices?: unknown): UpgradeSelection {
   const absent = mode == null || mode === ''
-  const explicit = mode === 'top' ? 'top' : mode === 'stock' ? 'stock' : null
+  const explicit = mode === 'top' ? 'top' : mode === 'stock' ? 'stock' : mode === 'custom' ? 'custom' : null
   const defaultMode = absent && record(modules) && modules.tier === 11 ? 'top' : 'stock'
   const result = emptySelection(explicit ?? defaultMode)
   if (!record(modules) || modules.tier !== 11 || !('upgradeProgression' in modules)) return result
@@ -154,19 +154,42 @@ export function resolveUpgradeSelection(modules: unknown, mode?: unknown, inputC
   }
   let requested: unknown = inputChoices
   if (typeof requested === 'string') {
-    requested = /^\d+(?:,\d+){0,7}$/.test(requested) ? requested.split(',').map(Number) : []
+    requested = /^\d+(?:,\d+){0,63}$/.test(requested) ? requested.split(',').map(Number) : []
   }
+  const custom = result.mode === 'custom'
+  const researched = Array.isArray(requested) ? new Set(requested.filter(id => ids.has(id))) : null
   for (const group of result.groups) {
-    const candidate = Array.isArray(requested)
-      ? requested.slice(0, 8).find(id => group.choices.includes(id))
-      : record(requested) ? requested[group.id] : undefined
+    let candidate: number | undefined
+    if (custom) {
+      // custom：abilities = 已研发节点 id 表；组内已研发的备选即选中（可未选）
+      candidate = group.choices.find(id => researched!.has(id))
+    } else {
+      candidate = Array.isArray(requested)
+        ? requested.slice(0, 8).find(id => group.choices.includes(id))
+        : record(requested) ? requested[group.id] : undefined
+    }
+    if (custom) {
+      if (candidate != null) { result.choices[group.id] = candidate; result.abilities.push(candidate) }
+      // 组未研发或未选：不写 choices/abilities（机制不生效，面板显示基础值）
+      continue
+    }
+    void group
     const chosen = typeof candidate === 'number' && group.choices.includes(candidate) ? candidate : group.choices[0]!
     result.choices[group.id] = chosen; result.abilities.push(chosen)
   }
+  if (custom) {
+    // custom（部分研发）：abilities 携带完整已研发表——resolveSetup 往返与
+    // 配置栏/研发树联动都依赖它不被裁剪成仅备选 id
+    result.abilities = [...researched]
+  }
   if (!result.supported || result.mode === 'stock') return result
-  const active = new Set(result.abilities)
+  const active = custom
+    ? new Set(result.nodes.filter(node => researched!.has(node.id)).map(node => node.id))
+    : new Set(result.abilities)
   for (const node of result.nodes) {
-    if (node.type === 'NODETYPE_ALTERNATIVE_MECHANIC' && !active.has(node.id)) continue
+    // custom（部分研发）：只聚合已研发节点；top：全部普通/机制节点 + 已选备选
+    if (custom ? !active.has(node.id)
+      : node.type === 'NODETYPE_ALTERNATIVE_MECHANIC' && !active.has(node.id)) continue
     for (const { name, value } of node.attributes) {
       const def = result.attributeDefinitions[name]!
       const previous = result.attributes[name]

@@ -166,6 +166,16 @@ UI profile 仍然只涉及呈现：`wotb-ui-profile` 是唯一的持久化 key�
 
 坦克百科仅在 XI 车辆的模块数据包含有效 `upgradeProgression` 时显示「初始值 / 升满级」两种选择。**缺省（无 `upgrade` key）为顶级**，显式 `upgrade=stock` 才回到初始值；坦克卡片与详情摘要显示顶级血量（`tank_cache.hp_top`，由上游按 `MAX_HEALTH` 升级节点预先算好），详情参数与装甲查看器也默认投影顶级。升级规则由上游客户端导出，包含节点、属性脚本与操作、互斥技能组及来源版本/哈希；不以炮塔/火炮 ID 区分升级态，也不插值补全升级路线。`tankUpgrades.ts` 聚合和投影原始数据，再交给既有 `tankSetup.ts` / `characteristics.ts` 计算，原资产对象保持不变。初始功率单独传入既有车体转速公式，避免投影后的发动机覆盖功率比基准。普通车辆与没有升级元数据的旧包保持原有计算；XI 缺升级数据时显示说明，未知静态脚本拒绝计算满级数值。
 
+研发界面（XI）：详情页「研发」按钮对带 `upgradeProgression` 的 XI 车辆打开
+`TankAugmentTree.vue`（客户端 TankProgress/UpgradeProgression 复刻）：96px 格网按
+`gridPosition` 渲染增强节点，连线沿 `requiredNodes` 布线（正交单拐角，箭头贴到达
+方向外缘）；增强组为右侧三选一环扇。交互为预览态（无账号）：单击未研发节点即
+研发（连带前置），单击已研发节点回退其下游分支，组圆研发/回退，扇区三选一。
+节点效果行按 i18n `upgrade_attributes.*` 显示（数值口径：机制白名单与起火几率
+按 %，其余为客户端原始增量）；机制（撞击减伤/助推/狂热/连发/稳定瞄准）配客户端
+同版描述文本。几何与状态计算在 `replay-local/compute/tankAugmentTree.ts`（纯函数，
+含布局/回退/扇区路径单测）；图标为客户端 @2x 贴图（common/research/icons/upgrades）。
+
 升级状态由 URL 的 `upgrade` 表示：缺省 = top（XI），`upgrade=stock` = 初始值，`upgrade=top` 可显式写出；`abilities` 为选中节点 ID 的逗号表，按客户端技能组归属校验。满级聚合全部普通/机制节点，并且每个备选组只应用一个技能；缺省选每组第一项。初始态保留技能选择但不应用升级，原有 20 个乘员技能独立保留。三选一以技能卡呈现名称、加成和勾选态，复用 `SegmentedControl` 的单选组语义、roving focus 与方向键 / Home / End 选择，每组仅保留一个选择；无客户端翻译时按已证实属性语义显示本地化描述，不直接显示内部 key。动态战斗技能不假定已触发。技能卡下方的效果表展示初始值、当前值及累计升级变化；初始态保持机制基础值、不应用升级。机制单位只在展示层换算：432U 每层装填加成与 Hacker 瞄准/散布加成显示百分数，加法变化显示百分点；表格标记累计变化，卡片显示本选项变化，其他技术系数保持原值。432U 的对应布尔项明确显示「击毁目标后保留层数」及是/否。Hacker 的触发条件显示「造成伤害 / 命中」，不表示自身受击；BZ-79 加热时长读取机制的 `duration`。两项映射经[同版客户端执行代码](../research/tier-xi-mechanics.md)核对，只用于机制展示。基础值只从同版客户端机制 script 的已核对参数读取；缺少来源或映射的项目显示 — 与已知变化，不把升级增量当最终值。
 
 XI 的基础模块、升级规则、车辆详情与 GLB 均来自当前选中的资产通道，经 `assetBase` / `assetProvider` 加载。`supertest` 使用统一的数据版本选择器，切换通过整页重载使模块缓存与资产基址保持同一页面快照。升级规则由资产导出器写入 `research/modules/{nation}.json`；`upgradeProgression.provenance.gameVersion` 必须与该车 `gameVersion` 一致，缺失或不匹配时拒绝投影。前端只解释资产中的规则，不随包携带规则副本；默认正式服及普通车辆保留原路径和计算。`modules.vehicleAbilities` 保存客户端车辆 `extras` 引用；全局物品中的 `isVehicleAbility=true` 同时归为 `isAbility=true`，内建机制不能作为可选补给/消耗品占槽。配置目录分别保留 `consumablesGameVersion` / `provisionsGameVersion`，机制基础值必须与车辆 `gameVersion` 完全一致，不能借用装备目录的版本。超测物品、默认表与车辆模块须由同版客户端重导，不能将 XI 车辆降为 X 来放宽筛选；客户端缺少 XI 默认配置时保持空选，仍允许按真实适用规则手动选择。
