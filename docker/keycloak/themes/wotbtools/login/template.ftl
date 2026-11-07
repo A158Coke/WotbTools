@@ -96,7 +96,7 @@
             <img class="wbtb-shell__brand-logo" src="${url.resourcesPath}/img/wotbtoolslogo.png" alt="WotBTools">
         </a>
         <div class="wbtb-shell__topbar-actions">
-            <button tabindex="0" id="wbtb-theme-toggle" class="wbtb-theme-toggle" type="button" data-label-to-light="切换到浅色主题" data-label-to-dark="切换到深色 Battlefield 主题" aria-label="切换到浅色主题" title="切换到浅色主题">
+            <button tabindex="0" id="wbtb-theme-toggle" class="wbtb-theme-toggle" type="button" data-label-to-light="${msg("wbtbThemeToggleToLight")}" data-label-to-dark="${msg("wbtbThemeToggleToDark")}" aria-label="${msg("wbtbThemeToggleToLight")}" title="${msg("wbtbThemeToggleToLight")}">
                 <span class="wbtb-theme-toggle__sun" aria-hidden="true"></span>
                 <span class="wbtb-theme-toggle__moon" aria-hidden="true"></span>
             </button>
@@ -105,14 +105,14 @@
 
     <div class="wbtb-shell__main">
         <section class="wbtb-shell__hero" aria-hidden="false">
-            <p class="wbtb-hero__eyebrow">Battle Intelligence Platform</p>
-            <h1 class="wbtb-hero__title">See the battle differently.</h1>
-            <p class="wbtb-hero__desc">Replay analysis, AI-assisted review and tactical reconstruction &mdash; one workspace built for understanding every fight.</p>
+            <p class="wbtb-hero__eyebrow">${msg("wbtbHeroEyebrow")}</p>
+            <h1 class="wbtb-hero__title">${msg("wbtbHeroTitle")}</h1>
+            <p class="wbtb-hero__desc">${msg("wbtbHeroDesc")}</p>
             <ul class="wbtb-hero__chips">
-                <li>Replay Analysis</li>
-                <li>AI Review</li>
-                <li>Battle Reconstruction</li>
-                <li>League Rating</li>
+                <li>${msg("wbtbHeroChipReplay")}</li>
+                <li>${msg("wbtbHeroChipAiReview")}</li>
+                <li>${msg("wbtbHeroChipReconstruction")}</li>
+                <li>${msg("wbtbHeroChipRating")}</li>
             </ul>
         </section>
 
@@ -199,7 +199,7 @@
     </div>
 
     <div class="wbtb-shell__footer">
-        <span>WotBTools &mdash; Blitz replay analysis</span>
+        <span>${msg("wbtbFooterTagline")}</span>
         <span class="wbtb-shell__footer-domain">auth.wotbtools.com</span>
     </div>
 </div>

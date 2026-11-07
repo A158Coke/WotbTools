@@ -10,7 +10,7 @@ docker/keycloak/themes/wotbtools/login/
 ├── template.ftl              # 唯一 FTL 覆盖：注册于 Keycloak `registrationLayout` 宏的共享 Shell
 ├── background-rotation.ftl   # 背景轮换配置 + 选片（服务端；template.ftl 在 <head> 内 include）
 ├── login.ftl                 # （未覆盖，用 base）：username/password/forgot/sign in + IdP grid
-├── messages/{en,zh,ru}.properties   # 覆盖 identity-provider-login-label / wbtbThemeToggle*
+├── messages/{en,zh,ru}.properties   # 主题文案 wbtb*（hero / chips / footer / theme toggle）+ identity-provider-login-label；zh 另含完整 Keycloak 简体中文副本
 └── resources/
     ├── css/{tokens,auth-shell,prism,components,responsive}.css
     ├── js/theme.js           # theme toggle + localStorage["wotbtools-theme"] 持久化 + 防闪烁
@@ -23,8 +23,9 @@ docker/keycloak/themes/wotbtools/login/
 - 登录卡 = **dark 局部毛玻璃 / light 透明 prism**：深色 `background: rgba(8,12,16,0.34)` + `backdrop-filter: blur(10px) saturate(120%)`，仅作用于 `html[data-theme="dark"] .wbtb-card`（token `--auth-card-bg/border/shadow/blur`），保留极弱 amber 高光；浅色 `rgba(255,255,255,0.72)`、`--auth-card-blur: none`。回归守卫：`backdrop-filter` 只允许出现在 dark `.wbtb-card` 作用域。
 - IdP 按 Keycloak `social.providers` 动态渲染，位于账号密码下方；无 Self Registration（realm 关闭）；无 `More sign-in options`。
 - 品牌：topbar 复用主站官方 Logo（`resources/img/wotbtoolslogo.png`，256px/37KB 优化版）。白底来自图片本身且仓库无透明源，**不裁切、不拉伸、不换源**，仅以固定显示高度收敛视觉面积——desktop 36px、mobile(≤767)/tablet-portrait 28px；brand 无额外背景/padding。
-- 主题切换：右上 pill 内用 CSS 绘制 Sun（圆+8 射线）与 Moon（月牙）双图标，双图标常显、当前主题态高亮另一态置灰；aria-label/title/data-label-* 中文硬编码，切换后 JS 同步指向「下一目标主题」；dark/light 两主题均有 `:focus-visible`；mobile(≤767) 点击区域经 `::after` 扩至 ≥40px（视觉保持 44×26）。
-- Locale：登录页不提供语言选择器；主题自创文案（theme toggle aria/tooltip）中文硬编码；登录表单字段仍由 Keycloak 基础包按浏览器语言本地化。
+- 主题切换：右上 pill 内用 CSS 绘制 Sun（圆+8 射线）与 Moon（月牙）双图标，双图标常显、当前主题态高亮另一态置灰；aria-label/title/data-label-* 取自 `msg("wbtbThemeToggleTo{Light,Dark}")`，切换后 JS 同步指向「下一目标主题」；dark/light 两主题均有 `:focus-visible`；mobile(≤767) 点击区域经 `::after` 扩至 ≥40px（视觉保持 44×26）。
+- Locale：登录页不提供语言选择器；realm locale 为 `zh` / `en` / `ru`（默认 `zh`），页面语言走 Keycloak 自身的 locale 选择（OIDC `ui_locales`、`login-actions/*` 上的 `kc_locale` 切换、浏览器 `Accept-Language`，最后回落到 realm 默认 `zh`）。主题自创文案（hero、chips、footer、theme toggle）全部走 `msg("wbtb*")`，三份 messages 文件 key 集合一致。
+- 简体中文：Keycloak 26.6.4 内置简体中文 bundle 名为 `messages_zh_Hans`，与 realm locale `zh` 不匹配，缺 key 会整页回退英文；因此 `messages_zh.properties` 是该 bundle 的完整副本（术语统一为「账号」「关联」等，见文件头），文件末尾是主题文案段。升级 Keycloak 时用新版本 `theme/base/login/messages/messages_zh_Hans.properties` 重新生成。
 - Dark readability：深色登录卡自带局部毛玻璃承载面；`.wbtb-shell__auth::before` 软径向 dark veil 保留但强度下调（中心 0.12 / 边缘 0.05，避免与毛玻璃双重黑化，无硬矩形/左右分区）+ 提升 input/eye/IdP/divider 对比（dark-only），light 零回归。
 - 三端破点：Phone ≤767 / Tablet 768–1179 / Tablet-portrait / Desktop ≥1180；Mobile 隐藏大 Hero、auth first；长页可滚动（`min-height:100dvh`）。
 - 主题初始化：`template.ftl` head 内联脚本读 `localStorage["wotbtools-theme"]` 设 `data-theme`（防闪烁）。
