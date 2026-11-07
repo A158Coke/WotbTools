@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -28,6 +29,12 @@ describe('APK root URL graph', () => {
     expect(policy).toContain("script-src 'self' 'wasm-unsafe-eval' 'sha256-")
     expect(policy).toContain("connect-src 'self' blob: https://wotbtools.com")
     expect(policy).not.toContain('http:'); expect(policy).not.toContain('*')
+  })
+  // </script-x> 是 script 数据里的普通文本，不是结束标签（HTML 只认空白、/ 或 > 作为分隔符）。
+  it('hashes the full inline body containing a non-end-tag script prefix', () => {
+    const body = 'const marker="</script-x>";document.documentElement.dataset.ran="yes"'
+    expect(androidCsp(`<script>${body}</script>`))
+      .toContain(`'sha256-${createHash('sha256').update(body).digest('base64')}'`)
   })
   // GLB 内嵌贴图由 GLTFLoader → ImageBitmapLoader 经 fetch(blob:) 读取：connect-src 缺 blob:
   // 时 3D 模型无贴图（坦克百科装甲查看器 / 3D 回放白模，2026-10-07 定位）。

@@ -31,6 +31,8 @@ import {
   applyWheelSpin, measureBeltUvSlope, chainBottomRunDir, writeUvOffsetV,
 } from '../suspension.js'
 import { markPickBoundsStale } from './armorHighlight.js'
+import { measureShadowFootprint } from './tankContactShadows.js'
+import type { TankContactShadows } from './tankContactShadows.js'
 import { ASSET_CONCURRENCY, mapLimit } from './util.js'
 import { assetProvider } from '../assetProvider.js'
 import { createTrailState } from '../treadMarks.js'
@@ -238,6 +240,10 @@ export interface VehicleRuntimeDeps {
   poseGrid: PoseGrid
   /** 协议精确 AoI 段（宿主唯一 owner 的 VIS_BY_EID 读取）。 */
   visByEid(): Map<number, number[]>
+  /** 坦克接地阴影句柄（#907 主干随迁；null = 未启用，所有调用点空转）。 */
+  contactShadows(): TankContactShadows | null
+  /** 开镜隐藏的本车 eid（owner = cameraRuntime；阴影随开镜隐藏）。 */
+  scopedHiddenEid(): number
 }
 
 /** 车辆运行时对外句柄（宿主与 treadRuntime 的唯一消费面）。 */
@@ -267,6 +273,8 @@ export interface VehicleRuntimeHandle {
   clearSnap(): void
   /** 会话 teardown：车辆循环（分离炮塔/GLB/悬挂几何/低模组）+ GLB 模板缓存释放 + V = []。 */
   dispose(): void
+  /** 阴影同步（宿主 setLabelPrefs 循环消费；实现见 syncContactShadow）。 */
+  syncContactShadow(v: RuntimeVehicle): void
 }
 
 export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHandle {
@@ -844,6 +852,8 @@ export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHa
             }
             v.glb = inst;                       // 通过部位检查后才落库（否则会卡在半装载态）
             v.glbParts = parts;
+            deps.contactShadows()?.setFootprint(v, measureShadowFootprint(inst));   // 受姿前一次性实测
+            deps.contactShadows()?.attachModel(v, inst);   // 轮廓投影（渲染器带 stencil 时）
             v.tankData = loaded.sd;             // Sniper 穿深着色的配置/弹表来源
             // 悬挂部件（轮/带）逐车收集：几何逐车 clone（模板共享），数据缺 → null 回落刚体
             v.suspParts = collectSuspensionParts(inst, loaded.susp, v.def.tank_id);
@@ -958,6 +968,7 @@ export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHa
     v.group.visible = vis;
     if (v.glb) v.glb.visible = vis && !deps.classIconsVisible();
     if (!vis) {
+      syncContactShadow(v);
       // 悬挂积分复位：不可见期间不累积侧位移（复现时首帧吸附，不跳变）
       if (v.suspParts) {
         for (const k of ['L', 'R'] as const) if (v.suspParts.sides[k]) v.suspParts.sides[k]!.prev = null;
@@ -979,6 +990,16 @@ export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHa
     const rel = wrapPi(turretAbsAt(v, T) - yawAt(v, T));
     v.turretG.rotation.y = -rel;
     v.gunPivot.rotation.x = -gunPitchAt(v, T);
+    syncContactShadow(v);
+  }
+
+  /** 阴影只读已变换完成的场景位姿（posAt 已含镜像）；车辆不可见或被类型图标替代时隐藏。 */
+  function syncContactShadow(v: RuntimeVehicle) {
+    const shadows = deps.contactShadows();
+    if (!shadows) return;
+    const p = v.group.position;
+    shadows.update(v, p.x, p.z, v.group.rotation.y,
+      v.group.visible && !deps.classIconsVisible() && v.def.eid !== deps.scopedHiddenEid());
   }
 
   function vehicleByEid(eid: number) { return V.find((x) => x.def.eid === eid); }
@@ -1017,6 +1038,7 @@ export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHa
   return {
     getVehicles: () => V,
     buildVehicles,
+    syncContactShadow,
     loadGlb,
     applyGlbToggle,
     glbOn: () => glbOn,

@@ -70,7 +70,9 @@ Yecao 上不以公网方式发布任何 Komodo 相关内容；Core 只在 WireGu
 ### 路由清单守卫
 
 `deploy/tx/validate-caddy-config.sh` 在每次 staged Caddy 上线（PR CI 与生产）之前运行，
-并断言已评审的 public site 清单：
+并断言已评审的 public site 清单。Caddy 校验必须显式 `--entrypoint caddy`：官方镜像只声明
+`CMD ["caddy","run",…]` 而没有 ENTRYPOINT，直接传 `validate …` 会被 runc 当成可执行文件名
+（`exec: "validate": executable file not found in $PATH`）：
 
 - `wotbtools.com` → `wotb-frontend:80`
 - `auth.wotbtools.com` → `keycloak:8080`

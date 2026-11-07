@@ -34,7 +34,7 @@ import { loadTerrain } from './groundPass.js'
 // 常量（白 3.0 + 半球 2.4 + ACES 1.15），未随逐图光照落地而同步（见该模块头部）
 //（pickDebug 的纯函数随拾取报告器移入 playback/pickReport.js；buildMeshOwnerMap 随场景
 // 装配块移入 playback/mapAssets.js）
-import { collectMaterialTextures } from './materialDispose.js'
+import { collectMaterialTextures, disposeObject3D } from './materialDispose.js'
 import { lifeAt, defLifeAt } from '../utils/battlePlaybackV2.ts'
 //（pruneForeignVariantsDetailed 随场景装配块移入 playback/mapAssets.js）
 //（applyPose/applyDetachedTurrets 随车辆运行时出仓 playback/vehicleRuntime.ts，
@@ -76,7 +76,9 @@ import { createCameraRuntime, CAMERA_GROUND_CLEARANCE } from './playback/cameraR
 // 出仓到 ./playback/，点击拾取调试与边界带出仓为工厂；公开 API 经本文件 re-export，
 // 导入方（Replay3DPane / 测试）零改动。
 import { GRID_DT } from './playback/util.js'
-import { QUALITY_PRESETS } from './playback/quality.js'
+import { QUALITY_PRESETS, shadowQualityEligible } from './playback/quality.js'
+// 坦克接地阴影（#907 主干随迁）：选择/句柄生命周期 owner = contactShadowControl.ts（逐车挂接在 vehicleRuntime）。
+import { createContactShadowControl } from './playback/contactShadowControl.ts'
 import { tracerSpanSecs, occlusionCells, occlusionFootprintCells } from './playback/pure.js'
 import { createPickReporter } from './playback/pickReport.js'
 import { chainVisible } from './pickDebug.js'
@@ -245,6 +247,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   store.logdepth = LOGDEPTH;   // Display 面板开关的初始态（偏好解析见上方 prefOf）
   store.dynres = DYNRES;
   store.armorHighlight = ARMOR_HIGHLIGHT;
+  // 接地阴影控制域（选择不持久化，语义见 contactShadowControl.ts 头注释）
+  const contactShadowCtl = createContactShadowControl({
+    store, qualityKey: () => QKEY, getScene: () => scene, getSunLight: () => sunLight,
+    surfaceHeightAt: (x, z) => mapWorld.annotationSurfaceHeightAt(x, z), stencilAssembled: () => !!rendererCaps?.stencil,
+  });
   function setQuality(k) {
     if (!QUALITY_PRESETS[k] || k === QKEY) return;
     const apply = () => {
@@ -253,6 +260,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       try { localStorage.setItem('pb_quality', k); } catch (e) {}
       store.qualityKey = QKEY;
       store.qualityLabel = '画质 · ' + Q.label;
+      if (!shadowQualityEligible(k)) contactShadowCtl.setEnabled(false);   // 降档清零；再升档不自动恢复
       applyGlbGate();
     };
     if (DATA) {
@@ -354,7 +362,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 创建核心（渲染器/相机/控件/灯光/resize+pointer 接线）在 playback/renderer.js
     //（2026-10-24 Step A2 出仓；状态所有权仍在本闭包——解构写回可变绑定）
     const core = createSceneCore({
-      container, quality: Q, logdepth: LOGDEPTH, dynres: DYNRES, debug: DEBUG,
+      container, quality: Q, logdepth: LOGDEPTH, dynres: DYNRES, stencil: contactShadowCtl.wantsStencil(), debug: DEBUG,
       envTexture: mapWorld.envTexture(), envMultiplier: mapWorld.envMultiplier(),
       onResize, onPointerDown: cameraRuntime.onScenePointerDown, onPointerUp: cameraRuntime.onScenePointerUp,
       setFollow: (eid) => cameraRuntime.setFollow(eid),
@@ -362,6 +370,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     scene = core.scene; camera = core.camera; renderer = core.renderer;
     controls = core.controls; clock = core.clock; raycaster = core.raycaster;
     gpu?.attach(renderer);
+    cameraRuntime.applyMobileTouchControls();
     hemiLight = core.hemiLight; sunLight = core.sunLight;
     dynResCtl = core.dynResCtl; sizeObserver = core.sizeObserver; rendererCaps = core.rendererCaps;
     // annotation 段收口（#820 Step 5）：独立 raycaster 重建 + 5 个 capture 监听 + layer
@@ -422,6 +431,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     rebuildAnnotationProjection: () => annotationScene.rebuildAnnotationProjection(),
     reprojectAnnotationHeights: () => annotationScene.reprojectAnnotationHeights(),
     scopedHiddenEid: () => cameraRuntime.scopedHiddenEid(),
+    onTerrainReground: () => contactShadowCtl.handle()?.reground(),   // 接地阴影随地形重建贴回
+    onLightingApplied: () => contactShadowCtl.handle()?.syncSun(),   // 逐图光照后同步太阳
     lightingTargets: () => ({ renderer, scene, sunLight, hemiLight, debug: DEBUG }),
     buildWorldCameraPlacement: (center) => {
       const { cx, cz, ext } = center;
@@ -459,6 +470,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     disposeObject3D,
     poseGrid: POSE_GRID,
     visByEid: () => VIS_BY_EID,
+    contactShadows: () => contactShadowCtl.handle(),   // 逐车阴影挂接/同步（#907 主干随迁）
+    scopedHiddenEid: () => cameraRuntime.scopedHiddenEid(),
   });
   // 地面履带印 owner（#820 Step 4 出仓）：逐车参数/贴图缓存、网格装配、路径喂样与
   // 游标泵的唯一归属；会话 teardown 的履带段（逐车 treadMesh + 共享贴图）在其 dispose。
@@ -647,6 +660,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     terrainHeightForCameraClamp,
     onVehicleSelect: onVehicleSelect ?? null,
     pickDebug: () => PICK_DEBUG,
+    mobileTouch: () => MOBILE_TOUCH,
+    syncContactShadow: (v) => vehicles.syncContactShadow(v),
     getPickDownAt: () => pickDownAt,
     setPickDownAt: (p) => { pickDownAt = p; },
     reportPick,
@@ -872,12 +887,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     getVehicles: () => vehicles.getVehicles(),
     annotationStats: () => annotationScene.stats(),
     armorStats: () => cameraRuntime.armorStats(),
+    contactShadowsCount: () => contactShadowCtl.count(),
   });
   const PERF = perfProbe.PERF;
   const perf = perfProbe.perf;
   const gpu = perfProbe.gpu;
   let dynResCtl = null;
-  let rendererCaps = null;   // 当前渲染器实际装配的 { logdepth, dynres }（reset 保留渲染器时用于失配检测）
+  let rendererCaps = null;   // 当前渲染器实际装配的 { logdepth, dynres, stencil }（reset 保留渲染器时用于失配检测）
 
 
   /** 预热在用材质（见 renderer 初始化处注释）：把首次编译的数十~数百 ms 从"战斗第一次
@@ -1053,28 +1069,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 注：hull_yaw/turret_yaw 由后端相位解卷绕（连续域）后落盘，朴素线性插值即物理正确，
   // 前端不再二次去缠绕（旧版前端 unwrapAngleArray 已由后端数据契约取代）。
 
-  // 递归收集 Object3D 子树的 geometry / material / texture 并各自 dispose 一次
-  //（Set 去重：clone 共享的模板资源多路径命中只 dispose 一遍；three dispose 幂等，
-  // 此处集合化只为省去重复遍历开销）
-  function disposeObject3D(root, shared = null) {
-    const geos = new Set(), mats = new Set(), texs = new Set();
-    void shared;   // 去重由调用方的 disposed 集合按 root 级完成（资源级去重见 materialDispose）
-    root.traverse((o) => {
-      // InstancedMesh 的 instanceMatrix 是实例专属的 InstancedBufferAttribute，
-      // 不随 geometry.dispose 释放，必须走 InstancedMesh.dispose 自己清理
-      if (o.isInstancedMesh) o.dispose();
-      if (o.geometry) geos.add(o.geometry);
-      const ms = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
-      for (const m of ms) {
-        mats.add(m);
-        collectMaterialTextures(m, texs);   // 直接属性 + uniforms（ShaderMaterial 纹理在 uniforms.value）
-      }
-    });
-    for (const t of texs) t.dispose();
-    for (const m of mats) m.dispose();
-    for (const g of geos) g.dispose();
-  }
-
   //（动态层清除 owner = playback/battleRuntime.ts 的 clearEffects/dispose；seekTo 与
   //  teardownSession 经 battle 句柄调用，防 seek 循环累积显存的语义逐字保留）
 
@@ -1088,6 +1082,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     //（相机段 teardown owner = cameraRuntime.resetSessionState：setCam('free') +
     //  topViewOnLoad 复位 + recorderCamera / armorHighlight 释放，语义逐字保留）
     cameraRuntime.resetSessionState();
+    contactShadowCtl.dispose();   // 只释放资源；选择跨 teardown 保留给本次 startPlayback
     foliageClip.value = 0;
     store.recorderCameraStatus = 'idle';
     store.recorderViewAvailable = false;
@@ -1175,13 +1170,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   /** 渲染器就绪（startPlayback 编排调用；原 startPlayback 内联段，偏好失配语义原样）。 */
   function ensureRenderer() {
     if (!renderer) initScene();   // 渲染器惰性创建：此时画质档已定型（loader 选择/URL 参数）
-    else if (rendererCaps && (rendererCaps.logdepth !== LOGDEPTH || rendererCaps.dynres !== DYNRES)) {
+    else if (rendererCaps && (rendererCaps.logdepth !== LOGDEPTH || rendererCaps.dynres !== DYNRES
+      || rendererCaps.stencil !== contactShadowCtl.wantsStencil())) {
       // 复用渲染器（换文件 reset 保留）但待开播偏好已改：按失配项热修正——
       // logdepth 是上下文级参数 → 重建渲染器（initScene 换新上下文，dynres 同步重装）；
       // 仅 dynres 变化 → 热装/卸控制器即可（无需动上下文）。
-      if (rendererCaps.logdepth !== LOGDEPTH) {
-        rebuildRenderer();
-        rendererCaps = { logdepth: LOGDEPTH, dynres: DYNRES };
+      if (rendererCaps.logdepth !== LOGDEPTH || rendererCaps.stencil !== contactShadowCtl.wantsStencil()) {
+        rebuildRenderer();   // 上下文级参数（logdepth / stencil）→ 重建渲染器
       } else {
         // 仅 dynres 变化（评审 P2）：控制器可能已把 pixelRatio 降过档，热装/卸时
         // 必须先同步 renderer 回当前档位上限 + 重设画布——否则 B 场永久停在
@@ -1250,6 +1245,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     buildBases,
     buildSpawns,
     buildVehicles: () => vehicles.buildVehicles(),
+    setupContactShadows: () => contactShadowCtl.setup(),
     applyGlbToggle: (on) => vehicles.applyGlbToggle(on),
     buildRoster: () => labels.buildRoster(),
     prepareResolvers,
@@ -1372,6 +1368,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     seekBy: (delta) => { if (DATA) seekTo(T + delta); },
     setBattleClock,
     setCam: (mode) => cameraRuntime.setCam(mode),
+    // 移动端竖向距离滑条（实现 owner = cameraRuntime）
+    cameraDistanceState: () => cameraRuntime.cameraDistanceState(),
+    setCameraDistance: (v) => cameraRuntime.setCameraDistance(v),
+    /** 触屏相机契约开关（usePlaybackPhoneForm 判定，watch 下发；状态 owner = cameraRuntime）。 */
+    setMobileTouch: (enabled) => cameraRuntime.setMobileTouch(enabled),
     setFollow: (eid) => cameraRuntime.setFollow(eid),
     setGlb: (on) => { if (!Q.forceGlb && (Q.allowGlb || !on)) vehicles.applyGlbToggle(on); invalidate(); },
     // 地面履带印开关（会话级，不持久化；关→开从 START 全量补铺，见 updateTrails）
@@ -1404,6 +1405,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         vehicles.setLowPoly(v, !v.glb);
         vehicles.applyDetachedTurrets(v);
         if (v.glb) v.glb.visible = v.group.visible && !labels.classIconsVisible();
+        vehicles.syncContactShadow(v);   // 类型图标替换后阴影随显隐（#907 主干随迁）
       }
       labels.setLabelPrefs();
       if (camera) labels.updateLabels();
@@ -1434,6 +1436,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       }
       invalidate();
     },
+    setContactShadows: (on) => contactShadowCtl.setEnabled(on),
     setQuality,
     setPaused,
     qualityPresets: QUALITY_PRESETS,

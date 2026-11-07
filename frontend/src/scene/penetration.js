@@ -29,13 +29,29 @@ export const ArmorSection = Object.freeze({
   GUN_BARREL: 'gunBarrel',
 })
 
-/** 弹种解析（tanks.pb 原始串：hc 与 hc_premium=HEAT、ap_cr 系=APCR、ap_premium=AP、he_premium=HE） */
+/**
+ * 弹种 icon 词表（唯一事实源）：`type`/`shell_type` 显示令牌 → 判定弹种
+ * （tanks.pb 原始串：hc 与 hc_premium=HEAT、ap_cr 系=APCR、ap_premium=AP、he_premium=HE）。
+ * `parseShellType`（判定链，未知兜底 'he'）与 `viewer/armorPlateModel.shellTypeOf`
+ * （查看器，未知返回 null fail-closed）共用本表；新增 token 只改这里。
+ *
+ * 必须是**无原型对象**（Object.create(null)）：普通对象查表会把 `constructor` /
+ * `__proto__` / `toString` 等原型属性当成命中（真值），绕过两条链的未知值兜底
+ * （review P2，2026-11-06）。Object.freeze 不会移除原型链。
+ */
+export const SHELL_TOKEN_KIND = Object.freeze(Object.assign(Object.create(null), {
+  ap: 'ap', ap_premium: 'ap',
+  apcr: 'apcr', ap_cr: 'apcr', ap_cr_premium: 'apcr',
+  he: 'he', he_premium: 'he', hesh: 'he', hesh_premium: 'he',
+  heat: 'heat', hc: 'heat', hc_premium: 'heat', atgm_heat: 'heat',
+}))
+
 /**
  * 弹种解析：**field9 枚举优先**（权威，0=AP/1=APCR/2=HEAT/3=HE），其次 icon 串词表。
  *
  * field9 来自上游 tank 数据的 `type_id`（客户端 `<kind>` 语义枚举的翻译，4 值闭集）；
- * `type`/`shell_type` 是 field7 的 icon 显示令牌，词表是手工归纳的、客户端可自由新增
- * 变体（`atgm_heat` 就是曾经漏掉的一个）。有 id 就绝不看词表。
+ * `type`/`shell_type` 是 field7 的 icon 显示令牌，词表（SHELL_TOKEN_KIND）是手工归纳的、
+ * 客户端可自由新增变体（`atgm_heat` 就是曾经漏掉的一个）。有 id 就绝不看词表。
  * 未知串仍兜底 `'he'`——这是最后手段，不是判定依据。
  */
 export function parseShellType(s, id) {
@@ -45,12 +61,7 @@ export function parseShellType(s, id) {
     if (id === 2) return 'heat'
     if (id === 3) return 'he'
   }
-  const t = String(s || '').toLowerCase()
-  if (t === 'ap' || t === 'ap_premium') return 'ap'
-  if (t === 'apcr' || t === 'ap_cr' || t === 'ap_cr_premium') return 'apcr'
-  if (t === 'he' || t === 'he_premium' || t === 'hesh' || t === 'hesh_premium') return 'he'
-  if (t === 'heat' || t === 'hc' || t === 'hc_premium' || t === 'atgm_heat') return 'heat'
-  return 'he'
+  return SHELL_TOKEN_KIND[String(s || '').toLowerCase()] || 'he'
 }
 
 const isKinetic = (shell) => shell === 'ap' || shell === 'apcr'
@@ -125,6 +136,62 @@ const pointsCoincide = (a, b) => {
 }
 
 /**
+ * HEAT 间隙衰减的间距原点：同板去重会删掉近侧的出射面/入射面，但间距必须从首个
+ * 物理接触面量起（GPU 以最近屏幕深度为原点），否则层的 point 前移后 gap 变短、
+ * 衰减被低估。首层之前存在被删掉的物理接触面时，返回「首层点位换成接触面点位」的
+ * 新数组（其余命中与顺序不变、不改输入）；否则原样返回输入。
+ * 与首层重合的命中（共享边/对角线）一起搬：保持 collectFilteredHits 的
+ * 重合三角形合并语义，避免同一块板被当成两层。
+ * 本模块由 Node 脚本直接加载（scripts/browser-armor-aiming.mjs 等），不得 import
+ * `.ts` 模块——import specifier 必须指向真实存在的 `.js`。
+ */
+/**
+ * 首层跳弹/续飞几何取物理首触面：同板去重删掉近侧命中后，首层的命中角/跳弹判定仍须
+ * 按射线实际先碰到的那个面（GPU：厚度通道累计保留的 front 片元、状态通道按最近面判
+ * 跳弹）。因此**不改**首层的 normal/thickness/point（厚度链几何保持 GPU 厚度通道口径），
+ * 只把首触面的法线与点位作为 `contact_normal` / `contact_point` 附在首层命中上：
+ * - `resolveLayerGeometry` 只把 `contact_normal` 用于跳弹判定（厚度/转正/角度显示仍用 normal）；
+ * - `ricochetSurface` 让续飞从该物理接触点/面发射；HEAT 的间隙原点另由 withGapOrigin 处理。
+ * 首触面在首层之前即可附加（不要求同键）：中间夹着别的板时，物理跳弹仍发生在首触面上。
+ * 这两个字段是客户端本地扩展（`judgePenetration` 直接调用本模块），不进上游 wire 请求。
+ */
+export function withContactRicochet(hits, contact) {
+  if (!contact || hits.length === 0) return hits
+  if (!(contact.distance < hits[0].distance)) return hits
+  const [first, ...rest] = hits
+  return [{
+    ...first,
+    contact_normal: contact.normal,
+    contact_point: contact.point,
+    // 首触板自己的厚度：3× 口径规则（overmatch 抑制跳弹）必须按它判，而不是首层保留板。
+    contact_thickness: contact.thickness,
+    // 首触板身份：跳弹层的结果卡要报「哪块板跳的」，而不是首层保留板（可能是前方模块）。
+    contact_part_name: contact.partName || contact.part_name || null,
+  }, ...rest]
+}
+
+/**
+ * 跳弹/续飞的发射面：优先物理首触面（`contact_*`），否则用该层自己的点/法线。
+ * 返回的对象与命中同形（point/normal），供轨迹与反射射线使用。
+ */
+export function ricochetSurface(hit) {
+  if (!hit) return null
+  return {
+    point: hit.contact_point || hit.point,
+    normal: hit.contact_normal || hit.normal,
+  }
+}
+
+export function withGapOrigin(hits, contact) {
+  if (!contact || hits.length === 0) return hits
+  if (!(contact.distance < hits[0].distance)) return hits
+  const origin = hits[0].point
+  return hits.map((hit) => (
+    pointsCoincide(hit.point, origin) ? { ...hit, point: contact.point } : hit
+  ))
+}
+
+/**
  * 收集阶段：外部模块按 variant 去重；确定性判定与概率链都只收集到**首个 Primary
  * （含）**——与 BlitzKit shoot() 的末层语义一致。概率链不再因某层未穿透而在收集
  * 阶段截断（那发生在判定循环），但也不得越过首个 Primary 继续收集其后的车体底板/
@@ -158,18 +225,41 @@ function collectFilteredHits(hits) {
 }
 
 /**
+ * 物理首触面的跳弹几何（contact_normal / contact_point / contact_thickness）：
+ * 同板去重删掉近侧命中后，跳弹仍按射线实际先碰到的面判。厚度先乘装备系数
+ * （enhanced_armor 1.04）再判 3× 口径，与普通厚度路径同源——否则同一块板会因
+ * 是否触发去重而得到不同的 overmatch/跳弹结果。无 contact_normal 时返回 null。
+ */
+function contactRicochetGeometry(ah, ctx) {
+  if (!ah.contact_normal) return null
+  const coeff = Number.isFinite(ctx.thicknessCoeff) ? ctx.thicknessCoeff : 1.0
+  const raw = ah.contact_thickness != null ? ah.contact_thickness : ah.thickness
+  const thickness = raw * coeff
+  const threeCalibers = ctx.caliber > thickness * 3.0
+  const n = normalize(ah.contact_normal)
+  const angleDeg = Math.acos(Math.min(Math.abs(dot(n, ctx.view)), 1.0)) / DEG
+  return { thickness, three_calibers: threeCalibers, angle_deg: angleDeg, ricochet: angleDeg >= ctx.ricochet_deg }
+}
+
+/**
  * 单层几何（确定性与概率链共用）：外部模块 flat；实际装甲算入射角、3×/2×
  * 口径规则、逐层转正与等效厚度。概率链只需要几何量，不读取剩余穿深。
  * 转正按 BlitzKit shoot() 对**每个非外部层**独立计算（不继承首层状态）。
+ * 外部模块层不跳弹，但**首触面**可能在其前方的间隙板上：此时模块层承载
+ * contact_* 并按首触面判跳弹（否则模块首层会吞掉物理跳弹）。
  */
 function resolveLayerGeometry(ah, thickness, ctx) {
   if (isModule(ah.section)) {
+    const contact = contactRicochetGeometry(ah, ctx)
+    const noRicochet = ctx.layerIndex > 0 || !ctx.allowRicochet || (contact ? contact.three_calibers : true)
+    const ricochet = !!contact && !noRicochet && contact.ricochet
     return {
       thickness,
       effective: thickness,
       external: true,
       angle_deg: null,
-      ricochet: false,
+      ricochet,
+      ricochet_angle_deg: contact ? contact.angle_deg : null,
       overmatch: false,
       normalization_deg: 0,
     }
@@ -178,8 +268,15 @@ function resolveLayerGeometry(ah, thickness, ctx) {
   const cosA = Math.min(Math.abs(dot(n, ctx.view)), 1.0)
   const angleRad = Math.acos(cosA)
   const angleDeg = angleRad / DEG
+  // 跳弹判定按物理首触面：同板去重删掉近侧命中后，`contact_normal` 记录射线实际先
+  // 碰到的面；厚度/转正/角度显示仍用保留层的 normal（GPU 厚度通道口径）。
+  const contact = contactRicochetGeometry(ah, ctx)
+  const ricochetAngleDeg = contact ? contact.angle_deg : angleDeg
   const threeCalibersRule = ctx.caliber > thickness * 3.0
-  const noRicochet = threeCalibersRule || ctx.layerIndex > 0 || !ctx.allowRicochet
+  // 跳弹的 3× 口径规则按**首触板**判（厚度已乘装备系数）：首层保留板的厚度可能与
+  // 首触板不同（中间夹着别的板）。
+  const noRicochet = (contact ? contact.three_calibers : threeCalibersRule)
+    || ctx.layerIndex > 0 || !ctx.allowRicochet
   const twoCalibersRule = ctx.caliber > thickness * 2.0
   // 0mm 是合法的 fail-closed 板厚：2× 公式在 thickness=0 时会 0/0，只对正厚度应用。
   const normalization = twoCalibersRule && thickness > 0.0
@@ -190,13 +287,14 @@ function resolveLayerGeometry(ah, thickness, ctx) {
   const effNormalization = normalization
   const finalAngle = Math.max(angleRad - effNormalization * DEG, 0.0)
   const effective = thickness / Math.max(Math.cos(finalAngle), 1e-6)
-  const ricochet = !noRicochet && angleDeg >= ctx.ricochet_deg
+  const ricochet = !noRicochet && ricochetAngleDeg >= ctx.ricochet_deg
   return {
     thickness,
     effective: ricochet ? 0.0 : effective,
     external: false,
     angle_deg: angleDeg,
     ricochet,
+    ricochet_angle_deg: ricochetAngleDeg,
     overmatch: threeCalibersRule,
     normalization_deg: effNormalization,
   }
@@ -245,6 +343,10 @@ function buildProbabilityLayers(filteredHits, ctx) {
       gap: false,
       point: ah.point,
       normal: ah.normal,
+      ...(geo.ricochet && ah.contact_normal ? {
+        contact_part_name: ah.contact_part_name || null,
+        contact_thickness: (ah.contact_thickness != null ? ah.contact_thickness : ah.thickness) * ctx.thicknessCoeff,
+      } : {}),
     })
     if (geo.ricochet) break
   }
@@ -379,10 +481,9 @@ export function calculate(req) {
   const view = normalize(req.view_dir)
 
   // —— 收集阶段（对齐 blitzkit noDuplicateIntersections）：确定性判定与概率链
-  // 都停在首个 Primary（含）。概率链的差异只在判定循环：即使某层未穿透，
-  // 也继续评估后面直到首个 Primary 的层，而不是复用确定性截断结果。
+  // **共享同一份命中链**——收集结果与后续评估无关（都停在首个 Primary 含；差异只在
+  // 判定循环本身：概率链对未穿透层继续评估，见 buildProbabilityLayers）。
   const filteredHits = collectFilteredHits(req.hits)
-  const probabilityHits = collectFilteredHits(req.hits)
   // blitzkit：出射射线（allowRicochet=false）未命中任何 Primary → null；这里以空结果 "-" 表达。
   const allowRicochet = req.allow_ricochet !== false
   if (!allowRicochet && filteredHits.every((h) => !isPrimary(h.section))) {
@@ -441,6 +542,39 @@ export function calculate(req) {
     let layerPenetrated
     let isOvermatch = false
     let layerAngleDeg = null   // 该层入射角（外部模块层无角度——flat 消耗）
+    // 几何规则与概率链共用 resolveLayerGeometry：外部模块 flat，不参与转正；0mm 板
+    // 不套 2× 公式。模块层也可能承载物理首触面（首触板在模块前方）→ 跳弹先在
+    // 分支之前判定，避免 isModule 提前返回吞掉 contact_*。
+    const geo = resolveLayerGeometry(ah, thickness, {
+      view,
+      caliber,
+      normalization_deg: normDeg,
+      ricochet_deg: ricochetDeg,
+      allowRicochet,
+      layerIndex,
+      thicknessCoeff,
+    })
+    if (geo.ricochet) {
+      ricochet = true
+      ricochetRemainingPen = remainingPen * 0.75
+      const contactThickness = ah.contact_normal
+        ? (ah.contact_thickness != null ? ah.contact_thickness : ah.thickness) * thicknessCoeff
+        : null
+      layers.push({
+        part_name: ah.part_name,
+        thickness,
+        effective: 0.0,
+        remaining_before: remainingPen,
+        penetrated: false,
+        ricochet: true,
+        overmatch: false,
+        angle_deg: geo.ricochet_angle_deg != null ? geo.ricochet_angle_deg : geo.angle_deg,
+        // 跳弹发生在首触面时，结果卡按首触板的名字/厚度呈现（保留层仍是厚度链那一层）。
+        contact_part_name: ah.contact_normal ? (ah.contact_part_name || null) : null,
+        contact_thickness: contactThickness,
+      })
+      break
+    }
     if (isModule(ah.section)) {
       eff = thickness
       if (isHe) {
@@ -451,37 +585,9 @@ export function calculate(req) {
         layerPenetrated = remainingPen > eff
       }
     } else {
-      // 几何规则与概率链共用 resolveLayerGeometry：BlitzKit 对每个非外部层
-      // 都用自身厚度/角度重新计算 normalization 与 2× 口径增强；外部模块 flat，
-      // 不参与转正；0mm 板不套 2× 公式。
-      const geo = resolveLayerGeometry(ah, thickness, {
-        view,
-        caliber,
-        normalization_deg: normDeg,
-        ricochet_deg: ricochetDeg,
-        allowRicochet,
-        layerIndex,
-      })
       layerAngleDeg = geo.angle_deg
       if (firstArmorAngleDeg < 0.0) firstArmorAngleDeg = layerAngleDeg
       isOvermatch = geo.overmatch
-
-      // 跳弹：入射角 ≥ 跳弹角 且 未被抑制（HEAT/HE 跳弹角=90° 永不触发）
-      if (geo.ricochet) {
-        ricochet = true
-        ricochetRemainingPen = remainingPen * 0.75
-        layers.push({
-          part_name: ah.part_name,
-          thickness,
-          effective: 0.0,
-          remaining_before: remainingPen,
-          penetrated: false,
-          ricochet: true,
-          overmatch: false,
-          angle_deg: layerAngleDeg,
-        })
-        break
-      }
 
       eff = geo.effective
       if (firstArmorNormDeg < 0.0) firstArmorNormDeg = geo.normalization_deg
@@ -512,8 +618,8 @@ export function calculate(req) {
   }
 
   // 概率链必须在确定性循环之外重建：上面的 layers 会在首个未穿透层提前 break，
-  // 而概率模型要看到到首个 Primary 的完整路径。
-  const probabilityLayers = buildProbabilityLayers(probabilityHits, {
+  // 而概率模型要看到到首个 Primary 的完整路径（命中链与确定性判定同一份）。
+  const probabilityLayers = buildProbabilityLayers(filteredHits, {
     view,
     caliber,
     thicknessCoeff,

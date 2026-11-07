@@ -27,6 +27,8 @@ export function loadResearchCatalog() {
     assetProvider.json('/research/skills.json'),
   ]).then(([devices, consumables, provisions, format, structure, camouflage, skills]) => Object.freeze({
     gameVersion: devices.meta?.gameVersion || null,
+    consumablesGameVersion: consumables.meta?.gameVersion || null,
+    provisionsGameVersion: provisions.meta?.gameVersion || null,
     devices: devices.devices,
     devicePresets: devices.presets,
     consumables: consumables.items,

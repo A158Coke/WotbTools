@@ -1,29 +1,68 @@
-## Workflow 所有权
+# .github/ — Workflow 所有权与变更规则
 
-仓库只有一个 pull-request routing 入口和按服务划分的 production workflow。Application owner 只在 main 上其 owned inputs 变化时运行：取消同一服务的旧 run；在发布生产 artifact 前立即复查 main；部署该服务被评审的 artifact（Keycloak 与 AI service 为 `latest`，Frontend 与 Business API 为 `repo@sha256:<digest>`）。所有 production owner 必须在 `on.push.paths` 与 `PRODUCTION_INPUT_PATHS` 中声明完全相同的 owned inputs。`deploy/check-production-freshness.sh` 检查 source ancestry 与 owned inputs；manual dispatch 必须精确指向 current `main`；强制更新 transport ref 的 owner（`asset-origin.yml`）还必须在 mutation 前立即确认精确 current `main`（`PRODUCTION_REQUIRE_EXACT_MAIN=1`）。Host mutation 使用 host-level `flock`；不得恢复已删除的 Release/Build/Deploy/Tofu reusable-workflow DAG。
+> **何时必读本文件**：新增/修改 `.github/workflows/` 下任何 workflow、
+> 调整 CI 路由或 production 触发条件时。硬约定见 `.agents/AGENTS.md`；
+> 细节 canonical 在 `docs/operations/*` 与 `docs/android/release-process.md`；
+> 契约测试 `scripts/ci/test-workflow-contract.sh`。
 
-- `ci-gate.yml` 是唯一 PR 入口，拥有 `CI / Required Gate`。它验证 PR identity，把 changed paths 路由到 reusable owner CI workflow，并聚合受影响结果。每个 OpenTofu root 只在其 owner 受影响时验证；验证只运行 `fmt`、`init -backend=false`、`validate` 与 root safety fixtures。PR CI 没有 production credentials、SSH、image push、production state、plan 或 apply。三个 data-update workflow 保持独立，并可为精确 open PR head dispatch CI。
-- `business-api.yml`、`frontend.yml`、`keycloak.yml` 与 `ai-service.yml` 拥有各自的 application image 与 deploy pipeline。TX image 使用 TCR；Yecao image 使用 GHCR。Keycloak 与 AI service 使用 `latest` freshness 协议：每个 owner 只在 current main 上 owned inputs 未变化时发布 `latest`（精确 current main，或 main 在其他地方前进），并部署该服务的 `latest`；若更新的 main 改变了其 owned inputs，该 run 视为 superseded——跳过 `latest` 与 deploy 但不失败，由更新的 run 发布。Frontend 与 Business API 是 digest-pinned 车道：它们从 exact SHA 构建并发布 immutable TCR artifact，生产部署消费 `TX_FRONTEND_IMAGE_REF` / `TX_BUSINESS_API_IMAGE_REF` 提供的 `repo@sha256:<digest>`，禁止回退 `latest`。Business API 在 mutation 前运行只读 consumer-side dependency probe。Keycloak 保留其 runtime、OpenTofu 与 final verification 链。Replay parsing 在浏览器中运行：没有 parser-worker、RabbitMQ 或 MinIO owner，且不得重新引入（`scripts/ci/test-workflow-contract.sh` 断言其不存在）。
-- `caddy.yml` 是独立的 TX gateway owner。它 stage 并验证 Caddy configuration/assets，只 reconcile gateway，在需要时刷新 frontend trusted-peer state，并验证 TLS、redirect 与 required route。它不构建 application image，也不依赖 database/admin credential。
-- `business-postgres.yml` 与 `keycloak-postgres.yml` 拥有其 TX runtime 与 host-local OpenTofu root。`observability.yml` 拥有 Yecao observability runtime 与 Grafana dashboard OpenTofu。每个 provider、state、secret、plan guard 与 readiness check 必须限定在其 owner 内。
-- `komodo-controller.yml` 是 Komodo control plane 的 bootstrap 与 break-glass owner；它是唯一被允许读取 TencentCloud DNSPod credentials 的 workflow。GitHub Actions 拥有 controller reconciliation，Docker Compose 拥有 Yecao Core/Mongo runtime（`deploy/komodo`），OpenTofu 只拥有 controller DNS record（`infra/tofu/komodo`）。Komodo 绝不能拥有自己的 Core lifecycle。Public ingress 保持在独立的 `caddy.yml` owner，它发布 `komodo.wotbtools.com`，先证明 WireGuard upstream，再要求 public answer 等于 private answer——它不读取 Komodo release pin，且 `deploy/komodo/**` 不是 Caddy-owned input。Workload adoption 仍是后续阶段。Declarative Komodo resources 位于 `infra/komodo/resources/**`（K4.1），不属于任何 production workflow：该路径只路由到 non-production `deployment` PR gate，由其运行 `scripts/ci/test-komodo-resources.py`，且绝不能加入 controller 的 `on.push.paths`/`PRODUCTION_INPUT_PATHS`（resource TOML 变化不得 reconcile Core/Mongo/DNS）。唯一狭窄例外是 `infra/komodo/resources/asset-origin.toml`，它同时是 asset-origin source-transport gate 的 input（见 `asset-origin.yml` 条目）：该 gate 只能修改 asset-owned transport pair（GitHub pointer branch + Gitee transport branch），不得 apply ResourceSync、修改 Komodo resource 或部署 Stack。resource tree 下没有其他文件是 production input。Sync 只能由人工在 UI 中应用：`managed = false`、`delete = false`、`webhook_enabled = false`。
-- `komodo-periphery.yml` 是每个 Komodo Periphery agent（`deploy/periphery`）的独立 owner，一个 host 一个 job，严格链式：`reconcile_yecao` → `reconcile_tx1` → `reconcile_tx2`，每个 job `needs` 前一个，因此已建立的 host 总会在新 host 被修改前得到证明。GitHub Actions 拥有每个 agent 的 systemd lifecycle；Komodo Core 只拥有 Server relationship，绝不安装、重启或管理连接它的 agent。只有一个 lifecycle implementation（`lib.sh` / `install.sh` / `verify.sh` / `reconcile.sh` 与 target 无关），per-host 差异位于经 review 的 `deploy/periphery/targets/<target>/target.env` 数据：`connect_as`、host 自己的 mutation lock（Yecao 为 `/opt/wotb/.deploy.lock`，TX1 为 `/opt/wotb-tx/.deploy.lock`，TX2 为 `/opt/wotb-tx2/.deploy.lock`，绝不使用 Periphery-only lock）、staging root（`/opt/periphery`、`/opt/wotb-tx/periphery`、`/opt/wotb-tx2/periphery`）与权限模型（`root`，或 non-root SSH account 使用 `sudo`，通过 `sudo -n` 重新执行且只保留 generic credential）。每个 job 验证 pinned release artifact 的 SHA256，只 stage 已验证字节加上该 host 自己的 profile——没有 host 下载 binary，也没有 host 接收另一个 host 的 profile。每个 agent 都是 outbound only（`core_addresses = ["http://10.20.0.2:9120"]`、`connect_as` 为其 target、`server_enabled = false`），因此 `:8120` 上没有 listener，effective config 与 target 经 review 的 config 逐字节一致。唯一的 generic bootstrap 变量是 `KOMODO_PERIPHERY_ONBOARDING_KEY`（workflow 把每个 host 自己的 secret 映射进去；scripts 不知道任何 host-specific secret 名）：它只通过临时 `/run/komodo/periphery-bootstrap.env` 到达 Periphery，永不持久化；一旦持久 `/etc/komodo/keys/onboarding-complete` marker 存在就不再需要——完成状态绝不从 `keys/periphery.key` 推断，因为 v2.3.3 即使 onboarding 失败也会在 startup 生成该文件；bootstrap 失败会停止 service，因此没有进程继续持有 credential。缺少 marker 且没有 credential 时 fail closed，而不是重新 onboarding；Yecao 已删除的 secret 不得再次被引用。Alibaba asset host（`ali-sh-asset-01`）**不属于**该自动链：其 Periphery agent 目前手动 bootstrap、手动管理 lifecycle，已 onboard 且健康，`infra/komodo/resources/servers.toml` 只声明现有 Server，以便 ResourceSync 按名称 adopt。Alibaba/mainland Periphery lifecycle 的自动化被有意推迟；本仓库不存在 Alibaba SSH secret 或 reusable Periphery workflow。`deploy/periphery/**` 只归本 workflow 所有，不得触发 Komodo controller 或 Caddy gateway。
-- `gitee-mirror.yml` 是 Gitee main 唯一自动同步 owner，独占 `production-gitee-main-sync` 队列，与 asset-origin 的 `production-gitee-mirror` 队列独立：exact event SHA、普通 fast-forward-only push、push 后远端 SHA 复验；分叉或非 fast-forward 更新失败，历史修复只由人工执行；只同步 main，不推 tags/其他分支，不 prune。TX builders 仅从 Gitee main 历史取 requested exact SHA，等待耗尽即 fail closed，不使用 staged 源码包或 TX→GitHub fallback。GitHub 保持唯一 SSOT/review/release authority，TCR 保持 image transport。
-- `asset-origin.yml` 只拥有 Komodo Stack `wotbtools-asset-origin` 的 mainland source-transport gate；它不部署 Stack，也不修改 Komodo resource。它 checkout 并冻结触发 `main` event 的 SHA，通过 `production-gitee-mirror` 串行化 transport mutation，把该精确冻结 commit 发布到派生的 GitHub `asset-origin` pointer branch（`contents: write`，仅此权限），再使用现有 Gitee credential 发布到 asset-owned `A158Coke/Wotbtools` Gitee `asset-origin` branch，最后要求 Gitee `refs/heads/asset-origin` 等于该 SHA 才允许 rollout 继续。保留 asset-owned GitHub pointer 与 Gitee transport pair；独立 main-only 同步不写或删除 asset ref。它绝不触碰共享 Gitee `main`，后者由独立 `gitee-mirror.yml` 拥有，其移动不得改变 asset deploy source。由于它 force-update transport ref，它声明 `PRODUCTION_INPUT_PATHS` 等于其 trigger paths，并在 `git push --force` 前立即以 `PRODUCTION_REQUIRE_EXACT_MAIN=1` 运行 `deploy/check-production-freshness.sh`，因此当冻结的 `SOURCE_SHA` 不再是精确 current `main` 时，`push` 与 `workflow_dispatch` 都 fail closed 且不修改 ref。`infra/komodo/resources/asset-origin.toml` 是唯一的 resource-tree input，Stack 固定 `branch = "asset-origin"`（绝不使用共享 `main`）。ResourceSync 仍由人工应用，Stack 保持 `deploy = false`；部署它是手动 Komodo 操作。
-- `android-release.yml`、`android-auto-publish.yml`、`database-backup.yml`、`cleanup-images.yml`、`prod-diagnostics.yml` 与 `tx-runtime-check.yml` 保持各自独立的 release、backup、cleanup、diagnostics 与 TX 只读 runtime-gate 职责。`android-release.yml` 的 stage/publish 共用 `android-release` concurrency group 并设置 `queue: max`（生产 mutation 串行、请求互不替换）；`android-auto-publish.yml` 只是 stage 成功后的薄续跑入口，自动 publish 是否执行由 `android-release.yml` 的 `publish_gate` 在实际执行时按 Version-as-Code 判定，而不是由入口 workflow 的 dispatch 时点决定。该入口只观察 stage 结论，不等待基础设施 workflow；infra 未就绪时 publish readiness fail-closed（不写 `version.json`），之后用同一 immutable candidate 做 recovery publish。`tx-runtime-check.yml` 仅 manual，使用 repository-level Actions secrets / variables，与 `production-maintenance` 串行化，要求精确 current `main`，只把该 checkout SHA 的四个 verifier/helper script 复制到临时 `/tmp/wotb-tx-runtime-check-<run>-<attempt>` bundle。它从运行中的 container 推导 Frontend/Business API image ref，在 production host lock 下以 `WOTB_TX_DIR=/opt/wotb-tx` 执行 staged verifier，之后清理临时 bundle。它绝不能 stage production Compose/config/data、部署、重建、停止、apply OpenTofu 或修改 DNS。
-- `android-offload-probe.yml` 是 Android offload 路径（runner → COS → TX1 → 清华网盘）的 manual link-health probe：仅 dispatch、使用 repository-level Actions secrets / variables、与 `production-maintenance` 串行化并与 `android-release` 互相排斥（job-level concurrency group——两者写同一个 Seafile repository）、固定到精确 current `main`，且只创建并删除自己在网盘上的 `_offload-probe-<run>.bin` scratch object 以及 release COS bucket 上的 `android/probe/*`；必须验证其不存在，因此无法删除自己 scratch object 的 probe 会失败而不是保持绿色。它绝不能触碰 release state（tag、staging evidence、production `version.json`、origin seed），其 drive protocol 必须与 `android-release.yml` 的 upload step 保持同步。
-- `update-tankopedia.yml`、`update-equipment.yml` 与 `update-crew-skills.yml` 保持独立 automation 入口。共享 PR 发布协议（无变化退出 → staged 内容守卫 → 白名单提交 → push → 查找/创建 PR → 校验 PR 身份 → 精确 HEAD dispatch）唯一正文是受限 helper `scripts/ci/publish-data-update.sh`，只服务三个 `automation/update-*` 分支；保留其 contents/PR/actions permissions 与 exact-head CI dispatch protocol；不得把它们并入 production workflow。
+## 硬约束（不可协商）
 
-## 变更规则
+- 仓库只有一个 PR routing 入口：`ci-gate.yml` 拥有唯一的 `CI / Required Gate`；
+  不得增加 heavy、non-gating job，不得在 production workflow 内重复 PR test suite。
+- 所有 production owner 必须在 `on.push.paths` 与 `PRODUCTION_INPUT_PATHS`
+  声明完全相同的 owned inputs；application owner 只在 main 上 owned inputs
+  变化时运行（取消同服务旧 run，发布前立即复查 main）。
+- `deploy/check-production-freshness.sh` 检查 source ancestry 与 owned inputs；
+  manual dispatch 必须精确指向 current `main`；强制更新 transport ref 的
+  `asset-origin.yml` 还需 mutation 前以 `PRODUCTION_REQUIRE_EXACT_MAIN=1` 确认。
+- Host mutation 使用 host-level `flock`；**不得恢复已删除的
+  Release/Build/Deploy/Tofu reusable-workflow DAG**，不得新增 `workflow_run`
+  链或跨服务 planner；改 workflow 前先读其真实 scripts 与相关
+  `deploy/AGENTS.md`/OpenTofu 契约。
+- Replay parsing 在浏览器运行：**没有 parser-worker、RabbitMQ 或 MinIO owner，
+  不得重新引入**（`scripts/ci/test-workflow-contract.sh` 断言）。
+- 不得在 workflow 文件中放置凭据；`secrets.*`/`vars.*`/job permission 只作用于
+  消费它们的 job；TX production job 用现有 repository-level Actions
+  secrets/variables，不得发明未配置的 Yecao environment。
 
-- 修改 workflow 前，先读其真实 scripts 与相关 `deploy/AGENTS.md`/OpenTofu 契约。保持 CI 命令与本地命令以及 pinned JDK/Node 版本一致。
-- 不得在 workflow 文件中放置凭据。`secrets.*`、`vars.*` 与 job permission 只作用于消费它们的 job。TX production job 使用现有 repository-level Actions secrets / variables；不得发明未配置的 Yecao environment。
-- Main-triggered production workflow 必须在昂贵工作前拒绝非 ancestor source 与 owned inputs 变化，然后在 staging 或 host mutation 前按需立即复查。使用 `latest` freshness 协议的 application workflow 在发布 `latest` 前也要复查：owned inputs 在 current main 上未变化才发布；已变化则将 run 标记为 superseded（`check-latest-main.sh` exit 10 → `latest_published=false`，下游 smoke/deploy 跳过，run 保持绿色）。新 main 到达时，同一服务的 run 仍取消旧 run。Manual dispatch 必须固定在精确 current `main` SHA。按服务契约要求，在 runtime mutation、OpenTofu plan/apply/second-plan 与验证期间持续持有 TX 与 Yecao host lock。
-- OpenTofu ownership 保持在与服务匹配的 standalone root workflow。PR validation 永不读取 production state，也不创建 authenticated production plan。Main workflow 本地重新 plan，并 apply 精确且受 guard 保护的 saved plan。
-- 保持稳定的 `CI / Required Gate` 为唯一 required PR check。不得给每个 change 增加 heavy、non-gating job，也不得在 production deployment workflow 内重复 PR test suite。
+- PR CI 没有 production credentials、SSH、image push、production state、plan 或
+  apply；OpenTofu PR validation 永不读 production state、不建 authenticated plan；
+  main workflow 本地重新 plan，apply 精确且受 guard 保护的 saved plan。
+- Main-triggered production workflow 必须在昂贵工作前拒绝非 ancestor source 与
+  owned inputs 变化；`latest` freshness（Keycloak / AI service）在 owned inputs
+  已变化时标记 superseded——跳过 publish/deploy 但不失败
+  （`check-latest-main.sh` exit 10）。
+- `infra/komodo/resources/**` 只路由到 non-production `deployment` PR gate
+  （`scripts/ci/test-komodo-resources.py`），**绝不能**加入 controller 的
+  paths/inputs。唯一狭窄例外是 `infra/komodo/resources/asset-origin.toml`：
+  它同时是 `asset-origin.yml` 的 production source-transport gate input，
+  该 gate 只能修改 GitHub `asset-origin` pointer branch 与 Gitee `asset-origin`
+  transport branch；不得修改共享 Gitee `main`、执行 ResourceSync Apply、
+  修改 Komodo resources 或部署 Stack。
+- `ali-sh-asset-01` 不属于 `komodo-periphery.yml` 自动化链：其 Periphery agent
+  手动 bootstrap、手动管理 lifecycle；不得引入 Alibaba SSH secrets、
+  reusable workflow 或自动 reconcile。
 
-## Workflow 清单（40）
+## Workflow 职责地图（43 个，以 `.github/workflows/` 目录为准）
 
-`ci-gate.yml`、15 个 reusable `ci-<owner>.yml` workflow、`business-api.yml`、`frontend.yml`、`frontend-replica.yml`、`caddy.yml`、`keycloak.yml`、`ai-service.yml`、`business-postgres.yml`、`keycloak-postgres.yml`、`observability.yml`、`alloy-tx.yml`、`komodo-controller.yml`、`komodo-periphery.yml`、`asset-origin.yml`、`production-worker.yml`、`tx-runtime-check.yml`、`android-release.yml`、`android-auto-publish.yml`、`android-offload-probe.yml`、`database-backup.yml`、`cleanup-images.yml`、`prod-diagnostics.yml`、`update-tankopedia.yml`、`update-equipment.yml` 与 `update-crew-skills.yml`、`codeql.yml`（CodeQL SAST，push main + 每周 + dispatch；observe 阶段不进 required gate）。
+| Workflow | 职责 | 细节 canonical |
+|---|---|---|
+| `ci-gate.yml` + 15 个 `ci-<owner>.yml` | 唯一 PR 入口：identity 验证、按 changed paths 路由、聚合结果；OpenTofu root 只在 owner 受影响时验证 | — |
+| `repository-hygiene-main.yml` | main push-only 事后审计：对 tracked tree 与 pushed history 运行 `check-repository-hygiene.sh`，覆盖 bypass / direct push 的历史违规 | `../docs/DEVELOPER_GUIDE.md` §PR CI 与 owner 路由 |
+| `business-api.yml` / `frontend.yml` | digest-pinned 车道：exact SHA → immutable TCR → 生产消费 `repo@sha256:<digest>`；Business API mutation 前跑只读 dependency probe | `../docs/operations/ci-supply-chain.md` §5 |
+| `frontend-replica.yml` | TX2 Frontend 副本 owner：Frontend 成功（或 manual exact SHA）后解析同一 immutable TCR artifact、部署 `/opt/wotb-tx2/frontend-replica`、验证 peer `/version.json` 与 API health；不构建镜像、不操作 TX1 | `../docs/operations/tx2-production-worker.md` |
+| `keycloak.yml` / `ai-service.yml` | `latest` freshness owner；Keycloak 保留 runtime/OpenTofu/verification 链 | `../docs/auth/keycloak-tx-bootstrap.md` |
+| `caddy.yml` | 独立 TX gateway owner：stage/验证配置、reconcile gateway、验证 TLS/redirect/route；不构建镜像、不依赖 database/admin credential | `../docs/operations/komodo-public-ingress.md` |
+| `business-postgres.yml` / `keycloak-postgres.yml` / `observability.yml` / `alloy-tx.yml` | 各自 TX/Yecao runtime 与 OpenTofu root；provider/state/secret/plan guard/readiness 限定在 owner 内 | `../docs/operations/tx-service-plane.md`、`../docs/operations/observability.md`、`../docs/architecture/grafana-opentofu.md` |
+| `komodo-controller.yml` | Komodo control plane bootstrap / break-glass owner；唯一可读 DNSPod credentials；GitHub Actions 拥有 controller reconcile | `../docs/operations/komodo-periphery.md` |
+| `komodo-periphery.yml` | 每 agent 独立 owner，一 host 一 job，链式 yecao→tx1→tx2；`deploy/periphery/**` 只归本 workflow | `../docs/operations/komodo-periphery.md` |
+| `production-worker.yml` | TX2 Docker 主机前置条件（compose plugin、daemon.json、TCR 凭据） | `../docs/operations/tx2-production-worker.md` |
+| `gitee-mirror.yml` | Gitee main 唯一自动同步 owner（独占 `production-gitee-main-sync` 队列）：exact SHA、fast-forward-only、push 后复验；分叉/非 FF 失败只由人工修；只同步 main、不 prune | `../docs/operations/agent-asset-origin.md` |
+| `asset-origin.yml` | asset origin source-transport gate：冻结 event SHA → GitHub pointer branch → Gitee `asset-origin`；不部署 Stack、不触碰共享 main | `../docs/operations/agent-asset-origin.md` |
+| `android-release.yml` / `android-auto-publish.yml` / `android-offload-probe.yml` | stage/publish（共用 concurrency + `queue: max`）、薄续跑入口（publish 由 `publish_gate` 执行时判定）、offload manual probe | `../docs/android/release-process.md` |
+| `database-backup.yml` / `cleanup-images.yml` / `prod-diagnostics.yml` | 备份（含 Tofu root 本地 state）、镜像清理、只读诊断 | `../docs/operations/opentofu-local-state.md` |
+| `tx-runtime-check.yml` | 仅 manual，只读 TX runtime gate；**绝不** stage 生产 Compose/config、部署、重建、停止、apply OpenTofu 或改 DNS | `../docs/operations/tx-service-plane.md` |
+| `update-tankopedia.yml` / `update-equipment.yml` / `update-crew-skills.yml` | 独立 data-update 入口；共享 PR 发布协议唯一正文 `scripts/ci/publish-data-update.sh` | `../docs/reference/replay-data.md` |
+| `codeql.yml` | CodeQL SAST（push main + 每周 + dispatch）；observe 不进 required gate | `../docs/operations/ci-supply-chain.md` §4 |
 
-一次性 `tx-gitee-build-path-validation.yml` benchmark 已退役：Business API 与 Frontend 拥有 production Gitee exact-SHA build/TCR publication 路径。已删除的 workflow 文件可以保留历史 Actions run；这些记录不是激活入口。按职责维护 reusable owner CI、release、deployment、data-update 与周期性/手动操作 workflow，不要按运行次数决定。
+已退役 workflow 的历史 Actions run 不是激活入口；按职责维护、不按运行次数决定。

@@ -273,7 +273,7 @@ rg -n '@Autowired(?:\s*\([^)]*\))?\s+(?:(?:private|protected|public)\s+)?[^(){}\
 
 映射结果为「无需更新」时必须给出具体理由；遗漏对应 canonical owner → BLOCKER。
 
-文档分层与权威归属（canonical current-state / HISTORY / TECHNICAL_EVOLUTION / research / Android releases / current-plan 的例外边界）、future-only 内容处理、语言规范、current-plan 门禁与 archive 禁令，唯一正文在 `.agents/AGENTS.md` 规则 3「文档生命周期与权威归属」；本 gate 按该规则逐项复核 candidate，任一不满足 → BLOCKER，不在此复制第二套例外列表。
+文档分层、例外边界、future-only 处理与存量偏差过渡的唯一正文在 `docs/README.md`「文档分层与权威归属」；语言规范、current-plan 门禁与 archive 禁令的 BLOCKER 正文在 `.agents/AGENTS.md` 规则 3「文档生命周期与权威归属」。本 gate 按二者逐项复核 candidate，任一不满足 → BLOCKER，不在此复制第二套清单。
 
 ### A4. AI dead/speculative code
 

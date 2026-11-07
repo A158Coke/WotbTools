@@ -378,3 +378,97 @@ describe('Shooter/Target 主炮配置解耦（射击方决定炮弹，受击方�
     expect(router.currentRoute.value.query.scfg).toBe('1')
   })
 })
+
+describe('XI armor upgrade handoff', () => {
+  async function editors(wrapper) {
+    await wrapper.get('[data-testid="armor-tools"]').trigger('click')
+    await flushPromises()
+    return wrapper.findAllComponents(ArmorSideConfig)
+  }
+
+  it('shot replay defaults both sides to stock and only explicit what-if upgrades', async () => {
+    const { wrapper } = await setup({ query: { view: 'agent-armor', shot: '6', tank: '15153', shooter: '30497' } })
+    const [shooter, target] = await editors(wrapper)
+    expect(target.props('upgrade')).toBe('stock')
+    expect(shooter.props('upgrade')).toBe('stock')
+    expect(wrapper.getComponent(ArmorShotHud).props('upgrade')).toBe('stock')
+  })
+
+  it('keeps shooter default independent when only the same target has an explicit upgrade', async () => {
+    const { wrapper } = await setup({ query: { view: 'agent-armor', tank: '15153', upgrade: 'top', abilities: '101,201' } })
+    const [shooter, target] = await editors(wrapper)
+    expect(target.props('upgrade')).toBe('top')
+    expect(target.props('abilities')).toBe('101,201')
+    expect(shooter.props('upgrade')).toBeNull()
+    expect(wrapper.getComponent(ArmorShotHud).props('upgrade')).toBeNull()
+  })
+
+  it('rebuilds on target upgrade and keeps shooter ammunition and upgrade independent', async () => {
+    const { wrapper, router } = await setup({ query: {
+      view: 'agent-armor', tank: '15153', shooter: '30497', shell: '2', supgrade: 'top', sabilities: '401',
+    } })
+    const [, target] = await editors(wrapper)
+    target.vm.$emit('apply', { config: 0, configChanged: false, upgrade: 'top', abilities: [101, 201] })
+    await flushPromises()
+    expect(router.currentRoute.value.query).toMatchObject({ upgrade: 'top', abilities: '101,201', supgrade: 'top', sabilities: '401', shell: '2' })
+    expect(scenes).toHaveLength(2)
+    expect(scenes[0].destroy).toHaveBeenCalledOnce()
+    expect(wrapper.getComponent(ArmorShotHud).props('abilities')).toBe('401')
+    expect(wrapper.get('[data-testid="armor-tools"]').attributes('aria-expanded')).toBe('true')
+    // Removing the explicit mode restores the XI top default; explicit stock remains available.
+    await router.replace({ query: { view: 'agent-armor', tank: '15153', shooter: '30497' } })
+    await flushPromises()
+    expect(scenes).toHaveLength(3)
+    expect(wrapper.findAllComponents(ArmorSideConfig).at(1).props('upgrade')).toBeNull()
+    await router.replace({ query: { view: 'agent-armor', tank: '15153', shooter: '30497', upgrade: 'stock' } })
+    await flushPromises()
+    expect(scenes).toHaveLength(4)
+    expect(wrapper.findAllComponents(ArmorSideConfig).at(1).props('upgrade')).toBe('stock')
+    expect(wrapper.findAllComponents(ArmorSideConfig).at(0).props('upgrade')).toBeNull()
+  })
+
+  it('pins the currently selected tanks before an upgrade rebuild', async () => {
+    const { wrapper, router } = await setup({ query: { view: 'agent-armor', tank: '1', shooter: '2' } })
+    scenes[0].options.onTankSelection({ target: 15153, shooter: 30497 })
+    const [shooter] = await editors(wrapper)
+    shooter.vm.$emit('apply', { configChanged: false, upgrade: 'top', abilities: [401] })
+    await flushPromises()
+    expect(router.currentRoute.value.query).toMatchObject({ tank: '15153', shooter: '30497', supgrade: 'top', sabilities: '401' })
+    expect(router.currentRoute.value.query.upgrade).toBeUndefined()
+    expect(scenes).toHaveLength(2)
+  })
+
+  it('rebuilds for an external ability-only change without sharing the target choices with the shooter', async () => {
+    const initial = { view: 'agent-armor', tank: '15153', upgrade: 'top', abilities: '101', supgrade: 'top', sabilities: '401' }
+    const { wrapper, router } = await setup({ query: initial })
+    await router.replace({ query: { ...initial, abilities: '102' } })
+    await flushPromises()
+    expect(scenes).toHaveLength(2)
+    expect(scenes[0].destroy).toHaveBeenCalledOnce()
+    const [shooter, target] = await editors(wrapper)
+    expect(target.props('abilities')).toBe('102')
+    expect(shooter.props('abilities')).toBe('401')
+    expect(wrapper.getComponent(ArmorShotHud).props('abilities')).toBe('401')
+  })
+})
+
+describe('armor camera actions', () => {
+  it('offers front and hull-down in static inspection without changing the URL or recreating the scene', async () => {
+    const { wrapper, router } = await setup({ query: { view: 'agent-armor', tank: '15153' } })
+    const scene = scenes[0]
+    scene.setCameraPreset = vi.fn()
+    await wrapper.get('[data-testid="armor-camera-front"]').trigger('click')
+    await wrapper.get('[data-testid="armor-camera-hull-down"]').trigger('click')
+    expect(scene.setCameraPreset.mock.calls).toEqual([['front'], ['hull_down']])
+    expect(router.currentRoute.value.query).toEqual({ view: 'agent-armor', tank: '15153' })
+    expect(scenes).toHaveLength(1)
+    scene.options.onLoadState({ state: 'loading' })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="armor-camera-front"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('does not offer static camera actions over recorded shots', async () => {
+    const { wrapper } = await setup()
+    expect(wrapper.find('[data-testid="armor-camera-front"]').exists()).toBe(false)
+  })
+})

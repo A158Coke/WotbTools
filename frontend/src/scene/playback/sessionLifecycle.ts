@@ -99,6 +99,8 @@ export interface SessionLifecycleDeps {
   buildBases(): void
   buildSpawns(): void
   buildVehicles(): void
+  /** 装配层接地阴影门禁复核 + 资源创建（#907 主干随迁；宿主实现）。 */
+  setupContactShadows(): void
   applyGlbToggle(on: boolean): Promise<void>
   buildRoster(): void
   /** 会话级 resolver 装配 + 共享 mounted-configs 预取（宿主 HUD 域实现）。 */
@@ -322,6 +324,8 @@ export function createSessionLifecycle(deps: SessionLifecycleDeps) {
     }
     const perfVehiclesAt = perf ? performance.now() : 0;
     deps.buildVehicles();
+    // 装配层复核门禁（不只依赖 UI disabled）；map 会话已在上方提前收口，不会走到这里
+    deps.setupContactShadows();
     if (perf && current()) perf.event({ stage: 'vehicle-construction', durationMs: performance.now() - perfVehiclesAt }, perfLoadingEpoch);
     const perfGlbAt = perf ? performance.now() : 0;
     if (deps.getGlbOn()) {

@@ -20,6 +20,7 @@ import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { useI18n } from 'vue-i18n'
 import { createPlaybackStore } from '../scene/playbackStore.js'
 import { initPlayback, QUALITY_PRESETS } from '../scene/playbackScene.js'
+import { shadowQualityEligible } from '../scene/playback/quality.js'
 import { detectWebGL } from '../scene/webglSupport.js'
 import { uiProfile } from '../composables/useUiProfile.js'
 import { usePlaybackFullscreen } from '../composables/usePlaybackFullscreen.js'
@@ -28,6 +29,8 @@ import { usePlaybackPortraitViewport } from '../composables/usePlaybackPortraitV
 import { usePlaybackPreferences } from '../composables/usePlaybackPreferences.js'
 import Scene3DStatus from './Scene3DStatus.vue'
 import PlaybackTransport from './PlaybackTransport.vue'
+import SceneFullscreenButton from './SceneFullscreenButton.vue'
+import SceneDistanceSlider from './SceneDistanceSlider.vue'
 import PlaybackDisplaySurface from './PlaybackDisplaySurface.vue'
 import RecorderReticle from './RecorderReticle.vue'
 import ReplayCameraTools from './ReplayCameraTools.vue'
@@ -156,6 +159,7 @@ watch(() => props.file, () => {
   controlsCollapsed.value = false
   controlsDocked.value = false
   resetAnnotationState()   // 换场次 = 换地图语义；旧标注不得跨图残留
+  sceneApi?.setContactShadows?.(false)   // 接地阴影是逐场 opt-in：新文件的待开播默认 OFF
 })
 /** 紧凑档：手机形态（见 usePlaybackPhoneForm —— 宽度 <768 **或** 触屏且视口高 ≤500，
  *  后者命中手机全屏横屏）。**不能用纯宽度断点**：手机竖屏 412×915 全屏后是 915×412，
@@ -407,6 +411,8 @@ watch(
 )
 watch(annotationsVisible, pushAnnotationVisibility)
 watch(() => store.hasData, (has) => { if (!has && annotationOpen.value) closeAnnotation() })
+// 旋转 / 跨断点改变手机形态时同步触屏相机契约（场景已建时立即生效）
+watch(isPhone, (v) => sceneApi?.setMobileTouch?.(v))
 
 /** 最近一次加载的文件：失败后"重试"直接重新解析，不必再选一次 */
 let lastFile = null
@@ -662,6 +668,7 @@ function ensureScene() {
   })
   sceneApi?.setPaused?.(!renderActive.value)
   sceneApi?.setFlySpeed?.(fly.flySpeedIndex())   // 新场景补推当前飞行速率档（重建不丢档）
+  sceneApi?.setMobileTouch?.(isPhone.value)      // 移动端触屏相机契约（单指分流 / 双指不控制）
   pushLabelPrefs();   // 新场景默认吃共享偏好（含"隐藏全部 UI"的当前状态）
   pushAnnotationProjection()
   pushAnnotationInteraction()
@@ -859,6 +866,23 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
     <div v-else class="pb-root playback-workspace" ref="rootEl" :class="{ 'phone-form': isPhone, 'portrait-flow': portraitFlow, 'roster-side': showRoster && !portraitFlow, 'compact-bar': compactBar }" data-testid="replay3d-root" data-tour="replay3d-workspace">
       <!-- 名牌覆盖层与 canvas 共用**同一个画布盒子**：场景内核按 canvas（.scene）尺寸算锚点，
            覆盖层必须与它同原点，否则三段式下名牌会整体偏一条车道宽。 -->
+      <!-- 移动端全屏入口统一右上角浮动（与 Map Preview 2D/3D、Replay 2D 同一组件同一位置）；
+           传输条里的内联按钮在手机形态由 floatingFullscreen 隐藏，桌面保持原位。 -->
+      <SceneFullscreenButton
+        v-if="isPhone && fullscreenSupported"
+        floating
+        :is-fullscreen="isFullscreen"
+        data-test="pb-fullscreen"
+        data-testid="playback-fullscreen"
+        @toggle="toggleFullscreen()"
+      />
+      <!-- 移动端竖向距离滑条：仅手机横屏显示（竖屏隐藏，判据与布局同一
+           usePlaybackPortraitViewport）；全屏按钮正下方；Follow/Recorder 相机所有权不动
+           （free/top 才可用），Hide All UI 时随控件一起隐藏。 -->
+      <SceneDistanceSlider
+        :get-scene-api="() => sceneApi"
+        :visible="isPhone && !isPortrait && !uiHidden && (store.cam === 'free' || store.cam === 'top')"
+      />
       <div class="pb-stage" data-testid="replay3d-stage">
         <div class="stage-square">
           <div ref="stage" class="scene"></div>
@@ -992,6 +1016,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
           <PlaybackTransport
             :fullscreen-supported="fullscreenSupported"
             :is-fullscreen="isFullscreen"
+            :floating-fullscreen="isPhone"
             :display-open="displayOpen"
             display-enabled
             @toggle-fullscreen="toggleFullscreen()"
@@ -1086,6 +1111,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
            不得做成不可逆状态（该状态也不写入持久化偏好）。 -->
       <button
         v-if="uiHidden" type="button" class="ui-restore tool-btn panel"
+        :class="{ 'ui-restore-shifted': isPhone && fullscreenSupported }"
         data-testid="show-all-ui" :title="t('agentReplay.show_all_ui_hint')"
         @click="setUiHidden(false)"
       >{{ t('agentReplay.show_all_ui') }}</button>
@@ -1114,6 +1140,9 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
             </label>
             <label class="toggle" :title="t('agentReplay.perf_armor_highlight_hint')">
               <input type="checkbox" data-testid="perf-armor-highlight" :checked="store.armorHighlight" @change="sceneApi.setArmorHighlight($event.target.checked)"> {{ t('agentReplay.perf_armor_highlight') }}
+            </label>
+            <label class="toggle" :title="t('agentReplay.perf_contact_shadows_hint')">
+              <input type="checkbox" data-testid="perf-contact-shadows" :disabled="!shadowQualityEligible(store.qualityKey)" :checked="store.contactShadows" @change="sceneApi.setContactShadows($event.target.checked)"> {{ t('agentReplay.perf_contact_shadows') }}
             </label>
             </div>
             <p class="pre-start-perf-note">{{ t('agentReplay.perf_load_note') }}</p>
@@ -1402,6 +1431,9 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
   position: absolute; right: var(--space-2); top: var(--space-2);
   z-index: var(--pb-z-hud);
   box-shadow: var(--elevation-3);
+}
+.ui-restore.ui-restore-shifted {
+  top: calc(var(--space-2) + var(--control-h-sm) + var(--space-2));
 }
 
 .banner {

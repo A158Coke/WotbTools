@@ -5,7 +5,8 @@
  *
  * 键：q（搜索词）· tier · nation · type · sort（name|tier|hp|pen）· tank（详情车辆 id）· config（配置下标）
  * · engine / track（发动机/履带下标）· shell（弹种下标）· dev（装备 9 槽 0/1/-）· cons / prov（物品 stem 逗号表）
- * · skills（已训练技能 id:等级 逗号表，兼容裸 id=7）· camo（涂装 0/1）
+ * · skills（已训练技能 id:等级 逗号表，兼容裸 id=7）· skillTriggers（模拟条件技能触发 0/1）· camo（涂装 0/1）
+ * · upgrade（XI，缺省 stock / top）· abilities（XI 互斥技能节点 ID 逗号表）
  */
 import { tankFuzzyScore } from '../scene/tankMeta.js'
 // 搜索别名（开发者审校维护的 WotBTools 搜索 metadata，**不是**游戏事实数据）：稀疏存储，
@@ -17,7 +18,8 @@ import { TANKOPEDIA_QUERY_KEYS } from '../shared/tankopediaQueryKeys.js'
 
 export { TANKOPEDIA_QUERY_KEYS }
 export const TANKOPEDIA_SORTS = Object.freeze(['name', 'tier', 'hp', 'pen'])
-const DEFAULT_SORT = 'name'
+/** 坦克百科默认按等级降序（同级按名称升序）；显式 sort 仍按 URL 恢复。 */
+const DEFAULT_SORT = 'tier'
 /** 搜索词上限：防止超长 query 拖慢模糊匹配 */
 const MAX_QUERY_LENGTH = 64
 /** 装备槽位数（与客户端 3 组 × 3 级一致） */
@@ -84,6 +86,14 @@ function equipmentIds(value) {
   return out.length ? [...new Set(out)].slice(0, DEVICE_SLOTS) : null
 }
 
+/** XI 技能 node ID；组归属与互斥校验由客户端 upgradeProgression 决定。 */
+function abilityIds(value) {
+  const raw = first(value)
+  if (typeof raw !== 'string') return []
+  return [...new Set(raw.split(',').map(s => Number(s.trim()))
+    .filter(n => Number.isSafeInteger(n) && n > 0))].slice(0, 8)
+}
+
 function deviceSlots(value) {
   const raw = first(value)
   if (typeof raw !== 'string') return ''
@@ -96,6 +106,9 @@ export function parseTankopediaQuery(query = {}) {
   const sort = text(query.sort)
   const tier = positiveInt(query.tier)
   const tank = positiveInt(query.tank)
+  // XI 缺省 = top（由 resolveUpgradeSelection 的 tier 默认决定）；这里保留 tri-state：
+  // null/缺省 = 默认，'stock'/'top' = 用户显式选择。
+  const upgrade = tank ? first(query.upgrade) : undefined
   return {
     q: text(query.q).slice(0, MAX_QUERY_LENGTH),
     tier: tier ? String(tier) : '',
@@ -113,7 +126,10 @@ export function parseTankopediaQuery(query = {}) {
     cons: tank ? stemList(query.cons) : null,
     prov: tank ? stemList(query.prov) : null,
     skills: tank ? skillLevels(query.skills) : {},
+    conditionalSkills: !!tank && first(query.skillTriggers) === '1',
     camo: tank ? first(query.camo) === '1' : false,
+    upgrade: upgrade === 'top' || upgrade === 'stock' ? upgrade : null,
+    abilities: tank ? abilityIds(query.abilities) : [],
   }
 }
 
@@ -142,7 +158,13 @@ export function serializeTankopediaQuery(state = {}) {
         .map(([id, level]) => `${id}:${level}`)
       if (pairs.length) query.skills = pairs.join(',')
     }
+    if (state.conditionalSkills === true) query.skillTriggers = '1'
     if (state.camo === true) query.camo = '1'
+    if (state.upgrade === 'top' || state.upgrade === 'stock') query.upgrade = state.upgrade
+    if (Array.isArray(state.abilities)) {
+      const ids = [...new Set(state.abilities.filter(n => Number.isSafeInteger(n) && n > 0))].slice(0, 8)
+      if (ids.length) query.abilities = ids.join(',')
+    }
   }
   return query
 }
@@ -216,7 +238,7 @@ export function selectTanks(tanks, state = {}) {
         || b.score - a.score || byName(a.tank, b.tank))
       .map(entry => entry.tank)
   }
-  return base.slice().sort(COMPARATORS[state.sort] || byName)
+  return base.slice().sort(COMPARATORS[state.sort] || COMPARATORS[DEFAULT_SORT] || byName)
 }
 
 /**
@@ -245,7 +267,9 @@ export function normalizeTankCache(cache, aliasMap = TANK_ALIASES) {
         // projection 只做布尔归一化，**不**替上游强制互斥；异常双 true 原样透传，
         // 视觉 precedence 由样式层确定（AgentTankopedia：premium > collector）。
         is_collector: !!value.is_collector,
-        hp: value.hp ?? null,
+        // XI 卡片默认顶级血量：hp_top 由上游按升级树 MAX_HEALTH 节点算好；
+        // 普通车没有该字段，继续用 hp（车体 + 顶炮塔）。
+        hp: value.hp_top ?? value.hp ?? null,
         pen_max: penMax || null,
       }
     })

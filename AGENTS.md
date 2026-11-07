@@ -39,7 +39,7 @@ operational 入口 **product-qa** 和收尾薄入口 **finish-task**。各 Skill
 `.agents/AGENTS.md` 的「Skills」一节与各 `SKILL.md`，本文件不复制其定义。Domain implementation playbook /
 checklist / tool guidance 在 `.agents/playbooks/`（wotb-sync、column-sync、frontend-architecture、
 keycloak-upgrade、komodo-server-lifecycle、code-quality、fallow、requirement-clarification、
-post-merge-cleanup），由四个 lifecycle Skills 按需加载；Product QA playbook 正文在
+post-merge-cleanup、pr-follow-up），由四个 lifecycle Skills 按需加载；Product QA playbook 正文在
 `.agents/playbooks/product-qa/`（用户说 Product QA / 全站 QA / 周期产品审查时执行，
 默认目标 `https://wotbtools.com`，不加入 implementation lifecycle）。
 

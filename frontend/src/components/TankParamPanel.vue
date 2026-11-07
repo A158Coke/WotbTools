@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 参数区（protectability / gun / mobility）：每行「名称 + 上一次值 delta + 主值」。
+ * 参数区（protectability / gun / mobility）：每行「名称 + 主值/单位 + 上一次值 delta」。
  * 数值来自 replay-local/compute/characteristics（与配置面板同一套选择态），
  * 分组/小数位/单位/越大越好来自客户端 params/{structure,format}.json。
  * 显示口径对齐客户端 NumberValue：delta 绿色 = 有利、红色 = 不利（biggerIsBetter 决定方向）。
@@ -8,7 +8,6 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { armorRows } from '../replay-local/compute/tankSetup'
-import { fmtNum } from '../scene/tankMeta.js'
 import GunArcDiagram from './GunArcDiagram.vue'
 
 const props = defineProps({
@@ -30,7 +29,22 @@ const props = defineProps({
 })
 const emit = defineEmits(['select-shell'])
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
+// 只格式化显示，保持计算器给出的精度与数值。
+const numberFormatters = new Map()
+function fmtNum(value, digits = 1) {
+  if (value == null || !Number.isFinite(Number(value))) return '—'
+  const key = `${locale.value}:${digits}`
+  if (!numberFormatters.has(key)) {
+    numberFormatters.set(key, new Intl.NumberFormat(locale.value, { maximumFractionDigits: digits }))
+  }
+  return numberFormatters.get(key).format(Number(value))
+}
+// 两条独立列避免长火力卡把机动分组向下挤；窄容器自然变成一列。
+const groupColumns = computed(() => [
+  props.groups.filter(group => group.group !== 'gun'),
+  props.groups.filter(group => group.group === 'gun'),
+].filter(column => column.length))
 
 /** 概览条（BlitzInfo “Characteristics” 同构）：HP / 单发伤害 / 穿深 / 极速 / 视野 */
 const summary = computed(() => {
@@ -41,7 +55,7 @@ const summary = computed(() => {
     { key: 'pen', label: t('agentTanks.pen'), value: fmtNum(current.baseShellAvgPiercingPower, 0), unit: t('agentTanks.units.MILLIMETER') },
     { key: 'speed', label: t('agentTanks.speed_fwd'), value: fmtNum(current.maxFrontSpeed, 0), unit: t('agentTanks.units.KILOMETER_PER_HOUR') },
     { key: 'view', label: t('agentTanks.view_range'), value: fmtNum(current.circularVisionRadius, 0), unit: t('agentTanks.units.METER') },
-  ].filter(item => item.value !== '-')
+  ].filter(item => item.value !== '—')
 })
 
 const gunTypeLabel = computed(() => {
@@ -71,7 +85,8 @@ const selectedShell = computed(() => props.shells.find(shell => shell.selected) 
     </dl>
 
     <div class="tp-param-grid" data-testid="tank-param-grid">
-      <section v-for="group in groups" :key="group.group" class="tp-param-group" :data-testid="`tank-params-${group.group}`">
+      <div v-for="(column, index) in groupColumns" :key="index" class="tp-param-column">
+      <section v-for="group in column" :key="group.group" class="tp-param-group" :data-testid="`tank-params-${group.group}`">
         <h3>
           {{ t(`agentTanks.params.groups.${group.group}`) }}
           <span v-if="group.group === 'gun' && gunMeta && gunTypeLabel" class="tp-gun-meta" data-testid="tank-gun-meta">
@@ -91,22 +106,24 @@ const selectedShell = computed(() => props.shells.find(shell => shell.selected) 
             <tr v-for="row in armorTable" :key="row.part">
               <th scope="row">{{ t(`agentTanks.params.armor_${row.part}`) }}</th>
               <td v-if="hasTurretArmor">
+                <span class="tp-param-reading"><span class="tp-param-value">{{ fmtNum(row.turret.value, 1) }}</span>
+                  <span class="tp-param-unit">{{ t('agentTanks.units.MILLIMETER') }}</span></span>
                 <span
                   v-if="row.turret.delta"
                   class="tp-param-delta"
                   :class="row.turret.good ? 'is-good' : 'is-bad'"
                 >{{ fmtNum(Math.abs(row.turret.delta), 0) }}<span aria-hidden="true">{{ row.turret.delta > 0 ? '▲' : '▼' }}</span></span>
-                <span class="tp-param-value">{{ fmtNum(row.turret.value, 1) }}</span>
-                <span class="tp-param-unit">{{ t('agentTanks.units.MILLIMETER') }}</span>
+
               </td>
               <td v-if="hasHullArmor">
+                <span class="tp-param-reading"><span class="tp-param-value">{{ fmtNum(row.hull.value, 1) }}</span>
+                  <span class="tp-param-unit">{{ t('agentTanks.units.MILLIMETER') }}</span></span>
                 <span
                   v-if="row.hull.delta"
                   class="tp-param-delta"
                   :class="row.hull.good ? 'is-good' : 'is-bad'"
                 >{{ fmtNum(Math.abs(row.hull.delta), 0) }}<span aria-hidden="true">{{ row.hull.delta > 0 ? '▲' : '▼' }}</span></span>
-                <span class="tp-param-value">{{ fmtNum(row.hull.value, 1) }}</span>
-                <span class="tp-param-unit">{{ t('agentTanks.units.MILLIMETER') }}</span>
+
               </td>
             </tr>
           </tbody>
@@ -130,21 +147,21 @@ const selectedShell = computed(() => props.shells.find(shell => shell.selected) 
               :data-testid="`tank-shell-${shell.index}`"
               @click="emit('select-shell', shell.index)"
             >
-              <img v-if="shell.iconUrl" :src="shell.iconUrl" alt="" width="40" height="40" loading="lazy">
-              <span v-else class="tp-shell-kind" :class="{ 'is-premium': shell.premium }">{{ shell.label }}</span>
+              <img v-if="shell.iconUrl" :src="shell.iconUrl" alt="" width="40" height="40" loading="eager">
+              <span class="tp-shell-kind" :class="{ 'is-premium': shell.premium }">{{ shell.label }}</span>
             </button>
           </div>
           <dl v-if="selectedShell" class="tp-shell-stats" data-testid="tank-shell-detail">
-            <div><dt>{{ t('agentTanks.pen') }}</dt><dd>{{ fmtNum(selectedShell.tunedPenetration) }}</dd></div>
-            <div><dt>{{ t('agentTanks.dmg') }}</dt><dd>{{ fmtNum(selectedShell.tunedDamage, 0) }}</dd></div>
-            <div><dt>{{ t('agentTanks.velocity') }}</dt><dd>{{ fmtNum(selectedShell.tunedVelocity) }}</dd></div>
-            <div><dt>{{ t('agentTanks.pen_far') }}</dt><dd>{{ fmtNum(selectedShell.tunedPenetrationFar) }}</dd></div>
-            <div><dt>{{ t('agentTanks.module_dmg') }}</dt><dd>{{ fmtNum(selectedShell.tunedModuleDamage, 0) }}</dd></div>
-            <div><dt>{{ t('agentTanks.normalization') }}</dt><dd>{{ fmtNum(selectedShell.normalization, 0) }}°</dd></div>
-            <div><dt>{{ t('agentTanks.ricochet') }}</dt><dd>{{ fmtNum(selectedShell.ricochet, 0) }}°</dd></div>
-            <div v-if="selectedShell.range != null"><dt>{{ t('agentTanks.configurator.shell_range') }}</dt><dd>{{ fmtNum(selectedShell.range, 0) }} m</dd></div>
-            <div v-if="selectedShell.maxAmmo != null"><dt>{{ t('agentTanks.configurator.shell_capacity') }}</dt><dd>{{ fmtNum(selectedShell.maxAmmo, 0) }}</dd></div>
-            <div v-if="selectedShell.explosionRadius > 0"><dt>{{ t('agentTanks.configurator.explosion_radius') }}</dt><dd>{{ fmtNum(selectedShell.explosionRadius, 2) }} m</dd></div>
+            <div><dt>{{ t('agentTanks.pen') }}</dt><dd><span class="tp-param-value">{{ fmtNum(selectedShell.tunedPenetration) }}</span><span class="tp-param-unit">{{ t('agentTanks.units.MILLIMETER') }}</span></dd></div>
+            <div><dt>{{ t('agentTanks.dmg') }}</dt><dd><span class="tp-param-value">{{ fmtNum(selectedShell.tunedDamage, 0) }}</span></dd></div>
+            <div><dt>{{ t('agentTanks.velocity') }}</dt><dd><span class="tp-param-value">{{ fmtNum(selectedShell.tunedVelocity) }}</span><span class="tp-param-unit">{{ t('agentTanks.units.METER_PER_SECOND') }}</span></dd></div>
+            <div><dt>{{ t('agentTanks.pen_far') }}</dt><dd><span class="tp-param-value">{{ fmtNum(selectedShell.tunedPenetrationFar) }}</span><span class="tp-param-unit">{{ t('agentTanks.units.MILLIMETER') }}</span></dd></div>
+            <div><dt>{{ t('agentTanks.module_dmg') }}</dt><dd><span class="tp-param-value">{{ fmtNum(selectedShell.tunedModuleDamage, 0) }}</span></dd></div>
+            <div><dt>{{ t('agentTanks.normalization') }}</dt><dd><span class="tp-param-value">{{ fmtNum(selectedShell.normalization, 0) }}</span><span class="tp-param-unit">{{ t('agentTanks.units.DEGREE') }}</span></dd></div>
+            <div><dt>{{ t('agentTanks.ricochet') }}</dt><dd><span class="tp-param-value">{{ fmtNum(selectedShell.ricochet, 0) }}</span><span class="tp-param-unit">{{ t('agentTanks.units.DEGREE') }}</span></dd></div>
+            <div v-if="selectedShell.range != null"><dt>{{ t('agentTanks.configurator.shell_range') }}</dt><dd><span class="tp-param-value">{{ fmtNum(selectedShell.range, 0) }}</span><span class="tp-param-unit">{{ t('agentTanks.units.METER') }}</span></dd></div>
+            <div v-if="selectedShell.maxAmmo != null"><dt>{{ t('agentTanks.configurator.shell_capacity') }}</dt><dd><span class="tp-param-value">{{ fmtNum(selectedShell.maxAmmo, 0) }}</span></dd></div>
+            <div v-if="selectedShell.explosionRadius > 0"><dt>{{ t('agentTanks.configurator.explosion_radius') }}</dt><dd><span class="tp-param-value">{{ fmtNum(selectedShell.explosionRadius, 2) }}</span><span class="tp-param-unit">{{ t('agentTanks.units.METER') }}</span></dd></div>
           </dl>
         </div>
 
@@ -152,13 +169,15 @@ const selectedShell = computed(() => props.shells.find(shell => shell.selected) 
           <div v-for="row in group.rows" :key="row.key" class="tp-param-row" :data-testid="`tank-param-${row.key}`">
             <dt>{{ t(`agentTanks.params.${row.key}`) }}</dt>
             <dd>
+              <span class="tp-param-reading">
+                <span class="tp-param-value">{{ fmtNum(row.value, row.digits) }}</span>
+                <span v-if="row.unit" class="tp-param-unit">{{ t(`agentTanks.units.${row.unit}`) }}</span>
+              </span>
               <span
                 v-if="row.delta"
                 class="tp-param-delta"
                 :class="row.good ? 'is-good' : 'is-bad'"
               >{{ fmtNum(Math.abs(row.delta), row.digits) }}<span aria-hidden="true">{{ row.delta > 0 ? '▲' : '▼' }}</span></span>
-              <span class="tp-param-value">{{ fmtNum(row.value, row.digits) }}</span>
-              <span v-if="row.unit" class="tp-param-unit">{{ t(`agentTanks.units.${row.unit}`) }}</span>
             </dd>
           </div>
         </dl>
@@ -170,121 +189,64 @@ const selectedShell = computed(() => props.shells.find(shell => shell.selected) 
           :bonus="pitchBonus"
         />
       </section>
+      </div>
     </div>
 
-    <p class="tp-muted">{{ t('agentTanks.params.armor_note') }}</p>
+    <p class="tp-muted tp-params-note">{{ t('agentTanks.params.armor_note') }}</p>
   </section>
 </template>
 
 <style scoped>
-.tp-params {
-  display: grid;
-  gap: var(--space-3);
-  padding: var(--space-3);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface-1);
-  box-shadow: var(--elevation-1);
-}
-
-.tp-params-head { display: grid; gap: var(--space-1); }
+.tp-params { display: grid; gap: var(--space-4); min-inline-size: 0; padding: var(--space-4); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-surface-1); }
+.tp-params-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-2) var(--space-4); }
 .tp-section-title { margin: 0; font: var(--type-h3); }
 .tp-muted { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); }
-
-.tp-summary-strip {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: var(--space-1);
-  margin: 0;
-  padding: var(--space-2);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-2);
-}
-.tp-summary-strip > div { display: grid; gap: 2px; min-inline-size: 0; }
+.tp-summary-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(var(--form-field-min) / 2)), 1fr)); gap: var(--space-3); margin: 0; padding: var(--space-3); border-radius: var(--radius-md); background: var(--color-surface-2); }
+.tp-summary-strip > div { display: grid; align-content: start; gap: var(--space-1); min-inline-size: 0; }
 .tp-summary-strip dt { color: var(--color-text-secondary); font: var(--type-caption); overflow-wrap: anywhere; }
-.tp-summary-strip dd { display: inline-flex; align-items: baseline; gap: var(--space-1); margin: 0; font: var(--type-h3); font-variant-numeric: tabular-nums; }
+.tp-summary-strip dd { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-1); margin: 0; font: var(--type-h2); font-variant-numeric: tabular-nums; }
 .tp-summary-unit { color: var(--color-text-secondary); font: var(--type-caption); }
-
-/* 分组卡片按 BlitzInfo 的 sheet-col 布局流动：每栏约 300–400px，行内标签/数值
-   不会被拉到整栏两端；卡片高度独立（break-inside: avoid）。 */
-.tp-param-grid { column-width: 280px; column-gap: var(--space-2); }
-.tp-param-group {
-  display: grid;
-  gap: var(--space-1);
-  align-content: start;
-  break-inside: avoid;
-  margin-block-end: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-2);
-}
-.tp-param-group h3 {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  margin: 0;
-  color: var(--color-text-secondary);
-  font: var(--type-caption);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-.tp-gun-meta { margin-inline-start: var(--space-2); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 400; letter-spacing: 0; text-transform: none; }
-
-@media (width < 768px) {
-  .tp-summary-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
-.tp-armor-table { inline-size: 100%; margin-block-end: var(--space-1); border-collapse: collapse; font: var(--type-caption); font-variant-numeric: tabular-nums; }
-.tp-armor-table th, .tp-armor-table td { padding: 2px 0; text-align: start; }
+.tp-param-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--tank-param-column-min)), 1fr)); gap: var(--space-4); align-items: start; }
+.tp-param-column { display: grid; gap: var(--space-4); min-inline-size: 0; align-content: start; }
+.tp-param-group { display: grid; gap: var(--space-3); min-inline-size: 0; align-content: start; }
+.tp-param-group h3 { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-1) var(--space-2); margin: 0; padding-block-end: var(--space-2); border-block-end: 1px solid var(--color-border-strong); color: var(--color-text-primary); font: var(--type-h3); }
+.tp-gun-meta { color: var(--color-text-secondary); font: var(--type-caption); }
+.tp-armor-table { inline-size: 100%; border-collapse: collapse; font: var(--type-caption); font-variant-numeric: tabular-nums; }
+.tp-armor-table th, .tp-armor-table td { padding: var(--space-2) var(--space-1); text-align: start; }
 .tp-armor-table th:not(:first-child), .tp-armor-table td { text-align: end; }
 .tp-armor-table thead th { color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; }
-.tp-armor-table tbody th { color: var(--color-text-secondary); font: var(--type-caption); font-weight: 400; }
+.tp-armor-table tbody th { color: var(--color-text-secondary); font: var(--type-body); }
 .tp-armor-table tbody tr + tr { border-block-start: 1px solid var(--color-border-subtle); }
-
-.tp-shells { display: grid; gap: var(--space-1); padding-block-start: var(--space-2); border-block-start: 1px solid var(--color-border-subtle); }
-.tp-shells-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
-.tp-shell-icons { display: flex; flex-wrap: wrap; gap: var(--space-1); }
-.tp-shell-btn {
-  display: grid;
-  place-items: center;
-  inline-size: 44px;
-  block-size: 44px;
-  padding: 2px;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-1);
-  cursor: pointer;
-}
-.tp-shell-btn:hover { border-color: var(--color-border-strong); }
-.tp-shell-btn.is-on { border-color: var(--color-accent); background: color-mix(in oklab, var(--color-accent) 16%, var(--color-surface-1)); }
+.tp-armor-table .tp-param-delta { display: flex; justify-content: flex-end; }
+.tp-shells { display: grid; gap: var(--space-2); }
+.tp-shells-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-1) var(--space-2); color: var(--color-text-primary); font: var(--type-body); font-weight: 600; }
+.tp-shell-icons { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.tp-shell-btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-1); min-inline-size: var(--control-h-lg); min-block-size: max(var(--control-h-lg), var(--space-12)); padding: var(--space-1) var(--space-2); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); background: var(--color-surface-2); cursor: pointer; }
+.tp-shell-btn.is-on { border-color: var(--color-accent); background: color-mix(in oklab, var(--color-accent) 12%, var(--color-surface-1)); }
 .tp-shell-btn.is-premium:not(.is-on) { border-color: color-mix(in oklab, var(--color-warning) 55%, var(--color-border-subtle)); }
 .tp-shell-btn:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-.tp-shell-btn img { inline-size: 100%; block-size: 100%; object-fit: contain; }
-.tp-shell-kind { padding: 0 var(--space-1); border-radius: var(--radius-sm); background: var(--color-surface-2); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 700; }
+.tp-shell-btn img { inline-size: var(--space-8); block-size: var(--space-8); object-fit: contain; }
+.tp-shell-kind { color: var(--color-text-primary); font: var(--type-caption); font-weight: 600; overflow-wrap: anywhere; }
 .tp-shell-kind.is-premium { color: var(--color-warning); }
-.tp-shell-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--space-2); margin: 0; }
-.tp-shell-stats > div { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-1); padding: 2px 0; border-block-start: 1px solid var(--color-border-subtle); }
-.tp-shell-stats dt { color: var(--color-text-secondary); font: var(--type-caption); }
-.tp-shell-stats dd { margin: 0; color: var(--color-text-primary); font: var(--type-caption); font-weight: 600; font-variant-numeric: tabular-nums; }
-
+.tp-shell-stats { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; margin: 0; padding: var(--space-2) 0; border-radius: var(--radius-md); background: var(--color-surface-2); }
+.tp-shell-stats > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: var(--space-2); padding: var(--space-1) 0 var(--space-1) var(--space-3); }
+.tp-shell-stats dt { color: var(--color-text-secondary); font: var(--type-caption); overflow-wrap: anywhere; }
+.tp-shell-stats dd { color: var(--color-text-primary); font: var(--type-body); font-weight: 600; }
 .tp-param-list { display: grid; margin: 0; }
-.tp-param-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-2);
-  padding: 2px 0;
-}
+.tp-param-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: var(--space-2); padding-block: var(--space-2); }
 .tp-param-row + .tp-param-row { border-block-start: 1px solid var(--color-border-subtle); }
-.tp-param-row dt { color: var(--color-text-secondary); font: var(--type-caption); }
-.tp-param-row dd { display: inline-flex; align-items: baseline; gap: var(--space-1); margin: 0; font-variant-numeric: tabular-nums; white-space: nowrap; }
-
-.tp-param-value { color: var(--color-text-primary); font: var(--type-body); font-weight: 600; }
-.tp-param-unit { color: var(--color-text-secondary); font: var(--type-caption); }
-.tp-param-delta { display: inline-flex; align-items: baseline; gap: var(--space-1); font: var(--type-caption); font-weight: 600; }
+.tp-param-row dt { color: var(--color-text-secondary); font: var(--type-body); overflow-wrap: anywhere; }
+.tp-param-row dd, .tp-shell-stats dd { display: grid; grid-template-columns: max-content var(--space-12) calc(var(--space-12) + var(--space-2)); align-items: baseline; gap: var(--space-1); margin: 0; font-variant-numeric: tabular-nums; }
+.tp-param-row .tp-param-reading { display: contents; }
+.tp-param-row .tp-param-unit, .tp-shell-stats .tp-param-unit { grid-column: 3; grid-row: 1; padding-inline-end: var(--space-3); text-align: end; }
+.tp-param-row .tp-param-delta { grid-column: 2; grid-row: 1; }
+.tp-param-reading { display: grid; grid-template-columns: max-content var(--space-12); justify-content: end; align-items: baseline; gap: var(--space-1); }
+.tp-param-value { grid-column: 1; text-align: end; white-space: nowrap; color: var(--color-text-primary); font: var(--type-body); font-weight: 600; }
+.tp-param-unit { grid-column: 2; text-align: start; color: var(--color-text-secondary); font: var(--type-caption); }
+.tp-param-delta { display: inline-flex; align-items: baseline; justify-content: flex-end; gap: var(--space-1); font: var(--type-caption); font-weight: 600; white-space: nowrap; }
 .tp-param-delta.is-good { color: var(--color-success); }
 .tp-param-delta.is-bad { color: var(--color-danger); }
+.tp-params-note { padding-block-start: var(--space-3); border-block-start: 1px solid var(--color-border-subtle); }
+@media (hover: hover) { .tp-shell-btn:hover { border-color: var(--color-border-strong); } .tp-param-row:hover { background: var(--color-surface-2); } }
+@media (width < 768px) { .tp-summary-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } .tp-params { padding: var(--space-3); } }
 </style>

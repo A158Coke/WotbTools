@@ -37,7 +37,7 @@ import type { AgentAuthorShellEvent } from '../../api/agent-replay-facets.js'
 import type { MountedConfigEvidence, TankJsonLike } from '../reloadBar.js'
 import {
   isFlySpeedIndex, FLY_SPEEDS, DEFAULT_FLY_SPEED_INDEX, TOUCH_PAN_MIN_HEIGHT,
-  advanceFly as tickFlyImpl, classifyTwoFinger, groundPanOffset,
+  advanceFly as tickFlyImpl, classifyTwoFinger, groundPanOffset, freeVerticalDistancePose,
 } from '../../composables/useSceneFlyControls.js'
 import { foliageClip } from '../sceneryMaterials.js'
 import { assetProvider } from '../assetProvider.js'
@@ -81,6 +81,8 @@ export interface CameraRuntimeControls {
   maxPolarAngle: number
   update(): boolean
   dispose(): void
+  /** 触屏手势映射（OrbitControls.touches；MOBILE_TOUCH 契约双指置 null）。 */
+  touches?: { ONE?: unknown; TWO?: number | null }
   __flyDist?: number
   _controlActive?: boolean
 }
@@ -156,6 +158,8 @@ export interface CameraRuntimeDeps {
   clampOrbitCameraToTerrain(): void
   baseMinDistance(): number
   terrainHeightForCameraClamp(x: number, z: number): number | null | undefined
+  /** 接地阴影显隐同步（owner = vehicleRuntime.syncContactShadow；#907 主干随迁）。 */
+  syncContactShadow(v: RuntimeVehicle): void
   /** 空处/车辆单击选中回调（owner = 宿主 pane 接线）。 */
   onVehicleSelect: ((eid: number | null, event: PointerEvent) => void) | null
   /** 点击拾取调试（PICK_DEBUG 域仍归宿主；按下/抬起判定经注入回调消费）。 */
@@ -211,6 +215,15 @@ export interface CameraRuntimeHandle {
   detachListeners(): void
   /** 会话 teardown 的相机段（原 teardownSession 的 recorder/armorHighlight 复位块）。 */
   resetSessionState(): void
+  /** 契约切换瞬间作废在途双指手势（宿主 setMobileTouch 调用）。 */
+  discardTouchGesture(): void
+  /** 触屏相机契约开关（语义见 applyMobileTouchControls；宿主 setMobileTouch 委托）。 */
+  setMobileTouch(on: boolean): void
+  /** renderer/controls 重建（initScene）后重新应用触屏 touches 分流。 */
+  applyMobileTouchControls(): void
+  /** 移动端竖向距离滑条（#912 主干随迁）：读当前相机真实距离（v: 1=近 0=远）；follow/recorder 返回 unavailable。 */
+  cameraDistanceState(): { available: boolean; mode?: 'free' | 'fixed'; v?: number }
+  setCameraDistance(v: number): void
 }
 
 export function createCameraRuntime(deps: CameraRuntimeDeps): CameraRuntimeHandle {
@@ -258,6 +271,11 @@ export function createCameraRuntime(deps: CameraRuntimeDeps): CameraRuntimeHandl
   let flyPan: { armed: boolean; startX: number; startY: number; x0?: number; y0?: number; z0?: number; height?: number; offset0?: { x: number; z: number } } | null = null;
   // 双指：mode = pending（判定中）| pinch（d0 指距 / dist0 视距）| look（cx/cy 两指中点）
   let flyTwoFinger: Record<string, unknown> | null = null;
+  // 移动端触屏相机契约（docs/frontend/replay-workspace.md）：单指按模式分流
+  // （Free=贴地平移 / Fixed=OrbitControls 左键式旋转），**双指不承担任何相机控制**。
+  // 由宿主按 form-factor（usePlaybackPhoneForm）下发（setMobileTouch），不在场景内嗅探；
+  // 桌面鼠标路径完全不受影响。
+  let mobileTouch = false;
   const FLY_LOOK_RAD_PER_PX = 0.0032;   // rad/px（与常见 FPS 灵敏度同量级）
   // [fly] 埋点：?debug 下走 console.info（默认级别可见，排障不用勾 Verbose）；
   // 非 debug 走 console.debug（默认隐藏）。每次交互只输出个位数行。
@@ -434,8 +452,11 @@ export function createCameraRuntime(deps: CameraRuntimeDeps): CameraRuntimeHandl
     camera.lookAt(controls.target);
     deps.invalidate();
   }
-  /** 从当前前两根手指开始一轮双指手势（绘制模式固定捏合，其余先判定）。 */
+  /** 从当前前两根手指开始一轮双指手势（绘制模式固定捏合，其余先判定）。
+   *  移动端触屏（MOBILE_TOUCH）：双指不承担相机控制——不进入 pending/pinch/look
+   *  分类，直接作废本手势（指针表仍跟踪，up 收尾语义不变）。 */
   function flyTwoFingerStart() {
+    if (mobileTouch) { flyTwoFinger = null; return; }
     const [[a, pa], [b, pb]] = [...flyPointers.entries()];
     flyTwoFinger = { mode: 'pending', a, b, startA: pa, startB: pb };
     if (deps.annotationScene.annotationToolActive()) flyTwoFingerEnter('pinch', pa, pb);
@@ -499,8 +520,18 @@ export function createCameraRuntime(deps: CameraRuntimeDeps): CameraRuntimeHandl
     flyLook.yaw -= dx * FLY_LOOK_RAD_PER_PX;
     flyLook.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, flyLook.pitch - dy * FLY_LOOK_RAD_PER_PX));
   }
+  /** 触屏相机 OrbitControls 侧分流：双指 DOLLY_PAN 关闭（捏合/双指拖不动相机），单指保持
+   *  默认 ROTATE（= Fixed 模式的「左键拖动」契约）。renderer/controls 每次重建都会重置
+   *  touches，所以每次创建后（initScene）都要重新应用。桌面恢复默认，行为零变化。 */
+  function applyMobileTouchControls() {
+    const controls = deps.getControls();
+    if (!controls) return;
+    controls.touches!.TWO = mobileTouch ? null : THREE.TOUCH.DOLLY_PAN;   // OrbitControls 默认双指手势
+  }
+
   /** 手指数量变化：还有两指就重新判定，否则结束双指手势（剩下的手指不生效）。 */
   function flyTouchCountChanged() {
+    if (mobileTouch) { flyTwoFinger = null; return; }
     if (flyPointers.size >= 2) flyTwoFingerStart();
     else flyTwoFinger = null;
   }
@@ -884,6 +915,7 @@ export function createCameraRuntime(deps: CameraRuntimeDeps): CameraRuntimeHandl
     const layer = hidden ? SCOPED_HIDDEN_LAYER : 0;
     v.group.traverse((node) => { node.layers.set(layer); });
     v.glb?.traverse((node) => { node.layers.set(layer); });
+    deps.syncContactShadow(v);   // 开镜摘掉本车 = 不留阴影（#907 主干随迁）
   }
   function applyCameraFov(fov: number) {
     const camera = deps.getCamera();
@@ -1109,6 +1141,74 @@ export function createCameraRuntime(deps: CameraRuntimeDeps): CameraRuntimeHandl
   }
   /** Free Camera 的上限与俯视默认高度同源。 */
   function topCameraDefaultHeight() { return deps.mapWorld.worldCenter().ext * 1.7; }
+
+  // ---------- 移动端竖向距离滑条（相机真实状态反推，无第二套倍率 SSOT） ----------
+  // 值语义统一 v ∈ [0,1]：v=1（滑条顶部）= 近，v=0（底部）= 远。
+  //   · Free：净空距离 = camera.y − 相机 xz 处地形高。近端 = 贴地下限
+  //     （CAMERA_GROUND_CLEARANCE），远端 = 自由相机高度上限（topCameraDefaultHeight）。
+  //     设置 = 垂直平移 camera；constrainFreeCameraAltitude 贴限时同步平移 target
+  //     （朝向不变，相机在真实限制处停住）。
+  //   · Fixed（top 持续模式）：camera↔target 距离（OrbitControls 半径）。近端 =
+  //     minDistance（含地形净空锁定值），远端 = maxDistance。设置 = 沿 target→camera
+  //     缩放半径后交给既有地形钳制。
+  // Follow / Recorder 返回 unavailable——滑条在这些形态隐藏，绝不接管相机所有权。
+  function cameraDistanceState(): { available: boolean; mode?: 'free' | 'fixed'; v?: number } {
+    const camera = deps.getCamera();
+    const controls = deps.getControls();
+    if (!deps.getRenderer() || !controls) return { available: false };
+    if (CAM === 'free') {
+      const terrain = deps.terrainHeightForCameraClamp(camera.position.x, camera.position.z) ?? 0;
+      const cMin = CAMERA_GROUND_CLEARANCE;
+      const cMax = Math.max(cMin + 0.001, topCameraDefaultHeight() - terrain);
+      const c = camera.position.y - terrain;
+      return { available: true, mode: 'free', v: Math.min(1, Math.max(0, 1 - (c - cMin) / (cMax - cMin))) };
+    }
+    if (CAM === 'top') {
+      const min = Number(controls.minDistance) || 0;
+      const max = Math.max(min + 0.001, Number(controls.maxDistance) || min);
+      const len = camera.position.distanceTo(controls.target);
+      return { available: true, mode: 'fixed', v: Math.min(1, Math.max(0, 1 - (len - min) / (max - min))) };
+    }
+    return { available: false };
+  }
+  function setCameraDistance(v: number) {
+    const camera = deps.getCamera();
+    const controls = deps.getControls();
+    if (!deps.getRenderer() || !controls) return;
+    const t = Math.min(1, Math.max(0, Number(v) || 0));
+    if (CAM === 'free') {
+      // 竖直平移位姿由纯函数给出（freeVerticalDistancePose）：camera 与 target 加
+      // 同一个高度差，yaw/pitch/FOV 保持不变；贴地/上限处相机停住、target 跟随
+      // 实际生效差值，真实净空由 cameraDistanceState() 从相机状态反推。
+      const terrain = deps.terrainHeightForCameraClamp(camera.position.x, camera.position.z) ?? 0;
+      const pose = freeVerticalDistancePose({
+        camY: camera.position.y,
+        targetY: controls.target.y,
+        terrainY: terrain,
+        clearanceMin: CAMERA_GROUND_CLEARANCE,
+        heightMax: topCameraDefaultHeight(),
+        v: t,
+      });
+      camera.position.y = pose.camY;
+      controls.target.y = pose.targetY;
+      constrainFreeCameraAltitude();
+      camera.lookAt(controls.target);
+      deps.invalidate();
+      return;
+    }
+    if (CAM === 'top') {
+      const off = _zoomDir.subVectors(camera.position, controls.target);
+      const len = off.length();
+      if (len <= 1e-6) return;
+      const min = Number(controls.minDistance) || 0;
+      const max = Math.max(min + 0.001, Number(controls.maxDistance) || min);
+      const next = max - t * (max - min);
+      camera.position.copy(controls.target).addScaledVector(off.divideScalar(len), next);
+      deps.clampOrbitCameraToTerrain();
+      camera.lookAt(controls.target);
+      deps.invalidate();
+    }
+  }
   // 瞄准点贴脸时扩散圆的最小投影距离
   const RETICLE_MIN_GUN_DISTANCE_M = 30;
 
@@ -1229,5 +1329,18 @@ export function createCameraRuntime(deps: CameraRuntimeDeps): CameraRuntimeHandl
     attachListeners,
     detachListeners,
     resetSessionState,
+    discardTouchGesture: () => { flyTwoFinger = null; },
+    /** 契约开关（状态 owner 在本模块；宿主 setMobileTouch 委托）。 */
+    setMobileTouch(on: boolean) {
+      const next = !!on;
+      if (mobileTouch === next) { applyMobileTouchControls(); return; }
+      mobileTouch = next;
+      flyTwoFinger = null;   // 契约切换瞬间作废在途双指手势
+      applyMobileTouchControls();
+    },
+    applyMobileTouchControls,
+    // ---------- 移动端竖向距离滑条（相机真实状态反推，无第二套倍率 SSOT；主干随迁） ----------
+    cameraDistanceState,
+    setCameraDistance,
   };
 }

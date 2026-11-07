@@ -191,6 +191,9 @@ jobs:
     with:
       base_sha: ${{ needs.pr_identity.outputs.base_sha }}
       head_sha: ${{ needs.pr_identity.outputs.head_sha }}
+      # 显式把字符串输出比较为 boolean：Frontend affected 时由 Frontend owner
+      # 承担完整 HTTP 契约检查，BA 的 http_contract 跳过（不做第二次）。
+      frontend_affected: ${{ needs.changes.outputs.frontend == 'true' }}
   ai_service:
     needs: [pr_identity, changes]
     if: needs.changes.outputs.ai_service == 'true'

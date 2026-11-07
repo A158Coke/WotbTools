@@ -54,6 +54,8 @@ export interface PerfProbeDeps {
   annotationStats(): unknown
   /** 穿深着色逐 pass 统计（owner = cameraRuntime.armorStats）。 */
   armorStats(): ArmorStatsView
+  /** 接地阴影装配数（#907 主干随迁；null = 未启用）。 */
+  contactShadowsCount(): number | null
 }
 
 /** ?perf 探针对宿主的暴露面：PERF/perf/gpu 由宿主解构持有，其余经探针调度。 */
@@ -130,7 +132,7 @@ export function createPerfProbe(deps: PerfProbeDeps): PerfProbeHandle {
   }
   const perfHandle = PERF ? {
     report: () => { gpu!.poll(); updatePerfIdentity(); const s = perf!.report() + `\ngpu_total_ms: sum of successfully measured render-pass GPU timings (not a full GPU frame; null unless all required queries succeed)` + `\nannotation: ${JSON.stringify(deps.annotationStats())}` + `\ngpu: ${JSON.stringify(gpu!.snapshot())}` + `\nmain-thread stalls >${PERF_HEARTBEAT_MS * 2}ms: ${perfStalls.length}\n` + perfStalls.map(r => `  ${r.gap.toFixed(1)} ms @T=${r.t.toFixed(1)}`).join('\n'); console.log(s); return s; },
-    snapshot: () => (gpu!.poll(), updatePerfIdentity(), { ...perf!.snapshot(), annotation: { ...(deps.annotationStats() as Record<string, unknown>) }, resources: { geometries: deps.getRenderer()?.info?.memory?.geometries ?? null, textures: deps.getRenderer()?.info?.memory?.textures ?? null }, armorRt: deps.armorStats().rt ? { ...deps.armorStats().rt } : null, gpu: gpu!.snapshot() }),
+    snapshot: () => (gpu!.poll(), updatePerfIdentity(), { ...perf!.snapshot(), annotation: { ...(deps.annotationStats() as Record<string, unknown>) }, resources: { geometries: deps.getRenderer()?.info?.memory?.geometries ?? null, textures: deps.getRenderer()?.info?.memory?.textures ?? null }, armorRt: deps.armorStats().rt ? { ...deps.armorStats().rt } : null, contactShadows: deps.contactShadowsCount(), gpu: gpu!.snapshot() }),
     startCapture: (options: { scenarioId: string; durationMs?: number }) => { if (deps.paused()) throw new Error('scene is inactive'); updatePerfIdentity(); perf!.startCapture(options); },
     stopCapture: () => { gpu!.poll(); return perf!.stopCapture(); },
     reset: () => { gpu!.reset(); perf!.reset(); deps.resetTerrainCounters(); perfStalls = []; perfBeat = performance.now(); },

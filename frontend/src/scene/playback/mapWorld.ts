@@ -167,6 +167,10 @@ export interface MapWorldDeps {
   scopedHiddenEid(): number
   /** 地形 LOD 变化后的 annotation 高度刷新（宿主 annotation 域）。 */
   reprojectAnnotationHeights(): void
+  /** 地表整体更换/LOD 重建后的接地阴影贴回（#907 主干随迁；宿主经 contactShadows 句柄）。 */
+  onTerrainReground(): void
+  /** 逐图光照应用后的接地阴影太阳同步（#907 主干随迁）。 */
+  onLightingApplied(): void
 }
 
 /** 边界带宿主（几何工厂在 boundary.ts；本模块只负责按权威范围重建）。 */
@@ -802,6 +806,7 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
     // floor 与替换后的三角面之间留下一帧/停驻时的穿地。
     deps.constrainFreeCameraAltitude();
     deps.reprojectAnnotationHeights();
+    deps.onTerrainReground();
     if (perf) perf.event({ stage: 'terrain-rebuild-inclusive', durationMs: performance.now() - perfRebuildAt });
   }
 
@@ -861,6 +866,7 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
     // 地形异步就绪后把基地环带/HUD 与出生点标记重新贴回地表
     deps.regroundBases();
     deps.regroundSpawns();
+    deps.onTerrainReground();   // 静止车辆的接地阴影也贴回新 LOD 网格（≤ 车辆数 × 25 次 O(1) 采样）
     // terrain 首次就绪 / 2D 回退切换：annotation 必须重投影到当前地表
     deps.rebuildAnnotationProjection();
   }
@@ -954,6 +960,7 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
     const { renderer, scene, sunLight, hemiLight, debug } = deps.lightingTargets()
     if (!sunLight || !hemiLight) return;
     envMultiplier = applyMapLightingCore({ renderer: renderer!, scene, sunLight, hemiLight, lighting: L, debug }).envMultiplier;
+    deps.onLightingApplied();   // 接地阴影的太阳方向/强度随逐图光照同步（#907 主干随迁）
   }
   // 复位体见共享模块（含共享太阳 uniform 与曝光复位）；envMultiplier 闭包回写。
   function resetMapLighting() {

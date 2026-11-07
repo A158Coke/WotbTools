@@ -12,11 +12,15 @@
  */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { Check, Zap } from 'lucide-vue-next'
 import AppButton from './AppButton.vue'
+import SegmentedControl from './SegmentedControl.vue'
 import { availableItems, itemIconUrl, moduleIconUrl, resolveDeviceIds, skillIconUrl } from '../utils/researchCatalog.js'
 import { configIndexFor, consumableTiming, pickGun, pickTurret, presetSlots, tankRef } from '../replay-local/compute/tankSetup'
 import { fmtNum } from '../scene/tankMeta.js'
 import { romanLevel } from '../utils/tierFormat.js'
+import { resolveUpgradeSelection, upgradeMechanicEffects } from '../replay-local/compute/tankUpgrades'
+import { isConditionalCrewSkill } from '../replay-local/compute/crewStats'
 
 const props = defineProps({
   /** tank/{id}.json */
@@ -27,11 +31,15 @@ const props = defineProps({
   selection: { type: Object, required: true },
   /** 资产包 research 全局目录（物品目录 + 预设 + 过滤器） */
   catalog: { type: Object, required: true },
+  /** 宿主可拒绝缺少投影源字段的满级状态。 */
+  upgradeSupported: { type: Boolean, default: true },
   /** 乘员技能 / 涂装块 */
   showCrew: { type: Boolean, default: true },
   showEquipment: { type: Boolean, default: true },
   showConsumables: { type: Boolean, default: true },
   showProvisions: { type: Boolean, default: true },
+  /** 嵌入查看器已有分区，只调整表面与标题，不复制配置状态。 */
+  embedded: { type: Boolean, default: false },
 })
 const emit = defineEmits(['update', 'reset', 'preset', 'cycle-skill', 'max-skills', 'clear-skills'])
 
@@ -48,6 +56,63 @@ function itemName(item) {
 }
 
 const currentTurret = computed(() => props.modules?.turrets?.[props.selection.turret] || null)
+const upgrades = computed(() => {
+  if (Number(props.detail?.tier) !== 11) return { available: false }
+  const state = resolveUpgradeSelection(props.modules, props.selection.upgrade, props.selection.abilities)
+  return { ...state, supported: state.supported && props.upgradeSupported }
+})
+const upgradeOptions = computed(() => [
+  { value: 'stock', label: t('agentTanks.configurator.upgrade_stock'), testid: 'tank-upgrade-stock' },
+  { value: 'top', label: t('agentTanks.configurator.upgrade_top'), testid: 'tank-upgrade-top', disabled: !upgrades.value.supported },
+])
+// 同版 hangarAbilityParamsConfig 明确标注 PERCENT 的三项；其他机制系数不做统一百分化。
+const PERCENT_MECHANIC_ATTRIBUTES = new Set([
+  'COMBAT_FRENZY_RELOAD_SPEED_BONUS_PER_STACK', 'SAS_AIMING_SPEED', 'SAS_GUN_DISPERSION',
+])
+function upgradeAmount(value, modifier = 'MODIFIER_ADD', name) {
+  if (value == null) return '—'
+  if (typeof value === 'boolean') return upgradeValue(value, name)
+  const points = modifier === 'MODIFIER_ADD' && PERCENT_MECHANIC_ATTRIBUTES.has(name)
+  const amount = `${modifier === 'MODIFIER_MULTIPLY' ? '×' : value > 0 ? '+' : ''}${fmtNum(points ? value * 100 : value, 3)}`
+  return points ? t('agentTanks.configurator.upgrade_percentage_points', { value: amount }) : amount
+}
+function upgradeValue(value, name) {
+  if (value == null) return '—'
+  if (name === 'SAS_ALLOW_ACTIVATE_ON_HIT' && typeof value === 'boolean') {
+    return t(`agentTanks.configurator.upgrade_trigger_${value ? 'hit' : 'damage'}`)
+  }
+  if (name === 'COMBAT_FRENZY_ALLOW_SWITCH_AFTER_KILL' && typeof value === 'boolean') {
+    return t(`agentTanks.configurator.upgrade_${value ? 'yes' : 'no'}`)
+  }
+  if (typeof value === 'number' && PERCENT_MECHANIC_ATTRIBUTES.has(name)) return `${fmtNum(value * 100, 3)}%`
+  return typeof value === 'boolean' ? t(`agentTanks.configurator.upgrade_${value ? 'enabled' : 'disabled'}`) : fmtNum(value, 3)
+}
+const mechanicEffects = computed(() => upgradeMechanicEffects(upgrades.value, props.modules, props.catalog))
+const abilityGroups = computed(() => (upgrades.value.groups || []).map((group, groupIndex) => ({
+  ...group,
+  label: itemName(group) || t('agentTanks.configurator.upgrade_skill_group', { index: groupIndex + 1 }),
+  description: group[`description_${lang.value}`] || group.description_en || '',
+  options: group.choices.map((id, index) => {
+    const node = upgrades.value.nodes.find(node => node.id === id)
+    const effects = (node?.attributes || []).map(({ name, value }) => ({
+      name, label: t(`agentTanks.configurator.upgrade_attributes.${name}`),
+      amount: upgradeAmount(value, upgrades.value.attributeDefinitions[name]?.modifier, name),
+    }))
+    return {
+      value: String(id),
+      label: itemName(node) || effects.map(effect => effect.label).join(' · ') || t('agentTanks.configurator.upgrade_skill_option', { index: index + 1 }),
+      description: node?.[`description_${lang.value}`] || node?.description_en || '',
+      disabled: !upgrades.value.supported,
+      effects,
+      testid: `tank-ability-${id}`,
+    }
+  }),
+})))
+function selectAbility(group, value) {
+  const choices = { ...upgrades.value.choices, [group.id]: Number(value) }
+  const next = resolveUpgradeSelection(props.modules, props.selection.upgrade, choices)
+  emit('update', { abilities: next.abilities })
+}
 
 /** 四个模块槽的候选（图标 = 客户端 ModulesTechTree 类型图；名称/等级来自数据）。 */
 const moduleRows = computed(() => {
@@ -356,6 +421,7 @@ const skillGroups = computed(() => SKILL_CLASS_ORDER.map(({ key, labelKey }) => 
           : `${skillText(item, 'name') || id} — ${t('agentTanks.configurator.skill_untrained')} · ${effect}`,
         icon: skillIconUrl(id),
         active: level > 0,
+        conditional: isConditionalCrewSkill(id),
       }
     }),
   }
@@ -378,14 +444,21 @@ const camoBonusParts = computed(() => {
 </script>
 
 <template>
-  <section class="tp-config" data-testid="tank-configurator">
+  <section class="tp-config" :class="{ 'is-embedded': embedded }" :aria-label="t('agentTanks.configurator.title')" data-testid="tank-configurator">
     <header class="tp-config-head">
-      <h2 class="tp-section-title">{{ t('agentTanks.configurator.title') }}</h2>
+      <h2 v-if="!embedded" class="tp-section-title">{{ t('agentTanks.configurator.title') }}</h2>
+      <SegmentedControl
+        v-if="embedded && upgrades.available"
+        :model-value="upgrades.mode"
+        :options="upgradeOptions"
+        :aria-label="t('agentTanks.configurator.upgrade_title')"
+        @update:model-value="emit('update', { upgrade: $event })"
+      />
       <div class="tp-config-actions">
-        <AppButton variant="ghost" size="sm" data-testid="tank-preset-stock" @click="emit('preset', 'stock')">
+        <AppButton v-if="!upgrades.available" variant="ghost" size="sm" data-testid="tank-preset-stock" @click="emit('preset', 'stock')">
           {{ t('agentTanks.configurator.stock') }}
         </AppButton>
-        <AppButton variant="ghost" size="sm" data-testid="tank-preset-top" @click="emit('preset', 'top')">
+        <AppButton v-if="!upgrades.available" variant="ghost" size="sm" data-testid="tank-preset-top" @click="emit('preset', 'top')">
           {{ t('agentTanks.configurator.top') }}
         </AppButton>
         <AppButton variant="ghost" size="sm" data-testid="tank-config-reset" @click="emit('reset')">
@@ -394,9 +467,61 @@ const camoBonusParts = computed(() => {
       </div>
     </header>
 
+    <section v-if="upgrades.available && (!embedded || showCrew || !upgrades.supported)" class="tp-config-block" data-testid="tank-upgrades">
+      <h3 v-if="!embedded">{{ t('agentTanks.configurator.upgrade_title') }}</h3>
+      <SegmentedControl
+        v-if="!embedded"
+        :model-value="upgrades.mode"
+        :options="upgradeOptions"
+        :aria-label="t('agentTanks.configurator.upgrade_title')"
+        @update:model-value="emit('update', { upgrade: $event })"
+      />
+      <p v-if="!embedded" class="tp-muted">{{ t('agentTanks.configurator.upgrade_hint') }}</p>
+      <p v-if="!upgrades.supported" class="tp-muted" role="status">{{ t('agentTanks.configurator.upgrade_unsupported') }}</p>
+      <template v-if="showCrew">
+        <div v-for="group in abilityGroups" :key="group.id" class="tp-config-block" data-testid="tank-upgrade-skills">
+          <h3>{{ group.label }}</h3>
+          <SegmentedControl class="tp-ability-options" presentation="tiles" :aria-label="group.label"
+            :options="group.options" :model-value="String(upgrades.choices[group.id])"
+            @update:model-value="selectAbility(group, $event)">
+            <template #option="{ option, index, selected }">
+            <span class="tp-ability-content">
+              <span class="tp-ability-top"><span class="tp-ability-number">{{ String(index + 1).padStart(2, '0') }}</span>
+                <Check v-if="selected" :size="16" aria-hidden="true" />
+              </span>
+              <span class="tp-ability-name">{{ option.label }}</span>
+              <strong class="tp-ability-value">{{ option.effects.map(effect => effect.amount).join(' / ') }}</strong>
+              <span v-if="option.description" class="tp-muted">{{ option.description }}</span>
+            </span>
+            </template>
+          </SegmentedControl>
+          <p v-if="group.description" class="tp-muted">{{ group.description }}</p>
+        </div>
+        <p v-if="abilityGroups.length" class="tp-muted">{{ t('agentTanks.configurator.upgrade_skill_hint') }}</p>
+        <section v-if="mechanicEffects.length" class="tp-mechanic-effects" aria-live="polite" data-testid="tank-mechanic-effects">
+          <header class="tp-block-head"><h3>{{ t('agentTanks.configurator.upgrade_effects') }}</h3>
+            <span class="tp-ability-status">{{ t(`agentTanks.configurator.${upgrades.mode === 'top' ? 'upgrade_top' : 'upgrade_inactive'}`) }}</span>
+          </header>
+          <table>
+            <thead><tr><th scope="col">{{ t('agentTanks.configurator.upgrade_effect_attribute') }}</th>
+              <th scope="col">{{ t('agentTanks.configurator.upgrade_stock') }}</th>
+              <th scope="col">{{ t('agentTanks.configurator.upgrade_effect_current') }}</th></tr></thead>
+            <tbody><tr v-for="effect in mechanicEffects" :key="effect.name" :data-testid="`tank-mechanic-${effect.name}`">
+              <th scope="row">{{ t(`agentTanks.configurator.upgrade_attributes.${effect.name}`) }}</th>
+              <td>{{ upgradeValue(effect.initial, effect.name) }}</td>
+              <td class="tp-effect-current"><strong>{{ upgradeValue(effect.value, effect.name) }}</strong>
+                <span v-if="effect.current != null" class="tp-effect-delta">{{ t('agentTanks.configurator.upgrade_effect_change', { value: upgradeAmount(effect.current, effect.modifier, effect.name) }) }}</span>
+              </td>
+            </tr></tbody>
+          </table>
+          <p class="tp-muted">{{ t('agentTanks.configurator.upgrade_effect_delta_note') }}</p>
+        </section>
+      </template>
+    </section>
+
     <!-- 模块矩阵：首行 = 4 个类型标签，之后按选项序号逐行展开（炮塔1|火炮1|发动机1|履带1，
          下一行炮塔2|火炮2…），4 列严格对齐，避免右侧空白。 -->
-    <div class="tp-module-matrix">
+    <div v-if="!upgrades.available" class="tp-module-matrix">
       <div v-for="row in moduleRows" :key="row.key" class="tp-module-head" :data-testid="`tank-module-${row.key}`">
         <span>{{ t(`agentTanks.configurator.${row.key}`) }}</span>
       </div>
@@ -526,28 +651,41 @@ const camoBonusParts = computed(() => {
     </section>
 
     <section v-if="showCrew" class="tp-config-block tp-skills-block">
-      <div class="tp-block-head">
-        <h3>{{ t('agentTanks.configurator.crew_skills') }}</h3>
-        <span class="tp-muted">{{ t('agentTanks.configurator.crew_count') }} {{ modules.crewRoles.length }} · {{ Object.values(selection.skills).filter(level => level > 0).length }}/20</span>
+      <div class="tp-block-head tp-skill-head">
+        <div class="tp-skill-heading">
+          <h3>{{ t('agentTanks.configurator.crew_skills') }}</h3>
+          <span class="tp-muted">{{ t('agentTanks.configurator.crew_count') }} {{ modules.crewRoles.length }} · {{ Object.values(selection.skills).filter(level => level > 0).length }}/20</span>
+        </div>
+        <div class="tp-skill-actions">
+          <AppButton variant="ghost" size="sm" data-testid="tank-skills-max" @click="emit('max-skills')">
+            {{ t('agentTanks.configurator.skill_max') }}
+          </AppButton>
+          <AppButton variant="ghost" size="sm" data-testid="tank-skills-clear" @click="emit('clear-skills')">
+            {{ t('agentTanks.configurator.skill_clear') }}
+          </AppButton>
+        </div>
       </div>
-      <div class="tp-skill-actions">
-        <AppButton variant="ghost" size="sm" data-testid="tank-skills-max" @click="emit('max-skills')">
-          {{ t('agentTanks.configurator.skill_max') }}
-        </AppButton>
-        <AppButton variant="ghost" size="sm" data-testid="tank-skills-clear" @click="emit('clear-skills')">
-          {{ t('agentTanks.configurator.skill_clear') }}
-        </AppButton>
-      </div>
+      <label class="tp-skill-trigger-control" data-testid="tank-skill-trigger-control">
+        <input type="checkbox" data-testid="tank-skill-triggers" :checked="selection.conditionalSkills === true"
+          @change="emit('update', { conditionalSkills: $event.target.checked })">
+        <span><strong>{{ t('agentTanks.configurator.skill_triggers') }}</strong>
+          <span class="tp-muted">{{ t('agentTanks.configurator.skill_triggers_hint') }}</span></span>
+      </label>
       <div class="tp-skill-groups">
-        <div v-for="group in skillGroups" :key="group.key" class="tp-skill-group">
-          <span class="tp-skill-class">{{ group.label }}</span>
-          <div class="tp-skill-row">
+        <div v-for="group in skillGroups" :key="group.key" class="tp-skill-group" role="group" :aria-label="group.label">
+          <h4 class="tp-skill-class">{{ group.label }}</h4>
+          <div v-for="conditional in [false, true].filter(value => group.skills.some(skill => skill.conditional === value))"
+            :key="String(conditional)" class="tp-skill-section">
+            <span class="tp-skill-category">
+              {{ t(`agentTanks.configurator.${conditional ? 'skill_conditional' : 'skill_permanent'}`) }}
+            </span>
+            <div class="tp-skill-row">
             <button
-              v-for="skill in group.skills"
+              v-for="skill in group.skills.filter(skill => skill.conditional === conditional)"
               :key="skill.id"
               type="button"
               class="tp-skill-btn"
-              :class="{ 'is-on': skill.active }"
+              :class="{ 'is-on': skill.active, 'is-pending': skill.active && skill.conditional && !selection.conditionalSkills }"
               :aria-pressed="skill.active"
               :aria-label="skill.title"
               :title="skill.title"
@@ -557,12 +695,16 @@ const camoBonusParts = computed(() => {
               <img v-if="skill.icon" :src="skill.icon" alt="" width="32" height="32" loading="lazy">
               <span v-else class="tp-skill-fallback">{{ skill.name.slice(0, 2) }}</span>
               <span v-if="skill.active" class="tp-skill-level">{{ skill.level }}</span>
+              <Zap v-if="skill.conditional" class="tp-skill-condition-icon" :size="12" aria-hidden="true" />
             </button>
+            </div>
           </div>
         </div>
       </div>
-      <p class="tp-muted">{{ t('agentTanks.configurator.skill_level_hint') }}</p>
-      <p class="tp-muted">{{ t('agentTanks.configurator.skill_note') }}</p>
+      <div class="tp-skill-notes">
+        <p class="tp-muted">{{ t('agentTanks.configurator.skill_level_hint') }}</p>
+        <p class="tp-muted">{{ t('agentTanks.configurator.skill_note') }}</p>
+      </div>
     </section>
 
     <div v-if="showCrew" class="tp-camo-block">
@@ -580,19 +722,62 @@ const camoBonusParts = computed(() => {
 <style scoped>
 .tp-config {
   display: grid;
-  gap: var(--space-3);
-  padding: var(--space-3);
+  gap: var(--space-4);
+  min-inline-size: 0;
+  padding: var(--space-4);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-lg);
   background: var(--color-surface-1);
   box-shadow: var(--elevation-1);
 }
+.tp-config.is-embedded { gap: var(--space-2); padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.tp-config.is-embedded .tp-config-head { justify-content: flex-end; }
+.tp-config.is-embedded .tp-config-head > .segmented { margin-inline-end: auto; }
 
 .tp-config-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; }
 .tp-config-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); }
-.tp-section-title { margin: 0; font: var(--type-h3); }
+.tp-section-title { margin: 0; font: var(--type-body); font-weight: 700; }
 
 .tp-muted { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); }
+
+.tp-ability-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }
+.tp-ability-options :deep(.segmented-option) {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  min-inline-size: 0;
+  min-block-size: var(--control-h-lg);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  text-align: start;
+  cursor: pointer;
+}
+.tp-ability-options :deep(.segmented-option:hover) { border-color: var(--color-border-strong); }
+.tp-ability-options :deep(.segmented-option.is-active) { border-color: var(--color-accent); }
+.tp-ability-content { display: flex; flex-direction: column; gap: var(--space-2); block-size: 100%; }
+.tp-ability-options :deep(.segmented-label) { flex: 1; }
+.tp-ability-top { display: flex; align-items: center; justify-content: space-between; color: var(--color-accent-text); }
+.tp-ability-number { font: var(--type-caption); font-variant-numeric: tabular-nums; }
+.tp-ability-name { flex: 1; font: var(--type-caption); overflow-wrap: anywhere; }
+.tp-ability-value { font: var(--type-h3); font-variant-numeric: tabular-nums; color: var(--color-accent-text); }
+.tp-mechanic-effects { display: grid; gap: var(--space-2); min-inline-size: 0; padding-block-start: var(--space-2); }
+.tp-ability-status { color: var(--color-text-secondary); font: var(--type-caption); }
+.tp-mechanic-effects table { inline-size: 100%; border-collapse: collapse; font: var(--type-caption); }
+.tp-mechanic-effects th, .tp-mechanic-effects td { padding: var(--space-2) var(--space-1); border-block-end: 1px solid var(--color-border-subtle); text-align: end; font-variant-numeric: tabular-nums; }
+.tp-mechanic-effects th:first-child { text-align: start; font-weight: 400; overflow-wrap: anywhere; }
+.tp-mechanic-effects thead { color: var(--color-text-secondary); }
+.tp-effect-current { color: var(--color-accent-text); font-weight: 600; }
+.tp-effect-delta { display: block; color: var(--color-text-secondary); font: var(--type-caption); }
+.tp-skill-trigger-control { display: flex; gap: var(--space-2); align-items: center; min-block-size: var(--hit-min-comfortable); padding-block: var(--space-2); cursor: pointer; }
+.tp-skill-trigger-control > span { display: grid; gap: var(--space-1); min-inline-size: 0; font: var(--type-caption); }
+.tp-skill-trigger-control input { flex: 0 0 var(--control-check); inline-size: var(--control-check); block-size: var(--control-check); margin: 0; accent-color: var(--color-accent); }
+.tp-skill-section { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1) var(--space-2); min-inline-size: 0; }
+.tp-skill-category { flex: 0 1 auto; color: var(--color-text-secondary); font: var(--type-caption); overflow-wrap: anywhere; }
+.tp-skill-condition-icon { position: absolute; inset-inline-start: 0; inset-block-start: 0; color: var(--color-accent-text); background: var(--color-surface-1); border-radius: var(--radius-sm); }
 
 /* ---------- 模块矩阵：4 列（炮塔/火炮/发动机/履带），选项按序号逐行对齐 ---------- */
 .tp-module-matrix {
@@ -646,9 +831,10 @@ const camoBonusParts = computed(() => {
 .tp-module-name { inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; }
 
 /* ---------- 装备 3×3 ---------- */
-.tp-config-block { display: grid; gap: var(--space-1); }
-.tp-block-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); }
-.tp-block-head h3 { margin: 0; font: var(--type-body); font-weight: 600; }
+.tp-config-block { display: grid; gap: var(--space-2); min-inline-size: 0; }
+.tp-config > .tp-config-block + .tp-config-block { padding-block-start: var(--space-4); border-block-start: 1px solid var(--color-border-subtle); }
+.tp-block-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-1) var(--space-2); }
+.tp-config-block > h3, .tp-block-head h3 { margin: 0; font: var(--type-body); font-weight: 600; }
 
 .tp-dev-matrix {
   display: grid;
@@ -722,19 +908,22 @@ const camoBonusParts = computed(() => {
 
 .tp-tile-fallback { color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; overflow-wrap: anywhere; }
 
-.tp-skills-block { padding-block-start: var(--space-2); border-block-start: 1px solid var(--color-border-subtle); }
+.tp-skill-head { align-items: center; }
+.tp-skill-heading { display: grid; gap: var(--space-1); }
 .tp-skill-actions { display: flex; gap: var(--space-1); }
-.tp-skill-groups { display: grid; gap: var(--space-2); }
-.tp-skill-group { display: grid; gap: 2px; }
-.tp-skill-class { color: var(--color-text-secondary); font: var(--type-caption); }
-.tp-skill-row { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.tp-skill-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--tank-skill-group-min)), 1fr)); gap: var(--space-4); }
+.tp-skill-group { display: grid; align-content: start; gap: var(--space-2); min-inline-size: 0; }
+.tp-skill-class { margin: 0; color: var(--color-text-primary); font: var(--type-caption); font-weight: 600; }
+.tp-skill-row { display: flex; flex: 1 1 auto; flex-wrap: wrap; gap: var(--space-1); min-inline-size: 0; }
+.tp-skill-notes { display: grid; gap: var(--space-1); padding-block-start: var(--space-2); }
 .tp-skill-btn {
   position: relative;
   display: grid;
   place-items: center;
-  inline-size: 40px;
-  block-size: 40px;
-  padding: 2px;
+  flex: 0 0 var(--control-h-lg);
+  inline-size: var(--control-h-lg);
+  block-size: var(--control-h-lg);
+  padding: var(--space-1);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-md);
   background: var(--color-surface-2);
@@ -742,6 +931,7 @@ const camoBonusParts = computed(() => {
 }
 .tp-skill-btn:hover { border-color: var(--color-border-strong); }
 .tp-skill-btn.is-on { border-color: var(--color-accent); background: color-mix(in oklab, var(--color-accent) 14%, var(--color-surface-1)); }
+.tp-skill-btn.is-pending { border-style: dashed; background: var(--color-surface-2); }
 .tp-skill-btn:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 .tp-skill-btn img { inline-size: 100%; block-size: 100%; object-fit: contain; }
 .tp-skill-fallback { color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; }
@@ -749,7 +939,7 @@ const camoBonusParts = computed(() => {
   position: absolute;
   inset-block-end: 0;
   inset-inline-end: 0;
-  padding: 0 2px;
+  padding: 0 var(--space-1);
   border-radius: var(--radius-sm);
   background: var(--color-surface-1);
   color: var(--color-accent-text);
@@ -758,7 +948,7 @@ const camoBonusParts = computed(() => {
 }
 
 .tp-camo-block { display: grid; gap: var(--space-1); }
-.tp-camo { display: inline-flex; align-items: center; gap: var(--space-2); font: var(--type-body); cursor: pointer; }
+.tp-camo { display: inline-flex; align-items: center; gap: var(--space-2); min-block-size: var(--hit-min-comfortable); font: var(--type-body); cursor: pointer; }
 .tp-camo-summary { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); }
 .tp-camo input { inline-size: var(--control-check); block-size: var(--control-check); margin: 0; accent-color: var(--color-accent); }
 
@@ -771,7 +961,7 @@ const camoBonusParts = computed(() => {
   .tp-module-cell-head { display: block; margin-block-end: 2px; color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; text-align: center; }
   .tp-module-tile { padding: var(--space-1); min-block-size: 64px; }
   /* 装备矩阵在窄屏吃掉等级标签列：标签收窄为图标宽度，槽位保持两候选并排 */
-  .tp-dev-matrix { gap: var(--space-1); }
+  .tp-dev-matrix { gap: var(--space-1) calc(var(--space-1) / 2); }
   .tp-dev-btn { min-block-size: 48px; }
 }
 

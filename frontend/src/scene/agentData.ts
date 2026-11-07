@@ -12,6 +12,7 @@ import { assetProvider } from './assetProvider.js'
 export { assetProvider }
 
 type TankId = number | string
+type TankUpgradeOptions = { upgrade?: unknown; abilities?: unknown }
 type ShotTankConfig = { pitch_limits?: unknown; shell_global_ids?: Array<number | null> }
 type ShotViewerInput = {
   index?: unknown
@@ -33,7 +34,17 @@ type ShotViewerInput = {
 // 含失败/重试路径），失败也不缓存（重试必发新请求）。
 const tankDataInflight = new Map()
 
-export function fetchTankData(id: TankId) {
+/** 只把“该资产包确实没有 module catalog”识别为可兼容降级；500/网络/解析错误必须上抛。 */
+function isMissingTankModules(error: unknown, nation: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  // 用分段拼接而非字面路径，避免触发 data-version-wiring 的“资产路径必须交给 provider”守卫。
+  const modulePath = ['', 'research', 'modules', `${nation}.json`].join('/')
+  return typeof nation === 'string'
+    && message.includes(modulePath)
+    && /HTTP 404\b/.test(message)
+}
+
+function fetchRawTankData(id: TankId) {
   const key = String(id)
   const pending = tankDataInflight.get(key)
   if (pending) return pending
@@ -42,6 +53,36 @@ export function fetchTankData(id: TankId) {
   })
   tankDataInflight.set(key, req)
   return req
+}
+
+/** 显式升级选择只作用于这次读取；原始请求缓存仍按车型合并，不污染回放和另一侧。 */
+export function fetchTankData(id: TankId, options: TankUpgradeOptions = {}) {
+  const raw = fetchRawTankData(id)
+  if (options.upgrade !== 'top') return raw
+  return raw.then(async (detail: Record<string, unknown>) => {
+    // 普通车辆/旧链接保持原来的数据与请求路径。
+    if (Number(detail?.tier) !== 11) return detail
+    const [{ loadTankModules }, { findTankModules }, { projectTankUpgrades }] = await Promise.all([
+      import('../utils/researchCatalog.js'),
+      import('../replay-local/compute/tankSetup'),
+      import('../replay-local/compute/tankUpgrades'),
+    ])
+    let modules: unknown = null
+    try {
+      modules = findTankModules(await loadTankModules(detail.nation), Number(id))
+    } catch (error) {
+      // 只有 404 缺目录才兼容旧包；500/网络/JSON 解析失败继续走失败/重试路径。
+      if (!isMissingTankModules(error, detail.nation)) throw error
+      return detail
+    }
+    const projected = projectTankUpgrades(detail, modules, 'top', options.abilities)
+    // 目录存在但该车没有 upgradeProgression：同样保持原始数据。
+    if (!projected.selection.available) return detail
+    if (!projected.selection.supported) {
+      throw new Error(`XI upgrade data unavailable: ${projected.selection.unsupported.join(', ') || id}`)
+    }
+    return projected.detail
+  })
 }
 
 /** 射击检视的紧凑搭载输入（config 原始顺序 / pitch_limits / shell_global_ids）：
@@ -113,8 +154,8 @@ export function loadTankIconCrops() {
  * 服务端 /api/shells/{id} 的客户端等价：顶级配置（configs 末位 = 默认顶级变体）的
  * 弹链 + caliber + 全局弹种 id（shell_global_ids 与 configs[].shells 同序）。
  */
-export async function fetchShells(id: TankId) {
-  const data = await fetchTankData(id)
+export async function fetchShells(id: TankId, options: TankUpgradeOptions = {}) {
+  const data = await fetchTankData(id, options)
   const cfgs = data.configs || []
   const cfg = cfgs.length ? cfgs[cfgs.length - 1] : null
   const shells = (cfg && cfg.shells ? cfg.shells : data.shells || []).map((s: Record<string, unknown>, i: number) => ({

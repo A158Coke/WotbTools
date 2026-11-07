@@ -1,8 +1,23 @@
 # WotBTools 文档索引
 
 > 本索引的唯一职责：**今天该读哪份文档？**
-> 当前状态文档只描述合并后的系统；产品/业务演进见 `../HISTORY.md`，技术/架构演进见 `architecture/TECHNICAL_EVOLUTION.md`，逆向证据见 `research/**`。
-> 未排期的 future wishlist 不进入 persistent repository docs；当前已批准任务只进入 `current-plan.md`，明确独立 follow-up 使用 GitHub Issue。
+
+## 文档分层与权威归属
+
+持久文档按用途分层，任何改动都不得把「改动故事」写进 canonical 文档：
+
+- `HISTORY.md`：**仅产品/业务演进**——用户可见或商业能力为何引入、变化、退役，以及产品方向决策。不是技术架构史。
+- `docs/architecture/TECHNICAL_EVOLUTION.md`：**仅技术演进**——架构迁移、数据流/权威归属变化、基础设施与拓扑、身份模型、被引入又退役的技术方案。不是产品 changelog。
+- **当前状态文档**：`README.md`、`docs/DEVELOPER_GUIDE.md`、架构现状文档、功能契约、运维 runbook、认证文档、Android 文档、前端文档、`docs/reference/**`、`contracts/**`，以及描述当前工作流的 `AGENTS.md` / `.agents/skills/**` / `.agents/playbooks/**`。它们只描述合并后的当前系统；维护者打开任一份都应能假设「这就是 WotBTools 现在的工作方式」。`README.md` 是仓库唯一当前 canonical README；不维护英文镜像副本。
+- **例外**：
+  - `docs/research/**`：实验、逆向证据、被否证假设与样本来源；证据史本身就是目的，但不得把已退役架构描述成当前生产状态。
+  - `docs/current-plan.md`：ephemeral 当前已批准任务状态（gitignore），不是架构/行为权威。
+  - `docs/android/releases/**`：**临时版本化发布记录**，豁免当前状态要求；迁移到 GitHub Release / tag / APK / `version.json` 后删除，迁移由 CI/CD 审计推进。
+- **future-only 内容不持久化为 repository docs**：属于当前 approved task → `docs/current-plan.md`；已经是明确独立 follow-up → GitHub Issue；其它 uncommitted / speculative wishlist → 删除，不保存。不得为 wishlist 新建 future/backlog/ideas 类文档，也不得塞进历史或 current-state owner。
+- **更新文档 = 描述结果状态，不是追加变更日记**：行为从 A 变成 B 再变成 C 时，canonical 文档只写「系统使用 C」；A/B 只在不写就会丢失产品/技术决策理由时分别进入 `HISTORY.md` 或 `TECHNICAL_EVOLUTION.md`，否则删除。禁止在 canonical 文档写「本 PR / 本次 / 审查基线 / Step / review P1 / 当前候选 / 未来 Kx / 以最终实现为准 / 迁移完成」等实现过程叙事。
+- **存量偏差过渡**：本治理规则首次进入仓库之前已经存在、且未被当前变更触及的 current-state / 历史文档偏差，在对应偏差被实际修复或登记为例外前按整改债务保留；新增或修改的持久文档必须满足本规则。
+
+语言规范、current-plan 引用门禁与禁用历史堆放目录是 BLOCKER，正文在 `../.agents/AGENTS.md` 规则 3；本索引不复制。
 
 固定接手方法以 `../.agents/AGENTS.md` 的「接手与调整方法（固定流程）」为准：入口阅读 → 现实审计 → 任务分类 → 计划契约 → Reuse / SSOT 执行 → 分层验证 → 收尾交接。
 

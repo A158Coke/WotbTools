@@ -189,6 +189,20 @@
         "tournament": "联赛"
       }
     },
+    "dataVersion": {
+      "title": "数据版本",
+      "default": "默认（跟随服务器）",
+      "defaultShort": "默认",
+      "loading": "正在加载版本列表…",
+      "loadFailed": "版本列表加载失败",
+      "unavailable": "资产源未配置",
+      "hint": "切换后页面将重新加载",
+      "tanks": "{count} 辆",
+      "serverDefault": "服务器默认：{id}",
+      "preview": "预览",
+      "statusDeprecated": "已弃用",
+      "statusRevoked": "已撤销"
+    },
     "more": {
       "title": "更多",
       "sections": {
@@ -395,7 +409,11 @@
       "best_sample": "最佳样本",
       "shot_ricochet_seg": "跳弹（-25% 穿深）",
       "shot_loss": "损耗",
-      "shot_nominal": "名义",
+      "shot_nominal": "板厚",
+      "camera_presets": "预设视角",
+      "shell_penetration_basis": "100 米内，含装备加成",
+      "camera_front": "正面",
+      "camera_hull_down": "压坡卖头",
       "shot_blocked": "挡下",
       "back_to_shots": "返回射击分析",
       "recorded_shot": "回放记录",
@@ -693,7 +711,7 @@
         },
         "replay3dCamera": {
           "title": "换个视角看这场战斗",
-          "description": "拖动场景调整自由视角，点「俯视」可一键回到俯视机位。点击车辆或名单会跟随该车，点「自由」退出。再用播放控件回到同一个关键时刻。"
+          "description": "拖动场景调整自由视角（触屏单指平移相机），点「固定」绕中心旋转，点「俯视」一键回到俯视机位。右上角可全屏，手机横屏可用右侧竖条调整远近。点击车辆或名单会跟随该车，点「自由」退出。"
         },
         "shots": {
           "title": "从真实的一发开始",
@@ -1171,6 +1189,20 @@
         "tournament": "League"
       }
     },
+    "dataVersion": {
+      "title": "Data version",
+      "default": "Default (follow server)",
+      "defaultShort": "Default",
+      "loading": "Loading versions…",
+      "loadFailed": "Failed to load versions",
+      "unavailable": "Asset origin not configured",
+      "hint": "The page reloads after switching",
+      "tanks": "{count} tanks",
+      "serverDefault": "Server default: {id}",
+      "preview": "Preview",
+      "statusDeprecated": "Deprecated",
+      "statusRevoked": "Revoked"
+    },
     "more": {
       "title": "More",
       "sections": {
@@ -1378,6 +1410,10 @@
       "shot_ricochet_seg": "ricochet (-25% penetration)",
       "shot_loss": "loss",
       "shot_nominal": "nominal",
+      "camera_presets": "View presets",
+      "shell_penetration_basis": "Up to 100 m, including equipment",
+      "camera_front": "Front",
+      "camera_hull_down": "Hull-down",
       "shot_blocked": "blocked",
       "back_to_shots": "Back to shots",
       "recorded_shot": "Recorded shot",
@@ -1675,7 +1711,7 @@
         },
         "replay3dCamera": {
           "title": "See the battle from another angle",
-          "description": "Drag the scene to adjust the free camera, or press Top to jump back to the overhead view. Click a tank or roster row to follow it, and press Free to stop. Then use playback controls to revisit a moment."
+          "description": "Drag the scene to adjust the free camera (one finger pans on touch), press Fixed to orbit the center, or Top to jump back to the overhead view. Fullscreen sits top-right; on phones in landscape the side slider changes camera distance. Click a tank or roster row to follow it, and press Free to stop."
         },
         "shots": {
           "title": "Start with a recorded shot",
@@ -2153,6 +2189,20 @@
         "tournament": "Лига"
       }
     },
+    "dataVersion": {
+      "title": "Версия данных",
+      "default": "По умолчанию (с сервера)",
+      "defaultShort": "По умолчанию",
+      "loading": "Загрузка версий…",
+      "loadFailed": "Не удалось загрузить версии",
+      "unavailable": "Источник ресурсов не настроен",
+      "hint": "После переключения страница перезагрузится",
+      "tanks": "{count} танков",
+      "serverDefault": "Сервер по умолчанию: {id}",
+      "preview": "Предпросмотр",
+      "statusDeprecated": "Устарело",
+      "statusRevoked": "Отозвано"
+    },
     "more": {
       "title": "Ещё",
       "sections": {
@@ -2360,6 +2410,10 @@
       "shot_ricochet_seg": "рикошет (-25% пробития)",
       "shot_loss": "потеря",
       "shot_nominal": "номинал",
+      "camera_presets": "Ракурсы",
+      "shell_penetration_basis": "До 100 м, с учётом оборудования",
+      "camera_front": "Спереди",
+      "camera_hull_down": "От башни",
       "shot_blocked": "блок",
       "back_to_shots": "К выстрелам",
       "recorded_shot": "Запись выстрела",
@@ -2657,7 +2711,7 @@
         },
         "replay3dCamera": {
           "title": "Посмотрите с другого ракурса",
-          "description": "Перетаскивайте сцену, чтобы настроить свободную камеру, а кнопка «Сверху» сразу вернёт вид сверху. Нажмите на танк или строку списка, чтобы следить за ним, а «Свободная» отключит слежение. Кнопками воспроизведения возвращайтесь к нужному моменту."
+          "description": "Перетаскивайте сцену, чтобы настроить свободную камеру (на сенсоре один палец перемещает камеру), «Фикс» вращает вокруг центра, а «Сверху» сразу вернёт вид сверху. Полный экран — справа сверху; на телефоне в горизонтали дистанцию меняет боковой ползунок. Нажмите на танк или строку списка, чтобы следить за ним, а «Свободная» отключит слежение."
         },
         "shots": {
           "title": "Начните с записанного выстрела",

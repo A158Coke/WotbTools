@@ -32,3 +32,29 @@ export function collectMaterialTextures(m: Material, out: Set<Texture> = new Set
   }
   return out
 }
+
+/** Object3D 子树递归 dispose（geometry/material/texture 各一次；Set 去重，dispose 幂等）。
+ *  原 playbackScene 内联实现出仓（#913 合并后行数门禁；语义逐字，含 InstancedMesh.dispose）。
+ *  shared 参数保留调用方签名（root 级去重由调用方 disposed 集合完成）。 */
+export function disposeObject3D(root: { traverse(cb: (o: never) => void): void }, shared: unknown = null): void {
+  const geos = new Set<{ dispose(): void }>(), mats = new Set<Material>(), texs = new Set<Texture>();
+  void shared;   // 去重由调用方的 disposed 集合按 root 级完成（资源级去重见本模块其余导出）
+  root.traverse((o) => {
+    const obj = o as unknown as {
+      isInstancedMesh?: boolean; dispose?(): void; geometry?: { dispose(): void } | null;
+      material?: Material | Material[] | null;
+    };
+    // InstancedMesh 的 instanceMatrix 是实例专属的 InstancedBufferAttribute，
+    // 不随 geometry.dispose 释放，必须走 InstancedMesh.dispose 自己清理
+    if (obj.isInstancedMesh) obj.dispose?.();
+    if (obj.geometry) geos.add(obj.geometry);
+    const ms: Material[] = Array.isArray(obj.material) ? obj.material : (obj.material ? [obj.material] : []);
+    for (const m of ms) {
+      mats.add(m);
+      collectMaterialTextures(m, texs);   // 直接属性 + uniforms（ShaderMaterial 纹理在 uniforms.value）
+    }
+  });
+  for (const t of texs) t.dispose();
+  for (const m of mats) m.dispose();
+  for (const g of geos) g.dispose();
+}

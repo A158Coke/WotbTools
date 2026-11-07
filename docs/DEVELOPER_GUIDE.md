@@ -285,6 +285,8 @@ League Rating 的适用范围、完整性门槛、公式、批次汇总与导出
 
 ## 前端架构
 
+坦克配置器的升级、技能与资产版本边界见 [`frontend/architecture.md`](frontend/architecture.md#xi-车辆升级)：条件技能默认不模拟触发，XI 机制基础值只消费同版客户端物品与 `vehicleAbilities` 绑定。超测物品修复属于资产通道更新，前端不维护等级规则副本。
+
 新手引导与匿名官方示例见 [`features/onboarding.md`](features/onboarding.md)。AppShell 持有唯一 `useOnboarding`，Replay session 持有可信示例选择；真实页面通过 typed `ONBOARDING_KEY` 和稳定锚点参与。完成/跳过由当前用户 `GET/PUT /api/users/onboarding` 同步。
 
 Replay Workspace 的 Data 批次分析与 2D/3D/Shots/AI 单场目标共享同一 selection；多文件先选首个有效 battle，`sourceId` 保留原始文件索引。布局所有权与浏览器验收矩阵见 [`frontend/replay-workspace.md`](frontend/replay-workspace.md)。
@@ -588,6 +590,10 @@ Frontend 的 TX1/TX2 发布在切换线上文件或容器前，校验实际 Busi
 - `.github/workflows/ci-gate.yml` 是唯一 PR 入口；按 changed paths 调用受影响的 `ci-<owner>.yml`，
   `CI / Required Gate` 汇总受影响结果。Backend 运行 Maven，frontend 运行类型检查、单测、两套真实浏览器回归和 build；
   OpenTofu 每个 owner 只验证自己的 root。PR 验证不 push 镜像。
+  完整 HTTP 契约检查（`api:lint`、`api:check`、`api:fixture` 与 `contract-runtime.test.ts`）由
+  Frontend owner 承担：Frontend 受影响的 PR（无论 Business API 是否同时受影响）都在 `ci-frontend.yml`
+  内执行这一整套；仅 Business API 受影响时仍由 `ci-business-api.yml` 的 `http_contract` job 执行。
+  Required Gate 保证受影响 owner 的检查不能被意外跳过。
 - Business API 镜像采用 Spring Boot 默认四层（dependencies / spring-boot-loader /
   snapshot-dependencies / application），tools 提取后运行精简 `wotb-web.jar`。
   `ci-business-api.yml` 在一次性 PostgreSQL 下验证默认启动命令、readiness、`/api/health`
