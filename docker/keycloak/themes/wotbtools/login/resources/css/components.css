@@ -84,7 +84,7 @@ html[data-theme="light"] .wbtb-theme-toggle:focus-visible { outline: none; box-s
 /* ── 4.0 登录卡：Wargaming 三服主按钮 + QQ 次按钮 + 运维登录折叠 ── */
 .wbtb-card__kicker { margin: 0 0 6px; color: var(--auth-amber-strong); font-size: 12px; font-weight: 700; letter-spacing: .18em; }
 #kc-social-providers.wbtb-idp-section { margin-top: 4px; padding-top: 0; border-top: 0; }
-.wbtb-idp-hint { margin: 0 0 10px; color: var(--auth-muted); font-size: 13px; }
+.wbtb-idp-hint { margin: 0 0 10px; color: var(--auth-text); font-size: 13px; opacity: .88; }
 .wbtb-idp-grid--primary { grid-template-columns: 1fr; }
 .wbtb-idp-grid:not(.wbtb-idp-grid--primary) { grid-template-columns: 1fr; }
 .wbtb-idp-btn--primary { min-height: 48px; border-color: transparent; background: linear-gradient(135deg, var(--auth-amber) 0%, #d98524 100%); color: #1a120a; font-size: 15px; }
@@ -93,16 +93,21 @@ html[data-theme="light"] .wbtb-theme-toggle:focus-visible { outline: none; box-s
 .wbtb-idp-btn:focus-visible { outline: 2px solid var(--auth-focus); outline-offset: 2px; }
 .wbtb-or { display: flex; align-items: center; gap: 12px; margin: 16px 0; color: var(--auth-muted); font-size: 12px; }
 .wbtb-or::before, .wbtb-or::after { content: ""; flex: 1 1 auto; height: 1px; background: var(--auth-border); }
-.wbtb-idp-note { margin: 14px 0 0; color: var(--auth-muted); font-size: 12.5px; text-align: center; }
+.wbtb-idp-note { margin: 14px 0 0; color: var(--auth-text); opacity: .8; font-size: 12.5px; text-align: center; }
 .wbtb-ops { margin-top: 22px; padding-top: 12px; border-top: 1px solid var(--auth-border); }
 .wbtb-ops__summary { display: inline-flex; align-items: center; min-height: 32px; color: var(--auth-muted); font-size: 12px; opacity: .8; cursor: pointer; list-style: none; }
 .wbtb-ops__summary::-webkit-details-marker { display: none; }
 .wbtb-ops__summary:focus-visible { outline: 2px solid var(--auth-focus); outline-offset: 2px; }
 .wbtb-ops[open] .wbtb-ops__summary { opacity: 1; margin-bottom: 12px; }
 
-/* 语言切换（中文 | EN） */
-.wbtb-lang { display: inline-flex; padding: 2px; border: 1px solid var(--auth-border); border-radius: 999px; }
-.wbtb-lang__link { display: inline-flex; align-items: center; min-height: 28px; padding: 0 10px; border-radius: 999px; color: var(--auth-muted); font-size: 12.5px; font-weight: 600; text-decoration: none; }
-.wbtb-lang__link[aria-current="true"] { background: var(--auth-input-bg); color: var(--auth-text); }
+/* 语言切换（中文 | EN）与主题切换：背景是整幅季节图，亮色天空上控件会被吃掉，
+   所以两者都放在半透明实底上，未选中项用主文字色而不是 muted（对比度不随图片变化）。 */
+.wbtb-lang { display: inline-flex; padding: 3px; border: 1px solid var(--auth-border-strong); border-radius: 999px; background: rgba(8, 12, 16, 0.62); }
+html[data-theme="light"] .wbtb-lang { background: rgba(255, 255, 255, 0.86); }
+.wbtb-lang__link { display: inline-flex; align-items: center; min-height: 28px; padding: 0 12px; border-radius: 999px; color: var(--auth-text); font-size: 13px; font-weight: 600; text-decoration: none; opacity: .82; }
+.wbtb-lang__link:hover { opacity: 1; }
+.wbtb-lang__link[aria-current="true"] { background: var(--auth-amber); color: #1a120a; opacity: 1; }
 .wbtb-lang__link:focus-visible { outline: 2px solid var(--auth-focus); outline-offset: 2px; }
+.wbtb-theme-toggle { border-color: var(--auth-border-strong); background: rgba(8, 12, 16, 0.62); }
+html[data-theme="light"] .wbtb-theme-toggle { background: rgba(255, 255, 255, 0.86); }
 @media (max-width: 767px) { .wbtb-lang__link { min-height: 40px; } }
