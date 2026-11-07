@@ -2003,5 +2003,30 @@
     "all_types": "All",
     "type_filter": "Vehicle type",
     "no_type_match": "This nation has no vehicles of this type."
+  },
+  "feedbackPrefs": {
+    "title": "Feedback",
+    "haptics": "Haptics",
+    "hapticsHint": "A short buzz on Android when you switch, confirm or hit an error",
+    "sound": "Sounds",
+    "soundHint": "Short tones for main actions, completions and errors; muted when reduced motion is on"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "unread": "{count} unread",
+    "bellUnread": "Notifications, {count} unread",
+    "readAll": "Mark all read",
+    "empty": "No notifications yet. Replay parsing, AI reviews and submission results show up here.",
+    "replayParsed": "Replay parsed",
+    "replayParsedBody": "{count} battle(s) ready to review",
+    "aiReview": "AI review ready",
+    "appUpdate": "Update available",
+    "appUpdateBody": "Android {version} is out",
+    "submitted": "Hall of Fame entry submitted",
+    "submittedBody": "Waiting for review"
+  },
+  "toast": {
+    "copied": "Copied",
+    "feedbackSent": "Feedback sent — thank you"
   }
 }

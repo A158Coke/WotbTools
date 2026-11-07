@@ -9,6 +9,8 @@
   可重试的给「重试」，取消之类的非错误只给中性提示，不渲染成 danger。
 -->
 <script setup lang="ts">
+import { showToast } from '../composables/useToast.js'
+import { notify } from '../composables/useNotifications.js'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Feature } from '../app/featureCapabilities.js'
@@ -294,6 +296,9 @@ async function readAnalyzeStream(r: Response, run: AiReviewRunState) {
         analysisResult.value = event.result
         progressStage.value = 'done'
         receivedDone = true
+        // 耗时任务完成：toast + 本机通知（离开页面后也能找回）
+        showToast({ id: 'ai-review', tone: 'success', titleKey: 'notifications.aiReview' })
+        notify({ kind: 'ai-review', titleKey: 'notifications.aiReview', view: 'ai-review' })
         break
       case 'error':
         throw new ApiError({

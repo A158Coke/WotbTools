@@ -2003,5 +2003,30 @@
     "all_types": "全部",
     "type_filter": "车种",
     "no_type_match": "这个国家没有该车种。"
+  },
+  "feedbackPrefs": {
+    "title": "反馈与提示",
+    "haptics": "按键震动",
+    "hapticsHint": "Android 上切换、确认和出错时轻震一下",
+    "sound": "按键音效",
+    "soundHint": "主要操作、完成和出错时的短音；系统减少动态效果时不播放"
+  },
+  "notifications": {
+    "title": "通知",
+    "unread": "{count} 条未读",
+    "bellUnread": "通知，{count} 条未读",
+    "readAll": "全部已读",
+    "empty": "还没有通知。回放解析、AI 复盘和提交结果完成后会出现在这里。",
+    "replayParsed": "回放解析完成",
+    "replayParsedBody": "{count} 场可查看赛后数据",
+    "aiReview": "AI 复盘已生成",
+    "appUpdate": "新版本可用",
+    "appUpdateBody": "Android {version} 已发布",
+    "submitted": "名人堂记录已提交",
+    "submittedBody": "等待审核"
+  },
+  "toast": {
+    "copied": "已复制",
+    "feedbackSent": "反馈已发送，谢谢"
   }
 }

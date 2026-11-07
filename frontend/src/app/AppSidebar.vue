@@ -5,9 +5,11 @@
 // 图标栏里文字缩成图标下方的小字（触屏平板没有悬停提示，不能只剩图标），过长时最多两行。
 // drawer：手机竖屏 / 横屏的左侧抽屉（AppNavDrawer 承载，§9 L1）复用同一份分组与管理组，
 // 品牌行带关闭按钮，「更多与设置」是整页链接，没有折叠开关，也没有弹出面板。
-import { computed, ref } from 'vue'
+import { computed, inject, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
-import { PanelLeftClose, PanelLeftOpen, X } from 'lucide-vue-next'
+import { Bell, PanelLeftClose, PanelLeftOpen, X } from 'lucide-vue-next'
+import { unreadCount } from '../composables/useNotifications.js'
+import { NOTIFICATIONS_PANEL_KEY } from '../shared/notifications.js'
 import { useAuth } from '../composables/useAuth.js'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
 import { useSidebar } from '../composables/useSidebar.js'
@@ -44,6 +46,7 @@ const devEnvironmentNoticeKey = import.meta.env.MODE === 'production-remote'
   ? 'environment.productionRemote'
   : 'environment.local'
 
+const openNotifications = inject(NOTIFICATIONS_PANEL_KEY, null)
 const moreOpen = ref(false)
 const moreTrigger = ref(null)
 const morePanelId = 'app-more-panel'
@@ -150,6 +153,19 @@ function linkAttrs(id) {
       >
         <component :is="PRIMARY_NAV_ICONS.more" :size="24" aria-hidden="true" />
         <span class="sidebar-label">{{ $t(moreItem.labelKey) }}</span>
+      </button>
+
+      <button
+        v-if="openNotifications && !drawer"
+        type="button"
+        class="sidebar-link"
+        :title="rail ? $t('notifications.title') : undefined"
+        :aria-label="unreadCount ? $t('notifications.bellUnread', { count: unreadCount }) : $t('notifications.title')"
+        data-testid="nav-notifications"
+        @click="openNotifications($event.currentTarget)"
+      >
+        <span class="sidebar-bell"><Bell :size="24" aria-hidden="true" /><span v-if="unreadCount" class="sidebar-bell-count" aria-hidden="true">{{ unreadCount > 9 ? '9+' : unreadCount }}</span></span>
+        <span class="sidebar-label">{{ $t('notifications.title') }}</span>
       </button>
 
       <RouterLink
@@ -350,6 +366,21 @@ function linkAttrs(id) {
 .is-rail .sidebar-link { border-inline-start: 0; }
 
 .sidebar-collapse { color: var(--color-text-tertiary); }
+.sidebar-bell { position: relative; display: inline-flex; flex: none; }
+.sidebar-bell-count {
+  position: absolute;
+  inset-block-start: calc(var(--space-1) * -1);
+  inset-inline-end: calc(var(--space-2) * -1);
+  min-inline-size: var(--space-4);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font: var(--type-caption);
+  font-weight: 700;
+  line-height: var(--space-4);
+  text-align: center;
+}
 
 .visually-hidden {
   position: absolute;

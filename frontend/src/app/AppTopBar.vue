@@ -1,7 +1,9 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
-import { Menu } from 'lucide-vue-next'
+import { Bell, Menu } from 'lucide-vue-next'
+import { unreadCount } from '../composables/useNotifications.js'
+import { NOTIFICATIONS_PANEL_KEY } from '../shared/notifications.js'
 import { defaultView, isWorkspaceView, locationForView, primarySection, sectionTitleKey as titleKeyFor, viewFromRoute } from './navigation.js'
 import { ACCOUNT_ICON } from './navIcons.js'
 import BrandMark from '../components/BrandMark.vue'
@@ -12,6 +14,7 @@ import BrandMark from '../components/BrandMark.vue'
 const props = defineProps({ navOpen: { type: Boolean, default: false } })
 const emit = defineEmits(['open-nav'])
 const menuButton = ref(null)
+const openNotifications = inject(NOTIFICATIONS_PANEL_KEY, null)
 defineExpose({ menuButton })
 const route = useRoute()
 const activeView = computed(() => viewFromRoute(route))
@@ -91,6 +94,17 @@ onBeforeUnmount(() => {
       :title="$t(devEnvironmentNoticeKey)"
     >{{ $t('environment.label') }}</span>
 
+    <button
+      v-if="openNotifications"
+      type="button"
+      class="account-link notification-bell"
+      :aria-label="unreadCount ? $t('notifications.bellUnread', { count: unreadCount }) : $t('notifications.title')"
+      data-testid="nav-notifications"
+      @click="openNotifications($event.currentTarget)"
+    >
+      <Bell :size="20" aria-hidden="true" />
+      <span v-if="unreadCount" class="notification-count" aria-hidden="true">{{ unreadCount > 9 ? '9+' : unreadCount }}</span>
+    </button>
     <RouterLink
       class="account-link"
       :class="{ 'is-active': activeSection === 'account' }"
@@ -161,6 +175,22 @@ onBeforeUnmount(() => {
   color: var(--color-text-secondary);
 }
 
+.notification-bell { position: relative; border: 0; background: transparent; cursor: pointer; }
+.notification-bell + .account-link { margin-inline-start: 0; }
+.notification-count {
+  position: absolute;
+  inset-block-start: var(--space-1);
+  inset-inline-end: var(--space-1);
+  min-inline-size: var(--space-4);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font: var(--type-caption);
+  font-weight: 700;
+  line-height: var(--space-4);
+  text-align: center;
+}
 .account-link.is-active { background: var(--color-surface-2); color: var(--color-accent-text); }
 
 .account-link:focus-visible,

@@ -12,6 +12,8 @@ import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 import SegmentedControl from '../components/SegmentedControl.vue'
 import ThemePicker from '../components/ThemePicker.vue'
+import AppSwitch from '../components/AppSwitch.vue'
+import { feedbackPrefs, setFeedbackPref } from '../composables/useFeedbackPrefs.js'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -94,6 +96,10 @@ watch(() => props.open, async (open) => {
           data-testid="more-panel-language"
           @update:model-value="setLocale"
         />
+      </div>
+      <div class="more-panel-setting" data-testid="more-panel-feedback">
+        <AppSwitch :model-value="feedbackPrefs.haptics" :label="$t('feedbackPrefs.haptics')" @update:model-value="value => setFeedbackPref('haptics', value)" />
+        <AppSwitch :model-value="feedbackPrefs.sound" :label="$t('feedbackPrefs.sound')" @update:model-value="value => setFeedbackPref('sound', value)" />
       </div>
     </section>
 

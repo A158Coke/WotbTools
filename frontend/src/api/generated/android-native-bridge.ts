@@ -1,5 +1,5 @@
 // GENERATED FILE - DO NOT EDIT MANUALLY. Source: contracts/android-native-bridge.json
-export type NativeBridgeCapability = 'native-auth' | 'replay-share' | 'replay-open' | 'app-update' | 'app-update-status' | 'connectivity' | 'replay-folder-picker' | 'screen-form'
+export type NativeBridgeCapability = 'native-auth' | 'replay-share' | 'replay-open' | 'app-update' | 'app-update-status' | 'connectivity' | 'replay-folder-picker' | 'screen-form' | 'haptics'
 
 export interface NativeBridgeMethods {
   getBridgeVersion: {
@@ -168,6 +168,12 @@ export interface NativeBridgeMethods {
   setLandscapeLock: {
     request: {
       locked: boolean
+    }
+    response: boolean
+  }
+  haptic: {
+    request: {
+      kind: 'selection' | 'primary' | 'success' | 'error' | 'endpoint'
     }
     response: boolean
   }

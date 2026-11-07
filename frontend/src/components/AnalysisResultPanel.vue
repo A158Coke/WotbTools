@@ -1,4 +1,5 @@
 <script setup>
+import { showToast } from '../composables/useToast.js'
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import MarkdownContent from './MarkdownContent.vue'
@@ -64,6 +65,7 @@ async function copyAnalysis() {
   const text = buildAiReviewReplyText(props.result, t)
   if (!text) return
   if (!(await copyText(text))) return
+  showToast({ id: 'copy', tone: 'success', titleKey: 'toast.copied' })
   copied.value = true
   clearTimeout(copyTimer)
   copyTimer = setTimeout(() => {

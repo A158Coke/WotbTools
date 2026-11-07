@@ -8,6 +8,8 @@ import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import PageHeader from './PageHeader.vue'
 import SegmentedControl from './SegmentedControl.vue'
 import ThemePicker from './ThemePicker.vue'
+import AppSwitch from './AppSwitch.vue'
+import { feedbackPrefs, setFeedbackPref } from '../composables/useFeedbackPrefs.js'
 
 // "更多"页：手机 / App 的低频入口（显示设置、管理、关于与支持）。全部栏目都在左侧抽屉里，这里不重复导航。
 // 平板 / 桌面的同一份内容在侧边栏底部的"更多"弹出面板里（useMoreMenu 是唯一内容源）。账户由顶栏头像进入 profile。
@@ -53,6 +55,18 @@ const groups = computed(() => [
         >
           <label class="more-setting-label" for="more-data-version-select">{{ $t('dataVersion.title') }}</label>
           <DataVersionSelect id="more-data-version-select" variant="setting" />
+        </div>
+      </div>
+    </section>
+
+    <section class="more-section" aria-labelledby="more-feedback-prefs">
+      <h2 id="more-feedback-prefs" class="more-section-title">{{ $t('feedbackPrefs.title') }}</h2>
+      <div class="more-card">
+        <div class="more-setting" data-testid="more-haptics">
+          <AppSwitch :model-value="feedbackPrefs.haptics" :label="$t('feedbackPrefs.haptics')" :description="$t('feedbackPrefs.hapticsHint')" @update:model-value="value => setFeedbackPref('haptics', value)" />
+        </div>
+        <div class="more-setting" data-testid="more-sound">
+          <AppSwitch :model-value="feedbackPrefs.sound" :label="$t('feedbackPrefs.sound')" :description="$t('feedbackPrefs.soundHint')" @update:model-value="value => setFeedbackPref('sound', value)" />
         </div>
       </div>
     </section>

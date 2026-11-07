@@ -548,6 +548,19 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | 权限 | 未登录：AuthGate 说明登录后能做什么，再给登录按钮。无权限：说明原因，不能静默重定向 |
 | 功能关闭 | 隐藏入口；如果必须保留，就显示 Banner 说明，不能留下死 Tab |
 
+### 反馈：toast、通知、按钮状态、触感与音效
+
+同一事件同一种反馈；视觉反馈始终存在，触感与音效只是加强。
+
+| 元素 | 规则 |
+|---|---|
+| **Toast**（`composables/useToast.ts` 状态源，`app/AppToast.vue` 唯一渲染出口） | 成功 / 提示 `role=status`，4 秒后消失，悬停、按住或焦点进入时暂停计时；警告 / 错误 `role=alert`，不自动消失，带关闭与可选的下一步操作。大屏在右下、最多 3 条；抽屉外壳（手机）在顶栏下方，不压工作台底部操作栏；横屏沉浸时只显示警告 / 错误。连通性提示（`useConnectivityNotice`）复用它（warning，固定 id）。 |
+| **通知中心**（`composables/useNotifications.ts`，`app/NotificationPanel.vue`） | 只存本机最近 20 条（`wotb-notifications`）：回放解析完成、AI 复盘完成、新版本可用、名人堂提交结果；文案存 i18n key。入口是顶栏铃铛（抽屉外壳）或侧边栏底部「通知」（平板 / 桌面），带未读数；面板复用 `AppSheet`。不做服务端推送。 |
+| **按钮状态**（`AppButton`） | 按下缩到 97% 并加深；`loading` 保持宽度、显示转圈并 `aria-busy`；`confirmed` 显示确认态（如「已复制」2 秒后恢复）。 |
+| **触感**（`useHaptics`） | 事件映射：选择（分段 / 开关）10ms、主操作 20ms、成功双击、错误长振、拖到端点 8ms。Android App 走 Native Bridge 可选能力 `haptics`（系统触感常量），Android 浏览器用 `navigator.vibrate`，iPhone Safari 不触感。 |
+| **音效**（`useSound`） | 点击、成功、错误、提示四种 WebAudio 短音，默认关闭；`prefers-reduced-motion: reduce` 时不播放；iOS 随静音开关。 |
+| **设置**（`useFeedbackPrefs`，`wotb-feedback`） | 「更多」→ 反馈与提示：按键震动（默认开）、按键音效（默认关），开关用 `AppSwitch`。 |
+
 ---
 
 ## 11. 文案与术语

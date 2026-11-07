@@ -9,7 +9,7 @@ import java.util.concurrent.Executors
  * origin-scoped bridge：经 GeckoView 内置扩展的 native messaging port（[GeckoWebRuntime]），
  * 仅 exact local origin（[MainActivity.LOCAL_APP_ORIGIN]）的 top frame 可调。
  * 只暴露：capability/version discovery、pending replay handoff、temporary folder picker、app update、native auth、
- * 场景页屏幕形态与横屏锁（screen-form）。
+ * 场景页屏幕形态与横屏锁（screen-form）、系统触感（haptics）。
  * 禁止 arbitrary file/http/command/intent API（规格 §27）。
  *
  * 消息形状 `{id, method, params}`；ACK / folder release 携带 exact identity，认证 token 可带有效期。
@@ -45,6 +45,7 @@ class NativeBridge(private val host: MainActivity) {
                 "getCapabilities" -> reply(envelope(id, JSONArray(host.bridgeCapabilities())))
                 "connectivityGetState" -> reply(envelope(id, host.bridgeConnectivityState()))
                 "getScreenForm" -> reply(envelope(id, host.bridgeScreenForm()))
+                "haptic" -> reply(envelope(id, host.bridgeHaptic(params?.opt("kind") as? String)))
                 "setLandscapeLock" -> reply(envelope(id, host.bridgeSetLandscapeLock(params?.optBoolean("locked", false) == true)))
                 "getPendingReplay" -> reply(envelope(id, host.bridgePendingReplayJson()))
                 "consumePendingReplay" ->

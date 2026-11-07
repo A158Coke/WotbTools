@@ -8,6 +8,7 @@ import { useId } from 'vue'
 import { RadioGroupItem, RadioGroupRoot } from 'reka-ui'
 import { Motion } from 'motion-v'
 import { motionTransition } from '../shared/motion/motionPolicy'
+import { haptic } from '../composables/useHaptics.js'
 
 const props = defineProps({
   modelValue: { type: String, required: true },
@@ -26,7 +27,10 @@ const emit = defineEmits(['update:modelValue', 'reselect'])
 const indicatorId = `segmented-indicator-${useId()}`
 
 function select(value) {
-  if (value !== props.modelValue) emit('update:modelValue', value)
+  if (value === props.modelValue) return
+  emit('update:modelValue', value)
+  // 切换选项（筛选、分段、主题）：轻触感（§10「反馈」）
+  void haptic('selection')
 }
 /** 点已选中项不改值；需要「再点一次」语义的调用方监听 reselect。 */
 function onOptionClick(value) {

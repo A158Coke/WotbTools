@@ -25,6 +25,8 @@ import ReplayProcessingPanel from './ReplayProcessingPanel.vue'
 import RemoveConfirmModal from './RemoveConfirmModal.vue'
 import ReplayCapabilityTabs from './ReplayCapabilityTabs.vue'
 import RotatePrompt from './RotatePrompt.vue'
+import { showToast } from '../composables/useToast.js'
+import { notify } from '../composables/useNotifications.js'
 import ReplayCollectionManager from './ReplayCollectionManager.vue'
 import ReplayCapabilityAuthGate from './ReplayCapabilityAuthGate.vue'
 import AppButton from './AppButton.vue'
@@ -244,6 +246,14 @@ const targetFile = computed(() => workspace.currentTargetFile.value)
 const initialLoading = computed(() => analysis.value.phase === 'parsing' && !resp.value)
 const openFailed = computed(() => analysis.value.phase === 'failed' && !resp.value)
 const workspaceReady = computed(() => !!resp.value && files.value.length > 0)
+// 解析完成（每份新结果一次）：toast + 本机通知
+watch(resp, (next, previous) => {
+  // 官方示例（新手教程）不提示：它不是用户自己的解析任务
+  if (!next || next === previous || !files.value.length || isDemoSelection.value) return
+  const count = files.value.length
+  showToast({ id: 'replay-parsed', tone: 'success', titleKey: 'notifications.replayParsed' })
+  notify({ id: 'replay-parsed', kind: 'replay-parsed', titleKey: 'notifications.replayParsed', bodyKey: 'notifications.replayParsedBody', params: { count }, view: 'replay' })
+})
 const contentVisible = computed(() => !files.value.length || !!resp.value)
 const demoEntryVisible = computed(() => !files.value.length || onboarding?.guideActive?.value === true)
 

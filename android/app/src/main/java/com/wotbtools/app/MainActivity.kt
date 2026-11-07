@@ -805,9 +805,16 @@ class MainActivity : Activity() {
     fun bridgeVersion(): Int = BuildConfig.NATIVE_BRIDGE_VERSION
 
     fun bridgeCapabilities(): List<String> =
-        listOf("native-auth", "replay-share", "replay-open", "app-update", "app-update-status", "connectivity", "replay-folder-picker", "screen-form")
+        listOf("native-auth", "replay-share", "replay-open", "app-update", "app-update-status", "connectivity", "replay-folder-picker", "screen-form", "haptics")
 
     private fun isPhone(): Boolean = ScreenForm.isPhone(resources.configuration.smallestScreenWidthDp)
+
+    /** `haptic`：页面事件种类 → 系统触感常量（跟随系统触摸反馈设置）。未知种类不振动。 */
+    fun bridgeHaptic(kind: String?): Boolean {
+        val constant = Haptics.feedbackConstant(kind) ?: return false
+        if (destroyedRuntime || isDestroyed) return false
+        return window.decorView.performHapticFeedback(constant)
+    }
 
     /** `getScreenForm`：只报告手机 / 非手机，页面据此决定场景页是否强制横屏。 */
     fun bridgeScreenForm(): JSONObject = JSONObject().put("phone", isPhone())

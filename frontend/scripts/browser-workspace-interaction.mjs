@@ -3217,6 +3217,7 @@ function workspace2dProbe(touch = false) {
       box: box(el),
       ids: rows.map((row) => Number(row.dataset.accountId)),
       scrolls: el.scrollHeight > el.clientHeight + 1,
+      dbg: { sh: el.scrollHeight, ch: el.clientHeight, before: getComputedStyle(el, "::before").content, rows: [...el.querySelectorAll("[data-test=pb-roster-row]")].map(r => Math.round(r.getBoundingClientRect().height)).join(",") },
       scrollsX: el.scrollWidth > el.clientWidth + 1,
       rowsFit: rows.every((row) => {
         const rowBox = row.getBoundingClientRect()
@@ -3697,7 +3698,7 @@ async function runWorkspace2DScenario(env, scenario) {
   check(failures, JSON.stringify(g.left.ids) === JSON.stringify(scenario.recorder === 2 ? team2 : team1), `left lane must be Recorder friendly: ${JSON.stringify(g.left.ids)}`)
   check(failures, JSON.stringify(g.right.ids) === JSON.stringify(scenario.recorder === 2 ? team1 : team2), `right lane must be Recorder enemy: ${JSON.stringify(g.right.ids)}`)
   check(failures, g.left.box.r <= g.map.l + 1 && g.right.box.l >= g.map.r - 1, 'lanes must flank the square Stage')
-  check(failures, !g.left.scrolls && !g.right.scrolls, 'normal 7v7 lanes must not scroll')
+  check(failures, !g.left.scrolls && !g.right.scrolls, `normal 7v7 lanes must not scroll: ${JSON.stringify({ left: g.left.dbg, right: g.right.dbg })}`)
   check(failures, !g.left.scrollsX && !g.right.scrollsX && g.left.rowsFit && g.right.rowsFit,
     'long player/tank labels must shrink within each lane without horizontal scrolling or clipping the HP bar')
   check(failures, g.left.rowsComplete && g.right.rowsComplete, 'roster rows must show player / tank / HP bar with in-bar text')

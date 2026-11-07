@@ -1,4 +1,5 @@
 <script setup>
+import { showToast } from '../composables/useToast.js'
 import { ref } from 'vue'
 import { Check, Copy, Gamepad2, MessageCircle, MessageSquareText } from 'lucide-vue-next'
 import AppButton from './AppButton.vue'
@@ -16,6 +17,7 @@ const copiedKey = ref(null)
 async function copyContact(contact) {
   const ok = await copyText(contact.value)
   if (!ok) return
+  showToast({ id: 'copy', tone: 'success', titleKey: 'toast.copied' })
   copiedKey.value = contact.key
   setTimeout(() => {
     if (copiedKey.value === contact.key) copiedKey.value = null

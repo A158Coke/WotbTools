@@ -19,7 +19,9 @@ import { ANDROID_UPDATE_KEY } from '../shared/androidUpdate.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { FEEDBACK_KEY } from '../shared/feedback.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
-import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
+import { OPEN_NAV_DRAWER_KEY, SHELL_CHROME_KEY } from '../shared/shellChrome.js'
+import { NOTIFICATIONS_PANEL_KEY } from '../shared/notifications.js'
+import { notify } from '../composables/useNotifications.js'
 import { createShellChrome } from './shellChrome.js'
 import { Feature } from './featureCapabilities.js'
 import { defaultView, locationForView, viewFromRoute } from './navigation.js'
@@ -27,7 +29,8 @@ import AppTopBar from './AppTopBar.vue'
 import AppNavDrawer from './AppNavDrawer.vue'
 import AppSidebar from './AppSidebar.vue'
 import GlobalErrorDialog from './GlobalErrorDialog.vue'
-import ConnectivityNoticeDialog from './ConnectivityNoticeDialog.vue'
+import AppToast from './AppToast.vue'
+import NotificationPanel from './NotificationPanel.vue'
 import ConfirmDialogHost from '../components/ConfirmDialogHost.vue'
 import SiteFeedbackDialog from '../components/SiteFeedbackDialog.vue'
 import OnboardingHost from '../components/OnboardingHost.vue'
@@ -40,13 +43,26 @@ const router = useRouter()
 const route = useRoute()
 useUsageTelemetry(computed(() => viewFromRoute(route)))
 const { error: globalError, showError: showGlobalError, close: closeGlobalError } = useError()
-const { notice: connectivityNotice, close: closeConnectivityNotice } = useConnectivityNotice()
+const { notice: connectivityNotice } = useConnectivityNotice()
 // 外壳形态（design-language §9）：手机竖屏 / 手机横屏用顶栏菜单 + 左侧抽屉；平板 / 桌面用左侧边栏
 const { isDrawerShell } = useBreakpoint()
 const navDrawerOpen = ref(false)
 const topBar = ref(null)
 const immersiveMenu = ref(null)
-const navReturnFocus = computed(() => topBar.value?.menuButton ?? immersiveMenu.value)
+const navOpener = ref(null)
+const navReturnFocus = computed(() => navOpener.value ?? topBar.value?.menuButton ?? immersiveMenu.value)
+function openNavDrawer(opener) {
+  navOpener.value = opener ?? null
+  navDrawerOpen.value = true
+}
+// 本机通知中心：顶栏铃铛（抽屉外壳）与侧边栏底部（平板 / 桌面）共用这一个面板
+const notificationsOpen = ref(false)
+const notificationOpener = ref(null)
+function openNotifications(opener) {
+  notificationOpener.value = opener ?? null
+  notificationsOpen.value = true
+}
+provide(NOTIFICATIONS_PANEL_KEY, openNotifications)
 watch(isDrawerShell, (drawer) => { if (!drawer) navDrawerOpen.value = false })
 
 /**
@@ -137,8 +153,14 @@ provide(NAVIGATE_VIEW_KEY, navigate)
 // 并把 --header-block / --header-h 归零（scale.css 是这两个 token 的唯一 owner），预算公式无需改。
 const shellChrome = createShellChrome()
 provide(SHELL_CHROME_KEY, shellChrome)
+provide(OPEN_NAV_DRAWER_KEY, openNavDrawer)
 const androidUpdate = useAndroidUpdate({ route, router })
 provide(ANDROID_UPDATE_KEY, androidUpdate)
+// 新版本可用：记一条本机通知（同一版本只记一次，id 含版本）
+watch(() => androidUpdate.showPrompt.value && androidUpdate.snapshot.value?.latestVersionName, (version) => {
+  if (!version) return
+  notify({ id: `app-update-${version}`, kind: 'app-update', titleKey: 'notifications.appUpdate', bodyKey: 'notifications.appUpdateBody', params: { version }, view: 'more' })
+}, { immediate: true })
 watchEffect(() => {
   if (shellChrome.immersive.value) document.documentElement.dataset.shellChrome = 'immersive'
   else delete document.documentElement.dataset.shellChrome
@@ -160,12 +182,12 @@ provide(FEEDBACK_KEY, siteFeedback.request)
     v-if="isDrawerShell && !shellChrome.immersive.value"
     ref="topBar"
     :nav-open="navDrawerOpen"
-    @open-nav="navDrawerOpen = true"
+    @open-nav="openNavDrawer(null)"
   />
   <AppSidebar v-if="!isDrawerShell" />
   <!-- 沉浸态（手机横屏回放 / 装甲查看器）没有顶栏：左上保留同一个菜单入口打开抽屉 -->
   <button
-    v-if="isDrawerShell && shellChrome.immersive.value"
+    v-if="isDrawerShell && shellChrome.immersive.value && !shellChrome.navHosted.value"
     ref="immersiveMenu"
     type="button"
     class="immersive-nav"
@@ -173,7 +195,7 @@ provide(FEEDBACK_KEY, siteFeedback.request)
     :aria-expanded="navDrawerOpen ? 'true' : 'false'"
     aria-haspopup="dialog"
     data-testid="nav-menu"
-    @click="navDrawerOpen = true"
+    @click="openNavDrawer(null)"
   >
     <Menu :size="20" aria-hidden="true" />
   </button>
@@ -216,13 +238,8 @@ provide(FEEDBACK_KEY, siteFeedback.request)
     <p class="app-footer-disclaimer" data-testid="wargaming-disclaimer">{{ $t('home.wargamingDisclaimer') }}</p>
   </footer>
   <GlobalErrorDialog :error="globalError" :visible="showGlobalError" @close="closeGlobalError" />
-  <ConnectivityNoticeDialog
-    :title-key="connectivityNotice?.titleKey"
-    :message-key="connectivityNotice?.messageKey"
-    :hint-key="connectivityNotice?.hintKey"
-    :visible="!!connectivityNotice"
-    @close="closeConnectivityNotice"
-  />
+  <AppToast />
+  <NotificationPanel :open="notificationsOpen" :return-focus-to="notificationOpener" @close="notificationsOpen = false" />
   <ConfirmDialogHost />
   <SiteFeedbackDialog v-if="siteFeedbackOpen" :page-view="siteFeedbackPage" @close="siteFeedbackOpen = false" />
   <OnboardingHost :onboarding="onboarding" />

@@ -64,3 +64,6 @@ export const NATIVE_SCREEN_FORM_METHODS = Object.freeze({
   getForm: 'getScreenForm',
   setLandscapeLock: 'setLandscapeLock',
 })
+
+/** Optional haptics capability: system haptic feedback constants mapped from a fixed event kind. */
+export const NATIVE_HAPTICS_CAPABILITY = 'haptics'

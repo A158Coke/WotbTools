@@ -1,4 +1,6 @@
 <script setup>
+import { showToast } from '../composables/useToast.js'
+import { notify } from '../composables/useNotifications.js'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { confirm } from '../composables/useConfirm.js'
@@ -264,6 +266,8 @@ async function upload(file) {
     } else {
       uploadMsg.value = t('hof.upload_success')
       uploadOk.value = true
+      notify({ kind: 'submission', titleKey: 'notifications.submitted', bodyKey: 'notifications.submittedBody', view: 'hof' })
+      showToast({ tone: 'success', title: uploadMsg.value })
     }
     if (fileInput.value) fileInput.value.value = ''
     uploaded = true

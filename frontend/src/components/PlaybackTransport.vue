@@ -1,8 +1,9 @@
 <script setup>
 // Shared primary composition: −5 / Play / +5 / current speed / Fullscreen / Display.
-import { computed, ref } from 'vue'
+import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
+import { OPEN_NAV_DRAWER_KEY, SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 import { useEventListener } from '@vueuse/core'
-import { Maximize2, Minimize2, Pause, Play, PencilRuler, SlidersHorizontal } from 'lucide-vue-next'
+import { Maximize2, Menu, Minimize2, Pause, Play, PencilRuler, SlidersHorizontal } from 'lucide-vue-next'
 import PlaybackTimeline from './PlaybackTimeline.vue'
 import { formatPlaybackClock } from '../utils/playbackClock'
 import { PLAYBACK_SPEEDS } from '../composables/usePlaybackTransport.js'
@@ -33,6 +34,13 @@ const props = defineProps({
   formatClock: { type: Function, default: formatPlaybackClock },
 })
 
+// 横屏沉浸态（无顶栏）：菜单入口作为控制条的第一项，外壳不再叠悬浮按钮（design-language §9「强制横屏」）
+const shellChrome = inject(SHELL_CHROME_KEY, null)
+const openNav = inject(OPEN_NAV_DRAWER_KEY, null)
+const navOwner = Symbol('playback-transport-nav')
+const hostsNav = computed(() => !!openNav && !!shellChrome?.immersive.value)
+watch(hostsNav, (on) => shellChrome?.hostNav(navOwner, on), { immediate: true })
+onBeforeUnmount(() => shellChrome?.hostNav(navOwner, false))
 const emit = defineEmits(['toggle-play', 'step', 'set-speed', 'seek', 'scrub-start', 'scrub-end', 'toggle-fullscreen', 'toggle-display', 'toggle-annotation'])
 
 /** 紧凑档的速度菜单开合；选中或点空白即收起（与 MenuButton 同口径的渐进披露） */
@@ -71,6 +79,7 @@ const total = computed(() => Number(props.duration) - Number(props.startTime))
     @seek="emit('seek', $event)"
   />
   <div class="pb-controls" :class="{ 'phone-form': props.compact }" data-test="pb-controls" data-tour="playback-transport" @pointerdown.stop @click.stop>
+    <button v-if="hostsNav" type="button" class="pb-btn" data-testid="nav-menu" :aria-label="$t('nav.openDrawer')" aria-haspopup="dialog" @click="openNav($event.currentTarget)"><Menu :size="18" aria-hidden="true" /></button>
     <button v-if="props.stepSeconds > 0" type="button" class="pb-btn" data-test="pb-back5" :disabled="!timelineUsable" :aria-label="$t('recon.map.playback.back_seconds', { seconds: props.stepSeconds })" @click="emit('step', -props.stepSeconds)">−{{ props.stepSeconds }}</button>
     <button
       type="button"
