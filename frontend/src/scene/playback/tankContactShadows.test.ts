@@ -189,6 +189,20 @@ describe('视线方向深度拉近（地表 / 贴地物件 / 深度量化不得�
     expect(v).toContain(`, ${DEPTH_PULL.minSin.toFixed(4)});`)
   })
 
+  it('透视相机下拉近量受近裁剪面限制（复审反例：离地 0.7 m 俯视时整片被近裁剪）', () => {
+    const shader = { vertexShader: THREE.ShaderLib.basic.vertexShader }
+    applyDepthPull(shader)
+    const v = shader.vertexShader
+    expect(v).toContain('if (isPerspectiveMatrix(projectionMatrix))')
+    expect(v).toContain(`float keepDepth = ${DEPTH_PULL.nearKeep.toFixed(4)} * projectionMatrix[3][2] / (projectionMatrix[2][2] - 1.0);`)
+    expect(v).toContain('pull = eyeDepth > keepDepth ? min(pull, pullDist * (1.0 - keepDepth / eyeDepth)) : 0.0;')
+    expect(v.indexOf('keepDepth')).toBeLessThan(v.indexOf('mvPosition.xyz *='))
+    // 着色器从投影矩阵反推 near 的口径与 three 的 makePerspective 一致
+    const cam = new THREE.PerspectiveCamera(55, 1, 0.5, 4000)
+    const e = cam.projectionMatrix.elements   // 列主序：e[14] = P[3][2]，e[10] = P[2][2]
+    expect(e[14] / (e[10] - 1)).toBeCloseTo(0.5, 9)
+  })
+
   it('three 升级改掉 chunk 名时显式失败，而不是静默失去拉近', () => {
     expect(() => applyDepthPull({ vertexShader: 'void main() {}' })).toThrow(/project_vertex/)
   })
@@ -231,6 +245,31 @@ describe('车模轮廓投影（silhouettes）', () => {
     expect(outerPlusX(named('tankContactShadow')[0])).toBeCloseTo(fp.halfW + shadowMargin(fp), 4)
     shadows.update(v, 0, 0, 0, false)
     expect(shadows.silhouetteCount()).toBe(0)
+  })
+
+  it('背光坡（n·light > 0）不沿光线反方向投影：影子不会被拉到迎光侧上坡（复审反例 29° 坡 + 21° 太阳）', () => {
+    const slope = Math.tan(29 * Math.PI / 180)
+    const el = 21 * Math.PI / 180
+    const scene = new THREE.Scene()
+    const sunLight = new THREE.DirectionalLight()
+    sunLight.position.set(-Math.cos(el) * 1000, Math.sin(el) * 1000, 0)   // 传播 (cos21°, −sin21°, 0)
+    scene.add(sunLight, sunLight.target)
+    const shadows = createTankContactShadows({ scene, sunLight, heightAt: (x) => -slope * x, silhouettes: true })
+    const root = new THREE.Group()
+    const part = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2)); part.position.y = 2
+    root.add(part)
+    const v = {}
+    shadows.attachModel(v, root)
+    shadows.update(v, 0, 0, 0, true)
+    expect(shadows.silhouetteCount()).toBe(1)
+    const shadow = scene.children.find(o => o.name === 'tankSilhouetteShadow') as THREE.Mesh
+    root.updateMatrixWorld(true)
+    shadow.onBeforeRender({} as THREE.WebGLRenderer, scene, new THREE.PerspectiveCamera(), shadow.geometry,
+      shadow.material as THREE.Material, new THREE.Group())
+    const p = new THREE.Vector3(0, 0, 0).applyMatrix4(shadow.matrixWorld)   // 部件原点 = 世界 (0, 2, 0)
+    expect(p.x).toBeGreaterThan(-1)                       // 修复前 −11.4993（落到太阳一侧上坡）
+    expect(p.y).toBeLessThan(2)                           // 修复前 6.41（影子跑到车模上方）
+    expect(p.y).toBeCloseTo(-slope * p.x + 0.04, 1)       // 仍落在车底局部地表平面上
   })
 
   it('先有阴影条目、后挂车模（GLB 迟到）也建立轮廓影子', () => {

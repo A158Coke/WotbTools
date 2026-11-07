@@ -190,7 +190,10 @@ function makeGradientTexture(): THREE.DataTexture {
 // 都不再盖住阴影（用户验收：「阴影有时被地形覆盖」）；高于 H 的建筑 / 车体在前时仍遮挡
 // （深度测试保留）。低视角下所需拉近量按 1/sinθ 增长（仰角 20° 时 6 cm 高的表面已需 0.18 m），
 // 故按视角计算而非固定米数；minSin 与 max 限住贴地平视时的拉近量。
-export const DEPTH_PULL = Object.freeze({ height: 0.25, minSin: 0.1, max: 2.5 })
+// 近裁剪余量（复审反例：自由相机离地 0.7 m 俯视，near 0.5 m，拉近后 25 个顶点视深从 0.66 m
+// 落到 0.41 m，整片被近裁剪）：拉近后视深不得小于 nearKeep × near——拉近沿视线、视深按
+// (pullDist − pull) / pullDist 等比缩小，故 pull ≤ pullDist · (1 − nearKeep·near / 视深)。
+export const DEPTH_PULL = Object.freeze({ height: 0.25, minSin: 0.1, max: 2.5, nearKeep: 1.05 })
 
 /** 注入到 MeshBasicMaterial 顶点着色器（project_vertex 之后、logdepthbuf_vertex 之前） */
 export function applyDepthPull(shader: { vertexShader: string }): void {
@@ -203,6 +206,12 @@ export function applyDepthPull(shader: { vertexShader: string }): void {
     vec3 upView = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
     float viewSin = max(dot(-mvPosition.xyz / max(pullDist, 1e-4), upView), ${f(DEPTH_PULL.minSin)});
     float pull = min(${f(DEPTH_PULL.height)} / viewSin, ${f(DEPTH_PULL.max)});
+    if (isPerspectiveMatrix(projectionMatrix)) {
+      // three makePerspective：P[3][2] / (P[2][2] − 1) = near
+      float keepDepth = ${f(DEPTH_PULL.nearKeep)} * projectionMatrix[3][2] / (projectionMatrix[2][2] - 1.0);
+      float eyeDepth = -mvPosition.z;
+      pull = eyeDepth > keepDepth ? min(pull, pullDist * (1.0 - keepDepth / eyeDepth)) : 0.0;
+    }
     mvPosition.xyz *= max(pullDist - pull, 0.0) / max(pullDist, 1e-4);
     gl_Position = projectionMatrix * mvPosition;
   }`)

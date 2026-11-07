@@ -25,6 +25,14 @@ describe('planarShadowMatrix', () => {
     }
   })
 
+  it('背光入射（n·light > 0）退化为沿法线投影，不沿光线反方向求交', () => {
+    const m = planarShadowMatrix(UP, 0, { x: 0.8, y: 0.6, z: 0 }, new THREE.Matrix4())
+    const p = new THREE.Vector3(2, 5, 3).applyMatrix4(m)
+    expect(p.x).toBeCloseTo(2, 9)
+    expect(p.y).toBeCloseTo(0, 9)
+    expect(p.z).toBeCloseTo(3, 9)
+  })
+
   it('光线贴着平面（入射角过小）时改为沿法线投影，不产生无限延伸', () => {
     const m = planarShadowMatrix(UP, 0, { x: 1, y: -0.001, z: 0 }, new THREE.Matrix4())
     const p = new THREE.Vector3(2, 5, 3).applyMatrix4(m)

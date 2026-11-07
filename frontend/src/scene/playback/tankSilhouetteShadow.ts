@@ -8,17 +8,19 @@ import type { Material, Object3D, Scene } from 'three'
 
 interface Vec3Like { x: number, y: number, z: number }
 
-/** 光线与平面法线夹角过小（贴着平面射入）时改为沿法线投影，避免投影无限延伸 */
+/** 光线必须至少以这个余弦「射向」接收面（n·light ≤ −MIN_INCIDENCE）；否则改为沿法线投影 */
 const MIN_INCIDENCE = 0.05
 
 /**
  * 方向光平面投影矩阵：点 p 沿 light（传播方向，单位向量）落到平面 n·x + d = 0。
- * p' = p − light · (n·p + d) / (n·light)。normal 须为单位向量。
+ * p' = p − light · (n·p + d) / (n·light)。normal 须为单位向量（朝上）。
+ * 只接受射向平面的入射：贴面入射会无限延伸，背光坡（n·light > 0）会沿光线**反方向**求交，
+ * 把影子拉到迎光侧的上坡（复审反例：29° 背光坡 + 21° 太阳，影子落到太阳一侧 11.5 m 外）。
  */
 export function planarShadowMatrix(normal: Vec3Like, d: number, light: Vec3Like, out: THREE.Matrix4): THREE.Matrix4 {
   let lx = light.x, ly = light.y, lz = light.z
   let k = normal.x * lx + normal.y * ly + normal.z * lz
-  if (!(Math.abs(k) >= MIN_INCIDENCE)) { lx = -normal.x; ly = -normal.y; lz = -normal.z; k = -1 }
+  if (!(k <= -MIN_INCIDENCE)) { lx = -normal.x; ly = -normal.y; lz = -normal.z; k = -1 }
   const nx = normal.x / k, ny = normal.y / k, nz = normal.z / k
   return out.set(
     1 - lx * nx, -lx * ny, -lx * nz, -lx * d / k,
