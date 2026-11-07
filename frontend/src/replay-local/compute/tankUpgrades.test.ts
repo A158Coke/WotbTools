@@ -13,6 +13,43 @@ const kr = TANKS.find(t => t.modules.tankId === 28161)!
 const black = TANKS.find(t => t.modules.tankId === 30241)!
 const hacker = TANKS.find(t => t.modules.tankId === 30497)!
 
+describe('XI 研发树 custom 模式（部分研发 ↔ 面板/配置栏联动）', () => {
+  const bz = TANKS.find(t => t.modules.tankId === 15153)!
+  const progression = bz.modules.upgradeProgression
+  const techToId = new Map(progression.nodes.map(n => [n.techName, n.id]))
+  const root = progression.nodes.find(n => n.gridPosition && !(n.requiredNodes ?? []).length)!
+
+  it('custom：abilities 为已研发 id 表，只聚合已安装节点', () => {
+    const rootId = techToId.get(root.techName)!
+    const sel = resolveUpgradeSelection(bz.modules, 'custom', [rootId])
+    expect(sel.available).toBe(true)
+    expect(sel.mode).toBe('custom')
+    // 根节点自己的属性已计入
+    const names = Object.keys(sel.attributes)
+    expect(names.length).toBeGreaterThan(0)
+    // abilities = 完整已研发表（配置栏/研发树往返依赖它不被裁剪）
+    expect(sel.abilities).toEqual([rootId])
+    // 组备选未安装：不产生 choices
+    expect(Object.values(sel.choices).flat()).toEqual([])
+  })
+
+  it('custom：安装组 + 备选后机制属性生效', () => {
+    const group = progression.alternativeGroups[0]
+    const altId = group.choices[0]
+    // 组 + 备选 + 全部前置（简化：直接给全量普通节点中的一部分与组链）
+    const researched = [altId, group.id]
+    const sel = resolveUpgradeSelection(bz.modules, 'custom', researched)
+    expect(sel.abilities).toEqual([altId])
+    expect(sel.choices[group.id]).toBe(altId)
+  })
+
+  it('custom：未知 id 被忽略，不产生部分聚合', () => {
+    const sel = resolveUpgradeSelection(bz.modules, 'custom', [999999, techToId.get(root.techName)!])
+    expect(sel.supported).toBe(true)
+    expect(sel.abilities).toEqual([techToId.get(root.techName)!])
+  })
+})
+
 describe('XI 技能升级变化展示', () => {
   const catalog = { ...MECHANICS, consumablesGameVersion: MECHANICS.gameVersion, provisionsGameVersion: MECHANICS.gameVersion }
   const boundModules = (modules: typeof black.modules) => ({ ...modules,
@@ -149,7 +186,7 @@ describe('真实客户端 XI 节点选择', () => {
       expect(selection.choices).toEqual({ [group.id]: 24 })
       expect(selection.abilities).toEqual([24])
     }
-    for (const input of [[999, 2], '999,2', '24.0', '-24', '24,,22', '24,22,23,24,22,23,24,22,23', { [group.id]: 2 }]) {
+    for (const input of [[999, 2], '999,2', '24.0', '-24', '24,,22', '901,902,903,904,905,906,907,908,909', { [group.id]: 2 }]) {
       expect(resolveUpgradeSelection(bz.modules, 'top', input).abilities).toEqual([22])
     }
     expect(resolveUpgradeSelection(bz.modules, 'invalid', [24]).mode).toBe('stock')

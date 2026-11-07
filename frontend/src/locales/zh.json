@@ -1746,7 +1746,33 @@
         "RAMMING_CONFIGURATION_RAMMING_DAMAGE_REDUCTION": "撞击承伤系数",
         "COMBAT_FRENZY_ALLOW_SWITCH_AFTER_KILL": "击毁目标后保留层数",
         "COMBAT_FRENZY_RELOAD_SPEED_BONUS_PER_STACK": "每层装填速度加成",
-        "COMBAT_FRENZY_MAX_STACKS": "最大层数"
+        "COMBAT_FRENZY_MAX_STACKS": "最大层数",
+        "ATTRIBUTE_NAME_MAX_HEALTH": "生命值",
+        "ATTRIBUTE_NAME_GUN_RELOAD_TIME": "装填时间",
+        "ATTRIBUTE_NAME_FIRE_START_CHANCE": "引擎被击中起火几率",
+        "ATTRIBUTE_NAME_ENGINE_POWER": "引擎功率",
+        "ATTRIBUTE_NAME_FORWARD_MAX_SPEED": "前进极速",
+        "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_1": "1 号弹伤害",
+        "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_2": "2 号弹伤害",
+        "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_3": "3 号弹伤害",
+        "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_1": "1 号弹弹速",
+        "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_2": "2 号弹弹速",
+        "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_3": "3 号弹弹速",
+        "ATTRIBUTE_NAME_DISPERSION_ANGLE_FACTOR_BONUS": "瞄准圈扩散系数",
+        "ATTRIBUTE_NAME_DISPERSION_TURRET_ROTATION_FACTOR": "炮塔旋转散布系数",
+        "ATTRIBUTE_NAME_DISPERSION_VEHICLE_MOVEMENT_FACTOR": "车体移动散布系数",
+        "ATTRIBUTE_NAME_DISPERSION_VEHICLE_ROTATION_FACTOR": "车体旋转散布系数",
+        "ATTRIBUTE_NAME_HULL_ROTATION_SPEED_FACTOR_BONUS": "车体转向速度",
+        "ATTRIBUTE_NAME_PITCH_LIMIT_UP": "仰角",
+        "ATTRIBUTE_NAME_PITCH_LIMIT_DOWN": "俯角",
+        "ATTRIBUTE_NAME_ARMOR_HOMOGENIZATION_FACTOR_BONUS": "装甲均质化系数",
+        "ATTRIBUTE_NAME_MODULES_AMMOBAY_MAX_HEALTH_FACTOR": "弹药架耐久",
+        "ATTRIBUTE_NAME_MODULES_ENGINE_MAX_HEALTH": "引擎耐久",
+        "ATTRIBUTE_NAME_MODULES_FUEL_TANK_HEALTH_FACTOR": "油箱耐久",
+        "ATTRIBUTE_NAME_MODULES_GUN_MAX_HEALTH_FACTOR": "火炮耐久",
+        "ATTRIBUTE_NAME_MODULES_SURVEYING_DEVICE_MAX_HEALTH_FACTOR": "观瞄设备耐久",
+        "ATTRIBUTE_NAME_MODULES_TRACK_MAX_HEALTH_FACTOR": "履带耐久",
+        "ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR": "炮塔旋转机耐久"
       },
       "title": "配置",
       "reset": "重置",
@@ -1803,7 +1829,39 @@
       "gun_type_autoloader": "弹夹炮",
       "gun_type_autoreloader": "自动装填炮",
       "gun_meta": "{caliber} mm · {type}",
-      "consumable_timing": "{name} · 持续 {duration} 秒 · 冷却 {cooldown} 秒"
+      "consumable_timing": "{name} · 持续 {duration} 秒 · 冷却 {cooldown} 秒",
+      "augment_title": "Augments · XI 升级研发",
+      "augment_hint": "单击未研发节点即研发（连带全部前置）；单击已研发节点回退其下游分支。数值为该节点增量。",
+      "augment_can_research": "可研发",
+      "augment_installed": "已研发",
+      "augment_mechanic_active": "机制生效中",
+      "augment_choice_saved": "已选增强（研发组后生效）",
+      "augment_research_with": "单击研发 · 连带前置 {count} 件",
+      "augment_choice": "已选",
+      "augment_or": "或",
+      "augment_options_hint": "三选一：研发组后选择其一，效果互斥",
+      "augment_mechanics": {
+        "RechargeableNitro": {
+          "name": "Liquid Fuel Boosters",
+          "description": ""
+        },
+        "CombatFrenzy": {
+          "name": "Combat Frenzy",
+          "description": ""
+        },
+        "RammingConfiguration": {
+          "name": "Ramming Configuration",
+          "description": ""
+        },
+        "BurstMode": {
+          "name": "Burst Mode",
+          "description": ""
+        },
+        "SteadyAimSystem": {
+          "name": "Steady Aim System",
+          "description": ""
+        }
+      }
     },
     "params": {
       "title": "参数",

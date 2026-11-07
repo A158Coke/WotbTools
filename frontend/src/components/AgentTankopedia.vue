@@ -36,6 +36,7 @@ import AppButton from './AppButton.vue'
 import TankCatalogMenu from './TankCatalogMenu.vue'
 import TankConfigPanel from './TankConfigPanel.vue'
 import TankResearchPanel from './TankResearchPanel.vue'
+import TankAugmentTree from './TankAugmentTree.vue'
 import TankParamPanel from './TankParamPanel.vue'
 import AppDialog from './AppDialog.vue'
 import { Motion } from 'motion-v'
@@ -254,6 +255,39 @@ const setup = computed(() => resolveSetup({
 /** 研发弹窗开关。弹窗与配置栏模块矩阵共用同一个 `setup`（URL 状态），改动双向同步；
  *  换车（含弹窗里点下一级坦克）时关闭，避免把上一辆车的图留在窗口里。 */
 const researchOpen = ref(false)
+/** XI：modules 带客户端 upgradeProgression（研发界面切升级树形态）。 */
+const isXiResearch = computed(() => !!modules.value?.upgradeProgression)
+
+/**
+ * 研发树 ↔ 配置栏/参数面板 三方共用同一 URL 状态：
+ * - stock → 空表；top → 全部普通/机制节点 + 各组已选备选；custom → abilities 原表。
+ * 研发树事件写回 custom + abilities，投影（projectTankUpgrades）随之重算。
+ */
+const augmentInstalled = computed(() => {
+  if (!isXiResearch.value) return []
+  if (urlState.value.upgrade === 'custom') return urlState.value.abilities
+  const sel = upgradeSelection.value
+  if (!sel.available || sel.mode !== 'top') return []
+  return [
+    ...sel.nodes.filter(n => n.type !== 'NODETYPE_ALTERNATIVE_MECHANIC').map(n => n.id),
+    ...sel.abilities,
+  ]
+})
+const augmentChosen = computed(() => {
+  const g = modules.value?.upgradeProgression?.alternativeGroups?.[0]
+  if (!g) return {}
+  const picked = augmentInstalled.value.filter(id => g.choices.includes(id))
+  return picked.length ? { [g.id]: picked[picked.length - 1] } : {}
+})
+function onAugmentResearch(ids) {
+  writeState({ upgrade: ids.length ? 'custom' : 'stock', abilities: ids })
+}
+function onAugmentResearchAll() {
+  writeState({ upgrade: 'top', abilities: [] })
+}
+function onAugmentResearchNone() {
+  writeState({ upgrade: 'stock', abilities: [] })
+}
 watch(detailId, () => { researchOpen.value = false })
 // 离开坦克百科（打开 3D 等）时不能把模态留在别的页面上
 watch(() => route.query.view, view => { if (view !== VIEW) researchOpen.value = false }, { flush: 'sync' })
@@ -448,7 +482,8 @@ const pitchBonus = computed(() => {
 /** 初始/顶级快捷：只切换模块（config/发动机/履带），保留装备与物品选择。 */
 function applyModulePreset(kind) {
   writeSetup({
-    ...(upgradeSelection.value.available ? { upgrade: kind === 'stock' ? 'stock' : 'top' } : {}),
+    ...(upgradeSelection.value.available
+      ? { upgrade: kind === 'stock' ? 'stock' : 'top', abilities: [] } : {}),
     config: kind === 'stock' ? 0 : Math.max(0, cfgs.value.length - 1),
     engine: kind === 'stock' ? 0 : Math.max(0, (modules.value?.engines?.length || 1) - 1),
     track: kind === 'stock' ? 0 : Math.max(0, (modules.value?.chassis?.length || 1) - 1),
@@ -708,13 +743,22 @@ onMounted(() => {
         <!-- 研发弹窗：客户端 ModulesTree 的形态；改动与背后的配置栏同源（URL） -->
         <AppDialog
           :open="researchOpen"
-          :title="t('research.modules_title')"
+          :title="isXiResearch ? t('agentTanks.configurator.augment_title') : t('research.modules_title')"
           size="xl"
           data-testid="tank-research-dialog"
           @close="researchOpen = false"
         >
+          <TankAugmentTree
+            v-if="modules && setup.canConfigure && isXiResearch"
+            :modules="modules"
+            :installed="augmentInstalled"
+            :chosen="augmentChosen"
+            @research="onAugmentResearch"
+            @research-all="onAugmentResearchAll"
+            @research-none="onAugmentResearchNone"
+          />
           <TankResearchPanel
-            v-if="modules && setup.canConfigure"
+            v-else-if="modules && setup.canConfigure"
             :detail="detail"
             :modules="modules"
             :selection="setup"

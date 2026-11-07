@@ -109,6 +109,13 @@ const abilityGroups = computed(() => (upgrades.value.groups || []).map((group, g
   }),
 })))
 function selectAbility(group, value) {
+  // custom（研发树联动）：abilities 即已研发表——选卡 = 组内换选，其余已研发节点保留
+  if (props.selection.upgrade === 'custom') {
+    const next = props.selection.abilities.filter(id => !group.choices.includes(id))
+    next.push(Number(value))
+    emit('update', { abilities: next })
+    return
+  }
   const choices = { ...upgrades.value.choices, [group.id]: Number(value) }
   const next = resolveUpgradeSelection(props.modules, props.selection.upgrade, choices)
   emit('update', { abilities: next.abilities })
