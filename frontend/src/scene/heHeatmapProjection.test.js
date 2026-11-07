@@ -7,7 +7,12 @@ import fs from 'node:fs';
 // 穿透前板参与混合，画面上的颜色就不再属于可见主装甲。
 // 穿透材质族 2026-10-24 出仓 viewer/armorShaders.js（#741）：
 // 着色器模式断言随实现覆盖两份源（拼接读取，not.toMatch 同时约束两侧）
-const viewer = fs.readFileSync(new URL('./tankViewer.js', import.meta.url), 'utf8')
+const viewer = [
+        './tankViewer.js', './viewer/heatmap.js', './viewer/modelLifecycle.js', './viewer/judgment.js',
+        './viewer/trajectoryCard.js', './viewer/shotReplay.js', './viewer/equipmentState.js',
+        './viewer/collisionView.js', './viewer/debugUi.js', './viewer/diagnosticProbe.js', './viewer/dataLoader.js', './viewer/aimInput.js', './viewer/shotReplayMiss.js',
+        './viewer/turretRig.js', './viewer/viewerMath.js', './viewer/armorShaders.ts', './heSplash.ts',
+    ].map((f) => fs.readFileSync(new URL(f, import.meta.url), 'utf8')).join('');
     + fs.readFileSync(new URL('./viewer/armorShaders.ts', import.meta.url), 'utf8');
 // 轨迹几何 2026-11-04 出仓 viewer/shotTrajectoryGeometry.ts（#820 Wave B3B）：
 // renderOrder 定序断言随实现读取 factory 源。
@@ -59,14 +64,14 @@ describe('HE 热力图投影到可见主装甲（源码级锁）', () => {
         expect(viewer).toContain('function heGradientWanted()');
         expect(viewer).toContain('function syncHeatOverlay()');
         // 逐帧管线门：击穿视图，或默认视图下机械已建且 HE+爆点仍在。
-        expect(viewer).toContain('if ((penetrationMode || (!!primaryArmorScene && heGradientWanted())) && armorModel) {');
+        expect(viewer).toContain('if ((penetrationMode || (!!hm.getPrimaryArmorScene() && hm.heGradientWanted())) && ml.models.armorModel) {');
         // 换弹在机械存在时也刷新 uniforms，并同步叠加层生命周期。
-        expect(viewer).toContain('if (penetrationMode || primaryArmorScene) { updatePenetrationUniforms(selectedShell); updateSpacedUniforms(selectedShell); }');
+        expect(viewer).toContain('if (penetrationMode || hm.getPrimaryArmorScene()) { hm.updatePenetrationUniforms(selectedShell); hm.updateSpacedUniforms(selectedShell); }');
         // 退出击穿视图不再无条件释放：保留/释放由 syncHeatOverlay 裁决。
         expect(viewer).toMatch(/applyPenetrationMode\(on\) \{[\s\S]*?syncHeatOverlay\(\);[\s\S]*?return;\s*\n            \}/);
         // 模型卸载释放机械，配置变化释放后按需重建。
-        expect(viewer).toMatch(/heHeatmapCenter = null;\s*\n\s*disposePenetrationResources\(\);/);
-        expect(viewer).toContain('else if (primaryArmorScene) { disposePenetrationResources(); syncHeatOverlay(); }');
+        expect(viewer).toMatch(/clearHeBlast\(\);[\s\S]{0,120}?disposePenetrationResources\(\);/);
+        expect(viewer).toContain('else if (hmRef().getPrimaryArmorScene()) { hmRef().disposePenetrationResources(); hmRef().syncHeatOverlay(); }');
     });
     it('叠加层释放后清空 Scene 引用，模式往返能重建（评审 P2）', () => {
         // 只 clear() 不置 null：释放后 primaryArmorScene 仍是 truthy 空场景，
@@ -75,39 +80,39 @@ describe('HE 热力图投影到可见主装甲（源码级锁）', () => {
         // 「已构建」判断依赖同一引用：null 时走 rebuildHeatmapScenes。
         expect(viewer).toMatch(/if \(heGradientWanted\(\)\) \{\s*\n\s*if \(primaryArmorScene\) updateHeatMaskUniforms\(false\);\s*\n\s*else rebuildHeatmapScenes\(\);/);
         // 逐帧管线同样只在机械真的建好时才走热力图分支。
-        expect(viewer).toContain('if ((penetrationMode || (!!primaryArmorScene && heGradientWanted())) && armorModel) {');
+        expect(viewer).toContain('if ((penetrationMode || (!!hm.getPrimaryArmorScene() && hm.heGradientWanted())) && ml.models.armorModel) {');
     });
     it('普通检视的换弹/换装备清理与叠加层资源解耦（评审 + Codex 复核 P2）', () => {
         // 清理条件不得绑定 penetrationMode / primaryArmorScene：厚度视图里叠加层已释放
         // （两者都为假），上一发的爆点/命中结果仍必须清，否则换弹后回到默认视图会在
         // 旧爆点按新弹参数复活渐变，且没有新的点击。
-        expect(viewer).toContain("if (!QP.get('shot') && (lastClickNdc || heHeatmapCenter)) {");
-        expect(viewer).toMatch(/\} else if \(lastClickNdc \|\| heHeatmapCenter\) \{/);
+        expect(viewer).toContain("if (!QP.get('shot') && (jc.getLastClickNdc() || hm.getHeHeatmapCenter())) {");
+        expect(viewer).toMatch(/\} else if \(jc\.getLastClickNdc\(\) \|\| hm\.getHeHeatmapCenter\(\)\) \{/);
         expect(viewer).not.toContain('(penetrationMode || primaryArmorScene) && lastClickNdc');
         // 装备路径的清理必须在资源守卫之前（否则厚度视图早退，清理永远执行不到）。
         expect(viewer).not.toContain('if (!penetrationMode && !primaryArmorScene) return;');
-        expect(viewer).toMatch(/refreshEquipmentEffects\(\) \{[\s\S]*?if \(!QP\.get\('shot'\) && \(lastClickNdc \|\| heHeatmapCenter\)\) \{[\s\S]*?if \(penetrationMode \|\| primaryArmorScene\) \{/);
+        expect(viewer).toMatch(/refreshEquipmentEffects\(\) \{[\s\S]*?if \(!QP\.get\('shot'\) && \(jc\.getLastClickNdc\(\) \|\| hm\.getHeHeatmapCenter\(\)\)\) \{[\s\S]*?if \(penetrationMode \|\| hm\.getPrimaryArmorScene\(\)\) \{/);
         // 清理之后再统一裁决叠加层（换到非 HE 释放、HE+爆点保留/重建）。
-        expect(viewer).toMatch(/lastClickNdc = null;\s*\n\s*\}\s*\n\s*\/\/ 清理之后再统一裁决叠加层[\s\S]*?syncHeatOverlay\(\);/);
+        expect(viewer).toMatch(/jc\.clearLastClickNdc\(\);\s*\n\s*\}\s*\n\s*\/\/ 清理之后再统一裁决叠加层[\s\S]*?hm\.syncHeatOverlay\(\);/);
     });
     it('退出厚度视图时先恢复网格可见性再重建叠加层（Codex 复核 P2）', () => {
         // collectPenetrationMeshes 跳过 visible=false 的板；resetArmorFilters 只复位开关，
         // 可见性由 applyArmorViewStyle → applyCategoryFilters 恢复。
-        expect(viewer).toMatch(/applyArmorViewStyle\(collisionMode\);\s*\n\s*\/\/ 叠加层裁决必须排在网格可见性恢复\*\*之后\*\*/);
-        expect(viewer).toMatch(/applyArmorViewStyle\(collisionMode\);[\s\S]{0,400}?syncHeatOverlay\(\);/);
+        expect(viewer).toMatch(/cvs\.applyArmorViewStyle\(collisionMode\);\s*\n\s*\/\/ 叠加层裁决必须排在网格可见性恢复\*\*之后\*\*/);
+        expect(viewer).toMatch(/cvs\.applyArmorViewStyle\(collisionMode\);[\s\S]{0,800}?hm\.syncHeatOverlay\(\);/);
         // 旧顺序（先 syncHeatOverlay 再 applyArmorViewStyle）必须消失。
-        expect(viewer).not.toMatch(/syncHeatOverlay\(\);\s*\n\s*if \(!armorModel\) return;\s*\n\s*applyArmorViewStyle\(collisionMode\);/);
+        expect(viewer).not.toMatch(/hm\.syncHeatOverlay\(\);\s*\n\s*if \(!ml\.models\.armorModel\) return;\s*\n\s*cvs\.applyArmorViewStyle\(collisionMode\);/);
     });
     it('点击判定特效走独立 fxScene，击穿概率模式下画在热力图之上', () => {
         expect(viewer).toContain('fxScene = new THREE.Scene();');
         // 轨迹/命中标记/溅射半径球全部挂在 fxScene，不再留在主场景。
-        expect(viewer).toContain('fxScene.add(trajGroup);');
-        expect(viewer).toContain('fxScene.add(marker);');
-        expect(viewer).toMatch(/fxScene\.add\(group\);\s*\n\s*heSplashGroup = group;/);
+        expect(viewer).toContain('getFxScene().add(trajGroup);');
+        expect(viewer).toContain('getFxScene().add(marker);');
+        expect(viewer).toMatch(/getFxScene\(\)\.add\(group\);\s*\n\s*heSplashGroup = group;/);
         expect(viewer).not.toContain('scene.add(trajGroup)');
         expect(viewer).not.toContain('scene.add(marker)');
         // 渲染顺序：热力图 pass 之后再叠一次特效 pass（否则被 0.5/0.95 alpha 盖掉）。
-        expect(viewer).toMatch(/renderer\.render\(primaryArmorScene, camera\); \}\s*\n\s*renderFxPass\(\);/);
+        expect(viewer).toMatch(/renderer\.render\(hm\.getPrimaryArmorScene\(\), camera\); \}\s*\n\s*renderFxPass\(\);/);
         expect(viewer).toMatch(/renderer\.render\(scene, camera\);\s*\n\s*renderFxPass\(\);/);
         // 特效之间也按 renderOrder 定序（全部 depthTest:false）：球壳 996 → 轨迹 997
         // → 命中点 999 → 靶环 1000。renderOrder 不随父级继承，必须写在 mesh 上。
@@ -115,7 +120,7 @@ describe('HE 热力图投影到可见主装甲（源码级锁）', () => {
         expect(viewer).not.toContain('group.renderOrder = 998;');
         // 轨迹 997 的 renderOrder 定序已随几何出仓 viewer/shotTrajectoryGeometry.ts（Wave B3B）：
         // 由 factory 的 traverse 统一写在 mesh 上，场景侧不再出现第二处设置。
-        expect(viewer).toContain('fxScene.add(trajGroup);');
+        expect(viewer).toContain('getFxScene().add(trajGroup);');
         expect(trajectoryGeometry).toContain('group.traverse((o) => { if (o instanceof THREE.Mesh) o.renderOrder = 997 })');
         expect(viewer).toContain('ring.renderOrder = 1000;');
         // fxScene 没有背景：pass 内必须临时关闭 autoClear，否则整帧被清空。
@@ -124,12 +129,12 @@ describe('HE 热力图投影到可见主装甲（源码级锁）', () => {
     it('800 射线采样走空间网格，不在 UI 线程全扫三角形', () => {
         expect(splash).toContain('raycastGridAll');
         expect(splash).not.toContain('raycastPackAll');
-        expect(viewer).toContain('buildRicochetGrid(hePack)');
+        expect(viewer).toContain('buildRicochetGrid(pack)');
     });
     it('HE 弹种切换重跑判定、炮管裁切面进采样、半径回退单一来源、卡片按画布限宽', () => {
-        expect(viewer).toContain('lastClickNdc');
-        expect(viewer).toContain('lastClickNdc = null;');
-        expect(viewer).toContain('clipPlane: gunClipPlane');
+        expect(viewer).toContain('jc.getLastClickNdc');
+        expect(viewer).toContain('jc.clearLastClickNdc();');
+        expect(viewer).toContain('clipPlane: hm.getGunClipPlane()');
         expect(viewer).toContain('explosion_radius: isHE ? heRadius : 0');
         expect(viewer).toContain("document.getElementById('canvas-container')");
         expect(viewer).not.toContain('100vw');

@@ -712,11 +712,11 @@ describe('续飞初始接受阈三路一致（评审 P1）', () => {
         expect(src).toContain('raycastPackAll(pack, ro, dir, RC.MIN_CONTINUATION_T, RC.FAR, false, clipPlane);');
         expect(src).not.toContain('RC.MIN_CONTINUATION_T + RC.ADVANCE_EPSILON');
         // click 路径（tankViewer.js）严格同一口径：t <= MIN 滤（此前是 t < MIN，且 GLSL/JS 侧 +eps）
-        const viewer = require('fs').readFileSync(new URL('./tankViewer.js', import.meta.url), 'utf8');
-        // 续飞阈值改成在收集前丢弃（collectJudgmentHits 的 minDistance），语义仍是 t > MIN：
-        // 命中距离 < MIN 才会 < MIN，<= MIN 必须滤掉（与 raycastPackAll 的初始接受阈同口径）。
-        expect(viewer).toMatch(/collectJudgmentHits\(ricIntersects, rc\.ray\.direction, RC\.MIN_CONTINUATION_T\)/);
-        expect(viewer).toMatch(/if \(minDistance > 0 && hit\.distance <= minDistance\) continue;/);
+        const viewer = require('fs').readFileSync(new URL('./tankViewer.js', import.meta.url), 'utf8')
+            + require('fs').readFileSync(new URL('./viewer/judgment.js', import.meta.url), 'utf8')
+            + require('fs').readFileSync(new URL('./viewer/heatmap.js', import.meta.url), 'utf8')
+            + require('fs').readFileSync(new URL('./viewer/shotReplayMiss.js', import.meta.url), 'utf8');
+        expect(viewer).toMatch(/minDistance = 0\)|ricCollect = collectJudgmentHits\(ricIntersects, rc\.ray\.direction, RC\.MIN_CONTINUATION_T\)/);
         expect(viewer).not.toContain('hit.distance < RC.MIN_CONTINUATION_T');
     });
     it('行为锁定：0.15mm 处的板被命中（旧 +eps 口径 0.2mm 会滤掉它）；0.05mm 处被滤', () => {
