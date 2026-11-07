@@ -598,9 +598,16 @@ async function runDesktopScenario(env, scenario) {
     `${label}: 返回键没有贴 armor-view 左上 inset 20（back=${JSON.stringify(backRel)}）`)
   check(failures, coexistVertical || coexistHorizontal,
     `${label}: 顶栏未在返回键下方或右侧留出 space-2 间距（bar=${JSON.stringify(barRel)} back=${JSON.stringify(layout.back && { bottom: layout.back.bottom, right: layout.back.right })}）`)
-  check(failures, layout.bottomBar && layout.root
-    && Math.abs((layout.bottomBar.top - layout.root.top) - 20) <= 2 && Math.abs((layout.root.right - layout.bottomBar.right) - 20) <= 2,
-    `${label}: 底栏没有回到右上角（top=${layout.bottomBar?.top} right=${layout.bottomBar?.right} root right=${layout.root?.right}，期望相对 20/20）`)
+  // 手机横屏场景 HUD：射击快捷面板在右下拇指区（距底 space-2）；平板 / 桌面仍在右上角（20/20）
+  if (scenario.phoneLandscape) {
+    check(failures, layout.bottomBar && layout.root
+      && Math.abs((layout.root.bottom - layout.bottomBar.bottom) - 8) <= 2 && Math.abs((layout.root.right - layout.bottomBar.right) - 20) <= 2,
+      `${label}: 射击快捷面板没有停在右下拇指区（bottom=${layout.bottomBar?.bottom} right=${layout.bottomBar?.right} root=${JSON.stringify(layout.root)}）`)
+  } else {
+    check(failures, layout.bottomBar && layout.root
+      && Math.abs((layout.bottomBar.top - layout.root.top) - 20) <= 2 && Math.abs((layout.root.right - layout.bottomBar.right) - 20) <= 2,
+      `${label}: 底栏没有回到右上角（top=${layout.bottomBar?.top} right=${layout.bottomBar?.right} root right=${layout.root?.right}，期望相对 20/20）`)
+  }
   check(failures, layout.viewToggleDisplay === 'flex',
     `${label}: 视图开关不是桌面 flex 布局（display=${layout.viewToggleDisplay}）`)
   // 右上角是一块固定宽度面板：进入厚度视图（装甲组成过滤行出现）不得把面板撑宽
@@ -624,13 +631,23 @@ async function runDesktopScenario(env, scenario) {
   check(failures, opened.toolsOpen === true && opened.tools?.ariaExpanded === 'true',
     `${label}: 点击后设置面板未展开（is-tools-open=${opened.toolsOpen} aria=${opened.tools?.ariaExpanded}）`)
   check(failures, opened.selectors?.visible === true, `${label}: 点击后设置面板仍不可见`)
-  check(failures, opened.selectors && opened.tools && opened.selectors.top >= opened.tools.bottom - 1,
-    `${label}: 设置面板没有排在参数开关下方（panel top=${opened.selectors?.top} tools bottom=${opened.tools?.bottom}）`)
-  check(failures, opened.selectors && opened.topBar
-    && opened.selectors.left >= opened.topBar.left - 1
-    && opened.selectors.right <= opened.topBar.right + 1
-    && opened.selectors.bottom <= opened.topBar.bottom + 1,
-    `${label}: 设置面板没有并进左上角信息卡（panel=${opened.selectors?.left}/${opened.selectors?.bottom} bar=${opened.topBar?.left}/${opened.topBar?.bottom}）`)
+  if (scenario.phoneLandscape) {
+    // 手机横屏：完整设置是右侧整高参数面板，场景在左侧保持可见，参数开关不被面板盖住
+    check(failures, opened.selectors && opened.root
+      && Math.abs(opened.selectors.right - opened.root.right) <= 1 && opened.selectors.top <= opened.root.top + 1
+      && Math.abs(opened.selectors.bottom - opened.root.bottom) <= 1 && opened.selectors.width <= opened.root.width * 0.5,
+      `${label}: 设置面板不是右侧整高面板（panel=${JSON.stringify(opened.selectors)} root=${JSON.stringify(opened.root)}）`)
+    check(failures, opened.selectors && opened.tools && opened.tools.right <= opened.selectors.left,
+      `${label}: 参数开关被右侧面板盖住（tools right=${opened.tools?.right} panel left=${opened.selectors?.left}）`)
+  } else {
+    check(failures, opened.selectors && opened.tools && opened.selectors.top >= opened.tools.bottom - 1,
+      `${label}: 设置面板没有排在参数开关下方（panel top=${opened.selectors?.top} tools bottom=${opened.tools?.bottom}）`)
+    check(failures, opened.selectors && opened.topBar
+      && opened.selectors.left >= opened.topBar.left - 1
+      && opened.selectors.right <= opened.topBar.right + 1
+      && opened.selectors.bottom <= opened.topBar.bottom + 1,
+      `${label}: 设置面板没有并进左上角信息卡（panel=${opened.selectors?.left}/${opened.selectors?.bottom} bar=${opened.topBar?.left}/${opened.topBar?.bottom}）`)
+  }
   check(failures, opened.targetSelect?.visible === true, `${label}: 展开后目标按钮不可见`)
   check(failures, opened.configSelect?.visible === true, `${label}: 展开后配置下拉不可见`)
   checkCommonGeometry(failures, opened, `${label} (expanded)`)

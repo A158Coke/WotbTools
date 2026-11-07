@@ -804,7 +804,23 @@ class MainActivity : Activity() {
     fun bridgeVersion(): Int = BuildConfig.NATIVE_BRIDGE_VERSION
 
     fun bridgeCapabilities(): List<String> =
-        listOf("native-auth", "replay-share", "replay-open", "app-update", "app-update-status", "connectivity", "replay-folder-picker")
+        listOf("native-auth", "replay-share", "replay-open", "app-update", "app-update-status", "connectivity", "replay-folder-picker", "screen-form")
+
+    private fun isPhone(): Boolean = ScreenForm.isPhone(resources.configuration.smallestScreenWidthDp)
+
+    /** `getScreenForm`：只报告手机 / 非手机，页面据此决定场景页是否强制横屏。 */
+    fun bridgeScreenForm(): JSONObject = JSONObject().put("phone", isPhone())
+
+    /**
+     * `setLandscapeLock`：手机上的场景页进入时锁横屏、离开时释放；平板一律不锁（返回 false）。
+     * HTML 全屏期间只更新全屏退出后要恢复的方向，不打断全屏自己的横屏。
+     */
+    fun bridgeSetLandscapeLock(locked: Boolean): Boolean {
+        if (!isPhone()) return false
+        val orientation = ScreenForm.pageOrientation(locked)
+        if (fullscreen) fullscreenPreviousOrientation = orientation else requestedOrientation = orientation
+        return true
+    }
 
     /**
      * 连通性状态 token（`connectivityGetState` 的 result）：Android 系统 `ConnectivityManager` 的

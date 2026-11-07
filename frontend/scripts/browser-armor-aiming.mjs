@@ -568,7 +568,7 @@ try {
   }
 
   // —— 结果卡随画布滚动（真实布局，替代纯源码正则守卫）——
-  // #traj-info 是 position:fixed；页面滚动后 left/top 必须按 canvas 的实时 rect 重算。
+  // #traj-info 停靠在场景容器顶部正中（absolute）；页面滚动后必须随画布一起移动。
   //
   // 同步契约（2026-10-19）：这个 scroll-layout 用例真正需要的不变量是「卡片锚定在画布上」，
   // 不是「卡片绝对屏幕坐标连续 5 帧不动」。旧实现把后者当成相机停止的判据，等于要求
@@ -649,6 +649,14 @@ try {
     })()`)
     const before = await readRects()
     if (!before) throw new Error('result card / canvas rect missing before scroll test')
+    // 结果停靠契约（design-language §9「强制横屏与场景 HUD」）：卡片固定在场景顶部正中，不按命中点摆位
+    const docked = await page.evaluate(`(() => {
+      const card = document.getElementById('traj-info')?.getBoundingClientRect()
+      const stage = document.querySelector('[data-testid="armor-stage"]')?.getBoundingClientRect()
+      return card && stage ? { centerDelta: (card.left + card.width / 2) - (stage.left + stage.width / 2), top: card.top - stage.top } : null
+    })()`)
+    check(!!docked && Math.abs(docked.centerDelta) <= 2 && docked.top >= 0 && docked.top <= 40,
+      `结果卡没有停靠在场景顶部正中（${JSON.stringify(docked)}）`)
     await page.evaluate(`(() => {
       const d = document.createElement('div');
       d.id = 'scroll-fixture';
@@ -1015,27 +1023,6 @@ try {
   } else {
     console.log('[armor-aiming] 跳过（模式条件）：真实资产覆盖不做固定战斗室夹具回归')
   }
-
-  // 结果卡贴边/避让：在真实浏览器里直接执行生产定位函数（vite 提供源模块），
-  // 用确定性几何覆盖「锚点越过 blocker 中线仍选同一边」与四边钳制。
-  const placement = await page.evaluate(`(async () => {
-    const { placeShotResultCard } = await import('/src/utils/shotResultCardPlacement.js')
-    const clip = { left: 0, top: 0, right: 1200, bottom: 700 }
-    const blocker = { left: 500, top: 20, right: 700, bottom: 200, width: 200, height: 180 }
-    const base = { offsetY: 0, cardWidth: 240, cardHeight: 120, clip, blockers: [blocker] }
-    return {
-      leftAnchor: placeShotResultCard({ ...base, anchorX: 420, anchorY: 100 }),
-      rightAnchor: placeShotResultCard({ ...base, anchorX: 780, anchorY: 100 }),
-      clippedLeft: placeShotResultCard({ ...base, anchorX: -500, anchorY: 300, blockers: [] }),
-      clippedRight: placeShotResultCard({ ...base, anchorX: 5000, anchorY: 300, blockers: [] }),
-    }
-  })()`)
-  check(placement.leftAnchor.x === placement.rightAnchor.x,
-    `结果卡避让跨 blocker 中线应选同一边（${placement.leftAnchor.x} vs ${placement.rightAnchor.x}）`)
-  const cardLeft = placement.leftAnchor.x - 120
-  check(cardLeft >= 700 + 12, `避让后卡片应落在 blocker 右侧（left=${cardLeft}）`)
-  check(placement.clippedLeft.x === 130, `左边界应钳制到 130（实际 ${placement.clippedLeft.x}）`)
-  check(placement.clippedRight.x === 1070, `右边界应钳制到 1070（实际 ${placement.clippedRight.x}）`)
 
   await chromeCdp.client.send('Target.closeTarget', { targetId })
 } catch (error) {

@@ -1,5 +1,5 @@
 // GENERATED FILE - DO NOT EDIT MANUALLY. Source: contracts/android-native-bridge.json
-export type NativeBridgeCapability = 'native-auth' | 'replay-share' | 'replay-open' | 'app-update' | 'app-update-status' | 'connectivity' | 'replay-folder-picker'
+export type NativeBridgeCapability = 'native-auth' | 'replay-share' | 'replay-open' | 'app-update' | 'app-update-status' | 'connectivity' | 'replay-folder-picker' | 'screen-form'
 
 export interface NativeBridgeMethods {
   getBridgeVersion: {
@@ -156,6 +156,18 @@ export interface NativeBridgeMethods {
   cancelReplayFolderPicker: {
     request: {
       requestId: string
+    }
+    response: boolean
+  }
+  getScreenForm: {
+    request: Record<string, never>
+    response: {
+      phone: boolean
+    }
+  }
+  setLandscapeLock: {
+    request: {
+      locked: boolean
     }
     response: boolean
   }

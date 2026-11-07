@@ -1988,5 +1988,19 @@
     "replay": "3D Replay",
     "tanks": "Tankopedia",
     "shots": "Shot Replay"
+  },
+  "rotate": {
+    "title": "Turn your phone sideways",
+    "body": "This page works in landscape only, so the scene and controls fit. Rotate to continue.",
+    "hintBrowser": "In the browser, turn off rotation lock first.",
+    "hintApp": "The app switches to landscape automatically."
+  },
+  "armor": {
+    "result_details": "Shot result — open for layer details"
+  },
+  "research": {
+    "all_types": "All",
+    "type_filter": "Vehicle type",
+    "no_type_match": "This nation has no vehicles of this type."
   }
 }

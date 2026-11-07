@@ -35,6 +35,7 @@ import TankClassIcon from './TankClassIcon.vue'
 import AppButton from './AppButton.vue'
 import Banner from './Banner.vue'
 import EquipmentBadges from './EquipmentBadges.vue'
+import SegmentedControl from './SegmentedControl.vue'
 
 defineOptions({ name: 'ReplayShotsPane' })
 
@@ -513,7 +514,9 @@ function hasEquipment(s) {
 const paneRoot = ref(null)
 const layout = ref('expanded')
 const guideLayout = computed(() => guideInset.value > 0 ? 'compact' : layout.value)
-const detailOpen = computed(() => selectedIndex.value != null)
+/** compact 直达复现：手机上点一发直接进入射击复现（design-language §9「射击分析」）；导航期间不弹出检视面板 */
+const directOpening = ref(false)
+const detailOpen = computed(() => selectedIndex.value != null && !directOpening.value)
 const isOverlay = computed(() => guideLayout.value === 'compact')
 
 let observer = null
@@ -525,6 +528,17 @@ function applyLayout(width) {
 }
 
 function selectShot(index, event) {
+  const shot = shots.value.find(s => s.index === index)
+  // compact：点一发直接进入射击复现。新手教程引导中保留检视面板，教程的「从这一发打开」步骤仍有目标。
+  if (layout.value === 'compact' && !onboarding?.guideActive?.value && shot && rowHas3d(shot)) {
+    selectedIndex.value = index
+    directOpening.value = true
+    void openInViewer(shot).finally(() => {
+      directOpening.value = false
+      if (selectedIndex.value === index) selectedIndex.value = null
+    })
+    return
+  }
   selectedIndex.value = index
   lastTrigger = event?.currentTarget ?? null
   if (isOverlay.value) nextTick(() => detailPane.value?.focus?.())
@@ -648,7 +662,8 @@ onMounted(() => {
     if (width) applyLayout(width)
   })
   observer.observe(paneRoot.value)
-  applyLayout(paneRoot.value.getBoundingClientRect().width)
+  const initialWidth = paneRoot.value.getBoundingClientRect().width
+  if (initialWidth) applyLayout(initialWidth)
 })
 
 onBeforeUnmount(() => {
@@ -689,6 +704,19 @@ onBeforeUnmount(() => {
           <h2>{{ scopeTitle }}</h2>
           <p>{{ scopeSubtitle }}</p>
         </div>
+        <!-- compact：射击者先给两项分段（我的 / 全部），按玩家筛选保留在下方下拉里 -->
+        <SegmentedControl
+          v-if="layout === 'compact'"
+          class="shots-scope-switch"
+          presentation="tiles"
+          :model-value="shooter === 'own' || shooter === 'all' ? shooter : ''"
+          :options="[
+            { value: 'own', label: `${$t('agentShots.my_shots')} · ${ownShots.length}`, testid: 'shots-scope-own' },
+            { value: 'all', label: `${$t('agentShots.all_shooters')} · ${shots.length}`, testid: 'shots-scope-all' },
+          ]"
+          :ariaLabel="$t('agentShots.shooter')"
+          @update:model-value="value => shooter = value"
+        />
         <div class="shots-filter">
           <label class="shots-filter-label" for="shots-shooter-select">{{ $t('agentShots.shooter') }}</label>
           <select id="shots-shooter-select" v-model="shooter" class="shots-select" data-testid="shots-shooter-select">
@@ -859,6 +887,10 @@ onBeforeUnmount(() => {
 .shots-cause { margin: var(--space-1) 0 0; color: var(--color-text-secondary); font: var(--type-caption); }
 
 .shots-filter { display: grid; gap: var(--space-1); min-width: 0; max-width: 100%; }
+/* compact：两项分段占满一行；四项统计固定一行（design-language §9「射击分析」） */
+.shots-scope-switch { flex: 1 1 100%; }
+.shots-pane:has(.shots-scope-switch) :deep(.stat-strip) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.shots-pane:has(.shots-scope-switch) :deep(.stat-strip .stat) { min-width: 0; padding-inline: var(--space-2); }
 .shots-filter-label { color: var(--color-text-secondary); font: var(--type-caption); }
 .shots-select {
   min-height: var(--control-h-md);

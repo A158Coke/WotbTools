@@ -30,7 +30,6 @@ import { normalizeTankCache } from '../utils/tankopediaQuery.js'
 import { createLoadProgress } from './loadProgress.js'
 import { shotResultClass } from '../utils/shotResultClass.js'
 import { isCompactShotResultCard, shotResultCardMaxWidth as resultCardMaxWidth, shotResultCardMetrics } from '../utils/shotResultCardMetrics.js'
-import { placeShotResultCard } from '../utils/shotResultCardPlacement.js'
 import { renderShotResultCardHtml } from './viewer/shotResultCard.js'
 import { armorCameraPreset, armorPresetGunPitch } from './viewer/cameraPresets.js'
 import { createShotTrajectoryGroup, trajectoryChanceColor } from './viewer/shotTrajectoryGeometry.js'
@@ -4959,7 +4958,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             doPenetrationCheck(ndcX, ndcY);
         }
 
-        /** 装甲厚度模式：命中装甲板 → 高亮该板，并在命中点旁侧的浮层显示部件名与基础装甲值
+        /** 装甲厚度模式：命中装甲板 → 高亮该板，并在场景顶部正中的胶囊显示部件名与基础装甲值
          *  （浮层相对点击坐标偏移 24px 并在视口内钳制，避免盖住命中点；无击穿判定）。 */
         function showArmorPartInfo(event, ndcX, ndcY) {
             tidyTrajectory();
@@ -4981,18 +4980,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const thickness = Number(info.thickness);
             document.getElementById('click-part').textContent = L.partName ? L.partName(info.partName) : info.partName;
             document.getElementById('click-armor').textContent = Number.isFinite(thickness) ? `${Math.round(thickness * 100) / 100} mm` : '—';
-            card.style.display = 'block';
-            // 命中点旁侧：先试右下，越界翻到左上；再整体钳制在视口内。任何情况下都不压住点击落点。
-            const gap = 24, edge = 8;
-            const w = card.offsetWidth || 200, h = card.offsetHeight || 72;
-            let left = event.clientX + gap;
-            let top = event.clientY + gap;
-            if (left + w > window.innerWidth - edge) left = event.clientX - w - gap;
-            if (top + h > window.innerHeight - edge) top = event.clientY - h - gap;
-            left = Math.max(edge, Math.min(window.innerWidth - w - edge, left));
-            top = Math.max(edge, Math.min(window.innerHeight - h - edge, top));
-            card.style.left = `${left}px`;
-            card.style.top = `${top}px`;
+            // 结果停靠在场景顶部正中的固定胶囊（AgentArmorView 样式所有），不跟随命中点、不压车体。
+            card.style.display = 'flex';
         }
 
         let __shotRayOrigin = null;   // 射击复现：射线起点（射手方向，固定距离）
@@ -5949,40 +5938,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             if (maxWidth) div.style.maxWidth = `${maxWidth}px`;
             div.style.whiteSpace = 'normal';
             div.style.boxSizing = 'border-box';
-            const v = trajInfoPos.clone().project(camera);
-            if (v.z > 1) { div.style.display = 'none'; return; }
-            // 卡片是 position:fixed，left/top 是视口坐标；必须按画布实际矩形换算，
-            // 否则页面/容器滚动或窗口缩放后画布移动而卡片停在旧视口位置。
-            const x = rect.left + (v.x * 0.5 + 0.5) * rect.width;
-            const y = rect.top + (-v.y * 0.5 + 0.5) * rect.height;
-            const offX = 0, offY = 160;
-            div.style.display = 'block';   // 先显示才能量取实际尺寸
-            const w = div.offsetWidth || 300, h = div.offsetHeight || 90;
-            // 可见画布内钳制（translateX(-50%)：left 是面板中心 x）
-            const clipL = Math.max(rect.left, 0), clipT = Math.max(rect.top, 0);
-            const clipR = Math.min(rect.right, window.innerWidth), clipB = Math.min(rect.bottom, window.innerHeight);
-            if (clipR <= clipL || clipB <= clipT) { div.style.display = 'none'; return; }
-            // 固定 UI 避让：不压四角与顶部信息面板（左下信息/右下按钮提示/右上栈/左上排）
-            const blockers = [];
-            const tc = document.getElementById('turret-controls');
-            if (tc && tc.style.display !== 'none') blockers.push(tc.getBoundingClientRect());
-            const addRect = (id) => {
-                const el = document.getElementById(id);
-                if (el) { const r = el.getBoundingClientRect(); if (r.width > 0 && r.height > 0) blockers.push(r); }
-            };
-            addRect('corner-br'); addRect('corner-tr'); addRect('info-panel'); addRect('tank-selectors');
-            const { x: px, y: py } = placeShotResultCard({
-                anchorX: x + offX,
-                anchorY: y,
-                offsetY: offY,
-                cardWidth: w,
-                cardHeight: h,
-                clip: { left: clipL, top: clipT, right: clipR, bottom: clipB },
-                blockers,
-            });
-            div.style.transform = 'translateX(-50%)';
-            div.style.left = px + 'px';
-            div.style.top = py + 'px';
+            // 结果固定停靠在场景顶部正中（AgentArmorView 样式所有），不再按命中点投影摆位：
+            // 不压车体、不避让四角，页面滚动时随场景容器一起移动。
+            div.style.display = 'block';
         }
 
         // 相机运动追踪（门禁用）：OrbitControls 的 damping 让相机在拖动/捏合结束后继续滑行

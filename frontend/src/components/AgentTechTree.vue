@@ -11,13 +11,13 @@
  * 点击节点进入**坦克百科详情**（?view=agent-tankopedia&tank=）；单车研发界面在详情页的
  * 「研发」弹窗里（见 TankResearchPanel），不做研发/购买/解锁流程（2026-10-27 裁定维持）。
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { BookOpen, RotateCcw, TriangleAlert } from 'lucide-vue-next'
 import { fetchTankEncyclopedia, loadTankIconCrops, tankImageUrl } from '../scene/agentData.js'
 import { tankIconCropTransform } from '../utils/tankIconCrop.js'
-import { tankNationLabel } from '../scene/tankMeta.js'
+import { tankNationLabel, tankTypeLabel } from '../scene/tankMeta.js'
 import { loadTechTree } from '../utils/researchCatalog.js'
 import { techTreeGrid, techTreeNations } from '../utils/techTreeLayout.js'
 import { formatXpCompact } from '../utils/xpFormat.js'
@@ -26,6 +26,7 @@ import { locationForView } from '../app/navigation'
 import PageHeader from './PageHeader.vue'
 import EmptyState from './EmptyState.vue'
 import AppButton from './AppButton.vue'
+import SegmentedControl from './SegmentedControl.vue'
 
 const VIEW = 'agent-techtree'
 const NATIONS = techTreeNations()
@@ -116,6 +117,40 @@ const costByStem = computed(() => {
 })
 
 const grid = computed(() => (tree.value ? techTreeGrid(tree.value) : null))
+
+/*
+ * 竖屏手机（design-language §9「科技树」）：网格横向太宽、等级标尺会压住节点，改为按等级从高到低、
+ * 每级一行横向卡片；国家页签 + 车种分段吸顶。连线与标尺只在网格形态出现。
+ */
+const PORTRAIT_QUERY = '(width < 768px) and (orientation: portrait)'
+const portrait = ref(false)
+let portraitQuery = null
+const syncPortrait = () => { portrait.value = !!portraitQuery?.matches }
+onMounted(() => {
+  if (typeof window.matchMedia !== 'function') return
+  portraitQuery = window.matchMedia(PORTRAIT_QUERY)
+  portraitQuery.addEventListener?.('change', syncPortrait)
+  syncPortrait()
+})
+onBeforeUnmount(() => portraitQuery?.removeEventListener?.('change', syncPortrait))
+
+const TYPE_FILTERS = ['all', 'heavyTank', 'mediumTank', 'lightTank', 'AT-SPG']
+const typeFilter = ref('all')
+const typeOptions = computed(() => TYPE_FILTERS.map(value => ({
+  value,
+  label: value === 'all' ? t('research.all_types') : tankTypeLabel(t, te, value),
+  testid: `techtree-type-${value}`,
+})))
+const tierRows = computed(() => {
+  if (!portrait.value || !tree.value) return null
+  const rows = new Map()
+  for (const node of tree.value.nodes || []) {
+    if (typeFilter.value !== 'all' && summaryOf(node)?.type !== typeFilter.value) continue
+    if (!rows.has(node.tier)) rows.set(node.tier, [])
+    rows.get(node.tier).push(node)
+  }
+  return [...rows.entries()].sort((a, b) => b[0] - a[0]).map(([tier, nodes]) => ({ tier, nodes: nodes.sort((a, b) => a.y - b.y || a.x - b.x) }))
+})
 const CELL_W = 216
 const CELL_H = 96
 const gridStyle = computed(() => ({
@@ -190,6 +225,7 @@ onMounted(() => {
     <p v-if="cacheState === 'error'" class="tt-status" role="status">{{ t('research.cache_unavailable') }}</p>
 
     <!-- ================= 树态 ================= -->
+    <div class="tt-filters" :class="{ 'is-sticky': tierRows }">
     <div class="tt-tabs" role="tablist" :aria-label="t('research.nation_tabs')">
         <button
           v-for="nation in NATIONS"
@@ -205,6 +241,16 @@ onMounted(() => {
           {{ nationLabel(nation) }}
         </button>
       </div>
+      <SegmentedControl
+        v-if="tierRows"
+        presentation="tiles"
+        :model-value="typeFilter"
+        :options="typeOptions"
+        :aria-label="t('research.type_filter')"
+        data-testid="techtree-type-filter"
+        @update:model-value="value => typeFilter = value"
+      />
+    </div>
 
       <p v-if="treeState === 'loading'" class="tt-status" role="status">{{ t('research.loading') }}</p>
       <EmptyState
@@ -220,6 +266,37 @@ onMounted(() => {
           {{ t('agentTanks.retry') }}
         </AppButton>
       </EmptyState>
+
+      <div v-else-if="tierRows" class="tt-tiers" data-testid="techtree-tiers">
+        <p v-if="!tierRows.length" class="tt-status" role="status">{{ t('research.no_type_match') }}</p>
+        <section v-for="row in tierRows" :key="row.tier" class="tt-tier-row" :aria-label="t('agentTanks.tier_n', { tier: row.tier })" :data-testid="`techtree-tier-${row.tier}`">
+          <span class="tt-tier-label" aria-hidden="true">{{ romanLevel(row.tier) }}</span>
+          <div class="tt-tier-cards">
+            <button
+              v-for="node in row.nodes"
+              :key="node.stem"
+              type="button"
+              class="tt-cell tt-tier-cell"
+              :class="{
+                'is-preview': node.preview,
+                'is-premium': summaryOf(node)?.is_premium,
+                'is-collector': !summaryOf(node)?.is_premium && summaryOf(node)?.is_collector,
+              }"
+              :data-testid="`techtree-cell-${node.stem}`"
+              :aria-label="`${nameOf(node) || node.stem} · ${t('agentTanks.tier_n', { tier: node.tier })}`"
+              @click="openResearch(node)"
+            >
+              <span class="tt-card">
+                <span class="tt-card-icon">
+                  <img :src="tankImageUrl(node.tankId)" alt="" loading="lazy" decoding="async" :style="iconCropStyle(node.tankId)" @error="$event.target.hidden = true">
+                </span>
+                <span class="tt-card-name">{{ nameOf(node) || node.stem }}</span>
+                <span v-if="costByStem.get(node.stem) != null" class="tt-card-cost">{{ t('research.xp_short', { xp: formatXpCompact(costByStem.get(node.stem)) }) }}</span>
+              </span>
+            </button>
+          </div>
+        </section>
+      </div>
 
       <div v-else-if="grid" class="tt-scroll" data-testid="techtree-grid">
         <div class="tt-canvas" :style="{ minWidth: `${grid.columns.length * CELL_W}px` }">
@@ -328,6 +405,16 @@ onMounted(() => {
 .tt-tab:hover { border-color: var(--color-border-strong); color: var(--color-text-primary); }
 .tt-tab.is-on { border-color: var(--color-accent); color: var(--color-accent-text); background: color-mix(in oklab, var(--color-accent) 14%, var(--color-surface-1)); }
 .tt-tab:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+
+/* ---------- 竖屏手机：按等级分行（design-language §9「科技树」） ---------- */
+.tt-filters { display: grid; flex: none; gap: var(--space-2); }
+.tt-filters.is-sticky .tt-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.tt-filters.is-sticky .tt-tab { flex: none; min-block-size: var(--hit-min-comfortable); }
+.tt-tiers { flex: 1 1 0; min-block-size: 0; overflow-y: auto; display: grid; align-content: start; gap: var(--space-2); }
+.tt-tier-row { display: grid; grid-template-columns: var(--space-10) minmax(0, 1fr); align-items: center; }
+.tt-tier-label { color: var(--color-accent-text); font: var(--type-h3); font-weight: 700; text-align: center; }
+.tt-tier-cards { display: flex; gap: var(--space-2); overflow-x: auto; overscroll-behavior-inline: contain; padding-block: var(--space-1); }
+.tt-tier-cell { flex: none; }
 
 /* ---------- 树网格：客户端 216×96 单元格语义，横向滚动 ---------- */
 /* flex: 1 1 0 + min-block-size: 0：滚动区只吃剩余高度，内容高度不反过来把页面撑出视口；

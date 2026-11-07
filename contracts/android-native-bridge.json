@@ -24,7 +24,8 @@
     "app-update",
     "app-update-status",
     "connectivity",
-    "replay-folder-picker"
+    "replay-folder-picker",
+    "screen-form"
   ],
   "methods": {
     "getBridgeVersion": {
@@ -592,6 +593,27 @@
       "response": {
         "type": "boolean",
         "notes": "Cancel only the in-flight picker/scan belonging to this client requestId. An old caller must never cancel a newer request. Does not release an already completed selection."
+      }
+    },
+    "getScreenForm": {
+      "request": { "fields": {} },
+      "response": {
+        "type": "object",
+        "fields": {
+          "phone": { "type": "boolean", "required": true }
+        },
+        "notes": "Optional screen-form capability. phone = Configuration.smallestScreenWidthDp < 600; tablets report false. The page uses it only to decide whether scene pages (2D / 3D playback, armor viewer, shot replay, map 3D) force landscape."
+      }
+    },
+    "setLandscapeLock": {
+      "request": {
+        "fields": {
+          "locked": { "type": "boolean", "required": true }
+        }
+      },
+      "response": {
+        "type": "boolean",
+        "notes": "Phones only: locked=true requests SENSOR_LANDSCAPE while a scene page is shown; locked=false releases it. Returns false (no-op) on tablets. HTML fullscreen keeps its own orientation handling and restores to the page lock state on exit."
       }
     },
     "releaseReplayFolderSelection": {

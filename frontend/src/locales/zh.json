@@ -1988,5 +1988,19 @@
     "replay": "三维回放",
     "tanks": "坦克百科",
     "shots": "射击复现"
+  },
+  "rotate": {
+    "title": "把手机横过来",
+    "body": "这个页面只在横屏下使用，场景和控件才放得下。横过来就会继续。",
+    "hintBrowser": "浏览器里请先关闭方向锁定。",
+    "hintApp": "App 会自动切到横屏。"
+  },
+  "armor": {
+    "result_details": "判定结果，点开看逐层明细"
+  },
+  "research": {
+    "all_types": "全部",
+    "type_filter": "车种",
+    "no_type_match": "这个国家没有该车种。"
   }
 }

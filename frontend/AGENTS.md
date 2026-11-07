@@ -107,7 +107,7 @@ HTTP 200 不证明每张地图的资产齐备，缺失的具体资产应如实�
   （20mm 屏 → RT0.R = 0.1；修复前 100000）与**同板去重的穿越顺序**（近背远正只计一次、同键仅背面逐片元累计），
   不依赖源码正则。
 - 修改装甲查看器**初始化 / 弹药 / 单发判定 / 重试 / 销毁生命周期**时保持 `pnpm run test:browser-armor-shot-readiness` 通过；该 gate 用真实应用和确定性夹具资产包控制异步响应，覆盖慢弹药、初始化期间选车反馈、自动选弹、错误阶段、重试及迟到响应隔离，无需真实资产或 WASM，不做 3D 画面验收。由 `ci-frontend.yml` 的 `browser-medium` job 执行。
-- 修改科技树或 compact `PageHeader` 布局时保持 `pnpm run test:browser-techtree-layout` 通过；该 gate 用真实应用 + 真实外壳（`startFixtureServer` + 确定性科技树夹具资产）在手机竖屏 / 横屏、平板、桌面档测量页头高度、页签行数、树滚动区与吸底等级条相对固定底栏的几何，并用旧 `max-block-size` 实现做负向对照。由 `ci-frontend.yml` 的 `browser-fast` job 执行。
+- 修改科技树或 compact `PageHeader` 布局时保持 `pnpm run test:browser-techtree-layout` 通过；该 gate 用真实应用 + 真实外壳（`startFixtureServer` + 确定性科技树夹具资产）在手机竖屏（按等级分行、无等级标尺、车种分段在列表之上）/ 横屏、平板、桌面档测量页头高度、页签行数、树滚动区与吸底等级条相对视口的几何，并在横屏注入固定 `max-block-size` 做负向对照。由 `ci-frontend.yml` 的 `browser-fast` job 执行。
 - 修改架构边界时覆盖受影响的深链、历史导航、认证目的地或共享状态；修改 build/dependency 时运行 `pnpm run build`。
 - 浏览器门禁里**不要用固定 `delay` 采样手势中间态、也不要刚做完相机手势就立刻采样部位像素**：OrbitControls 的 damping 会在拖动/捏合结束后继续滑行若干帧（CI 无 GPU、帧间隔可达数百 ms，滑行可持续数秒），此时"采样的像素"与"按下时的像素"已不是同一部位（`aimingState().cameraSettledMs` 就是给这件事用的：采样前等它 > `max(400ms, 3×frameIntervalMs)`）；断言中间态一律用 `page.waitForValue('<状态表达式>', 判定, { timeout })` 等状态成立。这也解释了 `browser-armor-aiming` 早期两次 CI 失败（本地快渲染掩盖）。
 - 变更后由 `review-with-docs` 执行唯一 final gate；影响界面、构建或文档时同样走该 gate。

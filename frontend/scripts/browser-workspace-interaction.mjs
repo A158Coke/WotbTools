@@ -661,7 +661,10 @@ async function runAuthCapabilityScenario(env, scenario) {
       await page.tap({ ...row, touch: scenario.touch })
       check(failures, await page.evaluate('window.__wsInput.click?.testId') === 'shot-row-1',
         'real selection click must land on the selected shot row')
-      for (const selector of ['[data-testid=shot-next]', '[data-testid=shot-prev]', '[data-testid=shot-detail-close]']) {
+      // compact 窗格（< 600）：点一发直接进入射击复现，不经检视面板（design-language §9「射击分析」）
+      const directOpen = scenario.width < 600
+      if (directOpen) check(failures, await page.evaluate('!document.querySelector("[data-testid=shot-inspector]")'), 'compact shot tap must not open the inspector overlay')
+      if (!directOpen) for (const selector of ['[data-testid=shot-next]', '[data-testid=shot-prev]', '[data-testid=shot-detail-close]']) {
         await page.callWith((sel) => document.querySelector(sel).scrollIntoView({ block: 'center' }), selector)
         const reach = await measureReachability(page, { options: [selector], touch: scenario.touch })
         check(failures, reach.sampled > 0, `${selector}: no hit-test samples`)
@@ -670,20 +673,22 @@ async function runAuthCapabilityScenario(env, scenario) {
         if (!point) throw new Error(`${selector} must be hit-testable`)
         await page.tap({ ...point, touch: scenario.touch })
       }
-      await page.waitForValue('!document.querySelector("[data-testid=shot-inspector]")', Boolean)
-      await page.evaluate('document.querySelector("[data-testid=shot-row-1]").scrollIntoView({block:"center"})')
-      const reopened = await page.evaluate(clickCenterExpression('[data-testid=shot-row-1]'))
-      if (!reopened) throw new Error('shot row cannot be reopened')
-      await page.tap({ ...reopened, touch: scenario.touch })
-      await page.evaluate('document.querySelector("[data-testid=shot-open-viewer]").scrollIntoView({block:"center"})')
-      const viewerReach = await measureReachability(page, { options: ['[data-testid=shot-open-viewer]'], touch: scenario.touch })
-      check(failures, viewerReach.sampled > 0, 'armor handoff reachability is empty')
-      failures.push(...viewerReach.failures)
-      const open = await page.evaluate(clickCenterExpression('[data-testid="shot-open-viewer"]'))
-      if (!open) throw new Error('armor handoff button must be hit-testable')
-      await page.tap({ ...open, touch: scenario.touch })
-      check(failures, await page.evaluate('window.__wsInput.click?.testId') === 'shot-open-viewer',
-        'real armor handoff click must land on its button')
+      if (!directOpen) {
+        await page.waitForValue('!document.querySelector("[data-testid=shot-inspector]")', Boolean)
+        await page.evaluate('document.querySelector("[data-testid=shot-row-1]").scrollIntoView({block:"center"})')
+        const reopened = await page.evaluate(clickCenterExpression('[data-testid=shot-row-1]'))
+        if (!reopened) throw new Error('shot row cannot be reopened')
+        await page.tap({ ...reopened, touch: scenario.touch })
+        await page.evaluate('document.querySelector("[data-testid=shot-open-viewer]").scrollIntoView({block:"center"})')
+        const viewerReach = await measureReachability(page, { options: ['[data-testid=shot-open-viewer]'], touch: scenario.touch })
+        check(failures, viewerReach.sampled > 0, 'armor handoff reachability is empty')
+        failures.push(...viewerReach.failures)
+        const open = await page.evaluate(clickCenterExpression('[data-testid="shot-open-viewer"]'))
+        if (!open) throw new Error('armor handoff button must be hit-testable')
+        await page.tap({ ...open, touch: scenario.touch })
+        check(failures, await page.evaluate('window.__wsInput.click?.testId') === 'shot-open-viewer',
+          'real armor handoff click must land on its button')
+      }
       await page.waitForValue('window.__wsArmorScene?.shot || null', (shot) => shot?.index === 1,
         { label: 'armor scene received the selected shot' })
       const scene = await page.evaluate('window.__wsArmorScene')
