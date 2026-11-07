@@ -639,7 +639,7 @@ function adaptiveCrossFractions(frames: RibbonFrame[], sampleHeight: HeightSampl
  * 每个顶点采样一次，是逐帧可承受的量级；细分校验只在提交时做。
  * 采样不到的顶点保持原高度。
  */
-export function reprojectRibbonPositions(positions: Float32Array, sampleHeight: HeightSampler, lift = ANNOTATION_LIFT, anchored?: boolean[] | null): Float32Array {
+export function reprojectRibbonPositions(positions: Float32Array, sampleHeight: HeightSampler, lift = ANNOTATION_LIFT, anchored?: Uint8Array | boolean[] | null): Float32Array {
   for (let i = 0; i + 2 < positions.length; i += 3) {
     // anchored 顶点属于选中表面层：LOD 重建只刷新 terrain 顶点，锚点高度保持。
     if (anchored && anchored[i / 3]) continue

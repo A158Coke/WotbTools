@@ -31,7 +31,8 @@ export interface AnnotationSurfaceMaterial {
   userData?: Record<string, unknown> | null
 }
 
-// type 别名（非 interface）：调用方需要把它传给带索引签名的结构化节点面（pickDebug.chainVisible）。
+// type 别名（非 interface）：调用方需要把真实 three 节点结构化传入（pickDebug.chainVisible
+// 经 VisibilityChainNode 结构面兼容）。
 export type AnnotationSurfaceObject = {
   userData?: Record<string, unknown> | null
   material?: AnnotationSurfaceMaterial | AnnotationSurfaceMaterial[] | null
@@ -48,7 +49,6 @@ export interface AnnotationSurfaceHit {
   point?: { x: number; y: number; z: number } | null
   distance: number
   instanceId?: number | null
-  [key: string]: unknown
 }
 
 export interface AnnotationSurfaceRaycaster {
@@ -78,7 +78,7 @@ export interface AnnotationSurfaceBatch {
 export type AnnotationSurfaceGrid = Map<string, AnnotationSurfaceObject[]>
 
 export interface AnnotationHitLike {
-  point: { y: number }
+  point: { x: number; y: number; z: number }
   distance: number
 }
 
