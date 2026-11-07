@@ -266,6 +266,7 @@ function applySide(side, patch) {
 let viewer = null
 /** tankViewer 已创建并挂上静态控件事件（碰撞/热力图按钮在此之前置灰，避免点击丢失） */
 const viewerReady = ref(false)
+const distanceState = ref(null)
 // 审计 3D-23：创建渲染器之前做 WebGL 预检；不支持时整页换成说明，不再抛原始报错
 const webgl = detectWebGL()
 /** 场景加载状态（tankViewer onLoadState 上报）：loading / ready / error */
@@ -430,6 +431,7 @@ onBeforeUnmount(() => {
 watch(pitchDeviceBonusValue, value => { viewer?.setPitchDeviceBonus?.(value) })
 
 function startViewer(preserveSelection = false) {
+    distanceState.value = null
     const seq = navigationSeq
     const q = new URLSearchParams(window.location.search)
     const tank = Number(q.get('tank')) || 0
@@ -519,6 +521,7 @@ function startViewer(preserveSelection = false) {
             selectedShooterId.value = selection.shooter
             selectedTargetId.value = selection.target
         },
+        onDistanceChange: state => { if (alive && seq === navigationSeq) distanceState.value = state },
         onConfigSelection: index => syncNativeTargetConfig(index),
         onShellSelection: index => syncNativeShell(index),
         onEquipmentSelection: (kind, value) => syncNativeEquipment(kind, value),
@@ -742,6 +745,8 @@ onBeforeUnmount(() => {
         <div id="corner-tr">
             <ArmorShotHud
                 :shooter-id="shooterSetupId"
+                :distance-state="load.state === 'ready' ? distanceState : null"
+                @distance="value => viewer?.setDistance?.(value)"
                 :scfg="shooterConfigValue"
                 :upgrade="armorUpgrade(route.query.supgrade)"
                 :abilities="route.query.sabilities"
@@ -880,7 +885,7 @@ onBeforeUnmount(() => {
     flex-direction: column;
     align-items: stretch;
     gap: var(--space-2);
-    inline-size: 17rem;
+    inline-size: var(--armor-shot-card-width);
     max-inline-size: 42%;
     padding: var(--space-2);
     background: var(--panel);
@@ -1105,5 +1110,8 @@ onBeforeUnmount(() => {
     .armor-view .armor-shot-matchup { font: var(--type-body); }
     .armor-view .armor-shot-meta { gap: var(--space-2); }
     .armor-view .armor-shot-navigation { inline-size: 100%; justify-content: space-between; }
+}
+@media (width < 768px) and (pointer: coarse) and (orientation: landscape) {
+    .armor-view #corner-tr { inline-size: var(--armor-shot-card-compact-width); }
 }
 </style>

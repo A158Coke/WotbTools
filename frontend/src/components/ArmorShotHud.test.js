@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises, mount as mountVue } from '@vue/test-utils'
 import ArmorShotHud from './ArmorShotHud.vue'
 
 const data = vi.hoisted(() => ({ fetchTankData: vi.fn() }))
@@ -11,6 +11,9 @@ vi.mock('../utils/researchCatalog.js', async (importOriginal) => ({
   loadDevices: research.loadDevices,
 }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: key => key }) }))
+
+const distanceState = { distance: 100, min: 3, max: 500, readOnly: false }
+const mount = (component, options) => mountVue(component, { ...options, props: { distanceState, ...options.props } })
 
 const TANK = {
   tank_id: 1,
@@ -27,50 +30,91 @@ beforeEach(() => {
 })
 
 describe('ArmorShotHud（右上角弹种 + 装备图标）', () => {
-  it('显示全部弹种的整数穿深，按场景系数联动校准弹并仅在最后取整', async () => {
+  it('只显示当前弹种的整数穿深，切换/校准只在最后取整', async () => {
     const shells = [
-      { type: 'ap', penetration: 200.49 },
-      { type: 'ap_cr_premium', penetration: 300.49 },
-      { type: 'heat', penetration: 310.5 },
-      { type: 'he', penetration: 60.5 },
-      { type: 'he', type_id: 0, penetration: 200.49 },
-      { type: 'unknown', penetration: 201.49 },
+      { type: 'ap', name: 'AP M73', penetration: 200.49 }, { type: 'ap_cr_premium', penetration: 300.49 },
+      { type: 'heat', penetration: 310.5 }, { type: 'he', penetration: 60.5 },
+      { type: 'he', type_id: 0, penetration: 200.49 }, { type: 'unknown', penetration: 201.49 },
     ]
     data.fetchTankData.mockResolvedValueOnce({ configs: [{ shells }] })
     const wrapper = mount(ArmorShotHud, { props: { shooterId: 1, eqcal: '0' } })
     await flushPromises()
-    const values = () => wrapper.findAll('[data-testid="hud-penetration"]').map(node => node.text())
-    expect(values()).toEqual(['200 mm', '300 mm', '311 mm', '61 mm', '200 mm', '201 mm'])
-    await wrapper.setProps({ eqcal: '1' })
-    expect(values()).toEqual(['213 mm', '319 mm', '332 mm', '65 mm', '213 mm', '201 mm'])
-    wrapper.findAll('[data-testid^="hud-shell-"]').forEach((button, index) => {
-      expect(button.attributes('title')).toContain(values()[index].replace(' ', ''))
-      expect(button.attributes('title')).toContain('armor.shell_penetration_basis')
-      expect(button.attributes('aria-label')).toBe(button.attributes('title'))
-    })
-    await wrapper.setProps({ eqenh: '1', eqpitch: '1', pitchAvailable: true })
-    expect(values()).toEqual(['213 mm', '319 mm', '332 mm', '65 mm', '213 mm', '201 mm'])
-    await wrapper.setProps({ eqcal: '0' })
-    expect(values()[0]).toBe('200 mm')
+    for (const [eqcal, expected] of [['0', [200, 300, 311, 61, 200, 201]], ['1', [213, 319, 332, 65, 213, 201]]]) {
+      await wrapper.setProps({ eqcal })
+      for (let shell = 0; shell < expected.length; shell++) {
+        await wrapper.setProps({ shell })
+        expect(wrapper.findAll('[data-testid="hud-penetration"]')).toHaveLength(1)
+        expect(wrapper.get('[data-testid="hud-penetration"]').text()).toBe(`${expected[shell]} mm`)
+        const button = wrapper.get(`[data-testid="hud-shell-${shell}"]`)
+        expect(button.text()).toBe('')
+        expect(button.attributes('title')).toContain(`${expected[shell]}mm`)
+        expect(button.attributes('aria-label')).toBe(button.attributes('title'))
+      }
+    }
+    await wrapper.setProps({ shell: 0, eqenh: '1', eqpitch: '1', pitchAvailable: true })
+    expect(wrapper.get('[data-testid="hud-penetration"]').text()).toBe('213 mm')
+    expect(wrapper.get('.hud-shell-name').text()).toBe('AP M73')
     expect(data.fetchTankData).toHaveBeenCalledOnce()
     expect(shells[0].penetration).toBe(200.49)
+  })
+
+  it('按各炮弹near/far衰减，包含有衰减的HEAT；HE/缺far/等值保持', async () => {
+    data.fetchTankData.mockResolvedValueOnce({ shells: [
+      { type: 'ap', penetration: 300, penetration_far: 260 },
+      { type: 'ap_cr', penetration: 300, penetration_far: 220 },
+      { type: 'heat', penetration: 300, penetration_far: 280 },
+      { type: 'heat', penetration: 300, penetration_far: 300 },
+      { type: 'he', penetration: 60, penetration_far: 20 },
+      { type: 'ap', penetration: 300 },
+    ] })
+    const wrapper = mount(ArmorShotHud, { props: { shooterId: 1 } })
+    await flushPromises()
+    for (const [distance, values] of [[3, [300,300,300,300,60,300]], [100,[300,300,300,300,60,300]], [300,[280,260,290,300,60,300]], [500,[260,220,280,300,60,300]]]) {
+      await wrapper.setProps({ distanceState: { ...distanceState, distance } })
+      for (let shell = 0; shell < values.length; shell++) {
+        await wrapper.setProps({ shell })
+        expect(wrapper.get('[data-testid="hud-penetration"]').text()).toBe(`${values[shell]} mm`)
+      }
+    }
+    await wrapper.setProps({ shell: 0, eqcal: '1' })
+    expect(wrapper.get('[data-testid="hud-penetration"]').text()).toBe('276 mm')
+  })
+
+  it('滑杆发意图，读数由场景回传；未就绪和回放只读', async () => {
+    const wrapper = mount(ArmorShotHud, { props: { shooterId: 1 } })
+    await flushPromises()
+    const slider = wrapper.get('[data-testid="hud-distance"]')
+    await slider.setValue('300')
+    expect(wrapper.emitted('distance').at(-1)).toEqual([300])
+    expect(wrapper.get('[data-testid="hud-distance-value"]').text()).toContain('100')
+    await wrapper.setProps({ distanceState: { ...distanceState, distance: 700, readOnly: true } })
+    expect(slider.attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="hud-distance-value"]').text()).toContain('700')
+    await slider.trigger('input')
+    expect(wrapper.emitted('distance')).toHaveLength(1)
+    await wrapper.setProps({ distanceState: null })
+    expect(wrapper.get('[data-testid="hud-penetration"]').text()).toBe('— mm')
+    expect(slider.attributes('disabled')).toBeDefined()
   })
 
   it('回放校准默认值参与穿深，显式关闭优先', async () => {
     const wrapper = mount(ArmorShotHud, { props: { shooterId: 1, calibratedDefault: true } })
     await flushPromises()
-    expect(wrapper.get('[data-testid="hud-shell-0"]').text()).toBe('233 mm')
+    expect(wrapper.get('[data-testid="hud-penetration"]').text()).toBe('233 mm')
     await wrapper.setProps({ eqcal: '0' })
-    expect(wrapper.get('[data-testid="hud-shell-0"]').text()).toBe('220 mm')
+    expect(wrapper.get('[data-testid="hud-penetration"]').text()).toBe('220 mm')
     await wrapper.setProps({ eqcal: null })
-    expect(wrapper.get('[data-testid="hud-shell-0"]').text()).toBe('233 mm')
+    expect(wrapper.get('[data-testid="hud-penetration"]').text()).toBe('233 mm')
   })
 
   it('缺失和非法穿深显示破折号，不伪造成零', async () => {
     data.fetchTankData.mockResolvedValueOnce({ configs: [{ shells: [undefined, null, NaN, Infinity, -1, 0].map(penetration => ({ type: 'ap', penetration })) }] })
     const wrapper = mount(ArmorShotHud, { props: { shooterId: 1, eqcal: '1' } })
     await flushPromises()
-    expect(wrapper.findAll('[data-testid="hud-penetration"]').map(node => node.text())).toEqual(['— mm', '— mm', '— mm', '— mm', '— mm', '0 mm'])
+    for (let shell = 0; shell < 6; shell++) {
+      await wrapper.setProps({ shell })
+      expect(wrapper.get('[data-testid="hud-penetration"]').text()).toBe(shell === 5 ? '0 mm' : '— mm')
+    }
   })
 
   it('按射击方配置渲染弹种图标与装备图标', async () => {
@@ -177,7 +221,7 @@ describe('ArmorShotHud（右上角弹种 + 装备图标）', () => {
     await flushPromises()
     expect(data.fetchTankData).toHaveBeenLastCalledWith(1, { upgrade: 'top', abilities: '101,201' })
     expect(wrapper.get('[data-testid="hud-shell-0"]').attributes('title')).toContain('330mm')
-    expect(wrapper.get('[data-testid="hud-shell-0"]').text()).toBe('330 mm')
+    expect(wrapper.get('[data-testid="hud-penetration"]').text()).toBe('330 mm')
     resolveStock(TANK)
     await flushPromises()
     expect(wrapper.get('[data-testid="hud-shell-0"]').attributes('title')).toContain('330mm')
@@ -186,7 +230,7 @@ describe('ArmorShotHud（右上角弹种 + 装备图标）', () => {
     await flushPromises()
     expect(data.fetchTankData).toHaveBeenLastCalledWith(1, { upgrade: 'stock', abilities: '101,201' })
     expect(wrapper.get('[data-testid="hud-shell-0"]').attributes('title')).toContain('220mm')
-    expect(wrapper.get('[data-testid="hud-shell-0"]').text()).toBe('220 mm')
+    expect(wrapper.get('[data-testid="hud-penetration"]').text()).toBe('220 mm')
   })
 
   it('卸载后迟到资产不会重新发出ready', async () => {
