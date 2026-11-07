@@ -131,7 +131,7 @@ android/
           AuthResponseGuard.kt    # 事务归属校验（state / redirect / code / error，纯逻辑）
           AuthResult.kt           # 显式 result / error 模型
       res/
-        layout/activity_main.xml         # GeckoView + versionGate + runtimeError（含诊断行）
+        layout/activity_main.xml         # startupSurface + GeckoView + versionGate + runtimeError（含诊断行）
         values/{strings,colors,themes}.xml
         xml/file_paths.xml               # FileProvider cache 与私有 updates 窄目录
         mipmap-anydpi-v26/{ic_launcher,ic_launcher_round}.xml
@@ -148,6 +148,12 @@ exact URL 优先，其次 `/agent-assets/*`，其余是 bundled assets；缺失�
 
 页面加载必须等内置扩展安装完成、message delegate 注册之后才开始，保证首屏前 `window.WotbNative` 已就绪；
 扩展用 `installBuiltIn`（每次进程启动都重装），升级 APK 后一定运行新的 `bridge.js`，不需要维护扩展版本号。
+
+冷启动、Activity 重建与引擎恢复期间由 Native 启动面（`@color/bg` + 进度指示）承接首帧。
+`StartupSurfaceState` 是该启动面可见性的唯一 owner：GeckoView 的 `onFirstContentfulPaint` 后移除；
+`onPaintStatusReset`、content crash、kill / resume 恢复时重新显示，直到下一次内容绘制。强制更新与运行时错误
+门禁接管画面时启动面隐藏，且不因恢复信号重新出现，直到下一次重新加载。启动面不使用固定延时，也不改变
+Gecko 初始化与页面加载顺序。
 
 启动先加载 bundled document，再在系统确认 online 时异步获取版本 manifest（connect/read 各 3 秒）。
 首次离线、manifest 获取失败或非法都不阻断本地界面。有效 manifest 的唯一分类归

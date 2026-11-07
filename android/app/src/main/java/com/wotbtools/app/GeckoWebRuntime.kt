@@ -54,6 +54,10 @@ internal class GeckoWebRuntime(
         fun onFilePrompt(prompt: PromptDelegate.FilePrompt): GeckoResult<PromptDelegate.PromptResponse>
         /** [crashLoop] = content 进程短时间内连续崩溃；否则为本地页面 / 扩展加载失败。 */
         fun onRuntimeFailure(crashLoop: Boolean)
+        /** GeckoView 报告页面已有可显示的首次内容绘制。 */
+        fun onContentPainted()
+        /** 已绘制内容不再显示（paint reset / crash / kill 恢复），宿主应重新显示启动面。 */
+        fun onContentUnavailable()
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -113,7 +117,10 @@ internal class GeckoWebRuntime(
 
     /** 低内存 kill 后回到前台：静默重开并重载被杀前的页面（包括还没收到 onLocationChange 的首屏）。 */
     fun onResume() {
-        recovery.onResume()?.let { load(it) }
+        recovery.onResume()?.let {
+            host.onContentUnavailable()
+            load(it)
+        }
     }
 
     fun close() {
@@ -366,6 +373,7 @@ internal class GeckoWebRuntime(
             if (recentCrashes.size >= 2) {
                 host.onRuntimeFailure(crashLoop = true)
             } else {
+                host.onContentUnavailable()
                 recovery.onCrash()?.let { load(it) }
             }
         }
@@ -376,7 +384,15 @@ internal class GeckoWebRuntime(
             port = null
             Log.w(TAG, "content process killed count=$killCount")
             // 通常发生在后台（低内存回收）：等回到前台再重载；若窗口正可见则立即重载，避免停在空白页。
+            host.onContentUnavailable()
             recovery.onKill(visible = view.windowVisibility == View.VISIBLE)?.let { load(it) }
+        }
+
+        override fun onFirstContentfulPaint(session: GeckoSession) = host.onContentPainted()
+
+        override fun onPaintStatusReset(session: GeckoSession) {
+            Log.d(TAG, "paint status reset")
+            host.onContentUnavailable()
         }
     }
 
