@@ -15,12 +15,26 @@ import AppDialog from './AppDialog.vue'
 import Banner from './Banner.vue'
 import CreatorCard from './CreatorCard.vue'
 import CreatorForm from './CreatorForm.vue'
+import SegmentedControl from './SegmentedControl.vue'
+import { useCreatorAvailability } from '../composables/useCreatorAvailability.js'
 import './creators.css'
 
 const props = withDefaults(defineProps<{ type?: RecommendationType }>(), { type: 'UP' })
 const video = computed(() => props.type === 'VIDEO')
 const route = useRoute(), router = useRouter(), editorDirty = ref(false)
 const { t, te } = useI18n()
+// 4.0：「推荐 UP | 优秀作品」页签在两个列表间直接切换（目录页入口与深链 ?view=creators / recommended-videos 不变）
+const availability = useCreatorAvailability()
+const typeTabs = computed(() => [
+  availability.typeVisible('UP') && { value: 'UP', label: t('creators.upType'), testid: 'recommendation-tab-UP' },
+  availability.typeVisible('VIDEO') && { value: 'VIDEO', label: t('creators.videosTitle'), testid: 'recommendation-tab-VIDEO' },
+].filter((tab): tab is { value: string, label: string, testid: string } => Boolean(tab)))
+function switchType(type: string) {
+  if (type === props.type) return
+  const query: LocationQueryRaw = { ...route.query, view: type === 'VIDEO' ? 'recommended-videos' : 'creators' }
+  delete query.creatorCategory
+  return router.push({ path: route.path, query, hash: route.hash })
+}
 const { categoryId, categories: publicCategories, creators, adminAllowed,
   network, loading, error, refresh, selectCategory } = useCreators({ type: () => props.type })
 const categoriesExpanded = ref(categoryId.value !== null)
@@ -65,6 +79,7 @@ async function remove(id: number, expectedVersion: number) {
 <template>
   <div class="creators-page layout-content" data-testid="creators-page">
     <PageHeader :title="t(video ? 'creators.videosTitle' : 'creators.title')"><template #actions><AppButton data-testid="recommendations-back" @click="backToTypes">{{ t('creators.backToTypes') }}</AppButton><AppButton :disabled="loading || adminLoading || editorLoading || busy || !network.available" data-testid="creator-refresh" @click="refreshPage">{{ t('creators.refresh') }}</AppButton></template></PageHeader>
+    <SegmentedControl v-if="typeTabs.length > 1" :model-value="props.type" :options="typeTabs" :aria-label="t('creators.directoryTitle')" data-testid="recommendation-tabs" @update:model-value="switchType" />
     <Banner v-if="!network.available && !network.pending">{{ t(network.messageKey || 'featureOffline.creators') }}</Banner>
     <Banner v-if="error" tone="danger">{{ apiErrorLabel(t, te, error) }}</Banner>
     <Banner v-if="adminError" tone="danger">{{ apiErrorLabel(t, te, adminError) }}</Banner>

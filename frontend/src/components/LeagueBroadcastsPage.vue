@@ -330,11 +330,12 @@ async function refreshPage() {
 .broadcast-disclosure span { overflow-wrap: anywhere; }
 .broadcast-node-actions { flex: none; flex-wrap: nowrap; gap: var(--space-1); }
 .broadcast-icon-action { min-width: var(--control-h-md); padding-inline: var(--space-2); }
-.broadcast-records { display: grid; padding-inline: var(--space-4); border-top: var(--border-width) solid var(--color-border-subtle); }
-.broadcast-record { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-4); padding-block: var(--space-5); }
-.broadcast-record + .broadcast-record { border-top: var(--border-width) solid var(--color-border-subtle); }
-.broadcast-thumbnail { width: min(100%, var(--broadcast-cover-thumbnail-w)); height: auto; object-fit: contain; border-radius: var(--radius-sm); }
-.broadcast-record-text { flex: 1; min-width: min(100%, var(--form-field-min)); overflow-wrap: anywhere; }
+/* 4.0：展开后的回放是 16:9 封面卡片网格（大屏多列、小屏左图右文），点开仍外链到原地址 */
+.broadcast-records { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, calc(var(--space-12) * 6)), 1fr)); gap: var(--space-4); padding: var(--space-4); border-top: var(--border-width) solid var(--color-border-subtle); }
+.broadcast-records > p { grid-column: 1 / -1; }
+.broadcast-record { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; padding: var(--space-3); border: var(--border-width) solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-surface-2); }
+.broadcast-thumbnail { inline-size: 100%; aspect-ratio: 16 / 9; height: auto; object-fit: cover; border-radius: var(--radius-md); background: var(--color-surface-1); }
+.broadcast-record-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .broadcast-record-text h3 { margin: 0 0 var(--space-2); color: var(--color-text-primary); font: var(--type-h3); }
 .broadcast-record-text p { margin: var(--space-1) 0; color: var(--color-text-secondary); font: var(--type-caption); }
 .broadcast-form, .broadcast-field { display: grid; gap: var(--space-2); }
@@ -367,7 +368,9 @@ async function refreshPage() {
   .broadcast-disclosure { gap: var(--space-2); }
   .broadcast-node-title { display: grid; }
   .broadcast-category-header > .broadcast-actions { margin-inline-start: auto; }
-  .broadcast-record { align-items: flex-start; flex-direction: column; }
+  .broadcast-records { grid-template-columns: minmax(0, 1fr); }
+  .broadcast-record { display: grid; grid-template-columns: calc(var(--space-12) * 2.5) minmax(0, 1fr); align-items: start; }
+  .broadcast-record > .broadcast-actions { grid-column: 1 / -1; }
   .broadcast-record-text { min-width: 0; width: 100%; }
 }
 </style>
