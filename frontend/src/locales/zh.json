@@ -1840,6 +1840,9 @@
       "augment_choice": "已选",
       "augment_or": "或",
       "augment_options_hint": "三选一：研发组后选择其一，效果互斥",
+      "augment_all_researched": "全部研发",
+      "augment_none": "清空",
+      "augment_node_title": "增强节点",
       "augment_mechanics": {
         "rechargeableNitro": {
           "name": "液态燃料助推器",

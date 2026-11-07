@@ -111,6 +111,11 @@ function effectText(attr: UpgradeAttribute): string {
     if (name === 'SAS_ALLOW_ACTIVATE_ON_HIT') return `${label} ${t(`agentTanks.configurator.upgrade_trigger_${value ? 'hit' : 'damage'}`)}`
     return `${label} ${t(`agentTanks.configurator.upgrade_${value ? 'yes' : 'no'}`)}`
   }
+  // 口径与 TankConfigPanel.upgradeAmount 一致：MODIFIER_MULTIPLY 是系数（×0.98
+  // = 散布乘 0.98 即降 2%），不能渲染成 +0.98 的加法。
+  if (progression.value?.attributeDefinitions[name]?.modifier === 'MODIFIER_MULTIPLY') {
+    return `${label} ×${value}`
+  }
   const sign = value > 0 ? '+' : ''
   const text = isPercentAttribute(name) ? `${sign}${Math.round(value * 100)} %` : `${sign}${value}`
   return `${label} ${text}`
@@ -155,6 +160,21 @@ function onGroupClick(): void {
 }
 function groupIsInstalled(g: AugmentGroup): boolean {
   return g.choices.some(id => installedSet.value.has(id))
+}
+/** 可点击单元的无障碍名：技术名 + 当前状态（节点/组/备选共用口径）。 */
+function nodeAriaLabel(node: AugmentNodeView | null | undefined): string {
+  if (!node) return ''
+  const status = installedSet.value.has(node.id)
+    ? t('agentTanks.configurator.augment_installed')
+    : t('agentTanks.configurator.augment_can_research')
+  return `${node.techName} · ${status}`
+}
+function groupAriaLabel(g: AugmentGroup): string {
+  const name = g.displayName || mechanicName.value || g.id
+  const status = groupIsInstalled(g)
+    ? t('agentTanks.configurator.augment_installed')
+    : t('agentTanks.configurator.augment_can_research')
+  return `${name} · ${status}`
 }
 function onSectorClick(nodeId: number): void {
   const g = group.value
@@ -212,8 +232,12 @@ const selectedGroup = computed(() => (selected.value && selected.value.kind !== 
     <div class="at-head">
       <p class="at-hint">{{ t('agentTanks.configurator.augment_hint') }}</p>
       <div class="at-actions">
-        <button type="button" class="at-pillbtn" data-testid="tank-augment-all" @click="researchAll">All researched</button>
-        <button type="button" class="at-pillbtn" data-testid="tank-augment-none" @click="researchNone">None</button>
+        <button type="button" class="at-pillbtn" data-testid="tank-augment-all" @click="researchAll">
+          {{ t('agentTanks.configurator.augment_all_researched') }}
+        </button>
+        <button type="button" class="at-pillbtn" data-testid="tank-augment-none" @click="researchNone">
+          {{ t('agentTanks.configurator.augment_none') }}
+        </button>
       </div>
     </div>
 
@@ -246,20 +270,18 @@ const selectedGroup = computed(() => (selected.value && selected.value.kind !== 
                 'at-sector-chosen': group != null && chosen[group.id] === sector.nodeId,
                 'at-sector-selected': selectedId === sector.nodeId,
               }"
-              role="button" tabindex="0"
-              :aria-label="nodesById.get(sector.nodeId)?.techName"
-              @click="onSectorClick(sector.nodeId)"
-              @keydown.enter="onSectorClick(sector.nodeId)"
             />
           </svg>
 
-          <div
+          <button
             v-for="node in layout.nodes" :key="'n' + node.id"
-            class="at-cell" :data-testid="`tank-augment-node-${node.id}`"
+            type="button" class="at-cell" :data-testid="`tank-augment-node-${node.id}`"
+            :aria-label="nodeAriaLabel(nodesById.get(node.id))"
+            :aria-pressed="installedSet.has(node.id)"
             :style="{ left: (node.col - 1) * AUGMENT_CELL + 'px', top: (node.row - 1) * AUGMENT_CELL + 'px' }"
             @click="onNodeClick(nodesById.get(node.id))"
           >
-            <div
+            <span
               class="at-node" :class="{
                 'at-diamond': nodesById.get(node.id)?.type === 'NODETYPE_MECHANIC',
                 'at-installed': installedSet.has(node.id),
@@ -268,17 +290,19 @@ const selectedGroup = computed(() => (selected.value && selected.value.kind !== 
               }"
             >
               <img class="at-ico" :src="nodeIcon(nodesById.get(node.id))" alt="" loading="lazy">
-            </div>
-            <div v-if="!installedSet.has(node.id)" class="at-price">{{ fmtCompact(nodesById.get(node.id)?.xpCost ?? 0) }}<svg class="at-star" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0 L9.8 6.2 L16 8 L9.8 9.8 L8 16 L6.2 9.8 L0 8 L6.2 6.2 Z" fill="#8fb6d9"/></svg></div>
-          </div>
+            </span>
+            <span v-if="!installedSet.has(node.id)" class="at-price">{{ fmtCompact(nodesById.get(node.id)?.xpCost ?? 0) }}<svg class="at-star" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0 L9.8 6.2 L16 8 L9.8 9.8 L8 16 L6.2 9.8 L0 8 L6.2 6.2 Z" fill="#8fb6d9"/></svg></span>
+          </button>
 
           <template v-if="group">
-            <div
-              class="at-cell at-cursor" :style="{ left: gcx - 48 + 'px', top: gcy - 48 + 'px' }"
+            <button
+              type="button" class="at-cell at-cursor" :style="{ left: gcx - 48 + 'px', top: gcy - 48 + 'px' }"
               data-testid="tank-augment-group"
+              :aria-label="groupAriaLabel(group)"
+              :aria-pressed="groupInstalled"
               @click="onGroupClick"
             >
-              <div
+              <span
                 class="at-node at-group-node" :class="{
                   'at-installed': groupInstalled,
                   'at-selected': groupSelected,
@@ -286,20 +310,22 @@ const selectedGroup = computed(() => (selected.value && selected.value.kind !== 
               >
                 <img class="at-orn" :src="iconUrl('', 't11_augment_ornaments')" alt="">
                 <img class="at-ico" :src="mechIconUrl" alt="">
-              </div>
-              <div v-if="!groupInstalled" class="at-price at-price-group">{{ fmtCompact(group.xpCost ?? 0) }}<svg class="at-star" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0 L9.8 6.2 L16 8 L9.8 9.8 L8 16 L6.2 9.8 L0 8 L6.2 6.2 Z" fill="#8fb6d9"/></svg></div>
-            </div>
-            <div
+              </span>
+              <span v-if="!groupInstalled" class="at-price at-price-group">{{ fmtCompact(group.xpCost ?? 0) }}<svg class="at-star" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0 L9.8 6.2 L16 8 L9.8 9.8 L8 16 L6.2 9.8 L0 8 L6.2 6.2 Z" fill="#8fb6d9"/></svg></span>
+            </button>
+            <button
               v-for="sector in layout.sectors" :key="'h' + sector.nodeId"
-              class="at-cell at-cursor"
+              type="button" class="at-cell at-cursor"
               :style="{ left: sector.cx - 48 + 'px', top: sector.cy - 48 + 'px' }"
+              :aria-label="nodeAriaLabel(nodesById.get(sector.nodeId))"
+              :aria-pressed="chosen[group.id] === sector.nodeId"
               @click="onSectorClick(sector.nodeId)"
             >
               <img
                 class="at-sector-ico" :src="nodeIcon(nodesById.get(sector.nodeId))"
                 :alt="nodesById.get(sector.nodeId)?.techName"
               >
-            </div>
+            </button>
           </template>
         </div>
       </div>
@@ -310,7 +336,7 @@ const selectedGroup = computed(() => (selected.value && selected.value.kind !== 
             <div class="at-bico"><img :src="selectedIsNode ? nodeIcon(selectedNode) : mechIconUrl" alt=""></div>
             <div class="at-bmain">
               <div class="at-btitle">
-                {{ selectedIsNode ? 'Augment' : (group?.displayName || '') }}
+                {{ selectedIsNode ? t('agentTanks.configurator.augment_node_title') : (group?.displayName || '') }}
               </div>
               <div class="at-bstatus" :class="{ 'at-ok': selectedInstalled }">
                 {{ selectedInstalled ? t('agentTanks.configurator.augment_installed') : t('agentTanks.configurator.augment_can_research') }}
@@ -381,7 +407,13 @@ const selectedGroup = computed(() => (selected.value && selected.value.kind !== 
 .at-sector-chosen { fill: rgba(232,150,30,.4); stroke: rgb(var(--at-amber)); stroke-width: 3.5; filter: drop-shadow(0 0 7px rgba(232,150,30,.7)); }
 .at-sector-selected { stroke: rgb(var(--at-amber)); stroke-width: 3; }
 .at-sector-installed { fill: rgb(var(--at-node-inst)); }
-.at-cell { position: absolute; width: 96px; height: 96px; }
+/* 可点击单元是原生 button（键盘 Enter/Space 天然可用）：清掉 UA 外观，保留 .at-cell 定位 */
+.at-cell {
+  position: absolute; width: 96px; height: 96px;
+  appearance: none; border: 0; background: none; padding: 0; margin: 0;
+  font: inherit; color: inherit; text-align: initial; cursor: pointer;
+}
+.at-cell:focus-visible { outline: 2.5px solid rgb(var(--at-amber)); outline-offset: 2px; border-radius: 14px; }
 .at-cursor { cursor: pointer; }
 .at-node { position: absolute; left: 16px; top: 16px; width: 64px; height: 64px; border-radius: 32px; background: rgb(var(--at-node)); display: flex; align-items: center; justify-content: center; }
 .at-diamond { border-radius: 9px; transform: rotate(45deg); }

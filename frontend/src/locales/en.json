@@ -1840,6 +1840,9 @@
       "augment_choice": "Chosen",
       "augment_or": "or",
       "augment_options_hint": "Pick one of three: mutually exclusive after the group is researched",
+      "augment_all_researched": "All researched",
+      "augment_none": "None",
+      "augment_node_title": "Augment",
       "augment_mechanics": {
         "rechargeableNitro": {
           "name": "Liquid Fuel Boosters",

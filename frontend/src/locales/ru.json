@@ -1840,6 +1840,9 @@
       "augment_choice": "Выбрано",
       "augment_or": "или",
       "augment_options_hint": "Выберите один из трёх: эффекты взаимоисключающие",
+      "augment_all_researched": "Всё исследовано",
+      "augment_none": "Сбросить",
+      "augment_node_title": "Усиление",
       "augment_mechanics": {
         "rechargeableNitro": {
           "name": "Жидкотопливные ускорители",

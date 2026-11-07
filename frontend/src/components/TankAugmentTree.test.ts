@@ -39,3 +39,41 @@ describe('TankAugmentTree（XI 研发树复刻）机制文案', () => {
     wrapper.unmount()
   })
 })
+
+describe('TankAugmentTree 可访问性与操作文案', () => {
+  it('节点/组/备选是原生 button，带 aria-label 与 aria-pressed，可键盘触发', async () => {
+    const wrapper = render()
+    const nodes = wrapper.findAll('button[data-testid^="tank-augment-node-"]')
+    expect(nodes.length).toBeGreaterThan(0)
+    const first = nodes[0]!
+    expect(first.attributes('type')).toBe('button')
+    expect(first.attributes('aria-label')).toBeTruthy()
+    expect(first.attributes('aria-pressed')).toBe('false')
+    // 原生 button：trigger('click') 即等价键盘 Enter/Space 的激活路径
+    await first.trigger('click')
+    expect(wrapper.emitted('research')).toBeTruthy()
+    expect(wrapper.find('button[data-testid="tank-augment-group"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('操作文案随语言变化（不再硬编码英文）', () => {
+    const modules = { ...bz.modules }
+    const zh = mount(TankAugmentTree, {
+      props: { modules, installed: [], chosen: {} },
+      global: { plugins: [createI18n({ locale: 'zh', messages })] },
+    })
+    expect(zh.get('[data-testid="tank-augment-all"]').text()).toBe('全部研发')
+    expect(zh.get('[data-testid="tank-augment-none"]').text()).toBe('清空')
+    zh.unmount()
+  })
+
+  it('MODIFIER_MULTIPLY 属性按系数（×）展示，不显示为加法', async () => {
+    const wrapper = render()
+    // BZ-79 节点 5（tier11_stabilisation_01）：散布系数 0.98 = 乘数语义（降 2%）
+    await wrapper.get('[data-testid="tank-augment-node-5"]').trigger('click')
+    const text = wrapper.get('[data-testid="tank-augment-info"]').text()
+    expect(text).toContain('×0.98')
+    expect(text).not.toContain('+0.98')
+    wrapper.unmount()
+  })
+})
