@@ -980,8 +980,8 @@ export function createCameraRuntime(deps: CameraRuntimeDeps): CameraRuntimeHandl
       if (recorderCamera.client_options.backward_zoom === true) {
         deps.vehicles.posAt(v, deps.getT() - REVERSE_SAMPLE_OFFSET_SEC, _recorderPrev);
         const reversing = isReversing(
-          { x: -_recorderPrev.x, y: 0, z: -_recorderPrev.z },
-          { x: -_recorderAnchor.x, y: 0, z: -_recorderAnchor.z },
+          { x: -_recorderPrev.x, y: 0, z: _recorderPrev.z },
+          { x: -_recorderAnchor.x, y: 0, z: _recorderAnchor.z },
           deps.vehicles.yawAt(v, deps.getT()),
         );
         recorderBoomScale = backwardZoomScale(recorderBoomScale, reversing, dt);

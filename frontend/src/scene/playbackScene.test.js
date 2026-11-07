@@ -3209,6 +3209,32 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
       expect(shadow().visible).toBe(true)
     })
 
+    describe('recorder backward_zoom 倒车判定（#913 review：恢复拆分前坐标转换——只反 x，保 z）', () => {
+      // pose_kf 关键帧（绕开 1 采样网格回退）上 5 m/s 的直线运动：yaw=0（车体前向 = +z），
+      // 相机航向 ray (0,2,100)（≈正 +z）。seek 落 T=75（Arcade 档：mode raw 1）。
+      // 倒车拉远收敛后 boom = 14 × 1.35 = 18.9 m，不触发时恒 14 m——
+      // 以 camera.z − 车体 z 的水平间距（负 = 相机在车后）判定。
+      const motionKf = (sign) => ({ t: [42, 75], pos: [0, 0, 0, 0, 0, sign * 165], yaw: [0, 0], pitch: [0, 0] })
+      const backwardFacet = () => facet({ client_options: { backward_zoom: true } })
+      const settledGap = async (sign) => {
+        const { api, run } = await load({ camera: backwardFacet(), vehicleOverrides: { pose_kf: motionKf(sign) } })
+        api.seekTime(75)
+        api.setCam('recorder')
+        run(40)   // dt=0.1 × 40 帧 ≫ tau=0.25s：boom 缩放完全收敛到 1 或 1.35
+        const v = window.__pbV[0]
+        return window.__camera.position.z - v.group.position.z
+      }
+      it('前进（+z 推进）不触发倒车拉远（boom 恒 14m 档）', async () => {
+        const gap = await settledGap(1)
+        expect(gap).toBeGreaterThan(-16)
+        expect(gap).toBeLessThan(-12)
+      })
+      it('倒车（−z）触发倒车拉远（boom 收敛到 18.9m 档）', async () => {
+        const gap = await settledGap(-1)
+        expect(gap).toBeLessThan(-16)
+      })
+    })
+
     it('accepts no camera input while active', async () => {
       const { api, run } = await load()
       api.seekTime(50)
