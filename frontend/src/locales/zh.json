@@ -110,7 +110,10 @@
     },
     "basemapFailed": "底图加载失败",
     "controlsHint": "拖拽转视角 · WASD/QE 平移升降 · 滚轮调远近（手机横屏可用右侧竖条） · 「固定」模式拖拽绕中心旋转 · 右上角全屏 · 1–6 调速",
-    "controlsHint2d": "拖动平移 · 滚轮或双指缩放 · 右上角全屏"
+    "controlsHint2d": "拖动平移 · 滚轮或双指缩放 · 右上角全屏",
+    "kicker": "不需要回放文件",
+    "searchPlaceholder": "搜索地图",
+    "searchEmpty": "没有找到匹配的地图"
   },
   "app": {
     "title": "WoTBTools",
@@ -2061,5 +2064,8 @@
     "step3": "打开 App，用 Wargaming 或 QQ 登录",
     "noReleaseNotes": "这一版没有写更新说明",
     "verifyFile": "校验文件（可选）"
+  },
+  "doc": {
+    "copy": "复制"
   }
 }

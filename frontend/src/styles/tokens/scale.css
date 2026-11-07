@@ -114,6 +114,9 @@
     --line-height-caption-xs: 14px;
     /* 长文阅读（项目历史 / 技术演进等文档页）：比界面正文更松的行高 */
     --line-height-prose: 1.7;
+    /* 长文档正文（产品历史 / 技术演进 / Rating 说明）：16px / 1.75，阅读宽度由组件的 720px 版心控制 */
+    --font-size-doc: 16px;
+    --line-height-doc: 1.75;
     --type-display-hero: 700 var(--font-size-display-hero) / var(--line-height-display-hero) var(--font-family-sans);
     --type-display-showcase: 700 var(--font-size-display-showcase) / var(--line-height-display-showcase) var(--font-family-sans);
     --type-display: 700 var(--font-size-display) / var(--line-height-display) var(--font-family-sans);

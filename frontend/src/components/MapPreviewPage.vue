@@ -59,9 +59,14 @@ const maps = computed(() => rawMaps.value
 /** picker 默认可见性：有中文名 = 人工认可（与当前 UI locale 无关，切 en/ru 集合不变）。
  *  开关只是本页会话状态——不写 localStorage、不占 URL 键，每次进入都回到干净默认。 */
 const showAllMaps = ref(false)
-const visibleMaps = computed(() => (showAllMaps.value
-  ? maps.value
-  : maps.value.filter((m) => hasChineseMapName(m.key))))
+/** 选图搜索（4.0）：按当前语言的显示名与 key 做不区分大小写的包含匹配；搜索时忽略「显示全部」开关，
+ *  否则未认可的地图永远搜不到。同样只是本页会话状态。 */
+const mapQuery = ref('')
+const visibleMaps = computed(() => {
+  const query = mapQuery.value.trim().toLocaleLowerCase()
+  if (query) return maps.value.filter((m) => m.name.toLocaleLowerCase().includes(query) || m.key.toLowerCase().includes(query))
+  return showAllMaps.value ? maps.value : maps.value.filter((m) => hasChineseMapName(m.key))
+})
 const indexFailed = ref(false)
 const indexLoaded = ref(false)
 const collator = new Intl.Collator()
@@ -252,9 +257,19 @@ const modeOptions = computed(() => [
       <div v-else-if="!selected" class="map-picker">
         <header class="map-picker-head">
           <div class="map-picker-heading">
+            <p class="map-picker-kicker">{{ $t('mapPreview.kicker') }}</p>
             <h1 class="map-picker-title">{{ $t('mapPreview.title') }}</h1>
             <p class="map-picker-subtitle">{{ $t('mapPreview.subtitle') }}</p>
           </div>
+          <div class="map-picker-tools">
+          <input
+            v-model="mapQuery"
+            type="search"
+            class="map-picker-search"
+            :placeholder="$t('mapPreview.searchPlaceholder')"
+            :aria-label="$t('mapPreview.searchPlaceholder')"
+            data-testid="map-search"
+          >
           <button
             type="button"
             role="switch"
@@ -268,7 +283,9 @@ const modeOptions = computed(() => [
             </span>
             <span>{{ $t('mapPreview.showAllMaps') }}</span>
           </button>
+          </div>
         </header>
+        <p v-if="mapQuery.trim() && !visibleMaps.length" class="map-picker-empty" data-testid="map-search-empty">{{ $t('mapPreview.searchEmpty') }}</p>
         <ul class="map-grid" data-testid="map-grid">
           <li v-for="m in visibleMaps" :key="m.key">
             <button
@@ -368,6 +385,24 @@ const modeOptions = computed(() => [
   gap: var(--space-3);
 }
 
+.map-picker-kicker { margin: 0; color: var(--color-accent-text); font: var(--type-caption); font-weight: 600; letter-spacing: .16em; }
+.map-picker-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.map-picker-search {
+  inline-size: calc(var(--space-12) * 6);
+  max-inline-size: 100%;
+  min-height: var(--control-h-lg);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+  color: var(--color-text-primary);
+  font: var(--type-body);
+}
+.map-picker-search:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+.map-picker-empty { margin: var(--space-4) 0; color: var(--color-text-secondary); font: var(--type-body); }
+@media (width < 768px) {
+  .map-picker-tools, .map-picker-search { inline-size: 100%; }
+}
 .map-picker-heading {
   display: flex;
   flex-direction: column;

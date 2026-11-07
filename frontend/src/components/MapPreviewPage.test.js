@@ -204,6 +204,17 @@ describe('MapPreviewPage', () => {
     expect(wrapper.find('[data-testid="map-card-rudniki_01"]').exists()).toBe(false)
   })
 
+  it('搜索按 key / 显示名过滤，并能搜到默认隐藏的地图；无匹配时说明', async () => {
+    auth.authenticated.value = true
+    source.loadMapIndex.mockResolvedValue(IDX)
+    const wrapper = await openAt()
+    await wrapper.find('[data-testid="map-search"]').setValue('rudniki')
+    expect(cardKeys(wrapper)).toEqual(['rudniki_01', 'rudniki_03'])
+    await wrapper.find('[data-testid="map-search"]').setValue('zzz-no-such-map')
+    expect(cardKeys(wrapper)).toEqual([])
+    expect(wrapper.find('[data-testid="map-search-empty"]').exists()).toBe(true)
+  })
+
   it('默认隐藏的地图仍可被 ?map= 深链打开（2D/3D），返回 picker 后仍默认隐藏', async () => {
     auth.authenticated.value = true
     source.loadMapIndex.mockResolvedValue(IDX)

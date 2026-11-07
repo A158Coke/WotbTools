@@ -36,4 +36,10 @@ describe('MarkdownDocPage（审计 PG-14：长文档目录）', () => {
     const wrapper = mount(MarkdownDocPage, { props: { source: '# T\n\n## Only\n\ntext' }, global: { mocks: { $t: key => key } } })
     expect(wrapper.find('[data-testid="doc-toc"]').exists()).toBe(false)
   })
+
+  it('代码块带复制按钮', () => {
+    const source = '# T\n\n## 一\n\n```\nnpm test\n```\n\n## 二\n\n正文'
+    const wrapper = mount(MarkdownDocPage, { props: { source }, global: { mocks: { $t: key => key } } })
+    expect(wrapper.find('pre .doc-copy').text()).toBe('doc.copy')
+  })
 })

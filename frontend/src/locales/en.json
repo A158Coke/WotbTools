@@ -110,7 +110,10 @@
     },
     "basemapFailed": "Failed to load the basemap",
     "controlsHint": "Drag to look · WASD/QE move & rise · Wheel for distance (side slider on phones in landscape) · Fixed mode orbits the center · Fullscreen top-right · Keys 1–6 fly speed",
-    "controlsHint2d": "Drag to pan · Wheel or pinch to zoom · Fullscreen top-right"
+    "controlsHint2d": "Drag to pan · Wheel or pinch to zoom · Fullscreen top-right",
+    "kicker": "No replay needed",
+    "searchPlaceholder": "Search maps",
+    "searchEmpty": "No matching maps"
   },
   "app": {
     "title": "WoTBTools",
@@ -2061,5 +2064,8 @@
     "step3": "Open the app and sign in with Wargaming or QQ",
     "noReleaseNotes": "No release notes for this version",
     "verifyFile": "Verify the file (optional)"
+  },
+  "doc": {
+    "copy": "Copy"
   }
 }
