@@ -281,6 +281,9 @@
   z-index: var(--pb-z-transient);
 }
 .battle-playback.playback-workspace .pb-team-lane-left { grid-column: 1; }
+/* 沉浸态：左车道顶部让出外壳的悬浮菜单按钮（--immersive-nav-reserve，非沉浸态为 0） */
+.battle-playback.playback-workspace .pb-team-lane-left::before,
+.pb-root.playback-workspace .team-lane.side-left::before { content: ''; display: block; flex: none; block-size: var(--immersive-nav-reserve); }
 .battle-playback.playback-workspace .pb-team-lane-right { grid-column: 3; }
 
 .battle-playback.playback-workspace:fullscreen {

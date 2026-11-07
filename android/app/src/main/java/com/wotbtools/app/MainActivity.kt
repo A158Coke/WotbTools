@@ -413,7 +413,7 @@ class MainActivity : Activity() {
 
     /**
      * HTML Fullscreen API：Gecko 在 GeckoView 内渲染 fullscreen element，经 onFullScreen 通知宿主；
-     * 这里只切换系统 UI 与方向。BattlePlayback 继续使用标准 requestFullscreen()，
+     * 这里只切换系统 UI 与方向（方向只在手机上锁横屏）。BattlePlayback 继续使用标准 requestFullscreen()，
      * 不需要 Android 专用前端分支，也不会 reset playback state。
      */
     private fun enterFullscreen() {
@@ -421,7 +421,8 @@ class MainActivity : Activity() {
         fullscreen = true
         fullscreenPreviousOrientation = requestedOrientation
         fullscreenPreviousSystemUiVisibility = window.decorView.systemUiVisibility
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        // 只在手机上锁横屏（design-language §9「强制横屏」）；平板保持系统方向
+        if (isPhone()) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         window.decorView.systemUiVisibility = (
             View.SYSTEM_UI_FLAG_FULLSCREEN
                 or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION

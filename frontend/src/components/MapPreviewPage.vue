@@ -30,6 +30,8 @@ import ReplayCapabilityAuthGate from './ReplayCapabilityAuthGate.vue'
 import SegmentedControl from './SegmentedControl.vue'
 import MapPreview3DPane from './MapPreview3DPane.vue'
 import MapPreview2DPane from './MapPreview2DPane.vue'
+import RotatePrompt from './RotatePrompt.vue'
+import { useForcedLandscape } from '../composables/useForcedLandscape.js'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -197,6 +199,9 @@ const basesOptions = computed(() => {
 function openMap(entry) {
   router.replace({ query: { ...route.query, map: entry.key, mode: mode.value } })
 }
+// 强制横屏只针对 3D 场景（design-language §9）：2D 战术图是正方形，竖屏放得下；地图选择列表也不强制。
+const forcedLandscape = useForcedLandscape(computed(() => mode.value === '3d' && !!selected.value))
+
 function setMode(value) {
   router.replace({ query: { ...route.query, mode: value } })
 }
@@ -322,6 +327,13 @@ const modeOptions = computed(() => [
             @update:model-value="setMode"
           />
         </header>
+        <RotatePrompt
+          v-if="forcedLandscape.blocked.value"
+          class="map-rotate-prompt"
+          :device="forcedLandscape.device.value"
+          :action-label="$t('mapPreview.mode2d')"
+          @action="setMode('2d')"
+        />
         <div v-show="mode === '3d'" class="map-stage-pane">
           <MapPreview3DPane :map-id="selected.mapId" :map-name="selected.name" :map-key="selected.key" :bases-kind="basesKind" :spawn-points="spawnPoints" :active="mode === '3d'" />
         </div>
@@ -334,6 +346,7 @@ const modeOptions = computed(() => [
 </template>
 
 <style scoped>
+.map-rotate-prompt { position: fixed; inset: calc(var(--header-block) + env(safe-area-inset-top)) 0 0; z-index: var(--z-sticky); background: var(--color-canvas); }
 .map-preview {
   display: flex;
   flex-direction: column;

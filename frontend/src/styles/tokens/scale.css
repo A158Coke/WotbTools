@@ -225,6 +225,11 @@
     --header-h: 0px;
   }
 
+  /* 沉浸态左上的悬浮菜单按钮（§9「强制横屏」：无顶栏，左上保留菜单）占用的空间；
+     场景外壳在自己的左上角让出这一块，非沉浸态为 0。 */
+  :root { --immersive-nav-reserve: 0px; }
+  :root[data-shell-chrome="immersive"] { --immersive-nav-reserve: calc(var(--hit-min-comfortable) + var(--space-2)); }
+
   @media (pointer: coarse) {
     :root {
       --font-size-body: 15px;

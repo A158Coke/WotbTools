@@ -1500,7 +1500,8 @@
     "ai_projection_failed": "这场回放解析失败，无法进行 AI 复盘",
     "pane_load_failed": "这个面板加载不出来，通常是页面版本已更新。重新加载即可拿到新版本；若只是网络中断，可先重试。",
     "pane_reload": "重新加载",
-    "pane_retry": "重试"
+    "pane_retry": "重试",
+    "rotate_view_data": "看赛后数据"
   },
   "league": {
     "title": "League Rating",

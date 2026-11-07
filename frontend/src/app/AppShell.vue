@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, provide, ref, watch, watchEffect } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
+import { Menu } from 'lucide-vue-next'
 import { useAuth } from '../composables/useAuth.js'
 import { shouldEnsureBusinessUser, useBusinessUserBootstrap } from '../composables/useBusinessUserBootstrap.js'
 import { useConnectivity } from '../composables/useConnectivity.js'
@@ -44,6 +45,8 @@ const { notice: connectivityNotice, close: closeConnectivityNotice } = useConnec
 const { isDrawerShell } = useBreakpoint()
 const navDrawerOpen = ref(false)
 const topBar = ref(null)
+const immersiveMenu = ref(null)
+const navReturnFocus = computed(() => topBar.value?.menuButton ?? immersiveMenu.value)
 watch(isDrawerShell, (drawer) => { if (!drawer) navDrawerOpen.value = false })
 
 /**
@@ -160,10 +163,24 @@ provide(FEEDBACK_KEY, siteFeedback.request)
     @open-nav="navDrawerOpen = true"
   />
   <AppSidebar v-if="!isDrawerShell" />
+  <!-- 沉浸态（手机横屏回放 / 装甲查看器）没有顶栏：左上保留同一个菜单入口打开抽屉 -->
+  <button
+    v-if="isDrawerShell && shellChrome.immersive.value"
+    ref="immersiveMenu"
+    type="button"
+    class="immersive-nav"
+    :aria-label="$t('nav.openDrawer')"
+    :aria-expanded="navDrawerOpen ? 'true' : 'false'"
+    aria-haspopup="dialog"
+    data-testid="nav-menu"
+    @click="navDrawerOpen = true"
+  >
+    <Menu :size="20" aria-hidden="true" />
+  </button>
   <AppNavDrawer
     v-if="isDrawerShell"
     :open="navDrawerOpen"
-    :return-focus-to="topBar?.menuButton"
+    :return-focus-to="navReturnFocus"
     @close="navDrawerOpen = false"
   />
   <div v-if="failed" class="business-bootstrap-notice" role="alert" data-testid="business-bootstrap-notice">
@@ -226,6 +243,25 @@ provide(FEEDBACK_KEY, siteFeedback.request)
 .app-footer {
   margin-top: auto;
 }
+
+/* 沉浸态悬浮菜单：玻璃底胶囊，避开刘海与圆角安全区；场景外壳用 --immersive-nav-reserve 让出这一块 */
+.immersive-nav {
+  position: fixed;
+  inset-block-start: max(var(--space-2), env(safe-area-inset-top));
+  inset-inline-start: max(var(--space-2), env(safe-area-inset-left));
+  z-index: var(--z-header);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--hit-min-comfortable);
+  block-size: var(--hit-min-comfortable);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--theme-glass);
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+.immersive-nav:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 
 .android-update-notice {
   display: flex;

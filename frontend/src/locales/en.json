@@ -1500,7 +1500,8 @@
     "ai_projection_failed": "This replay could not be parsed for AI review",
     "pane_load_failed": "This panel could not load, usually because the site was updated. Reload to get the new version; if it was only a network interruption, retry first.",
     "pane_reload": "Reload",
-    "pane_retry": "Retry"
+    "pane_retry": "Retry",
+    "rotate_view_data": "View battle data"
   },
   "league": {
     "title": "League Rating",

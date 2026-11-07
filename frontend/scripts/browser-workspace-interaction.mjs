@@ -2999,6 +2999,69 @@ async function runReplayCollectionScenario(env) {
 }
 
 /** Real multi-file analysis and 2D switching; scene appearance remains manual acceptance. */
+/**
+ * 强制横屏（design-language §9「强制横屏」）：判定只看设备，不看视口。真实应用 + 真实回放：
+ * - iPhone Safari 竖屏：2D 回放上出现旋转提示，提示里的「看赛后数据」回到数据能力；
+ * - iPad（含竖屏）与缩窄的桌面浏览器：同样的视口不出提示；
+ * - iPhone 横屏 844×340：没有提示，外壳沉浸、左上菜单可达并能打开抽屉。
+ */
+const FORCED_UA = {
+  iphone: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+  ipad: 'Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+  desktop: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+}
+const FORCED_LANDSCAPE_SCENARIOS = [
+  { name: 'forced-landscape-iphone-portrait', ua: 'iphone', width: 390, height: 664, touch: true, expectPrompt: true },
+  { name: 'forced-landscape-ipad-portrait', ua: 'ipad', width: 820, height: 1180, touch: true, expectPrompt: false },
+  { name: 'forced-landscape-desktop-narrow', ua: 'desktop', width: 390, height: 664, touch: false, expectPrompt: false },
+  { name: 'forced-landscape-iphone-landscape', ua: 'iphone', width: 844, height: 340, touch: true, expectPrompt: false, immersive: true },
+]
+
+async function runForcedLandscapeScenario(env, scenario) {
+  const failures = []
+  const { targetId, sessionId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  lastPage = page
+  try {
+    await page.enable()
+    await env.chrome.client.send('Emulation.setUserAgentOverride', { userAgent: FORCED_UA[scenario.ua] }, sessionId)
+    await page.emulate(scenario)
+    await page.goto(`${env.origin}/?view=battle-playback&ws-auth=1`)
+    await page.waitFor(() => !!document.querySelector('[data-testid="select-files-input"]'), { label: 'replay picker' })
+    const { root } = await env.chrome.client.send('DOM.getDocument', {}, sessionId)
+    const { nodeId } = await env.chrome.client.send('DOM.querySelector', {
+      nodeId: root.nodeId, selector: '[data-testid="select-files-input"]',
+    }, sessionId)
+    await env.chrome.client.send('DOM.setFileInputFiles', { nodeId, files: [
+      resolve(frontendRoot, '../common/fixtures/replays/cw-training-15-14-example.wotbreplay'),
+    ] }, sessionId)
+    await page.waitFor(() => !!document.querySelector('[data-test="battle-playback"]'), { timeout: 60_000, label: '2D playback loaded' })
+    // 设备判定是异步的：给它充足时间，再断言「出现」或「始终不出现」
+    const prompt = await page.waitForValue('!!document.querySelector("[data-testid=rotate-prompt]")',
+      value => value === scenario.expectPrompt, { timeout: 5000, label: `rotate prompt = ${scenario.expectPrompt}` }).catch(() => !scenario.expectPrompt)
+    if (!scenario.expectPrompt) {
+      await delay(800)
+      check(failures, await page.evaluate('!document.querySelector("[data-testid=rotate-prompt]")'), `${scenario.name}: 非强制设备不得出现旋转提示`)
+    } else {
+      check(failures, prompt === true, `${scenario.name}: iPhone 竖屏必须出现旋转提示`)
+      const action = await page.waitForValue(clickCenterExpression('[data-testid="rotate-prompt-action"]'), Boolean, { label: 'rotate prompt action' })
+      await page.tap({ ...action, touch: true })
+      await page.waitForValue('!!document.querySelector("[data-testid=rotate-prompt]")', value => value === false, { label: 'prompt dismissed by data capability' })
+      check(failures, await page.evaluate(`document.querySelector('[data-testid="ws-tab"][data-cap="data"]')?.getAttribute('aria-checked') === 'true'`),
+        `${scenario.name}: 退出动作必须回到赛后数据`)
+    }
+    if (scenario.immersive) {
+      await page.waitForValue('document.documentElement.dataset.shellChrome', value => value === 'immersive', { label: 'immersive shell' })
+      const menu = await page.waitForValue(clickCenterExpression('[data-testid="nav-menu"]'), Boolean, { label: 'immersive menu hit-testable' })
+      await page.tap({ ...menu, touch: true })
+      await page.waitForValue('!!document.querySelector("[data-testid=nav-drawer-panel]")', Boolean, { label: 'drawer from immersive menu' })
+    }
+  } finally {
+    await env.chrome.client.send('Target.closeTarget', { targetId })
+  }
+  results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
+}
+
 async function runMultiFileWorkspaceScenario(env) {
   const failures = []
   const { targetId, sessionId } = await env.chrome.openPage()
@@ -4225,6 +4288,7 @@ try {
     ...CATALOG_HOF_DOC_SCENARIOS.map(scenario => ({ scenario, run: async () => results.push(await runCatalogHofDocScenario(env, scenario)) })),
     ...MENU_VIEWPORT_SCENARIOS.map(scenario => ({ scenario, run: () => runMenuViewportScenario(env, scenario) })),
     { scenario: { name: 'multifile-workspace-playback', width: 1600, height: 900 }, run: () => runMultiFileWorkspaceScenario(env) },
+    ...FORCED_LANDSCAPE_SCENARIOS.map(scenario => ({ scenario, run: () => runForcedLandscapeScenario(env, scenario) })),
     { scenario: { name: 'replay-collection', width: 1440, height: 900 }, run: () => runReplayCollectionScenario(env) },
     { scenario: { name: 'offline-local-workspace-matrix', width: 1600, height: 900 }, run: () => runOfflineWorkspaceScenario(env) },
     ...APP_SCENARIOS.map((scenario) => ({ scenario, run: () => runAppScenario(env, scenario) })),

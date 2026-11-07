@@ -594,8 +594,15 @@ async function runDesktopScenario(env, scenario) {
   const coexistHorizontal = layout.back && layout.topBar
     && Math.abs((layout.topBar.left - layout.back.right) - 8) <= 2
     && Math.abs(barRel.top - 20) <= 2
-  check(failures, !!backRel && Math.abs(backRel.top - 20) <= 2 && Math.abs(backRel.left - 20) <= 2,
-    `${label}: 返回键没有贴 armor-view 左上 inset 20（back=${JSON.stringify(backRel)}）`)
+  // 沉浸态（手机横屏）外壳在左上放菜单按钮，返回键右移 44+8 让出（--immersive-nav-reserve）
+  const backInsetLeft = scenario.phoneLandscape ? 20 + 52 : 20
+  check(failures, !!backRel && Math.abs(backRel.top - 20) <= 2 && Math.abs(backRel.left - backInsetLeft) <= 2,
+    `${label}: 返回键没有贴 armor-view 左上 inset 20/${backInsetLeft}（back=${JSON.stringify(backRel)}）`)
+  if (scenario.phoneLandscape) {
+    const menu = await page.evaluate(`(() => { const el = document.querySelector('[data-testid="nav-menu"]'); if (!el) return null; const r = el.getBoundingClientRect(); const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return { right: r.right, hit: !!hit && el.contains(hit) } })()`)
+    check(failures, menu?.hit === true && layout.back && menu.right <= layout.back.left,
+      `${label}: 沉浸态左上菜单按钮不可达或与返回键重叠（menu=${JSON.stringify(menu)} back.left=${layout.back?.left}）`)
+  }
   check(failures, coexistVertical || coexistHorizontal,
     `${label}: 顶栏未在返回键下方或右侧留出 space-2 间距（bar=${JSON.stringify(barRel)} back=${JSON.stringify(layout.back && { bottom: layout.back.bottom, right: layout.back.right })}）`)
   // 手机横屏场景 HUD：射击快捷面板在右下拇指区（距底 space-2）；平板 / 桌面仍在右上角（20/20）

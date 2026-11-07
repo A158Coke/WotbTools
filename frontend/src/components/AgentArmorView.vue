@@ -1162,10 +1162,11 @@ onBeforeUnmount(() => {
    右下拇指区是射击快捷项（弹种、距离、厚度 / 击穿），左下是姿态与角度；完整设置在右侧参数面板
    （约 300px + 安全区），打开时场景仍在左侧可见。顶部正中留给点选结果胶囊。 */
 @media (pointer: coarse) and (orientation: landscape) and (height <= 500px) {
-    .armor-view :is(#corner-tl, .armor-back) { inset-inline-start: max(var(--space-5), env(safe-area-inset-left)); }
+    /* 沉浸态外壳在左上放菜单按钮（--immersive-nav-reserve）：返回键与信息卡整体右移让出 */
+    .armor-view :is(#corner-tl, .armor-back) { inset-inline-start: calc(max(var(--space-5), env(safe-area-inset-left)) + var(--immersive-nav-reserve)); }
     .armor-view .armor-back { inline-size: var(--hit-min-comfortable); padding: 0; justify-content: center; }
     .armor-view .armor-back-label { display: none; }
-    .armor-view.has-back #corner-tl { inset-block-start: var(--space-5); inset-inline-start: calc(max(var(--space-5), env(safe-area-inset-left)) + var(--hit-min-comfortable) + var(--space-2)); inline-size: min(17rem, 34%); }
+    .armor-view.has-back #corner-tl { inset-block-start: var(--space-5); inset-inline-start: calc(max(var(--space-5), env(safe-area-inset-left)) + var(--immersive-nav-reserve) + var(--hit-min-comfortable) + var(--space-2)); inline-size: min(17rem, 34%); }
     .armor-view #corner-tr { inset-block-start: auto; inset-block-end: max(var(--space-2), env(safe-area-inset-bottom)); inset-inline-end: max(var(--space-5), env(safe-area-inset-right)); max-block-size: calc(100% - var(--space-12) - var(--space-10)); overflow-y: auto; }
     .armor-view #corner-br { display: none; }
     .armor-view #turret-controls { inset-block-end: max(var(--space-2), env(safe-area-inset-bottom)); inset-inline-start: max(var(--space-5), env(safe-area-inset-left)); }
