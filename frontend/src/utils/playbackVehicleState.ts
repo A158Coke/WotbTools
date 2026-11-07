@@ -36,7 +36,8 @@ type ProjectVehicleStateInput = {
   markerTop: (y: number) => string
   markerTransform: string
   overlayInverseScale: number | string
-  overlayInverse: string
+  // 运行时恒为 1/view.scale 的数值（VehicleMarker 以 Number.isFinite 消费）。
+  overlayInverse: number
   translate: (key: string) => string
 }
 

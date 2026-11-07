@@ -1181,10 +1181,12 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
   it('车体不再参与防重叠布局（marker 只按真实位置摆放；位移与虚线整体删除）', () => {
     // happy-dom 下 import.meta.url 不是 file URL，用 cwd 相对路径读源码。
     const src = readFileSync(resolve(process.cwd(), 'src/components/BattlePlayback.vue'), 'utf8')
+    // #820 Agent C：vehicleStates 投影 owner 出仓到 usePlaybackVehicleProjection；负向锁仍看宿主。
+    const projectionSrc = readFileSync(resolve(process.cwd(), 'src/composables/usePlaybackVehicleProjection.ts'), 'utf8')
     expect(src).not.toContain('computeTankCollisionLayout')
     expect(src).not.toContain('presentationOffset')
     // 标记尺寸仍按渲染方框（供命中盒/环/标签布局用），但不再喂给碰撞求解器
-    expect(src).toContain('state.markerSize.renderBox.width')
+    expect(projectionSrc).toContain('state.markerSize.renderBox.width')
     expect(src).not.toContain('state.markerSize.collisionFootprint.width * view.scale')
   })
 
