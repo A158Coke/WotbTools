@@ -789,6 +789,30 @@ MACHINE/EXTERNAL，`PROVEN` 必须覆盖完整 criterion 且无相关 FAIL；Out
 provenance 与 alert 收敛证明供应链控制面已建立，不证明每个第三方 action 的运行时行为。审计时 main 的 open
 code scanning alert 只有 canary 1 条。
 
+## 34. 2026-11-07 — 4.0 界面外壳：抽屉导航、主题 token 与原生能力扩展
+
+外壳：手机竖屏与触屏横屏（`SHELL_DRAWER_QUERY`）共用左侧抽屉，`AppTabBar` 删除；`--header-block`（内容区为顶栏
+让出的固定空间）与 `--header-h`（吸顶偏移，顶栏收起时归零）拆成两个 token，滚动收起顶栏不再引起内容跳动。
+沉浸态（横屏 2D / 3D）由 `shellChrome.hostNav` 让播放控制条承载菜单按钮，外壳不再在场景上叠浮层。
+
+主题：`wotb-ui-profile` 的取值改为 spring / summer / autumn / winter，旧值在读取边界映射为 summer 并写回；`data-theme`
+仍只由 profile 派生（winter 为 light），场景容器用 `data-scene-surface` 固定深色。主视觉、遮罩、玻璃底与预览色板都是
+`tokens/color.css` 里的主题 token（`--theme-hero-image(-portrait)` / `--theme-hero-scrim(-portrait)` / `--theme-glass` /
+`--theme-preview-*`），`color-contrast.test.ts` 对四套主题的文字 / 遮罩组合做 WCAG 对比度断言。`showcase*.css`
+与 `tokens.css` 中残留的字面量颜色改为语义 token，`classic-profile.css` 删除；展示字阶 `--type-display-showcase`
+只给 `ShowcaseHero` 使用。
+
+原生桥：在 bridgeVersion 3 不变的前提下新增两个可选能力——`screen-form`（`getScreenForm` / `setLandscapeLock`，
+Kotlin `ScreenForm.kt`）与 `haptics`（`haptic {kind}`，`Haptics.kt`）；旧 App 没有能力时前端静默降级。强制横屏
+只按设备形态（Android 手机 App、iPhone Safari）判定，不按视口宽度。
+
+登录主题：Keycloak `login.ftl` 首次被覆盖（基于 26.6.4 base，字段与 action 不变），IdP 按 alias 分主次；背景选片从
+「UTC 天轮换 3 张」改为「UTC 月份 → 季节」，档期窗口机制保留；站点浏览器端登录经 keycloak-js `login({ locale })`
+传 `ui_locales`。
+
+边界：Android 端 `screen-form` / `haptics` 的 Kotlin 实现只有单元测试与契约测试，真机行为需人工验收；`ui_locales`
+在生产授权端点的效果未在线验证；登录模板在本地以 FreeMarker 离线渲染核对，未在 Keycloak 容器内渲染。
+
 ## 已退役 / 过渡架构
 
 - **Boost / Coaching** — 曾经形成完整有状态业务，后续连同 DB / frontend / roles 一并退役。
