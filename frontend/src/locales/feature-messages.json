@@ -183,10 +183,6 @@
         "reference": "资料",
         "events": "赛事",
         "community": "社区"
-      },
-      "compact": {
-        "tankopedia": "百科",
-        "tournament": "联赛"
       }
     },
     "dataVersion": {
@@ -208,8 +204,7 @@
       "sections": {
         "display": "显示设置",
         "admin": "管理",
-        "about": "关于与支持",
-        "shortcuts": "快捷入口"
+        "about": "关于与支持"
       },
       "language": "语言",
       "sponsor": "支持项目",
@@ -823,8 +818,8 @@
       "ownReplay": "使用自己的回放",
       "newbie": "新手教程",
       "newbieHint": "无需登录，可跳过。",
-      "anonymousHint": "可随时跳过。想重看时，回首页点“新手教程”。",
-      "anonymousFinished": "示例会留在工作台。使用自己的回放，或回首页重开新手教程。",
+      "anonymousHint": "可随时跳过。想重看时，在“更多”里点“功能指南”。",
+      "anonymousFinished": "示例会留在工作台。使用自己的回放，或在“更多”里点“功能指南”重开。",
       "exitFullscreenNext": "退出全屏并继续",
       "exitFullscreenFailed": "退出全屏失败，可以重试或跳过引导。",
       "exitFullscreenBack": "退出全屏并返回",
@@ -1186,10 +1181,6 @@
         "reference": "Reference",
         "events": "Events",
         "community": "Community"
-      },
-      "compact": {
-        "tankopedia": "Tanks",
-        "tournament": "League"
       }
     },
     "dataVersion": {
@@ -1211,8 +1202,7 @@
       "sections": {
         "display": "Display",
         "admin": "Administration",
-        "about": "About & support",
-        "shortcuts": "Shortcuts"
+        "about": "About & support"
       },
       "language": "Language",
       "sponsor": "Support the project",
@@ -1826,8 +1816,8 @@
       "ownReplay": "Use my own replay",
       "newbie": "Getting started",
       "newbieHint": "No sign-in needed. Skip at any time.",
-      "anonymousHint": "Skip at any time. Reopen Getting started from Home.",
-      "anonymousFinished": "The sample stays in your workspace. Select your own replay or reopen Getting started from Home.",
+      "anonymousHint": "Skip at any time. Reopen it from Feature guides under More.",
+      "anonymousFinished": "The sample stays in your workspace. Select your own replay or reopen a guide from Feature guides under More.",
       "exitFullscreenNext": "Exit fullscreen & continue",
       "exitFullscreenFailed": "Could not exit fullscreen. Retry or skip the guide.",
       "exitFullscreenBack": "Exit fullscreen & back",
@@ -2189,10 +2179,6 @@
         "reference": "Справочник",
         "events": "Турниры",
         "community": "Сообщество"
-      },
-      "compact": {
-        "tankopedia": "Танки",
-        "tournament": "Лига"
       }
     },
     "dataVersion": {
@@ -2214,8 +2200,7 @@
       "sections": {
         "display": "Отображение",
         "admin": "Администрирование",
-        "about": "О проекте и поддержка",
-        "shortcuts": "Быстрый доступ"
+        "about": "О проекте и поддержка"
       },
       "language": "Язык",
       "sponsor": "Поддержать проект",
@@ -2829,8 +2814,8 @@
       "ownReplay": "Открыть свой реплей",
       "newbie": "Первое знакомство",
       "newbieHint": "Без входа. Можно пропустить.",
-      "anonymousHint": "Можно пропустить в любой момент. Откройте «Первое знакомство» снова на главной странице.",
-      "anonymousFinished": "Пример останется в рабочей области. Выберите свой реплей или откройте «Первое знакомство» на главной странице.",
+      "anonymousHint": "Можно пропустить в любой момент. Откройте снова через «Ещё» → «Руководства по функциям».",
+      "anonymousFinished": "Пример останется в рабочей области. Выберите свой реплей или откройте руководство через «Ещё» → «Руководства по функциям».",
       "exitFullscreenNext": "Выйти и продолжить",
       "exitFullscreenFailed": "Не удалось выйти из полноэкранного режима. Повторите попытку или пропустите руководство.",
       "exitFullscreenBack": "Выйти и вернуться",

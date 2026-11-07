@@ -8,7 +8,7 @@ import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { callPageFunction } from './browser-page.mjs'
 import { parseScenarioArgs, selectShard } from './browser-scenario-args.mjs'
 import { OCCLUSION_LIMITS, measureOcclusion, measurePaintOrder, measureReachability } from './browser-occlusion.mjs'
-import { SHELL_OVERLAY_SCENARIOS, runShellOverlayScenario } from './browser-shell-overlays.mjs'
+import { MOBILE_PAGE_SCENARIOS, SHELL_OVERLAY_SCENARIOS, runMobilePageScenario, runShellOverlayScenario } from './browser-shell-overlays.mjs'
 import { DIALOG_SHEET_SCENARIOS, runDialogSheetScenario } from './browser-dialog-sheet.mjs'
 import { DRAWER_TABLE_SCENARIOS, runDrawerTableScenario } from './browser-drawer-tables.mjs'
 import { CATALOG_HOF_DOC_SCENARIOS, runCatalogHofDocScenario } from './browser-catalog-hof-docs.mjs'
@@ -3030,10 +3030,10 @@ async function runMultiFileWorkspaceScenario(env) {
     await page.waitForValue(roster, value => value === firstRoster, { timeout: 60_000, label: 'cached first battle restored' })
 
     // 手机回归：picker 是 fixed 底部 sheet。Replay Workspace 的 layout-data-workspace 有
-    // isolation: isolate，曾把仍留在局部层叠上下文里的 sheet 压在根层 AppTabBar 之下。
-    // 断言 sheet 贴住视口底部、覆盖导航栏且第二场在视口内，并用真实触摸完成切换。
+    // isolation: isolate，曾把仍留在局部层叠上下文里的 sheet 压在根层外壳之下。
+    // 断言 sheet 贴住视口底部、底边命中 sheet 本身且第二场在视口内，并用真实触摸完成切换。
     await page.emulate({ width: 390, height: 844, touch: true })
-    await page.waitFor(() => !!document.querySelector('[data-testid="app-tab-bar"]'), { label: 'mobile app tab bar after resize' })
+    await page.waitFor(() => !!document.querySelector('[data-testid="app-top-bar"]'), { label: 'mobile app top bar after resize' })
     await hit('[data-testid="playback-battle-picker"]', { touch: true })
     const sheet = await page.waitForValue(`(() => {
       const panel = document.querySelector('[data-testid="battle-picker-panel"]')
@@ -3046,14 +3046,14 @@ async function runMultiFileWorkspaceScenario(env) {
         teleported: panel.parentElement === document.body && !panel.closest('.battle-picker'),
         bottom: Math.round(rect.bottom),
         viewportHeight: innerHeight,
-        bottomOverTabBar: !!bottomHit && panel.contains(bottomHit),
+        bottomOverShell: !!bottomHit && panel.contains(bottomHit),
         optionInViewport: optionRect.top >= 0 && optionRect.left >= 0
           && optionRect.right <= innerWidth && optionRect.bottom <= innerHeight,
       }
     })()`, Boolean, { label: 'mobile battle picker sheet' })
     check(failures, sheet.teleported, `mobile battle picker sheet is not teleported to body: ${JSON.stringify(sheet)}`)
     check(failures, Math.abs(sheet.bottom - sheet.viewportHeight) <= 1, `mobile battle picker sheet must end at viewport bottom: ${JSON.stringify(sheet)}`)
-    check(failures, sheet.bottomOverTabBar, `app tab bar paints over the battle picker sheet: ${JSON.stringify(sheet)}`)
+    check(failures, sheet.bottomOverShell, `shell chrome paints over the battle picker sheet: ${JSON.stringify(sheet)}`)
     check(failures, sheet.optionInViewport, `Battle 2 option is outside the viewport: ${JSON.stringify(sheet)}`)
     // §5 可见即可达：逐个选项判定真实命中 / 裁剪 / 视口 / 触控命中区，而不是只看第二场那一项。
     const sheetReach = await measureReachability(page, {
@@ -3067,7 +3067,7 @@ async function runMultiFileWorkspaceScenario(env) {
     check(failures, await page.evaluate(`!!document.querySelector('[data-testid="battle-picker-panel"]')`) === false,
       'mobile battle picker sheet did not close after selection')
 
-    // 手机横屏沉浸态（真实应用）：回放就绪的触屏手机横屏隐藏顶栏 / Tab 栏，地图拿走 104px；
+    // 手机横屏沉浸态（真实应用）：回放就绪的触屏手机横屏隐藏顶栏，地图拿走顶栏高度；
     // 转回竖屏 / 切到数据 capability 立即恢复，地图回到竖屏契约（= 视口宽）。
     const shellState = `(() => ({
       topBar: !!document.querySelector('[data-testid="app-top-bar"]'),
@@ -3085,17 +3085,17 @@ async function runMultiFileWorkspaceScenario(env) {
     check(failures, landscape.map >= 260, `phone-landscape real-app map must be >= 260px: ${JSON.stringify(landscape)}`)
     console.log(`[browser-interaction] multifile 740x360 real-app map=${Math.round(landscape.map)}`)
     await page.emulate({ width: 390, height: 844, touch: true })
-    const portrait = await page.waitForValue(shellState, (state) => state.topBar && state.tabBar, { label: 'shell restored in portrait' })
+    const portrait = await page.waitForValue(shellState, (state) => state.topBar && !state.tabBar, { label: 'shell restored in portrait' })
     check(failures, !portrait.sidebar, `portrait phone shell must not mount the sidebar: ${JSON.stringify(portrait)}`)
     check(failures, portrait.headerH === '48px', `portrait must restore --header-h: ${JSON.stringify(portrait)}`)
     check(failures, portrait.map > 0 && Math.abs(portrait.map - portrait.stage) <= 2, `portrait map must fill the full column width: ${JSON.stringify(portrait)}`)
     await page.emulate({ width: 740, height: 360, touch: true })
     await page.waitForValue(shellState, (state) => !state.topBar, { label: 'immersive shell again' })
     await hit('[data-testid="ws-tab"][data-cap="data"]', { touch: true })
-    // 离开回放后仍处于 compact 横屏：导航是左侧图标栏（不是顶栏 + Tab 栏）
+    // 离开回放后仍处于手机横屏：导航是顶栏菜单 + 左侧抽屉（L3），没有侧边栏，也没有 Tab 栏
     await page.waitForValue(shellState,
-      (state) => state.sidebar && !state.topBar && !state.tabBar && state.headerH === '0px',
-      { label: 'rail restored when leaving playback' })
+      (state) => !state.sidebar && state.topBar && !state.tabBar && state.headerH === '48px',
+      { label: 'drawer shell restored when leaving playback' })
   } finally {
     await env.chrome.client.send('Target.closeTarget', { targetId })
   }
@@ -4214,6 +4214,7 @@ try {
   const env = { origin, chrome: chromeCdp }
   const runs = [
     ...SHELL_OVERLAY_SCENARIOS.map(scenario => ({ scenario, run: async () => results.push(await runShellOverlayScenario(env, scenario)) })),
+    ...MOBILE_PAGE_SCENARIOS.map(scenario => ({ scenario, run: async () => results.push(await runMobilePageScenario(env, scenario)) })),
     ...DIALOG_SHEET_SCENARIOS.map(scenario => ({ scenario, run: async () => results.push(await runDialogSheetScenario(env, scenario)) })),
     ...DRAWER_TABLE_SCENARIOS.map(scenario => ({ scenario, run: async () => results.push(await runDrawerTableScenario(env, scenario)) })),
     ...CATALOG_HOF_DOC_SCENARIOS.map(scenario => ({ scenario, run: async () => results.push(await runCatalogHofDocScenario(env, scenario)) })),
@@ -4237,7 +4238,7 @@ try {
   const scenarioArgs = parseScenarioArgs(process.argv.slice(2))
   const { nameFilter } = scenarioArgs
   const base = process.argv.includes('--occlusion')
-    ? runs.filter(({ scenario }) => /^(shell-overlay-|dialog-sheet-|drawer-tables-|overlay-|menu-viewport-|ws2d-|roster-geometry-|capability-normal-shots-armor-handoff)/.test(scenario.name))
+    ? runs.filter(({ scenario }) => /^(shell-overlay-|mobile-pages-|dialog-sheet-|drawer-tables-|overlay-|menu-viewport-|ws2d-|roster-geometry-|capability-normal-shots-armor-handoff)/.test(scenario.name))
     : process.argv.includes('--mobile-visual')
     ? runs.filter(({ scenario }) => scenario.width < 900 && /^(roster-geometry|ws2d)-/.test(scenario.name))
     : nameFilter ? runs.filter(({ scenario }) => scenario.name.includes(nameFilter)) : runs

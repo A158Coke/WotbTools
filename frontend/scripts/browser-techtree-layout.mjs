@@ -3,12 +3,12 @@
  *
  * 锁定的 invariant：
  * - compact（<768）页头收敛为「标题 + 操作」一行（≤56px，DC-ARC-02），国别页签单行；
- * - 科技树滚动区不得伸到固定底部 Tab 栏下面，吸底等级条必须停在底栏上方；
+ * - 外壳没有底部常驻栏（L1）：科技树滚动区与吸底等级条都停在视口底边之内；
  * - 矮横屏树视口至少约两行；平板 / 桌面等级条保持在滚动视口内；
  * - 任何形态都没有页面级横向溢出。
  *
- * 负向对照：在手机场景注入旧实现 `max-block-size: calc(100dvh - 220px)`，断言探针
- * 必须抓到「等级条被底栏遮住」——防止断言在旧 bug 上仍然变绿。
+ * 负向对照：在手机场景注入固定高度实现 `max-block-size: calc(100dvh + 120px)`，断言探针
+ * 必须抓到「等级条落到视口外」——防止断言在旧 bug 上仍然变绿。
  *
  * 数据面用确定性夹具资产包（科技树 JSON + tank_cache + crops），不依赖真实资产。
  */
@@ -72,7 +72,6 @@ function layoutProbe() {
   const q = selector => document.querySelector(selector)
   const scroll = q('.tt-scroll')
   const ruler = q('.tt-ruler')
-  const tabbar = q('[data-testid="app-tab-bar"]')
   const header = q('.techtree .page-header')
   const tabs = q('.tt-tabs')
   return {
@@ -86,7 +85,7 @@ function layoutProbe() {
     tabRows: tabs ? new Set([...tabs.children].map((element) => Math.round(element.getBoundingClientRect().top))).size : null,
     scroll: scroll ? { ...rect(scroll), clientHeight: scroll.clientHeight, scrollHeight: scroll.scrollHeight } : null,
     ruler: rect(ruler),
-    tabbar: rect(tabbar),
+    tabBar: !!q('[data-testid="app-tab-bar"]'),
     cells: document.querySelectorAll('.tt-cell').length,
   }
 }
@@ -110,19 +109,19 @@ function assertScenario(scenario, layout) {
     `${label}: 等级条跑到滚动视口上方（ruler.top=${layout.ruler.top}, scroll.top=${layout.scroll.top}）`,
   )
   if (scenario.compact) {
-    assert.ok(layout.tabbar, `${label}: compact 外壳必须渲染底部 Tab 栏`)
+    assert.equal(layout.tabBar, false, `${label}: 外壳不得渲染底部 Tab 栏（L1）`)
     assert.ok(
       layout.header.height <= 56,
       `${label}: compact 页头 ${layout.header.height}px 超过 DC-ARC-02 的 56px`,
     )
     assert.equal(layout.tabRows, 1, `${label}: 国别页签必须单行横滑（rows=${layout.tabRows}）`)
     assert.ok(
-      layout.scroll.bottom <= layout.tabbar.top + 1,
-      `${label}: 树滚动区伸到底栏下面（scroll.bottom=${layout.scroll.bottom}, tabbar.top=${layout.tabbar.top}）`,
+      layout.scroll.bottom <= layout.viewport.height + 1,
+      `${label}: 树滚动区伸到视口外（scroll.bottom=${layout.scroll.bottom}, viewport=${layout.viewport.height}）`,
     )
     assert.ok(
-      layout.ruler.bottom <= layout.tabbar.top - 1,
-      `${label}: 等级条被底栏遮住（ruler.bottom=${layout.ruler.bottom}, tabbar.top=${layout.tabbar.top}）`,
+      layout.ruler.bottom <= layout.viewport.height,
+      `${label}: 等级条落到视口外（ruler.bottom=${layout.ruler.bottom}, viewport=${layout.viewport.height}）`,
     )
   }
   if (scenario.landscape) {
@@ -165,7 +164,6 @@ try {
         tabs: layout.tabRows,
         scroll: layout.scroll.height,
         rulerBottom: layout.ruler.bottom,
-        tabbarTop: layout.tabbar?.top ?? null,
       })}`)
 
       // 负向对照：注入旧实现，探针必须能抓到等级条被底栏遮住。
@@ -173,16 +171,16 @@ try {
         await page.evaluate(`(() => {
           const style = document.createElement('style')
           style.id = 'techtree-negative-control'
-          style.textContent = '.tt-scroll { flex: none !important; max-block-size: calc(100dvh - 220px) !important; }'
+          style.textContent = '.tt-scroll { flex: none !important; max-block-size: calc(100dvh + 120px) !important; }'
           document.head.append(style)
         })()`)
         const broken = await page.probe(layoutProbe)
         assert.ok(
-          broken.ruler.bottom > broken.tabbar.top,
-          `negative control: 旧 max-block-size 未被识别（ruler.bottom=${broken.ruler.bottom}, tabbar.top=${broken.tabbar.top}）`,
+          broken.ruler.bottom > broken.viewport.height,
+          `negative control: 固定 max-block-size 未被识别（ruler.bottom=${broken.ruler.bottom}, viewport=${broken.viewport.height}）`,
         )
         await page.evaluate(`document.getElementById('techtree-negative-control')?.remove()`)
-        console.log(`[browser-techtree-layout] negative control PASS（旧实现 ruler.bottom=${broken.ruler.bottom} > tabbar.top=${broken.tabbar.top}）`)
+        console.log(`[browser-techtree-layout] negative control PASS（ruler.bottom=${broken.ruler.bottom} > viewport=${broken.viewport.height}）`)
       }
     } catch (error) {
       failures.push(`${scenario.name}: ${error.message}`)

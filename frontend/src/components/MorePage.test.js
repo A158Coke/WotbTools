@@ -42,19 +42,12 @@ function mountPage(navigate = vi.fn(), onboarding = null, creatorsAvailable = tr
   return { wrapper, i18n }
 }
 
-describe('MorePage shortcuts', () => {
-  it('opens sections outside the tab bar, and shows recommendations only when the directory is visible', async () => {
+describe('MorePage navigation', () => {
+  it('does not repeat primary navigation: every section lives in the drawer / sidebar', () => {
     menuRole.authenticated = ref(false)
-    const navigate = vi.fn()
-    const { wrapper } = mountPage(navigate, null, true, null, true)
-    expect(wrapper.findAll('[data-testid^="more-shortcut-"]').map(item => item.attributes('data-testid').replace('more-shortcut-', '')))
-      .toEqual(['techtree', 'maps', 'league-broadcasts', 'creators'])
-    await wrapper.get('[data-testid="more-shortcut-maps"]').trigger('click')
-    expect(navigate).toHaveBeenCalledWith('map-preview')
+    const { wrapper } = mountPage(vi.fn(), null, true, null, true)
+    expect(wrapper.find('[data-testid^="more-shortcut-"]').exists()).toBe(false)
     wrapper.unmount()
-    const hidden = mountPage(vi.fn(), null, true, null, false).wrapper
-    expect(hidden.find('[data-testid="more-shortcut-creators"]').exists()).toBe(false)
-    hidden.unmount()
   })
 })
 
@@ -116,17 +109,14 @@ describe('MorePage language switcher', () => {
     menuRole.content = false
     menuRole.authenticated = ref(false)
   })
-  it('shows More guides only while signed in and reacts to login/logout', async () => {
+  it('offers Feature guides to everyone (the APK has no Home page to reopen them from)', async () => {
     const openDirectory = vi.fn()
     const { wrapper } = mountPage(vi.fn(), { openDirectory })
-    expect(wrapper.find('[data-testid="more-link-guide"]').exists()).toBe(false)
-    menuRole.authenticated.value = true
-    await wrapper.vm.$nextTick()
     await wrapper.get('[data-testid="more-link-guide"]').trigger('click')
     expect(openDirectory).toHaveBeenCalledTimes(1)
-    menuRole.authenticated.value = false
+    menuRole.authenticated.value = true
     await wrapper.vm.$nextTick()
-    expect(wrapper.find('[data-testid="more-link-guide"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="more-link-guide"]').exists()).toBe(true)
     wrapper.unmount()
   })
 

@@ -308,7 +308,7 @@ onMounted(() => {
   /* 占满外壳留给本页的视口高度：顶栏高度已由 .app-main 的 padding 让出，底部 Tab 栏是
      fixed，必须在这里再减掉；树滚动区用 flex 吃掉页头/页签之后的剩余高度。
      不再写视口减法魔法数——4.0 外壳的顶栏/底栏与页头行数一变就错位。 */
-  block-size: calc(100dvh - var(--header-h) - var(--tabbar-h) - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  block-size: calc(100dvh - var(--header-h) - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   min-block-size: 0;
 }
 

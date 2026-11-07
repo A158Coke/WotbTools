@@ -2,10 +2,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   ALLOWED_VIEWS,
-  compactSection,
-  COMPACT_SHORTCUT_ITEMS,
-  COMPACT_TAB_ITEMS,
   defaultView,
+  isWorkspaceView,
   locationForView,
   PRIMARY_NAV,
   ADMIN_NAV,
@@ -83,22 +81,13 @@ describe('primary navigation', () => {
     expect(primarySection('home')).toBe('home')
   })
 
-  it('keeps five compact tabs and exposes every other section as a More shortcut', () => {
-    expect(COMPACT_TAB_ITEMS.map(item => item.id)).toEqual(['replay', 'hof', 'tankopedia', 'tournament-points', 'more'])
-    expect(COMPACT_SHORTCUT_ITEMS.map(item => item.id)).toEqual(['techtree', 'maps', 'league-broadcasts', 'creators'])
-    const reachable = [...COMPACT_TAB_ITEMS, ...COMPACT_SHORTCUT_ITEMS].map(item => item.id)
-    expect(PRIMARY_NAV.filter(item => !reachable.includes(item.id)).map(item => item.id)).toEqual(['home'])
-  })
-
-  it('maps every view to one compact section', () => {
-    expect(compactSection('battle-playback')).toBe('replay')
-    expect(compactSection('agent-armor')).toBe('tankopedia')
-    expect(compactSection('tournament-points')).toBe('tournament-points')
-    for (const view of ['agent-techtree', 'map-preview', 'league-broadcasts', 'creators', 'recommended-videos', 'history', 'sponsor', 'admin-users', 'hof-admin']) {
-      expect(compactSection(view)).toBe('more')
+  it('marks workspaces (replay, armor, maps, tech tree) as the top-bar auto-hide exception', () => {
+    for (const view of ['replay', 'battle-playback', 'ai-review', 'agent-replay', 'agent-shots', 'agent-armor', 'map-preview', 'agent-techtree']) {
+      expect(isWorkspaceView(view)).toBe(true)
     }
-    expect(compactSection('home')).toBeNull()
-    expect(compactSection('profile')).toBeNull()
+    for (const view of ['home', 'hof', 'agent-tankopedia', 'tournament-points', 'more', 'profile', 'admin-users']) {
+      expect(isWorkspaceView(view)).toBe(false)
+    }
   })
 
   it('places every section except Home and More in one sidebar group', () => {
@@ -124,8 +113,6 @@ describe('primary navigation', () => {
       expect(defaultView('127.0.0.1')).toBe('replay')
       expect(defaultView('wotbtools.com')).toBe('replay')
       expect(viewFromRoute({ path: '/', query: { view: 'home' } })).toBe('replay')
-      expect(COMPACT_TAB_ITEMS.every(item => expected.includes(item.id))).toBe(true)
-      expect(COMPACT_SHORTCUT_ITEMS.every(item => expected.includes(item.id))).toBe(true)
     } finally { vi.unstubAllEnvs() }
   })
 

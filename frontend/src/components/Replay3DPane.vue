@@ -740,10 +740,9 @@ function measurePresentationBounds() {
   if (!root) return
   const pageStyle = getComputedStyle(document.documentElement)
   const header = parseFloat(pageStyle.getPropertyValue('--header-h')) || 0
-  const tabs = document.fullscreenElement === root ? 0 : (parseFloat(pageStyle.getPropertyValue('--tabbar-h')) || 0)
   const viewportH = window.visualViewport?.height || window.innerHeight
   const top = document.fullscreenElement === root ? 0 : header
-  const workspaceH = Math.max(1, viewportH - top - tabs)
+  const workspaceH = Math.max(1, viewportH - top)
   root.style.setProperty('--pb-workspace-h', `${workspaceH}px`)
   shortWorkspace.value = workspaceH <= SHORT_WORKSPACE_MAX_H
   const style = getComputedStyle(root)
@@ -841,7 +840,7 @@ watch(() => props.active, (active) => {
 // 面板打开期间尺寸变化（旋转 / 全屏 / 工作台重排）重算可用高度；闭合时不测量
 // （此时 .controls 可能整块不存在），打开那一下由 watch(displayOpen) 负责。
 function onViewportResize() { measurePresentationBounds() }
-// 外壳沉浸态切换只改 --header-h / --tabbar-h，不触发 resize：显式重算预算。
+// 外壳沉浸态切换只改 --header-h，不触发 resize：显式重算预算。
 const shellChrome = inject(SHELL_CHROME_KEY, null)
 watch(() => shellChrome?.immersive.value, () => nextTick(measurePresentationBounds))
 onMounted(() => window.addEventListener('resize', onViewportResize))

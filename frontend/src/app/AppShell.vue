@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, provide, watch, watchEffect } from 'vue'
+import { computed, onMounted, onUnmounted, provide, ref, watch, watchEffect } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth.js'
 import { shouldEnsureBusinessUser, useBusinessUserBootstrap } from '../composables/useBusinessUserBootstrap.js'
@@ -23,7 +23,7 @@ import { createShellChrome } from './shellChrome.js'
 import { Feature } from './featureCapabilities.js'
 import { defaultView, locationForView, viewFromRoute } from './navigation.js'
 import AppTopBar from './AppTopBar.vue'
-import AppTabBar from './AppTabBar.vue'
+import AppNavDrawer from './AppNavDrawer.vue'
 import AppSidebar from './AppSidebar.vue'
 import GlobalErrorDialog from './GlobalErrorDialog.vue'
 import ConnectivityNoticeDialog from './ConnectivityNoticeDialog.vue'
@@ -40,8 +40,11 @@ const route = useRoute()
 useUsageTelemetry(computed(() => viewFromRoute(route)))
 const { error: globalError, showError: showGlobalError, close: closeGlobalError } = useError()
 const { notice: connectivityNotice, close: closeConnectivityNotice } = useConnectivityNotice()
-// 外壳按可用宽度切换（design-language §9）：compact 用标题栏 + 底部 Tab 栏；平板 / 桌面用左侧边栏
-const { isCompact, isCompactLandscape } = useBreakpoint()
+// 外壳形态（design-language §9）：手机竖屏 / 手机横屏用顶栏菜单 + 左侧抽屉；平板 / 桌面用左侧边栏
+const { isDrawerShell } = useBreakpoint()
+const navDrawerOpen = ref(false)
+const topBar = ref(null)
+watch(isDrawerShell, (drawer) => { if (!drawer) navDrawerOpen.value = false })
 
 /**
  * 连通性监听在这里启动一次（进程内单例）：Android 壳走系统 ConnectivityManager（Native Bridge），
@@ -127,8 +130,8 @@ function navigate(target) {
 }
 
 provide(NAVIGATE_VIEW_KEY, navigate)
-// 沉浸态：需要整屏高度的 feature（手机横屏回放）通过 typed key 申请，外壳不渲染顶栏 / Tab 栏，
-// 并把 --header-h / --tabbar-h 归零（scale.css 是这两个 token 的唯一 owner），预算公式无需改。
+// 沉浸态：需要整屏高度的 feature（手机横屏回放）通过 typed key 申请，外壳不渲染顶栏，
+// 并把 --header-block / --header-h 归零（scale.css 是这两个 token 的唯一 owner），预算公式无需改。
 const shellChrome = createShellChrome()
 provide(SHELL_CHROME_KEY, shellChrome)
 const androidUpdate = useAndroidUpdate({ route, router })
@@ -150,8 +153,19 @@ provide(FEEDBACK_KEY, siteFeedback.request)
 </script>
 
 <template>
-  <AppTopBar v-if="isCompact && !isCompactLandscape && !shellChrome.immersive.value" compact />
-  <AppSidebar v-if="!isCompact || (isCompactLandscape && !shellChrome.immersive.value)" />
+  <AppTopBar
+    v-if="isDrawerShell && !shellChrome.immersive.value"
+    ref="topBar"
+    :nav-open="navDrawerOpen"
+    @open-nav="navDrawerOpen = true"
+  />
+  <AppSidebar v-if="!isDrawerShell" />
+  <AppNavDrawer
+    v-if="isDrawerShell"
+    :open="navDrawerOpen"
+    :return-focus-to="topBar?.menuButton"
+    @close="navDrawerOpen = false"
+  />
   <div v-if="failed" class="business-bootstrap-notice" role="alert" data-testid="business-bootstrap-notice">
     <span>{{ $t('bootstrap.profileFailed') }}</span>
     <button type="button" class="business-bootstrap-retry" @click="retryBusinessBootstrap">{{ $t('bootstrap.retry') }}</button>
@@ -184,7 +198,6 @@ provide(FEEDBACK_KEY, siteFeedback.request)
     </div>
     <p class="app-footer-disclaimer" data-testid="wargaming-disclaimer">{{ $t('home.wargamingDisclaimer') }}</p>
   </footer>
-  <AppTabBar v-if="isCompact && !isCompactLandscape && !shellChrome.immersive.value" />
   <GlobalErrorDialog :error="globalError" :visible="showGlobalError" @close="closeGlobalError" />
   <ConnectivityNoticeDialog
     :title-key="connectivityNotice?.titleKey"
@@ -207,14 +220,8 @@ provide(FEEDBACK_KEY, siteFeedback.request)
   flex-direction: column;
 }
 
-/* 侧边栏是 fixed：内容整体让出 --sidebar-w（手机为 0）。底部 Tab 栏同理在页面底部留出空间 */
+/* 侧边栏是 fixed：内容整体让出 --sidebar-w（抽屉外壳为 0）。没有底部常驻栏（L1）。 */
 :global(#app) { padding-inline-start: var(--sidebar-w); }
-
-/* 手机竖屏 / 平板以下才为底部 Tab 栏留白；横屏手机改用左侧图标栏（--tabbar-h=0，
-   这里再用同一形态排除，避免给刘海屏横屏留下多余的底部安全区高度）。 */
-@media (width < 768px) and (not ((pointer: coarse) and (orientation: landscape) and (height <= 520px))) {
-  :global(#app) { padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom)); }
-}
 
 .app-footer {
   margin-top: auto;

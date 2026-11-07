@@ -201,6 +201,50 @@ export class Page {
     return this.evaluate('window.__inputTrace = { primary: null, click: null, clickCount: 0 }; window.__inputTrace')
   }
 
+  /** 把元素滚进视口、等顶栏收起 / 出现的过渡（L5）落定后，用真实输入点它的中心。 */
+  async tapSelector(selector, touch = true) {
+    await this.waitForValue(`!!document.querySelector(${JSON.stringify(selector)})`, Boolean, { label: `present ${selector}` })
+    await this.callWith((sel) => document.querySelector(sel).scrollIntoView({ block: 'center', inline: 'nearest' }), selector)
+    await this.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+    await this.animationsSettled()
+    const point = await this.callWith((sel) => {
+      const r = document.querySelector(sel).getBoundingClientRect()
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+    }, selector)
+    await this.tap({ ...point, touch })
+  }
+
+  /**
+   * 经外壳导航到一个栏目（design-language §9）：抽屉外壳（手机竖屏 / 横屏）走「菜单 → 抽屉 → 栏目」，
+   * 侧边栏外壳直接点侧边栏项。返回实际点击的选择器。
+   */
+  async navigateViaShell(id, touch = true) {
+    await this.waitForValue('!!document.querySelector("[data-testid=nav-menu],[data-testid=app-sidebar]")', Boolean, { label: 'app shell ready' })
+    const drawer = await this.evaluate('!!document.querySelector("[data-testid=nav-menu]")')
+    if (!drawer) {
+      await this.tapSelector(`[data-testid=nav-${id}]`, touch)
+      return `[data-testid=nav-${id}]`
+    }
+    await this.openNavDrawer(touch)
+    const selector = `[data-testid=nav-drawer-panel] [data-testid=nav-${id}]`
+    await this.tapSelector(selector, touch)
+    await this.waitForValue('!document.querySelector("[data-testid=nav-drawer-panel]")', Boolean, { label: `drawer closed after nav-${id}` })
+    return selector
+  }
+
+  async openNavDrawer(touch = true) {
+    await this.tapSelector('[data-testid=nav-menu]', touch)
+    await this.waitForValue('!!document.querySelector("[data-testid=nav-drawer-panel]")', Boolean, { label: 'nav drawer open' })
+    await this.animationsSettled()
+  }
+
+  async closeNavDrawer() {
+    for (const type of ['keyDown', 'keyUp']) {
+      await this.client.send('Input.dispatchKeyEvent', { type, key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, this.sessionId)
+    }
+    await this.waitForValue('!document.querySelector("[data-testid=nav-drawer-panel]")', Boolean, { label: 'nav drawer closed' })
+  }
+
   /** 以 CDP 参数调用页面函数，参数不进入表达式源码。 */
   callWith(fn, ...args) {
     return callPageFunction(this.client, this.sessionId, fn, ...args)

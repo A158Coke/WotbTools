@@ -44,7 +44,7 @@ async function scenario(name, width, height, touch, run) {
       } catch { /* 导航销毁 session 后的收尾噪声 */ }
     })
     await page.goto(`${origin}/`)
-    await page.waitForValue(`!!document.querySelector('[data-testid=app-sidebar]') || !!document.querySelector('[data-testid=app-tab-bar]')`, Boolean, { label: 'shell ready' })
+    await page.waitForValue(`!!document.querySelector('[data-testid=app-sidebar]') || !!document.querySelector('[data-testid=app-top-bar]')`, Boolean, { label: 'shell ready' })
     await run(page, modulePlan)
     const noise = page.consoleErrors.filter(message => /tech tree|tank cache|tankopedia|history page|markdown/i.test(message))
     assert.deepEqual(noise, [], `${name}: console errors`)

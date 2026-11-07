@@ -1,5 +1,6 @@
 <script setup lang="ts">
-// 手机底部 sheet（design-language §7 Sheet）：模态、焦点陷阱、Esc / 点遮罩 / 下滑关闭、portal 由 Reka Drawer 提供；
+// 手机 sheet（design-language §7 Sheet）：模态、焦点陷阱、Esc / 点遮罩 / 滑动关闭、portal 由 Reka Drawer 提供；
+// 默认从底部出现；side="start" 是左侧抽屉形态（小屏导航，§9 L1），左滑关闭、铺满高度、四边让出安全区。
 // 这里统一 WotbTools 的层级（--z-sheet）、遮罩（--color-scrim）、安全区、紧凑尺寸与 reduced-motion。
 // 不启用 snap points（目前没有产品场景）。
 import { computed, inject, ref, watch } from 'vue'
@@ -16,6 +17,8 @@ const props = defineProps<{
   title: string
   /** 同时显示 AppSheet 自己的标题行 */
   visibleTitle?: boolean
+  /** 出现方向：bottom（默认）或 start（左侧抽屉） */
+  side?: 'bottom' | 'start'
 }>()
 const emit = defineEmits<{ close: [] }>()
 defineOptions({ inheritAttrs: false })
@@ -35,10 +38,10 @@ function onUpdateOpen(value: boolean) {
 </script>
 
 <template>
-  <DrawerRoot :open="open" @update:open="onUpdateOpen">
+  <DrawerRoot :open="open" :swipe-direction="side === 'start' ? 'left' : 'down'" @update:open="onUpdateOpen">
     <DrawerPortal :to="portalTo ?? undefined" :disabled="inline" force-mount>
       <DrawerOverlay class="sheet-scrim" data-testid="sheet-scrim" />
-      <DrawerContent class="sheet" :final-focus="finalFocus" v-bind="$attrs">
+      <DrawerContent class="sheet" :class="{ 'is-start': side === 'start' }" :final-focus="finalFocus" v-bind="$attrs">
         <DrawerTitle class="sheet-title" :class="{ 'is-hidden': !visibleTitle }">{{ title }}</DrawerTitle>
         <div class="sheet-body"><slot /></div>
       </DrawerContent>
@@ -73,6 +76,20 @@ function onUpdateOpen(value: boolean) {
   /* 下滑关闭手势由 Reka 写入位移变量 */
   transform: translateY(var(--drawer-swipe-movement-y, 0px));
 }
+/* 左侧抽屉：铺满高度，顶 / 底 / 左让出安全区；左滑关闭的位移由 Reka 写入 x 变量 */
+.sheet.is-start {
+  top: 0;
+  right: auto;
+  width: var(--nav-drawer-w);
+  max-height: none;
+  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) env(safe-area-inset-left);
+  border-inline-end: 1px solid var(--color-border-subtle);
+  border-radius: 0;
+  background: var(--color-surface-1);
+  box-sizing: content-box;
+  transform: translateX(var(--drawer-swipe-movement-x, 0px));
+}
+.sheet.is-start .sheet-body { padding-inline-end: 0; overflow-y: auto; }
 /* 进场动画只挂在 open 态：Reka Presence 看到退场仍有 animation 会等一个不会再来的 animationend，sheet 就卸不掉 */
 .sheet[data-state="open"] { animation: sheet-in var(--duration-slow) var(--ease-standard); }
 

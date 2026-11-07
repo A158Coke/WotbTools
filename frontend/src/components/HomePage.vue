@@ -2,7 +2,7 @@
 /**
  * 首页 = 纯展示页（2026-10-18 重排）。它**不承担导航**。
  *
- * 依据：`AppSidebar.vue`（桌面 / 平板）与 `AppTabBar.vue` + `MorePage`（手机）已经覆盖
+ * 依据：`AppSidebar.vue`（桌面 / 平板）与 `AppNavDrawer.vue`（手机抽屉）已经覆盖
  * `app/navigation.js:PRIMARY_NAV` 的全部功能入口，三档都在。首页再摆一排功能卡就是把
  * 侧边栏抄一遍，所以这里只留一个功能入口（Replay Workspace / 上传回放）和 Web 侧边栏没有的
  * 非功能 / 转化入口：Android 下载、Sponsor、Feedback。Android App 内隐藏 Android 下载卡，

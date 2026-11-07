@@ -1,8 +1,8 @@
 import type { InjectionKey, Ref } from 'vue'
 
 /**
- * App shell chrome (top bar / bottom tab bar) visibility contract. AppShell owns the state and the
- * `--header-h` / `--tabbar-h` collapse; a feature that needs the whole viewport height (phone
+ * App shell chrome (drawer-shell top bar) visibility contract. AppShell owns the state and the
+ * `--header-block` / `--header-h` collapse; a feature that needs the whole viewport height (phone
  * landscape Replay Workspace) requests immersion through its own owner token and releases it when
  * the need ends. The shell stays immersive while at least one owner is requesting it.
  */

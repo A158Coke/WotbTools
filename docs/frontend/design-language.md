@@ -345,7 +345,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 - **输入方式：** `@media (pointer: coarse)` 只用来切换密度 token（§5），**不用来改布局**。JS 使用 `usePointer()`。
 - **组件级适配**用容器查询 `@container`，例如：表格在容器 < 560px 时切换成卡片。组件不应该知道视口有多大。
 - **视口单位：** 用 `dvh` / `svh`，不用 `100vh`；宽度用 `100%`，不用 `100vw`。
-- **安全区：** 顶栏、底部 Tab 栏、底部操作栏、全屏回放都要加 `env(safe-area-inset-*)`。
+- **安全区：** 顶栏、导航抽屉、底部操作栏、全屏回放都要加 `env(safe-area-inset-*)`（§9 L4）。
 - **hover 效果**包在 `@media (hover: hover)` 里，避免触屏上的"粘滞 hover"。
 
 ### 6.1 Fluid bounded sizing：固定值只定义边界
@@ -474,19 +474,33 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | DC-ARC-01 | MUST | 页面 | 自上而下是 Showcase Hero（可选）+ 控制条 + 数据区；同一页不并存两套标题区 | 场景型工作台（2D / 3D、装甲查看器）、长文档页 | 人工 |
 | DC-ARC-02 | MUST | 工作区 | `PageHeader` 只用 `compact`；kicker + h1 + 说明 + 标签块不得占掉首屏 | 满足 DC-THM-04 的 Showcase Hero | 人工 |
 | DC-ARC-03 | MUST | 筛选 | expanded / medium 行内工具栏；compact 用「筛选」按钮 + sheet，已生效条件显示为 chip | 无 | `pnpm run test:browser-interaction`（`overlay-catalog-` / `overlay-hof-`） |
-| DC-ARC-04 | MUST | 主导航 | 成员、分组、小屏 Tab 与栏目归属只由 `app/navigation.js` 定义，外壳组件和「更多」页不复制列表 | 无 | `src/app/navigation.test.js` |
-| DC-ARC-07 | MUST | 主导航 | `PRIMARY_NAV` 的每个入口在大屏与小屏都能到达；小屏 Tab 不超过 5 项 | 首页在小屏由 Logo 进入 | `pnpm run test:browser-interaction shell-overlay`；主站 Logo 回首页由 `test:browser-creators`（`production-`，小屏）与 `test:browser-broadcasts`（`-desktop`，大屏）验证 |
+| DC-ARC-04 | MUST | 主导航 | 成员、分组与栏目归属只由 `app/navigation.js` 定义；侧边栏与手机抽屉渲染同一份分组，「更多」页不复制导航列表 | 无 | `src/app/navigation.test.js` |
+| DC-ARC-07 | MUST | 主导航 | `PRIMARY_NAV` 的每个入口在大屏（侧边栏）与小屏（菜单 → 左侧抽屉）都能经真实点击到达；没有底部常驻导航 | 无 | `pnpm run test:browser-interaction shell-overlay`；主站 Logo 回首页由 `test:browser-creators`（`production-`，小屏）与 `test:browser-broadcasts`（`-desktop`，大屏）验证 |
+| DC-ARC-08 | MUST | 小屏外壳 | 满足下方「小屏布局契约」L1–L6 | 无 | `pnpm run test:browser-interaction mobile-pages`（L4 / L6）、`shell-overlay`（L1 / L3）、`src/app/navigation.test.js`（L5 例外清单） |
 | DC-ARC-05 | SHOULD | 页面状态 | 筛选、Tab、分页写进 URL，可深链和前进后退 | 无 | `src/app/router.test.js` + 人工 |
 | DC-ARC-06 | MUST | 表格 | 手机上复杂表格转卡片或关键列 + 容器内横向滚动，不撑破页面 | 无 | 人工 |
 
 | 模式 | 规则 |
 |---|---|
-| **AppShell** | 平板 / 桌面：左侧边栏（`--z-header`，铺满视口高度），没有顶栏（`--header-h: 0`）。桌面默认展开（240px，图标 + 文字），可折叠成 72px 图标栏并记住偏好；平板固定为图标栏。侧边栏从上到下：品牌 · 首页 · 按战斗、资料、赛事、社区分组的主栏目（`group`，图标栏用分隔线代替分组名）· 管理组（按角色）；底部：更多（弹出面板，只放低频的显示设置与关于 / 支持）· 账户 · 折叠开关。手机 / App：48px 标题栏 + 底部 Tab 栏（56px + 安全区）。Tab 栏固定 5 项：回放、名人堂、百科、联赛、更多（`compactTab`），不横向滚动，标签限制在各自栏目内、最多两行，短标题保留完整辅助名称。科技树、地图、联赛直播回放和推荐是「更多」页顶部的快捷入口，推荐目录不可用时隐藏推荐；打开这些页面时点亮「更多」（`compactSection()`）。Logo 回默认落地页：主站回首页，APK / 本地回回放。手机横屏的回放工作台（2D / 3D，回放就绪）与装甲查看器（WebGL 可用）进入沉浸态：顶栏与 Tab 栏让出，`--header-h` / `--tabbar-h` 归零，转竖屏或离开页面即恢复。更多是整页。当前侧边栏宽度写入 `--sidebar-w`（手机为 0），顶栏高度写入 `--header-h`；布局偏移只读这两个值 |
+| **AppShell** | 平板 / 桌面：左侧边栏（`--z-header`，铺满视口高度），没有顶栏（`--header-h: 0`）。桌面默认展开（240px，图标 + 文字），可折叠成 72px 图标栏并记住偏好；平板固定为图标栏。侧边栏从上到下：品牌 · 数据版本 · 首页 · 按战斗、资料、赛事、社区分组的主栏目（`group`，图标栏用分隔线代替分组名）· 管理组（按角色）；底部：更多（弹出面板，只放低频的显示设置与关于 / 支持）· 账户 · 折叠开关。手机竖屏与手机横屏（抽屉外壳，见下方 L1 / L3）：48px 顶栏（菜单 · Logo · 当前栏目名 · 账户）+ 左侧抽屉（`AppNavDrawer`，内容是侧边栏的同一份分组、管理组与数据版本，底部「更多」整页链接与账户）。Logo 回默认落地页：主站回首页，APK / 本地回回放。手机横屏的回放工作台（2D / 3D，回放就绪）与装甲查看器（WebGL 可用）进入沉浸态：顶栏让出，`--header-block` / `--header-h` 归零，转竖屏或离开页面即恢复。当前侧边栏宽度写入 `--sidebar-w`（抽屉外壳为 0）；顶栏为内容让出的固定空间是 `--header-block`，吸顶偏移与高度预算读 `--header-h` |
 | **PageHeader** | 只有 `compact`（工作区用：标题 + 右侧操作，一行，≤ 56px）。不提供 `hero` 变体；首页 hero 是 `HomePage.vue` 自己的整段落地页板块。**工作区禁止用 kicker + h1 + 说明 + 标签块占掉首屏** |
 | **容器宽度** | `content` → `--layout-content-max`；`wide` → `--layout-wide-max`；`workspace` → `--layout-workspace-max`；长文阅读宽度 → `--reading-measure`。具体数值由 `frontend/src/styles/tokens/scale.css` 定义，布局原语见 [UI 系统](ui-system.md) |
 | **Master–Detail** | expanded：列表 + 常驻详情。medium：列表 + 推开式详情。compact：列表 → 全屏详情（支持左右滑动切换）。回放工作台、射击分析、坦克百科都用这个模式 |
 | **筛选** | expanded / medium：行内工具栏。compact：一个"筛选"按钮 → sheet，已生效的条件以 chip 显示在列表上方 |
 | **主操作位置** | expanded：页面头部右侧。compact：底部固定操作栏（带安全区） |
+
+### 小屏布局契约（L1–L6）
+
+抽屉外壳的判定：宽 < 768，或触屏、横向、高 ≤ 520（不论宽度，iPhone 横屏 844×340 也在内）。JS 侧唯一来源是 `shared/breakpoints.ts` 的 `SHELL_DRAWER_QUERY`（`useBreakpoint().isDrawerShell`），CSS 侧是 `styles/tokens/scale.css` 的同一条件。
+
+| 规则 | 内容 |
+|---|---|
+| **L1 导航收进左侧抽屉** | 没有底部 Tab 栏；顶栏左上菜单按钮打开左侧抽屉（`AppSheet side="start"`：焦点陷阱、Esc、遮罩、左滑关闭、四边安全区），路由变化即关闭，焦点回到菜单按钮。不做左边缘滑动打开，避免与 iOS Safari 返回手势冲突。底部只留给工作台自己的操作栏 |
+| **L2 高度来自真实可视区** | 工作台高度 = 可视高度 − 顶栏 − 工作台操作栏 − 安全区，用 `dvh` 或 `visualViewport` 度量（`usePaneFillHeight` 扣底部安全区），不写固定像素或 `100vh` |
+| **L3 横屏不用侧栏** | 手机横屏与竖屏同一个顶栏菜单与抽屉；数据版本在抽屉里 |
+| **L4 四边让出安全区** | 固定外壳四边加 `env(safe-area-inset-*)`；可点控件不得落进安全区 |
+| **L5 顶栏随滚动收起** | 普通页面向下滚动收起顶栏（`html[data-topbar="hidden"]` 让 `--header-h` 归零，吸顶元素贴顶；`--header-block` 不变，内容不跳动），向上滚动或焦点进入时恢复。工作台不收起：回放工作台各能力、装甲查看器 / 射击复现、地图预览、科技树（`navigation.js` 的 `isWorkspaceView`） |
+| **L6 五视口进门禁** | Android 360×740 / 412×839（底部手势条 24）、iPhone Safari 390×664（顶 47 / 底 34）/ 375×553（顶 20）、iPhone 横屏 844×340（左右 47 / 底 21）。逐页滚动扫查：完整可见的交互控件 5 点命中自身、不落进安全区、页面无横向溢出；fixed / sticky 面里的控件无条件参与判定（`measureViewportSafety`） |
 
 ---
 

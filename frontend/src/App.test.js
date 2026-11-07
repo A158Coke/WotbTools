@@ -85,17 +85,17 @@ vi.mock('./composables/useAuth.js', () => ({
   }),
 }))
 
-// 外壳档位：默认桌面 / 平板（单行顶栏）；手机用例切到 compact（标题栏 + 底部 Tab 栏）
-const layoutState = vi.hoisted(() => ({ isCompact: null, isCompactLandscape: null }))
+// 外壳档位：默认桌面 / 平板（侧边栏）；手机用例切到抽屉外壳（顶栏菜单 + 左侧抽屉）
+const layoutState = vi.hoisted(() => ({ isCompact: null, isDrawerShell: null }))
 vi.mock('./composables/useBreakpoint.js', async () => {
   const { ref: vueRef, computed: vueComputed } = await import('vue')
   layoutState.isCompact = vueRef(false)
-  layoutState.isCompactLandscape = vueRef(false)
+  layoutState.isDrawerShell = vueRef(false)
   return {
     useBreakpoint: () => ({
       tier: vueComputed(() => (layoutState.isCompact.value ? 'compact' : 'expanded')),
       isCompact: layoutState.isCompact,
-      isCompactLandscape: layoutState.isCompactLandscape,
+      isDrawerShell: layoutState.isDrawerShell,
       isExpanded: vueComputed(() => !layoutState.isCompact.value),
     }),
     usePointer: () => ({ coarse: vueRef(false) }),
@@ -519,7 +519,7 @@ describe('App shell navigation, 更多 and account', () => {
     authState.login.mockClear()
     authState.logout.mockClear()
     layoutState.isCompact.value = false
-    layoutState.isCompactLandscape.value = false
+    layoutState.isDrawerShell.value = false
   })
 
   it('marks the active primary section with aria-current, including Replay capabilities', async () => {
@@ -565,26 +565,32 @@ describe('App shell navigation, 更多 and account', () => {
     expect(router.currentRoute.value.query.view).toBe('profile')
   })
 
-  it('uses a bottom tab bar and an icon-only account entry on compact layouts', async () => {
+  it('uses a top bar menu and a left drawer (no bottom tabs) on phone layouts', async () => {
     layoutState.isCompact.value = true
+    layoutState.isDrawerShell.value = true
     const { wrapper } = await mountApp('/?view=hof')
-    expect(wrapper.find('[data-testid="app-tab-bar"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="nav-hof"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="nav-more"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="tab-hof"]').attributes('aria-current')).toBe('page')
-    expect(wrapper.find('[data-testid="tab-more"]').exists()).toBe(true)
-    expect(wrapper.findAll('[data-testid="app-tab-bar"] a')).toHaveLength(5)
+    expect(wrapper.find('[data-testid="app-sidebar"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="app-tab-bar"]').exists()).toBe(false)
+    const menu = wrapper.get('[data-testid="nav-menu"]')
+    expect(menu.attributes('aria-expanded')).toBe('false')
     expect(wrapper.get('[data-testid="nav-account"]').attributes('aria-label')).toBe('nav.account')
+    await menu.trigger('click')
+    await settle()
+    expect(menu.attributes('aria-expanded')).toBe('true')
+    const drawer = wrapper.get('[data-testid="nav-drawer-panel"]')
+    expect(drawer.get('[data-testid="nav-hof"]').attributes('aria-current')).toBe('page')
+    expect(drawer.find('[data-testid="nav-more"]').exists()).toBe(true)
+    await drawer.get('[data-testid="nav-replay"]').trigger('click')
+    await settle()
+    expect(wrapper.find('[data-testid="nav-drawer-panel"]').exists()).toBe(false)
   })
 
-  it('compact 横屏：导航切到左侧图标栏，顶栏与底部 Tab 栏都不渲染', async () => {
-    layoutState.isCompact.value = true
-    layoutState.isCompactLandscape.value = true
+  it('手机横屏（宽度 ≥ 768 的 844×340 同样）：仍是顶栏菜单 + 抽屉，没有侧边栏', async () => {
+    layoutState.isDrawerShell.value = true
     const { wrapper } = await mountApp('/?view=hof')
-    expect(wrapper.find('[data-testid="app-sidebar"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="app-tab-bar"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="app-top-bar"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="nav-hof"]').attributes('aria-current')).toBe('page')
+    expect(wrapper.find('[data-testid="app-sidebar"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="app-top-bar"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="nav-menu"]').exists()).toBe(true)
   })
 
   it('does not render the tab bar or top bar on wider layouts; the sidebar carries navigation', async () => {

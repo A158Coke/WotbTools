@@ -40,7 +40,7 @@
 .tournament-stat dt { font: var(--type-caption); color: var(--color-text-secondary); }
 .tournament-stat dd { margin: 0; font: var(--type-h1); color: var(--color-accent-text); font-variant-numeric: tabular-nums; }
 .tournament-stat dd span { font: var(--type-h3); color: var(--color-text-secondary); }
-.tournament-board-grouped .tournament-table-wrap { max-block-size: calc(100dvh - var(--header-h) - max(var(--space-12), var(--tabbar-h))); border: var(--border-width) solid var(--color-border-subtle); border-radius: var(--radius-md); }
+.tournament-board-grouped .tournament-table-wrap { max-block-size: calc(100dvh - var(--header-h) - var(--space-12)); border: var(--border-width) solid var(--color-border-subtle); border-radius: var(--radius-md); }
 .tournament-board-grouped .tournament-table-wrap:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 .tournament-board-grouped .tournament-table th, .tournament-board-grouped .tournament-table td { border-inline-end: var(--border-width) solid var(--color-border-subtle); }
 .tournament-board-grouped .tournament-table thead th { box-sizing: border-box; z-index: var(--table-z-head); text-align: center; }

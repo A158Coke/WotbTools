@@ -73,7 +73,7 @@ describe('HomePage is a showcase, not a navigation surface', () => {
   })
 
   /**
-   * 首页不承担导航：侧边栏（AppSidebar）与底部 Tab 栏（AppTabBar）已经覆盖 PRIMARY_NAV 的
+   * 首页不承担导航：侧边栏（AppSidebar）与手机抽屉（AppNavDrawer）已经覆盖 PRIMARY_NAV 的
    * 全部入口。首页只保留一个功能入口（回放工作台）与少量非功能 / 转化入口；不写死「恰好 N 个链接」。
    */
   it('treats the replay workspace as the only functional navigation entry', () => {

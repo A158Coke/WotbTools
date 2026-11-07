@@ -76,7 +76,9 @@
     }
   },
   "nav": {
-    "maps": "地图"
+    "maps": "地图",
+    "openDrawer": "打开导航",
+    "closeDrawer": "关闭导航"
   },
   "mapPreview": {
     "title": "地图预览",

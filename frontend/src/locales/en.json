@@ -76,7 +76,9 @@
     }
   },
   "nav": {
-    "maps": "Maps"
+    "maps": "Maps",
+    "openDrawer": "Open navigation",
+    "closeDrawer": "Close navigation"
   },
   "mapPreview": {
     "title": "Map Preview",

@@ -125,4 +125,4 @@
 }
 .layout-wide { width: min(var(--layout-wide-max), calc(100% - var(--gutter) * 2)); }
 .layout-data-workspace { width: min(var(--layout-workspace-max), calc(100% - var(--gutter) * 2)); }
-.layout-full-workspace { width: 100%; height: calc(100dvh - var(--header-h) - var(--tabbar-h)); overflow: hidden; }
+.layout-full-workspace { width: 100%; height: calc(100dvh - var(--header-h) - env(safe-area-inset-bottom)); overflow: hidden; }

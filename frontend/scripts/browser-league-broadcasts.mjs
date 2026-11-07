@@ -5,7 +5,6 @@ import { createBroadcastFixture } from './browser-fixtures/broadcast-fixture.mjs
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
-import { COMPACT_TAB_ITEMS } from '../src/app/navigation.js'
 
 // Exercise the production router, components, transport validators and CSS. Only external
 // auth and HTTP services are fixtures, shared by anonymous and administrator requests.
@@ -64,13 +63,11 @@ async function fill(page, values) {
 async function geometry(page) {
   const result = await page.evaluate(`(() => ({ overflow: document.documentElement.scrollWidth > innerWidth + 1,
     tiny: matchMedia('(pointer:coarse)').matches ? [...document.querySelectorAll('[data-testid="league-broadcasts-page"] button')].filter(el=>{const r=el.getBoundingClientRect();return r.width>0&&r.height>0&&r.height<43}).map(el=>el.dataset.testid||el.textContent) : [],
-    tabs:[...document.querySelectorAll('[data-testid="app-tab-bar"] .tab')].map(el=>{const r=el.getBoundingClientRect();return {width:r.width,height:r.height}}),
+    tabBar:!!document.querySelector('[data-testid="app-tab-bar"]'),
     profile:document.documentElement.dataset.uiProfile }))()`)
   assert.equal(result.overflow, false, 'horizontal overflow')
   assert.deepEqual(result.tiny, [], 'minimum 44px hit targets')
-  for (const tab of result.tabs) {
-    assert.ok(tab.width >= 44 && tab.height >= 44, 'primary tab remains at least 44px wide and tall')
-  }
+  assert.equal(result.tabBar, false, 'no bottom tab bar (L1)')
 }
 async function serverGeometry(page, scenario, count) {
   await page.waitForValue('document.querySelectorAll("[data-testid=broadcast-servers] .broadcast-server-card").length', value => value === count)
@@ -80,7 +77,7 @@ async function serverGeometry(page, scenario, count) {
     const grid = document.querySelector('[data-testid=broadcast-servers]'), style = getComputedStyle(grid)
     return { cards: [...grid.querySelectorAll('.broadcast-server-card')].map(el => { const r=el.getBoundingClientRect(), stage=el.querySelector('.broadcast-server-emblem').getBoundingClientRect(), frame=el.querySelector('.broadcast-server-icon-frame').getBoundingClientRect(), icon=el.querySelector('.broadcast-server-emblem svg').getBoundingClientRect(); return { x:r.x, y:r.y+scrollY, width:r.width, height:r.height, bottom:r.bottom+scrollY, iconWidth:icon.width, iconHeight:icon.height, frameWidth:frame.width, frameHeight:frame.height, frameLeft:frame.left, frameTop:frame.top, stageWidth:stage.width, stageHeight:stage.height, stageLeft:stage.left, stageTop:stage.top, name:el.querySelector('.broadcast-server-name').textContent, code:el.querySelector('.broadcast-server-code').textContent }; }),
       gap:parseFloat(style.rowGap), top:parseFloat(style.getPropertyValue('--broadcast-grid-top')), tail:parseFloat(style.getPropertyValue('--broadcast-grid-tail')),
-      tabs:document.querySelector('[data-testid=app-tab-bar]')?.getBoundingClientRect().height ?? 0, viewport:innerHeight }
+      viewport:innerHeight }
   })()`)
   const [first, second, third, fourth, fifth] = layout.cards
   assert.deepEqual(layout.cards.map(card => card.code), ['CN', 'APAC', 'NA', 'EU', 'LESTA'])
@@ -103,7 +100,7 @@ async function serverGeometry(page, scenario, count) {
   assert.ok(Math.abs(first.height - expected) < 2, `cards fill two available rows: ${JSON.stringify(layout)}`)
   if (expected > 200 && count === 5) {
     const secondRowEnd = scenario.width < 768 ? second.bottom : fourth.bottom
-    assert.ok(Math.abs(secondRowEnd - (layout.viewport - layout.tabs)) < 2, 'first two rows fill the viewport without reserving offscreen footer space')
+    assert.ok(Math.abs(secondRowEnd - layout.viewport) < 2, 'first two rows fill the viewport without reserving offscreen footer space')
   }
   await geometry(page)
 }
@@ -128,24 +125,16 @@ try {
         await page.goto(`${scenarioOrigin}/?view=more&ws-auth=0`)
         await page.waitForValue('!!document.querySelector("[data-testid=more-page]")', Boolean)
       }
-      // 触屏横屏矮视口（≤520 高）由外壳改左侧图标栏：与 AppShell 的
-      // SHELL_RAIL_QUERY 同口径，不再有底部 Tab 栏。
-      const rail = scenario.touch && scenario.width < 768 && scenario.height <= 520
-        && scenario.width > scenario.height
-      // 小屏直播回放在"更多"页快捷区，属于"更多"栏目；大屏与横屏图标栏在侧边栏。
-      const activeEntry = rail || scenario.width >= 768 ? 'nav-league-broadcasts' : 'tab-more'
-      if (activeEntry === 'tab-more') {
-        await tap(page, '[data-testid=tab-more]', scenario.touch)
-        await page.waitForValue('!!document.querySelector("[data-testid=more-shortcut-league-broadcasts]")', Boolean)
-        await tap(page, '[data-testid=more-shortcut-league-broadcasts]', scenario.touch)
-      } else await tap(page, `[data-testid=${activeEntry}]`, scenario.touch)
+      // 手机竖屏 / 横屏走「菜单 → 左侧抽屉」，平板 / 桌面走侧边栏（§9 L1 / L3）；栏目入口是同一项。
+      const clicked = await page.navigateViaShell('league-broadcasts', scenario.touch)
       await page.waitForValue('document.querySelectorAll("[data-testid^=broadcast-server-]").length', value => value === 5)
-      assert.equal(await page.evaluate(`document.querySelector('[data-testid="${activeEntry}"]').getAttribute('aria-current')`), 'page')
-      const navLabel = await page.evaluate(`(() => { const link = document.querySelector('[data-testid="${activeEntry}"]'); return { visible: link.textContent.trim(), accessible: link.getAttribute('aria-label') }; })()`)
+      const drawerShell = clicked.includes('nav-drawer-panel')
+      if (drawerShell) await page.openNavDrawer(scenario.touch)
+      const activeEntry = drawerShell ? '[data-testid=nav-drawer-panel] [data-testid=nav-league-broadcasts]' : '[data-testid=nav-league-broadcasts]'
+      assert.equal(await page.evaluate(`document.querySelector(${JSON.stringify(activeEntry)}).getAttribute('aria-current')`), 'page')
+      const navLabel = await page.evaluate(`(() => { const link = document.querySelector(${JSON.stringify(activeEntry)}); return { visible: link.textContent.trim(), accessible: link.getAttribute('aria-label') }; })()`)
       assert.ok(navLabel.accessible.includes(navLabel.visible), 'accessible name includes the visible navigation label')
-      if (activeEntry === 'tab-more') {
-        assert.equal(await page.evaluate('document.querySelectorAll("[data-testid=app-tab-bar] .tab").length'), COMPACT_TAB_ITEMS.length)
-      }
+      if (drawerShell) await page.closeNavDrawer()
       await serverGeometry(page, scenario, 5)
       if (screenshots && ['showcase-desktop', 'classic-mobile'].includes(scenario.name)) {
         await mkdir(screenshots, { recursive: true })

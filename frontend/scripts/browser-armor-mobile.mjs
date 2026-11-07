@@ -141,7 +141,7 @@ function armorLayoutProbe() {
     scrollWidth: document.documentElement.scrollWidth,
     clientWidth: document.documentElement.clientWidth,
     statusOverlays: document.querySelectorAll('[data-testid="scene3d-error"], [data-testid="scene3d-loading"]').length,
-    /** 外壳沉浸态（shared/shellChrome）：手机横屏申请后 AppShell 卸载顶栏 / Tab 栏并归零高度 token */
+    /** 外壳沉浸态（shared/shellChrome）：手机横屏申请后 AppShell 卸载顶栏并归零高度 token；任何形态都没有底部 Tab 栏（L1） */
     shellChrome: document.documentElement.dataset.shellChrome || null,
     appTopBar: box('[data-testid="app-top-bar"]'),
     appTabBar: box('[data-testid="app-tab-bar"]'),
@@ -302,9 +302,9 @@ async function runMobileScenario(env, scenario) {
   const initial = await page.probe(armorLayoutProbe)
   check(failures, initial.hasStage && !initial.unsupported, `${label}: 场景未渲染（hasStage=${initial.hasStage} unsupported=${initial.unsupported}）`)
   checkCommonGeometry(failures, initial, label)
-  // 竖屏（含窄桌面窗口）不申请沉浸：外壳顶栏 / Tab 栏必须保留（沉浸契约只属于手机横屏）
-  check(failures, initial.appTopBar?.visible === true && initial.appTabBar?.visible === true,
-    `${label}: 竖屏外壳顶栏 / Tab 栏必须保留（top=${initial.appTopBar?.visible} tab=${initial.appTabBar?.visible}）`)
+  // 竖屏（含窄桌面窗口）不申请沉浸：外壳顶栏必须保留（沉浸契约只属于手机横屏）；没有底部 Tab 栏（L1）
+  check(failures, initial.appTopBar?.visible === true && initial.appTabBar === null,
+    `${label}: 竖屏外壳顶栏必须保留且没有 Tab 栏（top=${initial.appTopBar?.visible} tab=${!!initial.appTabBar}）`)
   check(failures, initial.shellChrome !== 'immersive', `${label}: 竖屏不应进入沉浸态（dataset=${initial.shellChrome}）`)
   if (scenario.assetless) {
     check(failures, initial.infoPanel?.visible === false, `${label}: 资产不可达时车名面板不应可见（场景前提失效）`)
@@ -562,7 +562,7 @@ async function runDesktopScenario(env, scenario) {
     check(failures, layout.shellChrome === 'immersive',
       `${label}: 手机横屏未申请沉浸态（dataset=${layout.shellChrome}）`)
     check(failures, layout.appTopBar === null && layout.appTabBar === null,
-      `${label}: 沉浸态下外壳顶栏 / Tab 栏仍渲染（top=${!!layout.appTopBar} tab=${!!layout.appTabBar}）`)
+      `${label}: 沉浸态下外壳顶栏仍渲染或出现 Tab 栏（top=${!!layout.appTopBar} tab=${!!layout.appTabBar}）`)
     check(failures, layout.root && layout.root.top === 0 && Math.abs(layout.root.height - layout.viewport.height) <= 1,
       `${label}: armor-view 没有占满整屏（root=${JSON.stringify(layout.root)} viewport=${JSON.stringify(layout.viewport)}）`)
     // 深链直达（本场景 goto 即无 history.back）也必须有应用内退出：返回键恒在，
@@ -842,7 +842,7 @@ async function runShotLandscapeScenario(env, scenario) {
   const layout = await page.probe(armorLayoutProbe)
   check(failures, layout.shellChrome === 'immersive', `${label}: 手机横屏未申请沉浸态（dataset=${layout.shellChrome}）`)
   check(failures, layout.appTopBar === null && layout.appTabBar === null,
-    `${label}: 沉浸态下外壳顶栏 / Tab 栏仍渲染（top=${!!layout.appTopBar} tab=${!!layout.appTabBar}）`)
+    `${label}: 沉浸态下外壳顶栏仍渲染或出现 Tab 栏（top=${!!layout.appTopBar} tab=${!!layout.appTabBar}）`)
   check(failures, layout.root && layout.root.top === 0 && Math.abs(layout.root.height - layout.viewport.height) <= 1,
     `${label}: armor-view 没有占满整屏（root=${JSON.stringify(layout.root)} viewport=${JSON.stringify(layout.viewport)}）`)
   check(failures, layout.interactionHelp === null || layout.interactionHelp.visible === false,

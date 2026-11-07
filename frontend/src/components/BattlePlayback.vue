@@ -414,11 +414,10 @@ function writeSquareAvailHeight() {
   const viewportH = window.visualViewport?.height || window.innerHeight
   const pageStyle = getComputedStyle(document.documentElement)
   const headerH = parseFloat(pageStyle.getPropertyValue('--header-h')) || 0
-  const tabbarH = isFullscreen.value ? 0 : (parseFloat(pageStyle.getPropertyValue('--tabbar-h')) || 0)
   // Use viewport capacity, never a content-derived root height (which feeds back into Stage).
   // Scroll changes presentation position, not the workspace capacity.
   const top = isFullscreen.value ? 0 : headerH
-  const workspaceH = Math.max(1, viewportH - top - tabbarH)
+  const workspaceH = Math.max(1, viewportH - top)
   root.style.setProperty('--pb-workspace-h', `${workspaceH}px`)
   const main = battlefieldWorkspaceEl.value
   const above = main ? Math.max(0, main.getBoundingClientRect().top - rootRect.top) : 0
@@ -431,7 +430,7 @@ function writeSquareAvailHeight() {
   root.style.setProperty('--pb-square-avail-h', `${Math.floor(budget)}px`)
 }
 
-// 外壳沉浸态切换改的是 --header-h / --tabbar-h（不触发任何元素 resize），显式重算高度预算与默认 fit。
+// 外壳沉浸态切换改的是 --header-h（不触发任何元素 resize），显式重算高度预算与默认 fit。
 const shellChrome = inject(SHELL_CHROME_KEY, null)
 watch(() => shellChrome?.immersive.value, () => nextTick(() => { writeSquareAvailHeight(); fitViewIfReady(true) }))
 

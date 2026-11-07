@@ -42,19 +42,16 @@ describe('MorePanel', () => {
   })
   beforeEach(() => { authState.authenticated = ref(false) })
   afterEach(() => { document.body.innerHTML = '' })
-  it('keeps anonymous guide entries hidden and enables them reactively after sign-in', async () => {
+  it('offers Feature guides signed in or not, closing the panel before opening the directory', async () => {
     const openDirectory = vi.fn()
     const { wrapper } = mountPanel(vi.fn(), { openDirectory })
     await wrapper.setProps({ open: true })
-    expect(wrapper.find('[data-testid="more-link-guide"]').exists()).toBe(false)
-    authState.authenticated.value = true
-    await wrapper.vm.$nextTick()
     await wrapper.get('[data-testid="more-link-guide"]').trigger('click')
     expect(openDirectory).toHaveBeenCalledTimes(1)
     expect(wrapper.emitted('close')).toHaveLength(1)
-    authState.authenticated.value = false
+    authState.authenticated.value = true
     await wrapper.vm.$nextTick()
-    expect(wrapper.find('[data-testid="more-link-guide"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="more-link-guide"]').exists()).toBe(true)
     wrapper.unmount()
   })
 

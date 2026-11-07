@@ -96,7 +96,7 @@ function rulesIn(css) {
 }
 
 describe('Agent 视觉面配色契约', () => {
-  // 含设计语言 token 目录（styles/tokens/*.css：--header-h / --tabbar-h / --color-* 等）
+  // 含设计语言 token 目录（styles/tokens/*.css：--header-h / --color-* 等）
   const cssFiles = [
     ...readdirSync(stylesDir).filter((f) => f.endsWith('.css')),
     ...readdirSync(stylesDir + 'tokens/').filter((f) => f.endsWith('.css')).map((f) => 'tokens/' + f),

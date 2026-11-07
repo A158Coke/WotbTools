@@ -83,7 +83,7 @@ tbody tr.t2 td { background: color-mix(in oklab, var(--color-team-enemy) 8%, var
   right: var(--gutter);
   z-index: var(--z-menu);
   width: min(var(--column-panel-width), calc(100% - var(--gutter) * 2));
-  max-height: min(var(--column-panel-max-height), calc(100dvh - var(--header-h) - var(--tabbar-h) - var(--space-8) - env(safe-area-inset-top) - env(safe-area-inset-bottom)));
+  max-height: min(var(--column-panel-max-height), calc(100dvh - var(--header-h) - var(--space-8) - env(safe-area-inset-top) - env(safe-area-inset-bottom)));
   display: flex;
   flex-direction: column;
   overflow: hidden;

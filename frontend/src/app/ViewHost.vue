@@ -72,10 +72,10 @@ const initialCapability = computed(() => replayInitialCapability(activeView.valu
 </template>
 
 <style scoped>
-/* 顶栏是 fixed：内容区只在这里让出一次高度（含顶部安全区） */
+/* 顶栏是 fixed：内容区只在这里让出一次高度（含顶部安全区）；用 --header-block，顶栏随滚动收起时内容不跳动 */
 .app-main {
   flex: 1 0 auto;
-  padding-top: calc(var(--header-h) + env(safe-area-inset-top));
+  padding-top: calc(var(--header-block) + env(safe-area-inset-top));
 }
 
 /* view loading/error surface（#845）在场时是 main 的唯一元素子节点（KeepAlive 不产生 DOM）：

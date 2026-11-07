@@ -144,7 +144,7 @@ onBeforeUnmount(() => {
 .doc-top {
   position: fixed;
   right: var(--gutter);
-  bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + var(--space-4));
+  bottom: calc(env(safe-area-inset-bottom) + var(--space-4));
   z-index: var(--z-sticky);
   display: inline-grid;
   place-items: center;
