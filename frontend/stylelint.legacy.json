@@ -30,7 +30,6 @@
     "src/components/ReplayAnalysisAction.vue",
     "src/components/ReplayPage.vue",
     "src/components/ReplaySourcePanel.vue",
-    "src/components/SponsorPage.vue",
     "src/components/TechnicalEvolutionPage.vue",
     "src/components/V2VehicleInspector.vue",
     "src/components/VehicleMarker.vue",

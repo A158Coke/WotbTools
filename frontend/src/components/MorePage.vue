@@ -1,6 +1,7 @@
 <script setup>
 import { computed, inject } from 'vue'
-import { BookOpen, ChevronRight, Download, MessageSquare } from 'lucide-vue-next'
+import { RouterLink } from 'vue-router'
+import { BookOpen, ChevronRight, Download, Heart, MessageSquare } from 'lucide-vue-next'
 import { LANGUAGES, useMoreMenu } from '../composables/useMoreMenu.js'
 import { useDataVersion } from '../composables/useDataVersion.js'
 import DataVersionSelect from './DataVersionSelect.vue'
@@ -11,23 +12,30 @@ import ThemePicker from './ThemePicker.vue'
 import AppSwitch from './AppSwitch.vue'
 import { feedbackPrefs, setFeedbackPref } from '../composables/useFeedbackPrefs.js'
 
-// "更多"页：手机 / App 的低频入口（显示设置、管理、关于与支持）。全部栏目都在左侧抽屉里，这里不重复导航。
-// 平板 / 桌面的同一份内容在侧边栏底部的"更多"弹出面板里（useMoreMenu 是唯一内容源）。账户由顶栏头像进入 profile。
+// 「更多与设置」（4.0）：显示设置、反馈与提示、赞助 / 反馈卡、关于与帮助。全部栏目都在左侧抽屉 / 侧边栏里，
+// 这里不重复导航；管理入口只在抽屉 / 侧边栏的「管理」分组按角色显示。
+// 平板 / 桌面的同一份链接清单也在侧边栏底部的"更多"弹出面板里（useMoreMenu 是唯一内容源）。账户由顶栏头像进入 profile。
 const navigate = inject(NAVIGATE_VIEW_KEY)
-const { setLocale, adminLinks, aboutLinks, openGuide, openFeedback, openAndroidUpdate } = useMoreMenu()
+const { setLocale, aboutLinks, openGuide, openFeedback, openAndroidUpdate } = useMoreMenu()
 const { state: dataVersionState } = useDataVersion()
-
-const groups = computed(() => [
-  { id: 'admin', titleKey: 'more.sections.admin', links: adminLinks.value },
-  { id: 'about', titleKey: 'more.sections.about', links: aboutLinks.value, feedback: true },
-].filter(group => group.links.length))
+// 赞助单独做成强调卡，不在「关于与帮助」列表里重复
+const helpLinks = computed(() => aboutLinks.value.filter(link => link.view !== 'sponsor'))
 </script>
 
 <template>
   <div class="more-page layout-content" data-testid="more-page">
     <PageHeader :title="$t('more.title')" />
-    <section v-if="openGuide" class="more-section">
-      <div class="more-card"><button type="button" class="more-row" data-testid="more-link-guide" @click="openGuide"><BookOpen :size="20" aria-hidden="true" /><span class="more-row-label">{{ $t('onboarding.directory') }}</span><ChevronRight :size="20" aria-hidden="true" /></button></div>
+    <section class="more-support" :aria-label="$t('more.sections.support')">
+      <RouterLink class="more-sponsor" to="/sponsor" data-testid="more-link-sponsor">
+        <span class="more-sponsor-icon" aria-hidden="true"><Heart :size="20" /></span>
+        <span class="more-support-text"><strong>{{ $t('home.sponsorTitle') }}</strong><span>{{ $t('home.sponsorDesc') }}</span></span>
+        <ChevronRight :size="20" aria-hidden="true" />
+      </RouterLink>
+      <button type="button" class="more-feedback-card" data-testid="more-link-feedback" @click="openFeedback?.()">
+        <MessageSquare :size="20" aria-hidden="true" />
+        <span class="more-support-text"><strong>{{ $t('app.feedback') }}</strong><span>{{ $t('home.feedbackDesc') }}</span></span>
+        <ChevronRight :size="20" aria-hidden="true" />
+      </button>
     </section>
 
     <section class="more-section" aria-labelledby="more-display">
@@ -71,14 +79,12 @@ const groups = computed(() => [
       </div>
     </section>
 
-    <section v-if="openAndroidUpdate" class="more-section">
-      <div class="more-card"><button type="button" class="more-row" data-testid="more-link-app-update" @click="openAndroidUpdate()"><Download :size="20" aria-hidden="true" /><span class="more-row-label">{{ $t('androidUpdate.title') }}</span><ChevronRight :size="20" aria-hidden="true" /></button></div>
-    </section>
-    <section v-for="group in groups" :key="group.id" class="more-section" :aria-labelledby="`more-${group.id}`">
-      <h2 :id="`more-${group.id}`" class="more-section-title">{{ $t(group.titleKey) }}</h2>
+    <section class="more-section" aria-labelledby="more-about">
+      <h2 id="more-about" class="more-section-title">{{ $t('more.sections.about') }}</h2>
       <div class="more-card">
+        <button v-if="openGuide" type="button" class="more-row" data-testid="more-link-guide" @click="openGuide"><BookOpen :size="20" aria-hidden="true" /><span class="more-row-label">{{ $t('onboarding.directory') }}</span><ChevronRight :size="20" aria-hidden="true" /></button>
         <button
-          v-for="link in group.links"
+          v-for="link in helpLinks"
           :key="link.view"
           type="button"
           class="more-row"
@@ -89,17 +95,7 @@ const groups = computed(() => [
           <span class="more-row-label">{{ $t(link.labelKey) }}</span>
           <ChevronRight :size="20" aria-hidden="true" />
         </button>
-        <button
-          v-if="group.feedback"
-          type="button"
-          class="more-row"
-          data-testid="more-link-feedback"
-          @click="openFeedback?.()"
-        >
-          <MessageSquare :size="20" aria-hidden="true" />
-          <span class="more-row-label">{{ $t('app.feedback') }}</span>
-          <ChevronRight :size="20" aria-hidden="true" />
-        </button>
+        <button v-if="openAndroidUpdate" type="button" class="more-row" data-testid="more-link-app-update" @click="openAndroidUpdate()"><Download :size="20" aria-hidden="true" /><span class="more-row-label">{{ $t('androidUpdate.title') }}</span><ChevronRight :size="20" aria-hidden="true" /></button>
       </div>
     </section>
   </div>
@@ -110,7 +106,38 @@ const groups = computed(() => [
   max-width: calc(var(--reading-measure) + var(--gutter) * 2);
 }
 
-.more-section + .more-section { margin-top: var(--space-6); }
+.more-section + .more-section,
+.more-support + .more-section { margin-top: var(--space-6); }
+
+/* 赞助（强调色）与反馈卡并排；小屏上下堆叠，赞助在最上面 */
+.more-support { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.more-sponsor,
+.more-feedback-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--row-h);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-1);
+  color: var(--color-text-primary);
+  font: var(--type-body);
+  text-align: start;
+  text-decoration: none;
+  cursor: pointer;
+}
+.more-sponsor { border-color: var(--color-accent); background: color-mix(in oklab, var(--color-accent) 10%, var(--color-surface-1)); }
+.more-sponsor-icon { display: inline-flex; flex: none; align-items: center; justify-content: center; inline-size: var(--space-10); block-size: var(--space-10); border-radius: var(--radius-full); background: var(--color-accent); color: var(--color-on-accent); }
+.more-feedback-card > svg:first-child { flex: none; color: var(--color-accent-text); }
+.more-support-text { display: grid; flex: 1 1 auto; gap: var(--space-1); min-width: 0; }
+.more-support-text span { color: var(--color-text-secondary); font: var(--type-caption); }
+.more-sponsor > svg, .more-feedback-card > svg:last-child { flex: none; color: var(--color-text-secondary); }
+.more-sponsor:focus-visible,
+.more-feedback-card:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+@media (width < 768px) {
+  .more-support { grid-template-columns: minmax(0, 1fr); }
+}
 
 .more-section-title {
   margin: 0 0 var(--space-2);

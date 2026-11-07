@@ -27,6 +27,8 @@
     --pb-label-reload-outline: 0 0 0 1.5px rgb(0 0 0 / .7);
     --pb-reticle-ink: #33ff33;
     --pb-reticle-outline: rgb(0 0 0 / .7);
+    /* 二维码底色：任何主题下都是白底，扫码器才能稳定识别（赞助页） */
+    --color-qr-surface: #ffffff;
     /* 主题选择器的预览色板（每套主题自己的底色 / 强调色 / 主视觉），与当前主题无关 */
     --theme-preview-spring-canvas: #08140f;
     --theme-preview-spring-accent: #f2b450;

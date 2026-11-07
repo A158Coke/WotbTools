@@ -279,7 +279,9 @@
     "copied": "已复制",
     "hint": "复制号码/用户名后，到对应应用添加好友。",
     "report_title": "投诉与举报",
-    "report_body": "本页面同时作为 WotbTools 的问题反馈、投诉与举报渠道。如发现违法有害信息、账号滥用、安全问题或其他违规情况，可通过下方联系方式联系我们。收到投诉或举报后，我们将及时核实并处理。"
+    "report_body": "本页面同时作为 WotbTools 的问题反馈、投诉与举报渠道。如发现违法有害信息、账号滥用、安全问题或其他违规情况，可通过上方联系方式联系我们。收到投诉或举报后，我们将及时核实并处理。",
+    "fastestTitle": "最快的方式：站内反馈",
+    "fastestDesc": "直接写下问题或建议，可以附上截图，不用加好友"
   },
   "col_groups": {
     "identity": "身份",
@@ -884,7 +886,9 @@
     "wgSyncRetry": "重试同步",
     "wgSyncing": "正在同步 Wargaming 账号",
     "verifyWithReplay": "用回放验证",
-    "verifyingReplay": "验证中…"
+    "verifyingReplay": "验证中…",
+    "settingsLink": "外观与反馈设置 →",
+    "submitLink": "提交新成绩 →"
   },
   "replay": {
     "no_files": "请先选择回放文件或文件夹",
@@ -1188,16 +1192,23 @@
   },
   "sponsor": {
     "eyebrow": "WOTBTOOLS · SUPPORT",
-    "title": "支持 WoTBTools",
+    "title": "赞助 WotbTools",
     "intro": "如果这个项目对你有帮助，可以自愿支持服务器与维护成本。",
     "aboutTitle": "关于赞助",
-    "description": "WoTBTools 是个人维护的免费工具。如果这个项目帮到了你，可以自愿赞助，用于服务器和维护成本。",
-    "voluntary": "赞助完全自愿，不设置固定金额，不影响任何功能使用，也不会解锁额外服务。",
     "note": "请勿在付款备注中填写敏感个人信息。",
     "methodsTitle": "扫码赞助",
     "unconfigured": "赞助方式暂未配置",
     "alipay": "支付宝",
-    "wechat": "微信支付"
+    "wechat": "微信支付",
+    "reasonVoluntary": "完全自愿",
+    "reasonVoluntaryDesc": "不设固定金额，给多少都行，不给也照常使用。",
+    "reasonNothingUnlocked": "不解锁任何东西",
+    "reasonNothingUnlockedDesc": "没有会员和付费功能，赞助与否功能完全一样。",
+    "reasonServers": "用在服务器和维护上",
+    "reasonServersDesc": "服务器、域名、存储与回放解析的算力。",
+    "saveHint": "手机没法扫自己的屏幕：先保存二维码，再到支付宝 / 微信「扫一扫」里选相册。",
+    "saveHintApp": "手机没法扫自己的屏幕：长按二维码保存，再到支付宝 / 微信「扫一扫」里选相册。",
+    "save": "保存二维码到相册"
   },
   "recon": {
     "nav": "AI 复盘",
@@ -2039,5 +2050,16 @@
   },
   "tankopedia": {
     "heroCount": "收录车辆"
+  },
+  "android": {
+    "heroTitle": "装进手机，随时复盘",
+    "downloadApk": "下载 APK",
+    "wifiHint": "安装包较大，建议连 Wi-Fi 下载",
+    "stepsTitle": "三步装好",
+    "step1": "下载 APK 安装包",
+    "step2": "按系统提示允许安装来自浏览器的应用",
+    "step3": "打开 App，用 Wargaming 或 QQ 登录",
+    "noReleaseNotes": "这一版没有写更新说明",
+    "verifyFile": "校验文件（可选）"
   }
 }

@@ -279,7 +279,9 @@
     "copied": "Copied",
     "hint": "Copy the ID and add me in the corresponding app.",
     "report_title": "Complaints and reports",
-    "report_body": "This page is also the feedback, complaint and report channel for WotbTools. If you come across illegal or harmful content, account abuse, a security problem or any other violation, reach us through the contact methods below. We verify and act on every complaint or report we receive without delay."
+    "report_body": "This page is also the feedback, complaint and report channel for WotbTools. If you come across illegal or harmful content, account abuse, a security problem or any other violation, reach us through the contact methods above. We verify and act on every complaint or report we receive without delay.",
+    "fastestTitle": "Fastest: in-app feedback",
+    "fastestDesc": "Describe the problem or idea, attach a screenshot if you like — no need to add anyone"
   },
   "col_groups": {
     "identity": "Identity",
@@ -884,7 +886,9 @@
     "wgSyncRetry": "Retry sync",
     "wgSyncing": "Syncing Wargaming account",
     "verifyWithReplay": "Verify with a replay",
-    "verifyingReplay": "Verifying…"
+    "verifyingReplay": "Verifying…",
+    "settingsLink": "Appearance & feedback settings →",
+    "submitLink": "Submit a new record →"
   },
   "replay": {
     "no_files": "Select replay files or a folder first",
@@ -1188,16 +1192,23 @@
   },
   "sponsor": {
     "eyebrow": "WOTBTOOLS · SUPPORT",
-    "title": "Support WoTBTools",
+    "title": "Sponsor WotbTools",
     "intro": "If this project helps you, you can voluntarily support its server and maintenance costs.",
     "aboutTitle": "About sponsorship",
-    "description": "WoTBTools is a free tool maintained by an individual. Voluntary sponsorship helps cover server and maintenance costs.",
-    "voluntary": "Sponsorship is completely voluntary. It does not unlock features or additional services.",
     "note": "Please do not include sensitive personal information in payment notes.",
     "methodsTitle": "Scan to Sponsor",
     "unconfigured": "Sponsorship methods are not configured yet",
     "alipay": "Alipay",
-    "wechat": "WeChat Pay"
+    "wechat": "WeChat Pay",
+    "reasonVoluntary": "Entirely voluntary",
+    "reasonVoluntaryDesc": "No fixed amount — give what you like, or nothing at all.",
+    "reasonNothingUnlocked": "Unlocks nothing",
+    "reasonNothingUnlockedDesc": "No memberships or paid features — everyone gets the same tools.",
+    "reasonServers": "Spent on servers and upkeep",
+    "reasonServersDesc": "Servers, the domain, storage and replay-parsing compute.",
+    "saveHint": "A phone can't scan its own screen: save the QR code, then pick it from your gallery in Alipay / WeChat Scan.",
+    "saveHintApp": "A phone can't scan its own screen: long-press the QR code to save it, then pick it from your gallery in Alipay / WeChat Scan.",
+    "save": "Save QR code"
   },
   "recon": {
     "nav": "AI Review",
@@ -2039,5 +2050,16 @@
   },
   "tankopedia": {
     "heroCount": "Vehicles"
+  },
+  "android": {
+    "heroTitle": "Put it in your pocket, review anytime",
+    "downloadApk": "Download APK",
+    "wifiHint": "Large file — Wi-Fi recommended",
+    "stepsTitle": "Three steps to install",
+    "step1": "Download the APK",
+    "step2": "Allow installing apps from your browser when prompted",
+    "step3": "Open the app and sign in with Wargaming or QQ",
+    "noReleaseNotes": "No release notes for this version",
+    "verifyFile": "Verify the file (optional)"
   }
 }

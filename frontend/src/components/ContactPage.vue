@@ -1,7 +1,8 @@
 <script setup>
 import { showToast } from '../composables/useToast.js'
-import { ref } from 'vue'
-import { Check, Copy, Gamepad2, MessageCircle, MessageSquareText } from 'lucide-vue-next'
+import { inject, ref } from 'vue'
+import { ArrowRight, Check, Copy, Gamepad2, MessageCircle, MessageSquare, MessageSquareText } from 'lucide-vue-next'
+import { FEEDBACK_KEY } from '../shared/feedback.js'
 import AppButton from './AppButton.vue'
 import PageHeader from './PageHeader.vue'
 import { copyText } from '../utils/clipboard.js'
@@ -13,6 +14,7 @@ const contacts = [
   { key: 'discord', icon: Gamepad2, value: 'a158coke' },
 ]
 const copiedKey = ref(null)
+const openFeedback = inject(FEEDBACK_KEY, null)
 
 async function copyContact(contact) {
   const ok = await copyText(contact.value)
@@ -29,36 +31,63 @@ async function copyContact(contact) {
   <div class="contact-page layout-content">
     <PageHeader :title="$t('contact.title')" :description="$t('contact.subtitle')" />
 
-    <!-- 正式投诉/举报渠道声明（公安自评估「是否建立投诉举报机制」）。放在联系方式卡片
-         上方，文案里的「下方联系方式」才指向真实入口。 -->
-    <section class="contact-report">
-      <h2>{{ $t('contact.report_title') }}</h2>
-      <p>{{ $t('contact.report_body') }}</p>
-    </section>
+    <!-- 最快的方式：站内反馈（4.0「联系我」稿） -->
+    <button v-if="openFeedback" type="button" class="contact-feedback" data-testid="contact-feedback" @click="openFeedback()">
+      <MessageSquare class="contact-feedback-icon" :size="24" aria-hidden="true" />
+      <span class="contact-feedback-text"><strong>{{ $t('contact.fastestTitle') }}</strong><span>{{ $t('contact.fastestDesc') }}</span></span>
+      <ArrowRight :size="20" aria-hidden="true" />
+    </button>
 
     <div class="contact-grid">
       <div v-for="c in contacts" :key="c.key" class="contact-card">
         <component :is="c.icon" class="contact-icon" :size="28" aria-hidden="true" />
         <h2>{{ $t(`contact.${c.key}`) }}</h2>
         <p class="contact-value">{{ c.value }}</p>
-        <AppButton class="copy-btn" :aria-label="`${$t('contact.copy')} ${c.value}`" @click="copyContact(c)">
+        <AppButton class="copy-btn" :confirmed="copiedKey === c.key" :aria-label="`${$t('contact.copy')} ${c.value}`" @click="copyContact(c)">
           <component :is="copiedKey === c.key ? Check : Copy" :size="16" aria-hidden="true" />
           {{ copiedKey === c.key ? $t('contact.copied') : $t('contact.copy') }}
         </AppButton>
       </div>
     </div>
 
+    <!-- 正式投诉/举报渠道声明（公安自评估「是否建立投诉举报机制」），整段保留。放在联系方式卡片
+         下方，文案里的「上方联系方式」指向真实入口。 -->
+    <section class="contact-report" data-testid="contact-report">
+      <h2>{{ $t('contact.report_title') }}</h2>
+      <p>{{ $t('contact.report_body') }}</p>
+    </section>
+
     <p class="contact-hint">{{ $t('contact.hint') }}</p>
   </div>
 </template>
 
 <style scoped>
-.contact-report {
+.contact-feedback {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
   margin: 0 0 var(--space-6);
-  padding: var(--space-6);
-  background: var(--color-surface-1);
-  border: 1px solid var(--color-border-subtle);
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--color-accent);
   border-radius: var(--radius-lg);
+  background: color-mix(in oklab, var(--color-accent) 10%, var(--color-surface-1));
+  color: var(--color-text-primary);
+  font: var(--type-body);
+  text-align: start;
+  cursor: pointer;
+}
+.contact-feedback:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+.contact-feedback-icon { flex: none; color: var(--color-accent-text); }
+.contact-feedback-text { display: grid; flex: 1 1 auto; gap: var(--space-1); min-width: 0; }
+.contact-feedback-text strong { font: var(--type-h3); }
+.contact-feedback-text span { color: var(--color-text-secondary); }
+.contact-report {
+  margin: var(--space-6) 0 0;
+  padding: var(--space-4) var(--space-5);
+  border-inline-start: var(--space-1) solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-1);
 }
 .contact-report h2 { margin: 0 0 var(--space-3); color: var(--color-text-primary); font: var(--type-h3); }
 .contact-report p { margin: 0; color: var(--color-text-secondary); font: var(--type-body); line-height: var(--line-height-prose); }
@@ -76,8 +105,8 @@ async function copyContact(contact) {
 }
 .contact-icon { color: var(--color-accent-text); }
 .contact-card h2 { margin: 0; color: var(--color-text-primary); font: var(--type-h3); }
-.contact-value { margin: 0; color: var(--color-text-secondary); font: var(--type-body); font-family: var(--font-family-mono); overflow-wrap: anywhere; }
+.contact-value { margin: 0; color: var(--color-text-primary); font: var(--type-h2); font-family: var(--font-family-mono); overflow-wrap: anywhere; }
 .copy-btn { margin-top: var(--space-2); }
-.contact-hint { margin: var(--space-5) 0 0; color: var(--color-text-secondary); font: var(--type-body); line-height: var(--line-height-prose); }
+.contact-hint { margin: var(--space-4) 0 0; color: var(--color-text-secondary); font: var(--type-body); line-height: var(--line-height-prose); }
 @media (width < 768px) { .contact-grid { grid-template-columns: minmax(0, 1fr); } }
 </style>

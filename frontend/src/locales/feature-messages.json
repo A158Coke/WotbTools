@@ -199,11 +199,12 @@
       "statusRevoked": "已撤销"
     },
     "more": {
-      "title": "更多",
+      "title": "更多与设置",
       "sections": {
         "display": "显示设置",
         "admin": "管理",
-        "about": "关于与支持"
+        "about": "关于与帮助",
+        "support": "赞助与反馈"
       },
       "language": "语言",
       "sponsor": "赞助",
@@ -1196,11 +1197,12 @@
       "statusRevoked": "Revoked"
     },
     "more": {
-      "title": "More",
+      "title": "More & settings",
       "sections": {
         "display": "Display",
         "admin": "Administration",
-        "about": "About & support"
+        "about": "About & help",
+        "support": "Sponsor & feedback"
       },
       "language": "Language",
       "sponsor": "Sponsor",
@@ -2193,11 +2195,12 @@
       "statusRevoked": "Отозвано"
     },
     "more": {
-      "title": "Ещё",
+      "title": "Ещё и настройки",
       "sections": {
         "display": "Отображение",
         "admin": "Администрирование",
-        "about": "О проекте и поддержка"
+        "about": "О проекте и помощь",
+        "support": "Поддержка и отзывы"
       },
       "language": "Язык",
       "sponsor": "Поддержать",
