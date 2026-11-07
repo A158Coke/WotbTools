@@ -310,6 +310,12 @@ describe('opt-in profiler ownership', () => {
     frame()
     const snapshot = window.__pbPerf.snapshot()
     expect(snapshot.events.filter(e => e.stage === 'firstReadyFrameSubmittedMs')).toHaveLength(1)
+    // #913 review P2：计时必须传入提交时刻（performance.now()）——durationMs 有限且非负
+    for (const e of snapshot.events.filter(e => e.stage === 'firstReadyFrameSubmittedMs')) {
+      expect(typeof e.durationMs).toBe('number')
+      expect(Number.isFinite(e.durationMs)).toBe(true)
+      expect(e.durationMs).toBeGreaterThanOrEqual(0)
+    }
     expect(snapshot.latest.cpuFrameMs).toBeGreaterThanOrEqual(0)
     expect(snapshot.gpu.status).toBe('unsupported')
   })
@@ -334,7 +340,12 @@ describe('opt-in profiler ownership', () => {
     expect(store.hasData).toBe(true)
     expect(window.__pbPerf.snapshot().events.some(e => e.stage === 'firstReadyFrameSubmittedMs')).toBe(false)
     frame()
-    expect(window.__pbPerf.snapshot().events.filter(e => e.stage === 'firstReadyFrameSubmittedMs')).toHaveLength(1)
+    const readyEvents = window.__pbPerf.snapshot().events.filter(e => e.stage === 'firstReadyFrameSubmittedMs')
+    expect(readyEvents).toHaveLength(1)
+    // #913 review P2：计时必须传入提交时刻（performance.now()）——durationMs 有限且非负
+    expect(typeof readyEvents[0].durationMs).toBe('number')
+    expect(Number.isFinite(readyEvents[0].durationMs)).toBe(true)
+    expect(readyEvents[0].durationMs).toBeGreaterThanOrEqual(0)
   })
 
   it('does not attribute an old scene render to a loading session', async () => {

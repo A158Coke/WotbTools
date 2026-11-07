@@ -856,7 +856,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       const gpuFrameId = session.isReadySession() ? gpu?.beginFrame() ?? null : null;
       const gpuMainStarted = gpu?.begin('main') ?? false;
       try { renderer.render(scene, camera); } finally { if (gpuMainStarted) gpu.end(); }
-      session.tryMarkFirstReadyFrame();
+      session.tryMarkFirstReadyFrame(performance.now());
       const perfR0 = PERF ? performance.now() : 0;
       cameraRuntime.renderArmorHighlight();
       gpu?.submitFrame();
