@@ -186,10 +186,12 @@ await scenario('slow-transition-compact-390', 390, 844, true, async (page, modul
   await page.goto(`${origin}/?view=history`)
   await page.waitForValue(loaderVisible, Boolean, { label: 'loader appears (compact deep link)' })
   await assertGeometry(page)
-  // 底部 Tab 栏不被 loader 覆盖且可点击
-  const tabReachable = await page.evaluate(`(() => { const tab = document.querySelector('[data-testid=tab-more]'); if (!tab) return null; const r = tab.getBoundingClientRect(); return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.closest('[data-testid=tab-more]') != null })()`)
-  assert.equal(tabReachable, true, 'tab bar must stay clickable above the loader')
-  await tap(page, '[data-testid=tab-more]', true)
+  // 顶栏菜单不被 loader 覆盖且可点击；经抽屉仍能离开加载中的页面
+  const menuReachable = await page.evaluate(`(() => { const menu = document.querySelector('[data-testid=nav-menu]'); if (!menu) return null; const r = menu.getBoundingClientRect(); return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.closest('[data-testid=nav-menu]') != null })()`)
+  assert.equal(menuReachable, true, 'top bar menu must stay clickable above the loader')
+  await tap(page, '[data-testid=nav-menu]', true)
+  await page.waitForValue(`!!document.querySelector('[data-testid=nav-drawer-panel] [data-testid=nav-more]')`, Boolean, { label: 'drawer open above the loader' })
+  await tap(page, '[data-testid=nav-drawer-panel] [data-testid=nav-more]', true)
   await viewIs(page, 'more')
 })
 
