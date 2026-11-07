@@ -71,7 +71,8 @@ vi.mock('../data/mapBases.js', async (importOriginal) => {
 vi.mock('three', async (importOriginal) => {
   const actual = await importOriginal()
   class StubWebGLRenderer {
-    constructor() {
+    constructor(params = {}) {
+      this.params = params   // 上下文级参数（logdepth / stencil）的装配证据
       this.domElement = document.createElement('canvas')
       this.toneMapping = 0
       this.toneMappingExposure = 1
@@ -3151,7 +3152,8 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
       client_options: { backward_zoom: null },
       ...overrides,
     })
-    const load = async ({ camera = facet(), vehicleOverrides = {}, others = [], overlay = null } = {}) => {
+    const load = async ({ camera = facet(), vehicleOverrides = {}, others = [], overlay = null, shadows = false } = {}) => {
+      if (shadows) window.history.replaceState(null, '', '/?debug&q=high')
       const frames = manualFrames()
       vi.spyOn(THREE.Clock.prototype, 'getDelta').mockReturnValue(0.1)
       source.loadRecorderCameraFromFile.mockResolvedValue(camera)
@@ -3165,6 +3167,7 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
       Object.defineProperty(stage, 'clientHeight', { value: 600, configurable: true })
       api = initPlayback(stage, store, overlay, { recorderReticle: reticle })
       created.push(api)
+      if (shadows) api.setContactShadows(true)
       await api.loadData({ kind: 'local', file: new File(['r'], 'recorder.wotbreplay') })
       api.setPlaying(false)
       await Promise.resolve()
@@ -3188,6 +3191,20 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
       expect(camera.position.z).toBeLessThan(window.__pbV[0].group.position.z)
       expect(camera.fov).toBe(55)
       expect(reticle.update).toHaveBeenCalled()
+    })
+
+    it('开镜从渲染里摘掉本车时不留接地阴影；回到 Arcade 后恢复', async () => {
+      const { api, run } = await load({ shadows: true })
+      const shadow = () => window.__scene.children.find((o) => o.name === 'tankContactShadow')
+      api.seekTime(50)
+      expect(shadow().visible).toBe(true)
+      api.setCam('recorder')
+      api.seekTime(65)   // mode 0 = SNIPER
+      run(12)
+      expect(shadow().visible).toBe(false)
+      api.seekTime(75)   // 回到 Arcade
+      run(12)
+      expect(shadow().visible).toBe(true)
     })
 
     it('accepts no camera input while active', async () => {
@@ -5218,5 +5235,119 @@ describe('3D annotation pointer ownership', () => {
     expect(onAnnotationCommit).not.toHaveBeenCalled()
     expect(window.__annotationLayer).toBeUndefined()
     created = []
+  })
+})
+
+describe('坦克接地阴影（High / Ultra opt-in）', () => {
+  const shadowMeshes = () => (window.__scene?.children ?? []).filter((o) => o.name === 'tankContactShadow')
+  const N = 120
+  /** 沿 +X 匀速 0.5 m/样本；coverage 只到 42+20 s，其后车辆不可见（非阵亡） */
+  function movingData() {
+    const data = minimalData(42)
+    data.meta.samples = N
+    data.meta.duration = 42 + 58
+    const pos = new Array(N * 3)
+    for (let i = 0; i < N; i++) { pos[i * 3] = i * 0.5; pos[i * 3 + 1] = 0; pos[i * 3 + 2] = 0 }
+    data.vehicles = [{ eid: 1, team: 1, tank_name: 'T', max_hp: 1000,
+      pos, hull_yaw: new Array(N).fill(0), hull_pitch: new Array(N).fill(0),
+      turret_yaw: new Array(N).fill(0), gun_pitch: new Array(N).fill(0),
+      hp: [], coverage: [42, 62], death_t: null }]
+    return data
+  }
+  async function start(api, name = 'shadow.wotbreplay') {
+    vi.spyOn(assetProvider, 'json').mockImplementation(() => Promise.resolve(null))
+    source.loadPlaybackData.mockResolvedValue(movingData())
+    await api.loadData({ kind: 'local', file: new File(['replay'], name) })
+    for (let i = 0; i < 6; i++) await Promise.resolve()
+    api.setPlaying(false)
+  }
+
+  it('流畅 / 均衡：开关被门禁拒绝（直接调 API 也不能绕过）', () => {
+    window.history.replaceState(null, '', '/?debug&q=low')
+    const { store, api } = createScene()
+    api.setContactShadows(true)
+    expect(store.contactShadows).toBe(false)
+    api.setQuality('mid')
+    api.setContactShadows(true)
+    expect(store.contactShadows).toBe(false)
+  })
+
+  it('高清 / 极致：默认 OFF、可开；降档清零，再升档不自动恢复；不写 localStorage', () => {
+    window.history.replaceState(null, '', '/?debug&q=high')
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+    const { store, api } = createScene()
+    expect(store.contactShadows).toBe(false)
+    api.setContactShadows(true)
+    expect(store.contactShadows).toBe(true)
+    api.setQuality('ultra')
+    expect(store.contactShadows).toBe(true)
+    api.setQuality('mid')
+    expect(store.contactShadows).toBe(false)
+    api.setQuality('high')
+    expect(store.contactShadows).toBe(false)
+    expect(setItem.mock.calls.map(([k]) => k).filter((k) => /shadow/i.test(k))).toEqual([])
+  })
+
+  it('OFF：开播后场景里没有任何阴影对象', async () => {
+    window.history.replaceState(null, '', '/?debug&q=high')
+    const { store, api } = createScene()
+    await start(api)
+    expect(store.hasData).toBe(true)
+    expect(shadowMeshes()).toHaveLength(0)
+    expect(window.__pbV).toHaveLength(1)
+    expect(window.__renderer.params.stencil).toBe(false)   // 关闭路径：渲染上下文与原来一致
+  })
+
+  it('开启时渲染器带模板缓冲（轮廓投影用）；下一场关闭后重建为不带模板的上下文', async () => {
+    window.history.replaceState(null, '', '/?debug&q=high')
+    const { api } = createScene()
+    api.setContactShadows(true)
+    await start(api, 'a.wotbreplay')
+    const first = window.__renderer
+    expect(first.params.stencil).toBe(true)
+    api.setContactShadows(false)
+    await start(api, 'b.wotbreplay')
+    expect(window.__renderer).not.toBe(first)
+    expect(window.__renderer.params.stencil).toBe(false)
+    expect(shadowMeshes()).toHaveLength(0)
+  })
+
+  it('ON：选择穿过 loadData 内的 teardown 生效；随位姿/seek 跟随，不可见即隐藏，reset 后释放', async () => {
+    window.history.replaceState(null, '', '/?debug&q=high')
+    const { store, api } = createScene()
+    api.setContactShadows(true)
+    await start(api)
+    expect(store.contactShadows).toBe(true)
+    const meshes = shadowMeshes()
+    expect(meshes).toHaveLength(1)
+    const shadow = meshes[0]
+    const centerX = () => {
+      const p = shadow.geometry.getAttribute('position').array
+      return p[((25 - 1) / 2) * 3]
+    }
+    const v = window.__pbV[0]
+    api.seekTime(42 + 5)
+    expect(shadow.visible).toBe(true)
+    const x5 = centerX(), vx5 = v.group.position.x
+    expect(Math.abs(x5 - vx5)).toBeLessThan(4)                  // 中心 ≈ 车位（太阳偏移有上限）
+    api.seekTime(42 + 15)
+    expect(Math.abs(v.group.position.x - vx5)).toBeGreaterThan(10)
+    expect(centerX() - x5).toBeCloseTo(v.group.position.x - vx5, 4)   // 同朝向：阴影与车同位移
+    api.seekTime(42 + 5)                                          // 向后 seek：无旧位置残留
+    expect(centerX()).toBeCloseTo(x5, 5)
+    api.seekTime(42 + 40)                                         // coverage 之外：车辆与阴影都隐藏
+    expect(v.group.visible).toBe(false)
+    expect(shadow.visible).toBe(false)
+    api.reset()
+    expect(shadowMeshes()).toHaveLength(0)
+    expect(store.contactShadows).toBe(true)                      // 资源随会话释放；选择由面板换文件时清零
+  })
+
+  it('地图预览会话：即使选择为 ON 也不创建阴影', async () => {
+    window.history.replaceState(null, '', '/?debug&q=high')
+    const { api } = createScene()
+    api.setContactShadows(true)
+    await api.loadMapOnly({ mapId: 1 })
+    expect(shadowMeshes()).toHaveLength(0)
   })
 })

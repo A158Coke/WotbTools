@@ -60,6 +60,7 @@ export function createPlaybackStore() {
     // URL > localStorage > 默认（logdepth 关 / dynres 开）覆写，见 playbackScene）
     logdepth: false,
     dynres: true,
+    contactShadows: false, // 坦克接地阴影（待开播 opt-in，不持久化；仅高清/极致，见 playbackScene.setContactShadows）
     // 覆盖层
     banner: null, // { text, color }
     killfeed: [], // { id, text }

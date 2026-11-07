@@ -122,7 +122,8 @@ import { createSceneCore } from './playback/renderer.js'
 // 出仓到 ./playback/，点击拾取调试与边界带出仓为工厂；公开 API 经本文件 re-export，
 // 导入方（Replay3DPane / 测试）零改动。
 import { GRID_DT, ASSET_CONCURRENCY, mapLimit } from './playback/util.js'
-import { QUALITY_PRESETS } from './playback/quality.js'
+import { QUALITY_PRESETS, shadowQualityEligible } from './playback/quality.js'
+import { createTankContactShadows, measureShadowFootprint } from './playback/tankContactShadows.js'
 import { tracerSpanSecs, occlusionCells, occlusionFootprintCells } from './playback/pure.js'
 import { createPickReporter } from './playback/pickReport.js'
 import { chainVisible } from './pickDebug.js'
@@ -370,6 +371,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let LOGDEPTH = prefOf('pb_logdepth', 'logdepth', false);
   let DYNRES = prefOf('pb_dynres', 'dynres', true);
   let ARMOR_HIGHLIGHT = prefOf('pb_armor_highlight', 'armorhl', false);
+  // 坦克接地阴影：待开播的一次性 opt-in，**不持久化、无 URL 参数**，新实例 / 换文件 / 降档即 OFF。
+  // 实例级（不随 teardownSession 复位）：loadData 的 teardown → startPlayback 之间选择必须保留；
+  // teardown 只释放已装配的阴影资源（contactShadows）。
+  let CONTACT_SHADOWS = false;
+  let contactShadows = null;
   const persistPref = (key, on) => { try { localStorage.setItem(key, on ? '1' : '0'); } catch (_) {} };
 
   // ---------- 画质分档 ----------
@@ -394,6 +400,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   store.logdepth = LOGDEPTH;   // Display 面板开关的初始态（偏好解析见上方 prefOf）
   store.dynres = DYNRES;
   store.armorHighlight = ARMOR_HIGHLIGHT;
+  store.contactShadows = false;
+  /** 唯一写入口：门禁不通过时恒 OFF（直接调 API 也不能绕过）。 */
+  function setContactShadows(on) {
+    CONTACT_SHADOWS = !!on && shadowQualityEligible(QKEY);
+    store.contactShadows = CONTACT_SHADOWS;
+  }
+  /** 轮廓投影阴影要模板缓冲；只在阴影有效时申请，关闭路径的渲染上下文与原来一致 */
+  function wantsShadowStencil() { return CONTACT_SHADOWS && shadowQualityEligible(QKEY); }
   function setQuality(k) {
     if (!QUALITY_PRESETS[k] || k === QKEY) return;
     const apply = () => {
@@ -402,6 +416,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       try { localStorage.setItem('pb_quality', k); } catch (e) {}
       store.qualityKey = QKEY;
       store.qualityLabel = '画质 · ' + Q.label;
+      if (!shadowQualityEligible(k)) setContactShadows(false);   // 降档清零；再升档不自动恢复
       applyGlbGate();
     };
     if (DATA) {
@@ -977,7 +992,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 创建核心（渲染器/相机/控件/灯光/resize+pointer 接线）在 playback/renderer.js
     //（2026-10-24 Step A2 出仓；状态所有权仍在本闭包——解构写回可变绑定）
     const core = createSceneCore({
-      container, quality: Q, logdepth: LOGDEPTH, dynres: DYNRES, debug: DEBUG,
+      container, quality: Q, logdepth: LOGDEPTH, dynres: DYNRES, stencil: wantsShadowStencil(), debug: DEBUG,
       envTexture, envMultiplier,
       onResize, onPointerDown: onScenePointerDown, onPointerUp: onScenePointerUp,
       setFollow,
@@ -2511,6 +2526,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // floor 与替换后的三角面之间留下一帧/停驻时的穿地。
     constrainFreeCameraAltitude();
     reprojectAnnotationHeights();
+    contactShadows?.reground();   // 静止车辆的阴影也贴回新 LOD 网格（≤ 车辆数 × 25 次 O(1) 采样）
     if (perf) perf.event({ stage: 'terrain-rebuild-inclusive', durationMs: performance.now() - perfRebuildAt });
   }
 
@@ -2568,6 +2584,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 地形异步就绪后把基地环带/HUD 与出生点标记重新贴回地表
     regroundBases();
     regroundSpawns();
+    contactShadows?.reground();
     // terrain 首次就绪 / 2D 回退切换：annotation 必须重投影到当前地表
     rebuildAnnotationProjection();
   }
@@ -3622,6 +3639,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
             }
             v.glb = inst;                       // 通过部位检查后才落库（否则会卡在半装载态）
             v.glbParts = parts;
+            contactShadows?.setFootprint(v, measureShadowFootprint(inst));   // 受姿前一次性实测
+            contactShadows?.attachModel(v, inst);   // 轮廓投影（渲染器带 stencil 时）
             v.tankData = loaded.sd;             // Sniper 穿深着色的配置/弹表来源
             // 悬挂部件（轮/带）逐车收集：几何逐车 clone（模板共享），数据缺 → null 回落刚体
             v.suspParts = collectSuspensionParts(inst, loaded.susp, v.def.tank_id);
@@ -4064,6 +4083,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     v.group.visible = vis;
     if (v.glb) v.glb.visible = vis && !classIconsVisible();
     if (!vis) {
+      syncContactShadow(v);
       // 悬挂积分复位：不可见期间不累积侧位移（复现时首帧吸附，不跳变）
       if (v.suspParts) {
         for (const k of ['L', 'R']) if (v.suspParts.sides[k]) v.suspParts.sides[k].prev = null;
@@ -4085,6 +4105,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const rel = wrapPi(turretAbsAt(v, T) - yawAt(v, T));
     v.turretG.rotation.y = -rel;
     v.gunPivot.rotation.x = -gunPitchAt(v, T);
+    syncContactShadow(v);
+  }
+  /** 阴影只读已变换完成的场景位姿（posAt 已含镜像）；车辆不可见或被类型图标替代时隐藏。 */
+  function syncContactShadow(v) {
+    if (!contactShadows) return;
+    const p = v.group.position;
+    contactShadows.update(v, p.x, p.z, v.group.rotation.y,
+      v.group.visible && !classIconsVisible() && v.def.eid !== scopedHiddenEid);
   }
 
   // 按需渲染的脏标记：状态跳变（seek/换相机/开关节/尺寸变化/特效到期）必须显式置脏，
@@ -4307,7 +4335,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
   const perfHandle = PERF ? {
     report: () => { gpu.poll(); updatePerfIdentity(); const s = perf.report() + `\ngpu_total_ms: sum of successfully measured render-pass GPU timings (not a full GPU frame; null unless all required queries succeed)` + `\nannotation: ${JSON.stringify(annotationStats)}` + `\ngpu: ${JSON.stringify(gpu.snapshot())}` + `\nmain-thread stalls >${PERF_HEARTBEAT_MS * 2}ms: ${perfStalls.length}\n` + perfStalls.map(r => `  ${r.gap.toFixed(1)} ms @T=${r.t.toFixed(1)}`).join('\n'); console.log(s); return s; },
-    snapshot: () => (gpu.poll(), updatePerfIdentity(), { ...perf.snapshot(), annotation: { ...annotationStats }, resources: { geometries: renderer?.info?.memory?.geometries ?? null, textures: renderer?.info?.memory?.textures ?? null }, armorRt: armorStats.rt ? { ...armorStats.rt } : null, gpu: gpu.snapshot() }),
+    snapshot: () => (gpu.poll(), updatePerfIdentity(), { ...perf.snapshot(), annotation: { ...annotationStats }, resources: { geometries: renderer?.info?.memory?.geometries ?? null, textures: renderer?.info?.memory?.textures ?? null }, armorRt: armorStats.rt ? { ...armorStats.rt } : null, contactShadows: contactShadows ? contactShadows.count() : null, gpu: gpu.snapshot() }),
     startCapture: (options) => { if (paused) throw new Error('scene is inactive'); updatePerfIdentity(); perf.startCapture(options); },
     stopCapture: () => { gpu.poll(); return perf.stopCapture(); },
     reset: () => { gpu.reset(); perf.reset(); perfTerrainChecks = 0; perfTerrainRebuilds = 0; perfStalls = []; perfBeat = performance.now(); },
@@ -4597,6 +4625,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const layer = hidden ? SCOPED_HIDDEN_LAYER : 0;
     v.group.traverse((node) => node.layers.set(layer));
     v.glb?.traverse((node) => node.layers.set(layer));
+    syncContactShadow(v);   // 开镜摘掉本车 = 不留阴影
   }
   function applyCameraFov(fov) {
     if (Math.abs(camera.fov - fov) < 1e-3) return;
@@ -4891,6 +4920,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function applyMapLighting(L) {
     if (!sunLight || !hemiLight) return;
     envMultiplier = applyMapLightingCore({ renderer, scene, sunLight, hemiLight, lighting: L, debug: DEBUG }).envMultiplier;
+    contactShadows?.syncSun();
   }
   // 复位体见共享模块（含共享太阳 uniform 与曝光复位）；envMultiplier 闭包回写。
   function resetMapLighting() {
@@ -4911,6 +4941,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     recorderCamera = null;
     armorHighlight?.dispose();
     armorHighlight = null;
+    contactShadows?.dispose();   // 只释放资源；选择（CONTACT_SHADOWS）跨 teardown 保留给本次 startPlayback
+    contactShadows = null;
     foliageClip.value = 0;
     store.recorderCameraStatus = 'idle';
     store.recorderViewAvailable = false;
@@ -5187,13 +5219,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 入口即复核：数据阶段可能耗时到被取代，此时连渲染器都不该为它创建;
     if (!current()) return false;
     if (!renderer) initScene();   // 渲染器惰性创建：此时画质档已定型（loader 选择/URL 参数）
-    else if (rendererCaps && (rendererCaps.logdepth !== LOGDEPTH || rendererCaps.dynres !== DYNRES)) {
+    else if (rendererCaps && (rendererCaps.logdepth !== LOGDEPTH || rendererCaps.dynres !== DYNRES
+      || rendererCaps.stencil !== wantsShadowStencil())) {
       // 复用渲染器（换文件 reset 保留）但待开播偏好已改：按失配项热修正——
       // logdepth 是上下文级参数 → 重建渲染器（initScene 换新上下文，dynres 同步重装）；
       // 仅 dynres 变化 → 热装/卸控制器即可（无需动上下文）。
-      if (rendererCaps.logdepth !== LOGDEPTH) {
+      if (rendererCaps.logdepth !== LOGDEPTH || rendererCaps.stencil !== wantsShadowStencil()) {
+        // 上下文级参数（logdepth / stencil）→ 重建渲染器（initScene 按当前偏好装配并写回 rendererCaps）
         rebuildRenderer();
-        rendererCaps = { logdepth: LOGDEPTH, dynres: DYNRES };
       } else {
         // 仅 dynres 变化（评审 P2）：控制器可能已把 pixelRatio 降过档，热装/卸时
         // 必须先同步 renderer 回当前档位上限 + 重设画布——否则 B 场永久停在
@@ -5259,6 +5292,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
     const perfVehiclesAt = perf ? performance.now() : 0;
     buildVehicles();
+    // 装配层复核门禁（不只依赖 UI disabled）；map 会话已在上方提前收口，不会走到这里
+    contactShadows?.dispose();
+    contactShadows = null;
+    if (CONTACT_SHADOWS && shadowQualityEligible(QKEY)) {
+      contactShadows = createTankContactShadows({
+        scene, sunLight, heightAt: annotationSurfaceHeightAt, silhouettes: !!rendererCaps?.stencil,
+      });
+    }
     if (perf && current()) perf.event({ stage: 'vehicle-construction', durationMs: performance.now() - perfVehiclesAt }, perfLoadingEpoch);
     const perfGlbAt = perf ? performance.now() : 0;
     if (glbOn) {
@@ -5494,6 +5535,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         setLowPoly(v, !v.glb);
         applyDetachedTurrets(v);
         if (v.glb) v.glb.visible = v.group.visible && !classIconsVisible();
+        syncContactShadow(v);
       }
       setLabelPrefs(prefs || {});
       if (camera) updateLabels();
@@ -5526,6 +5568,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       }
       invalidate();
     },
+    setContactShadows,
     setQuality,
     setPaused,
     qualityPresets: QUALITY_PRESETS,

@@ -81,6 +81,7 @@ vi.mock('../scene/playbackScene.js', () => {
       setGlb: vi.fn(),
       setLabelPrefs: vi.fn(),
       setQuality: vi.fn(),
+      setContactShadows: vi.fn((on) => { store.contactShadows = !!on }),
       setPaused: vi.fn(),
       setAnnotations: vi.fn(),
       setAnnotationInteraction: vi.fn(),
@@ -492,7 +493,7 @@ describe('Replay3DPane', () => {
     // 性能选项不折叠：三个开关不用展开就能看到
     const perf = wrapper.get('[data-test="replay3d-perf-options"]')
     expect(perf.element.closest('details')).toBeNull()
-    for (const id of ['perf-logdepth', 'perf-dynres', 'perf-armor-highlight']) {
+    for (const id of ['perf-logdepth', 'perf-dynres', 'perf-armor-highlight', 'perf-contact-shadows']) {
       expect(perf.find(`[data-testid="${id}"]`).exists()).toBe(true)
     }
     await start(wrapper)
@@ -502,6 +503,28 @@ describe('Replay3DPane', () => {
     await wrapper.setProps({ active: true })
     await flush()
     expect(playback.api.loadData).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it('接地阴影开关：流畅 / 均衡停用，高清 / 极致可开；换文件后新待开播回到 OFF', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane({ file: mkFile('a.wotbreplay') })
+    await flush()
+    const box = () => wrapper.get('[data-testid="perf-contact-shadows"]')
+    const store = playback.api.store
+    for (const [key, disabled] of [['low', true], ['mid', true], ['high', false], ['ultra', false]]) {
+      store.qualityKey = key
+      await flush()
+      expect(box().element.disabled).toBe(disabled)
+    }
+    expect(box().element.checked).toBe(false)
+    await box().setValue(true)
+    expect(playback.api.setContactShadows).toHaveBeenLastCalledWith(true)
+    expect(box().element.checked).toBe(true)
+    await wrapper.setProps({ file: mkFile('b.wotbreplay') })
+    await flush()
+    expect(playback.api.setContactShadows).toHaveBeenLastCalledWith(false)
+    expect(box().element.checked).toBe(false)
     wrapper.unmount()
   })
 

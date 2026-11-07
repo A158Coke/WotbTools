@@ -20,6 +20,7 @@ import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { useI18n } from 'vue-i18n'
 import { createPlaybackStore } from '../scene/playbackStore.js'
 import { initPlayback, QUALITY_PRESETS } from '../scene/playbackScene.js'
+import { shadowQualityEligible } from '../scene/playback/quality.js'
 import { detectWebGL } from '../scene/webglSupport.js'
 import { uiProfile } from '../composables/useUiProfile.js'
 import { usePlaybackFullscreen } from '../composables/usePlaybackFullscreen.js'
@@ -158,6 +159,7 @@ watch(() => props.file, () => {
   controlsCollapsed.value = false
   controlsDocked.value = false
   resetAnnotationState()   // 换场次 = 换地图语义；旧标注不得跨图残留
+  sceneApi?.setContactShadows?.(false)   // 接地阴影是逐场 opt-in：新文件的待开播默认 OFF
 })
 /** 紧凑档：手机形态（见 usePlaybackPhoneForm —— 宽度 <768 **或** 触屏且视口高 ≤500，
  *  后者命中手机全屏横屏）。**不能用纯宽度断点**：手机竖屏 412×915 全屏后是 915×412，
@@ -1138,6 +1140,9 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
             </label>
             <label class="toggle" :title="t('agentReplay.perf_armor_highlight_hint')">
               <input type="checkbox" data-testid="perf-armor-highlight" :checked="store.armorHighlight" @change="sceneApi.setArmorHighlight($event.target.checked)"> {{ t('agentReplay.perf_armor_highlight') }}
+            </label>
+            <label class="toggle" :title="t('agentReplay.perf_contact_shadows_hint')">
+              <input type="checkbox" data-testid="perf-contact-shadows" :disabled="!shadowQualityEligible(store.qualityKey)" :checked="store.contactShadows" @change="sceneApi.setContactShadows($event.target.checked)"> {{ t('agentReplay.perf_contact_shadows') }}
             </label>
             </div>
             <p class="pre-start-perf-note">{{ t('agentReplay.perf_load_note') }}</p>
