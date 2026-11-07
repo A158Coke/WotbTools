@@ -12,6 +12,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .ic { width: var(--space-4); height: var(--space-4); flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; vertical-align: middle; }
 .up-icon { display: inline-flex; align-items: center; justify-content: center; width: var(--control-h-lg); height: var(--control-h-lg); margin-bottom: var(--space-3); border-radius: var(--radius-md); background: var(--color-surface-2); color: var(--color-accent-text); }
 .up-icon .ic { width: var(--space-6); height: var(--space-6); }
+/* 统一控制条（design-language §9 DC-ARC-03）：页面数据区之上的筛选 / 排序 / 搜索一行；
+   大屏行内、窄屏自动换行；吸顶时读 --header-h（顶栏随滚动收起时贴顶）。 */
+.control-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); min-width: 0; margin-block-end: var(--space-4); }
+.control-bar > .control-bar-end { margin-inline-start: auto; }
+.control-bar.is-sticky { position: sticky; top: var(--header-h); z-index: var(--z-sticky); padding-block: var(--space-2); background: var(--color-canvas); }
 .wrap { max-width: var(--layout-wide-max); margin: 0 auto; padding: var(--space-6) var(--gutter) var(--space-12); }
 h2 { margin: 0 0 var(--space-3); color: var(--color-text-primary); font: var(--type-h2); }
 .app-footer {

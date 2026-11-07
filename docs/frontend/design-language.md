@@ -198,7 +198,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 |---|---|---|---|---|---|
 | DC-TYP-01 | MUST | 全站 | 文字不小于 12px | `--font-size-caption-xs`（11px）只用于放不下 12px 的密集节点标签：地图卡角标、回放名册、科技树模块 | `pnpm run lint:css` + 人工 |
 | DC-TYP-02 | MUST | 表格、统计、计时 | 数字用 `tabular-nums`，格式走 `Intl.NumberFormat(locale)` | 无 | 人工 |
-| DC-TYP-03 | MUST | 展示字阶 | 超过 `--type-display-hero` 的字号只能用于 Showcase Hero 的标题和关键数字，上限 104px，由 `scale.css` 的 token 提供；数据区不得使用 | 无 | `pnpm run lint:css` + 人工 |
+| DC-TYP-03 | MUST | 展示字阶 | 超过 `--type-display-hero` 的字号只能用于 Showcase Hero 的标题和关键数字，上限 104px，由 `scale.css` 的 `--type-display-showcase`（`clamp(44px, 7vw, 104px)`）提供；数据区不得使用 | 无 | `pnpm run lint:css` + 人工 |
 | DC-TYP-04 | MUST | 字体 | 只用系统字体栈，不引入网络字体 | 无 | 人工 |
 
 **依据：** 系统字体栈加载为零、CJK 渲染最好；模块化字号阶梯；数字用等宽数字（tabular），便于对齐比较。
@@ -488,6 +488,8 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | 模式 | 规则 |
 |---|---|
 | **AppShell** | 平板 / 桌面：左侧边栏（`--z-header`，铺满视口高度），没有顶栏（`--header-h: 0`）。桌面默认展开（240px，图标 + 文字），可折叠成 72px 图标栏并记住偏好；平板固定为图标栏。侧边栏从上到下：品牌 · 数据版本 · 首页 · 按战斗、资料、赛事、社区分组的主栏目（`group`，图标栏用分隔线代替分组名）· 管理组（按角色）；底部：更多（弹出面板，只放低频的显示设置与关于 / 支持）· 账户 · 折叠开关。手机竖屏与手机横屏（抽屉外壳，见下方 L1 / L3）：48px 顶栏（菜单 · Logo · 当前栏目名 · 账户）+ 左侧抽屉（`AppNavDrawer`，内容是侧边栏的同一份分组、管理组与数据版本，底部「更多」整页链接与账户）。Logo 回默认落地页：主站回首页，APK / 本地回回放。手机横屏的回放工作台（2D / 3D，回放就绪）与装甲查看器（WebGL 可用）进入沉浸态：顶栏让出，`--header-block` / `--header-h` 归零，转竖屏或离开页面即恢复。当前侧边栏宽度写入 `--sidebar-w`（抽屉外壳为 0）；顶栏为内容让出的固定空间是 `--header-block`，吸顶偏移与高度预算读 `--header-h` |
+| **Showcase Hero** | `components/ShowcaseHero.vue`：工作区页面数据区之上的可选主视觉（DC-THM-03…06），背景是当前主题主视觉（大屏横版、小屏竖版）+ 主题遮罩，只放 kicker、标题、一句说明、关键数字与操作 |
+| **控制条** | `app-shell.css` 的 `.control-bar`：数据区之上的筛选 / 排序 / 搜索一行，窄屏换行，`.control-bar-end` 推到行尾，`.is-sticky` 吸顶读 `--header-h` |
 | **PageHeader** | 只有 `compact`（工作区用：标题 + 右侧操作，一行，≤ 56px）。不提供 `hero` 变体；首页 hero 是 `HomePage.vue` 自己的整段落地页板块。**工作区禁止用 kicker + h1 + 说明 + 标签块占掉首屏** |
 | **容器宽度** | `content` → `--layout-content-max`；`wide` → `--layout-wide-max`；`workspace` → `--layout-workspace-max`；长文阅读宽度 → `--reading-measure`。具体数值由 `frontend/src/styles/tokens/scale.css` 定义，布局原语见 [UI 系统](ui-system.md) |
 | **Master–Detail** | expanded：列表 + 常驻详情。medium：列表 + 推开式详情。compact：列表 → 全屏详情（支持左右滑动切换）。回放工作台、射击分析、坦克百科都用这个模式 |
@@ -512,7 +514,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 - **适用设备只有两类**（`platform/screenForm.ts`，判定只看设备、不看视口）：Android 手机上的 App（Native Bridge 可选能力 `screen-form` 报告 phone）与 iPhone 上的 Safari（UA 含 iPhone 且不是 iPad）。桌面（含缩窄窗口）、所有平板、Android 手机浏览器都不受影响，竖屏照常用小屏布局。
 - **适用页面**：2D 回放、3D 回放、装甲查看器、射击复现、地图预览 3D。科技树、直播与推荐视频、比赛截图、AI 复盘、名人堂、管理页不强制。
 - **行为**（`useForcedLandscape`）：Android 手机 App 进入场景页时原生锁横屏，离开 / KeepAlive 停用即释放；iPhone Safari 竖屏时整块显示 `RotatePrompt`（场景保持挂载，横过来即继续），提示里给出退出动作：2D / 3D 回到「看赛后数据」，装甲查看器回到坦克百科 / 射击分析，地图 3D 切到 2D。HTML 全屏在 Android App 里也只在手机上锁横屏。
-- **横屏沉浸**：没有顶栏，外壳在左上保留悬浮菜单按钮（`AppShell` 的 `.immersive-nav`，打开同一个抽屉）；场景外壳用 `--immersive-nav-reserve`（沉浸态 44 + 8，其余为 0）在自己的左上让出这一块：回放左侧名册车道顶部、装甲查看器的返回键与信息卡右移。
+- **横屏沉浸**：没有顶栏，菜单入口仍在：2D / 3D 回放由传输条第一项承载（`PlaybackTransport` 经 `shellChrome.hostNav` 声明，7 人名册车道保持不滚动）；其余场景（装甲查看器、射击复现）由外壳在左上放悬浮菜单按钮（`AppShell` 的 `.immersive-nav`），场景用 `--immersive-nav-reserve`（沉浸态 44 + 8，其余为 0）让出：返回键与信息卡右移。两者打开同一个抽屉。
 - **验收**：`pnpm run test:browser-interaction forced-landscape`（iPhone 竖屏出提示并能回到赛后数据；iPad 竖屏与缩窄的桌面浏览器不出提示；iPhone 横屏 844×340 沉浸且菜单可打开抽屉）。
 - **场景 HUD（装甲查看器、射击复现）**：手机横屏时常驻控件只在四角——左上返回 + 车名 / 参数，右下拇指区是射击快捷项（弹种、距离、厚度 / 击穿），左下是姿态与角度；完整设置是右侧参数面板（约 19rem + 安全区），打开时场景仍在左侧可见。
 - **点选结果**（厚度 `#click-info`、击穿 `#traj-info`，所有尺寸）：固定停靠在场景顶部正中，不跟随命中点、不压车体；小屏收起态只显示最终判定一行（胶囊），点开看逐层明细。

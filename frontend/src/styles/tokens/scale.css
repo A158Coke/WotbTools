@@ -101,6 +101,10 @@
        40px，在宽屏停在 72px。 */
     --font-size-display-hero: clamp(2.5rem, 6vw, 4.5rem);
     --line-height-display-hero: 1.05;
+    /* 展示字阶上限（D2，DC-TYP-03）：Showcase Hero 的关键数字 / 首页大标题最大 104px，手机回落 44px。
+       只能用于装饰插槽里的标题与关键数字，数据区不得使用。 */
+    --font-size-display-showcase: clamp(2.75rem, 7vw, 6.5rem);
+    --line-height-display-showcase: 1;
     --font-size-display: 32px;
     --font-size-h1: 24px;
     --font-size-h2: 20px;
@@ -119,6 +123,7 @@
     /* 长文阅读（项目历史 / 技术演进等文档页）：比界面正文更松的行高 */
     --line-height-prose: 1.7;
     --type-display-hero: 700 var(--font-size-display-hero) / var(--line-height-display-hero) var(--font-family-sans);
+    --type-display-showcase: 700 var(--font-size-display-showcase) / var(--line-height-display-showcase) var(--font-family-sans);
     --type-display: 700 var(--font-size-display) / var(--line-height-display) var(--font-family-sans);
     --type-h1: 700 var(--font-size-h1) / var(--line-height-h1) var(--font-family-sans);
     --type-h2: 600 var(--font-size-h2) / var(--line-height-h2) var(--font-family-sans);
