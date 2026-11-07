@@ -349,7 +349,10 @@
       "DUPLICATE_OR_UNKNOWN_RECORDER": "已存在或无法识别录像者",
       "REPLAY_HASH_CONFLICT": "该战斗已绑定其他回放文件"
     },
-    "singleTab": "单场"
+    "singleTab": "单场",
+    "podium": "前三名",
+    "podiumRank": "第 {rank} 名",
+    "heroTotal": "收录记录"
   },
   "hofAdmin": {
     "login": "正在进入登录流程…",
@@ -1150,10 +1153,7 @@
   },
   "home": {
     "sponsorCta": "去赞助",
-    "takeItTitle": "带走它，也养着它",
-    "androidTitle": "装进手机",
-    "androidDesc": "同一个平台的 Android 版：三维复盘、装甲查看与名人堂，离开电脑照样能看。",
-    "sponsorDesc": "没有广告，没有会员。服务器和域名由玩家自愿赞助撑着。",
+    "sponsorDesc": "没有广告，没有会员。服务器和域名靠玩家赞助撑着。",
     "heroLine1": "不止是回放工具",
     "heroLine2": "是闪击战的主场",
     "heroSubtitle": "从单场回放的三维复盘，到全服名人堂、联赛积分与直播回放——WotBTools 是玩家自己搭的闪击战平台，网页与 Android 都能用。",
@@ -1176,11 +1176,15 @@
     "replayDesc": "上传 .wotbreplay 回放文件，提取战斗数据并导出 Excel。",
     "highestDamageRecord": "最高伤害记录",
     "available": "可用",
-    "sponsorTitle": "支持项目",
+    "sponsorTitle": "赞助 WotbTools",
     "footer": "WoTBTools - 社区工具，非 Wargaming 官方产品",
     "icpFiling": "闽ICP备2026036303号-1",
     "publicSecurityFiling": "闽公网安备35018202000555号",
-    "wargamingDisclaimer": "WotbTools 是非官方项目，与 Wargaming 无关联，也未获其认可。"
+    "wargamingDisclaimer": "WotbTools 是非官方项目，与 Wargaming 无关联，也未获其认可。",
+    "feedbackDesc": "遇到问题或有建议，直接告诉我们",
+    "calloutRicochet": "跳弹",
+    "calloutPenetration": "穿深",
+    "calloutChance": "击穿概率"
   },
   "sponsor": {
     "eyebrow": "WOTBTOOLS · SUPPORT",
@@ -2028,5 +2032,12 @@
   "toast": {
     "copied": "已复制",
     "feedbackSent": "反馈已发送，谢谢"
+  },
+  "more": {},
+  "tournament": {
+    "heroDescription": "各军团逐比赛日积分与总分，数据来自赛事方公开结果"
+  },
+  "tankopedia": {
+    "heroCount": "收录车辆"
   }
 }

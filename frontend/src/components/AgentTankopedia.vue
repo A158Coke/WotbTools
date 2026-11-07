@@ -30,7 +30,7 @@ import {
   buildComputeInput, decodeDevices, devicesFromEquipmentIds, encodeDevices,
   defaultShellIndex, findTankModules, paramGroups, pickGun, pickTurret, pitchDeviceBonus, resolveSetup,
 } from '../replay-local/compute/tankSetup'
-import PageHeader from './PageHeader.vue'
+import ShowcaseHero from './ShowcaseHero.vue'
 import EmptyState from './EmptyState.vue'
 import AppButton from './AppButton.vue'
 import TankCatalogMenu from './TankCatalogMenu.vue'
@@ -794,7 +794,8 @@ onMounted(() => {
 
     <!-- ================= 列表态 ================= -->
     <!-- v-if：直达详情不提前挂载；v-show：列表→详情→返回保留增量条数与搜索草稿 -->
-    <PageHeader v-if="listMounted" v-show="detailId == null" :title="t('agentTanks.title')" :description="t('agentTanks.hint')">
+    <ShowcaseHero v-if="listMounted" v-show="detailId == null" :kicker="t('nav.groups.reference')" :title="t('agentTanks.title')" :description="t('agentTanks.hint')">
+      <template v-if="tanks.length" #stats><div><span class="tp-hero-stat-label">{{ t('tankopedia.heroCount') }}</span><strong data-testid="tankopedia-count">{{ tanks.length.toLocaleString(locale) }}</strong></div></template>
       <template #actions>
         <AppButton
           v-if="detailId == null"
@@ -806,7 +807,7 @@ onMounted(() => {
           {{ t('research.open_techtree') }}
         </AppButton>
       </template>
-    </PageHeader>
+    </ShowcaseHero>
     <TankCatalogMenu
       v-if="listMounted"
       v-show="detailId == null"
@@ -834,6 +835,7 @@ onMounted(() => {
 
 .tp-muted { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); }
 .tp-status { margin: 0; color: var(--color-text-secondary); font: var(--type-body); }
+.tp-hero-stat-label { color: var(--color-text-secondary); font: var(--type-caption); }
 
 /* 详情页配置选择（列表的搜索/筛选/排序在 TankCatalogMenu 内，单一实现） */
 .tp-field { display: grid; gap: var(--space-1); min-inline-size: 140px; }

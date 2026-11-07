@@ -206,7 +206,7 @@
         "about": "关于与支持"
       },
       "language": "语言",
-      "sponsor": "支持项目",
+      "sponsor": "赞助",
       "ratingDocs": "Rating 文档"
     },
     "filters": {
@@ -1203,7 +1203,7 @@
         "about": "About & support"
       },
       "language": "Language",
-      "sponsor": "Support the project",
+      "sponsor": "Sponsor",
       "ratingDocs": "Rating docs"
     },
     "filters": {
@@ -2200,7 +2200,7 @@
         "about": "О проекте и поддержка"
       },
       "language": "Язык",
-      "sponsor": "Поддержать проект",
+      "sponsor": "Поддержать",
       "ratingDocs": "Документация Rating"
     },
     "filters": {

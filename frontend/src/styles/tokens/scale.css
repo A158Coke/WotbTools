@@ -29,18 +29,10 @@
     --broadcast-cover-max-h: 320px;
     --broadcast-cover-thumbnail-w: 160px;
     --broadcast-server-card-min-h: 200px;
-    /* 首页 landing page：组件语义尺寸（§4–§5），避免组件内出现第二套 scale。
-       手机 Hero 不强制高度，由组件置 0 把首屏留给标题与 CTA。 */
-    --home-hero-min-h-desktop: 460px;
-    --home-hero-min-h-tablet: 380px;
+    /* 首页 landing page：组件语义尺寸（§4–§5），避免组件内出现第二套 scale。Hero 三档都是整屏（100dvh）。 */
     --home-hero-title-measure: 16ch;
     --home-hero-subtitle-measure: 40ch;
     --home-hero-subtitle-size: clamp(1rem, 1.6vw, 1.25rem);
-    --home-shot-copy-measure: 42ch;
-    --home-phone-preview-w: 168px;
-    --home-phone-preview-h: 300px;
-    --home-phone-preview-mobile-w: 148px;
-    --home-phone-preview-mobile-max-h: 220px;
 
     /* 首页动效：统一时长 + 语义幅度（§5）。不要给每个 stagger 阶段单独造 duration。 */
     --home-enter-duration: 700ms;

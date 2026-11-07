@@ -22,6 +22,8 @@ import AppSheet from './AppSheet.vue'
 import { createReusableTemplate } from '@vueuse/core'
 import AppDialog from './AppDialog.vue'
 import AppButton from './AppButton.vue'
+import ShowcaseHero from './ShowcaseHero.vue'
+import HofPodium from './HofPodium.vue'
 import VehiclePicker from './VehiclePicker.vue'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
 
@@ -1324,18 +1326,19 @@ watch(() => hofAvailability.value.available, (available, previous) => {
     </div>
 
     <div v-show="activeTab === 'single'" data-hof-pane="single">
-      <header class="lb-head">
-        <span class="lb-kicker">{{ $t('hof.btn') }}</span>
-        <h1>{{ $t('hof.title') }}</h1>
-        <p>{{ $t('hof.subtitle') }}</p>
-      </header>
+      <ShowcaseHero :kicker="$t('hof.btn')" :title="$t('hof.title')" :description="$t('hof.subtitle')">
+        <template v-if="totalItems != null" #stats><div><span class="lb-hero-stat-label">{{ $t('hof.heroTotal') }}</span><strong>{{ totalItems.toLocaleString(locale) }}</strong></div></template>
+        <template #actions>
+        <div class="lb-submit-row">
+          <button type="button" class="filebtn" data-tour="hof-submit" @click="showUploadModal = true">
+            <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 9l4-4 4 4M12 5v12" /></svg>{{ $t('hof.submit_entry') }}
+          </button>
+          <span v-if="uploadMsg" class="lb-upload-msg" :class="{ err: !uploadOk }">{{ uploadMsg }}</span>
+        </div>
+        </template>
+      </ShowcaseHero>
 
-      <div class="lb-submit-row">
-        <button type="button" class="filebtn" data-tour="hof-submit" @click="showUploadModal = true">
-          <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 9l4-4 4 4M12 5v12" /></svg>{{ $t('hof.submit_entry') }}
-        </button>
-        <span v-if="uploadMsg" class="lb-upload-msg" :class="{ err: !uploadOk }">{{ uploadMsg }}</span>
-      </div>
+      <HofPodium v-if="page === 1 && rows.length >= 3 && !error" :rows="rows.slice(0, 3)" :compact="isCompact" :locale="locale" />
 
       <!-- 提交记录 Modal（§29：上传入口不再长期占据首屏，Ranking 成为核心） -->
       <AppDialog :open="showUploadModal" :title="$t('hof.upload_title')" class="hof-upload-modal" @close="showUploadModal = false">
@@ -1536,18 +1539,16 @@ watch(() => hofAvailability.value.available, (available, previous) => {
     </div>
 
     <div v-show="activeTab === 'hundred'" class="h100-pane" data-hof-pane="hundred">
-      <header class="lb-head">
-        <span class="lb-kicker">{{ $t('hof.btn') }}</span>
-        <h1>{{ $t('hundred.tab') }}</h1>
-        <p>{{ $t('hundred.subtitle') }}</p>
-      </header>
-
-      <!-- 审计 BZ-16：三个榜的提交入口统一放在页头下方同一位置 -->
-      <div class="lb-submit-row">
-        <button type="button" class="filebtn h100-submit-btn" data-tour="hof-submit" :disabled="!!currentPending || h100Loading" @click="openSubmit">
-          <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 9l4-4 4 4M12 5v12" /></svg>{{ $t('hundred.submit') }}
-        </button>
-      </div>
+      <ShowcaseHero :kicker="$t('hof.btn')" :title="$t('hundred.tab')" :description="$t('hundred.subtitle')">
+        <template v-if="h100TotalItems != null" #stats><div><span class="lb-hero-stat-label">{{ $t('hof.heroTotal') }}</span><strong>{{ h100TotalItems.toLocaleString(locale) }}</strong></div></template>
+        <template #actions>
+        <div class="lb-submit-row">
+          <button type="button" class="filebtn h100-submit-btn" data-tour="hof-submit" :disabled="!!currentPending || h100Loading" @click="openSubmit">
+            <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 9l4-4 4 4M12 5v12" /></svg>{{ $t('hundred.submit') }}
+          </button>
+        </div>
+        </template>
+      </ShowcaseHero>
 
       <FilterChips data-tour="hof-filters" v-if="isCompact" :chips="hundredChips" :open="filterSheet === 'hundred'" @toggle="toggleFilterSheet('hundred')" @remove="removeHundredFilter" />
       <DefineHundredFilters>
@@ -1667,18 +1668,17 @@ watch(() => hofAvailability.value.available, (available, previous) => {
     </div>
 
     <div v-show="activeTab === 'mark3'" class="h100-pane mark3-pane" data-hof-pane="mark3">
-      <header class="lb-head">
-        <span class="lb-kicker">{{ $t('hof.btn') }}</span>
-        <h1>{{ $t('mark3.tab') }}</h1>
-        <p>{{ $t('mark3.subtitle') }}</p>
-      </header>
-
-      <div class="lb-submit-row">
-        <button type="button" class="filebtn h100-submit-btn mark3-submit-btn" data-tour="hof-submit"
-                :disabled="!!selectedMark3Current || !!selectedMark3Pending || mark3Loading" @click="openMark3Submit">
-          <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 9l4-4 4 4M12 5v12" /></svg>{{ $t('mark3.submit') }}
-        </button>
-      </div>
+      <ShowcaseHero :kicker="$t('hof.btn')" :title="$t('mark3.tab')" :description="$t('mark3.subtitle')">
+        <template v-if="mark3TotalItems != null" #stats><div><span class="lb-hero-stat-label">{{ $t('hof.heroTotal') }}</span><strong>{{ mark3TotalItems.toLocaleString(locale) }}</strong></div></template>
+        <template #actions>
+        <div class="lb-submit-row">
+          <button type="button" class="filebtn h100-submit-btn mark3-submit-btn" data-tour="hof-submit"
+                  :disabled="!!selectedMark3Current || !!selectedMark3Pending || mark3Loading" @click="openMark3Submit">
+            <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 9l4-4 4 4M12 5v12" /></svg>{{ $t('mark3.submit') }}
+          </button>
+        </div>
+        </template>
+      </ShowcaseHero>
 
       <FilterChips data-tour="hof-filters" v-if="isCompact" :chips="mark3Chips" :open="filterSheet === 'mark3'" @toggle="toggleFilterSheet('mark3')" @remove="removeMark3Filter" />
       <DefineMark3Filters>
@@ -2056,10 +2056,6 @@ span.lb-card-tank { min-height: 0; color: var(--color-text-secondary); }
 .tablewrap.is-stale,
 .lb-cards.is-stale { opacity: .55; transition: opacity var(--duration-base) var(--ease-standard); }
 .lb-wrap { max-width: var(--wide-max, 1600px); margin: 0 auto; padding: 24px 20px 56px; }
-.lb-head { margin: 0 0 14px; }
-.lb-kicker { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 6px; background: var(--bg-rating); color: var(--accent-dark); font-size: 12px; font-weight: 800; }
-.lb-head h1 { margin: 10px 0 6px; color: var(--text-heading); font-size: 1.7rem; line-height: 1.15; letter-spacing: 0; }
-.lb-head p { margin: 0; color: var(--text-label); line-height: 1.65; }
 .lb-toolbar { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 14px;
   align-items: end; margin: 16px 0 12px; }
 .lb-limit { font-size: 13px; color: var(--text-label); display: grid; gap: 4px; min-width: 0; }
@@ -2102,7 +2098,8 @@ span.lb-card-tank { min-height: 0; color: var(--color-text-secondary); }
 .rk-bronze { background: var(--rating-great-bg); color: var(--rating-great-fg); }
 .muted { padding: 28px 4px; color: var(--text-muted); }
 
-.lb-submit-row { display: flex; align-items: center; gap: 12px; margin: 14px 0 16px; flex-wrap: wrap; }
+.lb-submit-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.lb-hero-stat-label { color: var(--color-text-secondary); font: var(--type-caption); }
 .lb-submit-row .lb-upload-msg { margin: 0; }
 .lb-upload-msg.err { color: var(--color-danger); }
 .hof-upload-modal .lb-upload-card { padding: 26px 18px; }
@@ -2246,7 +2243,6 @@ span.lb-card-tank { min-height: 0; color: var(--color-text-secondary); }
 
 @media (width < 768px) {
   .lb-wrap { padding: 14px 12px 48px; }
-  .lb-head h1 { font-size: 1.55rem; }
   .lb-upload-card { min-height: 230px; padding: 28px 16px; }
   .lb-upload-card .up-title { max-width: 260px; }
   .lb-upload-card .up-sub { max-width: 240px; }

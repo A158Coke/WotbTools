@@ -23,9 +23,7 @@
   "p2": [
     "src/app/AppShell.vue",
     "src/app/AppSidebar.vue",
-    "src/app/AppTabBar.vue",
     "src/app/AppTopBar.vue",
-    "src/app/ConnectivityNoticeDialog.vue",
     "src/app/GlobalErrorDialog.vue",
     "src/app/MorePanel.vue",
     "src/app/ViewHost.vue",
@@ -174,7 +172,6 @@
     "src/utils/researchCatalog.js",
     "src/utils/shotPresentation.js",
     "src/utils/shotResultCardMetrics.js",
-    "src/utils/shotResultCardPlacement.js",
     "src/utils/shotResultClass.js",
     "src/utils/sponsor-config.js",
     "src/utils/stickyColumns.js",

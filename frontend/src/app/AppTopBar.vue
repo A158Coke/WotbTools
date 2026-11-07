@@ -1,7 +1,7 @@
 <script setup>
 import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
-import { Bell, Menu } from 'lucide-vue-next'
+import { Bell, Heart, Menu } from 'lucide-vue-next'
 import { unreadCount } from '../composables/useNotifications.js'
 import { NOTIFICATIONS_PANEL_KEY } from '../shared/notifications.js'
 import { defaultView, isWorkspaceView, locationForView, primarySection, sectionTitleKey as titleKeyFor, viewFromRoute } from './navigation.js'
@@ -11,6 +11,7 @@ import BrandMark from '../components/BrandMark.vue'
 // 抽屉外壳（手机竖屏 / 手机横屏）的顶栏：菜单（打开左侧抽屉）· logo · 当前栏目名 · 账户（§9 L1 / L3）。
 // 普通页面向下滚动收起、向上滚动出现（L5）；工作台（回放、装甲查看器、地图、科技树）不收起。
 // 平板 / 桌面没有顶栏，导航在左侧边栏（AppSidebar）。
+// 首页首屏：顶栏浮在主视觉上（玻璃底、无分隔线），并多一个「♥ 赞助」按钮；滚过首屏后恢复实底。
 const props = defineProps({ navOpen: { type: Boolean, default: false } })
 const emit = defineEmits(['open-nav'])
 const menuButton = ref(null)
@@ -32,6 +33,9 @@ const hidden = ref(false)
 const pinned = computed(() => isWorkspaceView(activeView.value) || props.navOpen)
 let lastY = 0
 let frame = 0
+const onHome = computed(() => activeView.value === 'home')
+const scrollY = ref(0)
+const overHero = computed(() => onHome.value && scrollY.value < window.innerHeight / 2)
 
 function setHidden(next) {
   hidden.value = next
@@ -44,6 +48,7 @@ function onScroll() {
   frame = requestAnimationFrame(() => {
     frame = 0
     const y = Math.max(0, window.scrollY)
+    scrollY.value = y
     const header = menuButton.value?.closest('.app-top-bar')?.offsetHeight ?? 0
     if (pinned.value || y <= header) setHidden(false)
     else if (y > lastY + SCROLL_HYSTERESIS_PX) setHidden(true)
@@ -54,9 +59,10 @@ function onScroll() {
 }
 
 watch(pinned, (value) => { if (value) setHidden(false) })
-watch(() => route.fullPath, () => { lastY = 0; setHidden(false) })
+watch(() => route.fullPath, () => { lastY = 0; scrollY.value = Math.max(0, window.scrollY); setHidden(false) })
 onMounted(() => {
   lastY = window.scrollY
+  scrollY.value = Math.max(0, lastY)
   window.addEventListener('scroll', onScroll, { passive: true })
 })
 onBeforeUnmount(() => {
@@ -67,7 +73,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <header class="app-top-bar" :class="{ 'is-hidden': hidden }" data-testid="app-top-bar" @focusin="setHidden(false)">
+  <header class="app-top-bar" :class="{ 'is-hidden': hidden, 'is-over-hero': overHero }" data-testid="app-top-bar" @focusin="setHidden(false)">
     <button
       ref="menuButton"
       type="button"
@@ -94,6 +100,9 @@ onBeforeUnmount(() => {
       :title="$t(devEnvironmentNoticeKey)"
     >{{ $t('environment.label') }}</span>
 
+    <RouterLink v-if="onHome" class="sponsor-link" to="/sponsor" data-testid="nav-sponsor">
+      <Heart :size="16" aria-hidden="true" />{{ $t('more.sponsor') }}
+    </RouterLink>
     <button
       v-if="openNotifications"
       type="button"
@@ -133,6 +142,9 @@ onBeforeUnmount(() => {
   background: var(--color-surface-1);
   transition: transform var(--duration-base) var(--ease-standard);
 }
+
+/* 首页首屏：浮在主视觉上 */
+.app-top-bar.is-over-hero { border-bottom-color: transparent; background: var(--theme-glass); }
 
 /* L5：收起时整体移出视口（含顶部安全区），焦点进入时立即恢复 */
 .app-top-bar.is-hidden { transform: translateY(-100%); }
@@ -174,6 +186,27 @@ onBeforeUnmount(() => {
   margin-inline-start: auto;
   color: var(--color-text-secondary);
 }
+
+.sponsor-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  min-height: var(--control-h-lg);
+  margin-inline-start: auto;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-full);
+  color: var(--color-accent-text);
+  font: var(--type-caption);
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.sponsor-link + .notification-bell,
+.sponsor-link + .account-link,
+.dev-notice + .sponsor-link { margin-inline-start: 0; }
+.sponsor-link:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 
 .notification-bell { position: relative; border: 0; background: transparent; cursor: pointer; }
 .notification-bell + .account-link { margin-inline-start: 0; }

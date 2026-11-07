@@ -349,7 +349,10 @@
       "DUPLICATE_OR_UNKNOWN_RECORDER": "Уже существует или автор реплея не определен",
       "REPLAY_HASH_CONFLICT": "Этот бой уже привязан к другому файлу реплея"
     },
-    "singleTab": "Одиночный бой"
+    "singleTab": "Одиночный бой",
+    "podium": "Тройка лучших",
+    "podiumRank": "{rank}-е место",
+    "heroTotal": "Записей"
   },
   "hofAdmin": {
     "login": "Переход ко входу…",
@@ -1150,10 +1153,7 @@
   },
   "home": {
     "sponsorCta": "Поддержать",
-    "takeItTitle": "Возьмите с собой. И поддержите.",
-    "androidTitle": "В кармане",
-    "androidDesc": "Та же платформа на Android: трёхмерный разбор, просмотр брони и Зал славы — вдали от компьютера.",
-    "sponsorDesc": "Без рекламы и подписок. Серверы и домены держатся на добровольной поддержке игроков.",
+    "sponsorDesc": "Без рекламы и подписок. Серверы и домен держатся на поддержке игроков.",
     "heroLine1": "Больше, чем разбор реплеев.",
     "heroLine2": "Площадка Blitz.",
     "heroSubtitle": "От трёхмерного разбора одного боя до общесерверного Зала славы, таблиц лиги и записей трансляций — платформа Blitz, созданная игроками: в вебе и на Android.",
@@ -1176,11 +1176,15 @@
     "replayDesc": "Загружайте .wotbreplay файлы и экспортируйте данные в Excel.",
     "highestDamageRecord": "Рекорд урона",
     "available": "Доступно",
-    "sponsorTitle": "Поддержать",
+    "sponsorTitle": "Поддержать WotbTools",
     "footer": "WoTBTools - инструмент сообщества, не официальный продукт Wargaming",
     "icpFiling": "闽ICP备2026036303号-1",
     "publicSecurityFiling": "闽公网安备35018202000555号",
-    "wargamingDisclaimer": "WotbTools — неофициальный проект, не связанный с Wargaming и не одобренный компанией."
+    "wargamingDisclaimer": "WotbTools — неофициальный проект, не связанный с Wargaming и не одобренный компанией.",
+    "feedbackDesc": "Нашли ошибку или есть идея? Напишите нам",
+    "calloutRicochet": "Рикошет",
+    "calloutPenetration": "Бронепробитие",
+    "calloutChance": "Шанс пробития"
   },
   "sponsor": {
     "eyebrow": "WOTBTOOLS · ПОДДЕРЖКА",
@@ -2028,5 +2032,12 @@
   "toast": {
     "copied": "Скопировано",
     "feedbackSent": "Отзыв отправлен, спасибо"
+  },
+  "more": {},
+  "tournament": {
+    "heroDescription": "Очки кланов по игровым дням и в сумме — по опубликованным результатам организатора"
+  },
+  "tankopedia": {
+    "heroCount": "Машин"
   }
 }

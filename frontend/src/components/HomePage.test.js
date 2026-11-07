@@ -83,20 +83,19 @@ describe('HomePage is a showcase, not a navigation surface', () => {
     wrapper.unmount()
   })
 
-  // Android 下载与赞助是转化动作，不是功能导航（侧边栏里也没有它们），所以它们在首页
-  // 有自己的版面，而不是页脚一行小字。
-  it('gives Android and sponsorship a section of their own on the web', () => {
+  // 赞助与反馈是转化 / 非功能入口（侧边栏里也没有它们），4.0 起提到首屏（Hero 内），不再是页脚一行小字或底部转化卡。
+  it('lifts sponsorship and feedback into the hero, and the old take-it section and footer are gone', () => {
     const wrapper = mountPage()
-    const take = wrapper.get('.home-take')
-    const ctas = take.findAll('.home-take-cta')
-    expect(ctas.map(c => c.attributes('href'))).toEqual(['/download/android', '/sponsor'])
-    expect(take.find('.home-take-phone img').exists()).toBe(true)
-    expect(wrapper.get('.home-take-grid').classes()).not.toContain('is-sponsor-only')
-    expect(wrapper.get('.home-footer-bar').findAll('a')).toHaveLength(0)
+    const hero = wrapper.get('[data-testid="home-hero"]')
+    expect(hero.get('[data-testid="home-sponsor"]').attributes('href')).toBe('/sponsor')
+    expect(hero.find('[data-testid="home-feedback"]').exists()).toBe(true)
+    for (const selector of ['.home-take', '.home-footer-bar', '.home-take-phone']) {
+      expect(wrapper.find(selector).exists(), selector).toBe(false)
+    }
     wrapper.unmount()
   })
 
-  it('opens in-app feedback from the footer instead of linking to an external site', async () => {
+  it('opens in-app feedback from the hero instead of linking to an external site', async () => {
     const openFeedback = vi.fn()
     const wrapper = mountPage(null, openFeedback)
     await wrapper.get('[data-testid="home-feedback"]').trigger('click')
@@ -109,20 +108,21 @@ describe('HomePage is a showcase, not a navigation surface', () => {
     const heroLink = wrapper.get('.home-hero a[href="/download/android"]')
     expect(heroLink.classes()).toContain('is-secondary')
     expect(heroLink.text()).toContain('android.nav')
-    // 底部转化卡保留：Hero 是快速入口，不是替换原有内容。
-    expect(wrapper.get('.home-take').find('a[href="/download/android"]').exists()).toBe(true)
+    expect(wrapper.findAll('a[href="/download/android"]')).toHaveLength(1)
     wrapper.unmount()
   })
 
-  it('omits the entire Android promo inside the Android app but keeps sponsorship', () => {
+  it('omits the Android download inside the Android app but keeps sponsorship', () => {
     platform.android = true
     const wrapper = mountPage()
     expect(wrapper.find('a[href="/download/android"]').exists()).toBe(false)
-    expect(wrapper.find('.home-take-phone').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('home.androidTitle')
-    expect(wrapper.findAll('.home-take-card')).toHaveLength(1)
-    expect(wrapper.get('.home-take-grid').classes()).toContain('is-sponsor-only')
-    expect(wrapper.get('.home-take-card.is-sponsor').find('a[href="/sponsor"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="home-sponsor"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('the kicker names the active seasonal theme', () => {
+    const wrapper = mountPage()
+    expect(wrapper.get('.home-hero-kicker').text()).toMatch(/^WOTBTOOLS · uiProfile\.(spring|summer|autumn|winter)$/)
     wrapper.unmount()
   })
 
@@ -131,7 +131,7 @@ describe('HomePage is a showcase, not a navigation surface', () => {
     const section = wrapper.get('.home-showcase')
     expect(section.findAll('a')).toHaveLength(0)
     expect(section.findAll('button')).toHaveLength(0)
-    expect(section.findAll('.home-shot').length).toBeGreaterThanOrEqual(4)
+    expect(section.findAll('.home-feature, .home-card').length).toBeGreaterThanOrEqual(4)
     wrapper.unmount()
   })
 
@@ -145,9 +145,7 @@ describe('HomePage is a showcase, not a navigation surface', () => {
 
   it('no destination is duplicated, counted by component not by href', () => {
     const wrapper = mountPage({ start: vi.fn(), openDirectory: vi.fn() })
-    // Android 下载在 Hero 与底部转化卡各有一个入口是有意的转化重复，不是功能导航重复；
-    // 其余目的地仍必须唯一。
-    const intentionalConversionDuplicates = new Set(['/download/android'])
+    const intentionalConversionDuplicates = new Set()
     const seen = new Map()
     const duplicated = []
     for (const href of hrefsOf(wrapper)) {
@@ -196,7 +194,7 @@ describe('HomePage is a showcase, not a navigation surface', () => {
 
   it('only the first showcase image loads eagerly; the rest stay lazy', () => {
     const wrapper = mountPage()
-    const imgs = wrapper.findAll('.home-shot-figure img')
+    const imgs = wrapper.findAll('.home-showcase img')
     expect(imgs.length).toBeGreaterThanOrEqual(4)
     expect(imgs[0].attributes('loading')).toBe('eager')
     expect(imgs.slice(1).every(img => img.attributes('loading') === 'lazy')).toBe(true)
