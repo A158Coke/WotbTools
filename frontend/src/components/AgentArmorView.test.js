@@ -70,7 +70,7 @@ beforeEach(() => {
   mocks.modules.mockReset().mockResolvedValue({ tanks: {} })
   mocks.fetch.mockResolvedValue({ shots })
   mocks.query.mockImplementation(async shot => ({ view: 'agent-armor', shot: String(shot.index), tank: String(shot.target_tank_id) }))
-  mocks.init.mockImplementation(options => { const scene = { destroy: vi.fn(), options, setPitchDeviceBonus: vi.fn(), setPitchDeviceAvailable: vi.fn(), setEquipmentOverride: vi.fn() }; scenes.push(scene); options.onLoadState({ state: 'ready' }); return scene })
+  mocks.init.mockImplementation(options => { const scene = { destroy: vi.fn(), setDistance: vi.fn(), options, setPitchDeviceBonus: vi.fn(), setPitchDeviceAvailable: vi.fn(), setEquipmentOverride: vi.fn() }; scenes.push(scene); options.onLoadState({ state: 'ready' }); return scene })
 })
 afterEach(() => {
   mounted.forEach(w => w.unmount()); mounted.length = 0
@@ -80,6 +80,29 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 describe('Armor recorded-shot navigation', () => {
+  it('距离快照只来自当前场景，滑杆不写路由，重建与错误态不保留旧读数', async () => {
+    const { wrapper, router } = await setup({ query: { view: 'agent-armor', tank: '1' } })
+    const hud = wrapper.getComponent(ArmorShotHud)
+    const state = { distance: 300, min: 3, max: 500, readOnly: false }
+    scenes[0].options.onDistanceChange(state)
+    await flushPromises()
+    expect(hud.props('distanceState')).toEqual(state)
+    const query = { ...router.currentRoute.value.query }
+    hud.vm.$emit('distance', 400)
+    expect(scenes[0].setDistance).toHaveBeenCalledWith(400)
+    expect(router.currentRoute.value.query).toEqual(query)
+    scenes[0].options.onLoadState({ state: 'error' })
+    await flushPromises()
+    expect(hud.props('distanceState')).toBeNull()
+    await router.replace({ query: { view: 'agent-armor', tank: '2' } })
+    await flushPromises()
+    scenes[0].options.onDistanceChange(state)
+    await flushPromises()
+    expect(wrapper.getComponent(ArmorShotHud).props('distanceState')).toBeNull()
+    scenes[1].options.onDistanceChange({ ...state, distance: 15 })
+    await flushPromises()
+    expect(wrapper.getComponent(ArmorShotHud).props('distanceState').distance).toBe(15)
+  })
   it('shows tank names and recorded facts, disposes the previous scene, and respects navigation bounds', async () => {
     const { wrapper, router } = await setup()
     const header = wrapper.get('[data-testid="armor-shot-header"]')

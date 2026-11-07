@@ -59,6 +59,10 @@
     --reading-measure: 72ch;
     --dialog-width: 600px;
     --column-panel-width: 440px;
+    --armor-shot-card-width: 20rem;
+    --armor-shot-card-compact-width: 17rem;
+    --armor-shot-icon-size: 28px;
+    --armor-shot-reading-width: 5rem;
     --column-panel-max-height: 680px;
     --shot-detail-width: 360px;
     /* 坦克百科：配置与参数的可读宽度、紧凑车型图及目录卡。 */

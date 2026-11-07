@@ -298,16 +298,15 @@ try {
         visible: pens(Array.from(document.querySelectorAll('[data-testid="hud-penetration"]'), b => b.textContent.replace(/\\s/g, ''))),
         buttons: Array.from(document.querySelectorAll('[data-testid^="hud-shell-"]'), b => {
           const box = b.getBoundingClientRect();
-          const number = b.querySelector('[data-testid="hud-penetration"]').getBoundingClientRect();
-          return { width: box.width, height: box.height, fits: number.left >= box.left && number.right <= box.right };
+          return { width: box.width, height: box.height };
         }),
         value: document.querySelector('#shell-select').value,
       }
     })()`)
     assert.ok(state.native.length > 0, 'native shell table populated')
     assert.deepEqual(state.hud, state.native, 'HUD shell pens match the native/judgment table')
-    assert.deepEqual(state.visible, state.hud, 'visible rounded penetration matches tooltip and native table')
-    assert.ok(state.buttons.every(b => b.width >= 43.5 && b.height >= 43.5 && b.fits), `shell values fit inside 44px touch targets: ${JSON.stringify(state.buttons)}`)
+    assert.deepEqual(state.visible, [state.hud[Number(state.value)]], 'only selected shell penetration is visible')
+    assert.ok(state.buttons.every(b => b.width >= 43.5 && b.height >= 43.5), `shell icons retain 44px touch targets: ${JSON.stringify(state.buttons)}`)
     return state
   }
   for (const scenario of [
@@ -329,10 +328,52 @@ try {
       return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
     })()`)
     await page.tap({ ...point, touch: false })
-    await page.waitForValue('document.querySelector("[data-testid=hud-shell-0]").textContent.trim()',
+    await page.waitForValue('document.querySelector("[data-testid=hud-penetration]").textContent.trim()',
       text => text === expected, { timeout: 5000, label: 'visible penetration follows calibration' })
     await assertHudMatchesNative()
   }
+  targetResponse = plainAmmo
+
+  // 实际 range 键盘输入改变相机；滚轮反向同步 HUD，不写路由。
+  const distanceAmmo = JSON.parse(JSON.stringify(plainAmmo))
+  distanceAmmo.configs.forEach(config => { config.shells = [{ ...config.shells[0], type: 'ap', type_id: 0, penetration: 300, penetration_far: 260 }] })
+  response = distanceAmmo
+  targetResponse = distanceAmmo
+  await page.goto(plainUrl + '&shell=0&eqcal=0')
+  await page.waitForValue('document.querySelector("[data-testid=hud-distance]")?.disabled', value => value === false,
+    { timeout: 30000, label: 'distance slider ready' })
+  const distanceQuery = await page.evaluate('location.search')
+  const originalView = await page.evaluate('window.__armorRicochet.info().view')
+  await page.evaluate('document.querySelector("[data-testid=hud-distance]").focus()')
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'End', code: 'End', windowsVirtualKeyCode: 35 })
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'End', code: 'End', windowsVirtualKeyCode: 35 })
+  await page.waitForValue('window.__armorRicochet.aimingState().cameraDistance', value => Math.abs(value - 500) < 0.01,
+    { timeout: 5000, label: 'range End moves camera to 500m' })
+  const farView = await page.evaluate('window.__armorRicochet.info().view')
+  assert.deepEqual(farView.target, originalView.target, 'range preserves orbit center')
+  for (let axis = 0; axis < 3; axis++) {
+    assert.ok(Math.abs((farView.position[axis] - farView.target[axis]) / farView.cameraDistance
+      - (originalView.position[axis] - originalView.target[axis]) / originalView.cameraDistance) < 1e-6, 'range preserves viewing direction')
+  }
+  assert.equal(await page.evaluate('document.querySelector("[data-testid=hud-distance]").value'), '500')
+  assert.equal(await page.evaluate('document.querySelector("[data-testid=hud-penetration]").textContent.trim()'), '260 mm')
+  const wheelPoint = await page.evaluate(`(() => { const r = document.querySelector('#canvas-container canvas').getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2}; })()`)
+  await send('Input.dispatchMouseEvent', { type: 'mouseWheel', ...wheelPoint, deltaX: 0, deltaY: -300 })
+  await page.waitForValue('Number(document.querySelector("[data-testid=hud-distance]").value)', value => value < 500,
+    { timeout: 5000, label: 'wheel updates range' })
+  await page.waitForValue('window.__armorRicochet.aimingState().cameraSettledMs', value => value > 600,
+    { timeout: 10000, label: 'wheel settles' })
+  const rangeState = await page.evaluate(`({camera:window.__armorRicochet.aimingState().cameraDistance,range:Number(document.querySelector('[data-testid=hud-distance]').value),pen:document.querySelector('[data-testid=hud-penetration]').textContent.trim()})`)
+  assert.equal(rangeState.range, Math.round(rangeState.camera))
+  assert.equal(rangeState.pen, Math.round(300 - 40 * Math.max(0, rangeState.range - 100) / 400) + ' mm')
+  await page.evaluate('document.querySelector("[data-testid=hud-distance]").focus()')
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Home', code: 'Home', windowsVirtualKeyCode: 36 })
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Home', code: 'Home', windowsVirtualKeyCode: 36 })
+  await page.waitForValue('window.__armorRicochet.aimingState().cameraDistance', value => Math.abs(value - 3) < 0.01,
+    { timeout: 5000, label: 'range Home moves camera to 3m' })
+  assert.equal(await page.evaluate('location.search'), distanceQuery, 'distance gestures never rewrite URL')
+  console.log('[shot-readiness] PASS: range keyboard 3–500m, wheel synchronization, real far penetration, stable URL')
+  response = ammo
   targetResponse = plainAmmo
 
   // Same tank type still does not make the victim's configuration authoritative
@@ -346,6 +387,7 @@ try {
   await page.waitForValue('document.querySelector("#traj-info")?.textContent', text => text?.includes(penetrationText), { timeout: 30000, label: 'same-tank replay judgment' })
   await assertShellTable(1, [200, 300])
   assert.equal(await page.evaluate('window.__armorRicochet.info().judgments'), 1)
+  assert.equal(await page.evaluate('document.querySelector("[data-testid=hud-distance]").disabled'), true, 'recorded distance is read-only')
   console.log('[shot-readiness] PASS: same-tank shot replay keeps shooter scfg and replay shell matching')
   // review 2026-10-13：脱靶（MISS）world 总览同样不得套 dolly-zoom 补偿——此前
   // worldOverviewMode 只在命中路径置位，MISS 在弹道标注后提前返回漏置 → 远距落点裁出视锥。
