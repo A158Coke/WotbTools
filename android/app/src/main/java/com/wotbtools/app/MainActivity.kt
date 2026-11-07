@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.os.CancellationSignal
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.DocumentsContract
 import android.provider.Settings
 import android.util.Log
@@ -124,6 +125,10 @@ class MainActivity : Activity() {
     private lateinit var runtimeView: GeckoView
     private lateinit var runtime: GeckoWebRuntime
     private var localServer: LocalRuntimeServer? = null
+    /** 冷启动 / 引擎恢复期间的 Native 首帧占位；可见性规则归 [StartupSurfaceState]。 */
+    private lateinit var startupSurface: View
+    private val startupSurfaceState = StartupSurfaceState()
+    private val startupStartedAt = SystemClock.elapsedRealtime()
     private lateinit var versionGateView: View
     private lateinit var runtimeErrorView: LinearLayout
     private lateinit var versionTitle: TextView
@@ -194,6 +199,7 @@ class MainActivity : Activity() {
         setContentView(R.layout.activity_main)
 
         runtimeView = findViewById(R.id.runtimeView)
+        startupSurface = findViewById(R.id.startupSurface)
         versionGateView = findViewById(R.id.versionGateView)
         runtimeErrorView = findViewById(R.id.runtimeErrorView)
         versionTitle = findViewById(R.id.versionTitle)
@@ -380,6 +386,20 @@ class MainActivity : Activity() {
             if (fullscreen) exitFullscreen()
             showRuntimeError(if (crashLoop) R.string.runtime_error_crash_title else R.string.runtime_error_title)
         }
+
+        /** 首个内容绘制：Web 侧已有可显示内容，移除 Native 启动面。 */
+        override fun onContentPainted() {
+            startupSurfaceState.contentPainted()
+            applyStartupSurface()
+            Log.d(TAG, "startup content painted elapsedMs=${SystemClock.elapsedRealtime() - startupStartedAt}")
+        }
+
+        /** paint reset / crash / kill 恢复：已绘制内容不再显示，重新由启动面接管。 */
+        override fun onContentUnavailable() {
+            startupSurfaceState.contentUnavailable()
+            applyStartupSurface()
+            Log.d(TAG, "startup content unavailable")
+        }
     }
 
     /** 无可用浏览器时同样阻断：宁可停在这一页，也不在引擎内加载非本机 origin。 */
@@ -464,6 +484,8 @@ class MainActivity : Activity() {
             showMandatoryUpdate(updateCoordinator.status)
             return
         }
+        startupSurfaceState.startLoading()
+        applyStartupSurface()
         hideAllGates()
         if (!ensureLocalServer()) {
             showRuntimeError(R.string.runtime_error_port_title)
@@ -484,6 +506,8 @@ class MainActivity : Activity() {
             return
         }
         hideAllGates()
+        startupSurfaceState.gateShown()
+        applyStartupSurface()
         runtimeErrorTitle.text = getString(titleRes)
         runtimeErrorDiagnostics.text = runtime.diagnostics()
         runtimeErrorView.visibility = View.VISIBLE
@@ -493,6 +517,8 @@ class MainActivity : Activity() {
     private fun showMandatoryUpdate(snapshot: UpdateCoordinator.Status) {
         if (fullscreen) runtime.exitFullScreen()
         hideAllGates()
+        startupSurfaceState.gateShown()
+        applyStartupSurface()
         versionGateView.visibility = View.VISIBLE
         versionTitle.text = getString(R.string.update_mandatory_title)
         versionMessage.text = getString(R.string.update_mandatory_message)
@@ -1142,11 +1168,16 @@ class MainActivity : Activity() {
      * 门禁视图（version/runtimeError）与 [runtimeView] 是根 FrameLayout 的**兄弟节点**，根容器必须保持
      * VISIBLE，否则子节点即便置为 VISIBLE 也不会绘制（父 GONE 连子一起隐藏）。因此这里只隐藏 GeckoView
      * 本身：门禁视图各自带不透明背景、按 XML 顺序绘制在 GeckoView 之上，足以完整接管画面。
+     * [startupSurface] 的可见性属于 [StartupSurfaceState]，不在这里隐式修改。
      */
     private fun hideAllGates() {
         versionGateView.visibility = View.GONE
         runtimeErrorView.visibility = View.GONE
         runtimeView.visibility = View.GONE
+    }
+
+    private fun applyStartupSurface() {
+        startupSurface.visibility = if (startupSurfaceState.visible) View.VISIBLE else View.GONE
     }
 
     /** Blob bytes already belong to Gecko: spool off the UI thread, never refetch the URL. */
