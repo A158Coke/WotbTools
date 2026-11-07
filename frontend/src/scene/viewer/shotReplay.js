@@ -4,6 +4,7 @@
 // 回放语义、镜像约定与判定接线保持原样（window.__world* 钩子契约不变）。
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { neutralizeDefaultMetalness } from '../glbRig.js'
 import { poseFromYPR } from '../glbRig.js'
 import { fetchTankData, fetchReplayShots, assetProvider } from '../agentData.js'
 import { mirrorShotData } from './viewerMath.js'
