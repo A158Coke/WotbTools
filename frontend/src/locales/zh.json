@@ -1088,7 +1088,12 @@
   },
   "admin": {
     "title": "用户管理",
-    "hint": "管理后台 - 只读 + 删除，不可修改用户信息。",
+    "hint": "不能修改用户信息。删除会同时移除 WotBTools 与 Keycloak 账号。",
+    "kicker": "管理 · 只读与删除",
+    "searchLabel": "搜索用户",
+    "deleteUser": "删除用户",
+    "deleteHint": "删除前需输入 DELETE 确认",
+    "listSection": "列表信息",
     "search": "搜索 keycloakUserId / displayName / wotbNickname / accountId",
     "searchBtn": "搜索",
     "loading": "加载中...",

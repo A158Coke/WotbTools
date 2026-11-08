@@ -79,7 +79,6 @@
     "src/components/MarkdownDocPage.vue",
     "src/components/MenuButton.vue",
     "src/components/MorePage.vue",
-    "src/components/PageHeader.vue",
     "src/components/PlaybackConsumableBadge.vue",
     "src/components/PlaybackControls.vue",
     "src/components/PlaybackDisplaySurface.vue",

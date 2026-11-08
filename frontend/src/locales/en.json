@@ -1088,7 +1088,12 @@
   },
   "admin": {
     "title": "User Management",
-    "hint": "Read-only + delete. Users cannot be modified.",
+    "hint": "User details cannot be edited. Deleting removes both the WotBTools and the Keycloak account.",
+    "kicker": "Admin · Read-only and delete",
+    "searchLabel": "Search users",
+    "deleteUser": "Delete user",
+    "deleteHint": "Type DELETE to confirm",
+    "listSection": "List entry",
     "search": "Search keycloakUserId / displayName / wotbNickname / accountId",
     "searchBtn": "Search",
     "loading": "Loading…",

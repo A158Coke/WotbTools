@@ -9,7 +9,16 @@ import { Feature } from '../app/featureCapabilities.js'
 import { apiErrorCodeLabel, apiErrorLabel } from '../utils/display.js'
 import { ApiError } from '../utils/http.js'
 import * as api from '../api/admin-users.js'
+import AppButton from './AppButton.vue'
 import AppDialog from './AppDialog.vue'
+import AdminBulkBar from './AdminBulkBar.vue'
+import AdminDangerZone from './AdminDangerZone.vue'
+import AdminDetailDrawer from './AdminDetailDrawer.vue'
+import AdminFilterBar from './AdminFilterBar.vue'
+import PageHeader from './PageHeader.vue'
+import SegmentedControl from './SegmentedControl.vue'
+import { isRowControlClick, rowOpenTarget } from './adminListRow'
+import './admin-list.css'
 
 const { t, te } = useI18n()
 const { show: showError } = useError()
@@ -26,10 +35,12 @@ const jumpPage = ref('')
 // segment=keycloak（Keycloak 权威）| segment=local（本地 user_profile 权威）。
 const segment = ref('keycloak')
 const idpAlias = ref('')
+// 详情抽屉：点行立即打开，先显示列表行自带的字段；Keycloak 仍存在的用户再补拉详情（detailUser）。
+// 删除只在抽屉底部（AdminDangerZone，输入 DELETE），目标就是抽屉里这一行。
+const detailRow = ref(null)
 const detailUser = ref(null)
-const showDetail = ref(false)
-const deleteUserId = ref(null)
-const deleteConfirmText = ref('')
+const detailReturnFocus = ref(null)
+const dangerZone = ref(null)
 const deleting = ref(false)
 const deleteResult = ref('')
 
@@ -188,19 +199,34 @@ function onSearch() {
   reloadFirstPage()
 }
 
-/** segment=keycloak|local：门禁不通过时把 select 的改动回滚成已应用值（data-applied-value）。 */
-function onSegmentChange(event) {
-  if (!requireAdminUsersOnline()) {
-    if (event?.target) event.target.value = event.target.dataset.appliedValue
-    return
-  }
-  // 已应用状态由事件携带的新值推进（select 是 server-backed，没有本地降级语义）。
-  segment.value = event?.target?.value ?? segment.value
+/**
+ * segment=keycloak|local：页头的受控分段（:model-value = 已应用状态）。门禁不通过时不推进已应用值，
+ * 分段仍显示上一次真正生效的数据源，绝不出现「显示本地资料、行还是 Keycloak」的假 applied 状态。
+ */
+function onSegmentChange(value) {
+  if (value === segment.value || !requireAdminUsersOnline()) return
+  segment.value = value
   if (segment.value !== 'keycloak') idpAlias.value = ''
   reloadFirstPage()
 }
 
+const segmentOptions = computed(() => [
+  { value: 'keycloak', label: t('admin.segmentKeycloak'), testid: 'admin-segment-keycloak', disabled: !adminAvailability.value.available },
+  { value: 'local', label: t('admin.segmentLocal'), testid: 'admin-segment-local', disabled: !adminAvailability.value.available },
+])
+
 function onIdpAliasChange() {
+  reloadFirstPage()
+}
+
+/** 小屏筛选 chip：只有 IdP 别名一项（数据源在页头，不算筛选）。 */
+const filterChips = computed(() => (segment.value === 'keycloak' && idpAlias.value.trim()
+  ? [{ key: 'idpAlias', label: `${t('admin.idpAlias')}: ${idpAlias.value.trim()}` }]
+  : []))
+
+function removeFilterChip(key) {
+  if (key !== 'idpAlias') return
+  idpAlias.value = ''
   reloadFirstPage()
 }
 
@@ -259,50 +285,87 @@ function toggleSelectAllPage(checked) {
   selectedIds.value = [...next]
 }
 
+/**
+ * 点行 / 行的打开按钮：抽屉立即打开并显示列表行字段；Keycloak 已删除的用户没有详情可拉，
+ * 抽屉只显示行字段与说明（删除仍可用，与原来「查看禁用、删除可用」一致）。
+ * 详情请求走门禁：非-online 时不发 adminGetUser。
+ */
+function openDetail(u, event) {
+  detailLoadGeneration += 1
+  detailReturnFocus.value = event ? rowOpenTarget(event) : null
+  detailRow.value = u
+  detailUser.value = null
+  deleteResult.value = ''
+  deleting.value = false
+  dangerZone.value?.reset()
+  if (!u.keycloakUserMissing) loadDetail(u)
+}
+
+function onRowClick(u, event) {
+  if (!isRowControlClick(event)) openDetail(u, event)
+}
+
 async function loadDetail(u) {
   if (!requireAdminUsersOnline()) return
   const generation = ++detailLoadGeneration
   try {
     const result = await api.adminGetUser(u.keycloakUserId)
-    if (generation === detailLoadGeneration) {
-      detailUser.value = result
-      showDetail.value = true
-    }
+    if (generation === detailLoadGeneration) detailUser.value = result
   } catch (e) {
     if (generation === detailLoadGeneration) showError(apiError(e))
   }
 }
 
 function closeDetail() {
+  // 删除请求在途时不关（与原确认框同一约定）：结果要能被看到，且不允许在途中换目标。
+  if (deleting.value) return
   detailLoadGeneration += 1
-  showDetail.value = false
+  detailRow.value = null
   detailUser.value = null
+  deleteResult.value = ''
 }
 
+let deleteCloseTimer = null
 onBeforeUnmount(() => {
   userLoadGeneration += 1
   detailLoadGeneration += 1
+  clearTimeout(deleteCloseTimer)
 })
 
-function startDelete(u) { deleteUserId.value = u.keycloakUserId; deleteConfirmText.value = ''; deleteResult.value = ''; deleting.value = false }
-function cancelDelete() { deleteUserId.value = null; deleteConfirmText.value = ''; deleteResult.value = '' }
-
 async function confirmDelete() {
-  // TOCTOU：删除对话框可以在「在线」时打开、在「离线」后才确认，所以判定必须放在
-  // 真正的 API boundary（而不是只放在 startDelete）；否则离线时仍会发出破坏性请求。
+  // TOCTOU：抽屉可以在「在线」时打开、在「离线」后才确认，所以判定必须放在
+  // 真正的 API boundary（而不是只放在打开抽屉时）；否则离线时仍会发出破坏性请求。
   if (!requireAdminUsersOnline()) return
+  const target = detailRow.value?.keycloakUserId
+  if (!target || deleteResult.value === 'DELETED') return
   deleting.value = true
   deleteResult.value = ''
   try {
-    const target = deleteUserId.value
     // 单条删除就是长度为 1 的列表：与多选删除走同一个端点。
     const res = await api.adminDeleteUsers([target], true)
     const item = (res?.results || []).find(r => r.userId === target)
     deleteResult.value = item?.deleted ? 'DELETED' : apiError({ code: item?.errorCode || 'UNKNOWN_ERROR' })
-    setTimeout(() => { cancelDelete(); loadUsers() }, 1200)
+    deleteCloseTimer = setTimeout(() => {
+      if (detailRow.value?.keycloakUserId === target) closeDetail()
+      loadUsers()
+    }, 1200)
   } catch (e) {
     deleteResult.value = apiError(e)
   } finally { deleting.value = false }
+}
+
+/** 行主列：展示名 → Keycloak 用户名 → Keycloak ID（Keycloak 数据源的用户通常没有本地展示名）。 */
+function rowName(u) {
+  return u.displayName || u.keycloakUsername || u.keycloakUserId || t('admin.unknownUser')
+}
+
+/** 绑定 / 状态徽标：Keycloak 已删除 > 无本地资料 > 未绑定游戏账号 > 已绑定。 */
+function rowState(u) {
+  if (u.keycloakUserMissing) return { label: t('admin.kcUserMissing'), tone: 'is-warning' }
+  if (!u.hasLocalProfile) return { label: t('admin.noLocalProfile'), tone: '' }
+  // 本地资料在登录时即创建；真正的「绑定」是游戏账号（wotbAccountId），与个人资料页同一判据
+  if (u.wotbAccountId == null) return { label: t('admin.unbound'), tone: '' }
+  return { label: t('admin.bound'), tone: 'is-success' }
 }
 
 // 批量删除：整批只弹一次确认，要求输入 DELETE（不逐条弹）。
@@ -353,89 +416,99 @@ function fmtTime(s) {
 </script>
 
 <template>
-  <div class="admin-page">
-    <h1 class="admin-title">{{ $t('admin.title') }}</h1>
-    <p class="admin-hint">{{ $t('admin.hint') }}</p>
+  <div class="admin-page admin-users">
+    <PageHeader :kicker="$t('admin.kicker')" :title="$t('admin.title')" :description="$t('admin.hint')">
+      <template #actions>
+        <SegmentedControl
+          :model-value="segment"
+          :options="segmentOptions"
+          :aria-label="$t('admin.segment')"
+          class="admin-segment"
+          @update:model-value="onSegmentChange"
+        />
+      </template>
+    </PageHeader>
 
     <!-- 非-online 的中性状态（不是错误态）：文案来自 capability 模型，四态各有措辞。
          已加载的列表 / 搜索条件 / 选择集一律保留，只是新的 ONLINE_REQUIRED 动作被挡住。 -->
     <p
       v-if="!adminAvailability.pending && !adminAvailability.available"
-      class="admin-connectivity"
+      class="admin-list-status"
       data-testid="admin-connectivity-unavailable"
     >{{ $t(adminAvailability.messageKey) }}</p>
 
-    <div class="admin-search">
-      <input v-model="searchQuery" :placeholder="$t('admin.search')" @keyup.enter="onSearch" />
-      <button type="button" class="admin-search-btn" :disabled="!adminAvailability.available" @click="onSearch">{{ $t('admin.searchBtn') }}</button>
-    </div>
-
-    <div class="admin-filters">
-      <label class="admin-filter">
-        <span>{{ $t('admin.segment') }}</span>
-        <!-- 受控 select（:value = 已应用状态）+ data-applied-value：门禁不通过时把改动回滚，
-             绝不出现「select 显示 local 但 rows 还是 keycloak」的假 applied 状态。 -->
-        <select
-          :value="segment"
-          :data-applied-value="segment"
-          :disabled="!adminAvailability.available"
-          @change="onSegmentChange"
-        >
-          <option value="keycloak">{{ $t('admin.segmentKeycloak') }}</option>
-          <option value="local">{{ $t('admin.segmentLocal') }}</option>
-        </select>
-      </label>
-      <label class="admin-filter">
+    <AdminFilterBar :chips="filterChips" @remove="removeFilterChip">
+      <template #search>
+        <input
+          v-model="searchQuery"
+          type="search"
+          class="admin-list-input admin-search-input"
+          data-testid="admin-search-input"
+          :aria-label="$t('admin.searchLabel')"
+          :placeholder="$t('admin.search')"
+          @keyup.enter="onSearch"
+        />
+      </template>
+      <label class="admin-list-field admin-idp-field">
         <span>{{ $t('admin.idpAlias') }}</span>
         <!-- idpAlias 是**草稿**输入：非-online 时允许继续编辑（回车不生效），不会被当成已应用条件。 -->
         <input
           v-model="idpAlias"
+          class="admin-list-input"
+          data-testid="admin-idp-input"
           :disabled="segment !== 'keycloak'"
           :placeholder="$t('admin.idpAliasPlaceholder')"
           @keyup.enter="onIdpAliasChange"
         />
       </label>
-      <p v-if="segment !== 'keycloak'" class="admin-muted admin-filter-hint">{{ $t('admin.idpAliasKeycloakOnly') }}</p>
-    </div>
+      <p v-if="segment !== 'keycloak'" class="admin-list-muted admin-filter-hint">{{ $t('admin.idpAliasKeycloakOnly') }}</p>
+      <template #actions>
+        <AppButton variant="primary" class="admin-search-btn" data-testid="admin-search-btn" :disabled="!adminAvailability.available" @click="onSearch">{{ $t('admin.searchBtn') }}</AppButton>
+      </template>
+    </AdminFilterBar>
 
-    <div v-if="selectedCount" class="admin-bulk-bar">
-      <span class="admin-selected">{{ $t('admin.selectedCount', { count: selectedCount }) }}</span>
-      <button class="btn-sm btn-danger" :disabled="!adminAvailability.available" @click="startBulkDelete">{{ $t('admin.bulkDelete') }}</button>
-      <button class="btn-sm" @click="clearSelection">{{ $t('admin.clearSelection') }}</button>
-    </div>
+    <AdminBulkBar v-if="selectedCount" :summary="$t('admin.selectedCount', { count: selectedCount })" :hint="$t('adminList.bulkScope')">
+      <AppButton variant="ghost" size="sm" data-testid="admin-clear-selection" @click="clearSelection">{{ $t('admin.clearSelection') }}</AppButton>
+      <AppButton variant="danger" size="sm" data-testid="admin-bulk-delete" :disabled="!adminAvailability.available" @click="startBulkDelete">{{ $t('admin.bulkDelete') }}</AppButton>
+    </AdminBulkBar>
 
-    <p v-if="loading" class="admin-muted">{{ $t('admin.loading') }}</p>
+    <p v-if="loading" class="admin-list-empty" role="status">{{ $t('admin.loading') }}</p>
 
-    <div v-if="!loading && users.length" class="admin-table-wrap">
-      <table class="admin-table">
+    <div v-if="!loading && users.length" class="admin-list-table-wrap">
+      <table class="admin-list-table admin-table">
         <thead>
           <tr>
             <th class="cell-check">
-              <label class="check-hit">
+              <label class="admin-list-check">
                 <input
                   type="checkbox"
                   :checked="allPageSelected"
                   :aria-label="$t('admin.selectAllPage')"
                   @change="toggleSelectAllPage($event.target.checked)"
                 />
+                <span class="admin-list-check-label" aria-hidden="true">{{ $t('admin.selectAllPage') }}</span>
               </label>
             </th>
-            <th>{{ $t('admin.colId') }}</th>
             <th>{{ $t('admin.colDisplayName') }}</th>
-            <th>{{ $t('admin.colKcUser') }}</th>
-            <th>{{ $t('admin.colKcId') }}</th>
-            <th>{{ $t('admin.colAccountId') }}</th>
             <th>{{ $t('admin.colNickname') }}</th>
             <th>{{ $t('admin.colServer') }}</th>
-            <th>{{ $t('admin.colCreated') }}</th>
+            <th class="is-num">{{ $t('admin.colAccountId') }}</th>
             <th>{{ $t('admin.colState') }}</th>
-            <th class="cell-actions">{{ $t('admin.colActions') }}</th>
+            <th>{{ $t('admin.colKcUser') }}</th>
+            <th>{{ $t('admin.colKcId') }}</th>
+            <th>{{ $t('admin.colCreated') }}</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="u in users" :key="u.keycloakUserId || u.profileId">
+          <tr
+            v-for="u in users"
+            :key="u.keycloakUserId || u.profileId"
+            class="is-clickable has-check"
+            :class="{ 'is-selected': selectedSet.has(u.keycloakUserId), 'is-active': detailRow === u }"
+            @click="onRowClick(u, $event)"
+          >
             <td class="cell-check">
-              <label class="check-hit">
+              <label class="admin-list-check">
                 <input
                   type="checkbox"
                   :checked="selectedSet.has(u.keycloakUserId)"
@@ -444,412 +517,210 @@ function fmtTime(s) {
                 />
               </label>
             </td>
-            <td>{{ u.profileId }}</td>
-            <td>{{ u.displayName }}</td>
-            <td>
-              <div class="cell-kc-user">{{ u.keycloakUsername || '—' }}</div>
-              <div class="cell-time">{{ u.keycloakEmail || '—' }}</div>
+            <td class="cell-primary">
+              <button type="button" class="admin-list-open" data-testid="admin-row-open" @click="openDetail(u, $event)">{{ rowName(u) }}</button>
             </td>
-            <td class="cell-mono cell-short">{{ u.keycloakUserId }}</td>
-            <td>{{ u.wotbAccountId ?? '—' }}</td>
-            <td>{{ u.wotbNickname || '—' }}</td>
-            <td>{{ u.wotbServer || '—' }}</td>
-            <td class="cell-time">{{ fmtTime(u.profileCreatedAt) }}</td>
-            <td>
-              <span v-if="u.keycloakUserMissing" class="badge badge-warn">{{ $t('admin.kcUserMissing') }}</span>
-              <span v-else-if="!u.hasLocalProfile" class="badge">{{ $t('admin.noLocalProfile') }}</span>
-              <!-- 本地资料在登录时即创建；真正的「绑定」是游戏账号（wotbAccountId），与个人资料页同一判据 -->
-              <span v-else-if="u.wotbAccountId == null" class="badge">{{ $t('admin.unbound') }}</span>
-              <span v-else class="cell-time">{{ $t('admin.bound') }}</span>
+            <td :data-label="$t('admin.colNickname')">{{ u.wotbNickname || '—' }}</td>
+            <td :data-label="$t('admin.colServer')">{{ u.wotbServer || '—' }}</td>
+            <td class="is-num" :data-label="$t('admin.colAccountId')">{{ u.wotbAccountId ?? '—' }}</td>
+            <td :data-label="$t('admin.colState')"><span class="admin-list-badge" :class="rowState(u).tone">{{ rowState(u).label }}</span></td>
+            <td :data-label="$t('admin.colKcUser')">
+              <span>{{ u.keycloakUsername || '—' }}</span>
+              <span class="admin-list-muted admin-kc-email">{{ u.keycloakEmail || '—' }}</span>
             </td>
-            <td class="cell-actions">
-              <button
-                type="button"
-                class="btn-sm"
-                :disabled="u.keycloakUserMissing || !adminAvailability.available"
-                :title="u.keycloakUserMissing ? $t('admin.detailUnavailable') : ''"
-                @click="loadDetail(u)"
-              >{{ $t('admin.view') }}</button>
-              <button type="button" class="btn-sm btn-danger" :disabled="!adminAvailability.available" @click="startDelete(u)">{{ $t('admin.delete') }}</button>
-            </td>
+            <td :data-label="$t('admin.colKcId')"><span class="admin-list-mono admin-list-truncate cell-mono">{{ u.keycloakUserId }}</span></td>
+            <td class="admin-list-muted" :data-label="$t('admin.colCreated')">{{ fmtTime(u.profileCreatedAt) || '—' }}</td>
           </tr>
         </tbody>
       </table>
     </div>
-    <p v-else-if="!loading" class="admin-muted">{{ $t('admin.empty') }}</p>
+    <p v-else-if="!loading" class="admin-list-empty">{{ $t('admin.empty') }}</p>
 
-    <div v-if="totalPages > 0" class="admin-pagination">
-      <button class="btn-sm admin-page-prev" :disabled="page <= 0 || !adminAvailability.available" @click="goPage(page - 1)">{{ $t('admin.prev') }}</button>
+    <div v-if="totalPages > 0" class="admin-list-pagination admin-pagination">
       <span class="admin-page-info">{{ $t('admin.pageInfo', { page: page + 1, total: totalPages, items: totalItems }) }}</span>
-      <span v-if="totalPages > 1" class="admin-page-jump">
-        <input
-          v-model="jumpPage"
-          type="number"
-          inputmode="numeric"
-          min="1"
-          :max="totalPages"
-          step="1"
-          :disabled="!adminAvailability.available"
-          :aria-label="$t('admin.jumpLabel')"
-          :placeholder="$t('admin.jumpPlaceholder')"
-          @keydown.enter.prevent="goJumpPage"
-        />
-        <button type="button" class="btn-sm admin-page-go" :disabled="!adminAvailability.available" @click="goJumpPage">{{ $t('admin.jumpGo') }}</button>
-      </span>
-      <button class="btn-sm admin-page-next" :disabled="page + 1 >= totalPages || !adminAvailability.available" @click="goPage(page + 1)">{{ $t('admin.next') }}</button>
-      <label class="admin-filter">
-        <span>{{ $t('admin.size') }}</span>
-        <!-- 受控 select（同 segment）：非-online 时回滚，避免「每页显示 50 但表格还是 25 条」。 -->
-        <select
-          :value="size"
-          :data-applied-value="size"
-          :disabled="!adminAvailability.available"
-          @change="onSizeChange"
-        >
-          <option :value="25">25</option>
-          <option :value="50">50</option>
-          <option :value="100">100</option>
-        </select>
-      </label>
-    </div>
-
-    <!-- 详情（AppDialog：焦点陷阱 / Esc / 关闭后焦点回到触发按钮） -->
-    <AppDialog :open="showDetail && !!detailUser" :title="$t('admin.detail')" class="admin-modal detail-modal" @close="closeDetail">
-      <div class="admin-detail">
-        <section v-if="detailUser?.profile" class="detail-section">
-          <h3 class="detail-heading">{{ $t('admin.profileSection') }}</h3>
-          <dl class="detail-list">
-            <div class="detail-row"><dt>{{ $t('admin.colId') }}</dt><dd>{{ detailUser.profile.id }}</dd></div>
-            <div class="detail-row"><dt>{{ $t('admin.colDisplayName') }}</dt><dd>{{ detailUser.profile.displayName }}</dd></div>
-            <div class="detail-row"><dt>{{ $t('admin.colAccountId') }}</dt><dd>{{ detailUser.profile.wotbAccountId }}</dd></div>
-            <div class="detail-row"><dt>{{ $t('admin.colNickname') }}</dt><dd>{{ detailUser.profile.wotbNickname }}</dd></div>
-            <div class="detail-row"><dt>{{ $t('admin.colServer') }}</dt><dd>{{ detailUser.profile.wotbServer }}</dd></div>
-            <div class="detail-row"><dt>{{ $t('admin.colCreated') }}</dt><dd>{{ fmtTime(detailUser.profile.createdAt) }}</dd></div>
-          </dl>
-        </section>
-        <section v-if="detailUser?.keycloak" class="detail-section">
-          <h3 class="detail-heading">{{ $t('admin.keycloak') }}</h3>
-          <dl class="detail-list">
-            <div class="detail-row"><dt>{{ $t('admin.colId') }}</dt><dd class="cell-mono">{{ detailUser.keycloak.id }}</dd></div>
-            <div class="detail-row"><dt>{{ $t('admin.username') }}</dt><dd>{{ detailUser.keycloak.username }}</dd></div>
-            <div class="detail-row"><dt>{{ $t('admin.email') }}</dt><dd>{{ detailUser.keycloak.email }}</dd></div>
-            <div class="detail-row"><dt>{{ $t('admin.enabled') }}</dt><dd>{{ detailUser.keycloak.enabled }}</dd></div>
-            <div v-for="fi in (detailUser.keycloak.federatedIdentities || [])" :key="fi.userId" class="detail-row">
-              <dt>{{ fi.identityProvider }}</dt>
-              <dd>{{ fi.userName }} ({{ fi.userId }})</dd>
-            </div>
-          </dl>
-        </section>
-        <p v-if="detailUser?.warnings?.length" class="admin-warn">{{ detailUser.warnings.map(warning => apiErrorLabel(t, te, { code: warning })).join(', ') }}</p>
-      </div>
-      <template #actions>
-        <button type="button" class="btn-sm" @click="closeDetail">{{ $t('admin.close') }}</button>
-      </template>
-    </AppDialog>
-
-    <!-- 单个删除确认（需输入 DELETE） -->
-    <AppDialog
-      :open="!!deleteUserId"
-      :title="$t('admin.confirmDelete')"
-      size="sm"
-      tone="danger"
-      class="admin-modal confirm-modal"
-      @close="!deleting && cancelDelete()"
-    >
-      <div class="admin-detail">
-        <p>{{ $t('admin.confirmText') }}</p>
-        <p class="admin-warn">{{ $t('admin.confirmWarn') }}</p>
-        <p v-if="deleteResult === 'DELETED'" class="admin-ok">{{ $t('admin.deleted') }}</p>
-        <p v-else-if="deleteResult" class="admin-error">{{ deleteResult }}</p>
-        <label v-else class="admin-confirm-field">
-          <span>{{ $t('admin.confirmInput') }}</span>
-          <input v-model="deleteConfirmText" :placeholder="$t('admin.deleteKeyword')" class="admin-confirm-input" />
+      <div class="admin-list-pagination-controls">
+        <AppButton size="sm" class="admin-page-prev" :disabled="page <= 0 || !adminAvailability.available" @click="goPage(page - 1)">{{ $t('admin.prev') }}</AppButton>
+        <AppButton size="sm" class="admin-page-next" :disabled="page + 1 >= totalPages || !adminAvailability.available" @click="goPage(page + 1)">{{ $t('admin.next') }}</AppButton>
+        <span v-if="totalPages > 1" class="admin-page-jump">
+          <input
+            v-model="jumpPage"
+            type="number"
+            inputmode="numeric"
+            min="1"
+            :max="totalPages"
+            step="1"
+            class="admin-list-input"
+            :disabled="!adminAvailability.available"
+            :aria-label="$t('admin.jumpLabel')"
+            :placeholder="$t('admin.jumpPlaceholder')"
+            @keydown.enter.prevent="goJumpPage"
+          />
+          <AppButton size="sm" class="admin-page-go" :disabled="!adminAvailability.available" @click="goJumpPage">{{ $t('admin.jumpGo') }}</AppButton>
+        </span>
+        <label>
+          <span>{{ $t('admin.size') }}</span>
+          <!-- 受控 select + data-applied-value：非-online 时回滚，避免「每页显示 50 但表格还是 25 条」。 -->
+          <select
+            class="admin-list-input admin-size-select"
+            :value="size"
+            :data-applied-value="size"
+            :disabled="!adminAvailability.available"
+            @change="onSizeChange"
+          >
+            <option :value="25">25</option>
+            <option :value="50">50</option>
+            <option :value="100">100</option>
+          </select>
         </label>
       </div>
-      <template #actions>
-        <button type="button" class="btn-sm" @click="cancelDelete">{{ $t('admin.cancel') }}</button>
-        <button type="button" class="btn-sm btn-danger" :disabled="deleteConfirmText !== 'DELETE' || deleting" @click="confirmDelete">
-          {{ deleting ? $t('admin.deleting') : $t('admin.delete') }}
-        </button>
-      </template>
-    </AppDialog>
+    </div>
 
-    <!-- 批量删除确认（整批只弹一次） -->
+    <!-- 详情抽屉（右侧 AppSheet：焦点陷阱 / Esc / 关闭后焦点回到该行的打开按钮）；删除在抽屉底部 -->
+    <AdminDetailDrawer :open="!!detailRow" :title="$t('admin.detail')" :return-focus-to="detailReturnFocus" class="admin-user-drawer" @close="closeDetail">
+      <template v-if="detailRow">
+        <div class="admin-user-identity">
+          <span class="admin-user-avatar" aria-hidden="true">{{ rowName(detailRow).slice(0, 1).toUpperCase() }}</span>
+          <div>
+            <strong class="admin-user-name">{{ rowName(detailRow) }}</strong>
+            <p class="admin-list-muted admin-user-state">{{ rowState(detailRow).label }}</p>
+          </div>
+        </div>
+        <p v-if="detailRow.keycloakUserMissing" class="admin-list-warn admin-detail-unavailable">{{ $t('admin.detailUnavailable') }}</p>
+        <section v-if="!detailUser" class="admin-list-section" data-testid="admin-detail-row">
+          <h3 class="admin-list-section-title">{{ $t('admin.listSection') }}</h3>
+          <dl class="admin-list-dl">
+            <dt>{{ $t('admin.colKcId') }}</dt><dd class="admin-list-mono">{{ detailRow.keycloakUserId || '—' }}</dd>
+            <dt>{{ $t('admin.username') }}</dt><dd>{{ detailRow.keycloakUsername || '—' }}</dd>
+            <dt>{{ $t('admin.email') }}</dt><dd>{{ detailRow.keycloakEmail || '—' }}</dd>
+            <dt>{{ $t('admin.colId') }}</dt><dd>{{ detailRow.profileId ?? '—' }}</dd>
+            <dt>{{ $t('admin.colAccountId') }}</dt><dd>{{ detailRow.wotbAccountId ?? '—' }}</dd>
+            <dt>{{ $t('admin.colNickname') }}</dt><dd>{{ detailRow.wotbNickname || '—' }}</dd>
+            <dt>{{ $t('admin.colServer') }}</dt><dd>{{ detailRow.wotbServer || '—' }}</dd>
+            <dt>{{ $t('admin.colCreated') }}</dt><dd>{{ fmtTime(detailRow.profileCreatedAt) || '—' }}</dd>
+          </dl>
+        </section>
+        <template v-else>
+          <section v-if="detailUser.profile" class="admin-list-section" data-testid="admin-detail-profile">
+            <h3 class="admin-list-section-title">{{ $t('admin.profileSection') }}</h3>
+            <dl class="admin-list-dl">
+              <dt>{{ $t('admin.colId') }}</dt><dd>{{ detailUser.profile.id }}</dd>
+              <dt>{{ $t('admin.colDisplayName') }}</dt><dd>{{ detailUser.profile.displayName }}</dd>
+              <dt>{{ $t('admin.colAccountId') }}</dt><dd>{{ detailUser.profile.wotbAccountId }}</dd>
+              <dt>{{ $t('admin.colNickname') }}</dt><dd>{{ detailUser.profile.wotbNickname }}</dd>
+              <dt>{{ $t('admin.colServer') }}</dt><dd>{{ detailUser.profile.wotbServer }}</dd>
+              <dt>{{ $t('admin.colCreated') }}</dt><dd>{{ fmtTime(detailUser.profile.createdAt) }}</dd>
+            </dl>
+          </section>
+          <section v-if="detailUser.keycloak" class="admin-list-section" data-testid="admin-detail-keycloak">
+            <h3 class="admin-list-section-title">{{ $t('admin.keycloak') }}</h3>
+            <dl class="admin-list-dl">
+              <dt>{{ $t('admin.colId') }}</dt><dd class="admin-list-mono">{{ detailUser.keycloak.id }}</dd>
+              <dt>{{ $t('admin.username') }}</dt><dd>{{ detailUser.keycloak.username }}</dd>
+              <dt>{{ $t('admin.email') }}</dt><dd>{{ detailUser.keycloak.email }}</dd>
+              <dt>{{ $t('admin.enabled') }}</dt><dd>{{ detailUser.keycloak.enabled }}</dd>
+              <template v-for="fi in (detailUser.keycloak.federatedIdentities || [])" :key="fi.userId">
+                <dt>{{ fi.identityProvider }}</dt>
+                <dd>{{ fi.userName }} ({{ fi.userId }})</dd>
+              </template>
+            </dl>
+          </section>
+          <p v-if="detailUser.warnings?.length" class="admin-list-warn">{{ detailUser.warnings.map(warning => apiErrorLabel(t, te, { code: warning })).join(', ') }}</p>
+        </template>
+      </template>
+      <template #footer>
+        <AdminDangerZone
+          ref="dangerZone"
+          :action-label="$t('admin.deleteUser')"
+          :confirm-label="deleting ? $t('admin.deleting') : $t('admin.delete')"
+          :hint="$t('admin.deleteHint')"
+          :message="`${$t('admin.confirmText')} ${$t('admin.confirmWarn')}`"
+          keyword="DELETE"
+          :keyword-label="$t('admin.confirmInput')"
+          :busy="deleting"
+          :disabled="!adminAvailability.available || deleteResult === 'DELETED'"
+          @confirm="confirmDelete"
+        >
+          <p v-if="deleteResult === 'DELETED'" class="admin-list-ok" role="status">{{ $t('admin.deleted') }}</p>
+          <p v-else-if="deleteResult" class="admin-list-error" role="alert">{{ deleteResult }}</p>
+        </AdminDangerZone>
+      </template>
+    </AdminDetailDrawer>
+
+    <!-- 批量删除确认（整批只弹一次，输入 DELETE） -->
     <AppDialog
       :open="showBulkConfirm"
       :title="$t('admin.bulkConfirmDelete')"
       size="sm"
       tone="danger"
-      class="admin-modal confirm-modal bulk-confirm-modal"
+      class="bulk-confirm-modal"
       @close="!bulkDeleting && cancelBulkDelete()"
     >
-      <div class="admin-detail">
+      <div class="admin-bulk-confirm">
         <p>{{ $t('admin.bulkConfirmText', { count: selectedCount }) }}</p>
-        <p class="admin-warn">{{ $t('admin.confirmWarn') }}</p>
+        <p class="admin-list-warn">{{ $t('admin.confirmWarn') }}</p>
         <template v-if="bulkResult">
-          <p class="admin-ok">{{ $t('admin.bulkSummary', { requested: bulkResult.requested, deleted: bulkResult.deleted, failed: bulkResult.failed }) }}</p>
+          <p class="admin-list-ok">{{ $t('admin.bulkSummary', { requested: bulkResult.requested, deleted: bulkResult.deleted, failed: bulkResult.failed }) }}</p>
           <div v-if="bulkResult.results?.some(r => !r.deleted)" class="bulk-failures">
-            <p class="admin-warn">{{ $t('admin.bulkFailures') }}</p>
+            <p class="admin-list-warn">{{ $t('admin.bulkFailures') }}</p>
             <ul>
-              <li v-for="item in bulkResult.results.filter(r => !r.deleted)" :key="item.userId" class="cell-mono">
+              <li v-for="item in bulkResult.results.filter(r => !r.deleted)" :key="item.userId" class="admin-list-mono">
                 {{ item.userId }} — {{ errorCodeLabel(item.errorCode) }}
               </li>
             </ul>
           </div>
         </template>
-        <label v-else class="admin-confirm-field">
+        <label v-else class="admin-list-field">
           <span>{{ $t('admin.confirmInput') }}</span>
-          <input v-model="bulkConfirmText" :placeholder="$t('admin.deleteKeyword')" class="admin-confirm-input" />
+          <input v-model="bulkConfirmText" :placeholder="$t('admin.deleteKeyword')" class="admin-list-input admin-confirm-input" autocomplete="off" />
         </label>
       </div>
       <template #actions>
-        <button type="button" class="btn-sm" @click="cancelBulkDelete">{{ bulkResult ? $t('admin.close') : $t('admin.cancel') }}</button>
-        <button
+        <AppButton variant="ghost" class="bulk-cancel" @click="cancelBulkDelete">{{ bulkResult ? $t('admin.close') : $t('admin.cancel') }}</AppButton>
+        <AppButton
           v-if="!bulkResult"
-          type="button"
-          class="btn-sm btn-danger"
+          variant="danger"
+          class="bulk-confirm"
           :disabled="bulkConfirmText !== 'DELETE' || bulkDeleting"
+          :loading="bulkDeleting"
           @click="confirmBulkDelete"
         >
           {{ bulkDeleting ? $t('admin.deleting') : $t('admin.bulkDelete') }}
-        </button>
+        </AppButton>
       </template>
     </AppDialog>
   </div>
 </template>
 
 <style scoped>
-/* 设计语言 token（docs/frontend/design-language.md）：本组件是用户管理页样式的唯一 owner，
- * 各主题不再覆盖内部元素，只通过语义 token 换色。 */
-.admin-page { padding-block: var(--space-6) var(--space-12); color: var(--color-text-primary); font: var(--type-body); }
-.admin-title { margin: 0 0 var(--space-1); color: var(--color-text-primary); font: var(--type-h1); }
-.admin-hint { margin: 0 0 var(--space-4); color: var(--color-text-secondary); }
-
-.admin-search { display: flex; gap: var(--space-2); margin-bottom: var(--space-4); }
-
-.admin-page input:not([type="checkbox"]),
-.admin-page select,
-.admin-confirm-input {
-  box-sizing: border-box;
-  min-width: 0;
-  min-height: var(--control-h-md);
-  padding: 0 var(--space-3);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-1);
-  color: var(--color-text-primary);
-  font: var(--type-body);
-}
-
-.admin-search input { flex: 1 1 auto; }
-
-.admin-search-btn {
-  flex: none;
-  min-height: var(--control-h-md);
-  padding: 0 var(--space-5);
-  border: 0;
-  border-radius: var(--radius-md);
-  background: var(--color-accent);
-  color: var(--color-on-accent);
-  font: var(--type-body);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.admin-filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
-.admin-filter { display: flex; align-items: center; gap: var(--space-2); color: var(--color-text-secondary); }
-.admin-filter input:disabled { cursor: not-allowed; opacity: .5; }
-.admin-filter-hint { margin: 0; padding: 0; text-align: left; }
-
-.admin-bulk-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-2);
-}
-
-.admin-selected { color: var(--color-text-primary); font-weight: 600; }
-
-/* 表格：容器横向滚动；操作列（查看 / 删除）吸附在右侧，手机上始终可达（审计 PG-10）。
- * isolation 建立局部层叠上下文，表头 / 操作列的 z-index 不参与全局竞争（§5） */
-.admin-table-wrap {
-  isolation: isolate;
-  overflow-x: auto;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-1);
-  box-shadow: var(--elevation-1);
-}
-
-.admin-table {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-  font: var(--type-body);
-  font-variant-numeric: tabular-nums;
-}
-
-.admin-table th,
-.admin-table td {
-  height: var(--row-h);
-  padding: 0 var(--space-3);
-  border-bottom: 1px solid var(--color-border-subtle);
-  text-align: left;
-  white-space: nowrap;
-}
-
-.admin-table th {
-  position: sticky;
-  top: 0;
-  z-index: var(--z-sticky);
-  background: var(--color-surface-2);
-  color: var(--color-text-secondary);
-  font: var(--type-caption);
-  font-weight: 600;
-}
-
-.admin-table td { background: var(--color-surface-1); color: var(--color-text-primary); }
-
-.cell-actions {
-  position: sticky;
-  right: 0;
-  z-index: var(--z-base);
-  border-left: 1px solid var(--color-border-subtle);
-}
-
-td.cell-actions > * + * { margin-left: var(--space-1); }
-
-/* 复选框：放大到控件尺寸 token，label 提供最小点击区域 */
-.cell-check { width: var(--hit-min); padding: 0; text-align: center; }
-
-.check-hit {
-  display: inline-grid;
-  place-items: center;
-  min-width: var(--hit-min);
-  min-height: var(--hit-min);
-  cursor: pointer;
-}
-
-.check-hit input {
-  inline-size: var(--control-check);
-  block-size: var(--control-check);
-  margin: 0;
-  accent-color: var(--color-accent);
-  cursor: pointer;
-}
-
-.cell-mono { font-family: var(--font-family-mono); font-size: var(--font-size-caption); }
-.cell-short { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
-.cell-time { color: var(--color-text-secondary); font-size: var(--font-size-caption); }
-
-.badge {
-  display: inline-block;
-  padding: 0 var(--space-2);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-full);
-  background: var(--color-surface-2);
-  color: var(--color-text-secondary);
-  font: var(--type-caption);
-}
-
-.badge-warn { border-color: var(--color-warning); color: var(--color-warning); }
-
-.admin-pagination { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-top: var(--space-3); }
-.admin-page-info { color: var(--color-text-secondary); }
-
-/* 直接跳页：输入框与 .btn-sm 同高，宽度按 3–5 位页码设计（含数字输入的步进箭头） */
+/* 列表模板的共享样式在 admin-list.css；这里只放用户管理页自己的布局。 */
+.admin-users { color: var(--color-text-primary); font: var(--type-body); }
+.admin-search-input { flex: 1 1 auto; }
+.admin-idp-field { min-width: var(--form-field-min); }
+.admin-filter-hint { margin: 0; }
+.admin-kc-email { display: block; }
 .admin-page-jump { display: inline-flex; align-items: center; gap: var(--space-2); }
 
-.admin-page-jump input {
-  inline-size: 5.5rem;
-  min-height: var(--control-h-sm);
-  padding: 0 var(--space-2);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-1);
-  color: var(--color-text-primary);
-  font: var(--type-body);
-  text-align: center;
-}
-
-.admin-page-jump input:disabled { cursor: not-allowed; opacity: .5; }
-.admin-page-jump input:focus-visible,
-.admin-page-jump .btn-sm:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-
-.btn-sm {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: var(--control-h-sm);
-  padding: 0 var(--space-3);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-1);
-  color: var(--color-text-primary);
-  font: var(--type-body);
-  cursor: pointer;
-}
-
-.btn-danger { border-color: var(--color-danger); color: var(--color-danger); }
-.btn-sm:disabled { cursor: not-allowed; opacity: .5; }
-.admin-search-btn:disabled { cursor: not-allowed; opacity: .5; }
-.admin-page select:disabled { cursor: not-allowed; opacity: .5; }
-
-.btn-sm:focus-visible,
-.admin-search-btn:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-
-@media (hover: hover) {
-  .admin-table tbody tr:hover td { background: var(--color-surface-2); }
-  .btn-sm:hover:not(:disabled) { background: var(--color-surface-2); }
-  .btn-danger:hover:not(:disabled) { background: color-mix(in oklab, var(--color-danger) 14%, var(--color-surface-1)); }
-  .admin-search-btn:hover { background: color-mix(in oklab, var(--color-accent) 88%, var(--color-text-primary)); }
-}
-
-/* 对话框内容（外壳由 AppDialog 负责） */
-.detail-section + .detail-section { margin-top: var(--space-4); }
-
-.detail-heading {
-  margin: 0 0 var(--space-2);
-  padding-bottom: var(--space-1);
-  border-bottom: 1px solid var(--color-border-subtle);
-  color: var(--color-text-primary);
-  font: var(--type-body);
-  font-weight: 600;
-}
-
-.detail-list { margin: 0; }
-.detail-row { display: flex; gap: var(--space-3); padding: var(--space-1) 0; }
-.detail-row dt { flex: none; min-width: 110px; color: var(--color-text-secondary); font-weight: 600; }
-.detail-row dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
-
-.admin-error { padding: var(--space-2) 0; color: var(--color-danger); }
-.admin-warn { color: var(--color-warning); }
-.admin-ok { color: var(--color-success); font-weight: 600; }
-.admin-muted { padding: var(--space-4) 0; color: var(--color-text-secondary); text-align: center; }
-
-/* 连通性中性提示：与 admin-muted 同一语气（不是 danger），只表达「现在拿不到远端数据」。 */
-.admin-connectivity {
-  margin: 0 0 var(--space-4);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-md);
+.admin-user-identity { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-5); }
+.admin-user-avatar {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: var(--control-h-lg);
+  height: var(--control-h-lg);
+  border-radius: var(--radius-full);
   background: var(--color-surface-2);
-  color: var(--color-text-secondary);
+  color: var(--color-accent-text);
+  font: var(--type-h3);
 }
+.admin-user-name { font: var(--type-h3); overflow-wrap: anywhere; }
+.admin-user-state { margin: 0; }
+.admin-detail-unavailable { margin: 0 0 var(--space-4); }
 
-.admin-confirm-field { display: grid; gap: var(--space-1); color: var(--color-text-secondary); }
-.admin-confirm-input { width: 100%; }
+.admin-bulk-confirm { display: grid; gap: var(--space-2); }
+.admin-bulk-confirm p { margin: 0; }
 .bulk-failures ul { margin: var(--space-1) 0 0; padding-left: var(--space-5); }
 
 @media (width < 768px) {
-  .admin-page { padding-block: var(--space-3) var(--space-10); }
-  .admin-filter { flex: 1 1 100%; }
-  .admin-filter :is(input, select) { flex: 1 1 auto; }
-  .detail-row { flex-direction: column; gap: 0; }
+  .admin-idp-field { min-width: 0; }
 }
 </style>

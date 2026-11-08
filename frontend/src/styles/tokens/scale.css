@@ -82,6 +82,8 @@
     --sidebar-w: 0px;
     /* 左侧导航抽屉宽度（L1）：小屏不超过视口 85%，留出可点的遮罩 */
     --nav-drawer-w: min(304px, 85dvw);
+    /* 右侧详情抽屉（管理列表模板）：大屏约 400px，手机铺满视口宽度 */
+    --detail-drawer-w: min(400px, 100dvw);
 
     /* 字号阶梯（§4），最小 12px。
      * 原子 token：font-size / line-height 只能引用 --font-size-* / --line-height-*；
