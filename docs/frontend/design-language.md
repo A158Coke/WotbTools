@@ -1,7 +1,7 @@
 # WotbTools Design Contract v1（设计语言）
 
 > 适用范围：`frontend/` 全部页面、Android GeckoView。
-> 本文件是视觉与交互规则的唯一 owner。token 数值以 `frontend/src/styles/tokens/` 为准，实现位置与页面现状见 [ui-system.md](ui-system.md) 和 [replay-workspace.md](replay-workspace.md)。规则与代码不一致时按代码核实：事实描述错了就修文档，规则被违反就修代码，不把文档对齐隐式扩大为产品改动。
+> 本文件是已批准生产界面的视觉与交互规则的唯一 owner。token 数值以 `frontend/src/styles/tokens/` 为准，实现位置与页面现状见 [ui-system.md](ui-system.md) 和 [replay-workspace.md](replay-workspace.md)。对已发布界面，事实描述错了就修文档，规则被违反就修代码；独立设计探索可提出有证据的规则修订，按 §0 的 `Contract Conflict` 流程处理，不因旧的审美条款直接阻止原型。
 
 ---
 

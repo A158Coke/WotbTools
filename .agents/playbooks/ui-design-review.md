@@ -61,7 +61,7 @@
 
 - Executor 只实施已批准范围的设计；复用现有组件和 semantic tokens。Glass、Spring、回放表现层动效均允许在设计中探索，但须分别证明对比度/性能、可中断性/Reduced Motion、Seek/暂停/事实一致性。
 - Review With Docs 检查实际 before/after 证据是否来自同一场景，且与计划和 `docs/frontend/design-language.md` 一致（或同一 PR 已明确更新 Contract）。不得把 Stylelint/CI 绿色当作视觉检查通过。
-- 对改动运行受影响的 `pnpm run lint:css`、`pnpm run typecheck`、Vitest 与浏览器遮挡/交互测试。不同浏览器、触摸、GeckoView、合成材质和动画的运行时差异要有外部证据；没有就 `UNVERIFIED`，不能给视觉/动效 PASS。
+- 对改动运行受影响的 `pnpm run lint:css`、`pnpm run typecheck`、Vitest 与浏览器遮挡/交互测试。不同浏览器、触摸、GeckoView、合成材质和动画的运行时差异要有外部证据；没有就 `UNVERIFIED`，不能给视觉/动效 PASS。`DC-ACC-02` 对 3D/回放场景的用户验收仍然有效：场景截图/录屏可作诊断或性能证据，但**不得替代用户对实际回放画面的验收**。
 - 对流畅度用浏览器 Performance trace/帧时间和代表性 Android 设备测量，先记录 baseline；不凭主观体验声称 FPS 改善。不得为通过测试而放宽已有无障碍/回放语义门禁。
 - 所有 UI 改动可回滚到前一组件/Token 状态；若设计变更需要公共 Contract 更新，作为同一计划的明确 Scope，禁止静默加入。
 

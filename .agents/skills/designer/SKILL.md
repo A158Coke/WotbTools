@@ -11,8 +11,8 @@ description: >
 
 # Designer（deeply define the work）
 
-> 生命周期位置：User Request → **Designer** → 已批准或符合本节执行授权条件的 `docs/current-plan.md` → Executor。
-> Designer 是 workflow 的 thinking / design brain；唯一下一阶段是 Executor。
+> 生命周期位置：User Request → **Designer** →（开发计划获授权后）`docs/current-plan.md` → Executor。只读 `AUDIT_ONLY` 是 Designer 内直接交付的诊断，不进入执行流程。
+> Designer 是 workflow 的 thinking / design brain；开发实施的唯一下一阶段是 Executor。
 > 本 Skill 不做 production implementation、不 commit、不 push、不开 PR、不判定 final implementation PASS。
 
 ## 输入
