@@ -822,7 +822,7 @@ describe('armor shell and readiness ownership', () => {
 // 本 describe 只保留**既有**的材质状态接线断言；同板去重的真实行为（stencil 抑制、
 // 背面屏等效厚度、resize 后仍带 stencil 附件）由 browser gate
 // `test:browser-armor-spaced-backside` 以真实 GPU readback 验证，不用源码正则冒充
-//（frontend/AGENTS.md Testing rules：source guard 只锁 dependency/API ownership）。
+//（source guard 只锁 dependency/API ownership）。
 describe('spaced armor surface selection', () => {
   const shaders = read('../scene/viewer/armorShaders.ts')
   const kernel = read('../scene/tankViewer.js')

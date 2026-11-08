@@ -265,15 +265,15 @@ rg -n '@Autowired(?:\s*\([^)]*\))?\s+(?:(?:private|protected|public)\s+)?[^(){}\
 |---|---|
 | 用户可见界面 / 交互 / 导航 / i18n | 对应 `docs/frontend/**` 或专题文档 |
 | 导出 / 数据列 / 数据来源 | `docs/DEVELOPER_GUIDE.md`、对应数据/导出专题文档 |
-| 构建 / 部署 / 运维 / 配置 | `docs/DEVELOPER_GUIDE.md`、`docs/operations/**`、目录 `AGENTS.md` |
+| 构建 / 部署 / 运维 / 配置 | `docs/DEVELOPER_GUIDE.md`、`docs/operations/**` |
 | HTTP/API wire contract | `contracts/http/openapi.yaml` 及其 canonical 说明 |
 | 认证 / 身份 / 权限 | 对应 auth / Keycloak 文档 |
 | Android runtime / 发布契约 | `docs/android/**`，版本门槛归 `docs/android/release-process.md` |
-| 仓库工作流 / lifecycle / Skill | `AGENTS.md`、`.agents/AGENTS.md`、`.agents/skills/**`、`.agents/playbooks/**` |
+| 仓库工作流 / lifecycle / Skill | `.agents/skills/**`、`.agents/playbooks/**` |
 
 映射结果为「无需更新」时必须给出具体理由；遗漏对应 canonical owner → BLOCKER。
 
-文档分层、例外边界、future-only 处理与存量偏差过渡的唯一正文在 `docs/README.md`「文档分层与权威归属」；语言规范、current-plan 门禁与 archive 禁令的 BLOCKER 正文在 `.agents/AGENTS.md` 规则 3「文档生命周期与权威归属」。本 gate 按二者逐项复核 candidate，任一不满足 → BLOCKER，不在此复制第二套清单。
+文档分层、例外边界、future-only 处理与存量偏差过渡的唯一正文在 `docs/README.md`「文档分层与权威归属」；语言规范、current-plan 门禁与 archive 禁令的 BLOCKER 正文以该节与 `scripts/ci/check-repository-hygiene.sh` 为准。本 gate 按二者逐项复核 candidate，任一不满足 → BLOCKER，不在此复制第二套清单。
 
 ### A4. AI dead/speculative code
 

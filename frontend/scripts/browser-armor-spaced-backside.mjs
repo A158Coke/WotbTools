@@ -2,7 +2,7 @@
  * 间隙甲厚度通道门禁（真实 GPU readback；review P1 + review P2，2026-11-06）。
  *
  * 不变量全部是**真实装配 + 编译后 shader 的像素输出**，happy-dom / 正则 /
- * CPU 镜像都替代不了（frontend/AGENTS.md Testing rules：source guard 只锁
+ * CPU 镜像都替代不了（source guard 只锁
  * dependency/API ownership）：
  *
  * 1. 同板去重（stencil）：开放壳体（缺一面盒体）经**真实 `populateSpacedArmorScene`**

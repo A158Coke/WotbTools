@@ -10,8 +10,7 @@
  *
  * 为什么是 JS 度量而不是 CSS `calc(100dvh - …)`：全屏进出（fullscreenchange）与移动端
  * 视口条（visualViewport）都会改变几何，且回放系布局统一用 ResizeObserver + 视口事件
- * 度量（Replay3DPane.measurePresentationBounds 同一家族）；`100vh/100vw` 族是
- * frontend AGENTS.md 的禁用模式。
+ * 度量（Replay3DPane.measurePresentationBounds 同一家族）；`100vh/100vw` 族不可用。
  */
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 

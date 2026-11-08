@@ -603,7 +603,7 @@ export function lastPoseIndexAtOrBefore(track: { t: number[] } | undefined, t: n
 
 /**
  * prop2 u16 → 炮塔相对偏航（度）：`u16 · 360 / 65536 − 180`——WotbTools 已证明的 canonical 编码
- * （`docs/research/replay/turret-direction.md`，java/AGENTS.md「勿改编码常量」）。上游把低 6 位解释为
+ * （`docs/research/replay/turret-direction.md`）。上游把低 6 位解释为
  * 俯仰比例、只取高 10 位；两者相差 ≤ 0.35°，canonical 保持旧口径不静默改变。
  */
 export function prop2RelYawDeg(raw: number): number {

@@ -10,7 +10,7 @@ import java.util.List;
  * 投影成本结构；服务端只做结构校验，再由 {@link ClientAiProjectionAdapter} 装配成内存中的 canonical 事件流。
  * 所有时钟为原始回放时钟（秒）。只含参战实体。</p>
  *
- * <p>additive 字段的兼容**只经读取边界显式登记**获得（.agents/AGENTS.md §5a「旧 artifact 兼容只放
+ * <p>additive 字段的兼容**只经读取边界显式登记**获得（「旧 artifact 兼容只放
  * 读取边界」）：本 record 与其嵌套 record 显式登记新成员（如 `hpState`），并在
  * `contracts/http/openapi.yaml` 同步登记；`ReplayFactsCodec.PROJECTION_MAPPER` 保持
  * `FAIL_ON_UNKNOWN_PROPERTIES`——**未登记字段一律 fail-closed**（与各 schema 的

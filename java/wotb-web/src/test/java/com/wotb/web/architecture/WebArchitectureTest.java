@@ -26,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
- * wotb-web 架构契约（对应 {@code java/AGENTS.md} 与 {@code docs/DEVELOPER_GUIDE.md}）：
+ * wotb-web 架构契约（对应 {@code docs/DEVELOPER_GUIDE.md}）：
  * domain 分包（禁止层分包）、Controller→Service→Repository 分层、Service 不得跨域调 Repository、
  * 构造器注入（禁字段注入）、禁 Lombok；模块依赖与循环由 Modulith 验证。
  */

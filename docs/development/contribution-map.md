@@ -1,16 +1,12 @@
 # Contribution Map
 
-> 想接功能、改接口、补体验时，先用这张地图判断入口归属。具体代码仍以当前实现和各目录 `AGENTS.md` 为准。
+> 想接功能、改接口、补体验时，先用这张地图判断入口归属。具体代码仍以当前实现为准。
 
 ## Start before coding
 
 | 入口 | 用途 |
 |---|---|
-| `../../.agents/AGENTS.md` | 仓库级接手方法、计划/验证/文档同步规则 |
 | `../DEVELOPER_GUIDE.md` | 环境、模块、构建、运行方式总入口 |
-| `../../contracts/AGENTS.md` | HTTP 契约、生成代码、fixture 与 schema drift 规则 |
-| `../../java/AGENTS.md` | 后端分层、测试、Flyway、HTTP contract 规则 |
-| `../../frontend/AGENTS.md` | Vue 路由、API、状态、i18n、UI 验证规则 |
 
 ## New feature entry points
 

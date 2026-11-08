@@ -222,8 +222,7 @@ suite。PR CI 是完整验证入口。changed-file tests 通过后进入 Phase 6
 
 - **Git**：继续当前 branch / 当前 PR；不自动新建 branch、不自动开 PR（除非用户明确要求）。
   保护用户未提交修改：禁止 `git reset --hard` / `git checkout .` / `git clean -fd`。
-  是否自动 commit/push 遵循现有 DSH workflow 约定：`review-with-docs` PASS 后才 commit/push；
-  见 `.agents/AGENTS.md`。
+  是否自动 commit/push 遵循现有 DSH workflow 约定：`review-with-docs` PASS 后才 commit/push。
   **省时优化**：处于已存在 PR branch 的 repair 流程中，changed-file tests 通过后直接进入
   `review-with-docs` final gate；PASS 后立即 commit + push（让 CI 与本地测试并行），
   不先 push 后 review。push 后由 CI 完成 repository validation，发现新问题追加 commit 再 push——

@@ -140,7 +140,7 @@ jobs:
             script: test:browser-armor-aiming
           # 间隙甲厚度通道「背面开放板」等效厚度（真实 GPU readback）：SPACED_FRAG 的
           # BackSide clone 必须按 FLIP_SIDED 翻回几何法线，20mm 背面屏 R=0.1（回归值 100000）。
-          # 该不变量的行为证据在浏览器里，不在源码正则里（frontend/AGENTS.md Testing rules）。
+          # 该不变量的行为证据在浏览器里，不在源码正则里。
           - label: Armor viewer spaced backside thickness
             script: test:browser-armor-spaced-backside
           - label: Creator recommendations

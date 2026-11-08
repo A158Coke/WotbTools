@@ -26,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 客户端投影读取边界的 {@code hpState} 契约（{@code .agents/AGENTS.md} §5a「旧 artifact 兼容只放
+ * 客户端投影读取边界的 {@code hpState} 契约（「旧 artifact 兼容只放
  * 读取边界」）：**有效枚举值 = 权威分类**；**字段缺省 = legacy 现算**；**显式 {@code null} = 边界拒绝**；
  * **未登记 wire 值 = 校验拒绝**。additive 字段的兼容不靠"忽略未知字段"获得（{@code
  * PROJECTION_MAPPER} 保持 {@code FAIL_ON_UNKNOWN_PROPERTIES}），而是靠 DTO/契约显式登记。

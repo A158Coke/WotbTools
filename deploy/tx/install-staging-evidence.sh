@@ -56,7 +56,7 @@ name="${source_file##*/}"
 dest="$dest_dir/$name"
 exec 9>"$lock_file"
 flock -w "$wait_secs" 9 \
-  || fail "timed out after ${wait_secs}s waiting for $lock_file (holder diagnostics: .agents/AGENTS.md §TX host lock)"
+  || fail "timed out after ${wait_secs}s waiting for $lock_file (holder diagnostics: deploy/tx/with-deploy-lock.sh)"
 # 取到锁 = 换树已收尾（本进程不会撞上 swap 中间态）：此刻目录仍缺才是宿主真的未就绪。
 [ -d "$dest_dir" ] || fail "served destination directory is missing after acquiring the lock: $dest_dir"
 # 不得把被服务的产物当作可删除的中转文件（包括硬链接别名）。

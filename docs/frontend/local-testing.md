@@ -3,9 +3,7 @@
 在本机把 WotbTools 跑成"可测状态"的完整手册：Agent 引擎产物、资产面、认证门禁、
 自检探针、常见故障、自动化门禁。改动前端/场景/回放前先按 §0 起环境，交付前跑 §8 的相关门禁。
 
-相关文档：[`local-production-dev.md`](local-production-dev.md)（连接生产后端与 Keycloak 链路）、
-[`../../frontend/AGENTS.md`](../../frontend/AGENTS.md)（前端硬规则）、
-[`../../.agents/AGENTS.md`](../../.agents/AGENTS.md)（仓库级规则，含 §视觉验证归属）。
+相关文档：[`local-production-dev.md`](local-production-dev.md)（连接生产后端与 Keycloak 链路）。
 
 ## 0. TL;DR（最短路径）
 
@@ -246,8 +244,8 @@ Keycloak 配置是硬编码的生产（`auth.wotbtools.com` / realm `wotbtools` 
 
 - 先跑与改动直接相关的：`pnpm exec vitest run <related-test-files>`；多文件 feature 再跑对应 suite；
   全量 `pnpm test`。不因小改动重复跑全量测试或 build。
-- 浏览器门禁（真实 Chrome；**完整清单以 [`../../frontend/AGENTS.md`](../../frontend/AGENTS.md)
-  §Testing rules 为权威**，新增 gate 随其特性一起落地；改对应代码时保持通过）：
+- 浏览器门禁（真实 Chrome；**完整清单以 [`../../frontend/package.json`](../../frontend/package.json)
+  的 `test:browser-*` scripts 与 `../../frontend/scripts/` 下的 gate 脚本为权威**，新增 gate 随其特性一起落地；改对应代码时保持通过）：
   - `pnpm run test:browser-layout` —— Playback 布局（PC / tablet / mobile 实际 CSS geometry 与 form isolation）；
   - `pnpm run test:browser-interaction` —— 交互（hit target、pointer-events、capability 切换、认证门禁、播放控件）。
   - `pnpm run test:browser-armor-mobile` —— 装甲页三档布局与触控；选车弹窗与坦克百科共用 `TankCatalogMenu`，门禁通过真实名册响应覆盖共 121 张卡片（共享增量列表首屏 48，滚轮/哨兵/加载更多续页），在 Showcase / Classic 检查图片框、车型名和元数据不裁切、首末车型名实际可命中、内部滚动不带动外层页面、真实关闭按钮点击与弹窗关闭状态；手机上检查搜索框与筛选入口 44px、筛选 chips 打开 sheet 后四个筛选控件可用，并覆盖 4K、筛选和视口扩大时的名册补齐。夹具只验证图片框几何，不证明真实缩略图加载或 3D 视觉效果。不带参数时跑完整 28 个场景；CI 用 `--shard 1/3`、`--shard 2/3`、`--shard 3/3` 分三片并行，本地可写 `pnpm run test:browser-armor-mobile -- --shard 1/3 [场景名]`，先按名过滤再分片，分片参数非法时直接失败。
@@ -298,7 +296,7 @@ macOS 可指定 `CHROME_BIN='/Applications/Google Chrome.app/Contents/MacOS/Goog
 ## 9. 边界（必读）
 
 - **视觉验收归用户**：agent 不驱动浏览器看 3D 画面、不以截图作验收证据；本 runbook 的探针都是
-  协议/控制台级。见 [`../../.agents/AGENTS.md`](../../.agents/AGENTS.md) §视觉验证归属。
+  协议/控制台级。
 - **不提交**：`common/assets/wasm/`、Agent 仓 `release/asset_pack/`。
 - **生产远端模式**（`dev:production-remote`）只使用明确获准的账号与数据，不上传测试或敏感数据。
 

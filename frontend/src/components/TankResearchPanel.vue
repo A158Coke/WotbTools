@@ -73,7 +73,7 @@ const gridStyle = computed(() => ({
 
 /** 研发图按自然尺寸渲染（96×64 节点 / 136×97 pitch）：容器 .tr-scroll 负责滚动。
  * 不做整图 `transform: scale()`——缩放会把节点文字和 44px 触控目标一起缩小，窄屏上
- * 无法阅读/点击（frontend/AGENTS.md 明确禁止整图 scale 作为布局手段）。 */
+ * 无法阅读/点击（整图 scale 不是合法布局手段）。 */
 const gridW = computed(() => (layout.value?.columns || 0) * PITCH_X)
 const canvasW = computed(() => NODE_W + TRUNK_W + gridW.value)
 const gridH = computed(() => (layout.value?.rows || 0) * PITCH_Y)

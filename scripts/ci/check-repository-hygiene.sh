@@ -98,7 +98,7 @@ is_forbidden_path() {
   esac
 }
 
-# Lifecycle rule (.agents/AGENTS.md document lifecycle): Git history is the
+# Lifecycle rule (document lifecycle): Git history is the
 # archive. History-parking directories are banned outright, in the tracked tree
 # and in any commit tree introduced by the event range.
 is_history_parking_path() {
@@ -113,7 +113,7 @@ is_history_parking_path() {
   esac
 }
 
-# Lifecycle-plan reference gate (.agents/AGENTS.md current-plan 门禁): permanent
+# Lifecycle-plan reference gate: permanent
 # source/config/docs must not cite docs/current-plan.md as an authority. The
 # allowlist is structural, by path role, never by content: lifecycle
 # skills/playbooks, the guard workflows and the governance docs own the
@@ -122,7 +122,7 @@ is_history_parking_path() {
 is_current_plan_allowlisted() {
   local path="$1"
   case "$path" in
-    .gitignore|AGENTS.md|docs/README.md|docs/current-plan.md|scripts/ci/check-repository-hygiene.sh|scripts/ci/test-repository-hygiene.sh|.agents/*|.github/workflows/ci-gate.yml|.github/workflows/repository-hygiene-main.yml|*/db/migration/*)
+    .gitignore|docs/README.md|docs/current-plan.md|scripts/ci/check-repository-hygiene.sh|scripts/ci/test-repository-hygiene.sh|.agents/*|.github/workflows/ci-gate.yml|.github/workflows/repository-hygiene-main.yml|*/db/migration/*)
       return 0
       ;;
     *)

@@ -7,7 +7,7 @@ import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
  *
  * 为什么必须是真实浏览器：reduce 下「动画没跑」不是源码里有没有 animation 字符串，
  * 而是媒体查询命中后 computed animation/transition 是否归零、hover 是否真的不产生
- * transform。happy-dom / 正则源码断言看不到媒体查询与真实层叠（frontend/AGENTS.md）。
+ * transform。happy-dom / 正则源码断言看不到媒体查询与真实层叠。
  *
  * 复用 browser-page.mjs（CDP 页面壳）与 fixture-server.mjs（真实 Vite 应用 + auth stub），
  * 不另起浏览器框架；只替换 /api/hof 为确定性的空页，避免首页数据带请求真实后端。

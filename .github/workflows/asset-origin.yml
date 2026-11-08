@@ -21,7 +21,7 @@ name: Asset Origin Source Mirror
 #
 # `infra/komodo/resources/asset-origin.toml` is the single reviewed exception to
 # the rule that the declarative resource tree is owned by no production workflow:
-# it is an input of this source-transport gate only (see .github/AGENTS.md).
+# it is an input of this source-transport gate only.
 on:
   push:
     branches: [main]
