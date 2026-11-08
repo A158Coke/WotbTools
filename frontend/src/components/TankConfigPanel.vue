@@ -1032,8 +1032,8 @@ const camoBonusParts = computed(() => {
     justify-self: end;
     align-self: center;
   }
-  /* 装备矩阵在窄屏吃掉等级标签列：标签收窄为图标宽度，槽位保持两候选并排 */
-  .tp-dev-matrix { gap: var(--space-1) calc(var(--space-1) / 2); }
+  /* 装备矩阵 3 行 × 3 类共 9 对候选：组内 2px、组间 12px，避免六列糊成一片 */
+  .tp-dev-matrix { gap: var(--space-2) var(--space-3); }
   /* 极窄屏两个 44px 候选放不进同一槽位时自动改为纵向排列，避免 44px 触控目标互相覆盖 */
   .tp-dev-slot { grid-template-columns: repeat(auto-fit, minmax(var(--hit-min-comfortable), 1fr)); gap: calc(var(--space-1) / 2); }
   .tp-dev-btn { min-inline-size: var(--hit-min-comfortable); min-block-size: var(--hit-min-comfortable); padding: 2px; }

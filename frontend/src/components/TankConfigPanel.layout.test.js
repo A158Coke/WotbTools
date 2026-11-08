@@ -18,6 +18,12 @@ describe('TankConfigPanel mobile module layout', () => {
     expect(source).toMatch(/@media \(width < 768px\)[\s\S]*?\.tp-module-groups \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/)
   })
 
+  it('手机装备矩阵按 9 对候选分组：组内 2px、组间 12px 留白', () => {
+    const mobile = source.slice(source.indexOf('@media (width < 768px)'))
+    expect(mobile).toMatch(/\.tp-dev-matrix \{ gap: var\(--space-2\) var\(--space-3\); \}/)
+    expect(mobile).toMatch(/\.tp-dev-slot \{[^}]*gap: calc\(var\(--space-1\) \/ 2\);/)
+  })
+
   it('手机模块卡片紧凑但仍保留 44px 触控高度，装备与补给不小于 44px', () => {
     const mobile = source.slice(source.indexOf('@media (width < 768px)'))
     expect(mobile).toMatch(/\.tp-module-tile \{[\s\S]*?min-block-size: var\(--hit-min-comfortable\);/)

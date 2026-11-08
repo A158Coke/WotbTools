@@ -854,6 +854,11 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
 
   it('装备点击写 ?dev= 并实时改参数；再点卸下', async () => {
     const { wrapper, router } = await mountAt({ tank: '999' })
+    // 装备矩阵是 3 行 × 3 类 = 9 对候选：每对两个候选，组间留白由 .tp-dev-matrix 列间距表达。
+    const slots = wrapper.findAll('.tp-dev-slot')
+    expect(slots).toHaveLength(9)
+    expect(slots.every(slot => slot.findAll('.tp-dev-btn').length === 2)).toBe(true)
+    expect(wrapper.findAll('.tp-dev-btn')).toHaveLength(18)
     await wrapper.find('[data-testid="tank-device-1-defence-1"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query.dev).toBe('----1')
