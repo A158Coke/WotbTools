@@ -407,23 +407,36 @@ class GiteeMainSyncTest(unittest.TestCase):
             env = {**os.environ, "SOURCE_SHA": sha, "GITEE_TOKEN": "fixture-token",
                    "GITEE_USERNAME": "fixture", "GITEE_REPO_URL": target.resolve().as_uri(),
                    "RUNNER_TEMP": str(base), "CASE": case, "RACE_SHA": race,
-                   "TARGET_DIR": str(target), "FIXTURE_ROOT": str(base),
-                   "GITEE_RETRY_BACKOFF_SECONDS": "0 0"}
+                   "TARGET_DIR": str(target), "FIXTURE_ROOT": str(base)}
+            # sleep 不真实等待：只记录退避参数，并推进 $SECONDS 让重试预算可被确定性地耗尽。
             shim = r'''
+sleep() { echo "$1" >> "$FIXTURE_ROOT/sleeps"; SECONDS=$((SECONDS + $1)); }
 timeout() { while [[ "$1" = --* ]]; do shift; done; shift; "$@"; }
+reset_msg() { echo "fatal: unable to access '$GITEE_REPO_URL': Recv failure: Connection reset by peer" >&2; }
 git() {
   if [[ "$*" == *"ls-remote --refs $GITEE_REPO_URL refs/heads/main"* ]]; then
     count=$(cat "$FIXTURE_ROOT/reads" 2>/dev/null || echo 0)
     count=$((count + 1)); echo "$count" > "$FIXTURE_ROOT/reads"
-    if [ "$CASE" = observation-error ]; then return 9; fi
-    if [ "$CASE" = transient-observation ] && [ "$count" -eq 1 ]; then return 128; fi
-    if [ "$CASE" = malformed ]; then printf 'not-a-sha\trefs/heads/main\n'; return; fi
-    if [ "$CASE" = verify-mismatch ] && [ "$count" -eq 2 ]; then
-      printf '%s\trefs/heads/main\n' "$RACE_SHA"; return
-    fi
+    case "$CASE:$count" in
+      observation-error:*) return 9 ;;
+      transient-observation:1) reset_msg; return 128 ;;
+      transient-timeout:1) return 124 ;;
+      network-persistent:*) reset_msg; return 128 ;;
+      slow-network:*) SECONDS=$((SECONDS + 200)); reset_msg; return 128 ;;
+      auth-error:*) echo "fatal: Authentication failed for '$GITEE_REPO_URL'" >&2; return 128 ;;
+      malformed:*) printf 'not-a-sha\trefs/heads/main\n'; return ;;
+      verify-mismatch:2) printf '%s\trefs/heads/main\n' "$RACE_SHA"; return ;;
+    esac
   fi
-  if [[ " $* " == *" push "* ]] && [ "$CASE" = race ]; then
-    command git --git-dir="$TARGET_DIR" update-ref refs/heads/main "$RACE_SHA"
+  if [[ " $* " == *" push "* ]]; then
+    pushes=$(cat "$FIXTURE_ROOT/pushes" 2>/dev/null || echo 0)
+    pushes=$((pushes + 1)); echo "$pushes" > "$FIXTURE_ROOT/pushes"
+    case "$CASE:$pushes" in
+      race:*) command git --git-dir="$TARGET_DIR" update-ref refs/heads/main "$RACE_SHA" ;;
+      transient-push:1) reset_msg; return 128 ;;
+      network-persistent-push:*) echo "error: RPC failed; curl 56 Recv failure: Connection reset by peer" >&2; return 1 ;;
+      push-auth-error:*) echo "remote: Permission denied" >&2; echo "fatal: unable to access '$GITEE_REPO_URL': The requested URL returned error: 403" >&2; return 128 ;;
+    esac
   fi
   command git "$@"
 }
@@ -432,7 +445,38 @@ git() {
                                     text=True, capture_output=True, timeout=30)
             diagnostic = result.stdout + result.stderr
             actual = git("--git-dir", str(target), "rev-parse", "refs/heads/main") if case != "empty" or result.returncode == 0 else ""
-            if case in ("success", "empty", "transient-observation"):
+            def counter(name):
+                path = base / name
+                return int(path.read_text()) if path.exists() else 0
+            sleeps = (base / "sleeps").read_text().split() if (base / "sleeps").exists() else []
+            # case -> (退避序列, Gitee ls-remote 次数, push 次数)；None 表示该计数不是此用例的断言点。
+            expected = {
+                "transient-observation": (["10"], 3, 1),
+                "transient-timeout": (["10"], 3, 1),
+                "transient-push": (["10"], 2, 2),
+                "network-persistent": (["10", "30"], 3, 0),
+                "network-persistent-push": (["10", "30"], 1, 3),
+                "slow-network": (["10"], 2, 0),
+                "auth-error": ([], 1, 0),
+                "push-auth-error": ([], 1, 1),
+                "observation-error": ([], 1, 0),
+                "malformed": ([], 1, 0),
+                "race": ([], 1, 1),
+                "divergent": ([], 1, 1),
+                "stale": ([], 1, 0),
+                "verify-mismatch": ([], 2, 1),
+                "success": ([], 2, 1),
+                "empty": ([], 2, 1),
+            }
+            self.assertEqual((sleeps, counter("reads"), counter("pushes")), expected[case], diagnostic)
+            if case == "slow-network":
+                self.assertIn("retry budget exhausted", diagnostic)
+            if case in ("network-persistent", "network-persistent-push"):
+                self.assertIn("still failing after 3 attempts", diagnostic)
+            if case in ("auth-error", "push-auth-error", "race", "divergent", "observation-error"):
+                self.assertIn("non-retryable failure", diagnostic)
+            self.assertNotIn(env["GITEE_TOKEN"], diagnostic)
+            if case in ("success", "empty", "transient-observation", "transient-timeout", "transient-push"):
                 self.assertEqual(result.returncode, 0, diagnostic)
                 self.assertEqual(actual, sha)
                 self.assertIn("gitee_main_sync result=PASS", result.stdout)
@@ -462,7 +506,9 @@ git() {
                 self.assertEqual(result.returncode == 0, accepted, result.stdout + result.stderr)
 
     def test_sync_and_failure_contract(self):
-        for case in ("success", "empty", "transient-observation", "race", "stale", "verify-mismatch", "observation-error", "malformed"):
+        for case in ("success", "empty", "transient-observation", "transient-timeout", "transient-push",
+                     "network-persistent", "network-persistent-push", "slow-network", "auth-error", "push-auth-error",
+                     "race", "stale", "verify-mismatch", "observation-error", "malformed"):
             with self.subTest(case=case):
                 self.run_sync(case)
 
