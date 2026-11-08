@@ -3069,6 +3069,43 @@ async function runForcedLandscapeScenario(env, scenario) {
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
 }
 
+/**
+ * 装甲查看器同样强制横屏（2026-11-08 用户确认：只装甲查看器，科技树不强制）：
+ * iPhone Safari 竖屏出现旋转提示；iPhone 横屏、iPad、缩窄的桌面浏览器都不出。
+ */
+const ARMOR_FORCED_LANDSCAPE_SCENARIOS = [
+  { name: 'armor-forced-landscape-iphone-portrait', ua: 'iphone', width: 390, height: 664, touch: true, expectPrompt: true },
+  { name: 'armor-forced-landscape-iphone-landscape', ua: 'iphone', width: 844, height: 340, touch: true, expectPrompt: false },
+  { name: 'armor-forced-landscape-ipad-portrait', ua: 'ipad', width: 820, height: 1180, touch: true, expectPrompt: false },
+  { name: 'armor-forced-landscape-desktop-narrow', ua: 'desktop', width: 390, height: 664, touch: false, expectPrompt: false },
+]
+
+async function runArmorForcedLandscapeScenario(env, scenario) {
+  const failures = []
+  const { targetId, sessionId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  lastPage = page
+  try {
+    await page.enable()
+    await env.chrome.client.send('Emulation.setUserAgentOverride', { userAgent: FORCED_UA[scenario.ua] }, sessionId)
+    await page.emulate(scenario)
+    await page.goto(`${env.origin}/?view=agent-armor&tank=2`)
+    await page.waitFor(() => !!document.querySelector('.armor-viewer, [data-testid="armor-viewer"], #armor-canvas, canvas'), { timeout: 30_000, label: 'armor viewer mounted' })
+    const prompt = await page.waitForValue('!!document.querySelector("[data-testid=rotate-prompt]")',
+      value => value === scenario.expectPrompt, { timeout: 5000, label: `armor rotate prompt = ${scenario.expectPrompt}` }).catch(() => !scenario.expectPrompt)
+    if (scenario.expectPrompt) {
+      check(failures, prompt === true, `${scenario.name}: iPhone 竖屏打开装甲查看器必须出现旋转提示`)
+      check(failures, await page.evaluate('!!document.querySelector("[data-testid=rotate-prompt-action]")'), `${scenario.name}: 旋转提示必须给出返回动作`)
+    } else {
+      await delay(800)
+      check(failures, await page.evaluate('!document.querySelector("[data-testid=rotate-prompt]")'), `${scenario.name}: 不得出现旋转提示`)
+    }
+  } finally {
+    await env.chrome.client.send('Target.closeTarget', { targetId })
+  }
+  results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
+}
+
 async function runMultiFileWorkspaceScenario(env) {
   const failures = []
   const { targetId, sessionId } = await env.chrome.openPage()
@@ -4297,6 +4334,7 @@ try {
     ...MENU_VIEWPORT_SCENARIOS.map(scenario => ({ scenario, run: () => runMenuViewportScenario(env, scenario) })),
     { scenario: { name: 'multifile-workspace-playback', width: 1600, height: 900 }, run: () => runMultiFileWorkspaceScenario(env) },
     ...FORCED_LANDSCAPE_SCENARIOS.map(scenario => ({ scenario, run: () => runForcedLandscapeScenario(env, scenario) })),
+    ...ARMOR_FORCED_LANDSCAPE_SCENARIOS.map(scenario => ({ scenario, run: () => runArmorForcedLandscapeScenario(env, scenario) })),
     { scenario: { name: 'replay-collection', width: 1440, height: 900 }, run: () => runReplayCollectionScenario(env) },
     { scenario: { name: 'offline-local-workspace-matrix', width: 1600, height: 900 }, run: () => runOfflineWorkspaceScenario(env) },
     ...APP_SCENARIOS.map((scenario) => ({ scenario, run: () => runAppScenario(env, scenario) })),
