@@ -10,6 +10,10 @@ vi.mock('../scene/agentData.js', () => ({
   },
 }))
 
+vi.mock('../scene/replaySource.js', () => ({
+  mapCoverUrl: (key: string) => assets.configured ? `https://assets.test/cover/${key}.webp` : null,
+}))
+
 import HofPodium from './HofPodium.vue'
 
 const rows = [
@@ -53,6 +57,16 @@ describe('HofPodium', () => {
     const wrapper = mountPodium()
     expect(wrapper.findAll('.hof-podium-card')).toHaveLength(3)
     expect(wrapper.find('.hof-podium-tank').exists()).toBe(false)
+    assets.configured = true
+  })
+
+  it('卡片背景是该记录的地图封面；资产源不可用时回退打包地图图，没有地图名就不画', () => {
+    const wrapper = mountPodium()
+    const maps = wrapper.findAll('.hof-podium-map')
+    expect(maps.map(img => img.attributes('src'))).toEqual(['https://assets.test/cover/not_a_map.webp', 'https://assets.test/cover/savanna.webp'])
+    assets.configured = false
+    const offline = mountPodium(true)
+    expect(offline.find('.hof-podium-map').attributes('src')).toBeTruthy()
     assets.configured = true
   })
 })
