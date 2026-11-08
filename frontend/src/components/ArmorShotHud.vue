@@ -49,7 +49,10 @@ async function load(shooterId) {
   try {
     // HUD 常驻且只读 devices：不要为三枚装备图标拉整份配置器目录（skills/camo/params…）。
     // 缺省 = XI 顶级；显式 stock 才回退基础值（非 XI 传 top 会由 fetchTankData 原样返回）。
-    const upgrade = props.upgrade === 'stock' ? 'stock' : 'top'
+    // custom（部分研发）原样透传：折叠成 top 会让提示/无障碍标签报满级伤害，
+    // 与实际场景按部分研发算出的射击结果不一致。
+    const upgrade = props.upgrade === 'stock' ? 'stock'
+      : props.upgrade === 'custom' ? 'custom' : 'top'
     const detailRequest = fetchTankData(shooterId, { upgrade, abilities: props.abilities })
     const [detail, catalog] = await Promise.all([detailRequest, loadDevices()])
     if (seq !== request) return

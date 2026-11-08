@@ -36,8 +36,9 @@ export interface SetupSelection {
   /** 显式模拟条件技能触发，缺省关闭；与训练等级分别保存。 */
   conditionalSkills?: boolean
   camouflage: boolean
-  /** XI 客户端升级；缺省 stock 保持既有链接语义。普通车辆不产生这两个字段。 */
-  upgrade?: 'stock' | 'top'
+  /** XI 客户端升级；缺省 stock 保持既有链接语义。custom = 部分研发（abilities 原表）。
+   *  普通车辆不产生这两个字段。 */
+  upgrade?: 'stock' | 'top' | 'custom'
   abilities?: number[]
 }
 
@@ -501,7 +502,9 @@ export function buildComputeInput({ detail, modules, selection, catalog }: {
 }): ComputeInput {
   const stockEnginePower = Number(modules?.engines?.[0]?.stats?.power)
   const projected = projectTankUpgrades(detail, modules, selection.upgrade, selection.abilities)
-  if (projected.selection.available && !projected.selection.supported && selection.upgrade === 'top') {
+  // 升级数据不可用必须 fail-closed：top 与 custom 都不能把 stock 数值冒充成已研发后的投影。
+  if (projected.selection.available && !projected.selection.supported
+    && (selection.upgrade === 'top' || selection.upgrade === 'custom')) {
     throw new Error(`XI upgrade data unavailable: ${projected.selection.unsupported.join(', ')}`)
   }
   detail = projected.detail
@@ -517,7 +520,10 @@ export function buildComputeInput({ detail, modules, selection, catalog }: {
     gunIdx: selection.gun,
     engineIdx: selection.engine,
     trackIdx: selection.track,
-    ...(projected.selection.available && projected.selection.mode === 'top' && projected.selection.supported
+    // 车体转速公式的功率比基准始终取初始发动机：custom 部分研发同样要传，否则投影后
+    // 的发动机功率会被当成基准、抵消掉转向加成（top 与 custom 同口径）。
+    ...(projected.selection.available && projected.selection.supported
+      && (projected.selection.mode === 'top' || projected.selection.mode === 'custom')
       && Number.isFinite(stockEnginePower) ? { stockEnginePower } : {}),
     standardShell: standardShellOf(config, selection.shell),
     isBurstGun: !!config?.is_burst,

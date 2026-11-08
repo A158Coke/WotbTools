@@ -97,4 +97,19 @@ describe('explicit XI armor data selection', () => {
     })
     await expect(fetchTankData(15153, { upgrade: 'top' })).rejects.toThrow('XI upgrade data unavailable')
   })
+
+  it('projects partial research (custom) instead of falling back to top or stock', async () => {
+    // 装甲查看器导航带 upgrade=custom&abilities=…：custom 与已研发表必须原样交给投影，
+    // 折叠成 top 会把未研发节点的加成也画上去。
+    await expect(fetchTankData(15153, { upgrade: 'custom', abilities: '1,2' })).resolves.toBe(projected)
+    expect(upgrades.project).toHaveBeenCalledWith(raw, moduleData, 'custom', '1,2')
+  })
+
+  it('rejects unsupported custom data as well (fail-closed in both modes)', async () => {
+    upgrades.project.mockReturnValueOnce({
+      detail: raw, modules: moduleData,
+      selection: { available: true, supported: false, unsupported: ['UnknownUpgradeScript'] },
+    })
+    await expect(fetchTankData(15153, { upgrade: 'custom', abilities: '1' })).rejects.toThrow('XI upgrade data unavailable')
+  })
 })

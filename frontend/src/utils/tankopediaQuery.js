@@ -91,7 +91,7 @@ function abilityIds(value) {
   const raw = first(value)
   if (typeof raw !== 'string') return []
   return [...new Set(raw.split(',').map(s => Number(s.trim()))
-    .filter(n => Number.isSafeInteger(n) && n > 0))].slice(0, 8)
+    .filter(n => Number.isSafeInteger(n) && n > 0))].slice(0, 64)
 }
 
 function deviceSlots(value) {
@@ -128,7 +128,7 @@ export function parseTankopediaQuery(query = {}) {
     skills: tank ? skillLevels(query.skills) : {},
     conditionalSkills: !!tank && first(query.skillTriggers) === '1',
     camo: tank ? first(query.camo) === '1' : false,
-    upgrade: upgrade === 'top' || upgrade === 'stock' ? upgrade : null,
+    upgrade: upgrade === 'top' || upgrade === 'stock' || upgrade === 'custom' ? upgrade : null,
     abilities: tank ? abilityIds(query.abilities) : [],
   }
 }
@@ -160,9 +160,9 @@ export function serializeTankopediaQuery(state = {}) {
     }
     if (state.conditionalSkills === true) query.skillTriggers = '1'
     if (state.camo === true) query.camo = '1'
-    if (state.upgrade === 'top' || state.upgrade === 'stock') query.upgrade = state.upgrade
+    if (state.upgrade === 'top' || state.upgrade === 'stock' || state.upgrade === 'custom') query.upgrade = state.upgrade
     if (Array.isArray(state.abilities)) {
-      const ids = [...new Set(state.abilities.filter(n => Number.isSafeInteger(n) && n > 0))].slice(0, 8)
+      const ids = [...new Set(state.abilities.filter(n => Number.isSafeInteger(n) && n > 0))].slice(0, 64)
       if (ids.length) query.abilities = ids.join(',')
     }
   }
