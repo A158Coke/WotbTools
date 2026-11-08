@@ -15,6 +15,7 @@ import { useI18n } from 'vue-i18n'
 import { Check, Zap } from 'lucide-vue-next'
 import AppButton from './AppButton.vue'
 import SegmentedControl from './SegmentedControl.vue'
+import { useBreakpoint } from '../composables/useBreakpoint.js'
 import { availableItems, itemIconUrl, moduleIconUrl, resolveDeviceIds, skillIconUrl } from '../utils/researchCatalog.js'
 import { configIndexFor, consumableTiming, pickGun, pickTurret, presetSlots, tankRef } from '../replay-local/compute/tankSetup'
 import { fmtNum } from '../scene/tankMeta.js'
@@ -43,6 +44,7 @@ const props = defineProps({
   embedded: { type: Boolean, default: false },
 })
 const emit = defineEmits(['update', 'reset', 'preset', 'cycle-skill', 'max-skills', 'clear-skills'])
+const { isCompact } = useBreakpoint()
 
 const { t, locale } = useI18n()
 
@@ -224,6 +226,9 @@ const moduleMatrix = computed(() => {
   return Array.from({ length: depth }, (_, index) =>
     rows.map(row => ({ row, option: row.options[index] || null })))
 })
+
+/** 手机布局按类型分组；没有选项的类型连标题都不渲染，避免孤立标签。 */
+const moduleGroups = computed(() => moduleRows.value.filter(row => row.options.length > 0))
 
 /** 装备槽位按 (level, group) 定位：presetSlots 数组顺序是 level-major。 */
 const slots = computed(() => presetSlots(props.modules, props.catalog))
@@ -535,16 +540,14 @@ const camoBonusParts = computed(() => {
       </template>
     </section>
 
-    <!-- 模块矩阵：首行 = 4 个类型标签，之后按选项序号逐行展开（炮塔1|火炮1|发动机1|履带1，
+    <!-- 桌面/平板：首行 = 4 个类型标签，之后按选项序号逐行展开（炮塔1|火炮1|发动机1|履带1，
          下一行炮塔2|火炮2…），4 列严格对齐，避免右侧空白。 -->
-    <div v-if="!upgrades.available" class="tp-module-matrix">
+    <div v-if="!upgrades.available && !isCompact" class="tp-module-matrix">
       <div v-for="row in moduleRows" :key="row.key" class="tp-module-head" :data-testid="`tank-module-${row.key}`">
         <span>{{ t(`agentTanks.configurator.${row.key}`) }}</span>
       </div>
       <template v-for="(cells, index) in moduleMatrix" :key="index">
         <div v-for="cell in cells" :key="`${cell.row.key}-${index}`" class="tp-module-cell">
-          <!-- 手机 2 列时每个控件自带类型标题；桌面隐藏，使用顶部统一标题行 -->
-          <span class="tp-module-cell-head">{{ t(`agentTanks.configurator.${cell.row.key}`) }}</span>
           <button
             v-if="cell.option"
             type="button"
@@ -567,6 +570,42 @@ const camoBonusParts = computed(() => {
           </button>
         </div>
       </template>
+    </div>
+
+    <!-- 手机：按类型 2×2 分组（炮塔|火炮 // 发动机|履带），每组一个标题 + 纵向选项；
+         不按序号拼行，因此只有 1 个选项的类型不会留下带标题的空格子。 -->
+    <div v-else-if="!upgrades.available" class="tp-module-groups">
+      <section
+        v-for="row in moduleGroups"
+        :key="row.key"
+        class="tp-module-group"
+        :data-testid="`tank-module-group-${row.key}`"
+      >
+        <h3 class="tp-module-group-head">{{ t(`agentTanks.configurator.${row.key}`) }}</h3>
+        <div class="tp-module-group-list">
+          <button
+            v-for="option in row.options"
+            :key="option.testId ?? option.key ?? option.value"
+            type="button"
+            class="tp-module-tile"
+            :class="{ 'is-on': row.selected === option.value, 'is-disabled': option.disabled }"
+            :disabled="option.disabled"
+            :aria-disabled="option.disabled ? 'true' : undefined"
+            :aria-pressed="!option.disabled && row.selected === option.value"
+            :aria-label="option.ariaLabel || option.name"
+            :title="option.title || option.name"
+            :data-testid="option.testId || `tank-${row.key}-${option.value}`"
+            @click="option.disabled ? null : row.select(option.value)"
+          >
+            <span class="tp-module-pic">
+              <img v-if="row.icon" :src="row.icon" alt="" width="28" height="28" loading="lazy">
+              <span v-else class="tp-module-pic-fallback">{{ option.name.slice(0, 1) }}</span>
+            </span>
+            <span v-if="option.level != null" class="tp-module-level">{{ romanLevel(option.level) }}</span>
+            <span class="tp-module-name">{{ option.name }}</span>
+          </button>
+        </div>
+      </section>
     </div>
 
     <!-- 装备：3×3，每格左右两件图标 -->
@@ -804,7 +843,6 @@ const camoBonusParts = computed(() => {
 }
 .tp-module-head { display: grid; justify-items: center; align-content: end; gap: 2px; min-inline-size: 0; padding-block-end: var(--space-1); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; text-align: center; overflow-wrap: anywhere; }
 .tp-module-cell { min-inline-size: 0; }
-.tp-module-cell-head { display: none; }
 
 .tp-module-tile {
   position: relative;
@@ -970,16 +1008,39 @@ const camoBonusParts = computed(() => {
 .tp-camo input { inline-size: var(--control-check); block-size: var(--control-check); margin: 0; accent-color: var(--color-accent); }
 
 @media (width < 768px) {
-  /* 手机：4 列矩阵折 2 列（炮塔|火炮 // 发动机|履带）——每个逻辑行恰好 4 格，
-     折行后列语义仍逐行对齐；类型标签行与数据行同步折，不会错位。 */
-  .tp-module-matrix { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2) var(--space-1); }
-  /* 2 列折行后顶部 4 个标题行会落到错误列上方：隐藏它，改用每个控件自己的标题。 */
-  .tp-module-head { display: none; }
-  .tp-module-cell-head { display: block; margin-block-end: 2px; color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; text-align: center; }
-  .tp-module-tile { padding: var(--space-1); min-block-size: 64px; }
+  /* 手机：类型分组 2×2（炮塔|火炮 // 发动机|履带），每组标题 + 纵向选项 */
+  .tp-module-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+  .tp-module-group { display: grid; align-content: start; gap: var(--space-1); min-inline-size: 0; }
+  .tp-module-group-head { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; }
+  .tp-module-group-list { display: grid; gap: var(--space-1); }
+  /* 横向紧凑卡片：小图标 + 名称 + 等级徽标，44px 触控高度 */
+  .tp-module-tile {
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+    grid-template-areas: "pic name level";
+    justify-items: stretch;
+    align-items: center;
+    column-gap: var(--space-2);
+    min-block-size: var(--hit-min-comfortable);
+    padding: var(--space-1) var(--space-2);
+    text-align: start;
+  }
+  .tp-module-pic { grid-area: pic; inline-size: 28px; block-size: 28px; }
+  .tp-module-name { grid-area: name; inline-size: auto; text-align: start; }
+  .tp-module-level {
+    position: static;
+    grid-area: level;
+    justify-self: end;
+    align-self: center;
+  }
   /* 装备矩阵在窄屏吃掉等级标签列：标签收窄为图标宽度，槽位保持两候选并排 */
   .tp-dev-matrix { gap: var(--space-1) calc(var(--space-1) / 2); }
-  .tp-dev-btn { min-block-size: 48px; }
+  /* 极窄屏两个 44px 候选放不进同一槽位时自动改为纵向排列，避免 44px 触控目标互相覆盖 */
+  .tp-dev-slot { grid-template-columns: repeat(auto-fit, minmax(var(--hit-min-comfortable), 1fr)); gap: calc(var(--space-1) / 2); }
+  .tp-dev-btn { min-inline-size: var(--hit-min-comfortable); min-block-size: var(--hit-min-comfortable); padding: 2px; }
+  .tp-dev-btn img { inline-size: 32px; block-size: 32px; }
+  /* 补给 / 消耗品图标与装备图标同比缩小到 32px，同时保留 44px 触控区域 */
+  .tp-icon-tile { inline-size: var(--hit-min-comfortable); block-size: var(--hit-min-comfortable); padding: 3px; }
+  .tp-icon-tile img { inline-size: 32px; block-size: 32px; }
 }
 
 </style>

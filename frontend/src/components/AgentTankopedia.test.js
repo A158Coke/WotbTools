@@ -714,7 +714,7 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
     expect(wrapper.find('[data-testid="tank-param-gunCommonDamagePerMin"] .tp-param-delta').exists()).toBe(false)
   })
 
-  it('坦克模块矩阵按 4 列逐行对齐（炮塔|火炮|发动机|履带）', async () => {
+  it('桌面坦克模块矩阵按 4 列逐行对齐（炮塔|火炮|发动机|履带）', async () => {
     const { wrapper } = await mountAt({ tank: '999' })
     const matrix = wrapper.find('.tp-module-matrix')
     expect(matrix.exists()).toBe(true)
@@ -722,6 +722,40 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
     const cells = matrix.findAll('.tp-module-cell')
     expect(cells.slice(0, 4).map(cell => cell.find('button').exists() ? cell.find('button').attributes('data-testid') : null))
       .toEqual(['tank-turret-0', 'tank-gun-0', 'tank-engine-0', 'tank-track-0'])
+    expect(wrapper.find('.tp-module-groups').exists()).toBe(false)
+  })
+
+  it('手机模块区按类型 2×2 分组：只有 1 个炮塔时不会出现没有卡片的孤立炮塔标签', async () => {
+    const fixture = moduleFixture()
+    const [turret] = fixture.turrets
+    const secondTurretGun = fixture.turrets[1].guns[1]
+    fixture.turrets = [{ ...turret, guns: [...turret.guns, { ...secondTurretGun }] }]
+    research.loadTankModules.mockResolvedValue({ tanks: { 'IS-7': fixture } })
+    layout.compact = true
+    const { wrapper } = await mountAt({ tank: '999', config: '0' })
+
+    expect(wrapper.find('[data-testid="tank-configurator"]').exists()).toBe(true)
+    expect(wrapper.find('.tp-module-matrix').exists()).toBe(false)
+    const groups = wrapper.findAll('.tp-module-group')
+    expect(groups).toHaveLength(4)
+    expect(groups.map(group => group.find('.tp-module-group-head').text()))
+      .toEqual([
+        'agentTanks.configurator.turret',
+        'agentTanks.configurator.gun',
+        'agentTanks.configurator.engine',
+        'agentTanks.configurator.track',
+      ])
+
+    const turretGroup = wrapper.get('[data-testid="tank-module-group-turret"]')
+    expect(turretGroup.findAll('.tp-module-group-head')).toHaveLength(1)
+    expect(turretGroup.findAll('.tp-module-tile')).toHaveLength(1)
+    expect(turretGroup.get('.tp-module-tile').attributes('data-testid')).toBe('tank-turret-0')
+    const gunTiles = wrapper.get('[data-testid="tank-module-group-gun"]').findAll('.tp-module-tile')
+    expect(gunTiles.map(tile => tile.attributes('data-testid'))).toEqual(['tank-gun-0', 'tank-gun-1'])
+
+    // 每个类型标题下都必须至少有一张卡片；空格子不渲染标题或占位。
+    expect(groups.every(group => group.findAll('.tp-module-tile').length > 0)).toBe(true)
+    expect(wrapper.findAll('.tp-module-cell-head')).toHaveLength(0)
   })
 
   it('高端消耗品 / 配送系统联动消耗品计时徽标', async () => {
