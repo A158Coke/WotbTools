@@ -341,7 +341,7 @@ describe('HoFAdminPage', () => {
     expect(hofAdminApi.hofAdminHundredList).toHaveBeenCalledWith({
       page: 1, size: 50, status: '', nation: '', vehicleType: '', vehicleId: null
     })
-    const table = wrapper.find('.hof-hundred .hof-admin-table')
+    const table = wrapper.find('.hof-hundred .hof-queue')
     expect(table.exists()).toBe(true)
     expect(table.text()).toContain('FV4005')
     expect(table.text()).toContain('SnapUser')
@@ -350,13 +350,11 @@ describe('HoFAdminPage', () => {
     expect(table.text()).toContain('hundredAdmin.status.PENDING')
     expect(table.text()).toContain('hundredAdmin.status.CURRENT')
     expect(table.text()).toContain('RejectedUser')
-    // 所有状态只保留详情入口，列表不得直接审核或删除。
-    const actionButtons = wrapper.findAll('.hof-hundred .actions .btn-sm')
+    // 队列每条只打开右侧详情，队列不得直接审核或删除。
+    const actionButtons = wrapper.findAll('.hof-hundred [data-testid="hof-queue-open"]')
     expect(actionButtons).toHaveLength(3)
-    expect(actionButtons.map(button => button.text())).toEqual([
-      'hundredAdmin.details', 'hundredAdmin.details', 'hundredAdmin.details'
-    ])
-    expect(wrapper.find('.hof-hundred .actions .btn-sm.danger').exists()).toBe(false)
+    expect(wrapper.find('.hof-hundred .hof-queue .danger').exists()).toBe(false)
+    expect(wrapper.find('.hof-hundred .hof-review-pane').exists()).toBe(false)
     // 国家/车种无需先选车辆即可真实筛选；车辆与状态继续取交集。
     const filters = wrapper.findAll('.hof-hundred .hof-admin-filters select')
     expect(filters).toHaveLength(4)
@@ -389,12 +387,9 @@ describe('HoFAdminPage', () => {
     await flushPromises()
     await switchToHundred(wrapper)
 
-    const table = wrapper.find('.hof-hundred .hof-admin-table')
-    expect(table.findAll('th').map(header => header.text())).toContain('hundredAdmin.approvedDamage')
-    expect(table.findAll('th').map(header => header.text())).toContain('hundredAdmin.approvedBattles')
-    expect(table.text()).toContain('3814')
-    expect(table.text()).toContain('103')
-    expect(table.text()).not.toContain('3800')
+    const queue = wrapper.find('.hof-hundred .hof-queue')
+    expect(queue.text()).toMatch(/3,?814/)
+    expect(queue.text()).not.toMatch(/3,?800/)
   })
 
   it('PENDING row opens review modal with screenshot and validation items', async () => {
@@ -407,11 +402,11 @@ describe('HoFAdminPage', () => {
     await flushPromises()
     await switchToHundred(wrapper)
 
-    await wrapper.find('.hof-hundred .actions .btn-sm').trigger('click')
+    await wrapper.find('.hof-hundred [data-testid="hof-queue-open"]').trigger('click')
     await flushPromises()
 
     expect(hofAdminApi.hofAdminHundredDetail).toHaveBeenCalledWith(11)
-    const modal = wrapper.find('.hof-review-modal')
+    const modal = wrapper.find('.hof-review-pane')
     expect(modal.exists()).toBe(true)
     // 截图
     const img = modal.find('img')
@@ -439,21 +434,21 @@ describe('HoFAdminPage', () => {
     await flushPromises()
     await switchToHundred(wrapper)
 
-    await wrapper.find('.hof-hundred .actions .btn-sm').trigger('click')
+    await wrapper.find('.hof-hundred [data-testid="hof-queue-open"]').trigger('click')
     await flushPromises()
 
     // 第一次点击「通过」仅进入确认阶段，不调用 API
-    const approveBtn = () => wrapper.findAll('.hof-review-modal button').find(b => b.text() === 'hundredAdmin.approve')
+    const approveBtn = () => wrapper.findAll('.hof-review-pane button').find(b => b.text() === 'hundredAdmin.approve')
     await approveBtn().trigger('click')
     expect(hofAdminApi.hofAdminHundredApprove).not.toHaveBeenCalled()
-    expect(wrapper.find('.hof-review-modal').text()).toContain('hundredAdmin.approveConfirm')
+    expect(wrapper.find('.hof-review-pane').text()).toContain('hundredAdmin.approveConfirm')
 
     // 确认后调用 approve 并刷新列表
     await approveBtn().trigger('click')
     await flushPromises()
     expect(hofAdminApi.hofAdminHundredApprove).toHaveBeenCalledWith(11)
     expect(hofAdminApi.hofAdminHundredList).toHaveBeenCalledTimes(2)
-    expect(wrapper.find('.hof-review-modal').exists()).toBe(false)
+    expect(wrapper.find('.hof-review-pane').exists()).toBe(false)
   })
 
   it('reject select renders stable category values from $tm object', async () => {
@@ -464,19 +459,19 @@ describe('HoFAdminPage', () => {
     const wrapper = mountPage()
     await flushPromises()
     await switchToHundred(wrapper)
-    await wrapper.find('.hof-hundred .actions .btn-sm').trigger('click')
+    await wrapper.find('.hof-hundred [data-testid="hof-queue-open"]').trigger('click')
     await flushPromises()
 
     // 进入拒绝表单
-    const rejectBtn = () => wrapper.findAll('.hof-review-modal button').find(b => b.text() === 'hundredAdmin.reject')
+    const rejectBtn = () => wrapper.findAll('.hof-review-pane button').find(b => b.text() === 'hundredAdmin.reject')
     await rejectBtn().trigger('click')
-    const select = wrapper.find('.hof-review-modal select')
+    const select = wrapper.find('.hof-review-pane select')
     const values = select.findAll('option').map(o => o.attributes('value'))
     // option value 必须是 backend 接受的稳定 category（不是字符串字符/索引）
     expect(values).toEqual(['', 'SCREENSHOT_MISMATCH', 'SCREENSHOT_UNREADABLE', 'INSUFFICIENT_PROOF', 'SUSPECTED_FRAUD', 'OTHER'])
     // 选择 category 并确认 → API 收到稳定 category value
     await select.setValue('SCREENSHOT_MISMATCH')
-    await wrapper.findAll('.hof-review-modal .modal-actions button').find(b => b.text() === 'hundredAdmin.reject').trigger('click')
+    await wrapper.findAll('.hof-review-pane .modal-actions button').find(b => b.text() === 'hundredAdmin.reject').trigger('click')
     await flushPromises()
     expect(hofAdminApi.hofAdminHundredReject).toHaveBeenCalledWith(11, { rejectReason: 'SCREENSHOT_MISMATCH' })
   })
@@ -489,18 +484,18 @@ describe('HoFAdminPage', () => {
     const wrapper = mountPage()
     await flushPromises()
     await switchToHundred(wrapper)
-    await wrapper.find('.hof-hundred .actions .btn-sm').trigger('click')
+    await wrapper.find('.hof-hundred [data-testid="hof-queue-open"]').trigger('click')
     await flushPromises()
-    await wrapper.findAll('.hof-review-modal button').find(b => b.text() === 'hundredAdmin.reject').trigger('click')
+    await wrapper.findAll('.hof-review-pane button').find(b => b.text() === 'hundredAdmin.reject').trigger('click')
 
-    const select = wrapper.find('.hof-review-modal select')
+    const select = wrapper.find('.hof-review-pane select')
     await select.setValue('OTHER')
-    await wrapper.findAll('.hof-review-modal .modal-actions button').find(b => b.text() === 'hundredAdmin.reject').trigger('click')
+    await wrapper.findAll('.hof-review-pane .modal-actions button').find(b => b.text() === 'hundredAdmin.reject').trigger('click')
     await flushPromises()
     expect(hofAdminApi.hofAdminHundredReject).not.toHaveBeenCalled()
 
-    await wrapper.find('.hof-review-modal textarea').setValue('手工复核发现异常')
-    await wrapper.findAll('.hof-review-modal .modal-actions button').find(b => b.text() === 'hundredAdmin.reject').trigger('click')
+    await wrapper.find('.hof-review-pane textarea').setValue('手工复核发现异常')
+    await wrapper.findAll('.hof-review-pane .modal-actions button').find(b => b.text() === 'hundredAdmin.reject').trigger('click')
     await flushPromises()
     expect(hofAdminApi.hofAdminHundredReject).toHaveBeenCalledWith(11, {
       rejectReason: 'OTHER',
@@ -518,19 +513,19 @@ describe('HoFAdminPage', () => {
     await switchToHundred(wrapper)
 
     // 先打开详情，列表里没有直接删除入口。
-    await wrapper.find('.hof-hundred .actions .btn-sm').trigger('click')
+    await wrapper.find('.hof-hundred [data-testid="hof-queue-open"]').trigger('click')
     await flushPromises()
     expect(hofAdminApi.hofAdminHundredDetail).toHaveBeenCalledWith(12)
     expect(hofAdminApi.hofAdminHundredReplays).not.toHaveBeenCalled()
-    expect(wrapper.find('.hof-review-modal .replay-evidence-list').exists()).toBe(false)
+    expect(wrapper.find('.hof-review-pane .replay-evidence-list').exists()).toBe(false)
     expect(hofAdminApi.hofAdminHundredDelete).not.toHaveBeenCalled()
 
-    await wrapper.findAll('.hof-review-modal button').find(b => b.text() === 'hundredAdmin.delete').trigger('click')
-    const select = wrapper.find('.hof-review-modal select')
+    await wrapper.findAll('.hof-review-pane button').find(b => b.text() === 'hundredAdmin.delete').trigger('click')
+    const select = wrapper.find('.hof-review-pane select')
     const values = select.findAll('option').map(o => o.attributes('value'))
     expect(values).toEqual(['', 'CHEATING_FORGERY', 'WRONG_REVIEW', 'PLAYER_IDENTITY_ISSUE', 'DATA_ERROR', 'ADMIN_CORRECTION', 'OTHER'])
     await select.setValue('DATA_ERROR')
-    await wrapper.findAll('.hof-review-modal .modal-actions button').find(b => b.text() === 'hundredAdmin.delete').trigger('click')
+    await wrapper.findAll('.hof-review-pane .modal-actions button').find(b => b.text() === 'hundredAdmin.delete').trigger('click')
     await flushPromises()
     expect(hofAdminApi.hofAdminHundredDelete).toHaveBeenCalledWith(12, { deleteReason: 'DATA_ERROR' })
   })
@@ -544,10 +539,10 @@ describe('HoFAdminPage', () => {
     await flushPromises()
     await switchToHundred(wrapper)
 
-    await wrapper.find('.hof-hundred .actions .btn-sm').trigger('click')
+    await wrapper.find('.hof-hundred [data-testid="hof-queue-open"]').trigger('click')
     await flushPromises()
 
-    const modal = wrapper.find('.hof-review-modal')
+    const modal = wrapper.find('.hof-review-pane')
     expect(hofAdminApi.hofAdminHundredDetail).toHaveBeenCalledWith(13)
     expect(hofAdminApi.hofAdminHundredReplays).not.toHaveBeenCalled()
     expect(modal.find('.hundred-proof').exists()).toBe(false)
@@ -576,7 +571,7 @@ describe('HoFAdminPage', () => {
     const w = wrapper
     await flushPromises()
     await switchToHundred(w)
-    await w.find('.hof-hundred .actions .btn-sm').trigger('click')
+    await w.find('.hof-hundred [data-testid="hof-queue-open"]').trigger('click')
     await flushPromises()
     return w
   }
@@ -618,11 +613,11 @@ describe('HoFAdminPage', () => {
     hofAdminApi.hofAdminHundredReplays.mockRejectedValue({ code: 'NETWORK_ERROR' })
     await flushPromises()
     await switchToHundred(wrapper)
-    await wrapper.find('.hof-hundred .actions .btn-sm').trigger('click')
+    await wrapper.find('.hof-hundred [data-testid="hof-queue-open"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('.hundred-review-section .error').exists()).toBe(true)
-    expect(wrapper.find('.hundred-review-section .error').text()).toContain('err:NETWORK_ERROR')
+    expect(wrapper.find('.hof-review-evidence .error').exists()).toBe(true)
+    expect(wrapper.find('.hof-review-evidence .error').text()).toContain('err:NETWORK_ERROR')
   })
 
   it('screenshot click opens zoom lightbox and close button dismisses it', async () => {
@@ -648,7 +643,7 @@ describe('HoFAdminPage', () => {
   })
 
   function approveBtn(wrapper) {
-    return wrapper.findAll('.hof-review-modal button').find(b => b.text() === 'hundredAdmin.approve')
+    return wrapper.findAll('.hof-review-pane button').find(b => b.text() === 'hundredAdmin.approve')
   }
 
   it('legacy PENDING with 0 evidence disables approve but keeps reject available', async () => {
@@ -657,11 +652,11 @@ describe('HoFAdminPage', () => {
 
     expect(approveBtn(wrapper).attributes('disabled')).toBeDefined()
     // REJECT 在 evidence 不完整时仍可用
-    const rejectBtn = wrapper.findAll('.hof-review-modal button').find(b => b.text() === 'hundredAdmin.reject')
+    const rejectBtn = wrapper.findAll('.hof-review-pane button').find(b => b.text() === 'hundredAdmin.reject')
     expect(rejectBtn.attributes('disabled')).toBeUndefined()
     // 点击禁用按钮不会进入 approve-confirm
     await approveBtn(wrapper).trigger('click')
-    expect(wrapper.find('.hof-review-modal').text()).not.toContain('hundredAdmin.approveConfirm')
+    expect(wrapper.find('.hof-review-pane').text()).not.toContain('hundredAdmin.approveConfirm')
     expect(hofAdminApi.hofAdminHundredApprove).not.toHaveBeenCalled()
   })
 
@@ -674,11 +669,11 @@ describe('HoFAdminPage', () => {
     hofAdminApi.hofAdminHundredReplays.mockRejectedValue({ code: 'NETWORK_ERROR' })
     await flushPromises()
     await switchToHundred(wrapper)
-    await wrapper.find('.hof-hundred .actions .btn-sm').trigger('click')
+    await wrapper.find('.hof-hundred [data-testid="hof-queue-open"]').trigger('click')
     await flushPromises()
 
     expect(approveBtn(wrapper).attributes('disabled')).toBeDefined()
-    expect(wrapper.findAll('.hof-review-modal button').find(b => b.text() === 'hundredAdmin.reject').attributes('disabled')).toBeUndefined()
+    expect(wrapper.findAll('.hof-review-pane button').find(b => b.text() === 'hundredAdmin.reject').attributes('disabled')).toBeUndefined()
   })
 
   it('4 evidence disables approve', async () => {
@@ -727,10 +722,10 @@ describe('HoFAdminPage', () => {
     const wrapper = mountPage()
     await flushPromises()
     await switchToMark3(wrapper)
-    await wrapper.find('.hof-mark3 .actions .btn-sm').trigger('click')
+    await wrapper.find('.hof-mark3 [data-testid="hof-queue-open"]').trigger('click')
     await flushPromises()
 
-    const modal = wrapper.find('.hof-review-modal')
+    const modal = wrapper.find('.hof-review-pane')
     expect(modal.findAll('.mark3-admin-screenshots .hundred-proof')).toHaveLength(2)
     expect(modal.findAll('.replay-evidence-item')).toHaveLength(5)
     expect(modal.find('input[type="number"]').exists()).toBe(false)
@@ -757,10 +752,10 @@ describe('HoFAdminPage', () => {
     const wrapper = mountPage()
     await flushPromises()
     await switchToMark3(wrapper)
-    await wrapper.find('.hof-mark3 .actions .btn-sm').trigger('click')
+    await wrapper.find('.hof-mark3 [data-testid="hof-queue-open"]').trigger('click')
     await flushPromises()
 
-    const modal = wrapper.find('.hof-review-modal')
+    const modal = wrapper.find('.hof-review-pane')
     await modal.findAll('button').find(button => button.text() === 'mark3Admin.reject').trigger('click')
     expect(modal.find('textarea').attributes('maxlength')).toBe('500')
   })
@@ -851,7 +846,7 @@ describe('HoFAdminPage', () => {
     const wrapper = mountPage()
     await flushPromises()
     await switchToHundred(wrapper)
-    await wrapper.find('.hof-hundred .hof-admin-table thead input[type="checkbox"]').setValue(true)
+    await wrapper.find('.hof-hundred .hof-queue-all input').setValue(true)
 
     await wrapper.findAll('.hof-hundred .hof-bulk-bar button').find(button => button.text() === 'hofAdmin.bulkDelete').trigger('click')
     const modal = wrapper.find('.bulk-delete-modal')
@@ -893,7 +888,7 @@ describe('HoFAdminPage', () => {
     const wrapper = mountPage()
     await flushPromises()
     await switchToMark3(wrapper)
-    await wrapper.find('.hof-mark3 .hof-admin-table thead input[type="checkbox"]').setValue(true)
+    await wrapper.find('.hof-mark3 .hof-queue-all input').setValue(true)
     expect(wrapper.find('.hof-mark3 .hof-bulk-count').text()).toBe('hofAdmin.selectedCount(count=1)')
 
     await wrapper.findAll('.hof-mark3 .hof-bulk-bar button').find(button => button.text() === 'hofAdmin.bulkDelete').trigger('click')
@@ -924,31 +919,58 @@ describe('HoFAdminPage', () => {
     await flushPromises()
 
     await switchToHundred(wrapper)
-    expect(wrapper.find('.hof-hundred .hof-admin-table').text()).toContain('CN·game-456')
-    await wrapper.find('.hof-hundred .actions .btn-sm').trigger('click')
+    expect(wrapper.find('.hof-hundred .hof-review-pane').exists()).toBe(false)
+    await wrapper.find('.hof-hundred [data-testid="hof-queue-open"]').trigger('click')
     await flushPromises()
-    expect(wrapper.find('.hof-review-modal').text()).toContain('CN·game-456')
-    wrapper.find('.hof-review-modal').findAll('button').find(button => button.text() === 'hundredAdmin.close').trigger('click')
+    expect(wrapper.find('.hof-review-pane').text()).toContain('CN·game-456')
+    await wrapper.find('[data-testid="hof-review-back"]').trigger('click')
     await flushPromises()
 
     await switchToMark3(wrapper)
-    expect(wrapper.find('.hof-mark3 .hof-admin-table').text()).toContain('EU·game-333')
-    await wrapper.find('.hof-mark3 .actions .btn-sm').trigger('click')
+    expect(wrapper.find('.hof-mark3 .hof-queue').exists()).toBe(true)
+    await wrapper.find('.hof-mark3 [data-testid="hof-queue-open"]').trigger('click')
     await flushPromises()
-    expect(wrapper.find('.hof-review-modal').text()).toContain('EU·game-333')
+    expect(wrapper.find('.hof-review-pane').text()).toContain('EU·game-333')
   })
 
   // —— PG-09 / PG-10：对话框统一 AppDialog，图标按钮有可访问名称，Tab 可滚动 ——
-  it('review detail is an accessible modal dialog that closes on Escape', async () => {
+  it('review detail is a labelled region with step controls that closes on Escape inside the pane', async () => {
     const wrapper = mountPage()
     await openReviewWithEvidence(wrapper)
-    const dialog = wrapper.find('.hof-review-modal')
-    expect(dialog.attributes('role')).toBe('dialog')
-    expect(dialog.attributes('aria-modal')).toBe('true')
-    expect(wrapper.find('#' + dialog.attributes('aria-labelledby')).text()).toBe('hundredAdmin.details')
+    const pane = wrapper.find('.hof-review-pane')
+    expect(pane.element.tagName).toBe('SECTION')
+    expect(pane.attributes('aria-label')).toBe('hofAdmin.reviewDetail')
+    expect(wrapper.find('[data-testid="hof-review-prev"]').attributes('aria-label')).toBe('hofAdmin.reviewPrev')
+    expect(wrapper.find('[data-testid="hof-review-decision"]').attributes('role')).toBe('group')
 
-    await pressEscape()
-    expect(wrapper.find('.hof-review-modal').exists()).toBe(false)
+    pane.element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    expect(wrapper.find('.hof-review-pane').exists()).toBe(false)
+  })
+  it('steps through the queue with previous and next and keeps the current item highlighted', async () => {
+    hofAdminApi.hofAdminHundredList.mockResolvedValue({ items: [pendingItem, currentItem], page: 1, size: 50, totalItems: 2, totalPages: 1 })
+    hofAdminApi.hofAdminHundredDetail.mockImplementation(async id => (id === pendingItem.id ? pendingDetail : currentDetail))
+    hofAdminApi.hofAdminHundredReplays.mockResolvedValue(replayEvidence)
+    const wrapper = mountPage()
+    await flushPromises()
+    await switchToHundred(wrapper)
+    await wrapper.find('.hof-hundred [data-testid="hof-queue-open"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.hof-queue-item.is-current').text()).toContain(pendingItem.nicknameSnapshot)
+    expect(wrapper.find('[data-testid="hof-review-prev"]').attributes('disabled')).toBeDefined()
+    await wrapper.find('[data-testid="hof-review-next"]').trigger('click')
+    await flushPromises()
+    expect(hofAdminApi.hofAdminHundredDetail).toHaveBeenLastCalledWith(currentItem.id)
+    expect(wrapper.find('.hof-queue-item.is-current').text()).toContain(currentItem.nicknameSnapshot)
+    expect(wrapper.find('[data-testid="hof-review-next"]').attributes('disabled')).toBeDefined()
+  })
+  it('shows the claimed and confirmed columns side by side', async () => {
+    const wrapper = mountPage()
+    await openReviewWithEvidence(wrapper)
+    const compare = wrapper.find('.hof-review-compare')
+    expect(compare.text()).toContain('hofAdmin.reviewClaimed')
+    expect(compare.text()).toContain('hofAdmin.reviewAfterApprove')
+    expect(compare.text()).toContain('hofAdmin.reviewDamage')
   })
 
   it('screenshot lightbox is its own dialog; Escape closes only the lightbox', async () => {
@@ -959,7 +981,7 @@ describe('HoFAdminPage', () => {
     expect(lightbox.exists()).toBe(true)
     await pressEscape()
     expect(wrapper.find('.screenshot-zoom').exists()).toBe(false)
-    expect(wrapper.find('.hof-review-modal').exists()).toBe(true)
+    expect(wrapper.find('.hof-review-pane').exists()).toBe(true)
   })
 
   it('renders tabs as a tablist and icon-only row actions with accessible names (no emoji glyphs)', async () => {
