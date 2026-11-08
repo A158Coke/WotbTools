@@ -5,8 +5,8 @@ import { ref } from 'vue'
 import AdminSiteFeedbackPage from './AdminSiteFeedbackPage.vue'
 
 const api = vi.hoisted(() => ({
-  listSiteFeedback: vi.fn(), getSiteFeedback: vi.fn(), deleteSiteFeedback: vi.fn(),
-  siteFeedbackReasons: ['BUG', 'OTHER'],
+  listSiteFeedback: vi.fn(), getSiteFeedback: vi.fn(), deleteSiteFeedback: vi.fn(), updateSiteFeedbackStatus: vi.fn(),
+  siteFeedbackReasons: ['BUG', 'OTHER'], feedbackStatuses: ['PENDING', 'FIXED'],
 }))
 const gate = vi.hoisted(() => ({ status: null }))
 vi.mock('../api/site-feedback.js', () => api)
@@ -15,15 +15,17 @@ vi.mock('../composables/useFeatureGate.js', () => ({ useFeatureGate: () => ({
   requireFeature: () => gate.status.value.available,
   availability: () => gate.status.value,
 }) }))
-const row = { id: '1', reasonCodes: ['BUG'], feedbackText: 'feedback', pageView: 'hof', createdAt: '2026-01-01T00:00:00Z' }
+const row = { id: '1', reasonCodes: ['BUG'], feedbackText: 'feedback', pageView: 'hof', createdAt: '2026-01-01T00:00:00Z', status: 'PENDING' }
 const dialogStub = { props: ['open'], template: '<div v-if="open"><slot /></div>' }
 const mountPage = () => mount(AdminSiteFeedbackPage, { global: { mocks: { $t: key => key }, stubs: { AppDialog: dialogStub } } })
 beforeEach(() => {
   vi.clearAllMocks()
+  row.status = 'PENDING'
   gate.status = ref({ available: true, pending: false })
   api.listSiteFeedback.mockResolvedValue({ items: [row], page: 0, size: 25, totalItems: 1, totalPages: 1 })
   api.getSiteFeedback.mockResolvedValue(row)
   api.deleteSiteFeedback.mockResolvedValue(undefined)
+  api.updateSiteFeedbackStatus.mockResolvedValue(undefined)
 })
 
 it('loads exactly once when initial connectivity settles online', async () => {
@@ -59,4 +61,74 @@ it('shows details and deletes after confirmation', async () => {
   await flushPromises()
   expect(api.deleteSiteFeedback).toHaveBeenCalledWith('1')
   expect(api.listSiteFeedback).toHaveBeenCalledTimes(2)
+})
+
+it('displays the server status, saves a confirmed change and re-reads it on refresh', async () => {
+  const wrapper = mountPage()
+  await flushPromises()
+  expect(wrapper.get('.status-select').element.value).toBe('PENDING')
+  await wrapper.get('.status-select').setValue('FIXED')
+  await flushPromises()
+  expect(api.updateSiteFeedbackStatus).toHaveBeenCalledTimes(1)
+  expect(api.updateSiteFeedbackStatus).toHaveBeenCalledWith('1', 'FIXED')
+  expect(wrapper.get('.status-select').element.value).toBe('FIXED')
+  api.listSiteFeedback.mockResolvedValueOnce({ items: [{ ...row, status: 'FIXED' }], page: 0, size: 25, totalItems: 1, totalPages: 1 })
+  await wrapper.findAll('button').find(button => button.text() === 'siteFeedback.refresh').trigger('click')
+  await flushPromises()
+  expect(wrapper.get('.status-select').element.value).toBe('FIXED')
+})
+
+it('keeps the previous status and shows an error when the update fails', async () => {
+  api.updateSiteFeedbackStatus.mockRejectedValueOnce(new Error('network down'))
+  const wrapper = mountPage()
+  await flushPromises()
+  await wrapper.get('.status-select').setValue('FIXED')
+  await flushPromises()
+  expect(api.updateSiteFeedbackStatus).toHaveBeenCalledWith('1', 'FIXED')
+  expect(wrapper.get('.status-select').element.value).toBe('PENDING')
+  expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+})
+
+it('disables the status control while saving and ignores duplicate submissions', async () => {
+  let resolveUpdate
+  api.updateSiteFeedbackStatus.mockImplementationOnce(() => new Promise(resolve => { resolveUpdate = resolve }))
+  const wrapper = mountPage()
+  await flushPromises()
+  await wrapper.get('.status-select').setValue('FIXED')
+  await flushPromises()
+  expect(wrapper.get('.status-select').element.disabled).toBe(true)
+  await wrapper.get('.status-select').setValue('FIXED')
+  expect(api.updateSiteFeedbackStatus).toHaveBeenCalledTimes(1)
+  resolveUpdate()
+  await flushPromises()
+  expect(wrapper.get('.status-select').element.disabled).toBe(false)
+  expect(wrapper.get('.status-select').element.value).toBe('FIXED')
+})
+
+it('does not let a stale list response overwrite a confirmed status', async () => {
+  const wrapper = mountPage()
+  await flushPromises()
+  let resolveList
+  api.listSiteFeedback.mockImplementationOnce(() => new Promise(resolve => { resolveList = resolve }))
+  await wrapper.findAll('button').find(button => button.text() === 'siteFeedback.refresh').trigger('click')
+  await flushPromises()
+  await wrapper.get('.status-select').setValue('FIXED')
+  await flushPromises()
+  resolveList({ items: [row], page: 0, size: 25, totalItems: 1, totalPages: 1 })
+  await flushPromises()
+  expect(wrapper.get('.status-select').element.value).toBe('FIXED')
+})
+
+it('does not let a stale detail response overwrite a confirmed status', async () => {
+  let resolveDetail
+  api.getSiteFeedback.mockImplementationOnce(() => new Promise(resolve => { resolveDetail = resolve }))
+  const wrapper = mountPage()
+  await flushPromises()
+  await wrapper.findAll('button').find(button => button.text() === 'siteFeedback.view').trigger('click')
+  await wrapper.get('.status-select').setValue('FIXED')
+  await flushPromises()
+  resolveDetail(row)
+  await flushPromises()
+  expect(wrapper.text()).toContain('siteFeedback.statusLabel')
+  expect(wrapper.text()).toContain('siteFeedback.status.FIXED')
 })

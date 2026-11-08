@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { siteFeedbackReasons, listSiteFeedback, getSiteFeedback, deleteSiteFeedback, type SiteFeedbackDetail, type SiteFeedbackItem, type SiteFeedbackReason } from '../api/site-feedback.js'
+import { siteFeedbackReasons, feedbackStatuses, listSiteFeedback, getSiteFeedback, deleteSiteFeedback, updateSiteFeedbackStatus, type FeedbackStatus, type SiteFeedbackDetail, type SiteFeedbackItem, type SiteFeedbackReason } from '../api/site-feedback.js'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { apiErrorLabel } from '../utils/display.js'
@@ -11,14 +11,25 @@ const { t, te } = useI18n()
 const { requireFeature, availability } = useFeatureGate()
 const items = ref<SiteFeedbackItem[]>([]), page = ref(0), totalPages = ref(0), totalItems = ref(0), reason = ref<SiteFeedbackReason | ''>('')
 const loading = ref(false), error = ref(''), detail = ref<SiteFeedbackDetail | null>(null), confirmId = ref<string | null>(null), deleting = ref(false)
-const loaded = ref(false)
+const loaded = ref(false), savingStatus = ref<Record<string, boolean>>({})
 let hasLoadedOnce = false
 let blockedInitialLoad = false
 let generation = 0
 let detailGeneration = 0
+let statusEpoch = 0
+const confirmedStatuses = new Map<string, { status: FeedbackStatus; epoch: number }>()
 
+function applyConfirmedStatuses(list: SiteFeedbackItem[], startedEpoch: number): SiteFeedbackItem[] {
+  return list.map(item => {
+    const confirmed = confirmedStatuses.get(item.id)
+    if (!confirmed) return item
+    if (confirmed.epoch <= startedEpoch) { confirmedStatuses.delete(item.id); return item }
+    return { ...item, status: confirmed.status }
+  })
+}
 async function load(): Promise<void> {
   const current = ++generation
+  const statusEpochAtStart = statusEpoch
   if (!requireFeature(Feature.ADMIN_SITE_FEEDBACK)) {
     if (!hasLoadedOnce) blockedInitialLoad = true
     loading.value = false
@@ -34,7 +45,7 @@ async function load(): Promise<void> {
       await load()
       return
     }
-    items.value = result.items; totalPages.value = result.totalPages; totalItems.value = result.totalItems
+    items.value = applyConfirmedStatuses(result.items, statusEpochAtStart); totalPages.value = result.totalPages; totalItems.value = result.totalItems
     loaded.value = true; hasLoadedOnce = true
   } catch (cause) { if (current === generation) error.value = apiErrorLabel(t, te, cause) }
   finally { if (current === generation) loading.value = false }
@@ -49,12 +60,40 @@ function previewText(value: string | null) {
 function reasonLabels(codes: readonly SiteFeedbackReason[]) {
   return codes.map(code => t(`siteFeedback.reasons.${code}`)).join(', ')
 }
-async function showDetail(id: string) {
+async function changeStatus(item: SiteFeedbackItem, event: Event): Promise<void> {
+  const select = event.target as HTMLSelectElement
+  const next = select.value as FeedbackStatus
+  const previous = item.status
+  if (next === previous || savingStatus.value[item.id]) { select.value = previous; return }
+  savingStatus.value = { ...savingStatus.value, [item.id]: true }
+  error.value = ''
+  try {
+    await updateSiteFeedbackStatus(item.id, next)
+    statusEpoch++
+    confirmedStatuses.set(item.id, { status: next, epoch: statusEpoch })
+    const target = items.value.find(entry => entry.id === item.id)
+    if (target) target.status = next
+    if (detail.value && detail.value.id === item.id) detail.value = { ...detail.value, status: next }
+  } catch (cause) {
+    select.value = previous
+    error.value = apiErrorLabel(t, te, cause)
+  } finally {
+    const rest = { ...savingStatus.value }
+    delete rest[item.id]
+    savingStatus.value = rest
+  }
+}
+async function showDetail(id: string): Promise<void> {
   const current = ++detailGeneration
+  const statusEpochAtStart = statusEpoch
   if (!requireFeature(Feature.ADMIN_SITE_FEEDBACK)) return
   error.value = ''
-  try { const result = await getSiteFeedback(id); if (current === detailGeneration) detail.value = result }
-  catch (cause) { if (current === detailGeneration) error.value = apiErrorLabel(t, te, cause) }
+  try {
+    const result = await getSiteFeedback(id)
+    if (current !== detailGeneration) return
+    const confirmed = confirmedStatuses.get(result.id)
+    detail.value = confirmed && confirmed.epoch > statusEpochAtStart ? { ...result, status: confirmed.status } : result
+  } catch (cause) { if (current === detailGeneration) error.value = apiErrorLabel(t, te, cause) }
 }
 function closeDetail() { detailGeneration++; detail.value = null }
 async function remove() {
@@ -86,11 +125,12 @@ onBeforeUnmount(() => { generation++; detailGeneration++ })
     <p v-else-if="loaded && !items.length">{{ $t('siteFeedback.empty') }}</p>
     <div class="table-wrap">
       <table v-if="items.length">
-        <thead><tr><th>{{ $t('siteFeedback.created') }}</th><th>{{ $t('siteFeedback.filter') }}</th><th>{{ $t('siteFeedback.comment') }}</th><th>{{ $t('siteFeedback.page') }}</th><th>{{ $t('siteFeedback.actions') }}</th></tr></thead>
+        <thead><tr><th>{{ $t('siteFeedback.created') }}</th><th>{{ $t('siteFeedback.filter') }}</th><th>{{ $t('siteFeedback.comment') }}</th><th>{{ $t('siteFeedback.page') }}</th><th>{{ $t('siteFeedback.statusLabel') }}</th><th>{{ $t('siteFeedback.actions') }}</th></tr></thead>
         <tbody><tr v-for="item in items" :key="item.id">
           <td>{{ new Date(item.createdAt).toLocaleString() }}</td>
           <td>{{ reasonLabels(item.reasonCodes) }}</td>
           <td class="preview">{{ previewText(item.feedbackText) }}</td><td>{{ item.pageView || '—' }}</td>
+          <td><select class="status-select" :value="item.status" :disabled="!!savingStatus[item.id]" :aria-label="$t('siteFeedback.statusLabel')" @change="changeStatus(item, $event)"><option v-for="value in feedbackStatuses" :key="value" :value="value">{{ $t(`siteFeedback.status.${value}`) }}</option></select></td>
           <td><button type="button" @click="showDetail(item.id)">{{ $t('siteFeedback.view') }}</button> <button type="button" @click="confirmId = item.id">{{ $t('siteFeedback.delete') }}</button></td>
         </tr></tbody>
       </table>
@@ -103,6 +143,7 @@ onBeforeUnmount(() => { generation++; detailGeneration++ })
       <template v-if="detail">
         <p>{{ $t('siteFeedback.created') }}: {{ new Date(detail.createdAt).toLocaleString() }}</p>
         <p>{{ $t('siteFeedback.page') }}: {{ detail.pageView || '—' }}</p>
+        <p>{{ $t('siteFeedback.statusLabel') }}: {{ $t('siteFeedback.status.' + detail.status) }}</p>
         <p>{{ reasonLabels(detail.reasonCodes) }}</p>
         <h3>{{ $t('siteFeedback.comment') }}</h3><pre>{{ detail.feedbackText || '—' }}</pre>
       </template>
@@ -122,6 +163,7 @@ onBeforeUnmount(() => { generation++; detailGeneration++ })
 table { width: 100%; border-collapse: collapse; margin-top: var(--space-4); }
 th, td { text-align: left; padding: var(--space-2); border-bottom: 1px solid var(--color-border-subtle); }
 .preview { overflow-wrap: anywhere; }
+.status-select { min-width: 7rem; }
 .pages { display: flex; align-items: center; gap: var(--space-3); margin-top: var(--space-4); }
 pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
 </style>

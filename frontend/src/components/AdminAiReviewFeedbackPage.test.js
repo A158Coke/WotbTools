@@ -5,8 +5,8 @@ import { ref } from 'vue'
 import AdminAiReviewFeedbackPage from './AdminAiReviewFeedbackPage.vue'
 
 const api = vi.hoisted(() => ({
-  listFeedback: vi.fn(), getFeedback: vi.fn(), deleteFeedback: vi.fn(),
-  feedbackReasons: ['FACT_ERROR', 'OTHER'],
+  listFeedback: vi.fn(), getFeedback: vi.fn(), deleteFeedback: vi.fn(), updateFeedbackStatus: vi.fn(),
+  feedbackReasons: ['FACT_ERROR', 'OTHER'], feedbackStatuses: ['PENDING', 'FIXED'],
 }))
 const gate = vi.hoisted(() => ({ status: null }))
 vi.mock('../api/ai-review-feedback.js', () => api)
@@ -15,14 +15,16 @@ vi.mock('../composables/useFeatureGate.js', () => ({ useFeatureGate: () => ({
   requireFeature: () => gate.status.value.available,
   availability: () => gate.status.value,
 }) }))
-const row = { id: '1', reasonCodes: ['FACT_ERROR'], feedbackText: 'feedback', model: null, createdAt: '2026-01-01T00:00:00Z' }
+const row = { id: '1', reasonCodes: ['FACT_ERROR'], feedbackText: 'feedback', model: null, createdAt: '2026-01-01T00:00:00Z', status: 'PENDING' }
 const dialogStub = { props: ['open'], template: '<div v-if="open"><slot /></div>' }
 beforeEach(() => {
   vi.clearAllMocks()
+  row.status = 'PENDING'
   gate.status = ref({ available: true, pending: false })
   api.listFeedback.mockResolvedValue({ items: [row], page: 0, size: 25, totalItems: 1, totalPages: 1 })
   api.getFeedback.mockResolvedValue({ ...row, aiResponseText: 'exact reply\nraw' })
   api.deleteFeedback.mockResolvedValue(undefined)
+  api.updateFeedbackStatus.mockResolvedValue(undefined)
 })
 
 it('loads exactly once when initial connectivity settles online and does not show an unrequested empty list', async () => {
@@ -102,4 +104,73 @@ it('requests the next server page and ignores a stale filter response', async ()
   await flushPromises()
   expect(wrapper.text()).toContain('fresh')
   expect(wrapper.text()).not.toContain('stale')
+})
+
+it('displays the server status, saves a confirmed change and re-reads it on refresh', async () => {
+  const wrapper = mount(AdminAiReviewFeedbackPage, { global: { mocks: { $t: key => key }, stubs: { AppDialog: dialogStub } } })
+  await flushPromises()
+  expect(wrapper.get('.status-select').element.value).toBe('PENDING')
+  await wrapper.get('.status-select').setValue('FIXED')
+  await flushPromises()
+  expect(api.updateFeedbackStatus).toHaveBeenCalledTimes(1)
+  expect(api.updateFeedbackStatus).toHaveBeenCalledWith('1', 'FIXED')
+  expect(wrapper.get('.status-select').element.value).toBe('FIXED')
+  api.listFeedback.mockResolvedValueOnce({ items: [{ ...row, status: 'FIXED' }], page: 0, size: 25, totalItems: 1, totalPages: 1 })
+  await wrapper.findAll('button').find(button => button.text() === 'aiFeedback.refresh').trigger('click')
+  await flushPromises()
+  expect(wrapper.get('.status-select').element.value).toBe('FIXED')
+})
+
+it('keeps the previous status and shows an error when the update fails', async () => {
+  api.updateFeedbackStatus.mockRejectedValueOnce(new Error('network down'))
+  const wrapper = mount(AdminAiReviewFeedbackPage, { global: { mocks: { $t: key => key }, stubs: { AppDialog: dialogStub } } })
+  await flushPromises()
+  await wrapper.get('.status-select').setValue('FIXED')
+  await flushPromises()
+  expect(api.updateFeedbackStatus).toHaveBeenCalledWith('1', 'FIXED')
+  expect(wrapper.get('.status-select').element.value).toBe('PENDING')
+  expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+})
+
+it('disables the status control while saving and ignores duplicate submissions', async () => {
+  let resolveUpdate
+  api.updateFeedbackStatus.mockImplementationOnce(() => new Promise(resolve => { resolveUpdate = resolve }))
+  const wrapper = mount(AdminAiReviewFeedbackPage, { global: { mocks: { $t: key => key }, stubs: { AppDialog: dialogStub } } })
+  await flushPromises()
+  await wrapper.get('.status-select').setValue('FIXED')
+  await flushPromises()
+  expect(wrapper.get('.status-select').element.disabled).toBe(true)
+  await wrapper.get('.status-select').setValue('FIXED')
+  expect(api.updateFeedbackStatus).toHaveBeenCalledTimes(1)
+  resolveUpdate()
+  await flushPromises()
+  expect(wrapper.get('.status-select').element.disabled).toBe(false)
+  expect(wrapper.get('.status-select').element.value).toBe('FIXED')
+})
+
+it('does not let a stale list response overwrite a confirmed status', async () => {
+  const wrapper = mount(AdminAiReviewFeedbackPage, { global: { mocks: { $t: key => key }, stubs: { AppDialog: dialogStub } } })
+  await flushPromises()
+  let resolveList
+  api.listFeedback.mockImplementationOnce(() => new Promise(resolve => { resolveList = resolve }))
+  await wrapper.findAll('button').find(button => button.text() === 'aiFeedback.refresh').trigger('click')
+  await flushPromises()
+  await wrapper.get('.status-select').setValue('FIXED')
+  await flushPromises()
+  resolveList({ items: [row], page: 0, size: 25, totalItems: 1, totalPages: 1 })
+  await flushPromises()
+  expect(wrapper.get('.status-select').element.value).toBe('FIXED')
+})
+
+it('does not let a stale detail response overwrite a confirmed status', async () => {
+  let resolveDetail
+  api.getFeedback.mockImplementationOnce(() => new Promise(resolve => { resolveDetail = resolve }))
+  const wrapper = mount(AdminAiReviewFeedbackPage, { global: { mocks: { $t: key => key }, stubs: { AppDialog: dialogStub } } })
+  await flushPromises()
+  await wrapper.findAll('button').find(button => button.text() === 'aiFeedback.view').trigger('click')
+  await wrapper.get('.status-select').setValue('FIXED')
+  await flushPromises()
+  resolveDetail({ ...row, aiResponseText: 'exact reply\nraw' })
+  await flushPromises()
+  expect(wrapper.text()).toContain('aiFeedback.status.FIXED')
 })

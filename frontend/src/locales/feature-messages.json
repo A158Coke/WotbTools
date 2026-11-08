@@ -7,6 +7,7 @@
       "filter": "原因", "all": "全部", "refresh": "刷新", "loading": "加载中…", "empty": "没有反馈记录。",
       "created": "时间", "model": "模型", "actions": "操作", "view": "查看", "delete": "删除", "deleteConfirm": "确定永久删除这条反馈？",
       "previous": "上一页", "next": "下一页", "detail": "反馈详情", "snapshot": "AI 回复原文",
+      "statusLabel": "状态", "status": { "PENDING": "待修复", "FIXED": "已修复" },
       "reasons": { "FACT_ERROR": "事实错误", "BAD_JUDGMENT": "判断不好", "MISSED_KEY_POINT": "漏掉关键点", "TOO_AI_LIKE": "太像 AI", "TOO_VAGUE": "过于模糊", "TOO_VERBOSE": "太啰嗦", "UNHELPFUL_ADVICE": "建议没帮助", "OTHER": "其他" }
     },
     "siteFeedback": {
@@ -16,6 +17,7 @@
       "filter": "原因", "all": "全部", "refresh": "刷新", "loading": "加载中…", "empty": "没有反馈记录。",
       "created": "时间", "page": "页面", "actions": "操作", "view": "查看", "delete": "删除", "deleteConfirm": "确定永久删除这条反馈？",
       "previous": "上一页", "next": "下一页", "detail": "反馈详情",
+      "statusLabel": "状态", "status": { "PENDING": "待修复", "FIXED": "已修复" },
       "reasons": { "BUG": "功能故障", "FEATURE_REQUEST": "功能建议", "DATA_ERROR": "数据有误", "USABILITY": "使用不便", "OTHER": "其他" }
     },
     "baseStatus": {
@@ -1010,6 +1012,7 @@
       "filter": "Reason", "all": "All", "refresh": "Refresh", "loading": "Loading…", "empty": "No feedback found.",
       "created": "Date", "model": "Model", "actions": "Actions", "view": "View", "delete": "Delete", "deleteConfirm": "Permanently delete this feedback?",
       "previous": "Previous", "next": "Next", "detail": "Feedback details", "snapshot": "Original AI reply",
+      "statusLabel": "Status", "status": { "PENDING": "Pending", "FIXED": "Fixed" },
       "reasons": { "FACT_ERROR": "Factual error", "BAD_JUDGMENT": "Poor judgment", "MISSED_KEY_POINT": "Missed key point", "TOO_AI_LIKE": "Too AI-like", "TOO_VAGUE": "Too vague", "TOO_VERBOSE": "Too verbose", "UNHELPFUL_ADVICE": "Unhelpful advice", "OTHER": "Other" }
     },
     "siteFeedback": {
@@ -1019,6 +1022,7 @@
       "filter": "Reason", "all": "All", "refresh": "Refresh", "loading": "Loading…", "empty": "No feedback found.",
       "created": "Date", "page": "Page", "actions": "Actions", "view": "View", "delete": "Delete", "deleteConfirm": "Permanently delete this feedback?",
       "previous": "Previous", "next": "Next", "detail": "Feedback details",
+      "statusLabel": "Status", "status": { "PENDING": "Pending", "FIXED": "Fixed" },
       "reasons": { "BUG": "Something is broken", "FEATURE_REQUEST": "Feature request", "DATA_ERROR": "Incorrect data", "USABILITY": "Hard to use", "OTHER": "Other" }
     },
     "baseStatus": {
@@ -2013,6 +2017,7 @@
       "filter": "Причина", "all": "Все", "refresh": "Обновить", "loading": "Загрузка…", "empty": "Отзывы не найдены.",
       "created": "Дата", "model": "Модель", "actions": "Действия", "view": "Просмотр", "delete": "Удалить", "deleteConfirm": "Удалить отзыв без возможности восстановления?",
       "previous": "Назад", "next": "Далее", "detail": "Подробности отзыва", "snapshot": "Исходный ответ ИИ",
+      "statusLabel": "Статус", "status": { "PENDING": "Ожидает исправления", "FIXED": "Исправлено" },
       "reasons": { "FACT_ERROR": "Фактическая ошибка", "BAD_JUDGMENT": "Неверная оценка", "MISSED_KEY_POINT": "Упущен важный момент", "TOO_AI_LIKE": "Слишком похоже на ИИ", "TOO_VAGUE": "Слишком расплывчато", "TOO_VERBOSE": "Слишком многословно", "UNHELPFUL_ADVICE": "Бесполезный совет", "OTHER": "Другое" }
     },
     "siteFeedback": {
@@ -2022,6 +2027,7 @@
       "filter": "Причина", "all": "Все", "refresh": "Обновить", "loading": "Загрузка…", "empty": "Отзывы не найдены.",
       "created": "Дата", "page": "Страница", "actions": "Действия", "view": "Просмотр", "delete": "Удалить", "deleteConfirm": "Удалить отзыв без возможности восстановления?",
       "previous": "Назад", "next": "Далее", "detail": "Подробности отзыва",
+      "statusLabel": "Статус", "status": { "PENDING": "Ожидает исправления", "FIXED": "Исправлено" },
       "reasons": { "BUG": "Что-то сломано", "FEATURE_REQUEST": "Предложение", "DATA_ERROR": "Неверные данные", "USABILITY": "Неудобно пользоваться", "OTHER": "Другое" }
     },
     "baseStatus": {
