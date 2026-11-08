@@ -157,12 +157,53 @@ export function resolveUpgradeSelection(modules: unknown, mode?: unknown, inputC
     requested = /^\d+(?:,\d+){0,63}$/.test(requested) ? requested.split(',').map(Number) : []
   }
   const custom = result.mode === 'custom'
-  // custom：abilities = 已研发节点 id 表。先按组互斥归一化——每组只保留一个已研发
-  // 备选（组定义顺序首个），其余同组备选不写入结果、不参与聚合；手工构造的 URL
-  // （如 abilities=22,23,24）不能叠出客户端不可能的互斥效果。
+  // custom：abilities = 已研发节点 id 表，投影边界统一规范化为两类不变量：
+  // 1) 前置闭包——客户端不存在“节点已研发但前置未研发”的状态。深链/手写 URL 只给
+  //    部分节点时，前置由“已研发”这一事实蕴含，按同一规则补齐（不是逐例判断）；
+  //    前置不可解析（数据缺失）的节点整颗拒绝（fail-closed），不做部分接受。
+  // 2) 组互斥——每组只保留组定义顺序的首个已研发备选，其余同组备选不写入结果、
+  //    不参与聚合；手工构造的 URL（如 abilities=22,23,24）不能叠出互斥效果。
   let researched: Set<number> | null = null
   if (custom) {
-    const set = new Set(Array.isArray(requested) ? requested.filter(id => ids.has(id)) : [])
+    const nodesByTech = new Map(result.nodes.map(node => [node.techName, node]))
+    const nodesById = new Map(result.nodes.map(node => [node.id, node]))
+    /** 该节点 + 全部直接/间接前置；任一前置不可解析返回 null（整颗拒绝）。 */
+    const prerequisiteClosure = (id: number): Set<number> | null => {
+      const start = nodesById.get(id)
+      if (!start) return null
+      const out = new Set<number>()
+      const seen = new Set<string>()
+      const stack = [start]
+      while (stack.length) {
+        const node = stack.pop()!
+        if (seen.has(node.techName)) continue
+        seen.add(node.techName)
+        out.add(node.id)
+        for (const req of Array.isArray(node.requiredNodes) ? (node.requiredNodes as string[]) : []) {
+          const up = nodesByTech.get(req)
+          if (!up) return null
+          stack.push(up)
+        }
+      }
+      return out
+    }
+    const set = new Set<number>()
+    for (const id of Array.isArray(requested) ? requested : []) {
+      if (!ids.has(id)) continue
+      prerequisiteClosure(id)?.forEach(nodeId => set.add(nodeId))
+    }
+    for (const group of result.groups) {
+      if (!group.choices.some(id => set.has(id))) continue
+      // 组级 requiredNodes 同样属于闭包；不可解析时整组不激活（清掉该组备选）
+      let resolvable = true
+      for (const req of Array.isArray(group.requiredNodes) ? (group.requiredNodes as string[]) : []) {
+        const up = nodesByTech.get(req)
+        const closure = up ? prerequisiteClosure(up.id) : null
+        if (!closure) { resolvable = false; break }
+        closure.forEach(nodeId => set.add(nodeId))
+      }
+      if (!resolvable) group.choices.forEach(id => set.delete(id))
+    }
     for (const group of result.groups) {
       group.choices.filter(id => set.has(id)).slice(1).forEach(id => set.delete(id))
     }

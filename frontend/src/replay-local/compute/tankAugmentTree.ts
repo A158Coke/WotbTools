@@ -166,7 +166,9 @@ export function isGroupChosable(group: AugmentGroup, installed: ReadonlySet<numb
   return group.choices.some(id => installed.has(id))
 }
 
-/** 点击研发：该节点 + 全部未解锁前置（链式），返回新 installed。 */
+/** 点击研发：该节点 + 全部前置（链式），返回新 installed。
+ *  已装入的节点也要继续走它的前置：手写 URL 可能留下“孤立节点”（祖先缺失），
+ *  在此一并补全；用 techName 去重保证线性收敛，幂等。 */
 export function researchWithPrerequisites(
   progression: AugmentProgression,
   nodeId: number,
@@ -174,8 +176,10 @@ export function researchWithPrerequisites(
 ): Set<number> {
   const byTech = new Map(progression.nodes.map(n => [n.techName, n]))
   const next = new Set(installed)
+  const seen = new Set<string>()
   const walk = (node: AugmentNode | undefined): void => {
-    if (!node || next.has(node.id)) return
+    if (!node || seen.has(node.techName)) return
+    seen.add(node.techName)
     ;(node.requiredNodes ?? []).forEach(req => walk(byTech.get(req)))
     next.add(node.id)
   }

@@ -76,6 +76,21 @@ describe('TankAugmentTree 可访问性与操作文案', () => {
     wrapper.unmount()
   })
 
+  it('组详情三项备选标题可读（不泄露 */Upgrades/Alternative 资源键），组按钮无障碍名同口径', async () => {
+    const wrapper = render({ vehicleAbilities: ['rechargeableNitro'] })
+    const groupButton = wrapper.get('[data-testid="tank-augment-group"]')
+    expect(groupButton.attributes('aria-label')).not.toContain('Upgrades/Group')
+    expect(groupButton.attributes('aria-label')).toContain('Liquid Fuel Boosters')
+    await groupButton.trigger('click')
+    const panel = wrapper.get('[data-testid="tank-augment-info"]').text()
+    expect(panel).not.toContain('Upgrades/Alternative')
+    // 三项分别有可读文案（属性标签），不是空行/内部键
+    const rows = wrapper.findAll('.at-optrow')
+    expect(rows).toHaveLength(3)
+    for (const row of rows) expect(row.text().trim().length).toBeGreaterThan(0)
+    wrapper.unmount()
+  })
+
   it('MODIFIER_MULTIPLY 属性按系数（×）展示，不显示为加法', async () => {
     const wrapper = render()
     // BZ-79 节点 5（tier11_stabilisation_01）：散布系数 0.98 = 乘数语义（降 2%）

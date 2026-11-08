@@ -175,16 +175,23 @@ function onGroupClick(): void {
 function groupIsInstalled(g: AugmentGroup): boolean {
   return g.choices.some(id => installedSet.value.has(id))
 }
-/** 可点击单元的无障碍名：技术名 + 当前状态（节点/组/备选共用口径）。 */
+  /** 可读名称：客户端未本地化的资源键（含 `/Upgrades/` 路径）不外露，退回属性标签/技术名。 */
+function readableName(node: AugmentNodeView | null | undefined): string {
+  if (!node) return ''
+  if (node.displayName && !isResourceKey(node.displayName)) return node.displayName
+  const labels = nodeEffectLines(node)
+  return labels.length ? labels.join(' · ') : node.techName
+}
+/** 可点击单元的无障碍名：可读名称 + 当前状态（节点/组/备选共用口径）。 */
 function nodeAriaLabel(node: AugmentNodeView | null | undefined): string {
   if (!node) return ''
   const status = installedSet.value.has(node.id)
     ? t('agentTanks.configurator.augment_installed')
     : t('agentTanks.configurator.augment_can_research')
-  return `${node.techName} · ${status}`
+  return `${readableName(node)} · ${status}`
 }
 function groupAriaLabel(g: AugmentGroup): string {
-  const name = g.displayName || mechanicName.value || g.id
+  const name = groupTitle.value || mechanicName.value || g.id
   const status = groupIsInstalled(g)
     ? t('agentTanks.configurator.augment_installed')
     : t('agentTanks.configurator.augment_can_research')
@@ -219,7 +226,8 @@ const selectedGroupRows = computed<SelectedEffectRow[]>(() => {
   if (!sel || sel.kind !== 'group') return []
   return sel.group.choices.map(choiceId => {
     const alt = nodesById.value.get(choiceId)
-    return { id: choiceId, label: alt?.displayName || alt?.techName, lines: nodeEffectLines(alt), chosen: chosen.value[sel.group.id] === choiceId }
+    // 备选 displayName 也是未本地化资源键：与配置卡同口径退回本地化属性标签
+    return { id: choiceId, label: readableName(alt), lines: nodeEffectLines(alt), chosen: chosen.value[sel.group.id] === choiceId }
   })
 })
 const selectedIsNode = computed(() => selected.value?.kind === 'node' || selected.value?.kind === 'alt')
