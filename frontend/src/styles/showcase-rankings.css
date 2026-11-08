@@ -48,6 +48,7 @@
   height: 320px;
   border: 1px solid color-mix(in srgb, var(--color-accent) 14%, transparent);
   border-radius: 50%;
+  corner-shape: round;
   box-shadow: 0 0 0 54px color-mix(in srgb, var(--color-accent) 2.5%, transparent);
 }
 .lb-wrap .lb-kicker { color: var(--accent-light) !important; font-weight: 900; letter-spacing: .1em; }

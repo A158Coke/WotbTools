@@ -1032,7 +1032,7 @@ onBeforeUnmount(() => {
 .armor-view #debug-info { display: none; padding: var(--space-3); max-inline-size: 24rem; max-block-size: 32dvh; overflow: auto; font: var(--type-caption); }
 .armor-view #debug-info h4 { margin: 0 0 var(--space-2); font: var(--type-caption); }
 .armor-view .dbg-row { display: flex; align-items: flex-start; gap: var(--space-1); margin: var(--space-1) 0; overflow-wrap: anywhere; }
-.armor-view .dbg-dot { flex: none; inline-size: var(--space-2); block-size: var(--space-2); border-radius: var(--radius-full); margin-block-start: var(--space-1); }
+.armor-view .dbg-dot { flex: none; inline-size: var(--space-2); block-size: var(--space-2); border-radius: var(--radius-full); corner-shape: round; margin-block-start: var(--space-1); }
 .armor-view .dbg-name { flex: none; color: var(--muted); }
 .armor-view .dbg-val { min-inline-size: 0; }
 /* 点选结果（厚度 #click-info、击穿 #traj-info）：固定停靠在场景顶部正中的胶囊，不跟随命中点、

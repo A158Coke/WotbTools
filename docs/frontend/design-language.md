@@ -256,6 +256,12 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 **圆角**：`--radius-sm: 6px`（标签、小徽章、小控件）· `--radius-md: 8px`（按钮、输入框、卡片）· `--radius-lg: 12px`（弹窗、sheet、抽屉）· `--radius-full: 999px`（胶囊、头像）
 
+**超椭圆（squircle）圆角 · 渐进增强**：`scale.css` 在 `@supports (corner-shape: squircle)` 里集中启用，组件不逐个处理。
+- 开关是 `--corner-shape`（支持时为 `squircle`），并由一条 `*, ::before, ::after { corner-shape: var(--corner-shape) }` 全局规则应用。`corner-shape` 不继承，没有圆角的元素不受影响。不支持的引擎（截至核实：iOS Safari、Firefox / GeckoView 的稳定版）整段被忽略，照常退回普通 `border-radius`，页面无需任何分支。
+- 同半径下 squircle 的曲线更靠近角点、视觉更方，所以同一个 `@supports` 内把 `--radius-sm / md / lg` 从 6 / 8 / 12px 放大到 8 / 10 / 16px（约 1.25–1.33 倍）。基准值（不支持的平台）不变；组件仍只引用 token，不要自己写 `calc()` 补偿。
+- **`--radius-full` 例外**：胶囊、圆形（头像、圆形图标按钮、赞助胶囊、开关、进度条）不放大、不变形。凡是写 `border-radius: var(--radius-full)`（或 `50%`）的规则，必须紧跟一条 `corner-shape: round`（需要继承父级圆角时用 `corner-shape: inherit`）。未分层的组件规则优先于 `@layer tokens`，所以这条声明能覆盖全局规则。`src/styles/corner-shape.test.js` 会检查这条约定。
+- 新增圆形 / 胶囊元素时同样要带 `corner-shape: round`；普通圆角矩形什么都不用写。
+
 **阴影 / 层级**：
 
 | token | 用途 | 暗色 | 亮色 |

@@ -16,21 +16,21 @@ const presetSource = source.slice(
 
 function bindPreset(camera, controls) {
   return new Function('THREE', 'camera', 'controls', 'armorPresetGunPitch', 'armorCameraPreset', 'armorPresetViewPlacement', `
-    // 替身按 #914 拆分后的 owner 命名：模型归 modelLifecycle（ml.models），炮塔/炮管归 turretRig（rig），
-    // 装备状态归 equipmentState（eqs），轨迹卡归 trajectoryCard（tc）。
     const destroyed = false, contextLost = false, ARMOR_REF_DIST = 15;
-    const ml = { models: { armorModel: {}, tankModel: { matrixWorld: new THREE.Matrix4() } } };
     const QP = new URLSearchParams();
-    let currentTurretDeg = 0, currentGunDeg = 0;
+    // #820 拆分后：模型/世界米制 owner = modelLifecycle.ts（ml），炮塔/炮管 owner = turretRig.ts（rig），
+    // 瞄准设备 owner = equipmentState.ts（eqs），轨迹 owner = trajectoryCard.ts（tc）。
+    const ml = { models: { tankModel: { matrixWorld: new THREE.Matrix4() }, armorModel: {} } };
     const rig = {
       gunPoseMatrix: new THREE.Matrix4(),
       getArmorPivotGun: () => new THREE.Vector3(0, 0, 2),
       updateTurretGun: (turret, gun) => { currentTurretDeg = turret; currentGunDeg = gun; },
     };
-    const pitchAtBearing = () => ({ down: -20, up: 20 });
     const eqs = { effectivePitchDevice: () => false, getPitchDeviceBonusValue: () => 0 };
-    const currentConfig = () => ({ pitch_limits: { down: -20, up: 20 } });
     const tc = { tidyTrajectory: () => {} };
+    let currentTurretDeg = 0, currentGunDeg = 0;
+    const pitchAtBearing = () => ({ down: -20, up: 20 });
+    const currentConfig = () => ({ pitch_limits: { down: -20, up: 20 } });
     ${presetSource}
     return { setCameraPreset, pose: () => ({ turretDeg: currentTurretDeg, gunDeg: currentGunDeg }) };
   `)(THREE, camera, controls, armorPresetGunPitch, armorCameraPreset, armorPresetViewPlacement)

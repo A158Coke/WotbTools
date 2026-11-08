@@ -158,6 +158,7 @@ const percentNow = computed(() => Math.round(v.value * 100))
   padding: var(--space-1);
   border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: var(--color-surface-1);
   touch-action: none;
 }
@@ -175,6 +176,7 @@ const percentNow = computed(() => Math.round(v.value * 100))
   /* 高度上限 200px：矮横屏下不与全屏按钮/顶部 HUD 抢空间（不用 vh，lint 禁 vh） */
   height: min(max(96px, 22dvh), 200px);
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: var(--color-surface-3);
 }
 
@@ -185,6 +187,7 @@ const percentNow = computed(() => Math.round(v.value * 100))
   width: calc(var(--space-4) + var(--space-1));
   height: calc(var(--space-4) + var(--space-1));
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: var(--color-accent);
   pointer-events: none;
 }

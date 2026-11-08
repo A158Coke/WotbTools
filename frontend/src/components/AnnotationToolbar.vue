@@ -129,7 +129,7 @@ const is3D = computed(() => Array.isArray(props.allowedTools))
 .pb-annot-unit-btn small { font: inherit; opacity: .8; }
 .pb-annot-close { margin-inline-start: auto; }
 .pb-annot-color { display: grid; place-items: center; padding: var(--space-1); width: var(--control-h-md); height: var(--control-h-md); background: var(--color-surface-1); border: 1px solid transparent; border-radius: var(--radius-md); cursor: pointer; }
-.pb-annot-color span { width: var(--space-4); height: var(--space-4); border: 1px solid var(--color-border-strong); border-radius: var(--radius-full); background: var(--annot-color); }
+.pb-annot-color span { width: var(--space-4); height: var(--space-4); border: 1px solid var(--color-border-strong); border-radius: var(--radius-full); corner-shape: round; background: var(--annot-color); }
 .pb-annot-color.active { border-color: var(--color-accent); background: var(--color-surface-2); }
 .pb-annot-width, .pb-annot-name { display: inline-flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); color: var(--color-text-secondary); }
 .pb-annot-width input { width: calc(var(--space-10) * 2); min-height: var(--control-h-md); accent-color: var(--color-accent); }

@@ -431,12 +431,12 @@ onBeforeUnmount(() => { ++summaryGeneration; ++listGeneration; ++detailGeneratio
 
 /* 占比条：文字行 + 细条 */
 .share-row { display: grid; gap: var(--space-1); margin: 0 0 var(--space-2); }
-.share-track { display: block; block-size: var(--space-1); border-radius: var(--radius-full); background: var(--color-surface-2); overflow: hidden; }
+.share-track { display: block; block-size: var(--space-1); border-radius: var(--radius-full); corner-shape: round; background: var(--color-surface-2); overflow: hidden; }
 .share-fill { display: block; inline-size: var(--share, 0%); block-size: 100%; background: var(--color-accent); }
 
 /* 出生侧胜率分段条：先手侧胜 | 平局 | 后手侧胜 */
 .spawn-cell { min-inline-size: calc(var(--control-h-md) * 4); }
-.spawn-bar { display: flex; inline-size: 100%; min-inline-size: calc(var(--control-h-md) * 3); block-size: var(--space-2); border-radius: var(--radius-full); background: var(--color-surface-2); overflow: hidden; }
+.spawn-bar { display: flex; inline-size: 100%; min-inline-size: calc(var(--control-h-md) * 3); block-size: var(--space-2); border-radius: var(--radius-full); corner-shape: round; background: var(--color-surface-2); overflow: hidden; }
 .spawn-seg { display: block; inline-size: var(--seg, 0%); block-size: 100%; }
 .spawn-seg.is-first { background: var(--color-accent); }
 .spawn-seg.is-draw { background: var(--color-border-strong); }

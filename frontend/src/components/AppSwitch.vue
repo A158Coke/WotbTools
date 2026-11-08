@@ -48,6 +48,7 @@ function toggle(current: boolean) {
   block-size: var(--space-6);
   border: var(--border-width) solid var(--color-border-strong);
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: var(--color-surface-3);
   transition: background-color var(--duration-fast) var(--ease-standard);
 }
@@ -58,6 +59,7 @@ function toggle(current: boolean) {
   inline-size: var(--space-4);
   block-size: var(--space-4);
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: var(--color-text-secondary);
   transform: translateY(-50%);
   transition: inset-inline-start var(--duration-fast) var(--ease-standard);

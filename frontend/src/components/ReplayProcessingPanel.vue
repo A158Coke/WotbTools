@@ -73,12 +73,14 @@ const failureKey = computed(() => {
   height: var(--space-2);
   overflow: hidden;
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: var(--color-surface-3);
 }
 
 .task-bar-fill {
   height: 100%;
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: var(--color-accent);
   transition: width var(--duration-slow) var(--ease-standard);
 }

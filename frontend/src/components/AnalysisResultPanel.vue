@@ -318,7 +318,7 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
 .team-verdict-tags { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
 .team-diagnosis { padding-top: var(--space-2); border-top: 1px solid var(--color-border-subtle); }
 .team-diagnosis h3 { margin: 0 0 var(--space-1); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 700; }
-.team-verdict-tags li { padding: var(--space-1) var(--space-2); border-radius: var(--radius-full); background: var(--color-surface-2); color: var(--color-text-secondary); font: var(--type-caption); }
+.team-verdict-tags li { padding: var(--space-1) var(--space-2); border-radius: var(--radius-full); corner-shape: round; background: var(--color-surface-2); color: var(--color-text-secondary); font: var(--type-caption); }
 .team-timeline { display: grid; gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
 .team-timeline-item { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-3); padding-inline-start: var(--space-3); border-inline-start: 2px solid var(--color-border-subtle); }
 .team-timeline .team-time { align-self: start; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); background: var(--color-surface-2); color: var(--color-accent-text); font: var(--type-caption); font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
