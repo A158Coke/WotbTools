@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 
 import { describe, expect, it } from 'vitest'
+import { nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
 import MarkdownDocPage from './MarkdownDocPage.vue'
 
@@ -41,5 +42,39 @@ describe('MarkdownDocPage（审计 PG-14：长文档目录）', () => {
     const source = '# T\n\n## 一\n\n```\nnpm test\n```\n\n## 二\n\n正文'
     const wrapper = mount(MarkdownDocPage, { props: { source }, global: { mocks: { $t: key => key } } })
     expect(wrapper.find('pre .doc-copy').text()).toBe('doc.copy')
+  })
+
+  it('app footer 滚进视口底部带时隐藏「回到顶部」，不盖住页脚备案链接', async () => {
+    const observers = []
+    const RealIO = window.IntersectionObserver
+    class FakeIO {
+      constructor(callback, options) { this.callback = callback; this.options = options; observers.push(this) }
+      observe() {} unobserve() {} disconnect() {}
+    }
+    window.IntersectionObserver = FakeIO
+    const originalScrollY = Object.getOwnPropertyDescriptor(window, 'scrollY')
+    Object.defineProperty(window, 'scrollY', { value: 2000, configurable: true })
+    document.body.insertAdjacentHTML('beforeend', '<footer data-testid="app-footer"></footer>')
+    let wrapper
+    try {
+      wrapper = mount(MarkdownDocPage, { props: { source: SOURCE }, global: { mocks: { $t: key => key } } })
+      window.dispatchEvent(new Event('scroll'))
+      await nextTick()
+      expect(wrapper.find('[data-testid="doc-back-to-top"]').exists()).toBe(true)
+      const footerObserver = observers.find(observer => observer.options?.rootMargin === '0px 0px -80px 0px')
+      expect(footerObserver).toBeTruthy()
+      footerObserver.callback([{ isIntersecting: true }])
+      await nextTick()
+      expect(wrapper.find('[data-testid="doc-back-to-top"]').exists()).toBe(false)
+      footerObserver.callback([{ isIntersecting: false }])
+      await nextTick()
+      expect(wrapper.find('[data-testid="doc-back-to-top"]').exists()).toBe(true)
+    } finally {
+      wrapper?.unmount()
+      document.querySelector('[data-testid="app-footer"]')?.remove()
+      if (originalScrollY) Object.defineProperty(window, 'scrollY', originalScrollY)
+      else Reflect.deleteProperty(window, 'scrollY')
+      window.IntersectionObserver = RealIO
+    }
   })
 })

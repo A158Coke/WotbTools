@@ -53,7 +53,9 @@ async function onBodyClick(event) {
   if (await copyText(code)) showToast({ id: 'copy', tone: 'success', titleKey: 'toast.copied' })
 }
 const showBackToTop = ref(false)
+const footerInView = ref(false)
 let observer = null
+let footerObserver = null
 const body = ref(null)
 
 function onScroll() {
@@ -67,6 +69,17 @@ function scrollToTop() {
 onMounted(() => {
   window.addEventListener('scroll', onScroll, { passive: true })
   decorateCodeBlocks()
+  // 「回到顶部」固定在视口右下：app footer（备案链接）滚进底部 80px 带时必须让位，
+  // 否则 L6 判内容控件被常驻面盖住；footer 离开视口后恢复。
+  if (typeof IntersectionObserver === 'function') {
+    const footer = document.querySelector('[data-testid="app-footer"]')
+    if (footer) {
+      footerObserver = new IntersectionObserver((entries) => {
+        footerInView.value = entries.some(entry => entry.isIntersecting)
+      }, { rootMargin: '0px 0px -80px 0px' })
+      footerObserver.observe(footer)
+    }
+  }
   if (typeof IntersectionObserver !== 'function' || !body.value) return
   // 视口上部 30% 内最靠上的章节标题 = 当前章节
   observer = new IntersectionObserver((entries) => {
@@ -79,6 +92,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('scroll', onScroll)
   observer?.disconnect()
+  footerObserver?.disconnect()
 })
 </script>
 
@@ -108,7 +122,7 @@ onBeforeUnmount(() => {
     </div>
 
 
-    <button v-if="showBackToTop" type="button" class="doc-top" data-testid="doc-back-to-top" :aria-label="$t('doc.back_to_top')" :title="$t('doc.back_to_top')" @click="scrollToTop">
+    <button v-if="showBackToTop && !footerInView" type="button" class="doc-top" data-testid="doc-back-to-top" :aria-label="$t('doc.back_to_top')" :title="$t('doc.back_to_top')" @click="scrollToTop">
       <ArrowUp :size="20" aria-hidden="true" />
     </button>
   </div>
