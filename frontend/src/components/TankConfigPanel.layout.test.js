@@ -18,9 +18,9 @@ describe('TankConfigPanel mobile module layout', () => {
     expect(source).toMatch(/@media \(width < 768px\)[\s\S]*?\.tp-module-groups \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/)
   })
 
-  it('手机装备矩阵按 9 对候选分组：组内 2px、组间 12px 留白', () => {
+  it('手机装备矩阵按 9 对候选分组：横纵组间均为 12px、组内 2px', () => {
     const mobile = source.slice(source.indexOf('@media (width < 768px)'))
-    expect(mobile).toMatch(/\.tp-dev-matrix \{ gap: var\(--space-2\) var\(--space-3\); \}/)
+    expect(mobile).toMatch(/\.tp-dev-matrix \{ gap: var\(--space-3\); \}/)
     expect(mobile).toMatch(/\.tp-dev-slot \{[^}]*gap: calc\(var\(--space-1\) \/ 2\);/)
   })
 
