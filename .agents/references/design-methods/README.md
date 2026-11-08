@@ -11,6 +11,8 @@
 
 ## 使用入口与权威关系
 
+**直接使用方式：** 在已打开 WotBTools 仓库的 Coding Agent 中，说「使用 Designer，按 UI Design Review Playbook 只审计首页设计，不改代码」即可运行只读 Design Audit；说「使用 Designer，为某页面提出新的视觉和 Apple-style 交互方案，先出原型，不实现」即可运行设计阶段。无需把本目录复制到每个 Agent 的全局 Skills 目录；前提是该 Agent 能读取仓库文件并按 `.agents/skills/designer/SKILL.md` 加载本 Playbook。
+
 - **先读**项目内部 [UI Design Review Playbook](../../playbooks/ui-design-review.md)，由它解释参考方法在 WotBTools 的适用范围与验证方式。
 - 视觉设计：阅读 `refactoring-ui/SKILL.md`，按需要加载其 `references/`，不要一次性加载全部章节。
 - 交互设计：阅读 `apple-design/SKILL.md`。

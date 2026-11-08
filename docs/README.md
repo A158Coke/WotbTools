@@ -26,6 +26,7 @@
 | `DEVELOPER_GUIDE.md` | 找环境、构建、结构或架构时读取相关章节；全仓接手 / onboarding / architecture-wide 任务全文 |
 | `frontend/local-testing.md` | **本机全功能测试 runbook**：起环境（Agent 引擎 / 资产面 / 认证门禁）、自检探针、故障对照、自动化门禁时（本机测试最先读） |
 | `frontend/local-production-dev.md` | 本地前端连接生产后端 / Keycloak 链路与安全边界时 |
+| `../.agents/playbooks/ui-design-review.md` | 用 Refactoring UI + Apple Design 进行 UI 设计或只读 Design Audit；查看可直接使用的模式、输入和输出标准 |
 | `../README.md` | 了解当前产品是什么、功能与工程取舍 |
 
 ## 开发与性能

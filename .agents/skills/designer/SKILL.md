@@ -3,9 +3,10 @@ name: designer
 description: >
   开发生命周期的设计阶段：从用户请求中提取真实 outcome 与约束，基于仓库事实完成 ambition、
   evidence depth、cross-domain range、方案设计、独立验证与 adversarial design grill，最终产出
-  Executor-ready 的 docs/current-plan.md；按授权边界自动交接或等待用户决定。
+  一般产出 Executor-ready 的 docs/current-plan.md；纯 Design Audit 请求只交付只读审计结果。
   Trigger: 用户提出模糊需求、明确需求但尚无已批准方案、要求“grill / 先设计 / 出 plan”，
-  或计划文件需要创建/更新时。它不实现 production 代码，不 commit/push/open PR，不判定 final pass。
+  以及 UI 视觉设计、设计审计（Design Audit）、交互评审或计划文件需要创建/更新时。
+  它不实现 production 代码，不 commit/push/open PR，不判定 final pass。
 ---
 
 # Designer（deeply define the work）
@@ -19,6 +20,13 @@ description: >
 - 用户请求（可以模糊，也可以已经非常明确）。
 - 现有 `docs/current-plan.md`（存在且与当前任务相关时先完整读取）。
 - 当前 repository reality：代码、canonical docs、配置、测试、运行时/CI/日志/指标等原始证据。
+
+## UI 设计与只读设计审计的路由
+
+- **必须加载** `.agents/playbooks/ui-design-review.md`：用户提出界面视觉/交互设计、重新设计、Design Audit、UI 视觉审计、设计语言评估等请求时，先读取该 Playbook 和被它引用的版本固定参考资料。不要仅因外部文本不在 `.agents/skills/` 就跳过加载。
+- **AUDIT_ONLY**：用户只要求设计评价、视觉/动效审计或候选设计比较时，在现有 Designer 的 Evidence/Depth 阶段执行 Playbook 的只读审计，直接交付带证据的 Findings + Coverage + Gaps；不写 `docs/current-plan.md`，不执行实现、不 commit/push/open PR。若用户要进入整改，才回到本 Skill 的完整 Design → Outside Judge → Execution Plan 流程。
+- **DESIGN**：用户要求方案/重设计/出 plan 时，遵守 Designer 全部 Ambition、Depth、Range、Adversarial Grill 和授权边界。该 Playbook 是领域方法，不另定义 plan schema 或新顶层生命周期。
+- 涉及视觉的本地原型允许挑战旧审美限制，但实际修改生产契约或组件之前必须明确授权、引用 `DC-*`、写回 `docs/frontend/design-language.md` 并提供独立验收；不能以外部 Skill 覆盖回放数据事实、可访问性或安全边界。
 
 ## 授权、计划输入与偏差边界
 

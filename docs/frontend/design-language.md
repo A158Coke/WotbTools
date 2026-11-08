@@ -20,7 +20,7 @@
 - **强度：** `MUST` 违反即不通过审查；`SHOULD` 默认遵守，偏离时在 PR 写明理由；`MAY` 明确允许的选择。
 - **验证：** 优先写可运行的命令或测试。写「人工」表示没有自动判定，由 PR 审查或用户验收按规则核对；不得把人工项说成已被门禁覆盖。
 - **存量：** `frontend/stylelint.legacy.json` 名单内的文件在迁移前不受静态校验，迁移时一并修复。
-- **外部资料：** `.agents/references/design-methods/` 中的 Refactoring UI 与 Apple Design 是可版本化的参考方法，不是新 SSOT。旧审美限制可以被质疑；比例、弹簧参数这类经验值不自动成为规则，只有在本项目经渲染/交互证据验证并更新本文件才成为规范。
+- **外部资料：** `.agents/references/design-methods/` 中的 Refactoring UI 与 Apple Design 是可版本化的参考方法，不是新 SSOT；应用方法与审计输出见 `.agents/playbooks/ui-design-review.md`。本文件对**已批准的生产实现**具有约束力，但设计探索可以挑战旧审美限制并明确标记 `Contract Conflict`；不得以旧样式规则拒绝制作受控原型。生产变更必须有证据、授权且在本文件完成对应修订。回放数据事实、安全和可访问性保障不因视觉探索而撤销。比例、弹簧参数等经验值不能未经验证变成 MUST。
 
 ---
 
