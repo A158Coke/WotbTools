@@ -68,20 +68,39 @@ jobs:
           chmod 700 "$askpass"
           export GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0
 
-          observed="$(timeout --kill-after=10s 120s git -c credential.helper= \
+          # 仅对网络/超时类失败做有限次重试（ls-remote 与普通 push 均幂等，push 从不强推）。
+          # 每次尝试仍有 120s 超时；3 次 + 退避 ≤ 约 7 分钟，低于 job 的 10 分钟上限，超出后 fail-closed。
+          retry_network() {
+            local attempt=1 rc delay
+            local -a backoff=(10 30)
+            while true; do
+              "$@" && return 0
+              rc=$?
+              if [ "$attempt" -ge 3 ]; then
+                echo "gitee_main_sync: '$1' failed after $attempt attempts (exit $rc); refusing sync." >&2
+                return "$rc"
+              fi
+              delay=${backoff[$((attempt - 1))]}
+              echo "gitee_main_sync: attempt $attempt failed (exit $rc); retrying in ${delay}s." >&2
+              sleep "$delay"
+              attempt=$((attempt + 1))
+            done
+          }
+
+          observed="$(retry_network timeout --kill-after=10s 120s git -c credential.helper= \
             ls-remote --refs "$GITEE_REPO_URL" refs/heads/main)"
           if [ -n "$observed" ]; then
             [[ "$observed" =~ ^[0-9a-f]{40}$'\t'refs/heads/main$ ]]
           fi
           # 排队旧事件不能倒退 main；普通 push 只允许创建或 fast-forward，分叉需人工恢复。
-          current="$(timeout --kill-after=10s 120s git ls-remote --refs origin refs/heads/main)"
+          current="$(retry_network timeout --kill-after=10s 120s git ls-remote --refs origin refs/heads/main)"
           [ "$current" = "$SOURCE_SHA"$'\t'refs/heads/main ] || {
             echo "Source event is no longer current GitHub main; refusing sync." >&2
             exit 1
           }
-          timeout --kill-after=10s 120s git -c credential.helper= -c push.followTags=false push \
+          retry_network timeout --kill-after=10s 120s git -c credential.helper= -c push.followTags=false push \
             "$GITEE_REPO_URL" "$SOURCE_SHA:refs/heads/main"
-          actual="$(timeout --kill-after=10s 120s git -c credential.helper= \
+          actual="$(retry_network timeout --kill-after=10s 120s git -c credential.helper= \
             ls-remote --refs "$GITEE_REPO_URL" refs/heads/main)"
           [ "$actual" = "$SOURCE_SHA"$'\t'refs/heads/main ] || {
             echo "Gitee main does not equal the reviewed event SHA." >&2
