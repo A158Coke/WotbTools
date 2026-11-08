@@ -193,7 +193,8 @@ class ClassificationTests(unittest.TestCase):
         self.assertEqual(classify_area(pr(title='Adjust agent routing'), ['.agents/skills/executor/SKILL.md']), {'docs'})
         self.assertEqual(classify_area(pr(title='Tidy fixtures'), ['scripts/ci/test-workflow-contract.sh']), {'infra'})
         # Root and GitHub maintainer documents are documentation even with a generic title.
-        for path in ('README.md', 'HISTORY.md', '.github/pull_request_template.md'):
+        for path in ('README.md', 'AGENTS.md', 'HISTORY.md', '.github/AGENTS.md',
+                     '.github/pull_request_template.md'):
             self.assertEqual(classify_area(pr(title='Update contributor guidance'), [path]), {'docs'}, path)
 
     def test_feature_paths_keep_specific_area_alongside_generic_layer(self):
