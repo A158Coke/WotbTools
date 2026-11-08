@@ -91,9 +91,10 @@ async function tap(page, selector, touch) {
   const point = await page.waitForValue(`(async () => {
     const element = document.querySelector(${JSON.stringify(selector)});
     if (!element || element.disabled) return null;
-    element.scrollIntoView({block:'center',inline:'nearest'});
+    // 滚动后顶栏等粘性元素会在数帧后收起并让内容位移，两帧稳定检查不够；等 ~12 帧再比对，位移中就返回 null 让外层重试。
+    element.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});
     const before = element.getBoundingClientRect();
-    await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);
+    for (let i = 0; i < 12; i++) await new Promise(requestAnimationFrame);
     const after = element.getBoundingClientRect(), x = after.x + after.width / 2, y = after.y + after.height / 2;
     if (!after.width || !after.height || Math.abs(before.x-after.x) > 0.5 || Math.abs(before.y-after.y) > 0.5
       || !element.contains(document.elementFromPoint(x, y))) return null;
@@ -112,8 +113,10 @@ async function fill(page, values) {
   }, values)
 }
 async function chooseAvatar(page) { await page.evaluate(`(async()=>{const canvas=document.createElement('canvas');canvas.width=32;canvas.height=32;canvas.getContext('2d').fillRect(0,0,32,32);const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));const transfer=new DataTransfer();transfer.items.add(new File([blob],'avatar.png',{type:'image/png'}));const input=document.querySelector('[data-testid=tournament-image-input]');input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}))})()`) }
+// 触屏下 overflow 还要比 innerWidth 与 visualViewport：移动端模拟下内容过宽会撑大布局视口，scrollWidth 检测不到。
+// 命中区按布局盒（offset*）量：AppButton 按下反馈 scale(.97) 的回弹过渡会让 getBoundingClientRect 暂时缩到 42.68px。
 async function geometry(page, profile, configuration = false) {
-  const value = await page.evaluate(`(()=>{const p=[...document.querySelectorAll('.creator-config-grid > *')].map(e=>e.getBoundingClientRect());return{overflow:document.documentElement.scrollWidth>innerWidth+1,profile:document.documentElement.dataset.uiProfile,stacked:p.length===2?p[1].top>=p[0].bottom:false,tiny:matchMedia('(pointer:coarse)').matches?[...document.querySelectorAll('.creators-page button')].filter(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&r.height<43}).map(e=>e.dataset.testid||e.textContent):[]}})()`)
+  const value = await page.evaluate(`(()=>{const p=[...document.querySelectorAll('.creator-config-grid > *')].map(e=>e.getBoundingClientRect());return{overflow:document.documentElement.scrollWidth>innerWidth+1||matchMedia('(pointer:coarse)').matches&&innerWidth>visualViewport.width+1,profile:document.documentElement.dataset.uiProfile,stacked:p.length===2?p[1].top>=p[0].bottom:false,tiny:matchMedia('(pointer:coarse)').matches?[...document.querySelectorAll('.creators-page button')].filter(e=>e.getClientRects().length>0&&e.offsetWidth>0&&e.offsetHeight>0&&e.offsetHeight<43).map(e=>e.dataset.testid||e.textContent):[]}})()`)
   assert.equal(value.overflow, false); assert.equal(value.profile, profile); assert.deepEqual(value.tiny, [])
   if (configuration) assert.equal(value.stacked, await page.evaluate('innerWidth<768'))
 }

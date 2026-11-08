@@ -78,7 +78,7 @@ async function remove(id: number, expectedVersion: number) {
 <template>
   <div class="creators-page layout-content" data-testid="creators-page">
     <PageHeader :title="t('creators.directoryTitle')"><template #actions><AppButton :disabled="loading || adminLoading || editorLoading || busy || !network.available" data-testid="creator-refresh" @click="refreshPage">{{ t('creators.refresh') }}</AppButton></template></PageHeader>
-    <SegmentedControl v-if="typeTabs.length > 1" :model-value="props.type" :options="typeTabs" :ariaLabel="t('creators.directoryTitle')" data-testid="recommendation-tabs" @update:model-value="switchType" />
+    <SegmentedControl v-if="typeTabs.length > 1" :model-value="props.type" :options="typeTabs" wrap :ariaLabel="t('creators.directoryTitle')" data-testid="recommendation-tabs" @update:model-value="switchType" />
     <Banner v-if="!network.available && !network.pending">{{ t(network.messageKey || 'featureOffline.creators') }}</Banner>
     <Banner v-if="error" tone="danger">{{ apiErrorLabel(t, te, error) }}</Banner>
     <Banner v-if="adminError" tone="danger">{{ apiErrorLabel(t, te, adminError) }}</Banner>
