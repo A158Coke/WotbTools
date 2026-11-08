@@ -997,12 +997,17 @@ try {
         const r = b.getBoundingClientRect();
         return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
       })()`)
+      // 用户反馈（0x5f3759df，2026-11-08）：预设按钮不得改旋转中心。按钮走 preserveView，
+      // 只接管观察方向；轨道 target 与距离（URL 给的 dist=9）都保持原样。
+      const orbitBefore = await page.evaluate('(() => { const c = window.__DBG__.controls; return { d: c.object.position.distanceTo(c.target), t: c.target.toArray() } })()')
       await mouseTap(await presetPoint('hull-down'))
       const low = await page.waitForValue('window.__armorRicochet.aimingState()',
         s => s.turretDeg === 0 && s.gunDeg === -20,
         { timeout: 5000, label: 'hull-down preset uses fixture depression' })
-      check(low.controlsEnabled && Math.abs(low.cameraDistance - 15) < 0.01,
-        '压坡卖头预设使用当前俯角，保留轨道控制和 15m 距离')
+      const orbitAfter = await page.evaluate('(() => { const c = window.__DBG__.controls; return { d: c.object.position.distanceTo(c.target), t: c.target.toArray() } })()')
+      check(low.controlsEnabled && Math.abs(orbitAfter.d - orbitBefore.d) < 0.01
+        && orbitAfter.t.every((v, i) => Math.abs(v - orbitBefore.t[i]) < 1e-6),
+        `压坡卖头预设保留旋转中心与距离（${orbitBefore.d.toFixed(2)}m → ${orbitAfter.d.toFixed(2)}m），只换观察方向`)
       const depressed = await page.evaluate('window.__armorRicochet.rigState()')
       await mouseTap(await presetPoint('front'))
       await page.waitForValue('window.__armorRicochet.aimingState().gunDeg', g => g === 0,
