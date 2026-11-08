@@ -26,7 +26,7 @@ import { defaultStateId } from '../data/armorStates.js'
 // URL 契约基线（urlContract.test.js）经此 re-export；实现 owner = viewer/viewerMath.js
 export { dollyZoomFov, mirrorShotData } from './viewer/viewerMath.js'
 import { dollyZoomFov } from './viewer/viewerMath.js'
-import { armorCameraPreset, armorPresetGunPitch } from './viewer/cameraPresets.js'
+import { armorCameraPreset, armorPresetGunPitch, armorPresetViewPlacement } from './viewer/cameraPresets.js'
 import { createTurretRig } from './viewer/turretRig.js'
 import { createModelLifecycle } from './viewer/modelLifecycle.js'
 import { createHeatmapPipeline } from './viewer/heatmap.js'
@@ -672,7 +672,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             reportDistance();
             return true;
         }
-        function setCameraPreset(kind) {
+        function setCameraPreset(kind, { preserveView = false } = {}) {
             if (destroyed || contextLost || !ml.models.tankModel || !ml.models.armorModel || QP.get('shot')) return false;
             if (kind !== 'front' && kind !== 'hull_down') return false;
             const pitch = currentConfig()?.pitch_limits;
@@ -684,12 +684,22 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             rig.updateTurretGun(currentTurretDeg, currentGunDeg);
             const pose = armorCameraPreset(rig.getArmorPivotGun() || new THREE.Vector3(0, 0, 2),
                 new THREE.Matrix4().copy(ml.models.tankModel.matrixWorld).multiply(rig.gunPoseMatrix), ARMOR_REF_DIST);
+            // preserveView 在清惯性**之前**取景快照：无阻尼 update 会把残余 panOffset 一次性
+            // 应用（target 跳到平移终点），与 setDistance 同口径——快照 → 清惯性 → 用快照摆位。
+            // 按钮（preserveView）只换观察方向：旋转中心与距离归用户，平移/缩放不被重置；
+            // URL 首载路径没有用户取景，仍由预设完整摆位。
+            const userView = preserveView
+                ? { target: controls.target.clone(), position: camera.position.clone() }
+                : null;
             // 先清除轨道惯性，再设置预设；后续拖动仍由 OrbitControls 正常接管。
             const damping = controls.enableDamping;
             controls.enableDamping = false;
             controls.update();
-            controls.target.copy(pose.target);
-            camera.position.copy(pose.position);
+            const placement = preserveView
+                ? armorPresetViewPlacement(userView.target, userView.position, pose)
+                : pose;
+            controls.target.copy(placement.target);
+            camera.position.copy(placement.position);
             controls.update();
             controls.enableDamping = damping;
             document.getElementById('turret-val').textContent = '0°';
@@ -935,7 +945,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             };
             const hemi = new THREE.HemisphereLight(0xffffff, readThemeColor('--color-surface-2', '#172024'), 2.2);
             scene.add(hemi);
-            // 网页主题（showcase/classic）切换时，半球光底面跟随 UI 表面色；画布背景由透明 CSS 继承。
+            // 网页主题（四季）切换时，半球光底面跟随 UI 表面色；画布背景由透明 CSS 继承。
             const themeObserver = new MutationObserver(() => {
                 hemi.groundColor.copy(readThemeColor('--color-surface-2', '#172024'));
             });
@@ -1161,8 +1171,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
 
         // lastClickNdc owner = judgment 模块（jc.getLastClickNdc()）。
         
-        /** 装甲厚度模式：命中装甲板 → 高亮该板，并在命中点旁侧的浮层显示部件名与基础装甲值
-         *  （浮层相对点击坐标偏移 24px 并在视口内钳制，避免盖住命中点；无击穿判定）。 */
+        /** 装甲厚度模式（实现在 viewer/judgment.ts 的 showArmorPartInfo）：命中装甲板 → 高亮该板，
+         *  部件名与基础装甲值显示在场景顶部正中的固定胶囊里（不跟随命中点；无击穿判定）。 */
         
         // 射击复现错误面板（模块级：doPenetrationCheck 等顶层函数也要调用）
         

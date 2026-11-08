@@ -30,6 +30,8 @@ import ReplayCapabilityAuthGate from './ReplayCapabilityAuthGate.vue'
 import SegmentedControl from './SegmentedControl.vue'
 import MapPreview3DPane from './MapPreview3DPane.vue'
 import MapPreview2DPane from './MapPreview2DPane.vue'
+import RotatePrompt from './RotatePrompt.vue'
+import { useForcedLandscape } from '../composables/useForcedLandscape.js'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -57,9 +59,14 @@ const maps = computed(() => rawMaps.value
 /** picker 默认可见性：有中文名 = 人工认可（与当前 UI locale 无关，切 en/ru 集合不变）。
  *  开关只是本页会话状态——不写 localStorage、不占 URL 键，每次进入都回到干净默认。 */
 const showAllMaps = ref(false)
-const visibleMaps = computed(() => (showAllMaps.value
-  ? maps.value
-  : maps.value.filter((m) => hasChineseMapName(m.key))))
+/** 选图搜索（4.0）：按当前语言的显示名与 key 做不区分大小写的包含匹配；搜索时忽略「显示全部」开关，
+ *  否则未认可的地图永远搜不到。同样只是本页会话状态。 */
+const mapQuery = ref('')
+const visibleMaps = computed(() => {
+  const query = mapQuery.value.trim().toLocaleLowerCase()
+  if (query) return maps.value.filter((m) => m.name.toLocaleLowerCase().includes(query) || m.key.toLowerCase().includes(query))
+  return showAllMaps.value ? maps.value : maps.value.filter((m) => hasChineseMapName(m.key))
+})
 const indexFailed = ref(false)
 const indexLoaded = ref(false)
 const collator = new Intl.Collator()
@@ -197,6 +204,9 @@ const basesOptions = computed(() => {
 function openMap(entry) {
   router.replace({ query: { ...route.query, map: entry.key, mode: mode.value } })
 }
+// 强制横屏只针对 3D 场景（design-language §9）：2D 战术图是正方形，竖屏放得下；地图选择列表也不强制。
+const forcedLandscape = useForcedLandscape(computed(() => mode.value === '3d' && !!selected.value))
+
 function setMode(value) {
   router.replace({ query: { ...route.query, mode: value } })
 }
@@ -247,9 +257,19 @@ const modeOptions = computed(() => [
       <div v-else-if="!selected" class="map-picker">
         <header class="map-picker-head">
           <div class="map-picker-heading">
+            <p class="map-picker-kicker">{{ $t('mapPreview.kicker') }}</p>
             <h1 class="map-picker-title">{{ $t('mapPreview.title') }}</h1>
             <p class="map-picker-subtitle">{{ $t('mapPreview.subtitle') }}</p>
           </div>
+          <div class="map-picker-tools">
+          <input
+            v-model="mapQuery"
+            type="search"
+            class="map-picker-search"
+            :placeholder="$t('mapPreview.searchPlaceholder')"
+            :aria-label="$t('mapPreview.searchPlaceholder')"
+            data-testid="map-search"
+          >
           <button
             type="button"
             role="switch"
@@ -263,7 +283,9 @@ const modeOptions = computed(() => [
             </span>
             <span>{{ $t('mapPreview.showAllMaps') }}</span>
           </button>
+          </div>
         </header>
+        <p v-if="mapQuery.trim() && !visibleMaps.length" class="map-picker-empty" data-testid="map-search-empty">{{ $t('mapPreview.searchEmpty') }}</p>
         <ul class="map-grid" data-testid="map-grid">
           <li v-for="m in visibleMaps" :key="m.key">
             <button
@@ -322,6 +344,13 @@ const modeOptions = computed(() => [
             @update:model-value="setMode"
           />
         </header>
+        <RotatePrompt
+          v-if="forcedLandscape.blocked.value"
+          class="map-rotate-prompt"
+          :device="forcedLandscape.device.value"
+          :action-label="$t('mapPreview.mode2d')"
+          @action="setMode('2d')"
+        />
         <div v-show="mode === '3d'" class="map-stage-pane">
           <MapPreview3DPane :map-id="selected.mapId" :map-name="selected.name" :map-key="selected.key" :bases-kind="basesKind" :spawn-points="spawnPoints" :active="mode === '3d'" />
         </div>
@@ -334,6 +363,7 @@ const modeOptions = computed(() => [
 </template>
 
 <style scoped>
+.map-rotate-prompt { position: fixed; inset: calc(var(--header-block) + env(safe-area-inset-top)) 0 0; z-index: var(--z-sticky); background: var(--color-canvas); }
 .map-preview {
   display: flex;
   flex-direction: column;
@@ -355,6 +385,24 @@ const modeOptions = computed(() => [
   gap: var(--space-3);
 }
 
+.map-picker-kicker { margin: 0; color: var(--color-accent-text); font: var(--type-caption); font-weight: 600; letter-spacing: .16em; }
+.map-picker-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.map-picker-search {
+  inline-size: calc(var(--space-12) * 6);
+  max-inline-size: 100%;
+  min-height: var(--control-h-lg);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+  color: var(--color-text-primary);
+  font: var(--type-body);
+}
+.map-picker-search:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+.map-picker-empty { margin: var(--space-4) 0; color: var(--color-text-secondary); font: var(--type-body); }
+@media (width < 768px) {
+  .map-picker-tools, .map-picker-search { inline-size: 100%; }
+}
 .map-picker-heading {
   display: flex;
   flex-direction: column;
@@ -393,6 +441,7 @@ const modeOptions = computed(() => [
   padding: var(--space-1);
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: var(--color-surface-3);
 }
 
@@ -400,6 +449,7 @@ const modeOptions = computed(() => [
   width: var(--control-check);
   height: var(--control-check);
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: var(--color-text-primary);
   transition: transform var(--duration-fast);
 }
@@ -493,6 +543,7 @@ const modeOptions = computed(() => [
   inset-inline-end: var(--space-2);
   padding: 0 var(--space-2);
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: var(--color-surface-3);
   color: var(--color-text-secondary);
   font-size: var(--font-size-caption-xs);

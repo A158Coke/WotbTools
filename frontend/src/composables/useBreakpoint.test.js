@@ -8,7 +8,7 @@ function stubMatchMedia(width, coarse = false, { landscape = false, height = 800
     const min = /min-width:\s*(\d+)px/.exec(query)
     if (min) return width >= Number(min[1])
     if (query.includes('(pointer: coarse) and (orientation: landscape)')) {
-      return coarse && landscape && height <= 520 && width <= 1199.98
+      return width < 768 || (coarse && landscape && height <= 520)
     }
     if (query.includes('pointer: coarse')) return coarse
     return false
@@ -51,21 +51,26 @@ describe('useBreakpoint', () => {
     expect(usePointer().coarse.value).toBe(true)
   })
 
-  it('compact + 触屏横屏矮视口 → 左侧图标栏形态', async () => {
-    stubMatchMedia(740, true, { landscape: true, height: 390 })
-    const { useBreakpoint } = await import('./useBreakpoint.js')
-    const bp = useBreakpoint()
-    expect(bp.isCompact.value).toBe(true)
-    expect(bp.isCompactLandscape.value).toBe(true)
+  it('手机竖屏（宽 < 768）→ 抽屉外壳', async () => {
+    stubMatchMedia(390, true, { height: 664 })
+    const bp = (await import('./useBreakpoint.js')).useBreakpoint()
+    expect(bp.isDrawerShell.value).toBe(true)
   })
 
-  it('横屏但不是触屏 / 高度足够 → 保持底部 Tab 形态', async () => {
-    stubMatchMedia(740, false, { landscape: true, height: 390 })
+  it('手机横屏宽度 ≥ 768（844×340）仍是抽屉外壳，不回到侧边栏', async () => {
+    stubMatchMedia(844, true, { landscape: true, height: 340 })
+    const bp = (await import('./useBreakpoint.js')).useBreakpoint()
+    expect(bp.tier.value).toBe('medium')
+    expect(bp.isDrawerShell.value).toBe(true)
+  })
+
+  it('平板（触屏但高度足够）与非触屏横屏 → 侧边栏', async () => {
+    stubMatchMedia(1024, true, { landscape: true, height: 768 })
     let bp = (await import('./useBreakpoint.js')).useBreakpoint()
-    expect(bp.isCompactLandscape.value).toBe(false)
+    expect(bp.isDrawerShell.value).toBe(false)
     vi.resetModules()
-    stubMatchMedia(740, true, { landscape: true, height: 900 })
+    stubMatchMedia(900, false, { landscape: true, height: 390 })
     bp = (await import('./useBreakpoint.js')).useBreakpoint()
-    expect(bp.isCompactLandscape.value).toBe(false)
+    expect(bp.isDrawerShell.value).toBe(false)
   })
 })

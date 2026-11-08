@@ -230,7 +230,8 @@ export function renderShotResultCardHtml(input: ShotResultCardInput): string {
         damageHtml = `<span style="${damageValueCss}">· ${Math.round(displayDamage || 0)}</span>`;
       }
     }
-    return `<div style="display:flex;flex-wrap:wrap;align-items:baseline;font-size:${cardMetrics.titleFont}px;font-weight:bold;color:${titleColor};margin-bottom:${cardMetrics.marginTight}px;white-space:normal;overflow-wrap:anywhere;">`
+    // data-card-title：小屏收起态只留最终判定这一行作为顶部胶囊（AgentArmorView 样式所有）
+    return `<div data-card-title="${final ? 'final' : 'segment'}" style="display:flex;flex-wrap:wrap;align-items:baseline;font-size:${cardMetrics.titleFont}px;font-weight:bold;color:${titleColor};margin-bottom:${cardMetrics.marginTight}px;white-space:normal;overflow-wrap:anywhere;">`
       + `<span>${escapeText(title)}</span>${damageHtml}</div>`;
   };
   // 击穿概率行：跳弹链只在【最终判定结果】下侧出现，不能挂在第一段“跳弹”下面。

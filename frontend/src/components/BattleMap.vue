@@ -441,7 +441,7 @@ function onTwoFingerTouch(event) {
 .pb-float-enemy { color: var(--pb-enemy-text, #f87171); }
 .pb-float-neutral { color: var(--text-muted, #999); }
 @keyframes pb-float-rise { 0% { opacity: 1; margin-top: 0; } 70% { opacity: 1; } 100% { opacity: 0; margin-top: -10px; } }
-.pb-burst { position: absolute; width: 26px; height: 26px; border-radius: 50%; border: 2px solid currentColor; animation: pb-burst-ring .7s ease-out forwards; pointer-events: none; }
+.pb-burst { position: absolute; width: 26px; height: 26px; border-radius: 50%; corner-shape: round; border: 2px solid currentColor; animation: pb-burst-ring .7s ease-out forwards; pointer-events: none; }
 .pb-burst.pb-float-friendly { color: var(--pb-team-text, #4ade80); }
 .pb-burst.pb-float-enemy { color: var(--pb-enemy-text, #f87171); }
 .pb-burst.pb-float-neutral { color: var(--text-muted, #999); }

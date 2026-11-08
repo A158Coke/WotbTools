@@ -18,10 +18,10 @@
   gap: 5px;
   margin-bottom: 14px !important;
   padding: var(--space-2) !important;
-  border: 1px solid #303a40 !important;
+  border: 1px solid var(--color-border-subtle) !important;
   border-radius: 8px;
   background: color-mix(in srgb, var(--bg) 84%, transparent) !important;
-  box-shadow: 0 12px 30px rgba(0,0,0,.18);
+  box-shadow: var(--elevation-2);
   backdrop-filter: blur(12px);
 }
 .lb-wrap > .tabs button {
@@ -46,9 +46,10 @@
   top: -125px;
   width: 320px;
   height: 320px;
-  border: 1px solid rgba(217,143,24,.14);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 14%, transparent);
   border-radius: 50%;
-  box-shadow: 0 0 0 54px rgba(217,143,24,.025);
+  corner-shape: round;
+  box-shadow: 0 0 0 54px color-mix(in srgb, var(--color-accent) 2.5%, transparent);
 }
 .lb-wrap .lb-kicker { color: var(--accent-light) !important; font-weight: 900; letter-spacing: .1em; }
 .lb-wrap .lb-head h1 { margin: 5px 0 5px !important; font-size: 1.7rem !important; letter-spacing: -.025em; }
@@ -60,13 +61,13 @@
   z-index: 18;
   gap: 8px !important;
   padding: 10px !important;
-  border: 1px solid #303a40 !important;
+  border: 1px solid var(--color-border-subtle) !important;
   border-radius: 8px;
   background: color-mix(in srgb, var(--bg-card) 94%, transparent) !important;
-  box-shadow: 0 9px 24px rgba(0,0,0,.14);
+  box-shadow: var(--elevation-2);
   backdrop-filter: blur(10px);
 }
-.lb-wrap .lb-toolbar :is(select,input) { border-color: #3a454b !important; background: #0f1518 !important; }
+.lb-wrap .lb-toolbar :is(select,input) { border-color: var(--color-border-strong) !important; background: var(--color-surface-1) !important; }
 /* 审计 PG-06：横向滚动要求 .tablewrap 是滚动容器，sticky 表头只能相对它吸顶；因此平板 / 桌面限制它的高度，
  * 让表格在自身内纵向滚动。高度扣掉顶栏与吸顶 Tab，表格顶部对齐到 Tab 下方时表头不会被盖住。 */
 .lb-wrap .tablewrap {
@@ -74,10 +75,10 @@
   scroll-margin-top: var(--hof-sticky-top);
   margin-top: 12px;
   overflow: auto !important;
-  border: 1px solid #303a40 !important;
+  border: 1px solid var(--color-border-subtle) !important;
   border-radius: 8px;
   background: var(--bg-card);
-  box-shadow: 0 16px 38px rgba(0,0,0,.16);
+  box-shadow: var(--elevation-2);
 }
 .lb-wrap table { width: max-content !important; min-width: 100% !important; font-variant-numeric: tabular-nums; }
 .lb-wrap thead th {
@@ -85,7 +86,7 @@
   top: 0;
   z-index: 4;
   height: 42px;
-  background: #171e22 !important;
+  background: var(--color-surface-2) !important;
   color: var(--text-sub) !important;
 }
 .lb-wrap tbody td { height: 45px; }
@@ -103,7 +104,7 @@
 
 @media(max-width:1199px) {
   .lb-wrap,
-  .hof-admin { width: calc(100% - 24px) !important; padding-top: 16px !important; }
+  .hof-admin { width: calc(100% - var(--gutter) * 2) !important; padding-top: 16px !important; }
   .lb-wrap > .tabs,
   .lb-wrap .lb-toolbar { position: static; }
   /* 平板 Tab 不吸顶：表格吸顶区只需让出顶栏 */
@@ -112,7 +113,7 @@
 
 @media (width < 768px) {
   .lb-wrap,
-  .hof-admin { width: calc(100% - 16px) !important; padding: 10px 0 42px !important; }
+  .hof-admin { width: calc(100% - var(--gutter) * 2) !important; padding: 10px 0 42px !important; }
   .lb-wrap > .tabs { position: static; }
   .lb-wrap .lb-head { padding: 18px !important; }
   /* Mobile: the filter form must never become a horizontal-scrolling strip (data

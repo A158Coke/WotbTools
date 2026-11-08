@@ -239,7 +239,7 @@ describe('AdminUsersPage', () => {
     wrapper = mountPage()
     await flushPromises()
     await wrapper.find('.admin-table thead input[type="checkbox"]').setValue(true)
-    expect(wrapper.find('.admin-selected').text()).toBe('admin.selectedCount(count=2)')
+    expect(wrapper.find('.admin-bulk-summary').text()).toBe('admin.selectedCount(count=2)')
 
     const input = wrapper.find('.admin-page-jump input')
     await input.setValue('3')
@@ -260,8 +260,8 @@ describe('AdminUsersPage', () => {
     await flushPromises()
     expect(api.searchUsers).toHaveBeenLastCalledWith('', expect.objectContaining({ page: 1 }))
 
-    await wrapper.find('.admin-search input').setValue('foo')
-    await wrapper.find('.admin-search button').trigger('click')
+    await wrapper.find('[data-testid="admin-search-input"]').setValue('foo')
+    await wrapper.find('[data-testid="admin-search-btn"]').trigger('click')
     await flushPromises()
     expect(api.searchUsers).toHaveBeenLastCalledWith('foo', expect.objectContaining({ page: 0 }))
   })
@@ -276,21 +276,21 @@ describe('AdminUsersPage', () => {
     const headCheckbox = wrapper.find('.admin-table thead input[type="checkbox"]')
     await headCheckbox.setValue(true)
     expect(rows().every(row => row.find('input[type="checkbox"]').element.checked)).toBe(true)
-    expect(wrapper.find('.admin-selected').text()).toBe('admin.selectedCount(count=2)')
+    expect(wrapper.find('.admin-bulk-summary').text()).toBe('admin.selectedCount(count=2)')
 
     // 取消一行 → 计数跟随（partial selection 时不勾表头）。
     await rows()[1].find('input[type="checkbox"]').setValue(false)
-    expect(wrapper.find('.admin-selected').text()).toBe('admin.selectedCount(count=1)')
+    expect(wrapper.find('.admin-bulk-summary').text()).toBe('admin.selectedCount(count=1)')
     expect(headCheckbox.element.checked).toBe(false)
 
-    await wrapper.find('.admin-bulk-bar .btn-danger').trigger('click')
+    await wrapper.find('[data-testid="admin-bulk-delete"]').trigger('click')
     expect(api.deleteUsers).not.toHaveBeenCalled()
     const modal = wrapper.find('.bulk-confirm-modal')
     expect(modal.exists()).toBe(true)
     expect(modal.text()).toContain('admin.bulkConfirmText(count=1)')
 
     // 未输入 DELETE 前不可提交。
-    const confirmButton = modal.find('.dialog-actions .btn-danger')
+    const confirmButton = modal.find('.bulk-confirm')
     expect(confirmButton.attributes('disabled')).toBeDefined()
     await modal.find('.admin-confirm-input').setValue('DELET')
     expect(confirmButton.attributes('disabled')).toBeDefined()
@@ -319,9 +319,9 @@ describe('AdminUsersPage', () => {
     wrapper = mountPage()
     await flushPromises()
     await wrapper.find('.admin-table thead input[type="checkbox"]').setValue(true)
-    await wrapper.find('.admin-bulk-bar .btn-danger').trigger('click')
+    await wrapper.find('[data-testid="admin-bulk-delete"]').trigger('click')
     await wrapper.find('.bulk-confirm-modal .admin-confirm-input').setValue('DELETE')
-    await wrapper.find('.bulk-confirm-modal .dialog-actions .btn-danger').trigger('click')
+    await wrapper.find('.bulk-confirm-modal .bulk-confirm').trigger('click')
     await flushPromises()
 
     const modal = wrapper.find('.bulk-confirm-modal')
@@ -330,9 +330,9 @@ describe('AdminUsersPage', () => {
     expect(modal.text()).toContain('kc-b')
     expect(modal.text()).toContain('code:USER_HAS_DEPENDENCIES')
     // 失败项保留选择以便重试，成功项移出选择集。
-    expect(wrapper.find('.admin-selected').text()).toBe('admin.selectedCount(count=1)')
+    expect(wrapper.find('.admin-bulk-summary').text()).toBe('admin.selectedCount(count=1)')
 
-    await modal.find('.dialog-actions .btn-sm').trigger('click')
+    await modal.find('.bulk-cancel').trigger('click')
     expect(wrapper.find('.bulk-confirm-modal').exists()).toBe(false)
   })
 
@@ -354,9 +354,9 @@ describe('AdminUsersPage', () => {
     expect(api.searchUsers).toHaveBeenLastCalledWith('', expect.objectContaining({ page: 2 }))
 
     await wrapper.find('.admin-table thead input[type="checkbox"]').setValue(true)
-    await wrapper.find('.admin-bulk-bar .btn-danger').trigger('click')
+    await wrapper.find('[data-testid="admin-bulk-delete"]').trigger('click')
     await wrapper.find('.bulk-confirm-modal .admin-confirm-input').setValue('DELETE')
-    await wrapper.find('.bulk-confirm-modal .dialog-actions .btn-danger').trigger('click')
+    await wrapper.find('.bulk-confirm-modal .bulk-confirm').trigger('click')
     await flushPromises()
 
     // 先按 page=2 重新加载，发现 totalPages=1 后回落到最后一个有效页 page=0。
@@ -370,7 +370,7 @@ describe('AdminUsersPage', () => {
     wrapper = mountPage()
     await flushPromises()
 
-    const idpInput = wrapper.find('.admin-filters input')
+    const idpInput = wrapper.find('[data-testid="admin-idp-input"]')
     expect(idpInput.attributes('disabled')).toBeUndefined()
     await idpInput.setValue('qq')
     await idpInput.trigger('keyup.enter')
@@ -379,7 +379,7 @@ describe('AdminUsersPage', () => {
       segment: 'keycloak', idpAlias: 'qq', page: 0, size: 25
     })
 
-    await wrapper.find('.admin-filters select').setValue('local')
+    await wrapper.find('[data-testid="admin-segment-local"]').trigger('click')
     await flushPromises()
     // local segment：IdP 输入禁用、值清空，请求不带 idpAlias（否则后端 400）。
     expect(idpInput.attributes('disabled')).toBeDefined()
@@ -406,16 +406,19 @@ describe('AdminUsersPage', () => {
     wrapper = mountPage()
     await flushPromises()
 
-    const badges = wrapper.findAll('.admin-table .badge')
+    const badges = wrapper.findAll('.admin-table .admin-list-badge')
     expect(badges.map(badge => badge.text())).toEqual(['admin.noLocalProfile', 'admin.kcUserMissing'])
-    expect(badges[1].classes()).toContain('badge-warn')
+    expect(badges[1].classes()).toContain('is-warning')
 
-    // 孤儿绑定：删除仍可用（释放唯一槽位），详情不可用（Keycloak 侧已无该用户）。
-    const actions = rows()[1].findAll('.cell-actions button')
-    expect(actions[0].attributes('disabled')).toBeDefined()
-    expect(actions[0].attributes('title')).toBe('admin.detailUnavailable')
-    expect(actions[1].attributes('disabled')).toBeUndefined()
-    expect(rows()[0].findAll('.cell-actions button')[0].attributes('disabled')).toBeUndefined()
+    // 孤儿绑定：抽屉能打开并显示列表行字段与说明，但不向 Keycloak 拉详情；删除仍可用（释放唯一槽位）。
+    await rows()[1].find('[data-testid="admin-row-open"]').trigger('click')
+    await flushPromises()
+    const drawer = wrapper.find('[data-testid="admin-detail-drawer"]')
+    expect(drawer.exists()).toBe(true)
+    expect(drawer.text()).toContain('admin.detailUnavailable')
+    expect(drawer.text()).toContain('OrphanNick')
+    expect(api.getUser).not.toHaveBeenCalled()
+    expect(drawer.find('[data-testid="admin-danger-start"]').attributes('disabled')).toBeUndefined()
   })
 
   it('a local profile without a game account is shown as unbound, not bound (same rule as the profile page)', async () => {
@@ -431,43 +434,82 @@ describe('AdminUsersPage', () => {
     expect(rows()[1].text()).not.toContain('admin.unbound')
   })
 
-  // —— PG-09 / PG-10：详情与删除确认统一 AppDialog；操作列与复选框在手机上可达 ——
-  it('opens user detail in an accessible dialog and closes it with Escape', async () => {
+  // —— 点行在右侧详情抽屉打开（AppSheet side="end"），不再弹模态框；危险操作在抽屉底部 ——
+  async function openDrawer(index = 0) {
+    await rows()[index].find('[data-testid="admin-row-open"]').trigger('click')
+    await flushPromises()
+  }
+
+  it('opens user detail in an accessible right drawer when a row is clicked and closes it with Escape', async () => {
     api.getUser.mockResolvedValue({ profile: null, keycloak: { id: 'kc-a', username: 'kc-a-name', email: 'a@example.com', enabled: true }, warnings: [] })
     wrapper = mountPage()
     await flushPromises()
 
-    await rows()[0].findAll('.cell-actions button')[0].trigger('click')
+    // 点整行（非行内控件）与点主列按钮是同一个动作。
+    await rows()[0].find('td.admin-list-muted').trigger('click')
     await flushPromises()
-    const dialog = wrapper.find('.detail-modal')
-    expect(dialog.attributes('role')).toBe('dialog')
-    expect(dialog.attributes('aria-modal')).toBe('true')
-    expect(dialog.text()).toContain('kc-a-name')
+    const drawer = wrapper.find('[data-testid="admin-detail-drawer"]')
+    expect(drawer.attributes('role')).toBe('dialog')
+    expect(drawer.classes()).toContain('is-end')
+    expect(api.getUser).toHaveBeenCalledWith('kc-a')
+    expect(drawer.text()).toContain('kc-a-name')
 
     await pressEscape()
-    expect(wrapper.find('.detail-modal').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="admin-detail-drawer"]').exists()).toBe(false)
   })
 
-  it('confirms a single delete in a danger dialog that Escape cancels without calling the API', async () => {
+  it('does not open the drawer when a row checkbox is clicked', async () => {
     wrapper = mountPage()
     await flushPromises()
+    await rows()[0].find('input[type="checkbox"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="admin-detail-drawer"]').exists()).toBe(false)
+  })
 
-    await rows()[0].find('.cell-actions .btn-danger').trigger('click')
-    const dialog = wrapper.find('.confirm-modal')
-    expect(dialog.attributes('role')).toBe('dialog')
-    expect(dialog.classes()).toContain('is-danger')
+  it('keeps single delete at the bottom of the drawer: two steps, DELETE required, Escape cancels without calling the API', async () => {
+    wrapper = mountPage()
+    await flushPromises()
+    await openDrawer()
+
+    const drawer = () => wrapper.find('[data-testid="admin-detail-drawer"]')
+    expect(drawer().find('[data-testid="admin-danger-input"]').exists()).toBe(false)
+    await drawer().find('[data-testid="admin-danger-start"]').trigger('click')
+    const confirm = () => drawer().find('[data-testid="admin-danger-confirm"]')
+    expect(confirm().attributes('disabled')).toBeDefined()
+    await drawer().find('[data-testid="admin-danger-input"]').setValue('DELET')
+    expect(confirm().attributes('disabled')).toBeDefined()
+    await drawer().find('[data-testid="admin-danger-input"]').setValue('DELETE')
+    expect(confirm().attributes('disabled')).toBeUndefined()
+    expect(api.deleteUsers).not.toHaveBeenCalled()
+
     await pressEscape()
-    expect(wrapper.find('.confirm-modal').exists()).toBe(false)
+    expect(drawer().exists()).toBe(false)
     expect(api.deleteUsers).not.toHaveBeenCalled()
   })
 
-  it('keeps the action column sticky and wraps checkboxes in an enlarged hit area', async () => {
+  it('deletes the opened user through the drawer danger zone', async () => {
+    api.deleteUsers.mockResolvedValue({ requested: 1, deleted: 1, failed: 0, results: [{ userId: 'kc-b', deleted: true }] })
     wrapper = mountPage()
     await flushPromises()
-    expect(wrapper.find('.admin-table thead th.cell-actions').exists()).toBe(true)
+    await openDrawer(1)
+
+    const drawer = () => wrapper.find('[data-testid="admin-detail-drawer"]')
+    await drawer().find('[data-testid="admin-danger-start"]').trigger('click')
+    await drawer().find('[data-testid="admin-danger-input"]').setValue('DELETE')
+    await drawer().find('[data-testid="admin-danger-confirm"]').trigger('click')
+    await flushPromises()
+    expect(api.deleteUsers).toHaveBeenCalledTimes(1)
+    expect(api.deleteUsers).toHaveBeenCalledWith(['kc-b'], true)
+    expect(drawer().text()).toContain('admin.deleted')
+  })
+
+  it('makes every row keyboard-reachable and wraps checkboxes in an enlarged hit area', async () => {
+    wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.find('.admin-table thead th.cell-check input[type="checkbox"]').exists()).toBe(true)
     for (const row of rows()) {
-      expect(row.find('td.cell-actions').exists()).toBe(true)
-      expect(row.find('td.cell-check label.check-hit input[type="checkbox"]').exists()).toBe(true)
+      expect(row.find('td.cell-primary button.admin-list-open').exists()).toBe(true)
+      expect(row.find('td.cell-check label.admin-list-check input[type="checkbox"]').exists()).toBe(true)
     }
   })
 })
@@ -588,11 +630,11 @@ describe('AdminUsersPage connectivity gating', () => {
     api.searchUsers.mockClear()
     auth.ensureToken.mockClear()
 
-    await wrapper.find('.admin-search input').setValue('foo')
-    await wrapper.find('.admin-search button').trigger('click')
-    await wrapper.find('.admin-filters input').setValue('qq')
-    await wrapper.find('.admin-filters input').trigger('keyup.enter')
-    await wrapper.find('.admin-filters select').setValue('local')
+    await wrapper.find('[data-testid="admin-search-input"]').setValue('foo')
+    await wrapper.find('[data-testid="admin-search-btn"]').trigger('click')
+    await wrapper.find('[data-testid="admin-idp-input"]').setValue('qq')
+    await wrapper.find('[data-testid="admin-idp-input"]').trigger('keyup.enter')
+    await wrapper.find('[data-testid="admin-segment-local"]').trigger('click')
     await wrapper.find('.admin-pagination select').setValue('50')
     await wrapper.find('.admin-page-next').trigger('click')
     // 跳页控件本身 disabled；再绕过 disabled 直接派发输入 / click，handler 的门禁仍必须挡住。
@@ -620,11 +662,12 @@ describe('AdminUsersPage connectivity gating', () => {
     await flushPromises()
     api.getUser.mockClear()
 
-    await rows(wrapper)[0].findAll('.cell-actions button')[0].trigger('click')
+    await rows(wrapper)[0].find('[data-testid="admin-row-open"]').trigger('click')
     await flushPromises()
 
+    // 抽屉可以显示列表行已有的字段，但详情请求被门禁挡住；删除入口不可用。
     expect(api.getUser).not.toHaveBeenCalled()
-    expect(wrapper.find('.detail-modal').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="admin-detail-drawer"] [data-testid="admin-danger-start"]').attributes('disabled')).toBeDefined()
   })
 
   it('single delete TOCTOU: a dialog opened online but confirmed offline sends nothing', async () => {
@@ -632,18 +675,19 @@ describe('AdminUsersPage connectivity gating', () => {
     wrapper = mountPage()
     await flushPromises()
 
-    // 在线时打开删除确认框并输入 DELETE。
-    await rows(wrapper)[0].find('.cell-actions .btn-danger').trigger('click')
-    const modal = wrapper.find('.confirm-modal')
-    await modal.find('.admin-confirm-input').setValue('DELETE')
-    expect(modal.find('.dialog-actions .btn-danger').attributes('disabled')).toBeUndefined()
+    // 在线时打开抽屉、展开删除确认并输入 DELETE。
+    await rows(wrapper)[0].find('[data-testid="admin-row-open"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="admin-danger-start"]').trigger('click')
+    await wrapper.find('[data-testid="admin-danger-input"]').setValue('DELETE')
+    expect(wrapper.find('[data-testid="admin-danger-confirm"]').attributes('disabled')).toBeUndefined()
 
     // 确认前掉线。
     goOffline()
     await flushPromises()
     api.deleteUsers.mockClear()
 
-    await wrapper.find('.confirm-modal .dialog-actions .btn-danger').trigger('click')
+    await wrapper.find('[data-testid="admin-danger-confirm"]').trigger('click')
     await flushPromises()
 
     expect(api.deleteUsers).not.toHaveBeenCalled()
@@ -656,14 +700,14 @@ describe('AdminUsersPage connectivity gating', () => {
     await flushPromises()
 
     await wrapper.find('.admin-table thead input[type="checkbox"]').setValue(true)
-    await wrapper.find('.admin-bulk-bar .btn-danger').trigger('click')
+    await wrapper.find('[data-testid="admin-bulk-delete"]').trigger('click')
     await wrapper.find('.bulk-confirm-modal .admin-confirm-input').setValue('DELETE')
 
     goOffline()
     await flushPromises()
     api.deleteUsers.mockClear()
 
-    await wrapper.find('.bulk-confirm-modal .dialog-actions .btn-danger').trigger('click')
+    await wrapper.find('.bulk-confirm-modal .bulk-confirm').trigger('click')
     await flushPromises()
 
     expect(api.deleteUsers).not.toHaveBeenCalled()
@@ -680,7 +724,7 @@ describe('AdminUsersPage connectivity gating', () => {
     await wrapper.find('.admin-page-next').trigger('click')
     await flushPromises()
     await wrapper.find('.admin-table thead input[type="checkbox"]').setValue(true)
-    expect(wrapper.find('.admin-selected').text()).toBe('admin.selectedCount(count=1)')
+    expect(wrapper.find('.admin-bulk-summary').text()).toBe('admin.selectedCount(count=1)')
 
     goOffline()
     await flushPromises()
@@ -688,7 +732,7 @@ describe('AdminUsersPage connectivity gating', () => {
     // 掉线不清空数据 / 不登出 / 不整页重载：只挡住新的 ONLINE_REQUIRED 动作。
     expect(rows(wrapper).length).toBe(1)
     expect(wrapper.find('.admin-page-info').text()).toBe('admin.pageInfo(page=2,total=3,items=60)')
-    expect(wrapper.find('.admin-selected').text()).toBe('admin.selectedCount(count=1)')
+    expect(wrapper.find('.admin-bulk-summary').text()).toBe('admin.selectedCount(count=1)')
     expect(wrapper.find('[data-testid="admin-connectivity-unavailable"]').exists()).toBe(true)
     expect(api.searchUsers).toHaveBeenCalledTimes(2)
     // 会改变 server-backed 结果集的控件在非-online 时不可用，避免「显示改了、数据没改」。
@@ -697,8 +741,8 @@ describe('AdminUsersPage connectivity gating', () => {
     expect(wrapper.find('.admin-page-jump input').attributes('disabled')).toBeDefined()
     expect(wrapper.find('.admin-page-go').attributes('disabled')).toBeDefined()
     expect(wrapper.find('.admin-pagination select').attributes('disabled')).toBeDefined()
-    expect(wrapper.find('.admin-search button').attributes('disabled')).toBeDefined()
-    expect(wrapper.find('.admin-filters select').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-testid="admin-search-btn"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-testid="admin-segment-local"]').attributes('disabled')).toBeDefined()
   })
 
   it('reconnect after an offline mount loads once and never replays a destructive action', async () => {
@@ -770,7 +814,7 @@ describe('AdminUsersPage applied-state consistency while offline', () => {
       // keycloakUserId 列（与 keycloakUsername 同格的 .cell-mono）。
       rowId: rows(wrapper)[0].find('.cell-mono').text(),
       size: wrapper.find('.admin-pagination select').element.value,
-      segment: wrapper.find('.admin-filters select').element.value,
+      segment: wrapper.find('.segmented-option.is-active').attributes('data-value'),
     }
   }
 
@@ -840,13 +884,18 @@ describe('AdminUsersPage applied-state consistency while offline', () => {
     await flushPromises()
     api.searchUsers.mockClear()
 
-    await chooseOption('.admin-filters select', 'local')
+    // 分段按钮 disabled；摘掉后直接派发 click，等于绕过控件层，handler 的门禁仍必须守住已应用的数据源。
+    const local = wrapper.find('[data-testid="admin-segment-local"]')
+    expect(local.attributes('disabled')).toBeDefined()
+    local.element.removeAttribute('disabled')
+    local.element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await flushPromises()
 
     expect(api.searchUsers).not.toHaveBeenCalled()
-    expect(wrapper.find('.admin-filters select').element.value).toBe('keycloak')
+    expect(wrapper.find('.segmented-option.is-active').attributes('data-value')).toBe('keycloak')
     expect(rows(wrapper)[0].find('.cell-mono').text()).toBe(before.rowId)
     // 仍是 keycloak 段：IdP 输入不被清空、也不被禁用。
-    expect(wrapper.find('.admin-filters input').attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('[data-testid="admin-idp-input"]').attributes('disabled')).toBeUndefined()
   })
 
   it('CASE D: offline search submit and row actions are unavailable', async () => {
@@ -859,18 +908,16 @@ describe('AdminUsersPage applied-state consistency while offline', () => {
     api.searchUsers.mockClear()
     api.getUser.mockClear()
 
-    expect(wrapper.find('.admin-search button').attributes('disabled')).toBeDefined()
-    await wrapper.find('.admin-search button').trigger('click')
-    for (const button of rows(wrapper)[0].findAll('.cell-actions button')) {
-      expect(button.attributes('disabled')).toBeDefined()
-      await button.trigger('click')
-    }
+    expect(wrapper.find('[data-testid="admin-search-btn"]').attributes('disabled')).toBeDefined()
+    await wrapper.find('[data-testid="admin-search-btn"]').trigger('click')
+    // 行仍可点开抽屉（显示已加载的字段），但不请求详情，删除入口不可用。
+    await rows(wrapper)[0].find('[data-testid="admin-row-open"]').trigger('click')
     await flushPromises()
+    expect(wrapper.find('[data-testid="admin-danger-start"]').attributes('disabled')).toBeDefined()
 
     expect(api.searchUsers).not.toHaveBeenCalled()
     expect(api.getUser).not.toHaveBeenCalled()
     expect(api.deleteUsers).not.toHaveBeenCalled()
-    expect(wrapper.find('.confirm-modal').exists()).toBe(false)
     expect(wrapper.find('.admin-page-info').text()).toBe(before.pageInfo)
     expect(rows(wrapper)[0].find('.cell-mono').text()).toBe(before.rowId)
   })
@@ -883,8 +930,8 @@ describe('AdminUsersPage applied-state consistency while offline', () => {
     goOffline()
     await flushPromises()
     // 草稿输入允许继续编辑，但它不是已应用条件：提交被门禁挡住。
-    await wrapper.find('.admin-search input').setValue('draft-query')
-    await wrapper.find('.admin-search button').trigger('click')
+    await wrapper.find('[data-testid="admin-search-input"]').setValue('draft-query')
+    await wrapper.find('[data-testid="admin-search-btn"]').trigger('click')
     await flushPromises()
     expect(api.searchUsers).not.toHaveBeenCalled()
 
@@ -898,7 +945,7 @@ describe('AdminUsersPage applied-state consistency while offline', () => {
     expect(rows(wrapper)[0].find('.cell-mono').text()).toBe('kc-keycloak-p0')
 
     // 用户显式提交后才生效。
-    await wrapper.find('.admin-search button').trigger('click')
+    await wrapper.find('[data-testid="admin-search-btn"]').trigger('click')
     await flushPromises()
     expect(api.searchUsers).toHaveBeenCalledTimes(1)
     expect(api.searchUsers).toHaveBeenCalledWith('draft-query', expect.objectContaining({ page: 0 }))

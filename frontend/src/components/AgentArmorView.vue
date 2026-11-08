@@ -27,7 +27,9 @@ import { usePointer } from '../composables/useBreakpoint.js'
 import { usePlaybackPhoneForm } from '../composables/usePlaybackPhoneForm.js'
 import { usePlaybackPortraitViewport } from '../composables/usePlaybackPortraitViewport.js'
 import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
+import { useForcedLandscape } from '../composables/useForcedLandscape.js'
 import Scene3DStatus from './Scene3DStatus.vue'
+import RotatePrompt from './RotatePrompt.vue'
 import TankCatalogMenu from './TankCatalogMenu.vue'
 import ArmorSideConfig from './ArmorSideConfig.vue'
 import ArmorShotHud from './ArmorShotHud.vue'
@@ -286,6 +288,11 @@ const { isPortrait } = usePlaybackPortraitViewport()
 const wantsImmersive = computed(() => coarse.value && isPhone.value && !isPortrait.value && webgl.supported)
 watch(wantsImmersive, (on) => shellChrome?.request(shellOwner, on), { immediate: true })
 onBeforeUnmount(() => shellChrome?.request(shellOwner, false))
+// 强制横屏（design-language §9）：只在 Android 手机 App（原生锁定）与 iPhone Safari（竖屏提示旋转）生效；
+// 桌面、平板与 Android 浏览器沿用小屏布局。场景在提示下保持挂载，转到横屏即继续。
+const forcedLandscape = useForcedLandscape(computed(() => webgl.supported))
+// 点选结果胶囊（顶部正中）：小屏默认只显示最终判定一行，点开看逐层明细；新判定回到收起态。
+const resultExpanded = ref(false)
 const onboarding = inject(ONBOARDING_KEY, null)
 onMounted(() => onboarding?.registerSurface('armor', {
     ready: () => load.value.state === 'ready',
@@ -599,7 +606,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-<div class="armor-view" data-tour="armor-workspace" :class="{ 'is-unsupported': !webgl.supported, 'has-back': !isShotPage, 'is-shot': isShotPage, 'is-clean': cleanQuery }">
+<div class="armor-view" data-scene-surface data-tour="armor-workspace" :class="{ 'is-unsupported': !webgl.supported, 'has-back': !isShotPage, 'is-shot': isShotPage, 'is-clean': cleanQuery }">
     <button v-if="!isShotPage" type="button" class="armor-back" data-testid="armor-back" :aria-label="$t('armor.back')" @click="backOrTankopedia"><ArrowLeft :size="16" aria-hidden="true" /><span class="armor-back-label">{{ $t('armor.back') }}</span></button>
     <header v-if="isShotPage && !cleanQuery" class="armor-shot-header" data-testid="armor-shot-header">
         <button type="button" class="armor-shot-back" :aria-label="$t('armor.back_to_shots')" @click="backToShots"><ArrowLeft :size="18" aria-hidden="true" /><span>{{ $t('armor.back_to_shots') }}</span></button>
@@ -737,7 +744,7 @@ onBeforeUnmount(() => {
                 @close="closePicker"
             />
         </div>
-        <!-- 装甲厚度模式点选结果：命中点旁侧的浮层（偏移 + 视口钳制），只显示部件名 + 基础装甲值 -->
+        <!-- 装甲厚度模式点选结果：停靠在场景顶部正中的胶囊（不跟随命中点），只显示部件名 + 基础装甲值 -->
         <div id="click-info">
             <h3 id="click-part">—</h3>
             <div class="row">
@@ -787,12 +794,25 @@ onBeforeUnmount(() => {
             <div v-if="!isShotPage" id="controls-hint">{{ hint }}</div>
         </div>
         </div>
-        <div id="traj-info" style="display:none;"></div>
+        <div
+            id="traj-info"
+            style="display:none;"
+            role="button"
+            tabindex="0"
+            :class="{ 'is-expanded': resultExpanded }"
+            :aria-expanded="resultExpanded ? 'true' : 'false'"
+            :aria-label="$t('armor.result_details')"
+            data-testid="armor-result-pill"
+            @click="resultExpanded = !resultExpanded"
+            @keydown.enter.prevent="resultExpanded = !resultExpanded"
+            @keydown.space.prevent="resultExpanded = !resultExpanded"
+        ></div>
         <div id="shot-replay-error" role="alert" aria-live="assertive" style="display:none;"></div>
         <div id="turret-controls">
             <div v-if="!isShotPage && !cleanQuery" class="armor-camera-presets" role="group" :aria-label="$t('armor.camera_presets')">
-                <button type="button" class="armor-scene-button" data-testid="armor-camera-front" :disabled="load.state !== 'ready'" @click="viewer?.setCameraPreset?.('front')">{{ $t('armor.camera_front') }}</button>
-                <button type="button" class="armor-scene-button" data-testid="armor-camera-hull-down" :disabled="load.state !== 'ready'" @click="viewer?.setCameraPreset?.('hull_down')">{{ $t('armor.camera_hull_down') }}</button>
+                <!-- preserveView：预设只换观察方向，不动用户平移出的旋转中心（0x5f3759df 反馈） -->
+                <button type="button" class="armor-scene-button" data-testid="armor-camera-front" :disabled="load.state !== 'ready'" @click="viewer?.setCameraPreset?.('front', { preserveView: true })">{{ $t('armor.camera_front') }}</button>
+                <button type="button" class="armor-scene-button" data-testid="armor-camera-hull-down" :disabled="load.state !== 'ready'" @click="viewer?.setCameraPreset?.('hull_down', { preserveView: true })">{{ $t('armor.camera_hull_down') }}</button>
             </div>
             <div class="ctrl-row"><label>{{ $t('armor.turret') }}</label><span id="turret-val">0°</span></div>
             <div class="ctrl-row"><label>{{ $t('armor.gun') }}</label><span id="gun-val">0°</span></div>
@@ -810,6 +830,13 @@ onBeforeUnmount(() => {
             @retry="retry"
         />
     </div>
+    <RotatePrompt
+        v-if="forcedLandscape.blocked.value"
+        class="armor-rotate-prompt"
+        :device="forcedLandscape.device.value"
+        :action-label="isShotPage ? $t('armor.back_to_shots') : $t('armor.back')"
+        @action="isShotPage ? backToShots() : backOrTankopedia()"
+    />
 </div>
 </template>
 
@@ -825,7 +852,7 @@ onBeforeUnmount(() => {
     --input-bg: var(--color-surface-2); --input-bg-hover: var(--color-surface-3);
     --tooltip-bg: var(--color-surface-1); --scrub: var(--color-info);
     position: relative; display: flex; flex-direction: column; isolation: isolate;
-    inline-size: 100%; block-size: calc(100dvh - var(--header-h) - var(--tabbar-h)); min-block-size: 420px;
+    inline-size: 100%; block-size: calc(100dvh - var(--header-h) - env(safe-area-inset-bottom)); min-block-size: 420px;
     margin: 0; padding: 0; overflow: hidden; background: var(--color-canvas); color: var(--txt); font: var(--type-body);
 }
 .armor-view .armor-stage { position: relative; flex: 1; min-block-size: 0; inline-size: 100%; }
@@ -1005,25 +1032,43 @@ onBeforeUnmount(() => {
 .armor-view #debug-info { display: none; padding: var(--space-3); max-inline-size: 24rem; max-block-size: 32dvh; overflow: auto; font: var(--type-caption); }
 .armor-view #debug-info h4 { margin: 0 0 var(--space-2); font: var(--type-caption); }
 .armor-view .dbg-row { display: flex; align-items: flex-start; gap: var(--space-1); margin: var(--space-1) 0; overflow-wrap: anywhere; }
-.armor-view .dbg-dot { flex: none; inline-size: var(--space-2); block-size: var(--space-2); border-radius: var(--radius-full); margin-block-start: var(--space-1); }
+.armor-view .dbg-dot { flex: none; inline-size: var(--space-2); block-size: var(--space-2); border-radius: var(--radius-full); corner-shape: round; margin-block-start: var(--space-1); }
 .armor-view .dbg-name { flex: none; color: var(--muted); }
 .armor-view .dbg-val { min-inline-size: 0; }
-/* 装甲厚度模式点选结果：命中点旁侧的浮层（内核按点击坐标偏移 24px 并在视口内钳制，
-   不盖住命中点），只显示部件名 + 基础装甲值 */
+/* 点选结果（厚度 #click-info、击穿 #traj-info）：固定停靠在场景顶部正中的胶囊，不跟随命中点、
+   不压车体（design-language §9「强制横屏」场景 HUD）。场景脚本只切换显示与写入内容。 */
+.armor-view :is(#click-info, #traj-info) {
+    position: absolute;
+    inset-block-start: var(--space-5);
+    inset-inline-start: 50%;
+    transform: translateX(-50%);
+    z-index: var(--pb-z-hud);
+}
 .armor-view #click-info {
-    position: fixed;
     display: none;
-    padding: var(--space-2) var(--space-3);
-    min-inline-size: 11rem;
+    align-items: center;
+    gap: var(--space-3);
+    min-block-size: var(--hit-min-comfortable);
+    padding: 0 var(--space-3);
     color: var(--muted);
     font: var(--type-caption);
+    white-space: nowrap;
     pointer-events: none;
-    z-index: var(--pb-z-modal);
 }
-.armor-view #click-info h3 { margin: 0 0 var(--space-1); color: var(--txt); font: var(--type-caption); font-weight: 600; }
-.armor-view #click-info .row { display: flex; justify-content: space-between; gap: var(--space-3); }
-.armor-view #click-info #click-armor { color: var(--txt); font-variant-numeric: tabular-nums; }
-.armor-view #traj-info { position: fixed; z-index: var(--z-header); pointer-events: none; }
+.armor-view #click-info h3 { margin: 0; color: var(--txt); font: var(--type-caption); font-weight: 600; }
+.armor-view #click-info .row { display: flex; gap: var(--space-2); }
+.armor-view #click-info #click-armor { color: var(--txt); font-variant-numeric: tabular-nums; font-weight: 700; }
+.armor-view #traj-info { max-block-size: calc(100% - var(--space-10)); overflow-y: auto; cursor: pointer; }
+.armor-view #traj-info:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+/* 竖屏手机：顶部是信息条与姿态行，胶囊排在它们下面 */
+@media (width < 768px) and (orientation: portrait), (width < 768px) and (pointer: fine) {
+    .armor-view :is(#click-info, #traj-info) { inset-block-start: calc(var(--space-2) * 3 + var(--space-12) + var(--hit-min-comfortable)); max-inline-size: calc(100% - var(--space-4)); }
+}
+/* 小屏（竖屏手机 / 手机横屏）：收起态只留最终判定一行作为胶囊，点开看逐层明细 */
+@media (width < 768px), (pointer: coarse) and (orientation: landscape) and (height <= 500px) {
+    .armor-view #traj-info:not(.is-expanded) > div > :not([data-card-title="final"]) { display: none; }
+    .armor-view #traj-info:not(.is-expanded) > div > [data-card-title="final"] { margin: 0; }
+}
 .armor-view #shot-replay-error { position: fixed; z-index: var(--pb-z-modal); inset-block-start: calc(var(--space-5) + 48px); inset-inline: var(--space-4); margin-inline: auto; max-inline-size: 30rem; padding: var(--space-2) var(--space-3); background: var(--tooltip-bg); border-left: 4px solid var(--red); border-radius: var(--radius-md); color: var(--red); font: var(--type-caption); box-shadow: var(--elevation-2); pointer-events: none; }
 .armor-view .armor-back { position: absolute; z-index: calc(var(--z-sticky) + 1); inset-block-start: var(--space-5); inset-inline-start: var(--space-5); display: inline-flex; align-items: center; gap: var(--space-2); min-block-size: 44px; padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--panel); color: var(--txt); }
 .armor-view .armor-tools { display: none; }
@@ -1080,7 +1125,7 @@ onBeforeUnmount(() => {
     .armor-view #info-panel .stat { display: inline-flex; gap: var(--space-1); vertical-align: bottom; }
     .armor-view #info-panel .stat + .stat::before { content: '·'; color: var(--muted); }
     .armor-view #info-panel .label { display: none; }
-    .armor-view #tank-selectors { grid-column: 1 / -1; grid-row: 2; display: none; inline-size: auto; margin-block-start: var(--space-1); padding: var(--space-2) 0; border: none; border-block-start: 1px solid var(--border); border-radius: 0; background: none; box-shadow: none; max-block-size: calc((100dvh - var(--header-h) - var(--tabbar-h)) * .46); }
+    .armor-view #tank-selectors { grid-column: 1 / -1; grid-row: 2; display: none; inline-size: auto; margin-block-start: var(--space-1); padding: var(--space-2) 0; border: none; border-block-start: 1px solid var(--border); border-radius: 0; background: none; box-shadow: none; max-block-size: calc((100dvh - var(--header-h)) * .46); }
     .armor-view #tank-selectors .armor-panel-title { display: none; }
     .armor-view #tank-selectors .sel-row { flex-wrap: nowrap; }
     .armor-view #tank-selectors .sel-row > label:first-child { flex: 0 0 var(--space-12); }
@@ -1096,7 +1141,8 @@ onBeforeUnmount(() => {
     .armor-view #turret-controls { inset-block-start: calc(var(--space-2) * 2 + 48px); inset-block-end: auto; inset-inline-start: var(--space-2); min-inline-size: 0; max-inline-size: calc(100% - var(--space-4)); padding: 0 var(--space-1); max-block-size: 28dvh; white-space: nowrap; }
     .armor-view #turret-controls .ctrl-row { display: inline-flex; flex-wrap: nowrap; vertical-align: middle; gap: var(--space-1); margin: 0 var(--space-1); }
     .armor-view #turret-controls .armor-camera-presets { display: inline-flex; flex-wrap: nowrap; vertical-align: middle; gap: var(--space-1); margin: 0 var(--space-1) 0 0; }
-    .armor-view #turret-controls .armor-camera-presets button { padding: var(--space-1) var(--space-2); }
+    /* 按文字实际宽度排布：平分宽度时「压坡卖头」等较长文案会溢出按钮、压到旁边的炮塔读数 */
+    .armor-view #turret-controls .armor-camera-presets button { flex: none; padding: var(--space-1) var(--space-2); }
     .armor-view #corner-br { display: none; }
     .armor-view.is-shot .armor-bottom-controls { position: absolute; inset-block-end: var(--space-2); inset-inline: var(--space-2); display: flex; flex-direction: column; gap: var(--space-2); pointer-events: none; z-index: var(--pb-z-hud); }
     .armor-view.is-shot .armor-bottom-controls :is(#corner-tr, #corner-br) { position: static; max-inline-size: none; pointer-events: auto; }
@@ -1118,4 +1164,33 @@ onBeforeUnmount(() => {
 @media (width < 768px) and (pointer: coarse) and (orientation: landscape) {
     .armor-view #corner-tr { inline-size: var(--armor-shot-card-compact-width); }
 }
+/* 手机横屏场景 HUD（design-language §9「强制横屏」）：常驻控件只在四角——左上返回 + 车名 / 参数，
+   右下拇指区是射击快捷项（弹种、距离、厚度 / 击穿），左下是姿态与角度；完整设置在右侧参数面板
+   （约 300px + 安全区），打开时场景仍在左侧可见。顶部正中留给点选结果胶囊。 */
+@media (pointer: coarse) and (orientation: landscape) and (height <= 500px) {
+    /* 沉浸态外壳在左上放菜单按钮（--immersive-nav-reserve）：返回键与信息卡整体右移让出 */
+    .armor-view :is(#corner-tl, .armor-back) { inset-inline-start: calc(max(var(--space-5), env(safe-area-inset-left)) + var(--immersive-nav-reserve)); }
+    .armor-view .armor-back { inline-size: var(--hit-min-comfortable); padding: 0; justify-content: center; }
+    .armor-view .armor-back-label { display: none; }
+    .armor-view.has-back #corner-tl { inset-block-start: var(--space-5); inset-inline-start: calc(max(var(--space-5), env(safe-area-inset-left)) + var(--immersive-nav-reserve) + var(--hit-min-comfortable) + var(--space-2)); inline-size: min(17rem, 34%); }
+    .armor-view #corner-tr { inset-block-start: auto; inset-block-end: max(var(--space-2), env(safe-area-inset-bottom)); inset-inline-end: max(var(--space-5), env(safe-area-inset-right)); max-block-size: calc(100% - var(--space-12) - var(--space-10)); overflow-y: auto; }
+    .armor-view #corner-br { display: none; }
+    .armor-view #turret-controls { inset-block-end: max(var(--space-2), env(safe-area-inset-bottom)); inset-inline-start: max(var(--space-5), env(safe-area-inset-left)); }
+    .armor-view .armor-stage.is-tools-open #tank-selectors {
+        position: fixed;
+        inset-block: 0;
+        inset-inline-end: 0;
+        inline-size: calc(19rem + env(safe-area-inset-right));
+        max-block-size: none;
+        margin: 0;
+        padding: var(--space-3) calc(var(--space-3) + env(safe-area-inset-right)) var(--space-3) var(--space-3);
+        border: 0;
+        border-inline-start: 1px solid var(--border);
+        background: var(--color-surface-1);
+        box-shadow: var(--elevation-3);
+        z-index: var(--pb-z-modal);
+    }
+}
+/* 竖屏提示（强制横屏设备）：盖住场景但不卸载它，转到横屏即继续 */
+.armor-view .armor-rotate-prompt { position: absolute; inset: 0; z-index: var(--pb-z-modal); background: var(--color-canvas); }
 </style>

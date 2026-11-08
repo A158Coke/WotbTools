@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { defineComponent, h, KeepAlive, nextTick, ref } from 'vue'
+import { OPEN_NAV_DRAWER_KEY, SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 import PlaybackTransport from './PlaybackTransport.vue'
 
 const mountTransport = (props) => mount(PlaybackTransport, { props, global: { mocks: { $t: (k) => k } } })
@@ -102,5 +104,47 @@ describe('PlaybackTransport', () => {
     expect(wrapper.findAll('.pb-speed-item').map((b) => b.text()))
         .toEqual(['0.5×', '1×', '2×', '4×', '8×'])
     })
+  })
+
+  it('沉浸态托管菜单入口；所在工作台被 KeepAlive 停用时交还，外壳重新画悬浮菜单', async () => {
+    const hosted = new Set()
+    const shellChrome = { immersive: ref(true), request() {}, navHosted: ref(false), hostNav: vi.fn((owner, on) => { if (on) hosted.add(owner); else hosted.delete(owner) }) }
+    const show = ref(true)
+    const Other = defineComponent({ name: 'OtherPage', render: () => h('div') })
+    const Host = defineComponent({
+      setup: () => () => h(KeepAlive, null, [show.value ? h(PlaybackTransport, { key: 'pb', duration: 60 }) : h(Other, { key: 'other' })]),
+    })
+    const wrapper = mount(Host, { global: { mocks: { $t: (k) => k }, provide: { [SHELL_CHROME_KEY]: shellChrome, [OPEN_NAV_DRAWER_KEY]: () => {} } } })
+    await nextTick()
+    expect(hosted.size).toBe(1)
+    show.value = false
+    await nextTick(); await nextTick()
+    expect(hosted.size).toBe(0)
+    show.value = true
+    await nextTick(); await nextTick()
+    expect(hosted.size).toBe(1)
+    wrapper.unmount()
+  })
+
+  it('宿主用 v-show 收起控制条 / 能力切走（navEligible=false）时交还菜单入口，展开后重新托管', async () => {
+    const hosted = new Set()
+    const shellChrome = { immersive: ref(true), request() {}, navHosted: ref(false), hostNav: vi.fn((owner, on) => { if (on) hosted.add(owner); else hosted.delete(owner) }) }
+    const eligible = ref(true)
+    const Host = defineComponent({
+      setup: () => () => h('div', { style: eligible.value ? '' : 'display: none' }, [h(PlaybackTransport, { duration: 60, navEligible: eligible.value })]),
+    })
+    const wrapper = mount(Host, { global: { mocks: { $t: (k) => k }, provide: { [SHELL_CHROME_KEY]: shellChrome, [OPEN_NAV_DRAWER_KEY]: () => {} } } })
+    await nextTick()
+    expect(hosted.size).toBe(1)
+    eligible.value = false // 收起
+    await nextTick()
+    expect(hosted.size).toBe(0)
+    eligible.value = true // 重新展开
+    await nextTick()
+    expect(hosted.size).toBe(1)
+    shellChrome.immersive.value = false // 退出沉浸态同样交还
+    await nextTick()
+    expect(hosted.size).toBe(0)
+    wrapper.unmount()
   })
 })

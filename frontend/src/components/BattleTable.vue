@@ -321,50 +321,62 @@ function onCardSelect(accountId) {
 </template>
 
 <style scoped>
-/* League Rating 概览：两队 Rating + 可改队名 + MVP / 队内最佳（class 名保留给 PNG 导出样式） */
+/* League Rating 概览 = 赛后数据的比分主视觉（4.0 设计探索「回放赛后数据」）：主题主视觉 + 遮罩，
+   两队队名与队伍 Rating 用展示字阶，胜方强调；MVP / 队内最佳在下方一行（class 名保留给 PNG 导出样式） */
 .league-overview {
+  position: relative;
+  isolation: isolate;
   display: grid;
   gap: var(--space-3);
+  overflow: hidden;
   margin-bottom: var(--space-4);
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-5) var(--space-6);
   border: 1px solid var(--color-border-subtle);
+  border-block-end: 2px solid var(--color-accent);
   border-radius: var(--radius-lg);
-  background: var(--color-surface-1);
+  /* 两队文字左右分布：用均匀遮罩，而不是 Hero 的左深右浅遮罩，右侧队伍的对比度不随图片变化 */
+  background: linear-gradient(var(--league-hero-scrim), var(--league-hero-scrim)), var(--theme-hero-image) center / cover, var(--color-surface-1);
+  --league-hero-scrim: color-mix(in srgb, var(--color-canvas) 86%, transparent);
 }
 .league-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); }
 .league-title { color: var(--color-text-primary); font: var(--type-h3); }
 .league-sub,
 .league-note { color: var(--color-text-secondary); font: var(--type-caption); }
-.league-teams { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--space-2); }
+.league-teams { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-6); }
 .league-team {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: end;
+  gap: var(--space-1);
   min-width: 0;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-2);
 }
-.league-team.league-win { border-color: var(--color-accent); }
-.league-team-tag { flex: none; color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; white-space: nowrap; }
+.league-team + .league-team { justify-items: end; text-align: end; }
+.league-team-tag { color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; white-space: nowrap; }
+.league-team.league-win .league-team-tag { color: var(--color-success); }
 .team-name-input {
-  flex: 1 1 auto;
+  inline-size: 100%;
   min-width: 0;
-  min-height: var(--control-h-sm);
+  min-height: var(--control-h-md);
   padding: 0 var(--space-2);
   border: 1px dashed var(--color-border-strong);
   border-radius: var(--radius-sm);
-  background: transparent;
+  background: var(--theme-glass);
   color: var(--color-text-primary);
-  font: var(--type-body);
-  font-weight: 600;
+  font: var(--type-h2);
 }
+.league-team + .league-team .team-name-input { text-align: end; }
 .team-name-input:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-.league-team-rating { flex: none; color: var(--color-accent-text); font: var(--type-h3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.league-team-rating { color: var(--color-text-primary); font: var(--type-display-hero); font-variant-numeric: tabular-nums; letter-spacing: -0.03em; white-space: nowrap; }
+.league-team.league-win .league-team-rating { color: var(--color-accent-text); }
 .league-mvp { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-3); font: var(--type-body); }
 .lm-label { color: var(--color-text-secondary); }
 .lm-value { color: var(--color-text-primary); font-weight: 600; }
+@media (width < 768px) {
+  .league-overview { padding: var(--space-4); background: linear-gradient(var(--league-hero-scrim), var(--league-hero-scrim)), var(--theme-hero-image-portrait) center 70% / cover, var(--color-surface-1); }
+  .league-teams { gap: var(--space-3); }
+  .league-team-rating { font: var(--type-display); }
+  .team-name-input { font: var(--type-h3); }
+}
 
 /* League 表格：玩家 + 总 Rating sticky；其余列横向滚动。
    z-index 层级：tbody normal < tbody sticky(3) < thead normal(5) < thead sticky(7)。

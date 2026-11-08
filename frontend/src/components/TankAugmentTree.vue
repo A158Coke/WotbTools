@@ -401,7 +401,7 @@ const selectedGroup = computed(() => (selected.value && selected.value.kind !== 
 .at-actions { display: flex; gap: 8px; }
 .at-pillbtn {
   background: var(--color-surface-1); border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-full); padding: 4px 14px;
+  border-radius: var(--radius-full); corner-shape: round; padding: 4px 14px;
   color: var(--color-text-primary); font: var(--type-caption); cursor: pointer;
 }
 .at-pillbtn:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
@@ -427,7 +427,7 @@ const selectedGroup = computed(() => (selected.value && selected.value.kind !== 
 .at-cell:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); border-radius: var(--radius-lg); }
 .at-node {
   position: absolute; left: 16px; top: 16px; width: 64px; height: 64px;
-  border-radius: var(--radius-full); background: var(--color-surface-3);
+  border-radius: var(--radius-full); corner-shape: round; background: var(--color-surface-3);
   display: flex; align-items: center; justify-content: center;
 }
 .at-diamond { border-radius: var(--radius-md); transform: rotate(45deg); }
@@ -435,7 +435,7 @@ const selectedGroup = computed(() => (selected.value && selected.value.kind !== 
 .at-installed { background: var(--color-border-strong); }
 .at-selected { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 .at-rootnode::before {
-  content: ""; position: absolute; inset: -14px; border-radius: var(--radius-full);
+  content: ""; position: absolute; inset: -14px; border-radius: var(--radius-full); corner-shape: round;
   background: var(--color-accent); opacity: .18;
 }
 .at-ico { width: 38px; height: 38px; object-fit: contain; pointer-events: none; position: relative; }
@@ -446,7 +446,7 @@ const selectedGroup = computed(() => (selected.value && selected.value.kind !== 
   font-weight: 600; white-space: nowrap;
 }
 .at-price .at-star, .at-star { width: 11px; height: 11px; align-self: center; }
-.at-group-node { width: 100px; height: 100px; border-radius: var(--radius-full); left: -2px; top: -2px; position: absolute; }
+.at-group-node { width: 100px; height: 100px; border-radius: var(--radius-full); corner-shape: round; left: -2px; top: -2px; position: absolute; }
 .at-group-node .at-orn { position: absolute; inset: -4px; width: 108px; height: 108px; max-width: none; max-height: none; opacity: .9; pointer-events: none; }
 .at-group-node .at-ico { width: 46px; height: 46px; object-fit: contain; }
 .at-sector-ico { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); width: 32px; height: 32px; object-fit: contain; }

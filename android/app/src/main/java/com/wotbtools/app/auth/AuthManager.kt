@@ -102,6 +102,9 @@ internal class AuthManager private constructor(context: Context) {
     /** discovery 完成后待执行的一次登录（用户在 metadata 到手前就点了登录）。 */
     private var pendingLogin = false
 
+    /** 排队登录要用的登录页语言（OIDC `ui_locales`）；与 [pendingLogin] 同锁读写。 */
+    private var pendingUiLocale: String? = null
+
     private val listeners = mutableListOf<Listener>()
 
     private var session: AuthSession? = null
@@ -210,14 +213,17 @@ internal class AuthManager private constructor(context: Context) {
      * 直接回 false 会白丢一次点击。拉取失败时走 [notifyListeners]，让页面重新取状态后自行决定重试，
      * 绝不静默吞掉一次点击。
      *
+     * [uiLocale] 是页面当前语言（bridge 已按白名单收窄），作为 OIDC `ui_locales` 让登录页默认同语言；null 不带。
+     *
      * @return true 表示这次请求已被受理（立刻启动或排队等待 metadata）；false 表示完全无法受理。
      */
-    internal fun login(): Boolean {
+    internal fun login(uiLocale: String? = null): Boolean {
         var fetchNeeded = false
         val ready = synchronized(lock) {
             if (configuration != null) return@synchronized true
             // 没有 metadata 就排队，并在需要时发起一次 discovery。
             pendingLogin = true
+            pendingUiLocale = uiLocale
             if (!discovering) {
                 discovering = true
                 fetchNeeded = true
@@ -226,7 +232,7 @@ internal class AuthManager private constructor(context: Context) {
         }
         if (ready) {
             // 返回值语义：true = 已受理（交易已落盘并已交给浏览器）；false = 无法受理（落盘失败）。
-            return launchAuthorization()
+            return launchAuthorization(uiLocale)
         }
         if (fetchNeeded) onMainThread { fetchConfiguration() }
         Log.d(TAG, "auth-login queued reason=configuration-pending")
@@ -253,6 +259,7 @@ internal class AuthManager private constructor(context: Context) {
                             discovering = false
                             val wasPending = pendingLogin
                             pendingLogin = false
+                            pendingUiLocale = null
                             wasPending
                         }
                         // 排队中的登录无法完成：必须让页面知道（重新取状态 → 自行提示重试），
@@ -260,16 +267,19 @@ internal class AuthManager private constructor(context: Context) {
                         if (dropped) notifyListeners()
                         return
                     }
+                    var queuedUiLocale: String? = null
                     val queued = synchronized(lock) {
                         configuration = fetched
                         discovering = false
                         val wasPending = pendingLogin
                         pendingLogin = false
+                        queuedUiLocale = pendingUiLocale
+                        pendingUiLocale = null
                         wasPending
                     }
                     Log.d(TAG, "auth-discovery ready")
                     // 只补上排队的那一次登录：没有排队就不主动弹浏览器（预热不等于自动登录）。
-                    if (queued) launchAuthorization()
+                    if (queued) launchAuthorization(queuedUiLocale)
                 }
             }
         )
@@ -285,7 +295,7 @@ internal class AuthManager private constructor(context: Context) {
      * state 与 nonce 由库的 builder 自动生成（`AuthorizationRequest.Builder` 构造时生成随机 state，
      * `build()` 时生成 nonce），无需也不应手工设置：手工设置会引入第二个随机源。
      */
-    private fun launchAuthorization(): Boolean {
+    private fun launchAuthorization(uiLocale: String?): Boolean {
         val config = synchronized(lock) { configuration }
         if (config == null) {
             Log.d(TAG, "auth-login not-launched reason=no-configuration")
@@ -299,6 +309,7 @@ internal class AuthManager private constructor(context: Context) {
             ResponseTypeValues.CODE,
             Uri.parse(selectedRedirectUri)
         ).setScope(OidcConfiguration.SCOPE)
+        if (uiLocale != null) builder.setUiLocales(uiLocale)
         val verifier = CodeVerifierUtil.generateRandomCodeVerifier()
         builder.setCodeVerifier(
             verifier,

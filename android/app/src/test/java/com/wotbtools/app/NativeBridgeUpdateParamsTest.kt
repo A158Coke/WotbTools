@@ -13,4 +13,11 @@ class NativeBridgeUpdateParamsTest {
             assertNull("invalid identity: $invalid", NativeBridge.updateVersionCodeOf(invalid))
         }
     }
+
+    @Test fun loginUiLocaleAcceptsOnlyContractLocales() {
+        for (locale in listOf("zh", "en", "ru")) assertEquals(locale, NativeBridge.uiLocaleOf(locale))
+        for (invalid in listOf(null, "", "ZH", "zh-CN", "de", "en ru", 1, true)) {
+            assertNull("invalid ui locale: $invalid", NativeBridge.uiLocaleOf(invalid))
+        }
+    }
 }

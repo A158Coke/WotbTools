@@ -1,5 +1,6 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { useI18n } from 'vue-i18n'
 import { confirm } from '../composables/useConfirm.js'
 import { useAuth } from '../composables/useAuth.js'
@@ -22,6 +23,7 @@ import { copyText } from '../utils/clipboard.js'
 import AppButton from './AppButton.vue'
 
 const { locale, t, te } = useI18n()
+const navigateView = inject(NAVIGATE_VIEW_KEY, null)
 const { initPromise, login, logout, isAuthenticated, authenticated: authState, initError, tokenParsed, displayName: authDisplayName, authEpoch } = useAuth()
 
 /**
@@ -530,7 +532,11 @@ async function removeAccount() {
             <p class="hero-subtitle">{{ heroSubtitle }}</p>
           </div>
         </div>
-        <AppButton variant="danger" size="sm" data-testid="profile-logout" @click="logout()">{{ $t('profile.logout') }}</AppButton>
+        <!-- 4.0：页头只放去设置 / 提交成绩的入口；登出移到右栏底部的描边按钮 -->
+        <div class="hero-links">
+          <button v-if="navigateView" type="button" class="hero-link" data-testid="profile-settings-link" @click="navigateView('more')">{{ $t('profile.settingsLink') }}</button>
+          <button v-if="navigateView" type="button" class="hero-link" data-testid="profile-submit-link" @click="navigateView('hof')">{{ $t('profile.submitLink') }}</button>
+        </div>
       </div>
 
       <div class="profile-body">
@@ -737,6 +743,7 @@ async function removeAccount() {
               <p class="text-muted">{{ $t('profile.securityDesc') }}</p>
             </div>
           </div>
+          <AppButton variant="secondary" block data-testid="profile-logout" @click="logout()">{{ $t('profile.logout') }}</AppButton>
 
         </div>
       </div>
@@ -758,7 +765,10 @@ async function removeAccount() {
 .section-title-line { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid rgba(66, 77, 84, .45); }
 .section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid rgba(66, 77, 84, .45); }
 .section-actions { display: flex; gap: 6px; }
-.profile-hero { display: flex; align-items: center; justify-content: space-between; padding: 24px 28px; margin-bottom: 24px; background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 10%, var(--bg-card)), var(--bg-card)); }
+.profile-hero { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-4); padding: 24px 28px; margin-bottom: 24px; border-block-end: 2px solid var(--color-accent); background: var(--theme-hero-scrim), var(--theme-hero-image) right center / cover, var(--color-surface-1); }
+.hero-links { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.hero-link { display: inline-flex; cursor: pointer; align-items: center; min-height: var(--control-h-md); padding: 0 var(--space-3); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--theme-glass); color: var(--color-text-primary); font: var(--type-body); font-weight: 600; text-decoration: none; }
+.hero-link:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 .hero-left { display: flex; align-items: center; gap: 20px; }
 .profile-signed-out {
   display: grid;
@@ -785,7 +795,7 @@ async function removeAccount() {
 .info-value-copy { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .info-value code { font-family: var(--font-family-mono); font-size: var(--font-size-caption); }
 .role-list { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-1); }
-.role-chip { padding: var(--space-1) var(--space-2); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-full); background: var(--color-surface-2); color: var(--color-text-secondary); font-family: var(--font-family-mono); font-size: var(--font-size-caption); }
+.role-chip { padding: var(--space-1) var(--space-2); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-full); corner-shape: round; background: var(--color-surface-2); color: var(--color-text-secondary); font-family: var(--font-family-mono); font-size: var(--font-size-caption); }
 .account-bound { display: flex; flex-direction: column; gap: 10px; }
 .account-row { display: flex; justify-content: space-between; font-size: .88rem; color: var(--showcase-tactical-text); }
 .account-row span { color: #a3a6a0; }

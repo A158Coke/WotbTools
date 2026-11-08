@@ -15,8 +15,8 @@ export type BreakpointTier = 'compact' | 'medium' | 'expanded'
 export const PLAYBACK_MOBILE_QUERY = `(max-width: ${BREAKPOINT_MEDIUM - 0.02}px), (pointer: coarse) and (max-height: 500px)`
 
 /**
- * 手机横屏 / 矮视口的导航形态：外壳把导航改为左侧图标栏，让出底部 Tab 栏与顶栏的
- * 垂直空间（用户 2026-10-30 反馈：横屏下 Tab 栏挤占内容高度）。宽度 ≥768 的平板本就
- * 用侧栏；此查询只接管 compact（<768）的横屏手机。
+ * 抽屉外壳（design-language §9 L1 / L3）：手机竖屏（宽 < 768）与手机横屏（触屏、横向、高 ≤ 520，
+ * 不论宽度——iPhone 横屏 844×340 也在内）都用顶栏左上菜单按钮 + 左侧抽屉，没有侧边栏，也没有底部常驻栏。
+ * 平板（触屏但高度 > 520）与桌面保持左侧边栏。CSS 侧同一条件在 styles/tokens/scale.css。
  */
-export const SHELL_RAIL_QUERY = '(pointer: coarse) and (orientation: landscape) and (max-height: 520px)'
+export const SHELL_DRAWER_QUERY = `(max-width: ${BREAKPOINT_MEDIUM - 0.02}px), (pointer: coarse) and (orientation: landscape) and (max-height: 520px)`

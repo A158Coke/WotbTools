@@ -302,4 +302,20 @@ describe('AnalysisResultPanel structured Team review', () => {
     expect(wrapper.text()).toContain('recon.team.unknownPlayer / recon.team.unknownTank')
     expect(wrapper.text()).not.toContain('P1')
   })
+
+  it('关键回合是时间线；宿主允许时「在 2D 中查看」发出开战秒数，独立渲染时不显示', async () => {
+    const teamReview = {
+      summary: { verdict: '结论', primaryDiagnosis: '诊断' },
+      episodes: [{ id: 'e1', startSec: 75, endSec: 90, title: '中路失守', analysis: '分析', playerKeys: [] }, { id: 'e2', startSec: null, endSec: null, title: '无时间', analysis: '分析', playerKeys: [] }],
+      trainingSuggestions: [], reviewFocus: [], highContributors: [],
+    }
+    const standalone = mount(AnalysisResultPanel, { props: { result: { teamReview } }, global: { mocks: { $t: (k, p) => p ? `${k}:${JSON.stringify(p)}` : k } } })
+    expect(standalone.find('[data-testid="team-view-2d"]').exists()).toBe(false)
+    const wrapper = mount(AnalysisResultPanel, { props: { result: { teamReview }, canViewIn2d: true }, global: { mocks: { $t: (k, p) => p ? `${k}:${JSON.stringify(p)}` : k } } })
+    expect(wrapper.get('[data-testid="team-timeline"]').text()).toContain('1:15–1:30')
+    const buttons = wrapper.findAll('[data-testid="team-view-2d"]')
+    expect(buttons).toHaveLength(1)
+    await buttons[0].trigger('click')
+    expect(wrapper.emitted('view-2d')).toEqual([[75]])
+  })
 })

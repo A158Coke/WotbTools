@@ -429,7 +429,7 @@ onBeforeUnmount(() => { detach(); document.removeEventListener('fullscreenchange
 <style scoped>
 .onboarding-host { color: var(--color-text-primary); }
 /* 锚定在底部：顶部右侧是各页 PageHeader 的操作按钮（导出 / 刷新 …），桌面 --header-h=0 时会被整块盖住 */
-.onboarding-available { position: fixed; inset-block-end: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + var(--space-3)); inset-inline-end: var(--space-3); z-index: var(--z-menu); display: flex; align-items: center; gap: var(--space-2); max-width: calc(100dvw - var(--sidebar-w) - var(--space-6)); padding: var(--space-2); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-surface-1); box-shadow: var(--elevation-2); font: var(--type-caption); }
+.onboarding-available { position: fixed; inset-block-end: calc(env(safe-area-inset-bottom) + var(--space-3)); inset-inline-end: var(--space-3); z-index: var(--z-menu); display: flex; align-items: center; gap: var(--space-2); max-width: calc(100dvw - var(--sidebar-w) - var(--space-6)); padding: var(--space-2); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-surface-1); box-shadow: var(--elevation-2); font: var(--type-caption); }
 .onboarding-available > span { min-width: 0; overflow-wrap: anywhere; }
 .onboarding-layer { position: fixed; inset: 0; z-index: var(--z-dialog); pointer-events: none; }
 .onboarding-mask { position: fixed; background: var(--color-onboarding-scrim); pointer-events: none; }
@@ -442,7 +442,7 @@ onBeforeUnmount(() => { detach(); document.removeEventListener('fullscreenchange
 .onboarding-close:focus-visible, .onboarding-topic:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 .onboarding-card .onboarding-close { position: fixed; inset-block-start: max(var(--space-3), env(safe-area-inset-top)); inset-inline-end: max(var(--space-3), env(safe-area-inset-right)); border: 1px solid var(--color-border-subtle); background: var(--color-surface-1); }
 .onboarding-layer.is-inspecting-shot .onboarding-close { position: static; flex-shrink: 0; }
-.onboarding-meter { height: var(--space-1); overflow: hidden; border-radius: var(--radius-full); background: var(--color-surface-3); }
+.onboarding-meter { height: var(--space-1); overflow: hidden; border-radius: var(--radius-full); corner-shape: round; background: var(--color-surface-3); }
 .onboarding-meter > span { display: block; height: 100%; background: var(--color-accent); transition: width var(--duration-base) var(--ease-standard); }
 .onboarding-card h2 { margin: var(--space-1) 0 0; font: var(--type-h3); }
 .onboarding-card p { margin: 0; color: var(--color-text-secondary); font: var(--type-body); overflow-wrap: anywhere; }

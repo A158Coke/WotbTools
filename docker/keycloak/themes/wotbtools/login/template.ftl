@@ -96,6 +96,16 @@
             <img class="wbtb-shell__brand-logo" src="${url.resourcesPath}/img/wotbtoolslogo.png" alt="WotBTools">
         </a>
         <div class="wbtb-shell__topbar-actions">
+            <#-- 语言切换只给 中文 / EN：realm 仍支持 ru（ui_locales=ru 照常生效），但不进切换器（4.0 计划）。 -->
+            <#if realm.internationalizationEnabled && locale?? && locale.supported?size gt 1>
+                <nav class="wbtb-lang" aria-label="${msg("wbtbLanguage")}">
+                    <#list locale.supported as l>
+                        <#if l.languageTag == "zh" || l.languageTag == "en">
+                            <a class="wbtb-lang__link" href="${l.url}" lang="${l.languageTag}"<#if l.languageTag == locale.currentLanguageTag> aria-current="true"</#if>><#if l.languageTag == "zh">中文<#else>EN</#if></a>
+                        </#if>
+                    </#list>
+                </nav>
+            </#if>
             <button tabindex="0" id="wbtb-theme-toggle" class="wbtb-theme-toggle" type="button" data-label-to-light="${msg("wbtbThemeToggleToLight")}" data-label-to-dark="${msg("wbtbThemeToggleToDark")}" aria-label="${msg("wbtbThemeToggleToLight")}" title="${msg("wbtbThemeToggleToLight")}">
                 <span class="wbtb-theme-toggle__sun" aria-hidden="true"></span>
                 <span class="wbtb-theme-toggle__moon" aria-hidden="true"></span>
@@ -119,6 +129,7 @@
         <section class="wbtb-shell__auth">
             <div class="${properties.kcFormCardClass!}">
                 <header class="${properties.kcFormHeaderClass!}">
+                  <p class="wbtb-card__kicker">WOTBTOOLS · ${msg("wbtbSeason_" + (wbtbSeason!"summer"))}</p>
                   <#if !(auth?has_content && auth.showUsername() && !auth.showResetCredentials())>
                       <#if displayRequiredFields>
                           <div class="${properties.kcContentWrapperClass!}">

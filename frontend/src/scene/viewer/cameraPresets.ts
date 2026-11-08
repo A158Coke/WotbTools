@@ -12,3 +12,23 @@ export function armorCameraPreset(gunPivot: Vector3, gunWorldMatrix: Matrix4, di
   const direction = new Vector3(0, 1, 0).transformDirection(gunWorldMatrix)
   return { target, position: target.clone().addScaledVector(direction, distance) }
 }
+
+/**
+ * 视角预设只接管观察方向：旋转中心（轨道 target）与距离归用户所有。
+ * 用户平移/缩放后点击「正面 / 压坡卖头」，取景不回跳到炮线枢轴。
+ * direction 为零向量时退回完整预设姿态（target + preset position）。
+ */
+export function armorPresetViewPlacement(
+  prevTarget: Vector3,
+  prevCamera: Vector3,
+  pose: { target: Vector3; position: Vector3 },
+) {
+  const direction = pose.position.clone().sub(pose.target)
+  if (direction.lengthSq() === 0) return pose
+  const offset = prevCamera.clone().sub(prevTarget)
+  const distance = offset.length() > 0 ? offset.length() : direction.length()
+  return {
+    target: prevTarget.clone(),
+    position: prevTarget.clone().addScaledVector(direction.normalize(), distance),
+  }
+}

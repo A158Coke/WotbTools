@@ -19,27 +19,22 @@
     --space-8: 32px;
     --space-10: 40px;
     --space-12: 48px;
-    --gutter: 16px;
+    /* 内容左右边距：不小于设备侧边安全区（§9 L4，横屏刘海） */
+    --gutter: max(16px, env(safe-area-inset-left), env(safe-area-inset-right));
     /* Minimum readable form field before wrapping a fluid toolbar. */
     --form-field-min: 160px;
     /* Admin dataset summary: minimum readable metric card width. */
     --metric-card-min: 180px;
+    /* Admin dataset daily bar chart: bar track height. */
+    --chart-bar-h: 96px;
     --border-width: 1px;
     --broadcast-cover-max-h: 320px;
-    --broadcast-cover-thumbnail-w: 160px;
-    --broadcast-server-card-min-h: 200px;
-    /* 首页 landing page：组件语义尺寸（§4–§5），避免组件内出现第二套 scale。
-       手机 Hero 不强制高度，由组件置 0 把首屏留给标题与 CTA。 */
-    --home-hero-min-h-desktop: 460px;
-    --home-hero-min-h-tablet: 380px;
-    --home-hero-title-measure: 16ch;
+    /* 首页 landing page：组件语义尺寸（§4–§5），避免组件内出现第二套 scale。Hero 三档都是整屏（100dvh）。 */
+    --home-hero-title-measure: 20ch;
     --home-hero-subtitle-measure: 40ch;
     --home-hero-subtitle-size: clamp(1rem, 1.6vw, 1.25rem);
-    --home-shot-copy-measure: 42ch;
-    --home-phone-preview-w: 168px;
-    --home-phone-preview-h: 300px;
-    --home-phone-preview-mobile-w: 148px;
-    --home-phone-preview-mobile-max-h: 220px;
+    /* 手机首屏标题：比 display-showcase 的下限（2.75rem）小一档，标题不再吃掉半屏，赞助卡回到首屏附近 */
+    --home-hero-title-size-compact: 2.125rem;
 
     /* 首页动效：统一时长 + 语义幅度（§5）。不要给每个 stagger 阶段单独造 duration。 */
     --home-enter-duration: 700ms;
@@ -80,15 +75,19 @@
     --table-z-head: 2;
     --table-z-corner: 3;
 
-    /* 应用外壳（§9）：顶栏 / 底部 Tab 栏高度。所有吸顶偏移都读 --header-h */
-    --header-h: 48px;
-    --tabbar-h: 56px;
-    /* 侧边栏（平板 / 桌面）：图标栏宽 / 展开宽；--sidebar-w 是布局唯一读取的当前宽度（手机为 0） */
+    /* 应用外壳（§9）：抽屉外壳（手机竖屏 / 手机横屏）的顶栏高度。
+       --header-block 是内容区为顶栏让出的固定空间；--header-h 是吸顶偏移与高度预算读取的「顶栏当前占用」，
+       普通页面向下滚动收起顶栏时归零（L5），--header-block 不变，内容不跳动。 */
+    --header-block: 48px;
+    --header-h: var(--header-block);
+    /* 侧边栏（平板 / 桌面）：图标栏宽 / 展开宽；--sidebar-w 是布局唯一读取的当前宽度（抽屉外壳为 0） */
     --sidebar-rail-w: 72px;
-    /* compact 横屏（矮视口）的图标栏：更窄，保住回放传输控件单行 */
-    --sidebar-rail-w-compact-landscape: 56px;
     --sidebar-full-w: 240px;
     --sidebar-w: 0px;
+    /* 左侧导航抽屉宽度（L1）：小屏不超过视口 85%，留出可点的遮罩 */
+    --nav-drawer-w: min(304px, 85dvw);
+    /* 右侧详情抽屉（管理列表模板）：大屏约 400px，手机铺满视口宽度 */
+    --detail-drawer-w: min(400px, 100dvw);
 
     /* 字号阶梯（§4），最小 12px。
      * 原子 token：font-size / line-height 只能引用 --font-size-* / --line-height-*；
@@ -98,6 +97,10 @@
        40px，在宽屏停在 72px。 */
     --font-size-display-hero: clamp(2.5rem, 6vw, 4.5rem);
     --line-height-display-hero: 1.05;
+    /* 展示字阶上限（D2，DC-TYP-03）：Showcase Hero 的关键数字 / 首页大标题最大 104px，手机回落 44px。
+       只能用于装饰插槽里的标题与关键数字，数据区不得使用。 */
+    --font-size-display-showcase: clamp(2.75rem, 7vw, 6.5rem);
+    --line-height-display-showcase: 1.15;
     --font-size-display: 32px;
     --font-size-h1: 24px;
     --font-size-h2: 20px;
@@ -115,7 +118,11 @@
     --line-height-caption-xs: 14px;
     /* 长文阅读（项目历史 / 技术演进等文档页）：比界面正文更松的行高 */
     --line-height-prose: 1.7;
+    /* 长文档正文（产品历史 / 技术演进 / Rating 说明）：16px / 1.75，阅读宽度由组件的 720px 版心控制 */
+    --font-size-doc: 16px;
+    --line-height-doc: 1.75;
     --type-display-hero: 700 var(--font-size-display-hero) / var(--line-height-display-hero) var(--font-family-sans);
+    --type-display-showcase: 700 var(--font-size-display-showcase) / var(--line-height-display-showcase) var(--font-family-sans);
     --type-display: 700 var(--font-size-display) / var(--line-height-display) var(--font-family-sans);
     --type-h1: 700 var(--font-size-h1) / var(--line-height-h1) var(--font-family-sans);
     --type-h2: 600 var(--font-size-h2) / var(--line-height-h2) var(--font-family-sans);
@@ -191,39 +198,58 @@
     --focus-outline-offset: 2px;
   }
 
-  @media (width >= 768px) {
+  /* 超椭圆圆角（渐进增强，规则见 design-language §5「圆角」）：
+     只在支持 corner-shape 的引擎（Chromium 139+）里生效，其余平台原样使用 border-radius。
+     同半径下 squircle 的曲线更靠近角点、视觉更方，所以这里同时把 sm / md / lg 放大约 1.25–1.33 倍。
+     --radius-full 的胶囊 / 圆形不放大、不变形：凡是用 --radius-full（或 50%）的规则必须同时写
+     corner-shape: round（受 src/styles/corner-shape.test.js 守护）。 */
+  @supports (corner-shape: squircle) {
     :root {
-      --gutter: 24px;
-      /* 平板 / 桌面没有顶栏与底部 Tab 栏：导航在左侧边栏，吸顶偏移从视口顶部算起 */
-      --header-h: 0px;
-      --tabbar-h: 0px;
+      --corner-shape: squircle;
+      --radius-sm: 8px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+    }
+
+    /* corner-shape 不继承；无圆角的元素不受影响。未分层的组件规则优先于本层，可以覆盖成 round / inherit。 */
+    *, ::before, ::after { corner-shape: var(--corner-shape); }
+  }
+
+  @media (width >= 768px) {
+    :root { --gutter: max(24px, env(safe-area-inset-left), env(safe-area-inset-right)); }
+  }
+
+  /* 平板 / 桌面没有顶栏：导航在左侧边栏，吸顶偏移从视口顶部算起。
+     手机横屏（触屏、横向、高 ≤ 520，含宽度 ≥ 768 的 844×340）仍是抽屉外壳（L3），不进入侧边栏。
+     与 shared/breakpoints.ts SHELL_DRAWER_QUERY 同一条件。 */
+  @media (width >= 768px) and (not ((pointer: coarse) and (orientation: landscape) and (height <= 520px))) {
+    :root {
+      --header-block: 0px;
       --sidebar-w: var(--sidebar-rail-w);
     }
   }
 
-  @media (width >= 1200px) {
-    :root { --gutter: 32px; }
+  @media (width >= 1200px) and (not ((pointer: coarse) and (orientation: landscape) and (height <= 520px))) {
     :root:not([data-sidebar="collapsed"]) { --sidebar-w: var(--sidebar-full-w); }
   }
 
-  /* 手机横屏 / 矮视口：导航收进左侧图标栏，顶栏与底部 Tab 栏让出垂直空间 */
-  @media (pointer: coarse) and (orientation: landscape) and (height <= 520px) and (width < 768px) {
-    :root {
-      --header-h: 0px;
-      --tabbar-h: 0px;
-    }
-    /* 沉浸态（回放工作区）导航全部收起：不占内容宽度。侧栏宽度包含左侧安全区，
-       否则刘海屏横屏时 72px 边框盒被 env(safe-area-inset-left) 吃掉内宽。 */
-    :root:not([data-shell-chrome="immersive"]) {
-      --sidebar-w: calc(var(--sidebar-rail-w-compact-landscape) + env(safe-area-inset-left));
-    }
+  @media (width >= 1200px) {
+    :root { --gutter: max(32px, env(safe-area-inset-left), env(safe-area-inset-right)); }
   }
 
-  /* 沉浸态（shared/shellChrome）：AppShell 不渲染顶栏 / Tab 栏时，吸顶与高度预算同步归零 */
+  /* 普通页面向下滚动时顶栏收起（L5，AppTopBar 写入 data-topbar）：吸顶元素贴到视口顶部 */
+  :root[data-topbar="hidden"] { --header-h: 0px; }
+
+  /* 沉浸态（shared/shellChrome）：AppShell 不渲染顶栏时，吸顶与高度预算同步归零 */
   :root[data-shell-chrome="immersive"] {
+    --header-block: 0px;
     --header-h: 0px;
-    --tabbar-h: 0px;
   }
+
+  /* 沉浸态左上的悬浮菜单按钮（§9「强制横屏」：无顶栏，左上保留菜单）占用的空间；
+     场景外壳在自己的左上角让出这一块，非沉浸态为 0。 */
+  :root { --immersive-nav-reserve: 0px; }
+  :root[data-shell-chrome="immersive"] { --immersive-nav-reserve: calc(var(--hit-min-comfortable) + var(--space-2)); }
 
   @media (pointer: coarse) {
     :root {

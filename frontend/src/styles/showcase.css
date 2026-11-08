@@ -7,47 +7,20 @@
   --showcase-page-max: 1760px;
   --showcase-wide-max: 1720px;
   --showcase-content-max: 1420px;
-  --showcase-gutter: clamp(12px, 1.6vw, 30px);
-  --showcase-surface: color-mix(in srgb, var(--bg-card) 94%, #111 6%);
-  --showcase-surface-2: color-mix(in srgb, var(--bg-card2) 92%, #111 8%);
+  --showcase-gutter: max(clamp(12px, 1.6vw, 30px), env(safe-area-inset-left), env(safe-area-inset-right));
+  --showcase-surface: var(--color-surface-1);
+  --showcase-surface-2: var(--color-surface-2);
   --showcase-line: color-mix(in srgb, var(--border) 76%, var(--accent) 24%);
-  /* Tactical smoked surfaces keep content inside the Operations Console language. */
-  --showcase-tactical: linear-gradient(160deg, rgba(28, 34, 38, .95) 0%, rgba(17, 22, 25, .97) 100%);
-  --showcase-tactical-2: linear-gradient(165deg, rgba(22, 28, 31, .93) 0%, rgba(14, 19, 22, .96) 100%);
-  --showcase-tactical-border: rgba(66, 77, 84, .55);
-  --showcase-tactical-border-strong: rgba(217, 143, 24, .38);
-  --showcase-tactical-heading: #f2ede3;
-  --showcase-tactical-text: #c9c5bb;
-  --showcase-tactical-muted: #8f948d;
-  --showcase-tactical-soft: rgba(10, 15, 18, .55);
-  --showcase-tactical-soft-2: rgba(9, 14, 17, .8);
-
-  /* Showcase product palette. Dark is the only supported theme. */
-  --bg: #090d0f;
-  --bg-card: #11171a;
-  --bg-card2: #171e22;
-  --bg-card-hover: #1c252a;
-  --bg-upload: #0e1417;
-  --bg-elevated: #151c20;
-  --bg-list-hover: #182126;
-  --text: #e9e7e0;
-  --text-heading: #f6f1e7;
-  --text-sub: #a19f98;
-  --text-muted: #858985;
-  --text-label: #d7d2c8;
-  --border: #2b3439;
-  --border-header: #343d42;
-  --border-ghost: #394348;
-  --border-light: #20282c;
-  --border-light-strong: #35414a;
-  --border-heavy: #465158;
-  --accent: #d98f18;
-  --accent-hover: #f0a92c;
-  --accent-dark: #ffd382;
-  --accent-light: #f2ac30;
-  --accent-shadow: rgba(217, 143, 24, .22);
-  --surface-shadow: 0 16px 38px rgba(0, 0, 0, .28);
-  --hard-shadow: 0 26px 72px rgba(0, 0, 0, .46);
+  /* Tactical surfaces follow the active season（tokens/color.css）. */
+  --showcase-tactical: linear-gradient(160deg, var(--color-surface-2) 0%, var(--color-surface-1) 100%);
+  --showcase-tactical-2: linear-gradient(165deg, var(--color-surface-2) 0%, var(--color-canvas) 100%);
+  --showcase-tactical-border: var(--color-border-subtle);
+  --showcase-tactical-border-strong: color-mix(in srgb, var(--color-accent) 38%, transparent);
+  --showcase-tactical-heading: var(--color-text-primary);
+  --showcase-tactical-text: var(--color-text-secondary);
+  --showcase-tactical-muted: var(--color-text-tertiary);
+  --showcase-tactical-soft: color-mix(in srgb, var(--color-canvas) 55%, transparent);
+  --showcase-tactical-soft-2: color-mix(in srgb, var(--color-canvas) 80%, transparent);
 }
 
 .wrap {
@@ -98,6 +71,7 @@
   height: 340px;
   border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
   border-radius: 50%;
+  corner-shape: round;
   box-shadow: 0 0 0 54px color-mix(in srgb, var(--accent) 3%, transparent);
   pointer-events: none;
 }

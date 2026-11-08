@@ -192,14 +192,14 @@ describe('场景 Team 身份色（#835 后续：Team 1 绿 / Team 2 红 / 未知
 })
 
 describe('UI Profile 切换后 refreshColors 原位重着色（#877 review P3）', () => {
-  /** token 面板模拟：showcase(dark) ↔ classic(light) 的 team 色板（tokens/color.css 实值）。 */
+  /** token 面板模拟：盛夏 summer（深色）↔ 寒冬 winter（浅色） 的 team 色板（tokens/color.css 实值）。 */
   const PROFILES = {
-    showcase: { '--color-team-1': '#5cc280', '--color-team-2': '#f2786d', '--color-on-team-neutral': '#1c1f1d' },
-    classic: { '--color-team-1': '#16703c', '--color-team-2': '#b8352a', '--color-on-team-neutral': '#1c1f1d' },
+    summer: { '--color-team-1': '#5cc280', '--color-team-2': '#f2786d', '--color-on-team-neutral': '#1c1f1d' },
+    winter: { '--color-team-1': '#11703f', '--color-team-2': '#b8322a', '--color-on-team-neutral': '#1c1f1d' },
   } as const
   let prevGetComputedStyle: typeof globalThis.getComputedStyle | undefined
   let prevDocument: typeof globalThis.document | undefined
-  let tokens: Record<string, string> = { ...PROFILES.showcase }
+  let tokens: Record<string, string> = { ...PROFILES.summer }
 
   function useProfile(name: keyof typeof PROFILES) {
     tokens = { ...PROFILES[name] }
@@ -225,10 +225,10 @@ describe('UI Profile 切换后 refreshColors 原位重着色（#877 review P3）
     return ((o as THREE.Mesh).material as THREE.MeshBasicMaterial).color.getHexString()
   }
 
-  it('showcase → classic → showcase 双向：颜色随 token 更新，几何/对象原位保留', () => {
+  it('盛夏 → 寒冬 → 盛夏 双向：颜色随 token 更新，几何/对象原位保留', () => {
     stubCss()
     try {
-      useProfile('showcase')
+      useProfile('summer')
       const { scene, added } = fakeScene()
       const markers = createSpawnMarkers({ getScene: () => scene, groundY: () => 0 })
       markers.build([
@@ -239,18 +239,18 @@ describe('UI Profile 切换后 refreshColors 原位重着色（#877 review P3）
       expect(hexOf(added[0])).toBe('5cc280')
       expect(hexOf(added[2])).toBe('f2786d')
 
-      // classic（light 主题深色变体）：不重建场景，同批对象原位换色
+      // 寒冬（浅色主题）：不重建场景，同批对象原位换色
       const identityBefore = added.map(o => (o as THREE.Mesh).geometry)
-      useProfile('classic')
+      useProfile('winter')
       markers.refreshColors()
-      expect(hexOf(added[0])).toBe('16703c')
-      expect(hexOf(added[2])).toBe('b8352a')
-      // 中性盘：classic 无 --text-muted 覆盖（stub 未给）→ fallback，不误入 team 色
+      expect(hexOf(added[0])).toBe('11703f')
+      expect(hexOf(added[2])).toBe('b8322a')
+      // 中性盘：寒冬无 --text-muted 覆盖（stub 未给）→ fallback，不误入 team 色
       expect(hexOf(added[4])).toBe('858f81')
       expect(added.map(o => (o as THREE.Mesh).geometry)).toEqual(identityBefore)
 
       // 切回 showcase：双向回归
-      useProfile('showcase')
+      useProfile('summer')
       markers.refreshColors()
       expect(hexOf(added[0])).toBe('5cc280')
       expect(hexOf(added[2])).toBe('f2786d')
@@ -266,7 +266,7 @@ describe('UI Profile 切换后 refreshColors 原位重着色（#877 review P3）
   it('refreshColors 后 ring 深色轮廓保持、reground 链不受影响', () => {
     stubCss()
     try {
-      useProfile('classic')
+      useProfile('winter')
       const { scene, added } = fakeScene()
       const markers = createSpawnMarkers({ getScene: () => scene, groundY: () => 0 })
       markers.build([{ x: 0, y: 0, team: 2 }])

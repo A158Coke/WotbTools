@@ -1,4 +1,4 @@
-import { createApp, h } from 'vue'
+import { createApp, h, ref } from 'vue'
 import { createI18n } from 'vue-i18n'
 
 // 与 src/main.js 完全相同的样式加载顺序：三档 form + fullscreen contract 的相对顺序
@@ -17,7 +17,6 @@ import '../../src/styles/playback-overlap-ux.css'
 import '../../src/styles/playback-shared.css'
 import '../../src/styles/playback-mobile.css'
 import '../../src/styles/playback-workspace.css'
-import '../../src/styles/classic-profile.css'
 
 import { messages } from '../../src/locales/messages.js'
 import BattlePlayback from '../../src/components/BattlePlayback.vue'
@@ -87,9 +86,13 @@ const result = params.get('marks') === '1' ? {
   players: dataset.vehicles.map((vehicle, index) => ({ account_id: vehicle.accountId, gun_marks: index % 4 })),
 } : null
 
+// 能力切走模拟：工作台用 v-show 缓存能力面板，切走时组件不卸载、只收到 active=false。
+const active = ref(true)
+window.__pbFixture = { setActive: (value) => { active.value = !!value } }
+
 const Root = {
   name: 'PlaybackControlsFixture',
-  render: () => h(BattlePlayback, { playbackV2: dataset, result }),
+  render: () => h(BattlePlayback, { playbackV2: dataset, result, active: active.value }),
 }
 
 createApp(Root).use(i18n).mount('#app')

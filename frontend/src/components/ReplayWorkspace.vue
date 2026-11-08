@@ -5,6 +5,7 @@ import { CircleHelp, Play } from 'lucide-vue-next'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
+import { useForcedLandscape } from '../composables/useForcedLandscape.js'
 import { loadOfficialDemo } from '../replay-local/demo.js'
 import { mapLabel } from '../utils/helpers.js'
 import { defineLazyModule, reloadForFreshBundle } from '../utils/lazyModule.js'
@@ -23,6 +24,9 @@ import FileDrop from './FileDrop.vue'
 import ReplayProcessingPanel from './ReplayProcessingPanel.vue'
 import RemoveConfirmModal from './RemoveConfirmModal.vue'
 import ReplayCapabilityTabs from './ReplayCapabilityTabs.vue'
+import RotatePrompt from './RotatePrompt.vue'
+import { showToast } from '../composables/useToast.js'
+import { notify } from '../composables/useNotifications.js'
 import ReplayCollectionManager from './ReplayCollectionManager.vue'
 import ReplayCapabilityAuthGate from './ReplayCapabilityAuthGate.vue'
 import AppButton from './AppButton.vue'
@@ -242,6 +246,14 @@ const targetFile = computed(() => workspace.currentTargetFile.value)
 const initialLoading = computed(() => analysis.value.phase === 'parsing' && !resp.value)
 const openFailed = computed(() => analysis.value.phase === 'failed' && !resp.value)
 const workspaceReady = computed(() => !!resp.value && files.value.length > 0)
+// 解析完成（每份新结果一次）：toast + 本机通知
+watch(resp, (next, previous) => {
+  // 官方示例（新手教程）不提示：它不是用户自己的解析任务
+  if (!next || next === previous || !files.value.length || isDemoSelection.value) return
+  const count = files.value.length
+  showToast({ id: 'replay-parsed', tone: 'success', titleKey: 'notifications.replayParsed' })
+  notify({ id: 'replay-parsed', kind: 'replay-parsed', titleKey: 'notifications.replayParsed', bodyKey: 'notifications.replayParsedBody', params: { count }, view: 'replay' })
+})
 const contentVisible = computed(() => !files.value.length || !!resp.value)
 const demoEntryVisible = computed(() => !files.value.length || onboarding?.guideActive?.value === true)
 
@@ -281,6 +293,15 @@ const VIEW_BY_CAPABILITY = Object.freeze({
 /** capability → 路由 view（Back / Forward 与深链仍由 Vue Router 唯一持有）。 */
 function viewFor(cap) {
   return VIEW_BY_CAPABILITY[cap] || 'replay'
+}
+
+/** AI 复盘关键回合 →「在 2D 中查看」：切到 2D 能力页并按战斗时钟定位（BattlePlaybackPanel.seekTo 监听变化）。 */
+const playbackSeek = ref(null)
+async function viewIn2d(sec) {
+  await setCapability('playback')
+  playbackSeek.value = null
+  await nextTick()
+  playbackSeek.value = sec
 }
 
 async function setCapability(key) {
@@ -467,6 +488,9 @@ watch(wantsImmersive, (on) => {
   // 进入沉浸态时把回放区对齐到视口顶端（仅边沿触发一次，不监听滚动）
   if (on) nextTick(() => workspaceContentEl.value?.scrollIntoView?.({ block: 'start' }))
 }, { immediate: true })
+// 强制横屏（design-language §9）：2D / 3D 回放显示时，Android 手机 App 原生锁横屏，iPhone Safari 竖屏提示旋转；
+// 提示里的退出动作回到赛后数据，主要数据能力在竖屏仍可达。其它设备不受影响。
+const forcedLandscape = useForcedLandscape(computed(() => pageActive.value && workspaceReady.value && replayPaneShown.value))
 onActivated(() => { pageActive.value = true })
 onDeactivated(() => {
   pageActive.value = false
@@ -557,6 +581,14 @@ watch(() => props.initialCapability, (val) => {
       </Banner>
     </div>
 
+    <RotatePrompt
+      v-if="forcedLandscape.blocked.value"
+      class="workspace-rotate-prompt"
+      :device="forcedLandscape.device.value"
+      :action-label="$t('workspace.rotate_view_data')"
+      @action="setCapability('data')"
+    />
+
     <div v-if="showBattlePicker || isDemoSelection" class="workspace-sessionbar">
       <BattlePicker
         v-if="showBattlePicker"
@@ -592,6 +624,7 @@ watch(() => props.initialCapability, (val) => {
           :playback-session="workspace.playbackSession"
           :file="targetFile"
           :active="activeCapability === 'playback'"
+          :seek-to="playbackSeek"
         />
       </div>
       <div v-show="activeCapability === '3d'" class="capability-pane" data-testid="ws-3d">
@@ -663,6 +696,7 @@ watch(() => props.initialCapability, (val) => {
           :file="targetFile"
           :active="activeCapability === 'ai' && aiAvailability.available"
           :blocked-reason="aiBlocked"
+          @view-2d="viewIn2d"
         />
       </div>
     </div>
@@ -673,6 +707,8 @@ watch(() => props.initialCapability, (val) => {
 
 <style scoped>
 .replay-workspace { padding-right: var(--pd-drawer-offset, 0px); }
+/* 竖屏旋转提示盖在顶栏之下的整块可视区上（回放面板保持挂载，横过来即继续） */
+.workspace-rotate-prompt { position: fixed; inset: calc(var(--header-block) + env(safe-area-inset-top)) 0 0; z-index: var(--z-sticky); background: var(--color-canvas); }
 .workspace-source { display: grid; gap: var(--space-3); margin-bottom: var(--space-4); }
 .workspace-demo-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
 .workspace-demo-label { color: var(--color-text-secondary); font: var(--type-caption); }

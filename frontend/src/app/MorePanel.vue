@@ -11,6 +11,9 @@ import { LANGUAGES, useMoreMenu } from '../composables/useMoreMenu.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 import SegmentedControl from '../components/SegmentedControl.vue'
+import ThemePicker from '../components/ThemePicker.vue'
+import AppSwitch from '../components/AppSwitch.vue'
+import { feedbackPrefs, setFeedbackPref } from '../composables/useFeedbackPrefs.js'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -22,7 +25,7 @@ const emit = defineEmits(['close'])
 
 const navigate = inject(NAVIGATE_VIEW_KEY, null)
 const inline = inject(DIALOG_INLINE_KEY, false)
-const { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, aboutLinks, openGuide, openFeedback, openAndroidUpdate } = useMoreMenu()
+const { setLocale, aboutLinks, openGuide, openFeedback, openAndroidUpdate } = useMoreMenu()
 const panel = ref(null)
 
 function close({ restoreFocus = false } = {}) {
@@ -82,13 +85,7 @@ watch(() => props.open, async (open) => {
       <h2 id="more-panel-display" class="more-panel-title">{{ $t('more.sections.display') }}</h2>
       <div class="more-panel-setting" data-tour="settings-theme">
         <span class="more-panel-label">{{ $t('uiProfile.title') }}</span>
-        <SegmentedControl
-          :model-value="uiProfilePreference"
-          :options="uiProfileOptions($t)"
-          :aria-label="$t('uiProfile.title')"
-          data-testid="more-panel-ui-profile"
-          @update:model-value="setUiProfile"
-        />
+        <ThemePicker :aria-label="$t('uiProfile.title')" data-testid="more-panel-ui-profile" />
       </div>
       <div class="more-panel-setting" data-tour="settings-language">
         <span class="more-panel-label">{{ $t('more.language') }}</span>
@@ -99,6 +96,10 @@ watch(() => props.open, async (open) => {
           data-testid="more-panel-language"
           @update:model-value="setLocale"
         />
+      </div>
+      <div class="more-panel-setting" data-testid="more-panel-feedback">
+        <AppSwitch :model-value="feedbackPrefs.haptics" :label="$t('feedbackPrefs.haptics')" @update:model-value="value => setFeedbackPref('haptics', value)" />
+        <AppSwitch :model-value="feedbackPrefs.sound" :label="$t('feedbackPrefs.sound')" @update:model-value="value => setFeedbackPref('sound', value)" />
       </div>
     </section>
 

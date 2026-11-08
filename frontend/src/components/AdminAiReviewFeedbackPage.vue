@@ -1,38 +1,55 @@
-<script setup>
+<script setup lang="ts">
+// AI 复盘反馈管理（列表模板，docs/frontend/ui-system.md「管理后台列表模板」）：
+// 页头 → 原因筛选 → 表格（小屏卡片）→ 分页；点行在右侧抽屉看原文，删除在抽屉底部（两段式确认）。
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { feedbackReasons, feedbackStatuses, listFeedback, getFeedback, deleteFeedback, updateFeedbackStatus } from '../api/ai-review-feedback.js'
+import { feedbackReasons, feedbackStatuses, listFeedback, getFeedback, deleteFeedback, updateFeedbackStatus, type FeedbackReason, type FeedbackStatus } from '../api/ai-review-feedback.js'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { apiErrorLabel } from '../utils/display.js'
 import { normalizeApiError } from '../utils/http.js'
-import AppDialog from './AppDialog.vue'
+import AdminDangerZone from './AdminDangerZone.vue'
+import AdminDetailDrawer from './AdminDetailDrawer.vue'
+import AdminFilterBar from './AdminFilterBar.vue'
+import AppButton from './AppButton.vue'
+import PageHeader from './PageHeader.vue'
+import { isRowControlClick, rowOpenTarget } from './adminListRow'
+import './admin-list.css'
+
+type FeedbackPage = Awaited<ReturnType<typeof listFeedback>>
+type FeedbackItem = FeedbackPage['items'][number]
+type FeedbackDetail = Awaited<ReturnType<typeof getFeedback>>
 
 const { t, te } = useI18n()
 const { requireFeature, availability } = useFeatureGate()
-const items = ref([]), page = ref(0), totalPages = ref(0), totalItems = ref(0), reason = ref('')
-const loading = ref(false), error = ref(''), detail = ref(null), confirmId = ref(null), deleting = ref(false)
-const loaded = ref(false), savingStatus = ref({})
+const items = ref<FeedbackItem[]>([]), page = ref(0), totalPages = ref(0), totalItems = ref(0), reason = ref<FeedbackReason | ''>('')
+const loading = ref(false), error = ref(''), deleting = ref(false)
+const selected = ref<FeedbackItem | null>(null), detail = ref<FeedbackDetail | null>(null)
+const returnFocus = ref<HTMLElement | null>(null)
+const dangerZone = ref<InstanceType<typeof AdminDangerZone> | null>(null)
+const loaded = ref(false), savingStatus = ref<Record<string, boolean>>({})
+// 该记录的详情 GET 正在途中（PATCH 确认作废时据此重启读取，抽屉不停在「加载中」）
+const pendingDetailId = ref<FeedbackItem['id'] | null>(null)
 let hasLoadedOnce = false
 let blockedInitialLoad = false
 let generation = 0
 let detailGeneration = 0
 let statusEpoch = 0
-const confirmedStatuses = new Map()
-const detailVersions = new Map()
+const confirmedStatuses = new Map<string, { status: FeedbackStatus; epoch: number }>()
+const detailVersions = new Map<string, number>()
 
 /** 4xx means the server explicitly rejected the write; anything else may have committed. */
-function isDefiniteStatusRejection(cause) {
+function isDefiniteStatusRejection(cause: unknown): boolean {
   const status = normalizeApiError(cause).status
   return status !== null && status >= 400 && status < 500
 }
 
 /** Discard only in-flight detail reads for the record whose status just changed. */
-function invalidateDetailRequests(id) {
+function invalidateDetailRequests(id: string): void {
   detailVersions.set(id, (detailVersions.get(id) ?? 0) + 1)
 }
 
-function applyConfirmedStatuses(list, startedEpoch) {
+function applyConfirmedStatuses(list: FeedbackItem[], startedEpoch: number): FeedbackItem[] {
   return list.map(item => {
     const confirmed = confirmedStatuses.get(item.id)
     if (!confirmed) return item
@@ -40,7 +57,8 @@ function applyConfirmedStatuses(list, startedEpoch) {
     return { ...item, status: confirmed.status }
   })
 }
-async function load() {
+
+async function load(): Promise<void> {
   const current = ++generation
   const statusEpochAtStart = statusEpoch
   if (!requireFeature(Feature.ADMIN_AI_FEEDBACK)) {
@@ -65,14 +83,36 @@ async function load() {
 }
 function clearResults() { items.value = []; totalPages.value = 0; totalItems.value = 0; loaded.value = false; error.value = '' }
 function filterChanged() { page.value = 0; clearResults(); void load() }
-function move(delta) { page.value += delta; clearResults(); void load() }
-function previewText(value) {
+function removeReasonChip() { reason.value = ''; filterChanged() }
+function move(delta: number) { page.value += delta; clearResults(); void load() }
+function previewText(value: string | null) {
   const chars = [...(value || '')]
   return chars.length > 120 ? `${chars.slice(0, 120).join('')}…` : (value || '—')
 }
-async function changeStatus(item, event) {
-  const select = event.target
-  const next = select.value
+function reasonLabels(codes: readonly FeedbackReason[]) {
+  return codes.map(code => t(`aiFeedback.reasons.${code}`)).join(', ')
+}
+function fmtTime(value: string) { return new Date(value).toLocaleString() }
+function reasonChips() {
+  return reason.value ? [{ key: 'reason', label: `${t('aiFeedback.filter')}: ${t(`aiFeedback.reasons.${reason.value}`)}` }] : []
+}
+
+function applyStatus(id: string, status: FeedbackStatus): void {
+  statusEpoch++
+  // A detail GET for this record started before confirmation may still deliver the old status.
+  invalidateDetailRequests(id)
+  confirmedStatuses.set(id, { status, epoch: statusEpoch })
+  const target = items.value.find(entry => entry.id === id)
+  if (target) target.status = status
+  if (selected.value && selected.value.id === id) selected.value = { ...selected.value, status }
+  if (detail.value && detail.value.id === id) detail.value = { ...detail.value, status }
+  // PATCH 确认作废了在途详情读取：详情仍在加载时重启读取，抽屉不能停在「加载中」
+  else if (pendingDetailId.value === id && selected.value?.id === id) void loadDetail(id)
+}
+/** 行内状态下拉（行内控件，不触发整行打开）：成功即确认；4xx 回退；其它失败回读服务器状态。 */
+async function changeStatus(item: FeedbackItem, event: Event): Promise<void> {
+  const select = event.target as HTMLSelectElement
+  const next = select.value as FeedbackStatus
   const previous = item.status
   if (next === previous || savingStatus.value[item.id]) { select.value = previous; return }
   if (!requireFeature(Feature.ADMIN_AI_FEEDBACK)) { select.value = previous; return }
@@ -80,13 +120,7 @@ async function changeStatus(item, event) {
   error.value = ''
   try {
     await updateFeedbackStatus(item.id, next)
-    statusEpoch++
-    // A detail GET for this record started before confirmation may still deliver the old status.
-    invalidateDetailRequests(item.id)
-    confirmedStatuses.set(item.id, { status: next, epoch: statusEpoch })
-    const target = items.value.find(entry => entry.id === item.id)
-    if (target) target.status = next
-    if (detail.value && detail.value.id === item.id) detail.value = { ...detail.value, status: next }
+    applyStatus(item.id, next)
   } catch (cause) {
     if (isDefiniteStatusRejection(cause)) {
       select.value = previous
@@ -100,22 +134,20 @@ async function changeStatus(item, event) {
     savingStatus.value = rest
   }
 }
-async function reconcileStatus(item, select, previous) {
+async function reconcileStatus(item: FeedbackItem, select: HTMLSelectElement, previous: FeedbackStatus): Promise<void> {
   try {
     const result = await getFeedback(item.id)
-    statusEpoch++
-    invalidateDetailRequests(item.id)
-    confirmedStatuses.set(item.id, { status: result.status, epoch: statusEpoch })
-    const target = items.value.find(entry => entry.id === item.id)
-    if (target) target.status = result.status
+    applyStatus(item.id, result.status)
     select.value = result.status
-    if (detail.value && detail.value.id === item.id) detail.value = { ...detail.value, status: result.status }
   } catch {
     select.value = previous
     error.value = t('aiFeedback.statusUnconfirmed')
   }
 }
-async function showDetail(id) {
+
+/** 点行 / 主列按钮：抽屉立即打开显示列表字段，原文随后由详情请求补上。 */
+/** 详情读取：版本与状态纪元守卫（陈旧/被接管的响应静默丢弃）；在途标记见 pendingDetailId。 */
+async function loadDetail(id: FeedbackItem['id']): Promise<void> {
   const current = ++detailGeneration
   const detailVersion = detailVersions.get(id) ?? 0
   const statusEpochAtStart = statusEpoch
@@ -128,13 +160,25 @@ async function showDetail(id) {
     detail.value = confirmed && confirmed.epoch > statusEpochAtStart ? { ...result, status: confirmed.status } : result
   } catch (cause) {
     if (current === detailGeneration && detailVersion === (detailVersions.get(id) ?? 0)) error.value = apiErrorLabel(t, te, cause)
+  } finally {
+    if (pendingDetailId.value === id && current === detailGeneration) pendingDetailId.value = null
   }
 }
-function closeDetail() { detailGeneration++; detail.value = null }
+
+function openDetail(item: FeedbackItem, event?: Event) {
+  returnFocus.value = event ? rowOpenTarget(event) : null
+  selected.value = item; detail.value = null; deleting.value = false
+  dangerZone.value?.reset()
+  pendingDetailId.value = item.id
+  void loadDetail(item.id)
+}
+function onRowClick(item: FeedbackItem, event: Event) { if (!isRowControlClick(event)) void openDetail(item, event) }
+function closeDetail() { if (deleting.value) return; detailGeneration++; selected.value = null; detail.value = null; pendingDetailId.value = null }
 async function remove() {
-  if (deleting.value || !confirmId.value || !requireFeature(Feature.ADMIN_AI_FEEDBACK)) return
+  const target = selected.value
+  if (deleting.value || !target || !requireFeature(Feature.ADMIN_AI_FEEDBACK)) return
   deleting.value = true; error.value = ''
-  try { await deleteFeedback(confirmId.value); confirmId.value = null; closeDetail(); await load() }
+  try { await deleteFeedback(target.id); deleting.value = false; closeDetail(); await load() }
   catch (cause) { error.value = apiErrorLabel(t, te, cause) }
   finally { deleting.value = false }
 }
@@ -142,64 +186,83 @@ onMounted(load)
 watch(() => availability(Feature.ADMIN_AI_FEEDBACK).available, available => {
   if (available && blockedInitialLoad && !hasLoadedOnce && !loading.value) void load()
 })
-onBeforeUnmount(() => { generation++; detailGeneration++ })
+onBeforeUnmount(() => { generation++; detailGeneration++; pendingDetailId.value = null })
 </script>
 
 <template>
-  <section class="feedback-admin">
-    <h1>{{ $t('aiFeedback.adminTitle') }}</h1>
-    <label>{{ $t('aiFeedback.filter') }}
-      <select v-model="reason" @change="filterChanged">
-        <option value="">{{ $t('aiFeedback.all') }}</option>
-        <option v-for="item in feedbackReasons" :key="item" :value="item">{{ $t(`aiFeedback.reasons.${item}`) }}</option>
-      </select>
-    </label>
-    <button type="button" :disabled="loading" @click="load">{{ $t('aiFeedback.refresh') }}</button>
-    <p v-if="error" role="alert">{{ error }}</p>
-    <p v-if="loading" role="status">{{ $t('aiFeedback.loading') }}</p>
-    <p v-else-if="loaded && !items.length">{{ $t('aiFeedback.empty') }}</p>
-    <div class="table-wrap">
-      <table v-if="items.length">
-        <thead><tr><th>{{ $t('aiFeedback.created') }}</th><th>{{ $t('aiFeedback.filter') }}</th><th>{{ $t('aiFeedback.comment') }}</th><th>{{ $t('aiFeedback.model') }}</th><th>{{ $t('aiFeedback.statusLabel') }}</th><th>{{ $t('aiFeedback.actions') }}</th></tr></thead>
-        <tbody><tr v-for="item in items" :key="item.id">
-          <td>{{ new Date(item.createdAt).toLocaleString() }}</td>
-          <td>{{ item.reasonCodes.map(code => $t(`aiFeedback.reasons.${code}`)).join(', ') }}</td>
-          <td class="preview">{{ previewText(item.feedbackText) }}</td><td>{{ item.model || '—' }}</td>
-          <td><select class="status-select" :value="item.status" :disabled="!!savingStatus[item.id]" :aria-label="$t('aiFeedback.statusLabel')" @change="changeStatus(item, $event)"><option v-for="value in feedbackStatuses" :key="value" :value="value">{{ $t(`aiFeedback.status.${value}`) }}</option></select></td>
-          <td><button type="button" @click="showDetail(item.id)">{{ $t('aiFeedback.view') }}</button> <button type="button" @click="confirmId = item.id">{{ $t('aiFeedback.delete') }}</button></td>
-        </tr></tbody>
+  <section class="feedback-admin admin-page">
+    <PageHeader :kicker="$t('aiFeedback.adminKicker')" :title="$t('aiFeedback.adminTitle')" :description="$t('aiFeedback.adminDescription')">
+      <template #actions>
+        <AppButton size="sm" :disabled="loading" @click="load">{{ $t('aiFeedback.refresh') }}</AppButton>
+      </template>
+    </PageHeader>
+    <AdminFilterBar :chips="reasonChips()" @remove="removeReasonChip">
+      <label class="admin-list-field">
+        <span>{{ $t('aiFeedback.filter') }}</span>
+        <select v-model="reason" class="admin-list-input" data-testid="feedback-reason-filter" @change="filterChanged">
+          <option value="">{{ $t('aiFeedback.all') }}</option>
+          <option v-for="item in feedbackReasons" :key="item" :value="item">{{ $t(`aiFeedback.reasons.${item}`) }}</option>
+        </select>
+      </label>
+    </AdminFilterBar>
+    <p v-if="error && !selected" class="admin-list-status is-error" role="alert">{{ error }}</p>
+    <p v-if="loading" class="admin-list-empty" role="status">{{ $t('aiFeedback.loading') }}</p>
+    <p v-else-if="loaded && !items.length" class="admin-list-empty">{{ $t('aiFeedback.empty') }}</p>
+    <div v-if="items.length" class="admin-list-table-wrap">
+      <table class="admin-list-table">
+        <thead><tr><th>{{ $t('aiFeedback.created') }}</th><th>{{ $t('aiFeedback.filter') }}</th><th>{{ $t('aiFeedback.comment') }}</th><th>{{ $t('aiFeedback.model') }}</th><th>{{ $t('aiFeedback.statusLabel') }}</th></tr></thead>
+        <tbody>
+          <tr v-for="item in items" :key="item.id" class="is-clickable" :class="{ 'is-active': selected?.id === item.id }" @click="onRowClick(item, $event)">
+            <td class="cell-primary"><button type="button" class="admin-list-open" data-testid="feedback-row-open" @click="openDetail(item, $event)">{{ fmtTime(item.createdAt) }}</button></td>
+            <td :data-label="$t('aiFeedback.filter')">{{ reasonLabels(item.reasonCodes) }}</td>
+            <td class="is-wrap" :data-label="$t('aiFeedback.comment')">{{ previewText(item.feedbackText) }}</td>
+            <td :data-label="$t('aiFeedback.model')">{{ item.model || '—' }}</td>
+            <td :data-label="$t('aiFeedback.statusLabel')">
+              <select class="admin-list-input status-select" :value="item.status" :disabled="!!savingStatus[item.id]" :aria-label="$t('aiFeedback.statusLabel')" @change="changeStatus(item, $event)">
+                <option v-for="value in feedbackStatuses" :key="value" :value="value">{{ $t(`aiFeedback.status.${value}`) }}</option>
+              </select>
+            </td>
+          </tr>
+        </tbody>
       </table>
     </div>
-    <div v-if="loaded || page > 0" class="pages"><button type="button" :disabled="loading || page === 0" @click="move(-1)">{{ $t('aiFeedback.previous') }}</button>
+    <div v-if="loaded || page > 0" class="admin-list-pagination">
       <span v-if="loaded">{{ page + 1 }} / {{ Math.max(totalPages, 1) }} · {{ totalItems }}</span>
       <span v-else>{{ page + 1 }}</span>
-      <button type="button" :disabled="!loaded || loading || page + 1 >= totalPages" @click="move(1)">{{ $t('aiFeedback.next') }}</button></div>
-    <AppDialog :open="!!detail" :title="$t('aiFeedback.detail')" size="lg" @close="closeDetail">
-      <template v-if="detail">
-        <p>{{ $t('aiFeedback.created') }}: {{ new Date(detail.createdAt).toLocaleString() }}</p>
-        <p>{{ $t('aiFeedback.model') }}: {{ detail.model || '—' }}</p>
-        <p>{{ $t('aiFeedback.statusLabel') }}: {{ $t('aiFeedback.status.' + detail.status) }}</p>
-        <p>{{ detail.reasonCodes.map(code => $t(`aiFeedback.reasons.${code}`)).join(', ') }}</p>
-        <h3>{{ $t('aiFeedback.comment') }}</h3><pre>{{ detail.feedbackText || '—' }}</pre>
-        <h3>{{ $t('aiFeedback.snapshot') }}</h3><pre>{{ detail.aiResponseText }}</pre>
+      <div class="admin-list-pagination-controls">
+        <AppButton size="sm" :disabled="loading || page === 0" @click="move(-1)">{{ $t('aiFeedback.previous') }}</AppButton>
+        <AppButton size="sm" :disabled="!loaded || loading || page + 1 >= totalPages" @click="move(1)">{{ $t('aiFeedback.next') }}</AppButton>
+      </div>
+    </div>
+
+    <AdminDetailDrawer :open="!!selected" :title="$t('aiFeedback.detail')" :return-focus-to="returnFocus" @close="closeDetail">
+      <template v-if="selected">
+        <section class="admin-list-section">
+          <dl class="admin-list-dl">
+            <dt>{{ $t('aiFeedback.created') }}</dt><dd>{{ fmtTime(selected.createdAt) }}</dd>
+            <dt>{{ $t('aiFeedback.model') }}</dt><dd>{{ selected.model || '—' }}</dd>
+            <dt>{{ $t('aiFeedback.filter') }}</dt><dd>{{ reasonLabels(selected.reasonCodes) }}</dd>
+          </dl>
+        </section>
+        <p v-if="!detail && !error" class="admin-list-muted" role="status">{{ $t('aiFeedback.loading') }}</p>
+        <template v-if="detail">
+          <!-- 状态只取详情响应（已按确认状态校正）；被作废的旧详情不会显示过期状态 -->
+          <p class="admin-list-muted" data-testid="feedback-detail-status">{{ $t('aiFeedback.statusLabel') }}: {{ $t('aiFeedback.status.' + detail.status) }}</p>
+          <section class="admin-list-section"><h3 class="admin-list-section-title">{{ $t('aiFeedback.comment') }}</h3><pre class="admin-list-pre">{{ detail.feedbackText || '—' }}</pre></section>
+          <section class="admin-list-section"><h3 class="admin-list-section-title">{{ $t('aiFeedback.snapshot') }}</h3><pre class="admin-list-pre">{{ detail.aiResponseText }}</pre></section>
+        </template>
       </template>
-    </AppDialog>
-    <AppDialog :open="!!confirmId" :title="$t('aiFeedback.delete')" tone="danger" @close="!deleting && (confirmId = null)">
-      <p>{{ $t('aiFeedback.deleteConfirm') }}</p>
-      <p v-if="error" role="alert">{{ error }}</p>
-      <button type="button" :disabled="deleting" @click="confirmId = null">{{ $t('aiFeedback.cancel') }}</button>
-      <button type="button" :disabled="deleting" @click="remove">{{ $t('aiFeedback.delete') }}</button>
-    </AppDialog>
+      <template #footer>
+        <p v-if="error && selected" class="admin-list-error" role="alert">{{ error }}</p>
+        <AdminDangerZone
+          ref="dangerZone"
+          :action-label="$t('aiFeedback.delete')"
+          :hint="$t('aiFeedback.deleteHint')"
+          :message="$t('aiFeedback.deleteConfirm')"
+          :busy="deleting"
+          @confirm="remove"
+        />
+      </template>
+    </AdminDetailDrawer>
   </section>
 </template>
-
-<style scoped>
-.feedback-admin { padding: var(--space-5); }
-.table-wrap { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; margin-top: var(--space-4); }
-th, td { text-align: left; padding: var(--space-2); border-bottom: 1px solid var(--color-border-subtle); }
-.preview { overflow-wrap: anywhere; }
-.status-select { min-width: 7rem; }
-.pages { display: flex; align-items: center; gap: var(--space-3); margin-top: var(--space-4); }
-pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
-</style>

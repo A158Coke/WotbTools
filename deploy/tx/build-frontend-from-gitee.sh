@@ -370,7 +370,7 @@ if fingerprint.get("upstream_commit") != ref:
 if fingerprint.get("tag") != release:
     raise SystemExit("frontend image fingerprint tag %r != source.json artifact.release %r" % (fingerprint.get("tag"), release))
 '
-    for file in index.html version.json sponsor-bg.webp icon.ico icon.png wotbtoolslogo.png; do
+    for file in index.html version.json icon.ico icon.png wotbtoolslogo.png; do
       [ -s "$temp/html/$file" ]
     done
     docker cp "$container:/etc/nginx/conf.d/default.conf" "$temp/default.conf"

@@ -39,7 +39,6 @@ describe('shared broadcast catalogue rendering', () => {
     state.admin.value = true
     state.category.mockResolvedValue({ ...detail, categories: [detail.category], nodes: detail.nodes.map(node => ({ ...node, replays: node.replays.map(replay => ({ ...replay, startsAt: '2026-10-16T11:00:00Z' })) })) })
     const { wrapper } = await page()
-    await wrapper.get('[data-testid=broadcast-node-toggle-30]').trigger('click')
     expect(wrapper.get('[data-testid=broadcast-replay-40]').text()).toContain('2026-10-16 19:00 UTC+8')
     await wrapper.get('[data-testid=broadcast-display-time-zone]').setValue('UTC')
     expect(wrapper.get('[data-testid=broadcast-replay-40]').text()).toContain('2026-10-16 11:00 UTC')
@@ -53,7 +52,6 @@ describe('shared broadcast catalogue rendering', () => {
   })
   it('keeps a date-only replay stable when selecting another viewing zone', async () => {
     const { wrapper } = await page()
-    await wrapper.get('[data-testid=broadcast-node-toggle-30]').trigger('click')
     for (const zone of BROADCAST_DISPLAY_ZONES) {
       await wrapper.get('[data-testid=broadcast-display-time-zone]').setValue(zone)
       const text = wrapper.get('[data-testid=broadcast-replay-40]').text()
@@ -63,19 +61,22 @@ describe('shared broadcast catalogue rendering', () => {
     }
     wrapper.unmount()
   })
-  it.each([false, true])('shows empty categories and their management controls only to administrators (admin=%s)', async admin => {
+  it.each([false, true])('shows empty stages and their management controls only to administrators (admin=%s)', async admin => {
     state.admin.value = admin
     const quarter = { id: 21, seasonId: 10, type: 'QUARTER_FINALS' }
     const semi = { id: 22, seasonId: 10, type: 'SEMI_FINALS' }
     state.category.mockResolvedValue({ ...detail, categories: [detail.category, quarter, semi], nodes: [...detail.nodes,
       { id: 31, categoryId: 21, roundNumber: null, format: 'KNOCKOUT', replays: [] }] })
     const { wrapper } = await page()
+    // 第一个赛段默认选中；空赛段只对管理员显示成页签
     expect(wrapper.find('[data-testid=broadcast-category-20]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid=broadcast-category-21]').exists()).toBe(admin)
-    expect(wrapper.find('[data-testid=broadcast-category-22]').exists()).toBe(admin)
-    expect(wrapper.find('[data-testid=broadcast-new-node-22]').exists()).toBe(admin)
-    expect(wrapper.find('[data-testid=broadcast-new-replay-31]').exists()).toBe(admin)
+    expect(wrapper.find('[data-testid=broadcast-stage-21]').exists()).toBe(admin)
+    expect(wrapper.find('[data-testid=broadcast-stage-22]').exists()).toBe(admin)
     if (admin) {
+      await wrapper.get('[data-testid=broadcast-stage-21]').trigger('click'); await flushPromises()
+      expect(wrapper.find('[data-testid=broadcast-new-replay-31]').exists()).toBe(true)
+      await wrapper.get('[data-testid=broadcast-stage-22]').trigger('click'); await flushPromises()
+      expect(wrapper.find('[data-testid=broadcast-new-node-22]').exists()).toBe(true)
       await wrapper.get('[data-testid=broadcast-category-menu-22]').trigger('click')
       expect(wrapper.find('[data-testid=broadcast-delete-category-22]').exists()).toBe(true)
     }
@@ -86,7 +87,7 @@ describe('shared broadcast catalogue rendering', () => {
       nodes: withEmptyNode ? detail.nodes.map(node => ({ ...node, replays: [] })) : [] })
     const { wrapper } = await page()
     expect(wrapper.find('[data-testid=broadcast-category-20]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid=broadcast-nodes]').text()).toContain(messages.zh.leagueBroadcasts.noCategories)
+    expect(wrapper.text()).toContain(messages.zh.leagueBroadcasts.noCategories)
     wrapper.unmount()
   })
   it.each([false, true])('does not reveal an empty category through an old deep link (empty nodes=%s)', async withEmptyNode => {
@@ -94,26 +95,25 @@ describe('shared broadcast catalogue rendering', () => {
       nodes: withEmptyNode ? detail.nodes.map(node => ({ ...node, replays: [] })) : [] })
     const { wrapper } = await page('/?view=league-broadcasts&lbServer=CN&lbSeason=10&lbCategory=20')
     expect(wrapper.find('[data-testid=broadcast-category-20]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid=broadcast-node-toggle-30]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid=broadcast-round-30]').exists()).toBe(false)
     wrapper.unmount()
   })
-  it('hides empty categories after an administrator loses management permission', async () => {
+  it('hides empty stages after an administrator loses management permission', async () => {
     state.admin.value = true
     const semi = { id: 22, seasonId: 10, type: 'SEMI_FINALS' }
     state.category.mockResolvedValue({ ...detail, categories: [detail.category, semi] })
     const { wrapper } = await page()
-    expect(wrapper.find('[data-testid=broadcast-category-22]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid=broadcast-stage-22]').exists()).toBe(true)
     state.admin.value = false; await flushPromises()
-    expect(wrapper.find('[data-testid=broadcast-category-22]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid=broadcast-stage-22]').exists()).toBe(false)
     expect(wrapper.find('[data-testid=broadcast-category-20]').exists()).toBe(true)
     expect(wrapper.find('[data-testid=broadcast-category-menu-22]').exists()).toBe(false)
     wrapper.unmount()
   })
-  it('keeps roots collapsed, retains text on cover failure and retries the image on explicit refresh', async () => {
+  it('shows the first round with replays directly, retains text on cover failure and retries the image on explicit refresh', async () => {
     const { wrapper } = await page()
-    expect(wrapper.find('[data-testid=broadcast-replay-40]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid=broadcast-round-30]').attributes('aria-pressed')).toBe('true')
     expect(wrapper.find('[data-testid=broadcast-new-replay-30]').exists()).toBe(false)
-    await wrapper.get('[data-testid=broadcast-node-toggle-30]').trigger('click')
     const row = wrapper.get('[data-testid=broadcast-replay-40]')
     expect(row.text()).toContain('第 7 天')
     expect(row.text()).toContain('第 1 轮积分赛')
@@ -130,12 +130,11 @@ describe('shared broadcast catalogue rendering', () => {
   })
   it('uses fixed translated group numbers while preserving replay titles and team names', async () => {
     const { wrapper, i18n } = await page()
-    await wrapper.get('[data-testid=broadcast-node-toggle-30]').trigger('click')
     for (const [locale, label] of [['zh', '第7组'], ['en', 'Group 7'], ['ru', 'Группа 7']] as const) {
       i18n.global.locale.value = locale; await flushPromises()
       const row = wrapper.get('[data-testid=broadcast-replay-40]')
       expect(row.text()).toContain(label)
-      expect(row.get('h3').text()).toBe('League final')
+      expect(row.get('h4').text()).toBe('League final')
       expect(row.text()).toContain('Followed')
       expect(row.text()).toContain('Other')
     }
@@ -144,7 +143,6 @@ describe('shared broadcast catalogue rendering', () => {
   it('omits an optional empty group in every language', async () => {
     state.category.mockResolvedValue({ ...detail, categories: [detail.category], nodes: detail.nodes.map(node => ({ ...node, replays: node.replays.map(replay => ({ ...replay, groupNumber: null })) })) })
     const { wrapper, i18n } = await page()
-    await wrapper.get('[data-testid=broadcast-node-toggle-30]').trigger('click')
     for (const [locale, label] of [['zh', '组号待补'], ['en', 'Group number pending'], ['ru', 'Номер группы не указан']] as const) {
       i18n.global.locale.value = locale; await flushPromises()
       expect(wrapper.get('[data-testid=broadcast-replay-40]').text()).not.toContain(label)
@@ -159,19 +157,19 @@ describe('shared broadcast catalogue rendering', () => {
     state.admin.value = false; await flushPromises()
     expect(wrapper.find('[data-testid=broadcast-replay-dialog]').exists()).toBe(false)
     expect(wrapper.find('[data-testid=broadcast-new-replay-30]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid=broadcast-node-toggle-30]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid=broadcast-round-30]').exists()).toBe(true)
     wrapper.unmount()
   })
-  it('renders season roots inline and expands old category deep links without a detail page', async () => {
-    const { wrapper, router } = await page()
-    expect(wrapper.find('[data-testid=broadcast-node-toggle-30]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid=broadcast-replay-40]').exists()).toBe(false)
+  it('opens the latest season of the first server without extra history and keeps old category deep links', async () => {
+    const { wrapper, router } = await page('/?view=league-broadcasts')
+    expect(router.currentRoute.value.query).toMatchObject({ lbServer: 'CN', lbSeason: '10' })
+    expect(wrapper.find('[data-testid=broadcast-replay-40]').exists()).toBe(true)
+    expect(wrapper.get('.showcase-hero-description').text()).toContain('独立赛事')
     await router.push('/?view=league-broadcasts&lbServer=CN&lbSeason=10&lbCategory=20'); await flushPromises()
     expect(wrapper.find('[data-testid=broadcast-replay-40]').exists()).toBe(true)
-    expect(wrapper.get('h1').text()).toContain('独立赛事')
     wrapper.unmount()
   })
-  it('keeps category and individual-round management distinct without expanding a round', async () => {
+  it('keeps category and individual-round management distinct', async () => {
     state.admin.value = true
     const { wrapper } = await page()
     await wrapper.get('[data-testid=broadcast-category-menu-20]').trigger('click')
@@ -181,20 +179,18 @@ describe('shared broadcast catalogue rendering', () => {
     await wrapper.get('[data-testid=broadcast-node-menu-30]').trigger('click')
     expect(wrapper.find('[data-testid=broadcast-delete-node-30]').exists()).toBe(true)
     expect(wrapper.find('[data-testid=broadcast-delete-category-20]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid=broadcast-node-toggle-30]').attributes('aria-expanded')).toBe('false')
+    expect(wrapper.get('[data-testid=broadcast-round-30]').attributes('aria-pressed')).toBe('true')
     wrapper.unmount()
   })
-  it('updates the list, heading, breadcrumbs and replay context with the current locale', async () => {
+  it('updates the season selector, heading and replay context with the current locale', async () => {
     state.admin.value = true
-    const { wrapper, router, i18n } = await page('/?view=league-broadcasts&lbServer=CN')
-    expect(wrapper.get('[data-testid=broadcast-season-10] h2').text()).toContain('独立赛事')
+    const { wrapper, i18n } = await page('/?view=league-broadcasts&lbServer=CN')
+    expect(wrapper.get('[data-testid=broadcast-season-select]').text()).toContain('独立赛事')
     i18n.global.locale.value = 'en'; await flushPromises()
-    expect(wrapper.get('[data-testid=broadcast-season-10] h2').text()).toContain('Independent season')
-    await router.push('/?view=league-broadcasts&lbServer=CN&lbSeason=10'); await flushPromises()
-    expect(wrapper.get('h1').text()).toContain('Independent season')
+    expect(wrapper.get('[data-testid=broadcast-season-select]').text()).toContain('Independent season')
+    expect(wrapper.get('.showcase-hero-description').text()).toContain('Independent season')
     i18n.global.locale.value = 'ru'; await flushPromises()
-    expect(wrapper.get('h1').text()).toContain('Independent season')
-    expect(wrapper.get('.broadcast-breadcrumbs').text()).toContain('Independent season')
+    expect(wrapper.get('.showcase-hero-description').text()).toContain('Independent season')
     await wrapper.get('[data-testid=broadcast-new-replay-30]').trigger('click')
     expect(wrapper.get('[data-testid=broadcast-replay-context]').text()).toContain('Independent season')
     i18n.global.locale.value = 'zh'; await flushPromises()
@@ -202,16 +198,18 @@ describe('shared broadcast catalogue rendering', () => {
     expect(state.category).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
-  it('binds node creation and replay editing to their own inline category', async () => {
+  it('binds node creation and replay editing to the selected stage', async () => {
     state.admin.value = true
     const quarter = { id: 21, seasonId: 10, type: 'QUARTER_FINALS' }
     const semi = { id: 22, seasonId: 10, type: 'SEMI_FINALS' }
     state.category.mockResolvedValue({ ...detail, categories: [detail.category, quarter, semi], nodes: [...detail.nodes,
       { id: 31, categoryId: 21, roundNumber: null, format: 'KNOCKOUT', replays: [] }] })
     const { wrapper } = await page()
+    await wrapper.get('[data-testid=broadcast-stage-21]').trigger('click'); await flushPromises()
     await wrapper.get('[data-testid=broadcast-new-replay-31]').trigger('click')
     expect(wrapper.get('[data-testid=broadcast-replay-context]').text()).toContain('八强')
     await wrapper.findAll('[data-testid=broadcast-replay-dialog] button').find(button => button.text() === '取消')!.trigger('click')
+    await wrapper.get('[data-testid=broadcast-stage-22]').trigger('click'); await flushPromises()
     await wrapper.get('[data-testid=broadcast-new-node-22]').trigger('click')
     await wrapper.get('#broadcast-structure-form').trigger('submit'); await flushPromises()
     expect(state.createNode.mock.calls[0].slice(0, 2)).toEqual([22, { expectedVersion: 4, roundNumber: null, format: null }])
@@ -258,16 +256,20 @@ describe('shared broadcast catalogue rendering', () => {
     expect(state.updateSeason.mock.calls[0].slice(0, 2)).toEqual([10, { year: 2026, nameZh: '独立赛事', nameEn: 'Independent season', nameRu: 'Независимый турнир', startDate: null, expectedVersion: 4 }])
     wrapper.unmount()
   })
-  it('presents all five fixed server cards and does not expose mutation controls for an admin query alone', async () => {
+  it('presents all five servers in one segmented bar and does not expose mutation controls for an admin query alone', async () => {
     const { wrapper } = await page('/?view=league-broadcasts&admin=1')
-    expect(wrapper.findAll('[data-testid^=broadcast-server-]')).toHaveLength(5)
-    for (const server of ['CN', 'ASIA', 'NA', 'EU', 'LESTA']) {
-      const card = wrapper.get(`[data-testid=broadcast-server-${server}]`)
-      expect(card.get('svg use').attributes('href')).toContain(`/broadcast-globes/${server.toLowerCase()}.svg#globe`)
-      expect(card.get('svg').attributes('aria-hidden')).toBe('true')
-      expect(card.get('.broadcast-server-code').text()).toBe(server === 'ASIA' ? 'APAC' : server)
-    }
+    const servers = wrapper.findAll('[data-testid^=broadcast-server-]')
+    expect(servers.map(server => server.attributes('data-testid'))).toEqual(['CN', 'ASIA', 'NA', 'EU', 'LESTA'].map(server => `broadcast-server-${server}`))
+    expect(wrapper.get('[data-testid=broadcast-server-CN]').attributes('aria-checked') ?? wrapper.get('[data-testid=broadcast-server-CN]').attributes('aria-pressed')).toBe('true')
     expect(wrapper.find('[data-testid=broadcast-new-season]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('switches to a server without seasons and says so', async () => {
+    const { wrapper, router } = await page()
+    await wrapper.get('[data-testid=broadcast-server-LESTA]').trigger('click'); await flushPromises()
+    expect(router.currentRoute.value.query.lbServer).toBe('LESTA')
+    expect(wrapper.find('[data-testid=broadcast-no-seasons]').exists()).toBe(true)
     wrapper.unmount()
   })
 })

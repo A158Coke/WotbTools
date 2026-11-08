@@ -2,32 +2,32 @@
 
 /* ========================= Hall of Fame ========================= */
 .lb-wrap {
-  color: #e9e7e0;
+  color: var(--color-text-primary);
 }
 .lb-wrap > .tabs {
-  border-color: #39444a !important;
-  background: rgba(10,15,18,.90) !important;
-  box-shadow: 0 18px 40px rgba(0,0,0,.28) !important;
+  border-color: var(--color-border-subtle) !important;
+  background: color-mix(in srgb, var(--color-surface-1) 90%, transparent) !important;
+  box-shadow: var(--elevation-2) !important;
 }
 .lb-wrap > .tabs button {
-  color: #aaa79f !important;
+  color: var(--color-text-secondary) !important;
 }
 .lb-wrap > .tabs button.active {
-  border-color: rgba(217,143,24,.42) !important;
-  background: rgba(217,143,24,.13) !important;
-  color: #f0aa30 !important;
+  border-color: color-mix(in srgb, var(--color-accent) 42%, transparent) !important;
+  background: color-mix(in srgb, var(--color-accent) 13%, transparent) !important;
+  color: var(--color-accent-text) !important;
 }
 
 .lb-wrap .lb-head {
-  border-color: rgba(217,143,24,.38) !important;
+  border-color: color-mix(in srgb, var(--color-accent) 38%, transparent) !important;
   background:
-    linear-gradient(100deg, rgba(12,17,20,.96) 0%, rgba(16,19,20,.92) 58%, rgba(32,23,13,.80) 100%) !important;
-  color: #e9e7e0 !important;
-  box-shadow: 0 22px 54px rgba(0,0,0,.32) !important;
+    linear-gradient(100deg, color-mix(in srgb, var(--color-surface-1) 96%, transparent) 0%, color-mix(in srgb, var(--color-surface-1) 92%, transparent) 58%, color-mix(in srgb, var(--color-accent) 12%, var(--color-surface-1)) 100%) !important;
+  color: var(--color-text-primary) !important;
+  box-shadow: var(--elevation-2) !important;
   backdrop-filter: blur(10px);
 }
-.lb-wrap .lb-head h1 { color: #f6f1e7 !important; }
-.lb-wrap .lb-head p { color: #aaa79f !important; }
+.lb-wrap .lb-head h1 { color: var(--color-text-primary) !important; }
+.lb-wrap .lb-head p { color: var(--color-text-secondary) !important; }
 
 /* The filter bar is a dense operations toolbar. CSS Grid gives every field real
  * width instead of squeezing labels into one narrow flex line:
@@ -42,10 +42,10 @@
   gap: 10px 14px !important;
   align-items: end !important;
   padding: 12px 14px !important;
-  border: 1px solid #39444a !important;
-  background: rgba(10,16,19,.92) !important;
-  color: #c9c5bb !important;
-  box-shadow: 0 18px 42px rgba(0,0,0,.30) !important;
+  border: 1px solid var(--color-border-subtle) !important;
+  background: color-mix(in srgb, var(--color-surface-1) 92%, transparent) !important;
+  color: var(--color-text-secondary) !important;
+  box-shadow: var(--elevation-2) !important;
   backdrop-filter: blur(12px);
 }
 .lb-wrap .lb-toolbar .lb-limit:has(.hof-vehicle-select),
@@ -62,7 +62,7 @@
 }
 .lb-wrap .lb-toolbar .lb-label,
 .lb-wrap .lb-toolbar .label {
-  color: #a8aaa5 !important;
+  color: var(--color-text-secondary) !important;
 }
 .lb-wrap .lb-toolbar .lb-label {
   white-space: nowrap;
@@ -74,10 +74,10 @@
   min-width: 0 !important;
   max-width: none !important;
   height: 38px !important;
-  border: 1px solid #445057 !important;
+  border: 1px solid var(--color-border-strong) !important;
   border-radius: 6px !important;
-  background: #11191d !important;
-  color: #e4e1d9 !important;
+  background: var(--color-surface-1) !important;
+  color: var(--color-text-primary) !important;
   box-shadow: inset 0 1px 0 rgba(255,255,255,.02);
 }
 .lb-wrap .lb-toolbar .lb-nick-row {
@@ -94,18 +94,18 @@
 .lb-wrap .lb-toolbar input:disabled {
   opacity: .52;
 }
-.lb-wrap .lb-toolbar input::placeholder { color: #737b7c !important; }
+.lb-wrap .lb-toolbar input::placeholder { color: var(--color-text-tertiary) !important; }
 .lb-wrap .lb-toolbar button:not(.vp-btn) { /* 车辆选择器内部的图标按钮自带样式（VehiclePicker） */
   min-height: 38px;
   justify-self: start;
-  border: 1px solid #445057 !important;
+  border: 1px solid var(--color-border-strong) !important;
   border-radius: 6px !important;
-  background: #151d21 !important;
-  color: #d7d3ca !important;
+  background: var(--color-surface-2) !important;
+  color: var(--color-text-primary) !important;
 }
 .lb-wrap .lb-toolbar button:not(.vp-btn):hover {
-  border-color: #d98f18 !important;
-  color: #f0aa30 !important;
+  border-color: var(--color-accent) !important;
+  color: var(--color-accent-text) !important;
 }
 
 .lb-wrap .lb-submit-row {
@@ -115,9 +115,9 @@
   flex-wrap: wrap;
   margin: 4px 0 14px !important;
   padding: 10px 12px !important;
-  border: 1px solid rgba(57,68,74,.5) !important;
+  border: 1px solid color-mix(in srgb, var(--color-border-subtle) 50%, transparent) !important;
   border-radius: 8px !important;
-  background: rgba(10,16,19,.50) !important;
+  background: color-mix(in srgb, var(--color-surface-1) 50%, transparent) !important;
   backdrop-filter: blur(8px);
 }
 .lb-wrap .h100-pending-card {
@@ -125,61 +125,61 @@
   background: var(--showcase-tactical-soft) !important;
   box-shadow: none !important;
 }
-.lb-wrap .h100-pending-title { color: #f0a42b !important; }
-.lb-wrap .h100-pending-meta { color: #9aa09c !important; }
-.lb-wrap .h100-pending-meta strong { color: #f0a42b !important; }
-.lb-wrap .h100-pending-time { color: #8f948d !important; }
+.lb-wrap .h100-pending-title { color: var(--color-accent-text) !important; }
+.lb-wrap .h100-pending-meta { color: var(--color-text-secondary) !important; }
+.lb-wrap .h100-pending-meta strong { color: var(--color-accent-text) !important; }
+.lb-wrap .h100-pending-time { color: var(--color-text-tertiary) !important; }
 .lb-wrap .lb-download {
-  border-color: #39444a !important;
-  background: rgba(15, 21, 25, .9) !important;
-  color: #c9c5bb !important;
+  border-color: var(--color-border-subtle) !important;
+  background: color-mix(in srgb, var(--color-surface-1) 90%, transparent) !important;
+  color: var(--color-text-secondary) !important;
 }
-.lb-wrap .lb-download:hover:not(:disabled) { background: #1c262b !important; color: #f0a42b !important; }
+.lb-wrap .lb-download:hover:not(:disabled) { background: var(--color-surface-3) !important; color: var(--color-accent-text) !important; }
 .lb-wrap .pagination button {
-  border-color: #39444a !important;
-  background: #151d21 !important;
-  color: #d7d3ca !important;
+  border-color: var(--color-border-subtle) !important;
+  background: var(--color-surface-2) !important;
+  color: var(--color-text-primary) !important;
 }
-.lb-wrap .pagination button:hover:not(:disabled) { background: #1c262b !important; }
+.lb-wrap .pagination button:hover:not(:disabled) { background: var(--color-surface-3) !important; }
 .lb-wrap .lb-submit-row button,
 .lb-wrap .submit-btn {
-  border-color: #d98f18 !important;
-  background: linear-gradient(180deg, #f0aa30, #cf8310) !important;
-  color: #160e03 !important;
-  box-shadow: 0 10px 26px rgba(217,143,24,.20);
+  border-color: var(--color-accent) !important;
+  background: linear-gradient(180deg, var(--color-accent-text), var(--color-accent)) !important;
+  color: var(--color-on-accent) !important;
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--color-accent) 20%, transparent);
 }
 
 .lb-wrap .tablewrap {
-  border-color: #354047 !important;
-  background: rgba(11,17,20,.94) !important;
-  box-shadow: 0 20px 48px rgba(0,0,0,.30) !important;
+  border-color: var(--color-border-subtle) !important;
+  background: color-mix(in srgb, var(--color-surface-1) 94%, transparent) !important;
+  box-shadow: var(--elevation-2) !important;
 }
 .lb-wrap table thead th {
-  background: #151d21 !important;
-  color: #aaa79f !important;
+  background: var(--color-surface-2) !important;
+  color: var(--color-text-secondary) !important;
 }
-.lb-wrap table tbody tr { background: rgba(13,19,22,.86); }
-.lb-wrap table tbody tr:hover { background: rgba(28,39,44,.96) !important; }
-.lb-wrap table tbody td { color: #d8d5cd; }
+.lb-wrap table tbody tr { background: color-mix(in srgb, var(--color-surface-1) 86%, transparent); }
+.lb-wrap table tbody tr:hover { background: color-mix(in srgb, var(--color-surface-3) 96%, transparent) !important; }
+.lb-wrap table tbody td { color: var(--color-text-primary); }
 
 /* Error/warning states should integrate with the dark workspace instead of becoming
  * huge pastel strips that visually reset the page back to the old light UI. */
 .lb-wrap .lb-upload-msg.err {
-  color: #ff8f86 !important;
+  color: var(--color-danger) !important;
 }
 .lb-wrap .error {
-  border: 1px solid rgba(225,87,78,.46) !important;
-  border-left: 3px solid rgba(225,87,78,.85) !important;
+  border: 1px solid color-mix(in srgb, var(--color-danger) 46%, transparent) !important;
+  border-left: 3px solid color-mix(in srgb, var(--color-danger) 85%, transparent) !important;
   border-radius: 7px;
-  background: rgba(105,28,24,.62) !important;
-  color: #ffb6ae !important;
-  box-shadow: 0 10px 26px rgba(0,0,0,.18);
+  background: color-mix(in srgb, var(--color-danger) 16%, var(--color-surface-1)) !important;
+  color: var(--color-danger) !important;
+  box-shadow: var(--elevation-2);
 }
 .lb-wrap .warn {
-  border: 1px solid rgba(224,160,45,.42) !important;
+  border: 1px solid color-mix(in srgb, var(--color-warning) 42%, transparent) !important;
   border-radius: 7px;
-  background: rgba(90,61,14,.58) !important;
-  color: #f5cf83 !important;
+  background: color-mix(in srgb, var(--color-warning) 16%, var(--color-surface-1)) !important;
+  color: var(--color-warning) !important;
 }
 
 @media (min-width: 1200px) {

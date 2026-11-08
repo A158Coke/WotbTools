@@ -443,3 +443,77 @@ export async function measurePaintOrder(page, { above, below }) {
     }
   })
 }
+
+/**
+ * 小屏页面扫查（design-language §9 L4 / L6）：当前视口里每个**完整可见**的交互控件，
+ * 5 个采样点都必须命中它自己（没有被常驻面盖住），且不落进设备安全区。
+ *
+ * 「完整可见」以视口减去固定顶栏、减去安全区为准：随页面滚动经过顶栏下面的普通内容不算遮挡
+ * （用户继续滚动即可点到）；但 fixed / sticky 面里的控件不会滚走，它们无条件参与判定。
+ * @param insets 本场景模拟的安全区 { top, right, bottom, left }（px）
+ * @param chrome 固定外壳的选择器（其底边是普通内容的可见上沿）
+ */
+export async function measureViewportSafety(page, { insets, chrome = [] }) {
+  await page.evaluate(`window.__safetyInput = ${JSON.stringify({ insets, chrome, interactive: INTERACTIVE_SELECTOR, tolerance: OCCLUSION_LIMITS.clipTolerancePx })}`)
+  return page.probe(() => {
+    const input = window.__safetyInput
+    const tol = input.tolerance
+    const safe = { top: 0, right: 0, bottom: 0, left: 0, ...input.insets }
+    const vw = innerWidth
+    const vh = innerHeight
+    let chromeBottom = safe.top
+    const chromeEls = input.chrome.flatMap((selector) => [...document.querySelectorAll(selector)])
+    for (const el of chromeEls) {
+      const r = el.getBoundingClientRect()
+      if (r.height > 0 && r.bottom > chromeBottom && r.top <= safe.top + 1) chromeBottom = r.bottom
+    }
+    const pinnedOwner = (el) => {
+      for (let n = el; n && n !== document.body; n = n.parentElement) {
+        const p = getComputedStyle(n).position
+        if (p === 'fixed' || p === 'sticky') return n
+      }
+      return null
+    }
+    const name = (el) => el.getAttribute('data-test') || el.getAttribute('data-testid')
+      || `${el.tagName.toLowerCase()}.${(el.className || '').toString().trim().split(/\s+/)[0] || '?'}「${(el.getAttribute('aria-label') || el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 20)}」`
+    const describe = (el) => el ? `${el.tagName.toLowerCase()}${el.dataset?.testid ? `[${el.dataset.testid}]` : ''}.${(el.className || '').toString().trim().split(/\s+/)[0] || '?'}` : 'null'
+    const failures = []
+    let checked = 0
+    for (const node of document.querySelectorAll(input.interactive)) {
+      const el = node.matches('input[type=checkbox],input[type=radio]') ? node.closest('label') || node : node
+      const s = getComputedStyle(el)
+      if (s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity) === 0) continue
+      // 折叠的 <details> 内容等 content-visibility 隐藏的元素保留布局盒，但不可见、不可点
+      if (el.checkVisibility && !el.checkVisibility({ contentVisibilityAuto: true, opacityProperty: true, visibilityProperty: true })) continue
+      const r = el.getBoundingClientRect()
+      if (r.width < 2 || r.height < 2) continue
+      const owner = pinnedOwner(el)
+      const isChrome = chromeEls.some((c) => c.contains(el))
+      const top = owner ? 0 : chromeBottom
+      // 普通内容：只判完整落在「视口 − 顶栏 − 安全区」里的控件
+      if (!owner && (r.top < top - tol || r.bottom > vh - safe.bottom + tol || r.left < -tol || r.right > vw + tol)) continue
+      if (owner && (r.bottom <= 0 || r.top >= vh || r.right <= 0 || r.left >= vw)) continue
+      checked += 1
+      if (r.top < safe.top - tol || r.bottom > vh - safe.bottom + tol || r.left < safe.left - tol || r.right > vw - safe.right + tol) {
+        failures.push(`${name(el)} 落入安全区（rect=${[r.left, r.top, r.width, r.height].map(Math.round).join(',')} safe=${JSON.stringify(safe)}）`)
+        continue
+      }
+      if (!isChrome && owner && r.top < chromeBottom - tol && !chromeEls.some((c) => c.contains(owner))) {
+        failures.push(`${name(el)} 停在顶栏下面（top=${Math.round(r.top)} < ${Math.round(chromeBottom)}）`)
+        continue
+      }
+      // 正文里折行的行内链接（WCAG 2.5.8 inline 例外）：外接矩形的角落落在行间，只采每个行片段的中心
+      const fragments = s.display === 'inline' ? [...el.getClientRects()] : []
+      const samples = fragments.length > 1
+        ? fragments.map(f => [f.left + f.width / 2, f.top + f.height / 2])
+        : [[0.5, 0.5], [0.2, 0.25], [0.8, 0.25], [0.2, 0.75], [0.8, 0.75]].map(([fx, fy]) => [r.left + r.width * fx, r.top + r.height * fy])
+      let blocker = null
+      for (const [x, y] of samples) {
+        const hit = document.elementFromPoint(x, y)
+        if (!hit || !(hit === el || el.contains(hit) || hit.contains(el))) { blocker = hit; break }
+      }
+      if (blocker) failures.push(`${name(el)} 被 ${describe(blocker)} 盖住`)
+    }
+    return { checked, failures: [...new Set(failures)], scrollWidth: document.documentElement.scrollWidth, viewport: vw }
+  })
+}

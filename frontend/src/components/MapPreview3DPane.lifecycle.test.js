@@ -180,7 +180,7 @@ describe('MapPreview3DPane 首次激活生命周期', () => {
       scene.api.setMapSpawns.mockClear()
       scene.api.refreshSpawnColors.mockClear()
       await wrapper.setProps({ spawnPoints: next })
-      uiProfile.value = originalProfile === 'classic' ? 'showcase' : 'classic'
+      uiProfile.value = originalProfile === 'winter' ? 'summer' : 'winter'
       await flushPromises()
       expect(scene.api.setMapSpawns).toHaveBeenLastCalledWith(next)
       expect(scene.api.refreshSpawnColors).toHaveBeenCalledTimes(1)

@@ -399,7 +399,8 @@ APK 里那套 29 张底图是**兜底层**（离线永远可用，且与 Web 同
 
 ### 登录 / 登出语义
 
-- `authLogin()` 只启动外部 user-agent；**页面不导航、不重载**，登录完成后 Native 通知页面
+- `authLogin({locale?})` 只启动外部 user-agent；`locale` 是站点当前语言（`zh` / `en` / `ru`），Native 白名单校验后
+  经 AppAuth `setUiLocales` 作为 OIDC `ui_locales` 传给 Keycloak，登录页默认与站点同语言；**页面不导航、不重载**，登录完成后 Native 通知页面
   （`window.wotbtoolsOnAuthChanged()`），SPA 保持在原视图并重新同步状态。
 - `authLogout()` = 清 Native 会话 + 发起 Keycloak OIDC end-session（带 id-token hint）。**不**删除 Chrome
   cookie、**不**强制登出 QQ / Wargaming、**不**操作 provider session：下一次登录时若系统浏览器仍保有
@@ -429,6 +430,10 @@ Web，绝不自行决定「是否解析」「是否绕过登录」。
   （stale）一律不清理，保证 exactly-once 且绝不误清新 pending。
 - **登录不是 replay 的前置条件**：本机分析在本机完成，未登录同样可打开、解析与导出；认证失败 / 取消
   不会让已接收的 pending replay 失效。
+
+系统触感：可选 `haptics` capability 提供 `haptic`（事件种类 selection / primary / success / error / endpoint → `Haptics.feedbackConstant` 映射到系统 `HapticFeedbackConstants`，随系统触摸反馈设置），用户偏好由页面拥有（默认开）。
+
+场景页强制横屏：可选 `screen-form` capability 提供 `getScreenForm`（`smallestScreenWidthDp < 600` 即手机，`ScreenForm.isPhone`）与 `setLandscapeLock`。手机上的场景页（2D / 3D 回放、装甲查看器、射击复现、地图 3D）进入时由页面申请 `SENSOR_LANDSCAPE`、离开时释放；平板一律返回 false 不锁方向。HTML 全屏期间只更新全屏退出后要恢复的方向。前端判定与旋转提示见 [`design-language.md`](../frontend/design-language.md) §9「强制横屏」。
 
 手动目录选择与 external pending 不同：可选 `replay-folder-picker` capability 经 SAF 只保留瞬时目录引用，固定同源 stream 读取后释放；不自动解析、不跨进程保存目录授权。FileDrop 继续持有回放筛选与完整批次校验，普通文件多选保持原样。旧 v2 APK 缺少能力时隐藏目录入口，不能以 `allowFolder=false` 禁掉多选。详见 [`replay-intent.md`](replay-intent.md)「App 手动目录导入」。
 

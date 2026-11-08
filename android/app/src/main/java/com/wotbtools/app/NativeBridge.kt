@@ -8,7 +8,8 @@ import java.util.concurrent.Executors
 /**
  * origin-scoped bridge：经 GeckoView 内置扩展的 native messaging port（[GeckoWebRuntime]），
  * 仅 exact local origin（[MainActivity.LOCAL_APP_ORIGIN]）的 top frame 可调。
- * 只暴露：capability/version discovery、pending replay handoff、temporary folder picker、app update、native auth。
+ * 只暴露：capability/version discovery、pending replay handoff、temporary folder picker、app update、native auth、
+ * 场景页屏幕形态与横屏锁（screen-form）、系统触感（haptics）。
  * 禁止 arbitrary file/http/command/intent API（规格 §27）。
  *
  * 消息形状 `{id, method, params}`；ACK / folder release 携带 exact identity，认证 token 可带有效期。
@@ -43,6 +44,9 @@ class NativeBridge(private val host: MainActivity) {
                 "getBridgeVersion" -> reply(envelope(id, host.bridgeVersion()))
                 "getCapabilities" -> reply(envelope(id, JSONArray(host.bridgeCapabilities())))
                 "connectivityGetState" -> reply(envelope(id, host.bridgeConnectivityState()))
+                "getScreenForm" -> reply(envelope(id, host.bridgeScreenForm()))
+                "haptic" -> reply(envelope(id, host.bridgeHaptic(params?.opt("kind") as? String)))
+                "setLandscapeLock" -> reply(envelope(id, host.bridgeSetLandscapeLock(params?.optBoolean("locked", false) == true)))
                 "getPendingReplay" -> reply(envelope(id, host.bridgePendingReplayJson()))
                 "consumePendingReplay" ->
                     reply(envelope(id, host.bridgeConsumePendingReplay(params?.optString("expectedPendingId"))))
@@ -71,7 +75,7 @@ class NativeBridge(private val host: MainActivity) {
 
                 // ── 认证：离开主线程，完成后回复（绝不阻塞页面）──
                 "authGetState" -> dispatch(id, reply) { host.bridgeAuthGetState() }
-                "authLogin" -> dispatch(id, reply) { host.bridgeAuthLogin() }
+                "authLogin" -> dispatch(id, reply) { host.bridgeAuthLogin(uiLocaleOf(params?.opt("locale"))) }
                 "authLogout" -> dispatch(id, reply) { host.bridgeAuthLogout() }
                 "authGetAccessToken" -> dispatch(id, reply) {
                     host.bridgeAuthGetAccessToken(minValiditySecondsOf(params?.opt("minValiditySeconds")))
@@ -116,6 +120,9 @@ class NativeBridge(private val host: MainActivity) {
             is Long -> raw.takeIf { it in 0..Int.MAX_VALUE.toLong() }?.toInt()
             else -> null
         }
+        /** 登录页语言白名单：只接受契约里的 zh / en / ru，其它一律不带 ui_locales（让 Keycloak 走 realm 默认）。 */
+        internal fun uiLocaleOf(raw: Any?): String? = (raw as? String)?.takeIf { it in UI_LOCALES }
+        private val UI_LOCALES = setOf("zh", "en", "ru")
         /** `minValiditySeconds` 缺省 0（「现在可用即可」）；负数一律归零，绝不放宽判定。 */
         private fun minValiditySecondsOf(raw: Any?): Long = when (raw) {
             is Number -> raw.toLong().coerceAtLeast(0L)

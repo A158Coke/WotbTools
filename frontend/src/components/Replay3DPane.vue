@@ -740,10 +740,9 @@ function measurePresentationBounds() {
   if (!root) return
   const pageStyle = getComputedStyle(document.documentElement)
   const header = parseFloat(pageStyle.getPropertyValue('--header-h')) || 0
-  const tabs = document.fullscreenElement === root ? 0 : (parseFloat(pageStyle.getPropertyValue('--tabbar-h')) || 0)
   const viewportH = window.visualViewport?.height || window.innerHeight
   const top = document.fullscreenElement === root ? 0 : header
-  const workspaceH = Math.max(1, viewportH - top - tabs)
+  const workspaceH = Math.max(1, viewportH - top)
   root.style.setProperty('--pb-workspace-h', `${workspaceH}px`)
   shortWorkspace.value = workspaceH <= SHORT_WORKSPACE_MAX_H
   const style = getComputedStyle(root)
@@ -780,7 +779,7 @@ watch([controlsEl, hudEl], (elements) => {
  * （本组件不做任何 `reset()` / `loadData()`，全屏只改变容器尺寸，渲染器由既有
  * ResizeObserver 路径适配）。手机形态在全屏成功后锁横屏，退出/卸载解锁。
  */
-const { isFullscreen, fullscreenSupported, toggleFullscreen, unlockOrientation } = usePlaybackFullscreen({
+const { isFullscreen, fullscreenSupported, toggleFullscreen, unlockOrientation, exitOwnedFullscreen } = usePlaybackFullscreen({
   target: () => rootEl.value,
   isPhone,
   // capability 切走（active=false）时不该再锁着方向
@@ -835,13 +834,14 @@ watch(
 )
 
 watch(() => props.active, (active) => {
-  if (!active) { closeAnnotation(); unlockOrientation() }
+  // 能力切走 / 页面停用（active 已含 pageActive）：退出本回放拥有的全屏，否则新页面被挡在旧 fullscreen root 后面
+  if (!active) { closeAnnotation(); unlockOrientation(); exitOwnedFullscreen() }
 })
 
 // 面板打开期间尺寸变化（旋转 / 全屏 / 工作台重排）重算可用高度；闭合时不测量
 // （此时 .controls 可能整块不存在），打开那一下由 watch(displayOpen) 负责。
 function onViewportResize() { measurePresentationBounds() }
-// 外壳沉浸态切换只改 --header-h / --tabbar-h，不触发 resize：显式重算预算。
+// 外壳沉浸态切换只改 --header-h，不触发 resize：显式重算预算。
 const shellChrome = inject(SHELL_CHROME_KEY, null)
 watch(() => shellChrome?.immersive.value, () => nextTick(measurePresentationBounds))
 onMounted(() => window.addEventListener('resize', onViewportResize))
@@ -863,7 +863,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
                             宽档、平板、手机横屏、手机全屏横屏都是这一条；
            `portrait-flow` = 手机竖屏纵向流：HUD / Stage / 传输控件 / 详情 / Team 1 / Team 2。
          名册关闭时两者都没有车道，横屏场景铺满整个根，竖屏仍为正方形。 -->
-    <div v-else class="pb-root playback-workspace" ref="rootEl" :class="{ 'phone-form': isPhone, 'portrait-flow': portraitFlow, 'roster-side': showRoster && !portraitFlow, 'compact-bar': compactBar }" data-testid="replay3d-root" data-tour="replay3d-workspace">
+    <div v-else class="pb-root playback-workspace" ref="rootEl" :class="{ 'phone-form': isPhone, 'portrait-flow': portraitFlow, 'roster-side': showRoster && !portraitFlow, 'compact-bar': compactBar }" data-testid="replay3d-root" data-scene-surface data-tour="replay3d-workspace">
       <!-- 名牌覆盖层与 canvas 共用**同一个画布盒子**：场景内核按 canvas（.scene）尺寸算锚点，
            覆盖层必须与它同原点，否则三段式下名牌会整体偏一条车道宽。 -->
       <!-- 移动端全屏入口统一右上角浮动（与 Map Preview 2D/3D、Replay 2D 同一组件同一位置）；
@@ -1029,6 +1029,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
             :duration="store.duration"
             :step-seconds="PLAYBACK_STEP_SECONDS"
             :compact="isPhone"
+            :nav-eligible="active && !controlsCollapsed"
             @toggle-play="transport.togglePlay()"
             @step="sceneApi.seekBy($event)"
             @set-speed="sceneApi.setSpeed($event)"
@@ -1203,6 +1204,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: var(--color-surface-2);
   box-shadow: var(--elevation-2);
   color: var(--color-text-secondary);

@@ -129,7 +129,7 @@ vi.mock('../composables/usePlaybackPortraitViewport.ts', async () => {
 // 唯一 reactive 主题源：给 HUD 阵营色一个可依赖的 profile ref
 vi.mock('../composables/useUiProfile.js', async () => {
   const { ref } = await import('vue')
-  return { uiProfile: ref('showcase'), useUiProfile: () => ({ uiProfile: ref('showcase') }) }
+  return { uiProfile: ref('summer'), useUiProfile: () => ({ uiProfile: ref('summer') }) }
 })
 const translate = (key, params) => (params ? `${key}:${JSON.stringify(params)}` : key)
 vi.mock('vue-i18n', () => ({

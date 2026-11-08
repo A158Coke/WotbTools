@@ -76,7 +76,9 @@
     }
   },
   "nav": {
-    "maps": "Maps"
+    "maps": "Maps",
+    "openDrawer": "Open navigation",
+    "closeDrawer": "Close navigation"
   },
   "mapPreview": {
     "title": "Map Preview",
@@ -108,7 +110,10 @@
     },
     "basemapFailed": "Failed to load the basemap",
     "controlsHint": "Drag to look · WASD/QE move & rise · Wheel for distance (side slider on phones in landscape) · Fixed mode orbits the center · Fullscreen top-right · Keys 1–6 fly speed",
-    "controlsHint2d": "Drag to pan · Wheel or pinch to zoom · Fullscreen top-right"
+    "controlsHint2d": "Drag to pan · Wheel or pinch to zoom · Fullscreen top-right",
+    "kicker": "No replay needed",
+    "searchPlaceholder": "Search maps",
+    "searchEmpty": "No matching maps"
   },
   "app": {
     "title": "WoTBTools",
@@ -277,7 +282,9 @@
     "copied": "Copied",
     "hint": "Copy the ID and add me in the corresponding app.",
     "report_title": "Complaints and reports",
-    "report_body": "This page is also the feedback, complaint and report channel for WotbTools. If you come across illegal or harmful content, account abuse, a security problem or any other violation, reach us through the contact methods below. We verify and act on every complaint or report we receive without delay."
+    "report_body": "This page is also the feedback, complaint and report channel for WotbTools. If you come across illegal or harmful content, account abuse, a security problem or any other violation, reach us through the contact methods above. We verify and act on every complaint or report we receive without delay.",
+    "fastestTitle": "Fastest: in-app feedback",
+    "fastestDesc": "Describe the problem or idea, attach a screenshot if you like — no need to add anyone"
   },
   "col_groups": {
     "identity": "Identity",
@@ -347,9 +354,29 @@
       "DUPLICATE_OR_UNKNOWN_RECORDER": "Already exists or recorder cannot be identified",
       "REPLAY_HASH_CONFLICT": "This battle is already bound to another replay file"
     },
-    "singleTab": "Single battle"
+    "singleTab": "Single battle",
+    "podium": "Top three",
+    "podiumRank": "No. {rank}",
+    "heroTotal": "Records"
   },
   "hofAdmin": {
+    "reviewQueue": "Review queue",
+    "reviewDetail": "Review details",
+    "reviewBack": "Back to queue",
+    "reviewPrev": "Previous",
+    "reviewNext": "Next",
+    "reviewPosition": "{position} of {total}",
+    "reviewPick": "Pick a record from the queue to start reviewing",
+    "reviewNoEvidence": "Evidence is only needed for pending records",
+    "reviewClaimed": "User claim",
+    "reviewConfirmed": "Admin confirmed",
+    "reviewAfterApprove": "Recorded on approval",
+    "reviewDamage": "Average damage",
+    "reviewBattles": "Battles",
+    "reviewWinRate": "Win rate",
+    "reviewAvg": "{vehicle} · avg {value}",
+    "reviewActions": "Review actions",
+    "reviewApproveNote": "Approval records the claimed values",
     "login": "Redirecting to login…",
     "deniedTitle": "No permission to manage the Hall of Fame",
     "deniedHint": "Requires the HoF-admin or wotbtools-admin role. Roles are granted by a Keycloak administrator in the Admin Console.",
@@ -879,7 +906,9 @@
     "wgSyncRetry": "Retry sync",
     "wgSyncing": "Syncing Wargaming account",
     "verifyWithReplay": "Verify with a replay",
-    "verifyingReplay": "Verifying…"
+    "verifyingReplay": "Verifying…",
+    "settingsLink": "Appearance & feedback settings →",
+    "submitLink": "Submit a new record →"
   },
   "replay": {
     "no_files": "Select replay files or a folder first",
@@ -1076,7 +1105,12 @@
   },
   "admin": {
     "title": "User Management",
-    "hint": "Read-only + delete. Users cannot be modified.",
+    "hint": "User details cannot be edited. Deleting removes both the WotBTools and the Keycloak account.",
+    "kicker": "Admin · Read-only and delete",
+    "searchLabel": "Search users",
+    "deleteUser": "Delete user",
+    "deleteHint": "Type DELETE to confirm",
+    "listSection": "List entry",
     "search": "Search keycloakUserId / displayName / wotbNickname / accountId",
     "searchBtn": "Search",
     "loading": "Loading…",
@@ -1147,14 +1181,11 @@
     "qaPlaybackHint": "Fixed 14-vehicle moving scene: two dense clusters stress player/tank name collisions, with destroyed/last-known/recorder states mixed in; the timeline loops at 0.5x–4x. Reuses the production BattlePlayback."
   },
   "home": {
-    "sponsorCta": "Support the project",
-    "takeItTitle": "Take it with you. Keep it running.",
-    "androidTitle": "Put it in your pocket",
-    "androidDesc": "The same platform on Android: 3D rebuilds, the armour viewer and the Hall of Fame, away from your desk.",
-    "sponsorDesc": "No ads, no subscriptions. Servers and domains run on voluntary player support.",
-    "heroLine1": "More than a replay tool.",
-    "heroLine2": "Blitz's home ground.",
-    "heroSubtitle": "From a 3D rebuild of a single battle to the server-wide Hall of Fame, league standings and broadcast replays — a Blitz platform built by players, on the web and on Android.",
+    "sponsorCta": "Sponsor",
+    "sponsorDesc": "No ads, no memberships. Servers and the domain run on player sponsorship.",
+    "heroLine1": "Replays, ranks, leagues",
+    "heroLine2": "One Blitz platform",
+    "heroSubtitle": "Upload a replay to review the battle; the Hall of Fame, league standings and broadcast replays are always a tap away.",
     "showcaseTitle": "What it does",
     "showcasePlaybackTitle": "The whole battle, rebuilt in 3D",
     "showcasePlaybackDesc": "Terrain, vehicles, HP, base captures and movement paths — every second reconstructed from one replay file.",
@@ -1174,24 +1205,35 @@
     "replayDesc": "Upload .wotbreplay files, extract battle data and export to Excel.",
     "highestDamageRecord": "Highest Damage Record",
     "available": "Available",
-    "sponsorTitle": "Sponsor",
+    "sponsorTitle": "Sponsor WotbTools",
     "footer": "WoTBTools - Community tool, not a Wargaming product",
     "icpFiling": "闽ICP备2026036303号-1",
     "publicSecurityFiling": "闽公网安备35018202000555号",
-    "wargamingDisclaimer": "WotbTools is an unofficial project and is not affiliated with or endorsed by Wargaming."
+    "wargamingDisclaimer": "WotbTools is an unofficial project and is not affiliated with or endorsed by Wargaming.",
+    "feedbackDesc": "Found a problem or have an idea? Tell us directly",
+    "calloutRicochet": "Ricochet",
+    "calloutPenetration": "Penetration",
+    "calloutChance": "Penetration chance"
   },
   "sponsor": {
     "eyebrow": "WOTBTOOLS · SUPPORT",
-    "title": "Support WoTBTools",
+    "title": "Sponsor WotbTools",
     "intro": "If this project helps you, you can voluntarily support its server and maintenance costs.",
     "aboutTitle": "About sponsorship",
-    "description": "WoTBTools is a free tool maintained by an individual. Voluntary sponsorship helps cover server and maintenance costs.",
-    "voluntary": "Sponsorship is completely voluntary. It does not unlock features or additional services.",
     "note": "Please do not include sensitive personal information in payment notes.",
     "methodsTitle": "Scan to Sponsor",
     "unconfigured": "Sponsorship methods are not configured yet",
     "alipay": "Alipay",
-    "wechat": "WeChat Pay"
+    "wechat": "WeChat Pay",
+    "reasonVoluntary": "Entirely voluntary",
+    "reasonVoluntaryDesc": "No fixed amount — give what you like, or nothing at all.",
+    "reasonNothingUnlocked": "Unlocks nothing",
+    "reasonNothingUnlockedDesc": "No memberships or paid features — everyone gets the same tools.",
+    "reasonServers": "Spent on servers and upkeep",
+    "reasonServersDesc": "Servers, the domain, storage and replay-parsing compute.",
+    "saveHint": "A phone can't scan its own screen: save the QR code, then pick it from your gallery in Alipay / WeChat Scan.",
+    "saveHintApp": "A phone can't scan its own screen: long-press the QR code to save it, then pick it from your gallery in Alipay / WeChat Scan.",
+    "save": "Save QR code"
   },
   "recon": {
     "nav": "AI Review",
@@ -1213,7 +1255,10 @@
       "reviewFocus": "Review Focus",
       "highContributors": "High Contributors",
       "unknownPlayer": "Unknown player",
-      "unknownTank": "Unknown tank"
+      "unknownTank": "Unknown tank",
+      "viewIn2d": "View in 2D →",
+      "episodesCount": "Key moments: {count}",
+      "trainingCount": "Training tips: {count}"
     },
     "capability_limited": "AI review is based on a limited timeline (some time info missing); it is degraded to a coarser evidence level and does not guess unobserved facts",
     "playback": {
@@ -1498,7 +1543,8 @@
     "ai_projection_failed": "This replay could not be parsed for AI review",
     "pane_load_failed": "This panel could not load, usually because the site was updated. Reload to get the new version; if it was only a network interruption, retry first.",
     "pane_reload": "Reload",
-    "pane_retry": "Retry"
+    "pane_retry": "Retry",
+    "rotate_view_data": "View battle data"
   },
   "league": {
     "title": "League Rating",
@@ -2048,5 +2094,69 @@
     "replay": "3D Replay",
     "tanks": "Tankopedia",
     "shots": "Shot Replay"
+  },
+  "rotate": {
+    "title": "Turn your phone sideways",
+    "body": "This page works in landscape only, so the scene and controls fit. Rotate to continue.",
+    "hintBrowser": "In the browser, turn off rotation lock first.",
+    "hintApp": "The app switches to landscape automatically."
+  },
+  "armor": {
+    "result_details": "Shot result — open for layer details"
+  },
+  "research": {
+    "all_types": "All",
+    "type_filter": "Vehicle type",
+    "no_type_match": "This nation has no vehicles of this type."
+  },
+  "feedbackPrefs": {
+    "title": "Feedback",
+    "haptics": "Haptics",
+    "hapticsHint": "A short buzz on Android when you switch, confirm or hit an error",
+    "sound": "Sounds",
+    "soundHint": "Short tones for main actions, completions and errors; muted when reduced motion is on"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "unread": "{count} unread",
+    "bellUnread": "Notifications, {count} unread",
+    "readAll": "Mark all read",
+    "empty": "No notifications yet. Replay parsing, AI reviews and submission results show up here.",
+    "replayParsed": "Replay parsed",
+    "replayParsedBody": "{count} battle(s) ready to review",
+    "aiReview": "AI review ready",
+    "appUpdate": "Update available",
+    "appUpdateBody": "Android {version} is out",
+    "submitted": "Hall of Fame entry submitted",
+    "submittedBody": "Waiting for review"
+  },
+  "toast": {
+    "copied": "Copied",
+    "feedbackSent": "Feedback sent — thank you"
+  },
+  "more": {},
+  "tournament": {
+    "heroDescription": "Clan points by match day and in total, from the organizer's published results"
+  },
+  "tankopedia": {
+    "heroCount": "Vehicles"
+  },
+  "android": {
+    "heroTitle": "Put it in your pocket, review anytime",
+    "downloadApk": "Download APK",
+    "wifiHint": "Large file — Wi-Fi recommended",
+    "stepsTitle": "Three steps to install",
+    "step1": "Download the APK",
+    "step2": "Allow installing apps from your browser when prompted",
+    "step3": "Open the app and sign in with Wargaming or QQ",
+    "noReleaseNotes": "No release notes for this version",
+    "verifyFile": "Verify the file (optional)"
+  },
+  "doc": {
+    "copy": "Copy"
+  },
+  "leagueBroadcasts": {
+    "server": "Server",
+    "season": "Season"
   }
 }

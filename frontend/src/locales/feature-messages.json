@@ -1,9 +1,10 @@
 {
   "zh": {
+    "adminList": { "close": "关闭", "cancel": "取消", "bulkRegion": "批量操作", "bulkScope": "只作用于本页勾选的行", "dangerZone": "危险操作" },
     "aiFeedback": {
       "button": "反馈", "title": "复盘反馈", "question": "这次复盘哪里不够好？", "comment": "补充说明",
       "cancel": "取消", "submit": "提交反馈", "success": "感谢你的反馈。", "tooLong": "文本超过长度限制。", "snapshotNotice": "反馈会包含本次复制回复的完整原文，供站点管理员查看。",
-      "adminTitle": "AI 复盘反馈", "loginRequired": "请登录以查看反馈。", "adminRequired": "需要站点管理员权限。",
+      "adminTitle": "AI 复盘反馈", "adminKicker": "管理 · 用户反馈", "adminDescription": "用户对 AI 复盘回复的反馈，删除后不可恢复。", "deleteHint": "删除前需再次确认", "loginRequired": "请登录以查看反馈。", "adminRequired": "需要站点管理员权限。",
       "filter": "原因", "all": "全部", "refresh": "刷新", "loading": "加载中…", "empty": "没有反馈记录。",
       "created": "时间", "model": "模型", "actions": "操作", "view": "查看", "delete": "删除", "deleteConfirm": "确定永久删除这条反馈？",
       "previous": "上一页", "next": "下一页", "detail": "反馈详情", "snapshot": "AI 回复原文",
@@ -14,7 +15,7 @@
     "siteFeedback": {
       "title": "反馈", "question": "遇到了什么问题，或者有什么建议？", "comment": "详细说明", "notice": "我们会记录你所在的页面，但不会保存账号信息，所以无法直接回复你。需要回复时，请在说明里留下联系方式。", "contactLink": "前往联系页面",
       "cancel": "取消", "close": "关闭", "submit": "提交反馈", "success": "感谢你的反馈。", "tooLong": "文本超过长度限制。",
-      "adminTitle": "站点反馈", "loginRequired": "请登录以查看反馈。", "adminRequired": "需要站点管理员权限。",
+      "adminTitle": "站点反馈", "adminKicker": "管理 · 用户反馈", "adminDescription": "用户从站内反馈入口提交的问题与建议，删除后不可恢复。", "deleteHint": "删除前需再次确认", "loginRequired": "请登录以查看反馈。", "adminRequired": "需要站点管理员权限。",
       "filter": "原因", "all": "全部", "refresh": "刷新", "loading": "加载中…", "empty": "没有反馈记录。",
       "created": "时间", "page": "页面", "actions": "操作", "view": "查看", "delete": "删除", "deleteConfirm": "确定永久删除这条反馈？",
       "previous": "上一页", "next": "下一页", "detail": "反馈详情",
@@ -36,12 +37,11 @@
       "points_enemy": "敌方积分 {points}"
     },
     "uiProfile": {
-      "auto": "跟随系统",
-      "title": "界面风格",
-      "classic": "简约",
-      "showcase": "沉浸",
-      "classicDescription": "简约浅色主题，去除 AI/装饰背景，视觉更克制",
-      "showcaseDescription": "丰富的视觉层级与展示效果"
+      "title": "主题",
+      "spring": "春 · 青山",
+      "summer": "夏 · 盛夏",
+      "autumn": "秋 · 金秋",
+      "winter": "冬 · 寒冬"
     },
     "environment": {
       "label": "开发模式",
@@ -141,7 +141,6 @@
       "failure_hide": "收起详情",
       "unavailable_mixed": "League Rating 不适用于混合批次（普通回放与训练赛/联赛回放混传），已按普通回放展示",
       "docs_button": "算法说明",
-      "docs_page_title": "League Rating V6 算法说明",
       "docs_page_sub": "训练赛 / 联赛批次证据评分 · 单场评分沿用 V4.1",
       "docs_back": "返回解析",
       "drawer": {
@@ -187,10 +186,6 @@
         "reference": "资料",
         "events": "赛事",
         "community": "社区"
-      },
-      "compact": {
-        "tankopedia": "百科",
-        "tournament": "联赛"
       }
     },
     "dataVersion": {
@@ -208,15 +203,15 @@
       "statusRevoked": "已撤销"
     },
     "more": {
-      "title": "更多",
+      "title": "更多与设置",
       "sections": {
         "display": "显示设置",
         "admin": "管理",
-        "about": "关于与支持",
-        "shortcuts": "快捷入口"
+        "about": "关于与帮助",
+        "support": "赞助与反馈"
       },
       "language": "语言",
-      "sponsor": "支持项目",
+      "sponsor": "赞助",
       "ratingDocs": "Rating 文档"
     },
     "filters": {
@@ -583,7 +578,12 @@
       "apply": "应用筛选",
       "schemaVersion": "协议版本",
       "mapId": "地图 ID",
-      "range": "时间范围"
+      "range": "时间范围",
+      "kicker": "管理 · 采集数据审计",
+      "noteLabel": "口径",
+      "spawnBar": "{first} 胜 {firstRate} · 平局 {drawRate} · {second} 胜 {secondRate}",
+      "spawnSides": "{first} / {second} 胜率",
+      "otherVersions": "其他"
     },
     "featureOffline": {
       "adminBattleData": "战斗数据审计需要联网。",
@@ -806,7 +806,7 @@
         },
         "settingsTheme": {
           "title": "选择舒服的界面",
-          "description": "在沉浸、简约和跟随系统之间切换。所有主题使用同一套功能和数据。"
+          "description": "春、夏、秋、冬四套主题只换配色和氛围主视觉，功能和数据完全一样。"
         },
         "settingsLanguage": {
           "title": "随时切换语言",
@@ -827,8 +827,8 @@
       "ownReplay": "使用自己的回放",
       "newbie": "新手教程",
       "newbieHint": "无需登录，可跳过。",
-      "anonymousHint": "可随时跳过。想重看时，回首页点“新手教程”。",
-      "anonymousFinished": "示例会留在工作台。使用自己的回放，或回首页重开新手教程。",
+      "anonymousHint": "可随时跳过。想重看时，在“更多”里点“功能指南”。",
+      "anonymousFinished": "示例会留在工作台。使用自己的回放，或在“更多”里点“功能指南”重开。",
       "exitFullscreenNext": "退出全屏并继续",
       "exitFullscreenFailed": "退出全屏失败，可以重试或跳过引导。",
       "exitFullscreenBack": "退出全屏并返回",
@@ -1007,10 +1007,11 @@
     }
   },
   "en": {
+    "adminList": { "close": "Close", "cancel": "Cancel", "bulkRegion": "Bulk actions", "bulkScope": "Applies only to rows checked on this page", "dangerZone": "Danger zone" },
     "aiFeedback": {
       "button": "Feedback", "title": "Review feedback", "question": "What could be better about this review?", "comment": "Additional details",
       "cancel": "Cancel", "submit": "Submit feedback", "success": "Thank you for your feedback.", "tooLong": "The text exceeds the length limit.", "snapshotNotice": "Your feedback includes the complete copyable reply for site administrators to review.",
-      "adminTitle": "AI review feedback", "loginRequired": "Sign in to view feedback.", "adminRequired": "Site administrator access is required.",
+      "adminTitle": "AI review feedback", "adminKicker": "Admin · User feedback", "adminDescription": "Feedback users left on AI review replies. Deleting cannot be undone.", "deleteHint": "Deleting asks for confirmation", "loginRequired": "Sign in to view feedback.", "adminRequired": "Site administrator access is required.",
       "filter": "Reason", "all": "All", "refresh": "Refresh", "loading": "Loading…", "empty": "No feedback found.",
       "created": "Date", "model": "Model", "actions": "Actions", "view": "View", "delete": "Delete", "deleteConfirm": "Permanently delete this feedback?",
       "previous": "Previous", "next": "Next", "detail": "Feedback details", "snapshot": "Original AI reply",
@@ -1021,7 +1022,7 @@
     "siteFeedback": {
       "title": "Feedback", "question": "What went wrong, or what would you like to see?", "comment": "Details", "notice": "We record the page you are on but do not save your account details, so we cannot reply to you directly. If you need a reply, leave contact details below.", "contactLink": "Go to the Contact page",
       "cancel": "Cancel", "close": "Close", "submit": "Submit feedback", "success": "Thank you for your feedback.", "tooLong": "The text exceeds the length limit.",
-      "adminTitle": "Site feedback", "loginRequired": "Sign in to view feedback.", "adminRequired": "Site administrator access is required.",
+      "adminTitle": "Site feedback", "adminKicker": "Admin · User feedback", "adminDescription": "Issues and suggestions sent from the in-site feedback entry. Deleting cannot be undone.", "deleteHint": "Deleting asks for confirmation", "loginRequired": "Sign in to view feedback.", "adminRequired": "Site administrator access is required.",
       "filter": "Reason", "all": "All", "refresh": "Refresh", "loading": "Loading…", "empty": "No feedback found.",
       "created": "Date", "page": "Page", "actions": "Actions", "view": "View", "delete": "Delete", "deleteConfirm": "Permanently delete this feedback?",
       "previous": "Previous", "next": "Next", "detail": "Feedback details",
@@ -1043,12 +1044,11 @@
       "points_enemy": "Enemy points {points}"
     },
     "uiProfile": {
-      "auto": "Follow system",
-      "title": "Interface Style",
-      "classic": "Classic",
-      "showcase": "Showcase",
-      "classicDescription": "Simplified light theme; drops AI/decorative backgrounds for a calmer look",
-      "showcaseDescription": "Rich visual hierarchy and showcase effect"
+      "title": "Theme",
+      "spring": "Spring · Highlands",
+      "summer": "Summer · Midsummer",
+      "autumn": "Autumn · Harvest",
+      "winter": "Winter · Frost"
     },
     "environment": {
       "label": "Development",
@@ -1148,7 +1148,6 @@
       "failure_hide": "Hide details",
       "unavailable_mixed": "League Rating is not available for mixed batches (standard + training/tournament replays); shown as standard replays",
       "docs_button": "Algorithm docs",
-      "docs_page_title": "League Rating V6 — Algorithm Guide",
       "docs_page_sub": "Batch evidence scoring for Training / Tournament replays · single-battle scoring stays V4.1",
       "docs_back": "Back to analysis",
       "drawer": {
@@ -1194,10 +1193,6 @@
         "reference": "Reference",
         "events": "Events",
         "community": "Community"
-      },
-      "compact": {
-        "tankopedia": "Tanks",
-        "tournament": "League"
       }
     },
     "dataVersion": {
@@ -1215,15 +1210,15 @@
       "statusRevoked": "Revoked"
     },
     "more": {
-      "title": "More",
+      "title": "More & settings",
       "sections": {
         "display": "Display",
         "admin": "Administration",
-        "about": "About & support",
-        "shortcuts": "Shortcuts"
+        "about": "About & help",
+        "support": "Sponsor & feedback"
       },
       "language": "Language",
-      "sponsor": "Support the project",
+      "sponsor": "Sponsor",
       "ratingDocs": "Rating docs"
     },
     "filters": {
@@ -1590,7 +1585,12 @@
       "apply": "Apply filters",
       "schemaVersion": "Schema version",
       "mapId": "Map ID",
-      "range": "Time range"
+      "range": "Time range",
+      "kicker": "Admin · Collector data audit",
+      "noteLabel": "Scope",
+      "spawnBar": "{first} wins {firstRate} · draws {drawRate} · {second} wins {secondRate}",
+      "spawnSides": "{first} / {second} win rate",
+      "otherVersions": "Other"
     },
     "featureOffline": {
       "adminBattleData": "Battle data audit requires a connection.",
@@ -1813,7 +1813,7 @@
         },
         "settingsTheme": {
           "title": "Choose your interface",
-          "description": "Switch between Showcase, Classic and System. Every theme uses the same tools and data."
+          "description": "Spring, Summer, Autumn and Winter change only colours and artwork; every tool and all data stay the same."
         },
         "settingsLanguage": {
           "title": "Switch language at any time",
@@ -1834,8 +1834,8 @@
       "ownReplay": "Use my own replay",
       "newbie": "Getting started",
       "newbieHint": "No sign-in needed. Skip at any time.",
-      "anonymousHint": "Skip at any time. Reopen Getting started from Home.",
-      "anonymousFinished": "The sample stays in your workspace. Select your own replay or reopen Getting started from Home.",
+      "anonymousHint": "Skip at any time. Reopen it from Feature guides under More.",
+      "anonymousFinished": "The sample stays in your workspace. Select your own replay or reopen a guide from Feature guides under More.",
       "exitFullscreenNext": "Exit fullscreen & continue",
       "exitFullscreenFailed": "Could not exit fullscreen. Retry or skip the guide.",
       "exitFullscreenBack": "Exit fullscreen & back",
@@ -2014,10 +2014,11 @@
     }
   },
   "ru": {
+    "adminList": { "close": "Закрыть", "cancel": "Отмена", "bulkRegion": "Массовые действия", "bulkScope": "Только для строк, отмеченных на этой странице", "dangerZone": "Опасные действия" },
     "aiFeedback": {
       "button": "Отзыв", "title": "Отзыв о разборе", "question": "Что можно улучшить в этом разборе?", "comment": "Дополнительные сведения",
       "cancel": "Отмена", "submit": "Отправить отзыв", "success": "Спасибо за отзыв.", "tooLong": "Текст превышает ограничение длины.", "snapshotNotice": "Отзыв включает полный копируемый ответ для просмотра администраторами сайта.",
-      "adminTitle": "Отзывы о разборах ИИ", "loginRequired": "Войдите, чтобы просматривать отзывы.", "adminRequired": "Требуются права администратора сайта.",
+      "adminTitle": "Отзывы о разборах ИИ", "adminKicker": "Администрирование · Отзывы", "adminDescription": "Отзывы пользователей об ответах ИИ-разбора. Удаление нельзя отменить.", "deleteHint": "Удаление требует подтверждения", "loginRequired": "Войдите, чтобы просматривать отзывы.", "adminRequired": "Требуются права администратора сайта.",
       "filter": "Причина", "all": "Все", "refresh": "Обновить", "loading": "Загрузка…", "empty": "Отзывы не найдены.",
       "created": "Дата", "model": "Модель", "actions": "Действия", "view": "Просмотр", "delete": "Удалить", "deleteConfirm": "Удалить отзыв без возможности восстановления?",
       "previous": "Назад", "next": "Далее", "detail": "Подробности отзыва", "snapshot": "Исходный ответ ИИ",
@@ -2028,7 +2029,7 @@
     "siteFeedback": {
       "title": "Обратная связь", "question": "Что пошло не так или чего вам не хватает?", "comment": "Подробности", "notice": "Мы сохраняем страницу, на которой вы находитесь, но не данные аккаунта, поэтому не сможем ответить вам напрямую. Если нужен ответ, оставьте контакты в описании.", "contactLink": "Перейти на страницу контактов",
       "cancel": "Отмена", "close": "Закрыть", "submit": "Отправить отзыв", "success": "Спасибо за отзыв.", "tooLong": "Текст превышает ограничение длины.",
-      "adminTitle": "Отзывы о сайте", "loginRequired": "Войдите, чтобы просматривать отзывы.", "adminRequired": "Требуются права администратора сайта.",
+      "adminTitle": "Отзывы о сайте", "adminKicker": "Администрирование · Отзывы", "adminDescription": "Проблемы и предложения из формы обратной связи на сайте. Удаление нельзя отменить.", "deleteHint": "Удаление требует подтверждения", "loginRequired": "Войдите, чтобы просматривать отзывы.", "adminRequired": "Требуются права администратора сайта.",
       "filter": "Причина", "all": "Все", "refresh": "Обновить", "loading": "Загрузка…", "empty": "Отзывы не найдены.",
       "created": "Дата", "page": "Страница", "actions": "Действия", "view": "Просмотр", "delete": "Удалить", "deleteConfirm": "Удалить отзыв без возможности восстановления?",
       "previous": "Назад", "next": "Далее", "detail": "Подробности отзыва",
@@ -2050,12 +2051,11 @@
       "points_enemy": "Очки врага {points}"
     },
     "uiProfile": {
-      "auto": "Как в системе",
-      "title": "Стиль интерфейса",
-      "classic": "Классический",
-      "showcase": "Showcase",
-      "classicDescription": "Упрощённая светлая тема, без AI/декоративных фонов, сдержаннее",
-      "showcaseDescription": "Богатая визуальная иерархия и эффект показа"
+      "title": "Тема",
+      "spring": "Весна · Высокогорье",
+      "summer": "Лето · Зной",
+      "autumn": "Осень · Золото",
+      "winter": "Зима · Стужа"
     },
     "environment": {
       "label": "Режим разработки",
@@ -2155,7 +2155,6 @@
       "failure_hide": "Скрыть",
       "unavailable_mixed": "League Rating недоступен для смешанных наборов (обычные + тренировочные/турнирные реплеи); показаны как обычные реплеи",
       "docs_button": "Описание алгоритма",
-      "docs_page_title": "League Rating V6 — описание алгоритма",
       "docs_page_sub": "Пакетная оценка для тренировочных / турнирных реплеев · оценка одиночного боя остаётся V4.1",
       "docs_back": "Назад к анализу",
       "drawer": {
@@ -2201,10 +2200,6 @@
         "reference": "Справочник",
         "events": "Турниры",
         "community": "Сообщество"
-      },
-      "compact": {
-        "tankopedia": "Танки",
-        "tournament": "Лига"
       }
     },
     "dataVersion": {
@@ -2222,15 +2217,15 @@
       "statusRevoked": "Отозвано"
     },
     "more": {
-      "title": "Ещё",
+      "title": "Ещё и настройки",
       "sections": {
         "display": "Отображение",
         "admin": "Администрирование",
-        "about": "О проекте и поддержка",
-        "shortcuts": "Быстрый доступ"
+        "about": "О проекте и помощь",
+        "support": "Поддержка и отзывы"
       },
       "language": "Язык",
-      "sponsor": "Поддержать проект",
+      "sponsor": "Поддержать",
       "ratingDocs": "Документация Rating"
     },
     "filters": {
@@ -2597,7 +2592,12 @@
       "apply": "Применить фильтры",
       "schemaVersion": "Версия схемы",
       "mapId": "ID карты",
-      "range": "Период"
+      "range": "Период",
+      "kicker": "Администрирование · Аудит сборщика",
+      "noteLabel": "Охват",
+      "spawnBar": "Победы {first} {firstRate} · ничьи {drawRate} · победы {second} {secondRate}",
+      "spawnSides": "Победы: {first} / {second}",
+      "otherVersions": "Другие"
     },
     "featureOffline": {
       "adminBattleData": "Для просмотра боевых данных требуется подключение.",
@@ -2820,7 +2820,7 @@
         },
         "settingsTheme": {
           "title": "Выберите оформление",
-          "description": "Переключайте насыщенную, простую и системную тему. Функции и данные во всех темах одинаковы."
+          "description": "Весна, лето, осень и зима меняют только цвета и иллюстрации; функции и данные одинаковы."
         },
         "settingsLanguage": {
           "title": "Меняйте язык в любой момент",
@@ -2841,8 +2841,8 @@
       "ownReplay": "Открыть свой реплей",
       "newbie": "Первое знакомство",
       "newbieHint": "Без входа. Можно пропустить.",
-      "anonymousHint": "Можно пропустить в любой момент. Откройте «Первое знакомство» снова на главной странице.",
-      "anonymousFinished": "Пример останется в рабочей области. Выберите свой реплей или откройте «Первое знакомство» на главной странице.",
+      "anonymousHint": "Можно пропустить в любой момент. Откройте снова через «Ещё» → «Руководства по функциям».",
+      "anonymousFinished": "Пример останется в рабочей области. Выберите свой реплей или откройте руководство через «Ещё» → «Руководства по функциям».",
       "exitFullscreenNext": "Выйти и продолжить",
       "exitFullscreenFailed": "Не удалось выйти из полноэкранного режима. Повторите попытку или пропустите руководство.",
       "exitFullscreenBack": "Выйти и вернуться",

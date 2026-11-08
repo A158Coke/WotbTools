@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="dark" data-ui-profile="showcase">
+<html lang="zh-CN" data-theme="dark" data-ui-profile="summer">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"><title>Dialog and sheet reachability</title></head>
 <body>
 <div id="app"></div>
@@ -20,15 +20,14 @@ import '../../src/styles/playback-overlap-ux.css'
 import '../../src/styles/playback-shared.css'
 import '../../src/styles/playback-mobile.css'
 import '../../src/styles/playback-workspace.css'
-import '../../src/styles/classic-profile.css'
 import { messages } from '../../src/locales/messages.js'
 import AppDialog from '../../src/components/AppDialog.vue'
 import AppSheet from '../../src/components/AppSheet.vue'
 import AppButton from '../../src/components/AppButton.vue'
 
-const profile = new URLSearchParams(location.search).get('profile') === 'classic' ? 'classic' : 'showcase'
+const profile = new URLSearchParams(location.search).get('profile') === 'winter' ? 'winter' : 'summer'
 document.documentElement.dataset.uiProfile = profile
-document.documentElement.dataset.theme = profile === 'classic' ? 'light' : 'dark'
+document.documentElement.dataset.theme = profile === 'winter' ? 'light' : 'dark'
 createApp({ setup() {
   const dialog = ref(false), nested = ref(false), sheet = ref(false), visibleTitle = ref(false), selected = ref('')
   const button = (id, label, onClick) => h(AppButton, { 'data-testid': id, onClick }, () => label)

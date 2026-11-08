@@ -323,7 +323,7 @@ function onWideLayoutChange(event) {
  * 用新 mode 的真实几何 force 一次 authoritative fit（geometry-signature 也会捕获 bottom inset 变化）。
  * 不用 setTimeout magic delay。
  */
-const { isFullscreen, fullscreenSupported, toggleFullscreen } = usePlaybackFullscreen({
+const { isFullscreen, fullscreenSupported, toggleFullscreen, exitOwnedFullscreen } = usePlaybackFullscreen({
   target: () => pbRoot.value,
   isPhone: isMobileDevice,
   isActive: () => playbackLifecycleActive,
@@ -414,11 +414,10 @@ function writeSquareAvailHeight() {
   const viewportH = window.visualViewport?.height || window.innerHeight
   const pageStyle = getComputedStyle(document.documentElement)
   const headerH = parseFloat(pageStyle.getPropertyValue('--header-h')) || 0
-  const tabbarH = isFullscreen.value ? 0 : (parseFloat(pageStyle.getPropertyValue('--tabbar-h')) || 0)
   // Use viewport capacity, never a content-derived root height (which feeds back into Stage).
   // Scroll changes presentation position, not the workspace capacity.
   const top = isFullscreen.value ? 0 : headerH
-  const workspaceH = Math.max(1, viewportH - top - tabbarH)
+  const workspaceH = Math.max(1, viewportH - top)
   root.style.setProperty('--pb-workspace-h', `${workspaceH}px`)
   const main = battlefieldWorkspaceEl.value
   const above = main ? Math.max(0, main.getBoundingClientRect().top - rootRect.top) : 0
@@ -431,7 +430,7 @@ function writeSquareAvailHeight() {
   root.style.setProperty('--pb-square-avail-h', `${Math.floor(budget)}px`)
 }
 
-// 外壳沉浸态切换改的是 --header-h / --tabbar-h（不触发任何元素 resize），显式重算高度预算与默认 fit。
+// 外壳沉浸态切换改的是 --header-h（不触发任何元素 resize），显式重算高度预算与默认 fit。
 const shellChrome = inject(SHELL_CHROME_KEY, null)
 watch(() => shellChrome?.immersive.value, () => nextTick(() => { writeSquareAvailHeight(); fitViewIfReady(true) }))
 
@@ -557,9 +556,11 @@ function dragEnd() {
 
 // KeepAlive 停用（切到别的页面）时同样视为不可见
 const lifecycleVisible = ref(true)
-onDeactivated(() => { lifecycleVisible.value = false; pause() })
+// 离开（能力切走 / 页面停用）时退出本回放拥有的全屏：组件被 v-show / KeepAlive 缓存不会卸载，
+// 不主动退出的话 fullscreen root 仍是旧回放元素，新页面被挡在全屏层后面
+onDeactivated(() => { lifecycleVisible.value = false; pause(); exitOwnedFullscreen() })
 onActivated(() => { lifecycleVisible.value = true })
-watch(() => props.active, (value) => { if (!value) pause() })
+watch(() => props.active, (value) => { if (!value) { pause(); exitOwnedFullscreen() } })
 
 /**
  * 播放传输行为与 3D 共用：空格 / ←→ 的键位、输入框不劫持、拖动暂停后自动继续。
@@ -1038,7 +1039,7 @@ const mapStyle = computed(() => ({
 </script>
 
 <template>
-  <div v-if="image && playback" ref="pbRoot" class="battle-playback playback-workspace" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-phone-landscape': phoneLandscape, 'pb-controls-bottom': true, 'pb-roster-lanes': rosterLanes, ['pb-form-' + formFactor]: true }" :style="mapStyle" data-test="battle-playback">
+  <div v-if="image && playback" ref="pbRoot" class="battle-playback playback-workspace" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-phone-landscape': phoneLandscape, 'pb-controls-bottom': true, 'pb-roster-lanes': rosterLanes, ['pb-form-' + formFactor]: true }" :style="mapStyle" data-scene-surface data-test="battle-playback">
     <!-- 移动端全屏入口统一右上角浮动（与 Map Preview 3D / Replay 3D 同一组件同一位置）；
          传输条里的内联按钮在手机形态由 floatingFullscreen 隐藏，桌面保持原位。 -->
     <SceneFullscreenButton
@@ -1172,6 +1173,7 @@ const mapStyle = computed(() => ({
           :floating-fullscreen="isMobileDevice"
           :display-open="displayOpen"
           :annotation-enabled="phoneLandscape && !annotationOpen"
+          :nav-eligible="active && lifecycleVisible && !compactAnnotation"
           @toggle-annotation="toggleAnnotation"
           :format-clock="formatClock"
           @toggle-play="transport.togglePlay()"

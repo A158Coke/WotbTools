@@ -4,11 +4,11 @@ import { describe, expect, it, beforeEach, vi } from 'vitest'
 import {
   useUiProfile,
   setUiProfile,
-  toggleUiProfile,
   applyUiProfile,
   isUiProfile,
   themeForProfile,
   DEFAULT_UI_PROFILE,
+  THEME_COLOR,
   UI_PROFILES,
   UI_PROFILE_STORAGE_KEY,
   UI_THEME_ATTR,
@@ -25,133 +25,76 @@ function freshStorage() {
   return store
 }
 
-describe('useUiProfile', () => {
+const root = () => document.documentElement
+
+describe('useUiProfile（四季主题）', () => {
   beforeEach(() => {
     freshStorage()
-    document.documentElement.removeAttribute('data-ui-profile')
-    document.documentElement.removeAttribute('data-theme')
+    root().removeAttribute('data-ui-profile')
+    root().removeAttribute('data-theme')
+    document.head.innerHTML = '<meta name="theme-color" content="#000000">'
   })
 
-  it('暴露常量:合法值为 classic/showcase,默认 showcase', () => {
-    expect(DEFAULT_UI_PROFILE).toBe('showcase')
-    expect(UI_PROFILES).toEqual(['classic', 'showcase'])
+  it('合法值是春夏秋冬，默认盛夏，只有 wotb-ui-profile 一个 key', () => {
+    expect(UI_PROFILES).toEqual(['spring', 'summer', 'autumn', 'winter'])
+    expect(DEFAULT_UI_PROFILE).toBe('summer')
     expect(UI_PROFILE_STORAGE_KEY).toBe('wotb-ui-profile')
-    expect(isUiProfile('classic')).toBe(true)
-    expect(isUiProfile('showcase')).toBe(true)
-    expect(isUiProfile('legacy')).toBe(false)
-    expect(isUiProfile(null)).toBe(false)
+    for (const profile of UI_PROFILES) expect(isUiProfile(profile)).toBe(true)
+    for (const value of ['showcase', 'classic', 'auto', null, 'legacy']) expect(isUiProfile(value)).toBe(false)
   })
 
-  it('default:无 storage -> showcase', () => {
+  it('寒冬是唯一的浅色主题', () => {
+    expect(UI_PROFILES.map(themeForProfile)).toEqual(['dark', 'dark', 'dark', 'light'])
+  })
+
+  it.each(['showcase', 'classic', 'auto'])('旧值 %s 在读取边界映射为盛夏并写回新值', (legacy) => {
+    window.localStorage.setItem(UI_PROFILE_STORAGE_KEY, legacy)
     const { uiProfile } = useUiProfile()
-    expect(uiProfile.value).toBe('showcase')
+    expect(uiProfile.value).toBe('summer')
+    expect(window.localStorage.getItem(UI_PROFILE_STORAGE_KEY)).toBe('summer')
+    expect(root().getAttribute('data-ui-profile')).toBe('summer')
+    expect(root().getAttribute(UI_THEME_ATTR)).toBe('dark')
   })
 
-  it('persistence:storage=classic -> classic,并投影到 html[data-ui-profile]', () => {
-    window.localStorage.setItem(UI_PROFILE_STORAGE_KEY, 'classic')
-    const { uiProfile } = useUiProfile()
-    expect(uiProfile.value).toBe('classic')
-    expect(document.documentElement.getAttribute('data-ui-profile')).toBe('classic')
-  })
-
-  it('invalid storage -> showcase', () => {
+  it('非法值回退盛夏但不改写存储；无存储为盛夏', () => {
     window.localStorage.setItem(UI_PROFILE_STORAGE_KEY, 'legacy')
-    const { uiProfile } = useUiProfile()
-    expect(uiProfile.value).toBe('showcase')
-    expect(document.documentElement.getAttribute('data-ui-profile')).toBe('showcase')
+    expect(useUiProfile().uiProfile.value).toBe('summer')
+    expect(window.localStorage.getItem(UI_PROFILE_STORAGE_KEY)).toBe('legacy')
   })
 
-  it('setUiProfile("classic") 同步 ref + html dataset + localStorage', () => {
+  it.each(UI_PROFILES)('setUiProfile(%s) 同步 ref、html 投影、theme-color 与存储', (profile) => {
     const { uiProfile } = useUiProfile()
-    setUiProfile('classic')
-    expect(uiProfile.value).toBe('classic')
-    expect(document.documentElement.getAttribute('data-ui-profile')).toBe('classic')
-    expect(window.localStorage.getItem(UI_PROFILE_STORAGE_KEY)).toBe('classic')
+    setUiProfile(profile)
+    expect(uiProfile.value).toBe(profile)
+    expect(root().getAttribute('data-ui-profile')).toBe(profile)
+    expect(root().getAttribute(UI_THEME_ATTR)).toBe(themeForProfile(profile))
+    expect(document.querySelector('meta[name="theme-color"]').getAttribute('content')).toBe(THEME_COLOR[profile])
+    expect(window.localStorage.getItem(UI_PROFILE_STORAGE_KEY)).toBe(profile)
+    expect(window.localStorage.getItem('wotb-theme')).toBeNull()
   })
 
-  it('reverse:classic -> showcase', () => {
-    setUiProfile('classic')
-    const { uiProfile } = useUiProfile()
-    setUiProfile('showcase')
-    expect(uiProfile.value).toBe('showcase')
-    expect(document.documentElement.getAttribute('data-ui-profile')).toBe('showcase')
-    expect(window.localStorage.getItem(UI_PROFILE_STORAGE_KEY)).toBe('showcase')
+  it('持久化值在下次启动时恢复', () => {
+    window.localStorage.setItem(UI_PROFILE_STORAGE_KEY, 'winter')
+    expect(useUiProfile().uiProfile.value).toBe('winter')
+    expect(root().getAttribute(UI_THEME_ATTR)).toBe('light')
   })
 
-  it('setUiProfile(invalid) 回退 showcase 而非写入非法值', () => {
+  it('setUiProfile(非法值) 回退盛夏，不写入非法值', () => {
     setUiProfile('legacy')
-    const { uiProfile } = useUiProfile()
-    expect(uiProfile.value).toBe('showcase')
-    expect(window.localStorage.getItem(UI_PROFILE_STORAGE_KEY)).toBe('showcase')
+    expect(window.localStorage.getItem(UI_PROFILE_STORAGE_KEY)).toBe('summer')
   })
 
-  it('toggle 在 classic/showcase 间翻转', () => {
-    useUiProfile()
-    setUiProfile('showcase')
-    toggleUiProfile()
-    expect(useUiProfile().uiProfile.value).toBe('classic')
-    toggleUiProfile()
-    expect(useUiProfile().uiProfile.value).toBe('showcase')
-  })
-
-  it('applyUiProfile 投影到 html attribute', () => {
-    applyUiProfile('classic')
-    expect(document.documentElement.getAttribute('data-ui-profile')).toBe('classic')
+  it('applyUiProfile 只投影 html，不写存储', () => {
+    applyUiProfile('autumn')
+    expect(root().getAttribute('data-ui-profile')).toBe('autumn')
+    expect(window.localStorage.getItem(UI_PROFILE_STORAGE_KEY)).toBeNull()
   })
 
   it('切换不得触发 reload', () => {
     const reload = vi.spyOn(window.location, 'reload').mockImplementation(() => {})
-    setUiProfile('classic')
-    toggleUiProfile()
+    setUiProfile('spring')
+    setUiProfile('winter')
     expect(reload).not.toHaveBeenCalled()
     reload.mockRestore()
-  })
-})
-
-describe('useUiProfile → data-theme 派生（Theme 计划）', () => {
-  beforeEach(() => {
-    freshStorage()
-    document.documentElement.removeAttribute('data-ui-profile')
-    document.documentElement.removeAttribute('data-theme')
-  })
-
-  it('themeForProfile:showcase→dark,classic→light', () => {
-    expect(themeForProfile('showcase')).toBe('dark')
-    expect(themeForProfile('classic')).toBe('light')
-    expect(themeForProfile('legacy')).toBe('dark')
-  })
-
-  it('默认 showcase:data-ui-profile=showcase 且 data-theme=dark', () => {
-    useUiProfile()
-    expect(document.documentElement.getAttribute('data-ui-profile')).toBe('showcase')
-    expect(document.documentElement.getAttribute(UI_THEME_ATTR)).toBe('dark')
-  })
-
-  it('storage=classic:data-ui-profile=classic 且 data-theme=light,无独立 theme storage', () => {
-    window.localStorage.setItem(UI_PROFILE_STORAGE_KEY, 'classic')
-    useUiProfile()
-    expect(document.documentElement.getAttribute('data-ui-profile')).toBe('classic')
-    expect(document.documentElement.getAttribute(UI_THEME_ATTR)).toBe('light')
-    // 不得新增第二个持久化 key（no wotb-theme）
-    expect(window.localStorage.getItem(UI_PROFILE_STORAGE_KEY)).toBe('classic')
-    expect(window.localStorage.getItem('wotb-theme')).toBeNull()
-  })
-
-  it('setUiProfile(classic/showcase) 同步两个 attribute 派生主题', () => {
-    setUiProfile('classic')
-    expect(document.documentElement.getAttribute('data-ui-profile')).toBe('classic')
-    expect(document.documentElement.getAttribute(UI_THEME_ATTR)).toBe('light')
-    setUiProfile('showcase')
-    expect(document.documentElement.getAttribute('data-ui-profile')).toBe('showcase')
-    expect(document.documentElement.getAttribute(UI_THEME_ATTR)).toBe('dark')
-  })
-
-  it('非法值回退 showcase→dark,不写非法 key 值', () => {
-    setUiProfile('legacy')
-    const { uiProfile } = useUiProfile()
-    expect(uiProfile.value).toBe('showcase')
-    expect(document.documentElement.getAttribute('data-ui-profile')).toBe('showcase')
-    expect(document.documentElement.getAttribute(UI_THEME_ATTR)).toBe('dark')
-    expect(window.localStorage.getItem(UI_PROFILE_STORAGE_KEY)).toBe('showcase')
   })
 })
