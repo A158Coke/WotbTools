@@ -2512,14 +2512,19 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             updateTurretGun(currentTurretDeg, currentGunDeg);
             const pose = armorCameraPreset(armorPivotGun || new THREE.Vector3(0, 0, 2),
                 new THREE.Matrix4().copy(tankModel.matrixWorld).multiply(gunPoseMatrix), ARMOR_REF_DIST);
+            // preserveView 在清惯性**之前**取景快照：无阻尼 update 会把残余 panOffset 一次性
+            // 应用（target 跳到平移终点），与 setDistance 同口径——快照 → 清惯性 → 用快照摆位。
+            // 按钮（preserveView）只换观察方向：旋转中心与距离归用户，平移/缩放不被重置；
+            // URL 首载路径没有用户取景，仍由预设完整摆位。
+            const userView = preserveView
+                ? { target: controls.target.clone(), position: camera.position.clone() }
+                : null;
             // 先清除轨道惯性，再设置预设；后续拖动仍由 OrbitControls 正常接管。
             const damping = controls.enableDamping;
             controls.enableDamping = false;
             controls.update();
-            // 按钮（preserveView）只换观察方向：旋转中心与距离归用户，平移/缩放不被重置；
-            // URL 首载路径没有用户取景，仍由预设完整摆位。
             const placement = preserveView
-                ? armorPresetViewPlacement(controls.target, camera.position, pose)
+                ? armorPresetViewPlacement(userView.target, userView.position, pose)
                 : pose;
             controls.target.copy(placement.target);
             camera.position.copy(placement.position);
