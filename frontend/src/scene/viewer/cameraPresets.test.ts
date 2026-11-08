@@ -36,6 +36,22 @@ describe('armor camera presets', () => {
       expect(pitch).toBe(local)
       expect(Math.atan2(direction.y, -direction.z) * 180 / Math.PI).toBeCloseTo(worldAngle)
     })
+  it('applies pitch-device bonuses to the same front/hull-down presets', () => {
+    const modules = EUROPEAN.tanks.It21_Controcarro3_Minotauro
+    const baseLimits = pitchAtBearing(modules.turrets[0]!.guns[0]!.stats.pitchLimits, 0)
+    const bonus = { up: 4, down: 3 }
+    const limits = pitchAtBearing(modules.turrets[0]!.guns[0]!.stats.pitchLimits, 0, bonus)
+
+    expect(limits.up).toBeCloseTo(baseLimits.up + bonus.up)
+    expect(limits.down).toBeCloseTo(baseLimits.down - bonus.down)
+    expect(armorPresetGunPitch('front', limits)).toBe(0)
+    expect(armorPresetGunPitch('hull_down', limits)).toBe(limits.down)
+
+    const world = root.clone().multiply(new Matrix4().makeRotationX(angle(limits.down)))
+    const pose = armorCameraPreset(pivot, world, 15)
+    const direction = pose.position.clone().sub(pose.target)
+    expect(Math.atan2(direction.y, -direction.z) * 180 / Math.PI).toBeCloseTo(limits.down)
+  })
   it('honors full yaw/roll and transformed gun pivot, without mutating the supplied matrix', () => {
     const world = root.clone().multiply(new Matrix4().makeTranslation(1, 2, 3))
       .multiply(new Matrix4().makeRotationFromEuler(new Euler(.2, .1, .4, 'XYZ')))

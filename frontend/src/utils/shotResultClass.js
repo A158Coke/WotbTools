@@ -21,8 +21,8 @@ export const SHOT_RESULT = Object.freeze({
   HIT: 'HIT',
 })
 
-/** @param {{target_eid?: number|null, target_name?: string, hit_flags?: number,
- *           damage?: number, game_hit_result?: number|null}} shot */
+/** @param {{target_eid?: number|null, target_name?: string|null, hit_flags?: number|null,
+ *           damage?: number|null, game_hit_result?: number|null}} shot */
 export function shotResultClass(shot) {
   if (!shot) return SHOT_RESULT.HIT
   const hasTarget = shot.target_eid != null || !!(shot.target_name || '').trim()

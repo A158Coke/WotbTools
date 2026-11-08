@@ -550,7 +550,10 @@ export function moduleStateMaterial(clip: Plane | null | undefined): ShaderMater
 export function createArmorShaderContext() {
     const resUniform = { value: new THREE.Vector2(1, 1) };   // 共享分辨率（低清/全清 pass 每帧切换）
 
-    const rcUniforms: Record<string, { value: unknown }> = {
+    const rcUniforms: Record<string, { value: unknown }> & {
+        rcClipPlane: { value: THREE.Vector4 };
+        rcClipEnabled: { value: boolean };
+    } = {
         rcThickMul: { value: 1 },
         rcEnabled: { value: false },
         rcMode: { value: 0 },

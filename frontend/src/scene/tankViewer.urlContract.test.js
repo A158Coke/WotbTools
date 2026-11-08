@@ -95,11 +95,16 @@ describe('mirrorShotData（世界镜像一次性变换契约）', () => {
 
 // 俯仰覆盖的三态语义（review P2 回归锁，source regression）：`eqpitch` URL 初始化、
 // 覆盖只在 `!= null` 时生效、清覆盖必须传 null（显式 false 会永久压住 recorded truth）。
-const viewerSrc = readFileSync(fileURLToPath(new URL('./tankViewer.js', import.meta.url)), 'utf8')
+const viewerSrc = [
+        './tankViewer.js', './viewer/turretRig.ts', './viewer/modelLifecycle.ts', './viewer/heatmap.ts',
+        './viewer/judgment.ts', './viewer/trajectoryCard.ts', './viewer/diagnosticProbe.ts',
+        './viewer/shotReplay.ts', './viewer/debugUi.ts', './viewer/equipmentState.ts',
+        './viewer/collisionView.ts', './viewer/viewerMath.ts', './viewer/dataLoader.ts', './viewer/aimInput.ts', './viewer/shotReplayMiss.ts',
+    ].map((f) => readFileSync(fileURLToPath(new URL(f, import.meta.url)), 'utf8')).join('')
 
 describe('121/122 俯仰覆盖三态（source regression）', () => {
   it('eqpitch 只经 URL 初始化进 equipmentOverride.pitch', () => {
-    expect(viewerSrc).toContain("if (QP.has('eqpitch')) equipmentOverride.pitch = QP.get('eqpitch') === '1';")
+    expect(viewerSrc).toContain("if (QP.has('eqpitch')) eqs.equipmentOverride.pitch = QP.get('eqpitch') === '1';")
   })
 
   it('effectivePitchDevice 走 tankSetup 纯函数裁决（可用性/覆盖/真值/勾选三态）', () => {

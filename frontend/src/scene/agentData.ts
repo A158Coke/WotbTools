@@ -182,9 +182,112 @@ export async function fetchShells(id: TankId, options: TankUpgradeOptions = {}) 
 
 // ---------- 击穿判定（客户端移植；wire 形状与 /api/penetrate 响应一致） ----------
 
-export async function judgePenetration(req: object) {
+/** 判定命中输入（viewer → penetration.calculate；字段与 /api/penetrate hits 同形）。 */
+export interface PenetrationHit {
+  section: string
+  /** 客户端 raycast 可能给出字符串 plate id（与既有运行时一致）。 */
+  plate_id: number | string
+  thickness: number
+  normal: number[]
+  point: number[]
+  part_name: string
+  contact_normal?: number[]
+  contact_point?: number[]
+  contact_thickness?: number
+  contact_part_name?: string | null
+}
+
+/** 判定请求（penetration.calculate 入参；wire 形状的单点契约）。 */
+export interface PenetrationRequest {
+  shell_type: string | null
+  shell_type_id?: number | null
+  penetration: number
+  caliber: number
+  damage?: number
+  explosion_radius?: number
+  calibrated_shells?: number
+  enhanced_armor?: boolean | number
+  normalization_deg?: number | null
+  ricochet_deg?: number | null
+  allow_ricochet?: boolean
+  require_primary?: boolean
+  distance_m?: number
+  penetration_far?: number
+  he_splash?: unknown
+  he_splash_error?: string | null
+  view_dir: number[]
+  hits: PenetrationHit[]
+}
+
+/** 判定层（penetration.calculate 输出的确定性/概率层；扩展字段保留给调试消费方）。 */
+export interface PenetrationLayer {
+  part_name: string
+  contact_part_name: string | null
+  contact_thickness?: number | null
+  thickness: number
+  effective: number
+  penetrated: boolean
+  ricochet: boolean
+  angle_deg: number | null
+  remaining_before: number
+  gap: boolean
+  point: number[] | null
+  normal: number[] | null
+  [key: string]: unknown
+}
+
+/** HE 采样最佳样本（heSplash.sampleHeSplash 输出）。 */
+export interface HeSplashBestLayer {
+  section?: string | null
+  armor?: number | null
+  [key: string]: unknown
+}
+
+export interface HeSplashBest {
+  upper: number
+  lower: number
+  armor: number
+  distance: number
+  direction: number[] | null
+  layers: HeSplashBestLayer[]
+}
+
+/** HE 溅射采样数据（判定结果 he 字段；unavailable/reason 表示采样器跑不了）。 */
+export interface HeSplashData {
+  splash_min: number
+  splash_max: number
+  splash_avg: number
+  full_damage: number
+  explosion_radius: number
+  samples: number
+  best: HeSplashBest | null
+  best_lower?: HeSplashBest | null
+  source: string
+  degraded?: boolean
+  unavailable?: boolean
+  reason?: string
+  [key: string]: unknown
+}
+
+/** 判定结果（penetration.calculate 输出；wire 形状与 /api/penetrate 响应一致）。 */
+export interface PenetrationResult {
+  result: string
+  blocked_no_primary: boolean
+  total_effective: number
+  layers: PenetrationLayer[]
+  probability_layers: PenetrationLayer[]
+  probability_penetration: number
+  ricochet: boolean
+  ricochet_remaining_pen: number
+  damage: number
+  he: HeSplashData | null
+  [key: string]: unknown
+}
+
+export async function judgePenetration(req: PenetrationRequest): Promise<PenetrationResult> {
   const { calculate } = await import('./penetration.js')
-  return calculate(req)
+  const result = calculate(req) as PenetrationResult
+  return result
 }
 
 // ---------- 射击复现数据交接（射击复现表 → 3D 查看器新窗口；无服务端通道） ----------

@@ -12,6 +12,8 @@ function bindSetter(camera, controls) {
   return new Function('THREE', 'camera', 'controls', 'reportDistance', `
     const destroyed = false, contextLost = false, tankModel = {}, armorModel = {};
     const QP = new URLSearchParams(), worldMetersPerUnit = 1, worldOverviewMode = false;
+    // #820 拆分后：模型引用与场景米制 owner = viewer/modelLifecycle.ts（ml handle）
+    const ml = { getWorldMetersPerUnit: () => worldMetersPerUnit, models: { tankModel, armorModel } };
     const applyLongRangeCompensation = () => {};
     ${setterSource}
     return setDistance;
