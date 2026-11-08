@@ -1183,9 +1183,9 @@
   "home": {
     "sponsorCta": "去赞助",
     "sponsorDesc": "没有广告，没有会员。服务器和域名靠玩家赞助撑着。",
-    "heroLine1": "不止是回放工具",
-    "heroLine2": "是闪击战的主场",
-    "heroSubtitle": "从单场回放的三维复盘，到全服名人堂、联赛积分与直播回放——WotBTools 是玩家自己搭的闪击战平台，网页与 Android 都能用。",
+    "heroLine1": "回放 · 排行 · 联赛",
+    "heroLine2": "一站式闪击战平台",
+    "heroSubtitle": "上传回放就能复盘；名人堂、联赛积分和直播回放随时查看。",
     "showcaseTitle": "能做什么",
     "showcasePlaybackTitle": "整场战斗，三维重建",
     "showcasePlaybackDesc": "地形、车辆、血量、占点与行进路线——用一个回放文件还原每一秒。",

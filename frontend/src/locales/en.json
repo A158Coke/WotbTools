@@ -1183,9 +1183,9 @@
   "home": {
     "sponsorCta": "Sponsor",
     "sponsorDesc": "No ads, no memberships. Servers and the domain run on player sponsorship.",
-    "heroLine1": "More than a replay tool.",
-    "heroLine2": "Blitz's home ground.",
-    "heroSubtitle": "From a 3D rebuild of a single battle to the server-wide Hall of Fame, league standings and broadcast replays — a Blitz platform built by players, on the web and on Android.",
+    "heroLine1": "Replays, ranks, leagues",
+    "heroLine2": "One Blitz platform",
+    "heroSubtitle": "Upload a replay to review the battle; the Hall of Fame, league standings and broadcast replays are always a tap away.",
     "showcaseTitle": "What it does",
     "showcasePlaybackTitle": "The whole battle, rebuilt in 3D",
     "showcasePlaybackDesc": "Terrain, vehicles, HP, base captures and movement paths — every second reconstructed from one replay file.",

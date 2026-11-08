@@ -30,7 +30,7 @@
     --border-width: 1px;
     --broadcast-cover-max-h: 320px;
     /* 首页 landing page：组件语义尺寸（§4–§5），避免组件内出现第二套 scale。Hero 三档都是整屏（100dvh）。 */
-    --home-hero-title-measure: 16ch;
+    --home-hero-title-measure: 20ch;
     --home-hero-subtitle-measure: 40ch;
     --home-hero-subtitle-size: clamp(1rem, 1.6vw, 1.25rem);
 

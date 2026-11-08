@@ -1140,7 +1140,8 @@ onBeforeUnmount(() => {
     .armor-view #turret-controls { inset-block-start: calc(var(--space-2) * 2 + 48px); inset-block-end: auto; inset-inline-start: var(--space-2); min-inline-size: 0; max-inline-size: calc(100% - var(--space-4)); padding: 0 var(--space-1); max-block-size: 28dvh; white-space: nowrap; }
     .armor-view #turret-controls .ctrl-row { display: inline-flex; flex-wrap: nowrap; vertical-align: middle; gap: var(--space-1); margin: 0 var(--space-1); }
     .armor-view #turret-controls .armor-camera-presets { display: inline-flex; flex-wrap: nowrap; vertical-align: middle; gap: var(--space-1); margin: 0 var(--space-1) 0 0; }
-    .armor-view #turret-controls .armor-camera-presets button { padding: var(--space-1) var(--space-2); }
+    /* 按文字实际宽度排布：平分宽度时「压坡卖头」等较长文案会溢出按钮、压到旁边的炮塔读数 */
+    .armor-view #turret-controls .armor-camera-presets button { flex: none; padding: var(--space-1) var(--space-2); }
     .armor-view #corner-br { display: none; }
     .armor-view.is-shot .armor-bottom-controls { position: absolute; inset-block-end: var(--space-2); inset-inline: var(--space-2); display: flex; flex-direction: column; gap: var(--space-2); pointer-events: none; z-index: var(--pb-z-hud); }
     .armor-view.is-shot .armor-bottom-controls :is(#corner-tr, #corner-br) { position: static; max-inline-size: none; pointer-events: auto; }
