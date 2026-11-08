@@ -88,14 +88,13 @@ fetch_release_asset() {
     fi
     rm -f "$out.part"
     reason="HTTP ${http:-000} curl_exit=${rc}"
-    if [ "$rc" -ne 0 ]; then
-      retryable=1   # 传输层失败
-    else
-      case "$http" in
-        408|429|5??) retryable=1 ;;
-        *) retryable=0 ;;
-      esac
-    fi
+    # 先看已收到的 HTTP 状态，再看 curl exit code：截断/超时的永久错误响应（如 404 + exit 18）
+    # 仍按 HTTP 状态判为永久失败；无有效状态（000）或 200 但传输中断才是可重试的传输失败。
+    case "$http" in
+      000|""|200) retryable=1 ;;        # 无 HTTP 状态或 200 响应被中断
+      408|429|5??) retryable=1 ;;
+      *) retryable=0 ;;                 # 403/404 等永久错误，无论 curl exit code
+    esac
     if [ "$retryable" -eq 0 ]; then
       echo "下载失败（永久错误，不重试）: ${reason}  URL=${url}" >&2
       return 1

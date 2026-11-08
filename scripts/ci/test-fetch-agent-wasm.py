@@ -47,9 +47,13 @@ GOOD_ZIP = synthetic_zip()
 
 
 class Fixture:
-    """按路由顺序返回脚本化响应；序列耗尽后重复最后一个。"""
+    """按路由顺序返回脚本化响应；序列耗尽后重复最后一个。
 
-    def __init__(self, script: list[tuple[int, bytes]]):
+    条目为 (status, body) 或 (status, body, declared_len)：declared_len 大于 body 时声明的
+    Content-Length 大于实际发送字节数，随后断开连接，模拟截断的错误响应。
+    """
+
+    def __init__(self, script: list[tuple]):
         self.script = list(script)
         self.hits = 0
         fixture = self
@@ -57,9 +61,11 @@ class Fixture:
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_GET(self):  # noqa: N802
                 fixture.hits += 1
-                status, body = fixture.script[0] if len(fixture.script) == 1 else fixture.script.pop(0)
+                entry = fixture.script[0] if len(fixture.script) == 1 else fixture.script.pop(0)
+                status, body = entry[0], entry[1]
+                declared = entry[2] if len(entry) > 2 else len(body)
                 self.send_response(status)
-                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Content-Length", str(declared))
                 self.end_headers()
                 self.wfile.write(body)
 
@@ -158,6 +164,12 @@ def main() -> int:
              expect_hits=5, expect_in_stderr=["HTTP 503", "已达重试上限"])
     run_case("404-permanent", [(404, b"not found")], None, expect_ok=False,
              expect_hits=1, expect_in_stderr=["HTTP 404", "永久错误"])
+    # 已收到永久 HTTP 错误但响应体截断（curl 同时给出 HTTP 状态与非零 exit）：必须立即失败
+    truncated = b"x" * 9  # 声明 100 字节，只发 9 字节后断开
+    run_case("404-truncated-permanent", [(404, truncated, 100)], None, expect_ok=False,
+             expect_hits=1, expect_in_stderr=["HTTP 404", "curl_exit=18", "永久错误"])
+    run_case("403-truncated-permanent", [(403, truncated, 100)], None, expect_ok=False,
+             expect_hits=1, expect_in_stderr=["HTTP 403", "curl_exit=18", "永久错误"])
     run_case("200-wrong-sha", [(200, good)], "0" * 64, expect_ok=False, expect_hits=1,
              expect_in_stderr=["SHA256 校验失败"])
     run_case("connection-refused-capped", None, None, expect_ok=False,
