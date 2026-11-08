@@ -204,11 +204,6 @@ onBeforeUnmount(() => {
     background: var(--color-surface-1);
   }
   .doc-toc-current { min-width: 0; overflow: hidden; color: var(--color-text-secondary); font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
-  .doc-toc-compact {
-    position: sticky;
-    top: calc(var(--header-h) + var(--space-2));
-    z-index: var(--z-sticky);
-  }
   .doc-toc-compact summary {
     display: flex;
     align-items: center;
