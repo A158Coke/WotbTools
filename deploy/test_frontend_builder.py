@@ -407,7 +407,8 @@ class GiteeMainSyncTest(unittest.TestCase):
             env = {**os.environ, "SOURCE_SHA": sha, "GITEE_TOKEN": "fixture-token",
                    "GITEE_USERNAME": "fixture", "GITEE_REPO_URL": target.resolve().as_uri(),
                    "RUNNER_TEMP": str(base), "CASE": case, "RACE_SHA": race,
-                   "TARGET_DIR": str(target), "FIXTURE_ROOT": str(base)}
+                   "TARGET_DIR": str(target), "FIXTURE_ROOT": str(base),
+                   "GITEE_RETRY_BACKOFF_SECONDS": "0 0"}
             shim = r'''
 timeout() { while [[ "$1" = --* ]]; do shift; done; shift; "$@"; }
 git() {
@@ -415,6 +416,7 @@ git() {
     count=$(cat "$FIXTURE_ROOT/reads" 2>/dev/null || echo 0)
     count=$((count + 1)); echo "$count" > "$FIXTURE_ROOT/reads"
     if [ "$CASE" = observation-error ]; then return 9; fi
+    if [ "$CASE" = transient-observation ] && [ "$count" -eq 1 ]; then return 128; fi
     if [ "$CASE" = malformed ]; then printf 'not-a-sha\trefs/heads/main\n'; return; fi
     if [ "$CASE" = verify-mismatch ] && [ "$count" -eq 2 ]; then
       printf '%s\trefs/heads/main\n' "$RACE_SHA"; return
@@ -430,7 +432,7 @@ git() {
                                     text=True, capture_output=True, timeout=30)
             diagnostic = result.stdout + result.stderr
             actual = git("--git-dir", str(target), "rev-parse", "refs/heads/main") if case != "empty" or result.returncode == 0 else ""
-            if case in ("success", "empty"):
+            if case in ("success", "empty", "transient-observation"):
                 self.assertEqual(result.returncode, 0, diagnostic)
                 self.assertEqual(actual, sha)
                 self.assertIn("gitee_main_sync result=PASS", result.stdout)
@@ -460,7 +462,7 @@ git() {
                 self.assertEqual(result.returncode == 0, accepted, result.stdout + result.stderr)
 
     def test_sync_and_failure_contract(self):
-        for case in ("success", "empty", "race", "stale", "verify-mismatch", "observation-error", "malformed"):
+        for case in ("success", "empty", "transient-observation", "race", "stale", "verify-mismatch", "observation-error", "malformed"):
             with self.subTest(case=case):
                 self.run_sync(case)
 
