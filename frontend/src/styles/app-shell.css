@@ -1,8 +1,9 @@
 /* Shared application primitives. Feature components own their layout and state. */
 * { box-sizing: border-box; }
 html, body, #app { min-height: 100%; }
-/* 页面底色叠当前主题的底纹（design-language §2 装饰插槽 5）；卡片与数据区是纯色表面 */
-body { margin: 0; background: var(--theme-pattern), var(--color-canvas); background-attachment: fixed; color: var(--color-text-primary); font: var(--type-body); }
+/* 页面底色 = 主题底纹 + 环境光 + 纯色 canvas（design-language §2 装饰插槽 5）；
+   卡片与数据区仍是纯色表面，场景根（data-scene-surface）自铺不透明底，不叠这层。 */
+body { margin: 0; background: var(--theme-pattern), var(--theme-backdrop), var(--color-canvas); background-attachment: fixed; color: var(--color-text-primary); font: var(--type-body); }
 a { color: var(--color-accent-text); text-decoration: none; }
 button, input, select, textarea { font-family: inherit; }
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
@@ -32,6 +33,8 @@ h2 { margin: 0 0 var(--space-3); color: var(--color-text-primary); font: var(--t
   color: var(--color-text-tertiary);
   font: var(--type-caption);
   text-align: center;
+  /* 页脚文字落在环境光/底纹之上时，用 canvas 渐隐托底，避免 1px 网格线吃掉小字对比度。 */
+  background: linear-gradient(180deg, transparent 0, var(--color-canvas) var(--space-5));
 }
 .app-footer a { color: inherit; text-decoration: underline; text-underline-offset: var(--space-1); }
 .business-bootstrap-notice {
