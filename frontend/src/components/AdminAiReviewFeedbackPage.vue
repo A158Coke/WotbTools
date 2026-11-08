@@ -107,7 +107,7 @@ function applyStatus(id: string, status: FeedbackStatus): void {
   if (selected.value && selected.value.id === id) selected.value = { ...selected.value, status }
   if (detail.value && detail.value.id === id) detail.value = { ...detail.value, status }
   // PATCH 确认作废了在途详情读取：详情仍在加载时重启读取，抽屉不能停在「加载中」
-  else if (pendingDetailId.value === id) void loadDetail(id)
+  else if (pendingDetailId.value === id && selected.value?.id === id) void loadDetail(id)
 }
 /** 行内状态下拉（行内控件，不触发整行打开）：成功即确认；4xx 回退；其它失败回读服务器状态。 */
 async function changeStatus(item: FeedbackItem, event: Event): Promise<void> {
@@ -173,7 +173,7 @@ function openDetail(item: FeedbackItem, event?: Event) {
   void loadDetail(item.id)
 }
 function onRowClick(item: FeedbackItem, event: Event) { if (!isRowControlClick(event)) void openDetail(item, event) }
-function closeDetail() { if (deleting.value) return; detailGeneration++; selected.value = null; detail.value = null }
+function closeDetail() { if (deleting.value) return; detailGeneration++; selected.value = null; detail.value = null; pendingDetailId.value = null }
 async function remove() {
   const target = selected.value
   if (deleting.value || !target || !requireFeature(Feature.ADMIN_AI_FEEDBACK)) return
@@ -186,7 +186,7 @@ onMounted(load)
 watch(() => availability(Feature.ADMIN_AI_FEEDBACK).available, available => {
   if (available && blockedInitialLoad && !hasLoadedOnce && !loading.value) void load()
 })
-onBeforeUnmount(() => { generation++; detailGeneration++ })
+onBeforeUnmount(() => { generation++; detailGeneration++; pendingDetailId.value = null })
 </script>
 
 <template>

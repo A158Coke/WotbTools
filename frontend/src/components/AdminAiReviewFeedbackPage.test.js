@@ -304,3 +304,39 @@ it('keeps another record detail loading when an ambiguous status is reconciled',
   expect(detailStatusText(wrapper)).toContain('aiFeedback.status.PENDING')
   expect(wrapper.findAll('pre').at(-1).text()).toBe('second exact reply')
 })
+
+it('关闭抽屉后迟到的 PATCH 不再为已关闭详情重发读取，也不把错误写进列表页', async () => {
+  let resolveUpdate
+  let resolveDetail
+  api.updateFeedbackStatus.mockImplementationOnce(() => new Promise(resolve => { resolveUpdate = resolve }))
+  api.getFeedback.mockImplementationOnce(() => new Promise(resolve => { resolveDetail = resolve }))
+  const wrapper = mountPage()
+  await flushPromises()
+  await wrapper.get('.status-select').setValue('FIXED')
+  await wrapper.get('[data-testid="feedback-row-open"]').trigger('click')
+  await flushPromises()
+  expect(api.getFeedback).toHaveBeenCalledTimes(1)
+  // PATCH 完成前关闭抽屉：确认后不得为已关闭的详情重发 GET
+  await wrapper.get('[data-testid="admin-drawer-close"]').trigger('click')
+  resolveUpdate()
+  resolveDetail({ ...row, status: 'PENDING' })
+  await flushPromises()
+  expect(api.getFeedback).toHaveBeenCalledTimes(1)
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+})
+
+it('卸载后迟到的 PATCH 不再重发详情读取', async () => {
+  let resolveUpdate
+  api.updateFeedbackStatus.mockImplementationOnce(() => new Promise(resolve => { resolveUpdate = resolve }))
+  api.getFeedback.mockImplementationOnce(() => new Promise(() => {}))
+  const wrapper = mountPage()
+  await flushPromises()
+  await wrapper.get('.status-select').setValue('FIXED')
+  await wrapper.get('[data-testid="feedback-row-open"]').trigger('click')
+  await flushPromises()
+  expect(api.getFeedback).toHaveBeenCalledTimes(1)
+  wrapper.unmount()
+  resolveUpdate()
+  await flushPromises()
+  expect(api.getFeedback).toHaveBeenCalledTimes(1)
+})
