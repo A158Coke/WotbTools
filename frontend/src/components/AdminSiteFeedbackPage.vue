@@ -19,11 +19,17 @@ let generation = 0
 let detailGeneration = 0
 let statusEpoch = 0
 const confirmedStatuses = new Map<string, { status: FeedbackStatus; epoch: number }>()
+const detailVersions = new Map<string, number>()
 
 /** 4xx means the server explicitly rejected the write; anything else may have committed. */
 function isDefiniteStatusRejection(cause: unknown): boolean {
   const status = normalizeApiError(cause).status
   return status !== null && status >= 400 && status < 500
+}
+
+/** Discard only in-flight detail reads for the record whose status just changed. */
+function invalidateDetailRequests(id: string): void {
+  detailVersions.set(id, (detailVersions.get(id) ?? 0) + 1)
 }
 
 function applyConfirmedStatuses(list: SiteFeedbackItem[], startedEpoch: number): SiteFeedbackItem[] {
@@ -78,8 +84,8 @@ async function changeStatus(item: SiteFeedbackItem, event: Event): Promise<void>
   try {
     await updateSiteFeedbackStatus(item.id, next)
     statusEpoch++
-    // A detail GET started before this confirmation may still deliver the old status.
-    detailGeneration++
+    // A detail GET for this record started before confirmation may still deliver the old status.
+    invalidateDetailRequests(item.id)
     confirmedStatuses.set(item.id, { status: next, epoch: statusEpoch })
     const target = items.value.find(entry => entry.id === item.id)
     if (target) target.status = next
@@ -101,7 +107,7 @@ async function reconcileStatus(item: SiteFeedbackItem, select: HTMLSelectElement
   try {
     const result = await getSiteFeedback(item.id)
     statusEpoch++
-    detailGeneration++
+    invalidateDetailRequests(item.id)
     confirmedStatuses.set(item.id, { status: result.status, epoch: statusEpoch })
     const target = items.value.find(entry => entry.id === item.id)
     if (target) target.status = result.status
@@ -114,15 +120,18 @@ async function reconcileStatus(item: SiteFeedbackItem, select: HTMLSelectElement
 }
 async function showDetail(id: string): Promise<void> {
   const current = ++detailGeneration
+  const detailVersion = detailVersions.get(id) ?? 0
   const statusEpochAtStart = statusEpoch
   if (!requireFeature(Feature.ADMIN_SITE_FEEDBACK)) return
   error.value = ''
   try {
     const result = await getSiteFeedback(id)
-    if (current !== detailGeneration) return
+    if (current !== detailGeneration || detailVersion !== (detailVersions.get(id) ?? 0)) return
     const confirmed = confirmedStatuses.get(result.id)
     detail.value = confirmed && confirmed.epoch > statusEpochAtStart ? { ...result, status: confirmed.status } : result
-  } catch (cause) { if (current === detailGeneration) error.value = apiErrorLabel(t, te, cause) }
+  } catch (cause) {
+    if (current === detailGeneration && detailVersion === (detailVersions.get(id) ?? 0)) error.value = apiErrorLabel(t, te, cause)
+  }
 }
 function closeDetail() { detailGeneration++; detail.value = null }
 async function remove() {

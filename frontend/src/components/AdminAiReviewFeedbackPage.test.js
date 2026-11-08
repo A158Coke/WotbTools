@@ -238,3 +238,51 @@ it('does not let a pre-update detail response overwrite the status after a list 
   await flushPromises()
   expect(detailStatusText(wrapper)).toContain('aiFeedback.status.FIXED')
 })
+
+it('keeps another record detail loading when a status update succeeds', async () => {
+  const second = { ...row, id: '2', feedbackText: 'second feedback' }
+  api.listFeedback.mockResolvedValueOnce({ items: [row, second], page: 0, size: 25, totalItems: 2, totalPages: 1 })
+  let resolveUpdate
+  let resolveDetail
+  api.updateFeedbackStatus.mockImplementationOnce(() => new Promise(resolve => { resolveUpdate = resolve }))
+  api.getFeedback.mockImplementationOnce(() => new Promise(resolve => { resolveDetail = resolve }))
+  const wrapper = mountPage()
+  await flushPromises()
+  await wrapper.findAll('.status-select').at(0).setValue('FIXED')
+  await wrapper.findAll('button').filter(button => button.text() === 'aiFeedback.view').at(1).trigger('click')
+  await flushPromises()
+  expect(api.getFeedback).toHaveBeenCalledWith('2')
+  resolveUpdate()
+  await flushPromises()
+  resolveDetail({ ...second, aiResponseText: 'second exact reply', status: 'PENDING' })
+  await flushPromises()
+  expect(wrapper.findAll('.status-select').at(0).element.value).toBe('FIXED')
+  expect(detailStatusText(wrapper)).toContain('aiFeedback.status.PENDING')
+  expect(wrapper.get('pre:last-of-type').text()).toBe('second exact reply')
+})
+
+it('keeps another record detail loading when an ambiguous status is reconciled', async () => {
+  const second = { ...row, id: '2', feedbackText: 'second feedback' }
+  api.listFeedback.mockResolvedValueOnce({ items: [row, second], page: 0, size: 25, totalItems: 2, totalPages: 1 })
+  api.updateFeedbackStatus.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+  let resolveReadback
+  let resolveDetail
+  api.getFeedback
+    .mockImplementationOnce(() => new Promise(resolve => { resolveReadback = resolve }))
+    .mockImplementationOnce(() => new Promise(resolve => { resolveDetail = resolve }))
+  const wrapper = mountPage()
+  await flushPromises()
+  await wrapper.findAll('.status-select').at(0).setValue('FIXED')
+  await flushPromises()
+  expect(api.getFeedback).toHaveBeenCalledWith('1')
+  await wrapper.findAll('button').filter(button => button.text() === 'aiFeedback.view').at(1).trigger('click')
+  await flushPromises()
+  expect(api.getFeedback).toHaveBeenCalledWith('2')
+  resolveReadback({ ...row, status: 'FIXED' })
+  await flushPromises()
+  resolveDetail({ ...second, aiResponseText: 'second exact reply', status: 'PENDING' })
+  await flushPromises()
+  expect(wrapper.findAll('.status-select').at(0).element.value).toBe('FIXED')
+  expect(detailStatusText(wrapper)).toContain('aiFeedback.status.PENDING')
+  expect(wrapper.get('pre:last-of-type').text()).toBe('second exact reply')
+})
