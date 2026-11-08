@@ -1,12 +1,14 @@
-// 首屏 防 FOUC 契约:index.html 内联脚本必须在任何渲染前按 localStorage 设置
-// data-ui-profile 与派生的 data-theme(showcase→dark, classic→light),并给浅色 loader 提供 token。
-// 与 src/composables/useUiProfile.js 的 key/校验/默认保持一致。
+// @vitest-environment happy-dom
+// 首屏防 FOUC 契约：index.html 内联脚本在任何渲染前按 localStorage 投影 data-ui-profile、
+// 派生的 data-theme 与 theme-color；合法值 / 旧值映射 / 默认与 src/composables/useUiProfile.js 一致。
+// 这里真实执行内联脚本，而不是匹配源码文本。
 
 import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { describe, expect, it } from 'vitest'
+import { resolve } from 'node:path'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { THEME_COLOR, UI_PROFILES, themeForProfile } from './composables/useUiProfile.js'
 
-const html = readFileSync(fileURLToPath(new URL('../index.html', import.meta.url)), 'utf8')
+const html = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8')
 
 function firstInlineScript(source) {
   return (source.match(/<script\b[^>]*>([\s\S]*?)<\/script(?:[ \t\n\r\f/][^>]*)?>/i) || [])[1] || ''
@@ -14,28 +16,43 @@ function firstInlineScript(source) {
 
 const script = firstInlineScript(html)
 
-describe('index.html 首屏 profile/theme 派生（Theme 计划：无 FOUC）', () => {
-  it('默认 :root 为 dark,且提供 html[data-theme="light"] 浅色 loader token(Classic 首屏不成黑) ', () => {
-    expect(html).toContain('data-theme="dark"')
-    expect(html).toContain('html[data-theme="light"]')
-    expect(html).toMatch(/html\[data-theme="light"\]\{[^}]*color-scheme:light[^}]*\}/)
-    expect(html).toMatch(/html\[data-theme="light"\]\{[^}]*--bg:#f4f5f2[^}]*\}/)
+function runFirstPaint(stored) {
+  window.localStorage.clear()
+  if (stored !== undefined) window.localStorage.setItem('wotb-ui-profile', stored)
+  const root = document.documentElement
+  root.removeAttribute('data-ui-profile')
+  root.removeAttribute('data-theme')
+  document.head.innerHTML = '<meta name="theme-color" content="#000000">'
+  new Function(script)()
+  return {
+    profile: root.getAttribute('data-ui-profile'),
+    theme: root.getAttribute('data-theme'),
+    color: document.querySelector('meta[name="theme-color"]').getAttribute('content'),
+    stored: window.localStorage.getItem('wotb-ui-profile'),
+  }
+}
+
+describe('index.html 首屏主题投影（无 FOUC）', () => {
+  beforeEach(() => window.localStorage.clear())
+
+  it.each(UI_PROFILES)('%s：首帧即投影 profile、深浅色与 theme-color', (profile) => {
+    expect(runFirstPaint(profile)).toEqual({ profile, theme: themeForProfile(profile), color: THEME_COLOR[profile], stored: profile })
   })
 
-  it('内联 FOUC 脚本同时设置 data-ui-profile 与派生的 data-theme', () => {
-    expect(script).toContain("setAttribute('data-ui-profile', p)")
-    expect(script).toContain("setAttribute('data-theme', p === 'classic' ? 'light' : 'dark')")
+  it.each(['showcase', 'classic', 'auto'])('旧值 %s 映射为盛夏并写回', (legacy) => {
+    expect(runFirstPaint(legacy)).toEqual({ profile: 'summer', theme: 'dark', color: THEME_COLOR.summer, stored: 'summer' })
   })
 
-  it('非法值回退 showcase→dark(与 useUiProfile 默认一致)', () => {
-    expect(script).toContain("if (p !== 'classic' && p !== 'showcase') p = 'showcase'")
-    expect(script).toContain("setAttribute('data-theme', 'dark')")
+  it('没有存储或非法值：盛夏，不写入存储', () => {
+    expect(runFirstPaint(undefined)).toMatchObject({ profile: 'summer', theme: 'dark', stored: null })
+    expect(runFirstPaint('legacy')).toMatchObject({ profile: 'summer', theme: 'dark', stored: 'legacy' })
   })
 
-  it('首屏不新增独立主题状态(只有 wotb-ui-profile 一个 key)', () => {
-    expect(script).toContain("localStorage.getItem('wotb-ui-profile')")
+  it('静态默认与首屏 loader 底色覆盖四套主题；只有 wotb-ui-profile 一个 key', () => {
+    expect(html).toContain('data-ui-profile="summer"')
+    for (const profile of UI_PROFILES) expect(html).toContain(`html[data-ui-profile="${profile}"]{`)
+    expect(html).toMatch(/html\[data-ui-profile="winter"\]\{color-scheme:light;/)
     expect(script).not.toContain("'wotb-theme'")
-    expect(html).not.toMatch(/data-theme="[^"]*"\s+data-theme/)
   })
 
   it('不把 script 内容里的非结束标签当成结束标签', () => {

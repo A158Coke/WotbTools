@@ -1,10 +1,11 @@
 import { Page } from './browser-page.mjs'
-import { measureOcclusion, measureReachability, measureTouchTargets } from './browser-occlusion.mjs'
-import { COMPACT_SHORTCUT_ITEMS, COMPACT_TAB_ITEMS, primaryNavItems } from '../src/app/navigation.js'
+import { measureOcclusion, measureReachability, measureTouchTargets, measureViewportSafety } from './browser-occlusion.mjs'
+import { primaryNavItems } from '../src/app/navigation.js'
 
-export const SHELL_OVERLAY_SCENARIOS = ['showcase', 'classic'].flatMap(profile => [
+export const SHELL_OVERLAY_SCENARIOS = ['summer', 'winter'].flatMap(profile => [
   { width: 390, height: 844, touch: true },
   { width: 740, height: 360, touch: true },
+  { width: 844, height: 340, touch: true },
   { width: 1024, height: 768, touch: true },
   { width: 1440, height: 900, touch: false },
 ].map(size => ({ ...size, profile, name: `shell-overlay-${profile}-${size.width}x${size.height}` })))
@@ -36,6 +37,8 @@ export async function runShellOverlayScenario(env, scenario) {
 
   async function tap(selector) {
     await page.callWith((sel) => document.querySelector(sel).scrollIntoView({ block: 'center', inline: 'nearest' }), selector)
+    // 顶栏随滚动收起 / 出现（L5）在下一帧才开始过渡：先等两帧，再等过渡落定
+    await page.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
     await page.animationsSettled()
     const reach = await measureReachability(page, { options: [selector], touch: scenario.touch })
     check(reach.sampled > 0, `${selector}: no hit-test samples`)
@@ -57,8 +60,9 @@ export async function runShellOverlayScenario(env, scenario) {
     }
   }
   async function walkNavigation() {
-    const tabBar = await page.evaluate('!!document.querySelector("[data-testid=app-tab-bar]")')
-    if (!tabBar) {
+    const drawerShell = await page.evaluate('!!document.querySelector("[data-testid=nav-menu]")')
+    check(await page.evaluate('!document.querySelector("[data-testid=app-tab-bar]")'), 'bottom tab bar must not render (L1)')
+    if (!drawerShell) {
       for (const item of primaryNavItems('127.0.0.1').filter(entry => entry.id !== 'more')) {
         await tap(`[data-testid=nav-${item.id}]`)
         await viewIs(item.view)
@@ -66,23 +70,24 @@ export async function runShellOverlayScenario(env, scenario) {
       }
       return
     }
-    check(await page.evaluate('document.querySelectorAll("[data-testid=app-tab-bar] .tab").length') === COMPACT_TAB_ITEMS.length, 'compact tab count must follow COMPACT_TAB_ITEMS')
-    check(await page.evaluate(`[...document.querySelectorAll('[data-testid=app-tab-bar] .tab')].every(tab => tab.getAttribute('aria-label').includes(tab.querySelector('.tab-label').textContent.trim()))`), 'tab accessible name must contain its visible label')
-    for (const item of COMPACT_TAB_ITEMS) {
-      await tap(`[data-testid=tab-${item.id}]`)
+    // 抽屉外壳：每个栏目都经「菜单 → 抽屉 → 栏目」真实点击到达，导航后抽屉关闭、焦点回到菜单按钮
+    const panel = '[data-testid=nav-drawer-panel]'
+    for (const item of primaryNavItems('127.0.0.1')) {
+      await tap('[data-testid=nav-menu]')
+      await page.waitForValue(`!!document.querySelector(${JSON.stringify(panel)})`, Boolean, { label: 'drawer open' })
+      await tap(`${panel} [data-testid=nav-${item.id}]`)
       await viewIs(item.view)
-      await isCurrent(`[data-testid=tab-${item.id}]`)
-    }
-    for (const item of COMPACT_SHORTCUT_ITEMS) {
-      await tap('[data-testid=tab-more]')
-      await page.waitForValue(`!!document.querySelector("[data-testid=more-shortcut-${item.id}]")`, Boolean, { label: `shortcut ${item.id}` })
-      await tap(`[data-testid=more-shortcut-${item.id}]`)
-      await viewIs(item.view)
-      await isCurrent('[data-testid=tab-more]')
+      await page.waitForValue(`!document.querySelector(${JSON.stringify(panel)})`, Boolean, { label: `drawer closed after ${item.id}` })
+      await tap('[data-testid=nav-menu]')
+      await page.waitForValue(`!!document.querySelector(${JSON.stringify(panel)})`, Boolean, { label: 'drawer reopen' })
+      await isCurrent(`${panel} [data-testid=nav-${item.id}]`)
+      await env.chrome.client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, sessionId)
+      await env.chrome.client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, sessionId)
+      await page.waitForValue(`!document.querySelector(${JSON.stringify(panel)})`, Boolean, { label: 'drawer closed on Escape' })
+      check(await page.evaluate('document.activeElement?.dataset.testid === "nav-menu"'), `Esc did not restore menu focus (${item.id})`)
     }
     await tap('[data-testid=app-top-bar] .brand')
     await viewIs('replay')
-    await isCurrent('[data-testid=tab-replay]')
   }
 
   try {
@@ -95,10 +100,10 @@ export async function runShellOverlayScenario(env, scenario) {
       check(touch.scanned > 0, 'shell touch sweep must not be empty')
       failures.push(...touch.failures)
     }
-    const mobile = scenario.width < 768
+    const mobile = scenario.width < 768 || (scenario.touch && scenario.height <= 520)
     if (mobile) {
       const occlusion = await measureOcclusion(page, {
-        primary: '[data-testid=more-page] .page-header', persistent: ['[data-testid=app-top-bar]', '[data-testid=app-tab-bar]'],
+        primary: '[data-testid=more-page] .page-header', persistent: ['[data-testid=app-top-bar]'],
       })
       check(!!occlusion.primary, 'more page primary region absent')
       failures.push(...occlusion.failures)
@@ -152,4 +157,54 @@ export async function runShellOverlayScenario(env, scenario) {
     await env.chrome.client.send('Target.closeTarget', { targetId })
   }
   return { name: scenario.name, failures: [...failures, ...page.consoleErrors], viewport: `${scenario.width}x${scenario.height}` }
+}
+
+/**
+ * 小屏五视口（design-language §9 L6）：Android 360×740 / 412×839、iPhone Safari 390×664 / 375×553、
+ * iPhone 横屏 844×340，各自带设备安全区。逐页从顶到底滚动扫查，0 遮挡、0 安全区违规、无横向溢出。
+ * 工作台（回放 / 装甲查看器 / 科技树 / 地图）各自的门禁另外覆盖它们的场景几何。
+ */
+export const MOBILE_VIEWPORTS = Object.freeze([
+  { id: 'android-360', width: 360, height: 740, insets: { bottom: 24 } },
+  { id: 'android-412', width: 412, height: 839, insets: { bottom: 24 } },
+  { id: 'iphone-390', width: 390, height: 664, insets: { top: 47, bottom: 34 } },
+  { id: 'iphone-se', width: 375, height: 553, insets: { top: 20 } },
+  { id: 'iphone-land', width: 844, height: 340, insets: { left: 47, right: 47, bottom: 21 } },
+])
+const MOBILE_PAGES = ['more', 'hof', 'agent-tankopedia', 'tournament-points', 'league-broadcasts', 'history', 'contact', 'sponsor', 'android', 'rating-docs', 'profile']
+export const MOBILE_PAGE_SCENARIOS = MOBILE_VIEWPORTS.map(viewport => ({ ...viewport, touch: true, name: `mobile-pages-${viewport.id}-${viewport.width}x${viewport.height}` }))
+
+export async function runMobilePageScenario(env, scenario) {
+  const { sessionId, targetId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  const failures = []
+  await page.enable()
+  await env.chrome.client.send('Page.addScriptToEvaluateOnNewDocument', {
+    source: `localStorage.setItem('wotb-lang','zh')`,
+  }, sessionId)
+  try {
+    await page.emulate(scenario)
+    const insets = { top: 0, right: 0, bottom: 0, left: 0, ...scenario.insets }
+    await env.chrome.client.send('Emulation.setSafeAreaInsetsOverride', { insets }, sessionId)
+    for (const view of MOBILE_PAGES) {
+      await page.goto(`${env.origin}/?view=${view}&ws-auth=0`)
+      await page.waitForValue('!!document.querySelector("[data-testid=app-top-bar]") && !document.querySelector(".view-loading")', Boolean, { label: `${view} ready` })
+      await page.animationsSettled()
+      const seen = new Set()
+      for (let step = 0; step < 40; step += 1) {
+        await page.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        await page.animationsSettled()
+        const probe = await measureViewportSafety(page, { insets, chrome: ['[data-testid=app-top-bar]'] })
+        for (const failure of probe.failures) if (!seen.has(failure)) { seen.add(failure); failures.push(`${view}: ${failure}`) }
+        if (probe.scrollWidth > probe.viewport + 1) failures.push(`${view}: 横向溢出 ${probe.scrollWidth} > ${probe.viewport}`)
+        const done = await page.evaluate(`(() => { const before = scrollY; scrollBy(0, Math.round(innerHeight * 0.6)); return scrollY === before })()`)
+        if (done) break
+      }
+    }
+  } catch (error) {
+    failures.push(error.message, ...await page.diagnose())
+  } finally {
+    await env.chrome.client.send('Target.closeTarget', { targetId })
+  }
+  return { name: scenario.name, failures: [...new Set(failures)], viewport: `${scenario.width}x${scenario.height}` }
 }

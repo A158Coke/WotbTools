@@ -40,7 +40,7 @@
 .tournament-stat dt { font: var(--type-caption); color: var(--color-text-secondary); }
 .tournament-stat dd { margin: 0; font: var(--type-h1); color: var(--color-accent-text); font-variant-numeric: tabular-nums; }
 .tournament-stat dd span { font: var(--type-h3); color: var(--color-text-secondary); }
-.tournament-board-grouped .tournament-table-wrap { max-block-size: calc(100dvh - var(--header-h) - max(var(--space-12), var(--tabbar-h))); border: var(--border-width) solid var(--color-border-subtle); border-radius: var(--radius-md); }
+.tournament-board-grouped .tournament-table-wrap { max-block-size: calc(100dvh - var(--header-h) - var(--space-12)); border: var(--border-width) solid var(--color-border-subtle); border-radius: var(--radius-md); }
 .tournament-board-grouped .tournament-table-wrap:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 .tournament-board-grouped .tournament-table th, .tournament-board-grouped .tournament-table td { border-inline-end: var(--border-width) solid var(--color-border-subtle); }
 .tournament-board-grouped .tournament-table thead th { box-sizing: border-box; z-index: var(--table-z-head); text-align: center; }
@@ -61,8 +61,8 @@
 .tournament-default-switch { display: inline-flex; align-items: center; gap: var(--space-3); min-height: calc(var(--control-h-lg) + var(--space-1)); padding: var(--space-1); border: 0; background: transparent; color: var(--color-text-primary); font: var(--type-body); text-align: start; cursor: pointer; }
 .tournament-default-switch:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); border-radius: var(--radius-md); }
 .tournament-default-switch:disabled { cursor: not-allowed; color: var(--color-text-tertiary); }
-.tournament-default-track { box-sizing: content-box; display: flex; flex: none; align-items: center; width: calc(var(--control-check) * 2 + var(--space-2)); padding: var(--space-1); border: 1px solid var(--color-border-strong); border-radius: var(--radius-full); background: var(--color-surface-3); }
-.tournament-default-thumb { width: var(--control-check); height: var(--control-check); border-radius: var(--radius-full); background: var(--color-text-primary); transition: transform var(--duration-fast); }
+.tournament-default-track { box-sizing: content-box; display: flex; flex: none; align-items: center; width: calc(var(--control-check) * 2 + var(--space-2)); padding: var(--space-1); border: 1px solid var(--color-border-strong); border-radius: var(--radius-full); corner-shape: round; background: var(--color-surface-3); }
+.tournament-default-thumb { width: var(--control-check); height: var(--control-check); border-radius: var(--radius-full); corner-shape: round; background: var(--color-text-primary); transition: transform var(--duration-fast); }
 .tournament-default-switch[aria-checked='true'] .tournament-default-track { background: var(--color-info); border-color: var(--color-info); }
 .tournament-default-switch[aria-checked='true'] .tournament-default-thumb { background: var(--color-surface-1); transform: translateX(calc(var(--control-check) + var(--space-2))); }
 
@@ -83,15 +83,9 @@
 .tournament-admin .tournament-default-switch { font: var(--type-caption); }
 .tournament-admin .tournament-default .tournament-actions:empty { display: none; }
 .tournament-admin .tournament-default > p { font: var(--type-caption); }
-.tournament-admin .tournament-accent-heading { margin: calc(-1 * var(--space-5)) calc(-1 * var(--space-5)) 0; padding: var(--space-4) var(--space-5); border-inline-start: var(--space-1) solid var(--color-accent); border-bottom: var(--border-width) solid var(--color-border-subtle); }
-.tournament-admin .tournament-accent-heading h2 { font: var(--type-h2); overflow-wrap: anywhere; }
 .tournament-admin .tournament-form-section { border-top: var(--border-width) solid var(--color-border-subtle); padding-top: var(--space-4); }
 .tournament-admin .tournament-event-form > .tournament-actions { justify-content: flex-end; border-top: var(--border-width) solid var(--color-border-subtle); padding-top: var(--space-4); }
-.tournament-admin .tournament-rule-day { display: grid; gap: var(--space-3); padding: var(--space-4); border-radius: var(--radius-md); background: var(--color-surface-2); min-width: 0; }
-.tournament-admin .tournament-rule-day h3 { font: var(--type-h3); }
-.tournament-admin .tournament-rule-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-3); }
-.tournament-admin .tournament-rule-grid input { font-variant-numeric: tabular-nums; }
-.tournament-admin .tournament-status { display: inline-flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-3); border: var(--border-width) solid var(--color-border-subtle); border-radius: var(--radius-full); background: var(--color-surface-2); color: var(--color-text-secondary); font: var(--type-caption); }
+.tournament-admin .tournament-status { display: inline-flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-3); border: var(--border-width) solid var(--color-border-subtle); border-radius: var(--radius-full); corner-shape: round; background: var(--color-surface-2); color: var(--color-text-secondary); font: var(--type-caption); }
 .tournament-admin .tournament-status.is-finalized { background: color-mix(in oklab, var(--color-success) 14%, var(--color-surface-1)); color: var(--color-success); }
 .tournament-admin .tournament-admin-summary { padding: var(--space-5); gap: var(--space-4); }
 .tournament-admin .tournament-admin-summary h2 { font: var(--type-h2); }
@@ -110,11 +104,98 @@
 @media (width < 768px) {
   .tournament-admin { gap: var(--space-4); }
   .tournament-admin .tournament-card { padding: var(--space-4); }
-  .tournament-admin .tournament-accent-heading { margin: calc(-1 * var(--space-4)) calc(-1 * var(--space-4)) 0; padding: var(--space-4); }
   .tournament-admin .tournament-toolbar { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; }
-  .tournament-admin .tournament-rule-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .tournament-admin .tournament-rule-day { padding: var(--space-3); }
   .tournament-admin .tournament-default-switch { width: 100%; }
   .tournament-admin .tournament-event-form > .tournament-actions { justify-content: flex-start; }
   .tournament-admin .app-button { white-space: normal; overflow-wrap: anywhere; }
+}
+
+/* Admin page header controls: the compact event picker and secondary page links. */
+.tournament-admin .page-header-actions { align-items: end; }
+.tournament-event-compact { flex: 0 1 calc(var(--form-field-min) * 2); }
+.tournament-header-link { display: inline-flex; align-items: center; min-height: var(--control-h-md); padding: 0 var(--space-2); border-radius: var(--radius-md); color: var(--color-accent-text); font-weight: 600; text-decoration: none; }
+.tournament-header-link:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+@media (hover: hover) { .tournament-header-link:hover { background: var(--color-surface-2); } }
+
+/* Sticky bottom bar shared by the statistics day actions and the rules save bar. */
+.tournament-sticky-bar { position: sticky; bottom: 0; z-index: var(--z-sticky); display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom)); border-top: var(--border-width) solid var(--color-border-subtle); background: var(--color-surface-2); box-shadow: var(--elevation-2); }
+.tournament-sticky-status { flex: 1 1 var(--form-field-min); min-width: 0; color: var(--color-text-secondary); overflow-wrap: anywhere; }
+
+/* Rules configuration: structure / source on the side, round-tabbed rank × day matrix on the right. */
+.tournament-config-layout { display: grid; grid-template-columns: minmax(0, calc(var(--form-field-min) * 2)) minmax(0, 1fr); gap: var(--space-5); align-items: start; }
+.tournament-config-side { display: grid; gap: var(--space-4); min-width: 0; }
+.tournament-config-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.tournament-config-fields .tournament-field-wide { grid-column: 1 / -1; }
+.tournament-config-event { font: var(--type-h3); overflow-wrap: anywhere; }
+.tournament-config-source { color: var(--color-text-primary); }
+.tournament-admin .tournament-rules-form { gap: 0; padding: 0; overflow: clip; }
+.tournament-rules-title { padding: var(--space-4) var(--space-5) 0; }
+.tournament-round-tabs { display: flex; gap: var(--space-1); padding: 0 var(--space-3); overflow-x: auto; overscroll-behavior-x: contain; border-bottom: var(--border-width) solid var(--color-border-subtle); }
+.tournament-round-tab { display: inline-flex; flex: none; align-items: center; gap: var(--space-2); min-height: var(--control-h-lg); padding: 0 var(--space-3); border: 0; border-bottom: calc(var(--border-width) * 2) solid transparent; background: transparent; color: var(--color-text-secondary); font: var(--type-body); cursor: pointer; }
+.tournament-round-tab[aria-selected='true'] { border-bottom-color: var(--color-accent); color: var(--color-accent-text); font-weight: 600; }
+.tournament-round-tab:focus-visible { outline: var(--focus-outline); outline-offset: calc(var(--focus-outline-offset) * -1); }
+.tournament-round-tab:disabled { cursor: not-allowed; }
+.tournament-round-badge { padding: 0 var(--space-2); border-radius: var(--radius-sm); background: var(--color-surface-3); color: var(--color-text-secondary); font: var(--type-caption); }
+.tournament-round-tab.is-incomplete .tournament-round-badge { background: color-mix(in oklab, var(--color-warning) 14%, var(--color-surface-1)); color: var(--color-warning); }
+@media (hover: hover) { .tournament-round-tab:not([aria-selected='true'], :disabled):hover { color: var(--color-text-primary); } }
+.tournament-rules-body { display: grid; gap: var(--space-3); padding: var(--space-4) var(--space-5); min-width: 0; }
+.tournament-rule-matrix { width: 100%; border-collapse: separate; border-spacing: 0 var(--space-2); font-variant-numeric: tabular-nums; }
+.tournament-rule-matrix th { padding: 0 var(--space-3) 0 0; color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; text-align: start; white-space: nowrap; }
+.tournament-rule-matrix tbody th { color: var(--color-text-primary); font: var(--type-body); font-weight: 600; }
+.tournament-rule-matrix td { min-width: calc(var(--form-field-min) / 2); padding: 0 var(--space-3) 0 0; }
+.tournament-rule-matrix input { box-sizing: border-box; width: 100%; min-height: var(--control-h-lg); padding: var(--space-1) var(--space-3); border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-surface-1); color: var(--color-text-primary); font: var(--type-body); font-variant-numeric: tabular-nums; }
+.tournament-rule-matrix input:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+.tournament-rule-matrix input.is-missing { border-color: var(--color-warning); background: color-mix(in oklab, var(--color-warning) 14%, var(--color-surface-1)); }
+.tournament-rule-matrix input.is-missing::placeholder { color: var(--color-warning); }
+.tournament-missing { margin: 0; padding-inline-start: var(--space-5); color: var(--color-warning); font: var(--type-caption); }
+.tournament-rules-form > .tournament-sticky-bar { justify-content: flex-end; }
+
+/* Statistics workflow: match-day strip, five-step progress, review-card grid and the day action bar. */
+.tournament-day-strip { display: flex; gap: var(--space-2); overflow-x: auto; overscroll-behavior-x: contain; padding-bottom: var(--space-1); }
+.tournament-day-chip { display: grid; flex: none; gap: var(--space-1); min-width: calc(var(--form-field-min) * .8); min-height: var(--control-h-lg); padding: var(--space-2) var(--space-3); border: var(--border-width) solid var(--color-border-subtle); border-radius: var(--radius-md); background: var(--color-surface-1); color: var(--color-text-primary); font: var(--type-body); text-align: start; cursor: pointer; }
+.tournament-day-chip[aria-pressed='true'] { border-color: var(--color-accent); background: color-mix(in oklab, var(--color-accent) 14%, var(--color-surface-1)); }
+.tournament-day-chip[aria-pressed='true'] strong { color: var(--color-accent-text); }
+.tournament-day-chip:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+.tournament-day-chip:disabled { cursor: not-allowed; }
+.tournament-day-status { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--color-text-tertiary); font: var(--type-caption); }
+.tournament-day-status::before { width: var(--space-2); height: var(--space-2); border-radius: var(--radius-full); corner-shape: round; background: currentcolor; content: ''; }
+.tournament-day-chip.is-finalized .tournament-day-status { color: var(--color-success); }
+.tournament-day-chip.is-draft .tournament-day-status, .tournament-day-chip.is-correction .tournament-day-status { color: var(--color-warning); }
+@media (hover: hover) { .tournament-day-chip:not([aria-pressed='true'], :disabled):hover { background: var(--color-surface-2); } }
+.tournament-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 0; padding: 0; overflow: hidden; border: var(--border-width) solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-surface-1); list-style: none; }
+.tournament-step { display: flex; align-items: center; gap: var(--space-3); min-width: 0; padding: var(--space-3); border-inline-end: var(--border-width) solid var(--color-border-subtle); color: var(--color-text-secondary); }
+.tournament-step:last-child { border-inline-end: 0; }
+.tournament-step.is-current { background: var(--color-surface-2); border-block-end: calc(var(--border-width) * 2) solid var(--color-accent); color: var(--color-text-primary); }
+.tournament-step.is-done { color: var(--color-text-primary); }
+.tournament-step-mark { display: inline-flex; flex: none; align-items: center; justify-content: center; width: var(--space-6); height: var(--space-6); border-radius: var(--radius-full); corner-shape: round; background: var(--color-surface-3); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 700; }
+.tournament-step.is-done .tournament-step-mark { background: color-mix(in oklab, var(--color-success) 14%, var(--color-surface-1)); color: var(--color-success); }
+.tournament-step.is-current .tournament-step-mark { background: var(--color-accent); color: var(--color-on-accent); }
+.tournament-step-text { display: grid; min-width: 0; }
+.tournament-step-text strong { overflow-wrap: anywhere; }
+.tournament-step-text span { color: var(--color-text-tertiary); font: var(--type-caption); overflow-wrap: anywhere; }
+.tournament-review-issues { color: var(--color-warning); }
+.tournament-review-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--column-panel-width)), 1fr)); gap: var(--space-3); align-items: start; }
+.tournament-group-card.is-issue, .tournament-group-card.is-newClan { border-color: color-mix(in oklab, var(--color-warning) 45%, var(--color-border-subtle)); }
+.tournament-group-card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.tournament-group-card-head h3 { min-width: 0; overflow-wrap: anywhere; }
+.tournament-review-badge { padding: 0 var(--space-2); border-radius: var(--radius-sm); background: var(--color-surface-3); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; white-space: nowrap; }
+.tournament-review-badge.is-issue, .tournament-review-badge.is-newClan { background: color-mix(in oklab, var(--color-warning) 14%, var(--color-surface-1)); color: var(--color-warning); }
+.tournament-review-badge.is-reviewed { background: color-mix(in oklab, var(--color-success) 14%, var(--color-surface-1)); color: var(--color-success); }
+.tournament-finalize-blocker { color: var(--color-warning); }
+.tournament-admin > .tournament-sticky-bar { margin-inline: calc(var(--gutter) * -1); border-radius: 0; }
+.tournament-review-bar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); }
+@media (width < 1200px) { .tournament-steps { grid-template-columns: repeat(auto-fit, minmax(var(--form-field-min), 1fr)); } .tournament-step { border-bottom: var(--border-width) solid var(--color-border-subtle); } }
+@media (width < 768px) {
+  .tournament-steps { display: flex; overflow-x: auto; }
+  .tournament-step { flex: none; min-width: calc(var(--form-field-min) * .9); }
+  .tournament-review-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (width < 1200px) { .tournament-config-layout { grid-template-columns: minmax(0, 1fr); } }
+@media (width < 768px) {
+  .tournament-event-compact { flex: 1 1 100%; }
+  .tournament-config-fields { grid-template-columns: minmax(0, 1fr); }
+  .tournament-rules-title { padding: var(--space-4) var(--space-4) 0; }
+  .tournament-rules-body { padding: var(--space-4); }
+  .tournament-sticky-bar { padding-inline: var(--space-4); }
+  .tournament-sticky-bar .app-button { flex: 1 1 auto; }
 }

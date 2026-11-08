@@ -148,7 +148,7 @@ const classes = computed(() => ({
 }
 .pb-hp-num { position: absolute; inset: 0; display: grid; place-items: center; color: var(--color-playback-label-text); font-variant-numeric: tabular-nums; }
 /* 等宽轨道：HP 容纳数值，reload 保持较细的分段状态。 */
-.pb-hp-bar, .reload-bar { border-radius: var(--radius-full); background: var(--color-playback-label-track); overflow: hidden; }
+.pb-hp-bar, .reload-bar { border-radius: var(--radius-full); corner-shape: round; background: var(--color-playback-label-track); overflow: hidden; }
 .pb-hp-bar { position: relative; width: var(--pb-label-hp-bar-width); height: var(--space-4); }
 .pb-hp-fill, .pb-hp-ghost { position: absolute; inset-block: 0; left: 0; background: currentColor; }
 .pb-hp-fill { transition: width var(--duration-base) linear; }

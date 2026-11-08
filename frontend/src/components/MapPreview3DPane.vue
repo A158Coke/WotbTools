@@ -347,7 +347,7 @@ watch(
 watch(annotationsVisible, pushAnnotationVisibility)
 watch(() => props.basesKind, pushBasesKind)
 watch(() => props.spawnPoints, pushSpawnPoints)
-// UI Profile 切换（showcase↔classic / auto 随系统，不 reload/remount）：2D 出生点
+// UI Profile 切换（四季主题切换，不 reload/remount）：2D 出生点
 // 随 CSS token 自动换色，3D 材质颜色是 build 时快照——必须显式原位刷新（内核
 // refreshSpawnColors 只重着色已有标记，不重建场景、不动相机）。
 watch(uiProfile, () => {
@@ -448,7 +448,7 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
 </script>
 
 <template>
-  <div ref="rootEl" class="map3d" :data-pane-ready="paneReady ? 'true' : undefined" data-testid="map-3d-pane">
+  <div ref="rootEl" class="map3d" data-scene-surface :data-pane-ready="paneReady ? 'true' : undefined" data-testid="map-3d-pane">
     <!-- 连通性不可用是环境事实，stage 不渲染（available 翻转后由 reconcile watcher 建场景）。
          注意 loading/error **不得**走模板分支：initScene 的 canvas append 在 loadMapOnly
          开跑时执行，分支切换会卸载 stage、把 canvas 丢进游离 DOM（矿井阵地空白页根因）。

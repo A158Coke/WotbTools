@@ -10,7 +10,7 @@
 
 import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import { nextTick } from 'vue'
+import { nextTick, ref } from 'vue'
 
 const i18n = vi.hoisted(() => ({ t: vi.fn((key) => key) }))
 const connectivityState = vi.hoisted(() => ({ state: null }))
@@ -71,10 +71,17 @@ function mkFile(name = 'cn.wotbreplay') {
 
 const baseOthers = { total_launches: 0, skipped_no_endpoint: 0, skipped_no_target_state: 0, muzzle_fallback: 0 }
 
+/** 新手教程表面（ONBOARDING_KEY）：compact 检视面板只在教程引导中出现，测试用它模拟引导态 */
+const guideSurfaces = {}
+const guideActive = ref(false)
+const guideHost = { guideActive, registerSurface: (id, surface) => { guideSurfaces[id] = surface } }
+function guideCompactInspector() { guideActive.value = true; guideSurfaces.shots?.setGuideInset(120) }
+afterEach(() => { guideActive.value = false })
+
 async function mountPane(props = {}) {
   const wrapper = mount(ReplayShotsPane, {
     props: { file: mkFile(), active: true, ...props },
-    global: { mocks: { $t: i18n.t } },
+    global: { mocks: { $t: i18n.t }, provide: { [ONBOARDING_KEY]: guideHost } },
     attachTo: document.body,
   })
   // 只有"应当解码"的场景才等终态（无文件 / 被阻断 / 未激活时不发解码）
@@ -353,10 +360,11 @@ describe('ReplayShotsPane Master–Detail 与可访问性', () => {
     wrapper.unmount()
   })
 
-  it('容器 < 600px → 检视面板整屏，打开时焦点进入面板，Esc 关闭', async () => {
+  it('容器 < 600px（教程引导中）→ 检视面板整屏，打开时焦点进入面板，Esc 关闭', async () => {
     parseAgentShotsFromBytes.mockResolvedValue(oneShot)
     const wrapper = await mountPane()
     observers.at(-1).emit(420)
+    guideCompactInspector()
     await nextTick()
     expect(wrapper.get('.shots-split').classes()).toContain('is-compact')
     await wrapper.get('[data-testid="shot-row-7"]').trigger('click')
@@ -413,6 +421,7 @@ describe('ReplayShotsPane compact 上一发 / 下一发', () => {
   async function mountCompact() {
     const wrapper = await mountPane()
     observers.at(-1).emit(420)
+    guideCompactInspector()
     await nextTick()
     return wrapper
   }
@@ -668,6 +677,55 @@ describe('ReplayShotsPane → 装甲查看器交接', () => {
     }],
     author_path: 'ok', author_eid: 100, others: baseOthers,
   }
+
+  it('compact（手机）：点一发直接进入射击复现，不弹检视面板', async () => {
+    parseAgentShotsFromBytes.mockResolvedValue(hitShot)
+    const navigate = vi.fn()
+    const wrapper = await mountPane({ navigate })
+    observers.at(-1).emit(420)
+    await nextTick()
+    await wrapper.get('[data-testid="shot-row-2"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="shot-inspector"]').exists()).toBe(false)
+    expect(navigate).toHaveBeenCalledWith({ query: expect.objectContaining({ view: 'agent-armor', shot: '2' }) })
+    wrapper.unmount()
+  })
+
+  it('compact（手机）离线：3D 不可用时退回本地射击详情，不丢失这一发', async () => {
+    parseAgentShotsFromBytes.mockResolvedValue(hitShot)
+    const navigate = vi.fn()
+    const wrapper = await mountPane({ navigate })
+    connectivityState.state.value = 'offline'
+    observers.at(-1).emit(420)
+    await nextTick()
+    await wrapper.get('[data-testid="shot-row-2"]').trigger('click')
+    await flushPromises()
+    expect(navigate).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="shot-inspector"]').exists()).toBe(true)
+    connectivityState.state.value = 'online'
+    wrapper.unmount()
+  })
+
+  it('compact（手机）点击后、导航前断网：第二次能力检查拒绝导航，退回本地射击详情', async () => {
+    parseAgentShotsFromBytes.mockResolvedValue(hitShot)
+    let finishQuery
+    shotViewerQuery.mockImplementationOnce(() => new Promise((resolve) => { finishQuery = resolve }))
+    const navigate = vi.fn()
+    const wrapper = await mountPane({ navigate })
+    observers.at(-1).emit(420)
+    await nextTick()
+    await wrapper.get('[data-testid="shot-row-2"]').trigger('click')
+    await flushPromises()
+    // 等待坦克数据期间不弹检视面板
+    expect(wrapper.find('[data-testid="shot-inspector"]').exists()).toBe(false)
+    connectivityState.state.value = 'offline'
+    finishQuery({ view: 'agent-armor', shot: '2' })
+    await flushPromises()
+    expect(navigate).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="shot-inspector"]').exists()).toBe(true)
+    connectivityState.state.value = 'online'
+    wrapper.unmount()
+  })
 
   it('命中弹：先交出射击数据，再把场景参数整个交给 router', async () => {
     parseAgentShotsFromBytes.mockResolvedValue(hitShot)
@@ -1001,6 +1059,7 @@ it('compact shot inspector traps Tab focus and returns focus when closed', async
   ], author_eid: 7 })
   const wrapper = await mountPane()
   observers.at(-1).emit(420)
+  guideCompactInspector()
   await nextTick()
   await wrapper.get('[data-testid="shot-row-1"]').trigger('click')
   await flushPromises()

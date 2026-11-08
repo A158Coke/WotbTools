@@ -76,7 +76,9 @@
     }
   },
   "nav": {
-    "maps": "地图"
+    "maps": "地图",
+    "openDrawer": "打开导航",
+    "closeDrawer": "关闭导航"
   },
   "mapPreview": {
     "title": "地图预览",
@@ -108,7 +110,10 @@
     },
     "basemapFailed": "底图加载失败",
     "controlsHint": "拖拽转视角 · WASD/QE 平移升降 · 滚轮调远近（手机横屏可用右侧竖条） · 「固定」模式拖拽绕中心旋转 · 右上角全屏 · 1–6 调速",
-    "controlsHint2d": "拖动平移 · 滚轮或双指缩放 · 右上角全屏"
+    "controlsHint2d": "拖动平移 · 滚轮或双指缩放 · 右上角全屏",
+    "kicker": "不需要回放文件",
+    "searchPlaceholder": "搜索地图",
+    "searchEmpty": "没有找到匹配的地图"
   },
   "app": {
     "title": "WoTBTools",
@@ -277,7 +282,9 @@
     "copied": "已复制",
     "hint": "复制号码/用户名后，到对应应用添加好友。",
     "report_title": "投诉与举报",
-    "report_body": "本页面同时作为 WotbTools 的问题反馈、投诉与举报渠道。如发现违法有害信息、账号滥用、安全问题或其他违规情况，可通过下方联系方式联系我们。收到投诉或举报后，我们将及时核实并处理。"
+    "report_body": "本页面同时作为 WotbTools 的问题反馈、投诉与举报渠道。如发现违法有害信息、账号滥用、安全问题或其他违规情况，可通过上方联系方式联系我们。收到投诉或举报后，我们将及时核实并处理。",
+    "fastestTitle": "最快的方式：站内反馈",
+    "fastestDesc": "直接写下问题或建议，可以附上截图，不用加好友"
   },
   "col_groups": {
     "identity": "身份",
@@ -347,9 +354,29 @@
       "DUPLICATE_OR_UNKNOWN_RECORDER": "已存在或无法识别录像者",
       "REPLAY_HASH_CONFLICT": "该战斗已绑定其他回放文件"
     },
-    "singleTab": "单场"
+    "singleTab": "单场",
+    "podium": "前三名",
+    "podiumRank": "第 {rank} 名",
+    "heroTotal": "收录记录"
   },
   "hofAdmin": {
+    "reviewQueue": "审核队列",
+    "reviewDetail": "审核详情",
+    "reviewBack": "返回队列",
+    "reviewPrev": "上一条",
+    "reviewNext": "下一条",
+    "reviewPosition": "第 {position} / {total} 条",
+    "reviewPick": "从左侧队列选择一条记录开始审核",
+    "reviewNoEvidence": "只有待审核的记录需要查看证据",
+    "reviewClaimed": "用户申报",
+    "reviewConfirmed": "管理员确认",
+    "reviewAfterApprove": "通过后记录",
+    "reviewDamage": "场均伤害",
+    "reviewBattles": "场次",
+    "reviewWinRate": "胜率",
+    "reviewAvg": "{vehicle} · 场均 {value}",
+    "reviewActions": "审核操作",
+    "reviewApproveNote": "通过后将按用户申报值生效",
     "login": "正在进入登录流程…",
     "deniedTitle": "无权限访问名人堂管理",
     "deniedHint": "需要 HoF-admin 或 wotbtools-admin 角色。角色由 Keycloak 管理员在 Admin Console 中授予。",
@@ -879,7 +906,9 @@
     "wgSyncRetry": "重试同步",
     "wgSyncing": "正在同步 Wargaming 账号",
     "verifyWithReplay": "用回放验证",
-    "verifyingReplay": "验证中…"
+    "verifyingReplay": "验证中…",
+    "settingsLink": "外观与反馈设置 →",
+    "submitLink": "提交新成绩 →"
   },
   "replay": {
     "no_files": "请先选择回放文件或文件夹",
@@ -1076,7 +1105,12 @@
   },
   "admin": {
     "title": "用户管理",
-    "hint": "管理后台 - 只读 + 删除，不可修改用户信息。",
+    "hint": "不能修改用户信息。删除会同时移除 WotBTools 与 Keycloak 账号。",
+    "kicker": "管理 · 只读与删除",
+    "searchLabel": "搜索用户",
+    "deleteUser": "删除用户",
+    "deleteHint": "删除前需输入 DELETE 确认",
+    "listSection": "列表信息",
     "search": "搜索 keycloakUserId / displayName / wotbNickname / accountId",
     "searchBtn": "搜索",
     "loading": "加载中...",
@@ -1148,13 +1182,10 @@
   },
   "home": {
     "sponsorCta": "去赞助",
-    "takeItTitle": "带走它，也养着它",
-    "androidTitle": "装进手机",
-    "androidDesc": "同一个平台的 Android 版：三维复盘、装甲查看与名人堂，离开电脑照样能看。",
-    "sponsorDesc": "没有广告，没有会员。服务器和域名由玩家自愿赞助撑着。",
-    "heroLine1": "不止是回放工具",
-    "heroLine2": "是闪击战的主场",
-    "heroSubtitle": "从单场回放的三维复盘，到全服名人堂、联赛积分与直播回放——WotBTools 是玩家自己搭的闪击战平台，网页与 Android 都能用。",
+    "sponsorDesc": "没有广告，没有会员。服务器和域名靠玩家赞助撑着。",
+    "heroLine1": "回放 · 排行 · 联赛",
+    "heroLine2": "一站式闪击战平台",
+    "heroSubtitle": "上传回放就能复盘；名人堂、联赛积分和直播回放随时查看。",
     "showcaseTitle": "能做什么",
     "showcasePlaybackTitle": "整场战斗，三维重建",
     "showcasePlaybackDesc": "地形、车辆、血量、占点与行进路线——用一个回放文件还原每一秒。",
@@ -1174,24 +1205,35 @@
     "replayDesc": "上传 .wotbreplay 回放文件，提取战斗数据并导出 Excel。",
     "highestDamageRecord": "最高伤害记录",
     "available": "可用",
-    "sponsorTitle": "支持项目",
+    "sponsorTitle": "赞助 WotbTools",
     "footer": "WoTBTools - 社区工具，非 Wargaming 官方产品",
     "icpFiling": "闽ICP备2026036303号-1",
     "publicSecurityFiling": "闽公网安备35018202000555号",
-    "wargamingDisclaimer": "WotbTools 是非官方项目，与 Wargaming 无关联，也未获其认可。"
+    "wargamingDisclaimer": "WotbTools 是非官方项目，与 Wargaming 无关联，也未获其认可。",
+    "feedbackDesc": "遇到问题或有建议，直接告诉我们",
+    "calloutRicochet": "跳弹",
+    "calloutPenetration": "穿深",
+    "calloutChance": "击穿概率"
   },
   "sponsor": {
     "eyebrow": "WOTBTOOLS · SUPPORT",
-    "title": "支持 WoTBTools",
+    "title": "赞助 WotbTools",
     "intro": "如果这个项目对你有帮助，可以自愿支持服务器与维护成本。",
     "aboutTitle": "关于赞助",
-    "description": "WoTBTools 是个人维护的免费工具。如果这个项目帮到了你，可以自愿赞助，用于服务器和维护成本。",
-    "voluntary": "赞助完全自愿，不设置固定金额，不影响任何功能使用，也不会解锁额外服务。",
     "note": "请勿在付款备注中填写敏感个人信息。",
     "methodsTitle": "扫码赞助",
     "unconfigured": "赞助方式暂未配置",
     "alipay": "支付宝",
-    "wechat": "微信支付"
+    "wechat": "微信支付",
+    "reasonVoluntary": "完全自愿",
+    "reasonVoluntaryDesc": "不设固定金额，给多少都行，不给也照常使用。",
+    "reasonNothingUnlocked": "不解锁任何东西",
+    "reasonNothingUnlockedDesc": "没有会员和付费功能，赞助与否功能完全一样。",
+    "reasonServers": "用在服务器和维护上",
+    "reasonServersDesc": "服务器、域名、存储与回放解析的算力。",
+    "saveHint": "手机没法扫自己的屏幕：先保存二维码，再到支付宝 / 微信「扫一扫」里选相册。",
+    "saveHintApp": "手机没法扫自己的屏幕：长按二维码保存，再到支付宝 / 微信「扫一扫」里选相册。",
+    "save": "保存二维码到相册"
   },
   "recon": {
     "nav": "AI 复盘",
@@ -1213,7 +1255,10 @@
       "reviewFocus": "重点复查",
       "highContributors": "高贡献者",
       "unknownPlayer": "未知玩家",
-      "unknownTank": "未知坦克"
+      "unknownTank": "未知坦克",
+      "viewIn2d": "在 2D 中查看 →",
+      "episodesCount": "关键回合 {count}",
+      "trainingCount": "训练建议 {count}"
     },
     "capability_limited": "AI 复盘基于受限时间轴（部分时间信息缺失），已降级到较粗的证据层级，不猜测未观测事实",
     "playback": {
@@ -1498,7 +1543,8 @@
     "ai_projection_failed": "这场回放解析失败，无法进行 AI 复盘",
     "pane_load_failed": "这个面板加载不出来，通常是页面版本已更新。重新加载即可拿到新版本；若只是网络中断，可先重试。",
     "pane_reload": "重新加载",
-    "pane_retry": "重试"
+    "pane_retry": "重试",
+    "rotate_view_data": "看赛后数据"
   },
   "league": {
     "title": "League Rating",
@@ -2048,5 +2094,69 @@
     "replay": "三维回放",
     "tanks": "坦克百科",
     "shots": "射击复现"
+  },
+  "rotate": {
+    "title": "把手机横过来",
+    "body": "这个页面只在横屏下使用，场景和控件才放得下。横过来就会继续。",
+    "hintBrowser": "浏览器里请先关闭方向锁定。",
+    "hintApp": "App 会自动切到横屏。"
+  },
+  "armor": {
+    "result_details": "判定结果，点开看逐层明细"
+  },
+  "research": {
+    "all_types": "全部",
+    "type_filter": "车种",
+    "no_type_match": "这个国家没有该车种。"
+  },
+  "feedbackPrefs": {
+    "title": "反馈与提示",
+    "haptics": "按键震动",
+    "hapticsHint": "Android 上切换、确认和出错时轻震一下",
+    "sound": "按键音效",
+    "soundHint": "主要操作、完成和出错时的短音；系统减少动态效果时不播放"
+  },
+  "notifications": {
+    "title": "通知",
+    "unread": "{count} 条未读",
+    "bellUnread": "通知，{count} 条未读",
+    "readAll": "全部已读",
+    "empty": "还没有通知。回放解析、AI 复盘和提交结果完成后会出现在这里。",
+    "replayParsed": "回放解析完成",
+    "replayParsedBody": "{count} 场可查看赛后数据",
+    "aiReview": "AI 复盘已生成",
+    "appUpdate": "新版本可用",
+    "appUpdateBody": "Android {version} 已发布",
+    "submitted": "名人堂记录已提交",
+    "submittedBody": "等待审核"
+  },
+  "toast": {
+    "copied": "已复制",
+    "feedbackSent": "反馈已发送，谢谢"
+  },
+  "more": {},
+  "tournament": {
+    "heroDescription": "各军团逐比赛日积分与总分，数据来自赛事方公开结果"
+  },
+  "tankopedia": {
+    "heroCount": "收录车辆"
+  },
+  "android": {
+    "heroTitle": "装进手机，随时复盘",
+    "downloadApk": "下载 APK",
+    "wifiHint": "安装包较大，建议连 Wi-Fi 下载",
+    "stepsTitle": "三步装好",
+    "step1": "下载 APK 安装包",
+    "step2": "按系统提示允许安装来自浏览器的应用",
+    "step3": "打开 App，用 Wargaming 或 QQ 登录",
+    "noReleaseNotes": "这一版没有写更新说明",
+    "verifyFile": "校验文件（可选）"
+  },
+  "doc": {
+    "copy": "复制"
+  },
+  "leagueBroadcasts": {
+    "server": "区服",
+    "season": "赛季"
   }
 }

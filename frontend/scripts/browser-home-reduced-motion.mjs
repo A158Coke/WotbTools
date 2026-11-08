@@ -20,7 +20,7 @@ import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 
 const DESKTOP_WINDOW = '--window-size=1440,900'
 const DESKTOP_POINTER = '--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4'
-const HOME_READY = `document.querySelectorAll('.home-shot').length >= 4 && !!document.querySelector('.home-hero-line')`
+const HOME_READY = `document.querySelectorAll('.home-feature, .home-card').length >= 4 && !!document.querySelector('.home-hero-line')`
 
 /** 跨进程序列化执行：返回首页关键元素在真实浏览器里的 computed motion 状态。 */
 function homeMotionProbe() {
@@ -53,9 +53,9 @@ function homeMotionProbe() {
     accent: read('.home-hero-line.is-accent'),
     subtitle: read('.home-hero-subtitle'),
     heroInner: read('.home-hero-inner'),
-    shot: read('.home-shot'),
-    figure: read('.home-shot-figure'),
-    image: read('.home-shot-figure img'),
+    shot: read('.home-card'),
+    figure: read('.home-card-figure'),
+    image: read('.home-card-figure img'),
     decor: read('.home-hero-decor'),
     ctaArrow: read('.home-cta svg'),
   }
@@ -83,19 +83,27 @@ async function openHome(env, motion) {
   await page.goto(`${env.origin}/`)
   await page.waitForValue(HOME_READY, (ready) => ready === true, { label: 'homepage showcase ready' })
   // 图片加载完成后再测 hover，避免布局在 hover 坐标采集中变化。
+  // 卡片截图是 lazy 且位于第二屏之后：先滚到卡片区触发加载，再回到顶部。
   await page.waitForValue(
-    `[...document.querySelectorAll('.home-shot-figure img')].every((img) => img.complete)`,
+    `(() => { document.querySelector('.home-cards')?.scrollIntoView({ block: 'center' }); return [...document.querySelectorAll('.home-card-figure img')].every((img) => img.complete) })()`,
     (ready) => ready === true,
     { label: 'showcase images loaded' },
   )
+  await page.evaluate('window.scrollTo(0, 0)')
   return { page, targetId }
 }
 
 async function hover(page, selector) {
-  const point = await page.evaluate(`(() => {
+  // 滚动回首屏后，进场动画（document timeline，位移 --home-rise-travel）可能重新开始或仍在跑：
+  // 先等这些有限动画结束、目标位置稳定，再取中心点；否则鼠标落在动画前的位置，:hover 打不中。
+  const point = await page.evaluate(`(async () => {
     const element = document.querySelector(${JSON.stringify(selector)})
     if (!element) return null
     element.scrollIntoView({ block: 'center', inline: 'nearest' })
+    const frame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()))
+    await frame()
+    await Promise.all(document.getAnimations().filter((animation) => animation.timeline === document.timeline && Number.isFinite(animation.effect?.getComputedTiming().endTime)).map((animation) => animation.finished.catch(() => {})))
+    await frame()
     const rect = element.getBoundingClientRect()
     return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
   })()`)
@@ -122,7 +130,7 @@ async function runReducedMotion(env) {
     check(failures, durationSeconds(before.image?.transitionDuration) === 0, `reduce: screenshot image transition must be zero (got ${before.image?.transitionDuration})`)
     check(failures, durationSeconds(before.figure?.transitionDuration) === 0, `reduce: screenshot figure transition must be zero (got ${before.figure?.transitionDuration})`)
 
-    await hover(page, '.home-shot-figure')
+    await hover(page, '.home-card-figure')
     const afterShot = await page.probe(homeMotionProbe)
     check(failures, afterShot.figure?.transform === before.figure?.transform, 'reduce: screenshot hover must not lift the figure')
     check(failures, afterShot.image?.transform === before.image?.transform, 'reduce: screenshot hover must not zoom the image')
@@ -138,7 +146,7 @@ async function runReducedMotion(env) {
         scroller.scrollTop = scroller.scrollHeight
         return {
           decor: getComputedStyle(document.querySelector('.home-hero-decor')).transform,
-          shot: getComputedStyle(document.querySelector('.home-shot')).animationName,
+          shot: getComputedStyle(document.querySelector('.home-card')).animationName,
         }
       })()`,
       (state) => state && state.shot === 'none' && state.decor === 'none',
@@ -161,7 +169,6 @@ async function runMotionEnabled(env) {
     check(failures, hasAnimation(before.line), 'no-preference: hero line must keep an entrance animation')
     check(failures, hasAnimation(before.subtitle), 'no-preference: hero subtitle must keep an entrance animation')
     check(failures, before.shot?.animationName !== 'none', 'no-preference: showcase block must keep its reveal animation')
-    check(failures, hasTransition(before.figure), 'no-preference: screenshot figure must keep its hover transition')
     check(failures, hasTransition(before.image), 'no-preference: screenshot image must keep its hover transition')
     check(failures, before.image?.transform === 'none', `no-preference: image must start untransformed (got ${before.image?.transform})`)
     if (before.supports.viewTimeline) {
@@ -172,9 +179,9 @@ async function runMotionEnabled(env) {
       check(failures, (before.decor?.animationRange || '').includes('640px'), `no-preference: hero parallax range token must resolve (got ${before.decor?.animationRange})`)
     }
 
-    await hover(page, '.home-shot-figure')
+    await hover(page, '.home-card-figure')
     await page.waitForValue(
-      `getComputedStyle(document.querySelector('.home-shot-figure img')).transform`,
+      `getComputedStyle(document.querySelector('.home-card-figure img')).transform`,
       (transform) => transform !== 'none',
       { timeout: 3000, label: 'no-preference: screenshot hover zoom' },
     )

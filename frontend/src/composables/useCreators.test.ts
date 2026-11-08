@@ -42,6 +42,18 @@ describe('public creator directory ownership', () => {
       expect(router.currentRoute.value.query.keep).toBe('yes'); expect(router.currentRoute.value.hash).toBe('#list')
     } finally { host.unmount() }
   })
+  it.each([[true, 'UP'], [false, 'VIDEO']] as const)('loads the default tab on the combined recommendations entry (UP visible: %s)', async (upVisible, defaultType) => {
+    const f = fixture(); f.scope.stop()
+    const route = reactive({ path: '/', query: { view: 'recommendations' } as Record<string, string>, hash: '' }), scope = effectScope()
+    const availability = { ...f.availability, typeVisible: (value: string) => value === 'VIDEO' || upVisible }
+    for (const type of ['UP', 'VIDEO'] as const) {
+      f.api.listRecommendations.mockClear()
+      scope.run(() => useCreators({ type, api: f.api, auth: f.auth, route, router: f.router, availability, network: () => ({ available: true }) } as any))
+      await flushPromises()
+      expect(f.api.listRecommendations.mock.calls.length > 0).toBe(type === defaultType)
+    }
+    scope.stop()
+  })
   it('never lets a late UP list replace a newer video list', async () => {
     const f = fixture(); await flushPromises()
     let done!: (value: typeof card[]) => void

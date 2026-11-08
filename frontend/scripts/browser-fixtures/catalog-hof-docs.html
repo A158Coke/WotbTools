@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="dark" data-ui-profile="showcase">
+<html lang="zh-CN" data-theme="dark" data-ui-profile="summer">
 <head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" /><title>筛选与文档可达性夹具</title></head>
 <body>
 <div id="app"></div>
@@ -21,7 +21,6 @@
   import '../../src/styles/playback-shared.css'
   import '../../src/styles/playback-mobile.css'
   import '../../src/styles/playback-workspace.css'
-  import '../../src/styles/classic-profile.css'
   import { messages } from '../../src/locales/messages.js'
   import { useConnectivity } from '../../src/composables/useConnectivity.js'
   import { shellIconUrl } from '../../src/utils/researchCatalog.js'
@@ -42,9 +41,9 @@
   import VehiclePicker from '../../src/components/VehiclePicker.vue'
 
   const query = new URLSearchParams(location.search)
-  const profile = query.get('profile') === 'classic' ? 'classic' : 'showcase'
+  const profile = query.get('profile') === 'winter' ? 'winter' : 'summer'
   document.documentElement.dataset.uiProfile = profile
-  document.documentElement.dataset.theme = profile === 'classic' ? 'light' : 'dark'
+  document.documentElement.dataset.theme = profile === 'winter' ? 'light' : 'dark'
   const mode = query.get('mode') || 'catalog'
   const tanks = [
     { id: 9001, name: '测试重坦', tier: 10, nation: 'germany', type: 'heavyTank', aliases: [], hp: 2000, pen_max: 250 },

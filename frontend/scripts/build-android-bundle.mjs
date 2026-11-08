@@ -187,8 +187,6 @@ async function main() {
   rmSync(DIST, { recursive: true, force: true })
   await build({ mode: 'android', logLevel: 'info' })
   if (!existsSync(join(DIST, 'index.html'))) fail('vite build 未产出 index.html')
-  // Web image build also installs this public static sponsor asset.
-  cpSync(join(FRONTEND, 'public/sponsor-bg.webp'), join(DIST, 'sponsor-bg.webp'))
 
   // 3) 复用唯一实现校验 commit-addressed WASM 产物。
   execFileSync(process.execPath, [VERIFY, '--dist', DIST, '--pin', PIN_PATH], { stdio: 'inherit' })

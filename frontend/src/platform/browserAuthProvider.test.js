@@ -85,11 +85,19 @@ describe('browserAuthProvider', () => {
     expect(provider.token()).toBe('access-token')
   })
 
+  it('login 把站点当前语言作为 ui_locales（keycloak-js locale）传给登录页', async () => {
+    window.localStorage.setItem('wotb-lang', 'en')
+    const provider = createBrowserAuthProvider()
+    await provider.login('https://wotbtools.com/')
+    expect(kcLogin).toHaveBeenLastCalledWith({ redirectUri: 'https://wotbtools.com/', locale: 'en' })
+    window.localStorage.removeItem('wotb-lang')
+  })
+
   it('login(redirectUri) / logout(redirectUri) 原样透传 redirect 参数', async () => {
     const provider = createBrowserAuthProvider()
 
     await expect(provider.login('https://wotbtools.com/?view=profile')).resolves.toBe(true)
-    expect(kcLogin).toHaveBeenCalledWith({ redirectUri: 'https://wotbtools.com/?view=profile' })
+    expect(kcLogin).toHaveBeenCalledWith({ redirectUri: 'https://wotbtools.com/?view=profile', locale: 'zh' })
 
     await provider.logout('https://wotbtools.com/profile')
     expect(kcLogout).toHaveBeenCalledWith({ redirectUri: 'https://wotbtools.com/profile' })
@@ -109,7 +117,7 @@ describe('browserAuthProvider', () => {
     }
     expect(kcLogin).not.toHaveBeenCalled()
     await expect(provider.login('https://wotbtools.com/?view=profile')).resolves.toBe(true)
-    expect(kcLogin).toHaveBeenCalledWith({ redirectUri: 'https://wotbtools.com/?view=profile' })
+    expect(kcLogin).toHaveBeenCalledWith({ redirectUri: 'https://wotbtools.com/?view=profile', locale: 'zh' })
   })
 
   it('ensureToken 未登录时不刷新，直接 false', async () => {

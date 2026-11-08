@@ -173,10 +173,7 @@ describe('PlayerRatingRadar', () => {
     const comp = readFileSync(resolve(process.cwd(), 'src/components/PlayerRatingRadar.vue'), 'utf8')
     expect(comp).toContain('var(--border-light-strong)')
     const tokens = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8')
-    const showcase = readFileSync(resolve(process.cwd(), 'src/styles/showcase.css'), 'utf8')
-    const classic = readFileSync(resolve(process.cwd(), 'src/styles/classic-profile.css'), 'utf8')
-    expect(tokens).toContain('--border-light-strong:')
-    expect(showcase).toContain('--border-light-strong:')
-    expect(classic).toContain('--border-light-strong:')
+    // 旧变量只在 tokens.css 定义一次，并投影到当前主题的语义 token（四季主题自动跟随）
+    expect(tokens).toContain('--border-light-strong: var(--color-border-strong)')
   })
 })

@@ -21,13 +21,17 @@ describe('RatingDocsPage', () => {
     const { wrapper } = mountPage()
     expect(wrapper.find('.rating-docs-page').exists()).toBe(true)
     expect(wrapper.find('[data-testid="docs-back-btn"]').exists()).toBe(true)
-    const md = wrapper.find('.markdown-content')
+    // 与历史 / 技术演进同一文档模板：有目录、正文在 .doc-body
+    expect(wrapper.find('[data-testid="doc-toc"]').exists()).toBe(true)
+    const md = wrapper.find('.doc-body')
     expect(md.exists()).toBe(true)
     expect(md.text()).toContain('League Rating V6')
     expect(md.text()).toContain('Research Data Status')
     expect(md.text()).toContain('Team V6 Rating')
     expect(md.text()).toContain('(T + 475) / (N + 1)')
     expect(md.text()).not.toContain('Mandatory Scope-Risk Checkpoint')
+    // CommonMark：源文件里的硬换行不再变成 <br>
+    expect(md.find('br').exists()).toBe(false)
   })
 
   it('返回按钮跳转回回放解析视图', async () => {

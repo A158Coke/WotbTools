@@ -8,15 +8,11 @@
 
 | 资产 | 当前用途 |
 |---|---|
-| `home/hero-v4.webp`（1920×768，108 KB） | 首页 Hero 装饰插槽（`design-language.md` §2）。`HomePage.vue` import 后经内联 `--home-hero-image` 传给 CSS；插槽开关是 `--home-hero-decor`，Classic Profile 与 `width < 768px` 两种情况下置 `none` |
 | `home/showcase-playback-3d-v1.webp`（1600×798，177 KB） | 首页能力展示①：3D 战局回放 |
 | `home/showcase-armor-v1.webp`（1600×1043，192 KB） | 首页能力展示②：装甲查看器（112 Glacial 实体渲染） |
 | `home/showcase-rating-v1.webp`（1600×696，50 KB） | 首页能力展示③：回放解析结果与 League Rating |
 | `home/showcase-tankopedia-v1.webp`（1600×1165，94 KB） | 首页能力展示④：坦克百科列表 |
-| `home/showcase-android-v1.webp`（640×1385，80 KB） | 首页「带走它」Android 转化卡（仅 Web；Android App 内整张卡不渲染） |
-| `home/card-*.webp`（5 张） | 2026-10-18 首页改为纯展示页后全部不再被引用，保留作设计参考 |
 | 其余各页 `*-v1.webp` / SVG | 保留的历史设计素材，当前 SPA 不通过全局背景样式加载 |
-| `../../../public/sponsor-bg.webp` | `SponsorPage.vue` 自己引用的赞助页背景，用户提供，仅用于视觉氛围 |
 
 **`showcase-*` 五张都是真实产品截图，不是插画**（2026-10-18 拍摄）。来源、数据边界与再拍方式：
 

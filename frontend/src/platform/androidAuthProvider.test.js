@@ -201,7 +201,7 @@ describe('androidAuthProvider', () => {
     const provider = createAndroidAuthProvider()
 
     await expect(provider.login('https://wotbtools.com/?view=profile')).resolves.toBe(true)
-    expect(native.calls).toEqual([{ method: 'authLogin', params: {} }])
+    expect(native.calls).toEqual([{ method: 'authLogin', params: { locale: 'zh' } }])
 
     native.results.authLogin = false
     await expect(provider.login()).resolves.toBe(false)

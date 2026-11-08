@@ -35,7 +35,7 @@ beforeEach(() => {
 })
 afterEach(() => { wrapper?.unmount(); wrapper = undefined })
 
-function availability() { return { typeAvailable: () => true, publicCategories: computed(() => state.categories), loading: ref(false), error: ref(null), contentKnown: ref(true), refresh: vi.fn(async () => {}), refreshPublicCategories: vi.fn(async () => {}) } }
+function availability() { return { typeAvailable: () => true, typeVisible: () => true, publicCategories: computed(() => state.categories), loading: ref(false), error: ref(null), contentKnown: ref(true), refresh: vi.fn(async () => {}), refreshPublicCategories: vi.fn(async () => {}) } }
 async function publicPage(query = '') {
   state.auth.tokenParsed.value.realm_access.roles = []
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
@@ -45,6 +45,16 @@ async function publicPage(query = '') {
   await flushPromises()
   return { router, i18n }
 }
+
+describe('recommendation type tabs', () => {
+  it('「推荐 UP | 优秀作品」页签直接切到另一个列表，保留其余 query 与 hash、清掉分类', async () => {
+    const { router } = await publicPage('&creatorCategory=3')
+    await wrapper!.get('[data-testid=recommendation-tab-VIDEO]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ view: 'recommended-videos', lang: 'ru' })
+    expect(router.currentRoute.value.hash).toBe('#list')
+  })
+})
 
 describe('creator category disclosure', () => {
   it('starts collapsed and toggles without changing route, results or HTTP reads', async () => {

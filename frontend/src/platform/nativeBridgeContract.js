@@ -57,3 +57,16 @@ export const NATIVE_REPLAY_RESOURCE_URL = `${ANDROID_APP_ORIGIN}/__native/replay
 /** Optional v2 capability: manual SAF directory selection, independent of external replay pending. */
 export const NATIVE_REPLAY_FOLDER_CAPABILITY = 'replay-folder-picker'
 export const NATIVE_REPLAY_FOLDER_RESOURCE_URL = `${ANDROID_APP_ORIGIN}/__native/replay-folder`
+
+/** Optional screen-form capability: phone detection + scene-page landscape lock (tablets never lock). */
+export const NATIVE_SCREEN_FORM_CAPABILITY = 'screen-form'
+export const NATIVE_SCREEN_FORM_METHODS = Object.freeze({
+  getForm: 'getScreenForm',
+  setLandscapeLock: 'setLandscapeLock',
+})
+
+/** Optional haptics capability: system haptic feedback constants mapped from a fixed event kind. */
+export const NATIVE_HAPTICS_CAPABILITY = 'haptics'
+export const NATIVE_HAPTICS_METHODS = Object.freeze({
+  haptic: 'haptic',
+})

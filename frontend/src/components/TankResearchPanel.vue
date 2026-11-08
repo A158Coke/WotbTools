@@ -437,6 +437,7 @@ function activate(node) {
   place-items: center;
   overflow: hidden;
   border-radius: inherit;
+  corner-shape: inherit;
 }
 /* 必须**绝对定位**铺满：grid 容器里 `block-size:100%` 解不出确定高度，
    img 会退回固有尺寸（96×96），被 62 高的容器从下方裁掉 32px——实测如此。 */
@@ -455,6 +456,7 @@ function activate(node) {
   min-inline-size: 16px;
   padding: 0 3px;
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: var(--color-surface-1);
   color: var(--color-text-secondary);
   font: var(--type-caption);
@@ -487,6 +489,7 @@ function activate(node) {
   inline-size: 14px;
   block-size: 14px;
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: var(--color-accent);
   color: var(--color-canvas);
 }

@@ -27,6 +27,7 @@
   block-size: var(--space-8);
   inline-size: var(--space-8);
   border-radius: var(--radius-full);
+  corner-shape: round;
   border: 3px solid var(--color-border-subtle);
   border-block-start-color: var(--color-accent);
   animation: view-loading-spin 0.9s linear infinite;

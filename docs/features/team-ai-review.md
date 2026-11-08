@@ -224,6 +224,8 @@ Team Call #2 通过 `AiPromptLibrary` 的模块化 include，按 INFORMATION/VIS
 
 所有数组必须存在，可为空。Markdown 只能出现在字段值内部；页面标题和层级由前端控制。
 
+前端呈现（5.0）：团队结论是置顶强调卡（附关键回合数、训练建议数与主要诊断）；关键回合是时间线（`m:ss–m:ss` 战斗时钟徽标 + 标题 + 分析）。在回放工作台内，`startSec` 非 null 的回合带「在 2D 中查看」：`AnalysisResultPanel` 只发出 `view-2d(startSec)`，由 `ReplayWorkspace` 切到 2D 能力页并经 `BattlePlaybackPanel.seekTo` 定位——AI episode 与 2D 回放共用开战为 0 的战斗时钟（见 `battle-playback.md`「同一战斗时钟」）。
+
 ### 8.2 技术校验与 recovery
 
 - Call #2 使用 provider `response_format=json_object`（`AiChatRequest.responseFormat=JSON_OBJECT`；Player / Pre-battle / Harness 保持 TEXT）。

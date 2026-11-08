@@ -457,6 +457,32 @@ if [[ -n "$BASE_SHA" ]]; then
     source_line_history_allowlisted["$union_path"]=1
   done
 
+  # Third source, for branches that merged a newer main: a branch commit made
+  # before main split a legacy file still carries the then-sanctioned
+  # over-budget blob, while both BASE and HEAD have already retired the entry.
+  # Such a commit is judged by the allowlist main had where the branch forked,
+  # i.e. at merge-base(commit, BASE). That fork point is reachable from BASE, so
+  # the entry was approved on main — a branch-only temporary entry is never at
+  # a merge-base and still legitimizes nothing.
+  declare -A fork_allowlist_loaded=()
+  declare -A fork_allowlisted=()
+  fork_point_allowlists() {
+    local commit="$1" path="$2" fork
+    fork=$(git merge-base "$commit" "$BASE_SHA" 2>/dev/null) || return 1
+    [[ -n "$fork" ]] || return 1
+    if [[ -z "${fork_allowlist_loaded[$fork]+x}" ]]; then
+      fork_allowlist_loaded["$fork"]=1
+      if git cat-file -e "${fork}:${SOURCE_LINE_ALLOWLIST_FILE}" 2>/dev/null; then
+        declare -A fork_entries=()
+        load_source_line_paths fork_entries < <(git show "${fork}:${SOURCE_LINE_ALLOWLIST_FILE}")
+        local entry
+        for entry in "${!fork_entries[@]}"; do fork_allowlisted["${fork}:${entry}"]=1; done
+        unset fork_entries
+      fi
+    fi
+    [[ -n "${fork_allowlisted["${fork}:${path}"]+x}" ]]
+  }
+
   while IFS= read -r commit; do
     [[ -n "$commit" ]] || continue
     history_commits=$((history_commits + 1))
@@ -513,7 +539,7 @@ if [[ -n "$BASE_SHA" ]]; then
           echo "Unable to count source lines of blob $oid for $(printable_path "$path") (awk returned: ${blob_lines:-<empty>})." >&2
           exit 2
         fi
-        if (( blob_lines > MAX_SOURCE_LINES )) && [[ -z "${source_line_history_allowlisted[$path]+x}" ]]; then
+        if (( blob_lines > MAX_SOURCE_LINES )) && [[ -z "${source_line_history_allowlisted[$path]+x}" ]] && ! fork_point_allowlists "$commit" "$path"; then
           # The union list only decides whether the over-budget blob was ever a
           # sanctioned exception; policing per-file net growth is left to the
           # split workflow (the entry-count ratchet owns the allowlist).

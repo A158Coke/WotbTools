@@ -17,7 +17,6 @@ import './styles/playback-mobile.css'
 // 正方形 Stage 的三段式 workspace（Team 1 | Stage | Team 2、手机竖屏纵向流、详情浮窗层）。
 // Shared sizing authority for every form and fullscreen mode.
 import './styles/playback-workspace.css'
-import './styles/classic-profile.css'
 import { messages } from './locales/messages.js'
 import { readLocale } from './i18n/locale-preference.js'
 import { sectionTitleKey, viewFromRoute } from './app/navigation.js'

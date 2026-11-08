@@ -312,6 +312,13 @@ export default defineConfig(({ command, mode }) => {
           changeOrigin: true,
           secure: mode === 'production-remote',
         },
+        // 赞助配置与二维码是部署时注入前端容器的内容（deploy/tx/build-frontend-from-gitee.sh），不在仓库里；
+        // 连接生产后端时一并从生产站点读取，否则本地赞助页只会显示「赞助方式暂未配置」。
+        ...(mode === 'production-remote' ? Object.fromEntries(['/sponsor-config.json', '/sponsor-assets'].map(path => [path, {
+          target: devProxyTarget(mode),
+          changeOrigin: true,
+          secure: true,
+        }])) : {}),
         // 仅当 WOTB_ASSET_PROXY 设置时存在（见 assetProxyTarget 说明）
         ...(assetProxyTarget() ? {
           '/__assets': {

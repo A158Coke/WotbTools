@@ -98,6 +98,7 @@ function baseLabel(base) {
   padding: var(--space-1) var(--space-3);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: color-mix(in oklab, var(--color-canvas) 82%, transparent);
   backdrop-filter: blur(8px);
   pointer-events: auto;

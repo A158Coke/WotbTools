@@ -1,7 +1,12 @@
 import { NATIVE_AUTH_CHANGED_GLOBAL, NATIVE_AUTH_METHODS } from './nativeBridgeContract.js'
 import { callBridge } from '../composables/usePlatformBridge.js'
 import { isRecord } from '../types/primitive-guards.js'
+import { readLocale } from '../i18n/locale-preference.js'
 import type { AuthClaims, AuthProvider } from '../types/auth.js'
+import type { NativeBridgeRequest } from '../api/generated/android-native-bridge.js'
+
+/** readLocale 只会返回 SUPPORTED_LOCALES（zh / en / ru），与契约枚举同集合。 */
+type LoginLocale = NonNullable<NativeBridgeRequest<'authLogin'>['locale']>
 
 /**
  * native-auth RPC 的单次上限：Android 侧可能在回复前做 OIDC discovery + token refresh
@@ -108,7 +113,8 @@ export function createAndroidAuthProvider(): AuthProvider {
      */
     async login() {
       generation += 1
-      return (await callBridge(NATIVE_AUTH_METHODS.login, {}, AUTH_RPC_OPTIONS)) === true
+      // 站点语言作为 OIDC ui_locales 交给 Native，登录页默认与站点一致（与浏览器端 keycloak-js locale 同一语义）。
+      return (await callBridge(NATIVE_AUTH_METHODS.login, { locale: readLocale() as LoginLocale }, AUTH_RPC_OPTIONS)) === true
     },
 
     async logout() {

@@ -413,7 +413,7 @@ class MainActivity : Activity() {
 
     /**
      * HTML Fullscreen API：Gecko 在 GeckoView 内渲染 fullscreen element，经 onFullScreen 通知宿主；
-     * 这里只切换系统 UI 与方向。BattlePlayback 继续使用标准 requestFullscreen()，
+     * 这里只切换系统 UI 与方向（方向只在手机上锁横屏）。BattlePlayback 继续使用标准 requestFullscreen()，
      * 不需要 Android 专用前端分支，也不会 reset playback state。
      */
     private fun enterFullscreen() {
@@ -421,7 +421,8 @@ class MainActivity : Activity() {
         fullscreen = true
         fullscreenPreviousOrientation = requestedOrientation
         fullscreenPreviousSystemUiVisibility = window.decorView.systemUiVisibility
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        // 只在手机上锁横屏（design-language §9「强制横屏」）；平板保持系统方向
+        if (isPhone()) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         window.decorView.systemUiVisibility = (
             View.SYSTEM_UI_FLAG_FULLSCREEN
                 or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
@@ -804,7 +805,30 @@ class MainActivity : Activity() {
     fun bridgeVersion(): Int = BuildConfig.NATIVE_BRIDGE_VERSION
 
     fun bridgeCapabilities(): List<String> =
-        listOf("native-auth", "replay-share", "replay-open", "app-update", "app-update-status", "connectivity", "replay-folder-picker")
+        listOf("native-auth", "replay-share", "replay-open", "app-update", "app-update-status", "connectivity", "replay-folder-picker", "screen-form", "haptics")
+
+    private fun isPhone(): Boolean = ScreenForm.isPhone(resources.configuration.smallestScreenWidthDp)
+
+    /** `haptic`：页面事件种类 → 系统触感常量（跟随系统触摸反馈设置）。未知种类不振动。 */
+    fun bridgeHaptic(kind: String?): Boolean {
+        val constant = Haptics.feedbackConstant(kind) ?: return false
+        if (destroyedRuntime || isDestroyed) return false
+        return window.decorView.performHapticFeedback(constant)
+    }
+
+    /** `getScreenForm`：只报告手机 / 非手机，页面据此决定场景页是否强制横屏。 */
+    fun bridgeScreenForm(): JSONObject = JSONObject().put("phone", isPhone())
+
+    /**
+     * `setLandscapeLock`：手机上的场景页进入时锁横屏、离开时释放；平板一律不锁（返回 false）。
+     * HTML 全屏期间只更新全屏退出后要恢复的方向，不打断全屏自己的横屏。
+     */
+    fun bridgeSetLandscapeLock(locked: Boolean): Boolean {
+        if (!isPhone()) return false
+        val orientation = ScreenForm.pageOrientation(locked)
+        if (fullscreen) fullscreenPreviousOrientation = orientation else requestedOrientation = orientation
+        return true
+    }
 
     /**
      * 连通性状态 token（`connectivityGetState` 的 result）：Android 系统 `ConnectivityManager` 的
@@ -1111,7 +1135,7 @@ class MainActivity : Activity() {
      * `authLogin`：先补齐 discovery，再启动 external user-agent（Custom Tabs），
      * 并持久化含 PKCE verifier 的交易状态。返回 true 只在真的把它交给了浏览器时。
      */
-    fun bridgeAuthLogin(): Boolean = authManager.login()
+    fun bridgeAuthLogin(uiLocale: String?): Boolean = authManager.login(uiLocale)
 
     /** `authLogout`：先清本地会话（内存 + 加密存储），再 best-effort 结束 Keycloak SSO 会话。 */
     fun bridgeAuthLogout(): Boolean = authManager.logout()

@@ -29,30 +29,30 @@ export const NAV_GROUPS = Object.freeze([
 
 /**
  * 主导航（design-language §9）：
- * - 手机 / App（compact）：底部 Tab 栏只渲染 `compactTab` 成员；其余栏目是"更多"页顶部的快捷入口，
- *   首页由顶栏 Logo 进入。
  * - 平板 / 桌面：左侧边栏按 `group` 分组渲染 PRIMARY_NAV 中除"更多"外的栏目 + 管理组（ADMIN_NAV）；
- *   "更多"在侧边栏底部是弹出面板（显示设置 + 关于与支持），不再是一个整页。
- * 账户（个人中心 / 登录登出）不在主导航里：手机在顶栏右侧，平板 / 桌面在侧边栏底部。
+ *   "更多"在侧边栏底部是弹出面板（显示设置 + 关于与支持）。
+ * - 手机竖屏 / 手机横屏（抽屉外壳）：顶栏左上菜单按钮打开左侧抽屉，内容与侧边栏同一份分组 + 管理组，
+ *   "更多与设置"是整页。没有底部常驻导航。
+ * 账户（个人中心 / 登录登出）：手机在顶栏右侧与抽屉底部，平板 / 桌面在侧边栏底部。
  * `homeHostOnly`：公开 Web 站提供首页；APK 与本地 Web 开发都直接以回放作为落地页，APK 不显示首页 Tab。
  */
 export const PRIMARY_NAV = Object.freeze([
   Object.freeze({ id: 'home', view: 'home', labelKey: 'nav.home', homeHostOnly: true }),
-  Object.freeze({ id: 'replay', view: 'replay', labelKey: 'nav.replay', group: 'battle', compactTab: true }),
-  Object.freeze({ id: 'hof', view: 'hof', labelKey: 'nav.hof', group: 'battle', compactTab: true }),
-  Object.freeze({ id: 'tankopedia', view: 'agent-tankopedia', labelKey: 'nav.tankopedia', compactLabelKey: 'nav.compact.tankopedia', group: 'reference', compactTab: true }),
+  Object.freeze({ id: 'replay', view: 'replay', labelKey: 'nav.replay', group: 'battle' }),
+  Object.freeze({ id: 'hof', view: 'hof', labelKey: 'nav.hof', group: 'battle' }),
+  Object.freeze({ id: 'tankopedia', view: 'agent-tankopedia', labelKey: 'nav.tankopedia', group: 'reference' }),
   Object.freeze({ id: 'techtree', view: 'agent-techtree', labelKey: 'research.title', group: 'reference' }),
   Object.freeze({ id: 'maps', view: 'map-preview', labelKey: 'nav.maps', group: 'reference' }),
-  Object.freeze({ id: 'tournament-points', view: 'tournament-points', labelKey: 'tournament.title', compactLabelKey: 'nav.compact.tournament', group: 'events', compactTab: true }),
+  Object.freeze({ id: 'tournament-points', view: 'tournament-points', labelKey: 'tournament.title', group: 'events' }),
   Object.freeze({ id: 'league-broadcasts', view: 'league-broadcasts', labelKey: 'leagueBroadcasts.title', shortLabelKey: 'leagueBroadcasts.navTitle', group: 'events' }),
   Object.freeze({ id: 'creators', view: 'recommendations', labelKey: 'creators.nav', group: 'community' }),
-  Object.freeze({ id: 'more', view: 'more', labelKey: 'nav.more', compactTab: true }),
+  Object.freeze({ id: 'more', view: 'more', labelKey: 'nav.more' }),
 ])
 
 /**
  * 侧边栏管理组（平板 / 桌面）。role 对应 useAuth 的各域管理权限（contentAdmin 独立于
  * tournamentAdmin）；全站管理员通过 Keycloak composite 同时具备所有管理入口。
- * 手机没有侧边栏，这些入口留在"更多"页的管理分组里。
+ * 手机抽屉复用同一组。
  */
 export const ADMIN_NAV = Object.freeze([
   Object.freeze({ id: 'admin-users', view: 'admin-users', labelKey: 'admin.title', role: 'admin' }),
@@ -99,18 +99,14 @@ export function primarySection(view) {
   return PRIMARY_SECTION_OF_VIEW[view] ?? 'more'
 }
 
-/** 小屏栏目归属：非 Tab 栏目归到"更多"；首页与账户由顶栏进入，不点亮任何 Tab。 */
-export function compactSection(view) {
-  const section = primarySection(view)
-  if (section === 'home' || section === 'account') return null
-  return PRIMARY_NAV.some(item => item.id === section && item.compactTab) ? section : 'more'
+/**
+ * 工作台视图（L5 例外）：回放工作台的各能力、装甲查看器 / 射击复现、地图预览与科技树。
+ * 它们自己管理高度预算与底部操作栏，顶栏不随滚动收起。
+ */
+const WORKSPACE_SECTIONS = Object.freeze(['replay', 'maps', 'techtree'])
+export function isWorkspaceView(view) {
+  return view === 'agent-armor' || WORKSPACE_SECTIONS.includes(primarySection(view))
 }
-
-/** 小屏底部 Tab。 */
-export const COMPACT_TAB_ITEMS = Object.freeze(PRIMARY_NAV.filter(item => item.compactTab))
-
-/** "更多"页顶部的快捷入口：不在 Tab 栏里的栏目，首页除外。 */
-export const COMPACT_SHORTCUT_ITEMS = Object.freeze(PRIMARY_NAV.filter(item => !item.compactTab && !item.homeHostOnly))
 
 export function primaryNavItems(hostname = window.location.hostname) {
   const android = isAndroidRuntime()

@@ -136,7 +136,8 @@ function onClick(event: MouseEvent): void {
             doPenetrationCheck(ndcX, ndcY);
         }
 
-function showArmorPartInfo(event: MouseEvent, ndcX: number, ndcY: number): void {
+// 第一个参数保留调用签名（onClick 统一传 event），停靠后不再按点击坐标摆位
+function showArmorPartInfo(_event: MouseEvent, ndcX: number, ndcY: number): void {
             tc.tidyTrajectory();
             getRaycaster().setFromCamera(new THREE.Vector2(ndcX, ndcY), getCamera());
             const objects = models.armorModel ? [models.armorModel, ...getModuleMeshes()] : [];
@@ -157,18 +158,8 @@ function showArmorPartInfo(event: MouseEvent, ndcX: number, ndcY: number): void 
             const thickness = Number(info.thickness);
             document.getElementById('click-part')!.textContent = L.partName ? L.partName(info.partName) : info.partName;
             document.getElementById('click-armor')!.textContent = Number.isFinite(thickness) ? `${Math.round(thickness * 100) / 100} mm` : '—';
-            card.style.display = 'block';
-            // 命中点旁侧：先试右下，越界翻到左上；再整体钳制在视口内。任何情况下都不压住点击落点。
-            const gap = 24, edge = 8;
-            const w = card.offsetWidth || 200, h = card.offsetHeight || 72;
-            let left = event.clientX + gap;
-            let top = event.clientY + gap;
-            if (left + w > window.innerWidth - edge) left = event.clientX - w - gap;
-            if (top + h > window.innerHeight - edge) top = event.clientY - h - gap;
-            left = Math.max(edge, Math.min(window.innerWidth - w - edge, left));
-            top = Math.max(edge, Math.min(window.innerHeight - h - edge, top));
-            card.style.left = `${left}px`;
-            card.style.top = `${top}px`;
+            // 结果停靠在场景顶部正中的固定胶囊（AgentArmorView 样式所有），不跟随命中点、不压车体。
+            card.style.display = 'flex';
         }
 
 function isEffectivelyVisible(node: THREE.Object3D): boolean {

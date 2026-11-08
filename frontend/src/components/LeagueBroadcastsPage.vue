@@ -1,13 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronDown, ChevronRight, Clock3, ExternalLink, Plus, Trash2, Pencil } from 'lucide-vue-next'
-import cnGlobe from '../assets/broadcast-globes/cn.svg'
-import asiaGlobe from '../assets/broadcast-globes/asia.svg'
-import naGlobe from '../assets/broadcast-globes/na.svg'
-import euGlobe from '../assets/broadcast-globes/eu.svg'
-import lestaGlobe from '../assets/broadcast-globes/lesta.svg'
-import PageHeader from './PageHeader.vue'
+import { ChevronDown, Clock3, ExternalLink, Plus, Trash2, Pencil } from 'lucide-vue-next'
+import ShowcaseHero from './ShowcaseHero.vue'
+import SegmentedControl from './SegmentedControl.vue'
 import AppButton from './AppButton.vue'
 import MenuButton from './MenuButton.vue'
 import AppDialog from './AppDialog.vue'
@@ -21,39 +17,14 @@ import { BROADCAST_DISPLAY_ZONES, formatBroadcastDate } from '../utils/broadcast
 
 const { t, te, locale } = useI18n()
 const state = reactive(useLeagueBroadcasts())
-const serverIcons = { CN: cnGlobe, ASIA: asiaGlobe, NA: naGlobe, EU: euGlobe, LESTA: lestaGlobe }
-const serverGrid = ref<HTMLElement | null>(null)
-// Measure shell chrome instead of duplicating header/footer heights. Two card rows fill
-// the remaining viewport; minimum card height preserves readability on short screens.
-watch(serverGrid, (element, _, onCleanup) => {
-  if (!element) return
-  const grid = element
-  const page = grid.parentElement!
-  const app = document.getElementById('app')
-  const footer = document.querySelector<HTMLElement>('.app-footer')
-  function measure() {
-    grid.style.setProperty('--broadcast-grid-top', `${grid.getBoundingClientRect().top + window.scrollY}px`)
-    const columns = getComputedStyle(grid).gridTemplateColumns.split(' ').length
-    const fitsTwoRows = grid.childElementCount <= columns * 2
-    const tail = fitsTwoRows ? (Number.parseFloat(getComputedStyle(page).paddingBottom) || 0)
-      + (footer?.getBoundingClientRect().height ?? 0) : 0
-    const shellBottom = app ? Number.parseFloat(getComputedStyle(app).paddingBottom) || 0 : 0
-    grid.style.setProperty('--broadcast-grid-tail', `${tail + shellBottom}px`)
-  }
-  const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null
-  observer?.observe(page)
-  if (app) observer?.observe(app)
-  if (footer) observer?.observe(footer)
-  window.addEventListener('resize', measure)
-  measure()
-  onCleanup(() => { observer?.disconnect(); window.removeEventListener('resize', measure) })
-}, { flush: 'post' })
 const dialog = ref<'' | 'season' | 'category' | 'node'>('')
 const editingSeason = ref<BroadcastSeason | null>(null)
 const structureCategory = ref<BroadcastCategory | null>(null)
 const replayCategory = computed(() => state.categories.find(category => category.id === replayEditor.value?.node.categoryId) ?? null)
 const replayEditor = ref<{ node: BroadcastNode; replay: BroadcastReplay | null } | null>(null)
-const expanded = ref(new Set<number>()), failedCovers = ref(new Set<string>())
+const failedCovers = ref(new Set<string>())
+/** 当前选中的轮次（本页视图状态，不进 URL）；赛段由 URL 的 lbCategory 决定，缺省为第一个。 */
+const selectedNodeId = ref<number | null>(null)
 const invalid = ref(false)
 const form = reactive({ year: new Date().getFullYear(), nameZh: '', nameEn: '', nameRu: '', startDate: '', type: 'POINTS' as BroadcastCategory['type'], roundNumber: 1, format: 'ROUND_ROBIN' as NonNullable<BroadcastNode['format']>, expectedVersion: 0 })
 const errorText = computed(() => state.error ? apiErrorLabel(t, te, state.error) : '')
@@ -65,7 +36,6 @@ function canAddNode(category: BroadcastCategory) {
 }
 const dialogTitle = computed(() => t(dialog.value === 'season' ? (editingSeason.value ? 'leagueBroadcasts.editSeason' : 'leagueBroadcasts.newSeason')
   : dialog.value === 'category' ? 'leagueBroadcasts.newCategory' : 'leagueBroadcasts.newNode'))
-const pageTitle = computed(() => state.season ? `${state.season.year} ${broadcastSeasonName(state.season, locale.value)}` : state.server ? t(`leagueBroadcasts.servers.${state.server}`) : t('leagueBroadcasts.title'))
 
 function nodeTitle(node: BroadcastNode) {
   const category = state.categories.find(value => value.id === node.categoryId)
@@ -85,19 +55,25 @@ const displayNodes = computed(() => state.nodes.map(node => ({ ...node, label: n
 const sections = computed(() => state.categories.map(category => ({ ...category,
   nodes: displayNodes.value.filter(node => node.categoryId === category.id),
 })).filter(section => state.allowed || section.nodes.some(node => node.replays.length > 0)))
-watch(() => state.contextKey, () => { expanded.value = new Set(); failedCovers.value = new Set() })
-watch([() => state.loading, () => state.categoryId], async ([loading, categoryId]) => {
-  if (loading || !categoryId || !state.category) return
-  expanded.value = new Set([...expanded.value, ...state.nodes.filter(node => node.categoryId === categoryId).map(node => node.id)])
-  await nextTick()
-  document.getElementById(`broadcast-category-${categoryId}`)?.scrollIntoView?.({ block: 'nearest' })
-}, { flush: 'post' })
+// 4.0 版式：区服 · 赛季 · 时区在同一顶栏；赛段是页签；左侧轮次、右侧视频网格。
+// 缺省选择用 replace 写进 URL（不新增历史记录）：区服缺省第一个，赛季缺省最新一届（年份最大，同年取 id 最大）。
+const sortedSeasons = computed(() => [...state.seasons].sort((a, b) => b.year - a.year || b.id - a.id))
+watch(() => [state.loading, state.readFailed, state.network.available, state.server, state.seasonId, state.servers.length, state.seasons.length] as const, () => {
+  if (state.loading || state.readFailed || !state.network.available) return
+  if (!state.server && state.servers.length) void state.select({ server: state.servers[0] })
+  else if (state.server && !state.seasonId && sortedSeasons.value.length) void state.select({ server: state.server, season: sortedSeasons.value[0].id })
+}, { flush: 'post', immediate: true })
+const activeSection = computed(() => sections.value.find(section => section.id === state.categoryId) ?? sections.value[0] ?? null)
+const stageTabs = computed(() => sections.value.map(section => ({ value: String(section.id), testid: `broadcast-stage-${section.id}`,
+  label: [t(`leagueBroadcasts.categories.${section.type}`), section.type === 'POINTS' ? t('leagueBroadcasts.roundCount', { count: section.nodes.length }) : '',
+    t('leagueBroadcasts.replayCount', { count: section.nodes.reduce((sum, node) => sum + node.replays.length, 0) })].filter(Boolean).join(' · ') })))
+const activeNode = computed(() => activeSection.value?.nodes.find(node => node.id === selectedNodeId.value)
+  ?? activeSection.value?.nodes.find(node => node.replays.length) ?? activeSection.value?.nodes[0] ?? null)
+function selectStage(id: string) { void state.select({ server: state.server, season: state.seasonId, category: Number(id) }) }
+function selectSeason(event: Event) { void state.navigate({ server: state.server, season: Number((event.target as HTMLSelectElement).value) }) }
+watch(() => state.contextKey, () => { failedCovers.value = new Set() })
+watch(() => activeSection.value?.id, () => { selectedNodeId.value = null })
 watch(() => state.editorEpoch, () => { dialog.value = ''; replayEditor.value = null; invalid.value = false })
-function toggle(id: number) {
-  const next = new Set(expanded.value)
-  if (next.has(id)) next.delete(id); else next.add(id)
-  expanded.value = next
-}
 function openSeason(value: BroadcastSeason | null = null) {
   editingSeason.value = value
   Object.assign(form, { year: value?.year ?? new Date().getFullYear(), nameZh: value?.nameZh ?? '', nameEn: value?.nameEn ?? '', nameRu: value?.nameRu ?? '', startDate: value?.startDate ?? '', expectedVersion: value?.version ?? 0 })
@@ -131,7 +107,7 @@ async function saveStructure() {
 async function saveReplay(value: BroadcastTimedReplaySave, cover: File | null) {
   const editor = replayEditor.value
   if (!editor) return
-  expanded.value = new Set([...expanded.value, editor.node.id])
+  selectedNodeId.value = editor.node.id
   await state.mutate(signal => api.saveBroadcastReplay({ nodeId: editor.node.id, replayId: editor.replay?.id }, value, cover, signal))
 }
 async function reloadEditor() {
@@ -151,9 +127,6 @@ async function reloadEditor() {
     if (category) openStructure(kind, category)
   }
 }
-function goBack() {
-  void state.navigate(state.seasonId ? { server: state.server } : {})
-}
 function coverFailed(id: string | null) { if (id) failedCovers.value = new Set([...failedCovers.value, id]) }
 async function refreshPage() {
   failedCovers.value = new Set()
@@ -163,8 +136,26 @@ async function refreshPage() {
 
 <template>
   <div class="broadcast-page layout-wide" data-testid="league-broadcasts-page">
-    <PageHeader class="broadcast-page-header" :title="pageTitle"><template #actions>
-      <AppButton v-if="state.server" :disabled="state.busy" data-testid="broadcast-back" @click="goBack">{{ t('leagueBroadcasts.back') }}</AppButton>
+    <ShowcaseHero :kicker="t('nav.groups.events')" :title="t('leagueBroadcasts.title')" :description="state.season ? `${state.season.year} · ${broadcastSeasonName(state.season, locale)}` : undefined" />
+
+    <!-- 顶栏：区服（分段）· 赛季（下拉）· 显示时区 · 刷新 · 管理操作 -->
+    <div class="broadcast-toolbar" data-testid="broadcast-toolbar">
+      <SegmentedControl
+        v-if="state.servers.length"
+        scrollable
+        :model-value="state.server ?? ''"
+        :options="state.servers.map(server => ({ value: server, label: t(`leagueBroadcasts.servers.${server}`), testid: `broadcast-server-${server}` }))"
+        :ariaLabel="t('leagueBroadcasts.server')"
+        data-testid="broadcast-servers"
+        @update:model-value="server => state.navigate({ server })"
+      />
+      <label v-if="state.server && sortedSeasons.length" class="broadcast-select">
+        <span class="visually-hidden">{{ t('leagueBroadcasts.season') }}</span>
+        <select :value="state.seasonId ?? ''" :disabled="state.busy" data-testid="broadcast-season-select" @change="selectSeason">
+          <option v-for="season in sortedSeasons" :key="season.id" :value="season.id">{{ season.year }} · {{ broadcastSeasonName(season, locale) }}</option>
+        </select>
+        <ChevronDown class="broadcast-select-chevron" :size="16" aria-hidden="true" />
+      </label>
       <label v-if="state.season && state.defaultTimeZone" class="broadcast-time-zone">
         <Clock3 class="broadcast-time-zone-icon" :size="16" aria-hidden="true" />
         <select v-model="state.displayTimeZonePreference" :aria-label="t('leagueBroadcasts.displayTimeZone')" :title="`${t('leagueBroadcasts.displayTimeZone')} · ${t(`leagueBroadcasts.timeZones.${state.displayTimeZone}`)}`" data-testid="broadcast-display-time-zone">
@@ -173,77 +164,88 @@ async function refreshPage() {
         </select>
         <ChevronDown class="broadcast-time-zone-chevron" :size="16" aria-hidden="true" />
       </label>
-      <AppButton :disabled="state.loading || state.busy || !state.network.available" data-testid="broadcast-refresh" @click="refreshPage">{{ t('leagueBroadcasts.refresh') }}</AppButton>
-      <template v-if="state.allowed && state.network.available && !state.loading">
-        <AppButton v-if="state.server && !state.seasonId" variant="primary" :disabled="state.busy" data-testid="broadcast-new-season" @click="openSeason()"><Plus :size="18" aria-hidden="true" />{{ t('leagueBroadcasts.newSeason') }}</AppButton>
-        <AppButton v-else-if="state.season" variant="primary" :disabled="state.busy || !remainingCategories.length" data-testid="broadcast-new-category" @click="openStructure('category')">{{ t('leagueBroadcasts.newCategory') }}</AppButton>
-      </template>
-    </template></PageHeader>
-    <nav v-if="state.server" class="broadcast-breadcrumbs" :aria-label="t('leagueBroadcasts.title')">
-      <button type="button" @click="state.navigate({})">{{ t('leagueBroadcasts.title') }}</button>
-      <ChevronRight :size="14" aria-hidden="true" />
-      <button type="button" @click="state.navigate({ server: state.server })">{{ t(`leagueBroadcasts.servers.${state.server}`) }}</button>
-      <ChevronRight v-if="state.season" :size="14" aria-hidden="true" />
-      <span v-if="state.season" aria-current="page">{{ state.season.year }} · {{ broadcastSeasonName(state.season, locale) }}</span>
-    </nav>
+      <div class="broadcast-actions broadcast-toolbar-actions">
+        <AppButton :disabled="state.loading || state.busy || !state.network.available" data-testid="broadcast-refresh" @click="refreshPage">{{ t('leagueBroadcasts.refresh') }}</AppButton>
+        <template v-if="state.allowed && state.network.available && !state.loading && state.server">
+          <template v-if="state.season">
+            <AppButton :disabled="state.busy" :aria-label="t('leagueBroadcasts.editSeason')" :data-testid="`broadcast-edit-season-${state.season.id}`" @click="openSeason(state.season)"><Pencil :size="18" aria-hidden="true" />{{ t('leagueBroadcasts.edit') }}</AppButton>
+            <AppButton variant="danger" :disabled="state.busy" :data-testid="`broadcast-delete-season-${state.season.id}`" @click="state.remove('seasons', state.season.id, broadcastSeasonName(state.season, locale), t)"><Trash2 :size="18" aria-hidden="true" />{{ t('leagueBroadcasts.delete') }}</AppButton>
+            <AppButton :disabled="state.busy || !remainingCategories.length" data-testid="broadcast-new-category" @click="openStructure('category')">{{ t('leagueBroadcasts.newCategory') }}</AppButton>
+          </template>
+          <AppButton variant="primary" :disabled="state.busy" data-testid="broadcast-new-season" @click="openSeason()"><Plus :size="18" aria-hidden="true" />{{ t('leagueBroadcasts.newSeason') }}</AppButton>
+        </template>
+      </div>
+    </div>
+
     <Banner v-if="!state.network.available && !state.network.pending">{{ t(state.network.messageKey || 'featureOffline.leagueBroadcasts') }}</Banner>
     <Banner v-if="errorText" tone="danger">{{ errorText }}</Banner>
     <Banner v-if="state.notice">{{ t(`leagueBroadcasts.${state.notice}`) }}</Banner>
     <p v-if="state.loading || state.network.pending" role="status">{{ t('leagueBroadcasts.loading') }}</p>
-    <template v-else-if="state.network.available && !state.readFailed">
-      <div v-if="!state.server" ref="serverGrid" class="broadcast-card-grid broadcast-servers" data-testid="broadcast-servers">
-        <button v-for="server in state.servers" :key="server" type="button" class="broadcast-choice broadcast-server-card" :data-server="server" :data-testid="`broadcast-server-${server}`" @click="state.navigate({ server })">
-          <span class="broadcast-server-emblem"><span class="broadcast-server-icon-frame"><svg viewBox="0 0 160 160" aria-hidden="true" focusable="false"><use :href="`${serverIcons[server]}#globe`" /></svg></span></span>
-          <span class="broadcast-server-code">{{ server === 'ASIA' ? 'APAC' : server }}</span>
-          <span class="broadcast-server-name">{{ t(`leagueBroadcasts.servers.${server}`) }}</span>
-          <ChevronRight class="broadcast-server-arrow" aria-hidden="true" />
-        </button>
-      </div>
-      <section v-else-if="!state.seasonId" class="broadcast-list" data-testid="broadcast-seasons">
-        <p v-if="!state.seasons.length">{{ t('leagueBroadcasts.noSeasons') }}</p>
-        <article v-for="season in state.seasons" :key="season.id" class="broadcast-season-row" :data-testid="`broadcast-season-${season.id}`">
-          <div class="broadcast-row-title"><h2>{{ season.year }} · {{ broadcastSeasonName(season, locale) }}</h2><span v-if="season.startDate">{{ season.startDate }}</span></div>
-          <div v-if="state.allowed" class="broadcast-actions"><AppButton :disabled="state.busy" :aria-label="t('leagueBroadcasts.editSeason')" :data-testid="`broadcast-edit-season-${season.id}`" @click="openSeason(season)"><Pencil :size="18" aria-hidden="true" />{{ t('leagueBroadcasts.edit') }}</AppButton><AppButton variant="danger" :disabled="state.busy" :data-testid="`broadcast-delete-season-${season.id}`" @click="state.remove('seasons', season.id, broadcastSeasonName(season, locale), t)"><Trash2 :size="18" aria-hidden="true" />{{ t('leagueBroadcasts.delete') }}</AppButton></div>
-          <AppButton class="broadcast-enter" :aria-label="t('leagueBroadcasts.enter', { name: `${season.year} ${broadcastSeasonName(season, locale)}` })" :data-testid="`broadcast-enter-season-${season.id}`" @click="state.navigate({ server: state.server, season: season.id })"><ChevronRight :size="20" aria-hidden="true" /></AppButton>
-        </article>
-      </section>
-      <section v-else class="broadcast-list" data-testid="broadcast-nodes">
-        <p v-if="!sections.length">{{ t('leagueBroadcasts.noCategories') }}</p>
-        <section v-for="section in sections" :id="`broadcast-category-${section.id}`" :key="section.id" class="broadcast-category" :data-testid="`broadcast-category-${section.id}`">
-          <header v-if="section.type === 'POINTS' || !section.nodes.length" class="broadcast-category-header">
-            <div class="broadcast-category-title">
-              <h2>{{ t(`leagueBroadcasts.categories.${section.type}`) }}</h2>
-              <span v-if="section.type === 'POINTS'">{{ t('leagueBroadcasts.roundCount', { count: section.nodes.length }) }} · {{ t('leagueBroadcasts.replayCount', { count: section.nodes.reduce((sum, node) => sum + node.replays.length, 0) }) }}</span>
+    <template v-else-if="state.network.available && !state.readFailed && state.server">
+      <p v-if="!sortedSeasons.length" class="broadcast-empty" data-testid="broadcast-no-seasons">{{ t('leagueBroadcasts.noSeasons') }}</p>
+      <template v-else-if="state.season">
+        <p v-if="!sections.length" class="broadcast-empty">{{ t('leagueBroadcasts.noCategories') }}</p>
+        <template v-else>
+          <SegmentedControl
+            v-if="sections.length > 1"
+            scrollable
+            :model-value="String(activeSection?.id ?? '')"
+            :options="stageTabs"
+            :ariaLabel="t('leagueBroadcasts.category')"
+            data-testid="broadcast-stages"
+            @update:model-value="selectStage"
+          />
+          <section v-if="activeSection" :key="activeSection.id" class="broadcast-stage" :data-testid="`broadcast-category-${activeSection.id}`">
+            <header class="broadcast-stage-header">
+              <h2>{{ t(`leagueBroadcasts.categories.${activeSection.type}`) }}</h2>
+              <div v-if="state.allowed" class="broadcast-actions">
+                <AppButton v-if="canAddNode(activeSection)" variant="ghost" :disabled="state.busy" :data-testid="`broadcast-new-node-${activeSection.id}`" @click="openStructure('node', activeSection)"><Plus :size="18" aria-hidden="true" />{{ t(activeSection.type === 'POINTS' ? 'leagueBroadcasts.newRound' : 'leagueBroadcasts.newNode') }}</AppButton>
+                <MenuButton :label="t('leagueBroadcasts.manage')" variant="ghost" :aria-label="`${t('leagueBroadcasts.manage')} · ${t(`leagueBroadcasts.categories.${activeSection.type}`)}`" :disabled="state.busy" :data-testid="`broadcast-category-menu-${activeSection.id}`" :items="[{ key: 'delete', label: t('leagueBroadcasts.deleteCategory'), testid: `broadcast-delete-category-${activeSection.id}` }]" @select="state.remove('categories', activeSection.id, t(`leagueBroadcasts.categories.${activeSection.type}`), t)" />
+              </div>
+            </header>
+            <p v-if="!activeSection.nodes.length" class="broadcast-empty">{{ t('leagueBroadcasts.noNodes') }}</p>
+            <div v-else class="broadcast-stage-body" :class="{ 'has-rounds': activeSection.nodes.length > 1 || activeSection.type === 'POINTS' }">
+              <nav v-if="activeSection.nodes.length > 1 || activeSection.type === 'POINTS'" class="broadcast-rounds" :aria-label="t('leagueBroadcasts.round')">
+                <button
+                  v-for="node in activeSection.nodes"
+                  :key="node.id"
+                  type="button"
+                  class="broadcast-round"
+                  :aria-pressed="activeNode?.id === node.id"
+                  :data-testid="`broadcast-round-${node.id}`"
+                  @click="selectedNodeId = node.id"
+                >
+                  <span>{{ activeSection.type === 'POINTS' ? t('leagueBroadcasts.roundShortLabel', { round: node.roundNumber }) : node.label }}</span>
+                  <small>{{ t('leagueBroadcasts.replayCount', { count: node.replays.length }) }}</small>
+                </button>
+              </nav>
+              <div v-if="activeNode" class="broadcast-round-panel" :data-testid="`broadcast-round-panel-${activeNode.id}`">
+                <header class="broadcast-round-header">
+                  <h3>{{ activeNode.label }}</h3>
+                  <div v-if="state.allowed" class="broadcast-actions broadcast-node-actions">
+                    <AppButton variant="ghost" class="broadcast-icon-action" :disabled="state.busy" :aria-label="t('leagueBroadcasts.newReplay')" :title="t('leagueBroadcasts.newReplay')" :data-testid="`broadcast-new-replay-${activeNode.id}`" @click="replayEditor = { node: activeNode, replay: null }"><Plus :size="20" aria-hidden="true" /></AppButton>
+                    <MenuButton :label="t('leagueBroadcasts.manage')" variant="ghost" :aria-label="`${t('leagueBroadcasts.manage')} · ${activeNode.label}`" :disabled="state.busy" :data-testid="`broadcast-node-menu-${activeNode.id}`"
+                      :items="[{ key: 'node', label: t('leagueBroadcasts.nodeDeleteTitle'), testid: `broadcast-delete-node-${activeNode.id}` }]"
+                      @select="state.remove('nodes', activeNode.id, activeNode.label, t)" />
+                  </div>
+                </header>
+                <p v-if="!activeNode.records.length" class="broadcast-empty">{{ t('leagueBroadcasts.noReplays') }}</p>
+                <div v-else class="broadcast-records">
+                  <article v-for="replay in activeNode.records" :key="replay.id" class="broadcast-record" :data-testid="`broadcast-replay-${replay.id}`">
+                    <a class="broadcast-cover" :href="replay.url" target="_blank" rel="noopener noreferrer" :aria-label="`${t('leagueBroadcasts.open')} · ${replay.title}`">
+                      <img v-if="replay.coverUrl" :src="replay.coverUrl" :alt="t('leagueBroadcasts.coverAlt', { title: replay.title })" class="broadcast-thumbnail" loading="lazy" @error="coverFailed(replay.coverId)">
+                      <span v-else class="broadcast-thumbnail is-placeholder" aria-hidden="true"><ExternalLink :size="24" /></span>
+                      <span class="broadcast-perspective">{{ t(`leagueBroadcasts.perspectives.${replay.perspective}`) }}</span>
+                    </a>
+                    <div class="broadcast-record-text"><h4>{{ replay.title }}</h4><p>{{ replay.metadata }}</p><p>{{ replay.teamLabel }}</p></div>
+                    <div v-if="state.allowed" class="broadcast-actions"><AppButton size="sm" :disabled="state.busy" :data-testid="`broadcast-edit-replay-${replay.id}`" @click="replayEditor = { node: activeNode, replay }">{{ t('leagueBroadcasts.edit') }}</AppButton><AppButton size="sm" variant="danger" :disabled="state.busy" :data-testid="`broadcast-delete-replay-${replay.id}`" @click="state.remove('replays', replay.id, replay.title, t)">{{ t('leagueBroadcasts.delete') }}</AppButton></div>
+                  </article>
+                </div>
+              </div>
             </div>
-            <div v-if="state.allowed" class="broadcast-actions">
-              <AppButton v-if="canAddNode(section)" variant="ghost" :disabled="state.busy" :data-testid="`broadcast-new-node-${section.id}`" @click="openStructure('node', section)"><Plus :size="18" aria-hidden="true" />{{ t(section.type === 'POINTS' ? 'leagueBroadcasts.newRound' : 'leagueBroadcasts.newNode') }}</AppButton>
-              <MenuButton :label="t('leagueBroadcasts.manage')" variant="ghost" :aria-label="`${t('leagueBroadcasts.manage')} · ${t(`leagueBroadcasts.categories.${section.type}`)}`" :disabled="state.busy" :data-testid="`broadcast-category-menu-${section.id}`" :items="[{ key: 'delete', label: t('leagueBroadcasts.deleteCategory'), testid: `broadcast-delete-category-${section.id}` }]" @select="state.remove('categories', section.id, t(`leagueBroadcasts.categories.${section.type}`), t)" />
-            </div>
-          </header>
-          <div :id="`broadcast-category-nodes-${section.id}`" class="broadcast-list">
-            <p v-if="!section.nodes.length" class="broadcast-category-empty">{{ t('leagueBroadcasts.noNodes') }}</p>
-        <article v-for="node in section.nodes" :key="node.id" class="broadcast-node" :class="{ 'is-expanded': expanded.has(node.id) }">
-          <header class="broadcast-node-header">
-            <button type="button" class="broadcast-disclosure" :aria-expanded="expanded.has(node.id)" :aria-controls="`broadcast-records-${node.id}`" :data-testid="`broadcast-node-toggle-${node.id}`" @click="toggle(node.id)"><component :is="expanded.has(node.id) ? ChevronDown : ChevronRight" :size="20" aria-hidden="true" /><span class="broadcast-node-title">{{ section.type === 'POINTS' ? t('leagueBroadcasts.roundShortLabel', { round: node.roundNumber }) : node.label }}<small>{{ t('leagueBroadcasts.replayCount', { count: node.replays.length }) }}</small></span></button>
-            <div v-if="state.allowed" class="broadcast-actions broadcast-node-actions">
-              <AppButton variant="ghost" class="broadcast-icon-action" :disabled="state.busy" :aria-label="t('leagueBroadcasts.newReplay')" :title="t('leagueBroadcasts.newReplay')" :data-testid="`broadcast-new-replay-${node.id}`" @click="replayEditor = { node, replay: null }"><Plus :size="20" aria-hidden="true" /></AppButton>
-              <MenuButton :label="t('leagueBroadcasts.manage')" variant="ghost" :aria-label="`${t('leagueBroadcasts.manage')} · ${node.label}`" :disabled="state.busy" :data-testid="`broadcast-node-menu-${node.id}`"
-                :items="[{ key: 'node', label: t('leagueBroadcasts.nodeDeleteTitle'), testid: `broadcast-delete-node-${node.id}` }, ...(section.type === 'POINTS' ? [] : [{ key: 'category', label: t('leagueBroadcasts.deleteCategory'), testid: `broadcast-delete-category-${section.id}` }])]"
-                @select="kind => kind === 'category' ? state.remove('categories', section.id, t(`leagueBroadcasts.categories.${section.type}`), t) : state.remove('nodes', node.id, node.label, t)" />
-            </div>
-          </header>
-          <div v-if="expanded.has(node.id)" :id="`broadcast-records-${node.id}`" class="broadcast-records">
-            <p v-if="!node.records.length">{{ t('leagueBroadcasts.noReplays') }}</p>
-            <article v-for="replay in node.records" :key="replay.id" class="broadcast-record" :data-testid="`broadcast-replay-${replay.id}`">
-              <img v-if="replay.coverUrl" :src="replay.coverUrl" :alt="t('leagueBroadcasts.coverAlt', { title: replay.title })" class="broadcast-thumbnail" loading="lazy" @error="coverFailed(replay.coverId)">
-              <div class="broadcast-record-text"><h3>{{ replay.title }}</h3><p>{{ replay.metadata }}</p><p>{{ replay.teamLabel }}</p></div>
-              <div class="broadcast-actions"><AppButton :href="replay.url" target="_blank" rel="noopener noreferrer">{{ t('leagueBroadcasts.open') }}<ExternalLink :size="16" aria-hidden="true" /></AppButton><template v-if="state.allowed"><AppButton :disabled="state.busy" :data-testid="`broadcast-edit-replay-${replay.id}`" @click="replayEditor = { node, replay }">{{ t('leagueBroadcasts.edit') }}</AppButton><AppButton variant="danger" :disabled="state.busy" :data-testid="`broadcast-delete-replay-${replay.id}`" @click="state.remove('replays', replay.id, replay.title, t)">{{ t('leagueBroadcasts.delete') }}</AppButton></template></div>
-            </article>
-          </div>
-        </article>
-          </div>
-        </section>
-      </section>
+          </section>
+        </template>
+      </template>
     </template>
 
     <AppDialog :open="!!dialog && state.allowed" :title="dialogTitle" :close-on-scrim="false" data-testid="broadcast-structure-dialog" @close="!state.busy && (dialog = '')">
@@ -272,102 +274,64 @@ async function refreshPage() {
 
 <style scoped>
 .broadcast-page { display: grid; gap: var(--space-4); }
-.broadcast-page-header { margin-bottom: 0; }
-.broadcast-breadcrumbs, .broadcast-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
-.broadcast-breadcrumbs { gap: var(--space-1); color: var(--color-text-secondary); font: var(--type-caption); }
-.broadcast-breadcrumbs button { min-height: var(--control-h-md); padding: 0 var(--space-1); border: 0; background: transparent; color: var(--color-text-secondary); font: inherit; cursor: pointer; overflow-wrap: anywhere; }
-.broadcast-breadcrumbs svg { flex: none; color: var(--color-text-tertiary); }
-.broadcast-breadcrumbs [aria-current] { padding-inline: var(--space-1); color: var(--color-text-primary); overflow-wrap: anywhere; }
-.broadcast-card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--form-field-min)), 1fr)); gap: var(--space-4); }
-.broadcast-choice { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: var(--control-h-lg); padding: var(--space-6); border: var(--border-width) solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-surface-1); color: var(--color-text-primary); font: var(--type-h3); cursor: pointer; text-align: start; }
-.broadcast-choice span { min-width: 0; overflow-wrap: anywhere; }
-.broadcast-choice svg { flex: none; }
-.broadcast-servers { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: minmax(var(--broadcast-server-card-min-h), auto); }
-.broadcast-servers .broadcast-server-card {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: 1fr auto;
-  align-items: start;
-  gap: var(--space-6);
-  min-height: max(var(--broadcast-server-card-min-h), calc((100dvh - var(--broadcast-grid-top, 0px) - var(--broadcast-grid-tail, 0px) - var(--space-4)) / 2));
-  padding: var(--space-8);
-  border-color: color-mix(in oklab, var(--color-broadcast-server) 30%, var(--color-border-subtle));
-  background: color-mix(in oklab, var(--color-broadcast-server) 5%, var(--color-surface-1));
-  font: var(--type-h1);
-}
-.broadcast-server-card[data-server="CN"] { --color-broadcast-server: var(--color-danger); }
-.broadcast-server-card[data-server="ASIA"] { --color-broadcast-server: var(--color-success); }
-.broadcast-server-card[data-server="NA"] { --color-broadcast-server: var(--color-info); }
-.broadcast-server-card[data-server="EU"] { --color-broadcast-server: var(--color-warning); }
-.broadcast-server-card[data-server="LESTA"] { --color-broadcast-server: var(--color-text-secondary); }
-.broadcast-server-emblem { display: grid; align-self: stretch; min-width: 0; min-height: 0; container-type: size; color: var(--color-broadcast-server); }
-.broadcast-server-icon-frame { display: grid; place-items: center; align-self: start; justify-self: start; width: min(100cqw, 100cqh); height: min(100cqw, 100cqh); border-radius: var(--radius-lg); background: color-mix(in oklab, var(--color-broadcast-server) 14%, var(--color-surface-1)); }
-.broadcast-server-emblem svg { width: 75%; height: 75%; }
-.broadcast-server-code { align-self: start; color: var(--color-text-secondary); font: var(--type-h3); }
-.broadcast-server-name, .broadcast-server-arrow { align-self: end; }
-.broadcast-server-arrow { width: var(--space-6); height: var(--space-6); color: var(--color-broadcast-server); }
-.broadcast-list { display: grid; gap: var(--space-3); }
-.broadcast-season-row { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-4); border: var(--border-width) solid var(--color-border-subtle); border-radius: var(--radius-md); background: var(--color-surface-1); }
-.broadcast-row-title { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.broadcast-row-title h2 { margin: 0 0 var(--space-1); color: var(--color-text-primary); font: var(--type-h3); }
-.broadcast-row-title span { color: var(--color-text-secondary); font: var(--type-caption); }
-.broadcast-enter { flex: none; }
-.broadcast-category { display: grid; gap: var(--space-3); min-width: 0; }
-.broadcast-category-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-2); }
-.broadcast-category-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-2) var(--space-3); padding-inline-start: var(--space-3); border-inline-start: var(--space-1) solid var(--color-accent); }
-.broadcast-category-header h2 { margin: 0; font: var(--type-h3); color: var(--color-text-primary); }
-.broadcast-category-title > span { color: var(--color-text-secondary); font: var(--type-caption); }
-.broadcast-category + .broadcast-category { margin-top: var(--space-4); }
-.broadcast-category-empty { margin: 0; padding: var(--space-4); color: var(--color-text-secondary); }
-.broadcast-node { min-width: 0; border: var(--border-width) solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-surface-1); }
-.broadcast-node.is-expanded { border-color: var(--color-border-strong); }
-.broadcast-node-header { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3); }
-.broadcast-disclosure { display: flex; align-items: center; flex: 1; gap: var(--space-3); min-width: 0; min-height: var(--control-h-md); padding: var(--space-2); border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--color-text-primary); font: var(--type-h3); cursor: pointer; text-align: start; }
-.broadcast-disclosure > svg { flex: none; color: var(--color-text-secondary); }
-.is-expanded > .broadcast-node-header .broadcast-disclosure > svg { color: var(--color-accent-text); }
-.broadcast-node-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-1) var(--space-3); min-width: 0; }
-.broadcast-disclosure small { color: var(--color-text-secondary); font: var(--type-caption); }
-.broadcast-disclosure span { overflow-wrap: anywhere; }
+.broadcast-page > :deep(.showcase-hero) { margin-block-end: 0; }
+.broadcast-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.broadcast-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); min-width: 0; }
+.broadcast-toolbar-actions { margin-inline-start: auto; }
+.broadcast-empty { margin: 0; padding: var(--space-4); color: var(--color-text-secondary); font: var(--type-body); }
+.broadcast-select, .broadcast-time-zone { position: relative; display: inline-flex; min-width: 0; max-width: 100%; color: var(--color-text-secondary); }
+.broadcast-select select, .broadcast-time-zone select { appearance: none; min-width: 0; max-width: 100%; min-height: var(--control-h-md); padding-block: 0; border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-surface-1); color: var(--color-text-primary); font: var(--type-body); text-overflow: ellipsis; cursor: pointer; transition: border-color var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard); }
+.broadcast-select select { padding-inline: var(--space-3) calc(var(--space-3) + var(--space-4) + var(--space-2)); }
+.broadcast-time-zone select { padding-inline: calc(var(--space-3) + var(--space-4) + var(--space-2)); }
+.broadcast-time-zone-icon, .broadcast-time-zone-chevron, .broadcast-select-chevron { position: absolute; top: 50%; transform: translateY(-50%); pointer-events: none; }
+.broadcast-time-zone-icon { inset-inline-start: var(--space-3); color: var(--color-accent-text); }
+.broadcast-time-zone-chevron, .broadcast-select-chevron { inset-inline-end: var(--space-3); }
+
+.broadcast-stage { display: grid; gap: var(--space-3); min-width: 0; }
+.broadcast-stage-header, .broadcast-round-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-2); }
+.broadcast-stage-header h2 { margin: 0; padding-inline-start: var(--space-3); border-inline-start: var(--space-1) solid var(--color-accent); color: var(--color-text-primary); font: var(--type-h3); }
+.broadcast-round-header h3 { margin: 0; color: var(--color-text-primary); font: var(--type-h3); }
+.broadcast-stage-body { display: grid; gap: var(--space-4); min-width: 0; }
+.broadcast-stage-body.has-rounds { grid-template-columns: calc(var(--space-12) * 4) minmax(0, 1fr); align-items: start; }
+.broadcast-rounds { display: grid; gap: var(--space-1); }
+.broadcast-round { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); min-height: var(--control-h-lg); padding: var(--space-2) var(--space-3); border: var(--border-width) solid transparent; border-radius: var(--radius-md); background: transparent; color: var(--color-text-primary); font: var(--type-body); font-weight: 600; text-align: start; cursor: pointer; }
+.broadcast-round small { color: var(--color-text-secondary); font: var(--type-caption); }
+.broadcast-round[aria-pressed="true"] { border-color: var(--color-accent); background: var(--color-surface-2); color: var(--color-accent-text); }
+.broadcast-round-panel { display: grid; gap: var(--space-3); min-width: 0; }
 .broadcast-node-actions { flex: none; flex-wrap: nowrap; gap: var(--space-1); }
 .broadcast-icon-action { min-width: var(--control-h-md); padding-inline: var(--space-2); }
-.broadcast-records { display: grid; padding-inline: var(--space-4); border-top: var(--border-width) solid var(--color-border-subtle); }
-.broadcast-record { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-4); padding-block: var(--space-5); }
-.broadcast-record + .broadcast-record { border-top: var(--border-width) solid var(--color-border-subtle); }
-.broadcast-thumbnail { width: min(100%, var(--broadcast-cover-thumbnail-w)); height: auto; object-fit: contain; border-radius: var(--radius-sm); }
-.broadcast-record-text { flex: 1; min-width: min(100%, var(--form-field-min)); overflow-wrap: anywhere; }
-.broadcast-record-text h3 { margin: 0 0 var(--space-2); color: var(--color-text-primary); font: var(--type-h3); }
-.broadcast-record-text p { margin: var(--space-1) 0; color: var(--color-text-secondary); font: var(--type-caption); }
+
+/* 视频网格：16:9 封面 + 标题、时间 / 赛日 / 视角、队伍；点开外链到原地址 */
+.broadcast-records { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, calc(var(--space-12) * 6)), 1fr)); gap: var(--space-4); }
+.broadcast-record { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; padding: var(--space-3); border: var(--border-width) solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-surface-1); }
+.broadcast-cover { position: relative; display: block; border-radius: var(--radius-md); }
+.broadcast-thumbnail { display: block; inline-size: 100%; aspect-ratio: 16 / 9; height: auto; object-fit: cover; border-radius: var(--radius-md); background: var(--color-surface-2); }
+.broadcast-thumbnail.is-placeholder { display: grid; place-items: center; color: var(--color-text-secondary); }
+.broadcast-perspective { position: absolute; inset-block-start: var(--space-2); inset-inline-start: var(--space-2); padding: 0 var(--space-2); border-radius: var(--radius-full); corner-shape: round; background: var(--color-canvas); color: var(--color-text-primary); font: var(--type-caption); font-weight: 600; }
+.broadcast-record-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.broadcast-record-text h4 { margin: 0 0 var(--space-1); color: var(--color-text-primary); font: var(--type-h3); }
+.broadcast-record-text p { margin: var(--space-1) 0 0; color: var(--color-text-secondary); font: var(--type-caption); }
+
 .broadcast-form, .broadcast-field { display: grid; gap: var(--space-2); }
 .broadcast-form { gap: var(--space-4); }
 .broadcast-field { min-width: 0; color: var(--color-text-primary); font: var(--type-body); }
 .broadcast-field input, .broadcast-field select { width: 100%; min-width: 0; min-height: var(--control-h-md); padding: var(--space-2); border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius-sm); background: var(--color-surface-1); color: var(--color-text-primary); font: inherit; }
-.broadcast-time-zone { position: relative; display: inline-flex; min-width: 0; max-width: 100%; color: var(--color-text-secondary); }
-.broadcast-time-zone select { appearance: none; min-width: 0; max-width: 100%; min-height: var(--control-h-md); padding-block: 0; padding-inline: calc(var(--space-3) + var(--space-4) + var(--space-2)); border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-surface-1); color: var(--color-text-primary); font: var(--type-body); text-overflow: ellipsis; cursor: pointer; transition: border-color var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard); }
-.broadcast-time-zone-icon, .broadcast-time-zone-chevron { position: absolute; top: 50%; transform: translateY(-50%); pointer-events: none; }
-.broadcast-time-zone-icon { inset-inline-start: var(--space-3); color: var(--color-accent-text); }
-.broadcast-time-zone-chevron { inset-inline-end: var(--space-3); }
-.broadcast-choice:focus-visible, .broadcast-disclosure:focus-visible, .broadcast-breadcrumbs button:focus-visible, .broadcast-field input:focus-visible, .broadcast-field select:focus-visible, .broadcast-time-zone select:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-@media (hover: hover) { .broadcast-time-zone select:hover { border-color: var(--color-accent); background: var(--color-surface-2); } }
-@media (hover: hover) { .broadcast-choice:hover { border-color: var(--color-accent); background: var(--color-surface-2); } }
+.broadcast-round:focus-visible, .broadcast-cover:focus-visible, .broadcast-field input:focus-visible, .broadcast-field select:focus-visible, .broadcast-time-zone select:focus-visible, .broadcast-select select:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 @media (hover: hover) {
-  .broadcast-disclosure:hover { background: var(--color-surface-2); }
-  .broadcast-breadcrumbs button:hover { color: var(--color-accent-text); }
+  .broadcast-time-zone select:hover, .broadcast-select select:hover { border-color: var(--color-accent); background: var(--color-surface-2); }
+  .broadcast-round:hover { background: var(--color-surface-2); }
 }
-@media (hover: hover) { .broadcast-servers .broadcast-server-card:hover { border-color: var(--color-broadcast-server); background: color-mix(in oklab, var(--color-broadcast-server) 10%, var(--color-surface-1)); } }
 @media (width < 768px) {
-  .broadcast-time-zone { order: 1; flex-basis: 100%; }
-  .broadcast-time-zone select { width: 100%; }
-  .broadcast-servers { grid-template-columns: minmax(0, 1fr); }
-  .broadcast-servers .broadcast-server-card { padding: var(--space-6); gap: var(--space-4); font: var(--type-h2); }
-  .broadcast-season-row { flex-wrap: wrap; }
-  .broadcast-row-title { flex-basis: calc(100% - var(--control-h-lg) - var(--space-3)); }
-  .broadcast-season-row > .broadcast-actions { order: 1; flex-basis: 100%; }
-  .broadcast-page-header :deep(.page-header-actions) { width: 100%; }
-  .broadcast-node-header { padding: var(--space-2); gap: var(--space-1); }
-  .broadcast-disclosure { gap: var(--space-2); }
-  .broadcast-node-title { display: grid; }
-  .broadcast-category-header > .broadcast-actions { margin-inline-start: auto; }
-  .broadcast-record { align-items: flex-start; flex-direction: column; }
-  .broadcast-record-text { min-width: 0; width: 100%; }
+  .broadcast-select, .broadcast-time-zone { flex: 1 1 100%; }
+  .broadcast-select select, .broadcast-time-zone select { width: 100%; }
+  .broadcast-toolbar-actions { margin-inline-start: 0; }
+  /* 小屏：轮次变横向胶囊，视频变左图右文列表 */
+  .broadcast-stage-body.has-rounds { grid-template-columns: minmax(0, 1fr); }
+  .broadcast-rounds { display: flex; gap: var(--space-2); overflow-x: auto; padding-block-end: var(--space-1); }
+  .broadcast-round { flex: none; border-color: var(--color-border-subtle); border-radius: var(--radius-full); corner-shape: round; }
+  .broadcast-records { grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }
+  .broadcast-record { display: grid; grid-template-columns: calc(var(--space-12) * 2.75) minmax(0, 1fr); align-items: start; gap: var(--space-3); }
+  .broadcast-record > .broadcast-actions { grid-column: 1 / -1; }
 }
 </style>

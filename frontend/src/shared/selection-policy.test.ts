@@ -11,16 +11,11 @@ const SRC = fileURLToPath(new URL('../', import.meta.url))
 
 // 存量例外，只减不增：每项是一处具体 <select>（文件#绑定=候选），页面迁移到 Choice Group 时删除。
 const BASELINE = [
-  'components/AdminUsersPage.vue#segment=keycloak|local',
-  'components/BattleDataAdminPage.vue#filters.arenaBonusType=1|7',
   'components/HoFAdminPage.vue#fBattleType=RANDOM|RATING',
   'components/HoFAdminPage.vue#fReplayAvailable=true|false',
   'components/HoFAdminPage.vue#fSort=battle_time|upload_time',
   'components/HoFPage.vue#battleType=RANDOM|RATING',
   'components/TournamentPointsConfigPage.vue#=GLOBAL',
-  'components/TournamentPointsConfigPage.vue#form.daysPerRound=2|3',
-  'components/TournamentPointsConfigPage.vue#form.roundCount=4|5',
-  'components/TournamentPointsConfigPage.vue#naming=DAY|STAGE',
 ]
 
 interface TemplateProp {

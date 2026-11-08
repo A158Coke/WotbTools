@@ -523,18 +523,18 @@ describe('ReplayPage PNG export', () => {
       expect(h2c.getCalls()[0][1].backgroundColor).toBe('#1e1e1e')
     })
 
-    it('uses profile-derived theme:classic→light, showcase→dark (data-theme 由 useUiProfile 派生)', async () => {
+    it('uses profile-derived theme:winter→light, summer→dark (data-theme 由 useUiProfile 派生)', async () => {
       state.init.resp = makeResp()
-      // classic → data-theme=light → 浅色导出
-      setUiProfile('classic')
+      // 寒冬 → data-theme=light → 浅色导出
+      setUiProfile('winter')
       h2c.resetCalls()
       wrapper = mountPage()
       await pngButton(wrapper).trigger('click')
       await flushPromises()
       expect(document.documentElement.getAttribute('data-theme')).toBe('light')
       expect(h2c.getCalls()[0][1].backgroundColor).toBe('#ffffff')
-      // showcase → data-theme=dark → 深色导出
-      setUiProfile('showcase')
+      // 盛夏 → data-theme=dark → 深色导出
+      setUiProfile('summer')
       h2c.resetCalls()
       wrapper = mountPage()
       await pngButton(wrapper).trigger('click')

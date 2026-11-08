@@ -108,6 +108,18 @@ export function usePlaybackFullscreen({ target, isPhone, isActive = () => true, 
     return typeof document !== 'undefined' && el != null && typeof el.requestFullscreen === 'function'
   })
 
+  /**
+   * 只在本回放根**确实是** fullscreenElement 时退出（别的元素的全屏不碰）。
+   * 供宿主在能力切走 / KeepAlive 停用时调用：被缓存的组件不会卸载，卸载路径的兜底退出不会发生。
+   */
+  function exitOwnedFullscreen() {
+    if (!ownsFullscreen() || typeof document.exitFullscreen !== 'function') return
+    try {
+      const p = document.exitFullscreen()
+      if (p && typeof p.catch === 'function') p.catch(() => {})
+    } catch { /* unsupported browsers may throw */ }
+  }
+
   function toggleFullscreen() {
     if (typeof document === 'undefined') return
     const el = target()
@@ -138,6 +150,7 @@ export function usePlaybackFullscreen({ target, isPhone, isActive = () => true, 
     isFullscreen: readonly(isFullscreen),
     fullscreenSupported,
     toggleFullscreen,
+    exitOwnedFullscreen,
     /** 供测试与外部退出路径显式解锁 */
     unlockOrientation,
   }

@@ -5,7 +5,6 @@ import { Readable } from 'node:stream'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
-import { COMPACT_TAB_ITEMS } from '../src/app/navigation.js'
 
 // Production router, components, multipart transport and CSS; only external HTTP/auth are fixtures.
 let db
@@ -92,9 +91,10 @@ async function tap(page, selector, touch) {
   const point = await page.waitForValue(`(async () => {
     const element = document.querySelector(${JSON.stringify(selector)});
     if (!element || element.disabled) return null;
-    element.scrollIntoView({block:'center',inline:'nearest'});
+    // 滚动后顶栏等粘性元素会在数帧后收起并让内容位移，两帧稳定检查不够；等 ~12 帧再比对，位移中就返回 null 让外层重试。
+    element.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});
     const before = element.getBoundingClientRect();
-    await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);
+    for (let i = 0; i < 12; i++) await new Promise(requestAnimationFrame);
     const after = element.getBoundingClientRect(), x = after.x + after.width / 2, y = after.y + after.height / 2;
     if (!after.width || !after.height || Math.abs(before.x-after.x) > 0.5 || Math.abs(before.y-after.y) > 0.5
       || !element.contains(document.elementFromPoint(x, y))) return null;
@@ -113,31 +113,36 @@ async function fill(page, values) {
   }, values)
 }
 async function chooseAvatar(page) { await page.evaluate(`(async()=>{const canvas=document.createElement('canvas');canvas.width=32;canvas.height=32;canvas.getContext('2d').fillRect(0,0,32,32);const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));const transfer=new DataTransfer();transfer.items.add(new File([blob],'avatar.png',{type:'image/png'}));const input=document.querySelector('[data-testid=tournament-image-input]');input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}))})()`) }
+// 触屏下 overflow 还要比 innerWidth 与 visualViewport：移动端模拟下内容过宽会撑大布局视口，scrollWidth 检测不到。
+// 命中区按布局盒（offset*）量：AppButton 按下反馈 scale(.97) 的回弹过渡会让 getBoundingClientRect 暂时缩到 42.68px。
 async function geometry(page, profile, configuration = false) {
-  const value = await page.evaluate(`(()=>{const p=[...document.querySelectorAll('.creator-config-grid > *')].map(e=>e.getBoundingClientRect());return{overflow:document.documentElement.scrollWidth>innerWidth+1,profile:document.documentElement.dataset.uiProfile,stacked:p.length===2?p[1].top>=p[0].bottom:false,tiny:matchMedia('(pointer:coarse)').matches?[...document.querySelectorAll('.creators-page button')].filter(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&r.height<43}).map(e=>e.dataset.testid||e.textContent):[]}})()`)
+  const value = await page.evaluate(`(()=>{const p=[...document.querySelectorAll('.creator-config-grid > *')].map(e=>e.getBoundingClientRect());return{overflow:document.documentElement.scrollWidth>innerWidth+1||matchMedia('(pointer:coarse)').matches&&innerWidth>visualViewport.width+1,profile:document.documentElement.dataset.uiProfile,stacked:p.length===2?p[1].top>=p[0].bottom:false,tiny:matchMedia('(pointer:coarse)').matches?[...document.querySelectorAll('.creators-page button')].filter(e=>e.getClientRects().length>0&&e.offsetWidth>0&&e.offsetHeight>0&&e.offsetHeight<43).map(e=>e.dataset.testid||e.textContent):[]}})()`)
   assert.equal(value.overflow, false); assert.equal(value.profile, profile); assert.deepEqual(value.tiny, [])
   if (configuration) assert.equal(value.stacked, await page.evaluate('innerWidth<768'))
 }
-/** 小屏的推荐入口在"更多"页快捷区（底部 Tab 固定 5 项），大屏在侧边栏。 */
+/** 推荐入口：小屏在左侧抽屉，大屏在侧边栏（同一份分组）。 */
 async function openCreators(page, scenario) {
-  if (scenario.width >= 768) return tap(page, '[data-testid=nav-creators]', scenario.touch)
-  await tap(page, '[data-testid=tab-more]', scenario.touch)
-  await page.waitForValue('!!document.querySelector("[data-testid=more-shortcut-creators]")', Boolean)
-  await tap(page, '[data-testid=more-shortcut-creators]', scenario.touch)
+  await page.navigateViaShell('creators', scenario.touch)
 }
-async function tabGeometry(page, expectedCount) {
+/** 4.0：bilibili 推荐是一页两个页签；只有一种类型已发布时没有页签，直接就是该列表。 */
+async function openType(page, type, touch) {
+  await page.waitForValue('!!document.querySelector("[data-testid=creators-page]")', Boolean, { label: 'recommendations page' })
+  if (await page.evaluate(`!!document.querySelector('[data-testid=recommendation-tab-${type}]')`)) await tap(page, `[data-testid=recommendation-tab-${type}]`, touch)
+}
+/** 抽屉外壳的导航几何：每一项 44px 命中区、项与项不重叠、抽屉不越出视口、没有底部 Tab 栏。 */
+async function drawerGeometry(page, scenario) {
+  await page.openNavDrawer(scenario.touch)
   const value = await page.evaluate(`(() => {
-    const bar = document.querySelector('[data-testid=app-tab-bar]'), bounds = bar.getBoundingClientRect();
-    const tabs = [...bar.querySelectorAll('.tab')].map(el => { const r = el.getBoundingClientRect(); return {left:r.left,right:r.right,width:r.width,height:r.height,active:el.getAttribute('aria-current') === 'page'} });
-    return {tabs,left:bounds.left,right:bounds.right,overflow:document.documentElement.scrollWidth > innerWidth + 1};
+    const panel = document.querySelector('[data-testid=nav-drawer-panel]'), sheet = panel.closest('[role=dialog]') || panel, bounds = sheet.getBoundingClientRect();
+    const items = [...panel.querySelectorAll('.sidebar-link')].map(el => { const r = el.getBoundingClientRect(); return {top:r.top,bottom:r.bottom,width:r.width,height:r.height} });
+    return {items,right:bounds.right,tabBar:!!document.querySelector('[data-testid=app-tab-bar]'),overflow:document.documentElement.scrollWidth > innerWidth + 1};
   })()`)
-  assert.equal(value.tabs.length, expectedCount)
-  assert.equal(value.overflow, false, 'tab bar never overflows the viewport')
-  value.tabs.forEach((tab, index) => {
-    assert.ok(tab.width >= 44 && tab.height >= 44, 'tabs retain 44px touch targets')
-    if (index) assert.ok(tab.left >= value.tabs[index - 1].right - 0.5, 'adjacent tab targets never overlap')
-    if (tab.active) assert.ok(tab.left >= value.left - 0.5 && tab.right <= value.right + 0.5, 'active tab is visible after navigation')
-  })
+  assert.equal(value.tabBar, false, 'no bottom tab bar (L1)')
+  assert.equal(value.overflow, false, 'drawer never overflows the viewport')
+  assert.ok(value.right <= scenario.width + 0.5, 'drawer stays inside the viewport')
+  assert.ok(value.items.length >= 3, 'drawer lists the primary sections')
+  for (const item of value.items) assert.ok(item.width >= 44 && item.height >= 44, 'drawer items retain 44px touch targets')
+  await page.closeNavDrawer()
 }
 async function cardPresentation(page, origin, scenario, chrome, sessionId) {
   const type = scenario.cardType
@@ -225,13 +230,11 @@ async function videoLifecycle(page, origin, scenario) {
     { ...db.creators[1], id: 102, type: 'VIDEO', bilibiliUid: 'BV1XX411C7MD', name: 'Highlight video', categoryIds: [52], levelId: null },
   ]
   await page.goto(`${origin}/?view=recommendations&ws-auth=0&keep=1#catalog`)
-  await page.waitForValue('!!document.querySelector("[data-testid=recommendation-card-VIDEO]")', Boolean)
-  assert.equal(await page.evaluate('!!document.querySelector("[data-testid=recommendation-card-UP]")'), false, 'only VIDEO content still publishes the main entry')
+  await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 2, { label: 'only VIDEO published: the page opens straight on the video list' })
+  assert.equal(await page.evaluate('!!document.querySelector("[data-testid=recommendation-tabs]")'), false, 'a single published type has no tabs')
   if (scenario.width >= 768) assert.equal(await page.evaluate('!!document.querySelector("[data-testid=nav-creators]")'), true)
   await geometry(page, scenario.profile)
-  await tap(page, '[data-testid=recommendation-card-VIDEO]', touch)
-  await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 2)
-  assert.equal(await page.evaluate('new URL(location.href).searchParams.get("view")'), 'recommended-videos')
+  assert.equal(await page.evaluate('new URL(location.href).searchParams.get("view")'), 'recommendations')
   assert.equal(await page.evaluate('document.querySelector("[data-testid=creator-card-101] a").href'), 'https://www.bilibili.com/video/BV1xx411c7mD')
   await tap(page, '[data-testid=creator-categories-toggle]', touch)
   assert.equal(await page.evaluate('!!document.querySelector("[data-testid=creator-filter-1],[data-testid=creator-filter-53]")'), false, 'public VIDEO filters exclude UP and empty VIDEO categories')
@@ -241,9 +244,7 @@ async function videoLifecycle(page, origin, scenario) {
   await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 2)
   await page.evaluate('history.forward()')
   await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 1)
-  await tap(page, '[data-testid=recommendations-back]', touch)
-  await page.waitForValue('!!document.querySelector("[data-testid=recommendations-page]")', Boolean)
-  assert.deepEqual(await page.evaluate('({view:new URL(location.href).searchParams.get("view"),category:new URL(location.href).searchParams.get("creatorCategory"),keep:new URL(location.href).searchParams.get("keep"),hash:location.hash})'), { view: 'recommendations', category: null, keep: '1', hash: '#catalog' })
+  assert.deepEqual(await page.evaluate('({view:new URL(location.href).searchParams.get("view"),keep:new URL(location.href).searchParams.get("keep"),hash:location.hash})'), { view: 'recommendations', keep: '1', hash: '#catalog' }, 'category filtering keeps unrelated query and hash')
 
   reset(); db.recommendationsAvailable = false
   for (const view of ['recommendations', 'creators', 'recommended-videos', 'creators-config']) {
@@ -296,7 +297,7 @@ async function videoLifecycle(page, origin, scenario) {
   const created = db.creators.find(value => value.type === 'VIDEO')
   assert.ok(created?.avatarId); assert.equal(created.bilibiliUid, 'BV1xX411c7mD'); assert.equal(created.levelId, null); assert.equal(created.stars, 3)
   await openCreators(page, scenario)
-  await tap(page, '[data-testid=recommendation-card-VIDEO]', touch)
+  await openType(page, 'VIDEO', touch)
   await page.waitForValue(`document.querySelector('[data-testid=creator-edit-${created.id}]')?.disabled`, value => value === false)
   await geometry(page, scenario.profile)
   await tap(page, `[data-testid=creator-edit-${created.id}]`, touch)
@@ -310,15 +311,15 @@ async function videoLifecycle(page, origin, scenario) {
   await tap(page, `[data-testid=creator-remove-${created.id}]`, touch)
   await tap(page, '[data-testid=confirm-ok]', touch)
   await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 0)
-  await tap(page, '[data-testid=recommendations-back]', touch)
-  await page.waitForValue('!!document.querySelector("[data-testid=recommendation-card-VIDEO]")', Boolean)
   await page.evaluate('window.__wsAuth.tokenParsed.value={realm_access:{roles:[]}}')
-  await page.waitForValue('!document.querySelector("[data-testid=recommendation-card-VIDEO]")', Boolean)
-  assert.equal(await page.evaluate('!!document.querySelector("[data-testid=recommendation-card-UP]")'), true, 'deleting final VIDEO hides its public card while UP stays published')
+  await page.waitForValue('!!document.querySelector("[data-testid=creators-not-published]")', Boolean, { label: 'final VIDEO removed: the VIDEO tab is no longer public' })
+  await tap(page, '[data-testid=recommendations-back]', touch)
+  await page.waitForValue('!!document.querySelector("[data-testid=creators-page]")', Boolean)
+  assert.equal(await page.evaluate('!!document.querySelector("[data-testid=recommendation-tab-VIDEO]")'), false, 'deleting final VIDEO hides its public tab while UP stays published')
   if (scenario.width >= 768) assert.equal(await page.evaluate('!!document.querySelector("[data-testid=nav-creators]")'), true)
 }
 const { server, origin } = await startFixtureServer({ middleware, allowedHosts: ['wotbtools.com'] }), chrome = await launchChromeForCdp(findChrome(), { extraArgs: ['--host-resolver-rules=MAP wotbtools.com 127.0.0.1', '--no-proxy-server'] })
-const scenarios = ['showcase', 'classic'].flatMap(profile => [
+const scenarios = ['summer', 'winter'].flatMap(profile => [
   ...['UP', 'VIDEO'].flatMap(cardType => [1920, 1600, 1024, 390, 320].map(width => ({ name: `${profile}-cards-${cardType}-${width}`, profile, cardType, width, height: 1000, touch: width < 1200, locale: 'zh' }))),
   ...['en', 'ru'].map(locale => ({ name: `${profile}-cards-VIDEO-${locale}-1280`, profile, cardType: 'VIDEO', width: 1280, height: 1000, touch: false, locale })),
   ...[1440, 1024, 390, 360, 767, 768, 1199, 1200].map(width => ({ name: `${profile}-${width}`, profile, width, height: 1000, touch: width < 1200, full: [1440, 1024, 390].includes(width), locale: width === 1024 ? 'zh' : width === 390 ? 'ru' : 'en' })),
@@ -370,7 +371,7 @@ try {
         const created = db.creators[0]
         assert.ok(created, 'administrator can publish the first UP')
         await tap(page, '[data-testid=nav-creators]', scenario.touch)
-        await tap(page, '[data-testid=recommendation-card-UP]', scenario.touch)
+        await openType(page, 'UP', scenario.touch)
         await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 1)
         await tap(page, '[data-testid=creator-categories-toggle]', scenario.touch)
         await tap(page, '[data-testid=creator-filter-3]', scenario.touch)
@@ -417,34 +418,22 @@ try {
       await page.goto(`${scenarioOrigin}/?view=more&ws-auth=0`)
       if (scenario.compactNavigation) {
         await page.waitForValue('!!document.querySelector("[data-testid=more-page]")', Boolean)
-        await page.waitForValue('!!document.querySelector("[data-testid=more-shortcut-creators]")', Boolean)
-        await tabGeometry(page, COMPACT_TAB_ITEMS.length)
-        // Tab traversal must reveal every target without moving the page vertically.
-        const scrollY = await page.evaluate('window.scrollY')
-        const targets = await page.evaluate('[...document.querySelectorAll("[data-testid=app-tab-bar] .tab")].map(el=>el.dataset.testid)')
-        await page.evaluate(`document.querySelector('[data-testid="${targets[0]}"]').focus()`)
-        for (const [index, target] of targets.entries()) {
-          if (index) {
-            await chrome.client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 }, sessionId)
-            await chrome.client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 }, sessionId)
-          }
-          await page.waitForValue(`(() => {const e=document.activeElement,r=e.getBoundingClientRect();return {id:e.dataset.testid,left:r.left,right:r.right,width:innerWidth}})()`, value => value.id === target && value.left >= -0.5 && value.right <= value.width + 0.5)
-        }
-        assert.equal(await page.evaluate('window.scrollY'), scrollY)
+        await drawerGeometry(page, scenario)
         if (scenario.productionHome) {
-          // 主站小屏没有首页 Tab，Logo 是首页唯一入口（APK 与本地回回放）。
-          assert.equal(await page.evaluate('!!document.querySelector("[data-testid=tab-home],[data-testid=more-shortcut-home]")'), false)
-          await tap(page, '[data-testid=app-top-bar] .brand', scenario.touch)
+          // 主站：Logo 与抽屉里的「首页」都回到公开首页（APK 与本地回回放）。
+          await page.tapSelector('[data-testid=app-top-bar] .brand', scenario.touch)
           await page.waitForValue('!!document.querySelector("[data-testid=home-feedback]")', Boolean, { label: 'public home after logo' })
-          assert.deepEqual(await page.evaluate('[location.pathname, new URL(location.href).searchParams.has("view"), document.querySelectorAll("[data-testid=app-tab-bar] [aria-current]").length]'), ['/', false, 0])
+          assert.deepEqual(await page.evaluate('[location.pathname, new URL(location.href).searchParams.has("view")]'), ['/', false])
         }
       }
       await openCreators(page, scenario)
-      await tap(page, '[data-testid=recommendation-card-UP]', scenario.touch)
+      await openType(page, 'UP', scenario.touch)
       await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 2)
-      const activeEntry = scenario.width < 768 ? '[data-testid=tab-more]' : '[data-testid=nav-creators]'
+      const drawerShell = await page.evaluate('!!document.querySelector("[data-testid=nav-menu]")')
+      if (drawerShell) await page.openNavDrawer(scenario.touch)
+      const activeEntry = drawerShell ? '[data-testid=nav-drawer-panel] [data-testid=nav-creators]' : '[data-testid=nav-creators]'
       assert.equal(await page.evaluate(`document.querySelector(${JSON.stringify(activeEntry)}).getAttribute('aria-current')`), 'page')
-      if (scenario.compactNavigation) await tabGeometry(page, COMPACT_TAB_ITEMS.length)
+      if (drawerShell) await page.closeNavDrawer()
       assert.equal(await page.evaluate('document.querySelectorAll(".creator-card button").length'), 0, 'anonymous cards have no management or user-action buttons')
       assert.equal(await page.evaluate('window.__wsAuth.loginCalls.length'), 0); assert.equal(db.writes, 0)
       assert.equal(await page.evaluate('document.querySelector(".creator-card a").rel'), 'noopener noreferrer')
@@ -480,7 +469,7 @@ try {
         assert.equal(await page.evaluate('document.querySelector("[data-testid=creator-categories-toggle]").getAttribute("aria-expanded")'), 'false')
         assert.equal(await page.evaluate('new URL(location.href).searchParams.get("creatorCategory")'), '2')
         const profileBeforeReads = db.creatorReads
-        await page.evaluate(`import('/src/composables/useUiProfile.js').then(m => m.setUiProfile(${JSON.stringify(scenario.profile === 'classic' ? 'showcase' : 'classic')}))`)
+        await page.evaluate(`import('/src/composables/useUiProfile.js').then(m => m.setUiProfile(${JSON.stringify(scenario.profile === 'winter' ? 'summer' : 'winter')}))`)
         assert.equal(await page.evaluate('document.querySelector("[data-testid=creator-categories-toggle]").getAttribute("aria-expanded")'), 'false')
         await page.evaluate(`import('/src/composables/useUiProfile.js').then(m => m.setUiProfile(${JSON.stringify(scenario.profile)}))`)
         assert.equal(db.creatorReads, profileBeforeReads)
