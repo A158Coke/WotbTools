@@ -130,7 +130,7 @@ function regroundSpawns() {
   for (const m of markers) m.reground();
 }
 
-/** UI Profile 切换（showcase ↔ classic）后 token 值变化：已有标记原位重着色，
+/** UI Profile 切换（四季主题）后 token 值变化：已有标记原位重着色，
  *  不重建几何 / 场景 / 相机。与 reground 同为宿主显式调用的刷新面。 */
 function refreshSpawnColors() {
   for (const m of markers) {

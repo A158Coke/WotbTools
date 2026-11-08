@@ -1,39 +1,19 @@
 // @vitest-environment happy-dom
-import { describe, expect, it, beforeEach } from 'vitest'
-import { bottomChromeHeight } from './usePaneFillHeight.js'
+import { describe, expect, it } from 'vitest'
+import { bottomSafeAreaHeight } from './usePaneFillHeight.js'
 
 /**
- * 底部固定导航预算（Codex #4432009935 / A158Coke 复核）：手机竖屏 `AppTabBar` 是
- * `position: fixed; bottom: 0`（56px + safe-area），盖在内容之上而 `#app` 的
- * padding-bottom 不缩短显式算出的 pane 高度——必须按实际 TabBar 高度扣减。
+ * 底部预算（design-language §9 L1 / L4）：外壳没有底部常驻栏，只扣底部安全区；
+ * 探针用完即移除，不在文档里留下节点。
  */
-describe('bottomChromeHeight', () => {
-  beforeEach(() => {
-    document.body.innerHTML = ''
+describe('bottomSafeAreaHeight', () => {
+  it('没有安全区（桌面 / 无刘海设备）：预算为 0，且不留下探针节点', () => {
+    const before = document.body.childElementCount
+    expect(bottomSafeAreaHeight()).toBe(0)
+    expect(document.body.childElementCount).toBe(before)
   })
 
-  it('无 TabBar（桌面/平板/紧凑横屏/沉浸态）：预算为 0', () => {
-    expect(bottomChromeHeight()).toBe(0)
-  })
-
-  it('渲染出的 TabBar：按实际高度扣减（含 safe-area 的 padding 在内）', () => {
-    const bar = document.createElement('nav')
-    bar.setAttribute('data-testid', 'app-tab-bar')
-    bar.style.height = '56px'
-    Object.defineProperty(bar, 'getBoundingClientRect', {
-      value: () => ({ top: 788, height: 56, bottom: 844, left: 0, right: 390, width: 390 }),
-    })
-    document.body.appendChild(bar)
-    expect(bottomChromeHeight()).toBe(56)
-  })
-
-  it('零高度 TabBar（隐藏/卸载中）：预算为 0，不扣出负空间', () => {
-    const bar = document.createElement('nav')
-    bar.setAttribute('data-testid', 'app-tab-bar')
-    Object.defineProperty(bar, 'getBoundingClientRect', {
-      value: () => ({ top: 844, height: 0, bottom: 844, left: 0, right: 390, width: 390 }),
-    })
-    document.body.appendChild(bar)
-    expect(bottomChromeHeight()).toBe(0)
+  it('没有 document：预算为 0', () => {
+    expect(bottomSafeAreaHeight(null)).toBe(0)
   })
 })

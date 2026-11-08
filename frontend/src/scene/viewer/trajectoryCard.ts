@@ -3,7 +3,6 @@
 import * as THREE from 'three'
 import { createShotTrajectoryGroup, trajectoryChanceColor } from './shotTrajectoryGeometry.js'
 import { isCompactShotResultCard, shotResultCardMaxWidth as resultCardMaxWidth, shotResultCardMetrics } from '../../utils/shotResultCardMetrics.js'
-import { placeShotResultCard } from '../../utils/shotResultCardPlacement.js'
 import { renderShotResultCardHtml } from './shotResultCard.js'
 import { penetrationChance, evaluateProbabilityChain, resolveCardChance } from '../armorInspectorChance.js'
 import type { ProbabilityChainLayer } from '../armorInspectorChance.js'
@@ -279,40 +278,9 @@ function updateTrajInfoPos(): void {
             if (maxWidth) div.style.maxWidth = `${maxWidth}px`;
             div.style.whiteSpace = 'normal';
             div.style.boxSizing = 'border-box';
-            const v = trajInfoPos.clone().project(getCamera());
-            if (v.z > 1) { div.style.display = 'none'; return; }
-            // 卡片是 position:fixed，left/top 是视口坐标；必须按画布实际矩形换算，
-            // 否则页面/容器滚动或窗口缩放后画布移动而卡片停在旧视口位置。
-            const x = rect.left + (v.x * 0.5 + 0.5) * rect.width;
-            const y = rect.top + (-v.y * 0.5 + 0.5) * rect.height;
-            const offX = 0, offY = 160;
-            div.style.display = 'block';   // 先显示才能量取实际尺寸
-            const w = div.offsetWidth || 300, h = div.offsetHeight || 90;
-            // 可见画布内钳制（translateX(-50%)：left 是面板中心 x）
-            const clipL = Math.max(rect.left, 0), clipT = Math.max(rect.top, 0);
-            const clipR = Math.min(rect.right, window.innerWidth), clipB = Math.min(rect.bottom, window.innerHeight);
-            if (clipR <= clipL || clipB <= clipT) { div.style.display = 'none'; return; }
-            // 固定 UI 避让：不压四角与顶部信息面板（左下信息/右下按钮提示/右上栈/左上排）
-            const blockers: DOMRect[] = [];
-            const tc = document.getElementById('turret-controls');
-            if (tc && tc.style.display !== 'none') blockers.push(tc.getBoundingClientRect());
-            const addRect = (id: string) => {
-                const el = document.getElementById(id);
-                if (el) { const r = el.getBoundingClientRect(); if (r.width > 0 && r.height > 0) blockers.push(r); }
-            };
-            addRect('corner-br'); addRect('corner-tr'); addRect('info-panel'); addRect('tank-selectors');
-            const { x: px, y: py } = placeShotResultCard({
-                anchorX: x + offX,
-                anchorY: y,
-                offsetY: offY,
-                cardWidth: w,
-                cardHeight: h,
-                clip: { left: clipL, top: clipT, right: clipR, bottom: clipB },
-                blockers,
-            });
-            div.style.transform = 'translateX(-50%)';
-            div.style.left = px + 'px';
-            div.style.top = py + 'px';
+            // 结果固定停靠在场景顶部正中（AgentArmorView 样式所有），不再按命中点投影摆位：
+            // 不压车体、不避让四角，页面滚动时随场景容器一起移动。
+            div.style.display = 'block';
         }
     return {
         showTrajectory, updateTrajInfoPos, armorDebugPanel, tidyTrajectory,

@@ -35,6 +35,7 @@ function mountPage(navigate = vi.fn(), onboarding = null, creatorsAvailable = tr
   const wrapper = mount(MorePage, {
     global: {
       plugins: [i18n],
+      stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } },
       provide: { [NAVIGATE_VIEW_KEY]: navigate, [ONBOARDING_KEY]: onboarding, [FEEDBACK_KEY]: openFeedback, [ANDROID_UPDATE_KEY]: androidUpdate,
         [CREATOR_AVAILABILITY_KEY]: { available: ref(creatorsAvailable), directoryVisible: ref(creatorsVisible), contentKnown: ref(true), publicCategories: ref([]), loading: ref(false), refresh: vi.fn() } },
     },
@@ -42,23 +43,35 @@ function mountPage(navigate = vi.fn(), onboarding = null, creatorsAvailable = tr
   return { wrapper, i18n }
 }
 
-describe('MorePage shortcuts', () => {
-  it('opens sections outside the tab bar, and shows recommendations only when the directory is visible', async () => {
+describe('MorePage navigation', () => {
+  it('does not repeat primary navigation: every section lives in the drawer / sidebar', () => {
     menuRole.authenticated = ref(false)
-    const navigate = vi.fn()
-    const { wrapper } = mountPage(navigate, null, true, null, true)
-    expect(wrapper.findAll('[data-testid^="more-shortcut-"]').map(item => item.attributes('data-testid').replace('more-shortcut-', '')))
-      .toEqual(['techtree', 'maps', 'league-broadcasts', 'creators'])
-    await wrapper.get('[data-testid="more-shortcut-maps"]').trigger('click')
-    expect(navigate).toHaveBeenCalledWith('map-preview')
+    const { wrapper } = mountPage(vi.fn(), null, true, null, true)
+    expect(wrapper.find('[data-testid^="more-shortcut-"]').exists()).toBe(false)
     wrapper.unmount()
-    const hidden = mountPage(vi.fn(), null, true, null, false).wrapper
-    expect(hidden.find('[data-testid="more-shortcut-creators"]').exists()).toBe(false)
-    hidden.unmount()
   })
 })
 
 describe('MorePage language switcher', () => {
+  it('管理入口只在抽屉 / 侧边栏：任何角色在「更多与设置」都看不到管理链接', () => {
+    menuRole.tournament = true
+    menuRole.content = true
+    const { wrapper } = mountPage()
+    for (const view of ['admin-users', 'hof-admin', 'tournament-points-config', 'tournament-points-admin', 'creators-config']) {
+      expect(wrapper.find(`[data-testid="more-link-${view}"]`).exists(), view).toBe(false)
+    }
+    menuRole.tournament = false
+    menuRole.content = false
+    wrapper.unmount()
+  })
+
+  it('赞助是强调卡，不在关于与帮助列表里重复', () => {
+    const { wrapper } = mountPage()
+    expect(wrapper.findAll('[data-testid="more-link-sponsor"]')).toHaveLength(1)
+    expect(wrapper.get('[data-testid="more-link-sponsor"]').attributes('href')).toBe('/sponsor')
+    wrapper.unmount()
+  })
+
   it('requests the in-app feedback dialog instead of linking out', async () => {
     menuRole.authenticated = ref(false)
     const openFeedback = vi.fn()
@@ -79,32 +92,6 @@ describe('MorePage language switcher', () => {
     expect(update.open).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
-  it('keeps creator administration hidden on a legacy backend', () => {
-    menuRole.tournament = true
-    menuRole.content = true
-    const { wrapper } = mountPage(vi.fn(), null, false)
-    expect(wrapper.find('[data-testid="more-link-creators-config"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="more-link-tournament-points-config"]').exists()).toBe(true)
-    wrapper.unmount()
-  })
-  it('keeps creator administration available to content-admin with an empty public snapshot without duplicating primary navigation', async () => {
-    const navigate = vi.fn(), { wrapper } = mountPage(navigate)
-    expect(wrapper.find('[data-testid="more-link-creators"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="more-link-creators-config"]').exists()).toBe(false)
-    wrapper.unmount()
-    menuRole.content = true
-    const admin = mountPage().wrapper
-    expect(admin.find('[data-testid="more-link-creators-config"]').exists()).toBe(true)
-    expect(admin.find('[data-testid="more-link-tournament-points-config"]').exists()).toBe(false)
-    admin.unmount()
-  })
-  it('does not grant content administration to tournament-admin', () => {
-    menuRole.tournament = true
-    const { wrapper } = mountPage()
-    expect(wrapper.find('[data-testid="more-link-tournament-points-config"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="more-link-creators-config"]').exists()).toBe(false)
-    wrapper.unmount()
-  })
   it('does not duplicate the primary broadcast entry in More', () => {
     const { wrapper } = mountPage()
     expect(wrapper.find('[data-testid="more-link-league-broadcasts"]').exists()).toBe(false)
@@ -116,17 +103,14 @@ describe('MorePage language switcher', () => {
     menuRole.content = false
     menuRole.authenticated = ref(false)
   })
-  it('shows More guides only while signed in and reacts to login/logout', async () => {
+  it('offers Feature guides to everyone (the APK has no Home page to reopen them from)', async () => {
     const openDirectory = vi.fn()
     const { wrapper } = mountPage(vi.fn(), { openDirectory })
-    expect(wrapper.find('[data-testid="more-link-guide"]').exists()).toBe(false)
-    menuRole.authenticated.value = true
-    await wrapper.vm.$nextTick()
     await wrapper.get('[data-testid="more-link-guide"]').trigger('click')
     expect(openDirectory).toHaveBeenCalledTimes(1)
-    menuRole.authenticated.value = false
+    menuRole.authenticated.value = true
     await wrapper.vm.$nextTick()
-    expect(wrapper.find('[data-testid="more-link-guide"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="more-link-guide"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
@@ -149,14 +133,5 @@ describe('MorePage language switcher', () => {
     expect(i18n.global.locale).toBe('en')
     expect(localStorage.getItem('wotb-lang')).toBe('en')
     expect(english.attributes('aria-checked')).toBe('true')
-  })
-  it('shows tournament management to tournament-only administrators without other management entries', () => {
-    menuRole.tournament = true
-    const { wrapper } = mountPage()
-    expect(wrapper.find('[data-testid="more-link-tournament-points-config"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="more-link-tournament-points-admin"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="more-link-admin-users"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="more-link-hof-admin"]').exists()).toBe(false)
-    wrapper.unmount()
   })
 })

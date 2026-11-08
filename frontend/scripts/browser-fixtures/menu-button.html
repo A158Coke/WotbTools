@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html data-theme="dark" data-ui-profile="showcase">
+<html data-theme="dark" data-ui-profile="summer">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -24,14 +24,13 @@
     import '../../src/styles/playback-shared.css'
     import '../../src/styles/playback-mobile.css'
     import '../../src/styles/playback-workspace.css'
-    import '../../src/styles/classic-profile.css'
     import MenuButton from '../../src/components/MenuButton.vue'
     import { messages } from '../../src/locales/messages.js'
 
     const params = new URLSearchParams(location.search)
-    const profile = params.get('profile') === 'classic' ? 'classic' : 'showcase'
+    const profile = params.get('profile') === 'winter' ? 'winter' : 'summer'
     document.documentElement.dataset.uiProfile = profile
-    document.documentElement.dataset.theme = profile === 'classic' ? 'light' : 'dark'
+    document.documentElement.dataset.theme = profile === 'winter' ? 'light' : 'dark'
     const text = messages.ru.workspace
     const items = [
       { key: 'aggregate', label: text.export_excel_summary, testid: 'menu-aggregate' },

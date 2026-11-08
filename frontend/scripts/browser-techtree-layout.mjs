@@ -2,13 +2,13 @@
  * 科技树 / compact 页头布局门禁（真实浏览器几何，不是源码正则）。
  *
  * 锁定的 invariant：
- * - compact（<768）页头收敛为「标题 + 操作」一行（≤56px，DC-ARC-02），国别页签单行；
- * - 科技树滚动区不得伸到固定底部 Tab 栏下面，吸底等级条必须停在底栏上方；
+ * - 竖屏手机按等级从高到低一行一级（无等级标尺），页头一行（≤56px，DC-ARC-02），国别页签单行横滑；
+ * - 外壳没有底部常驻栏（L1）：科技树滚动区与吸底等级条都停在视口底边之内；
  * - 矮横屏树视口至少约两行；平板 / 桌面等级条保持在滚动视口内；
  * - 任何形态都没有页面级横向溢出。
  *
- * 负向对照：在手机场景注入旧实现 `max-block-size: calc(100dvh - 220px)`，断言探针
- * 必须抓到「等级条被底栏遮住」——防止断言在旧 bug 上仍然变绿。
+ * 负向对照：在手机场景注入固定高度实现 `max-block-size: calc(100dvh + 120px)`，断言探针
+ * 必须抓到「等级条落到视口外」——防止断言在旧 bug 上仍然变绿。
  *
  * 数据面用确定性夹具资产包（科技树 JSON + tank_cache + crops），不依赖真实资产。
  */
@@ -48,8 +48,8 @@ function fixtureTechTree() {
 const { tree, tankCache } = fixtureTechTree()
 
 const SCENARIOS = [
-  { name: 'phone-390x844', width: 390, height: 844, touch: true, compact: true },
-  { name: 'phone-360x640', width: 360, height: 640, touch: true, compact: true },
+  { name: 'phone-390x844', width: 390, height: 844, touch: true, portrait: true },
+  { name: 'phone-360x640', width: 360, height: 640, touch: true, portrait: true },
   { name: 'phone-landscape-740x360', width: 740, height: 360, touch: true, compact: false, landscape: true },
   { name: 'tablet-768x1024', width: 768, height: 1024, touch: true, compact: false },
   { name: 'desktop-1440x900', width: 1440, height: 900, touch: false, compact: false },
@@ -70,9 +70,8 @@ function layoutProbe() {
     }
   }
   const q = selector => document.querySelector(selector)
-  const scroll = q('.tt-scroll')
+  const scroll = q('.tt-scroll') || q('.tt-tiers')
   const ruler = q('.tt-ruler')
-  const tabbar = q('[data-testid="app-tab-bar"]')
   const header = q('.techtree .page-header')
   const tabs = q('.tt-tabs')
   return {
@@ -86,8 +85,11 @@ function layoutProbe() {
     tabRows: tabs ? new Set([...tabs.children].map((element) => Math.round(element.getBoundingClientRect().top))).size : null,
     scroll: scroll ? { ...rect(scroll), clientHeight: scroll.clientHeight, scrollHeight: scroll.scrollHeight } : null,
     ruler: rect(ruler),
-    tabbar: rect(tabbar),
+    tabBar: !!q('[data-testid="app-tab-bar"]'),
     cells: document.querySelectorAll('.tt-cell').length,
+    tierRows: document.querySelectorAll('.tt-tier-row').length,
+    typeFilter: rect(q('[data-testid="techtree-type-filter"]')),
+    smallestCell: [...document.querySelectorAll('.tt-tier-cell')].reduce((min, el) => { const r = el.getBoundingClientRect(); return Math.min(min, r.height, r.width) }, Infinity),
   }
 }
 
@@ -96,11 +98,26 @@ function assertScenario(scenario, layout) {
   assert.ok(layout.cells >= ROWS * COLS, `${label}: 科技树未完整渲染（cells=${layout.cells}）`)
   assert.ok(layout.header, `${label}: 缺少 PageHeader`)
   assert.ok(layout.scroll, `${label}: 缺少树滚动区`)
-  assert.ok(layout.ruler, `${label}: 缺少等级条`)
+  assert.equal(layout.tabBar, false, `${label}: 外壳不得渲染底部 Tab 栏（L1）`)
   assert.ok(
     layout.document.scrollWidth <= layout.viewport.width,
     `${label}: 页面横向溢出（scrollWidth=${layout.document.scrollWidth} > ${layout.viewport.width}）`,
   )
+  assert.ok(
+    layout.scroll.bottom <= layout.viewport.height + 1,
+    `${label}: 树滚动区伸到视口外（scroll.bottom=${layout.scroll.bottom}, viewport=${layout.viewport.height}）`,
+  )
+  if (scenario.portrait) {
+    // 竖屏手机：按等级从高到低一行一级，不渲染会压住节点的等级标尺；国家页签单行横滑 + 车种分段在滚动区之上
+    assert.equal(layout.ruler, null, `${label}: 竖屏不得渲染等级标尺`)
+    assert.equal(layout.tierRows, ROWS, `${label}: 每个等级一行（rows=${layout.tierRows}）`)
+    assert.equal(layout.tabRows, 1, `${label}: 国别页签必须单行横滑（rows=${layout.tabRows}）`)
+    assert.ok(layout.typeFilter && layout.typeFilter.bottom <= layout.scroll.top + 1, `${label}: 车种分段必须在等级列表之上`)
+    assert.ok(layout.smallestCell >= 44, `${label}: 坦克卡片触控尺寸不足（${layout.smallestCell}px）`)
+    assert.ok(layout.header.height <= 56, `${label}: compact 页头 ${layout.header.height}px 超过 DC-ARC-02 的 56px`)
+    return
+  }
+  assert.ok(layout.ruler, `${label}: 缺少等级条`)
   assert.ok(
     layout.ruler.bottom <= layout.scroll.bottom + 1,
     `${label}: 等级条超出滚动视口（ruler.bottom=${layout.ruler.bottom}, scroll.bottom=${layout.scroll.bottom}）`,
@@ -109,22 +126,7 @@ function assertScenario(scenario, layout) {
     layout.ruler.top >= layout.scroll.top - 1,
     `${label}: 等级条跑到滚动视口上方（ruler.top=${layout.ruler.top}, scroll.top=${layout.scroll.top}）`,
   )
-  if (scenario.compact) {
-    assert.ok(layout.tabbar, `${label}: compact 外壳必须渲染底部 Tab 栏`)
-    assert.ok(
-      layout.header.height <= 56,
-      `${label}: compact 页头 ${layout.header.height}px 超过 DC-ARC-02 的 56px`,
-    )
-    assert.equal(layout.tabRows, 1, `${label}: 国别页签必须单行横滑（rows=${layout.tabRows}）`)
-    assert.ok(
-      layout.scroll.bottom <= layout.tabbar.top + 1,
-      `${label}: 树滚动区伸到底栏下面（scroll.bottom=${layout.scroll.bottom}, tabbar.top=${layout.tabbar.top}）`,
-    )
-    assert.ok(
-      layout.ruler.bottom <= layout.tabbar.top - 1,
-      `${label}: 等级条被底栏遮住（ruler.bottom=${layout.ruler.bottom}, tabbar.top=${layout.tabbar.top}）`,
-    )
-  }
+  assert.ok(layout.ruler.bottom <= layout.viewport.height, `${label}: 等级条落到视口外（ruler.bottom=${layout.ruler.bottom}）`)
   if (scenario.landscape) {
     assert.ok(
       layout.scroll.height >= NODE_H * 2,
@@ -164,25 +166,25 @@ try {
         header: layout.header.height,
         tabs: layout.tabRows,
         scroll: layout.scroll.height,
-        rulerBottom: layout.ruler.bottom,
-        tabbarTop: layout.tabbar?.top ?? null,
+        rulerBottom: layout.ruler?.bottom ?? null,
+        tierRows: layout.tierRows,
       })}`)
 
       // 负向对照：注入旧实现，探针必须能抓到等级条被底栏遮住。
-      if (scenario.name === 'phone-390x844') {
+      if (scenario.name === 'phone-landscape-740x360') {
         await page.evaluate(`(() => {
           const style = document.createElement('style')
           style.id = 'techtree-negative-control'
-          style.textContent = '.tt-scroll { flex: none !important; max-block-size: calc(100dvh - 220px) !important; }'
+          style.textContent = '.tt-scroll { flex: none !important; max-block-size: calc(100dvh + 120px) !important; }'
           document.head.append(style)
         })()`)
         const broken = await page.probe(layoutProbe)
         assert.ok(
-          broken.ruler.bottom > broken.tabbar.top,
-          `negative control: 旧 max-block-size 未被识别（ruler.bottom=${broken.ruler.bottom}, tabbar.top=${broken.tabbar.top}）`,
+          broken.ruler.bottom > broken.viewport.height,
+          `negative control: 固定 max-block-size 未被识别（ruler.bottom=${broken.ruler.bottom}, viewport=${broken.viewport.height}）`,
         )
         await page.evaluate(`document.getElementById('techtree-negative-control')?.remove()`)
-        console.log(`[browser-techtree-layout] negative control PASS（旧实现 ruler.bottom=${broken.ruler.bottom} > tabbar.top=${broken.tabbar.top}）`)
+        console.log(`[browser-techtree-layout] negative control PASS（ruler.bottom=${broken.ruler.bottom} > viewport=${broken.viewport.height}）`)
       }
     } catch (error) {
       failures.push(`${scenario.name}: ${error.message}`)

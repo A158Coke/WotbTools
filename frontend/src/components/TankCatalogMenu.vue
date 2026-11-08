@@ -552,6 +552,7 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
 .tp-pill {
   padding: 0 var(--space-2);
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: var(--color-surface-3);
   color: var(--color-text-secondary);
   font: var(--type-caption);
@@ -588,10 +589,11 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
 
 .tp-more { display: flex; justify-content: center; padding-block: var(--space-4); }
 
-/* 手机：两列卡片；筛选进 sheet */
+/* 手机：三列卡片（用户反馈 2026-11-08：小屏加大密度，一屏可见大部分车型；
+   360px 下单卡约 104px，名称/徽标/参数仍为 12px 正文下限），筛选进 sheet */
 @media (width < 768px) {
   .tp-search { flex-basis: 100%; }
   .tp-card { padding: var(--space-2); }
-  .tp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+  .tp-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }
 }
 </style>

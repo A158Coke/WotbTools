@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import BattleDataAdminPage from './BattleDataAdminPage.vue'
+import { DIALOG_INLINE_KEY } from '../shared/dialog'
 const state = vi.hoisted(() => ({ summary: vi.fn(), battles: vi.fn(), detail: vi.fn() }))
 type SpawnStat = { mapKey: string; arenaBonusType: 1 | 7 | null; side: 'NORTH' | 'SOUTH' | 'WEST' | 'EAST'; battles: number; wins: number; draws: number; losses: number }
 const stat = (mapKey: string, arenaBonusType: SpawnStat['arenaBonusType'], side: SpawnStat['side'], wins: number, draws: number, losses: number): SpawnStat => ({ mapKey, arenaBonusType, side, battles: wins + draws + losses, wins, draws, losses })
@@ -24,7 +25,8 @@ const summary = { asOf: '2026-10-29T00:00:00Z', totalBattles: 1, last24Hours: 1,
 const battle = { id: '1', arenaId: '18446744073709551615', schemaVersion: 1, arenaBonusType: 1, mapId: 1, mapKey: 'rift', clientVersion: '11.18', winnerTeam: 0, team1Spawn: 'NORTH', team2Spawn: 'SOUTH', receivedAt: '2026-10-29T00:00:00Z' }
 const vehicles = Array.from({ length: 14 }, (_, i) => ({ team: i < 7 ? 1 : 2, slot: i % 7, vehicleId: 10 + i }))
 beforeEach(() => { vi.clearAllMocks(); online.value = true; locale.value = 'en'; state.summary.mockResolvedValue(summary); state.battles.mockResolvedValue({ items: [battle], nextCursor: null }); state.detail.mockResolvedValue({ battle, vehicles }) })
-function page() { return mount(BattleDataAdminPage, { global: { stubs: { AppDialog: { props: ['open'], template: '<div v-if="open"><slot /></div>' } } } }) }
+function page() { return mount(BattleDataAdminPage, { global: { provide: { [DIALOG_INLINE_KEY]: true } } }) }
+const openRow = (wrapper: ReturnType<typeof page>) => wrapper.find('[data-testid=battle-row-open]').trigger('click')
 describe('BattleDataAdminPage', () => {
   it('shows bias, reviewed zero coverage and detail', async () => {
     const wrapper = page(); await flushPromises()
@@ -34,7 +36,8 @@ describe('BattleDataAdminPage', () => {
     expect(wrapper.text()).toContain('battleDataAdmin.mapsObserved: 1')
     expect(wrapper.text()).toContain('battleDataAdmin.reviewedZero: 28')
     expect(wrapper.text()).toContain('18446744073709551615')
-    await wrapper.findAll('button').find(b => b.text() === 'battleDataAdmin.view')!.trigger('click'); await flushPromises()
+    await openRow(wrapper); await flushPromises()
+    expect(wrapper.find('[data-testid=admin-detail-drawer]').exists()).toBe(true)
     expect(wrapper.text()).toContain('battleDataAdmin.vehicle #10')
     expect(wrapper.text()).toContain('battleDataAdmin.vehicle #23')
     wrapper.unmount()
@@ -76,6 +79,16 @@ describe('BattleDataAdminPage', () => {
     await wrapper.find('[data-testid=spawn-mode-rating]').trigger('click'); await flushPromises()
     expect(row().slice(1, 5)).toEqual(['28', '35.7% · 10/28', '60.7% · 17/28', '3.6%'])
     expect(state.summary).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+  it('draws a three-segment spawn bar for rows with samples', async () => {
+    state.summary.mockResolvedValueOnce({ ...summary, ...spawnSummary })
+    const wrapper = page(); await flushPromises()
+    const bars = wrapper.findAll('[data-testid=spawn-stats] .spawn-bar')
+    expect(bars.length).toBeGreaterThan(0)
+    expect(bars[0].attributes('role')).toBe('img')
+    expect(bars[0].attributes('aria-label')).toContain('battleDataAdmin.spawnBar')
+    expect(bars[0].findAll('.spawn-seg')).toHaveLength(3)
     wrapper.unmount()
   })
   it('labels north/south as top/bottom, keeps Copperfield west/east and renders both axes', async () => {
@@ -130,7 +143,7 @@ describe('BattleDataAdminPage', () => {
     const delayedList = new Promise<{ items: (typeof battle)[]; nextCursor: string | null }>(resolve => { finishList = resolve })
     state.summary.mockReturnValueOnce(delayedSummary)
     state.battles.mockReturnValueOnce(delayedList)
-    await wrapper.find('select').setValue('30d')
+    await wrapper.find('[data-testid=range-30d]').trigger('click')
     await wrapper.vm.$nextTick()
     const loadMore = wrapper.findAll('button').find(button => button.text() === 'battleDataAdmin.loadMore')
     expect(loadMore).toBeDefined()
@@ -183,7 +196,7 @@ describe('BattleDataAdminPage', () => {
     state.battles.mockResolvedValueOnce({ items: [{ ...battle, id: '9007199254740993' }], nextCursor: null })
     state.detail.mockResolvedValueOnce({ battle, vehicles: vehicles.slice(0, 13) })
     const wrapper = page(); await flushPromises()
-    await wrapper.findAll('button').find(b => b.text() === 'battleDataAdmin.view')!.trigger('click'); await flushPromises()
+    await openRow(wrapper); await flushPromises()
     expect(state.detail).toHaveBeenCalledWith('9007199254740993')
     expect(wrapper.text()).toContain('battleDataAdmin.invalidRows')
     wrapper.unmount()
@@ -198,7 +211,7 @@ describe('BattleDataAdminPage', () => {
   it('reports detail failure without clearing the existing list', async () => {
     state.detail.mockRejectedValueOnce(new Error('404'))
     const wrapper = page(); await flushPromises()
-    await wrapper.findAll('button').find(b => b.text() === 'battleDataAdmin.view')!.trigger('click'); await flushPromises()
+    await openRow(wrapper); await flushPromises()
     expect(wrapper.text()).toContain('battleDataAdmin.detailError')
     expect(wrapper.text()).toContain('18446744073709551615')
     wrapper.unmount()

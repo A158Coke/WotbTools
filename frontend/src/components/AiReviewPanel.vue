@@ -9,6 +9,8 @@
   可重试的给「重试」，取消之类的非错误只给中性提示，不渲染成 danger。
 -->
 <script setup lang="ts">
+import { showToast } from '../composables/useToast.js'
+import { notify } from '../composables/useNotifications.js'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Feature } from '../app/featureCapabilities.js'
@@ -44,10 +46,12 @@ const props = defineProps({
   /** 客户端 AI 输入（battle + canonical projection）：由本地解析层产出；null = 尚未就绪。 */
   projection: { type: Object as () => AiReviewProjection | null, default: null },
   /** 投影准备失败时的已本地化错误；空 = 无。 */
-  projectionError: { type: String, default: '' }
+  projectionError: { type: String, default: '' },
+  /** 宿主能跳到 2D 回放（工作台）时为 true：关键回合显示「在 2D 中查看」。 */
+  canViewIn2d: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['rebuild-projection'])
+const emit = defineEmits(['rebuild-projection', 'view-2d'])
 
 const { t, te, locale } = useI18n()
 const auth = useAuth() as AiPanelAuth
@@ -294,6 +298,9 @@ async function readAnalyzeStream(r: Response, run: AiReviewRunState) {
         analysisResult.value = event.result
         progressStage.value = 'done'
         receivedDone = true
+        // 耗时任务完成：toast + 本机通知（离开页面后也能找回）
+        showToast({ id: 'ai-review', tone: 'success', titleKey: 'notifications.aiReview' })
+        notify({ kind: 'ai-review', titleKey: 'notifications.aiReview', view: 'ai-review' })
         break
       case 'error':
         throw new ApiError({
@@ -419,7 +426,7 @@ defineExpose({ __classify: classify })
         {{ partialAnalysis }}
       </div>
 
-      <AnalysisResultPanel v-if="analysisResult" data-tour="ai-review-report" :result="analysisResult" />
+      <AnalysisResultPanel v-if="analysisResult" data-tour="ai-review-report" :result="analysisResult" :can-view-in2d="canViewIn2d" @view-2d="sec => emit('view-2d', sec)" />
       <Banner v-if="limitedTimelineNote" tone="warning" data-test="ai-capability-limited">
         <p>{{ limitedTimelineNote }}</p>
       </Banner>
@@ -477,6 +484,7 @@ defineExpose({ __classify: classify })
   border: 2px solid var(--color-border-subtle);
   border-top-color: var(--color-accent);
   border-radius: var(--radius-full);
+  corner-shape: round;
   animation: stream-spin 0.9s linear infinite;
   flex-shrink: 0;
 }

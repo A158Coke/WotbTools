@@ -2,6 +2,7 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
+import { DIALOG_INLINE_KEY } from '../shared/dialog'
 import AdminAiReviewFeedbackPage from './AdminAiReviewFeedbackPage.vue'
 
 const api = vi.hoisted(() => ({
@@ -16,9 +17,12 @@ vi.mock('../composables/useFeatureGate.js', () => ({ useFeatureGate: () => ({
   availability: () => gate.status.value,
 }) }))
 const row = { id: '1', reasonCodes: ['FACT_ERROR'], feedbackText: 'feedback', model: null, createdAt: '2026-01-01T00:00:00Z', status: 'PENDING' }
-const dialogStub = { props: ['open'], template: '<div v-if="open"><slot /></div>' }
-const mountPage = () => mount(AdminAiReviewFeedbackPage, { global: { mocks: { $t: key => key }, stubs: { AppDialog: dialogStub } } })
-const detailStatusText = wrapper => wrapper.findAll('p').map(p => p.text()).find(text => text.startsWith('aiFeedback.statusLabel'))
+const globalOptions = { mocks: { $t: key => key }, provide: { [DIALOG_INLINE_KEY]: true } }
+const detailStatusText = wrapper => {
+  const node = wrapper.find('[data-testid="feedback-detail-status"]')
+  return node.exists() ? node.text() : undefined
+}
+const mountPage = () => mount(AdminAiReviewFeedbackPage, { global: globalOptions })
 beforeEach(() => {
   vi.clearAllMocks()
   row.status = 'PENDING'
@@ -31,7 +35,7 @@ beforeEach(() => {
 
 it('loads exactly once when initial connectivity settles online and does not show an unrequested empty list', async () => {
   gate.status.value = { available: false, pending: true }
-  const wrapper = mount(AdminAiReviewFeedbackPage, { global: { mocks: { $t: key => key }, stubs: { AppDialog: dialogStub } } })
+  const wrapper = mount(AdminAiReviewFeedbackPage, { global: globalOptions })
   await flushPromises()
   expect(api.listFeedback).not.toHaveBeenCalled()
   expect(wrapper.text()).not.toContain('aiFeedback.empty')
@@ -44,18 +48,8 @@ it('loads exactly once when initial connectivity settles online and does not sho
   expect(api.listFeedback).toHaveBeenCalledTimes(1)
 })
 
-it('does not send a status update when the admin feedback feature is unavailable', async () => {
-  const wrapper = mountPage()
-  await flushPromises()
-  gate.status.value = { available: false, pending: false }
-  await wrapper.get('.status-select').setValue('FIXED')
-  await flushPromises()
-  expect(api.updateFeedbackStatus).not.toHaveBeenCalled()
-  expect(wrapper.get('.status-select').element.value).toBe('PENDING')
-})
-
 it('clears old rows when a filter request fails and retries the selected query', async () => {
-  const wrapper = mount(AdminAiReviewFeedbackPage, { global: { mocks: { $t: key => key }, stubs: { AppDialog: dialogStub } } })
+  const wrapper = mount(AdminAiReviewFeedbackPage, { global: globalOptions })
   await flushPromises()
   expect(wrapper.text()).toContain('feedback')
   api.listFeedback.mockRejectedValueOnce(new Error('failed'))
@@ -70,7 +64,7 @@ it('clears old rows when a filter request fails and retries the selected query',
 
 it('does not display page one rows as page two when pagination fails', async () => {
   api.listFeedback.mockResolvedValueOnce({ items: [row], page: 0, size: 25, totalItems: 26, totalPages: 2 })
-  const wrapper = mount(AdminAiReviewFeedbackPage, { global: { mocks: { $t: key => key }, stubs: { AppDialog: dialogStub } } })
+  const wrapper = mount(AdminAiReviewFeedbackPage, { global: globalOptions })
   await flushPromises()
   api.listFeedback.mockRejectedValueOnce(new Error('failed'))
   await wrapper.findAll('button').find(button => button.text() === 'aiFeedback.next').trigger('click'); await flushPromises()
@@ -81,18 +75,21 @@ it('does not display page one rows as page two when pagination fails', async () 
 })
 
 it('filters on the server, displays original detail and confirms deletion', async () => {
-  const wrapper = mount(AdminAiReviewFeedbackPage, { global: { mocks: { $t: key => key }, stubs: { AppDialog: dialogStub } } })
+  const wrapper = mount(AdminAiReviewFeedbackPage, { global: globalOptions })
   await flushPromises()
   expect(api.listFeedback).toHaveBeenCalledWith(0, '')
   await wrapper.get('select').setValue('FACT_ERROR')
   await flushPromises()
   expect(api.listFeedback).toHaveBeenLastCalledWith(0, 'FACT_ERROR')
-  await wrapper.findAll('button').find(button => button.text() === 'aiFeedback.view').trigger('click')
+  await wrapper.get('[data-testid="feedback-row-open"]').trigger('click')
   await flushPromises()
-  expect(wrapper.get('pre:last-of-type').text()).toBe('exact reply\nraw')
-  await wrapper.findAll('button').find(button => button.text() === 'aiFeedback.delete').trigger('click')
+  const drawer = wrapper.get('[data-testid="admin-detail-drawer"]')
+  expect(drawer.attributes('role')).toBe('dialog')
+  expect(drawer.findAll('pre').at(-1).text()).toBe('exact reply\nraw')
+  // 删除在抽屉底部两段式确认：第一步只展开确认，不发请求
+  await drawer.get('[data-testid="admin-danger-start"]').trigger('click')
   expect(api.deleteFeedback).not.toHaveBeenCalled()
-  await wrapper.findAll('button').filter(button => button.text() === 'aiFeedback.delete').at(-1).trigger('click')
+  await drawer.get('[data-testid="admin-danger-confirm"]').trigger('click')
   await flushPromises()
   expect(api.deleteFeedback).toHaveBeenCalledWith('1')
   expect(api.listFeedback).toHaveBeenLastCalledWith(0, 'FACT_ERROR')
@@ -100,7 +97,7 @@ it('filters on the server, displays original detail and confirms deletion', asyn
 
 it('requests the next server page and ignores a stale filter response', async () => {
   api.listFeedback.mockResolvedValueOnce({ items: [row], page: 0, size: 25, totalItems: 26, totalPages: 2 })
-  const wrapper = mount(AdminAiReviewFeedbackPage, { global: { mocks: { $t: key => key }, stubs: { AppDialog: dialogStub } } })
+  const wrapper = mount(AdminAiReviewFeedbackPage, { global: globalOptions })
   await flushPromises()
   api.listFeedback.mockResolvedValueOnce({ items: [{ ...row, id: '2' }], page: 1, size: 25, totalItems: 26, totalPages: 2 })
   await wrapper.findAll('button').find(button => button.text() === 'aiFeedback.next').trigger('click')
@@ -118,8 +115,19 @@ it('requests the next server page and ignores a stale filter response', async ()
   expect(wrapper.text()).not.toContain('stale')
 })
 
+// --- #923 管理员可维护状态（行内状态下拉；详情抽屉只显示服务器确认的状态）---
+it('does not send a status update when the admin feedback feature is unavailable', async () => {
+  const wrapper = mountPage()
+  await flushPromises()
+  gate.status.value = { available: false, pending: false }
+  await wrapper.get('.status-select').setValue('FIXED')
+  await flushPromises()
+  expect(api.updateFeedbackStatus).not.toHaveBeenCalled()
+  expect(wrapper.get('.status-select').element.value).toBe('PENDING')
+})
+
 it('displays the server status, saves a confirmed change and re-reads it on refresh', async () => {
-  const wrapper = mount(AdminAiReviewFeedbackPage, { global: { mocks: { $t: key => key }, stubs: { AppDialog: dialogStub } } })
+  const wrapper = mountPage()
   await flushPromises()
   expect(wrapper.get('.status-select').element.value).toBe('PENDING')
   await wrapper.get('.status-select').setValue('FIXED')
@@ -148,7 +156,7 @@ it('keeps the previous status when the server explicitly rejects the update', as
 it('re-reads the server status when an update outcome is ambiguous', async () => {
   const wrapper = mountPage()
   await flushPromises()
-  await wrapper.findAll('button').find(button => button.text() === 'aiFeedback.view').trigger('click')
+  await wrapper.get('[data-testid="feedback-row-open"]').trigger('click')
   await flushPromises()
   api.updateFeedbackStatus.mockRejectedValueOnce(new TypeError('Failed to fetch'))
   api.getFeedback.mockResolvedValueOnce({ ...row, status: 'FIXED', aiResponseText: 'exact reply\nraw' })
@@ -177,7 +185,7 @@ it('reports an unconfirmed status when reconciliation also fails', async () => {
 it('disables the status control while saving and ignores duplicate submissions', async () => {
   let resolveUpdate
   api.updateFeedbackStatus.mockImplementationOnce(() => new Promise(resolve => { resolveUpdate = resolve }))
-  const wrapper = mount(AdminAiReviewFeedbackPage, { global: { mocks: { $t: key => key }, stubs: { AppDialog: dialogStub } } })
+  const wrapper = mountPage()
   await flushPromises()
   await wrapper.get('.status-select').setValue('FIXED')
   await flushPromises()
@@ -191,7 +199,7 @@ it('disables the status control while saving and ignores duplicate submissions',
 })
 
 it('does not let a stale list response overwrite a confirmed status', async () => {
-  const wrapper = mount(AdminAiReviewFeedbackPage, { global: { mocks: { $t: key => key }, stubs: { AppDialog: dialogStub } } })
+  const wrapper = mountPage()
   await flushPromises()
   let resolveList
   api.listFeedback.mockImplementationOnce(() => new Promise(resolve => { resolveList = resolve }))
@@ -209,13 +217,18 @@ it('ignores a stale detail response that predates a confirmed status', async () 
   api.getFeedback.mockImplementationOnce(() => new Promise(resolve => { resolveDetail = resolve }))
   const wrapper = mountPage()
   await flushPromises()
-  await wrapper.findAll('button').find(button => button.text() === 'aiFeedback.view').trigger('click')
+  await wrapper.get('[data-testid="feedback-row-open"]').trigger('click')
+  // PATCH 确认会作废在途详情读取并自动重发：先排队重发响应（服务器已应用新状态）
+  api.getFeedback.mockResolvedValueOnce({ ...row, status: 'FIXED', feedbackText: 'feedback', aiResponseText: 'exact reply\nraw' })
   await wrapper.get('.status-select').setValue('FIXED')
   await flushPromises()
   resolveDetail({ ...row, aiResponseText: 'exact reply\nraw', status: 'PENDING' })
   await flushPromises()
   expect(wrapper.get('.status-select').element.value).toBe('FIXED')
-  expect(detailStatusText(wrapper)).toBeUndefined()
+  // 被作废的在途读取会自动重发：陈旧响应不得展示，重发的新详情应渲染（状态取确认值）
+  expect(detailStatusText(wrapper)).toContain('aiFeedback.status.FIXED')
+  expect(wrapper.get('[data-testid="admin-detail-drawer"] .admin-list-pre').text()).toBe('feedback')
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false)
 })
 
 it('does not let a pre-update detail response overwrite the status after a list refresh', async () => {
@@ -223,7 +236,9 @@ it('does not let a pre-update detail response overwrite the status after a list 
   api.getFeedback.mockImplementationOnce(() => new Promise(resolve => { resolveDetail = resolve }))
   const wrapper = mountPage()
   await flushPromises()
-  await wrapper.findAll('button').find(button => button.text() === 'aiFeedback.view').trigger('click')
+  await wrapper.get('[data-testid="feedback-row-open"]').trigger('click')
+  // PATCH 确认会作废在途详情读取并自动重发：先排队重发响应（服务器已应用新状态）
+  api.getFeedback.mockResolvedValueOnce({ ...row, status: 'FIXED', feedbackText: 'feedback', aiResponseText: 'exact reply\nraw' })
   await wrapper.get('.status-select').setValue('FIXED')
   await flushPromises()
   api.listFeedback.mockResolvedValueOnce({ items: [{ ...row, status: 'FIXED' }], page: 0, size: 25, totalItems: 1, totalPages: 1 })
@@ -232,9 +247,12 @@ it('does not let a pre-update detail response overwrite the status after a list 
   resolveDetail({ ...row, aiResponseText: 'exact reply\nraw', status: 'PENDING' })
   await flushPromises()
   expect(wrapper.get('.status-select').element.value).toBe('FIXED')
-  expect(detailStatusText(wrapper)).toBeUndefined()
+  // 被作废的在途读取会自动重发：陈旧响应不得展示，重发的新详情应渲染（状态取确认值）
+  expect(detailStatusText(wrapper)).toContain('aiFeedback.status.FIXED')
+  expect(wrapper.get('[data-testid="admin-detail-drawer"] .admin-list-pre').text()).toBe('feedback')
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false)
   api.getFeedback.mockResolvedValueOnce({ ...row, status: 'FIXED', aiResponseText: 'exact reply\nraw' })
-  await wrapper.findAll('button').find(button => button.text() === 'aiFeedback.view').trigger('click')
+  await wrapper.get('[data-testid="feedback-row-open"]').trigger('click')
   await flushPromises()
   expect(detailStatusText(wrapper)).toContain('aiFeedback.status.FIXED')
 })
@@ -249,7 +267,7 @@ it('keeps another record detail loading when a status update succeeds', async ()
   const wrapper = mountPage()
   await flushPromises()
   await wrapper.findAll('.status-select').at(0).setValue('FIXED')
-  await wrapper.findAll('button').filter(button => button.text() === 'aiFeedback.view').at(1).trigger('click')
+  await wrapper.findAll('[data-testid="feedback-row-open"]').at(1).trigger('click')
   await flushPromises()
   expect(api.getFeedback).toHaveBeenCalledWith('2')
   resolveUpdate()
@@ -258,7 +276,7 @@ it('keeps another record detail loading when a status update succeeds', async ()
   await flushPromises()
   expect(wrapper.findAll('.status-select').at(0).element.value).toBe('FIXED')
   expect(detailStatusText(wrapper)).toContain('aiFeedback.status.PENDING')
-  expect(wrapper.get('pre:last-of-type').text()).toBe('second exact reply')
+  expect(wrapper.findAll('pre').at(-1).text()).toBe('second exact reply')
 })
 
 it('keeps another record detail loading when an ambiguous status is reconciled', async () => {
@@ -275,7 +293,7 @@ it('keeps another record detail loading when an ambiguous status is reconciled',
   await wrapper.findAll('.status-select').at(0).setValue('FIXED')
   await flushPromises()
   expect(api.getFeedback).toHaveBeenCalledWith('1')
-  await wrapper.findAll('button').filter(button => button.text() === 'aiFeedback.view').at(1).trigger('click')
+  await wrapper.findAll('[data-testid="feedback-row-open"]').at(1).trigger('click')
   await flushPromises()
   expect(api.getFeedback).toHaveBeenCalledWith('2')
   resolveReadback({ ...row, status: 'FIXED' })
@@ -284,5 +302,41 @@ it('keeps another record detail loading when an ambiguous status is reconciled',
   await flushPromises()
   expect(wrapper.findAll('.status-select').at(0).element.value).toBe('FIXED')
   expect(detailStatusText(wrapper)).toContain('aiFeedback.status.PENDING')
-  expect(wrapper.get('pre:last-of-type').text()).toBe('second exact reply')
+  expect(wrapper.findAll('pre').at(-1).text()).toBe('second exact reply')
+})
+
+it('关闭抽屉后迟到的 PATCH 不再为已关闭详情重发读取，也不把错误写进列表页', async () => {
+  let resolveUpdate
+  let resolveDetail
+  api.updateFeedbackStatus.mockImplementationOnce(() => new Promise(resolve => { resolveUpdate = resolve }))
+  api.getFeedback.mockImplementationOnce(() => new Promise(resolve => { resolveDetail = resolve }))
+  const wrapper = mountPage()
+  await flushPromises()
+  await wrapper.get('.status-select').setValue('FIXED')
+  await wrapper.get('[data-testid="feedback-row-open"]').trigger('click')
+  await flushPromises()
+  expect(api.getFeedback).toHaveBeenCalledTimes(1)
+  // PATCH 完成前关闭抽屉：确认后不得为已关闭的详情重发 GET
+  await wrapper.get('[data-testid="admin-drawer-close"]').trigger('click')
+  resolveUpdate()
+  resolveDetail({ ...row, status: 'PENDING' })
+  await flushPromises()
+  expect(api.getFeedback).toHaveBeenCalledTimes(1)
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+})
+
+it('卸载后迟到的 PATCH 不再重发详情读取', async () => {
+  let resolveUpdate
+  api.updateFeedbackStatus.mockImplementationOnce(() => new Promise(resolve => { resolveUpdate = resolve }))
+  api.getFeedback.mockImplementationOnce(() => new Promise(() => {}))
+  const wrapper = mountPage()
+  await flushPromises()
+  await wrapper.get('.status-select').setValue('FIXED')
+  await wrapper.get('[data-testid="feedback-row-open"]').trigger('click')
+  await flushPromises()
+  expect(api.getFeedback).toHaveBeenCalledTimes(1)
+  wrapper.unmount()
+  resolveUpdate()
+  await flushPromises()
+  expect(api.getFeedback).toHaveBeenCalledTimes(1)
 })

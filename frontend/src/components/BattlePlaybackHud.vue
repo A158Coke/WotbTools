@@ -164,7 +164,7 @@ const baseViews = computed(() => props.baseStates.map((state) => baseView(state,
 /* 队伍血量：数值居中在血条上方（无标签文字）。 */
 .pb-hud-team { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; gap: var(--space-1); min-width: 0; }
 .pb-hud-value { grid-row: 1; grid-column: 1; justify-self: center; white-space: nowrap; font: var(--type-caption); font-weight: 700; font-variant-numeric: tabular-nums; }
-.pb-hud-track { position: relative; grid-column: 1 / -1; grid-row: 2; display: flex; min-width: 0; height: var(--space-1); overflow: hidden; border-radius: var(--radius-full); background: var(--color-surface-3); }
+.pb-hud-track { position: relative; grid-column: 1 / -1; grid-row: 2; display: flex; min-width: 0; height: var(--space-1); overflow: hidden; border-radius: var(--radius-full); corner-shape: round; background: var(--color-surface-3); }
 .pb-hud-fill { height: 100%; transition: width var(--duration-base) var(--ease-standard); }
 .pb-hud-fill-friendly { background: var(--color-team-ally); }
 .pb-hud-fill-enemy { background: var(--color-team-enemy); }

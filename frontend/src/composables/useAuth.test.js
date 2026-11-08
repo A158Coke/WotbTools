@@ -323,7 +323,7 @@ describe('useAuth', () => {
 
     await expect(auth.login('profile')).resolves.toBe(true)
 
-    expect(native.calls.at(-1)).toEqual({ method: 'authLogin', params: {} })
+    expect(native.calls.at(-1)).toEqual({ method: 'authLogin', params: { locale: 'zh' } })
     expect(window.location.href).toBe(hrefBefore)
     expect(kcInstances.length).toBe(keycloakBefore)
     expect(kcInit).not.toHaveBeenCalled()

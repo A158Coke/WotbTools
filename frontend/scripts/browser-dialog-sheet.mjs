@@ -1,13 +1,13 @@
 import { Page } from './browser-page.mjs'
 import { measurePaintOrder, measureReachability } from './browser-occlusion.mjs'
 
-export const DIALOG_SHEET_SCENARIOS = [...['showcase', 'classic'].flatMap(profile => [
+export const DIALOG_SHEET_SCENARIOS = [...['summer', 'winter'].flatMap(profile => [
   { width: 390, height: 844, touch: true },
   { width: 740, height: 360, touch: true },
   { width: 1024, height: 768, touch: true },
   { width: 1440, height: 900, touch: false },
 ].map(size => ({ ...size, profile, name: `dialog-sheet-${profile}-${size.width}x${size.height}` }))),
-{ width: 740, height: 360, touch: true, profile: 'showcase', name: 'dialog-sheet-showcase-740x360-safe-area',
+{ width: 740, height: 360, touch: true, profile: 'summer', name: 'dialog-sheet-summer-740x360-safe-area',
   safeAreaInsets: { top: 24, bottom: 20, left: 12, right: 12 } },
 ]
 

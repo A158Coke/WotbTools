@@ -33,9 +33,9 @@ describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
     ).toEqual([])
   })
 
-  // 2026-10-29 用户要求：厚度模式点选结果只留装甲名称 + 基础装甲值，做成命中点旁侧的浮层
-  // （相对点击坐标偏移 + 视口钳制，不盖住命中点）；右上角 HUD/模式/装甲组成合并为一块整卡片。
-  it('点选结果只显示装甲名称与基础装甲值，浮层避开命中点；右上角合并为一块整体面板', () => {
+  // 点选结果只留装甲名称 + 基础装甲值（2026-10-29）；5.0 起固定停靠在场景顶部正中（design-language §9
+  // 「强制横屏与场景 HUD」），不再按命中点摆位；右上角 HUD/模式/装甲组成合并为一块整卡片。
+  it('点选结果只显示装甲名称与基础装甲值，停靠在场景顶部正中；右上角合并为一块整体面板', () => {
     expect(template).toContain('id="click-part"')
     expect(template).toContain('id="click-armor"')
     expect(template).not.toMatch(/id="click-(?:angle|effective|pen|result)"/)
@@ -43,21 +43,21 @@ describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
     expect(kernel).not.toContain("document.getElementById('click-effective')")
     expect(kernel).toMatch(/document\.getElementById\('click-part'\)!?\.textContent = L\.partName/)
     expect(kernel).toMatch(/if \(getCollisionMode\(\)\) \{ showArmorPartInfo\(event, ndcX, ndcY\); return; \}/)
-    expect(kernel).toMatch(/function showArmorPartInfo\(event: MouseEvent, ndcX: number, ndcY: number\): void/)
-    // 浮层先放在命中点右下、越界翻到左上，再钳制；两条左/上赋值都在，且偏移量 >= 视觉间距
-    expect(kernel).toMatch(/let left = event\.clientX \+ gap;/)
-    expect(kernel).toMatch(/let top = event\.clientY \+ gap;/)
-    expect(kernel).toMatch(/if \(left \+ w > window\.innerWidth - edge\) left = event\.clientX - w - gap;/)
-    expect(kernel).toMatch(/if \(top \+ h > window\.innerHeight - edge\) top = event\.clientY - h - gap;/)
-    expect(kernel).toMatch(/card\.style\.left = /)
-    expect(kernel).toMatch(/card\.style\.top = /)
-    expect(kernel).toMatch(/card\.style\.display = 'block'/)
+    expect(kernel).toMatch(/function showArmorPartInfo\(_?event: MouseEvent, ndcX: number, ndcY: number\): void/)
+    // 5.0 停靠胶囊（design-language §9 场景 HUD）：场景脚本不写位置，只切换显示
+    expect(kernel).not.toMatch(/card\.style\.left = /)
+    expect(kernel).not.toMatch(/card\.style\.top = /)
+    expect(kernel).toMatch(/card\.style\.display = 'flex'/)
+    // 停靠位置由样式所有：固定顶部正中（不跟随命中点）
+    const dockCss = template.slice(template.indexOf('.armor-view :is(#click-info, #traj-info) {'))
+    const dockRule = dockCss.slice(0, dockCss.indexOf('}'))
+    expect(dockRule).toContain('position: absolute')
+    expect(dockRule).toContain('inset-block-start: var(--space-5)')
+    expect(dockRule).toContain('inset-inline-start: 50%')
+    expect(dockRule).toContain('transform: translateX(-50%)')
+    expect(template).toMatch(/\.armor-view #click-info \{[^}]*pointer-events: none/)
     // 浮层不是右上角面板的子节点：DOM 顺序在 #corner-tr 之前，外观由共享面板规则提供
     expect(template.indexOf('id="click-info"')).toBeLessThan(template.indexOf('id="corner-tr"'))
-    const clickInfoCss = template.slice(template.indexOf('.armor-view #click-info {'))
-    const clickInfoRule = clickInfoCss.slice(0, clickInfoCss.indexOf('}'))
-    expect(clickInfoRule).toContain('position: fixed')
-    expect(clickInfoRule).toContain('pointer-events: none')
     expect(template).toMatch(/:is\(#info-panel, #tank-selectors, #turret-controls, #debug-info, #click-info\)/)
     // 右上角卡片外观由 #corner-tr 提供；射击 HUD 与模式切换只排布内容，过滤行是面板内静态第二行
     const cornerTrCss = template.slice(template.indexOf('.armor-view #corner-tr {'))
@@ -252,7 +252,7 @@ describe('dolly-zoom world-overview scope guard', () => {
     expect(kernel).toMatch(/collisionMode && penetrationMode/)
     expect(kernel).toMatch(/penetrationMode && collisionMode/)
     expect(kernel).toMatch(/if \(getCollisionMode\(\)\) \{ showArmorPartInfo\(event, ndcX, ndcY\); return; \}/)
-    expect(kernel).toMatch(/function showArmorPartInfo\(event: MouseEvent, ndcX: number, ndcY: number\): void/)
+    expect(kernel).toMatch(/function showArmorPartInfo\(_?event: MouseEvent, ndcX: number, ndcY: number\): void/)
     // 碰撞视图保留炮管/履带碰撞体
     expect(kernel).toMatch(/function applyModuleCollisionMaterial\(on(?:: boolean)?\)(?:: void)?/)
     expect(kernel).toMatch(/moduleOriginalMaterials\.set\((?:node|mesh), (?:node|mesh)\.material\)/)
@@ -348,20 +348,18 @@ describe('dolly-zoom world-overview scope guard', () => {
 
 // 结果卡片是 position:fixed，left/top 是视口坐标；投影必须基于画布实际矩形。
 // 若用 window.innerWidth/Height，页面/容器滚动或窗口缩放时画布移动而卡片停在旧视口位置。
-describe('traj-info canvas anchoring', () => {
+describe('traj-info docking', () => {
   const kernel = [read('../scene/tankViewer.js'), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
-  it('按画布 getBoundingClientRect 投影，而不是视口尺寸', () => {
+  it('结果卡不再按命中点投影摆位：停靠位置由样式所有（真实几何由 browser-armor-aiming 断言）', () => {
     const start = kernel.indexOf('function updateTrajInfoPos()')
     expect(start).toBeGreaterThan(-1)
-    const end = kernel.indexOf('div.style.transform', start)
-    expect(end).toBeGreaterThan(start)
-    const fn = kernel.slice(start, end)
+    const fn = kernel.slice(start, kernel.indexOf('function ', start + 10))
+    // 拆分后相机经 getCamera() 取得：两种写法都不允许出现投影摆位
+    expect(fn).not.toMatch(/project\((camera|getCamera\(\))\)/)
+    expect(fn).not.toMatch(/div\.style\.(left|top|transform) =/)
+    // 停靠容器宽度仍按画布容器测量（侧栏/窄画布不能按视口算）——保留这部分既有口径
     expect(fn).toMatch(/getElementById\('canvas-container'\)/)
     expect(fn).toMatch(/getBoundingClientRect\(\)/)
-    expect(fn).toMatch(/const x = rect\.left \+ \(v\.x \* 0\.5 \+ 0\.5\) \* rect\.width;/)
-    expect(fn).toMatch(/const y = rect\.top \+ \(-v\.y \* 0\.5 \+ 0\.5\) \* rect\.height;/)
-    expect(fn).not.toMatch(/\(v\.x \* 0\.5 \+ 0\.5\) \* window\.innerWidth/)
-    expect(fn).not.toMatch(/\(-v\.y \* 0\.5 \+ 0\.5\) \* window\.innerHeight/)
   })
 })
 

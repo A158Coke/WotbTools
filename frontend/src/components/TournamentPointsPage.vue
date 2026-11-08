@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onScopeDispose, ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import PageHeader from './PageHeader.vue'
+import ShowcaseHero from './ShowcaseHero.vue'
 import AppButton from './AppButton.vue'
 import MenuButton from './MenuButton.vue'
 import Banner from './Banner.vue'
@@ -131,10 +131,10 @@ onScopeDispose(() => { generation++; controller.abort() })
 </script>
 <template>
   <div class="tournament-page tournament-stack">
-    <PageHeader :title="$t('tournament.title')"><template #actions>
+    <ShowcaseHero :kicker="$t('nav.groups.events')" :title="$t('tournament.title')" :description="$t('tournament.heroDescription')"><template #actions>
       <MenuButton :label="$t(exporting ? 'tournament.exporting' : 'tournament.export')" :items="exportItems" :disabled="exportDisabled" data-testid="tournament-export" data-tour="tournament-export" @select="exportBoard" />
       <AppButton :disabled="loading || !network.available" @click="eventId ? loadBoard() : loadEvents(true)">{{ $t('tournament.refresh') }}</AppButton>
-    </template></PageHeader>
+    </template></ShowcaseHero>
     <Banner v-if="!network.available">{{ $t(network.messageKey || 'featureOffline.tournamentPoints') }}</Banner>
     <Banner v-if="error" tone="danger">{{ apiErrorLabel(t, te, error) }}</Banner>
     <Banner v-if="exportMessage" role="status">{{ exportMessage }}</Banner>

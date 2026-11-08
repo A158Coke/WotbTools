@@ -1,6 +1,7 @@
 import Keycloak, { type KeycloakInitOptions } from 'keycloak-js'
 import type { AuthProvider } from '../types/auth.js'
 import { hasAuthReturn, recordLoginStart, recordReturnFacts } from './authDiagnostics.js'
+import { readLocale } from '../i18n/locale-preference.js'
 
 const KEYCLOAK_CONFIG = Object.freeze({
   url: 'https://auth.wotbtools.com',
@@ -85,10 +86,14 @@ export function createBrowserAuthProvider(): AuthProvider {
       return accessTokenUsable ? (keycloak?.token || '') : ''
     },
 
-    /** 浏览器：redirect 真的会回到本页，redirectUri 由调用方（SPA 自己）决定并保留 view。 */
+    /**
+     * 浏览器：redirect 真的会回到本页，redirectUri 由调用方（SPA 自己）决定并保留 view。
+     * `locale` 让 keycloak-js 带上 OIDC `ui_locales`，登录页默认与站点语言一致（Keycloak 登录页只做中文 / EN 切换，
+     * 但 realm 仍支持 ru，站点是俄语时照样传 ru）。
+     */
     login(redirectUri?: string) {
       recordLoginStart(typeof redirectUri === 'string' ? redirectUri : null)
-      return adapter().login({ redirectUri })
+      return adapter().login({ redirectUri, locale: readLocale() })
     },
 
     logout(redirectUri?: string) {

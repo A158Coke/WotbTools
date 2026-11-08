@@ -8,7 +8,7 @@
 ## 0. 五条总原则
 
 1. **数据优先。** 这是一个分析工具：先让数字清楚、可比较，然后才考虑氛围。装饰永远不能降低数据的可读性。
-2. **主题只换"皮"，不换"骨"。** 两套主题的布局、间距、字号、组件结构、交互完全一致，只替换语义 token 的值和装饰插槽。
+2. **主题只换"皮"，不换"骨"。** 四季主题的布局、间距、字号、组件结构、交互完全一致，只替换语义 token 的值和装饰插槽。
 3. **组件只认语义 token。** 组件里不出现色值、像素魔法数、`!important`、裸 z-index。
 4. **可访问性是底线，不是加分项。** WCAG 2.2 AA：对比度、触控尺寸、键盘可达、减少动画。
 5. **一个概念一个名字。** 术语、图标、组件都遵守这条：同一件事在所有页面上叫法一致、长相一致。
@@ -41,8 +41,8 @@ Semantic（语义）        --color-accent: var(--orange-500)     组件只能�
 Component（可选）       --button-primary-bg: var(--color-accent)     仅复杂组件需要
 ```
 
-- **文件：** `src/styles/tokens/scale.css`（间距、字号、圆角、层级、控件尺寸、动效等与主题无关的量，并在文件顶部声明 `@layer` 顺序）· `src/styles/tokens/color.css`（原始色层与两套主题的语义映射、层级阴影）。**原始层只收录被两个及以上语义 token 共用的颜色**（目前是 `--green-400/700`、`--red-400/700`，被 success / danger 与阵营色共用）；只被一个语义 token 使用的颜色直接写在语义映射里，等出现第二个引用方时再抽出。
-- **主题切换：** `<html data-theme="dark|light">`。主题文件只重新映射**语义层**；原始层和 scale 层两套主题共用。
+- **文件：** `src/styles/tokens/scale.css`（间距、字号、圆角、层级、控件尺寸、动效等与主题无关的量，并在文件顶部声明 `@layer` 顺序）· `src/styles/tokens/color.css`（原始色层、四季主题的语义映射与氛围插槽、层级阴影）。**原始层只收录被两个及以上语义 token 共用的颜色**（目前是 `--green-400/700`、`--red-400/700`，被 success / danger 与阵营色共用）；只被一个语义 token 使用的颜色直接写在语义映射里，等出现第二个引用方时再抽出。
+- **主题切换：** `<html data-ui-profile="spring|summer|autumn|winter">`，`data-theme`（dark / light）由 profile 派生。主题文件只重新映射**语义层**与氛围插槽；原始层和 scale 层四套主题共用。
 - **CSS 分层：** 目前 `scale.css` 顶部只有 `@layer tokens;`（全站只有这一处声明），只声明已经在用的层。
 - **命名：** `--{类别}-{角色}-{变体}-{状态}`，例如 `--color-text-secondary`、`--color-surface-2`、`--color-border-focus`。
 - **旧 token 迁移：** 与新刻度同名、同值的旧变量（`--space-1…4`、`--radius-sm/md/lg`）已迁入 `scale.css`，保持单一事实源；`--space-5/6` 的旧用法已改指取值相同的 `--space-6/8`。其余旧变量（颜色、`--z-*`、`--font-*`、`--friendly/--enemy` 等）保持原值、标注 deprecated，与新 token 并存。组件迁移时直接改用新 token；某个旧变量不再被任何地方引用时就删除。**不把旧变量整体改成指向新值的 alias**：新旧色值不同，整体 alias 会一次性改变全站视觉。
@@ -53,20 +53,25 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 
 | ID | 强度 | 范围 | 规则 | 例外 | 验证 |
 |---|---|---|---|---|---|
-| DC-THM-01 | MUST | 两档 Profile | 布局、组件结构、交互完全一致，只替换语义 token 和装饰插槽；不按 Profile fork 业务实现 | 无 | `src/styles/classic-profile-css.test.js` |
+| DC-THM-01 | MUST | 四季主题 | 布局、组件结构、字号、交互完全一致，只替换语义 token 与氛围插槽；不按主题 fork 业务实现，组件不出现主题判断 | 无 | `src/ui-profile-fork-guard.test.js` |
 | DC-THM-02 | MUST | 全站 | 背景图、渐变、毛玻璃只出现在本节列出的装饰插槽 | 无 | 人工 |
 | DC-THM-03 | MAY | 工作区页面 | 在数据区之上放一个 Showcase Hero | 无 | 人工 |
 | DC-THM-04 | MUST | Showcase Hero | 只放在数据区之上，不进入表格、筛选、表单、抽屉；expanded 档首屏必须能看到数据区 | 无 | 每页 PR 大屏截图，人工 |
-| DC-THM-05 | MUST | Showcase Hero | 文字落在纯色遮罩上，遮罩上最差取样点满足 §3 对比度，两档 Profile 都测 | 无 | 人工取样 |
-| DC-THM-06 | MUST | Showcase Hero | Classic 下降级为纯色；`prefers-reduced-motion: reduce` 下无动效 | 无 | 人工；首页由 `pnpm run test:browser-home` 覆盖动效 |
+| DC-THM-05 | MUST | Showcase Hero | 文字落在主题遮罩（`--theme-hero-scrim*`）压出的纯色区上，最差取样点满足 §3 对比度，四套主题都测 | 无 | 人工取样 |
+| DC-THM-06 | MUST | Showcase Hero | `prefers-reduced-motion: reduce` 下无动效 | 无 | 人工；首页由 `pnpm run test:browser-home` 覆盖动效 |
+| DC-THM-07 | MUST | 主题 token | 四套主题的文字 / UI 色在各自四层表面上的最差对比度达到 AA（正文 ≥ 4.5，UI ≥ 3，强调色上的文字 ≥ 4.5） | 无 | `src/styles/tokens/color-contrast.test.ts` |
+| DC-THM-08 | MUST | 场景外壳 | 2D / 3D 回放、装甲查看器、地图 3D 的根元素带 `data-scene-surface`，寒冬下仍是深色玻璃，不跟随浅色表面 | 无 | `color-contrast.test.ts` 的场景块断言 + 人工 |
 
-| | **沉浸**（`dark`） | **简约**（`light`） |
-|---|---|---|
-| 定位 | 游戏氛围、夜间使用 | 白天、办公、截图分享、打印 |
-| 布局 / 组件 / 字号 / 密度 | **完全相同** | **完全相同** |
-| 语义色 | §3 暗色列 | §3 亮色列 |
-| 装饰图像 | 允许，只能出现在**装饰插槽**里 | 关闭（插槽为 `none`），Hero 降级为纯色 |
-| 系统界面 | `color-scheme: dark`，`<meta name="theme-color" content="#0b0f11">` | `color-scheme: light`，`theme-color` 为 `#f6f5f2` |
+| | **春 · 青山** `spring` | **夏 · 盛夏** `summer`（默认） | **秋 · 金秋** `autumn` | **冬 · 寒冬** `winter` |
+|---|---|---|---|---|
+| 深浅色 | 深色 | 深色 | 深色 | 浅色（白 7 蓝 3） |
+| 底色 / 强调色 | `#08140f` / `#f2b450` | `#0b0f11` / `#e0a02e` | `#160f08` / `#ef8434` | `#eef3f8` / `#1f6fd1` |
+| 底纹 `--theme-pattern` | 等高线 | 战术网格 | 斜纹 | 雷达环 |
+| 布局 / 组件 / 字号 / 密度 | **完全相同** | **完全相同** | **完全相同** | **完全相同** |
+
+完整取值只在 `frontend/src/styles/tokens/color.css`（每套主题一个语义映射块）；`<meta name="theme-color">` 取当前主题底色（`useUiProfile.THEME_COLOR`），`color-scheme` 随深浅色。
+
+**氛围插槽**（主题 token，只能用在装饰插槽里）：`--theme-hero-image`（横版约 2.5:1）、`--theme-hero-image-portrait`（竖版约 4:5）、`--theme-hero-scrim`（横版遮罩，左侧压出文字区）、`--theme-hero-scrim-portrait`（竖版遮罩，自下而上）、`--theme-glass`（叠在主视觉上的按钮底）、`--theme-pattern`（页面底纹）。主视觉素材在 `frontend/src/assets/theme/theme-<季节>-{wide,portrait}.webp`。主题选择器的缩略图与色点读 `--theme-preview-<季节>-*`。
 
 **装饰插槽**（这是唯一允许放背景图、渐变、毛玻璃的地方）：
 
@@ -74,16 +79,16 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 2. 工作区 Showcase Hero（规则见 DC-THM-03 至 DC-THM-06）
 3. 空状态插图
 4. 登录页
+5. 页面底色上的主题底纹（`--theme-pattern`，叠在 `--color-canvas` 上，卡片与数据区是纯色表面）
 
-**数据区**，也就是表格、回放、筛选、表单、抽屉，**两套主题都用纯色**。依据：WCAG 1.4.3 要求文字对比度稳定，而文字压在图片上时，对比度会随图片内容变化，没法保证。
+**数据区**，也就是表格、回放、筛选、表单、抽屉，**四套主题都用纯色**。依据：WCAG 1.4.3 要求文字对比度稳定，而文字压在图片上时，对比度会随图片内容变化，没法保证。
 
 **选择逻辑：**
-- 首次访问跟随 `prefers-color-scheme`。
-- 用户手动选择后记住，以用户选择为准。
-- 在首次绘制之前，由 `index.html` 里的内联脚本设置 `data-theme`，避免闪烁。
-- 用户菜单里提供"跟随系统 / 沉浸 / 简约"三个选项。`wotb-ui-profile` 的 `auto` 值由 `useUiProfile` 按 `prefers-color-scheme` 解析为 showcase / classic；没有独立的 theme 状态或存储 key。
+- 默认盛夏；用户在「更多」→ 主题里选择（`ThemePicker`：`SegmentedControl` tiles，每项是主视觉缩略图 + 强调色点 + 名称），选择后记住。
+- 持久化 key 只有 `wotb-ui-profile`，值为 `spring` / `summer` / `autumn` / `winter`；读取边界把旧值 `showcase` / `classic` / `auto` 映射为 `summer` 并写回。没有独立的 theme 状态或存储 key。
+- 在首次绘制之前，由 `index.html` 里的内联脚本投影 `data-ui-profile` / `data-theme` / `theme-color`，避免闪烁（`src/index-firstpaint.test.js` 真实执行该脚本）。
 
-**验收标准：** 任何组件在两套主题下都必须通过 §3 的对比度要求。
+**验收标准：** 任何组件在四套主题下都必须通过 §3 的对比度要求。
 
 ---
 
@@ -91,8 +96,8 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 
 | ID | 强度 | 范围 | 规则 | 例外 | 验证 |
 |---|---|---|---|---|---|
-| DC-CLR-01 | MUST | 全站 | 正文 ≥ 4.5:1，大字与 UI 图形 ≥ 3:1，两档 Profile 都成立 | 无 | 人工 |
-| DC-CLR-02 | MUST | 单个视图 | 只保留一个橙色填充主操作 | 无 | 人工 |
+| DC-CLR-01 | MUST | 全站 | 正文 ≥ 4.5:1，大字与 UI 图形 ≥ 3:1，四套主题都成立 | 无 | token 由 `src/styles/tokens/color-contrast.test.ts` 断言；组件组合人工 |
+| DC-CLR-02 | MUST | 单个视图 | 只保留一个强调色填充主操作 | 无 | 人工 |
 | DC-CLR-03 | MUST | 阵营表达 | 不能只靠红绿区分，必须再用位置、文字或形状表达一次 | 无 | 人工 |
 | DC-CLR-04 | MUST | 物理队伍色 | Team 1 / Team 2 颜色不随录像者交换 | 无 | 人工 |
 
@@ -101,35 +106,35 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 
 ### 3.1 表面与文字
 
-| 语义 token | 沉浸 dark | 简约 light | 用途 |
-|---|---|---|---|
-| `--color-canvas` | `#0b0f11` | `#f6f5f2` | 页面底色 |
-| `--color-surface-1` | `#11171a` | `#ffffff` | 卡片、面板 |
-| `--color-surface-2` | `#172024` | `#f1efea` | 表头、嵌套区域、hover |
-| `--color-surface-3` | `#1e292e` | `#e8e5de` | 选中行、按下、输入框底 |
-| `--color-text-primary` | `#eceae4`（≥12.4） | `#1b1e1c`（≥13.4） | 正文、数字 |
-| `--color-text-secondary` | `#aab1ac`（≥6.8） | `#4c534f`（≥6.3） | 标签、说明 |
-| `--color-text-tertiary` | `#8a938e`（≥4.7） | `#5a615d`（≥5.1） | 辅助信息、占位符。**这是最浅的一级文字色** |
-| `--color-border-subtle` | `#25313a` | `#e3dfd6` | 分隔线（装饰性，不承担信息） |
-| `--color-border-strong` | `#6c7a82`（≥3.4） | `#7f7c74`（≥3.3） | 输入框、复选框等控件边框（需 ≥3:1） |
+| 语义 token | 春 spring | 夏 summer | 秋 autumn | 冬 winter | 用途 |
+|---|---|---|---|---|---|
+| `--color-canvas` | `#08140f` | `#0b0f11` | `#160f08` | `#eef3f8` | 页面底色 |
+| `--color-surface-1` | `#0e1d17` | `#11171a` | `#20160c` | `#ffffff` | 卡片、面板 |
+| `--color-surface-2` | `#14271f` | `#172024` | `#2a1d10` | `#f5f8fc` | 表头、嵌套区域、hover |
+| `--color-surface-3` | `#1b3228` | `#1e292e` | `#362516` | `#e2ebf5` | 选中行、按下、输入框底 |
+| `--color-text-primary` | `#e7f1ea` | `#eceae4` | `#f6ead6` | `#0f2236` | 正文、数字 |
+| `--color-text-secondary` | `#a6bdb0` | `#aab1ac` | `#d0bb9a` | `#3b5470` | 标签、说明 |
+| `--color-text-tertiary` | `#869d90` | `#8a938e` | `#ad9576` | `#4a6380` | 辅助信息、占位符。**这是最浅的一级文字色** |
+| `--color-border-subtle` | `#1f3a2e` | `#25313a` | `#3d2c19` | `#cbd8e6` | 分隔线（装饰性，不承担信息） |
+| `--color-border-strong` | `#5f8072` | `#6c7a82` | `#937a55` | `#6f849b` | 输入框、复选框等控件边框（需 ≥3:1） |
 
-**深色主题的层级靠亮度区分，不靠阴影。** 表面越亮，离用户越近。依据：Material Design 的暗色主题指南。浅色主题则用阴影。
+**深色主题的层级靠亮度区分，不靠阴影。** 表面越亮，离用户越近。依据：Material Design 的暗色主题指南。浅色主题（寒冬）则用阴影。
 
 ### 3.2 强调色与状态色
 
-| 语义 token | 沉浸 dark | 简约 light | 规则 |
-|---|---|---|---|
-| `--color-accent` | `#e0a02e` | `#a0620c` | 主按钮底色、选中态、焦点环、进度条 |
-| `--color-on-accent` | `#17130b`（8.1） | `#ffffff`（4.9） | 橙色底上的文字 |
-| `--color-accent-text` | `#f0b33e`（≥8.0） | `#955708`（≥4.6） | **橙色文字只能用这个 token**，如链接、强调数字 |
-| `--color-success` | `#5cc280` | `#16703c` | 成功、胜利 |
-| `--color-danger` | `#f2786d` | `#b8352a` | 错误、删除、失败 |
-| `--color-warning` | `#f5ca76` | `#855600` | 警告 |
-| `--color-info` | `#6db3ec` | `#1a64a8` | 提示、链接（非品牌链接） |
+| 语义 token | 春 | 夏 | 秋 | 冬 | 规则 |
+|---|---|---|---|---|---|
+| `--color-accent` | `#f2b450` | `#e0a02e` | `#ef8434` | `#1f6fd1` | 主按钮底色、选中态、焦点环、进度条 |
+| `--color-on-accent` | `#1a1206` | `#17130b` | `#1a0d04` | `#ffffff` | 强调色底上的文字 |
+| `--color-accent-text` | `#f8c56e` | `#f0b33e` | `#ffa15c` | `#1d63b8` | **强调色文字只能用这个 token**，如链接、强调数字 |
+| `--color-success` | `#66d48f` | `#5cc280` | `#6cc08a` | `#11703f` | 成功、胜利 |
+| `--color-danger` | `#f2786d` | `#f2786d` | `#ff8070` | `#b8322a` | 错误、删除、失败 |
+| `--color-warning` | `#f5ca76` | `#f5ca76` | `#f5ca76` | `#855600` | 警告 |
+| `--color-info` | `#6db3ec` | `#6db3ec` | `#6db3ec` | `#1a64a8` | 提示、链接（非品牌链接） |
 
-- 遮罩：`--color-scrim` 暗色为 `rgb(0 0 0 / .6)`、亮色为 `rgb(0 0 0 / .35)`，所有弹窗、sheet 共用；组件不各自定义遮罩色。
+- 遮罩：`--color-scrim` 深色主题为 `rgb(0 0 0 / .6)`、寒冬为 `rgb(15 34 54 / .35)`，所有弹窗、sheet 共用；组件不各自定义遮罩色。
 - 状态色的背景版本（`--color-danger-bg` 等）统一用 `color-mix(in oklab, var(--color-danger) 14%, var(--color-surface-1))`，不单独定义色值。
-- **强调色要克制**：每个视图只保留一个主操作用橙色填充。其余按钮用 secondary 或 ghost（§7）。
+- **强调色要克制**：每个视图只保留一个主操作用强调色填充。其余按钮用 secondary 或 ghost（§7）。
 
 ### 3.3 领域色：阵营
 
@@ -141,10 +146,10 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | **记录者视角**（我方 / 敌方） | `--color-team-ally` / `--color-team-enemy` | 2D / 3D 名册、顶栏双方总血量与比分、基地归属、胜负横幅 |
 | 未知 / 中立 | `--color-team-neutral` | 未识别阵营、无主基地 |
 
-| token | 沉浸 | 简约 | 色盲替代色 |
+| token | 春 / 夏 / 秋 | 冬 | 色盲替代色 |
 |---|---|---|---|
-| `--color-team-1` | `#5cc280` | `#16703c` | 不变 |
-| `--color-team-2` | `#f2786d` | `#b8352a` | 改用 `--color-team-enemy-cb`（`#c38bf0` / `#7b3fb3`，紫色） |
+| `--color-team-1` | `#66d48f` / `#5cc280` / `#6cc08a` | `#11703f` | 不变 |
+| `--color-team-2` | `#f2786d` / `#f2786d` / `#ff8070` | `#b8322a` | 改用 `--color-team-enemy-cb`（深色 `#c38bf0` / 寒冬 `#7b3fb3`，紫色） |
 | `--color-team-ally` | = `--color-team-1`（别名） | = `--color-team-1` | 不变 |
 | `--color-team-enemy` | = `--color-team-2`（别名） | = `--color-team-2` | 改用 `--color-team-enemy-cb` |
 
@@ -164,7 +169,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 ### 3.4 数据可视化
 
-- 分类色板：8 色，对色盲友好（参考 Okabe–Ito），两套主题各一份，都要在 `surface-1` 上 ≥ 3:1。
+- 分类色板：8 色，对色盲友好（参考 Okabe–Ito），深色三季共用一份、寒冬一份，都要在 `surface-1` 上 ≥ 3:1。
 - 顺序色板（热力图、穿透率等）：单色相，从浅到深；在亮色主题里方向反转。
 - 图表**一律带图例**，关键数值直接标在图上，不能只靠颜色读值。
 
@@ -193,7 +198,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 |---|---|---|---|---|---|
 | DC-TYP-01 | MUST | 全站 | 文字不小于 12px | `--font-size-caption-xs`（11px）只用于放不下 12px 的密集节点标签：地图卡角标、回放名册、科技树模块 | `pnpm run lint:css` + 人工 |
 | DC-TYP-02 | MUST | 表格、统计、计时 | 数字用 `tabular-nums`，格式走 `Intl.NumberFormat(locale)` | 无 | 人工 |
-| DC-TYP-03 | MUST | 展示字阶 | 超过 `--type-display-hero` 的字号只能用于 Showcase Hero 的标题和关键数字，上限 104px，由 `scale.css` 的 token 提供；数据区不得使用 | 无 | `pnpm run lint:css` + 人工 |
+| DC-TYP-03 | MUST | 展示字阶 | 超过 `--type-display-hero` 的字号只能用于 Showcase Hero 的标题和关键数字，上限 104px，由 `scale.css` 的 `--type-display-showcase`（`clamp(44px, 7vw, 104px)`）提供；数据区不得使用 | 无 | `pnpm run lint:css` + 人工 |
 | DC-TYP-04 | MUST | 字体 | 只用系统字体栈，不引入网络字体 | 无 | 人工 |
 
 **依据：** 系统字体栈加载为零、CJK 渲染最好；模块化字号阶梯；数字用等宽数字（tabular），便于对齐比较。
@@ -251,6 +256,12 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 **圆角**：`--radius-sm: 6px`（标签、小徽章、小控件）· `--radius-md: 8px`（按钮、输入框、卡片）· `--radius-lg: 12px`（弹窗、sheet、抽屉）· `--radius-full: 999px`（胶囊、头像）
 
+**超椭圆（squircle）圆角 · 渐进增强**：`scale.css` 在 `@supports (corner-shape: squircle)` 里集中启用，组件不逐个处理。
+- 开关是 `--corner-shape`（支持时为 `squircle`），并由一条 `*, ::before, ::after { corner-shape: var(--corner-shape) }` 全局规则应用。`corner-shape` 不继承，没有圆角的元素不受影响。不支持的引擎（截至核实：iOS Safari、Firefox / GeckoView 的稳定版）整段被忽略，照常退回普通 `border-radius`，页面无需任何分支。
+- 同半径下 squircle 的曲线更靠近角点、视觉更方，所以同一个 `@supports` 内把 `--radius-sm / md / lg` 从 6 / 8 / 12px 放大到 8 / 10 / 16px（约 1.25–1.33 倍）。基准值（不支持的平台）不变；组件仍只引用 token，不要自己写 `calc()` 补偿。
+- **`--radius-full` 例外**：胶囊、圆形（头像、圆形图标按钮、赞助胶囊、开关、进度条）不放大、不变形。凡是写 `border-radius: var(--radius-full)`（或 `50%`）的规则，必须紧跟一条 `corner-shape: round`（需要继承父级圆角时用 `corner-shape: inherit`）。未分层的组件规则优先于 `@layer tokens`，所以这条声明能覆盖全局规则。`src/styles/corner-shape.test.js` 会检查这条约定。
+- 新增圆形 / 胶囊元素时同样要带 `corner-shape: round`；普通圆角矩形什么都不用写。
+
 **阴影 / 层级**：
 
 | token | 用途 | 暗色 | 亮色 |
@@ -269,7 +280,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 局部阶梯按下面的概念层序排列，token 见 `tokens/scale.css`：`--pb-z-canvas: 1` → `--pb-z-hud: 5` → `--pb-z-scrim: 6` → `--pb-z-controls: 7` → `--pb-z-transient: 8` → `--pb-z-modal: 9`。
 
-需要越过该局部上下文的顶级浮层（手机底部 sheet、dialog、从工作台内部打开的菜单）必须 Teleport 到 `body`；提高 z-index 不会离开局部层叠上下文，仍会被根层 `AppTabBar` / 侧栏盖住。Teleport 出去的浮层不继承父级的 `display: none` / KeepAlive 停用，父级必须在 capability 隐藏或 `onDeactivated()` 时主动关闭。
+需要越过该局部上下文的顶级浮层（手机底部 sheet、dialog、从工作台内部打开的菜单）必须 Teleport 到 `body`；提高 z-index 不会离开局部层叠上下文，仍会被根层顶栏 / 抽屉 / 侧栏盖住。Teleport 出去的浮层不继承父级的 `display: none` / KeepAlive 停用，父级必须在 capability 隐藏或 `onDeactivated()` 时主动关闭。
 
 ### 遮挡与可达（occlusion / reachability）
 
@@ -345,7 +356,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 - **输入方式：** `@media (pointer: coarse)` 只用来切换密度 token（§5），**不用来改布局**。JS 使用 `usePointer()`。
 - **组件级适配**用容器查询 `@container`，例如：表格在容器 < 560px 时切换成卡片。组件不应该知道视口有多大。
 - **视口单位：** 用 `dvh` / `svh`，不用 `100vh`；宽度用 `100%`，不用 `100vw`。
-- **安全区：** 顶栏、底部 Tab 栏、底部操作栏、全屏回放都要加 `env(safe-area-inset-*)`。
+- **安全区：** 顶栏、导航抽屉、底部操作栏、全屏回放都要加 `env(safe-area-inset-*)`（§9 L4）。
 - **hover 效果**包在 `@media (hover: hover)` 里，避免触屏上的"粘滞 hover"。
 
 ### 6.1 Fluid bounded sizing：固定值只定义边界
@@ -382,7 +393,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | DC-FOC-02 | MUST | 键盘 | 主流程键盘能走完；Dialog 关闭后焦点回到触发元素 | 无 | `pnpm run test:browser-interaction` + 人工 |
 | DC-FOC-03 | MUST | sticky / overlay | 不遮住当前焦点元素 | 无 | 人工 |
 | DC-A11-01 | MUST | 语义 | 操作用 `<button>`，导航用 `<a>` / router link；icon-only 按钮有 `aria-label` | 无 | 人工 |
-| DC-A11-05 | MUST | 可见标签 | 可访问名称包含可见文字（WCAG 2.5.3），短标题写成「短标题: 完整名称」，让语音输入能匹配 | 无 | `src/app/AppTabBar.test.js`、`pnpm run test:browser-interaction shell-overlay` |
+| DC-A11-05 | MUST | 可见标签 | 可访问名称包含可见文字（WCAG 2.5.3），短标题写成「短标题: 完整名称」，让语音输入能匹配 | 无 | `pnpm run test:browser-interaction shell-overlay`、`pnpm run test:browser-broadcasts`（导航项可访问名称包含可见文字） |
 | DC-A11-02 | MUST | 表单 | 控件有 `<label>` 或 `aria-label`，不能只靠 placeholder | 无 | 人工 |
 | DC-A11-03 | SHOULD | 异步反馈 | toast、校验、加载结果用 `role="status"` / `role="alert"` 或 `aria-live` 通知 | 无 | 人工 |
 | DC-A11-04 | MUST | 图片 | 有 `alt`（装饰图 `alt=""`）；首屏外图片 `loading="lazy"`；有固有尺寸防抖版 | 无 | 人工 |
@@ -474,19 +485,50 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | DC-ARC-01 | MUST | 页面 | 自上而下是 Showcase Hero（可选）+ 控制条 + 数据区；同一页不并存两套标题区 | 场景型工作台（2D / 3D、装甲查看器）、长文档页 | 人工 |
 | DC-ARC-02 | MUST | 工作区 | `PageHeader` 只用 `compact`；kicker + h1 + 说明 + 标签块不得占掉首屏 | 满足 DC-THM-04 的 Showcase Hero | 人工 |
 | DC-ARC-03 | MUST | 筛选 | expanded / medium 行内工具栏；compact 用「筛选」按钮 + sheet，已生效条件显示为 chip | 无 | `pnpm run test:browser-interaction`（`overlay-catalog-` / `overlay-hof-`） |
-| DC-ARC-04 | MUST | 主导航 | 成员、分组、小屏 Tab 与栏目归属只由 `app/navigation.js` 定义，外壳组件和「更多」页不复制列表 | 无 | `src/app/navigation.test.js` |
-| DC-ARC-07 | MUST | 主导航 | `PRIMARY_NAV` 的每个入口在大屏与小屏都能到达；小屏 Tab 不超过 5 项 | 首页在小屏由 Logo 进入 | `pnpm run test:browser-interaction shell-overlay`；主站 Logo 回首页由 `test:browser-creators`（`production-`，小屏）与 `test:browser-broadcasts`（`-desktop`，大屏）验证 |
+| DC-ARC-04 | MUST | 主导航 | 成员、分组与栏目归属只由 `app/navigation.js` 定义；侧边栏与手机抽屉渲染同一份分组，「更多」页不复制导航列表 | 无 | `src/app/navigation.test.js` |
+| DC-ARC-07 | MUST | 主导航 | `PRIMARY_NAV` 的每个入口在大屏（侧边栏）与小屏（菜单 → 左侧抽屉）都能经真实点击到达；没有底部常驻导航 | 无 | `pnpm run test:browser-interaction shell-overlay`；主站 Logo 回首页由 `test:browser-creators`（`production-`，小屏）与 `test:browser-broadcasts`（`-desktop`，大屏）验证 |
+| DC-ARC-08 | MUST | 小屏外壳 | 满足下方「小屏布局契约」L1–L6 | 无 | `pnpm run test:browser-interaction mobile-pages`（L4 / L6）、`shell-overlay`（L1 / L3）、`src/app/navigation.test.js`（L5 例外清单） |
 | DC-ARC-05 | SHOULD | 页面状态 | 筛选、Tab、分页写进 URL，可深链和前进后退 | 无 | `src/app/router.test.js` + 人工 |
 | DC-ARC-06 | MUST | 表格 | 手机上复杂表格转卡片或关键列 + 容器内横向滚动，不撑破页面 | 无 | 人工 |
 
 | 模式 | 规则 |
 |---|---|
-| **AppShell** | 平板 / 桌面：左侧边栏（`--z-header`，铺满视口高度），没有顶栏（`--header-h: 0`）。桌面默认展开（240px，图标 + 文字），可折叠成 72px 图标栏并记住偏好；平板固定为图标栏。侧边栏从上到下：品牌 · 首页 · 按战斗、资料、赛事、社区分组的主栏目（`group`，图标栏用分隔线代替分组名）· 管理组（按角色）；底部：更多（弹出面板，只放低频的显示设置与关于 / 支持）· 账户 · 折叠开关。手机 / App：48px 标题栏 + 底部 Tab 栏（56px + 安全区）。Tab 栏固定 5 项：回放、名人堂、百科、联赛、更多（`compactTab`），不横向滚动，标签限制在各自栏目内、最多两行，短标题保留完整辅助名称。科技树、地图、联赛直播回放和推荐是「更多」页顶部的快捷入口，推荐目录不可用时隐藏推荐；打开这些页面时点亮「更多」（`compactSection()`）。Logo 回默认落地页：主站回首页，APK / 本地回回放。手机横屏的回放工作台（2D / 3D，回放就绪）与装甲查看器（WebGL 可用）进入沉浸态：顶栏与 Tab 栏让出，`--header-h` / `--tabbar-h` 归零，转竖屏或离开页面即恢复。更多是整页。当前侧边栏宽度写入 `--sidebar-w`（手机为 0），顶栏高度写入 `--header-h`；布局偏移只读这两个值 |
+| **AppShell** | 平板 / 桌面：左侧边栏（`--z-header`，铺满视口高度），没有顶栏（`--header-h: 0`）。桌面默认展开（240px，图标 + 文字），可折叠成 72px 图标栏并记住偏好；平板固定为图标栏。侧边栏从上到下：品牌 · 数据版本 · 首页 · 按战斗、资料、赛事、社区分组的主栏目（`group`，图标栏用分隔线代替分组名）· 管理组（按角色）；底部：更多（弹出面板，只放低频的显示设置与关于 / 支持）· 账户 · 折叠开关。手机竖屏与手机横屏（抽屉外壳，见下方 L1 / L3）：48px 顶栏（菜单 · Logo · 当前栏目名 · 账户）+ 左侧抽屉（`AppNavDrawer`，内容是侧边栏的同一份分组、管理组与数据版本，底部「更多」整页链接与账户）。Logo 回默认落地页：主站回首页，APK / 本地回回放。手机横屏的回放工作台（2D / 3D，回放就绪）与装甲查看器（WebGL 可用）进入沉浸态：顶栏让出，`--header-block` / `--header-h` 归零，转竖屏或离开页面即恢复。当前侧边栏宽度写入 `--sidebar-w`（抽屉外壳为 0）；顶栏为内容让出的固定空间是 `--header-block`，吸顶偏移与高度预算读 `--header-h` |
+| **Showcase Hero** | `components/ShowcaseHero.vue`：工作区页面数据区之上的可选主视觉（DC-THM-03…06），背景是当前主题主视觉（大屏横版、小屏竖版）+ 主题遮罩，只放 kicker、标题、一句说明、关键数字与操作 |
+| **控制条** | `app-shell.css` 的 `.control-bar`：数据区之上的筛选 / 排序 / 搜索一行，窄屏换行，`.control-bar-end` 推到行尾，`.is-sticky` 吸顶读 `--header-h` |
 | **PageHeader** | 只有 `compact`（工作区用：标题 + 右侧操作，一行，≤ 56px）。不提供 `hero` 变体；首页 hero 是 `HomePage.vue` 自己的整段落地页板块。**工作区禁止用 kicker + h1 + 说明 + 标签块占掉首屏** |
 | **容器宽度** | `content` → `--layout-content-max`；`wide` → `--layout-wide-max`；`workspace` → `--layout-workspace-max`；长文阅读宽度 → `--reading-measure`。具体数值由 `frontend/src/styles/tokens/scale.css` 定义，布局原语见 [UI 系统](ui-system.md) |
 | **Master–Detail** | expanded：列表 + 常驻详情。medium：列表 + 推开式详情。compact：列表 → 全屏详情（支持左右滑动切换）。回放工作台、射击分析、坦克百科都用这个模式 |
 | **筛选** | expanded / medium：行内工具栏。compact：一个"筛选"按钮 → sheet，已生效的条件以 chip 显示在列表上方 |
 | **主操作位置** | expanded：页面头部右侧。compact：底部固定操作栏（带安全区） |
+
+### 小屏布局契约（L1–L6）
+
+抽屉外壳的判定：宽 < 768，或触屏、横向、高 ≤ 520（不论宽度，iPhone 横屏 844×340 也在内）。JS 侧唯一来源是 `shared/breakpoints.ts` 的 `SHELL_DRAWER_QUERY`（`useBreakpoint().isDrawerShell`），CSS 侧是 `styles/tokens/scale.css` 的同一条件。
+
+| 规则 | 内容 |
+|---|---|
+| **L1 导航收进左侧抽屉** | 没有底部 Tab 栏；顶栏左上菜单按钮打开左侧抽屉（`AppSheet side="start"`：焦点陷阱、Esc、遮罩、左滑关闭、四边安全区），路由变化即关闭，焦点回到菜单按钮。不做左边缘滑动打开，避免与 iOS Safari 返回手势冲突。底部只留给工作台自己的操作栏 |
+| **L2 高度来自真实可视区** | 工作台高度 = 可视高度 − 顶栏 − 工作台操作栏 − 安全区，用 `dvh` 或 `visualViewport` 度量（`usePaneFillHeight` 扣底部安全区），不写固定像素或 `100vh` |
+| **L3 横屏不用侧栏** | 手机横屏与竖屏同一个顶栏菜单与抽屉；数据版本在抽屉里 |
+| **L4 四边让出安全区** | 固定外壳四边加 `env(safe-area-inset-*)`；可点控件不得落进安全区 |
+| **L5 顶栏随滚动收起** | 普通页面向下滚动收起顶栏（`html[data-topbar="hidden"]` 让 `--header-h` 归零，吸顶元素贴顶；`--header-block` 不变，内容不跳动），向上滚动或焦点进入时恢复。工作台不收起：回放工作台各能力、装甲查看器 / 射击复现、地图预览、科技树（`navigation.js` 的 `isWorkspaceView`） |
+| **L6 五视口进门禁** | Android 360×740 / 412×839（底部手势条 24）、iPhone Safari 390×664（顶 47 / 底 34）/ 375×553（顶 20）、iPhone 横屏 844×340（左右 47 / 底 21）。逐页滚动扫查：完整可见的交互控件 5 点命中自身、不落进安全区、页面无横向溢出；fixed / sticky 面里的控件无条件参与判定（`measureViewportSafety`） |
+
+### 强制横屏与场景 HUD
+
+- **适用设备只有两类**（`platform/screenForm.ts`，判定只看设备、不看视口）：Android 手机上的 App（Native Bridge 可选能力 `screen-form` 报告 phone）与 iPhone 上的 Safari（UA 含 iPhone 且不是 iPad）。桌面（含缩窄窗口）、所有平板、Android 手机浏览器都不受影响，竖屏照常用小屏布局。
+- **适用页面**：2D 回放、3D 回放、装甲查看器、射击复现、地图预览 3D。科技树、直播与推荐视频、比赛截图、AI 复盘、名人堂、管理页不强制。
+- **行为**（`useForcedLandscape`）：Android 手机 App 进入场景页时原生锁横屏，离开 / KeepAlive 停用即释放；iPhone Safari 竖屏时整块显示 `RotatePrompt`（场景保持挂载，横过来即继续），提示里给出退出动作：2D / 3D 回到「看赛后数据」，装甲查看器回到坦克百科 / 射击分析，地图 3D 切到 2D。HTML 全屏在 Android App 里也只在手机上锁横屏。
+- **横屏沉浸**：没有顶栏，菜单入口仍在：2D / 3D 回放由传输条第一项承载（`PlaybackTransport` 经 `shellChrome.hostNav` 声明，7 人名册车道保持不滚动；控制条被 `v-show` 收起、能力切走或 KeepAlive 停用时经 `navEligible` / 生命周期交还，外壳重新画悬浮菜单）；其余场景（装甲查看器、射击复现）由外壳在左上放悬浮菜单按钮（`AppShell` 的 `.immersive-nav`），场景用 `--immersive-nav-reserve`（沉浸态 44 + 8，其余为 0）让出：返回键与信息卡右移。两者打开同一个抽屉。
+- **验收**：`pnpm run test:browser-interaction forced-landscape`（iPhone 竖屏出提示并能回到赛后数据；iPad 竖屏与缩窄的桌面浏览器不出提示；iPhone 横屏 844×340 沉浸且菜单可打开抽屉；装甲查看器 `armor-forced-landscape-*`：iPhone 竖屏出提示并带返回动作，iPhone 横屏、iPad 竖屏与缩窄的桌面浏览器不出）。
+- **场景 HUD（装甲查看器、射击复现）**：手机横屏时常驻控件只在四角——左上返回 + 车名 / 参数，右下拇指区是射击快捷项（弹种、距离、厚度 / 击穿），左下是姿态与角度；完整设置是右侧参数面板（约 19rem + 安全区），打开时场景仍在左侧可见。
+- **点选结果**（厚度 `#click-info`、击穿 `#traj-info`，所有尺寸）：固定停靠在场景顶部正中，不跟随命中点、不压车体；小屏收起态只显示最终判定一行（胶囊），点开看逐层明细。
+
+### 射击分析与科技树（小屏）
+
+- **射击分析**（窗格 < 600px）：射击者先给「我的射击 / 全部玩家」两项分段，按玩家筛选保留在下拉里；四项统计固定一行；时间线每行一发，点一发直接进入射击复现（新手教程引导中保留检视面板，教程步骤仍有目标）。
+- **科技树**（竖屏手机）：国家页签单行横滑 + 车种分段在列表之上；按等级从高到低、每级一行横向卡片（卡片压缩到 92×48、图标盒等比缩小、行距收紧，一行可容 3 张、整树近一屏可见）；不渲染等级标尺与连线。手机横屏、平板、桌面保持客户端网格。
 
 ---
 
@@ -513,6 +555,19 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | 破坏性操作 | 能撤销的用 toast 加"撤销"；不能撤销的用 Dialog 确认，按钮写明具体动作，例如"清空 6 场结果" |
 | 权限 | 未登录：AuthGate 说明登录后能做什么，再给登录按钮。无权限：说明原因，不能静默重定向 |
 | 功能关闭 | 隐藏入口；如果必须保留，就显示 Banner 说明，不能留下死 Tab |
+
+### 反馈：toast、通知、按钮状态、触感与音效
+
+同一事件同一种反馈；视觉反馈始终存在，触感与音效只是加强。
+
+| 元素 | 规则 |
+|---|---|
+| **Toast**（`composables/useToast.ts` 状态源，`app/AppToast.vue` 唯一渲染出口） | 成功 / 提示 `role=status`，4 秒后消失，悬停、按住或焦点进入时暂停计时；警告 / 错误 `role=alert`，不自动消失，带关闭与可选的下一步操作。大屏在右下、最多 3 条；抽屉外壳（手机）在顶栏下方，不压工作台底部操作栏；横屏沉浸时只显示警告 / 错误。连通性提示（`useConnectivityNotice`）复用它（warning，固定 id）。 |
+| **通知中心**（`composables/useNotifications.ts`，`app/NotificationPanel.vue`） | 只存本机最近 20 条（`wotb-notifications`）：回放解析完成、AI 复盘完成、新版本可用、名人堂提交结果；文案存 i18n key。入口是顶栏铃铛（抽屉外壳）或侧边栏底部「通知」（平板 / 桌面），带未读数；面板复用 `AppSheet`。不做服务端推送。 |
+| **按钮状态**（`AppButton`） | 按下缩到 97% 并加深；`loading` 保持宽度、显示转圈并 `aria-busy`；`confirmed` 显示确认态（如「已复制」2 秒后恢复）。 |
+| **触感**（`useHaptics`） | 事件映射：选择（分段 / 开关）10ms、主操作 20ms、成功双击、错误长振、拖到端点 8ms。Android App 走 Native Bridge 可选能力 `haptics`（系统触感常量），Android 浏览器用 `navigator.vibrate`，iPhone Safari 不触感。 |
+| **音效**（`useSound`） | 点击、成功、错误、提示四种 WebAudio 短音，默认关闭；`prefers-reduced-motion: reduce` 时不播放；iOS 随静音开关。 |
+| **设置**（`useFeedbackPrefs`，`wotb-feedback`） | 「更多」→ 反馈与提示：按键震动（默认开）、按键音效（默认关），开关用 `AppSwitch`。 |
 
 ---
 
@@ -549,7 +604,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | ID | 强度 | 范围 | 规则 | 例外 | 验证 |
 |---|---|---|---|---|---|
 | DC-ACC-01 | MUST | 界面 PR | 说明涉及的规则 ID、影响的 Profile 与断点，以及哪些只能人工验证 | 无 | PR 审查 |
-| DC-ACC-02 | MUST | 页面视觉 PR | 附大屏、小屏前后截图，两档 Profile 都看 | 3D 与回放画面由用户验收，截图不作验收证据 | PR 审查，用户验收 |
+| DC-ACC-02 | MUST | 页面视觉 PR | 附大屏、小屏前后截图，盛夏与寒冬（深 / 浅各一）都看 | 3D 与回放画面由用户验收，截图不作验收证据 | PR 审查，用户验收 |
 | DC-ACC-03 | MUST | 界面 PR | 受影响的 browser gate 通过，退步不靠放宽门禁解决 | 无 | PR CI |
 | DC-ACC-04 | MUST | Android / WebView | 只有行为确实与浏览器不同的规则才要求真机验证；Chromium 设备仿真不替代真机 | 无 | 真机人工 |
 
@@ -562,7 +617,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
    - 旧文件列在 `frontend/stylelint.legacy.json` 忽略名单里（基线），新文件一律严格检查；移出名单的文件同样受严格检查。
 2. **PR 自查清单：**
    - [ ] 只用了语义 token
-   - [ ] 两套主题都截了图
+   - [ ] 盛夏与寒冬都截了图
    - [ ] 三档宽度都截了图
    - [ ] 键盘能走完整个流程
    - [ ] 新文案进了 i18n 和术语表

@@ -3,9 +3,13 @@
 // 上：品牌 · 分组主栏目 · 管理组（按角色）；下：更多（弹出面板，放低频设置）· 账户 · 折叠开关（仅桌面）。
 // 平板（768–1199）固定为图标栏；桌面（≥1200）默认展开，可折叠成图标栏（useSidebar 记忆偏好）。
 // 图标栏里文字缩成图标下方的小字（触屏平板没有悬停提示，不能只剩图标），过长时最多两行。
-import { computed, ref } from 'vue'
+// drawer：手机竖屏 / 横屏的左侧抽屉（AppNavDrawer 承载，§9 L1）复用同一份分组与管理组，
+// 品牌行带关闭按钮，「更多与设置」是整页链接，没有折叠开关，也没有弹出面板。
+import { computed, inject, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
-import { PanelLeftClose, PanelLeftOpen } from 'lucide-vue-next'
+import { Bell, PanelLeftClose, PanelLeftOpen, X } from 'lucide-vue-next'
+import { unreadCount } from '../composables/useNotifications.js'
+import { NOTIFICATIONS_PANEL_KEY } from '../shared/notifications.js'
 import { useAuth } from '../composables/useAuth.js'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
 import { useSidebar } from '../composables/useSidebar.js'
@@ -16,13 +20,15 @@ import MorePanel from './MorePanel.vue'
 import SidebarDataVersion from './SidebarDataVersion.vue'
 import BrandMark from '../components/BrandMark.vue'
 
+const props = defineProps({ drawer: { type: Boolean, default: false } })
+defineEmits(['close'])
 const route = useRoute()
 const { isAdmin, isHofAdmin, isTournamentAdmin, isContentAdmin, isAuthenticated, displayName } = useAuth()
 const { isExpanded } = useBreakpoint()
 const { collapsed, toggle } = useSidebar()
 
 /** 图标栏：平板一律；桌面在用户折叠时 */
-const rail = computed(() => !isExpanded.value || collapsed.value)
+const rail = computed(() => !props.drawer && (!isExpanded.value || collapsed.value))
 const activeSection = computed(() => primarySection(viewFromRoute(route)))
 const items = primaryNavItems()
 const { available: creatorsAvailable, directoryVisible: creatorsVisible } = useCreatorAvailability()
@@ -40,6 +46,7 @@ const devEnvironmentNoticeKey = import.meta.env.MODE === 'production-remote'
   ? 'environment.productionRemote'
   : 'environment.local'
 
+const openNotifications = inject(NOTIFICATIONS_PANEL_KEY, null)
 const moreOpen = ref(false)
 const moreTrigger = ref(null)
 const morePanelId = 'app-more-panel'
@@ -55,11 +62,16 @@ function linkAttrs(id) {
 </script>
 
 <template>
-  <aside class="app-sidebar" :class="{ 'is-rail': rail }" data-testid="app-sidebar">
-    <RouterLink class="sidebar-brand" :to="brandTarget" aria-label="WoTBTools">
-      <BrandMark class="sidebar-logo" />
-      <span v-if="!rail" class="sidebar-brand-name">WoTB<span class="sidebar-brand-accent">Tools</span></span>
-    </RouterLink>
+  <component :is="drawer ? 'div' : 'aside'" class="app-sidebar" :class="{ 'is-rail': rail, 'is-drawer': drawer }" :data-testid="drawer ? 'nav-drawer-panel' : 'app-sidebar'">
+    <div class="sidebar-brand-row">
+      <RouterLink class="sidebar-brand" :to="brandTarget" aria-label="WoTBTools">
+        <BrandMark class="sidebar-logo" />
+        <span v-if="!rail" class="sidebar-brand-name">WoTB<span class="sidebar-brand-accent">Tools</span></span>
+      </RouterLink>
+      <button v-if="drawer" type="button" class="sidebar-close" :aria-label="$t('nav.closeDrawer')" data-testid="nav-drawer-close" @click="$emit('close')">
+        <X :size="20" aria-hidden="true" />
+      </button>
+    </div>
 
     <SidebarDataVersion :rail="rail" />
 
@@ -116,7 +128,18 @@ function linkAttrs(id) {
     </nav>
 
     <div class="sidebar-footer">
+      <RouterLink
+        v-if="drawer"
+        class="sidebar-link"
+        v-bind="linkAttrs('more')"
+        :to="to('more')"
+        data-testid="nav-more"
+      >
+        <component :is="PRIMARY_NAV_ICONS.more" :size="24" aria-hidden="true" />
+        <span class="sidebar-label">{{ $t(moreItem.labelKey) }}</span>
+      </RouterLink>
       <button
+        v-else
         ref="moreTrigger"
         type="button"
         class="sidebar-link"
@@ -130,6 +153,19 @@ function linkAttrs(id) {
       >
         <component :is="PRIMARY_NAV_ICONS.more" :size="24" aria-hidden="true" />
         <span class="sidebar-label">{{ $t(moreItem.labelKey) }}</span>
+      </button>
+
+      <button
+        v-if="openNotifications && !drawer"
+        type="button"
+        class="sidebar-link"
+        :title="rail ? $t('notifications.title') : undefined"
+        :aria-label="unreadCount ? $t('notifications.bellUnread', { count: unreadCount }) : $t('notifications.title')"
+        data-testid="nav-notifications"
+        @click="openNotifications($event.currentTarget)"
+      >
+        <span class="sidebar-bell"><Bell :size="24" aria-hidden="true" /><span v-if="unreadCount" class="sidebar-bell-count" aria-hidden="true">{{ unreadCount > 9 ? '9+' : unreadCount }}</span></span>
+        <span class="sidebar-label">{{ $t('notifications.title') }}</span>
       </button>
 
       <RouterLink
@@ -157,8 +193,8 @@ function linkAttrs(id) {
       </button>
     </div>
 
-    <MorePanel :id="morePanelId" :open="moreOpen" :anchor="moreTrigger" @close="moreOpen = false" />
-  </aside>
+    <MorePanel v-if="!drawer" :id="morePanelId" :open="moreOpen" :anchor="moreTrigger" @close="moreOpen = false" />
+  </component>
 </template>
 
 <style scoped>
@@ -178,6 +214,37 @@ function linkAttrs(id) {
   border-inline-end: 1px solid var(--color-border-subtle);
   background: var(--color-surface-1);
 }
+
+/* 抽屉形态：由 AppSheet 定位与让出安全区，这里只铺满抽屉 */
+.app-sidebar.is-drawer {
+  position: static;
+  width: 100%;
+  min-height: 100%;
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  border-inline-end: 0;
+  background: transparent;
+}
+
+.sidebar-brand-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.is-rail .sidebar-brand-row { justify-content: center; }
+
+.sidebar-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: var(--hit-min-comfortable);
+  min-height: var(--hit-min-comfortable);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+.sidebar-close:focus-visible { outline: var(--focus-outline); outline-offset: calc(var(--focus-outline-offset) * -1); }
+
+.is-drawer .sidebar-nav { margin-top: var(--space-2); }
+.is-drawer .sidebar-footer { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
 .sidebar-brand {
   display: flex;
@@ -299,6 +366,22 @@ function linkAttrs(id) {
 .is-rail .sidebar-link { border-inline-start: 0; }
 
 .sidebar-collapse { color: var(--color-text-tertiary); }
+.sidebar-bell { position: relative; display: inline-flex; flex: none; }
+.sidebar-bell-count {
+  position: absolute;
+  inset-block-start: calc(var(--space-1) * -1);
+  inset-inline-end: calc(var(--space-2) * -1);
+  min-inline-size: var(--space-4);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-full);
+  corner-shape: round;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font: var(--type-caption);
+  font-weight: 700;
+  line-height: var(--space-4);
+  text-align: center;
+}
 
 .visually-hidden {
   position: absolute;
@@ -310,6 +393,7 @@ function linkAttrs(id) {
 }
 
 @media (hover: hover) {
+  .sidebar-close:hover { background: var(--color-surface-2); color: var(--color-text-primary); }
   .sidebar-link:not(.is-active):hover { background: var(--color-surface-2); color: var(--color-text-primary); }
 }
 </style>

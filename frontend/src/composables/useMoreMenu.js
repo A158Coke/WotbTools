@@ -1,15 +1,9 @@
 import { computed, getCurrentInstance, inject } from 'vue'
-import {
-  Cpu, Database, Download, FileText, Heart, History, Mail, MessageSquare, ShieldCheck, Users, ListOrdered, Settings,
-} from 'lucide-vue-next'
-import { useAuth } from './useAuth.js'
-import { useUiProfile } from './useUiProfile.js'
+import { Cpu, Download, FileText, Heart, History, Mail } from 'lucide-vue-next'
 import { isAndroidApp } from './usePlatformBridge.js'
 import { FEEDBACK_KEY } from '../shared/feedback.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
-import { COMPACT_SHORTCUT_ITEMS } from '../app/navigation.js'
 import { ANDROID_UPDATE_KEY } from '../shared/androidUpdate.js'
-import { useCreatorAvailability } from './useCreatorAvailability.js'
 import { persistLocale } from '../i18n/locale-preference.js'
 
 /**
@@ -27,37 +21,13 @@ export function useMoreMenu() {
   const onboarding = inject(ONBOARDING_KEY, null)
   const openFeedback = inject(FEEDBACK_KEY, null)
   const androidUpdate = inject(ANDROID_UPDATE_KEY, null)
-  const { isAdmin, isHofAdmin, isTournamentAdmin, isContentAdmin, authenticated } = useAuth()
-  const { uiProfilePreference, setUiProfile } = useUiProfile()
-  const { available: creatorsAvailable, directoryVisible: creatorsVisible } = useCreatorAvailability()
-  // vue-i18n legacy 模式下 $i18n 由 mixin 在 setup 之后才挂上：setup 时只捕获实例，用户操作时再读
+    // vue-i18n legacy 模式下 $i18n 由 mixin 在 setup 之后才挂上：setup 时只捕获实例，用户操作时再读
   const instance = getCurrentInstance()
 
   function setLocale(value) {
     const locale = persistLocale(value)
     instance.proxy.$i18n.locale = locale
   }
-
-  const uiProfileOptions = (t) => [
-    { value: 'showcase', label: t('uiProfile.showcase') },
-    { value: 'classic', label: t('uiProfile.classic') },
-    { value: 'auto', label: t('uiProfile.auto') },
-  ]
-
-  /** 不在小屏 Tab 栏里的栏目：只由 PRIMARY_NAV 派生，手机"更多"页顶部的快捷入口。 */
-  const shortcuts = computed(() => COMPACT_SHORTCUT_ITEMS.filter(item => item.id !== 'creators' || creatorsVisible.value))
-
-  /** 管理入口：平板 / 桌面在侧边栏管理组，手机在"更多"页。 */
-  const adminLinks = computed(() => [
-    isAdmin.value && { view: 'admin-users', labelKey: 'admin.title', icon: Users },
-    isAdmin.value && { view: 'admin-battle-data', labelKey: 'battleDataAdmin.title', icon: Database },
-    isAdmin.value && { view: 'admin-ai-review-feedback', labelKey: 'aiFeedback.adminTitle', icon: Users },
-    isAdmin.value && { view: 'admin-site-feedback', labelKey: 'siteFeedback.adminTitle', icon: MessageSquare },
-    isHofAdmin.value && { view: 'hof-admin', labelKey: 'hofAdmin.cardTitle', icon: ShieldCheck },
-    isTournamentAdmin.value && { view: 'tournament-points-config', labelKey: 'tournament.configTitle', icon: Settings },
-    isTournamentAdmin.value && { view: 'tournament-points-admin', labelKey: 'tournament.adminTitle', icon: ListOrdered },
-    isContentAdmin.value && creatorsAvailable.value && { view: 'creators-config', labelKey: 'creators.configTitle', icon: Users },
-  ].filter(Boolean))
 
   /** 关于与支持：低频入口，两种形态都放在"更多"里。 */
   const aboutLinks = computed(() => [
@@ -69,7 +39,8 @@ export function useMoreMenu() {
     !isAndroidApp() && { view: 'android', labelKey: 'android.nav', icon: Download },
   ].filter(Boolean))
 
-  const openGuide = computed(() => authenticated?.value && onboarding ? () => onboarding.openDirectory() : null)
+  // 功能指南对所有人开放：Android App 没有首页，抽屉外壳里「更多」是重开教程的唯一稳定入口
+  const openGuide = computed(() => onboarding ? () => onboarding.openDirectory() : null)
   const openAndroidUpdate = computed(() => androidUpdate?.supported.value ? opener => androidUpdate.open(opener) : null)
-  return { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, shortcuts, adminLinks, aboutLinks, openGuide, openFeedback, openAndroidUpdate }
+  return { setLocale, aboutLinks, openGuide, openFeedback, openAndroidUpdate }
 }

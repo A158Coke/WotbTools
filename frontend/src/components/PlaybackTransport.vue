@@ -1,8 +1,9 @@
 <script setup>
 // Shared primary composition: −5 / Play / +5 / current speed / Fullscreen / Display.
-import { computed, ref } from 'vue'
+import { computed, inject, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
+import { OPEN_NAV_DRAWER_KEY, SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 import { useEventListener } from '@vueuse/core'
-import { Maximize2, Minimize2, Pause, Play, PencilRuler, SlidersHorizontal } from 'lucide-vue-next'
+import { Maximize2, Menu, Minimize2, Pause, Play, PencilRuler, SlidersHorizontal } from 'lucide-vue-next'
 import PlaybackTimeline from './PlaybackTimeline.vue'
 import { formatPlaybackClock } from '../utils/playbackClock'
 import { PLAYBACK_SPEEDS } from '../composables/usePlaybackTransport.js'
@@ -31,8 +32,23 @@ const props = defineProps({
   /** 全屏入口由宿主以右上角浮动按钮呈现（移动端统一契约）：本条不再渲染第二个重复按钮。 */
   floatingFullscreen: Boolean,
   formatClock: { type: Function, default: formatPlaybackClock },
+  /** 本条此刻是否真的看得见：宿主用 v-show 收起控制条、能力切走时传 false，菜单入口交还外壳。 */
+  navEligible: { type: Boolean, default: true },
 })
 
+// 横屏沉浸态（无顶栏）：菜单入口作为控制条的第一项，外壳不再叠悬浮按钮（design-language §9「强制横屏」）
+const shellChrome = inject(SHELL_CHROME_KEY, null)
+const openNav = inject(OPEN_NAV_DRAWER_KEY, null)
+const navOwner = Symbol('playback-transport-nav')
+// 回放工作台在 KeepAlive 里：切到别的页面（如装甲查看器）时本组件仍挂载但不可见，
+// 此时必须交还菜单入口，否则外壳以为菜单已被托管而不画悬浮按钮，新页面就没有抽屉入口
+const alive = ref(true)
+onActivated(() => { alive.value = true })
+onDeactivated(() => { alive.value = false })
+// v-show 收起（3D 控制条折叠、2D 紧凑标注）或能力切走时组件同样不卸载、不停用：由宿主经 navEligible 告知
+const hostsNav = computed(() => alive.value && props.navEligible && !!openNav && !!shellChrome?.immersive.value)
+watch(hostsNav, (on) => shellChrome?.hostNav(navOwner, on), { immediate: true })
+onBeforeUnmount(() => shellChrome?.hostNav(navOwner, false))
 const emit = defineEmits(['toggle-play', 'step', 'set-speed', 'seek', 'scrub-start', 'scrub-end', 'toggle-fullscreen', 'toggle-display', 'toggle-annotation'])
 
 /** 紧凑档的速度菜单开合；选中或点空白即收起（与 MenuButton 同口径的渐进披露） */
@@ -71,6 +87,7 @@ const total = computed(() => Number(props.duration) - Number(props.startTime))
     @seek="emit('seek', $event)"
   />
   <div class="pb-controls" :class="{ 'phone-form': props.compact }" data-test="pb-controls" data-tour="playback-transport" @pointerdown.stop @click.stop>
+    <button v-if="hostsNav" type="button" class="pb-btn" data-testid="nav-menu" :aria-label="$t('nav.openDrawer')" aria-haspopup="dialog" @click="openNav($event.currentTarget)"><Menu :size="18" aria-hidden="true" /></button>
     <button v-if="props.stepSeconds > 0" type="button" class="pb-btn" data-test="pb-back5" :disabled="!timelineUsable" :aria-label="$t('recon.map.playback.back_seconds', { seconds: props.stepSeconds })" @click="emit('step', -props.stepSeconds)">−{{ props.stepSeconds }}</button>
     <button
       type="button"

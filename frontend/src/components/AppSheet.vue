@@ -1,5 +1,7 @@
 <script setup lang="ts">
-// 手机底部 sheet（design-language §7 Sheet）：模态、焦点陷阱、Esc / 点遮罩 / 下滑关闭、portal 由 Reka Drawer 提供；
+// 手机 sheet（design-language §7 Sheet）：模态、焦点陷阱、Esc / 点遮罩 / 滑动关闭、portal 由 Reka Drawer 提供；
+// 默认从底部出现；side="start" 是左侧抽屉形态（小屏导航，§9 L1），左滑关闭、铺满高度、四边让出安全区；
+// side="end" 是右侧详情抽屉（管理列表模板：大屏约 400px，手机铺满宽度），右滑关闭，内容区由调用方分出头 / 体 / 底。
 // 这里统一 WotbTools 的层级（--z-sheet）、遮罩（--color-scrim）、安全区、紧凑尺寸与 reduced-motion。
 // 不启用 snap points（目前没有产品场景）。
 import { computed, inject, ref, watch } from 'vue'
@@ -16,6 +18,8 @@ const props = defineProps<{
   title: string
   /** 同时显示 AppSheet 自己的标题行 */
   visibleTitle?: boolean
+  /** 出现方向：bottom（默认）、start（左侧抽屉）或 end（右侧详情抽屉） */
+  side?: 'bottom' | 'start' | 'end'
 }>()
 const emit = defineEmits<{ close: [] }>()
 defineOptions({ inheritAttrs: false })
@@ -29,16 +33,19 @@ watch(() => props.open, (open) => {
 }, { immediate: true, flush: 'sync' })
 const finalFocus = computed(() => props.returnFocusTo ?? opener.value ?? undefined)
 
+const SWIPE = { bottom: 'down', start: 'left', end: 'right' } as const
+const swipeDirection = computed(() => SWIPE[props.side ?? 'bottom'])
+
 function onUpdateOpen(value: boolean) {
   if (!value) emit('close')
 }
 </script>
 
 <template>
-  <DrawerRoot :open="open" @update:open="onUpdateOpen">
+  <DrawerRoot :open="open" :swipe-direction="swipeDirection" @update:open="onUpdateOpen">
     <DrawerPortal :to="portalTo ?? undefined" :disabled="inline" force-mount>
       <DrawerOverlay class="sheet-scrim" data-testid="sheet-scrim" />
-      <DrawerContent class="sheet" :final-focus="finalFocus" v-bind="$attrs">
+      <DrawerContent class="sheet" :class="{ 'is-start': side === 'start', 'is-end': side === 'end' }" :final-focus="finalFocus" v-bind="$attrs">
         <DrawerTitle class="sheet-title" :class="{ 'is-hidden': !visibleTitle }">{{ title }}</DrawerTitle>
         <div class="sheet-body"><slot /></div>
       </DrawerContent>
@@ -73,6 +80,33 @@ function onUpdateOpen(value: boolean) {
   /* 下滑关闭手势由 Reka 写入位移变量 */
   transform: translateY(var(--drawer-swipe-movement-y, 0px));
 }
+/* 左侧抽屉：铺满高度，顶 / 底 / 左让出安全区；左滑关闭的位移由 Reka 写入 x 变量 */
+.sheet.is-start {
+  top: 0;
+  right: auto;
+  width: var(--nav-drawer-w);
+  max-height: none;
+  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) env(safe-area-inset-left);
+  border-inline-end: 1px solid var(--color-border-subtle);
+  border-radius: 0;
+  background: var(--color-surface-1);
+  box-sizing: content-box;
+  transform: translateX(var(--drawer-swipe-movement-x, 0px));
+}
+.sheet.is-start .sheet-body { padding-inline-end: 0; overflow-y: auto; }
+/* 右侧详情抽屉：铺满高度，顶 / 底 / 右让出安全区；内容区不滚动，由调用方的头 / 体 / 底自己分配（体内滚动） */
+.sheet.is-end {
+  top: 0;
+  left: auto;
+  width: var(--detail-drawer-w);
+  max-height: none;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) 0;
+  border-inline-start: 1px solid var(--color-border-subtle);
+  border-radius: 0;
+  background: var(--color-surface-1);
+  transform: translateX(var(--drawer-swipe-movement-x, 0px));
+}
+.sheet.is-end .sheet-body { display: flex; flex-direction: column; padding-inline-end: 0; overflow: hidden; }
 /* 进场动画只挂在 open 态：Reka Presence 看到退场仍有 animation 会等一个不会再来的 animationend，sheet 就卸不掉 */
 .sheet[data-state="open"] { animation: sheet-in var(--duration-slow) var(--ease-standard); }
 

@@ -6,6 +6,7 @@ import { nextTick, inject, ref, computed } from 'vue'
 import App from './App.vue'
 import { DIALOG_INLINE_KEY } from './shared/dialog.js'
 import { NAVIGATE_VIEW_KEY } from './shared/navigation.js'
+import { SHELL_CHROME_KEY } from './shared/shellChrome.js'
 import { createAppRouter } from './app/router.js'
 import { ALLOWED_VIEWS } from './app/navigation.js'
 import { VIEW_COMPONENTS } from './app/viewRegistry.js'
@@ -18,12 +19,15 @@ vi.mock('./components/ReplayWorkspace.vue', () => ({
   default: {
     name: 'ReplayWorkspace',
     props: ['initialCapability'],
-    setup() { return { navigate: inject(NAVIGATE_VIEW_KEY) } },
+    setup() { return { navigate: inject(NAVIGATE_VIEW_KEY), chrome: inject(SHELL_CHROME_KEY) } },
     // ws-armor-handoff 模拟 `ReplayShotsPane.openInViewer`：目标带 query 的对象形式
     // （工作台把整个目的地交给 router owner，装甲查看器要的 tank/shot/world/… 都在里面）
+    // ws-immersive-request：仅全屏兜底菜单用例点击——模拟播放器申请沉浸态但暂不 hostNav
+    //（对应 3D 工具栏收起交还托管的状态），其余用例不受影响。
     template: `<div :data-cap="initialCapability" data-test="view-replay">
       <button data-testid="ws-tab" @click="navigate('ai-review')">ai</button>
       <button data-testid="ws-armor-handoff" @click="navigate({ query: { view: 'agent-armor', tank: '13825', shooter: '19969', shot: '2', shell: '0', scfg: '0', config: '1', world: '1', heatmap: '1' } })">viewer</button>
+      <button data-testid="ws-immersive-request" @click="chrome?.request('app-test-immersive', true)" />
     </div>`,
   },
 }))
@@ -85,17 +89,17 @@ vi.mock('./composables/useAuth.js', () => ({
   }),
 }))
 
-// 外壳档位：默认桌面 / 平板（单行顶栏）；手机用例切到 compact（标题栏 + 底部 Tab 栏）
-const layoutState = vi.hoisted(() => ({ isCompact: null, isCompactLandscape: null }))
+// 外壳档位：默认桌面 / 平板（侧边栏）；手机用例切到抽屉外壳（顶栏菜单 + 左侧抽屉）
+const layoutState = vi.hoisted(() => ({ isCompact: null, isDrawerShell: null }))
 vi.mock('./composables/useBreakpoint.js', async () => {
   const { ref: vueRef, computed: vueComputed } = await import('vue')
   layoutState.isCompact = vueRef(false)
-  layoutState.isCompactLandscape = vueRef(false)
+  layoutState.isDrawerShell = vueRef(false)
   return {
     useBreakpoint: () => ({
       tier: vueComputed(() => (layoutState.isCompact.value ? 'compact' : 'expanded')),
       isCompact: layoutState.isCompact,
-      isCompactLandscape: layoutState.isCompactLandscape,
+      isDrawerShell: layoutState.isDrawerShell,
       isExpanded: vueComputed(() => !layoutState.isCompact.value),
     }),
     usePointer: () => ({ coarse: vueRef(false) }),
@@ -361,11 +365,11 @@ describe('App routing', () => {
 
   it('changes UI profile without navigating or remounting the active route', async () => {
     const { wrapper, router } = await mountApp('/?view=replay')
-    setUiProfile('classic')
+    setUiProfile('winter')
     await nextTick()
     expect(router.currentRoute.value.query.view).toBe('replay')
     expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(true)
-    setUiProfile('showcase')
+    setUiProfile('summer')
     document.documentElement.removeAttribute('data-ui-profile')
     document.documentElement.removeAttribute('data-theme')
     window.localStorage.removeItem('wotb-ui-profile')
@@ -519,7 +523,7 @@ describe('App shell navigation, 更多 and account', () => {
     authState.login.mockClear()
     authState.logout.mockClear()
     layoutState.isCompact.value = false
-    layoutState.isCompactLandscape.value = false
+    layoutState.isDrawerShell.value = false
   })
 
   it('marks the active primary section with aria-current, including Replay capabilities', async () => {
@@ -565,26 +569,59 @@ describe('App shell navigation, 更多 and account', () => {
     expect(router.currentRoute.value.query.view).toBe('profile')
   })
 
-  it('uses a bottom tab bar and an icon-only account entry on compact layouts', async () => {
+  it('uses a top bar menu and a left drawer (no bottom tabs) on phone layouts', async () => {
     layoutState.isCompact.value = true
+    layoutState.isDrawerShell.value = true
     const { wrapper } = await mountApp('/?view=hof')
-    expect(wrapper.find('[data-testid="app-tab-bar"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="nav-hof"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="nav-more"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="tab-hof"]').attributes('aria-current')).toBe('page')
-    expect(wrapper.find('[data-testid="tab-more"]').exists()).toBe(true)
-    expect(wrapper.findAll('[data-testid="app-tab-bar"] a')).toHaveLength(5)
+    expect(wrapper.find('[data-testid="app-sidebar"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="app-tab-bar"]').exists()).toBe(false)
+    const menu = wrapper.get('[data-testid="nav-menu"]')
+    expect(menu.attributes('aria-expanded')).toBe('false')
     expect(wrapper.get('[data-testid="nav-account"]').attributes('aria-label')).toBe('nav.account')
+    await menu.trigger('click')
+    await settle()
+    expect(menu.attributes('aria-expanded')).toBe('true')
+    const drawer = wrapper.get('[data-testid="nav-drawer-panel"]')
+    expect(drawer.get('[data-testid="nav-hof"]').attributes('aria-current')).toBe('page')
+    expect(drawer.find('[data-testid="nav-more"]').exists()).toBe(true)
+    await drawer.get('[data-testid="nav-replay"]').trigger('click')
+    await settle()
+    expect(wrapper.find('[data-testid="nav-drawer-panel"]').exists()).toBe(false)
   })
 
-  it('compact 横屏：导航切到左侧图标栏，顶栏与底部 Tab 栏都不渲染', async () => {
-    layoutState.isCompact.value = true
-    layoutState.isCompactLandscape.value = true
+  it('手机横屏（宽度 ≥ 768 的 844×340 同样）：仍是顶栏菜单 + 抽屉，没有侧边栏', async () => {
+    layoutState.isDrawerShell.value = true
     const { wrapper } = await mountApp('/?view=hof')
-    expect(wrapper.find('[data-testid="app-sidebar"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="app-tab-bar"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="app-top-bar"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="nav-hof"]').attributes('aria-current')).toBe('page')
+    expect(wrapper.find('[data-testid="app-sidebar"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="app-top-bar"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="nav-menu"]').exists()).toBe(true)
+  })
+
+  it('3D 全屏且播放器交还导航托管时，兜底菜单渲染进全屏元素（外壳会被浏览器隐藏）', async () => {
+    const fullscreenRoot = document.createElement('div')
+    document.body.append(fullscreenRoot)
+    Object.defineProperty(document, 'fullscreenElement', { configurable: true, value: fullscreenRoot })
+    layoutState.isCompact.value = true
+    layoutState.isDrawerShell.value = true
+    try {
+      const { wrapper } = await mountApp('/?view=replay')
+      await wrapper.get('[data-testid="ws-immersive-request"]').trigger('click')
+      await settle()
+      // 兜底菜单走 AppShell 自己的 Teleport（不受 DIALOG_INLINE_KEY 影响）：
+      // 必须落在全屏元素里，留在全屏层外的外壳会被浏览器整体隐藏。
+      const menu = document.querySelector('[data-testid="nav-menu"]')
+      expect(menu).toBeTruthy()
+      expect(fullscreenRoot.contains(menu)).toBe(true)
+      menu.click()
+      await settle()
+      // 抽屉本体在组件测试里原地渲染（DIALOG_INLINE_KEY），打开状态由 aria-expanded 断言；
+      // 全屏下抽屉自身 portal 进全屏根的行为由 AppNavDrawer.test.ts 持有。
+      expect(menu.getAttribute('aria-expanded')).toBe('true')
+      expect(wrapper.find('[data-testid="nav-drawer-panel"]').exists()).toBe(true)
+    } finally {
+      Object.defineProperty(document, 'fullscreenElement', { configurable: true, value: null })
+      fullscreenRoot.remove()
+    }
   })
 
   it('does not render the tab bar or top bar on wider layouts; the sidebar carries navigation', async () => {

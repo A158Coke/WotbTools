@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { effectScope, nextTick, ref } from 'vue'
-import { useTournamentPointsAdmin, tournamentGroupReviewError, normalizeTournamentClan } from './useTournamentPointsAdmin.js'
+import { useTournamentPointsAdmin, tournamentGroupReviewError, tournamentReviewState, normalizeTournamentClan } from './useTournamentPointsAdmin.js'
 import { tournamentRulesFromInputs } from './useTournamentPointsConfig.js'
 import { tournamentAdminAllowed } from '../api/tournament-points.js'
 import type { TournamentImageReview } from './useTournamentPointsAdmin.js'
@@ -43,6 +43,25 @@ function reviewFrom(f: ReturnType<typeof fixture>): TournamentImageReview {
     groupNumber: 1, teams: structuredClone(f.group.teams), complete: true, duplicateAction: 'ERROR', confirmedClans: [], error: null }
 }
 beforeEach(() => { vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:test'); vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {}) })
+
+describe('tournament review card state', () => {
+  it('识别警告在改正并确认后进入已核对；未改正时仍是有疑点；整图结构问题始终有疑点', () => {
+    const f = fixture()
+    const review = reviewFrom(f)
+    review.result!.issues = ['GROUP_NUMBER_MISSING']
+    review.groupNumber = null as unknown as number
+    expect(tournamentReviewState(review, f.cfg, 1, 1, false)).toBe('issue')
+    review.groupNumber = 1
+    expect(tournamentReviewState(review, f.cfg, 1, 1, false)).toBe('reviewed')
+    review.result!.issues = ['UNCLEAR_CLAN']
+    review.teams[0].clanTag = 'NEW'
+    expect(tournamentReviewState(review, f.cfg, 1, 1, false)).toBe('newClan')
+    review.confirmedClans = ['NEW']
+    expect(tournamentReviewState(review, f.cfg, 1, 1, false)).toBe('reviewed')
+    review.result!.issues = ['INCOMPLETE_GROUP']
+    expect(tournamentReviewState(review, f.cfg, 1, 1, false)).toBe('issue')
+  })
+})
 
 describe('tournament rules and identities', () => {
   it('uses the wire contract Unicode character limit for clan tags', () => {
@@ -449,6 +468,48 @@ describe('shared tournament draft owner', () => {
     expect(f.owner.canUpload.value).toBe(false)
     await f.owner.finalize()
     expect(f.transport.finalizeTournamentDay).not.toHaveBeenCalled()
+    f.scope.stop()
+  })
+  it('取消识别时移除在途占位卡，不留孤儿审核卡；已识别的卡保留', async () => {
+    const f = mountOwner()
+    f.owner.eventId.value = 7
+    await settle()
+    const recognized = f.transport.recognizeTournamentImage.getMockImplementation()!
+    let call = 0
+    f.transport.recognizeTournamentImage.mockImplementation((...args) => {
+      call++
+      return call === 1 ? recognized(...args) : new Promise(() => {})
+    })
+    const pending = f.owner.recognize([new File(['a'], 'a.png'), new File(['b'], 'b.png')])
+    await settle()
+    expect(f.owner.reviews.value).toHaveLength(2)
+    expect(f.owner.recognizing.value).toBe(true)
+    f.owner.cancelRecognition()
+    expect(f.owner.recognizing.value).toBe(false)
+    expect(f.owner.reviews.value).toHaveLength(1)
+    expect(f.owner.reviews.value[0].result).not.toBeNull()
+    void pending
+    f.scope.stop()
+  })
+  it('失败卡 → 重试 → 取消：保留这张卡并恢复原错误，仍可重试', async () => {
+    const f = mountOwner()
+    f.owner.eventId.value = 7
+    await settle()
+    const failure = { errorCode: 'TOURNAMENT_OCR_FAILED', status: 502 }
+    f.transport.recognizeTournamentImage.mockRejectedValueOnce(failure)
+    await f.owner.recognize([new File(['a'], 'a.png')])
+    expect(f.owner.reviews.value).toHaveLength(1)
+    const failed = f.owner.reviews.value[0]
+    expect(failed.error).toEqual(failure)
+    f.transport.recognizeTournamentImage.mockImplementationOnce(() => new Promise(() => {}))
+    const pending = f.owner.recognize([failed.file], failed)
+    await settle()
+    expect(f.owner.reviews.value[0].error).toBeNull()
+    f.owner.cancelRecognition()
+    expect(f.owner.reviews.value).toHaveLength(1)
+    expect(f.owner.reviews.value[0].error).toEqual(failure)
+    expect(f.owner.reviews.value[0].result).toBeNull()
+    void pending
     f.scope.stop()
   })
   it('rejects a late recognition result after day selection changes', async () => {

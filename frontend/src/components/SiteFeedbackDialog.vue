@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { showToast } from '../composables/useToast.js'
 import { computed, inject, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { siteFeedbackReasons, createSiteFeedback, type SiteFeedbackReason } from '../api/site-feedback.js'
@@ -36,6 +37,7 @@ async function submit() {
   try {
     await createSiteFeedback({ reasonCodes: reasons.value, feedbackText: feedbackText.value || null, pageView: props.pageView })
     sent.value = true
+    showToast({ id: 'site-feedback', tone: 'success', titleKey: 'toast.feedbackSent' })
   } catch (cause) { error.value = apiErrorLabel(t, te, cause) }
   finally { busy.value = false }
 }

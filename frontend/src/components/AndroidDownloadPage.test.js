@@ -30,6 +30,14 @@ describe('AndroidDownloadPage', () => {
     telemetry.post.mockReset().mockResolvedValue(undefined)
   })
 
+  it('下载按钮带版本与由 apkSizeBytes 换算的大小；没有更新说明时如实说明', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ latestVersionName: '4.8.0', apkUrl: 'https://wotbtools.com/a.apk', apkSizeBytes: 203884583, releaseNotes: '' }) }))
+    const wrapper = mount(AndroidDownloadPage, { global: { plugins: [i18n] } })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="android-download-link"]').text()).toBe('下载 APK · 4.8.0 · 194 MB')
+    expect(wrapper.get('[data-testid="android-release-notes"]').text()).toBe('这一版没有写更新说明')
+  })
+
   it('renders latest version and SHA from the public manifest without auth', async () => {
     const fetch = vi.fn().mockResolvedValue(manifestResponse())
     vi.stubGlobal('fetch', fetch)

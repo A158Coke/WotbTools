@@ -320,6 +320,60 @@ git commit -q -m 'shrink the legacy file and retire its entry'
 head=$(git rev-parse HEAD)
 expect_pass source-line-split-in-range env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$split_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
+# A branch forked before main split a legacy file, then merged the newer main:
+# its early commits still carry the over-budget blob, while BASE (new main) and
+# HEAD (the merge) have both retired the entry. The fork point's allowlist was
+# approved on main, so this must pass.
+git switch -q -C source-line-merged-newer-main "$base"
+mkdir -p frontend/src scripts/ci
+python3 - <<'PY'
+from pathlib import Path
+Path("frontend/src/legacy.js").write_text("// line\n" * 1601)
+Path("scripts/ci/source-line-allowlist.txt").write_text("frontend/src/legacy.js\n")
+PY
+git add frontend/src/legacy.js scripts/ci/source-line-allowlist.txt
+git commit -q -m 'old main: pinned legacy file'
+old_main=$(git rev-parse HEAD)
+git switch -q -c source-line-merged-newer-main-feature
+printf 'feature\n' > feature.txt
+git add feature.txt
+git commit -q -m 'feature commit made before main split the file'
+git switch -q source-line-merged-newer-main
+python3 - <<'PY'
+from pathlib import Path
+Path("frontend/src/legacy.js").write_text("// line\n" * 1500)
+PY
+git rm -q scripts/ci/source-line-allowlist.txt
+git add frontend/src/legacy.js
+git commit -q -m 'new main: split the legacy file and retire its entry'
+new_main=$(git rev-parse HEAD)
+git switch -q source-line-merged-newer-main-feature
+git merge -q --no-edit "$new_main"
+head=$(git rev-parse HEAD)
+expect_pass source-line-merged-newer-main env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$new_main" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+
+# The fork-point rule must not admit a branch-only entry: a feature commit that
+# adds an oversized blob shielded by its own temporary entry still fails after
+# merging a newer main (its fork point never had that entry).
+git switch -q -C source-line-fork-evasion "$old_main"
+python3 - <<'PY'
+from pathlib import Path
+Path("frontend/src/flash.js").write_text("// line\n" * 1501)
+Path("scripts/ci/source-line-allowlist.txt").write_text("frontend/src/legacy.js\nfrontend/src/flash.js\n")
+PY
+git add frontend/src/flash.js scripts/ci/source-line-allowlist.txt
+git commit -q -m 'branch-only temporary entry'
+python3 - <<'PY'
+from pathlib import Path
+Path("frontend/src/flash.js").write_text("// line\n" * 1500)
+Path("scripts/ci/source-line-allowlist.txt").write_text("frontend/src/legacy.js\n")
+PY
+git add frontend/src/flash.js scripts/ci/source-line-allowlist.txt
+git commit -q -m 'shrink and drop the temporary entry'
+git merge -q --no-edit "$new_main"
+head=$(git rev-parse HEAD)
+expect_fail_msg source-line-fork-evasion "frontend/src/flash.js" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$new_main" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+
 # An oversized blob committed together with a temporary allowlist entry that is
 # removed later must still fail: entries that exist neither at the base nor at
 # HEAD legitimize nothing in the history gate.

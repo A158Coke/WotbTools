@@ -203,10 +203,10 @@ const selected = computed(() => shellOptions.value[shellIndex.value])
 .shot-hud { display: grid; gap: var(--space-2); min-inline-size: 0; inline-size: 100%; }
 .hud-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .hud-row { display: flex; align-items: center; gap: var(--space-1); }
-.hud-shells { border: 1px solid var(--color-border-subtle); border-radius: var(--radius-full); background: var(--color-surface-2); }
+.hud-shells { border: 1px solid var(--color-border-subtle); border-radius: var(--radius-full); corner-shape: round; background: var(--color-surface-2); }
 .hud-shell,
 .hud-eq { display: grid; place-items: center; flex-shrink: 0; inline-size: var(--hit-min-comfortable); block-size: var(--hit-min-comfortable); padding: 0; border: 1px solid transparent; border-radius: var(--radius-sm); background: var(--color-surface-2); color: var(--color-text-secondary); cursor: pointer; }
-.hud-shell { border-radius: var(--radius-full); background: transparent; }
+.hud-shell { border-radius: var(--radius-full); corner-shape: round; background: transparent; }
 .hud-shell img,
 .hud-eq img { inline-size: var(--armor-shot-icon-size); block-size: var(--armor-shot-icon-size); object-fit: contain; }
 .hud-shell.is-on,

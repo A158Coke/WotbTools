@@ -67,6 +67,10 @@ export function useLeagueBroadcasts(route = useRoute(), router = useRouter(), de
   function navigate(value: { server?: string | null; season?: number | null; category?: number | null }) {
     return router.push(destination(value))
   }
+  /** 页面的缺省选择（区服 / 最新赛季 / 赛段页签）：replace 写进 URL，不新增历史记录、不显示 notFound。 */
+  function select(value: { server?: string | null; season?: number | null; category?: number | null }) {
+    return router.replace(destination(value))
+  }
   async function repair(value: { server?: string | null; season?: number | null; category?: number | null }) {
     notice.value = 'notFound'
     await router.replace(destination(value))
@@ -167,5 +171,5 @@ export function useLeagueBroadcasts(route = useRoute(), router = useRouter(), de
   onScopeDispose(invalidate)
   return { network, allowed, index, server, servers, seasonId, categoryId, season, seasons, categories, category, nodes,
     defaultTimeZone, displayTimeZonePreference, displayTimeZone,
-    coverUploadAvailable, loading, busy, readFailed, error, notice, editorEpoch, contextKey, refresh, navigate, mutate, remove }
+    coverUploadAvailable, loading, busy, readFailed, error, notice, editorEpoch, contextKey, refresh, navigate, select, mutate, remove }
 }

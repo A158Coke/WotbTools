@@ -8,7 +8,7 @@ import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { callPageFunction } from './browser-page.mjs'
 import { parseScenarioArgs, selectShard } from './browser-scenario-args.mjs'
 import { OCCLUSION_LIMITS, measureOcclusion, measurePaintOrder, measureReachability } from './browser-occlusion.mjs'
-import { SHELL_OVERLAY_SCENARIOS, runShellOverlayScenario } from './browser-shell-overlays.mjs'
+import { MOBILE_PAGE_SCENARIOS, SHELL_OVERLAY_SCENARIOS, runMobilePageScenario, runShellOverlayScenario } from './browser-shell-overlays.mjs'
 import { DIALOG_SHEET_SCENARIOS, runDialogSheetScenario } from './browser-dialog-sheet.mjs'
 import { DRAWER_TABLE_SCENARIOS, runDrawerTableScenario } from './browser-drawer-tables.mjs'
 import { CATALOG_HOF_DOC_SCENARIOS, runCatalogHofDocScenario } from './browser-catalog-hof-docs.mjs'
@@ -305,7 +305,7 @@ class Page {
     })
   }
 
-  async enable({ locale = 'zh', profile = 'showcase' } = {}) {
+  async enable({ locale = 'zh', profile = 'summer' } = {}) {
     await this.client.send('Runtime.enable', {}, this.sessionId)
     await this.client.send('Page.enable', {}, this.sessionId)
     // 页面共享 origin 的 localStorage；每个场景都在首屏前设置自己的偏好，避免矩阵污染后续场景。
@@ -562,7 +562,7 @@ const APP_SCENARIOS = [
   // Admin 与普通登录用户能力集合相同。
   { name: 'admin-1600x900-desktop', width: 1600, height: 900, touch: false, authenticated: true, login: 'resolve', roles: ['wotbtools-admin'] },
   { name: 'admin-390x844-portrait-coarse', width: 390, height: 844, touch: true, authenticated: true, login: 'resolve', roles: ['wotbtools-admin'] },
-  ...['zh', 'en', 'ru'].flatMap(locale => ['showcase', 'classic'].flatMap(profile => [
+  ...['zh', 'en', 'ru'].flatMap(locale => ['summer', 'winter'].flatMap(profile => [
     { width: 320, height: 812, touch: true },
     { width: 390, height: 844, touch: true },
     { width: 767, height: 900, touch: true },
@@ -582,7 +582,7 @@ const AUTH_CAPABILITY_SCENARIOS = [
   { name: 'capability-normal-shots-armor-handoff', cap: 'shots', view: 'agent-shots', authenticated: true, width: 1600, height: 900, touch: false, reconstruct: true },
   { name: 'capability-normal-shots-armor-handoff-mobile', cap: 'shots', view: 'agent-shots', authenticated: true, width: 390, height: 844, touch: true, reconstruct: true },
   { name: 'capability-normal-shots-armor-handoff-tablet', cap: 'shots', view: 'agent-shots', authenticated: true, width: 1024, height: 768, touch: false, reconstruct: true },
-  ...['showcase', 'classic'].map(profile => ({ name: `capability-normal-shots-armor-handoff-landscape-${profile}`, profile, cap: 'shots', view: 'agent-shots', authenticated: true, width: 740, height: 360, touch: true, reconstruct: true })),
+  ...['summer', 'winter'].map(profile => ({ name: `capability-normal-shots-armor-handoff-landscape-${profile}`, profile, cap: 'shots', view: 'agent-shots', authenticated: true, width: 740, height: 360, touch: true, reconstruct: true })),
 ]
 
 async function runAuthCapabilityScenario(env, scenario) {
@@ -590,7 +590,7 @@ async function runAuthCapabilityScenario(env, scenario) {
   const { targetId, sessionId } = await env.chrome.openPage()
   const page = new Page(env.chrome.client, sessionId)
   lastPage = page
-  await page.enable({ profile: scenario.profile ?? 'showcase' })
+  await page.enable({ profile: scenario.profile ?? 'summer' })
   await page.emulate(scenario)
   const origin = await fakeAnalysisOrigin()
   await page.goto(`${origin}/?view=replay&ws-auth=${scenario.authenticated ? 1 : 0}&ws-shot-fixture=1&assets=${encodeURIComponent(`${origin}/fixture-assets`)}`)
@@ -661,7 +661,10 @@ async function runAuthCapabilityScenario(env, scenario) {
       await page.tap({ ...row, touch: scenario.touch })
       check(failures, await page.evaluate('window.__wsInput.click?.testId') === 'shot-row-1',
         'real selection click must land on the selected shot row')
-      for (const selector of ['[data-testid=shot-next]', '[data-testid=shot-prev]', '[data-testid=shot-detail-close]']) {
+      // compact 窗格（< 600）：点一发直接进入射击复现，不经检视面板（design-language §9「射击分析」）
+      const directOpen = scenario.width < 600
+      if (directOpen) check(failures, await page.evaluate('!document.querySelector("[data-testid=shot-inspector]")'), 'compact shot tap must not open the inspector overlay')
+      if (!directOpen) for (const selector of ['[data-testid=shot-next]', '[data-testid=shot-prev]', '[data-testid=shot-detail-close]']) {
         await page.callWith((sel) => document.querySelector(sel).scrollIntoView({ block: 'center' }), selector)
         const reach = await measureReachability(page, { options: [selector], touch: scenario.touch })
         check(failures, reach.sampled > 0, `${selector}: no hit-test samples`)
@@ -670,20 +673,22 @@ async function runAuthCapabilityScenario(env, scenario) {
         if (!point) throw new Error(`${selector} must be hit-testable`)
         await page.tap({ ...point, touch: scenario.touch })
       }
-      await page.waitForValue('!document.querySelector("[data-testid=shot-inspector]")', Boolean)
-      await page.evaluate('document.querySelector("[data-testid=shot-row-1]").scrollIntoView({block:"center"})')
-      const reopened = await page.evaluate(clickCenterExpression('[data-testid=shot-row-1]'))
-      if (!reopened) throw new Error('shot row cannot be reopened')
-      await page.tap({ ...reopened, touch: scenario.touch })
-      await page.evaluate('document.querySelector("[data-testid=shot-open-viewer]").scrollIntoView({block:"center"})')
-      const viewerReach = await measureReachability(page, { options: ['[data-testid=shot-open-viewer]'], touch: scenario.touch })
-      check(failures, viewerReach.sampled > 0, 'armor handoff reachability is empty')
-      failures.push(...viewerReach.failures)
-      const open = await page.evaluate(clickCenterExpression('[data-testid="shot-open-viewer"]'))
-      if (!open) throw new Error('armor handoff button must be hit-testable')
-      await page.tap({ ...open, touch: scenario.touch })
-      check(failures, await page.evaluate('window.__wsInput.click?.testId') === 'shot-open-viewer',
-        'real armor handoff click must land on its button')
+      if (!directOpen) {
+        await page.waitForValue('!document.querySelector("[data-testid=shot-inspector]")', Boolean)
+        await page.evaluate('document.querySelector("[data-testid=shot-row-1]").scrollIntoView({block:"center"})')
+        const reopened = await page.evaluate(clickCenterExpression('[data-testid=shot-row-1]'))
+        if (!reopened) throw new Error('shot row cannot be reopened')
+        await page.tap({ ...reopened, touch: scenario.touch })
+        await page.evaluate('document.querySelector("[data-testid=shot-open-viewer]").scrollIntoView({block:"center"})')
+        const viewerReach = await measureReachability(page, { options: ['[data-testid=shot-open-viewer]'], touch: scenario.touch })
+        check(failures, viewerReach.sampled > 0, 'armor handoff reachability is empty')
+        failures.push(...viewerReach.failures)
+        const open = await page.evaluate(clickCenterExpression('[data-testid="shot-open-viewer"]'))
+        if (!open) throw new Error('armor handoff button must be hit-testable')
+        await page.tap({ ...open, touch: scenario.touch })
+        check(failures, await page.evaluate('window.__wsInput.click?.testId') === 'shot-open-viewer',
+          'real armor handoff click must land on its button')
+      }
       await page.waitForValue('window.__wsArmorScene?.shot || null', (shot) => shot?.index === 1,
         { label: 'armor scene received the selected shot' })
       const scene = await page.evaluate('window.__wsArmorScene')
@@ -2407,6 +2412,13 @@ async function runMobileFullscreenScenario(env, scenario) {
   check(failures, !!drawer && drawer.insideViewport,
     `Display must stay inside the viewport in mobile fullscreen: ${JSON.stringify(drawer)}`)
 
+  // 全屏中经导航抽屉离开：回放被 v-show 缓存、不卸载，只收到 active=false。
+  // 必须由真实 Fullscreen API 退出，否则新页面被挡在旧 fullscreen root 后面。
+  await page.evaluate(`window.__pbFixture.setActive(false)`)
+  const exited = await page.waitFor(() => !document.fullscreenElement, { timeout: 5000, label: 'fullscreen exits on deactivate' })
+    .then(() => true, () => false)
+  check(failures, exited, 'deactivating the playback (active=false) must exit its own fullscreen')
+
   await env.chrome.client.send('Target.closeTarget', { targetId })
   results.push({ name: scenario.name, failures, viewport: `fullscreen ${scenario.width}x${scenario.height}` })
 }
@@ -2994,6 +3006,106 @@ async function runReplayCollectionScenario(env) {
 }
 
 /** Real multi-file analysis and 2D switching; scene appearance remains manual acceptance. */
+/**
+ * 强制横屏（design-language §9「强制横屏」）：判定只看设备，不看视口。真实应用 + 真实回放：
+ * - iPhone Safari 竖屏：2D 回放上出现旋转提示，提示里的「看赛后数据」回到数据能力；
+ * - iPad（含竖屏）与缩窄的桌面浏览器：同样的视口不出提示；
+ * - iPhone 横屏 844×340：没有提示，外壳沉浸、左上菜单可达并能打开抽屉。
+ */
+const FORCED_UA = {
+  iphone: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+  ipad: 'Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+  desktop: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+}
+const FORCED_LANDSCAPE_SCENARIOS = [
+  { name: 'forced-landscape-iphone-portrait', ua: 'iphone', width: 390, height: 664, touch: true, expectPrompt: true },
+  { name: 'forced-landscape-ipad-portrait', ua: 'ipad', width: 820, height: 1180, touch: true, expectPrompt: false },
+  { name: 'forced-landscape-desktop-narrow', ua: 'desktop', width: 390, height: 664, touch: false, expectPrompt: false },
+  { name: 'forced-landscape-iphone-landscape', ua: 'iphone', width: 844, height: 340, touch: true, expectPrompt: false, immersive: true },
+]
+
+async function runForcedLandscapeScenario(env, scenario) {
+  const failures = []
+  const { targetId, sessionId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  lastPage = page
+  try {
+    await page.enable()
+    await env.chrome.client.send('Emulation.setUserAgentOverride', { userAgent: FORCED_UA[scenario.ua] }, sessionId)
+    await page.emulate(scenario)
+    await page.goto(`${env.origin}/?view=battle-playback&ws-auth=1`)
+    await page.waitFor(() => !!document.querySelector('[data-testid="select-files-input"]'), { label: 'replay picker' })
+    const { root } = await env.chrome.client.send('DOM.getDocument', {}, sessionId)
+    const { nodeId } = await env.chrome.client.send('DOM.querySelector', {
+      nodeId: root.nodeId, selector: '[data-testid="select-files-input"]',
+    }, sessionId)
+    await env.chrome.client.send('DOM.setFileInputFiles', { nodeId, files: [
+      resolve(frontendRoot, '../common/fixtures/replays/cw-training-15-14-example.wotbreplay'),
+    ] }, sessionId)
+    await page.waitFor(() => !!document.querySelector('[data-test="battle-playback"]'), { timeout: 60_000, label: '2D playback loaded' })
+    // 设备判定是异步的：给它充足时间，再断言「出现」或「始终不出现」
+    const prompt = await page.waitForValue('!!document.querySelector("[data-testid=rotate-prompt]")',
+      value => value === scenario.expectPrompt, { timeout: 5000, label: `rotate prompt = ${scenario.expectPrompt}` }).catch(() => !scenario.expectPrompt)
+    if (!scenario.expectPrompt) {
+      await delay(800)
+      check(failures, await page.evaluate('!document.querySelector("[data-testid=rotate-prompt]")'), `${scenario.name}: 非强制设备不得出现旋转提示`)
+    } else {
+      check(failures, prompt === true, `${scenario.name}: iPhone 竖屏必须出现旋转提示`)
+      const action = await page.waitForValue(clickCenterExpression('[data-testid="rotate-prompt-action"]'), Boolean, { label: 'rotate prompt action' })
+      await page.tap({ ...action, touch: true })
+      await page.waitForValue('!!document.querySelector("[data-testid=rotate-prompt]")', value => value === false, { label: 'prompt dismissed by data capability' })
+      check(failures, await page.evaluate(`document.querySelector('[data-testid="ws-tab"][data-cap="data"]')?.getAttribute('aria-checked') === 'true'`),
+        `${scenario.name}: 退出动作必须回到赛后数据`)
+    }
+    if (scenario.immersive) {
+      await page.waitForValue('document.documentElement.dataset.shellChrome', value => value === 'immersive', { label: 'immersive shell' })
+      const menu = await page.waitForValue(clickCenterExpression('[data-testid="nav-menu"]'), Boolean, { label: 'immersive menu hit-testable' })
+      await page.tap({ ...menu, touch: true })
+      await page.waitForValue('!!document.querySelector("[data-testid=nav-drawer-panel]")', Boolean, { label: 'drawer from immersive menu' })
+    }
+  } finally {
+    await env.chrome.client.send('Target.closeTarget', { targetId })
+  }
+  results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
+}
+
+/**
+ * 装甲查看器同样强制横屏（2026-11-08 用户确认：只装甲查看器，科技树不强制）：
+ * iPhone Safari 竖屏出现旋转提示；iPhone 横屏、iPad、缩窄的桌面浏览器都不出。
+ */
+const ARMOR_FORCED_LANDSCAPE_SCENARIOS = [
+  { name: 'armor-forced-landscape-iphone-portrait', ua: 'iphone', width: 390, height: 664, touch: true, expectPrompt: true },
+  { name: 'armor-forced-landscape-iphone-landscape', ua: 'iphone', width: 844, height: 340, touch: true, expectPrompt: false },
+  { name: 'armor-forced-landscape-ipad-portrait', ua: 'ipad', width: 820, height: 1180, touch: true, expectPrompt: false },
+  { name: 'armor-forced-landscape-desktop-narrow', ua: 'desktop', width: 390, height: 664, touch: false, expectPrompt: false },
+]
+
+async function runArmorForcedLandscapeScenario(env, scenario) {
+  const failures = []
+  const { targetId, sessionId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  lastPage = page
+  try {
+    await page.enable()
+    await env.chrome.client.send('Emulation.setUserAgentOverride', { userAgent: FORCED_UA[scenario.ua] }, sessionId)
+    await page.emulate(scenario)
+    await page.goto(`${env.origin}/?view=agent-armor&tank=2`)
+    await page.waitFor(() => !!document.querySelector('.armor-viewer, [data-testid="armor-viewer"], #armor-canvas, canvas'), { timeout: 30_000, label: 'armor viewer mounted' })
+    const prompt = await page.waitForValue('!!document.querySelector("[data-testid=rotate-prompt]")',
+      value => value === scenario.expectPrompt, { timeout: 5000, label: `armor rotate prompt = ${scenario.expectPrompt}` }).catch(() => !scenario.expectPrompt)
+    if (scenario.expectPrompt) {
+      check(failures, prompt === true, `${scenario.name}: iPhone 竖屏打开装甲查看器必须出现旋转提示`)
+      check(failures, await page.evaluate('!!document.querySelector("[data-testid=rotate-prompt-action]")'), `${scenario.name}: 旋转提示必须给出返回动作`)
+    } else {
+      await delay(800)
+      check(failures, await page.evaluate('!document.querySelector("[data-testid=rotate-prompt]")'), `${scenario.name}: 不得出现旋转提示`)
+    }
+  } finally {
+    await env.chrome.client.send('Target.closeTarget', { targetId })
+  }
+  results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
+}
+
 async function runMultiFileWorkspaceScenario(env) {
   const failures = []
   const { targetId, sessionId } = await env.chrome.openPage()
@@ -3030,10 +3142,10 @@ async function runMultiFileWorkspaceScenario(env) {
     await page.waitForValue(roster, value => value === firstRoster, { timeout: 60_000, label: 'cached first battle restored' })
 
     // 手机回归：picker 是 fixed 底部 sheet。Replay Workspace 的 layout-data-workspace 有
-    // isolation: isolate，曾把仍留在局部层叠上下文里的 sheet 压在根层 AppTabBar 之下。
-    // 断言 sheet 贴住视口底部、覆盖导航栏且第二场在视口内，并用真实触摸完成切换。
+    // isolation: isolate，曾把仍留在局部层叠上下文里的 sheet 压在根层外壳之下。
+    // 断言 sheet 贴住视口底部、底边命中 sheet 本身且第二场在视口内，并用真实触摸完成切换。
     await page.emulate({ width: 390, height: 844, touch: true })
-    await page.waitFor(() => !!document.querySelector('[data-testid="app-tab-bar"]'), { label: 'mobile app tab bar after resize' })
+    await page.waitFor(() => !!document.querySelector('[data-testid="app-top-bar"]'), { label: 'mobile app top bar after resize' })
     await hit('[data-testid="playback-battle-picker"]', { touch: true })
     const sheet = await page.waitForValue(`(() => {
       const panel = document.querySelector('[data-testid="battle-picker-panel"]')
@@ -3046,14 +3158,14 @@ async function runMultiFileWorkspaceScenario(env) {
         teleported: panel.parentElement === document.body && !panel.closest('.battle-picker'),
         bottom: Math.round(rect.bottom),
         viewportHeight: innerHeight,
-        bottomOverTabBar: !!bottomHit && panel.contains(bottomHit),
+        bottomOverShell: !!bottomHit && panel.contains(bottomHit),
         optionInViewport: optionRect.top >= 0 && optionRect.left >= 0
           && optionRect.right <= innerWidth && optionRect.bottom <= innerHeight,
       }
     })()`, Boolean, { label: 'mobile battle picker sheet' })
     check(failures, sheet.teleported, `mobile battle picker sheet is not teleported to body: ${JSON.stringify(sheet)}`)
     check(failures, Math.abs(sheet.bottom - sheet.viewportHeight) <= 1, `mobile battle picker sheet must end at viewport bottom: ${JSON.stringify(sheet)}`)
-    check(failures, sheet.bottomOverTabBar, `app tab bar paints over the battle picker sheet: ${JSON.stringify(sheet)}`)
+    check(failures, sheet.bottomOverShell, `shell chrome paints over the battle picker sheet: ${JSON.stringify(sheet)}`)
     check(failures, sheet.optionInViewport, `Battle 2 option is outside the viewport: ${JSON.stringify(sheet)}`)
     // §5 可见即可达：逐个选项判定真实命中 / 裁剪 / 视口 / 触控命中区，而不是只看第二场那一项。
     const sheetReach = await measureReachability(page, {
@@ -3067,7 +3179,7 @@ async function runMultiFileWorkspaceScenario(env) {
     check(failures, await page.evaluate(`!!document.querySelector('[data-testid="battle-picker-panel"]')`) === false,
       'mobile battle picker sheet did not close after selection')
 
-    // 手机横屏沉浸态（真实应用）：回放就绪的触屏手机横屏隐藏顶栏 / Tab 栏，地图拿走 104px；
+    // 手机横屏沉浸态（真实应用）：回放就绪的触屏手机横屏隐藏顶栏，地图拿走顶栏高度；
     // 转回竖屏 / 切到数据 capability 立即恢复，地图回到竖屏契约（= 视口宽）。
     const shellState = `(() => ({
       topBar: !!document.querySelector('[data-testid="app-top-bar"]'),
@@ -3085,17 +3197,17 @@ async function runMultiFileWorkspaceScenario(env) {
     check(failures, landscape.map >= 260, `phone-landscape real-app map must be >= 260px: ${JSON.stringify(landscape)}`)
     console.log(`[browser-interaction] multifile 740x360 real-app map=${Math.round(landscape.map)}`)
     await page.emulate({ width: 390, height: 844, touch: true })
-    const portrait = await page.waitForValue(shellState, (state) => state.topBar && state.tabBar, { label: 'shell restored in portrait' })
+    const portrait = await page.waitForValue(shellState, (state) => state.topBar && !state.tabBar, { label: 'shell restored in portrait' })
     check(failures, !portrait.sidebar, `portrait phone shell must not mount the sidebar: ${JSON.stringify(portrait)}`)
     check(failures, portrait.headerH === '48px', `portrait must restore --header-h: ${JSON.stringify(portrait)}`)
     check(failures, portrait.map > 0 && Math.abs(portrait.map - portrait.stage) <= 2, `portrait map must fill the full column width: ${JSON.stringify(portrait)}`)
     await page.emulate({ width: 740, height: 360, touch: true })
     await page.waitForValue(shellState, (state) => !state.topBar, { label: 'immersive shell again' })
     await hit('[data-testid="ws-tab"][data-cap="data"]', { touch: true })
-    // 离开回放后仍处于 compact 横屏：导航是左侧图标栏（不是顶栏 + Tab 栏）
+    // 离开回放后仍处于手机横屏：导航是顶栏菜单 + 左侧抽屉（L3），没有侧边栏，也没有 Tab 栏
     await page.waitForValue(shellState,
-      (state) => state.sidebar && !state.topBar && !state.tabBar && state.headerH === '0px',
-      { label: 'rail restored when leaving playback' })
+      (state) => !state.sidebar && state.topBar && !state.tabBar && state.headerH === '48px',
+      { label: 'drawer shell restored when leaving playback' })
   } finally {
     await env.chrome.client.send('Target.closeTarget', { targetId })
   }
@@ -3149,6 +3261,7 @@ function workspace2dProbe(touch = false) {
       box: box(el),
       ids: rows.map((row) => Number(row.dataset.accountId)),
       scrolls: el.scrollHeight > el.clientHeight + 1,
+      dbg: { sh: el.scrollHeight, ch: el.clientHeight, before: getComputedStyle(el, "::before").content, rows: [...el.querySelectorAll("[data-test=pb-roster-row]")].map(r => Math.round(r.getBoundingClientRect().height)).join(",") },
       scrollsX: el.scrollWidth > el.clientWidth + 1,
       rowsFit: rows.every((row) => {
         const rowBox = row.getBoundingClientRect()
@@ -3629,7 +3742,7 @@ async function runWorkspace2DScenario(env, scenario) {
   check(failures, JSON.stringify(g.left.ids) === JSON.stringify(scenario.recorder === 2 ? team2 : team1), `left lane must be Recorder friendly: ${JSON.stringify(g.left.ids)}`)
   check(failures, JSON.stringify(g.right.ids) === JSON.stringify(scenario.recorder === 2 ? team1 : team2), `right lane must be Recorder enemy: ${JSON.stringify(g.right.ids)}`)
   check(failures, g.left.box.r <= g.map.l + 1 && g.right.box.l >= g.map.r - 1, 'lanes must flank the square Stage')
-  check(failures, !g.left.scrolls && !g.right.scrolls, 'normal 7v7 lanes must not scroll')
+  check(failures, !g.left.scrolls && !g.right.scrolls, `normal 7v7 lanes must not scroll: ${JSON.stringify({ left: g.left.dbg, right: g.right.dbg })}`)
   check(failures, !g.left.scrollsX && !g.right.scrollsX && g.left.rowsFit && g.right.rowsFit,
     'long player/tank labels must shrink within each lane without horizontal scrolling or clipping the HP bar')
   check(failures, g.left.rowsComplete && g.right.rowsComplete, 'roster rows must show player / tank / HP bar with in-bar text')
@@ -3919,12 +4032,12 @@ async function captureMobileReview(page, scenario, state = 'battlefield') {
 
 /* ------------------------------------------------------------------ main */
 
-const ONBOARDING_SCENARIOS = [...['zh', 'en', 'ru'].flatMap(language => ['showcase', 'classic'].flatMap(profile =>
+const ONBOARDING_SCENARIOS = [...['zh', 'en', 'ru'].flatMap(language => ['summer', 'winter'].flatMap(profile =>
   [{ width: 1600, height: 1000, touch: false }, { width: 1024, height: 900, touch: false }, { width: 390, height: 844, touch: true }]
     .map(viewport => ({ ...viewport, language, profile, name: `onboarding-${language}-${profile}-${viewport.width}` })))),
-  { name: 'onboarding-fullscreen-844', width: 844, height: 390, touch: true, language: 'zh', profile: 'showcase', fullscreen: true },
-  { name: 'onboarding-narrow-desktop-840', width: 840, height: 900, touch: false, language: 'zh', profile: 'showcase' },
-  { name: 'onboarding-fullscreen-transition-844', width: 844, height: 390, touch: true, language: 'zh', profile: 'showcase', fullscreen: true, fullscreenTransition: true }]
+  { name: 'onboarding-fullscreen-844', width: 844, height: 390, touch: true, language: 'zh', profile: 'summer', fullscreen: true },
+  { name: 'onboarding-narrow-desktop-840', width: 840, height: 900, touch: false, language: 'zh', profile: 'summer' },
+  { name: 'onboarding-fullscreen-transition-844', width: 844, height: 390, touch: true, language: 'zh', profile: 'summer', fullscreen: true, fullscreenTransition: true }]
 let onboardingServer = null
 async function runOnboardingScenario(env, scenario) {
   // Actual pinned WASM and the actual sample: only the external auth/profile boundary is stubbed.
@@ -4106,7 +4219,7 @@ async function runOnboardingScenario(env, scenario) {
 }
 
 // #727：真实 MenuButton + 当前三项导出文案；短视口在上下两侧都放不下整个菜单。
-const MENU_VIEWPORT_SCENARIOS = ['showcase', 'classic'].flatMap(profile => [
+const MENU_VIEWPORT_SCENARIOS = ['summer', 'winter'].flatMap(profile => [
   { width: 360, height: 640, touch: true },
   { width: 740, height: 360, touch: true },
   { width: 740, height: 240, touch: true },
@@ -4214,11 +4327,14 @@ try {
   const env = { origin, chrome: chromeCdp }
   const runs = [
     ...SHELL_OVERLAY_SCENARIOS.map(scenario => ({ scenario, run: async () => results.push(await runShellOverlayScenario(env, scenario)) })),
+    ...MOBILE_PAGE_SCENARIOS.map(scenario => ({ scenario, run: async () => results.push(await runMobilePageScenario(env, scenario)) })),
     ...DIALOG_SHEET_SCENARIOS.map(scenario => ({ scenario, run: async () => results.push(await runDialogSheetScenario(env, scenario)) })),
     ...DRAWER_TABLE_SCENARIOS.map(scenario => ({ scenario, run: async () => results.push(await runDrawerTableScenario(env, scenario)) })),
     ...CATALOG_HOF_DOC_SCENARIOS.map(scenario => ({ scenario, run: async () => results.push(await runCatalogHofDocScenario(env, scenario)) })),
     ...MENU_VIEWPORT_SCENARIOS.map(scenario => ({ scenario, run: () => runMenuViewportScenario(env, scenario) })),
     { scenario: { name: 'multifile-workspace-playback', width: 1600, height: 900 }, run: () => runMultiFileWorkspaceScenario(env) },
+    ...FORCED_LANDSCAPE_SCENARIOS.map(scenario => ({ scenario, run: () => runForcedLandscapeScenario(env, scenario) })),
+    ...ARMOR_FORCED_LANDSCAPE_SCENARIOS.map(scenario => ({ scenario, run: () => runArmorForcedLandscapeScenario(env, scenario) })),
     { scenario: { name: 'replay-collection', width: 1440, height: 900 }, run: () => runReplayCollectionScenario(env) },
     { scenario: { name: 'offline-local-workspace-matrix', width: 1600, height: 900 }, run: () => runOfflineWorkspaceScenario(env) },
     ...APP_SCENARIOS.map((scenario) => ({ scenario, run: () => runAppScenario(env, scenario) })),
@@ -4237,7 +4353,7 @@ try {
   const scenarioArgs = parseScenarioArgs(process.argv.slice(2))
   const { nameFilter } = scenarioArgs
   const base = process.argv.includes('--occlusion')
-    ? runs.filter(({ scenario }) => /^(shell-overlay-|dialog-sheet-|drawer-tables-|overlay-|menu-viewport-|ws2d-|roster-geometry-|capability-normal-shots-armor-handoff)/.test(scenario.name))
+    ? runs.filter(({ scenario }) => /^(shell-overlay-|mobile-pages-|dialog-sheet-|drawer-tables-|overlay-|menu-viewport-|ws2d-|roster-geometry-|capability-normal-shots-armor-handoff)/.test(scenario.name))
     : process.argv.includes('--mobile-visual')
     ? runs.filter(({ scenario }) => scenario.width < 900 && /^(roster-geometry|ws2d)-/.test(scenario.name))
     : nameFilter ? runs.filter(({ scenario }) => scenario.name.includes(nameFilter)) : runs

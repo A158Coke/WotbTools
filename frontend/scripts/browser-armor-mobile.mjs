@@ -141,7 +141,7 @@ function armorLayoutProbe() {
     scrollWidth: document.documentElement.scrollWidth,
     clientWidth: document.documentElement.clientWidth,
     statusOverlays: document.querySelectorAll('[data-testid="scene3d-error"], [data-testid="scene3d-loading"]').length,
-    /** 外壳沉浸态（shared/shellChrome）：手机横屏申请后 AppShell 卸载顶栏 / Tab 栏并归零高度 token */
+    /** 外壳沉浸态（shared/shellChrome）：手机横屏申请后 AppShell 卸载顶栏并归零高度 token；任何形态都没有底部 Tab 栏（L1） */
     shellChrome: document.documentElement.dataset.shellChrome || null,
     appTopBar: box('[data-testid="app-top-bar"]'),
     appTabBar: box('[data-testid="app-tab-bar"]'),
@@ -302,9 +302,9 @@ async function runMobileScenario(env, scenario) {
   const initial = await page.probe(armorLayoutProbe)
   check(failures, initial.hasStage && !initial.unsupported, `${label}: 场景未渲染（hasStage=${initial.hasStage} unsupported=${initial.unsupported}）`)
   checkCommonGeometry(failures, initial, label)
-  // 竖屏（含窄桌面窗口）不申请沉浸：外壳顶栏 / Tab 栏必须保留（沉浸契约只属于手机横屏）
-  check(failures, initial.appTopBar?.visible === true && initial.appTabBar?.visible === true,
-    `${label}: 竖屏外壳顶栏 / Tab 栏必须保留（top=${initial.appTopBar?.visible} tab=${initial.appTabBar?.visible}）`)
+  // 竖屏（含窄桌面窗口）不申请沉浸：外壳顶栏必须保留（沉浸契约只属于手机横屏）；没有底部 Tab 栏（L1）
+  check(failures, initial.appTopBar?.visible === true && initial.appTabBar === null,
+    `${label}: 竖屏外壳顶栏必须保留且没有 Tab 栏（top=${initial.appTopBar?.visible} tab=${!!initial.appTabBar}）`)
   check(failures, initial.shellChrome !== 'immersive', `${label}: 竖屏不应进入沉浸态（dataset=${initial.shellChrome}）`)
   if (scenario.assetless) {
     check(failures, initial.infoPanel?.visible === false, `${label}: 资产不可达时车名面板不应可见（场景前提失效）`)
@@ -562,7 +562,7 @@ async function runDesktopScenario(env, scenario) {
     check(failures, layout.shellChrome === 'immersive',
       `${label}: 手机横屏未申请沉浸态（dataset=${layout.shellChrome}）`)
     check(failures, layout.appTopBar === null && layout.appTabBar === null,
-      `${label}: 沉浸态下外壳顶栏 / Tab 栏仍渲染（top=${!!layout.appTopBar} tab=${!!layout.appTabBar}）`)
+      `${label}: 沉浸态下外壳顶栏仍渲染或出现 Tab 栏（top=${!!layout.appTopBar} tab=${!!layout.appTabBar}）`)
     check(failures, layout.root && layout.root.top === 0 && Math.abs(layout.root.height - layout.viewport.height) <= 1,
       `${label}: armor-view 没有占满整屏（root=${JSON.stringify(layout.root)} viewport=${JSON.stringify(layout.viewport)}）`)
     // 深链直达（本场景 goto 即无 history.back）也必须有应用内退出：返回键恒在，
@@ -594,13 +594,27 @@ async function runDesktopScenario(env, scenario) {
   const coexistHorizontal = layout.back && layout.topBar
     && Math.abs((layout.topBar.left - layout.back.right) - 8) <= 2
     && Math.abs(barRel.top - 20) <= 2
-  check(failures, !!backRel && Math.abs(backRel.top - 20) <= 2 && Math.abs(backRel.left - 20) <= 2,
-    `${label}: 返回键没有贴 armor-view 左上 inset 20（back=${JSON.stringify(backRel)}）`)
+  // 沉浸态（手机横屏）外壳在左上放菜单按钮，返回键右移 44+8 让出（--immersive-nav-reserve）
+  const backInsetLeft = scenario.phoneLandscape ? 20 + 52 : 20
+  check(failures, !!backRel && Math.abs(backRel.top - 20) <= 2 && Math.abs(backRel.left - backInsetLeft) <= 2,
+    `${label}: 返回键没有贴 armor-view 左上 inset 20/${backInsetLeft}（back=${JSON.stringify(backRel)}）`)
+  if (scenario.phoneLandscape) {
+    const menu = await page.evaluate(`(() => { const el = document.querySelector('[data-testid="nav-menu"]'); if (!el) return null; const r = el.getBoundingClientRect(); const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return { right: r.right, hit: !!hit && el.contains(hit) } })()`)
+    check(failures, menu?.hit === true && layout.back && menu.right <= layout.back.left,
+      `${label}: 沉浸态左上菜单按钮不可达或与返回键重叠（menu=${JSON.stringify(menu)} back.left=${layout.back?.left}）`)
+  }
   check(failures, coexistVertical || coexistHorizontal,
     `${label}: 顶栏未在返回键下方或右侧留出 space-2 间距（bar=${JSON.stringify(barRel)} back=${JSON.stringify(layout.back && { bottom: layout.back.bottom, right: layout.back.right })}）`)
-  check(failures, layout.bottomBar && layout.root
-    && Math.abs((layout.bottomBar.top - layout.root.top) - 20) <= 2 && Math.abs((layout.root.right - layout.bottomBar.right) - 20) <= 2,
-    `${label}: 底栏没有回到右上角（top=${layout.bottomBar?.top} right=${layout.bottomBar?.right} root right=${layout.root?.right}，期望相对 20/20）`)
+  // 手机横屏场景 HUD：射击快捷面板在右下拇指区（距底 space-2）；平板 / 桌面仍在右上角（20/20）
+  if (scenario.phoneLandscape) {
+    check(failures, layout.bottomBar && layout.root
+      && Math.abs((layout.root.bottom - layout.bottomBar.bottom) - 8) <= 2 && Math.abs((layout.root.right - layout.bottomBar.right) - 20) <= 2,
+      `${label}: 射击快捷面板没有停在右下拇指区（bottom=${layout.bottomBar?.bottom} right=${layout.bottomBar?.right} root=${JSON.stringify(layout.root)}）`)
+  } else {
+    check(failures, layout.bottomBar && layout.root
+      && Math.abs((layout.bottomBar.top - layout.root.top) - 20) <= 2 && Math.abs((layout.root.right - layout.bottomBar.right) - 20) <= 2,
+      `${label}: 底栏没有回到右上角（top=${layout.bottomBar?.top} right=${layout.bottomBar?.right} root right=${layout.root?.right}，期望相对 20/20）`)
+  }
   check(failures, layout.viewToggleDisplay === 'flex',
     `${label}: 视图开关不是桌面 flex 布局（display=${layout.viewToggleDisplay}）`)
   // 右上角是一块固定宽度面板：进入厚度视图（装甲组成过滤行出现）不得把面板撑宽
@@ -624,13 +638,23 @@ async function runDesktopScenario(env, scenario) {
   check(failures, opened.toolsOpen === true && opened.tools?.ariaExpanded === 'true',
     `${label}: 点击后设置面板未展开（is-tools-open=${opened.toolsOpen} aria=${opened.tools?.ariaExpanded}）`)
   check(failures, opened.selectors?.visible === true, `${label}: 点击后设置面板仍不可见`)
-  check(failures, opened.selectors && opened.tools && opened.selectors.top >= opened.tools.bottom - 1,
-    `${label}: 设置面板没有排在参数开关下方（panel top=${opened.selectors?.top} tools bottom=${opened.tools?.bottom}）`)
-  check(failures, opened.selectors && opened.topBar
-    && opened.selectors.left >= opened.topBar.left - 1
-    && opened.selectors.right <= opened.topBar.right + 1
-    && opened.selectors.bottom <= opened.topBar.bottom + 1,
-    `${label}: 设置面板没有并进左上角信息卡（panel=${opened.selectors?.left}/${opened.selectors?.bottom} bar=${opened.topBar?.left}/${opened.topBar?.bottom}）`)
+  if (scenario.phoneLandscape) {
+    // 手机横屏：完整设置是右侧整高参数面板，场景在左侧保持可见，参数开关不被面板盖住
+    check(failures, opened.selectors && opened.root
+      && Math.abs(opened.selectors.right - opened.root.right) <= 1 && opened.selectors.top <= opened.root.top + 1
+      && Math.abs(opened.selectors.bottom - opened.root.bottom) <= 1 && opened.selectors.width <= opened.root.width * 0.5,
+      `${label}: 设置面板不是右侧整高面板（panel=${JSON.stringify(opened.selectors)} root=${JSON.stringify(opened.root)}）`)
+    check(failures, opened.selectors && opened.tools && opened.tools.right <= opened.selectors.left,
+      `${label}: 参数开关被右侧面板盖住（tools right=${opened.tools?.right} panel left=${opened.selectors?.left}）`)
+  } else {
+    check(failures, opened.selectors && opened.tools && opened.selectors.top >= opened.tools.bottom - 1,
+      `${label}: 设置面板没有排在参数开关下方（panel top=${opened.selectors?.top} tools bottom=${opened.tools?.bottom}）`)
+    check(failures, opened.selectors && opened.topBar
+      && opened.selectors.left >= opened.topBar.left - 1
+      && opened.selectors.right <= opened.topBar.right + 1
+      && opened.selectors.bottom <= opened.topBar.bottom + 1,
+      `${label}: 设置面板没有并进左上角信息卡（panel=${opened.selectors?.left}/${opened.selectors?.bottom} bar=${opened.topBar?.left}/${opened.topBar?.bottom}）`)
+  }
   check(failures, opened.targetSelect?.visible === true, `${label}: 展开后目标按钮不可见`)
   check(failures, opened.configSelect?.visible === true, `${label}: 展开后配置下拉不可见`)
   checkCommonGeometry(failures, opened, `${label} (expanded)`)
@@ -842,7 +866,7 @@ async function runShotLandscapeScenario(env, scenario) {
   const layout = await page.probe(armorLayoutProbe)
   check(failures, layout.shellChrome === 'immersive', `${label}: 手机横屏未申请沉浸态（dataset=${layout.shellChrome}）`)
   check(failures, layout.appTopBar === null && layout.appTabBar === null,
-    `${label}: 沉浸态下外壳顶栏 / Tab 栏仍渲染（top=${!!layout.appTopBar} tab=${!!layout.appTabBar}）`)
+    `${label}: 沉浸态下外壳顶栏仍渲染或出现 Tab 栏（top=${!!layout.appTopBar} tab=${!!layout.appTabBar}）`)
   check(failures, layout.root && layout.root.top === 0 && Math.abs(layout.root.height - layout.viewport.height) <= 1,
     `${label}: armor-view 没有占满整屏（root=${JSON.stringify(layout.root)} viewport=${JSON.stringify(layout.viewport)}）`)
   check(failures, layout.interactionHelp === null || layout.interactionHelp.visible === false,
@@ -863,7 +887,7 @@ const PICKER_TANK_CACHE = {
   })),
 }
 const PICKER_PAGE_SIZE = 48   // 共享 TankCatalogMenu 的首屏页大小（useIncrementalList 默认）
-const PICKER_SCENARIOS = ['showcase', 'classic'].flatMap(profile => [
+const PICKER_SCENARIOS = ['summer', 'winter'].flatMap(profile => [
   { name: `armor-picker-390x844-${profile}`, width: 390, height: 844, touch: true, profile },
   { name: `armor-picker-1024x768-${profile}`, width: 1024, height: 768, touch: false, profile },
   { name: `armor-picker-1440x900-${profile}`, width: 1440, height: 900, touch: false, profile },

@@ -1,11 +1,11 @@
 import { computed, readonly, ref } from 'vue'
-import { BREAKPOINT_EXPANDED, BREAKPOINT_MEDIUM, SHELL_RAIL_QUERY } from '../shared/breakpoints.js'
+import { BREAKPOINT_EXPANDED, BREAKPOINT_MEDIUM, SHELL_DRAWER_QUERY } from '../shared/breakpoints.js'
 
 // 布局按可用宽度决定，交互尺寸按输入方式决定——两者分开（design-language §6）。
 // 全应用共享一组 matchMedia 监听；应用生命周期内不解绑。
 const tier = ref('expanded')
 const coarsePointer = ref(false)
-const landscapeRail = ref(false)
+const drawerShell = ref(false)
 let bound = false
 
 function bind() {
@@ -14,13 +14,13 @@ function bind() {
   const medium = window.matchMedia(`(min-width: ${BREAKPOINT_MEDIUM}px)`)
   const expanded = window.matchMedia(`(min-width: ${BREAKPOINT_EXPANDED}px)`)
   const coarse = window.matchMedia('(pointer: coarse)')
-  const rail = window.matchMedia(SHELL_RAIL_QUERY)
+  const drawer = window.matchMedia(SHELL_DRAWER_QUERY)
   const update = () => {
     tier.value = expanded.matches ? 'expanded' : medium.matches ? 'medium' : 'compact'
     coarsePointer.value = coarse.matches
-    landscapeRail.value = rail.matches
+    drawerShell.value = drawer.matches
   }
-  for (const query of [medium, expanded, coarse, rail]) query.addEventListener?.('change', update)
+  for (const query of [medium, expanded, coarse, drawer]) query.addEventListener?.('change', update)
   update()
 }
 
@@ -31,8 +31,8 @@ export function useBreakpoint() {
     tier: readonly(tier),
     isCompact: computed(() => tier.value === 'compact'),
     isExpanded: computed(() => tier.value === 'expanded'),
-    /** compact + 手机横屏：外壳改左侧图标栏（顶部/底部导航让出垂直空间） */
-    isCompactLandscape: computed(() => tier.value === 'compact' && landscapeRail.value),
+    /** 抽屉外壳（手机竖屏与手机横屏）：顶栏菜单按钮 + 左侧抽屉，不渲染侧边栏 */
+    isDrawerShell: readonly(drawerShell),
   }
 }
 

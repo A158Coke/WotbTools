@@ -2,6 +2,7 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
+import { DIALOG_INLINE_KEY } from '../shared/dialog'
 import AdminSiteFeedbackPage from './AdminSiteFeedbackPage.vue'
 
 const api = vi.hoisted(() => ({
@@ -16,9 +17,12 @@ vi.mock('../composables/useFeatureGate.js', () => ({ useFeatureGate: () => ({
   availability: () => gate.status.value,
 }) }))
 const row = { id: '1', reasonCodes: ['BUG'], feedbackText: 'feedback', pageView: 'hof', createdAt: '2026-01-01T00:00:00Z', status: 'PENDING' }
-const dialogStub = { props: ['open'], template: '<div v-if="open"><slot /></div>' }
-const mountPage = () => mount(AdminSiteFeedbackPage, { global: { mocks: { $t: key => key }, stubs: { AppDialog: dialogStub } } })
-const detailStatusText = wrapper => wrapper.findAll('p').map(p => p.text()).find(text => text.startsWith('siteFeedback.statusLabel'))
+const globalOptions = { mocks: { $t: key => key }, provide: { [DIALOG_INLINE_KEY]: true } }
+const detailStatusText = wrapper => {
+  const node = wrapper.find('[data-testid="feedback-detail-status"]')
+  return node.exists() ? node.text() : undefined
+}
+const mountPage = () => mount(AdminSiteFeedbackPage, { global: globalOptions })
 beforeEach(() => {
   vi.clearAllMocks()
   row.status = 'PENDING'
@@ -41,16 +45,6 @@ it('loads exactly once when initial connectivity settles online', async () => {
   expect(wrapper.text()).toContain('hof')
 })
 
-it('does not send a status update when the admin feedback feature is unavailable', async () => {
-  const wrapper = mountPage()
-  await flushPromises()
-  gate.status.value = { available: false, pending: false }
-  await wrapper.get('.status-select').setValue('FIXED')
-  await flushPromises()
-  expect(api.updateSiteFeedbackStatus).not.toHaveBeenCalled()
-  expect(wrapper.get('.status-select').element.value).toBe('PENDING')
-})
-
 it('filters by reason from the first page', async () => {
   const wrapper = mountPage()
   await flushPromises()
@@ -62,16 +56,30 @@ it('filters by reason from the first page', async () => {
 it('shows details and deletes after confirmation', async () => {
   const wrapper = mountPage()
   await flushPromises()
-  await wrapper.findAll('button').find(button => button.text() === 'siteFeedback.view').trigger('click')
+  await wrapper.get('[data-testid="feedback-row-open"]').trigger('click')
   await flushPromises()
+  const drawer = wrapper.get('[data-testid="admin-detail-drawer"]')
+  expect(drawer.attributes('role')).toBe('dialog')
   expect(api.getSiteFeedback).toHaveBeenCalledWith('1')
-  expect(wrapper.get('pre').text()).toBe('feedback')
-  await wrapper.findAll('button').find(button => button.text() === 'siteFeedback.delete').trigger('click')
-  const confirm = wrapper.findAll('button').filter(button => button.text() === 'siteFeedback.delete').at(-1)
-  await confirm.trigger('click')
+  expect(drawer.get('pre').text()).toBe('feedback')
+  // 删除在抽屉底部两段式确认：第一步只展开确认，不发请求
+  await drawer.get('[data-testid="admin-danger-start"]').trigger('click')
+  expect(api.deleteSiteFeedback).not.toHaveBeenCalled()
+  await drawer.get('[data-testid="admin-danger-confirm"]').trigger('click')
   await flushPromises()
   expect(api.deleteSiteFeedback).toHaveBeenCalledWith('1')
   expect(api.listSiteFeedback).toHaveBeenCalledTimes(2)
+})
+
+// --- #923 管理员可维护状态（行内状态下拉；详情抽屉只显示服务器确认的状态）---
+it('does not send a status update when the admin feedback feature is unavailable', async () => {
+  const wrapper = mountPage()
+  await flushPromises()
+  gate.status.value = { available: false, pending: false }
+  await wrapper.get('.status-select').setValue('FIXED')
+  await flushPromises()
+  expect(api.updateSiteFeedbackStatus).not.toHaveBeenCalled()
+  expect(wrapper.get('.status-select').element.value).toBe('PENDING')
 })
 
 it('displays the server status, saves a confirmed change and re-reads it on refresh', async () => {
@@ -104,7 +112,7 @@ it('keeps the previous status when the server explicitly rejects the update', as
 it('re-reads the server status when an update outcome is ambiguous', async () => {
   const wrapper = mountPage()
   await flushPromises()
-  await wrapper.findAll('button').find(button => button.text() === 'siteFeedback.view').trigger('click')
+  await wrapper.get('[data-testid="feedback-row-open"]').trigger('click')
   await flushPromises()
   api.updateSiteFeedbackStatus.mockRejectedValueOnce(new TypeError('Failed to fetch'))
   api.getSiteFeedback.mockResolvedValueOnce({ ...row, status: 'FIXED' })
@@ -165,13 +173,16 @@ it('ignores a stale detail response that predates a confirmed status', async () 
   api.getSiteFeedback.mockImplementationOnce(() => new Promise(resolve => { resolveDetail = resolve }))
   const wrapper = mountPage()
   await flushPromises()
-  await wrapper.findAll('button').find(button => button.text() === 'siteFeedback.view').trigger('click')
+  await wrapper.get('[data-testid="feedback-row-open"]').trigger('click')
   await wrapper.get('.status-select').setValue('FIXED')
   await flushPromises()
   resolveDetail({ ...row, status: 'PENDING' })
   await flushPromises()
   expect(wrapper.get('.status-select').element.value).toBe('FIXED')
-  expect(detailStatusText(wrapper)).toBeUndefined()
+  // 被作废的在途读取会自动重发：陈旧响应不得展示，重发的新详情应渲染（状态取确认值）
+  expect(detailStatusText(wrapper)).toContain('siteFeedback.status.FIXED')
+  expect(wrapper.get('[data-testid="admin-detail-drawer"] .admin-list-pre').text()).toBe('feedback')
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false)
 })
 
 it('does not let a pre-update detail response overwrite the status after a list refresh', async () => {
@@ -179,7 +190,7 @@ it('does not let a pre-update detail response overwrite the status after a list 
   api.getSiteFeedback.mockImplementationOnce(() => new Promise(resolve => { resolveDetail = resolve }))
   const wrapper = mountPage()
   await flushPromises()
-  await wrapper.findAll('button').find(button => button.text() === 'siteFeedback.view').trigger('click')
+  await wrapper.get('[data-testid="feedback-row-open"]').trigger('click')
   await wrapper.get('.status-select').setValue('FIXED')
   await flushPromises()
   api.listSiteFeedback.mockResolvedValueOnce({ items: [{ ...row, status: 'FIXED' }], page: 0, size: 25, totalItems: 1, totalPages: 1 })
@@ -188,9 +199,12 @@ it('does not let a pre-update detail response overwrite the status after a list 
   resolveDetail({ ...row, status: 'PENDING' })
   await flushPromises()
   expect(wrapper.get('.status-select').element.value).toBe('FIXED')
-  expect(detailStatusText(wrapper)).toBeUndefined()
+  // 被作废的在途读取会自动重发：陈旧响应不得展示，重发的新详情应渲染（状态取确认值）
+  expect(detailStatusText(wrapper)).toContain('siteFeedback.status.FIXED')
+  expect(wrapper.get('[data-testid="admin-detail-drawer"] .admin-list-pre').text()).toBe('feedback')
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false)
   api.getSiteFeedback.mockResolvedValueOnce({ ...row, status: 'FIXED' })
-  await wrapper.findAll('button').find(button => button.text() === 'siteFeedback.view').trigger('click')
+  await wrapper.get('[data-testid="feedback-row-open"]').trigger('click')
   await flushPromises()
   expect(detailStatusText(wrapper)).toContain('siteFeedback.status.FIXED')
 })
@@ -205,7 +219,7 @@ it('keeps another record detail loading when a status update succeeds', async ()
   const wrapper = mountPage()
   await flushPromises()
   await wrapper.findAll('.status-select').at(0).setValue('FIXED')
-  await wrapper.findAll('button').filter(button => button.text() === 'siteFeedback.view').at(1).trigger('click')
+  await wrapper.findAll('[data-testid="feedback-row-open"]').at(1).trigger('click')
   await flushPromises()
   expect(api.getSiteFeedback).toHaveBeenCalledWith('2')
   resolveUpdate()
@@ -231,7 +245,7 @@ it('keeps another record detail loading when an ambiguous status is reconciled',
   await wrapper.findAll('.status-select').at(0).setValue('FIXED')
   await flushPromises()
   expect(api.getSiteFeedback).toHaveBeenCalledWith('1')
-  await wrapper.findAll('button').filter(button => button.text() === 'siteFeedback.view').at(1).trigger('click')
+  await wrapper.findAll('[data-testid="feedback-row-open"]').at(1).trigger('click')
   await flushPromises()
   expect(api.getSiteFeedback).toHaveBeenCalledWith('2')
   resolveReadback({ ...row, status: 'FIXED' })
@@ -241,4 +255,40 @@ it('keeps another record detail loading when an ambiguous status is reconciled',
   expect(wrapper.findAll('.status-select').at(0).element.value).toBe('FIXED')
   expect(detailStatusText(wrapper)).toContain('siteFeedback.status.PENDING')
   expect(wrapper.get('pre').text()).toBe('second exact feedback')
+})
+
+it('关闭抽屉后迟到的 PATCH 不再为已关闭详情重发读取，也不把错误写进列表页', async () => {
+  let resolveUpdate
+  let resolveDetail
+  api.updateSiteFeedbackStatus.mockImplementationOnce(() => new Promise(resolve => { resolveUpdate = resolve }))
+  api.getSiteFeedback.mockImplementationOnce(() => new Promise(resolve => { resolveDetail = resolve }))
+  const wrapper = mountPage()
+  await flushPromises()
+  await wrapper.get('.status-select').setValue('FIXED')
+  await wrapper.get('[data-testid="feedback-row-open"]').trigger('click')
+  await flushPromises()
+  expect(api.getSiteFeedback).toHaveBeenCalledTimes(1)
+  // PATCH 完成前关闭抽屉：确认后不得为已关闭的详情重发 GET
+  await wrapper.get('[data-testid="admin-drawer-close"]').trigger('click')
+  resolveUpdate()
+  resolveDetail({ ...row, status: 'PENDING' })
+  await flushPromises()
+  expect(api.getSiteFeedback).toHaveBeenCalledTimes(1)
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+})
+
+it('卸载后迟到的 PATCH 不再重发详情读取', async () => {
+  let resolveUpdate
+  api.updateSiteFeedbackStatus.mockImplementationOnce(() => new Promise(resolve => { resolveUpdate = resolve }))
+  api.getSiteFeedback.mockImplementationOnce(() => new Promise(() => {}))
+  const wrapper = mountPage()
+  await flushPromises()
+  await wrapper.get('.status-select').setValue('FIXED')
+  await wrapper.get('[data-testid="feedback-row-open"]').trigger('click')
+  await flushPromises()
+  expect(api.getSiteFeedback).toHaveBeenCalledTimes(1)
+  wrapper.unmount()
+  resolveUpdate()
+  await flushPromises()
+  expect(api.getSiteFeedback).toHaveBeenCalledTimes(1)
 })
