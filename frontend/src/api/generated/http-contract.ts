@@ -1399,6 +1399,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/ai-review-feedback/{id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update the status of an AI review feedback record */
+        patch: operations["updateAdminAiReviewFeedbackStatus"];
+        trace?: never;
+    };
     "/api/site-feedback": {
         parameters: {
             query?: never;
@@ -1452,6 +1471,25 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/admin/site-feedback/{id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update the status of a site feedback record */
+        patch: operations["updateAdminSiteFeedbackStatus"];
         trace?: never;
     };
     "/api/admin/users": {
@@ -3165,6 +3203,11 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
         };
+        /** @enum {string} */
+        FeedbackStatus: "PENDING" | "FIXED";
+        UpdateFeedbackStatusRequest: {
+            status: components["schemas"]["FeedbackStatus"];
+        };
         AdminAiReviewFeedbackListItem: {
             id: string;
             reasonCodes: components["schemas"]["AiReviewFeedbackReason"][];
@@ -3172,6 +3215,7 @@ export interface components {
             model: string | null;
             /** Format: date-time */
             createdAt: string;
+            status: components["schemas"]["FeedbackStatus"];
         };
         AdminAiReviewFeedbackDetail: {
             id: string;
@@ -3181,6 +3225,7 @@ export interface components {
             model: string | null;
             /** Format: date-time */
             createdAt: string;
+            status: components["schemas"]["FeedbackStatus"];
         };
         AdminAiReviewFeedbackPage: {
             items: components["schemas"]["AdminAiReviewFeedbackListItem"][];
@@ -3209,6 +3254,7 @@ export interface components {
             pageView: string | null;
             /** Format: date-time */
             createdAt: string;
+            status: components["schemas"]["FeedbackStatus"];
         };
         AdminSiteFeedbackDetail: {
             id: string;
@@ -3217,6 +3263,7 @@ export interface components {
             pageView: string | null;
             /** Format: date-time */
             createdAt: string;
+            status: components["schemas"]["FeedbackStatus"];
         };
         AdminSiteFeedbackPage: {
             items: components["schemas"]["AdminSiteFeedbackListItem"][];
@@ -8319,6 +8366,66 @@ export interface operations {
             };
         };
     };
+    updateAdminAiReviewFeedbackStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateFeedbackStatusRequest"];
+            };
+        };
+        responses: {
+            /** @description Status updated */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid id or status */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Administrator required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Feedback not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     createSiteFeedback: {
         parameters: {
             query?: never;
@@ -8489,6 +8596,66 @@ export interface operations {
                 content?: never;
             };
             /** @description Invalid id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Administrator required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Feedback not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    updateAdminSiteFeedbackStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateFeedbackStatusRequest"];
+            };
+        };
+        responses: {
+            /** @description Status updated */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid id or status */
             400: {
                 headers: {
                     [name: string]: unknown;

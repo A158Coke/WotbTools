@@ -166,8 +166,8 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 - `tournament`：按年份/区服/季赛配置积分规则、截图排名的共享草稿、CSV 整表替换、正式榜单、修正与审计；同域 `Broadcast*` 管理五服联赛直播目录。契约见 [`features/tournament-points.md`](features/tournament-points.md) 与 [`features/league-broadcasts.md`](features/league-broadcasts.md)。
 - `replay`：只剩 `/api/health` 与名人堂共用的 `ReplayCapacityLimiter`。
 - `battledata`：匿名接收最小化 Random/Rating 战斗观察，站点管理员可只读审计持久化数据；验证后按 arenaId 首次有效写入，不解析回放、不关联用户。客户端隔离、隐私与数据归属见 [Replay Pipeline](architecture/replay-pipeline.md#匿名-battle-data-collector)，配额与开关见 [运维手册](operations/observability-runbook.md#battle-data-collector)。
-- `sitefeedback`：认证用户从首页页脚和「更多」提交站点反馈（原因标签、说明、当前 view id），站点管理员在独立的 `admin-site-feedback` 页查询和硬删除；不保存用户 ID，无法回复提交者。文本规则与 `aireviewfeedback` 共用 `util.text.UserText`；HTTP 字段以 OpenAPI 为准。
-- `aireviewfeedback`：认证用户提交 AI 复盘反馈及复制回复快照，站点管理员可查询和硬删除；不保存用户 ID 或回放。详情见 [AI Review](architecture/ai-review.md#用户反馈)。
+- `sitefeedback`：认证用户从首页页脚和「更多」提交站点反馈（原因标签、说明、当前 view id），站点管理员在独立的 `admin-site-feedback` 页查询、切换 `PENDING`/`FIXED` 状态和硬删除；不保存用户 ID，无法回复提交者。文本规则与 `aireviewfeedback` 共用 `util.text.UserText`；HTTP 字段以 OpenAPI 为准。
+- `aireviewfeedback`：认证用户提交 AI 复盘反馈及复制回复快照，站点管理员可查询、切换 `PENDING`/`FIXED` 状态和硬删除；不保存用户 ID 或回放。详情见 [AI Review](architecture/ai-review.md#用户反馈)。
 
 ### 客户端 Replay Engine
 

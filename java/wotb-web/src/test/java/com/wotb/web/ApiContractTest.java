@@ -9,11 +9,13 @@ import com.wotb.web.aireviewfeedback.dto.FeedbackListItem;
 import com.wotb.web.aireviewfeedback.dto.FeedbackPage;
 import com.wotb.web.aireviewfeedback.dto.FeedbackReason;
 import com.wotb.web.aireviewfeedback.dto.FeedbackRecord;
+import com.wotb.web.aireviewfeedback.dto.FeedbackStatus;
 import com.wotb.web.sitefeedback.dto.SiteFeedbackCreated;
 import com.wotb.web.sitefeedback.dto.SiteFeedbackListItem;
 import com.wotb.web.sitefeedback.dto.SiteFeedbackPage;
 import com.wotb.web.sitefeedback.dto.SiteFeedbackReason;
 import com.wotb.web.sitefeedback.dto.SiteFeedbackRecord;
+import com.wotb.web.sitefeedback.dto.SiteFeedbackStatus;
 import com.wotb.web.exceptionhandler.GlobalExceptionHandler;
 import com.wotb.web.hof.dto.BulkDeleteItemResult;
 import com.wotb.web.hof.dto.BulkDeleteResultDto;
@@ -115,14 +117,17 @@ class ApiContractTest {
         final Instant created = Instant.parse("2026-10-01T12:00:00Z");
         final var reasons = List.of(FeedbackReason.FACT_ERROR);
         cases.add(new WireCase("CreateAiReviewFeedbackResponse", new FeedbackCreated("123", created)));
-        cases.add(new WireCase("AdminAiReviewFeedbackDetail", new FeedbackRecord("123", reasons, "note", "reply\nfooter", null, created)));
+        cases.add(new WireCase("AdminAiReviewFeedbackDetail",
+                new FeedbackRecord("123", reasons, "note", "reply\nfooter", null, created, FeedbackStatus.PENDING)));
         cases.add(new WireCase("AdminAiReviewFeedbackPage", new FeedbackPage(
-                List.of(new FeedbackListItem("123", reasons, "note", null, created)), 0, 25, 1, 1)));
+                List.of(new FeedbackListItem("123", reasons, "note", null, created, FeedbackStatus.PENDING)), 0, 25, 1, 1)));
         final var siteReasons = List.of(SiteFeedbackReason.BUG);
         cases.add(new WireCase("CreateSiteFeedbackResponse", new SiteFeedbackCreated("123", created)));
-        cases.add(new WireCase("AdminSiteFeedbackDetail", new SiteFeedbackRecord("123", siteReasons, "note", "hof", created)));
+        cases.add(new WireCase("AdminSiteFeedbackDetail",
+                new SiteFeedbackRecord("123", siteReasons, "note", "hof", created, SiteFeedbackStatus.PENDING)));
         cases.add(new WireCase("AdminSiteFeedbackPage", new SiteFeedbackPage(
-                List.of(new SiteFeedbackListItem("123", siteReasons, "note", "hof", created)), 0, 25, 1, 1)));
+                List.of(new SiteFeedbackListItem("123", siteReasons, "note", "hof", created, SiteFeedbackStatus.PENDING)),
+                0, 25, 1, 1)));
         final Path fixture = Path.of("../../contracts/http/fixtures/business-boundaries.json");
         assertThat(objectMapper.readTree(objectMapper.writeValueAsString(cases)))
                 .isEqualTo(objectMapper.readTree(Files.readString(fixture)));

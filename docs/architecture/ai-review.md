@@ -550,4 +550,4 @@ realm role 是渲染前就确定的**前置权限态**（`data-testid="ai-permis
 
 完成的个人或团队复盘可提交反馈，标签和说明与当时复制回复的原文一起保存；快照含本地化 footer，不含独立赛前预测。复制与反馈共用前端 formatter，内容由客户端提供，服务端不能证明它来自 AI。认证用户向 Business Backend 的 `POST /api/ai-review-feedback` 提交；每次提交独立记录，`model` 可为空。反馈域由 Business PostgreSQL 持久化，不保存用户 ID、回放或 prompt 版本；正文仍可能包含玩家名或用户主动输入的信息。
 
-仅站点管理员可通过 `/api/admin/ai-review-feedback` 分页按标签筛选、查看完整原文及硬删除；服务端按创建时间和 ID 倒序。删除不保证立即从备份移除。该功能不修改 AI 服务、推理或 SSE 契约；OpenAPI 是 HTTP 字段与错误的权威来源。
+仅站点管理员可通过 `/api/admin/ai-review-feedback` 分页按标签筛选、查看完整原文、切换 `PENDING`/`FIXED` 状态及硬删除；服务端按创建时间和 ID 倒序。状态更新通过 `PATCH /api/admin/ai-review-feedback/{id}/status` 持久化，默认 `PENDING`。删除不保证立即从备份移除。该功能不修改 AI 服务、推理或 SSE 契约；OpenAPI 是 HTTP 字段与错误的权威来源。

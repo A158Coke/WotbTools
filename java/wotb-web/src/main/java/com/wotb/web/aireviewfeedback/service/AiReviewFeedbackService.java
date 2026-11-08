@@ -4,6 +4,7 @@ import com.wotb.web.aireviewfeedback.dto.FeedbackCreated;
 import com.wotb.web.aireviewfeedback.dto.FeedbackPage;
 import com.wotb.web.aireviewfeedback.dto.FeedbackReason;
 import com.wotb.web.aireviewfeedback.dto.FeedbackRecord;
+import com.wotb.web.aireviewfeedback.dto.FeedbackStatus;
 import com.wotb.web.aireviewfeedback.repository.AiReviewFeedbackRepository;
 import com.wotb.web.util.apierror.ApiErrorCode;
 import com.wotb.web.util.apierror.ApiException;
@@ -60,6 +61,28 @@ public class AiReviewFeedbackService {
         require(!reasons.isEmpty() || UserText.hasText(feedback));
         require(UserText.hasText(response));
         try { return repository.insert(reasons, UserText.hasText(feedback) ? feedback : null, response, model); }
+        catch (final RuntimeException ex) { throw new ApiException(ApiErrorCode.INTERNAL_ERROR); }
+    }
+
+    public void updateStatus(final String rawId, final InputStream input) {
+        final long id = id(rawId);
+        final JsonNode body;
+        try {
+            final byte[] bytes = input.readNBytes(MAX_REQUEST_BYTES + 1);
+            require(bytes.length <= MAX_REQUEST_BYTES);
+            body = JSON.readTree(bytes);
+        } catch (final IOException | tools.jackson.core.JacksonException ex) {
+            throw invalid();
+        }
+        require(body != null && body.isObject());
+        body.propertyNames().forEach(name -> require("status".equals(name)));
+        final var value = body.get("status");
+        require(value != null && value.isString());
+        final FeedbackStatus status;
+        try { status = FeedbackStatus.from(value.asString()); }
+        catch (final IllegalArgumentException ex) { throw invalid(); }
+        try { if (!repository.updateStatus(id, status)) { throw new ApiException(ApiErrorCode.RESOURCE_NOT_FOUND); } }
+        catch (final ApiException ex) { throw ex; }
         catch (final RuntimeException ex) { throw new ApiException(ApiErrorCode.INTERNAL_ERROR); }
     }
 

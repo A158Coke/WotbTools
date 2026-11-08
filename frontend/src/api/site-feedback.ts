@@ -1,7 +1,11 @@
 import type { components } from './generated/http-contract.js'
 import { createSiteFeedbackResponseValidator, adminSiteFeedbackPageValidator, adminSiteFeedbackDetailValidator } from './generated/contract-validators.js'
 import { request } from './ai-review-feedback.js'
+import type { FeedbackStatus } from './ai-review-feedback.js'
 import { ApiError } from '../utils/http.js'
+
+export type { FeedbackStatus } from './ai-review-feedback.js'
+export { feedbackStatuses } from './ai-review-feedback.js'
 
 type Request = components['schemas']['CreateSiteFeedbackRequest']
 type Created = components['schemas']['CreateSiteFeedbackResponse']
@@ -35,5 +39,14 @@ export async function getSiteFeedback(id: string): Promise<SiteFeedbackDetail> {
 
 export async function deleteSiteFeedback(id: string): Promise<void> {
   const value = await request(`/api/admin/site-feedback/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  if (value !== null) throw new ApiError({ errorCode: 'INVALID_RESPONSE', retryable: false })
+}
+
+export async function updateSiteFeedbackStatus(id: string, status: FeedbackStatus): Promise<void> {
+  const value = await request(`/api/admin/site-feedback/${encodeURIComponent(id)}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  })
   if (value !== null) throw new ApiError({ errorCode: 'INVALID_RESPONSE', retryable: false })
 }

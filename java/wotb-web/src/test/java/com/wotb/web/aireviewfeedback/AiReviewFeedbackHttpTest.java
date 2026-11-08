@@ -32,6 +32,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -69,6 +70,20 @@ class AiReviewFeedbackHttpTest {
                 .andExpect(status().isForbidden());
         mvc.perform(delete("/api/admin/ai-review-feedback/1").with(jwt().authorities()))
                 .andExpect(status().isForbidden());
+        mvc.perform(patch("/api/admin/ai-review-feedback/1/status").contentType("application/json")
+                        .content("{\"status\":\"FIXED\"}"))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(patch("/api/admin/ai-review-feedback/1/status").with(jwt().authorities())
+                        .contentType("application/json").content("{\"status\":\"FIXED\"}"))
+                .andExpect(status().isForbidden());
+        mvc.perform(patch("/api/admin/ai-review-feedback/1/status")
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_content-admin")))
+                        .contentType("application/json").content("{\"status\":\"FIXED\"}"))
+                .andExpect(status().isForbidden());
+        mvc.perform(patch("/api/admin/ai-review-feedback/1/status")
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))
+                        .contentType("application/json").content("{\"status\":\"FIXED\"}"))
+                .andExpect(status().isNoContent());
         mvc.perform(delete("/api/admin/ai-review-feedback/1").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))
                 .andExpect(status().isNoContent());
         mvc.perform(get("/api/admin/ai-review-feedback").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))

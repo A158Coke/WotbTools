@@ -5863,6 +5863,25 @@ export default {
         }
       }
     },
+    "FeedbackStatus": {
+      "type": "string",
+      "enum": [
+        "PENDING",
+        "FIXED"
+      ]
+    },
+    "UpdateFeedbackStatusRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/FeedbackStatus"
+        }
+      }
+    },
     "AdminAiReviewFeedbackListItem": {
       "type": "object",
       "additionalProperties": false,
@@ -5871,7 +5890,8 @@ export default {
         "reasonCodes",
         "feedbackText",
         "model",
-        "createdAt"
+        "createdAt",
+        "status"
       ],
       "properties": {
         "id": {
@@ -5901,6 +5921,9 @@ export default {
         "createdAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "status": {
+          "$ref": "#/$defs/FeedbackStatus"
         }
       }
     },
@@ -5913,7 +5936,8 @@ export default {
         "feedbackText",
         "aiResponseText",
         "model",
-        "createdAt"
+        "createdAt",
+        "status"
       ],
       "properties": {
         "id": {
@@ -5946,6 +5970,9 @@ export default {
         "createdAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "status": {
+          "$ref": "#/$defs/FeedbackStatus"
         }
       }
     },
@@ -6053,7 +6080,8 @@ export default {
         "reasonCodes",
         "feedbackText",
         "pageView",
-        "createdAt"
+        "createdAt",
+        "status"
       ],
       "properties": {
         "id": {
@@ -6083,6 +6111,9 @@ export default {
         "createdAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "status": {
+          "$ref": "#/$defs/FeedbackStatus"
         }
       }
     },
@@ -6094,7 +6125,8 @@ export default {
         "reasonCodes",
         "feedbackText",
         "pageView",
-        "createdAt"
+        "createdAt",
+        "status"
       ],
       "properties": {
         "id": {
@@ -6124,6 +6156,9 @@ export default {
         "createdAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "status": {
+          "$ref": "#/$defs/FeedbackStatus"
         }
       }
     },

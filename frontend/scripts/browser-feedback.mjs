@@ -49,8 +49,8 @@ try {
       if (options.method === 'POST') return Response.json({ id: '1', createdAt: '2026-01-01T00:00:00Z' }, { status: 201 })
       if (options.method === 'DELETE') return new Response(null, { status: 204 })
       const row = site
-        ? { id: '1', reasonCodes: ['OTHER'], feedbackText: 'note', pageView: 'hof', createdAt: '2026-01-01T00:00:00Z' }
-        : { id: '1', reasonCodes: ['OTHER'], feedbackText: 'note', model: null, createdAt: '2026-01-01T00:00:00Z' }
+        ? { id: '1', reasonCodes: ['OTHER'], feedbackText: 'note', pageView: 'hof', createdAt: '2026-01-01T00:00:00Z', status: 'PENDING' }
+        : { id: '1', reasonCodes: ['OTHER'], feedbackText: 'note', model: null, createdAt: '2026-01-01T00:00:00Z', status: 'PENDING' }
       if (String(url).includes('/1')) return Response.json(site ? row : { ...row, aiResponseText: 'exact\\nreply' })
       return Response.json({ items: [row], page: 0, size: 25, totalItems: 1, totalPages: 1 })
     }

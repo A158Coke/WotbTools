@@ -8,10 +8,12 @@ type Created = components['schemas']['CreateAiReviewFeedbackResponse']
 type Page = components['schemas']['AdminAiReviewFeedbackPage']
 type Detail = components['schemas']['AdminAiReviewFeedbackDetail']
 export type FeedbackReason = components['schemas']['AiReviewFeedbackReason']
+export type FeedbackStatus = components['schemas']['FeedbackStatus']
 export const feedbackReasons: readonly FeedbackReason[] = Object.freeze([
   'FACT_ERROR', 'BAD_JUDGMENT', 'MISSED_KEY_POINT', 'TOO_AI_LIKE',
   'TOO_VAGUE', 'TOO_VERBOSE', 'UNHELPFUL_ADVICE', 'OTHER',
 ])
+export const feedbackStatuses: readonly FeedbackStatus[] = Object.freeze(['PENDING', 'FIXED'])
 
 export async function request(url: string, options: RequestInit = {}): Promise<unknown | null> {
   const { token, ensureToken } = useAuth()
@@ -47,5 +49,14 @@ export async function getFeedback(id: string): Promise<Detail> {
 
 export async function deleteFeedback(id: string): Promise<void> {
   const value = await request(`/api/admin/ai-review-feedback/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  if (value !== null) throw new ApiError({ errorCode: 'INVALID_RESPONSE', retryable: false })
+}
+
+export async function updateFeedbackStatus(id: string, status: FeedbackStatus): Promise<void> {
+  const value = await request(`/api/admin/ai-review-feedback/${encodeURIComponent(id)}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  })
   if (value !== null) throw new ApiError({ errorCode: 'INVALID_RESPONSE', retryable: false })
 }
