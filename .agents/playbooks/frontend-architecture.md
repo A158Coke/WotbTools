@@ -6,7 +6,7 @@
 
 ## 流程
 
-1. **DISCOVER** — 读适用的 `AGENTS.md`、架构文档与最小相关测试。选择目标结构前，先检查真实 import 与 runtime entry points。
+1. **DISCOVER** — 读架构文档与最小相关测试。选择目标结构前，先检查真实 import 与 runtime entry points。
 2. **TRACE** — 沿每个改动涉及的 state、route、API call 与 user transition 找到权威 owner。相关时必须覆盖 deep-link、Back/Forward、auth 与 async completion 路径。
 3. **OWNERSHIP** — 每个 business state 只能有一个 owner。优先用 derived `computed`，不要用 watcher 同步多个 ref；watcher 只用于 side effect 或 lifecycle bridge。
 4. **BOUNDARY** — 依赖方向保持 `app → features → shared`。feature 间只能通过小而显式的 public contract 交互；`shared/` 必须 feature-neutral。跨 app/feature injection contract 使用 `shared/` 中的 typed `InjectionKey<T>`，禁止 magic-string service locator。直接 parent-child 依赖通常应使用显式 props/emits，而不是隐藏 injection。

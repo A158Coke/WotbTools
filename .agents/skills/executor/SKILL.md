@@ -60,17 +60,16 @@ description: >
    只执行当前计划内步骤。
 5. **逐项执行（每步）**：
    - 读该步 `Scope / Files`、`Change`、`Validation`，并对照 `# Impact Surface` 定位相关代码（用 `rg` / `rg --files`）；
-   - **Reuse Audit（新增 production type/file 前）**：先 `rg` / repo-wide 搜索候选现有实现，优先 reuse / extend；如仍需新增，在实现 reasoning 中明确为什么现有 abstraction 无法合理承载（按 `.agents/AGENTS.md` 的 Reuse / Extend First contract，只引用不复制、无需长 ADR）；
+   - **Reuse Audit（新增 production type/file 前）**：先 `rg` / repo-wide 搜索候选现有实现，优先 reuse / extend；如仍需新增，在实现 reasoning 中明确为什么现有 abstraction 无法合理承载（只引用不复制，无需长 ADR）；
    - 开始该步前把 `Status` 置为 `IN_PROGRESS`；
-   - 实现，遵循项目约定（`.agents/AGENTS.md`、`.agents/playbooks/wotb-sync.md` 跨层检查单）；
+   - 实现，遵循项目约定（`.agents/playbooks/wotb-sync.md` 跨层检查单）；
    - 运行该步 `Validation`；失败先修复再前进；已通过且依赖未变的验证复用，不重复运行；
    - 该步 `Status` 置为 `DONE`，在 commentary 简短汇报后自动继续下一步；阶段汇报不代表任务完成。
 6. **偏差处理**：按 Designer「授权、计划输入与偏差边界」分类。路径、必要直接依赖、测试/文档/生成产物等可恢复纠正自行完成，更新同一计划的实际 impact 与证据后继续。HARD STOP 只暂停依赖该决定的步骤并置 `BLOCKED`，给出证据与所需输入；设计实质失效才返回 Designer / 用户，不静默改变目标。
 7. **全部完成后**：
    - 按 `# Validation / Outside Judge` 逐条验证；存在 `# Final Verification` 时一并按之验证（映射到具体测试/检查，禁止口头宣称通过）；
    - 运行本任务 affected regression tests（targeted / module / feature）；
-     repository-level full validation 交由 PR CI 统一执行，**不在任务结束重复跑全量**（仅在 `.agents/AGENTS.md`
-     的 Full-test 例外情形下才跑全量，并须先声明 Affected scope / Selected validation / Why）；
+     repository-level full validation 交由 PR CI 统一执行，**不在任务结束重复跑全量**；仅在 Full-test 例外下才跑全量（例外清单与命令见 `docs/DEVELOPER_GUIDE.md`「测试策略」）。触发前必须说明 Affected scope / Selected validation / Why；
    - 影响行为/文档时更新对应 canonical 当前状态文档；只有确有长期历史价值时才更新历史：产品 / 业务演进归 `HISTORY.md`，技术 / 架构 / 数据流 / 身份 / 生产拓扑 / 工程演进归 `docs/architecture/TECHNICAL_EVOLUTION.md`，不要求每个改动都更新历史；
    - 汇总：修改文件、测试结果、仍存在的真实限制；
    - **自动调用 review-with-docs 审查**（必须执行，不是建议）：读
@@ -81,7 +80,7 @@ description: >
      不得先 commit 以制造干净 diff，也不得只看 `<main-ref>..HEAD`。审查发现的问题先修复，
      继续修复与重审直到无未解决 BLOCKER/MAJOR；MINOR 可按 Review 规则报告。只有 Designer 定义的 HARD STOP 才中断依赖步骤，不因单轮未闭环停止。
    - **review-with-docs 明确 PASS（无未解决 BLOCKER/MAJOR）即验收通过，PASS 后才提交并开 PR**：提交（git add/commit，
-     中文信息 + Co-Authored-By，按 `.agents/AGENTS.md` 约定）→ 推送 → `gh pr create`，
+     中文信息 + Co-Authored-By）→ 推送 → `gh pr create`，
      无需再等用户指示；存在 blocker/未闭环问题时禁止开 PR。
 8. **计划文件收尾**：无论计划最初来自文件还是手贴文本，状态更新与收尾都只操作任务 worktree
    中唯一的 `docs/current-plan.md`。只把实际完成的 step 置为 `DONE`；默认保留完成记录，不为可选清理额外请求确认。

@@ -12,7 +12,7 @@ import { tankFuzzyScore } from '../scene/tankMeta.js'
 // 搜索别名（开发者审校维护的 WotBTools 搜索 metadata，**不是**游戏事实数据）：稀疏存储，
 // 没配 alias 的车辆直接不出现在文件里（缺 key == aliases []）。与 map_names.json 同一机制：
 // 构建期相对路径 import，无后端接口、无第二资产源，Web 与 Android 内置前端同一份。
-// 契约与维护流程见 common/AGENTS.md 与 docs/architecture/tankopedia-reference-data.md。
+// 契约与维护流程见 docs/architecture/tankopedia-reference-data.md。
 import TANK_ALIASES from '../../../common/tank_aliases.json'
 import { TANKOPEDIA_QUERY_KEYS } from '../shared/tankopediaQueryKeys.js'
 

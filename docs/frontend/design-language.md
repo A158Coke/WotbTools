@@ -53,7 +53,7 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 
 | ID | 强度 | 范围 | 规则 | 例外 | 验证 |
 |---|---|---|---|---|---|
-| DC-THM-01 | MUST | 四季主题 | 布局、组件结构、字号、交互完全一致，只替换语义 token 与氛围插槽；不按主题 fork 业务实现，组件不出现主题判断 | 无 | `src/ui-profile-fork-guard.test.js`；`frontend/AGENTS.md` UI Profile 不变量 |
+| DC-THM-01 | MUST | 四季主题 | 布局、组件结构、字号、交互完全一致，只替换语义 token 与氛围插槽；不按主题 fork 业务实现，组件不出现主题判断 | 无 | `src/ui-profile-fork-guard.test.js` |
 | DC-THM-02 | MUST | 全站 | 背景图、渐变、毛玻璃只出现在本节列出的装饰插槽 | 无 | 人工 |
 | DC-THM-03 | MAY | 工作区页面 | 在数据区之上放一个 Showcase Hero | 无 | 人工 |
 | DC-THM-04 | MUST | Showcase Hero | 只放在数据区之上，不进入表格、筛选、表单、抽屉；expanded 档首屏必须能看到数据区 | 无 | 每页 PR 大屏截图，人工 |
@@ -85,7 +85,7 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 
 **选择逻辑：**
 - 默认盛夏；用户在「更多」→ 主题里选择（`ThemePicker`：`SegmentedControl` tiles，每项是主视觉缩略图 + 强调色点 + 名称），选择后记住。
-- 持久化 key 只有 `wotb-ui-profile`，值为 `spring` / `summer` / `autumn` / `winter`；读取边界把旧值 `showcase` / `classic` / `auto` 映射为 `summer` 并写回。没有独立的 theme 状态或存储 key（遵守 `frontend/AGENTS.md` 的 UI Profile 不变量）。
+- 持久化 key 只有 `wotb-ui-profile`，值为 `spring` / `summer` / `autumn` / `winter`；读取边界把旧值 `showcase` / `classic` / `auto` 映射为 `summer` 并写回。没有独立的 theme 状态或存储 key。
 - 在首次绘制之前，由 `index.html` 里的内联脚本投影 `data-ui-profile` / `data-theme` / `theme-color`，避免闪烁（`src/index-firstpaint.test.js` 真实执行该脚本）。
 
 **验收标准：** 任何组件在四套主题下都必须通过 §3 的对比度要求。
@@ -609,8 +609,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
    - `media-feature-range-notation: context`、`media-feature-name-value-allowed-list: width → 768px / 1200px`、`media-feature-name-disallowed-list: min-width / max-width / device-width`：断点只有三档，且必须写 range 语法。
    - `declaration-property-unit-disallowed-list`：块方向尺寸（`height`、`block-size` 及其 min/max，`top`、`bottom`、`inset`、`inset-block*`）禁止 `vh`，用 `dvh` / `svh`；行方向尺寸（`width`、`inline-size` 及其 min/max）禁止 `vw`，用 `%`；`flex-basis` 两者都禁。
    - 旧文件列在 `frontend/stylelint.legacy.json` 忽略名单里（基线），新文件一律严格检查；移出名单的文件同样受严格检查。
-2. **frontend/AGENTS.md** 引用本文件："改动 UI 前必须阅读 design-language.md；新增视觉值必须先加 token。"
-3. **PR 自查清单：**
+2. **PR 自查清单：**
    - [ ] 只用了语义 token
    - [ ] 盛夏与寒冬都截了图
    - [ ] 三档宽度都截了图

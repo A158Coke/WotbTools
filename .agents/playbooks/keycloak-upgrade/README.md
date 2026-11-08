@@ -71,7 +71,7 @@
 
 ### Phase 6 — 收尾
 
-- 更新 `java/README.md`、`docs/auth/*`。产品/业务层认证变化 → `HISTORY.md`；Keycloak / SPI / identity model / auth architecture 技术演进 → `docs/architecture/TECHNICAL_EVOLUTION.md`（判据见 `.agents/AGENTS.md` 规则 3）。
+- 更新 `java/README.md`、`docs/auth/*`。产品/业务层认证变化 → `HISTORY.md`；Keycloak / SPI / identity model / auth architecture 技术演进 → `docs/architecture/TECHNICAL_EVOLUTION.md`。
 - 走 `review-with-docs` 作为唯一 final gate；它内部完成 code quality、docs、architecture 检查与 fix-and-rereview 闭环。
 
 ## 边界情况必查清单（Edge Cases）

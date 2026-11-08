@@ -10,7 +10,7 @@ import { FIXTURE_SECOND_TANK_ID, FIXTURE_TANK_CACHE, FIXTURE_TANK_DATA, FIXTURE_
  * 为什么必须是真浏览器：本次改动把手机端从「四角面板 + 上下两条可滚动窄带」改成
  * 「顶栏一行 + 底栏一行 + 参数面板默认收起」。这类断言的本质是真实 CSS 几何
  * （元素 rect、互相遮挡、触控尺寸、断点边界）——happy-dom / jsdom 没有布局引擎，
- * 只能靠 source-text 猜，那个不算验证（frontend/AGENTS.md：不得用正则测试冒充浏览器验证）。
+ * 只能靠 source-text 猜，那个不算验证（不得用正则测试冒充浏览器验证）。
  *
  * 与另外两个浏览器门禁的分工：
  *   - browser-playback-layout.mjs：file:// + 生产 CSS 的**静态几何**夹具；
@@ -23,7 +23,7 @@ import { FIXTURE_SECOND_TANK_ID, FIXTURE_TANK_CACHE, FIXTURE_TANK_DATA, FIXTURE_
  *      资产不可达场景显式使用不可达 origin，测量前移除错误遮罩，只验证外壳与禁用入口。
  *   2. 加载态布局（顶栏单行 / 弹种不截断 / 面板控件 ≥44px）用 `applyLoadedFixture`
  *      注入 worst-case 内容后测量——不依赖资产，避免"退化态下空跑"（评审 BLOCKER 2）。
- *   3. 3D 画面本身不在断言之列（视觉归属用户，见 .agents/AGENTS.md）；这里只断言
+ *   3. 3D 画面本身不在断言之列（视觉归属用户）；这里只断言
  *      DOM/CSS chrome 的几何与接线。
  */
 

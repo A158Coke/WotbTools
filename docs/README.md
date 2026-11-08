@@ -8,7 +8,7 @@
 
 - `HISTORY.md`：**仅产品/业务演进**——用户可见或商业能力为何引入、变化、退役，以及产品方向决策。不是技术架构史。
 - `docs/architecture/TECHNICAL_EVOLUTION.md`：**仅技术演进**——架构迁移、数据流/权威归属变化、基础设施与拓扑、身份模型、被引入又退役的技术方案。不是产品 changelog。
-- **当前状态文档**：`README.md`、`docs/DEVELOPER_GUIDE.md`、架构现状文档、功能契约、运维 runbook、认证文档、Android 文档、前端文档、`docs/reference/**`、`contracts/**`，以及描述当前工作流的 `AGENTS.md` / `.agents/skills/**` / `.agents/playbooks/**`。它们只描述合并后的当前系统；维护者打开任一份都应能假设「这就是 WotBTools 现在的工作方式」。`README.md` 是仓库唯一当前 canonical README；不维护英文镜像副本。
+- **当前状态文档**：`README.md`、`docs/DEVELOPER_GUIDE.md`、架构现状文档、功能契约、运维 runbook、认证文档、Android 文档、前端文档、`docs/reference/**`、`contracts/**`，以及 `.agents/skills/**` / `.agents/playbooks/**`。它们只描述合并后的当前系统；维护者打开任一份都应能假设「这就是 WotBTools 现在的工作方式」。`README.md` 是仓库唯一当前 canonical README；不维护英文镜像副本。
 - **例外**：
   - `docs/research/**`：实验、逆向证据、被否证假设与样本来源；证据史本身就是目的，但不得把已退役架构描述成当前生产状态。
   - `docs/current-plan.md`：ephemeral 当前已批准任务状态（gitignore），不是架构/行为权威。
@@ -17,9 +17,7 @@
 - **更新文档 = 描述结果状态，不是追加变更日记**：行为从 A 变成 B 再变成 C 时，canonical 文档只写「系统使用 C」；A/B 只在不写就会丢失产品/技术决策理由时分别进入 `HISTORY.md` 或 `TECHNICAL_EVOLUTION.md`，否则删除。禁止在 canonical 文档写「本 PR / 本次 / 审查基线 / Step / review P1 / 当前候选 / 未来 Kx / 以最终实现为准 / 迁移完成」等实现过程叙事。
 - **存量偏差过渡**：本治理规则首次进入仓库之前已经存在、且未被当前变更触及的 current-state / 历史文档偏差，在对应偏差被实际修复或登记为例外前按整改债务保留；新增或修改的持久文档必须满足本规则。
 
-语言规范、current-plan 引用门禁与禁用历史堆放目录是 BLOCKER，正文在 `../.agents/AGENTS.md` 规则 3；本索引不复制。
-
-固定接手方法以 `../.agents/AGENTS.md` 的「接手与调整方法（固定流程）」为准：入口阅读 → 现实审计 → 任务分类 → 计划契约 → Reuse / SSOT 执行 → 分层验证 → 收尾交接。
+语言规范、current-plan 引用门禁与禁用历史堆放目录是三条 BLOCKER：持久开发者 / 维护者 / 运维文档正文使用简体中文（类名、函数/类型名、源路径、API path、HTTP method、配置 key、error code、enum、event、schema 字段、命令、外部产品名与上游原文保留规范英文）；永久源码、配置、文档不得把 `docs/current-plan.md` 当作架构/行为权威；禁止 `archive/`、`old/`、`legacy-docs/`、`historical/` 等历史堆放目录与 “Historical” 标签。current-plan 引用门禁与历史堆放目录由 `scripts/ci/check-repository-hygiene.sh` 在 PR gate 强制（结构性例外见 `is_current_plan_allowlisted()`）；语言规范由 review-with-docs 复核。
 
 ## 入口
 
@@ -29,7 +27,6 @@
 | `frontend/local-testing.md` | **本机全功能测试 runbook**：起环境（Agent 引擎 / 资产面 / 认证门禁）、自检探针、故障对照、自动化门禁时（本机测试最先读） |
 | `frontend/local-production-dev.md` | 本地前端连接生产后端 / Keycloak 链路与安全边界时 |
 | `../README.md` | 了解当前产品是什么、功能与工程取舍 |
-| `../.agents/AGENTS.md` | 动手前必读（仓库级硬约定、接手与调整固定流程） |
 
 ## 开发与性能
 

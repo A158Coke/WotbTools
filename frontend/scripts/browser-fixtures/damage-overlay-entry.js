@@ -3,7 +3,7 @@
  * 不用 WebGL、不加载资产——被验收的是 DOM 几何与 CSS 动画（跟随 anchor / 出屏隐藏 / 镜像侧 /
  * 漂移方向 / fit 边界 / 0×0 兜底 / rerender 不重算 delay）。
  *
- * 3D 场景本身的画面观感仍归用户人工验收（见 .agents/AGENTS.md「视觉验证归属」）。
+ * 3D 场景本身的画面观感仍归用户人工验收。
  */
 import { createApp, h, nextTick, onMounted, reactive, ref } from 'vue'
 import { createI18n } from 'vue-i18n'
