@@ -4,7 +4,8 @@ import type { TournamentEvent } from '../api/tournament-points.js'
 import { useI18n } from 'vue-i18n'
 import { TOURNAMENT_REGIONS, TOURNAMENT_SEASONS } from '../api/tournament-points.js'
 import SegmentedControl from './SegmentedControl.vue'
-const props = defineProps<{ events: TournamentEvent[]; modelValue: number | null; disabled?: boolean; includeGlobal?: boolean; globalSelected?: boolean }>()
+// compact：管理页页头的单个「赛事」选择器（年份 + 区服 + 季赛合成一项）；公开榜单仍用逐级筛选。
+const props = defineProps<{ events: TournamentEvent[]; modelValue: number | null; disabled?: boolean; includeGlobal?: boolean; globalSelected?: boolean; compact?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: number | null]; 'select-global': [] }>()
 const { t } = useI18n()
 const year = ref('')
@@ -18,6 +19,15 @@ const regionOptions = computed(() => TOURNAMENT_REGIONS.map(value => ({
   disabled: props.disabled || !props.events.some(event => event.year === Number(year.value) && event.region === value),
 })))
 const seasons = computed(() => TOURNAMENT_SEASONS.filter(value => props.events.some(event => event.year === Number(year.value) && event.region === region.value && event.season === value)))
+const compactEvents = computed(() => [...props.events].sort((a, b) => b.year - a.year
+  || TOURNAMENT_REGIONS.indexOf(a.region) - TOURNAMENT_REGIONS.indexOf(b.region)
+  || TOURNAMENT_SEASONS.indexOf(a.season) - TOURNAMENT_SEASONS.indexOf(b.season)))
+const compactValue = computed(() => props.globalSelected ? 'GLOBAL' : props.modelValue === null ? '' : String(props.modelValue))
+function selectCompact(event: Event) {
+  const value = (event.target as HTMLSelectElement).value
+  if (value === 'GLOBAL') emit('select-global')
+  else emit('update:modelValue', value ? Number(value) : null)
+}
 let preservePartialSelection = false
 function syncModel(value: number | null) {
   const selected = props.events.find(event => event.id === value)
@@ -50,7 +60,13 @@ function select(level: 'year' | 'region' | 'season') {
 }
 </script>
 <template>
-  <div class="tournament-toolbar">
+  <label v-if="compact" class="tournament-field tournament-event-compact"><span>{{ $t('tournament.event') }}</span>
+    <select :value="compactValue" :disabled="disabled" data-testid="event-compact" @change="selectCompact">
+      <option value="">{{ $t('tournament.choose') }}</option><option v-if="includeGlobal" value="GLOBAL">{{ $t('tournament.globalConfiguration') }}</option>
+      <option v-for="item in compactEvents" :key="item.id" :value="String(item.id)">{{ item.year }} · {{ t('tournament.regions.' + item.region) }} · {{ t('tournament.seasons.' + item.season) }}</option>
+    </select>
+  </label>
+  <div v-else class="tournament-toolbar">
     <label class="tournament-field"><span>{{ $t('tournament.year') }}</span>
       <select v-model="year" :disabled="disabled" data-testid="event-year" @change="select('year')">
         <option value="">{{ $t('tournament.choose') }}</option><option v-for="value in years" :key="value" :value="value">{{ value }}</option>

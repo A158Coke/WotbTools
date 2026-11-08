@@ -33,12 +33,20 @@ function page() {
   const i18n = createI18n({ legacy: false, locale: 'zh', messages: messages as Record<string, any> })
   const wrapper = mount(TournamentPointsAdminPage, { global: { plugins: [i18n], provide: { [DIALOG_INLINE_KEY as symbol]: true }, stubs: { RouterLink: { template: '<a><slot /></a>' } } } })
   const select = async () => { await flushPromises(); wrapper.findComponent(TournamentEventSelect).vm.$emit('update:modelValue', 7); await flushPromises() }
+  // 「更多」菜单：先点开触发按钮，再点菜单项（项目内联渲染在测试宿主里）。
+  const more = async (testid: string) => {
+    (wrapper.get('[data-testid="tournament-admin-more"]').element as HTMLElement).click(); await flushPromises()
+    (wrapper.get(`[data-testid="${testid}"]`).element as HTMLElement).click(); await flushPromises()
+  }
   const file = async (kind: string, file: File) => {
+    if (!wrapper.find(`[data-testid="${kind}-file"]`).exists()) await more(kind === 'csv' ? 'tournament-admin-csv' : 'tournament-admin-historical')
     const input = wrapper.get(`[data-testid="${kind}-file"]`)
     Object.defineProperty(input.element, 'files', { configurable: true, value: [file] })
     await input.trigger('change'); await flushPromises()
   }
-  return { wrapper, i18n, select, file }
+  // 导入面板本身也是对话框；确认对话框叠在其上，取最上层一个。
+  const topDialog = () => wrapper.findAll('[role="dialog"]').at(-1)!
+  return { wrapper, i18n, select, file, more, topDialog }
 }
 beforeEach(() => {
   vi.clearAllMocks()
@@ -65,7 +73,7 @@ describe('independent CSV administration flow', () => {
       standings: visibleStandings, canonicalStandings })
     const p = page(); await p.select()
     expect(p.wrapper.get('[data-testid="tournament-csv-hint"]').text()).toBe(p.i18n.global.t('tournament.csvExportHint'))
-    await p.wrapper.get('[data-testid="tournament-admin-export-csv"]').trigger('click'); await flushPromises()
+    await p.more('tournament-admin-export-csv')
     expect(state.download).toHaveBeenCalledOnce()
     expect(state.download.mock.calls[0][1]).toBe('2026_CN_FIRE_CUP.csv')
     expect(await state.download.mock.calls[0][0].text()).toContain('A,900')
@@ -76,8 +84,9 @@ describe('independent CSV administration flow', () => {
     state.api.getTournamentDay.mockResolvedValue({ eventId: 7, roundNumber: 1, dayNumber: 1, eventVersion: 1, version: 1,
       rulesVersion: 0, status: 'EMPTY', expectedGroupCount: null, groups: [], published: false, standings })
     const p = page(); await p.select()
-    expect(p.wrapper.get('[data-testid="tournament-admin-export-csv"]').attributes('disabled')).toBeDefined()
-    expect(p.wrapper.find('[data-testid="tournament-admin-summary"]').exists()).toBe(true)
+    await p.wrapper.get('[data-testid="tournament-admin-more"]').trigger('click'); await flushPromises()
+    expect(p.wrapper.get('[data-testid="tournament-admin-export-csv"]').attributes('data-disabled')).toBeDefined()
+    expect(p.wrapper.find('[data-testid="event-compact"]').exists()).toBe(true)
     p.wrapper.unmount()
   })
   it('guides event selection without showing a create prompt for existing events', async () => {
@@ -86,7 +95,7 @@ describe('independent CSV administration flow', () => {
     expect(p.wrapper.find('[data-testid="tournament-admin-empty"] a').exists()).toBe(false)
     await p.select()
     expect(p.wrapper.find('[data-testid="tournament-admin-empty"]').exists()).toBe(false)
-    expect(p.wrapper.get('[data-testid="tournament-admin-summary"]').text()).toContain('2026 · 国服 · 战火杯')
+    expect(p.wrapper.get<HTMLSelectElement>('[data-testid="event-compact"]').element.selectedOptions[0].text).toBe('2026 · 国服 · 战火杯')
     expect(p.wrapper.get('.tournament-admin-preview').text()).toContain(p.i18n.global.t('tournament.draftHint'))
     expect(p.wrapper.findAll('.tournament-admin-preview thead tr')).toHaveLength(2)
     expect(p.wrapper.find('[data-testid="tournament-public-summary"]').exists()).toBe(false)
@@ -118,18 +127,20 @@ describe('independent CSV administration flow', () => {
     expect(p.wrapper.get('[data-testid="expected-group-count"]').attributes('disabled')).toBeUndefined()
     expect(p.wrapper.get(`[data-testid="${testid}"]`).text()).toContain(p.i18n.global.t(message))
     if (request === 'supportsTournamentCsvImport') expect(p.wrapper.get('[data-testid="tournament-data-source"] a').text()).toBe('_EK_')
-    await p.wrapper.findAll('button').find(button => button.text() === p.i18n.global.t('tournament.refresh'))!.trigger('click')
-    await flushPromises()
+    await p.more('tournament-admin-refresh')
     expect(p.wrapper.find(`[data-testid="${testid}"]`).exists()).toBe(false)
     expect(p.wrapper.get('[data-testid="expected-group-count"]').attributes('disabled')).toBeUndefined()
     expect(p.wrapper.get('[data-testid="tournament-data-source"] a').text()).toBe('_EK_')
-    expect(p.wrapper.find('[data-testid="csv-import"]').exists()).toBe(true)
+    await p.wrapper.get('[data-testid="tournament-admin-more"]').trigger('click'); await flushPromises()
+    expect(p.wrapper.find('[data-testid="tournament-admin-csv"]').exists()).toBe(true)
     p.wrapper.unmount()
   })
   it('keeps JSON and CSV inputs separate, previews changes and cancels before writing', async () => {
     const p = page(); await p.select()
-    expect(p.wrapper.get('[data-testid="csv-file"]').attributes('accept')).toBe('.csv,text/csv')
+    await p.more('tournament-admin-historical')
     expect(p.wrapper.get('[data-testid="historical-file"]').attributes('accept')).toBe('.json,application/json')
+    await p.more('tournament-admin-csv')
+    expect(p.wrapper.get('[data-testid="csv-file"]').attributes('accept')).toBe('.csv,text/csv')
     await p.file('csv', new File(['scores'], 'scores.csv'))
     expect(state.api.previewTournamentCsvImport).not.toHaveBeenCalled()
     await p.wrapper.get('[data-testid="csv-preview"]').trigger('click'); await flushPromises()
@@ -138,9 +149,9 @@ describe('independent CSV administration flow', () => {
     expect(section.text()).toContain(p.i18n.global.t('tournament.csvScoreChanges', { added: 5, changed: 6, removed: 7 }))
     expect(section.text()).toContain(p.i18n.global.t('tournament.csvReplaceWarning'))
     await p.wrapper.get('[data-testid="csv-publish"]').trigger('click')
-    expect(p.wrapper.get('[role="dialog"]').text()).toContain('2026 · 国服 · 战火杯')
+    expect(p.topDialog().text()).toContain('2026 · 国服 · 战火杯')
     await p.wrapper.get('[data-testid="csv-cancel"]').trigger('click')
-    expect(p.wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(p.wrapper.find('[data-testid="csv-confirm"]').exists()).toBe(false)
     expect(state.api.importTournamentCsv).not.toHaveBeenCalled()
     expect(state.api.previewTournamentHistoricalImport).not.toHaveBeenCalled()
     p.wrapper.unmount()
@@ -176,13 +187,13 @@ describe('independent CSV administration flow', () => {
     await p.wrapper.get('[data-testid="csv-publish"]').trigger('click')
     state.api.importTournamentCsv.mockRejectedValueOnce({ errorCode: 'TOURNAMENT_VERSION_CONFLICT', status: 409 })
     await p.wrapper.get('[data-testid="csv-confirm"]').trigger('click'); await flushPromises()
-    expect(p.wrapper.get('[role="dialog"]').text()).toContain(p.i18n.global.t('tournament.stale'))
+    expect(p.topDialog().text()).toContain(p.i18n.global.t('tournament.stale'))
     expect(p.wrapper.get('[data-testid="csv-confirm"]').attributes('disabled')).toBeDefined()
     expect(p.wrapper.get('[data-testid="csv-import"]').text()).toContain('scores.csv')
     expect(p.wrapper.find('[data-testid="csv-publish"]').exists()).toBe(true)
     expect(state.api.importTournamentCsv.mock.calls[0][1]).toBe(file)
     await p.wrapper.get('[data-testid="csv-cancel"]').trigger('click')
-    expect(p.wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(p.wrapper.find('[data-testid="csv-confirm"]').exists()).toBe(false)
     p.wrapper.unmount()
   })
 })

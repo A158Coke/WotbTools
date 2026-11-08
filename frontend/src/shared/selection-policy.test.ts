@@ -18,9 +18,6 @@ const BASELINE = [
   'components/HoFAdminPage.vue#fSort=battle_time|upload_time',
   'components/HoFPage.vue#battleType=RANDOM|RATING',
   'components/TournamentPointsConfigPage.vue#=GLOBAL',
-  'components/TournamentPointsConfigPage.vue#form.daysPerRound=2|3',
-  'components/TournamentPointsConfigPage.vue#form.roundCount=4|5',
-  'components/TournamentPointsConfigPage.vue#naming=DAY|STAGE',
 ]
 
 interface TemplateProp {
