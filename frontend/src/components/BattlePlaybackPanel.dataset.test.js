@@ -92,6 +92,14 @@ describe('BattlePlaybackPanel local playback parse', () => {
     wrapper.unmount()
   })
 
+  it('「在 2D 中查看」：面板挂载前就给出的秒数在挂载后仍转交给播放器（不从 0 开始）', async () => {
+    const playbackSession = { loadCanonical: vi.fn().mockResolvedValue({ dataset: dataset(), overview: null, reloadTelemetry: null }) }
+    const wrapper = mountPanel({ playbackSession, seekTo: 75 })
+    await flushPromises()
+    expect(wrapper.getComponent(BattlePlayback).attributes('seek-to')).toBe('75')
+    wrapper.unmount()
+  })
+
   it('shows LOADING while the local parse is pending, then FULL with BattlePlayback + map overlay', async () => {
     const pending = deferred()
     playback.parseLocalPlayback.mockReturnValue(pending.promise)

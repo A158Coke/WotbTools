@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { effectScope, nextTick, ref } from 'vue'
-import { useTournamentPointsAdmin, tournamentGroupReviewError, normalizeTournamentClan } from './useTournamentPointsAdmin.js'
+import { useTournamentPointsAdmin, tournamentGroupReviewError, tournamentReviewState, normalizeTournamentClan } from './useTournamentPointsAdmin.js'
 import { tournamentRulesFromInputs } from './useTournamentPointsConfig.js'
 import { tournamentAdminAllowed } from '../api/tournament-points.js'
 import type { TournamentImageReview } from './useTournamentPointsAdmin.js'
@@ -43,6 +43,25 @@ function reviewFrom(f: ReturnType<typeof fixture>): TournamentImageReview {
     groupNumber: 1, teams: structuredClone(f.group.teams), complete: true, duplicateAction: 'ERROR', confirmedClans: [], error: null }
 }
 beforeEach(() => { vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:test'); vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {}) })
+
+describe('tournament review card state', () => {
+  it('识别警告在改正并确认后进入已核对；未改正时仍是有疑点；整图结构问题始终有疑点', () => {
+    const f = fixture()
+    const review = reviewFrom(f)
+    review.result!.issues = ['GROUP_NUMBER_MISSING']
+    review.groupNumber = null as unknown as number
+    expect(tournamentReviewState(review, f.cfg, 1, 1, false)).toBe('issue')
+    review.groupNumber = 1
+    expect(tournamentReviewState(review, f.cfg, 1, 1, false)).toBe('reviewed')
+    review.result!.issues = ['UNCLEAR_CLAN']
+    review.teams[0].clanTag = 'NEW'
+    expect(tournamentReviewState(review, f.cfg, 1, 1, false)).toBe('newClan')
+    review.confirmedClans = ['NEW']
+    expect(tournamentReviewState(review, f.cfg, 1, 1, false)).toBe('reviewed')
+    review.result!.issues = ['INCOMPLETE_GROUP']
+    expect(tournamentReviewState(review, f.cfg, 1, 1, false)).toBe('issue')
+  })
+})
 
 describe('tournament rules and identities', () => {
   it('uses the wire contract Unicode character limit for clan tags', () => {

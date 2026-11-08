@@ -20,6 +20,8 @@ export function useForcedLandscape(active: Readonly<Ref<boolean>>) {
   const blocked = computed(() => required.value && portrait.value)
 
   let locked = false
+  /** 卸载后异步设备判定才返回：不得再给已离开的页面加锁（否则下一个页面被锁在横屏且无人释放） */
+  let disposed = false
   function applyLock(next: boolean) {
     if (device.value !== 'android-phone-app' || next === locked) return
     locked = next
@@ -34,6 +36,7 @@ export function useForcedLandscape(active: Readonly<Ref<boolean>>) {
       syncOrientation()
     }
     void forcedLandscapeDevice().then((value) => {
+      if (disposed) return
       device.value = value
       applyLock(required.value)
     })
@@ -41,6 +44,8 @@ export function useForcedLandscape(active: Readonly<Ref<boolean>>) {
   onActivated(() => { visible.value = true })
   onDeactivated(() => { visible.value = false; applyLock(false) })
   onBeforeUnmount(() => {
+    disposed = true
+    visible.value = false
     query?.removeEventListener?.('change', syncOrientation)
     applyLock(false)
   })

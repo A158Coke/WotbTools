@@ -1122,8 +1122,10 @@ function stepMark3Review(delta) {
   const next = mark3Rows.value[positionOf(mark3Rows.value, mark3ReviewTarget.value) - 1 + delta]
   if (next && !mark3ActionBusy.value) openMark3Review(next)
 }
-const openHundredById = id => openReview(hundredRows.value.find(row => row.id === id))
-const openMark3ById = id => openMark3Review(mark3Rows.value.find(row => row.id === id))
+// 通过 / 拒绝 / 删除请求在途时不换目标：openReview 会重置共享的 busy 并替换当前条，
+// 首个请求返回后会关掉新选中的条目或把错误显示到错误的记录上（与 stepReview 同一门禁）
+const openHundredById = id => { if (!actionBusy.value) openReview(hundredRows.value.find(row => row.id === id)) }
+const openMark3ById = id => { if (!mark3ActionBusy.value) openMark3Review(mark3Rows.value.find(row => row.id === id)) }
 const toggleHundredById = (id, on) => hundredSelection.toggle(hundredRows.value.find(row => row.id === id), on)
 const toggleMark3ById = (id, on) => mark3Selection.toggle(mark3Rows.value.find(row => row.id === id), on)
 const downloadMark3At = index => downloadMark3Screenshot(mark3ReviewDetail.value.proofScreenshots[index], index)
@@ -1365,7 +1367,7 @@ const cancelMark3Phase = () => { mark3ActionMsg.value = ''; mark3ReviewPhase.val
         <p v-if="hundredLoading" class="muted">{{ $t('hundredAdmin.loading') }}</p>
         <p v-else-if="!hundredRows.length" class="muted">{{ $t('hundredAdmin.empty') }}</p>
         <div v-else class="hof-review-layout">
-          <HoFReviewQueue :items="hundredQueue" :current-id="reviewTarget?.id ?? null" :all-selected="hundredSelection.allSelected()" :label="$t('hofAdmin.reviewQueue')"
+          <HoFReviewQueue :items="hundredQueue" :current-id="reviewTarget?.id ?? null" :all-selected="hundredSelection.allSelected()" :label="$t('hofAdmin.reviewQueue')" :busy="actionBusy"
             @open="openHundredById" @toggle="toggleHundredById" @toggle-all="hundredSelection.toggleAll($event)" />
           <HoFReviewPane v-if="reviewTarget" v-bind="hundredPane" v-model:reject-reason="rejectReason" v-model:reject-text="rejectReasonText" v-model:delete-reason="currentDeleteReason" v-model:delete-text="currentDeleteReasonText"
             @close="closeReview" @prev="stepReview(-1)" @next="stepReview(1)" @ask-reject="askReject" @ask-approve="askApprove" @ask-delete="askCurrentDelete" @cancel="cancelCurrentDelete"
@@ -1420,7 +1422,7 @@ const cancelMark3Phase = () => { mark3ActionMsg.value = ''; mark3ReviewPhase.val
         <p v-if="mark3Loading" class="muted">{{ $t('mark3Admin.loading') }}</p>
         <p v-else-if="!mark3Rows.length" class="muted">{{ $t('mark3Admin.empty') }}</p>
         <div v-else class="hof-review-layout">
-          <HoFReviewQueue :items="mark3Queue" :current-id="mark3ReviewTarget?.id ?? null" :all-selected="mark3Selection.allSelected()" :label="$t('hofAdmin.reviewQueue')"
+          <HoFReviewQueue :items="mark3Queue" :current-id="mark3ReviewTarget?.id ?? null" :all-selected="mark3Selection.allSelected()" :label="$t('hofAdmin.reviewQueue')" :busy="mark3ActionBusy"
             @open="openMark3ById" @toggle="toggleMark3ById" @toggle-all="mark3Selection.toggleAll($event)" />
           <HoFReviewPane v-if="mark3ReviewTarget" v-bind="mark3Pane" v-model:reject-reason="mark3RejectReason" v-model:reject-text="mark3RejectReasonText" v-model:delete-reason="mark3DeleteReason" v-model:delete-text="mark3DeleteReasonText"
             @close="closeMark3Review" @prev="stepMark3Review(-1)" @next="stepMark3Review(1)" @ask-reject="askMark3Reject" @ask-approve="askMark3Approve" @ask-delete="askMark3Delete" @cancel="cancelMark3Phase"

@@ -2,7 +2,7 @@
 // 百场 / 三环审核详情（design-language §7 / current-plan Step 11「审核模板」）：
 // 证据 + 「用户申报 / 管理员确认」对照 + Replay 校验清单，底部固定决定栏。纯展示组件，状态与请求都在 HoFAdminPage。
 // 大屏内联在队列右侧；小屏经 Teleport 成为一屏全屏详情，顶部上一条 / 下一条，底部是拇指区决定栏。
-import { computed, inject } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { Check, ChevronLeft, ChevronRight, Download, X } from 'lucide-vue-next'
 import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 
@@ -49,13 +49,58 @@ const emit = defineEmits<{
 const inline = inject(DIALOG_INLINE_KEY, false)
 const pending = computed(() => props.status === 'PENDING')
 const confirmedHeader = computed(() => pending.value ? 'hofAdmin.reviewAfterApprove' : 'hofAdmin.reviewConfirmed')
+
+/*
+ * 窄屏覆盖层是模态的：传送到 body 后，打开时把焦点移进来，Tab 在层内循环，背后的 #app 设为 inert
+ * （键盘与读屏都操作不到看不见的队列）；关闭后焦点回到打开前的元素（队列里那一条）。
+ */
+const root = ref<HTMLElement | null>(null)
+const back = ref<HTMLButtonElement | null>(null)
+let returnFocus: HTMLElement | null = null
+let inertTarget: HTMLElement | null = null
+const modal = computed(() => props.compact && !inline)
+function release() {
+  if (inertTarget) { inertTarget.inert = false; inertTarget = null }
+  if (returnFocus?.isConnected) returnFocus.focus()
+  returnFocus = null
+}
+watch(modal, async (on) => {
+  if (!on) { release(); return }
+  returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  inertTarget = document.getElementById('app')
+  if (inertTarget && !inertTarget.contains(root.value)) inertTarget.inert = true
+  else inertTarget = null
+  await nextTick()
+  ;(back.value ?? root.value)?.focus()
+}, { immediate: true, flush: 'post' })
+onBeforeUnmount(release)
+
+function trapTab(event: KeyboardEvent) {
+  if (!modal.value || !root.value) return
+  const focusable = [...root.value.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+  if (!focusable.length) return
+  const first = focusable[0], last = focusable[focusable.length - 1]
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+}
 </script>
 
 <template>
   <Teleport to="body" :disabled="!compact || inline">
-    <section class="hof-review-pane" :class="{ 'is-overlay': compact }" :aria-label="$t('hofAdmin.reviewDetail')" data-testid="hof-review-pane" @keydown.esc="emit('close')">
+    <section
+      ref="root"
+      class="hof-review-pane"
+      :class="{ 'is-overlay': compact }"
+      :role="modal ? 'dialog' : undefined"
+      :aria-modal="modal ? 'true' : undefined"
+      :aria-label="$t('hofAdmin.reviewDetail')"
+      :tabindex="modal ? -1 : undefined"
+      data-testid="hof-review-pane"
+      @keydown.esc="emit('close')"
+      @keydown.tab="trapTab"
+    >
       <header class="hof-review-top">
-        <button type="button" class="btn-sm hof-review-back" data-testid="hof-review-back" :disabled="busy" @click="emit('close')"><ChevronLeft :size="16" aria-hidden="true" />{{ $t('hofAdmin.reviewBack') }}</button>
+        <button ref="back" type="button" class="btn-sm hof-review-back" data-testid="hof-review-back" :disabled="busy" @click="emit('close')"><ChevronLeft :size="16" aria-hidden="true" />{{ $t('hofAdmin.reviewBack') }}</button>
         <span v-if="position" class="hof-review-position" role="status">{{ $t('hofAdmin.reviewPosition', { position, total }) }}</span>
         <span class="hof-review-step">
           <button type="button" class="btn-sm btn-icon" :disabled="busy || position <= 1" :aria-label="$t('hofAdmin.reviewPrev')" data-testid="hof-review-prev" @click="emit('prev')"><ChevronLeft :size="16" aria-hidden="true" /></button>

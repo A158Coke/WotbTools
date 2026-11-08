@@ -1,6 +1,6 @@
 <script setup>
 // Shared primary composition: −5 / Play / +5 / current speed / Fullscreen / Display.
-import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, inject, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
 import { OPEN_NAV_DRAWER_KEY, SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 import { useEventListener } from '@vueuse/core'
 import { Maximize2, Menu, Minimize2, Pause, Play, PencilRuler, SlidersHorizontal } from 'lucide-vue-next'
@@ -38,7 +38,12 @@ const props = defineProps({
 const shellChrome = inject(SHELL_CHROME_KEY, null)
 const openNav = inject(OPEN_NAV_DRAWER_KEY, null)
 const navOwner = Symbol('playback-transport-nav')
-const hostsNav = computed(() => !!openNav && !!shellChrome?.immersive.value)
+// 回放工作台在 KeepAlive 里：切到别的页面（如装甲查看器）时本组件仍挂载但不可见，
+// 此时必须交还菜单入口，否则外壳以为菜单已被托管而不画悬浮按钮，新页面就没有抽屉入口
+const alive = ref(true)
+onActivated(() => { alive.value = true })
+onDeactivated(() => { alive.value = false })
+const hostsNav = computed(() => alive.value && !!openNav && !!shellChrome?.immersive.value)
 watch(hostsNav, (on) => shellChrome?.hostNav(navOwner, on), { immediate: true })
 onBeforeUnmount(() => shellChrome?.hostNav(navOwner, false))
 const emit = defineEmits(['toggle-play', 'step', 'set-speed', 'seek', 'scrub-start', 'scrub-end', 'toggle-fullscreen', 'toggle-display', 'toggle-annotation'])

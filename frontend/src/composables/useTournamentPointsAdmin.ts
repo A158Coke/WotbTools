@@ -44,10 +44,16 @@ export type TournamentReviewState = 'issue' | 'newClan' | 'pending' | 'reviewed'
 export const TOURNAMENT_REVIEW_ORDER: TournamentReviewState[] = ['issue', 'newClan', 'pending', 'reviewed']
 export function tournamentReviewState(review: TournamentImageReview, config: TournamentConfig, round: number, day: number, duplicate: boolean): TournamentReviewState {
   if (review.duplicateAction === 'SKIP') return 'reviewed'
-  if (review.error || !review.result || review.result.issues.length || (duplicate && review.duplicateAction === 'ERROR')) return 'issue'
+  if (review.error || !review.result || (duplicate && review.duplicateAction === 'ERROR')) return 'issue'
+  const groupError = tournamentGroupReviewError(review, config, round, day)
+  // 识别警告（缺组号 / 军团或名次不清）在管理员改正并确认后即视为已处理：result.issues 是识别时的原始记录，
+  // 不会被清空，只看它会让改正过的卡片永远停在「有疑点」。整图结构问题（多组 / 不完整）仍由 groupError 拦住。
+  // 「新军团未确认」单独归入 newClan，不算作未改正的识别问题。
+  const corrected = review.complete && (!groupError || groupError === 'unreviewed')
+  if (review.result.issues.length && !corrected) return 'issue'
   const tags = review.teams.map(team => normalizeTournamentClan(team.clanTag)).filter(Boolean)
   if (tags.some(tag => !config.clans.includes(tag) && !review.confirmedClans.includes(tag))) return 'newClan'
-  return review.complete && !tournamentGroupReviewError(review, config, round, day) ? 'reviewed' : 'pending'
+  return review.complete && !groupError ? 'reviewed' : 'pending'
 }
 
 export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {

@@ -61,4 +61,13 @@ describe('useForcedLandscape', () => {
     wrapper.unmount()
     expect(platform.locks).toEqual([true, false, true, false])
   })
+
+  it('Android 手机 App：设备判定返回前就离开页面，不会在卸载后加锁', async () => {
+    platform.device = 'android-phone-app'
+    stubOrientation(false)
+    const { wrapper } = host()
+    wrapper.unmount()
+    await flushPromises()
+    expect(platform.locks).not.toContain(true)
+  })
 })

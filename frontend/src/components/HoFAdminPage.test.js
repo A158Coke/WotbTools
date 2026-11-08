@@ -451,6 +451,32 @@ describe('HoFAdminPage', () => {
     expect(wrapper.find('.hof-review-pane').exists()).toBe(false)
   })
 
+  it('通过请求在途时队列里的其它记录不可切换，结果不会落到别的记录上', async () => {
+    hofAdminApi.hofAdminHundredList.mockResolvedValue({
+      items: [pendingItem, { ...pendingItem, id: 12 }], page: 1, size: 50, totalItems: 2, totalPages: 1
+    })
+    hofAdminApi.hofAdminHundredDetail.mockResolvedValue(pendingDetail)
+    hofAdminApi.hofAdminHundredReplays.mockResolvedValue(replayEvidence)
+    let release
+    hofAdminApi.hofAdminHundredApprove.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+    const wrapper = mountPage()
+    await flushPromises()
+    await switchToHundred(wrapper)
+    await wrapper.findAll('.hof-hundred [data-testid="hof-queue-open"]')[0].trigger('click')
+    await flushPromises()
+    const approveBtn = () => wrapper.findAll('.hof-review-pane button').find(b => b.text() === 'hundredAdmin.approve')
+    await approveBtn().trigger('click')
+    await approveBtn().trigger('click')
+    const other = wrapper.findAll('.hof-hundred [data-testid="hof-queue-open"]')[1]
+    expect(other.attributes('disabled')).toBeDefined()
+    hofAdminApi.hofAdminHundredDetail.mockClear()
+    await other.trigger('click')
+    expect(hofAdminApi.hofAdminHundredDetail).not.toHaveBeenCalled()
+    release({ status: 'CURRENT' })
+    await flushPromises()
+    expect(hofAdminApi.hofAdminHundredApprove).toHaveBeenCalledWith(11)
+  })
+
   it('reject select renders stable category values from $tm object', async () => {
     hofAdminApi.hofAdminHundredList.mockResolvedValue({
       items: [pendingItem], page: 1, size: 50, totalItems: 1, totalPages: 1

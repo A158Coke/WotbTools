@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // 审核队列（左栏）：状态色徽标、当前条左边框高亮；复选框保留批量删除入口。纯展示，选中与翻页由 HoFAdminPage 持有。
 interface QueueItem { id: number; title: string; status: string; statusLabel: string; sub: string; time: string; checked: boolean }
-defineProps<{ items: QueueItem[]; currentId: number | null; allSelected: boolean; label: string }>()
+/** busy：当前条的审核请求在途，队列暂不可切换（页面同样在 API 前拦截） */
+defineProps<{ items: QueueItem[]; currentId: number | null; allSelected: boolean; label: string; busy?: boolean }>()
 const emit = defineEmits<{ open: [id: number]; toggle: [id: number, checked: boolean]; toggleAll: [checked: boolean] }>()
 </script>
 
@@ -11,7 +12,7 @@ const emit = defineEmits<{ open: [id: number]; toggle: [id: number, checked: boo
     <ul class="hof-queue-list">
       <li v-for="item in items" :key="item.id" class="hof-queue-item" :class="{ 'is-current': item.id === currentId }">
         <input type="checkbox" :checked="item.checked" :aria-label="$t('hofAdmin.selectRow', { id: item.id })" @change="emit('toggle', item.id, ($event.target as HTMLInputElement).checked)" />
-        <button type="button" class="hof-queue-main" :aria-current="item.id === currentId ? 'true' : undefined" data-testid="hof-queue-open" @click="emit('open', item.id)">
+        <button type="button" class="hof-queue-main" :aria-current="item.id === currentId ? 'true' : undefined" data-testid="hof-queue-open" :disabled="busy && item.id !== currentId" @click="emit('open', item.id)">
           <strong class="hof-queue-title">{{ item.title }}</strong>
           <span class="hundred-status" :class="'hundred-status-' + item.status.toLowerCase()">{{ item.statusLabel }}</span>
           <span class="hof-queue-sub">{{ item.sub }}</span>
@@ -31,6 +32,7 @@ const emit = defineEmits<{ open: [id: number]; toggle: [id: number, checked: boo
 .hof-queue-item.is-current { border-inline-start-color: var(--color-accent); background: var(--color-surface-2); }
 .hof-queue input[type='checkbox'] { flex: none; inline-size: var(--control-check); block-size: var(--control-check); margin: var(--space-3); accent-color: var(--color-accent); cursor: pointer; }
 .hof-queue-main { display: grid; flex: 1; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-1) var(--space-3); min-width: 0; min-height: var(--hit-min); padding: var(--space-3) var(--space-3) var(--space-3) 0; border: 0; background: transparent; color: var(--color-text-primary); font: var(--type-body); text-align: start; cursor: pointer; }
+.hof-queue-main:disabled { cursor: not-allowed; opacity: .55; }
 .hof-queue-main:focus-visible { outline: var(--focus-outline); outline-offset: calc(var(--focus-outline-offset) * -1); }
 .hof-queue-title, .hof-queue-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hof-queue-sub { color: var(--color-text-secondary); }

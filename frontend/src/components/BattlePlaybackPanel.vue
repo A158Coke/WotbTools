@@ -132,12 +132,13 @@ watch(() => props.active, (active) => {
   if (active) load()
 }, { immediate: true })
 
+// immediate：「在 2D 中查看」可能在本面板（懒加载）挂载前就给出了秒数，挂载时也要接住
 watch(() => props.seekTo, async (sec) => {
   if (!Number.isFinite(sec)) return
   mapSeek.value = null
   await nextTick()
   mapSeek.value = sec
-})
+}, { immediate: true })
 
 onBeforeUnmount(() => {
   parseSeq++
