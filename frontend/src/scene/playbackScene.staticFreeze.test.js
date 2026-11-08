@@ -21,10 +21,16 @@ describe('playbackScene 静态子树矩阵冻结（场景 GLB）', () => {
   })
 
   it('poseGlb 不再逐车强制全树 updateMatrixWorld（renderer 场景遍历已从根强制传播）', () => {
-    const at = src.indexOf('function poseGlb(')
+    // #820 Step 2：poseGlb owner = playback/vehicleRuntime.ts
+    const vehicleSrc = readFileSync(resolve(__dirname, 'playback/vehicleRuntime.ts'), 'utf8')
+    const at = vehicleSrc.indexOf('function poseGlb(')
     expect(at).toBeGreaterThan(0)
-    const body = src.slice(at, src.indexOf('async function applyGlbToggle', at))
-    expect(body).not.toMatch(/updateMatrixWorld/)
+    // poseGlb 与 poseGlbRig 之间不得强制全树刷新（collectSuspensionParts 的
+    // root.updateMatrixWorld 是 clone 未入 scene 的一次性收集，不在帧路径）
+    const body = vehicleSrc.slice(at, vehicleSrc.indexOf('function glbTurretMatrix', at))
+    // 注释里的「scene.updateMatrixWorld()」是解释性文本；守卫的是**代码调用**
+    const bodyCode = body.replace(/\/\/[^\n]*/g, '')
+    expect(bodyCode).not.toMatch(/updateMatrixWorld/)
   })
 })
 
@@ -67,9 +73,12 @@ describe('playbackScene 场景 GLB 实例化合批接线', () => {
   })
 
   it('树倒走逐实例矩阵（fallMatrix）且与 settled 自校验的 fallQuat 同步维护', () => {
-    const at = src.indexOf('function updateDestructibles(')
+    // #820 Step 2：updateDestructibles owner = playback/mapWorld.ts
+    const worldSrc = readFileSync(resolve(__dirname, 'playback/mapWorld.ts'), 'utf8')
+    const at = worldSrc.indexOf('function updateDestructibles(')
     expect(at).toBeGreaterThan(0)
-    const body = src.slice(at, src.indexOf('const _tmpFallAxis', at))
+    // mapWorld 内 scratch（_tmpFallAxis 等）声明在函数之前，body 以下一个 function 为界
+    const body = worldSrc.slice(at, worldSrc.indexOf('\n  function ', at + 10))
     // 倒伏写入 + 倒带复位，两条路径都要置脏上传
     expect(body).toMatch(/fallMatrix\(s\.base, st\.pivotPos\.x, st\.pivotPos\.y, st\.pivotPos\.z, _tmpFallAxis, f\.angle, _tmpInstM\)/)
     expect(body).toMatch(/s\.mesh\.setMatrixAt\(s\.idx, s\.base\); mark\(s\.mesh\)/)
@@ -80,9 +89,10 @@ describe('playbackScene 场景 GLB 实例化合批接线', () => {
   })
 
   it('实例矩阵上传按帧合并（dirty 集合 → needsUpdate），不许逐树逐帧全量上传', () => {
-    const at = src.indexOf('function updateDestructibles(')
-    const body = src.slice(at, src.indexOf('const _tmpFallAxis', at))
-    expect(body).toMatch(/const mark = \(mesh\) => \{ \(dirty \|\| \(dirty = new Set\(\)\)\)\.add\(mesh\); \};/)
+    const worldSrc = readFileSync(resolve(__dirname, 'playback/mapWorld.ts'), 'utf8')
+    const at = worldSrc.indexOf('function updateDestructibles(')
+    const body = worldSrc.slice(at, worldSrc.indexOf('\n  function ', at + 10))
+    expect(body).toMatch(/const mark = \(mesh: THREE\.InstancedMesh\) => \{ \(dirty \|\| \(dirty = new Set\(\)\)\)\.add\(mesh\); \};/)
     expect(body).toMatch(/if \(dirty\) for \(const mesh of dirty\) mesh\.instanceMatrix\.needsUpdate = true;/)
   })
 })

@@ -28,39 +28,44 @@ describe('occlusionCells（标签遮挡候选格：线段经过的 16m 格）', 
 
 describe('标签遮挡：只对候选格做 raycast（禁止整场景递归检测）', () => {
   const src = readFileSync(resolve(__dirname, 'playbackScene.js'), 'utf8')
+  // #820 Step 5：软遮挡 owner = playback/labelsRuntime.ts（守卫随实现迁移）
+  const labelsSrc = readFileSync(resolve(__dirname, 'playback/labelsRuntime.ts'), 'utf8').replace(/\/\/[^\n]*/g, '')
   // 候选表登记随场景装配块 2026-10-24 出仓 playback/mapAssets.js（Step A3），守卫随实现迁移
   const mapAssetsSrc = readFileSync(resolve(__dirname, 'playback/mapAssets.ts'), 'utf8')
   it('源码护栏：不再对 mapScenery 全量 intersectObject，改用候选列表 intersectObjects', () => {
     expect(src).not.toMatch(/intersectObject\(mapScenery, true\)/)
-    expect(src).toMatch(/raycaster\.intersectObjects\(cands, false\)/)
-    expect(src).toMatch(/OCCL_MAX_CANDIDATES/)
-    // 候选表在场景加载时构建、换场时失效
+    expect(labelsSrc).toMatch(/raycaster\.intersectObjects\(cands as THREE\.Object3D\[], false\)/)
+    expect(labelsSrc).toMatch(/OCCL_MAX_CANDIDATES/)
+    // 候选表在场景加载时构建、换场时失效（#820 Step 2：候选格 owner = mapWorld.ts）
     expect(mapAssetsSrc).toMatch(/occlGrid = occGrid;/)
-    expect(src).toMatch(/occlGrid = null;/)
+    const mapWorldSrc = readFileSync(resolve(__dirname, 'playback/mapWorld.ts'), 'utf8')
+    expect(mapWorldSrc).toMatch(/occlGrid = null;/)
   })
+  // #820 Step 5：弹道 owner = playback/battleRuntime.ts（守卫随实现迁移）
+  const battleSrc = readFileSync(resolve(__dirname, 'playback/battleRuntime.ts'), 'utf8').replace(/\/\/[^\n]*/g, '')
   it('折线点表必须镜像 x（游戏系 → 场景系）——镜像丢失 = 轨迹画到地图对侧', () => {
-    expect(src).toMatch(/pathPointsOf\(s\)\.map\(\(\[x, y, z\]\) => \[-x, y, z\]\)/)
+    expect(battleSrc).toMatch(/pathPointsOf\(s\)\.map\(\(\[x, y, z\]\) => \[-x, y, z\]\)/)
     // 弹着点从镜像后的点表取（pts3[1] = via[0] 或终点），不得再读原始坐标
-    expect(src).toMatch(/fromArray\(pts3\[1\]\)/)
-    expect(src).not.toMatch(/fromArray\(\(s\.via && s\.via\.length\) \? s\.via\[0\] : s\.to\)/)
+    expect(battleSrc).toMatch(/fromArray\(pts3\[1\]\)/)
+    expect(battleSrc).not.toMatch(/fromArray\(\(s\.via && s\.via\.length\) \? s\.via\[0\] : s\.to\)/)
   })
 
   it('updateTracers 完成判定用 T >= tr.t1（禁止再引用已删除的旧变量 f）', () => {
     // 回归：折线改造曾把推进公式换成折线求值，却留下 `if (f >= 1)` —— f 未定义，
     // 每帧 ReferenceError 中断整个 tick（不渲染、炮线永不回收），即"播放中卡死、暂停即止"。
-    expect(src).toMatch(/if \(T >= tr\.t1\) \{/)
-    expect(src).not.toMatch(/f >= 1/)
+    expect(battleSrc).toMatch(/if \(T >= tr\.t1\) \{/)
+    expect(battleSrc).not.toMatch(/f >= 1/)
     // 完成块必须仍然归还曳光条带；命中特效在抵达点时刻（legEnds[0]）生成，只生成一次
-    expect(src).toMatch(/if \(T >= tr\.t1\) \{[\s\S]{0,220}battleFx\.giveRibbon\(tr\.mesh\);/)
-    expect(src).toMatch(/if \(!tr\.hit && T >= tr\.legEnds\[0\]\) \{ tr\.hit = true; spawnImpact\(tr\); \}/)
+    expect(battleSrc).toMatch(/if \(T >= tr\.t1\) \{[\s\S]{0,220}battleFx!?\.giveRibbon\(tr\.mesh\);/)
+    expect(battleSrc).toMatch(/if \(!tr\.hit && T >= tr\.legEnds\[0\]\) \{ tr\.hit = true; spawnImpact\(tr\); \}/)
   })
 
   it('开火 / 命中特效的炮口、来弹与跳弹出射方向都取自镜像后的点表（折线改造曾漏字段 → 整帧抛异常）', () => {
     // 炮口 = pts3[0]、抵达点 = pts3[1]、跳弹出射段 = pts3[2]（镜像后的场景系，不得再读原始坐标）
-    expect(src).toMatch(/const from = new THREE\.Vector3\(\)\.fromArray\(pts3\[0\]\);/)
-    expect(src).toMatch(/const dir = impactPos\.clone\(\)\.sub\(from\);/)
-    expect(src).toMatch(/const out = pts3\.length > 2 \? new THREE\.Vector3\(\)\.fromArray\(pts3\[2\]\)\.sub\(impactPos\) : null;/)
-    expect(src).toMatch(/battleFx\.spawnImpact\(kind, tr\.impactPos, tr\.dir, tr\.out,/)
+    expect(battleSrc).toMatch(/const from = new THREE\.Vector3\(\)\.fromArray\(pts3\[0\]\);/)
+    expect(battleSrc).toMatch(/const dir = impactPos\.clone\(\)\.sub\(from\);/)
+    expect(battleSrc).toMatch(/const out = pts3\.length > 2 \? new THREE\.Vector3\(\)\.fromArray\(pts3\[2\]\)\.sub\(impactPos\) : null;/)
+    expect(battleSrc).toMatch(/battleFx!\.spawnImpact\(kind, tr\.impactPos, tr\.dir, tr\.out,/)
   })
 })
 
@@ -98,38 +103,47 @@ describe('场景源码护栏：评审 P0 修复的接线锁定', () => {
     expect(src).not.toMatch(/occlusionCells\(wx - r/)
   })
   it('时间轴回退必须显式清树终态 settled（否则重播不重写触地旋转）', () => {
-    expect(src).toMatch(/if \(T < destruct\.lastT\) \{[\s\S]{0,80}destruct\.ptr = 0;[\s\S]{0,400}st\.prop === 3\) st\.settled = false;[\s\S]{0,40}\}\s*destruct\.lastT = T;/)
+    // #820 Step 2：updateDestructibles owner = playback/mapWorld.ts
+    const mapWorldSrc = readFileSync(resolve(__dirname, 'playback/mapWorld.ts'), 'utf8')
+    expect(mapWorldSrc).toMatch(/if \(T < destruct\.lastT\) \{[\s\S]{0,80}destruct\.ptr = 0;[\s\S]{0,400}st\.prop === 3\) st\.settled = false;[\s\S]{0,40}\}\s*destruct\.lastT = T;/)
   })
   it('?perf 看门狗随 destroy 清理（心跳定时器 + 调试句柄）', () => {
-    expect(src).toContain('if (perfBeatTimer) { clearInterval(perfBeatTimer); perfBeatTimer = 0; }')
-    expect(src).toContain('if (window.__pbPerf === perfHandle) delete window.__pbPerf;')
+    // #820 Step 4：看门狗/句柄 owner = playback/perfProbe.ts（destroy 清理语义逐字保留）
+    const perfProbeSrc = readFileSync(resolve(__dirname, 'playback/perfProbe.ts'), 'utf8').replace(/\/\/[^\n]*/g, '')
+    expect(perfProbeSrc).toContain('function stopWatchdog() { if (perfBeatTimer) { clearInterval(perfBeatTimer); perfBeatTimer = 0; } }')
+    expect(src).toContain('if (window.__pbPerf === perfProbe.perfHandle) delete window.__pbPerf;')
+    expect(src).toContain('perfProbe.stopWatchdog();')
   })
 })
 
 describe('Sniper 穿深着色接线', () => {
   const source = readFileSync(resolve(__dirname, 'playbackScene.js'), 'utf8')
+  // #820 Step 4：录像者相机/穿深着色 owner = playback/cameraRuntime.ts（守卫随实现迁移）
+  const cameraSrc = readFileSync(resolve(__dirname, 'playback/cameraRuntime.ts'), 'utf8').replace(/\/\/[^\n]*/g, '')
 
   it('叠加 pass 排在主渲染之后，只有录像者开镜且过渡结束才运行', () => {
     const draw = source.indexOf('renderer.render(scene, camera);')
     const armor = source.indexOf('renderArmorHighlight();', draw)
     expect(draw).toBeGreaterThan(-1)
     expect(armor).toBeGreaterThan(draw)
-    expect(source).toContain("if (!ARMOR_HIGHLIGHT || CAM !== 'recorder' || !scopedHiddenEid || cameraBlend) return;")
+    expect(cameraSrc).toContain("if (!deps.armorHighlightPref() || CAM !== 'recorder' || !scopedHiddenEid || cameraBlend) return;")
   })
 
   it('选目标与准星同源（Type39 瞄准点），不取相机正前方', () => {
-    const start = source.indexOf('function renderArmorHighlight')
-    const body = source.slice(start, source.indexOf('回到俯视机位', start))
+    const start = cameraSrc.indexOf('function renderArmorHighlight')
+    const body = cameraSrc.slice(start, cameraSrc.indexOf('回到俯视机位', start))
     expect(body).toContain('reticleAimDirection(camera, recorderAimPoint(recorderSample')
     expect(body).not.toContain('getWorldDirection')
-    expect(source).toContain('recorderAimPoint(sample, _recorderRay)')
+    expect(cameraSrc).toContain('recorderAimPoint(sample, _recorderRay)')
   })
 
   it('悬挂改写履带顶点后只打标记，不在主路径重算或置空 bounds', () => {
-    expect(source).toMatch(/gp\.posAttr\.needsUpdate = true;\s+markPickBoundsStale\(gp\.mesh\.geometry\);/)
-    const start = source.indexOf('function suspensionStep')
-    const body = source.slice(start, source.indexOf('function ', start + 'function suspensionStep'.length))
-    expect(body).not.toMatch(/computeBounding|bounding(Box|Sphere) = null/)
+    // #820 Step 2：suspensionStep owner = playback/vehicleRuntime.ts
+    const vehicleSrc = readFileSync(resolve(__dirname, 'playback/vehicleRuntime.ts'), 'utf8')
+    expect(vehicleSrc).toMatch(/gp\.posAttr\.needsUpdate = true;\s+markPickBoundsStale\(gp\.mesh\.geometry\);/)
+    const start = vehicleSrc.indexOf('function suspensionStep')
+    const body = vehicleSrc.slice(start, vehicleSrc.indexOf('function ', start + 'function suspensionStep'.length))
+    expect(body).not.toMatch(/computeBounding|bounding\(Box|Sphere\) = null/)
   })
 
   it('着色默认关闭，?armorhl=1 可打开', () => {
@@ -137,26 +151,26 @@ describe('Sniper 穿深着色接线', () => {
   })
 
   it('配置解析不走带回退的 resolveMountedConfig', () => {
-    const start = source.indexOf('function renderArmorHighlight')
-    const body = source.slice(start, source.indexOf('回到俯视机位', start))
+    const start = cameraSrc.indexOf('function renderArmorHighlight')
+    const body = cameraSrc.slice(start, cameraSrc.indexOf('回到俯视机位', start))
     expect(body).toContain('resolveExactMountedConfig')
     expect(body).not.toMatch(/resolveMountedConfig\(/)
   })
 
   it('SNIPER→ARCADE 转换释放 RT（不只退出录像者模式）', () => {
-    const start = source.indexOf('function driveRecorderCamera')
-    const body = source.slice(start, source.indexOf('function ', start + 20))
+    const start = cameraSrc.indexOf('function driveRecorderCamera')
+    const body = cameraSrc.slice(start, cameraSrc.indexOf('function ', start + 20))
     expect(body).toMatch(/wasScoped\s*&&\s*!scoped/)
     expect(body).toContain('armorHighlight?.releaseRenderTargets?.()')
   })
 
   it('关闭开关与退出录像者模式仍释放 RT', () => {
-    const leaveStart = source.indexOf('function leaveRecorderView')
-    const leaveBody = source.slice(leaveStart, source.indexOf('function ', leaveStart + 20))
+    const leaveStart = cameraSrc.indexOf('function leaveRecorderView')
+    const leaveBody = cameraSrc.slice(leaveStart, cameraSrc.indexOf('function ', leaveStart + 20))
     expect(leaveBody).toContain('releaseRenderTargets')
     const setStart = source.indexOf('setArmorHighlight:')
     const setBody = source.slice(setStart, source.indexOf('setQuality', setStart))
-    expect(setBody).toContain('releaseRenderTargets')
+    expect(setBody).toContain('releaseArmorHighlightRenderTargets')
   })
 
   it('遮挡剔除优先批次 AABB；可破坏物批次回退球', () => {
@@ -185,22 +199,22 @@ describe('Sniper 穿深着色接线', () => {
 
   it('?perf 逐 pass 计时与装甲预热接线', () => {
     expect(source).toMatch(/perfFrame\([^\n]*armorStats/)
-    expect(source).toMatch(/stats: PERF \? armorStats : null/)
+    expect(cameraSrc).toMatch(/stats: PERF \? armorStats : undefined/)
     const hl = readFileSync(resolve(__dirname, 'playback/armorHighlight.ts'), 'utf8')
     expect(hl).toMatch(/function prewarm\(camera: PerspectiveCamera\)/)
-    expect(source).toMatch(/\.prewarm\(camera\)/)
+    expect(cameraSrc).toMatch(/\.prewarm\(camera\)/)
   })
 
   it('遮挡 pass 用语义化遮挡根，不再全场景 traverseVisible（issue #850 F）', () => {
-    const start = source.indexOf('function occluderRoots')
-    const body = source.slice(start, source.indexOf('function ', start + 20))
+    const start = cameraSrc.indexOf('function occluderRoots')
+    const body = cameraSrc.slice(start, cameraSrc.indexOf('function ', start + 20))
     // 地形/场景 GLB/占位地面 + 每车低模组、GLB、飞炮塔
-    expect(body).toMatch(/terrainMesh, mapScenery, mapPlane, groundMesh/)
+    expect(body).toMatch(/deps\.mapWorld\.terrainMesh\(\), deps\.mapWorld\.mapScenery\(\), deps\.mapWorld\.mapPlane\(\), deps\.mapWorld\.groundMesh\(\)/)
     expect(body).toContain('v.glb')
     expect(body).toContain('detachedTurrets')
     // v.glb 是 v.group 的场景级兄弟，两者都必须在根清单里
     expect(body).toContain('v.group')
-    expect(source).toMatch(/occluderRoots: occluderRoots\(target\.def\.eid\)/)
+    expect(cameraSrc).toMatch(/occluderRoots: occluderRoots\(target\.def\.eid as number\)/)
     const hl = readFileSync(resolve(__dirname, 'playback/armorHighlight.ts'), 'utf8')
     expect(hl).toMatch(/function markOccluders\(camera: PerspectiveCamera, vehicle: ArmorHighlightFrame\['vehicle'\], view: OccluderView, roots: Object3D\[\]\): number/)
     expect(hl).toMatch(/for \(const root of roots\)/)
@@ -208,9 +222,9 @@ describe('Sniper 穿深着色接线', () => {
   })
 
   it('SNIPER 进入时补预取敌方 armor 模板（tankData 晚到缺口）', () => {
-    const start = source.indexOf('function driveRecorderCamera')
-    const body = source.slice(start, source.indexOf('function ', start + 20))
-    expect(body).toMatch(/scoped && !wasScoped && ARMOR_HIGHLIGHT\)\s+ensureArmorHighlight\(\)\.prefetch\(highlightEnemies\(\)\)/)
+    const start = cameraSrc.indexOf('function driveRecorderCamera')
+    const body = cameraSrc.slice(start, cameraSrc.indexOf('function ', start + 20))
+    expect(body).toMatch(/scoped && !wasScoped && deps\.armorHighlightPref\(\)\)\s+prewarmArmorHighlight\(camera\)/)
   })
 
   it('零遮挡快速路径：走廊内无遮挡物时跳过世界深度重绘', () => {
