@@ -125,4 +125,26 @@ describe('PlaybackTransport', () => {
     expect(hosted.size).toBe(1)
     wrapper.unmount()
   })
+
+  it('宿主用 v-show 收起控制条 / 能力切走（navEligible=false）时交还菜单入口，展开后重新托管', async () => {
+    const hosted = new Set()
+    const shellChrome = { immersive: ref(true), request() {}, navHosted: ref(false), hostNav: vi.fn((owner, on) => { if (on) hosted.add(owner); else hosted.delete(owner) }) }
+    const eligible = ref(true)
+    const Host = defineComponent({
+      setup: () => () => h('div', { style: eligible.value ? '' : 'display: none' }, [h(PlaybackTransport, { duration: 60, navEligible: eligible.value })]),
+    })
+    const wrapper = mount(Host, { global: { mocks: { $t: (k) => k }, provide: { [SHELL_CHROME_KEY]: shellChrome, [OPEN_NAV_DRAWER_KEY]: () => {} } } })
+    await nextTick()
+    expect(hosted.size).toBe(1)
+    eligible.value = false // 收起
+    await nextTick()
+    expect(hosted.size).toBe(0)
+    eligible.value = true // 重新展开
+    await nextTick()
+    expect(hosted.size).toBe(1)
+    shellChrome.immersive.value = false // 退出沉浸态同样交还
+    await nextTick()
+    expect(hosted.size).toBe(0)
+    wrapper.unmount()
+  })
 })

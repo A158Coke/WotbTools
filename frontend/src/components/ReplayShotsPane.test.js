@@ -706,6 +706,27 @@ describe('ReplayShotsPane → 装甲查看器交接', () => {
     wrapper.unmount()
   })
 
+  it('compact（手机）点击后、导航前断网：第二次能力检查拒绝导航，退回本地射击详情', async () => {
+    parseAgentShotsFromBytes.mockResolvedValue(hitShot)
+    let finishQuery
+    shotViewerQuery.mockImplementationOnce(() => new Promise((resolve) => { finishQuery = resolve }))
+    const navigate = vi.fn()
+    const wrapper = await mountPane({ navigate })
+    observers.at(-1).emit(420)
+    await nextTick()
+    await wrapper.get('[data-testid="shot-row-2"]').trigger('click')
+    await flushPromises()
+    // 等待坦克数据期间不弹检视面板
+    expect(wrapper.find('[data-testid="shot-inspector"]').exists()).toBe(false)
+    connectivityState.state.value = 'offline'
+    finishQuery({ view: 'agent-armor', shot: '2' })
+    await flushPromises()
+    expect(navigate).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="shot-inspector"]').exists()).toBe(true)
+    connectivityState.state.value = 'online'
+    wrapper.unmount()
+  })
+
   it('命中弹：先交出射击数据，再把场景参数整个交给 router', async () => {
     parseAgentShotsFromBytes.mockResolvedValue(hitShot)
     const navigate = vi.fn()

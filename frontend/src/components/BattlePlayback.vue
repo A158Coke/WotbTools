@@ -323,7 +323,7 @@ function onWideLayoutChange(event) {
  * 用新 mode 的真实几何 force 一次 authoritative fit（geometry-signature 也会捕获 bottom inset 变化）。
  * 不用 setTimeout magic delay。
  */
-const { isFullscreen, fullscreenSupported, toggleFullscreen } = usePlaybackFullscreen({
+const { isFullscreen, fullscreenSupported, toggleFullscreen, exitOwnedFullscreen } = usePlaybackFullscreen({
   target: () => pbRoot.value,
   isPhone: isMobileDevice,
   isActive: () => playbackLifecycleActive,
@@ -556,9 +556,11 @@ function dragEnd() {
 
 // KeepAlive 停用（切到别的页面）时同样视为不可见
 const lifecycleVisible = ref(true)
-onDeactivated(() => { lifecycleVisible.value = false; pause() })
+// 离开（能力切走 / 页面停用）时退出本回放拥有的全屏：组件被 v-show / KeepAlive 缓存不会卸载，
+// 不主动退出的话 fullscreen root 仍是旧回放元素，新页面被挡在全屏层后面
+onDeactivated(() => { lifecycleVisible.value = false; pause(); exitOwnedFullscreen() })
 onActivated(() => { lifecycleVisible.value = true })
-watch(() => props.active, (value) => { if (!value) pause() })
+watch(() => props.active, (value) => { if (!value) { pause(); exitOwnedFullscreen() } })
 
 /**
  * 播放传输行为与 3D 共用：空格 / ←→ 的键位、输入框不劫持、拖动暂停后自动继续。
@@ -1171,6 +1173,7 @@ const mapStyle = computed(() => ({
           :floating-fullscreen="isMobileDevice"
           :display-open="displayOpen"
           :annotation-enabled="phoneLandscape && !annotationOpen"
+          :nav-eligible="active && lifecycleVisible && !compactAnnotation"
           @toggle-annotation="toggleAnnotation"
           :format-clock="formatClock"
           @toggle-play="transport.togglePlay()"

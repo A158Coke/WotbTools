@@ -491,6 +491,27 @@ describe('shared tournament draft owner', () => {
     void pending
     f.scope.stop()
   })
+  it('失败卡 → 重试 → 取消：保留这张卡并恢复原错误，仍可重试', async () => {
+    const f = mountOwner()
+    f.owner.eventId.value = 7
+    await settle()
+    const failure = { errorCode: 'TOURNAMENT_OCR_FAILED', status: 502 }
+    f.transport.recognizeTournamentImage.mockRejectedValueOnce(failure)
+    await f.owner.recognize([new File(['a'], 'a.png')])
+    expect(f.owner.reviews.value).toHaveLength(1)
+    const failed = f.owner.reviews.value[0]
+    expect(failed.error).toEqual(failure)
+    f.transport.recognizeTournamentImage.mockImplementationOnce(() => new Promise(() => {}))
+    const pending = f.owner.recognize([failed.file], failed)
+    await settle()
+    expect(f.owner.reviews.value[0].error).toBeNull()
+    f.owner.cancelRecognition()
+    expect(f.owner.reviews.value).toHaveLength(1)
+    expect(f.owner.reviews.value[0].error).toEqual(failure)
+    expect(f.owner.reviews.value[0].result).toBeNull()
+    void pending
+    f.scope.stop()
+  })
   it('rejects a late recognition result after day selection changes', async () => {
     const f = mountOwner()
     f.owner.eventId.value = 7

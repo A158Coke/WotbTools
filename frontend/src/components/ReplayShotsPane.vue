@@ -535,14 +535,22 @@ function selectShot(index, event) {
     && availability(Feature.PLAYBACK_3D).available) {
     selectedIndex.value = index
     directOpening.value = true
-    void openInViewer(shot).finally(() => {
+    const trigger = event?.currentTarget ?? null
+    // 只有真的导航走了才清选择；等待期间断网 / 第二次能力检查拒绝 / 出错时退回本地检视面板
+    void openInViewer(shot).catch(() => false).then((navigated) => {
       directOpening.value = false
-      if (selectedIndex.value === index) selectedIndex.value = null
+      if (selectedIndex.value !== index) return
+      if (navigated) selectedIndex.value = null
+      else showDetail(trigger)
     })
     return
   }
   selectedIndex.value = index
-  lastTrigger = event?.currentTarget ?? null
+  showDetail(event?.currentTarget ?? null)
+}
+
+function showDetail(trigger) {
+  lastTrigger = trigger
   if (isOverlay.value) nextTick(() => detailPane.value?.focus?.())
 }
 
@@ -634,13 +642,14 @@ function onDetailPointerUp(event) {
 /**
  * 在 3D 装甲查看器里复现这一发：装甲查看器属于坦克百科侧（独立页面），
  * 工作台只把发射数据交出去（本地交接通道，无服务端），导航仍走 router。
+ * 返回是否真的发起了导航（compact 直达据此决定清选择还是退回本地检视面板）。
  */
 async function openInViewer(s) {
-  if (!requireFeature(Feature.PLAYBACK_3D)) return
-  if (!rowHas3d(s)) return
+  if (!requireFeature(Feature.PLAYBACK_3D)) return false
+  if (!rowHas3d(s)) return false
   const shooterTank = s.shooter_tank_id || 0
   const tank = s.target_tank_id || shooterTank || 0
-  if (!tank) return
+  if (!tank) return false
   // **点击时刻的射击快照**贯穿交接与导航（评审 P2）：storeShotsForViewer 在调用时
   // 同步序列化（点击时版本），而 shotViewerQuery 的 await 期间后台配置注解可能就地
   // 修改 live 对象——继续读 live 会得到「交接 JSON 按点击时配置装配模型/炮口、URL
@@ -652,9 +661,11 @@ async function openInViewer(s) {
   const sequence = parseSeq
   storeShotsForViewer(JSON.parse(JSON.stringify(filteredShots.value.filter(rowHas3d))))
   const query = await shotViewerQuery(s)
-  if (sequence !== parseSeq || selectedIndex.value !== s.index || !props.active || !query || !requireFeature(Feature.PLAYBACK_3D)) return
+  if (sequence !== parseSeq || selectedIndex.value !== s.index || !props.active || !query || !requireFeature(Feature.PLAYBACK_3D)) return false
   // Routing remains owned by the workspace. Both entry and viewer navigation share one config resolver.
-  props.navigate?.({ query })
+  if (!props.navigate) return false
+  props.navigate({ query })
+  return true
 }
 
 onMounted(() => {

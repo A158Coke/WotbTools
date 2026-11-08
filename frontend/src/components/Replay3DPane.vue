@@ -779,7 +779,7 @@ watch([controlsEl, hudEl], (elements) => {
  * （本组件不做任何 `reset()` / `loadData()`，全屏只改变容器尺寸，渲染器由既有
  * ResizeObserver 路径适配）。手机形态在全屏成功后锁横屏，退出/卸载解锁。
  */
-const { isFullscreen, fullscreenSupported, toggleFullscreen, unlockOrientation } = usePlaybackFullscreen({
+const { isFullscreen, fullscreenSupported, toggleFullscreen, unlockOrientation, exitOwnedFullscreen } = usePlaybackFullscreen({
   target: () => rootEl.value,
   isPhone,
   // capability 切走（active=false）时不该再锁着方向
@@ -834,7 +834,8 @@ watch(
 )
 
 watch(() => props.active, (active) => {
-  if (!active) { closeAnnotation(); unlockOrientation() }
+  // 能力切走 / 页面停用（active 已含 pageActive）：退出本回放拥有的全屏，否则新页面被挡在旧 fullscreen root 后面
+  if (!active) { closeAnnotation(); unlockOrientation(); exitOwnedFullscreen() }
 })
 
 // 面板打开期间尺寸变化（旋转 / 全屏 / 工作台重排）重算可用高度；闭合时不测量
@@ -1028,6 +1029,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
             :duration="store.duration"
             :step-seconds="PLAYBACK_STEP_SECONDS"
             :compact="isPhone"
+            :nav-eligible="active && !controlsCollapsed"
             @toggle-play="transport.togglePlay()"
             @step="sceneApi.seekBy($event)"
             @set-speed="sceneApi.setSpeed($event)"

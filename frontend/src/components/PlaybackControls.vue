@@ -20,6 +20,8 @@ const props = defineProps({
   /** 全屏入口由宿主右上角浮动按钮呈现：不在传输条里重复渲染（见 PlaybackTransport）。 */
   floatingFullscreen: Boolean,
   formatClock: { type: Function, required: true },
+  /** 透传给 PlaybackTransport：控制条当前是否可见（决定是否托管菜单入口）。 */
+  navEligible: { type: Boolean, default: true },
 })
 
 const emit = defineEmits([
@@ -45,6 +47,7 @@ const emit = defineEmits([
     :duration="props.duration"
     :compact="isPhone"
     :format-clock="props.formatClock"
+    :nav-eligible="props.navEligible"
     @toggle-play="emit('toggle-play')"
     @step="emit('step', $event)"
     @set-speed="emit('set-speed', $event)"

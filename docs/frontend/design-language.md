@@ -514,7 +514,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 - **适用设备只有两类**（`platform/screenForm.ts`，判定只看设备、不看视口）：Android 手机上的 App（Native Bridge 可选能力 `screen-form` 报告 phone）与 iPhone 上的 Safari（UA 含 iPhone 且不是 iPad）。桌面（含缩窄窗口）、所有平板、Android 手机浏览器都不受影响，竖屏照常用小屏布局。
 - **适用页面**：2D 回放、3D 回放、装甲查看器、射击复现、地图预览 3D。科技树、直播与推荐视频、比赛截图、AI 复盘、名人堂、管理页不强制。
 - **行为**（`useForcedLandscape`）：Android 手机 App 进入场景页时原生锁横屏，离开 / KeepAlive 停用即释放；iPhone Safari 竖屏时整块显示 `RotatePrompt`（场景保持挂载，横过来即继续），提示里给出退出动作：2D / 3D 回到「看赛后数据」，装甲查看器回到坦克百科 / 射击分析，地图 3D 切到 2D。HTML 全屏在 Android App 里也只在手机上锁横屏。
-- **横屏沉浸**：没有顶栏，菜单入口仍在：2D / 3D 回放由传输条第一项承载（`PlaybackTransport` 经 `shellChrome.hostNav` 声明，7 人名册车道保持不滚动）；其余场景（装甲查看器、射击复现）由外壳在左上放悬浮菜单按钮（`AppShell` 的 `.immersive-nav`），场景用 `--immersive-nav-reserve`（沉浸态 44 + 8，其余为 0）让出：返回键与信息卡右移。两者打开同一个抽屉。
+- **横屏沉浸**：没有顶栏，菜单入口仍在：2D / 3D 回放由传输条第一项承载（`PlaybackTransport` 经 `shellChrome.hostNav` 声明，7 人名册车道保持不滚动；控制条被 `v-show` 收起、能力切走或 KeepAlive 停用时经 `navEligible` / 生命周期交还，外壳重新画悬浮菜单）；其余场景（装甲查看器、射击复现）由外壳在左上放悬浮菜单按钮（`AppShell` 的 `.immersive-nav`），场景用 `--immersive-nav-reserve`（沉浸态 44 + 8，其余为 0）让出：返回键与信息卡右移。两者打开同一个抽屉。
 - **验收**：`pnpm run test:browser-interaction forced-landscape`（iPhone 竖屏出提示并能回到赛后数据；iPad 竖屏与缩窄的桌面浏览器不出提示；iPhone 横屏 844×340 沉浸且菜单可打开抽屉）。
 - **场景 HUD（装甲查看器、射击复现）**：手机横屏时常驻控件只在四角——左上返回 + 车名 / 参数，右下拇指区是射击快捷项（弹种、距离、厚度 / 击穿），左下是姿态与角度；完整设置是右侧参数面板（约 19rem + 安全区），打开时场景仍在左侧可见。
 - **点选结果**（厚度 `#click-info`、击穿 `#traj-info`，所有尺寸）：固定停靠在场景顶部正中，不跟随命中点、不压车体；小屏收起态只显示最终判定一行（胶囊），点开看逐层明细。

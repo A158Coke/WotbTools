@@ -32,6 +32,8 @@ const props = defineProps({
   /** 全屏入口由宿主以右上角浮动按钮呈现（移动端统一契约）：本条不再渲染第二个重复按钮。 */
   floatingFullscreen: Boolean,
   formatClock: { type: Function, default: formatPlaybackClock },
+  /** 本条此刻是否真的看得见：宿主用 v-show 收起控制条、能力切走时传 false，菜单入口交还外壳。 */
+  navEligible: { type: Boolean, default: true },
 })
 
 // 横屏沉浸态（无顶栏）：菜单入口作为控制条的第一项，外壳不再叠悬浮按钮（design-language §9「强制横屏」）
@@ -43,7 +45,8 @@ const navOwner = Symbol('playback-transport-nav')
 const alive = ref(true)
 onActivated(() => { alive.value = true })
 onDeactivated(() => { alive.value = false })
-const hostsNav = computed(() => alive.value && !!openNav && !!shellChrome?.immersive.value)
+// v-show 收起（3D 控制条折叠、2D 紧凑标注）或能力切走时组件同样不卸载、不停用：由宿主经 navEligible 告知
+const hostsNav = computed(() => alive.value && props.navEligible && !!openNav && !!shellChrome?.immersive.value)
 watch(hostsNav, (on) => shellChrome?.hostNav(navOwner, on), { immediate: true })
 onBeforeUnmount(() => shellChrome?.hostNav(navOwner, false))
 const emit = defineEmits(['toggle-play', 'step', 'set-speed', 'seek', 'scrub-start', 'scrub-end', 'toggle-fullscreen', 'toggle-display', 'toggle-annotation'])

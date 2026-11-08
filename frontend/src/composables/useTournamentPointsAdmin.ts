@@ -358,6 +358,11 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
     } catch (value) { if (owns(gen, epoch)) fail(value) }
     finally { if (owns(gen, epoch)) busy.value = false }
   }
+  /**
+   * 本次识别正在处理的那张卡：取消时据此区分「本次新建的占位卡」（移除）与「复用的已有卡」（恢复原错误，保留可重试）。
+   * 不按 result / error 字段推断：重试开始时旧错误已被清空，推断会把可重试的失败卡当成孤儿删掉。
+   */
+  let inFlightReview: { review: TournamentImageReview, created: boolean, previousError: unknown } | null = null
   async function recognize(files: File[], retry?: TournamentImageReview) {
     if (!canUpload.value) return
     const gen = generation, epoch = auth.authEpoch(), versions = draftRequest()
@@ -369,11 +374,13 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
       if (!owns(gen, epoch)) break
       let review = retry || reviews.value.find(review => review.file === file)
       if (review?.result && !retry) { progress.value++; continue }
+      const created = !review
       if (!review) {
         review = { file, url: URL.createObjectURL(file), evidenceId: '', result: null, groupNumber: null, teams: [], complete: false, duplicateAction: 'ERROR', confirmedClans: [], error: null }
         reviews.value.push(review)
         review = reviews.value[reviews.value.length - 1]
       }
+      inFlightReview = { review, created, previousError: review.error }
       review.error = null
       try {
         const recognized = await transport.recognizeTournamentImage(eventId.value!, round.value, day.value, versions, file, controller.signal)
@@ -385,6 +392,8 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
         review.complete = false
       } catch (value) {
         if (owns(gen, epoch)) { review.error = value; fail(value) }
+      } finally {
+        if (owns(gen, epoch) && inFlightReview?.review === review) inFlightReview = null
       }
       progress.value++
     }
@@ -395,12 +404,16 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
     controller.abort()
     controller = new AbortController()
     recognizing.value = false
-    // 识别开始前就放进列表的在途占位卡（无结果、无错误）随取消一起移除，不留孤儿审核卡；
-    // 已有结果或已报错（可重试）的卡保留
-    const orphans = reviews.value.filter(review => !review.result && !review.error)
-    if (orphans.length) {
-      for (const review of orphans) URL.revokeObjectURL(review.url)
-      reviews.value = reviews.value.filter(review => !orphans.includes(review))
+    // 只处理被取消的那张在途卡：本次新建的占位卡移除（不留孤儿审核卡）；
+    // 复用的已有卡（重试）恢复原来的错误，仍可重试。其它卡（已有结果 / 已报错 / 排队未开始）不动。
+    const pending = inFlightReview
+    inFlightReview = null
+    if (!pending) return
+    if (pending.created) {
+      URL.revokeObjectURL(pending.review.url)
+      reviews.value = reviews.value.filter(review => review !== pending.review)
+    } else if (!pending.review.error) {
+      pending.review.error = pending.previousError
     }
   }
   async function preview() {

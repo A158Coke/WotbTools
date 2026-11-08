@@ -2412,6 +2412,13 @@ async function runMobileFullscreenScenario(env, scenario) {
   check(failures, !!drawer && drawer.insideViewport,
     `Display must stay inside the viewport in mobile fullscreen: ${JSON.stringify(drawer)}`)
 
+  // 全屏中经导航抽屉离开：回放被 v-show 缓存、不卸载，只收到 active=false。
+  // 必须由真实 Fullscreen API 退出，否则新页面被挡在旧 fullscreen root 后面。
+  await page.evaluate(`window.__pbFixture.setActive(false)`)
+  const exited = await page.waitFor(() => !document.fullscreenElement, { timeout: 5000, label: 'fullscreen exits on deactivate' })
+    .then(() => true, () => false)
+  check(failures, exited, 'deactivating the playback (active=false) must exit its own fullscreen')
+
   await env.chrome.client.send('Target.closeTarget', { targetId })
   results.push({ name: scenario.name, failures, viewport: `fullscreen ${scenario.width}x${scenario.height}` })
 }
