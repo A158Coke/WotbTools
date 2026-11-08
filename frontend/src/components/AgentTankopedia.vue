@@ -36,6 +36,7 @@ import AppButton from './AppButton.vue'
 import TankCatalogMenu from './TankCatalogMenu.vue'
 import TankConfigPanel from './TankConfigPanel.vue'
 import TankResearchPanel from './TankResearchPanel.vue'
+import TankAugmentTree from './TankAugmentTree.vue'
 import TankParamPanel from './TankParamPanel.vue'
 import AppDialog from './AppDialog.vue'
 import { Motion } from 'motion-v'
@@ -254,6 +255,46 @@ const setup = computed(() => resolveSetup({
 /** 研发弹窗开关。弹窗与配置栏模块矩阵共用同一个 `setup`（URL 状态），改动双向同步；
  *  换车（含弹窗里点下一级坦克）时关闭，避免把上一辆车的图留在窗口里。 */
 const researchOpen = ref(false)
+/** XI：modules 带客户端 upgradeProgression（研发界面切升级树形态）。 */
+const isXiResearch = computed(() => !!modules.value?.upgradeProgression)
+
+/**
+ * 研发树 ↔ 配置栏/参数面板 三方共用同一 URL 状态：
+ * - stock → 空表；top → 全部普通/机制节点 + 各组已选备选；custom → 归一化后的已研发表。
+ * 研发树事件写回 custom + abilities，投影（projectTankUpgrades）随之重算。
+ * 树必须消费 `upgradeSelection` 的归一化结果（而不是原始 URL）：手工链接
+ * `abilities=22,23,24` 投影只取每组一项，若树直接读 URL 会把三项都标成已研发。
+ */
+const augmentInstalled = computed(() => {
+  if (!isXiResearch.value) return []
+  const sel = upgradeSelection.value
+  if (!sel.available) return []
+  if (sel.mode === 'custom') return sel.abilities
+  if (sel.mode !== 'top') return []
+  return [
+    ...sel.nodes.filter(n => n.type !== 'NODETYPE_ALTERNATIVE_MECHANIC').map(n => n.id),
+    ...sel.abilities,
+  ]
+})
+const augmentChosen = computed(() => {
+  const sel = upgradeSelection.value
+  if (!sel.available) return {}
+  return { ...sel.choices }
+})
+/** 升级元数据不可用（版本/脚本/投影字段缺失）时禁止写入研发状态：树保持只读展示。 */
+const augmentWritable = computed(() => upgradeSelection.value.supported !== false)
+function onAugmentResearch(ids) {
+  if (!augmentWritable.value) return
+  writeState({ upgrade: ids.length ? 'custom' : 'stock', abilities: ids })
+}
+function onAugmentResearchAll() {
+  if (!augmentWritable.value) return
+  writeState({ upgrade: 'top', abilities: [] })
+}
+function onAugmentResearchNone() {
+  if (!augmentWritable.value) return
+  writeState({ upgrade: 'stock', abilities: [] })
+}
 watch(detailId, () => { researchOpen.value = false })
 // 离开坦克百科（打开 3D 等）时不能把模态留在别的页面上
 watch(() => route.query.view, view => { if (view !== VIEW) researchOpen.value = false }, { flush: 'sync' })
@@ -329,8 +370,9 @@ function openVehicleFromGraph(tankId) {
 }
 
 const computeInput = computed(() => (setup.value.canConfigure && detail.value && modules.value && catalog.value
+  // 升级数据不可用时 top 与 custom 都 fail-closed：不允许拿 stock 数值冒充已研发投影。
   && !(upgradeSelection.value.available
-    && upgradeSelection.value.mode === 'top'
+    && (upgradeSelection.value.mode === 'top' || upgradeSelection.value.mode === 'custom')
     && !upgradeSelection.value.supported)
   ? buildComputeInput({
     detail: detail.value, modules: modules.value, selection: setup.value, catalog: catalog.value,
@@ -448,7 +490,8 @@ const pitchBonus = computed(() => {
 /** 初始/顶级快捷：只切换模块（config/发动机/履带），保留装备与物品选择。 */
 function applyModulePreset(kind) {
   writeSetup({
-    ...(upgradeSelection.value.available ? { upgrade: kind === 'stock' ? 'stock' : 'top' } : {}),
+    ...(upgradeSelection.value.available
+      ? { upgrade: kind === 'stock' ? 'stock' : 'top', abilities: [] } : {}),
     config: kind === 'stock' ? 0 : Math.max(0, cfgs.value.length - 1),
     engine: kind === 'stock' ? 0 : Math.max(0, (modules.value?.engines?.length || 1) - 1),
     track: kind === 'stock' ? 0 : Math.max(0, (modules.value?.chassis?.length || 1) - 1),
@@ -550,8 +593,10 @@ function open3d() {  // 审计 3D-09：在当前标签页打开装甲查看器�
   const handoff = setup.value.canConfigure
     ? {
         ...(upgradeSelection.value.available ? {
-          // 显式传递两种模式：装甲页缺省已是 top，stock 必须写成 upgrade=stock 才能保留。
-          upgrade: setup.value.upgrade === 'stock' ? 'stock' : 'top',
+          // 显式传递模式（装甲页按同一 resolveSetup 口径解析 custom+abilities）：
+          // stock 必须写成 upgrade=stock 才能保留；custom 必须连 abilities 一起带，
+          // 否则部分研发语义丢失、装甲/火炮数值会按整套 top 静默展示。
+          upgrade: setup.value.upgrade ?? 'top',
           ...(setup.value.abilities?.length ? { abilities: setup.value.abilities.join(',') } : {}),
         } : {}),
         dev: encodeDevices(setup.value.devices),
@@ -708,13 +753,22 @@ onMounted(() => {
         <!-- 研发弹窗：客户端 ModulesTree 的形态；改动与背后的配置栏同源（URL） -->
         <AppDialog
           :open="researchOpen"
-          :title="t('research.modules_title')"
+          :title="isXiResearch ? t('agentTanks.configurator.augment_title') : t('research.modules_title')"
           size="xl"
           data-testid="tank-research-dialog"
           @close="researchOpen = false"
         >
+          <TankAugmentTree
+            v-if="modules && setup.canConfigure && isXiResearch"
+            :modules="modules"
+            :installed="augmentInstalled"
+            :chosen="augmentChosen"
+            @research="onAugmentResearch"
+            @research-all="onAugmentResearchAll"
+            @research-none="onAugmentResearchNone"
+          />
           <TankResearchPanel
-            v-if="modules && setup.canConfigure"
+            v-else-if="modules && setup.canConfigure"
             :detail="detail"
             :modules="modules"
             :selection="setup"

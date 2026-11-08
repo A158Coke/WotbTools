@@ -231,8 +231,12 @@ function applySide(side, patch) {
   const abilitiesKey = shooter ? 'sabilities' : 'abilities'
   const previousUpgrade = query[upgradeKey]
   const previousAbilities = query[abilitiesKey]
-  // PATCH 里带 upgrade 时写显式模式；缺省（无 key）= XI 顶级由场景侧决定。
-  if ('upgrade' in patch) put(upgradeKey, patch.upgrade === 'stock' ? 'stock' : 'top')
+  // PATCH 里带 upgrade 时写显式模式（stock/top/custom 原样写回——custom 由
+  // ArmorSideConfig 携带 abilities 一起发来，折叠成 top 会静默展示整套顶级数值）；
+  // 缺省（无 key）= XI 顶级由场景侧决定。
+  if ('upgrade' in patch) {
+    put(upgradeKey, patch.upgrade === 'stock' || patch.upgrade === 'custom' ? patch.upgrade : 'top')
+  }
   if ('abilities' in patch) put(abilitiesKey, patch.abilities)
   const upgradesChanged = previousUpgrade !== query[upgradeKey] || previousAbilities !== query[abilitiesKey]
   if (upgradesChanged) {

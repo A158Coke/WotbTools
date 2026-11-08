@@ -1724,6 +1724,7 @@
       "upgrade_trigger_hit": "On hit",
       "upgrade_trigger_damage": "On damage",
       "upgrade_inactive": "Stock · inactive",
+      "upgrade_custom": "Partially researched · active",
       "upgrade_effect_delta_note": "Current values combine same-version ability data and upgrades. Missing base values show — and known changes only. Battle effects require activation and do not enter normal stats.",
       "upgrade_unsupported": "Upgrade data is incomplete. Fully upgraded stats are unavailable.",
       "upgrade_unavailable": "This asset pack has no upgrade data for this vehicle. Initial stats are shown.",
@@ -1746,7 +1747,33 @@
         "RAMMING_CONFIGURATION_RAMMING_DAMAGE_REDUCTION": "Received ramming damage factor",
         "COMBAT_FRENZY_ALLOW_SWITCH_AFTER_KILL": "Keep stacks after destroying a target",
         "COMBAT_FRENZY_RELOAD_SPEED_BONUS_PER_STACK": "Reload speed bonus per stack",
-        "COMBAT_FRENZY_MAX_STACKS": "Maximum stacks"
+        "COMBAT_FRENZY_MAX_STACKS": "Maximum stacks",
+        "ATTRIBUTE_NAME_MAX_HEALTH": "Hit Points",
+        "ATTRIBUTE_NAME_GUN_RELOAD_TIME": "Reload Time",
+        "ATTRIBUTE_NAME_FIRE_START_CHANCE": "Chance of Fire When Engine Is Hit",
+        "ATTRIBUTE_NAME_ENGINE_POWER": "Engine Power",
+        "ATTRIBUTE_NAME_FORWARD_MAX_SPEED": "Forward Speed Limit",
+        "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_1": "Shell Damage (Slot 1)",
+        "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_2": "Shell Damage (Slot 2)",
+        "ATTRIBUTE_NAME_SHELL_DAMAGE_SLOT_3": "Shell Damage (Slot 3)",
+        "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_1": "Shell Speed (Slot 1)",
+        "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_2": "Shell Speed (Slot 2)",
+        "ATTRIBUTE_NAME_SHELL_SPEED_SLOT_3": "Shell Speed (Slot 3)",
+        "ATTRIBUTE_NAME_DISPERSION_ANGLE_FACTOR_BONUS": "Gun Dispersion Factor",
+        "ATTRIBUTE_NAME_DISPERSION_TURRET_ROTATION_FACTOR": "Turret Rotation Dispersion Factor",
+        "ATTRIBUTE_NAME_DISPERSION_VEHICLE_MOVEMENT_FACTOR": "Vehicle Movement Dispersion Factor",
+        "ATTRIBUTE_NAME_DISPERSION_VEHICLE_ROTATION_FACTOR": "Vehicle Rotation Dispersion Factor",
+        "ATTRIBUTE_NAME_HULL_ROTATION_SPEED_FACTOR_BONUS": "Hull Rotation Speed",
+        "ATTRIBUTE_NAME_PITCH_LIMIT_UP": "Gun Elevation",
+        "ATTRIBUTE_NAME_PITCH_LIMIT_DOWN": "Gun Depression",
+        "ATTRIBUTE_NAME_ARMOR_HOMOGENIZATION_FACTOR_BONUS": "Armor Homogenization Factor",
+        "ATTRIBUTE_NAME_MODULES_AMMOBAY_MAX_HEALTH_FACTOR": "Ammo Bay Durability",
+        "ATTRIBUTE_NAME_MODULES_ENGINE_MAX_HEALTH": "Engine Durability",
+        "ATTRIBUTE_NAME_MODULES_FUEL_TANK_HEALTH_FACTOR": "Fuel Tank Durability",
+        "ATTRIBUTE_NAME_MODULES_GUN_MAX_HEALTH_FACTOR": "Gun Durability",
+        "ATTRIBUTE_NAME_MODULES_SURVEYING_DEVICE_MAX_HEALTH_FACTOR": "Surveying Device Durability",
+        "ATTRIBUTE_NAME_MODULES_TRACK_MAX_HEALTH_FACTOR": "Track Durability",
+        "ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR": "Turret Rotator Durability"
       },
       "title": "Loadout",
       "reset": "Reset",
@@ -1803,7 +1830,42 @@
       "gun_type_autoloader": "Autoloader",
       "gun_type_autoreloader": "Auto-reloader",
       "gun_meta": "{caliber} mm · {type}",
-      "consumable_timing": "{name} · {duration}s duration · {cooldown}s cooldown"
+      "consumable_timing": "{name} · {duration}s duration · {cooldown}s cooldown",
+      "augment_title": "Augments · Tier XI Research",
+      "augment_hint": "Click an unresearched node to research it (with all prerequisites); click a researched node to roll back its subtree. Values are per-node deltas.",
+      "augment_can_research": "Can be researched",
+      "augment_installed": "Researched",
+      "augment_mechanic_active": "Mechanic in effect",
+      "augment_choice_saved": "Augment chosen (research the group to activate)",
+      "augment_research_with": "Click to research · {count} nodes with prerequisites",
+      "augment_choice": "Chosen",
+      "augment_or": "or",
+      "augment_options_hint": "Pick one of three: mutually exclusive after the group is researched",
+      "augment_all_researched": "All researched",
+      "augment_none": "None",
+      "augment_node_title": "Augment",
+      "augment_mechanics": {
+        "rechargeableNitro": {
+          "name": "Liquid Fuel Boosters",
+          "description": "When activated, temporarily raises the forward speed limit and hull rotation speed; afterwards the system cools down and reheats before it can trigger again."
+        },
+        "combatFrenzy": {
+          "name": "Combat Frenzy",
+          "description": "Each enemy vehicle destroyed increases reload speed, stacking up to a limit; destroyed targets keep the accumulated stacks."
+        },
+        "rammingConfiguration": {
+          "name": "Ramming Configuration",
+          "description": "Reinforces the vehicle for ramming: collision damage and track damage dealt are increased, while collision damage taken is reduced."
+        },
+        "burstMode": {
+          "name": "Burst Mode",
+          "description": "After the required number of damaging penetrations, the gun switches to a rapid-fire burst."
+        },
+        "steadyAimSystem": {
+          "name": "Steady Aim System",
+          "description": "Temporarily tightens shell dispersion and speeds up aiming when activated."
+        }
+      }
     },
     "params": {
       "title": "Characteristics",

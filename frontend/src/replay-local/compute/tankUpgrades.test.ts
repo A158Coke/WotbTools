@@ -5,6 +5,8 @@ import MECHANICS from './__fixtures__/upgrades/mechanics.json'
 import ORDINARY from './__fixtures__/modules/ussr.json'
 import { computeCharacteristics } from './characteristics'
 import { baseSelection, buildComputeInput } from './tankSetup'
+import { parseTankopediaQuery } from '../../utils/tankopediaQuery.js'
+import { parseAugmentProgression, researchGroupChoice } from './tankAugmentTree'
 import { projectTankUpgrades, resolveUpgradeSelection, upgradeMechanicEffects, type UpgradeDefinition, type UpgradeNode } from './tankUpgrades'
 
 const bz = TANKS.find(t => t.modules.tankId === 15153)!
@@ -12,6 +14,133 @@ const object432 = TANKS.find(t => t.modules.tankId === 27905)!
 const kr = TANKS.find(t => t.modules.tankId === 28161)!
 const black = TANKS.find(t => t.modules.tankId === 30241)!
 const hacker = TANKS.find(t => t.modules.tankId === 30497)!
+
+describe('XI 研发树 custom 模式（部分研发 ↔ 面板/配置栏联动）', () => {
+  const bz = TANKS.find(t => t.modules.tankId === 15153)!
+  const progression = bz.modules.upgradeProgression
+  const techToId = new Map(progression.nodes.map(n => [n.techName, n.id]))
+  const root = progression.nodes.find(n => n.gridPosition && !(n.requiredNodes ?? []).length)!
+
+  it('custom：abilities 为已研发 id 表，只聚合已安装节点', () => {
+    const rootId = techToId.get(root.techName)!
+    const sel = resolveUpgradeSelection(bz.modules, 'custom', [rootId])
+    expect(sel.available).toBe(true)
+    expect(sel.mode).toBe('custom')
+    // 根节点自己的属性已计入
+    const names = Object.keys(sel.attributes)
+    expect(names.length).toBeGreaterThan(0)
+    // abilities = 完整已研发表（配置栏/研发树往返依赖它不被裁剪）
+    expect(sel.abilities).toEqual([rootId])
+    // 组备选未安装：不产生 choices
+    expect(Object.values(sel.choices).flat()).toEqual([])
+  })
+
+  it('custom：安装组 + 备选后机制属性生效，前置闭包自动补齐', () => {
+    const group = progression.alternativeGroups[0]
+    const altId = group.choices[0]
+    // 只给备选：组前置由前置闭包补齐（客户端不存在缺前置的已研发状态）
+    const sel = resolveUpgradeSelection(bz.modules, 'custom', [altId])
+    expect(sel.choices[group.id]).toBe(altId)
+    expect(sel.abilities).toContain(altId)
+    for (const req of group.requiredNodes!) expect(sel.abilities).toContain(techToId.get(req)!)
+    expect(sel.attributes.RECHARGEABLE_NITRO_HEATING_DURATION).toBe(5)
+  })
+
+  it('custom：未知 id 被忽略，不产生部分聚合', () => {
+    const sel = resolveUpgradeSelection(bz.modules, 'custom', [999999, techToId.get(root.techName)!])
+    expect(sel.supported).toBe(true)
+    expect(sel.abilities).toEqual([techToId.get(root.techName)!])
+  })
+
+  it('custom：手工多选同组备选被归一化为每组一项，互斥效果不叠加', () => {
+    const group = progression.alternativeGroups[0]!
+    // URL 解析器接受 abilities=22,23,24（分享/手改链接）——三选一只保留一项
+    const sel = resolveUpgradeSelection(bz.modules, 'custom', [22, 23, 24])
+    expect(sel.supported).toBe(true)
+    expect(sel.choices[group.id]).toBe(group.choices[0])
+    // 归一化结果=前置闭包 + 每组唯一备选；未选中的同组备选不出现
+    expect(sel.abilities).toContain(group.choices[0])
+    expect(sel.abilities).not.toContain(group.choices[1])
+    expect(sel.abilities).not.toContain(group.choices[2])
+    for (const req of group.requiredNodes!) expect(sel.abilities).toContain(techToId.get(req)!)
+    // 只聚合选中项：同组其余备选的专属属性不出现（前置节点的属性照常计入）
+    expect(sel.attributes.RECHARGEABLE_NITRO_HEATING_DURATION).toBe(5)
+    expect(sel.attributes.RECHARGEABLE_NITRO_FWD_SPEED_LIMIT_FACTOR).not.toBe(0.15) // 23 专属
+    expect(sel.attributes.RECHARGEABLE_NITRO_ROTATION_SPEED_FACTOR).toBeUndefined() // 24 专属
+  })
+
+  it('custom：真实 URL（parseTankopediaQuery）到投影全程保持互斥', () => {
+    const parsed = parseTankopediaQuery({ tank: '15153', upgrade: 'custom', abilities: '22,23,24' })
+    expect(parsed.abilities).toEqual([22, 23, 24])
+    const sel = resolveUpgradeSelection(bz.modules, parsed.upgrade, parsed.abilities)
+    expect(sel.abilities).toContain(22)
+    expect(sel.abilities).not.toContain(23)
+    expect(sel.abilities).not.toContain(24)
+    const projected = projectTankUpgrades(bz.detail, bz.modules, sel.mode, sel.abilities)
+    expect(projected.selection.choices[progression.alternativeGroups[0]!.id]).toBe(22)
+    expect(projected.selection.attributes.RECHARGEABLE_NITRO_FWD_SPEED_LIMIT_FACTOR).not.toBe(0.15)
+    expect(projected.selection.attributes.RECHARGEABLE_NITRO_ROTATION_SPEED_FACTOR).toBeUndefined()
+  })
+
+  it('custom 深链缺前置：投影边界补前置闭包（含组级 requiredNodes）', () => {
+    const group = progression.alternativeGroups[0]!
+    // 审阅用例：abilities=1,22（只有根节点 + 备选）——组前置 19/20/21 不在表里
+    const sel = resolveUpgradeSelection(bz.modules, 'custom', '1,22')
+    expect(sel.supported).toBe(true)
+    expect(sel.choices[group.id]).toBe(22)
+    for (const req of group.requiredNodes!) {
+      expect(sel.abilities).toContain(techToId.get(req)!)
+    }
+    // 不是逐例判断：同一规则也作用于单个孤立节点（12 = 引擎功率，前提前置一并补齐）
+    const engine = resolveUpgradeSelection(bz.modules, 'custom', [12])
+    const engineNode = progression.nodes.find(node => node.id === 12)!
+    const nodeByTech = new Map(progression.nodes.map(node => [node.techName, node]))
+    for (const req of engineNode.requiredNodes ?? []) {
+      expect(engine.abilities).toContain(nodeByTech.get(req)!.id)
+    }
+    expect(engine.attributes.ATTRIBUTE_NAME_ENGINE_POWER).toBe(50)
+  })
+
+  it('researchWithPrerequisites 能修复已存在的孤立节点（已装入也继续补祖先）', () => {
+    const parsed = parseAugmentProgression(bz.modules)!
+    const group = parsed.alternativeGroups[0]!
+    const byTech = new Map(parsed.nodes.map(node => [node.techName, node]))
+    // 审阅用例：只装了组前置 19/20/21（缺它们的祖先），再选 22 应把祖先补齐
+    const orphans = new Set<number>(group.requiredNodes!.map(req => byTech.get(req)!.id))
+    const next = researchGroupChoice(parsed, group.id, group.choices[0]!, orphans)
+    for (const id of orphans) {
+      const node = parsed.nodes.find(item => item.id === id)!
+      for (const req of node.requiredNodes ?? []) expect(next.has(byTech.get(req)!.id)).toBe(true)
+    }
+    expect(next.has(group.choices[0]!)).toBe(true)
+  })
+
+  it('custom→top/stock 切换时保留已选备选（备选位于长表后段也不丢）', () => {
+    const group = progression.alternativeGroups[0]!
+    const chosen = group.choices[2]! // 24：排在根节点链之后
+    // 模拟 custom 的完整已研发表：8 个前置节点 + 组备选
+    const longList = [...progression.nodes.filter(n => n.gridPosition).slice(0, 8).map(n => n.id), chosen]
+    expect(longList.indexOf(chosen)).toBeGreaterThanOrEqual(8)
+    const top = resolveUpgradeSelection(bz.modules, 'top', longList)
+    expect(top.choices[group.id]).toBe(chosen)
+    expect(top.abilities).toEqual([chosen])
+    const stock = resolveUpgradeSelection(bz.modules, 'stock', longList)
+    expect(stock.choices[group.id]).toBe(chosen)
+  })
+
+  it('custom 部分研发的引擎功率升级计入车体转向（stock 功率仍是基准）', () => {
+    // BZ-79 前置完整的研发表 [3,7,11,12] 含引擎功率升级
+    const sel = resolveUpgradeSelection(bz.modules, 'custom', [3, 7, 11, 12])
+    expect(sel.supported).toBe(true)
+    const withBaseline = buildComputeInput({
+      detail: bz.detail, modules: bz.modules, selection: { ...baseSelection(bz)!, upgrade: 'custom' as const, abilities: [3, 7, 11, 12] },
+      catalog: { devices: [], devicePresets: {} },
+    })
+    expect(withBaseline.stockEnginePower).toBe(Number(bz.modules.engines[0].stats.power))
+    // 功率比基准必须来自初始发动机，而不是投影后的功率
+    expect(withBaseline.stockEnginePower).toBeLessThan(Number(withBaseline.modules.engines[0].stats.power))
+  })
+})
 
 describe('XI 技能升级变化展示', () => {
   const catalog = { ...MECHANICS, consumablesGameVersion: MECHANICS.gameVersion, provisionsGameVersion: MECHANICS.gameVersion }
@@ -149,7 +278,7 @@ describe('真实客户端 XI 节点选择', () => {
       expect(selection.choices).toEqual({ [group.id]: 24 })
       expect(selection.abilities).toEqual([24])
     }
-    for (const input of [[999, 2], '999,2', '24.0', '-24', '24,,22', '24,22,23,24,22,23,24,22,23', { [group.id]: 2 }]) {
+    for (const input of [[999, 2], '999,2', '24.0', '-24', '24,,22', '901,902,903,904,905,906,907,908,909', { [group.id]: 2 }]) {
       expect(resolveUpgradeSelection(bz.modules, 'top', input).abilities).toEqual([22])
     }
     expect(resolveUpgradeSelection(bz.modules, 'invalid', [24]).mode).toBe('stock')

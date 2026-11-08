@@ -1,5 +1,5 @@
 /** XI 客户端升级节点的选择与静态投影；普通车计算公式仍由 characteristics 负责。 */
-export type UpgradeMode = 'stock' | 'top'
+export type UpgradeMode = 'stock' | 'top' | 'custom'
 export type UpgradeValue = number | boolean
 export interface UpgradeAttribute { name: string; value: UpgradeValue }
 export interface UpgradeNode {
@@ -90,7 +90,7 @@ function supports(def: UpgradeDefinition): boolean {
  */
 export function resolveUpgradeSelection(modules: unknown, mode?: unknown, inputChoices?: unknown): UpgradeSelection {
   const absent = mode == null || mode === ''
-  const explicit = mode === 'top' ? 'top' : mode === 'stock' ? 'stock' : null
+  const explicit = mode === 'top' ? 'top' : mode === 'stock' ? 'stock' : mode === 'custom' ? 'custom' : null
   const defaultMode = absent && record(modules) && modules.tier === 11 ? 'top' : 'stock'
   const result = emptySelection(explicit ?? defaultMode)
   if (!record(modules) || modules.tier !== 11 || !('upgradeProgression' in modules)) return result
@@ -154,19 +154,88 @@ export function resolveUpgradeSelection(modules: unknown, mode?: unknown, inputC
   }
   let requested: unknown = inputChoices
   if (typeof requested === 'string') {
-    requested = /^\d+(?:,\d+){0,7}$/.test(requested) ? requested.split(',').map(Number) : []
+    requested = /^\d+(?:,\d+){0,63}$/.test(requested) ? requested.split(',').map(Number) : []
+  }
+  const custom = result.mode === 'custom'
+  // custom：abilities = 已研发节点 id 表，投影边界统一规范化为两类不变量：
+  // 1) 前置闭包——客户端不存在“节点已研发但前置未研发”的状态。深链/手写 URL 只给
+  //    部分节点时，前置由“已研发”这一事实蕴含，按同一规则补齐（不是逐例判断）；
+  //    前置不可解析（数据缺失）的节点整颗拒绝（fail-closed），不做部分接受。
+  // 2) 组互斥——每组只保留组定义顺序的首个已研发备选，其余同组备选不写入结果、
+  //    不参与聚合；手工构造的 URL（如 abilities=22,23,24）不能叠出互斥效果。
+  let researched: Set<number> | null = null
+  if (custom) {
+    const nodesByTech = new Map(result.nodes.map(node => [node.techName, node]))
+    const nodesById = new Map(result.nodes.map(node => [node.id, node]))
+    /** 该节点 + 全部直接/间接前置；任一前置不可解析返回 null（整颗拒绝）。 */
+    const prerequisiteClosure = (id: number): Set<number> | null => {
+      const start = nodesById.get(id)
+      if (!start) return null
+      const out = new Set<number>()
+      const seen = new Set<string>()
+      const stack = [start]
+      while (stack.length) {
+        const node = stack.pop()!
+        if (seen.has(node.techName)) continue
+        seen.add(node.techName)
+        out.add(node.id)
+        for (const req of Array.isArray(node.requiredNodes) ? (node.requiredNodes as string[]) : []) {
+          const up = nodesByTech.get(req)
+          if (!up) return null
+          stack.push(up)
+        }
+      }
+      return out
+    }
+    const set = new Set<number>()
+    for (const id of Array.isArray(requested) ? requested : []) {
+      if (!ids.has(id)) continue
+      prerequisiteClosure(id)?.forEach(nodeId => set.add(nodeId))
+    }
+    for (const group of result.groups) {
+      if (!group.choices.some(id => set.has(id))) continue
+      // 组级 requiredNodes 同样属于闭包；不可解析时整组不激活（清掉该组备选）
+      let resolvable = true
+      for (const req of Array.isArray(group.requiredNodes) ? (group.requiredNodes as string[]) : []) {
+        const up = nodesByTech.get(req)
+        const closure = up ? prerequisiteClosure(up.id) : null
+        if (!closure) { resolvable = false; break }
+        closure.forEach(nodeId => set.add(nodeId))
+      }
+      if (!resolvable) group.choices.forEach(id => set.delete(id))
+    }
+    for (const group of result.groups) {
+      group.choices.filter(id => set.has(id)).slice(1).forEach(id => set.delete(id))
+    }
+    researched = set
   }
   for (const group of result.groups) {
+    if (custom) {
+      // 组内已研发的备选即选中（可未选）：未研发/未选时不写 choices/abilities
+      // （机制不生效，面板显示基础值）
+      const candidate = group.choices.find(id => researched!.has(id))
+      if (candidate != null) { result.choices[group.id] = candidate; result.abilities.push(candidate) }
+      continue
+    }
+    // custom→top/stock 切换时 abilities 是完整已研发表（至多 64 项），备选可能排在
+    // 前置节点之后；按全表找已选备选，避免晚于第 8 位的选择被重置成默认项。
     const candidate = Array.isArray(requested)
-      ? requested.slice(0, 8).find(id => group.choices.includes(id))
+      ? requested.find(id => group.choices.includes(id))
       : record(requested) ? requested[group.id] : undefined
     const chosen = typeof candidate === 'number' && group.choices.includes(candidate) ? candidate : group.choices[0]!
     result.choices[group.id] = chosen; result.abilities.push(chosen)
   }
+  if (custom) {
+    // custom（部分研发）：abilities 携带归一化后的完整已研发表——resolveSetup 往返、
+    // 配置栏/研发树联动都依赖它（互斥归一化在上面完成，写回的 URL 不含同组多选）
+    result.abilities = researched ? [...researched] : []
+  }
   if (!result.supported || result.mode === 'stock') return result
-  const active = new Set(result.abilities)
+  const active = custom && researched ? researched : new Set(result.abilities)
   for (const node of result.nodes) {
-    if (node.type === 'NODETYPE_ALTERNATIVE_MECHANIC' && !active.has(node.id)) continue
+    // custom（部分研发）：只聚合已研发节点；top：全部普通/机制节点 + 已选备选
+    if (custom ? !active.has(node.id)
+      : node.type === 'NODETYPE_ALTERNATIVE_MECHANIC' && !active.has(node.id)) continue
     for (const { name, value } of node.attributes) {
       const def = result.attributeDefinitions[name]!
       const previous = result.attributes[name]

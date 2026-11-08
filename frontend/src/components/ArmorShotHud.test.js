@@ -233,6 +233,20 @@ describe('ArmorShotHud（右上角弹种 + 装备图标）', () => {
     expect(wrapper.get('[data-testid="hud-penetration"]').text()).toBe('220 mm')
   })
 
+  it('custom（部分研发）射手：HUD 与场景同口径，不折叠成 top', async () => {
+    const wrapper = mount(ArmorShotHud, { props: { shooterId: 1, upgrade: 'custom', abilities: '1' } })
+    await flushPromises()
+    expect(data.fetchTankData).toHaveBeenLastCalledWith(1, { upgrade: 'custom', abilities: '1' })
+    // 场景按部分研发算 400 伤害；HUD 若折叠 top 会读满级 430。
+    const partial = structuredClone(TANK)
+    partial.configs[0].shells[0].damage = 400
+    data.fetchTankData.mockResolvedValueOnce(partial)
+    await wrapper.setProps({ upgrade: 'custom', abilities: '1,19,20,21,22' })
+    await flushPromises()
+    expect(data.fetchTankData).toHaveBeenLastCalledWith(1, { upgrade: 'custom', abilities: '1,19,20,21,22' })
+    wrapper.unmount()
+  })
+
   it('卸载后迟到资产不会重新发出ready', async () => {
     let resolve
     data.fetchTankData.mockReturnValueOnce(new Promise(done => { resolve = done }))

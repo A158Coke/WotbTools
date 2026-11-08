@@ -58,7 +58,9 @@ function fetchRawTankData(id: TankId) {
 /** 显式升级选择只作用于这次读取；原始请求缓存仍按车型合并，不污染回放和另一侧。 */
 export function fetchTankData(id: TankId, options: TankUpgradeOptions = {}) {
   const raw = fetchRawTankData(id)
-  if (options.upgrade !== 'top') return raw
+  // top 与 custom 都走投影（custom = 部分研发，abilities 携带已研发表）。stock 与
+  // 无键保持原始数据；把 custom 当 stock 会静默丢掉用户已研发节点的效果。
+  if (options.upgrade !== 'top' && options.upgrade !== 'custom') return raw
   return raw.then(async (detail: Record<string, unknown>) => {
     // 普通车辆/旧链接保持原来的数据与请求路径。
     if (Number(detail?.tier) !== 11) return detail
@@ -75,7 +77,7 @@ export function fetchTankData(id: TankId, options: TankUpgradeOptions = {}) {
       if (!isMissingTankModules(error, detail.nation)) throw error
       return detail
     }
-    const projected = projectTankUpgrades(detail, modules, 'top', options.abilities)
+    const projected = projectTankUpgrades(detail, modules, options.upgrade, options.abilities)
     // 目录存在但该车没有 upgradeProgression：同样保持原始数据。
     if (!projected.selection.available) return detail
     if (!projected.selection.supported) {

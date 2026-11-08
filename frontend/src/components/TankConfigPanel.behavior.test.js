@@ -212,4 +212,25 @@ describe('XI 技能选择卡与效果反馈', () => {
     expect(wrapper.get('[data-testid="tank-upgrade-skills"]').text()).not.toContain('agentTanks.')
     wrapper.unmount()
   })
+
+  it('custom 下配置卡换选备选会补齐组前置（与研发树同口径），并显示部分研发状态', async () => {
+    const source = tanks.find(tank => tank.modules.tankId === 15153)
+    const modules = source.modules
+    const group = modules.upgradeProgression.alternativeGroups[0]
+    const root = modules.upgradeProgression.nodes.find(node => node.gridPosition && !(node.requiredNodes ?? []).length)
+    const wrapper = panel('zh', source, {
+      selection: { ...baseSelection(source), upgrade: 'custom', abilities: [root.id] },
+    })
+    await wrapper.get(`[data-testid="tank-ability-${group.choices[0]}"]`).trigger('click')
+    const patch = wrapper.emitted('update').at(-1)[0]
+    const abilities = new Set(patch.abilities)
+    expect(abilities.has(group.choices[0])).toBe(true)
+    // 三条组前置链全部补齐（不再出现“缺前置却生效”的非法状态）
+    const byTech = new Map(modules.upgradeProgression.nodes.map(node => [node.techName, node.id]))
+    for (const req of group.requiredNodes) expect(abilities.has(byTech.get(req))).toBe(true)
+    await wrapper.setProps({ selection: { ...wrapper.props('selection'), ...patch } })
+    // 部分研发状态不再显示“未生效”
+    expect(wrapper.get('[data-testid="tank-mechanic-effects"]').text()).toContain('部分研发')
+    wrapper.unmount()
+  })
 })
