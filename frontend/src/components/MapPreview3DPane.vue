@@ -618,6 +618,8 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
   display: flex;
   flex-direction: column;
   min-height: 100%;
+  /* 3D 场景（含非全屏）必须不透明：页面外围仍可见环境背景，但场景内不能透图。 */
+  background: var(--color-canvas);
 }
 
 .map3d-note {

@@ -54,13 +54,16 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | ID | 强度 | 范围 | 规则 | 例外 | 验证 |
 |---|---|---|---|---|---|
 | DC-THM-01 | MUST | 四季主题 | 布局、组件结构、字号、交互完全一致，只替换语义 token 与氛围插槽；不按主题 fork 业务实现，组件不出现主题判断 | 无 | `src/ui-profile-fork-guard.test.js` |
-| DC-THM-02 | MUST | 全站 | 背景图、渐变、毛玻璃只出现在本节列出的装饰插槽 | 无 | 人工 |
+| DC-THM-02 | MUST | 全站 | 背景图与装饰渐变只出现在本节列出的装饰插槽；毛玻璃只允许用于 §2.1 的页面级玻璃表面 | 无 | 人工 |
 | DC-THM-03 | MAY | 工作区页面 | 在数据区之上放一个 Showcase Hero | 无 | 人工 |
 | DC-THM-04 | MUST | Showcase Hero | 只放在数据区之上，不进入表格、筛选、表单、抽屉；expanded 档首屏必须能看到数据区 | 无 | 每页 PR 大屏截图，人工 |
 | DC-THM-05 | MUST | Showcase Hero | 文字落在主题遮罩（`--theme-hero-scrim*`）压出的纯色区上，最差取样点满足 §3 对比度，四套主题都测 | 无 | 人工取样 |
 | DC-THM-06 | MUST | Showcase Hero | `prefers-reduced-motion: reduce` 下无动效 | 无 | 人工；首页由 `pnpm run test:browser-home` 覆盖动效 |
 | DC-THM-07 | MUST | 主题 token | 四套主题的文字 / UI 色在各自四层表面上的最差对比度达到 AA（正文 ≥ 4.5，UI ≥ 3，强调色上的文字 ≥ 4.5） | 无 | `src/styles/tokens/color-contrast.test.ts` |
 | DC-THM-08 | MUST | 场景外壳 | 2D / 3D 回放、装甲查看器、地图 3D 的根元素带 `data-scene-surface`，寒冬下仍是深色玻璃，不跟随浅色表面 | 无 | `color-contrast.test.ts` 的场景块断言 + 人工 |
+| DC-THM-09 | MUST | 全站环境背景 | 全站只由 `AppShell.vue` 的 `.app-backdrop` 渲染环境背景层：`position: fixed; inset: 0; pointer-events: none`，层级低于内容，背景图 / 遮罩 / 位置全部读 `--theme-backdrop-*`；禁止在 `body` 上用 `background-attachment: fixed` | 无 | 人工；`pnpm run test:browser-home`、`test:browser-view-transition` |
+| DC-THM-10 | MUST | 首屏与主题切换 | 环境背景先显示 `--color-canvas` 纯色，图片解码后淡入，不得阻塞首屏；`prefers-reduced-motion: reduce` 下直接显示、不做过渡；切换主题时背景随 token 同步切换 | 无 | 人工；`src/index-firstpaint.test.js` 保持通过 |
+| DC-THM-11 | MUST | 内容表面 | 只有页面级卡片 / 面板可用 `--color-surface-{1,2,3}-glass`（表面色 82%–90% 不透明 + `backdrop-filter: blur(16px) saturate(1.2)`）；表格、数据密集区、输入框、回放 HUD 保持纯色；场景根必须不透明；`@supports not (backdrop-filter)` 时回退纯色 | 无 | `color-contrast.test.ts` 的玻璃等效色断言 + 人工 |
 
 | | **春 · 青山** `spring` | **夏 · 盛夏** `summer`（默认） | **秋 · 金秋** `autumn` | **冬 · 寒冬** `winter` |
 |---|---|---|---|---|
@@ -71,17 +74,29 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 
 完整取值只在 `frontend/src/styles/tokens/color.css`（每套主题一个语义映射块）；`<meta name="theme-color">` 取当前主题底色（`useUiProfile.THEME_COLOR`），`color-scheme` 随深浅色。
 
-**氛围插槽**（主题 token，只能用在装饰插槽里）：`--theme-hero-image`（横版约 2.5:1）、`--theme-hero-image-portrait`（竖版约 4:5）、`--theme-hero-scrim`（横版遮罩，左侧压出文字区）、`--theme-hero-scrim-portrait`（竖版遮罩，自下而上）、`--theme-glass`（叠在主视觉上的按钮底）、`--theme-pattern`（页面底纹）。主视觉素材在 `frontend/src/assets/theme/theme-<季节>-{wide,portrait}.webp`。主题选择器的缩略图与色点读 `--theme-preview-<季节>-*`。
+**氛围插槽**（主题 token，只能用在装饰插槽里）：`--theme-hero-image`（横版约 2.5:1）、`--theme-hero-image-portrait`（竖版约 4:5）、`--theme-hero-scrim`（横版遮罩，左侧压出文字区）、`--theme-hero-scrim-portrait`（竖版遮罩，自下而上）、`--theme-glass`（叠在主视觉上的按钮底）、`--theme-pattern`（页面底纹）、`--theme-backdrop-image` / `--theme-backdrop-image-portrait`（全站环境背景横 / 竖版）、`--theme-backdrop-scrim`（环境背景遮罩）、`--theme-backdrop-position` / `--theme-backdrop-position-portrait`（横 / 竖版焦点位置）。主视觉素材在 `frontend/src/assets/theme/theme-<季节>-{wide,portrait}.webp`，环境背景产物在 `frontend/src/assets/theme/backdrop-<季节>-{wide,portrait}.webp`。主题选择器的缩略图与色点读 `--theme-preview-<季节>-*`。
 
-**装饰插槽**（这是唯一允许放背景图、渐变、毛玻璃的地方）：
+**装饰插槽**（这是唯一允许放背景图与装饰渐变的地方；毛玻璃表面见 §2.1）：
 
 1. 首页英雄区（`HomePage.vue` 自己拥有；`PageHeader` 不提供 `hero` 变体）
 2. 工作区 Showcase Hero（规则见 DC-THM-03 至 DC-THM-06）
 3. 空状态插图
 4. 登录页
-5. 页面底色上的主题底纹（`--theme-pattern`，叠在 `--color-canvas` 上，卡片与数据区是纯色表面）
+5. 全站环境背景层（`.app-backdrop`，§2.1）：固定的季节背景图 + 遮罩 + `--theme-pattern` 底纹，叠在 `--color-canvas` 上
 
-**数据区**，也就是表格、回放、筛选、表单、抽屉，**四套主题都用纯色**。依据：WCAG 1.4.3 要求文字对比度稳定，而文字压在图片上时，对比度会随图片内容变化，没法保证。
+**数据区**，也就是表格、回放数据区、筛选结果、表单控件、抽屉，**四套主题都用纯色**。页面级卡片与面板（包括筛选面板的容器，不含输入框本身）可以用 §2.1 的玻璃表面，但表格、数据密集区、输入框和回放 HUD 不在例外里。依据：WCAG 1.4.3 要求文字对比度稳定，而文字压在图片上时，对比度会随图片内容变化，没法保证。
+
+### 2.1 全站环境背景层
+
+**定义：** 每个页面共享的一层 fixed 装饰背景，由 `AppShell.vue` 根部的 `.app-backdrop` 唯一渲染。它不是页面内容的一部分，只负责氛围：季节图、canvas 色遮罩、`--theme-pattern` 底纹依次叠在 `--color-canvas` 上，`pointer-events: none`，层级用 `--z-backdrop`（低于所有内容）。使用 `position: fixed` 而不是 `body { background-attachment: fixed }`，因为 iOS Safari 不支持后者。
+
+**构图与遮罩：** 横版图里车队在中部到右侧、左侧较干净；竖版里车队在中上部、下半部较干净。wide 用 `--theme-backdrop-position: center 40%`，portrait 用 `center 30%`，让车队避开顶栏。深色三季的 `--theme-backdrop-scrim` 用各自 canvas 色从约 85% 渐到 55%：干净侧更实，坦克与天空侧更透；寒冬用 canvas 白色雾化遮罩。竖屏手机（`orientation: portrait` 且 `width < 768px`）切换到 `--theme-backdrop-image-portrait` 与对应 position。
+
+**首屏性能：** 首帧只画 canvas 纯色；`.app-backdrop` 的图片由 JS 在 mount 后预解码，完成后才加 `.is-ready` 淡入，背景图不进入首屏关键路径。`prefers-reduced-motion: reduce` 下不做透明度过渡。主题切换时重新等待对应季节图，CSS token 已同步换图，不保留上一主题的图。
+
+**内容表面边界：** 页面级卡片 / 面板（首页卡片、文档正文、坦克详情区块、筛选面板、空状态上传区、管理后台提示条等）使用 `--color-surface-{1,2,3}-glass`（对应表面色 82%–90% 不透明）加 `backdrop-filter: blur(16px) saturate(1.2)`，让背景隐约透出。表格、数据密集区、输入框、回放 HUD 仍用纯色 `--color-surface-*`；2D / 3D 回放、装甲查看器、地图 3D 的场景根必须有 canvas 不透明底色，非全屏时场景外围的页面区域才透出环境背景。浏览器不支持 `backdrop-filter` 时，玻璃表面回退为对应纯色。玻璃色按 alpha 与 canvas 混合后的等效不透明色必须进入 §3 的对比度最差值计算。
+
+**素材来源：** 四季原图为 AI 生成画面与真实 WoTB 十级车型参考融合，写实电影风格；原图保留在 `frontend/art-source/backdrops/backdrop-<季节>-{wide,portrait}.webp`，不得修改。发布产物由 `frontend/scripts/build-theme-backdrops.mjs`（`pnpm run assets:backdrops`）生成：wide Lanczos 放大到 2560 宽、portrait 到 1080 宽，轻度锐化，WebP 初始 quality 80；单张超过 300KB 时脚本按预算自适应下调 quality（产物实测约 q29–q80，均 ≤ 300KB）。
 
 **选择逻辑：**
 - 默认盛夏；用户在「更多」→ 主题里选择（`ThemePicker`：`SegmentedControl` tiles，每项是主视觉缩略图 + 强调色点 + 名称），选择后记住。
@@ -102,7 +117,7 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | DC-CLR-04 | MUST | 物理队伍色 | Team 1 / Team 2 颜色不随录像者交换 | 无 | 人工 |
 
 **依据：** WCAG 2.2 AA。正文 ≥ 4.5:1；大字（≥ 24px，或 ≥ 18.66px 且加粗）≥ 3:1；UI 组件和图形 ≥ 3:1（1.4.11）。
-下表每个值都已用脚本验证：在该主题的**全部 4 层表面**上取最差的一层，结果仍然达标。
+下表每个值都已用脚本验证：在该主题的**全部纯色表面与玻璃表面**上取最差的一层，结果仍然达标。玻璃表面先按 alpha 与 canvas 混合成等效不透明色，再参与比较。
 
 ### 3.1 表面与文字
 
@@ -117,6 +132,9 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | `--color-text-tertiary` | `#869d90` | `#8a938e` | `#ad9576` | `#4a6380` | 辅助信息、占位符。**这是最浅的一级文字色** |
 | `--color-border-subtle` | `#1f3a2e` | `#25313a` | `#3d2c19` | `#cbd8e6` | 分隔线（装饰性，不承担信息） |
 | `--color-border-strong` | `#5f8072` | `#6c7a82` | `#937a55` | `#6f849b` | 输入框、复选框等控件边框（需 ≥3:1） |
+| `--color-surface-1/2/3-glass` | 对应表面色 + 88% / 86% / 84% alpha | 同左 | 同左 | 同左 | 页面级卡片的磨砂表面；等效色纳入最差对比度 |
+
+> 玻璃表面只减不增：`surface-1-glass` 用于主卡片 / 面板，`surface-2-glass` 用于嵌套面板，`surface-3-glass` 用于更近一层的装饰面板；数据区一律用上面的纯色行。
 
 **深色主题的层级靠亮度区分，不靠阴影。** 表面越亮，离用户越近。依据：Material Design 的暗色主题指南。浅色主题（寒冬）则用阴影。
 

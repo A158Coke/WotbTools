@@ -56,6 +56,11 @@
     --color-surface-1: #11171a;
     --color-surface-2: #172024;
     --color-surface-3: #1e292e;
+    /* 磨砂玻璃表面：页面级卡片 / 面板专用，82%–90% 不透明，配 backdrop-filter 让环境背景透出。
+       表格、数据密集区、输入框与场景 HUD 仍用上面的纯色表面。 */
+    --color-surface-1-glass: rgb(17 23 26 / .88);
+    --color-surface-2-glass: rgb(23 32 36 / .86);
+    --color-surface-3-glass: rgb(30 41 46 / .84);
 
     --color-text-primary: #eceae4;
     --color-text-secondary: #aab1ac;
@@ -98,6 +103,13 @@
     --theme-hero-scrim: linear-gradient(90deg, rgb(11 15 17 / .95) 0%, rgb(11 15 17 / .82) 45%, rgb(11 15 17 / .15) 100%);
     --theme-hero-scrim-portrait: linear-gradient(0deg, rgb(11 15 17 / .95) 15%, rgb(11 15 17 / .35) 100%);
     --theme-glass: rgb(11 15 17 / .55);
+    /* 全站环境背景（§2）：装饰层固定铺满视口，内容区半透明表面让背景隐约透出。
+       遮罩在干净侧更实（85%），在坦克 / 天空侧更透（55%），保证文字可读同时保留氛围。 */
+    --theme-backdrop-image: url("../../assets/theme/backdrop-summer-wide.webp");
+    --theme-backdrop-image-portrait: url("../../assets/theme/backdrop-summer-portrait.webp");
+    --theme-backdrop-scrim: linear-gradient(115deg, rgb(11 15 17 / .85) 0%, rgb(11 15 17 / .55) 100%);
+    --theme-backdrop-position: center 40%;
+    --theme-backdrop-position-portrait: center 30%;
     --theme-pattern: repeating-linear-gradient(0deg, rgb(240 179 62 / .04) 0 1px, transparent 1px 48px), repeating-linear-gradient(90deg, rgb(240 179 62 / .04) 0 1px, transparent 1px 48px);
   }
 
@@ -108,6 +120,9 @@
     --color-surface-1: #0e1d17;
     --color-surface-2: #14271f;
     --color-surface-3: #1b3228;
+    --color-surface-1-glass: rgb(14 29 23 / .88);
+    --color-surface-2-glass: rgb(20 39 31 / .86);
+    --color-surface-3-glass: rgb(27 50 40 / .84);
 
     --color-text-primary: #e7f1ea;
     --color-text-secondary: #a6bdb0;
@@ -150,6 +165,11 @@
     --theme-hero-scrim: linear-gradient(90deg, rgb(8 20 15 / .95) 0%, rgb(8 20 15 / .82) 45%, rgb(8 20 15 / .15) 100%);
     --theme-hero-scrim-portrait: linear-gradient(0deg, rgb(8 20 15 / .95) 15%, rgb(8 20 15 / .35) 100%);
     --theme-glass: rgb(8 20 15 / .55);
+    --theme-backdrop-image: url("../../assets/theme/backdrop-spring-wide.webp");
+    --theme-backdrop-image-portrait: url("../../assets/theme/backdrop-spring-portrait.webp");
+    --theme-backdrop-scrim: linear-gradient(115deg, rgb(8 20 15 / .85) 0%, rgb(8 20 15 / .55) 100%);
+    --theme-backdrop-position: center 40%;
+    --theme-backdrop-position-portrait: center 30%;
     --theme-pattern: repeating-radial-gradient(ellipse at 15% 85%, rgb(102 212 143 / .07) 0 1px, transparent 1px 26px);
   }
 
@@ -160,6 +180,9 @@
     --color-surface-1: #20160c;
     --color-surface-2: #2a1d10;
     --color-surface-3: #362516;
+    --color-surface-1-glass: rgb(32 22 12 / .88);
+    --color-surface-2-glass: rgb(42 29 16 / .86);
+    --color-surface-3-glass: rgb(54 37 22 / .84);
 
     --color-text-primary: #f6ead6;
     --color-text-secondary: #d0bb9a;
@@ -202,6 +225,11 @@
     --theme-hero-scrim: linear-gradient(90deg, rgb(22 15 8 / .95) 0%, rgb(22 15 8 / .82) 45%, rgb(22 15 8 / .15) 100%);
     --theme-hero-scrim-portrait: linear-gradient(0deg, rgb(22 15 8 / .95) 15%, rgb(22 15 8 / .35) 100%);
     --theme-glass: rgb(22 15 8 / .55);
+    --theme-backdrop-image: url("../../assets/theme/backdrop-autumn-wide.webp");
+    --theme-backdrop-image-portrait: url("../../assets/theme/backdrop-autumn-portrait.webp");
+    --theme-backdrop-scrim: linear-gradient(115deg, rgb(22 15 8 / .85) 0%, rgb(22 15 8 / .55) 100%);
+    --theme-backdrop-position: center 40%;
+    --theme-backdrop-position-portrait: center 30%;
     --theme-pattern: repeating-linear-gradient(-24deg, rgb(239 132 52 / .06) 0 2px, transparent 2px 22px);
   }
 
@@ -212,6 +240,9 @@
     --color-surface-1: #ffffff;
     --color-surface-2: #f5f8fc;
     --color-surface-3: #e2ebf5;
+    --color-surface-1-glass: rgb(255 255 255 / .88);
+    --color-surface-2-glass: rgb(245 248 252 / .86);
+    --color-surface-3-glass: rgb(226 235 245 / .84);
 
     --color-text-primary: #0f2236;
     --color-text-secondary: #3b5470;
@@ -254,6 +285,12 @@
     --theme-hero-scrim: linear-gradient(90deg, rgb(238 243 248 / .96) 0%, rgb(238 243 248 / .86) 45%, rgb(238 243 248 / .1) 100%);
     --theme-hero-scrim-portrait: linear-gradient(0deg, rgb(238 243 248 / .97) 18%, rgb(238 243 248 / .4) 100%);
     --theme-glass: rgb(255 255 255 / .72);
+    --theme-backdrop-image: url("../../assets/theme/backdrop-winter-wide.webp");
+    --theme-backdrop-image-portrait: url("../../assets/theme/backdrop-winter-portrait.webp");
+    /* 浅色主题用 canvas 白色雾化遮罩压住画面，深色文字仍落在高不透明区域。 */
+    --theme-backdrop-scrim: linear-gradient(115deg, rgb(238 243 248 / .85) 0%, rgb(238 243 248 / .55) 100%);
+    --theme-backdrop-position: center 40%;
+    --theme-backdrop-position-portrait: center 30%;
     --theme-pattern: repeating-radial-gradient(circle at 88% 18%, rgb(31 111 209 / .06) 0 1px, transparent 1px 34px);
   }
 
@@ -284,5 +321,8 @@
     --elevation-2: 0 4px 12px rgb(0 0 0 / .4);
     --elevation-3: 0 12px 32px rgb(0 0 0 / .5);
     --theme-glass: rgb(11 15 17 / .72);
+    --color-surface-1-glass: rgb(17 23 26 / .88);
+    --color-surface-2-glass: rgb(23 32 36 / .86);
+    --color-surface-3-glass: rgb(30 41 46 / .84);
   }
 }

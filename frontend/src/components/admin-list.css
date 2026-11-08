@@ -11,8 +11,13 @@
   border: 1px solid var(--color-border-subtle);
   border-inline-start: var(--space-1) solid var(--color-accent);
   border-radius: var(--radius-md);
-  background: var(--color-surface-1);
+  background: var(--color-surface-1-glass);
   color: var(--color-text-secondary);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  backdrop-filter: blur(16px) saturate(1.2);
+}
+@supports not (backdrop-filter: blur(1px)) {
+  .admin-list-note { background: var(--color-surface-1); }
 }
 .admin-list-note > strong { flex: none; color: var(--color-accent-text); }
 .admin-list-note > ul { display: grid; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }

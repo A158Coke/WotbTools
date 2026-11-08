@@ -11,6 +11,7 @@ import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { provideCreatorAvailability } from '../composables/useCreatorAvailability.js'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
 import { useOnboarding } from '../composables/useOnboarding.js'
+import { useUiProfile } from '../composables/useUiProfile.js'
 import { useSiteFeedback } from '../composables/useSiteFeedback.js'
 import { useUsageTelemetry } from '../composables/useUsageTelemetry.js'
 import { isAndroidApp } from '../composables/usePlatformBridge.js'
@@ -37,6 +38,14 @@ import SiteFeedbackDialog from '../components/SiteFeedbackDialog.vue'
 import OnboardingHost from '../components/OnboardingHost.vue'
 import AndroidUpdatePanel from '../components/AndroidUpdatePanel.vue'
 import publicSecurityFilingIcon from '../assets/public-security-filing.png'
+import springBackdropWide from '../assets/theme/backdrop-spring-wide.webp'
+import springBackdropPortrait from '../assets/theme/backdrop-spring-portrait.webp'
+import summerBackdropWide from '../assets/theme/backdrop-summer-wide.webp'
+import summerBackdropPortrait from '../assets/theme/backdrop-summer-portrait.webp'
+import autumnBackdropWide from '../assets/theme/backdrop-autumn-wide.webp'
+import autumnBackdropPortrait from '../assets/theme/backdrop-autumn-portrait.webp'
+import winterBackdropWide from '../assets/theme/backdrop-winter-wide.webp'
+import winterBackdropPortrait from '../assets/theme/backdrop-winter-portrait.webp'
 
 const APP_ICP_FILING = '闽ICP备2026036303号-2A'
 const isAndroidAppRuntime = isAndroidApp()
@@ -185,9 +194,72 @@ provide(ONBOARDING_KEY, onboarding.context)
 const siteFeedback = useSiteFeedback(route)
 const { open: siteFeedbackOpen, pageView: siteFeedbackPage } = siteFeedback
 provide(FEEDBACK_KEY, siteFeedback.request)
+
+/**
+ * 全站环境背景（design-language §2）：fixed 装饰层先铺 canvas 纯色，等当前主题 /
+ * 视口对应的氛围图解码完成后再 .is-ready 淡入，避免背景图阻塞首屏。
+ * 主题切换时重新等新图，竖屏 / 横屏切换只更新预载目标（CSS 已同步换图）。
+ */
+const { uiProfile } = useUiProfile()
+const BACKDROP_SOURCES = {
+  spring: { wide: springBackdropWide, portrait: springBackdropPortrait },
+  summer: { wide: summerBackdropWide, portrait: summerBackdropPortrait },
+  autumn: { wide: autumnBackdropWide, portrait: autumnBackdropPortrait },
+  winter: { wide: winterBackdropWide, portrait: winterBackdropPortrait },
+}
+const backdropReady = ref(false)
+const loadedBackdrops = new Set()
+let backdropLoadToken = 0
+const portraitBackdropQuery = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+  ? window.matchMedia('(orientation: portrait) and (width < 768px)')
+  : null
+
+function currentBackdropSource() {
+  const images = BACKDROP_SOURCES[uiProfile.value] ?? BACKDROP_SOURCES.summer
+  return portraitBackdropQuery?.matches ? images.portrait : images.wide
+}
+
+function preloadBackdrop(url) {
+  if (!url || typeof Image === 'undefined') {
+    backdropReady.value = true
+    return
+  }
+  if (loadedBackdrops.has(url)) {
+    backdropReady.value = true
+    return
+  }
+  const token = ++backdropLoadToken
+  const image = new Image()
+  image.decoding = 'async'
+  const finish = (loaded) => {
+    if (loaded) loadedBackdrops.add(url)
+    // 只让最后一次请求决定可见性，防止快速切换主题时旧图回写把新图盖住。
+    if (token === backdropLoadToken) backdropReady.value = true
+  }
+  image.onload = () => finish(true)
+  // 图片 404 / 解码失败时退回 canvas 纯色，不能让装饰层永远停在 opacity: 0。
+  image.onerror = () => finish(false)
+  image.src = url
+}
+
+function syncBackdrop() {
+  // 视口横竖切换也会换图：先退回 canvas，等新图解码后再淡入，避免换图瞬间露出半张图。
+  backdropReady.value = false
+  preloadBackdrop(currentBackdropSource())
+}
+
+onMounted(() => {
+  syncBackdrop()
+  portraitBackdropQuery?.addEventListener?.('change', syncBackdrop)
+})
+onUnmounted(() => {
+  portraitBackdropQuery?.removeEventListener?.('change', syncBackdrop)
+})
+watch(uiProfile, syncBackdrop)
 </script>
 
 <template>
+  <div class="app-backdrop" :class="{ 'is-ready': backdropReady }" aria-hidden="true" />
   <AppTopBar
     v-if="isDrawerShell && !shellChrome.immersive.value"
     ref="topBar"
@@ -268,6 +340,39 @@ provide(FEEDBACK_KEY, siteFeedback.request)
 
 /* 侧边栏是 fixed：内容整体让出 --sidebar-w（抽屉外壳为 0）。没有底部常驻栏（L1）。 */
 :global(#app) { padding-inline-start: var(--sidebar-w); }
+
+/* 全站环境背景层（design-language §2）：固定铺满视口、不接收指针事件、永远在内容之后。
+   canvas 是最后一层，所以图片未加载 / 加载失败时仍是主题纯色；加载完成后由 JS 加 .is-ready 淡入。
+   竖屏手机改用竖向构图，让中上部的坦克车队落在首屏可见区域。 */
+.app-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-backdrop);
+  pointer-events: none;
+  background:
+    var(--theme-pattern),
+    var(--theme-backdrop-scrim),
+    var(--theme-backdrop-image) var(--theme-backdrop-position) / cover,
+    var(--color-canvas);
+  opacity: 0;
+  transition: opacity 480ms ease;
+}
+
+.app-backdrop.is-ready { opacity: 1; }
+
+@media (orientation: portrait) and (width < 768px) {
+  .app-backdrop {
+    background:
+      var(--theme-pattern),
+      var(--theme-backdrop-scrim),
+      var(--theme-backdrop-image-portrait) var(--theme-backdrop-position-portrait) / cover,
+      var(--color-canvas);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-backdrop { transition: none; }
+}
 
 .app-footer {
   margin-top: auto;
