@@ -2439,9 +2439,13 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         const QP = new URLSearchParams(location.search);
         const shotMode = QP.has('shot');
         // XI 升级态与模块配置一样按双方独立读取；同车也不从目标推导射手状态。
+        // custom（部分研发）必须原样透传：折叠成 top 会把未研发节点的加成也画上去，
+        // 折叠成 stock 会丢掉已研发效果。
         const upgradeOptions = (side) => {
             const rawUpgrade = QP.get(side === 'shooter' ? 'supgrade' : 'upgrade');
-            const explicit = rawUpgrade === 'top' ? 'top' : rawUpgrade === 'stock' ? 'stock' : undefined;
+            const explicit = rawUpgrade === 'top' ? 'top'
+                : rawUpgrade === 'stock' ? 'stock'
+                    : rawUpgrade === 'custom' ? 'custom' : undefined;
             return {
                 // 普通装甲检视缺省 XI 顶级；射击复现没有升级态证据时不得补成满级，
                 // 只有显式 &upgrade=top / &supgrade=top 才是 what-if。
