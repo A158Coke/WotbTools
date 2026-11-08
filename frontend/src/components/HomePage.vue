@@ -95,13 +95,16 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
     <section class="home-hero" data-testid="home-hero">
       <!-- 装饰层放在内容**之前**：两者都定位，后出现的内容自然压在上面，不需要 z-index。 -->
       <div class="home-hero-decor" aria-hidden="true"></div>
-      <div class="home-hero-reticle" aria-hidden="true"><span></span><span></span><span></span><span></span><i></i></div>
       <div class="home-hero-inner">
         <p class="home-hero-kicker">WOTBTOOLS · {{ $t(`uiProfile.${uiProfile}`) }}</p>
         <h1>
           <span class="home-hero-line">{{ $t('home.heroLine1') }}</span>
           <span class="home-hero-line is-accent">{{ $t('home.heroLine2') }}</span>
         </h1>
+        <!-- 副标题 + 按钮在左，瞄准框在右列：放进布局流而不是绝对定位，它只能占标题与数据带之间的空白，
+             任何视口、任何语言下都不会压到文字和按钮（之前按百分比定位，会盖住新手教程 / 赞助卡） -->
+        <div class="home-hero-mid">
+        <div class="home-hero-lead">
         <p class="home-hero-subtitle">{{ $t('home.heroSubtitle') }}</p>
         <div class="home-hero-actions">
           <AppButton class="home-cta" variant="primary" size="lg" href="/?view=replay">{{ $t('home.replayParse') }}<ArrowRight :size="18" aria-hidden="true" /></AppButton>
@@ -109,6 +112,9 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
             <Smartphone :size="18" aria-hidden="true" />{{ $t('android.nav') }}
           </AppButton>
           <button v-if="onboarding" type="button" class="home-cta-ghost" data-testid="home-onboarding" @click="onboarding.openDirectory()">{{ $t('onboarding.newbie') }}</button>
+        </div>
+        </div>
+        <div class="home-hero-reticle" aria-hidden="true"><span></span><span></span><span></span><span></span><i></i></div>
         </div>
 
         <div class="home-hero-foot">
@@ -205,8 +211,11 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
     var(--theme-hero-image) right center / cover;
 }
 
-/* 瞄准框装饰：四角 + 十字，纯装饰 */
-.home-hero-reticle { position: absolute; inset-inline-start: 34%; inset-block-start: 46%; inline-size: 50%; block-size: 38%; pointer-events: none; }
+/* 中段：左列副标题 + 按钮，右列瞄准框；中段吃掉标题与数据带之间的剩余高度，瞄准框随之伸缩 */
+.home-hero-mid { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); flex: 1 0 auto; gap: var(--space-12); }
+.home-hero-lead { min-width: 0; }
+/* 瞄准框装饰：四角 + 十字，纯装饰；太窄 / 太矮时不画（min 尺寸之下装饰没有意义） */
+.home-hero-reticle { position: relative; align-self: stretch; min-block-size: calc(var(--space-12) * 3); margin-block: var(--space-10) var(--space-6); pointer-events: none; }
 .home-hero-reticle span { position: absolute; inline-size: var(--space-10); block-size: var(--space-10); border: 0 solid var(--color-accent); }
 .home-hero-reticle span:nth-child(1) { inset-block-start: 0; inset-inline-start: 0; border-block-start-width: 2px; border-inline-start-width: 2px; }
 .home-hero-reticle span:nth-child(2) { inset-block-start: 0; inset-inline-end: 0; border-block-start-width: 2px; border-inline-end-width: 2px; }
@@ -380,6 +389,8 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
 
 @media (768px <= width < 1200px) {
   .home-hero-inner { padding: calc(var(--header-block) + env(safe-area-inset-top) + var(--space-10)) var(--space-10) var(--space-10); }
+  .home-hero-mid { display: block; }
+  .home-hero-reticle { display: none; }
   .home-feature-copy { inset-inline: var(--space-10); }
   .home-cards { padding: var(--space-8) var(--space-10); }
 }
@@ -388,10 +399,12 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
    赞助卡是主视觉下方第一块（实心按钮），反馈是第二块 */
 @media (width < 768px) {
   .home-hero-decor { background: var(--theme-hero-scrim-portrait), var(--theme-hero-image-portrait) center 72% / cover; }
-  /* 手机首屏文字铺满整屏，瞄准框会压在标题和副标题上，隐藏 */
+  .home-hero-mid { display: block; flex: none; }
   .home-hero-reticle { display: none; }
   .home-hero-inner { justify-content: flex-end; padding: calc(var(--header-block) + env(safe-area-inset-top) + var(--space-6)) var(--gutter) var(--space-8); }
   .home-hero-kicker { margin-bottom: var(--space-3); }
+  /* 小屏优先缩字号与占用，而不是改布局（2026-11-08 用户）；34px 仍是首屏最大的字 */
+  .home-hero h1 { font-size: var(--home-hero-title-size-compact); }
   .home-hero-subtitle { margin-top: var(--space-4); font-size: var(--font-size-body); }
   .home-hero-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); margin-top: var(--space-5); }
   .home-cta { grid-column: 1 / -1; }

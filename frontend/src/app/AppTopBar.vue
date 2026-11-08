@@ -203,6 +203,20 @@ onBeforeUnmount(() => {
   text-decoration: none;
   white-space: nowrap;
 }
+/* 窄屏：命中区保持控件高度（触屏 48px），可见的胶囊边框收窄到中间一段，顶栏不再显得拥挤 */
+@media (width < 768px) {
+  .app-top-bar { gap: var(--space-1); }
+  .sponsor-link { position: relative; padding: 0 var(--space-2); border-color: transparent; }
+  .sponsor-link::before {
+    position: absolute;
+    inset: var(--space-2) 0;
+    border: 1px solid var(--color-accent);
+    border-radius: var(--radius-full);
+    content: "";
+    pointer-events: none;
+  }
+  .account-link { min-width: var(--hit-min-comfortable); }
+}
 .sponsor-link + .notification-bell,
 .sponsor-link + .account-link,
 .dev-notice + .sponsor-link { margin-inline-start: 0; }
@@ -231,6 +245,10 @@ onBeforeUnmount(() => {
 .brand:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 
 .dev-notice {
+  /* 环境标签只是提示：空间不够时省略号收缩，不能把账号入口挤出屏幕 */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   margin-inline-start: auto;
   padding: var(--space-1) var(--space-2);
   border: 1px solid var(--color-border-subtle);
