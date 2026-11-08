@@ -218,12 +218,17 @@ it('ignores a stale detail response that predates a confirmed status', async () 
   const wrapper = mountPage()
   await flushPromises()
   await wrapper.get('[data-testid="feedback-row-open"]').trigger('click')
+  // PATCH 确认会作废在途详情读取并自动重发：先排队重发响应（服务器已应用新状态）
+  api.getFeedback.mockResolvedValueOnce({ ...row, status: 'FIXED', feedbackText: 'feedback', aiResponseText: 'exact reply\nraw' })
   await wrapper.get('.status-select').setValue('FIXED')
   await flushPromises()
   resolveDetail({ ...row, aiResponseText: 'exact reply\nraw', status: 'PENDING' })
   await flushPromises()
   expect(wrapper.get('.status-select').element.value).toBe('FIXED')
-  expect(detailStatusText(wrapper)).toBeUndefined()
+  // 被作废的在途读取会自动重发：陈旧响应不得展示，重发的新详情应渲染（状态取确认值）
+  expect(detailStatusText(wrapper)).toContain('aiFeedback.status.FIXED')
+  expect(wrapper.get('[data-testid="admin-detail-drawer"] .admin-list-pre').text()).toBe('feedback')
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false)
 })
 
 it('does not let a pre-update detail response overwrite the status after a list refresh', async () => {
@@ -232,6 +237,8 @@ it('does not let a pre-update detail response overwrite the status after a list 
   const wrapper = mountPage()
   await flushPromises()
   await wrapper.get('[data-testid="feedback-row-open"]').trigger('click')
+  // PATCH 确认会作废在途详情读取并自动重发：先排队重发响应（服务器已应用新状态）
+  api.getFeedback.mockResolvedValueOnce({ ...row, status: 'FIXED', feedbackText: 'feedback', aiResponseText: 'exact reply\nraw' })
   await wrapper.get('.status-select').setValue('FIXED')
   await flushPromises()
   api.listFeedback.mockResolvedValueOnce({ items: [{ ...row, status: 'FIXED' }], page: 0, size: 25, totalItems: 1, totalPages: 1 })
@@ -240,7 +247,10 @@ it('does not let a pre-update detail response overwrite the status after a list 
   resolveDetail({ ...row, aiResponseText: 'exact reply\nraw', status: 'PENDING' })
   await flushPromises()
   expect(wrapper.get('.status-select').element.value).toBe('FIXED')
-  expect(detailStatusText(wrapper)).toBeUndefined()
+  // 被作废的在途读取会自动重发：陈旧响应不得展示，重发的新详情应渲染（状态取确认值）
+  expect(detailStatusText(wrapper)).toContain('aiFeedback.status.FIXED')
+  expect(wrapper.get('[data-testid="admin-detail-drawer"] .admin-list-pre').text()).toBe('feedback')
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false)
   api.getFeedback.mockResolvedValueOnce({ ...row, status: 'FIXED', aiResponseText: 'exact reply\nraw' })
   await wrapper.get('[data-testid="feedback-row-open"]').trigger('click')
   await flushPromises()

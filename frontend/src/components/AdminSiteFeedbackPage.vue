@@ -28,6 +28,8 @@ const selected = ref<FeedbackItem | null>(null), detail = ref<FeedbackDetail | n
 const returnFocus = ref<HTMLElement | null>(null)
 const dangerZone = ref<InstanceType<typeof AdminDangerZone> | null>(null)
 const loaded = ref(false), savingStatus = ref<Record<string, boolean>>({})
+// 该记录的详情 GET 正在途中（PATCH 确认作废时据此重启读取，抽屉不停在「加载中」）
+const pendingDetailId = ref<FeedbackItem['id'] | null>(null)
 let hasLoadedOnce = false
 let blockedInitialLoad = false
 let generation = 0
@@ -104,6 +106,8 @@ function applyStatus(id: string, status: FeedbackStatus): void {
   if (target) target.status = status
   if (selected.value && selected.value.id === id) selected.value = { ...selected.value, status }
   if (detail.value && detail.value.id === id) detail.value = { ...detail.value, status }
+  // PATCH 确认作废了在途详情读取：详情仍在加载时重启读取，抽屉不能停在「加载中」
+  else if (pendingDetailId.value === id) void loadDetail(id)
 }
 /** 行内状态下拉（行内控件，不触发整行打开）：成功即确认；4xx 回退；其它失败回读服务器状态。 */
 async function changeStatus(item: FeedbackItem, event: Event): Promise<void> {
@@ -142,23 +146,31 @@ async function reconcileStatus(item: FeedbackItem, select: HTMLSelectElement, pr
 }
 
 /** 点行 / 主列按钮：抽屉立即打开显示列表字段，原文随后由详情请求补上。 */
-async function openDetail(item: FeedbackItem, event?: Event) {
+/** 详情读取：版本与状态纪元守卫（陈旧/被接管的响应静默丢弃）；在途标记见 pendingDetailId。 */
+async function loadDetail(id: FeedbackItem['id']): Promise<void> {
   const current = ++detailGeneration
-  const detailVersion = detailVersions.get(item.id) ?? 0
+  const detailVersion = detailVersions.get(id) ?? 0
   const statusEpochAtStart = statusEpoch
-  returnFocus.value = event ? rowOpenTarget(event) : null
-  selected.value = item; detail.value = null; deleting.value = false
-  dangerZone.value?.reset()
   if (!requireFeature(Feature.ADMIN_SITE_FEEDBACK)) return
   error.value = ''
   try {
-    const result = await getSiteFeedback(item.id)
-    if (current !== detailGeneration || detailVersion !== (detailVersions.get(item.id) ?? 0)) return
+    const result = await getSiteFeedback(id)
+    if (current !== detailGeneration || detailVersion !== (detailVersions.get(id) ?? 0)) return
     const confirmed = confirmedStatuses.get(result.id)
     detail.value = confirmed && confirmed.epoch > statusEpochAtStart ? { ...result, status: confirmed.status } : result
   } catch (cause) {
-    if (current === detailGeneration && detailVersion === (detailVersions.get(item.id) ?? 0)) error.value = apiErrorLabel(t, te, cause)
+    if (current === detailGeneration && detailVersion === (detailVersions.get(id) ?? 0)) error.value = apiErrorLabel(t, te, cause)
+  } finally {
+    if (pendingDetailId.value === id && current === detailGeneration) pendingDetailId.value = null
   }
+}
+
+function openDetail(item: FeedbackItem, event?: Event) {
+  returnFocus.value = event ? rowOpenTarget(event) : null
+  selected.value = item; detail.value = null; deleting.value = false
+  dangerZone.value?.reset()
+  pendingDetailId.value = item.id
+  void loadDetail(item.id)
 }
 function onRowClick(item: FeedbackItem, event: Event) { if (!isRowControlClick(event)) void openDetail(item, event) }
 function closeDetail() { if (deleting.value) return; detailGeneration++; selected.value = null; detail.value = null }

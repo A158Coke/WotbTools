@@ -179,7 +179,10 @@ it('ignores a stale detail response that predates a confirmed status', async () 
   resolveDetail({ ...row, status: 'PENDING' })
   await flushPromises()
   expect(wrapper.get('.status-select').element.value).toBe('FIXED')
-  expect(detailStatusText(wrapper)).toBeUndefined()
+  // 被作废的在途读取会自动重发：陈旧响应不得展示，重发的新详情应渲染（状态取确认值）
+  expect(detailStatusText(wrapper)).toContain('siteFeedback.status.FIXED')
+  expect(wrapper.get('[data-testid="admin-detail-drawer"] .admin-list-pre').text()).toBe('feedback')
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false)
 })
 
 it('does not let a pre-update detail response overwrite the status after a list refresh', async () => {
@@ -196,7 +199,10 @@ it('does not let a pre-update detail response overwrite the status after a list 
   resolveDetail({ ...row, status: 'PENDING' })
   await flushPromises()
   expect(wrapper.get('.status-select').element.value).toBe('FIXED')
-  expect(detailStatusText(wrapper)).toBeUndefined()
+  // 被作废的在途读取会自动重发：陈旧响应不得展示，重发的新详情应渲染（状态取确认值）
+  expect(detailStatusText(wrapper)).toContain('siteFeedback.status.FIXED')
+  expect(wrapper.get('[data-testid="admin-detail-drawer"] .admin-list-pre').text()).toBe('feedback')
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false)
   api.getSiteFeedback.mockResolvedValueOnce({ ...row, status: 'FIXED' })
   await wrapper.get('[data-testid="feedback-row-open"]').trigger('click')
   await flushPromises()
