@@ -5,6 +5,7 @@ import { siteFeedbackReasons, feedbackStatuses, listSiteFeedback, getSiteFeedbac
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { apiErrorLabel } from '../utils/display.js'
+import { normalizeApiError } from '../utils/http.js'
 import AppDialog from './AppDialog.vue'
 
 const { t, te } = useI18n()
@@ -18,6 +19,12 @@ let generation = 0
 let detailGeneration = 0
 let statusEpoch = 0
 const confirmedStatuses = new Map<string, { status: FeedbackStatus; epoch: number }>()
+
+/** 4xx means the server explicitly rejected the write; anything else may have committed. */
+function isDefiniteStatusRejection(cause: unknown): boolean {
+  const status = normalizeApiError(cause).status
+  return status !== null && status >= 400 && status < 500
+}
 
 function applyConfirmedStatuses(list: SiteFeedbackItem[], startedEpoch: number): SiteFeedbackItem[] {
   return list.map(item => {
@@ -65,22 +72,44 @@ async function changeStatus(item: SiteFeedbackItem, event: Event): Promise<void>
   const next = select.value as FeedbackStatus
   const previous = item.status
   if (next === previous || savingStatus.value[item.id]) { select.value = previous; return }
+  if (!requireFeature(Feature.ADMIN_SITE_FEEDBACK)) { select.value = previous; return }
   savingStatus.value = { ...savingStatus.value, [item.id]: true }
   error.value = ''
   try {
     await updateSiteFeedbackStatus(item.id, next)
     statusEpoch++
+    // A detail GET started before this confirmation may still deliver the old status.
+    detailGeneration++
     confirmedStatuses.set(item.id, { status: next, epoch: statusEpoch })
     const target = items.value.find(entry => entry.id === item.id)
     if (target) target.status = next
     if (detail.value && detail.value.id === item.id) detail.value = { ...detail.value, status: next }
   } catch (cause) {
-    select.value = previous
-    error.value = apiErrorLabel(t, te, cause)
+    if (isDefiniteStatusRejection(cause)) {
+      select.value = previous
+      error.value = apiErrorLabel(t, te, cause)
+    } else {
+      await reconcileStatus(item, select, previous)
+    }
   } finally {
     const rest = { ...savingStatus.value }
     delete rest[item.id]
     savingStatus.value = rest
+  }
+}
+async function reconcileStatus(item: SiteFeedbackItem, select: HTMLSelectElement, previous: FeedbackStatus): Promise<void> {
+  try {
+    const result = await getSiteFeedback(item.id)
+    statusEpoch++
+    detailGeneration++
+    confirmedStatuses.set(item.id, { status: result.status, epoch: statusEpoch })
+    const target = items.value.find(entry => entry.id === item.id)
+    if (target) target.status = result.status
+    select.value = result.status
+    if (detail.value && detail.value.id === item.id) detail.value = { ...detail.value, status: result.status }
+  } catch {
+    select.value = previous
+    error.value = t('siteFeedback.statusUnconfirmed')
   }
 }
 async function showDetail(id: string): Promise<void> {
