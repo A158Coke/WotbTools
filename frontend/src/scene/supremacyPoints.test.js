@@ -81,6 +81,8 @@ describe('中立 / 未知阵营色（PR #411 非阻塞：green / red / white）'
   const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
   // 基地色 token 兜底 2026-10-24 随基地系统出仓 playback/bases.js，守卫随实现迁移
   const basesSrc = readFileSync(resolve(here, 'playback/bases.ts'), 'utf8')
+  // 炮线阵营分流 2026-11-06 随战斗表现出仓 playback/battleRuntime.ts（#820 Step 5）
+  const battleSrc = readFileSync(resolve(here, 'playback/battleRuntime.ts'), 'utf8')
 
   it('中立与阵营未知收敛到 white（不再用灰）', () => {
     // 基地中立色走阵营 token --color-team-neutral，兜底同为白色
@@ -115,7 +117,10 @@ describe('中立 / 未知阵营色（PR #411 非阻塞：green / red / white）'
     expect(((trF >> 8) & 255)).toBeGreaterThan((trF >> 16) & 255)   // 绿通道为主
     expect((trE >> 16) & 255).toBeGreaterThan((trE >> 8) & 255)     // 红通道为主
     // 阵营语义分流：炮线走亮板、车辆走深板（各只出现一次，避免误用）
-    expect(src.match(/return t === ft \? TRACER_FRIENDLY : TRACER_ENEMY;/g)?.length).toBe(1)
+    expect(battleSrc.match(/return t === ft \? tracerColors\.friendly : tracerColors\.enemy;/g)?.length).toBe(1)
     expect(src.match(/return t === f \? COLOR_FRIENDLY : COLOR_ENEMY;/g)?.length).toBe(1)
+    // 亮板常量仍由宿主单点声明并注入（battleRuntime 不复制色值）
+    expect(src).toMatch(/tracerFriendly: TRACER_FRIENDLY,/)
+    expect(src).toMatch(/tracerEnemy: TRACER_ENEMY,/)
   })
 })

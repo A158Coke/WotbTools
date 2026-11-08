@@ -26,6 +26,8 @@ const gpSrc = strip(readFileSync(resolve(here, 'groundPass.js'), 'utf8'))
 const src = strip(readFileSync(resolve(here, 'playbackScene.js'), 'utf8'))
 // 场景装配块 2026-10-24 出仓 playback/mapAssets.js（Step A3），运行时侧装配守卫随实现迁移
 const mapAssetsSrc = strip(readFileSync(resolve(here, 'playback/mapAssets.ts'), 'utf8'))
+// 地面/地形运行时块 2026-11-06 出仓 playback/mapWorld.ts（#820 Step 2），守卫随实现迁移
+const mapWorldSrc = strip(readFileSync(resolve(here, 'playback/mapWorld.ts'), 'utf8'))
 const bakeSrc = strip(readFileSync(resolve(here, '..', '..', 'scripts', 'bake-ground-overhead.mjs'), 'utf8'))
 const bakeLayersSrc = strip(readFileSync(resolve(here, '..', '..', 'scripts', 'bake-ground-layers.js'), 'utf8'))
 
@@ -42,18 +44,21 @@ describe('地面 pass SSOT（groundPass.js）：两侧消费同一份，本地�
 
   it('运行时侧：消费共享入口，本地不得再持有地面着色器/海岸线构造/地形解码副本', () => {
     expect(src).toMatch(/from '\.\/groundPass\.js'/)
-    expect(src).toMatch(/buildGroundGeometry\(\{/)
-    expect(src).toMatch(/makeGroundMaterial\(\{/)
+    expect(mapWorldSrc).toMatch(/from '\.\.\/groundPass\.js'/)
+    expect(mapWorldSrc).toMatch(/buildGroundGeometryTyped\(\{/)
+    expect(mapWorldSrc).toMatch(/makeGroundMaterialTyped\(\{/)
     expect(mapAssetsSrc).toMatch(/waterCoast = makeWaterCoast\(\{/)
-    expect(src).toMatch(/const need = groundLayerKeys\(L\);/)
-    expect(src).toMatch(/setupGroundTextures\(texs, ani\);/)
-    expect(src).toMatch(/const \{ field, meta: tmeta, metaStatus, binStatus \} = await loadTerrain\(\{/)
-    // 副本禁令（本地零残留）
-    expect(src).not.toMatch(/function groundShaderMaterial/)
-    expect(src).not.toMatch(/uniform sampler2D uCM;/)
-    expect(src).not.toMatch(/new THREE\.DataTexture\(heightField/)
-    expect(src).not.toMatch(/decodeTerrainField\(/)
-    expect(src).not.toMatch(/pairedTerrainBinUrl\(/)
+    expect(mapWorldSrc).toMatch(/const need = groundLayerKeys\(L\);/)
+    expect(mapWorldSrc).toMatch(/setupGroundTextures\(texs, ani\);/)
+    expect(mapWorldSrc).toMatch(/const \{ field, meta: tmeta, metaStatus, binStatus \} = await loadTerrainTyped\(\{/)
+    // 副本禁令（本地零残留）：宿主与出仓运行时模块都不得复辟
+    for (const s of [src, mapWorldSrc]) {
+      expect(s).not.toMatch(/function groundShaderMaterial/)
+      expect(s).not.toMatch(/uniform sampler2D uCM;/)
+      expect(s).not.toMatch(/new THREE\.DataTexture\(heightField/)
+      expect(s).not.toMatch(/decodeTerrainField\(/)
+      expect(s).not.toMatch(/pairedTerrainBinUrl\(/)
+    }
   })
 
   it('烘焙侧：消费共享入口，本地不得复辟地面代码', () => {
@@ -140,8 +145,8 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
     // 运行时：调用共享实现并把掩码喂进构建器（留宿主接线与 DEBUG 钩子）
     expect(mapAssetsSrc).toMatch(/const built = buildCorridorRefineMask\(\{/)
     expect(mapAssetsSrc).toMatch(/terrainRefineMask = built\.mask;/)
-    expect(src).toMatch(/refineMask: terrainRefineMask,/)
-    expect(src).toMatch(/terrainRefineMask = null;/)
+    expect(mapWorldSrc).toMatch(/refineMask: terrainRefineMask,/)
+    expect(mapWorldSrc).toMatch(/terrainRefineMask = null;/)
     // 烘焙：同一实现 + 同一收集口径（onMesh 的 water 标记）；次序=掩码先于实例化合批
     expect(bakeSrc).toMatch(/buildCorridorRefineMask\(\{/)
     expect(bakeSrc).toMatch(/meshes: sceneryMeshes, field,/)

@@ -45,6 +45,18 @@ const asmSrc = readSrc(resolve(here, 'sceneryAssembly.ts'), 'utf8')
 const gpSrc = readSrc(resolve(here, 'groundPass.js'), 'utf8')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
+// #913 拆分后的运行时 owner（守卫随实现迁移）：地面/LOD/IBL/照明 → mapWorld，
+// 车辆位姿/悬挂 → vehicleRuntime，战斗特效 → battleRuntime，标签 → labelsRuntime，
+// 性能探针 → perfProbe，材质回收核心 → materialDispose。
+const stripComments = (s) => s.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '')
+const mapWorldSrc = stripComments(readSrc(resolve(here, 'playback/mapWorld.ts')))
+const vehSrc = stripComments(readSrc(resolve(here, 'playback/vehicleRuntime.ts')))
+const battleSrc = stripComments(readSrc(resolve(here, 'playback/battleRuntime.ts')))
+const lblSrc = stripComments(readSrc(resolve(here, 'playback/labelsRuntime.ts')))
+const perfSrc = stripComments(readSrc(resolve(here, 'playback/perfProbe.ts')))
+const matDisposeSrc = stripComments(readSrc(resolve(here, 'materialDispose.ts')))
+const treadSrc = stripComments(readSrc(resolve(here, 'playback/treadRuntime.ts')))
+const lifecycleSrc = stripComments(readSrc(resolve(here, 'playback/sessionLifecycle.ts')))
 
 // 场景内核依赖 WebGL，无法直接实例化；此仓已有源码级契约测试的先例（labelOcclusion.test.js）。
 // 本文件守卫「场景 GLB 材质管线」，即本轮从上游补齐的渲染实现——它们此前在本仓缺失，
@@ -66,18 +78,21 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
   it('disposeObject3D 经 collectMaterialTextures 回收纹理（含 ShaderMaterial uniforms）', () => {
     // 回归：ST| 静态 ShaderMaterial 的纹理在 uniforms.map.value，直接属性枚举
     // 触发零次 dispose → 切图累积 GPU 显存
-    expect(src).toMatch(/import \{ collectMaterialTextures \} from '\.\/materialDispose\.js'/)
-    const at = src.indexOf('function disposeObject3D')
+    // 实现 2026-11-05 出仓 materialDispose.ts（#913 合并后行数门禁）；守卫随实现迁移
+    expect(src).toMatch(/import \{ collectMaterialTextures, disposeObject3D \} from '\.\/materialDispose\.js'/)
+    const at = matDisposeSrc.indexOf('export function disposeObject3D')
     expect(at).toBeGreaterThan(-1)
-    expect(src.slice(at, at + 900)).toMatch(/collectMaterialTextures\(m, texs\)/)
+    expect(matDisposeSrc.slice(at, at + 900)).toMatch(/collectMaterialTextures\(m, texs\)/)
   })
 
   it('材质缓存随会话释放（勿复用已 dispose 实例）', () => {
-    // 必须在 teardownSession 里清空——mapScenery 在同一段被 dispose，缓存留着就会
-    // 复用已释放的材质实例
-    const at = src.indexOf('function teardownSession')
+    // 必须在 teardown 里清空——mapScenery 在同一段被 dispose，缓存留着就会
+    // 复用已释放的材质实例。地图资源 teardown owner 2026-11-05 出仓 playback/mapWorld
+    //（#913），守卫随实现迁移；宿主 teardownSession 仍必须调用 mapWorld.dispose()
+    const at = mapWorldSrc.indexOf('function dispose()')
     expect(at).toBeGreaterThan(-1)
-    expect(src.slice(at, at + 4000)).toMatch(/clearSceneryMatCache\(\);/)
+    expect(mapWorldSrc.slice(at, at + 1200)).toMatch(/clearSceneryMatCache\(\);/)
+    expect(src).toMatch(/mapWorld\.dispose\(\);/)
   })
 
   it('叶卡走不透明管线：transparent=false + uAlphaCut discard（消除互遮挡闪烁）', () => {
@@ -154,13 +169,13 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
   it('坦克 GLB 失败必须留痕（禁止静默 catch）+ 部位不全保持代理车', () => {
     // 回归：loadGlb 原为 `catch { return null }` —— 404/解析异常/模板处理抛错全被吞，
     // "切真实车模后没有车"无从定位（2026-10-09 实测）。失败要带 tank_id 与原始错误。
-    expect(src).toMatch(/console\.warn\('\[playback\] 坦克 GLB 加载失败 tank_id=' \+ tankId \+ ':', e\)/)
-    expect(src).not.toMatch(/\} catch \{ return null; \}/)
-    expect(src).toMatch(/console\.warn\('\[playback\] 坦克 GLB 解析返回空 tank_id=' \+ tankId\)/)
+    expect(vehSrc).toMatch(/console\.warn\('\[playback\] 坦克 GLB 加载失败 tank_id=' \+ tankId \+ ':', e\)/)
+    expect(vehSrc).not.toMatch(/\} catch \{ return null; \}/)
+    expect(vehSrc).toMatch(/console\.warn\('\[playback\] 坦克 GLB 解析返回空 tank_id=' \+ tankId\)/)
     // 部位/枢轴链不全 → 不挂半装载的 GLB（会停在世界原点被地形埋住），保留代理车
-    expect(src).toMatch(/console\.warn\('\[playback\] GLB 部位不全，保留代理车 tank_id=' \+ v\.def\.tank_id\)/)
+    expect(vehSrc).toMatch(/console\.warn\('\[playback\] GLB 部位不全，保留代理车 tank_id=' \+ v\.def\.tank_id\)/)
     // 顺序：先过部位检查、再落 v.glb（注释被剥，故用区间顺序断言）
-    const blk = src.slice(src.indexOf('if (loaded && glbOn && !v.glb) {'), src.indexOf('scene.add(v.glb);'))
+    const blk = vehSrc.slice(vehSrc.indexOf('if (loaded && glbOn && !v.glb) {'), vehSrc.indexOf('scene.add(v.glb);'))
     expect(blk.indexOf('collectGlbParts(')).toBeGreaterThan(-1)
     expect(blk.indexOf('collectGlbParts(')).toBeLessThan(blk.indexOf('v.glb = inst;'))
   })
@@ -247,21 +262,21 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 只影响 glTF PBR 材质（坦克）；自定义 ShaderMaterial 不吃 environment。
     const rs = readSrc(resolve(here, 'replaySource.ts'), 'utf8')
     expect(rs).toMatch(/case 'ibl': return f\('ibl\.webp'\)/)
-    expect(src).toMatch(/tex\.mapping = THREE\.EquirectangularReflectionMapping;/)
-    expect(src).toMatch(/tex\.colorSpace = THREE\.SRGBColorSpace;/)
-    expect(src).toMatch(/scene\.environmentIntensity = envMultiplier;/)
+    expect(mapWorldSrc).toMatch(/tex!\.mapping = THREE\.EquirectangularReflectionMapping;/)
+    expect(mapWorldSrc).toMatch(/tex!\.colorSpace = THREE\.SRGBColorSpace;/)
+    expect(mapWorldSrc).toMatch(/scene\.environmentIntensity = envMultiplier;/)
     // 倍率来自 lighting.json 的 ibl.environmentMultiplier（逐图 0.8–4.0）；
     // 2026-10-11 起在 applyMapLighting 内随太阳强度归一（authored 读取 + /expo，
     // 高太阳图 IBL 不再被输出曝光压暗——mountain 报障"坦克非常暗"）
     expect(mlSrc).toMatch(/const envAuthored = L\?\.ibl\?\.\['ibl\.environmentMultiplier'\];/)
     expect(mlSrc).toMatch(/envMultiplier = \(typeof envAuthored === 'number' && Number\.isFinite\(envAuthored\) \? envAuthored : 1\) \/ expo;/)
     // 时序：资产阶段可早于 initScene（scene 未创建）→ 加载时判空 + initScene 末尾补挂
-    expect(src).toMatch(/if \(scene\) \{/)
-    expect(src).toMatch(/scene\.environment = tex;/)
-    expect(src).toMatch(/if \(envTexture\) \{/)
+    expect(mapWorldSrc).toMatch(/if \(scene\) \{/)
+    expect(mapWorldSrc).toMatch(/scene\.environment = tex;/)
+    expect(mapWorldSrc).toMatch(/if \(envTexture\) \{/)
     // 会话拆除：摘环境 + dispose（PMREM 缓存随纹理释放）
-    expect(src).toMatch(/scene\.environment = null;/)
-    expect(src).toMatch(/if \(envTexture\) \{ envTexture\.dispose\(\); envTexture = null; \}/)
+    expect(mapWorldSrc).toMatch(/scene\.environment = null;/)
+    expect(mapWorldSrc).toMatch(/if \(envTexture\) \{ envTexture\.dispose\(\); envTexture = null; \}/)
   })
 
   it('烘焙光照图：albedo × lightmap(UV1×逐实例变换) × 2、不受光、镂空保留', () => {
@@ -341,11 +356,11 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 定向光真正塑形，错方位立刻显形（面向太阳的面反而暗，2026-10-09 用户报障）。
     const rs = readSrc(resolve(here, 'replaySource.ts'), 'utf8')
     expect(rs).toMatch(/case 'lighting': return f\('lighting\.json'\)/)
-    expect(src).toMatch(/applyMapLighting\(L\)/)
+    expect(mapWorldSrc).toMatch(/applyMapLighting\(L\)/)
     // 应用体自 2026-10-14 抽到共享模块 mapLighting.js（SSOT，与俯视烘焙同一份——烘焙此前
     // 自持固定日光常量，faust（夜图 intensity 8）等比 3D 档亮约 3 倍）；本页只保留委托。
-    expect(src).toMatch(/from '\.\/mapLighting\.js'/)
-    expect(src).toMatch(/envMultiplier = applyMapLightingCore\(\{ renderer, scene, sunLight, hemiLight, lighting: L, debug: DEBUG \}\)\.envMultiplier;/)
+    expect(mapWorldSrc).toMatch(/from '\.\.\/mapLighting\.js'/)
+    expect(mapWorldSrc).toMatch(/envMultiplier = applyMapLightingCore\(\{ renderer: renderer!, scene, sunLight, hemiLight, lighting: L, debug \}\)\.envMultiplier;/)
     // 客户端给"传播方向"，three 的方向光从 position 射向 target ⇒ position = −direction
     expect(mlSrc).toMatch(/sunLight\.position\.set\(-d\[0\] \/ n, -d\[1\] \/ n, -d\[2\] \/ n\)/)
     expect(mlSrc).toMatch(/sunLight\.intensity = sunIntensity;/)
@@ -353,7 +368,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // target 必须进场景图（否则矩阵不更新，方向滞留默认）
     expect(rendererSrc).toMatch(/scene\.add\(sunLight\.target\);/)
     // 会话拆除复位，避免换图残留上一张的太阳（守卫读的是剥注释源码，别带注释）
-    expect(src).toMatch(/resetMapLighting\(\);/)
+    expect(src).toMatch(/mapWorld\.resetMapLighting\(\);/)
   })
 
   it('ST| 静态几何走伽马直通 ShaderMaterial（与叶卡同方程，防同树双色）', () => {
@@ -378,10 +393,10 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // terrainMesh/水面同层附近：显示出来会在地图、半透明水面与地图外沿画出一层蓝灰线，
     // 并透出深色底板掩盖水的 alpha 效果。两者都必须 visible=false，对象仍保留入 scene
     //（拾取过滤/bbox 拟合按对象引用走，不看 visible）。
-    expect(src).toMatch(/ground\.visible = false;/)
-    const at = src.indexOf('const grid = new THREE.GridHelper(')
+    expect(mapWorldSrc).toMatch(/ground\.visible = false;/)
+    const at = mapWorldSrc.indexOf('const grid = new THREE.GridHelper(')
     expect(at).toBeGreaterThan(-1)
-    const block = src.slice(at, at + 900)
+    const block = mapWorldSrc.slice(at, at + 900)
     expect(block).toMatch(/grid\.visible = false;/)
     expect(block).toMatch(/scene\.add\(grid\);/)
   })
@@ -401,7 +416,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(fn).toMatch(/__tankAmbientFixed/)                       // 幂等：重复遍历不重打
     expect(fn).toMatch(/'\|tank-noambient'/)                       // 程序缓存键带标记（否则复用未打补丁程序）
     // 接线：坦克装配点（禁区外）调用；不改 scenery 侧任何材质
-    expect(src).toMatch(/v\.glbVisual = prepareTankDestroyedVisual\(v\.glb\);/)
+    expect(vehSrc).toMatch(/v\.glbVisual = prepareTankDestroyedVisual\(v\.glb\);/)
   })
 
   it('出屏口径（A2）：线性 × 曝光 1.0 → sRGB 编码 = 客户端口径；不引入调参旋钮', () => {
@@ -462,11 +477,13 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 新增一处（尤其给地面分层 texs[k] 加）会改这个数 ⇒ 必须先想清楚它属于哪一类。
     // 基地标记画布 2026-10-24 随基地系统出仓 playback/bases.js（Step A4），计数覆盖两份源
     const sites = [...src.matchAll(/colorSpace = THREE\.SRGBColorSpace/g),
-                   ...basesSrc.matchAll(/colorSpace = THREE\.SRGBColorSpace/g)]
+                   ...mapWorldSrc.matchAll(/colorSpace = THREE\.SRGBColorSpace/g),
+                   ...basesSrc.matchAll(/colorSpace = THREE\.SRGBColorSpace/g),
+                   ...treadSrc.matchAll(/colorSpace = THREE\.SRGBColorSpace/g)]
     expect(sites.length).toBe(4)
     expect(basesSrc).toMatch(/tex\.colorSpace = THREE\.SRGBColorSpace;/)   // 基地标记画布（bases.js）
-    expect(src).toMatch(/groundLayers = \{ layers: L, texs \};/)   // 分层纹理键集不变
-    expect(src).not.toMatch(/texs\[k\][^\n]*colorSpace/);          // 分层纹理不得改采样空间
+    expect(mapWorldSrc).toMatch(/groundLayers = \{ layers: L, texs \};/)   // 分层纹理键集不变
+    expect(mapWorldSrc).not.toMatch(/texs\[k\][^\n]*colorSpace/);          // 分层纹理不得改采样空间
   })
 
   it('地面弹着痕迹（D2）已撤除：客户端贴图不在可得数据面 ⇒ 不留程序化替代', () => {
@@ -486,29 +503,29 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // ⚠️ 断言只看代码（src 已剥注释）——用代码锚点，不要在注释文本上定位
     // 2026-10-14 地面 pass 抽层后：内核从 groundPass.js 引地形入口，地形内核（buildAdaptiveTerrain/
     // decodeTerrainField/groundMapUv/配对）在 groundPass 内消费（份额单实现见 groundPass.test.js）
-    expect(src).toMatch(/import \{[^}]*\bloadTerrain\b[^}]*\bbuildGroundGeometry\b[^}]*\} from '\.\/groundPass\.js'/)
-    expect(src).toMatch(/import \{[^}]*\bterrainLodState\b[^}]*\bterrainLodStale\b[^}]*\} from '\.\/terrainMesh\.js'/)
+    expect(mapWorldSrc).toMatch(/import \{[^}]*\bloadTerrain\b[^}]*\bbuildGroundGeometry\b[^}]*\} from '\.\.\/groundPass\.js'/)
+    expect(mapWorldSrc).toMatch(/import \{[^}]*\bterrainLodState\b[^}]*\bterrainLodStale\b[^}]*\} from '\.\.\/terrainMesh\.js'/)
     expect(gpSrc).toMatch(/buildAdaptiveTerrain, buildRefineMask, groundMapUv, decodeTerrainField,/)
-    expect(src).toMatch(/const geo = buildTerrainGeometry\(\);/)
-    expect(src).toMatch(/function buildTerrainGeometry\(\) \{/)
-    expect(src).toMatch(/field: heightField, n, span,/)
-    expect(src).toMatch(/maybeRebuildTerrainLod\(\);/)
+    expect(mapWorldSrc).toMatch(/const geo = buildTerrainGeometry\(\);/)
+    expect(mapWorldSrc).toMatch(/function buildTerrainGeometry\(\) \{/)
+    expect(mapWorldSrc).toMatch(/field: heightField, n, span,/)
+    expect(mapWorldSrc).toMatch(/maybeRebuildTerrainLod\(\);/)
     // LOD 单向滞回（拉近立即细化、拉远才允许变粗）：旧的双向 25% 滞回会让网格长期停在
     // "更远视距"的更粗层级 ⇒ 同一相机位置可比客户端判据允许的更粗 ⇒ 地形抬过贴地薄结构
     // （2026-10-10 用户"铁轨被盖、转/缩放后时有时无"）
     // 滞回输入与构建判据同源（review P2：绕目标水平旋转视距不变时也必须重建）
-    expect(src).toMatch(/if \(!terrainLodStale\(terrainLodPrev, cur, now - terrainLodAt\)\) return;/)
-    expect(src).not.toMatch(/Math\.abs\(d - terrainLodDist\) \/ Math\.max\(1, d\) < 0\.25/)
+    expect(mapWorldSrc).toMatch(/if \(!terrainLodStale\(terrainLodPrev, cur, now - terrainLodAt\)\) return;/)
+    expect(mapWorldSrc).not.toMatch(/Math\.abs\(d - terrainLodDist\) \/ Math\.max\(1, d\) < 0\.25/)
     // 回退/低档底图 UV（review P1）：几何必须带 uv——分层着色在片元反推 UV，
     // 但回退材质 `MeshBasicMaterial({ map })` 吃几何属性，缺了整张底图退化成单 texel
     expect(gpSrc).toMatch(/setAttribute\('uv', new THREE\.BufferAttribute\(groundMapUv\(positions, span, cx, cz\), 2\)\)/)
     // sampleHeight 采引擎口径（除 n，非 n−1）
-    expect(src).toMatch(/const fx = \(x \/ span \+ 0\.5\) \* n, fy = \(z \/ span \+ 0\.5\) \* n;/)
+    expect(mapWorldSrc).toMatch(/const fx = \(x \/ span \+ 0\.5\) \* n, fy = \(z \/ span \+ 0\.5\) \* n;/)
     // 几何已建在场景系：不得再有 PlaneGeometry 地形 + sampleHeight 位移 + 旋转/平移放置
-    expect(src).not.toMatch(/new THREE\.PlaneGeometry\(size, size, Q\.terrainSeg/)
-    expect(src).not.toMatch(/setZ\(k, sampleHeight\(-pos\.getX\(k\)/)
+    expect(mapWorldSrc).not.toMatch(/new THREE\.PlaneGeometry\(size, size, Q\.terrainSeg/)
+    expect(mapWorldSrc).not.toMatch(/setZ\(k, sampleHeight\(-pos\.getX\(k\)/)
     // 自适应网格模块与测试在位（客户端同构 LOD：顶点=texel 原值 + 视距容差细分）
-    expect(src).toMatch(/aspect: camera && Number\.isFinite\(camera\.aspect\)/)
+    expect(mapWorldSrc).toMatch(/aspect: camera && Number\.isFinite\(camera\.aspect\)/)
     const meshSrc = readSrc(resolve(here, 'terrainMesh.js'), 'utf8')
     expect(meshSrc).toMatch(
       /export function buildAdaptiveTerrain\(\{ field, n, span, cam, fovY, aspect = 16 \/ 9, minStep = 1, tolScale = 1, hFovDeg = null, refineMask = null \}\)/)
@@ -528,8 +545,8 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(gpSrc).toMatch(/const mask = buildRefineMask\(pts, n, span, marginTexels\);/)
     expect(mapAssetsSrc).toMatch(/terrainRefineMask = built\.mask;/)
     expect(mapAssetsSrc).toMatch(/const built = buildCorridorRefineMask\(\{/)
-    expect(src).toMatch(/refineMask: terrainRefineMask,/)
-    expect(src).toMatch(/terrainRefineMask = null;/)
+    expect(mapWorldSrc).toMatch(/refineMask: terrainRefineMask,/)
+    expect(mapWorldSrc).toMatch(/terrainRefineMask = null;/)
     expect(gpSrc).toMatch(/buildRefineMask,[\s\S]{0,200}from '\.\/terrainMesh\.js'/)
     const maskAt = mapAssetsSrc.indexOf('const sceneryMeshes: SceneryMeshSample[] = []')
     const instAt = mapAssetsSrc.indexOf('collectInstanceEntries(gltf.scene)')
@@ -540,8 +557,8 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // ⇒ 运行时恒传客户端正常相机；不传的话窄画布把「55° 竖直 × aspect」折算成小水平角、阈值滑到
     // 狙击镜档（放松最多 ~1.8×），同一机位我们的网格比客户端更粗（2026-10-14 用户报障）
     expect(meshSrc).toMatch(/export const CLIENT_NORMAL_CAMERA_FOV_H = 70/)
-    expect(src).toMatch(/hFovDeg: terrainHFovDeg\(\),/)
-    expect(src).toMatch(/import \{[^}]*\bCLIENT_NORMAL_CAMERA_FOV_H\b[^}]*\} from '\.\/terrainMesh\.js'/)
+    expect(mapWorldSrc).toMatch(/hFovDeg: terrainHFovDeg\(\),/)
+    expect(mapWorldSrc).toMatch(/import \{[^}]*\bCLIENT_NORMAL_CAMERA_FOV_H\b[^}]*\} from '\.\.\/terrainMesh\.js'/)
     // 引擎 `SubdivisionMetrics` 两套 fov 预设（LandscapeSubdivision.h:44-58）——阈值随 fov 插值
     expect(meshSrc).toMatch(/normalFov: 70, zoomFov: 6\.5/)
     expect(meshSrc).toMatch(
@@ -564,18 +581,18 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 预算用尽必须**仍出几何**（否则出现空洞 ⇒ 透出下层地面/水面）
     expect(meshSrc).toMatch(/overBudget = true;/)
     // 共面接缝不设任何人工补偿（?poff / ?seamfix 均已于 2026-10-10 撤除，理由见下一条用例）
-    expect(src).not.toMatch(/scenerySeamLift|instanceSeamLift|TERRAIN_SEAM_BAND/)
-    expect(src).not.toMatch(/get\('poff'\)|get\('seamfix'\)|get\('terrainlod'\)/)
+    expect(mapWorldSrc).not.toMatch(/scenerySeamLift|instanceSeamLift|TERRAIN_SEAM_BAND/)
+    expect(mapWorldSrc).not.toMatch(/get\('poff'\)|get\('seamfix'\)|get\('terrainlod'\)/)
     // 高度场一份到底（2026-10-11 用户裁示"只对齐客户端"：让位掩码与贴地结构脚印判据均已
     // 撤销，渲染/查询/放置全用真值 heightField）；双场概念（renderField）与 terrainCover、
     // structs 脚印管线禁止复活
-    expect(src).not.toMatch(/applyTerrainCover|terrainCover/)
-    expect(src).not.toMatch(/renderField/)
-    expect(src).not.toMatch(/structFootprint|structs\.u8\.bin/)
+    expect(mapWorldSrc).not.toMatch(/applyTerrainCover|terrainCover/)
+    expect(mapWorldSrc).not.toMatch(/renderField/)
+    expect(mapWorldSrc).not.toMatch(/structFootprint|structs\.u8\.bin/)
     // sampleHeight 读 heightField（唯一场）；拾取/贴地/贴花与渲染同源（客户端同构）
-    const shAt = src.indexOf('function sampleHeight')
+    const shAt = mapWorldSrc.indexOf('function sampleHeight')
     expect(shAt).toBeGreaterThan(-1)
-    const shBody = src.slice(shAt, src.indexOf('function ', shAt + 10))   // 只到下一个函数为止
+    const shBody = mapWorldSrc.slice(shAt, mapWorldSrc.indexOf('function ', shAt + 10))   // 只到下一个函数为止
     expect(shBody).toMatch(/heightField/)
   })
 
@@ -676,12 +693,12 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     //  ⚠️ 曾用"该视距下地形单元格上界"（∝视距）当淡出宽度：与客户端无关，且远景把水整片洗掉
     //  （用户"水面贴图也不太对了"）。此用例同时钉死正确口径并禁止那两个错误写法复活。
     expect(asmSrc).toMatch(/coast: waterCoast \}\);/)
-    expect(src).toMatch(/if \(waterTexDispose\) \{ waterTexDispose\.dispose\(\); waterTexDispose = null; \}/)
+    expect(mapWorldSrc).toMatch(/if \(waterTexDispose\) \{ waterTexDispose\.dispose\(\); waterTexDispose = null; \}/)
     // 2026-10-14 地面 pass 抽层：资源构造与数据读取在 groundPass（俯视烘焙同一份）
     expect(mapAssetsSrc).toMatch(/waterCoast = makeWaterCoast\(\{/)
     expect(gpSrc).toMatch(/export function makeWaterCoast\(\{ field, n, span, near, far, depthBits = 24 \}\) \{/)
-    expect(src).toMatch(/function terrainSpanOf\(\) \{/)
-    expect(src).not.toMatch(/terrainCellBound\(1, camera/)          // 旧"单元格上界"口径：禁止复活
+    expect(mapWorldSrc).toMatch(/function terrainSpanOf\(\) \{/)
+    expect(mapWorldSrc).not.toMatch(/terrainCellBound\(1, camera/)  // 旧"单元格上界"口径：禁止复活
     const wSrc = readSrc(resolve(here, 'sceneryMaterials.ts'), 'utf8')
     expect(wSrc).toMatch(/export function makeWaterMaterial\(m: GltfSceneMaterial, \{ normalTex, cubeTex, props, coast = null \}: \{/)
     expect(wSrc).toMatch(/uniform sampler2D uHeightmap;/)
@@ -697,10 +714,10 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 读取在 groundPass.loadTerrain（俯视烘焙同一份）
     expect(gpSrc).toMatch(/const matched = await terrainBinMatchesMeta\(tbuf, meta\);[\s\S]*?if \(matched\) \{[\s\S]*?decodeTerrainField\(tbuf, meta\)/)
     // json/bin 配对（PR #615 review P2）：bin 以 terrainBinSha256 作缓存键、解码前核对字节
-    expect(src).toMatch(/fetchFn: \(u\) => assetProvider\.fetch\(u\),/)
+    expect(mapWorldSrc).toMatch(/fetchFn: \(u: string\) => assetProvider\.fetch\(u\),/)
     expect(gpSrc).toMatch(/fetchFn\(pairedTerrainBinUrl\(binUrl, meta\)\)/)
     expect(gpSrc).toMatch(/const matched = await terrainBinMatchesMeta\(tbuf, meta\)/)
-    expect(src).not.toMatch(/heightField\[i\] = u16\[i\]/)
+    expect(mapWorldSrc).not.toMatch(/heightField\[i\] = u16\[i\]/)
     expect(wSrc).toMatch(/gl_FragColor = vec4\(refl, clamp\(fresnel, 0\.0, 1\.0\) \* coastLine\);/)
     expect(wSrc).not.toMatch(/uCoastCellPerDist|cellPerDist/)
     expect(wSrc).not.toMatch(/max\(cameraPosition\.y - vWorldP\.y, 1e-3\)/)     // 旧"相机高"口径：禁止复活
@@ -744,13 +761,13 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 2026-10-11 PR 评审：DAVA `SubdividePatch` 没有这条判据，与"纯客户端三判据"目标冲突 ⇒
     // 整体删除（岸线视觉由水材质/coastLine 处理，不改地形 tessellation）。
     // 本守卫锁死删除：`shores`/`shoreLevels`/`shoreHit` 均不得再现于两个模块。
-    expect(src).not.toMatch(/shores:/)
-    expect(src).not.toMatch(/shoreLevels/)
+    expect(mapWorldSrc).not.toMatch(/shores:/)
+    expect(mapWorldSrc).not.toMatch(/shoreLevels/)
     const meshSrc = readSrc(resolve(here, 'terrainMesh.js'), 'utf8')
     expect(meshSrc).not.toMatch(/shores/)
     expect(meshSrc).not.toMatch(/shoreHit/)
     expect(gpSrc).toMatch(/buildAdaptiveTerrain\(\{/)   // 地形构建入口在 groundPass（俯视烘焙同一份）
-    expect(src).toMatch(/buildGroundGeometry\(\{/)
+    expect(mapWorldSrc).toMatch(/buildGroundGeometryTyped\(\{/)
   })
 
   it('地面分层混合 uniform 类型对齐：uHbSoft 必须 vec4（曾误写 float ⇒ 值 NaN ⇒ 地面取错层色）', () => {
@@ -973,81 +990,85 @@ describe('__hullGroup 挂点（车体 = 记录位姿；逐轮悬挂见下方「�
     expect(glbPartsSrc).toMatch(/hullGroup\.name = '__hullGroup';?/)  // TS 出仓后无分号
     expect(glbPartsSrc).toMatch(/return \{ turretNode, gunNodes, tP, gP, hullGroup,/)
     // 两条位姿路径（GLB / 低模）都对 hullGroup 归单位：拆分组不得改变摆放
-    expect(src).toMatch(/p\.hullGroup\.quaternion\.identity\(\);/)
-    expect(src).toMatch(/p\.hullGroup\.position\.set\(0, 0, 0\);/)
-    expect(src).toMatch(/v\.hullGroup\.quaternion\.identity\(\);/)
+    expect(vehSrc).toMatch(/p\.hullGroup\.quaternion\.identity\(\);/)
+    expect(vehSrc).toMatch(/p\.hullGroup\.position\.set\(0, 0, 0\);/)
+    expect(vehSrc).toMatch(/v\.hullGroup\.quaternion\.identity\(\);/)
     // 旧近似整段移除：内核不得再出现地形局部平面/限幅残差解算（准备件留在 glbRig.js，未接线）
-    expect(src).not.toMatch(/terrainPitchRoll/)
-    expect(src).not.toMatch(/clampHullAttitude/)
-    expect(src).not.toMatch(/poseLocalBetween/)
+    expect(vehSrc).not.toMatch(/terrainPitchRoll/)
+    expect(vehSrc).not.toMatch(/clampHullAttitude/)
+    expect(vehSrc).not.toMatch(/poseLocalBetween/)
     // 低模侧挂点：履带盒留组根、hull/grille/turretG 收进同名 hullGroup
-    expect(src).toMatch(/const hullG = new THREE\.Group\(\); hullG\.name = '__hullGroup';/)
-    expect(src).toMatch(/hullGroup: hullG \};/)
+    expect(vehSrc).toMatch(/const hullG = new THREE\.Group\(\); hullG\.name = '__hullGroup';/)
+    expect(vehSrc).toMatch(/hullGroup: hullG,/)
   })
 })
 
 describe('悬挂接线（轮/带逐帧解算，客户端同构）', () => {
   it('数据来自包内 suspension/<id>.json（取证失败回落刚体），求解器独立成模块', () => {
     // 数据面无该车（或 404）→ 整车刚体：与"客户端无悬挂数据"同路，不造缺省值
-    expect(src).toMatch(/from '\.\/suspension\.js'/)
-    expect(src).toMatch(/assetProvider\.json\(`\/suspension\/\$\{tankId\}\.json`\)\.catch\(\(\) => null\)/)
-    expect(src).toMatch(/v\.suspParts = collectSuspensionParts\(inst, loaded\.susp, v\.def\.tank_id\)/)
-    expect(src).toMatch(/v\.def\.suspReaction = loaded\.susp \? loaded\.susp\.wheels_reaction_speed : null/)
+    expect(vehSrc).toMatch(/from '\.\.\/suspension\.js'/)
+    expect(vehSrc).toMatch(/assetProvider\.json<SuspensionJson \| null>\(`\/suspension\/\$\{tankId\}\.json`\)\.catch\(\(\) => null\)/)
+    expect(vehSrc).toMatch(/v\.suspParts = collectSuspensionParts\(inst, loaded\.susp, v\.def\.tank_id\)/)
+    expect(vehSrc).toMatch(/v\.def\.suspReaction = loaded\.susp \? loaded\.susp\.wheels_reaction_speed \?\? null : null/)
     // 履带印宽度回落链的源码级守卫（2026-10-11 事故：tracks.push 引用了未声明的
     // beltW 简写——两次补丁只落了引用侧——运行时报 "beltW is not defined"）
-    expect(src).toMatch(/const beltW = _spBox\.getSize\(new THREE\.Vector3\(\)\)\.x;/)
-    expect(src).toMatch(/tracks\.push\(\{[\s\S]{0,120}beltW,/)
-    expect(src).toMatch(/beltW: tracks\.length \? wsum \/ tracks\.length : 0/)
+    expect(vehSrc).toMatch(/const beltW = _spBox\.getSize\(new THREE\.Vector3\(\)\)\.x;/)
+    expect(vehSrc).toMatch(/tracks\.push\(\{[\s\S]{0,120}beltW,/)
+    expect(vehSrc).toMatch(/beltW: tracks\.length \? wsum \/ tracks\.length : 0/)
   })
 
   it('每帧在 poseGlb 里解算；seek 跳变吸附；不可见时侧位移积分复位', () => {
-    const glb = src.slice(src.indexOf('function poseGlb'), src.indexOf('async function applyGlbToggle'))
+    const glb = vehSrc.slice(vehSrc.indexOf('function poseGlb'), vehSrc.indexOf('async function applyGlbToggle'))
     expect(glb).toMatch(/suspensionStep\(v\);/)
     // 跳变（seek）语义 = 客户端"首次可见直接吸附"：行程吸附、侧位移不积分
-    expect(src).toMatch(/suspSnap = true;[\s\S]{0,160}tick\(\);/)
-    expect(src).toMatch(/for \(const v of V\) applyPose\(v\);[\s\S]{0,60}suspSnap = false;/)
-    expect(src).toMatch(/if \(v\.suspParts\) \{[\s\S]{0,200}\.prev = null;/)
+    // 宿主在 tick 前 markSeekSnap()、tick 后 clearSnap()；模块持有 suspSnap/suspDt 状态。
+    expect(src).toMatch(/vehicles\.markSeekSnap\(\);[\s\S]{0,160}tick\(\);/)
+    expect(src).toMatch(/for \(const v of vehicles\.getVehicles\(\)\) vehicles\.applyPose\(v\);[\s\S]{0,80}vehicles\.clearSnap\(\);/)
+    expect(vehSrc).toMatch(/markSeekSnap: \(\) => \{ suspSnap = true; suspDt = 0; \},/)
+    expect(vehSrc).toMatch(/clearSnap: \(\) => \{ suspSnap = false; \},/)
+    expect(vehSrc).toMatch(/if \(v\.suspParts\) \{[\s\S]{0,200}\.prev = null;/)
     // 逐帧 dt 来自主循环（按帧步长限速 = 客户端 wheelsReactionSpeed·dt 同口径）
-    expect(src).toMatch(/suspDt = dt;[\s\S]{0,80}tick\(\);/)
+    expect(src).toMatch(/vehicles\.frameTiming\(dt, false\);[\s\S]{0,80}tick\(\);/)
+    expect(vehSrc).toMatch(/frameTiming: \(dt, snap\) => \{ suspDt = dt; suspSnap = snap; \},/)
   })
 
   it('关闭 GLB / 会话结束：状态不残留，逐车 clone 的履带几何显式释放', () => {
-    expect(src).toMatch(/v\.glbParts = null; v\.suspParts = null;/)
-    expect(src).toMatch(/for \(const g of v\.suspParts\.disposables\) g\.dispose\(\);/)
+    expect(vehSrc).toMatch(/v\.glbParts = null; v\.suspParts = null;/)
+    expect(vehSrc).toMatch(/for \(const g of v\.suspParts\.disposables\) g\.dispose\(\);/)
   })
 
   it('只动底盘节点（chassis_wheel_* / chassis_track_*）：轮数/链数不符即 fail-closed', () => {
     // 名字解析走 suspension.js 的纯函数（语义由 suspension.test.js 锁：两位编号、多段履带）
-    expect(src.includes('parseWheelNodeName(n.name)')).toBe(true)
-    expect(src.includes('parseTrackNodeName(n.name)')).toBe(true)
+    expect(vehSrc.includes('parseWheelNodeName(n.name)')).toBe(true)
+    expect(vehSrc.includes('parseTrackNodeName(n.name)')).toBe(true)
     // 客户端口径 `wheelInfos.size() == suspension.wheels.size()`：轮数不符整台回落刚体
-    expect(src).toMatch(/wheelNodes\.length !== susp\.wheels\.length\) return null;/)
-    expect(src).toMatch(/trackNodes\.length !== chains\.length\) return null;/)
+    expect(vehSrc).toMatch(/wheelNodes\.length !== susp\.wheels\.length\) return null;/)
+    expect(vehSrc).toMatch(/trackNodes\.length !== chains\.length\) return null;/)
     // 履带几何逐车 clone（模板几何共享：变形会互相串）
-    expect(src).toMatch(/mesh\.geometry = mesh\.geometry\.clone\(\);/)
+    expect(vehSrc).toMatch(/mesh\.geometry = mesh\.geometry\.clone\(\);/)
     // 轮自转必须走 pivot 补偿：导出器把轮几何烘进顶点、节点留在原点 —— 直接写旋转 =
     // 轮绕整车公转（实测轮心漂 5.4~6.8 m，观感"旋转混乱"）
-    expect(src).toMatch(/applyWheelSpin\(w\.node, w\.restPos, w\.restQuat, w\.pivot, w\.restPivotRot,/)
-    expect(src).toMatch(/node\.parent\.worldToLocal\(ctr\.clone\(\)\)/)
+    expect(vehSrc).toMatch(/applyWheelSpin\(w\.node, w\.restPos, w\.restQuat, w\.pivot, w\.restPivotRot,/)
+    expect(vehSrc).toMatch(/node\.parent\.worldToLocal\(ctr\.clone\(\)\)/)
   })
 
   it('花纹写 V 只取模**偏移**（逐顶点取模会拉长跨 wrap 图元 = "外表面一小段没有纹理"）', () => {
     // 回归：旧写法 `val = frac(uvBase + offset)` 把 KRV 底段（跨 2.85 wrap）折成 0.15 wrap
     // ⇒ 纹理被拉长 ~18×；现改为整带同相（取模只作用于 offset）
-    expect(src).toMatch(/writeUvOffsetV\(gp\.uvAttr\.array, gp\.uvBase, uv\);/)
-    const scroll = src.slice(src.indexOf('writeUvOffsetV(gp.uvAttr.array'),
-                             src.indexOf('writeUvOffsetV(gp.uvAttr.array') + 400)
+    expect(vehSrc).toMatch(/writeUvOffsetV\(gp\.uvAttr\.array, gp\.uvBase, uv\);/)
+    const scroll = vehSrc.slice(vehSrc.indexOf('writeUvOffsetV(gp.uvAttr.array'),
+                             vehSrc.indexOf('writeUvOffsetV(gp.uvAttr.array') + 400)
     expect(scroll).not.toMatch(/Math\.floor\(val\)/)
-    expect(src).not.toMatch(/val -= Math\.floor\(val\)/)
+    expect(vehSrc).not.toMatch(/val -= Math\.floor\(val\)/)
   })
 
   it('花纹滚动速率来自**网格实测** dV/ds，不是客户端形式常数 textureScale/chunkLength', () => {
     // 实测（30 辆抽样）客户端形式常数比网格真实斜率大 3.4~19×（中位 4.5×）——直接用会明显偏快
-    expect(src).toMatch(/const uvFit = measureBeltUvSlope\(uvSamples\);/)
-    expect(src).toMatch(/const dvPerM = uvFit\.ok \? chainBottomRunDir\(chain2\) \* uvFit\.slope : 0;/)
-    expect(src).toMatch(/tg\.uv = treadScrollStep\(tg\.uv, dS, tg\.dvPerM\)/)
+    expect(vehSrc).toMatch(/const uvFit = measureBeltUvSlope\(uvSamples\);/)
+    expect(vehSrc).toMatch(/const dvPerM = uvFit\.ok \? chainBottomRunDir\(chain2\) \* uvFit\.slope : 0;/)
+    expect(vehSrc).toMatch(/tg\.uv = treadScrollStep\(tg\.uv, dS, tg\.dvPerM\)/)
     // 逐帧路径不得再引用客户端形式常数（量纲不同，见 suspension.js 注释）
-    const step = src.slice(src.indexOf('function suspensionStep'), src.indexOf('async function applyGlbToggle'))
+    const step = vehSrc.slice(vehSrc.indexOf('function suspensionStep'), vehSrc.indexOf('async function applyGlbToggle'))
     expect(step).not.toMatch(/textureScale/)
   })
 })
@@ -1087,12 +1108,13 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
     // 回归：每发/每次命中/每次击毁新建 geometry+material 再 dispose → 交火高峰分配尖峰。
     // 炮线/光迹借还 battleFx 的条带池，命中/开火/爆炸写进 battleFx 的粒子批次
     //（资源唯一 owner 与释放见 battleFx.test.js）；伤害数字已是覆盖层 DOM，没有画布资源可池化。
-    expect(src).toMatch(/fx\.takeRibbon\('tracer'\)/)
-    expect(src).toMatch(/fx\.takeRibbon\('trail'\)/)
-    expect(src).toMatch(/battleFx\.giveRibbon\(tl\.mesh\);/)
-    expect(src).toMatch(/battleFx\?\.dispose\(\);/)
+    expect(battleSrc).toMatch(/fx\.takeRibbon\('tracer'\)/)
+    expect(battleSrc).toMatch(/fx\.takeRibbon\('trail'\)/)
+    expect(battleSrc).toMatch(/battleFx!\.giveRibbon\(tl\.mesh\);/)
+    expect(battleSrc).toMatch(/battleFx\?\.dispose\(\);/)
+    expect(src).toMatch(/battle\.dispose\(\);/)
     // 热路径不得再出现逐次 dispose（geometry/material 的释放只在会话结束时）
-    const hot = src.slice(src.indexOf('function spawnShot'), src.indexOf('function updateBases'))
+    const hot = battleSrc.slice(battleSrc.indexOf('function spawnShot'), battleSrc.indexOf('function clearEffects'))
     expect(hot).not.toMatch(/\.geometry\.dispose\(\)/)
     expect(hot).not.toMatch(/\.material\.dispose\(\)/)
   })
@@ -1104,14 +1126,14 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
    *   2. 暂停 / T 未变时不重复求值（时间戳门控）。
    */
   it('装填条求值：关标签或 T 未变时跳过（暂停/关标签不再每车每帧全量求值）', () => {
-    const publish = src.slice(src.indexOf('function publishLabels'), src.indexOf('function setLabelPrefs'))
-    expect(publish, '关标签时必须整段早退').toMatch(/if \(!DATA \|\| !labelOverlay \|\| !store\.labelsOn\) return;/)
+    const publish = lblSrc.slice(lblSrc.indexOf('function publishLabels'), lblSrc.indexOf('function setLabelPrefs'))
+    expect(publish, '关标签时必须整段早退').toMatch(/if \(!DATA \|\| !labelOverlay \|\| !deps\.store\.labelsOn\) return;/)
     // 动态节流（2026-10-05）：装填中 33ms（~30Hz，进度平滑）/ 空闲 100ms。
     expect(publish, 'T 未变 / 未到节流窗口时不得重复求值')
       .toMatch(/if \(!force && \(T === labelsTime \|\| now - labelsWrittenMs < interval\)\) return;/)
     expect(publish, '装填中提高发布频率').toMatch(/labelsReloadActive \? LABEL_INTERVAL_RELOAD_MS : LABEL_INTERVAL_IDLE_MS/)
-    expect(src, '装填中 33ms').toMatch(/const LABEL_INTERVAL_RELOAD_MS = 33;/)
-    expect(src, '空闲 100ms（原值）').toMatch(/const LABEL_INTERVAL_IDLE_MS = 100;/)
+    expect(lblSrc, '装填中 33ms').toMatch(/const LABEL_INTERVAL_RELOAD_MS = 33;/)
+    expect(lblSrc, '空闲 100ms（原值）').toMatch(/const LABEL_INTERVAL_IDLE_MS = 100;/)
     // 求值本身只依赖 T（纯状态在时刻）：走共享 resolver，不再自带累加计时器；
     // 弹容 N 由 resolver 从 facet 车辆的 burst_size 取默认（调用点不再传 v.reloadSize）
     expect(publish).toMatch(/reload: destroyed \? null : reloadStateAt\(v\.def\.eid, T\)/)
@@ -1137,21 +1159,21 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
 
   it('资产加载走有限并发（地表贴图 / 坦克 GLB 都受上限约束）', () => {
     expect(pbUtilSrc).toMatch(/const ASSET_CONCURRENCY = 4/)
-    expect(src).toMatch(/await mapLimit\(need, ASSET_CONCURRENCY/)
-    expect(src).toMatch(/await mapLimit\(V\.filter\(v => v\.def\.tank_id > 0\), ASSET_CONCURRENCY/)
+    expect(mapWorldSrc).toMatch(/await mapLimit\(need, ASSET_CONCURRENCY/)
+    expect(vehSrc).toMatch(/await mapLimit\(V\.filter\(v => v\.def\.tank_id > 0\), ASSET_CONCURRENCY/)
   })
 
   it('GLB 位姿零分配：poseFromYPR 支持 out 参数，poseGlb 用模块级 scratch', () => {
     // 回退后（记录位姿）：根 = 记录 yaw/pitch/roll 一次合成，无高度场参与
     // 纯姿态 poseGlbRig(v, t, pos)：每帧以 (T, 本帧位置) 调用；开火定位炮口时临时以 t_fire 调用再摆回
-    expect(src).toMatch(/v\.glb\.quaternion\.copy\(poseFromYPR\(-yawAt\(v, t\), hullPitchAt\(v, t\), -rollAt\(v, t\), _glbQuat\)\);/)
-    expect(src).toMatch(/v\.glb\.position\.copy\(pos\);/)
-    expect(src).toMatch(/poseGlbRig\(v, T, v\.group\.position\);\s*suspensionStep\(v\);/)
-    const glb = src.slice(src.indexOf('function poseGlb'), src.indexOf('async function applyGlbToggle'))
+    expect(vehSrc).toMatch(/v\.glb\.quaternion\.copy\(poseFromYPR\(-yawAt\(v, t\), hullPitchAt\(v, t\), -rollAt\(v, t\), _glbQuat\)\);/)
+    expect(vehSrc).toMatch(/v\.glb\.position\.copy\(pos\);/)
+    expect(vehSrc).toMatch(/poseGlbRig\(v, deps\.getT\(\), v\.group\.position\);\s*suspensionStep\(v\);/)
+    const glb = vehSrc.slice(vehSrc.indexOf('function poseGlb'), vehSrc.indexOf('async function applyGlbToggle'))
     expect(glb).not.toMatch(/terrainPitchRoll|clampHullAttitude|sampleHeight/)
     expect(glb).not.toMatch(/new THREE\.Matrix4\(\)/)     // 每帧不再新建矩阵
     expect(glb).not.toMatch(/new THREE\.Euler\(\)/)
-    expect(glb).toMatch(/_mAcc\.copy\(mT\)\.multiply\(tn\.userData\.__bake\)/)
+    expect(glb).toMatch(/_mAcc\.copy\(mT\)\.multiply\(tn\.userData\.__bake as THREE\.Matrix4\)/)
     // bake 捕获的 clone 是一次性（userData.__bake），不属于逐帧分配
   })
 
@@ -1160,9 +1182,9 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
     expect(animate).toMatch(/const busy = PLAYING/)
     expect(animate).toMatch(/\|\| cameraMoved/)
     expect(animate).toMatch(/\|\| frameDirty/)
-    expect(animate).toMatch(/tracers\.length > 0 \|\| \(battleFx && battleFx\.active\(\)\)/)
-    // 幽灵段/受击闪的活跃判定由 transient 模块持有，场景只问 hasActive()
-    expect(animate).toMatch(/transients\.hasActive\(\);/)
+    // 弹道/战斗特效/幽灵闪的活跃判定由 battleRuntime 持有，场景只问 battle.isActive()
+    expect(animate).toMatch(/\|\| battle\.isActive\(\);/)
+    expect(battleSrc).toMatch(/isActive\(\) \{ return tracers\.length > 0 \|\| \(battleFx && battleFx\.active\(\)\) \|\| transients\.hasActive\(\); \}/)
     // 跳帧分支：空闲时只做帧率角标归零，随后 return（不跑 tick / 标签 / render）
     expect(animate).toMatch(/if \(!busy\) \{(?:.|\n){0,600}?return;/)
     expect(animate.indexOf('frameDirty = false;')).toBeGreaterThan(animate.indexOf('if (!busy) {'))
@@ -1179,8 +1201,8 @@ describe('车体横滚（hull_roll）接线守卫', () => {
   it('侧倾取值走共享位姿采样器：旧产物缺列时落 0（不拿 pitch 顶替）', () => {
     // rollAt 经每车最近采样缓存（poseStash）读 .roll；poseStash 内部仍走共享采样器 poseOf
     //（下一断言），缓存不改变通道选择的 SSOT 归属。
-    expect(src).toMatch(/const rollAt = \(v, t\) => poseStash\(v, t\)\.roll;/)
-    expect(src).toMatch(/function poseStash\(v, t\) \{(?:.|\n){0,400}?const p = poseOf\(v, t\);/)
+    expect(vehSrc).toMatch(/const rollAt = \(v: RuntimeVehicle, t: number\) => poseStash\(v, t\)\.roll;/)
+    expect(vehSrc).toMatch(/function poseStash\(v: RuntimeVehicle, t: number\) \{(?:.|\n){0,400}?const p = poseOf\(v, t\);/)
     expect(poseSrc).toMatch(/if \(!arr \|\| !arr\.length\) return 0/)
     expect(poseSrc).toMatch(/out\.roll = gridChannel\(def\.hull_roll, t, grid, span\)/)
     expect(poseSrc).toMatch(/out\.turretAbs = gridChannel\(def\.turret_yaw, t, grid, span\)/)
@@ -1190,35 +1212,35 @@ describe('车体横滚（hull_roll）接线守卫', () => {
 
   it('位姿通道唯一实现：场景只做帧变换，不再自带通道选择/关键帧回退', () => {
     // 2D 俯视与 3D 场景必须逐帧同源（2026-10-16 抽层）；本守卫防通道逻辑回流到场景侧。
-    expect(src).toMatch(/const poseOf = \(v, t\) => sampleVehiclePoseGame\(/)
-    expect(src).toMatch(/VIS_BY_EID\.get\(v\.def\.eid\) \?\? v\.def\.coverage/)
-    expect(src).toMatch(/out\.set\(-p\.x, p\.y, p\.z\);/)
-    expect(src).not.toMatch(/kfOf/)
-    expect(src).not.toMatch(/const col = \(c\) =>/)
+    expect(vehSrc).toMatch(/const poseOf = \(v: RuntimeVehicle, t: number\) => sampleVehiclePoseGame\(/)
+    expect(vehSrc).toMatch(/deps\.visByEid\(\)\.get\(v\.def\.eid\) \?\? v\.def\.coverage/)
+    expect(vehSrc).toMatch(/out\.set\(-p\.x, p\.y, p\.z\);/)
+    expect(vehSrc).not.toMatch(/kfOf/)
+    expect(vehSrc).not.toMatch(/const col = \(c\) =>/)
   })
 
   it('两条位姿路径都带 roll，且符号为负（镜像约定：绕前向轴取负，与 -yaw 同理）', () => {
     // GLB 路径：记录 roll 取负进 poseFromYPR（客户端同构，见 glbRig.js 符号约定）
-    expect(src).toMatch(/poseFromYPR\(-yawAt\(v, t\), hullPitchAt\(v, t\), -rollAt\(v, t\), _glbQuat\)/)
+    expect(vehSrc).toMatch(/poseFromYPR\(-yawAt\(v, t\), hullPitchAt\(v, t\), -rollAt\(v, t\), _glbQuat\)/)
     // 低模路径：同一口径的记录位姿（y=-yaw / x=pitch / z=-roll）
-    expect(src).toMatch(/v\.group\.rotation\.y = -yawAt\(v, T\);/)
-    expect(src).toMatch(/v\.group\.rotation\.x = hullPitchAt\(v, T\);/)
-    expect(src).toMatch(/v\.group\.rotation\.z = -rollAt\(v, T\);/)
+    expect(vehSrc).toMatch(/v\.group\.rotation\.y = -yawAt\(v, T\);/)
+    expect(vehSrc).toMatch(/v\.group\.rotation\.x = hullPitchAt\(v, T\);/)
+    expect(vehSrc).toMatch(/v\.group\.rotation\.z = -rollAt\(v, T\);/)
   })
 
   it('横滚与偏航符号同号、俯仰不受影响（镜像约定的可判据部分）', () => {
     // 注释里的完整推导不入断言（src 已剥注释）；这里只锁「yaw 取负 ⇒ roll 也取负」这一约定
-    expect(src).toMatch(/-yawAt\(v, T\)/)
-    expect(src).toMatch(/-rollAt\(v, T\)/)
-    expect(src).not.toMatch(/\+rollAt\(v, T\)/)
+    expect(vehSrc).toMatch(/-yawAt\(v, T\)/)
+    expect(vehSrc).toMatch(/-rollAt\(v, T\)/)
+    expect(vehSrc).not.toMatch(/\+rollAt\(v, T\)/)
   })
 })
 
 describe('炮线渲染守卫（阵营语义色直出）', () => {
   it('炮线与弹道光迹的外观只在 battleFx：场景按射手阵营色调用（直出、亮度、粗细层级由 battleFx.test.js 按真实材质锁定）', () => {
-    expect(src).toMatch(/battleFx\.setTracer\(tr\.mesh, _tpB, _tpA, tr\.color\);/)
-    expect(src).toMatch(/battleFx\.setTrail\(tl\.mesh, _tpA\.copy\(tl\.a\)\.lerp\(tl\.b, f0\), _tpB\.copy\(tl\.a\)\.lerp\(tl\.b, f\), tl\.color, opacity\);/)
-    expect(src).not.toMatch(/TRAJ_OPACITY|TRACER_RADIUS|TRAJ_RADIUS/)
+    expect(battleSrc).toMatch(/battleFx!\.setTracer\(tr\.mesh, _tpB, _tpA, tr\.color\);/)
+    expect(battleSrc).toMatch(/battleFx!\.setTrail\(tl\.mesh, _tpA\.copy\(tl\.a\)\.lerp\(tl\.b, f0\), _tpB\.copy\(tl\.a\)\.lerp\(tl\.b, f\), tl\.color, opacity\);/)
+    expect(battleSrc).not.toMatch(/TRAJ_OPACITY|TRACER_RADIUS|TRAJ_RADIUS/)
   })
 
   it('飞行段时长 = 真实飞行时长（不得再有"最小显示时长"拖慢炮弹）', async () => {
@@ -1235,9 +1257,9 @@ describe('炮线渲染守卫（阵营语义色直出）', () => {
     expect(tracerSpanSecs(Number.POSITIVE_INFINITY)).toBeCloseTo(oneFrame, 12)
     // 源码护栏：飞行时长必须由纯函数/折线段时长给出，且不存在 0.22 之类的最小显示钳位
     // （折线弹道：`legEnds` 由 `legSecsOf(s, tracerSpanSecs(...))` 累计 → t1 = 末段结束时刻）
-    expect(src).toMatch(/const legSecs = legSecsOf\(s, tracerSpanSecs\(s\.flight_secs\)\);/)
-    expect(src).toMatch(/const t1 = legEnds\[legEnds\.length - 1\];/)
-    expect(src).not.toMatch(/Math\.max\(0\.22, s\.flight_secs\)/)
+    expect(battleSrc).toMatch(/const legSecs = legSecsOf\(s, tracerSpanSecs\(s\.flight_secs\)\);/)
+    expect(battleSrc).toMatch(/const t1 = legEnds\[legEnds\.length - 1\];/)
+    expect(battleSrc).not.toMatch(/Math\.max\(0\.22, s\.flight_secs\)/)
   })
 
   it('标记/反馈层材质字面色直出（toneMapped:false）——逐图曝光不得压深 UI 语义色', () => {
@@ -1254,7 +1276,7 @@ describe('炮线渲染守卫（阵营语义色直出）', () => {
     const sites = [
       [/color: 0xe8b23c[\s\S]{0,160}toneMapped: false/, '作者标记环'],
     ]
-    for (const [re, label] of sites) expect(src, label).toMatch(re)
+    for (const [re, label] of sites) expect(vehSrc, label).toMatch(re)
     // 炮线 / 光迹 / 命中 / 开火 / 爆炸的材质在 battleFx：其 toneMapped=false 由 battleFx.test.js 按真实材质断言
   })
 
@@ -1264,15 +1286,16 @@ describe('炮线渲染守卫（阵营语义色直出）', () => {
     // 会话启动路径必须调用（GLB 恢复之后、开播之前）
     // GLB 恢复挂载已前移到 buildVehicles 之后（2026-10-11）：高/极致在 assetStage 内
     // await 全部模型就绪才开播（用户裁示"进地图前加载完双方坦克模型"）
-    expect(src).toMatch(/const attach = applyGlbToggle\(true\);[\s\S]{0,80}if \(Q\.forceGlb\) \{/)
-    expect(src).toMatch(/try \{ await attach; \} finally \{ if \(current\(\)\) store\.assetStage = false; \}/)
-    expect(src).toMatch(/prewarmShaders\(\);/)
+    expect(lifecycleSrc).toMatch(/const attach = deps\.applyGlbToggle\(true\);[\s\S]{0,120}if \(deps\.forceGlb\(\)\) \{/)
+    expect(lifecycleSrc).toMatch(/try \{ await attach; \} finally \{ if \(current\(\)\) store\.assetStage = false; \}/)
+    expect(lifecycleSrc).toMatch(/deps\.prewarmShaders\(\);/)
+    expect(src).toMatch(/prewarmShaders,/)
   })
 
   it('性能探针带主线程停顿看门狗（抓帧循环之外的长任务）', () => {
-    expect(src).toMatch(/setInterval\(\(\) => \{/)
-    expect(src).toMatch(/PERF_HEARTBEAT_MS = 50/)
-    expect(src).toMatch(/main-thread stalls/)
+    expect(perfSrc).toMatch(/setInterval\(\(\) => \{/)
+    expect(perfSrc).toMatch(/PERF_HEARTBEAT_MS = 50/)
+    expect(perfSrc).toMatch(/main-thread stalls/)
   })
 })
 
@@ -1308,9 +1331,9 @@ describe('地形 LOD 滞回与构建判据同源（review P2 回归锁）', () =
   // （视距恒等）时网格永远不重建，停在旧相机位置的 LOD 分布上。onResize 同理只改投影
   // 不重建地形。守卫：重建入口必须传相机姿态快照（terrainLodState），不得退回只比视距。
   it('maybeRebuildTerrainLod 消费 terrainLodState(camera, controls.target, camera.aspect)', () => {
-    const start = src.indexOf('function maybeRebuildTerrainLod')
+    const start = mapWorldSrc.indexOf('function maybeRebuildTerrainLod')
     expect(start).toBeGreaterThan(0)
-    const fn = src.slice(start, src.indexOf('\n  }', start))
+    const fn = mapWorldSrc.slice(start, mapWorldSrc.indexOf('\n  }', start))
     expect(fn).toMatch(/terrainLodState\(camera, controls\.target, camera\.aspect\)/)
     expect(fn).not.toMatch(/terrainLodDist/)
     expect(fn).toMatch(/terrainLodStale\(terrainLodPrev, cur, now - terrainLodAt\)/)
@@ -1326,8 +1349,8 @@ describe('场景装配的会话/资源卫生（2026-10-10 review P2 批）', () 
   })
 
   it('履带 UV 回退分支引用有效变量（v0tankId 未定义会抛 ReferenceError，半初始化装配）', () => {
-    expect(src).not.toMatch(/v0tankId/)
-    expect(src).toMatch(/花纹停滚）tank=' \+ \(tankId \|\| '\?'\)/)
+    expect(vehSrc).not.toMatch(/v0tankId/)
+    expect(vehSrc).toMatch(/花纹停滚）tank=' \+ \(tankId \|\| '\?'\)/)
   })
 
   it('光照图材质按输入指纹缓存共享（逐 mesh 新建会把 (几何,材质) 合批拆成单实例批）', () => {
@@ -1341,20 +1364,20 @@ describe('场景装配的会话/资源卫生（2026-10-10 review P2 批）', () 
   })
 
   it('关闭 GLB 时在清引用前释放该车悬挂克隆几何（反复开关不累积 GPU 缓冲）', () => {
-    const start = src.indexOf('function applyGlbToggle')
+    const start = vehSrc.indexOf('function applyGlbToggle')
     expect(start).toBeGreaterThan(0)
-    const seg = src.slice(start, src.indexOf('\n  }', src.indexOf('setLowPoly(v, true);', start)))
+    const seg = vehSrc.slice(start, vehSrc.indexOf('\n  }', vehSrc.indexOf('setLowPoly(v, true);', start)))
     expect(seg).toMatch(/if \(v\.suspParts && v\.suspParts\.disposables\) \{[\s\S]{0,80}?g\.dispose\(\);/)
     // disposables 释放必须发生在清空引用之前
     expect(seg.indexOf('disposables')).toBeLessThan(seg.indexOf('v.suspParts = null'))
   })
 
   it('履带形变下发按解算链判定（只比最大幅度会漏"幅度相同、分布不同"）', () => {
-    expect(src).toMatch(/chainChanged\(tg\.appliedChainZ, tg\.chainZ\)/)
-    expect(src).toMatch(/tg\.appliedChainZ\.set\(tg\.chainZ\)/)
+    expect(vehSrc).toMatch(/chainChanged\(tg\.appliedChainZ, tg\.chainZ\)/)
+    expect(vehSrc).toMatch(/tg\.appliedChainZ\.set\(tg\.chainZ\)/)
     // 法线闸门必须与**上次重算法线时的链**逐点比较（review 复审 P2：dmax/dmean 漏"分布变化"）
-    expect(src).toMatch(/chainDrift\(tg\.normalChainZ, tg\.chainZ\)/)
-    expect(src).toMatch(/tg\.normalChainZ\.set\(tg\.chainZ\)/)
-    expect(src).not.toMatch(/appliedAbs|normalMean|normalAbs/)
+    expect(vehSrc).toMatch(/chainDrift\(tg\.normalChainZ, tg\.chainZ\)/)
+    expect(vehSrc).toMatch(/tg\.normalChainZ\.set\(tg\.chainZ\)/)
+    expect(vehSrc).not.toMatch(/appliedAbs|normalMean|normalAbs/)
   })
 })
