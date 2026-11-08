@@ -20,6 +20,7 @@ import { configIndexFor, consumableTiming, pickGun, pickTurret, presetSlots, tan
 import { fmtNum } from '../scene/tankMeta.js'
 import { romanLevel } from '../utils/tierFormat.js'
 import { resolveUpgradeSelection, upgradeMechanicEffects } from '../replay-local/compute/tankUpgrades'
+import { parseAugmentProgression, researchGroupChoice } from '../replay-local/compute/tankAugmentTree'
 import { isConditionalCrewSkill } from '../replay-local/compute/crewStats'
 
 const props = defineProps({
@@ -108,12 +109,20 @@ const abilityGroups = computed(() => (upgrades.value.groups || []).map((group, g
     }
   }),
 })))
+/** 升级状态文案：custom（部分研发）效果已生效，不能沿用 stock 的「未生效」。 */
+const upgradeStatusKey = computed(() => (upgrades.value.mode === 'top' ? 'upgrade_top'
+  : upgrades.value.mode === 'custom' ? 'upgrade_custom' : 'upgrade_inactive'))
 function selectAbility(group, value) {
-  // custom（研发树联动）：abilities 即已研发表——选卡 = 组内换选，其余已研发节点保留
+  // custom（研发树联动）：abilities 即已研发表——选卡 = 组内换选，其余已研发节点保留。
+  // 组前置必须与研发树同口径补齐（共享 researchGroupChoice），否则配置卡能装出
+  // “缺前置却有机制效果”的非法状态。
   if (props.selection.upgrade === 'custom') {
-    const next = props.selection.abilities.filter(id => !group.choices.includes(id))
-    next.push(Number(value))
-    emit('update', { abilities: next })
+    const progression = parseAugmentProgression(props.modules)
+    const installed = new Set(props.selection.abilities)
+    const next = progression
+      ? researchGroupChoice(progression, group.id, Number(value), installed)
+      : installed
+    emit('update', { abilities: [...next] })
     return
   }
   const choices = { ...upgrades.value.choices, [group.id]: Number(value) }
@@ -507,7 +516,7 @@ const camoBonusParts = computed(() => {
         <p v-if="abilityGroups.length" class="tp-muted">{{ t('agentTanks.configurator.upgrade_skill_hint') }}</p>
         <section v-if="mechanicEffects.length" class="tp-mechanic-effects" aria-live="polite" data-testid="tank-mechanic-effects">
           <header class="tp-block-head"><h3>{{ t('agentTanks.configurator.upgrade_effects') }}</h3>
-            <span class="tp-ability-status">{{ t(`agentTanks.configurator.${upgrades.mode === 'top' ? 'upgrade_top' : 'upgrade_inactive'}`) }}</span>
+            <span class="tp-ability-status">{{ t(`agentTanks.configurator.${upgradeStatusKey}`) }}</span>
           </header>
           <table>
             <thead><tr><th scope="col">{{ t('agentTanks.configurator.upgrade_effect_attribute') }}</th>

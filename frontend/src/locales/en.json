@@ -1724,6 +1724,7 @@
       "upgrade_trigger_hit": "On hit",
       "upgrade_trigger_damage": "On damage",
       "upgrade_inactive": "Stock · inactive",
+      "upgrade_custom": "Partially researched · active",
       "upgrade_effect_delta_note": "Current values combine same-version ability data and upgrades. Missing base values show — and known changes only. Battle effects require activation and do not enter normal stats.",
       "upgrade_unsupported": "Upgrade data is incomplete. Fully upgraded stats are unavailable.",
       "upgrade_unavailable": "This asset pack has no upgrade data for this vehicle. Initial stats are shown.",
@@ -1850,7 +1851,7 @@
         },
         "combatFrenzy": {
           "name": "Combat Frenzy",
-          "description": "Each enemy vehicle destroyed increases reload speed, stacking up to a limit; a new shell can be switched in after a kill."
+          "description": "Each enemy vehicle destroyed increases reload speed, stacking up to a limit; destroyed targets keep the accumulated stacks."
         },
         "rammingConfiguration": {
           "name": "Ramming Configuration",

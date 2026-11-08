@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import TANKS from './__fixtures__/upgrades/tanks.json'
 import {
   buildAugmentLayout, isNodeAvailable, parseAugmentProgression,
-  researchWithPrerequisites, rollbackSubtree,
+  researchGroupChoice, researchWithPrerequisites, rollbackSubtree,
 } from './tankAugmentTree'
 
 const bz = TANKS.find(t => t.modules.tankId === 15153)!
@@ -101,6 +101,23 @@ describe('XI 升级研发树布局（客户端 TankProgress/UpgradeProgression�
     expect(rolled.chosen[group.id]).toBeUndefined()
     // 其余两条链的前置与备选无关节点保留（只回退被回退链的下游）
     expect(rolled.installed.has(byTech.get(group.requiredNodes![1]!)!.id)).toBe(true)
+  })
+
+  it('researchGroupChoice：组前置链 + 备选，组内互斥（树与配置卡共用）', () => {
+    const group = progression.alternativeGroups[0]!
+    const byTech = new Map(progression.nodes.map(n => [n.techName, n]))
+    // 空状态点备选 22 → 三条前置链全部补齐 + 22
+    const next = researchGroupChoice(progression, group.id, group.choices[0]!, new Set<number>())
+    for (const req of group.requiredNodes ?? []) expect(next.has(byTech.get(req)!.id)).toBe(true)
+    expect(next.has(group.choices[0]!)).toBe(true)
+    // 换选到 23：22 被替换（组内互斥），前置保留
+    const swapped = researchGroupChoice(progression, group.id, group.choices[1]!, next)
+    expect(swapped.has(group.choices[0]!)).toBe(false)
+    expect(swapped.has(group.choices[1]!)).toBe(true)
+    for (const req of group.requiredNodes ?? []) expect(swapped.has(byTech.get(req)!.id)).toBe(true)
+    // 非法备选/组 id 原样返回
+    expect([...researchGroupChoice(progression, group.id, 999999, next)]).toEqual([...next])
+    expect([...researchGroupChoice(progression, 'no-such-group', group.choices[0]!, next)]).toEqual([...next])
   })
 
   it('可用性：前置未齐不可用', () => {

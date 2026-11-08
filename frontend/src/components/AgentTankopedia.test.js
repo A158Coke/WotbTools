@@ -499,6 +499,23 @@ describe('AgentTankopedia — XI 两端升级（真实客户端模块，受控�
     expect(old.find('.tp-module-matrix').exists()).toBe(true)
     old.unmount()
   })
+
+  it('XI 研发树消费归一化状态：手工多选同组备选只显示一项已研发（URL 互斥）', async () => {
+    const fixture = UPGRADE_TANKS[0]
+    useTank(fixture)
+    const choices = fixture.modules.upgradeProgression.alternativeGroups[0].choices
+    const opened = await mountAt({
+      tank: String(fixture.modules.tankId), config: '0', upgrade: 'custom', abilities: choices.join(','),
+    })
+    await opened.wrapper.find('[data-testid="tank-open-research"]').trigger('click')
+    await flushPromises()
+    // 投影规范化为每组第一项；树必须与投影一致，不能把三项都标成已研发
+    for (const [index, id] of choices.entries()) {
+      expect(opened.wrapper.find(`[data-testid="tank-augment-sector-${id}"]`).attributes('aria-pressed'))
+        .toBe(String(index === 0))
+    }
+    opened.wrapper.unmount()
+  })
 })
 
 describe('AgentTankopedia — XI 数据完整性', () => {
@@ -512,6 +529,18 @@ describe('AgentTankopedia — XI 数据完整性', () => {
     const { wrapper } = await mountAt({ tank: String(modules.tankId), upgrade: 'top' })
     expect(wrapper.find('[data-testid="tank-upgrade-top"]').attributes('disabled')).toBeDefined()
     expect(wrapper.text()).toContain('agentTanks.configurator.upgrade_unsupported')
+    expect(wrapper.find('[data-testid="tank-param-maxHealth"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('升级数据 unsupported 时 custom 也 fail-closed：不显示 stock 数值冒充已研发', async () => {
+    const { detail, modules } = structuredClone(UPGRADE_TANKS[0])
+    modules.gameVersion = 'release/11.99' // 版本不匹配 → supported=false
+    data.fetchTankData.mockReset().mockResolvedValue(detail)
+    data.fetchTankEncyclopedia.mockReset().mockResolvedValue(makeCache())
+    research.loadResearchCatalog.mockReset().mockResolvedValue(CATALOG)
+    research.loadTankModules.mockReset().mockResolvedValue({ tanks: { [modules.stem]: modules } })
+    const { wrapper } = await mountAt({ tank: String(modules.tankId), upgrade: 'custom', abilities: '3,7,11,12' })
     expect(wrapper.find('[data-testid="tank-param-maxHealth"]').exists()).toBe(false)
     wrapper.unmount()
   })

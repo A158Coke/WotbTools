@@ -1724,6 +1724,7 @@
       "upgrade_trigger_hit": "命中",
       "upgrade_trigger_damage": "造成伤害",
       "upgrade_inactive": "初始状态 · 未生效",
+      "upgrade_custom": "部分研发 · 已生效",
       "upgrade_effect_delta_note": "当前值来自同版技能基础值与升级加成；缺少基础值的项目显示 — 和已知变化。战斗效果需触发，不计入常态参数。",
       "upgrade_unsupported": "当前升级数据不完整，暂时无法计算满级数值。",
       "upgrade_unavailable": "当前资产包尚未提供这辆车的升级数据，显示初始值。",
@@ -1850,7 +1851,7 @@
         },
         "combatFrenzy": {
           "name": "战斗狂热",
-          "description": "每击毁一辆敌方车辆都会提升装填速度，可叠加至上限；击杀后允许更换弹种。"
+          "description": "每击毁一辆敌方车辆提升装填速度，可叠加至上限；击毁目标后保留已积累的层数（不因换目标清空）。"
         },
         "rammingConfiguration": {
           "name": "撞击配置",

@@ -176,8 +176,10 @@ export function resolveUpgradeSelection(modules: unknown, mode?: unknown, inputC
       if (candidate != null) { result.choices[group.id] = candidate; result.abilities.push(candidate) }
       continue
     }
+    // custom→top/stock 切换时 abilities 是完整已研发表（至多 64 项），备选可能排在
+    // 前置节点之后；按全表找已选备选，避免晚于第 8 位的选择被重置成默认项。
     const candidate = Array.isArray(requested)
-      ? requested.slice(0, 8).find(id => group.choices.includes(id))
+      ? requested.find(id => group.choices.includes(id))
       : record(requested) ? requested[group.id] : undefined
     const chosen = typeof candidate === 'number' && group.choices.includes(candidate) ? candidate : group.choices[0]!
     result.choices[group.id] = chosen; result.abilities.push(chosen)

@@ -14,7 +14,7 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   AUGMENT_CELL, buildAugmentLayout, isPercentAttribute,
-  parseAugmentProgression, researchWithPrerequisites, rollbackSubtree,
+  parseAugmentProgression, researchGroupChoice, researchWithPrerequisites, rollbackSubtree,
 } from '../replay-local/compute/tankAugmentTree'
 import type { AugmentGroup } from '../replay-local/compute/tankAugmentTree'
 
@@ -46,6 +46,20 @@ const mechanicName = computed(() => {
 const mechanicDescription = computed(() => {
   const p = mechanicPath.value
   return p && te(`${p}.description`) ? t(`${p}.description`) : ''
+})
+/** 客户端未本地化的组名/描述是资源键（如 `Ch67_BZ_79/Upgrades/Group/Name`）。 */
+function isResourceKey(value: string | undefined): boolean {
+  return !!value && (value.includes('/') || value.startsWith('$'))
+}
+const groupTitle = computed(() => {
+  const g = group.value
+  if (!g) return ''
+  return isResourceKey(g.displayName) ? (mechanicName.value || '') : (g.displayName || '')
+})
+const groupDescription = computed(() => {
+  const g = group.value
+  if (!g) return ''
+  return isResourceKey(g.description) ? mechanicDescription.value : (g.description || '')
 })
 
 const installedSet = computed(() => new Set(props.installed))
@@ -180,16 +194,8 @@ function onSectorClick(nodeId: number): void {
   const g = group.value
   if (!g || !progression.value) return
   selectedId.value = nodeId
-  // 选备选 = 研发组前置链 + 该备选（组状态由 choices 携带）；组内互斥
-  const next = new Set(installedSet.value)
-  const byTech = new Map(progression.value.nodes.map(n => [n.techName, n]))
-  for (const req of g.requiredNodes ?? []) {
-    const reqNode = byTech.get(req)
-    if (reqNode) researchWithPrerequisites(progression.value, reqNode.id, next).forEach(id => next.add(id))
-  }
-  for (const other of g.choices) next.delete(other)
-  next.add(nodeId)
-  emitState(next)
+  // 选备选 = 研发组前置链 + 该备选（组内互斥）；与配置卡换选共用同一助手
+  emitState(researchGroupChoice(progression.value, g.id, nodeId, installedSet.value))
 }
 function researchAll(): void {
   emit('research-all')
@@ -316,6 +322,7 @@ const selectedGroup = computed(() => (selected.value && selected.value.kind !== 
             <button
               v-for="sector in layout.sectors" :key="'h' + sector.nodeId"
               type="button" class="at-cell at-cursor"
+              :data-testid="`tank-augment-sector-${sector.nodeId}`"
               :style="{ left: sector.cx - 48 + 'px', top: sector.cy - 48 + 'px' }"
               :aria-label="nodeAriaLabel(nodesById.get(sector.nodeId))"
               :aria-pressed="chosen[group.id] === sector.nodeId"
@@ -336,7 +343,7 @@ const selectedGroup = computed(() => (selected.value && selected.value.kind !== 
             <div class="at-bico"><img :src="selectedIsNode ? nodeIcon(selectedNode) : mechIconUrl" alt=""></div>
             <div class="at-bmain">
               <div class="at-btitle">
-                {{ selectedIsNode ? t('agentTanks.configurator.augment_node_title') : (group?.displayName || '') }}
+                {{ selectedIsNode ? t('agentTanks.configurator.augment_node_title') : groupTitle }}
               </div>
               <div class="at-bstatus" :class="{ 'at-ok': selectedInstalled }">
                 {{ selectedInstalled ? t('agentTanks.configurator.augment_installed') : t('agentTanks.configurator.augment_can_research') }}
@@ -351,7 +358,7 @@ const selectedGroup = computed(() => (selected.value && selected.value.kind !== 
             </div>
           </div>
           <div v-if="!selectedIsNode && selectedGroup" class="at-groupdesc">
-            <p class="at-braw">{{ selectedGroup.description }}</p>
+            <p class="at-braw">{{ groupDescription }}</p>
             <template v-for="(opt, i) in selectedGroupRows" :key="opt.id">
               <div v-if="i > 0" class="at-or">{{ t('agentTanks.configurator.augment_or') }}</div>
               <div class="at-optrow">

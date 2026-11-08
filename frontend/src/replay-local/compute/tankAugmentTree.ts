@@ -183,6 +183,29 @@ export function researchWithPrerequisites(
   return next
 }
 
+/**
+ * 研发某组备选：组前置链（researchWithPrerequisites）+ 该备选，组内互斥。
+ * 树扇区点击与配置卡换选共用同一口径——两条入口都不能跳过组前置。
+ */
+export function researchGroupChoice(
+  progression: AugmentProgression,
+  groupId: string,
+  choiceId: number,
+  installed: ReadonlySet<number>,
+): Set<number> {
+  const group = progression.alternativeGroups.find(g => g.id === groupId)
+  if (!group || !group.choices.includes(choiceId)) return new Set(installed)
+  const byTech = new Map(progression.nodes.map(n => [n.techName, n]))
+  const next = new Set(installed)
+  for (const req of group.requiredNodes ?? []) {
+    const reqNode = byTech.get(req)
+    if (reqNode) researchWithPrerequisites(progression, reqNode.id, next).forEach(id => next.add(id))
+  }
+  for (const other of group.choices) next.delete(other)
+  next.add(choiceId)
+  return next
+}
+
 /** 点击已研发节点：回退该节点 + 所有直接/间接依赖它的节点与组（组级联卸载并清除备选）。 */
 export function rollbackSubtree(
   progression: AugmentProgression,

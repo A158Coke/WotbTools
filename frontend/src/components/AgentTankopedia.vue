@@ -260,32 +260,39 @@ const isXiResearch = computed(() => !!modules.value?.upgradeProgression)
 
 /**
  * 研发树 ↔ 配置栏/参数面板 三方共用同一 URL 状态：
- * - stock → 空表；top → 全部普通/机制节点 + 各组已选备选；custom → abilities 原表。
+ * - stock → 空表；top → 全部普通/机制节点 + 各组已选备选；custom → 归一化后的已研发表。
  * 研发树事件写回 custom + abilities，投影（projectTankUpgrades）随之重算。
+ * 树必须消费 `upgradeSelection` 的归一化结果（而不是原始 URL）：手工链接
+ * `abilities=22,23,24` 投影只取每组一项，若树直接读 URL 会把三项都标成已研发。
  */
 const augmentInstalled = computed(() => {
   if (!isXiResearch.value) return []
-  if (urlState.value.upgrade === 'custom') return urlState.value.abilities
   const sel = upgradeSelection.value
-  if (!sel.available || sel.mode !== 'top') return []
+  if (!sel.available) return []
+  if (sel.mode === 'custom') return sel.abilities
+  if (sel.mode !== 'top') return []
   return [
     ...sel.nodes.filter(n => n.type !== 'NODETYPE_ALTERNATIVE_MECHANIC').map(n => n.id),
     ...sel.abilities,
   ]
 })
 const augmentChosen = computed(() => {
-  const g = modules.value?.upgradeProgression?.alternativeGroups?.[0]
-  if (!g) return {}
-  const picked = augmentInstalled.value.filter(id => g.choices.includes(id))
-  return picked.length ? { [g.id]: picked[picked.length - 1] } : {}
+  const sel = upgradeSelection.value
+  if (!sel.available) return {}
+  return { ...sel.choices }
 })
+/** 升级元数据不可用（版本/脚本/投影字段缺失）时禁止写入研发状态：树保持只读展示。 */
+const augmentWritable = computed(() => upgradeSelection.value.supported !== false)
 function onAugmentResearch(ids) {
+  if (!augmentWritable.value) return
   writeState({ upgrade: ids.length ? 'custom' : 'stock', abilities: ids })
 }
 function onAugmentResearchAll() {
+  if (!augmentWritable.value) return
   writeState({ upgrade: 'top', abilities: [] })
 }
 function onAugmentResearchNone() {
+  if (!augmentWritable.value) return
   writeState({ upgrade: 'stock', abilities: [] })
 }
 watch(detailId, () => { researchOpen.value = false })
@@ -363,8 +370,9 @@ function openVehicleFromGraph(tankId) {
 }
 
 const computeInput = computed(() => (setup.value.canConfigure && detail.value && modules.value && catalog.value
+  // 升级数据不可用时 top 与 custom 都 fail-closed：不允许拿 stock 数值冒充已研发投影。
   && !(upgradeSelection.value.available
-    && upgradeSelection.value.mode === 'top'
+    && (upgradeSelection.value.mode === 'top' || upgradeSelection.value.mode === 'custom')
     && !upgradeSelection.value.supported)
   ? buildComputeInput({
     detail: detail.value, modules: modules.value, selection: setup.value, catalog: catalog.value,

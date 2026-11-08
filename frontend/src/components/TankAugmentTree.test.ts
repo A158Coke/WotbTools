@@ -67,6 +67,15 @@ describe('TankAugmentTree 可访问性与操作文案', () => {
     zh.unmount()
   })
 
+  it('选中组圆：标题/描述回退到本地化机制文案，不显示客户端资源键', async () => {
+    const wrapper = render({ vehicleAbilities: ['rechargeableNitro'] })
+    await wrapper.get('[data-testid="tank-augment-group"]').trigger('click')
+    const text = wrapper.get('[data-testid="tank-augment-info"]').text()
+    expect(text).not.toContain('Upgrades/Group')
+    expect(text).toContain('Liquid Fuel Boosters')
+    wrapper.unmount()
+  })
+
   it('MODIFIER_MULTIPLY 属性按系数（×）展示，不显示为加法', async () => {
     const wrapper = render()
     // BZ-79 节点 5（tier11_stabilisation_01）：散布系数 0.98 = 乘数语义（降 2%）

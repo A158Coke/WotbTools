@@ -72,6 +72,32 @@ describe('XI 研发树 custom 模式（部分研发 ↔ 面板/配置栏联动�
     expect(projected.selection.choices[progression.alternativeGroups[0]!.id]).toBe(22)
     expect(projected.selection.attributes.RECHARGEABLE_NITRO_FWD_SPEED_LIMIT_FACTOR).toBeUndefined()
   })
+
+  it('custom→top/stock 切换时保留已选备选（备选位于长表后段也不丢）', () => {
+    const group = progression.alternativeGroups[0]!
+    const chosen = group.choices[2]! // 24：排在根节点链之后
+    // 模拟 custom 的完整已研发表：8 个前置节点 + 组备选
+    const longList = [...progression.nodes.filter(n => n.gridPosition).slice(0, 8).map(n => n.id), chosen]
+    expect(longList.indexOf(chosen)).toBeGreaterThanOrEqual(8)
+    const top = resolveUpgradeSelection(bz.modules, 'top', longList)
+    expect(top.choices[group.id]).toBe(chosen)
+    expect(top.abilities).toEqual([chosen])
+    const stock = resolveUpgradeSelection(bz.modules, 'stock', longList)
+    expect(stock.choices[group.id]).toBe(chosen)
+  })
+
+  it('custom 部分研发的引擎功率升级计入车体转向（stock 功率仍是基准）', () => {
+    // BZ-79 前置完整的研发表 [3,7,11,12] 含引擎功率升级
+    const sel = resolveUpgradeSelection(bz.modules, 'custom', [3, 7, 11, 12])
+    expect(sel.supported).toBe(true)
+    const withBaseline = buildComputeInput({
+      detail: bz.detail, modules: bz.modules, selection: { ...baseSelection(bz)!, upgrade: 'custom' as const, abilities: [3, 7, 11, 12] },
+      catalog: { devices: [], devicePresets: {} },
+    })
+    expect(withBaseline.stockEnginePower).toBe(Number(bz.modules.engines[0].stats.power))
+    // 功率比基准必须来自初始发动机，而不是投影后的功率
+    expect(withBaseline.stockEnginePower).toBeLessThan(Number(withBaseline.modules.engines[0].stats.power))
+  })
 })
 
 describe('XI 技能升级变化展示', () => {
