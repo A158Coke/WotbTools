@@ -44,37 +44,20 @@ describe('MarkdownDocPage（审计 PG-14：长文档目录）', () => {
     expect(wrapper.find('pre .doc-copy').text()).toBe('doc.copy')
   })
 
-  it('app footer 滚进视口底部带时隐藏「回到顶部」，不盖住页脚备案链接', async () => {
-    const observers = []
-    const RealIO = window.IntersectionObserver
-    class FakeIO {
-      constructor(callback, options) { this.callback = callback; this.options = options; observers.push(this) }
-      observe() {} unobserve() {} disconnect() {}
-    }
-    window.IntersectionObserver = FakeIO
+  it('回顶钮是 .doc-page 直接子元素（sticky，流位在 app footer 之前）', async () => {
     const originalScrollY = Object.getOwnPropertyDescriptor(window, 'scrollY')
     Object.defineProperty(window, 'scrollY', { value: 2000, configurable: true })
-    document.body.insertAdjacentHTML('beforeend', '<footer data-testid="app-footer"></footer>')
-    let wrapper
     try {
-      wrapper = mount(MarkdownDocPage, { props: { source: SOURCE }, global: { mocks: { $t: key => key } } })
+      const wrapper = mount(MarkdownDocPage, { props: { source: SOURCE }, global: { mocks: { $t: key => key } } })
       window.dispatchEvent(new Event('scroll'))
       await nextTick()
       expect(wrapper.find('[data-testid="doc-back-to-top"]').exists()).toBe(true)
-      const footerObserver = observers.find(observer => observer.options?.rootMargin === '0px 0px -80px 0px')
-      expect(footerObserver).toBeTruthy()
-      footerObserver.callback([{ isIntersecting: true }])
-      await nextTick()
-      expect(wrapper.find('[data-testid="doc-back-to-top"]').exists()).toBe(false)
-      footerObserver.callback([{ isIntersecting: false }])
-      await nextTick()
-      expect(wrapper.find('[data-testid="doc-back-to-top"]').exists()).toBe(true)
+      // 几何契约由 mobile-pages L6 浏览器门禁持有；这里锁定结构：sticky 的回顶钮
+      // 不再是 fixed 外科元素，留在 .doc-page 内、随内容停在页脚之上。
+      expect(wrapper.find('.doc-page > .doc-top').exists()).toBe(true)
     } finally {
-      wrapper?.unmount()
-      document.querySelector('[data-testid="app-footer"]')?.remove()
       if (originalScrollY) Object.defineProperty(window, 'scrollY', originalScrollY)
       else Reflect.deleteProperty(window, 'scrollY')
-      window.IntersectionObserver = RealIO
     }
   })
 })

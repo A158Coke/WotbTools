@@ -6,6 +6,7 @@ import { nextTick, inject, ref, computed } from 'vue'
 import App from './App.vue'
 import { DIALOG_INLINE_KEY } from './shared/dialog.js'
 import { NAVIGATE_VIEW_KEY } from './shared/navigation.js'
+import { SHELL_CHROME_KEY } from './shared/shellChrome.js'
 import { createAppRouter } from './app/router.js'
 import { ALLOWED_VIEWS } from './app/navigation.js'
 import { VIEW_COMPONENTS } from './app/viewRegistry.js'
@@ -18,12 +19,15 @@ vi.mock('./components/ReplayWorkspace.vue', () => ({
   default: {
     name: 'ReplayWorkspace',
     props: ['initialCapability'],
-    setup() { return { navigate: inject(NAVIGATE_VIEW_KEY) } },
+    setup() { return { navigate: inject(NAVIGATE_VIEW_KEY), chrome: inject(SHELL_CHROME_KEY) } },
     // ws-armor-handoff 模拟 `ReplayShotsPane.openInViewer`：目标带 query 的对象形式
     // （工作台把整个目的地交给 router owner，装甲查看器要的 tank/shot/world/… 都在里面）
+    // ws-immersive-request：仅全屏兜底菜单用例点击——模拟播放器申请沉浸态但暂不 hostNav
+    //（对应 3D 工具栏收起交还托管的状态），其余用例不受影响。
     template: `<div :data-cap="initialCapability" data-test="view-replay">
       <button data-testid="ws-tab" @click="navigate('ai-review')">ai</button>
       <button data-testid="ws-armor-handoff" @click="navigate({ query: { view: 'agent-armor', tank: '13825', shooter: '19969', shot: '2', shell: '0', scfg: '0', config: '1', world: '1', heatmap: '1' } })">viewer</button>
+      <button data-testid="ws-immersive-request" @click="chrome?.request('app-test-immersive', true)" />
     </div>`,
   },
 }))
@@ -591,6 +595,33 @@ describe('App shell navigation, 更多 and account', () => {
     expect(wrapper.find('[data-testid="app-sidebar"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="app-top-bar"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="nav-menu"]').exists()).toBe(true)
+  })
+
+  it('3D 全屏且播放器交还导航托管时，兜底菜单渲染进全屏元素（外壳会被浏览器隐藏）', async () => {
+    const fullscreenRoot = document.createElement('div')
+    document.body.append(fullscreenRoot)
+    Object.defineProperty(document, 'fullscreenElement', { configurable: true, value: fullscreenRoot })
+    layoutState.isCompact.value = true
+    layoutState.isDrawerShell.value = true
+    try {
+      const { wrapper } = await mountApp('/?view=replay')
+      await wrapper.get('[data-testid="ws-immersive-request"]').trigger('click')
+      await settle()
+      // 兜底菜单走 AppShell 自己的 Teleport（不受 DIALOG_INLINE_KEY 影响）：
+      // 必须落在全屏元素里，留在全屏层外的外壳会被浏览器整体隐藏。
+      const menu = document.querySelector('[data-testid="nav-menu"]')
+      expect(menu).toBeTruthy()
+      expect(fullscreenRoot.contains(menu)).toBe(true)
+      menu.click()
+      await settle()
+      // 抽屉本体在组件测试里原地渲染（DIALOG_INLINE_KEY），打开状态由 aria-expanded 断言；
+      // 全屏下抽屉自身 portal 进全屏根的行为由 AppNavDrawer.test.ts 持有。
+      expect(menu.getAttribute('aria-expanded')).toBe('true')
+      expect(wrapper.find('[data-testid="nav-drawer-panel"]').exists()).toBe(true)
+    } finally {
+      Object.defineProperty(document, 'fullscreenElement', { configurable: true, value: null })
+      fullscreenRoot.remove()
+    }
   })
 
   it('does not render the tab bar or top bar on wider layouts; the sidebar carries navigation', async () => {

@@ -53,9 +53,7 @@ async function onBodyClick(event) {
   if (await copyText(code)) showToast({ id: 'copy', tone: 'success', titleKey: 'toast.copied' })
 }
 const showBackToTop = ref(false)
-const footerInView = ref(false)
 let observer = null
-let footerObserver = null
 const body = ref(null)
 
 function onScroll() {
@@ -69,17 +67,6 @@ function scrollToTop() {
 onMounted(() => {
   window.addEventListener('scroll', onScroll, { passive: true })
   decorateCodeBlocks()
-  // 「回到顶部」固定在视口右下：app footer（备案链接）滚进底部 80px 带时必须让位，
-  // 否则 L6 判内容控件被常驻面盖住；footer 离开视口后恢复。
-  if (typeof IntersectionObserver === 'function') {
-    const footer = document.querySelector('[data-testid="app-footer"]')
-    if (footer) {
-      footerObserver = new IntersectionObserver((entries) => {
-        footerInView.value = entries.some(entry => entry.isIntersecting)
-      }, { rootMargin: '0px 0px -80px 0px' })
-      footerObserver.observe(footer)
-    }
-  }
   if (typeof IntersectionObserver !== 'function' || !body.value) return
   // 视口上部 30% 内最靠上的章节标题 = 当前章节
   observer = new IntersectionObserver((entries) => {
@@ -92,7 +79,6 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('scroll', onScroll)
   observer?.disconnect()
-  footerObserver?.disconnect()
 })
 </script>
 
@@ -122,7 +108,10 @@ onBeforeUnmount(() => {
     </div>
 
 
-    <button v-if="showBackToTop && !footerInView" type="button" class="doc-top" data-testid="doc-back-to-top" :aria-label="$t('doc.back_to_top')" :title="$t('doc.back_to_top')" @click="scrollToTop">
+    <!-- 回顶钮自身 sticky（fixed + IO 异步隐藏与 L6 探针存在竞态）：flow 位置在
+         .doc-page 末尾、app footer 之前，滚到文档末尾随流位升出贴靠线停在 footer
+         之上，与页脚备案链接几何上永不同区 -->
+    <button v-if="showBackToTop" type="button" class="doc-top" data-testid="doc-back-to-top" :aria-label="$t('doc.back_to_top')" :title="$t('doc.back_to_top')" @click="scrollToTop">
       <ArrowUp :size="20" aria-hidden="true" />
     </button>
   </div>
@@ -191,10 +180,15 @@ onBeforeUnmount(() => {
 
 .doc-toc-compact { display: none; }
 
+/* 回顶钮自身 sticky：flow 位置 = .doc-page 末尾（app footer 之前），滚过即贴视口右下；
+   到文档末尾流位升出贴靠线，按钮随内容上移停在 footer 之上 —— 与页脚备案链接
+   几何上永不同区（fixed + 异步隐藏会输给 L6 探针的同步采样） */
 .doc-top {
-  position: fixed;
-  right: var(--gutter);
-  bottom: calc(env(safe-area-inset-bottom) + var(--space-4));
+  position: sticky;
+  inset-block-end: calc(env(safe-area-inset-bottom) + var(--space-4));
+  grid-column: 1 / -1;
+  justify-self: end;
+  margin-inline-end: var(--gutter);
   z-index: var(--z-sticky);
   display: inline-grid;
   place-items: center;

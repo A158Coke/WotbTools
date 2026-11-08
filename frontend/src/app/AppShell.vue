@@ -50,6 +50,13 @@ const { isDrawerShell } = useBreakpoint()
 const navDrawerOpen = ref(false)
 const topBar = ref(null)
 const immersiveMenu = ref(null)
+// 3D 全屏 + 播放器工具栏收起（navEligible=false 交还托管）时，兜底菜单若留在全屏元素外，
+// 会被浏览器随外壳一起隐藏，抽屉入口不可达；随 fullscreenchange 渲染进当前全屏根
+// （与 AppNavDrawer 的 portalTo 同因同修；非全屏时 Teleport disabled 原地渲染，行为不变）。
+const fullscreenRoot = ref(typeof document === 'undefined' ? null : document.fullscreenElement)
+function onFullscreenChange() { fullscreenRoot.value = document.fullscreenElement }
+onMounted(() => document.addEventListener('fullscreenchange', onFullscreenChange))
+onUnmounted(() => document.removeEventListener('fullscreenchange', onFullscreenChange))
 const navOpener = ref(null)
 const navReturnFocus = computed(() => navOpener.value ?? topBar.value?.menuButton ?? immersiveMenu.value)
 function openNavDrawer(opener) {
@@ -189,19 +196,21 @@ provide(FEEDBACK_KEY, siteFeedback.request)
   />
   <AppSidebar v-if="!isDrawerShell" />
   <!-- 沉浸态（手机横屏回放 / 装甲查看器）没有顶栏：左上保留同一个菜单入口打开抽屉 -->
-  <button
-    v-if="isDrawerShell && shellChrome.immersive.value && !shellChrome.navHosted.value"
-    ref="immersiveMenu"
-    type="button"
-    class="immersive-nav"
-    :aria-label="$t('nav.openDrawer')"
-    :aria-expanded="navDrawerOpen ? 'true' : 'false'"
-    aria-haspopup="dialog"
-    data-testid="nav-menu"
-    @click="openNavDrawer(null)"
-  >
-    <Menu :size="20" aria-hidden="true" />
-  </button>
+  <Teleport :to="fullscreenRoot ?? 'body'" :disabled="!fullscreenRoot">
+    <button
+      v-if="isDrawerShell && shellChrome.immersive.value && !shellChrome.navHosted.value"
+      ref="immersiveMenu"
+      type="button"
+      class="immersive-nav"
+      :aria-label="$t('nav.openDrawer')"
+      :aria-expanded="navDrawerOpen ? 'true' : 'false'"
+      aria-haspopup="dialog"
+      data-testid="nav-menu"
+      @click="openNavDrawer(null)"
+    >
+      <Menu :size="20" aria-hidden="true" />
+    </button>
+  </Teleport>
   <AppNavDrawer
     v-if="isDrawerShell"
     :open="navDrawerOpen"
