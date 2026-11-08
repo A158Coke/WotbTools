@@ -30,6 +30,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -80,16 +81,58 @@ class SiteFeedbackIntegrationTest {
                 .andExpect(status().isForbidden());
         mvc.perform(get("/api/admin/site-feedback?reason=BUG&size=1").with(jwt().authorities(admin)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.totalItems").value(1))
-                .andExpect(jsonPath("$.items[0].pageView").value("hof"));
+                .andExpect(jsonPath("$.items[0].pageView").value("hof"))
+                .andExpect(jsonPath("$.items[0].status").value("PENDING"));
         mvc.perform(get("/api/admin/site-feedback?reason=FACT_ERROR").with(jwt().authorities(admin)))
                 .andExpect(status().isBadRequest());
         mvc.perform(get("/api/admin/site-feedback?size=101").with(jwt().authorities(admin)))
                 .andExpect(status().isBadRequest());
         mvc.perform(get("/api/admin/site-feedback/" + id).with(jwt().authorities(admin)))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.feedbackText").value("note"));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.feedbackText").value("note"))
+                .andExpect(jsonPath("$.status").value("PENDING"));
         mvc.perform(delete("/api/admin/site-feedback/" + id).with(jwt().authorities(admin)))
                 .andExpect(status().isNoContent());
         mvc.perform(get("/api/admin/site-feedback/" + id).with(jwt().authorities(admin)))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test void adminUpdatesStatusAndRejectsInvalidOrMissingRecords() throws Exception {
+        final var admin = new SimpleGrantedAuthority("ROLE_wotbtools-admin");
+        final String created = mvc.perform(post("/api/site-feedback").with(jwt()).contentType("application/json")
+                        .content("{\"reasonCodes\":[\"BUG\"]}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        final String id = JsonMapper.builder().build().readTree(created).get("id").asString();
+        final String path = "/api/admin/site-feedback/" + id + "/status";
+
+        mvc.perform(patch(path).contentType("application/json").content("{\"status\":\"FIXED\"}"))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(patch(path).with(jwt().authorities()).contentType("application/json")
+                        .content("{\"status\":\"FIXED\"}"))
+                .andExpect(status().isForbidden());
+        mvc.perform(patch(path).with(jwt().authorities(admin)).contentType("application/json")
+                        .content("{\"status\":\"FIXED\"}"))
+                .andExpect(status().isNoContent());
+        mvc.perform(get("/api/admin/site-feedback/" + id).with(jwt().authorities(admin)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("FIXED"));
+        mvc.perform(get("/api/admin/site-feedback").with(jwt().authorities(admin)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items[0].status").value("FIXED"));
+        mvc.perform(patch(path).with(jwt().authorities(admin)).contentType("application/json")
+                        .content("{\"status\":\"PENDING\"}"))
+                .andExpect(status().isNoContent());
+        assertEquals("PENDING", jdbc.queryForObject(
+                "SELECT status FROM site_feedback WHERE id = ?", String.class, Long.parseLong(id)));
+
+        for (final String body : new String[]{"{\"status\":\"DONE\"}", "{\"status\":\"FIXED\",\"extra\":true}", "{}"}) {
+            mvc.perform(patch(path).with(jwt().authorities(admin)).contentType("application/json").content(body))
+                    .andExpect(status().isBadRequest());
+        }
+        mvc.perform(patch("/api/admin/site-feedback/999999999/status").with(jwt().authorities(admin))
+                        .contentType("application/json").content("{\"status\":\"FIXED\"}"))
+                .andExpect(status().isNotFound());
+        mvc.perform(delete("/api/admin/site-feedback/" + id).with(jwt().authorities(admin)))
+                .andExpect(status().isNoContent());
+        mvc.perform(patch(path).with(jwt().authorities(admin)).contentType("application/json")
+                        .content("{\"status\":\"FIXED\"}"))
                 .andExpect(status().isNotFound());
     }
 

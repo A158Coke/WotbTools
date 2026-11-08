@@ -5,6 +5,7 @@ import com.wotb.web.sitefeedback.dto.SiteFeedbackListItem;
 import com.wotb.web.sitefeedback.dto.SiteFeedbackPage;
 import com.wotb.web.sitefeedback.dto.SiteFeedbackReason;
 import com.wotb.web.sitefeedback.dto.SiteFeedbackRecord;
+import com.wotb.web.sitefeedback.dto.SiteFeedbackStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import tools.jackson.databind.json.JsonMapper;
@@ -39,11 +40,12 @@ public class SiteFeedbackRepository {
         final var queryArgs = new ArrayList<>(List.of(args));
         queryArgs.add(size);
         queryArgs.add((long) page * size);
-        final List<SiteFeedbackListItem> items = jdbc.query("SELECT id, reason_codes, feedback_text, page_view, created_at "
+        final List<SiteFeedbackListItem> items = jdbc.query("SELECT id, reason_codes, feedback_text, page_view, created_at, status "
                 + "FROM site_feedback" + filter + " ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
                 (rs, row) -> new SiteFeedbackListItem(Long.toString(rs.getLong("id")), reasons(rs),
                         rs.getString("feedback_text"), rs.getString("page_view"),
-                        rs.getObject("created_at", OffsetDateTime.class).toInstant()), queryArgs.toArray());
+                        rs.getObject("created_at", OffsetDateTime.class).toInstant(),
+                        SiteFeedbackStatus.valueOf(rs.getString("status"))), queryArgs.toArray());
         final long total = count == null ? 0 : count;
         return new SiteFeedbackPage(items, page, size, total, (total + size - 1) / size);
     }
@@ -51,8 +53,13 @@ public class SiteFeedbackRepository {
     public Optional<SiteFeedbackRecord> find(final long id) {
         return jdbc.query("SELECT * FROM site_feedback WHERE id = ?", (rs, row) -> new SiteFeedbackRecord(
                 Long.toString(rs.getLong("id")), reasons(rs), rs.getString("feedback_text"),
-                rs.getString("page_view"), rs.getObject("created_at", OffsetDateTime.class).toInstant()),
+                rs.getString("page_view"), rs.getObject("created_at", OffsetDateTime.class).toInstant(),
+                SiteFeedbackStatus.valueOf(rs.getString("status"))),
                 id).stream().findFirst();
+    }
+
+    public boolean updateStatus(final long id, final SiteFeedbackStatus status) {
+        return jdbc.update("UPDATE site_feedback SET status = ? WHERE id = ?", status.name(), id) != 0;
     }
 
     public boolean delete(final long id) {
