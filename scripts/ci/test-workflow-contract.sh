@@ -1852,3 +1852,6 @@ EOF
   [ "$FAIL" -eq 0 ] || exit 1
 }
 helper_behavior_main
+
+# Agent WASM 下载器故障注入测试（本地 HTTP fixture，不访问上游）。
+python3 "$ROOT/scripts/ci/test-fetch-agent-wasm.py"

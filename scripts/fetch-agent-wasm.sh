@@ -63,6 +63,56 @@ stage_artifact() {
   echo "WASM 产物已就位: $WASM_ROOT/$REF（/wasm/$REF/）"
 }
 
+# 下载 Release 附件（有限重试 + 指数退避 + 总时限）。
+# - 可恢复错误重试：HTTP 408/429/5xx 与 curl 传输失败（连接中断、超时、DNS 等）。
+# - 永久错误立即失败：其余 HTTP 状态（如 404/403），不重试、不回退。
+# - 数据只写入 `.part` 临时文件，成功（HTTP 200）后才 mv 到目标路径；失败不留下可用文件。
+# - 上限：最多 RETRY_MAX_ATTEMPTS 次；退避 1x/2x/4x…（封顶 60s）；总时限 RETRY_DEADLINE_SECONDS
+#   内不再发起新尝试（单次 curl 另有 --max-time）。WOTB_FETCH_RETRY_DELAY 仅供测试缩短退避。
+RETRY_MAX_ATTEMPTS=5
+RETRY_DEADLINE_SECONDS=240
+RETRY_BASE_DELAY="${WOTB_FETCH_RETRY_DELAY:-5}"
+
+fetch_release_asset() {
+  local url="$1" out="$2"
+  local attempt=1 delay="$RETRY_BASE_DELAY" started=$SECONDS
+  local http="" rc=0 retryable=0 reason=""
+  while :; do
+    rc=0
+    http="$(curl --silent --show-error --location --max-time 90 \
+      --output "$out.part" --write-out '%{http_code}' "$url")" || rc=$?
+    if [ "$rc" -eq 0 ] && [ "$http" = "200" ]; then
+      mv -f "$out.part" "$out"
+      echo "下载成功: HTTP 200（第 ${attempt}/${RETRY_MAX_ATTEMPTS} 次尝试）"
+      return 0
+    fi
+    rm -f "$out.part"
+    reason="HTTP ${http:-000} curl_exit=${rc}"
+    if [ "$rc" -ne 0 ]; then
+      retryable=1   # 传输层失败
+    else
+      case "$http" in
+        408|429|5??) retryable=1 ;;
+        *) retryable=0 ;;
+      esac
+    fi
+    if [ "$retryable" -eq 0 ]; then
+      echo "下载失败（永久错误，不重试）: ${reason}  URL=${url}" >&2
+      return 1
+    fi
+    if [ "$attempt" -ge "$RETRY_MAX_ATTEMPTS" ] \
+      || [ $((SECONDS - started + delay)) -ge "$RETRY_DEADLINE_SECONDS" ]; then
+      echo "下载失败（可恢复错误，已达重试上限，第 ${attempt}/${RETRY_MAX_ATTEMPTS} 次，已耗时 $((SECONDS - started))s）: ${reason}  URL=${url}" >&2
+      return 1
+    fi
+    echo "下载失败（可恢复错误: ${reason}，第 ${attempt}/${RETRY_MAX_ATTEMPTS} 次），${delay}s 后重试" >&2
+    sleep "$delay"
+    attempt=$((attempt + 1))
+    delay=$((delay * 2))
+    [ "$delay" -le 60 ] || delay=60
+  done
+}
+
 # repo 兼容两种形态：完整 URL（当前 source.json）或 owner/name
 case "$REPO" in
   http*) RELEASE_URL="$REPO" ;;
@@ -84,7 +134,7 @@ if [ "${1:-}" = "--self-test" ]; then
     echo "self-test 反例样本: $WOTB_AGENT_ARTIFACT_FILE"
   else
     echo "下载 ${URL}"
-    curl --fail --silent --location --retry 3 "$URL" -o "$TMP/${ASSET}"
+    fetch_release_asset "$URL" "$TMP/${ASSET}" || exit 1
   fi
   python3 "$INGEST" self-test "$TMP/${ASSET}" "$TMP/self-test"
   exit 0
@@ -99,8 +149,11 @@ if [ -n "${WOTB_AGENT_ARTIFACT_FILE:-}" ]; then
   echo "使用本地已暂存 Agent WASM artifact: $WOTB_AGENT_ARTIFACT_FILE"
 else
   echo "下载 ${URL}"
-  curl --fail --silent --location --retry 3 "$URL" -o "$TMP/${ASSET}"
+  fetch_release_asset "$URL" "$TMP/${ASSET}" || exit 1
 fi
 
-echo "${EXPECT_SHA}  ${TMP}/${ASSET}" | sha256sum -c --quiet
+if ! echo "${EXPECT_SHA}  ${TMP}/${ASSET}" | sha256sum -c --quiet; then
+  echo "SHA256 校验失败：附件与 deploy/agent/source.json 的 artifact.sha256 不一致，拒绝使用" >&2
+  exit 1
+fi
 stage_artifact "$TMP/${ASSET}"
