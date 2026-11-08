@@ -140,7 +140,9 @@ onBeforeUnmount(() => {
 .doc-body :deep(ul), .doc-body :deep(ol) { padding-inline-start: var(--space-6); }
 .doc-body :deep(blockquote) { margin: var(--space-4) 0; padding: var(--space-2) var(--space-4); border-inline-start: var(--space-1) solid var(--color-accent); background: var(--color-surface-2); }
 .doc-body :deep(pre) { position: relative; max-width: 100%; overflow-x: auto; margin: var(--space-4) 0; padding: var(--space-4); border-radius: var(--radius-md); background: var(--color-surface-2); }
-.doc-body :deep(.doc-copy) { position: absolute; inset-block-start: var(--space-2); inset-inline-end: var(--space-2); min-height: var(--control-h-sm); padding: 0 var(--space-2); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-sm); background: var(--color-surface-1); color: var(--color-text-secondary); font: var(--type-caption); cursor: pointer; }
+/* 复制钮放代码块左下角：右上角与 fixed 的「回到顶部」.doc-top（视口右下）在窄屏必然
+   同区，L6 探针判内容控件被常驻面盖住；视口左下没有 fixed 控件，碰撞不可能发生。 */
+.doc-body :deep(.doc-copy) { position: absolute; inset-block-end: var(--space-2); inset-inline-start: var(--space-2); min-height: var(--control-h-sm); padding: 0 var(--space-2); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-sm); background: var(--color-surface-1); color: var(--color-text-secondary); font: var(--type-caption); cursor: pointer; }
 .doc-body :deep(.doc-copy:focus-visible) { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 .doc-body :deep(table) { display: block; max-width: 100%; overflow-x: auto; margin: var(--space-4) 0; border-collapse: collapse; }
 .doc-body :deep(th), .doc-body :deep(td) { padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--color-border-subtle); text-align: start; }
