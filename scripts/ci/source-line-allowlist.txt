@@ -7,9 +7,7 @@
 # removal is the proof of a completed split. A rename may swap one path for
 # another without changing the entry count.
 #
-# #820 split targets
-frontend/src/scene/tankViewer.js
-
+# #820 split targets（tankViewer.js 与 playbackScene.js 均已完整拆分并移出本名单）
 #
 # Legacy over-budget files outside #820's three-file scope. Each needs its own
 # split issue before it can leave this list.
