@@ -10,9 +10,7 @@
 
 WotbTools 是 WoT Blitz `.wotbreplay` 回放分析工具集：Java 25 + Spring Boot 4 业务与 AI 服务、Vue 3 Web/Android 客户端、上游 Rust/WASM 回放引擎、Keycloak + PostgreSQL。
 
-动手前读根 `AGENTS.md`、`.agents/AGENTS.md`、当前 lifecycle Skill 与涉及目录的 `AGENTS.md`；本文件和专题文档按任务主题定位，跨层改动按 `.agents/playbooks/wotb-sync.md`。真实代码始终是 source of truth；与当前改动有关的文档漂移同步修正，未触及且不影响验收的无关漂移只报告。
-
-固定接手方法（入口阅读 → 现实审计 → 任务分类 → 计划契约 → Reuse / SSOT 执行 → 分层验证 → 收尾交接）以 [`.agents/AGENTS.md`](../.agents/AGENTS.md) 的「接手与调整方法」为准。
+动手前读当前 lifecycle Skill 与相关目录文档；本文件和专题文档按任务主题定位，跨层改动按 `.agents/playbooks/wotb-sync.md`。真实代码始终是 source of truth；与当前改动有关的文档漂移同步修正，未触及且不影响验收的无关漂移只报告。
 
 ---
 
@@ -21,8 +19,6 @@ WotbTools 是 WoT Blitz `.wotbreplay` 回放分析工具集：Java 25 + Spring B
 | 文档 | 作用 | 何时读 |
 |---|---|---|
 | `docs/DEVELOPER_GUIDE.md` | 开发入口、环境、结构、架构约束 | 按任务读取相关章节；全仓接手时全文 |
-| `.agents/AGENTS.md` | 仓库级硬约定、接手与调整固定流程 | 动手前必读 |
-| `frontend/AGENTS.md` / `java/AGENTS.md` 等 | 目录级约束 | 进入对应目录时 |
 | `.agents/playbooks/wotb-sync.md` | 跨层改动检查单 | 增删列、改解析、导出、前端时 |
 | `java/README.md` | Java/Web 运行、接口、构建 | 跑后端时 |
 | `docs/README.md` | 全部专题文档索引 | 查专项设计时 |
@@ -119,11 +115,11 @@ HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/s
 
 `.github/workflows/ci-gate.yml` 是唯一 PR 入口：校验 PR/base/head SHA 身份，用 `dorny/paths-filter` 将变更映射到 owner，调用相应 reusable CI workflow，最后由稳定的 `CI / Required Gate` 汇总。未受影响的 owner 跳过；五个 OpenTofu root 只在各自 owner 受影响时验证。PR trigger 不设置 paths，确保 required check 始终产生。PR CI 不接触 production credentials、host、state 或 authenticated plan。
 
-仓库 hygiene 是同一 PR gate 的无条件前置检查：`scripts/ci/check-repository-hygiene.sh` 默认拒绝超过 5 MiB 的 tracked file，并拒绝 `Python/`、`.deepseek/`、`common/assets/wasm/`、`frontend/dist/`、`frontend/dist-android/`、`dist/`、`dist-desktop/`、`target/`、`node_modules/` 等生成/运行时路径，同时拒绝 `archive/`、`old/`、`legacy-docs/`、`historical/` 历史堆放目录路径段，并拒绝 PR `base..head` 变更文件把 ephemeral 计划载体当作权威引用（规则正文见 `.agents/AGENTS.md`「current-plan 门禁」，结构性例外见脚本内 `is_current_plan_allowlisted()`，遗留引用在被触及的 PR 中迁移）；确属 source-of-truth 且应继续使用普通 Git 的超限文件，只能把 exact path 加到 `scripts/ci/large-file-allowlist.txt` 并在 PR 解释理由。检查同时覆盖最终 tree 和 PR `base..head` 中每个 commit tree，防止“先提交大 blob 再删除”把对象带入历史；路径遍历使用 NUL-safe Git 输出以支持合法特殊文件名。同一脚本还执行 first-party 前端源码行数预算：`frontend/src/**/*.{js,ts,vue,mjs,cjs}`（排除 `*.test.*`、`*.spec.*`、`*.d.ts` 与 `frontend/src/api/generated/**`）单文件上限 1500 物理行；遗留超限文件只能以 exact path 进入 `scripts/ci/source-line-allowlist.txt`，条目数 base→head 只减不增（重命名可等量替换），拆分完成后同步移除条目；门禁已存在于 base 时，删除名单不会重置基线（缺失名单按 0 条比较），重新创建仍受只减不增约束。三项补充约束：`base..head` 中每个 commit tree 的源 blob 同样受行数预算约束（豁免按 base 与 HEAD 名单的联合判定，两端都不存在的临时条目不提供豁免）；名单条目必须仍指向 tracked、in-scope 且仍超限的文件，删除/重命名/缩行后残留条目按违规处理；重复条目 fail-closed。开发者可在仓库根运行 `bash scripts/ci/check-repository-hygiene.sh`，回归 fixture 为 `bash scripts/ci/test-repository-hygiene.sh`。main 上另有 push-only `repository-hygiene-main.yml` 对 bypass/direct push 做事后审计。
+仓库 hygiene 是同一 PR gate 的无条件前置检查：`scripts/ci/check-repository-hygiene.sh` 默认拒绝超过 5 MiB 的 tracked file，并拒绝 `Python/`、`.deepseek/`、`common/assets/wasm/`、`frontend/dist/`、`frontend/dist-android/`、`dist/`、`dist-desktop/`、`target/`、`node_modules/` 等生成/运行时路径，同时拒绝 `archive/`、`old/`、`legacy-docs/`、`historical/` 历史堆放目录路径段，并拒绝 PR `base..head` 变更文件把 ephemeral 计划载体当作权威引用（结构性例外见脚本内 `is_current_plan_allowlisted()`，遗留引用在被触及的 PR 中迁移）；确属 source-of-truth 且应继续使用普通 Git 的超限文件，只能把 exact path 加到 `scripts/ci/large-file-allowlist.txt` 并在 PR 解释理由。检查同时覆盖最终 tree 和 PR `base..head` 中每个 commit tree，防止“先提交大 blob 再删除”把对象带入历史；路径遍历使用 NUL-safe Git 输出以支持合法特殊文件名。同一脚本还执行 first-party 前端源码行数预算：`frontend/src/**/*.{js,ts,vue,mjs,cjs}`（排除 `*.test.*`、`*.spec.*`、`*.d.ts` 与 `frontend/src/api/generated/**`）单文件上限 1500 物理行；遗留超限文件只能以 exact path 进入 `scripts/ci/source-line-allowlist.txt`，条目数 base→head 只减不增（重命名可等量替换），拆分完成后同步移除条目；门禁已存在于 base 时，删除名单不会重置基线（缺失名单按 0 条比较），重新创建仍受只减不增约束。三项补充约束：`base..head` 中每个 commit tree 的源 blob 同样受行数预算约束（豁免按 base 与 HEAD 名单的联合判定，两端都不存在的临时条目不提供豁免）；名单条目必须仍指向 tracked、in-scope 且仍超限的文件，删除/重命名/缩行后残留条目按违规处理；重复条目 fail-closed。开发者可在仓库根运行 `bash scripts/ci/check-repository-hygiene.sh`，回归 fixture 为 `bash scripts/ci/test-repository-hygiene.sh`。main 上另有 push-only `repository-hygiene-main.yml` 对 bypass/direct push 做事后审计。
 
 三个数据更新 workflow 在创建/更新 PR 时分别执行来源数据的真实同步与验证，再 dispatch CI 验证精确 open PR head。生产发布继续由 service owner workflow 的原生路径规则独立触发。
 
-[`ci-owner-paths.yml`](../.github/ci-owner-paths.yml) 是 PR 路由表；生产 owner workflow 的 `on.push.paths` 与 `PRODUCTION_INPUT_PATHS` 必须逐项相同。共享输入按真实依赖 fan-out，未列出的普通文档变更只执行 PR gate。下表是维护边界索引，具体路径以 workflow 为准；完整 owner 清单与运行时不变量见 [`.github/AGENTS.md`](../.github/AGENTS.md)。
+[`ci-owner-paths.yml`](../.github/ci-owner-paths.yml) 是 PR 路由表；生产 owner workflow 的 `on.push.paths` 与 `PRODUCTION_INPUT_PATHS` 必须逐项相同。共享输入按真实依赖 fan-out，未列出的普通文档变更只执行 PR gate。下表是维护边界索引，具体路径以 workflow 为准；完整 owner 清单与运行时不变量见 [`.github/workflows/`](../.github/workflows/) 与 [`ci-owner-paths.yml`](../.github/ci-owner-paths.yml)。
 
 | Owner | Source / shared inputs | Runtime inputs | PR validation | OpenTofu root | Production workflow |
 |---|---|---|---|---|---|
@@ -141,7 +137,7 @@ HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/s
 | Komodo 声明式资源 | `infra/komodo/resources/**` 的 ResourceSync 与 Server 期望状态 | Komodo 控制面（只由人工在 UI apply，CI 不 apply） | `scripts/ci/test-komodo-resources.py`（tomllib 结构契约） | — | —（仅 deployment PR gate） |
 | Deployment / Python | shared deploy policy / common Python tools、map-semanticizer 与 tools 的 stdlib unittest | shared scripts | contract smokes / unit tests | — | — |
 
-另有 `frontend-replica.yml`、`production-worker.yml`、`asset-origin.yml`、`tx-runtime-check.yml`、`database-backup.yml`、`cleanup-images.yml`、`prod-diagnostics.yml` 与 `android-offload-probe.yml` 等独立发布、运维与诊断入口，职责见 `.github/AGENTS.md`。
+另有 `frontend-replica.yml`、`production-worker.yml`、`asset-origin.yml`、`tx-runtime-check.yml`、`database-backup.yml`、`cleanup-images.yml`、`prod-diagnostics.yml` 与 `android-offload-probe.yml` 等独立发布、运维与诊断入口，职责以其 workflow 定义与 [`ci-owner-paths.yml`](../.github/ci-owner-paths.yml) 为准。
 
 ---
 
@@ -689,7 +685,7 @@ Android publish 的运行时依赖；schema2 staging evidence 从实际 APK 内 
 发布前的卸载链路体检（`android-offload-probe.yml`，手工 dispatch，只写删一个探针对象）测
 runner → 上海 COS → TX1 → 清华网盘 这条候选链路，现状与判据见 `docs/android/release-process.md`「卸载链路体检」。
 
-**Flyway 迁移不可变（canonical policy 见 `java/AGENTS.md`）**：`java/wotb-web/src/main/resources/db/migration/V*.sql` 中已存在的 versioned migration 是 immutable historical artifact——禁止修改、重命名、删除、格式化、改注释、转换换行或编码；schema 变化只能新增更高版本 forward-only `V<N>__*.sql`。仅当 Git history 证明生产已执行且文件发生 checksum drift 时，才允许恢复 exact deployed blob；该恢复不改变 migration 的 immutable 语义。CI `deploy-smoke` 用 `deploy/check-flyway-immutability.sh` 以 PR base SHA 做 diff 检测，任何既有 migration 的 M/D/R 一律失败，新 migration 版本号必须高于 base 最大版本。
+**Flyway 迁移不可变**：`java/wotb-web/src/main/resources/db/migration/V*.sql` 中已存在的 versioned migration 是 immutable historical artifact——禁止修改、重命名、删除、格式化、改注释、转换换行或编码；schema 变化只能新增更高版本 forward-only `V<N>__*.sql`。仅当 Git history 证明生产已执行且文件发生 checksum drift 时，才允许恢复 exact deployed blob；该恢复不改变 migration 的 immutable 语义。CI `deploy-smoke` 用 `deploy/check-flyway-immutability.sh` 以 PR base SHA 做 diff 检测，任何既有 migration 的 M/D/R 一律失败，新 migration 版本号必须高于 base 最大版本。
 
 Deploy job、固定基础设施的 Tofu/runtime workflows 与 database backup 共用
 `production-maintenance` concurrency（`cancel-in-progress: false`、`queue: max`）。应用 workflow
@@ -740,9 +736,9 @@ Sponsor QR 不进仓库：配置与收款码作为 **GitHub Release 资产**发�
   runtime/events/outbox。实际模块图与正反向架构夹具随 `mvn test` 执行，失败即构建失败。
   仅验证架构时，在 `java/` 运行
   `mvn -s settings.xml -pl wotb-web -am "-Dtest=CoreArchitectureTest,WebArchitectureTest,WebArchitectureRuleMutationTest,WebModuleArchitectureTest,WebModuleArchitectureMutationTest" -Dsurefire.failIfNoSpecifiedTests=false test`。
-- 前端：Vitest + happy-dom（按需声明）；浏览器 gate 的命令与覆盖范围见 [`frontend/AGENTS.md`](../frontend/AGENTS.md)。
+- 前端：Vitest + happy-dom（按需声明）；浏览器 gate 的命令与覆盖范围见 [`frontend/package.json`](../frontend/package.json) 的 `test:browser-*` scripts 与 [`frontend/scripts/`](../frontend/scripts/) 下的 gate 脚本。
 - Replay/League/UI regression 必须补针对真实 invariant 的测试，而不是只验证函数被调用。
-- **职责分层（Fast Feedback First）**：开发过程中 Agent 只跑 targeted / module / feature regression，不重复跑 repository-level full test；仓库级 full validation 由 PR CI 统一执行（authoritative gate）。仅当改动影响跨模块 / build / test infrastructure（[`.agents/AGENTS.md`](../.agents/AGENTS.md) 的 Full-test 例外清单）时，Agent 才跑 `cd java && mvn -s settings.xml verify` / `cd frontend && pnpm test && pnpm run build`。
+- **职责分层（Fast Feedback First）**：开发过程中 Agent 只跑 targeted / module / feature regression，不重复跑 repository-level full test；仓库级 full validation 由 PR CI 统一执行（authoritative gate）。仅在 Full-test 例外下才跑全量（用户明确要求 full test；改 Maven parent / dependencyManagement / plugin 配置、Node/Vite/Vitest 全局配置、跨 module 公共 contract、architecture rules、test infrastructure，或 build infrastructure 且 targeted 无法判断影响面；CI 不可用但需高置信验证或 affected scope 无法可靠确定；CI 前必须用 full suite 复现 / 排查，或安全上无法用 targeted/static 确认）；此时跑 `cd java && mvn -s settings.xml verify` / `cd frontend && pnpm test && pnpm run build`。
 - `wotb-ai` 的真实 DeepSeek/provider probe 使用 `@Tag("ai-live")`，普通 `mvn test` 默认不执行；仅在明确选择 probe、清空 `-Dai.probe.excludedGroups=` 且通过环境变量提供 key 时手动运行。gateway mock、loopback 与 deterministic AI eval 仍属于普通测试。
 - 涉及 Docker/部署时同时跑对应 Docker build 与 deployment smoke；Deploy 不重复运行测试套件。
 

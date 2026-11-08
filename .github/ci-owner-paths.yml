@@ -124,7 +124,7 @@ android:
   - 'android/**'
   - 'contracts/android-native-bridge.json'
   - 'frontend/src/platform/nativeBridgeContract.js'
-  # Agent WASM pin 是 Android runtime 输入（AGENTS「Android Version-as-Code」）：
+  # Agent WASM pin 是 Android runtime 输入（Android Version-as-Code 规则）：
   # ci-android 的 bundle→APK 装配链真实消费它，是 PR 级唯一验证「新 pin 能进 APK」
   # 的地方（issue #828）。frontend/src/** 不路由（frontend owner 已构建同一 bundle，
   # 全量路由让每个前端 PR 付 gradle/SDK 成本）。
@@ -157,7 +157,6 @@ deployment:
   - '.github/workflows/ci-gate.yml'
   - '.github/workflows/codeql.yml'
   - '.github/ci-owner-paths.yml'
-  - '.github/AGENTS.md'
   - 'scripts/ci/**'
   - 'deploy/test-*.sh'
   - 'deploy/test_*.py'

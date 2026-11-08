@@ -1,4 +1,4 @@
-// CSS source contract guard for Classic Profile (frontend/AGENTS.md D1/D2).
+// CSS source contract guard for Classic Profile.
 //
 // Presentation profiles share DOM and business state. Migrated surfaces use semantic tokens;
 // remaining legacy surfaces retain namespaced Classic bridges until their owner is migrated.

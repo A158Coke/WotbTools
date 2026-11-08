@@ -23,7 +23,7 @@ export function baselineViolations(base, head) {
 }
 
 // stylelint.legacy.json 的 files[] 同样只减不增：文件迁完设计语言 token 后从名单删除，
-// 不允许把新文件加进名单来豁免严格规则（frontend/AGENTS.md Design language）。
+// 不允许把新文件加进名单来豁免严格规则。
 export function stylelintBaselineViolations(base, head) {
   const allowed = new Set(base.files ?? [])
   return (head.files ?? []).filter(path => !allowed.has(path)).map(path => `${path}: 新增了 stylelint legacy 豁免`)

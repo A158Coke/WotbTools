@@ -129,7 +129,7 @@ python common/python/extract_map_bases.py <同上> --check   # CI：过期即失
   经**冻结配方**派生：LANCZOS 1254² → 全局对比曲线 ×1.17（两端 24 级软肩）→ 饱和 ×0.9748 →
   逐通道软肩（无硬裁切）→ USM 1.0px/80%/thr2 → WebP q90 / method 6。工具 = Agent 仓
   `tools/export_2d_basemaps.py`（`--verify` 全量重算逐张比对；`--self-test` 锁曲线单调/不裁切/色相）；
-  **全部 29 张同一套参数**（不做逐图统计决策，见 Agent 仓 AGENTS.md）。
+  **全部 29 张同一套参数**（不做逐图统计决策）。
 - 取向与世界框由契约确定：`ground.webp` 顶行 = +Z_scene、左列 = +X_scene，与 2D 渲染契约
   （`utils/mapView.js` 的 `toX/toY` + `coordinateBounds`）在同一坐标系 ⇒ **无需翻转/裁剪**，
   本批未做任何几何校正。

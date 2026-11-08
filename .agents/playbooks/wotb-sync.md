@@ -5,8 +5,7 @@
 
 > 本文件是**工具无关**的改动 playbook，供任意 AI coder / 人类贡献者使用，
 > 也是本技能的唯一维护点（内容只增删于此）。
-> 背景与数据格式见 `docs/DEVELOPER_GUIDE.md`，硬性约定见 `.agents/AGENTS.md`；
-> 数据目录单一来源清单见 `common/AGENTS.md`。
+> 背景与数据格式见 `docs/DEVELOPER_GUIDE.md`。
 >
 > **前提**：服务器没有回放解析器（2026-10-02 退役）。解析 = 上游 Rust Core WASM，
 > 列/汇总/评分/导出 = 浏览器内 `frontend/src/replay-local/`。
@@ -24,7 +23,7 @@
     `PLAYER_PRESENTATION` / `SUMMARY_PRESENTATION` / `DIMENSION_TITLES`（导出仅中文）。
 - **列 `key`（snake_case）单一来源**：`frontend/src/replay-local/compute/columns.ts`；导出表头、
   locale label、Excel 输出都按该 key 对齐，不另起别名。
-- **Web 分层**：按 `java/AGENTS.md` 的 domain 分包，域内 `controller → service → repository`；
+- **Web 分层**：按 domain 分包，域内 `controller → service → repository`；
   controller 只做 HTTP 映射、只调自己域 service，业务逻辑写进 service。新增 endpoint 的业务逻辑
   写进 service。**回放解析 / 汇总 / 导出 / 评分全在客户端**（浏览器 + `frontend/src/replay-local/`），
   `ReplayController` 目前只剩 `/api/health`。
@@ -110,7 +109,7 @@
 
 ## 配方 G：更新车辆库
 
-更新走 `.github/workflows/update-tankopedia.yml`（手动触发，blitzkit 数据源，自动提交 10 个文件）或本地 `cd common/python && python update_tankopedia.py`（需联网）。产物为 `common/tankopedia-tier{1..10}.json`（**不是** `tankopedia.json`）；写入前有完整性门禁。Java 构建会自动复制到 classpath，无需手动同步。详见 `common/AGENTS.md`。
+更新走 `.github/workflows/update-tankopedia.yml`（手动触发，blitzkit 数据源，自动提交 10 个文件）或本地 `cd common/python && python update_tankopedia.py`（需联网）。产物为 `common/tankopedia-tier{1..10}.json`（**不是** `tankopedia.json`）；写入前有完整性门禁。Java 构建会自动复制到 classpath，无需手动同步。
 
 ---
 
@@ -142,7 +141,7 @@
 2. 前端：`useAuth.ts` composable（Keycloak adapter check-sso 游客模式）。
 3. 后端：Spring Security Resource Server + `application.yml` JWT 验证。
 4. 新表（user/binding）：Flyway migration，`ddl-auto: validate` 验证。
-5. 验证 + 文档（WG 登录/身份/安全契约见 `docs/auth/wargaming-asia-deployment.md`，Profile/绑定语义见 `docs/features/user-profile.md`，provider 约束见 `keycloak-wargaming-provider/AGENTS.md`）。
+5. 验证 + 文档（WG 登录/身份/安全契约见 `docs/auth/wargaming-asia-deployment.md`，Profile/绑定语义见 `docs/features/user-profile.md`）。
 
 ## 配方 L：FE ↔ BE HTTP contract
 
@@ -162,8 +161,8 @@ cd frontend && pnpm run build        # 仅当触及路由/依赖/Vite/动态 imp
 cd java && JAVA_HOME=<JDK 25> mvn -pl wotb-web -am -Dtest=WebApiTest test
 ```
 
-> 分层验证口径见 `java/AGENTS.md`（Targeted → Module → Full）与 `frontend/AGENTS.md`
-> （targeted → feature suite → build）；repository full validation 由 PR CI 的 `CI / Required Gate` 负责。
+> 分层验证口径：Targeted（直接相关最小测试集）→ Module / Feature（affected 范围回归）→
+> Regression（review/fix 后）；repository full validation 由 PR CI 的 `CI / Required Gate` 负责。
 > JDK 版本是 **25**（不是 21）；系统默认 `java` 可能不是 JDK 25，跑 mvn 必须先把 `JAVA_HOME` 指向 JDK 25。
 > 本环境/沙箱可能无法真正监听端口，用 MockMvc 测试（`WebApiTest`）即可，不必起服务。
 

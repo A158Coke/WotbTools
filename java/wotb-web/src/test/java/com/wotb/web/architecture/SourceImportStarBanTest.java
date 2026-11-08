@@ -35,7 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * javac parser API（{@code com.sun.source}，无第三方依赖）把每个 .java 源文件
  * 解析成编译单元，再检查 on-demand import 的限定名是否以 {@code *} 结尾——
  * 多行、注间空白/注释、Unicode 翻译等所有词法形态天然覆盖。扫描范围是三个
- * 模块的 {@code src/main/java} 与 {@code src/test/java}（java/AGENTS.md 的
+ * 模块的 {@code src/main/java} 与 {@code src/test/java}（该
  * 禁令没有 production 限定）。随 {@code mvn test} 的 authoritative CI 路径执行。</p>
  *
  * <p>红线证明（committed）：{@code src/test/resources/archfixture/import-star/}
@@ -109,7 +109,7 @@ class SourceImportStarBanTest {
         assertTrue(parsed.parseErrors().isEmpty(),
                 "源码必须可解析（fail closed）：" + parsed.parseErrors());
         assertTrue(parsed.starImports().isEmpty(),
-                "禁止 import *（java/AGENTS.md 分层与风格，production + test 全部 Java 源码）：" + parsed.starImports());
+                "禁止 import *（分层与风格，production + test 全部 Java 源码）：" + parsed.starImports());
     }
 
     @Test

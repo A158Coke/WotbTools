@@ -49,7 +49,7 @@
 ### 6. 文档
 - [ ] `docs/DEVELOPER_GUIDE.md` — 字段表/回放格式表更新
 - [ ] `docs/reference/replay-data.md` — 客户端列/汇总口径变更
-- [ ] `HISTORY.md` — 仅当列变更是长期数据模型演进时记录，不作为逐列变更日志（判据见 `.agents/AGENTS.md` 规则 3）
+- [ ] `HISTORY.md` — 仅当列变更是长期数据模型演进时记录，不作为逐列变更日志
 
 ## 子 agent 分工建议
 

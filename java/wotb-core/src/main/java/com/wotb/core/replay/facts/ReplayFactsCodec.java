@@ -48,7 +48,7 @@ public final class ReplayFactsCodec {
     }
 
     /**
-     * 客户端投影的读取边界（`.agents/AGENTS.md` §5a「旧 artifact 兼容只放读取边界」）：
+     * 客户端投影的读取边界（「旧 artifact 兼容只放读取边界」）：
      * additive 字段的兼容**只经读取边界显式登记**（DTO 成员 + `contracts/http/openapi.yaml`）获得——
      * 未登记字段一律 fail-closed（与各 schema 的 `additionalProperties: false` 一致）；
      * 已知字段仍由 {@code ClientAiProjectionAdapter} 逐项显式校验，primitive 的 null 仍 fail closed。

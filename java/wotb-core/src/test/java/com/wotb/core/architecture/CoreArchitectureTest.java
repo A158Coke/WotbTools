@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
 /**
- * wotb-core 架构契约（对应 {@code java/AGENTS.md} 与 {@code docs/DEVELOPER_GUIDE.md}）：
+ * wotb-core 架构契约（对应 {@code docs/DEVELOPER_GUIDE.md}）：
  * 纯库边界——不依赖 Spring Web/Boot 容器，不反向依赖 wotb-web；core 内部无循环依赖。
  */
 @AnalyzeClasses(packages = "com.wotb.core", importOptions = ImportOption.DoNotIncludeTests.class)

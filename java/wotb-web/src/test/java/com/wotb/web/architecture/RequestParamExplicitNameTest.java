@@ -28,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 无需源码 regex / AST parser，天然免疫多行注解与注释形态。覆盖范围：
  * wotb-web production classes（本模块的 controller 域；wotb-ai 的 controller
  * 形态已核实全部显式 name，其 coverage 待该模块引入 ArchUnit infra 时镜像）。
- * 例外与 java/AGENTS.md 同步：unnamed 仅允许 {@code Map} / {@code MultiValueMap}
+ * 例外：unnamed 仅允许 {@code Map} / {@code MultiValueMap}
  * 聚合绑定（raw type assignable to Map，Spring 官方合法形态）。</p>
  *
  * <p>红线证明（committed）：{@code archfixture.requestparam.RequestParamFixture}

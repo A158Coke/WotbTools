@@ -53,7 +53,7 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 
 | ID | 强度 | 范围 | 规则 | 例外 | 验证 |
 |---|---|---|---|---|---|
-| DC-THM-01 | MUST | 两档 Profile | 布局、组件结构、交互完全一致，只替换语义 token 和装饰插槽；不按 Profile fork 业务实现 | 无 | `src/styles/classic-profile-css.test.js`；`frontend/AGENTS.md` UI Profile 不变量 |
+| DC-THM-01 | MUST | 两档 Profile | 布局、组件结构、交互完全一致，只替换语义 token 和装饰插槽；不按 Profile fork 业务实现 | 无 | `src/styles/classic-profile-css.test.js` |
 | DC-THM-02 | MUST | 全站 | 背景图、渐变、毛玻璃只出现在本节列出的装饰插槽 | 无 | 人工 |
 | DC-THM-03 | MAY | 工作区页面 | 在数据区之上放一个 Showcase Hero | 无 | 人工 |
 | DC-THM-04 | MUST | Showcase Hero | 只放在数据区之上，不进入表格、筛选、表单、抽屉；expanded 档首屏必须能看到数据区 | 无 | 每页 PR 大屏截图，人工 |
@@ -81,7 +81,7 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 - 首次访问跟随 `prefers-color-scheme`。
 - 用户手动选择后记住，以用户选择为准。
 - 在首次绘制之前，由 `index.html` 里的内联脚本设置 `data-theme`，避免闪烁。
-- 用户菜单里提供"跟随系统 / 沉浸 / 简约"三个选项。`wotb-ui-profile` 的 `auto` 值由 `useUiProfile` 按 `prefers-color-scheme` 解析为 showcase / classic；没有独立的 theme 状态或存储 key（遵守 `frontend/AGENTS.md` 的 UI Profile 不变量）。
+- 用户菜单里提供"跟随系统 / 沉浸 / 简约"三个选项。`wotb-ui-profile` 的 `auto` 值由 `useUiProfile` 按 `prefers-color-scheme` 解析为 showcase / classic；没有独立的 theme 状态或存储 key。
 
 **验收标准：** 任何组件在两套主题下都必须通过 §3 的对比度要求。
 
@@ -560,8 +560,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
    - `media-feature-range-notation: context`、`media-feature-name-value-allowed-list: width → 768px / 1200px`、`media-feature-name-disallowed-list: min-width / max-width / device-width`：断点只有三档，且必须写 range 语法。
    - `declaration-property-unit-disallowed-list`：块方向尺寸（`height`、`block-size` 及其 min/max，`top`、`bottom`、`inset`、`inset-block*`）禁止 `vh`，用 `dvh` / `svh`；行方向尺寸（`width`、`inline-size` 及其 min/max）禁止 `vw`，用 `%`；`flex-basis` 两者都禁。
    - 旧文件列在 `frontend/stylelint.legacy.json` 忽略名单里（基线），新文件一律严格检查；移出名单的文件同样受严格检查。
-2. **frontend/AGENTS.md** 引用本文件："改动 UI 前必须阅读 design-language.md；新增视觉值必须先加 token。"
-3. **PR 自查清单：**
+2. **PR 自查清单：**
    - [ ] 只用了语义 token
    - [ ] 两套主题都截了图
    - [ ] 三档宽度都截了图
