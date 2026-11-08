@@ -71,6 +71,14 @@ function runAction(toast: Toast) {
   }
 }
 
+/* 手机横屏（矮屏）：横贯整行的提示会盖住工作台的能力页签，改为靠右的窄条 */
+@media (pointer: coarse) and (orientation: landscape) and (height <= 520px) {
+  .app-toasts {
+    inset-inline: auto max(var(--space-4), env(safe-area-inset-right));
+    inline-size: min(20rem, 45%);
+  }
+}
+
 .app-toast {
   display: flex;
   align-items: flex-start;
