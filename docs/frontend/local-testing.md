@@ -41,13 +41,18 @@ pnpm run dev
 1. **Node 24 + pnpm**（`.nvmrc` 为准）：先执行一次 `corepack enable`，再在 frontend 目录 `pnpm install`（pnpm 版本由 `package.json#packageManager` 钉住）。
 2. **引擎产物**：本仓根目录执行 `bash scripts/fetch-agent-wasm.sh`
    （2026-10-03 时 pin = v0.3.11 / `73ea422a…`；以 `source.json` 现值准）。
-   - 脚本从上游 Release 直取 ZIP，sha256 + fingerprint 双重校验后落位 `common/assets/wasm/<ref>/`。
-   - **下载重试策略**（`fetch_release_asset`）：
+   - 脚本经 GitHub Releases API 下载 ZIP，sha256 + fingerprint 双重校验后落位 `common/assets/wasm/<ref>/`：
+     1. `GET /repos/<owner>/<name>/releases/tags/<release>`，按 `source.json` 的 `artifact.asset` 名称解析 Asset ID（不写死 ID）；tag 或附件名不匹配即失败；
+     2. `GET /repos/<owner>/<name>/releases/assets/<id>`，`Accept: application/octet-stream`，由 `curl --location` 跟随 302 到对象存储。
+     - 不再使用 `github.com/<repo>/releases/download/…` 直链（GitHub-hosted runner 上直链曾持续返回 HTTP 504）。
+     - 可选环境变量 `GITHUB_TOKEN`：仅随 API 请求发送，用于避免匿名 API 限流；签名跳转地址不写入日志。
+     - 校验失败（sha256 / fingerprint）不会回退到其他来源接受另一份产物。
+   - **下载重试策略**（`http_get_retry`，元数据与附件请求共用）：
      - 最多 5 次尝试；退避 5 / 10 / 20 / 40 秒；单次请求 90 秒超时；整体重试时限 240 秒，超出后不再发起新尝试。
-     - 429、408、5xx 与传输中断（无 HTTP 状态，或 200 响应被截断）可恢复，按上述预算重试。
+     - 429、408、5xx、无 HTTP 响应（`HTTP 000`）、200 响应被截断，以及 302 后跳转目标连接失败（保留的 3xx + 非零退出码）可恢复，按上述预算重试。
      - 403、404 及其他永久 HTTP 错误立即失败，即使 curl 同时返回非零退出码（截断的错误响应）。
      - 下载先写入 `.part` 临时文件，仅 HTTP 200 后才替换目标；失败不会留下可用产物。
-     - **诊断方式**：失败日志形如 `HTTP <状态> curl_exit=<码>`，并给出第几次尝试。`HTTP 000` 表示未收到任何 HTTP 响应（连接/DNS/超时）；`curl_exit=28` 为超时，`18` 为响应截断。连续 `HTTP 5xx` 达上限时，多为上游 Release 的持续故障，应等待或稍后重跑，而不是修改脚本预算；`HTTP 403/404` 则应核对 `source.json` 的 `repo`、`release`、`asset` 与仓库访问权限。
+     - **诊断方式**：失败日志形如 `HTTP <状态> curl_exit=<码>`，并给出第几次尝试与请求 URL（API 地址，不含签名参数）。`HTTP 000` 表示未收到任何 HTTP 响应；`curl_exit=28` 为超时，`18` 为响应截断，`7` 为连接被拒。连续 `HTTP 5xx` 达上限时，应先区分 API 元数据请求还是附件请求失败，并判断是否为上游持续故障，而不是盲目提高重试次数；`HTTP 403` 可能是匿名 API 限流（需设置 `GITHUB_TOKEN`）或权限问题，`HTTP 404` 则应核对 `source.json` 的 `repo`、`release`、`asset`。
      - SHA256 或 fingerprint 不一致时脚本拒绝使用该产物，任何重试都不会放宽校验；必须核对 pin 与上游附件，而不是跳过校验。
    - **何时重跑**：`deploy/agent/source.json` 变化（上游 pin bump）后必须重跑。不重跑的症状：
      dev 下 `/wasm/<ref>/…` 404 → 3D 回放 / 射击复现 / 装甲查看器"引擎加载失败"，其余功能正常。
