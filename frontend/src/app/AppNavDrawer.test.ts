@@ -39,4 +39,17 @@ describe('AppNavDrawer', () => {
     wrapper.unmount()
     root.remove()
   })
+
+  it('点击抽屉里的导航链接即关闭（含当前页：路由不变也要收起）', async () => {
+    const SidebarStub = defineComponent({ setup: () => () => h('nav', [h('a', { href: '/?view=replay', 'data-test': 'link' }, 'Replay'), h('span', { 'data-test': 'label' }, 'group')]) })
+    const wrapper = mount(AppNavDrawer, {
+      props: { open: true },
+      global: { stubs: { AppSheet: AppSheetStub, AppSidebar: SidebarStub }, mocks: { $t: (key: string) => key } },
+    })
+    await wrapper.get('[data-test="label"]').trigger('click')
+    expect(wrapper.emitted('close')).toBeUndefined()
+    await wrapper.get('[data-test="link"]').trigger('click')
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    wrapper.unmount()
+  })
 })

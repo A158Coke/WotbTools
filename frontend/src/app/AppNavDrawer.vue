@@ -16,6 +16,11 @@ watch(() => route.fullPath, () => {
   if (props.open) emit('close')
 })
 
+// 点的是当前页（路由不变，上面的 watch 不触发）也要关：任何导航链接被点即收起抽屉，回到页面内容
+function onNavClick(event: MouseEvent) {
+  if ((event.target as Element | null)?.closest?.('a[href]')) emit('close')
+}
+
 // 回放 2D / 3D 进入原生全屏时，从播放控制条打开的抽屉必须渲染进全屏元素里：
 // 传送到 body 的抽屉与遮罩会落在全屏层后面，看起来按钮没反应（与 OnboardingHost 同一做法）
 const fullscreenRoot = ref<HTMLElement | null>(typeof document === 'undefined' ? null : document.fullscreenElement as HTMLElement | null)
@@ -35,6 +40,13 @@ watch(() => props.open, (open) => { if (open) fullscreenRoot.value = document.fu
     data-testid="nav-drawer"
     @close="emit('close')"
   >
-    <AppSidebar drawer @close="emit('close')" />
+    <div class="nav-drawer-body" @click="onNavClick">
+      <AppSidebar drawer @close="emit('close')" />
+    </div>
   </AppSheet>
 </template>
+
+<style scoped>
+/* 只为委托点击存在，不参与布局 */
+.nav-drawer-body { display: contents; }
+</style>
