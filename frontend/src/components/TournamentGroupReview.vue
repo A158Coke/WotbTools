@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { TournamentImageReview } from '../composables/useTournamentPointsAdmin.js'
+import type { TournamentImageReview, TournamentReviewState } from '../composables/useTournamentPointsAdmin.js'
 import { normalizeTournamentClan } from '../composables/useTournamentPointsAdmin.js'
 import { apiErrorLabel } from '../utils/display.js'
 import Banner from './Banner.vue'
 import AppButton from './AppButton.vue'
-const props = defineProps<{ review: TournamentImageReview; clans: string[]; duplicate: boolean; disabled: boolean }>()
+const props = defineProps<{ review: TournamentImageReview; clans: string[]; duplicate: boolean; disabled: boolean; state: TournamentReviewState; position?: string }>()
 const emit = defineEmits<{
   change: [value: Partial<TournamentImageReview>]
   teamChange: [index: number, key: 'clanTag' | 'rank', value: string | number]
@@ -19,8 +19,12 @@ const clanListId = `tournament-clans-${useId()}`
 const newClans = computed(() => [...new Set(props.review.teams.map(team => normalizeTournamentClan(team.clanTag)).filter(tag => tag && !props.clans.includes(tag)))])
 </script>
 <template>
-  <section class="tournament-card">
-    <h3>{{ review.file.name }}</h3>
+  <section class="tournament-card tournament-group-card" :class="`is-${state}`" :data-review-state="state">
+    <header class="tournament-group-card-head">
+      <h3>{{ review.groupNumber ? $t('tournament.group', { number: review.groupNumber }) : review.file.name }}<span v-if="position" class="tournament-muted"> · {{ position }}</span></h3>
+      <span class="tournament-review-badge" :class="`is-${state}`">{{ $t('tournament.reviewStates.' + state) }}</span>
+    </header>
+    <p v-if="review.groupNumber" class="tournament-muted tournament-source-name">{{ review.file.name }}</p>
     <div class="tournament-review">
       <img :src="review.url" :alt="$t('tournament.evidence')" />
       <div class="tournament-stack">

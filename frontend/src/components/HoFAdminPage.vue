@@ -9,8 +9,11 @@ import { mapLabel } from '../utils/helpers.js'
 import { apiErrorCodeLabel, apiErrorLabel, formatDateTimeMinute, replayValueLabel } from '../utils/display.js'
 import { HUNDRED_VEHICLES } from '../utils/hundredVehicles.js'
 import * as api from '../api/hall-of-fame.js'
-import { Check, Download, Trash2, X } from 'lucide-vue-next'
+import { Check, Download, Trash2 } from 'lucide-vue-next'
 import AppDialog from './AppDialog.vue'
+import HoFReviewPane from './HoFReviewPane.vue'
+import HoFReviewQueue from './HoFReviewQueue.vue'
+import { useBreakpoint } from '../composables/useBreakpoint.js'
 
 const { t, te, tm, locale } = useI18n()
 const { initPromise, isAuthenticated, tokenParsed, login } = useAuth()
@@ -1029,6 +1032,103 @@ function battleTypeLabel(tp) {
   if (tp === 'RANDOM') return t('hof.battleType.random')
   return tp || '-'
 }
+// ── 审核工作区：队列（左）+ 证据 / 申报确认对照 / 校验清单 / 决定栏（右）；小屏单条全屏详情 ──
+const { isExpanded } = useBreakpoint()
+const REPLAY_CHECKS = [['replayParseOk', 'valParsed'], ['replayGameIdMatch', 'valGameId'], ['replayVehicleMatch', 'valVehicle'], ['replayDistinctBattles', 'valDistinct']]
+const reasonOptions = (prefix, kind) => {
+  const options = tm(`${prefix}.${kind}ReasonOptions`)
+  return options && typeof options === 'object' ? options : {}
+}
+const claimedAverage = (row, value) => {
+  const text = formatNumber(value)
+  return text === '-' ? row.vehicleName : t('hofAdmin.reviewAvg', { vehicle: row.vehicleName, value: text })
+}
+const hundredQueue = computed(() => hundredRows.value.map(row => ({
+  id: row.id, title: row.nicknameSnapshot || '-', status: String(row.status), statusLabel: hundredStatusLabel(row.status),
+  sub: claimedAverage(row, row.approvedAverageDamage ?? row.claimedAverageDamage), time: fmtTime(row.submittedAt) || '-', checked: hundredSelection.isSelected(row),
+})))
+const mark3Queue = computed(() => mark3Rows.value.map(row => ({
+  id: row.id, title: row.nicknameSnapshot || '-', status: String(row.status), statusLabel: mark3StatusLabel(row.status),
+  sub: claimedAverage(row, row.claimedAverageDamage), time: fmtTime(row.submittedAt) || '-', checked: mark3Selection.isSelected(row),
+})))
+function moderationPane(prefix, d, extra) {
+  const row = (label, value, strong) => ({ label, value: value ?? '-', strong })
+  const meta = [
+    row(t(`${prefix}.vehicle`), d?.vehicleName),
+    row(t(`${prefix}.gameId`), d ? `${d.wotbServer}·${d.wotbAccountId}` : '-'),
+    row(t(`${prefix}.submittedAt`), fmtTime(d?.submittedAt) || '-'),
+  ]
+  if (d?.approvedAt) meta.push(row(t(`${prefix}.approvedAt`), fmtTime(d.approvedAt) || '-'))
+  if (d?.status === 'REJECTED') {
+    meta.push(row(t(`${prefix}.rejectReason`), extra.reasonLabel('reject', d.rejectReason)))
+    if (d.rejectReasonText) meta.push(row(t(`${prefix}.rejectReasonTextValue`), d.rejectReasonText))
+    meta.push(row(t(`${prefix}.rejectedAt`), fmtTime(d.rejectedAt) || '-'))
+  }
+  if (d?.status === 'CANCELLED') meta.push(row(t(`${prefix}.cancelledAt`), fmtTime(d.cancelledAt) || '-'))
+  if (d?.status === 'DELETED') {
+    meta.push(row(t(`${prefix}.deleteReason`), extra.reasonLabel('delete', d.deleteReason)))
+    if (d.deleteReasonText) meta.push(row(t(`${prefix}.deleteReasonTextValue`), d.deleteReasonText))
+    meta.push(row(t(`${prefix}.deletedAt`), fmtTime(d.deletedAt) || '-'))
+  }
+  // 通过时后端把申报值原样写入确认值（HundredModerationService / Mark3ModerationService），所以待审核时「确认」列展示将被记录的值。
+  const confirmed = (approved, claimed) => approved != null ? approved : d?.status === 'PENDING' ? claimed : null
+  return {
+    prefix, title: d ? `${d.nicknameSnapshot} · ${d.vehicleName}` : '', status: String(d?.status ?? ''), statusLabel: extra.statusLabel(d?.status),
+    meta, loading: extra.loading, phase: extra.phase, busy: extra.busy, message: extra.message,
+    compare: d ? extra.compare(confirmed) : [],
+    checks: d ? REPLAY_CHECKS.map(([field, key]) => ({ ok: !!d[field], label: t(`${prefix}.${key}`) })) : [],
+    evidenceLoading: extra.evidenceLoading, evidenceError: extra.evidenceError, evidenceComplete: extra.evidenceComplete,
+    screenshots: extra.screenshots, replays: extra.replays, position: extra.position, total: extra.total, compact: !isExpanded.value,
+    rejectReasons: reasonOptions(prefix, 'reject'), deleteReasons: reasonOptions(prefix, 'delete'),
+  }
+}
+const replayItems = list => list.map(ev => ({ id: ev.id, slot: ev.slot, name: ev.originalFilename, sizeLabel: fmtSize(ev.fileSize), raw: ev }))
+const positionOf = (rows, target) => {
+  const index = rows.findIndex(row => row.id === target?.id)
+  return index < 0 ? 0 : index + 1
+}
+const hundredPane = computed(() => {
+  const d = reviewDetail.value
+  return moderationPane('hundredAdmin', d, {
+    reasonLabel, statusLabel: hundredStatusLabel, loading: reviewLoading.value, phase: reviewPhase.value, busy: actionBusy.value, message: actionMsg.value,
+    compare: confirmed => [
+      { label: t('hofAdmin.reviewDamage'), claimed: formatNumber(d.claimedAverageDamage), confirmed: formatNumber(confirmed(d.approvedAverageDamage, d.claimedAverageDamage)) },
+      { label: t('hofAdmin.reviewBattles'), claimed: formatNumber(d.claimedBattleCount), confirmed: formatNumber(confirmed(d.approvedBattleCount, d.claimedBattleCount)) },
+    ],
+    evidenceLoading: evidenceLoading.value, evidenceError: evidenceError.value, evidenceComplete: evidenceComplete.value,
+    screenshots: d?.proofScreenshot ? [d.proofScreenshot] : [], replays: replayItems(replayEvidence.value),
+    position: positionOf(hundredRows.value, reviewTarget.value), total: hundredRows.value.length,
+  })
+})
+const mark3Pane = computed(() => {
+  const d = mark3ReviewDetail.value
+  return moderationPane('mark3Admin', d, {
+    reasonLabel: mark3ReasonLabel, statusLabel: mark3StatusLabel, loading: mark3ReviewLoading.value, phase: mark3ReviewPhase.value, busy: mark3ActionBusy.value, message: mark3ActionMsg.value,
+    compare: confirmed => [
+      { label: t('hofAdmin.reviewBattles'), claimed: formatNumber(d.claimedBattleCount), confirmed: formatNumber(confirmed(d.approvedBattleCount, d.claimedBattleCount)) },
+      { label: t('hofAdmin.reviewDamage'), claimed: formatNumber(d.claimedAverageDamage), confirmed: formatNumber(confirmed(d.approvedAverageDamage, d.claimedAverageDamage)) },
+      { label: t('hofAdmin.reviewWinRate'), claimed: formatMark3WinRate(d.claimedWinRate), confirmed: confirmed(d.approvedWinRate, d.claimedWinRate) == null ? '-' : formatMark3WinRate(confirmed(d.approvedWinRate, d.claimedWinRate)) },
+    ],
+    evidenceLoading: mark3EvidenceLoading.value, evidenceError: mark3EvidenceError.value, evidenceComplete: mark3EvidenceComplete.value,
+    screenshots: d?.proofScreenshots ?? [], replays: replayItems(mark3ReplayEvidence.value),
+    position: positionOf(mark3Rows.value, mark3ReviewTarget.value), total: mark3Rows.value.length,
+  })
+})
+function stepReview(delta) {
+  const next = hundredRows.value[positionOf(hundredRows.value, reviewTarget.value) - 1 + delta]
+  if (next && !actionBusy.value) openReview(next)
+}
+function stepMark3Review(delta) {
+  const next = mark3Rows.value[positionOf(mark3Rows.value, mark3ReviewTarget.value) - 1 + delta]
+  if (next && !mark3ActionBusy.value) openMark3Review(next)
+}
+const openHundredById = id => openReview(hundredRows.value.find(row => row.id === id))
+const openMark3ById = id => openMark3Review(mark3Rows.value.find(row => row.id === id))
+const toggleHundredById = (id, on) => hundredSelection.toggle(hundredRows.value.find(row => row.id === id), on)
+const toggleMark3ById = (id, on) => mark3Selection.toggle(mark3Rows.value.find(row => row.id === id), on)
+const downloadMark3At = index => downloadMark3Screenshot(mark3ReviewDetail.value.proofScreenshots[index], index)
+const zoomMark3At = index => { mark3ScreenshotZoom.value = mark3ReviewDetail.value.proofScreenshots[index] }
+const cancelMark3Phase = () => { mark3ActionMsg.value = ''; mark3ReviewPhase.value = 'view' }
 </script>
 
 <template>
@@ -1264,53 +1364,13 @@ function battleTypeLabel(tp) {
         </div>
         <p v-if="hundredLoading" class="muted">{{ $t('hundredAdmin.loading') }}</p>
         <p v-else-if="!hundredRows.length" class="muted">{{ $t('hundredAdmin.empty') }}</p>
-        <div v-else class="tablewrap">
-          <table class="hof-admin-table">
-            <thead>
-              <tr>
-                <th class="hof-check">
-                  <input
-                    type="checkbox"
-                    :checked="hundredSelection.allSelected()"
-                    :aria-label="$t('hofAdmin.selectAllPage')"
-                    @change="hundredSelection.toggleAll($event.target.checked)"
-                  />
-                </th>
-                <th>ID</th>
-                <th>{{ $t('hundredAdmin.vehicle') }}</th>
-                <th>{{ $t('hundredAdmin.nicknameSnapshot') }}</th>
-                <th>{{ $t('hundredAdmin.gameId') }}</th>
-                <th>{{ $t('hundredAdmin.approvedDamage') }}</th>
-                <th>{{ $t('hundredAdmin.approvedBattles') }}</th>
-                <th>{{ $t('hundredAdmin.statusLabel') }}</th>
-                <th>{{ $t('hundredAdmin.submittedAt') }}</th>
-                <th class="actions">{{ $t('hofAdmin.actions') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="r in hundredRows" :key="r.id">
-                <td class="hof-check">
-                  <input
-                    type="checkbox"
-                    :checked="hundredSelection.isSelected(r)"
-                    :aria-label="$t('hofAdmin.selectRow', { id: r.id })"
-                    @change="hundredSelection.toggle(r, $event.target.checked)"
-                  />
-                </td>
-                <td class="muted">{{ r.id }}</td>
-                <td>{{ r.vehicleName }}</td>
-                <td>{{ r.nicknameSnapshot }}</td>
-                <td class="muted">{{ r.wotbServer }}·{{ r.wotbAccountId }}</td>
-                <td class="dmg">{{ r.approvedAverageDamage ?? '-' }}</td>
-                <td>{{ r.approvedBattleCount ?? '-' }}</td>
-                <td><span class="hundred-status" :class="'hundred-status-' + String(r.status).toLowerCase()">{{ hundredStatusLabel(r.status) }}</span></td>
-                <td class="muted">{{ fmtTime(r.submittedAt) || '-' }}</td>
-                <td class="actions">
-                  <button class="btn-sm" @click="openReview(r)">{{ $t('hundredAdmin.details') }}</button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+        <div v-else class="hof-review-layout">
+          <HoFReviewQueue :items="hundredQueue" :current-id="reviewTarget?.id ?? null" :all-selected="hundredSelection.allSelected()" :label="$t('hofAdmin.reviewQueue')"
+            @open="openHundredById" @toggle="toggleHundredById" @toggle-all="hundredSelection.toggleAll($event)" />
+          <HoFReviewPane v-if="reviewTarget" v-bind="hundredPane" v-model:reject-reason="rejectReason" v-model:reject-text="rejectReasonText" v-model:delete-reason="currentDeleteReason" v-model:delete-text="currentDeleteReasonText"
+            @close="closeReview" @prev="stepReview(-1)" @next="stepReview(1)" @ask-reject="askReject" @ask-approve="askApprove" @ask-delete="askCurrentDelete" @cancel="cancelCurrentDelete"
+            @confirm-approve="confirmApprove" @confirm-reject="confirmReject" @confirm-delete="confirmCurrentDelete" @download-screenshot="downloadScreenshot" @zoom="screenshotZoom = true" @download-replay="downloadReplay" />
+          <p v-else class="hof-review-empty">{{ $t('hofAdmin.reviewPick') }}</p>
         </div>
         <div v-if="hundredTotalPages > 1" class="pagination">
           <button :disabled="hundredPage <= 1" @click="goHundredPage(hundredPage - 1)">{{ $t('hundredAdmin.prev') }}</button>
@@ -1359,53 +1419,13 @@ function battleTypeLabel(tp) {
         </div>
         <p v-if="mark3Loading" class="muted">{{ $t('mark3Admin.loading') }}</p>
         <p v-else-if="!mark3Rows.length" class="muted">{{ $t('mark3Admin.empty') }}</p>
-        <div v-else class="tablewrap">
-          <table class="hof-admin-table">
-            <thead>
-              <tr>
-                <th class="hof-check">
-                  <input
-                    type="checkbox"
-                    :checked="mark3Selection.allSelected()"
-                    :aria-label="$t('hofAdmin.selectAllPage')"
-                    @change="mark3Selection.toggleAll($event.target.checked)"
-                  />
-                </th>
-                <th>ID</th>
-                <th>{{ $t('mark3Admin.vehicle') }}</th>
-                <th>{{ $t('mark3Admin.nicknameSnapshot') }}</th>
-                <th>{{ $t('mark3Admin.gameId') }}</th>
-                <th>{{ $t('mark3Admin.claimedBattles') }}</th>
-                <th>{{ $t('mark3Admin.claimedDamage') }}</th>
-                <th>{{ $t('mark3Admin.claimedWinRate') }}</th>
-                <th>{{ $t('mark3Admin.statusLabel') }}</th>
-                <th>{{ $t('mark3Admin.submittedAt') }}</th>
-                <th class="actions">{{ $t('hofAdmin.actions') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in mark3Rows" :key="row.id">
-                <td class="hof-check">
-                  <input
-                    type="checkbox"
-                    :checked="mark3Selection.isSelected(row)"
-                    :aria-label="$t('hofAdmin.selectRow', { id: row.id })"
-                    @change="mark3Selection.toggle(row, $event.target.checked)"
-                  />
-                </td>
-                <td class="muted">{{ row.id }}</td>
-                <td>{{ row.vehicleName }}</td>
-                <td>{{ row.nicknameSnapshot }}</td>
-                <td class="muted">{{ row.wotbServer }}·{{ row.wotbAccountId }}</td>
-                <td class="dmg">{{ formatNumber(row.claimedBattleCount) }}</td>
-                <td>{{ formatNumber(row.claimedAverageDamage) }}</td>
-                <td>{{ formatMark3WinRate(row.claimedWinRate) }}</td>
-                <td><span class="hundred-status" :class="'hundred-status-' + String(row.status).toLowerCase()">{{ mark3StatusLabel(row.status) }}</span></td>
-                <td class="muted">{{ fmtTime(row.submittedAt) || '-' }}</td>
-                <td class="actions"><button class="btn-sm" @click="openMark3Review(row)">{{ $t('mark3Admin.details') }}</button></td>
-              </tr>
-            </tbody>
-          </table>
+        <div v-else class="hof-review-layout">
+          <HoFReviewQueue :items="mark3Queue" :current-id="mark3ReviewTarget?.id ?? null" :all-selected="mark3Selection.allSelected()" :label="$t('hofAdmin.reviewQueue')"
+            @open="openMark3ById" @toggle="toggleMark3ById" @toggle-all="mark3Selection.toggleAll($event)" />
+          <HoFReviewPane v-if="mark3ReviewTarget" v-bind="mark3Pane" v-model:reject-reason="mark3RejectReason" v-model:reject-text="mark3RejectReasonText" v-model:delete-reason="mark3DeleteReason" v-model:delete-text="mark3DeleteReasonText"
+            @close="closeMark3Review" @prev="stepMark3Review(-1)" @next="stepMark3Review(1)" @ask-reject="askMark3Reject" @ask-approve="askMark3Approve" @ask-delete="askMark3Delete" @cancel="cancelMark3Phase"
+            @confirm-approve="confirmMark3Approve" @confirm-reject="confirmMark3Reject" @confirm-delete="confirmMark3Delete" @download-screenshot="downloadMark3At" @zoom="zoomMark3At" @download-replay="downloadMark3Replay" />
+          <p v-else class="hof-review-empty">{{ $t('hofAdmin.reviewPick') }}</p>
         </div>
         <div v-if="mark3TotalPages > 1" class="pagination">
           <button :disabled="mark3Page <= 1" @click="goMark3Page(mark3Page - 1)">{{ $t('mark3Admin.prev') }}</button>
@@ -1421,284 +1441,7 @@ function battleTypeLabel(tp) {
         </label>
       </div>
 
-      <!-- ── 百场详情：所有状态都从这里查看，操作不会直接出现在列表中 ── -->
-      <AppDialog :open="!!reviewTarget" :title="$t('hundredAdmin.details')" class="hof-review-modal" @close="closeReview">
-          <p v-if="reviewLoading" class="muted">{{ $t('hundredAdmin.loading') }}</p>
-          <template v-else-if="reviewDetail">
-            <table class="hof-delete-table">
-              <tbody>
-                <tr><th>{{ $t('hundredAdmin.user') }}</th><td>{{ reviewDetail.nicknameSnapshot }}</td></tr>
-                <tr><th>{{ $t('hundredAdmin.gameId') }}</th><td class="muted">{{ reviewDetail.wotbServer }}·{{ reviewDetail.wotbAccountId }}</td></tr>
-                <tr><th>{{ $t('hundredAdmin.vehicle') }}</th><td>{{ reviewDetail.vehicleName }}</td></tr>
-                <tr><th>{{ $t('hundredAdmin.claimedDamage') }}</th><td class="dmg">{{ reviewDetail.claimedAverageDamage }}</td></tr>
-                <tr><th>{{ $t('hundredAdmin.claimedBattles') }}</th><td>{{ reviewDetail.claimedBattleCount }}</td></tr>
-                <tr><th>{{ $t('hundredAdmin.statusLabel') }}</th><td>{{ hundredStatusLabel(reviewDetail.status) }}</td></tr>
-                <tr><th>{{ $t('hundredAdmin.submittedAt') }}</th><td>{{ fmtTime(reviewDetail.submittedAt) || '-' }}</td></tr>
-                <template v-if="reviewDetail.approvedAverageDamage != null">
-                  <tr><th>{{ $t('hundredAdmin.approvedDamage') }}</th><td class="dmg">{{ reviewDetail.approvedAverageDamage }}</td></tr>
-                  <tr><th>{{ $t('hundredAdmin.approvedBattles') }}</th><td>{{ reviewDetail.approvedBattleCount }}</td></tr>
-                  <tr><th>{{ $t('hundredAdmin.approvedAt') }}</th><td>{{ fmtTime(reviewDetail.approvedAt) || '-' }}</td></tr>
-                </template>
-                <template v-if="reviewDetail.status === 'REJECTED'">
-                  <tr><th>{{ $t('hundredAdmin.rejectReason') }}</th><td>{{ reasonLabel('reject', reviewDetail.rejectReason) }}</td></tr>
-                  <tr v-if="reviewDetail.rejectReasonText"><th>{{ $t('hundredAdmin.rejectReasonTextValue') }}</th><td>{{ reviewDetail.rejectReasonText }}</td></tr>
-                  <tr><th>{{ $t('hundredAdmin.rejectedAt') }}</th><td>{{ fmtTime(reviewDetail.rejectedAt) || '-' }}</td></tr>
-                </template>
-                <template v-if="reviewDetail.status === 'CANCELLED'">
-                  <tr><th>{{ $t('hundredAdmin.cancelledAt') }}</th><td>{{ fmtTime(reviewDetail.cancelledAt) || '-' }}</td></tr>
-                </template>
-                <template v-if="reviewDetail.status === 'DELETED'">
-                  <tr><th>{{ $t('hundredAdmin.deleteReason') }}</th><td>{{ reasonLabel('delete', reviewDetail.deleteReason) }}</td></tr>
-                  <tr v-if="reviewDetail.deleteReasonText"><th>{{ $t('hundredAdmin.deleteReasonTextValue') }}</th><td>{{ reviewDetail.deleteReasonText }}</td></tr>
-                  <tr><th>{{ $t('hundredAdmin.deletedAt') }}</th><td>{{ fmtTime(reviewDetail.deletedAt) || '-' }}</td></tr>
-                </template>
-              </tbody>
-            </table>
-
-            <div v-if="reviewDetail.status === 'PENDING'" class="hundred-review-section">
-              <div class="hundred-review-label">{{ $t('hundredAdmin.evidence') }}</div>
-              <div class="hundred-proof-row">
-                <img v-if="reviewDetail.proofScreenshot" class="hundred-proof" :src="reviewDetail.proofScreenshot"
-                     :alt="$t('hundredAdmin.screenshot')" @click="screenshotZoom = true" />
-                <span v-else class="hundred-proof-empty">—</span>
-                <button v-if="reviewDetail.proofScreenshot" class="btn-sm" @click="downloadScreenshot">
-                  {{ $t('hundredAdmin.downloadScreenshot') }}
-                </button>
-              </div>
-              <p v-if="evidenceLoading" class="muted">{{ $t('hundredAdmin.loading') }}</p>
-              <p v-else-if="evidenceError" class="error">{{ evidenceError }}</p>
-              <template v-else>
-                <p v-if="!replayEvidence.length" class="hundred-legacy-warn">
-                  {{ $t('hundredAdmin.legacyNoReplays') }}
-                </p>
-                <template v-else>
-                  <p v-if="replayEvidence.length !== 5" class="hundred-legacy-warn">
-                    {{ $t('hundredAdmin.evidenceIncomplete') }}
-                  </p>
-                  <ul class="replay-evidence-list">
-                    <li v-for="ev in replayEvidence" :key="ev.id" class="replay-evidence-item">
-                      <span class="replay-slot">#{{ ev.slot }}</span>
-                      <span class="replay-name" :title="ev.originalFilename">{{ ev.originalFilename }}</span>
-                      <span class="replay-size">{{ fmtSize(ev.fileSize) }}</span>
-                      <button type="button" class="btn-sm btn-icon" :title="$t('hundredAdmin.replayDownload')" :aria-label="$t('hundredAdmin.replayDownload')" @click="downloadReplay(ev)">
-                        <Download :size="16" aria-hidden="true" />
-                      </button>
-                    </li>
-                  </ul>
-                </template>
-              </template>
-            </div>
-
-            <div class="hundred-review-section">
-              <div class="hundred-review-label">{{ $t('hundredAdmin.replayValidation') }}</div>
-              <ul class="val-list">
-                <li :class="reviewDetail.replayParseOk ? 'val-ok' : 'val-bad'">
-                  <component :is="reviewDetail.replayParseOk ? Check : X" class="val-mark" :size="16" role="img" :aria-label="reviewDetail.replayParseOk ? $t('hofAdmin.valPass') : $t('hofAdmin.valFail')" />{{ $t('hundredAdmin.valParsed') }}
-                </li>
-                <li :class="reviewDetail.replayGameIdMatch ? 'val-ok' : 'val-bad'">
-                  <component :is="reviewDetail.replayGameIdMatch ? Check : X" class="val-mark" :size="16" role="img" :aria-label="reviewDetail.replayGameIdMatch ? $t('hofAdmin.valPass') : $t('hofAdmin.valFail')" />{{ $t('hundredAdmin.valGameId') }}
-                </li>
-                <li :class="reviewDetail.replayVehicleMatch ? 'val-ok' : 'val-bad'">
-                  <component :is="reviewDetail.replayVehicleMatch ? Check : X" class="val-mark" :size="16" role="img" :aria-label="reviewDetail.replayVehicleMatch ? $t('hofAdmin.valPass') : $t('hofAdmin.valFail')" />{{ $t('hundredAdmin.valVehicle') }}
-                </li>
-                <li :class="reviewDetail.replayDistinctBattles ? 'val-ok' : 'val-bad'">
-                  <component :is="reviewDetail.replayDistinctBattles ? Check : X" class="val-mark" :size="16" role="img" :aria-label="reviewDetail.replayDistinctBattles ? $t('hofAdmin.valPass') : $t('hofAdmin.valFail')" />{{ $t('hundredAdmin.valDistinct') }}
-                </li>
-              </ul>
-            </div>
-
-            <p v-if="actionMsg" class="error">{{ actionMsg }}</p>
-
-            <div v-if="reviewDetail.status === 'PENDING' && reviewPhase === 'view'" class="modal-actions">
-              <button class="btn-sm" :disabled="actionBusy" @click="closeReview">{{ $t('hundredAdmin.close') }}</button>
-              <button class="btn-sm danger" :disabled="actionBusy" @click="askReject">{{ $t('hundredAdmin.reject') }}</button>
-              <button class="btn-sm ok" :disabled="actionBusy || !evidenceComplete" :title="evidenceComplete ? '' : approveDisabledHint" @click="askApprove">{{ $t('hundredAdmin.approve') }}</button>
-            </div>
-
-            <div v-else-if="reviewDetail.status === 'PENDING' && reviewPhase === 'approve-confirm'" class="hundred-action-area">
-              <p class="hundred-confirm">{{ $t('hundredAdmin.approveConfirm') }}</p>
-              <div class="modal-actions">
-                <button class="btn-sm" :disabled="actionBusy" @click="reviewPhase = 'view'">{{ $t('hundredAdmin.cancel') }}</button>
-                <button class="btn-sm ok" :disabled="actionBusy" @click="confirmApprove">
-                  {{ actionBusy ? $t('hundredAdmin.approving') : $t('hundredAdmin.approve') }}
-                </button>
-              </div>
-            </div>
-
-            <div v-else-if="reviewDetail.status === 'PENDING' && reviewPhase === 'reject-form'" class="hundred-action-area">
-              <label class="hundred-reason-label">{{ $t('hundredAdmin.rejectReason') }}</label>
-              <select v-model="rejectReason">
-                <option value="">{{ $t('hundredAdmin.rejectReasonRequired') }}</option>
-                <option v-for="(label, key) in $tm('hundredAdmin.rejectReasonOptions')" :key="key" :value="key">{{ label }}</option>
-              </select>
-              <textarea v-model="rejectReasonText" rows="2" :placeholder="$t('hundredAdmin.rejectReasonPlaceholder')"></textarea>
-              <p class="hundred-confirm">{{ $t('hundredAdmin.rejectConfirm') }}</p>
-              <div class="modal-actions">
-                <button class="btn-sm" :disabled="actionBusy" @click="reviewPhase = 'view'">{{ $t('hundredAdmin.cancel') }}</button>
-                <button class="btn-sm danger" :disabled="actionBusy" @click="confirmReject">
-                  {{ actionBusy ? $t('hundredAdmin.rejecting') : $t('hundredAdmin.reject') }}
-                </button>
-              </div>
-            </div>
-
-            <div v-else-if="reviewDetail.status === 'CURRENT' && reviewPhase === 'view'" class="modal-actions">
-              <button class="btn-sm" :disabled="actionBusy" @click="closeReview">{{ $t('hundredAdmin.close') }}</button>
-              <button class="btn-sm danger" :disabled="actionBusy" @click="askCurrentDelete">{{ $t('hundredAdmin.delete') }}</button>
-            </div>
-
-            <div v-else-if="reviewDetail.status === 'CURRENT' && reviewPhase === 'delete-form'" class="hundred-action-area">
-              <label class="hundred-reason-label">{{ $t('hundredAdmin.deleteReason') }}</label>
-              <select v-model="currentDeleteReason">
-                <option value="">{{ $t('hundredAdmin.deleteReasonRequired') }}</option>
-                <option v-for="(label, key) in $tm('hundredAdmin.deleteReasonOptions')" :key="key" :value="key">{{ label }}</option>
-              </select>
-              <textarea v-model="currentDeleteReasonText" rows="2" :placeholder="$t('hundredAdmin.deleteReasonPlaceholder')"></textarea>
-              <p class="hundred-confirm">{{ $t('hundredAdmin.deleteConfirm') }}</p>
-              <div class="modal-actions">
-                <button class="btn-sm" :disabled="actionBusy" @click="cancelCurrentDelete">{{ $t('hundredAdmin.cancel') }}</button>
-                <button class="btn-sm danger" :disabled="actionBusy" @click="confirmCurrentDelete">
-                  {{ actionBusy ? $t('hundredAdmin.deleting') : $t('hundredAdmin.delete') }}
-                </button>
-              </div>
-            </div>
-
-            <div v-else class="modal-actions">
-              <button class="btn-sm" :disabled="actionBusy" @click="closeReview">{{ $t('hundredAdmin.close') }}</button>
-            </div>
-          </template>
-      </AppDialog>
-
-      <!-- ── 三环详情：只审核状态，绝不提供成绩编辑控件 ── -->
-      <AppDialog :open="!!mark3ReviewTarget" :title="$t('mark3Admin.details')" class="hof-review-modal" @close="closeMark3Review">
-          <p v-if="mark3ReviewLoading" class="muted">{{ $t('mark3Admin.loading') }}</p>
-          <template v-else-if="mark3ReviewDetail">
-            <table class="hof-delete-table">
-              <tbody>
-                <tr><th>{{ $t('mark3Admin.user') }}</th><td>{{ mark3ReviewDetail.nicknameSnapshot }}</td></tr>
-                <tr><th>{{ $t('mark3Admin.gameId') }}</th><td class="muted">{{ mark3ReviewDetail.wotbServer }}·{{ mark3ReviewDetail.wotbAccountId }}</td></tr>
-                <tr><th>{{ $t('mark3Admin.vehicle') }}</th><td>{{ mark3ReviewDetail.vehicleName }}</td></tr>
-                <tr><th>{{ $t('mark3Admin.claimedBattles') }}</th><td class="dmg">{{ formatNumber(mark3ReviewDetail.claimedBattleCount) }}</td></tr>
-                <tr><th>{{ $t('mark3Admin.claimedDamage') }}</th><td>{{ formatNumber(mark3ReviewDetail.claimedAverageDamage) }}</td></tr>
-                <tr><th>{{ $t('mark3Admin.claimedWinRate') }}</th><td>{{ formatMark3WinRate(mark3ReviewDetail.claimedWinRate) }}</td></tr>
-                <tr><th>{{ $t('mark3Admin.statusLabel') }}</th><td>{{ mark3StatusLabel(mark3ReviewDetail.status) }}</td></tr>
-                <tr><th>{{ $t('mark3Admin.submittedAt') }}</th><td>{{ fmtTime(mark3ReviewDetail.submittedAt) || '-' }}</td></tr>
-                <template v-if="mark3ReviewDetail.approvedBattleCount != null">
-                  <tr><th>{{ $t('mark3Admin.approvedBattles') }}</th><td class="dmg">{{ formatNumber(mark3ReviewDetail.approvedBattleCount) }}</td></tr>
-                  <tr><th>{{ $t('mark3Admin.approvedDamage') }}</th><td>{{ formatNumber(mark3ReviewDetail.approvedAverageDamage) }}</td></tr>
-                  <tr><th>{{ $t('mark3Admin.approvedWinRate') }}</th><td>{{ formatMark3WinRate(mark3ReviewDetail.approvedWinRate) }}</td></tr>
-                  <tr><th>{{ $t('mark3Admin.approvedAt') }}</th><td>{{ fmtTime(mark3ReviewDetail.approvedAt) || '-' }}</td></tr>
-                </template>
-                <template v-if="mark3ReviewDetail.status === 'REJECTED'">
-                  <tr><th>{{ $t('mark3Admin.rejectReason') }}</th><td>{{ mark3ReasonLabel('reject', mark3ReviewDetail.rejectReason) }}</td></tr>
-                  <tr v-if="mark3ReviewDetail.rejectReasonText"><th>{{ $t('mark3Admin.rejectReasonTextValue') }}</th><td>{{ mark3ReviewDetail.rejectReasonText }}</td></tr>
-                  <tr><th>{{ $t('mark3Admin.rejectedAt') }}</th><td>{{ fmtTime(mark3ReviewDetail.rejectedAt) || '-' }}</td></tr>
-                </template>
-                <template v-if="mark3ReviewDetail.status === 'CANCELLED'">
-                  <tr><th>{{ $t('mark3Admin.cancelledAt') }}</th><td>{{ fmtTime(mark3ReviewDetail.cancelledAt) || '-' }}</td></tr>
-                </template>
-                <template v-if="mark3ReviewDetail.status === 'DELETED'">
-                  <tr><th>{{ $t('mark3Admin.deleteReason') }}</th><td>{{ mark3ReasonLabel('delete', mark3ReviewDetail.deleteReason) }}</td></tr>
-                  <tr v-if="mark3ReviewDetail.deleteReasonText"><th>{{ $t('mark3Admin.deleteReasonTextValue') }}</th><td>{{ mark3ReviewDetail.deleteReasonText }}</td></tr>
-                  <tr><th>{{ $t('mark3Admin.deletedAt') }}</th><td>{{ fmtTime(mark3ReviewDetail.deletedAt) || '-' }}</td></tr>
-                </template>
-              </tbody>
-            </table>
-
-            <div v-if="mark3ReviewDetail.status === 'PENDING'" class="hundred-review-section">
-              <div class="hundred-review-label">{{ $t('mark3Admin.evidence') }}</div>
-              <div v-if="mark3ReviewDetail.proofScreenshots?.length" class="mark3-admin-screenshots">
-                <div v-for="(screenshot, index) in mark3ReviewDetail.proofScreenshots" :key="screenshot" class="hundred-proof-row">
-                  <img class="hundred-proof" :src="screenshot" :alt="$t('mark3Admin.screenshot', { number: index + 1 })" @click="mark3ScreenshotZoom = screenshot" />
-                  <button class="btn-sm" @click="downloadMark3Screenshot(screenshot, index)">{{ $t('mark3Admin.downloadScreenshot') }}</button>
-                </div>
-              </div>
-              <span v-else class="hundred-proof-empty">—</span>
-              <p v-if="mark3EvidenceLoading" class="muted">{{ $t('mark3Admin.loading') }}</p>
-              <p v-else-if="mark3EvidenceError" class="error">{{ mark3EvidenceError }}</p>
-              <template v-else>
-                <p v-if="!mark3ReplayEvidence.length" class="hundred-legacy-warn">{{ $t('mark3Admin.legacyNoReplays') }}</p>
-                <template v-else>
-                  <p v-if="mark3ReplayEvidence.length !== 5" class="hundred-legacy-warn">{{ $t('mark3Admin.evidenceIncomplete') }}</p>
-                  <ul class="replay-evidence-list">
-                    <li v-for="evidence in mark3ReplayEvidence" :key="evidence.id" class="replay-evidence-item">
-                      <span class="replay-slot">#{{ evidence.slot }}</span>
-                      <span class="replay-name" :title="evidence.originalFilename">{{ evidence.originalFilename }}</span>
-                      <span class="replay-size">{{ fmtSize(evidence.fileSize) }}</span>
-                      <button type="button" class="btn-sm btn-icon" :title="$t('mark3Admin.replayDownload')" :aria-label="$t('mark3Admin.replayDownload')" @click="downloadMark3Replay(evidence)">
-                        <Download :size="16" aria-hidden="true" />
-                      </button>
-                    </li>
-                  </ul>
-                </template>
-              </template>
-            </div>
-
-            <div class="hundred-review-section">
-              <div class="hundred-review-label">{{ $t('mark3Admin.replayValidation') }}</div>
-              <ul class="val-list">
-                <li :class="mark3ReviewDetail.replayParseOk ? 'val-ok' : 'val-bad'"><component :is="mark3ReviewDetail.replayParseOk ? Check : X" class="val-mark" :size="16" role="img" :aria-label="mark3ReviewDetail.replayParseOk ? $t('hofAdmin.valPass') : $t('hofAdmin.valFail')" />{{ $t('mark3Admin.valParsed') }}</li>
-                <li :class="mark3ReviewDetail.replayGameIdMatch ? 'val-ok' : 'val-bad'"><component :is="mark3ReviewDetail.replayGameIdMatch ? Check : X" class="val-mark" :size="16" role="img" :aria-label="mark3ReviewDetail.replayGameIdMatch ? $t('hofAdmin.valPass') : $t('hofAdmin.valFail')" />{{ $t('mark3Admin.valGameId') }}</li>
-                <li :class="mark3ReviewDetail.replayVehicleMatch ? 'val-ok' : 'val-bad'"><component :is="mark3ReviewDetail.replayVehicleMatch ? Check : X" class="val-mark" :size="16" role="img" :aria-label="mark3ReviewDetail.replayVehicleMatch ? $t('hofAdmin.valPass') : $t('hofAdmin.valFail')" />{{ $t('mark3Admin.valVehicle') }}</li>
-                <li :class="mark3ReviewDetail.replayDistinctBattles ? 'val-ok' : 'val-bad'"><component :is="mark3ReviewDetail.replayDistinctBattles ? Check : X" class="val-mark" :size="16" role="img" :aria-label="mark3ReviewDetail.replayDistinctBattles ? $t('hofAdmin.valPass') : $t('hofAdmin.valFail')" />{{ $t('mark3Admin.valDistinct') }}</li>
-              </ul>
-            </div>
-
-            <p v-if="mark3ActionMsg" class="error">{{ mark3ActionMsg }}</p>
-
-            <div v-if="mark3ReviewDetail.status === 'PENDING' && mark3ReviewPhase === 'view'" class="modal-actions">
-              <button class="btn-sm" :disabled="mark3ActionBusy" @click="closeMark3Review">{{ $t('mark3Admin.close') }}</button>
-              <button class="btn-sm danger" :disabled="mark3ActionBusy" @click="askMark3Reject">{{ $t('mark3Admin.reject') }}</button>
-              <button class="btn-sm ok" :disabled="mark3ActionBusy || !mark3EvidenceComplete" :title="mark3EvidenceComplete ? '' : $t('mark3Admin.approveDisabledHint')" @click="askMark3Approve">{{ $t('mark3Admin.approve') }}</button>
-            </div>
-
-            <div v-else-if="mark3ReviewDetail.status === 'PENDING' && mark3ReviewPhase === 'approve-confirm'" class="hundred-action-area">
-              <p class="hundred-confirm">{{ $t('mark3Admin.approveConfirm') }}</p>
-              <div class="modal-actions">
-                <button class="btn-sm" :disabled="mark3ActionBusy" @click="mark3ReviewPhase = 'view'">{{ $t('mark3Admin.cancel') }}</button>
-                <button class="btn-sm ok" :disabled="mark3ActionBusy" @click="confirmMark3Approve">{{ mark3ActionBusy ? $t('mark3Admin.approving') : $t('mark3Admin.approve') }}</button>
-              </div>
-            </div>
-
-            <div v-else-if="mark3ReviewDetail.status === 'PENDING' && mark3ReviewPhase === 'reject-form'" class="hundred-action-area">
-              <label class="hundred-reason-label">{{ $t('mark3Admin.rejectReason') }}</label>
-              <select v-model="mark3RejectReason">
-                <option value="">{{ $t('mark3Admin.rejectReasonRequired') }}</option>
-                <option v-for="(label, key) in $tm('mark3Admin.rejectReasonOptions')" :key="key" :value="key">{{ label }}</option>
-              </select>
-              <textarea v-model="mark3RejectReasonText" rows="2" maxlength="500" :placeholder="$t('mark3Admin.rejectReasonPlaceholder')"></textarea>
-              <p class="hundred-confirm">{{ $t('mark3Admin.rejectConfirm') }}</p>
-              <div class="modal-actions">
-                <button class="btn-sm" :disabled="mark3ActionBusy" @click="mark3ReviewPhase = 'view'">{{ $t('mark3Admin.cancel') }}</button>
-                <button class="btn-sm danger" :disabled="mark3ActionBusy" @click="confirmMark3Reject">{{ mark3ActionBusy ? $t('mark3Admin.rejecting') : $t('mark3Admin.reject') }}</button>
-              </div>
-            </div>
-
-            <div v-else-if="mark3ReviewDetail.status === 'CURRENT' && mark3ReviewPhase === 'view'" class="modal-actions">
-              <button class="btn-sm" :disabled="mark3ActionBusy" @click="closeMark3Review">{{ $t('mark3Admin.close') }}</button>
-              <button class="btn-sm danger" :disabled="mark3ActionBusy" @click="askMark3Delete">{{ $t('mark3Admin.delete') }}</button>
-            </div>
-
-            <div v-else-if="mark3ReviewDetail.status === 'CURRENT' && mark3ReviewPhase === 'delete-form'" class="hundred-action-area">
-              <label class="hundred-reason-label">{{ $t('mark3Admin.deleteReason') }}</label>
-              <select v-model="mark3DeleteReason">
-                <option value="">{{ $t('mark3Admin.deleteReasonRequired') }}</option>
-                <option v-for="(label, key) in $tm('mark3Admin.deleteReasonOptions')" :key="key" :value="key">{{ label }}</option>
-              </select>
-              <textarea v-model="mark3DeleteReasonText" rows="2" maxlength="500" :placeholder="$t('mark3Admin.deleteReasonPlaceholder')"></textarea>
-              <p class="hundred-confirm">{{ $t('mark3Admin.deleteConfirm') }}</p>
-              <div class="modal-actions">
-                <button class="btn-sm" :disabled="mark3ActionBusy" @click="mark3ReviewPhase = 'view'">{{ $t('mark3Admin.cancel') }}</button>
-                <button class="btn-sm danger" :disabled="mark3ActionBusy" @click="confirmMark3Delete">{{ mark3ActionBusy ? $t('mark3Admin.deleting') : $t('mark3Admin.delete') }}</button>
-              </div>
-            </div>
-
-            <div v-else class="modal-actions">
-              <button class="btn-sm" :disabled="mark3ActionBusy" @click="closeMark3Review">{{ $t('mark3Admin.close') }}</button>
-            </div>
-          </template>
-      </AppDialog>
-
-      <!-- ── 截图放大（lightbox）── -->
+                  <!-- ── 截图放大（lightbox）── -->
       <AppDialog
         :open="!!(screenshotZoom && reviewDetail?.proofScreenshot)"
         :title="$t('hundredAdmin.screenshot')"
@@ -2103,6 +1846,12 @@ function battleTypeLabel(tp) {
 
 .admin-confirm-input { width: 100%; margin-top: var(--space-1); }
 .screenshot-zoom-img { display: block; max-width: 100%; max-height: 70dvh; margin: 0 auto; border-radius: var(--radius-md); }
+
+/* 审核工作区：队列 + 详情并排；详情在大屏吸附于视口，小屏由 HoFReviewPane 自身变成全屏层 */
+.hof-review-layout { display: grid; grid-template-columns: minmax(0, calc(var(--form-field-min) * 2)) minmax(0, 1fr); gap: var(--space-4); align-items: start; }
+.hof-review-layout > :deep(.hof-review-pane) { position: sticky; top: calc(var(--header-h) + var(--space-12)); max-block-size: calc(100dvh - var(--header-h) - var(--space-12) - var(--space-4)); }
+.hof-review-empty { display: grid; place-items: center; min-block-size: calc(var(--form-field-min) * 1.5); margin: 0; border: 1px dashed var(--color-border-strong); border-radius: var(--radius-lg); color: var(--color-text-tertiary); }
+@media (width < 1200px) { .hof-review-layout { grid-template-columns: minmax(0, 1fr); } .hof-review-empty { display: none; } }
 
 @media (width < 768px) {
   .hof-admin { padding-block: var(--space-3) var(--space-10); }

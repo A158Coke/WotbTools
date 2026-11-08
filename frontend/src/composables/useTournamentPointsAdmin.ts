@@ -39,6 +39,17 @@ export function tournamentGroupReviewError(review: TournamentImageReview, config
   return null
 }
 
+/** 核对卡片的展示状态与排序：有疑点 → 新军团 → 待核对 → 已核对。只读现有识别结果，不改变保存校验。 */
+export type TournamentReviewState = 'issue' | 'newClan' | 'pending' | 'reviewed'
+export const TOURNAMENT_REVIEW_ORDER: TournamentReviewState[] = ['issue', 'newClan', 'pending', 'reviewed']
+export function tournamentReviewState(review: TournamentImageReview, config: TournamentConfig, round: number, day: number, duplicate: boolean): TournamentReviewState {
+  if (review.duplicateAction === 'SKIP') return 'reviewed'
+  if (review.error || !review.result || review.result.issues.length || (duplicate && review.duplicateAction === 'ERROR')) return 'issue'
+  const tags = review.teams.map(team => normalizeTournamentClan(team.clanTag)).filter(Boolean)
+  if (tags.some(tag => !config.clans.includes(tag) && !review.confirmedClans.includes(tag))) return 'newClan'
+  return review.complete && !tournamentGroupReviewError(review, config, round, day) ? 'reviewed' : 'pending'
+}
+
 export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
   const { auth } = deps
   const transport = deps.api
