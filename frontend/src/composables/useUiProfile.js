@@ -13,7 +13,7 @@ export const DEFAULT_UI_PROFILE = 'summer'
 /** 读取边界的旧值映射：沉浸 / 简约 / 跟随系统一律落到默认主题，并写回新值。 */
 const LEGACY_UI_PROFILES = Object.freeze(['showcase', 'classic', 'auto'])
 /** 浏览器 / 系统界面颜色（<meta name="theme-color">），与各主题的 --color-canvas 一致（tokens/color.css）。 */
-export const THEME_COLOR = Object.freeze({ spring: '#08140f', summer: '#0b0f11', autumn: '#160f08', winter: '#eef3f8' })
+export const THEME_COLOR = Object.freeze({ spring: '#08140f', summer: '#191304', autumn: '#160f08', winter: '#eef3f8' })
 
 /** Profile → 深浅色：寒冬是浅色（白 7 蓝 3），其余三套深色。唯一事实源。 */
 export function themeForProfile(profile) {

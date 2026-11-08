@@ -65,7 +65,7 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | | **春 · 青山** `spring` | **夏 · 盛夏** `summer`（默认） | **秋 · 金秋** `autumn` | **冬 · 寒冬** `winter` |
 |---|---|---|---|---|
 | 深浅色 | 深色 | 深色 | 深色 | 浅色（白 7 蓝 3） |
-| 底色 / 强调色 | `#08140f` / `#f2b450` | `#0b0f11` / `#e0a02e` | `#160f08` / `#ef8434` | `#eef3f8` / `#1f6fd1` |
+| 底色 / 强调色 | `#08140f` / `#f2b450` | `#191304` / `#f7bd3c` | `#160f08` / `#ef8434` | `#eef3f8` / `#1f6fd1` |
 | 底纹 `--theme-pattern` | 等高线 | 战术网格 | 斜纹 | 雷达环 |
 | 布局 / 组件 / 字号 / 密度 | **完全相同** | **完全相同** | **完全相同** | **完全相同** |
 
@@ -108,15 +108,15 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 
 | 语义 token | 春 spring | 夏 summer | 秋 autumn | 冬 winter | 用途 |
 |---|---|---|---|---|---|
-| `--color-canvas` | `#08140f` | `#0b0f11` | `#160f08` | `#eef3f8` | 页面底色 |
-| `--color-surface-1` | `#0e1d17` | `#11171a` | `#20160c` | `#ffffff` | 卡片、面板 |
-| `--color-surface-2` | `#14271f` | `#172024` | `#2a1d10` | `#f5f8fc` | 表头、嵌套区域、hover |
-| `--color-surface-3` | `#1b3228` | `#1e292e` | `#362516` | `#e2ebf5` | 选中行、按下、输入框底 |
-| `--color-text-primary` | `#e7f1ea` | `#eceae4` | `#f6ead6` | `#0f2236` | 正文、数字 |
-| `--color-text-secondary` | `#a6bdb0` | `#aab1ac` | `#d0bb9a` | `#3b5470` | 标签、说明 |
-| `--color-text-tertiary` | `#869d90` | `#8a938e` | `#ad9576` | `#4a6380` | 辅助信息、占位符。**这是最浅的一级文字色** |
-| `--color-border-subtle` | `#1f3a2e` | `#25313a` | `#3d2c19` | `#cbd8e6` | 分隔线（装饰性，不承担信息） |
-| `--color-border-strong` | `#5f8072` | `#6c7a82` | `#937a55` | `#6f849b` | 输入框、复选框等控件边框（需 ≥3:1） |
+| `--color-canvas` | `#08140f` | `#191304` | `#160f08` | `#eef3f8` | 页面底色 |
+| `--color-surface-1` | `#0e1d17` | `#231a09` | `#20160c` | `#ffffff` | 卡片、面板 |
+| `--color-surface-2` | `#14271f` | `#2f2311` | `#2a1d10` | `#f5f8fc` | 表头、嵌套区域、hover |
+| `--color-surface-3` | `#1b3228` | `#3e2f18` | `#362516` | `#e2ebf5` | 选中行、按下、输入框底 |
+| `--color-text-primary` | `#e7f1ea` | `#f8efd9` | `#f6ead6` | `#0f2236` | 正文、数字 |
+| `--color-text-secondary` | `#a6bdb0` | `#d9c7a0` | `#d0bb9a` | `#3b5470` | 标签、说明 |
+| `--color-text-tertiary` | `#869d90` | `#b8a277` | `#ad9576` | `#4a6380` | 辅助信息、占位符。**这是最浅的一级文字色** |
+| `--color-border-subtle` | `#1f3a2e` | `#4b3a1d` | `#3d2c19` | `#cbd8e6` | 分隔线（装饰性，不承担信息） |
+| `--color-border-strong` | `#5f8072` | `#a28a5a` | `#937a55` | `#6f849b` | 输入框、复选框等控件边框（需 ≥3:1） |
 
 **深色主题的层级靠亮度区分，不靠阴影。** 表面越亮，离用户越近。依据：Material Design 的暗色主题指南。浅色主题（寒冬）则用阴影。
 
@@ -124,9 +124,9 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 
 | 语义 token | 春 | 夏 | 秋 | 冬 | 规则 |
 |---|---|---|---|---|---|
-| `--color-accent` | `#f2b450` | `#e0a02e` | `#ef8434` | `#1f6fd1` | 主按钮底色、选中态、焦点环、进度条 |
-| `--color-on-accent` | `#1a1206` | `#17130b` | `#1a0d04` | `#ffffff` | 强调色底上的文字 |
-| `--color-accent-text` | `#f8c56e` | `#f0b33e` | `#ffa15c` | `#1d63b8` | **强调色文字只能用这个 token**，如链接、强调数字 |
+| `--color-accent` | `#f2b450` | `#f7bd3c` | `#ef8434` | `#1f6fd1` | 主按钮底色、选中态、焦点环、进度条 |
+| `--color-on-accent` | `#1a1206` | `#1a1204` | `#1a0d04` | `#ffffff` | 强调色底上的文字 |
+| `--color-accent-text` | `#f8c56e` | `#ffd166` | `#ffa15c` | `#1d63b8` | **强调色文字只能用这个 token**，如链接、强调数字 |
 | `--color-success` | `#66d48f` | `#5cc280` | `#6cc08a` | `#11703f` | 成功、胜利 |
 | `--color-danger` | `#f2786d` | `#f2786d` | `#ff8070` | `#b8322a` | 错误、删除、失败 |
 | `--color-warning` | `#f5ca76` | `#f5ca76` | `#f5ca76` | `#855600` | 警告 |
