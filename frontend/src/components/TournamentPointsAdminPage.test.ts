@@ -35,8 +35,8 @@ function page() {
   const select = async () => { await flushPromises(); wrapper.findComponent(TournamentEventSelect).vm.$emit('update:modelValue', 7); await flushPromises() }
   // 「更多」菜单：先点开触发按钮，再点菜单项（项目内联渲染在测试宿主里）。
   const more = async (testid: string) => {
-    (wrapper.get('[data-testid="tournament-admin-more"]').element as HTMLElement).click(); await flushPromises()
-    (wrapper.get(`[data-testid="${testid}"]`).element as HTMLElement).click(); await flushPromises()
+    await wrapper.get('[data-testid="tournament-admin-more"]').trigger('click'); await flushPromises()
+    await wrapper.get(`[data-testid="${testid}"]`).trigger('click'); await flushPromises()
   }
   const file = async (kind: string, file: File) => {
     if (!wrapper.find(`[data-testid="${kind}-file"]`).exists()) await more(kind === 'csv' ? 'tournament-admin-csv' : 'tournament-admin-historical')
