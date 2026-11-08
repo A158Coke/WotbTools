@@ -395,6 +395,13 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
     controller.abort()
     controller = new AbortController()
     recognizing.value = false
+    // 识别开始前就放进列表的在途占位卡（无结果、无错误）随取消一起移除，不留孤儿审核卡；
+    // 已有结果或已报错（可重试）的卡保留
+    const orphans = reviews.value.filter(review => !review.result && !review.error)
+    if (orphans.length) {
+      for (const review of orphans) URL.revokeObjectURL(review.url)
+      reviews.value = reviews.value.filter(review => !orphans.includes(review))
+    }
   }
   async function preview() {
     if (!editable.value || reviewError.value || !reviews.value.length) return

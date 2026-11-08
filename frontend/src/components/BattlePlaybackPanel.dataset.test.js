@@ -100,6 +100,19 @@ describe('BattlePlaybackPanel local playback parse', () => {
     wrapper.unmount()
   })
 
+  it('「在 2D 中查看」：停在地图子视图时切回回放子视图并定位', async () => {
+    const playbackSession = { loadCanonical: vi.fn().mockResolvedValue({ dataset: dataset(), overview: { mapCode: 'holland-overview' }, reloadTelemetry: null }) }
+    const wrapper = mountPanel({ playbackSession })
+    await flushPromises()
+    await find(wrapper, 'pb-view-map').trigger('click')
+    expect(find(wrapper, 'pb-primary').element.style.display).toBe('none')
+    await wrapper.setProps({ seekTo: 90 })
+    await flushPromises()
+    expect(find(wrapper, 'pb-primary').element.style.display).toBe('')
+    expect(wrapper.getComponent(BattlePlayback).attributes('seek-to')).toBe('90')
+    wrapper.unmount()
+  })
+
   it('shows LOADING while the local parse is pending, then FULL with BattlePlayback + map overlay', async () => {
     const pending = deferred()
     playback.parseLocalPlayback.mockReturnValue(pending.promise)

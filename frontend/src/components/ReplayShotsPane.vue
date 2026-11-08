@@ -59,7 +59,7 @@ onMounted(() => onboarding?.registerSurface('shots', {
   failed: () => !!err.value || !!props.blockedReason || (!parsing.value && parsedFile === props.file && !filteredShots.value.some(rowHas3d)),
 }))
 onBeforeUnmount(() => onboarding?.registerSurface('shots', null))
-const { requireFeature } = useFeatureGate()
+const { requireFeature, availability } = useFeatureGate()
 
 const shots = ref([])
 const parsing = ref(false)
@@ -530,7 +530,9 @@ function applyLayout(width) {
 function selectShot(index, event) {
   const shot = shots.value.find(s => s.index === index)
   // compact：点一发直接进入射击复现。新手教程引导中保留检视面板，教程的「从这一发打开」步骤仍有目标。
-  if (layout.value === 'compact' && !onboarding?.guideActive?.value && shot && rowHas3d(shot)) {
+  // 3D 复现需要在线能力；射击检视是本地能力——3D 当前不可用（离线等）时退回本地详情，不能让这一发无处可看。
+  if (layout.value === 'compact' && !onboarding?.guideActive?.value && shot && rowHas3d(shot)
+    && availability(Feature.PLAYBACK_3D).available) {
     selectedIndex.value = index
     directOpening.value = true
     void openInViewer(shot).finally(() => {

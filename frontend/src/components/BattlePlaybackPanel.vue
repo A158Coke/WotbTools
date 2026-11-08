@@ -135,6 +135,8 @@ watch(() => props.active, (active) => {
 // immediate：「在 2D 中查看」可能在本面板（懒加载）挂载前就给出了秒数，挂载时也要接住
 watch(() => props.seekTo, async (sec) => {
   if (!Number.isFinite(sec)) return
+  // 外部定位（AI 复盘「在 2D 中查看」）总是落在回放子视图：用户之前停在「地图」子视图时也要切回来
+  panelView.value = 'playback'
   mapSeek.value = null
   await nextTick()
   mapSeek.value = sec

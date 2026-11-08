@@ -470,6 +470,27 @@ describe('shared tournament draft owner', () => {
     expect(f.transport.finalizeTournamentDay).not.toHaveBeenCalled()
     f.scope.stop()
   })
+  it('取消识别时移除在途占位卡，不留孤儿审核卡；已识别的卡保留', async () => {
+    const f = mountOwner()
+    f.owner.eventId.value = 7
+    await settle()
+    const recognized = f.transport.recognizeTournamentImage.getMockImplementation()!
+    let call = 0
+    f.transport.recognizeTournamentImage.mockImplementation((...args) => {
+      call++
+      return call === 1 ? recognized(...args) : new Promise(() => {})
+    })
+    const pending = f.owner.recognize([new File(['a'], 'a.png'), new File(['b'], 'b.png')])
+    await settle()
+    expect(f.owner.reviews.value).toHaveLength(2)
+    expect(f.owner.recognizing.value).toBe(true)
+    f.owner.cancelRecognition()
+    expect(f.owner.recognizing.value).toBe(false)
+    expect(f.owner.reviews.value).toHaveLength(1)
+    expect(f.owner.reviews.value[0].result).not.toBeNull()
+    void pending
+    f.scope.stop()
+  })
   it('rejects a late recognition result after day selection changes', async () => {
     const f = mountOwner()
     f.owner.eventId.value = 7

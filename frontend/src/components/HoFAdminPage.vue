@@ -751,15 +751,17 @@ async function confirmApprove() {
   if (actionBusy.value || !reviewTarget.value) return
   actionBusy.value = true
   actionMsg.value = ''
+  // 结果按提交时的记录 ID 关联：返回时若当前审核对象已不是它，不把结果 / 错误套到别的记录上
+  const submissionId = reviewTarget.value.id
   try {
-    await api.hofAdminHundredApprove(reviewTarget.value.id)
+    await api.hofAdminHundredApprove(submissionId)
   } catch (e) {
-    actionMsg.value = apiErrorLabel(t, te, e)
+    if (reviewTarget.value?.id === submissionId) actionMsg.value = apiErrorLabel(t, te, e)
     return
   } finally {
     actionBusy.value = false
   }
-  closeReview()
+  if (reviewTarget.value?.id === submissionId) closeReview()
   loadHundred()
 }
 
@@ -777,18 +779,20 @@ async function confirmReject() {
   }
   actionBusy.value = true
   actionMsg.value = ''
+  // 结果按提交时的记录 ID 关联：返回时若当前审核对象已不是它，不把结果 / 错误套到别的记录上
+  const submissionId = reviewTarget.value.id
   try {
-    await api.hofAdminHundredReject(reviewTarget.value.id, {
+    await api.hofAdminHundredReject(submissionId, {
       rejectReason: rejectReason.value,
       ...(text ? { rejectReasonText: text } : {}),
     })
   } catch (e) {
-    actionMsg.value = apiErrorLabel(t, te, e)
+    if (reviewTarget.value?.id === submissionId) actionMsg.value = apiErrorLabel(t, te, e)
     return
   } finally {
     actionBusy.value = false
   }
-  closeReview()
+  if (reviewTarget.value?.id === submissionId) closeReview()
   loadHundred()
 }
 
@@ -818,18 +822,20 @@ async function confirmCurrentDelete() {
   }
   actionBusy.value = true
   actionMsg.value = ''
+  // 结果按提交时的记录 ID 关联：返回时若当前审核对象已不是它，不把结果 / 错误套到别的记录上
+  const submissionId = reviewTarget.value.id
   try {
-    await api.hofAdminHundredDelete(reviewTarget.value.id, {
+    await api.hofAdminHundredDelete(submissionId, {
       deleteReason: currentDeleteReason.value,
       ...(text ? { deleteReasonText: text } : {}),
     })
   } catch (e) {
-    actionMsg.value = apiErrorLabel(t, te, e)
+    if (reviewTarget.value?.id === submissionId) actionMsg.value = apiErrorLabel(t, te, e)
     return
   } finally {
     actionBusy.value = false
   }
-  closeReview()
+  if (reviewTarget.value?.id === submissionId) closeReview()
   loadHundred()
 }
 
@@ -935,15 +941,17 @@ async function confirmMark3Approve() {
   if (mark3ActionBusy.value || !mark3ReviewTarget.value) return
   mark3ActionBusy.value = true
   mark3ActionMsg.value = ''
+  // 结果按提交时的记录 ID 关联：返回时若当前审核对象已不是它，不把结果 / 错误套到别的记录上
+  const submissionId = mark3ReviewTarget.value.id
   try {
-    await api.hofAdminMark3Approve(mark3ReviewTarget.value.id)
+    await api.hofAdminMark3Approve(submissionId)
   } catch (e) {
-    mark3ActionMsg.value = apiErrorLabel(t, te, e)
+    if (mark3ReviewTarget.value?.id === submissionId) mark3ActionMsg.value = apiErrorLabel(t, te, e)
     return
   } finally {
     mark3ActionBusy.value = false
   }
-  closeMark3Review()
+  if (mark3ReviewTarget.value?.id === submissionId) closeMark3Review()
   loadMark3()
 }
 
@@ -961,18 +969,20 @@ async function confirmMark3Reject() {
   }
   mark3ActionBusy.value = true
   mark3ActionMsg.value = ''
+  // 结果按提交时的记录 ID 关联：返回时若当前审核对象已不是它，不把结果 / 错误套到别的记录上
+  const submissionId = mark3ReviewTarget.value.id
   try {
-    await api.hofAdminMark3Reject(mark3ReviewTarget.value.id, {
+    await api.hofAdminMark3Reject(submissionId, {
       rejectReason: mark3RejectReason.value,
       ...(text ? { rejectReasonText: text } : {}),
     })
   } catch (e) {
-    mark3ActionMsg.value = apiErrorLabel(t, te, e)
+    if (mark3ReviewTarget.value?.id === submissionId) mark3ActionMsg.value = apiErrorLabel(t, te, e)
     return
   } finally {
     mark3ActionBusy.value = false
   }
-  closeMark3Review()
+  if (mark3ReviewTarget.value?.id === submissionId) closeMark3Review()
   loadMark3()
 }
 
@@ -990,18 +1000,20 @@ async function confirmMark3Delete() {
   }
   mark3ActionBusy.value = true
   mark3ActionMsg.value = ''
+  // 结果按提交时的记录 ID 关联：返回时若当前审核对象已不是它，不把结果 / 错误套到别的记录上
+  const submissionId = mark3ReviewTarget.value.id
   try {
-    await api.hofAdminMark3Delete(mark3ReviewTarget.value.id, {
+    await api.hofAdminMark3Delete(submissionId, {
       deleteReason: mark3DeleteReason.value,
       ...(text ? { deleteReasonText: text } : {}),
     })
   } catch (e) {
-    mark3ActionMsg.value = apiErrorLabel(t, te, e)
+    if (mark3ReviewTarget.value?.id === submissionId) mark3ActionMsg.value = apiErrorLabel(t, te, e)
     return
   } finally {
     mark3ActionBusy.value = false
   }
-  closeMark3Review()
+  if (mark3ReviewTarget.value?.id === submissionId) closeMark3Review()
   loadMark3()
 }
 

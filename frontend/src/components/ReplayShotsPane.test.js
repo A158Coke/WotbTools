@@ -691,6 +691,21 @@ describe('ReplayShotsPane → 装甲查看器交接', () => {
     wrapper.unmount()
   })
 
+  it('compact（手机）离线：3D 不可用时退回本地射击详情，不丢失这一发', async () => {
+    parseAgentShotsFromBytes.mockResolvedValue(hitShot)
+    const navigate = vi.fn()
+    const wrapper = await mountPane({ navigate })
+    connectivityState.state.value = 'offline'
+    observers.at(-1).emit(420)
+    await nextTick()
+    await wrapper.get('[data-testid="shot-row-2"]').trigger('click')
+    await flushPromises()
+    expect(navigate).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="shot-inspector"]').exists()).toBe(true)
+    connectivityState.state.value = 'online'
+    wrapper.unmount()
+  })
+
   it('命中弹：先交出射击数据，再把场景参数整个交给 router', async () => {
     parseAgentShotsFromBytes.mockResolvedValue(hitShot)
     const navigate = vi.fn()

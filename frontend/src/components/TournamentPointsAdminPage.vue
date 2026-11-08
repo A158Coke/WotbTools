@@ -276,6 +276,11 @@ onScopeDispose(clearLocal)
           <FileDrop :files="files" purpose="image" :disabled="!canUpload" :loading="recognizing || busy" @update:files="files = $event" />
           <div class="tournament-actions"><AppButton :disabled="!canUpload || !files.length" @click="owner.recognize(files)">{{ $t('tournament.recognize') }}</AppButton><AppButton v-if="recognizing" @click="owner.cancelRecognition">{{ $t('tournament.stop') }}</AppButton><span v-if="recognizing" role="status">{{ $t('tournament.recognizing', { current: progress, total: files.length }) }}</span></div>
         </section>
+        <!-- 手机核对模式会隐藏上面的上传区：识别仍在进行时，进度与「停止」必须留在可见位置 -->
+        <div v-if="compactReviewing && recognizing" class="tournament-actions" data-testid="tournament-recognition-status">
+          <span role="status">{{ $t('tournament.recognizing', { current: progress, total: files.length }) }}</span>
+          <AppButton data-testid="tournament-stop-recognition" @click="owner.cancelRecognition">{{ $t('tournament.stop') }}</AppButton>
+        </div>
         <section v-if="reviews.length" class="tournament-stack tournament-review-area" aria-labelledby="tournament-review-heading" data-testid="tournament-review-area">
           <div class="tournament-section-heading">
             <div><h2 id="tournament-review-heading">{{ $t('tournament.review') }}</h2><p class="tournament-muted">{{ $t('tournament.reviewHint') }} {{ $t('tournament.reviewSortHint') }}</p></div>
