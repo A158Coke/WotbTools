@@ -228,13 +228,17 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
 
 .home-hero-kicker { margin: 0 0 var(--space-5); color: var(--color-accent-text); font: var(--type-caption); font-weight: 600; letter-spacing: .22em; }
 .home-hero h1 { max-width: var(--home-hero-title-measure); margin: 0; color: var(--color-text-primary); font: var(--type-display-showcase); letter-spacing: -0.03em; }
+/* 中文不收字距：负字距会让「一」贴到下一个字上，看起来像破折号（「—站式」） */
+.home-hero h1:lang(zh) { letter-spacing: 0; }
+.home-hero h1:lang(zh) .home-hero-line + .home-hero-line { margin-block-start: var(--space-2); }
 .home-hero-line { display: block; }
 .home-hero-line.is-accent { color: var(--color-accent-text); }
 
 /* 渐变文字 + 一次性扫光；background-clip 不被支持时回落到纯强调色（不会变透明） */
 @supports (((background-clip: text) or (-webkit-background-clip: text)) and (color: color-mix(in oklab, red, blue))) {
   .home-hero-line.is-accent {
-    background-image: linear-gradient(100deg, var(--color-accent) 0%, var(--color-accent-text) 34%, color-mix(in oklab, var(--color-accent-text) 42%, var(--color-text-primary)) 58%, var(--color-accent-text) 100%);
+    /* 高光带放在前 45%：入场时从 0 扫到 100%，停下后可见区域（后 55%）是统一的强调色，不会有几个字发白 */
+    background-image: linear-gradient(100deg, var(--color-accent-text) 0%, var(--color-accent-text) 18%, color-mix(in oklab, var(--color-accent-text) 42%, var(--color-text-primary)) 30%, var(--color-accent-text) 42%, var(--color-accent-text) 100%);
     background-size: 220% 100%;
     background-position: 100% 0;
     -webkit-background-clip: text;
@@ -384,8 +388,8 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
    赞助卡是主视觉下方第一块（实心按钮），反馈是第二块 */
 @media (width < 768px) {
   .home-hero-decor { background: var(--theme-hero-scrim-portrait), var(--theme-hero-image-portrait) center 72% / cover; }
-  .home-hero-reticle { inset-inline-start: 18%; inset-block-start: 22%; inline-size: 64%; block-size: 18%; }
-  .home-hero-reticle span { inline-size: var(--space-6); block-size: var(--space-6); }
+  /* 手机首屏文字铺满整屏，瞄准框会压在标题和副标题上，隐藏 */
+  .home-hero-reticle { display: none; }
   .home-hero-inner { justify-content: flex-end; padding: calc(var(--header-block) + env(safe-area-inset-top) + var(--space-6)) var(--gutter) var(--space-8); }
   .home-hero-kicker { margin-bottom: var(--space-3); }
   .home-hero-subtitle { margin-top: var(--space-4); font-size: var(--font-size-body); }

@@ -98,7 +98,7 @@
     /* 展示字阶上限（D2，DC-TYP-03）：Showcase Hero 的关键数字 / 首页大标题最大 104px，手机回落 44px。
        只能用于装饰插槽里的标题与关键数字，数据区不得使用。 */
     --font-size-display-showcase: clamp(2.75rem, 7vw, 6.5rem);
-    --line-height-display-showcase: 1;
+    --line-height-display-showcase: 1.15;
     --font-size-display: 32px;
     --font-size-h1: 24px;
     --font-size-h2: 20px;
