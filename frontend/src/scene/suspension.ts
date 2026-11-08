@@ -150,7 +150,7 @@ export function attachChainToWheels(chain: readonly ChainPoint[], wheels: readon
  * @param {{upper_factor:number, length_power:number}} bend 垂弧系数
  * @returns {{maxAbs:number}} 本次解算的最大绝对位移（脏判据用）
  */
-export function solveChain(out: Float64Array | number[], rest: readonly ChainPoint[], attach: Int32Array, wheelDelta: readonly number[], groundDrop: readonly number[], wheels: readonly SuspensionWheel[], bend: { upper_factor?: number; length_power?: number } | null | undefined): { maxAbs: number } {
+export function solveChain(out: Float64Array | number[], rest: readonly ChainPoint[], attach: Int32Array, wheelDelta: readonly number[] | Float64Array, groundDrop: readonly number[] | Float64Array, wheels: readonly SuspensionWheel[], bend: { upper_factor?: number; length_power?: number } | null | undefined): { maxAbs: number } {
   const n = rest.length;
   let maxAbs = 0;
   // 1) 逐轮偏移：挂接点随轮移动（客户端 `chain[i] += wheelInfo.offset`）

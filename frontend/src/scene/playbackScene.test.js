@@ -310,6 +310,12 @@ describe('opt-in profiler ownership', () => {
     frame()
     const snapshot = window.__pbPerf.snapshot()
     expect(snapshot.events.filter(e => e.stage === 'firstReadyFrameSubmittedMs')).toHaveLength(1)
+    // #913 review P2：计时必须传入提交时刻（performance.now()）——durationMs 有限且非负
+    for (const e of snapshot.events.filter(e => e.stage === 'firstReadyFrameSubmittedMs')) {
+      expect(typeof e.durationMs).toBe('number')
+      expect(Number.isFinite(e.durationMs)).toBe(true)
+      expect(e.durationMs).toBeGreaterThanOrEqual(0)
+    }
     expect(snapshot.latest.cpuFrameMs).toBeGreaterThanOrEqual(0)
     expect(snapshot.gpu.status).toBe('unsupported')
   })
@@ -334,7 +340,12 @@ describe('opt-in profiler ownership', () => {
     expect(store.hasData).toBe(true)
     expect(window.__pbPerf.snapshot().events.some(e => e.stage === 'firstReadyFrameSubmittedMs')).toBe(false)
     frame()
-    expect(window.__pbPerf.snapshot().events.filter(e => e.stage === 'firstReadyFrameSubmittedMs')).toHaveLength(1)
+    const readyEvents = window.__pbPerf.snapshot().events.filter(e => e.stage === 'firstReadyFrameSubmittedMs')
+    expect(readyEvents).toHaveLength(1)
+    // #913 review P2：计时必须传入提交时刻（performance.now()）——durationMs 有限且非负
+    expect(typeof readyEvents[0].durationMs).toBe('number')
+    expect(Number.isFinite(readyEvents[0].durationMs)).toBe(true)
+    expect(readyEvents[0].durationMs).toBeGreaterThanOrEqual(0)
   })
 
   it('does not attribute an old scene render to a loading session', async () => {
@@ -1699,11 +1710,13 @@ describe('playbackScene 资产发布顺序', () => {
 
   it('资产缺失/失败进入 assetIssues + assetDegraded（不再只写 console 后算完成）', async () => {
     const raw = (await import('./playbackScene.js?raw')).default
-    expect(raw).toMatch(/store\.assetIssues = assetIssues/)
-    expect(raw).toMatch(/store\.assetDegraded = true/)
-    expect(raw).toMatch(/noteAsset\('map', `http-\$\{resp\.status\}`/)
-    expect(raw).toMatch(/noteAsset\('terrain', 'unavailable'/)
-    expect(raw).toMatch(/noteAsset\('scenery', 'failed'/)
+    // #820 Step 2：地图资产装载（noteAsset/进度/降级）owner = playback/mapWorld.ts
+    const worldSrc = (await import('./playback/mapWorld.ts?raw')).default
+    expect(worldSrc).toMatch(/store\.assetIssues = assetIssues/)
+    expect(worldSrc).toMatch(/store\.assetDegraded = true/)
+    expect(worldSrc).toMatch(/noteAsset\('map', `http-\$\{resp\.status\}`/)
+    expect(worldSrc).toMatch(/noteAsset\('terrain', 'unavailable'/)
+    expect(worldSrc).toMatch(/noteAsset\('scenery', 'failed'/)
     // 3D 与 2D 共用同一 visibility 投影（短隐藏段在 3D 也不能回退到 coverage）
     expect(raw).toMatch(/VIS_BY_EID = visibilitySpansByEid\(data\.visibility\)/)
     expect(raw).toMatch(/VIS_BY_EID\.get\(v\.def\.eid\) \?\? v\.def\.coverage/)
@@ -3207,6 +3220,32 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
       expect(shadow().visible).toBe(true)
     })
 
+    describe('recorder backward_zoom 倒车判定（#913 review：恢复拆分前坐标转换——只反 x，保 z）', () => {
+      // pose_kf 关键帧（绕开 1 采样网格回退）上 5 m/s 的直线运动：yaw=0（车体前向 = +z），
+      // 相机航向 ray (0,2,100)（≈正 +z）。seek 落 T=75（Arcade 档：mode raw 1）。
+      // 倒车拉远收敛后 boom = 14 × 1.35 = 18.9 m，不触发时恒 14 m——
+      // 以 camera.z − 车体 z 的水平间距（负 = 相机在车后）判定。
+      const motionKf = (sign) => ({ t: [42, 75], pos: [0, 0, 0, 0, 0, sign * 165], yaw: [0, 0], pitch: [0, 0] })
+      const backwardFacet = () => facet({ client_options: { backward_zoom: true } })
+      const settledGap = async (sign) => {
+        const { api, run } = await load({ camera: backwardFacet(), vehicleOverrides: { pose_kf: motionKf(sign) } })
+        api.seekTime(75)
+        api.setCam('recorder')
+        run(40)   // dt=0.1 × 40 帧 ≫ tau=0.25s：boom 缩放完全收敛到 1 或 1.35
+        const v = window.__pbV[0]
+        return window.__camera.position.z - v.group.position.z
+      }
+      it('前进（+z 推进）不触发倒车拉远（boom 恒 14m 档）', async () => {
+        const gap = await settledGap(1)
+        expect(gap).toBeGreaterThan(-16)
+        expect(gap).toBeLessThan(-12)
+      })
+      it('倒车（−z）触发倒车拉远（boom 收敛到 18.9m 档）', async () => {
+        const gap = await settledGap(-1)
+        expect(gap).toBeLessThan(-16)
+      })
+    })
+
     it('accepts no camera input while active', async () => {
       const { api, run } = await load()
       api.seekTime(50)
@@ -3661,7 +3700,10 @@ describe('画质四档阶梯契约（2026-10-07 重分档）', () => {
     const src = (await import('./playbackScene.js?raw')).default
     expect(src).not.toMatch(/map-mini/)
     expect(src).not.toMatch(/miniMap/)
-    expect(src).toMatch(/const mapUrl = mapStaticUrl\('map', undefined, resolvedKey\);/)
+    // #820 Step 2：地面链路 owner = playback/mapWorld.ts（四档统一 ground.webp）
+    const worldSrc = (await import('./playback/mapWorld.ts?raw')).default
+    expect(worldSrc).not.toMatch(/map-mini/)
+    expect(worldSrc).toMatch(/const mapUrl = mapStaticUrl\('map', undefined, resolvedKey\);/)
     const replay = (await import('./replaySource.js?raw')).default
     expect(replay).not.toMatch(/map-mini/)
   })

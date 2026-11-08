@@ -94,6 +94,14 @@ const pickSrc = readFileSync(resolve(here, 'playback/pickReport.ts'), 'utf8')
 const mapAssetsSrc = readFileSync(resolve(here, 'playback/mapAssets.ts'), 'utf8')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
+// 指针选中/拾取接线 2026-11-06 出仓 playback/cameraRuntime.ts（#820 Step 2），守卫随实现迁移
+const cameraSrc = readFileSync(resolve(here, 'playback/cameraRuntime.ts'), 'utf8')
+  .replace(/\/\/[^\n]*/g, '')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+// 地图资产 teardown（含 meshOwner/destruct 释放）owner = playback/mapWorld.ts
+const mapWorldSrc = readFileSync(resolve(here, 'playback/mapWorld.ts'), 'utf8')
+  .replace(/\/\/[^\n]*/g, '')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
 
 describe('buildMeshOwnerMap', () => {
   // 评审复现场景：6m 倒树的树梢命中点 (6,0) 离邻树 id=8 的根部更近——
@@ -128,18 +136,19 @@ describe('buildMeshOwnerMap', () => {
 
 describe('拾取接线（源码级守卫）', () => {
   it('onScenePointerDown 无条件记录 pickDownAt（含车辆命中路径）', () => {
-    const at = sceneSrc.indexOf('function onScenePointerDown')
+    const at = cameraSrc.indexOf('function onScenePointerDown')
     expect(at).toBeGreaterThan(-1)
-    expect(sceneSrc.slice(at, at + 500)).toMatch(/if \(PICK_DEBUG\) pickDownAt = \{ x: e\.clientX, y: e\.clientY \}/)
+    expect(cameraSrc.slice(at, at + 700))
+      .toMatch(/if \(deps\.pickDebug\(\)\) deps\.setPickDownAt\(\{ x: e\.clientX, y: e\.clientY \}\)/)
   })
   it('onScenePointerUp 先处理调试拾取再走选中语义', () => {
-    const at = sceneSrc.indexOf('function onScenePointerUp')
+    const at = cameraSrc.indexOf('function onScenePointerUp')
     expect(at).toBeGreaterThan(-1)
-    const body = sceneSrc.slice(at, at + 900)
-    expect(body).toMatch(/movedPick <= SCENE_CLICK_SLOP_PX\) reportPick\(e\)/)
-    const reportAt = body.indexOf('reportPick(e)')
+    const body = cameraSrc.slice(at, at + 1200)
+    expect(body).toMatch(/movedPick <= SCENE_CLICK_SLOP_PX\) deps\.reportPick\(e\)/)
+    const reportAt = body.indexOf('deps.reportPick(e)')
     // 自由飞行接管后选中 = up 判定（eid ?? null 经统一入口 onVehicleSelect 上报）
-    const clearAt = body.indexOf('onVehicleSelect?.(down.eid ?? null, e)')
+    const clearAt = body.indexOf('deps.onVehicleSelect?.(down.eid ?? null, e)')
     expect(reportAt).toBeGreaterThan(-1)
     expect(clearAt).toBeGreaterThan(-1)
     expect(reportAt).toBeLessThan(clearAt)
@@ -158,10 +167,15 @@ describe('拾取接线（源码级守卫）', () => {
   it('teardownSession 释放 meshOwner/destructPickList/destruct（评审回归：reset 后仍持有引用）', () => {
     const at = sceneSrc.indexOf('function teardownSession')
     expect(at).toBeGreaterThan(-1)
-    const body = sceneSrc.slice(at, at + 900)
-    expect(body).toMatch(/destruct = null;/)
-    expect(body).toMatch(/destructPickList = null;/)
-    expect(body).toMatch(/meshOwner = null;/)
+    const body = sceneSrc.slice(at, at + 2600)
+    // 宿主 teardown 委托 mapWorld 释放；引用清空在 owner 的 dispose 内（#820 Step 2）
+    expect(body).toMatch(/mapWorld\.dispose\(\);/)
+    const disposeAt = mapWorldSrc.indexOf('function dispose()')
+    expect(disposeAt).toBeGreaterThan(-1)
+    const disposeBody = mapWorldSrc.slice(disposeAt, disposeAt + 1600)
+    expect(disposeBody).toMatch(/destruct = null;/)
+    expect(disposeBody).toMatch(/destructPickList = null;/)
+    expect(disposeBody).toMatch(/meshOwner = null;/)
   })
   it('destructibles await 之后先核会话（stale）再发布清单；stale 不自行摘除宿主资源', () => {
     const awaitAt = mapAssetsSrc.indexOf('const destructDoc = await ctx.destructDocPromise')
