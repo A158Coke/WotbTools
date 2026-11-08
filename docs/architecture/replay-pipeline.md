@@ -24,7 +24,7 @@
 - **build 期注入**：`frontend/vite.config.js:agentWasmIdentity()` 读 `deploy/agent/source.json` 并通过
   `define` 注入 `__AGENT_WASM_COMMIT__` / `__AGENT_WASM_RELEASE__`（不在 TypeScript 里手写版本号）。
   Docker 通过 `COPY deploy/agent/source.json /deploy/agent/source.json` 保持与仓库同一相对布局。
-- **落位与证据链**：`scripts/fetch-agent-wasm.sh`（Release 直取，sha256 + fingerprint 校验；
+- **落位与证据链**：`scripts/fetch-agent-wasm.sh`（经 GitHub Releases API 下载附件，sha256 + fingerprint 校验；
   `scripts/agent-wasm-artifact.py` 是唯一 ingest 实现）与 `scripts/build-agent-wasm.sh`（源码自建后备）
   都产出 `common/assets/wasm/<ref>/`，经 Vite publicDir 进 `dist/wasm/<ref>/`，再由 TX 发布脚本
   从该 source commit 的 `source.json` 逐字段回验镜像内产物。
