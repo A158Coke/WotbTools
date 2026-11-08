@@ -7,7 +7,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 
 // 执行场景内真实 setter，不复制实现；只提供其闭包依赖，保留真实 OrbitControls 数学和输入处理。
 const source = readFileSync(new NodeURL('./tankViewer.js', import.meta.url), 'utf8')
-const setterSource = source.slice(source.indexOf('        function setDistance(value)'), source.indexOf('        function setCameraPreset(kind)'))
+const setterSource = source.slice(source.indexOf('        function setDistance(value)'), source.indexOf('        function setCameraPreset('))
 function bindSetter(camera, controls) {
   return new Function('THREE', 'camera', 'controls', 'reportDistance', `
     const destroyed = false, contextLost = false, tankModel = {}, armorModel = {};
