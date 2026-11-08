@@ -196,6 +196,7 @@ onBeforeUnmount(() => {
   height: var(--control-h-lg);
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: var(--color-surface-3);
   box-shadow: var(--elevation-2);
   color: var(--color-text-primary);

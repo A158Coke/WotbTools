@@ -198,6 +198,23 @@
     --focus-outline-offset: 2px;
   }
 
+  /* 超椭圆圆角（渐进增强，规则见 design-language §5「圆角」）：
+     只在支持 corner-shape 的引擎（Chromium 139+）里生效，其余平台原样使用 border-radius。
+     同半径下 squircle 的曲线更靠近角点、视觉更方，所以这里同时把 sm / md / lg 放大约 1.25–1.33 倍。
+     --radius-full 的胶囊 / 圆形不放大、不变形：凡是用 --radius-full（或 50%）的规则必须同时写
+     corner-shape: round（受 src/styles/corner-shape.test.js 守护）。 */
+  @supports (corner-shape: squircle) {
+    :root {
+      --corner-shape: squircle;
+      --radius-sm: 8px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+    }
+
+    /* corner-shape 不继承；无圆角的元素不受影响。未分层的组件规则优先于本层，可以覆盖成 round / inherit。 */
+    *, ::before, ::after { corner-shape: var(--corner-shape); }
+  }
+
   @media (width >= 768px) {
     :root { --gutter: max(24px, env(safe-area-inset-left), env(safe-area-inset-right)); }
   }

@@ -441,6 +441,7 @@ const modeOptions = computed(() => [
   padding: var(--space-1);
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: var(--color-surface-3);
 }
 
@@ -448,6 +449,7 @@ const modeOptions = computed(() => [
   width: var(--control-check);
   height: var(--control-check);
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: var(--color-text-primary);
   transition: transform var(--duration-fast);
 }
@@ -541,6 +543,7 @@ const modeOptions = computed(() => [
   inset-inline-end: var(--space-2);
   padding: 0 var(--space-2);
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: var(--color-surface-3);
   color: var(--color-text-secondary);
   font-size: var(--font-size-caption-xs);

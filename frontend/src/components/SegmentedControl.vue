@@ -174,12 +174,14 @@ function onKeydown(event) {
   min-height: var(--control-h-md);
   border: var(--border-width) solid var(--color-border-subtle);
   border-radius: var(--radius-full);
+  corner-shape: round;
 }
 
 .segmented.is-chips .segmented-option.is-active { border-color: var(--color-accent); }
 
 .segmented.is-chips .segmented-indicator {
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: var(--color-surface-3);
   box-shadow: none;
 }

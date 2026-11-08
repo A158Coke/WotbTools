@@ -1204,6 +1204,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: var(--color-surface-2);
   box-shadow: var(--elevation-2);
   color: var(--color-text-secondary);

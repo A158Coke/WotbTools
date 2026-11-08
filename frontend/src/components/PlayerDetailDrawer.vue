@@ -793,6 +793,7 @@ body.pd-resizing .pd-resizer { opacity: 1; }
   width: 2px;
   height: 52px;
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: var(--color-border-strong);
   transition: background-color var(--duration-fast) var(--ease-standard), height var(--duration-fast) var(--ease-standard);
 }

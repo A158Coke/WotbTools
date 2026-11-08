@@ -39,6 +39,7 @@ function goBack() {
   padding: 0 var(--space-3);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: var(--color-surface-1);
   color: var(--color-text-secondary);
   font: var(--type-caption);

@@ -307,7 +307,7 @@ async function refreshPage() {
 .broadcast-cover { position: relative; display: block; border-radius: var(--radius-md); }
 .broadcast-thumbnail { display: block; inline-size: 100%; aspect-ratio: 16 / 9; height: auto; object-fit: cover; border-radius: var(--radius-md); background: var(--color-surface-2); }
 .broadcast-thumbnail.is-placeholder { display: grid; place-items: center; color: var(--color-text-secondary); }
-.broadcast-perspective { position: absolute; inset-block-start: var(--space-2); inset-inline-start: var(--space-2); padding: 0 var(--space-2); border-radius: var(--radius-full); background: var(--color-canvas); color: var(--color-text-primary); font: var(--type-caption); font-weight: 600; }
+.broadcast-perspective { position: absolute; inset-block-start: var(--space-2); inset-inline-start: var(--space-2); padding: 0 var(--space-2); border-radius: var(--radius-full); corner-shape: round; background: var(--color-canvas); color: var(--color-text-primary); font: var(--type-caption); font-weight: 600; }
 .broadcast-record-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .broadcast-record-text h4 { margin: 0 0 var(--space-1); color: var(--color-text-primary); font: var(--type-h3); }
 .broadcast-record-text p { margin: var(--space-1) 0 0; color: var(--color-text-secondary); font: var(--type-caption); }
@@ -329,7 +329,7 @@ async function refreshPage() {
   /* 小屏：轮次变横向胶囊，视频变左图右文列表 */
   .broadcast-stage-body.has-rounds { grid-template-columns: minmax(0, 1fr); }
   .broadcast-rounds { display: flex; gap: var(--space-2); overflow-x: auto; padding-block-end: var(--space-1); }
-  .broadcast-round { flex: none; border-color: var(--color-border-subtle); border-radius: var(--radius-full); }
+  .broadcast-round { flex: none; border-color: var(--color-border-subtle); border-radius: var(--radius-full); corner-shape: round; }
   .broadcast-records { grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }
   .broadcast-record { display: grid; grid-template-columns: calc(var(--space-12) * 2.75) minmax(0, 1fr); align-items: start; gap: var(--space-3); }
   .broadcast-record > .broadcast-actions { grid-column: 1 / -1; }

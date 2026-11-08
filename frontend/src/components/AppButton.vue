@@ -80,6 +80,7 @@ function onPress() {
   border: 2px solid currentColor;
   border-inline-end-color: transparent;
   border-radius: var(--radius-full);
+  corner-shape: round;
 }
 
 @media (prefers-reduced-motion: no-preference) {

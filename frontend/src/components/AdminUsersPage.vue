@@ -708,6 +708,7 @@ function fmtTime(s) {
   width: var(--control-h-lg);
   height: var(--control-h-lg);
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: var(--color-surface-2);
   color: var(--color-accent-text);
   font: var(--type-h3);

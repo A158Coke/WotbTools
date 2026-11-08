@@ -442,7 +442,7 @@ onBeforeUnmount(() => { detach(); document.removeEventListener('fullscreenchange
 .onboarding-close:focus-visible, .onboarding-topic:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 .onboarding-card .onboarding-close { position: fixed; inset-block-start: max(var(--space-3), env(safe-area-inset-top)); inset-inline-end: max(var(--space-3), env(safe-area-inset-right)); border: 1px solid var(--color-border-subtle); background: var(--color-surface-1); }
 .onboarding-layer.is-inspecting-shot .onboarding-close { position: static; flex-shrink: 0; }
-.onboarding-meter { height: var(--space-1); overflow: hidden; border-radius: var(--radius-full); background: var(--color-surface-3); }
+.onboarding-meter { height: var(--space-1); overflow: hidden; border-radius: var(--radius-full); corner-shape: round; background: var(--color-surface-3); }
 .onboarding-meter > span { display: block; height: 100%; background: var(--color-accent); transition: width var(--duration-base) var(--ease-standard); }
 .onboarding-card h2 { margin: var(--space-1) 0 0; font: var(--type-h3); }
 .onboarding-card p { margin: 0; color: var(--color-text-secondary); font: var(--type-body); overflow-wrap: anywhere; }

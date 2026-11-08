@@ -174,7 +174,7 @@ function signed(value) {
 
 .tp-ga-plot { position: relative; inline-size: 100%; max-inline-size: 300px; margin-inline: auto; aspect-ratio: 1; }
 .tp-ga-svg { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; overflow: visible; cursor: crosshair; touch-action: none; outline: none; }
-.tp-ga-svg:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); border-radius: var(--radius-full); }
+.tp-ga-svg:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); border-radius: var(--radius-full); corner-shape: round; }
 
 .tp-ga-disc { fill: var(--color-surface-1); stroke: var(--color-border-subtle); stroke-width: 0.006; }
 .tp-ga-ring { fill: none; stroke: var(--color-border-subtle); stroke-width: 0.004; }

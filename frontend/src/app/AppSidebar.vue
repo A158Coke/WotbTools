@@ -374,6 +374,7 @@ function linkAttrs(id) {
   min-inline-size: var(--space-4);
   padding: 0 var(--space-1);
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: var(--color-accent);
   color: var(--color-on-accent);
   font: var(--type-caption);

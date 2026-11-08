@@ -71,6 +71,7 @@
   height: 340px;
   border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
   border-radius: 50%;
+  corner-shape: round;
   box-shadow: 0 0 0 54px color-mix(in srgb, var(--accent) 3%, transparent);
   pointer-events: none;
 }
