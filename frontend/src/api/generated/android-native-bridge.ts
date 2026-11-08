@@ -115,7 +115,9 @@ export interface NativeBridgeMethods {
     }
   }
   authLogin: {
-    request: Record<string, never>
+    request: {
+      locale?: 'zh' | 'en' | 'ru'
+    }
     response: boolean
   }
   authLogout: {

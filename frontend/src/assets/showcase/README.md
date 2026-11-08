@@ -13,7 +13,6 @@
 | `home/showcase-rating-v1.webp`（1600×696，50 KB） | 首页能力展示③：回放解析结果与 League Rating |
 | `home/showcase-tankopedia-v1.webp`（1600×1165，94 KB） | 首页能力展示④：坦克百科列表 |
 | 其余各页 `*-v1.webp` / SVG | 保留的历史设计素材，当前 SPA 不通过全局背景样式加载 |
-| `../../../public/sponsor-bg.webp` | 4.0 起赞助页改用主题主视觉，页面不再引用；`docker/Dockerfile.frontend`、`deploy/tx/build-frontend-from-gitee.sh`、`scripts/build-android-bundle.mjs` 仍复制该文件，删除需同时改三处（后续清理） |
 
 **`showcase-*` 五张都是真实产品截图，不是插画**（2026-10-18 拍摄）。来源、数据边界与再拍方式：
 

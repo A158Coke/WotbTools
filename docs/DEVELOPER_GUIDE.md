@@ -344,7 +344,7 @@ Replay/管理宽表必须保持高 information density；允许横向滚动，�
 
 - 回放工作台：`replay`、`battle-playback`、`ai-review`、`agent-replay`、`agent-shots` 共用 `ReplayWorkspace`，仅初始能力不同；坦克百科/装甲查看器为 `agent-tankopedia` / `agent-armor`。
 - 业务页：`home`、`hof`、`tournament-points`（含 `tournament-points-config` / `tournament-points-admin`）、`league-broadcasts`、`recommendations` / `creators`（含 `recommended-videos` / `creators-config`）、`profile`、`admin-users`、`hof-admin`。
-- 信息页：`history` 渲染仓库根 `HISTORY.md`；`technical-evolution` 渲染技术演进；`rating-docs` 构建期以 `?raw` 读取 [`WotBTools_League_Rating_V6.md`](WotBTools_League_Rating_V6.md)（canonical 单一事实源，ReplayPage League 模式「算法说明」跳转进入，返回时经 KeepAlive 保留解析状态）；`contact`、`android`、`sponsor`、`more`。
+- 信息页：`history` 渲染仓库根 `HISTORY.md`；`technical-evolution` 渲染技术演进；`rating-docs` 构建期以 `?raw` 读取 [`WotBTools_League_Rating_V6.md`](WotBTools_League_Rating_V6.md)（canonical 单一事实源，与 `history` / `technical-evolution` 同用 `MarkdownDocPage` 文档模板，ReplayPage League 模式「算法说明」跳转进入，返回时经 KeepAlive 保留解析状态）；`contact`、`android`、`sponsor`、`more`。
 
 旧 view alias：`leaderboard → hof`、`extended → replay`、`reconstruction → battle-playback`；未知 view 回落到默认视图。
 

@@ -2,15 +2,6 @@
 
 /* Changelog */
 
-/* Rating docs（League Rating V6 算法说明） */
-.rating-docs-page {
-  width: min(1120px, calc(100% - var(--showcase-gutter) * 2)) !important;
-  max-width: none !important;
-  margin: 0 auto !important;
-  padding: 28px 0 64px !important;
-  color: var(--color-text-secondary) !important;
-}
-
 /* HoF admin and other admin-like pages */
 .hof-admin {
   width: min(1760px, calc(100% - var(--showcase-gutter) * 2)) !important;
@@ -21,8 +12,7 @@
 /* 用户管理 / 名人堂管理页内部元素由组件自身按设计语言 token 定义（design-language），这里只保留页面容器宽度。 */
 
 @media (width < 768px) {
-  .rating-docs-page,
-.hof-admin {
+  .hof-admin {
     width: calc(100% - 16px) !important;
     padding: 12px 0 42px !important;
   }

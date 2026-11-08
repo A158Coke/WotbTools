@@ -808,7 +808,8 @@ Kotlin `ScreenForm.kt`）与 `haptics`（`haptic {kind}`，`Haptics.kt`）；旧
 
 登录主题：Keycloak `login.ftl` 首次被覆盖（基于 26.6.4 base，字段与 action 不变），IdP 按 alias 分主次；背景选片从
 「UTC 天轮换 3 张」改为「UTC 月份 → 季节」，档期窗口机制保留；站点浏览器端登录经 keycloak-js `login({ locale })`
-传 `ui_locales`。
+传 `ui_locales`；Android 原生登录经 `authLogin` 的可选 `locale` 参数由 AppAuth `setUiLocales` 带上（bridgeVersion 不变，
+旧 App 忽略该字段）。
 
 边界：Android 端 `screen-form` / `haptics` 的 Kotlin 实现只有单元测试与契约测试，真机行为需人工验收；`ui_locales`
 在生产授权端点的效果未在线验证；登录模板在本地以 FreeMarker 离线渲染核对，未在 Keycloak 容器内渲染。

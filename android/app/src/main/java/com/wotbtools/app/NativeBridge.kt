@@ -75,7 +75,7 @@ class NativeBridge(private val host: MainActivity) {
 
                 // ── 认证：离开主线程，完成后回复（绝不阻塞页面）──
                 "authGetState" -> dispatch(id, reply) { host.bridgeAuthGetState() }
-                "authLogin" -> dispatch(id, reply) { host.bridgeAuthLogin() }
+                "authLogin" -> dispatch(id, reply) { host.bridgeAuthLogin(uiLocaleOf(params?.opt("locale"))) }
                 "authLogout" -> dispatch(id, reply) { host.bridgeAuthLogout() }
                 "authGetAccessToken" -> dispatch(id, reply) {
                     host.bridgeAuthGetAccessToken(minValiditySecondsOf(params?.opt("minValiditySeconds")))
@@ -120,6 +120,9 @@ class NativeBridge(private val host: MainActivity) {
             is Long -> raw.takeIf { it in 0..Int.MAX_VALUE.toLong() }?.toInt()
             else -> null
         }
+        /** 登录页语言白名单：只接受契约里的 zh / en / ru，其它一律不带 ui_locales（让 Keycloak 走 realm 默认）。 */
+        internal fun uiLocaleOf(raw: Any?): String? = (raw as? String)?.takeIf { it in UI_LOCALES }
+        private val UI_LOCALES = setOf("zh", "en", "ru")
         /** `minValiditySeconds` 缺省 0（「现在可用即可」）；负数一律归零，绝不放宽判定。 */
         private fun minValiditySecondsOf(raw: Any?): Long = when (raw) {
             is Number -> raw.toLong().coerceAtLeast(0L)

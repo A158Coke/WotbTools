@@ -18,7 +18,6 @@ const admin = read('../components/AdminUsersPage.vue')
 const adminList = read('../components/admin-list.css')
 const profile = read('../components/ProfilePage.vue')
 const md = read('../components/MarkdownContent.vue')
-const ratingDocs = read('../components/RatingDocsPage.vue')
 const drawer = read('../components/PlayerDetailDrawer.vue')
 const capabilityTabs = read('../components/ReplayCapabilityTabs.vue')
 const segmented = read('../components/SegmentedControl.vue')
@@ -66,11 +65,6 @@ describe('浅色主题 residual-dark 回归（语义 token 契约）', () => {
     expect(ruleBody(md, '\\.markdown-content :deep\\(pre\\)')).toContain('background: var(--bg-elevated)')
     expect(ruleBody(md, '\\.markdown-content :deep\\(blockquote\\)')).toContain('background: var(--bg-card)')
     expect(ruleBody(md, '\\.markdown-content :deep\\(code\\)')).not.toContain('rgba(10, 15, 18')
-  })
-
-  it('RatingDocsPage 文档卡 不得再写死深色面', () => {
-    expect(ruleBody(ratingDocs, '\\.rating-docs-card')).toContain('background: var(--bg-card)')
-    expect(ruleBody(ratingDocs, '\\.rating-docs-card')).not.toContain('rgba(24, 30, 34')
   })
 
   it('PlayerDetailDrawer 导出评分卡 不得再写死深色面', () => {

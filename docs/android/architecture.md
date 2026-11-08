@@ -399,7 +399,8 @@ APK 里那套 29 张底图是**兜底层**（离线永远可用，且与 Web 同
 
 ### 登录 / 登出语义
 
-- `authLogin()` 只启动外部 user-agent；**页面不导航、不重载**，登录完成后 Native 通知页面
+- `authLogin({locale?})` 只启动外部 user-agent；`locale` 是站点当前语言（`zh` / `en` / `ru`），Native 白名单校验后
+  经 AppAuth `setUiLocales` 作为 OIDC `ui_locales` 传给 Keycloak，登录页默认与站点同语言；**页面不导航、不重载**，登录完成后 Native 通知页面
   （`window.wotbtoolsOnAuthChanged()`），SPA 保持在原视图并重新同步状态。
 - `authLogout()` = 清 Native 会话 + 发起 Keycloak OIDC end-session（带 id-token hint）。**不**删除 Chrome
   cookie、**不**强制登出 QQ / Wargaming、**不**操作 provider session：下一次登录时若系统浏览器仍保有

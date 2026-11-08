@@ -501,7 +501,11 @@
       }
     },
     "authLogin": {
-      "request": { "fields": {} },
+      "request": {
+        "fields": {
+          "locale": { "type": "string", "enum": ["zh", "en", "ru"], "required": false, "notes": "站点当前语言，Native 作为 OIDC ui_locales 传给 Keycloak 登录页；缺省或不在白名单内时不带 ui_locales（旧 Native 忽略该字段）。" }
+        }
+      },
       "response": { "type": "boolean" }
     },
     "authLogout": {

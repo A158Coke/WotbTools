@@ -91,7 +91,6 @@
     "src/components/PlayerDetailDrawer.vue",
     "src/components/PlayerRatingRadar.vue",
     "src/components/ProfilePage.vue",
-    "src/components/RatingDocsPage.vue",
     "src/components/RecorderReticle.vue",
     "src/components/RemoveConfirmModal.vue",
     "src/components/Replay3DPane.vue",

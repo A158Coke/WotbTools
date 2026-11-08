@@ -101,7 +101,11 @@ onBeforeUnmount(() => {
       </ol>
     </nav>
 
-    <article ref="body" class="doc-body" @click="onBodyClick" v-html="doc.html"></article>
+    <div class="doc-main">
+      <!-- 页面自己的页头（如 Rating 说明的返回按钮）；历史 / 技术演进不传 -->
+      <slot name="header" />
+      <article ref="body" class="doc-body" @click="onBodyClick" v-html="doc.html"></article>
+    </div>
 
 
     <button v-if="showBackToTop" type="button" class="doc-top" data-testid="doc-back-to-top" :aria-label="$t('doc.back_to_top')" :title="$t('doc.back_to_top')" @click="scrollToTop">
@@ -121,6 +125,7 @@ onBeforeUnmount(() => {
 .doc-page.has-toc { grid-template-columns: calc(var(--space-12) * 5) minmax(0, var(--doc-measure)); justify-content: center; }
 .doc-page { --doc-measure: calc(var(--space-12) * 15); }
 
+.doc-main { min-width: 0; }
 .doc-body { min-width: 0; padding: var(--space-6); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-surface-1); font: var(--type-body); font-size: var(--font-size-doc); line-height: var(--line-height-doc); overflow-wrap: anywhere; }
 .doc-body :deep(h1),
 .doc-body :deep(h2),

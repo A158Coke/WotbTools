@@ -1135,7 +1135,7 @@ class MainActivity : Activity() {
      * `authLogin`：先补齐 discovery，再启动 external user-agent（Custom Tabs），
      * 并持久化含 PKCE verifier 的交易状态。返回 true 只在真的把它交给了浏览器时。
      */
-    fun bridgeAuthLogin(): Boolean = authManager.login()
+    fun bridgeAuthLogin(uiLocale: String?): Boolean = authManager.login(uiLocale)
 
     /** `authLogout`：先清本地会话（内存 + 加密存储），再 best-effort 结束 Keycloak SSO 会话。 */
     fun bridgeAuthLogout(): Boolean = authManager.logout()
