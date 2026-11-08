@@ -109,4 +109,4 @@ PR merge 后，加载 `.agents/playbooks/post-merge-cleanup.md`：切回 main �
 
 ## 内部 playbooks
 
-按需加载 `.agents/playbooks/`：`wotb-sync.md`、`column-sync.md`、`frontend-architecture.md`、`keycloak-upgrade/`、`komodo-server-lifecycle.md`、`post-merge-cleanup.md`、`pr-follow-up.md`。它们不是顶层 Skill，不参与生命周期选择。
+按需加载 `.agents/playbooks/`：`wotb-sync.md`、`column-sync.md`、`frontend-architecture.md`、`ui-design-review.md`（UI 任务）、`keycloak-upgrade/`、`komodo-server-lifecycle.md`、`post-merge-cleanup.md`、`pr-follow-up.md`。它们不是顶层 Skill，不参与生命周期选择。

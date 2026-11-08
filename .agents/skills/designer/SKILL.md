@@ -197,7 +197,7 @@ Step 0 — Evidence Collection / Baseline
 按相关性覆盖 complexity、maintenance、compatibility、performance、runtime cost、migration cost。
 
 ### Files / Components Affected
-给出初始 impact map；跨层改动按需加载 `.agents/playbooks/wotb-sync.md`、`column-sync.md`、`frontend-architecture.md`、`keycloak-upgrade/`、`komodo-server-lifecycle.md`。
+给出初始 impact map；跨层改动按需加载 `.agents/playbooks/wotb-sync.md`、`column-sync.md`、`frontend-architecture.md`、`ui-design-review.md`（视觉/交互设计时）、`keycloak-upgrade/`、`komodo-server-lifecycle.md`。
 
 #### Impact evidence contract（`# Impact Surface` 的写法约束）
 
