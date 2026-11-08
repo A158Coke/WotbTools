@@ -4,13 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <link rel="icon" type="image/svg+xml" sizes="any" href="/brand/wotbtools-app-icon.svg">
-  <meta name="theme-color" content="#0b0f11" />
+  <meta name="theme-color" content="#191304" />
   <title>WoTBTools</title>
   <style>
     :root{color-scheme:dark;--bg:#0d1117;--bg-card:#161b22;--bg-card2:#21262d;--text:#c9d1d9;--text-heading:#f0f6fc;--text-sub:#8b949e;--text-muted:#8b949e;--text-label:#8b949e;--border:#30363d;--border-header:#21262d;--border-ghost:#30363d;--accent:#58a6ff;--accent-hover:#79c0ff;--accent-dark:#58a6ff;--error:#f85149}
     /* 首屏 loader 按主题取底色（与 tokens/color.css 的 --color-canvas 一致；data-ui-profile 由下方脚本投影，避免 FOUC） */
     html[data-ui-profile="spring"]{--bg:#08140f;--accent:#f2b450}
-    html[data-ui-profile="summer"]{--bg:#0b0f11;--accent:#e0a02e}
+    html[data-ui-profile="summer"]{--bg:#191304;--accent:#f7bd3c}
     html[data-ui-profile="autumn"]{--bg:#160f08;--accent:#ef8434}
     html[data-ui-profile="winter"]{color-scheme:light;--bg:#eef3f8;--bg-card:#ffffff;--bg-card2:#ffffff;--text:#0f2236;--text-heading:#0f2236;--text-sub:#3b5470;--text-muted:#4a6380;--text-label:#3b5470;--border:#cbd8e6;--border-header:#cbd8e6;--border-ghost:#cbd8e6;--accent:#1f6fd1;--accent-hover:#1d63b8;--accent-dark:#1d63b8;--error:#b8322a}
     body{margin:0;font-family:"Segoe UI","Microsoft YaHei",sans-serif;color:var(--text);background:var(--bg)}
@@ -28,7 +28,7 @@
     (function () {
       // 首屏防 FOUC：在任何渲染前按 localStorage 投影 html[data-ui-profile] / data-theme / theme-color。
       // 与 src/composables/useUiProfile.js 的 key / 合法值 / 旧值映射 / 默认保持一致。
-      var colors = { spring: '#08140f', summer: '#0b0f11', autumn: '#160f08', winter: '#eef3f8' }
+      var colors = { spring: '#08140f', summer: '#191304', autumn: '#160f08', winter: '#eef3f8' }
       var p = 'summer'
       try {
         var stored = localStorage.getItem('wotb-ui-profile')
