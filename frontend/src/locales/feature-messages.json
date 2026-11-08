@@ -1,6 +1,6 @@
 {
   "zh": {
-    "adminList": { "kicker": "管理", "close": "关闭", "cancel": "取消", "refresh": "刷新", "bulkRegion": "批量操作", "bulkScope": "只作用于本页勾选的行", "dangerZone": "危险操作", "selectAllPage": "全选本页" },
+    "adminList": { "close": "关闭", "cancel": "取消", "bulkRegion": "批量操作", "bulkScope": "只作用于本页勾选的行", "dangerZone": "危险操作" },
     "aiFeedback": {
       "button": "反馈", "title": "复盘反馈", "question": "这次复盘哪里不够好？", "comment": "补充说明",
       "cancel": "取消", "submit": "提交反馈", "success": "感谢你的反馈。", "tooLong": "文本超过长度限制。", "snapshotNotice": "反馈会包含本次复制回复的完整原文，供站点管理员查看。",
@@ -578,7 +578,6 @@
       "range": "时间范围",
       "kicker": "管理 · 采集数据审计",
       "noteLabel": "口径",
-      "recentDays": "近 14 天",
       "spawnBar": "{first} 胜 {firstRate} · 平局 {drawRate} · {second} 胜 {secondRate}",
       "spawnSides": "{first} / {second} 胜率",
       "otherVersions": "其他"
@@ -1005,7 +1004,7 @@
     }
   },
   "en": {
-    "adminList": { "kicker": "Admin", "close": "Close", "cancel": "Cancel", "refresh": "Refresh", "bulkRegion": "Bulk actions", "bulkScope": "Applies only to rows checked on this page", "dangerZone": "Danger zone", "selectAllPage": "Select all on this page" },
+    "adminList": { "close": "Close", "cancel": "Cancel", "bulkRegion": "Bulk actions", "bulkScope": "Applies only to rows checked on this page", "dangerZone": "Danger zone" },
     "aiFeedback": {
       "button": "Feedback", "title": "Review feedback", "question": "What could be better about this review?", "comment": "Additional details",
       "cancel": "Cancel", "submit": "Submit feedback", "success": "Thank you for your feedback.", "tooLong": "The text exceeds the length limit.", "snapshotNotice": "Your feedback includes the complete copyable reply for site administrators to review.",
@@ -1583,7 +1582,6 @@
       "range": "Time range",
       "kicker": "Admin · Collector data audit",
       "noteLabel": "Scope",
-      "recentDays": "Last 14 days",
       "spawnBar": "{first} wins {firstRate} · draws {drawRate} · {second} wins {secondRate}",
       "spawnSides": "{first} / {second} win rate",
       "otherVersions": "Other"
@@ -2010,7 +2008,7 @@
     }
   },
   "ru": {
-    "adminList": { "kicker": "Администрирование", "close": "Закрыть", "cancel": "Отмена", "refresh": "Обновить", "bulkRegion": "Массовые действия", "bulkScope": "Только для строк, отмеченных на этой странице", "dangerZone": "Опасные действия", "selectAllPage": "Выбрать все на странице" },
+    "adminList": { "close": "Закрыть", "cancel": "Отмена", "bulkRegion": "Массовые действия", "bulkScope": "Только для строк, отмеченных на этой странице", "dangerZone": "Опасные действия" },
     "aiFeedback": {
       "button": "Отзыв", "title": "Отзыв о разборе", "question": "Что можно улучшить в этом разборе?", "comment": "Дополнительные сведения",
       "cancel": "Отмена", "submit": "Отправить отзыв", "success": "Спасибо за отзыв.", "tooLong": "Текст превышает ограничение длины.", "snapshotNotice": "Отзыв включает полный копируемый ответ для просмотра администраторами сайта.",
@@ -2588,7 +2586,6 @@
       "range": "Период",
       "kicker": "Администрирование · Аудит сборщика",
       "noteLabel": "Охват",
-      "recentDays": "Последние 14 дней",
       "spawnBar": "Победы {first} {firstRate} · ничьи {drawRate} · победы {second} {secondRate}",
       "spawnSides": "Победы: {first} / {second}",
       "otherVersions": "Другие"

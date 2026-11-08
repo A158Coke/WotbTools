@@ -15,6 +15,7 @@ const read = (name) => readFileSync(fileURLToPath(new URL(name, import.meta.url)
 
 const app = read('./app-shell.css')
 const admin = read('../components/AdminUsersPage.vue')
+const adminList = read('../components/admin-list.css')
 const profile = read('../components/ProfilePage.vue')
 const md = read('../components/MarkdownContent.vue')
 const ratingDocs = read('../components/RatingDocsPage.vue')
@@ -44,10 +45,12 @@ describe('浅色主题 residual-dark 回归（语义 token 契约）', () => {
 
   it('AdminUsersPage 搜索/表格/按钮 不得再写死深色面', () => {
     // 设计语言组件：只用语义 token（--color-*），不写死任何色值
+    // 表格 / 输入的共享样式在管理列表模板 admin-list.css
     expect(admin).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
-    expect(ruleBody(admin, '\\.admin-table-wrap')).toContain('background: var(--color-surface-1)')
-    expect(ruleBody(admin, '\\.admin-table th')).toContain('background: var(--color-surface-2)')
-    expect(ruleBody(admin, '\\.btn-sm')).toContain('background: var(--color-surface-1)')
+    expect(adminList).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
+    expect(ruleBody(adminList, '\\.admin-list-table-wrap')).toContain('background: var(--color-surface-1)')
+    expect(ruleBody(adminList, '\\.admin-list-table th')).toContain('background: var(--color-surface-2)')
+    expect(ruleBody(adminList, '\\.admin-list-input')).toContain('background: var(--color-surface-1)')
   })
 
   it('ProfilePage 编辑输入/记录表 不得再写死深色面', () => {

@@ -79,7 +79,7 @@
 .admin-list-table tr.is-clickable { cursor: pointer; }
 .admin-list-table tr.is-selected td { background: color-mix(in oklab, var(--color-accent) 8%, var(--color-surface-1)); }
 .admin-list-table tr.is-active td { background: var(--color-surface-2); }
-.admin-list-table tr.is-active td:first-child { box-shadow: inset var(--space-1) 0 0 var(--color-accent); }
+.admin-list-table tr.is-active td:first-child { border-inline-start: var(--space-1) solid var(--color-accent); }
 
 /* 行的键盘入口：主列是按钮，点整行与按它是同一个动作 */
 .admin-list-open {
@@ -212,7 +212,7 @@
     overflow-wrap: anywhere;
     text-align: end;
   }
-  .admin-list-table tbody tr td:first-child { box-shadow: none; }
+  .admin-list-table tbody tr td:first-child { border-inline-start: 0; }
   .admin-list-table tbody td[data-label]::before { content: attr(data-label); flex: none; color: var(--color-text-secondary); font: var(--type-caption); text-align: start; }
   .admin-list-table tbody td.cell-primary { text-align: start; }
   .admin-list-table tbody td.cell-check { position: absolute; inset-block-start: var(--space-1); inset-inline-start: var(--space-1); width: auto; }

@@ -31,7 +31,6 @@
     "src/app/router.js",
     "src/app/shellChrome.js",
     "src/app/viewRegistry.js",
-    "src/components/AdminAiReviewFeedbackPage.vue",
     "src/components/AdminUsersPage.vue",
     "src/components/AgentArmorView.vue",
     "src/components/AgentTankopedia.vue",
