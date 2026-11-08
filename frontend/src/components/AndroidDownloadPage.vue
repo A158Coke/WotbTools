@@ -123,7 +123,7 @@ onMounted(loadManifest)
 .wifi-hint { color: var(--color-text-secondary); font: var(--type-caption); }
 .install-steps { display: grid; gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
 .install-steps li { display: flex; align-items: center; gap: var(--space-3); }
-.step-index { display: inline-flex; flex: none; align-items: center; justify-content: center; inline-size: var(--space-8); block-size: var(--space-8); border-radius: var(--radius-full); background: var(--color-surface-2); color: var(--color-accent-text); font-weight: 700; }
+.step-index { display: inline-flex; flex: none; align-items: center; justify-content: center; inline-size: var(--space-8); block-size: var(--space-8); border-radius: var(--radius-full); corner-shape: round; background: var(--color-surface-2); color: var(--color-accent-text); font-weight: 700; }
 .release-notes { margin: 0; color: var(--color-text-secondary); line-height: var(--line-height-prose); white-space: pre-wrap; overflow-wrap: anywhere; }
 .muted { color: var(--color-text-secondary); }
 .sha { margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px solid var(--color-border-subtle); font: var(--type-caption); }

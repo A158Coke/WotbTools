@@ -68,7 +68,7 @@ function timeLabel(at: number, locale: string) {
   text-align: start;
   cursor: pointer;
 }
-.notification-dot { inline-size: var(--space-2); block-size: var(--space-2); margin-block-start: var(--space-2); border-radius: var(--radius-full); }
+.notification-dot { inline-size: var(--space-2); block-size: var(--space-2); margin-block-start: var(--space-2); border-radius: var(--radius-full); corner-shape: round; }
 .notification-item.is-unread .notification-dot { background: var(--color-accent); }
 .notification-text { display: grid; gap: var(--space-1); min-inline-size: 0; overflow-wrap: anywhere; }
 .notification-text span { color: var(--color-text-secondary); font: var(--type-caption); }

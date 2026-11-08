@@ -75,12 +75,14 @@ const iconUrl = computed(() => consumableIconUrl(props.logicalItemId))
   height: var(--space-5);
   object-fit: contain;
   border-radius: var(--radius-full);
+  corner-shape: round;
 }
 .pb-consumable-fallback {
   position: relative;
   width: var(--space-2);
   height: var(--space-2);
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: currentColor;
   opacity: .6;
 }

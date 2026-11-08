@@ -265,6 +265,7 @@ onMounted(() => {
   border: 2px solid var(--border);
   border-top-color: var(--accent);
   border-radius: 50%;
+  corner-shape: round;
   animation: map-status-spin 0.9s linear infinite;
   flex-shrink: 0;
 }

@@ -287,7 +287,7 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
   text-decoration: none;
   box-shadow: 0 0 0 var(--space-2) color-mix(in oklab, var(--color-accent) 10%, transparent);
 }
-.home-sponsor-icon { display: inline-flex; flex: none; align-items: center; justify-content: center; inline-size: var(--space-12); block-size: var(--space-12); border-radius: var(--radius-full); background: var(--color-accent); color: var(--color-on-accent); }
+.home-sponsor-icon { display: inline-flex; flex: none; align-items: center; justify-content: center; inline-size: var(--space-12); block-size: var(--space-12); border-radius: var(--radius-full); corner-shape: round; background: var(--color-accent); color: var(--color-on-accent); }
 .home-sponsor-text { display: grid; flex: 1 1 auto; gap: var(--space-1); min-width: 0; }
 .home-sponsor-text strong { font: var(--type-h3); }
 .home-sponsor-text span { color: var(--color-text-secondary); font: var(--type-caption); }

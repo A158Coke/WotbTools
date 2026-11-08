@@ -124,6 +124,7 @@ const unsupportedDescription = computed(() => t(
   overflow: hidden;
   block-size: var(--space-1);
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: var(--color-surface-3);
 }
 
@@ -134,6 +135,7 @@ const unsupportedDescription = computed(() => t(
   block-size: 100%;
   inline-size: 0;
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: var(--color-accent);
   transition: inline-size var(--duration-base) var(--ease-standard);
 }

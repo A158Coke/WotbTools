@@ -47,7 +47,7 @@ const tileStyle = ({ value }: ThemeOption) => ({
 
 .theme-name { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-1); font: var(--type-caption); font-weight: 600; }
 
-.theme-dot { flex: none; width: var(--space-2); height: var(--space-2); border-radius: var(--radius-full); background: var(--tile-accent); }
+.theme-dot { flex: none; width: var(--space-2); height: var(--space-2); border-radius: var(--radius-full); corner-shape: round; background: var(--tile-accent); }
 
 .theme-picker :deep(.segmented-option.is-active) .theme-thumb { border-color: var(--color-accent); outline: var(--border-width) solid var(--color-accent); }
 </style>

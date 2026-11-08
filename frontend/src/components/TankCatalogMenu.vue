@@ -552,6 +552,7 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
 .tp-pill {
   padding: 0 var(--space-2);
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: var(--color-surface-3);
   color: var(--color-text-secondary);
   font: var(--type-caption);

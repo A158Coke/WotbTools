@@ -837,6 +837,7 @@ const camoBonusParts = computed(() => {
   min-inline-size: 16px;
   padding: 0 3px;
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: var(--color-surface-1);
   color: var(--color-text-secondary);
   font: var(--type-caption);

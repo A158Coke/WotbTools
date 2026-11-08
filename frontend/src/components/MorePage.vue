@@ -128,7 +128,7 @@ const helpLinks = computed(() => aboutLinks.value.filter(link => link.view !== '
   cursor: pointer;
 }
 .more-sponsor { border-color: var(--color-accent); background: color-mix(in oklab, var(--color-accent) 10%, var(--color-surface-1)); }
-.more-sponsor-icon { display: inline-flex; flex: none; align-items: center; justify-content: center; inline-size: var(--space-10); block-size: var(--space-10); border-radius: var(--radius-full); background: var(--color-accent); color: var(--color-on-accent); }
+.more-sponsor-icon { display: inline-flex; flex: none; align-items: center; justify-content: center; inline-size: var(--space-10); block-size: var(--space-10); border-radius: var(--radius-full); corner-shape: round; background: var(--color-accent); color: var(--color-on-accent); }
 .more-feedback-card > svg:first-child { flex: none; color: var(--color-accent-text); }
 .more-support-text { display: grid; flex: 1 1 auto; gap: var(--space-1); min-width: 0; }
 .more-support-text span { color: var(--color-text-secondary); font: var(--type-caption); }

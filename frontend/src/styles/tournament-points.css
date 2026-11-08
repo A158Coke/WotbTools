@@ -61,8 +61,8 @@
 .tournament-default-switch { display: inline-flex; align-items: center; gap: var(--space-3); min-height: calc(var(--control-h-lg) + var(--space-1)); padding: var(--space-1); border: 0; background: transparent; color: var(--color-text-primary); font: var(--type-body); text-align: start; cursor: pointer; }
 .tournament-default-switch:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); border-radius: var(--radius-md); }
 .tournament-default-switch:disabled { cursor: not-allowed; color: var(--color-text-tertiary); }
-.tournament-default-track { box-sizing: content-box; display: flex; flex: none; align-items: center; width: calc(var(--control-check) * 2 + var(--space-2)); padding: var(--space-1); border: 1px solid var(--color-border-strong); border-radius: var(--radius-full); background: var(--color-surface-3); }
-.tournament-default-thumb { width: var(--control-check); height: var(--control-check); border-radius: var(--radius-full); background: var(--color-text-primary); transition: transform var(--duration-fast); }
+.tournament-default-track { box-sizing: content-box; display: flex; flex: none; align-items: center; width: calc(var(--control-check) * 2 + var(--space-2)); padding: var(--space-1); border: 1px solid var(--color-border-strong); border-radius: var(--radius-full); corner-shape: round; background: var(--color-surface-3); }
+.tournament-default-thumb { width: var(--control-check); height: var(--control-check); border-radius: var(--radius-full); corner-shape: round; background: var(--color-text-primary); transition: transform var(--duration-fast); }
 .tournament-default-switch[aria-checked='true'] .tournament-default-track { background: var(--color-info); border-color: var(--color-info); }
 .tournament-default-switch[aria-checked='true'] .tournament-default-thumb { background: var(--color-surface-1); transform: translateX(calc(var(--control-check) + var(--space-2))); }
 
@@ -85,7 +85,7 @@
 .tournament-admin .tournament-default > p { font: var(--type-caption); }
 .tournament-admin .tournament-form-section { border-top: var(--border-width) solid var(--color-border-subtle); padding-top: var(--space-4); }
 .tournament-admin .tournament-event-form > .tournament-actions { justify-content: flex-end; border-top: var(--border-width) solid var(--color-border-subtle); padding-top: var(--space-4); }
-.tournament-admin .tournament-status { display: inline-flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-3); border: var(--border-width) solid var(--color-border-subtle); border-radius: var(--radius-full); background: var(--color-surface-2); color: var(--color-text-secondary); font: var(--type-caption); }
+.tournament-admin .tournament-status { display: inline-flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-3); border: var(--border-width) solid var(--color-border-subtle); border-radius: var(--radius-full); corner-shape: round; background: var(--color-surface-2); color: var(--color-text-secondary); font: var(--type-caption); }
 .tournament-admin .tournament-status.is-finalized { background: color-mix(in oklab, var(--color-success) 14%, var(--color-surface-1)); color: var(--color-success); }
 .tournament-admin .tournament-admin-summary { padding: var(--space-5); gap: var(--space-4); }
 .tournament-admin .tournament-admin-summary h2 { font: var(--type-h2); }
@@ -158,7 +158,7 @@
 .tournament-day-chip:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 .tournament-day-chip:disabled { cursor: not-allowed; }
 .tournament-day-status { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--color-text-tertiary); font: var(--type-caption); }
-.tournament-day-status::before { width: var(--space-2); height: var(--space-2); border-radius: var(--radius-full); background: currentcolor; content: ''; }
+.tournament-day-status::before { width: var(--space-2); height: var(--space-2); border-radius: var(--radius-full); corner-shape: round; background: currentcolor; content: ''; }
 .tournament-day-chip.is-finalized .tournament-day-status { color: var(--color-success); }
 .tournament-day-chip.is-draft .tournament-day-status, .tournament-day-chip.is-correction .tournament-day-status { color: var(--color-warning); }
 @media (hover: hover) { .tournament-day-chip:not([aria-pressed='true'], :disabled):hover { background: var(--color-surface-2); } }
@@ -167,7 +167,7 @@
 .tournament-step:last-child { border-inline-end: 0; }
 .tournament-step.is-current { background: var(--color-surface-2); border-block-end: calc(var(--border-width) * 2) solid var(--color-accent); color: var(--color-text-primary); }
 .tournament-step.is-done { color: var(--color-text-primary); }
-.tournament-step-mark { display: inline-flex; flex: none; align-items: center; justify-content: center; width: var(--space-6); height: var(--space-6); border-radius: var(--radius-full); background: var(--color-surface-3); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 700; }
+.tournament-step-mark { display: inline-flex; flex: none; align-items: center; justify-content: center; width: var(--space-6); height: var(--space-6); border-radius: var(--radius-full); corner-shape: round; background: var(--color-surface-3); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 700; }
 .tournament-step.is-done .tournament-step-mark { background: color-mix(in oklab, var(--color-success) 14%, var(--color-surface-1)); color: var(--color-success); }
 .tournament-step.is-current .tournament-step-mark { background: var(--color-accent); color: var(--color-on-accent); }
 .tournament-step-text { display: grid; min-width: 0; }

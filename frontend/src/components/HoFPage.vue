@@ -2225,7 +2225,7 @@ span.lb-card-tank { min-height: 0; color: var(--color-text-secondary); }
 }
 .h100-file-index {
   display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
-  width: 20px; height: 20px; border-radius: 50%;
+  width: 20px; height: 20px; border-radius: 50%; corner-shape: round;
   background: var(--bg-rating); color: var(--accent-dark); font-weight: 700;
 }
 .h100-selected-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -66,6 +66,7 @@ const { t } = useI18n()
   gap: var(--space-1);
   min-height: max(var(--control-h-sm), var(--hit-min));
   border-radius: var(--radius-full);
+  corner-shape: round;
   font: var(--type-body);
   cursor: pointer;
 }
@@ -85,6 +86,7 @@ const { t } = useI18n()
   height: 20px;
   padding: 0 var(--space-1);
   border-radius: var(--radius-full);
+  corner-shape: round;
   background: var(--color-accent);
   color: var(--color-on-accent);
   font: var(--type-caption);

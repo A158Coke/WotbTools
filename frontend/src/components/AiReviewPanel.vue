@@ -484,6 +484,7 @@ defineExpose({ __classify: classify })
   border: 2px solid var(--color-border-subtle);
   border-top-color: var(--color-accent);
   border-radius: var(--radius-full);
+  corner-shape: round;
   animation: stream-spin 0.9s linear infinite;
   flex-shrink: 0;
 }
