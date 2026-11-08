@@ -41,7 +41,7 @@
 - `frontend/src/composables/useUiProfile.js` 是 profile 的唯一 reactive owner，持久化 key 为 `wotb-ui-profile`。
 - 四季主题 `spring` / `summer`（默认）/ `autumn` / `winter` 只改变 Presentation 层；`data-theme` 从 profile 派生。四套主题共用组件、业务状态、API、spacing 和 layout。
 - `useUiProfile` 是唯一 owner：`uiProfile` 即当前主题，持久化 `wotb-ui-profile`；读取边界把旧值 `showcase` / `classic` / `auto` 映射为 `summer` 并写回。`<meta name="theme-color">` 取当前主题的 `--color-canvas`（`THEME_COLOR`），首屏脚本与运行时一致。选择入口是 `components/ThemePicker.vue`（「更多」页与侧边栏「更多」面板共用）。
-- 首屏投影在 `frontend/index.html`；主题 token 在 `frontend/src/styles/tokens/color.css`，旧变量投影在 `frontend/src/styles/tokens.css`。场景外壳（2D / 3D 回放、装甲查看器、地图 3D）的根元素带 `data-scene-surface`，寒冬下仍用深色玻璃。
+- 首屏投影在 `frontend/index.html`；首屏 loader 与 `app/ViewLoadingState.vue` 的单层圆环视觉对齐（底色环 + 顶部强调色弧、线性匀速、reduced-motion 停止），每个 profile 都覆盖 loader 的 `--loader-bg` / `--loader-accent` / `--loader-text` / `--loader-ring`，取值分别对齐 `--color-canvas` / `--color-accent` / `--color-text-secondary` / `--color-border-subtle`；圆形元素显式 `corner-shape: round`，避免全局 squircle 改形；主题 token 在 `frontend/src/styles/tokens/color.css`，旧变量投影在 `frontend/src/styles/tokens.css`。场景外壳（2D / 3D 回放、装甲查看器、地图 3D）的根元素带 `data-scene-surface`，寒冬下仍用深色玻璃。
 
 ## 布局与响应式契约
 
