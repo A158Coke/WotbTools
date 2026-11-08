@@ -60,18 +60,19 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | DC-THM-05 | MUST | Showcase Hero | 文字落在主题遮罩（`--theme-hero-scrim*`）压出的纯色区上，最差取样点满足 §3 对比度，四套主题都测 | 无 | 人工取样 |
 | DC-THM-06 | MUST | Showcase Hero | `prefers-reduced-motion: reduce` 下无动效 | 无 | 人工；首页由 `pnpm run test:browser-home` 覆盖动效 |
 | DC-THM-07 | MUST | 主题 token | 四套主题的文字 / UI 色在各自四层表面上的最差对比度达到 AA（正文 ≥ 4.5，UI ≥ 3，强调色上的文字 ≥ 4.5） | 无 | `src/styles/tokens/color-contrast.test.ts` |
-| DC-THM-08 | MUST | 场景外壳 | 2D / 3D 回放、装甲查看器、地图 3D 的根元素带 `data-scene-surface`，寒冬下仍是深色玻璃，不跟随浅色表面 | 无 | `color-contrast.test.ts` 的场景块断言 + 人工 |
+| DC-THM-08 | MUST | 场景外壳 | 2D / 3D 回放、装甲查看器、地图 3D 的根元素带 `data-scene-surface`，正常渲染态自铺不透明底，寒冬下仍是深色玻璃，不跟随浅色表面，也不叠页面环境光 | 装甲查看器 `is-unsupported` 无 WebGL 降级态（不渲染游戏画面，保留透明 fallback） | `color-contrast.test.ts` 的场景块断言 + 人工 |
 
 | | **春 · 青山** `spring` | **夏 · 盛夏** `summer`（默认） | **秋 · 金秋** `autumn` | **冬 · 寒冬** `winter` |
 |---|---|---|---|---|
 | 深浅色 | 深色 | 深色 | 深色 | 浅色（白 7 蓝 3） |
 | 底色 / 强调色 | `#08140f` / `#f2b450` | `#191304` / `#f7bd3c` | `#160f08` / `#ef8434` | `#eef3f8` / `#1f6fd1` |
 | 底纹 `--theme-pattern` | 等高线 | 战术网格 | 斜纹 | 雷达环 |
+| 环境光 `--theme-backdrop` | 右上青绿柔光 + 左下淡金光晕 | 右上金色日光 + 底部暖橙渐暗 | 斜向橙红暮光 + 双角暗化 | 顶部冷白蓝高光 + 底部淡蓝雾 |
 | 布局 / 组件 / 字号 / 密度 | **完全相同** | **完全相同** | **完全相同** | **完全相同** |
 
 完整取值只在 `frontend/src/styles/tokens/color.css`（每套主题一个语义映射块）；`<meta name="theme-color">` 取当前主题底色（`useUiProfile.THEME_COLOR`），`color-scheme` 随深浅色。
 
-**氛围插槽**（主题 token，只能用在装饰插槽里）：`--theme-hero-image`（横版约 2.5:1）、`--theme-hero-image-portrait`（竖版约 4:5）、`--theme-hero-scrim`（横版遮罩，左侧压出文字区）、`--theme-hero-scrim-portrait`（竖版遮罩，自下而上）、`--theme-glass`（叠在主视觉上的按钮底）、`--theme-pattern`（页面底纹）。主视觉素材在 `frontend/src/assets/theme/theme-<季节>-{wide,portrait}.webp`。主题选择器的缩略图与色点读 `--theme-preview-<季节>-*`。
+**氛围插槽**（主题 token，只能用在装饰插槽里）：`--theme-hero-image`（横版约 2.5:1）、`--theme-hero-image-portrait`（竖版约 4:5）、`--theme-hero-scrim`（横版遮罩，左侧压出文字区）、`--theme-hero-scrim-portrait`（竖版遮罩，自下而上）、`--theme-glass`（叠在主视觉上的按钮底）、`--theme-pattern`（页面底纹）、`--theme-backdrop`（页面环境光，多层静态 `radial-gradient` / `linear-gradient`，固定视口、无动画）。页面底色按 `--theme-pattern` → `--theme-backdrop` → `--color-canvas` 三层合成；环境光集中在页面边缘与角落，正文所在的中部保持接近 `--color-canvas` 的纯色区。环境光在页面底边渐隐回 `--color-canvas`，页脚（`.app-footer`）另有 canvas 渐隐托底，避免底纹的 1px 线穿过页脚小字、拉低对比度。页头等无底色文字所在的最亮处也必须按 §3 取样，至少覆盖 1024 宽的桌面视口；环境光峰值不得压过文字对比度。主视觉素材在 `frontend/src/assets/theme/theme-<季节>-{wide,portrait}.webp`。主题选择器的缩略图与色点读 `--theme-preview-<季节>-*`。
 
 **装饰插槽**（这是唯一允许放背景图、渐变、毛玻璃的地方）：
 
@@ -79,9 +80,11 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 2. 工作区 Showcase Hero（规则见 DC-THM-03 至 DC-THM-06）
 3. 空状态插图
 4. 登录页
-5. 页面底色上的主题底纹（`--theme-pattern`，叠在 `--color-canvas` 上，卡片与数据区是纯色表面）
+5. 页面底色上的主题底纹与环境光（`--theme-pattern` + `--theme-backdrop`，按「底纹 → 环境光 → `--color-canvas`」三层合成；卡片与数据区仍是纯色表面）。环境光只允许静态渐变，不允许背景图、动画或随滚动变化。页脚 `.app-footer` 的 canvas 渐隐托底属于这层页面底色合成（不是组件装饰），用于保证页脚小字对比度
 
 **数据区**，也就是表格、回放、筛选、表单、抽屉，**四套主题都用纯色**。依据：WCAG 1.4.3 要求文字对比度稳定，而文字压在图片上时，对比度会随图片内容变化，没法保证。
+
+**场景排除：** 带 `data-scene-surface` 的 2D / 3D 回放、装甲查看器、地图 3D 场景根在正常渲染态必须自铺不透明底色（通常 `var(--color-canvas)` 或 `var(--color-surface-1)`），页面环境光不得透进游戏画面。唯一例外是装甲查看器的 `is-unsupported` 无 WebGL 降级态：它不渲染游戏画面，保留既有的透明 fallback。
 
 **选择逻辑：**
 - 默认盛夏；用户在「更多」→ 主题里选择（`ThemePicker`：`SegmentedControl` tiles，每项是主视觉缩略图 + 强调色点 + 名称），选择后记住。

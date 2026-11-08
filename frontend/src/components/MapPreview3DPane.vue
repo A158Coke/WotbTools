@@ -618,6 +618,8 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
   display: flex;
   flex-direction: column;
   min-height: 100%;
+  /* 场景根自铺不透明底（winter 场景块解析为深色），不叠页面氛围背景。 */
+  background: var(--color-canvas);
 }
 
 .map3d-note {
