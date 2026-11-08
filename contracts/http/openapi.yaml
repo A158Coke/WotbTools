@@ -3064,6 +3064,20 @@ paths:
         '401': { description: Authentication required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
         '403': { description: Administrator required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
         '404': { description: Feedback not found, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+  /api/admin/ai-review-feedback/{id}/status:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
+    patch:
+      operationId: updateAdminAiReviewFeedbackStatus
+      summary: Update the status of an AI review feedback record
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UpdateFeedbackStatusRequest' } } } }
+      responses:
+        '204': { description: Status updated }
+        '400': { description: Invalid id or status, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '401': { description: Authentication required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '403': { description: Administrator required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '404': { description: Feedback not found, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
   /api/site-feedback:
     post:
       operationId: createSiteFeedback
@@ -3107,6 +3121,20 @@ paths:
       responses:
         '204': { description: Deleted }
         '400': { description: Invalid id, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '401': { description: Authentication required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '403': { description: Administrator required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '404': { description: Feedback not found, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+  /api/admin/site-feedback/{id}/status:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
+    patch:
+      operationId: updateAdminSiteFeedbackStatus
+      summary: Update the status of a site feedback record
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UpdateFeedbackStatusRequest' } } } }
+      responses:
+        '204': { description: Status updated }
+        '400': { description: Invalid id or status, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
         '401': { description: Authentication required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
         '403': { description: Administrator required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
         '404': { description: Feedback not found, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
@@ -6976,20 +7004,30 @@ components:
       properties:
         id: { type: string, pattern: '^[1-9][0-9]*$' }
         createdAt: { type: string, format: date-time }
+    FeedbackStatus:
+      type: string
+      enum: [PENDING, FIXED]
+    UpdateFeedbackStatusRequest:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { $ref: '#/components/schemas/FeedbackStatus' }
     AdminAiReviewFeedbackListItem:
       type: object
       additionalProperties: false
-      required: [id, reasonCodes, feedbackText, model, createdAt]
+      required: [id, reasonCodes, feedbackText, model, createdAt, status]
       properties:
         id: { type: string, pattern: '^[1-9][0-9]*$' }
         reasonCodes: { type: array, maxItems: 8, uniqueItems: true, items: { $ref: '#/components/schemas/AiReviewFeedbackReason' } }
         feedbackText: { type: [string, 'null'] }
         model: { type: [string, 'null'] }
         createdAt: { type: string, format: date-time }
+        status: { $ref: '#/components/schemas/FeedbackStatus' }
     AdminAiReviewFeedbackDetail:
       type: object
       additionalProperties: false
-      required: [id, reasonCodes, feedbackText, aiResponseText, model, createdAt]
+      required: [id, reasonCodes, feedbackText, aiResponseText, model, createdAt, status]
       properties:
         id: { type: string, pattern: '^[1-9][0-9]*$' }
         reasonCodes: { type: array, maxItems: 8, uniqueItems: true, items: { $ref: '#/components/schemas/AiReviewFeedbackReason' } }
@@ -6997,6 +7035,7 @@ components:
         aiResponseText: { type: string }
         model: { type: [string, 'null'] }
         createdAt: { type: string, format: date-time }
+        status: { $ref: '#/components/schemas/FeedbackStatus' }
     AdminAiReviewFeedbackPage:
       type: object
       additionalProperties: false
@@ -7029,23 +7068,25 @@ components:
     AdminSiteFeedbackListItem:
       type: object
       additionalProperties: false
-      required: [id, reasonCodes, feedbackText, pageView, createdAt]
+      required: [id, reasonCodes, feedbackText, pageView, createdAt, status]
       properties:
         id: { type: string, pattern: '^[1-9][0-9]*$' }
         reasonCodes: { type: array, maxItems: 5, uniqueItems: true, items: { $ref: '#/components/schemas/SiteFeedbackReason' } }
         feedbackText: { type: [string, 'null'] }
         pageView: { type: [string, 'null'] }
         createdAt: { type: string, format: date-time }
+        status: { $ref: '#/components/schemas/FeedbackStatus' }
     AdminSiteFeedbackDetail:
       type: object
       additionalProperties: false
-      required: [id, reasonCodes, feedbackText, pageView, createdAt]
+      required: [id, reasonCodes, feedbackText, pageView, createdAt, status]
       properties:
         id: { type: string, pattern: '^[1-9][0-9]*$' }
         reasonCodes: { type: array, maxItems: 5, uniqueItems: true, items: { $ref: '#/components/schemas/SiteFeedbackReason' } }
         feedbackText: { type: [string, 'null'] }
         pageView: { type: [string, 'null'] }
         createdAt: { type: string, format: date-time }
+        status: { $ref: '#/components/schemas/FeedbackStatus' }
     AdminSiteFeedbackPage:
       type: object
       additionalProperties: false

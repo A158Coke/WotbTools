@@ -5,6 +5,7 @@ import com.wotb.web.aireviewfeedback.dto.FeedbackListItem;
 import com.wotb.web.aireviewfeedback.dto.FeedbackPage;
 import com.wotb.web.aireviewfeedback.dto.FeedbackReason;
 import com.wotb.web.aireviewfeedback.dto.FeedbackRecord;
+import com.wotb.web.aireviewfeedback.dto.FeedbackStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import tools.jackson.databind.json.JsonMapper;
@@ -40,11 +41,12 @@ public class AiReviewFeedbackRepository {
         final var queryArgs = new ArrayList<>(List.of(args));
         queryArgs.add(size);
         queryArgs.add((long) page * size);
-        final List<FeedbackListItem> items = jdbc.query("SELECT id, reason_codes, feedback_text, model, created_at "
+        final List<FeedbackListItem> items = jdbc.query("SELECT id, reason_codes, feedback_text, model, created_at, status "
                 + "FROM ai_review_feedback" + filter + " ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
                 (rs, row) -> new FeedbackListItem(Long.toString(rs.getLong("id")), reasons(rs),
                         rs.getString("feedback_text"), rs.getString("model"),
-                        rs.getObject("created_at", OffsetDateTime.class).toInstant()), queryArgs.toArray());
+                        rs.getObject("created_at", OffsetDateTime.class).toInstant(),
+                        FeedbackStatus.valueOf(rs.getString("status"))), queryArgs.toArray());
         final long total = count == null ? 0 : count;
         return new FeedbackPage(items, page, size, total, (total + size - 1) / size);
     }
@@ -53,7 +55,12 @@ public class AiReviewFeedbackRepository {
         return jdbc.query("SELECT * FROM ai_review_feedback WHERE id = ?", (rs, row) -> new FeedbackRecord(
                 Long.toString(rs.getLong("id")), reasons(rs), rs.getString("feedback_text"),
                 rs.getString("ai_response_text"), rs.getString("model"),
-                rs.getObject("created_at", OffsetDateTime.class).toInstant()), id).stream().findFirst();
+                rs.getObject("created_at", OffsetDateTime.class).toInstant(),
+                FeedbackStatus.valueOf(rs.getString("status"))), id).stream().findFirst();
+    }
+
+    public boolean updateStatus(final long id, final FeedbackStatus status) {
+        return jdbc.update("UPDATE ai_review_feedback SET status = ? WHERE id = ?", status.name(), id) != 0;
     }
 
     public boolean delete(final long id) {

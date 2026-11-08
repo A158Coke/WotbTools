@@ -4,5 +4,5 @@ import java.time.Instant;
 import java.util.List;
 
 public record FeedbackListItem(String id, List<FeedbackReason> reasonCodes, String feedbackText,
-        String model, Instant createdAt) {
+        String model, Instant createdAt, FeedbackStatus status) {
 }

@@ -4,6 +4,7 @@ import com.wotb.web.sitefeedback.dto.SiteFeedbackCreated;
 import com.wotb.web.sitefeedback.dto.SiteFeedbackPage;
 import com.wotb.web.sitefeedback.dto.SiteFeedbackReason;
 import com.wotb.web.sitefeedback.dto.SiteFeedbackRecord;
+import com.wotb.web.sitefeedback.dto.SiteFeedbackStatus;
 import com.wotb.web.sitefeedback.repository.SiteFeedbackRepository;
 import com.wotb.web.util.apierror.ApiErrorCode;
 import com.wotb.web.util.apierror.ApiException;
@@ -60,6 +61,28 @@ public class SiteFeedbackService {
         final String pageView = pageView(body.get("pageView"));
         require(!reasons.isEmpty() || UserText.hasText(feedback));
         try { return repository.insert(reasons, UserText.hasText(feedback) ? feedback : null, pageView); }
+        catch (final RuntimeException ex) { throw new ApiException(ApiErrorCode.INTERNAL_ERROR); }
+    }
+
+    public void updateStatus(final String rawId, final InputStream input) {
+        final long id = id(rawId);
+        final JsonNode body;
+        try {
+            final byte[] bytes = input.readNBytes(MAX_REQUEST_BYTES + 1);
+            require(bytes.length <= MAX_REQUEST_BYTES);
+            body = JSON.readTree(bytes);
+        } catch (final IOException | tools.jackson.core.JacksonException ex) {
+            throw invalid();
+        }
+        require(body != null && body.isObject());
+        body.propertyNames().forEach(name -> require("status".equals(name)));
+        final var value = body.get("status");
+        require(value != null && value.isString());
+        final SiteFeedbackStatus status;
+        try { status = SiteFeedbackStatus.from(value.asString()); }
+        catch (final IllegalArgumentException ex) { throw invalid(); }
+        try { if (!repository.updateStatus(id, status)) { throw new ApiException(ApiErrorCode.RESOURCE_NOT_FOUND); } }
+        catch (final ApiException ex) { throw ex; }
         catch (final RuntimeException ex) { throw new ApiException(ApiErrorCode.INTERNAL_ERROR); }
     }
 

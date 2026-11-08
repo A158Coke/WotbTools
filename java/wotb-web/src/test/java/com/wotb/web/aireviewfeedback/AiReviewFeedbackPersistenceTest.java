@@ -4,8 +4,10 @@ import com.github.dockerjava.api.model.ExposedPort;
 import com.github.dockerjava.api.model.PortBinding;
 import com.github.dockerjava.api.model.Ports;
 import com.wotb.web.aireviewfeedback.dto.FeedbackReason;
+import com.wotb.web.aireviewfeedback.dto.FeedbackStatus;
 import com.wotb.web.aireviewfeedback.repository.AiReviewFeedbackRepository;
 import com.wotb.web.aireviewfeedback.service.AiReviewFeedbackService;
+import com.wotb.web.util.apierror.ApiErrorCode;
 import com.wotb.web.util.apierror.ApiException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -43,8 +45,11 @@ class AiReviewFeedbackPersistenceTest {
         final var ds = new DriverManagerDataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
         jdbc = new JdbcTemplate(ds);
         jdbc.execute("DROP TABLE IF EXISTS ai_review_feedback");
+        jdbc.execute("DROP TABLE IF EXISTS site_feedback");
         try (final var connection = ds.getConnection()) {
             ScriptUtils.executeSqlScript(connection, new ClassPathResource("db/migration/V46__create_ai_review_feedback.sql"));
+            ScriptUtils.executeSqlScript(connection, new ClassPathResource("db/migration/V48__create_site_feedback.sql"));
+            ScriptUtils.executeSqlScript(connection, new ClassPathResource("db/migration/V49__add_feedback_status.sql"));
         }
         repository = new AiReviewFeedbackRepository(jdbc);
         service = new AiReviewFeedbackService(repository);
@@ -114,5 +119,57 @@ class AiReviewFeedbackPersistenceTest {
             assertThrows(ApiException.class, () -> service.createFromStream(new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8))));
         }
         assertThrows(ApiException.class, () -> service.createFromStream(new ByteArrayInputStream(new byte[3 * 1024 * 1024 + 1])));
+    }
+
+    @Test void defaultsToPendingAndPersistsStatusChanges() {
+        final var created = service.create(JSON.readTree("""
+                {"reasonCodes":["OTHER"],"aiResponseText":"reply"}
+                """));
+        assertEquals(FeedbackStatus.PENDING, service.get(created.id()).status());
+        final long id = Long.parseLong(created.id());
+
+        service.updateStatus(created.id(), stream("{\"status\":\"FIXED\"}"));
+        assertEquals(FeedbackStatus.FIXED, service.get(created.id()).status());
+        assertEquals(FeedbackStatus.FIXED, service.list(0, 25, null).items().getFirst().status());
+        assertEquals("FIXED", jdbc.queryForObject("SELECT status FROM ai_review_feedback WHERE id = ?", String.class, id));
+
+        service.updateStatus(created.id(), stream("{\"status\":\"PENDING\"}"));
+        assertEquals(FeedbackStatus.PENDING, service.get(created.id()).status());
+        assertEquals("PENDING", jdbc.queryForObject("SELECT status FROM ai_review_feedback WHERE id = ?", String.class, id));
+    }
+
+    @Test void rejectsInvalidStatusUpdatesAndMissingRecords() {
+        final var created = service.create(JSON.readTree("""
+                {"reasonCodes":["OTHER"],"aiResponseText":"reply"}
+                """));
+        for (final String body : List.of("", "{}", "{\"status\":null}", "{\"status\":1}",
+                "{\"status\":\"DONE\"}", "{\"status\":\"pending\"}",
+                "{\"status\":\"FIXED\",\"extra\":true}", "{\"status\":\"FIXED\",\"status\":\"PENDING\"}", "{")) {
+            final ApiException failure = assertThrows(ApiException.class,
+                    () -> service.updateStatus(created.id(), stream(body)), body);
+            assertEquals(ApiErrorCode.INVALID_REQUEST, failure.errorCode(), body);
+        }
+        assertEquals(FeedbackStatus.PENDING, service.get(created.id()).status());
+
+        for (final String id : List.of("0", "abc")) {
+            final ApiException failure = assertThrows(ApiException.class,
+                    () -> service.updateStatus(id, stream("{\"status\":\"FIXED\"}")), id);
+            assertEquals(ApiErrorCode.INVALID_REQUEST, failure.errorCode(), id);
+        }
+        final ApiException missing = assertThrows(ApiException.class,
+                () -> service.updateStatus("999999999", stream("{\"status\":\"FIXED\"}")));
+        assertEquals(ApiErrorCode.RESOURCE_NOT_FOUND, missing.errorCode());
+
+        service.delete(created.id());
+        final ApiException deleted = assertThrows(ApiException.class,
+                () -> service.updateStatus(created.id(), stream("{\"status\":\"FIXED\"}")));
+        assertEquals(ApiErrorCode.RESOURCE_NOT_FOUND, deleted.errorCode());
+        final ApiException oversized = assertThrows(ApiException.class,
+                () -> service.updateStatus(created.id(), new ByteArrayInputStream(new byte[3 * 1024 * 1024 + 1])));
+        assertEquals(ApiErrorCode.INVALID_REQUEST, oversized.errorCode());
+    }
+
+    private static ByteArrayInputStream stream(final String body) {
+        return new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8));
     }
 }
