@@ -3,9 +3,13 @@
  * 组件只使用语义 token（--color-*、--elevation-*），不引用原始色。
  * 四季主题（data-ui-profile，由 useUiProfile 从 wotb-ui-profile 投影）：春 spring、夏 summer（默认）、
  * 秋 autumn 是深色，冬 winter 是浅色（白 7 蓝 3）；data-theme（dark / light）只由 profile 派生。
- * 主题只换语义色与氛围插槽（主视觉、遮罩、底纹），布局 / 组件 / 字号一律不变。
+ * 主题只换语义色与氛围插槽（主视觉、遮罩、底纹、环境光），布局 / 组件 / 字号一律不变。
  * 所有文字 / UI 色均已按 WCAG 2.2 AA 在本主题四层表面上的最差值验证（正文 ≥ 4.5，UI ≥ 3），
  * 由 tokens/color-contrast.test.ts 读取本文件断言。
+ *
+ * 页面底色 = --theme-pattern + --theme-backdrop + --color-canvas。--theme-backdrop 是纯静态
+ * 多层渐变，环境光层内把底边 14% 渐隐回 canvas；底纹仍在最上层，所以页脚另有 canvas 渐隐
+ * 托底（app-shell.css），保证页脚小字不落在 1px 底纹交点上。场景根（data-scene-surface）不叠这两层。
  *
  * 原始色（--{色相}-{级}）只在被两个及以上语义 token 共用时才抽出（§1），组件不得直接引用。
  */
@@ -98,7 +102,15 @@
     --theme-hero-scrim: linear-gradient(90deg, rgb(25 19 4 / .95) 0%, rgb(25 19 4 / .82) 45%, rgb(25 19 4 / .15) 100%);
     --theme-hero-scrim-portrait: linear-gradient(0deg, rgb(25 19 4 / .95) 15%, rgb(25 19 4 / .35) 100%);
     --theme-glass: rgb(25 19 4 / .55);
-    --theme-pattern: repeating-linear-gradient(0deg, rgb(247 189 60 / .04) 0 1px, transparent 1px 48px), repeating-linear-gradient(90deg, rgb(247 189 60 / .04) 0 1px, transparent 1px 48px);
+    /* 夏日正午：右上角金色日光压出暖调高光，底部暖橙渐暗收住页面；
+       峰值按 1024 宽页头 ghost 文字 ≥4.5 调校，不再压过顶栏文字。 */
+    --theme-backdrop:
+      linear-gradient(0deg, var(--color-canvas) 0%, transparent 14%),
+      radial-gradient(ellipse 70% 65% at 82% -6%, rgb(255 220 140 / .46) 0%, rgb(248 182 62 / .21) 38%, transparent 72%),
+      radial-gradient(ellipse 120% 85% at 86% -30%, rgb(255 192 74 / .075) 0%, transparent 66%),
+      radial-gradient(ellipse 100% 75% at 50% 116%, rgb(255 134 44 / .24) 0%, rgb(150 62 12 / .11) 52%, transparent 78%),
+      linear-gradient(180deg, transparent 38%, rgb(25 19 4 / .33) 100%);
+    --theme-pattern: repeating-linear-gradient(0deg, rgb(247 189 60 / .08) 0 1px, transparent 1px 48px), repeating-linear-gradient(90deg, rgb(247 189 60 / .08) 0 1px, transparent 1px 48px);
   }
 
   :root[data-ui-profile="spring"] {
@@ -150,7 +162,14 @@
     --theme-hero-scrim: linear-gradient(90deg, rgb(8 20 15 / .95) 0%, rgb(8 20 15 / .82) 45%, rgb(8 20 15 / .15) 100%);
     --theme-hero-scrim-portrait: linear-gradient(0deg, rgb(8 20 15 / .95) 15%, rgb(8 20 15 / .35) 100%);
     --theme-glass: rgb(8 20 15 / .55);
-    --theme-pattern: repeating-radial-gradient(ellipse at 15% 85%, rgb(102 212 143 / .07) 0 1px, transparent 1px 26px);
+    /* 春日清晨：右上角青绿柔光，左下角淡金光晕，底部微暗压住视线。 */
+    --theme-backdrop:
+      linear-gradient(0deg, var(--color-canvas) 0%, transparent 14%),
+      radial-gradient(ellipse 90% 70% at 90% -12%, rgb(120 235 180 / .24) 0%, rgb(70 190 137 / .11) 40%, transparent 72%),
+      radial-gradient(ellipse 70% 55% at 0% 100%, rgb(242 184 84 / .17) 0%, rgb(242 184 84 / .06) 44%, transparent 72%),
+      radial-gradient(ellipse 110% 60% at 50% 118%, rgb(20 60 40 / .35) 0%, transparent 70%),
+      linear-gradient(180deg, transparent 55%, rgb(3 10 7 / .5) 100%);
+    --theme-pattern: repeating-radial-gradient(ellipse at 15% 85%, rgb(102 212 143 / .10) 0 1px, transparent 1px 26px);
   }
 
   :root[data-ui-profile="autumn"] {
@@ -202,7 +221,14 @@
     --theme-hero-scrim: linear-gradient(90deg, rgb(22 15 8 / .95) 0%, rgb(22 15 8 / .82) 45%, rgb(22 15 8 / .15) 100%);
     --theme-hero-scrim-portrait: linear-gradient(0deg, rgb(22 15 8 / .95) 15%, rgb(22 15 8 / .35) 100%);
     --theme-glass: rgb(22 15 8 / .55);
-    --theme-pattern: repeating-linear-gradient(-24deg, rgb(239 132 52 / .06) 0 2px, transparent 2px 22px);
+    /* 秋日黄昏：一束斜向橙红暮光，双角暗化把视线收进画面中心。 */
+    --theme-backdrop:
+      linear-gradient(0deg, var(--color-canvas) 0%, transparent 14%),
+      radial-gradient(ellipse 65% 60% at 0% 0%, rgb(6 3 1 / .62) 0%, transparent 66%),
+      radial-gradient(ellipse 70% 65% at 100% 100%, rgb(8 4 2 / .70) 0%, transparent 70%),
+      linear-gradient(118deg, rgb(255 139 64 / .24) 0%, rgb(198 77 32 / .13) 34%, transparent 64%),
+      radial-gradient(ellipse 90% 60% at 55% 112%, rgb(239 132 52 / .12) 0%, transparent 68%);
+    --theme-pattern: repeating-linear-gradient(-24deg, rgb(239 132 52 / .09) 0 2px, transparent 2px 22px);
   }
 
   :root[data-ui-profile="winter"] {
@@ -254,7 +280,15 @@
     --theme-hero-scrim: linear-gradient(90deg, rgb(238 243 248 / .96) 0%, rgb(238 243 248 / .86) 45%, rgb(238 243 248 / .1) 100%);
     --theme-hero-scrim-portrait: linear-gradient(0deg, rgb(238 243 248 / .97) 18%, rgb(238 243 248 / .4) 100%);
     --theme-glass: rgb(255 255 255 / .72);
-    --theme-pattern: repeating-radial-gradient(circle at 88% 18%, rgb(31 111 209 / .06) 0 1px, transparent 1px 34px);
+    /* 冬日晴雪：顶部冷白高光，底部淡蓝雾气；浅色底上保持清爽。 */
+    --theme-backdrop:
+      linear-gradient(0deg, var(--color-canvas) 0%, transparent 14%),
+      radial-gradient(ellipse 90% 60% at 62% -18%, rgb(255 255 255 / .98) 0%, rgb(226 240 253 / .55) 42%, transparent 74%),
+      radial-gradient(ellipse 55% 45% at 100% 8%, rgb(188 219 250 / .45) 0%, transparent 70%),
+      radial-gradient(ellipse 80% 55% at 18% 104%, rgb(170 204 238 / .55) 0%, rgb(200 222 246 / .25) 46%, transparent 78%),
+      radial-gradient(ellipse 80% 55% at 82% 106%, rgb(170 204 238 / .45) 0%, transparent 74%),
+      linear-gradient(180deg, rgb(255 255 255 / .55) 0%, transparent 38%, rgb(184 212 242 / .38) 100%);
+    --theme-pattern: repeating-radial-gradient(circle at 88% 18%, rgb(31 111 209 / .09) 0 1px, transparent 1px 34px);
   }
 
   /* 场景外壳（2D / 3D 回放、装甲查看器 HUD、地图 3D）画在游戏画面之上：寒冬下仍是深色玻璃，

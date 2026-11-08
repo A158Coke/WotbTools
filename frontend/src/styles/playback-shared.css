@@ -1,5 +1,6 @@
 /* Shared 2D chrome; geometry remains owned by playback-workspace.css. */
-.battle-playback { min-width: 0; }
+/* 场景根自铺不透明底（winter 场景块解析为深色）：页面氛围背景不得透进游戏画面。 */
+.battle-playback { min-width: 0; background: var(--color-canvas); }
 .battle-playback .pb-main { position: relative; min-width: 0; }
 .battle-playback .pb-map-stage { position: relative; min-width: 0; }
 /* The playable area is information, not a permanently alarming frame. */
