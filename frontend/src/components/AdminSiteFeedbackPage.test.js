@@ -2,6 +2,7 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
+import { DIALOG_INLINE_KEY } from '../shared/dialog'
 import AdminSiteFeedbackPage from './AdminSiteFeedbackPage.vue'
 
 const api = vi.hoisted(() => ({
@@ -16,8 +17,8 @@ vi.mock('../composables/useFeatureGate.js', () => ({ useFeatureGate: () => ({
   availability: () => gate.status.value,
 }) }))
 const row = { id: '1', reasonCodes: ['BUG'], feedbackText: 'feedback', pageView: 'hof', createdAt: '2026-01-01T00:00:00Z' }
-const dialogStub = { props: ['open'], template: '<div v-if="open"><slot /></div>' }
-const mountPage = () => mount(AdminSiteFeedbackPage, { global: { mocks: { $t: key => key }, stubs: { AppDialog: dialogStub } } })
+const globalOptions = { mocks: { $t: key => key }, provide: { [DIALOG_INLINE_KEY]: true } }
+const mountPage = () => mount(AdminSiteFeedbackPage, { global: globalOptions })
 beforeEach(() => {
   vi.clearAllMocks()
   gate.status = ref({ available: true, pending: false })
@@ -49,13 +50,16 @@ it('filters by reason from the first page', async () => {
 it('shows details and deletes after confirmation', async () => {
   const wrapper = mountPage()
   await flushPromises()
-  await wrapper.findAll('button').find(button => button.text() === 'siteFeedback.view').trigger('click')
+  await wrapper.get('[data-testid="feedback-row-open"]').trigger('click')
   await flushPromises()
+  const drawer = wrapper.get('[data-testid="admin-detail-drawer"]')
+  expect(drawer.attributes('role')).toBe('dialog')
   expect(api.getSiteFeedback).toHaveBeenCalledWith('1')
-  expect(wrapper.get('pre').text()).toBe('feedback')
-  await wrapper.findAll('button').find(button => button.text() === 'siteFeedback.delete').trigger('click')
-  const confirm = wrapper.findAll('button').filter(button => button.text() === 'siteFeedback.delete').at(-1)
-  await confirm.trigger('click')
+  expect(drawer.get('pre').text()).toBe('feedback')
+  // 删除在抽屉底部两段式确认：第一步只展开确认，不发请求
+  await drawer.get('[data-testid="admin-danger-start"]').trigger('click')
+  expect(api.deleteSiteFeedback).not.toHaveBeenCalled()
+  await drawer.get('[data-testid="admin-danger-confirm"]').trigger('click')
   await flushPromises()
   expect(api.deleteSiteFeedback).toHaveBeenCalledWith('1')
   expect(api.listSiteFeedback).toHaveBeenCalledTimes(2)

@@ -111,13 +111,25 @@ try {
       if (!dialog.querySelector('[role=status]')) throw Error('success state missing')
       const closeButton = [...dialog.querySelectorAll('button')].find(x => x.textContent.trim() === 'Close' && !x.classList.contains('dialog-close')); closeButton.click(); await wait(100)
       if (document.querySelector('[role=dialog]')) throw Error('dialog did not close')
-      const view = [...document.querySelectorAll('.feedback-admin button')].find(x => x.textContent.trim() === 'View'); view.click(); await wait(150)
-      if (![...document.querySelectorAll('pre')].some(x => x.textContent === 'note')) throw Error('detail mismatch')
-      document.querySelector('[role=dialog] .dialog-close').click(); await wait(100)
-      const filter = document.querySelector('.feedback-admin select'); filter.value = 'OTHER'; filter.dispatchEvent(new Event('change', { bubbles: true })); await wait(150)
+      const filterSelect = async () => {
+        let select = document.querySelector('[data-testid=feedback-reason-filter]')
+        if (!select) { document.querySelector('[data-testid=filter-toggle]').click(); await wait(150); select = document.querySelector('[data-testid=feedback-reason-filter]') }
+        if (!select) throw Error('reason filter unavailable')
+        select.value = 'OTHER'; select.dispatchEvent(new Event('change', { bubbles: true })); await wait(150)
+        const done = document.querySelector('[data-testid=admin-filter-done]'); if (done) { done.click(); await wait(150) }
+      }
+      await filterSelect()
       if (!window.requests.some(x => x.url.includes('/api/admin/site-feedback?') && x.url.includes('reason=OTHER'))) throw Error('filter missing')
-      const remove = [...document.querySelectorAll('.feedback-admin button')].find(x => x.textContent.trim() === 'Delete'); remove.click(); await wait(100)
-      const confirm = [...document.querySelectorAll('[role=dialog] button')].find(x => x.textContent.trim() === 'Delete'); if (!confirm) throw Error('delete confirmation missing'); confirm.click()
+      document.querySelector('[data-testid=feedback-row-open]').click(); await wait(150)
+      const drawer = document.querySelector('[data-testid=admin-detail-drawer]'); if (!drawer) throw Error('detail drawer missing')
+      const drawerRect = drawer.getBoundingClientRect(); if (drawerRect.left < -1 || drawerRect.right > innerWidth + 1) throw Error('drawer overflows viewport')
+      if (innerWidth >= 768 && Math.abs(drawerRect.right - innerWidth) > 1) throw Error('drawer is not docked to the right edge')
+      if (![...drawer.querySelectorAll('pre')].some(x => x.textContent === 'note')) throw Error('detail mismatch')
+      document.querySelector('[data-testid=admin-drawer-close]').click(); await wait(150)
+      if (document.querySelector('[data-testid=admin-detail-drawer]')) throw Error('drawer did not close')
+      document.querySelector('[data-testid=feedback-row-open]').click(); await wait(150)
+      document.querySelector('[data-testid=admin-danger-start]').click(); await wait(100)
+      const confirm = document.querySelector('[data-testid=admin-danger-confirm]'); if (!confirm) throw Error('delete confirmation missing'); confirm.click()
       await wait(150); if (!window.requests.some(x => x.options.method === 'DELETE')) throw Error('delete missing')
       return true
     })()`
@@ -141,14 +153,27 @@ try {
       window.testOnline = true; window.failNext = true; retrySubmit.click(); await new Promise(r => setTimeout(r, 150))
       if (textarea.value !== 'preserve' || !form.querySelector('[role=alert]')) throw Error('failed form was not preserved')
       form.querySelector('.dialog-close').click(); await new Promise(r => setTimeout(r, 100))
-      const view = [...document.querySelectorAll('.feedback-admin button')].find(x => x.textContent.trim() === 'View'); view.click(); await new Promise(r => setTimeout(r, 150))
-      if (![...document.querySelectorAll('pre')].some(x => x.textContent === 'exact\\nreply')) throw Error('detail mismatch')
-      document.querySelector('[role=dialog] .dialog-close').click(); await new Promise(r => setTimeout(r, 100))
-      const filter = document.querySelector('.feedback-admin select'); filter.value = 'OTHER'; filter.dispatchEvent(new Event('change', { bubbles: true })); await new Promise(r => setTimeout(r, 150))
+      const sleep = ms => new Promise(r => setTimeout(r, ms))
+      const filterSelect = async () => {
+        let select = document.querySelector('[data-testid=feedback-reason-filter]')
+        if (!select) { document.querySelector('[data-testid=filter-toggle]').click(); await sleep(150); select = document.querySelector('[data-testid=feedback-reason-filter]') }
+        if (!select) throw Error('reason filter unavailable')
+        select.value = 'OTHER'; select.dispatchEvent(new Event('change', { bubbles: true })); await sleep(150)
+        const done = document.querySelector('[data-testid=admin-filter-done]'); if (done) { done.click(); await sleep(150) }
+      }
+      await filterSelect()
       if (!window.requests.some(x => x.url.includes('reason=OTHER'))) throw Error('filter missing')
-      const remove = [...document.querySelectorAll('.feedback-admin button')].find(x => x.textContent.trim() === 'Delete'); remove.click(); await new Promise(r => setTimeout(r, 100))
-      const confirm = [...document.querySelectorAll('[role=dialog] button')].find(x => x.textContent.trim() === 'Delete'); if (!confirm) throw Error('delete confirmation missing'); confirm.click()
-      await new Promise(r => setTimeout(r, 150)); if (!window.requests.some(x => x.options.method === 'DELETE')) throw Error('delete missing')
+      document.querySelector('[data-testid=feedback-row-open]').click(); await sleep(150)
+      const drawer = document.querySelector('[data-testid=admin-detail-drawer]'); if (!drawer) throw Error('detail drawer missing')
+      const drawerRect = drawer.getBoundingClientRect(); if (drawerRect.left < -1 || drawerRect.right > innerWidth + 1) throw Error('drawer overflows viewport')
+      if (innerWidth >= 768 && Math.abs(drawerRect.right - innerWidth) > 1) throw Error('drawer is not docked to the right edge')
+      if (![...drawer.querySelectorAll('pre')].some(x => x.textContent === 'exact\\nreply')) throw Error('detail mismatch')
+      document.querySelector('[data-testid=admin-drawer-close]').click(); await sleep(150)
+      if (document.querySelector('[data-testid=admin-detail-drawer]')) throw Error('drawer did not close')
+      document.querySelector('[data-testid=feedback-row-open]').click(); await sleep(150)
+      document.querySelector('[data-testid=admin-danger-start]').click(); await sleep(100)
+      const confirm = document.querySelector('[data-testid=admin-danger-confirm]'); if (!confirm) throw Error('delete confirmation missing'); confirm.click()
+      await sleep(150); if (!window.requests.some(x => x.options.method === 'DELETE')) throw Error('delete missing')
       return true
     })()`
     const outcome = await client.send('Runtime.evaluate', { expression: surface === 'site' ? siteExpression : aiExpression, awaitPromise: true, returnByValue: true }, sessionId)

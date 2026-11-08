@@ -1,0 +1,223 @@
+/* 管理后台列表模板（docs/frontend/ui-system.md「管理后台列表模板」）：表格 / 手机卡片、分页、详情列表、状态徽标、口径提示。
+ * 全局类名统一带 admin-list- 前缀，不与各页 scoped 类（如名人堂管理的 .admin-table）冲突；只用语义 token。
+ * 页面骨架：PageHeader（kicker）→ AdminFilterBar → AdminBulkBar → .admin-list-table → .admin-list-pagination，
+ * 点行打开 AdminDetailDrawer（右侧 AppSheet），危险操作在抽屉底部的 AdminDangerZone。 */
+
+.admin-list-note {
+  display: flex;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border-subtle);
+  border-inline-start: var(--space-1) solid var(--color-accent);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+  color: var(--color-text-secondary);
+}
+.admin-list-note > strong { flex: none; color: var(--color-accent-text); }
+.admin-list-note > ul { display: grid; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
+
+/* 连通性 / 加载 / 空状态：中性语气（不是 danger） */
+.admin-list-status {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+}
+.admin-list-status.is-error { border-color: var(--color-danger); color: var(--color-danger); }
+.admin-list-empty { margin: 0; padding: var(--space-8) 0; color: var(--color-text-secondary); text-align: center; }
+
+/* 筛选条与抽屉里的输入控件 */
+.admin-list-field { display: grid; gap: var(--space-1); min-width: 0; color: var(--color-text-secondary); font: var(--type-caption); }
+.admin-list-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--control-h-md);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+  color: var(--color-text-primary);
+  font: var(--type-body);
+}
+.admin-list-input:disabled { cursor: not-allowed; opacity: .5; }
+
+/* 表格：容器横向滚动；isolation 建立局部层叠上下文，表头只用 --table-z-*（§5） */
+.admin-list-table-wrap {
+  isolation: isolate;
+  overflow-x: auto;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-1);
+  box-shadow: var(--elevation-1);
+}
+.admin-list-table { width: 100%; border-collapse: separate; border-spacing: 0; font-variant-numeric: tabular-nums; }
+.admin-list-table th,
+.admin-list-table td {
+  height: var(--row-h);
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--color-border-subtle);
+  text-align: start;
+  white-space: nowrap;
+}
+.admin-list-table th {
+  position: sticky;
+  top: 0;
+  z-index: var(--table-z-head);
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+  font: var(--type-caption);
+  font-weight: 600;
+}
+.admin-list-table td { background: var(--color-surface-1); color: var(--color-text-primary); }
+.admin-list-table tbody tr:last-child td { border-bottom: 0; }
+.admin-list-table .is-num { text-align: end; }
+.admin-list-table .is-wrap { min-width: var(--form-field-min); white-space: normal; overflow-wrap: anywhere; }
+.admin-list-table tr.is-clickable { cursor: pointer; }
+.admin-list-table tr.is-selected td { background: color-mix(in oklab, var(--color-accent) 8%, var(--color-surface-1)); }
+.admin-list-table tr.is-active td { background: var(--color-surface-2); }
+.admin-list-table tr.is-active td:first-child { border-inline-start: var(--space-1) solid var(--color-accent); }
+
+/* 行的键盘入口：主列是按钮，点整行与按它是同一个动作 */
+.admin-list-open {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--hit-min);
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: var(--type-body);
+  font-weight: 600;
+  text-align: start;
+  cursor: pointer;
+}
+.admin-list-open:disabled { cursor: not-allowed; }
+
+/* 复选框：可视尺寸取 --control-check，label 提供最小点击区域 */
+.admin-list-table .cell-check { width: var(--hit-min); padding: 0; text-align: center; }
+.admin-list-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-width: var(--hit-min);
+  min-height: var(--hit-min);
+  cursor: pointer;
+}
+.admin-list-check input { inline-size: var(--control-check); block-size: var(--control-check); margin: 0; accent-color: var(--color-accent); cursor: pointer; }
+.admin-list-check-label { display: none; }
+
+.admin-list-muted { color: var(--color-text-secondary); font: var(--type-caption); }
+.admin-list-mono { font-family: var(--font-family-mono); font-size: var(--font-size-caption); }
+.admin-list-truncate { display: inline-block; max-width: var(--form-field-min); overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+
+.admin-list-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+  font: var(--type-caption);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.admin-list-badge.is-success { background: color-mix(in oklab, var(--color-success) 16%, var(--color-surface-1)); color: var(--color-success); }
+.admin-list-badge.is-warning { background: color-mix(in oklab, var(--color-warning) 16%, var(--color-surface-1)); color: var(--color-warning); }
+
+/* 分页：左侧页码信息，右侧翻页 / 跳页 / 每页数量 */
+.admin-list-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  margin-top: var(--space-3);
+  color: var(--color-text-secondary);
+}
+.admin-list-pagination-controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.admin-list-pagination-controls label { display: inline-flex; align-items: center; gap: var(--space-2); }
+.admin-list-pagination-controls .admin-list-input { width: auto; }
+.admin-list-pagination-controls input.admin-list-input { inline-size: calc(var(--control-h-md) * 2); text-align: center; }
+
+/* 抽屉内容：分区标题 + 键值列表 + 原文 */
+.admin-list-section + .admin-list-section { margin-top: var(--space-5); }
+.admin-list-section-title { margin: 0 0 var(--space-2); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; }
+.admin-list-dl {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-canvas);
+}
+.admin-list-dl dt { color: var(--color-text-secondary); }
+.admin-list-dl dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.admin-list-pre {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-canvas);
+  font: var(--type-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.admin-list-warn { color: var(--color-warning); }
+.admin-list-ok { color: var(--color-success); font-weight: 600; }
+.admin-list-error { color: var(--color-danger); }
+
+@media (hover: hover) {
+  .admin-list-table tr.is-clickable:hover td { background: var(--color-surface-2); }
+}
+
+/* 小屏：表格变卡片列表（DC-ARC-06）。表头只留「全选本页」，其余列名进每个单元格的 data-label。 */
+@media (width < 768px) {
+  .admin-list-table-wrap { overflow: visible; border: 0; background: none; box-shadow: none; }
+  .admin-list-table,
+  .admin-list-table thead,
+  .admin-list-table tbody { display: block; }
+  .admin-list-table thead tr { display: flex; }
+  .admin-list-table thead th { display: none; }
+  .admin-list-table thead th.cell-check { display: block; position: static; width: auto; height: auto; padding: 0 0 var(--space-2); border: 0; background: none; text-align: start; }
+  .admin-list-check-label { display: inline; color: var(--color-text-secondary); font: var(--type-body); }
+  .admin-list-table tbody { display: grid; gap: var(--space-2); }
+  .admin-list-table tbody tr {
+    position: relative;
+    display: grid;
+    gap: var(--space-1);
+    padding: var(--space-3);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface-1);
+  }
+  .admin-list-table tbody tr.has-check { padding-inline-start: calc(var(--hit-min) + var(--space-2)); }
+  .admin-list-table tbody tr.is-selected { border-color: var(--color-accent); background: color-mix(in oklab, var(--color-accent) 8%, var(--color-surface-1)); }
+  .admin-list-table tbody td {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-3);
+    height: auto;
+    padding: 0;
+    border: 0;
+    background: none;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: end;
+  }
+  .admin-list-table tbody tr td:first-child { border-inline-start: 0; }
+  .admin-list-table tbody td[data-label]::before { content: attr(data-label); flex: none; color: var(--color-text-secondary); font: var(--type-caption); text-align: start; }
+  .admin-list-table tbody td.cell-primary { text-align: start; }
+  .admin-list-table tbody td.cell-check { position: absolute; inset-block-start: var(--space-1); inset-inline-start: var(--space-1); width: auto; }
+  .admin-list-table tbody td.cell-actions { justify-content: flex-end; }
+  .admin-list-table tbody td.is-empty-cell { display: none; }
+  .admin-list-truncate { max-width: none; }
+  .admin-list-pagination { justify-content: center; }
+}
