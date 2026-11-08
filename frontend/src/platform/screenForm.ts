@@ -1,5 +1,5 @@
 import { callBridge, getCapabilities, isAndroidApp } from '../composables/usePlatformBridge.js'
-import { NATIVE_SCREEN_FORM_CAPABILITY } from './nativeBridgeContract.js'
+import { NATIVE_SCREEN_FORM_CAPABILITY, NATIVE_SCREEN_FORM_METHODS } from './nativeBridgeContract.js'
 import { isRecord } from '../types/primitive-guards.js'
 
 /**
@@ -19,7 +19,7 @@ let cached: Promise<ForcedLandscapeDevice> | null = null
 async function detect(): Promise<ForcedLandscapeDevice> {
   if (isAndroidApp()) {
     if (!(await getCapabilities()).includes(NATIVE_SCREEN_FORM_CAPABILITY)) return null
-    const form = await callBridge('getScreenForm')
+    const form = await callBridge(NATIVE_SCREEN_FORM_METHODS.getForm)
     return isRecord(form) && form.phone === true ? 'android-phone-app' : null
   }
   return typeof navigator !== 'undefined' && isIphoneSafari(navigator.userAgent) ? 'iphone-safari' : null
@@ -33,7 +33,7 @@ export function forcedLandscapeDevice(): Promise<ForcedLandscapeDevice> {
 
 /** 只在 Android 手机 App 上有效；其它设备 resolve false。 */
 export async function setNativeLandscapeLock(locked: boolean): Promise<boolean> {
-  return (await forcedLandscapeDevice()) === 'android-phone-app' && (await callBridge('setLandscapeLock', { locked })) === true
+  return (await forcedLandscapeDevice()) === 'android-phone-app' && (await callBridge(NATIVE_SCREEN_FORM_METHODS.setLandscapeLock, { locked })) === true
 }
 
 export function __resetForcedLandscapeDeviceForTest() {

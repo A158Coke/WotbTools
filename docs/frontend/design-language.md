@@ -274,7 +274,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 局部阶梯按下面的概念层序排列，token 见 `tokens/scale.css`：`--pb-z-canvas: 1` → `--pb-z-hud: 5` → `--pb-z-scrim: 6` → `--pb-z-controls: 7` → `--pb-z-transient: 8` → `--pb-z-modal: 9`。
 
-需要越过该局部上下文的顶级浮层（手机底部 sheet、dialog、从工作台内部打开的菜单）必须 Teleport 到 `body`；提高 z-index 不会离开局部层叠上下文，仍会被根层 `AppTabBar` / 侧栏盖住。Teleport 出去的浮层不继承父级的 `display: none` / KeepAlive 停用，父级必须在 capability 隐藏或 `onDeactivated()` 时主动关闭。
+需要越过该局部上下文的顶级浮层（手机底部 sheet、dialog、从工作台内部打开的菜单）必须 Teleport 到 `body`；提高 z-index 不会离开局部层叠上下文，仍会被根层顶栏 / 抽屉 / 侧栏盖住。Teleport 出去的浮层不继承父级的 `display: none` / KeepAlive 停用，父级必须在 capability 隐藏或 `onDeactivated()` 时主动关闭。
 
 ### 遮挡与可达（occlusion / reachability）
 
@@ -387,7 +387,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | DC-FOC-02 | MUST | 键盘 | 主流程键盘能走完；Dialog 关闭后焦点回到触发元素 | 无 | `pnpm run test:browser-interaction` + 人工 |
 | DC-FOC-03 | MUST | sticky / overlay | 不遮住当前焦点元素 | 无 | 人工 |
 | DC-A11-01 | MUST | 语义 | 操作用 `<button>`，导航用 `<a>` / router link；icon-only 按钮有 `aria-label` | 无 | 人工 |
-| DC-A11-05 | MUST | 可见标签 | 可访问名称包含可见文字（WCAG 2.5.3），短标题写成「短标题: 完整名称」，让语音输入能匹配 | 无 | `src/app/AppTabBar.test.js`、`pnpm run test:browser-interaction shell-overlay` |
+| DC-A11-05 | MUST | 可见标签 | 可访问名称包含可见文字（WCAG 2.5.3），短标题写成「短标题: 完整名称」，让语音输入能匹配 | 无 | `pnpm run test:browser-interaction shell-overlay`、`pnpm run test:browser-broadcasts`（导航项可访问名称包含可见文字） |
 | DC-A11-02 | MUST | 表单 | 控件有 `<label>` 或 `aria-label`，不能只靠 placeholder | 无 | 人工 |
 | DC-A11-03 | SHOULD | 异步反馈 | toast、校验、加载结果用 `role="status"` / `role="alert"` 或 `aria-live` 通知 | 无 | 人工 |
 | DC-A11-04 | MUST | 图片 | 有 `alt`（装饰图 `alt=""`）；首屏外图片 `loading="lazy"`；有固有尺寸防抖版 | 无 | 人工 |

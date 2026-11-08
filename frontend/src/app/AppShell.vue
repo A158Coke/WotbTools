@@ -30,6 +30,7 @@ import AppNavDrawer from './AppNavDrawer.vue'
 import AppSidebar from './AppSidebar.vue'
 import GlobalErrorDialog from './GlobalErrorDialog.vue'
 import AppToast from './AppToast.vue'
+import { dismissTransientToasts } from '../composables/useToast.js'
 import NotificationPanel from './NotificationPanel.vue'
 import ConfirmDialogHost from '../components/ConfirmDialogHost.vue'
 import SiteFeedbackDialog from '../components/SiteFeedbackDialog.vue'
@@ -64,6 +65,8 @@ function openNotifications(opener) {
 }
 provide(NOTIFICATIONS_PANEL_KEY, openNotifications)
 watch(isDrawerShell, (drawer) => { if (!drawer) navDrawerOpen.value = false })
+// 切换视图时收起上一页的成功 / 提示 toast（警告 / 错误保留），避免遮住新页面的控件
+watch(() => viewFromRoute(route), () => dismissTransientToasts())
 
 /**
  * 连通性监听在这里启动一次（进程内单例）：Android 壳走系统 ConnectivityManager（Native Bridge），

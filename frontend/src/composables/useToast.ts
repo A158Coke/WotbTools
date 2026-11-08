@@ -91,15 +91,12 @@ export function resumeToast(id: string) {
   startTimer(id, timer.remaining)
 }
 
-export function useToast() {
-  return {
-    toasts,
-    show: showToast,
-    dismiss: dismissToast,
-    success: (title: string, message?: string) => showToast({ tone: 'success', title, message }),
-    info: (title: string, message?: string) => showToast({ tone: 'info', title, message }),
-    error: (title: string, message?: string, action?: ToastAction) => showToast({ tone: 'error', title, message, action }),
-  }
+/**
+ * 换到另一个视图时收起成功 / 提示类 toast：它们属于触发它的那一页（例如回放解析完成），
+ * 带到下一页只会遮住新页面的控件（手机竖屏装甲查看器的「返回」按钮）。警告 / 错误需要用户处理，保留。
+ */
+export function dismissTransientToasts() {
+  for (const toast of toasts.value.filter(item => !item.persistent)) dismissToast(toast.id)
 }
 
 export function __resetToastsForTest() {

@@ -1,5 +1,5 @@
 import { callBridge, getCapabilities, isAndroidApp } from './usePlatformBridge.js'
-import { NATIVE_HAPTICS_CAPABILITY } from '../platform/nativeBridgeContract.js'
+import { NATIVE_HAPTICS_CAPABILITY, NATIVE_HAPTICS_METHODS } from '../platform/nativeBridgeContract.js'
 import { feedbackPrefs } from './useFeedbackPrefs.js'
 
 /**
@@ -27,7 +27,7 @@ function nativeSupported() {
 export async function haptic(kind: HapticKind): Promise<void> {
   if (!feedbackPrefs.value.haptics) return
   if (isAndroidApp()) {
-    if (await nativeSupported()) void callBridge('haptic', { kind })
+    if (await nativeSupported()) void callBridge(NATIVE_HAPTICS_METHODS.haptic, { kind })
     return
   }
   if (typeof navigator === 'undefined' || typeof navigator.vibrate !== 'function') return

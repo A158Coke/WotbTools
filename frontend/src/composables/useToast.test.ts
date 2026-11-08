@@ -5,7 +5,7 @@ const feedback = vi.hoisted(() => ({ haptics: [] as string[], sounds: [] as stri
 vi.mock('./useHaptics.js', () => ({ haptic: async (kind: string) => { feedback.haptics.push(kind) } }))
 vi.mock('./useSound.js', () => ({ playSound: (kind: string) => { feedback.sounds.push(kind); return true } }))
 
-import { __resetToastsForTest, dismissToast, pauseToast, resumeToast, showToast, toasts, TOAST_DURATION_MS, TOAST_LIMIT } from './useToast.js'
+import { __resetToastsForTest, dismissToast, dismissTransientToasts, pauseToast, resumeToast, showToast, toasts, TOAST_DURATION_MS, TOAST_LIMIT } from './useToast.js'
 
 beforeEach(() => { vi.useFakeTimers(); feedback.haptics = []; feedback.sounds = [] })
 afterEach(() => { __resetToastsForTest(); vi.useRealTimers() })
@@ -58,5 +58,13 @@ describe('useToast', () => {
     showToast({ tone: 'info', title: 'i' })
     expect(feedback.haptics).toEqual(['success', 'error'])
     expect(feedback.sounds).toEqual(['success', 'error', 'notice'])
+  })
+
+  it('换视图时只收起成功 / 提示，警告 / 错误保留', () => {
+    showToast({ tone: 'success', title: 'parsed' })
+    showToast({ tone: 'info', title: 'fyi' })
+    showToast({ tone: 'error', title: 'failed' })
+    dismissTransientToasts()
+    expect(toasts.value.map(toast => toast.title)).toEqual(['failed'])
   })
 })

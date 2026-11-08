@@ -6,7 +6,7 @@ import { feedbackPrefs } from './useFeedbackPrefs.js'
  */
 export type SoundKind = 'click' | 'success' | 'error' | 'notice'
 type Tone = { frequency: number, start: number, duration: number }
-export const SOUND_TONES: Record<SoundKind, Tone[]> = Object.freeze({
+const SOUND_TONES: Record<SoundKind, Tone[]> = Object.freeze({
   click: [{ frequency: 880, start: 0, duration: 0.03 }],
   success: [{ frequency: 660, start: 0, duration: 0.06 }, { frequency: 990, start: 0.07, duration: 0.08 }],
   error: [{ frequency: 220, start: 0, duration: 0.16 }],

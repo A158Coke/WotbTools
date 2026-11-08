@@ -35,7 +35,7 @@ export function showConnectivityNotice(availability: ConnectivityNotice | null |
   })
 }
 
-export function closeConnectivityNotice() {
+function closeConnectivityNotice() {
   notice.value = null
   dismissToast(TOAST_ID)
 }

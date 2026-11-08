@@ -4,7 +4,7 @@ import { computed, ref } from 'vue'
  * 本机通知中心（design-language §10「反馈」）：耗时任务完成、新版本可用、提交结果，离开页面后也能找回。
  * 只存本机（`wotb-notifications`，最近 20 条），不做服务端推送。文案存 i18n key + 参数，切换语言后仍正确。
  */
-export const NOTIFICATIONS_STORAGE_KEY = 'wotb-notifications'
+const NOTIFICATIONS_STORAGE_KEY = 'wotb-notifications'
 export const NOTIFICATION_LIMIT = 20
 export type NotificationKind = 'replay-parsed' | 'ai-review' | 'app-update' | 'submission'
 export interface AppNotification {
