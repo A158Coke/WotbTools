@@ -37,6 +37,8 @@ jobs:
       # 上游产物 pin（deploy/agent/source.json）的确定性验证：每个 PR 都重新下载
       # v0.1.6 附件并 sha256 校验——pin 漂移/上游重发布在这里 fail，而不是发布日。
       - name: Fetch upstream agent WASM artifact (release pin, sha256 verified)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: bash scripts/fetch-agent-wasm.sh
       # 完整 HTTP 契约检查归属 Frontend owner（FE 与 BA 同时受影响时唯一执行位置；
       # BA-only 时仍由 ci-business-api.yml 的 http_contract 承担）。
@@ -162,6 +164,8 @@ jobs:
         working-directory: frontend
         run: pnpm install --frozen-lockfile
       - name: Fetch upstream agent WASM artifact (release pin, sha256 verified)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: bash scripts/fetch-agent-wasm.sh
       - name: Real-browser ${{ matrix.gate.label }} regression
         working-directory: frontend
@@ -190,6 +194,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Fetch upstream agent WASM artifact (release pin, sha256 verified)
         id: wasm
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: bash scripts/fetch-agent-wasm.sh
       - name: Real-browser Playback layout regression
         if: ${{ !cancelled() && steps.wasm.outcome == 'success' }}
@@ -245,6 +251,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Fetch upstream agent WASM artifact (release pin, sha256 verified)
         id: wasm
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: bash scripts/fetch-agent-wasm.sh
       # 初始化、选弹、失败重试与销毁生命周期；同样自带夹具资产包，不需要真实资产。
       - name: Real-browser Armor viewer shot readiness regression

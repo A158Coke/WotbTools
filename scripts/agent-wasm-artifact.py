@@ -14,6 +14,7 @@
 调用方：
     scripts/fetch-agent-wasm.sh        ingest  <zip> <ref> <release> <dest>
     scripts/build-agent-wasm.sh        verify  <fingerprint.json> <ref> <release>
+    scripts/fetch-agent-wasm.sh        asset-id <release.json> <tag> <asset-name>  → 打印 Asset ID
     契约自测（fetch-agent-wasm.sh --self-test）  self-test <zip> <workdir>
 """
 from __future__ import annotations
@@ -68,6 +69,30 @@ def verify_fingerprint(path: pathlib.Path, expect_commit: str, expect_tag: str) 
             f"与 source.json artifact.release = {expect_tag!r} 不一致"
         )
     return fingerprint
+
+
+def asset_id(release_json: pathlib.Path, tag: str, name: str) -> int:
+    """从 GitHub Release 元数据解析附件 ID：tag 必须一致，附件名必须恰好命中一个。"""
+    try:
+        data = json.loads(release_json.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise IngestError(f"Release 元数据不可解析: {exc}")
+    if not isinstance(data, dict):
+        raise IngestError("Release 元数据顶层必须是对象")
+    if data.get("tag_name") != tag:
+        raise IngestError(f"Release 元数据 tag_name = {data.get('tag_name')!r}，与 source.json artifact.release = {tag!r} 不一致")
+    assets = data.get("assets")
+    if not isinstance(assets, list):
+        raise IngestError("Release 元数据缺 assets 列表")
+    entries = [a for a in assets if isinstance(a, dict)]
+    matches = [a for a in entries if a.get("name") == name]
+    if len(matches) != 1:
+        names = sorted(str(a.get("name")) for a in entries)
+        raise IngestError(f"Release {tag} 中附件 {name!r} 命中 {len(matches)} 个（现有附件: {names}）")
+    value = matches[0].get("id")
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        raise IngestError(f"附件 {name!r} 的 id 非法: {value!r}")
+    return value
 
 
 def _extract_into(archive: pathlib.Path, dest: pathlib.Path) -> None:
@@ -202,6 +227,8 @@ def main(argv: list[str]) -> int:
         elif command == "verify" and len(argv) == 5:
             verify_fingerprint(pathlib.Path(argv[2]), argv[3], argv[4])
             print(f"fingerprint 校验通过: {argv[4]} @ {argv[3]}")
+        elif command == "asset-id" and len(argv) == 5:
+            print(asset_id(pathlib.Path(argv[2]), argv[3], argv[4]))
         elif command == "self-test" and len(argv) == 4:
             self_test(pathlib.Path(argv[2]), pathlib.Path(argv[3]))
         else:
