@@ -54,7 +54,8 @@ jobs:
           [ -n "$GITEE_TOKEN" ]
           started=$SECONDS
           askpass="$RUNNER_TEMP/gitee-main-askpass.sh"
-          cleanup() { rm -f -- "$askpass"; }
+          errfile="$RUNNER_TEMP/gitee-main-stderr.txt"
+          cleanup() { rm -f -- "$askpass" "$errfile"; }
           trap cleanup EXIT
           umask 077
           cat > "$askpass" <<'EOF'
@@ -68,20 +69,85 @@ jobs:
           chmod 700 "$askpass"
           export GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0
 
-          observed="$(timeout --kill-after=10s 120s git -c credential.helper= \
+          # 重试预算：四次远端操作（Gitee ls-remote、origin ls-remote、push、推送后核验）共用同一个
+          # 截止时间。每次尝试的超时被截到「剩余预算 - 10s」，所以同步脚本最迟在 started+420s 结束，
+          # 加上 checkout 等前置步骤仍低于 job 的 10 分钟上限；预算耗尽直接 fail-closed 并给出诊断。
+          deadline=$((started + 420))
+
+          # 只重试可确认的瞬时网络错误与超时；认证/权限、non-fast-forward 及无法归类的错误一律立即失败。
+          classify_failure() {
+            local rc=$1 text
+            case "$rc" in 124|137) echo retry; return ;; esac
+            text="$(tr '[:upper:]' '[:lower:]' < "$2")"
+            case "$text" in
+              *"authentication failed"*|*"could not read username"*|*"could not read password"*|\
+              *"permission denied"*|*"access denied"*|*"unauthorized"*|*"forbidden"*|\
+              *"returned error: 401"*|*"returned error: 403"*|*"repository not found"*|\
+              *"non-fast-forward"*|*"[rejected]"*|*"[remote rejected]"*|*"fetch first"*|\
+              *"stale info"*|*"pre-receive hook declined"*|*"protected branch"*)
+                echo fatal; return ;;
+              *"connection reset by peer"*|*"connection timed out"*|*"operation timed out"*|\
+              *"could not resolve host"*|*"failed to connect"*|*"recv failure"*|*"send failure"*|\
+              *"the remote end hung up unexpectedly"*|*"early eof"*|*"rpc failed"*|\
+              *"ssl_error_syscall"*|*"tls connection was non-properly terminated"*|\
+              *"gnutls_handshake() failed"*|*"returned error: 502"*|*"returned error: 503"*|\
+              *"returned error: 504"*)
+                echo retry; return ;;
+            esac
+            echo fatal
+          }
+
+          # retry_network <label> <单次超时上限秒> <命令...>：保持命令的 stdout 与退出码不变，
+          # stderr 原样回显（Git 不会输出凭据，凭据只经 GIT_ASKPASS 提供）。
+          retry_network() {
+            local label=$1 cap=$2 attempt=1 rc delay limit remaining
+            local -a backoff=(10 30)
+            shift 2
+            while true; do
+              remaining=$((deadline - SECONDS))
+              if [ "$remaining" -le 20 ]; then
+                echo "gitee_main_sync: $label: retry budget exhausted before attempt $attempt; refusing sync." >&2
+                return 1
+              fi
+              limit=$cap
+              [ "$limit" -le $((remaining - 10)) ] || limit=$((remaining - 10))
+              rc=0
+              timeout --kill-after=10s "${limit}s" "$@" 2>"$errfile" || rc=$?
+              cat "$errfile" >&2
+              [ "$rc" -ne 0 ] || return 0
+              if [ "$(classify_failure "$rc" "$errfile")" != retry ]; then
+                echo "gitee_main_sync: $label: non-retryable failure (exit $rc); refusing sync." >&2
+                return "$rc"
+              fi
+              delay=${backoff[$((attempt - 1))]:-}
+              if [ "$attempt" -ge 3 ] || [ -z "$delay" ]; then
+                echo "gitee_main_sync: $label: still failing after $attempt attempts (exit $rc); refusing sync." >&2
+                return "$rc"
+              fi
+              if [ $((deadline - SECONDS)) -le $((delay + 20)) ]; then
+                echo "gitee_main_sync: $label: retry budget exhausted after $attempt attempts (exit $rc); refusing sync." >&2
+                return "$rc"
+              fi
+              echo "gitee_main_sync: $label: attempt $attempt failed (exit $rc); retrying in ${delay}s." >&2
+              sleep "$delay"
+              attempt=$((attempt + 1))
+            done
+          }
+
+          observed="$(retry_network "gitee ls-remote" 60 git -c credential.helper= \
             ls-remote --refs "$GITEE_REPO_URL" refs/heads/main)"
           if [ -n "$observed" ]; then
             [[ "$observed" =~ ^[0-9a-f]{40}$'\t'refs/heads/main$ ]]
           fi
           # 排队旧事件不能倒退 main；普通 push 只允许创建或 fast-forward，分叉需人工恢复。
-          current="$(timeout --kill-after=10s 120s git ls-remote --refs origin refs/heads/main)"
+          current="$(retry_network "github ls-remote" 60 git ls-remote --refs origin refs/heads/main)"
           [ "$current" = "$SOURCE_SHA"$'\t'refs/heads/main ] || {
             echo "Source event is no longer current GitHub main; refusing sync." >&2
             exit 1
           }
-          timeout --kill-after=10s 120s git -c credential.helper= -c push.followTags=false push \
+          retry_network "gitee push" 120 git -c credential.helper= -c push.followTags=false push \
             "$GITEE_REPO_URL" "$SOURCE_SHA:refs/heads/main"
-          actual="$(timeout --kill-after=10s 120s git -c credential.helper= \
+          actual="$(retry_network "gitee verify" 60 git -c credential.helper= \
             ls-remote --refs "$GITEE_REPO_URL" refs/heads/main)"
           [ "$actual" = "$SOURCE_SHA"$'\t'refs/heads/main ] || {
             echo "Gitee main does not equal the reviewed event SHA." >&2
