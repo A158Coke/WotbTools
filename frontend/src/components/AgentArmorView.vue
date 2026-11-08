@@ -810,8 +810,9 @@ onBeforeUnmount(() => {
         <div id="shot-replay-error" role="alert" aria-live="assertive" style="display:none;"></div>
         <div id="turret-controls">
             <div v-if="!isShotPage && !cleanQuery" class="armor-camera-presets" role="group" :aria-label="$t('armor.camera_presets')">
-                <button type="button" class="armor-scene-button" data-testid="armor-camera-front" :disabled="load.state !== 'ready'" @click="viewer?.setCameraPreset?.('front')">{{ $t('armor.camera_front') }}</button>
-                <button type="button" class="armor-scene-button" data-testid="armor-camera-hull-down" :disabled="load.state !== 'ready'" @click="viewer?.setCameraPreset?.('hull_down')">{{ $t('armor.camera_hull_down') }}</button>
+                <!-- preserveView：预设只换观察方向，不动用户平移出的旋转中心（0x5f3759df 反馈） -->
+                <button type="button" class="armor-scene-button" data-testid="armor-camera-front" :disabled="load.state !== 'ready'" @click="viewer?.setCameraPreset?.('front', { preserveView: true })">{{ $t('armor.camera_front') }}</button>
+                <button type="button" class="armor-scene-button" data-testid="armor-camera-hull-down" :disabled="load.state !== 'ready'" @click="viewer?.setCameraPreset?.('hull_down', { preserveView: true })">{{ $t('armor.camera_hull_down') }}</button>
             </div>
             <div class="ctrl-row"><label>{{ $t('armor.turret') }}</label><span id="turret-val">0°</span></div>
             <div class="ctrl-row"><label>{{ $t('armor.gun') }}</label><span id="gun-val">0°</span></div>

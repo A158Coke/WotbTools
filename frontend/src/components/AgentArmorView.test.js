@@ -482,7 +482,11 @@ describe('armor camera actions', () => {
     scene.setCameraPreset = vi.fn()
     await wrapper.get('[data-testid="armor-camera-front"]').trigger('click')
     await wrapper.get('[data-testid="armor-camera-hull-down"]').trigger('click')
-    expect(scene.setCameraPreset.mock.calls).toEqual([['front'], ['hull_down']])
+    // preserveView：预设只换观察方向，不接管用户的旋转中心/距离。
+    expect(scene.setCameraPreset.mock.calls).toEqual([
+      ['front', { preserveView: true }],
+      ['hull_down', { preserveView: true }],
+    ])
     expect(router.currentRoute.value.query).toEqual({ view: 'agent-armor', tank: '15153' })
     expect(scenes).toHaveLength(1)
     scene.options.onLoadState({ state: 'loading' })

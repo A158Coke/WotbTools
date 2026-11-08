@@ -557,6 +557,26 @@ onMounted(() => {
   }
   .tt-tabs::-webkit-scrollbar { display: none; }
   .tt-tab { flex: 0 0 auto; }
+  /* 竖屏行形态密度（用户反馈 2026-11-08：小屏要能近览整树）：176×64 卡一行只容 2 张、
+     每屏约 2 个等级；压到 92×48（图标盒按 97×60 等比 0.45 居中）一行 3 张、行距收紧后
+     每屏约 8–9 个等级。横屏手机走网格形态，这些规则不命中。触控下限 44px 由
+     browser-techtree-layout 门禁锁定。 */
+  .tt-tier-cell .tt-card {
+    inline-size: 92px;
+    block-size: 48px;
+    display: grid;
+    place-items: center;
+  }
+  .tt-tier-cell .tt-card-icon {
+    position: static;
+    inset: auto;
+    inline-size: 43.65px;
+    block-size: 27px;
+  }
+  .tt-tiers { gap: var(--space-1); }
+  .tt-tier-row { grid-template-columns: 28px minmax(0, 1fr); }
+  .tt-tier-label { font: var(--type-caption); }
+  .tt-tier-cards { padding-block: 2px; }
 }
 
 /* 矮视口（手机横屏等）：页头描述让位给树；标题与「坦克百科」按钮保持一行，

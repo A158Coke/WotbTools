@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Euler, Matrix4, Vector3 } from 'three'
-import { armorCameraPreset, armorPresetGunPitch } from './cameraPresets'
+import { armorCameraPreset, armorPresetGunPitch, armorPresetViewPlacement } from './cameraPresets'
 import EUROPEAN from '../../replay-local/compute/__fixtures__/modules/european.json'
 import { pitchAtBearing } from '../../replay-local/compute/tankSetup'
 
@@ -46,5 +46,36 @@ describe('armor camera presets', () => {
     expect(pose.target.distanceTo(breech)).toBeCloseTo(0)
     expect(pose.position.clone().sub(breech).normalize().distanceTo(muzzle.sub(breech).normalize())).toBeCloseTo(0)
     expect(world.equals(before)).toBe(true)
+  })
+})
+
+describe('armor preset view placement', () => {
+  const world = new Matrix4().makeRotationX(-Math.PI / 2)
+  const gunLine = () => armorCameraPreset(pivot, world, 15)
+
+  it('keeps the user pivot and distance, only adopting the gun-line direction', () => {
+    const pose = gunLine()
+    const prevTarget = new Vector3(0.4, 1.9, 0.2)
+    const prevCamera = new Vector3(0.4, 1.6, -7)
+    const placement = armorPresetViewPlacement(prevTarget, prevCamera, pose)
+    const userDistance = prevCamera.distanceTo(prevTarget)
+    expect(placement.target.equals(prevTarget)).toBe(true)
+    expect(placement.position.distanceTo(prevTarget)).toBeCloseTo(userDistance)
+    const gunDirection = pose.position.clone().sub(pose.target).normalize()
+    expect(placement.position.clone().sub(prevTarget).normalize().distanceTo(gunDirection)).toBeCloseTo(0)
+  })
+
+  it('degenerate orbit offset adopts the preset distance instead of collapsing the camera', () => {
+    const pose = gunLine()
+    const prevTarget = new Vector3(1, 2, 3)
+    const placement = armorPresetViewPlacement(prevTarget, prevTarget.clone(), pose)
+    expect(placement.target.distanceTo(prevTarget)).toBeCloseTo(0)
+    expect(placement.position.distanceTo(prevTarget)).toBeCloseTo(15)
+  })
+
+  it('zero-length preset direction falls back to the full preset pose', () => {
+    const pose = { target: new Vector3(1, 2, 3), position: new Vector3(1, 2, 3) }
+    const placement = armorPresetViewPlacement(new Vector3(), new Vector3(0, 0, -5), pose)
+    expect(placement).toBe(pose)
   })
 })

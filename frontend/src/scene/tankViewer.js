@@ -31,7 +31,7 @@ import { createLoadProgress } from './loadProgress.js'
 import { shotResultClass } from '../utils/shotResultClass.js'
 import { isCompactShotResultCard, shotResultCardMaxWidth as resultCardMaxWidth, shotResultCardMetrics } from '../utils/shotResultCardMetrics.js'
 import { renderShotResultCardHtml } from './viewer/shotResultCard.js'
-import { armorCameraPreset, armorPresetGunPitch } from './viewer/cameraPresets.js'
+import { armorCameraPreset, armorPresetGunPitch, armorPresetViewPlacement } from './viewer/cameraPresets.js'
 import { createShotTrajectoryGroup, trajectoryChanceColor } from './viewer/shotTrajectoryGeometry.js'
 import {
     RC,
@@ -2500,7 +2500,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             reportDistance();
             return true;
         }
-        function setCameraPreset(kind) {
+        function setCameraPreset(kind, { preserveView = false } = {}) {
             if (destroyed || contextLost || !tankModel || !armorModel || QP.get('shot')) return false;
             if (kind !== 'front' && kind !== 'hull_down') return false;
             const pitch = currentConfig()?.pitch_limits;
@@ -2516,8 +2516,13 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const damping = controls.enableDamping;
             controls.enableDamping = false;
             controls.update();
-            controls.target.copy(pose.target);
-            camera.position.copy(pose.position);
+            // 按钮（preserveView）只换观察方向：旋转中心与距离归用户，平移/缩放不被重置；
+            // URL 首载路径没有用户取景，仍由预设完整摆位。
+            const placement = preserveView
+                ? armorPresetViewPlacement(controls.target, camera.position, pose)
+                : pose;
+            controls.target.copy(placement.target);
+            camera.position.copy(placement.position);
             controls.update();
             controls.enableDamping = damping;
             document.getElementById('turret-val').textContent = '0°';
