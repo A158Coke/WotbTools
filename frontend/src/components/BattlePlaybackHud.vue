@@ -17,7 +17,7 @@ const props = defineProps({
   friendlyTeam: { type: Number, default: null },
   // seek/恢复帧不补播 HP 伤害动画（与单车 hpNoTransition 同源，父组件传入）。
   hpNoTransition: { type: Boolean, default: false },
-  /** 手机横屏：地图名隐藏，时钟 / 基地并入中列，整个 HUD 只占一行（把高度让给正方形地图）。 */
+  /** 手机横屏：地图名与时钟 / 比分同排并入中列，整个 HUD 只占一行（把高度让给正方形地图）。 */
   compact: { type: Boolean, default: false },
 })
 
@@ -116,6 +116,7 @@ const baseViews = computed(() => props.baseStates.map((state) => baseView(state,
     </div>
 
     <div v-if="hasPoints() || props.compact" class="pb-hud-center pb-hud-column-center" data-test="pb-hud-center">
+      <span v-if="props.compact && props.showSummary && props.mapTitle" class="pb-hud-map" data-test="pb-hud-map">{{ props.mapTitle }}</span>
       <div v-if="props.compact && (props.baseStates.length || $slots.bases)" class="pb-hud-bases" data-test="pb-hud-bases">
         <slot name="bases"><BaseStatusBar :bases="baseViews" compact /></slot>
       </div>
@@ -187,7 +188,16 @@ const baseViews = computed(() => props.baseStates.map((state) => baseView(state,
 }
 /* 紧凑单行：己方 值+血条 │ 基地 / 时钟 / 比分 │ 敌方 血条+值。 */
 .pb-hud-compact { gap: 0; padding-block: var(--space-1); }
-.pb-hud-compact .pb-hud-grid { gap: var(--space-2); }
+/* 667px 横屏：8px 中列间隙会把两侧血条压到 39.7px；4px 让单行 HUD 在最小手机横屏仍 ≥40px。 */
+.pb-hud-compact .pb-hud-grid { gap: var(--space-1); }
+.pb-hud-compact .pb-hud-map {
+  display: inline-block;
+  max-inline-size: 12ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
 .pb-hud-compact .pb-hud-team { grid-template-columns: auto minmax(0, 1fr); gap: var(--space-2); }
 .pb-hud-compact .pb-hud-value { grid-row: 1; grid-column: 1; justify-self: start; white-space: nowrap; overflow-wrap: normal; }
 .pb-hud-compact .pb-hud-track { grid-row: 1; grid-column: 2; }

@@ -764,6 +764,7 @@ const ROSTER_GEOMETRY_SCENARIOS = [
   { name: 'roster-geometry-375x812-portrait-coarse', width: 375, height: 812, touch: true, players: 7, unknown: 0, killfeed: 3, layout: 'portrait' },
   { name: 'roster-geometry-390x844-portrait-coarse', width: 390, height: 844, touch: true, players: 7, unknown: 2, killfeed: 3, layout: 'portrait' },
   { name: 'roster-geometry-740x360-landscape-coarse', width: 740, height: 360, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side' },
+  { name: 'roster-geometry-740x360-fullscreen-coarse', width: 740, height: 360, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', fullscreen: true },
   { name: 'roster-geometry-844x390-landscape-coarse', width: 844, height: 390, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side' },
   { name: 'roster-geometry-844x390-fullscreen-coarse', width: 844, height: 390, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', fullscreen: true },
   { name: 'roster-geometry-portrait-to844x390-coarse', width: 390, height: 844, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', rotateTo: { width: 844, height: 390 } },
@@ -870,6 +871,12 @@ function rosterGeometryProbe() {
       } else {
         out.errors.push('floating: .pb-stage missing')
       }
+      // 距离滑条与 FPS 角标都曾停右下角；手机横屏把 FPS 让到左下，二者不得互相遮挡。
+      const fpsBox = root.querySelector('[data-testid="replay3d-fps"]')?.getBoundingClientRect()
+      const distBox = root.querySelector('[data-testid="scene-distance-slider"]')?.getBoundingClientRect()
+      if (fpsBox && distBox && fpsBox.left < distBox.right && distBox.left < fpsBox.right && fpsBox.top < distBox.bottom && distBox.top < fpsBox.bottom) {
+        out.errors.push('floating: FPS badge overlaps the distance slider')
+      }
       // ② 名册车道必须落在 **root 工作区**内（root 系坐标，与页面滚动无关——
       //    workspace 场景本身可被页面滚过标题栏），且不与对侧重叠
       const inRoot = (b) => b.left >= rr.left - 0.5 && b.right <= rr.right + 0.5 && b.top >= rr.top - 0.5 && b.bottom <= rr.bottom + 0.5
@@ -909,15 +916,27 @@ function rosterGeometryProbe() {
       } else if (!inRoot(controls)) {
         out.errors.push(`floating: transport controls outside the workspace: ${JSON.stringify([Math.round(controls.left - rr.left), Math.round(controls.top - rr.top), Math.round(controls.width), Math.round(controls.height)])}`)
       }
-      // ⑤ 全屏语义：root 即全屏元素（由 usePlaybackFullscreen 保证 enter/exit 不重建）
+      // ⑤ 手机横屏：3D 工作台根必须去边框/圆角并横向贴边（safe-area 由共享规则负责）。
+      //    页面 .wrap 的 gutter 不能留在场景两侧，否则“沉浸态”仍浪费一圈像素。
+      if (out.phone && out.side && !transient) {
+        const cs = getComputedStyle(root)
+        const borders = ['borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth']
+          .reduce((sum, key) => sum + (parseFloat(cs[key]) || 0), 0)
+        if (borders > 0.5) out.errors.push(`phone landscape: scene frame border must be 0, got ${borders}px`)
+        if ((parseFloat(cs.borderTopLeftRadius) || 0) > 0.5) {
+          out.errors.push(`phone landscape: scene frame radius must be 0, got ${cs.borderTopLeftRadius}`)
+        }
+        if (rr.left > 1 || rr.right < window.innerWidth - 1) {
+          out.errors.push(`phone landscape: scene must reach viewport edges, got ${Math.round(rr.left)}..${Math.round(rr.right)} of ${window.innerWidth}`)
+        }
+      }
+      // ⑥ 全屏语义：root 即全屏元素（由 usePlaybackFullscreen 保证 enter/exit 不重建）
       out.floatingChecked = true
     }
   }
-  // 手机形态：全屏入口是右上角浮动按钮（SceneFullscreenButton），传输条不再重复渲染
-  // （floatingFullscreen 契约）——传输条主控件为 5 个 + 浮动全屏按钮单独断言位置。
-  const primaryIds = out.phone
-    ? ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-secondary-entry']
-    : ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']
+  // 手机形态：全屏入口内联在传输条（旧版右上浮动按钮会压住敌方第一行 / 血量数字）。
+  // 只有隐藏全部 UI 时浮动入口才作为唯一可达入口出现，由 uiHidden 场景单独断言。
+  const primaryIds = ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']
   const transportControls = root.querySelector('.pb-controls')
   const primary = primaryIds.map((id) => transportControls && transportControls.querySelector(`[data-test="${id}"]`))
   if (primary.some((element) => !element)) out.errors.push('shared primary controls must be present in transport')
@@ -931,15 +950,11 @@ function rosterGeometryProbe() {
     if (out.phone && boxes.some((box) => Math.min(box.width, box.height) < 43.5)) out.errors.push('primary touch targets must be at least 44px')
   }
   if (out.phone) {
-    const floating = root.querySelector('[data-test="pb-fullscreen"]')
-    if (!floating) out.errors.push('phone: floating fullscreen button missing')
-    else {
-      const fr = floating.getBoundingClientRect()
-      const rr = root.getBoundingClientRect()
-      if (Math.abs(fr.right - rr.right) > 12 || Math.abs(fr.top - rr.top) > 12) {
-        out.errors.push(`phone: fullscreen button not top-right floating: ${JSON.stringify([Math.round(fr.top - rr.top), Math.round(rr.right - fr.right)])}`)
-      }
-    }
+    const inline = transportControls && transportControls.querySelector('[data-test="pb-fullscreen"]')
+    if (!inline || inline.getClientRects().length === 0) out.errors.push('phone: inline fullscreen entry missing from transport')
+    // 内联入口与右上浮动入口互斥：同一时刻只允许一个可见全屏入口，避免浮钮再次压住敌方首行。
+    const entries = root.querySelectorAll('[data-test="pb-fullscreen"]')
+    if (entries.length !== 1) out.errors.push(`phone: expected exactly one fullscreen entry, got ${entries.length}`)
   }
   out.laneWidths = ['.side-left', '.side-right'].map((selector) => root.querySelector(selector)?.getBoundingClientRect().width ?? 0)
   // center 列宽：HUD 占满整列，直接量它的盒。
@@ -1311,12 +1326,10 @@ async function waitForStableLayout(page, { timeout = 10_000 } = {}) {
 }
 
 async function check3DDrawingSurface(page, failures, scenario, viewport) {
-  // 手机形态：全屏入口在右上角浮动（floatingFullscreen 契约），传输条 5 控件。
+  // 手机形态：全屏入口内联在传输条（右上浮动按钮已移除），传输条 6 个主控件。
   // touch 由调用方经 page.callWith 显式传入（probe 在页面内执行，无 Node 闭包）。
   const probe = (touch) => {
-    const ids = touch
-      ? ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-secondary-entry']
-      : ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']
+    const ids = ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']
     const controls = document.querySelector('.pb-controls')
     const els = ids.map((id) => controls && controls.querySelector('[data-test="' + id + '"]'))
     const boxes = els.map((el) => el && el.getBoundingClientRect()).filter(Boolean)
@@ -1359,7 +1372,7 @@ async function check3DDrawingSurface(page, failures, scenario, viewport) {
   check(failures, compactBar ? !before.toolRow : before.toolRow, label + ': tool-row belongs to the controls only in wide forms')
   check(failures, !before.inTransport && !before.entryInTransport, label + ': Drawing entry must live outside the shared transport')
   check(failures, !before.entryInDisplay, label + ': Drawing is a creation tool, not a Display preference')
-  const expectedPrimary = scenario.touch ? 5 : 6
+  const expectedPrimary = 6
   check(failures, before.transport.order.length === expectedPrimary && before.transport.oneRow,
     label + ': shared primary controls must stay in x-order on one row before Drawing')
   if (!before.entry) return
@@ -1584,7 +1597,7 @@ async function runRosterGeometryScenario(env, scenario) {
   await page.evaluate('window.scrollTo(0, 0)')
   await waitForStableLayout(page)
   const geometry = await page.probe(rosterGeometryProbe)
-  if (scenario.name === 'roster-geometry-844x390-fullscreen-coarse') {
+  if (scenario.name.endsWith('-fullscreen-coarse')) {
     const slider = await page.probe(() => {
       const el = document.querySelector('[data-testid="scene-distance-slider"]')
       const fs = document.querySelector('[data-test="pb-fullscreen"]')
@@ -3234,6 +3247,7 @@ const WORKSPACE_2D_SCENARIOS = [
   // 外壳让出 104px、传输条合成一行、HUD 一行后的预算，留 ~6% 余量）。
   { name: 'ws2d-667x375-landscape-coarse', width: 667, height: 375, touch: true, layout: 'lanes', minMap: 270 },
   { name: 'ws2d-740x360-landscape-coarse', width: 740, height: 360, touch: true, layout: 'lanes', minMap: 260 },
+  { name: 'ws2d-740x360-fullscreen-coarse', width: 740, height: 360, touch: true, layout: 'lanes', fullscreen: true, minMap: 260 },
   { name: 'ws2d-844x390-landscape-coarse', width: 844, height: 390, touch: true, layout: 'lanes', minMap: 290 },
   { name: 'ws2d-844x390-landscape-recorder-team2', width: 844, height: 390, touch: true, layout: 'lanes', recorder: 2, minMap: 290 },
   { name: 'ws2d-844x390-fullscreen-coarse', width: 844, height: 390, touch: true, layout: 'lanes', fullscreen: true, minMap: 290 },
@@ -3283,9 +3297,11 @@ function workspace2dProbe(touch = false) {
   }
   const buttons = [...document.querySelectorAll('.pb-controls > .pb-btn, .pb-controls > * > .pb-btn, .pb-controls .pb-btn')]
     .filter((b) => b.getClientRects().length && !b.closest('.pb-speed-menu'))
-  // 手机形态：全屏入口在右上角浮动（floatingFullscreen 契约），传输条 5 控件。
+  // 手机横屏：全屏入口内联在传输条（右上浮动按钮已移除），与桌面同一组 6 个主控件。
+  // 手机竖屏仍保留 HUD 右上角的浮动全屏入口（不压纵向流的名单），传输条只有 5 个主控件。
   // touch 由调用方经 page.callWith 显式传入（probe 在页面内执行，无 Node 闭包）。
-  const primaryIds = touch
+  const phoneLandscape = !!root?.classList.contains('pb-phone-landscape')
+  const primaryIds = touch && !phoneLandscape
     ? ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-secondary-entry']
     : ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']
   const primary = primaryIds
@@ -3298,6 +3314,8 @@ function workspace2dProbe(touch = false) {
     height: innerHeight,
     fullscreen: !!document.fullscreenElement,
     rootClass: root?.className || '',
+    phoneLandscape,
+    primaryIds,
     hud: box(document.querySelector('.pb-hud')),
     pageOverflowX: document.documentElement.scrollWidth > innerWidth + 1,
     main: box(main),
@@ -3320,14 +3338,11 @@ function workspace2dProbe(touch = false) {
     primaryBoxes: primary,
     primaryOrder: [...document.querySelectorAll('.pb-controls button[data-test]')].map((b) => b.dataset.test)
       .filter((id) => primaryIds.includes(id)),
-    floatingFullscreenTopRight: (() => {
-      if (!touch) return null
-      const floating = document.querySelector('[data-test="pb-fullscreen"]')
-      const rootBox = root?.getBoundingClientRect()
-      if (!floating || !rootBox) return false
-      const r = floating.getBoundingClientRect()
-      return Math.abs(r.right - rootBox.right) <= 12 && Math.abs(r.top - rootBox.top) <= 12
+    fullscreenInline: (() => {
+      const inlineFs = document.querySelector('.pb-controls [data-test="pb-fullscreen"]')
+      return !!inlineFs && inlineFs.getClientRects().length > 0
     })(),
+    fullscreenCount: document.querySelectorAll('[data-test="pb-fullscreen"]').length,
     primaryMinSide: Math.min(...primary.filter(Boolean).map((b) => Math.min(b.w, b.h))),
     buttonCount: buttons.length,
     layout: ['.battle-playback', '.pb-hud', '.pb-main', '.pb-map-stage', '.pb-map', '.pb-transport-slot', '.pb-mobile-overlay', '.pb-mobile-overlay-content', '.pb-team-lane-left', '[data-test="pb-roster-row"]'].map((selector) => {
@@ -3653,11 +3668,17 @@ async function runWorkspace2DScenario(env, scenario) {
   // 标记共用这一个画框），与 1:1 的差 < 1%——拉成严格 1:1 反而会把地图拉伸变形。
   const squareish = (b) => b && b.w > 0 && Math.abs(b.w - b.h) <= Math.max(1.5, b.w * 0.01)
   check(failures, squareish(g.map), `Stage is not square: ${JSON.stringify(g.map)}`)
-  check(failures, JSON.stringify(g.primaryOrder) === JSON.stringify(scenario.touch
-    ? ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-secondary-entry']
-    : ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']),
+  check(failures, JSON.stringify(g.primaryOrder) === JSON.stringify(g.primaryIds),
     `primary controls DOM order: ${JSON.stringify(g.primaryOrder)}`)
-  if (scenario.touch) check(failures, g.floatingFullscreenTopRight === true, 'phone: floating fullscreen button missing or not top-right')
+  if (scenario.touch) {
+    if (g.phoneLandscape) {
+      check(failures, g.fullscreenInline === true, 'phone landscape: fullscreen entry must be inline in transport')
+      check(failures, g.fullscreenCount === 1, `phone landscape: expected exactly one fullscreen entry, got ${g.fullscreenCount}`)
+    } else {
+      check(failures, g.fullscreenInline === false, 'phone portrait: fullscreen entry must stay a floating HUD button')
+      check(failures, g.fullscreenCount === 1, `phone portrait: expected exactly one fullscreen entry, got ${g.fullscreenCount}`)
+    }
+  }
   check(failures, g.primaryBoxes.every((box) => box)
     && g.primaryBoxes.every((box, index) => index === 0 || box.l >= g.primaryBoxes[index - 1].r - 1),
     'primary controls must preserve their x-order')
@@ -3695,9 +3716,9 @@ async function runWorkspace2DScenario(env, scenario) {
     }
     console.log(`[browser-interaction] ${scenario.name} map=${Math.round(g.map?.w)}x${Math.round(g.map?.h)} hud=${Math.round(g.hud?.h)} transport=${Math.round(g.transport?.h)}`)
   }
-  // 手机五项、桌面六项均同一行；手机全屏入口独立浮动。
+  // 手机横屏 / 桌面：六项同一行（全屏入口内联）；手机竖屏：五项同一行（全屏浮在 HUD）。
   const tops = g.primaryTops.filter((t) => t != null)
-  check(failures, tops.length === (scenario.touch ? 5 : 6) && Math.max(...tops) - Math.min(...tops) <= 1,
+  check(failures, tops.length === g.primaryIds.length && Math.max(...tops) - Math.min(...tops) <= 1,
     `primary controls are not one row: ${JSON.stringify(g.primaryTops)}`)
   if (scenario.touch) {
     check(failures, g.primaryMinSide >= 43.5, `primary control below 44px: ${g.primaryMinSide}`)

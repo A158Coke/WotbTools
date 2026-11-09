@@ -1040,10 +1040,10 @@ const mapStyle = computed(() => ({
 
 <template>
   <div v-if="image && playback" ref="pbRoot" class="battle-playback playback-workspace" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-phone-landscape': phoneLandscape, 'pb-controls-bottom': true, 'pb-roster-lanes': rosterLanes, ['pb-form-' + formFactor]: true }" :style="mapStyle" data-scene-surface data-test="battle-playback">
-    <!-- 移动端全屏入口统一右上角浮动（与 Map Preview 3D / Replay 3D 同一组件同一位置）；
-         传输条里的内联按钮在手机形态由 floatingFullscreen 隐藏，桌面保持原位。 -->
+    <!-- 移动端全屏入口：竖屏保持右上角浮动（与 Map Preview 3D / Replay 3D 同一位置）；
+         手机横屏并入传输条，浮动按钮只在隐藏全部 UI 时作为唯一可达入口出现。 -->
     <SceneFullscreenButton
-      v-if="isMobileDevice && fullscreenSupported"
+      v-if="isMobileDevice && fullscreenSupported && (!phoneLandscape || uiHidden)"
       floating
       :is-fullscreen="isFullscreen"
       data-test="pb-fullscreen"
@@ -1072,7 +1072,7 @@ const mapStyle = computed(() => ({
            两侧车道只在「名册开着 且 非手机竖屏」时存在；关掉名册两侧整体消失，
            Stage 依然居中且保持正方形（绝不被拉宽填满）。 -->
       <div v-if="rosterLanes" class="pb-team-lane pb-team-lane-left" data-test="pb-team-lane-left" :aria-label="$t('recon.map.team_friendly')">
-        <PlaybackRoster :gun-marks="gunMarks" :teams="rosterTeams.left" :friendly-team="friendlyTeam" :destroyed="destroyedNow" :health="rosterHealth" :reload="rosterReload" :selected-id="selectedAccountId" :compact="formFactor === 'mobile'" @select="selectFromRoster" />
+        <PlaybackRoster :gun-marks="gunMarks" :teams="rosterTeams.left" :friendly-team="friendlyTeam" :destroyed="destroyedNow" :health="rosterHealth" :reload="rosterReload" :selected-id="selectedAccountId" :compact="formFactor === 'mobile'" :dense="phoneLandscape" @select="selectFromRoster" />
       </div>
       <div class="pb-map-stage" ref="mapStageEl">
         <BattleMap
@@ -1151,7 +1151,7 @@ const mapStyle = computed(() => ({
       />
 
       <div v-if="rosterLanes" class="pb-team-lane pb-team-lane-right" data-test="pb-team-lane-right" :aria-label="$t('recon.map.team_enemy')">
-        <PlaybackRoster :gun-marks="gunMarks" :teams="rosterTeams.right" :friendly-team="friendlyTeam" :destroyed="destroyedNow" :health="rosterHealth" :reload="rosterReload" :selected-id="selectedAccountId" :compact="formFactor === 'mobile'" @select="selectFromRoster" />
+        <PlaybackRoster :gun-marks="gunMarks" :teams="rosterTeams.right" :friendly-team="friendlyTeam" :destroyed="destroyedNow" :health="rosterHealth" :reload="rosterReload" :selected-id="selectedAccountId" :compact="formFactor === 'mobile'" :dense="phoneLandscape" @select="selectFromRoster" />
       </div>
 
       <PlaybackMobileOverlay v-if="!uiHidden" ref="mobileOverlay" :paused="!playing">
@@ -1170,7 +1170,7 @@ const mapStyle = computed(() => ({
           :duration="duration"
           :fullscreen-supported="fullscreenSupported"
           :is-fullscreen="isFullscreen"
-          :floating-fullscreen="isMobileDevice"
+          :floating-fullscreen="isMobileDevice && !phoneLandscape"
           :display-open="displayOpen"
           :annotation-enabled="phoneLandscape && !annotationOpen"
           :nav-eligible="active && lifecycleVisible && !compactAnnotation"

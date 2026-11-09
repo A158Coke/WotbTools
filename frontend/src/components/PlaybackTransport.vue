@@ -186,6 +186,8 @@ const total = computed(() => Number(props.duration) - Number(props.startTime))
 }
 
 .pb-play-btn { min-inline-size: calc(var(--control-h-md) + var(--space-3)); border-color: var(--color-accent); background: var(--color-accent); color: var(--color-on-accent); }
+/* 手机形态不再额外加宽播放键：命中区仍是 --control-h-md（触屏 44），六个动作更紧凑。 */
+.pb-controls.phone-form .pb-play-btn { min-inline-size: var(--control-h-md); }
 .pb-btn:hover:not(:disabled) { border-color: var(--color-border-strong); }
 .pb-play-btn:hover:not(:disabled) { filter: brightness(1.08); }
 

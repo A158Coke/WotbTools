@@ -36,12 +36,14 @@ describe('BattlePlaybackHud', () => {
     expect(wrapper.find('[data-test="pb-hp-fill-friendly"]').attributes('style')).toContain('width: 50.0%')
   })
 
-  it('compact（手机横屏）一行：不渲染地图名，时钟与比分并入中列', () => {
+  it('compact（手机横屏）单行：地图名、时钟与比分并入中列', () => {
     const wrapper = mountHud({ mapTitle: 'Canal', battleTime: '03:20', compact: true })
 
     expect(wrapper.find('[data-test="pb-hud-meta"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="pb-hud-map"]').exists()).toBe(false)
+    // 单行 HUD 仍要保留任务要求的地图名（旧断言要求隐藏；新布局改为塞进中列）
+    expect(wrapper.get('[data-test="pb-hud-map"]').text()).toBe('Canal')
     const center = wrapper.get('[data-test="pb-hud-center"]')
+    expect(center.get('[data-test="pb-hud-map"]').text()).toBe('Canal')
     expect(center.get('[data-test="pb-hud-time"]').text()).toBe('03:20')
     expect(center.get('[data-test="pb-hud-score"]').text()).toBe('3 : 1')
     expect(wrapper.find('[data-test="pb-hud-friendly"]').exists()).toBe(true)

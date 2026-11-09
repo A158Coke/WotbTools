@@ -108,11 +108,15 @@ function reachabilitySelfTestHtml() {
 function fixtureHtml(scenario) {
   const fullscreen = !!scenario.fullscreen
   const lanes = !['mobile', 'raster', 'true-position'].includes(scenario.check)
+  // 手机横屏在真实宿主里还会带 pb-phone-landscape（PlaybackWorkspace 的 phoneLandscape）。
+  // 夹具必须带上同一个类，才能真正量到手机横屏的窄车道规则，而不是继续量桌面 2fr/6fr/2fr。
+  const phoneLandscape = scenario.form === 'mobile' && scenario.width > scenario.height
   const rootClasses = [
     'battle-playback',
     'playback-workspace',
     `pb-form-${scenario.form}`,
     lanes ? 'pb-roster-lanes' : '',
+    phoneLandscape ? 'pb-phone-landscape' : '',
     fullscreen ? 'pb-test-fullscreen' : '',
     scenario.sideSlots ? 'pb-side-slots' : '',
   ].filter(Boolean).join(' ')
@@ -698,7 +702,7 @@ try {
     if (result.failures.length) {
       throw new Error(`${scenario.name}:\n- ${result.failures.join('\n- ')}`)
     }
-    geometryByName.set(scenario.name, result.metrics)
+    geometryByName.set(scenario.name, { ...result.metrics, phoneLandscape: scenario.form === 'mobile' && scenario.width > scenario.height })
     console.log(`[browser-layout] ${scenario.name} OK (${result.width}x${result.height})${result.metrics ? ` ${JSON.stringify(result.metrics)}` : ''}`)
   }
   const tablet = geometryByName.get('tablet-1024x768')
@@ -715,7 +719,10 @@ try {
   // 用比例 / 恒等式而不是像素宽度做验收：断点只决定形态，尺寸由 fr 连续决定，
   // 所以「center 相对 lane 有多宽」才是要锁的契约，具体 px 会随视口自由变化。
   const LANE_GAP_PX = 8 // --space-2：三栏之间的 gutter，由 --space-* token 决定
-  const ROSTER_MIN_PX = 9 * 16 // --pb-roster-min（窄档 fallback 的下限）
+  const ROSTER_MIN_PX = 9 * 16 // --pb-roster-min（桌面 / 平板 2fr 车道的可读下限）
+  // 手机横屏的 dense 名单是两行 12px 文本 + 44px 细血条，不需要桌面的 9rem；
+  // 新规则 minmax(8.5rem, 1fr) minmax(0, 4fr) ... 把宽度让给地图（844 下实测 141px）。
+  const PHONE_LANDSCAPE_LANE_MIN_PX = 8.5 * 16
   const contractFailures = []
   const requireContract = (ok, message) => { if (!ok) contractFailures.push(message) }
 
@@ -724,7 +731,8 @@ try {
     const label = `${name}: lane=${metrics.laneWidth} center=${metrics.centerWidth} stage=${metrics.stageSide}`
     // 两条 lane 等宽，且不低于可读下限（2/6/2 的窄档 fallback 就是守在 --pb-roster-min 上）
     requireContract(Math.abs(metrics.laneWidth - metrics.laneRight) <= 0.5, `both lanes must share one width: ${label}`)
-    requireContract(metrics.laneWidth >= ROSTER_MIN_PX - 0.5, `roster lane must keep its readable floor: ${label}`)
+    const laneFloor = metrics.phoneLandscape ? PHONE_LANDSCAPE_LANE_MIN_PX : ROSTER_MIN_PX
+    requireContract(metrics.laneWidth >= laneFloor - 0.5, `roster lane must keep its readable floor (${laneFloor}px): ${label}`)
     // center 必须吃掉**全部**剩余宽度：等于 整宽 − 两条 lane − 一条 gutter。
     // 这条恒等式才是「center 没有额外 max-width / 固定宽度 / 多余 margin」的直接证据。
     // 注意 `centerWidth` 量的是 right.left − left.right − LANE_GAP_PX：右 lane 的 gutter
@@ -799,7 +807,9 @@ try {
     const overlayPage = new Page(browser.client, sessionId)
     await overlayPage.enable()
     await overlayPage.emulate({ width: 1200, height: 800, touch: false, deviceScaleFactor: 1 })
-    await overlayPage.goto(`${fixture.origin}/scripts/browser-fixtures/damage-overlay.html`)
+    // 覆盖层 fixture 会冷启动 Vite 并转译整条 consumable/badge 依赖链；实测冷缓存下首次 complete 约需 50s，
+    // 超过 goto 默认 20s。放宽到 90s 只覆盖加载等待，几何 / 跟随 / 出屏 / 镜像断言不变。
+    await overlayPage.goto(`${fixture.origin}/scripts/browser-fixtures/damage-overlay.html`, { timeout: 90_000 })
     await overlayPage.waitForValue('!!(window.__damageOverlay && window.__damageOverlay.ready())', (ready) => ready === true,
       { label: '3d damage overlay fixture ready' })
     const overlayResult = await overlayPage.probe(probeDamageOverlay)

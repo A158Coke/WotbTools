@@ -174,8 +174,10 @@ const { isPhone } = usePlaybackPhoneForm()
  */
 const { isPortrait } = usePlaybackPortraitViewport()
 const portraitFlow = computed(() => isPortrait.value)
-/** 控制条收成一行：手机横屏与矮工作台。竖屏的控制条在流内，不压场景，不需要收。 */
+/** 控制条收成一行：手机横屏与矮工作台。竖屏的控制条在流内，不压场景，不需要收。
+    名册 dense 与单行 HUD 只给手机横屏：矮桌面保留既有行高/多行 HUD，不因短视口被压成 30px 行。 */
 const compactBar = computed(() => !portraitFlow.value && (isPhone.value || shortWorkspace.value))
+const phoneLandscape = computed(() => isPhone.value && !portraitFlow.value)
 
 // Selection belongs to the pane. Camera mode and follow target belong to the scene.
 // 选中与详情可见性是**两个状态**：关详情不清选中。点车或点名单都会选中并跟随；相机档位负责离开跟随。
@@ -866,10 +868,10 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
     <div v-else class="pb-root playback-workspace" ref="rootEl" :class="{ 'phone-form': isPhone, 'portrait-flow': portraitFlow, 'roster-side': showRoster && !portraitFlow, 'compact-bar': compactBar }" data-testid="replay3d-root" data-scene-surface data-tour="replay3d-workspace">
       <!-- 名牌覆盖层与 canvas 共用**同一个画布盒子**：场景内核按 canvas（.scene）尺寸算锚点，
            覆盖层必须与它同原点，否则三段式下名牌会整体偏一条车道宽。 -->
-      <!-- 移动端全屏入口统一右上角浮动（与 Map Preview 2D/3D、Replay 2D 同一组件同一位置）；
-           传输条里的内联按钮在手机形态由 floatingFullscreen 隐藏，桌面保持原位。 -->
+      <!-- 手机全屏入口：传输条内联（compact-bar 含横屏）；隐藏全部 UI 时改用右上角浮动入口，
+           保证隐藏态仍有可点击的全屏 / 恢复入口。 -->
       <SceneFullscreenButton
-        v-if="isPhone && fullscreenSupported"
+        v-if="isPhone && fullscreenSupported && uiHidden"
         floating
         :is-fullscreen="isFullscreen"
         data-test="pb-fullscreen"
@@ -877,8 +879,8 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         @toggle="toggleFullscreen()"
       />
       <!-- 移动端竖向距离滑条：仅手机横屏显示（竖屏隐藏，判据与布局同一
-           usePlaybackPortraitViewport）；全屏按钮正下方；Follow/Recorder 相机所有权不动
-           （free/top 才可用），Hide All UI 时随控件一起隐藏。 -->
+           usePlaybackPortraitViewport）；停右下角，传输条右侧预留同宽空槽；Follow/Recorder
+           相机所有权不动（free/top 才可用），Hide All UI 时随控件一起隐藏。 -->
       <SceneDistanceSlider
         :get-scene-api="() => sceneApi"
         :visible="isPhone && !isPortrait && !uiHidden && (store.cam === 'free' || store.cam === 'top')"
@@ -906,6 +908,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
           :friendly-points="store.scoreFriend"
           :enemy-points="store.scoreEnemy"
           :hp-no-transition="!store.playing"
+          :compact="phoneLandscape"
         >
           <template v-if="showBaseStatus && store.baseViews.length" #bases>
             <BaseStatusBar compact class="base-status" :bases="store.baseViews" :friendly-points="store.pointsFriend" :enemy-points="store.pointsEnemy" />
@@ -950,10 +953,10 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
            uiPrefs.showRoster。行的渲染与 2D 共用同一个 `PlaybackRoster`。 -->
       <div v-if="store.hasData && showRoster" class="roster-surface" data-testid="roster-surface">
         <div class="team-lane side-left" data-testid="replay3d-lane-left">
-          <PlaybackRoster :gun-marks="gunMarks" variant="3d" :compact="!portraitFlow" :teams="rosterLanes.left" :friendly-team="store.friendlyTeam" :selected-id="selectedEid" @select="followFromRoster" />
+          <PlaybackRoster :gun-marks="gunMarks" variant="3d" :compact="!portraitFlow" :dense="phoneLandscape" :teams="rosterLanes.left" :friendly-team="store.friendlyTeam" :selected-id="selectedEid" @select="followFromRoster" />
         </div>
         <div class="team-lane side-right" data-testid="replay3d-lane-right">
-          <PlaybackRoster :gun-marks="gunMarks" variant="3d" :compact="!portraitFlow" :teams="rosterLanes.right" :friendly-team="store.friendlyTeam" :selected-id="selectedEid" @select="followFromRoster" />
+          <PlaybackRoster :gun-marks="gunMarks" variant="3d" :compact="!portraitFlow" :dense="phoneLandscape" :teams="rosterLanes.right" :friendly-team="store.friendlyTeam" :selected-id="selectedEid" @select="followFromRoster" />
         </div>
       </div>
 
@@ -1016,7 +1019,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
           <PlaybackTransport
             :fullscreen-supported="fullscreenSupported"
             :is-fullscreen="isFullscreen"
-            :floating-fullscreen="isPhone"
+            :floating-fullscreen="false"
             :display-open="displayOpen"
             display-enabled
             @toggle-fullscreen="toggleFullscreen()"
@@ -1238,7 +1241,6 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
   color: var(--color-text-primary);
   font: var(--type-body);
 }
-
 .scene { position: absolute; inset: 0; z-index: var(--pb-z-canvas); }
 
 /**

@@ -108,9 +108,9 @@ export class Page {
     await this.client.send('Emulation.setTouchEmulationEnabled', { enabled: touch, maxTouchPoints: touch ? 5 : 1 }, this.sessionId)
   }
 
-  async goto(url) {
+  async goto(url, { timeout = 20_000 } = {}) {
     await this.client.send('Page.navigate', { url }, this.sessionId)
-    await this.waitForValue('document.readyState', (value) => value === 'complete', { label: 'document readyState=complete' })
+    await this.waitForValue('document.readyState', (value) => value === 'complete', { timeout, label: 'document readyState=complete' })
   }
 
   /** 场景失败时的现场快照：页面异常 + 可选的状态探针，避免「timeout 但不知道为什么」。 */

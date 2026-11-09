@@ -36,7 +36,12 @@
 .pb-quick-action:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: var(--space-1); }
 /* Phone landscape uses the available width instead of spending a second row on
    the same clock already shown in the HUD. Buttons retain their touch targets. */
-:is(.battle-playback.pb-phone-landscape, .pb-root.compact-bar) .pb-controls .pb-time { flex-basis: auto; margin-inline: auto; order: 0; }
+:is(.battle-playback.pb-phone-landscape, .pb-root.compact-bar) .pb-controls .pb-time {
+  flex-basis: auto;
+  /* 右侧留 4px：时间不贴视口边缘，也不被相邻按钮挤压。 */
+  margin-inline: auto var(--space-1);
+  order: 0;
+}
 
 .battle-playback.playback-workspace:not(:fullscreen),
 .battle-playback.playback-workspace:fullscreen {
@@ -130,6 +135,10 @@
   grid-row: 1 / 3;
   max-block-size: 100%;
 }
+/* 手机横屏把两侧车道压到 136px 起、地图吃满剩余；仍保持 lane 等宽（browser layout 契约）。 */
+.battle-playback.playback-workspace.pb-phone-landscape.pb-roster-lanes .pb-main {
+  grid-template-columns: minmax(8.5rem, 1fr) minmax(0, 4fr) minmax(8.5rem, 1fr);
+}
 /* 沉浸态横屏（非全屏）同样贴到屏幕左右边缘：刘海 / 圆角侧的 safe-area 与全屏路径一致（:fullscreen 另有自己的 padding-inline） */
 .battle-playback.playback-workspace.pb-phone-landscape:not(:fullscreen) {
   padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
@@ -145,6 +154,8 @@
   flex: 1 1 auto;
   inline-size: auto;
   min-inline-size: var(--pb-timeline-min-w);
+  /* 时间轴自己的 4px 上下外边距会把底栏从 44px 顶到 52px；横屏单行底栏由控件本体撑高。 */
+  margin-block: 0;
 }
 :is(.battle-playback.playback-workspace.pb-phone-landscape [data-test="pb-transport-controls"], .pb-root.playback-workspace.compact-bar .controls-content) > .pb-controls {
   flex: none;
@@ -218,7 +229,12 @@
   --pb-controls-max: calc(100% - var(--space-4));
   align-items: center;
   margin-inline: var(--space-2);
-  padding-block: var(--space-1);
+  /* 底栏总高 ≈ 44（按钮命中区）+ 2px 边框；内边距归零，时间轴自身 4px margin 已属外层。 */
+  padding-block: 0;
+}
+/* 只有手机横屏才有右下角距离滑条：控制条额外在右侧让出 44px 宽 + 两侧 8px 的空槽。 */
+.pb-root.playback-workspace.compact-bar.phone-form:not(.portrait-flow) > .controls {
+  margin-inline-end: calc(var(--space-2) + var(--control-h-sm) + var(--space-2));
 }
 /* 收起后容器只包住按钮：右缘留在展开时的位置，按钮不横向跳动。 */
 .pb-root.playback-workspace:not(.portrait-flow) > .controls.controls-docked {
@@ -227,23 +243,65 @@
   inline-size: fit-content;
   margin-inline: 0;
 }
+/* 3D 紧凑条收起后只剩把手：仍留在距离滑条左侧，不压住滑条。 */
+.pb-root.playback-workspace.compact-bar.phone-form:not(.portrait-flow) > .controls.controls-docked {
+  inset-inline-end: calc((100% - var(--pb-controls-max)) / 2 + var(--space-2) + var(--control-h-sm) + var(--space-2));
+}
 .pb-root.playback-workspace.portrait-flow > .controls.controls-docked {
   inline-size: fit-content;
   margin-inline-start: auto;
 }
-.pb-root.playback-workspace.roster-side:not(.portrait-flow).phone-form { --pb-overlay-lane-w: clamp(10rem, 15vw, 13rem); }
+.pb-root.playback-workspace.roster-side:not(.portrait-flow).phone-form { --pb-overlay-lane-w: clamp(8.25rem, 17vw, 9rem); }
+/* 单行 HUD 要装下地图名 + 时钟 + 双方血条 + 比分：按两条车道让出的中心宽度收口，不再固定 52%。 */
 .pb-root.playback-workspace.roster-side:not(.portrait-flow).phone-form > .hud {
-  max-inline-size: min(52%, max(12rem, calc(100% - 2 * var(--pb-overlay-lane-w) - var(--space-4))));
+  max-inline-size: min(calc(100% - 2 * var(--pb-overlay-lane-w) - var(--space-4)), 520px);
+}
+
+/* 手机横屏 3D 场景贴边：页面 .wrap 的水平/垂直外框（gutter、top space-6/4、
+   bottom space-12/8）用负 margin 抵消；根高度已按 --pb-workspace-h 扣除 header，
+   负 top 正好对齐内容区顶部。safe-area 仍由全屏 / 页面规则处理。 */
+@media (orientation: landscape) {
+  .pb-root.playback-workspace.phone-form:not(.portrait-flow, :fullscreen) {
+    border: 0;
+    border-radius: 0;
+    margin-inline: calc(var(--gutter) * -1);
+    margin-block-start: calc(var(--space-6) * -1);
+    margin-block-end: calc(var(--space-12) * -1);
+  }
+}
+@media (orientation: landscape) and (width < 768px) {
+  .pb-root.playback-workspace.phone-form:not(.portrait-flow, :fullscreen) {
+    margin-block-start: calc(var(--space-4) * -1);
+    margin-block-end: calc(var(--space-8) * -1);
+  }
+}
+/* 全屏手机横屏：场景就是视口，外框圆角/边框会切掉一圈像素；safe-area 由共享规则保留。 */
+.pb-root.playback-workspace.phone-form:fullscreen {
+  border: 0;
+  border-radius: 0;
+}
+/* 全屏入口已并入传输条，右上角让给名册。距离滑条停右下角，传输条右侧预留同宽空槽；
+   滑条高度随视口收缩，7 行 dense 名册最后一行之下才起跳（390/360 都成立）。 */
+.pb-root.playback-workspace.phone-form:not(.portrait-flow) .scene-dist {
+  top: auto;
+  bottom: var(--space-2);
+  right: var(--space-2);
+}
+.pb-root.playback-workspace.phone-form:not(.portrait-flow) .scene-dist .scene-dist-track {
+  height: min(max(64px, 18dvh), 96px);
+}
+/* FPS 角标原本也停右下，会与滑条同槽；手机横屏改停左下、控制条上方，二者不再互相遮挡。 */
+.pb-root.playback-workspace.phone-form:not(.portrait-flow) .pb-fps {
+  inset-inline-end: auto;
+  inset-inline-start: var(--space-2);
+  inset-block-end: calc(var(--control-h-sm) + var(--space-4));
 }
 
 /* 名册车道 = 左上/右上角悬浮面板（游戏同款：己方在左、敌方在右）。
-   宽度按行内容需求定：行固定开销 = 内边距 32 + 间隙 12 + 色点 8 + 血条 52 = 104px，
-   昵称 + 车型再需 ~90px——9rem(144px) 会横向撑破（行被裁切 + 出现横向滚动条）。
-   取 clamp(11rem, 16vw, 15rem)：窄屏 176px 起、宽屏到原始 240px（f226174b 版宽）。
-   宽度收进 `--pb-overlay-lane-w`（同一根作用域）：顶中 HUD 按它收口，两者不会互相压住。
-   手机横屏（.phone-form）适度缩小浮层：lane 10rem 起 / HUD 收口相应收窄——740×360 上
-   顶中 HUD（含时间与比分）此前盖住名册下排行的点击区（740 tap diagnostic 实测
-   hitAtRow=SPAN.pb-time），缩组件后两者互不侵入。 */
+   桌面/平板按行内容需求取 clamp(11rem, 16vw, 15rem)，并限制在场景侧带内，避免压入中心。
+   手机横屏（.phone-form）改用 dense 行：固定开销 ≈ 内边距 8 + 两处 gap 8 + 血条 44，
+   车道再压到 8.25rem 起、17vw，HUD 按 `--pb-overlay-lane-w` 收口，二者不互相压住；
+   7×30px 行在 390/360 高度下无需滚动。 */
 .pb-root.playback-workspace.roster-side:not(.portrait-flow) {
   /* 上限按工作台算（侧栏占掉的宽度 vw 看不见）：宽形态车道不得压入场景中心 60% 盒。 */
   --pb-overlay-lane-w: min(clamp(11rem, 16vw, 15rem), calc(20% - var(--space-2)));
