@@ -2998,6 +2998,9 @@ async function runReplayCollectionScenario(env) {
   }
   const roster = `Array.from(document.querySelectorAll('[data-test="pb-roster-row"]')).map(row => row.dataset.accountId).join(',')`
   const contentTop = `(() => { window.scrollTo(0, 0); return Math.round(document.querySelector('.workspace-content').getBoundingClientRect().top) })()`
+  // 分区主视觉是页面标题区的一部分：密度预算只放行这段紧凑横幅本身，
+  // 不允许标题区在横幅之外再长出额外高度。旧基线与当前实测的差值必须只等于横幅高度。
+  const heroHeight = `Math.round(document.querySelector('.workspace-head .showcase-hero')?.getBoundingClientRect().height ?? 0)`
   const trigger = `document.querySelector('[data-testid="collection-trigger"]')?.textContent ?? ''`
   try {
     await page.enable()
@@ -3014,8 +3017,10 @@ async function runReplayCollectionScenario(env) {
     const before = await page.waitForValue(roster, Boolean, { timeout: 60_000, label: 'first battle roster' })
     check(failures, !await page.evaluate(`!!document.querySelector('[data-testid="file-uploader-empty"]')`), 'Ready must not keep the upload card')
     check(failures, await page.evaluate(`!!document.querySelector('[data-testid="playback-battle-picker"]:not(button)')`), 'a single replay shows static battle context')
+    const singleHero = await page.evaluate(heroHeight)
+    check(failures, singleHero >= 120 && singleHero <= 140, `compact hero must stay 120-140px at 1440: ${singleHero}`)
     const singleTop = await page.evaluate(contentTop)
-    check(failures, singleTop <= 175, `single-battle content must start within 175px at 1440: ${singleTop}`)
+    check(failures, singleTop <= 175 + singleHero, `single-battle content must start within 175px + hero at 1440: ${singleTop} (hero ${singleHero})`)
 
     // 看第一场时加入两份新回放 + 一个损坏文件：内容不换场，也不重建面板。
     const broken = join(tempDir, 'broken.wotbreplay')
@@ -3059,8 +3064,10 @@ async function runReplayCollectionScenario(env) {
       // 从单回放追加：赛后数据留在原来那一场，汇总由用户切换。
       await page.evaluate(`document.querySelector('[data-testid="data-view-summary"]').click()`)
       await page.waitFor(() => !!document.querySelector('[data-testid="series-overview"]'), { label: 'Data summary' })
+      const hero = await page.evaluate(heroHeight)
+      if (width === 390) check(failures, hero >= 88 && hero <= 110, `compact hero must stay 88-110px at 390: ${hero}`)
       const top = await page.evaluate(contentTop)
-      if (limit) check(failures, top <= limit, `Data content must start within ${limit}px at ${width}: ${top}`)
+      if (limit) check(failures, top <= limit + hero, `Data content must start within ${limit}px + hero at ${width}: ${top} (hero ${hero})`)
       check(failures, !await page.evaluate(`!!document.querySelector('[data-testid="battle-picker"]')`), 'Data summary must not show a current battle picker')
       await page.evaluate(`document.querySelector('[data-testid="ws-tab"][data-cap="playback"]').click()`)
       await page.waitFor(() => !!document.querySelector('[data-testid="playback-battle-picker"]'), { label: 'single-battle picker' })
@@ -3076,8 +3083,8 @@ async function runReplayCollectionScenario(env) {
       console.log(`[browser-interaction] replay-collection ${width}x${height} ${JSON.stringify({ dataTop: top, ...metrics })}`)
       check(failures, metrics.overflow <= 0, `no horizontal overflow at ${width}: ${JSON.stringify(metrics)}`)
       if (touch) check(failures, metrics.trigger >= 44, `manage trigger needs a 44px target at ${width}: ${JSON.stringify(metrics)}`)
-      if (width === 1440) check(failures, metrics.top <= 175, `single-battle content must start within 175px at 1440: ${JSON.stringify(metrics)}`)
-      if (width === 390) check(failures, metrics.top <= 350, `single-battle content must start within 350px at 390: ${JSON.stringify(metrics)}`)
+      if (width === 1440) check(failures, metrics.top <= 175 + hero, `single-battle content must start within 175px + hero at 1440: ${JSON.stringify({ ...metrics, hero })}`)
+      if (width === 390) check(failures, metrics.top <= 350 + hero, `single-battle content must start within 350px + hero at 390: ${JSON.stringify({ ...metrics, hero })}`)
     }
 
     await page.emulate({ width: 1440, height: 900, touch: false })

@@ -136,7 +136,7 @@ async function refreshPage() {
 
 <template>
   <div class="broadcast-page layout-wide" data-testid="league-broadcasts-page">
-    <ShowcaseHero :kicker="t('nav.groups.events')" :title="t('leagueBroadcasts.title')" :description="state.season ? `${state.season.year} · ${broadcastSeasonName(state.season, locale)}` : undefined" />
+    <ShowcaseHero section="events" :kicker="t('nav.groups.events')" :title="t('leagueBroadcasts.title')" :description="state.season ? `${state.season.year} · ${broadcastSeasonName(state.season, locale)}` : undefined" />
 
     <!-- 顶栏：区服（分段）· 赛季（下拉）· 显示时区 · 刷新 · 管理操作 -->
     <div class="broadcast-toolbar" data-testid="broadcast-toolbar">
@@ -274,7 +274,7 @@ async function refreshPage() {
 
 <style scoped>
 .broadcast-page { display: grid; gap: var(--space-4); }
-.broadcast-page > :deep(.showcase-hero) { margin-block-end: 0; }
+.broadcast-page :deep(.showcase-hero) { margin-block-end: 0; }
 .broadcast-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
 .broadcast-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); min-width: 0; }
 .broadcast-toolbar-actions { margin-inline-start: auto; }

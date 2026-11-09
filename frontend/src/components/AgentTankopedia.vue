@@ -671,6 +671,13 @@ onMounted(() => {
       </EmptyState>
 
       <template v-else-if="detail">
+        <ShowcaseHero
+          compact
+          section="tankopedia"
+          :kicker="t('nav.groups.reference')"
+          :title="detail.name"
+        />
+
         <Motion
           tag="header"
           class="tp-detail-head surface-glass-1"
@@ -682,7 +689,6 @@ onMounted(() => {
             <img :src="tankImageUrl(detailId)" alt="" width="320" height="200" decoding="async" :style="iconCropStyle(detailId)" @error="hideBrokenImage">
           </span>
           <div class="tp-detail-title">
-            <h1>{{ detail.name }}</h1>
             <div class="tp-badges">
               <span class="tp-pill is-tier">{{ tierLabel(detail.tier) }}</span>
               <span class="tp-pill">{{ nationLabel(detail.nation) }}</span>
@@ -848,7 +854,7 @@ onMounted(() => {
 
     <!-- ================= 列表态 ================= -->
     <!-- v-if：直达详情不提前挂载；v-show：列表→详情→返回保留增量条数与搜索草稿 -->
-    <ShowcaseHero v-if="listMounted" v-show="detailId == null" :kicker="t('nav.groups.reference')" :title="t('agentTanks.title')" :description="t('agentTanks.hint')">
+    <ShowcaseHero v-if="listMounted" v-show="detailId == null" section="tankopedia" :kicker="t('nav.groups.reference')" :title="t('agentTanks.title')" :description="t('agentTanks.hint')">
       <template v-if="tanks.length" #stats><div><span class="tp-hero-stat-label">{{ t('tankopedia.heroCount') }}</span><strong data-testid="tankopedia-count">{{ tanks.length.toLocaleString(locale) }}</strong></div></template>
       <template #actions>
         <AppButton
@@ -885,7 +891,6 @@ onMounted(() => {
   color: var(--color-text-primary);
 }
 
-.tankopedia :deep(.page-header) { margin-bottom: 0; }
 
 .tp-muted { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); }
 .tp-status { margin: 0; color: var(--color-text-secondary); font: var(--type-body); }
@@ -974,7 +979,6 @@ onMounted(() => {
 .tp-media-lg { inline-size: 100%; }
 .tp-detail-title { display: grid; gap: var(--space-2); min-inline-size: 0; }
 .tp-detail-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); min-inline-size: 0; }
-.tp-detail-title h1 { margin: 0; font: var(--type-h1); overflow-wrap: anywhere; }
 
 .tp-card-section {
   display: grid;
@@ -1030,7 +1034,6 @@ onMounted(() => {
 @media (width < 768px) {
   .tankopedia { gap: var(--space-3); padding-block-start: var(--space-4); }
   .tp-detail-head { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: var(--space-3); padding: var(--space-3); }
-  .tp-detail-title h1 { font: var(--type-h2); }
   .tp-detail-actions { grid-column: 1 / -1; justify-content: stretch; }
   .tp-detail-actions > * { flex: 1; }
   .tp-card-section { padding: var(--space-3); }

@@ -10,7 +10,7 @@ import { apiErrorLabel, formatDateTimeMinute } from '../utils/display.js'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
-import PageHeader from './PageHeader.vue'
+import ShowcaseHero from './ShowcaseHero.vue'
 import Banner from './Banner.vue'
 import EmptyState from './EmptyState.vue'
 import AppButton from './AppButton.vue'
@@ -231,12 +231,12 @@ onScopeDispose(clearLocal)
 </script>
 <template>
   <div class="tournament-page tournament-stack tournament-admin" :class="{ 'is-compact-review': compactReviewing }">
-    <PageHeader :title="$t('tournament.adminTitle')" :description="$t('tournament.adminSelectionHint')"><template #actions>
+    <ShowcaseHero compact section="admin" :kicker="$t('more.sections.admin')" :title="$t('tournament.adminTitle')"><template #actions>
       <TournamentEventSelect v-if="allowed" v-model="eventId" compact :events="events" :disabled="busy || recognizing || eventsLoading" />
       <RouterLink class="tournament-header-link" :to="{ path: '/', query: { view: 'tournament-points' } }">{{ $t('tournament.publicBoard') }}</RouterLink>
       <RouterLink class="tournament-header-link" :to="{ path: '/', query: { view: 'tournament-points-config' } }">{{ $t('tournament.configure') }}</RouterLink>
       <MenuButton v-if="allowed" :label="$t('tournament.more')" :items="moreItems" data-testid="tournament-admin-more" @select="selectMore" />
-    </template></PageHeader>
+    </template></ShowcaseHero>
     <Banner v-if="!allowed" tone="danger">{{ $t('tournament.adminRequired') }}</Banner>
     <template v-else>
       <Banner v-if="!network.available">{{ $t(network.messageKey || 'featureOffline.tournamentPoints') }}</Banner>

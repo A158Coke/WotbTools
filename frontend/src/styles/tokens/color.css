@@ -312,6 +312,10 @@
     --theme-hero-image-portrait: url("../../assets/theme/theme-winter-portrait.webp");
     --theme-hero-scrim: linear-gradient(90deg, rgb(238 243 248 / .96) 0%, rgb(238 243 248 / .86) 45%, rgb(238 243 248 / .1) 100%);
     --theme-hero-scrim-portrait: linear-gradient(0deg, rgb(238 243 248 / .97) 18%, rgb(238 243 248 / .4) 100%);
+    /* 分区主视觉在寒冬要露出坦克：桌面左侧文字仍压 90%+，右侧留给画面；
+       手机改成从上到下的遮罩，文字所在的上半部更实，坦克所在的下半部透出。 */
+    --theme-hero-section-scrim: linear-gradient(90deg, rgb(238 243 248 / .94) 0%, rgb(238 243 248 / .78) 48%, rgb(238 243 248 / .12) 100%);
+    --theme-hero-section-scrim-portrait: linear-gradient(180deg, rgb(238 243 248 / .97) 0%, rgb(238 243 248 / .86) 48%, rgb(238 243 248 / .24) 100%);
     --theme-glass: rgb(255 255 255 / .72);
     --theme-backdrop-image: url("../../assets/theme/backdrop-winter-wide.webp");
     --theme-backdrop-image-portrait: url("../../assets/theme/backdrop-winter-portrait.webp");

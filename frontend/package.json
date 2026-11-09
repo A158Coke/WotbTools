@@ -27,6 +27,7 @@
     "typecheck": "vue-tsc --noEmit -p tsconfig.app.json",
     "build": "vite build",
     "assets:backdrops": "node scripts/build-theme-backdrops.mjs",
+    "assets:heroes": "node scripts/build-section-heroes.mjs",
     "verify:agent-wasm": "node scripts/verify-agent-wasm-dist.mjs --dist dist",
     "preview": "vite preview",
     "api:generate": "openapi-typescript ../contracts/http/openapi.yaml -o src/api/generated/http-contract.ts && node scripts/generate-api-contract.mjs",

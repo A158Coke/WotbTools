@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ShowcaseHero from './ShowcaseHero.vue'
+import { SECTION_HERO_IDS } from '../shared/sectionHeroes'
 
 describe('ShowcaseHero', () => {
   it('只渲染给出的标题区内容；主视觉层是装饰（aria-hidden）', () => {
@@ -21,5 +22,39 @@ describe('ShowcaseHero', () => {
     expect(wrapper.find('.showcase-hero-kicker').exists()).toBe(false)
     expect(wrapper.find('.showcase-hero-stats').exists()).toBe(false)
     expect(wrapper.find('.showcase-hero-actions').exists()).toBe(false)
+  })
+
+  it('section 映射到对应分区的固定主视觉与焦点位置', () => {
+    for (const section of SECTION_HERO_IDS) {
+      const wrapper = mount(ShowcaseHero, { props: { title: '页面标题', section } })
+      const art = wrapper.get('.showcase-hero-art')
+      const style = art.attributes('style') || ''
+      expect(wrapper.get('[data-testid="showcase-hero"]').attributes('data-section')).toBe(section)
+      expect(art.classes()).toContain('showcase-hero-art--section')
+      expect(style).toContain(`hero-${section}.webp`)
+      expect(style).toContain('--hero-pos')
+      expect(style).toContain('--hero-pos-mobile')
+    }
+  })
+
+  it('未传 section 时保留季节主视觉，不注入分区图片', () => {
+    const wrapper = mount(ShowcaseHero, { props: { title: '首页' } })
+    const art = wrapper.get('.showcase-hero-art')
+    expect(art.classes()).not.toContain('showcase-hero-art--section')
+    expect(art.attributes('style')).toBeUndefined()
+  })
+
+  it('compact 的横幅只保留 kicker / 标题，操作移到横幅外的工具条', () => {
+    const wrapper = mount(ShowcaseHero, {
+      props: { kicker: '回放', title: '回放工作台', description: '导入录像', compact: true },
+      slots: { stats: '<strong>12</strong>', actions: '<button>选择文件</button>' },
+    })
+    expect(wrapper.get('[data-testid="showcase-hero"]').classes()).toContain('is-compact')
+    expect(wrapper.get('.showcase-hero-kicker').text()).toBe('回放')
+    expect(wrapper.get('h1').text()).toBe('回放工作台')
+    expect(wrapper.find('.showcase-hero-description').exists()).toBe(false)
+    expect(wrapper.find('.showcase-hero-stats').exists()).toBe(false)
+    expect(wrapper.find('.showcase-hero-actions').exists()).toBe(false)
+    expect(wrapper.find('.showcase-hero-toolbar button').text()).toBe('选择文件')
   })
 })

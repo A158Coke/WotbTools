@@ -9,7 +9,7 @@ import { useAuth } from '../composables/useAuth.js'
 import { confirm } from '../composables/useConfirm.js'
 import { apiErrorLabel } from '../utils/display.js'
 import { creatorNameValid } from '../api/creators.js'
-import PageHeader from './PageHeader.vue'
+import ShowcaseHero from './ShowcaseHero.vue'
 import AppButton from './AppButton.vue'
 import Banner from './Banner.vue'
 import CreatorForm from './CreatorForm.vue'
@@ -51,7 +51,7 @@ async function remove(kind: 'categories' | 'levels', id: number) {
 
 <template>
   <div class="creators-page layout-content" data-testid="creators-config-page">
-    <PageHeader :kicker="t('creators.configKicker')" :title="t('creators.configTitle')"><template #actions><AppButton :disabled="loading || busy || !network.available" @click="management.refresh">{{ t('creators.refresh') }}</AppButton></template></PageHeader>
+    <ShowcaseHero compact section="admin" :kicker="t('creators.configKicker')" :title="t('creators.configTitle')"><template #actions><AppButton :disabled="loading || busy || !network.available" @click="management.refresh">{{ t('creators.refresh') }}</AppButton></template></ShowcaseHero>
     <nav class="creator-filter-bar" :aria-label="t('creators.recommendationType')">
       <AppButton :aria-pressed="type === 'UP'" :disabled="busy" data-testid="recommendation-type-UP" @click="selectType('UP')">{{ t('creators.addCreator') }}</AppButton>
       <AppButton :aria-pressed="type === 'VIDEO'" :disabled="busy || !availability.typeAvailable('VIDEO')" data-testid="recommendation-type-VIDEO" @click="selectType('VIDEO')">{{ t('creators.addVideo') }}</AppButton>

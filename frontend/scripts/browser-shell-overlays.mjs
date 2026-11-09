@@ -103,7 +103,7 @@ export async function runShellOverlayScenario(env, scenario) {
     const mobile = scenario.width < 768 || (scenario.touch && scenario.height <= 520)
     if (mobile) {
       const occlusion = await measureOcclusion(page, {
-        primary: '[data-testid=more-page] .page-header', persistent: ['[data-testid=app-top-bar]'],
+        primary: '[data-testid=more-page] .showcase-hero', persistent: ['[data-testid=app-top-bar]'],
       })
       check(!!occlusion.primary, 'more page primary region absent')
       failures.push(...occlusion.failures)

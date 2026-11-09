@@ -52,17 +52,18 @@
 }
 .profile-page .hero-avatar { display: none !important; }
 .profile-page .profile-main { display: grid; gap: 14px; }
-.profile-page .profile-hero {
+.profile-page .profile-card.profile-hero {
   position: relative;
   overflow: hidden;
   min-height: 118px;
   padding: 24px 28px !important;
   border-color: color-mix(in srgb, var(--accent) 34%, var(--border)) !important;
   background:
-    linear-gradient(100deg, color-mix(in srgb, var(--accent) 9%, var(--bg-card)), var(--bg-card) 48%),
-    var(--bg-card) !important;
+    var(--theme-hero-section-scrim, var(--theme-hero-scrim)),
+    var(--hero-image) var(--hero-pos, right center) / cover,
+    var(--color-surface-1) !important;
 }
-.profile-page .profile-hero::after {
+.profile-page .profile-card.profile-hero::after {
   content: '';
   position: absolute;
   right: -60px;
@@ -112,6 +113,13 @@
   .profile-page .profile-body { display: block !important; }
   .profile-page .profile-left,
   .profile-page .profile-right { display: grid; gap: 12px; }
-  .profile-page .profile-hero { padding: 20px !important; min-height: 100px; }
+  .profile-page .profile-card.profile-hero {
+    padding: 20px !important;
+    min-height: 100px;
+    background:
+      var(--theme-hero-section-scrim-portrait, var(--theme-hero-scrim-portrait)),
+      var(--hero-image) var(--hero-pos-mobile, center) / cover,
+      var(--color-surface-1) !important;
+  }
   .profile-page .hero-name { font-size: 1.35rem !important; }
 }

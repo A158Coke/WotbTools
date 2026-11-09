@@ -21,6 +21,7 @@ import { mapLabel } from '../utils/helpers.js'
 import { apiErrorLabel } from '../utils/display.js'
 import { copyText } from '../utils/clipboard.js'
 import AppButton from './AppButton.vue'
+import { sectionHeroStyle } from '../shared/sectionHeroes'
 
 const { locale, t, te } = useI18n()
 const navigateView = inject(NAVIGATE_VIEW_KEY, null)
@@ -524,7 +525,7 @@ async function removeAccount() {
     </div>
 
     <div v-else-if="profile" class="profile-main">
-      <div class="profile-card profile-hero">
+      <div class="profile-card profile-hero" :style="sectionHeroStyle('profile')">
         <div class="hero-left">
           <div class="hero-avatar">{{ (displayName || '?')[0] }}</div>
           <div class="hero-identity">
@@ -765,7 +766,7 @@ async function removeAccount() {
 .section-title-line { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid rgba(66, 77, 84, .45); }
 .section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid rgba(66, 77, 84, .45); }
 .section-actions { display: flex; gap: 6px; }
-.profile-hero { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-4); padding: 24px 28px; margin-bottom: 24px; border-block-end: 2px solid var(--color-accent); background: var(--theme-hero-scrim), var(--theme-hero-image) right center / cover, var(--color-surface-1); }
+.profile-hero { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-4); padding: 24px 28px; margin-bottom: 24px; border-block-end: 2px solid var(--color-accent); }
 .hero-links { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .hero-link { display: inline-flex; cursor: pointer; align-items: center; min-height: var(--control-h-md); padding: 0 var(--space-3); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--theme-glass); color: var(--color-text-primary); font: var(--type-body); font-weight: 600; text-decoration: none; }
 .hero-link:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }

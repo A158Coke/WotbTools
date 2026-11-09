@@ -13,6 +13,7 @@ import { Check, Download, Trash2 } from 'lucide-vue-next'
 import AppDialog from './AppDialog.vue'
 import HoFReviewPane from './HoFReviewPane.vue'
 import HoFReviewQueue from './HoFReviewQueue.vue'
+import ShowcaseHero from './ShowcaseHero.vue'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
 
 const { t, te, tm, locale } = useI18n()
@@ -1158,6 +1159,7 @@ const cancelMark3Phase = () => { mark3ActionMsg.value = ''; mark3ReviewPhase.val
     </div>
 
     <template v-else>
+      <ShowcaseHero compact section="admin" :kicker="$t('more.sections.admin')" :title="$t('hofAdmin.cardTitle')" />
       <!-- 页面级分区（design-language §7 Tabs）：窄屏横向滚动，不再被裁掉（审计 PG-10） -->
       <div class="hof-admin-tabs" role="tablist" :aria-label="$t('hofAdmin.tabsLabel')">
         <button

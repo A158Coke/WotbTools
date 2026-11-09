@@ -31,6 +31,7 @@ import SegmentedControl from './SegmentedControl.vue'
 import MapPreview3DPane from './MapPreview3DPane.vue'
 import MapPreview2DPane from './MapPreview2DPane.vue'
 import RotatePrompt from './RotatePrompt.vue'
+import ShowcaseHero from './ShowcaseHero.vue'
 import { useForcedLandscape } from '../composables/useForcedLandscape.js'
 
 const { t, locale } = useI18n()
@@ -237,54 +238,49 @@ const modeOptions = computed(() => [
       login-destination="map-preview"
     />
     <template v-else>
+      <ShowcaseHero v-if="!selected" compact section="maps" :kicker="$t('mapPreview.kicker')" :title="$t('mapPreview.title')">
+        <template v-if="indexLoaded && maps.length" #actions>
+          <div class="map-picker-tools">
+            <input
+              v-model="mapQuery"
+              type="search"
+              class="map-picker-search"
+              :placeholder="$t('mapPreview.searchPlaceholder')"
+              :aria-label="$t('mapPreview.searchPlaceholder')"
+              data-testid="map-search"
+            >
+            <button
+              type="button"
+              role="switch"
+              class="map-picker-switch"
+              :aria-checked="showAllMaps"
+              data-testid="map-show-all"
+              @click="showAllMaps = !showAllMaps"
+            >
+              <span class="map-picker-switch-track" aria-hidden="true">
+                <span class="map-picker-switch-thumb" />
+              </span>
+              <span>{{ $t('mapPreview.showAllMaps') }}</span>
+            </button>
+          </div>
+        </template>
+      </ShowcaseHero>
       <EmptyState
         v-if="indexFailed"
         role="alert"
         :icon="MapIcon"
-        :title="$t('mapPreview.title')"
-        :description="$t('mapPreview.loadFailed')"
+        :title="$t('mapPreview.loadFailed')"
       >
         <AppButton data-testid="map-retry" @click="loadMaps">{{ $t('mapPreview.retry') }}</AppButton>
       </EmptyState>
       <EmptyState
         v-else-if="indexLoaded && !maps.length"
         :icon="MapIcon"
-        :title="$t('mapPreview.title')"
-        :description="$t('mapPreview.empty')"
+        :title="$t('mapPreview.empty')"
       />
 
       <!-- 地图选择网格 -->
       <div v-else-if="!selected" class="map-picker">
-        <header class="map-picker-head">
-          <div class="map-picker-heading">
-            <p class="map-picker-kicker">{{ $t('mapPreview.kicker') }}</p>
-            <h1 class="map-picker-title">{{ $t('mapPreview.title') }}</h1>
-            <p class="map-picker-subtitle">{{ $t('mapPreview.subtitle') }}</p>
-          </div>
-          <div class="map-picker-tools">
-          <input
-            v-model="mapQuery"
-            type="search"
-            class="map-picker-search"
-            :placeholder="$t('mapPreview.searchPlaceholder')"
-            :aria-label="$t('mapPreview.searchPlaceholder')"
-            data-testid="map-search"
-          >
-          <button
-            type="button"
-            role="switch"
-            class="map-picker-switch"
-            :aria-checked="showAllMaps"
-            data-testid="map-show-all"
-            @click="showAllMaps = !showAllMaps"
-          >
-            <span class="map-picker-switch-track" aria-hidden="true">
-              <span class="map-picker-switch-thumb" />
-            </span>
-            <span>{{ $t('mapPreview.showAllMaps') }}</span>
-          </button>
-          </div>
-        </header>
         <p v-if="mapQuery.trim() && !visibleMaps.length" class="map-picker-empty" data-testid="map-search-empty">{{ $t('mapPreview.searchEmpty') }}</p>
         <ul class="map-grid" data-testid="map-grid">
           <li v-for="m in visibleMaps" :key="m.key">
@@ -377,15 +373,6 @@ const modeOptions = computed(() => [
   padding: var(--space-4);
 }
 
-.map-picker-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.map-picker-kicker { margin: 0; color: var(--color-accent-text); font: var(--type-caption); font-weight: 600; letter-spacing: .16em; }
 .map-picker-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
 .map-picker-search {
   inline-size: calc(var(--space-12) * 6);
@@ -402,12 +389,6 @@ const modeOptions = computed(() => [
 .map-picker-empty { margin: var(--space-4) 0; color: var(--color-text-secondary); font: var(--type-body); }
 @media (width < 768px) {
   .map-picker-tools, .map-picker-search { inline-size: 100%; }
-}
-.map-picker-heading {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  min-width: 0;
 }
 
 /* Switch（DC-SEL-06：只用于立即生效的布尔状态）：track/thumb 与仓库既有
@@ -462,19 +443,6 @@ const modeOptions = computed(() => [
 .map-picker-switch[aria-checked='true'] .map-picker-switch-thumb {
   background: var(--color-surface-1);
   transform: translateX(calc(var(--control-check) + var(--space-2)));
-}
-
-.map-picker-title {
-  font-size: var(--font-size-h2);
-  line-height: var(--line-height-h2);
-  margin: 0;
-}
-
-.map-picker-subtitle {
-  margin: 0;
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-body);
-  line-height: var(--line-height-body);
 }
 
 .map-grid {

@@ -1326,7 +1326,7 @@ watch(() => hofAvailability.value.available, (available, previous) => {
     </div>
 
     <div v-show="activeTab === 'single'" data-hof-pane="single">
-      <ShowcaseHero :kicker="$t('hof.btn')" :title="$t('hof.title')" :description="$t('hof.subtitle')">
+      <ShowcaseHero v-if="activeTab === 'single'" section="hof" :kicker="$t('hof.btn')" :title="$t('hof.title')" :description="$t('hof.subtitle')">
         <template v-if="totalItems != null" #stats><div><span class="lb-hero-stat-label">{{ $t('hof.heroTotal') }}</span><strong>{{ totalItems.toLocaleString(locale) }}</strong></div></template>
         <template #actions>
         <div class="lb-submit-row">
@@ -1539,7 +1539,7 @@ watch(() => hofAvailability.value.available, (available, previous) => {
     </div>
 
     <div v-show="activeTab === 'hundred'" class="h100-pane" data-hof-pane="hundred">
-      <ShowcaseHero :kicker="$t('hof.btn')" :title="$t('hundred.tab')" :description="$t('hundred.subtitle')">
+      <ShowcaseHero v-if="activeTab === 'hundred'" section="hof" :kicker="$t('hof.btn')" :title="$t('hundred.tab')" :description="$t('hundred.subtitle')">
         <template v-if="h100TotalItems != null" #stats><div><span class="lb-hero-stat-label">{{ $t('hof.heroTotal') }}</span><strong>{{ h100TotalItems.toLocaleString(locale) }}</strong></div></template>
         <template #actions>
         <div class="lb-submit-row">
@@ -1668,7 +1668,7 @@ watch(() => hofAvailability.value.available, (available, previous) => {
     </div>
 
     <div v-show="activeTab === 'mark3'" class="h100-pane mark3-pane" data-hof-pane="mark3">
-      <ShowcaseHero :kicker="$t('hof.btn')" :title="$t('mark3.tab')" :description="$t('mark3.subtitle')">
+      <ShowcaseHero v-if="activeTab === 'mark3'" section="mark3" :kicker="$t('hof.btn')" :title="$t('mark3.tab')" :description="$t('mark3.subtitle')">
         <template v-if="mark3TotalItems != null" #stats><div><span class="lb-hero-stat-label">{{ $t('hof.heroTotal') }}</span><strong>{{ mark3TotalItems.toLocaleString(locale) }}</strong></div></template>
         <template #actions>
         <div class="lb-submit-row">
