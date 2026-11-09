@@ -226,7 +226,13 @@ export function usePlaybackDetailsPlacement({
     const host = hostEl.value
     if (!host) return
     const hostRect = host.getBoundingClientRect()
-    apply(clampToBounds(event.clientX - hostRect.left - session.dx, event.clientY - hostRect.top - session.dy))
+    const next = clampToBounds(event.clientX - hostRect.left - session.dx, event.clientY - hostRect.top - session.dy)
+    if (!next) return
+    apply(next)
+    // 指针已经开始移动就说明用户亲手定位了浮窗；不能等 pointerup 才置位——
+    // 指针捕获丢失、触屏 pointercancel 或后续点击抢走焦点时 up 可能收不到，
+    // 紧接着的选择变化会把刚拖到的位置重算成初始落位。
+    userPositioned.value = true
   }
 
   function onPointerUp(): void {

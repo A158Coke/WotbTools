@@ -3815,7 +3815,7 @@ async function runWorkspace2DScenario(env, scenario) {
     }
     // 记录宿主相对坐标：下面点 Team 2 时 clickElement 可能把行滚进视口，页面 scrollY 变化会
     // 同时移动面板与宿主，只比较视口坐标会把滚动误判成“面板被重新摆放”。
-    lastPos = { panel, main: d.main }
+    lastPos = { panel, main: d.main, transport: d.transport }
   }
 
   // ---- 点 Team 2 → 同一个窗更新、位置不动、Team 2 车道仍在 ----
@@ -3825,10 +3825,24 @@ async function runWorkspace2DScenario(env, scenario) {
   s = await page.callWith(workspace2dProbe, scenario.touch)
   check(failures, s.detailsCount === 1 && s.detailsPlayer === rightName, `details did not update to the Team 2 vehicle: ${s.detailsPlayer}`)
   check(failures, !!s.right, 'Team 2 lane disappeared after selecting a Team 2 vehicle')
-  check(failures, lastPos?.panel && lastPos.main && s.details
-    && Math.abs((s.details.l - s.main.l) - (lastPos.panel.l - lastPos.main.l)) < 1
-    && Math.abs((s.details.t - s.main.t) - (lastPos.panel.t - lastPos.main.t)) < 1,
-    'user-dragged details position must survive selection changes (host-relative)')
+  // 宿主相对坐标：页面滚动不影响。选中另一台车时内容高度可能变化，ResizeObserver 会把
+  // 已拖到传输条上方的浮窗向上夹紧；这是尺寸约束，不是落位重置。允许的纵向位移必须
+  // 由面板增高解释，且底边仍贴住原来的下界（不能跳回初始的左上角）。
+  const oldPanel = lastPos?.panel
+  const oldMain = lastPos?.main
+  const dx = oldPanel && oldMain && s.details && s.main ? (s.details.l - s.main.l) - (oldPanel.l - oldMain.l) : NaN
+  const topMove = oldPanel && oldMain && s.details && s.main ? (oldPanel.t - oldMain.t) - (s.details.t - s.main.t) : NaN
+  const grew = oldPanel && s.details ? s.details.h - oldPanel.h : NaN
+  const bottomMove = oldPanel && oldMain && s.details && s.main
+    ? (s.details.b - s.main.t) - (oldPanel.b - oldMain.t)
+    : NaN
+  check(failures, oldPanel && oldMain && s.details
+    && Math.abs(dx) < 1
+    && topMove >= -1
+    && topMove <= Math.max(0, grew) + 2
+    && (topMove <= 1 || Math.abs(bottomMove) <= 2)
+    && (!s.transport || s.details.b <= s.transport.t + 0.5),
+    `user-dragged details position must survive selection changes (host-relative): dx=${dx} topMove=${topMove} grew=${grew} bottomMove=${bottomMove} old=${JSON.stringify(oldPanel)} now=${JSON.stringify(s.details)}`)
 
   // ---- × 只关详情 ----
   await clickElement(page, '[data-test="pb-sb-close"]')

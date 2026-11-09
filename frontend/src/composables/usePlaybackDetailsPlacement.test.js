@@ -189,6 +189,8 @@ describe('usePlaybackDetailsPlacement', () => {
     const target = { setPointerCapture: vi.fn(), currentTarget: null }
     api.onPointerDown({ button: 0, pointerId: 3, clientX: 100, clientY: 60, currentTarget: target })
     window.dispatchEvent(new PointerEvent('pointermove', { pointerId: 3, clientX: 500, clientY: 260 }))
+    // 移动即置位：pointerup 可能在指针捕获丢失/触屏取消时收不到，不能依赖它才认用户位置。
+    expect(api.userPositioned.value).toBe(true)
     window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 3 }))
     // 指针相对面板原点偏移 100/60 → 新位置 = 500-100 / 260-60
     expect(api.pos.value).toEqual({ left: 400, top: 200 })
