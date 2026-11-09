@@ -7,9 +7,11 @@
  * 所有文字 / UI 色均已按 WCAG 2.2 AA 在本主题四层表面上的最差值验证（正文 ≥ 4.5，UI ≥ 3），
  * 由 tokens/color-contrast.test.ts 读取本文件断言。
  *
- * 页面底色 = --theme-pattern + --theme-backdrop + --color-canvas。--theme-backdrop 是纯静态
- * 多层渐变，环境光层内把底边 14% 渐隐回 canvas；底纹仍在最上层，所以页脚另有 canvas 渐隐
- * 托底（app-shell.css），保证页脚小字不落在 1px 底纹交点上。场景根（data-scene-surface）不叠这两层。
+ * 页面静态底色 = --theme-pattern + --theme-backdrop + --color-canvas；全站环境背景层
+ * （.app-backdrop）再叠 --theme-backdrop-scrim 与季节背景图，图未加载时就是这层纯色底色。
+ * --theme-backdrop 是纯静态多层渐变，环境光层内把底边 14% 渐隐回 canvas；底纹仍在最上层，
+ * 所以页脚另有 canvas 渐隐托底（app-shell.css），保证页脚小字不落在 1px 底纹交点上。
+ * 场景根（data-scene-surface）不叠这些层。
  *
  * 原始色（--{色相}-{级}）只在被两个及以上语义 token 共用时才抽出（§1），组件不得直接引用。
  */
@@ -60,6 +62,11 @@
     --color-surface-1: #231a09;
     --color-surface-2: #2f2311;
     --color-surface-3: #3e2f18;
+    /* 磨砂玻璃表面：页面级卡片 / 面板专用，82%–90% 不透明，配 backdrop-filter 让环境背景透出。
+       表格、数据密集区、输入框与场景 HUD 仍用上面的纯色表面。 */
+    --color-surface-1-glass: rgb(35 26 9 / .88);
+    --color-surface-2-glass: rgb(47 35 17 / .86);
+    --color-surface-3-glass: rgb(62 47 24 / .84);
 
     --color-text-primary: #f8efd9;
     --color-text-secondary: #d9c7a0;
@@ -102,6 +109,13 @@
     --theme-hero-scrim: linear-gradient(90deg, rgb(25 19 4 / .95) 0%, rgb(25 19 4 / .82) 45%, rgb(25 19 4 / .15) 100%);
     --theme-hero-scrim-portrait: linear-gradient(0deg, rgb(25 19 4 / .95) 15%, rgb(25 19 4 / .35) 100%);
     --theme-glass: rgb(25 19 4 / .55);
+    /* 全站环境背景（§2）：装饰层固定铺满视口，内容区半透明表面让背景隐约透出。
+       遮罩在干净侧更实（85%），在坦克 / 天空侧更透（55%），保证文字可读同时保留氛围。 */
+    --theme-backdrop-image: url("../../assets/theme/backdrop-summer-wide.webp");
+    --theme-backdrop-image-portrait: url("../../assets/theme/backdrop-summer-portrait.webp");
+    --theme-backdrop-scrim: linear-gradient(115deg, rgb(25 19 4 / .85) 0%, rgb(25 19 4 / .55) 100%);
+    --theme-backdrop-position: center 40%;
+    --theme-backdrop-position-portrait: center 30%;
     /* 夏日正午：右上角金色日光压出暖调高光，底部暖橙渐暗收住页面；
        峰值按 1024 宽页头 ghost 文字 ≥4.5 调校，不再压过顶栏文字。 */
     --theme-backdrop:
@@ -120,6 +134,9 @@
     --color-surface-1: #0e1d17;
     --color-surface-2: #14271f;
     --color-surface-3: #1b3228;
+    --color-surface-1-glass: rgb(14 29 23 / .88);
+    --color-surface-2-glass: rgb(20 39 31 / .86);
+    --color-surface-3-glass: rgb(27 50 40 / .84);
 
     --color-text-primary: #e7f1ea;
     --color-text-secondary: #a6bdb0;
@@ -162,6 +179,11 @@
     --theme-hero-scrim: linear-gradient(90deg, rgb(8 20 15 / .95) 0%, rgb(8 20 15 / .82) 45%, rgb(8 20 15 / .15) 100%);
     --theme-hero-scrim-portrait: linear-gradient(0deg, rgb(8 20 15 / .95) 15%, rgb(8 20 15 / .35) 100%);
     --theme-glass: rgb(8 20 15 / .55);
+    --theme-backdrop-image: url("../../assets/theme/backdrop-spring-wide.webp");
+    --theme-backdrop-image-portrait: url("../../assets/theme/backdrop-spring-portrait.webp");
+    --theme-backdrop-scrim: linear-gradient(115deg, rgb(8 20 15 / .85) 0%, rgb(8 20 15 / .55) 100%);
+    --theme-backdrop-position: center 40%;
+    --theme-backdrop-position-portrait: center 30%;
     /* 春日清晨：右上角青绿柔光，左下角淡金光晕，底部微暗压住视线。 */
     --theme-backdrop:
       linear-gradient(0deg, var(--color-canvas) 0%, transparent 14%),
@@ -179,6 +201,9 @@
     --color-surface-1: #20160c;
     --color-surface-2: #2a1d10;
     --color-surface-3: #362516;
+    --color-surface-1-glass: rgb(32 22 12 / .88);
+    --color-surface-2-glass: rgb(42 29 16 / .86);
+    --color-surface-3-glass: rgb(54 37 22 / .84);
 
     --color-text-primary: #f6ead6;
     --color-text-secondary: #d0bb9a;
@@ -221,6 +246,11 @@
     --theme-hero-scrim: linear-gradient(90deg, rgb(22 15 8 / .95) 0%, rgb(22 15 8 / .82) 45%, rgb(22 15 8 / .15) 100%);
     --theme-hero-scrim-portrait: linear-gradient(0deg, rgb(22 15 8 / .95) 15%, rgb(22 15 8 / .35) 100%);
     --theme-glass: rgb(22 15 8 / .55);
+    --theme-backdrop-image: url("../../assets/theme/backdrop-autumn-wide.webp");
+    --theme-backdrop-image-portrait: url("../../assets/theme/backdrop-autumn-portrait.webp");
+    --theme-backdrop-scrim: linear-gradient(115deg, rgb(22 15 8 / .85) 0%, rgb(22 15 8 / .55) 100%);
+    --theme-backdrop-position: center 40%;
+    --theme-backdrop-position-portrait: center 30%;
     /* 秋日黄昏：一束斜向橙红暮光，双角暗化把视线收进画面中心。 */
     --theme-backdrop:
       linear-gradient(0deg, var(--color-canvas) 0%, transparent 14%),
@@ -238,6 +268,9 @@
     --color-surface-1: #ffffff;
     --color-surface-2: #f5f8fc;
     --color-surface-3: #e2ebf5;
+    --color-surface-1-glass: rgb(255 255 255 / .88);
+    --color-surface-2-glass: rgb(245 248 252 / .86);
+    --color-surface-3-glass: rgb(226 235 245 / .84);
 
     --color-text-primary: #0f2236;
     --color-text-secondary: #3b5470;
@@ -280,6 +313,12 @@
     --theme-hero-scrim: linear-gradient(90deg, rgb(238 243 248 / .96) 0%, rgb(238 243 248 / .86) 45%, rgb(238 243 248 / .1) 100%);
     --theme-hero-scrim-portrait: linear-gradient(0deg, rgb(238 243 248 / .97) 18%, rgb(238 243 248 / .4) 100%);
     --theme-glass: rgb(255 255 255 / .72);
+    --theme-backdrop-image: url("../../assets/theme/backdrop-winter-wide.webp");
+    --theme-backdrop-image-portrait: url("../../assets/theme/backdrop-winter-portrait.webp");
+    /* 浅色主题用 canvas 白色雾化遮罩压住画面，深色文字仍落在高不透明区域。 */
+    --theme-backdrop-scrim: linear-gradient(115deg, rgb(238 243 248 / .85) 0%, rgb(238 243 248 / .55) 100%);
+    --theme-backdrop-position: center 40%;
+    --theme-backdrop-position-portrait: center 30%;
     /* 冬日晴雪：顶部冷白高光，底部淡蓝雾气；浅色底上保持清爽。 */
     --theme-backdrop:
       linear-gradient(0deg, var(--color-canvas) 0%, transparent 14%),
@@ -318,5 +357,8 @@
     --elevation-2: 0 4px 12px rgb(0 0 0 / .4);
     --elevation-3: 0 12px 32px rgb(0 0 0 / .5);
     --theme-glass: rgb(11 15 17 / .72);
+    --color-surface-1-glass: rgb(17 23 26 / .88);
+    --color-surface-2-glass: rgb(23 32 36 / .86);
+    --color-surface-3-glass: rgb(30 41 46 / .84);
   }
 }

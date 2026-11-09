@@ -411,7 +411,8 @@ onMounted(() => {
 .tt-filters { display: grid; flex: none; gap: var(--space-2); }
 .tt-filters.is-sticky .tt-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
 .tt-filters.is-sticky .tt-tab { flex: none; min-block-size: var(--hit-min-comfortable); }
-.tt-tiers { flex: 1 1 0; min-block-size: 0; overflow-y: auto; display: grid; align-content: start; gap: var(--space-2); }
+/* 数据密集区：整站环境背景只出现在页头与外围，树板保持不透明表面（design-language §2.1）。 */
+.tt-tiers { flex: 1 1 0; min-block-size: 0; overflow-y: auto; display: grid; align-content: start; gap: var(--space-2); background: var(--color-surface-1); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); padding: var(--space-2); }
 .tt-tier-row { display: grid; grid-template-columns: var(--space-10) minmax(0, 1fr); align-items: center; }
 .tt-tier-label { color: var(--color-accent-text); font: var(--type-h3); font-weight: 700; text-align: center; }
 .tt-tier-cards { display: flex; gap: var(--space-2); overflow-x: auto; overscroll-behavior-inline: contain; padding-block: var(--space-1); }
@@ -420,7 +421,7 @@ onMounted(() => {
 /* ---------- 树网格：客户端 216×96 单元格语义，横向滚动 ---------- */
 /* flex: 1 1 0 + min-block-size: 0：滚动区只吃剩余高度，内容高度不反过来把页面撑出视口；
    吸底等级条因此始终停在滚动区底部、底栏上方。 */
-.tt-scroll { flex: 1 1 0; min-block-size: 0; overflow: auto; }
+.tt-scroll { flex: 1 1 0; min-block-size: 0; overflow: auto; background: var(--color-surface-1); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); }
 .tt-canvas { display: grid; gap: 0; min-inline-size: 0; align-content: start; }
 .tt-body { position: relative; display: grid; }
 .tt-edges { position: absolute; inset: 0; pointer-events: none; overflow: visible; }

@@ -263,7 +263,9 @@ function linkAttrs(id) {
 .sidebar-brand-name { font: var(--type-h3); font-weight: 700; white-space: nowrap; }
 .sidebar-brand-accent { color: var(--color-accent-text); }
 
+/* 侧栏整体可滚动；状态条不能被 flex 压扁，否则文字只剩半行。 */
 .sidebar-dev-notice {
+  flex: none;
   padding: var(--space-1) var(--space-2);
   overflow: hidden;
   border: 1px solid var(--color-border-subtle);
