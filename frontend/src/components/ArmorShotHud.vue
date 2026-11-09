@@ -222,4 +222,50 @@ const selected = computed(() => shellOptions.value[shellIndex.value])
 .hud-reading { color: var(--color-text-primary); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: end; }
 .hud-penetration { color: var(--color-accent-text); }
 .hud-unit { color: var(--color-text-secondary); font-weight: 400; }
+
+/* 短横屏：5 个弹种 36px / 装备图标一行；距离滑条与 AP 数值共用一行，
+   整个 HUD 交给宿主 15rem 卡片收口，避免占满右侧车体。 */
+@media (pointer: coarse) and (orientation: landscape) and (height <= 500px) {
+    .shot-hud {
+        grid-template-columns: auto minmax(0, 1fr) auto auto;
+        align-items: center;
+        gap: 2px 6px;
+    }
+    .hud-controls { display: contents; }
+    .hud-shells {
+        grid-column: 1 / -1;
+        grid-row: 1;
+        justify-self: start;
+        gap: 2px;
+        border: 0;
+    }
+    .hud-equipment {
+        grid-column: 1 / -1;
+        grid-row: 2;
+        justify-self: start;
+        gap: 2px;
+    }
+    .hud-shell,
+    .hud-eq {
+        inline-size: 36px;
+        block-size: 36px;
+        min-block-size: 36px;
+    }
+    .hud-shell img,
+    .hud-eq img {
+        inline-size: 24px;
+        block-size: 24px;
+    }
+    .hud-distance { display: contents; }
+    .hud-distance label { grid-column: 1; grid-row: 3; font-size: var(--font-size-caption-xs); line-height: var(--line-height-caption-xs); }
+    .hud-distance input {
+        grid-column: 2;
+        grid-row: 3;
+        min-block-size: 30px;
+    }
+    .hud-distance output { grid-column: 3; grid-row: 3; }
+    .hud-summary { display: contents; }
+    .hud-shell-name { display: none; }
+    .hud-penetration { grid-column: 4; grid-row: 3; }
+}
 </style>
