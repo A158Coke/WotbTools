@@ -227,7 +227,7 @@ defineExpose({
     <input v-if="showFolderPicker && !isAndroidApp()" ref="folderInput" class="visually-hidden" type="file" tabindex="-1" aria-hidden="true" multiple webkitdirectory data-testid="select-folder-input" @change="onPick" />
 
     <!-- 只有空列表才有上传面；有回放后入口在工作台的「管理回放」，这里只留 input 与校验提示 -->
-    <div v-if="!files.length" class="dropzone" data-testid="file-uploader-empty">
+    <div v-if="!files.length" class="dropzone surface-glass-1" data-testid="file-uploader-empty">
       <CloudUpload class="dropzone-icon" :size="40" aria-hidden="true" />
       <p class="dropzone-title">{{ $t('upload.drop_hint') }}</p>
       <p class="dropzone-hint">{{ $t(showFolderPicker ? 'upload.sub_hint' : 'upload.files_only_hint') }}</p>
@@ -262,7 +262,6 @@ defineExpose({
   padding: var(--space-10) var(--space-4);
   border: 2px dashed var(--color-border-strong);
   border-radius: var(--radius-lg);
-  background: var(--color-surface-1);
   text-align: center;
   transition: border-color var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard);
 }

@@ -618,7 +618,8 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
   display: flex;
   flex-direction: column;
   min-height: 100%;
-  /* 场景根自铺不透明底（winter 场景块解析为深色），不叠页面氛围背景。 */
+  /* 3D 场景（含非全屏）必须自铺不透明底（winter 场景块解析为深色）：
+     页面外围仍可见环境背景，但场景内不能透图，也不叠页面环境光。 */
   background: var(--color-canvas);
 }
 

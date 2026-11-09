@@ -104,7 +104,7 @@ onBeforeUnmount(() => {
     <div class="doc-main">
       <!-- 页面自己的页头（如 Rating 说明的返回按钮）；历史 / 技术演进不传 -->
       <slot name="header" />
-      <article ref="body" class="doc-body" @click="onBodyClick" v-html="doc.html"></article>
+      <article ref="body" class="doc-body surface-glass-1" @click="onBodyClick" v-html="doc.html"></article>
     </div>
 
 
@@ -129,7 +129,7 @@ onBeforeUnmount(() => {
 .doc-page { --doc-measure: calc(var(--space-12) * 15); }
 
 .doc-main { min-width: 0; }
-.doc-body { min-width: 0; padding: var(--space-6); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-surface-1); font: var(--type-body); font-size: var(--font-size-doc); line-height: var(--line-height-doc); overflow-wrap: anywhere; }
+.doc-body { min-width: 0; padding: var(--space-6); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); font: var(--type-body); font-size: var(--font-size-doc); line-height: var(--line-height-doc); overflow-wrap: anywhere; }
 .doc-body :deep(h1),
 .doc-body :deep(h2),
 .doc-body :deep(h3) { color: var(--color-text-primary); scroll-margin-top: calc(var(--header-h) + var(--space-4)); }
@@ -147,7 +147,7 @@ onBeforeUnmount(() => {
    同区，L6 探针判内容控件被常驻面盖住；视口左下没有 fixed 控件，碰撞不可能发生。 */
 .doc-body :deep(.doc-copy) { position: absolute; inset-block-end: var(--space-2); inset-inline-start: var(--space-2); min-height: var(--control-h-sm); padding: 0 var(--space-2); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-sm); background: var(--color-surface-1); color: var(--color-text-secondary); font: var(--type-caption); cursor: pointer; }
 .doc-body :deep(.doc-copy:focus-visible) { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-.doc-body :deep(table) { display: block; max-width: 100%; overflow-x: auto; margin: var(--space-4) 0; border-collapse: collapse; }
+.doc-body :deep(table) { display: block; max-width: 100%; overflow-x: auto; margin: var(--space-4) 0; border-collapse: collapse; background: var(--color-surface-1); }
 .doc-body :deep(th), .doc-body :deep(td) { padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--color-border-subtle); text-align: start; }
 .doc-body :deep(th) { color: var(--color-text-primary); background: var(--color-surface-2); }
 .doc-body :deep(img) { max-width: 100%; height: auto; }

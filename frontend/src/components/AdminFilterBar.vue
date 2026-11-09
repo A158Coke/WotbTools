@@ -41,7 +41,18 @@ function close() { sheetOpen.value = false }
 </template>
 
 <style scoped>
-.admin-filter-bar { align-items: end; }
+.admin-filter-bar {
+  align-items: end;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-1-glass);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  backdrop-filter: blur(16px) saturate(1.2);
+}
+@supports not (backdrop-filter: blur(1px)) {
+  .admin-filter-bar { background: var(--color-surface-1); }
+}
 .admin-filter-search { display: flex; flex: 1 1 var(--form-field-min); gap: var(--space-2); min-width: 0; }
 .admin-filter-search > :deep(*) { min-width: 0; }
 .admin-filter-fields { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-2) var(--space-3); min-width: 0; }
