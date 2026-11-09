@@ -198,13 +198,15 @@ const baseViews = computed(() => props.baseStates.map((state) => baseView(state,
   white-space: nowrap;
   vertical-align: bottom;
 }
-.pb-hud-compact .pb-hud-team { grid-template-columns: auto minmax(0, 1fr); gap: var(--space-2); }
+.pb-hud-compact .pb-hud-team { grid-template-columns: auto minmax(0, 1fr); gap: var(--space-1); }
 .pb-hud-compact .pb-hud-value { grid-row: 1; grid-column: 1; justify-self: start; white-space: nowrap; overflow-wrap: normal; }
 .pb-hud-compact .pb-hud-track { grid-row: 1; grid-column: 2; }
 .pb-hud-compact .pb-hud-enemy { grid-template-columns: minmax(0, 1fr) auto; }
 .pb-hud-compact .pb-hud-enemy .pb-hud-value { grid-column: 2; justify-self: end; }
 .pb-hud-compact .pb-hud-enemy .pb-hud-track { grid-column: 1; }
-.pb-hud-compact .pb-hud-center { display: flex; align-items: center; justify-content: center; gap: var(--space-2); }
+/* 667px 横屏（CI Linux 字体更宽）：中列三项的 8px 间隙 + 行内 8px 间隙会把血条压到
+   36.6px；紧凑态统一收到 4px，两侧血条在最小手机横屏仍 ≥40px。 */
+.pb-hud-compact .pb-hud-center { display: flex; align-items: center; justify-content: center; gap: var(--space-1); }
 @media (prefers-reduced-motion: reduce) {
   .pb-hud-fill, .pb-hud-lag { transition: none; }
 }

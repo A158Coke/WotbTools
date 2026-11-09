@@ -3813,7 +3813,9 @@ async function runWorkspace2DScenario(env, scenario) {
     if (d.transport && d.transport.h > 0) {
       check(failures, panel && panel.b <= d.transport.t + 0.5, `details covers the transport after dragging ${label}`)
     }
-    lastPos = panel
+    // 记录宿主相对坐标：下面点 Team 2 时 clickElement 可能把行滚进视口，页面 scrollY 变化会
+    // 同时移动面板与宿主，只比较视口坐标会把滚动误判成“面板被重新摆放”。
+    lastPos = { panel, main: d.main }
   }
 
   // ---- 点 Team 2 → 同一个窗更新、位置不动、Team 2 车道仍在 ----
@@ -3823,8 +3825,10 @@ async function runWorkspace2DScenario(env, scenario) {
   s = await page.callWith(workspace2dProbe, scenario.touch)
   check(failures, s.detailsCount === 1 && s.detailsPlayer === rightName, `details did not update to the Team 2 vehicle: ${s.detailsPlayer}`)
   check(failures, !!s.right, 'Team 2 lane disappeared after selecting a Team 2 vehicle')
-  check(failures, lastPos && s.details && Math.abs(s.details.l - lastPos.l) < 1 && Math.abs(s.details.t - lastPos.t) < 1,
-    'user-dragged details position must survive selection changes')
+  check(failures, lastPos?.panel && lastPos.main && s.details
+    && Math.abs((s.details.l - s.main.l) - (lastPos.panel.l - lastPos.main.l)) < 1
+    && Math.abs((s.details.t - s.main.t) - (lastPos.panel.t - lastPos.main.t)) < 1,
+    'user-dragged details position must survive selection changes (host-relative)')
 
   // ---- × 只关详情 ----
   await clickElement(page, '[data-test="pb-sb-close"]')
