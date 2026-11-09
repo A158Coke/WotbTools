@@ -7,6 +7,8 @@ defineOptions({ name: 'PlaybackMobileOverlay' })
 const props = defineProps({
   /** 暂停时控制栏不自动隐藏（审计 PB-06）。 */
   paused: { type: Boolean, default: false },
+  /** 全屏事实由 usePlaybackFullscreen 提供；本组件不再另行监听 fullscreenchange。 */
+  fullscreen: { type: Boolean, default: false },
 })
 
 const AUTO_HIDE_MS = 2500
@@ -26,10 +28,6 @@ function clearHideTimer() {
   }
 }
 
-function fullscreenActive() {
-  return typeof document !== 'undefined' && !!document.fullscreenElement
-}
-
 function mobileQueryMatches() {
   if (mobileMql) return !!mobileMql.matches
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
@@ -37,7 +35,7 @@ function mobileQueryMatches() {
 }
 
 function isMobileFullscreen() {
-  return fullscreenActive() && mobileQueryMatches()
+  return props.fullscreen && mobileQueryMatches()
 }
 
 function scheduleHide() {
@@ -70,6 +68,15 @@ function syncResponsiveMode() {
   open.value = false
 }
 
+function syncFullscreenExit() {
+  if (props.fullscreen || !transientFullscreen.value) return
+  // 退出全屏的点击会先命中 document 捕获阶段的 reveal()，此时全屏尚未结束，transient 被置为
+  // true。全屏退出后若不清掉，overlay 会保持 transient 网格并让标注工具条按 min-content 撑宽。
+  // 只清 transient / 隐藏计时器，不关闭 open，标注与未完成路线保持原样。
+  clearHideTimer()
+  transientFullscreen.value = false
+}
+
 function onContentPointerDown() {
   pressing = true
   reveal()
@@ -84,6 +91,12 @@ function onWindowPointerUp() {
 watch(() => props.paused, (paused) => {
   if (paused) clearHideTimer()
   else if (open.value) scheduleHide()
+})
+
+// 全屏状态由父组件的 usePlaybackFullscreen 独占监听，这里只消费 prop：
+// 退出全屏必须清掉点击瞬间建立的 transient 形态，但不能新增第二个 document 监听。
+watch(() => props.fullscreen, (fullscreen) => {
+  if (!fullscreen) syncFullscreenExit()
 })
 
 function onDocumentClick(event) {
@@ -179,7 +192,8 @@ defineExpose({ reveal, hide, open, transientFullscreen })
   .pb-mobile-overlay { position: absolute; inset: 0; z-index: var(--pb-z-controls); display: block; pointer-events: none; opacity: 0; transition: opacity .18s ease; }
   .pb-mobile-overlay-visible { opacity: 1; }
   .pb-mobile-overlay-visible .pb-mobile-overlay-content { pointer-events: auto; }
-  .pb-mobile-overlay-content { position: absolute; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom)); left: 8px; display: grid; gap: 5px; padding: 7px; border: 1px solid color-mix(in srgb, var(--text) 18%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--bg-card2) 78%, transparent); backdrop-filter: blur(8px); pointer-events: none; }
+  /* 竖屏控制条降一档：外框/内边距收 4px，给时间轴多让出可用宽度；触控命中区仍由按钮本体保证。 */
+  .pb-mobile-overlay-content { position: absolute; right: 4px; bottom: calc(4px + env(safe-area-inset-bottom)); left: 4px; display: grid; gap: 4px; padding: 4px; border: 1px solid color-mix(in srgb, var(--text) 18%, transparent); border-radius: 6px; background: color-mix(in srgb, var(--bg-card2) 78%, transparent); backdrop-filter: blur(8px); pointer-events: none; }
 }
 @media (prefers-reduced-motion: reduce) { .pb-mobile-overlay { transition: none; } }
 </style>

@@ -182,6 +182,52 @@ describe('PlaybackRoster', () => {
     wrapper.unmount()
   })
 
+  it('dense：固定 30px 轨道、不纵向铺满、两行信息、44×20 窄血条、隐藏枪章', () => {
+    const wrapper = mountRoster({ compact: true, dense: true, gunMarks: new Map([[1001, 2]]) })
+    const shell = wrapper.get('[data-test="pb-shell-roster"]')
+    expect(shell.classes()).toContain('pb-roster-dense')
+    // 手机横屏必须按内容高度排 7 行，不再被车道剩余高度 1fr 拉伸
+    expect(shell.classes()).not.toContain('pb-roster-fill')
+    const list = wrapper.get('.pb-roster-team1 .pb-roster-list')
+    expect(list.attributes('style')).toContain('repeat(2, var(--roster-row-dense, 30px))')
+    // 行仍是带 data-test 的 button，信息与状态不变
+    const row = wrapper.findAll('[data-test="pb-roster-row"]')[0]
+    expect(row.element.tagName).toBe('BUTTON')
+    expect(row.get('[data-test="pb-roster-player"]').text()).toBe('You')
+    expect(row.get('[data-test="pb-roster-tank"]').text()).toBe('Maus')
+    expect(row.get('[data-test="roster-hp"]').exists()).toBe(true)
+    // 车章在这个密度下让位给名字（非 dense 行仍保留）
+    expect(row.find('[data-gun-marks]').exists()).toBe(false)
+    // 两行 grid + 行尾 44×20 细血条（happy-dom 无量纲，锁声明）
+    const source = readFileSync('src/components/PlaybackRoster.vue', 'utf8')
+    const block = (selector) => {
+      const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const m = source.match(new RegExp(escaped + '\\s*\\{([^}]*)\\}'))
+      return m ? m[1] : ''
+    }
+    const denseRow = block('.pb-roster-dense .pb-roster-row')
+    expect(denseRow).toContain('grid-template-rows')
+    expect(denseRow).toContain('block-size: var(--roster-row-dense, 30px)')
+    const denseHp = block('.pb-roster-dense .pb-roster-hpbar')
+    expect(denseHp).toContain('inline-size: 44px')
+    expect(denseHp).toContain('block-size: 20px')
+
+    // 密度变化不改变状态语义：选中 / 阵亡 / 阵营色变量照旧落在同一行 button 上。
+    const stateful = mountRoster({
+      compact: true,
+      dense: true,
+      selectedId: 1001,
+      destroyed: new Set([1001]),
+      friendlyTeam: 1,
+    })
+    const selectedDead = stateful.findAll('[data-test="pb-roster-row"]')[0]
+    expect(selectedDead.classes()).toEqual(expect.arrayContaining(['is-selected', 'selected', 'is-destroyed', 'dead']))
+    expect(selectedDead.attributes('style')).toContain('--roster-team-color')
+    expect(selectedDead.attributes('aria-pressed')).toBe('true')
+    stateful.unmount()
+    wrapper.unmount()
+  })
+
   it('纵向铺满：列表轨道是 N × minmax(可读下限, 1fr)，不是固定大 px', () => {
     const wrapper = mountRoster({ compact: true })
     const list = wrapper.get('.pb-roster-team1 .pb-roster-list')

@@ -108,11 +108,11 @@ export class Page {
     await this.client.send('Emulation.setTouchEmulationEnabled', { enabled: touch, maxTouchPoints: touch ? 5 : 1 }, this.sessionId)
   }
 
-  async goto(url) {
+  async goto(url, { timeout = 45_000 } = {}) {
     await this.client.send('Page.navigate', { url }, this.sessionId)
     // 每个 fixture 服务器都用独立 Vite cacheDir：冷启动要现场优化依赖 + 加载整张模块图，
-    // 慢机器/CI runner 上 20s 会卡在 readyState=interactive。放宽到 45s，不改变任何行为断言。
-    await this.waitForValue('document.readyState', (value) => value === 'complete', { timeout: 45_000, label: 'document readyState=complete' })
+    // 慢机器/CI runner 上 20s 会卡在 readyState=interactive。默认放宽到 45s；个别场景可显式覆盖。
+    await this.waitForValue('document.readyState', (value) => value === 'complete', { timeout, label: 'document readyState=complete' })
   }
 
   /** 场景失败时的现场快照：页面异常 + 可选的状态探针，避免「timeout 但不知道为什么」。 */

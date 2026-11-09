@@ -23,6 +23,7 @@
  */
 import { nextTick, onBeforeUnmount, onMounted, ref, unref, watch } from 'vue'
 import type { Ref } from 'vue'
+import { DETAILS_EDGE_MARGIN, detailsPlacementLimits } from '../utils/detailsPlacementBounds.ts'
 
 /** 已应用的位置（workspace 内像素坐标）；null = 还没定位（首帧交给 CSS 的默认角落）。 */
 export interface PanelPosition {
@@ -44,8 +45,8 @@ interface DragSession {
   dy: number
 }
 
-/** 左侧/顶部的最小可见余量：贴边时不能整个压出 workspace。 */
-const EDGE_MARGIN = 8
+/** 左侧/顶部的最小可见余量（纯几何 helper 的同一常量）。 */
+const EDGE_MARGIN = DETAILS_EDGE_MARGIN
 /** 初始落位为避让中心栏而收窄时的下限：再窄就不收（宁可压住中心栏边缘，也不把内容挤成一列字）。 */
 const MIN_PANEL_WIDTH = 240
 
@@ -102,29 +103,27 @@ export function usePlaybackDetailsPlacement({
     // 宿主的左右内边距不属于 workspace（竖屏 / 全屏时那里是容器的留白与顶部 HUD）。
     const hostStyle = typeof getComputedStyle === 'function' ? getComputedStyle(host) : null
     const padStart = parseFloat(hostStyle?.paddingLeft ?? '') || 0
-    const padEnd = parseFloat(hostStyle?.paddingRight ?? '') || 0
-    const minLeft = padStart + EDGE_MARGIN
-    // 上内边距同理：手机 / 桌面全屏时那里是顶部 HUD，浮窗的拖动柄不能钻到 HUD 下面。
-    const minTop = (parseFloat(hostStyle?.paddingTop ?? '') || 0) + EDGE_MARGIN
-    const maxLeft = Math.max(minLeft, hostRect.width - padEnd - rect.width - EDGE_MARGIN)
     // 传输控件是保护区：浮窗**下缘**不得越过它的上缘（控件缺失 → 只受 host 约束）。
     const bounds = boundsEl?.value
-    let transportTop = hostRect.height
+    let transportTop: number | null = null
     if (bounds) {
       const boundsRect = bounds.getBoundingClientRect()
-      if (boundsRect.height > 0) {
-        transportTop = Math.min(transportTop, boundsRect.top - hostRect.top)
-      }
+      if (boundsRect.height > 0) transportTop = boundsRect.top - hostRect.top
     }
-    const maxBottom = Math.min(hostRect.height - EDGE_MARGIN, transportTop - EDGE_MARGIN)
-    // 这里是 top 的上界，不是高度：`maxBottom` 已经是「浮窗下缘允许到的位置」，
-    // 减去面板自身高度才是浮窗左上角的极限。写反的后果不是布局偏移，而是保护边界**完全失效**
-    // —— 只要候选 top 小于这个数值，`Math.min` 就永远选候选值，浮窗会盖在传输控件上。
-    const maxTop = Math.max(minTop, maxBottom - rect.height)
+    const limits = detailsPlacementLimits({
+      hostWidth: hostRect.width,
+      hostHeight: hostRect.height,
+      paddingLeft: padStart,
+      paddingRight: parseFloat(hostStyle?.paddingRight ?? '') || 0,
+      paddingTop: parseFloat(hostStyle?.paddingTop ?? '') || 0,
+      panelWidth: rect.width,
+      panelHeight: rect.height,
+      transportTop,
+    })
     return {
-      left: Math.round(Math.min(Math.max(left, minLeft), maxLeft)),
-      top: Math.round(Math.min(Math.max(top, minTop), maxTop)),
-      maxHeight: Math.max(0, maxBottom - minTop),
+      left: Math.round(Math.min(Math.max(left, limits.minLeft), limits.maxLeft)),
+      top: Math.round(Math.min(Math.max(top, limits.minTop), limits.maxTop)),
+      maxHeight: limits.maxHeight,
     }
   }
 
@@ -226,7 +225,13 @@ export function usePlaybackDetailsPlacement({
     const host = hostEl.value
     if (!host) return
     const hostRect = host.getBoundingClientRect()
-    apply(clampToBounds(event.clientX - hostRect.left - session.dx, event.clientY - hostRect.top - session.dy))
+    const next = clampToBounds(event.clientX - hostRect.left - session.dx, event.clientY - hostRect.top - session.dy)
+    if (!next) return
+    apply(next)
+    // 指针已经开始移动就说明用户亲手定位了浮窗；不能等 pointerup 才置位——
+    // 指针捕获丢失、触屏 pointercancel 或后续点击抢走焦点时 up 可能收不到，
+    // 紧接着的选择变化会把刚拖到的位置重算成初始落位。
+    userPositioned.value = true
   }
 
   function onPointerUp(): void {
