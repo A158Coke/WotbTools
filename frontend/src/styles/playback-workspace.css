@@ -259,7 +259,7 @@
 
 /* 手机横屏 3D 场景贴边：页面 .wrap 的水平/垂直外框（gutter、top space-6/4、
    bottom space-12/8）用负 margin 抵消；根高度已按 --pb-workspace-h 扣除 header，
-   负 top 正好对齐内容区顶部。safe-area 仍由全屏 / 页面规则处理。 */
+   负 top 正好对齐内容区顶部。场景/画布继续贴边，交互浮层在下面单独避让 safe-area。 */
 @media (orientation: landscape) {
   .pb-root.playback-workspace.phone-form:not(.portrait-flow, :fullscreen) {
     border: 0;
@@ -280,12 +280,37 @@
   border: 0;
   border-radius: 0;
 }
+/* 场景仍全幅贴边；交互浮层单独避让安全区，避免刘海/圆角设备上按钮进入 unsafe area。
+   --gutter 已包含水平 safe-area 并用于负 margin，所以这里只处理浮层，不重复扣减根尺寸。 */
+.pb-root.playback-workspace.phone-form:not(.portrait-flow) {
+  --pb-safe-left: env(safe-area-inset-left, 0px);
+  --pb-safe-right: env(safe-area-inset-right, 0px);
+  --pb-safe-top: env(safe-area-inset-top, 0px);
+  --pb-safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+.pb-root.playback-workspace.phone-form:not(.portrait-flow) > .hud {
+  inset-block-start: max(var(--space-1), var(--pb-safe-top));
+  /* 车道从安全区内缘起算，HUD 必须同时让开「内缩 + 车道宽」；零 inset 时与旧式
+     100% - 2*lane - space-4 完全等价（左右各 4px 间隙）。 */
+  max-inline-size: min(
+    calc(100% - 2 * (max(var(--space-1), var(--pb-safe-left), var(--pb-safe-right)) + var(--pb-overlay-lane-w, 0px) + var(--space-1))),
+    520px);
+}
 /* 全屏入口已并入传输条，右上角让给名册。距离滑条停右下角，传输条右侧预留同宽空槽；
-   滑条高度随视口收缩，7 行 dense 名册最后一行之下才起跳（390/360 都成立）。 */
+   滑条高度随视口收缩，7 行 dense 名册最后一行之下才起跳（390/360 都成立）。
+   传输条与滑条都从 safe-area 内缘开始。 */
+.pb-root.playback-workspace.phone-form:not(.portrait-flow) > .controls {
+  margin-inline-start: max(var(--space-2), var(--pb-safe-left));
+  margin-inline-end: calc(max(var(--space-2), var(--pb-safe-right)) + var(--control-h-sm) + var(--space-2));
+  inset-block-end: max(var(--space-2), var(--pb-safe-bottom));
+}
+.pb-root.playback-workspace.compact-bar.phone-form:not(.portrait-flow) > .controls.controls-docked {
+  inset-inline-end: calc(max(var(--space-2), var(--pb-safe-right)) + var(--control-h-sm) + var(--space-4));
+}
 .pb-root.playback-workspace.phone-form:not(.portrait-flow) .scene-dist {
   top: auto;
-  bottom: var(--space-2);
-  right: var(--space-2);
+  bottom: max(var(--space-2), var(--pb-safe-bottom));
+  right: max(var(--space-2), var(--pb-safe-right));
 }
 .pb-root.playback-workspace.phone-form:not(.portrait-flow) .scene-dist .scene-dist-track {
   height: min(max(64px, 18dvh), 96px);
@@ -293,8 +318,20 @@
 /* FPS 角标原本也停右下，会与滑条同槽；手机横屏改停左下、控制条上方，二者不再互相遮挡。 */
 .pb-root.playback-workspace.phone-form:not(.portrait-flow) .pb-fps {
   inset-inline-end: auto;
-  inset-inline-start: var(--space-2);
-  inset-block-end: calc(var(--control-h-sm) + var(--space-4));
+  inset-inline-start: max(var(--space-2), var(--pb-safe-left));
+  inset-block-end: calc(max(var(--space-2), var(--pb-safe-bottom)) + var(--control-h-sm) + var(--space-4));
+}
+/* uiHidden 时全屏按钮与恢复按钮是仅存的两个交互入口，同样保持在安全区内。 */
+.pb-root.playback-workspace.phone-form:not(.portrait-flow) .scene-fs-btn.floating {
+  top: max(var(--space-2), var(--pb-safe-top));
+  right: max(var(--space-2), var(--pb-safe-right));
+}
+.pb-root.playback-workspace.phone-form:not(.portrait-flow) .ui-restore {
+  top: max(var(--space-2), var(--pb-safe-top));
+  right: max(var(--space-2), var(--pb-safe-right));
+}
+.pb-root.playback-workspace.phone-form:not(.portrait-flow) .ui-restore.ui-restore-shifted {
+  top: calc(max(var(--space-2), var(--pb-safe-top)) + var(--control-h-sm) + var(--space-2));
 }
 
 /* 名册车道 = 左上/右上角悬浮面板（游戏同款：己方在左、敌方在右）。
@@ -324,6 +361,13 @@
 }
 .pb-root.playback-workspace.roster-side:not(.portrait-flow) .side-right {
   inset-inline-end: var(--space-1);
+}
+/* 手机横屏：名册是交互浮层，必须落在水平安全区内；场景本身仍全幅贴边。 */
+.pb-root.playback-workspace.phone-form.roster-side:not(.portrait-flow) .side-left {
+  inset-inline-start: max(var(--space-1), var(--pb-safe-left));
+}
+.pb-root.playback-workspace.phone-form.roster-side:not(.portrait-flow) .side-right {
+  inset-inline-end: max(var(--space-1), var(--pb-safe-right));
 }
 
 .battle-playback.playback-workspace .pb-map-stage > .pb-map {

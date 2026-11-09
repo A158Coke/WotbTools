@@ -67,6 +67,31 @@ if (players > 0) {
   dataset.events = []
   dataset.recorderAccountId = 1002
 }
+// `?hud=exact|mixed`：宽度竞争压力夹具——非空四基地、完整 5 位 HP 数字，
+// mixed 再叠加 PARTIAL / UNKNOWN 队伍状态。只驱动现有生产 HUD，不另造布局。
+const hudStress = params.get('hud')
+if (hudStress) {
+  const exactHp = (hp = 12600) => ({ timeSec: 0, currentHp: hp, knowledge: 'CURRENT', displayCapacityHp: 12600, relativeFull: true, source: 'EXACT_BATTLE_EVENT', confidence: 'HIGH' })
+  dataset.vehicles = dataset.vehicles.map((vehicle) => {
+    const unknown = hudStress === 'mixed' && vehicle.team === 2
+    const partial = hudStress === 'mixed' && vehicle.team === 1 && vehicle.accountId % 2 === 0
+    return {
+      ...vehicle,
+      healthTransitions: unknown || partial ? [] : [exactHp(12600 - (vehicle.accountId % 5) * 100)],
+    }
+  })
+  dataset.pointsSamples = [
+    { timeSec: 0, team: 1, points: 4 },
+    { timeSec: 0, team: 2, points: 2 },
+  ]
+  dataset.baseStates = ['A', 'B', 'C', 'D'].map((baseId, index) => ({
+    baseId,
+    timeSec: 0,
+    ownerTeam: index < 2 ? 1 : 2,
+    capturingTeam: index % 2 ? 2 : 1,
+    captureProgress: 25 + index * 15,
+  }))
+}
 // `?shell=immersive`：与 AppShell 的沉浸态同一份契约（根元素属性 + scale.css 把外壳高度 token 归零），
 // 夹具没有真实顶栏 / Tab 栏，所以用它复现「手机横屏回放把外壳让出来」后的高度预算。
 if (params.get('shell') === 'immersive') document.documentElement.dataset.shellChrome = 'immersive'

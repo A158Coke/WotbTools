@@ -50,6 +50,17 @@ describe('BattlePlaybackHud', () => {
     expect(wrapper.find('[data-test="pb-hud-enemy"]').exists()).toBe(true)
   })
 
+  it('compact reserves HP track width and lets only the map name yield', () => {
+    // 667px 横屏的真实失败模式：完整 HP 数字与血条抢同一行，血条被压到 36.6px。
+    // 结构上必须把数字叠到血条上方（共用单列），中列只让地图名收缩。
+    const compact = hudSource.slice(hudSource.indexOf('/* 紧凑单行'))
+    expect(compact).toMatch(/\.pb-hud-compact \.pb-hud-grid \{[^}]*minmax\(0, 1fr\) minmax\(0, max-content\) minmax\(0, 1fr\)/)
+    expect(compact).toMatch(/\.pb-hud-compact \.pb-hud-team \{ grid-template-columns: minmax\(0, 1fr\);/)
+    expect(compact).toMatch(/\.pb-hud-compact \.pb-hud-track \{[^}]*min-inline-size: 40px/)
+    expect(compact).toMatch(/\.pb-hud-compact \.pb-hud-map \{[^}]*flex: 1 1 0;[^}]*min-inline-size: 0;/)
+    expect(compact).toMatch(/\.pb-hud-compact \.pb-hud-center > \.pb-hud-(bases|time|points)[^{]*\{[^}]*flex: none/)
+  })
+
   it('renders map and battle time in the persistent summary', () => {
     const wrapper = mountHud({ mapTitle: 'Canal', battleTime: '03:20' })
     expect(wrapper.get('[data-test="pb-hud-map"]').text()).toBe('Canal')

@@ -15,6 +15,7 @@ import { defineComponent, h, nextTick, ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { usePlaybackDetailsPlacement } from './usePlaybackDetailsPlacement.ts'
+import { detailsPlacementLimits, detailsPlacementPreserved } from '../utils/detailsPlacementBounds.js'
 
 /** 用 happy-dom 的元素几何桩：这一层只读 getBoundingClientRect，不需要真实布局引擎。 */
 function rect(left, top, width, height) {
@@ -305,5 +306,47 @@ describe('initial placement keeps the center column clear', () => {
     await nextTick()
     expect(api.maxPanelWidth.value).toBe(null)
     wrapper.unmount()
+  })
+})
+
+/**
+ * 选择变化后的位置断言必须由**真实边界**推导，不能用「上移不超过增高量」这种弱谓词：
+ * old top 在新高度下仍然合法时，任何位移（哪怕 bottom 没变）都是不必要的重排。
+ */
+describe('user-dragged placement after selection change', () => {
+  const base = {
+    hostWidth: 1200,
+    hostHeight: 700,
+    panelWidth: 320,
+    transportTop: 600,
+  }
+
+  it('negative: old top remains legal under the new height → exact top must be preserved', () => {
+    const input = {
+      ...base,
+      oldTop: 100,
+      newTop: 50,
+      newHeight: 150,
+    }
+    const limits = detailsPlacementLimits({ ...base, panelHeight: 150 })
+    expect(limits.maxTop).toBeGreaterThan(100)
+    // 负例：old top=100、new height=150 时下缘 250 仍远高于 transport 600；移到 50 是假阳性。
+    expect(detailsPlacementPreserved(input)).toBe(false)
+    // 正确结果：原位 100。
+    expect(detailsPlacementPreserved({ ...input, newTop: 100 })).toBe(true)
+  })
+
+  it('positive: new height truly crosses the transport boundary → clamp to maxTop and stay clear', () => {
+    const input = {
+      ...base,
+      oldTop: 390,
+      newTop: 372,
+      newHeight: 220,
+    }
+    const limits = detailsPlacementLimits({ ...base, panelHeight: 220 })
+    expect(limits.maxTop).toBe(372)
+    expect(limits.maxTop + 220).toBeLessThanOrEqual(limits.maxBottom)
+    expect(detailsPlacementPreserved(input)).toBe(true)
+    expect(detailsPlacementPreserved({ ...input, newTop: 300 })).toBe(false)
   })
 })

@@ -187,26 +187,41 @@ const baseViews = computed(() => props.baseStates.map((state) => baseView(state,
   .pb-hud-enemy .pb-hud-track { grid-column: 1; grid-row: 2; }
 }
 /* 紧凑单行：己方 值+血条 │ 基地 / 时钟 / 比分 │ 敌方 血条+值。 */
-.pb-hud-compact { gap: 0; padding-block: var(--space-1); }
+.pb-hud-compact { gap: 0; padding-block: var(--space-1); padding-inline: var(--space-1); }
 /* 667px 横屏：8px 中列间隙会把两侧血条压到 39.7px；4px 让单行 HUD 在最小手机横屏仍 ≥40px。 */
-.pb-hud-compact .pb-hud-grid { gap: var(--space-1); }
+.pb-hud-compact .pb-hud-grid {
+  /* 左右两支等宽（血条对称）；把完整 HP 数字的 max-content 作为两侧下限，避免 5 位
+     数字溢出 HUD；中列允许缩到内容下限，地图名先让位给底座/时钟/比分。 */
+  grid-template-columns: minmax(max-content, 1fr) minmax(0, max-content) minmax(max-content, 1fr);
+  gap: var(--space-1);
+}
 .pb-hud-compact .pb-hud-map {
   display: inline-block;
+  flex: 1 1 0;
+  min-inline-size: 0;
   max-inline-size: 12ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: bottom;
 }
-.pb-hud-compact .pb-hud-team { grid-template-columns: auto minmax(0, 1fr); gap: var(--space-1); }
-.pb-hud-compact .pb-hud-value { grid-row: 1; grid-column: 1; justify-self: start; white-space: nowrap; overflow-wrap: normal; }
-.pb-hud-compact .pb-hud-track { grid-row: 1; grid-column: 2; }
-.pb-hud-compact .pb-hud-enemy { grid-template-columns: minmax(0, 1fr) auto; }
-.pb-hud-compact .pb-hud-enemy .pb-hud-value { grid-column: 2; justify-self: end; }
-.pb-hud-compact .pb-hud-enemy .pb-hud-track { grid-column: 1; }
-/* 667px 横屏（CI Linux 字体更宽）：中列三项的 8px 间隙 + 行内 8px 间隙会把血条压到
-   36.6px；紧凑态统一收到 4px，两侧血条在最小手机横屏仍 ≥40px。 */
-.pb-hud-compact .pb-hud-center { display: flex; align-items: center; justify-content: center; gap: var(--space-1); }
+/* 667px 横屏的宽度账：完整 HP 数字 + ≥40px 血条放不进同一行时，数字叠到血条上方；
+   整块仍是单行 HUD（高度由 24px 基地徽标决定），但数字不参与和血条抢宽度。 */
+.pb-hud-compact .pb-hud-team { grid-template-columns: minmax(0, 1fr); gap: var(--space-1); }
+.pb-hud-compact .pb-hud-value { grid-row: 1; grid-column: 1; justify-self: center; white-space: nowrap; overflow-wrap: normal; }
+.pb-hud-compact .pb-hud-track { grid-row: 2; grid-column: 1; min-inline-size: 40px; }
+/* 中列三项（基地 / 时钟 / 比分）不可压缩；地图名是唯一的弹性项。 */
+.pb-hud-compact .pb-hud-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-inline-size: 0;
+  overflow: hidden;
+}
+.pb-hud-compact .pb-hud-center > .pb-hud-bases,
+.pb-hud-compact .pb-hud-center > .pb-hud-time,
+.pb-hud-compact .pb-hud-center > .pb-hud-points { flex: none; }
 @media (prefers-reduced-motion: reduce) {
   .pb-hud-fill, .pb-hud-lag { transition: none; }
 }

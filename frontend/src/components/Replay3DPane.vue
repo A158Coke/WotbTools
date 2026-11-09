@@ -868,10 +868,10 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
     <div v-else class="pb-root playback-workspace" ref="rootEl" :class="{ 'phone-form': isPhone, 'portrait-flow': portraitFlow, 'roster-side': showRoster && !portraitFlow, 'compact-bar': compactBar }" data-testid="replay3d-root" data-scene-surface data-tour="replay3d-workspace">
       <!-- 名牌覆盖层与 canvas 共用**同一个画布盒子**：场景内核按 canvas（.scene）尺寸算锚点，
            覆盖层必须与它同原点，否则三段式下名牌会整体偏一条车道宽。 -->
-      <!-- 手机全屏入口：传输条内联（compact-bar 含横屏）；隐藏全部 UI 时改用右上角浮动入口，
-           保证隐藏态仍有可点击的全屏 / 恢复入口。 -->
+      <!-- 手机全屏入口：竖屏保持右上角浮动（原契约），横屏并入传输条；隐藏全部 UI 时
+           浮动入口是唯一可达入口。三态互斥，不会出现两个全屏按钮。 -->
       <SceneFullscreenButton
-        v-if="isPhone && fullscreenSupported && uiHidden"
+        v-if="isPhone && fullscreenSupported && (uiHidden || isPortrait)"
         floating
         :is-fullscreen="isFullscreen"
         data-test="pb-fullscreen"
@@ -1019,7 +1019,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
           <PlaybackTransport
             :fullscreen-supported="fullscreenSupported"
             :is-fullscreen="isFullscreen"
-            :floating-fullscreen="false"
+            :floating-fullscreen="isPhone && isPortrait"
             :display-open="displayOpen"
             display-enabled
             @toggle-fullscreen="toggleFullscreen()"

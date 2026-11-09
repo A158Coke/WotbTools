@@ -12,6 +12,7 @@ import { MOBILE_PAGE_SCENARIOS, SHELL_OVERLAY_SCENARIOS, runMobilePageScenario, 
 import { DIALOG_SHEET_SCENARIOS, runDialogSheetScenario } from './browser-dialog-sheet.mjs'
 import { DRAWER_TABLE_SCENARIOS, runDrawerTableScenario } from './browser-drawer-tables.mjs'
 import { CATALOG_HOF_DOC_SCENARIOS, runCatalogHofDocScenario } from './browser-catalog-hof-docs.mjs'
+import { detailsPlacementPreserved } from '../src/utils/detailsPlacementBounds.js'
 
 /**
  * Browser-level interaction regression for the Replay Workspace capability tabs and the
@@ -763,6 +764,7 @@ const ROSTER_GEOMETRY_SCENARIOS = [
   { name: 'roster-geometry-1024x768-tablet', width: 1024, height: 768, touch: false, players: 7, unknown: 2, killfeed: 3, layout: 'side' },
   { name: 'roster-geometry-375x812-portrait-coarse', width: 375, height: 812, touch: true, players: 7, unknown: 0, killfeed: 3, layout: 'portrait' },
   { name: 'roster-geometry-390x844-portrait-coarse', width: 390, height: 844, touch: true, players: 7, unknown: 2, killfeed: 3, layout: 'portrait' },
+  { name: 'roster-geometry-390x844-portrait-fullscreen-coarse', width: 390, height: 844, touch: true, players: 7, unknown: 2, killfeed: 3, layout: 'portrait', fullscreen: true },
   { name: 'roster-geometry-740x360-landscape-coarse', width: 740, height: 360, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side' },
   { name: 'roster-geometry-740x360-fullscreen-coarse', width: 740, height: 360, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', fullscreen: true },
   { name: 'roster-geometry-844x390-landscape-coarse', width: 844, height: 390, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side' },
@@ -934,9 +936,12 @@ function rosterGeometryProbe() {
       out.floatingChecked = true
     }
   }
-  // 手机形态：全屏入口内联在传输条（旧版右上浮动按钮会压住敌方第一行 / 血量数字）。
-  // 只有隐藏全部 UI 时浮动入口才作为唯一可达入口出现，由 uiHidden 场景单独断言。
-  const primaryIds = ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']
+  // 手机横屏：全屏入口内联在传输条（旧版右上浮动按钮会压住敌方第一行 / 血量数字）。
+  // 手机竖屏：恢复右上浮动入口，传输条只有 5 个主控件；桌面仍是 6 个。
+  const portraitRoot = root.classList.contains('portrait-flow')
+  const primaryIds = out.phone && portraitRoot
+    ? ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-secondary-entry']
+    : ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']
   const transportControls = root.querySelector('.pb-controls')
   const primary = primaryIds.map((id) => transportControls && transportControls.querySelector(`[data-test="${id}"]`))
   if (primary.some((element) => !element)) out.errors.push('shared primary controls must be present in transport')
@@ -951,8 +956,15 @@ function rosterGeometryProbe() {
   }
   if (out.phone) {
     const inline = transportControls && transportControls.querySelector('[data-test="pb-fullscreen"]')
-    if (!inline || inline.getClientRects().length === 0) out.errors.push('phone: inline fullscreen entry missing from transport')
-    // 内联入口与右上浮动入口互斥：同一时刻只允许一个可见全屏入口，避免浮钮再次压住敌方首行。
+    const floating = root.querySelector('.scene-fs-btn.floating')
+    // 横屏内联、竖屏浮动；两种形态互斥，同一时刻只允许一个可见全屏入口。
+    if (portraitRoot) {
+      if (inline && inline.getClientRects().length > 0) out.errors.push('phone portrait: fullscreen entry must not be inline in transport')
+      if (!floating || floating.getClientRects().length === 0) out.errors.push('phone portrait: floating fullscreen entry missing')
+    } else {
+      if (!inline || inline.getClientRects().length === 0) out.errors.push('phone landscape: inline fullscreen entry missing from transport')
+      if (floating && floating.getClientRects().length > 0) out.errors.push('phone landscape: floating fullscreen entry must be hidden')
+    }
     const entries = root.querySelectorAll('[data-test="pb-fullscreen"]')
     if (entries.length !== 1) out.errors.push(`phone: expected exactly one fullscreen entry, got ${entries.length}`)
   }
@@ -1307,6 +1319,75 @@ function rosterLayoutSignature() {
   ].join('|')
 }
 
+/** 3D 手机横屏所有常驻交互浮层的实际矩形（相对视口）。 */
+async function phoneOverlayBoxes(page) {
+  return page.probe(() => {
+    const box = (selector) => {
+      const el = document.querySelector(selector)
+      if (!el || !el.getClientRects().length) return null
+      const r = el.getBoundingClientRect()
+      return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height }
+    }
+    return {
+      width: innerWidth,
+      height: innerHeight,
+      root: box('.pb-root'),
+      stage: box('.pb-stage'),
+      laneLeft: box('.side-left'),
+      laneRight: box('.side-right'),
+      hud: box('.hud'),
+      controls: box('.controls'),
+      fullscreen: box('[data-test="pb-fullscreen"]'),
+      slider: box('[data-testid="scene-distance-slider"]'),
+      fps: box('[data-testid="replay3d-fps"]'),
+      restore: box('[data-testid="show-all-ui"]'),
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }
+  })
+}
+
+/**
+ * 非零水平 safe-area 的门禁：场景/画布仍贴边，但所有交互浮层必须落在安全区内；
+ * 归零后原有布局不得漂移。用 Chromium 的 Emulation.setSafeAreaInsetsOverride，
+ * 与 2D 同一套真实浏览器 env() 语义（不是 CSS 推断）。
+ */
+async function checkPhoneSafeArea(page, failures, label) {
+  const inset = 44
+  const before = await phoneOverlayBoxes(page)
+  if (!before.root) {
+    failures.push(label + ': safe-area check needs .pb-root')
+    return
+  }
+  await page.client.send('Emulation.setSafeAreaInsetsOverride', { insets: { left: inset, right: inset } }, page.sessionId)
+  await page.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+  await waitForStableLayout(page)
+  const safe = await phoneOverlayBoxes(page)
+  const interactive = ['laneLeft', 'laneRight', 'hud', 'controls', 'fullscreen', 'slider', 'fps', 'restore']
+  const outside = interactive.filter((name) => {
+    const b = safe[name]
+    return b && (b.l < inset - 1 || b.r > safe.width - inset + 1)
+  })
+  check(failures, outside.length === 0,
+    `${label}: interactive overlays enter the horizontal safe area: ${JSON.stringify(outside.map((name) => [name, safe[name]]))}`)
+  check(failures, safe.root.l <= 0.5 && safe.root.r >= safe.width - 0.5,
+    `${label}: scene root must stay edge-to-edge with safe-area insets: ${JSON.stringify({ root: safe.root, width: safe.width })}`)
+  check(failures, safe.stage && safe.stage.l <= 0.5 && safe.stage.r >= safe.width - 0.5,
+    `${label}: scene stage must stay edge-to-edge with safe-area insets: ${JSON.stringify(safe.stage)}`)
+  check(failures, safe.scrollWidth <= safe.clientWidth + 1,
+    `${label}: page must not overflow horizontally with safe-area insets: ${safe.scrollWidth} > ${safe.clientWidth}`)
+  console.log(`[browser-interaction] ${label} safe-area=${JSON.stringify({ inset, lanes: [safe.laneLeft?.l, safe.laneRight?.r], hud: [safe.hud?.l, safe.hud?.r], controls: [safe.controls?.l, safe.controls?.r], slider: [safe.slider?.l, safe.slider?.r], fps: [safe.fps?.l, safe.fps?.r], root: [safe.root.l, safe.root.r] })}`)
+  await page.client.send('Emulation.setSafeAreaInsetsOverride', { insets: { left: 0, right: 0 } }, page.sessionId)
+  await page.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+  await waitForStableLayout(page)
+  const reset = await phoneOverlayBoxes(page)
+  const drift = ['root', 'stage', 'laneLeft', 'laneRight', 'hud', 'controls', 'fullscreen', 'slider', 'fps', 'restore']
+    .filter((name) => before[name] && reset[name])
+    .filter((name) => Math.abs(before[name].l - reset[name].l) > 1.5 || Math.abs(before[name].r - reset[name].r) > 1.5)
+  check(failures, drift.length === 0,
+    `${label}: zero-inset layout must be restored exactly after safe-area probe: ${JSON.stringify(drift.map((name) => [name, before[name], reset[name]]))}`)
+}
+
 async function waitForStableLayout(page, { timeout = 10_000 } = {}) {
   const deadline = Date.now() + timeout
   let previous = null
@@ -1326,10 +1407,12 @@ async function waitForStableLayout(page, { timeout = 10_000 } = {}) {
 }
 
 async function check3DDrawingSurface(page, failures, scenario, viewport) {
-  // 手机形态：全屏入口内联在传输条（右上浮动按钮已移除），传输条 6 个主控件。
-  // touch 由调用方经 page.callWith 显式传入（probe 在页面内执行，无 Node 闭包）。
-  const probe = (touch) => {
-    const ids = ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']
+  // 手机横屏：全屏入口内联在传输条，6 个主控件；手机竖屏：浮动入口，传输条 5 个。
+  // touch / portrait 由调用方经 page.callWith 显式传入（probe 在页面内执行，无 Node 闭包）。
+  const probe = (touch, portrait) => {
+    const ids = portrait
+      ? ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-secondary-entry']
+      : ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']
     const controls = document.querySelector('.pb-controls')
     const els = ids.map((id) => controls && controls.querySelector('[data-test="' + id + '"]'))
     const boxes = els.map((el) => el && el.getBoundingClientRect()).filter(Boolean)
@@ -1361,7 +1444,8 @@ async function check3DDrawingSurface(page, failures, scenario, viewport) {
     }
   }
   const compactBar = await page.evaluate(`document.querySelector('.pb-root').classList.contains('compact-bar')`)
-  const before = await page.callWith(probe, scenario.touch)
+  const portrait = scenario.layout === 'portrait'
+  const before = await page.callWith(probe, scenario.touch, portrait)
   const label = viewport.width + 'x' + viewport.height
   check(failures, !!before.entry && before.entry.reachable, label + ': Drawing entry must be hit-testable in the 3D tool-row')
   if (before.entry) {
@@ -1372,7 +1456,7 @@ async function check3DDrawingSurface(page, failures, scenario, viewport) {
   check(failures, compactBar ? !before.toolRow : before.toolRow, label + ': tool-row belongs to the controls only in wide forms')
   check(failures, !before.inTransport && !before.entryInTransport, label + ': Drawing entry must live outside the shared transport')
   check(failures, !before.entryInDisplay, label + ': Drawing is a creation tool, not a Display preference')
-  const expectedPrimary = 6
+  const expectedPrimary = portrait ? 5 : 6
   check(failures, before.transport.order.length === expectedPrimary && before.transport.oneRow,
     label + ': shared primary controls must stay in x-order on one row before Drawing')
   if (!before.entry) return
@@ -1380,7 +1464,7 @@ async function check3DDrawingSurface(page, failures, scenario, viewport) {
   check(failures, openedByClick, label + ': Drawing entry click failed')
   if (!openedByClick) return
   await page.waitFor(() => !!document.querySelector('[data-test="pb-annot-toolbar"]'), { label: '3D drawing toolbar' })
-  const opened = await page.callWith(probe, scenario.touch)
+  const opened = await page.callWith(probe, scenario.touch, portrait)
   check(failures, opened.toolbar && !opened.toolRow, label + ': Drawing must replace the tool-row with AnnotationToolbar')
   check(failures, await page.evaluate(`!document.querySelector('[data-testid="display-panel"]')`), label + ': Drawing and Display are mutually exclusive')
   check(failures, await page.evaluate('window.__sceneMarker === window.__pbPane.sceneApi'), label + ': opening Drawing must not rebuild the scene')
@@ -1597,7 +1681,10 @@ async function runRosterGeometryScenario(env, scenario) {
   await page.evaluate('window.scrollTo(0, 0)')
   await waitForStableLayout(page)
   const geometry = await page.probe(rosterGeometryProbe)
-  if (scenario.name.endsWith('-fullscreen-coarse')) {
+  if (scenario.touch && scenario.layout !== 'portrait') {
+    await checkPhoneSafeArea(page, failures, scenario.name + ' landscape')
+  }
+  if (scenario.layout !== 'portrait' && scenario.name.endsWith('-fullscreen-coarse')) {
     const slider = await page.probe(() => {
       const el = document.querySelector('[data-testid="scene-distance-slider"]')
       const fs = document.querySelector('[data-test="pb-fullscreen"]')
@@ -1851,6 +1938,9 @@ async function runRosterGeometryScenario(env, scenario) {
   }
   if (scenario.fullscreen) {
     check(failures, await page.evaluate('window.__sceneMarker === window.__pbPane.sceneApi'), 'entering fullscreen must not recreate the 3D scene')
+    if (scenario.touch && scenario.layout !== 'portrait') {
+      await checkPhoneSafeArea(page, failures, scenario.name + ' fullscreen')
+    }
   }
 
   // —— 跟随：名册行 → selectedEid + cam=follow（2026-10-05 交互契约）——
@@ -3246,6 +3336,10 @@ const WORKSPACE_2D_SCENARIOS = [
   // 手机横屏：地图是主角。minMap = 地图边长下限（由 740×360 基线 96px + 产品目标推出：
   // 外壳让出 104px、传输条合成一行、HUD 一行后的预算，留 ~6% 余量）。
   { name: 'ws2d-667x375-landscape-coarse', width: 667, height: 375, touch: true, layout: 'lanes', minMap: 270 },
+  // 紧凑 HUD 宽度竞争：非空四基地 + 完整 5 位 HP 数字 + 超长地图名；mixed 再加 PARTIAL/UNKNOWN。
+  { name: 'ws2d-667x375-hud-exact', width: 667, height: 375, touch: true, layout: 'lanes', minMap: 270, hudStress: 'exact' },
+  { name: 'ws2d-740x360-hud-mixed', width: 740, height: 360, touch: true, layout: 'lanes', minMap: 260, hudStress: 'mixed' },
+  { name: 'ws2d-844x390-hud-exact', width: 844, height: 390, touch: true, layout: 'lanes', minMap: 290, hudStress: 'exact' },
   { name: 'ws2d-740x360-landscape-coarse', width: 740, height: 360, touch: true, layout: 'lanes', minMap: 260 },
   { name: 'ws2d-740x360-fullscreen-coarse', width: 740, height: 360, touch: true, layout: 'lanes', fullscreen: true, minMap: 260 },
   { name: 'ws2d-844x390-landscape-coarse', width: 844, height: 390, touch: true, layout: 'lanes', minMap: 290 },
@@ -3319,6 +3413,11 @@ function workspace2dProbe(touch = false) {
     hud: box(document.querySelector('.pb-hud')),
     pageOverflowX: document.documentElement.scrollWidth > innerWidth + 1,
     main: box(main),
+    mainPadding: main ? {
+      left: parseFloat(getComputedStyle(main).paddingLeft) || 0,
+      right: parseFloat(getComputedStyle(main).paddingRight) || 0,
+      top: parseFloat(getComputedStyle(main).paddingTop) || 0,
+    } : null,
     map: box(document.querySelector('[data-test="pb-map"]')),
     transport: box(transport),
     left: lane('left'),
@@ -3355,6 +3454,67 @@ function workspace2dProbe(touch = false) {
         scrollHeight: element.scrollHeight, clientHeight: element.clientHeight, classes: element.className,
         squareAvailable: style.getPropertyValue('--pb-square-avail-h'), workspaceHeight: style.getPropertyValue('--pb-workspace-h') }
     }),
+  }
+}
+
+/**
+ * 紧凑 HUD 的宽度竞争探针：把地图名换成超长串后，量实际轨道/数字/中列的几何。
+ * 只读 + 一次 DOM 文本注入，不依赖 fixture 为某个设备硬编码 HUD 宽度。
+ */
+function hudStressProbe(longTitle = false) {
+  const box = (el) => {
+    if (!el || !el.getClientRects().length) return null
+    const r = el.getBoundingClientRect()
+    return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height }
+  }
+  const hud = document.querySelector('[data-test="pb-hud"]')
+  if (!hud) return { missing: true }
+  const map = hud.querySelector('[data-test="pb-hud-map"]')
+  if (longTitle && map) {
+    map.textContent = '异常长的地图名称用于验证截断优先级与完整战斗数据'
+    void hud.offsetWidth
+  }
+  const center = hud.querySelector('[data-test="pb-hud-center"]')
+  const teams = [...hud.querySelectorAll('[data-test="pb-hud-friendly"], [data-test="pb-hud-enemy"]')]
+  const tracks = teams.map((el) => el.querySelector('.pb-hp-track'))
+  const values = teams.map((el) => el.querySelector('.pb-hp-value'))
+  const valueTextWidth = (el) => {
+    if (!el) return 0
+    const range = document.createRange()
+    range.selectNodeContents(el)
+    return range.getBoundingClientRect().width
+  }
+  const rects = { hud: box(hud), map: box(map), center: box(center), friendly: box(teams[0]), enemy: box(teams[1]) }
+  const overlaps = (a, b) => !!a && !!b && a.l < b.r - 0.5 && b.l < a.r - 0.5 && a.t < b.b - 0.5 && b.t < a.b - 0.5
+  return {
+    missing: false,
+    width: hud.getBoundingClientRect().width,
+    height: hud.getBoundingClientRect().height,
+    tracks: tracks.map((el) => (el ? el.getBoundingClientRect().width : 0)),
+    values: values.map((el) => (el ? el.textContent.trim() : '')),
+    valueWidths: values.map((el) => (el ? el.getBoundingClientRect().width : 0)),
+    valueTextWidths: values.map(valueTextWidth),
+    baseCount: hud.querySelectorAll('[data-testid^="base-badge-"]').length,
+    clock: hud.querySelector('[data-test="pb-hud-time"]')?.textContent?.trim() || '',
+    score: hud.querySelector('[data-test="pb-hud-score"]')?.textContent?.trim() || '',
+    title: map ? {
+      text: map.textContent.trim(),
+      width: map.getBoundingClientRect().width,
+      scrollWidth: map.scrollWidth,
+      overflow: getComputedStyle(map).overflow,
+      textOverflow: getComputedStyle(map).textOverflow,
+    } : null,
+    rects,
+    centerOverlapsTeam: overlaps(rects.center, rects.friendly) || overlaps(rects.center, rects.enemy),
+    valueOverlapsCenter: overlaps(box(values[0]), rects.center) || overlaps(box(values[1]), rects.center),
+    hudOverflowX: hud.scrollWidth > hud.clientWidth + 1,
+    hudScrollWidth: hud.scrollWidth,
+    hudClientWidth: hud.clientWidth,
+    centerScrollWidth: center ? center.scrollWidth : 0,
+    centerClientWidth: center ? center.clientWidth : 0,
+    centerChildren: center ? [...center.children].map((el) => ({ test: el.dataset.test || el.className, ...box(el), scrollWidth: el.scrollWidth, clientWidth: el.clientWidth })) : [],
+    overflowingHudChildren: [...hud.querySelectorAll('*')].map((el) => ({ test: el.dataset.test || el.className || el.tagName, ...box(el) })).filter((r) => r.r > rects.hud.r + 1 || r.b > rects.hud.b + 1),
+    centerOverflowX: center ? center.scrollWidth > center.clientWidth + 1 : false,
   }
 }
 
@@ -3558,7 +3718,7 @@ async function runWorkspace2DScenario(env, scenario) {
   lastPage = page
   await page.enable()
   await page.emulate(scenario)
-  await page.goto(`${env.origin}/scripts/browser-fixtures/playback-controls.html?duration=60&players=7&recorder=${scenario.recorder || 1}&marks=1${scenario.minMap ? '&shell=immersive' : ''}`)
+  await page.goto(`${env.origin}/scripts/browser-fixtures/playback-controls.html?duration=60&players=7&recorder=${scenario.recorder || 1}&marks=1${scenario.minMap ? '&shell=immersive' : ''}${scenario.hudStress ? `&hud=${scenario.hudStress}` : ''}`)
   await page.waitFor(() => !!document.querySelector('[data-test="pb-roster-row"]'), { label: '2D roster rows' })
   await delay(300)
 
@@ -3700,6 +3860,26 @@ async function runWorkspace2DScenario(env, scenario) {
     })()`)
     check(failures, bars.friendly >= 40 && bars.enemy >= 40 && Math.abs(bars.friendly - bars.enemy) <= 2,
       `compact HUD HP bars must both be >=40px and symmetric: ${JSON.stringify(bars)}`)
+    if (scenario.hudStress) {
+      const h = await page.callWith(hudStressProbe, true)
+      const exact = /^\d{5,} \/ \d{5,}$/
+      const valueOk = scenario.hudStress === 'exact'
+        ? h.values.every((value) => exact.test(value))
+        : /^\d{5,}$/.test(h.values[0]) && h.values[1] === '—'
+      check(failures, !h.missing && h.height <= 36, `hud stress: HUD missing or taller than one row: ${JSON.stringify(h)}`)
+      check(failures, h.baseCount >= 4 && !!h.clock && !!h.score,
+        `hud stress: base/clock/score lost: ${JSON.stringify({ bases: h.baseCount, clock: h.clock, score: h.score })}`)
+      check(failures, valueOk && h.valueTextWidths.every((width, index) => width <= h.valueWidths[index] + 1),
+        `hud stress: full HP values must render uncut: ${JSON.stringify({ values: h.values, text: h.valueTextWidths, box: h.valueWidths })}`)
+      check(failures, h.tracks.every((width) => width >= 40) && Math.abs(h.tracks[0] - h.tracks[1]) <= 2,
+        `hud stress: HP tracks must stay >=40px and symmetric: ${JSON.stringify(h.tracks)}`)
+      check(failures, h.title && h.title.overflow === 'hidden' && h.title.textOverflow === 'ellipsis'
+        && h.title.scrollWidth > h.title.width + 1,
+        `hud stress: long map title must yield with ellipsis, not squeeze battle data: ${JSON.stringify(h.title)}`)
+      check(failures, !h.centerOverlapsTeam && !h.valueOverlapsCenter && !h.hudOverflowX && !h.centerOverflowX,
+        `hud stress: content overlaps/overflows: ${JSON.stringify({ center: h.rects.center, friendly: h.rects.friendly, enemy: h.rects.enemy, hudOverflowX: h.hudOverflowX, centerOverflowX: h.centerOverflowX, hudScrollWidth: h.hudScrollWidth, hudClientWidth: h.hudClientWidth, centerScrollWidth: h.centerScrollWidth, centerClientWidth: h.centerClientWidth, centerChildren: h.centerChildren, overflowingHudChildren: h.overflowingHudChildren })}`)
+      console.log(`[browser-interaction] ${scenario.name} hud=${JSON.stringify({ width: h.width, height: h.height, tracks: h.tracks, values: h.values, bases: h.baseCount, mapW: h.title?.width })}`)
+    }
     // 沉浸态横屏（非全屏）也贴屏幕边缘：模拟刘海侧 safe-area，车道与传输条不得进入该区域。
     if (!scenario.fullscreen) {
       const inset = 44
@@ -3825,24 +4005,27 @@ async function runWorkspace2DScenario(env, scenario) {
   s = await page.callWith(workspace2dProbe, scenario.touch)
   check(failures, s.detailsCount === 1 && s.detailsPlayer === rightName, `details did not update to the Team 2 vehicle: ${s.detailsPlayer}`)
   check(failures, !!s.right, 'Team 2 lane disappeared after selecting a Team 2 vehicle')
-  // 宿主相对坐标：页面滚动不影响。选中另一台车时内容高度可能变化，ResizeObserver 会把
-  // 已拖到传输条上方的浮窗向上夹紧；这是尺寸约束，不是落位重置。允许的纵向位移必须
-  // 由面板增高解释，且底边仍贴住原来的下界（不能跳回初始的左上角）。
+  // 宿主相对坐标：页面滚动不影响。选中另一台车时内容高度可能变化；ResizeObserver 的合法结果
+  // 由生产同一份 detailsPlacementLimits 推导：old top 仍合法就**原位保留**，只有真正越过
+  // transport / host 下界才 clamp。不能用「上移不超过增高量」这类弱谓词（会放过不必要的位移）。
   const oldPanel = lastPos?.panel
   const oldMain = lastPos?.main
   const dx = oldPanel && oldMain && s.details && s.main ? (s.details.l - s.main.l) - (oldPanel.l - oldMain.l) : NaN
-  const topMove = oldPanel && oldMain && s.details && s.main ? (oldPanel.t - oldMain.t) - (s.details.t - s.main.t) : NaN
-  const grew = oldPanel && s.details ? s.details.h - oldPanel.h : NaN
-  const bottomMove = oldPanel && oldMain && s.details && s.main
-    ? (s.details.b - s.main.t) - (oldPanel.b - oldMain.t)
-    : NaN
-  check(failures, oldPanel && oldMain && s.details
-    && Math.abs(dx) < 1
-    && topMove >= -1
-    && topMove <= Math.max(0, grew) + 2
-    && (topMove <= 1 || Math.abs(bottomMove) <= 2)
+  const placementOk = !!(oldPanel && oldMain && s.details && s.main && s.mainPadding) && detailsPlacementPreserved({
+    oldTop: oldPanel.t - oldMain.t,
+    newTop: s.details.t - s.main.t,
+    newHeight: s.details.h,
+    hostWidth: s.main.w,
+    hostHeight: s.main.h,
+    paddingLeft: s.mainPadding.left,
+    paddingRight: s.mainPadding.right,
+    paddingTop: s.mainPadding.top,
+    panelWidth: s.details.w,
+    transportTop: s.transport ? s.transport.t - s.main.t : null,
+  })
+  check(failures, placementOk && Math.abs(dx) < 1
     && (!s.transport || s.details.b <= s.transport.t + 0.5),
-    `user-dragged details position must survive selection changes (host-relative): dx=${dx} topMove=${topMove} grew=${grew} bottomMove=${bottomMove} old=${JSON.stringify(oldPanel)} now=${JSON.stringify(s.details)}`)
+    `user-dragged details position must survive selection changes (host-relative): dx=${dx} old=${JSON.stringify(oldPanel)} now=${JSON.stringify(s.details)} host=${JSON.stringify(s.main)} padding=${JSON.stringify(s.mainPadding)} transport=${JSON.stringify(s.transport)}`)
 
   // ---- × 只关详情 ----
   await clickElement(page, '[data-test="pb-sb-close"]')
