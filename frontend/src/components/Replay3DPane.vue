@@ -1437,6 +1437,9 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 .ui-restore.ui-restore-shifted {
   top: calc(var(--space-2) + var(--control-h-sm) + var(--space-2));
 }
+@media (pointer: coarse) and (orientation: landscape) and (height <= 520px) {
+  .ui-restore.ui-restore-shifted { top: calc(var(--space-2) + var(--hit-min-comfortable) + var(--space-2)); }
+}
 
 .banner {
   position: absolute; top: 38%; left: 50%; transform: translate(-50%, -50%);
@@ -1490,7 +1493,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 .portrait-flow .team-lane { position: static; width: auto; }
 .portrait-flow > .banner { position: absolute; top: var(--space-12); }
 
-/* 触屏：控件点击区域抬到 --hit-min（44px），布局不动 */
+/* 触屏：控件点击区域抬到 --hit-min（coarse 44px；场景短视口横屏紧凑档 40px），布局不动 */
 @media (pointer: coarse) {
   .tool-btn { min-height: var(--hit-min); }
 }

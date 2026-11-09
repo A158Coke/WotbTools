@@ -266,9 +266,11 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | `--type-body` | 14 / 20 | 400 | 正文、表格（桌面） |
 | `--type-body`（触控） | 15 / 22 | 400 | 正文（`pointer: coarse` 时自动替换） |
 | `--type-caption` | 12 / 16 | 400 / 600 | 标签、表头、辅助说明。**这是最小字号**，中文 < 12px 不可读 |
+| `--type-body`（场景短视口横屏紧凑档） | 14 / 18 | 400 | 只在 `[data-scene-surface]` 的短视口横屏档内生效；见 §5 |
+| `--type-caption`（场景短视口横屏紧凑档） | 12 / 14 | 400 / 600 | 同上；字号仍守住 12px 下限 |
 
 - 工作区只用 7 级字阶；`display-hero` 与 DC-TYP-03 的展示字阶只属于装饰插槽。
-- **token 形态：** 每一级有两个原子 token `--font-size-{级}`、`--line-height-{级}`，以及一个组合 token `--type-{级}`（字重 + 字号 / 行高 + 字体，用于 `font` 简写）。`font-size` / `line-height` 只能引用原子 token，`font` 只能引用组合 token；触控档只覆盖 `--font-size-body` / `--line-height-body`，组合 token 自动跟随。长文阅读另有 `--line-height-prose`（1.7，只用于文档类页面的正文）。
+- **token 形态：** 每一级有两个原子 token `--font-size-{级}`、`--line-height-{级}`，以及一个组合 token `--type-{级}`（字重 + 字号 / 行高 + 字体，用于 `font` 简写）。`font-size` / `line-height` 只能引用原子 token，`font` 只能引用组合 token；常规触控档只覆盖 `--font-size-body` / `--line-height-body`，组合 token 自动跟随。场景短视口横屏紧凑档同时收紧 body / caption，并在同一作用域重定义组合 token。长文阅读另有 `--line-height-prose`（1.7，只用于文档类页面的正文）。
 - 字重只用 400 / 600 / 700。
 - 大写字母 + 字间距的 "kicker" 标签（如 `WOTBTOOLS · REPLAY WORKSPACE`）只能出现在装饰插槽里，工作区不用。
 
@@ -278,7 +280,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 | ID | 强度 | 范围 | 规则 | 例外 | 验证 |
 |---|---|---|---|---|---|
-| DC-SIZ-01 | MUST | 触控档 | 可交互元素命中区 ≥ 44×44 | 页脚备案链接等法定文字 | `pnpm run test:browser-interaction`、`pnpm run test:browser-armor-mobile` |
+| DC-SIZ-01 | MUST | 触控档 | 可交互元素命中区 ≥ 44×44；场景短视口横屏紧凑档 ≥ 40×40（见 §5「场景短视口横屏紧凑档」）；装甲短横屏 38px 胶囊的 36px 分段开关为 PR #932 的显式例外 | 页脚备案链接等法定文字 | `pnpm run test:browser-interaction`、`pnpm run test:browser-armor-mobile` |
 | DC-SIZ-02 | MUST | 层级 | z-index 只用 token，不靠大数值收尾 | 场景型工作台内部用局部 1–9 | `pnpm run lint:css` |
 | DC-MOT-01 | MUST | 动效 | 时长与缓动只取自 `--duration-*` / `--ease-*`，JS 侧经 `motionPolicy.ts` 读取 | 无 | `src/shared/motion/motionPolicy.test.ts` |
 | DC-MOT-02 | MUST | 动效 | `prefers-reduced-motion: reduce` 时动效归零 | 无 | `motionPolicy.test.ts`、`pnpm run test:browser-home` |
@@ -286,9 +288,9 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | DC-MOT-04 | MUST | 动效 | 禁止 `transition: all`，列出具体属性 | 无 | 人工 |
 | DC-MOT-05 | SHOULD | 动效 | 优先动画 `transform` / `opacity`；动画可被用户操作打断 | 选中指示器等 shared layout | 人工 |
 
-**依据：** 4pt 网格（Material、Apple HIG、多数设计系统的做法），以及有限的离散刻度。
+**依据：** 4pt 网格（Material、Apple HIG、多数设计系统的做法），以及有限的离散刻度。场景短视口横屏紧凑档是唯一例外，取 0.75× 刻度（见下文）。
 
-**间距**：`--space-{0,1,2,3,4,5,6,8,10,12}` = `0, 4, 8, 12, 16, 20, 24, 32, 40, 48px`
+**间距**：`--space-{0,1,2,3,4,5,6,8,10,12}` = `0, 4, 8, 12, 16, 20, 24, 32, 40, 48px`；场景紧凑档为 `0, 3, 6, 9, 12, 15, 18, 24, 30, 36px`
 
 - 组件内间距用 1–4 级，组件之间用 4–6 级，区块之间用 8–12 级。
 - 页面左右边距：`--gutter` = 手机 16 / 平板 24 / 桌面 32。
@@ -302,7 +304,28 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | `--control-h-lg` | 40 | 48 | 主操作 |
 | `--row-h` | 36 | 48 | 表格行、列表行 |
 | `--control-check` | 18 | 24 | 复选框 / 单选框的可视尺寸（所在单元格或 label 另保证最小点击区域 `--hit-min`） |
-| 最小点击区域 | 24×24 | **44×44** | WCAG 2.5.8 最低 24；Apple HIG 44pt；Material 48dp |
+| 最小点击区域 | 24×24 | **44×44**（场景短视口横屏紧凑档 40×40；装甲短横屏胶囊 36/38 例外） | WCAG 2.5.8 最低 24；Apple HIG 44pt；Material 48dp |
+
+**场景短视口横屏紧凑档**：条件为 `@media (pointer: coarse) and (orientation: landscape) and (height <= 520px)`，只作用于场景根 `[data-scene-surface]`（2D / 3D 回放、装甲查看器 / 射击复现、地图 3D）。普通内容页、桌面和竖屏手机不命中。
+
+| token | 常规触控 | 场景紧凑档 | 用途 |
+|---|---|---|---|
+| `--control-h-sm` | 44 | 32 | 次要行内操作；视觉不足 40 时用透明命中区补足 |
+| `--control-h-md` | 44 | 36 | 回放传输条按钮；视觉 36，命中区补到 40 |
+| `--control-h-lg` | 48 | 40 | 主操作 |
+| `--row-h` | 48 | 40 | 名册 / 列表行 |
+| `--hit-min` | 44 | 40 | 最小命中区 |
+| `--hit-min-comfortable` | 44 | 40 | 舒适命中区；本档不得低于 40 |
+| `--scene-hit` | 44 | 40 | 场景按钮保底尺寸（默认值等于 44） |
+| `--scene-control-h-lg` | 48 | 40 | 装甲查看器底栏等 48px 主操作（默认值等于 48） |
+
+- 间距取常规刻度的 0.75×：`3 / 6 / 9 / 12 / 15 / 18 / 24 / 30 / 36px`。这是本档唯一的 4pt 网格例外，且只作用于场景根，不改变全站间距。
+- 回放 Display 面在本档把内边距从 `--space-3`（9px）收到 `--space-2`（6px）：9px 时 375px 高的横屏会让最后一排 40px 选项行被滚动口裁掉 2px；收到 6px 后 667×375、740×360、844×390 均可完整可达。
+- 字号：`--type-body` 14/18、`--type-caption` 12/14；必须在同一作用域重定义组合 token `--type-body` / `--type-caption`，否则子元素只改原子 token 不会重算 `font` 简写。
+- **命中区**：`--hit-min-comfortable` 不得低于 40px。视觉高度需要更小时（例如传输条 36px），用透明伪元素或 padding 把可点范围补到 40×40；唯一的视觉尺寸例外是装甲 `height <= 500px` 的 38px 胶囊 / 36px 分段开关（PR #932），由 `browser-armor-mobile` 单独锁定；扩展区不得压住相邻控件的命中区（传输条把 gap 固定为 6px，按钮外框 36px、含 1px 边框的 padding box 为 34px，伪元素 `inset: -3px` 补到 40×40；相对视觉外框向 gap 各伸 2px，命中区之间仍留 2px，不重叠）。
+- 3D 回放的「恢复 UI」按钮在本档把顶偏移改为 `--space-2 + --hit-min-comfortable + --space-2`（6 + 40 + 6 = 52px），让出右上角 40px 全屏按钮（top 6、bottom 46）；常规档仍用 `--control-h-sm`。
+- 倍速菜单的档位按钮在本档保持 `--hit-min + --space-4` = 52px 宽、40px 高；回归测试按 40×40 有效命中区校验，不把视觉外框直接当成命中区。
+- 竖屏手机、桌面与普通内容页沿用上面的常规触控档；场景紧凑档的值不能写到 `:root` 或普通页面的作用域。
 
 **圆角**：`--radius-sm: 6px`（标签、小徽章、小控件）· `--radius-md: 8px`（按钮、输入框、卡片）· `--radius-lg: 12px`（弹窗、sheet、抽屉）· `--radius-full: 999px`（胶囊、头像）
 
@@ -378,7 +401,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 - **部分**覆盖与**部分**裁剪同样不合格：中心点露着不等于可达，按钮底部被切掉 10px 也是缺陷。容差 2px，只放过边框、阴影级别的亚像素误差。
 - 裁剪只沿 containing block 链计算：`position: fixed / absolute` 的元素逃出了中间那些祖先，它们的 `overflow` 裁不到它；滚出可滚动容器属于「可滚动触达」，此时要求的是滚动容器本身不被外层裁掉。
 - 判定用浏览器真实命中测试：在选项盒内多点采样 `elementFromPoint`，只有命中选项自身或其后代才算点得到——命中它的祖先恰恰说明指针穿透了它。门禁里的真实点击另以输入事件记录佐证。
-- 触控档最小命中区见上表（44×44）。
+- 触控档最小命中区见上表：常规 44×44，场景短视口横屏紧凑档 40×40。
 
 **4. 适用形态。** 上面三条必须在手机竖屏、手机横屏、平板与桌面都成立，并覆盖**状态组合**（工具栏 + 菜单开、sticky 表头 + 下拉开、名册展开 + 浮层开、底栏 + sheet 开、drawer + 背景 sticky、断点切换），不只是静止初始态。
 
@@ -403,7 +426,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 - **断点只有三档：** `compact < 768` · `medium 768–1199` · `expanded ≥ 1200`。
   - CSS 只允许写 range 语法：`@media (width < 768px)`、`(768px <= width < 1200px)`、`(width >= 1200px)`。
   - JS 使用 `useBreakpoint()`，与 CSS 共用同一份常量。
-- **输入方式：** `@media (pointer: coarse)` 只用来切换密度 token（§5），**不用来改布局**。JS 使用 `usePointer()`。
+- **输入方式：** `@media (pointer: coarse)` 只用来切换密度 token（§5），**不用来改布局**；场景短视口横屏紧凑档是密度 token 的补充条件，同样不改布局。JS 使用 `usePointer()`。
 - **组件级适配**用容器查询 `@container`，例如：表格在容器 < 560px 时切换成卡片。组件不应该知道视口有多大。
 - **视口单位：** 用 `dvh` / `svh`，不用 `100vh`；宽度用 `100%`，不用 `100vw`。
 - **安全区：** 顶栏、导航抽屉、底部操作栏、全屏回放都要加 `env(safe-area-inset-*)`（§9 L4）。
@@ -570,9 +593,10 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 - **适用设备只有两类**（`platform/screenForm.ts`，判定只看设备、不看视口）：Android 手机上的 App（Native Bridge 可选能力 `screen-form` 报告 phone）与 iPhone 上的 Safari（UA 含 iPhone 且不是 iPad）。桌面（含缩窄窗口）、所有平板、Android 手机浏览器都不受影响，竖屏照常用小屏布局。
 - **适用页面**：2D 回放、3D 回放、装甲查看器、射击复现、地图预览 3D。科技树、直播与推荐视频、比赛截图、AI 复盘、名人堂、管理页不强制。
 - **行为**（`useForcedLandscape`）：Android 手机 App 进入场景页时原生锁横屏，离开 / KeepAlive 停用即释放；iPhone Safari 竖屏时整块显示 `RotatePrompt`（场景保持挂载，横过来即继续），提示里给出退出动作：2D / 3D 回到「看赛后数据」，装甲查看器回到坦克百科 / 射击分析，地图 3D 切到 2D。HTML 全屏在 Android App 里也只在手机上锁横屏。
-- **横屏沉浸**：没有顶栏，菜单入口仍在：2D / 3D 回放由传输条第一项承载（`PlaybackTransport` 经 `shellChrome.hostNav` 声明，7 人名册车道保持不滚动；控制条被 `v-show` 收起、能力切走或 KeepAlive 停用时经 `navEligible` / 生命周期交还，外壳重新画悬浮菜单）；其余场景（装甲查看器、射击复现）由外壳在左上放悬浮菜单按钮（`AppShell` 的 `.immersive-nav`），场景用 `--immersive-nav-reserve`（沉浸态 44 + 8，其余为 0）让出：返回键与信息卡右移。两者打开同一个抽屉。
+- **横屏沉浸**：没有顶栏，菜单入口仍在：2D / 3D 回放由传输条第一项承载（`PlaybackTransport` 经 `shellChrome.hostNav` 声明，7 人名册车道保持不滚动；控制条被 `v-show` 收起、能力切走或 KeepAlive 停用时经 `navEligible` / 生命周期交还，外壳重新画悬浮菜单）；其余场景（装甲查看器、射击复现）由外壳在左上放悬浮菜单按钮（`AppShell` 的 `.immersive-nav`），场景用 `--immersive-nav-reserve`（沉浸态 44 + 8，其余为 0）让出：返回键与信息卡右移。该 reserve 由场景外的外壳菜单按钮决定，场景短视口横屏紧凑档不把它改成 40 + 6，否则返回键会压住仍是 44px 的菜单按钮。两者打开同一个抽屉。
 - **验收**：`pnpm run test:browser-interaction forced-landscape`（iPhone 竖屏出提示并能回到赛后数据；iPad 竖屏与缩窄的桌面浏览器不出提示；iPhone 横屏 844×340 沉浸且菜单可打开抽屉；装甲查看器 `armor-forced-landscape-*`：iPhone 竖屏出提示并带返回动作，iPhone 横屏、iPad 竖屏与缩窄的桌面浏览器不出）。
-- **场景 HUD（装甲查看器、射击复现）**：手机横屏时常驻控件只在四角——左上返回 + 车名 / 参数，右下拇指区是射击快捷项（弹种、距离、厚度 / 击穿），左下是姿态与角度；完整设置是右侧参数面板（约 19rem + 安全区），打开时场景仍在左侧可见。短横屏（`height <= 500px`）再启用紧凑档：左上收成 38px 胶囊（返回图标 + 可截断车名 + 参数图标），右下射击卡片收到 15rem × ≤45dvh 并把距离滑条与穿深数值并排，左下姿态压成两行，参数面板头部提供 sticky 的 44px 关闭按钮。
+- **短视口紧凑档**：手机横屏高度 ≤ 520px 时，上述场景改用 §5 的场景紧凑档 token（控件 32/36/40、命中区 40、间距 0.75×、正文 14/18），让传输条、底栏和 HUD 不再按 44/48px 撑高；竖屏与桌面完全沿用常规触控档。装甲查看器在 `height <= 500px` 的短横屏胶囊（下方一条）另有 36/38px 视觉尺寸，是本档 40px 命中区的唯一显式例外，由 `browser-armor-mobile` 单独锁定。
+- **场景 HUD（装甲查看器、射击复现）**：手机横屏时常驻控件只在四角——左上返回 + 车名 / 参数，右下拇指区是射击快捷项（弹种、距离、厚度 / 击穿），左下是姿态与角度；完整设置是右侧参数面板（约 19rem + 安全区），打开时场景仍在左侧可见。短横屏（`height <= 500px`）再启用紧凑档：左上收成 38px 胶囊（返回图标 + 可截断车名 + 参数图标），右下射击卡片收到 15rem × ≤45dvh 并把距离滑条与穿深数值并排，左下姿态压成两行，参数面板头部提供 sticky 的 40px 关闭按钮（紧凑档命中区）。
 - **点选结果**（厚度 `#click-info`、击穿 `#traj-info`）：固定停靠在场景顶部，不跟随命中点、不压车体；宽屏 / 竖屏在顶部居中；短横屏 ≥768px 紧贴左上胶囊右侧并与其垂直对齐，<768px 落到胶囊下方第二行；小屏收起态只显示最终判定一行（胶囊），点开看逐层明细。
 
 ### 射击分析与科技树（小屏）

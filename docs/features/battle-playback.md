@@ -149,11 +149,11 @@ KILL / DAMAGE / DESTROYED 事件多重集（含 `observedHpLoss`）与掉血明�
 
 ### 布局与控件
 
-- **手机横屏高度账**：正方形地图只受纵向预算约束，所以横屏把非地图的行压到最小——外壳顶栏在 2D / 3D 回放就绪的触屏手机横屏下让出（沉浸态，转竖屏或离开回放即恢复）、HUD 压成一行（己方血条 │ 时钟 / 比分 / 基地 │ 敌方血条，不显示地图名）、传输条（时间轴 + 按钮 + 时间）合成一行横跨全宽。实测地图：740×360 约 266px、667×375 约 281px、844×390 约 298px；名册车道只跨 HUD + Stage 两行，不浮在地图上。
-- **形态判定**：`shared/breakpoints` 的 `PLAYBACK_MOBILE_QUERY`——Mobile = 宽 < 768px 或触屏且高 ≤ 500px（手机横屏）；768–1199px 一律 Tablet；≥1200px 一律 PC。布局只看可用空间，触屏只放大控件点击区域（44px），iPad / Android 平板使用 Tablet 形态。
+- **手机横屏高度账**：正方形地图只受纵向预算约束，所以横屏把非地图的行压到最小——外壳顶栏在 2D / 3D 回放就绪的触屏手机横屏下让出（沉浸态，转竖屏或离开回放即恢复）、HUD 压成一行（己方血条 │ 时钟 / 比分 / 基地 │ 敌方血条，不显示地图名）、传输条（时间轴 + 按钮 + 时间）合成一行横跨全宽。实测地图（场景短视口紧凑档）：740×360 约 276px、667×375 约 291px、844×390 约 308px；名册车道只跨 HUD + Stage 两行，不浮在地图上。
+- **形态判定**：`shared/breakpoints` 的 `PLAYBACK_MOBILE_QUERY`——Mobile = 宽 < 768px 或触屏且高 ≤ 500px（手机横屏）；768–1199px 一律 Tablet；≥1200px 一律 PC。布局只看可用空间，触屏只放大控件点击区域（常规 44px；手机横屏高度 ≤ 520px 的场景紧凑档 40px，见 design-language §5），iPad / Android 平板使用 Tablet 形态。
 - **Universal Battle HUD**：Desktop / Tablet / Mobile 共用同一套 HUD——己方在左、权威比分 / 基地状态在中（无事实时不渲染占位符）、敌方在右；HP 的 FULL_RELATIVE / EXACT / PARTIAL / UNKNOWN 语义保持不变。
 - **中心栈**：2D / 3D 共用「地图/时间、HP/比分与 compact 基地 metadata 的持久 HUD → Stage → Transport」。2D 取最大正方形；3D 横屏铺满可用宽高。击杀流是独立的有界 overlay（2D 最多保留最新 2 条、3D 最多 3 条），不参与 HUD 高度预算，条目变化不牵动 Stage / Transport 重排。
-- **主控件**：共用 `PlaybackTransport.vue`，顺序为 −5 / Play-Pause / +5 / 当前速度 / 全屏 / Display；速度档位按需展开，六个触控目标至少 44px。时间轴不可用时相关控件显式 disabled。
+- **主控件**：共用 `PlaybackTransport.vue`，顺序为 −5 / Play-Pause / +5 / 当前速度 / 全屏 / Display；速度档位按需展开，六个触控目标至少 44px；场景短视口横屏紧凑档为 40px。时间轴不可用时相关控件显式 disabled。
 - **侧车道**：以 workspace 宽度作 fluid sizing，并保持可读下限；桌面左 / 中 / 右列约为 25% / 50% / 25%，短横屏保留主控件所需列宽。HUD 铺满中心列，桌面放大字号与血条厚度；名册与战场标签的装填条均与 HP 条等宽且更细；横条模式的战场血量数值置于加厚血条内，不重复显示百分比。2D Stage 同时受中心可用宽度和实际可用高度约束；3D 横屏画布铺满中心列可用宽高，相机比例随容器更新，竖屏保持正方形。容量按视口算（视口高 − 顶栏/底栏 − 实际 HUD − 实际 Transport − 间距），刻意不用根元素的内容高度，也就不用按断点各写一套固定扣减。
 - **Display**：由 `PlaybackDisplaySurface.vue` 锚定 Gear，优先向上、空间不足换边并夹紧；竖屏采用有界 inline 面。Display 与 Events 从 Gear 按需打开，Vehicle 由选车打开 Details；Events 只呈现 `DAMAGE` / `KILL` / `DESTROYED`，点击事件执行 seek + pause，纯时间轴不承载事件标记。
 - **Details**：workspace 级可拖动上下文窗；首次落位不压中心栏（HUD / Stage / Transport 同一列，以 Transport 的左右边为准）：侧边车道比浮窗窄时（如 1280 宽桌面）把浮窗收窄到侧边可用宽度，侧边不足 240px 或名册关闭时不收窄（`usePlaybackDetailsPlacement`）。
@@ -161,7 +161,7 @@ KILL / DAMAGE / DESTROYED 事件多重集（含 `observedHpLoss`）与掉血明�
 - **详情面板**：点击 marker 打开 / 切换（不 toggle-off）、点击空白不关闭、× 显式关闭、destroyed 车可选、seek 保持同一 selected vehicle；宽屏右侧固定、窄屏（≤768px）置于地图下方。Tier X 车辆按 tankId 懒加载随站点发布的 BlitzKit 车型图；非 Tier X / 缺图 / 单图加载失败时静默省略图片，production 不访问第三方 CDN。面板只含当前 playback 时间点状态：阵营 / 车辆类型（replay → tankopedia fallback）/ 状态（当前观测 / 最后已知 / 已击毁）/ 当前或最后已知 HP（按 provenance：已阵亡 → 0；己方开局相对满血 → 100%；有真实 current → 数字，容量已证明时显示 pct；敌方无依据 → —）/ 当前播放时间 / 已记录伤害（录像者优先取当前时刻之前的 Avatar prop10 累计伤害广播；无该证据时 Σ 可 attribution 的权威掉血）/ 承受伤害（Σ 该车 HP 条可信读数的累计下降，与当前 HP 同源；车辆库 provisional 开局种子不作下降起点）/ 击杀数 + 最近伤害记录（权威掉血；incoming 在相邻可信 CURRENT HP 观测窗口内关联 `DAMAGE`，仅当唯一攻击者的全部可归因掉血恰好覆盖该窗口掉血时显示来源，否则显示「来源未知」）。面板不显示整场最终战绩或协助伤害汇总。
 - **不抢页面**：滚轮只在全屏、按住 Ctrl/⌘ 或刚在地图上按下后才缩放，否则交给页面滚动并短暂提示；地图未放大、非全屏、未标注时 `touch-action: pan-y`，单指纵向滑动滚动页面；`active=false`（隐藏的模式 / KeepAlive 停用）时暂停并不响应空格 / 方向键。地图高度扣掉固定顶栏，手机横屏按可用高度封顶。
 - **防遮**：2D / 3D 的「一键防遮」复用 `usePlaybackPreferences`：开启后保留车型名，车辆替换为类型符号，并隐藏玩家名、装填条、状态装饰与轨迹；2D 同时保留环形血量，3D 沿用隐藏血条的呈现；再按一次恢复开启前的配置。预设是临时状态，不覆盖持久化偏好；手动更改显示选项则退出预设并保存当前组合。名单开关独立于预设。Display 保留「坦克类型图标」「状态标记」单独开关。2D 的状态标记开关同时控制伤害飘字；3D 只控制状态标记，伤害数字在防遮下照常显示（3D 防遮隐藏血条，因此没有幽灵段与受击闪）。
-- **车型图标**：实际车辆和战术标记统一使用 `TankClassIcon.vue` / `utils/tankClassIcon.js` 的 LT 单菱形、MT 双分段菱形、HT 三分段菱形和 TD 倒三角；未知车型不猜类别，使用中性圆形。3D 类型符号由既有投影标签层呈现并可选车，场景只隐藏车模绘制节点，保留位置、可见性事实与拾取代理。手机短横屏把标记入口并入地图快捷条，保留 44px 触控区域。
+- **车型图标**：实际车辆和战术标记统一使用 `TankClassIcon.vue` / `utils/tankClassIcon.js` 的 LT 单菱形、MT 双分段菱形、HT 三分段菱形和 TD 倒三角；未知车型不猜类别，使用中性圆形。3D 类型符号由既有投影标签层呈现并可选车，场景只隐藏车模绘制节点，保留位置、可见性事实与拾取代理。手机短横屏把标记入口并入地图快捷条，保留 44px 触控区域；场景紧凑档按 40px 命中区排布。
 
 ### 地图、标记与图层
 

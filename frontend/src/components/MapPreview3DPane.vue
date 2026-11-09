@@ -788,4 +788,14 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
   inset-block-start: calc(var(--space-2) + var(--control-h-sm) + var(--space-2));
   z-index: var(--z-sticky);
 }
+
+/* 短视口横屏紧凑档：map3d-btn 的 --control-h-sm 只有 32px，回落到 40px 舒适命中区；
+   全屏按钮同样抬到 40px，restore 的偏移必须跟它一起改，避免两块命中区重叠。 */
+@media (pointer: coarse) and (orientation: landscape) and (height <= 520px) {
+  .map3d-btn { min-height: var(--hit-min-comfortable); }
+  .map3d-btn-icon { min-inline-size: var(--hit-min-comfortable); }
+  .map3d-restore.map3d-restore-shifted {
+    inset-block-start: calc(var(--space-2) + var(--hit-min-comfortable) + var(--space-2));
+  }
+}
 </style>
