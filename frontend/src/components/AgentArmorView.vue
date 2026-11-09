@@ -860,13 +860,13 @@ onBeforeUnmount(() => {
 .armor-view.is-unsupported .armor-back { position: static; margin: var(--space-4) var(--gutter) 0; }
 .armor-view #canvas-container { inline-size: 100%; block-size: 100%; }
 .armor-view :is(button, select, input) { font: inherit; }
-.armor-view :is(button, select) { min-block-size: 44px; }
+.armor-view :is(button, select) { min-block-size: var(--scene-hit); }
 .armor-view :is(button, summary, select, input):focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 .armor-view button { cursor: pointer; }
 .armor-view button:disabled { cursor: default; opacity: .45; }
 .armor-view :is(#corner-tl, #corner-tr, #corner-br) { position: absolute; display: flex; gap: var(--space-3); }
 .armor-view #corner-tl { inset-block-start: var(--space-5); inset-inline-start: var(--space-5); align-items: flex-start; }
-.armor-view.has-back #corner-tl { inset-block-start: calc(var(--space-5) + 44px + var(--space-2)); }
+.armor-view.has-back #corner-tl { inset-block-start: calc(var(--space-5) + var(--scene-hit) + var(--space-2)); }
 .armor-view :is(#info-panel, #tank-selectors, #turret-controls, #debug-info, #click-info) {
     background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--elevation-2);
 }
@@ -899,7 +899,7 @@ onBeforeUnmount(() => {
 .armor-view #tank-selectors .sel-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-1) 0; }
 .armor-view #tank-selectors label { color: var(--muted); font: var(--type-caption); }
 .armor-view #tank-selectors .sel-row > label:first-child { flex: 0 0 100%; }
-.armor-view #tank-selectors .eq-opt { display: inline-flex; flex: 1; align-items: center; gap: var(--space-1); min-block-size: 44px; cursor: pointer; }
+.armor-view #tank-selectors .eq-opt { display: inline-flex; flex: 1; align-items: center; gap: var(--space-1); min-block-size: var(--scene-hit); cursor: pointer; }
 .armor-view input[type="checkbox"] { flex: none; min-inline-size: 0; inline-size: var(--control-check); block-size: var(--control-check); margin: 0; accent-color: var(--color-accent); }
 .armor-view #tank-selectors :is(.tank-btn, select) { inline-size: 100%; min-inline-size: 0; padding: var(--space-2) var(--space-3); background: var(--input-bg); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--txt); }
 .armor-view #tank-selectors .tank-btn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: start; }
@@ -966,7 +966,7 @@ onBeforeUnmount(() => {
         z-index: var(--pb-z-hud);
     }
     .armor-view.is-clean #corner-tl { display: none; }
-    .armor-view.has-back #corner-tl { max-block-size: calc(100% - var(--space-10) - 44px - var(--space-2)); }
+    .armor-view.has-back #corner-tl { max-block-size: calc(100% - var(--space-10) - var(--scene-hit) - var(--space-2)); }
     .armor-view #info-panel {
         grid-column: 1;
         grid-row: 1;
@@ -1028,7 +1028,7 @@ onBeforeUnmount(() => {
 .armor-view .ctrl-row > * { min-inline-size: 0; }
 .armor-view .ctrl-row label { color: var(--muted); }
 .armor-view .ctrl-row span { color: var(--accent); }
-.armor-view .armor-evidence summary { display: list-item; min-block-size: 44px; padding: var(--space-3) 0; cursor: pointer; color: var(--color-text-primary); font: var(--type-body); }
+.armor-view .armor-evidence summary { display: list-item; min-block-size: var(--scene-hit); padding: var(--space-3) 0; cursor: pointer; color: var(--color-text-primary); font: var(--type-body); }
 .armor-view #debug-info { display: none; padding: var(--space-3); max-inline-size: 24rem; max-block-size: 32dvh; overflow: auto; font: var(--type-caption); }
 .armor-view #debug-info h4 { margin: 0 0 var(--space-2); font: var(--type-caption); }
 .armor-view .dbg-row { display: flex; align-items: flex-start; gap: var(--space-1); margin: var(--space-1) 0; overflow-wrap: anywhere; }
@@ -1069,24 +1069,24 @@ onBeforeUnmount(() => {
     .armor-view #traj-info:not(.is-expanded) > div > :not([data-card-title="final"]) { display: none; }
     .armor-view #traj-info:not(.is-expanded) > div > [data-card-title="final"] { margin: 0; }
 }
-.armor-view #shot-replay-error { position: fixed; z-index: var(--pb-z-modal); inset-block-start: calc(var(--space-5) + 48px); inset-inline: var(--space-4); margin-inline: auto; max-inline-size: 30rem; padding: var(--space-2) var(--space-3); background: var(--tooltip-bg); border-left: 4px solid var(--red); border-radius: var(--radius-md); color: var(--red); font: var(--type-caption); box-shadow: var(--elevation-2); pointer-events: none; }
-.armor-view .armor-back { position: absolute; z-index: calc(var(--z-sticky) + 1); inset-block-start: var(--space-5); inset-inline-start: var(--space-5); display: inline-flex; align-items: center; gap: var(--space-2); min-block-size: 44px; padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--panel); color: var(--txt); }
+.armor-view #shot-replay-error { position: fixed; z-index: var(--pb-z-modal); inset-block-start: calc(var(--space-5) + var(--scene-control-h-lg)); inset-inline: var(--space-4); margin-inline: auto; max-inline-size: 30rem; padding: var(--space-2) var(--space-3); background: var(--tooltip-bg); border-left: 4px solid var(--red); border-radius: var(--radius-md); color: var(--red); font: var(--type-caption); box-shadow: var(--elevation-2); pointer-events: none; }
+.armor-view .armor-back { position: absolute; z-index: calc(var(--z-sticky) + 1); inset-block-start: var(--space-5); inset-inline-start: var(--space-5); display: inline-flex; align-items: center; gap: var(--space-2); min-block-size: var(--scene-hit); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--panel); color: var(--txt); }
 .armor-view .armor-tools { display: none; }
 .armor-view .armor-bottom-controls { display: contents; }
 /* Recorded-shot actions are a persistent, high-contrast toolbar. */
 .armor-view.is-shot #corner-br { display: flex; flex-direction: row; flex-wrap: wrap; align-items: stretch; gap: var(--space-2); max-inline-size: calc(100% - var(--space-10)); padding: var(--space-2); background: var(--color-surface-1); border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); box-shadow: var(--elevation-2); z-index: var(--pb-z-hud); }
 .armor-view.is-shot #corner-br:empty { display: none; }
 .armor-view .armor-shot-view-switch { display: flex; flex-wrap: wrap; gap: var(--space-1); padding: var(--space-1); background: var(--color-surface-2); border-radius: var(--radius-md); }
-.armor-view .armor-shot-view-switch .armor-scene-button { flex: 1; min-block-size: var(--space-12); padding: var(--space-2) var(--space-4); font: var(--type-body); font-weight: 600; }
+.armor-view .armor-shot-view-switch .armor-scene-button { flex: 1; min-block-size: var(--scene-control-h-lg); padding: var(--space-2) var(--space-4); font: var(--type-body); font-weight: 600; }
 
 .armor-view #tank-picker { position: absolute; inset: var(--space-5); margin: auto; max-inline-size: var(--layout-wide-max); background: var(--panel); border: 1px solid var(--border-hi); border-radius: var(--radius-lg); z-index: var(--z-dialog); display: none; flex-direction: column; box-shadow: var(--elevation-3); }
 .armor-view #tank-picker.open { display: flex; }
 /* 菜单本体 = 共享 TankCatalogMenu（与坦克百科同一套搜索/筛选/卡片/增量列表） */
 .armor-view #tank-picker > .tank-catalog-menu { flex: 1; min-block-size: 0; }
-/* 共享菜单的控件在装甲页内沿用 44px 触控目标（含搜索框；百科页保持全站控件高度） */
-.armor-view #tank-picker :is(button, select, input) { min-block-size: 44px; }
+/* 共享菜单的控件在装甲页内沿用场景命中尺寸（含搜索框；百科页保持全站控件高度） */
+.armor-view #tank-picker :is(button, select, input) { min-block-size: var(--scene-hit); }
 .armor-view .armor-shot-header { display: flex; align-items: center; gap: var(--space-4); padding: var(--space-3) var(--space-5); border-block-end: 1px solid var(--border); background: var(--color-surface-1); z-index: calc(var(--z-sticky) + 1); }
-.armor-view .armor-shot-header button { display: inline-flex; flex: none; align-items: center; justify-content: center; gap: var(--space-2); min-inline-size: 44px; padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--input-bg); color: var(--txt); }
+.armor-view .armor-shot-header button { display: inline-flex; flex: none; align-items: center; justify-content: center; gap: var(--space-2); min-inline-size: var(--scene-hit); padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--input-bg); color: var(--txt); }
 .armor-view .armor-navigation-error { margin: 0; color: var(--color-danger); font: var(--type-caption); }
 .armor-view .armor-shot-context { flex: 1; min-inline-size: 0; }
 .armor-view .armor-shot-matchup { display: flex; align-items: center; gap: var(--space-2); font: var(--type-h3); }
@@ -1119,7 +1119,7 @@ onBeforeUnmount(() => {
     .armor-view .armor-interaction-help dl { gap: var(--space-2); }
 
     .armor-view #corner-tl { inset-block-start: var(--space-2); inset-inline: var(--space-2); display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-1) var(--space-2); padding: var(--space-1) var(--space-2); background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--elevation-2); z-index: var(--pb-z-modal); }
-    .armor-view.has-back #corner-tl { inset-block-start: var(--space-2); inset-inline-start: calc(var(--space-2) * 2 + 44px); }
+    .armor-view.has-back #corner-tl { inset-block-start: var(--space-2); inset-inline-start: calc(var(--space-2) * 2 + var(--scene-hit)); }
     .armor-view #info-panel { grid-column: 1; grid-row: 1; min-inline-size: 0; max-inline-size: none; max-block-size: none; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding: 0; background: none; border: none; box-shadow: none; }
     .armor-view #info-panel h1 { display: inline-block; max-inline-size: 52%; vertical-align: bottom; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--type-body); margin: 0 var(--space-2) 0 0; }
     .armor-view #info-panel .stat { display: inline-flex; gap: var(--space-1); vertical-align: bottom; }
@@ -1130,7 +1130,7 @@ onBeforeUnmount(() => {
     .armor-view #tank-selectors .sel-row { flex-wrap: nowrap; }
     .armor-view #tank-selectors .sel-row > label:first-child { flex: 0 0 var(--space-12); }
     .armor-view .armor-stage.is-tools-open #tank-selectors { display: block; }
-    .armor-view .armor-tools { grid-column: 2; grid-row: 1; display: inline-flex; align-items: center; justify-content: center; inline-size: 44px; block-size: 44px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--input-bg); color: var(--txt); }
+    .armor-view .armor-tools { grid-column: 2; grid-row: 1; display: inline-flex; align-items: center; justify-content: center; inline-size: var(--scene-hit); block-size: var(--scene-hit); padding: 0; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--input-bg); color: var(--txt); }
     .armor-view .armor-tools-label { display: none; }
     .armor-view .armor-tools[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
     .armor-view #corner-tr { inset-block-start: auto; inset-block-end: var(--space-2); inset-inline: var(--space-2); inline-size: auto; max-inline-size: none; flex-direction: row; flex-wrap: wrap; align-items: stretch; gap: var(--space-2); }
@@ -1138,7 +1138,7 @@ onBeforeUnmount(() => {
     .armor-view #view-toggle { flex: 1 1 11rem; min-inline-size: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1); padding: 0; }
     .armor-view #view-toggle button { padding: var(--space-1); white-space: normal; }
     .armor-view #armor-filters { grid-column: 1 / -1; padding-block-start: var(--space-1); gap: var(--space-1); }
-    .armor-view #turret-controls { inset-block-start: calc(var(--space-2) * 2 + 48px); inset-block-end: auto; inset-inline-start: var(--space-2); min-inline-size: 0; max-inline-size: calc(100% - var(--space-4)); padding: 0 var(--space-1); max-block-size: 28dvh; white-space: nowrap; }
+    .armor-view #turret-controls { inset-block-start: calc(var(--space-2) * 2 + var(--scene-control-h-lg)); inset-block-end: auto; inset-inline-start: var(--space-2); min-inline-size: 0; max-inline-size: calc(100% - var(--space-4)); padding: 0 var(--space-1); max-block-size: 28dvh; white-space: nowrap; }
     .armor-view #turret-controls .ctrl-row { display: inline-flex; flex-wrap: nowrap; vertical-align: middle; gap: var(--space-1); margin: 0 var(--space-1); }
     .armor-view #turret-controls .armor-camera-presets { display: inline-flex; flex-wrap: nowrap; vertical-align: middle; gap: var(--space-1); margin: 0 var(--space-1) 0 0; }
     /* 按文字实际宽度排布：平分宽度时「压坡卖头」等较长文案会溢出按钮、压到旁边的炮塔读数 */
@@ -1151,7 +1151,7 @@ onBeforeUnmount(() => {
     .armor-view.is-shot .armor-stage.is-tools-open #corner-tr { display: flex; z-index: var(--pb-z-hud); }
     .armor-view.is-shot #debug-info { max-block-size: 20dvh; }
     .armor-view.is-clean #corner-tl { display: none; }
-    .armor-view .armor-back { inset-block-start: var(--space-2); inset-inline-start: var(--space-2); inline-size: 44px; block-size: 44px; padding: 0; justify-content: center; }
+    .armor-view .armor-back { inset-block-start: var(--space-2); inset-inline-start: var(--space-2); inline-size: var(--scene-hit); block-size: var(--scene-hit); padding: 0; justify-content: center; }
     .armor-view .armor-back-label { display: none; }
     .armor-view #tank-picker { inset: 0; max-inline-size: none; border-radius: 0; }
     .armor-view .armor-shot-header { flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2); }

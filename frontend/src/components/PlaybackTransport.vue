@@ -160,8 +160,8 @@ const total = computed(() => Number(props.duration) - Number(props.startTime))
 }
 .pb-speed-item { min-inline-size: calc(var(--hit-min) + var(--space-4)); }
 
-/* Primary 组合的固有尺寸：--control-h-md 在触屏下就是 44px（fine pointer 下 32px，
-   布局按可用空间收紧），不用断点区分形态。 */
+/* Primary 组合的固有尺寸：--control-h-md 触屏默认 44px、场景短视口横屏紧凑档 36px
+   （fine pointer 下 32px），布局按可用空间收紧，不用断点区分形态。 */
 .pb-btn {
   display: inline-flex;
   align-items: center;
@@ -197,8 +197,8 @@ const total = computed(() => Number(props.duration) - Number(props.startTime))
 .pb-unavailable { flex-basis: 100%; color: var(--color-text-tertiary); font: var(--type-caption); }
 .pb-time { margin-inline: auto; color: var(--color-text-secondary); font: var(--type-caption); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-/* compact 只改对齐与「时间独占一行」：六个 primary action 的触控尺寸由 --control-h-md
-   在触屏下已经是 44px（--hit-min），不需要再按形态各写一套。 */
+/* compact 只改对齐与「时间独占一行」：六个 primary action 的视觉尺寸由 --control-h-md
+   统一控制（触屏 44px / 场景紧凑档 36px），命中区由 playback-workspace.css 的紧凑档补到 40px。 */
 .pb-controls.phone-form { justify-content: center; }
 .phone-form .pb-btn { padding: 0 var(--space-1); }
 /* Time occupies its own row so all six primary actions remain together. */

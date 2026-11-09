@@ -3240,6 +3240,7 @@ const WORKSPACE_2D_SCENARIOS = [
   { name: 'ws2d-1024x768-tablet', width: 1024, height: 768, touch: false, layout: 'lanes' },
   // 1280 宽桌面：侧边车道（≈320）比详情浮窗（340）窄——初始落位必须收窄浮窗，而不是伸进中心栏盖住 HUD
   { name: 'ws2d-1280x720-desktop', width: 1280, height: 720, touch: false, layout: 'lanes' },
+  { name: 'ws2d-1280x800-desktop', width: 1280, height: 800, touch: false, layout: 'lanes' },
   { name: 'ws2d-1600x900-desktop', width: 1600, height: 900, touch: false, layout: 'lanes' },
   { name: 'ws2d-1792x922-fullscreen-desktop', width: 1792, height: 922, touch: false, layout: 'lanes', fullscreen: true },
 ]
@@ -3290,6 +3291,21 @@ function workspace2dProbe(touch = false) {
     : ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']
   const primary = primaryIds
     .map((test) => box(document.querySelector(`.pb-controls [data-test="${test}"]`)))
+  // 视觉盒仍是 36px：用真实命中测试验证伪元素把可点范围扩到 ≥40×40（不读 token 代替）。
+  const primaryHitAreas = primaryIds.map((test, index) => {
+    const el = document.querySelector(`.pb-controls [data-test="${test}"]`)
+    const b = primary[index]
+    if (!el || !b) return { test, missing: true }
+    const hit = (x, y) => { const target = document.elementFromPoint(x, y); return target === el || el.contains(target) }
+    const cx = b.l + b.w / 2, cy = b.t + b.h / 2
+    return {
+      test, center: hit(cx, cy), top: hit(cx, b.t - 1.5), bottom: hit(cx, b.b + 1.5),
+      left: hit(b.l - 1.5, cy), right: hit(b.r + 1.5, cy), visualHeight: b.h, visualWidth: b.w,
+    }
+  })
+  const scene = document.querySelector('[data-scene-surface]')
+  const sceneStyle = getComputedStyle(scene || document.documentElement)
+  const token = (name) => parseFloat(sceneStyle.getPropertyValue(name)) || null
   const details = document.querySelector('[data-test="pb-info"]')
   const transport = document.querySelector('[data-test="pb-transport-slot"]')
   const inline = document.querySelector('[data-test="pb-inline-area"]')
@@ -3329,6 +3345,12 @@ function workspace2dProbe(touch = false) {
       return Math.abs(r.right - rootBox.right) <= 12 && Math.abs(r.top - rootBox.top) <= 12
     })(),
     primaryMinSide: Math.min(...primary.filter(Boolean).map((b) => Math.min(b.w, b.h))),
+    primaryHitAreas,
+    tokens: {
+      coarse: matchMedia('(pointer: coarse)').matches,
+      compact: matchMedia('(pointer: coarse) and (orientation: landscape) and (height <= 520px)').matches,
+      controlMd: token('--control-h-md'), hitComfortable: token('--hit-min-comfortable'), space2: token('--space-2'),
+    },
     buttonCount: buttons.length,
     layout: ['.battle-playback', '.pb-hud', '.pb-main', '.pb-map-stage', '.pb-map', '.pb-transport-slot', '.pb-mobile-overlay', '.pb-mobile-overlay-content', '.pb-team-lane-left', '[data-test="pb-roster-row"]'].map((selector) => {
       const element = document.querySelector(selector)
@@ -3513,9 +3535,11 @@ async function checkDisplaySurface(page, failures, layout, scenario) {
       for (const failure of detailsPaint.failures) check(failures, false, `Display 必须压过车辆详情面板: ${failure}`)
     }
     // 选项不只是按钮：显示开关是 label 包着的复选框，只查 button 会漏掉整块被盖住的复选框区
+    const compact = !!scenario.touch && scenario.height <= 520 && scenario.width > scenario.height
     const reach = await measureReachability(page, {
       options: ['[data-testid="display-panel"] button', '[data-testid="display-panel"] label'],
       touch: !!scenario.touch,
+      minTouchTargetPx: compact ? 40 : undefined,
     })
     for (const failure of reach.failures) check(failures, false, `Display 选项可达性: ${failure}`)
     check(failures, reach.sampled > 0, 'Display 可达性断言空跑：没有任何选项被实际命中采样')
@@ -3700,7 +3724,20 @@ async function runWorkspace2DScenario(env, scenario) {
   check(failures, tops.length === (scenario.touch ? 5 : 6) && Math.max(...tops) - Math.min(...tops) <= 1,
     `primary controls are not one row: ${JSON.stringify(g.primaryTops)}`)
   if (scenario.touch) {
-    check(failures, g.primaryMinSide >= 43.5, `primary control below 44px: ${g.primaryMinSide}`)
+    if (g.tokens.compact) {
+      check(failures, g.tokens.controlMd === 36 && g.tokens.hitComfortable === 40 && g.tokens.space2 === 6,
+        `compact scene tokens wrong: ${JSON.stringify(g.tokens)}`)
+      check(failures, g.primaryMinSide >= 35.5, `compact primary visual height below 36px: ${g.primaryMinSide}`)
+    } else {
+      check(failures, g.tokens.hitComfortable === 44, `non-compact touch hit token changed: ${JSON.stringify(g.tokens)}`)
+      check(failures, g.primaryMinSide >= 43.5, `primary control below 44px: ${g.primaryMinSide}`)
+    }
+    check(failures, g.primaryHitAreas.every((area) => area.center
+      && (!g.tokens.compact || (area.top && area.bottom && area.left && area.right))),
+      `primary controls do not expose a 40x40 effective hit area: ${JSON.stringify(g.primaryHitAreas)}`)
+  } else {
+    check(failures, g.tokens.compact === false && g.tokens.controlMd === 32 && g.tokens.hitComfortable === 44,
+      `desktop scene tokens changed: ${JSON.stringify(g.tokens)}`)
   }
 
   const team1 = Array.from({ length: 7 }, (_, i) => 1001 + i)

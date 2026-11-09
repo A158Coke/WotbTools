@@ -53,6 +53,11 @@ function armorLayoutProbe() {
     : null
   const toolsHit = toolsCenter ? document.elementFromPoint(toolsCenter.x, toolsCenter.y) : null
   const root = document.querySelector('.armor-view')
+  const rootStyle = root ? getComputedStyle(root) : null
+  const sceneToken = (name) => {
+    const value = rootStyle?.getPropertyValue(name).trim() || ''
+    return value.endsWith('px') ? Number.parseFloat(value) : null
+  }
   const stage = document.querySelector('[data-testid="armor-stage"]')
   const viewToggle = document.querySelector('#view-toggle')
   const turretRows = [...document.querySelectorAll('#turret-controls .ctrl-row')].map((row) => row.getBoundingClientRect())
@@ -60,6 +65,12 @@ function armorLayoutProbe() {
     url: location.href,
     viewport: { width: innerWidth, height: innerHeight },
     coarse: matchMedia('(pointer: coarse)').matches,
+    /** 场景根上的密度 token：短视口横屏紧凑档会把它收窄到 40px，断言从实际 token 取值而不是写死 44。 */
+    sceneTokens: {
+      space2: sceneToken('--space-2'),
+      space5: sceneToken('--space-5'),
+      hitComfortable: sceneToken('--hit-min-comfortable'),
+    },
     hasStage: !!stage,
     unsupported: !!document.querySelector('[data-testid="scene3d-unsupported"]'),
     root: box('.armor-view'),
@@ -232,18 +243,28 @@ function checkSceneBand(failures, layout, label) {
     `${label}: 3D 场景可用带只有 ${band}px（顶栏 ${layout.topBar.height}px + 底栏 ${layout.bottomBar.height}px 之后），低于 armor-view 高度 ${layout.root.height}px 的 ${SCENE_BAND_MIN_RATIO * 100}%`)
 }
 
+function isCompactScene(layout) {
+  return layout.coarse && layout.viewport.height <= 520 && layout.viewport.width > layout.viewport.height
+}
+
 function checkTouchTargets(failures, layout, label) {
+  // 桌面触控档 44px；场景短视口横屏紧凑档按 design-language §5 降到 40px。
+  // token 值本身也要锁死，避免场景 token 回退时断言跟着放宽。
+  const expected = isCompactScene(layout) ? 40 : 44
+  const floor = layout.sceneTokens?.hitComfortable ?? 44
+  check(failures, floor === expected, `${label}: 场景命中 token 为 ${floor}px，期望 ${expected}px`)
+  const threshold = expected - 0.5
   for (const button of layout.viewToggleButtons) {
     if (!button.visible) continue
-    check(failures, Math.min(button.width, button.height) >= 43.5,
-      `${label}: 视图开关「${button.text}」触控目标 ${button.width}x${button.height}，低于 44px`)
+    check(failures, Math.min(button.width, button.height) >= threshold,
+      `${label}: 视图开关「${button.text}」触控目标 ${button.width}x${button.height}，低于 ${floor}px`)
   }
   if (layout.tools) {
-    check(failures, Math.min(layout.tools.width, layout.tools.height) >= 43.5,
-      `${label}: 参数开关触控目标 ${layout.tools.width}x${layout.tools.height}，低于 44px`)
+    check(failures, Math.min(layout.tools.width, layout.tools.height) >= threshold,
+      `${label}: 参数开关触控目标 ${layout.tools.width}x${layout.tools.height}，低于 ${floor}px`)
   }
   if (layout.back) {
-    check(failures, layout.back.height >= 43.5, `${label}: 返回键高度 ${layout.back.height}px，低于 44px`)
+    check(failures, layout.back.height >= threshold, `${label}: 返回键高度 ${layout.back.height}px，低于 ${floor}px`)
   }
 }
 
@@ -588,16 +609,26 @@ async function runDesktopScenario(env, scenario) {
     ? { top: layout.back.top - layout.root.top, left: layout.back.left - layout.root.left } : null
   const barRel = layout.topBar && layout.root
     ? { top: layout.topBar.top - layout.root.top, left: layout.topBar.left - layout.root.left } : null
+  // 紧凑档的 space-2 / space-5 会随场景 token 收窄（6/15）；常规触控与桌面仍是 8/20。
+  // 期望值同样锁死，防止 token 回退后测试跟着放宽。
+  const compactScene = isCompactScene(layout)
+  const expectedSpace2 = compactScene ? 6 : 8
+  const expectedSpace5 = compactScene ? 15 : 20
+  const sceneSpace2 = layout.sceneTokens?.space2 ?? 8
+  const sceneSpace5 = layout.sceneTokens?.space5 ?? 20
+  check(failures, sceneSpace2 === expectedSpace2 && sceneSpace5 === expectedSpace5,
+    `${label}: 场景间距 token space-2/space-5 为 ${sceneSpace2}/${sceneSpace5}，期望 ${expectedSpace2}/${expectedSpace5}`)
   const coexistVertical = layout.back && layout.topBar
-    && Math.abs((layout.topBar.top - layout.back.bottom) - 8) <= 2
-    && Math.abs(barRel.left - 20) <= 2
+    && Math.abs((layout.topBar.top - layout.back.bottom) - sceneSpace2) <= 2
+    && Math.abs(barRel.left - sceneSpace5) <= 2
   const coexistHorizontal = layout.back && layout.topBar
-    && Math.abs((layout.topBar.left - layout.back.right) - 8) <= 2
-    && Math.abs(barRel.top - 20) <= 2
-  // 沉浸态（手机横屏）外壳在左上放菜单按钮，返回键右移 44+8 让出（--immersive-nav-reserve）
-  const backInsetLeft = scenario.phoneLandscape ? 20 + 52 : 20
-  check(failures, !!backRel && Math.abs(backRel.top - 20) <= 2 && Math.abs(backRel.left - backInsetLeft) <= 2,
-    `${label}: 返回键没有贴 armor-view 左上 inset 20/${backInsetLeft}（back=${JSON.stringify(backRel)}）`)
+    && Math.abs((layout.topBar.left - layout.back.right) - sceneSpace2) <= 2
+    && Math.abs(barRel.top - sceneSpace5) <= 2
+  // 沉浸态（手机横屏）外壳在左上放菜单按钮，返回键右移 44+8 让出（--immersive-nav-reserve）。
+  // 这个 reserve 由外壳按常规触控档计算，场景紧凑档也不改它（菜单按钮在场景外，仍是 44px）。
+  const backInsetLeft = scenario.phoneLandscape ? sceneSpace5 + 52 : sceneSpace5
+  check(failures, !!backRel && Math.abs(backRel.top - sceneSpace5) <= 2 && Math.abs(backRel.left - backInsetLeft) <= 2,
+    `${label}: 返回键没有贴 armor-view 左上 inset ${sceneSpace5}/${backInsetLeft}（back=${JSON.stringify(backRel)}）`)
   if (scenario.phoneLandscape) {
     const menu = await page.evaluate(`(() => { const el = document.querySelector('[data-testid="nav-menu"]'); if (!el) return null; const r = el.getBoundingClientRect(); const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return { right: r.right, hit: !!hit && el.contains(hit) } })()`)
     check(failures, menu?.hit === true && layout.back && menu.right <= layout.back.left,
@@ -605,11 +636,12 @@ async function runDesktopScenario(env, scenario) {
   }
   check(failures, coexistVertical || coexistHorizontal,
     `${label}: 顶栏未在返回键下方或右侧留出 space-2 间距（bar=${JSON.stringify(barRel)} back=${JSON.stringify(layout.back && { bottom: layout.back.bottom, right: layout.back.right })}）`)
-  // 手机横屏场景 HUD：射击快捷面板在右下拇指区（距底 space-2）；平板 / 桌面仍在右上角（20/20）
+  // 手机横屏场景 HUD：射击快捷面板在右下拇指区（距底 space-2）；平板 / 桌面仍在右上角（20/20）。
+  // 紧凑档的 space-2 / space-5 是 6/15，所以这里从场景 token 取期望值。
   if (scenario.phoneLandscape) {
     check(failures, layout.bottomBar && layout.root
-      && Math.abs((layout.root.bottom - layout.bottomBar.bottom) - 8) <= 2 && Math.abs((layout.root.right - layout.bottomBar.right) - 20) <= 2,
-      `${label}: 射击快捷面板没有停在右下拇指区（bottom=${layout.bottomBar?.bottom} right=${layout.bottomBar?.right} root=${JSON.stringify(layout.root)}）`)
+      && Math.abs((layout.root.bottom - layout.bottomBar.bottom) - sceneSpace2) <= 2 && Math.abs((layout.root.right - layout.bottomBar.right) - sceneSpace5) <= 2,
+      `${label}: 射击快捷面板没有停在右下拇指区（bottom=${layout.bottomBar?.bottom} right=${layout.bottomBar?.right}，期望间距 ${sceneSpace2}/${sceneSpace5}）`)
   } else {
     check(failures, layout.bottomBar && layout.root
       && Math.abs((layout.bottomBar.top - layout.root.top) - 20) <= 2 && Math.abs((layout.root.right - layout.bottomBar.right) - 20) <= 2,

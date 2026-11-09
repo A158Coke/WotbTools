@@ -356,11 +356,12 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
   padding: var(--space-3);
 }
 
-/* 弹窗内（装甲页）所有控件 ≥44px，包括 FilterChips / AppButton 等子组件内部按钮。 */
+/* 弹窗内（装甲页）所有控件走 --scene-hit（常规触控 44px；场景短视口横屏紧凑档 40px），
+   包括 FilterChips / AppButton 等子组件内部按钮。 */
 .tank-catalog-menu.is-dialog :deep(button),
 .tank-catalog-menu.is-dialog :deep(select),
 .tank-catalog-menu.is-dialog :deep(input) {
-  min-block-size: 44px;
+  min-block-size: var(--scene-hit);
 }
 
 .tc-dialog-head {
@@ -384,8 +385,8 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
   flex: none;
   align-items: center;
   justify-content: center;
-  inline-size: 44px;
-  block-size: 44px;
+  inline-size: var(--scene-hit);
+  block-size: var(--scene-hit);
   padding: 0;
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-md);
@@ -458,12 +459,13 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
 
 .is-sheet .tp-field { min-inline-size: 0; }
 
-/* 筛选内容随 AppSheet portal 到 body，脱离了上面 .is-dialog 与 AgentArmorView 的 #tank-picker 44px 保底：
-   在随内容一起传送的元素上自带保底（含 AppButton 等子组件内部按钮）。 */
+/* 筛选内容随 AppSheet portal 到 body，脱离了上面 .is-dialog 与 AgentArmorView 的 #tank-picker 保底：
+   在随内容一起传送的元素上自带保底（含 AppButton 等子组件内部按钮）。portal 到 body 后不再
+   继承场景紧凑档，--scene-hit 保持 :root 的 44px，符合全站舒适命中区。 */
 .tp-filters.is-sheet :deep(button),
 .tp-filters.is-sheet :deep(select),
 .tp-filters.is-sheet :deep(input) {
-  min-block-size: 44px;
+  min-block-size: var(--scene-hit);
 }
 
 /* Choice Group（type/sort）的选项是 SegmentedControl 的子组件按钮：它的 scoped
@@ -472,7 +474,7 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
    会落回 --control-h-md=32px。本 sheet 的产品规则是「所有控件 ≥44px」，这里按
    更高特异性把选项抬回去（coarse 档本就由 --control-h-md=44 覆盖）。 */
 .tp-filters.is-sheet :deep(.segmented .segmented-option) {
-  min-block-size: 44px;
+  min-block-size: var(--scene-hit);
 }
 
 /* ---------- 结果区与卡片网格 ---------- */

@@ -1490,7 +1490,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 .portrait-flow .team-lane { position: static; width: auto; }
 .portrait-flow > .banner { position: absolute; top: var(--space-12); }
 
-/* 触屏：控件点击区域抬到 --hit-min（44px），布局不动 */
+/* 触屏：控件点击区域抬到 --hit-min（coarse 44px；场景短视口横屏紧凑档 40px），布局不动 */
 @media (pointer: coarse) {
   .tool-btn { min-height: var(--hit-min); }
 }
