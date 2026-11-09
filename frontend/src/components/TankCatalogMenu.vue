@@ -187,7 +187,7 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
       </button>
     </div>
 
-    <div class="tp-toolbar">
+    <div class="tp-toolbar surface-glass-1">
     <div class="tp-search-row">
       <label class="tp-search">
         <Search :size="16" class="tp-search-icon" aria-hidden="true" />
@@ -409,7 +409,7 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
 }
 
 /* ---------- 搜索与筛选 ---------- */
-.tp-toolbar { display: grid; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-surface-1); }
+.tp-toolbar { display: grid; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); }
 .is-dialog .tp-toolbar { padding: 0; border: 0; border-radius: 0; background: transparent; }
 .tp-search-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); flex: none; }
 

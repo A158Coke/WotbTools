@@ -673,7 +673,7 @@ onMounted(() => {
       <template v-else-if="detail">
         <Motion
           tag="header"
-          class="tp-detail-head"
+          class="tp-detail-head surface-glass-1"
           :initial="{ opacity: 0, y: 4 }"
           :animate="{ opacity: 1, y: 0 }"
           :transition="motionTransition('fast')"
@@ -707,7 +707,7 @@ onMounted(() => {
              参数卡片顺序：防护 → 机动 → 火力（火力卡内弹种选择置顶）。 -->
         <div class="tp-workbench">
           <div class="tp-workbench-left">
-          <section class="tp-card-section tp-model-card" data-testid="tank-open3d-card" data-tour="tankopedia-detail">
+          <section class="tp-card-section tp-model-card surface-glass-1" data-testid="tank-open3d-card" data-tour="tankopedia-detail">
             <div class="tp-model-card-heading">
               <h2 class="tp-section-title">{{ t('agentTanks.open3d_title') }}</h2>
               <AppButton variant="primary" data-testid="tank-open3d" data-tour="tankopedia-armor" @click="open3d">
@@ -794,7 +794,7 @@ onMounted(() => {
           @select-shell="selectShell"
         />
 
-        <section v-else class="tp-card-section tp-workbench-right">
+        <section v-else class="tp-card-section tp-workbench-right surface-glass-1">
           <h2 class="tp-section-title">{{ t('agentTanks.mobility') }}</h2>
           <dl class="tp-stats">
             <div><dt>{{ t('agentTanks.hp') }}</dt><dd>{{ fmtNum(upgradeProjection.detail?.hp ?? detail.hp, 0) }}</dd></div>
@@ -812,7 +812,7 @@ onMounted(() => {
         </div>
 
         <!-- 无模块数据的静态详情：保留只读弹种表（可配置时弹种表已并入火力卡） -->
-        <section v-if="!characteristics" class="tp-card-section">
+        <section v-if="!characteristics" class="tp-card-section surface-glass-1">
           <h2 class="tp-section-title">{{ t('agentTanks.shells') }}</h2>
           <div class="tp-table-wrap">
             <table class="tp-table">
@@ -968,7 +968,6 @@ onMounted(() => {
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-lg);
-  background: var(--color-surface-1);
   box-shadow: var(--elevation-1);
 }
 
@@ -983,7 +982,6 @@ onMounted(() => {
   padding: var(--space-4);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-lg);
-  background: var(--color-surface-1);
   box-shadow: var(--elevation-1);
 }
 
@@ -1007,7 +1005,7 @@ onMounted(() => {
 .tp-summary dd { margin: 0; font: var(--type-body); font-weight: 600; overflow-wrap: anywhere; }
 
 .tp-table-wrap { overflow-x: auto; }
-.tp-table { inline-size: 100%; border-collapse: collapse; font: var(--type-body); font-variant-numeric: tabular-nums; }
+.tp-table { inline-size: 100%; border-collapse: collapse; background: var(--color-surface-1); font: var(--type-body); font-variant-numeric: tabular-nums; }
 .tp-table th { padding: var(--space-1) var(--space-2); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; text-align: start; white-space: nowrap; }
 .tp-table td { padding: var(--space-2); border-block-start: 1px solid var(--color-border-subtle); }
 .tp-table .is-num { text-align: end; }
@@ -1019,7 +1017,7 @@ onMounted(() => {
   margin: 0;
 }
 
-.tp-stats > div { padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); }
+.tp-stats > div { padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); background: var(--color-surface-1); }
 .tp-stats dt { color: var(--color-text-secondary); font: var(--type-caption); }
 .tp-stats dd { margin: 0; font: var(--type-h3); font-variant-numeric: tabular-nums; }
 

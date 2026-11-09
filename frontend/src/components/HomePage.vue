@@ -174,7 +174,7 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
         </div>
       </article>
       <div class="home-cards">
-        <article v-for="item in cards" :key="item.id" class="home-card">
+        <article v-for="item in cards" :key="item.id" class="home-card surface-glass-1">
           <div class="home-card-figure">
             <img :src="item.image" :width="item.w" :height="item.h" loading="lazy" decoding="async" alt="" aria-hidden="true">
           </div>
@@ -330,7 +330,7 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
 .home-callouts li { padding: var(--space-1) var(--space-3); border: 1px solid var(--color-accent); border-radius: var(--radius-md); background: var(--color-canvas); color: var(--color-accent-text); font: var(--type-caption); font-weight: 600; white-space: nowrap; }
 
 .home-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-6); padding: var(--space-10) var(--space-12); }
-.home-card { display: flex; flex-direction: column; min-width: 0; overflow: hidden; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-surface-1); }
+.home-card { display: flex; flex-direction: column; min-width: 0; overflow: hidden; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); }
 .home-card-figure { block-size: calc(var(--space-12) * 5); overflow: hidden; }
 .home-card-figure img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 40%; }
 .home-card-copy { padding: var(--space-5) var(--space-6); }

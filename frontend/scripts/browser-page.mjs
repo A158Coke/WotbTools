@@ -110,7 +110,9 @@ export class Page {
 
   async goto(url) {
     await this.client.send('Page.navigate', { url }, this.sessionId)
-    await this.waitForValue('document.readyState', (value) => value === 'complete', { label: 'document readyState=complete' })
+    // 每个 fixture 服务器都用独立 Vite cacheDir：冷启动要现场优化依赖 + 加载整张模块图，
+    // 慢机器/CI runner 上 20s 会卡在 readyState=interactive。放宽到 45s，不改变任何行为断言。
+    await this.waitForValue('document.readyState', (value) => value === 'complete', { timeout: 45_000, label: 'document readyState=complete' })
   }
 
   /** 场景失败时的现场快照：页面异常 + 可选的状态探针，避免「timeout 但不知道为什么」。 */

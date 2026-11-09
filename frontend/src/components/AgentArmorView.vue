@@ -13,7 +13,7 @@ import { computed, inject, nextTick, onMounted, onBeforeUnmount, ref, watch } fr
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, SlidersHorizontal, MousePointer2, ChevronDown } from 'lucide-vue-next'
+import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, SlidersHorizontal, MousePointer2, ChevronDown, X } from 'lucide-vue-next'
 import { fetchReplayShots, shotViewerQuery, fetchTankData } from '../scene/agentData.js'
 import { shotResultBadge } from '../utils/shotPresentation.js'
 import { shellLabel, armorPartLabel, armorResultLabel, tankNationLabel, tankTypeLabel } from '../scene/tankMeta.js'
@@ -650,7 +650,19 @@ onBeforeUnmount(() => {
                 :title="$t('armor.tools')"
                 @click="toolsOpen = !toolsOpen"
             ><SlidersHorizontal :size="18" aria-hidden="true" /><span class="armor-tools-label">{{ $t('armor.tools') }}</span></button>
-            <div id="tank-selectors" :class="{ 'has-shot-hud': hudReady }"><h2 class="armor-panel-title">{{ $t('armor.setup') }}</h2><p v-if="isShotPage" class="armor-setup-note">{{ $t('armor.recording_vs_preview') }}</p>
+            <div id="tank-selectors" :class="{ 'has-shot-hud': hudReady }">
+                <div class="armor-setup-head">
+                    <h2 class="armor-panel-title">{{ $t('armor.setup') }}</h2>
+                    <button
+                        type="button"
+                        class="armor-tools-close"
+                        data-testid="armor-tools-close"
+                        :aria-label="$t('armor.tools_close')"
+                        :title="$t('armor.tools_close')"
+                        @click="toolsOpen = false"
+                    ><X :size="18" aria-hidden="true" /></button>
+                </div>
+                <p v-if="isShotPage" class="armor-setup-note">{{ $t('armor.recording_vs_preview') }}</p>
                 <div class="sel-row" id="config-row" style="display:none;"><label id="config-label" for="config-select">{{ $t('armor.config') }}</label><select id="config-select"></select></div>
                 <div class="sel-row">
                     <label class="armor-equipment-caption">{{ $t('armor.equip') }}</label>
@@ -877,6 +889,7 @@ onBeforeUnmount(() => {
 .armor-view #info-panel .value { font-weight: 600; }
 .armor-view .armor-setup-note { margin: 0 0 var(--space-3); color: var(--muted); font: var(--type-caption); }
 .armor-view .armor-panel-title { margin: 0 0 var(--space-2); color: var(--muted); font: var(--type-caption); }
+.armor-view .armor-tools-close { display: none; }
 .armor-view .armor-side-cards { display: grid; gap: var(--space-3); min-inline-size: 0; }
 .armor-view .armor-side-card { display: grid; gap: var(--space-2); min-inline-size: 0; }
 .armor-view .armor-side-card + .armor-side-card { border-block-start: 1px solid var(--color-border-subtle); padding-block-start: var(--space-3); }
@@ -1175,7 +1188,207 @@ onBeforeUnmount(() => {
     .armor-view.has-back #corner-tl { inset-block-start: var(--space-5); inset-inline-start: calc(max(var(--space-5), env(safe-area-inset-left)) + var(--immersive-nav-reserve) + var(--hit-min-comfortable) + var(--space-2)); inline-size: min(17rem, 34%); }
     .armor-view #corner-tr { inset-block-start: auto; inset-block-end: max(var(--space-2), env(safe-area-inset-bottom)); inset-inline-end: max(var(--space-5), env(safe-area-inset-right)); max-block-size: calc(100% - var(--space-12) - var(--space-10)); overflow-y: auto; }
     .armor-view #corner-br { display: none; }
-    .armor-view #turret-controls { inset-block-end: max(var(--space-2), env(safe-area-inset-bottom)); inset-inline-start: max(var(--space-5), env(safe-area-inset-left)); }
+    /* 短横屏紧凑 HUD：返回键 + 车名 + 参数并成一条 38px 胶囊；点选结果接管胶囊右侧；
+       右下射击面板 15rem × ≤45dvh；左下姿态面板压到两行。 */
+    .armor-view .armor-back {
+        block-size: 38px;
+        min-block-size: 38px;
+        inline-size: 40px;
+        padding: 0;
+        border-start-end-radius: 0;
+        border-end-end-radius: 0;
+        border-inline-end: 0;
+        box-shadow: none;
+    }
+    .armor-view #corner-tl {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        inline-size: 14rem;
+        block-size: 38px;
+        min-block-size: 38px;
+        max-block-size: none;
+        padding: 0 6px 0 10px;
+        overflow: visible;
+    }
+    .armor-view.has-back #corner-tl {
+        inset-inline-start: calc(max(var(--space-5), env(safe-area-inset-left)) + var(--immersive-nav-reserve) + 40px);
+        inline-size: 14rem;
+        border-start-start-radius: 0;
+        border-end-start-radius: 0;
+        border-inline-start: 0;
+    }
+    .armor-view #info-panel {
+        /* tankViewer 用内联 display:block 打开信息卡；这里保持块级，内部再用行内排版，
+           避免用 !important 与运行时内联样式打架。 */
+        display: block;
+        min-inline-size: 0;
+        max-inline-size: none;
+        max-block-size: none;
+        padding: 0;
+        overflow: hidden;
+        white-space: nowrap;
+    }
+    .armor-view #info-panel h1 {
+        display: inline-block;
+        max-inline-size: 46%;
+        margin: 0 4px 0 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        vertical-align: bottom;
+        font: var(--type-caption);
+        font-weight: 600;
+    }
+    .armor-view #info-panel .stat {
+        display: inline-flex;
+        gap: 3px;
+        margin: 0;
+        vertical-align: bottom;
+        font: var(--type-caption);
+        font-size: var(--font-size-caption-xs);
+        line-height: var(--line-height-caption-xs);
+    }
+    .armor-view #info-panel .stat + .stat::before {
+        content: '·';
+        margin-inline: 3px;
+        color: var(--muted);
+    }
+    .armor-view #info-panel .label { display: none; }
+    .armor-view #info-panel .stat:last-child { display: none; }
+    .armor-view #corner-tl > .armor-tools {
+        flex: none;
+        inline-size: 36px;
+        block-size: 36px;
+        min-block-size: 36px;
+        padding: 0;
+        border: 0;
+        border-radius: var(--radius-full);
+        corner-shape: round;
+        background: transparent;
+    }
+    .armor-view #corner-tl .armor-tools-label { display: none; }
+    /* 结果胶囊贴左上胶囊右侧，不再固定 50%：740px 视口下也不会压到右下射击面板。 */
+    .armor-view :is(#click-info, #traj-info) {
+        inset-block-start: calc(var(--space-5) + 5px);
+        inset-inline-start: calc(max(var(--space-5), env(safe-area-inset-left)) + var(--immersive-nav-reserve) + 14rem + 8px);
+        transform: none;
+    }
+    .armor-view.has-back :is(#click-info, #traj-info) {
+        inset-inline-start: calc(max(var(--space-5), env(safe-area-inset-left)) + var(--immersive-nav-reserve) + 40px + 14rem + 8px);
+    }
+    .armor-view #click-info {
+        min-block-size: 28px;
+        max-inline-size: max(6rem, calc(100% - 32.5rem - var(--immersive-nav-reserve) - max(var(--space-5), env(safe-area-inset-left)) - max(var(--space-5), env(safe-area-inset-right))));
+        padding: 0 8px;
+        gap: 6px;
+        overflow: hidden;
+        font: var(--type-caption);
+    }
+    /* 厚度值 #click-armor 永不参与收缩；部件名与「基础装甲」标签可省略。 */
+    .armor-view #click-info h3 { flex: 1 1 0; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; }
+    /* 结果卡最窄时也先保证厚度数值：部件名以 0 为 flex 基准完全让位，
+       行拿到剩余宽度后只压缩标签；#click-armor 不收缩。 */
+    .armor-view #click-info .row { flex: 0 1 auto; min-inline-size: 0; }
+    .armor-view #click-info .row > span:first-child { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; }
+    .armor-view #click-info #click-armor { flex: none; }
+    .armor-view #traj-info { max-block-size: 72px; }
+    .armor-view #traj-info:not(.is-expanded) { max-inline-size: max(6rem, calc(100% - 32.5rem - var(--immersive-nav-reserve) - max(var(--space-5), env(safe-area-inset-left)) - max(var(--space-5), env(safe-area-inset-right)))); }
+    .armor-view #corner-tr {
+        inline-size: 15rem;
+        max-block-size: 45dvh;
+        padding: 4px;
+        gap: 4px;
+    }
+    .armor-view #view-toggle {
+        display: grid;
+        flex: 0 0 auto;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+    }
+    .armor-view #view-toggle > button,
+    .armor-view #view-toggle > button:last-of-type {
+        min-block-size: 36px;
+        block-size: 36px;
+        padding: 0 4px;
+        border: 0;
+        border-radius: 0;
+        white-space: nowrap;
+    }
+    .armor-view #view-toggle > button + button { border-inline-start: 1px solid var(--border); }
+    .armor-view #view-toggle .armor-filters {
+        grid-column: 1 / -1;
+        gap: 2px;
+        padding: 4px 0 0;
+    }
+    .armor-view #turret-controls {
+        inset-block-end: max(var(--space-2), env(safe-area-inset-bottom));
+        inset-inline-start: max(var(--space-5), env(safe-area-inset-left));
+        min-inline-size: 0;
+        max-inline-size: min(15rem, calc(100% - var(--space-10)));
+        max-block-size: 72px;
+        padding: 4px 8px;
+        border-radius: var(--radius-md);
+        overflow-y: auto;
+        white-space: nowrap;
+    }
+    .armor-view #turret-controls .armor-camera-presets {
+        display: flex;
+        flex-wrap: nowrap;
+        gap: 4px;
+        margin: 0 0 2px;
+    }
+    .armor-view #turret-controls .armor-camera-presets button {
+        flex: 1;
+        min-inline-size: 0;
+        min-block-size: 30px;
+        padding: 2px 6px;
+        font: var(--type-caption);
+        font-size: var(--font-size-caption-xs);
+        line-height: var(--line-height-caption-xs);
+        white-space: nowrap;
+    }
+    .armor-view #turret-controls .ctrl-row {
+        display: inline-flex;
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: 4px;
+        margin: 0 10px 0 0;
+        font: var(--type-caption);
+        font-size: var(--font-size-caption-xs);
+        line-height: var(--line-height-caption-xs);
+    }
+    .armor-view #turret-controls .ctrl-row:last-child { margin-inline-end: 0; }
+    .armor-view .armor-setup-head {
+        position: sticky;
+        inset-block-start: 0;
+        z-index: var(--z-sticky);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-2);
+        margin-block-end: var(--space-2);
+        padding-block: 2px;
+        background: var(--color-surface-1);
+    }
+    .armor-view #tank-selectors .armor-panel-title { margin: 0; }
+    .armor-view .armor-tools-close {
+        display: inline-flex;
+        flex: none;
+        align-items: center;
+        justify-content: center;
+        inline-size: var(--hit-min);
+        block-size: var(--hit-min);
+        min-block-size: var(--hit-min);
+        padding: 0;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-full);
+        corner-shape: round;
+        background: var(--input-bg);
+        color: var(--txt);
+    }
     .armor-view .armor-stage.is-tools-open #tank-selectors {
         position: fixed;
         inset-block: 0;
@@ -1189,6 +1402,16 @@ onBeforeUnmount(() => {
         background: var(--color-surface-1);
         box-shadow: var(--elevation-3);
         z-index: var(--pb-z-modal);
+    }
+}
+/* 600×320 级窄横屏：左上胶囊已占掉近半宽度，结果胶囊改到胶囊下方第二行；
+   右下面板从 168px 起、左下面板从 ~240px 起，与 28px 高的结果行保持分离。 */
+@media (pointer: coarse) and (orientation: landscape) and (height <= 500px) and (width < 768px) {
+    .armor-view :is(#click-info, #traj-info),
+    .armor-view.has-back :is(#click-info, #traj-info) {
+        inset-block-start: calc(var(--space-5) + 44px);
+        inset-inline-start: calc(max(var(--space-5), env(safe-area-inset-left)) + var(--immersive-nav-reserve));
+        max-inline-size: calc(100% - max(var(--space-5), env(safe-area-inset-left)) - max(var(--space-5), env(safe-area-inset-right)) - var(--immersive-nav-reserve));
     }
 }
 /* 竖屏提示（强制横屏设备）：盖住场景但不卸载它，转到横屏即继续 */
