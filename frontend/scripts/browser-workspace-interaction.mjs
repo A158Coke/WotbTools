@@ -12,7 +12,7 @@ import { MOBILE_PAGE_SCENARIOS, SHELL_OVERLAY_SCENARIOS, runMobilePageScenario, 
 import { DIALOG_SHEET_SCENARIOS, runDialogSheetScenario } from './browser-dialog-sheet.mjs'
 import { DRAWER_TABLE_SCENARIOS, runDrawerTableScenario } from './browser-drawer-tables.mjs'
 import { CATALOG_HOF_DOC_SCENARIOS, runCatalogHofDocScenario } from './browser-catalog-hof-docs.mjs'
-import { detailsPlacementPreserved } from '../src/utils/detailsPlacementBounds.js'
+import { detailsPlacementPreserved } from '../src/utils/detailsPlacementBounds.ts'
 
 /**
  * Browser-level interaction regression for the Replay Workspace capability tabs and the
@@ -822,6 +822,20 @@ const ROSTER_GEOMETRY_SCENARIOS = [
   { name: 'roster-geometry-844x390-fullscreen-coarse', width: 844, height: 390, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', fullscreen: true },
   { name: 'roster-geometry-portrait-to844x390-coarse', width: 390, height: 844, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', rotateTo: { width: 844, height: 390 } },
   { name: 'roster-geometry-667x375-landscape-coarse', width: 667, height: 375, touch: true, players: 7, unknown: 0, killfeed: 0 },
+  { name: 'roster-geometry-740x360-distance-ru-free', width: 740, height: 360, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', locale: 'ru', camera: 'free', toggleFullscreen: true },
+  { name: 'roster-geometry-740x360-distance-ru-top', width: 740, height: 360, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', locale: 'ru', camera: 'top' },
+  { name: 'roster-geometry-844x390-distance-ru-free', width: 844, height: 390, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', locale: 'ru', camera: 'free', toggleFullscreen: true },
+  { name: 'roster-geometry-844x390-distance-ru-top', width: 844, height: 390, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', locale: 'ru', camera: 'top' },
+  { name: 'roster-geometry-740x360-distance-ru-free-fullscreen', width: 740, height: 360, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', locale: 'ru', camera: 'free', fullscreen: true },
+  { name: 'roster-geometry-844x390-distance-ru-free-fullscreen', width: 844, height: 390, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', locale: 'ru', camera: 'free', fullscreen: true },
+  { name: 'roster-geometry-740x360-distance-zh-free', width: 740, height: 360, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', locale: 'zh', camera: 'free' },
+  { name: 'roster-geometry-740x360-distance-zh-top', width: 740, height: 360, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', locale: 'zh', camera: 'top' },
+  { name: 'roster-geometry-740x360-distance-en-free', width: 740, height: 360, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', locale: 'en', camera: 'free' },
+  { name: 'roster-geometry-740x360-distance-en-top', width: 740, height: 360, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', locale: 'en', camera: 'top' },
+  { name: 'roster-geometry-844x390-distance-zh-free', width: 844, height: 390, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', locale: 'zh', camera: 'free' },
+  { name: 'roster-geometry-844x390-distance-zh-top', width: 844, height: 390, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', locale: 'zh', camera: 'top' },
+  { name: 'roster-geometry-844x390-distance-en-free', width: 844, height: 390, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', locale: 'en', camera: 'free' },
+  { name: 'roster-geometry-844x390-distance-en-top', width: 844, height: 390, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', locale: 'en', camera: 'top' },
   { name: 'roster-geometry-1280x720-desktop', width: 1280, height: 720, touch: false, players: 7, unknown: 2, killfeed: 0 },
   { name: 'roster-geometry-1280x800-desktop', width: 1280, height: 800, touch: false, players: 7, unknown: 2, killfeed: 0, killfeedRows: 2 },
   { name: 'roster-geometry-1280x704-desktop', width: 1280, height: 704, touch: false, players: 7, unknown: 2, killfeed: 0, killfeedRows: 2 },
@@ -1285,6 +1299,107 @@ function rosterGeometryProbe() {
   return out
 }
 
+/** 3D 右下距离滑条与 7v7 名册的真实几何：标签/轨道/整盒、最后三行、命中与内部滚动。 */
+function sceneDistanceProbe() {
+  const root = document.querySelector('.pb-root')
+  const slider = root && root.querySelector('[data-testid="scene-distance-slider"]')
+  const box = (el) => {
+    if (!el) return null
+    const r = el.getBoundingClientRect()
+    return {
+      l: +r.left.toFixed(2), t: +r.top.toFixed(2), r: +r.right.toFixed(2), b: +r.bottom.toFixed(2),
+      w: +r.width.toFixed(2), h: +r.height.toFixed(2),
+    }
+  }
+  const out = {
+    present: !!slider,
+    root: !!root,
+    viewport: { width: innerWidth, height: innerHeight },
+    errors: [],
+  }
+  if (!root || !slider) return out
+  const overlap = (a, b) => a.l < b.r - 0.5 && b.l < a.r - 0.5 && a.t < b.b - 0.5 && b.t < a.b - 0.5
+  out.rootBox = box(root)
+  out.pageScroll = { x: scrollX, y: scrollY }
+  out.slider = box(slider)
+  out.track = box(slider.querySelector('.scene-dist-track'))
+  out.controls = box(root.querySelector('.controls'))
+  out.fps = box(root.querySelector('.pb-fps'))
+  out.labels = [...slider.querySelectorAll('.scene-dist-label')].map((el) => {
+    const style = getComputedStyle(el)
+    return { text: (el.textContent || '').trim(), ...box(el), writingMode: style.writingMode, textOrientation: style.textOrientation }
+  })
+  const lane = root.querySelector('.side-right')
+  out.lane = box(lane)
+  const rows = [...root.querySelectorAll('.side-right .pb-roster-row')]
+  out.rows = rows.length
+  out.rowBoxes = rows.map((row, index) => ({
+    index,
+    ...box(row),
+    hp: box(row.querySelector('.pb-roster-hpfill')),
+  }))
+  out.last3 = out.rowBoxes.slice(-3)
+  out.rowOverlap = out.rowBoxes.filter((row) => overlap(out.slider, row)).map((row) => row.index)
+  out.labelOverlap = out.labels.flatMap((label, labelIndex) => out.rowBoxes
+    .filter((row) => overlap(label, row))
+    .map((row) => ({ label: labelIndex, row: row.index })))
+  out.laneOverlap = out.lane ? overlap(out.slider, out.lane) : false
+  out.rowHits = rows.map((row, index) => {
+    const r = row.getBoundingClientRect()
+    const target = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+    return { index, hit: target === row || row.contains(target) }
+  })
+  out.labelHits = [...slider.querySelectorAll('.scene-dist-label')].map((label, index) => {
+    const r = label.getBoundingClientRect()
+    const target = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+    return { index, hit: target === label || slider.contains(target) }
+  })
+  out.inViewport = out.slider.l >= -0.5 && out.slider.r <= innerWidth + 0.5
+    && out.slider.t >= -0.5 && out.slider.b <= innerHeight + 0.5
+  out.hpOverlap = out.rowBoxes
+    .filter((row) => row.hp && overlap(out.slider, row.hp))
+    .map((row) => row.index)
+  out.laneScroll = lane ? {
+    scrollH: lane.scrollHeight,
+    clientH: lane.clientHeight,
+    scrolls: lane.scrollHeight > lane.clientHeight + 1,
+  } : null
+  out.overflowX = document.documentElement.scrollWidth > innerWidth + 1
+  return out
+}
+
+const DISTANCE_LABELS = {
+  zh: ['近', '远'],
+  en: ['Near', 'Far'],
+  ru: ['Ближе', 'Дальше'],
+}
+
+/** 距离滑条与右侧 7v7 名册的几何契约；返回所有违规项而不是首个。 */
+function sceneDistanceViolations(dist, scenario, viewport) {
+  const errors = []
+  if (!dist.present || !dist.root) return ['distance slider missing']
+  if (dist.rows !== 7) errors.push(`expected 7 enemy rows, got ${dist.rows}`)
+  if (!dist.slider || dist.slider.h > 64) errors.push(`slider too tall: ${JSON.stringify(dist.slider)}`)
+  if (!dist.track || dist.track.h < 40) errors.push(`slider track too short for touch: ${JSON.stringify(dist.track)}`)
+  if (dist.rowOverlap.length) errors.push(`slider overlaps roster rows ${JSON.stringify(dist.rowOverlap)}`)
+  if (dist.labelOverlap.length) errors.push(`slider labels overlap roster rows ${JSON.stringify(dist.labelOverlap)}`)
+  if (dist.hpOverlap.length) errors.push(`slider overlaps HP bars of rows ${JSON.stringify(dist.hpOverlap)}`)
+  if (dist.laneOverlap) errors.push('slider overlaps right roster lane')
+  if (!dist.laneScroll || dist.laneScroll.scrolls) errors.push(`right roster must not scroll: ${JSON.stringify(dist.laneScroll)}`)
+  if (!dist.rowHits.every((row) => row.hit)) errors.push(`roster rows not hit-testable: ${JSON.stringify(dist.rowHits)}`)
+  if (dist.labelHits.length !== 2 || !dist.labelHits.every((label) => label.hit)) errors.push(`slider labels not hit-testable: ${JSON.stringify(dist.labelHits)}`)
+  if (!dist.inViewport) errors.push(`slider outside viewport: ${JSON.stringify(dist.slider)}`)
+  if (dist.slider.l < -0.5 || dist.slider.r > viewport.width + 0.5) errors.push('slider crosses viewport horizontally')
+  if (dist.controls && dist.slider.b > dist.controls.t + 0.5) errors.push(`slider overlaps transport: slider=${JSON.stringify(dist.slider)} controls=${JSON.stringify(dist.controls)}`)
+  if (dist.overflowX) errors.push('page has horizontal overflow')
+  const labels = DISTANCE_LABELS[scenario.locale ?? 'zh'] || DISTANCE_LABELS.zh
+  const texts = dist.labels.map((label) => label.text)
+  if (texts[0] !== labels[0] || texts[1] !== labels[1]) errors.push(`distance labels wrong: ${JSON.stringify(texts)}`)
+  if (!dist.labels.every((label) => label.w > 0 && label.h > 0 && label.h <= 24)) errors.push(`distance labels are not compact: ${JSON.stringify(dist.labels)}`)
+  if (!dist.labels.every((label) => label.writingMode === 'horizontal-tb')) errors.push(`distance labels must be horizontal: ${JSON.stringify(dist.labels.map((label) => label.writingMode))}`)
+  return errors
+}
+
 /** 「显示」面板：全部开关可用、面板不越界、隐藏全部 UI 可恢复（真实点击）。 */
 function displayPanelProbe() {
   const root = document.querySelector('.pb-root')
@@ -1616,7 +1731,7 @@ async function runRosterGeometryScenario(env, scenario) {
   const { targetId, sessionId } = await env.chrome.openPage()
   const page = new Page(env.chrome.client, sessionId)
   lastPage = page
-  await page.enable()
+  await page.enable({ locale: scenario.locale ?? 'zh', profile: scenario.profile ?? 'summer' })
   await page.emulate(scenario)
 
   // ?debug：Replay3DPane 的状态注入口（与场景内核的 ?debug 钩子同一口径），
@@ -1702,7 +1817,7 @@ async function runRosterGeometryScenario(env, scenario) {
     s.duration = 300
     s.time = 42
     s.startTime = 0
-    s.cam = 'free'
+    s.cam = ${JSON.stringify(scenario.camera ?? 'free')}
     s.roster = {
       team1: mk('Ally', ${scenario.players}, 1),
       team2: mk('Enemy', ${scenario.players}, 2),
@@ -1783,6 +1898,88 @@ async function runRosterGeometryScenario(env, scenario) {
   await page.evaluate('window.scrollTo(0, 0)')
   await waitForStableLayout(page)
   const geometry = await page.probe(rosterGeometryProbe)
+  if (scenario.name.includes('distance-')) {
+    // 非全屏工作台在矮窗口里会把 .pb-root 推到首屏之外；把根滚进视口后再测，
+    // 否则行命中/滑条可见性测到的是页面滚动位置，而不是布局本身。
+    if (!scenario.fullscreen) {
+      await page.evaluate("document.querySelector('.pb-root').scrollIntoView({ block: 'start' })");
+      await waitForStableLayout(page)
+    }
+    const checkDistance = async (state = '') => {
+      const measured = await page.probe(sceneDistanceProbe)
+      console.log(`[browser-interaction] ${scenario.name}${state} distance ${JSON.stringify(measured)}`)
+      for (const error of sceneDistanceViolations(measured, scenario, viewport)) {
+        check(failures, false, `${scenario.name}${state} distance slider: ${error}`)
+      }
+      return measured
+    }
+    const dist = await checkDistance()
+
+    // 真实拖动证明滑条仍可操作，而不是只摆对位置。
+    const dragStart = await page.evaluate(`(() => {
+      const el = document.querySelector('[data-testid="scene-distance-slider"]')
+      const track = el && el.querySelector('.scene-dist-track')
+      if (!el || !track) return null
+      const r = track.getBoundingClientRect()
+      return { x: r.left + r.width / 2, top: r.top, bottom: r.bottom, value: Number(el.getAttribute('aria-valuenow')) }
+    })()`)
+    if (!dragStart) {
+      check(failures, false, `${scenario.name} distance slider: drag track missing`)
+    } else {
+      await dragPointer(page, { x: dragStart.x, y: dragStart.top + 6 }, { x: dragStart.x, y: dragStart.bottom - 6 }, { touch: scenario.touch })
+      const farValue = await page.evaluate("Number(document.querySelector('[data-testid=\"scene-distance-slider\"]').getAttribute('aria-valuenow'))")
+      await dragPointer(page, { x: dragStart.x, y: dragStart.bottom - 6 }, { x: dragStart.x, y: dragStart.top + 6 }, { touch: scenario.touch })
+      const nearValue = await page.evaluate("Number(document.querySelector('[data-testid=\"scene-distance-slider\"]').getAttribute('aria-valuenow'))")
+      check(failures, Number.isFinite(farValue) && farValue < dragStart.value - 10,
+        `${scenario.name} distance slider: downward drag must move toward far (before=${dragStart.value}, after=${farValue})`)
+      check(failures, Number.isFinite(nearValue) && nearValue > farValue + 10,
+        `${scenario.name} distance slider: upward drag must move toward near (far=${farValue}, near=${nearValue})`)
+    }
+
+    // 负向对照：把滑条移到名册中段，必须真的压住行与血量条；否则几何判定是空跑。
+    // （旧竖排布局只在 ru 等长标签下才必然压住短标签；这里用确定性的真实遮挡来验证探针。）
+    await page.evaluate(`(() => {
+      const style = document.createElement('style')
+      style.id = 'distance-occlusion-negative-control'
+      style.textContent = '.pb-root.playback-workspace .scene-dist { top: 120px !important; bottom: auto !important; }'
+      document.head.append(style)
+    })()`)
+    await waitForStableLayout(page)
+    const mutant = await page.probe(sceneDistanceProbe)
+    check(failures, mutant.rowOverlap.length > 0 && mutant.hpOverlap.length > 0,
+      `${scenario.name} distance slider negative control: intentional overlay must hit roster rows and HP bars, got rows=${JSON.stringify(mutant.rowOverlap)} hp=${JSON.stringify(mutant.hpOverlap)}`)
+    await page.evaluate("document.getElementById('distance-occlusion-negative-control')?.remove()")
+    await waitForStableLayout(page)
+
+    // 全屏切换后仍须成立：同一场景内真实进入/退出，而不是只靠另一个全屏场景代证。
+    if (scenario.toggleFullscreen) {
+      const fsButton = await page.evaluate(`(() => {
+        const el = document.querySelector('[data-test="pb-fullscreen"]')
+        if (!el) return null
+        el.scrollIntoView({ block: 'center' })
+        const r = el.getBoundingClientRect()
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+      })()`)
+      check(failures, !!fsButton, `${scenario.name} distance slider: fullscreen entry missing`)
+      if (fsButton) {
+        await page.tap({ ...fsButton, touch: scenario.touch })
+        await page.waitFor(() => !!document.fullscreenElement, { timeout: 5000, label: 'distance fullscreen on' })
+        await waitForStableLayout(page)
+        await checkDistance(' fullscreen')
+
+        const exitCenter = await page.evaluate(`(() => {
+          const el = document.querySelector('[data-test="pb-fullscreen"]')
+          const r = el.getBoundingClientRect()
+          return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+        })()`)
+        await page.tap({ ...exitCenter, touch: scenario.touch })
+        await page.waitFor(() => !document.fullscreenElement, { timeout: 5000, label: 'distance fullscreen off' })
+        await page.evaluate("document.querySelector('.pb-root').scrollIntoView({ block: 'start' })")
+        await waitForStableLayout(page)
+        await checkDistance(' restored')
+      }
+    }
+  }
   if (scenario.touch && scenario.layout !== 'portrait') {
     await checkPhoneSafeArea(page, failures, scenario.name + ' landscape')
   }

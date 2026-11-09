@@ -15,7 +15,7 @@ import { defineComponent, h, nextTick, ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { usePlaybackDetailsPlacement } from './usePlaybackDetailsPlacement.ts'
-import { detailsPlacementLimits, detailsPlacementPreserved } from '../utils/detailsPlacementBounds.js'
+import { detailsPlacementLimits, detailsPlacementPreserved } from '../utils/detailsPlacementBounds.ts'
 
 /** 用 happy-dom 的元素几何桩：这一层只读 getBoundingClientRect，不需要真实布局引擎。 */
 function rect(left, top, width, height) {

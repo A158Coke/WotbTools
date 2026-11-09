@@ -1156,7 +1156,7 @@ const mapStyle = computed(() => ({
         <PlaybackRoster :gun-marks="gunMarks" :teams="rosterTeams.right" :friendly-team="friendlyTeam" :destroyed="destroyedNow" :health="rosterHealth" :reload="rosterReload" :selected-id="selectedAccountId" :compact="formFactor === 'mobile'" :dense="phoneLandscape" @select="selectFromRoster" />
       </div>
 
-      <PlaybackMobileOverlay v-if="!uiHidden" ref="mobileOverlay" :paused="!playing">
+      <PlaybackMobileOverlay v-if="!uiHidden" ref="mobileOverlay" :paused="!playing" :fullscreen="isFullscreen">
         <div ref="transportEl" class="pb-transport-slot" data-test="pb-transport-slot">
         <div v-if="!phoneLandscape" class="pb-replay-mode-bar">
           <button type="button" class="pb-annotation-entry" :class="{ active: annotationOpen }" data-test="pb-annotation-entry" data-tour="playback-annotation-entry" :aria-pressed="annotationOpen" @click="toggleAnnotation">

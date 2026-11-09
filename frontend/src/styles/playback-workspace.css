@@ -246,10 +246,7 @@
   /* 底栏总高 ≈ 44（按钮命中区）+ 2px 边框；内边距归零，时间轴自身 4px margin 已属外层。 */
   padding-block: 0;
 }
-/* 只有手机横屏才有右下角距离滑条：控制条额外在右侧让出 44px 宽 + 两侧 8px 的空槽。 */
-.pb-root.playback-workspace.compact-bar.phone-form:not(.portrait-flow) > .controls {
-  margin-inline-end: calc(var(--space-2) + var(--control-h-sm) + var(--space-2));
-}
+/* 距离滑条已移到控制条正上方，不再需要右下角让槽；控制条恢复全宽。 */
 /* 收起后容器只包住按钮：右缘留在展开时的位置，按钮不横向跳动。 */
 .pb-root.playback-workspace:not(.portrait-flow) > .controls.controls-docked {
   inset-inline-start: auto;
@@ -257,9 +254,9 @@
   inline-size: fit-content;
   margin-inline: 0;
 }
-/* 3D 紧凑条收起后只剩把手：仍留在距离滑条左侧，不压住滑条。 */
+/* 距离滑条在控制条上方，收起后把手可以贴右缘，不再为滑条让位。 */
 .pb-root.playback-workspace.compact-bar.phone-form:not(.portrait-flow) > .controls.controls-docked {
-  inset-inline-end: calc((100% - var(--pb-controls-max)) / 2 + var(--space-2) + var(--control-h-sm) + var(--space-2));
+  inset-inline-end: max(var(--space-2), var(--pb-safe-right));
 }
 .pb-root.playback-workspace.portrait-flow > .controls.controls-docked {
   inline-size: fit-content;
@@ -320,24 +317,38 @@
     calc(100% - 2 * (max(var(--space-1), var(--pb-safe-left), var(--pb-safe-right)) + var(--pb-overlay-lane-w, 0px) + var(--space-1))),
     520px);
 }
-/* 全屏入口已并入传输条，右上角让给名册。距离滑条停右下角，传输条右侧预留同宽空槽；
-   滑条高度随视口收缩，7 行 dense 名册最后一行之下才起跳（390/360 都成立）。
+/* 全屏入口已并入传输条，右上角让给名册。距离滑条停右下角、传输条正上方，
+   7 行 dense 名册最后一行之下才起跳（390/360 都成立）。
+   竖排标签会让滑条高达 250px 以上并压住最后 4–5 行（含血量条），因此紧凑横屏
+   改成「近 | 竖轨 | 远」的单行布局：标签横排、滑轨缩短，整盒约 60px 高。
    传输条与滑条都从 safe-area 内缘开始。 */
 .pb-root.playback-workspace.phone-form:not(.portrait-flow) > .controls {
   margin-inline-start: max(var(--space-2), var(--pb-safe-left));
-  margin-inline-end: calc(max(var(--space-2), var(--pb-safe-right)) + var(--control-h-sm) + var(--space-2));
+  margin-inline-end: max(var(--space-2), var(--pb-safe-right));
   inset-block-end: max(var(--space-2), var(--pb-safe-bottom));
 }
 .pb-root.playback-workspace.compact-bar.phone-form:not(.portrait-flow) > .controls.controls-docked {
-  inset-inline-end: calc(max(var(--space-2), var(--pb-safe-right)) + var(--control-h-sm) + var(--space-4));
+  inset-inline-end: max(var(--space-2), var(--pb-safe-right));
 }
 .pb-root.playback-workspace.phone-form:not(.portrait-flow) .scene-dist {
   top: auto;
-  bottom: max(var(--space-2), var(--pb-safe-bottom));
+  bottom: calc(max(var(--space-2), var(--pb-safe-bottom)) + var(--hit-min-comfortable) + var(--space-2));
   right: max(var(--space-2), var(--pb-safe-right));
+  display: grid;
+  grid-template-columns: auto var(--space-2) auto;
+  grid-template-rows: auto;
+  align-items: center;
+  justify-items: center;
+  gap: var(--space-1);
+}
+.pb-root.playback-workspace.phone-form:not(.portrait-flow) .scene-dist .scene-dist-label {
+  writing-mode: horizontal-tb;
+  text-orientation: mixed;
+  line-height: var(--line-height-caption);
+  white-space: nowrap;
 }
 .pb-root.playback-workspace.phone-form:not(.portrait-flow) .scene-dist .scene-dist-track {
-  height: min(max(64px, 18dvh), 96px);
+  height: min(max(48px, 14dvh), 72px);
 }
 /* FPS 角标原本也停右下，会与滑条同槽；手机横屏改停左下、控制条上方，二者不再互相遮挡。 */
 .pb-root.playback-workspace.phone-form:not(.portrait-flow) .pb-fps {

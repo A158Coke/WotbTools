@@ -52,7 +52,10 @@ describe('PlaybackMobileOverlay', () => {
       configurable: true,
       value: document.body,
     })
-    const wrapper = mount(PlaybackMobileOverlay, { slots: { default: '<button>Controls</button>' } })
+    const wrapper = mount(PlaybackMobileOverlay, {
+      props: { fullscreen: true },
+      slots: { default: '<button>Controls</button>' },
+    })
     await wrapper.vm.$nextTick()
 
     expect(wrapper.classes()).toContain('pb-mobile-overlay-transient')
@@ -76,7 +79,10 @@ describe('PlaybackMobileOverlay', () => {
       configurable: true,
       value: document.body,
     })
-    const wrapper = mount(PlaybackMobileOverlay, { slots: { default: '<button>Controls</button>' } })
+    const wrapper = mount(PlaybackMobileOverlay, {
+      props: { fullscreen: true },
+      slots: { default: '<button>Controls</button>' },
+    })
     expect(wrapper.classes()).not.toContain('pb-mobile-overlay-visible')
 
     document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -94,7 +100,10 @@ describe('PlaybackMobileOverlay', () => {
       configurable: true,
       value: document.body,
     })
-    const wrapper = mount(PlaybackMobileOverlay, { slots: { default: '<button>Controls</button>' } })
+    const wrapper = mount(PlaybackMobileOverlay, {
+      props: { fullscreen: true },
+      slots: { default: '<button>Controls</button>' },
+    })
     wrapper.vm.reveal()
     await wrapper.vm.$nextTick()
     expect(wrapper.classes()).toContain('pb-mobile-overlay-transient')
@@ -113,12 +122,15 @@ describe('PlaybackMobileOverlay', () => {
     expect(wrapper.classes()).not.toContain('pb-mobile-overlay-visible')
   })
 
-  it('clears transient fullscreen state on exit without closing annotation controls', async () => {
+  it('clears transient fullscreen state when the owned fullscreen prop turns false, without closing annotation controls', async () => {
     Object.defineProperty(document, 'fullscreenElement', {
       configurable: true,
       value: document.body,
     })
-    const wrapper = mount(PlaybackMobileOverlay, { slots: { default: '<button>Controls</button>' } })
+    const wrapper = mount(PlaybackMobileOverlay, {
+      props: { fullscreen: true },
+      slots: { default: '<button>Controls</button>' },
+    })
     wrapper.vm.reveal()
     await wrapper.vm.$nextTick()
     expect(wrapper.classes()).toContain('pb-mobile-overlay-transient')
@@ -128,7 +140,7 @@ describe('PlaybackMobileOverlay', () => {
       configurable: true,
       value: null,
     })
-    document.dispatchEvent(new Event('fullscreenchange'))
+    await wrapper.setProps({ fullscreen: false })
     await wrapper.vm.$nextTick()
     expect(wrapper.classes()).not.toContain('pb-mobile-overlay-transient')
     // 退出全屏不应隐藏标注工具条；reveal() 排下的 auto-hide 计时器也必须取消。
@@ -138,17 +150,16 @@ describe('PlaybackMobileOverlay', () => {
     expect(wrapper.classes()).toContain('pb-mobile-overlay-visible')
   })
 
-  it('cleans the responsive MQL listener on unmount', () => {
+  it('cleans the responsive MQL listener on unmount without owning fullscreenchange', () => {
     const add = vi.spyOn(document, 'addEventListener')
     const remove = vi.spyOn(document, 'removeEventListener')
     const wrapper = mount(PlaybackMobileOverlay, { slots: { default: '<button>Controls</button>' } })
     expect(mql.addEventListener).toHaveBeenCalledWith('change', expect.any(Function))
     const handler = mqlChange
-    const fullscreenHandler = add.mock.calls.find(([type]) => type === 'fullscreenchange')?.[1]
-    expect(fullscreenHandler).toEqual(expect.any(Function))
+    expect(add.mock.calls.filter(([type]) => type === 'fullscreenchange')).toEqual([])
     wrapper.unmount()
     expect(mql.removeEventListener).toHaveBeenCalledWith('change', handler)
-    expect(remove).toHaveBeenCalledWith('fullscreenchange', fullscreenHandler)
+    expect(remove.mock.calls.filter(([type]) => type === 'fullscreenchange')).toEqual([])
     add.mockRestore()
     remove.mockRestore()
   })

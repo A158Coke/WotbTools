@@ -9,21 +9,45 @@
 /** 浮窗贴边时仍需保留的最小可见余量。 */
 export const DETAILS_EDGE_MARGIN = 8
 
-const px = (value) => {
+export interface DetailsPlacementLimitsInput {
+  hostWidth: number
+  hostHeight: number
+  paddingLeft?: number
+  paddingRight?: number
+  paddingTop?: number
+  panelWidth: number
+  panelHeight: number
+  transportTop?: number | null
+}
+
+export interface DetailsPlacementLimits {
+  minLeft: number
+  maxLeft: number
+  minTop: number
+  maxTop: number
+  maxBottom: number
+  maxHeight: number
+}
+
+export interface DetailsPlacementPreservedInput {
+  oldTop: number
+  newTop: number
+  newHeight: number
+  hostWidth: number
+  hostHeight: number
+  paddingLeft?: number
+  paddingRight?: number
+  paddingTop?: number
+  panelWidth: number
+  transportTop?: number | null
+}
+
+const px = (value: number | null | undefined): number => {
   const n = Number(value)
   return Number.isFinite(n) ? n : 0
 }
 
-/**
- * 当前面板尺寸下允许的左上角范围与最大高度。
- * @param {{
- *   hostWidth: number, hostHeight: number,
- *   paddingLeft?: number, paddingRight?: number, paddingTop?: number,
- *   panelWidth: number, panelHeight: number,
- *   transportTop?: number | null,
- * }} input
- * @returns {{minLeft:number,maxLeft:number,minTop:number,maxTop:number,maxBottom:number,maxHeight:number}}
- */
+/** 当前面板尺寸下允许的左上角范围与最大高度。 */
 export function detailsPlacementLimits({
   hostWidth,
   hostHeight,
@@ -33,7 +57,7 @@ export function detailsPlacementLimits({
   panelWidth,
   panelHeight,
   transportTop = null,
-}) {
+}: DetailsPlacementLimitsInput): DetailsPlacementLimits {
   const minLeft = px(paddingLeft) + DETAILS_EDGE_MARGIN
   const minTop = px(paddingTop) + DETAILS_EDGE_MARGIN
   const maxLeft = Math.max(minLeft, px(hostWidth) - px(paddingRight) - px(panelWidth) - DETAILS_EDGE_MARGIN)
@@ -54,13 +78,6 @@ export function detailsPlacementLimits({
 /**
  * 用户拖过的位置在选择变化后的唯一合法结果：尺寸变化后仍合法就**原位保留**，
  * 只有越界才夹到真实边界。返回 true 表示 newTop 恰好是允许结果且下缘不遮 transport。
- *
- * @param {{
- *   oldTop: number, newTop: number, newHeight: number,
- *   hostWidth: number, hostHeight: number,
- *   paddingLeft?: number, paddingRight?: number, paddingTop?: number,
- *   panelWidth: number, transportTop?: number | null,
- * }} input
  */
 export function detailsPlacementPreserved({
   oldTop,
@@ -73,7 +90,7 @@ export function detailsPlacementPreserved({
   paddingTop = 0,
   panelWidth,
   transportTop = null,
-}) {
+}: DetailsPlacementPreservedInput): boolean {
   const limits = detailsPlacementLimits({
     hostWidth,
     hostHeight,

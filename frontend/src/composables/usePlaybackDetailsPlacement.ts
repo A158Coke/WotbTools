@@ -23,7 +23,7 @@
  */
 import { nextTick, onBeforeUnmount, onMounted, ref, unref, watch } from 'vue'
 import type { Ref } from 'vue'
-import { DETAILS_EDGE_MARGIN, detailsPlacementLimits } from '../utils/detailsPlacementBounds.js'
+import { DETAILS_EDGE_MARGIN, detailsPlacementLimits } from '../utils/detailsPlacementBounds.ts'
 
 /** 已应用的位置（workspace 内像素坐标）；null = 还没定位（首帧交给 CSS 的默认角落）。 */
 export interface PanelPosition {
