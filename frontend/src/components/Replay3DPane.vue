@@ -1437,6 +1437,9 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 .ui-restore.ui-restore-shifted {
   top: calc(var(--space-2) + var(--control-h-sm) + var(--space-2));
 }
+@media (pointer: coarse) and (orientation: landscape) and (height <= 520px) {
+  .ui-restore.ui-restore-shifted { top: calc(var(--space-2) + var(--hit-min-comfortable) + var(--space-2)); }
+}
 
 .banner {
   position: absolute; top: 38%; left: 50%; transform: translate(-50%, -50%);

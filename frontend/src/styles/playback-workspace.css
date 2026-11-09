@@ -322,12 +322,8 @@
   /* 分段控件（镜头模式、地图画质等）的 --control-h-sm 在紧凑档只有 32px，场景内仍需 40px。
      选择器不绑定 .playback-workspace：地图 3D 的 .map3d 也是场景根，但不在回放工作台内。 */
   [data-scene-surface] .segmented .segmented-option { min-height: var(--hit-min-comfortable); }
-  /* Replay3D：查看动作与复选框行保持 40px 命中区；隐藏 UI 的恢复按钮下移量与
-     抬到 40px 的全屏按钮一起算，避免两块命中区重叠。规则原属 Replay3DPane 尾部，
+  /* Replay3D：查看动作与复选框行保持 40px 命中区。规则原属 Replay3DPane 尾部，
      移入共享场景样式表以满足组件行数预算（选择器显式带场景根）。 */
   [data-scene-surface] .pb-root .tool-btn { min-height: var(--hit-min-comfortable); }
   [data-scene-surface] .pb-root .toggle { min-height: var(--hit-min-comfortable); }
-  [data-scene-surface] .ui-restore.ui-restore-shifted {
-    top: calc(var(--space-2) + var(--hit-min-comfortable) + var(--space-2));
-  }
 }

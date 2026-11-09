@@ -360,14 +360,17 @@ async function main() {
           const track = el.querySelector('.scene-dist-track').getBoundingClientRect()
           const r = el.getBoundingClientRect()
           const fs = document.querySelector('[data-testid="map-3d-fullscreen"]').getBoundingClientRect()
+          const scene = el.closest('[data-scene-surface]')
+          const token = parseFloat(scene ? getComputedStyle(scene).getPropertyValue('--hit-min-comfortable') : '')
+          const minHit = Number.isFinite(token) && token > 0 ? token : 44
           const hit = (x) => { const target = document.elementFromPoint(x, track.top + track.height / 2); return target === el || el.contains(target) }
-          return { width: r.width, centerError: Math.abs((r.left + r.right - track.left - track.right) / 2),
+          return { width: r.width, minHit, centerError: Math.abs((r.left + r.right - track.left - track.right) / 2),
             overlap: r.left < fs.right && fs.left < r.right && r.top < fs.bottom && fs.top < r.bottom,
             leftHit: hit(r.left + 2), rightHit: hit(r.right - 2),
             left: { x: r.left + 2, y: track.top + track.height * 0.25 },
             right: { x: r.right - 2, y: track.top + track.height * 0.75 } }
         })
-        if (slider.width < 44 || slider.centerError > 1 || slider.overlap || !slider.leftHit || !slider.rightHit) {
+        if (slider.width < slider.minHit - 0.5 || slider.centerError > 1 || slider.overlap || !slider.leftHit || !slider.rightHit) {
           throw new Error(`phone distance slider geometry/hit targets: ${JSON.stringify(slider)}`)
         }
         await page.tap({ ...slider.left, touch: true })

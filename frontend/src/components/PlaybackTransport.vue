@@ -158,8 +158,6 @@ const total = computed(() => Number(props.duration) - Number(props.startTime))
   background: var(--color-surface-2);
   box-shadow: var(--elevation-3);
 }
-.pb-speed-item { min-inline-size: calc(var(--hit-min) + var(--space-4)); }
-
 /* Primary 组合的固有尺寸：--control-h-md 触屏默认 44px、场景短视口横屏紧凑档 36px
    （fine pointer 下 32px），布局按可用空间收紧，不用断点区分形态。 */
 .pb-btn {
@@ -177,6 +175,13 @@ const total = computed(() => Number(props.duration) - Number(props.startTime))
   font: var(--type-caption);
   font-weight: 600;
   cursor: pointer;
+}
+
+/* 紧凑档档位按钮保持最低 52px 宽：必须写在 .pb-btn 之后。横排书写模式下
+   min-inline-size 与 min-width 解析为同一物理属性，同 specificity 时后写的
+   min-width 会覆盖它。竖屏与桌面沿用 .pb-btn 的既有宽度，不因这次修复改变。 */
+@media (pointer: coarse) and (orientation: landscape) and (height <= 520px) {
+  .pb-speed-item { min-inline-size: calc(var(--hit-min) + var(--space-4)); }
 }
 
 .pb-btn.active {

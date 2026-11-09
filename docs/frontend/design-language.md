@@ -276,6 +276,8 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 - 回放 Display 面在本档把内边距从 `--space-3`（9px）收到 `--space-2`（6px）：9px 时 375px 高的横屏会让最后一排 40px 选项行被滚动口裁掉 2px；收到 6px 后 667×375、740×360、844×390 均可完整可达。
 - 字号：`--type-body` 14/18、`--type-caption` 12/14；必须在同一作用域重定义组合 token `--type-body` / `--type-caption`，否则子元素只改原子 token 不会重算 `font` 简写。
 - **命中区**：`--hit-min-comfortable` 不得低于 40px。视觉高度需要更小时（例如传输条 36px），用透明伪元素或 padding 把可点范围补到 40×40；扩展区不得压住相邻控件的命中区（传输条把 gap 固定为 6px，按钮外框 36px、含 1px 边框的 padding box 为 34px，伪元素 `inset: -3px` 补到 40×40；相对视觉外框向 gap 各伸 2px，命中区之间仍留 2px，不重叠）。
+- 3D 回放的「恢复 UI」按钮在本档把顶偏移改为 `--space-2 + --hit-min-comfortable + --space-2`（6 + 40 + 6 = 52px），让出右上角 40px 全屏按钮（top 6、bottom 46）；常规档仍用 `--control-h-sm`。
+- 倍速菜单的档位按钮在本档保持 `--hit-min + --space-4` = 52px 宽、40px 高；回归测试按 40×40 有效命中区校验，不把视觉外框直接当成命中区。
 - 竖屏手机、桌面与普通内容页沿用上面的常规触控档；场景紧凑档的值不能写到 `:root` 或普通页面的作用域。
 
 **圆角**：`--radius-sm: 6px`（标签、小徽章、小控件）· `--radius-md: 8px`（按钮、输入框、卡片）· `--radius-lg: 12px`（弹窗、sheet、抽屉）· `--radius-full: 999px`（胶囊、头像）
