@@ -866,10 +866,25 @@ function rosterGeometryProbe() {
   out.side = root.classList.contains('roster-side')
   out.phone = root.classList.contains('phone-form')
   out.viewport = { width: innerWidth, height: innerHeight }
+  // 竖屏全屏的根固定为一屏，纵向流比视口高：根必须自己可滚动，内容才可达。
+  const rootStyle = getComputedStyle(root)
+  const portraitScrolls = /auto|scroll/.test(rootStyle.overflowY)
+    && root.scrollHeight > root.clientHeight + 1
+  out.portraitScroll = {
+    scrollH: root.scrollHeight, clientH: root.clientHeight, overflowY: rootStyle.overflowY, scrolls: portraitScrolls,
+  }
+  if (out.portrait && document.fullscreenElement && root.scrollHeight > root.clientHeight + 1 && !portraitScrolls) {
+    out.errors.push(`portrait fullscreen content exceeds the viewport but cannot scroll: ${JSON.stringify(out.portraitScroll)}`)
+  }
   const square = root.querySelector('.stage-square')?.getBoundingClientRect()
   out.square = square ? { w: square.width, h: square.height, l: square.left, r: square.right, t: square.top, b: square.bottom } : null
   if (!square || (out.portrait && Math.abs(square.width - square.height) > 1)) out.errors.push(`3D Stage is not square: ${JSON.stringify(out.square)}`)
   const stage = root.querySelector('.pb-stage')?.getBoundingClientRect()
+  // 竖屏的 Stage 必须在流里真正包住正方形画布；全屏高度受限时曾被 flex 压成 0，
+  // 画布溢出到控制条下面（遮挡探针同时报 99% 中心遮挡）。
+  if (out.portrait && stage && square && stage.height < square.height - 1) {
+    out.errors.push(`portrait Stage collapses around its square: stage=${stage.height}, square=${square.height}`)
+  }
   const hud = root.querySelector('.hud')?.getBoundingClientRect()
   const transport = root.querySelector('.controls')?.getBoundingClientRect()
   const hudPanel = root.querySelector('.hud .pb-hud')
@@ -935,7 +950,10 @@ function rosterGeometryProbe() {
       }
       // ② 名册车道必须落在 **root 工作区**内（root 系坐标，与页面滚动无关——
       //    workspace 场景本身可被页面滚过标题栏），且不与对侧重叠
-      const inRoot = (b) => b.left >= rr.left - 0.5 && b.right <= rr.right + 0.5 && b.top >= rr.top - 0.5 && b.bottom <= rr.bottom + 0.5
+      // 竖屏全屏的根是滚动容器：内容可以在视口下方，但不能超出滚动内容高度。
+      const contentBottom = rr.top + Math.max(root.scrollHeight, root.clientHeight)
+      const inRoot = (b) => b.left >= rr.left - 0.5 && b.right <= rr.right + 0.5 && b.top >= rr.top - 0.5
+        && (b.bottom <= rr.bottom + 0.5 || (out.portraitScroll.scrolls && b.bottom <= contentBottom + 0.5))
       for (const [name, sel] of [['left', '.side-left'], ['right', '.side-right']]) {
         const lane = root.querySelector(sel)?.getBoundingClientRect()
         if (!lane) { out.errors.push(`floating: ${name} lane missing`); continue }
@@ -1059,6 +1077,9 @@ function rosterGeometryProbe() {
   const overlap = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5
     && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5
   const panels = {}
+  const panelBottom = out.portraitScroll.scrolls
+    ? rr.top + Math.max(root.scrollHeight, root.clientHeight)
+    : rr.bottom
   for (const name of ['team1', 'team2', 'team-unknown']) {
     const el = document.querySelector('.' + name)
     const cs = el ? getComputedStyle(el) : null
@@ -1066,7 +1087,7 @@ function rosterGeometryProbe() {
     const b = rect(el)
     panels[name] = b
     out.boxes[name] = { l: +b.left.toFixed(1), t: +b.top.toFixed(1), r: +b.right.toFixed(1), b: +b.bottom.toFixed(1) }
-    if (!transient && (b.left < rr.left - 0.5 || b.right > rr.right + 0.5 || b.top < rr.top - 0.5 || b.bottom > rr.bottom + 0.5)) {
+    if (!transient && (b.left < rr.left - 0.5 || b.right > rr.right + 0.5 || b.top < rr.top - 0.5 || b.bottom > panelBottom + 0.5)) {
       out.errors.push(`${name} is outside pb-root (root=${JSON.stringify({ l: +rr.left.toFixed(1), t: +rr.top.toFixed(1), r: +rr.right.toFixed(1), b: +rr.bottom.toFixed(1) })})`)
     }
   }
@@ -1576,7 +1597,7 @@ async function check3DDrawingSurface(page, failures, scenario, viewport, sceneHi
   check(failures, closedByClick, label + ': Drawing close failed')
   if (!closedByClick) return
   await page.waitFor(() => !document.querySelector('[data-test="pb-annot-toolbar"]'), { label: '3D drawing toolbar closed' })
-  const restored = await page.callWith(probe, scenario.touch)
+  const restored = await page.callWith(probe, scenario.touch, portrait)
   check(failures, (compactBar ? !!restored.entry : restored.toolRow) && !restored.toolbar, label + ': original tool-row must return after Drawing closes')
   if (compactBar) {
     await page.evaluate(`document.querySelector('[data-testid="display-toggle"]').click()`)
@@ -3447,6 +3468,7 @@ const WORKSPACE_2D_SCENARIOS = [
   { name: 'ws2d-740x360-landscape-coarse', width: 740, height: 360, touch: true, layout: 'lanes', minMap: 260 },
   { name: 'ws2d-740x360-fullscreen-coarse', width: 740, height: 360, touch: true, layout: 'lanes', fullscreen: true, minMap: 260 },
   { name: 'ws2d-844x390-landscape-coarse', width: 844, height: 390, touch: true, layout: 'lanes', minMap: 290 },
+  { name: 'ws2d-844x390-annotation-fullscreen', width: 844, height: 390, touch: true, layout: 'lanes', minMap: 290, annotationFullscreen: true },
   { name: 'ws2d-844x390-landscape-recorder-team2', width: 844, height: 390, touch: true, layout: 'lanes', recorder: 2, minMap: 290 },
   { name: 'ws2d-844x390-fullscreen-coarse', width: 844, height: 390, touch: true, layout: 'lanes', fullscreen: true, minMap: 290 },
   { name: 'ws2d-1024x768-tablet', width: 1024, height: 768, touch: false, layout: 'lanes' },
@@ -4332,8 +4354,137 @@ async function checkAnnotationMode(page, failures, scenario) {
   check(failures, geometry.mapHeight >= 96, `marking mode must retain a usable battlefield: ${JSON.stringify(geometry)}`)
   check(failures, !geometry.horizontalOverflow, `marking tools must not overflow the page horizontally: ${JSON.stringify(geometry)}`)
   if (scenario.fullscreen) check(failures, geometry.closeBottom <= geometry.viewport + 1, `fullscreen marking exit must not be clipped: ${JSON.stringify(geometry)}`)
-  check(failures, clicked(await clickElement(page, '[data-test="pb-annot-close"]')), 'marking mode must be closable')
-  await delay(150)
+  if (scenario.annotationFullscreen) {
+    await checkCompactAnnotationFullscreen(page, failures, scenario)
+  } else {
+    check(failures, clicked(await clickElement(page, '[data-test="pb-annot-close"]')), 'marking mode must be closable')
+    await delay(150)
+  }
+}
+
+/**
+ * 手机横屏 compactAnnotation：传输条隐藏后仍要有唯一可达的全屏入口。
+ * 真正在浏览器里开标注、点两条未完成路线、进出全屏，再关标注恢复传输条——
+ * 状态断言只看 route draft / toolbar / 入口可见性，不依赖组件内部 ref。
+ */
+async function checkCompactAnnotationFullscreen(page, failures, scenario) {
+  const map = await page.evaluate(`(() => {
+    const r = document.querySelector('[data-test="pb-map"]').getBoundingClientRect()
+    return { l: r.left, t: r.top, w: r.width, h: r.height }
+  })()`)
+  check(failures, map.w > 0 && map.h > 0, `annotation fullscreen test needs a measurable map: ${JSON.stringify(map)}`)
+  if (!(map.w > 0 && map.h > 0)) return
+  const routePoints = [
+    { x: Math.round(map.l + map.w * 0.3), y: Math.round(map.t + map.h * 0.3) },
+    { x: Math.round(map.l + map.w * 0.7), y: Math.round(map.t + map.h * 0.65) },
+  ]
+  for (const point of routePoints) await page.tap({ ...point, touch: scenario.touch })
+  await page.waitFor(() => !!document.querySelector('[data-test="pb-annot-route-shape"]'),
+    { label: 'unfinished route draft' })
+
+  const snapshot = () => page.evaluate(`(() => {
+    const visible = (el) => !!el && el.getClientRects().length > 0
+    const root = document.querySelector('[data-test="battle-playback"]')
+    const toolbar = document.querySelector('[data-test="pb-annot-toolbar"]')
+    const surface = document.querySelector('.pb-annotation-surface')
+    const entries = [...document.querySelectorAll('[data-test="pb-fullscreen"]')]
+      .filter(visible)
+      .map((el) => {
+        const r = el.getBoundingClientRect()
+        return { l: r.left, t: r.top, r: r.right, b: r.bottom, inTransport: !!el.closest('[data-test="pb-transport-controls"]') }
+      })
+    const shape = document.querySelector('[data-test="pb-annot-route-shape"]')
+    const polyline = shape && shape.querySelector('polyline')
+    const finish = document.querySelector('[data-test="pb-annot-route-finish"]')
+    const rr = root && root.getBoundingClientRect()
+    const tr = toolbar && toolbar.getBoundingClientRect()
+    const sr = surface && surface.getBoundingClientRect()
+    const tb = tr ? { l: tr.left, t: tr.top, r: tr.right, b: tr.bottom } : null
+    const intersects = (a, b) => !!a && !!b && a.l < b.r - 0.5 && b.l < a.r - 0.5 && a.t < b.b - 0.5 && b.t < a.b - 0.5
+    return {
+      fullscreen: !!document.fullscreenElement,
+      routeExists: !!shape,
+      routeVertices: polyline ? polyline.getAttribute('points').trim().split(/\\s+/).filter(Boolean).length : 0,
+      routeActive: document.querySelector('[data-test="pb-annot-route"]')?.classList.contains('active') || false,
+      finishDisabled: finish ? finish.disabled : null,
+      toolbarVisible: visible(toolbar),
+      transportVisible: visible(document.querySelector('[data-test="pb-transport-controls"]')),
+      annotationSurface: sr ? { l: sr.left, t: sr.top, r: sr.right, b: sr.bottom } : null,
+      toolbar: tb,
+      root: rr ? { l: rr.left, t: rr.top, r: rr.right, b: rr.bottom } : null,
+      entries,
+      entryOverlapsToolbar: entries.length === 1 && tb ? intersects(entries[0], tb) : null,
+      docScrollWidth: document.documentElement.scrollWidth,
+      surfaceOverflowsX: sr && rr ? sr.left < rr.left - 0.5 || sr.right > rr.right + 0.5 : null,
+      pageOverflowsX: document.documentElement.scrollWidth > innerWidth + 1,
+      entryInsideRoot: entries.length === 1 && rr
+        ? entries[0].l >= rr.left - 1 && entries[0].r <= rr.right + 1 && entries[0].t >= rr.top - 1 && entries[0].b <= rr.bottom + 1
+        : null,
+    }
+  })()`)
+
+  let before = await snapshot()
+  console.log(`[browser-interaction] ${scenario.name} annotation fullscreen before=${JSON.stringify(before)}`)
+  check(failures, before.routeExists && before.routeVertices === 2 && before.routeActive && before.finishDisabled === false,
+    `annotation route must stay editable before fullscreen: ${JSON.stringify(before)}`)
+  check(failures, before.toolbarVisible && !before.transportVisible,
+    `compact annotation must hide transport controls: ${JSON.stringify(before)}`)
+  check(failures, before.entries.length === 1 && !before.entries[0].inTransport,
+    `compact annotation must expose exactly one floating fullscreen entry: ${JSON.stringify(before.entries)}`)
+  check(failures, before.entryInsideRoot === true && before.entryOverlapsToolbar === false && before.surfaceOverflowsX === false && before.pageOverflowsX === false,
+    `annotation fullscreen entry must stay inside the workspace without covering the toolbar or overflowing horizontally: ${JSON.stringify({ entry: before.entries[0], toolbar: before.toolbar, root: before.root, surface: before.annotationSurface, docScrollWidth: before.docScrollWidth })}`)
+
+  const tapFullscreen = async (label) => {
+    const point = await page.evaluate(`(() => {
+      const el = [...document.querySelectorAll('[data-test="pb-fullscreen"]')].find((node) => node.getClientRects().length > 0)
+      if (!el) return null
+      const r = el.getBoundingClientRect()
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+    })()`)
+    check(failures, !!point, `${label}: fullscreen entry is not measurable`)
+    if (!point) return
+    await page.tap({ ...point, touch: scenario.touch })
+  }
+
+  await tapFullscreen('enter')
+  await page.waitFor(() => !!document.fullscreenElement, { timeout: 5000, label: 'annotation fullscreen entered' })
+  await delay(300)
+  const opened = await snapshot()
+  console.log(`[browser-interaction] ${scenario.name} annotation fullscreen opened=${JSON.stringify(opened)}`)
+  check(failures, opened.fullscreen && opened.routeExists && opened.routeVertices === 2 && opened.routeActive && opened.finishDisabled === false,
+    `fullscreen must keep the unfinished annotation route: ${JSON.stringify(opened)}`)
+  check(failures, opened.toolbarVisible && opened.entries.length === 1 && !opened.entries[0].inTransport,
+    `fullscreen annotation must keep exactly one floating entry: ${JSON.stringify(opened.entries)}`)
+  check(failures, opened.entryInsideRoot === true && opened.entryOverlapsToolbar === false && opened.surfaceOverflowsX === false && opened.pageOverflowsX === false,
+    `fullscreen annotation entry must remain usable without horizontal overflow: ${JSON.stringify({ entry: opened.entries[0], toolbar: opened.toolbar, root: opened.root, surface: opened.annotationSurface, docScrollWidth: opened.docScrollWidth })}`)
+
+  await tapFullscreen('exit')
+  await page.waitFor(() => !document.fullscreenElement, { timeout: 5000, label: 'annotation fullscreen exited' })
+  await delay(300)
+  const restored = await snapshot()
+  console.log(`[browser-interaction] ${scenario.name} annotation fullscreen restored=${JSON.stringify(restored)}`)
+  check(failures, !restored.fullscreen && restored.routeExists && restored.routeVertices === 2 && restored.routeActive,
+    `exiting fullscreen must keep the unfinished annotation route: ${JSON.stringify(restored)}`)
+  check(failures, restored.entries.length === 1 && !restored.entries[0].inTransport,
+    `exiting fullscreen must restore the annotation entry: ${JSON.stringify(restored.entries)}`)
+  check(failures, restored.entryInsideRoot === true && restored.entryOverlapsToolbar === false && restored.surfaceOverflowsX === false && restored.pageOverflowsX === false,
+    `exiting fullscreen must keep one reachable annotation entry without horizontal overflow: ${JSON.stringify({ entry: restored.entries[0], toolbar: restored.toolbar, root: restored.root, surface: restored.annotationSurface, docScrollWidth: restored.docScrollWidth })}`)
+  check(failures, clicked(await clickElement(page, '[data-test="pb-annot-close"]')), 'marking mode must be closable after fullscreen')
+  await delay(250)
+  const closed = await page.evaluate(`(() => {
+    const visible = (el) => !!el && el.getClientRects().length > 0
+    const entries = [...document.querySelectorAll('[data-test="pb-fullscreen"]')].filter(visible)
+    return {
+      toolbar: visible(document.querySelector('[data-test="pb-annot-toolbar"]')),
+      transport: visible(document.querySelector('[data-test="pb-transport-controls"]')),
+      entries: entries.map((el) => ({ inTransport: !!el.closest('[data-test="pb-transport-controls"]') })),
+      fullscreen: !!document.fullscreenElement,
+    }
+  })()`)
+  check(failures, !closed.toolbar && closed.transport,
+    `closing compact annotation must restore the transport controls: ${JSON.stringify(closed)}`)
+  check(failures, closed.entries.length === 1 && closed.entries[0].inTransport && !closed.fullscreen,
+    `closing compact annotation must restore exactly one inline fullscreen entry: ${JSON.stringify(closed)}`)
 }
 
 /**

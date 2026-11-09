@@ -113,11 +113,43 @@ describe('PlaybackMobileOverlay', () => {
     expect(wrapper.classes()).not.toContain('pb-mobile-overlay-visible')
   })
 
+  it('clears transient fullscreen state on exit without closing annotation controls', async () => {
+    Object.defineProperty(document, 'fullscreenElement', {
+      configurable: true,
+      value: document.body,
+    })
+    const wrapper = mount(PlaybackMobileOverlay, { slots: { default: '<button>Controls</button>' } })
+    wrapper.vm.reveal()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.classes()).toContain('pb-mobile-overlay-transient')
+    expect(wrapper.classes()).toContain('pb-mobile-overlay-visible')
+
+    Object.defineProperty(document, 'fullscreenElement', {
+      configurable: true,
+      value: null,
+    })
+    document.dispatchEvent(new Event('fullscreenchange'))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.classes()).not.toContain('pb-mobile-overlay-transient')
+    // 退出全屏不应隐藏标注工具条；reveal() 排下的 auto-hide 计时器也必须取消。
+    expect(wrapper.classes()).toContain('pb-mobile-overlay-visible')
+    vi.advanceTimersByTime(2500)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.classes()).toContain('pb-mobile-overlay-visible')
+  })
+
   it('cleans the responsive MQL listener on unmount', () => {
+    const add = vi.spyOn(document, 'addEventListener')
+    const remove = vi.spyOn(document, 'removeEventListener')
     const wrapper = mount(PlaybackMobileOverlay, { slots: { default: '<button>Controls</button>' } })
     expect(mql.addEventListener).toHaveBeenCalledWith('change', expect.any(Function))
     const handler = mqlChange
+    const fullscreenHandler = add.mock.calls.find(([type]) => type === 'fullscreenchange')?.[1]
+    expect(fullscreenHandler).toEqual(expect.any(Function))
     wrapper.unmount()
     expect(mql.removeEventListener).toHaveBeenCalledWith('change', handler)
+    expect(remove).toHaveBeenCalledWith('fullscreenchange', fullscreenHandler)
+    add.mockRestore()
+    remove.mockRestore()
   })
 })

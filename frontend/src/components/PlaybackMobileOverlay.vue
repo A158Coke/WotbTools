@@ -70,6 +70,15 @@ function syncResponsiveMode() {
   open.value = false
 }
 
+function syncFullscreenExit() {
+  if (isMobileFullscreen() || !transientFullscreen.value) return
+  // 退出全屏的点击会先命中 document 捕获阶段的 reveal()，此时 fullscreenElement 还没清空，
+  // transient 被置为 true。全屏退出后若不清掉，overlay 会保持 transient 网格并让标注工具条
+  // 按 min-content 撑宽。只清 transient / 隐藏计时器，不关闭 open，标注与未完成路线保持原样。
+  clearHideTimer()
+  transientFullscreen.value = false
+}
+
 function onContentPointerDown() {
   pressing = true
   reveal()
@@ -110,6 +119,7 @@ onMounted(() => {
   }
   transientFullscreen.value = isMobileFullscreen()
   document.addEventListener('click', onDocumentClick, true)
+  document.addEventListener('fullscreenchange', syncFullscreenExit)
   window.addEventListener('pointerup', onWindowPointerUp)
   window.addEventListener('pointercancel', onWindowPointerUp)
 })
@@ -117,6 +127,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   clearHideTimer()
   document.removeEventListener('click', onDocumentClick, true)
+  document.removeEventListener('fullscreenchange', syncFullscreenExit)
   window.removeEventListener('pointerup', onWindowPointerUp)
   window.removeEventListener('pointercancel', onWindowPointerUp)
   if (mobileMql && typeof mobileMql.removeEventListener === 'function') {

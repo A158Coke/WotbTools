@@ -144,6 +144,20 @@
   padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
 }
 .battle-playback.playback-workspace.pb-phone-landscape.pb-roster-lanes .pb-main > .pb-mobile-overlay { grid-column: 1 / -1; }
+/* 紧凑档按钮视觉高度 36px，命中区靠上下各 2px 的伪元素补到 40px。传输条此前贴视口底：
+   下缘 2px 落到 viewport 之外，真实命中测试会在 b.bottom + 1.5 处取到 null。留 4px 后
+   40×40 命中区完整落在屏内，同时不改变按钮视觉尺寸。 */
+.battle-playback.playback-workspace.pb-phone-landscape .pb-transport-slot { padding-block-end: var(--space-1); }
+/* 标注编辑时传输条整体隐藏；把同一个全屏入口移到标注行右端，并给工具条留出按钮槽。
+   按钮仍是 root 的绝对定位子节点，所以必须按标注行高度贴底，而不是继续停在右上名册上。 */
+.battle-playback.playback-workspace.pb-phone-landscape .pb-annotation-surface {
+  padding-inline-end: calc(var(--hit-min-comfortable) + var(--space-2) * 2);
+}
+.battle-playback.playback-workspace.pb-phone-landscape .scene-fs-btn.floating.pb-fs-annotation {
+  top: auto;
+  right: calc(var(--space-2) + env(safe-area-inset-right, 0px));
+  bottom: calc(var(--space-2) + env(safe-area-inset-bottom, 0px));
+}
 :is(.battle-playback.playback-workspace.pb-phone-landscape [data-test="pb-transport-controls"], .pb-root.playback-workspace.compact-bar .controls-content) {
   display: flex;
   flex-direction: row;
@@ -280,6 +294,16 @@
   border: 0;
   border-radius: 0;
 }
+/* 手机竖屏全屏：页面本身不能再变高，全屏根必须自己成为纵向滚动容器。
+   否则高度受限的 flex 根会压扁 Stage（高度 0），名册落到视口外且无法点到。
+   交互内容仍走根内边距与 safe-area；只允许纵向滚动。 */
+.pb-root.playback-workspace.portrait-flow:fullscreen {
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.pb-root.playback-workspace.portrait-flow:fullscreen > * { flex-shrink: 0; }
 /* 场景仍全幅贴边；交互浮层单独避让安全区，避免刘海/圆角设备上按钮进入 unsafe area。
    --gutter 已包含水平 safe-area 并用于负 margin，所以这里只处理浮层，不重复扣减根尺寸。 */
 .pb-root.playback-workspace.phone-form:not(.portrait-flow) {
@@ -330,8 +354,14 @@
   top: max(var(--space-2), var(--pb-safe-top));
   right: max(var(--space-2), var(--pb-safe-right));
 }
+/* 紧凑档里 --control-h-sm 只有 32px，而全屏按钮固定 40px；恢复按钮必须按较大的
+   命中尺寸下移，否则会压住全屏入口（740/844 横屏实测重叠 2px）。 */
 .pb-root.playback-workspace.phone-form:not(.portrait-flow) .ui-restore.ui-restore-shifted {
-  top: calc(max(var(--space-2), var(--pb-safe-top)) + var(--control-h-sm) + var(--space-2));
+  top: calc(
+    max(var(--space-2), var(--pb-safe-top)) +
+    max(var(--control-h-sm), var(--hit-min-comfortable)) +
+    var(--space-2)
+  );
 }
 
 /* 名册车道 = 左上/右上角悬浮面板（游戏同款：己方在左、敌方在右）。
