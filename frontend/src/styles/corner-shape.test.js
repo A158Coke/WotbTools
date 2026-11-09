@@ -1,5 +1,6 @@
 // squircle 渐进增强守护：scale.css 在 @supports (corner-shape: squircle) 里给所有元素套 squircle，
-// 因此胶囊 / 圆形（--radius-full、50%）必须在同一条规则里声明 corner-shape: round，否则头像会变成方圆。
+// 因此胶囊 / 圆形（--radius-full、50%、9999px）必须在同一条规则里声明 corner-shape: round，否则头像会变成方圆。
+// 首屏 index.html 的内联 loader 在 Vue 挂载前就已渲染，同样要扫描，不能只覆盖 src/。
 // 规则见 docs/frontend/design-language.md §5「圆角」。
 
 import { readFileSync, readdirSync, statSync } from 'node:fs'
@@ -9,6 +10,7 @@ import { describe, expect, it } from 'vitest'
 
 const srcDir = fileURLToPath(new URL('..', import.meta.url))
 const tokensDir = join(srcDir, 'styles', 'tokens')
+const indexHtml = join(srcDir, '..', 'index.html')
 
 function sources(dir, acc = []) {
   for (const name of readdirSync(dir)) {
@@ -20,12 +22,12 @@ function sources(dir, acc = []) {
 }
 
 describe('corner-shape 渐进增强', () => {
-  it('--radius-full / 50% 圆角紧跟 corner-shape: round', () => {
+  it('--radius-full / 50% / 9999px 圆角紧跟 corner-shape: round（含首屏 index.html）', () => {
     const offenders = []
-    for (const file of sources(srcDir)) {
+    for (const file of [...sources(srcDir), indexHtml]) {
       const css = readFileSync(file, 'utf8')
-      const all = css.match(/border-radius:\s*(?:var\(--radius-full\)|50%);/g) ?? []
-      const guarded = css.match(/border-radius:\s*(?:var\(--radius-full\)|50%);\s*corner-shape:\s*round;/g) ?? []
+      const all = css.match(/border-radius:\s*(?:var\(--radius-full\)|50%|9999px);/g) ?? []
+      const guarded = css.match(/border-radius:\s*(?:var\(--radius-full\)|50%|9999px);\s*corner-shape:\s*round;/g) ?? []
       if (all.length !== guarded.length) offenders.push(`${file}: ${all.length - guarded.length} 处缺 corner-shape: round`)
     }
     expect(offenders).toEqual([])

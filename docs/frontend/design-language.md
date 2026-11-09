@@ -60,18 +60,19 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | DC-THM-05 | MUST | Showcase Hero | 文字落在主题遮罩（`--theme-hero-scrim*`）压出的纯色区上，最差取样点满足 §3 对比度，四套主题都测 | 无 | 人工取样 |
 | DC-THM-06 | MUST | Showcase Hero | `prefers-reduced-motion: reduce` 下无动效 | 无 | 人工；首页由 `pnpm run test:browser-home` 覆盖动效 |
 | DC-THM-07 | MUST | 主题 token | 四套主题的文字 / UI 色在各自四层表面上的最差对比度达到 AA（正文 ≥ 4.5，UI ≥ 3，强调色上的文字 ≥ 4.5） | 无 | `src/styles/tokens/color-contrast.test.ts` |
-| DC-THM-08 | MUST | 场景外壳 | 2D / 3D 回放、装甲查看器、地图 3D 的根元素带 `data-scene-surface`，寒冬下仍是深色玻璃，不跟随浅色表面 | 无 | `color-contrast.test.ts` 的场景块断言 + 人工 |
+| DC-THM-08 | MUST | 场景外壳 | 2D / 3D 回放、装甲查看器、地图 3D 的根元素带 `data-scene-surface`，正常渲染态自铺不透明底，寒冬下仍是深色玻璃，不跟随浅色表面，也不叠页面环境光 | 装甲查看器 `is-unsupported` 无 WebGL 降级态（不渲染游戏画面，保留透明 fallback） | `color-contrast.test.ts` 的场景块断言 + 人工 |
 
 | | **春 · 青山** `spring` | **夏 · 盛夏** `summer`（默认） | **秋 · 金秋** `autumn` | **冬 · 寒冬** `winter` |
 |---|---|---|---|---|
 | 深浅色 | 深色 | 深色 | 深色 | 浅色（白 7 蓝 3） |
-| 底色 / 强调色 | `#08140f` / `#f2b450` | `#0b0f11` / `#e0a02e` | `#160f08` / `#ef8434` | `#eef3f8` / `#1f6fd1` |
+| 底色 / 强调色 | `#08140f` / `#f2b450` | `#191304` / `#f7bd3c` | `#160f08` / `#ef8434` | `#eef3f8` / `#1f6fd1` |
 | 底纹 `--theme-pattern` | 等高线 | 战术网格 | 斜纹 | 雷达环 |
+| 环境光 `--theme-backdrop` | 右上青绿柔光 + 左下淡金光晕 | 右上金色日光 + 底部暖橙渐暗 | 斜向橙红暮光 + 双角暗化 | 顶部冷白蓝高光 + 底部淡蓝雾 |
 | 布局 / 组件 / 字号 / 密度 | **完全相同** | **完全相同** | **完全相同** | **完全相同** |
 
 完整取值只在 `frontend/src/styles/tokens/color.css`（每套主题一个语义映射块）；`<meta name="theme-color">` 取当前主题底色（`useUiProfile.THEME_COLOR`），`color-scheme` 随深浅色。
 
-**氛围插槽**（主题 token，只能用在装饰插槽里）：`--theme-hero-image`（横版约 2.5:1）、`--theme-hero-image-portrait`（竖版约 4:5）、`--theme-hero-scrim`（横版遮罩，左侧压出文字区）、`--theme-hero-scrim-portrait`（竖版遮罩，自下而上）、`--theme-glass`（叠在主视觉上的按钮底）、`--theme-pattern`（页面底纹）。主视觉素材在 `frontend/src/assets/theme/theme-<季节>-{wide,portrait}.webp`。主题选择器的缩略图与色点读 `--theme-preview-<季节>-*`。
+**氛围插槽**（主题 token，只能用在装饰插槽里）：`--theme-hero-image`（横版约 2.5:1）、`--theme-hero-image-portrait`（竖版约 4:5）、`--theme-hero-scrim`（横版遮罩，左侧压出文字区）、`--theme-hero-scrim-portrait`（竖版遮罩，自下而上）、`--theme-glass`（叠在主视觉上的按钮底）、`--theme-pattern`（页面底纹）、`--theme-backdrop`（页面环境光，多层静态 `radial-gradient` / `linear-gradient`，固定视口、无动画）。页面底色按 `--theme-pattern` → `--theme-backdrop` → `--color-canvas` 三层合成；环境光集中在页面边缘与角落，正文所在的中部保持接近 `--color-canvas` 的纯色区。环境光在页面底边渐隐回 `--color-canvas`，页脚（`.app-footer`）另有 canvas 渐隐托底，避免底纹的 1px 线穿过页脚小字、拉低对比度。页头等无底色文字所在的最亮处也必须按 §3 取样，至少覆盖 1024 宽的桌面视口；环境光峰值不得压过文字对比度。主视觉素材在 `frontend/src/assets/theme/theme-<季节>-{wide,portrait}.webp`。主题选择器的缩略图与色点读 `--theme-preview-<季节>-*`。
 
 **装饰插槽**（这是唯一允许放背景图、渐变、毛玻璃的地方）：
 
@@ -79,9 +80,11 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 2. 工作区 Showcase Hero（规则见 DC-THM-03 至 DC-THM-06）
 3. 空状态插图
 4. 登录页
-5. 页面底色上的主题底纹（`--theme-pattern`，叠在 `--color-canvas` 上，卡片与数据区是纯色表面）
+5. 页面底色上的主题底纹与环境光（`--theme-pattern` + `--theme-backdrop`，按「底纹 → 环境光 → `--color-canvas`」三层合成；卡片与数据区仍是纯色表面）。环境光只允许静态渐变，不允许背景图、动画或随滚动变化。页脚 `.app-footer` 的 canvas 渐隐托底属于这层页面底色合成（不是组件装饰），用于保证页脚小字对比度
 
 **数据区**，也就是表格、回放、筛选、表单、抽屉，**四套主题都用纯色**。依据：WCAG 1.4.3 要求文字对比度稳定，而文字压在图片上时，对比度会随图片内容变化，没法保证。
+
+**场景排除：** 带 `data-scene-surface` 的 2D / 3D 回放、装甲查看器、地图 3D 场景根在正常渲染态必须自铺不透明底色（通常 `var(--color-canvas)` 或 `var(--color-surface-1)`），页面环境光不得透进游戏画面。唯一例外是装甲查看器的 `is-unsupported` 无 WebGL 降级态：它不渲染游戏画面，保留既有的透明 fallback。
 
 **选择逻辑：**
 - 默认盛夏；用户在「更多」→ 主题里选择（`ThemePicker`：`SegmentedControl` tiles，每项是主视觉缩略图 + 强调色点 + 名称），选择后记住。
@@ -108,15 +111,15 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 
 | 语义 token | 春 spring | 夏 summer | 秋 autumn | 冬 winter | 用途 |
 |---|---|---|---|---|---|
-| `--color-canvas` | `#08140f` | `#0b0f11` | `#160f08` | `#eef3f8` | 页面底色 |
-| `--color-surface-1` | `#0e1d17` | `#11171a` | `#20160c` | `#ffffff` | 卡片、面板 |
-| `--color-surface-2` | `#14271f` | `#172024` | `#2a1d10` | `#f5f8fc` | 表头、嵌套区域、hover |
-| `--color-surface-3` | `#1b3228` | `#1e292e` | `#362516` | `#e2ebf5` | 选中行、按下、输入框底 |
-| `--color-text-primary` | `#e7f1ea` | `#eceae4` | `#f6ead6` | `#0f2236` | 正文、数字 |
-| `--color-text-secondary` | `#a6bdb0` | `#aab1ac` | `#d0bb9a` | `#3b5470` | 标签、说明 |
-| `--color-text-tertiary` | `#869d90` | `#8a938e` | `#ad9576` | `#4a6380` | 辅助信息、占位符。**这是最浅的一级文字色** |
-| `--color-border-subtle` | `#1f3a2e` | `#25313a` | `#3d2c19` | `#cbd8e6` | 分隔线（装饰性，不承担信息） |
-| `--color-border-strong` | `#5f8072` | `#6c7a82` | `#937a55` | `#6f849b` | 输入框、复选框等控件边框（需 ≥3:1） |
+| `--color-canvas` | `#08140f` | `#191304` | `#160f08` | `#eef3f8` | 页面底色 |
+| `--color-surface-1` | `#0e1d17` | `#231a09` | `#20160c` | `#ffffff` | 卡片、面板 |
+| `--color-surface-2` | `#14271f` | `#2f2311` | `#2a1d10` | `#f5f8fc` | 表头、嵌套区域、hover |
+| `--color-surface-3` | `#1b3228` | `#3e2f18` | `#362516` | `#e2ebf5` | 选中行、按下、输入框底 |
+| `--color-text-primary` | `#e7f1ea` | `#f8efd9` | `#f6ead6` | `#0f2236` | 正文、数字 |
+| `--color-text-secondary` | `#a6bdb0` | `#d9c7a0` | `#d0bb9a` | `#3b5470` | 标签、说明 |
+| `--color-text-tertiary` | `#869d90` | `#b8a277` | `#ad9576` | `#4a6380` | 辅助信息、占位符。**这是最浅的一级文字色** |
+| `--color-border-subtle` | `#1f3a2e` | `#4b3a1d` | `#3d2c19` | `#cbd8e6` | 分隔线（装饰性，不承担信息） |
+| `--color-border-strong` | `#5f8072` | `#a28a5a` | `#937a55` | `#6f849b` | 输入框、复选框等控件边框（需 ≥3:1） |
 
 **深色主题的层级靠亮度区分，不靠阴影。** 表面越亮，离用户越近。依据：Material Design 的暗色主题指南。浅色主题（寒冬）则用阴影。
 
@@ -124,9 +127,9 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 
 | 语义 token | 春 | 夏 | 秋 | 冬 | 规则 |
 |---|---|---|---|---|---|
-| `--color-accent` | `#f2b450` | `#e0a02e` | `#ef8434` | `#1f6fd1` | 主按钮底色、选中态、焦点环、进度条 |
-| `--color-on-accent` | `#1a1206` | `#17130b` | `#1a0d04` | `#ffffff` | 强调色底上的文字 |
-| `--color-accent-text` | `#f8c56e` | `#f0b33e` | `#ffa15c` | `#1d63b8` | **强调色文字只能用这个 token**，如链接、强调数字 |
+| `--color-accent` | `#f2b450` | `#f7bd3c` | `#ef8434` | `#1f6fd1` | 主按钮底色、选中态、焦点环、进度条 |
+| `--color-on-accent` | `#1a1206` | `#1a1204` | `#1a0d04` | `#ffffff` | 强调色底上的文字 |
+| `--color-accent-text` | `#f8c56e` | `#ffd166` | `#ffa15c` | `#1d63b8` | **强调色文字只能用这个 token**，如链接、强调数字 |
 | `--color-success` | `#66d48f` | `#5cc280` | `#6cc08a` | `#11703f` | 成功、胜利 |
 | `--color-danger` | `#f2786d` | `#f2786d` | `#ff8070` | `#b8322a` | 错误、删除、失败 |
 | `--color-warning` | `#f5ca76` | `#f5ca76` | `#f5ca76` | `#855600` | 警告 |
@@ -522,8 +525,8 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 - **行为**（`useForcedLandscape`）：Android 手机 App 进入场景页时原生锁横屏，离开 / KeepAlive 停用即释放；iPhone Safari 竖屏时整块显示 `RotatePrompt`（场景保持挂载，横过来即继续），提示里给出退出动作：2D / 3D 回到「看赛后数据」，装甲查看器回到坦克百科 / 射击分析，地图 3D 切到 2D。HTML 全屏在 Android App 里也只在手机上锁横屏。
 - **横屏沉浸**：没有顶栏，菜单入口仍在：2D / 3D 回放由传输条第一项承载（`PlaybackTransport` 经 `shellChrome.hostNav` 声明，7 人名册车道保持不滚动；控制条被 `v-show` 收起、能力切走或 KeepAlive 停用时经 `navEligible` / 生命周期交还，外壳重新画悬浮菜单）；其余场景（装甲查看器、射击复现）由外壳在左上放悬浮菜单按钮（`AppShell` 的 `.immersive-nav`），场景用 `--immersive-nav-reserve`（沉浸态 44 + 8，其余为 0）让出：返回键与信息卡右移。两者打开同一个抽屉。
 - **验收**：`pnpm run test:browser-interaction forced-landscape`（iPhone 竖屏出提示并能回到赛后数据；iPad 竖屏与缩窄的桌面浏览器不出提示；iPhone 横屏 844×340 沉浸且菜单可打开抽屉；装甲查看器 `armor-forced-landscape-*`：iPhone 竖屏出提示并带返回动作，iPhone 横屏、iPad 竖屏与缩窄的桌面浏览器不出）。
-- **场景 HUD（装甲查看器、射击复现）**：手机横屏时常驻控件只在四角——左上返回 + 车名 / 参数，右下拇指区是射击快捷项（弹种、距离、厚度 / 击穿），左下是姿态与角度；完整设置是右侧参数面板（约 19rem + 安全区），打开时场景仍在左侧可见。短横屏（`height <= 500px`）再启用紧凑档：左上收成 38px 胶囊（返回图标 + 可截断车名 + 参数图标），右下射击卡片收到 15rem × ≤45dvh 并把距离滑条与穿深数值并排，左下姿态压成两行。
-- **点选结果**（厚度 `#click-info`、击穿 `#traj-info`）：固定停靠在场景顶部，不跟随命中点、不压车体；宽屏 / 竖屏在顶部居中，短横屏紧贴左上胶囊右侧并与其垂直对齐；小屏收起态只显示最终判定一行（胶囊），点开看逐层明细。
+- **场景 HUD（装甲查看器、射击复现）**：手机横屏时常驻控件只在四角——左上返回 + 车名 / 参数，右下拇指区是射击快捷项（弹种、距离、厚度 / 击穿），左下是姿态与角度；完整设置是右侧参数面板（约 19rem + 安全区，头部有 44px 关闭按钮），打开时场景仍在左侧可见。短横屏（`height <= 500px`）再启用紧凑档：左上收成 38px 胶囊（返回图标 + 可截断车名 + 参数图标），右下射击卡片收到 15rem × ≤45dvh 并把距离滑条与穿深数值并排，左下姿态压成两行。
+- **点选结果**（厚度 `#click-info`、击穿 `#traj-info`）：固定停靠在场景顶部，不跟随命中点、不压车体；宽屏 / 竖屏在顶部居中；短横屏 ≥768px 紧贴左上胶囊右侧并与其垂直对齐，<768px 落到胶囊下方第二行；小屏收起态只显示最终判定一行（胶囊），点开看逐层明细。
 
 ### 射击分析与科技树（小屏）
 
