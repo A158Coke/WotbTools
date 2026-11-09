@@ -111,7 +111,7 @@
 }
 
 /* Admin page header controls: the compact event picker and secondary page links. */
-.tournament-admin .page-header-actions { align-items: end; }
+.tournament-admin .showcase-hero-toolbar { align-items: end; }
 .tournament-event-compact { flex: 0 1 calc(var(--form-field-min) * 2); }
 .tournament-header-link { display: inline-flex; align-items: center; min-height: var(--control-h-md); padding: 0 var(--space-2); border-radius: var(--radius-md); color: var(--color-accent-text); font-weight: 600; text-decoration: none; }
 .tournament-header-link:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }

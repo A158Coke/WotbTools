@@ -8,7 +8,7 @@
 - 设计语言 token：`frontend/src/styles/tokens/scale.css`（刻度，并声明 `@layer` 顺序）与 `frontend/src/styles/tokens/color.css`（四季主题的语义色与氛围插槽）。`data-theme` 由 profile 派生：春 / 夏 / 秋 → `dark`、冬 → `light`。
 - `frontend/src/styles/tokens.css` 是 deprecated 的旧 token 与 layout class 层，仅为保持现有视觉；新代码不得引用其中的旧 token；颜色类旧变量全部投影到当前主题的语义 token。
 - `pnpm run lint:css`（stylelint，CI 必过）强制执行设计语言；`frontend/stylelint.legacy.json` 是旧文件的忽略名单，只减不增。
-- 设计语言组件（`frontend/src/components/`，均只用语义 token）：`AppButton`（Button）· `SegmentedControl` · `PageHeader` · `EmptyState` · `Banner` · `MenuButton`（Menu：方向键 / Esc / 外部点击关闭）· `BattlePicker`（SearchSelect 单选：超过 6 项显示搜索，属于 DC-SEL-05 的提前搜索；手机为底部 sheet）· `StatStrip`（Stat）· `PlayerCardList`（DataTable 的手机卡片形态） · `FilterChips`（手机筛选入口：「筛选」按钮 + 已生效条件 chip，配合底部 sheet） · `AppDialog`（Dialog：焦点陷阱、Esc、关闭后焦点回到触发元素、手机底部 sheet；`keepMounted` 保留表单草稿）· `confirm()` + `ConfirmDialogHost`（应用内确认，禁止 `window.confirm`）· `MarkdownDocPage`（长文档：二级标题目录、吸顶 / 折叠目录、回到顶部）· `ReplayCapabilityTabs`（Tabs）。新界面优先复用它们，不新增一次性按钮 / 下拉样式。
+- 设计语言组件（`frontend/src/components/`，均只用语义 token）：`AppButton`（Button）· `SegmentedControl` · `ShowcaseHero`（完整 / 紧凑分区主视觉）· `EmptyState` · `Banner` · `MenuButton`（Menu：方向键 / Esc / 外部点击关闭）· `BattlePicker`（SearchSelect 单选：超过 6 项显示搜索，属于 DC-SEL-05 的提前搜索；手机为底部 sheet）· `StatStrip`（Stat）· `PlayerCardList`（DataTable 的手机卡片形态） · `FilterChips`（手机筛选入口：「筛选」按钮 + 已生效条件 chip，配合底部 sheet） · `AppDialog`（Dialog：焦点陷阱、Esc、关闭后焦点回到触发元素、手机底部 sheet；`keepMounted` 保留表单草稿）· `confirm()` + `ConfirmDialogHost`（应用内确认，禁止 `window.confirm`）· `MarkdownDocPage`（长文档：二级标题目录、吸顶 / 折叠目录、回到顶部）· `ReplayCapabilityTabs`（Tabs）。新界面优先复用它们，不新增一次性按钮 / 下拉样式。
 
 共享 `MenuButton` 使用 Reka 碰撞定位给出的可用高度限制菜单面板，空间不足时在菜单内部纵向滚动，滚动不传递到背景页面。选项保留原有触控尺寸；键盘 Home / End 导航及指针选择均可触达全部选项。`test:browser-interaction menu-viewport` 以当前回放导出三项文案验证 盛夏 / 寒冬、手机短视口、平板、桌面及打开期间的视口高度变化。
 
@@ -46,17 +46,17 @@
 ## 布局与响应式契约
 
 - 应用壳：`app/AppSidebar.vue`（平板图标栏 / 桌面可折叠侧栏）、`AppTopBar.vue` + `AppNavDrawer.vue`（手机竖屏 / 横屏的顶栏菜单与左侧抽屉，内容与侧边栏同一份分组，没有底部常驻导航，见 design-language §9 L1–L6）。导航、账户及 Profile owner 不变；导航表面使用不透明语义色，当前栏目同时用背景、强调色和位置标识区分。
-- 通用元素：`frontend/src/styles/app-shell.css` 负责页面底色、基础按钮、表格、提示、footer 与列选择器；`PageHeader.vue` 负责标题 / 说明 / 操作的对齐与分隔（compact 隐藏说明，保持「标题 + 操作」一行，DC-ARC-02）；两者只使用设计语言 token，并受 CSS lint 严格检查。列选择器手机布局把分类说明放到下一行，重排按钮保持 `--hit-min`，不与字段名称争抢横向空间。
+- 通用元素：`frontend/src/styles/app-shell.css` 负责页面底色、基础按钮、表格、提示、footer 与列选择器；`ShowcaseHero.vue` 负责页头主视觉与标题：完整档保留说明 / 统计 / 操作，compact 档只保留 kicker + 标题、操作移到横幅下方工具条（DC-ARC-02）；原 `PageHeader.vue` 已由 compact 档取代并删除。两者只使用设计语言 token，并受 CSS lint 严格检查。列选择器手机布局把分类说明放到下一行，重排按钮保持 `--hit-min`，不与字段名称争抢横向空间。
 - `tokens.css` 保留现有 layout class；它们从 `tokens/scale.css` 读取 `--layout-content-max` / `--layout-wide-max` / `--layout-workspace-max` 与 `--gutter`。当前最大宽度分别为 1420 / 1720 / 1760px；文本阅读区另用 `--reading-measure`，不限制表格宽度。
 - Showcase 页面层位于 `showcase.css`、`showcase-pages.css`、`showcase-rankings.css`、`showcase-cohesion.css` 和 `showcase-regressions.css`；Profile / HoF 的局部装饰也在这层，颜色全部取语义 token。
 - 页面底色由语义 token 提供，首页插图由首页组件的独立图片区域拥有；Home / Contact / 回放的通用按钮与表格由语义 token 提供，不按主题另写覆盖。
-- Showcase Hero（`ShowcaseHero.vue`，design-language DC-THM-03…06）当前用于：名人堂三个榜（单场 / 百场 / 三环，actions 插槽承载各榜「提交」按钮，stats 插槽显示收录总数）、坦克百科列表（收录车辆数 + 科技树入口）、联赛积分榜（导出 / 刷新）。名人堂单场榜第 1 页在 Hero 之下另有 `HofPodium.vue` 前三名领奖台（大屏 2 · 1 · 3，小屏只显示第 1 名；车辆图缺失或资产源未配置时只隐藏图片），表格仍完整列出前三名。
-- 回放赛后数据的联赛概览（`BattleTable.vue` 的 `.league-overview`）是比分主视觉：主题主视觉 + **均匀**遮罩（`--color-canvas` 86%，两队文字左右分布，不用 Hero 的左深右浅遮罩），队伍 Rating 用 `--type-display-hero`，胜方强调色。
+- Showcase Hero（`ShowcaseHero.vue`，design-language DC-THM-03…06、DC-THM-12）按导航分区使用固定 key visual（`src/shared/sectionHeroes.ts` 是唯一映射表）：名人堂三个榜（单场 / 百场 / 三环）、坦克百科列表 / 详情、回放工作台、科技树、地图预览、赛事、社区、账户、文档与后台页；名人堂、社区、赛事等完整档保留 stats / actions，工具页与后台用 compact 档。名人堂单场榜第 1 页在 Hero 之下另有 `HofPodium.vue` 前三名领奖台（大屏 2 · 1 · 3，小屏只显示第 1 名；车辆图缺失或资产源未配置时只隐藏图片），表格仍完整列出前三名。
+- 回放赛后数据的联赛概览（`BattleTable.vue` 的 `.league-overview`）是比分主视觉：复用 `replay` 分区图（`hero-replay.webp`）+ **均匀**遮罩（`--color-canvas` 86%，两队文字左右分布，不用 Hero 的左深右浅遮罩），队伍 Rating 用 `--type-display-hero`，胜方强调色。
 - 首页（`HomePage.vue`，**纯展示页**）**不承担导航**：`AppSidebar.vue`（桌面 / 平板）与 `AppNavDrawer.vue`（手机抽屉）已覆盖 `PRIMARY_NAV` 的全部入口，首页再摆功能卡就是抄侧边栏。功能导航只有 Replay Workspace 一个。此外首页保留 Android 下载（仅 Web 首屏按钮；Android App 内不渲染）、赞助、站内反馈等非功能 / 转化入口，三者都在首屏。由 `HomePage.test.js` 按语义锁定，不写死「恰好 N 个链接」。分段为 ① 整屏 Hero（主视觉、标题、主按钮、数据带；大屏右下为赞助卡 + 反馈行，小屏紧接主视觉之后依次是赞助卡、反馈）② 能力展示（两段整幅截图 + 叠字，装甲段带跳弹 / 穿深 / 击穿概率标注；两张卡片；**整节无任何链接**）。旧的「带走它」转化节与页脚已删除。小屏与 Android App 用同一套首页。
   - 主视觉来自当前主题的装饰插槽（design-language §2）：`--theme-hero-image` + `--theme-hero-scrim`（大屏横版），`width < 768px` 换 `--theme-hero-image-portrait` + `--theme-hero-scrim-portrait`（竖版，遮罩自下而上）。kicker 显示当前主题名。文字落在 scrim 压出的纯色上，对比度不随图片内容变化（`color-contrast.test.ts`）。视差只在 `width >= 768px` 且未要求减少动态效果时启用。
   - **回放的五个 capability tab 不是独立目的地**：`viewRegistry.js` 的 `replay` / `battle-playback` / `ai-review` / `agent-replay` / `agent-shots` 全部落在同一个 `ReplayWorkspace`，只是初始 tab 不同。去重断言因此按 `VIEW_COMPONENTS` 的**组件对象引用**判定，不是 href 字符串（五个 href 指向同一个 workspace），也不是组件名（view 懒加载，全叫 `AsyncComponentWrapper`）。
   - ② 的四张都是真实产品截图，来源与隐私边界见 [`frontend/src/assets/showcase/README.md`](../../frontend/src/assets/showcase/README.md)；只有第一张 `eager`，其余 `lazy` 且都带固有尺寸防抖版。动效默认关闭，只在 `prefers-reduced-motion: no-preference` 下启用；hover 位移 / 缩放同样如此。
-  - 项目历史 / 技术演进 / 联系我只在 `useMoreMenu.js` 的「更多」组；Web 首页首屏有「下载 Android 版」按钮，Android App 内隐藏。`PageHeader.vue` 不提供 hero 变体。
+  - 项目历史 / 技术演进 / 联系我只在 `useMoreMenu.js` 的「更多」组；Web 首页首屏有「下载 Android 版」按钮，Android App 内隐藏。首页 hero 由 `HomePage.vue` 自己拥有，`ShowcaseHero` 的 `section` 变体只用于导航分区页头。
 - `PlaybackRoster.vue` 的三层 grid 显式使用 `minmax(0, 1fr)` 横向轨道，连续长昵称 / 车型可以在行内收缩，不撑宽车道、不裁掉血条。既有 2D 浏览器夹具包含长中文 / 英文压力名称，并断言车道无横滚、整行与血条矩形完整落在车道内。
 - 层级与遮挡（`design-language.md` §5）的实现位置：局部层叠上下文在 `playback-workspace.css` 的 `.playback-workspace` 与 `BattleMap.vue` 的 `.pb-map`（两处 `isolation: isolate`），局部刻度 token 在 `tokens/scale.css`（`--pb-z-canvas/hud/scrim/controls/transient/modal`）。遮挡与可达由浏览器门禁强制：共享探针在 `frontend/scripts/browser-occlusion.mjs`，几何档接在 `pnpm run test:browser-layout`（含故意盖住主内容的负向场景，以及可达性探针自测：部分裁剪、部分覆盖、`pointer-events` 穿透必须判失败，可滚动触达与逃出 overflow 的 fixed 元素必须判通过），真实命中与状态组合接在 `pnpm run test:browser-interaction`（含把常驻控制条提到瞬态面之上的负向对照；空跑守卫按形态逐场景判定：宽档 / 横屏的 Display 锚在 gear 上，必须与常驻传输条重叠，竖屏的 Display 是流内静态面、不要求重叠，因此按名字单跑或分片都不会误报；宽档 / 横屏还断言 Display 压过同时打开的车辆详情面板；可达性检查覆盖面板内的按钮与复选框行，并要求至少有一个选项真的做了命中采样）。3D 的控制条与名册由 `roster-geometry-` 场景按 §5 例外段判定，实现位置是 `Replay3DPane.vue` 的 `compact-bar` 与 `playback-workspace.css`。探针的判定常量与 `design-language.md` §5 双向校验（`assertDocumentedLimits()`），任一侧漂移即失败。
 - 回放结果表格的滚动 / sticky 接线由 `showcase-workspaces.css` 提供，容器建立局部隔离层叠；表头、首列及交叉角使用 `--table-z-*`，背景保持不透明，阵营底色与非 sticky 单元格使用同一表达式。
@@ -79,7 +79,7 @@
 ## 管理后台列表模板
 
 用户管理、AI 复盘反馈、站点反馈、战斗数据共用同一页面骨架（推荐视频配置只统一页头 kicker，表单仍是原有双栏）：
-`PageHeader`（分区 kicker、标题、一句说明、右侧数据源切换 / 操作）→ `AdminFilterBar`（搜索与筛选）→ `AdminBulkBar`（勾选后出现，现有批量能力）→ `admin-list-table`（表格）→ 分页。
+`ShowcaseHero` compact（分区 kicker + 标题，操作在下方工具条）→ `AdminFilterBar`（搜索与筛选）→ `AdminBulkBar`（勾选后出现，现有批量能力）→ `admin-list-table`（表格）→ 分页。
 共享样式在 `components/admin-list.css`，类名统一 `admin-list-` 前缀，只用语义 token。
 
 - 点行（或行内主列按钮，键盘入口）在右侧约 400px 详情抽屉打开（`AdminDetailDrawer`，基于 `AppSheet side="end"`），不再弹模态框；抽屉关闭后焦点回到该行的打开按钮。

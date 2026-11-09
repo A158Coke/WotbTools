@@ -64,6 +64,7 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | DC-THM-09 | MUST | 全站环境背景 | 全站只由 `AppShell.vue` 的 `.app-backdrop` 渲染环境背景层：`position: fixed; inset: 0; pointer-events: none`，层级低于内容；环境光、背景图、遮罩、位置全部读 `--theme-backdrop*` token；禁止在 `body` 上用 `background-attachment: fixed` | 无 | 人工；`pnpm run test:browser-home`、`test:browser-view-transition` |
 | DC-THM-10 | MUST | 首屏与主题切换 | 环境背景先显示 `--color-canvas` 纯色，图片解码后淡入，不得阻塞首屏；`prefers-reduced-motion: reduce` 下直接显示、不做过渡；切换主题时背景随 token 同步切换 | 无 | 人工；`src/index-firstpaint.test.js` 保持通过 |
 | DC-THM-11 | MUST | 内容表面 | 只有页面级卡片 / 面板可用 `--color-surface-{1,2,3}-glass`（表面色 82%–90% 不透明 + `backdrop-filter: blur(16px) saturate(1.2)`）；表格、数据密集区、输入框、回放 HUD 保持纯色；场景根必须不透明；`@supports not (backdrop-filter)` 时回退纯色 | 无 | `color-contrast.test.ts` 的真实背景取样 + 人工 |
+| DC-THM-12 | MUST | 分区主视觉 | 每个导航分区用一张固定 key visual（与季节无关），由 `ShowcaseHero` 的 `section` prop 选择；图片经 `import` 由 Vite 生成 hash URL，只加载当前页面用到的一张；标题必须落在主题遮罩压出的可读区 | 首页继续使用季节主视觉 | 人工四主题 × 双视口截图；`ShowcaseHero.test.ts` |
 
 | | **春 · 青山** `spring` | **夏 · 盛夏** `summer`（默认） | **秋 · 金秋** `autumn` | **冬 · 寒冬** `winter` |
 |---|---|---|---|---|
@@ -75,11 +76,11 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 
 完整取值只在 `frontend/src/styles/tokens/color.css`（每套主题一个语义映射块）；`<meta name="theme-color">` 取当前主题底色（`useUiProfile.THEME_COLOR`），`color-scheme` 随深浅色。
 
-**氛围插槽**（主题 token，只能用在装饰插槽里）：`--theme-hero-image`（横版约 2.5:1）、`--theme-hero-image-portrait`（竖版约 4:5）、`--theme-hero-scrim`（横版遮罩，左侧压出文字区）、`--theme-hero-scrim-portrait`（竖版遮罩，自下而上）、`--theme-glass`（叠在主视觉上的按钮底）、`--theme-pattern`（页面底纹）、`--theme-backdrop`（页面环境光，多层静态 `radial-gradient` / `linear-gradient`，固定视口、无动画）、`--theme-backdrop-image` / `--theme-backdrop-image-portrait`（全站环境背景横 / 竖版）、`--theme-backdrop-scrim`（环境背景遮罩）、`--theme-backdrop-position` / `--theme-backdrop-position-portrait`（横 / 竖版焦点位置）。页面静态底色按 `--theme-pattern` → `--theme-backdrop` → `--color-canvas` 合成；环境光集中在页面边缘与角落，正文所在的中部保持接近 `--color-canvas` 的纯色区。环境光在页面底边渐隐回 `--color-canvas`，页脚（`.app-footer`）另有 canvas 渐隐托底，避免底纹的 1px 线穿过页脚小字、拉低对比度。页头等无底色文字所在的最亮处也必须按 §3 取样，至少覆盖 1024 宽的桌面视口；环境光峰值不得压过文字对比度。主视觉素材在 `frontend/src/assets/theme/theme-<季节>-{wide,portrait}.webp`；环境背景产物在 `frontend/src/assets/theme/backdrop-<季节>-{wide,portrait}.webp`，与 `--theme-backdrop` 的环境光层一起由 `.app-backdrop` 渲染（§2.1）。主题选择器的缩略图与色点读 `--theme-preview-<季节>-*`。
+**氛围插槽**（主题 token，只能用在装饰插槽里）：`--theme-hero-image`（横版约 2.5:1）、`--theme-hero-image-portrait`（竖版约 4:5）、`--theme-hero-scrim`（横版遮罩，左侧压出文字区）、`--theme-hero-scrim-portrait`（竖版遮罩，自下而上）、`--theme-hero-section-scrim` / `--theme-hero-section-scrim-portrait`（仅寒冬的分区主视觉遮罩，见 §2.2）、`--theme-glass`（叠在主视觉上的按钮底）、`--theme-pattern`（页面底纹）、`--theme-backdrop`（页面环境光，多层静态 `radial-gradient` / `linear-gradient`，固定视口、无动画）、`--theme-backdrop-image` / `--theme-backdrop-image-portrait`（全站环境背景横 / 竖版）、`--theme-backdrop-scrim`（环境背景遮罩）、`--theme-backdrop-position` / `--theme-backdrop-position-portrait`（横 / 竖版焦点位置）。页面静态底色按 `--theme-pattern` → `--theme-backdrop` → `--color-canvas` 合成；环境光集中在页面边缘与角落，正文所在的中部保持接近 `--color-canvas` 的纯色区。环境光在页面底边渐隐回 `--color-canvas`，页脚（`.app-footer`）另有 canvas 渐隐托底，避免底纹的 1px 线穿过页脚小字、拉低对比度。页头等无底色文字所在的最亮处也必须按 §3 取样，至少覆盖 1024 宽的桌面视口；环境光峰值不得压过文字对比度。主视觉素材在 `frontend/src/assets/theme/theme-<季节>-{wide,portrait}.webp`；环境背景产物在 `frontend/src/assets/theme/backdrop-<季节>-{wide,portrait}.webp`，与 `--theme-backdrop` 的环境光层一起由 `.app-backdrop` 渲染（§2.1）。主题选择器的缩略图与色点读 `--theme-preview-<季节>-*`。
 
 **装饰插槽**（这是唯一允许放背景图与装饰渐变的地方；毛玻璃表面见 §2.1）：
 
-1. 首页英雄区（`HomePage.vue` 自己拥有；`PageHeader` 不提供 `hero` 变体）
+1. 首页英雄区（`HomePage.vue` 自己拥有整屏主视觉；`ShowcaseHero` 的 `section` 变体只负责导航分区的页头，不改变首页）
 2. 工作区 Showcase Hero（规则见 DC-THM-03 至 DC-THM-06）
 3. 空状态插图
 4. 登录页
@@ -107,6 +108,34 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 - 在首次绘制之前，由 `index.html` 里的内联脚本投影 `data-ui-profile` / `data-theme` / `theme-color`，避免闪烁（`src/index-firstpaint.test.js` 真实执行该脚本）。
 
 **验收标准：** 任何组件在四套主题下都必须通过 §3 的对比度要求。
+
+### 2.2 分区主视觉（section key visual）
+
+**定义：** 导航分区的固定主视觉。和四季主视觉不同，每张图不随主题/季节换图，只换压在图上的主题遮罩；一张图对应一个导航分区，同一分区的所有页面复用同一张。季节只影响氛围，不改变页面身份。
+
+**素材与产物：** 原图在 `frontend/art-source/heroes/hero-<分区>.webp`（1672×941，16:9，不得修改），由 `frontend/scripts/build-section-heroes.mjs`（`pnpm run assets:heroes`）输出到 `frontend/src/assets/theme/hero-<分区>.webp`：Lanczos 放大到 2400 宽、轻度锐化、WebP q≈80 且单张 ≤ 250KB。运行时通过 `src/shared/sectionHeroes.ts` 的 `import` 拿到 Vite hash URL，不复制到每套主题，也不在 CSS 里写死路径。
+
+**唯一映射表：** 代码里的 `SECTION_HEROES` 是唯一事实源，本表是它的文档镜像。`--hero-pos` / `--hero-pos-mobile` 是 `background-position` 的焦点，用来保证坦克主体不被左侧标题压住：桌面横幅很宽，横向焦点恒为 `center`，只调纵向；手机竖版把主体推到右侧。
+
+| 分区 `section` | 使用页面 | 原图 | 桌面焦点 | 手机焦点 |
+|---|---|---|---|---|
+| `hof` | `HoFPage` 单场 / 百场 tab | `hero-hof.webp` | `center 45%` | `22% center` |
+| `mark3` | `HoFPage` 三环 tab | `hero-mark3.webp` | `center 45%` | `18% center` |
+| `replay` | `ReplayWorkspace`、`BattleTable` league 概览 | `hero-replay.webp` | `center 48%` | `45% center` |
+| `tankopedia` | `AgentTankopedia` 列表 / 详情 | `hero-tankopedia.webp` | `center 45%` | `18% center` |
+| `techtree` | `AgentTechTree` | `hero-techtree.webp` | `center 45%` | `42% center` |
+| `maps` | `MapPreviewPage` 选择态 | `hero-maps.webp` | `center 45%` | `22% center` |
+| `events` | `TournamentPointsPage`、`LeagueBroadcastsPage` | `hero-events.webp` | `center 45%` | `40% center` |
+| `community` | `CreatorsPage`、`ContactPage`、`MorePage`、`AndroidDownloadPage`、`SponsorPage` | `hero-community.webp` | `center 45%` | `45% center` |
+| `profile` | `ProfilePage` | `hero-profile.webp` | `center 45%` | `45% center` |
+| `docs` | `HistoryPage`、`TechnicalEvolutionPage`、`RatingDocsPage` | `hero-docs.webp` | `center 45%` | `42% center` |
+| `admin` | 全部后台页（用户、战斗数据、反馈、名人堂、赛事积分、创作者配置） | `hero-admin.webp` | `center 45%` | `40% center` |
+
+**遮罩与可读性：** 分区图默认仍用 `--theme-hero-scrim`（手机 `--theme-hero-scrim-portrait`）压出纯色文字区，因此 DC-THM-05 的四主题对比度要求不变。寒冬是浅色主题，白色遮罩会把图洗淡，所以只在寒冬定义更轻的分区遮罩：`--theme-hero-section-scrim`（横版，左侧 94% → 78% → 12%）和 `--theme-hero-section-scrim-portrait`（竖版，自上而下 97% → 86% → 24%，把下半部留给坦克）。其它主题不定义这两个 token，组件用 `var(--theme-hero-section-scrim, var(--theme-hero-scrim))` 回退。验收时坦克主体必须仍可辨认，标题区域取样点满足 §3。
+
+**紧凑档（compact）：** 工具页与后台使用紧凑档，桌面最小高度 132px、手机 96px，横幅里只保留 kicker + 标题；操作（能力切换、搜索、刷新等）放在横幅下方独立的工具条里，不挤压下方操作区。完整档保留说明、关键数字与操作。标题复用页面原有 i18n 文案；如果横幅已经承担页面标题，就删除原独立页头，避免同屏两个一级标题。
+
+**验收：** 每个分区至少一个页面，四套主题 × 1440×900 / 390×844 截图人工确认：坦克主体可见、未被标题压住、标题可读、无横向滚动；`ShowcaseHero.test.ts` 覆盖 `section` 映射与紧凑档结构。
 
 ---
 
@@ -504,7 +533,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | ID | 强度 | 范围 | 规则 | 例外 | 验证 |
 |---|---|---|---|---|---|
 | DC-ARC-01 | MUST | 页面 | 自上而下是 Showcase Hero（可选）+ 控制条 + 数据区；同一页不并存两套标题区 | 场景型工作台（2D / 3D、装甲查看器）、长文档页 | 人工 |
-| DC-ARC-02 | MUST | 工作区 | `PageHeader` 只用 `compact`；kicker + h1 + 说明 + 标签块不得占掉首屏 | 满足 DC-THM-04 的 Showcase Hero | 人工 |
+| DC-ARC-02 | MUST | 工作区 / 工具页 | 页头用 `ShowcaseHero` 的 `compact` 档：横幅只保留 kicker + h1（桌面 132px / 手机 96px），操作放横幅下方工具条；kicker + h1 + 说明 + 标签块不得占掉首屏 | 内容型页面用完整档 Showcase Hero | 人工；`ShowcaseHero.test.ts` |
 | DC-ARC-03 | MUST | 筛选 | expanded / medium 行内工具栏；compact 用「筛选」按钮 + sheet，已生效条件显示为 chip | 无 | `pnpm run test:browser-interaction`（`overlay-catalog-` / `overlay-hof-`） |
 | DC-ARC-04 | MUST | 主导航 | 成员、分组与栏目归属只由 `app/navigation.js` 定义；侧边栏与手机抽屉渲染同一份分组，「更多」页不复制导航列表 | 无 | `src/app/navigation.test.js` |
 | DC-ARC-07 | MUST | 主导航 | `PRIMARY_NAV` 的每个入口在大屏（侧边栏）与小屏（菜单 → 左侧抽屉）都能经真实点击到达；没有底部常驻导航 | 无 | `pnpm run test:browser-interaction shell-overlay`；主站 Logo 回首页由 `test:browser-creators`（`production-`，小屏）与 `test:browser-broadcasts`（`-desktop`，大屏）验证 |
@@ -515,9 +544,9 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | 模式 | 规则 |
 |---|---|
 | **AppShell** | 平板 / 桌面：左侧边栏（`--z-header`，铺满视口高度），没有顶栏（`--header-h: 0`）。桌面默认展开（240px，图标 + 文字），可折叠成 72px 图标栏并记住偏好；平板固定为图标栏。侧边栏从上到下：品牌 · 数据版本 · 首页 · 按战斗、资料、赛事、社区分组的主栏目（`group`，图标栏用分隔线代替分组名）· 管理组（按角色）；底部：更多（弹出面板，只放低频的显示设置与关于 / 支持）· 账户 · 折叠开关。手机竖屏与手机横屏（抽屉外壳，见下方 L1 / L3）：48px 顶栏（菜单 · Logo · 当前栏目名 · 账户）+ 左侧抽屉（`AppNavDrawer`，内容是侧边栏的同一份分组、管理组与数据版本，底部「更多」整页链接与账户）。Logo 回默认落地页：主站回首页，APK / 本地回回放。手机横屏的回放工作台（2D / 3D，回放就绪）与装甲查看器（WebGL 可用）进入沉浸态：顶栏让出，`--header-block` / `--header-h` 归零，转竖屏或离开页面即恢复。当前侧边栏宽度写入 `--sidebar-w`（抽屉外壳为 0）；顶栏为内容让出的固定空间是 `--header-block`，吸顶偏移与高度预算读 `--header-h` |
-| **Showcase Hero** | `components/ShowcaseHero.vue`：工作区页面数据区之上的可选主视觉（DC-THM-03…06），背景是当前主题主视觉（大屏横版、小屏竖版）+ 主题遮罩，只放 kicker、标题、一句说明、关键数字与操作 |
+| **Showcase Hero** | `components/ShowcaseHero.vue`：页面数据区之上的主视觉（DC-THM-03…06、DC-THM-12）。不传 `section` 时用当前主题的季节主视觉；传 `section` 时用该导航分区的固定 key visual（§2.2），四套主题只换遮罩。`compact` 档只保留 kicker + 标题，操作在横幅下方工具条 |
 | **控制条** | `app-shell.css` 的 `.control-bar`：数据区之上的筛选 / 排序 / 搜索一行，窄屏换行，`.control-bar-end` 推到行尾，`.is-sticky` 吸顶读 `--header-h` |
-| **PageHeader** | 只有 `compact`（工作区用：标题 + 右侧操作，一行，≤ 56px）。不提供 `hero` 变体；首页 hero 是 `HomePage.vue` 自己的整段落地页板块。**工作区禁止用 kicker + h1 + 说明 + 标签块占掉首屏** |
+| **紧凑页头** | 工作区、工具页与后台用 `ShowcaseHero` 的 `compact` 档：横幅只显示 kicker + h1，操作 / 搜索 / 刷新放在下方工具条。原 `PageHeader.vue` 已由本档取代并删除；首页 hero 是 `HomePage.vue` 自己的整段落地页板块。**工作区禁止用 kicker + h1 + 说明 + 标签块占掉首屏** |
 | **容器宽度** | `content` → `--layout-content-max`；`wide` → `--layout-wide-max`；`workspace` → `--layout-workspace-max`；长文阅读宽度 → `--reading-measure`。具体数值由 `frontend/src/styles/tokens/scale.css` 定义，布局原语见 [UI 系统](ui-system.md) |
 | **Master–Detail** | expanded：列表 + 常驻详情。medium：列表 + 推开式详情。compact：列表 → 全屏详情（支持左右滑动切换）。回放工作台、射击分析、坦克百科都用这个模式 |
 | **筛选** | expanded / medium：行内工具栏。compact：一个"筛选"按钮 → sheet，已生效的条件以 chip 显示在列表上方 |

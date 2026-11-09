@@ -16,7 +16,7 @@ function goBack() {
 </script>
 
 <template>
-  <MarkdownDocPage class="rating-docs-page" :source="leagueRatingV6">
+  <MarkdownDocPage class="rating-docs-page" section-hero :source="leagueRatingV6">
     <template #header>
       <header class="rating-docs-header">
         <button type="button" class="rating-docs-back" data-testid="docs-back-btn" @click="goBack">

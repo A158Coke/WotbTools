@@ -13,7 +13,7 @@ import { mapLabel } from '../utils/helpers.js'
 import AdminDetailDrawer from './AdminDetailDrawer.vue'
 import AdminFilterBar from './AdminFilterBar.vue'
 import AppButton from './AppButton.vue'
-import PageHeader from './PageHeader.vue'
+import ShowcaseHero from './ShowcaseHero.vue'
 import SegmentedControl from './SegmentedControl.vue'
 import { isRowControlClick, rowOpenTarget } from './adminListRow'
 import './admin-list.css'
@@ -253,12 +253,12 @@ onBeforeUnmount(() => { ++summaryGeneration; ++listGeneration; ++detailGeneratio
 
 <template>
   <section class="battle-admin admin-page">
-    <PageHeader :kicker="t('battleDataAdmin.kicker')" :title="t('battleDataAdmin.title')" :description="t('battleDataAdmin.description')">
+    <ShowcaseHero compact section="admin" :kicker="t('battleDataAdmin.kicker')" :title="t('battleDataAdmin.title')">
       <template #actions>
         <SegmentedControl :model-value="range" :options="rangeOptions" :ariaLabel="t('battleDataAdmin.range')" data-testid="range-control" @update:model-value="onRangeChange" />
         <AppButton size="sm" :disabled="!availability.available || loading" data-testid="battle-refresh" @click="refresh">{{ t('battleDataAdmin.refresh') }}</AppButton>
       </template>
-    </PageHeader>
+    </ShowcaseHero>
     <div class="admin-list-note"><strong>{{ t('battleDataAdmin.noteLabel') }}</strong><ul><li>{{ t('battleDataAdmin.acceptedNotice') }}</li><li>{{ t('battleDataAdmin.biasNotice') }}</li></ul></div>
     <p v-if="!availability.pending && !availability.available" class="admin-list-status" data-testid="battle-offline">{{ t(availability.messageKey!) }}</p>
     <p v-if="loading" class="admin-list-status" role="status">{{ t('battleDataAdmin.loading') }}</p>

@@ -6,7 +6,7 @@ import { Plus } from 'lucide-vue-next'
 import { useTournamentPointsConfig } from '../composables/useTournamentPointsConfig.js'
 import { TOURNAMENT_REGIONS, TOURNAMENT_SEASONS } from '../api/tournament-points.js'
 import { apiErrorLabel } from '../utils/display.js'
-import PageHeader from './PageHeader.vue'
+import ShowcaseHero from './ShowcaseHero.vue'
 import Banner from './Banner.vue'
 import AppButton from './AppButton.vue'
 import AppDialog from './AppDialog.vue'
@@ -44,12 +44,12 @@ const missingCells = computed(() => Array.from({ length: dayTotal.value }, (_, i
 </script>
 <template>
   <div class="tournament-page tournament-stack tournament-admin tournament-config">
-    <PageHeader :title="$t('tournament.configTitle')" :description="$t('tournament.configSelectionHint')"><template #actions>
+    <ShowcaseHero compact section="admin" :kicker="$t('more.sections.admin')" :title="$t('tournament.configTitle')"><template #actions>
       <TournamentEventSelect v-if="allowed" compact :model-value="eventId" :events="events" :disabled="busy" :include-global="!!defaults" :global-selected="globalMode" @update:model-value="selectEvent" @select-global="selectGlobal" />
       <AppButton v-if="allowed" :disabled="busy" data-testid="config-new-event" @click="newEvent"><Plus :size="16" aria-hidden="true" />{{ $t('tournament.newEvent') }}</AppButton>
       <RouterLink class="tournament-header-link" :to="{ path: '/', query: { view: 'tournament-points-admin' } }">{{ $t('tournament.statistics') }}</RouterLink>
       <AppButton :disabled="busy" @click="refresh">{{ $t('tournament.refresh') }}</AppButton>
-    </template></PageHeader>
+    </template></ShowcaseHero>
     <Banner v-if="!allowed" tone="danger">{{ $t('tournament.adminRequired') }}</Banner>
     <template v-else>
       <Banner v-if="error" tone="danger">{{ stale ? $t('tournament.stale') : apiErrorLabel(t, te, error) }}</Banner>

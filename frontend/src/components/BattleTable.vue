@@ -8,6 +8,7 @@ import { useStickyColumns } from '../utils/stickyColumns.js'
 import PlayerCardList from './PlayerCardList.vue'
 import GunMarksBadge from './GunMarksBadge.vue'
 import StatStrip from './StatStrip.vue'
+import { sectionHeroStyle } from '../shared/sectionHeroes'
 
 const { locale, t, te } = useI18n()
 const LOCALIZED_VALUE_KEYS = new Set(['tank_type', 'tank_nation'])
@@ -243,7 +244,7 @@ function onCardSelect(accountId) {
     <StatStrip :stats="battleStats" />
 
     <!-- League Rating 概览（CW 专属；Rating-ineligible 场次 league=null → 显示 "--" 不伪造） -->
-    <div v-if="isLeague" class="league-overview">
+    <div v-if="isLeague" class="league-overview" :style="sectionHeroStyle('replay')">
       <div class="league-head">
         <span class="league-title">{{ $t('league.title') }}</span>
         <span class="league-sub">{{ $t('league.subtitle') }}</span>
@@ -335,7 +336,7 @@ function onCardSelect(accountId) {
   border-block-end: 2px solid var(--color-accent);
   border-radius: var(--radius-lg);
   /* 两队文字左右分布：用均匀遮罩，而不是 Hero 的左深右浅遮罩，右侧队伍的对比度不随图片变化 */
-  background: linear-gradient(var(--league-hero-scrim), var(--league-hero-scrim)), var(--theme-hero-image) center / cover, var(--color-surface-1);
+  background: linear-gradient(var(--league-hero-scrim), var(--league-hero-scrim)), var(--hero-image) var(--hero-pos, center) / cover, var(--color-surface-1);
   --league-hero-scrim: color-mix(in srgb, var(--color-canvas) 86%, transparent);
 }
 .league-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); }
@@ -372,7 +373,7 @@ function onCardSelect(accountId) {
 .lm-label { color: var(--color-text-secondary); }
 .lm-value { color: var(--color-text-primary); font-weight: 600; }
 @media (width < 768px) {
-  .league-overview { padding: var(--space-4); background: linear-gradient(var(--league-hero-scrim), var(--league-hero-scrim)), var(--theme-hero-image-portrait) center 70% / cover, var(--color-surface-1); }
+  .league-overview { padding: var(--space-4); background: linear-gradient(var(--league-hero-scrim), var(--league-hero-scrim)), var(--hero-image) var(--hero-pos-mobile, center) / cover, var(--color-surface-1); }
   .league-teams { gap: var(--space-3); }
   .league-team-rating { font: var(--type-display); }
   .team-name-input { font: var(--type-h3); }

@@ -4,5 +4,5 @@ import MarkdownDocPage from './MarkdownDocPage.vue'
 </script>
 
 <template>
-  <MarkdownDocPage class="technical-evolution-page" :source="technicalEvolutionSource" />
+  <MarkdownDocPage class="technical-evolution-page" section-hero :source="technicalEvolutionSource" />
 </template>
