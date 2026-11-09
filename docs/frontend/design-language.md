@@ -59,11 +59,11 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | DC-THM-04 | MUST | Showcase Hero | 只放在数据区之上，不进入表格、筛选、表单、抽屉；expanded 档首屏必须能看到数据区 | 无 | 每页 PR 大屏截图，人工 |
 | DC-THM-05 | MUST | Showcase Hero | 文字落在主题遮罩（`--theme-hero-scrim*`）压出的纯色区上，最差取样点满足 §3 对比度，四套主题都测 | 无 | 人工取样 |
 | DC-THM-06 | MUST | Showcase Hero | `prefers-reduced-motion: reduce` 下无动效 | 无 | 人工；首页由 `pnpm run test:browser-home` 覆盖动效 |
-| DC-THM-07 | MUST | 主题 token | 四套主题的文字 / UI 色在各自四层表面上的最差对比度达到 AA（正文 ≥ 4.5，UI ≥ 3，强调色上的文字 ≥ 4.5） | 无 | `src/styles/tokens/color-contrast.test.ts` |
+| DC-THM-07 | MUST | 主题 token | 四套主题的文字 / UI 色在各自四层表面上的最差对比度达到 AA（正文 ≥ 4.5，UI ≥ 3，强调色上的文字 ≥ 4.5）；实际应用的玻璃表面还要按真实 wide / portrait 背景图与 `--theme-backdrop-scrim` 逐像素合成后取样 | 无 | `src/styles/tokens/color-contrast.test.ts` |
 | DC-THM-08 | MUST | 场景外壳 | 2D / 3D 回放、装甲查看器、地图 3D 的根元素带 `data-scene-surface`，正常渲染态自铺不透明底，寒冬下仍是深色玻璃，不跟随浅色表面，也不叠页面环境光 | 装甲查看器 `is-unsupported` 无 WebGL 降级态（不渲染游戏画面，保留透明 fallback） | `color-contrast.test.ts` 的场景块断言 + 人工 |
 | DC-THM-09 | MUST | 全站环境背景 | 全站只由 `AppShell.vue` 的 `.app-backdrop` 渲染环境背景层：`position: fixed; inset: 0; pointer-events: none`，层级低于内容；环境光、背景图、遮罩、位置全部读 `--theme-backdrop*` token；禁止在 `body` 上用 `background-attachment: fixed` | 无 | 人工；`pnpm run test:browser-home`、`test:browser-view-transition` |
 | DC-THM-10 | MUST | 首屏与主题切换 | 环境背景先显示 `--color-canvas` 纯色，图片解码后淡入，不得阻塞首屏；`prefers-reduced-motion: reduce` 下直接显示、不做过渡；切换主题时背景随 token 同步切换 | 无 | 人工；`src/index-firstpaint.test.js` 保持通过 |
-| DC-THM-11 | MUST | 内容表面 | 只有页面级卡片 / 面板可用 `--color-surface-{1,2,3}-glass`（表面色 82%–90% 不透明 + `backdrop-filter: blur(16px) saturate(1.2)`）；表格、数据密集区、输入框、回放 HUD 保持纯色；场景根必须不透明；`@supports not (backdrop-filter)` 时回退纯色 | 无 | `color-contrast.test.ts` 的玻璃等效色断言 + 人工 |
+| DC-THM-11 | MUST | 内容表面 | 只有页面级卡片 / 面板可用 `--color-surface-{1,2,3}-glass`（表面色 82%–90% 不透明 + `backdrop-filter: blur(16px) saturate(1.2)`）；表格、数据密集区、输入框、回放 HUD 保持纯色；场景根必须不透明；`@supports not (backdrop-filter)` 时回退纯色 | 无 | `color-contrast.test.ts` 的真实背景取样 + 人工 |
 
 | | **春 · 青山** `spring` | **夏 · 盛夏** `summer`（默认） | **秋 · 金秋** `autumn` | **冬 · 寒冬** `winter` |
 |---|---|---|---|---|
@@ -95,7 +95,7 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 
 **首屏性能：** 首帧只画 canvas 纯色（`html` / 首屏内联样式负责，图片层此时 `opacity: 0`）；`.app-backdrop` 的图片由 JS 在 mount 后预解码，完成后才加 `.is-ready` 淡入，背景图不进入首屏关键路径。`prefers-reduced-motion: reduce` 下不做透明度过渡。主题切换时重新等待对应季节图，CSS token 已同步换图，不保留上一主题的图。
 
-**内容表面边界：** 页面级卡片 / 面板（首页卡片、文档正文、坦克详情区块、筛选面板、空状态上传区、管理后台提示条等）使用 `--color-surface-{1,2,3}-glass`（对应表面色 82%–90% 不透明）加 `backdrop-filter: blur(16px) saturate(1.2)`，让背景隐约透出。表格、数据密集区、输入框、回放 HUD 仍用纯色 `--color-surface-*`；2D / 3D 回放、装甲查看器、地图 3D 的场景根必须有 canvas 不透明底色，非全屏时场景外围的页面区域才透出环境背景。浏览器不支持 `backdrop-filter` 时，玻璃表面回退为对应纯色。玻璃色按 alpha 与 canvas 混合后的等效不透明色必须进入 §3 的对比度最差值计算。
+**内容表面边界：** 页面级卡片 / 面板（首页卡片、文档正文、坦克详情区块、筛选面板、空状态上传区、管理后台提示条等）使用 `--color-surface-{1,2,3}-glass`（对应表面色 82%–90% 不透明）加 `backdrop-filter: blur(16px) saturate(1.2)`，让背景隐约透出。表格、数据密集区、输入框、回放 HUD 仍用纯色 `--color-surface-*`；2D / 3D 回放、装甲查看器、地图 3D 的场景根必须有 canvas 不透明底色，非全屏时场景外围的页面区域才透出环境背景。浏览器不支持 `backdrop-filter` 时，玻璃表面回退为对应纯色。实际应用的玻璃表面必须先按真实 wide / portrait 背景图逐像素叠加 `--theme-backdrop-scrim`，再与玻璃 alpha 合成，取亮度最小 / 最大像素进入 §3 的最差值计算；不能只用 canvas 混合等效色代替。
 
 **素材来源：** 四季原图为 AI 生成画面与真实 WoTB 十级车型参考融合，写实电影风格；原图保留在 `frontend/art-source/backdrops/backdrop-<季节>-{wide,portrait}.webp`，不得修改。发布产物由 `frontend/scripts/build-theme-backdrops.mjs`（`pnpm run assets:backdrops`）生成：wide Lanczos 放大到 2560 宽、portrait 到 1080 宽，轻度锐化，WebP 初始 quality 80；单张超过 300KB 时脚本按预算自适应下调 quality（产物实测约 q29–q80，均 ≤ 300KB）。
 
@@ -120,7 +120,7 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | DC-CLR-04 | MUST | 物理队伍色 | Team 1 / Team 2 颜色不随录像者交换 | 无 | 人工 |
 
 **依据：** WCAG 2.2 AA。正文 ≥ 4.5:1；大字（≥ 24px，或 ≥ 18.66px 且加粗）≥ 3:1；UI 组件和图形 ≥ 3:1（1.4.11）。
-下表每个值都已用脚本验证：在该主题的**全部纯色表面与玻璃表面**上取最差的一层，结果仍然达标。玻璃表面先按 alpha 与 canvas 混合成等效不透明色，再参与比较。
+下表每个值都已用脚本验证：在该主题的**全部纯色表面与实际应用的玻璃表面**上取最差的一层，结果仍然达标。当前页面级实现只应用 `surface-1-glass`；它按真实 wide / portrait 背景图逐像素叠加 `--theme-backdrop-scrim` 后再与玻璃 alpha 合成，取亮度最小 / 最大像素参与比较。`surface-2/3-glass` 是保留档位，仍校验 alpha 与 canvas 混合；新增使用处时必须把该档位加入真实背景取样。
 
 ### 3.1 表面与文字
 
@@ -135,9 +135,9 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | `--color-text-tertiary` | `#869d90` | `#b8a277` | `#ad9576` | `#4a6380` | 辅助信息、占位符。**这是最浅的一级文字色** |
 | `--color-border-subtle` | `#1f3a2e` | `#4b3a1d` | `#3d2c19` | `#cbd8e6` | 分隔线（装饰性，不承担信息） |
 | `--color-border-strong` | `#5f8072` | `#a28a5a` | `#937a55` | `#6f849b` | 输入框、复选框等控件边框（需 ≥3:1） |
-| `--color-surface-1/2/3-glass` | 对应表面色 + 88% / 86% / 84% alpha | 同左 | 同左 | 同左 | 页面级卡片的磨砂表面；等效色纳入最差对比度 |
+| `--color-surface-1/2/3-glass` | 对应表面色 + 88% / 86% / 84% alpha | 同左 | 同左 | 同左 | 页面级卡片的磨砂表面；实际应用档位纳入真实背景图最差对比度 |
 
-> 玻璃表面只减不增：`surface-1-glass` 用于主卡片 / 面板，`surface-2-glass` 用于嵌套面板，`surface-3-glass` 用于更近一层的装饰面板；数据区一律用上面的纯色行。
+> 玻璃表面只减不增：当前页面级实现使用 `surface-1-glass` 作为主卡片 / 面板；`surface-2-glass` 与 `surface-3-glass` 是保留档位，尚未落到元素上。数据区一律用上面的纯色行；新增玻璃档位使用处时必须同步把它加入 `color-contrast.test.ts` 的真实背景取样列表。
 
 **深色主题的层级靠亮度区分，不靠阴影。** 表面越亮，离用户越近。依据：Material Design 的暗色主题指南。浅色主题（寒冬）则用阴影。
 

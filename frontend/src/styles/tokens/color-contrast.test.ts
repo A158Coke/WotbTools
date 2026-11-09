@@ -1,19 +1,24 @@
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import sharp from 'sharp'
 import { describe, expect, it } from 'vitest'
 
 /**
  * 四季主题对比度（design-language §2 / §3，WCAG 2.2 AA）：直接读取 tokens/color.css 的主题块，
  * 每个文字 / UI 色在该主题各层表面上的**最差**对比度都必须达标。改 token 而不满足 AA 即失败。
  *
- * 全站环境背景上线后，页面级面板使用半透明玻璃表面；这里把玻璃色按 alpha 与 canvas 混合成
- * 等效不透明色，再和纯色表面一起参与最差值计算（背景图始终被 canvas 色遮罩压住，取最保守的
- * 纯 canvas 混合）。玻璃 alpha 必须在 82%–90%，过低会让文字直接落在不可控的图片上。
+ * 全站环境背景上线后，页面级面板使用半透明玻璃表面。这里除了玻璃色与 canvas 的等效混合，
+ * 还对实际提交的 wide / portrait 背景图逐像素合成当前使用的玻璃表面，取合成后亮度的
+ * 最小 / 最大像素参与最差值计算；因此背景图或遮罩改动后，这个测试会重新计算而不是沿用旧数值。
+ * 目前只有 surface-1-glass 实际用于页面级面板；2/3 档位未应用，仍校验 alpha 与 canvas 混合。
  */
-const css = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'color.css'), 'utf8')
+const HERE = dirname(fileURLToPath(import.meta.url))
+const css = readFileSync(resolve(HERE, 'color.css'), 'utf8')
+const BACKDROP_DIR = resolve(HERE, '../../assets/theme')
 
 type Rgba = { r: number; g: number; b: number; a: number }
+type Rgb = [number, number, number]
 
 function rawBlock(selector: string): string {
   const start = css.indexOf(`${selector} {`)
@@ -35,25 +40,74 @@ function glassTokens(selector: string): Record<string, Rgba> {
   }]))
 }
 
-function channels(hex: string): [number, number, number] {
-  return (hex.slice(1).match(/../g) ?? []).map(part => parseInt(part, 16)) as [number, number, number]
+function channels(hex: string): Rgb {
+  return (hex.slice(1).match(/../g) ?? []).map(part => parseInt(part, 16)) as Rgb
+}
+
+function rgbToHex(rgb: Rgb): string {
+  return '#' + rgb.map(value => value.toString(16).padStart(2, '0')).join('')
+}
+
+function compositeChannels(glass: Rgba, backdrop: Rgb): Rgb {
+  return [glass.r, glass.g, glass.b].map((fg, index) => Math.round(fg * glass.a + backdrop[index] * (1 - glass.a))) as Rgb
 }
 
 /** 半透明表面按 alpha 叠在 canvas 上，得到不依赖图片内容的等效不透明色。 */
 function composite(glass: Rgba, canvas: string): string {
-  const [cr, cg, cb] = channels(canvas)
-  const mix = (fg: number, bg: number) => Math.round(fg * glass.a + bg * (1 - glass.a))
-  return '#' + [mix(glass.r, cr), mix(glass.g, cg), mix(glass.b, cb)]
-    .map(value => value.toString(16).padStart(2, '0'))
-    .join('')
+  return rgbToHex(compositeChannels(glass, channels(canvas)))
 }
 
-function luminance(hex: string): number {
-  const [r, g, b] = channels(hex).map(channel => {
+function luminanceRgb(rgb: Rgb): number {
+  const [r, g, b] = rgb.map(channel => {
     const value = channel / 255
     return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
   })
   return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+function luminance(hex: string): number {
+  return luminanceRgb(channels(hex))
+}
+
+function scrimStops(selector: string): Rgba[] {
+  const value = rawBlock(selector).match(/--theme-backdrop-scrim:\s*([^;]+);/)?.[1]
+  if (!value) throw new Error(`${selector} 缺少 --theme-backdrop-scrim`)
+  return [...value.matchAll(/rgb\(\s*(\d+)\s+(\d+)\s+(\d+)\s*\/\s*([\d.]+)\s*\)/g)].map(match => ({
+    r: Number(match[1]), g: Number(match[2]), b: Number(match[3]), a: Number(match[4]),
+  }))
+}
+
+/**
+ * 实际背景图逐像素与遮罩、玻璃色合成后的亮度极值。wide 与 portrait 都取，保证横竖屏构图
+ * 不同、坦克/天空位置不同时，最差像素仍被覆盖。
+ */
+async function glassBackdropExtrema(season: string, glass: Rgba, canvas: Rgb, scrims: Rgba[]): Promise<[string, string]> {
+  let min: Rgb = [0, 0, 0]
+  let max: Rgb = [0, 0, 0]
+  let minLuminance = Number.POSITIVE_INFINITY
+  let maxLuminance = Number.NEGATIVE_INFINITY
+  for (const variant of ['wide', 'portrait']) {
+    const file = resolve(BACKDROP_DIR, `backdrop-${season}-${variant}.webp`)
+    const { data, info } = await sharp(file).raw().toBuffer({ resolveWithObject: true })
+    for (let offset = 0; offset < data.length; offset += info.channels) {
+      const image: Rgb = [data[offset], data[offset + 1], data[offset + 2]]
+      // 遮罩渐变两端的 alpha 是实际可能取到的边界；逐端合成后再叠玻璃，取整段渐变的最坏值。
+      for (const scrim of scrims) {
+        const scrimmed = image.map((channel, index) => channel * (1 - scrim.a) + canvas[index] * scrim.a) as Rgb
+        const composed = compositeChannels(glass, scrimmed)
+        const value = luminanceRgb(composed)
+        if (value < minLuminance) {
+          minLuminance = value
+          min = composed
+        }
+        if (value > maxLuminance) {
+          maxLuminance = value
+          max = composed
+        }
+      }
+    }
+  }
+  return [rgbToHex(min), rgbToHex(max)]
 }
 
 function ratio(a: string, b: string): number {
@@ -66,6 +120,9 @@ const TEXT = ['--color-text-primary', '--color-text-secondary', '--color-text-te
 const UI = ['--color-border-strong', '--color-accent', '--color-team-enemy-cb']
 const SURFACES = ['--color-canvas', '--color-surface-1', '--color-surface-2', '--color-surface-3']
 const GLASS_SURFACES = ['--color-surface-1-glass', '--color-surface-2-glass', '--color-surface-3-glass']
+// 目前实际应用的只有页面级 .surface-glass-1（见 app-shell.css 与各页面 class）；
+// 2/3 档位保留但未落到元素上，不参与真实背景图的逐像素最差值。
+const ACTIVE_GLASS_SURFACES = ['--color-surface-1-glass']
 
 const THEMES = {
   summer: ':root,\n  :root[data-ui-profile="summer"]',
@@ -76,17 +133,24 @@ const THEMES = {
 
 describe('theme token contrast (WCAG 2.2 AA)', () => {
   for (const [name, selector] of Object.entries(THEMES)) {
-    it(`${name}: 文字 ≥ 4.5、UI ≥ 3、强调色上的文字 ≥ 4.5（含玻璃表面等效色）`, () => {
+    it(`${name}: 文字 ≥ 4.5、UI ≥ 3、强调色上的文字 ≥ 4.5（含真实背景图上的玻璃表面）`, async () => {
       const tokens = block(selector)
       const glass = glassTokens(selector)
       const canvas = tokens['--color-canvas']
-      const glassSurfaces = GLASS_SURFACES.map(token => {
+      const canvasGlassSurfaces = GLASS_SURFACES.map(token => {
         expect(glass[token], `${name} ${token}`).toBeDefined()
         expect(glass[token].a, `${name} ${token} alpha`).toBeGreaterThanOrEqual(0.82)
         expect(glass[token].a, `${name} ${token} alpha`).toBeLessThanOrEqual(0.9)
         return composite(glass[token], canvas)
       })
-      const surfaces = [...SURFACES.map(token => tokens[token]), ...glassSurfaces]
+      const backdropGlassSurfaces: string[] = []
+      const canvasRgb = channels(canvas)
+      const scrims = scrimStops(selector)
+      for (const token of ACTIVE_GLASS_SURFACES) {
+        const [min, max] = await glassBackdropExtrema(name, glass[token], canvasRgb, scrims)
+        backdropGlassSurfaces.push(min, max)
+      }
+      const surfaces = [...SURFACES.map(token => tokens[token]), ...canvasGlassSurfaces, ...backdropGlassSurfaces]
       const failures: string[] = []
       const worst = (token: string) => Math.min(...surfaces.map(surface => ratio(tokens[token], surface)))
       for (const token of SURFACES) expect(tokens[token], `${name} ${token}`).toMatch(/^#/)
@@ -95,7 +159,7 @@ describe('theme token contrast (WCAG 2.2 AA)', () => {
       const onAccent = ratio(tokens['--color-on-accent'], tokens['--color-accent'])
       if (onAccent < 4.5) failures.push(`--color-on-accent ${onAccent.toFixed(2)}`)
       expect(failures).toEqual([])
-    })
+    }, 30_000)
   }
 
   it('寒冬是唯一的浅色主题，场景外壳在寒冬下仍是深色玻璃且同样达标', () => {

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, provide, ref, watch, watchEffect } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch, watchEffect } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
 import { Menu } from 'lucide-vue-next'
 import { useAuth } from '../composables/useAuth.js'
@@ -38,14 +38,6 @@ import SiteFeedbackDialog from '../components/SiteFeedbackDialog.vue'
 import OnboardingHost from '../components/OnboardingHost.vue'
 import AndroidUpdatePanel from '../components/AndroidUpdatePanel.vue'
 import publicSecurityFilingIcon from '../assets/public-security-filing.png'
-import springBackdropWide from '../assets/theme/backdrop-spring-wide.webp'
-import springBackdropPortrait from '../assets/theme/backdrop-spring-portrait.webp'
-import summerBackdropWide from '../assets/theme/backdrop-summer-wide.webp'
-import summerBackdropPortrait from '../assets/theme/backdrop-summer-portrait.webp'
-import autumnBackdropWide from '../assets/theme/backdrop-autumn-wide.webp'
-import autumnBackdropPortrait from '../assets/theme/backdrop-autumn-portrait.webp'
-import winterBackdropWide from '../assets/theme/backdrop-winter-wide.webp'
-import winterBackdropPortrait from '../assets/theme/backdrop-winter-portrait.webp'
 
 const APP_ICP_FILING = '闽ICP备2026036303号-2A'
 const isAndroidAppRuntime = isAndroidApp()
@@ -201,12 +193,6 @@ provide(FEEDBACK_KEY, siteFeedback.request)
  * 主题切换时重新等新图，竖屏 / 横屏切换只更新预载目标（CSS 已同步换图）。
  */
 const { uiProfile } = useUiProfile()
-const BACKDROP_SOURCES = {
-  spring: { wide: springBackdropWide, portrait: springBackdropPortrait },
-  summer: { wide: summerBackdropWide, portrait: summerBackdropPortrait },
-  autumn: { wide: autumnBackdropWide, portrait: autumnBackdropPortrait },
-  winter: { wide: winterBackdropWide, portrait: winterBackdropPortrait },
-}
 const backdropReady = ref(false)
 const loadedBackdrops = new Set()
 let backdropLoadToken = 0
@@ -214,9 +200,16 @@ const portraitBackdropQuery = typeof window !== 'undefined' && typeof window.mat
   ? window.matchMedia('(orientation: portrait) and (width < 768px)')
   : null
 
+/**
+ * 图片 URL 只从 color.css 的语义 token 读，避免 AppShell 再维护一份季节映射；
+ * 主题 / 横竖屏切换时 CSS 已经同步换图，这里只负责按同一个 URL 预解码。
+ */
 function currentBackdropSource() {
-  const images = BACKDROP_SOURCES[uiProfile.value] ?? BACKDROP_SOURCES.summer
-  return portraitBackdropQuery?.matches ? images.portrait : images.wide
+  if (typeof window === 'undefined' || typeof getComputedStyle !== 'function') return ''
+  const token = portraitBackdropQuery?.matches ? '--theme-backdrop-image-portrait' : '--theme-backdrop-image'
+  const value = getComputedStyle(document.documentElement).getPropertyValue(token).trim()
+  const match = value.match(/^url\((['"]?)(.*)\1\)$/)
+  return match ? match[2] : ''
 }
 
 function preloadBackdrop(url) {
@@ -255,7 +248,11 @@ onMounted(() => {
 onUnmounted(() => {
   portraitBackdropQuery?.removeEventListener?.('change', syncBackdrop)
 })
-watch(uiProfile, syncBackdrop)
+watch(uiProfile, async () => {
+  backdropReady.value = false
+  await nextTick()
+  syncBackdrop()
+})
 </script>
 
 <template>
