@@ -187,7 +187,7 @@ const baseViews = computed(() => props.baseStates.map((state) => baseView(state,
   .pb-hud-enemy .pb-hud-track { grid-column: 1; grid-row: 2; }
 }
 /* 紧凑单行：己方 值+血条 │ 基地 / 时钟 / 比分 │ 敌方 血条+值。 */
-.pb-hud-compact { gap: 0; padding-block: var(--space-1); padding-inline: var(--space-1); }
+.pb-hud-compact { gap: 0; padding-block: var(--space-1); }
 /* 667px 横屏：8px 中列间隙会把两侧血条压到 39.7px；4px 让单行 HUD 在最小手机横屏仍 ≥40px。 */
 .pb-hud-compact .pb-hud-grid {
   /* 左右两支等宽（血条对称）；把完整 HP 数字的 max-content 作为两侧下限，避免 5 位

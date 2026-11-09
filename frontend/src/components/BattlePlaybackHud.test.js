@@ -51,10 +51,12 @@ describe('BattlePlaybackHud', () => {
   })
 
   it('compact reserves HP track width and lets only the map name yield', () => {
-    // 667px 横屏的真实失败模式：完整 HP 数字与血条抢同一行，血条被压到 36.6px。
-    // 结构上必须把数字叠到血条上方（共用单列），中列只让地图名收缩。
+    // 667px 横屏的真实失败模式：完整 HP 数字与血条抢同一行，血条被压到 36.6px；
+    // 五位数的双方总血量还会从 46px 的 team 列向外溢出 HUD（浏览器实测 398 > 385）。
+    // 结构上把数字叠到血条上方（共用单列），并用 HP 数字的 max-content 作为两侧下限；
+    // 中列只剩地图名可收缩。
     const compact = hudSource.slice(hudSource.indexOf('/* 紧凑单行'))
-    expect(compact).toMatch(/\.pb-hud-compact \.pb-hud-grid \{[^}]*minmax\(0, 1fr\) minmax\(0, max-content\) minmax\(0, 1fr\)/)
+    expect(compact).toMatch(/\.pb-hud-compact \.pb-hud-grid \{[^}]*minmax\(max-content, 1fr\) minmax\(0, max-content\) minmax\(max-content, 1fr\)/)
     expect(compact).toMatch(/\.pb-hud-compact \.pb-hud-team \{ grid-template-columns: minmax\(0, 1fr\);/)
     expect(compact).toMatch(/\.pb-hud-compact \.pb-hud-track \{[^}]*min-inline-size: 40px/)
     expect(compact).toMatch(/\.pb-hud-compact \.pb-hud-map \{[^}]*flex: 1 1 0;[^}]*min-inline-size: 0;/)

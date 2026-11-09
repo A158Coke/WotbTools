@@ -3629,10 +3629,6 @@ function hudStressProbe(longTitle = false) {
     hudOverflowX: hud.scrollWidth > hud.clientWidth + 1,
     hudScrollWidth: hud.scrollWidth,
     hudClientWidth: hud.clientWidth,
-    centerScrollWidth: center ? center.scrollWidth : 0,
-    centerClientWidth: center ? center.clientWidth : 0,
-    centerChildren: center ? [...center.children].map((el) => ({ test: el.dataset.test || el.className, ...box(el), scrollWidth: el.scrollWidth, clientWidth: el.clientWidth })) : [],
-    overflowingHudChildren: [...hud.querySelectorAll('*')].map((el) => ({ test: el.dataset.test || el.className || el.tagName, ...box(el) })).filter((r) => r.r > rects.hud.r + 1 || r.b > rects.hud.b + 1),
     centerOverflowX: center ? center.scrollWidth > center.clientWidth + 1 : false,
   }
 }
@@ -3998,7 +3994,7 @@ async function runWorkspace2DScenario(env, scenario) {
         && h.title.scrollWidth > h.title.width + 1,
         `hud stress: long map title must yield with ellipsis, not squeeze battle data: ${JSON.stringify(h.title)}`)
       check(failures, !h.centerOverlapsTeam && !h.valueOverlapsCenter && !h.hudOverflowX && !h.centerOverflowX,
-        `hud stress: content overlaps/overflows: ${JSON.stringify({ center: h.rects.center, friendly: h.rects.friendly, enemy: h.rects.enemy, hudOverflowX: h.hudOverflowX, centerOverflowX: h.centerOverflowX, hudScrollWidth: h.hudScrollWidth, hudClientWidth: h.hudClientWidth, centerScrollWidth: h.centerScrollWidth, centerClientWidth: h.centerClientWidth, centerChildren: h.centerChildren, overflowingHudChildren: h.overflowingHudChildren })}`)
+        `hud stress: content overlaps/overflows: ${JSON.stringify({ center: h.rects.center, friendly: h.rects.friendly, enemy: h.rects.enemy, hudOverflowX: h.hudOverflowX, centerOverflowX: h.centerOverflowX, hudScrollWidth: h.hudScrollWidth, hudClientWidth: h.hudClientWidth })}`)
       console.log(`[browser-interaction] ${scenario.name} hud=${JSON.stringify({ width: h.width, height: h.height, tracks: h.tracks, values: h.values, bases: h.baseCount, mapW: h.title?.width })}`)
     }
     // 沉浸态横屏（非全屏）也贴屏幕边缘：模拟刘海侧 safe-area，车道与传输条不得进入该区域。
