@@ -152,4 +152,14 @@ const is3D = computed(() => Array.isArray(props.allowedTools))
   .pb-annot-btn, .pb-annot-color { min-height: var(--control-h-md); }
   .pb-annot-color { width: var(--control-h-md); }
 }
+/* 短视口横屏紧凑档：标注工具、输入框与色板按 40px 命中高度渲染；
+   只作用于场景根，竖屏触控仍为 44px、桌面沿用常规控件尺寸。 */
+@media (pointer: coarse) and (orientation: landscape) and (height <= 520px) {
+  [data-scene-surface] .pb-annot-btn,
+  [data-scene-surface] .pb-annot-color,
+  [data-scene-surface] .pb-annot-width input,
+  [data-scene-surface] .pb-annot-name input { min-height: var(--hit-min-comfortable); }
+  [data-scene-surface] .pb-annot-color { width: var(--hit-min-comfortable); }
+  [data-scene-surface] .pb-annot-close { min-inline-size: var(--hit-min-comfortable); }
+}
 </style>

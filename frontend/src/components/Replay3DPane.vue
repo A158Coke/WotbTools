@@ -174,8 +174,7 @@ const { isPhone } = usePlaybackPhoneForm()
  */
 const { isPortrait } = usePlaybackPortraitViewport()
 const portraitFlow = computed(() => isPortrait.value)
-/** 控制条收成一行：手机横屏与矮工作台。竖屏的控制条在流内，不压场景，不需要收。
-    名册 dense 与单行 HUD 只给手机横屏：矮桌面保留既有行高/多行 HUD，不因短视口被压成 30px 行。 */
+/** 控制条一行：手机横屏与矮工作台。竖屏控制条在流内；dense 名册与单行 HUD 只给手机横屏，矮桌面保持原行高。 */
 const compactBar = computed(() => !portraitFlow.value && (isPhone.value || shortWorkspace.value))
 const phoneLandscape = computed(() => isPhone.value && !portraitFlow.value)
 
@@ -868,8 +867,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
     <div v-else class="pb-root playback-workspace" ref="rootEl" :class="{ 'phone-form': isPhone, 'portrait-flow': portraitFlow, 'roster-side': showRoster && !portraitFlow, 'compact-bar': compactBar }" data-testid="replay3d-root" data-scene-surface data-tour="replay3d-workspace">
       <!-- 名牌覆盖层与 canvas 共用**同一个画布盒子**：场景内核按 canvas（.scene）尺寸算锚点，
            覆盖层必须与它同原点，否则三段式下名牌会整体偏一条车道宽。 -->
-      <!-- 手机全屏入口：竖屏保持右上角浮动（原契约），横屏并入传输条；隐藏全部 UI 时
-           浮动入口是唯一可达入口。三态互斥，不会出现两个全屏按钮。 -->
+      <!-- 手机全屏入口：竖屏浮动、横屏内联；隐藏全部 UI 时保留唯一浮动入口，三态互斥。 -->
       <SceneFullscreenButton
         v-if="isPhone && fullscreenSupported && (uiHidden || isPortrait)"
         floating
@@ -1439,6 +1437,9 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 .ui-restore.ui-restore-shifted {
   top: calc(var(--space-2) + var(--control-h-sm) + var(--space-2));
 }
+@media (pointer: coarse) and (orientation: landscape) and (height <= 520px) {
+  .ui-restore.ui-restore-shifted { top: calc(var(--space-2) + var(--hit-min-comfortable) + var(--space-2)); }
+}
 
 .banner {
   position: absolute; top: 38%; left: 50%; transform: translate(-50%, -50%);
@@ -1492,7 +1493,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 .portrait-flow .team-lane { position: static; width: auto; }
 .portrait-flow > .banner { position: absolute; top: var(--space-12); }
 
-/* 触屏：控件点击区域抬到 --hit-min（44px），布局不动 */
+/* 触屏：控件点击区域抬到 --hit-min（coarse 44px；场景短视口横屏紧凑档 40px），布局不动 */
 @media (pointer: coarse) {
   .tool-btn { min-height: var(--hit-min); }
 }

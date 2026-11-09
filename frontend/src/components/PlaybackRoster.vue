@@ -129,10 +129,10 @@ function hpValueOf(hp) {
 /**
  * 每行的可读下限：固定值只是 guard，正常高度由 `1fr` 连续决定。
  *
- * 取 26px 而不是触控尺寸：短横屏（740×360）整个 workspace 只有 ~256px，7 行 × 44px
- * 直接就溢出去顶开传输控件了。行仍带 `min-height: var(--hit-min)` 之外的可点区域由整行
- * 承担。触屏宽度低于 1200px 时 CSS 将下限提升到 64px，短横屏列表内部滚动，
- * 保证身份与血条可读；高视口下 1fr 均匀铺满。
+ * 默认取 26px 而不是触控尺寸：短横屏（740×360）整个 workspace 只有 ~256px，固定 44px
+ * 会直接溢出去顶开传输控件。触屏宽度低于 1200px 时 CSS 将下限提升到 64px（短横屏列表
+ * 内部滚动，保证身份与血条可读）；场景短视口横屏紧凑档再收窄到 --row-h=40px；
+ * 高视口下 1fr 均匀铺满。
  */
 const ROSTER_ROW_MIN_PX = 26
 
@@ -368,5 +368,9 @@ function listRows(rowCount) {
 @media (width < 1200px) and (pointer: coarse) {
   .pb-roster:not(.pb-roster-dense) { --roster-row-min: calc(var(--space-4) * 4); }
   .pb-roster.pb-roster-fill:not(.pb-roster-dense) .pb-roster-list { overflow-y: auto; }
+}
+/* 短视口横屏紧凑档只收窄名册行；竖屏 / 平板仍保持上面的 64px。 */
+@media (pointer: coarse) and (orientation: landscape) and (height <= 520px) {
+  .pb-roster { --roster-row-min: var(--row-h); }
 }
 </style>

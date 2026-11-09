@@ -64,4 +64,12 @@ const { t } = useI18n()
   right: var(--space-2);
   z-index: var(--z-sticky);
 }
+
+/* 短视口横屏紧凑档：按钮的 --control-h-sm 是 32px，场景里仍要保证 40×40 可点。 */
+@media (pointer: coarse) and (orientation: landscape) and (height <= 520px) {
+  [data-scene-surface] .scene-fs-btn {
+    min-height: var(--hit-min-comfortable);
+    min-width: var(--hit-min-comfortable);
+  }
+}
 </style>

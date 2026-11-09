@@ -164,6 +164,11 @@ const percentNow = computed(() => Math.round(v.value * 100))
   touch-action: none;
 }
 
+/* 短视口横屏紧凑档：全屏按钮抬到 40px 后，距离滑条按同一底边下移，避免命中区重叠。 */
+@media (pointer: coarse) and (orientation: landscape) and (height <= 520px) {
+  .scene-dist { top: var(--scene-fs-bottom, calc(var(--space-2) + var(--hit-min-comfortable) + var(--space-2))); }
+}
+
 .scene-dist-label {
   font: var(--type-caption);
   color: var(--color-text-secondary);

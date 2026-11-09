@@ -45,7 +45,15 @@ function measure() {
   // 锚点本身在视口外，按它算「可用空间」会得出一个屏幕外的答案（实测 above=300 而可见只有 111）。
   const anchorTop = Math.min(Math.max(anchor.top, viewportTop), Math.max(viewportTop, viewportBottom))
   const anchorBottom = Math.min(Math.max(anchor.bottom, anchorTop), Math.max(viewportTop, viewportBottom))
-  const above = Math.max(0, anchorTop - viewportTop - edge - gap)
+  // 紧凑横屏的传输条是全宽常驻条：Display 锚在条内 gear 上，必须整块停在条的上沿之外，
+  // 否则会盖住传输条顶部（844×390 实测 8px 重叠）。其它形态保持原有锚定行为。
+  const compactLandscape = typeof window.matchMedia === 'function'
+    && window.matchMedia('(pointer: coarse) and (orientation: landscape) and (height <= 520px)').matches
+  const transport = compactLandscape ? props.anchor.closest?.('.pb-transport-slot') : null
+  const aboveAnchorTop = transport
+    ? Math.max(viewportTop, transport.getBoundingClientRect().top)
+    : anchorTop
+  const above = Math.max(0, aboveAnchorTop - viewportTop - edge - gap)
   const below = Math.max(0, viewportBottom - anchorBottom - edge - gap)
   // 可见高度不足时 selected 侧会压到 0，此时保留一个下限，避免 max-height 把面板压成不可用。
   const minimumPane = 96
@@ -58,7 +66,7 @@ function measure() {
   const height = Math.min(panel.value.scrollHeight, available, Math.max(0, viewportBottom - viewportTop))
   const topMin = Math.max(0, paddingTop + edge)
   const topMax = Math.max(topMin, viewportBottom - host.top - height)
-  const aboveTop = anchorTop - originTop - gap - height
+  const aboveTop = aboveAnchorTop - originTop - gap - height
   const rawTop = abovePreferred ? aboveTop : anchorBottom - originTop + gap
   placement.value = {
     // 面板以 host 的内边距盒为定位基准，故先扣掉左侧内边距再夹到 host 内。
@@ -170,4 +178,9 @@ useEventListener(() => document, 'keydown', dismiss)
 .pb-display-portrait { position: static; inline-size: 100%; max-block-size: 60dvh; }
 /* tabindex="-1" 只是给键盘落点用的（打开时焦点进入面内），程序化聚焦不画焦点环 */
 .pb-display-surface:focus { outline: none; }
+/* 场景短视口横屏：选项行 40px、滚动口高度受传输条限制，9px 内边距会让最后一行
+   恰好被滚动口裁掉 2px（667×375 实测）。再收一档到 6px，让可见行完整落在滚动口内。 */
+@media (pointer: coarse) and (orientation: landscape) and (height <= 520px) {
+  .pb-display-surface { padding: var(--space-2); }
+}
 </style>

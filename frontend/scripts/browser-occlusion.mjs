@@ -358,11 +358,12 @@ export async function measureOcclusion(page, { primary, persistent = [], ignore 
 /**
  * 判定可见选项是否真的可达。
  * @param options 选项选择器列表
- * @param touch 触控档（true 时追加 44×44 命中区判定）
+ * @param touch 触控档（true 时追加命中区判定）
  * @param requirePresent 选择器必须有命中元素（默认 true）
+ * @param minTouchTargetPx 场景紧凑档可传 40；默认仍为 44
  */
-export async function measureReachability(page, { options, touch = false, requirePresent = true }) {
-  await page.evaluate(`window.__reachInput = ${JSON.stringify({ options, touch, requirePresent, limits: OCCLUSION_LIMITS })}`)
+export async function measureReachability(page, { options, touch = false, requirePresent = true, minTouchTargetPx = OCCLUSION_LIMITS.minTouchTargetPx }) {
+  await page.evaluate(`window.__reachInput = ${JSON.stringify({ options, touch, requirePresent, limits: { ...OCCLUSION_LIMITS, minTouchTargetPx } })}`)
   return page.probe(reachabilityProbe)
 }
 

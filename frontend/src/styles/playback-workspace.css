@@ -402,3 +402,30 @@
       minmax(var(--pb-roster-min), 1fr);
   }
 }
+
+/* 短视口横屏紧凑档（§9「强制横屏」）：scale.css 已把场景 token 收紧到 32/36/40。
+  传输按钮保持 36px 的视觉高度，用透明伪元素把命中区补到 40×40：绝对定位的包含块是
+  padding box（36px 外框去掉 1px 边框 = 34px），inset: -3px 得到 40px。相对视觉外框
+  向 gap 各伸 2px；gap 6px 中仍留 2px，两个 40px 命中区不重叠、不覆盖对方中心。 */
+
+@media (pointer: coarse) and (orientation: landscape) and (height <= 520px) {
+  [data-scene-surface].playback-workspace .pb-controls { gap: var(--space-2); }
+  [data-scene-surface].playback-workspace .pb-controls > .pb-btn,
+  [data-scene-surface].playback-workspace .pb-speed-picker > .pb-btn { position: relative; }
+  [data-scene-surface].playback-workspace .pb-controls > .pb-btn::before,
+  [data-scene-surface].playback-workspace .pb-speed-picker > .pb-btn::before {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: inherit;
+  }
+  [data-scene-surface].playback-workspace .pb-speed-item { min-block-size: var(--hit-min-comfortable); }
+  [data-scene-surface].playback-workspace .pb-panel-options label { min-block-size: var(--hit-min-comfortable); }
+  /* 分段控件（镜头模式、地图画质等）的 --control-h-sm 在紧凑档只有 32px，场景内仍需 40px。
+     选择器不绑定 .playback-workspace：地图 3D 的 .map3d 也是场景根，但不在回放工作台内。 */
+  [data-scene-surface] .segmented .segmented-option { min-height: var(--hit-min-comfortable); }
+  /* Replay3D：查看动作与复选框行保持 40px 命中区。规则原属 Replay3DPane 尾部，
+     移入共享场景样式表以满足组件行数预算（选择器显式带场景根）。 */
+  [data-scene-surface] .pb-root .tool-btn { min-height: var(--hit-min-comfortable); }
+  [data-scene-surface] .pb-root .toggle { min-height: var(--hit-min-comfortable); }
+}

@@ -214,6 +214,28 @@ function playbackControlProbe() {
   const hit = document.elementFromPoint(center.x, center.y)
   const time = document.querySelector('[data-test="pb-time"]')
   const reason = document.querySelector('[data-test="pb-play-unavailable"]')
+  const scene = document.querySelector('[data-scene-surface]')
+  const sceneStyle = getComputedStyle(scene || document.documentElement)
+  const minHit = parseFloat(sceneStyle.getPropertyValue('--hit-min-comfortable')) || 44
+  const space4 = parseFloat(sceneStyle.getPropertyValue('--space-4')) || 16
+  const compactScene = matchMedia('(pointer: coarse) and (orientation: landscape) and (height <= 520px)').matches
+  // 视觉框只有 36px 时，紧凑档靠透明伪元素把命中区补到 40px。
+  // 边界采样点本身是否算命中取决于亚像素取整，因此取目标框内缩 0.25px 的四边中点。
+  const hitBoxAt = (button) => {
+    const r = button.getBoundingClientRect()
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2
+    const dx = minHit / 2 - 0.25, dy = minHit / 2 - 0.25
+    const reaches = (x, y) => {
+      // 控件贴住视口边缘时，边框最后 0.5px 会被 Chrome 的可命中区域裁掉；
+      // 采样点限制在视口内 1px，避免把亚像素裁切误判成伪元素没有补足命中区。
+      const px = Math.min(Math.max(x, 1), innerWidth - 1)
+      const py = Math.min(Math.max(y, 1), innerHeight - 1)
+      const hit = document.elementFromPoint(px, py)
+      return hit === button || button.contains(hit)
+    }
+    return reaches(cx, cy) && reaches(cx - dx, cy) && reaches(cx + dx, cy)
+      && reaches(cx, cy - dy) && reaches(cx, cy + dy)
+  }
   return {
     found: true,
     disabled: play.disabled === true,
@@ -226,25 +248,43 @@ function playbackControlProbe() {
       ? `${hit.tagName}${typeof hit.className === 'string' && hit.className.trim() ? `.${hit.className.trim().split(/\s+/).join('.')}` : ''}`
       : null,
     formClass: root ? Array.from(root.classList).find((name) => name.startsWith('pb-form-')) || null : null,
-    /** 所有可见速度档位按钮的最小边（触屏点击区域契约：≥ 44px） */
-    speedMinSide: (() => {
-      const sides = [...document.querySelectorAll('[data-test^="pb-speed-"]')]
-        .map((b) => b.getBoundingClientRect())
-        .filter((r) => r.width > 0 && r.height > 0)
-        .map((r) => Math.min(r.width, r.height))
-      return sides.length ? Math.min(...sides) : null
+    /** 所有可见速度档位按钮都提供 minHit × minHit 的有效命中区（紧凑档 40 / 常规触屏 44） */
+    speedHit: (() => {
+      const buttons = [...document.querySelectorAll('button[data-test^="pb-speed-"]')]
+        .filter((b) => { const r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0 })
+      return buttons.length ? buttons.every(hitBoxAt) : null
+    })(),
+    speedHitDetail: (() => {
+      const buttons = [...document.querySelectorAll('button[data-test^="pb-speed-"]')]
+        .filter((b) => { const r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0 })
+      return buttons.map((b) => {
+        const r = b.getBoundingClientRect()
+        const cx = r.left + r.width / 2, cy = r.top + r.height / 2
+        const dx = minHit / 2 - 0.25, dy = minHit / 2 - 0.25
+        const at = (x, y) => {
+          const px = Math.min(Math.max(x, 1), innerWidth - 1)
+          const py = Math.min(Math.max(y, 1), innerHeight - 1)
+          const hit = document.elementFromPoint(px, py)
+          return hit === b || b.contains(hit)
+        }
+        return { test: b.dataset.test, w: r.width, h: r.height, center: at(cx, cy), left: at(cx - dx, cy), right: at(cx + dx, cy), top: at(cx, cy - dy), bottom: at(cx, cy + dy) }
+      })
     })(),
     /** 速度档位菜单展开后必须一行排开且不越出自身容器（档位个数变化时的回归点） */
     speedMenu: (() => {
       const group = document.querySelector('.pb-speed-menu')
       if (!group) return null
       const limit = group.getBoundingClientRect()
-      const buttons = [...group.querySelectorAll('.pb-speed-menu [data-test^="pb-speed-"]')].map((b) => b.getBoundingClientRect())
+      const items = [...group.querySelectorAll('.pb-speed-menu [data-test^="pb-speed-"]')]
+      const buttons = items.map((b) => b.getBoundingClientRect())
       if (!buttons.length) return null
       return {
         count: buttons.length,
         overflow: buttons.some((r) => r.left < limit.left - 1 || r.right > limit.right + 1 || r.top < limit.top - 1 || r.bottom > limit.bottom + 1),
         minSide: Math.min(...buttons.map((r) => Math.min(r.width, r.height))),
+        minWidth: Math.min(...buttons.map((r) => r.width)),
+        expectedWidth: compactScene ? minHit + space4 : minHit,
+        allHit: items.every(hitBoxAt),
       }
     })(),
     pageScrollWidth: document.documentElement.scrollWidth,
@@ -547,6 +587,17 @@ function check(failures, ok, message) {
   if (!ok) failures.push(message)
 }
 
+/** 场景根的有效触控下限：紧凑档 40px，常规触屏 44px；普通内容页不读场景 token。 */
+async function sceneHitTarget(page) {
+  const value = await page.evaluate(`(() => {
+    const scene = document.querySelector('[data-scene-surface]')
+    if (!scene) return 44
+    const token = parseFloat(getComputedStyle(scene).getPropertyValue('--hit-min-comfortable'))
+    return Number.isFinite(token) && token > 0 ? token : 44
+  })()`)
+  return value
+}
+
 /* ------------------------------------------------------------------ 场景 */
 
 const APP_SCENARIOS = [
@@ -805,6 +856,9 @@ function rosterGeometryProbe() {
   const root = document.querySelector('.pb-root')
   const out = { root: !!root, errors: [], boxes: {} }
   if (!root) return out
+  const scene = root.closest('[data-scene-surface]')
+  const hitComfortable = parseFloat(getComputedStyle(scene || root).getPropertyValue('--hit-min-comfortable')) || 44
+  out.hitComfortable = hitComfortable
   const rr = root.getBoundingClientRect()
   const transient = false
   const mobileRosterScroll = matchMedia('(width < 1200px) and (pointer: coarse)').matches
@@ -947,12 +1001,33 @@ function rosterGeometryProbe() {
   if (primary.some((element) => !element)) out.errors.push('shared primary controls must be present in transport')
   else {
     const boxes = primary.map((element) => element.getBoundingClientRect())
+    // 移动端工作台常高于视口（667×375 时控制条在 y≈526），elementFromPoint 只接受视口坐标；
+    // 先滚到控制条再测，否则整块都在视口外、所有采样点都会返回 null。
+    const scrollY = window.scrollY
+    transportControls.scrollIntoView({ block: 'center' })
+    const hitProbe = (element) => {
+      const r = element.getBoundingClientRect()
+      const x = r.left + r.width / 2, y = r.top + r.height / 2
+      const half = hitComfortable / 2 - 0.25
+      return [[x, y], [x - half, y], [x + half, y], [x, y - half], [x, y + half]]
+        .every(([px, py]) => {
+          const hit = document.elementFromPoint(px, py)
+          return hit === element || element.contains(hit)
+        })
+    }
+    out.primaryHitAreas = primary.map(hitProbe)
+    window.scrollTo(0, scrollY)
     const domOrder = [...transportControls.querySelectorAll('button[data-test]')]
       .map((element) => element.dataset.test).filter((id) => primaryIds.includes(id))
     if (JSON.stringify(domOrder) !== JSON.stringify(primaryIds)) out.errors.push(`primary control DOM order: ${domOrder.join(',')}`)
     if (boxes.some((box, index) => index > 0 && box.left < boxes[index - 1].right - 1)
       || boxes.some((box) => Math.abs(box.top - boxes[0].top) > 1)) out.errors.push('primary controls must stay in x-order on one row')
-    if (out.phone && boxes.some((box) => Math.min(box.width, box.height) < 43.5)) out.errors.push('primary touch targets must be at least 44px')
+    if (out.phone) {
+      if (boxes.some((box) => Math.min(box.width, box.height) < hitComfortable - 4.5)) {
+        out.errors.push(`primary touch targets must provide ${hitComfortable}px hit area`)
+      }
+      if (out.primaryHitAreas.some((hit) => !hit)) out.errors.push('primary touch hit probes must reach every control edge')
+    }
   }
   if (out.phone) {
     const inline = transportControls && transportControls.querySelector('[data-test="pb-fullscreen"]')
@@ -1406,7 +1481,7 @@ async function waitForStableLayout(page, { timeout = 10_000 } = {}) {
   return previous
 }
 
-async function check3DDrawingSurface(page, failures, scenario, viewport) {
+async function check3DDrawingSurface(page, failures, scenario, viewport, sceneHit) {
   // 手机横屏：全屏入口内联在传输条，6 个主控件；手机竖屏：浮动入口，传输条 5 个。
   // touch / portrait 由调用方经 page.callWith 显式传入（probe 在页面内执行，无 Node 闭包）。
   const probe = (touch, portrait) => {
@@ -1449,8 +1524,8 @@ async function check3DDrawingSurface(page, failures, scenario, viewport) {
   const label = viewport.width + 'x' + viewport.height
   check(failures, !!before.entry && before.entry.reachable, label + ': Drawing entry must be hit-testable in the 3D tool-row')
   if (before.entry) {
-    check(failures, !scenario.touch || (before.entry.width >= 43.5 && before.entry.height >= 43.5),
-      label + ': Drawing entry must keep a 44px touch target')
+    check(failures, !scenario.touch || (before.entry.width >= sceneHit - 0.5 && before.entry.height >= sceneHit - 0.5),
+      label + `: Drawing entry must keep a ${sceneHit}px touch target`)
   }
   // 紧凑形态的镜头 / GLB 在 Display 面里，Drawing 入口留在控制条
   check(failures, compactBar ? !before.toolRow : before.toolRow, label + ': tool-row belongs to the controls only in wide forms')
@@ -1479,7 +1554,9 @@ async function check3DDrawingSurface(page, failures, scenario, viewport) {
       const bar = document.querySelector('[data-test="pb-annot-toolbar"]')
       bar.scrollLeft += tool.getBoundingClientRect().left - bar.getBoundingClientRect().left - (bar.clientWidth - tool.offsetWidth) / 2
     })()`)
-    const reach = await measureReachability(page, { options: ['[data-occlusion-control=current]'], touch: scenario.touch })
+    const reach = await measureReachability(page, {
+      options: ['[data-occlusion-control=current]'], touch: scenario.touch, minTouchTargetPx: sceneHit,
+    })
     for (const failure of reach.failures) check(failures, false, `${label}: AnnotationToolbar 可达: ${failure}`)
   }
   await page.evaluate(`(() => {
@@ -1619,12 +1696,15 @@ async function runRosterGeometryScenario(env, scenario) {
   // 车道的上下界、控制条的位置会一起重排，读到的就是「上一轮布局 + 这一轮变量」的混合几何
   // （实测同一次运行里 1024×768 会因为抢在重排前读而失败，稍后再读就通过）。
   await waitForStableLayout(page)
+  let sceneHit = await sceneHitTarget(page)
 
   if (scenario.rotateTo) {
     await page.emulate({ ...scenario, ...scenario.rotateTo })
     await page.waitFor(() => document.querySelector('.pb-root')?.classList.contains('roster-side'),
       { label: 'rotated 3D pane switches to Team 1 | Stage | Team 2' })
     await waitForStableLayout(page)
+    // 旋转后媒体查询从竖屏触控档切到紧凑档，命中下限必须重新读取。
+    sceneHit = await sceneHitTarget(page)
   }
   const viewport = scenario.rotateTo || scenario
   const sceneBefore = await page.evaluate('(window.__sceneMarker = window.__pbPane.sceneApi, true)')
@@ -1658,7 +1738,8 @@ async function runRosterGeometryScenario(env, scenario) {
       const x = r.left + r.width / 2, y = r.top + r.height / 2
       return { x, y, reachable: button.contains(document.elementFromPoint(x, y)), width: r.width, height: r.height }
     })()`)
-    check(failures, hit.reachable && hit.width >= 44 && hit.height >= 44, 'toolbar disclosure must be hit-testable with a 44px target')
+    check(failures, hit.reachable && hit.width >= sceneHit - 0.5 && hit.height >= sceneHit - 0.5,
+      `toolbar disclosure must be hit-testable with a ${sceneHit}px target`)
     await page.tap({ x: hit.x, y: hit.y, touch: scenario.touch })
     await page.waitForValue(`document.querySelector(${JSON.stringify(toolbarSelector)})?.getAttribute('aria-expanded')`,
       value => value === String(!collapsed), { label: 'toolbar disclosure changes after raw input' })
@@ -1695,8 +1776,8 @@ async function runRosterGeometryScenario(env, scenario) {
         overlap: r.left < f.right && f.left < r.right && r.top < f.bottom && f.top < r.bottom,
         leftHit: hit(r.left + 2), rightHit: hit(r.right - 2) }
     })
-    check(failures, slider && slider.width >= 44 && slider.centerError <= 1 && !slider.overlap && slider.leftHit && slider.rightHit,
-      `3D replay distance slider hit geometry: ${JSON.stringify(slider)}`)
+    check(failures, slider && slider.width >= sceneHit - 0.5 && slider.centerError <= 1 && !slider.overlap && slider.leftHit && slider.rightHit,
+      `3D replay distance slider hit geometry (${sceneHit}px): ${JSON.stringify(slider)}`)
   }
 
   // —— #727 3D 主内容遮挡（design-language §5 例外段）：HUD 可以浮在场景上，但控制条不得压入中心 ——
@@ -1852,7 +1933,7 @@ async function runRosterGeometryScenario(env, scenario) {
     check(failures, geometry.side && !geometry.portrait, `expected Team 1 | Stage | Team 2 (class roster-side): portrait=${geometry.portrait} side=${geometry.side}`)
   }
 
-  await check3DDrawingSurface(page, failures, scenario, viewport)
+  await check3DDrawingSurface(page, failures, scenario, viewport, sceneHit)
 
   // Desktop uses approximately 25 / 50 / 25 columns.
   // 2026-10-05 布局恢复为「场景铺满 + 浮层」：2/6/2 列几何断言编码的是被替换的旧契约，
@@ -1991,7 +2072,9 @@ async function runRosterGeometryScenario(env, scenario) {
   check(failures, clicked(speedToggle), `speed picker not clickable: ${speedToggle}`)
   if (clicked(speedToggle)) {
     await page.waitFor(() => !!document.querySelector('[data-test="pb-speed-menu"]'), { label: 'speed menu opens' })
-    const speedReach = await measureReachability(page, { options: ['[data-test="pb-speed-menu"] button'], touch: scenario.touch })
+    const speedReach = await measureReachability(page, {
+      options: ['[data-test="pb-speed-menu"] button'], touch: scenario.touch, minTouchTargetPx: sceneHit,
+    })
     for (const failure of speedReach.failures) check(failures, false, `3D 倍速菜单可达: ${failure}`)
     await page.evaluate(`document.querySelector('[data-test="pb-speed-current"]').click()`)
     await page.waitFor(() => !document.querySelector('[data-test="pb-speed-menu"]'), { label: 'speed menu closes' })
@@ -2034,7 +2117,9 @@ async function runRosterGeometryScenario(env, scenario) {
           option.scrollIntoView({ block: 'center', inline: 'nearest' })
         }
       })()`)
-      const reach = await measureReachability(page, { options: ['[data-occlusion-control=current]'], touch: scenario.touch })
+      const reach = await measureReachability(page, {
+        options: ['[data-occlusion-control=current]'], touch: scenario.touch, minTouchTargetPx: sceneHit,
+      })
       for (const failure of reach.failures) check(failures, false, `3D Display 可达: ${failure}`)
       check(failures, reach.sampled > 0, `3D Display 第 ${i} 项没有做到命中采样: ${JSON.stringify(reach.results)}`)
     }
@@ -2116,6 +2201,9 @@ async function runRosterGeometryScenario(env, scenario) {
       })
       check(failures, points.fullscreen?.hit && points.restore?.hit,
         `hidden UI buttons must both be independently hit-testable: ${JSON.stringify(points)}`)
+      // 紧凑档全屏按钮本体 40px、top 6；恢复入口必须真的让到它下方，而不是只测两个中心点各自可点。
+      check(failures, points.restore?.rect?.[1] >= points.fullscreen?.rect?.[3] - 0.5,
+        `hidden UI restore must sit below the fullscreen button: ${JSON.stringify(points)}`)
       if (points.fullscreen?.hit && points.restore?.hit) {
         await page.installInputTrace()
         await page.tap({ x: points.fullscreen.x, y: points.fullscreen.y, touch: true })
@@ -2347,6 +2435,7 @@ async function runPlaybackControlScenario(env, scenario) {
 
   await page.goto(`${env.origin}/scripts/browser-fixtures/playback-controls.html?duration=${scenario.duration}`)
   await page.waitFor(() => !!document.querySelector('[data-test="pb-play"]'), { label: 'playback controls' })
+  const sceneHit = await sceneHitTarget(page)
 
   const before = await page.probe(playbackControlProbe)
   // §landscape：非全屏手机横屏时地图按宽度定尺寸，方形地图可以比视口还高，
@@ -2354,12 +2443,18 @@ async function runPlaybackControlScenario(env, scenario) {
   const control = before.hitIsButton ? before : await page.revealControl('[data-test="pb-play"]')
   check(failures, control.hitIsButton,
     `play button center hit ${control.hitDescription} instead (viewport=${control.viewportWidth}x${control.viewportHeight} geometry=${JSON.stringify(control.geometry)})`)
-  if (scenario.touch && before.speedMinSide != null) {
-    check(failures, before.speedMinSide >= 43.5,
-      `touch speed option hit target is ${before.speedMinSide.toFixed(1)}px, below 44px`)
+  // 命中区必须在档位控件真正进入视口后测量：1024×768 平板的地图高于视口，
+  // 控件条会换行且档位可能在首屏之外；此时 elementFromPoint 返回 null 是可达性问题，
+  // 不是命中区问题。先滚到档位控件本身，再判定 44×44 的可点范围。
+  const speed = scenario.touch && !control.speedHit
+    ? await page.revealControl('[data-test="pb-speed-current"]')
+    : control
+  if (scenario.touch && speed.speedHit != null) {
+    check(failures, speed.speedHit,
+      `touch speed option must expose a ${sceneHit}x${sceneHit} hit target: ${JSON.stringify(speed.speedHitDetail)}`)
   }
   // 速度档位是渐进披露：常驻只有当前值，展开后是一列档位菜单——档位齐全、不越出自身容器、
-  // 触屏每个档位都满足 44px。菜单是覆盖层，不参与控件条高度。
+  // 触屏每个档位都满足场景命中下限（紧凑档 40px、常规触屏 44px）。菜单是覆盖层，不参与控件条高度。
   {
     await page.evaluate(`document.querySelector('[data-test="pb-speed-current"]')?.click()`)
     await delay(150)
@@ -2370,8 +2465,10 @@ async function runPlaybackControlScenario(env, scenario) {
         `speed menu must list every shared speed: ${JSON.stringify(menu.speedMenu)}`)
       check(failures, !menu.speedMenu.overflow, 'speed options overflow their menu')
       if (scenario.touch) {
-        check(failures, menu.speedMenu.minSide >= 43.5,
-          `touch speed option hit target is ${menu.speedMenu.minSide.toFixed(1)}px, below 44px`)
+        check(failures, menu.speedMenu.allHit,
+          `touch speed option must expose a ${sceneHit}x${sceneHit} hit target: ${JSON.stringify(menu.speedMenu)}`)
+        check(failures, menu.speedMenu.minWidth >= menu.speedMenu.expectedWidth - 0.5,
+          `touch speed menu option width is ${menu.speedMenu.minWidth.toFixed(1)}px, below ${menu.speedMenu.expectedWidth}px: ${JSON.stringify(menu.speedMenu)}`)
       }
     }
     await page.evaluate(`document.querySelector('[data-test="pb-speed-current"]')?.click()`)
@@ -3348,6 +3445,7 @@ const WORKSPACE_2D_SCENARIOS = [
   { name: 'ws2d-1024x768-tablet', width: 1024, height: 768, touch: false, layout: 'lanes' },
   // 1280 宽桌面：侧边车道（≈320）比详情浮窗（340）窄——初始落位必须收窄浮窗，而不是伸进中心栏盖住 HUD
   { name: 'ws2d-1280x720-desktop', width: 1280, height: 720, touch: false, layout: 'lanes' },
+  { name: 'ws2d-1280x800-desktop', width: 1280, height: 800, touch: false, layout: 'lanes' },
   { name: 'ws2d-1600x900-desktop', width: 1600, height: 900, touch: false, layout: 'lanes' },
   { name: 'ws2d-1792x922-fullscreen-desktop', width: 1792, height: 922, touch: false, layout: 'lanes', fullscreen: true },
 ]
@@ -3400,6 +3498,21 @@ function workspace2dProbe(touch = false) {
     : ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']
   const primary = primaryIds
     .map((test) => box(document.querySelector(`.pb-controls [data-test="${test}"]`)))
+  // 视觉盒仍是 36px：用真实命中测试验证伪元素把可点范围扩到 ≥40×40（不读 token 代替）。
+  const primaryHitAreas = primaryIds.map((test, index) => {
+    const el = document.querySelector(`.pb-controls [data-test="${test}"]`)
+    const b = primary[index]
+    if (!el || !b) return { test, missing: true }
+    const hit = (x, y) => { const target = document.elementFromPoint(x, y); return target === el || el.contains(target) }
+    const cx = b.l + b.w / 2, cy = b.t + b.h / 2
+    return {
+      test, center: hit(cx, cy), top: hit(cx, b.t - 1.5), bottom: hit(cx, b.b + 1.5),
+      left: hit(b.l - 1.5, cy), right: hit(b.r + 1.5, cy), visualHeight: b.h, visualWidth: b.w,
+    }
+  })
+  const scene = document.querySelector('[data-scene-surface]')
+  const sceneStyle = getComputedStyle(scene || document.documentElement)
+  const token = (name) => parseFloat(sceneStyle.getPropertyValue(name)) || null
   const details = document.querySelector('[data-test="pb-info"]')
   const transport = document.querySelector('[data-test="pb-transport-slot"]')
   const inline = document.querySelector('[data-test="pb-inline-area"]')
@@ -3443,6 +3556,12 @@ function workspace2dProbe(touch = false) {
     })(),
     fullscreenCount: document.querySelectorAll('[data-test="pb-fullscreen"]').length,
     primaryMinSide: Math.min(...primary.filter(Boolean).map((b) => Math.min(b.w, b.h))),
+    primaryHitAreas,
+    tokens: {
+      coarse: matchMedia('(pointer: coarse)').matches,
+      compact: matchMedia('(pointer: coarse) and (orientation: landscape) and (height <= 520px)').matches,
+      controlMd: token('--control-h-md'), hitComfortable: token('--hit-min-comfortable'), space2: token('--space-2'),
+    },
     buttonCount: buttons.length,
     layout: ['.battle-playback', '.pb-hud', '.pb-main', '.pb-map-stage', '.pb-map', '.pb-transport-slot', '.pb-mobile-overlay', '.pb-mobile-overlay-content', '.pb-team-lane-left', '[data-test="pb-roster-row"]'].map((selector) => {
       const element = document.querySelector(selector)
@@ -3688,9 +3807,11 @@ async function checkDisplaySurface(page, failures, layout, scenario) {
       for (const failure of detailsPaint.failures) check(failures, false, `Display 必须压过车辆详情面板: ${failure}`)
     }
     // 选项不只是按钮：显示开关是 label 包着的复选框，只查 button 会漏掉整块被盖住的复选框区
+    const compact = !!scenario.touch && scenario.height <= 520 && scenario.width > scenario.height
     const reach = await measureReachability(page, {
       options: ['[data-testid="display-panel"] button', '[data-testid="display-panel"] label'],
       touch: !!scenario.touch,
+      minTouchTargetPx: compact ? 40 : undefined,
     })
     for (const failure of reach.failures) check(failures, false, `Display 选项可达性: ${failure}`)
     check(failures, reach.sampled > 0, 'Display 可达性断言空跑：没有任何选项被实际命中采样')
@@ -3901,7 +4022,20 @@ async function runWorkspace2DScenario(env, scenario) {
   check(failures, tops.length === g.primaryIds.length && Math.max(...tops) - Math.min(...tops) <= 1,
     `primary controls are not one row: ${JSON.stringify(g.primaryTops)}`)
   if (scenario.touch) {
-    check(failures, g.primaryMinSide >= 43.5, `primary control below 44px: ${g.primaryMinSide}`)
+    if (g.tokens.compact) {
+      check(failures, g.tokens.controlMd === 36 && g.tokens.hitComfortable === 40 && g.tokens.space2 === 6,
+        `compact scene tokens wrong: ${JSON.stringify(g.tokens)}`)
+      check(failures, g.primaryMinSide >= 35.5, `compact primary visual height below 36px: ${g.primaryMinSide}`)
+    } else {
+      check(failures, g.tokens.hitComfortable === 44, `non-compact touch hit token changed: ${JSON.stringify(g.tokens)}`)
+      check(failures, g.primaryMinSide >= 43.5, `primary control below 44px: ${g.primaryMinSide}`)
+    }
+    check(failures, g.primaryHitAreas.every((area) => area.center
+      && (!g.tokens.compact || (area.top && area.bottom && area.left && area.right))),
+      `primary controls do not expose a 40x40 effective hit area: ${JSON.stringify(g.primaryHitAreas)}`)
+  } else {
+    check(failures, g.tokens.compact === false && g.tokens.controlMd === 32 && g.tokens.hitComfortable === 44,
+      `desktop scene tokens changed: ${JSON.stringify(g.tokens)}`)
   }
 
   const team1 = Array.from({ length: 7 }, (_, i) => 1001 + i)
