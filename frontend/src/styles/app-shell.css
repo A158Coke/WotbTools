@@ -1,8 +1,11 @@
 /* Shared application primitives. Feature components own their layout and state. */
 * { box-sizing: border-box; }
 html, body, #app { min-height: 100%; }
-/* 底色与氛围图移到 AppShell 的 .app-backdrop 固定装饰层（design-language §2 全站环境背景）：
-   body 保持透明，避免 iOS Safari 不支持 background-attachment: fixed 时背景错位。 */
+/* 页面底色 = 主题底纹 + 环境光 + 纯色 canvas（design-language §2 装饰插槽 5）。
+   底纹与环境光移到 AppShell 的 .app-backdrop 固定装饰层，body 保持透明；
+   这是为了避开 iOS Safari 不支持 background-attachment: fixed 的问题。
+   图片层未 ready 时 html 自铺 canvas，避免白闪。 */
+html { background: var(--color-canvas); }
 body { margin: 0; background: transparent; color: var(--color-text-primary); font: var(--type-body); }
 
 /* 页面级卡片的磨砂玻璃表面（§2 D10）：背景图只从这些大面板透出；
@@ -51,6 +54,8 @@ h2 { margin: 0 0 var(--space-3); color: var(--color-text-primary); font: var(--t
   color: var(--color-text-tertiary);
   font: var(--type-caption);
   text-align: center;
+  /* 页脚文字落在环境光/底纹之上时，用 canvas 渐隐托底，避免 1px 网格线吃掉小字对比度。 */
+  background: linear-gradient(180deg, transparent 0, var(--color-canvas) var(--space-5));
 }
 .app-footer a { color: inherit; text-decoration: underline; text-underline-offset: var(--space-1); }
 .business-bootstrap-notice {

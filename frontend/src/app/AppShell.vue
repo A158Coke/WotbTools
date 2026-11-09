@@ -351,6 +351,7 @@ watch(uiProfile, syncBackdrop)
   pointer-events: none;
   background:
     var(--theme-pattern),
+    var(--theme-backdrop),
     var(--theme-backdrop-scrim),
     var(--theme-backdrop-image) var(--theme-backdrop-position) / cover,
     var(--color-canvas);
@@ -364,6 +365,7 @@ watch(uiProfile, syncBackdrop)
   .app-backdrop {
     background:
       var(--theme-pattern),
+      var(--theme-backdrop),
       var(--theme-backdrop-scrim),
       var(--theme-backdrop-image-portrait) var(--theme-backdrop-position-portrait) / cover,
       var(--color-canvas);

@@ -943,11 +943,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (!raw) return new THREE.Color(fallback);
                 try { return new THREE.Color(raw); } catch { return new THREE.Color(fallback); }
             };
-            const hemi = new THREE.HemisphereLight(0xffffff, readThemeColor('--color-surface-2', '#172024'), 2.2);
+            const hemi = new THREE.HemisphereLight(0xffffff, readThemeColor('--color-surface-2', '#2f2311'), 2.2);
             scene.add(hemi);
             // 网页主题（四季）切换时，半球光底面跟随 UI 表面色；画布背景由透明 CSS 继承。
             const themeObserver = new MutationObserver(() => {
-                hemi.groundColor.copy(readThemeColor('--color-surface-2', '#172024'));
+                hemi.groundColor.copy(readThemeColor('--color-surface-2', '#2f2311'));
             });
             themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
             cleanups.push(() => themeObserver.disconnect());
