@@ -1285,8 +1285,10 @@ onBeforeUnmount(() => {
         font: var(--type-caption);
     }
     /* 厚度值 #click-armor 永不参与收缩；部件名与「基础装甲」标签可省略。 */
-    .armor-view #click-info h3 { flex: 1 1 auto; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; }
-    .armor-view #click-info .row { flex: none; min-inline-size: 0; }
+    .armor-view #click-info h3 { flex: 1 1 0; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; }
+    /* 结果卡最窄时也先保证厚度数值：部件名以 0 为 flex 基准完全让位，
+       行拿到剩余宽度后只压缩标签；#click-armor 不收缩。 */
+    .armor-view #click-info .row { flex: 0 1 auto; min-inline-size: 0; }
     .armor-view #click-info .row > span:first-child { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; }
     .armor-view #click-info #click-armor { flex: none; }
     .armor-view #traj-info { max-block-size: 72px; }

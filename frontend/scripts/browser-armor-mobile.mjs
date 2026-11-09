@@ -65,6 +65,11 @@ function armorLayoutProbe() {
   return {
     url: location.href,
     viewport: { width: innerWidth, height: innerHeight },
+    horizontalOverflow: {
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+      overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+    },
     coarse: matchMedia('(pointer: coarse)').matches,
     hasStage: !!stage,
     unsupported: !!document.querySelector('[data-testid="scene3d-unsupported"]'),
@@ -110,7 +115,35 @@ function armorLayoutProbe() {
         display: 'union', visible: back.visible && card.visible,
       }
     })(),
-    clickInfo: box('#click-info'),
+    clickInfo: (() => {
+      const card = box('#click-info')
+      if (!card) return null
+      const element = document.querySelector('#click-info')
+      const style = getComputedStyle(element)
+      const borderLeft = parseFloat(style.borderLeftWidth)
+      const borderRight = parseFloat(style.borderRightWidth)
+      const contentLeft = Math.round(card.left + borderLeft + parseFloat(style.paddingLeft))
+      const contentRight = Math.round(card.right - borderRight - parseFloat(style.paddingRight))
+      return {
+        ...card,
+        maxInlineSize: style.maxInlineSize,
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+        contentLeft,
+        contentRight,
+        contentWidth: contentRight - contentLeft,
+        clipped: element.scrollWidth > element.clientWidth + 1,
+      }
+    })(),
+    clickRow: (() => {
+      const element = document.querySelector('#click-info .row')
+      if (!element) return null
+      return {
+        ...box('#click-info .row'),
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+      }
+    })(),
     clickPart: box('#click-part'),
     /** 厚度值节点本身是否完整落在结果卡内（overflow:hidden 裁切不能只看外层 box）。 */
     clickArmor: (() => {
@@ -128,6 +161,17 @@ function armorLayoutProbe() {
         textRight: Math.round(textRect.right),
         insideCard: textRect.left >= card.left - 1 && textRect.right <= card.right + 1
           && textRect.top >= card.top - 1 && textRect.bottom <= card.bottom + 1,
+        // 父级 #click-info 是 overflow:hidden，外框内不等于可见：必须落在 padding/border 之后的内容区。
+        ...(() => {
+          const style = getComputedStyle(document.querySelector('#click-info'))
+          const contentLeft = card.left + parseFloat(style.borderLeftWidth) + parseFloat(style.paddingLeft)
+          const contentRight = card.right - parseFloat(style.borderRightWidth) - parseFloat(style.paddingRight)
+          return {
+            insideContent: textRect.left >= contentLeft - 1 && textRect.right <= contentRight + 1,
+            contentLeft: Math.round(contentLeft),
+            contentRight: Math.round(contentRight),
+          }
+        })(),
         selfClipped: value.scrollWidth > value.clientWidth + 1,
       }
     })(),
@@ -336,6 +380,8 @@ function checkCompactLandscapeHud(failures, layout, label) {
   const missing = (layout.requiredNodes || []).filter(node => !node.present).map(node => node.selector)
   check(failures, missing.length === 0, `${label}: 场景脚本依赖的 DOM 节点缺失：${missing.join(', ')}`)
   check(failures, layout.coarse === true, `${label}: 设备仿真未生效（pointer: coarse 必须为 true）`)
+  check(failures, layout.horizontalOverflow?.overflow === false,
+    `${label}: 横屏布局出现横向溢出（${JSON.stringify(layout.horizontalOverflow)}）`)
 
   const result = layout.trajInfo?.visible ? layout.trajInfo : layout.clickInfo
   const boxes = {
@@ -965,6 +1011,9 @@ function armorVisibilityProbe() {
 
 const COMPACT_LANDSCAPE_SCENARIOS = [
   { name: 'armor-compact-landscape-844x390', width: 844, height: 390, touch: true, safeAreaInsets: { left: 47, right: 47 } },
+  // 768px 断点边界：>=768 结果胶囊回到左上胶囊右侧，可用宽度被两侧安全区与面板夹到最窄。
+  { name: 'armor-compact-landscape-780x360', width: 780, height: 360, touch: true, safeAreaInsets: { left: 47, right: 47 } },
+  { name: 'armor-compact-landscape-768x360', width: 768, height: 360, touch: true, safeAreaInsets: { left: 47, right: 47 } },
   { name: 'armor-compact-landscape-740x360', width: 740, height: 360, touch: true },
   { name: 'armor-compact-landscape-600x320', width: 600, height: 320, touch: true },
 ]
@@ -1172,6 +1221,11 @@ async function runCompactLandscapeScenario(env, scenario) {
       `${label}: 厚度数值节点文本异常（${JSON.stringify(valueLayout.clickArmor)}）`)
     check(failures, valueLayout.clickArmor?.insideCard === true && valueLayout.clickArmor?.selfClipped === false,
       `${label}: 厚度数值节点被裁切（${JSON.stringify(valueLayout.clickArmor)}）`)
+    check(failures, valueLayout.clickArmor?.insideContent === true,
+      `${label}: 厚度数值超出结果卡可见内容区（card=${JSON.stringify(valueLayout.clickInfo)} value=${JSON.stringify(valueLayout.clickArmor)}）`)
+    check(failures, valueLayout.clickInfo?.clipped === false
+      && valueLayout.clickRow?.scrollWidth <= (valueLayout.clickInfo?.contentWidth ?? 0) + 1,
+      `${label}: 厚度数值行横向溢出结果卡（row=${JSON.stringify(valueLayout.clickRow)} card=${JSON.stringify(valueLayout.clickInfo)}）`)
     check(failures, valueLayout.clickInfo.height <= 40,
       `${label}: 厚度结果卡高 ${valueLayout.clickInfo.height}px，超过 40px`)
     console.log(`[browser-armor-mobile] ${label} thickness "${part} / ${armor}": card=${JSON.stringify(valueLayout.clickInfo)} value=${JSON.stringify(valueLayout.clickArmor)}`)
