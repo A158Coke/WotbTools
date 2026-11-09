@@ -11,11 +11,30 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 const rect = (left, top, width, height) => ({ left, top, width, height, right: left + width, bottom: top + height })
-async function openSurface(hostRect, anchorRect) {
+async function openSurface(hostRect, anchorRect, { transportRect, compact = false } = {}) {
   const host = document.createElement('div')
   const anchor = document.createElement('button')
   host.getBoundingClientRect = () => hostRect
   anchor.getBoundingClientRect = () => anchorRect
+  if (transportRect) {
+    const transport = document.createElement('div')
+    transport.className = 'pb-transport-slot'
+    transport.getBoundingClientRect = () => transportRect
+    transport.appendChild(anchor)
+  }
+  if (compact) {
+    // measure() 用同一条件判断是否把面停在传输条上沿之外；happy-dom 默认 media query 不命中。
+    vi.spyOn(window, 'matchMedia').mockImplementation(query => ({
+      matches: query === '(pointer: coarse) and (orientation: landscape) and (height <= 520px)',
+      media: query,
+      onchange: null,
+      addEventListener() {},
+      removeEventListener() {},
+      addListener() {},
+      removeListener() {},
+      dispatchEvent: () => false,
+    }))
+  }
   // 焦点断言要求真实在文档里（不在文档中的元素 focus() 不会成为 activeElement）。
   const container = document.createElement('div')
   document.body.appendChild(container)
@@ -41,6 +60,15 @@ describe('PlaybackDisplaySurface', () => {
     expect(wrapper.get('section').element.style.left).toBe('292px')
     expect(wrapper.get('section').element.style.top).toBe('196px')
     expect(wrapper.get('section').element.style.maxHeight).toBe('468px')
+  })
+  it('stacks above the compact landscape transport bar instead of the gear', async () => {
+    // 844×390 的传输条是全宽常驻条；如果按 gear 上沿定位，面会盖住条顶 8px。
+    const { wrapper } = await openSurface(rect(0, 0, 844, 390), rect(700, 330, 36, 36), {
+      transportRect: rect(0, 318, 844, 46),
+      compact: true,
+    })
+    expect(wrapper.get('section').element.style.top).toBe('34px')
+    expect(wrapper.get('section').element.style.maxHeight).toBe('306px')
   })
   it('uses the lower side when above has insufficient room', async () => {
     const { wrapper } = await openSurface(rect(20, 20, 600, 600), rect(200, 40, 44, 44))

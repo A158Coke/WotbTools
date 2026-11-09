@@ -1,9 +1,30 @@
 /* Shared application primitives. Feature components own their layout and state. */
 * { box-sizing: border-box; }
 html, body, #app { min-height: 100%; }
-/* 页面底色 = 主题底纹 + 环境光 + 纯色 canvas（design-language §2 装饰插槽 5）；
-   卡片与数据区仍是纯色表面，场景根（data-scene-surface）自铺不透明底，不叠这层。 */
-body { margin: 0; background: var(--theme-pattern), var(--theme-backdrop), var(--color-canvas); background-attachment: fixed; color: var(--color-text-primary); font: var(--type-body); }
+/* 页面底色 = 主题底纹 + 环境光 + 纯色 canvas（design-language §2 装饰插槽 5）。
+   底纹与环境光移到 AppShell 的 .app-backdrop 固定装饰层，body 保持透明；
+   这是为了避开 iOS Safari 不支持 background-attachment: fixed 的问题。
+   图片层未 ready 时 html 自铺 canvas，避免白闪。 */
+html { background: var(--color-canvas); }
+body { margin: 0; background: transparent; color: var(--color-text-primary); font: var(--type-body); }
+
+/* 页面级卡片的磨砂玻璃表面（§2 D10）：背景图只从这些大面板透出；
+   表格、数据密集区、输入框与回放 HUD 仍使用 --color-surface-N 纯色。
+   无 backdrop-filter 的浏览器退回纯色，不能依赖半透明表面保证文字对比度。 */
+.surface-glass-1,
+.surface-glass-2,
+.surface-glass-3 {
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  backdrop-filter: blur(16px) saturate(1.2);
+}
+.surface-glass-1 { background: var(--color-surface-1-glass); }
+.surface-glass-2 { background: var(--color-surface-2-glass); }
+.surface-glass-3 { background: var(--color-surface-3-glass); }
+@supports not (backdrop-filter: blur(1px)) {
+  .surface-glass-1 { background: var(--color-surface-1); }
+  .surface-glass-2 { background: var(--color-surface-2); }
+  .surface-glass-3 { background: var(--color-surface-3); }
+}
 a { color: var(--color-accent-text); text-decoration: none; }
 button, input, select, textarea { font-family: inherit; }
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {

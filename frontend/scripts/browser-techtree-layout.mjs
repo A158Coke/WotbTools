@@ -2,7 +2,8 @@
  * 科技树 / compact 页头布局门禁（真实浏览器几何，不是源码正则）。
  *
  * 锁定的 invariant：
- * - 竖屏手机按等级从高到低一行一级（无等级标尺），页头一行（≤56px，DC-ARC-02），国别页签单行横滑；
+ * - 竖屏手机按等级从高到低一行一级（无等级标尺），分区主视觉紧凑横幅（88–112px），国别页签单行横滑；
+ * - 矮横屏隐藏分区主视觉，让树保留约两行视口；
  * - 外壳没有底部常驻栏（L1）：科技树滚动区与吸底等级条都停在视口底边之内；
  * - 矮横屏树视口至少约两行；平板 / 桌面等级条保持在滚动视口内；
  * - 任何形态都没有页面级横向溢出。
@@ -72,7 +73,8 @@ function layoutProbe() {
   const q = selector => document.querySelector(selector)
   const scroll = q('.tt-scroll') || q('.tt-tiers')
   const ruler = q('.tt-ruler')
-  const header = q('.techtree .page-header')
+  const header = q('.techtree .showcase-hero.is-compact')
+  const legacyHeader = q('.techtree .page-header')
   const tabs = q('.tt-tabs')
   return {
     viewport: { width: innerWidth, height: innerHeight },
@@ -81,6 +83,8 @@ function layoutProbe() {
       clientWidth: document.documentElement.clientWidth,
     },
     header: rect(header),
+    legacyHeader: rect(legacyHeader),
+    tankopedia: rect(q('.techtree .showcase-hero-toolbar [data-testid="techtree-tankopedia"]')),
     tabs: rect(tabs),
     tabRows: tabs ? new Set([...tabs.children].map((element) => Math.round(element.getBoundingClientRect().top))).size : null,
     scroll: scroll ? { ...rect(scroll), clientHeight: scroll.clientHeight, scrollHeight: scroll.scrollHeight } : null,
@@ -96,7 +100,15 @@ function layoutProbe() {
 function assertScenario(scenario, layout) {
   const label = scenario.name
   assert.ok(layout.cells >= ROWS * COLS, `${label}: 科技树未完整渲染（cells=${layout.cells}）`)
-  assert.ok(layout.header, `${label}: 缺少 PageHeader`)
+  if (scenario.landscape) {
+    assert.equal(layout.header.height, 0, `${label}: 矮横屏应隐藏分区主视觉（height=${layout.header.height}）`)
+    assert.ok(
+      layout.tankopedia && layout.tankopedia.height > 0,
+      `${label}: 隐藏横幅后仍须保留「坦克百科」操作`,
+    )
+  } else {
+    assert.ok(layout.header, `${label}: 缺少分区主视觉紧凑横幅`)
+  }
   assert.ok(layout.scroll, `${label}: 缺少树滚动区`)
   assert.equal(layout.tabBar, false, `${label}: 外壳不得渲染底部 Tab 栏（L1）`)
   assert.ok(
@@ -114,7 +126,11 @@ function assertScenario(scenario, layout) {
     assert.equal(layout.tabRows, 1, `${label}: 国别页签必须单行横滑（rows=${layout.tabRows}）`)
     assert.ok(layout.typeFilter && layout.typeFilter.bottom <= layout.scroll.top + 1, `${label}: 车种分段必须在等级列表之上`)
     assert.ok(layout.smallestCell >= 44, `${label}: 坦克卡片触控尺寸不足（${layout.smallestCell}px）`)
-    assert.ok(layout.header.height <= 56, `${label}: compact 页头 ${layout.header.height}px 超过 DC-ARC-02 的 56px`)
+    assert.ok(
+      layout.header.height >= 88 && layout.header.height <= 112,
+      `${label}: compact 横幅 ${layout.header.height}px 不在 88–112px 区间`,
+    )
+    assert.equal(layout.legacyHeader, null, `${label}: 不应再渲染 PageHeader`)
     return
   }
   assert.ok(layout.ruler, `${label}: 缺少等级条`)

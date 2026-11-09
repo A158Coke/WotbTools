@@ -671,9 +671,16 @@ onMounted(() => {
       </EmptyState>
 
       <template v-else-if="detail">
+        <ShowcaseHero
+          compact
+          section="tankopedia"
+          :kicker="t('nav.groups.reference')"
+          :title="detail.name"
+        />
+
         <Motion
           tag="header"
-          class="tp-detail-head"
+          class="tp-detail-head surface-glass-1"
           :initial="{ opacity: 0, y: 4 }"
           :animate="{ opacity: 1, y: 0 }"
           :transition="motionTransition('fast')"
@@ -682,7 +689,6 @@ onMounted(() => {
             <img :src="tankImageUrl(detailId)" alt="" width="320" height="200" decoding="async" :style="iconCropStyle(detailId)" @error="hideBrokenImage">
           </span>
           <div class="tp-detail-title">
-            <h1>{{ detail.name }}</h1>
             <div class="tp-badges">
               <span class="tp-pill is-tier">{{ tierLabel(detail.tier) }}</span>
               <span class="tp-pill">{{ nationLabel(detail.nation) }}</span>
@@ -707,7 +713,7 @@ onMounted(() => {
              参数卡片顺序：防护 → 机动 → 火力（火力卡内弹种选择置顶）。 -->
         <div class="tp-workbench">
           <div class="tp-workbench-left">
-          <section class="tp-card-section tp-model-card" data-testid="tank-open3d-card" data-tour="tankopedia-detail">
+          <section class="tp-card-section tp-model-card surface-glass-1" data-testid="tank-open3d-card" data-tour="tankopedia-detail">
             <div class="tp-model-card-heading">
               <h2 class="tp-section-title">{{ t('agentTanks.open3d_title') }}</h2>
               <AppButton variant="primary" data-testid="tank-open3d" data-tour="tankopedia-armor" @click="open3d">
@@ -794,7 +800,7 @@ onMounted(() => {
           @select-shell="selectShell"
         />
 
-        <section v-else class="tp-card-section tp-workbench-right">
+        <section v-else class="tp-card-section tp-workbench-right surface-glass-1">
           <h2 class="tp-section-title">{{ t('agentTanks.mobility') }}</h2>
           <dl class="tp-stats">
             <div><dt>{{ t('agentTanks.hp') }}</dt><dd>{{ fmtNum(upgradeProjection.detail?.hp ?? detail.hp, 0) }}</dd></div>
@@ -812,7 +818,7 @@ onMounted(() => {
         </div>
 
         <!-- 无模块数据的静态详情：保留只读弹种表（可配置时弹种表已并入火力卡） -->
-        <section v-if="!characteristics" class="tp-card-section">
+        <section v-if="!characteristics" class="tp-card-section surface-glass-1">
           <h2 class="tp-section-title">{{ t('agentTanks.shells') }}</h2>
           <div class="tp-table-wrap">
             <table class="tp-table">
@@ -848,7 +854,7 @@ onMounted(() => {
 
     <!-- ================= 列表态 ================= -->
     <!-- v-if：直达详情不提前挂载；v-show：列表→详情→返回保留增量条数与搜索草稿 -->
-    <ShowcaseHero v-if="listMounted" v-show="detailId == null" :kicker="t('nav.groups.reference')" :title="t('agentTanks.title')" :description="t('agentTanks.hint')">
+    <ShowcaseHero v-if="listMounted" v-show="detailId == null" section="tankopedia" :kicker="t('nav.groups.reference')" :title="t('agentTanks.title')" :description="t('agentTanks.hint')">
       <template v-if="tanks.length" #stats><div><span class="tp-hero-stat-label">{{ t('tankopedia.heroCount') }}</span><strong data-testid="tankopedia-count">{{ tanks.length.toLocaleString(locale) }}</strong></div></template>
       <template #actions>
         <AppButton
@@ -885,7 +891,6 @@ onMounted(() => {
   color: var(--color-text-primary);
 }
 
-.tankopedia :deep(.page-header) { margin-bottom: 0; }
 
 .tp-muted { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); }
 .tp-status { margin: 0; color: var(--color-text-secondary); font: var(--type-body); }
@@ -968,14 +973,12 @@ onMounted(() => {
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-lg);
-  background: var(--color-surface-1);
   box-shadow: var(--elevation-1);
 }
 
 .tp-media-lg { inline-size: 100%; }
 .tp-detail-title { display: grid; gap: var(--space-2); min-inline-size: 0; }
 .tp-detail-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); min-inline-size: 0; }
-.tp-detail-title h1 { margin: 0; font: var(--type-h1); overflow-wrap: anywhere; }
 
 .tp-card-section {
   display: grid;
@@ -983,7 +986,6 @@ onMounted(() => {
   padding: var(--space-4);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-lg);
-  background: var(--color-surface-1);
   box-shadow: var(--elevation-1);
 }
 
@@ -1007,7 +1009,7 @@ onMounted(() => {
 .tp-summary dd { margin: 0; font: var(--type-body); font-weight: 600; overflow-wrap: anywhere; }
 
 .tp-table-wrap { overflow-x: auto; }
-.tp-table { inline-size: 100%; border-collapse: collapse; font: var(--type-body); font-variant-numeric: tabular-nums; }
+.tp-table { inline-size: 100%; border-collapse: collapse; background: var(--color-surface-1); font: var(--type-body); font-variant-numeric: tabular-nums; }
 .tp-table th { padding: var(--space-1) var(--space-2); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; text-align: start; white-space: nowrap; }
 .tp-table td { padding: var(--space-2); border-block-start: 1px solid var(--color-border-subtle); }
 .tp-table .is-num { text-align: end; }
@@ -1019,7 +1021,7 @@ onMounted(() => {
   margin: 0;
 }
 
-.tp-stats > div { padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); }
+.tp-stats > div { padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); background: var(--color-surface-1); }
 .tp-stats dt { color: var(--color-text-secondary); font: var(--type-caption); }
 .tp-stats dd { margin: 0; font: var(--type-h3); font-variant-numeric: tabular-nums; }
 
@@ -1032,7 +1034,6 @@ onMounted(() => {
 @media (width < 768px) {
   .tankopedia { gap: var(--space-3); padding-block-start: var(--space-4); }
   .tp-detail-head { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: var(--space-3); padding: var(--space-3); }
-  .tp-detail-title h1 { font: var(--type-h2); }
   .tp-detail-actions { grid-column: 1 / -1; justify-content: stretch; }
   .tp-detail-actions > * { flex: 1; }
   .tp-card-section { padding: var(--space-3); }

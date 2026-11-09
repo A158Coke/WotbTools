@@ -1303,6 +1303,57 @@ describe('Replay3DPane', () => {
         wrapper.unmount()
       })
     })
+
+    it('全屏入口三态：竖屏浮动、横屏内联、隐藏 UI 只有一个可达入口', async () => {
+      await withRequestFullscreen(true, async () => {
+        // 布局 mock 是普通对象（只在挂载时读取），因此三态各挂载一次；真实旋转
+        // 由 browser harness 的 portrait-to-landscape 场景独立验证。
+        const mountAt = async ({ compact, portrait }) => {
+          layout.compact = compact
+          layout.portrait = portrait
+          mockWebGL('webgl2')
+          const wrapper = mountPane()
+          playback.api.store.hasData = true
+          await nextTick()
+          return wrapper
+        }
+        // 手机竖屏：原契约——右上浮动，传输条不重复渲染。
+        let wrapper = await mountAt({ compact: true, portrait: true })
+        let entries = () => wrapper.findAll('[data-test="pb-fullscreen"]')
+        expect(entries()).toHaveLength(1)
+        expect(entries()[0].classes()).toContain('floating')
+        expect(wrapper.find('.controls [data-test="pb-fullscreen"]').exists()).toBe(false)
+        wrapper.unmount()
+        // 手机横屏：入口变成传输条内联，浮钮消失。
+        wrapper = await mountAt({ compact: true, portrait: false })
+        entries = () => wrapper.findAll('[data-test="pb-fullscreen"]')
+        expect(entries()).toHaveLength(1)
+        expect(entries()[0].classes()).not.toContain('floating')
+        expect(wrapper.find('.controls [data-test="pb-fullscreen"]').exists()).toBe(true)
+        // 横屏隐藏全部 UI：浮钮是唯一入口，恢复 UI 后回到内联，仍不重复。
+        await wrapper.get('[data-testid="display-toggle"]').trigger('click')
+        await wrapper.get('[data-testid="hide-all-ui"]').trigger('click')
+        await nextTick()
+        expect(entries()).toHaveLength(1)
+        expect(entries()[0].classes()).toContain('floating')
+        expect(wrapper.find('.controls [data-test="pb-fullscreen"]').exists()).toBe(false)
+        await wrapper.get('[data-testid="show-all-ui"]').trigger('click')
+        await nextTick()
+        expect(entries()).toHaveLength(1)
+        expect(entries()[0].classes()).not.toContain('floating')
+        expect(wrapper.find('.controls [data-test="pb-fullscreen"]').exists()).toBe(true)
+        wrapper.unmount()
+        // 桌面：保持既有内联行为（isPhone=false 不触发 floatingFullscreen）。
+        wrapper = await mountAt({ compact: false, portrait: false })
+        entries = () => wrapper.findAll('[data-test="pb-fullscreen"]')
+        expect(entries()).toHaveLength(1)
+        expect(entries()[0].classes()).not.toContain('floating')
+        expect(wrapper.find('.controls [data-test="pb-fullscreen"]').exists()).toBe(true)
+        wrapper.unmount()
+        layout.compact = false
+        layout.portrait = false
+      })
+    })
   })
 
   /**

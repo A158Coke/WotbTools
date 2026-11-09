@@ -7,6 +7,9 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick, ref } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import Scene3DStatus from './Scene3DStatus.vue'
+// 静态导入：动态 import 的首次编译会落进第一个用例的 5s 预算（冷 Vite 下约 6s），
+// 超时后仍在后台 mounted 的组件会在下一个用例里再创建一个 viewer，造成串扰。
+import AgentArmorView from './AgentArmorView.vue'
 
 const viewer = vi.hoisted(() => ({ calls: [], retryResult: true }))
 vi.mock('../scene/tankViewer.js', () => ({
@@ -92,7 +95,6 @@ describe('Scene3DStatus', () => {
 
 describe('AgentArmorView WebGL 预检与加载状态', () => {
   async function mountArmor() {
-    const { default: AgentArmorView } = await import('./AgentArmorView.vue')
     return mountWithRouter(AgentArmorView, { view: 'agent-armor', tank: '5' })
   }
 

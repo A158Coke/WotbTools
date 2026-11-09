@@ -15,7 +15,7 @@ import AdminBulkBar from './AdminBulkBar.vue'
 import AdminDangerZone from './AdminDangerZone.vue'
 import AdminDetailDrawer from './AdminDetailDrawer.vue'
 import AdminFilterBar from './AdminFilterBar.vue'
-import PageHeader from './PageHeader.vue'
+import ShowcaseHero from './ShowcaseHero.vue'
 import SegmentedControl from './SegmentedControl.vue'
 import { isRowControlClick, rowOpenTarget } from './adminListRow'
 import './admin-list.css'
@@ -417,7 +417,7 @@ function fmtTime(s) {
 
 <template>
   <div class="admin-page admin-users">
-    <PageHeader :kicker="$t('admin.kicker')" :title="$t('admin.title')" :description="$t('admin.hint')">
+    <ShowcaseHero compact section="admin" :kicker="$t('admin.kicker')" :title="$t('admin.title')">
       <template #actions>
         <SegmentedControl
           :model-value="segment"
@@ -427,7 +427,7 @@ function fmtTime(s) {
           @update:model-value="onSegmentChange"
         />
       </template>
-    </PageHeader>
+    </ShowcaseHero>
 
     <!-- 非-online 的中性状态（不是错误态）：文案来自 capability 模型，四态各有措辞。
          已加载的列表 / 搜索条件 / 选择集一律保留，只是新的 ONLINE_REQUIRED 动作被挡住。 -->

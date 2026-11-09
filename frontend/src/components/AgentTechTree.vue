@@ -23,7 +23,7 @@ import { techTreeGrid, techTreeNations } from '../utils/techTreeLayout.js'
 import { formatXpCompact } from '../utils/xpFormat.js'
 import { romanLevel } from '../utils/tierFormat.js'
 import { locationForView } from '../app/navigation'
-import PageHeader from './PageHeader.vue'
+import ShowcaseHero from './ShowcaseHero.vue'
 import EmptyState from './EmptyState.vue'
 import AppButton from './AppButton.vue'
 import SegmentedControl from './SegmentedControl.vue'
@@ -210,17 +210,14 @@ onMounted(() => {
 
 <template>
   <section class="techtree" data-testid="techtree">
-    <PageHeader
-      :title="t('research.title')"
-      :description="t('research.hint')"
-    >
+    <ShowcaseHero compact section="techtree" :kicker="t('nav.groups.reference')" :title="t('research.title')">
       <template #actions>
         <AppButton variant="secondary" data-testid="techtree-tankopedia" @click="openTankopedia">
           <BookOpen :size="18" aria-hidden="true" />
           {{ t('nav.tankopedia') }}
         </AppButton>
       </template>
-    </PageHeader>
+    </ShowcaseHero>
 
     <p v-if="cacheState === 'error'" class="tt-status" role="status">{{ t('research.cache_unavailable') }}</p>
 
@@ -389,7 +386,7 @@ onMounted(() => {
   min-block-size: 0;
 }
 
-.techtree :deep(.page-header) { flex: none; margin-bottom: 0; }
+.techtree :deep(.showcase-hero-host) { flex: none; }
 .tt-status { margin: 0; color: var(--color-text-secondary); font: var(--type-body); }
 
 .tt-tabs { display: flex; flex: none; flex-wrap: wrap; gap: var(--space-1); }
@@ -411,7 +408,8 @@ onMounted(() => {
 .tt-filters { display: grid; flex: none; gap: var(--space-2); }
 .tt-filters.is-sticky .tt-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
 .tt-filters.is-sticky .tt-tab { flex: none; min-block-size: var(--hit-min-comfortable); }
-.tt-tiers { flex: 1 1 0; min-block-size: 0; overflow-y: auto; display: grid; align-content: start; gap: var(--space-2); }
+/* 数据密集区：整站环境背景只出现在页头与外围，树板保持不透明表面（design-language §2.1）。 */
+.tt-tiers { flex: 1 1 0; min-block-size: 0; overflow-y: auto; display: grid; align-content: start; gap: var(--space-2); background: var(--color-surface-1); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); padding: var(--space-2); }
 .tt-tier-row { display: grid; grid-template-columns: var(--space-10) minmax(0, 1fr); align-items: center; }
 .tt-tier-label { color: var(--color-accent-text); font: var(--type-h3); font-weight: 700; text-align: center; }
 .tt-tier-cards { display: flex; gap: var(--space-2); overflow-x: auto; overscroll-behavior-inline: contain; padding-block: var(--space-1); }
@@ -420,7 +418,7 @@ onMounted(() => {
 /* ---------- 树网格：客户端 216×96 单元格语义，横向滚动 ---------- */
 /* flex: 1 1 0 + min-block-size: 0：滚动区只吃剩余高度，内容高度不反过来把页面撑出视口；
    吸底等级条因此始终停在滚动区底部、底栏上方。 */
-.tt-scroll { flex: 1 1 0; min-block-size: 0; overflow: auto; }
+.tt-scroll { flex: 1 1 0; min-block-size: 0; overflow: auto; background: var(--color-surface-1); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); }
 .tt-canvas { display: grid; gap: 0; min-inline-size: 0; align-content: start; }
 .tt-body { position: relative; display: grid; }
 .tt-edges { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
@@ -544,7 +542,7 @@ onMounted(() => {
 .tt-pill.is-tier { background: color-mix(in oklab, var(--color-accent) 14%, var(--color-surface-1)); color: var(--color-accent-text); }
 
 /* ---------- 研发态 ---------- */
-/* 手机：页头已由 PageHeader 收敛为一行；国别页签改单行横滑——9 个国别在 390px 下会换
+/* 手机：分区横幅只保留标题；国别页签改单行横滑——9 个国别在 390px 下会换
    两行，白白吃掉 36px 树高；横滑比换行更符合“页签条”的语义。 */
 @media (width < 768px) {
   .techtree {
@@ -581,14 +579,17 @@ onMounted(() => {
   .tt-tier-cards { padding-block: 2px; }
 }
 
-/* 矮视口（手机横屏等）：页头描述让位给树；标题与「坦克百科」按钮保持一行，
-   去掉页头上下边距与分隔线。360px 高的横屏只剩约 1.5 行树时靠这条把窗口抬到 2.5 行。 */
+/* 矮横屏（手机横屏等）：96px 分区横幅会把树视口压到不足两行，只隐藏横幅本身；
+   “坦克百科”操作留在下方工具条里，不丢入口。 */
+@media (orientation: landscape) and (height <= 520px) {
+  .techtree :deep(.showcase-hero) { display: none; }
+  .techtree :deep(.showcase-hero-host) { gap: 0; margin-block-end: 0; }
+}
+
 @media (height <= 520px) {
   .techtree {
     gap: var(--space-2);
     padding-block: var(--space-3);
   }
-  .techtree :deep(.page-header) { padding-block: 0; border-bottom: 0; }
-  .techtree :deep(.page-header-description) { display: none; }
 }
 </style>

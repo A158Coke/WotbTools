@@ -54,13 +54,17 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | ID | 强度 | 范围 | 规则 | 例外 | 验证 |
 |---|---|---|---|---|---|
 | DC-THM-01 | MUST | 四季主题 | 布局、组件结构、字号、交互完全一致，只替换语义 token 与氛围插槽；不按主题 fork 业务实现，组件不出现主题判断 | 无 | `src/ui-profile-fork-guard.test.js` |
-| DC-THM-02 | SHOULD | 全站材料与层次 | 允许经证据验证的渐变、半透明和毛玻璃材质（包括数据区）；优先清晰的信息层级，必须对实际复合背景验证文本/控件对比度、遮挡、触摸可达与性能 | 有明确视觉理由并提供截图/设备证据 | 四主题实际渲染截图 + 对比度取样 + 浏览器/设备审查 |
+| DC-THM-02 | SHOULD | 全站材料与层次 | 当前背景图与装饰渐变通过 §2 的装饰插槽渲染，现有玻璃材质用于 §2.1 的页面级表面；这些是实现基线而非永久白名单。允许设计探索渐变与半透明/玻璃材质，包括数据区，但上线前必须通过真实复合背景的可读性、交互、设备性能与可降级验收 | 仍须遵守其他真实安全/可达性边界 | 四主题实际渲染取样 + 对比度/交互/设备验证 |
 | DC-THM-03 | MAY | 工作区页面 | 在数据区之上放一个 Showcase Hero | 无 | 人工 |
 | DC-THM-04 | MUST | Showcase Hero | 只放在数据区之上，不进入表格、筛选、表单、抽屉；expanded 档首屏必须能看到数据区 | 无 | 每页 PR 大屏截图，人工 |
 | DC-THM-05 | MUST | Showcase Hero | 文字落在主题遮罩（`--theme-hero-scrim*`）压出的纯色区上，最差取样点满足 §3 对比度，四套主题都测 | 无 | 人工取样 |
 | DC-THM-06 | MUST | Showcase Hero | `prefers-reduced-motion: reduce` 下无动效 | 无 | 人工；首页由 `pnpm run test:browser-home` 覆盖动效 |
-| DC-THM-07 | MUST | 主题 token | 四套主题的文字 / UI 色在各自四层表面上的最差对比度达到 AA（正文 ≥ 4.5，UI ≥ 3，强调色上的文字 ≥ 4.5） | 无 | `src/styles/tokens/color-contrast.test.ts` |
+| DC-THM-07 | MUST | 主题 token | 四套主题的文字 / UI 色在各自四层表面上的最差对比度达到 AA（正文 ≥ 4.5，UI ≥ 3，强调色上的文字 ≥ 4.5）；实际应用的玻璃表面还要按真实 wide / portrait 背景图与 `--theme-backdrop-scrim` 逐像素合成后取样 | 无 | `src/styles/tokens/color-contrast.test.ts` |
 | DC-THM-08 | MUST | 场景外壳 | 2D / 3D 回放、装甲查看器、地图 3D 的根元素带 `data-scene-surface`，正常渲染态自铺不透明底，寒冬下仍是深色玻璃，不跟随浅色表面，也不叠页面环境光 | 装甲查看器 `is-unsupported` 无 WebGL 降级态（不渲染游戏画面，保留透明 fallback） | `color-contrast.test.ts` 的场景块断言 + 人工 |
+| DC-THM-09 | MUST | 全站环境背景 | 全站只由 `AppShell.vue` 的 `.app-backdrop` 渲染环境背景层：`position: fixed; inset: 0; pointer-events: none`，层级低于内容；环境光、背景图、遮罩、位置全部读 `--theme-backdrop*` token；禁止在 `body` 上用 `background-attachment: fixed` | 无 | 人工；`pnpm run test:browser-home`、`test:browser-view-transition` |
+| DC-THM-10 | MUST | 首屏与主题切换 | 环境背景先显示 `--color-canvas` 纯色，图片解码后淡入，不得阻塞首屏；`prefers-reduced-motion: reduce` 下直接显示、不做过渡；切换主题时背景随 token 同步切换 | 无 | 人工；`src/index-firstpaint.test.js` 保持通过 |
+| DC-THM-11 | SHOULD | 内容表面 | 当前页面级卡片/面板使用 `--color-surface-{1,2,3}-glass`（表面色 82%–90% 不透明 + `backdrop-filter: blur(16px) saturate(1.2)`）；当前表格、数据密集区、输入框、回放 HUD 使用纯色，这是已实现分配而非未来设计禁令。扩展玻璃范围时先证明真实背景对比度、合成性能与不支持 `backdrop-filter` 的纯色降级；场景根保持不透明（DC-THM-08） | 未验证的设计不得直接成为生产变更 | `color-contrast.test.ts` 的真实背景取样 + 浏览器/设备审查 |
+| DC-THM-12 | MUST | 分区主视觉 | 每个导航分区用一张固定 key visual（与季节无关），由 `ShowcaseHero` 的 `section` prop 选择；图片经 `import` 由 Vite 生成 hash URL，只加载当前页面用到的一张；标题必须落在主题遮罩压出的可读区 | 首页继续使用季节主视觉 | 人工四主题 × 双视口截图；`ShowcaseHero.test.ts` |
 
 | | **春 · 青山** `spring` | **夏 · 盛夏** `summer`（默认） | **秋 · 金秋** `autumn` | **冬 · 寒冬** `winter` |
 |---|---|---|---|---|
@@ -72,17 +76,29 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 
 完整取值只在 `frontend/src/styles/tokens/color.css`（每套主题一个语义映射块）；`<meta name="theme-color">` 取当前主题底色（`useUiProfile.THEME_COLOR`），`color-scheme` 随深浅色。
 
-**氛围插槽**（主题 token，只能用在装饰插槽里）：`--theme-hero-image`（横版约 2.5:1）、`--theme-hero-image-portrait`（竖版约 4:5）、`--theme-hero-scrim`（横版遮罩，左侧压出文字区）、`--theme-hero-scrim-portrait`（竖版遮罩，自下而上）、`--theme-glass`（叠在主视觉上的按钮底）、`--theme-pattern`（页面底纹）、`--theme-backdrop`（页面环境光，多层静态 `radial-gradient` / `linear-gradient`，固定视口、无动画）。页面底色按 `--theme-pattern` → `--theme-backdrop` → `--color-canvas` 三层合成；环境光集中在页面边缘与角落，正文所在的中部保持接近 `--color-canvas` 的纯色区。环境光在页面底边渐隐回 `--color-canvas`，页脚（`.app-footer`）另有 canvas 渐隐托底，避免底纹的 1px 线穿过页脚小字、拉低对比度。页头等无底色文字所在的最亮处也必须按 §3 取样，至少覆盖 1024 宽的桌面视口；环境光峰值不得压过文字对比度。主视觉素材在 `frontend/src/assets/theme/theme-<季节>-{wide,portrait}.webp`。主题选择器的缩略图与色点读 `--theme-preview-<季节>-*`。
+**氛围插槽**（主题 token，只能用在装饰插槽里）：`--theme-hero-image`（横版约 2.5:1）、`--theme-hero-image-portrait`（竖版约 4:5）、`--theme-hero-scrim`（横版遮罩，左侧压出文字区）、`--theme-hero-scrim-portrait`（竖版遮罩，自下而上）、`--theme-hero-section-scrim` / `--theme-hero-section-scrim-portrait`（仅寒冬的分区主视觉遮罩，见 §2.2）、`--theme-glass`（叠在主视觉上的按钮底）、`--theme-pattern`（页面底纹）、`--theme-backdrop`（页面环境光，多层静态 `radial-gradient` / `linear-gradient`，固定视口、无动画）、`--theme-backdrop-image` / `--theme-backdrop-image-portrait`（全站环境背景横 / 竖版）、`--theme-backdrop-scrim`（环境背景遮罩）、`--theme-backdrop-position` / `--theme-backdrop-position-portrait`（横 / 竖版焦点位置）。页面静态底色按 `--theme-pattern` → `--theme-backdrop` → `--color-canvas` 合成；环境光集中在页面边缘与角落，正文所在的中部保持接近 `--color-canvas` 的纯色区。环境光在页面底边渐隐回 `--color-canvas`，页脚（`.app-footer`）另有 canvas 渐隐托底，避免底纹的 1px 线穿过页脚小字、拉低对比度。页头等无底色文字所在的最亮处也必须按 §3 取样，至少覆盖 1024 宽的桌面视口；环境光峰值不得压过文字对比度。主视觉素材在 `frontend/src/assets/theme/theme-<季节>-{wide,portrait}.webp`；环境背景产物在 `frontend/src/assets/theme/backdrop-<季节>-{wide,portrait}.webp`，与 `--theme-backdrop` 的环境光层一起由 `.app-backdrop` 渲染（§2.1）。主题选择器的缩略图与色点读 `--theme-preview-<季节>-*`。
 
-**现有装饰插槽**（当前实现清单，非新增材质的排他白名单）：
+**现有装饰插槽**（背景图/环境装饰的实现清单，不是后续材质设计的排他白名单）：
 
-1. 首页英雄区（`HomePage.vue` 自己拥有；`PageHeader` 不提供 `hero` 变体）
+1. 首页英雄区（`HomePage.vue` 自己拥有整屏主视觉；`ShowcaseHero` 的 `section` 变体只负责导航分区的页头，不改变首页）
 2. 工作区 Showcase Hero（规则见 DC-THM-03 至 DC-THM-06）
 3. 空状态插图
 4. 登录页
-5. 页面底色上的主题底纹与环境光（`--theme-pattern` + `--theme-backdrop`，按「底纹 → 环境光 → `--color-canvas`」三层合成；当前实现的卡片与数据区仍以纯色为默认）。页面环境光当前保持静态渐变；对动画与滚动联动的新提案先采集性能与可读性证据。页脚 `.app-footer` 的 canvas 渐隐托底属于页面底色合成，用于保证页脚小字对比度
+5. 全站环境背景层（`.app-backdrop`，§2.1）：当前以固定主题底纹、环境光、季节背景图和 canvas 遮罩叠在 `--color-canvas` 上；按「`--theme-pattern` → `--theme-backdrop` → `--theme-backdrop-scrim` → `--theme-backdrop-image` → `--color-canvas`」合成（CSS 中前面的层在上）。当前环境光使用静态渐变；未来的动画或滚动联动不是默认禁令，但必须先采集 CPU/GPU 帧性能、可读性与 Reduced Motion 证据。页脚 `.app-footer` 的 canvas 渐隐托底属于同一层页面底色合成，用于保证页脚小字对比度
 
-**数据区材质**：现有表格、回放、筛选、表单、抽屉默认使用纯色表面，这只是实现基线，不是永久禁令。可探索半透明/毛玻璃等材质，但每个提案须在四季主题、实际滚动背景和关键交互状态下证明文字/图形对比度稳定；不能因视觉效果牺牲数据可读性。背景复杂或平台不支持时保留高对比不透明降级。WCAG 1.4.3 的对比度验收仍然有效。
+**数据区材质**：当前表格、回放数据区、筛选结果、表单控件和抽屉以纯色为默认；页面级卡片/面板（包括筛选面板容器，非输入框）使用 §2.1 的玻璃表面。这是当前实现的**事实描述**，不是未来设计禁令。允许在经过专项验证后提议扩展玻璃/半透明到数据区域：对四套主题、wide/portrait 真实背景、滚动状态和复杂内容逐像素采样文字/UI 对比度，证明触摸可达和设备性能，并提供不透明降级。未经验证不得将现有数据表面直接替换。
+
+### 2.1 全站环境背景层
+
+**定义：** 每个页面共享的一层 fixed 装饰背景，由 `AppShell.vue` 根部的 `.app-backdrop` 唯一渲染。它不是页面内容的一部分，只负责氛围：按「`--theme-pattern` → `--theme-backdrop` 环境光 → `--theme-backdrop-scrim` → 季节图 → `--color-canvas`」合成（CSS 中前面的层在上），`pointer-events: none`，层级用 `--z-backdrop`（低于所有内容）。使用 `position: fixed` 而不是 `body { background-attachment: fixed }`，因为 iOS Safari 不支持后者。
+
+**构图与遮罩：** 横版图里车队在中部到右侧、左侧较干净；竖版里车队在中上部、下半部较干净。wide 用 `--theme-backdrop-position: center 40%`，portrait 用 `center 30%`，让车队避开顶栏。深色三季的 `--theme-backdrop-scrim` 用各自 canvas 色从约 85% 渐到 55%：干净侧更实，坦克与天空侧更透；寒冬用 canvas 白色雾化遮罩。竖屏手机（`orientation: portrait` 且 `width < 768px`）切换到 `--theme-backdrop-image-portrait` 与对应 position。
+
+**首屏性能：** 首帧只画 canvas 纯色（`html` / 首屏内联样式负责，图片层此时 `opacity: 0`）；`.app-backdrop` 的图片由 JS 在 mount 后预解码，完成后才加 `.is-ready` 淡入，背景图不进入首屏关键路径。`prefers-reduced-motion: reduce` 下不做透明度过渡。主题切换时重新等待对应季节图，CSS token 已同步换图，不保留上一主题的图。
+
+**内容表面边界（当前实现）**：页面级卡片/面板（首页卡片、文档正文、坦克详情区块、筛选面板、空状态上传区、管理后台提示条等）使用 `--color-surface-{1,2,3}-glass`（对应表面色 82%–90% 不透明）加 `backdrop-filter: blur(16px) saturate(1.2)`，让背景隐约透出。当前表格、数据密集区、输入框、回放 HUD 使用纯色 `--color-surface-*`；2D/3D 回放、装甲查看器和地图 3D 场景根保持不透明底色，非全屏时场景外围的页面区域可透出环境背景。这是已实施状态，不排除未来经过验证的材料调整。浏览器不支持 `backdrop-filter` 时玻璃表面回退为对应纯色。实际应用玻璃表面必须先按真实 wide/portrait 背景图逐像素叠加 `--theme-backdrop-scrim`，再与玻璃 alpha 合成，取亮度最小/最大像素进入 §3 最差值计算；不能只用 canvas 等效色替代。
+
+**素材来源：** 四季原图为 AI 生成画面与真实 WoTB 十级车型参考融合，写实电影风格；原图保留在 `frontend/art-source/backdrops/backdrop-<季节>-{wide,portrait}.webp`，不得修改。发布产物由 `frontend/scripts/build-theme-backdrops.mjs`（`pnpm run assets:backdrops`）生成：wide Lanczos 放大到 2560 宽、portrait 到 1080 宽，轻度锐化，WebP 初始 quality 80；单张超过 300KB 时脚本按预算自适应下调 quality（产物实测约 q29–q80，均 ≤ 300KB）。
 
 **场景排除：** 带 `data-scene-surface` 的 2D / 3D 回放、装甲查看器、地图 3D 场景根在正常渲染态必须自铺不透明底色（通常 `var(--color-canvas)` 或 `var(--color-surface-1)`），页面环境光不得透进游戏画面。唯一例外是装甲查看器的 `is-unsupported` 无 WebGL 降级态：它不渲染游戏画面，保留既有的透明 fallback。
 
@@ -92,6 +108,34 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 - 在首次绘制之前，由 `index.html` 里的内联脚本投影 `data-ui-profile` / `data-theme` / `theme-color`，避免闪烁（`src/index-firstpaint.test.js` 真实执行该脚本）。
 
 **验收标准：** 任何组件在四套主题下都必须通过 §3 的对比度要求。
+
+### 2.2 分区主视觉（section key visual）
+
+**定义：** 导航分区的固定主视觉。和四季主视觉不同，每张图不随主题/季节换图，只换压在图上的主题遮罩；一张图对应一个导航分区，同一分区的所有页面复用同一张。季节只影响氛围，不改变页面身份。
+
+**素材与产物：** 原图在 `frontend/art-source/heroes/hero-<分区>.webp`（1672×941，16:9，不得修改），由 `frontend/scripts/build-section-heroes.mjs`（`pnpm run assets:heroes`）输出到 `frontend/src/assets/theme/hero-<分区>.webp`：Lanczos 放大到 2400 宽、轻度锐化、WebP q≈80 且单张 ≤ 250KB。运行时通过 `src/shared/sectionHeroes.ts` 的 `import` 拿到 Vite hash URL，不复制到每套主题，也不在 CSS 里写死路径。
+
+**唯一映射表：** 代码里的 `SECTION_HEROES` 是唯一事实源，本表是它的文档镜像。`--hero-pos` / `--hero-pos-mobile` 是 `background-position` 的焦点，用来保证坦克主体不被左侧标题压住：桌面横幅很宽，横向焦点恒为 `center`，只调纵向；手机竖版把主体推到右侧。
+
+| 分区 `section` | 使用页面 | 原图 | 桌面焦点 | 手机焦点 |
+|---|---|---|---|---|
+| `hof` | `HoFPage` 单场 / 百场 tab | `hero-hof.webp` | `center 45%` | `22% center` |
+| `mark3` | `HoFPage` 三环 tab | `hero-mark3.webp` | `center 45%` | `18% center` |
+| `replay` | `ReplayWorkspace`、`BattleTable` league 概览 | `hero-replay.webp` | `center 48%` | `45% center` |
+| `tankopedia` | `AgentTankopedia` 列表 / 详情 | `hero-tankopedia.webp` | `center 45%` | `18% center` |
+| `techtree` | `AgentTechTree` | `hero-techtree.webp` | `center 45%` | `42% center` |
+| `maps` | `MapPreviewPage` 选择态 | `hero-maps.webp` | `center 45%` | `22% center` |
+| `events` | `TournamentPointsPage`、`LeagueBroadcastsPage` | `hero-events.webp` | `center 45%` | `40% center` |
+| `community` | `CreatorsPage`、`ContactPage`、`MorePage`、`AndroidDownloadPage`、`SponsorPage` | `hero-community.webp` | `center 45%` | `45% center` |
+| `profile` | `ProfilePage` | `hero-profile.webp` | `center 45%` | `45% center` |
+| `docs` | `HistoryPage`、`TechnicalEvolutionPage`、`RatingDocsPage` | `hero-docs.webp` | `center 45%` | `42% center` |
+| `admin` | 全部后台页（用户、战斗数据、反馈、名人堂、赛事积分、创作者配置） | `hero-admin.webp` | `center 45%` | `40% center` |
+
+**遮罩与可读性：** 分区图默认仍用 `--theme-hero-scrim`（手机 `--theme-hero-scrim-portrait`）压出纯色文字区，因此 DC-THM-05 的四主题对比度要求不变。寒冬是浅色主题，白色遮罩会把图洗淡，所以只在寒冬定义更轻的分区遮罩：`--theme-hero-section-scrim`（横版，左侧 94% → 78% → 12%）和 `--theme-hero-section-scrim-portrait`（竖版，自上而下 97% → 86% → 24%，把下半部留给坦克）。其它主题不定义这两个 token，组件用 `var(--theme-hero-section-scrim, var(--theme-hero-scrim))` 回退。验收时坦克主体必须仍可辨认，标题区域取样点满足 §3。
+
+**紧凑档（compact）：** 工具页与后台使用紧凑档，桌面最小高度 132px、手机 96px，横幅里只保留 kicker + 标题；操作（能力切换、搜索、刷新等）放在横幅下方独立的工具条里，不挤压下方操作区。完整档保留说明、关键数字与操作。标题复用页面原有 i18n 文案；如果横幅已经承担页面标题，就删除原独立页头，避免同屏两个一级标题。
+
+**验收：** 每个分区至少一个页面，四套主题 × 1440×900 / 390×844 截图人工确认：坦克主体可见、未被标题压住、标题可读、无横向滚动；`ShowcaseHero.test.ts` 覆盖 `section` 映射与紧凑档结构。
 
 ---
 
@@ -105,7 +149,7 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | DC-CLR-04 | MUST | 物理队伍色 | Team 1 / Team 2 颜色不随录像者交换 | 无 | 人工 |
 
 **依据：** WCAG 2.2 AA。正文 ≥ 4.5:1；大字（≥ 24px，或 ≥ 18.66px 且加粗）≥ 3:1；UI 组件和图形 ≥ 3:1（1.4.11）。
-下表每个值都已用脚本验证：在该主题的**全部 4 层表面**上取最差的一层，结果仍然达标。
+下表每个值都已用脚本验证：在该主题的**全部纯色表面与实际应用的玻璃表面**上取最差的一层，结果仍然达标。当前页面级实现只应用 `surface-1-glass`；它按真实 wide / portrait 背景图逐像素叠加 `--theme-backdrop-scrim` 后再与玻璃 alpha 合成，取亮度最小 / 最大像素参与比较。`surface-2/3-glass` 是保留档位，仍校验 alpha 与 canvas 混合；新增使用处时必须把该档位加入真实背景取样。
 
 ### 3.1 表面与文字
 
@@ -120,6 +164,9 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | `--color-text-tertiary` | `#869d90` | `#b8a277` | `#ad9576` | `#4a6380` | 辅助信息、占位符。**这是最浅的一级文字色** |
 | `--color-border-subtle` | `#1f3a2e` | `#4b3a1d` | `#3d2c19` | `#cbd8e6` | 分隔线（装饰性，不承担信息） |
 | `--color-border-strong` | `#5f8072` | `#a28a5a` | `#937a55` | `#6f849b` | 输入框、复选框等控件边框（需 ≥3:1） |
+| `--color-surface-1/2/3-glass` | 对应表面色 + 88% / 86% / 84% alpha | 同左 | 同左 | 同左 | 页面级卡片的磨砂表面；实际应用档位纳入真实背景图最差对比度 |
+
+> 玻璃表面只减不增：当前页面级实现使用 `surface-1-glass` 作为主卡片 / 面板；`surface-2-glass` 与 `surface-3-glass` 是保留档位，尚未落到元素上。数据区一律用上面的纯色行；新增玻璃档位使用处时必须同步把它加入 `color-contrast.test.ts` 的真实背景取样列表。
 
 **深色主题的层级靠亮度区分，不靠阴影。** 表面越亮，离用户越近。依据：Material Design 的暗色主题指南。浅色主题（寒冬）则用阴影。
 
@@ -219,9 +266,11 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | `--type-body` | 14 / 20 | 400 | 正文、表格（桌面） |
 | `--type-body`（触控） | 15 / 22 | 400 | 正文（`pointer: coarse` 时自动替换） |
 | `--type-caption` | 12 / 16 | 400 / 600 | 标签、表头、辅助说明。**这是最小字号**，中文 < 12px 不可读 |
+| `--type-body`（场景短视口横屏紧凑档） | 14 / 18 | 400 | 只在 `[data-scene-surface]` 的短视口横屏档内生效；见 §5 |
+| `--type-caption`（场景短视口横屏紧凑档） | 12 / 14 | 400 / 600 | 同上；字号仍守住 12px 下限 |
 
 - 工作区只用 7 级字阶；`display-hero` 与 DC-TYP-03 的展示字阶只属于装饰插槽。
-- **token 形态：** 每一级有两个原子 token `--font-size-{级}`、`--line-height-{级}`，以及一个组合 token `--type-{级}`（字重 + 字号 / 行高 + 字体，用于 `font` 简写）。`font-size` / `line-height` 只能引用原子 token，`font` 只能引用组合 token；触控档只覆盖 `--font-size-body` / `--line-height-body`，组合 token 自动跟随。长文阅读另有 `--line-height-prose`（1.7，只用于文档类页面的正文）。
+- **token 形态：** 每一级有两个原子 token `--font-size-{级}`、`--line-height-{级}`，以及一个组合 token `--type-{级}`（字重 + 字号 / 行高 + 字体，用于 `font` 简写）。`font-size` / `line-height` 只能引用原子 token，`font` 只能引用组合 token；常规触控档只覆盖 `--font-size-body` / `--line-height-body`，组合 token 自动跟随。场景短视口横屏紧凑档同时收紧 body / caption，并在同一作用域重定义组合 token。长文阅读另有 `--line-height-prose`（1.7，只用于文档类页面的正文）。
 - 字重只用 400 / 600 / 700。
 - 大写字母 + 字间距的 "kicker" 标签（如 `WOTBTOOLS · REPLAY WORKSPACE`）只能出现在装饰插槽里，工作区不用。
 
@@ -231,7 +280,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 | ID | 强度 | 范围 | 规则 | 例外 | 验证 |
 |---|---|---|---|---|---|
-| DC-SIZ-01 | MUST | 触控档 | 可交互元素命中区 ≥ 44×44 | 页脚备案链接等法定文字 | `pnpm run test:browser-interaction`、`pnpm run test:browser-armor-mobile` |
+| DC-SIZ-01 | MUST | 触控档 | 可交互元素命中区 ≥ 44×44；场景短视口横屏紧凑档 ≥ 40×40（见 §5「场景短视口横屏紧凑档」）；装甲短横屏 38px 胶囊的 36px 分段开关为 PR #932 的显式例外 | 页脚备案链接等法定文字 | `pnpm run test:browser-interaction`、`pnpm run test:browser-armor-mobile` |
 | DC-SIZ-02 | MUST | 层级 | z-index 只用 token，不靠大数值收尾 | 场景型工作台内部用局部 1–9 | `pnpm run lint:css` |
 | DC-MOT-01 | MUST | 动效参数的 ownership | 动效参数仍有唯一权威入口：现有 duration/ease 从 CSS token 经 `motionPolicy.ts` 读取；允许在同一 ownership 下扩展 spring、velocity、interruptibility 等参数，不得每个组件自建互不兼容的第二套 motion policy | 新模型在实现前明确其 token/owner | `motionPolicy.test.ts` + 相关交互测试 |
 | DC-MOT-02 | MUST | 降低动效 | 遵守 `prefers-reduced-motion: reduce`，移除可能引起不适的空间位移、弹性/视差效果，允许保留必要的静态/淡入反馈；当前实现的 duration 归零是合规降级之一而非所有未来动效的唯一方案 | 无 | `motionPolicy.test.ts`、`pnpm run test:browser-home` + 实际渲染审查 |
@@ -239,9 +288,9 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | DC-MOT-04 | MUST | 动效 | 禁止 `transition: all`，列出具体属性 | 无 | 人工 |
 | DC-MOT-05 | SHOULD | 动效 | 优先动画 `transform` / `opacity`；动画可被用户操作打断 | 选中指示器等 shared layout | 人工 |
 
-**依据：** 4pt 网格（Material、Apple HIG、多数设计系统的做法），以及有限的离散刻度。
+**依据：** 4pt 网格（Material、Apple HIG、多数设计系统的做法），以及有限的离散刻度。场景短视口横屏紧凑档是唯一例外，取 0.75× 刻度（见下文）。
 
-**间距**：`--space-{0,1,2,3,4,5,6,8,10,12}` = `0, 4, 8, 12, 16, 20, 24, 32, 40, 48px`
+**间距**：`--space-{0,1,2,3,4,5,6,8,10,12}` = `0, 4, 8, 12, 16, 20, 24, 32, 40, 48px`；场景紧凑档为 `0, 3, 6, 9, 12, 15, 18, 24, 30, 36px`
 
 - 组件内间距用 1–4 级，组件之间用 4–6 级，区块之间用 8–12 级。
 - 页面左右边距：`--gutter` = 手机 16 / 平板 24 / 桌面 32。
@@ -255,7 +304,28 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | `--control-h-lg` | 40 | 48 | 主操作 |
 | `--row-h` | 36 | 48 | 表格行、列表行 |
 | `--control-check` | 18 | 24 | 复选框 / 单选框的可视尺寸（所在单元格或 label 另保证最小点击区域 `--hit-min`） |
-| 最小点击区域 | 24×24 | **44×44** | WCAG 2.5.8 最低 24；Apple HIG 44pt；Material 48dp |
+| 最小点击区域 | 24×24 | **44×44**（场景短视口横屏紧凑档 40×40；装甲短横屏胶囊 36/38 例外） | WCAG 2.5.8 最低 24；Apple HIG 44pt；Material 48dp |
+
+**场景短视口横屏紧凑档**：条件为 `@media (pointer: coarse) and (orientation: landscape) and (height <= 520px)`，只作用于场景根 `[data-scene-surface]`（2D / 3D 回放、装甲查看器 / 射击复现、地图 3D）。普通内容页、桌面和竖屏手机不命中。
+
+| token | 常规触控 | 场景紧凑档 | 用途 |
+|---|---|---|---|
+| `--control-h-sm` | 44 | 32 | 次要行内操作；视觉不足 40 时用透明命中区补足 |
+| `--control-h-md` | 44 | 36 | 回放传输条按钮；视觉 36，命中区补到 40 |
+| `--control-h-lg` | 48 | 40 | 主操作 |
+| `--row-h` | 48 | 40 | 名册 / 列表行 |
+| `--hit-min` | 44 | 40 | 最小命中区 |
+| `--hit-min-comfortable` | 44 | 40 | 舒适命中区；本档不得低于 40 |
+| `--scene-hit` | 44 | 40 | 场景按钮保底尺寸（默认值等于 44） |
+| `--scene-control-h-lg` | 48 | 40 | 装甲查看器底栏等 48px 主操作（默认值等于 48） |
+
+- 间距取常规刻度的 0.75×：`3 / 6 / 9 / 12 / 15 / 18 / 24 / 30 / 36px`。这是本档唯一的 4pt 网格例外，且只作用于场景根，不改变全站间距。
+- 回放 Display 面在本档把内边距从 `--space-3`（9px）收到 `--space-2`（6px）：9px 时 375px 高的横屏会让最后一排 40px 选项行被滚动口裁掉 2px；收到 6px 后 667×375、740×360、844×390 均可完整可达。
+- 字号：`--type-body` 14/18、`--type-caption` 12/14；必须在同一作用域重定义组合 token `--type-body` / `--type-caption`，否则子元素只改原子 token 不会重算 `font` 简写。
+- **命中区**：`--hit-min-comfortable` 不得低于 40px。视觉高度需要更小时（例如传输条 36px），用透明伪元素或 padding 把可点范围补到 40×40；唯一的视觉尺寸例外是装甲 `height <= 500px` 的 38px 胶囊 / 36px 分段开关（PR #932），由 `browser-armor-mobile` 单独锁定；扩展区不得压住相邻控件的命中区（传输条把 gap 固定为 6px，按钮外框 36px、含 1px 边框的 padding box 为 34px，伪元素 `inset: -3px` 补到 40×40；相对视觉外框向 gap 各伸 2px，命中区之间仍留 2px，不重叠）。
+- 3D 回放的「恢复 UI」按钮在本档把顶偏移改为 `--space-2 + --hit-min-comfortable + --space-2`（6 + 40 + 6 = 52px），让出右上角 40px 全屏按钮（top 6、bottom 46）；常规档仍用 `--control-h-sm`。
+- 倍速菜单的档位按钮在本档保持 `--hit-min + --space-4` = 52px 宽、40px 高；回归测试按 40×40 有效命中区校验，不把视觉外框直接当成命中区。
+- 竖屏手机、桌面与普通内容页沿用上面的常规触控档；场景紧凑档的值不能写到 `:root` 或普通页面的作用域。
 
 **圆角**：`--radius-sm: 6px`（标签、小徽章、小控件）· `--radius-md: 8px`（按钮、输入框、卡片）· `--radius-lg: 12px`（弹窗、sheet、抽屉）· `--radius-full: 999px`（胶囊、头像）
 
@@ -331,7 +401,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 - **部分**覆盖与**部分**裁剪同样不合格：中心点露着不等于可达，按钮底部被切掉 10px 也是缺陷。容差 2px，只放过边框、阴影级别的亚像素误差。
 - 裁剪只沿 containing block 链计算：`position: fixed / absolute` 的元素逃出了中间那些祖先，它们的 `overflow` 裁不到它；滚出可滚动容器属于「可滚动触达」，此时要求的是滚动容器本身不被外层裁掉。
 - 判定用浏览器真实命中测试：在选项盒内多点采样 `elementFromPoint`，只有命中选项自身或其后代才算点得到——命中它的祖先恰恰说明指针穿透了它。门禁里的真实点击另以输入事件记录佐证。
-- 触控档最小命中区见上表（44×44）。
+- 触控档最小命中区见上表：常规 44×44，场景短视口横屏紧凑档 40×40。
 
 **4. 适用形态。** 上面三条必须在手机竖屏、手机横屏、平板与桌面都成立，并覆盖**状态组合**（工具栏 + 菜单开、sticky 表头 + 下拉开、名册展开 + 浮层开、底栏 + sheet 开、drawer + 背景 sticky、断点切换），不只是静止初始态。
 
@@ -356,7 +426,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 - **断点只有三档：** `compact < 768` · `medium 768–1199` · `expanded ≥ 1200`。
   - CSS 只允许写 range 语法：`@media (width < 768px)`、`(768px <= width < 1200px)`、`(width >= 1200px)`。
   - JS 使用 `useBreakpoint()`，与 CSS 共用同一份常量。
-- **输入方式：** `@media (pointer: coarse)` 只用来切换密度 token（§5），**不用来改布局**。JS 使用 `usePointer()`。
+- **输入方式：** `@media (pointer: coarse)` 只用来切换密度 token（§5），**不用来改布局**；场景短视口横屏紧凑档是密度 token 的补充条件，同样不改布局。JS 使用 `usePointer()`。
 - **组件级适配**用容器查询 `@container`，例如：表格在容器 < 560px 时切换成卡片。组件不应该知道视口有多大。
 - **视口单位：** 用 `dvh` / `svh`，不用 `100vh`；宽度用 `100%`，不用 `100vw`。
 - **安全区：** 顶栏、导航抽屉、底部操作栏、全屏回放都要加 `env(safe-area-inset-*)`（§9 L4）。
@@ -486,7 +556,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | ID | 强度 | 范围 | 规则 | 例外 | 验证 |
 |---|---|---|---|---|---|
 | DC-ARC-01 | MUST | 页面 | 自上而下是 Showcase Hero（可选）+ 控制条 + 数据区；同一页不并存两套标题区 | 场景型工作台（2D / 3D、装甲查看器）、长文档页 | 人工 |
-| DC-ARC-02 | MUST | 工作区 | `PageHeader` 只用 `compact`；kicker + h1 + 说明 + 标签块不得占掉首屏 | 满足 DC-THM-04 的 Showcase Hero | 人工 |
+| DC-ARC-02 | MUST | 工作区 / 工具页 | 页头用 `ShowcaseHero` 的 `compact` 档：横幅只保留 kicker + h1（桌面 132px / 手机 96px），操作放横幅下方工具条；kicker + h1 + 说明 + 标签块不得占掉首屏 | 内容型页面用完整档 Showcase Hero | 人工；`ShowcaseHero.test.ts` |
 | DC-ARC-03 | MUST | 筛选 | expanded / medium 行内工具栏；compact 用「筛选」按钮 + sheet，已生效条件显示为 chip | 无 | `pnpm run test:browser-interaction`（`overlay-catalog-` / `overlay-hof-`） |
 | DC-ARC-04 | MUST | 主导航 | 成员、分组与栏目归属只由 `app/navigation.js` 定义；侧边栏与手机抽屉渲染同一份分组，「更多」页不复制导航列表 | 无 | `src/app/navigation.test.js` |
 | DC-ARC-07 | MUST | 主导航 | `PRIMARY_NAV` 的每个入口在大屏（侧边栏）与小屏（菜单 → 左侧抽屉）都能经真实点击到达；没有底部常驻导航 | 无 | `pnpm run test:browser-interaction shell-overlay`；主站 Logo 回首页由 `test:browser-creators`（`production-`，小屏）与 `test:browser-broadcasts`（`-desktop`，大屏）验证 |
@@ -497,9 +567,9 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | 模式 | 规则 |
 |---|---|
 | **AppShell** | 平板 / 桌面：左侧边栏（`--z-header`，铺满视口高度），没有顶栏（`--header-h: 0`）。桌面默认展开（240px，图标 + 文字），可折叠成 72px 图标栏并记住偏好；平板固定为图标栏。侧边栏从上到下：品牌 · 数据版本 · 首页 · 按战斗、资料、赛事、社区分组的主栏目（`group`，图标栏用分隔线代替分组名）· 管理组（按角色）；底部：更多（弹出面板，只放低频的显示设置与关于 / 支持）· 账户 · 折叠开关。手机竖屏与手机横屏（抽屉外壳，见下方 L1 / L3）：48px 顶栏（菜单 · Logo · 当前栏目名 · 账户）+ 左侧抽屉（`AppNavDrawer`，内容是侧边栏的同一份分组、管理组与数据版本，底部「更多」整页链接与账户）。Logo 回默认落地页：主站回首页，APK / 本地回回放。手机横屏的回放工作台（2D / 3D，回放就绪）与装甲查看器（WebGL 可用）进入沉浸态：顶栏让出，`--header-block` / `--header-h` 归零，转竖屏或离开页面即恢复。当前侧边栏宽度写入 `--sidebar-w`（抽屉外壳为 0）；顶栏为内容让出的固定空间是 `--header-block`，吸顶偏移与高度预算读 `--header-h` |
-| **Showcase Hero** | `components/ShowcaseHero.vue`：工作区页面数据区之上的可选主视觉（DC-THM-03…06），背景是当前主题主视觉（大屏横版、小屏竖版）+ 主题遮罩，只放 kicker、标题、一句说明、关键数字与操作 |
+| **Showcase Hero** | `components/ShowcaseHero.vue`：页面数据区之上的主视觉（DC-THM-03…06、DC-THM-12）。不传 `section` 时用当前主题的季节主视觉；传 `section` 时用该导航分区的固定 key visual（§2.2），四套主题只换遮罩。`compact` 档只保留 kicker + 标题，操作在横幅下方工具条 |
 | **控制条** | `app-shell.css` 的 `.control-bar`：数据区之上的筛选 / 排序 / 搜索一行，窄屏换行，`.control-bar-end` 推到行尾，`.is-sticky` 吸顶读 `--header-h` |
-| **PageHeader** | 只有 `compact`（工作区用：标题 + 右侧操作，一行，≤ 56px）。不提供 `hero` 变体；首页 hero 是 `HomePage.vue` 自己的整段落地页板块。**工作区禁止用 kicker + h1 + 说明 + 标签块占掉首屏** |
+| **紧凑页头** | 工作区、工具页与后台用 `ShowcaseHero` 的 `compact` 档：横幅只显示 kicker + h1，操作 / 搜索 / 刷新放在下方工具条。原 `PageHeader.vue` 已由本档取代并删除；首页 hero 是 `HomePage.vue` 自己的整段落地页板块。**工作区禁止用 kicker + h1 + 说明 + 标签块占掉首屏** |
 | **容器宽度** | `content` → `--layout-content-max`；`wide` → `--layout-wide-max`；`workspace` → `--layout-workspace-max`；长文阅读宽度 → `--reading-measure`。具体数值由 `frontend/src/styles/tokens/scale.css` 定义，布局原语见 [UI 系统](ui-system.md) |
 | **Master–Detail** | expanded：列表 + 常驻详情。medium：列表 + 推开式详情。compact：列表 → 全屏详情（支持左右滑动切换）。回放工作台、射击分析、坦克百科都用这个模式 |
 | **筛选** | expanded / medium：行内工具栏。compact：一个"筛选"按钮 → sheet，已生效的条件以 chip 显示在列表上方 |
@@ -523,10 +593,11 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 - **适用设备只有两类**（`platform/screenForm.ts`，判定只看设备、不看视口）：Android 手机上的 App（Native Bridge 可选能力 `screen-form` 报告 phone）与 iPhone 上的 Safari（UA 含 iPhone 且不是 iPad）。桌面（含缩窄窗口）、所有平板、Android 手机浏览器都不受影响，竖屏照常用小屏布局。
 - **适用页面**：2D 回放、3D 回放、装甲查看器、射击复现、地图预览 3D。科技树、直播与推荐视频、比赛截图、AI 复盘、名人堂、管理页不强制。
 - **行为**（`useForcedLandscape`）：Android 手机 App 进入场景页时原生锁横屏，离开 / KeepAlive 停用即释放；iPhone Safari 竖屏时整块显示 `RotatePrompt`（场景保持挂载，横过来即继续），提示里给出退出动作：2D / 3D 回到「看赛后数据」，装甲查看器回到坦克百科 / 射击分析，地图 3D 切到 2D。HTML 全屏在 Android App 里也只在手机上锁横屏。
-- **横屏沉浸**：没有顶栏，菜单入口仍在：2D / 3D 回放由传输条第一项承载（`PlaybackTransport` 经 `shellChrome.hostNav` 声明，7 人名册车道保持不滚动；控制条被 `v-show` 收起、能力切走或 KeepAlive 停用时经 `navEligible` / 生命周期交还，外壳重新画悬浮菜单）；其余场景（装甲查看器、射击复现）由外壳在左上放悬浮菜单按钮（`AppShell` 的 `.immersive-nav`），场景用 `--immersive-nav-reserve`（沉浸态 44 + 8，其余为 0）让出：返回键与信息卡右移。两者打开同一个抽屉。
+- **横屏沉浸**：没有顶栏，菜单入口仍在：2D / 3D 回放由传输条第一项承载（`PlaybackTransport` 经 `shellChrome.hostNav` 声明，7 人名册车道保持不滚动；控制条被 `v-show` 收起、能力切走或 KeepAlive 停用时经 `navEligible` / 生命周期交还，外壳重新画悬浮菜单）；其余场景（装甲查看器、射击复现）由外壳在左上放悬浮菜单按钮（`AppShell` 的 `.immersive-nav`），场景用 `--immersive-nav-reserve`（沉浸态 44 + 8，其余为 0）让出：返回键与信息卡右移。该 reserve 由场景外的外壳菜单按钮决定，场景短视口横屏紧凑档不把它改成 40 + 6，否则返回键会压住仍是 44px 的菜单按钮。两者打开同一个抽屉。
 - **验收**：`pnpm run test:browser-interaction forced-landscape`（iPhone 竖屏出提示并能回到赛后数据；iPad 竖屏与缩窄的桌面浏览器不出提示；iPhone 横屏 844×340 沉浸且菜单可打开抽屉；装甲查看器 `armor-forced-landscape-*`：iPhone 竖屏出提示并带返回动作，iPhone 横屏、iPad 竖屏与缩窄的桌面浏览器不出）。
-- **场景 HUD（装甲查看器、射击复现）**：手机横屏时常驻控件只在四角——左上返回 + 车名 / 参数，右下拇指区是射击快捷项（弹种、距离、厚度 / 击穿），左下是姿态与角度；完整设置是右侧参数面板（约 19rem + 安全区），打开时场景仍在左侧可见。
-- **点选结果**（厚度 `#click-info`、击穿 `#traj-info`，所有尺寸）：固定停靠在场景顶部正中，不跟随命中点、不压车体；小屏收起态只显示最终判定一行（胶囊），点开看逐层明细。
+- **短视口紧凑档**：手机横屏高度 ≤ 520px 时，上述场景改用 §5 的场景紧凑档 token（控件 32/36/40、命中区 40、间距 0.75×、正文 14/18），让传输条、底栏和 HUD 不再按 44/48px 撑高；竖屏与桌面完全沿用常规触控档。装甲查看器在 `height <= 500px` 的短横屏胶囊（下方一条）另有 36/38px 视觉尺寸，是本档 40px 命中区的唯一显式例外，由 `browser-armor-mobile` 单独锁定。
+- **场景 HUD（装甲查看器、射击复现）**：手机横屏时常驻控件只在四角——左上返回 + 车名 / 参数，右下拇指区是射击快捷项（弹种、距离、厚度 / 击穿），左下是姿态与角度；完整设置是右侧参数面板（约 19rem + 安全区），打开时场景仍在左侧可见。短横屏（`height <= 500px`）再启用紧凑档：左上收成 38px 胶囊（返回图标 + 可截断车名 + 参数图标），右下射击卡片收到 15rem × ≤45dvh 并把距离滑条与穿深数值并排，左下姿态压成两行，参数面板头部提供 sticky 的 40px 关闭按钮（紧凑档命中区）。
+- **点选结果**（厚度 `#click-info`、击穿 `#traj-info`）：固定停靠在场景顶部，不跟随命中点、不压车体；宽屏 / 竖屏在顶部居中；短横屏 ≥768px 紧贴左上胶囊右侧并与其垂直对齐，<768px 落到胶囊下方第二行；小屏收起态只显示最终判定一行（胶囊），点开看逐层明细。
 
 ### 射击分析与科技树（小屏）
 

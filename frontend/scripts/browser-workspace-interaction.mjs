@@ -12,6 +12,7 @@ import { MOBILE_PAGE_SCENARIOS, SHELL_OVERLAY_SCENARIOS, runMobilePageScenario, 
 import { DIALOG_SHEET_SCENARIOS, runDialogSheetScenario } from './browser-dialog-sheet.mjs'
 import { DRAWER_TABLE_SCENARIOS, runDrawerTableScenario } from './browser-drawer-tables.mjs'
 import { CATALOG_HOF_DOC_SCENARIOS, runCatalogHofDocScenario } from './browser-catalog-hof-docs.mjs'
+import { detailsPlacementPreserved } from '../src/utils/detailsPlacementBounds.ts'
 
 /**
  * Browser-level interaction regression for the Replay Workspace capability tabs and the
@@ -213,6 +214,28 @@ function playbackControlProbe() {
   const hit = document.elementFromPoint(center.x, center.y)
   const time = document.querySelector('[data-test="pb-time"]')
   const reason = document.querySelector('[data-test="pb-play-unavailable"]')
+  const scene = document.querySelector('[data-scene-surface]')
+  const sceneStyle = getComputedStyle(scene || document.documentElement)
+  const minHit = parseFloat(sceneStyle.getPropertyValue('--hit-min-comfortable')) || 44
+  const space4 = parseFloat(sceneStyle.getPropertyValue('--space-4')) || 16
+  const compactScene = matchMedia('(pointer: coarse) and (orientation: landscape) and (height <= 520px)').matches
+  // 视觉框只有 36px 时，紧凑档靠透明伪元素把命中区补到 40px。
+  // 边界采样点本身是否算命中取决于亚像素取整，因此取目标框内缩 0.25px 的四边中点。
+  const hitBoxAt = (button) => {
+    const r = button.getBoundingClientRect()
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2
+    const dx = minHit / 2 - 0.25, dy = minHit / 2 - 0.25
+    const reaches = (x, y) => {
+      // 控件贴住视口边缘时，边框最后 0.5px 会被 Chrome 的可命中区域裁掉；
+      // 采样点限制在视口内 1px，避免把亚像素裁切误判成伪元素没有补足命中区。
+      const px = Math.min(Math.max(x, 1), innerWidth - 1)
+      const py = Math.min(Math.max(y, 1), innerHeight - 1)
+      const hit = document.elementFromPoint(px, py)
+      return hit === button || button.contains(hit)
+    }
+    return reaches(cx, cy) && reaches(cx - dx, cy) && reaches(cx + dx, cy)
+      && reaches(cx, cy - dy) && reaches(cx, cy + dy)
+  }
   return {
     found: true,
     disabled: play.disabled === true,
@@ -225,25 +248,43 @@ function playbackControlProbe() {
       ? `${hit.tagName}${typeof hit.className === 'string' && hit.className.trim() ? `.${hit.className.trim().split(/\s+/).join('.')}` : ''}`
       : null,
     formClass: root ? Array.from(root.classList).find((name) => name.startsWith('pb-form-')) || null : null,
-    /** 所有可见速度档位按钮的最小边（触屏点击区域契约：≥ 44px） */
-    speedMinSide: (() => {
-      const sides = [...document.querySelectorAll('[data-test^="pb-speed-"]')]
-        .map((b) => b.getBoundingClientRect())
-        .filter((r) => r.width > 0 && r.height > 0)
-        .map((r) => Math.min(r.width, r.height))
-      return sides.length ? Math.min(...sides) : null
+    /** 所有可见速度档位按钮都提供 minHit × minHit 的有效命中区（紧凑档 40 / 常规触屏 44） */
+    speedHit: (() => {
+      const buttons = [...document.querySelectorAll('button[data-test^="pb-speed-"]')]
+        .filter((b) => { const r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0 })
+      return buttons.length ? buttons.every(hitBoxAt) : null
+    })(),
+    speedHitDetail: (() => {
+      const buttons = [...document.querySelectorAll('button[data-test^="pb-speed-"]')]
+        .filter((b) => { const r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0 })
+      return buttons.map((b) => {
+        const r = b.getBoundingClientRect()
+        const cx = r.left + r.width / 2, cy = r.top + r.height / 2
+        const dx = minHit / 2 - 0.25, dy = minHit / 2 - 0.25
+        const at = (x, y) => {
+          const px = Math.min(Math.max(x, 1), innerWidth - 1)
+          const py = Math.min(Math.max(y, 1), innerHeight - 1)
+          const hit = document.elementFromPoint(px, py)
+          return hit === b || b.contains(hit)
+        }
+        return { test: b.dataset.test, w: r.width, h: r.height, center: at(cx, cy), left: at(cx - dx, cy), right: at(cx + dx, cy), top: at(cx, cy - dy), bottom: at(cx, cy + dy) }
+      })
     })(),
     /** 速度档位菜单展开后必须一行排开且不越出自身容器（档位个数变化时的回归点） */
     speedMenu: (() => {
       const group = document.querySelector('.pb-speed-menu')
       if (!group) return null
       const limit = group.getBoundingClientRect()
-      const buttons = [...group.querySelectorAll('.pb-speed-menu [data-test^="pb-speed-"]')].map((b) => b.getBoundingClientRect())
+      const items = [...group.querySelectorAll('.pb-speed-menu [data-test^="pb-speed-"]')]
+      const buttons = items.map((b) => b.getBoundingClientRect())
       if (!buttons.length) return null
       return {
         count: buttons.length,
         overflow: buttons.some((r) => r.left < limit.left - 1 || r.right > limit.right + 1 || r.top < limit.top - 1 || r.bottom > limit.bottom + 1),
         minSide: Math.min(...buttons.map((r) => Math.min(r.width, r.height))),
+        minWidth: Math.min(...buttons.map((r) => r.width)),
+        expectedWidth: compactScene ? minHit + space4 : minHit,
+        allHit: items.every(hitBoxAt),
       }
     })(),
     pageScrollWidth: document.documentElement.scrollWidth,
@@ -546,6 +587,17 @@ function check(failures, ok, message) {
   if (!ok) failures.push(message)
 }
 
+/** 场景根的有效触控下限：紧凑档 40px，常规触屏 44px；普通内容页不读场景 token。 */
+async function sceneHitTarget(page) {
+  const value = await page.evaluate(`(() => {
+    const scene = document.querySelector('[data-scene-surface]')
+    if (!scene) return 44
+    const token = parseFloat(getComputedStyle(scene).getPropertyValue('--hit-min-comfortable'))
+    return Number.isFinite(token) && token > 0 ? token : 44
+  })()`)
+  return value
+}
+
 /* ------------------------------------------------------------------ 场景 */
 
 const APP_SCENARIOS = [
@@ -763,11 +815,27 @@ const ROSTER_GEOMETRY_SCENARIOS = [
   { name: 'roster-geometry-1024x768-tablet', width: 1024, height: 768, touch: false, players: 7, unknown: 2, killfeed: 3, layout: 'side' },
   { name: 'roster-geometry-375x812-portrait-coarse', width: 375, height: 812, touch: true, players: 7, unknown: 0, killfeed: 3, layout: 'portrait' },
   { name: 'roster-geometry-390x844-portrait-coarse', width: 390, height: 844, touch: true, players: 7, unknown: 2, killfeed: 3, layout: 'portrait' },
+  { name: 'roster-geometry-390x844-portrait-fullscreen-coarse', width: 390, height: 844, touch: true, players: 7, unknown: 2, killfeed: 3, layout: 'portrait', fullscreen: true },
   { name: 'roster-geometry-740x360-landscape-coarse', width: 740, height: 360, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side' },
+  { name: 'roster-geometry-740x360-fullscreen-coarse', width: 740, height: 360, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', fullscreen: true },
   { name: 'roster-geometry-844x390-landscape-coarse', width: 844, height: 390, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side' },
   { name: 'roster-geometry-844x390-fullscreen-coarse', width: 844, height: 390, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', fullscreen: true },
   { name: 'roster-geometry-portrait-to844x390-coarse', width: 390, height: 844, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', rotateTo: { width: 844, height: 390 } },
   { name: 'roster-geometry-667x375-landscape-coarse', width: 667, height: 375, touch: true, players: 7, unknown: 0, killfeed: 0 },
+  { name: 'roster-geometry-740x360-distance-ru-free', width: 740, height: 360, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', locale: 'ru', camera: 'free', toggleFullscreen: true },
+  { name: 'roster-geometry-740x360-distance-ru-top', width: 740, height: 360, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', locale: 'ru', camera: 'top' },
+  { name: 'roster-geometry-844x390-distance-ru-free', width: 844, height: 390, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', locale: 'ru', camera: 'free', toggleFullscreen: true },
+  { name: 'roster-geometry-844x390-distance-ru-top', width: 844, height: 390, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', locale: 'ru', camera: 'top' },
+  { name: 'roster-geometry-740x360-distance-ru-free-fullscreen', width: 740, height: 360, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', locale: 'ru', camera: 'free', fullscreen: true },
+  { name: 'roster-geometry-844x390-distance-ru-free-fullscreen', width: 844, height: 390, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', locale: 'ru', camera: 'free', fullscreen: true },
+  { name: 'roster-geometry-740x360-distance-zh-free', width: 740, height: 360, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', locale: 'zh', camera: 'free' },
+  { name: 'roster-geometry-740x360-distance-zh-top', width: 740, height: 360, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', locale: 'zh', camera: 'top' },
+  { name: 'roster-geometry-740x360-distance-en-free', width: 740, height: 360, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', locale: 'en', camera: 'free' },
+  { name: 'roster-geometry-740x360-distance-en-top', width: 740, height: 360, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', locale: 'en', camera: 'top' },
+  { name: 'roster-geometry-844x390-distance-zh-free', width: 844, height: 390, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', locale: 'zh', camera: 'free' },
+  { name: 'roster-geometry-844x390-distance-zh-top', width: 844, height: 390, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', locale: 'zh', camera: 'top' },
+  { name: 'roster-geometry-844x390-distance-en-free', width: 844, height: 390, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', locale: 'en', camera: 'free' },
+  { name: 'roster-geometry-844x390-distance-en-top', width: 844, height: 390, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', locale: 'en', camera: 'top' },
   { name: 'roster-geometry-1280x720-desktop', width: 1280, height: 720, touch: false, players: 7, unknown: 2, killfeed: 0 },
   { name: 'roster-geometry-1280x800-desktop', width: 1280, height: 800, touch: false, players: 7, unknown: 2, killfeed: 0, killfeedRows: 2 },
   { name: 'roster-geometry-1280x704-desktop', width: 1280, height: 704, touch: false, players: 7, unknown: 2, killfeed: 0, killfeedRows: 2 },
@@ -802,6 +870,9 @@ function rosterGeometryProbe() {
   const root = document.querySelector('.pb-root')
   const out = { root: !!root, errors: [], boxes: {} }
   if (!root) return out
+  const scene = root.closest('[data-scene-surface]')
+  const hitComfortable = parseFloat(getComputedStyle(scene || root).getPropertyValue('--hit-min-comfortable')) || 44
+  out.hitComfortable = hitComfortable
   const rr = root.getBoundingClientRect()
   const transient = false
   const mobileRosterScroll = matchMedia('(width < 1200px) and (pointer: coarse)').matches
@@ -809,10 +880,25 @@ function rosterGeometryProbe() {
   out.side = root.classList.contains('roster-side')
   out.phone = root.classList.contains('phone-form')
   out.viewport = { width: innerWidth, height: innerHeight }
+  // 竖屏全屏的根固定为一屏，纵向流比视口高：根必须自己可滚动，内容才可达。
+  const rootStyle = getComputedStyle(root)
+  const portraitScrolls = /auto|scroll/.test(rootStyle.overflowY)
+    && root.scrollHeight > root.clientHeight + 1
+  out.portraitScroll = {
+    scrollH: root.scrollHeight, clientH: root.clientHeight, overflowY: rootStyle.overflowY, scrolls: portraitScrolls,
+  }
+  if (out.portrait && document.fullscreenElement && root.scrollHeight > root.clientHeight + 1 && !portraitScrolls) {
+    out.errors.push(`portrait fullscreen content exceeds the viewport but cannot scroll: ${JSON.stringify(out.portraitScroll)}`)
+  }
   const square = root.querySelector('.stage-square')?.getBoundingClientRect()
   out.square = square ? { w: square.width, h: square.height, l: square.left, r: square.right, t: square.top, b: square.bottom } : null
   if (!square || (out.portrait && Math.abs(square.width - square.height) > 1)) out.errors.push(`3D Stage is not square: ${JSON.stringify(out.square)}`)
   const stage = root.querySelector('.pb-stage')?.getBoundingClientRect()
+  // 竖屏的 Stage 必须在流里真正包住正方形画布；全屏高度受限时曾被 flex 压成 0，
+  // 画布溢出到控制条下面（遮挡探针同时报 99% 中心遮挡）。
+  if (out.portrait && stage && square && stage.height < square.height - 1) {
+    out.errors.push(`portrait Stage collapses around its square: stage=${stage.height}, square=${square.height}`)
+  }
   const hud = root.querySelector('.hud')?.getBoundingClientRect()
   const transport = root.querySelector('.controls')?.getBoundingClientRect()
   const hudPanel = root.querySelector('.hud .pb-hud')
@@ -870,9 +956,18 @@ function rosterGeometryProbe() {
       } else {
         out.errors.push('floating: .pb-stage missing')
       }
+      // 距离滑条与 FPS 角标都曾停右下角；手机横屏把 FPS 让到左下，二者不得互相遮挡。
+      const fpsBox = root.querySelector('[data-testid="replay3d-fps"]')?.getBoundingClientRect()
+      const distBox = root.querySelector('[data-testid="scene-distance-slider"]')?.getBoundingClientRect()
+      if (fpsBox && distBox && fpsBox.left < distBox.right && distBox.left < fpsBox.right && fpsBox.top < distBox.bottom && distBox.top < fpsBox.bottom) {
+        out.errors.push('floating: FPS badge overlaps the distance slider')
+      }
       // ② 名册车道必须落在 **root 工作区**内（root 系坐标，与页面滚动无关——
       //    workspace 场景本身可被页面滚过标题栏），且不与对侧重叠
-      const inRoot = (b) => b.left >= rr.left - 0.5 && b.right <= rr.right + 0.5 && b.top >= rr.top - 0.5 && b.bottom <= rr.bottom + 0.5
+      // 竖屏全屏的根是滚动容器：内容可以在视口下方，但不能超出滚动内容高度。
+      const contentBottom = rr.top + Math.max(root.scrollHeight, root.clientHeight)
+      const inRoot = (b) => b.left >= rr.left - 0.5 && b.right <= rr.right + 0.5 && b.top >= rr.top - 0.5
+        && (b.bottom <= rr.bottom + 0.5 || (out.portraitScroll.scrolls && b.bottom <= contentBottom + 0.5))
       for (const [name, sel] of [['left', '.side-left'], ['right', '.side-right']]) {
         const lane = root.querySelector(sel)?.getBoundingClientRect()
         if (!lane) { out.errors.push(`floating: ${name} lane missing`); continue }
@@ -909,13 +1004,28 @@ function rosterGeometryProbe() {
       } else if (!inRoot(controls)) {
         out.errors.push(`floating: transport controls outside the workspace: ${JSON.stringify([Math.round(controls.left - rr.left), Math.round(controls.top - rr.top), Math.round(controls.width), Math.round(controls.height)])}`)
       }
-      // ⑤ 全屏语义：root 即全屏元素（由 usePlaybackFullscreen 保证 enter/exit 不重建）
+      // ⑤ 手机横屏：3D 工作台根必须去边框/圆角并横向贴边（safe-area 由共享规则负责）。
+      //    页面 .wrap 的 gutter 不能留在场景两侧，否则“沉浸态”仍浪费一圈像素。
+      if (out.phone && out.side && !transient) {
+        const cs = getComputedStyle(root)
+        const borders = ['borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth']
+          .reduce((sum, key) => sum + (parseFloat(cs[key]) || 0), 0)
+        if (borders > 0.5) out.errors.push(`phone landscape: scene frame border must be 0, got ${borders}px`)
+        if ((parseFloat(cs.borderTopLeftRadius) || 0) > 0.5) {
+          out.errors.push(`phone landscape: scene frame radius must be 0, got ${cs.borderTopLeftRadius}`)
+        }
+        if (rr.left > 1 || rr.right < window.innerWidth - 1) {
+          out.errors.push(`phone landscape: scene must reach viewport edges, got ${Math.round(rr.left)}..${Math.round(rr.right)} of ${window.innerWidth}`)
+        }
+      }
+      // ⑥ 全屏语义：root 即全屏元素（由 usePlaybackFullscreen 保证 enter/exit 不重建）
       out.floatingChecked = true
     }
   }
-  // 手机形态：全屏入口是右上角浮动按钮（SceneFullscreenButton），传输条不再重复渲染
-  // （floatingFullscreen 契约）——传输条主控件为 5 个 + 浮动全屏按钮单独断言位置。
-  const primaryIds = out.phone
+  // 手机横屏：全屏入口内联在传输条（旧版右上浮动按钮会压住敌方第一行 / 血量数字）。
+  // 手机竖屏：恢复右上浮动入口，传输条只有 5 个主控件；桌面仍是 6 个。
+  const portraitRoot = root.classList.contains('portrait-flow')
+  const primaryIds = out.phone && portraitRoot
     ? ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-secondary-entry']
     : ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']
   const transportControls = root.querySelector('.pb-controls')
@@ -923,23 +1033,47 @@ function rosterGeometryProbe() {
   if (primary.some((element) => !element)) out.errors.push('shared primary controls must be present in transport')
   else {
     const boxes = primary.map((element) => element.getBoundingClientRect())
+    // 移动端工作台常高于视口（667×375 时控制条在 y≈526），elementFromPoint 只接受视口坐标；
+    // 先滚到控制条再测，否则整块都在视口外、所有采样点都会返回 null。
+    const scrollY = window.scrollY
+    transportControls.scrollIntoView({ block: 'center' })
+    const hitProbe = (element) => {
+      const r = element.getBoundingClientRect()
+      const x = r.left + r.width / 2, y = r.top + r.height / 2
+      const half = hitComfortable / 2 - 0.25
+      return [[x, y], [x - half, y], [x + half, y], [x, y - half], [x, y + half]]
+        .every(([px, py]) => {
+          const hit = document.elementFromPoint(px, py)
+          return hit === element || element.contains(hit)
+        })
+    }
+    out.primaryHitAreas = primary.map(hitProbe)
+    window.scrollTo(0, scrollY)
     const domOrder = [...transportControls.querySelectorAll('button[data-test]')]
       .map((element) => element.dataset.test).filter((id) => primaryIds.includes(id))
     if (JSON.stringify(domOrder) !== JSON.stringify(primaryIds)) out.errors.push(`primary control DOM order: ${domOrder.join(',')}`)
     if (boxes.some((box, index) => index > 0 && box.left < boxes[index - 1].right - 1)
       || boxes.some((box) => Math.abs(box.top - boxes[0].top) > 1)) out.errors.push('primary controls must stay in x-order on one row')
-    if (out.phone && boxes.some((box) => Math.min(box.width, box.height) < 43.5)) out.errors.push('primary touch targets must be at least 44px')
+    if (out.phone) {
+      if (boxes.some((box) => Math.min(box.width, box.height) < hitComfortable - 4.5)) {
+        out.errors.push(`primary touch targets must provide ${hitComfortable}px hit area`)
+      }
+      if (out.primaryHitAreas.some((hit) => !hit)) out.errors.push('primary touch hit probes must reach every control edge')
+    }
   }
   if (out.phone) {
-    const floating = root.querySelector('[data-test="pb-fullscreen"]')
-    if (!floating) out.errors.push('phone: floating fullscreen button missing')
-    else {
-      const fr = floating.getBoundingClientRect()
-      const rr = root.getBoundingClientRect()
-      if (Math.abs(fr.right - rr.right) > 12 || Math.abs(fr.top - rr.top) > 12) {
-        out.errors.push(`phone: fullscreen button not top-right floating: ${JSON.stringify([Math.round(fr.top - rr.top), Math.round(rr.right - fr.right)])}`)
-      }
+    const inline = transportControls && transportControls.querySelector('[data-test="pb-fullscreen"]')
+    const floating = root.querySelector('.scene-fs-btn.floating')
+    // 横屏内联、竖屏浮动；两种形态互斥，同一时刻只允许一个可见全屏入口。
+    if (portraitRoot) {
+      if (inline && inline.getClientRects().length > 0) out.errors.push('phone portrait: fullscreen entry must not be inline in transport')
+      if (!floating || floating.getClientRects().length === 0) out.errors.push('phone portrait: floating fullscreen entry missing')
+    } else {
+      if (!inline || inline.getClientRects().length === 0) out.errors.push('phone landscape: inline fullscreen entry missing from transport')
+      if (floating && floating.getClientRects().length > 0) out.errors.push('phone landscape: floating fullscreen entry must be hidden')
     }
+    const entries = root.querySelectorAll('[data-test="pb-fullscreen"]')
+    if (entries.length !== 1) out.errors.push(`phone: expected exactly one fullscreen entry, got ${entries.length}`)
   }
   out.laneWidths = ['.side-left', '.side-right'].map((selector) => root.querySelector(selector)?.getBoundingClientRect().width ?? 0)
   // center 列宽：HUD 占满整列，直接量它的盒。
@@ -957,6 +1091,9 @@ function rosterGeometryProbe() {
   const overlap = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5
     && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5
   const panels = {}
+  const panelBottom = out.portraitScroll.scrolls
+    ? rr.top + Math.max(root.scrollHeight, root.clientHeight)
+    : rr.bottom
   for (const name of ['team1', 'team2', 'team-unknown']) {
     const el = document.querySelector('.' + name)
     const cs = el ? getComputedStyle(el) : null
@@ -964,7 +1101,7 @@ function rosterGeometryProbe() {
     const b = rect(el)
     panels[name] = b
     out.boxes[name] = { l: +b.left.toFixed(1), t: +b.top.toFixed(1), r: +b.right.toFixed(1), b: +b.bottom.toFixed(1) }
-    if (!transient && (b.left < rr.left - 0.5 || b.right > rr.right + 0.5 || b.top < rr.top - 0.5 || b.bottom > rr.bottom + 0.5)) {
+    if (!transient && (b.left < rr.left - 0.5 || b.right > rr.right + 0.5 || b.top < rr.top - 0.5 || b.bottom > panelBottom + 0.5)) {
       out.errors.push(`${name} is outside pb-root (root=${JSON.stringify({ l: +rr.left.toFixed(1), t: +rr.top.toFixed(1), r: +rr.right.toFixed(1), b: +rr.bottom.toFixed(1) })})`)
     }
   }
@@ -1162,6 +1299,107 @@ function rosterGeometryProbe() {
   return out
 }
 
+/** 3D 右下距离滑条与 7v7 名册的真实几何：标签/轨道/整盒、最后三行、命中与内部滚动。 */
+function sceneDistanceProbe() {
+  const root = document.querySelector('.pb-root')
+  const slider = root && root.querySelector('[data-testid="scene-distance-slider"]')
+  const box = (el) => {
+    if (!el) return null
+    const r = el.getBoundingClientRect()
+    return {
+      l: +r.left.toFixed(2), t: +r.top.toFixed(2), r: +r.right.toFixed(2), b: +r.bottom.toFixed(2),
+      w: +r.width.toFixed(2), h: +r.height.toFixed(2),
+    }
+  }
+  const out = {
+    present: !!slider,
+    root: !!root,
+    viewport: { width: innerWidth, height: innerHeight },
+    errors: [],
+  }
+  if (!root || !slider) return out
+  const overlap = (a, b) => a.l < b.r - 0.5 && b.l < a.r - 0.5 && a.t < b.b - 0.5 && b.t < a.b - 0.5
+  out.rootBox = box(root)
+  out.pageScroll = { x: scrollX, y: scrollY }
+  out.slider = box(slider)
+  out.track = box(slider.querySelector('.scene-dist-track'))
+  out.controls = box(root.querySelector('.controls'))
+  out.fps = box(root.querySelector('.pb-fps'))
+  out.labels = [...slider.querySelectorAll('.scene-dist-label')].map((el) => {
+    const style = getComputedStyle(el)
+    return { text: (el.textContent || '').trim(), ...box(el), writingMode: style.writingMode, textOrientation: style.textOrientation }
+  })
+  const lane = root.querySelector('.side-right')
+  out.lane = box(lane)
+  const rows = [...root.querySelectorAll('.side-right .pb-roster-row')]
+  out.rows = rows.length
+  out.rowBoxes = rows.map((row, index) => ({
+    index,
+    ...box(row),
+    hp: box(row.querySelector('.pb-roster-hpfill')),
+  }))
+  out.last3 = out.rowBoxes.slice(-3)
+  out.rowOverlap = out.rowBoxes.filter((row) => overlap(out.slider, row)).map((row) => row.index)
+  out.labelOverlap = out.labels.flatMap((label, labelIndex) => out.rowBoxes
+    .filter((row) => overlap(label, row))
+    .map((row) => ({ label: labelIndex, row: row.index })))
+  out.laneOverlap = out.lane ? overlap(out.slider, out.lane) : false
+  out.rowHits = rows.map((row, index) => {
+    const r = row.getBoundingClientRect()
+    const target = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+    return { index, hit: target === row || row.contains(target) }
+  })
+  out.labelHits = [...slider.querySelectorAll('.scene-dist-label')].map((label, index) => {
+    const r = label.getBoundingClientRect()
+    const target = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+    return { index, hit: target === label || slider.contains(target) }
+  })
+  out.inViewport = out.slider.l >= -0.5 && out.slider.r <= innerWidth + 0.5
+    && out.slider.t >= -0.5 && out.slider.b <= innerHeight + 0.5
+  out.hpOverlap = out.rowBoxes
+    .filter((row) => row.hp && overlap(out.slider, row.hp))
+    .map((row) => row.index)
+  out.laneScroll = lane ? {
+    scrollH: lane.scrollHeight,
+    clientH: lane.clientHeight,
+    scrolls: lane.scrollHeight > lane.clientHeight + 1,
+  } : null
+  out.overflowX = document.documentElement.scrollWidth > innerWidth + 1
+  return out
+}
+
+const DISTANCE_LABELS = {
+  zh: ['近', '远'],
+  en: ['Near', 'Far'],
+  ru: ['Ближе', 'Дальше'],
+}
+
+/** 距离滑条与右侧 7v7 名册的几何契约；返回所有违规项而不是首个。 */
+function sceneDistanceViolations(dist, scenario, viewport) {
+  const errors = []
+  if (!dist.present || !dist.root) return ['distance slider missing']
+  if (dist.rows !== 7) errors.push(`expected 7 enemy rows, got ${dist.rows}`)
+  if (!dist.slider || dist.slider.h > 64) errors.push(`slider too tall: ${JSON.stringify(dist.slider)}`)
+  if (!dist.track || dist.track.h < 40) errors.push(`slider track too short for touch: ${JSON.stringify(dist.track)}`)
+  if (dist.rowOverlap.length) errors.push(`slider overlaps roster rows ${JSON.stringify(dist.rowOverlap)}`)
+  if (dist.labelOverlap.length) errors.push(`slider labels overlap roster rows ${JSON.stringify(dist.labelOverlap)}`)
+  if (dist.hpOverlap.length) errors.push(`slider overlaps HP bars of rows ${JSON.stringify(dist.hpOverlap)}`)
+  if (dist.laneOverlap) errors.push('slider overlaps right roster lane')
+  if (!dist.laneScroll || dist.laneScroll.scrolls) errors.push(`right roster must not scroll: ${JSON.stringify(dist.laneScroll)}`)
+  if (!dist.rowHits.every((row) => row.hit)) errors.push(`roster rows not hit-testable: ${JSON.stringify(dist.rowHits)}`)
+  if (dist.labelHits.length !== 2 || !dist.labelHits.every((label) => label.hit)) errors.push(`slider labels not hit-testable: ${JSON.stringify(dist.labelHits)}`)
+  if (!dist.inViewport) errors.push(`slider outside viewport: ${JSON.stringify(dist.slider)}`)
+  if (dist.slider.l < -0.5 || dist.slider.r > viewport.width + 0.5) errors.push('slider crosses viewport horizontally')
+  if (dist.controls && dist.slider.b > dist.controls.t + 0.5) errors.push(`slider overlaps transport: slider=${JSON.stringify(dist.slider)} controls=${JSON.stringify(dist.controls)}`)
+  if (dist.overflowX) errors.push('page has horizontal overflow')
+  const labels = DISTANCE_LABELS[scenario.locale ?? 'zh'] || DISTANCE_LABELS.zh
+  const texts = dist.labels.map((label) => label.text)
+  if (texts[0] !== labels[0] || texts[1] !== labels[1]) errors.push(`distance labels wrong: ${JSON.stringify(texts)}`)
+  if (!dist.labels.every((label) => label.w > 0 && label.h > 0 && label.h <= 24)) errors.push(`distance labels are not compact: ${JSON.stringify(dist.labels)}`)
+  if (!dist.labels.every((label) => label.writingMode === 'horizontal-tb')) errors.push(`distance labels must be horizontal: ${JSON.stringify(dist.labels.map((label) => label.writingMode))}`)
+  return errors
+}
+
 /** 「显示」面板：全部开关可用、面板不越界、隐藏全部 UI 可恢复（真实点击）。 */
 function displayPanelProbe() {
   const root = document.querySelector('.pb-root')
@@ -1292,6 +1530,75 @@ function rosterLayoutSignature() {
   ].join('|')
 }
 
+/** 3D 手机横屏所有常驻交互浮层的实际矩形（相对视口）。 */
+async function phoneOverlayBoxes(page) {
+  return page.probe(() => {
+    const box = (selector) => {
+      const el = document.querySelector(selector)
+      if (!el || !el.getClientRects().length) return null
+      const r = el.getBoundingClientRect()
+      return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height }
+    }
+    return {
+      width: innerWidth,
+      height: innerHeight,
+      root: box('.pb-root'),
+      stage: box('.pb-stage'),
+      laneLeft: box('.side-left'),
+      laneRight: box('.side-right'),
+      hud: box('.hud'),
+      controls: box('.controls'),
+      fullscreen: box('[data-test="pb-fullscreen"]'),
+      slider: box('[data-testid="scene-distance-slider"]'),
+      fps: box('[data-testid="replay3d-fps"]'),
+      restore: box('[data-testid="show-all-ui"]'),
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }
+  })
+}
+
+/**
+ * 非零水平 safe-area 的门禁：场景/画布仍贴边，但所有交互浮层必须落在安全区内；
+ * 归零后原有布局不得漂移。用 Chromium 的 Emulation.setSafeAreaInsetsOverride，
+ * 与 2D 同一套真实浏览器 env() 语义（不是 CSS 推断）。
+ */
+async function checkPhoneSafeArea(page, failures, label) {
+  const inset = 44
+  const before = await phoneOverlayBoxes(page)
+  if (!before.root) {
+    failures.push(label + ': safe-area check needs .pb-root')
+    return
+  }
+  await page.client.send('Emulation.setSafeAreaInsetsOverride', { insets: { left: inset, right: inset } }, page.sessionId)
+  await page.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+  await waitForStableLayout(page)
+  const safe = await phoneOverlayBoxes(page)
+  const interactive = ['laneLeft', 'laneRight', 'hud', 'controls', 'fullscreen', 'slider', 'fps', 'restore']
+  const outside = interactive.filter((name) => {
+    const b = safe[name]
+    return b && (b.l < inset - 1 || b.r > safe.width - inset + 1)
+  })
+  check(failures, outside.length === 0,
+    `${label}: interactive overlays enter the horizontal safe area: ${JSON.stringify(outside.map((name) => [name, safe[name]]))}`)
+  check(failures, safe.root.l <= 0.5 && safe.root.r >= safe.width - 0.5,
+    `${label}: scene root must stay edge-to-edge with safe-area insets: ${JSON.stringify({ root: safe.root, width: safe.width })}`)
+  check(failures, safe.stage && safe.stage.l <= 0.5 && safe.stage.r >= safe.width - 0.5,
+    `${label}: scene stage must stay edge-to-edge with safe-area insets: ${JSON.stringify(safe.stage)}`)
+  check(failures, safe.scrollWidth <= safe.clientWidth + 1,
+    `${label}: page must not overflow horizontally with safe-area insets: ${safe.scrollWidth} > ${safe.clientWidth}`)
+  console.log(`[browser-interaction] ${label} safe-area=${JSON.stringify({ inset, lanes: [safe.laneLeft?.l, safe.laneRight?.r], hud: [safe.hud?.l, safe.hud?.r], controls: [safe.controls?.l, safe.controls?.r], slider: [safe.slider?.l, safe.slider?.r], fps: [safe.fps?.l, safe.fps?.r], root: [safe.root.l, safe.root.r] })}`)
+  await page.client.send('Emulation.setSafeAreaInsetsOverride', { insets: { left: 0, right: 0 } }, page.sessionId)
+  await page.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+  await waitForStableLayout(page)
+  const reset = await phoneOverlayBoxes(page)
+  const drift = ['root', 'stage', 'laneLeft', 'laneRight', 'hud', 'controls', 'fullscreen', 'slider', 'fps', 'restore']
+    .filter((name) => before[name] && reset[name])
+    .filter((name) => Math.abs(before[name].l - reset[name].l) > 1.5 || Math.abs(before[name].r - reset[name].r) > 1.5)
+  check(failures, drift.length === 0,
+    `${label}: zero-inset layout must be restored exactly after safe-area probe: ${JSON.stringify(drift.map((name) => [name, before[name], reset[name]]))}`)
+}
+
 async function waitForStableLayout(page, { timeout = 10_000 } = {}) {
   const deadline = Date.now() + timeout
   let previous = null
@@ -1310,11 +1617,11 @@ async function waitForStableLayout(page, { timeout = 10_000 } = {}) {
   return previous
 }
 
-async function check3DDrawingSurface(page, failures, scenario, viewport) {
-  // 手机形态：全屏入口在右上角浮动（floatingFullscreen 契约），传输条 5 控件。
-  // touch 由调用方经 page.callWith 显式传入（probe 在页面内执行，无 Node 闭包）。
-  const probe = (touch) => {
-    const ids = touch
+async function check3DDrawingSurface(page, failures, scenario, viewport, sceneHit) {
+  // 手机横屏：全屏入口内联在传输条，6 个主控件；手机竖屏：浮动入口，传输条 5 个。
+  // touch / portrait 由调用方经 page.callWith 显式传入（probe 在页面内执行，无 Node 闭包）。
+  const probe = (touch, portrait) => {
+    const ids = portrait
       ? ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-secondary-entry']
       : ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']
     const controls = document.querySelector('.pb-controls')
@@ -1348,18 +1655,19 @@ async function check3DDrawingSurface(page, failures, scenario, viewport) {
     }
   }
   const compactBar = await page.evaluate(`document.querySelector('.pb-root').classList.contains('compact-bar')`)
-  const before = await page.callWith(probe, scenario.touch)
+  const portrait = scenario.layout === 'portrait'
+  const before = await page.callWith(probe, scenario.touch, portrait)
   const label = viewport.width + 'x' + viewport.height
   check(failures, !!before.entry && before.entry.reachable, label + ': Drawing entry must be hit-testable in the 3D tool-row')
   if (before.entry) {
-    check(failures, !scenario.touch || (before.entry.width >= 43.5 && before.entry.height >= 43.5),
-      label + ': Drawing entry must keep a 44px touch target')
+    check(failures, !scenario.touch || (before.entry.width >= sceneHit - 0.5 && before.entry.height >= sceneHit - 0.5),
+      label + `: Drawing entry must keep a ${sceneHit}px touch target`)
   }
   // 紧凑形态的镜头 / GLB 在 Display 面里，Drawing 入口留在控制条
   check(failures, compactBar ? !before.toolRow : before.toolRow, label + ': tool-row belongs to the controls only in wide forms')
   check(failures, !before.inTransport && !before.entryInTransport, label + ': Drawing entry must live outside the shared transport')
   check(failures, !before.entryInDisplay, label + ': Drawing is a creation tool, not a Display preference')
-  const expectedPrimary = scenario.touch ? 5 : 6
+  const expectedPrimary = portrait ? 5 : 6
   check(failures, before.transport.order.length === expectedPrimary && before.transport.oneRow,
     label + ': shared primary controls must stay in x-order on one row before Drawing')
   if (!before.entry) return
@@ -1367,7 +1675,7 @@ async function check3DDrawingSurface(page, failures, scenario, viewport) {
   check(failures, openedByClick, label + ': Drawing entry click failed')
   if (!openedByClick) return
   await page.waitFor(() => !!document.querySelector('[data-test="pb-annot-toolbar"]'), { label: '3D drawing toolbar' })
-  const opened = await page.callWith(probe, scenario.touch)
+  const opened = await page.callWith(probe, scenario.touch, portrait)
   check(failures, opened.toolbar && !opened.toolRow, label + ': Drawing must replace the tool-row with AnnotationToolbar')
   check(failures, await page.evaluate(`!document.querySelector('[data-testid="display-panel"]')`), label + ': Drawing and Display are mutually exclusive')
   check(failures, await page.evaluate('window.__sceneMarker === window.__pbPane.sceneApi'), label + ': opening Drawing must not rebuild the scene')
@@ -1382,7 +1690,9 @@ async function check3DDrawingSurface(page, failures, scenario, viewport) {
       const bar = document.querySelector('[data-test="pb-annot-toolbar"]')
       bar.scrollLeft += tool.getBoundingClientRect().left - bar.getBoundingClientRect().left - (bar.clientWidth - tool.offsetWidth) / 2
     })()`)
-    const reach = await measureReachability(page, { options: ['[data-occlusion-control=current]'], touch: scenario.touch })
+    const reach = await measureReachability(page, {
+      options: ['[data-occlusion-control=current]'], touch: scenario.touch, minTouchTargetPx: sceneHit,
+    })
     for (const failure of reach.failures) check(failures, false, `${label}: AnnotationToolbar 可达: ${failure}`)
   }
   await page.evaluate(`(() => {
@@ -1402,7 +1712,7 @@ async function check3DDrawingSurface(page, failures, scenario, viewport) {
   check(failures, closedByClick, label + ': Drawing close failed')
   if (!closedByClick) return
   await page.waitFor(() => !document.querySelector('[data-test="pb-annot-toolbar"]'), { label: '3D drawing toolbar closed' })
-  const restored = await page.callWith(probe, scenario.touch)
+  const restored = await page.callWith(probe, scenario.touch, portrait)
   check(failures, (compactBar ? !!restored.entry : restored.toolRow) && !restored.toolbar, label + ': original tool-row must return after Drawing closes')
   if (compactBar) {
     await page.evaluate(`document.querySelector('[data-testid="display-toggle"]').click()`)
@@ -1421,7 +1731,7 @@ async function runRosterGeometryScenario(env, scenario) {
   const { targetId, sessionId } = await env.chrome.openPage()
   const page = new Page(env.chrome.client, sessionId)
   lastPage = page
-  await page.enable()
+  await page.enable({ locale: scenario.locale ?? 'zh', profile: scenario.profile ?? 'summer' })
   await page.emulate(scenario)
 
   // ?debug：Replay3DPane 的状态注入口（与场景内核的 ?debug 钩子同一口径），
@@ -1507,7 +1817,7 @@ async function runRosterGeometryScenario(env, scenario) {
     s.duration = 300
     s.time = 42
     s.startTime = 0
-    s.cam = 'free'
+    s.cam = ${JSON.stringify(scenario.camera ?? 'free')}
     s.roster = {
       team1: mk('Ally', ${scenario.players}, 1),
       team2: mk('Enemy', ${scenario.players}, 2),
@@ -1522,12 +1832,15 @@ async function runRosterGeometryScenario(env, scenario) {
   // 车道的上下界、控制条的位置会一起重排，读到的就是「上一轮布局 + 这一轮变量」的混合几何
   // （实测同一次运行里 1024×768 会因为抢在重排前读而失败，稍后再读就通过）。
   await waitForStableLayout(page)
+  let sceneHit = await sceneHitTarget(page)
 
   if (scenario.rotateTo) {
     await page.emulate({ ...scenario, ...scenario.rotateTo })
     await page.waitFor(() => document.querySelector('.pb-root')?.classList.contains('roster-side'),
       { label: 'rotated 3D pane switches to Team 1 | Stage | Team 2' })
     await waitForStableLayout(page)
+    // 旋转后媒体查询从竖屏触控档切到紧凑档，命中下限必须重新读取。
+    sceneHit = await sceneHitTarget(page)
   }
   const viewport = scenario.rotateTo || scenario
   const sceneBefore = await page.evaluate('(window.__sceneMarker = window.__pbPane.sceneApi, true)')
@@ -1561,7 +1874,8 @@ async function runRosterGeometryScenario(env, scenario) {
       const x = r.left + r.width / 2, y = r.top + r.height / 2
       return { x, y, reachable: button.contains(document.elementFromPoint(x, y)), width: r.width, height: r.height }
     })()`)
-    check(failures, hit.reachable && hit.width >= 44 && hit.height >= 44, 'toolbar disclosure must be hit-testable with a 44px target')
+    check(failures, hit.reachable && hit.width >= sceneHit - 0.5 && hit.height >= sceneHit - 0.5,
+      `toolbar disclosure must be hit-testable with a ${sceneHit}px target`)
     await page.tap({ x: hit.x, y: hit.y, touch: scenario.touch })
     await page.waitForValue(`document.querySelector(${JSON.stringify(toolbarSelector)})?.getAttribute('aria-expanded')`,
       value => value === String(!collapsed), { label: 'toolbar disclosure changes after raw input' })
@@ -1584,7 +1898,92 @@ async function runRosterGeometryScenario(env, scenario) {
   await page.evaluate('window.scrollTo(0, 0)')
   await waitForStableLayout(page)
   const geometry = await page.probe(rosterGeometryProbe)
-  if (scenario.name === 'roster-geometry-844x390-fullscreen-coarse') {
+  if (scenario.name.includes('distance-')) {
+    // 非全屏工作台在矮窗口里会把 .pb-root 推到首屏之外；把根滚进视口后再测，
+    // 否则行命中/滑条可见性测到的是页面滚动位置，而不是布局本身。
+    if (!scenario.fullscreen) {
+      await page.evaluate("document.querySelector('.pb-root').scrollIntoView({ block: 'start' })");
+      await waitForStableLayout(page)
+    }
+    const checkDistance = async (state = '') => {
+      const measured = await page.probe(sceneDistanceProbe)
+      console.log(`[browser-interaction] ${scenario.name}${state} distance ${JSON.stringify(measured)}`)
+      for (const error of sceneDistanceViolations(measured, scenario, viewport)) {
+        check(failures, false, `${scenario.name}${state} distance slider: ${error}`)
+      }
+      return measured
+    }
+    const dist = await checkDistance()
+
+    // 真实拖动证明滑条仍可操作，而不是只摆对位置。
+    const dragStart = await page.evaluate(`(() => {
+      const el = document.querySelector('[data-testid="scene-distance-slider"]')
+      const track = el && el.querySelector('.scene-dist-track')
+      if (!el || !track) return null
+      const r = track.getBoundingClientRect()
+      return { x: r.left + r.width / 2, top: r.top, bottom: r.bottom, value: Number(el.getAttribute('aria-valuenow')) }
+    })()`)
+    if (!dragStart) {
+      check(failures, false, `${scenario.name} distance slider: drag track missing`)
+    } else {
+      await dragPointer(page, { x: dragStart.x, y: dragStart.top + 6 }, { x: dragStart.x, y: dragStart.bottom - 6 }, { touch: scenario.touch })
+      const farValue = await page.evaluate("Number(document.querySelector('[data-testid=\"scene-distance-slider\"]').getAttribute('aria-valuenow'))")
+      await dragPointer(page, { x: dragStart.x, y: dragStart.bottom - 6 }, { x: dragStart.x, y: dragStart.top + 6 }, { touch: scenario.touch })
+      const nearValue = await page.evaluate("Number(document.querySelector('[data-testid=\"scene-distance-slider\"]').getAttribute('aria-valuenow'))")
+      check(failures, Number.isFinite(farValue) && farValue < dragStart.value - 10,
+        `${scenario.name} distance slider: downward drag must move toward far (before=${dragStart.value}, after=${farValue})`)
+      check(failures, Number.isFinite(nearValue) && nearValue > farValue + 10,
+        `${scenario.name} distance slider: upward drag must move toward near (far=${farValue}, near=${nearValue})`)
+    }
+
+    // 负向对照：把滑条移到名册中段，必须真的压住行与血量条；否则几何判定是空跑。
+    // （旧竖排布局只在 ru 等长标签下才必然压住短标签；这里用确定性的真实遮挡来验证探针。）
+    await page.evaluate(`(() => {
+      const style = document.createElement('style')
+      style.id = 'distance-occlusion-negative-control'
+      style.textContent = '.pb-root.playback-workspace .scene-dist { top: 120px !important; bottom: auto !important; }'
+      document.head.append(style)
+    })()`)
+    await waitForStableLayout(page)
+    const mutant = await page.probe(sceneDistanceProbe)
+    check(failures, mutant.rowOverlap.length > 0 && mutant.hpOverlap.length > 0,
+      `${scenario.name} distance slider negative control: intentional overlay must hit roster rows and HP bars, got rows=${JSON.stringify(mutant.rowOverlap)} hp=${JSON.stringify(mutant.hpOverlap)}`)
+    await page.evaluate("document.getElementById('distance-occlusion-negative-control')?.remove()")
+    await waitForStableLayout(page)
+
+    // 全屏切换后仍须成立：同一场景内真实进入/退出，而不是只靠另一个全屏场景代证。
+    if (scenario.toggleFullscreen) {
+      const fsButton = await page.evaluate(`(() => {
+        const el = document.querySelector('[data-test="pb-fullscreen"]')
+        if (!el) return null
+        el.scrollIntoView({ block: 'center' })
+        const r = el.getBoundingClientRect()
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+      })()`)
+      check(failures, !!fsButton, `${scenario.name} distance slider: fullscreen entry missing`)
+      if (fsButton) {
+        await page.tap({ ...fsButton, touch: scenario.touch })
+        await page.waitFor(() => !!document.fullscreenElement, { timeout: 5000, label: 'distance fullscreen on' })
+        await waitForStableLayout(page)
+        await checkDistance(' fullscreen')
+
+        const exitCenter = await page.evaluate(`(() => {
+          const el = document.querySelector('[data-test="pb-fullscreen"]')
+          const r = el.getBoundingClientRect()
+          return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+        })()`)
+        await page.tap({ ...exitCenter, touch: scenario.touch })
+        await page.waitFor(() => !document.fullscreenElement, { timeout: 5000, label: 'distance fullscreen off' })
+        await page.evaluate("document.querySelector('.pb-root').scrollIntoView({ block: 'start' })")
+        await waitForStableLayout(page)
+        await checkDistance(' restored')
+      }
+    }
+  }
+  if (scenario.touch && scenario.layout !== 'portrait') {
+    await checkPhoneSafeArea(page, failures, scenario.name + ' landscape')
+  }
+  if (scenario.layout !== 'portrait' && scenario.name.endsWith('-fullscreen-coarse')) {
     const slider = await page.probe(() => {
       const el = document.querySelector('[data-testid="scene-distance-slider"]')
       const fs = document.querySelector('[data-test="pb-fullscreen"]')
@@ -1595,8 +1994,8 @@ async function runRosterGeometryScenario(env, scenario) {
         overlap: r.left < f.right && f.left < r.right && r.top < f.bottom && f.top < r.bottom,
         leftHit: hit(r.left + 2), rightHit: hit(r.right - 2) }
     })
-    check(failures, slider && slider.width >= 44 && slider.centerError <= 1 && !slider.overlap && slider.leftHit && slider.rightHit,
-      `3D replay distance slider hit geometry: ${JSON.stringify(slider)}`)
+    check(failures, slider && slider.width >= sceneHit - 0.5 && slider.centerError <= 1 && !slider.overlap && slider.leftHit && slider.rightHit,
+      `3D replay distance slider hit geometry (${sceneHit}px): ${JSON.stringify(slider)}`)
   }
 
   // —— #727 3D 主内容遮挡（design-language §5 例外段）：HUD 可以浮在场景上，但控制条不得压入中心 ——
@@ -1752,7 +2151,7 @@ async function runRosterGeometryScenario(env, scenario) {
     check(failures, geometry.side && !geometry.portrait, `expected Team 1 | Stage | Team 2 (class roster-side): portrait=${geometry.portrait} side=${geometry.side}`)
   }
 
-  await check3DDrawingSurface(page, failures, scenario, viewport)
+  await check3DDrawingSurface(page, failures, scenario, viewport, sceneHit)
 
   // Desktop uses approximately 25 / 50 / 25 columns.
   // 2026-10-05 布局恢复为「场景铺满 + 浮层」：2/6/2 列几何断言编码的是被替换的旧契约，
@@ -1838,6 +2237,9 @@ async function runRosterGeometryScenario(env, scenario) {
   }
   if (scenario.fullscreen) {
     check(failures, await page.evaluate('window.__sceneMarker === window.__pbPane.sceneApi'), 'entering fullscreen must not recreate the 3D scene')
+    if (scenario.touch && scenario.layout !== 'portrait') {
+      await checkPhoneSafeArea(page, failures, scenario.name + ' fullscreen')
+    }
   }
 
   // —— 跟随：名册行 → selectedEid + cam=follow（2026-10-05 交互契约）——
@@ -1888,7 +2290,9 @@ async function runRosterGeometryScenario(env, scenario) {
   check(failures, clicked(speedToggle), `speed picker not clickable: ${speedToggle}`)
   if (clicked(speedToggle)) {
     await page.waitFor(() => !!document.querySelector('[data-test="pb-speed-menu"]'), { label: 'speed menu opens' })
-    const speedReach = await measureReachability(page, { options: ['[data-test="pb-speed-menu"] button'], touch: scenario.touch })
+    const speedReach = await measureReachability(page, {
+      options: ['[data-test="pb-speed-menu"] button'], touch: scenario.touch, minTouchTargetPx: sceneHit,
+    })
     for (const failure of speedReach.failures) check(failures, false, `3D 倍速菜单可达: ${failure}`)
     await page.evaluate(`document.querySelector('[data-test="pb-speed-current"]').click()`)
     await page.waitFor(() => !document.querySelector('[data-test="pb-speed-menu"]'), { label: 'speed menu closes' })
@@ -1931,7 +2335,9 @@ async function runRosterGeometryScenario(env, scenario) {
           option.scrollIntoView({ block: 'center', inline: 'nearest' })
         }
       })()`)
-      const reach = await measureReachability(page, { options: ['[data-occlusion-control=current]'], touch: scenario.touch })
+      const reach = await measureReachability(page, {
+        options: ['[data-occlusion-control=current]'], touch: scenario.touch, minTouchTargetPx: sceneHit,
+      })
       for (const failure of reach.failures) check(failures, false, `3D Display 可达: ${failure}`)
       check(failures, reach.sampled > 0, `3D Display 第 ${i} 项没有做到命中采样: ${JSON.stringify(reach.results)}`)
     }
@@ -2013,6 +2419,9 @@ async function runRosterGeometryScenario(env, scenario) {
       })
       check(failures, points.fullscreen?.hit && points.restore?.hit,
         `hidden UI buttons must both be independently hit-testable: ${JSON.stringify(points)}`)
+      // 紧凑档全屏按钮本体 40px、top 6；恢复入口必须真的让到它下方，而不是只测两个中心点各自可点。
+      check(failures, points.restore?.rect?.[1] >= points.fullscreen?.rect?.[3] - 0.5,
+        `hidden UI restore must sit below the fullscreen button: ${JSON.stringify(points)}`)
       if (points.fullscreen?.hit && points.restore?.hit) {
         await page.installInputTrace()
         await page.tap({ x: points.fullscreen.x, y: points.fullscreen.y, touch: true })
@@ -2244,6 +2653,7 @@ async function runPlaybackControlScenario(env, scenario) {
 
   await page.goto(`${env.origin}/scripts/browser-fixtures/playback-controls.html?duration=${scenario.duration}`)
   await page.waitFor(() => !!document.querySelector('[data-test="pb-play"]'), { label: 'playback controls' })
+  const sceneHit = await sceneHitTarget(page)
 
   const before = await page.probe(playbackControlProbe)
   // §landscape：非全屏手机横屏时地图按宽度定尺寸，方形地图可以比视口还高，
@@ -2251,12 +2661,18 @@ async function runPlaybackControlScenario(env, scenario) {
   const control = before.hitIsButton ? before : await page.revealControl('[data-test="pb-play"]')
   check(failures, control.hitIsButton,
     `play button center hit ${control.hitDescription} instead (viewport=${control.viewportWidth}x${control.viewportHeight} geometry=${JSON.stringify(control.geometry)})`)
-  if (scenario.touch && before.speedMinSide != null) {
-    check(failures, before.speedMinSide >= 43.5,
-      `touch speed option hit target is ${before.speedMinSide.toFixed(1)}px, below 44px`)
+  // 命中区必须在档位控件真正进入视口后测量：1024×768 平板的地图高于视口，
+  // 控件条会换行且档位可能在首屏之外；此时 elementFromPoint 返回 null 是可达性问题，
+  // 不是命中区问题。先滚到档位控件本身，再判定 44×44 的可点范围。
+  const speed = scenario.touch && !control.speedHit
+    ? await page.revealControl('[data-test="pb-speed-current"]')
+    : control
+  if (scenario.touch && speed.speedHit != null) {
+    check(failures, speed.speedHit,
+      `touch speed option must expose a ${sceneHit}x${sceneHit} hit target: ${JSON.stringify(speed.speedHitDetail)}`)
   }
   // 速度档位是渐进披露：常驻只有当前值，展开后是一列档位菜单——档位齐全、不越出自身容器、
-  // 触屏每个档位都满足 44px。菜单是覆盖层，不参与控件条高度。
+  // 触屏每个档位都满足场景命中下限（紧凑档 40px、常规触屏 44px）。菜单是覆盖层，不参与控件条高度。
   {
     await page.evaluate(`document.querySelector('[data-test="pb-speed-current"]')?.click()`)
     await delay(150)
@@ -2267,8 +2683,10 @@ async function runPlaybackControlScenario(env, scenario) {
         `speed menu must list every shared speed: ${JSON.stringify(menu.speedMenu)}`)
       check(failures, !menu.speedMenu.overflow, 'speed options overflow their menu')
       if (scenario.touch) {
-        check(failures, menu.speedMenu.minSide >= 43.5,
-          `touch speed option hit target is ${menu.speedMenu.minSide.toFixed(1)}px, below 44px`)
+        check(failures, menu.speedMenu.allHit,
+          `touch speed option must expose a ${sceneHit}x${sceneHit} hit target: ${JSON.stringify(menu.speedMenu)}`)
+        check(failures, menu.speedMenu.minWidth >= menu.speedMenu.expectedWidth - 0.5,
+          `touch speed menu option width is ${menu.speedMenu.minWidth.toFixed(1)}px, below ${menu.speedMenu.expectedWidth}px: ${JSON.stringify(menu.speedMenu)}`)
       }
     }
     await page.evaluate(`document.querySelector('[data-test="pb-speed-current"]')?.click()`)
@@ -2901,6 +3319,9 @@ async function runReplayCollectionScenario(env) {
   }
   const roster = `Array.from(document.querySelectorAll('[data-test="pb-roster-row"]')).map(row => row.dataset.accountId).join(',')`
   const contentTop = `(() => { window.scrollTo(0, 0); return Math.round(document.querySelector('.workspace-content').getBoundingClientRect().top) })()`
+  // 分区主视觉是页面标题区的一部分：密度预算只放行这段紧凑横幅本身，
+  // 不允许标题区在横幅之外再长出额外高度。旧基线与当前实测的差值必须只等于横幅高度。
+  const heroHeight = `Math.round(document.querySelector('.workspace-head .showcase-hero')?.getBoundingClientRect().height ?? 0)`
   const trigger = `document.querySelector('[data-testid="collection-trigger"]')?.textContent ?? ''`
   try {
     await page.enable()
@@ -2917,8 +3338,10 @@ async function runReplayCollectionScenario(env) {
     const before = await page.waitForValue(roster, Boolean, { timeout: 60_000, label: 'first battle roster' })
     check(failures, !await page.evaluate(`!!document.querySelector('[data-testid="file-uploader-empty"]')`), 'Ready must not keep the upload card')
     check(failures, await page.evaluate(`!!document.querySelector('[data-testid="playback-battle-picker"]:not(button)')`), 'a single replay shows static battle context')
+    const singleHero = await page.evaluate(heroHeight)
+    check(failures, singleHero >= 120 && singleHero <= 140, `compact hero must stay 120-140px at 1440: ${singleHero}`)
     const singleTop = await page.evaluate(contentTop)
-    check(failures, singleTop <= 175, `single-battle content must start within 175px at 1440: ${singleTop}`)
+    check(failures, singleTop <= 175 + singleHero, `single-battle content must start within 175px + hero at 1440: ${singleTop} (hero ${singleHero})`)
 
     // 看第一场时加入两份新回放 + 一个损坏文件：内容不换场，也不重建面板。
     const broken = join(tempDir, 'broken.wotbreplay')
@@ -2962,8 +3385,10 @@ async function runReplayCollectionScenario(env) {
       // 从单回放追加：赛后数据留在原来那一场，汇总由用户切换。
       await page.evaluate(`document.querySelector('[data-testid="data-view-summary"]').click()`)
       await page.waitFor(() => !!document.querySelector('[data-testid="series-overview"]'), { label: 'Data summary' })
+      const hero = await page.evaluate(heroHeight)
+      if (width === 390) check(failures, hero >= 88 && hero <= 110, `compact hero must stay 88-110px at 390: ${hero}`)
       const top = await page.evaluate(contentTop)
-      if (limit) check(failures, top <= limit, `Data content must start within ${limit}px at ${width}: ${top}`)
+      if (limit) check(failures, top <= limit + hero, `Data content must start within ${limit}px + hero at ${width}: ${top} (hero ${hero})`)
       check(failures, !await page.evaluate(`!!document.querySelector('[data-testid="battle-picker"]')`), 'Data summary must not show a current battle picker')
       await page.evaluate(`document.querySelector('[data-testid="ws-tab"][data-cap="playback"]').click()`)
       await page.waitFor(() => !!document.querySelector('[data-testid="playback-battle-picker"]'), { label: 'single-battle picker' })
@@ -2979,8 +3404,8 @@ async function runReplayCollectionScenario(env) {
       console.log(`[browser-interaction] replay-collection ${width}x${height} ${JSON.stringify({ dataTop: top, ...metrics })}`)
       check(failures, metrics.overflow <= 0, `no horizontal overflow at ${width}: ${JSON.stringify(metrics)}`)
       if (touch) check(failures, metrics.trigger >= 44, `manage trigger needs a 44px target at ${width}: ${JSON.stringify(metrics)}`)
-      if (width === 1440) check(failures, metrics.top <= 175, `single-battle content must start within 175px at 1440: ${JSON.stringify(metrics)}`)
-      if (width === 390) check(failures, metrics.top <= 350, `single-battle content must start within 350px at 390: ${JSON.stringify(metrics)}`)
+      if (width === 1440) check(failures, metrics.top <= 175 + hero, `single-battle content must start within 175px + hero at 1440: ${JSON.stringify({ ...metrics, hero })}`)
+      if (width === 390) check(failures, metrics.top <= 350 + hero, `single-battle content must start within 350px + hero at 390: ${JSON.stringify({ ...metrics, hero })}`)
     }
 
     await page.emulate({ width: 1440, height: 900, touch: false })
@@ -3233,13 +3658,20 @@ const WORKSPACE_2D_SCENARIOS = [
   // 手机横屏：地图是主角。minMap = 地图边长下限（由 740×360 基线 96px + 产品目标推出：
   // 外壳让出 104px、传输条合成一行、HUD 一行后的预算，留 ~6% 余量）。
   { name: 'ws2d-667x375-landscape-coarse', width: 667, height: 375, touch: true, layout: 'lanes', minMap: 270 },
+  // 紧凑 HUD 宽度竞争：非空四基地 + 完整 5 位 HP 数字 + 超长地图名；mixed 再加 PARTIAL/UNKNOWN。
+  { name: 'ws2d-667x375-hud-exact', width: 667, height: 375, touch: true, layout: 'lanes', minMap: 270, hudStress: 'exact' },
+  { name: 'ws2d-740x360-hud-mixed', width: 740, height: 360, touch: true, layout: 'lanes', minMap: 260, hudStress: 'mixed' },
+  { name: 'ws2d-844x390-hud-exact', width: 844, height: 390, touch: true, layout: 'lanes', minMap: 290, hudStress: 'exact' },
   { name: 'ws2d-740x360-landscape-coarse', width: 740, height: 360, touch: true, layout: 'lanes', minMap: 260 },
+  { name: 'ws2d-740x360-fullscreen-coarse', width: 740, height: 360, touch: true, layout: 'lanes', fullscreen: true, minMap: 260 },
   { name: 'ws2d-844x390-landscape-coarse', width: 844, height: 390, touch: true, layout: 'lanes', minMap: 290 },
+  { name: 'ws2d-844x390-annotation-fullscreen', width: 844, height: 390, touch: true, layout: 'lanes', minMap: 290, annotationFullscreen: true },
   { name: 'ws2d-844x390-landscape-recorder-team2', width: 844, height: 390, touch: true, layout: 'lanes', recorder: 2, minMap: 290 },
   { name: 'ws2d-844x390-fullscreen-coarse', width: 844, height: 390, touch: true, layout: 'lanes', fullscreen: true, minMap: 290 },
   { name: 'ws2d-1024x768-tablet', width: 1024, height: 768, touch: false, layout: 'lanes' },
   // 1280 宽桌面：侧边车道（≈320）比详情浮窗（340）窄——初始落位必须收窄浮窗，而不是伸进中心栏盖住 HUD
   { name: 'ws2d-1280x720-desktop', width: 1280, height: 720, touch: false, layout: 'lanes' },
+  { name: 'ws2d-1280x800-desktop', width: 1280, height: 800, touch: false, layout: 'lanes' },
   { name: 'ws2d-1600x900-desktop', width: 1600, height: 900, touch: false, layout: 'lanes' },
   { name: 'ws2d-1792x922-fullscreen-desktop', width: 1792, height: 922, touch: false, layout: 'lanes', fullscreen: true },
 ]
@@ -3283,13 +3715,30 @@ function workspace2dProbe(touch = false) {
   }
   const buttons = [...document.querySelectorAll('.pb-controls > .pb-btn, .pb-controls > * > .pb-btn, .pb-controls .pb-btn')]
     .filter((b) => b.getClientRects().length && !b.closest('.pb-speed-menu'))
-  // 手机形态：全屏入口在右上角浮动（floatingFullscreen 契约），传输条 5 控件。
+  // 手机横屏：全屏入口内联在传输条（右上浮动按钮已移除），与桌面同一组 6 个主控件。
+  // 手机竖屏仍保留 HUD 右上角的浮动全屏入口（不压纵向流的名单），传输条只有 5 个主控件。
   // touch 由调用方经 page.callWith 显式传入（probe 在页面内执行，无 Node 闭包）。
-  const primaryIds = touch
+  const phoneLandscape = !!root?.classList.contains('pb-phone-landscape')
+  const primaryIds = touch && !phoneLandscape
     ? ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-secondary-entry']
     : ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']
   const primary = primaryIds
     .map((test) => box(document.querySelector(`.pb-controls [data-test="${test}"]`)))
+  // 视觉盒仍是 36px：用真实命中测试验证伪元素把可点范围扩到 ≥40×40（不读 token 代替）。
+  const primaryHitAreas = primaryIds.map((test, index) => {
+    const el = document.querySelector(`.pb-controls [data-test="${test}"]`)
+    const b = primary[index]
+    if (!el || !b) return { test, missing: true }
+    const hit = (x, y) => { const target = document.elementFromPoint(x, y); return target === el || el.contains(target) }
+    const cx = b.l + b.w / 2, cy = b.t + b.h / 2
+    return {
+      test, center: hit(cx, cy), top: hit(cx, b.t - 1.5), bottom: hit(cx, b.b + 1.5),
+      left: hit(b.l - 1.5, cy), right: hit(b.r + 1.5, cy), visualHeight: b.h, visualWidth: b.w,
+    }
+  })
+  const scene = document.querySelector('[data-scene-surface]')
+  const sceneStyle = getComputedStyle(scene || document.documentElement)
+  const token = (name) => parseFloat(sceneStyle.getPropertyValue(name)) || null
   const details = document.querySelector('[data-test="pb-info"]')
   const transport = document.querySelector('[data-test="pb-transport-slot"]')
   const inline = document.querySelector('[data-test="pb-inline-area"]')
@@ -3298,9 +3747,16 @@ function workspace2dProbe(touch = false) {
     height: innerHeight,
     fullscreen: !!document.fullscreenElement,
     rootClass: root?.className || '',
+    phoneLandscape,
+    primaryIds,
     hud: box(document.querySelector('.pb-hud')),
     pageOverflowX: document.documentElement.scrollWidth > innerWidth + 1,
     main: box(main),
+    mainPadding: main ? {
+      left: parseFloat(getComputedStyle(main).paddingLeft) || 0,
+      right: parseFloat(getComputedStyle(main).paddingRight) || 0,
+      top: parseFloat(getComputedStyle(main).paddingTop) || 0,
+    } : null,
     map: box(document.querySelector('[data-test="pb-map"]')),
     transport: box(transport),
     left: lane('left'),
@@ -3320,15 +3776,18 @@ function workspace2dProbe(touch = false) {
     primaryBoxes: primary,
     primaryOrder: [...document.querySelectorAll('.pb-controls button[data-test]')].map((b) => b.dataset.test)
       .filter((id) => primaryIds.includes(id)),
-    floatingFullscreenTopRight: (() => {
-      if (!touch) return null
-      const floating = document.querySelector('[data-test="pb-fullscreen"]')
-      const rootBox = root?.getBoundingClientRect()
-      if (!floating || !rootBox) return false
-      const r = floating.getBoundingClientRect()
-      return Math.abs(r.right - rootBox.right) <= 12 && Math.abs(r.top - rootBox.top) <= 12
+    fullscreenInline: (() => {
+      const inlineFs = document.querySelector('.pb-controls [data-test="pb-fullscreen"]')
+      return !!inlineFs && inlineFs.getClientRects().length > 0
     })(),
+    fullscreenCount: document.querySelectorAll('[data-test="pb-fullscreen"]').length,
     primaryMinSide: Math.min(...primary.filter(Boolean).map((b) => Math.min(b.w, b.h))),
+    primaryHitAreas,
+    tokens: {
+      coarse: matchMedia('(pointer: coarse)').matches,
+      compact: matchMedia('(pointer: coarse) and (orientation: landscape) and (height <= 520px)').matches,
+      controlMd: token('--control-h-md'), hitComfortable: token('--hit-min-comfortable'), space2: token('--space-2'),
+    },
     buttonCount: buttons.length,
     layout: ['.battle-playback', '.pb-hud', '.pb-main', '.pb-map-stage', '.pb-map', '.pb-transport-slot', '.pb-mobile-overlay', '.pb-mobile-overlay-content', '.pb-team-lane-left', '[data-test="pb-roster-row"]'].map((selector) => {
       const element = document.querySelector(selector)
@@ -3340,6 +3799,63 @@ function workspace2dProbe(touch = false) {
         scrollHeight: element.scrollHeight, clientHeight: element.clientHeight, classes: element.className,
         squareAvailable: style.getPropertyValue('--pb-square-avail-h'), workspaceHeight: style.getPropertyValue('--pb-workspace-h') }
     }),
+  }
+}
+
+/**
+ * 紧凑 HUD 的宽度竞争探针：把地图名换成超长串后，量实际轨道/数字/中列的几何。
+ * 只读 + 一次 DOM 文本注入，不依赖 fixture 为某个设备硬编码 HUD 宽度。
+ */
+function hudStressProbe(longTitle = false) {
+  const box = (el) => {
+    if (!el || !el.getClientRects().length) return null
+    const r = el.getBoundingClientRect()
+    return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height }
+  }
+  const hud = document.querySelector('[data-test="pb-hud"]')
+  if (!hud) return { missing: true }
+  const map = hud.querySelector('[data-test="pb-hud-map"]')
+  if (longTitle && map) {
+    map.textContent = '异常长的地图名称用于验证截断优先级与完整战斗数据'
+    void hud.offsetWidth
+  }
+  const center = hud.querySelector('[data-test="pb-hud-center"]')
+  const teams = [...hud.querySelectorAll('[data-test="pb-hud-friendly"], [data-test="pb-hud-enemy"]')]
+  const tracks = teams.map((el) => el.querySelector('.pb-hp-track'))
+  const values = teams.map((el) => el.querySelector('.pb-hp-value'))
+  const valueTextWidth = (el) => {
+    if (!el) return 0
+    const range = document.createRange()
+    range.selectNodeContents(el)
+    return range.getBoundingClientRect().width
+  }
+  const rects = { hud: box(hud), map: box(map), center: box(center), friendly: box(teams[0]), enemy: box(teams[1]) }
+  const overlaps = (a, b) => !!a && !!b && a.l < b.r - 0.5 && b.l < a.r - 0.5 && a.t < b.b - 0.5 && b.t < a.b - 0.5
+  return {
+    missing: false,
+    width: hud.getBoundingClientRect().width,
+    height: hud.getBoundingClientRect().height,
+    tracks: tracks.map((el) => (el ? el.getBoundingClientRect().width : 0)),
+    values: values.map((el) => (el ? el.textContent.trim() : '')),
+    valueWidths: values.map((el) => (el ? el.getBoundingClientRect().width : 0)),
+    valueTextWidths: values.map(valueTextWidth),
+    baseCount: hud.querySelectorAll('[data-testid^="base-badge-"]').length,
+    clock: hud.querySelector('[data-test="pb-hud-time"]')?.textContent?.trim() || '',
+    score: hud.querySelector('[data-test="pb-hud-score"]')?.textContent?.trim() || '',
+    title: map ? {
+      text: map.textContent.trim(),
+      width: map.getBoundingClientRect().width,
+      scrollWidth: map.scrollWidth,
+      overflow: getComputedStyle(map).overflow,
+      textOverflow: getComputedStyle(map).textOverflow,
+    } : null,
+    rects,
+    centerOverlapsTeam: overlaps(rects.center, rects.friendly) || overlaps(rects.center, rects.enemy),
+    valueOverlapsCenter: overlaps(box(values[0]), rects.center) || overlaps(box(values[1]), rects.center),
+    hudOverflowX: hud.scrollWidth > hud.clientWidth + 1,
+    hudScrollWidth: hud.scrollWidth,
+    hudClientWidth: hud.clientWidth,
+    centerOverflowX: center ? center.scrollWidth > center.clientWidth + 1 : false,
   }
 }
 
@@ -3513,9 +4029,11 @@ async function checkDisplaySurface(page, failures, layout, scenario) {
       for (const failure of detailsPaint.failures) check(failures, false, `Display 必须压过车辆详情面板: ${failure}`)
     }
     // 选项不只是按钮：显示开关是 label 包着的复选框，只查 button 会漏掉整块被盖住的复选框区
+    const compact = !!scenario.touch && scenario.height <= 520 && scenario.width > scenario.height
     const reach = await measureReachability(page, {
       options: ['[data-testid="display-panel"] button', '[data-testid="display-panel"] label'],
       touch: !!scenario.touch,
+      minTouchTargetPx: compact ? 40 : undefined,
     })
     for (const failure of reach.failures) check(failures, false, `Display 选项可达性: ${failure}`)
     check(failures, reach.sampled > 0, 'Display 可达性断言空跑：没有任何选项被实际命中采样')
@@ -3543,7 +4061,7 @@ async function runWorkspace2DScenario(env, scenario) {
   lastPage = page
   await page.enable()
   await page.emulate(scenario)
-  await page.goto(`${env.origin}/scripts/browser-fixtures/playback-controls.html?duration=60&players=7&recorder=${scenario.recorder || 1}&marks=1${scenario.minMap ? '&shell=immersive' : ''}`)
+  await page.goto(`${env.origin}/scripts/browser-fixtures/playback-controls.html?duration=60&players=7&recorder=${scenario.recorder || 1}&marks=1${scenario.minMap ? '&shell=immersive' : ''}${scenario.hudStress ? `&hud=${scenario.hudStress}` : ''}`)
   await page.waitFor(() => !!document.querySelector('[data-test="pb-roster-row"]'), { label: '2D roster rows' })
   await delay(300)
 
@@ -3653,11 +4171,17 @@ async function runWorkspace2DScenario(env, scenario) {
   // 标记共用这一个画框），与 1:1 的差 < 1%——拉成严格 1:1 反而会把地图拉伸变形。
   const squareish = (b) => b && b.w > 0 && Math.abs(b.w - b.h) <= Math.max(1.5, b.w * 0.01)
   check(failures, squareish(g.map), `Stage is not square: ${JSON.stringify(g.map)}`)
-  check(failures, JSON.stringify(g.primaryOrder) === JSON.stringify(scenario.touch
-    ? ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-secondary-entry']
-    : ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']),
+  check(failures, JSON.stringify(g.primaryOrder) === JSON.stringify(g.primaryIds),
     `primary controls DOM order: ${JSON.stringify(g.primaryOrder)}`)
-  if (scenario.touch) check(failures, g.floatingFullscreenTopRight === true, 'phone: floating fullscreen button missing or not top-right')
+  if (scenario.touch) {
+    if (g.phoneLandscape) {
+      check(failures, g.fullscreenInline === true, 'phone landscape: fullscreen entry must be inline in transport')
+      check(failures, g.fullscreenCount === 1, `phone landscape: expected exactly one fullscreen entry, got ${g.fullscreenCount}`)
+    } else {
+      check(failures, g.fullscreenInline === false, 'phone portrait: fullscreen entry must stay a floating HUD button')
+      check(failures, g.fullscreenCount === 1, `phone portrait: expected exactly one fullscreen entry, got ${g.fullscreenCount}`)
+    }
+  }
   check(failures, g.primaryBoxes.every((box) => box)
     && g.primaryBoxes.every((box, index) => index === 0 || box.l >= g.primaryBoxes[index - 1].r - 1),
     'primary controls must preserve their x-order')
@@ -3679,6 +4203,26 @@ async function runWorkspace2DScenario(env, scenario) {
     })()`)
     check(failures, bars.friendly >= 40 && bars.enemy >= 40 && Math.abs(bars.friendly - bars.enemy) <= 2,
       `compact HUD HP bars must both be >=40px and symmetric: ${JSON.stringify(bars)}`)
+    if (scenario.hudStress) {
+      const h = await page.callWith(hudStressProbe, true)
+      const exact = /^\d{5,} \/ \d{5,}$/
+      const valueOk = scenario.hudStress === 'exact'
+        ? h.values.every((value) => exact.test(value))
+        : /^\d{5,}$/.test(h.values[0]) && h.values[1] === '—'
+      check(failures, !h.missing && h.height <= 36, `hud stress: HUD missing or taller than one row: ${JSON.stringify(h)}`)
+      check(failures, h.baseCount >= 4 && !!h.clock && !!h.score,
+        `hud stress: base/clock/score lost: ${JSON.stringify({ bases: h.baseCount, clock: h.clock, score: h.score })}`)
+      check(failures, valueOk && h.valueTextWidths.every((width, index) => width <= h.valueWidths[index] + 1),
+        `hud stress: full HP values must render uncut: ${JSON.stringify({ values: h.values, text: h.valueTextWidths, box: h.valueWidths })}`)
+      check(failures, h.tracks.every((width) => width >= 40) && Math.abs(h.tracks[0] - h.tracks[1]) <= 2,
+        `hud stress: HP tracks must stay >=40px and symmetric: ${JSON.stringify(h.tracks)}`)
+      check(failures, h.title && h.title.overflow === 'hidden' && h.title.textOverflow === 'ellipsis'
+        && h.title.scrollWidth > h.title.width + 1,
+        `hud stress: long map title must yield with ellipsis, not squeeze battle data: ${JSON.stringify(h.title)}`)
+      check(failures, !h.centerOverlapsTeam && !h.valueOverlapsCenter && !h.hudOverflowX && !h.centerOverflowX,
+        `hud stress: content overlaps/overflows: ${JSON.stringify({ center: h.rects.center, friendly: h.rects.friendly, enemy: h.rects.enemy, hudOverflowX: h.hudOverflowX, centerOverflowX: h.centerOverflowX, hudScrollWidth: h.hudScrollWidth, hudClientWidth: h.hudClientWidth })}`)
+      console.log(`[browser-interaction] ${scenario.name} hud=${JSON.stringify({ width: h.width, height: h.height, tracks: h.tracks, values: h.values, bases: h.baseCount, mapW: h.title?.width })}`)
+    }
     // 沉浸态横屏（非全屏）也贴屏幕边缘：模拟刘海侧 safe-area，车道与传输条不得进入该区域。
     if (!scenario.fullscreen) {
       const inset = 44
@@ -3695,12 +4239,25 @@ async function runWorkspace2DScenario(env, scenario) {
     }
     console.log(`[browser-interaction] ${scenario.name} map=${Math.round(g.map?.w)}x${Math.round(g.map?.h)} hud=${Math.round(g.hud?.h)} transport=${Math.round(g.transport?.h)}`)
   }
-  // 手机五项、桌面六项均同一行；手机全屏入口独立浮动。
+  // 手机横屏 / 桌面：六项同一行（全屏入口内联）；手机竖屏：五项同一行（全屏浮在 HUD）。
   const tops = g.primaryTops.filter((t) => t != null)
-  check(failures, tops.length === (scenario.touch ? 5 : 6) && Math.max(...tops) - Math.min(...tops) <= 1,
+  check(failures, tops.length === g.primaryIds.length && Math.max(...tops) - Math.min(...tops) <= 1,
     `primary controls are not one row: ${JSON.stringify(g.primaryTops)}`)
   if (scenario.touch) {
-    check(failures, g.primaryMinSide >= 43.5, `primary control below 44px: ${g.primaryMinSide}`)
+    if (g.tokens.compact) {
+      check(failures, g.tokens.controlMd === 36 && g.tokens.hitComfortable === 40 && g.tokens.space2 === 6,
+        `compact scene tokens wrong: ${JSON.stringify(g.tokens)}`)
+      check(failures, g.primaryMinSide >= 35.5, `compact primary visual height below 36px: ${g.primaryMinSide}`)
+    } else {
+      check(failures, g.tokens.hitComfortable === 44, `non-compact touch hit token changed: ${JSON.stringify(g.tokens)}`)
+      check(failures, g.primaryMinSide >= 43.5, `primary control below 44px: ${g.primaryMinSide}`)
+    }
+    check(failures, g.primaryHitAreas.every((area) => area.center
+      && (!g.tokens.compact || (area.top && area.bottom && area.left && area.right))),
+      `primary controls do not expose a 40x40 effective hit area: ${JSON.stringify(g.primaryHitAreas)}`)
+  } else {
+    check(failures, g.tokens.compact === false && g.tokens.controlMd === 32 && g.tokens.hitComfortable === 44,
+      `desktop scene tokens changed: ${JSON.stringify(g.tokens)}`)
   }
 
   const team1 = Array.from({ length: 7 }, (_, i) => 1001 + i)
@@ -3792,7 +4349,9 @@ async function runWorkspace2DScenario(env, scenario) {
     if (d.transport && d.transport.h > 0) {
       check(failures, panel && panel.b <= d.transport.t + 0.5, `details covers the transport after dragging ${label}`)
     }
-    lastPos = panel
+    // 记录宿主相对坐标：下面点 Team 2 时 clickElement 可能把行滚进视口，页面 scrollY 变化会
+    // 同时移动面板与宿主，只比较视口坐标会把滚动误判成“面板被重新摆放”。
+    lastPos = { panel, main: d.main, transport: d.transport }
   }
 
   // ---- 点 Team 2 → 同一个窗更新、位置不动、Team 2 车道仍在 ----
@@ -3802,8 +4361,27 @@ async function runWorkspace2DScenario(env, scenario) {
   s = await page.callWith(workspace2dProbe, scenario.touch)
   check(failures, s.detailsCount === 1 && s.detailsPlayer === rightName, `details did not update to the Team 2 vehicle: ${s.detailsPlayer}`)
   check(failures, !!s.right, 'Team 2 lane disappeared after selecting a Team 2 vehicle')
-  check(failures, lastPos && s.details && Math.abs(s.details.l - lastPos.l) < 1 && Math.abs(s.details.t - lastPos.t) < 1,
-    'user-dragged details position must survive selection changes')
+  // 宿主相对坐标：页面滚动不影响。选中另一台车时内容高度可能变化；ResizeObserver 的合法结果
+  // 由生产同一份 detailsPlacementLimits 推导：old top 仍合法就**原位保留**，只有真正越过
+  // transport / host 下界才 clamp。不能用「上移不超过增高量」这类弱谓词（会放过不必要的位移）。
+  const oldPanel = lastPos?.panel
+  const oldMain = lastPos?.main
+  const dx = oldPanel && oldMain && s.details && s.main ? (s.details.l - s.main.l) - (oldPanel.l - oldMain.l) : NaN
+  const placementOk = !!(oldPanel && oldMain && s.details && s.main && s.mainPadding) && detailsPlacementPreserved({
+    oldTop: oldPanel.t - oldMain.t,
+    newTop: s.details.t - s.main.t,
+    newHeight: s.details.h,
+    hostWidth: s.main.w,
+    hostHeight: s.main.h,
+    paddingLeft: s.mainPadding.left,
+    paddingRight: s.mainPadding.right,
+    paddingTop: s.mainPadding.top,
+    panelWidth: s.details.w,
+    transportTop: s.transport ? s.transport.t - s.main.t : null,
+  })
+  check(failures, placementOk && Math.abs(dx) < 1
+    && (!s.transport || s.details.b <= s.transport.t + 0.5),
+    `user-dragged details position must survive selection changes (host-relative): dx=${dx} old=${JSON.stringify(oldPanel)} now=${JSON.stringify(s.details)} host=${JSON.stringify(s.main)} padding=${JSON.stringify(s.mainPadding)} transport=${JSON.stringify(s.transport)}`)
 
   // ---- × 只关详情 ----
   await clickElement(page, '[data-test="pb-sb-close"]')
@@ -3973,8 +4551,137 @@ async function checkAnnotationMode(page, failures, scenario) {
   check(failures, geometry.mapHeight >= 96, `marking mode must retain a usable battlefield: ${JSON.stringify(geometry)}`)
   check(failures, !geometry.horizontalOverflow, `marking tools must not overflow the page horizontally: ${JSON.stringify(geometry)}`)
   if (scenario.fullscreen) check(failures, geometry.closeBottom <= geometry.viewport + 1, `fullscreen marking exit must not be clipped: ${JSON.stringify(geometry)}`)
-  check(failures, clicked(await clickElement(page, '[data-test="pb-annot-close"]')), 'marking mode must be closable')
-  await delay(150)
+  if (scenario.annotationFullscreen) {
+    await checkCompactAnnotationFullscreen(page, failures, scenario)
+  } else {
+    check(failures, clicked(await clickElement(page, '[data-test="pb-annot-close"]')), 'marking mode must be closable')
+    await delay(150)
+  }
+}
+
+/**
+ * 手机横屏 compactAnnotation：传输条隐藏后仍要有唯一可达的全屏入口。
+ * 真正在浏览器里开标注、点两条未完成路线、进出全屏，再关标注恢复传输条——
+ * 状态断言只看 route draft / toolbar / 入口可见性，不依赖组件内部 ref。
+ */
+async function checkCompactAnnotationFullscreen(page, failures, scenario) {
+  const map = await page.evaluate(`(() => {
+    const r = document.querySelector('[data-test="pb-map"]').getBoundingClientRect()
+    return { l: r.left, t: r.top, w: r.width, h: r.height }
+  })()`)
+  check(failures, map.w > 0 && map.h > 0, `annotation fullscreen test needs a measurable map: ${JSON.stringify(map)}`)
+  if (!(map.w > 0 && map.h > 0)) return
+  const routePoints = [
+    { x: Math.round(map.l + map.w * 0.3), y: Math.round(map.t + map.h * 0.3) },
+    { x: Math.round(map.l + map.w * 0.7), y: Math.round(map.t + map.h * 0.65) },
+  ]
+  for (const point of routePoints) await page.tap({ ...point, touch: scenario.touch })
+  await page.waitFor(() => !!document.querySelector('[data-test="pb-annot-route-shape"]'),
+    { label: 'unfinished route draft' })
+
+  const snapshot = () => page.evaluate(`(() => {
+    const visible = (el) => !!el && el.getClientRects().length > 0
+    const root = document.querySelector('[data-test="battle-playback"]')
+    const toolbar = document.querySelector('[data-test="pb-annot-toolbar"]')
+    const surface = document.querySelector('.pb-annotation-surface')
+    const entries = [...document.querySelectorAll('[data-test="pb-fullscreen"]')]
+      .filter(visible)
+      .map((el) => {
+        const r = el.getBoundingClientRect()
+        return { l: r.left, t: r.top, r: r.right, b: r.bottom, inTransport: !!el.closest('[data-test="pb-transport-controls"]') }
+      })
+    const shape = document.querySelector('[data-test="pb-annot-route-shape"]')
+    const polyline = shape && shape.querySelector('polyline')
+    const finish = document.querySelector('[data-test="pb-annot-route-finish"]')
+    const rr = root && root.getBoundingClientRect()
+    const tr = toolbar && toolbar.getBoundingClientRect()
+    const sr = surface && surface.getBoundingClientRect()
+    const tb = tr ? { l: tr.left, t: tr.top, r: tr.right, b: tr.bottom } : null
+    const intersects = (a, b) => !!a && !!b && a.l < b.r - 0.5 && b.l < a.r - 0.5 && a.t < b.b - 0.5 && b.t < a.b - 0.5
+    return {
+      fullscreen: !!document.fullscreenElement,
+      routeExists: !!shape,
+      routeVertices: polyline ? polyline.getAttribute('points').trim().split(/\\s+/).filter(Boolean).length : 0,
+      routeActive: document.querySelector('[data-test="pb-annot-route"]')?.classList.contains('active') || false,
+      finishDisabled: finish ? finish.disabled : null,
+      toolbarVisible: visible(toolbar),
+      transportVisible: visible(document.querySelector('[data-test="pb-transport-controls"]')),
+      annotationSurface: sr ? { l: sr.left, t: sr.top, r: sr.right, b: sr.bottom } : null,
+      toolbar: tb,
+      root: rr ? { l: rr.left, t: rr.top, r: rr.right, b: rr.bottom } : null,
+      entries,
+      entryOverlapsToolbar: entries.length === 1 && tb ? intersects(entries[0], tb) : null,
+      docScrollWidth: document.documentElement.scrollWidth,
+      surfaceOverflowsX: sr && rr ? sr.left < rr.left - 0.5 || sr.right > rr.right + 0.5 : null,
+      pageOverflowsX: document.documentElement.scrollWidth > innerWidth + 1,
+      entryInsideRoot: entries.length === 1 && rr
+        ? entries[0].l >= rr.left - 1 && entries[0].r <= rr.right + 1 && entries[0].t >= rr.top - 1 && entries[0].b <= rr.bottom + 1
+        : null,
+    }
+  })()`)
+
+  let before = await snapshot()
+  console.log(`[browser-interaction] ${scenario.name} annotation fullscreen before=${JSON.stringify(before)}`)
+  check(failures, before.routeExists && before.routeVertices === 2 && before.routeActive && before.finishDisabled === false,
+    `annotation route must stay editable before fullscreen: ${JSON.stringify(before)}`)
+  check(failures, before.toolbarVisible && !before.transportVisible,
+    `compact annotation must hide transport controls: ${JSON.stringify(before)}`)
+  check(failures, before.entries.length === 1 && !before.entries[0].inTransport,
+    `compact annotation must expose exactly one floating fullscreen entry: ${JSON.stringify(before.entries)}`)
+  check(failures, before.entryInsideRoot === true && before.entryOverlapsToolbar === false && before.surfaceOverflowsX === false && before.pageOverflowsX === false,
+    `annotation fullscreen entry must stay inside the workspace without covering the toolbar or overflowing horizontally: ${JSON.stringify({ entry: before.entries[0], toolbar: before.toolbar, root: before.root, surface: before.annotationSurface, docScrollWidth: before.docScrollWidth })}`)
+
+  const tapFullscreen = async (label) => {
+    const point = await page.evaluate(`(() => {
+      const el = [...document.querySelectorAll('[data-test="pb-fullscreen"]')].find((node) => node.getClientRects().length > 0)
+      if (!el) return null
+      const r = el.getBoundingClientRect()
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+    })()`)
+    check(failures, !!point, `${label}: fullscreen entry is not measurable`)
+    if (!point) return
+    await page.tap({ ...point, touch: scenario.touch })
+  }
+
+  await tapFullscreen('enter')
+  await page.waitFor(() => !!document.fullscreenElement, { timeout: 5000, label: 'annotation fullscreen entered' })
+  await delay(300)
+  const opened = await snapshot()
+  console.log(`[browser-interaction] ${scenario.name} annotation fullscreen opened=${JSON.stringify(opened)}`)
+  check(failures, opened.fullscreen && opened.routeExists && opened.routeVertices === 2 && opened.routeActive && opened.finishDisabled === false,
+    `fullscreen must keep the unfinished annotation route: ${JSON.stringify(opened)}`)
+  check(failures, opened.toolbarVisible && opened.entries.length === 1 && !opened.entries[0].inTransport,
+    `fullscreen annotation must keep exactly one floating entry: ${JSON.stringify(opened.entries)}`)
+  check(failures, opened.entryInsideRoot === true && opened.entryOverlapsToolbar === false && opened.surfaceOverflowsX === false && opened.pageOverflowsX === false,
+    `fullscreen annotation entry must remain usable without horizontal overflow: ${JSON.stringify({ entry: opened.entries[0], toolbar: opened.toolbar, root: opened.root, surface: opened.annotationSurface, docScrollWidth: opened.docScrollWidth })}`)
+
+  await tapFullscreen('exit')
+  await page.waitFor(() => !document.fullscreenElement, { timeout: 5000, label: 'annotation fullscreen exited' })
+  await delay(300)
+  const restored = await snapshot()
+  console.log(`[browser-interaction] ${scenario.name} annotation fullscreen restored=${JSON.stringify(restored)}`)
+  check(failures, !restored.fullscreen && restored.routeExists && restored.routeVertices === 2 && restored.routeActive,
+    `exiting fullscreen must keep the unfinished annotation route: ${JSON.stringify(restored)}`)
+  check(failures, restored.entries.length === 1 && !restored.entries[0].inTransport,
+    `exiting fullscreen must restore the annotation entry: ${JSON.stringify(restored.entries)}`)
+  check(failures, restored.entryInsideRoot === true && restored.entryOverlapsToolbar === false && restored.surfaceOverflowsX === false && restored.pageOverflowsX === false,
+    `exiting fullscreen must keep one reachable annotation entry without horizontal overflow: ${JSON.stringify({ entry: restored.entries[0], toolbar: restored.toolbar, root: restored.root, surface: restored.annotationSurface, docScrollWidth: restored.docScrollWidth })}`)
+  check(failures, clicked(await clickElement(page, '[data-test="pb-annot-close"]')), 'marking mode must be closable after fullscreen')
+  await delay(250)
+  const closed = await page.evaluate(`(() => {
+    const visible = (el) => !!el && el.getClientRects().length > 0
+    const entries = [...document.querySelectorAll('[data-test="pb-fullscreen"]')].filter(visible)
+    return {
+      toolbar: visible(document.querySelector('[data-test="pb-annot-toolbar"]')),
+      transport: visible(document.querySelector('[data-test="pb-transport-controls"]')),
+      entries: entries.map((el) => ({ inTransport: !!el.closest('[data-test="pb-transport-controls"]') })),
+      fullscreen: !!document.fullscreenElement,
+    }
+  })()`)
+  check(failures, !closed.toolbar && closed.transport,
+    `closing compact annotation must restore the transport controls: ${JSON.stringify(closed)}`)
+  check(failures, closed.entries.length === 1 && closed.entries[0].inTransport && !closed.fullscreen,
+    `closing compact annotation must restore exactly one inline fullscreen entry: ${JSON.stringify(closed)}`)
 }
 
 /**

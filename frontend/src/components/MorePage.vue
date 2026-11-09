@@ -6,7 +6,7 @@ import { LANGUAGES, useMoreMenu } from '../composables/useMoreMenu.js'
 import { useDataVersion } from '../composables/useDataVersion.js'
 import DataVersionSelect from './DataVersionSelect.vue'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
-import PageHeader from './PageHeader.vue'
+import ShowcaseHero from './ShowcaseHero.vue'
 import SegmentedControl from './SegmentedControl.vue'
 import ThemePicker from './ThemePicker.vue'
 import AppSwitch from './AppSwitch.vue'
@@ -24,7 +24,7 @@ const helpLinks = computed(() => aboutLinks.value.filter(link => link.view !== '
 
 <template>
   <div class="more-page layout-content" data-testid="more-page">
-    <PageHeader :title="$t('more.title')" />
+    <ShowcaseHero section="community" :kicker="$t('nav.groups.community')" :title="$t('more.title')" />
     <section class="more-support" :aria-label="$t('more.sections.support')">
       <RouterLink class="more-sponsor" to="/sponsor" data-testid="more-link-sponsor">
         <span class="more-sponsor-icon" aria-hidden="true"><Heart :size="20" /></span>

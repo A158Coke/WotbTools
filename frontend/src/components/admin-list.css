@@ -1,6 +1,6 @@
 /* 管理后台列表模板（docs/frontend/ui-system.md「管理后台列表模板」）：表格 / 手机卡片、分页、详情列表、状态徽标、口径提示。
  * 全局类名统一带 admin-list- 前缀，不与各页 scoped 类（如名人堂管理的 .admin-table）冲突；只用语义 token。
- * 页面骨架：PageHeader（kicker）→ AdminFilterBar → AdminBulkBar → .admin-list-table → .admin-list-pagination，
+ * 页面骨架：ShowcaseHero compact（kicker + 标题，操作在工具条）→ AdminFilterBar → AdminBulkBar → .admin-list-table → .admin-list-pagination，
  * 点行打开 AdminDetailDrawer（右侧 AppSheet），危险操作在抽屉底部的 AdminDangerZone。 */
 
 .admin-list-note {
@@ -11,8 +11,13 @@
   border: 1px solid var(--color-border-subtle);
   border-inline-start: var(--space-1) solid var(--color-accent);
   border-radius: var(--radius-md);
-  background: var(--color-surface-1);
+  background: var(--color-surface-1-glass);
   color: var(--color-text-secondary);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  backdrop-filter: blur(16px) saturate(1.2);
+}
+@supports not (backdrop-filter: blur(1px)) {
+  .admin-list-note { background: var(--color-surface-1); }
 }
 .admin-list-note > strong { flex: none; color: var(--color-accent-text); }
 .admin-list-note > ul { display: grid; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }

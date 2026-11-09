@@ -139,6 +139,9 @@
     --radius-full: 999px;
 
     /* 层级：只允许用这些值（§5） */
+    /* 全站环境背景是 fixed 装饰层，必须落在普通文档流内容之后；内容本身基本不定位，
+       用 0 会盖住页面文本，因此单独保留一个负值 token。 */
+    --z-backdrop: -1;
     --z-base: 0;
     --z-sticky: 100;
     --z-header: 200;
@@ -186,6 +189,10 @@
     --hit-min-comfortable: 44px;
     /* 复选框 / 单选框的可视尺寸（审计 PG-10：原生 13×13 太小） */
     --control-check: 18px;
+    /* 场景页（[data-scene-surface]）专用尺寸：:root 默认 44 / 48，短视口横屏紧凑档只在场景根内下调。
+       普通内容页读到的仍是 :root 值，场景紧凑档不会泄漏到表单与列表。 */
+    --scene-hit: 44px;
+    --scene-control-h-lg: 48px;
 
     /* 动效 */
     --duration-fast: 120ms;
@@ -261,6 +268,43 @@
       --row-h: 48px;
       --hit-min: 44px;
       --control-check: 24px;
+    }
+  }
+
+  /* 短视口横屏紧凑档（§9「强制横屏」）：手机横屏高度 ≤ 520px 时，回放 / 装甲查看器 / 地图 3D
+     的 44–48px 触控尺寸会把底栏与 HUD 撑到视口的三分之一。只在场景根 [data-scene-surface]
+     内收紧，普通内容页、竖屏手机和桌面维持原尺寸。
+     间距取 4px 网格的 0.75×（3 / 6 / 9 …）；字号仍不低于 12px 文档下限。
+     视觉高度低于 40px 的场景控件必须用透明命中区补足（见各组件）。 */
+  @media (pointer: coarse) and (orientation: landscape) and (height <= 520px) {
+    [data-scene-surface] {
+      --control-h-sm: 32px;
+      --control-h-md: 36px;
+      --control-h-lg: 40px;
+      --row-h: 40px;
+      --hit-min: 40px;
+      --hit-min-comfortable: 40px;
+      --control-check: 20px;
+      --scene-hit: 40px;
+      --scene-control-h-lg: 40px;
+
+      --space-1: 3px;
+      --space-2: 6px;
+      --space-3: 9px;
+      --space-4: 12px;
+      --space-5: 15px;
+      --space-6: 18px;
+      --space-8: 24px;
+      --space-10: 30px;
+      --space-12: 36px;
+
+      /* 组合 token 必须在同一作用域重定义，否则子元素只改原子字号不会重算 font 简写。 */
+      --font-size-body: 14px;
+      --line-height-body: 18px;
+      --type-body: 400 var(--font-size-body) / var(--line-height-body) var(--font-family-sans);
+      --font-size-caption: 12px;
+      --line-height-caption: 14px;
+      --type-caption: 400 var(--font-size-caption) / var(--line-height-caption) var(--font-family-sans);
     }
   }
 

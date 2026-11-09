@@ -31,7 +31,7 @@ import ReplayCollectionManager from './ReplayCollectionManager.vue'
 import ReplayCapabilityAuthGate from './ReplayCapabilityAuthGate.vue'
 import AppButton from './AppButton.vue'
 import Banner from './Banner.vue'
-import PageHeader from './PageHeader.vue'
+import ShowcaseHero from './ShowcaseHero.vue'
 import BattlePicker from './BattlePicker.vue'
 import { battlePickerOptions, buildSeriesOverview, replayCollectionRows } from '../utils/replaySeries.js'
 
@@ -519,8 +519,9 @@ watch(() => props.initialCapability, (val) => {
 
 <template>
   <div class="layout-data-workspace replay-workspace" @dragover.prevent @drop.prevent="onWorkspaceDrop">
-    <PageHeader :title="$t('workspace.title')">
-      <template #actions>
+    <div class="workspace-head">
+      <ShowcaseHero v-if="!wantsImmersive && !forcedLandscape.blocked.value" compact section="replay" :kicker="$t('nav.replay')" :title="$t('workspace.title')" />
+      <div class="workspace-toolbar">
         <ReplayCapabilityTabs class="workspace-capabilities" data-tour="workspace-capabilities" :options="capabilityOptions" :active-capability="activeCapability" @select="setCapability" />
         <AppButton v-if="onboarding" variant="ghost" size="sm" data-tour="workspace-help" @click="onboarding.openDirectory()">
           <CircleHelp :size="16" aria-hidden="true" />{{ $t('onboarding.help') }}
@@ -540,8 +541,8 @@ watch(() => props.initialCapability, (val) => {
           @remove="onRemoveFile"
           @clear="clearSelection"
         />
-      </template>
-    </PageHeader>
+      </div>
+    </div>
 
     <div v-if="demoEntryVisible || demoError" class="workspace-source">
       <div v-if="demoEntryVisible" class="workspace-demo-actions">
@@ -709,6 +710,9 @@ watch(() => props.initialCapability, (val) => {
 .replay-workspace { padding-right: var(--pd-drawer-offset, 0px); }
 /* 竖屏旋转提示盖在顶栏之下的整块可视区上（回放面板保持挂载，横过来即继续） */
 .workspace-rotate-prompt { position: fixed; inset: calc(var(--header-block) + env(safe-area-inset-top)) 0 0; z-index: var(--z-sticky); background: var(--color-canvas); }
+.workspace-head { display: grid; gap: var(--space-2); margin-bottom: var(--space-4); }
+.workspace-head > .showcase-hero-host { margin-block-end: 0; }
+.workspace-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); }
 .workspace-source { display: grid; gap: var(--space-3); margin-bottom: var(--space-4); }
 .workspace-demo-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
 .workspace-demo-label { color: var(--color-text-secondary); font: var(--type-caption); }
@@ -722,10 +726,8 @@ watch(() => props.initialCapability, (val) => {
 .single-battle-picker { flex: 1; min-width: 0; }
 @media (width < 768px) {
   .single-battle-picker { flex-basis: 100%; }
-  /* 手机：帮助与管理回放跟标题同行，能力切换独占下面一整行，页头少占一行。 */
-  .replay-workspace :deep(.page-header) { align-items: center; }
-  .replay-workspace :deep(.page-header-actions) { display: contents; }
-  .replay-workspace :deep(.page-header-text) { flex: 1 1 0; }
-  .workspace-capabilities { order: 1; flex-basis: 100%; }
+  .workspace-toolbar { justify-content: flex-start; }
+  /* 手机：能力切换独占一整行，帮助与管理回放排在下一行。 */
+  .workspace-capabilities { flex-basis: 100%; order: -1; }
 }
 </style>

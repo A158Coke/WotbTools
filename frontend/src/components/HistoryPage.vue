@@ -4,5 +4,5 @@ import MarkdownDocPage from './MarkdownDocPage.vue'
 </script>
 
 <template>
-  <MarkdownDocPage class="history-page" :source="historySource" />
+  <MarkdownDocPage class="history-page" section-hero :source="historySource" />
 </template>

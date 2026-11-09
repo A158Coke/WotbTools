@@ -71,5 +71,9 @@ function reselect(value) {
 @media (pointer: coarse) {
   .top-view { min-height: var(--hit-min); min-width: var(--hit-min); }
 }
+/* 短视口横屏紧凑档：--control-h-sm 收到 32px 时，俯视按钮仍保留 40px 命中区。 */
+@media (pointer: coarse) and (orientation: landscape) and (height <= 520px) {
+  .top-view { min-height: var(--hit-min-comfortable); min-width: var(--hit-min-comfortable); }
+}
 .toggle { display: flex; gap: var(--space-1); align-items: center; min-height: var(--hit-min); color: var(--color-text-secondary); cursor: pointer; }
 </style>

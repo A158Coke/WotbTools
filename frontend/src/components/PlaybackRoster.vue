@@ -45,6 +45,11 @@ const props = defineProps({
    * 让正常 7v7 不用车道滚动条就放得进正方形 Stage 两侧的空白——不是把行砍成只剩名字。
    */
   compact: { type: Boolean, default: false },
+  /**
+   * 紧凑横屏密度：行固定 30px、两行信息（玩家名 + 车名）、窄血条。用于手机横屏两侧车道：
+   * 7 人必须一屏放下且不滚动；compact 只收紧留白，仍然会按 1fr 拉伸铺满车道。
+   */
+  dense: { type: Boolean, default: false },
 })
 const emit = defineEmits(['select'])
 const { t } = useI18n()
@@ -113,7 +118,7 @@ function decorate(row) {
  * 每行 `minmax(<可读下限>, 1fr)` 均匀分布——而不是全部堆在顶部、下面留一大片空白。
  * 竖屏纵向流（`compact === false`）保持自然高，不参与铺满。
  */
-const fillHeight = computed(() => props.compact === true)
+const fillHeight = computed(() => props.compact === true && props.dense !== true)
 /** 血条上方的数值：只写可证明的量，相对证据写百分比，阵亡不占位。 */
 function hpValueOf(hp) {
   if (hp.mode === 'exact') return String(Math.round(hp.currentHp))
@@ -124,23 +129,25 @@ function hpValueOf(hp) {
 /**
  * 每行的可读下限：固定值只是 guard，正常高度由 `1fr` 连续决定。
  *
- * 取 26px 而不是触控尺寸：短横屏（740×360）整个 workspace 只有 ~256px，7 行 × 44px
- * 直接就溢出去顶开传输控件了。行仍带 `min-height: var(--hit-min)` 之外的可点区域由整行
- * 承担。触屏宽度低于 1200px 时 CSS 将下限提升到 64px，短横屏列表内部滚动，
- * 保证身份与血条可读；高视口下 1fr 均匀铺满。
+ * 默认取 26px 而不是触控尺寸：短横屏（740×360）整个 workspace 只有 ~256px，固定 44px
+ * 会直接溢出去顶开传输控件。触屏宽度低于 1200px 时 CSS 将下限提升到 64px（短横屏列表
+ * 内部滚动，保证身份与血条可读）；场景短视口横屏紧凑档再收窄到 --row-h=40px；
+ * 高视口下 1fr 均匀铺满。
  */
 const ROSTER_ROW_MIN_PX = 26
 
-/** 每个分组的列表轨道：N 行 × minmax(下限, 1fr)。 */
+/** 每个分组的列表轨道：dense 固定 30px；其余 N 行 × minmax(下限, 1fr)。 */
 function listRows(rowCount) {
-  return `repeat(${Math.max(1, rowCount)}, minmax(var(--roster-row-min, ${ROSTER_ROW_MIN_PX}px), 1fr))`
+  const count = Math.max(1, rowCount)
+  if (props.dense) return `repeat(${count}, var(--roster-row-dense, 30px))`
+  return `repeat(${count}, minmax(var(--roster-row-min, ${ROSTER_ROW_MIN_PX}px), 1fr))`
 }
 </script>
 
 <template>
   <div
     class="pb-roster"
-    :class="['pb-roster-' + variant, { 'pb-roster-compact': compact, 'pb-roster-fill': fillHeight }]"
+    :class="['pb-roster-' + variant, { 'pb-roster-compact': compact, 'pb-roster-dense': dense, 'pb-roster-fill': fillHeight }]"
     data-test="pb-shell-roster"
   >
     <section
@@ -169,7 +176,7 @@ function listRows(rowCount) {
           <span v-if="variant === '3d'" class="dot" :style="{ background: row.teamColor }" aria-hidden="true" />
           <span class="nick pb-team-player" data-test="pb-roster-player">{{ row.player }}</span>
           <span class="tank pb-team-tank" data-test="pb-roster-tank">{{ row.tank }}</span>
-          <GunMarksBadge :marks="gunMarks.get(row.accountId)" />
+          <GunMarksBadge v-if="!dense" :marks="gunMarks.get(row.accountId)" />
           <span
             class="pb-roster-hpbar pb-roster-hp"
             :class="'hp-mode-' + row.hp.mode"
@@ -319,8 +326,51 @@ function listRows(rowCount) {
 /* 行间保留 2px 呼吸：gap 0 时相邻行的血条/文字贴在一起，视觉上像互相遮挡。 */
 .pb-roster-compact .pb-roster-list { gap: 2px; }
 .pb-roster-compact .pb-roster-row { min-height: 0; padding: 0 var(--space-1); border-block-width: 0; }
+
+/* 紧凑横屏密度：固定 30px 行，两行文字 + 行尾 44×20 细血条（数字叠在条上）。
+   7 人 × 30px + 间隔在 390px 高的横屏里完整放下，不再拉伸铺满、也不产生列表滚动。
+   玩家名 / 车名各占一行，空间从 GunMarks、内边距与 52px 大胶囊让出来。 */
+.pb-roster-dense { gap: 0; padding: 0; }
+.pb-roster-dense .pb-roster-team { gap: 0; padding: 0; }
+.pb-roster-dense .pb-team-head { padding-inline: var(--space-1); font-size: var(--font-size-caption-xs); line-height: var(--line-height-caption-xs); }
+.pb-roster-dense .pb-roster-list { gap: 2px; }
+.pb-roster-dense .pb-roster-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 44px;
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: var(--space-1);
+  row-gap: 0;
+  min-height: 30px;
+  block-size: var(--roster-row-dense, 30px);
+  padding: 1px var(--space-1);
+  border-block-width: 0;
+  overflow: hidden;
+}
+.pb-roster-dense .pb-roster-row .dot { grid-column: 1; grid-row: 1 / 3; align-self: center; }
+.pb-roster-dense .pb-roster-row .nick {
+  grid-column: 2; grid-row: 1; align-self: end;
+  min-inline-size: 0; font-size: var(--font-size-caption-xs); line-height: var(--line-height-caption-xs);
+}
+.pb-roster-dense .pb-roster-row .tank {
+  grid-column: 2; grid-row: 2; align-self: start;
+  max-inline-size: none; min-inline-size: 0;
+  font-size: var(--font-size-caption-xs); line-height: var(--line-height-caption-xs);
+}
+.pb-roster-dense .pb-roster-hpbar {
+  grid-column: 3; grid-row: 1 / 3; align-self: center;
+  inline-size: 44px; block-size: 20px;
+}
+.pb-roster-dense .pb-roster-hpvalue {
+  font-size: var(--font-size-caption-xs);
+  line-height: var(--line-height-body);
+}
+.pb-roster-dense.pb-roster-3d { flex: 0 0 auto; }
 @media (width < 1200px) and (pointer: coarse) {
-  .pb-roster { --roster-row-min: calc(var(--space-4) * 4); }
-  .pb-roster.pb-roster-fill .pb-roster-list { overflow-y: auto; }
+  .pb-roster:not(.pb-roster-dense) { --roster-row-min: calc(var(--space-4) * 4); }
+  .pb-roster.pb-roster-fill:not(.pb-roster-dense) .pb-roster-list { overflow-y: auto; }
+}
+/* 短视口横屏紧凑档只收窄名册行；竖屏 / 平板仍保持上面的 64px。 */
+@media (pointer: coarse) and (orientation: landscape) and (height <= 520px) {
+  .pb-roster { --roster-row-min: var(--row-h); }
 }
 </style>

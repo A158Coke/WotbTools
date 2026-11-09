@@ -1,8 +1,14 @@
+import { mkdir, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page, delay } from './browser-page.mjs'
 import { parseScenarioArgs, selectShard } from './browser-scenario-args.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 import { FIXTURE_SECOND_TANK_ID, FIXTURE_TANK_CACHE, FIXTURE_TANK_DATA, FIXTURE_TANK_ID, startFixtureAssetPack } from './browser-fixtures/fixture-asset-pack.mjs'
+
+/** 视觉证据放被 .gitignore 忽略的仓库根 tmp/，不进入提交；失败时也可直接打开排查。 */
+const COMPACT_SCREENSHOT_DIR = fileURLToPath(new URL('../../tmp/armor-landscape-compact-hud/', import.meta.url))
 
 /**
  * 装甲查看器（?view=agent-armor）移动端布局的浏览器几何门禁。
@@ -53,13 +59,29 @@ function armorLayoutProbe() {
     : null
   const toolsHit = toolsCenter ? document.elementFromPoint(toolsCenter.x, toolsCenter.y) : null
   const root = document.querySelector('.armor-view')
+  const rootStyle = root ? getComputedStyle(root) : null
+  const sceneToken = (name) => {
+    const value = rootStyle?.getPropertyValue(name).trim() || ''
+    return value.endsWith('px') ? Number.parseFloat(value) : null
+  }
   const stage = document.querySelector('[data-testid="armor-stage"]')
   const viewToggle = document.querySelector('#view-toggle')
   const turretRows = [...document.querySelectorAll('#turret-controls .ctrl-row')].map((row) => row.getBoundingClientRect())
   return {
     url: location.href,
     viewport: { width: innerWidth, height: innerHeight },
+    horizontalOverflow: {
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+      overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+    },
     coarse: matchMedia('(pointer: coarse)').matches,
+    /** 场景根上的密度 token：短视口横屏紧凑档会把它收窄到 40px，断言从实际 token 取值而不是写死 44。 */
+    sceneTokens: {
+      space2: sceneToken('--space-2'),
+      space5: sceneToken('--space-5'),
+      hitComfortable: sceneToken('--hit-min-comfortable'),
+    },
     hasStage: !!stage,
     unsupported: !!document.querySelector('[data-testid="scene3d-unsupported"]'),
     root: box('.armor-view'),
@@ -88,6 +110,109 @@ function armorLayoutProbe() {
       }
     }),
     turretControls: box('#turret-controls'),
+    /** 手机横屏短视口：左上胶囊 = 返回键 + 信息卡 + 参数按钮（视觉上一条胶囊）。 */
+    capsule: (() => {
+      const back = box('.armor-back')
+      const card = box('#corner-tl')
+      if (!back) return card
+      if (!card) return back
+      const top = Math.min(back.top, card.top)
+      const bottom = Math.max(back.bottom, card.bottom)
+      const left = Math.min(back.left, card.left)
+      const right = Math.max(back.right, card.right)
+      return {
+        top, bottom, left, right,
+        width: right - left, height: bottom - top,
+        display: 'union', visible: back.visible && card.visible,
+      }
+    })(),
+    clickInfo: (() => {
+      const card = box('#click-info')
+      if (!card) return null
+      const element = document.querySelector('#click-info')
+      const style = getComputedStyle(element)
+      const borderLeft = parseFloat(style.borderLeftWidth)
+      const borderRight = parseFloat(style.borderRightWidth)
+      const contentLeft = Math.round(card.left + borderLeft + parseFloat(style.paddingLeft))
+      const contentRight = Math.round(card.right - borderRight - parseFloat(style.paddingRight))
+      return {
+        ...card,
+        maxInlineSize: style.maxInlineSize,
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+        contentLeft,
+        contentRight,
+        contentWidth: contentRight - contentLeft,
+        clipped: element.scrollWidth > element.clientWidth + 1,
+      }
+    })(),
+    clickRow: (() => {
+      const element = document.querySelector('#click-info .row')
+      if (!element) return null
+      return {
+        ...box('#click-info .row'),
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+      }
+    })(),
+    clickPart: box('#click-part'),
+    /** 厚度值节点本身是否完整落在结果卡内（overflow:hidden 裁切不能只看外层 box）。 */
+    clickArmor: (() => {
+      const card = box('#click-info')
+      const value = document.querySelector('#click-armor')
+      if (!card || !value) return null
+      const rect = value.getBoundingClientRect()
+      const range = document.createRange()
+      range.selectNodeContents(value)
+      const textRect = range.getBoundingClientRect()
+      return {
+        ...box('#click-armor'),
+        text: value.textContent,
+        textLeft: Math.round(textRect.left),
+        textRight: Math.round(textRect.right),
+        insideCard: textRect.left >= card.left - 1 && textRect.right <= card.right + 1
+          && textRect.top >= card.top - 1 && textRect.bottom <= card.bottom + 1,
+        // 父级 #click-info 是 overflow:hidden，外框内不等于可见：必须落在 padding/border 之后的内容区。
+        ...(() => {
+          const style = getComputedStyle(document.querySelector('#click-info'))
+          const contentLeft = card.left + parseFloat(style.borderLeftWidth) + parseFloat(style.paddingLeft)
+          const contentRight = card.right - parseFloat(style.borderRightWidth) - parseFloat(style.paddingRight)
+          return {
+            insideContent: textRect.left >= contentLeft - 1 && textRect.right <= contentRight + 1,
+            contentLeft: Math.round(contentLeft),
+            contentRight: Math.round(contentRight),
+          }
+        })(),
+        selfClipped: value.scrollWidth > value.clientWidth + 1,
+      }
+    })(),
+    closeTools: (() => {
+      const element = document.querySelector('[data-testid="armor-tools-close"]')
+      if (!element) return null
+      const rect = element.getBoundingClientRect()
+      const center = { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) }
+      const hit = document.elementFromPoint(center.x, center.y)
+      return {
+        ...box('[data-testid="armor-tools-close"]'),
+        center,
+        hitIsClose: hit === element || (!!hit && element.contains(hit)),
+        hitDescription: hit ? `${hit.tagName}${typeof hit.className === 'string' && hit.className.trim() ? `.${hit.className.trim().split(/\s+/).join('.')}` : ''}` : null,
+      }
+    })(),
+    trajInfo: box('#traj-info'),
+    shellButton: box('[data-testid="hud-shell-0"]'),
+    distanceInput: box('#armor-distance'),
+    distanceValue: box('[data-testid="hud-distance-value"]'),
+    penetration: box('[data-testid="hud-penetration"]'),
+    viewToggle: box('#view-toggle'),
+    tankName: (() => {
+      const el = document.querySelector('#tank-name')
+      if (!el) return null
+      const rect = el.getBoundingClientRect()
+      return { width: Math.round(rect.width), height: Math.round(rect.height) }
+    })(),
+    requiredNodes: ['#corner-tl', '#info-panel', '#tank-name', '#tank-selectors', '#click-info', '#traj-info', '#corner-tr', '#turret-controls', '.armor-back']
+      .map(selector => ({ selector, present: !!document.querySelector(selector) })),
     turretRowsInline: turretRows.length === 2 ? Math.abs(Math.round(turretRows[0].top) - Math.round(turretRows[1].top)) <= 2 : null,
     tools: tools && toolsRect
       ? {
@@ -232,19 +357,104 @@ function checkSceneBand(failures, layout, label) {
     `${label}: 3D 场景可用带只有 ${band}px（顶栏 ${layout.topBar.height}px + 底栏 ${layout.bottomBar.height}px 之后），低于 armor-view 高度 ${layout.root.height}px 的 ${SCENE_BAND_MIN_RATIO * 100}%`)
 }
 
+function isCompactScene(layout) {
+  return layout.coarse && layout.viewport.height <= 520 && layout.viewport.width > layout.viewport.height
+}
+
 function checkTouchTargets(failures, layout, label) {
+  // 场景 token 本身也要锁死：紧凑档 40px，其余触控/桌面 44px。
+  // 视觉尺寸允许两处例外，但都必须由独立断言锁定：普通场景控件按 token 下限，
+  // 装甲短横屏（<=500px）胶囊按 PR #932 的 38px / 36px 紧凑尺寸。
+  const expected = isCompactScene(layout) ? 40 : 44
+  const floor = layout.sceneTokens?.hitComfortable ?? 44
+  check(failures, floor === expected, `${label}: 场景命中 token 为 ${floor}px，期望 ${expected}px`)
+  const compactBar = layout.coarse && layout.topBar && layout.topBar.height <= 40
+  const minTarget = compactBar ? 34.5 : floor - 0.5
   for (const button of layout.viewToggleButtons) {
     if (!button.visible) continue
-    check(failures, Math.min(button.width, button.height) >= 43.5,
-      `${label}: 视图开关「${button.text}」触控目标 ${button.width}x${button.height}，低于 44px`)
+    check(failures, Math.min(button.width, button.height) >= minTarget,
+      `${label}: 视图开关「${button.text}」触控目标 ${button.width}x${button.height}，低于 ${compactBar ? '36px 紧凑分段下限' : `${floor}px`}`)
   }
   if (layout.tools) {
-    check(failures, Math.min(layout.tools.width, layout.tools.height) >= 43.5,
-      `${label}: 参数开关触控目标 ${layout.tools.width}x${layout.tools.height}，低于 44px`)
+    check(failures, Math.min(layout.tools.width, layout.tools.height) >= minTarget,
+      `${label}: 参数开关触控目标 ${layout.tools.width}x${layout.tools.height}，低于 ${compactBar ? '36px 胶囊下限' : `${floor}px`}`)
   }
   if (layout.back) {
-    check(failures, layout.back.height >= 43.5, `${label}: 返回键高度 ${layout.back.height}px，低于 44px`)
+    const minBackHeight = compactBar ? 36 : floor - 0.5
+    check(failures, layout.back.height >= minBackHeight,
+      `${label}: 返回键高度 ${layout.back.height}px，低于 ${compactBar ? '38px 胶囊下限' : `${floor}px`}`)
   }
+}
+
+/** 两个可见矩形是否相交（边缘相接不算）。 */
+function rectsOverlap(a, b) {
+  if (!a?.visible || !b?.visible) return false
+  return Math.min(a.right, b.right) > Math.max(a.left, b.left) + 0.5
+    && Math.min(a.bottom, b.bottom) > Math.max(a.top, b.top) + 0.5
+}
+
+/** 手机横屏短视口专用几何：紧凑胶囊 / 结果胶囊 / 右下射击 / 左下姿态四块互不相交。 */
+function checkCompactLandscapeHud(failures, layout, label) {
+  checkCommonGeometry(failures, layout, label)
+  const missing = (layout.requiredNodes || []).filter(node => !node.present).map(node => node.selector)
+  check(failures, missing.length === 0, `${label}: 场景脚本依赖的 DOM 节点缺失：${missing.join(', ')}`)
+  check(failures, layout.coarse === true, `${label}: 设备仿真未生效（pointer: coarse 必须为 true）`)
+  check(failures, layout.horizontalOverflow?.overflow === false,
+    `${label}: 横屏布局出现横向溢出（${JSON.stringify(layout.horizontalOverflow)}）`)
+
+  const result = layout.trajInfo?.visible ? layout.trajInfo : layout.clickInfo
+  const boxes = {
+    capsule: layout.capsule,
+    result,
+    shotPanel: layout.bottomBar,
+    posturePanel: layout.turretControls,
+  }
+  const missingBoxes = Object.entries(boxes).filter(([, box]) => box?.visible !== true)
+  for (const [name, box] of missingBoxes) {
+    check(failures, false, `${label}: ${name} 不可见/不可测（${JSON.stringify(box)}）`)
+  }
+  // 盒子缺失时后续尺寸断言全都会读到 undefined；记录上面这条失败后直接结束，避免 TypeError。
+  if (missingBoxes.length > 0) return
+  const pairs = [
+    ['capsule', 'result'], ['capsule', 'shotPanel'], ['capsule', 'posturePanel'],
+    ['result', 'shotPanel'], ['result', 'posturePanel'], ['shotPanel', 'posturePanel'],
+  ]
+  for (const [a, b] of pairs) {
+    check(failures, !rectsOverlap(boxes[a], boxes[b]),
+      `${label}: ${a} 与 ${b} 相交（${a}=${JSON.stringify(boxes[a])} ${b}=${JSON.stringify(boxes[b])}）`)
+  }
+
+  check(failures, layout.capsule.height >= 36 && layout.capsule.height <= 40,
+    `${label}: 左上胶囊高度 ${layout.capsule.height}px，不在 36–40px 区间`)
+  check(failures, layout.capsule.width <= 280,
+    `${label}: 左上胶囊宽 ${layout.capsule.width}px，超过 280px`)
+  if (layout.viewport.width < 768) {
+    // 窄横屏：结果胶囊移到胶囊下方第二行，必须同左对齐且不压住胶囊。
+    check(failures, Math.abs(result.left - layout.capsule.left) <= 2 && result.top >= layout.capsule.bottom + 2,
+      `${label}: 结果胶囊没有排在左上胶囊下方第二行（capsule=${JSON.stringify(layout.capsule)} result=${JSON.stringify(result)}）`)
+  } else {
+    check(failures, layout.capsule.right + 2 <= result.left,
+      `${label}: 结果胶囊没有排在左上胶囊右侧（capsule right=${layout.capsule.right} result left=${result.left}）`)
+  }
+  check(failures, result.height <= 40, `${label}: 结果胶囊高度 ${result.height}px，超过 40px`)
+
+  check(failures, layout.bottomBar.width <= 280,
+    `${label}: 右下射击面板宽 ${layout.bottomBar.width}px，超过 280px`)
+  check(failures, layout.bottomBar.height <= layout.viewport.height * 0.45 + 1,
+    `${label}: 右下射击面板高 ${layout.bottomBar.height}px，超过视口 ${layout.viewport.height}px 的 45%`)
+  check(failures, layout.shellButton && Math.abs(layout.shellButton.width - 36) <= 2 && Math.abs(layout.shellButton.height - 36) <= 2,
+    `${label}: 弹种按钮不是约 36px（${layout.shellButton?.width}x${layout.shellButton?.height}）`)
+  check(failures, layout.distanceValue?.visible, `${label}: 距离数值不可见（${JSON.stringify(layout.distanceValue)}）`)
+  check(failures, layout.distanceInput?.visible && layout.penetration?.visible
+    && Math.abs((layout.distanceInput.top + layout.distanceInput.height / 2) - (layout.penetration.top + layout.penetration.height / 2)) <= 3,
+    `${label}: 距离滑条与 AP 数值没有同排（input=${JSON.stringify(layout.distanceInput)} pen=${JSON.stringify(layout.penetration)}）`)
+  check(failures, layout.viewToggle?.visible && layout.viewToggle.height <= 38,
+    `${label}: 厚度/击穿分段开关高度 ${layout.viewToggle?.height}px，超过 38px`)
+
+  check(failures, layout.turretControls.width <= 240 && layout.turretControls.height <= 80,
+    `${label}: 左下姿态面板仍偏大（${layout.turretControls.width}x${layout.turretControls.height}）`)
+  check(failures, layout.tankName && layout.tankName.height <= 20,
+    `${label}: 车名单行高度异常（${JSON.stringify(layout.tankName)}）`)
 }
 
 /* ------------------------------------------------------------------ 场景 */
@@ -588,34 +798,52 @@ async function runDesktopScenario(env, scenario) {
     ? { top: layout.back.top - layout.root.top, left: layout.back.left - layout.root.left } : null
   const barRel = layout.topBar && layout.root
     ? { top: layout.topBar.top - layout.root.top, left: layout.topBar.left - layout.root.left } : null
+  // 紧凑档的 space-2 / space-5 会随场景 token 收窄（6/15）；常规触控与桌面仍是 8/20。
+  // 期望值同样锁死，防止 token 回退后测试跟着放宽。
+  const compactScene = isCompactScene(layout)
+  const expectedSpace2 = compactScene ? 6 : 8
+  const expectedSpace5 = compactScene ? 15 : 20
+  const sceneSpace2 = layout.sceneTokens?.space2 ?? 8
+  const sceneSpace5 = layout.sceneTokens?.space5 ?? 20
+  check(failures, sceneSpace2 === expectedSpace2 && sceneSpace5 === expectedSpace5,
+    `${label}: 场景间距 token space-2/space-5 为 ${sceneSpace2}/${sceneSpace5}，期望 ${expectedSpace2}/${expectedSpace5}`)
   const coexistVertical = layout.back && layout.topBar
-    && Math.abs((layout.topBar.top - layout.back.bottom) - 8) <= 2
-    && Math.abs(barRel.left - 20) <= 2
+    && Math.abs((layout.topBar.top - layout.back.bottom) - sceneSpace2) <= 2
+    && Math.abs(barRel.left - sceneSpace5) <= 2
   const coexistHorizontal = layout.back && layout.topBar
-    && Math.abs((layout.topBar.left - layout.back.right) - 8) <= 2
-    && Math.abs(barRel.top - 20) <= 2
-  // 沉浸态（手机横屏）外壳在左上放菜单按钮，返回键右移 44+8 让出（--immersive-nav-reserve）
-  const backInsetLeft = scenario.phoneLandscape ? 20 + 52 : 20
-  check(failures, !!backRel && Math.abs(backRel.top - 20) <= 2 && Math.abs(backRel.left - backInsetLeft) <= 2,
-    `${label}: 返回键没有贴 armor-view 左上 inset 20/${backInsetLeft}（back=${JSON.stringify(backRel)}）`)
+    && Math.abs((layout.topBar.left - layout.back.right) - sceneSpace2) <= 2
+    && Math.abs(barRel.top - sceneSpace5) <= 2
+  // 短横屏（<=500）胶囊把返回键并进同一条：两者等高、同顶、边缘相接（不再留 space-2）。
+  const coexistMergedCapsule = scenario.phoneLandscape && scenario.height <= 500 && layout.back && layout.topBar
+    && Math.abs(layout.topBar.left - layout.back.right) <= 1
+    && Math.abs(layout.topBar.top - layout.back.top) <= 1
+    && Math.abs(layout.topBar.height - layout.back.height) <= 1
+  // 沉浸态（手机横屏）外壳在左上放菜单按钮，返回键右移 44+8 让出（--immersive-nav-reserve）。
+  // 这个 reserve 由外壳按常规触控档计算，场景紧凑档也不改它（菜单按钮在场景外，仍是 44px）。
+  const backInsetLeft = scenario.phoneLandscape ? sceneSpace5 + 52 : sceneSpace5
+  check(failures, !!backRel && Math.abs(backRel.top - sceneSpace5) <= 2 && Math.abs(backRel.left - backInsetLeft) <= 2,
+    `${label}: 返回键没有贴 armor-view 左上 inset ${sceneSpace5}/${backInsetLeft}（back=${JSON.stringify(backRel)}）`)
   if (scenario.phoneLandscape) {
     const menu = await page.evaluate(`(() => { const el = document.querySelector('[data-testid="nav-menu"]'); if (!el) return null; const r = el.getBoundingClientRect(); const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return { right: r.right, hit: !!hit && el.contains(hit) } })()`)
     check(failures, menu?.hit === true && layout.back && menu.right <= layout.back.left,
       `${label}: 沉浸态左上菜单按钮不可达或与返回键重叠（menu=${JSON.stringify(menu)} back.left=${layout.back?.left}）`)
   }
-  check(failures, coexistVertical || coexistHorizontal,
-    `${label}: 顶栏未在返回键下方或右侧留出 space-2 间距（bar=${JSON.stringify(barRel)} back=${JSON.stringify(layout.back && { bottom: layout.back.bottom, right: layout.back.right })}）`)
-  // 手机横屏场景 HUD：射击快捷面板在右下拇指区（距底 space-2）；平板 / 桌面仍在右上角（20/20）
+  check(failures, coexistVertical || coexistHorizontal || coexistMergedCapsule,
+    `${label}: 顶栏未在返回键下方 / 右侧留出 space-2，也未与返回键并成同一条胶囊（bar=${JSON.stringify(barRel)} back=${JSON.stringify(layout.back && { bottom: layout.back.bottom, right: layout.back.right })}）`)
+  // 手机横屏场景 HUD：射击快捷面板在右下拇指区（距底 space-2）；平板 / 桌面仍在右上角（20/20）。
+  // 紧凑档的 space-2 / space-5 是 6/15，所以这里从场景 token 取期望值。
   if (scenario.phoneLandscape) {
     check(failures, layout.bottomBar && layout.root
-      && Math.abs((layout.root.bottom - layout.bottomBar.bottom) - 8) <= 2 && Math.abs((layout.root.right - layout.bottomBar.right) - 20) <= 2,
-      `${label}: 射击快捷面板没有停在右下拇指区（bottom=${layout.bottomBar?.bottom} right=${layout.bottomBar?.right} root=${JSON.stringify(layout.root)}）`)
+      && Math.abs((layout.root.bottom - layout.bottomBar.bottom) - sceneSpace2) <= 2 && Math.abs((layout.root.right - layout.bottomBar.right) - sceneSpace5) <= 2,
+      `${label}: 射击快捷面板没有停在右下拇指区（bottom=${layout.bottomBar?.bottom} right=${layout.bottomBar?.right}，期望间距 ${sceneSpace2}/${sceneSpace5}）`)
   } else {
     check(failures, layout.bottomBar && layout.root
       && Math.abs((layout.bottomBar.top - layout.root.top) - 20) <= 2 && Math.abs((layout.root.right - layout.bottomBar.right) - 20) <= 2,
       `${label}: 底栏没有回到右上角（top=${layout.bottomBar?.top} right=${layout.bottomBar?.right} root right=${layout.root?.right}，期望相对 20/20）`)
   }
-  check(failures, layout.viewToggleDisplay === 'flex',
+  // 短横屏（height <= 500）把厚度/击穿合并成两列 segmented control；桌面 / 平板仍是 flex。
+  const compactLandscape = scenario.phoneLandscape && scenario.height <= 500
+  check(failures, layout.viewToggleDisplay === 'flex' || (compactLandscape && layout.viewToggleDisplay === 'grid'),
     `${label}: 视图开关不是桌面 flex 布局（display=${layout.viewToggleDisplay}）`)
   // 右上角是一块固定宽度面板：进入厚度视图（装甲组成过滤行出现）不得把面板撑宽
   // （2026-10-29 用户报障：点厚度模式后这一栏突然变宽）。
@@ -725,6 +953,388 @@ async function runDesktopScenario(env, scenario) {
   check(failures, collapsed.toolsOpen === false && collapsed.selectors?.visible === false,
     `${label}: 再次点击未收起（is-tools-open=${collapsed.toolsOpen} selectors visible=${collapsed.selectors?.visible}）`)
 
+  await env.chrome.client.send('Target.closeTarget', { targetId })
+  results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
+}
+
+/* ------------------------------------------------- 手机横屏短视口紧凑 HUD */
+
+/** worst-case 车名：真实加载态之上写长名，验证胶囊只会省略号裁剪、不会换行撑高。 */
+function applyCompactHeaderFixture() {
+  const title = document.getElementById('tank-name')
+  if (title) title.textContent = '116-F3 X · 重型坦克 · 实验型'
+  const tier = document.getElementById('tank-tier')
+  if (tier) tier.textContent = 'VIII'
+  const type = document.getElementById('tank-type')
+  if (type) type.textContent = '重型坦克'
+  const info = document.getElementById('info-panel')
+  if (info) info.style.display = 'block'
+  return true
+}
+
+/** 真实结果卡的收缩态：只保留最终判定行，其余明细由 AgentArmorView 的 ≤500px 规则隐藏。 */
+function applyCompactResultBadge() {
+  const click = document.getElementById('click-info')
+  if (click) click.style.display = 'none'
+  const traj = document.getElementById('traj-info')
+  if (!traj) return false
+  traj.style.display = 'block'
+  traj.classList.remove('is-expanded')
+  traj.setAttribute('aria-expanded', 'false')
+  traj.innerHTML = '<div style="background:var(--tooltip-bg);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--elevation-2);padding:4px 8px;box-sizing:border-box;max-width:360px;">'
+    + '<div data-card-title="final" style="display:flex;flex-wrap:wrap;align-items:baseline;gap:3px;font:700 14px/16px var(--font-family-sans);color:var(--color-success);">'
+    + '击穿<span style="font:400 var(--font-size-caption-xs)/var(--line-height-caption-xs) var(--font-family-sans);color:var(--color-text-secondary);">· 420</span></div>'
+    + '<div data-card-title="segment" style="font:400 var(--font-size-caption-xs)/var(--line-height-caption-xs) var(--font-family-sans);color:var(--color-text-secondary);">击穿概率 72% · 车体装甲板</div>'
+    + '</div>'
+  return true
+}
+
+async function captureCompactScreenshot(env, page, name) {
+  const { data } = await env.chrome.client.send('Page.captureScreenshot', { format: 'png' }, page.sessionId)
+  await mkdir(COMPACT_SCREENSHOT_DIR, { recursive: true })
+  const file = join(COMPACT_SCREENSHOT_DIR, `${name}.png`)
+  await writeFile(file, Buffer.from(data, 'base64'))
+  console.log(`[browser-armor-mobile] screenshot ${file}`)
+}
+
+/** 滚进可滚动面板后用 elementFromPoint 取真实触控点；返回可点击性，不在这里 tap。 */
+async function compactTarget(page, selector) {
+  await page.callWith((sel) => document.querySelector(sel)?.scrollIntoView({ block: 'nearest', inline: 'nearest' }), selector)
+  await page.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+  return page.evaluate(`(() => {
+    const el = document.querySelector(${JSON.stringify(selector)})
+    if (!el) return null
+    const r = el.getBoundingClientRect()
+    const x = r.left + r.width / 2
+    const y = r.top + r.height / 2
+    const hit = document.elementFromPoint(x, y)
+    return {
+      x, y,
+      center: { x, y },
+      width: Math.round(r.width), height: Math.round(r.height),
+      left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top), bottom: Math.round(r.bottom),
+      visible: r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden',
+      hit: hit === el || (!!hit && el.contains(hit)),
+      hitDescription: hit ? \`\${hit.tagName}\${typeof hit.className === 'string' && hit.className.trim() ? \`.\${hit.className.trim().split(/\\s+/).join('.')}\` : ''}\` : null,
+      inside: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight,
+    }
+  })()`)
+}
+
+/** 厚度分类过滤的真实网格可见性（不是只读 aria）：主装/间隙来自 armorModel，外部模块来自场景。 */
+function armorVisibilityProbe() {
+  const counts = { primary: 0, spaced: 0, external: 0 }
+  const dbg = window.__DBG__
+  if (!dbg) return counts
+  dbg.armorModel?.traverse((node) => {
+    if (!node.isMesh) return
+    const section = node.userData.armorSection
+    if (!node.visible) return
+    if (section === 'hull' || section === 'turret' || section === 'gun') counts.primary += 1
+    if (section === 'spaced') counts.spaced += 1
+  })
+  dbg.scene?.traverse((node) => {
+    if (node.isMesh && node.visible && (node.userData.armorSection === 'chassis' || node.userData.armorSection === 'gunBarrel')) counts.external += 1
+  })
+  return counts
+}
+
+const COMPACT_LANDSCAPE_SCENARIOS = [
+  { name: 'armor-compact-landscape-844x390', width: 844, height: 390, touch: true, safeAreaInsets: { left: 47, right: 47 } },
+  // 768px 断点边界：>=768 结果胶囊回到左上胶囊右侧，可用宽度被两侧安全区与面板夹到最窄。
+  { name: 'armor-compact-landscape-780x360', width: 780, height: 360, touch: true, safeAreaInsets: { left: 47, right: 47 } },
+  { name: 'armor-compact-landscape-768x360', width: 768, height: 360, touch: true, safeAreaInsets: { left: 47, right: 47 } },
+  { name: 'armor-compact-landscape-740x360', width: 740, height: 360, touch: true },
+  { name: 'armor-compact-landscape-600x320', width: 600, height: 320, touch: true },
+]
+
+async function runCompactLandscapeScenario(env, scenario) {
+  const failures = []
+  const label = scenario.name
+  const { targetId, sessionId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  lastPage = page
+  await page.enable()
+  await page.emulate(scenario)
+  if (scenario.safeAreaInsets) {
+    await env.chrome.client.send('Emulation.setSafeAreaInsetsOverride', { insets: scenario.safeAreaInsets }, sessionId)
+  }
+  // HUD 的装备目录是独立资产；只有紧凑横屏场景需要真实 HUD，避免改变其它场景的原生弹种下拉。
+  await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&shooter=${FIXTURE_TANK_ID}&assets=${encodeURIComponent(env.compactAssets)}`)
+  await page.waitFor(() => !!document.querySelector('[data-testid="armor-stage"]'), { label: 'armor stage' })
+  await page.waitFor(() => !document.querySelector('[data-testid="scene3d-loading"]') && !document.querySelector('[data-testid="scene3d-error"]') && !document.querySelector('#target-select').disabled,
+    { timeout: 30000, label: 'viewer initialized' })
+  await delay(150)
+
+  const hudAppeared = await page.waitFor(() => !!document.querySelector('[data-testid="armor-shot-hud"]'), { timeout: 6000, label: 'shot hud ready' })
+    .then(() => true).catch(() => false)
+  // HUD 就绪后原生弹种下拉必须让位；否则紧凑面板会多出一整行大号 select。
+  const nativeShellHidden = await page.waitFor(() => getComputedStyle(document.querySelector('#shell-selector')).display === 'none', { timeout: 3000, label: 'native shell selector hidden' })
+    .then(() => true).catch(() => false)
+  const hudDebug = await page.evaluate(`(() => ({
+    hud: !!document.querySelector('[data-testid="armor-shot-hud"]'),
+    shellSelector: getComputedStyle(document.querySelector('#shell-selector')).display,
+    shellOptions: [...document.querySelectorAll('#shell-select option')].map(option => option.textContent),
+    targetValue: document.querySelector('#target-select')?.value,
+    shooterValue: document.querySelector('#shooter-select')?.value,
+    shellValue: document.querySelector('#shell-select')?.value,
+  }))()`)
+  console.log(`[browser-armor-mobile] ${label} HUD ready=${hudAppeared} ${JSON.stringify(hudDebug)}`)
+  check(failures, hudAppeared, `${label}: 射击快捷 HUD 未渲染（debug=${JSON.stringify(hudDebug)}）`)
+  check(failures, nativeShellHidden && hudDebug.shellSelector === 'none',
+    `${label}: 原生弹种下拉仍可见（display=${hudDebug.shellSelector}）`)
+  await page.probe(applyCompactHeaderFixture)
+  await page.probe(applyCompactResultBadge)
+  await page.animationsSettled()
+  await delay(100)
+  const layout = await page.probe(armorLayoutProbe)
+  checkCompactLandscapeHud(failures, layout, label)
+  // 抽屉与厚度过滤行也在场景根内，命中区按紧凑档 token（40）校验。
+  const compactFloor = layout.sceneTokens?.hitComfortable ?? 44
+
+  // 设置抽屉：打开 → 真实交互（目标坦克选择器）→ 关闭 → 再次打开并关闭。
+  // 600px 宽时参数开关中心会被 19rem 抽屉盖住，必须由抽屉内明确的关闭按钮接手。
+  await page.installInputTrace()
+  await page.tap({ ...layout.tools.center, touch: true })
+  const tapInput = await page.inputTrace()
+  check(failures, tapInput?.click?.testId === 'armor-tools',
+    `${label}: 真实点击落在 ${JSON.stringify(tapInput?.click)}，不是参数开关`)
+  const opened = await page.probe(armorLayoutProbe)
+  check(failures, opened.toolsOpen === true && opened.tools?.ariaExpanded === 'true',
+    `${label}: 点击后设置面板未展开（is-tools-open=${opened.toolsOpen} aria=${opened.tools?.ariaExpanded}）`)
+  check(failures, opened.selectors?.visible === true, `${label}: 点击后设置面板仍不可见`)
+  await page.animationsSettled()
+  await captureCompactScreenshot(env, page, `${scenario.name}-drawer`)
+  if (scenario.width >= 768) {
+    check(failures, opened.tools?.hitIsTools === true,
+      `${label}: 展开后参数开关中心被 ${opened.tools?.hitDescription} 覆盖`)
+  }
+  const closeTarget = await compactTarget(page, '[data-testid="armor-tools-close"]')
+  check(failures, closeTarget?.visible === true && closeTarget?.hit === true && closeTarget?.inside === true,
+    `${label}: 设置抽屉关闭按钮不可触达（${JSON.stringify(closeTarget)}）`)
+  check(failures, closeTarget && Math.min(closeTarget.width, closeTarget.height) >= compactFloor - 0.5,
+    `${label}: 设置抽屉关闭按钮 ${closeTarget?.width}x${closeTarget?.height}，低于 ${compactFloor}px`)
+  const targetButton = await compactTarget(page, '#target-select')
+  check(failures, targetButton?.hit === true && targetButton?.inside === true,
+    `${label}: 抽屉内目标选择器不可触达（${JSON.stringify(targetButton)}）`)
+  await page.tap({ x: targetButton.x, y: targetButton.y, touch: true })
+  await page.waitFor(() => !!document.querySelector('#tank-picker.open'), { label: 'target picker opened from drawer' })
+  await page.tapSelector('#tp-close', true)
+  await page.waitFor(() => !document.querySelector('#tank-picker.open'), { label: 'target picker closed' })
+  check(failures, await page.evaluate(`!!document.querySelector('.armor-stage.is-tools-open')`),
+    `${label}: 关闭目标选择器后设置抽屉丢失打开状态`)
+  await page.resetInputTrace()
+  await page.tap({ x: closeTarget.center.x, y: closeTarget.center.y, touch: true })
+  const closeInput = await page.inputTrace()
+  check(failures, closeInput?.click?.testId === 'armor-tools-close',
+    `${label}: 关闭按钮真实点击落在 ${JSON.stringify(closeInput?.click)}`)
+  const collapsed = await page.probe(armorLayoutProbe)
+  check(failures, collapsed.toolsOpen === false && collapsed.selectors?.visible === false,
+    `${label}: 关闭按钮未收起设置面板（is-tools-open=${collapsed.toolsOpen} selectors visible=${collapsed.selectors?.visible}）`)
+  await page.tap({ ...layout.tools.center, touch: true })
+  const reopened = await page.probe(armorLayoutProbe)
+  check(failures, reopened.toolsOpen === true && reopened.selectors?.visible === true,
+    `${label}: 收起后无法再次打开设置面板`)
+  const closeAgain = await compactTarget(page, '[data-testid="armor-tools-close"]')
+  check(failures, closeAgain?.hit === true, `${label}: 第二次打开后关闭按钮不可触达`)
+  await page.tap({ x: closeAgain.center.x, y: closeAgain.center.y, touch: true })
+  const collapsedAgain = await page.probe(armorLayoutProbe)
+  check(failures, collapsedAgain.toolsOpen === false && collapsedAgain.selectors?.visible === false,
+    `${label}: 第二次打开后无法关闭设置面板`)
+
+  // 装甲厚度：真实切换到厚度视图，过滤行不能被 flex shrink 压扁/裁掉。
+  await page.evaluate(`(() => {
+    const traj = document.querySelector('#traj-info')
+    if (traj) traj.style.display = 'none'
+    const click = document.querySelector('#click-info')
+    if (click) click.style.display = 'none'
+  })()`)
+  const collision = await compactTarget(page, '#collision-btn')
+  check(failures, collision?.hit === true && collision?.inside === true,
+    `${label}: 厚度模式开关不可触达（${JSON.stringify(collision)}）`)
+  await page.tap({ x: collision.x, y: collision.y, touch: true })
+  await page.waitForValue(`document.querySelector('#collision-btn').getAttribute('aria-pressed')`,
+    (value) => value === 'true', { label: 'thickness mode active' })
+  await page.waitForValue(`!document.querySelector('#armor-filters').hidden`, Boolean,
+    { label: 'armor filters visible' })
+  const filterMetrics = await page.evaluate(`(() => {
+    const toggle = document.querySelector('#view-toggle')
+    const buttons = [...document.querySelectorAll('#armor-filters button')]
+    return {
+      toggleHeight: Math.round(toggle.getBoundingClientRect().height),
+      count: buttons.length,
+      buttons: buttons.map(button => ({ text: button.textContent.trim(), height: Math.round(button.getBoundingClientRect().height) })),
+    }
+  })()`)
+  check(failures, filterMetrics.count === 3, `${label}: 装甲分类过滤按钮不是 3 个（${JSON.stringify(filterMetrics)}）`)
+  check(failures, filterMetrics.toggleHeight > 38,
+    `${label}: 厚度模式过滤行被压扁（#view-toggle 高 ${filterMetrics.toggleHeight}px，${JSON.stringify(filterMetrics)}）`)
+  await page.callWith((sel) => document.querySelector(sel)?.scrollIntoView({ block: 'nearest', inline: 'nearest' }), '#filter-primary')
+  await page.animationsSettled()
+  await captureCompactScreenshot(env, page, `${scenario.name}-thickness`)
+  const filterCategories = [
+    { name: 'primary', id: '#filter-primary' },
+    { name: 'spaced', id: '#filter-spaced' },
+    { name: 'external', id: '#filter-external' },
+  ]
+  for (const category of filterCategories) {
+    const target = await compactTarget(page, category.id)
+    check(failures, target?.hit === true && target?.inside === true,
+      `${label}: ${category.id} 不可触达（${JSON.stringify(target)}）`)
+    check(failures, target && Math.min(target.width, target.height) >= compactFloor - 0.5,
+      `${label}: ${category.id} 触控目标 ${target?.width}x${target?.height}，低于 ${compactFloor}px`)
+    const pressed = await page.evaluate(`document.querySelector('${category.id}').getAttribute('aria-pressed')`)
+    check(failures, pressed === 'true', `${label}: ${category.id} 初始 aria-pressed=${pressed}`)
+    const countsBefore = await page.probe(armorVisibilityProbe)
+    await page.tap({ x: target.x, y: target.y, touch: true })
+    const off = await page.waitForValue(`(() => ({
+      pressed: document.querySelector('${category.id}').getAttribute('aria-pressed'),
+      counts: (${armorVisibilityProbe.toString()})(),
+    }))()`, (value) => value.pressed === 'false', { label: `${category.id} pressed off` })
+    if (countsBefore[category.name] > 0) {
+      check(failures, off.counts[category.name] === 0,
+        `${label}: 关闭 ${category.id} 后仍有 ${off.counts[category.name]} 个网格可见（before=${JSON.stringify(countsBefore)}）`)
+    }
+    const targetAgain = await compactTarget(page, category.id)
+    await page.tap({ x: targetAgain.x, y: targetAgain.y, touch: true })
+    const on = await page.waitForValue(`(() => ({
+      pressed: document.querySelector('${category.id}').getAttribute('aria-pressed'),
+      counts: (${armorVisibilityProbe.toString()})(),
+    }))()`, (value) => value.pressed === 'true', { label: `${category.id} pressed on` })
+    if (countsBefore[category.name] > 0) {
+      check(failures, on.counts[category.name] === countsBefore[category.name],
+        `${label}: 恢复 ${category.id} 后网格可见数 ${on.counts[category.name]} 与初始 ${countsBefore[category.name]} 不一致`)
+    }
+    console.log(`[browser-armor-mobile] ${label} filter ${category.name}: before=${JSON.stringify(countsBefore)} off=${JSON.stringify(off.counts)} on=${JSON.stringify(on.counts)}`)
+  }
+
+  // 真实厚度点选：在画布上命中装甲板，验证 #click-info 数值节点没有被 overflow:hidden 裁切。
+  let realThickness = null
+  const canvasPoints = [[0.4, 0.4], [0.5, 0.35], [0.35, 0.55], [0.45, 0.55], [0.3, 0.45], [0.55, 0.3]]
+  for (const [fx, fy] of canvasPoints) {
+    const point = await page.evaluate(`(() => {
+      const canvas = document.querySelector('#canvas-container canvas')
+      const stage = document.querySelector('[data-testid="armor-stage"]')
+      if (!canvas || !stage) return null
+      const r = stage.getBoundingClientRect()
+      const x = r.left + r.width * ${fx}
+      const y = r.top + r.height * ${fy}
+      const hit = document.elementFromPoint(x, y)
+      if (!(hit === canvas || canvas.contains(hit))) return null
+      return { x, y }
+    })()`)
+    if (!point) continue
+    await page.tap({ x: point.x, y: point.y, touch: true })
+    await delay(250)
+    const state = await page.evaluate(`(() => {
+      const card = document.querySelector('#click-info')
+      const part = document.querySelector('#click-part')
+      const armor = document.querySelector('#click-armor')
+      return { display: getComputedStyle(card).display, part: part?.textContent, armor: armor?.textContent }
+    })()`)
+    if (state.display !== 'none' && state.armor?.trim()) { realThickness = state; break }
+  }
+  check(failures, realThickness?.armor && /\d+\s*mm/.test(realThickness.armor),
+    `${label}: 真实厚度点选没有产生厚度数值（${JSON.stringify(realThickness)}）`)
+  console.log(`[browser-armor-mobile] ${label} real thickness result: ${JSON.stringify(realThickness)}`)
+
+  const checkThicknessValue = async (part, armor, expected, labelText = '基础装甲') => {
+    await page.evaluate(`(() => {
+      document.querySelector('#click-part').textContent = ${JSON.stringify(part)}
+      document.querySelector('#click-info .row > span').textContent = ${JSON.stringify(labelText)}
+      document.querySelector('#click-armor').textContent = ${JSON.stringify(armor)}
+      document.querySelector('#click-info').style.display = 'flex'
+    })()`)
+    await page.animationsSettled()
+    const valueLayout = await page.probe(armorLayoutProbe)
+    check(failures, valueLayout.clickInfo?.visible === true,
+      `${label}: 厚度结果卡不可见（${JSON.stringify(valueLayout.clickInfo)}）`)
+    check(failures, valueLayout.clickArmor?.visible === true && valueLayout.clickArmor.text === expected,
+      `${label}: 厚度数值节点文本异常（${JSON.stringify(valueLayout.clickArmor)}）`)
+    check(failures, valueLayout.clickArmor?.insideCard === true && valueLayout.clickArmor?.selfClipped === false,
+      `${label}: 厚度数值节点被裁切（${JSON.stringify(valueLayout.clickArmor)}）`)
+    check(failures, valueLayout.clickArmor?.insideContent === true,
+      `${label}: 厚度数值超出结果卡可见内容区（card=${JSON.stringify(valueLayout.clickInfo)} value=${JSON.stringify(valueLayout.clickArmor)}）`)
+    check(failures, valueLayout.clickInfo?.clipped === false
+      && valueLayout.clickRow?.scrollWidth <= (valueLayout.clickInfo?.contentWidth ?? 0) + 1,
+      `${label}: 厚度数值行横向溢出结果卡（row=${JSON.stringify(valueLayout.clickRow)} card=${JSON.stringify(valueLayout.clickInfo)}）`)
+    check(failures, valueLayout.clickInfo.height <= 40,
+      `${label}: 厚度结果卡高 ${valueLayout.clickInfo.height}px，超过 40px`)
+    console.log(`[browser-armor-mobile] ${label} thickness "${part} / ${armor}": card=${JSON.stringify(valueLayout.clickInfo)} value=${JSON.stringify(valueLayout.clickArmor)}`)
+  }
+  await checkThicknessValue('Hull', '200 mm', '200 mm', 'Base armor')
+  await checkThicknessValue('炮塔正面附加装甲模块', '1280 mm', '1280 mm')
+
+  // 回到击穿模式：过滤行必须重新隐藏，布局恢复正常。
+  const penetrationButton = await compactTarget(page, '#penetration-btn')
+  check(failures, penetrationButton?.hit === true && penetrationButton?.inside === true,
+    `${label}: 击穿模式开关不可触达（${JSON.stringify(penetrationButton)}）`)
+  await page.tap({ x: penetrationButton.x, y: penetrationButton.y, touch: true })
+  const penetrationState = await page.waitForValue(`(() => ({
+    collision: document.querySelector('#collision-btn').getAttribute('aria-pressed'),
+    penetration: document.querySelector('#penetration-btn').getAttribute('aria-pressed'),
+    filtersHidden: document.querySelector('#armor-filters').hidden,
+    clickDisplay: getComputedStyle(document.querySelector('#click-info')).display,
+  }))()`, (value) => value.collision === 'false' && value.filtersHidden === true,
+  { label: 'penetration mode restored' })
+  check(failures, penetrationState.penetration === 'true' && penetrationState.clickDisplay === 'none',
+    `${label}: 击穿模式恢复不完整（${JSON.stringify(penetrationState)}）`)
+  const restoredLayout = await page.probe(armorLayoutProbe)
+  check(failures, restoredLayout.viewToggle?.height <= 38,
+    `${label}: 恢复击穿模式后分段开关高度 ${restoredLayout.viewToggle?.height}px`)
+
+  // 最终截图回到击穿结果胶囊，并再次确认四盒几何。
+  await page.probe(applyCompactResultBadge)
+  await page.animationsSettled()
+  const finalLayout = await page.probe(armorLayoutProbe)
+  checkCompactLandscapeHud(failures, finalLayout, label)
+
+  await captureCompactScreenshot(env, page, scenario.name)
+
+  // 结果卡展开态：真实点击 #traj-info 后才显示明细行；高度受限且不能压到其他 HUD 面板。
+  const badge = await compactTarget(page, '#traj-info')
+  check(failures, badge?.hit === true && badge?.inside === true,
+    `${label}: 展开前结果卡不可触达（${JSON.stringify(badge)}）`)
+  await page.tap({ x: badge.x, y: badge.y, touch: true })
+  const expandedState = await page.waitForValue(`(() => {
+    const el = document.querySelector('#traj-info')
+    const segment = el.querySelector('[data-card-title="segment"]')
+    const r = el.getBoundingClientRect()
+    const sr = segment?.getBoundingClientRect()
+    return {
+      expanded: el.classList.contains('is-expanded'),
+      aria: el.getAttribute('aria-expanded'),
+      height: Math.round(r.height),
+      segmentVisible: !!segment && getComputedStyle(segment).display !== 'none' && sr.width > 0 && sr.height > 0,
+      segmentText: segment?.textContent,
+    }
+  })()`, (value) => value.expanded === true, { label: 'result details expanded' })
+  check(failures, expandedState.aria === 'true' && expandedState.segmentVisible && /击穿概率/.test(expandedState.segmentText || ''),
+    `${label}: 结果卡展开后明细行不可见（${JSON.stringify(expandedState)}）`)
+  check(failures, expandedState.height <= 72,
+    `${label}: 展开结果卡高 ${expandedState.height}px，超过 72px`)
+  const expandedLayout = await page.probe(armorLayoutProbe)
+  check(failures, expandedLayout.trajInfo?.visible === true,
+    `${label}: 展开结果卡不可见（${JSON.stringify(expandedLayout.trajInfo)}）`)
+  for (const [name, rect] of [
+    ['左上胶囊', expandedLayout.capsule],
+    ['右下射击面板', expandedLayout.bottomBar],
+    ['左下姿态面板', expandedLayout.turretControls],
+  ]) {
+    check(failures, !rectsOverlap(expandedLayout.trajInfo, rect),
+      `${label}: 展开结果卡与${name}相交（result=${JSON.stringify(expandedLayout.trajInfo)} other=${JSON.stringify(rect)}）`)
+  }
+  await captureCompactScreenshot(env, page, `${scenario.name}-expanded`)
+  await page.tap({ x: badge.x, y: badge.y, touch: true })
+  const collapsedState = await page.waitForValue(`(() => {
+    const el = document.querySelector('#traj-info')
+    const r = el.getBoundingClientRect()
+    return { expanded: el.classList.contains('is-expanded'), aria: el.getAttribute('aria-expanded'), height: Math.round(r.height) }
+  })()`, (value) => value.expanded === false, { label: 'result details collapsed' })
+  check(failures, collapsedState.aria === 'false' && collapsedState.height <= 40,
+    `${label}: 结果卡收起异常（${JSON.stringify(collapsedState)}）`)
+
+  check(failures, page.consoleErrors.length === 0, `${label}: JS errors: ${page.consoleErrors.join(' | ')}`)
   await env.chrome.client.send('Target.closeTarget', { targetId })
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
 }
@@ -1277,6 +1887,10 @@ const scenarioArgs = parseScenarioArgs(process.argv.slice(2))
 const chrome = findChrome()
 const { server, origin } = await startFixtureServer()
 const assets = await startFixtureAssetPack()
+const compactAssets = await startFixtureAssetPack({ extraRoutes: {
+  // HUD 的装备目录：缺这个文件时 ArmorShotHud 不挂载，紧凑横屏就测不到真实布局。
+  '/research/devices.json': { type: 'application/json', body: JSON.stringify({ meta: { gameVersion: 'fixture' }, devices: [], presets: [] }) },
+} })
 const staggeredAssets = await startFixtureAssetPack({ delays: { armor: 6000, visual: 4000 } })
 const pickerAssets = await startFixtureAssetPack({ tankCache: PICKER_TANK_CACHE })
 const contextLossSelectionAssets = await startFixtureAssetPack({ tankCache: CONTEXT_LOSS_SELECTION_TANK_CACHE })
@@ -1297,10 +1911,11 @@ try {
       '--enable-unsafe-swiftshader',
     ],
   })
-  const env = { origin, chrome: chromeCdp, assets: assets.origin, pickerAssets: pickerAssets.origin, staggeredAssets: staggeredAssets.origin, contextLossSelectionAssets: contextLossSelectionAssets.origin, contextLossRouteRebuildAssets: contextLossRouteRebuildAssets.origin }
+  const env = { origin, chrome: chromeCdp, assets: assets.origin, compactAssets: compactAssets.origin, pickerAssets: pickerAssets.origin, staggeredAssets: staggeredAssets.origin, contextLossSelectionAssets: contextLossSelectionAssets.origin, contextLossRouteRebuildAssets: contextLossRouteRebuildAssets.origin }
   const runs = [
     ...SHOT_SCENARIOS.map(scenario => ({ scenario, run: () => runShotActionsScenario(env, scenario) })),
     { scenario: SHOT_LANDSCAPE_SCENARIO, run: () => runShotLandscapeScenario(env, SHOT_LANDSCAPE_SCENARIO) },
+    ...COMPACT_LANDSCAPE_SCENARIOS.map(scenario => ({ scenario, run: () => runCompactLandscapeScenario(env, scenario) })),
     ...MOBILE_SCENARIOS.map((scenario) => ({ scenario, run: () => runMobileScenario(env, scenario) })),
     { scenario: BACK_SCENARIO, run: () => runMobileBackScenario(env, BACK_SCENARIO) },
     ...DESKTOP_SCENARIOS.map((scenario) => ({ scenario, run: () => runDesktopScenario(env, scenario) })),
@@ -1357,6 +1972,7 @@ try {
   if (chromeCdp) await chromeCdp.close()
   await server.close()
   await assets.close()
+  await compactAssets.close()
   await staggeredAssets.close()
   await pickerAssets.close()
   await contextLossSelectionAssets.close()

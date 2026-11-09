@@ -142,8 +142,9 @@ const percentNow = computed(() => Math.round(v.value * 100))
 </template>
 
 <style scoped>
-/* 覆盖在 3D 视口右侧、全屏按钮正下方：不单独挤占一列，hit area 与按钮不重叠
- （top 从全屏按钮下缘起算，由宿主以 CSS 变量 --scene-fs-bottom 下发）。 */
+/* 默认覆盖在 3D 视口右侧、全屏按钮正下方（top 由宿主以 --scene-fs-bottom 下发）；
+   手机回放紧凑条把全屏入口并入传输条后，Replay3DPane 在 .phone-form 下将其改停右下角。
+   始终绝对定位、不单独挤占一列。 */
 .scene-dist {
   position: absolute;
   min-inline-size: var(--hit-min);
@@ -161,6 +162,11 @@ const percentNow = computed(() => Math.round(v.value * 100))
   corner-shape: round;
   background: var(--color-surface-1);
   touch-action: none;
+}
+
+/* 短视口横屏紧凑档：全屏按钮抬到 40px 后，距离滑条按同一底边下移，避免命中区重叠。 */
+@media (pointer: coarse) and (orientation: landscape) and (height <= 520px) {
+  .scene-dist { top: var(--scene-fs-bottom, calc(var(--space-2) + var(--hit-min-comfortable) + var(--space-2))); }
 }
 
 .scene-dist-label {

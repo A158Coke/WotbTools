@@ -7,9 +7,12 @@ import { showToast } from '../composables/useToast.js'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 import { ArrowUp, ListTree } from 'lucide-vue-next'
+import ShowcaseHero from './ShowcaseHero.vue'
 
 const props = defineProps({
   source: { type: String, required: true },
+  /** 用文档 H1 生成分区主视觉（docs），并从正文移除重复标题 */
+  sectionHero: { type: Boolean, default: false },
 })
 
 const markdown = new MarkdownIt({ html: false, linkify: true })
@@ -18,15 +21,26 @@ const markdown = new MarkdownIt({ html: false, linkify: true })
 const doc = computed(() => {
   const tokens = markdown.parse(props.source, {})
   const toc = []
-  tokens.forEach((token, index) => {
+  let title = ''
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index]
+    // 页面主视觉接管一级标题：取第一个 H1 作为 banner 标题，并从正文删除它，避免重复
+    if (token.type === 'heading_open' && token.tag === 'h1' && !title) {
+      title = tokens[index + 1]?.content || ''
+      if (props.sectionHero) {
+        tokens.splice(index, 3)
+        index -= 1
+        continue
+      }
+    }
     if (token.type === 'heading_open' && token.tag === 'h2') {
       const id = `section-${toc.length + 1}`
       token.attrSet('id', id)
       toc.push({ id, title: tokens[index + 1]?.content || '' })
     }
-  })
+  }
   const html = DOMPurify.sanitize(markdown.renderer.render(tokens, markdown.options, {}), { ADD_ATTR: ['id'] })
-  return { html, toc }
+  return { html, toc, title }
 })
 
 const activeId = ref('')
@@ -102,9 +116,10 @@ onBeforeUnmount(() => {
     </nav>
 
     <div class="doc-main">
+      <ShowcaseHero v-if="sectionHero && doc.title" section="docs" :title="doc.title" />
       <!-- 页面自己的页头（如 Rating 说明的返回按钮）；历史 / 技术演进不传 -->
       <slot name="header" />
-      <article ref="body" class="doc-body" @click="onBodyClick" v-html="doc.html"></article>
+      <article ref="body" class="doc-body surface-glass-1" @click="onBodyClick" v-html="doc.html"></article>
     </div>
 
 
@@ -129,7 +144,7 @@ onBeforeUnmount(() => {
 .doc-page { --doc-measure: calc(var(--space-12) * 15); }
 
 .doc-main { min-width: 0; }
-.doc-body { min-width: 0; padding: var(--space-6); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-surface-1); font: var(--type-body); font-size: var(--font-size-doc); line-height: var(--line-height-doc); overflow-wrap: anywhere; }
+.doc-body { min-width: 0; padding: var(--space-6); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); font: var(--type-body); font-size: var(--font-size-doc); line-height: var(--line-height-doc); overflow-wrap: anywhere; }
 .doc-body :deep(h1),
 .doc-body :deep(h2),
 .doc-body :deep(h3) { color: var(--color-text-primary); scroll-margin-top: calc(var(--header-h) + var(--space-4)); }
@@ -147,7 +162,7 @@ onBeforeUnmount(() => {
    同区，L6 探针判内容控件被常驻面盖住；视口左下没有 fixed 控件，碰撞不可能发生。 */
 .doc-body :deep(.doc-copy) { position: absolute; inset-block-end: var(--space-2); inset-inline-start: var(--space-2); min-height: var(--control-h-sm); padding: 0 var(--space-2); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-sm); background: var(--color-surface-1); color: var(--color-text-secondary); font: var(--type-caption); cursor: pointer; }
 .doc-body :deep(.doc-copy:focus-visible) { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-.doc-body :deep(table) { display: block; max-width: 100%; overflow-x: auto; margin: var(--space-4) 0; border-collapse: collapse; }
+.doc-body :deep(table) { display: block; max-width: 100%; overflow-x: auto; margin: var(--space-4) 0; border-collapse: collapse; background: var(--color-surface-1); }
 .doc-body :deep(th), .doc-body :deep(td) { padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--color-border-subtle); text-align: start; }
 .doc-body :deep(th) { color: var(--color-text-primary); background: var(--color-surface-2); }
 .doc-body :deep(img) { max-width: 100%; height: auto; }
