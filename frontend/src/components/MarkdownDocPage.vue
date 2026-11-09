@@ -7,9 +7,12 @@ import { showToast } from '../composables/useToast.js'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 import { ArrowUp, ListTree } from 'lucide-vue-next'
+import ShowcaseHero from './ShowcaseHero.vue'
 
 const props = defineProps({
   source: { type: String, required: true },
+  /** 用文档 H1 生成分区主视觉（docs），并从正文移除重复标题 */
+  sectionHero: { type: Boolean, default: false },
 })
 
 const markdown = new MarkdownIt({ html: false, linkify: true })
@@ -18,15 +21,26 @@ const markdown = new MarkdownIt({ html: false, linkify: true })
 const doc = computed(() => {
   const tokens = markdown.parse(props.source, {})
   const toc = []
-  tokens.forEach((token, index) => {
+  let title = ''
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index]
+    // 页面主视觉接管一级标题：取第一个 H1 作为 banner 标题，并从正文删除它，避免重复
+    if (token.type === 'heading_open' && token.tag === 'h1' && !title) {
+      title = tokens[index + 1]?.content || ''
+      if (props.sectionHero) {
+        tokens.splice(index, 3)
+        index -= 1
+        continue
+      }
+    }
     if (token.type === 'heading_open' && token.tag === 'h2') {
       const id = `section-${toc.length + 1}`
       token.attrSet('id', id)
       toc.push({ id, title: tokens[index + 1]?.content || '' })
     }
-  })
+  }
   const html = DOMPurify.sanitize(markdown.renderer.render(tokens, markdown.options, {}), { ADD_ATTR: ['id'] })
-  return { html, toc }
+  return { html, toc, title }
 })
 
 const activeId = ref('')
@@ -102,6 +116,7 @@ onBeforeUnmount(() => {
     </nav>
 
     <div class="doc-main">
+      <ShowcaseHero v-if="sectionHero && doc.title" section="docs" :title="doc.title" />
       <!-- 页面自己的页头（如 Rating 说明的返回按钮）；历史 / 技术演进不传 -->
       <slot name="header" />
       <article ref="body" class="doc-body surface-glass-1" @click="onBodyClick" v-html="doc.html"></article>

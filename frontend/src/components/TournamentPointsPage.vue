@@ -131,7 +131,7 @@ onScopeDispose(() => { generation++; controller.abort() })
 </script>
 <template>
   <div class="tournament-page tournament-stack">
-    <ShowcaseHero :kicker="$t('nav.groups.events')" :title="$t('tournament.title')" :description="$t('tournament.heroDescription')"><template #actions>
+    <ShowcaseHero section="events" :kicker="$t('nav.groups.events')" :title="$t('tournament.title')" :description="$t('tournament.heroDescription')"><template #actions>
       <MenuButton :label="$t(exporting ? 'tournament.exporting' : 'tournament.export')" :items="exportItems" :disabled="exportDisabled" data-testid="tournament-export" data-tour="tournament-export" @select="exportBoard" />
       <AppButton :disabled="loading || !network.available" @click="eventId ? loadBoard() : loadEvents(true)">{{ $t('tournament.refresh') }}</AppButton>
     </template></ShowcaseHero>

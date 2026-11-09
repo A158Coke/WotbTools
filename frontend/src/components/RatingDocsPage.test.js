@@ -25,7 +25,11 @@ describe('RatingDocsPage', () => {
     expect(wrapper.find('[data-testid="doc-toc"]').exists()).toBe(true)
     const md = wrapper.find('.doc-body')
     expect(md.exists()).toBe(true)
-    expect(md.text()).toContain('League Rating V6')
+    // 分区主视觉取代了正文里的首个 H1：标题只出现一次，正文从导语开始。
+    const hero = wrapper.find('[data-testid="showcase-hero"]')
+    expect(hero.exists()).toBe(true)
+    expect(hero.text()).toContain('League Rating V6')
+    expect(md.text()).not.toContain('League Rating V6')
     expect(md.text()).toContain('Research Data Status')
     expect(md.text()).toContain('Team V6 Rating')
     expect(md.text()).toContain('(T + 475) / (N + 1)')

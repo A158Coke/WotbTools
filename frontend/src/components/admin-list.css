@@ -1,6 +1,6 @@
 /* 管理后台列表模板（docs/frontend/ui-system.md「管理后台列表模板」）：表格 / 手机卡片、分页、详情列表、状态徽标、口径提示。
  * 全局类名统一带 admin-list- 前缀，不与各页 scoped 类（如名人堂管理的 .admin-table）冲突；只用语义 token。
- * 页面骨架：PageHeader（kicker）→ AdminFilterBar → AdminBulkBar → .admin-list-table → .admin-list-pagination，
+ * 页面骨架：ShowcaseHero compact（kicker + 标题，操作在工具条）→ AdminFilterBar → AdminBulkBar → .admin-list-table → .admin-list-pagination，
  * 点行打开 AdminDetailDrawer（右侧 AppSheet），危险操作在抽屉底部的 AdminDangerZone。 */
 
 .admin-list-note {

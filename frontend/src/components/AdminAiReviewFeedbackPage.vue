@@ -12,7 +12,7 @@ import AdminDangerZone from './AdminDangerZone.vue'
 import AdminDetailDrawer from './AdminDetailDrawer.vue'
 import AdminFilterBar from './AdminFilterBar.vue'
 import AppButton from './AppButton.vue'
-import PageHeader from './PageHeader.vue'
+import ShowcaseHero from './ShowcaseHero.vue'
 import { isRowControlClick, rowOpenTarget } from './adminListRow'
 import './admin-list.css'
 
@@ -191,11 +191,11 @@ onBeforeUnmount(() => { generation++; detailGeneration++; pendingDetailId.value 
 
 <template>
   <section class="feedback-admin admin-page">
-    <PageHeader :kicker="$t('aiFeedback.adminKicker')" :title="$t('aiFeedback.adminTitle')" :description="$t('aiFeedback.adminDescription')">
+    <ShowcaseHero compact section="admin" :kicker="$t('aiFeedback.adminKicker')" :title="$t('aiFeedback.adminTitle')">
       <template #actions>
         <AppButton size="sm" :disabled="loading" @click="load">{{ $t('aiFeedback.refresh') }}</AppButton>
       </template>
-    </PageHeader>
+    </ShowcaseHero>
     <AdminFilterBar :chips="reasonChips()" @remove="removeReasonChip">
       <label class="admin-list-field">
         <span>{{ $t('aiFeedback.filter') }}</span>

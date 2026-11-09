@@ -28,6 +28,12 @@ describe('MarkdownDocPage（审计 PG-14：长文档目录）', () => {
     expect(wrapper.findAll('[data-testid="doc-toc-compact"] a')).toHaveLength(2)
   })
 
+  it('sectionHero 用文档 H1 生成分区主视觉，并从正文删除重复标题', () => {
+    const wrapper = mount(MarkdownDocPage, { props: { source: SOURCE, sectionHero: true }, global: { mocks: { $t: key => key } } })
+    expect(wrapper.get('.showcase-hero h1').text()).toBe('项目历史')
+    expect(wrapper.find('.doc-body h1').exists()).toBe(false)
+  })
+
   it('不渲染原始 HTML（markdown html:false + DOMPurify）', () => {
     const wrapper = mount(MarkdownDocPage, { props: { source: SOURCE }, global: { mocks: { $t: key => key } } })
     expect(wrapper.find('script').exists()).toBe(false)

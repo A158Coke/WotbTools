@@ -4,7 +4,7 @@ import { inject, ref } from 'vue'
 import { ArrowRight, Check, Copy, Gamepad2, MessageCircle, MessageSquare, MessageSquareText } from 'lucide-vue-next'
 import { FEEDBACK_KEY } from '../shared/feedback.js'
 import AppButton from './AppButton.vue'
-import PageHeader from './PageHeader.vue'
+import ShowcaseHero from './ShowcaseHero.vue'
 import { copyText } from '../utils/clipboard.js'
 
 // design-language §8：不用 emoji 当图标。Lucide 不收录品牌 logo，用语义相近的通用图标，平台名写在卡片标题里
@@ -29,7 +29,7 @@ async function copyContact(contact) {
 
 <template>
   <div class="contact-page layout-content">
-    <PageHeader :title="$t('contact.title')" :description="$t('contact.subtitle')" />
+    <ShowcaseHero section="community" :kicker="$t('nav.groups.community')" :title="$t('contact.title')" :description="$t('contact.subtitle')" />
 
     <!-- 最快的方式：站内反馈（4.0「联系我」稿） -->
     <button v-if="openFeedback" type="button" class="contact-feedback" data-testid="contact-feedback" @click="openFeedback()">

@@ -45,7 +45,7 @@ function isShown(type) {
 
 <template>
   <main class="sponsor-page layout-content">
-    <ShowcaseHero :kicker="t('sponsor.eyebrow')" :title="t('sponsor.title')" :description="t('sponsor.intro')" />
+    <ShowcaseHero section="community" :kicker="t('sponsor.eyebrow')" :title="t('sponsor.title')" :description="t('sponsor.intro')" />
 
     <div class="sponsor-grid">
       <section class="sponsor-card" :aria-label="t('sponsor.aboutTitle')">

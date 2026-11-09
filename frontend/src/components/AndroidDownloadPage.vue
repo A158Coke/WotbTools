@@ -57,7 +57,7 @@ onMounted(loadManifest)
 
 <template>
   <main class="android-page layout-content">
-    <ShowcaseHero :kicker="t('android.nav')" :title="t('android.heroTitle')" :description="t('android.description')" />
+    <ShowcaseHero section="community" :kicker="t('android.nav')" :title="t('android.heroTitle')" :description="t('android.description')" />
 
     <section v-if="isAndroidApp()" class="installed-banner" data-testid="android-installed">
       <p>{{ t('android.installed') }}</p>
@@ -107,7 +107,7 @@ onMounted(loadManifest)
 
 <style scoped>
 .android-page { display: grid; gap: var(--space-4); max-width: calc(var(--reading-measure) + var(--gutter) * 2); color: var(--color-text-primary); font: var(--type-body); }
-.android-page > :deep(.showcase-hero) { margin-block-end: 0; }
+.android-page :deep(.showcase-hero) { margin-block-end: 0; }
 .download-card, .installed-banner, .unavailable {
   padding: var(--space-6);
   border: 1px solid var(--color-border-subtle);
