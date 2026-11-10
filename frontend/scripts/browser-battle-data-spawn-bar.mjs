@@ -69,6 +69,7 @@ function spawnBarProbe() {
     barWidth: bar?.getBoundingClientRect().width ?? 0,
     overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
     lang: document.documentElement.lang,
+    uiProfile: document.documentElement.dataset.uiProfile ?? null,
   }
 }
 
@@ -90,6 +91,8 @@ async function runTheme(env, theme) {
     await page.evaluate(`localStorage.setItem(${JSON.stringify(THEME_KEY)}, ${JSON.stringify(theme)}); localStorage.setItem('wotb-lang', 'en')`)
     await page.goto(`${env.origin}/?view=admin-battle-data&ws-auth=1&ws-roles=wotbtools-admin&ws-auth-init=resolve-authenticated`)
     const state = await page.waitForValue(`(${spawnBarProbe.toString()})()`, probe => Boolean(probe?.first && probe.segWidths.length === 3), { label: `${theme}: spawn bar rendered` })
+    // 防误通过：断言页面真的加载了目标主题，而不是四季都跑在默认夏季上。
+    check(failures, state.uiProfile === theme, `${theme}: page must render data-ui-profile=${theme} got ${state.uiProfile}`)
     const tokens = state.tokens
     check(failures, state.first.backgroundColor === hexToRgb(tokens.danger), `${theme}: first seg must be danger(${tokens.danger}) got ${state.first.backgroundColor}`)
     check(failures, state.draw.backgroundColor === hexToRgb(tokens.borderStrong), `${theme}: draw seg must be border-strong(${tokens.borderStrong}) got ${state.draw.backgroundColor}`)
@@ -136,8 +139,9 @@ async function runRussianWinter(env) {
     await page.goto(`${env.origin}/?view=admin-battle-data&ws-auth=1&ws-roles=wotbtools-admin&ws-auth-init=resolve-authenticated`)
     const state = await page.waitForValue(`(${spawnBarProbe.toString()})()`, probe => Boolean(probe?.first), { label: 'ru winter: spawn bar rendered' })
     check(failures, state.lang === 'ru', `ru winter: document lang must be ru got ${state.lang}`)
+    check(failures, state.uiProfile === 'winter', `ru winter: page must render data-ui-profile=winter got ${state.uiProfile}`)
     check(failures, state.overflowX === false, 'ru winter: document must not gain horizontal overflow')
-    check(failures, state.first.backgroundColor === state.tokens.danger.startsWith('#') ? hexToRgb(state.tokens.danger) : state.first.backgroundColor, 'ru winter: first seg mapping must not change')
+    check(failures, state.first.backgroundColor === hexToRgb(state.tokens.danger), `ru winter: first seg must be danger(${state.tokens.danger}) got ${state.first.backgroundColor}`)
   } finally {
     await env.chrome.client.send('Target.closeTarget', { targetId })
   }
