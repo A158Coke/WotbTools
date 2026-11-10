@@ -321,6 +321,9 @@ function linkAttrs(id) {
   text-align: start;
   text-decoration: none;
   cursor: pointer;
+  /* 导航 chrome 不参与文字选择（同 app-shell.css 的 button 规则）：GeckoView 有活动选区时
+     文字上的拖动会变成「扩展选区」而不是滚动。 */
+  user-select: none;
   transition: background-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
 }
 

@@ -1188,6 +1188,28 @@ onBeforeUnmount(() => {
     .armor-view.has-back #corner-tl { inset-block-start: var(--space-5); inset-inline-start: calc(max(var(--space-5), env(safe-area-inset-left)) + var(--immersive-nav-reserve) + var(--hit-min-comfortable) + var(--space-2)); inline-size: min(17rem, 34%); }
     .armor-view #corner-tr { inset-block-start: auto; inset-block-end: max(var(--space-2), env(safe-area-inset-bottom)); inset-inline-end: max(var(--space-5), env(safe-area-inset-right)); max-block-size: calc(100% - var(--space-12) - var(--space-10)); overflow-y: auto; }
     .armor-view #corner-br { display: none; }
+    /* 单发分析页：射击参数面板（#corner-tr）与视角切换（#corner-br）共享右下布局空间——
+       与竖屏 is-shot 契约同构（armor-bottom-controls 升为布局 owner，两角置 static 排进
+       同一列，视角切换按 DOM 序落在参数面板下方）；is-shot #corner-br 的 display:flex
+       特异性高于上面的 #corner-br 隐藏规则，必须显式接管而不是再调 z-index。 */
+    .armor-view.is-shot .armor-bottom-controls {
+        position: absolute;
+        inset-block-end: max(var(--space-2), env(safe-area-inset-bottom));
+        inset-inline-end: max(var(--space-5), env(safe-area-inset-right));
+        max-inline-size: calc(100% - max(var(--space-5), env(safe-area-inset-left)) - max(var(--space-5), env(safe-area-inset-right)) - var(--immersive-nav-reserve));
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: var(--space-2);
+        pointer-events: none;
+        z-index: var(--pb-z-hud);
+    }
+    .armor-view.is-shot .armor-bottom-controls :is(#corner-tr, #corner-br) {
+        position: static;
+        inset: auto;
+        max-inline-size: none;
+        pointer-events: auto;
+    }
     /* 短横屏紧凑 HUD：返回键 + 车名 + 参数并成一条 38px 胶囊；点选结果接管胶囊右侧；
        右下射击面板 15rem × ≤45dvh；左下姿态面板压到两行。 */
     .armor-view .armor-back {
@@ -1292,6 +1314,13 @@ onBeforeUnmount(() => {
     .armor-view #click-info .row > span:first-child { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; }
     .armor-view #click-info #click-armor { flex: none; }
     .armor-view #traj-info { max-block-size: 72px; }
+    /* 展开态明细卡必须留在左上 / 左中带：780×360 实测展开卡（top 79 + 72px）会伸进
+       右下共享列的参数面板。高度收到 48px（overflow-y 继承基础滚动），宽度与收起态
+       同公式，任何 Judge 视口都不与右下列相交。 */
+    .armor-view #traj-info.is-expanded {
+        max-block-size: 48px;
+        max-inline-size: max(6rem, calc(100% - 32.5rem - var(--immersive-nav-reserve) - max(var(--space-5), env(safe-area-inset-left)) - max(var(--space-5), env(safe-area-inset-right))));
+    }
     .armor-view #traj-info:not(.is-expanded) { max-inline-size: max(6rem, calc(100% - 32.5rem - var(--immersive-nav-reserve) - max(var(--space-5), env(safe-area-inset-left)) - max(var(--space-5), env(safe-area-inset-right)))); }
     .armor-view #corner-tr {
         inline-size: 15rem;
@@ -1403,6 +1432,12 @@ onBeforeUnmount(() => {
         box-shadow: var(--elevation-3);
         z-index: var(--pb-z-modal);
     }
+    /* 抽屉是 #corner-tl 的后代：#corner-tl 所属层叠上下文只有 pb-z-hud(5)，与右下
+       armor-bottom-controls（同为 5 且 DOM 靠后）同级时抽屉会被 HUD 盖住并拦截触摸；
+       其自身 pb-z-modal(9) 无法越级。展开抽屉时提升所属上下文到 z-dialog——必须高于
+       射击复现顶栏（--z-sticky+1 = 101），否则顶栏右侧的上一/下一发箭头会盖住抽屉
+       顶部 sticky 的关闭按钮（与 #tank-picker 同一 dialog 层，DOM 靠后的 picker 仍在其上）。 */
+    .armor-view.is-shot .armor-stage.is-tools-open #corner-tl { z-index: var(--z-dialog); }
 }
 /* 600×320 级窄横屏：左上胶囊已占掉近半宽度，结果胶囊改到胶囊下方第二行；
    右下面板从 168px 起、左下面板从 ~240px 起，与 28px 高的结果行保持分离。 */
