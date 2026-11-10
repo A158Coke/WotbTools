@@ -23,3 +23,36 @@
 - Replay protocol facts 保持权威。不要为了简化架构改动而发明缺失的 battle facts，或重建 upload/processing flow。
 - Feature components 使用 feature API 或显式 injected/public contract；通用 HTTP 行为归 shared infrastructure。
 - `AiReviewPanel.vue` / `BattlePlaybackPanel.vue` 不得拥有 raw transport。`src/api/replay-capabilities.ts` 只是 `/api/ai/**` callers 共享的 Bearer/transport helper（`ReplayAuthSession` / `optionalBearer` / `authedReplayPost`）；AI wire assembly 位于 `src/api/ai-review.ts`。
+
+## UI Change Contract
+
+涉及 UI、CSS、响应式布局或前端状态的改动，动手前先回答四个 ownership 问题。ONE RESPONSIBILITY. ONE AUTHORITATIVE OWNER.
+
+**A. DOM Ownership** — 改动前确定：哪个 Vue component 渲染该 DOM；谁管理其生命周期；哪些父组件影响它的布局；哪些子组件共享同一行为。改样式先改渲染它的组件，而不是在别处加规则。
+
+**B. CSS Ownership** — 改动前确定：目标 selector 定义在哪个文件（全局 `src/styles/*.css` vs 组件 scoped CSS）；`src/main.js` 的 CSS import order；specificity；`@media` 条件；`!important`；以及最终 computed style。不得仅凭源码搜索认定某条 CSS 生效——cascade 由这些因素共同决定。对实际视觉问题，以浏览器中的 computed style 和布局几何为证据，而不是源码推断。
+
+**C. State Ownership** — 确定真实状态所有者：是否已有可复用 composable / shared preference / 管理同一行为的组件；是否存在多个 ref / watcher 同步相同状态。优先使用现有状态源，不得为局部 UI 问题创建第二套状态。
+
+**D. Change Ownership** — 优先修改原 owner。不得在其他文件新增覆盖规则，除非有具体证据证明原 owner 不适合承担该行为。确需迁移 owner 时：明确新 owner、删除旧 owner 的对应实现、保持实际行为不变、验证原有消费者。
+
+## Subtractive Coding
+
+修改 UI 时默认按此顺序执行：
+
+1. 找到现有实现；
+2. 识别真正的错误；
+3. 修复原实现；
+4. 删除被替代的旧规则；
+5. 复用已有组件和状态；
+6. 最后才考虑新增代码。
+
+新增以下任何一项时，必须先回答对应问题并记录在改动说明中：
+
+- 新增 `!important` — 为什么原实现不能直接修改？它覆盖的是哪个现有规则？
+- 新增重复 selector / 全局 CSS override / 重复 responsive breakpoint — 为什么不在原 owner 内修改？
+- 新增仅用于转发的 wrapper — 为什么现有组件不能直接使用？
+- 新增重复状态 — 为什么现有状态源不能复用？
+- 新增仅服务单处使用的通用抽象 — 为什么直接实现不够？
+
+这些不是绝对禁止项；没有书面理由时默认走「修改原实现 + 删除被替代代码」。检查标准不是 LOC 下降，而是维护的实现路径是否变多：被新实现取代的旧代码必须删除，不允许新旧并存。
