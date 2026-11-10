@@ -3342,9 +3342,9 @@ async function runReplayCollectionScenario(env) {
     // Replay 紧凑横幅是密度预算的唯一例外（design-language §2）：桌面放宽到 clamp(132px, min(20vw, 42vh), 384px)，
     // 1440×900 实测 288px——~43% 可见带容纳坦克整体；其余 compact 页保持 132px 密度。
     check(failures, singleHero >= 240 && singleHero <= 400, `replay compact hero must stay 240-400px at 1440: ${singleHero}`)
-    const toolbarClearance = `(() => { const t = document.querySelector('.showcase-hero-toolbar')?.getBoundingClientRect(); const h = document.querySelector('.workspace-head .showcase-hero')?.getBoundingClientRect(); return t && h ? Math.round(t.top - h.bottom) : -1 })()`
+    const toolbarClearance = `(() => { const t = document.querySelector('.workspace-toolbar')?.getBoundingClientRect(); const h = document.querySelector('.workspace-head .showcase-hero')?.getBoundingClientRect(); return t && h ? Math.round(t.top - h.bottom) : -1 })()`
     check(failures, await page.evaluate(`${toolbarClearance} >= -2 && ${toolbarClearance} <= 24`), `replay toolbar must sit right below the taller hero: ${await page.evaluate(toolbarClearance)}`)
-    const toolbarVisible = `(() => { const t = document.querySelector('.showcase-hero-toolbar')?.getBoundingClientRect(); return t ? t.top >= 0 && t.bottom <= innerHeight : false })()`
+    const toolbarVisible = `(() => { const t = document.querySelector('.workspace-toolbar')?.getBoundingClientRect(); return t ? t.top >= 0 && t.bottom <= innerHeight : false })()`
     check(failures, await page.evaluate(toolbarVisible), 'replay toolbar must be fully visible at 1440x900')
     const singleTop = await page.evaluate(contentTop)
     check(failures, singleTop <= 175 + singleHero, `single-battle content must start within 175px + hero at 1440: ${singleTop} (hero ${singleHero})`)
