@@ -63,6 +63,8 @@ Product QA finding 需要开发时，路由固定为：Product QA → confirmed 
 
 目的：避免先看到实现后产生 confirmation bias，让 finding 来自真实产品体验。
 
+**唯一允许预读的规范例外：几何验收阈值。** 在执行下方只读几何探针、判断触控命中区或认定遮挡缺陷之前，可以**只读取** `docs/frontend/design-language.md` §5 中的 `DC-SIZ-01`、`场景短视口横屏紧凑档`（含适用条件、40×40 命中区及装甲 36/38px 显式例外）、`遮挡与可达（occlusion / reachability）`（`DC-OCC-01…04`、中心盒/占比阈值与 HUD 例外）。这些是测试判定准则，不是实现细节。必须先记录真实 UI 现象和原始测量，再将该规范用于确定 Expected/Actual；不得借此提前阅读其他 Design Contract 条款、`ui-design-review.md`、第三方设计 Skill、业务源码或历史 Issue。
+
 ### 例外：渲染几何探针（occlusion / reachability）
 
 **只有这一类判定允许读浏览器的渲染结果**：怀疑「某个东西被挡住了 / 看得见却点不到 / 被裁掉了」时，
@@ -79,7 +81,7 @@ Product QA finding 需要开发时，路由固定为：Product QA → confirmed 
 在截图上看不出来。缺的不是检查项，是仪器。
 
 可直接复制到 QA 浏览器会话里执行（判定口径与阈值的 owner 是
-`docs/frontend/design-language.md` §5「遮挡与可达」，本文件不复制数值）：
+`docs/frontend/design-language.md` §5「遮挡与可达」及 `DC-SIZ-01`/紧凑档例外；按上方唯一规范例外可在判定前**限范围阅读**，本文件不复制数值）：
 
 ```js
 // 1) 主内容上方压着什么：不用知道控件类名，20px 网格命中自己发现（比 44px 控件密）。primary 换成该页主内容选择器。
@@ -289,8 +291,8 @@ Product QA finding 需要开发时，路由固定为：Product QA → confirmed 
 
 **遮挡 / 可达类的证据口径**：探针数值本身就是证据，**不要求「肉眼一眼看出来」**。
 「常驻控件覆盖主内容 X%」「选项有采样点命中了别的元素或它的祖先」「选项被祖先 overflow 裁掉（含部分裁掉）」
-「选项落在可用视口外且无法滚动触达」「触控命中区小于 44×44」都属于 Visual/layout problem，
-按正常门槛复现两次并记录数值即可，不因为「看着还能用」降级或丢弃。
+「选项落在可用视口外且无法滚动触达」「触控命中区低于当前场景的合法阈值」都属于 Visual/layout problem。
+命中区必须按 §5 `DC-SIZ-01`、`pointer: coarse` 与场景短视口横屏例外判定：常规触控为 44×44，符合条件的场景紧凑档为 40×40，装甲短横屏特殊控件还存在显式例外；不能把 40px 合法控件统一按 44px 报错。按正常门槛复现两次并记录数值即可，不因为「看着还能用」降级或丢弃。
 
 ### Named regression case：#727（2D / 3D 手机端遮挡）
 
@@ -363,7 +365,7 @@ UI/UX finding 还需说明用户要完成什么任务、具体阻力、可用绕
 
 **边界与加载顺序**：
 
-1. 先完整执行本 Playbook 的黑盒阶段，至少完成所选场景的浏览器操作、独立复现和「第一阶段输出」，将已观察事实、复现率、截图/数值和 coverage 冻结。此之前**不得读取**仓库内部 Design Contract、`.agents/playbooks/ui-design-review.md`、外部 Skill、业务源码、历史 issue，也不得为设计建议逆向猜测产品实现；这些都不是 §1 只读几何探针的例外。
+1. 先完整执行本 Playbook 的黑盒阶段，至少完成所选场景的浏览器操作、独立复现和「第一阶段输出」，将已观察事实、复现率、截图/数值和 coverage 冻结。在此之前**只允许**按照 §1 的「唯一允许预读的规范例外」限范围读取 `docs/frontend/design-language.md` §5 的几何验收阈值与场景例外，用于判断已观测的遮挡/命中结果；**不得读取**其他 Design Contract 内容、`.agents/playbooks/ui-design-review.md`、外部 Skill、业务源码或历史 issue，也不得为设计建议逆向猜测产品实现。
 2. 冻结后按需加载 `.agents/playbooks/ui-design-review.md` 的 **A1/A2 设计镜头与 Finding 字段**、`.agents/references/design-methods/README.md` 的上游禁用说明、`refactoring-ui/SKILL.md` 与 `apple-design/SKILL.md`，以及对应章节（视觉 Audit 优先 `references/13-audit-rubric.md` 与 `14-antipatterns.md`）。查看 `docs/frontend/design-language.md`、`docs/frontend/ui-system.md` 可帮助判定 Contract；**不自动开启 §8 业务源码 root-cause triage**。
 3. 保留 Product QA 的独立 operational ownership。借用两套方法做**设计专项复核**，不是调用 Designer 的 AUDIT_ONLY 生命周期入口，也不是 Review With Docs 的 final PR gate。不得创建计划/Issue/PR、修改项目文件、执行上游已禁用的 Token 生成脚本。
 
