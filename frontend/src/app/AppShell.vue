@@ -39,7 +39,6 @@ import OnboardingHost from '../components/OnboardingHost.vue'
 import AndroidUpdatePanel from '../components/AndroidUpdatePanel.vue'
 import publicSecurityFilingIcon from '../assets/public-security-filing.png'
 
-const APP_ICP_FILING = '闽ICP备2026036303号-2A'
 const isAndroidAppRuntime = isAndroidApp()
 const router = useRouter()
 const route = useRoute()
@@ -303,7 +302,14 @@ watch(uiProfile, async () => {
         :target="isAndroidAppRuntime ? null : '_blank'"
         :rel="isAndroidAppRuntime ? null : 'noopener noreferrer'"
         data-testid="icp-filing-link"
-      >{{ isAndroidAppRuntime ? APP_ICP_FILING : $t('home.icpFiling') }}</a>
+      >{{ $t('home.icpFiling') }}</a>
+      <span class="app-footer-separator" aria-hidden="true">|</span>
+      <a
+        href="https://beian.miit.gov.cn/"
+        :target="isAndroidAppRuntime ? null : '_blank'"
+        :rel="isAndroidAppRuntime ? null : 'noopener noreferrer'"
+        data-testid="app-icp-filing-link"
+      >{{ $t('home.appIcpFiling') }}</a>
       <span class="app-footer-separator" aria-hidden="true">|</span>
       <a
         class="app-footer-public-security"

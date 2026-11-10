@@ -142,7 +142,10 @@ async function mountApp(path = '/') {
       plugins: [router],
       provide: { [DIALOG_INLINE_KEY]: true },
       mocks: {
-        $t: key => key === 'home.icpFiling' ? '闽ICP备2026036303号-1' : key,
+        $t: key => ({
+          'home.icpFiling': '闽ICP备2026036303号-1',
+          'home.appIcpFiling': '闽ICP备2026036303号-2A',
+        })[key] ?? key,
         $i18n: { locale: 'zh' },
       },
     },
@@ -260,13 +263,19 @@ describe('App routing', () => {
     const { wrapper } = await mountApp(path)
     const footer = wrapper.get('[data-testid="app-footer"]')
     const icpLink = footer.get('[data-testid="icp-filing-link"]')
+    const appIcpLink = footer.get('[data-testid="app-icp-filing-link"]')
     const publicSecurityLink = footer.get('[data-testid="public-security-filing-link"]')
 
     expect(footer.findAll('[data-testid="icp-filing-link"]')).toHaveLength(1)
+    expect(footer.findAll('[data-testid="app-icp-filing-link"]')).toHaveLength(1)
     expect(icpLink.text()).toBe('闽ICP备2026036303号-1')
     expect(icpLink.attributes('href')).toBe('https://beian.miit.gov.cn/')
     expect(icpLink.attributes('target')).toBe('_blank')
     expect(icpLink.attributes('rel')).toBe('noopener noreferrer')
+    expect(appIcpLink.text()).toBe('闽ICP备2026036303号-2A')
+    expect(appIcpLink.attributes('href')).toBe('https://beian.miit.gov.cn/')
+    expect(appIcpLink.attributes('target')).toBe('_blank')
+    expect(appIcpLink.attributes('rel')).toBe('noopener noreferrer')
     expect(publicSecurityLink.text()).toBe('home.publicSecurityFiling')
     expect(publicSecurityLink.attributes('href')).toBe('https://beian.mps.gov.cn/#/query/webSearch?code=35018202000555')
     expect(publicSecurityLink.attributes('target')).toBe('_blank')
@@ -274,7 +283,7 @@ describe('App routing', () => {
     expect(publicSecurityLink.get('img').attributes('aria-hidden')).toBe('true')
     expect(publicSecurityLink.get('img').attributes('alt')).toBe('')
     expect(footer.get('[data-testid="wargaming-disclaimer"]').text()).toBe('home.wargamingDisclaimer')
-    expect(footer.findAll('a')).toHaveLength(2)
+    expect(footer.findAll('a')).toHaveLength(3)
   })
 
   it('renders direct /sponsor path inside AppShell with exactly one shared Footer', async () => {
