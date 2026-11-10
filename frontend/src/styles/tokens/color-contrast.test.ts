@@ -115,30 +115,6 @@ function ratio(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05)
 }
 
-function linear(channel: number): number {
-  const value = channel / 255
-  return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
-}
-
-/** OKLab 距离：亮度比不够，春 / 夏的 accent 与 warning 连色相都几乎相同。 */
-function oklab(hex: string): [number, number, number] {
-  const [r, g, b] = channels(hex).map(linear)
-  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b)
-  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b)
-  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b)
-  return [
-    0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
-    1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
-    0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
-  ]
-}
-
-function deltaE(a: string, b: string): number {
-  const [aL, aa, ab] = oklab(a)
-  const [bL, ba, bb] = oklab(b)
-  return Math.hypot(aL - bL, aa - ba, ab - bb)
-}
-
 const TEXT = ['--color-text-primary', '--color-text-secondary', '--color-text-tertiary', '--color-accent-text',
   '--color-success', '--color-danger', '--color-warning', '--color-info', '--color-team-1', '--color-team-2']
 const UI = ['--color-border-strong', '--color-accent', '--color-team-enemy-cb']
@@ -187,30 +163,43 @@ describe('theme token contrast (WCAG 2.2 AA)', () => {
   }
 
   /**
-   * 分段条门禁：每个 fill 必须与 track（surface-3）≥ 3:1，1px ring（border-strong）必须与
-   * 行底色（surface-1）≥ 3:1；主 / 次系列再用 OKLab 距离防止同色相浅金再现。
-   * 春 / 夏的 accent 与 warning 是同一支浅金，亮度比和 OKLab 距离会同时失效，两个维度都要断言。
+   * 出生侧胜率分段条门禁（BattleDataAdminPage .spawn-bar，物理出生侧语义四季固定）：
+   * 先手侧 danger 红 / 平局 border-strong 灰 / 后手侧 info 蓝，每个 fill 对 track（surface-3）≥ 3:1，
+   * 1px ring（border-strong）对行底色（surface-1）≥ 3:1。三段是三个不同 token，靠同一断言防主题漂移。
    */
-  it('四季图表分段条：fill 对 track ≥ 3、ring 对行底 ≥ 3、主次系列 ΔE ≥ 0.2', () => {
+  it('四季出生侧分段条：danger / border-strong / info 对 track ≥ 3、ring 对行底 ≥ 3', () => {
     const failures: string[] = []
     for (const [name, selector] of Object.entries(THEMES)) {
       const tokens = block(selector)
       const track = tokens['--color-surface-3']
       const row = tokens['--color-surface-1']
-      const series = tokens['--color-chart-series-2']
       expect(track, `${name} --color-surface-3`).toMatch(/^#/)
       expect(row, `${name} --color-surface-1`).toMatch(/^#/)
-      expect(series, `${name} --color-chart-series-2`).toMatch(/^#/)
-      for (const fill of ['--color-accent', '--color-chart-series-2', '--color-border-strong']) {
+      for (const fill of ['--color-danger', '--color-border-strong', '--color-info']) {
         const value = ratio(tokens[fill], track)
         if (value < 3) failures.push(`${name} ${fill} vs track ${value.toFixed(2)}`)
       }
       const ring = ratio(tokens['--color-border-strong'], row)
       if (ring < 3) failures.push(`${name} border-strong vs row ${ring.toFixed(2)}`)
-      const separation = deltaE(tokens['--color-accent'], series)
-      if (separation < 0.2) failures.push(`${name} accent vs chart-series-2 ΔE ${separation.toFixed(3)}`)
     }
     expect(failures).toEqual([])
+  })
+
+  /** 组件真实映射契约：spawn 分段条三段必须精确使用固定出生侧 token，不允许主题相关色（如 accent）。 */
+  it('BattleDataAdminPage 出生侧分段条 CSS 映射：first=danger、draw=border-strong、second=info', () => {
+    const component = readFileSync(resolve(HERE, '../../components/BattleDataAdminPage.vue'), 'utf8')
+    const expected: [string, string][] = [
+      ['.spawn-seg.is-first', '--color-danger'],
+      ['.spawn-seg.is-draw', '--color-border-strong'],
+      ['.spawn-seg.is-second', '--color-info'],
+    ]
+    for (const [selector, token] of expected) {
+      const declaration = component.match(new RegExp(`${selector.replace(/\./g, '\\.')} \\{ background: var\\((--color-[\\w-]+)\\); \\}`))
+      expect(declaration, `BattleDataAdminPage.vue ${selector} background`).not.toBeNull()
+      expect(declaration![1], `BattleDataAdminPage.vue ${selector} background`).toBe(token)
+    }
+    expect(component).not.toContain('--color-chart-series-2')
+    expect(component).not.toMatch(/\.spawn-seg\.is-(?:first|second)[^}]*--color-accent/)
   })
 
   it('寒冬是唯一的浅色主题，场景外壳在寒冬下仍是深色玻璃且同样达标', () => {

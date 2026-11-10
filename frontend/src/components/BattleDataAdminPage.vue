@@ -435,13 +435,14 @@ onBeforeUnmount(() => { ++summaryGeneration; ++listGeneration; ++detailGeneratio
 .share-fill { display: block; inline-size: var(--share, 0%); block-size: 100%; background: var(--color-accent); }
 
 /* 出生侧胜率分段条：先手侧胜 | 平局 | 后手侧胜。底轨用更深的 surface-3 + 1px 实边框，
- * 条形自带宽边界；不依赖行背景 / 玻璃层，主段与次段用 accent / chart-series-2 的色相分离。 */
+ * 条形自带宽边界；不依赖行背景 / 玻璃层。颜色是物理出生侧语义，四季固定：
+ * 先手侧（NORTH / WEST）红、平局中性灰、后手侧（SOUTH / EAST）蓝，不随主题 accent 变化。 */
 .spawn-cell { min-inline-size: calc(var(--control-h-md) * 4); }
 .spawn-bar { box-sizing: border-box; display: flex; inline-size: 100%; min-inline-size: calc(var(--control-h-md) * 3); block-size: var(--space-3); border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius-full); corner-shape: round; background: var(--color-surface-3); overflow: hidden; }
 .spawn-seg { display: block; inline-size: var(--seg, 0%); block-size: 100%; }
-.spawn-seg.is-first { background: var(--color-accent); }
+.spawn-seg.is-first { background: var(--color-danger); }
 .spawn-seg.is-draw { background: var(--color-border-strong); }
-.spawn-seg.is-second { background: var(--color-chart-series-2); }
+.spawn-seg.is-second { background: var(--color-info); }
 
 .filters { margin: 0; }
 .filters-advanced { flex: 1 0 100%; }

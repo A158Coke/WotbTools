@@ -181,7 +181,6 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | `--color-danger` | `#f2786d` | `#f2786d` | `#ff8070` | `#b8322a` | 错误、删除、失败 |
 | `--color-warning` | `#f5ca76` | `#f5ca76` | `#f5ca76` | `#855600` | 警告 |
 | `--color-info` | `#6db3ec` | `#6db3ec` | `#6db3ec` | `#1a64a8` | 提示、链接（非品牌链接） |
-| `--color-chart-series-2` | `#6db3ec` | `#6db3ec` | `#6db3ec` | `#855600` | 图表第二数据系列（分段条次段）；不替代状态色语义 |
 
 - 遮罩：`--color-scrim` 深色主题为 `rgb(0 0 0 / .6)`、寒冬为 `rgb(15 34 54 / .35)`，所有弹窗、sheet 共用；组件不各自定义遮罩色。
 - 状态色的背景版本（`--color-danger-bg` 等）统一用 `color-mix(in oklab, var(--color-danger) 14%, var(--color-surface-1))`，不单独定义色值。
@@ -223,9 +222,10 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 - 分类色板：8 色，对色盲友好（参考 Okabe–Ito），深色三季共用一份、寒冬一份，都要在 `surface-1` 上 ≥ 3:1。
 - 顺序色板（热力图、穿透率等）：单色相，从浅到深；在亮色主题里方向反转。
 - 图表**一律带图例**，关键数值直接标在图上，不能只靠颜色读值。
-- **分段条必须有独立的三层结构：** track（底轨）用 `--color-surface-3`，fill 用语义系列色，整体加 1px `--color-border-strong` 实边框；条高不小于 `var(--space-3)`（12px）。条形颜色一律不透明，不得靠父级玻璃、页面背景亮部或透明度来补对比。
-- **同一图表内的数据系列必须色相分离：** 主系列用 `--color-accent`，第二系列用 `--color-chart-series-2`（春 / 夏 / 秋取 info 蓝 `#6db3ec`，冬取 warning 琥珀 `#855600`——冬季 accent 本身是蓝色，不能再配蓝）。主 / 次系列不得只靠同色相明度阶梯区分。
-- 图表条门禁（`color-contrast.test.ts`）：每个 fill 对 track ≥ 3:1；1px 边界对行底色（`surface-1`）≥ 3:1；主 / 次系列 OKLab ΔE ≥ 0.2。四季主题都必须通过，改 token 时不能静默退化。
+- **Battle Data 出生侧胜率分段条**（`BattleDataAdminPage.vue` `.spawn-bar`）是本节唯一约束到具体组件的例外，颜色表达**物理出生侧**（不是 Team 1 / Team 2，也不是胜负），四季固定：
+  - 先手侧（NORTH / WEST）胜场 → `--color-danger`（红）；后手侧（SOUTH / EAST）胜场 → `--color-info`（蓝）；平局 → `--color-border-strong`（中性灰），是独立第三段，不并入任一侧。
+  - track（底轨）用 `--color-surface-3`，整体加 1px `--color-border-strong` 实边框，条高 `var(--space-3)`（12px），颜色一律不透明。
+  - 门禁（`color-contrast.test.ts`）：每个 fill 对 track ≥ 3:1，1px 边界对行底色（`surface-1`）≥ 3:1，并断言组件 CSS 三段精确使用上述 token；四季主题都必须通过，改 token 时不能静默退化。
 
 ### 3.5 领域色：坦克类别
 
