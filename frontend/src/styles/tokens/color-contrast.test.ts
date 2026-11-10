@@ -206,6 +206,10 @@ describe('theme token contrast (WCAG 2.2 AA)', () => {
     expect(css).toMatch(/:root\[data-ui-profile="winter"\] \{\s*color-scheme: light;/)
     for (const name of ['spring', 'autumn']) expect(css).toMatch(new RegExp(`:root\\[data-ui-profile="${name}"\\] \\{\\s*color-scheme: dark;`))
     const scene = block(':root[data-ui-profile="winter"] [data-scene-surface]')
+    // 场景子树的文字色必须在场景根落定：页面层已按浅色主题把 computed color 写成深蓝，
+    // 缺这行时未显式设置 color 的后代（Display 面板选项行等）继承它落在暗色表面上
+    // （实测对比度 1.03:1，2026-11-10 反馈）。变量换成暗色值不够——继承的是祖先的 computed color。
+    expect(css).toMatch(/:root\[data-ui-profile="winter"\] \[data-scene-surface\] \{[\s\S]*?color-scheme: dark;[\s\S]*?color: var\(--color-text-primary\);/)
     const sceneGlass = glassTokens(':root[data-ui-profile="winter"] [data-scene-surface]')
     const glassSurfaces = GLASS_SURFACES.map(token => composite(sceneGlass[token], scene['--color-canvas']))
     for (const token of ['--color-text-primary', '--color-text-secondary', '--color-text-tertiary', '--color-accent-text']) {
