@@ -72,5 +72,13 @@ function bytes(value: number | null | undefined): string {
 .android-update-download progress { width: 100%; accent-color: var(--color-accent); }
 .android-update-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
 /* AppButton md 高度低于移动端 44px 触控目标下限：更新弹窗保持 comfortable 命中高度。 */
-.android-update-actions .app-button { min-height: var(--hit-min-comfortable); }
+/* AppButton 默认 nowrap：俄文长操作文案（如「Разрешить установку и продолжить」）在 320px 视口须允许按钮内换行。 */
+.android-update-actions .app-button {
+  min-height: var(--hit-min-comfortable);
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
 </style>
