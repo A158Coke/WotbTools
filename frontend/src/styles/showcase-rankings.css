@@ -20,7 +20,6 @@
   padding: var(--space-2) !important;
   border: 1px solid var(--color-border-subtle) !important;
   border-radius: 8px;
-  /* background / box-shadow 由 showcase-cohesion.css 的同名规则提供（cascade 后位 + !important）。 */
   backdrop-filter: blur(12px);
 }
 .lb-wrap > .tabs button {
@@ -28,36 +27,10 @@
   padding: 0 18px !important;
   border-radius: 6px !important;
 }
-.lb-wrap .lb-head {
-  position: relative;
-  overflow: hidden;
-  margin-bottom: 12px;
-  padding: 24px 26px !important;
-  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
-  border-radius: 9px;
-  /* background / box-shadow 由 showcase-cohesion.css 的同名规则提供（cascade 后位 + !important）。 */
-}
-.lb-wrap .lb-head::after {
-  content: '';
-  position: absolute;
-  right: -50px;
-  top: -125px;
-  width: 320px;
-  height: 320px;
-  border: 1px solid color-mix(in srgb, var(--color-accent) 14%, transparent);
-  border-radius: 50%;
-  corner-shape: round;
-  box-shadow: 0 0 0 54px color-mix(in srgb, var(--color-accent) 2.5%, transparent);
-}
-.lb-wrap .lb-kicker { color: var(--accent-light) !important; font-weight: 900; letter-spacing: .1em; }
-.lb-wrap .lb-head h1 { margin: 5px 0 5px !important; font-size: 1.7rem !important; letter-spacing: -.025em; }
-/* .lb-head p 的 color 由 showcase-cohesion.css 提供（同值 !important，cascade 后位）。 */
-.lb-wrap .lb-head p { max-width: 760px; }
-/* .lb-submit-row 的 margin 由 showcase-cohesion.css 的同名规则提供（cascade 后位 !important 简写覆盖）。 */
-/* .lb-toolbar 整体由 showcase-cohesion.css（颜色/网格）与 showcase-regressions.css（position/z-index）定义；
-   这里只保留它们都不提供的 border-radius。sticky/top/z-index 曾定义于此，被 regressions 的
-   relative !important 永久覆盖，已删除。 */
-.lb-wrap .lb-toolbar { border-radius: 8px; }
+/* .lb-head / .lb-kicker 已删除：全仓库 Vue 模板无任何 DOM 消费者，纯死规则。 */
+/* Ownership：.lb-wrap 的共享观感（tabs/工具栏/表头/表行的颜色背景）唯一 owner 是
+ * showcase-cohesion.css（cascade 后位 + 更高 specificity），本文件只保留它不提供的
+ * 布局骨架（sticky、max-height、行高）与移动端 grid-area。 */
 /* 审计 PG-06：横向滚动要求 .tablewrap 是滚动容器，sticky 表头只能相对它吸顶；因此平板 / 桌面限制它的高度，
  * 让表格在自身内纵向滚动。高度扣掉顶栏与吸顶 Tab，表格顶部对齐到 Tab 下方时表头不会被盖住。 */
 .lb-wrap .tablewrap {
@@ -67,7 +40,6 @@
   overflow: auto !important;
   border: 1px solid var(--color-border-subtle) !important;
   border-radius: 8px;
-  /* background / box-shadow 由 showcase-cohesion.css 的同名规则提供（cascade 后位 + !important）。 */
 }
 .lb-wrap table { width: max-content !important; min-width: 100% !important; font-variant-numeric: tabular-nums; }
 .lb-wrap thead th {
@@ -75,10 +47,8 @@
   top: 0;
   z-index: 4;
   height: 42px;
-  /* background / color 由 showcase-cohesion.css 的 .lb-wrap table thead th（更高 specificity）提供，同值。 */
 }
 .lb-wrap tbody td { height: 45px; }
-/* tbody tr:hover 背景由 showcase-cohesion.css 的 .lb-wrap table tbody tr:hover（更高 specificity）提供。 */
 .lb-wrap .lb-dmg { color: var(--accent-dark) !important; font-weight: 900; }
 .lb-wrap .rk { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent); }
 
@@ -93,7 +63,6 @@
 @media(max-width:1199px) {
   .lb-wrap,
   .hof-admin { width: calc(100% - var(--gutter) * 2) !important; padding-top: 16px !important; }
-  /* .lb-toolbar 不在此取消吸顶：showcase-regressions.css 已全局将其固定为 relative（!important）。 */
   .lb-wrap > .tabs { position: static; }
   /* 平板 Tab 不吸顶：表格吸顶区只需让出顶栏 */
   .lb-wrap { --hof-sticky-top: calc(var(--header-h) + var(--space-2)); }
@@ -103,7 +72,6 @@
   .lb-wrap,
   .hof-admin { width: calc(100% - var(--gutter) * 2) !important; padding: 10px 0 42px !important; }
   .lb-wrap > .tabs { position: static; }
-  .lb-wrap .lb-head { padding: 18px !important; }
   /* Mobile: the filter form must never become a horizontal-scrolling strip (data
    * tables may scroll, form filters may not). Task-first 2-column grid, explicit
    * placement per the real DOM:
@@ -112,8 +80,6 @@
    *   row 5: Show count | Refresh      (conditional Clear-filter auto-places below)
    * Hundred-battles toolbar: Nation | Vehicle Type / Select Vehicle (full) /
    * Refresh | Submit. */
-  /* .lb-toolbar 的 2 列 grid / gap / overflow 由 showcase-cohesion.css 的 <768 同名规则提供（同值 !important，
-   * cascade 后位）；`> * { min-width: 0 }` 由其基础规则提供。这里只保留本文件独有的 grid-area 布局。 */
   /* Single-battle toolbar (children: Nation, Vehicle Type, Vehicle Tier,
    * Select Vehicle, Battle Type, Nickname, Limit, [Clear filter], Refresh). */
   .lb-wrap .lb-toolbar:not(.h100-toolbar) .lb-limit:nth-child(1) { grid-area: 1 / 1; }

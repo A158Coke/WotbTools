@@ -28,7 +28,7 @@
 
 涉及 UI、CSS、响应式布局或前端状态的改动，动手前先回答四个 ownership 问题。ONE RESPONSIBILITY. ONE AUTHORITATIVE OWNER.
 
-**A. DOM Ownership** — 改动前确定：哪个 Vue component 渲染该 DOM；谁管理其生命周期；哪些父组件影响它的布局；哪些子组件共享同一行为。改样式先改渲染它的组件，而不是在别处加规则。
+**A. DOM Ownership** — 改动前确定：哪个 Vue component 渲染该 DOM；谁管理其生命周期；哪些父组件影响它的布局；哪些子组件共享同一行为。DOM Owner 不一定是 CSS Owner：修改样式前，先分别确认 DOM Owner 与实际 CSS Owner，优先修改现有 CSS Owner；只有存在明确的职责迁移理由时，才将规则转移到组件 Scoped CSS，并同步删除旧规则。
 
 **B. CSS Ownership** — 改动前确定：目标 selector 定义在哪个文件（全局 `src/styles/*.css` vs 组件 scoped CSS）；`src/main.js` 的 CSS import order；specificity；`@media` 条件；`!important`；以及最终 computed style。不得仅凭源码搜索认定某条 CSS 生效——cascade 由这些因素共同决定。对实际视觉问题，以浏览器中的 computed style 和布局几何为证据，而不是源码推断。
 
