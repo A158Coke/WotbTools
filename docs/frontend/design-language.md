@@ -54,7 +54,7 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | ID | 强度 | 范围 | 规则 | 例外 | 验证 |
 |---|---|---|---|---|---|
 | DC-THM-01 | MUST | 四季主题 | 布局、组件结构、字号、交互完全一致，只替换语义 token 与氛围插槽；不按主题 fork 业务实现，组件不出现主题判断 | 无 | `src/ui-profile-fork-guard.test.js` |
-| DC-THM-02 | SHOULD | 全站材料与层次 | 当前背景图与装饰渐变通过 §2 的装饰插槽渲染，现有玻璃材质用于 §2.1 的页面级表面；这些是实现基线而非永久白名单。允许设计探索渐变与半透明/玻璃材质，包括数据区，但上线前必须通过真实复合背景的可读性、交互、设备性能与可降级验收 | 仍须遵守其他真实安全/可达性边界 | 四主题实际渲染取样 + 对比度/交互/设备验证 |
+| DC-THM-02 | MUST | 全站材质验收 | 背景图、装饰渐变与玻璃材质的生产使用必须通过真实叠合背景可读性、触摸可达、设备性能与降级验收；§2 的插槽与 §2.1 页面级玻璃只是当前实现基线，允许经证据验证的设计探索扩展材质到其他区域（包括数据区），不能因旧白名单而拒绝原型 | 不得弱化对比度与业务数据可读性 | 四主题真实背景取样 + 交互/设备验证 |
 | DC-THM-03 | MAY | 工作区页面 | 在数据区之上放一个 Showcase Hero | 无 | 人工 |
 | DC-THM-04 | MUST | Showcase Hero | 只放在数据区之上，不进入表格、筛选、表单、抽屉；expanded 档首屏必须能看到数据区 | 无 | 每页 PR 大屏截图，人工 |
 | DC-THM-05 | MUST | Showcase Hero | 文字落在主题遮罩（`--theme-hero-scrim*`）压出的纯色区上，最差取样点满足 §3 对比度，四套主题都测 | 无 | 人工取样 |
@@ -63,7 +63,7 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | DC-THM-08 | MUST | 场景外壳 | 2D / 3D 回放、装甲查看器、地图 3D 的根元素带 `data-scene-surface`，正常渲染态自铺不透明底，寒冬下仍是深色玻璃，不跟随浅色表面，也不叠页面环境光 | 装甲查看器 `is-unsupported` 无 WebGL 降级态（不渲染游戏画面，保留透明 fallback） | `color-contrast.test.ts` 的场景块断言 + 人工 |
 | DC-THM-09 | MUST | 全站环境背景 | 全站只由 `AppShell.vue` 的 `.app-backdrop` 渲染环境背景层：`position: fixed; inset: 0; pointer-events: none`，层级低于内容；环境光、背景图、遮罩、位置全部读 `--theme-backdrop*` token；禁止在 `body` 上用 `background-attachment: fixed` | 无 | 人工；`pnpm run test:browser-home`、`test:browser-view-transition` |
 | DC-THM-10 | MUST | 首屏与主题切换 | 环境背景先显示 `--color-canvas` 纯色，图片解码后淡入，不得阻塞首屏；`prefers-reduced-motion: reduce` 下直接显示、不做过渡；切换主题时背景随 token 同步切换 | 无 | 人工；`src/index-firstpaint.test.js` 保持通过 |
-| DC-THM-11 | SHOULD | 内容表面 | 当前页面级卡片/面板使用 `--color-surface-{1,2,3}-glass`（表面色 82%–90% 不透明 + `backdrop-filter: blur(16px) saturate(1.2)`）；当前表格、数据密集区、输入框、回放 HUD 使用纯色，这是已实现分配而非未来设计禁令。扩展玻璃范围时先证明真实背景对比度、合成性能与不支持 `backdrop-filter` 的纯色降级；场景根保持不透明（DC-THM-08） | 未验证的设计不得直接成为生产变更 | `color-contrast.test.ts` 的真实背景取样 + 浏览器/设备审查 |
+| DC-THM-11 | MUST | 生产内容表面 | 当前页面级卡片/面板采用 `--color-surface-{1,2,3}-glass`（表面色 82%–90% 不透明 + `backdrop-filter: blur(16px) saturate(1.2)`），当前表格、数据密集区、输入框、回放 HUD 采用纯色；这是实现事实而非未来设计禁令。任何扩展玻璃材质的生产变更必须先证明真实背景对比度、合成性能和不支持 `backdrop-filter` 时的纯色降级；场景根必须保持不透明（DC-THM-08） | 受控设计原型可先探索，生产需独立验收 | `color-contrast.test.ts` 的真实背景取样 + 浏览器/设备审查 |
 | DC-THM-12 | MUST | 分区主视觉 | 每个导航分区用一张固定 key visual（与季节无关），由 `ShowcaseHero` 的 `section` prop 选择；图片经 `import` 由 Vite 生成 hash URL，只加载当前页面用到的一张；标题必须落在主题遮罩压出的可读区 | 首页继续使用季节主视觉 | 人工四主题 × 双视口截图；`ShowcaseHero.test.ts` |
 
 | | **春 · 青山** `spring` | **夏 · 盛夏** `summer`（默认） | **秋 · 金秋** `autumn` | **冬 · 寒冬** `winter` |

@@ -76,4 +76,8 @@
 | 遇到旧的纯色/固定缓动限制 | 允许提出可验证的 Contract 修改，不直接执行与现有规则冲突的 production 变更 |
 | 上游脚本建议直接生成 Token | 根据来源 README 的禁用说明，使用现有项目 Token/测试，不生成第二套设计系统 |
 
+## 与独立 Product QA 的关系
+
+`product-qa` 的唯一入口是 `.agents/skills/product-qa/SKILL.md`，正文在 `.agents/playbooks/product-qa/README.md`。真实用户黑盒阶段先独立完成并冻结结果，**之后**在同一个 QA 报告内按该 Playbook §7.1 读取本文件的设计镜头。Product QA 不自动变成 Designer，也不拥有实现计划、PR 或 final PASS；Designer 的单独 AUDIT_ONLY 仍适用于用户明确要求的设计诊断。避免新增 `design-qa` 顶层 Skill 或第二份 Finding 事实源。
+
 本 Playbook 是设计领域方法，不是全局技能路由、第二份设计规则、自动部署系统或视觉评分服务。

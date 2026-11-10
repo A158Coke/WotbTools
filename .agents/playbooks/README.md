@@ -24,7 +24,7 @@ lifecycle 只有四个 orchestrating Skills（另有 operational 入口 `product
 | `ui-design-review.md` | designer / executor / review-with-docs | UI DESIGN / AUDIT_ONLY / IMPLEMENT / VERIFY 路由；设计诊断只读，实施与 final gate 仍遵循现有 lifecycle；参考版本固定的 Refactoring UI + Apple Design |
 | `keycloak-upgrade`（目录） | designer / executor / prompt-repair / review-with-docs | Keycloak / SPI / provider 版本升级 |
 | `komodo-server-lifecycle.md` | designer / executor / prompt-repair / review-with-docs | 新增/迁移/下线服务器、Komodo Stack、持久数据迁移 |
-| `product-qa/`（目录） | 独立（用户显式触发） | 周期性 / 显式 production product audit（默认 `https://wotbtools.com`）；不是 PR final gate |
+| `product-qa/`（目录） | 独立（用户显式触发） | 周期性 / 显式 production product audit（默认 `https://wotbtools.com`）；先黑盒并冻结证据，UI/UX 任务随后调用 `ui-design-review.md` 的设计镜头；不是 PR final gate |
 | `code-quality.md` | review-with-docs | 代码质量与品味 9 项检查（正确性/边界 + 可维护性） |
 | `fallow.md` | review-with-docs | 前端 dead-code / circular-deps / duplication / complexity 诊断 |
 | `post-merge-cleanup.md` | executor | PR merge 后清理分支、worktree、current-plan 与任务状态 |
