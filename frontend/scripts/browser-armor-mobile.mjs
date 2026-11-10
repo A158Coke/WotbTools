@@ -1453,8 +1453,66 @@ async function runShotActionsScenario(env, scenario) {
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
 }
 
-/** 手机横屏射击复现页：沉浸态 + 流内「操作提示」节整节让位（竖屏 / 平板 / 桌面保留，由 runShotActionsScenario 锁定）。 */
-const SHOT_LANDSCAPE_SCENARIO = { name: 'armor-shot-landscape-phone', width: 740, height: 360, touch: true }
+/** 手机横屏射击复现页：沉浸态 + 流内「操作提示」节整节让位（竖屏 / 平板 / 桌面保留，由 runShotActionsScenario 锁定）。
+    Outside Judge 视口：844×390 / 780×360 / 740×360 / 600×320（844/780 按真机注入左右 safe-area）。 */
+const SHOT_LANDSCAPE_SCENARIOS = [
+  { name: 'armor-shot-landscape-844x390', width: 844, height: 390, touch: true, safeAreaInsets: { left: 47, right: 47 } },
+  { name: 'armor-shot-landscape-780x360', width: 780, height: 360, touch: true, safeAreaInsets: { left: 47, right: 47 } },
+  { name: 'armor-shot-landscape-phone', width: 740, height: 360, touch: true },
+  { name: 'armor-shot-landscape-600x320', width: 600, height: 320, touch: true },
+]
+/** 单发分析页右下/左上 chrome 的几何快照：射击参数面板（#corner-tr）与视角切换
+    （#corner-br = .armor-shot-view-switch）必须两两不相交，且视角按钮是真实触控目标。 */
+function shotLandscapeProbe() {
+  const box = (selector) => {
+    const element = document.querySelector(selector)
+    if (!element) return null
+    const rect = element.getBoundingClientRect()
+    const style = getComputedStyle(element)
+    return {
+      top: Math.round(rect.top), bottom: Math.round(rect.bottom),
+      left: Math.round(rect.left), right: Math.round(rect.right),
+      width: Math.round(rect.width), height: Math.round(rect.height),
+      display: style.display,
+      visible: rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden',
+    }
+  }
+  const hitTest = (selector) => {
+    const element = document.querySelector(selector)
+    if (!element) return null
+    const rect = element.getBoundingClientRect()
+    const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2
+    const hit = document.elementFromPoint(x, y)
+    return {
+      ...box(selector),
+      center: { x, y },
+      hit: hit === element || (!!hit && element.contains(hit)),
+      hitDescription: hit ? `${hit.tagName}${typeof hit.className === 'string' && hit.className.trim() ? `.${hit.className.trim().split(/\s+/).join('.')}` : ''}` : null,
+    }
+  }
+  const viewSwitch = box('.armor-shot-view-switch')
+  const relBtn = hitTest('#rel-view-toggle')
+  const worldBtn = hitTest('#world-view-toggle')
+  const back = box('.armor-back')
+  const topCard = box('#corner-tl')
+  const capsule = back && topCard ? {
+    top: Math.min(back.top, topCard.top), bottom: Math.max(back.bottom, topCard.bottom),
+    left: Math.min(back.left, topCard.left), right: Math.max(back.right, topCard.right),
+    visible: back.visible && topCard.visible,
+  } : (topCard || back)
+  return {
+    viewport: { width: innerWidth, height: innerHeight },
+    capsule,
+    result: box('#traj-info')?.visible ? box('#traj-info') : box('#click-info'),
+    shotPanel: box('#corner-tr'),
+    viewSwitch,
+    relBtn,
+    worldBtn,
+    hudShell: hitTest('[data-testid="hud-shell-0"]'),
+    distanceInput: hitTest('#armor-distance'),
+    horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+  }
+}
 async function runShotLandscapeScenario(env, scenario) {
   const failures = []
   const { targetId, sessionId } = await env.chrome.openPage()
@@ -1462,14 +1520,23 @@ async function runShotLandscapeScenario(env, scenario) {
   lastPage = page
   await page.enable()
   await page.emulate(scenario)
+  if (scenario.safeAreaInsets) {
+    await env.chrome.client.send('Emulation.setSafeAreaInsetsOverride', { insets: scenario.safeAreaInsets }, sessionId)
+  }
   await page.goto(`${env.origin}/?view=home&ws-auth=1`)
   await page.evaluate(`(async () => {
     localStorage.setItem('wotb-lang', 'zh')
     const { storeShotsForViewer } = await import('/src/scene/agentData.js')
     storeShotsForViewer(${JSON.stringify(FIXTURE_SHOTS)})
   })()`)
-  await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&shooter=${FIXTURE_TANK_ID}&shot=1&assets=${encodeURIComponent(env.assets)}`)
-  await page.waitFor(() => !!document.querySelector('[data-testid="armor-stage"]'), { label: 'armor stage' })
+  // compactAssets 资产包提供 /research/devices.json：缺它时 ArmorShotHud 不挂载，
+  // 右下就没有真实的射击参数面板可测（compact 场景同口径）。
+  await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&shooter=${FIXTURE_TANK_ID}&shot=1&world=1&assets=${encodeURIComponent(env.compactAssets)}`)
+  // 回归夹具必须在真实 view-switch（查看弹着点 / 查看双方位置）出现后才测量遮挡：
+  // #932 的横屏夹具只等 scene ready，而普通装甲查看器 URL 下 #corner-br 是空的，
+  // 四盒断言测不到 shot 页右下的真实布局。
+  await page.waitFor(() => !!document.querySelector('#world-view-toggle'),
+    { timeout: 30000, label: 'real shot view-switch controls' })
   await page.waitFor(() => !document.querySelector('[data-testid="scene3d-loading"]') && !document.querySelector('[data-testid="scene3d-error"]'),
     { timeout: 30000, label: 'shot scene ready' })
   const label = scenario.name
@@ -1483,6 +1550,57 @@ async function runShotLandscapeScenario(env, scenario) {
     `${label}: 操作提示节没有在手机横屏让位（${JSON.stringify(layout.interactionHelp)}）`)
   check(failures, layout.shotHeader?.visible === true, `${label}: 射击复现顶栏丢失（${JSON.stringify(layout.shotHeader)}）`)
   checkCommonGeometry(failures, layout, label)
+  const shot = await page.probe(shotLandscapeProbe)
+  // 右下共享布局：射击参数面板与视角切换必须同时可见且互不相交（含左上胶囊 / 结果胶囊）。
+  const visibleBoxes = Object.entries({ capsule: shot.capsule, result: shot.result, shotPanel: shot.shotPanel, viewSwitch: shot.viewSwitch })
+    .filter(([, box]) => box?.visible === true)
+  check(failures, visibleBoxes.some(([name]) => name === 'shotPanel') && visibleBoxes.some(([name]) => name === 'viewSwitch'),
+    `${label}: 射击参数面板或视角切换不可见（${JSON.stringify({ shotPanel: shot.shotPanel, viewSwitch: shot.viewSwitch })}）`)
+  for (let a = 0; a < visibleBoxes.length; a++) {
+    for (let b = a + 1; b < visibleBoxes.length; b++) {
+      const [nameA, boxA] = visibleBoxes[a]
+      const [nameB, boxB] = visibleBoxes[b]
+      check(failures, !rectsOverlap(boxA, boxB),
+        `${label}: ${nameA} 与 ${nameB} 相交（${nameA}=${JSON.stringify(boxA)} ${nameB}=${JSON.stringify(boxB)}）`)
+    }
+  }
+  check(failures, shot.horizontalOverflow === false, `${label}: shot 页横屏出现横向溢出`)
+  // 真实触摸命中（不是只看截图）：两枚视角按钮 + HUD 弹种按钮 + 距离滑条必须是自己区域的真实命中目标。
+  for (const [name, target] of Object.entries({ relBtn: shot.relBtn, worldBtn: shot.worldBtn, hudShell: shot.hudShell, distanceInput: shot.distanceInput })) {
+    check(failures, target?.visible === true && target.hit === true && target.inside !== false,
+      `${label}: ${name} 不是真实触控目标（hit=${target?.hit} hitDescription=${target?.hitDescription} box=${JSON.stringify(target)}）`)
+  }
+  // 视角来回切换的真实接线（与 runShotActionsScenario 同契约，在横屏 HUD 布局下复核）。
+  await page.tap({ ...shot.relBtn.center, touch: scenario.touch })
+  await page.waitForValue(`(() => ({
+    impact: document.querySelector('#rel-view-toggle')?.getAttribute('aria-pressed'),
+    overview: document.querySelector('#world-view-toggle')?.getAttribute('aria-pressed'),
+    distance: window.__armorRicochet?.aimingState()?.cameraDistance,
+  }))()`, value => value.impact === 'true' && value.overview === 'false' && Math.abs(value.distance - 15) < .1,
+    { timeout: 15000, label: 'impact camera re-selected from landscape HUD' })
+  await page.tap({ ...shot.worldBtn.center, touch: scenario.touch })
+  await page.waitForValue(`(() => ({
+    impact: document.querySelector('#rel-view-toggle')?.getAttribute('aria-pressed'),
+    overview: document.querySelector('#world-view-toggle')?.getAttribute('aria-pressed'),
+    distance: window.__armorRicochet?.aimingState()?.cameraDistance,
+  }))()`, value => value.overview === 'true' && value.impact === 'false' && value.distance > 20,
+    { timeout: 15000, label: 'overview camera restored from landscape HUD' })
+  // 参数面板展开/关闭（参数抽屉）后右下共享布局仍成立。
+  await page.tap({ ...layout.tools.center, touch: scenario.touch })
+  await page.waitForValue(`document.querySelector('.armor-stage').className`, value => value.includes('is-tools-open'),
+    { label: 'tools drawer open' })
+  const openedShot = await page.probe(shotLandscapeProbe)
+  const openedBoxes = Object.entries({ capsule: openedShot.capsule, result: openedShot.result, shotPanel: openedShot.shotPanel, viewSwitch: openedShot.viewSwitch })
+    .filter(([, box]) => box?.visible === true)
+  for (let a = 0; a < openedBoxes.length; a++) {
+    for (let b = a + 1; b < openedBoxes.length; b++) {
+      const [nameA, boxA] = openedBoxes[a]
+      const [nameB, boxB] = openedBoxes[b]
+      check(failures, !rectsOverlap(boxA, boxB),
+        `${label}: 参数展开后 ${nameA} 与 ${nameB} 相交（${nameA}=${JSON.stringify(boxA)} ${nameB}=${JSON.stringify(boxB)}）`)
+    }
+  }
+  await page.tap({ ...layout.tools.center, touch: scenario.touch })
   check(failures, page.consoleErrors.length === 0, `${label}: JS errors: ${page.consoleErrors.join(' | ')}`)
   await env.chrome.client.send('Target.closeTarget', { targetId })
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
@@ -1914,7 +2032,7 @@ try {
   const env = { origin, chrome: chromeCdp, assets: assets.origin, compactAssets: compactAssets.origin, pickerAssets: pickerAssets.origin, staggeredAssets: staggeredAssets.origin, contextLossSelectionAssets: contextLossSelectionAssets.origin, contextLossRouteRebuildAssets: contextLossRouteRebuildAssets.origin }
   const runs = [
     ...SHOT_SCENARIOS.map(scenario => ({ scenario, run: () => runShotActionsScenario(env, scenario) })),
-    { scenario: SHOT_LANDSCAPE_SCENARIO, run: () => runShotLandscapeScenario(env, SHOT_LANDSCAPE_SCENARIO) },
+    ...SHOT_LANDSCAPE_SCENARIOS.map(scenario => ({ scenario, run: () => runShotLandscapeScenario(env, scenario) })),
     ...COMPACT_LANDSCAPE_SCENARIOS.map(scenario => ({ scenario, run: () => runCompactLandscapeScenario(env, scenario) })),
     ...MOBILE_SCENARIOS.map((scenario) => ({ scenario, run: () => runMobileScenario(env, scenario) })),
     { scenario: BACK_SCENARIO, run: () => runMobileBackScenario(env, BACK_SCENARIO) },

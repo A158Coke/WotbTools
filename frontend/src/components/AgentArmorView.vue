@@ -1188,6 +1188,28 @@ onBeforeUnmount(() => {
     .armor-view.has-back #corner-tl { inset-block-start: var(--space-5); inset-inline-start: calc(max(var(--space-5), env(safe-area-inset-left)) + var(--immersive-nav-reserve) + var(--hit-min-comfortable) + var(--space-2)); inline-size: min(17rem, 34%); }
     .armor-view #corner-tr { inset-block-start: auto; inset-block-end: max(var(--space-2), env(safe-area-inset-bottom)); inset-inline-end: max(var(--space-5), env(safe-area-inset-right)); max-block-size: calc(100% - var(--space-12) - var(--space-10)); overflow-y: auto; }
     .armor-view #corner-br { display: none; }
+    /* 单发分析页：射击参数面板（#corner-tr）与视角切换（#corner-br）共享右下布局空间——
+       与竖屏 is-shot 契约同构（armor-bottom-controls 升为布局 owner，两角置 static 排进
+       同一列，视角切换按 DOM 序落在参数面板下方）；is-shot #corner-br 的 display:flex
+       特异性高于上面的 #corner-br 隐藏规则，必须显式接管而不是再调 z-index。 */
+    .armor-view.is-shot .armor-bottom-controls {
+        position: absolute;
+        inset-block-end: max(var(--space-2), env(safe-area-inset-bottom));
+        inset-inline-end: max(var(--space-5), env(safe-area-inset-right));
+        max-inline-size: calc(100% - max(var(--space-5), env(safe-area-inset-left)) - max(var(--space-5), env(safe-area-inset-right)) - var(--immersive-nav-reserve));
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: var(--space-2);
+        pointer-events: none;
+        z-index: var(--pb-z-hud);
+    }
+    .armor-view.is-shot .armor-bottom-controls :is(#corner-tr, #corner-br) {
+        position: static;
+        inset: auto;
+        max-inline-size: none;
+        pointer-events: auto;
+    }
     /* 短横屏紧凑 HUD：返回键 + 车名 + 参数并成一条 38px 胶囊；点选结果接管胶囊右侧；
        右下射击面板 15rem × ≤45dvh；左下姿态面板压到两行。 */
     .armor-view .armor-back {
