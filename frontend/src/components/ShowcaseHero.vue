@@ -69,6 +69,12 @@ const artStyle = computed(() => (props.section ? sectionHeroStyle(props.section)
   background: var(--theme-hero-section-scrim, var(--theme-hero-scrim)), var(--hero-image) var(--hero-pos, right center) / cover, var(--color-surface-1);
 }
 
+/* 紧凑档横幅接近 12:1，cover 只能露出很窄的纵向带：焦点切换到 sectionHeroes 的
+   compactPosition（对准主体带），缺省回退桌面 position */
+.showcase-hero.is-compact .showcase-hero-art--section {
+  background: var(--theme-hero-section-scrim, var(--theme-hero-scrim)), var(--hero-image) var(--hero-pos-compact, var(--hero-pos, right center)) / cover, var(--color-surface-1);
+}
+
 .showcase-hero-content {
   position: relative;
   display: grid;
@@ -85,7 +91,9 @@ const artStyle = computed(() => (props.section ? sectionHeroStyle(props.section)
 .showcase-hero-stats :deep(strong) { display: block; color: var(--color-accent-text); font: var(--type-display); font-variant-numeric: tabular-nums; }
 .showcase-hero-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-block-start: var(--space-3); }
 
-/* 紧凑档：桌面 132px、手机 96px 起，横幅只显示 kicker + 标题；操作在下方工具条 */
+/* 紧凑档：桌面高度随视口放宽——cover 的可见纵向占比 = (容器高/宽)×原图宽高比，与源图无关，
+   约 20vw（上限 384px）才有 ~43% 可见带，恰好装下坦克整体（炮管→负重轮）；
+   手机 96px 起可见带已近一半，维持不变。横幅只显示 kicker + 标题，操作在下方工具条 */
 .showcase-hero-host.is-compact-host { display: grid; gap: var(--space-2); margin-block-end: var(--space-4); }
 .showcase-hero-host.is-compact-host .showcase-hero { margin-block-end: 0; }
 .showcase-hero-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); }
@@ -95,7 +103,7 @@ const artStyle = computed(() => (props.section ? sectionHeroStyle(props.section)
   align-items: center;
   gap: var(--space-2) var(--space-4);
   max-inline-size: none;
-  min-block-size: 132px;
+  min-block-size: clamp(132px, 20vw, 384px);
   padding: var(--space-4) var(--space-6);
 }
 .showcase-hero.is-compact .showcase-hero-title { font: var(--type-h2); }
