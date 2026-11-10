@@ -5,7 +5,7 @@
  * - 桌面 compact 分区主视觉使用 section-scrim + compactPosition（replay 50% / techtree 58%）；
  * - 手机断点（width < 768px）compact 恢复 portrait 分区遮罩 + mobilePosition——
  *   桌面 compact 覆盖规则与手机规则同优先级、靠媒体查询内更晚声明获胜，这里用 computed style 证明；
- * - Replay compact 桌面高度放宽到 clamp(132px, min(20vw, 42vh), 384px)，矮窗口按 42vh 降级；
+ * - Replay compact 桌面高度放宽到 clamp(132px, 20vw, 384px)，矮窗口（height < 700px）回退默认密度；
  * - 非 Replay compact（techtree / admin）保持 132px 密度；
  * - 冬季 portrait 遮罩实际生效（浅色 rgba(238 243 248 / …)，非深色主题遮罩）；
  * - 无 section 的普通 ShowcaseHero 不注入分区遮罩层。
@@ -15,7 +15,9 @@ import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 
-const WINTER_SCRIM_RGB = '238, 243, 248'
+// 冬季竖屏分区遮罩的三处停靠点（Chrome computed style 归一化为 rgba(...)）。
+// 必须逐一断言完整 opacity：只查 RGB 的话旧遮罩（.97/.86/.24）与新遮罩（.84/.52/.10）都会命中。
+const WINTER_PORTRAIT_STOPS = ['rgba(238, 243, 248, 0.84)', 'rgba(238, 243, 248, 0.52)', 'rgba(238, 243, 248, 0.1)']
 
 /** 页面内探针：取紧凑横幅的 computed style 与几何（Page.probe 会序列化，不能引用模块作用域）。 */
 function heroProbe() {
@@ -24,7 +26,8 @@ function heroProbe() {
   const art = section?.querySelector('.showcase-hero-art')
   if (!section || !art) return null
   const cs = getComputedStyle(art)
-  const layers = cs.backgroundImage.split(/,(?=\s*(?:linear-gradient|url|rgb))/).map(s => s.trim())
+  // backgroundImage 不做拆分：linear-gradient 内部的逗号会被顶层 split 打碎，
+  // 遮罩断言必须基于完整 computed 值（多个停靠点逐一比对）。
   const positions = cs.backgroundPosition.split(',').map(s => s.trim())
   const rect = section.getBoundingClientRect()
   return {
@@ -32,7 +35,7 @@ function heroProbe() {
     compact: section.classList.contains('is-compact'),
     height: Math.round(rect.height),
     width: Math.round(rect.width),
-    scrimLayer: layers[0],
+    backgroundImage: cs.backgroundImage,
     imagePosition: positions[1] ?? null,
     backgroundSize: cs.backgroundSize.split(',').map(s => s.trim())[1] ?? null,
     titleColor: getComputedStyle(section.querySelector('h1')).color,
@@ -44,7 +47,7 @@ function heroProbe() {
 function assertDesktopCompact(hero, { section, position }) {
   assert.equal(hero.section, section, `desktop ${section} must use its section hero`)
   assert.ok(hero.compact, `desktop ${section} must render compact`)
-  assert.match(hero.scrimLayer, /linear-gradient/, `desktop ${section} scrim must be the section scrim gradient`)
+  assert.match(hero.backgroundImage, /linear-gradient/, `desktop ${section} scrim must be the section scrim gradient`)
   assert.equal(hero.imagePosition, position, `desktop ${section} compact focus must be ${position}`)
   assert.equal(hero.backgroundSize, 'cover', `desktop ${section} must keep cover (no distortion)`)
   assert.ok(hero.titleBottom <= hero.heroBottom, `desktop ${section} title must stay inside the banner`)
@@ -88,7 +91,7 @@ try {
       assertDesktopCompact(hero, { section, position })
       const [lo, hi] = section === 'replay' ? [240, 400] : [120, 140]
       assert.ok(hero.height >= lo && hero.height <= hi, `desktop ${section} hero height must stay ${lo}-${hi}px at 1440: ${hero.height}`)
-      console.log(`[browser-showcase-hero] desktop ${section}: height=${hero.height} pos=${hero.imagePosition} scrim=${hero.scrimLayer.slice(0, 48)}… passed`)
+      console.log(`[browser-showcase-hero] desktop ${section}: height=${hero.height} pos=${hero.imagePosition} scrim=${hero.backgroundImage.slice(0, 48)}… passed`)
     } catch (error) {
       console.error(await page.diagnose(heroProbe))
       throw error
@@ -110,12 +113,15 @@ try {
       const mobile = await page.probe(heroProbe)
       assertMobileCompact(mobile, { section, position: mobilePosition })
       assert.ok(mobile.height >= heightLo && mobile.height <= heightHi, `mobile ${section} hero height must stay ${heightLo}-${heightHi}px: ${mobile.height}`)
-      // 冬季 portrait 遮罩实际生效：切换主题后 scrim 层变成浅色 rgba(238 243 248 / …)。
+      // 冬季 portrait 遮罩实际生效：三处停靠点逐一比对（完整 backgroundImage，不拆层）——
+      // 旧遮罩 .97/.86/.24 缺 .84/.52/.10，负向可捕获泛白回归。
       await page.evaluate(`localStorage.setItem('wotb-ui-profile', 'winter'); document.documentElement.setAttribute('data-ui-profile', 'winter'); document.documentElement.setAttribute('data-theme', 'light')`)
-      await page.waitForValue(`getComputedStyle(document.querySelector('.showcase-hero-art')).backgroundImage`, value => value.includes(WINTER_SCRIM_RGB), { timeout: 20_000, label: 'winter portrait scrim' })
+      await page.waitForValue(`getComputedStyle(document.querySelector('.showcase-hero-art')).backgroundImage`, value => value.includes(WINTER_PORTRAIT_STOPS[0]), { timeout: 20_000, label: 'winter portrait scrim' })
       const winter = await page.probe(heroProbe)
-      assert.ok(winter.scrimLayer.includes(WINTER_SCRIM_RGB), `mobile ${section} winter portrait scrim must be light rgb(${WINTER_SCRIM_RGB}): ${winter.scrimLayer}`)
-      console.log(`[browser-showcase-hero] breakpoint ${section}: desktop pos=${desktop.imagePosition} → mobile pos=${mobile.imagePosition} height=${mobile.height}, winter scrim=${winter.scrimLayer.slice(0, 60)}… passed`)
+      for (const stop of WINTER_PORTRAIT_STOPS) {
+        assert.ok(winter.backgroundImage.includes(stop), `mobile ${section} winter portrait scrim must contain ${stop}: ${winter.backgroundImage}`)
+      }
+      console.log(`[browser-showcase-hero] breakpoint ${section}: desktop pos=${desktop.imagePosition} → mobile pos=${mobile.imagePosition} height=${mobile.height}, winter scrim stops ok passed`)
     } catch (error) {
       console.error(await page.diagnose(heroProbe))
       throw error
