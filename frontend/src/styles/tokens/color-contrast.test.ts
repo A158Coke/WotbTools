@@ -162,6 +162,46 @@ describe('theme token contrast (WCAG 2.2 AA)', () => {
     }, 30_000)
   }
 
+  /**
+   * 出生侧胜率分段条门禁（BattleDataAdminPage .spawn-bar，物理出生侧语义四季固定）：
+   * 先手侧 danger 红 / 平局 border-strong 灰 / 后手侧 info 蓝，每个 fill 对 track（surface-3）≥ 3:1，
+   * 1px ring（border-strong）对行底色（surface-1）≥ 3:1。三段是三个不同 token，靠同一断言防主题漂移。
+   */
+  it('四季出生侧分段条：danger / border-strong / info 对 track ≥ 3、ring 对行底 ≥ 3', () => {
+    const failures: string[] = []
+    for (const [name, selector] of Object.entries(THEMES)) {
+      const tokens = block(selector)
+      const track = tokens['--color-surface-3']
+      const row = tokens['--color-surface-1']
+      expect(track, `${name} --color-surface-3`).toMatch(/^#/)
+      expect(row, `${name} --color-surface-1`).toMatch(/^#/)
+      for (const fill of ['--color-danger', '--color-border-strong', '--color-info']) {
+        const value = ratio(tokens[fill], track)
+        if (value < 3) failures.push(`${name} ${fill} vs track ${value.toFixed(2)}`)
+      }
+      const ring = ratio(tokens['--color-border-strong'], row)
+      if (ring < 3) failures.push(`${name} border-strong vs row ${ring.toFixed(2)}`)
+    }
+    expect(failures).toEqual([])
+  })
+
+  /** 组件真实映射契约：spawn 分段条三段必须精确使用固定出生侧 token，不允许主题相关色（如 accent）。 */
+  it('BattleDataAdminPage 出生侧分段条 CSS 映射：first=danger、draw=border-strong、second=info', () => {
+    const component = readFileSync(resolve(HERE, '../../components/BattleDataAdminPage.vue'), 'utf8')
+    const expected: [string, string][] = [
+      ['.spawn-seg.is-first', '--color-danger'],
+      ['.spawn-seg.is-draw', '--color-border-strong'],
+      ['.spawn-seg.is-second', '--color-info'],
+    ]
+    for (const [selector, token] of expected) {
+      const declaration = component.match(new RegExp(`${selector.replace(/\./g, '\\.')} \\{ background: var\\((--color-[\\w-]+)\\); \\}`))
+      expect(declaration, `BattleDataAdminPage.vue ${selector} background`).not.toBeNull()
+      expect(declaration![1], `BattleDataAdminPage.vue ${selector} background`).toBe(token)
+    }
+    expect(component).not.toContain('--color-chart-series-2')
+    expect(component).not.toMatch(/\.spawn-seg\.is-(?:first|second)[^}]*--color-accent/)
+  })
+
   it('寒冬是唯一的浅色主题，场景外壳在寒冬下仍是深色玻璃且同样达标', () => {
     expect(css).toMatch(/:root\[data-ui-profile="winter"\] \{\s*color-scheme: light;/)
     for (const name of ['spring', 'autumn']) expect(css).toMatch(new RegExp(`:root\\[data-ui-profile="${name}"\\] \\{\\s*color-scheme: dark;`))
