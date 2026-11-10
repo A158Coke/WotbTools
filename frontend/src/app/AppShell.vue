@@ -31,6 +31,7 @@ import AppNavDrawer from './AppNavDrawer.vue'
 import AppSidebar from './AppSidebar.vue'
 import GlobalErrorDialog from './GlobalErrorDialog.vue'
 import AppToast from './AppToast.vue'
+import AppButton from '../components/AppButton.vue'
 import { dismissTransientToasts } from '../composables/useToast.js'
 import NotificationPanel from './NotificationPanel.vue'
 import ConfirmDialogHost from '../components/ConfirmDialogHost.vue'
@@ -292,8 +293,8 @@ watch(uiProfile, async () => {
   </div>
   <aside v-if="androidUpdate.showPrompt.value && !shellChrome.immersive.value" class="android-update-notice" data-testid="android-update-notice" :aria-label="$t('androidUpdate.noticeLabel')">
     <span>{{ $t('androidUpdate.available', { version: androidUpdate.snapshot.value?.latestVersionName }) }}</span>
-    <button type="button" class="btn btn-secondary" @click="androidUpdate.open">{{ $t('androidUpdate.view') }}</button>
-    <button type="button" class="btn btn-secondary" :disabled="androidUpdate.acting.value" @click="androidUpdate.dismiss">{{ $t('androidUpdate.later') }}</button>
+    <AppButton @click="androidUpdate.open">{{ $t('androidUpdate.view') }}</AppButton>
+    <AppButton :disabled="androidUpdate.acting.value" @click="androidUpdate.dismiss">{{ $t('androidUpdate.later') }}</AppButton>
   </aside>
   <RouterView />
   <footer class="app-footer" data-testid="app-footer">
@@ -408,7 +409,8 @@ watch(uiProfile, async () => {
   background: var(--color-surface-2);
   color: var(--color-text-primary);
 }
-.android-update-notice button { min-height: var(--hit-min-comfortable); }
+/* AppButton md 高度（32px）低于移动端 44px 触控目标下限：更新提示条保持 comfortable 命中高度。 */
+.android-update-notice .app-button { min-height: var(--hit-min-comfortable); }
 
 /* 提示条已在文档流中让出固定顶栏与安全区：内容区不再重复让出同一高度。 */
 :global(#app:has(> .android-update-notice) > .app-main) {

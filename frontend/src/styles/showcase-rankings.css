@@ -20,8 +20,6 @@
   padding: var(--space-2) !important;
   border: 1px solid var(--color-border-subtle) !important;
   border-radius: 8px;
-  background: color-mix(in srgb, var(--bg) 84%, transparent) !important;
-  box-shadow: var(--elevation-2);
   backdrop-filter: blur(12px);
 }
 .lb-wrap > .tabs button {
@@ -29,45 +27,10 @@
   padding: 0 18px !important;
   border-radius: 6px !important;
 }
-.lb-wrap .lb-head {
-  position: relative;
-  overflow: hidden;
-  margin-bottom: 12px;
-  padding: 24px 26px !important;
-  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
-  border-radius: 9px;
-  background: linear-gradient(110deg, color-mix(in srgb, var(--accent) 7%, var(--bg-card)), var(--bg-card) 46%);
-  box-shadow: var(--surface-shadow);
-}
-.lb-wrap .lb-head::after {
-  content: '';
-  position: absolute;
-  right: -50px;
-  top: -125px;
-  width: 320px;
-  height: 320px;
-  border: 1px solid color-mix(in srgb, var(--color-accent) 14%, transparent);
-  border-radius: 50%;
-  corner-shape: round;
-  box-shadow: 0 0 0 54px color-mix(in srgb, var(--color-accent) 2.5%, transparent);
-}
-.lb-wrap .lb-kicker { color: var(--accent-light) !important; font-weight: 900; letter-spacing: .1em; }
-.lb-wrap .lb-head h1 { margin: 5px 0 5px !important; font-size: 1.7rem !important; letter-spacing: -.025em; }
-.lb-wrap .lb-head p { max-width: 760px; color: var(--text-sub) !important; }
-.lb-wrap .lb-submit-row { margin-bottom: 10px !important; }
-.lb-wrap .lb-toolbar {
-  position: sticky;
-  top: 119px;
-  z-index: 18;
-  gap: 8px !important;
-  padding: 10px !important;
-  border: 1px solid var(--color-border-subtle) !important;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--bg-card) 94%, transparent) !important;
-  box-shadow: var(--elevation-2);
-  backdrop-filter: blur(10px);
-}
-.lb-wrap .lb-toolbar :is(select,input) { border-color: var(--color-border-strong) !important; background: var(--color-surface-1) !important; }
+/* .lb-head / .lb-kicker 已删除：全仓库 Vue 模板无任何 DOM 消费者，纯死规则。 */
+/* Ownership：.lb-wrap 的共享观感（tabs/工具栏/表头/表行的颜色背景）唯一 owner 是
+ * showcase-cohesion.css（cascade 后位 + 更高 specificity），本文件只保留它不提供的
+ * 布局骨架（sticky、max-height、行高）与移动端 grid-area。 */
 /* 审计 PG-06：横向滚动要求 .tablewrap 是滚动容器，sticky 表头只能相对它吸顶；因此平板 / 桌面限制它的高度，
  * 让表格在自身内纵向滚动。高度扣掉顶栏与吸顶 Tab，表格顶部对齐到 Tab 下方时表头不会被盖住。 */
 .lb-wrap .tablewrap {
@@ -77,8 +40,6 @@
   overflow: auto !important;
   border: 1px solid var(--color-border-subtle) !important;
   border-radius: 8px;
-  background: var(--bg-card);
-  box-shadow: var(--elevation-2);
 }
 .lb-wrap table { width: max-content !important; min-width: 100% !important; font-variant-numeric: tabular-nums; }
 .lb-wrap thead th {
@@ -86,11 +47,8 @@
   top: 0;
   z-index: 4;
   height: 42px;
-  background: var(--color-surface-2) !important;
-  color: var(--text-sub) !important;
 }
 .lb-wrap tbody td { height: 45px; }
-.lb-wrap tbody tr:hover { background: var(--bg-list-hover) !important; }
 .lb-wrap .lb-dmg { color: var(--accent-dark) !important; font-weight: 900; }
 .lb-wrap .rk { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent); }
 
@@ -105,8 +63,7 @@
 @media(max-width:1199px) {
   .lb-wrap,
   .hof-admin { width: calc(100% - var(--gutter) * 2) !important; padding-top: 16px !important; }
-  .lb-wrap > .tabs,
-  .lb-wrap .lb-toolbar { position: static; }
+  .lb-wrap > .tabs { position: static; }
   /* 平板 Tab 不吸顶：表格吸顶区只需让出顶栏 */
   .lb-wrap { --hof-sticky-top: calc(var(--header-h) + var(--space-2)); }
 }
@@ -115,7 +72,6 @@
   .lb-wrap,
   .hof-admin { width: calc(100% - var(--gutter) * 2) !important; padding: 10px 0 42px !important; }
   .lb-wrap > .tabs { position: static; }
-  .lb-wrap .lb-head { padding: 18px !important; }
   /* Mobile: the filter form must never become a horizontal-scrolling strip (data
    * tables may scroll, form filters may not). Task-first 2-column grid, explicit
    * placement per the real DOM:
@@ -124,13 +80,6 @@
    *   row 5: Show count | Refresh      (conditional Clear-filter auto-places below)
    * Hundred-battles toolbar: Nation | Vehicle Type / Select Vehicle (full) /
    * Refresh | Submit. */
-  .lb-wrap .lb-toolbar {
-    display: grid !important;
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-    gap: 8px 10px !important;
-    overflow: visible !important;
-  }
-  .lb-wrap .lb-toolbar > * { min-width: 0; }
   /* Single-battle toolbar (children: Nation, Vehicle Type, Vehicle Tier,
    * Select Vehicle, Battle Type, Nickname, Limit, [Clear filter], Refresh). */
   .lb-wrap .lb-toolbar:not(.h100-toolbar) .lb-limit:nth-child(1) { grid-area: 1 / 1; }

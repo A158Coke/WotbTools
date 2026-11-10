@@ -18,16 +18,7 @@
   color: var(--color-accent-text) !important;
 }
 
-.lb-wrap .lb-head {
-  border-color: color-mix(in srgb, var(--color-accent) 38%, transparent) !important;
-  background:
-    linear-gradient(100deg, color-mix(in srgb, var(--color-surface-1) 96%, transparent) 0%, color-mix(in srgb, var(--color-surface-1) 92%, transparent) 58%, color-mix(in srgb, var(--color-accent) 12%, var(--color-surface-1)) 100%) !important;
-  color: var(--color-text-primary) !important;
-  box-shadow: var(--elevation-2) !important;
-  backdrop-filter: blur(10px);
-}
-.lb-wrap .lb-head h1 { color: var(--color-text-primary) !important; }
-.lb-wrap .lb-head p { color: var(--color-text-secondary) !important; }
+/* .lb-head 已删除：全仓库无 DOM 消费者（见 showcase-rankings.css 同注）。 */
 
 /* The filter bar is a dense operations toolbar. CSS Grid gives every field real
  * width instead of squeezing labels into one narrow flex line:
@@ -36,7 +27,14 @@
  * Each label stays on one line, the nickname input is usable, limit/refresh align.
  * Tablet wraps to two columns, mobile is task-first with the wide fields spanning
  * the full row. */
+/* .lb-toolbar 基础样式唯一 owner：网格/颜色/间距/背景在此，position/z-index（相对定位、
+ * 低于吸顶 Tab 但高于表格吸头，保证下拉列表可达）也在此。HoFPage.vue scoped 版同 selector
+ * 更高 specificity，故网格/颜色需 !important 压制；移动端 grid-area 布局归 showcase-rankings.css。 */
 .lb-wrap .lb-toolbar {
+  position: relative;
+  top: auto;
+  z-index: 5;
+  border-radius: 8px;
   display: grid !important;
   grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
   gap: 10px 14px !important;
