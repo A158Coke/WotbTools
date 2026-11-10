@@ -27,6 +27,10 @@ body { margin: 0; background: transparent; color: var(--color-text-primary); fon
 }
 a { color: var(--color-accent-text); text-decoration: none; }
 button, input, select, textarea { font-family: inherit; }
+/* 交互控件文字不可被长按选中：GeckoView 下一旦存在活动选区，落在文字上的拖动会被引擎解释为
+   「扩展选区」而不是滚动，误长按控件选中文字后滑动就成了逐帧选区扩展（感知为滑动卡死）。
+   只覆盖控件 chrome；内容文本不受影响，仍可长按选中与复制。 */
+button { user-select: none; }
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
   outline: var(--focus-outline);
   outline-offset: var(--focus-outline-offset);
