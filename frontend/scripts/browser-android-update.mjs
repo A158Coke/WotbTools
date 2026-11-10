@@ -4,15 +4,18 @@ import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 
 // Real application/shell/sheet/CSS, with only the Android transport boundary replaced.
 // This verifies browser layout and interaction; it does not emulate DownloadManager or Gecko.
-function nativeBoundary({ promptSuppressed = false } = {}) {
+function nativeBoundary({ promptSuppressed = false, installPermissionRequired = false } = {}) {
   const listeners = new Set()
   const status = {
     revision: 1, state: 'optional', checkState: 'succeeded', checkFailureReason: null,
     currentVersionName: '3.27.2', currentVersionCode: 3027002,
     latestVersionName: '3.29.0', latestVersionCode: 3029000, minSupportedVersionCode: 3017007,
     publishedAt: '2026-11-01T12:00:00Z', releaseNotes: 'Fixture release notes', optionalPromptSuppressed: promptSuppressed,
-    download: { taskToken: null, versionName: null, versionCode: null, state: 'idle',
-      downloadedBytes: null, totalBytes: null, progressPercent: null, failureReason: null },
+    download: installPermissionRequired
+      ? { taskToken: 'fixture-permission', versionName: '3.29.0', versionCode: 3029000, state: 'installPermissionRequired',
+          downloadedBytes: null, totalBytes: null, progressPercent: null, failureReason: 'permissionDenied' }
+      : { taskToken: null, versionName: null, versionCode: null, state: 'idle',
+          downloadedBytes: null, totalBytes: null, progressPercent: null, failureReason: null },
   }
   window.updateFixture = { status, calls: [], focusChanges: 0 }
   document.addEventListener('focusin', () => { window.updateFixture.focusChanges += 1 })
@@ -69,6 +72,8 @@ function geometry() {
   const rect = panel?.getBoundingClientRect()
   const controls = panel ? [...panel.querySelectorAll('button')].map(element => ({
     text: element.textContent, height: element.getBoundingClientRect().height,
+    clipped: element.scrollWidth > element.clientWidth + 1 || element.scrollHeight > element.clientHeight + 1,
+    whiteSpace: getComputedStyle(element).whiteSpace,
   })) : []
   return { width: innerWidth, focused: document.activeElement?.outerHTML.slice(0, 180), viewportOverflow: document.documentElement.scrollWidth > innerWidth,
     panel: rect ? { left: rect.left, right: rect.right } : null, controls }
@@ -137,7 +142,8 @@ try {
   chrome = await launchChromeForCdp(findChrome())
 
   async function openAppPage({ width, height = 900, profile = 'summer', safeTop = 0, promptSuppressed = false,
-    expectNotice = true, waitForMoreLink = true, url = `${origin}/?view=more&ws-auth=0` }) {
+    expectNotice = true, waitForMoreLink = true, lang = 'en', boundaryArgs = {},
+    url = `${origin}/?view=more&ws-auth=0` }) {
     const { targetId, sessionId } = await chrome.openPage()
     const page = new Page(chrome.client, sessionId)
     try {
@@ -149,7 +155,7 @@ try {
         }, sessionId)
       }
       await chrome.client.send('Page.addScriptToEvaluateOnNewDocument', {
-        source: `(${nativeBoundary.toString()})(${JSON.stringify({ promptSuppressed })}); localStorage.setItem('wotb-ui-profile', ${JSON.stringify(profile)}); localStorage.setItem('wotb-lang', 'en');`,
+        source: `(${nativeBoundary.toString()})(${JSON.stringify({ promptSuppressed, ...boundaryArgs })}); localStorage.setItem('wotb-ui-profile', ${JSON.stringify(profile)}); localStorage.setItem('wotb-lang', ${JSON.stringify(lang)});`,
       }, sessionId)
       await chrome.client.send('Page.navigate', { url }, sessionId)
       // Cold Vite dependency transforms can exceed the shared navigation budget on CI.
@@ -230,6 +236,39 @@ try {
     } catch (error) {
       console.error(error)
       console.error(await page.diagnose(noticeGeometry))
+      throw error
+    } finally { await chrome.client.send('Target.closeTarget', { targetId }) }
+  }
+
+  {
+    // 320px + 俄文 + installPermissionRequired：AppButton 默认 nowrap，长操作文案（Разрешить установку и продолжить）
+    // 必须允许按钮内换行且不产生水平溢出，同时保持 44px 触控高度（PR #939 评审 P2）。
+    // 有进行中下载时可选提示不出现（showPrompt 要求 download.state==='idle'），改从 More 入口直达面板。
+    const { targetId, page } = await openAppPage({ width: 320, lang: 'ru', expectNotice: false, boundaryArgs: { installPermissionRequired: true } })
+    try {
+      await page.evaluate('window.scrollTo(0, 0)')
+      await page.waitForValue(`!!document.querySelector('[data-testid="more-link-app-update"]')`, value => value === true, { timeout: 90_000, label: 'More app-update entry' })
+      await click(page, '[data-testid="more-link-app-update"]')
+      await page.waitForValue(`!!document.querySelector('[data-testid="update-install"]')`, value => value === true, { timeout: 90_000, label: 'ru install panel' })
+      const installText = await page.evaluate(`document.querySelector('[data-testid="update-install"]').textContent.trim()`)
+      if (installText !== 'Разрешить установку и продолжить') {
+        throw Error(`Unexpected ru install label: ${JSON.stringify(installText)}`)
+      }
+      const shape = await page.probe(geometry)
+      if (shape.viewportOverflow || !shape.panel || shape.panel.left < 0 || shape.panel.right > shape.width + 1) {
+        throw Error(`ru 320px panel overflow: ${JSON.stringify(shape)}`)
+      }
+      const clipped = shape.controls.filter(control => control.clipped)
+      if (clipped.length) throw Error(`ru 320px clipped buttons: ${JSON.stringify(clipped)}`)
+      const nowrap = shape.controls.filter(control => control.whiteSpace !== 'normal')
+      if (nowrap.length) throw Error(`ru 320px buttons cannot wrap long labels: ${JSON.stringify(nowrap)}`)
+      if (shape.controls.some(control => control.height < 44)) throw Error(`ru 320px undersized touch target: ${JSON.stringify(shape.controls)}`)
+      await click(page, '[data-testid="update-install"]')
+      await page.waitForValue(`window.updateFixture.calls.filter(call => call.method === 'installUpdate').length`, value => value === 1, { label: 'ru install click' })
+      console.log(`[browser-android-update] ru 320px installPermissionRequired: no overflow/clipped labels, heights=${shape.controls.map(control => Math.round(control.height)).join('/')} install clickable passed`)
+    } catch (error) {
+      console.error(error)
+      console.error(await page.diagnose(geometry))
       throw error
     } finally { await chrome.client.send('Target.closeTarget', { targetId }) }
   }

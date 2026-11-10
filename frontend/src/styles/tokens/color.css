@@ -340,6 +340,11 @@
      不跟随浅色表面。场景根元素带 data-scene-surface，在其子树里把表面与文字色换回深色。 */
   :root[data-ui-profile="winter"] [data-scene-surface] {
     color-scheme: dark;
+    /* 场景子树的文字色必须在此落定：页面层（body）已按浅色主题把 computed color 写成
+       深蓝 #0f2236，未显式设置 color 的后代（Display 面板选项行等）会继承它落在暗色
+       表面上，对比度 1.03:1（2026-11-10 反馈实测）。变量本身在下面已换成暗色场景值，
+       但继承的是**祖先的 computed color**，不重设就拿到页面浅色主题的文字色。 */
+    color: var(--color-text-primary);
 
     --color-canvas: #0b0f11;
     --color-surface-1: #11171a;

@@ -1,7 +1,7 @@
 # WotbTools Design Contract v1（设计语言）
 
 > 适用范围：`frontend/` 全部页面、Android GeckoView。
-> 本文件是视觉与交互规则的唯一 owner。token 数值以 `frontend/src/styles/tokens/` 为准，实现位置与页面现状见 [ui-system.md](ui-system.md) 和 [replay-workspace.md](replay-workspace.md)。规则与代码不一致时按代码核实：事实描述错了就修文档，规则被违反就修代码，不把文档对齐隐式扩大为产品改动。
+> 本文件是已批准生产界面的视觉与交互规则的唯一 owner。token 数值以 `frontend/src/styles/tokens/` 为准，实现位置与页面现状见 [ui-system.md](ui-system.md) 和 [replay-workspace.md](replay-workspace.md)。对已发布界面，事实描述错了就修文档，规则被违反就修代码；独立设计探索可提出有证据的规则修订，按 §0 的 `Contract Conflict` 流程处理，不因旧的审美条款直接阻止原型。
 
 ---
 
@@ -20,7 +20,7 @@
 - **强度：** `MUST` 违反即不通过审查；`SHOULD` 默认遵守，偏离时在 PR 写明理由；`MAY` 明确允许的选择。
 - **验证：** 优先写可运行的命令或测试。写「人工」表示没有自动判定，由 PR 审查或用户验收按规则核对；不得把人工项说成已被门禁覆盖。
 - **存量：** `frontend/stylelint.legacy.json` 名单内的文件在迁移前不受静态校验，迁移时一并修复。
-- **外部资料：** 规则依据可以引用外部规范，但比例、弹簧参数这类经验值不自动成为规则，只有能在本项目验证并写进本文件才算数。
+- **外部资料：** `.agents/references/design-methods/` 中的 Refactoring UI 与 Apple Design 是可版本化的参考方法，不是新 SSOT；应用方法与审计输出见 `.agents/playbooks/ui-design-review.md`。本文件对**已批准的生产实现**具有约束力，但设计探索可以挑战旧审美限制并明确标记 `Contract Conflict`；不得以旧样式规则拒绝制作受控原型。生产变更必须有证据、授权且在本文件完成对应修订。回放数据事实、安全和可访问性保障不因视觉探索而撤销。比例、弹簧参数等经验值不能未经验证变成 MUST。
 
 ---
 
@@ -54,7 +54,7 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | ID | 强度 | 范围 | 规则 | 例外 | 验证 |
 |---|---|---|---|---|---|
 | DC-THM-01 | MUST | 四季主题 | 布局、组件结构、字号、交互完全一致，只替换语义 token 与氛围插槽；不按主题 fork 业务实现，组件不出现主题判断 | 无 | `src/ui-profile-fork-guard.test.js` |
-| DC-THM-02 | MUST | 全站 | 背景图与装饰渐变只出现在本节列出的装饰插槽；毛玻璃只允许用于 §2.1 的页面级玻璃表面 | 无 | 人工 |
+| DC-THM-02 | MUST | 全站材质验收 | 背景图、装饰渐变与玻璃材质的生产使用必须通过真实叠合背景可读性、触摸可达、设备性能与降级验收；§2 的插槽与 §2.1 页面级玻璃只是当前实现基线，允许经证据验证的设计探索扩展材质到其他区域（包括数据区），不能因旧白名单而拒绝原型 | 不得弱化对比度与业务数据可读性 | 四主题真实背景取样 + 交互/设备验证 |
 | DC-THM-03 | MAY | 工作区页面 | 在数据区之上放一个 Showcase Hero | 无 | 人工 |
 | DC-THM-04 | MUST | Showcase Hero | 只放在数据区之上，不进入表格、筛选、表单、抽屉；expanded 档首屏必须能看到数据区 | 无 | 每页 PR 大屏截图，人工 |
 | DC-THM-05 | MUST | Showcase Hero | 文字落在主题遮罩（`--theme-hero-scrim*`）压出的纯色区上，最差取样点满足 §3 对比度，四套主题都测 | 无 | 人工取样 |
@@ -63,7 +63,7 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | DC-THM-08 | MUST | 场景外壳 | 2D / 3D 回放、装甲查看器、地图 3D 的根元素带 `data-scene-surface`，正常渲染态自铺不透明底，寒冬下仍是深色玻璃，不跟随浅色表面，也不叠页面环境光 | 装甲查看器 `is-unsupported` 无 WebGL 降级态（不渲染游戏画面，保留透明 fallback） | `color-contrast.test.ts` 的场景块断言 + 人工 |
 | DC-THM-09 | MUST | 全站环境背景 | 全站只由 `AppShell.vue` 的 `.app-backdrop` 渲染环境背景层：`position: fixed; inset: 0; pointer-events: none`，层级低于内容；环境光、背景图、遮罩、位置全部读 `--theme-backdrop*` token；禁止在 `body` 上用 `background-attachment: fixed` | 无 | 人工；`pnpm run test:browser-home`、`test:browser-view-transition` |
 | DC-THM-10 | MUST | 首屏与主题切换 | 环境背景先显示 `--color-canvas` 纯色，图片解码后淡入，不得阻塞首屏；`prefers-reduced-motion: reduce` 下直接显示、不做过渡；切换主题时背景随 token 同步切换 | 无 | 人工；`src/index-firstpaint.test.js` 保持通过 |
-| DC-THM-11 | MUST | 内容表面 | 只有页面级卡片 / 面板可用 `--color-surface-{1,2,3}-glass`（表面色 82%–90% 不透明 + `backdrop-filter: blur(16px) saturate(1.2)`）；表格、数据密集区、输入框、回放 HUD 保持纯色；场景根必须不透明；`@supports not (backdrop-filter)` 时回退纯色 | 无 | `color-contrast.test.ts` 的真实背景取样 + 人工 |
+| DC-THM-11 | MUST | 生产内容表面 | 当前页面级卡片/面板采用 `--color-surface-{1,2,3}-glass`（表面色 82%–90% 不透明 + `backdrop-filter: blur(16px) saturate(1.2)`），当前表格、数据密集区、输入框、回放 HUD 采用纯色；这是实现事实而非未来设计禁令。任何扩展玻璃材质的生产变更必须先证明真实背景对比度、合成性能和不支持 `backdrop-filter` 时的纯色降级；场景根必须保持不透明（DC-THM-08） | 受控设计原型可先探索，生产需独立验收 | `color-contrast.test.ts` 的真实背景取样 + 浏览器/设备审查 |
 | DC-THM-12 | MUST | 分区主视觉 | 每个导航分区用一张固定 key visual（与季节无关），由 `ShowcaseHero` 的 `section` prop 选择；图片经 `import` 由 Vite 生成 hash URL，只加载当前页面用到的一张；标题必须落在主题遮罩压出的可读区 | 首页继续使用季节主视觉 | 人工四主题 × 双视口截图；`ShowcaseHero.test.ts` |
 
 | | **春 · 青山** `spring` | **夏 · 盛夏** `summer`（默认） | **秋 · 金秋** `autumn` | **冬 · 寒冬** `winter` |
@@ -78,15 +78,15 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 
 **氛围插槽**（主题 token，只能用在装饰插槽里）：`--theme-hero-image`（横版约 2.5:1）、`--theme-hero-image-portrait`（竖版约 4:5）、`--theme-hero-scrim`（横版遮罩，左侧压出文字区）、`--theme-hero-scrim-portrait`（竖版遮罩，自下而上）、`--theme-hero-section-scrim` / `--theme-hero-section-scrim-portrait`（仅寒冬的分区主视觉遮罩，见 §2.2）、`--theme-glass`（叠在主视觉上的按钮底）、`--theme-pattern`（页面底纹）、`--theme-backdrop`（页面环境光，多层静态 `radial-gradient` / `linear-gradient`，固定视口、无动画）、`--theme-backdrop-image` / `--theme-backdrop-image-portrait`（全站环境背景横 / 竖版）、`--theme-backdrop-scrim`（环境背景遮罩）、`--theme-backdrop-position` / `--theme-backdrop-position-portrait`（横 / 竖版焦点位置）。页面静态底色按 `--theme-pattern` → `--theme-backdrop` → `--color-canvas` 合成；环境光集中在页面边缘与角落，正文所在的中部保持接近 `--color-canvas` 的纯色区。环境光在页面底边渐隐回 `--color-canvas`，页脚（`.app-footer`）另有 canvas 渐隐托底，避免底纹的 1px 线穿过页脚小字、拉低对比度。页头等无底色文字所在的最亮处也必须按 §3 取样，至少覆盖 1024 宽的桌面视口；环境光峰值不得压过文字对比度。主视觉素材在 `frontend/src/assets/theme/theme-<季节>-{wide,portrait}.webp`；环境背景产物在 `frontend/src/assets/theme/backdrop-<季节>-{wide,portrait}.webp`，与 `--theme-backdrop` 的环境光层一起由 `.app-backdrop` 渲染（§2.1）。主题选择器的缩略图与色点读 `--theme-preview-<季节>-*`。
 
-**装饰插槽**（这是唯一允许放背景图与装饰渐变的地方；毛玻璃表面见 §2.1）：
+**现有装饰插槽**（背景图/环境装饰的实现清单，不是后续材质设计的排他白名单）：
 
 1. 首页英雄区（`HomePage.vue` 自己拥有整屏主视觉；`ShowcaseHero` 的 `section` 变体只负责导航分区的页头，不改变首页）
 2. 工作区 Showcase Hero（规则见 DC-THM-03 至 DC-THM-06）
 3. 空状态插图
 4. 登录页
-5. 全站环境背景层（`.app-backdrop`，§2.1）：固定的主题底纹 + 环境光 + 季节背景图 + canvas 遮罩，叠在 `--color-canvas` 上；按「`--theme-pattern` → `--theme-backdrop` → `--theme-backdrop-scrim` → `--theme-backdrop-image` → `--color-canvas`」合成（CSS 中前面的层在上）。环境光只允许静态渐变，不允许动画或随滚动变化；页脚 `.app-footer` 的 canvas 渐隐托底属于同一层页面底色合成（不是组件装饰），用于保证页脚小字对比度
+5. 全站环境背景层（`.app-backdrop`，§2.1）：当前以固定主题底纹、环境光、季节背景图和 canvas 遮罩叠在 `--color-canvas` 上；按「`--theme-pattern` → `--theme-backdrop` → `--theme-backdrop-scrim` → `--theme-backdrop-image` → `--color-canvas`」合成（CSS 中前面的层在上）。当前环境光使用静态渐变；未来的动画或滚动联动不是默认禁令，但必须先采集 CPU/GPU 帧性能、可读性与 Reduced Motion 证据。页脚 `.app-footer` 的 canvas 渐隐托底属于同一层页面底色合成，用于保证页脚小字对比度
 
-**数据区**，也就是表格、回放数据区、筛选结果、表单控件、抽屉，**四套主题都用纯色**。页面级卡片与面板（包括筛选面板的容器，不含输入框本身）可以用 §2.1 的玻璃表面，但表格、数据密集区、输入框和回放 HUD 不在例外里。依据：WCAG 1.4.3 要求文字对比度稳定，而文字压在图片上时，对比度会随图片内容变化，没法保证。
+**数据区材质**：当前表格、回放数据区、筛选结果、表单控件和抽屉以纯色为默认；页面级卡片/面板（包括筛选面板容器，非输入框）使用 §2.1 的玻璃表面。这是当前实现的**事实描述**，不是未来设计禁令。允许在经过专项验证后提议扩展玻璃/半透明到数据区域：对四套主题、wide/portrait 真实背景、滚动状态和复杂内容逐像素采样文字/UI 对比度，证明触摸可达和设备性能，并提供不透明降级。未经验证不得将现有数据表面直接替换。
 
 ### 2.1 全站环境背景层
 
@@ -96,11 +96,11 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 
 **首屏性能：** 首帧只画 canvas 纯色（`html` / 首屏内联样式负责，图片层此时 `opacity: 0`）；`.app-backdrop` 的图片由 JS 在 mount 后预解码，完成后才加 `.is-ready` 淡入，背景图不进入首屏关键路径。`prefers-reduced-motion: reduce` 下不做透明度过渡。主题切换时重新等待对应季节图，CSS token 已同步换图，不保留上一主题的图。
 
-**内容表面边界：** 页面级卡片 / 面板（首页卡片、文档正文、坦克详情区块、筛选面板、空状态上传区、管理后台提示条等）使用 `--color-surface-{1,2,3}-glass`（对应表面色 82%–90% 不透明）加 `backdrop-filter: blur(16px) saturate(1.2)`，让背景隐约透出。表格、数据密集区、输入框、回放 HUD 仍用纯色 `--color-surface-*`；2D / 3D 回放、装甲查看器、地图 3D 的场景根必须有 canvas 不透明底色，非全屏时场景外围的页面区域才透出环境背景。浏览器不支持 `backdrop-filter` 时，玻璃表面回退为对应纯色。实际应用的玻璃表面必须先按真实 wide / portrait 背景图逐像素叠加 `--theme-backdrop-scrim`，再与玻璃 alpha 合成，取亮度最小 / 最大像素进入 §3 的最差值计算；不能只用 canvas 混合等效色代替。
+**内容表面边界（当前实现）**：页面级卡片/面板（首页卡片、文档正文、坦克详情区块、筛选面板、空状态上传区、管理后台提示条等）使用 `--color-surface-{1,2,3}-glass`（对应表面色 82%–90% 不透明）加 `backdrop-filter: blur(16px) saturate(1.2)`，让背景隐约透出。当前表格、数据密集区、输入框、回放 HUD 使用纯色 `--color-surface-*`；2D/3D 回放、装甲查看器和地图 3D 场景根保持不透明底色，非全屏时场景外围的页面区域可透出环境背景。这是已实施状态，不排除未来经过验证的材料调整。浏览器不支持 `backdrop-filter` 时玻璃表面回退为对应纯色。实际应用玻璃表面必须先按真实 wide/portrait 背景图逐像素叠加 `--theme-backdrop-scrim`，再与玻璃 alpha 合成，取亮度最小/最大像素进入 §3 最差值计算；不能只用 canvas 等效色替代。
 
 **素材来源：** 四季原图为 AI 生成画面与真实 WoTB 十级车型参考融合，写实电影风格；原图保留在 `frontend/art-source/backdrops/backdrop-<季节>-{wide,portrait}.webp`，不得修改。发布产物由 `frontend/scripts/build-theme-backdrops.mjs`（`pnpm run assets:backdrops`）生成：wide Lanczos 放大到 2560 宽、portrait 到 1080 宽，轻度锐化，WebP 初始 quality 80；单张超过 300KB 时脚本按预算自适应下调 quality（产物实测约 q29–q80，均 ≤ 300KB）。
 
-**场景排除：** 带 `data-scene-surface` 的 2D / 3D 回放、装甲查看器、地图 3D 场景根在正常渲染态必须自铺不透明底色（通常 `var(--color-canvas)` 或 `var(--color-surface-1)`），页面环境光不得透进游戏画面。唯一例外是装甲查看器的 `is-unsupported` 无 WebGL 降级态：它不渲染游戏画面，保留既有的透明 fallback。
+**场景排除：** 带 `data-scene-surface` 的 2D / 3D 回放、装甲查看器、地图 3D 场景根在正常渲染态必须自铺不透明底色（通常 `var(--color-canvas)` 或 `var(--color-surface-1)`），页面环境光不得透进游戏画面。场景子树的**文字色必须在场景根落定**（场景根声明 `color: var(--color-text-primary)`）：变量换成场景值不会改变继承链——后代继承的是页面层的 computed color，寒冬浅色页面下缺这行会让未显式设置 color 的文本以深蓝落在暗色场景表面上（2026-11-10 Display 面板实测 1.03:1）。唯一例外是装甲查看器的 `is-unsupported` 无 WebGL 降级态：它不渲染游戏画面，保留既有的透明 fallback。
 
 **选择逻辑：**
 - 默认盛夏；用户在「更多」→ 主题里选择（`ThemePicker`：`SegmentedControl` tiles，每项是主视觉缩略图 + 强调色点 + 名称），选择后记住。
@@ -222,6 +222,10 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 - 分类色板：8 色，对色盲友好（参考 Okabe–Ito），深色三季共用一份、寒冬一份，都要在 `surface-1` 上 ≥ 3:1。
 - 顺序色板（热力图、穿透率等）：单色相，从浅到深；在亮色主题里方向反转。
 - 图表**一律带图例**，关键数值直接标在图上，不能只靠颜色读值。
+- **Battle Data 出生侧胜率分段条**（`BattleDataAdminPage.vue` `.spawn-bar`）是本节唯一约束到具体组件的例外，颜色表达**物理出生侧**（不是 Team 1 / Team 2，也不是胜负），四季固定：
+  - 先手侧（NORTH / WEST）胜场 → `--color-danger`（红）；后手侧（SOUTH / EAST）胜场 → `--color-info`（蓝）；平局 → `--color-border-strong`（中性灰），是独立第三段，不并入任一侧。
+  - track（底轨）用 `--color-surface-3`，整体加 1px `--color-border-strong` 实边框，条高 `var(--space-3)`（12px），颜色一律不透明。
+  - 门禁（`color-contrast.test.ts`）：每个 fill 对 track ≥ 3:1，1px 边界对行底色（`surface-1`）≥ 3:1，并断言组件 CSS 三段精确使用上述 token；四季主题都必须通过，改 token 时不能静默退化。
 
 ### 3.5 领域色：坦克类别
 
@@ -282,9 +286,9 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 |---|---|---|---|---|---|
 | DC-SIZ-01 | MUST | 触控档 | 可交互元素命中区 ≥ 44×44；场景短视口横屏紧凑档 ≥ 40×40（见 §5「场景短视口横屏紧凑档」）；装甲短横屏 38px 胶囊的 36px 分段开关为 PR #932 的显式例外 | 页脚备案链接等法定文字 | `pnpm run test:browser-interaction`、`pnpm run test:browser-armor-mobile` |
 | DC-SIZ-02 | MUST | 层级 | z-index 只用 token，不靠大数值收尾 | 场景型工作台内部用局部 1–9 | `pnpm run lint:css` |
-| DC-MOT-01 | MUST | 动效 | 时长与缓动只取自 `--duration-*` / `--ease-*`，JS 侧经 `motionPolicy.ts` 读取 | 无 | `src/shared/motion/motionPolicy.test.ts` |
-| DC-MOT-02 | MUST | 动效 | `prefers-reduced-motion: reduce` 时动效归零 | 无 | `motionPolicy.test.ts`、`pnpm run test:browser-home` |
-| DC-MOT-03 | MUST | 播放帧路径 | 3D、2D 场景、timeline、HP、camera 不使用 UI 动效 | 无 | `src/shared/ui-dependency-ownership.test.ts` + 人工 |
+| DC-MOT-01 | MUST | 动效参数的 ownership | 动效参数仍有唯一权威入口：现有 duration/ease 从 CSS token 经 `motionPolicy.ts` 读取；允许在同一 ownership 下扩展 spring、velocity、interruptibility 等参数，不得每个组件自建互不兼容的第二套 motion policy | 新模型在实现前明确其 token/owner | `motionPolicy.test.ts` + 相关交互测试 |
+| DC-MOT-02 | MUST | 降低动效 | 遵守 `prefers-reduced-motion: reduce`，移除可能引起不适的空间位移、弹性/视差效果，允许保留必要的静态/淡入反馈；当前实现的 duration 归零是合规降级之一而非所有未来动效的唯一方案 | 无 | `motionPolicy.test.ts`、`pnpm run test:browser-home` + 实际渲染审查 |
+| DC-MOT-03 | MUST | 回放与 UI 动效边界 | 回放时间、事件、HP、镜头事实的来源与时间轴语义必须准确；允许在 2D/3D、HUD、timeline、HP、camera 加入可中断的**表现层**动效，但不得让视觉状态冒充错误的战斗事实或造成输入延迟；先测帧性能并进行回放 seek/暂停/反向验证 | 不对原始事件或回放时钟造假 | 相关回放测试 + 录屏/帧性能/真实回放语料 |
 | DC-MOT-04 | MUST | 动效 | 禁止 `transition: all`，列出具体属性 | 无 | 人工 |
 | DC-MOT-05 | SHOULD | 动效 | 优先动画 `transform` / `opacity`；动画可被用户操作打断 | 选中指示器等 shared layout | 人工 |
 
@@ -347,7 +351,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 `--z-base: 0` · `--z-sticky: 100` · `--z-header: 200` · `--z-drawer: 300` · `--z-sheet: 400` · `--z-menu: 500` · `--z-dialog: 600` · `--z-tooltip: 650` · `--z-toast: 700`
 
-**动效**：`--duration-fast: 120ms`（hover、按下）· `--duration-base: 200ms`（展开、切换）· `--duration-slow: 300ms`（sheet、抽屉进出）· `--ease-standard: cubic-bezier(.2, 0, 0, 1)`。`prefers-reduced-motion: reduce` 时三个时长都归零。JS 侧（motion-v）不另设时长：`shared/motion/motionPolicy.ts` 只读取这些 token；overlay 进出场用同一组 token 的 CSS keyframes。动效只用于低频 UI chrome（menu / popover / dialog / sheet / 选中指示器 / chip 增删 / 详情头部进入），播放帧路径（3D、2D 场景、timeline、HP、camera）不使用。
+**当前动效实现基线**：`--duration-fast: 120ms`、`--duration-base: 200ms`、`--duration-slow: 300ms`、`--ease-standard: cubic-bezier(.2, 0, 0, 1)`。`prefers-reduced-motion: reduce` 目前令三个时长归零，JS 侧（motion-v）通过 `shared/motion/motionPolicy.ts` 读取这些 token；overlay 进出场沿用现有 CSS keyframes。这描述**已实现行为**，不再禁止未来有证据支持的 Spring Physics、手势中断、velocity handoff 或回放表现层动效。扩展时必须沿用单一 motion ownership，并以真实设备、回放事实一致性及性能回归作为 Outside Judge。
 
 场景型工作台（2D / 3D 回放、装甲查看器）内部的叠放用 `isolation: isolate` 建立局部层叠上下文，内部只用 1–9，不参与全局竞争。**隔离必须真的写出来**：`position: relative` 与 `overflow: hidden` 都不建立层叠上下文，少了 `isolation: isolate` 时局部的 1–9 会和页面里任何裸 z-index 在外壳的上下文里裸比大小，"局部刻度"只是错觉。当前隔离点：`.playback-workspace`（工作台根）与 `.pb-map`（2D 场景）。
 
