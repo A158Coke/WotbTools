@@ -4,7 +4,7 @@
 
 lifecycle 只有四个 orchestrating Skills（另有 operational 入口 `product-qa` 和委托 Executor 的收尾薄入口 `finish-task`，均不新增 lifecycle 阶段）：
 
-1. `designer` — deeply define the work；完整设计 pipeline authority 只在 `.agents/skills/designer/SKILL.md`，产出已批准/授权的 `docs/current-plan.md`；授权、手贴计划规范化与偏差边界只由该 Skill 定义。
+1. `designer` — deeply define the work；完整设计 pipeline authority 只在 `.agents/skills/designer/SKILL.md`，开发方案产出已批准/授权的 `docs/current-plan.md`，只读 UI Design Audit 直接交付 Findings 而不启动 Executor；授权、手贴计划规范化与偏差边界只由该 Skill 定义。
 2. `executor` — 执行已批准/授权的文件或手贴计划、targeted validation；review-with-docs PASS 后 commit/push/open PR；merge 后 cleanup。
 3. `prompt-repair` — 基于现成 repair prompt / PR findings 做 minimum-delta 增量修复；只有 finding 按 Designer 偏差边界证明设计实质失效才返回 Designer。
 4. `review-with-docs` — 验证 implementation against plan + repository reality + canonical docs + acceptance criteria 要求的 runtime evidence；唯一 final quality gate。
@@ -21,9 +21,10 @@ lifecycle 只有四个 orchestrating Skills（另有 operational 入口 `product
 | `wotb-sync.md` | designer / executor / prompt-repair / review-with-docs | 跨层改动：解析、列、API、导出、i18n、auth、Flyway |
 | `column-sync.md` | designer / executor / prompt-repair / review-with-docs | 新增/重命名/删除数据列 |
 | `frontend-architecture.md` | designer / executor / prompt-repair / review-with-docs | 前端目录、路由、状态 ownership、API transport 边界 |
+| `ui-design-review.md` | designer / executor / review-with-docs | UI DESIGN / AUDIT_ONLY / IMPLEMENT / VERIFY 路由；设计诊断只读，实施与 final gate 仍遵循现有 lifecycle；参考版本固定的 Refactoring UI + Apple Design |
 | `keycloak-upgrade`（目录） | designer / executor / prompt-repair / review-with-docs | Keycloak / SPI / provider 版本升级 |
 | `komodo-server-lifecycle.md` | designer / executor / prompt-repair / review-with-docs | 新增/迁移/下线服务器、Komodo Stack、持久数据迁移 |
-| `product-qa/`（目录） | 独立（用户显式触发） | 周期性 / 显式 production product audit（默认 `https://wotbtools.com`）；不是 PR final gate |
+| `product-qa/`（目录） | 独立（用户显式触发） | 周期性 / 显式 production product audit（默认 `https://wotbtools.com`）；先黑盒并冻结证据，UI/UX 任务随后调用 `ui-design-review.md` 的设计镜头；不是 PR final gate |
 | `code-quality.md` | review-with-docs | 代码质量与品味 9 项检查（正确性/边界 + 可维护性） |
 | `fallow.md` | review-with-docs | 前端 dead-code / circular-deps / duplication / complexity 诊断 |
 | `post-merge-cleanup.md` | executor | PR merge 后清理分支、worktree、current-plan 与任务状态 |
