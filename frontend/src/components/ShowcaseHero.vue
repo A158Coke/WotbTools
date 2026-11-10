@@ -70,7 +70,8 @@ const artStyle = computed(() => (props.section ? sectionHeroStyle(props.section)
 }
 
 /* 紧凑档横幅接近 12:1，cover 只能露出很窄的纵向带：焦点切换到 sectionHeroes 的
-   compactPosition（对准主体带），缺省回退桌面 position */
+   compactPosition（对准主体带），缺省回退桌面 position。
+   只在桌面断点生效；手机断点在下方用同优先级、更晚声明的规则恢复 portrait 遮罩与 mobilePosition */
 .showcase-hero.is-compact .showcase-hero-art--section {
   background: var(--theme-hero-section-scrim, var(--theme-hero-scrim)), var(--hero-image) var(--hero-pos-compact, var(--hero-pos, right center)) / cover, var(--color-surface-1);
 }
@@ -91,9 +92,12 @@ const artStyle = computed(() => (props.section ? sectionHeroStyle(props.section)
 .showcase-hero-stats :deep(strong) { display: block; color: var(--color-accent-text); font: var(--type-display); font-variant-numeric: tabular-nums; }
 .showcase-hero-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-block-start: var(--space-3); }
 
-/* 紧凑档：桌面高度随视口放宽——cover 的可见纵向占比 = (容器高/宽)×原图宽高比，与源图无关，
-   约 20vw（上限 384px）才有 ~43% 可见带，恰好装下坦克整体（炮管→负重轮）；
-   手机 96px 起可见带已近一半，维持不变。横幅只显示 kicker + 标题，操作在下方工具条 */
+/* 紧凑档：默认保持原有内容密度（桌面 132px、手机 96px 起）；
+   Replay 是经视觉验收确认的例外——cover 的可见纵向占比 = (容器高/宽)×原图宽高比，与源图无关，
+   约 12:1 的 132px 窄条只剩 ~12% 可见带，坦克被裁成炮管残片；
+   ~43% 可见带恰好装下坦克整体。矮桌面窗口（height < 700px，科技树等 flex scrollport
+   会被高横幅压缩）回退默认密度；手机可见带已近一半，不参与放宽。
+   横幅只显示 kicker + 标题，操作在下方工具条 */
 .showcase-hero-host.is-compact-host { display: grid; gap: var(--space-2); margin-block-end: var(--space-4); }
 .showcase-hero-host.is-compact-host .showcase-hero { margin-block-end: 0; }
 .showcase-hero-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); }
@@ -103,8 +107,18 @@ const artStyle = computed(() => (props.section ? sectionHeroStyle(props.section)
   align-items: center;
   gap: var(--space-2) var(--space-4);
   max-inline-size: none;
-  min-block-size: clamp(132px, 20vw, 384px);
+  min-block-size: 132px;
   padding: var(--space-4) var(--space-6);
+}
+@media (width >= 768px) {
+  .showcase-hero.is-compact[data-section='replay'] .showcase-hero-content {
+    min-block-size: clamp(132px, 20vw, 384px);
+  }
+}
+@media (width >= 768px) and (height < 700px) {
+  .showcase-hero.is-compact[data-section='replay'] .showcase-hero-content {
+    min-block-size: 132px;
+  }
 }
 .showcase-hero.is-compact .showcase-hero-title { font: var(--type-h2); }
 
@@ -116,6 +130,11 @@ const artStyle = computed(() => (props.section ? sectionHeroStyle(props.section)
   .showcase-hero.is-compact .showcase-hero-content {
     min-block-size: 96px;
     padding: var(--space-3) var(--space-4);
+  }
+  /* 与桌面 compact 覆盖规则同优先级（0,3,0），但声明在媒体查询内更晚命中：
+     恢复 portrait 遮罩与 mobilePosition，桌面 compactPosition 不影响手机端 */
+  .showcase-hero.is-compact .showcase-hero-art--section {
+    background: var(--theme-hero-section-scrim-portrait, var(--theme-hero-scrim-portrait)), var(--hero-image) var(--hero-pos-mobile, center) / cover, var(--color-surface-1);
   }
   .showcase-hero.is-compact .showcase-hero-title { font: var(--type-h3); }
   .showcase-hero-toolbar { justify-content: flex-start; }
