@@ -222,6 +222,10 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 - 分类色板：8 色，对色盲友好（参考 Okabe–Ito），深色三季共用一份、寒冬一份，都要在 `surface-1` 上 ≥ 3:1。
 - 顺序色板（热力图、穿透率等）：单色相，从浅到深；在亮色主题里方向反转。
 - 图表**一律带图例**，关键数值直接标在图上，不能只靠颜色读值。
+- **Battle Data 出生侧胜率分段条**（`BattleDataAdminPage.vue` `.spawn-bar`）是本节唯一约束到具体组件的例外，颜色表达**物理出生侧**（不是 Team 1 / Team 2，也不是胜负），四季固定：
+  - 先手侧（NORTH / WEST）胜场 → `--color-danger`（红）；后手侧（SOUTH / EAST）胜场 → `--color-info`（蓝）；平局 → `--color-border-strong`（中性灰），是独立第三段，不并入任一侧。
+  - track（底轨）用 `--color-surface-3`，整体加 1px `--color-border-strong` 实边框，条高 `var(--space-3)`（12px），颜色一律不透明。
+  - 门禁（`color-contrast.test.ts`）：每个 fill 对 track ≥ 3:1，1px 边界对行底色（`surface-1`）≥ 3:1，并断言组件 CSS 三段精确使用上述 token；四季主题都必须通过，改 token 时不能静默退化。
 
 ### 3.5 领域色：坦克类别
 
