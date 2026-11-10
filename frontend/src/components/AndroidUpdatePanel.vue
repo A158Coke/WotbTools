@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import AppSheet from './AppSheet.vue'
+import AppButton from './AppButton.vue'
 import type { AndroidUpdateController } from '../shared/androidUpdate.js'
 
 const props = defineProps<{ update: AndroidUpdateController }>()
@@ -48,11 +49,11 @@ function bytes(value: number | null | undefined): string {
         <p v-if="download.failureReason" class="android-update-hint" data-testid="update-failure">{{ $t(`androidUpdate.failure.${download.failureReason}`) }}</p>
       </section>
       <div class="android-update-actions">
-        <button type="button" class="btn btn-secondary" :disabled="checking || update.acting.value || selectingPackage" data-testid="update-refresh" @click="update.refresh">{{ $t('androidUpdate.check') }}</button>
-        <button v-if="canDownload || replaceUnsupported" type="button" class="btn btn-primary" :disabled="update.acting.value" data-testid="update-download-action" @click="update.download">{{ $t(replaceUnsupported ? 'androidUpdate.replaceDownload' : 'androidUpdate.download') }}</button>
-        <button v-if="canInstall" type="button" class="btn btn-primary" :disabled="update.acting.value" data-testid="update-install" @click="update.install">{{ $t(download?.state === 'installPermissionRequired' ? 'androidUpdate.allowInstall' : 'androidUpdate.install') }}</button>
-        <button v-if="snapshot?.state === 'optional'" type="button" class="btn btn-secondary" :disabled="update.acting.value || selectingPackage" data-testid="update-later" @click="update.dismiss(); update.close()">{{ $t('androidUpdate.later') }}</button>
-        <button type="button" class="btn btn-secondary" data-testid="update-close" @click="update.close">{{ $t('androidUpdate.close') }}</button>
+        <AppButton :disabled="checking || update.acting.value || selectingPackage" data-testid="update-refresh" @click="update.refresh">{{ $t('androidUpdate.check') }}</AppButton>
+        <AppButton v-if="canDownload || replaceUnsupported" variant="primary" :loading="update.acting.value" :disabled="update.acting.value" data-testid="update-download-action" @click="update.download">{{ $t(replaceUnsupported ? 'androidUpdate.replaceDownload' : 'androidUpdate.download') }}</AppButton>
+        <AppButton v-if="canInstall" variant="primary" :loading="update.acting.value" :disabled="update.acting.value" data-testid="update-install" @click="update.install">{{ $t(download?.state === 'installPermissionRequired' ? 'androidUpdate.allowInstall' : 'androidUpdate.install') }}</AppButton>
+        <AppButton v-if="snapshot?.state === 'optional'" :disabled="update.acting.value || selectingPackage" data-testid="update-later" @click="update.dismiss(); update.close()">{{ $t('androidUpdate.later') }}</AppButton>
+        <AppButton data-testid="update-close" @click="update.close">{{ $t('androidUpdate.close') }}</AppButton>
       </div>
     </section>
   </AppSheet>
@@ -70,5 +71,14 @@ function bytes(value: number | null | undefined): string {
 .android-update-download h3 { margin: 0; font: var(--type-h3); }
 .android-update-download progress { width: 100%; accent-color: var(--color-accent); }
 .android-update-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
-.android-update-actions button { min-height: var(--hit-min-comfortable); }
+/* AppButton md 高度低于移动端 44px 触控目标下限：更新弹窗保持 comfortable 命中高度。 */
+/* AppButton 默认 nowrap：俄文长操作文案（如「Разрешить установку и продолжить」）在 320px 视口须允许按钮内换行。 */
+.android-update-actions .app-button {
+  min-height: var(--hit-min-comfortable);
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
 </style>

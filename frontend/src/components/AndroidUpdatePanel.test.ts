@@ -146,6 +146,35 @@ describe('Android update panel', () => {
     wrapper.unmount()
   })
 
+  it('renders buttons with the shared AppButton design classes and preserved variants', () => {
+    const wrapper = render(controller())
+    expect(wrapper.get('[data-testid="update-refresh"]').classes())
+      .toEqual(expect.arrayContaining(['app-button', 'is-secondary']))
+    expect(wrapper.get('[data-testid="update-download-action"]').classes())
+      .toEqual(expect.arrayContaining(['app-button', 'is-primary']))
+    expect(wrapper.get('[data-testid="update-later"]').classes())
+      .toEqual(expect.arrayContaining(['app-button', 'is-secondary']))
+    expect(wrapper.get('[data-testid="update-close"]').classes())
+      .toEqual(expect.arrayContaining(['app-button', 'is-secondary']))
+    expect(wrapper.find('button.btn').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('renders the install action as a primary AppButton and keeps the spinner + disabled set while acting', () => {
+    const update = controller()
+    if (update.snapshot.value) update.snapshot.value.download.state = 'ready'
+    update.acting = ref(true)
+    const wrapper = render(update)
+    const install = wrapper.get('[data-testid="update-install"]')
+    expect(install.classes()).toEqual(expect.arrayContaining(['app-button', 'is-primary']))
+    expect(install.attributes('aria-busy')).toBe('true')
+    expect(install.classes()).toContain('is-loading')
+    for (const id of ['update-refresh', 'update-install', 'update-later']) {
+      expect(wrapper.get(`[data-testid="${id}"]`).attributes('disabled')).toBeDefined()
+    }
+    wrapper.unmount()
+  })
+
   it('translates every canonical state and failure category in all three locales', () => {
     const fields = contract.methods.getUpdateStatus.response.fields
     for (const locale of ['zh', 'en', 'ru'] as const) {
