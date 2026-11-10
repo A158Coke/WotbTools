@@ -132,6 +132,8 @@ const artStyle = computed(() => (props.section ? sectionHeroStyle(props.section)
     color: var(--theme-hero-title-color, var(--color-text-primary));
     text-shadow: var(--theme-hero-text-shadow, none);
   }
+  .showcase-hero-description { color: var(--theme-hero-description-color, var(--color-text-secondary)); }
+  .showcase-hero-stats :deep(strong) { color: var(--theme-hero-stat-color, var(--color-accent-text)); }
   .showcase-hero-content { padding: var(--space-10) var(--space-4) var(--space-4); }
   .showcase-hero-title { font: var(--type-h1); }
   .showcase-hero.is-compact .showcase-hero-content {

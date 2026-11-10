@@ -49,6 +49,20 @@ function heroProbe() {
   }
 }
 
+/** 完整档 Hero 探针：额外取 description 颜色（冬季手机端全档文字可读性门禁用）。 */
+function fullHeroProbe() {
+  const section = document.querySelector('.showcase-hero')
+  const h1 = section?.querySelector('h1')
+  const description = section?.querySelector('.showcase-hero-description')
+  if (!section || !h1) return null
+  return {
+    section: section.dataset.section ?? null,
+    compact: section.classList.contains('is-compact'),
+    titleColor: getComputedStyle(h1).color,
+    descriptionColor: description ? getComputedStyle(description).color : null,
+  }
+}
+
 function assertDesktopCompact(hero, { section, position }) {
   assert.equal(hero.section, section, `desktop ${section} must use its section hero`)
   assert.ok(hero.compact, `desktop ${section} must render compact`)
@@ -118,8 +132,8 @@ try {
       const mobile = await page.probe(heroProbe)
       assertMobileCompact(mobile, { section, position: mobilePosition })
       assert.ok(mobile.height >= heightLo && mobile.height <= heightHi, `mobile ${section} hero height must stay ${heightLo}-${heightHi}px: ${mobile.height}`)
-      // 冬季 portrait 遮罩实际生效：三处停靠点逐一比对（完整 backgroundImage，不拆层）——
-      // 旧遮罩 .97/.86/.24 缺 .84/.52/.10，负向可捕获泛白回归。
+      // 冬季 portrait 遮罩实际生效：两处停靠点（.15 → 0）逐一比对（完整 backgroundImage，不拆层）——
+      // 旧遮罩 .97/.86/.24 不含这两个停靠点，负向可捕获泛白回归。
       await page.evaluate(`localStorage.setItem('wotb-ui-profile', 'winter'); document.documentElement.setAttribute('data-ui-profile', 'winter'); document.documentElement.setAttribute('data-theme', 'light')`)
       await page.waitForValue(`getComputedStyle(document.querySelector('.showcase-hero-art')).backgroundImage`, value => value.includes(WINTER_PORTRAIT_STOPS[0]), { timeout: 20_000, label: 'winter portrait scrim' })
       const winter = await page.probe(heroProbe)
@@ -142,6 +156,32 @@ try {
       assert.ok(hero.height >= 120 && hero.height <= 140, `replay hero must fall back to compact density in short windows: ${hero.height}`)
       assert.ok(hero.titleBottom <= hero.heroBottom, 'replay title must stay inside the degraded banner')
       console.log(`[browser-showcase-hero] short-window replay: height=${hero.height} at 1920x540 passed`)
+    } finally { await chrome.client.send('Target.closeTarget', { targetId }) }
+  }
+
+  // 冬季手机端完整档 Hero（ContactPage 同构）：遮罩几乎全撤后 description / kicker / 标题
+  // 必须切浅色，且文字区域的实测像素对比度 ≥ 4.5:1（不只查 computed color）。
+  {
+    const { targetId, page } = await openAppPage({ width: 390, height: 844, profile: 'winter', view: 'contact' })
+    try {
+      const hero = await page.probe(fullHeroProbe)
+      assert.equal(hero.descriptionColor, 'rgb(216, 230, 244)', `winter full hero description must switch to light: ${hero.descriptionColor}`)
+      assert.equal(hero.titleColor, WINTER_TITLE_COLOR, `winter full hero title must switch to white: ${hero.titleColor}`)
+      // 像素级验收：截图说明文字矩形，取背景亮度 p90（排除字形墨水）计算对比度。
+      const rect = await page.evaluate(`(() => { const el = document.querySelector('.showcase-hero-description'); const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height } })()`)
+      const { data } = await chrome.client.send('Page.captureScreenshot', { format: 'png', clip: { ...rect, scale: 2 } }, page.sessionId)
+      const { default: sharp } = await import('sharp')
+      const { info, data: raw } = await sharp(Buffer.from(data, 'base64')).raw().toBuffer({ resolveWithObject: true })
+      const lums = []
+      for (let i = 0; i < raw.length; i += info.channels) lums.push((0.2126 * raw[i] + 0.7152 * raw[i + 1] + 0.0722 * raw[i + 2]) / 255)
+      lums.sort((a, b) => a - b)
+      const rel = c => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4))
+      const t = [216 / 255, 230 / 255, 244 / 255].map(rel)
+      const textLum = 0.2126 * t[0] + 0.7152 * t[1] + 0.0722 * t[2]
+      const bgLum = rel(lums[Math.floor(lums.length * 0.1)]) // 浅字深底：背景取暗分位（排除字形亮墨水）
+      const ratio = (Math.max(bgLum, textLum) + 0.05) / (Math.min(bgLum, textLum) + 0.05)
+      assert.ok(ratio >= 4.5, `winter full hero description contrast must be >= 4.5:1: ${ratio.toFixed(2)}:1`)
+      console.log(`[browser-showcase-hero] winter full hero (contact 390x844): description light + pixel contrast ${ratio.toFixed(2)}:1 passed`)
     } finally { await chrome.client.send('Target.closeTarget', { targetId }) }
   }
 

@@ -318,10 +318,13 @@
        深色标题在 .86 白底上的对比度仍有约 12:1，可读性不受影响。 */
     --theme-hero-section-scrim: linear-gradient(90deg, rgb(238 243 248 / .94) 0%, rgb(238 243 248 / .78) 48%, rgb(238 243 248 / .12) 100%);
     --theme-hero-section-scrim-portrait: linear-gradient(180deg, rgb(238 243 248 / .15) 0%, rgb(238 243 248 / 0) 45%);
-    /* 竖屏遮罩几乎全撤后，横幅文字改白色 + 深色描边（只在手机断点由组件启用），
-       图片 100% 清晰无任何遮挡 */
+    /* 竖屏遮罩已几乎全撤（.15 → 0，画面 100% 清晰），冬季手机横幅的全部文字
+       （kicker / 标题 / 说明 / 关键数字）改浅色 + 深色描边，只在手机断点由组件启用；
+       桌面左侧仍有 90° 白色遮罩，深色文字保持原样 */
     --theme-hero-title-color: #f2f7fb;
     --theme-hero-kicker-color: #cfe3f5;
+    --theme-hero-description-color: #d8e6f4;
+    --theme-hero-stat-color: #ffd166;
     --theme-hero-text-shadow: 0 1px 2px rgb(4 10 18 / .85), 0 0 8px rgb(4 10 18 / .6);
     --theme-glass: rgb(255 255 255 / .72);
     --theme-backdrop-image: url("../../assets/theme/backdrop-winter-wide.webp");
