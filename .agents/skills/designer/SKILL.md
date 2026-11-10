@@ -151,6 +151,8 @@ KEEP 时 `Scope delta: none`，不要写成长篇理论说明。
 ### Expert Inspection
 真正的领域专家会实际检查什么事实，而不是只给角色标签。
 
+UI / CSS / 响应式布局 / 前端状态任务额外检查（contract 正文见 `.agents/playbooks/frontend-architecture.md`「UI Change Contract」）：当前 owner 与目标 owner、是否已有可复用实现、是否会产生重复状态或覆盖规则、影响哪些页面 / 主题 / viewport、哪些用户可见状态必须独立验证。结论记入现有 Evidence / Design 章节，不新增独立 schema。
+
 ### Instruments
 需要什么 instrumentation / tools 才能观测问题，例如 profiler、benchmark harness、trace、browser/devtools、DB query、real device、representative replay corpus。
 
