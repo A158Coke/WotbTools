@@ -4,7 +4,7 @@ import { URL as NodeURL } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import { armorCameraPreset, armorPresetGunPitch, armorPresetViewPlacement } from './viewer/cameraPresets.js'
+import { armorCameraPreset, armorPresetGunPitch, armorPresetPlacement } from './viewer/cameraPresets.js'
 
 // 执行场景内真实 setCameraPreset（不复制实现）；模型/炮管闭包用测试替身，
 // 保留真实 OrbitControls 数学、输入处理与 cameraPresets 纯函数。
@@ -15,7 +15,7 @@ const presetSource = source.slice(
 )
 
 function bindPreset(camera, controls) {
-  return new Function('THREE', 'camera', 'controls', 'armorPresetGunPitch', 'armorCameraPreset', 'armorPresetViewPlacement', `
+  return new Function('THREE', 'camera', 'controls', 'armorPresetGunPitch', 'armorCameraPreset', 'armorPresetPlacement', `
     const destroyed = false, contextLost = false, ARMOR_REF_DIST = 15;
     const QP = new URLSearchParams();
     // #820 拆分后：模型/世界米制 owner = modelLifecycle.ts（ml），炮塔/炮管 owner = turretRig.ts（rig），
@@ -33,7 +33,7 @@ function bindPreset(camera, controls) {
     const currentConfig = () => ({ pitch_limits: { down: -20, up: 20 } });
     ${presetSource}
     return { setCameraPreset, pose: () => ({ turretDeg: currentTurretDeg, gunDeg: currentGunDeg }) };
-  `)(THREE, camera, controls, armorPresetGunPitch, armorCameraPreset, armorPresetViewPlacement)
+  `)(THREE, camera, controls, armorPresetGunPitch, armorCameraPreset, armorPresetPlacement)
 }
 
 function makeScene() {
@@ -59,7 +59,7 @@ const pointer = (target, type, x) => target.dispatchEvent(new PointerEvent(type,
 }))
 
 describe('装甲相机预设保留用户取景（preserveView）', () => {
-  it.each(['hull_down', 'front'])('%s：平移惯性在途时点击，旋转中心与距离都不跳变', kind => {
+  it.each(['hull_down', 'front'])('%s：平移惯性在途时点击，机位上炮轴线、炮管指向镜头，距离不跳变', kind => {
     const { canvas, camera, controls } = makeScene()
     const preset = bindPreset(camera, controls)
     try {
@@ -69,20 +69,27 @@ describe('装甲相机预设保留用户取景（preserveView）', () => {
         controls.update()
       }
       pointer(document, 'pointerup', 443)
-      // 不再 update：平移惯性仍在途（panOffset 残余），此刻的 target 就是用户看到的旋转中心。
-      const targetAtClick = controls.target.clone()
-      const distanceAtClick = camera.position.distanceTo(targetAtClick)
+      // 不再 update：平移惯性仍在途（panOffset 残余），此刻的距离就是用户的缩放层级。
+      const distanceAtClick = camera.position.distanceTo(controls.target)
       const positionAtClick = camera.position.clone()
+      // stub 炮线枢轴 = (0,0,2)（matrixWorld=identity），炮线方向 = (0,1,0)。
+      const pivotAtClick = new THREE.Vector3(0, 0, 2)
 
       expect(preset.setCameraPreset(kind, { preserveView: true })).toBe(true)
 
-      expect(controls.target.distanceTo(targetAtClick)).toBeLessThan(1e-9)
-      expect(camera.position.distanceTo(targetAtClick)).toBeCloseTo(distanceAtClick, 8)
-      // 预设确实接管了观察方向（新机位 ≠ 点击前机位）且惯性被清空。
+      // 机位在炮轴线上：target = 炮线枢轴，相机 = 枢轴 + 炮线方向 × 用户距离（炮管正对镜头）。
+      expect(controls.target.distanceTo(pivotAtClick)).toBeLessThan(1e-9)
+      expect(camera.position.distanceTo(pivotAtClick)).toBeCloseTo(distanceAtClick, 8)
+      expect(camera.position.x).toBeCloseTo(0, 8)
+      expect(camera.position.y).toBeCloseTo(distanceAtClick, 8)
+      // stub 炮线方向 = 正上方，OrbitControls makeSafe 有 EPS=1e-6 极角下限，
+      // update() roundtrip 后 z 偏 ~15·1e-6；真实模型根带 Rx(-90°) 炮线水平，不触发。
+      expect(camera.position.z).toBeCloseTo(2, 4)
+      // 预设确实接管了机位（新机位 ≠ 点击前机位）且惯性被清空。
       expect(camera.position.distanceTo(positionAtClick)).toBeGreaterThan(0.01)
       for (let frame = 0; frame < 30; frame++) {
         controls.update()
-        expect(controls.target.distanceTo(targetAtClick)).toBeLessThan(1e-9)
+        expect(controls.target.distanceTo(pivotAtClick)).toBeLessThan(1e-9)
       }
     } finally {
       canvas.remove()

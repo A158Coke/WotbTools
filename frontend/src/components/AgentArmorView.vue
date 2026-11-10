@@ -822,7 +822,7 @@ onBeforeUnmount(() => {
         <div id="shot-replay-error" role="alert" aria-live="assertive" style="display:none;"></div>
         <div id="turret-controls">
             <div v-if="!isShotPage && !cleanQuery" class="armor-camera-presets" role="group" :aria-label="$t('armor.camera_presets')">
-                <!-- preserveView：预设只换观察方向，不动用户平移出的旋转中心（0x5f3759df 反馈） -->
+                <!-- preserveView：保留用户缩放距离；机位上炮轴线、看向炮线枢轴，炮管指向镜头（0x5f3759df / 2026-11-10 反馈） -->
                 <button type="button" class="armor-scene-button" data-testid="armor-camera-front" :disabled="load.state !== 'ready'" @click="viewer?.setCameraPreset?.('front', { preserveView: true })">{{ $t('armor.camera_front') }}</button>
                 <button type="button" class="armor-scene-button" data-testid="armor-camera-hull-down" :disabled="load.state !== 'ready'" @click="viewer?.setCameraPreset?.('hull_down', { preserveView: true })">{{ $t('armor.camera_hull_down') }}</button>
             </div>

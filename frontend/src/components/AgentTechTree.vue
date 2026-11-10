@@ -499,14 +499,20 @@ onMounted(() => {
   object-fit: contain;
 }
 
+/* 名字横贯卡片下缘，正压在坦克贴图（图标盒 97×60）的下半上：贴图是不透明的深色车体，
+   浅色主题（冬）的近黑文字直接混进贴图里。名字自带一层卡片表面色 → 透明的雾化
+   scrim——文字永远落在自家表面色上，所有卡片、所有主题同一规则（2026-11-10 反馈）；
+   竖屏 92×48 行形态共用此规则。padding 复刻原 2/4px 内缩，文字可用宽度不变。 */
 .tt-card-name {
   position: absolute;
-  inset-block-end: 2px;
-  inset-inline: 4px;
+  inset-block-end: 0;
+  inset-inline: 0;
+  padding: 0 4px 2px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   text-align: center;
+  background: linear-gradient(to top, var(--color-surface-1) 70%, transparent);
   color: var(--color-text-primary);
   font: var(--type-caption);
   font-weight: 600;
