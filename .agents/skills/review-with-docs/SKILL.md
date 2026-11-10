@@ -85,7 +85,7 @@ Task-related candidate tree contains changes but review scope is empty.
 
 ## 内部 playbooks
 
-按需加载 `.agents/playbooks/`：`code-quality.md`（代码质量与品味检查）、`fallow.md`、`wotb-sync.md`、`column-sync.md`、`frontend-architecture.md`、`keycloak-upgrade/`、`komodo-server-lifecycle.md`。
+按需加载 `.agents/playbooks/`：`code-quality.md`（代码质量与品味检查）、`fallow.md`、`wotb-sync.md`、`column-sync.md`、`frontend-architecture.md`、`ui-design-review.md`（UI 任务）、`keycloak-upgrade/`、`komodo-server-lifecycle.md`。
 
 它们是 checklist/tool guidance，不拥有 lifecycle actions，也不是顶层 Skill。`product-qa/` 是独立的周期性 production product audit playbook，不属于本 Skill 的审查阶段。
 
@@ -102,6 +102,13 @@ Task-related candidate tree contains changes but review scope is empty.
 7. **Layer C**：reconcile findings，计算 blocker。
 8. **Fix → re-review**：可修 BLOCKER/MAJOR 持续修复后只重跑受影响 scope；按 Designer「授权、计划输入与偏差边界」遇到 HARD STOP 才暂停依赖步骤。
 9. **Report**：Plan compliance + Findings + Validation + Final。
+
+## UI Design Evidence Gate（仅针对影响视觉/交互的 candidate）
+
+- 当 PR/任务涉及布局、组件视觉、材质、动效、触控或设计契约变更时，**必须加载** `.agents/playbooks/ui-design-review.md`；它属于本 Skill 的领域审查，而不是独立 final gate。纯文本设计审计仍由 Designer 的 AUDIT_ONLY 承担，不由此入口替代。
+- 审查结果必须对照任务计划、受影响的 `DC-*`、实际渲染证据和相关浏览器/设备测试。核对 Before/After 是否采用相同 route、viewport、profile、数据与状态；复核截图中可读性、UI 遮挡，交互录屏中的动画中断与 Reduced Motion。
+- **证据有范围**：静态 lint/单测证明代码与 token 约束，但不证明视觉、动态合成对比度或移动端帧性能。若计划/Contract 要求的独立运行时验证缺失，相应验收为 `UNVERIFIED` 并按本 Skill 的既有 blocker 规则处理；不得以“看起来更高级”或 CI 绿色替代。
+- 检查旧设计限制变动是否明确更新原 `docs/frontend/design-language.md`，没有引入第二份 Token/Motion SSOT、默认新依赖或回放事实漂移。Stylelint 与截图不代替实际交互，反之亦然。
 
 ## HTTP Contract Gate
 
