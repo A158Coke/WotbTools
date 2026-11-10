@@ -1485,12 +1485,18 @@ function shotLandscapeProbe() {
     const hit = document.elementFromPoint(x, y)
     return {
       ...box(selector),
-      center: { x, y },
+      // 触控派发（Input.dispatchTouchEvent）只收整数坐标；elementFromPoint 用原始中心。
+      center: { x: Math.round(x), y: Math.round(y) },
       hit: hit === element || (!!hit && element.contains(hit)),
       hitDescription: hit ? `${hit.tagName}${typeof hit.className === 'string' && hit.className.trim() ? `.${hit.className.trim().split(/\s+/).join('.')}` : ''}` : null,
     }
   }
   const viewSwitch = box('.armor-shot-view-switch')
+  const resultElement = document.querySelector('#traj-info')?.getClientRects().length ? document.querySelector('#traj-info') : document.querySelector('#click-info')
+  const resultCenter = (() => {
+    const rect = resultElement?.getBoundingClientRect()
+    return rect && rect.width > 0 ? { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) } : null
+  })()
   const relBtn = hitTest('#rel-view-toggle')
   const worldBtn = hitTest('#world-view-toggle')
   const back = box('.armor-back')
@@ -1504,6 +1510,9 @@ function shotLandscapeProbe() {
     viewport: { width: innerWidth, height: innerHeight },
     capsule,
     result: box('#traj-info')?.visible ? box('#traj-info') : box('#click-info'),
+    resultCenter,
+    resultExpanded: !!document.querySelector('#traj-info.is-expanded, #click-info.is-expanded'),
+    postureControls: box('#turret-controls'),
     shotPanel: box('#corner-tr'),
     viewSwitch,
     relBtn,
@@ -1551,56 +1560,72 @@ async function runShotLandscapeScenario(env, scenario) {
   check(failures, layout.shotHeader?.visible === true, `${label}: 射击复现顶栏丢失（${JSON.stringify(layout.shotHeader)}）`)
   checkCommonGeometry(failures, layout, label)
   const shot = await page.probe(shotLandscapeProbe)
-  // 右下共享布局：射击参数面板与视角切换必须同时可见且互不相交（含左上胶囊 / 结果胶囊）。
-  const visibleBoxes = Object.entries({ capsule: shot.capsule, result: shot.result, shotPanel: shot.shotPanel, viewSwitch: shot.viewSwitch })
-    .filter(([, box]) => box?.visible === true)
-  check(failures, visibleBoxes.some(([name]) => name === 'shotPanel') && visibleBoxes.some(([name]) => name === 'viewSwitch'),
-    `${label}: 射击参数面板或视角切换不可见（${JSON.stringify({ shotPanel: shot.shotPanel, viewSwitch: shot.viewSwitch })}）`)
-  for (let a = 0; a < visibleBoxes.length; a++) {
-    for (let b = a + 1; b < visibleBoxes.length; b++) {
-      const [nameA, boxA] = visibleBoxes[a]
-      const [nameB, boxB] = visibleBoxes[b]
-      check(failures, !rectsOverlap(boxA, boxB),
-        `${label}: ${nameA} 与 ${nameB} 相交（${nameA}=${JSON.stringify(boxA)} ${nameB}=${JSON.stringify(boxB)}）`)
+  /** F1：四个 HUD 区域先显式断言存在且可见（缺失 = fail，而不是静默跳过对应互斥断言）；
+      shot 页姿态面板 #turret-controls 由场景隐藏（标注交给 3D），锁定其不可见契约后，
+      互斥检查覆盖全部实际可见盒。 */
+  const assertShotGeometry = (snapshot, phase) => {
+    for (const name of ['capsule', 'result', 'shotPanel', 'viewSwitch']) {
+      check(failures, snapshot[name]?.visible === true,
+        `${label}${phase}: ${name} 不可见/不可测（${JSON.stringify(snapshot[name])}）`)
+    }
+    check(failures, snapshot.postureControls?.visible === false,
+      `${label}${phase}: shot 页姿态面板必须由场景隐藏（${JSON.stringify(snapshot.postureControls)}）`)
+    const visibleBoxes = Object.entries({ capsule: snapshot.capsule, result: snapshot.result, shotPanel: snapshot.shotPanel, viewSwitch: snapshot.viewSwitch })
+      .filter(([, box]) => box?.visible === true)
+    for (let a = 0; a < visibleBoxes.length; a++) {
+      for (let b = a + 1; b < visibleBoxes.length; b++) {
+        const [nameA, boxA] = visibleBoxes[a]
+        const [nameB, boxB] = visibleBoxes[b]
+        check(failures, !rectsOverlap(boxA, boxB),
+          `${label}${phase}: ${nameA} 与 ${nameB} 相交（${nameA}=${JSON.stringify(boxA)} ${nameB}=${JSON.stringify(boxB)}）`)
+      }
+    }
+    check(failures, snapshot.horizontalOverflow === false, `${label}${phase}: shot 页横屏出现横向溢出`)
+  }
+  /** 真实触摸命中（不是只看截图）：两枚视角按钮 + HUD 弹种按钮 + 距离滑条必须是自己区域的真实命中目标。 */
+  const assertTouchTargets = (snapshot, phase) => {
+    for (const [name, target] of Object.entries({ relBtn: snapshot.relBtn, worldBtn: snapshot.worldBtn, hudShell: snapshot.hudShell, distanceInput: snapshot.distanceInput })) {
+      check(failures, target?.visible === true && target.hit === true && target.inside !== false,
+        `${label}${phase}: ${name} 不是真实触控目标（hit=${target?.hit} hitDescription=${target?.hitDescription} box=${JSON.stringify(target)}）`)
     }
   }
-  check(failures, shot.horizontalOverflow === false, `${label}: shot 页横屏出现横向溢出`)
-  // 真实触摸命中（不是只看截图）：两枚视角按钮 + HUD 弹种按钮 + 距离滑条必须是自己区域的真实命中目标。
-  for (const [name, target] of Object.entries({ relBtn: shot.relBtn, worldBtn: shot.worldBtn, hudShell: shot.hudShell, distanceInput: shot.distanceInput })) {
-    check(failures, target?.visible === true && target.hit === true && target.inside !== false,
-      `${label}: ${name} 不是真实触控目标（hit=${target?.hit} hitDescription=${target?.hitDescription} box=${JSON.stringify(target)}）`)
-  }
-  // 视角来回切换的真实接线（与 runShotActionsScenario 同契约，在横屏 HUD 布局下复核）。
-  await page.tap({ ...shot.relBtn.center, touch: scenario.touch })
-  await page.waitForValue(`(() => ({
+  assertShotGeometry(shot, '')
+  assertTouchTargets(shot, '')
+  // F3：HIT 默认已进入相对视角，此时点 relBtn 是 no-op（setImpactView 早期返回）。
+  // 真正的往返 = world → rel → world，每步都校验 aria-pressed 互斥与相机距离。
+  const viewState = `(() => ({
     impact: document.querySelector('#rel-view-toggle')?.getAttribute('aria-pressed'),
     overview: document.querySelector('#world-view-toggle')?.getAttribute('aria-pressed'),
     distance: window.__armorRicochet?.aimingState()?.cameraDistance,
-  }))()`, value => value.impact === 'true' && value.overview === 'false' && Math.abs(value.distance - 15) < .1,
-    { timeout: 15000, label: 'impact camera re-selected from landscape HUD' })
+  }))()`
   await page.tap({ ...shot.worldBtn.center, touch: scenario.touch })
-  await page.waitForValue(`(() => ({
-    impact: document.querySelector('#rel-view-toggle')?.getAttribute('aria-pressed'),
-    overview: document.querySelector('#world-view-toggle')?.getAttribute('aria-pressed'),
-    distance: window.__armorRicochet?.aimingState()?.cameraDistance,
-  }))()`, value => value.overview === 'true' && value.impact === 'false' && value.distance > 20,
-    { timeout: 15000, label: 'overview camera restored from landscape HUD' })
-  // 参数面板展开/关闭（参数抽屉）后右下共享布局仍成立。
+  await page.waitForValue(viewState, value => value.overview === 'true' && value.impact === 'false' && value.distance > 20,
+    { timeout: 15000, label: 'overview camera from default impact view' })
+  await page.tap({ ...shot.relBtn.center, touch: scenario.touch })
+  await page.waitForValue(viewState, value => value.impact === 'true' && value.overview === 'false' && Math.abs(value.distance - 15) < .1,
+    { timeout: 15000, label: 'impact camera re-selected from overview' })
+  await page.tap({ ...shot.worldBtn.center, touch: scenario.touch })
+  await page.waitForValue(viewState, value => value.overview === 'true' && value.impact === 'false' && value.distance > 20,
+    { timeout: 15000, label: 'overview restored after full round trip' })
+  // F2：结果胶囊展开（逐层明细）在最小视口也不得压到右下列；展开后收起恢复胶囊。
+  await page.tap({ ...shot.resultCenter, touch: scenario.touch })
+  await page.waitForValue(`!!document.querySelector('#traj-info.is-expanded, #click-info.is-expanded')`, value => value === true,
+    { label: 'result details expanded' })
+  assertShotGeometry(await page.probe(shotLandscapeProbe), ' 结果展开')
+  await page.tap({ ...shot.resultCenter, touch: scenario.touch })
+  await page.waitForValue(`!!document.querySelector('#traj-info.is-expanded, #click-info.is-expanded')`, value => value === false,
+    { label: 'result details collapsed' })
+  // F2：参数面板展开/关闭（参数抽屉）后右下共享布局仍成立；关闭后重新执行几何与触摸命中。
   await page.tap({ ...layout.tools.center, touch: scenario.touch })
   await page.waitForValue(`document.querySelector('.armor-stage').className`, value => value.includes('is-tools-open'),
     { label: 'tools drawer open' })
-  const openedShot = await page.probe(shotLandscapeProbe)
-  const openedBoxes = Object.entries({ capsule: openedShot.capsule, result: openedShot.result, shotPanel: openedShot.shotPanel, viewSwitch: openedShot.viewSwitch })
-    .filter(([, box]) => box?.visible === true)
-  for (let a = 0; a < openedBoxes.length; a++) {
-    for (let b = a + 1; b < openedBoxes.length; b++) {
-      const [nameA, boxA] = openedBoxes[a]
-      const [nameB, boxB] = openedBoxes[b]
-      check(failures, !rectsOverlap(boxA, boxB),
-        `${label}: 参数展开后 ${nameA} 与 ${nameB} 相交（${nameA}=${JSON.stringify(boxA)} ${nameB}=${JSON.stringify(boxB)}）`)
-    }
-  }
+  assertShotGeometry(await page.probe(shotLandscapeProbe), ' 参数展开')
   await page.tap({ ...layout.tools.center, touch: scenario.touch })
+  await page.waitForValue(`document.querySelector('.armor-stage').className`, value => !value.includes('is-tools-open'),
+    { label: 'tools drawer closed' })
+  const closedShot = await page.probe(shotLandscapeProbe)
+  assertShotGeometry(closedShot, ' 参数关闭')
+  assertTouchTargets(closedShot, ' 参数关闭')
   check(failures, page.consoleErrors.length === 0, `${label}: JS errors: ${page.consoleErrors.join(' | ')}`)
   await env.chrome.client.send('Target.closeTarget', { targetId })
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })

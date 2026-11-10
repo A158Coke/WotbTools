@@ -1314,6 +1314,13 @@ onBeforeUnmount(() => {
     .armor-view #click-info .row > span:first-child { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; }
     .armor-view #click-info #click-armor { flex: none; }
     .armor-view #traj-info { max-block-size: 72px; }
+    /* 展开态明细卡必须留在左上 / 左中带：780×360 实测展开卡（top 79 + 72px）会伸进
+       右下共享列的参数面板。高度收到 48px（overflow-y 继承基础滚动），宽度与收起态
+       同公式，任何 Judge 视口都不与右下列相交。 */
+    .armor-view #traj-info.is-expanded {
+        max-block-size: 48px;
+        max-inline-size: max(6rem, calc(100% - 32.5rem - var(--immersive-nav-reserve) - max(var(--space-5), env(safe-area-inset-left)) - max(var(--space-5), env(safe-area-inset-right))));
+    }
     .armor-view #traj-info:not(.is-expanded) { max-inline-size: max(6rem, calc(100% - 32.5rem - var(--immersive-nav-reserve) - max(var(--space-5), env(safe-area-inset-left)) - max(var(--space-5), env(safe-area-inset-right)))); }
     .armor-view #corner-tr {
         inline-size: 15rem;
