@@ -15,12 +15,43 @@ import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 
-// 冬季竖屏分区遮罩的三处停靠点（Chrome computed style 归一化为 rgba(...)）。
-// 必须逐一断言完整 opacity：只查 RGB 的话旧遮罩（.97/.86/.24）与新遮罩（.84/.52/.10）都会命中。
-// 冬季竖屏遮罩已几乎全撤（.15 → 0），标题可读性由 --theme-hero-text-veil 玻璃底板承担；
-// 旧遮罩（.97/.86/.24）不含这两个停靠点，负向可捕获泛白回归。
+// 冬季竖屏分区遮罩已几乎全撤：两处停靠点（.15 → 0，Chrome computed style 归一化为 rgba(...)）。
+// 完整 backgroundImage 逐一比对完整 opacity——旧遮罩（.97/.86/.24）不含这两个停靠点，
+// 负向可捕获泛白回归；标题可读性由手机断点的浅色文字 + 深色描边承担（无玻璃底板）。
 const WINTER_PORTRAIT_STOPS = ['rgba(238, 243, 248, 0.15)', 'rgba(238, 243, 248, 0)']
 const WINTER_TITLE_COLOR = 'rgb(242, 247, 251)'
+
+// sRGB 逐通道线性化后的相对亮度（WCAG）。
+function relativeLuminance([r, g, b]) {
+  const rel = c => (c /= 255) <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
+  return 0.2126 * rel(r) + 0.7152 * rel(g) + 0.0722 * rel(b)
+}
+
+// 纯背景像素中对比度 ≥ 4.5:1 的面积占比（浅色文字对不利亮背景的确定性检查）。
+function backgroundContrastFraction(raw, channels, textLum) {
+  let pass = 0
+  let total = 0
+  for (let i = 0; i < raw.length; i += channels) {
+    const bgLum = relativeLuminance([raw[i], raw[i + 1], raw[i + 2]])
+    if ((Math.max(bgLum, textLum) + 0.05) / (Math.min(bgLum, textLum) + 0.05) >= 4.5) pass += 1
+    total += 1
+  }
+  return total ? pass / total : 0
+}
+
+// 负向自检：11% 黑 + 89% 白的背景（浅色文字）必须不达标——防止检查退化成
+// 只看最暗分位的漏检。此断言在每次运行时确定性执行。
+{
+  const white = [255, 255, 255]
+  const black = [0, 0, 0]
+  const mixed = []
+  for (let i = 0; i < 1000; i++) mixed.push(...(i % 9 === 0 ? black : white))
+  const fraction = backgroundContrastFraction(mixed, 3, relativeLuminance([216, 230, 244]))
+  assert.ok(fraction < 0.9, `contrast self-test must reject a mostly-white background: ${(fraction * 100).toFixed(1)}%`)
+  const dark = []
+  for (let i = 0; i < 3000; i++) dark.push(...[10, 14, 20])
+  assert.equal(backgroundContrastFraction(dark, 3, relativeLuminance([216, 230, 244])), 1, 'contrast self-test must accept a uniformly dark background')
+}
 
 /** 页面内探针：取紧凑横幅的 computed style 与几何（Page.probe 会序列化，不能引用模块作用域）。 */
 function heroProbe() {
@@ -160,28 +191,25 @@ try {
   }
 
   // 冬季手机端完整档 Hero（ContactPage 同构）：遮罩几乎全撤后 description / kicker / 标题
-  // 必须切浅色，且文字区域的实测像素对比度 ≥ 4.5:1（不只查 computed color）。
+  // 必须切浅色，且文字区域的实测背景像素对比度 ≥ 4.5:1（不只查 computed color）。
   {
     const { targetId, page } = await openAppPage({ width: 390, height: 844, profile: 'winter', view: 'contact' })
     try {
       const hero = await page.probe(fullHeroProbe)
       assert.equal(hero.descriptionColor, 'rgb(216, 230, 244)', `winter full hero description must switch to light: ${hero.descriptionColor}`)
       assert.equal(hero.titleColor, WINTER_TITLE_COLOR, `winter full hero title must switch to white: ${hero.titleColor}`)
-      // 像素级验收：截图说明文字矩形，取背景亮度 p90（排除字形墨水）计算对比度。
-      const rect = await page.evaluate(`(() => { const el = document.querySelector('.showcase-hero-description'); const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height } })()`)
+      // 像素级验收：隐藏文字后截取说明文字矩形 = 纯背景；逐像素 sRGB 线性化亮度，
+      // 与文字亮度逐一算对比度；≥ 90% 的背景像素必须达标——大面积不利亮背景无法靠
+      // 少数暗像素蒙混（11% 黑 + 89% 白的负向自检保证必然失败）。
+      const rect = await page.evaluate(`(() => { const el = document.querySelector('.showcase-hero-description'); el.style.visibility = 'hidden'; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height } })()`)
       const { data } = await chrome.client.send('Page.captureScreenshot', { format: 'png', clip: { ...rect, scale: 2 } }, page.sessionId)
+      await page.evaluate(`(() => { document.querySelector('.showcase-hero-description').style.visibility = '' })()`)
       const { default: sharp } = await import('sharp')
       const { info, data: raw } = await sharp(Buffer.from(data, 'base64')).raw().toBuffer({ resolveWithObject: true })
-      const lums = []
-      for (let i = 0; i < raw.length; i += info.channels) lums.push((0.2126 * raw[i] + 0.7152 * raw[i + 1] + 0.0722 * raw[i + 2]) / 255)
-      lums.sort((a, b) => a - b)
-      const rel = c => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4))
-      const t = [216 / 255, 230 / 255, 244 / 255].map(rel)
-      const textLum = 0.2126 * t[0] + 0.7152 * t[1] + 0.0722 * t[2]
-      const bgLum = rel(lums[Math.floor(lums.length * 0.1)]) // 浅字深底：背景取暗分位（排除字形亮墨水）
-      const ratio = (Math.max(bgLum, textLum) + 0.05) / (Math.min(bgLum, textLum) + 0.05)
-      assert.ok(ratio >= 4.5, `winter full hero description contrast must be >= 4.5:1: ${ratio.toFixed(2)}:1`)
-      console.log(`[browser-showcase-hero] winter full hero (contact 390x844): description light + pixel contrast ${ratio.toFixed(2)}:1 passed`)
+      const textLum = relativeLuminance([216, 230, 244])
+      const passFraction = backgroundContrastFraction(raw, info.channels, textLum)
+      assert.ok(passFraction >= 0.9, `winter full hero description background must keep 4.5:1 over >=90% of its area: ${(passFraction * 100).toFixed(1)}%`)
+      console.log(`[browser-showcase-hero] winter full hero (contact 390x844): description light + background contrast ${(passFraction * 100).toFixed(1)}% area passed`)
     } finally { await chrome.client.send('Target.closeTarget', { targetId }) }
   }
 
