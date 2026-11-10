@@ -1453,8 +1453,141 @@ async function runShotActionsScenario(env, scenario) {
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
 }
 
-/** 手机横屏射击复现页：沉浸态 + 流内「操作提示」节整节让位（竖屏 / 平板 / 桌面保留，由 runShotActionsScenario 锁定）。 */
-const SHOT_LANDSCAPE_SCENARIO = { name: 'armor-shot-landscape-phone', width: 740, height: 360, touch: true }
+/** 手机横屏射击复现页：沉浸态 + 流内「操作提示」节整节让位（竖屏 / 平板 / 桌面保留，由 runShotActionsScenario 锁定）。
+    Outside Judge 视口：844×390 / 780×360 / 740×360 / 600×320（844/780 按真机注入左右 safe-area）。 */
+const SHOT_LANDSCAPE_SCENARIOS = [
+  { name: 'armor-shot-landscape-844x390', width: 844, height: 390, touch: true, safeAreaInsets: { left: 47, right: 47 } },
+  { name: 'armor-shot-landscape-780x360', width: 780, height: 360, touch: true, safeAreaInsets: { left: 47, right: 47 } },
+  { name: 'armor-shot-landscape-phone', width: 740, height: 360, touch: true },
+  { name: 'armor-shot-landscape-600x320', width: 600, height: 320, touch: true },
+]
+/** 单发分析页右下/左上 chrome 的几何快照：射击参数面板（#corner-tr）与视角切换
+    （#corner-br = .armor-shot-view-switch）必须两两不相交，且视角按钮是真实触控目标。 */
+function shotLandscapeProbe() {
+  const box = (selector) => {
+    const element = document.querySelector(selector)
+    if (!element) return null
+    const rect = element.getBoundingClientRect()
+    const style = getComputedStyle(element)
+    return {
+      top: Math.round(rect.top), bottom: Math.round(rect.bottom),
+      left: Math.round(rect.left), right: Math.round(rect.right),
+      width: Math.round(rect.width), height: Math.round(rect.height),
+      display: style.display,
+      visible: rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden',
+    }
+  }
+  const hitTest = (selector) => {
+    const element = document.querySelector(selector)
+    if (!element) return null
+    const rect = element.getBoundingClientRect()
+    const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2
+    // 触控派发（Input.dispatchTouchEvent）只收整数坐标：inside 按最终派发的取整坐标判定。
+    const tx = Math.round(x), ty = Math.round(y)
+    const hit = document.elementFromPoint(x, y)
+    return {
+      ...box(selector),
+      center: { x: tx, y: ty },
+      hit: hit === element || (!!hit && element.contains(hit)),
+      hitDescription: hit ? `${hit.tagName}${typeof hit.className === 'string' && hit.className.trim() ? `.${hit.className.trim().split(/\s+/).join('.')}` : ''}` : null,
+      inside: Number.isFinite(tx) && Number.isFinite(ty)
+        && tx >= 0 && ty >= 0 && tx <= innerWidth && ty <= innerHeight
+        && rect.left >= 0 && rect.right <= innerWidth + 1 && rect.top >= 0 && rect.bottom <= innerHeight + 1,
+    }
+  }
+  const viewSwitch = box('.armor-shot-view-switch')
+  const resultElement = document.querySelector('#traj-info')?.getClientRects().length ? document.querySelector('#traj-info') : document.querySelector('#click-info')
+  const resultCenter = (() => {
+    const rect = resultElement?.getBoundingClientRect()
+    return rect && rect.width > 0 ? { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) } : null
+  })()
+  const relBtn = hitTest('#rel-view-toggle')
+  const worldBtn = hitTest('#world-view-toggle')
+  const back = box('.armor-back')
+  const topCard = box('#corner-tl')
+  const capsule = back && topCard ? {
+    top: Math.min(back.top, topCard.top), bottom: Math.max(back.bottom, topCard.bottom),
+    left: Math.min(back.left, topCard.left), right: Math.max(back.right, topCard.right),
+    visible: back.visible && topCard.visible,
+  } : (topCard || back)
+  return {
+    viewport: { width: innerWidth, height: innerHeight },
+    capsule,
+    result: box('#traj-info')?.visible ? box('#traj-info') : box('#click-info'),
+    resultCenter,
+    resultExpanded: !!document.querySelector('#traj-info.is-expanded, #click-info.is-expanded'),
+    postureControls: box('#turret-controls'),
+    shotPanel: box('#corner-tr'),
+    viewSwitch,
+    relBtn,
+    worldBtn,
+    hudShell: hitTest('[data-testid="hud-shell-0"]'),
+    distanceInput: hitTest('#armor-distance'),
+    horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+  }
+}
+/** 抽屉遮挡探针（仅在抽屉展开时执行）：抽屉与右下 HUD 的真实交集区、交集内命中归属、
+    滚到抽屉底部后的最下方交互控件是否仍被抽屉自身命中。 */
+const drawerOcclusionProbe = () => {
+  const box = (selector) => {
+    const element = document.querySelector(selector)
+    if (!element) return null
+    const rect = element.getBoundingClientRect()
+    const style = getComputedStyle(element)
+    return {
+      top: Math.round(rect.top), bottom: Math.round(rect.bottom),
+      left: Math.round(rect.left), right: Math.round(rect.right),
+      width: Math.round(rect.width), height: Math.round(rect.height),
+      display: style.display,
+      visible: rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden',
+    }
+  }
+  const drawerEl = document.querySelector('#tank-selectors')
+  if (!drawerEl) return { drawer: null, drawerVisible: false, regions: [], sampleHit: null, bottomControl: null }
+  const drawer = box('#tank-selectors')
+  const shotPanel = box('#corner-tr')
+  const viewSwitch = box('.armor-shot-view-switch')
+  const intersect = (a, b) => {
+    if (!a || !b || !a.visible || !b.visible) return null
+    const left = Math.max(a.left, b.left), right = Math.min(a.right, b.right)
+    const top = Math.max(a.top, b.top), bottom = Math.min(a.bottom, b.bottom)
+    return right > left && bottom > top ? { left, right, top, bottom } : null
+  }
+  const regions = [intersect(drawer, shotPanel), intersect(drawer, viewSwitch)].filter(Boolean)
+  const sample = regions[0]
+    ? { x: Math.round((regions[0].left + regions[0].right) / 2), y: Math.round((regions[0].top + regions[0].bottom) / 2) }
+    : null
+  const sampleHit = (() => {
+    if (!sample) return null
+    const el = document.elementFromPoint(sample.x, sample.y)
+    return {
+      description: el ? `${el.tagName}${typeof el.className === 'string' && el.className.trim() ? `.${el.className.trim().split(/\s+/).join('.')}` : ''}` : null,
+      inDrawer: !!el && (el === drawerEl || drawerEl.contains(el)),
+      inHud: !!el && !!(el.closest && el.closest('#corner-tr, .armor-shot-view-switch')),
+    }
+  })()
+  // 抽屉内容不一定溢出（滚不动也可断言）；在全部可见可交互控件里优先选
+  // 「中心已落入 HUD 覆盖区」的最下方一个做真实命中，否则退回最下方控件。
+  let inRegionControl = null
+  let bottomControl = null
+  for (const el of drawerEl.querySelectorAll('button, input, select')) {
+    const r = el.getBoundingClientRect()
+    if (r.width <= 0 || r.height <= 0 || el.disabled) continue
+    const cx = Math.round(r.left + r.width / 2), cy = Math.round(r.top + r.height / 2)
+    const hit = document.elementFromPoint(cx, cy)
+    const candidate = {
+      bottom: Math.round(r.bottom),
+      description: `${el.tagName}${el.id ? `#${el.id}` : ''}`,
+      center: { x: cx, y: cy },
+      inOccludedRegion: regions.some(rg => cx > rg.left && cx < rg.right && cy > rg.top && cy < rg.bottom),
+      hit: !!hit && (hit === el || el.contains(hit)),
+      hitDescription: hit ? `${hit.tagName}${typeof hit.className === 'string' && hit.className.trim() ? `.${hit.className.trim().split(/\s+/).join('.')}` : ''}` : null,
+    }
+    if (candidate.inOccludedRegion && (!inRegionControl || candidate.bottom > inRegionControl.bottom)) inRegionControl = candidate
+    if (!bottomControl || candidate.bottom > bottomControl.bottom) bottomControl = candidate
+  }
+  return { drawer, drawerVisible: drawer.visible === true, regions, sample, sampleHit, bottomControl: inRegionControl || bottomControl }
+}
 async function runShotLandscapeScenario(env, scenario) {
   const failures = []
   const { targetId, sessionId } = await env.chrome.openPage()
@@ -1462,14 +1595,23 @@ async function runShotLandscapeScenario(env, scenario) {
   lastPage = page
   await page.enable()
   await page.emulate(scenario)
+  if (scenario.safeAreaInsets) {
+    await env.chrome.client.send('Emulation.setSafeAreaInsetsOverride', { insets: scenario.safeAreaInsets }, sessionId)
+  }
   await page.goto(`${env.origin}/?view=home&ws-auth=1`)
   await page.evaluate(`(async () => {
     localStorage.setItem('wotb-lang', 'zh')
     const { storeShotsForViewer } = await import('/src/scene/agentData.js')
     storeShotsForViewer(${JSON.stringify(FIXTURE_SHOTS)})
   })()`)
-  await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&shooter=${FIXTURE_TANK_ID}&shot=1&assets=${encodeURIComponent(env.assets)}`)
-  await page.waitFor(() => !!document.querySelector('[data-testid="armor-stage"]'), { label: 'armor stage' })
+  // compactAssets 资产包提供 /research/devices.json：缺它时 ArmorShotHud 不挂载，
+  // 右下就没有真实的射击参数面板可测（compact 场景同口径）。
+  await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&shooter=${FIXTURE_TANK_ID}&shot=1&world=1&assets=${encodeURIComponent(env.compactAssets)}`)
+  // 回归夹具必须在真实 view-switch（查看弹着点 / 查看双方位置）出现后才测量遮挡：
+  // #932 的横屏夹具只等 scene ready，而普通装甲查看器 URL 下 #corner-br 是空的，
+  // 四盒断言测不到 shot 页右下的真实布局。
+  await page.waitFor(() => !!document.querySelector('#world-view-toggle'),
+    { timeout: 30000, label: 'real shot view-switch controls' })
   await page.waitFor(() => !document.querySelector('[data-testid="scene3d-loading"]') && !document.querySelector('[data-testid="scene3d-error"]'),
     { timeout: 30000, label: 'shot scene ready' })
   const label = scenario.name
@@ -1483,6 +1625,120 @@ async function runShotLandscapeScenario(env, scenario) {
     `${label}: 操作提示节没有在手机横屏让位（${JSON.stringify(layout.interactionHelp)}）`)
   check(failures, layout.shotHeader?.visible === true, `${label}: 射击复现顶栏丢失（${JSON.stringify(layout.shotHeader)}）`)
   checkCommonGeometry(failures, layout, label)
+  const shot = await page.probe(shotLandscapeProbe)
+  /** F1：四个 HUD 区域先显式断言存在且可见（缺失 = fail，而不是静默跳过对应互斥断言）；
+      shot 页姿态面板 #turret-controls 由场景隐藏（标注交给 3D），锁定其不可见契约后，
+      互斥检查覆盖全部实际可见盒。 */
+  const assertShotGeometry = (snapshot, phase) => {
+    for (const name of ['capsule', 'result', 'shotPanel', 'viewSwitch']) {
+      check(failures, snapshot[name]?.visible === true,
+        `${label}${phase}: ${name} 不可见/不可测（${JSON.stringify(snapshot[name])}）`)
+    }
+    check(failures, snapshot.postureControls?.visible === false,
+      `${label}${phase}: shot 页姿态面板必须由场景隐藏（${JSON.stringify(snapshot.postureControls)}）`)
+    const visibleBoxes = Object.entries({ capsule: snapshot.capsule, result: snapshot.result, shotPanel: snapshot.shotPanel, viewSwitch: snapshot.viewSwitch })
+      .filter(([, box]) => box?.visible === true)
+    for (let a = 0; a < visibleBoxes.length; a++) {
+      for (let b = a + 1; b < visibleBoxes.length; b++) {
+        const [nameA, boxA] = visibleBoxes[a]
+        const [nameB, boxB] = visibleBoxes[b]
+        check(failures, !rectsOverlap(boxA, boxB),
+          `${label}${phase}: ${nameA} 与 ${nameB} 相交（${nameA}=${JSON.stringify(boxA)} ${nameB}=${JSON.stringify(boxB)}）`)
+      }
+    }
+    check(failures, snapshot.horizontalOverflow === false, `${label}${phase}: shot 页横屏出现横向溢出`)
+  }
+  /** 真实触摸命中（不是只看截图）：两枚视角按钮 + HUD 弹种按钮 + 距离滑条必须是自己区域的真实命中目标。 */
+  const assertTouchTargets = (snapshot, phase) => {
+    for (const [name, target] of Object.entries({ relBtn: snapshot.relBtn, worldBtn: snapshot.worldBtn, hudShell: snapshot.hudShell, distanceInput: snapshot.distanceInput })) {
+      check(failures, target?.visible === true && target.hit === true && target.inside === true,
+        `${label}${phase}: ${name} 不是真实触控目标（hit=${target?.hit} hitDescription=${target?.hitDescription} box=${JSON.stringify(target)}）`)
+    }
+  }
+  assertShotGeometry(shot, '')
+  assertTouchTargets(shot, '')
+  // F3：HIT 默认已进入相对视角，此时点 relBtn 是 no-op（setImpactView 早期返回）。
+  // 真正的往返 = world → rel → world，每步都校验 aria-pressed 互斥与相机距离。
+  const viewState = `(() => ({
+    impact: document.querySelector('#rel-view-toggle')?.getAttribute('aria-pressed'),
+    overview: document.querySelector('#world-view-toggle')?.getAttribute('aria-pressed'),
+    distance: window.__armorRicochet?.aimingState()?.cameraDistance,
+  }))()`
+  await page.tap({ ...shot.worldBtn.center, touch: scenario.touch })
+  await page.waitForValue(viewState, value => value.overview === 'true' && value.impact === 'false' && value.distance > 20,
+    { timeout: 15000, label: 'overview camera from default impact view' })
+  await page.tap({ ...shot.relBtn.center, touch: scenario.touch })
+  await page.waitForValue(viewState, value => value.impact === 'true' && value.overview === 'false' && Math.abs(value.distance - 15) < .1,
+    { timeout: 15000, label: 'impact camera re-selected from overview' })
+  await page.tap({ ...shot.worldBtn.center, touch: scenario.touch })
+  await page.waitForValue(viewState, value => value.overview === 'true' && value.impact === 'false' && value.distance > 20,
+    { timeout: 15000, label: 'overview restored after full round trip' })
+  // F2：结果胶囊展开（逐层明细）在最小视口也不得压到右下列；展开后收起恢复胶囊。
+  await page.tap({ ...shot.resultCenter, touch: scenario.touch })
+  await page.waitForValue(`!!document.querySelector('#traj-info.is-expanded, #click-info.is-expanded')`, value => value === true,
+    { label: 'result details expanded' })
+  assertShotGeometry(await page.probe(shotLandscapeProbe), ' 结果展开')
+  await page.tap({ ...shot.resultCenter, touch: scenario.touch })
+  await page.waitForValue(`!!document.querySelector('#traj-info.is-expanded, #click-info.is-expanded')`, value => value === false,
+    { label: 'result details collapsed' })
+  // F2：参数面板展开/关闭（参数抽屉）后右下共享布局仍成立；关闭后重新执行几何与触摸命中。
+  await page.tap({ ...layout.tools.center, touch: scenario.touch })
+  await page.waitForValue(`document.querySelector('.armor-stage').className`, value => value.includes('is-tools-open'),
+    { label: 'tools drawer open' })
+  assertShotGeometry(await page.probe(shotLandscapeProbe), ' 参数展开')
+  // P2 抽屉层叠：抽屉是 #corner-tl 的后代，展开后必须绘制在右下 HUD 之上，
+  // 且被 HUD 覆盖区域内的抽屉控件仍能收到真实触摸（bounding box 断言证明不了绘制/命中顺序）。
+  // 先滚到抽屉底部；若最下方控件中心落在 HUD 盒之间的间隙，则逐步回滚把它带入
+  // 真实覆盖区（有界迭代，找到即停）。
+  await page.evaluate(`(() => {
+    const drawer = document.querySelector('#tank-selectors')
+    if (drawer) drawer.scrollTop = drawer.scrollHeight
+  })()`)
+  await page.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+  let occlusion = await page.probe(drawerOcclusionProbe)
+  for (let attempt = 0; attempt < 10 && occlusion.bottomControl && !occlusion.bottomControl.inOccludedRegion; attempt++) {
+    await page.evaluate(`(() => {
+      const drawer = document.querySelector('#tank-selectors')
+      if (drawer) drawer.scrollTop = Math.max(0, drawer.scrollTop - 60)
+    })()`)
+    await page.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+    occlusion = await page.probe(drawerOcclusionProbe)
+  }
+  check(failures, occlusion.drawerVisible === true, `${label} 参数展开: 抽屉不可见（${JSON.stringify(occlusion.drawer)}）`)
+  // 交集必须真实存在，否则后面的命中断言是空集通过。
+  check(failures, occlusion.regions.length > 0,
+    `${label} 参数展开: 抽屉与右下 HUD 无实际交集，遮挡断言无效（drawer=${JSON.stringify(occlusion.drawer)}）`)
+  check(failures, occlusion.sampleHit?.inDrawer === true && occlusion.sampleHit?.inHud === false,
+    `${label} 参数展开: HUD 覆盖区域的命中不属于抽屉（sample=${JSON.stringify(occlusion.sample)} hit=${JSON.stringify(occlusion.sampleHit)}）`)
+  check(failures, occlusion.bottomControl?.inOccludedRegion === true,
+    `${label} 参数展开: 抽屉最下方交互控件未落入 HUD 覆盖区域，控件命中断言无效（${JSON.stringify(occlusion.bottomControl)}）`)
+  check(failures, occlusion.bottomControl?.hit === true,
+    `${label} 参数展开: 抽屉内位于 HUD 覆盖区域的控件被 HUD 抢走触摸（${JSON.stringify(occlusion.bottomControl)}）`)
+  // 抽屉自带的关闭按钮（sticky 在抽屉头部）必须可操作：真实 tap 关闭抽屉。
+  const closeProbe = await page.evaluate(`(() => {
+    const el = document.querySelector('[data-testid="armor-tools-close"]')
+    if (!el) return { present: false }
+    const r = el.getBoundingClientRect()
+    const x = Math.round(r.left + r.width / 2), y = Math.round(r.top + r.height / 2)
+    const hit = document.elementFromPoint(x, y)
+    return {
+      present: true, x, y, width: Math.round(r.width), height: Math.round(r.height),
+      hit: hit === el || el.contains(hit),
+      hitDescription: hit ? hit.tagName : null,
+    }
+  })()`)
+  check(failures, closeProbe.present === true && closeProbe.hit === true && closeProbe.width >= 36,
+    `${label} 参数展开: 抽屉关闭按钮不是真实触控目标（${JSON.stringify(closeProbe)}）`)
+  if (closeProbe.present && closeProbe.hit) {
+    await page.tap({ x: closeProbe.x, y: closeProbe.y, touch: scenario.touch })
+  } else {
+    await page.tap({ ...layout.tools.center, touch: scenario.touch })
+  }
+  await page.waitForValue(`document.querySelector('.armor-stage').className`, value => !value.includes('is-tools-open'),
+    { label: 'tools drawer closed' })
+  const closedShot = await page.probe(shotLandscapeProbe)
+  assertShotGeometry(closedShot, ' 参数关闭')
+  assertTouchTargets(closedShot, ' 参数关闭')
   check(failures, page.consoleErrors.length === 0, `${label}: JS errors: ${page.consoleErrors.join(' | ')}`)
   await env.chrome.client.send('Target.closeTarget', { targetId })
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
@@ -1914,7 +2170,7 @@ try {
   const env = { origin, chrome: chromeCdp, assets: assets.origin, compactAssets: compactAssets.origin, pickerAssets: pickerAssets.origin, staggeredAssets: staggeredAssets.origin, contextLossSelectionAssets: contextLossSelectionAssets.origin, contextLossRouteRebuildAssets: contextLossRouteRebuildAssets.origin }
   const runs = [
     ...SHOT_SCENARIOS.map(scenario => ({ scenario, run: () => runShotActionsScenario(env, scenario) })),
-    { scenario: SHOT_LANDSCAPE_SCENARIO, run: () => runShotLandscapeScenario(env, SHOT_LANDSCAPE_SCENARIO) },
+    ...SHOT_LANDSCAPE_SCENARIOS.map(scenario => ({ scenario, run: () => runShotLandscapeScenario(env, scenario) })),
     ...COMPACT_LANDSCAPE_SCENARIOS.map(scenario => ({ scenario, run: () => runCompactLandscapeScenario(env, scenario) })),
     ...MOBILE_SCENARIOS.map((scenario) => ({ scenario, run: () => runMobileScenario(env, scenario) })),
     { scenario: BACK_SCENARIO, run: () => runMobileBackScenario(env, BACK_SCENARIO) },
