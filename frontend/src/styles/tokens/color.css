@@ -83,6 +83,8 @@
     --color-danger: #f2786d;
     --color-warning: #f5ca76;
     --color-info: #6db3ec;
+    /* 图表第二数据系列：三季强调色是金 / 橙，次段用 info 蓝；冬季强调色是蓝，次段用 warning 琥珀。 */
+    --color-chart-series-2: #6db3ec;
 
     /* 物理阵营（回放 Team 1 / Team 2）：**固定身份色**，绝不随录像者属于哪一队交换。
        呈现层需要「我方 / 敌方」时用 ally/enemy 用途别名：physical team → 稳定身份；relation → 记录者视角。 */
@@ -153,6 +155,8 @@
     --color-danger: #f2786d;
     --color-warning: #f5ca76;
     --color-info: #6db3ec;
+    /* 图表第二数据系列：三季强调色是金 / 橙，次段用 info 蓝；冬季强调色是蓝，次段用 warning 琥珀。 */
+    --color-chart-series-2: #6db3ec;
 
     /* 物理阵营（回放 Team 1 / Team 2）：**固定身份色**，绝不随录像者属于哪一队交换。
        呈现层需要「我方 / 敌方」时用 ally/enemy 用途别名：physical team → 稳定身份；relation → 记录者视角。 */
@@ -220,6 +224,8 @@
     --color-danger: #ff8070;
     --color-warning: #f5ca76;
     --color-info: #6db3ec;
+    /* 图表第二数据系列：三季强调色是金 / 橙，次段用 info 蓝；冬季强调色是蓝，次段用 warning 琥珀。 */
+    --color-chart-series-2: #6db3ec;
 
     /* 物理阵营（回放 Team 1 / Team 2）：**固定身份色**，绝不随录像者属于哪一队交换。
        呈现层需要「我方 / 敌方」时用 ally/enemy 用途别名：physical team → 稳定身份；relation → 记录者视角。 */
@@ -287,6 +293,8 @@
     --color-danger: #b8322a;
     --color-warning: #855600;
     --color-info: #1a64a8;
+    /* 图表第二数据系列：三季强调色是金 / 橙，次段用 info 蓝；冬季强调色是蓝，次段用 warning 琥珀。 */
+    --color-chart-series-2: #855600;
 
     /* 物理阵营（回放 Team 1 / Team 2）：**固定身份色**，绝不随录像者属于哪一队交换。
        呈现层需要「我方 / 敌方」时用 ally/enemy 用途别名：physical team → 稳定身份；relation → 记录者视角。 */
