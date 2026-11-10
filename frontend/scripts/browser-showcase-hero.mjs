@@ -17,7 +17,7 @@ import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 
 // 冬季竖屏分区遮罩的三处停靠点（Chrome computed style 归一化为 rgba(...)）。
 // 必须逐一断言完整 opacity：只查 RGB 的话旧遮罩（.97/.86/.24）与新遮罩（.84/.52/.10）都会命中。
-const WINTER_PORTRAIT_STOPS = ['rgba(238, 243, 248, 0.84)', 'rgba(238, 243, 248, 0.52)', 'rgba(238, 243, 248, 0.1)']
+const WINTER_PORTRAIT_STOPS = ['rgba(238, 243, 248, 0.7)', 'rgba(238, 243, 248, 0.4)', 'rgba(238, 243, 248, 0.08)']
 
 /** 页面内探针：取紧凑横幅的 computed style 与几何（Page.probe 会序列化，不能引用模块作用域）。 */
 function heroProbe() {
