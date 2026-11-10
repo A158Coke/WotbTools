@@ -1482,13 +1482,17 @@ function shotLandscapeProbe() {
     if (!element) return null
     const rect = element.getBoundingClientRect()
     const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2
+    // 触控派发（Input.dispatchTouchEvent）只收整数坐标：inside 按最终派发的取整坐标判定。
+    const tx = Math.round(x), ty = Math.round(y)
     const hit = document.elementFromPoint(x, y)
     return {
       ...box(selector),
-      // 触控派发（Input.dispatchTouchEvent）只收整数坐标；elementFromPoint 用原始中心。
-      center: { x: Math.round(x), y: Math.round(y) },
+      center: { x: tx, y: ty },
       hit: hit === element || (!!hit && element.contains(hit)),
       hitDescription: hit ? `${hit.tagName}${typeof hit.className === 'string' && hit.className.trim() ? `.${hit.className.trim().split(/\s+/).join('.')}` : ''}` : null,
+      inside: Number.isFinite(tx) && Number.isFinite(ty)
+        && tx >= 0 && ty >= 0 && tx <= innerWidth && ty <= innerHeight
+        && rect.left >= 0 && rect.right <= innerWidth + 1 && rect.top >= 0 && rect.bottom <= innerHeight + 1,
     }
   }
   const viewSwitch = box('.armor-shot-view-switch')
@@ -1521,6 +1525,68 @@ function shotLandscapeProbe() {
     distanceInput: hitTest('#armor-distance'),
     horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
   }
+}
+/** 抽屉遮挡探针（仅在抽屉展开时执行）：抽屉与右下 HUD 的真实交集区、交集内命中归属、
+    滚到抽屉底部后的最下方交互控件是否仍被抽屉自身命中。 */
+const drawerOcclusionProbe = () => {
+  const box = (selector) => {
+    const element = document.querySelector(selector)
+    if (!element) return null
+    const rect = element.getBoundingClientRect()
+    const style = getComputedStyle(element)
+    return {
+      top: Math.round(rect.top), bottom: Math.round(rect.bottom),
+      left: Math.round(rect.left), right: Math.round(rect.right),
+      width: Math.round(rect.width), height: Math.round(rect.height),
+      display: style.display,
+      visible: rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden',
+    }
+  }
+  const drawerEl = document.querySelector('#tank-selectors')
+  if (!drawerEl) return { drawer: null, drawerVisible: false, regions: [], sampleHit: null, bottomControl: null }
+  const drawer = box('#tank-selectors')
+  const shotPanel = box('#corner-tr')
+  const viewSwitch = box('.armor-shot-view-switch')
+  const intersect = (a, b) => {
+    if (!a || !b || !a.visible || !b.visible) return null
+    const left = Math.max(a.left, b.left), right = Math.min(a.right, b.right)
+    const top = Math.max(a.top, b.top), bottom = Math.min(a.bottom, b.bottom)
+    return right > left && bottom > top ? { left, right, top, bottom } : null
+  }
+  const regions = [intersect(drawer, shotPanel), intersect(drawer, viewSwitch)].filter(Boolean)
+  const sample = regions[0]
+    ? { x: Math.round((regions[0].left + regions[0].right) / 2), y: Math.round((regions[0].top + regions[0].bottom) / 2) }
+    : null
+  const sampleHit = (() => {
+    if (!sample) return null
+    const el = document.elementFromPoint(sample.x, sample.y)
+    return {
+      description: el ? `${el.tagName}${typeof el.className === 'string' && el.className.trim() ? `.${el.className.trim().split(/\s+/).join('.')}` : ''}` : null,
+      inDrawer: !!el && (el === drawerEl || drawerEl.contains(el)),
+      inHud: !!el && !!(el.closest && el.closest('#corner-tr, .armor-shot-view-switch')),
+    }
+  })()
+  // 抽屉内容不一定溢出（滚不动也可断言）；在全部可见可交互控件里优先选
+  // 「中心已落入 HUD 覆盖区」的最下方一个做真实命中，否则退回最下方控件。
+  let inRegionControl = null
+  let bottomControl = null
+  for (const el of drawerEl.querySelectorAll('button, input, select')) {
+    const r = el.getBoundingClientRect()
+    if (r.width <= 0 || r.height <= 0 || el.disabled) continue
+    const cx = Math.round(r.left + r.width / 2), cy = Math.round(r.top + r.height / 2)
+    const hit = document.elementFromPoint(cx, cy)
+    const candidate = {
+      bottom: Math.round(r.bottom),
+      description: `${el.tagName}${el.id ? `#${el.id}` : ''}`,
+      center: { x: cx, y: cy },
+      inOccludedRegion: regions.some(rg => cx > rg.left && cx < rg.right && cy > rg.top && cy < rg.bottom),
+      hit: !!hit && (hit === el || el.contains(hit)),
+      hitDescription: hit ? `${hit.tagName}${typeof hit.className === 'string' && hit.className.trim() ? `.${hit.className.trim().split(/\s+/).join('.')}` : ''}` : null,
+    }
+    if (candidate.inOccludedRegion && (!inRegionControl || candidate.bottom > inRegionControl.bottom)) inRegionControl = candidate
+    if (!bottomControl || candidate.bottom > bottomControl.bottom) bottomControl = candidate
+  }
+  return { drawer, drawerVisible: drawer.visible === true, regions, sample, sampleHit, bottomControl: inRegionControl || bottomControl }
 }
 async function runShotLandscapeScenario(env, scenario) {
   const failures = []
@@ -1585,7 +1651,7 @@ async function runShotLandscapeScenario(env, scenario) {
   /** 真实触摸命中（不是只看截图）：两枚视角按钮 + HUD 弹种按钮 + 距离滑条必须是自己区域的真实命中目标。 */
   const assertTouchTargets = (snapshot, phase) => {
     for (const [name, target] of Object.entries({ relBtn: snapshot.relBtn, worldBtn: snapshot.worldBtn, hudShell: snapshot.hudShell, distanceInput: snapshot.distanceInput })) {
-      check(failures, target?.visible === true && target.hit === true && target.inside !== false,
+      check(failures, target?.visible === true && target.hit === true && target.inside === true,
         `${label}${phase}: ${name} 不是真实触控目标（hit=${target?.hit} hitDescription=${target?.hitDescription} box=${JSON.stringify(target)}）`)
     }
   }
@@ -1620,7 +1686,54 @@ async function runShotLandscapeScenario(env, scenario) {
   await page.waitForValue(`document.querySelector('.armor-stage').className`, value => value.includes('is-tools-open'),
     { label: 'tools drawer open' })
   assertShotGeometry(await page.probe(shotLandscapeProbe), ' 参数展开')
-  await page.tap({ ...layout.tools.center, touch: scenario.touch })
+  // P2 抽屉层叠：抽屉是 #corner-tl 的后代，展开后必须绘制在右下 HUD 之上，
+  // 且被 HUD 覆盖区域内的抽屉控件仍能收到真实触摸（bounding box 断言证明不了绘制/命中顺序）。
+  // 先滚到抽屉底部；若最下方控件中心落在 HUD 盒之间的间隙，则逐步回滚把它带入
+  // 真实覆盖区（有界迭代，找到即停）。
+  await page.evaluate(`(() => {
+    const drawer = document.querySelector('#tank-selectors')
+    if (drawer) drawer.scrollTop = drawer.scrollHeight
+  })()`)
+  await page.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+  let occlusion = await page.probe(drawerOcclusionProbe)
+  for (let attempt = 0; attempt < 10 && occlusion.bottomControl && !occlusion.bottomControl.inOccludedRegion; attempt++) {
+    await page.evaluate(`(() => {
+      const drawer = document.querySelector('#tank-selectors')
+      if (drawer) drawer.scrollTop = Math.max(0, drawer.scrollTop - 60)
+    })()`)
+    await page.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+    occlusion = await page.probe(drawerOcclusionProbe)
+  }
+  check(failures, occlusion.drawerVisible === true, `${label} 参数展开: 抽屉不可见（${JSON.stringify(occlusion.drawer)}）`)
+  // 交集必须真实存在，否则后面的命中断言是空集通过。
+  check(failures, occlusion.regions.length > 0,
+    `${label} 参数展开: 抽屉与右下 HUD 无实际交集，遮挡断言无效（drawer=${JSON.stringify(occlusion.drawer)}）`)
+  check(failures, occlusion.sampleHit?.inDrawer === true && occlusion.sampleHit?.inHud === false,
+    `${label} 参数展开: HUD 覆盖区域的命中不属于抽屉（sample=${JSON.stringify(occlusion.sample)} hit=${JSON.stringify(occlusion.sampleHit)}）`)
+  check(failures, occlusion.bottomControl?.inOccludedRegion === true,
+    `${label} 参数展开: 抽屉最下方交互控件未落入 HUD 覆盖区域，控件命中断言无效（${JSON.stringify(occlusion.bottomControl)}）`)
+  check(failures, occlusion.bottomControl?.hit === true,
+    `${label} 参数展开: 抽屉内位于 HUD 覆盖区域的控件被 HUD 抢走触摸（${JSON.stringify(occlusion.bottomControl)}）`)
+  // 抽屉自带的关闭按钮（sticky 在抽屉头部）必须可操作：真实 tap 关闭抽屉。
+  const closeProbe = await page.evaluate(`(() => {
+    const el = document.querySelector('[data-testid="armor-tools-close"]')
+    if (!el) return { present: false }
+    const r = el.getBoundingClientRect()
+    const x = Math.round(r.left + r.width / 2), y = Math.round(r.top + r.height / 2)
+    const hit = document.elementFromPoint(x, y)
+    return {
+      present: true, x, y, width: Math.round(r.width), height: Math.round(r.height),
+      hit: hit === el || el.contains(hit),
+      hitDescription: hit ? hit.tagName : null,
+    }
+  })()`)
+  check(failures, closeProbe.present === true && closeProbe.hit === true && closeProbe.width >= 36,
+    `${label} 参数展开: 抽屉关闭按钮不是真实触控目标（${JSON.stringify(closeProbe)}）`)
+  if (closeProbe.present && closeProbe.hit) {
+    await page.tap({ x: closeProbe.x, y: closeProbe.y, touch: scenario.touch })
+  } else {
+    await page.tap({ ...layout.tools.center, touch: scenario.touch })
+  }
   await page.waitForValue(`document.querySelector('.armor-stage').className`, value => !value.includes('is-tools-open'),
     { label: 'tools drawer closed' })
   const closedShot = await page.probe(shotLandscapeProbe)

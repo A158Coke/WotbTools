@@ -1432,6 +1432,12 @@ onBeforeUnmount(() => {
         box-shadow: var(--elevation-3);
         z-index: var(--pb-z-modal);
     }
+    /* 抽屉是 #corner-tl 的后代：#corner-tl 所属层叠上下文只有 pb-z-hud(5)，与右下
+       armor-bottom-controls（同为 5 且 DOM 靠后）同级时抽屉会被 HUD 盖住并拦截触摸；
+       其自身 pb-z-modal(9) 无法越级。展开抽屉时提升所属上下文到 z-dialog——必须高于
+       射击复现顶栏（--z-sticky+1 = 101），否则顶栏右侧的上一/下一发箭头会盖住抽屉
+       顶部 sticky 的关闭按钮（与 #tank-picker 同一 dialog 层，DOM 靠后的 picker 仍在其上）。 */
+    .armor-view.is-shot .armor-stage.is-tools-open #corner-tl { z-index: var(--z-dialog); }
 }
 /* 600×320 级窄横屏：左上胶囊已占掉近半宽度，结果胶囊改到胶囊下方第二行；
    右下面板从 168px 起、左下面板从 ~240px 起，与 28px 高的结果行保持分离。 */
