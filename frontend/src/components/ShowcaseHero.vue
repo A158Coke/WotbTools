@@ -85,8 +85,15 @@ const artStyle = computed(() => (props.section ? sectionHeroStyle(props.section)
 }
 
 .showcase-hero-text { display: grid; gap: var(--space-2); }
+/* 浅色主题（冬季）遮罩几乎全撤后，由文字局部玻璃底板保住可读性；其他主题 token 缺省不垫底 */
+.showcase-hero-text {
+  background: var(--theme-hero-text-veil, transparent);
+  padding: var(--theme-hero-text-veil-pad, 0);
+  border-radius: var(--radius-md);
+  backdrop-filter: var(--theme-hero-text-veil-blur, none);
+}
 .showcase-hero-kicker { margin: 0; color: var(--color-accent-text); font: var(--type-caption); font-weight: 600; letter-spacing: .2em; }
-.showcase-hero-title { margin: 0; color: var(--color-text-primary); font: var(--type-display); letter-spacing: -0.02em; }
+.showcase-hero-title { margin: 0; color: var(--color-text-primary); font: var(--type-display); letter-spacing: -0.02em; text-shadow: var(--theme-hero-title-halo, none); }
 .showcase-hero-description { margin: 0; color: var(--color-text-secondary); font: var(--type-body); }
 .showcase-hero-stats { display: flex; flex-wrap: wrap; gap: var(--space-6); margin-block-start: var(--space-3); }
 .showcase-hero-stats :deep(strong) { display: block; color: var(--color-accent-text); font: var(--type-display); font-variant-numeric: tabular-nums; }

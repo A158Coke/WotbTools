@@ -131,7 +131,7 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | `docs` | `HistoryPage`、`TechnicalEvolutionPage`、`RatingDocsPage` | `hero-docs.webp` | `center 45%` | `42% center` |
 | `admin` | 全部后台页（用户、战斗数据、反馈、名人堂、赛事积分、创作者配置） | `hero-admin.webp` | `center 45%` | `40% center` |
 
-**遮罩与可读性：** 分区图默认仍用 `--theme-hero-scrim`（手机 `--theme-hero-scrim-portrait`）压出纯色文字区，因此 DC-THM-05 的四主题对比度要求不变。寒冬是浅色主题，白色遮罩会把图洗淡，所以只在寒冬定义更轻的分区遮罩：`--theme-hero-section-scrim`（横版，左侧 94% → 78% → 12%）和 `--theme-hero-section-scrim-portrait`（竖版，自上而下 70% → 40% → 8%，只在标题带保住对比度、其余透出坦克；再高会把整幅画面洗白）。其它主题不定义这两个 token，组件用 `var(--theme-hero-section-scrim, var(--theme-hero-scrim))` 回退。验收时坦克主体必须仍可辨认，标题区域取样点满足 §3。
+**遮罩与可读性：** 分区图默认仍用 `--theme-hero-scrim`（手机 `--theme-hero-scrim-portrait`）压出纯色文字区，因此 DC-THM-05 的四主题对比度要求不变。寒冬是浅色主题，白色遮罩会把图洗淡，所以只在寒冬定义更轻的分区遮罩：`--theme-hero-section-scrim`（横版，左侧 94% → 78% → 12%）和 `--theme-hero-section-scrim-portrait`（竖版，自上而下 15% → 0%，几乎全撤，画面完整透出；标题可读性改由 --theme-hero-text-veil 文字局部玻璃底板承担，只垫文字块不洗画面）。其它主题不定义这两个 token，组件用 `var(--theme-hero-section-scrim, var(--theme-hero-scrim))` 回退。验收时坦克主体必须仍可辨认，标题区域取样点满足 §3。
 
 **紧凑档（compact）：** 工具页与后台使用紧凑档，默认桌面 132px / 手机 96px，横幅里只保留 kicker + 标题；操作（能力切换、搜索、刷新等）放在横幅下方独立的工具条里，不挤压下方操作区。Replay 是唯一例外：约 12:1 的 132px 窄条在 cover 下只剩 ~12% 可见带（可见占比 = 容器高宽比 × 原图宽高比，与源图无关），坦克被裁成炮管残片，因此桌面放宽到 clamp(132px, 20vw, 384px)（~43% 可见带容纳坦克整体），矮桌面窗口（height < 700px，flex scrollport 会被压缩）与手机（可见带已近一半）回退默认密度。完整档保留说明、关键数字与操作。标题复用页面原有 i18n 文案；如果横幅已经承担页面标题，就删除原独立页头，避免同屏两个一级标题。
 

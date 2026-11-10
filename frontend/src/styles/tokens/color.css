@@ -317,7 +317,11 @@
        上半部不透明度压到 .86 以下：再高会把整幅画面洗白（2026-11-10 反馈），
        深色标题在 .86 白底上的对比度仍有约 12:1，可读性不受影响。 */
     --theme-hero-section-scrim: linear-gradient(90deg, rgb(238 243 248 / .94) 0%, rgb(238 243 248 / .78) 48%, rgb(238 243 248 / .12) 100%);
-    --theme-hero-section-scrim-portrait: linear-gradient(180deg, rgb(238 243 248 / .70) 0%, rgb(238 243 248 / .40) 45%, rgb(238 243 248 / .08) 100%);
+    --theme-hero-section-scrim-portrait: linear-gradient(180deg, rgb(238 243 248 / .15) 0%, rgb(238 243 248 / 0) 45%);
+    /* 遮罩几乎全撤后，标题可读性由文字局部玻璃底板承担（只垫文字块，不洗画面） */
+    --theme-hero-text-veil: rgb(238 243 248 / .58);
+    --theme-hero-text-veil-pad: var(--space-2) var(--space-4);
+    --theme-hero-text-veil-blur: blur(8px);
     --theme-glass: rgb(255 255 255 / .72);
     --theme-backdrop-image: url("../../assets/theme/backdrop-winter-wide.webp");
     --theme-backdrop-image-portrait: url("../../assets/theme/backdrop-winter-portrait.webp");

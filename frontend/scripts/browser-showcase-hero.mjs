@@ -17,7 +17,10 @@ import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 
 // 冬季竖屏分区遮罩的三处停靠点（Chrome computed style 归一化为 rgba(...)）。
 // 必须逐一断言完整 opacity：只查 RGB 的话旧遮罩（.97/.86/.24）与新遮罩（.84/.52/.10）都会命中。
-const WINTER_PORTRAIT_STOPS = ['rgba(238, 243, 248, 0.7)', 'rgba(238, 243, 248, 0.4)', 'rgba(238, 243, 248, 0.08)']
+// 冬季竖屏遮罩已几乎全撤（.15 → 0），标题可读性由 --theme-hero-text-veil 玻璃底板承担；
+// 旧遮罩（.97/.86/.24）不含这两个停靠点，负向可捕获泛白回归。
+const WINTER_PORTRAIT_STOPS = ['rgba(238, 243, 248, 0.15)', 'rgba(238, 243, 248, 0)']
+const WINTER_TEXT_VEIL = 'rgba(238, 243, 248, 0.58)'
 
 /** 页面内探针：取紧凑横幅的 computed style 与几何（Page.probe 会序列化，不能引用模块作用域）。 */
 function heroProbe() {
@@ -39,6 +42,7 @@ function heroProbe() {
     imagePosition: positions[1] ?? null,
     backgroundSize: cs.backgroundSize.split(',').map(s => s.trim())[1] ?? null,
     titleColor: getComputedStyle(section.querySelector('h1')).color,
+    textVeil: getComputedStyle(section.querySelector('.showcase-hero-text')).backgroundColor,
     titleBottom: Math.round(section.querySelector('h1').getBoundingClientRect().bottom),
     heroBottom: Math.round(rect.bottom),
   }
@@ -121,6 +125,7 @@ try {
       for (const stop of WINTER_PORTRAIT_STOPS) {
         assert.ok(winter.backgroundImage.includes(stop), `mobile ${section} winter portrait scrim must contain ${stop}: ${winter.backgroundImage}`)
       }
+      assert.ok(winter.textVeil.includes(WINTER_TEXT_VEIL), `mobile ${section} winter title must sit on the glass veil: ${winter.textVeil}`)
       console.log(`[browser-showcase-hero] breakpoint ${section}: desktop pos=${desktop.imagePosition} → mobile pos=${mobile.imagePosition} height=${mobile.height}, winter scrim stops ok passed`)
     } catch (error) {
       console.error(await page.diagnose(heroProbe))
