@@ -125,13 +125,12 @@ const artStyle = computed(() => (props.section ? sectionHeroStyle(props.section)
 @media (width < 768px) {
   .showcase-hero-art { background: var(--theme-hero-scrim-portrait), var(--theme-hero-image-portrait) center 70% / cover; }
   .showcase-hero-art--section { background: var(--theme-hero-section-scrim-portrait, var(--theme-hero-scrim-portrait)), var(--hero-image) var(--hero-pos-mobile, center) / cover, var(--color-surface-1); }
-  /* 浅色主题（冬季）竖屏遮罩几乎全撤后，由文字局部玻璃底板保住可读性；
-     只在手机断点生效——桌面左侧仍有 90° 白色遮罩保护文字，再垫底板会叠成大块白板 */
-  .showcase-hero-text {
-    background: var(--theme-hero-text-veil, transparent);
-    padding: var(--theme-hero-text-veil-pad, 0);
-    border-radius: var(--radius-md);
-    backdrop-filter: var(--theme-hero-text-veil-blur, none);
+  /* 浅色主题（冬季）竖屏遮罩几乎全撤后，横幅文字改白色 + 深色描边保住可读性；
+     只在手机断点生效——桌面左侧仍有 90° 白色遮罩，深色标题保持原样 */
+  .showcase-hero-kicker { color: var(--theme-hero-kicker-color, var(--color-accent-text)); }
+  .showcase-hero-title {
+    color: var(--theme-hero-title-color, var(--color-text-primary));
+    text-shadow: var(--theme-hero-text-shadow, none);
   }
   .showcase-hero-content { padding: var(--space-10) var(--space-4) var(--space-4); }
   .showcase-hero-title { font: var(--type-h1); }
