@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Euler, Matrix4, Vector3 } from 'three'
-import { armorCameraPreset, armorPresetGunPitch, armorPresetViewPlacement } from './cameraPresets'
+import { armorCameraPreset, armorPresetGunPitch, armorPresetPlacement } from './cameraPresets'
 import EUROPEAN from '../../replay-local/compute/__fixtures__/modules/european.json'
 import { pitchAtBearing } from '../../replay-local/compute/tankSetup'
 
@@ -65,33 +65,33 @@ describe('armor camera presets', () => {
   })
 })
 
-describe('armor preset view placement', () => {
+describe('armor preset placement', () => {
   const world = new Matrix4().makeRotationX(-Math.PI / 2)
   const gunLine = () => armorCameraPreset(pivot, world, 15)
 
-  it('keeps the user pivot and distance, only adopting the gun-line direction', () => {
+  it('camera stays on the gun axis past the muzzle; user distance preserved', () => {
     const pose = gunLine()
-    const prevTarget = new Vector3(0.4, 1.9, 0.2)
-    const prevCamera = new Vector3(0.4, 1.6, -7)
-    const placement = armorPresetViewPlacement(prevTarget, prevCamera, pose)
-    const userDistance = prevCamera.distanceTo(prevTarget)
-    expect(placement.target.equals(prevTarget)).toBe(true)
-    expect(placement.position.distanceTo(prevTarget)).toBeCloseTo(userDistance)
+    // 炮长 5m：机位在炮口之外（距离 > 5m 时），炮管正对镜头。
+    const barrelLength = 5
+    const placement = armorPresetPlacement(pose, 7.5)
     const gunDirection = pose.position.clone().sub(pose.target).normalize()
-    expect(placement.position.clone().sub(prevTarget).normalize().distanceTo(gunDirection)).toBeCloseTo(0)
+    expect(placement.target.distanceTo(pose.target)).toBeCloseTo(0)
+    expect(placement.position.distanceTo(placement.target)).toBeCloseTo(7.5)
+    expect(placement.position.clone().sub(placement.target).normalize().distanceTo(gunDirection)).toBeCloseTo(0)
+    expect(placement.position.distanceTo(pose.target.clone().addScaledVector(gunDirection, barrelLength))).toBeCloseTo(2.5)
   })
 
-  it('degenerate orbit offset adopts the preset distance instead of collapsing the camera', () => {
+  it('non-finite or non-positive user distance falls back to the preset distance', () => {
     const pose = gunLine()
-    const prevTarget = new Vector3(1, 2, 3)
-    const placement = armorPresetViewPlacement(prevTarget, prevTarget.clone(), pose)
-    expect(placement.target.distanceTo(prevTarget)).toBeCloseTo(0)
-    expect(placement.position.distanceTo(prevTarget)).toBeCloseTo(15)
+    for (const bad of [0, -3, NaN, Infinity]) {
+      const placement = armorPresetPlacement(pose, bad)
+      expect(placement.position.distanceTo(placement.target)).toBeCloseTo(15)
+    }
   })
 
   it('zero-length preset direction falls back to the full preset pose', () => {
     const pose = { target: new Vector3(1, 2, 3), position: new Vector3(1, 2, 3) }
-    const placement = armorPresetViewPlacement(new Vector3(), new Vector3(0, 0, -5), pose)
+    const placement = armorPresetPlacement(pose, 8)
     expect(placement).toBe(pose)
   })
 })

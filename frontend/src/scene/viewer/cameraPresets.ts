@@ -14,21 +14,24 @@ export function armorCameraPreset(gunPivot: Vector3, gunWorldMatrix: Matrix4, di
 }
 
 /**
- * 视角预设只接管观察方向：旋转中心（轨道 target）与距离归用户所有。
- * 用户平移/缩放后点击「正面 / 压坡卖头」，取景不回跳到炮线枢轴。
- * direction 为零向量时退回完整预设姿态（target + preset position）。
+ * 视角预设保证炮管指向镜头：机位放在炮轴线上（枢轴 + 炮线方向 × 距离），
+ * 旋转中心 = 炮线枢轴，后续环绕即绕炮线检视。距离归用户（缩放层级不回跳，
+ * 0x5f3759df 反馈）——不保留旧轨道中心：炮轴线穿过枢轴而非车体中心，
+ * 沿旧中心摆位会让炮管指向镜头之外（2026-11-10 反馈）。
+ * userDistance 非正数/非有限时退回预设摆位距离；direction 为零向量时
+ * 退回完整预设姿态（target + preset position）。
  */
-export function armorPresetViewPlacement(
-  prevTarget: Vector3,
-  prevCamera: Vector3,
+export function armorPresetPlacement(
   pose: { target: Vector3; position: Vector3 },
+  userDistance: number,
 ) {
   const direction = pose.position.clone().sub(pose.target)
   if (direction.lengthSq() === 0) return pose
-  const offset = prevCamera.clone().sub(prevTarget)
-  const distance = offset.length() > 0 ? offset.length() : direction.length()
+  const distance = Number.isFinite(userDistance) && userDistance > 0
+    ? userDistance
+    : direction.length()
   return {
-    target: prevTarget.clone(),
-    position: prevTarget.clone().addScaledVector(direction.normalize(), distance),
+    target: pose.target.clone(),
+    position: pose.target.clone().addScaledVector(direction.normalize(), distance),
   }
 }
