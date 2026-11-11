@@ -421,12 +421,16 @@
   overflow: hidden;
 }
 
-/* §2d-toolbar-collapse：传输条折叠行——内容行（flex:1）+ 折叠切换按钮同行，
-   折叠后内容 v-show 隐藏，只剩右侧的恢复按钮（不新增一行高度）。 */
+/* The content keeps its natural width during height transitions; the restore entry stays right. */
 .battle-playback.playback-workspace .pb-transport-slot { display: flex; flex-direction: column; gap: var(--space-1); }
-.battle-playback.playback-workspace .pb-transport-row { display: flex; flex-direction: row; align-items: center; gap: var(--space-1); min-inline-size: 0; }
-.battle-playback.playback-workspace .pb-transport-main { flex: 1 1 auto; min-inline-size: 0; }
-.battle-playback.playback-workspace .pb-transport-toggle { flex: none; order: 1; }
+.battle-playback.playback-workspace .pb-transport-row { display: flex; flex-direction: row; align-items: flex-start; gap: var(--space-1); min-inline-size: 0; }
+.battle-playback.playback-workspace .pb-transport-main { display: flex; flex-direction: column; gap: var(--space-1); flex: 1 1 auto; min-inline-size: 0; }
+.battle-playback.playback-workspace .pb-transport-toggle { flex: none; order: 1; margin-inline-start: auto; }
+.pb-transport-slide-enter-active,
+.pb-transport-slide-leave-active {
+  overflow: hidden;
+  transition: height calc(var(--duration-slow) * 2) var(--ease-standard);
+}
 /* §2d-shellnav 窄容器宽度账（600×320 沉浸态 + 真实 Shell 实测）：导航托管 + 九个 36px 控件 +
    时间轴 + 折叠入口的 min-content 超出行宽——时钟溢出视口右缘并与折叠按钮重叠（gear 亦越界）。
    紧凑 HUD 中心列已有同一时钟（pb-hud-time，可触达替代），窄视口隐藏传输条时钟；时间轴下限
@@ -444,8 +448,6 @@
     text-align: center;
   }
   .battle-playback.playback-workspace.pb-hud-clock-off .pb-transport-main .pb-controls { flex-wrap: wrap; }
-  /* 时钟换行后主行变高：折叠按钮从垂直居中改顶对齐，避免与换行的时钟行相交。 */
-  .battle-playback.playback-workspace.pb-hud-clock-off .pb-transport-row { align-items: flex-start; }
   /* 与手机横屏单行规则（--pb-timeline-min-w）同特异性、声明在后：窄容器下限收缩生效。 */
   :is(.battle-playback.playback-workspace.pb-phone-landscape [data-test="pb-transport-controls"],
     .battle-playback.playback-workspace .pb-transport-main) > .pb-progress { min-inline-size: 6rem; }

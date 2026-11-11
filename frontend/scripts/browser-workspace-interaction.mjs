@@ -2814,6 +2814,8 @@ const PLAYBACK_COLLAPSE_SCENARIOS = [
   { name: 'pb-collapse-844x390-landscape-coarse', width: 844, height: 390, touch: true, duration: 60 },
   { name: 'pb-collapse-740x360-landscape-coarse', width: 740, height: 360, touch: true, duration: 60 },
   { name: 'pb-collapse-600x320-landscape-coarse', width: 600, height: 320, touch: true, duration: 60 },
+  { name: 'pb-collapse-375x812-winter-reduced', width: 375, height: 812, touch: true, duration: 60, reduced: true, profile: 'winter' },
+  { name: 'pb-collapse-1280x900-fullscreen', width: 1280, height: 900, touch: false, duration: 60, fullscreen: true },
   { name: 'pb-collapse-390x844-portrait-coarse', width: 390, height: 844, touch: true, duration: 60 },
   { name: 'pb-collapse-1280x900-desktop', width: 1280, height: 900, touch: false, duration: 60 },
 ]
@@ -2857,12 +2859,24 @@ function playbackCollapseProbe() {
     rosterRows: document.querySelectorAll('[data-test="pb-roster-row"]').length,
     selectedRows: document.querySelectorAll('[data-test="pb-roster-row"][aria-pressed="true"]').length,
     transportContentHidden: transportContent ? getComputedStyle(transportContent).display === 'none' : null,
+    contentHeight: transportContent?.getBoundingClientRect().height,
+    contentTop: transportContent?.getBoundingClientRect().top,
+    contentInlineHeight: transportContent?.style.height,
+    toggleRect: rect(toggle),
     transportToggle: toggle ? { expanded: toggle.getAttribute('aria-expanded'), hitSelf: hitSelf(toggle), controls: toggle.getAttribute('aria-controls') } : null,
     time: document.querySelector('[data-test="pb-time"]') ? document.querySelector('[data-test="pb-time"]').textContent.trim() : null,
     pageScrollWidth: document.documentElement.scrollWidth,
     viewportWidth: innerWidth,
     viewportHeight: innerHeight,
   }
+}
+
+async function captureToolbarReview(page, scenario, state) {
+  const output = process.env.WOTB_TOOLBAR_REVIEW_DIR
+  if (!output) return
+  await mkdir(output, { recursive: true })
+  const { data } = await page.client.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, page.sessionId)
+  await writeFile(resolve(output, `${scenario.name}-${state}.png`), Buffer.from(data, 'base64'))
 }
 
 async function runPlaybackCollapseScenario(env, scenario) {
@@ -2878,6 +2892,20 @@ async function runPlaybackCollapseScenario(env, scenario) {
   await delay(300)
   const portrait = scenario.height > scenario.width
 
+  await page.client.send('Emulation.setEmulatedMedia', {
+    features: [{ name: 'prefers-reduced-motion', value: scenario.reduced ? 'reduce' : 'no-preference' }],
+  }, page.sessionId)
+  await page.evaluate(`document.documentElement.dataset.uiProfile = ${JSON.stringify(scenario.profile || 'summer')}`)
+  if (scenario.fullscreen) {
+    const fs = await page.evaluate(`(() => {
+      const button = document.querySelector('[data-test="pb-fullscreen"]')
+      const r = button.getBoundingClientRect()
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 }
+    })()`)
+    await page.tap({ ...fs, touch: false })
+    await page.waitFor(() => !!document.fullscreenElement, { label: 'native fullscreen entered' })
+    await delay(300)
+  }
   const base = await page.probe(playbackCollapseProbe)
   check(failures, base.found, 'fixture must mount the production BattlePlayback')
   check(failures, base.pageScrollWidth <= base.viewportWidth + 1,
@@ -2941,19 +2969,92 @@ async function runPlaybackCollapseScenario(env, scenario) {
       'page-level horizontal overflow with the roster expanded: ' + closed.pageScrollWidth + ' > ' + closed.viewportWidth)
   }
 
-  const timeBeforeCollapse = (await page.probe(playbackCollapseProbe)).time
+  await captureToolbarReview(page, scenario, 'expanded')
+  const beforeCollapse = await page.probe(playbackCollapseProbe)
+  check(failures, Math.abs(beforeCollapse.toggleRect.top - beforeCollapse.contentTop) <= 1, 'expanded toggle must sit at the top right of the content')
+  const timeBeforeCollapse = beforeCollapse.time
+  await page.evaluate(`document.querySelector('[data-test="pb-play"]').focus()`)
   const toggleRes = await clickElement(page, '[data-test="pb-transport-toggle"]')
   check(failures, clicked(toggleRes), 'transport toggle click failed: ' + toggleRes)
+  // Observe actual production layout at intermediate animation frames, not just classes.
+  const frames = await page.evaluate(`new Promise(resolve => {
+    const samples = []
+    const start = performance.now()
+    function frame() {
+      const content = document.querySelector('[data-test="pb-transport-controls"]')
+      const button = document.querySelector('[data-test="pb-transport-toggle"]')
+      samples.push({ height: content.getBoundingClientRect().height, right: button.getBoundingClientRect().right, inert: content.inert })
+      if (performance.now() - start < 750) requestAnimationFrame(frame)
+      else resolve(samples)
+    }
+    requestAnimationFrame(frame)
+  })`)
   const collapsed = await page.probe(playbackCollapseProbe)
-  check(failures, collapsed.transportContentHidden === true, 'collapsing the toolbar must hide the transport content (v-show)')
+  await captureToolbarReview(page, scenario, 'collapsed')
+  check(failures, collapsed.transportContentHidden === true, 'collapsing must remove the measured content from layout')
+  check(failures, collapsed.contentInlineHeight === '', 'completed collapse must clear inline height')
+  check(failures, frames.every(frame => frame.inert), 'collapsing content must immediately reject focus and input')
+  check(failures, frames.every(frame => Math.abs(frame.right - beforeCollapse.toggleRect.right) <= 1), 'toggle must not jump horizontally during collapse')
+  check(failures, Math.abs(collapsed.toggleRect.right - collapsed.transportRect.right) <= 1, 'restore entry must stay at the right edge of its slot')
+  const intermediate = frames.some(frame => frame.height > 0 && frame.height < beforeCollapse.contentHeight - 0.5)
+  check(failures, scenario.reduced ? !intermediate : intermediate, 'height interpolation must follow reduced-motion preference')
   check(failures, collapsed.transportToggle.expanded === 'false' && collapsed.transportToggle.hitSelf === true,
-    'the collapsed toolbar must leave a reachable restore entry that hit-tests to itself')
-  check(failures, collapsed.time === timeBeforeCollapse, 'collapsing the toolbar must not move the clock (' + timeBeforeCollapse + ' -> ' + collapsed.time + ')')
-  const expandToggleRes = await clickElement(page, '[data-test="pb-transport-toggle"]')
-  check(failures, clicked(expandToggleRes), 'transport restore click failed: ' + expandToggleRes)
+    'collapsed toolbar must leave a reachable restore entry')
+  check(failures, collapsed.time === timeBeforeCollapse, 'collapse must preserve the clock')
+  check(failures, await page.evaluate(`document.activeElement === document.querySelector('[data-test="pb-transport-toggle"]')`), 'focus in collapsing content must return to the restore entry')
+  for (const type of ['keyDown', 'keyUp']) {
+    await page.client.send('Input.dispatchKeyEvent', { type, key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, ...(type === 'keyDown' ? { text: '\r', unmodifiedText: '\r' } : {}) }, page.sessionId)
+  }
+
+  await page.waitFor(() => document.querySelector('[data-test="pb-transport-toggle"]').getAttribute('aria-expanded') === 'true', { label: 'keyboard restores toolbar' })
+  await page.waitFor(() => !document.querySelector('.pb-transport-slide-enter-active, .pb-transport-slide-leave-active'), { label: 'toolbar expand finished' })
   const restored = await page.probe(playbackCollapseProbe)
-  check(failures, restored.transportContentHidden === false, 'restoring the toolbar must show the transport content again')
-  check(failures, restored.time === timeBeforeCollapse, 'restoring the toolbar must not move the clock')
+  check(failures, restored.transportContentHidden === false && restored.contentInlineHeight === '', 'restore must release natural height')
+  check(failures, Math.abs(restored.toggleRect.right - beforeCollapse.toggleRect.right) <= 1, 'restore must preserve horizontal alignment')
+  check(failures, restored.time === timeBeforeCollapse, 'restore must preserve the clock')
+  check(failures, Math.abs(restored.toggleRect.top - restored.contentTop) <= 1, 'restored toggle must return to the top right')
+
+  if (!scenario.reduced) {
+    const reversal = await page.evaluate(`new Promise(resolve => {
+      const content = document.querySelector('[data-test="pb-transport-controls"]')
+      const toggle = document.querySelector('[data-test="pb-transport-toggle"]')
+      toggle.click()
+      setTimeout(() => {
+        const before = content.getBoundingClientRect().height
+        toggle.click()
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve({ before, after: content.getBoundingClientRect().height, full: content.scrollHeight })))
+      }, 150)
+    })`)
+    check(failures, reversal.before > 0 && reversal.before < reversal.full, 'reversal must interrupt a running slide')
+    check(failures, reversal.after > 0 && reversal.after < reversal.full, 'reverse must continue from visible height, not snap to an endpoint')
+    await page.waitFor(() => !document.querySelector('.pb-transport-slide-enter-active, .pb-transport-slide-leave-active'), { label: 'reversed slide finished' })
+    check(failures, (await page.probe(playbackCollapseProbe)).contentInlineHeight === '', 'reversal must clean inline height')
+  }
+  if (scenario.width === 844) {
+    // Rotation preserves disclosure state, and a transition interrupted by hiding UI is disposable.
+    await clickElement(page, '[data-test="pb-transport-toggle"]')
+    await delay(120)
+    await page.emulate({ ...scenario, width: 390, height: 844 })
+    await page.waitFor(() => !document.querySelector('.pb-transport-slide-leave-active'), { label: 'rotated slide finished' })
+    const rotated = await page.probe(playbackCollapseProbe)
+    check(failures, rotated.transportContentHidden && rotated.transportToggle.hitSelf, 'rotation must preserve a reachable collapsed state')
+    check(failures, Math.abs(rotated.toggleRect.right - rotated.transportRect.right) <= 1, 'rotation must preserve right docking')
+    await page.emulate(scenario)
+    await clickElement(page, '[data-test="pb-transport-toggle"]')
+    await page.waitFor(() => !document.querySelector('.pb-transport-slide-enter-active'), { label: 'post-rotation restore' })
+    await clickElement(page, '[data-test="pb-transport-toggle"]')
+    await delay(100)
+    await page.evaluate('document.activeElement?.blur()')
+    await page.pressH()
+    await page.waitFor(() => !document.querySelector('[data-test="pb-transport-slot"]'), { label: 'hide UI during slide' })
+    await page.pressH()
+    await page.waitFor(() => !!document.querySelector('[data-test="pb-transport-toggle"]'), { label: 'restore UI after slide teardown' })
+    const remounted = await page.probe(playbackCollapseProbe)
+    check(failures, remounted.transportToggle.expanded === 'false' && remounted.contentInlineHeight === '', 'UI remount must preserve collapse without stale height')
+    await clickElement(page, '[data-test="pb-transport-toggle"]')
+    await page.waitFor(() => !document.querySelector('.pb-transport-slide-enter-active'), { label: 'post-remount restore' })
+  }
+  console.log('[toolbar-motion]', scenario.name, JSON.stringify({ right: collapsed.toggleRect.right, slotRight: collapsed.transportRect.right, frames: frames.length, intermediate, reduced: !!scenario.reduced, fullscreen: !!scenario.fullscreen }))
 
   await clickElement(page, '[data-test="pb-play"]')
   const advanced = await page
@@ -3134,6 +3235,7 @@ async function runPlaybackShellNavScenario(env, scenario) {
   const toggleClick = await hit('[data-test="pb-transport-toggle"]')
   check(failures, toggleClick?.test === 'pb-transport-toggle', `collapse tap missed the toggle: ${JSON.stringify(toggleClick)}`)
   await alignWorkspace()
+  await page.waitFor(() => getComputedStyle(document.querySelector('[data-test="pb-transport-controls"]')).display === 'none', { label: 'transport collapse animation finished' })
   const collapsed = await page.probe(playbackShellNavProbe)
   check(failures, collapsed.controls.play.every(r => !r.visible), 'collapsing must hide the primary transport controls')
   check(failures, collapsed.controls.toggle.some(r => r.visible && r.hitSelf), 'the collapsed restore entry must stay reachable')

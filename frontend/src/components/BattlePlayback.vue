@@ -284,30 +284,16 @@ const battlefieldWorkspaceEl = ref(null)
 const mapComponent = ref(null)
 const mapStageEl = ref(null)
 
-// ---- Fullscreen：原生 Fullscreen API；document.fullscreenElement + fullscreenchange 为事实源
-//（不维护手工 isFullscreen = !isFullscreen，ESC/浏览器 UI 退出后状态自动同步）。
-// 生命周期与方向锁已抽到 composables/usePlaybackFullscreen.js（与 3D 共用同一套产品语义：
-// 手机形态才锁横屏、锁在全屏成功之后、退出/卸载解锁、平板与桌面绝不请求方向锁）。----
+// Fullscreen API 与方向锁生命周期归 usePlaybackFullscreen。
 const pbRoot = ref(null)
-/* §three-forms：PC / tablet / mobile 三套互斥的布局形态，由 JS 判定后写成根类。
-   互斥性由「只挂一个类」保证，而不是靠媒体查询之间的算术——旧写法里
-   .pb-device-mobile(0,4,0) 会压掉宽度键控的规则(0,3,0)，一档的改动因此
-   反复打穿另一档。三档与旧行为逐条等价：
-     mobile = isMobileDevice（宽 <768，或触屏且高 <=500；见 shared/breakpoints PLAYBACK_MOBILE_QUERY）
-     pc     = 非 mobile 且 >=1200
-     tablet = 非 mobile 且 <1200（含 iPad / Android 平板；触屏只放大点击区域，不改形态） */
+// 三档互斥：手机由 usePlaybackPhoneForm 判定；非手机以 1200px 分 PC / tablet。
 const wideLayout = ref(false)
 const formFactor = computed(() => {
   if (isMobileDevice.value) return 'mobile'
   return wideLayout.value ? 'pc' : 'tablet'
 })
 
-// §mobile-contract：设备是否为「移动端」（primary pointer=coarse 且视口 <=1200px）。手机在
-// fullscreen + landscape 时内宽可 >768，因此移动端判定不得只依赖 innerWidth<768；一旦判定为
-// 移动端，无论全屏/横竖屏都保持 mobile playback mode（HUD+Stage 为主、bottom overlay controls、
-// 紧凑控件密度）；几何本身仍由朝向决定，两种形态都没有常驻侧栏。
-// §three-forms：与 wideLayoutQuery('(min-width: 1200px)') 必须严格互补。
-// 手机形态由共享 contract 判定，横屏/全屏后与 3D 保持同一紧凑呈现。
+// 手机判定沿用共享 contract，全屏横屏不能仅按宽度判定为桌面。
 const { isPhone: isMobileDevice } = usePlaybackPhoneForm()
 /* §square-stage：正方形 Stage 的两种呈现由**视口朝向**决定，不由宽度决定（见
    composables/usePlaybackPortraitViewport.js）。竖屏是纵向流，横屏与宽档才是三段式。 */
@@ -315,29 +301,43 @@ const { isPortrait: isPhonePortrait } = usePlaybackPortraitViewport()
 const phoneLandscape = computed(() => isMobileDevice.value && !isPhonePortrait.value)
 const compactAnnotation = computed(() => annotationOpen.value && phoneLandscape.value)
 
-// §2d-toolbar-collapse / §roster-overlay 的会话级开关：唯一 owner = usePlaybackWorkspaceToggles
-//（状态与形态默认值语义见该文件；displayOpen / closeAnnotation 在下方声明，惰性闭包避免 TDZ）。
+// 折叠/名册状态归 usePlaybackWorkspaceToggles；下方关闭函数通过惰性闭包调用。
 const { controlsCollapsed, controlsContentId, toggleControlsCollapsed, rosterLanesOpen, toggleRosterLanes } =
   usePlaybackWorkspaceToggles({ phoneLandscape, onCollapse: () => { displayOpen.value = false; closeAnnotation() } })
+// Presentation-only height bookkeeping: the existing disclosure ref remains the sole state owner.
+const transportToggleEl = ref(null)
+const transportContentEl = ref(null)
+function freezeTransportHeight(el) { el.style.height = `${el.getBoundingClientRect().height}px` }
+function startTransportEnter(el) {
+  // A cancelled leave has already frozen the current visible height.
+  if (!el.style.height) el.style.height = '0px'
+}
+function openTransportHeight(el) {
+  void el.offsetHeight
+  el.style.height = `${el.scrollHeight}px`
+}
+function closeTransportHeight(el) {
+  void el.offsetHeight
+  el.style.height = '0px'
+}
+function clearTransportHeight(el) { el.style.height = '' }
+function toggleTransport() {
+  if (!controlsCollapsed.value && transportContentEl.value?.contains(document.activeElement)) {
+    transportToggleEl.value?.focus({ preventScroll: true })
+  }
+  toggleControlsCollapsed()
+}
 let playbackLifecycleActive = true
 const lifecycleVisible = ref(true)
 let wideLayoutQuery = null
 function onWideLayoutChange(event) {
   wideLayout.value = !!(event && event.matches)
 }
-/**
- * 全屏 / 方向锁生命周期与 3D 共用同一实现（composables/usePlaybackFullscreen）：
- * 事实源 `document.fullscreenElement`、手机形态才锁横屏、锁在全屏成功之后、退出与卸载解锁。
- * 这里只保留 2D 自己的**布局**反应：全屏进出后等 Vue 把控件搬进新的容器尺寸，
- * 用新 mode 的真实几何 force 一次 authoritative fit（geometry-signature 也会捕获 bottom inset 变化）。
- * 不用 setTimeout magic delay。
- */
+// 全屏变化后等 Vue 更新布局再 force fit；事件与方向锁仍由共享 composable 所有。
 const { isFullscreen, fullscreenSupported, toggleFullscreen, exitOwnedFullscreen } = usePlaybackFullscreen({
   target: () => pbRoot.value,
   isPhone: isMobileDevice,
   isActive: () => playbackLifecycleActive && props.active && lifecycleVisible.value,
-  // fullscreenchange 只由 composable 监听；这里注入 2D 的布局反应（等 Vue 搬完 controls 再 force fit）。
-  // fitViewIfReady 由下方相机提供（函数声明提升，调用时相机已创建）。
   onChange: () => nextTick(() => fitViewIfReady(true)),
   auto: () => ({ token: props.autoFullscreen?.token ?? 0, key: props.autoFullscreen?.key, ready: true, active: props.active && lifecycleVisible.value }),
 })
@@ -564,18 +564,12 @@ function dragEnd() {
   transport.scrubEnd()
 }
 
-// KeepAlive 停用（切到别的页面）时同样视为不可见（声明在全屏 composable 之前：其 isActive / auto 谓词会读它）
-// 离开（能力切走 / 页面停用）时退出本回放拥有的全屏：组件被 v-show / KeepAlive 缓存不会卸载，
-// 不主动退出的话 fullscreen root 仍是旧回放元素，新页面被挡在全屏层后面
+// 能力切换或 KeepAlive 停用时暂停并退出本回放拥有的全屏。
 onDeactivated(() => { lifecycleVisible.value = false; pause(); exitOwnedFullscreen() })
 onActivated(() => { lifecycleVisible.value = true })
 watch(() => props.active, (value) => { if (!value) { pause(); exitOwnedFullscreen() } })
 
-/**
- * 播放传输行为与 3D 共用：空格 / ←→ 的键位、输入框不劫持、拖动暂停后自动继续。
- * 键盘监听仍由本组件在 onMounted / onBeforeUnmount 挂卸（与其它全局监听同一处管理），
- * 所以 keyboard: false，只借用 handleKeydown。
- */
+// 共享播放键位/拖动语义；键盘监听由本组件挂卸，避免重复注册。
 const transport = usePlaybackTransport({
   isPlaying: () => playing.value,
   // 播放时钟在下方解构（声明顺序晚于本调用）——惰性闭包避免 TDZ；事件期才求值。
@@ -1176,16 +1170,22 @@ const mapStyle = computed(() => ({
 
       <PlaybackMobileOverlay v-if="!uiHidden" ref="mobileOverlay" :paused="!playing" :fullscreen="isFullscreen">
         <div ref="transportEl" class="pb-transport-slot" data-test="pb-transport-slot">
-        <div v-if="!phoneLandscape" v-show="!controlsCollapsed" class="pb-replay-mode-bar">
+        <!-- One measured disclosure region; the persistent restore entry stays outside it. -->
+        <div v-show="!compactAnnotation" class="pb-transport-row">
+        <Transition name="pb-transport-slide"
+          @before-enter="startTransportEnter" @enter="openTransportHeight"
+          @after-enter="clearTransportHeight" @enter-cancelled="freezeTransportHeight"
+          @before-leave="freezeTransportHeight" @leave="closeTransportHeight"
+          @after-leave="clearTransportHeight" @leave-cancelled="freezeTransportHeight"
+        >
+        <div v-show="!compactAnnotation && !controlsCollapsed" ref="transportContentEl" :id="controlsContentId"
+          :inert="controlsCollapsed" class="pb-transport-main" data-test="pb-transport-controls">
+        <div v-if="!phoneLandscape" class="pb-replay-mode-bar">
           <button type="button" class="pb-annotation-entry" :class="{ active: annotationOpen }" data-test="pb-annotation-entry" data-tour="playback-annotation-entry" :aria-pressed="annotationOpen" @click="toggleAnnotation">
             <PencilRuler :size="18" aria-hidden="true" /> {{ $t('recon.map.playback.annot.mode') }}
           </button>
           <span>{{ $t(annotationOpen ? 'recon.map.playback.annot.mode_hint' : 'recon.map.playback.annot.watch_hint') }}</span>
         </div>
-        <!-- §2d-toolbar-collapse + §mobile-panels：紧凑标注态整行隐藏——标注工具条接替传输行，
-             不多占一行高度；折叠切换随之消失（其 aria-expanded 只在被渲染时才有意义）。 -->
-        <div v-show="!compactAnnotation" class="pb-transport-row">
-        <div v-show="!compactAnnotation && !controlsCollapsed" :id="controlsContentId" class="pb-transport-main" data-test="pb-transport-controls">
         <PlaybackControls
           :playing="playing"
           :speed="speed"
@@ -1212,13 +1212,13 @@ const mapStyle = computed(() => ({
           @seek="seek"
         />
         </div>
-        <!-- §2d-toolbar-collapse：折叠后唯一的恢复入口（与 3D controls-toggle 同语义），
-             aria-controls 指向 v-show 的传输内容；折叠时它仍留在流内，始终可触达。 -->
-        <button type="button" class="pb-transport-toggle pb-quick-action" data-test="pb-transport-toggle"
+        </Transition>
+        <!-- Persistent restore entry, independent of the animated content's height. -->
+        <button ref="transportToggleEl" type="button" class="pb-transport-toggle pb-quick-action" data-test="pb-transport-toggle"
           :aria-expanded="!controlsCollapsed" :aria-controls="controlsContentId"
           :aria-label="$t(controlsCollapsed ? 'agentReplay.expand_toolbar' : 'agentReplay.collapse_toolbar')"
           :title="$t(controlsCollapsed ? 'agentReplay.expand_toolbar' : 'agentReplay.collapse_toolbar')"
-          @click="toggleControlsCollapsed"
+          @click="toggleTransport"
         >
           <component :is="controlsCollapsed ? ChevronUp : ChevronDown" :size="18" aria-hidden="true" />
         </button>
