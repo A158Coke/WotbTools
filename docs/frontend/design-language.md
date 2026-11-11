@@ -96,7 +96,7 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 
 **首屏性能：** 首帧只画 canvas 纯色（`html` / 首屏内联样式负责，图片层此时 `opacity: 0`）；`.app-backdrop` 的图片由 JS 在 mount 后预解码，完成后才加 `.is-ready` 淡入，背景图不进入首屏关键路径。`prefers-reduced-motion: reduce` 下不做透明度过渡。主题切换时重新等待对应季节图，CSS token 已同步换图，不保留上一主题的图。
 
-**内容表面边界（当前实现）**：页面级卡片/面板（首页卡片、文档正文、坦克详情区块、筛选面板、空状态上传区、管理后台提示条等）使用 `--color-surface-{1,2,3}-glass`（对应表面色 82%–90% 不透明）加 `backdrop-filter: blur(16px) saturate(1.2)`，让背景隐约透出。当前表格、数据密集区、输入框、回放 HUD 使用纯色 `--color-surface-*`；2D/3D 回放、装甲查看器和地图 3D 场景根保持不透明底色，非全屏时场景外围的页面区域可透出环境背景。这是已实施状态，不排除未来经过验证的材料调整。浏览器不支持 `backdrop-filter` 时玻璃表面回退为对应纯色。实际应用玻璃表面必须先按真实 wide/portrait 背景图逐像素叠加 `--theme-backdrop-scrim`，再与玻璃 alpha 合成，取亮度最小/最大像素进入 §3 最差值计算；不能只用 canvas 等效色替代。
+**内容表面边界（当前实现）**：页面级卡片/面板（首页卡片、文档正文、坦克详情区块、筛选面板、空状态上传区、管理后台提示条等）使用 `--color-surface-{1,2,3}-glass`（对应表面色 82%–90% 不透明）加 `backdrop-filter: blur(16px) saturate(1.2)`，让背景隐约透出。当前表格、数据密集区、输入框、回放 HUD 使用纯色 `--color-surface-*`；2D/3D 回放、装甲查看器和地图 3D 场景根保持不透明底色，非全屏时场景外围的页面区域可透出环境背景。这是已实施状态，不排除未来经过验证的材料调整。浏览器不支持 `backdrop-filter` 时玻璃表面回退为对应纯色。系统级可访问性偏好同样在 `app-shell.css` 整体降级：`prefers-reduced-transparency: reduce` 与 `prefers-contrast: more` 下玻璃表面关闭 `backdrop-filter` 并退化为对应纯色 `--color-surface-{1,2,3}`，`more` 另将边界提为 `--color-border-strong`；默认视觉不变（浏览器门禁 `home-glass-accessibility`）。实际应用玻璃表面必须先按真实 wide/portrait 背景图逐像素叠加 `--theme-backdrop-scrim`，再与玻璃 alpha 合成，取亮度最小/最大像素进入 §3 最差值计算；不能只用 canvas 等效色替代。
 
 **素材来源：** 四季原图为 AI 生成画面与真实 WoTB 十级车型参考融合，写实电影风格；原图保留在 `frontend/art-source/backdrops/backdrop-<季节>-{wide,portrait}.webp`，不得修改。发布产物由 `frontend/scripts/build-theme-backdrops.mjs`（`pnpm run assets:backdrops`）生成：wide Lanczos 放大到 2560 宽、portrait 到 1080 宽，轻度锐化，WebP 初始 quality 80；单张超过 300KB 时脚本按预算自适应下调 quality（产物实测约 q29–q80，均 ≤ 300KB）。
 
@@ -502,7 +502,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | **DataTable** | — | 数字右对齐 + 等宽数字；表头吸顶；首列可冻结（手机上只冻结一列）；可排序列用 `<button>` 并带 `aria-sort`；容器 < 560px 时自动切换成卡片列表 |
 | **Stat** | — | 标签（caption）+ 数值（h2，等宽数字）+ 可选的变化量 |
 | **Dialog** | 确认 / 表单 | 焦点陷阱，Esc 关闭，关闭后焦点回到触发元素，`aria-modal`；同时打开多个时按打开顺序叠放，后打开的在上层；手机上变为底部 sheet；**禁止 `window.confirm`**。交互机制由 `AppDialog`（内部 Reka Dialog）提供，页面只用 `AppDialog` |
-| **Sheet** | 底部 / 侧边 | 手机上的筛选、详情、面板都用 `AppSheet`（内部 Reka Drawer，统一 `--z-sheet`、`--color-scrim`、安全区与下滑关闭）；吸附高度只在有产品场景时启用 |
+| **Sheet** | 底部 / 侧边 | 手机上的筛选、详情、面板都用 `AppSheet`（内部 Reka Drawer，统一 `--z-sheet`、`--color-scrim`、安全区与下滑关闭）；关闭走 `data-state="closed"` 的 CSS keyframes 退场（Reka Presence 等它 `animationend` 再卸载），swipe 释放后从当前位移继续滑出（时长随 `--drawer-swipe-strength` 匹配释放速度），reduced-motion 下不做动画等待直接关闭；吸附高度只在有产品场景时启用 |
 | **Drawer** | — | 桌面上是常驻侧栏，平板上是推开式侧栏（不遮盖内容），手机上变成全屏 sheet |
 | **Menu** | — | 下拉菜单，支持方向键导航和 Esc 关闭；由 `MenuButton`（内部 Reka DropdownMenu）提供 |
 | **Tooltip** | — | icon-only 按钮必须有 `aria-label`，并用 `AppTooltip`（内部 Reka Tooltip，`--z-tooltip`）补充悬停 / 聚焦提示；触屏不依赖 tooltip 传达信息 |
